@@ -2,6 +2,6 @@
   "database": "dolt",
   "backend": "dolt",
   "dolt_mode": "embedded",
-  "dolt_database": "ghidra_retro_machines",
-  "project_id": "18d6b986-a403-4171-83b0-750030310a2a"
+  "dolt_database": "grm",
+  "project_id": "bd95886b-d242-40a3-ad31-9df10f221c64"
 }
