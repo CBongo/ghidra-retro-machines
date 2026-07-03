@@ -1,0 +1,18 @@
+# Gradle
+.gradle/
+build/
+dist/
+
+# Generated artifacts — .gdt archives are build output, never committed (see docs/SCHEMA.md)
+*.gdt
+
+# IDE
+.classpath
+.project
+.settings/
+.idea/
+bin/
+
+# OS
+.DS_Store
+Thumbs.db

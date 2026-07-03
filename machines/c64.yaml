@@ -1,0 +1,244 @@
+# Commodore 64 system descriptor — worked example for the descriptor schema (gib.1.2).
+# Schema documented in ../SCHEMA.md. All hardware facts cross-checked against:
+#   - c64-wiki.com/wiki/Memory_Map (banking table, region layout)
+#   - mist64/c64ref (register/symbol details)
+#   - VICE (behavioral oracle; see validation section)
+
+schema: 1
+
+system:
+  id: c64
+  name: Commodore 64
+  cpu:
+    # Bundled with the extension (precedent: grue74/ghidra-c64helpers).
+    # The 6510 language also declares the bank context register (see banking).
+    language: "6510:LE:16:default"
+    fallback_language: "6502:LE:16:default"   # until the 6510 language is bundled
+
+memory:
+  regions:                        # always visible, never banked
+    - name: P6510
+      start: 0x0000
+      end: 0x0001
+      kind: io
+      type: R6510                 # DDR + port struct; the banking register lives here
+      comment: "6510 on-die port: $00 DDR, $01 port (LORAM/HIRAM/CHAREN + cassette)"
+    - name: ZEROPAGE
+      start: 0x0002
+      end: 0x00FF
+      kind: ram
+    - name: STACK
+      start: 0x0100
+      end: 0x01FF
+      kind: ram
+    - name: OS_WORKSPACE
+      start: 0x0200
+      end: 0x03FF
+      kind: ram
+      comment: "KERNAL/BASIC buffers and vectors when system ROMs are in use"
+    - name: SCREEN_RAM
+      start: 0x0400
+      end: 0x07FF
+      kind: ram
+      comment: "default VIC-II screen matrix location (movable)"
+    - name: RAM_MAIN
+      start: 0x0800
+      end: 0x9FFF
+      kind: ram
+      comment: "BASIC program space; typical PRG load target ($0801)"
+    - name: RAM_C000
+      start: 0xC000
+      end: 0xCFFF
+      kind: ram
+
+  windows:                        # banked ranges; occupant chosen by bank state
+    # Read/write asymmetry: on_write declares where WRITES land while this occupant
+    # is mapped for reads. ROMs write through to the RAM beneath (hardware truth:
+    # the 6510 write line always reaches RAM under ROM). Default (ram/io): self.
+    - name: LOROM                 # $A000-$BFFF
+      start: 0xA000
+      end: 0xBFFF
+      occupants:
+        - { name: RAM_A000, kind: ram }
+        - { name: BASIC,    kind: rom, image: basic, on_write: RAM_A000 }
+
+    - name: CHARIO                # $D000-$DFFF: RAM / CHARGEN / IO three-way
+      start: 0xD000
+      end: 0xDFFF
+      occupants:
+        - { name: RAM_D000, kind: ram }
+        - { name: CHARGEN,  kind: rom, image: chargen, on_write: RAM_D000 }
+        - name: IO
+          kind: io            # reads AND writes both hit the chips (on_write: self)
+          subregions:
+            - name: VIC
+              start: 0xD000
+              size: 0x40
+              repeat_to: 0xD3FF          # registers mirror every 64 bytes
+              type: MOS6569_VICII
+            - name: SID
+              start: 0xD400
+              size: 0x20
+              repeat_to: 0xD7FF          # mirrors every 32 bytes
+              type: MOS6581_SID
+            - name: COLOR_RAM
+              start: 0xD800
+              end: 0xDBFF
+              kind: ram
+              comment: "4-bit wide; upper nibble is open bus"
+            - name: CIA1
+              start: 0xDC00
+              size: 0x10
+              repeat_to: 0xDCFF
+              type: MOS6526_CIA
+            - name: CIA2
+              start: 0xDD00
+              size: 0x10
+              repeat_to: 0xDDFF
+              type: MOS6526_CIA
+            - name: IO1
+              start: 0xDE00
+              end: 0xDEFF
+              kind: io
+              comment: "expansion port IO1 (cartridge-defined)"
+            - name: IO2
+              start: 0xDF00
+              end: 0xDFFF
+              kind: io
+              comment: "expansion port IO2 (cartridge-defined)"
+
+    - name: HIROM                 # $E000-$FFFF
+      start: 0xE000
+      end: 0xFFFF
+      occupants:
+        - { name: RAM_E000, kind: ram }
+        - { name: KERNAL,   kind: rom, image: kernal, on_write: RAM_E000 }
+
+banking:
+  mechanism:
+    strategy: register-write      # simplest strategy; NES mappers will add others
+    params:
+      address: 0x0001
+      mask: 0x07                  # bits 0-2; bits 3-5 are cassette lines
+  context_register: c64bank       # declared in the bundled 6510 language (TMode-style)
+  state_bits: [LORAM, HIRAM, CHAREN]   # bit 0, 1, 2
+  initial_state: 7                # PRG default: ($37 & 7) = %111
+  # PLA truth table, no cartridge (GAME/EXROM high). Source: c64-wiki Memory_Map;
+  # cross-checked against VICE c64pla. Cartridge lines extend this table later (.crt).
+  states:
+    - { value: 7, LOROM: BASIC,    CHARIO: IO,       HIROM: KERNAL }    # %111 default
+    - { value: 6, LOROM: RAM_A000, CHARIO: IO,       HIROM: KERNAL }    # %110
+    - { value: 5, LOROM: RAM_A000, CHARIO: IO,       HIROM: RAM_E000 }  # %101
+    - { value: 4, LOROM: RAM_A000, CHARIO: RAM_D000, HIROM: RAM_E000 }  # %100 all-RAM
+    - { value: 3, LOROM: BASIC,    CHARIO: CHARGEN,  HIROM: KERNAL }    # %011
+    - { value: 2, LOROM: RAM_A000, CHARIO: CHARGEN,  HIROM: KERNAL }    # %010
+    - { value: 1, LOROM: RAM_A000, CHARIO: CHARGEN,  HIROM: RAM_E000 }  # %001
+    - { value: 0, LOROM: RAM_A000, CHARIO: RAM_D000, HIROM: RAM_E000 }  # %000 all-RAM
+
+rom_images:
+  # Copyright-safe slots: never shipped. Empty slot = uninitialized block, symbols
+  # still applied. User fills via loader option or File > Add To Program.
+  # known_sha1 values are UNVERIFIED placeholders — verify against a real ROM set
+  # (e.g. the VICE distribution) before relying on them for slot validation.
+  basic:
+    size: 0x2000
+    occupant: BASIC
+    known_sha1: []                # TODO verify: BASIC V2 (901226-01)
+  kernal:
+    size: 0x2000
+    occupant: KERNAL
+    known_sha1: []                # TODO verify: KERNAL rev3 (901227-03)
+  chargen:
+    size: 0x1000
+    occupant: CHARGEN
+    known_sha1: []                # TODO verify: chargen (901225-01)
+
+symbols:
+  # Bulk sets are generated from mist64/c64ref (clean license) — see gib.1.2 notes.
+  # Sets are user-toggleable at import; defaults tuned for game RE (KERNAL API on,
+  # BASIC internals off — games routinely reuse BASIC's zero-page).
+  - set: kernal-api
+    default: on
+    source: generated/c64ref-kernal.yaml
+    provenance: "mist64/c64ref src/kernal, generator adaptation TBD"
+    region: KERNAL
+    # Inline seed until generation lands — the jump-table entries game loaders call:
+    inline:
+      - { addr: 0xFF81, name: CINT,   kind: entry, comment: "init VIC & screen" }
+      - { addr: 0xFF84, name: IOINIT, kind: entry, comment: "init CIA & IRQ" }
+      - { addr: 0xFF87, name: RAMTAS, kind: entry, comment: "init RAM, tape buffer" }
+      - { addr: 0xFFBA, name: SETLFS, kind: entry, comment: "set logical file params" }
+      - { addr: 0xFFBD, name: SETNAM, kind: entry, comment: "set filename" }
+      - { addr: 0xFFC0, name: OPEN,   kind: entry }
+      - { addr: 0xFFC3, name: CLOSE,  kind: entry }
+      - { addr: 0xFFC6, name: CHKIN,  kind: entry }
+      - { addr: 0xFFC9, name: CHKOUT, kind: entry }
+      - { addr: 0xFFCC, name: CLRCHN, kind: entry }
+      - { addr: 0xFFCF, name: CHRIN,  kind: entry }
+      - { addr: 0xFFD2, name: CHROUT, kind: entry, comment: "output char in A" }
+      - { addr: 0xFFD5, name: LOAD,   kind: entry, comment: "load file into memory" }
+      - { addr: 0xFFD8, name: SAVE,   kind: entry }
+      - { addr: 0xFFE1, name: STOP,   kind: entry, comment: "check STOP key" }
+      - { addr: 0xFFE4, name: GETIN,  kind: entry }
+      - { addr: 0xFFFA, name: NMI_VEC,   kind: vector }
+      - { addr: 0xFFFC, name: RESET_VEC, kind: vector }
+      - { addr: 0xFFFE, name: IRQ_VEC,   kind: vector }
+  - set: kernal-zeropage
+    default: off
+    source: generated/c64ref-c64mem-zp.yaml
+    provenance: "mist64/c64ref src/c64mem, generator adaptation TBD"
+    region: ZEROPAGE
+    comment: "KERNAL/BASIC zero-page usage; off by default — games reuse this RAM"
+  - set: basic-api
+    default: off
+    source: generated/c64ref-basic.yaml
+    provenance: "mist64/c64ref, generator adaptation TBD"
+    region: LOROM
+
+types:
+  # Struct definitions applied at region/subregion `type:` references above.
+  # Offsets cross-checked against KickAssembler built-ins and mist64/c64ref src/c64io.
+  # Full field lists to be generated from c64ref; R6510 inline (small + critical):
+  - name: R6510
+    kind: struct
+    fields:
+      - { offset: 0, name: DDR,  size: 1, comment: "data direction; default $2F" }
+      - { offset: 1, name: PORT, size: 1, type: R6510_PORT_BITS }
+  - name: R6510_PORT_BITS
+    kind: flags
+    bits:
+      - { bit: 0, name: LORAM,  comment: "1=BASIC ROM at $A000 (with HIRAM)" }
+      - { bit: 1, name: HIRAM,  comment: "1=KERNAL ROM at $E000" }
+      - { bit: 2, name: CHAREN, comment: "1=IO at $D000, 0=CHARGEN (when ROM mapped)" }
+      - { bit: 3, name: CASS_WRITE }
+      - { bit: 4, name: CASS_SENSE }
+      - { bit: 5, name: CASS_MOTOR }
+  - name: MOS6569_VICII
+    kind: struct
+    source: generated/c64ref-vic.yaml     # 47 registers; generated
+  - name: MOS6581_SID
+    kind: struct
+    source: generated/c64ref-sid.yaml     # 29 registers; generated
+  - name: MOS6526_CIA
+    kind: struct
+    source: generated/c64ref-cia.yaml     # 16 registers; generated
+
+formats:
+  prg:
+    extensions: [".prg", ".p00"]
+    header:
+      - { field: load_address, size: 2, endian: little }
+    placement: load_address
+    initial_bank_state: default          # banking.initial_state (7)
+  # crt: future — CHIP packets to cartridge windows; EXROM/GAME from header
+  #      bytes 0x18/0x19 extend the bank state bits (gib.1 later phase)
+  # d64/t64: future — filesystem providers, not loaders
+
+validation:
+  oracle: VICE
+  checks:
+    - "banking.states vs VICE monitor 'bank' command and c64pla.c PLA model"
+    - "types offsets vs KickAssembler MOS6569_VICII/MOS6581_SID/MOS6526_CIA built-ins"
+    - "rom_images.known_sha1 vs VICE-distributed ROM set checksums"
+    - "future (gib.1.3): run test PRG in VICE, compare bank state at breakpoints
+       against static model prediction"
