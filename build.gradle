@@ -106,16 +106,16 @@ dependencies {
 
 task buildC64Gdt(type: JavaExec) {
 	group = "Ghidra Retro Machines"
-	description = "Generate build/c64.gdt from machines/c64.yaml (build artifact; never committed)"
+	description = "Generate data/machines/c64.gdt from machines/c64.yaml (build artifact; never committed)"
 	dependsOn 'compileGdtBuilderJava'
 	classpath = sourceSets.gdtBuilder.runtimeClasspath
 	mainClass = 'gdtbuilder.GdtBuilder'
 	doFirst {
-		buildDir.mkdirs()
+		file('data/machines').mkdirs()
 	}
 	args = [
 		file('machines/c64.yaml').absolutePath,
-		"$buildDir/c64.gdt"
+		file('data/machines/c64.gdt').absolutePath
 	]
 }
 
@@ -123,4 +123,32 @@ task buildGdt {
 	group = "Ghidra Retro Machines"
 	description = "Generate all machine .gdt data-type archives from their YAML descriptors"
 	dependsOn buildC64Gdt
+}
+
+task buildC64Map(type: JavaExec) {
+	group = "Ghidra Retro Machines"
+	description = "Generate data/machines/c64.map from machines/c64.yaml (build artifact; never committed)"
+	dependsOn 'compileGdtBuilderJava'
+	classpath = sourceSets.gdtBuilder.runtimeClasspath
+	mainClass = 'gdtbuilder.MapCompiler'
+	doFirst {
+		file('data/machines').mkdirs()
+	}
+	args = [
+		file('machines/c64.yaml').absolutePath,
+		file('data/machines/c64.map').absolutePath
+	]
+}
+
+task buildMap {
+	group = "Ghidra Retro Machines"
+	description = "Generate all machine .map runtime files from their YAML descriptors"
+	dependsOn buildC64Map
+}
+
+// buildExtension is defined by the applied support/buildExtension.gradle (invoked via the
+// distributeExtension task above); it doesn't exist at this file's configuration time, so
+// attach the dependency lazily once Gradle resolves the task graph.
+tasks.matching { it.name == 'buildExtension' }.configureEach {
+	dependsOn 'buildGdt', 'buildMap'
 }

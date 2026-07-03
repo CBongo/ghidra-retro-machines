@@ -6,6 +6,9 @@ dist/
 # Generated artifacts — .gdt archives are build output, never committed (see docs/SCHEMA.md)
 *.gdt
 
+# Generated runtime map files (JSON, see docs/MAP_FORMAT.md) — build output, never committed
+data/machines/*.map
+
 # IDE
 .classpath
 .project
