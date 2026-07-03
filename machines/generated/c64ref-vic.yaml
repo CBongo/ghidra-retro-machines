@@ -1,0 +1,19 @@
+# STUB — full register set pending c64ref generator (grm-1.2). Do not hand-expand.
+#
+# Real derivation will pull the full 47-register MOS6569 (VIC-II) map from
+# mist64/c64ref (src/c64io). Until that generator lands, this file seeds the
+# `source:` field-file mechanism (see docs/SCHEMA.md / MOS6569_VICII in
+# machines/c64.yaml) with a small set of well-known, widely-documented
+# registers so the YAML -> .gdt builder can be exercised end-to-end.
+#
+# Offsets are relative to the chip's base address ($D000 for VIC-II). Only
+# unambiguous, commonly-cited registers are listed; gaps between them are
+# real (sparse register map) and must be left unfilled by the builder, not
+# padded with guessed names.
+
+size: 0x40
+fields:
+  - { offset: 0x11, name: CR1, size: 1, comment: "control register 1: screen on/off, text/bitmap, raster bit 8" }
+  - { offset: 0x18, name: MEMPTR, size: 1, comment: "video matrix / character base memory pointers" }
+  - { offset: 0x20, name: EC, size: 1, comment: "border color" }
+  - { offset: 0x21, name: B0C, size: 1, comment: "background color 0" }

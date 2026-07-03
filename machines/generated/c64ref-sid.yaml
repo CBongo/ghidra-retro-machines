@@ -1,0 +1,18 @@
+# STUB — full register set pending c64ref generator (grm-1.2). Do not hand-expand.
+#
+# Real derivation will pull the full 29-register MOS6581 (SID) map from
+# mist64/c64ref (src/c64io). Until that generator lands, this file seeds the
+# `source:` field-file mechanism (see docs/SCHEMA.md / MOS6581_SID in
+# machines/c64.yaml) with a small set of well-known, widely-documented
+# registers so the YAML -> .gdt builder can be exercised end-to-end.
+#
+# Offsets are relative to the chip's base address ($D400 for SID). Only
+# unambiguous, commonly-cited registers are listed; gaps are real (sparse
+# register map).
+
+size: 0x20
+fields:
+  - { offset: 0x00, name: FREQ1LO, size: 1, comment: "voice 1 frequency, low byte" }
+  - { offset: 0x01, name: FREQ1HI, size: 1, comment: "voice 1 frequency, high byte" }
+  - { offset: 0x04, name: CR1, size: 1, comment: "voice 1 control register: waveform, gate, sync, ring mod" }
+  - { offset: 0x18, name: MODEVOL, size: 1, comment: "filter mode ($D418) and master volume" }

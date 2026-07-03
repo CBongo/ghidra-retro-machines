@@ -51,16 +51,76 @@ task distributeExtension {
 //----------------------END "DO NOT MODIFY" SECTION-------------------------------
 
 repositories {
-	// Declare dependency repositories here.  This is not needed if dependencies are manually 
+	// Declare dependency repositories here.  This is not needed if dependencies are manually
 	// dropped into the lib/ directory.
 	// See https://docs.gradle.org/current/userguide/declaring_repositories.html for more info.
 	// Ex: mavenCentral()
+
+	// Only used to resolve the build-time gdtBuilder dependencies below (snakeyaml). Nothing
+	// resolved through this repository is added to the shipped extension's runtime lib/.
+	mavenCentral()
 }
 
 dependencies {
 	// Any external dependencies added here will automatically be copied to the lib/ directory when
-	// this extension is built.	
+	// this extension is built.
 }
 
 // Exclude additional files from the built extension
 // Ex: buildExtension.exclude '.idea/**'
+
+//----------------------------------------------------------------------------------
+// YAML -> .gdt data-type archive build pipeline (bead grm-1.5).
+//
+// docs/SCHEMA.md "Resolved decisions" #1: struct/enum definitions live canonically in
+// the machine descriptor YAML (`types:` section); the .gdt archive is a generated build
+// artifact (never committed — see .gitignore) produced here and consumed by the runtime
+// extension ONLY via the standard Ghidra archive API. There is deliberately no YAML
+// parser in the shipped extension: the builder below (source set `gdtBuilder`) and its
+// snakeyaml dependency are build-only and are never copied into the extension's lib/,
+// because they live in a separate source set / configuration from `main` and
+// `dependencies {}` above (which is what buildExtension.gradle copies).
+//----------------------------------------------------------------------------------
+
+sourceSets {
+	gdtBuilder {
+		java {
+			srcDirs = ['tools/gdtbuilder/src/main/java']
+		}
+	}
+}
+
+dependencies {
+	// Ghidra's own jars, needed to construct DataTypeManager/StructureDataType/etc.
+	// standalone (outside the Ghidra GUI/headless-analyzer process). Build-only: this
+	// configuration (gdtBuilderImplementation) is independent of the extension's runtime
+	// `dependencies {}` block above and is never packaged.
+	gdtBuilderImplementation fileTree(dir: ghidraInstallDir, includes: [
+		'Ghidra/Framework/*/lib/*.jar',
+		'Ghidra/Features/*/lib/*.jar'
+	])
+
+	// YAML parsing for the builder only; never shipped (see note above).
+	gdtBuilderImplementation 'org.yaml:snakeyaml:2.2'
+}
+
+task buildC64Gdt(type: JavaExec) {
+	group = "Ghidra Retro Machines"
+	description = "Generate build/c64.gdt from machines/c64.yaml (build artifact; never committed)"
+	dependsOn 'compileGdtBuilderJava'
+	classpath = sourceSets.gdtBuilder.runtimeClasspath
+	mainClass = 'gdtbuilder.GdtBuilder'
+	doFirst {
+		buildDir.mkdirs()
+	}
+	args = [
+		file('machines/c64.yaml').absolutePath,
+		"$buildDir/c64.gdt"
+	]
+}
+
+task buildGdt {
+	group = "Ghidra Retro Machines"
+	description = "Generate all machine .gdt data-type archives from their YAML descriptors"
+	dependsOn buildC64Gdt
+}

@@ -1,0 +1,17 @@
+# STUB — full register set pending c64ref generator (grm-1.2). Do not hand-expand.
+#
+# Real derivation will pull the full 16-register MOS6526 (CIA) map from
+# mist64/c64ref (src/c64io). Until that generator lands, this file seeds the
+# `source:` field-file mechanism (see docs/SCHEMA.md / MOS6526_CIA in
+# machines/c64.yaml) with a small set of well-known, widely-documented
+# registers so the YAML -> .gdt builder can be exercised end-to-end. This
+# single register map is shared by both CIA1 ($DC00) and CIA2 ($DD00).
+#
+# Offsets are relative to the chip base ($DC00 / $DD00).
+
+size: 0x10
+fields:
+  - { offset: 0x00, name: PRA, size: 1, comment: "port A data register" }
+  - { offset: 0x01, name: PRB, size: 1, comment: "port B data register" }
+  - { offset: 0x02, name: DDRA, size: 1, comment: "data direction register A" }
+  - { offset: 0x03, name: DDRB, size: 1, comment: "data direction register B" }
