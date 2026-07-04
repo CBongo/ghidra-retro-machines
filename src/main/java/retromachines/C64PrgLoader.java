@@ -135,11 +135,11 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 			}
 
 			for (JsonObject region : regionsByName.values()) {
-				createRegionBlock(program, baseSpace, region, loadAddr, prgLength, regionsByName, log);
+				createRegionBlock(program, baseSpace, region, loadAddr, prgLength, log);
 			}
 
 			// --- PRG image block ---
-			createPrgBlock(program, baseSpace, provider, loadAddr, prgLength, regionsByName, log);
+			createPrgBlock(program, baseSpace, provider, loadAddr, prgLength, log);
 
 			// --- Banked windows: home occupant in base space, alternates in overlay spaces ---
 			JsonObject banking = map.getAsJsonObject("banking");
@@ -233,11 +233,27 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 	}
 
 	// ------------------------------------------------------------------
+	// Block permissions by descriptor kind
+	// ------------------------------------------------------------------
+	// Centralized so every block-creation site agrees. RAM: read/write/execute (C64 code
+	// routinely runs from RAM). ROM: read/execute, not writable (write-through to the RAM
+	// beneath, per the map's on_write, is deferred to gib.2). IO: read/write, not
+	// executable. Read is always permitted.
+
+	private static boolean canWrite(String kind) {
+		return !kind.equals("rom");
+	}
+
+	private static boolean canExecute(String kind) {
+		return !kind.equals("io");
+	}
+
+	// ------------------------------------------------------------------
 	// Always-visible regions
 	// ------------------------------------------------------------------
 
 	private void createRegionBlock(Program program, AddressSpace baseSpace, JsonObject region,
-			long loadAddr, long prgLength, Map<String, JsonObject> regionsByName, MessageLog log) {
+			long loadAddr, long prgLength, MessageLog log) {
 
 		String name = region.get("name").getAsString();
 		long start = region.get("start").getAsLong();
@@ -245,7 +261,7 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 		String kind = region.get("kind").getAsString();
 		String comment = region.has("comment") ? region.get("comment").getAsString() : null;
 
-		// RAM_MAIN is carved around the PRG image; handled separately in createPrgBlock().
+		// RAM_MAIN is carved around the PRG image; handled separately in createRamMainSplit().
 		if (name.equals("RAM_MAIN")) {
 			createRamMainSplit(program, baseSpace, start, end, comment, loadAddr, prgLength, log);
 			return;
@@ -253,9 +269,8 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 
 		Address startAddr = baseSpace.getAddress(start);
 		long length = end - start + 1;
-		boolean isIo = kind.equals("io");
 		MemoryBlockUtils.createUninitializedBlock(program, false, name, startAddr, length, comment,
-			"c64.map", true, isIo, false, log);
+			"c64.map", true, canWrite(kind), canExecute(kind), log);
 	}
 
 	private void createRamMainSplit(Program program, AddressSpace baseSpace, long start, long end,
@@ -273,24 +288,30 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 				"]; creating RAM_MAIN as a single block");
 			Address startAddr = baseSpace.getAddress(start);
 			MemoryBlockUtils.createUninitializedBlock(program, false, "RAM_MAIN", startAddr,
-				end - start + 1, comment, "c64.map", true, true, false, log);
+				end - start + 1, comment, "c64.map", true, canWrite("ram"), canExecute("ram"), log);
 			return;
 		}
 
+		// The PRG initialized block occupies part of RAM_MAIN's range, so the surrounding RAM
+		// is emitted as separate blocks (Ghidra can't overlap blocks, and join() can't merge an
+		// initialized FileBytes block with uninitialized RAM). Address-suffix the carved halves
+		// so the two blocks never share the name "RAM_MAIN".
 		if (loadAddr > start) {
 			Address belowStart = baseSpace.getAddress(start);
-			MemoryBlockUtils.createUninitializedBlock(program, false, "RAM_MAIN", belowStart,
-				loadAddr - start, comment, "c64.map", true, true, false, log);
+			MemoryBlockUtils.createUninitializedBlock(program, false,
+				String.format("RAM_MAIN_%04X", (int) start), belowStart,
+				loadAddr - start, comment, "c64.map", true, canWrite("ram"), canExecute("ram"), log);
 		}
 		if (prgEnd < end) {
 			Address aboveStart = baseSpace.getAddress(prgEnd + 1);
-			MemoryBlockUtils.createUninitializedBlock(program, false, "RAM_MAIN", aboveStart,
-				end - prgEnd, comment, "c64.map", true, true, false, log);
+			MemoryBlockUtils.createUninitializedBlock(program, false,
+				String.format("RAM_MAIN_%04X", (int) (prgEnd + 1)), aboveStart,
+				end - prgEnd, comment, "c64.map", true, canWrite("ram"), canExecute("ram"), log);
 		}
 	}
 
 	private void createPrgBlock(Program program, AddressSpace baseSpace, ByteProvider provider,
-			long loadAddr, long prgLength, Map<String, JsonObject> regionsByName, MessageLog log) {
+			long loadAddr, long prgLength, MessageLog log) {
 
 		if (prgLength <= 0) {
 			log.appendMsg("PRG file has no program bytes past the 2-byte load address header");
@@ -333,13 +354,9 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 
 		boolean isOverlay = !isHome;
 		Address startAddr = baseSpace.getAddress(start);
-		boolean r = true;
-		boolean w = kind.equals("ram");
-		boolean x = kind.equals("rom") || kind.equals("ram");
-
 		String comment = occupantName + " (" + kind + ")";
 		MemoryBlockUtils.createUninitializedBlock(program, isOverlay, occupantName, startAddr, length,
-			comment, "c64.map", r, w, x, log);
+			comment, "c64.map", true, canWrite(kind), canExecute(kind), log);
 	}
 
 	private void createIoSubregions(Program program, AddressSpace baseSpace, JsonObject ioOccupant,
@@ -363,9 +380,8 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 			String comment = sub.has("comment") ? sub.get("comment").getAsString() : name;
 
 			Address startAddr = baseSpace.getAddress(start);
-			boolean w = !kind.equals("rom");
 			MemoryBlockUtils.createUninitializedBlock(program, false, name, startAddr, length, comment,
-				"c64.map", true, w, false, log);
+				"c64.map", true, canWrite(kind), canExecute(kind), log);
 
 			if (sub.has("type") && gdtMgr != null) {
 				applyStructType(program, baseSpace, gdtMgr, sub, log);
