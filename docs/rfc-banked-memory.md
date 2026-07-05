@@ -1,9 +1,11 @@
 # RFC: Context-aware address resolution for banked memory (extending overlays)
 
-> **STATUS: INTERNAL DRAFT — not yet posted.** Target venue: GitHub Discussion on
-> NationalSecurityAgency/ghidra. All file/line citations are against the Ghidra 12.1.2
-> source. Tracked as bead `gib.2` / `rrh` in the GME tracker; motivating loader lives in
-> this repo (CBongo/ghidra-retro-machines).
+> **STATUS: POSTED** as
+> [NationalSecurityAgency/ghidra discussion #9349](https://github.com/NationalSecurityAgency/ghidra/discussions/9349)
+> (2026-07-05). This file is the source of record for the proposal text; substantive
+> revisions should be mirrored to the discussion. All file/line citations are against the
+> Ghidra 12.1.2 source. Tracked as bead `gib.2` / `rrh` in the GME tracker; motivating
+> loader + Phase 0 analyzer live in this repo (CBongo/ghidra-retro-machines).
 
 ## Summary
 
