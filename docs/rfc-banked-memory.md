@@ -230,13 +230,29 @@ data flow, and the decompiler unaware.
 
 ## Phasing
 
-- **Phase 0 (no core change, exists/underway):** loaders use home-in-base + overlay
-  alternates; bank-aware analyzers hand-create cross-space references. Proves demand,
-  documents pain.
-- **Phase 1 (this RFC's core ask):** bank context register + declarative bank map +
-  context-aware resolution hook for READ/EXECUTE targets.
-- **Phase 2:** access-type-aware selection (the read/write asymmetry columns), completing
-  the model for write-under-ROM and mapper-register writes.
+Each phase adds one dimension to resolution:
+
+- **Phase 0 — today, no core change (exists/underway):** loaders use home-in-base +
+  overlay alternates; bank-aware analyzers hand-create cross-space references. Proves
+  demand, documents pain.
+- **Phase 1 — bank-aware resolution (the core ask): "which bank is switched in?"**
+  Context register + bank map + the resolution hook, consulting `(context, address)`
+  only: **one target per address per bank state** — the occupant the bank-state table
+  names. A load, a store, and a jump to the same address in the same bank state all
+  resolve to that one occupant. This alone fixes the reported pain class (#6651
+  cross-bank calls, #2546 cross-bank xrefs), and the map needs nothing beyond the
+  per-state occupant table. We propose the hook *signature* carry `access_type` from day
+  one, with Phase 1 implementations treating all modes identically — so Phase 2 changes
+  data and semantics, never API.
+- **Phase 2 — access-mode fidelity: "within one bank state, can a read and a write
+  diverge?"** The bank map gains the separate read/write target columns shown above, and
+  the hook honors them: `STA $A000` with BASIC banked in now resolves to the RAM beneath
+  (write-under-ROM) while `LDA $A000` stays on the ROM; NES PRG-ROM reads vs.
+  mapper-register writes likewise. Purely additive over Phase 1.
+
+Motive for the split: Phase 1 is the smallest reviewable change carrying most of the
+value; Phase 2's read-target ≠ write-target divergence is the conceptually novel part
+and benefits from landing on a proven Phase 1.
 
 ## Questions for maintainers
 
@@ -249,8 +265,10 @@ data flow, and the decompiler unaware.
 3. Where should the bank map live — `.pspec`, a loader-populated program property, or a
    new first-class program object? (We currently compile it from a YAML machine
    descriptor into loader-consumed data, so any of these is reachable for us.)
-4. Would you want the phases split as above, or READ-only resolution first with
-   asymmetry folded in from the start?
+4. On the Phase 1/2 split: are you comfortable with the hook signature including
+   `access_type` from day one (Phase 1 ignoring it) to avoid API churn when Phase 2's
+   per-mode targets land — or would you rather the parameter appear only when something
+   consumes it?
 
 ## Alternatives considered
 
