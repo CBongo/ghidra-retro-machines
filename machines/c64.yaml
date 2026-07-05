@@ -67,7 +67,7 @@ memory:
       end: 0xDFFF
       occupants:
         - { name: RAM_D000, kind: ram }
-        - { name: CHARGEN,  kind: rom, image: chargen, on_write: RAM_D000 }
+        - { name: CHARGEN,  kind: rom, image: chargen, on_write: RAM_D000, executable: false }
         - name: IO
           kind: io            # reads AND writes both hit the chips (on_write: self)
           subregions:
@@ -85,6 +85,7 @@ memory:
               start: 0xD800
               end: 0xDBFF
               kind: ram
+              executable: false     # 4-bit cells; fetches see open-bus upper nibble
               comment: "4-bit wide; upper nibble is open bus"
             - name: CIA1
               start: 0xDC00

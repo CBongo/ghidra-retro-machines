@@ -122,6 +122,9 @@ public class MapCompiler {
 			r.put("kind", requireString(region, "kind", "memory.regions[]"));
 			copyIfPresent(region, r, "type");
 			copyIfPresent(region, r, "comment");
+			copyIfPresent(region, r, "readable");
+			copyIfPresent(region, r, "writable");
+			copyIfPresent(region, r, "executable");
 			out.add(r);
 		}
 		return out;
@@ -168,6 +171,9 @@ public class MapCompiler {
 		o.put("kind", requireString(occupant, "kind", "window occupant"));
 		copyIfPresent(occupant, o, "image");
 		copyIfPresent(occupant, o, "on_write");
+		copyIfPresent(occupant, o, "readable");
+		copyIfPresent(occupant, o, "writable");
+		copyIfPresent(occupant, o, "executable");
 
 		List<Map<String, Object>> subregions =
 			(List<Map<String, Object>>) occupant.get("subregions");
@@ -191,6 +197,9 @@ public class MapCompiler {
 		copyIfPresent(sub, s, "kind");
 		copyIfPresent(sub, s, "type");
 		copyIfPresent(sub, s, "comment");
+		copyIfPresent(sub, s, "readable");
+		copyIfPresent(sub, s, "writable");
+		copyIfPresent(sub, s, "executable");
 		return s;
 	}
 

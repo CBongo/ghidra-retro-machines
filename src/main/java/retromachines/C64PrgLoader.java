@@ -235,10 +235,19 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 	// ------------------------------------------------------------------
 	// Block permissions by descriptor kind
 	// ------------------------------------------------------------------
-	// Centralized so every block-creation site agrees. RAM: read/write/execute (C64 code
-	// routinely runs from RAM). ROM: read/execute, not writable (write-through to the RAM
-	// beneath, per the map's on_write, is deferred to gib.2). IO: read/write, not
-	// executable. Read is always permitted.
+	// Centralized so every block-creation site agrees. Kind-derived defaults: RAM:
+	// read/write/execute (C64 code routinely runs from RAM). ROM: read/execute, not
+	// writable (write-through to the RAM beneath, per the map's on_write, is deferred to
+	// gib.2). IO: read/write, not executable, and marked volatile (hardware registers with
+	// side effects on read/write). Read is always permitted by default.
+	//
+	// A node (region/occupant/subregion JSON object) may carry sparse boolean overrides
+	// (`readable`/`writable`/`executable`) for hardware quirks that deviate from the kind
+	// default on a single attribute (e.g. CHARGEN is kind:rom but its glyph data is never
+	// executed). Multi-attribute deviations should get a new `kind` instead of overrides.
+
+	/** Effective permissions for a block: kind default, overridden by explicit JSON fields. */
+	private record Perms(boolean readable, boolean writable, boolean executable) {}
 
 	private static boolean canWrite(String kind) {
 		return !kind.equals("rom");
@@ -246,6 +255,22 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 
 	private static boolean canExecute(String kind) {
 		return !kind.equals("io");
+	}
+
+	private static Perms perms(JsonObject node, String kind) {
+		boolean r = node.has("readable") ? node.get("readable").getAsBoolean() : true;
+		boolean w = node.has("writable") ? node.get("writable").getAsBoolean() : canWrite(kind);
+		boolean x = node.has("executable") ? node.get("executable").getAsBoolean() : canExecute(kind);
+		return new Perms(r, w, x);
+	}
+
+	/** IO-kind blocks have side effects on access; mark them volatile so Ghidra doesn't cache
+	 *  or fold reads/writes to them. Never applied to ram/rom (e.g. COLOR_RAM inside the IO
+	 *  window is kind:ram and stays non-volatile). */
+	private static void markVolatileIfIo(MemoryBlock block, String kind) {
+		if (block != null && kind.equals("io")) {
+			block.setVolatile(true);
+		}
 	}
 
 	// ------------------------------------------------------------------
@@ -263,19 +288,23 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 
 		// RAM_MAIN is carved around the PRG image; handled separately in createRamMainSplit().
 		if (name.equals("RAM_MAIN")) {
-			createRamMainSplit(program, baseSpace, start, end, comment, loadAddr, prgLength, log);
+			createRamMainSplit(program, baseSpace, region, start, end, comment, loadAddr, prgLength,
+				log);
 			return;
 		}
 
 		Address startAddr = baseSpace.getAddress(start);
 		long length = end - start + 1;
-		MemoryBlockUtils.createUninitializedBlock(program, false, name, startAddr, length, comment,
-			"c64.map", true, canWrite(kind), canExecute(kind), log);
+		Perms p = perms(region, kind);
+		MemoryBlock block = MemoryBlockUtils.createUninitializedBlock(program, false, name, startAddr,
+			length, comment, "c64.map", p.readable(), p.writable(), p.executable(), log);
+		markVolatileIfIo(block, kind);
 	}
 
-	private void createRamMainSplit(Program program, AddressSpace baseSpace, long start, long end,
-			String comment, long loadAddr, long prgLength, MessageLog log) {
+	private void createRamMainSplit(Program program, AddressSpace baseSpace, JsonObject region,
+			long start, long end, String comment, long loadAddr, long prgLength, MessageLog log) {
 
+		Perms p = perms(region, "ram");
 		long prgEnd = loadAddr + prgLength - 1;
 		boolean prgInRange = prgLength > 0 && loadAddr >= start && prgEnd <= end;
 
@@ -288,7 +317,7 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 				"]; creating RAM_MAIN as a single block");
 			Address startAddr = baseSpace.getAddress(start);
 			MemoryBlockUtils.createUninitializedBlock(program, false, "RAM_MAIN", startAddr,
-				end - start + 1, comment, "c64.map", true, canWrite("ram"), canExecute("ram"), log);
+				end - start + 1, comment, "c64.map", p.readable(), p.writable(), p.executable(), log);
 			return;
 		}
 
@@ -300,13 +329,13 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 			Address belowStart = baseSpace.getAddress(start);
 			MemoryBlockUtils.createUninitializedBlock(program, false,
 				String.format("RAM_MAIN_%04X", (int) start), belowStart,
-				loadAddr - start, comment, "c64.map", true, canWrite("ram"), canExecute("ram"), log);
+				loadAddr - start, comment, "c64.map", p.readable(), p.writable(), p.executable(), log);
 		}
 		if (prgEnd < end) {
 			Address aboveStart = baseSpace.getAddress(prgEnd + 1);
 			MemoryBlockUtils.createUninitializedBlock(program, false,
 				String.format("RAM_MAIN_%04X", (int) (prgEnd + 1)), aboveStart,
-				end - prgEnd, comment, "c64.map", true, canWrite("ram"), canExecute("ram"), log);
+				end - prgEnd, comment, "c64.map", p.readable(), p.writable(), p.executable(), log);
 		}
 	}
 
@@ -355,8 +384,9 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 		boolean isOverlay = !isHome;
 		Address startAddr = baseSpace.getAddress(start);
 		String comment = occupantName + " (" + kind + ")";
+		Perms p = perms(occupant, kind);
 		MemoryBlockUtils.createUninitializedBlock(program, isOverlay, occupantName, startAddr, length,
-			comment, "c64.map", true, canWrite(kind), canExecute(kind), log);
+			comment, "c64.map", p.readable(), p.writable(), p.executable(), log);
 	}
 
 	private void createIoSubregions(Program program, AddressSpace baseSpace, JsonObject ioOccupant,
@@ -380,8 +410,10 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 			String comment = sub.has("comment") ? sub.get("comment").getAsString() : name;
 
 			Address startAddr = baseSpace.getAddress(start);
-			MemoryBlockUtils.createUninitializedBlock(program, false, name, startAddr, length, comment,
-				"c64.map", true, canWrite(kind), canExecute(kind), log);
+			Perms p = perms(sub, kind);
+			MemoryBlock block = MemoryBlockUtils.createUninitializedBlock(program, false, name,
+				startAddr, length, comment, "c64.map", p.readable(), p.writable(), p.executable(), log);
+			markVolatileIfIo(block, kind);
 
 			if (sub.has("type") && gdtMgr != null) {
 				applyStructType(program, baseSpace, gdtMgr, sub, log);

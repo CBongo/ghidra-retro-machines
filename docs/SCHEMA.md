@@ -78,6 +78,44 @@ state space:
 Initial state comes from `banking.initial_state`, overridable per-format (e.g. a future
 `.crt` format entry derives EXROM/GAME from header bytes 0x18/0x19).
 
+## Block permissions: kind defaults + sparse overrides
+
+Every place a `kind` appears (`memory.regions[]`, window `occupants[]`, IO `subregions[]`)
+derives its Ghidra `MemoryBlock` permissions from that `kind` alone, unless overridden:
+
+| `kind` | readable | writable | executable | volatile |
+|---|---|---|---|---|
+| `ram` | yes | yes | yes | no |
+| `rom` | yes | no | yes | no |
+| `io`  | yes | yes | no | **yes** |
+
+RAM is r+w+x because C64 code routinely runs from RAM. ROM is r+x, not writable — write-
+through to the RAM beneath (`on_write`, below) is a separate concern from block
+permissions. IO is r+w, not executable, and marked **volatile**: chip registers have side
+effects on access (VIC/SID/CIA, the P6510 port), so Ghidra should not assume reads are
+idempotent or cacheable.
+
+Optional boolean fields `readable:`, `writable:`, `executable:` override one attribute of
+the kind default without changing the kind. They are **sparse overrides for hardware
+quirks**, not required fields — omit them entirely when the kind default already holds.
+Example: CHARGEN is `kind: rom` (font glyph data, r+x by default) but the bytes are never
+executed as code, so it declares `executable: false`:
+
+```yaml
+- { name: CHARGEN, kind: rom, image: chargen, on_write: RAM_D000, executable: false }
+```
+
+**Design rule — override vs. new kind:** a single-attribute deviation from an existing
+kind's defaults (like CHARGEN above) is an override. If a hardware region needs *multiple*
+coordinated behavior changes (e.g. a different combination of r/w/x *and* a different
+`on_write` policy *and* different volatility), that's a sign it's really a distinct
+behavioral cluster and deserves its own `kind`, not a pile of overrides on an existing one.
+Overrides are for one-off exceptions; new kinds are for repeated behavior patterns.
+
+`MapCompiler` passes these three fields through to the compiled `.map` verbatim, only when
+present in the YAML (no defaults are ever written into the JSON — the loader is the single
+place that knows the kind→default table and applies overrides on top of it).
+
 ## Read/write asymmetry (`on_write`)
 
 Bank mapping differentiates **read and write targets**. On the C64, when BASIC/KERNAL

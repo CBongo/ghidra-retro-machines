@@ -29,11 +29,14 @@ the extension zip alongside the corresponding `.gdt`.
 ```
 {
   "system":  { "id", "name", "language" },
-  "regions": [ { "name", "start", "end", "kind", "type"?, "comment"? } ],
+  "regions": [ { "name", "start", "end", "kind", "type"?, "comment"?,
+                 "readable"?, "writable"?, "executable"? } ],
   "windows": [ { "name", "start", "end",
                  "occupants": [ { "name", "kind", "image"?, "on_write"?,
+                    "readable"?, "writable"?, "executable"?,
                     "subregions"?: [ { "name", "start", "end"?, "size"?, "repeat_to"?,
-                                       "kind"?, "type"?, "comment"? } ] } ] } ],
+                                       "kind"?, "type"?, "comment"?,
+                                       "readable"?, "writable"?, "executable"? } ] } ] } ],
   "banking": { "initial_state", "context_register", "state_bits": [...],
                "states": [ { "value", "<windowName>": "<occupantName>", ... } ] },
   "rom_images": { "<imageName>": { "size", "occupant" } },
@@ -51,7 +54,8 @@ This is the Ghidra language ID (e.g. `"6510:LE:16:default"`) the loader should t
 
 Direct translation of `memory.regions[]` — the always-visible (non-banked) parts of the
 address space. `type`, when present, names a struct/enum defined in the companion `.gdt`
-archive (e.g. `R6510`); `comment` is documentation only.
+archive (e.g. `R6510`); `comment` is documentation only. `readable`/`writable`/`executable`
+are optional sparse permission overrides — see below and `docs/SCHEMA.md`.
 
 ### `windows`
 
@@ -66,6 +70,19 @@ on the current banking state. Each occupant may carry:
   etc). Each subregion carries `start` plus either `end` or `size`, an optional
   `repeat_to` (register-mirroring end address — also passed through for the loader to
   interpret, not expanded here), and an optional `type`/`kind`/`comment`.
+
+Occupants and subregions may also carry `readable`/`writable`/`executable` — see next.
+
+### Permission overrides (`readable`/`writable`/`executable`)
+
+Optional booleans on any region, occupant, or subregion. The loader derives a block's
+permissions from its `kind` (`ram`→r+w+x, `rom`→r+x, `io`→r+w, non-executable and marked
+volatile); these three fields override one attribute at a time for hardware quirks that
+don't fit the kind's default (e.g. CHARGEN is `kind: rom` but its glyph data is never
+executed, so it sets `executable: false`). **MapCompiler passes them through only when
+present in the source YAML — it never emits kind-derived defaults into the JSON.** The
+kind→default table and the override-vs-new-kind design rule are documented in
+`docs/SCHEMA.md`.
 
 ### `banking`
 
