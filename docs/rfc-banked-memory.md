@@ -136,6 +136,7 @@ the bank map:
 
 ```
 resolve(context, address, access_type) -> memory block / overlay space
+    where access_type ∈ { READ, WRITE, EXECUTE }
 ```
 
 falling back to today's behavior when no bank map covers the address. Everything
@@ -145,6 +146,43 @@ decompiler's use of references — inherits correct targets with no further chan
 This mirrors, precisely, what `TMode` already does for *decode*, applied to *address
 resolution*: same context machinery, same flow tracking, same user-override story, one
 new consumer.
+
+### Is EXECUTE a real third mode, or just READ?
+
+On the systems in scope, the banking hardware sees only *address + R/W line*: the C64 PLA
+and NES mappers cannot distinguish an opcode fetch from a data read (the 6502's SYNC pin
+is not routed to them). Fetch is electrically a read, so **the bank map defaults EXECUTE
+to the READ mapping and needs no third column** in the common case.
+
+The hook signature still carries EXECUTE as a distinct value, for three low-cost reasons:
+
+1. **It is free.** Flow targets and data operands already arrive at the resolution layer
+   distinguished (`gatherFlows` vs. `RefTypeFactory.getDefaultMemoryRefType`); collapsing
+   them would be added work, not saved work.
+2. **Fetch-sensitive hardware exists.** The Z80 exposes an opcode-fetch signal (M1) and
+   shipping designs key on it — Sega's MC-8123 and Capcom's Kabuki decrypt opcodes
+   differently from data reads *at the same address*. Those are encryption rather than
+   banking, but they establish that an optional per-window execute override is worth
+   keeping representable without burdening the common case.
+3. **Policy may legitimately differ by mode.** Following flow into a bank on
+   low-confidence context poisons analysis with wrongly-decoded bytes; a low-confidence
+   data reference is merely an imprecise xref. Keeping the mode visible lets an
+   implementation demand higher context confidence for EXECUTE resolution than for READ.
+
+**Analyzer compatibility** (branch-into-non-executable heuristics): the existing checks
+compose cleanly because they run *after* resolution selects the block —
+`Disassembler.getInitializedMemory(program, restrictToExecuteMemory)`
+(`ghidra/program/disassemble/Disassembler.java:309`) filters on
+`block.isInitialized() && block.isExecute()` (line 411) for whatever block the target
+lands in. Today a `JMP $D000` on the C64 is permission-checked against the single static
+block at that address regardless of bank state; with context-aware resolution the same
+jump checks the *bank-selected* block — executable overlay RAM in an all-RAM bank state
+(rightly unflagged), the non-executable I/O block in the I/O state (rightly flagged: that
+jump really does target chip registers), and character-generator ROM in a CHARGEN state
+(glyph bitmap data, which a machine descriptor sensibly marks non-executable — also
+rightly flagged). Unmapped or unknown context falls back to today's resolution, so
+analyzers see the status quo. The heuristics get more accurate targets, and finer-grained
+ones, with no analyzer changes.
 
 ## Prior art in-tree (the mechanism half-exists)
 
