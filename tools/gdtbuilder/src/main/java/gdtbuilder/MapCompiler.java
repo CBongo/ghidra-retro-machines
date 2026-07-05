@@ -215,6 +215,19 @@ public class MapCompiler {
 		out.put("initial_state", requireAddr(banking, "initial_state", "banking"));
 		out.put("context_register", requireString(banking, "context_register", "banking"));
 
+		Map<String, Object> mechanism = (Map<String, Object>) banking.get("mechanism");
+		if (mechanism != null) {
+			Map<String, Object> m = new LinkedHashMap<>();
+			m.put("strategy", requireString(mechanism, "strategy", "banking.mechanism"));
+			Map<String, Object> params = (Map<String, Object>) mechanism.get("params");
+			if (params == null) {
+				throw new IllegalArgumentException("banking.mechanism is missing 'params:'");
+			}
+			m.put("address", requireAddr(params, "address", "banking.mechanism.params"));
+			m.put("mask", requireAddr(params, "mask", "banking.mechanism.params"));
+			out.put("mechanism", m);
+		}
+
 		List<Object> stateBits = (List<Object>) banking.get("state_bits");
 		if (stateBits == null) {
 			throw new IllegalArgumentException("banking is missing 'state_bits:' list");

@@ -37,7 +37,9 @@ the extension zip alongside the corresponding `.gdt`.
                     "subregions"?: [ { "name", "start", "end"?, "size"?, "repeat_to"?,
                                        "kind"?, "type"?, "comment"?,
                                        "readable"?, "writable"?, "executable"? } ] } ] } ],
-  "banking": { "initial_state", "context_register", "state_bits": [...],
+  "banking": { "initial_state", "context_register",
+               "mechanism"?: { "strategy", "address", "mask" },
+               "state_bits": [...],
                "states": [ { "value", "<windowName>": "<occupantName>", ... } ] },
   "rom_images": { "<imageName>": { "size", "occupant" } },
   "symbols": [ { "set", "default": <bool>, "region"?,
@@ -87,10 +89,24 @@ kind→default table and the override-vs-new-kind design rule are documented in
 ### `banking`
 
 Direct translation of the descriptor's `banking:` section: `initial_state`,
-`context_register` (the Ghidra language context register name), the ordered `state_bits`
-list, and `states[]` — one row per reachable banking-register value, each row being
-`value` plus one key per window name (`LOROM`/`CHARIO`/`HIROM` for C64) mapping to the
-occupant name active in that window for that state.
+`context_register` (the Ghidra language context register name), an optional `mechanism`,
+the ordered `state_bits` list, and `states[]` — one row per reachable banking-register
+value, each row being `value` plus one key per window name (`LOROM`/`CHARIO`/`HIROM` for
+C64) mapping to the occupant name active in that window for that state.
+
+`mechanism`, when present, is a translation of the descriptor's `banking.mechanism:`
+section — how a bank-aware static analyzer (e.g. `C64BankingAnalyzer`) recognizes and
+interprets writes that change the banking state, as opposed to `context_register` which
+names the Ghidra *language* context register some processor modules expose for the
+disassembler/decompiler's own use. For C64, `strategy: "register-write"` means the state
+changes when the CPU writes to `address` (decimal, converted from the YAML's `0x0001`);
+the new state value is the written byte ANDed with `mask` (`0x07`, since only bits 0-2 —
+LORAM/HIRAM/CHAREN — select the banking state; bits 3-5 are cassette-port lines and bit 6
+is unused). Other machines may need different `strategy` values (e.g. NES mappers that
+bank-switch via writes to arbitrary cartridge-mapped addresses) — this field is designed
+to grow additional strategies without changing the schema shape, but only
+`register-write` exists today. Omitted entirely for descriptors with no banking
+mechanism info (none currently — C64 is the only banked machine so far).
 
 ### `rom_images`
 

@@ -232,9 +232,13 @@ data flow, and the decompiler unaware.
 
 Each phase adds one dimension to resolution:
 
-- **Phase 0 — today, no core change (exists/underway):** loaders use home-in-base +
-  overlay alternates; bank-aware analyzers hand-create cross-space references. Proves
-  demand, documents pain.
+- **Phase 0 — today, no core change (implemented):** loaders use home-in-base + overlay
+  alternates; a bank-aware analyzer flow-tracks the bank register and hand-creates
+  cross-space references — including write-under-ROM retargeting — where the default
+  resolution is wrong (both working in CBongo/ghidra-retro-machines). Proves demand,
+  documents pain, and demonstrates every capability of the proposal except the part that
+  requires the core hook: making *default* resolution, flow following, and the decompiler
+  bank-aware instead of patching references after the fact.
 - **Phase 1 — bank-aware resolution (the core ask): "which bank is switched in?"**
   Context register + bank map + the resolution hook, consulting `(context, address)`
   only: **one target per address per bank state** — the occupant the bank-state table
