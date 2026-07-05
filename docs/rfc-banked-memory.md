@@ -262,9 +262,9 @@ and benefits from landing on a proven Phase 1.
 
 ## Questions for maintainers
 
-1. Is there internal effort in this direction? (PIC18 banking issue #9052 was closed
-   "Internal effort — we already have a fix in progress"; looks like the PIC case was a
-   specific bug that might not relate to this case; we would much rather align than
+1. Is there internal effort in this direction? (~~PIC18 banking issue #9052 was closed
+   "Internal effort — we already have a fix in progress";~~ looks like the PIC case was a
+   specific bug that might not relate to this case; still, we would much rather align than
    duplicate.)
    <!-- 2026-07-05: qualifier added after review — #9052's underlying issue (#9051) was
         fixed with a simple sleigh update, so it likely doesn't indicate internal work on
