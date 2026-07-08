@@ -1,0 +1,5 @@
+COMMENT 0803 bank -> 7 (BASIC/IO/KERNAL)
+COMMENT 080d bank -> 5 (RAM_A000/IO/RAM_E000)
+REF 0805 -> RAM_A000::a000 WRITE primary=true
+REF 080f -> RAM_A000::a000 READ primary=true
+REF 0812 -> RAM_E000::e000 WRITE primary=true
