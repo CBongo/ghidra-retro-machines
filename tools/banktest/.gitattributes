@@ -1,0 +1,2 @@
+*.sh text eol=lf
+expected/*.dump text eol=lf

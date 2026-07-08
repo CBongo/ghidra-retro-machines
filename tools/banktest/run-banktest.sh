@@ -89,7 +89,7 @@ for name in banktest banktest2; do
 		if [ ! -f "$EXPECTED_DIR/$name.dump" ]; then
 			echo "FAIL: missing golden $EXPECTED_DIR/$name.dump (run bless first)"
 			fail=1
-		elif diff -u "$EXPECTED_DIR/$name.dump" "$WORK/$name.dump"; then
+		elif diff -u <(tr -d '\r' <"$EXPECTED_DIR/$name.dump") "$WORK/$name.dump"; then
 			echo "dump matches golden: $name"
 		else
 			echo "FAIL: dump differs from golden for $name"
