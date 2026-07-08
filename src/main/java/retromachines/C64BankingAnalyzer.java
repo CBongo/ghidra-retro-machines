@@ -97,7 +97,7 @@ import ghidra.util.task.TaskMonitor;
  * space (write) -- including the "write under ROM" case that applies even in the home banking
  * state.
  * <p>
- * All C64-specific facts (windows, occupants, banking states, the {@code banking.mechanism}
+ * All C64-specific facts (windows, occupants, banking states, the {@code banking.mechanisms}
  * register-write description) come from the bundled {@code machines/c64.map} JSON descriptor,
  * loaded the same way {@link C64PrgLoader#loadMap()} does -- nothing about the C64 memory map
  * is hardcoded here beyond the descriptor's schema.
@@ -160,21 +160,50 @@ public class C64BankingAnalyzer extends AbstractAnalyzer {
 		}
 
 		JsonObject banking = map.getAsJsonObject("banking");
-		if (banking == null || !banking.has("mechanism")) {
+		if (banking == null || !banking.has("mechanisms")) {
 			log.appendMsg(NAME,
-				"banking.mechanism missing from machines/c64.map; skipping bank-state analysis");
+				"banking.mechanisms missing from machines/c64.map; skipping bank-state analysis");
 			return true;
 		}
 
 		int initialState = banking.get("initial_state").getAsInt();
-		JsonObject mechanism = banking.getAsJsonObject("mechanism");
-		long mechAddrOffset = mechanism.get("address").getAsLong();
-		int mask = mechanism.get("mask").getAsInt();
+		// banking.mechanisms is a list of strategy instances (schema v2); this analyzer
+		// implements only register-write (store to a fixed address, masked value is the
+		// state) — the strategy the C64's on-die $01 port uses.
+		JsonObject mechanism = null;
+		for (JsonElement me : banking.getAsJsonArray("mechanisms")) {
+			JsonObject m = me.getAsJsonObject();
+			if ("register-write".equals(m.get("strategy").getAsString())) {
+				mechanism = m;
+				break;
+			}
+		}
+		if (mechanism == null) {
+			log.appendMsg(NAME, "no register-write mechanism in machines/c64.map banking; " +
+				"skipping bank-state analysis");
+			return true;
+		}
+		JsonObject params = mechanism.getAsJsonObject("params");
+		long mechAddrOffset = params.get("address").getAsLong();
+		int mask = params.get("mask").getAsInt();
 
+		// banking.state is the ordered bank-state field tuple; expand to per-bit names
+		// (LSB first) for switch-site annotation text. Multi-bit fields (none on C64)
+		// would expand to name.0, name.1, ...
 		List<String> stateBitNames = new ArrayList<>();
-		if (banking.has("state_bits")) {
-			for (JsonElement be : banking.getAsJsonArray("state_bits")) {
-				stateBitNames.add(be.getAsString());
+		if (banking.has("state")) {
+			for (JsonElement fe : banking.getAsJsonArray("state")) {
+				JsonObject field = fe.getAsJsonObject();
+				String fieldName = field.get("name").getAsString();
+				int bits = field.get("bits").getAsInt();
+				if (bits == 1) {
+					stateBitNames.add(fieldName);
+				}
+				else {
+					for (int i = 0; i < bits; i++) {
+						stateBitNames.add(fieldName + "." + i);
+					}
+				}
 			}
 		}
 
@@ -637,8 +666,8 @@ public class C64BankingAnalyzer extends AbstractAnalyzer {
 	 * Annotates a resolved bank-switch store with an EOL comment. When {@code newState} is fully
 	 * known ({@code knownMask == mask}), the comment matches the pre-{@link PortState} format:
 	 * {@code bank -> 5 (RAM_A000/IO/RAM_E000)}. When only some bits are known, the comment marks
-	 * the effective state with a trailing {@code ?} and spells out, by {@code banking.state_bits}
-	 * name, which bits are actually known (with their resolved value) versus merely assumed from
+	 * the effective state with a trailing {@code ?} and spells out, by {@code banking.state}
+	 * field name, which bits are actually known (with their resolved value) versus merely assumed from
 	 * {@code banking.initial_state} -- e.g.
 	 * {@code bank -> 7? (BASIC/IO/KERNAL) [known: LORAM=1; assumed from initial: HIRAM,CHAREN]}.
 	 */

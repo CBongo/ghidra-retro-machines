@@ -1,0 +1,74 @@
+# NES UxROM board descriptor — schema-v2 validation SKETCH (bead grm-os4).
+# Deliverable of the M1 schema work: exercises the v2 shapes from
+# docs/vision-board-banking.md §5.3 (computed windows) and §8 (discrete-mapper row) to
+# validate schema v2 expressiveness. This is NOT a shipping board descriptor — the real
+# nes.yaml is a later bead (grm-9ux, M2-M3).
+# Hardware facts from the NESdev wiki: https://www.nesdev.org/wiki/UxROM
+#
+# rom_images / symbols / types / formats / validation sections omitted — sketch scope only.
+
+schema: 2
+
+system:
+  id: nes_uxrom
+  name: NES UxROM (iNES mapper 2)
+  cpu:
+    # Stock 6502 language. The NES 2A03 core is a 6502 with decimal mode disabled — the
+    # difference is invisible to a schema sketch; a dedicated 2A03 language is a grm-9ux call.
+    language: "6502:LE:16:default"
+
+physical:
+  # PRG ROM laid out once, in file order. No size: — it comes from the iNES header
+  # (PRG-ROM size field) at load time.
+  - { name: PRG, image: prg_rom }
+
+memory:
+  regions:                        # always visible, never banked
+    - name: RAM
+      start: 0x0000
+      end: 0x07FF
+      kind: ram
+      comment: "2 KiB internal RAM; mirrored at $0800-$1FFF (mirrors noted, not modeled)"
+    - name: PPU_REGS
+      start: 0x2000
+      end: 0x2007
+      kind: io
+      comment: "PPU registers; mirrored every 8 bytes through $3FFF (mirrors noted, not modeled)"
+    - name: APU_IO
+      start: 0x4000
+      end: 0x401F
+      kind: io
+      comment: "APU, controller, and test-mode registers"
+  # PPU/CHR address space: explicitly out of sketch scope (vision doc §5.4 defers non-CPU spaces).
+
+  windows:                        # computed occupants — slices of the physical PRG space
+    # Writes anywhere in $8000-$FFFF are mapper latch writes, not memory writes,
+    # hence on_write: mechanism on both windows (including the fixed one).
+    - name: PRG_LO                # switchable 16 KiB bank
+      start: 0x8000
+      end: 0xBFFF
+      maps: PRG[bank * 0x4000]
+      on_write: mechanism
+    - name: PRG_HI                # fixed to the last 16 KiB bank in the image
+      start: 0xC000
+      end: 0xFFFF
+      maps: PRG[last]
+      on_write: mechanism
+
+banking:
+  state:
+    # UNROM has 8 banks (3 bits), UOROM 16 (4 bits); 4 bits covers the whole family.
+    - { name: bank, bits: 4 }
+  mechanisms:
+    - strategy: memory-latch      # vision doc §5.2: store anywhere in a range sets the latch
+      # A write anywhere in the PRG-ROM range latches the bank. On real UNROM boards the
+      # latch has no bus isolation, so the CPU-driven value is ANDed with the ROM byte at
+      # the written address (bus conflict) — games write to a location whose ROM byte equals
+      # the intended bank number. bus_conflict tells the analyzer to apply that AND.
+      params: { start: 0x8000, end: 0xFFFF, mask: 0x0F, bus_conflict: true }
+      sets: [bank]
+  context_register: nesbank       # provisional name; the real register lands with grm-9ux
+  # Power-on latch state is electrically undefined; 0 is the conventional assumption
+  # (reset code runs from the fixed $C000 window regardless).
+  initial_state: { bank: 0 }
+  # No states: table — occupants are computed from the maps: expressions, not enumerated.

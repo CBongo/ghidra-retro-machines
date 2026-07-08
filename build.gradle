@@ -146,6 +146,23 @@ task buildMap {
 	dependsOn buildC64Map
 }
 
+task validateSketches {
+	group = "Ghidra Retro Machines"
+	description = "Compile every machines/sketches/*.yaml through MapCompiler to prove the schema can express it (grm-os4 acceptance; outputs under build/sketches, never shipped)"
+	dependsOn 'compileGdtBuilderJava'
+	doLast {
+		fileTree(dir: 'machines/sketches', include: '*.yaml').each { sketch ->
+			def out = file("build/sketches/${sketch.name.replace('.yaml', '.map')}")
+			out.parentFile.mkdirs()
+			javaexec {
+				classpath = sourceSets.gdtBuilder.runtimeClasspath
+				mainClass = 'gdtbuilder.MapCompiler'
+				args = [sketch.absolutePath, out.absolutePath]
+			}
+		}
+	}
+}
+
 // buildExtension is defined by the applied support/buildExtension.gradle (invoked via the
 // distributeExtension task above); it doesn't exist at this file's configuration time, so
 // attach the dependency lazily once Gradle resolves the task graph.

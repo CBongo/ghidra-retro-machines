@@ -1,0 +1,93 @@
+# NES MMC3 board descriptor — schema-v2 validation SKETCH (bead grm-os4).
+# Deliverable of the M1 schema work: exercises the v2 shapes from
+# docs/vision-board-banking.md §5.3 (mode-dependent layouts) and §8 (protocol-tier row) to
+# validate schema v2 expressiveness. This is NOT a shipping board descriptor — the real
+# nes.yaml is a later bead (grm-9ux, with MMC3 strategies landing in M3).
+# Hardware facts from the NESdev wiki: https://www.nesdev.org/wiki/MMC3
+#
+# PRG side only: CHR banking (R0-R5), nametable mirroring, and the scanline IRQ counter are
+# out of sketch scope (vision doc §5.4 defers non-CPU spaces).
+# rom_images / symbols / types / formats / validation sections omitted — sketch scope only.
+
+schema: 2
+
+system:
+  id: nes_mmc3
+  name: NES MMC3 (iNES mapper 4)
+  cpu:
+    # Stock 6502 language. The NES 2A03 core is a 6502 with decimal mode disabled — the
+    # difference is invisible to a schema sketch; a dedicated 2A03 language is a grm-9ux call.
+    language: "6502:LE:16:default"
+
+physical:
+  # PRG ROM laid out once, in file order. No size: — it comes from the iNES header
+  # (PRG-ROM size field) at load time.
+  - { name: PRG, image: prg_rom }
+
+memory:
+  regions:                        # always visible, never banked
+    - name: RAM
+      start: 0x0000
+      end: 0x07FF
+      kind: ram
+      comment: "2 KiB internal RAM; mirrored at $0800-$1FFF (mirrors noted, not modeled)"
+    - name: PPU_REGS
+      start: 0x2000
+      end: 0x2007
+      kind: io
+      comment: "PPU registers; mirrored every 8 bytes through $3FFF (mirrors noted, not modeled)"
+    - name: APU_IO
+      start: 0x4000
+      end: 0x401F
+      kind: io
+      comment: "APU, controller, and test-mode registers"
+    - name: PRG_RAM
+      start: 0x6000
+      end: 0x7FFF
+      kind: ram
+      comment: "8 KiB PRG RAM; enable/write-protect bits ($A001) out of sketch scope"
+  # PPU/CHR address space: explicitly out of sketch scope (vision doc §5.4).
+
+  windows: []                     # every PRG window is mode-dependent — see layouts
+
+  layouts:
+    # The four 8 KiB PRG windows, selected by the prg_mode bit (bank-select $8000 bit 6).
+    # Writes anywhere in $8000-$FFFF are mapper register writes, hence on_write: mechanism.
+    - when: { prg_mode: 0 }
+      windows:
+        - { name: W8000, start: 0x8000, size: 0x2000, maps: "PRG[R6 * 0x2000]",   on_write: mechanism }
+        - { name: WA000, start: 0xA000, size: 0x2000, maps: "PRG[R7 * 0x2000]",   on_write: mechanism }
+        - { name: WC000, start: 0xC000, size: 0x2000, maps: "PRG[second_last]",   on_write: mechanism }
+        - { name: WE000, start: 0xE000, size: 0x2000, maps: "PRG[last]",          on_write: mechanism }
+    # prg_mode 1: $8000 and $C000 swap roles; $A000 and $E000 are unchanged.
+    - when: { prg_mode: 1 }
+      windows:
+        - { name: W8000, start: 0x8000, size: 0x2000, maps: "PRG[second_last]",   on_write: mechanism }
+        - { name: WA000, start: 0xA000, size: 0x2000, maps: "PRG[R7 * 0x2000]",   on_write: mechanism }
+        - { name: WC000, start: 0xC000, size: 0x2000, maps: "PRG[R6 * 0x2000]",   on_write: mechanism }
+        - { name: WE000, start: 0xE000, size: 0x2000, maps: "PRG[last]",          on_write: mechanism }
+
+banking:
+  state:
+    # R6/R7 are the MMC3 PRG bank registers (8 KiB units); 6 bits addresses up to the
+    # 512 KiB PRG ceiling of commercial MMC3 boards. prg_mode is bank-select bit 6.
+    - { name: prg_mode, bits: 1 }
+    - { name: R6,       bits: 6 }
+    - { name: R7,       bits: 6 }
+  mechanisms:
+    # MMC3 bank switching is an even/odd register pair at $8000-$9FFE: the even address
+    # (bank select) picks a target register via its low 3 bits, the odd address (bank data)
+    # writes it. Only targets 6/7 are PRG registers — R0-R5 are CHR, out of sketch scope.
+    - strategy: select-data       # vision doc §5.2: one address selects, the other writes
+      params: { select_address: 0x8000, data_address: 0x8001, select_mask: 0x07,
+                targets: { 6: R6, 7: R7 } }
+      sets: [R6, R7]
+    # The same bank-select write also carries the PRG mode in bit 6 — a second strategy
+    # instance watching a different field of the same physical register.
+    - strategy: mode-register     # vision doc §5.2: value selects among window layouts
+      params: { address: 0x8000, mask: 0x40, shift: 6 }
+      sets: [prg_mode]
+  context_register: nesbank       # provisional name; the real register lands with grm-9ux
+  # Power-on register contents are undefined; all-zeros is the conventional assumption.
+  initial_state: { prg_mode: 0, R6: 0, R7: 0 }
+  # No states: table — occupants are computed from the layouts' maps: expressions.
