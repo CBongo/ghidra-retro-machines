@@ -146,6 +146,23 @@ public class MapCompiler {
 		out.put("id", requireString(system, "id", "system"));
 		out.put("name", requireString(system, "name", "system"));
 		out.put("language", requireString(cpu, "language", "system.cpu"));
+		// board registry keys (e.g. which iNES mapper numbers this board descriptor
+		// serves) — how a container loader picks a descriptor without hardcoding it
+		Map<String, Object> board = (Map<String, Object>) system.get("board");
+		if (board != null) {
+			Map<String, Object> b = new LinkedHashMap<>();
+			List<Object> mappers = (List<Object>) board.get("ines_mappers");
+			if (mappers != null) {
+				List<Object> normalized = new ArrayList<>();
+				for (Object mapper : mappers) {
+					normalized.add(toInt(mapper));
+				}
+				b.put("ines_mappers", normalized);
+			}
+			if (!b.isEmpty()) {
+				out.put("board", b);
+			}
+		}
 		return out;
 	}
 

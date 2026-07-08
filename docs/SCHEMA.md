@@ -60,6 +60,11 @@ validation: {...}    # emulator-oracle cross-check metadata
 `banking:` is optional (a bankless board like NES NROM omits it), but windows with
 enumerated `occupants:` require it — the states table is what picks an occupant.
 
+`system.board` carries container-registry keys: `ines_mappers` lists the iNES mapper
+numbers a NES board descriptor serves, letting the loader resolve header → board from
+data (`machines/nes.yaml` is the worked example; the registry is a scan of bundled
+descriptors, so new boards need no Java).
+
 ## Section semantics → Ghidra mapping
 
 | Descriptor construct | Ghidra realization |

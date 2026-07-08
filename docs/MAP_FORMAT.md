@@ -57,6 +57,13 @@ the extension zip alongside the corresponding `.gdt`.
 Pass-through of the descriptor's `system.id` / `system.name` / `system.cpu.language`.
 This is the Ghidra language ID (e.g. `"6510:LE:16:default"`) the loader should target.
 
+`board`, when present, carries the descriptor's board-registry keys — currently
+`ines_mappers`, the iNES mapper numbers this board serves. `NesRomLoader` builds its
+board registry by scanning every bundled `machines/*.map` for this key (vision doc §3.1:
+boards are chosen like languages, from data), so adding a NES board is adding a
+descriptor — no Java changes. The `system.id` doubles as the user-override key for the
+loader's "NES Board" import option.
+
 ### `regions`
 
 Direct translation of `memory.regions[]` — the always-visible (non-banked) parts of the

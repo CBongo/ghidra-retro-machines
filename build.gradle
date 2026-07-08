@@ -119,10 +119,25 @@ task buildC64Gdt(type: JavaExec) {
 	]
 }
 
+task buildNesGdt(type: JavaExec) {
+	group = "Ghidra Retro Machines"
+	description = "Generate data/machines/nes.gdt from machines/nes.yaml (build artifact; never committed)"
+	dependsOn 'compileGdtBuilderJava'
+	classpath = sourceSets.gdtBuilder.runtimeClasspath
+	mainClass = 'gdtbuilder.GdtBuilder'
+	doFirst {
+		file('data/machines').mkdirs()
+	}
+	args = [
+		file('machines/nes.yaml').absolutePath,
+		file('data/machines/nes.gdt').absolutePath
+	]
+}
+
 task buildGdt {
 	group = "Ghidra Retro Machines"
 	description = "Generate all machine .gdt data-type archives from their YAML descriptors"
-	dependsOn buildC64Gdt
+	dependsOn buildC64Gdt, buildNesGdt
 }
 
 task buildC64Map(type: JavaExec) {
@@ -140,10 +155,25 @@ task buildC64Map(type: JavaExec) {
 	]
 }
 
+task buildNesMap(type: JavaExec) {
+	group = "Ghidra Retro Machines"
+	description = "Generate data/machines/nes.map from machines/nes.yaml (build artifact; never committed)"
+	dependsOn 'compileGdtBuilderJava'
+	classpath = sourceSets.gdtBuilder.runtimeClasspath
+	mainClass = 'gdtbuilder.MapCompiler'
+	doFirst {
+		file('data/machines').mkdirs()
+	}
+	args = [
+		file('machines/nes.yaml').absolutePath,
+		file('data/machines/nes.map').absolutePath
+	]
+}
+
 task buildMap {
 	group = "Ghidra Retro Machines"
 	description = "Generate all machine .map runtime files from their YAML descriptors"
-	dependsOn buildC64Map
+	dependsOn buildC64Map, buildNesMap
 }
 
 task validateSketches {

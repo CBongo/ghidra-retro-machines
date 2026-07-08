@@ -8,8 +8,10 @@ the loader sets up the complete machine around it: RAM/ROM regions, banked memor
 windows, IO chip register structs, system ROM slots, and symbol sets — all driven by a
 per-machine YAML descriptor with zero hard-coded system knowledge in Java.
 
-**Status: early design.** The descriptor schema and the C64 machine definition exist;
-the loader does not yet. See the [roadmap](#roadmap).
+**Status: working pipeline, two machines.** Descriptor schema v2 (state tuples,
+mechanism strategies, physical spaces, computed windows), a C64 PRG loader with
+bank-state analysis, and an iNES loader with a data-driven board registry (NROM
+baseline) all work end-to-end. See the [roadmap](#roadmap).
 
 ## Why
 
@@ -24,6 +26,11 @@ being re-executed by hand across the community — this extension automates it.
   full memory map, the 8 PLA bank states driven by `$01`, read/write asymmetry
   (RAM-under-ROM write-through), VIC-II/SID/CIA register structs, KERNAL symbols,
   copyright-safe ROM slots
+- **[machines/nes.yaml](machines/nes.yaml)** — NES NROM, the second machine: physical
+  PRG space with computed windows (`PRG[last]` handles NROM-128 mirroring and NROM-256
+  with one expression), PPU/APU register structs, board registry keyed by iNES mapper
+  number ([machines/sketches/](machines/sketches/) holds the UxROM/MMC3 schema
+  validation sketches that the banked-mapper milestones will graduate)
 
 ## Design highlights
 
@@ -40,15 +47,17 @@ being re-executed by hand across the community — this extension automates it.
 
 ## Roadmap
 
-1. YAML → `.gdt` data-type archive build pipeline (the archives are usable in stock
-   Ghidra, no extension required)
-2. C64 PRG loader proof-of-concept: banked windows as overlay spaces, bank-state context
-   register, IO annotation
-3. Bundled 6510 processor language (bank context register lives there)
-4. Flow-tracked bank-state analysis; upstream proposal for context-aware address
-   resolution in Ghidra core
-5. More machines: NES (mapper mechanisms), SNES, PS1
-6. Generalized string detection (PETSCII, screen codes, per-game tile tables)
+1. ~~YAML → `.gdt` data-type archive build pipeline~~ (done — the archives are usable in
+   stock Ghidra, no extension required)
+2. ~~C64 PRG loader proof-of-concept: banked windows as overlay spaces, flow-tracked
+   bank-state analysis, IO annotation~~ (done; upstream proposal posted as ghidra
+   discussion #9349)
+3. ~~Descriptor schema v2 + iNES loader with board registry, NROM end-to-end~~ (done)
+4. Bundled 6510 processor language (bank context register lives there)
+5. Machine-independent bank analyzer + strategy library; NES banked mappers
+   (UxROM tier, then MMC1/MMC3) — see [docs/vision-board-banking.md](docs/vision-board-banking.md)
+6. More machines: GB, SNES, PS1
+7. Generalized string detection (PETSCII, screen codes, per-game tile tables)
 
 ## Building
 
