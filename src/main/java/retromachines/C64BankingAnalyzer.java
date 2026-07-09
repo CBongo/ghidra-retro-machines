@@ -50,7 +50,7 @@ public class C64BankingAnalyzer extends BoardBankAnalyzer {
 	}
 
 	@Override
-	protected String getMapPath() {
+	protected String getMapPath(Program program) {
 		return "machines/c64.map";
 	}
 }

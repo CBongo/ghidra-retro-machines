@@ -18,7 +18,12 @@ package retromachines;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashSet;
+import java.util.Map;
+import java.util.Set;
 import java.util.function.BiConsumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -52,6 +57,14 @@ import ghidra.program.model.symbol.SourceType;
  * only interpret the descriptor schema (docs/MAP_FORMAT.md).
  */
 final class DescriptorSupport {
+
+	/**
+	 * Program-info property where a loader that chose among several board descriptors
+	 * (e.g. {@link NesRomLoader} via the iNES mapper registry) records the winning
+	 * descriptor's resource path, so downstream analyzers ({@link BoardBankAnalyzer}
+	 * subclasses) interpret the program with the same board the loader used.
+	 */
+	static final String MAP_PATH_PROPERTY = "Retro Machine Map";
 
 	private DescriptorSupport() {
 	}
@@ -276,23 +289,57 @@ final class DescriptorSupport {
 	 * @return byte offset into the physical space
 	 */
 	static long evalConstantExpr(String expr, long imageSize, long windowSize) {
-		ExprParser p = new ExprParser(expr, imageSize, windowSize);
+		return evalExpr(expr, imageSize, windowSize, Map.of());
+	}
+
+	/**
+	 * Evaluates a computed-window {@code maps:} expression with concrete values bound
+	 * to the bank-state fields it references — the bank-dependent complement of
+	 * {@link #evalConstantExpr}, used to place switchable windows (one evaluation per
+	 * candidate bank value) and to resolve a reference's effective target bank.
+	 * Identifiers not in {@code env} (and not {@code last}/{@code second_last}) throw
+	 * {@link IllegalArgumentException}.
+	 */
+	static long evalExpr(String expr, long imageSize, long windowSize, Map<String, Long> env) {
+		ExprParser p = new ExprParser(expr, imageSize, windowSize, env);
 		long v = p.parseSum();
 		p.expectEnd();
 		return v;
 	}
 
-	/** Minimal recursive-descent parser for the constant expression subset. */
+	/**
+	 * The state-field identifiers a {@code maps:} expression references (everything that
+	 * is not a number or the {@code last}/{@code second_last} keywords). The MapCompiler
+	 * already validated each against the descriptor's {@code banking.state} tuple.
+	 */
+	static Set<String> referencedFields(String expr) {
+		Set<String> fields = new LinkedHashSet<>();
+		Matcher m = IDENT.matcher(expr);
+		while (m.find()) {
+			String ident = m.group();
+			if (!ident.equals("last") && !ident.equals("second_last")) {
+				fields.add(ident);
+			}
+		}
+		return fields;
+	}
+
+	// lookbehind keeps the 'x4000' inside a hex literal from matching as an identifier
+	private static final Pattern IDENT = Pattern.compile("(?<!\\w)[A-Za-z_]\\w*");
+
+	/** Minimal recursive-descent parser for {@code maps:} expressions. */
 	private static final class ExprParser {
 		private final String expr;
 		private final long imageSize;
 		private final long windowSize;
+		private final Map<String, Long> env;
 		private int pos;
 
-		ExprParser(String expr, long imageSize, long windowSize) {
+		ExprParser(String expr, long imageSize, long windowSize, Map<String, Long> env) {
 			this.expr = expr;
 			this.imageSize = imageSize;
 			this.windowSize = windowSize;
+			this.env = env;
 		}
 
 		long parseSum() {
@@ -344,6 +391,10 @@ final class DescriptorSupport {
 				case "second_last":
 					return imageSize - 2 * windowSize;
 				default:
+					Long bound = env.get(ident);
+					if (bound != null) {
+						return bound;
+					}
 					throw new IllegalArgumentException("expression '" + expr +
 						"' depends on bank state ('" + ident +
 						"'); only constant windows can be placed at load time");

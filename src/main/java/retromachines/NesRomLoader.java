@@ -19,6 +19,8 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -59,8 +61,9 @@ import ghidra.util.exception.CancelledException;
  * <p>
  * CHR ROM is deliberately <b>not</b> loaded into CPU space (it lives on the PPU bus;
  * modeling non-CPU spaces is deferred — vision doc §5.4). Bank-state-dependent
- * windows (none on NROM) are skipped with a log message; resolving those is the bank
- * engine's job (M2+).
+ * windows (the discrete mappers' switchable PRG) get the "home-in-base" overlay
+ * layout: the initial-state bank in base space, every other bank as an overlay block
+ * {@code <window>_B<bank>} for {@link NesBankingAnalyzer} to retarget references into.
  */
 public class NesRomLoader extends AbstractProgramWrapperLoader {
 
@@ -185,6 +188,10 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 			board.name() + "); PRG " + (header.prgSize() / 1024) + "K, CHR " +
 			(header.chrBanks() * 8) + "K" + (header.trainer() ? ", trainer" : ""));
 
+		// record the chosen board so the bank analyzer interprets with the same descriptor
+		program.getOptions(Program.PROGRAM_INFO)
+				.setString(DescriptorSupport.MAP_PATH_PROPERTY, board.mapPath());
+
 		JsonObject map = DescriptorSupport.loadMap(board.mapPath());
 
 		FileDataTypeManager gdtMgr = null;
@@ -220,7 +227,13 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 			}
 
 			// --- PRG windows: computed slices of the PRG image ---
+			// Fixed windows (constant maps: expr) become one base-space block. Bank-state-
+			// dependent windows get the "home-in-base" overlay layout: the initial-state
+			// bank's slice is the base-space block (references resolve there by default);
+			// every other in-range bank value gets an overlay block <name>_B<value> that
+			// the bank analyzer retargets references into.
 			List<PlacedWindow> placed = new ArrayList<>();
+			BankedFieldInfo bankedField = BankedFieldInfo.parse(map);
 			for (JsonElement we : map.getAsJsonArray("windows")) {
 				JsonObject window = we.getAsJsonObject();
 				String name = window.get("name").getAsString();
@@ -235,32 +248,49 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 				long length = end - start + 1;
 				String expr = window.getAsJsonObject("maps").get("expr").getAsString();
 
-				long srcOffset;
 				try {
-					srcOffset = DescriptorSupport.evalConstantExpr(expr, header.prgSize(), length);
+					long srcOffset =
+						DescriptorSupport.evalConstantExpr(expr, header.prgSize(), length);
+					if (checkRange(name, expr, srcOffset, length, header, log)) {
+						createWindowBlock(program, baseSpace, false, name,
+							name + " = PRG[" + expr + "] (offset 0x" + Long.toHexString(srcOffset) +
+								")",
+							start, length, fileBytes, header.prgFileOffset() + srcOffset,
+							board.mapPath(), log);
+						placed.add(new PlacedWindow(name, start, end, srcOffset));
+					}
+					continue;
 				}
 				catch (IllegalArgumentException e) {
-					log.appendMsg("Window '" + name + "' skipped: " + e.getMessage());
-					continue;
-				}
-				if (srcOffset < 0 || srcOffset + length > header.prgSize()) {
-					log.appendMsg("Window '" + name + "' skipped: '" + expr + "' resolves to [" +
-						srcOffset + ", " + (srcOffset + length) + ") outside the " +
-						header.prgSize() + "-byte PRG image");
-					continue;
+					// falls through to the bank-state-dependent path below
 				}
 
-				// ROM-kind permissions: readable + executable, not writable
-				try {
-					MemoryBlockUtils.createInitializedBlock(program, false, name,
-						baseSpace.getAddress(start), fileBytes, header.prgFileOffset() + srcOffset,
-						length, name + " = PRG[" + expr + "] (offset 0x" +
-							Long.toHexString(srcOffset) + ")",
-						board.mapPath(), true, false, true, log);
-					placed.add(new PlacedWindow(name, start, end, srcOffset));
+				Set<String> fields = DescriptorSupport.referencedFields(expr);
+				if (bankedField == null || fields.size() != 1 ||
+					!fields.iterator().next().equals(bankedField.name())) {
+					log.appendMsg("Window '" + name + "' skipped: '" + expr +
+						"' needs exactly one banking.state field" +
+						(bankedField == null ? " but the descriptor has no banking section"
+								: " (first field '" + bankedField.name() + "')"));
+					continue;
 				}
-				catch (Exception e) {
-					log.appendMsg("Failed to create window block '" + name + "': " + e.getMessage());
+				for (int v = 0; v < (1 << bankedField.bits()); v++) {
+					long srcOffset = DescriptorSupport.evalExpr(expr, header.prgSize(), length,
+						Map.of(bankedField.name(), (long) v));
+					if (srcOffset < 0 || srcOffset + length > header.prgSize()) {
+						continue; // bank values beyond the image simply don't exist
+					}
+					boolean home = v == bankedField.initialValue();
+					String blockName = home ? name : name + "_B" + v;
+					createWindowBlock(program, baseSpace, !home, blockName,
+						name + " = PRG[" + expr + "], " + bankedField.name() + "=" + v +
+							" (offset 0x" + Long.toHexString(srcOffset) +
+							(home ? ", home bank in base space)" : ")"),
+						start, length, fileBytes, header.prgFileOffset() + srcOffset,
+						board.mapPath(), log);
+					if (home) {
+						placed.add(new PlacedWindow(name, start, end, srcOffset));
+					}
 				}
 			}
 
@@ -331,6 +361,55 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 				log.appendMsg("Failed to label vector " + vector.handlerName() + ": " +
 					e.getMessage());
 			}
+		}
+	}
+
+	/**
+	 * The single bank-state field this loader can drive switchable windows with: the
+	 * <em>first</em> field of {@code banking.state} (matching the memory-latch
+	 * strategy's field-placement constraint), its width, and its {@code initial_state}
+	 * value (the home bank). Null when the descriptor has no banking section.
+	 */
+	private record BankedFieldInfo(String name, int bits, int initialValue) {
+
+		static BankedFieldInfo parse(JsonObject map) {
+			JsonObject banking = map.getAsJsonObject("banking");
+			if (banking == null || !banking.has("state")) {
+				return null;
+			}
+			JsonArray state = banking.getAsJsonArray("state");
+			if (state.isEmpty()) {
+				return null;
+			}
+			JsonObject first = state.get(0).getAsJsonObject();
+			int bits = first.get("bits").getAsInt();
+			int initial = banking.get("initial_state").getAsInt() & ((1 << bits) - 1);
+			return new BankedFieldInfo(first.get("name").getAsString(), bits, initial);
+		}
+	}
+
+	private static boolean checkRange(String name, String expr, long srcOffset, long length,
+			InesHeader header, MessageLog log) {
+		if (srcOffset < 0 || srcOffset + length > header.prgSize()) {
+			log.appendMsg("Window '" + name + "' skipped: '" + expr + "' resolves to [" +
+				srcOffset + ", " + (srcOffset + length) + ") outside the " + header.prgSize() +
+				"-byte PRG image");
+			return false;
+		}
+		return true;
+	}
+
+	/** ROM-kind permissions: readable + executable, not writable. */
+	private static void createWindowBlock(Program program, AddressSpace baseSpace,
+			boolean isOverlay, String blockName, String comment, long start, long length,
+			FileBytes fileBytes, long fileOffset, String source, MessageLog log) {
+		try {
+			MemoryBlockUtils.createInitializedBlock(program, isOverlay, blockName,
+				baseSpace.getAddress(start), fileBytes, fileOffset, length, comment, source,
+				true, false, true, log);
+		}
+		catch (Exception e) {
+			log.appendMsg("Failed to create window block '" + blockName + "': " + e.getMessage());
 		}
 	}
 

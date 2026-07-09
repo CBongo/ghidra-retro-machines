@@ -62,7 +62,7 @@ enumerated `occupants:` require it — the states table is what picks an occupan
 
 `system.board` carries container-registry keys: `ines_mappers` lists the iNES mapper
 numbers a NES board descriptor serves, letting the loader resolve header → board from
-data (`machines/nes.yaml` is the worked example; the registry is a scan of bundled
+data (`machines/nes-nrom.yaml` is the worked example; the registry is a scan of bundled
 descriptors, so new boards need no Java).
 
 ## Section semantics → Ghidra mapping
@@ -118,11 +118,26 @@ banking:
 ```
 
 The strategy vocabulary (vision doc §5.2) is deliberately small: `register-write`,
-`memory-latch`, `select-data`, `serial-shift`, `io-port`, `mode-register`. Only
-`register-write` has an implementation today (`C64BankingAnalyzer`); the others are
-schema-validated names whose analyzer support lands with the NES milestones. This
-mirrors emulator architecture (mapper classes keyed by iNES number) — deliberate, per
-the emulators-as-oracle principle.
+`memory-latch`, `select-data`, `serial-shift`, `io-port`, `mode-register`. Two have
+implementations today; the others are schema-validated names whose analyzer support
+lands with the MMC milestones. This mirrors emulator architecture (mapper classes
+keyed by iNES number) — deliberate, per the emulators-as-oracle principle.
+
+- **`register-write`** — the state changes on a store to one fixed address (C64 `$01`).
+  Params: `address`, `mask` (which stored bits are state bits). The mechanism register
+  reads back what was stored, so value recovery may fall back to the tracked in-state.
+- **`memory-latch`** — a store *anywhere* in a range latches the bank; the write hits a
+  mapper register, not the ROM at that address (NES discrete mappers; GB MBC and SMS
+  are the same shape). Params: `start`/`end` (the latch range), `mask` and `shift`
+  (field extraction from the written byte — GxROM's PRG bits 4-5 are
+  `{ shift: 4, mask: 0x3 }`), `bus_conflict` (boards without bus isolation AND the
+  driven value with the ROM byte at the written address; when the store target is
+  constant and bank-invariant the analyzer applies that AND, turning the ROM byte's 0
+  bits into *known* zeros). The latch is write-only — reads of the range read ROM —
+  so value recovery resolves plain absolute loads of bank-invariant ROM bytes to
+  constants instead of consulting the in-state. Constraint: the field a memory-latch
+  `sets` must currently be the **first** field of `banking.state` (the recovered value
+  lands at state bits `[0, width)`); multi-latch boards will add a placement param.
 
 ## Banked windows: enumerated or computed
 
@@ -168,6 +183,29 @@ window-level `on_write:` (there is no occupant to hang it on); `on_write: mechan
 marks stores into the range as bank-switch events, doubling as the analyzer's
 watch-list. YAML note: inside a flow mapping (`{ ... }`) the `maps:` value must be
 quoted (`maps: "PRG[R6 * 0x2000]"`) — `[` is a YAML flow indicator.
+
+**How computed windows are realized** (loader + `BoardBankAnalyzer`): a fixed window
+(constant expression) is one base-space block. A switchable window (expression uses a
+state field) follows the same home-in-base principle as enumerated windows: the
+`initial_state` bank's slice is the base-space block named after the window, and every
+other in-range field value `v` becomes an overlay block `<window>_B<v>`. The bank
+engine then (a) retargets references whose tracked effective state selects a non-home
+bank into that bank's overlay, kicking disassembly/function creation at cross-bank
+flow targets; (b) clamps the state of instructions physically inside `<window>_B<v>`
+to `field = v` (execution implies mapping); (c) leaves *writes* into
+`on_write: mechanism` windows alone — those are latch pokes, already modeled by the
+strategy. Bank values whose slice falls outside the image simply get no block. A
+switchable window must reference exactly one state field for overlay naming to work;
+multi-field windows are rejected with a log message (MMC3's mode-swapped windows are
+an M3 problem).
+
+Real code switches banks through helpers (`LDA #bank / JSR SelectBank` — often an
+indexed bus-conflict table store inside). The engine detects every function containing
+a recognized mechanism write and treats calls to it as switch sites: the helper's own
+constant result when it has one, else the immediate register argument recovered at the
+call site, else explicitly unknown (WARNING bookmark naming the helper). Sites whose
+bank argument is loaded from a memory variable (stage-driven dispatch, e.g.
+Castlevania) are genuinely static-unresolvable and keep the ambiguity marker.
 
 ### The expression mini-language
 

@@ -31,6 +31,8 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
+import ghidra.app.cmd.disassemble.DisassembleCommand;
+import ghidra.app.cmd.function.CreateFunctionCmd;
 import ghidra.app.services.AbstractAnalyzer;
 import ghidra.app.services.AnalysisPriority;
 import ghidra.app.services.AnalyzerType;
@@ -61,21 +63,34 @@ import ghidra.util.task.TaskMonitor;
  * Everything per-board comes from a compiled schema-v2 descriptor: the bank-state field
  * tuple ({@code banking.state}), the switch mechanisms ({@code banking.mechanisms} --
  * each matched to a {@link BankSwitchStrategy} implementation by name and configured
- * with its params), the enumerated window/occupant truth table, and the initial state.
- * The engine owns what is the same on every machine:
+ * with its params), the window model (enumerated occupant truth table, C64-style, or
+ * computed {@code maps:} windows backed by per-bank overlays, NES-mapper-style), and
+ * the initial state. The engine owns what is the same on every machine:
  * <ul>
  * <li><b>Forward dataflow to fixpoint</b> over disassembled instructions, seeded with
  * {@code banking.initial_state} at every entry point and function start, with per-bit
- * partial knowledge ({@link BankState}) and agree-bit merges at control-flow joins.</li>
+ * partial knowledge ({@link BankState}) and agree-bit merges at control-flow joins.
+ * Instructions physically located in a bank overlay ({@code WINDOW_B<n>}) have that
+ * window's field clamped to {@code n} -- code cannot execute from a bank that is not
+ * mapped in.</li>
  * <li><b>Switch recognition and value recovery</b> delegated to the configured
  * strategies (first strategy that recognizes an instruction wins).</li>
+ * <li><b>Helper-call propagation</b>: real code often switches banks through a helper
+ * ({@code LDA #bank / JSR SelectBank}, where the helper does the store -- possibly via
+ * an indexed bus-conflict table the local scan cannot resolve). After a first dataflow
+ * pass, every function containing a recognized mechanism write becomes a <em>switch
+ * helper</em>; a second pass treats each call to one as a switch site whose value is
+ * the helper's own constant result when it has one, else the immediate register
+ * argument recovered at the call site (bank-in-A/X/Y convention), else unknown.</li>
  * <li><b>Annotation</b>: EOL comments at resolved switch sites (with per-bit known/
- * assumed provenance when knowledge is partial), WARNING bookmarks only when a switch
- * leaves no tracked bit known.</li>
- * <li><b>Application</b> (interim overlay generation): for references landing in an
- * enumerated banked window, an ANALYSIS reference into the effective occupant's overlay
- * space (or its {@code on_write} occupant for writes -- including write-under-ROM),
- * marked primary. Unknown bits assume their initial-state value.</li>
+ * assumed provenance when knowledge is partial; call-site switches name the helper),
+ * WARNING bookmarks when a switch leaves no tracked bit known.</li>
+ * <li><b>Application</b> (interim overlay generation): for references landing in a
+ * banked window, an ANALYSIS reference into the effective occupant's overlay space
+ * (enumerated windows -- including the {@code on_write} occupant for writes, e.g.
+ * write-under-ROM) or the effective bank's overlay block (computed windows; writes are
+ * latch pokes when the window declares {@code on_write: mechanism} and are left
+ * alone), marked primary. Unknown bits assume their initial-state value.</li>
  * <li><b>Context stamping</b>: when the program's language actually declares the
  * descriptor's {@code banking.context_register}, fully-known states are stamped over
  * instruction ranges via {@code ProgramContext.setValue}. Stock languages (6502) don't
@@ -100,8 +115,12 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		return true;
 	}
 
-	/** Resource path of this board's compiled descriptor, e.g. {@code machines/c64.map}. */
-	protected abstract String getMapPath();
+	/**
+	 * Resource path of this program's compiled descriptor, e.g. {@code machines/c64.map}
+	 * (a per-board constant on single-board systems; read from the program on systems
+	 * where the loader chose among boards). {@code null} skips analysis.
+	 */
+	protected abstract String getMapPath(Program program);
 
 	/** Category used for this analyzer's bookmarks; defaults to the concrete class name. */
 	protected String getBookmarkCategory() {
@@ -113,34 +132,40 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			throws CancelledException {
 
 		String tag = getClass().getSimpleName();
-		log.appendMsg(getName(), tag + " running");
+		String mapPath = getMapPath(program);
+		if (mapPath == null) {
+			return false;
+		}
+		log.appendMsg(getName(), tag + " running (" + mapPath + ")");
 
 		JsonObject map;
 		try {
-			map = DescriptorSupport.loadMap(getMapPath());
+			map = DescriptorSupport.loadMap(mapPath);
 		}
 		catch (IOException e) {
-			log.appendMsg(getName(), "Failed to load " + getMapPath() + ": " + e.getMessage());
+			log.appendMsg(getName(), "Failed to load " + mapPath + ": " + e.getMessage());
 			return false;
 		}
 
 		JsonObject banking = map.getAsJsonObject("banking");
 		if (banking == null || !banking.has("mechanisms")) {
-			log.appendMsg(getName(), "banking.mechanisms missing from " + getMapPath() +
+			log.appendMsg(getName(), "banking.mechanisms missing from " + mapPath +
 				"; skipping bank-state analysis");
 			return true;
 		}
 
 		int initialState = banking.get("initial_state").getAsInt();
 
-		// The tracked-bit mask and per-bit annotation names come from the banking.state
-		// field tuple (LSB first; multi-bit fields expand to name.0, name.1, ...).
+		// The tracked-bit mask, per-bit annotation names, and field layout come from the
+		// banking.state field tuple (LSB first; multi-bit fields expand to name.0, ...).
 		List<String> stateBitNames = new ArrayList<>();
+		List<FieldSpec> fieldSpecs = new ArrayList<>();
 		if (banking.has("state")) {
 			for (JsonElement fe : banking.getAsJsonArray("state")) {
 				JsonObject field = fe.getAsJsonObject();
 				String fieldName = field.get("name").getAsString();
 				int bits = field.get("bits").getAsInt();
+				fieldSpecs.add(new FieldSpec(fieldName, stateBitNames.size(), bits));
 				if (bits == 1) {
 					stateBitNames.add(fieldName);
 				}
@@ -156,32 +181,57 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		List<BankSwitchStrategy> strategies =
 			configureStrategies(program, banking.getAsJsonArray("mechanisms"), mask, log);
 		if (strategies.isEmpty()) {
-			log.appendMsg(getName(), "no usable bank-switch strategy in " + getMapPath() +
+			log.appendMsg(getName(), "no usable bank-switch strategy in " + mapPath +
 				" banking; skipping bank-state analysis");
 			return true;
 		}
 
 		AddressSpace baseSpace = program.getAddressFactory().getDefaultAddressSpace();
 
-		// --- Parse windows + banking states ---
+		// --- Parse windows (enumerated occupants OR computed maps:) + banking states ---
 		Map<String, WindowModel> windowsByName = new LinkedHashMap<>();
+		Map<String, ComputedWindowModel> computedByName = new LinkedHashMap<>();
 		for (JsonElement we : map.getAsJsonArray("windows")) {
 			JsonObject window = we.getAsJsonObject();
-			if (!window.has("occupants")) {
-				continue; // computed windows are the loader's / bank engine's concern
-			}
 			String name = window.get("name").getAsString();
 			long start = window.get("start").getAsLong();
 			long end = window.get("end").getAsLong();
-			Map<String, OccupantModel> occupants = new LinkedHashMap<>();
-			for (JsonElement oe : window.getAsJsonArray("occupants")) {
-				JsonObject occ = oe.getAsJsonObject();
-				String occName = occ.get("name").getAsString();
-				String kind = occ.get("kind").getAsString();
-				String onWrite = occ.has("on_write") ? occ.get("on_write").getAsString() : null;
-				occupants.put(occName, new OccupantModel(occName, kind, onWrite));
+			if (window.has("occupants")) {
+				Map<String, OccupantModel> occupants = new LinkedHashMap<>();
+				for (JsonElement oe : window.getAsJsonArray("occupants")) {
+					JsonObject occ = oe.getAsJsonObject();
+					String occName = occ.get("name").getAsString();
+					String kind = occ.get("kind").getAsString();
+					String onWrite = occ.has("on_write") ? occ.get("on_write").getAsString() : null;
+					occupants.put(occName, new OccupantModel(occName, kind, onWrite));
+				}
+				windowsByName.put(name, new WindowModel(name, start, end, occupants));
 			}
-			windowsByName.put(name, new WindowModel(name, start, end, occupants));
+			else if (window.has("maps")) {
+				String expr = window.getAsJsonObject("maps").get("expr").getAsString();
+				Set<String> fields = DescriptorSupport.referencedFields(expr);
+				if (fields.isEmpty()) {
+					continue; // fixed window -- placed by the loader, never retargeted
+				}
+				if (fields.size() > 1) {
+					log.appendMsg(getName(), "computed window '" + name + "' uses " + fields +
+						"; multi-field windows are not supported yet -- not retargeting it");
+					continue;
+				}
+				String fieldName = fields.iterator().next();
+				FieldSpec fieldSpec = fieldSpecs.stream()
+						.filter(f -> f.name().equals(fieldName))
+						.findFirst()
+						.orElse(null);
+				if (fieldSpec == null) {
+					log.appendMsg(getName(), "computed window '" + name +
+						"' references unknown state field '" + fieldName + "'; skipping it");
+					continue;
+				}
+				String onWrite = window.has("on_write") ? window.get("on_write").getAsString() : null;
+				computedByName.put(name,
+					new ComputedWindowModel(name, start, end, fieldSpec, onWrite));
+			}
 		}
 
 		Map<Integer, Map<String, String>> occupantByWindowForState = new LinkedHashMap<>();
@@ -200,66 +250,31 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		}
 
 		Map<String, String> homeOccupantByWindow = occupantByWindowForState.get(initialState);
-		if (homeOccupantByWindow == null) {
+		if (!windowsByName.isEmpty() && homeOccupantByWindow == null) {
 			log.appendMsg(getName(), "banking.initial_state " + initialState +
 				" not found in banking.states; skipping bank-state analysis");
 			return true;
 		}
 
-		// --- Phase 1: forward dataflow to fixpoint (bank state per instruction address) ---
+		BoardModel board = new BoardModel(mask, initialState, stateBitNames, fieldSpecs,
+			windowsByName, computedByName, occupantByWindowForState, homeOccupantByWindow);
+
+		// --- Phase 1: forward dataflow to fixpoint; rerun with helper knowledge if any ---
 		Listing listing = program.getListing();
-		Map<Address, BankState> stateIn = new HashMap<>();
-		Map<Address, BankState> switchResults = new HashMap<>();
-		Deque<Address> worklist = new ArrayDeque<>();
+		DataflowResult flow = runDataflow(program, monitor, listing, strategies, board, null);
 
-		Set<Address> seeds = new LinkedHashSet<>();
-		AddressIterator eps = program.getSymbolTable().getExternalEntryPointIterator();
-		while (eps.hasNext()) {
-			seeds.add(eps.next());
-		}
-		FunctionIterator funcs = program.getFunctionManager().getFunctions(true);
-		for (Function f : funcs) {
-			seeds.add(f.getEntryPoint());
-		}
-
-		BankState seedState = BankState.fullyKnown(mask, initialState);
-		for (Address seed : seeds) {
-			mergeAndEnqueue(seed, seedState, stateIn, worklist, listing);
-		}
-
-		while (!worklist.isEmpty()) {
-			monitor.checkCancelled();
-			Address addr = worklist.poll();
-			Instruction instr = listing.getInstructionAt(addr);
-			if (instr == null) {
-				continue;
-			}
-			BankState inState = stateIn.get(addr);
-			BankState outState = inState;
-
-			for (BankSwitchStrategy strategy : strategies) {
-				BankState switched = strategy.computeSwitch(program, instr, inState);
-				if (switched != null) {
-					switchResults.put(addr, switched);
-					outState = switched;
-					break;
-				}
-			}
-
-			for (Address flow : instr.getFlows()) {
-				mergeAndEnqueue(flow, outState, stateIn, worklist, listing);
-			}
-			Address fallThrough = instr.getFallThrough();
-			if (fallThrough != null) {
-				mergeAndEnqueue(fallThrough, outState, stateIn, worklist, listing);
-			}
+		Map<Function, HelperModel> helpers = findHelpers(program, flow.switchResults(), board);
+		if (!helpers.isEmpty()) {
+			log.appendMsg(getName(), helpers.size() + " bank-switch helper function(s): " +
+				helpers.keySet().stream().map(Function::getName).sorted().toList());
+			flow = runDataflow(program, monitor, listing, strategies, board, helpers);
 		}
 
 		// --- Phase 2: annotate bank switches + retarget references ---
 		ReferenceManager refMgr = program.getReferenceManager();
 		int refsAdded = 0;
 		int warnings = 0;
-		for (Map.Entry<Address, BankState> entry : stateIn.entrySet()) {
+		for (Map.Entry<Address, BankState> entry : flow.stateIn().entrySet()) {
 			monitor.checkCancelled();
 			Address addr = entry.getKey();
 			BankState inState = entry.getValue();
@@ -268,7 +283,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				continue;
 			}
 
-			BankState switched = switchResults.get(addr);
+			BankState switched = flow.switchResults().get(addr);
 			if (switched != null) {
 				if (switched.knownMask() == 0) {
 					warnings++;
@@ -281,25 +296,35 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 									"AND/ORA immediate to constrain it)");
 				}
 				else {
-					annotateBankSwitch(listing, addr, switched, initialState, mask, stateBitNames,
-						windowsByName.keySet(), occupantByWindowForState);
+					annotateBankSwitch(listing, addr, switched, board, null);
 				}
 			}
 
-			int effective = inState.effective(initialState, mask);
-			Map<String, String> stateRow = occupantByWindowForState.get(effective);
-			if (stateRow == null) {
-				continue;
+			CallSwitch callSwitch = flow.callSwitches().get(addr);
+			if (callSwitch != null) {
+				if (callSwitch.state().knownMask() == 0) {
+					warnings++;
+					program.getBookmarkManager()
+							.setBookmark(addr, BookmarkType.WARNING, getBookmarkCategory(),
+								"Bank state becomes unknown here: call to bank-switch helper " +
+									callSwitch.helperName() + " whose bank argument could not " +
+									"be recovered at this call site");
+				}
+				else {
+					annotateBankSwitch(listing, addr, callSwitch.state(), board,
+						callSwitch.helperName());
+				}
 			}
 
-			refsAdded += retargetReferences(program, refMgr, baseSpace, instr, windowsByName,
-				stateRow, homeOccupantByWindow, log);
+			int effective = inState.effective(board.initialState(), board.mask());
+			refsAdded += retargetReferences(program, refMgr, baseSpace, instr, board, effective,
+				monitor, log);
 		}
 
 		// --- Context stamping: only when the language actually declares the register ---
-		stampContextRegister(program, banking, stateIn, listing, mask, log);
+		stampContextRegister(program, banking, flow.stateIn(), listing, board.mask(), log);
 
-		log.appendMsg(getName(), tag + ": " + stateIn.size() + " instructions tracked, " +
+		log.appendMsg(getName(), tag + ": " + flow.stateIn().size() + " instructions tracked, " +
 			refsAdded + " overlay references added/confirmed, " + warnings +
 			" unknown-state warnings");
 		return true;
@@ -352,14 +377,89 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	// Dataflow
 	// ------------------------------------------------------------------
 
+	/**
+	 * One forward-dataflow run to fixpoint. When {@code helpers} is non-null, a call to
+	 * a helper function is itself a switch site: the state on the call's fall-through is
+	 * the helper's effect, not the flowed-through in-state (the call target's entry is
+	 * still seeded with the in-state -- the switch happens inside the helper).
+	 */
+	private DataflowResult runDataflow(Program program, TaskMonitor monitor, Listing listing,
+			List<BankSwitchStrategy> strategies, BoardModel board,
+			Map<Function, HelperModel> helpers) throws CancelledException {
+
+		Map<Address, BankState> stateIn = new HashMap<>();
+		Map<Address, BankState> switchResults = new HashMap<>();
+		Map<Address, CallSwitch> callSwitches = new HashMap<>();
+		Deque<Address> worklist = new ArrayDeque<>();
+		Map<String, int[]> clampCache = new HashMap<>();
+
+		Set<Address> seeds = new LinkedHashSet<>();
+		AddressIterator eps = program.getSymbolTable().getExternalEntryPointIterator();
+		while (eps.hasNext()) {
+			seeds.add(eps.next());
+		}
+		FunctionIterator funcs = program.getFunctionManager().getFunctions(true);
+		for (Function f : funcs) {
+			seeds.add(f.getEntryPoint());
+		}
+
+		BankState seedState = BankState.fullyKnown(board.mask(), board.initialState());
+		for (Address seed : seeds) {
+			mergeAndEnqueue(seed, seedState, stateIn, worklist, listing, board, clampCache);
+		}
+
+		while (!worklist.isEmpty()) {
+			monitor.checkCancelled();
+			Address addr = worklist.poll();
+			Instruction instr = listing.getInstructionAt(addr);
+			if (instr == null) {
+				continue;
+			}
+			BankState inState = stateIn.get(addr);
+			BankState outState = inState;
+
+			for (BankSwitchStrategy strategy : strategies) {
+				BankState switched = strategy.computeSwitch(program, instr, inState);
+				if (switched != null) {
+					switchResults.put(addr, switched);
+					outState = switched;
+					break;
+				}
+			}
+
+			BankState fallState = outState;
+			if (helpers != null && instr.getFlowType().isCall()) {
+				HelperModel helper = calledHelper(program, instr, helpers);
+				if (helper != null) {
+					BankState afterCall = helper.constState() != null ? helper.constState()
+							: recoverCallArgument(program, instr, board.mask());
+					callSwitches.put(addr, new CallSwitch(helper.function().getName(), afterCall));
+					fallState = afterCall;
+				}
+			}
+
+			for (Address flowAddr : instr.getFlows()) {
+				mergeAndEnqueue(flowAddr, outState, stateIn, worklist, listing, board, clampCache);
+			}
+			Address fallThrough = instr.getFallThrough();
+			if (fallThrough != null) {
+				mergeAndEnqueue(fallThrough, fallState, stateIn, worklist, listing, board,
+					clampCache);
+			}
+		}
+		return new DataflowResult(stateIn, switchResults, callSwitches);
+	}
+
 	private void mergeAndEnqueue(Address addr, BankState incoming, Map<Address, BankState> stateIn,
-			Deque<Address> worklist, Listing listing) {
+			Deque<Address> worklist, Listing listing, BoardModel board,
+			Map<String, int[]> clampCache) {
 		if (listing.getInstructionAt(addr) == null) {
 			// not (yet) disassembled / not code -- nothing to track here
 			return;
 		}
 		BankState existing = stateIn.get(addr);
 		BankState merged = existing == null ? incoming : BankState.merge(existing, incoming);
+		merged = clampToResidence(addr, merged, board, clampCache);
 		if (existing == null || !merged.equals(existing)) {
 			stateIn.put(addr, merged);
 			worklist.add(addr);
@@ -367,29 +467,142 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// else: unchanged, already processed with this exact state -- nothing to do
 	}
 
+	/**
+	 * Execution implies mapping: an instruction physically inside a computed window's
+	 * bank overlay {@code WINDOW_B<n>} can only be running while that window's field
+	 * holds {@code n}, so those bits are forced known regardless of what flowed in.
+	 * (Idempotent and deterministic per address, so the fixpoint still terminates.)
+	 */
+	private BankState clampToResidence(Address addr, BankState state, BoardModel board,
+			Map<String, int[]> clampCache) {
+		AddressSpace space = addr.getAddressSpace();
+		if (!space.isOverlaySpace()) {
+			return state;
+		}
+		int[] clamp = clampCache.computeIfAbsent(space.getName(), name -> {
+			for (ComputedWindowModel w : board.computedWindows().values()) {
+				String prefix = w.name() + "_B";
+				if (name.startsWith(prefix)) {
+					try {
+						int v = Integer.parseInt(name.substring(prefix.length()));
+						FieldSpec f = w.field();
+						return new int[] { f.positionedMask(), (v << f.lsb()) & f.positionedMask() };
+					}
+					catch (NumberFormatException e) {
+						// not one of ours (e.g. a C64 occupant overlay) -- fall through
+					}
+				}
+			}
+			return new int[0];
+		});
+		if (clamp.length == 0) {
+			return state;
+		}
+		return new BankState(state.knownMask() | clamp[0],
+			(state.bits() & ~clamp[0]) | clamp[1]);
+	}
+
+	// ------------------------------------------------------------------
+	// Helper-call propagation
+	// ------------------------------------------------------------------
+
+	/**
+	 * Every function containing a recognized mechanism write is a bank-switch helper.
+	 * When all of a helper's switch results are fully known and agree, calling it
+	 * unconditionally produces that state; otherwise the helper's effect depends on its
+	 * caller (bank-argument convention) and is recovered per call site.
+	 */
+	private Map<Function, HelperModel> findHelpers(Program program,
+			Map<Address, BankState> switchResults, BoardModel board) {
+		Map<Function, HelperModel> helpers = new LinkedHashMap<>();
+		for (Map.Entry<Address, BankState> entry : switchResults.entrySet()) {
+			Function f = program.getFunctionManager().getFunctionContaining(entry.getKey());
+			if (f == null) {
+				continue;
+			}
+			BankState result = entry.getValue();
+			HelperModel existing = helpers.get(f);
+			if (existing == null) {
+				helpers.put(f, new HelperModel(f,
+					result.knownMask() == board.mask() ? result : null));
+			}
+			else if (existing.constState() != null && !existing.constState().equals(result)) {
+				helpers.put(f, new HelperModel(f, null));
+			}
+		}
+		return helpers;
+	}
+
+	/** The helper this call instruction targets, or null. */
+	private HelperModel calledHelper(Program program, Instruction callInstr,
+			Map<Function, HelperModel> helpers) {
+		for (Address flowAddr : callInstr.getFlows()) {
+			Function f = program.getFunctionManager().getFunctionAt(flowAddr);
+			if (f != null) {
+				HelperModel helper = helpers.get(f);
+				if (helper != null) {
+					return helper;
+				}
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Recovers the bank argument at a helper call site by running the shared backward
+	 * scan for an immediate register value as of the call ({@code LDA #bank / JSR
+	 * SelectBank} and its X/Y variants). By the helper convention the register holds the
+	 * <em>field value itself</em>, so no mechanism transform is applied beyond the state
+	 * mask. Returns {@link BankState#unknown()} when no register resolves -- the caller
+	 * conservatively loses the bank state across the call.
+	 */
+	private BankState recoverCallArgument(Program program, Instruction callInstr, int mask) {
+		for (char reg : new char[] { 'A', 'X', 'Y' }) {
+			BankState v = StoredValueScanner.resolveStoredValue(program, callInstr, reg,
+				BankState.unknown(), mask, NO_HOOKS);
+			if (v.knownMask() != 0) {
+				return v;
+			}
+		}
+		return BankState.unknown();
+	}
+
+	private static final StoredValueScanner.Hooks NO_HOOKS = new StoredValueScanner.Hooks() {
+		@Override
+		public boolean isMechanismWrite(Instruction instr) {
+			return false;
+		}
+
+		@Override
+		public BankState resolveLoad(Instruction loadInstr, BankState inStateAtStore) {
+			return null;
+		}
+	};
+
 	// ------------------------------------------------------------------
 	// Annotation
 	// ------------------------------------------------------------------
 
 	/**
-	 * Annotates a resolved bank-switch store with an EOL comment. When {@code newState}
-	 * is fully known, the comment is {@code bank -> 5 (RAM_A000/IO/RAM_E000)}. When only
-	 * some bits are known, the comment marks the effective state with a trailing
+	 * Annotates a resolved bank-switch site with an EOL comment. When {@code newState}
+	 * is fully known, the comment is {@code bank -> 5 (RAM_A000/IO/RAM_E000)} (occupant
+	 * row on enumerated boards, {@code bank=5} field values on computed boards). When
+	 * only some bits are known, the comment marks the effective state with a trailing
 	 * {@code ?} and spells out, by {@code banking.state} field name, which bits are
 	 * actually known versus merely assumed from {@code banking.initial_state} -- e.g.
 	 * {@code bank -> 7? (BASIC/IO/KERNAL) [known: LORAM=1; assumed from initial:
-	 * HIRAM,CHAREN]}.
+	 * HIRAM,CHAREN]}. Call-site switches carry the helper's name.
 	 */
 	private void annotateBankSwitch(Listing listing, Address addr, BankState newState,
-			int initialState, int mask, List<String> stateBitNames, Set<String> windowNames,
-			Map<Integer, Map<String, String>> occupantByWindowForState) {
-		int effective = newState.effective(initialState, mask);
-		Map<String, String> stateRow = occupantByWindowForState.get(effective);
-		String desc = describeState(windowNames, stateRow);
+			BoardModel board, String viaHelper) {
+		int mask = board.mask();
+		int effective = newState.effective(board.initialState(), mask);
+		String desc = describeState(board, effective);
+		String via = viaHelper == null ? "" : " via " + viaHelper;
 
 		String bankComment;
 		if (newState.knownMask() == mask) {
-			bankComment = "bank -> " + effective + " (" + desc + ")";
+			bankComment = "bank -> " + effective + " (" + desc + ")" + via;
 		}
 		else {
 			List<String> known = new ArrayList<>();
@@ -399,7 +612,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				if ((mask & bitMask) == 0) {
 					continue;
 				}
-				String name = bit < stateBitNames.size() ? stateBitNames.get(bit)
+				String name = bit < board.stateBitNames().size() ? board.stateBitNames().get(bit)
 						: ("bit" + bit);
 				if ((newState.knownMask() & bitMask) != 0) {
 					known.add(name + "=" + ((newState.bits() & bitMask) != 0 ? 1 : 0));
@@ -408,7 +621,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 					assumed.add(name);
 				}
 			}
-			bankComment = "bank -> " + effective + "? (" + desc + ") [known: " +
+			bankComment = "bank -> " + effective + "? (" + desc + ")" + via + " [known: " +
 				String.join(",", known) + "; assumed from initial: " + String.join(",", assumed) +
 				"]";
 		}
@@ -422,15 +635,27 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		}
 	}
 
-	private static String describeState(Set<String> windowNames, Map<String, String> stateRow) {
-		if (stateRow == null) {
-			return "?";
+	/**
+	 * Human description of an effective state: the occupant row on enumerated boards
+	 * ({@code BASIC/IO/KERNAL}), field values on computed boards ({@code bank=3}).
+	 */
+	private static String describeState(BoardModel board, int effective) {
+		Map<String, String> stateRow = board.occupantByWindowForState().get(effective);
+		if (stateRow != null && !board.windows().isEmpty()) {
+			List<String> parts = new ArrayList<>();
+			for (String windowName : board.windows().keySet()) {
+				parts.add(stateRow.getOrDefault(windowName, "?"));
+			}
+			return String.join("/", parts);
 		}
-		List<String> parts = new ArrayList<>();
-		for (String windowName : windowNames) {
-			parts.add(stateRow.getOrDefault(windowName, "?"));
+		if (!board.fieldSpecs().isEmpty()) {
+			List<String> parts = new ArrayList<>();
+			for (FieldSpec f : board.fieldSpecs()) {
+				parts.add(f.name() + "=" + f.valueIn(effective));
+			}
+			return String.join(",", parts);
 		}
-		return String.join("/", parts);
+		return "?";
 	}
 
 	// ------------------------------------------------------------------
@@ -438,9 +663,10 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	// ------------------------------------------------------------------
 
 	private int retargetReferences(Program program, ReferenceManager refMgr,
-			AddressSpace baseSpace, Instruction instr, Map<String, WindowModel> windowsByName,
-			Map<String, String> stateRow, Map<String, String> homeOccupantByWindow,
-			MessageLog log) {
+			AddressSpace baseSpace, Instruction instr, BoardModel board, int effective,
+			TaskMonitor monitor, MessageLog log) {
+
+		Map<String, String> stateRow = board.occupantByWindowForState().get(effective);
 
 		int added = 0;
 		for (Reference ref : instr.getReferencesFrom()) {
@@ -449,41 +675,57 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				continue;
 			}
 			long offset = to.getOffset();
-
-			WindowModel window = findWindow(windowsByName, offset);
-			if (window == null) {
-				continue;
-			}
-			String occupantName = stateRow.get(window.name);
-			if (occupantName == null) {
-				continue;
-			}
-			OccupantModel occupant = window.occupants.get(occupantName);
-			if (occupant == null) {
-				continue;
-			}
-
 			RefType refType = ref.getReferenceType();
-			String targetOccupant;
-			if (refType.isWrite()) {
-				targetOccupant = occupant.onWrite != null ? occupant.onWrite : occupantName;
+
+			String targetSpaceName = null;
+
+			WindowModel window = findWindow(board.windows(), offset);
+			if (window != null && stateRow != null) {
+				String occupantName = stateRow.get(window.name());
+				OccupantModel occupant =
+					occupantName == null ? null : window.occupants().get(occupantName);
+				if (occupant == null) {
+					continue;
+				}
+				String targetOccupant;
+				if (refType.isWrite()) {
+					targetOccupant =
+						occupant.onWrite() != null ? occupant.onWrite() : occupantName;
+				}
+				else {
+					targetOccupant = occupantName;
+				}
+				String homeOccupant = board.homeOccupantByWindow().get(window.name());
+				if (targetOccupant.equals(homeOccupant)) {
+					// resolves to the home occupant, which already lives in base space at
+					// this offset -- the default reference is correct.
+					continue;
+				}
+				targetSpaceName = targetOccupant;
 			}
 			else {
-				targetOccupant = occupantName;
+				ComputedWindowModel computed = findComputedWindow(board.computedWindows(), offset);
+				if (computed == null) {
+					continue;
+				}
+				if (refType.isWrite() && "mechanism".equals(computed.onWrite())) {
+					// a store here is a mapper-latch poke, not a memory write; the
+					// strategy already models it -- nothing to retarget.
+					continue;
+				}
+				FieldSpec field = computed.field();
+				int bankValue = field.valueIn(effective);
+				if (bankValue == field.valueIn(board.initialState())) {
+					// the home bank lives in base space at this offset -- default is right.
+					continue;
+				}
+				targetSpaceName = computed.name() + "_B" + bankValue;
 			}
 
-			String homeOccupant = homeOccupantByWindow.get(window.name);
-			if (targetOccupant.equals(homeOccupant)) {
-				// resolves to the home occupant, which already lives in base space at this
-				// offset -- the default reference the reference analyzer laid down is correct.
-				continue;
-			}
-
-			AddressSpace overlaySpace = program.getAddressFactory().getAddressSpace(targetOccupant);
+			AddressSpace overlaySpace = program.getAddressFactory().getAddressSpace(targetSpaceName);
 			if (overlaySpace == null) {
-				log.appendMsg(getName(), "No overlay address space named '" + targetOccupant +
-					"' for window '" + window.name + "'; cannot retarget reference from " +
-					instr.getMinAddress());
+				log.appendMsg(getName(), "No overlay address space named '" + targetSpaceName +
+					"'; cannot retarget reference from " + instr.getMinAddress());
 				continue;
 			}
 			Address overlayAddr = overlaySpace.getAddress(offset);
@@ -501,13 +743,38 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 						SourceType.ANALYSIS, opIndex);
 			refMgr.setPrimary(newRef, true);
 			added++;
+
+			// Adding a reference does not by itself pull the target into analysis: a
+			// cross-bank JSR/JMP target in an overlay would stay undisassembled bytes.
+			// Kick disassembly (and function creation for calls) there; the framework
+			// then re-runs this analyzer over the new instructions until convergence
+			// (their in-overlay bank state comes from the residence clamp).
+			if (refType.isFlow() &&
+				program.getListing().getInstructionAt(overlayAddr) == null) {
+				new DisassembleCommand(overlayAddr, null, true).applyTo(program, monitor);
+				if (refType.isCall() &&
+					program.getListing().getInstructionAt(overlayAddr) != null &&
+					program.getFunctionManager().getFunctionAt(overlayAddr) == null) {
+					new CreateFunctionCmd(overlayAddr).applyTo(program, monitor);
+				}
+			}
 		}
 		return added;
 	}
 
 	private static WindowModel findWindow(Map<String, WindowModel> windowsByName, long offset) {
 		for (WindowModel w : windowsByName.values()) {
-			if (offset >= w.start && offset <= w.end) {
+			if (offset >= w.start() && offset <= w.end()) {
+				return w;
+			}
+		}
+		return null;
+	}
+
+	private static ComputedWindowModel findComputedWindow(
+			Map<String, ComputedWindowModel> computedByName, long offset) {
+		for (ComputedWindowModel w : computedByName.values()) {
+			if (offset >= w.start() && offset <= w.end()) {
 				return w;
 			}
 		}
@@ -566,8 +833,41 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	// Descriptor model
 	// ------------------------------------------------------------------
 
+	/** One {@code banking.state} field: its bit position and width within the state int. */
+	private record FieldSpec(String name, int lsb, int width) {
+
+		int positionedMask() {
+			return ((1 << width) - 1) << lsb;
+		}
+
+		int valueIn(int state) {
+			return (state >> lsb) & ((1 << width) - 1);
+		}
+	}
+
 	private record OccupantModel(String name, String kind, String onWrite) {}
 
 	private record WindowModel(String name, long start, long end,
 			Map<String, OccupantModel> occupants) {}
+
+	/** A computed window driven by a single state field; per-bank overlays are named
+	 *  {@code <name>_B<fieldValue>} by the loader, home bank in base space. */
+	private record ComputedWindowModel(String name, long start, long end, FieldSpec field,
+			String onWrite) {}
+
+	/** Everything phase-independent parsed out of the descriptor. */
+	private record BoardModel(int mask, int initialState, List<String> stateBitNames,
+			List<FieldSpec> fieldSpecs, Map<String, WindowModel> windows,
+			Map<String, ComputedWindowModel> computedWindows,
+			Map<Integer, Map<String, String>> occupantByWindowForState,
+			Map<String, String> homeOccupantByWindow) {}
+
+	/** A helper function's modeled effect: a constant state, or null = caller-supplied. */
+	private record HelperModel(Function function, BankState constState) {}
+
+	/** A resolved call-site switch (for annotation, distinct from direct switches). */
+	private record CallSwitch(String helperName, BankState state) {}
+
+	private record DataflowResult(Map<Address, BankState> stateIn,
+			Map<Address, BankState> switchResults, Map<Address, CallSwitch> callSwitches) {}
 }

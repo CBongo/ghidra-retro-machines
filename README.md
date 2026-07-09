@@ -8,10 +8,13 @@ the loader sets up the complete machine around it: RAM/ROM regions, banked memor
 windows, IO chip register structs, system ROM slots, and symbol sets — all driven by a
 per-machine YAML descriptor with zero hard-coded system knowledge in Java.
 
-**Status: working pipeline, two machines.** Descriptor schema v2 (state tuples,
-mechanism strategies, physical spaces, computed windows), a C64 PRG loader with
-bank-state analysis, and an iNES loader with a data-driven board registry (NROM
-baseline) all work end-to-end. See the [roadmap](#roadmap).
+**Status: working pipeline, two machines, seven boards.** Descriptor schema v2 (state
+tuples, mechanism strategies, physical spaces, computed windows), a C64 PRG loader
+with bank-state analysis, and an iNES loader with a data-driven board registry all
+work end-to-end. The machine-independent bank engine tracks banking on the NES
+discrete mappers (NROM/UxROM/CNROM/AxROM/GxROM/BNROM boards): on Mega Man (UNROM) it
+resolves ~1,500 cross-bank JSR/JMP references into per-bank overlay spaces and pulls
+~7,400 instructions of banked code into analysis. See the [roadmap](#roadmap).
 
 ## Why
 
@@ -26,11 +29,16 @@ being re-executed by hand across the community — this extension automates it.
   full memory map, the 8 PLA bank states driven by `$01`, read/write asymmetry
   (RAM-under-ROM write-through), VIC-II/SID/CIA register structs, KERNAL symbols,
   copyright-safe ROM slots
-- **[machines/nes.yaml](machines/nes.yaml)** — NES NROM, the second machine: physical
+- **[machines/nes-nrom.yaml](machines/nes-nrom.yaml)** — NES NROM, the second machine: physical
   PRG space with computed windows (`PRG[last]` handles NROM-128 mirroring and NROM-256
   with one expression), PPU/APU register structs, board registry keyed by iNES mapper
-  number ([machines/sketches/](machines/sketches/) holds the UxROM/MMC3 schema
-  validation sketches that the banked-mapper milestones will graduate)
+  number
+- **machines/nes-{uxrom,cnrom,axrom,gxrom,bnrom}.yaml** — the discrete-mapper boards:
+  `memory-latch` mechanism (store anywhere in the ROM range latches the bank, optional
+  bus-conflict AND, field extraction via shift/mask), switchable windows realized as
+  home-bank-in-base plus one overlay per alternate bank
+  ([machines/sketches/](machines/sketches/) keeps the MMC3 schema-validation sketch
+  the M3 milestone will graduate)
 
 ## Design highlights
 
@@ -54,8 +62,11 @@ being re-executed by hand across the community — this extension automates it.
    discussion #9349)
 3. ~~Descriptor schema v2 + iNES loader with board registry, NROM end-to-end~~ (done)
 4. Bundled 6510 processor language (bank context register lives there)
-5. Machine-independent bank analyzer + strategy library; NES banked mappers
-   (UxROM tier, then MMC1/MMC3) — see [docs/vision-board-banking.md](docs/vision-board-banking.md)
+5. ~~Machine-independent bank analyzer + strategy library (`register-write`,
+   `memory-latch`); NES discrete mappers with per-bank overlays, bank-switch-helper
+   call propagation, cross-bank flow retargeting~~ (done — UxROM tier); next:
+   MMC1/MMC3 protocol strategies —
+   see [docs/vision-board-banking.md](docs/vision-board-banking.md)
 6. More machines: GB, SNES, PS1
 7. Generalized string detection (PETSCII, screen codes, per-game tile tables)
 

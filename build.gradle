@@ -104,76 +104,60 @@ dependencies {
 	gdtBuilderImplementation 'org.yaml:snakeyaml:2.2'
 }
 
-task buildC64Gdt(type: JavaExec) {
-	group = "Ghidra Retro Machines"
-	description = "Generate data/machines/c64.gdt from machines/c64.yaml (build artifact; never committed)"
-	dependsOn 'compileGdtBuilderJava'
-	classpath = sourceSets.gdtBuilder.runtimeClasspath
-	mainClass = 'gdtbuilder.GdtBuilder'
-	doFirst {
-		file('data/machines').mkdirs()
-	}
-	args = [
-		file('machines/c64.yaml').absolutePath,
-		file('data/machines/c64.gdt').absolutePath
-	]
-}
+// Data-driven per-machine task generation (bead grm-9ux): one buildXxxGdt/buildXxxMap
+// task pair per machines/*.yaml descriptor, instead of hand-written tasks per machine.
+def machineGdtTasks = []
+def machineMapTasks = []
 
-task buildNesGdt(type: JavaExec) {
-	group = "Ghidra Retro Machines"
-	description = "Generate data/machines/nes.gdt from machines/nes.yaml (build artifact; never committed)"
-	dependsOn 'compileGdtBuilderJava'
-	classpath = sourceSets.gdtBuilder.runtimeClasspath
-	mainClass = 'gdtbuilder.GdtBuilder'
-	doFirst {
-		file('data/machines').mkdirs()
+fileTree(dir: 'machines', include: '*.yaml').each { yamlFile ->
+	def baseName = yamlFile.name.replace('.yaml', '')
+	// Capitalize each hyphen-separated component so e.g. nes-uxrom -> NesUxrom, yielding
+	// valid task names buildNesUxromGdt / buildNesUxromMap.
+	def taskId = baseName.split('-').collect { it.capitalize() }.join('')
+
+	def gdtTask = tasks.create("build${taskId}Gdt", JavaExec) {
+		group = "Ghidra Retro Machines"
+		description = "Generate data/machines/${baseName}.gdt from machines/${yamlFile.name} (build artifact; never committed)"
+		dependsOn 'compileGdtBuilderJava'
+		classpath = sourceSets.gdtBuilder.runtimeClasspath
+		mainClass = 'gdtbuilder.GdtBuilder'
+		doFirst {
+			file('data/machines').mkdirs()
+		}
+		args = [
+			yamlFile.absolutePath,
+			file("data/machines/${baseName}.gdt").absolutePath
+		]
 	}
-	args = [
-		file('machines/nes.yaml').absolutePath,
-		file('data/machines/nes.gdt').absolutePath
-	]
+	machineGdtTasks << gdtTask
+
+	def mapTask = tasks.create("build${taskId}Map", JavaExec) {
+		group = "Ghidra Retro Machines"
+		description = "Generate data/machines/${baseName}.map from machines/${yamlFile.name} (build artifact; never committed)"
+		dependsOn 'compileGdtBuilderJava'
+		classpath = sourceSets.gdtBuilder.runtimeClasspath
+		mainClass = 'gdtbuilder.MapCompiler'
+		doFirst {
+			file('data/machines').mkdirs()
+		}
+		args = [
+			yamlFile.absolutePath,
+			file("data/machines/${baseName}.map").absolutePath
+		]
+	}
+	machineMapTasks << mapTask
 }
 
 task buildGdt {
 	group = "Ghidra Retro Machines"
 	description = "Generate all machine .gdt data-type archives from their YAML descriptors"
-	dependsOn buildC64Gdt, buildNesGdt
-}
-
-task buildC64Map(type: JavaExec) {
-	group = "Ghidra Retro Machines"
-	description = "Generate data/machines/c64.map from machines/c64.yaml (build artifact; never committed)"
-	dependsOn 'compileGdtBuilderJava'
-	classpath = sourceSets.gdtBuilder.runtimeClasspath
-	mainClass = 'gdtbuilder.MapCompiler'
-	doFirst {
-		file('data/machines').mkdirs()
-	}
-	args = [
-		file('machines/c64.yaml').absolutePath,
-		file('data/machines/c64.map').absolutePath
-	]
-}
-
-task buildNesMap(type: JavaExec) {
-	group = "Ghidra Retro Machines"
-	description = "Generate data/machines/nes.map from machines/nes.yaml (build artifact; never committed)"
-	dependsOn 'compileGdtBuilderJava'
-	classpath = sourceSets.gdtBuilder.runtimeClasspath
-	mainClass = 'gdtbuilder.MapCompiler'
-	doFirst {
-		file('data/machines').mkdirs()
-	}
-	args = [
-		file('machines/nes.yaml').absolutePath,
-		file('data/machines/nes.map').absolutePath
-	]
+	dependsOn machineGdtTasks
 }
 
 task buildMap {
 	group = "Ghidra Retro Machines"
 	description = "Generate all machine .map runtime files from their YAML descriptors"
-	dependsOn buildC64Map, buildNesMap
+	dependsOn machineMapTasks
 }
 
 task validateSketches {
