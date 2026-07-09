@@ -42,11 +42,8 @@ public class NesBankingAnalyzer extends BoardBankAnalyzer {
 	}
 
 	@Override
-	public boolean canAnalyze(Program program) {
-		// Gate on the loader that produced this program: only NES ROM imports lay out
-		// memory "home-in-base" with per-bank overlays the way the engine assumes.
-		String format = program.getExecutableFormat();
-		return format != null && format.equals(new NesRomLoader().getName());
+	protected String getLoaderName() {
+		return NesRomLoader.NAME;
 	}
 
 	@Override

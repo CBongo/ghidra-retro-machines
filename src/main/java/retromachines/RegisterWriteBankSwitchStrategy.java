@@ -98,14 +98,10 @@ public class RegisterWriteBankSwitchStrategy implements BankSwitchStrategy {
 			return null;
 		}
 
-		String mnem = instr.getMnemonicString().toUpperCase();
-		if (!(mnem.equals("STA") || mnem.equals("STX") || mnem.equals("STY"))) {
-			// INC/DEC/ASL/LSR/ROL/ROR and friends read-modify-write in place; we don't
-			// attempt to track the resulting value.
+		Character reg = StoredValueScanner.storeRegister(instr);
+		if (reg == null) {
 			return BankState.unknown();
 		}
-
-		char reg = mnem.charAt(2); // 'A' | 'X' | 'Y'
 		return StoredValueScanner.resolveStoredValue(program, instr, reg, inState, mask, hooks);
 	}
 }

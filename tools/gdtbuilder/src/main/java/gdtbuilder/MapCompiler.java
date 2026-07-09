@@ -16,10 +16,7 @@
 package gdtbuilder;
 
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileWriter;
-import java.io.IOException;
-import java.io.InputStream;
 import java.io.Writer;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -29,8 +26,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-import org.yaml.snakeyaml.Yaml;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -78,7 +73,7 @@ public class MapCompiler {
 		File descriptorFile = new File(args[0]).getCanonicalFile();
 		File outputMap = new File(args[1]).getCanonicalFile();
 
-		Map<String, Object> descriptor = loadYaml(descriptorFile);
+		Map<String, Object> descriptor = YamlSupport.load(descriptorFile);
 
 		int schemaVersion = requireAddr(descriptor, "schema", "descriptor");
 		if (schemaVersion != 2) {
@@ -772,17 +767,5 @@ public class MapCompiler {
 			return Integer.parseInt(s.substring(2), 16);
 		}
 		return Integer.parseInt(s);
-	}
-
-	@SuppressWarnings("unchecked")
-	private static Map<String, Object> loadYaml(File file) throws IOException {
-		try (InputStream in = new FileInputStream(file)) {
-			Yaml yaml = new Yaml();
-			Object loaded = yaml.load(in);
-			if (loaded == null) {
-				return new LinkedHashMap<>();
-			}
-			return (Map<String, Object>) loaded;
-		}
 	}
 }

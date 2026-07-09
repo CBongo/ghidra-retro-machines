@@ -103,13 +103,10 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 			return null;
 		}
 
-		String mnem = instr.getMnemonicString().toUpperCase();
-		if (!(mnem.equals("STA") || mnem.equals("STX") || mnem.equals("STY"))) {
-			// read-modify-write into the latch range; value not tracked
+		Character reg = StoredValueScanner.storeRegister(instr);
+		if (reg == null) {
 			return BankState.unknown();
 		}
-
-		char reg = mnem.charAt(2); // 'A' | 'X' | 'Y'
 		BankState stored =
 			StoredValueScanner.resolveStoredValue(program, instr, reg, inState, 0xFF, hooks);
 

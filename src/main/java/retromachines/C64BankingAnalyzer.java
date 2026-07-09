@@ -41,12 +41,8 @@ public class C64BankingAnalyzer extends BoardBankAnalyzer {
 	}
 
 	@Override
-	public boolean canAnalyze(Program program) {
-		// Gate on the loader that produced this program: only C64 PRG imports lay out memory
-		// "home-in-base" the way the engine's retargeting assumes. AbstractProgramLoader
-		// stamps the program's executable-format property with the Loader's own getName().
-		String format = program.getExecutableFormat();
-		return format != null && format.equals(new C64PrgLoader().getName());
+	protected String getLoaderName() {
+		return C64PrgLoader.NAME;
 	}
 
 	@Override

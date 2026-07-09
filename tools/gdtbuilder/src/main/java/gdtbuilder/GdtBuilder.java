@@ -16,9 +16,7 @@
 package gdtbuilder;
 
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -28,8 +26,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-
-import org.yaml.snakeyaml.Yaml;
 
 import ghidra.framework.Application;
 import ghidra.framework.HeadlessGhidraApplicationConfiguration;
@@ -80,7 +76,7 @@ public class GdtBuilder {
 		}
 		outputGdt.getParentFile().mkdirs();
 
-		Map<String, Object> descriptor = loadYaml(descriptorFile);
+		Map<String, Object> descriptor = YamlSupport.load(descriptorFile);
 		@SuppressWarnings("unchecked")
 		List<Map<String, Object>> typeDefs = (List<Map<String, Object>>) descriptor.get("types");
 		if (typeDefs == null) {
@@ -217,7 +213,7 @@ public class GdtBuilder {
 			throw new IllegalArgumentException("struct '" + typeDef.get("name")
 				+ "' references source file that does not exist: " + sourceFile);
 		}
-		Map<String, Object> sourceDoc = loadYaml(sourceFile);
+		Map<String, Object> sourceDoc = YamlSupport.load(sourceFile);
 		List<Map<String, Object>> fields = (List<Map<String, Object>>) sourceDoc.get("fields");
 		if (fields == null) {
 			throw new IllegalArgumentException(
@@ -391,17 +387,5 @@ public class GdtBuilder {
 			return ((Number) o).intValue();
 		}
 		throw new IllegalArgumentException("Expected numeric value, got: " + o);
-	}
-
-	@SuppressWarnings("unchecked")
-	private static Map<String, Object> loadYaml(File file) throws IOException {
-		try (InputStream in = new FileInputStream(file)) {
-			Yaml yaml = new Yaml();
-			Object loaded = yaml.load(in);
-			if (loaded == null) {
-				return new LinkedHashMap<>();
-			}
-			return (Map<String, Object>) loaded;
-		}
 	}
 }

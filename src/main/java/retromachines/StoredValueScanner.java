@@ -236,6 +236,21 @@ final class StoredValueScanner {
 	// Operand helpers shared by store-recognizing strategies
 	// ------------------------------------------------------------------
 
+	/**
+	 * The register a 6502 store targets -- {@code 'A'}, {@code 'X'}, or {@code 'Y'} for
+	 * {@code STA}/{@code STX}/{@code STY} -- or {@code null} for any other mnemonic. In
+	 * particular the read-modify-write stores ({@code INC}/{@code DEC}/{@code ASL}/
+	 * {@code LSR}/{@code ROL}/{@code ROR}) return {@code null}: they mutate the target in
+	 * place and this scanner does not model the resulting value.
+	 */
+	static Character storeRegister(Instruction instr) {
+		String mnem = instr.getMnemonicString().toUpperCase();
+		if (mnem.equals("STA") || mnem.equals("STX") || mnem.equals("STY")) {
+			return mnem.charAt(2); // 'A' | 'X' | 'Y'
+		}
+		return null;
+	}
+
 	static boolean writesAddress(Instruction instr, Address addr) {
 		for (Reference ref : instr.getReferencesFrom()) {
 			if (ref.getToAddress().equals(addr) && ref.getReferenceType().isWrite()) {

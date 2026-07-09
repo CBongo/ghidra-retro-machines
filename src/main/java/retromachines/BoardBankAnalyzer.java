@@ -112,9 +112,20 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		setSupportsOneTimeAnalysis();
 	}
 
+	/**
+	 * The executable-format name of the loader whose "home-in-base" per-bank overlay
+	 * layout the engine's reference retargeting assumes (e.g. {@link C64PrgLoader#NAME}).
+	 * Only programs imported by that loader are analyzed.
+	 */
+	protected abstract String getLoaderName();
+
 	@Override
-	public boolean getDefaultEnablement(Program program) {
-		return true;
+	public boolean canAnalyze(Program program) {
+		// Gate on the loader that produced this program: only its imports lay out memory
+		// "home-in-base" with per-bank overlays the way the engine's retargeting assumes.
+		// AbstractProgramLoader stamps the executable-format property with the Loader's name.
+		String format = program.getExecutableFormat();
+		return format != null && format.equals(getLoaderName());
 	}
 
 	/**
@@ -287,35 +298,20 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 
 			BankState switched = flow.switchResults().get(addr);
 			if (switched != null) {
-				if (switched.knownMask() == 0) {
-					warnings++;
-					program.getBookmarkManager()
-							.setBookmark(addr, BookmarkType.WARNING, getBookmarkCategory(),
-								"Bank state becomes unknown here: mechanism write with a " +
-									"genuinely undeterminable value (value recovery could not " +
-									"pin down even one tracked bank bit -- e.g. a load of an " +
-									"unrelated address followed directly by the store, with no " +
-									"AND/ORA immediate to constrain it)");
-				}
-				else {
-					annotateBankSwitch(listing, addr, switched, board, null);
-				}
+				warnings += annotateOrWarn(program, listing, addr, switched, board, null,
+					"Bank state becomes unknown here: mechanism write with a genuinely " +
+						"undeterminable value (value recovery could not pin down even one " +
+						"tracked bank bit -- e.g. a load of an unrelated address followed " +
+						"directly by the store, with no AND/ORA immediate to constrain it)");
 			}
 
 			CallSwitch callSwitch = flow.callSwitches().get(addr);
 			if (callSwitch != null) {
-				if (callSwitch.state().knownMask() == 0) {
-					warnings++;
-					program.getBookmarkManager()
-							.setBookmark(addr, BookmarkType.WARNING, getBookmarkCategory(),
-								"Bank state becomes unknown here: call to bank-switch helper " +
-									callSwitch.helperName() + " whose bank argument could not " +
-									"be recovered at this call site");
-				}
-				else {
-					annotateBankSwitch(listing, addr, callSwitch.state(), board,
-						callSwitch.helperName());
-				}
+				warnings += annotateOrWarn(program, listing, addr, callSwitch.state(), board,
+					callSwitch.helperName(),
+					"Bank state becomes unknown here: call to bank-switch helper " +
+						callSwitch.helperName() + " whose bank argument could not be " +
+						"recovered at this call site");
 			}
 
 			int effective = inState.effective(board.initialState(), board.mask());
@@ -595,6 +591,22 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * {@code bank -> 7? (BASIC/IO/KERNAL) [known: LORAM=1; assumed from initial:
 	 * HIRAM,CHAREN]}. Call-site switches carry the helper's name.
 	 */
+	/**
+	 * Records one recovered switch site: an EOL annotation when at least one tracked bank
+	 * bit is known, or the {@code warning} bookmark when value recovery pinned down no bit
+	 * at all. Returns the number of warnings raised (0 or 1) for the caller's tally.
+	 */
+	private int annotateOrWarn(Program program, Listing listing, Address addr, BankState state,
+			BoardModel board, String viaHelper, String warning) {
+		if (state.knownMask() == 0) {
+			program.getBookmarkManager()
+					.setBookmark(addr, BookmarkType.WARNING, getBookmarkCategory(), warning);
+			return 1;
+		}
+		annotateBankSwitch(listing, addr, state, board, viaHelper);
+		return 0;
+	}
+
 	private void annotateBankSwitch(Listing listing, Address addr, BankState newState,
 			BoardModel board, String viaHelper) {
 		int mask = board.mask();
@@ -706,7 +718,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				targetSpaceName = targetOccupant;
 			}
 			else {
-				ComputedWindowModel computed = findComputedWindow(board.computedWindows(), offset);
+				ComputedWindowModel computed = findWindow(board.computedWindows(), offset);
 				if (computed == null) {
 					continue;
 				}
@@ -764,18 +776,9 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		return added;
 	}
 
-	private static WindowModel findWindow(Map<String, WindowModel> windowsByName, long offset) {
-		for (WindowModel w : windowsByName.values()) {
-			if (offset >= w.start() && offset <= w.end()) {
-				return w;
-			}
-		}
-		return null;
-	}
-
-	private static ComputedWindowModel findComputedWindow(
-			Map<String, ComputedWindowModel> computedByName, long offset) {
-		for (ComputedWindowModel w : computedByName.values()) {
+	/** The window (enumerated or computed) whose {@code [start, end]} contains {@code offset}, or null. */
+	private static <T extends Bounded> T findWindow(Map<String, T> windowsByName, long offset) {
+		for (T w : windowsByName.values()) {
 			if (offset >= w.start() && offset <= w.end()) {
 				return w;
 			}
@@ -850,13 +853,20 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 
 	private record OccupantModel(String name, String kind, String onWrite) {}
 
+	/** An address window with an inclusive {@code [start, end]} offset range in base space. */
+	private interface Bounded {
+		long start();
+
+		long end();
+	}
+
 	private record WindowModel(String name, long start, long end,
-			Map<String, OccupantModel> occupants) {}
+			Map<String, OccupantModel> occupants) implements Bounded {}
 
 	/** A computed window driven by a single state field; per-bank overlays are named
 	 *  {@code <name>_B<fieldValue>} by the loader, home bank in base space. */
 	private record ComputedWindowModel(String name, long start, long end, FieldSpec field,
-			String onWrite) {}
+			String onWrite) implements Bounded {}
 
 	/** Everything phase-independent parsed out of the descriptor. */
 	private record BoardModel(int mask, int initialState, List<String> stateBitNames,

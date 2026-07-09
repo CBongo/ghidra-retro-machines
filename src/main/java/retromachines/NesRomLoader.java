@@ -105,9 +105,12 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 		}
 	}
 
+	/** The executable-format name stamped on imports; gated on by {@link NesBankingAnalyzer}. */
+	public static final String NAME = "NES ROM (iNES)";
+
 	@Override
 	public String getName() {
-		return "NES ROM (iNES)";
+		return NAME;
 	}
 
 	@Override

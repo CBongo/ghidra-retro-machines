@@ -60,9 +60,12 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 	private static final String MAP_PATH = "machines/c64.map";
 	private static final String GDT_PATH = "machines/c64.gdt";
 
+	/** The executable-format name stamped on imports; gated on by {@link C64BankingAnalyzer}. */
+	public static final String NAME = "Commodore 64 PRG";
+
 	@Override
 	public String getName() {
-		return "Commodore 64 PRG";
+		return NAME;
 	}
 
 	@Override
