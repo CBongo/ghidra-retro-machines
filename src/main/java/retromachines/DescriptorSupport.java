@@ -43,10 +43,13 @@ import ghidra.program.model.data.DataTypeManager;
 import ghidra.program.model.data.DataUtilities;
 import ghidra.program.model.data.DataUtilities.ClearDataMode;
 import ghidra.program.model.data.FileDataTypeManager;
+import ghidra.program.model.lang.LanguageID;
+import ghidra.program.model.lang.LanguageNotFoundException;
 import ghidra.program.model.listing.CommentType;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.symbol.SourceType;
+import ghidra.program.util.DefaultLanguageService;
 
 /**
  * The system-neutral half of the descriptor-driven loader stack: everything a loader
@@ -82,6 +85,36 @@ final class DescriptorSupport {
 		try (InputStreamReader reader =
 				new InputStreamReader(mapFile.getInputStream(), StandardCharsets.UTF_8)) {
 			return JsonParser.parseReader(reader).getAsJsonObject();
+		}
+	}
+
+	/**
+	 * Resolves the processor language a descriptor should load with: the compiled map's
+	 * {@code system.language} when that language is actually available to Ghidra (bundled
+	 * or installed), otherwise {@code safetyFallbackId}. This is how a loader "stops
+	 * passing a fallback language" once the descriptor's real language is bundled (bead
+	 * grm-bk6): the descriptor names {@code 6510:LE:16:default}, the extension ships it,
+	 * and this returns it; the hard-coded 6502 fallback only fires in a broken install
+	 * where even the descriptor's language is missing.
+	 */
+	static String resolveLanguageId(JsonObject map, String safetyFallbackId) {
+		JsonObject system = map.getAsJsonObject("system");
+		String declared =
+			system != null && system.has("language") ? system.get("language").getAsString() : null;
+		if (declared != null && languageAvailable(declared)) {
+			return declared;
+		}
+		return safetyFallbackId;
+	}
+
+	private static boolean languageAvailable(String id) {
+		try {
+			DefaultLanguageService.getLanguageService()
+					.getLanguageDescription(new LanguageID(id));
+			return true;
+		}
+		catch (LanguageNotFoundException e) {
+			return false;
 		}
 	}
 

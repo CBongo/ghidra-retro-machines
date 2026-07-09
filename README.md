@@ -28,7 +28,9 @@ being re-executed by hand across the community — this extension automates it.
 - **[machines/c64.yaml](machines/c64.yaml)** — the Commodore 64, the first machine:
   full memory map, the 8 PLA bank states driven by `$01`, read/write asymmetry
   (RAM-under-ROM write-through), VIC-II/SID/CIA register structs, KERNAL symbols,
-  copyright-safe ROM slots
+  copyright-safe ROM slots; loads with the bundled
+  [6510 language](data/languages/6510.slaspec) that models the on-die `$00`/`$01` port
+  as registers
 - **[machines/nes-nrom.yaml](machines/nes-nrom.yaml)** — NES NROM, the second machine: physical
   PRG space with computed windows (`PRG[last]` handles NROM-128 mirroring and NROM-256
   with one expression), PPU/APU register structs, board registry keyed by iNES mapper
@@ -61,7 +63,11 @@ being re-executed by hand across the community — this extension automates it.
    bank-state analysis, IO annotation~~ (done; upstream proposal posted as ghidra
    discussion #9349)
 3. ~~Descriptor schema v2 + iNES loader with board registry, NROM end-to-end~~ (done)
-4. Bundled 6510 processor language (bank context register lives there)
+4. ~~Bundled 6510 processor language: models the on-die $00/$01 I/O port as the
+   PORTDDR/PORT registers so bank-switch stores are register dataflow. System-neutral
+   (the port bits' banking meaning is board wiring, not CPU architecture, so no C64
+   naming or bank-context register in the language); the C64 loader resolves it at
+   import with a stock-6502 safety fallback~~ (done)
 5. ~~Machine-independent bank analyzer + strategy library (`register-write`,
    `memory-latch`); NES discrete mappers with per-bank overlays, bank-switch-helper
    call propagation, cross-bank flow retargeting~~ (done — UxROM tier); next:

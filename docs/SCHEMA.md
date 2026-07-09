@@ -123,9 +123,19 @@ implementations today; the others are schema-validated names whose analyzer supp
 lands with the MMC milestones. This mirrors emulator architecture (mapper classes
 keyed by iNES number) — deliberate, per the emulators-as-oracle principle.
 
-- **`register-write`** — the state changes on a store to one fixed address (C64 `$01`).
-  Params: `address`, `mask` (which stored bits are state bits). The mechanism register
-  reads back what was stored, so value recovery may fall back to the tracked in-state.
+- **`register-write`** — the state changes on a store to one fixed port (C64 `$01`).
+  Params: `address`, `mask` (which stored bits are state bits), and optional `register`
+  (the port's name when the CPU models it on-die). The mechanism reads back what was
+  stored, so value recovery may fall back to the tracked in-state. The `register` param
+  bridges the two ways a port can be modeled: on stock 6502 `$01` is memory-mapped, so
+  `STA $01` references address `$0001`; the bundled **6510** language models the on-die
+  port as the `PORT` register, so `STA $01` decodes to `PORT = A` with no memory
+  reference — the strategy recognizes the write either way (address or register), and the
+  register clause is simply ignored when the loaded language lacks it (the 6502 fallback).
+  This is the L1 "mechanism register" of the vision doc: modeling the port as a register
+  makes the bank-switch idiom ordinary register dataflow. Note the language is
+  system-neutral — it names the port anonymously and encodes no banking meaning; the
+  descriptor supplies that.
 - **`memory-latch`** — a store *anywhere* in a range latches the bank; the write hits a
   mapper register, not the ROM at that address (NES discrete mappers; GB MBC and SMS
   are the same shape). Params: `start`/`end` (the latch range), `mask` and `shift`

@@ -177,9 +177,39 @@ task validateSketches {
 	}
 }
 
+//----------------------------------------------------------------------------------
+// Bundled sleigh language build (bead grm-bk6): compile data/languages/*.slaspec -> .sla.
+//
+// buildExtension.gradle does NOT compile sleigh, and Ghidra ships languages pre-compiled,
+// so an extension that bundles a processor language must compile it itself. This mirrors
+// the canonical mechanism in <ghidra>/Extensions/Ghidra/Skeleton/data/buildLanguage.xml:
+// run ghidra.pcodeCPort.slgh_compile.SleighCompile with the SoftwareModeling/Generic/
+// Utility lib jars on the classpath (antlr lives among them), passing '-a' to compile
+// every .slaspec in data/languages. The produced .sla sits beside its .slaspec and is
+// packaged into the extension by buildExtension (which ships data/).
+//----------------------------------------------------------------------------------
+
+task sleighCompile(type: JavaExec) {
+	group = "Ghidra Retro Machines"
+	description = "Compile bundled sleigh languages (data/languages/*.slaspec -> .sla)"
+	mainClass = 'ghidra.pcodeCPort.slgh_compile.SleighCompile'
+	classpath = files(
+		fileTree(dir: ghidraInstallDir + '/Ghidra/Framework/SoftwareModeling/lib', include: '*.jar'),
+		fileTree(dir: ghidraInstallDir + '/Ghidra/Framework/Generic/lib', include: '*.jar'),
+		fileTree(dir: ghidraInstallDir + '/Ghidra/Framework/Utility/lib', include: '*.jar')
+	)
+	jvmArgs = ['-Xmx2048M']
+	workingDir = file('data')
+	// '-a' compiles every language in the dir; sleighArgs.txt carries per-module options.
+	args = ['-i', 'sleighArgs.txt', '-a', './languages']
+
+	inputs.files(fileTree(dir: 'data/languages', includes: ['*.slaspec', '*.sinc', '*.pspec', '*.cspec', '*.ldefs']))
+	outputs.files(fileTree(dir: 'data/languages', include: '*.sla'))
+}
+
 // buildExtension is defined by the applied support/buildExtension.gradle (invoked via the
 // distributeExtension task above); it doesn't exist at this file's configuration time, so
 // attach the dependency lazily once Gradle resolves the task graph.
 tasks.matching { it.name == 'buildExtension' }.configureEach {
-	dependsOn 'buildGdt', 'buildMap'
+	dependsOn 'buildGdt', 'buildMap', 'sleighCompile'
 }

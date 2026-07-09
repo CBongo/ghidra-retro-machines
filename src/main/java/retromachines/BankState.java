@@ -23,11 +23,14 @@ package retromachines;
  * known"); the dataflow merge at control-flow joins ({@link #merge}) only ever shrinks
  * {@code knownMask}, so the worklist fixpoint terminates.
  * <p>
- * This is the value+mask model of Ghidra's {@code RegisterValue}, reimplemented on ints:
- * binding it to a real context register (so {@code ProgramContext} carries it natively)
- * requires the bundled 6510 language's {@code c64bank} register to exist first (bead
- * grm-bk6); until then the engine stamps the context register only when the program's
- * language actually declares it.
+ * This is the value+mask model of Ghidra's {@code RegisterValue}, reimplemented on ints.
+ * Binding it to a real context register (so {@code ProgramContext} carries it natively)
+ * needs an <em>application-layer</em> bank-state register to exist. The bundled 6510
+ * language (grm-bk6) deliberately does <em>not</em> declare one: it is system-neutral and
+ * models only the on-die {@code PORT} register, since the port bits' banking meaning is
+ * C64 board wiring, not CPU architecture. So that channel awaits a per-system pspec alias
+ * or the RFC #9349 resolution hook; until then the engine stamps a context register only
+ * when the program's language actually declares one (today: none).
  */
 public record BankState(int knownMask, int bits) {
 

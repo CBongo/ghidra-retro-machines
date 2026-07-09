@@ -18,6 +18,7 @@ package retromachines;
 import java.util.Set;
 
 import ghidra.program.model.address.Address;
+import ghidra.program.model.lang.Register;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
@@ -247,6 +248,31 @@ final class StoredValueScanner {
 	static boolean readsAddress(Instruction instr, Address addr) {
 		for (Reference ref : instr.getReferencesFrom()) {
 			if (ref.getToAddress().equals(addr) && ref.getReferenceType().isRead()) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Whether {@code instr} writes {@code reg} (e.g. {@code STA PORT} on the bundled 6510
+	 * language, where the on-die $01 port is a register, not a memory address). Used
+	 * alongside {@link #writesAddress} so a mechanism modeled as a CPU register is detected
+	 * the same way as one modeled as a memory-mapped address.
+	 */
+	static boolean writesRegister(Instruction instr, Register reg) {
+		for (Object o : instr.getResultObjects()) {
+			if (o instanceof Register r && r.equals(reg)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Whether {@code instr} reads {@code reg} (e.g. {@code LDA PORT}); see {@link #writesRegister}. */
+	static boolean readsRegister(Instruction instr, Register reg) {
+		for (Object o : instr.getInputObjects()) {
+			if (o instanceof Register r && r.equals(reg)) {
 				return true;
 			}
 		}

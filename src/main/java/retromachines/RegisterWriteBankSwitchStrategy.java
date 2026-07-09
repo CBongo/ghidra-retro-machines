@@ -18,6 +18,7 @@ package retromachines;
 import com.google.gson.JsonObject;
 
 import ghidra.program.model.address.Address;
+import ghidra.program.model.lang.Register;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Program;
 
@@ -34,14 +35,22 @@ import ghidra.program.model.listing.Program;
  *     LDA $01 / AND #$F8 / ORA #$05 / STA $01   ; set bank 5, preserving cassette bits
  *     LDA $01 / AND #$FE / STA $01              ; clear LORAM only ("BASIC off")
  * </pre>
- * This strategy's hooks into the scan: a write to the mechanism address (by any store)
- * aborts the scan, and a {@code LD<reg>} of the mechanism address itself resolves the
- * base value to the dataflow's tracked in-state at the store (per-bit, possibly
- * partial) -- the port reads back what was stored, unlike a memory latch.
+ * This strategy's hooks into the scan: a write to the mechanism (by any store) aborts the
+ * scan, and a {@code LD<reg>} of the mechanism itself resolves the base value to the
+ * dataflow's tracked in-state at the store (per-bit, possibly partial) -- the port reads
+ * back what was stored, unlike a memory latch.
+ * <p>
+ * The mechanism is recognized by <em>either</em> a memory address (stock 6502: the port is
+ * memory-mapped, so {@code STA $01} references {@code $0001}) <em>or</em> an on-die CPU
+ * register (the bundled 6510 language models the $01 port as the {@code PORT} register, so
+ * {@code STA $01} decodes to {@code PORT = A} with no memory reference at all). The
+ * descriptor supplies the register name via the optional {@code register} param; when the
+ * loaded language lacks that register (the 6502 fallback), only the address path fires.
  */
 public class RegisterWriteBankSwitchStrategy implements BankSwitchStrategy {
 
 	private Address mechAddr;
+	private Register mechReg;
 	private int mask;
 
 	@Override
@@ -53,25 +62,39 @@ public class RegisterWriteBankSwitchStrategy implements BankSwitchStrategy {
 	public void configure(Program program, JsonObject params, int stateMask) {
 		long address = params.get("address").getAsLong();
 		mechAddr = program.getAddressFactory().getDefaultAddressSpace().getAddress(address);
+		mechReg = params.has("register") ? program.getRegister(params.get("register").getAsString())
+				: null;
 		mask = params.has("mask") ? params.get("mask").getAsInt() : stateMask;
+	}
+
+	/** Whether {@code instr} writes the mechanism, however it is modeled (address/register). */
+	private boolean writesMechanism(Instruction instr) {
+		return StoredValueScanner.writesAddress(instr, mechAddr) ||
+			(mechReg != null && StoredValueScanner.writesRegister(instr, mechReg));
+	}
+
+	/** Whether {@code instr} reads the mechanism back (LDA $01 / LDA PORT). */
+	private boolean readsMechanism(Instruction instr) {
+		return StoredValueScanner.readsAddress(instr, mechAddr) ||
+			(mechReg != null && StoredValueScanner.readsRegister(instr, mechReg));
 	}
 
 	private final StoredValueScanner.Hooks hooks = new StoredValueScanner.Hooks() {
 		@Override
 		public boolean isMechanismWrite(Instruction instr) {
-			return StoredValueScanner.writesAddress(instr, mechAddr);
+			return writesMechanism(instr);
 		}
 
 		@Override
 		public BankState resolveLoad(Instruction loadInstr, BankState inStateAtStore) {
 			// x is the port's value as tracked in-state at our own store.
-			return StoredValueScanner.readsAddress(loadInstr, mechAddr) ? inStateAtStore : null;
+			return readsMechanism(loadInstr) ? inStateAtStore : null;
 		}
 	};
 
 	@Override
 	public BankState computeSwitch(Program program, Instruction instr, BankState inState) {
-		if (!StoredValueScanner.writesAddress(instr, mechAddr)) {
+		if (!writesMechanism(instr)) {
 			return null;
 		}
 

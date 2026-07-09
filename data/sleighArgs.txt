@@ -1,0 +1,3 @@
+# Sleigh compiler options (one per line, each starting with '-') applied to every
+# language in this module. The -a option must NOT be listed here (it is passed on the
+# command line by the build's sleighCompile task).

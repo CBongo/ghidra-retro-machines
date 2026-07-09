@@ -10,10 +10,12 @@ system:
   id: c64
   name: Commodore 64
   cpu:
-    # Bundled with the extension (precedent: grue74/ghidra-c64helpers).
-    # The 6510 language also declares the bank context register (see banking).
+    # Bundled with the extension (bead grm-bk6; precedent: grue74/ghidra-c64helpers). The
+    # 6510 models the on-die $00/$01 I/O port as the PORTDDR/PORT registers, so bank-switch
+    # stores (STA $01) are register dataflow. The loader resolves this language at import
+    # time and only falls back to stock 6502 if it is somehow unavailable, so no
+    # fallback_language is declared here.
     language: "6510:LE:16:default"
-    fallback_language: "6502:LE:16:default"   # until the 6510 language is bundled
 
 memory:
   regions:                        # always visible, never banked
@@ -121,12 +123,20 @@ banking:
     - { name: HIRAM,  bits: 1 }
     - { name: CHAREN, bits: 1 }
   mechanisms:                     # strategy instances; NES mappers add memory-latch etc.
-    - strategy: register-write    # store to a fixed address; masked value is the state
+    - strategy: register-write    # store to the port; masked value is the state
       params:
-        address: 0x0001
+        address: 0x0001           # port address (6502 fallback: STA $01 hits memory)
+        register: PORT            # on-die port register (6510: STA $01 -> PORT = A)
         mask: 0x07                # bits 0-2; bits 3-5 are cassette lines
       sets: [LORAM, HIRAM, CHAREN]
-  context_register: c64bank       # declared in the bundled 6510 language (TMode-style)
+  # Names the (future) application-layer channel that will carry bank state into
+  # reference resolution (the RFC #9349 hook). Per the grm-bk6 design correction the
+  # bundled 6510 language is SYSTEM-NEUTRAL and deliberately declares NO such register --
+  # the port bits' banking meaning is C64 board wiring, not 6510 CPU architecture -- so no
+  # register named c64bank exists yet and stampContextRegister stays dormant (it no-ops
+  # when the register is absent). Bank state is carried analyzer-side (BankState value+mask)
+  # until that channel is realized (a per-system pspec alias or the resolution hook).
+  context_register: c64bank
   initial_state: { LORAM: 1, HIRAM: 1, CHAREN: 1 }   # PRG default: ($37 & 7) = %111
   # PLA truth table, no cartridge (GAME/EXROM high), keyed by state-field values (the
   # packed row value is computed at map-compile time). Source: c64-wiki Memory_Map;

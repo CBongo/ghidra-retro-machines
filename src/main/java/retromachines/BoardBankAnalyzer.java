@@ -93,8 +93,10 @@ import ghidra.util.task.TaskMonitor;
  * alone), marked primary. Unknown bits assume their initial-state value.</li>
  * <li><b>Context stamping</b>: when the program's language actually declares the
  * descriptor's {@code banking.context_register}, fully-known states are stamped over
- * instruction ranges via {@code ProgramContext.setValue}. Stock languages (6502) don't
- * declare it, so this stays dormant until the bundled 6510 language lands (grm-bk6).</li>
+ * instruction ranges via {@code ProgramContext.setValue}. No shipped language declares a
+ * bank-state register -- the bundled 6510 (grm-bk6) models the on-die port but stays
+ * system-neutral about banking -- so this stays dormant until an application-layer state
+ * register exists (a per-system pspec alias or the RFC #9349 resolution hook).</li>
  * </ul>
  * Concrete subclasses (e.g. {@link C64BankingAnalyzer}) supply only the loader gate,
  * the descriptor path, and the analyzer's name -- no analysis logic.
@@ -789,9 +791,10 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * Stamps fully-known bank states into the descriptor's
 	 * {@code banking.context_register} over instruction ranges -- the L4 state channel
 	 * the RFC's resolution hook consumes. Programs whose language does not declare the
-	 * register (today: everything, until the bundled 6510 language of grm-bk6) skip this
-	 * silently; the value+mask model of {@link BankState} maps 1:1 onto
-	 * {@code RegisterValue} when partial stamping becomes worthwhile.
+	 * register (today: everything -- the bundled 6510 stays system-neutral and declares no
+	 * bank-state register, only the on-die port) skip this silently; the value+mask model
+	 * of {@link BankState} maps 1:1 onto {@code RegisterValue} when partial stamping
+	 * becomes worthwhile.
 	 */
 	private void stampContextRegister(Program program, JsonObject banking,
 			Map<Address, BankState> stateIn, Listing listing, int mask, MessageLog log) {

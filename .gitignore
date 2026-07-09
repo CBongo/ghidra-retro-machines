@@ -9,6 +9,10 @@ dist/
 # Generated runtime map files (JSON, see docs/MAP_FORMAT.md) — build output, never committed
 data/machines/*.map
 
+# Compiled sleigh languages — build output of the sleighCompile task (from the committed
+# .slaspec/.sinc sources); regenerated on every build, never committed
+data/languages/*.sla
+
 # IDE
 .classpath
 .project

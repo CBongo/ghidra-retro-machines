@@ -53,7 +53,9 @@ import retromachines.DescriptorSupport.Perms;
  */
 public class C64PrgLoader extends AbstractProgramWrapperLoader {
 
-	private static final String LANGUAGE_ID = "6502:LE:16:default";
+	// Safety fallback only: the descriptor names the bundled 6510 language, which this
+	// loader resolves at import time; stock 6502 is used solely if the 6510 is unavailable.
+	private static final String FALLBACK_LANGUAGE_ID = "6502:LE:16:default";
 	private static final String COMPILER_SPEC_ID = "default";
 	private static final String MAP_PATH = "machines/c64.map";
 	private static final String GDT_PATH = "machines/c64.gdt";
@@ -75,7 +77,17 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 			return loadSpecs;
 		}
 
-		LanguageCompilerSpecPair pair = new LanguageCompilerSpecPair(LANGUAGE_ID, COMPILER_SPEC_ID);
+		// Load with the descriptor's declared language (the bundled 6510, which models the
+		// on-die $00/$01 port as a register); fall back to stock 6502 only if that language
+		// is somehow unavailable. See DescriptorSupport.resolveLanguageId.
+		String languageId = FALLBACK_LANGUAGE_ID;
+		try {
+			languageId = DescriptorSupport.resolveLanguageId(loadMap(), FALLBACK_LANGUAGE_ID);
+		}
+		catch (IOException e) {
+			// descriptor unreadable here -> keep the safety fallback; load() will report it
+		}
+		LanguageCompilerSpecPair pair = new LanguageCompilerSpecPair(languageId, COMPILER_SPEC_ID);
 		loadSpecs.add(new LoadSpec(this, 0, pair, true));
 		return loadSpecs;
 	}
