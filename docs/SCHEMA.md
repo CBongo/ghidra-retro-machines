@@ -221,10 +221,14 @@ Castlevania) are genuinely static-unresolvable and keep the ambiguity marker.
 
 Deliberately tiny, validated by `MapCompiler` at build time, evaluated by the bank
 engine at analysis time: integers (decimal or `0x` hex), declared state-field names,
-the keywords `last` / `second_last` (bank indices relative to the image's end) and
-`offset` (window-relative CPU offset), operators `+ - *`, parentheses. **If a board
-needs more, that is a signal to add a strategy or a schema feature, not to grow a
-Turing tarpit** (vision doc §5.3). Guard this in review.
+the keywords `last` / `second_last` (byte offsets of the last / second-to-last
+window-sized bank, relative to the image's end), operators `+ - *`, parentheses. The
+window-relative CPU offset is added implicitly by the contiguous block mapping, so it
+is not an expression term. **If a board needs more, that is a signal to add a strategy
+or a schema feature, not to grow a Turing tarpit** (vision doc §5.3). Guard this in
+review — in particular, keep this keyword set in lockstep with the runtime evaluator
+(`DescriptorSupport.ExprParser`); a keyword the compiler accepts but the runtime cannot
+resolve compiles clean yet silently fails to place its window.
 
 ## Mode-dependent layouts
 

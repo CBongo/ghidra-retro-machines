@@ -86,8 +86,8 @@ or `maps` (computed).
 
 **Computed windows** (`maps`) show a slice of a physical space:
 `"maps": { "space": "PRG", "expr": "bank * 0x4000" }`. The expression was validated by
-MapCompiler at build time (grammar: integers, state-field names, `last`/`second_last`/
-`offset`, `+ - *`, parentheses — see `docs/SCHEMA.md`) but is passed through as a
+MapCompiler at build time (grammar: integers, state-field names, `last`/`second_last`,
+`+ - *`, parentheses — see `docs/SCHEMA.md`) but is passed through as a
 string; the bank engine evaluates it at analysis time. A computed window may carry a
 window-level `on_write` (typically `"mechanism"`: stores into the range are bank-switch
 events, not memory writes). The YAML `size:` alternative to `end:` is resolved at

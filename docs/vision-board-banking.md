@@ -227,7 +227,8 @@ layouts:
 ```
 
 The expression language stays deliberately tiny: state fields, integer arithmetic,
-`last`/`second_last`, window-relative offset. If a board needs more, that is a signal to
+`last`/`second_last` (the window-relative offset is added implicitly by the contiguous
+block mapping, not written in the expression). If a board needs more, that is a signal to
 add a strategy or a schema feature, not to grow a Turing tarpit.
 
 ### 5.4 Everything else generalizes unchanged

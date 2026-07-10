@@ -61,9 +61,14 @@ import com.google.gson.GsonBuilder;
  */
 public class MapCompiler {
 
-	/** Expression keywords usable in {@code maps:} alongside state-field names. */
+	/**
+	 * Expression keywords usable in {@code maps:} alongside state-field names. Kept in lockstep
+	 * with the runtime evaluator ({@code DescriptorSupport.ExprParser}): a keyword the compiler
+	 * accepts but the runtime cannot resolve produces a descriptor that compiles clean yet fails
+	 * to place its window at load time.
+	 */
 	private static final Set<String> EXPR_KEYWORDS =
-		Set.of("last", "second_last", "offset");
+		Set.of("last", "second_last");
 
 	public static void main(String[] args) throws Exception {
 		if (args.length != 2) {
@@ -377,7 +382,7 @@ public class MapCompiler {
 	 * Validates a computed-window expression like {@code PRG[bank * 0x4000]} and returns
 	 * its structured form {@code {space, expr}}. The grammar is deliberately tiny
 	 * (vision doc §5.3): integers, declared state-field names, the keywords
-	 * {@code last}/{@code second_last}/{@code offset}, {@code + - *}, and parentheses.
+	 * {@code last}/{@code second_last}, {@code + - *}, and parentheses.
 	 * The expression is validated here but kept as a string in the .map; runtime
 	 * evaluation is the bank engine's job (M2+).
 	 */
