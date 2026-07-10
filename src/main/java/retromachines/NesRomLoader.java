@@ -316,6 +316,13 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 						continue; // bank values beyond the image simply don't exist
 					}
 					boolean home = v == bankedField.initialValue();
+					// blockName also becomes the overlay AddressSpace's name (MemoryBlockUtils
+					// names the overlay space after the block when isOverlay=true) -- empirically
+					// confirmed unmangled (tools/banktest checkNesBanktest N3, bead grm-5tl.17):
+					// AddressSpace.getName() equals this exact string, so BoardBankAnalyzer's
+					// addOverlayRef() can look the space up by "<window>_B<bank>" with no
+					// separate name-mapping table. (OverlayNaming doesn't exist yet; grm-5tl.14
+					// may want to move this note there.)
 					String blockName = home ? name : name + "_B" + v;
 					createWindowBlock(program, baseSpace, !home, blockName,
 						name + " = PRG[" + expr + "], " + bankedField.name() + "=" + v +

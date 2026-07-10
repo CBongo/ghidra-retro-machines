@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# C64 banking-analyzer regression suite driver (bead grm-wzl).
+# C64 + NES banking-analyzer regression suite driver (bead grm-wzl, extended to NES
+# by grm-5tl.17).
 #
 # Usage: run-banktest.sh [check|bless]
 #
@@ -41,25 +42,29 @@ WORK="$(mktemp -d)"
 fail=0
 
 "$PYTHON" "$SCRIPT_DIR/mkbanktest.py" "$WORK/prg" || { echo "FAIL: mkbanktest.py" >&2; exit 1; }
+"$PYTHON" "$SCRIPT_DIR/mknesbanktest.py" "$WORK/nes" || { echo "FAIL: mknesbanktest.py" >&2; exit 1; }
 
-for name in banktest banktest2 banktest3 banktest4; do
-	proj="$WORK/proj_$name"
+# Imports $2 (a .prg or .nes fixture) via $3 (the loader name), runs VerifyBankTest.java,
+# extracts the normalized dump, and check|bless's it against expected/$1.dump.
+run_one() {
+	local name="$1" fixture="$2" loader="$3"
+	local proj="$WORK/proj_$name"
 	mkdir -p "$proj"
-	log="$WORK/$name.log"
-	echo "== $name: importing $name.prg via analyzeHeadless =="
+	local log="$WORK/$name.log"
+	echo "== $name: importing $(basename "$fixture") via analyzeHeadless ($loader) =="
 	"$GHIDRA_HEADLESS" "$(native "$proj")" headless \
-		-import "$(native "$WORK/prg/$name.prg")" \
-		-loader C64PrgLoader \
+		-import "$(native "$fixture")" \
+		-loader "$loader" \
 		-scriptPath "$(native "$SCRIPT_DIR")" \
 		-postScript VerifyBankTest.java \
 		>"$log" 2>&1
-	status=$?
+	local status=$?
 
 	# Headless wraps script println output as
 	#   "INFO  VerifyBankTest.java> <msg> (GhidraScript)  "
 	# -- strip the prefix, the " (GhidraScript)" suffix, trailing whitespace and
 	# CRs, then cut the normalized dump out by its markers.
-	stripped="$WORK/$name.out"
+	local stripped="$WORK/$name.out"
 	sed 's/\r$//; s/^.*VerifyBankTest\.java> //; s/ (GhidraScript)[[:space:]]*$//' \
 		"$log" >"$stripped"
 	awk '/^=== BANKDUMP BEGIN ===$/{f=1;next} /^=== BANKDUMP END ===$/{f=0} f' \
@@ -69,12 +74,12 @@ for name in banktest banktest2 banktest3 banktest4; do
 	if [ $status -ne 0 ]; then
 		echo "FAIL: analyzeHeadless exited $status for $name (log: $log)"
 		fail=1
-		continue
+		return
 	fi
 	if ! grep -q '^=== BANKDUMP END ===$' "$stripped"; then
 		echo "FAIL: no BANKDUMP section for $name -- did VerifyBankTest run? (log: $log)"
 		fail=1
-		continue
+		return
 	fi
 	if ! grep -q '^SUITE PASS$' "$stripped"; then
 		echo "FAIL: criteria failed for $name (log: $log)"
@@ -96,7 +101,13 @@ for name in banktest banktest2 banktest3 banktest4; do
 			fail=1
 		fi
 	fi
+}
+
+for name in banktest banktest2 banktest3 banktest4; do
+	run_one "$name" "$WORK/prg/$name.prg" C64PrgLoader
 done
+
+run_one nesbanktest "$WORK/nes/nesbanktest.nes" NesRomLoader
 
 if [ $fail -ne 0 ]; then
 	echo "SUITE FAILED (work dir kept for inspection: $WORK)"

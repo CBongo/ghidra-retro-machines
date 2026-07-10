@@ -1,0 +1,10 @@
+BLOCK APU_IO 4000-401f overlay=false
+BLOCK PPU_REGS 2000-2007 overlay=false
+BLOCK PRG_HI c000-ffff overlay=false
+BLOCK PRG_LO 8000-bfff overlay=false
+BLOCK PRG_LO_B1 8000-bfff overlay=true
+BLOCK PRG_LO_B2 8000-bfff overlay=true
+BLOCK PRG_LO_B3 8000-bfff overlay=true
+BLOCK RAM 0000-07ff overlay=false
+COMMENT c002 bank -> 2 (bank=2)
+REF c005 -> PRG_LO_B2::8005 UNCONDITIONAL_CALL primary=true

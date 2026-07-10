@@ -1,2 +1,24 @@
+BLOCK BASIC a000-bfff overlay=false
+BLOCK CHARGEN d000-dfff overlay=true
+BLOCK CIA1 dc00-dcff overlay=false
+BLOCK CIA2 dd00-ddff overlay=false
+BLOCK COLOR_RAM d800-dbff overlay=false
+BLOCK IO1 de00-deff overlay=false
+BLOCK IO2 df00-dfff overlay=false
+BLOCK KERNAL e000-ffff overlay=false
+BLOCK OS_WORKSPACE 0200-03ff overlay=false
+BLOCK P6510 0000-0001 overlay=false
+BLOCK PRG 0801-0808 overlay=false
+BLOCK RAM_A000 a000-bfff overlay=true
+BLOCK RAM_C000 c000-cfff overlay=false
+BLOCK RAM_D000 d000-dfff overlay=true
+BLOCK RAM_E000 e000-ffff overlay=true
+BLOCK RAM_MAIN_0800 0800-0800 overlay=false
+BLOCK RAM_MAIN_0809 0809-9fff overlay=false
+BLOCK SCREEN_RAM 0400-07ff overlay=false
+BLOCK SID d400-d7ff overlay=false
+BLOCK STACK 0100-01ff overlay=false
+BLOCK VIC d000-d3ff overlay=false
+BLOCK ZEROPAGE 0002-00ff overlay=false
 COMMENT 0803 bank -> 7 (BASIC/IO/KERNAL)
 REF 0805 -> RAM_A000::a000 WRITE primary=true
