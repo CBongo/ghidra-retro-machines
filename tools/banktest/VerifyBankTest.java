@@ -50,7 +50,10 @@ public class VerifyBankTest extends GhidraScript {
 		dump();
 
 		String name = currentProgram.getName();
-		if (name.contains("banktest3")) {
+		if (name.contains("banktest4")) {
+			checkBanktest4();
+		}
+		else if (name.contains("banktest3")) {
 			checkBanktest3();
 		}
 		else if (name.contains("banktest2")) {
@@ -221,6 +224,45 @@ public class VerifyBankTest extends GhidraScript {
 			hasWarningBookmark(0x080F) && !eol(0x080F).contains("bank ->"),
 			"join-target store is ambiguous at 080f: warning=" + hasWarningBookmark(0x080F) +
 				" comment=\"" + eol(0x080F) + "\"");
+	}
+
+	// ------------------------------------------------------------------
+	// banktest4.prg criteria (READ_WRITE reference split, bead grm-5tl.16)
+	// ------------------------------------------------------------------
+
+	private void checkBanktest4() {
+		// D1: INC $A000 in home state 7 is a read-modify-write across the write-under-ROM
+		// boundary: it reads BASIC (the LOROM home occupant in state 7) and writes RAM_A000
+		// (BASIC's on_write target, not home). The write side must get a primary WRITE
+		// overlay ref to RAM_A000; the pre-fix bug pointed the *whole* RMW (including the
+		// read) at the write target via a single overlay ref.
+		Reference w = findOverlayRef(0x0805, "RAM_A000", 0xA000);
+		criterion("D1", w != null && w.getReferenceType().isWrite() && w.isPrimary(),
+			"INC $A000 in bank 7 gets a primary WRITE overlay ref to RAM_A000: " + describe(w));
+
+		// D2: the read side must NOT be redirected to RAM_A000 (or any overlay space) --
+		// BASIC is the home occupant for LOROM in state 7, so the read is already correctly
+		// resolved by the original base-space reference and needs no overlay ref. A READ
+		// overlay ref to RAM_A000 here is exactly the pre-fix misdirection bug.
+		Reference readOverlay = null;
+		Instruction instr = currentProgram.getListing().getInstructionAt(addr(0x0805));
+		if (instr != null) {
+			for (Reference r : instr.getReferencesFrom()) {
+				if (r.getReferenceType().isRead() && r.getToAddress().getAddressSpace().isOverlaySpace()) {
+					readOverlay = r;
+					break;
+				}
+			}
+		}
+		criterion("D2", readOverlay == null,
+			"no READ overlay ref at 0805 (read resolves via base-space ref to home BASIC): " +
+				describe(readOverlay));
+
+		// D3: exactly one overlay reference total from this instruction -- the primary WRITE
+		// ref -- confirming the read side was left alone rather than also redirected.
+		criterion("D3", overlayRefCount(0x0805) == 1,
+			"exactly one overlay ref (the WRITE) at 0805 (" + overlayRefCount(0x0805) +
+				" found)");
 	}
 
 	// ------------------------------------------------------------------

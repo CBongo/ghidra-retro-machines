@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Hand-assembles the two C64 banking-analyzer regression PRGs.
+"""Hand-assembles the C64 banking-analyzer regression PRGs.
 
 Usage: mkbanktest.py <output-dir>
 
-Writes banktest.prg and banktest2.prg (2-byte little-endian load-address
-header, then code) into <output-dir>. No dependencies beyond Python 3.
+Writes banktest.prg, banktest2.prg, banktest3.prg, and banktest4.prg (2-byte
+little-endian load-address header, then code) into <output-dir>. No
+dependencies beyond Python 3.
 
 These programs exercise C64BankingAnalyzer's forward per-bit dataflow of the
 $01 bank state, the masked-RMW backward scan, partial-knowledge comments,
@@ -157,6 +158,28 @@ BANKTEST3 = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# banktest4.prg -- READ_WRITE reference split across a write-under-ROM
+# boundary (bead grm-5tl.16)
+# (load $0801)
+#
+# 0801  A9 37     LDA #$37
+# 0803  85 01     STA $01      ; bank -> 7 (home state: LOROM occupant = BASIC)
+# 0805  EE 00 A0  INC $A000    ; D1: read-modify-write in home state 7 --
+#                              ;     read occupant is BASIC (home -> no overlay
+#                              ;     read ref, base ref resolves it), write
+#                              ;     occupant is RAM_A000 (write-under-ROM,
+#                              ;     non-home -> WRITE overlay ref, primary)
+# 0808  60        RTS
+# ---------------------------------------------------------------------------
+BANKTEST4 = [
+    0xA9, 0x37,          # 0801 LDA #$37
+    0x85, 0x01,          # 0803 STA $01
+    0xEE, 0x00, 0xA0,    # 0805 INC $A000    (D1)
+    0x60,                # 0808 RTS
+]
+
+
 def main():
     if len(sys.argv) != 2:
         sys.exit("usage: mkbanktest.py <output-dir>")
@@ -164,7 +187,7 @@ def main():
     os.makedirs(outdir, exist_ok=True)
 
     for name, code in (("banktest.prg", BANKTEST), ("banktest2.prg", BANKTEST2),
-                       ("banktest3.prg", BANKTEST3)):
+                       ("banktest3.prg", BANKTEST3), ("banktest4.prg", BANKTEST4)):
         path = os.path.join(outdir, name)
         with open(path, "wb") as f:
             f.write(prg(code))
@@ -185,6 +208,10 @@ def main():
     assert BANKTEST3[0x080B - LOAD_ADDR] == 0xF0  # BEQ
     assert (0x080D + BANKTEST3[0x080C - LOAD_ADDR]) == 0x080F  # BEQ -> join store
     assert BANKTEST3[0x0812 - LOAD_ADDR] == 0x86  # STX $01 (helper body)
+
+    # Sanity-check banktest4's INC $A000 encoding.
+    assert BANKTEST4[0x0805 - LOAD_ADDR] == 0xEE  # INC absolute
+    assert (BANKTEST4[0x0806 - LOAD_ADDR] | (BANKTEST4[0x0807 - LOAD_ADDR] << 8)) == 0xA000
 
 
 if __name__ == "__main__":

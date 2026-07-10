@@ -42,7 +42,7 @@ fail=0
 
 "$PYTHON" "$SCRIPT_DIR/mkbanktest.py" "$WORK/prg" || { echo "FAIL: mkbanktest.py" >&2; exit 1; }
 
-for name in banktest banktest2 banktest3; do
+for name in banktest banktest2 banktest3 banktest4; do
 	proj="$WORK/proj_$name"
 	mkdir -p "$proj"
 	log="$WORK/$name.log"
