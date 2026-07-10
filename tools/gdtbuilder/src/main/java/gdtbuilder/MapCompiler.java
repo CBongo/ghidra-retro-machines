@@ -199,9 +199,11 @@ public class MapCompiler {
 			throw new IllegalArgumentException("descriptor 'memory:' is missing 'regions:' list");
 		}
 		List<Map<String, Object>> out = new ArrayList<>();
+		String loadTargetName = null;
 		for (Map<String, Object> region : regions) {
 			Map<String, Object> r = new LinkedHashMap<>();
-			r.put("name", requireString(region, "name", "memory.regions[]"));
+			String name = requireString(region, "name", "memory.regions[]");
+			r.put("name", name);
 			r.put("start", requireAddr(region, "start", "memory.regions[]"));
 			r.put("end", requireAddr(region, "end", "memory.regions[]"));
 			r.put("kind", requireString(region, "kind", "memory.regions[]"));
@@ -210,6 +212,16 @@ public class MapCompiler {
 			copyIfPresent(region, r, "readable");
 			copyIfPresent(region, r, "writable");
 			copyIfPresent(region, r, "executable");
+			copyIfPresent(region, r, "load_target");
+			if (Boolean.TRUE.equals(region.get("load_target"))) {
+				if (loadTargetName != null) {
+					throw new IllegalArgumentException(
+						"descriptor 'memory.regions[]' declares 'load_target: true' on both '" +
+							loadTargetName + "' and '" + name +
+							"'; at most one region may be the load target");
+				}
+				loadTargetName = name;
+			}
 			out.add(r);
 		}
 		return out;

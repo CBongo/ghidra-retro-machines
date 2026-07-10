@@ -37,6 +37,7 @@ import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.data.FileDataTypeManager;
 import ghidra.program.model.lang.LanguageCompilerSpecPair;
 import ghidra.program.model.listing.Program;
+import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.symbol.SourceType;
 import ghidra.util.exception.CancelledException;
 import retromachines.DescriptorSupport.Perms;
@@ -138,15 +139,24 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 				regionsByName.put(region.get("name").getAsString(), region);
 			}
 
+			boolean sawLoadTarget = false;
 			for (JsonObject region : regionsByName.values()) {
-				// RAM_MAIN is carved around the PRG image; everything else is generic
-				if (region.get("name").getAsString().equals("RAM_MAIN")) {
+				// The region flagged load_target: true (c64.map's RAM_MAIN) is carved around
+				// the PRG image; everything else is generic. Which region (if any) plays this
+				// role is entirely descriptor-driven -- see docs/MAP_FORMAT.md's load_target.
+				if (region.has("load_target") && region.get("load_target").getAsBoolean()) {
+					sawLoadTarget = true;
 					createRamMainSplit(program, baseSpace, region, loadAddr, prgLength, log);
 				}
 				else {
 					DescriptorSupport.createRegionBlock(program, baseSpace, region, "c64.map",
 						gdtMgr, log);
 				}
+			}
+			if (!sawLoadTarget) {
+				log.appendMsg("c64.map has no region flagged load_target: true; PRG image will " +
+					"not be carved into any region (all regions created as generic uninitialized " +
+					"blocks)");
 			}
 
 			// --- PRG image block ---
@@ -182,14 +192,18 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 							? homeState.get(windowName).getAsString()
 							: null;
 
+					List<DescriptorSupport.NamedCandidate> occupantCandidates = new ArrayList<>();
 					JsonArray occupants = window.getAsJsonArray("occupants");
+					FileDataTypeManager gdtMgrForCandidates = gdtMgr;
 					for (JsonElement oe : occupants) {
 						JsonObject occupant = oe.getAsJsonObject();
 						String occupantName = occupant.get("name").getAsString();
-						boolean isHome = occupantName.equals(homeOccupantName);
-						createWindowOccupant(program, baseSpace, occupant, window, isHome, gdtMgr,
-							log);
+						occupantCandidates.add(new DescriptorSupport.NamedCandidate(occupantName,
+							(p, bs, isHome, l) -> createWindowOccupant(p, bs, occupant, window,
+								isHome, gdtMgrForCandidates, l)));
 					}
+					DescriptorSupport.placeHomeInBaseWindow(program, baseSpace, occupantCandidates,
+						homeOccupantName, log);
 				}
 			}
 
@@ -237,13 +251,14 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 	}
 
 	// ------------------------------------------------------------------
-	// RAM_MAIN carve (the one region the generic path can't build: the PRG
-	// image lands inside it, and Ghidra can't overlap blocks)
+	// load_target region carve (the one region the generic path can't build: the
+	// PRG image lands inside it, and Ghidra can't overlap blocks)
 	// ------------------------------------------------------------------
 
 	private void createRamMainSplit(Program program, AddressSpace baseSpace, JsonObject region,
 			long loadAddr, long prgLength, MessageLog log) {
 
+		String regionName = region.get("name").getAsString();
 		long start = region.get("start").getAsLong();
 		long end = region.get("end").getAsLong();
 		String comment = region.has("comment") ? region.get("comment").getAsString() : null;
@@ -252,32 +267,33 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 		boolean prgInRange = prgLength > 0 && loadAddr >= start && prgEnd <= end;
 
 		if (!prgInRange) {
-			// PRG doesn't land cleanly inside RAM_MAIN (POC scope: log and create the plain
-			// RAM_MAIN block; the PRG block created separately may overlap/land elsewhere).
+			// PRG doesn't land cleanly inside the load-target region (POC scope: log and
+			// create the plain region block; the PRG block created separately may
+			// overlap/land elsewhere).
 			log.appendMsg("PRG load address 0x" + Long.toHexString(loadAddr) +
-				" (length " + prgLength + ") does not fit within RAM_MAIN [0x" +
+				" (length " + prgLength + ") does not fit within " + regionName + " [0x" +
 				Long.toHexString(start) + ",0x" + Long.toHexString(end) +
-				"]; creating RAM_MAIN as a single block");
+				"]; creating " + regionName + " as a single block");
 			Address startAddr = baseSpace.getAddress(start);
-			MemoryBlockUtils.createUninitializedBlock(program, false, "RAM_MAIN", startAddr,
+			MemoryBlockUtils.createUninitializedBlock(program, false, regionName, startAddr,
 				end - start + 1, comment, "c64.map", p.readable(), p.writable(), p.executable(), log);
 			return;
 		}
 
-		// The PRG initialized block occupies part of RAM_MAIN's range, so the surrounding RAM
-		// is emitted as separate blocks (Ghidra can't overlap blocks, and join() can't merge an
-		// initialized FileBytes block with uninitialized RAM). Address-suffix the carved halves
-		// so the two blocks never share the name "RAM_MAIN".
+		// The PRG initialized block occupies part of the region's range, so the surrounding
+		// RAM is emitted as separate blocks (Ghidra can't overlap blocks, and join() can't
+		// merge an initialized FileBytes block with uninitialized RAM). Address-suffix the
+		// carved halves so they never share the region's plain name.
 		if (loadAddr > start) {
 			Address belowStart = baseSpace.getAddress(start);
 			MemoryBlockUtils.createUninitializedBlock(program, false,
-				String.format("RAM_MAIN_%04X", (int) start), belowStart,
+				regionName + String.format("_%04X", (int) start), belowStart,
 				loadAddr - start, comment, "c64.map", p.readable(), p.writable(), p.executable(), log);
 		}
 		if (prgEnd < end) {
 			Address aboveStart = baseSpace.getAddress(prgEnd + 1);
 			MemoryBlockUtils.createUninitializedBlock(program, false,
-				String.format("RAM_MAIN_%04X", (int) (prgEnd + 1)), aboveStart,
+				regionName + String.format("_%04X", (int) (prgEnd + 1)), aboveStart,
 				end - prgEnd, comment, "c64.map", p.readable(), p.writable(), p.executable(), log);
 		}
 	}
@@ -306,8 +322,9 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 	// Banked windows
 	// ------------------------------------------------------------------
 
-	private void createWindowOccupant(Program program, AddressSpace baseSpace, JsonObject occupant,
-			JsonObject window, boolean isHome, FileDataTypeManager gdtMgr, MessageLog log) {
+	private MemoryBlock createWindowOccupant(Program program, AddressSpace baseSpace,
+			JsonObject occupant, JsonObject window, boolean isHome, FileDataTypeManager gdtMgr,
+			MessageLog log) {
 
 		String occupantName = occupant.get("name").getAsString();
 		String kind = occupant.get("kind").getAsString();
@@ -317,19 +334,19 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 
 		if (kind.equals("io")) {
 			// The IO occupant is only meaningful when home (CHARIO/IO for POC); its subregions
-			// are laid out individually.
+			// are laid out individually, so there's no single representative block to return.
 			if (isHome) {
 				DescriptorSupport.createIoSubregions(program, baseSpace, occupant, "c64.map",
 					gdtMgr, log);
 			}
-			return;
+			return null;
 		}
 
 		boolean isOverlay = !isHome;
 		Address startAddr = baseSpace.getAddress(start);
 		String comment = occupantName + " (" + kind + ")";
 		Perms p = DescriptorSupport.perms(occupant, kind);
-		MemoryBlockUtils.createUninitializedBlock(program, isOverlay, occupantName, startAddr, length,
-			comment, "c64.map", p.readable(), p.writable(), p.executable(), log);
+		return MemoryBlockUtils.createUninitializedBlock(program, isOverlay, occupantName, startAddr,
+			length, comment, "c64.map", p.readable(), p.writable(), p.executable(), log);
 	}
 }

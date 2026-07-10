@@ -292,6 +292,21 @@ coordinated behavior changes (e.g. a different combination of r/w/x *and* a diff
 behavioral cluster and deserves its own `kind`, not a pile of overrides on an existing one.
 Overrides are for one-off exceptions; new kinds are for repeated behavior patterns.
 
+## Load-time image target (`load_target`)
+
+Optional boolean field on `memory.regions[]` entries, omitted (== `false`) unless the
+region is where a machine's load-time image gets carved into (e.g. C64's `RAM_MAIN`, which
+a `.prg`'s load address/length split around at import time). MapCompiler passes it through
+only when present in the source YAML, exactly like `readable`/`writable`/`executable`, and
+**rejects a descriptor that sets it on more than one region** — a build-time error, since
+"which region is the load target" must be unambiguous.
+
+`load_target` is not required — a descriptor with zero `load_target: true` regions is
+valid (NES boards have none: PRG banks load as ROM windows, not into a RAM region). Whether
+a loader *needs* a load target is a property of that loader, not the schema; a loader that
+does (`C64PrgLoader`) logs clearly when the descriptor doesn't provide one rather than
+falling back to a hardcoded region name.
+
 `MapCompiler` passes these three fields through to the compiled `.map` verbatim, only when
 present in the YAML (no defaults are ever written into the JSON — the loader is the single
 place that knows the kind→default table and applies overrides on top of it).

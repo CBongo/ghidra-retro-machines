@@ -384,17 +384,12 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		}
 		int[] clamp = clampCache.computeIfAbsent(space.getName(), name -> {
 			for (ComputedWindowModel w : board.computedWindows().values()) {
-				String prefix = w.name() + "_B";
-				if (name.startsWith(prefix)) {
-					try {
-						int v = Integer.parseInt(name.substring(prefix.length()));
-						FieldSpec f = w.field();
-						return new int[] { f.positionedMask(), (v << f.lsb()) & f.positionedMask() };
-					}
-					catch (NumberFormatException e) {
-						// not one of ours (e.g. a C64 occupant overlay) -- fall through
-					}
+				Integer v = DescriptorSupport.OverlayNaming.parseBankValue(w.name(), name);
+				if (v != null) {
+					FieldSpec f = w.field();
+					return new int[] { f.positionedMask(), (v << f.lsb()) & f.positionedMask() };
 				}
+				// null: not one of ours (e.g. a C64 occupant overlay) -- keep looking
 			}
 			return new int[0];
 		});
@@ -662,7 +657,8 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 					continue;
 				}
 				added += addOverlayRef(program, refMgr, instr, offset, opIndex,
-					computed.name() + "_B" + bankValue, refType, true, monitor, log);
+					DescriptorSupport.OverlayNaming.bankBlockName(computed.name(), bankValue), refType,
+					true, monitor, log);
 			}
 		}
 		return added;

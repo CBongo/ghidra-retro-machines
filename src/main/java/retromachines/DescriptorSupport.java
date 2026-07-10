@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.BiConsumer;
@@ -485,6 +486,94 @@ final class DescriptorSupport {
 			if (pos != expr.length()) {
 				throw new IllegalArgumentException(
 					"trailing garbage in expression '" + expr + "' at offset " + pos);
+			}
+		}
+	}
+
+	// ------------------------------------------------------------------
+	// Home-in-base window placement
+	// ------------------------------------------------------------------
+
+	/**
+	 * One way to materialize a named candidate occupying a computed window: given
+	 * whether it is the home candidate, creates whatever block(s) (if any) it needs
+	 * and returns the representative {@link MemoryBlock}, or {@code null} if it
+	 * created none (legal -- e.g. an io-kind occupant that only carves subregions,
+	 * or a candidate skipped for a loader-specific reason).
+	 */
+	@FunctionalInterface
+	interface WindowCandidate {
+		MemoryBlock place(Program program, AddressSpace baseSpace, boolean isHome, MessageLog log);
+	}
+
+	/** A named candidate occupant/bank of a computed window, paired with how to place it. */
+	record NamedCandidate(String name, WindowCandidate candidate) {}
+
+	/**
+	 * Shared "home-in-base" window placement policy used by both banked loaders: of
+	 * {@code candidates} occupying one computed window, the one named
+	 * {@code homeName} is placed non-overlay (it lives directly in {@code baseSpace},
+	 * so references resolve there by default); every other candidate is placed as an
+	 * overlay. If no candidate's name equals {@code homeName} (e.g. the home bank
+	 * fell out of the image's range), nothing is treated as home -- callers may log
+	 * that themselves before calling, since the exact message differs by loader.
+	 *
+	 * <p>Loader-specific concerns -- which candidates exist, their content, and any
+	 * bookkeeping the caller needs about the home candidate (e.g. NES's
+	 * {@code PlacedWindow} list) -- stay in the loaders' {@link WindowCandidate}
+	 * closures and surrounding code; this helper only owns the placement decision.
+	 */
+	static void placeHomeInBaseWindow(Program program, AddressSpace baseSpace,
+			List<NamedCandidate> candidates, String homeName, MessageLog log) {
+		for (NamedCandidate c : candidates) {
+			boolean isHome = c.name().equals(homeName);
+			c.candidate().place(program, baseSpace, isHome, log);
+		}
+	}
+
+	// ------------------------------------------------------------------
+	// Non-home-bank overlay naming
+	// ------------------------------------------------------------------
+
+	/**
+	 * Naming convention for a computed window's non-home-bank overlay blocks:
+	 * {@code <windowName>_B<bankValue>}. Used both when a loader creates a bank's
+	 * overlay block at load time and when an analyzer later needs to resolve a
+	 * bank value back out of an overlay {@link AddressSpace}'s name.
+	 *
+	 * <p>The block name also becomes the overlay {@link AddressSpace}'s name --
+	 * {@code MemoryBlockUtils} names the overlay space after the block when
+	 * {@code isOverlay=true} -- empirically confirmed unmangled (tools/banktest
+	 * checkNesBanktest N3, bead grm-5tl.17): {@code AddressSpace.getName()} equals
+	 * this exact string, so callers like {@link BoardBankAnalyzer}'s
+	 * {@code addOverlayRef()} can look the space up by {@code "<window>_B<bank>"}
+	 * with no separate name-mapping table.
+	 */
+	static final class OverlayNaming {
+		private OverlayNaming() {
+		}
+
+		/** Builds the {@code <windowName>_B<bankValue>} name for a non-home bank overlay. */
+		static String bankBlockName(String windowName, int bankValue) {
+			return windowName + "_B" + bankValue;
+		}
+
+		/**
+		 * Parses a bank value back out of an overlay space name, given the owning
+		 * window's name. Returns {@code null} if {@code spaceName} does not start
+		 * with {@code "<windowName>_B"} or the remainder is not a valid integer
+		 * (e.g. a differently-named overlay space, such as a C64 occupant overlay).
+		 */
+		static Integer parseBankValue(String windowName, String spaceName) {
+			String prefix = windowName + "_B";
+			if (!spaceName.startsWith(prefix)) {
+				return null;
+			}
+			try {
+				return Integer.parseInt(spaceName.substring(prefix.length()));
+			}
+			catch (NumberFormatException e) {
+				return null;
 			}
 		}
 	}

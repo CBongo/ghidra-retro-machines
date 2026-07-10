@@ -71,6 +71,13 @@ address space. `type`, when present, names a struct/enum defined in the companio
 archive (e.g. `R6510`); `comment` is documentation only. `readable`/`writable`/`executable`
 are optional sparse permission overrides — see below and `docs/SCHEMA.md`.
 
+`load_target` is an optional boolean, omitted (== `false`) unless a region is where a
+machine's load-time image (e.g. a C64 `.prg`'s bytes) gets carved into. At most one region
+in a descriptor may set it — MapCompiler rejects a descriptor with two. Machines whose
+loader has no notion of a load-time image (e.g. NES, which loads PRG banks as ROM windows,
+not into RAM) correctly have none; a loader that needs one logs clearly when the descriptor
+doesn't provide one instead of guessing a region by name.
+
 ### `physical`
 
 Present only for descriptors with a `physical:` section (schema v2): named physical

@@ -48,6 +48,7 @@ memory:
       end: 0x9FFF
       kind: ram
       comment: "BASIC program space; typical PRG load target ($0801)"
+      load_target: true
     - name: RAM_C000
       start: 0xC000
       end: 0xCFFF

@@ -18,6 +18,7 @@ package retromachines;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -43,6 +44,7 @@ import ghidra.program.model.data.DataUtilities;
 import ghidra.program.model.data.DataUtilities.ClearDataMode;
 import ghidra.program.model.lang.LanguageCompilerSpecPair;
 import ghidra.program.model.listing.Program;
+import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.symbol.SourceType;
 import ghidra.util.exception.CancelledException;
 
@@ -309,6 +311,12 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 								: " (first field '" + bankedField.name() + "')"));
 					continue;
 				}
+				// Build one named candidate per in-range bank value, then hand them to the
+				// shared home-in-base placement policy (DescriptorSupport.placeHomeInBaseWindow);
+				// only the home candidate's srcOffset is needed here (for PlacedWindow
+				// bookkeeping), so we stash offsets by block name as we build the list.
+				Map<String, Long> srcOffsetsByName = new HashMap<>();
+				List<DescriptorSupport.NamedCandidate> candidates = new ArrayList<>();
 				for (int v = 0; v < (1 << bankedField.bits()); v++) {
 					long srcOffset = DescriptorSupport.evalExpr(expr, header.prgSize(), length,
 						Map.of(bankedField.name(), (long) v));
@@ -316,23 +324,23 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 						continue; // bank values beyond the image simply don't exist
 					}
 					boolean home = v == bankedField.initialValue();
-					// blockName also becomes the overlay AddressSpace's name (MemoryBlockUtils
-					// names the overlay space after the block when isOverlay=true) -- empirically
-					// confirmed unmangled (tools/banktest checkNesBanktest N3, bead grm-5tl.17):
-					// AddressSpace.getName() equals this exact string, so BoardBankAnalyzer's
-					// addOverlayRef() can look the space up by "<window>_B<bank>" with no
-					// separate name-mapping table. (OverlayNaming doesn't exist yet; grm-5tl.14
-					// may want to move this note there.)
-					String blockName = home ? name : name + "_B" + v;
-					createWindowBlock(program, baseSpace, !home, blockName,
-						name + " = PRG[" + expr + "], " + bankedField.name() + "=" + v +
-							" (offset 0x" + Long.toHexString(srcOffset) +
-							(home ? ", home bank in base space)" : ")"),
-						start, length, fileBytes, header.prgFileOffset() + srcOffset,
-						board.mapPath(), log);
-					if (home) {
-						placed.add(new PlacedWindow(name, start, end, srcOffset));
-					}
+					// see DescriptorSupport.OverlayNaming for why blockName doubling as the
+					// overlay AddressSpace's name is safe to rely on here.
+					String blockName =
+						home ? name : DescriptorSupport.OverlayNaming.bankBlockName(name, v);
+					srcOffsetsByName.put(blockName, srcOffset);
+					String windowComment = name + " = PRG[" + expr + "], " + bankedField.name() + "=" +
+						v + " (offset 0x" + Long.toHexString(srcOffset) +
+						(home ? ", home bank in base space)" : ")");
+					long fileOffset = header.prgFileOffset() + srcOffset;
+					candidates.add(new DescriptorSupport.NamedCandidate(blockName,
+						(p, bs, isHome, l) -> createWindowBlock(p, bs, !isHome, blockName,
+							windowComment, start, length, fileBytes, fileOffset, board.mapPath(), l)));
+				}
+				DescriptorSupport.placeHomeInBaseWindow(program, baseSpace, candidates, name, log);
+				Long homeSrcOffset = srcOffsetsByName.get(name);
+				if (homeSrcOffset != null) {
+					placed.add(new PlacedWindow(name, start, end, homeSrcOffset));
 				}
 			}
 
@@ -442,16 +450,17 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 	}
 
 	/** ROM-kind permissions: readable + executable, not writable. */
-	private static void createWindowBlock(Program program, AddressSpace baseSpace,
+	private static MemoryBlock createWindowBlock(Program program, AddressSpace baseSpace,
 			boolean isOverlay, String blockName, String comment, long start, long length,
 			FileBytes fileBytes, long fileOffset, String source, MessageLog log) {
 		try {
-			MemoryBlockUtils.createInitializedBlock(program, isOverlay, blockName,
+			return MemoryBlockUtils.createInitializedBlock(program, isOverlay, blockName,
 				baseSpace.getAddress(start), fileBytes, fileOffset, length, comment, source,
 				true, false, true, log);
 		}
 		catch (Exception e) {
 			log.appendMsg("Failed to create window block '" + blockName + "': " + e.getMessage());
+			return null;
 		}
 	}
 
