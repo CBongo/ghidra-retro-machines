@@ -179,6 +179,18 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 			return;
 		}
 
+		// The header's declared PRG size is trusted throughout (window placement, the
+		// $FFFA-$FFFF vector read); a body shorter than declared would place windows over
+		// bytes past EOF, and the unguarded vector read would then throw IOException out of
+		// load() -- an exception dialog instead of a diagnosable message. Reject up front.
+		long declaredEnd = header.prgFileOffset() + header.prgSize();
+		if (declaredEnd > provider.length()) {
+			log.appendMsg("Truncated iNES image: header declares PRG through file offset " +
+				declaredEnd + " but the file is only " + provider.length() +
+				" bytes; refusing to load a truncated ROM");
+			return;
+		}
+
 		String boardId = OptionUtils.getOption(BOARD_OPTION_NAME, settings.options(), "");
 		NesBoardRegistry.Board board = boardId.isEmpty() ? NesBoardRegistry.forMapper(header.mapper())
 				: NesBoardRegistry.forId(boardId);

@@ -480,6 +480,15 @@ public class MapCompiler {
 				throw new IllegalArgumentException("banking.state field '" + name + "' declared twice");
 			}
 		}
+		int total = fields.values().stream().mapToInt(Integer::intValue).sum();
+		if (total > 31) {
+			// packState shifts each field by the cumulative width into a 32-bit int, and the
+			// runtime derives the whole-state mask as (1 << total) - 1 (BoardBankAnalyzer). Both
+			// only hold for total <= 31: at 32+ a field's shift wraps mod-32 (silently corrupting
+			// packed values) and (1 << 32) - 1 evaluates to 0 (an empty mask).
+			throw new IllegalArgumentException("banking.state total width " + total +
+				" bits exceeds 31; the packed bank state is a 32-bit int");
+		}
 		return fields;
 	}
 
