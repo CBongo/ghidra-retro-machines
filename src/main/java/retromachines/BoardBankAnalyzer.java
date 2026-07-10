@@ -25,6 +25,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import com.google.gson.JsonArray;
@@ -430,7 +431,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				HelperModel helper = calledHelper(program, instr, helpers);
 				if (helper != null) {
 					BankState afterCall = helper.constState() != null ? helper.constState()
-							: recoverCallArgument(program, instr, board.mask());
+							: recoverCallArgument(program, instr, helper, board.mask());
 					callSwitches.put(addr, new CallSwitch(helper.function().getName(), afterCall));
 					fallState = afterCall;
 				}
@@ -519,13 +520,19 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				continue;
 			}
 			BankState result = entry.getValue();
+			Instruction store = program.getListing().getInstructionAt(entry.getKey());
+			Character reg = store == null ? null : StoredValueScanner.storeRegister(store);
+
 			HelperModel existing = helpers.get(f);
 			if (existing == null) {
 				helpers.put(f, new HelperModel(f,
-					result.knownMask() == board.mask() ? result : null));
+					result.knownMask() == board.mask() ? result : null, reg));
 			}
-			else if (existing.constState() != null && !existing.constState().equals(result)) {
-				helpers.put(f, new HelperModel(f, null));
+			else {
+				BankState constState = existing.constState() != null
+						&& !existing.constState().equals(result) ? null : existing.constState();
+				Character argReg = Objects.equals(existing.argReg(), reg) ? reg : null;
+				helpers.put(f, new HelperModel(f, constState, argReg));
 			}
 		}
 		return helpers;
@@ -547,22 +554,24 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	}
 
 	/**
-	 * Recovers the bank argument at a helper call site by running the shared backward
-	 * scan for an immediate register value as of the call ({@code LDA #bank / JSR
-	 * SelectBank} and its X/Y variants). By the helper convention the register holds the
-	 * <em>field value itself</em>, so no mechanism transform is applied beyond the state
-	 * mask. Returns {@link BankState#unknown()} when no register resolves -- the caller
-	 * conservatively loses the bank state across the call.
+	 * Recovers the bank argument at a helper call site by running the shared backward scan
+	 * for an immediate value in the register the helper actually reads ({@code LDA #bank /
+	 * JSR SelectBank}, or the X/Y equivalent). The argument register is taken from the
+	 * helper's own mechanism-write ({@link HelperModel#argReg}) rather than guessed, so a
+	 * caller that also loads an unrelated immediate into another register no longer misleads
+	 * the scan. By the helper convention the register holds the <em>field value itself</em>,
+	 * so no mechanism transform is applied beyond the state mask. Returns
+	 * {@link BankState#unknown()} when the argument register is unknown or its value does not
+	 * resolve -- the caller conservatively loses the bank state across the call.
 	 */
-	private BankState recoverCallArgument(Program program, Instruction callInstr, int mask) {
-		for (char reg : new char[] { 'A', 'X', 'Y' }) {
-			BankState v = StoredValueScanner.resolveStoredValue(program, callInstr, reg,
-				BankState.unknown(), mask, NO_HOOKS);
-			if (v.knownMask() != 0) {
-				return v;
-			}
+	private BankState recoverCallArgument(Program program, Instruction callInstr, HelperModel helper,
+			int mask) {
+		Character reg = helper.argReg();
+		if (reg == null) {
+			return BankState.unknown();
 		}
-		return BankState.unknown();
+		return StoredValueScanner.resolveStoredValue(program, callInstr, reg,
+			BankState.unknown(), mask, NO_HOOKS);
 	}
 
 	private static final StoredValueScanner.Hooks NO_HOOKS = new StoredValueScanner.Hooks() {
@@ -875,8 +884,14 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			Map<Integer, Map<String, String>> occupantByWindowForState,
 			Map<String, String> homeOccupantByWindow) {}
 
-	/** A helper function's modeled effect: a constant state, or null = caller-supplied. */
-	private record HelperModel(Function function, BankState constState) {}
+	/**
+	 * A helper function's modeled effect: a constant state, or null = caller-supplied. For
+	 * caller-supplied helpers, {@code argReg} is the register (A/X/Y) the helper stores into
+	 * its mechanism -- i.e. the register by which the caller passes the bank field -- or null
+	 * when the helper's switch sites disagree on that register or use a non-{@code ST<reg>}
+	 * write, in which case the argument convention is unknown.
+	 */
+	private record HelperModel(Function function, BankState constState, Character argReg) {}
 
 	/** A resolved call-site switch (for annotation, distinct from direct switches). */
 	private record CallSwitch(String helperName, BankState state) {}

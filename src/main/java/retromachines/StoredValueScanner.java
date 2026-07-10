@@ -115,6 +115,12 @@ final class StoredValueScanner {
 				// not a straight-line predecessor of cur -- left the basic block
 				return combine(aAcc, oAcc, mask, BankState.unknown());
 			}
+			if (isControlFlowJoin(program, cur, prev)) {
+				// cur is also a branch target: some other path reaches it and may leave a
+				// different register value, so prev's fall-through value can't be attributed
+				// to the store with confidence.
+				return combine(aAcc, oAcc, mask, BankState.unknown());
+			}
 
 			if (hooks.isMechanismWrite(prev)) {
 				// the mechanism was written mid-chain; a base value read further back
@@ -177,6 +183,31 @@ final class StoredValueScanner {
 			cur = prev;
 		}
 		return combine(aAcc, oAcc, mask, BankState.unknown());
+	}
+
+	/**
+	 * Whether {@code cur} is reachable other than by falling through from {@code prev} --
+	 * i.e. another instruction branches, jumps, or calls to it, making it a control-flow
+	 * join. The backward scan follows only the {@code prev} fall-through path, so at a join
+	 * it cannot soundly attribute that path's register value to the store: the other
+	 * incoming path(s) may leave a different value.
+	 * <p>
+	 * A join is detected by an incoming <em>flow</em> reference from an address other than
+	 * {@code prev} (a conditional or unconditional branch to {@code cur} records one; the
+	 * implicit fall-through from {@code prev} is not a reference, and a branch from
+	 * {@code prev} whose target is also its own fall-through is excluded). Unresolved
+	 * computed jumps leave no reference and so are not detected -- conservative in the safe
+	 * direction (a missed join only forfeits a fold the scan would otherwise have made).
+	 */
+	private static boolean isControlFlowJoin(Program program, Instruction cur, Instruction prev) {
+		Address curAddr = cur.getMinAddress();
+		Address prevAddr = prev.getMinAddress();
+		for (Reference ref : program.getReferenceManager().getReferencesTo(curAddr)) {
+			if (ref.getReferenceType().isFlow() && !ref.getFromAddress().equals(prevAddr)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
