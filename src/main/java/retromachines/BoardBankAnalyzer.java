@@ -161,44 +161,14 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			return false;
 		}
 
+		BoardModel board = BoardModel.parse(map, log, getName(), mapPath);
+		if (board == null) {
+			return true;
+		}
+
 		JsonObject banking = map.getAsJsonObject("banking");
-		if (banking == null || !banking.has("mechanisms")) {
-			log.appendMsg(getName(), "banking.mechanisms missing from " + mapPath +
-				"; skipping bank-state analysis");
-			return true;
-		}
-		if (!banking.has("initial_state")) {
-			log.appendMsg(getName(), "banking.initial_state missing from " + mapPath +
-				"; skipping bank-state analysis");
-			return true;
-		}
-
-		int initialState = banking.get("initial_state").getAsInt();
-
-		// The tracked-bit mask, per-bit annotation names, and field layout come from the
-		// banking.state field tuple (LSB first; multi-bit fields expand to name.0, ...).
-		List<String> stateBitNames = new ArrayList<>();
-		List<FieldSpec> fieldSpecs = new ArrayList<>();
-		if (banking.has("state")) {
-			for (JsonElement fe : banking.getAsJsonArray("state")) {
-				JsonObject field = fe.getAsJsonObject();
-				String fieldName = field.get("name").getAsString();
-				int bits = field.get("bits").getAsInt();
-				fieldSpecs.add(new FieldSpec(fieldName, stateBitNames.size(), bits));
-				if (bits == 1) {
-					stateBitNames.add(fieldName);
-				}
-				else {
-					for (int i = 0; i < bits; i++) {
-						stateBitNames.add(fieldName + "." + i);
-					}
-				}
-			}
-		}
-		int mask = (1 << stateBitNames.size()) - 1;
-
-		List<BankSwitchStrategy> strategies =
-			configureStrategies(program, banking.getAsJsonArray("mechanisms"), mask, log);
+		List<BankSwitchStrategy> strategies = configureStrategies(program,
+			banking.getAsJsonArray("mechanisms"), board.mask(), log);
 		if (strategies.isEmpty()) {
 			log.appendMsg(getName(), "no usable bank-switch strategy in " + mapPath +
 				" banking; skipping bank-state analysis");
@@ -206,78 +176,6 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		}
 
 		AddressSpace baseSpace = program.getAddressFactory().getDefaultAddressSpace();
-
-		// --- Parse windows (enumerated occupants OR computed maps:) + banking states ---
-		Map<String, WindowModel> windowsByName = new LinkedHashMap<>();
-		Map<String, ComputedWindowModel> computedByName = new LinkedHashMap<>();
-		JsonArray windows = map.has("windows") ? map.getAsJsonArray("windows") : new JsonArray();
-		for (JsonElement we : windows) {
-			JsonObject window = we.getAsJsonObject();
-			String name = window.get("name").getAsString();
-			long start = window.get("start").getAsLong();
-			long end = window.get("end").getAsLong();
-			if (window.has("occupants")) {
-				Map<String, OccupantModel> occupants = new LinkedHashMap<>();
-				for (JsonElement oe : window.getAsJsonArray("occupants")) {
-					JsonObject occ = oe.getAsJsonObject();
-					String occName = occ.get("name").getAsString();
-					String kind = occ.get("kind").getAsString();
-					String onWrite = occ.has("on_write") ? occ.get("on_write").getAsString() : null;
-					occupants.put(occName, new OccupantModel(occName, kind, onWrite));
-				}
-				windowsByName.put(name, new WindowModel(name, start, end, occupants));
-			}
-			else if (window.has("maps")) {
-				String expr = window.getAsJsonObject("maps").get("expr").getAsString();
-				Set<String> fields = DescriptorSupport.referencedFields(expr);
-				if (fields.isEmpty()) {
-					continue; // fixed window -- placed by the loader, never retargeted
-				}
-				if (fields.size() > 1) {
-					log.appendMsg(getName(), "computed window '" + name + "' uses " + fields +
-						"; multi-field windows are not supported yet -- not retargeting it");
-					continue;
-				}
-				String fieldName = fields.iterator().next();
-				FieldSpec fieldSpec = fieldSpecs.stream()
-						.filter(f -> f.name().equals(fieldName))
-						.findFirst()
-						.orElse(null);
-				if (fieldSpec == null) {
-					log.appendMsg(getName(), "computed window '" + name +
-						"' references unknown state field '" + fieldName + "'; skipping it");
-					continue;
-				}
-				String onWrite = window.has("on_write") ? window.get("on_write").getAsString() : null;
-				computedByName.put(name,
-					new ComputedWindowModel(name, start, end, fieldSpec, onWrite));
-			}
-		}
-
-		Map<Integer, Map<String, String>> occupantByWindowForState = new LinkedHashMap<>();
-		if (banking.has("states")) {
-			for (JsonElement se : banking.getAsJsonArray("states")) {
-				JsonObject state = se.getAsJsonObject();
-				int value = state.get("value").getAsInt();
-				Map<String, String> row = new LinkedHashMap<>();
-				for (String windowName : windowsByName.keySet()) {
-					if (state.has(windowName)) {
-						row.put(windowName, state.get(windowName).getAsString());
-					}
-				}
-				occupantByWindowForState.put(value, row);
-			}
-		}
-
-		Map<String, String> homeOccupantByWindow = occupantByWindowForState.get(initialState);
-		if (!windowsByName.isEmpty() && homeOccupantByWindow == null) {
-			log.appendMsg(getName(), "banking.initial_state " + initialState +
-				" not found in banking.states; skipping bank-state analysis");
-			return true;
-		}
-
-		BoardModel board = new BoardModel(mask, initialState, stateBitNames, fieldSpecs,
-			windowsByName, computedByName, occupantByWindowForState, homeOccupantByWindow);
 
 		// --- Phase 1: forward dataflow to fixpoint; rerun with helper knowledge if any ---
 		Listing listing = program.getListing();
@@ -916,7 +814,126 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			List<FieldSpec> fieldSpecs, Map<String, WindowModel> windows,
 			Map<String, ComputedWindowModel> computedWindows,
 			Map<Integer, Map<String, String>> occupantByWindowForState,
-			Map<String, String> homeOccupantByWindow) {}
+			Map<String, String> homeOccupantByWindow) {
+
+		/**
+		 * Parses the {@code banking} and {@code windows} sections of a board descriptor into
+		 * a {@link BoardModel}. Returns {@code null} when a required section is missing or
+		 * inconsistent, in which case the caller should skip bank-state analysis (but this is
+		 * not an error -- callers should treat a {@code null} result like the other "skip"
+		 * paths in {@code added()}, not like an {@link IOException}).
+		 */
+		private static BoardModel parse(JsonObject map, MessageLog log, String source,
+				String mapPath) {
+			JsonObject banking = map.getAsJsonObject("banking");
+			if (banking == null || !banking.has("mechanisms")) {
+				log.appendMsg(source, "banking.mechanisms missing from " + mapPath +
+					"; skipping bank-state analysis");
+				return null;
+			}
+			if (!banking.has("initial_state")) {
+				log.appendMsg(source, "banking.initial_state missing from " + mapPath +
+					"; skipping bank-state analysis");
+				return null;
+			}
+
+			int initialState = banking.get("initial_state").getAsInt();
+
+			// The tracked-bit mask, per-bit annotation names, and field layout come from the
+			// banking.state field tuple (LSB first; multi-bit fields expand to name.0, ...).
+			List<String> stateBitNames = new ArrayList<>();
+			List<FieldSpec> fieldSpecs = new ArrayList<>();
+			if (banking.has("state")) {
+				for (JsonElement fe : banking.getAsJsonArray("state")) {
+					JsonObject field = fe.getAsJsonObject();
+					String fieldName = field.get("name").getAsString();
+					int bits = field.get("bits").getAsInt();
+					fieldSpecs.add(new FieldSpec(fieldName, stateBitNames.size(), bits));
+					if (bits == 1) {
+						stateBitNames.add(fieldName);
+					}
+					else {
+						for (int i = 0; i < bits; i++) {
+							stateBitNames.add(fieldName + "." + i);
+						}
+					}
+				}
+			}
+			int mask = (1 << stateBitNames.size()) - 1;
+
+			// --- Parse windows (enumerated occupants OR computed maps:) + banking states ---
+			Map<String, WindowModel> windowsByName = new LinkedHashMap<>();
+			Map<String, ComputedWindowModel> computedByName = new LinkedHashMap<>();
+			JsonArray windows = map.has("windows") ? map.getAsJsonArray("windows") : new JsonArray();
+			for (JsonElement we : windows) {
+				JsonObject window = we.getAsJsonObject();
+				String name = window.get("name").getAsString();
+				long start = window.get("start").getAsLong();
+				long end = window.get("end").getAsLong();
+				if (window.has("occupants")) {
+					Map<String, OccupantModel> occupants = new LinkedHashMap<>();
+					for (JsonElement oe : window.getAsJsonArray("occupants")) {
+						JsonObject occ = oe.getAsJsonObject();
+						String occName = occ.get("name").getAsString();
+						String kind = occ.get("kind").getAsString();
+						String onWrite = occ.has("on_write") ? occ.get("on_write").getAsString() : null;
+						occupants.put(occName, new OccupantModel(occName, kind, onWrite));
+					}
+					windowsByName.put(name, new WindowModel(name, start, end, occupants));
+				}
+				else if (window.has("maps")) {
+					String expr = window.getAsJsonObject("maps").get("expr").getAsString();
+					Set<String> fields = DescriptorSupport.referencedFields(expr);
+					if (fields.isEmpty()) {
+						continue; // fixed window -- placed by the loader, never retargeted
+					}
+					if (fields.size() > 1) {
+						log.appendMsg(source, "computed window '" + name + "' uses " + fields +
+							"; multi-field windows are not supported yet -- not retargeting it");
+						continue;
+					}
+					String fieldName = fields.iterator().next();
+					FieldSpec fieldSpec = fieldSpecs.stream()
+							.filter(f -> f.name().equals(fieldName))
+							.findFirst()
+							.orElse(null);
+					if (fieldSpec == null) {
+						log.appendMsg(source, "computed window '" + name +
+							"' references unknown state field '" + fieldName + "'; skipping it");
+						continue;
+					}
+					String onWrite = window.has("on_write") ? window.get("on_write").getAsString() : null;
+					computedByName.put(name,
+						new ComputedWindowModel(name, start, end, fieldSpec, onWrite));
+				}
+			}
+
+			Map<Integer, Map<String, String>> occupantByWindowForState = new LinkedHashMap<>();
+			if (banking.has("states")) {
+				for (JsonElement se : banking.getAsJsonArray("states")) {
+					JsonObject state = se.getAsJsonObject();
+					int value = state.get("value").getAsInt();
+					Map<String, String> row = new LinkedHashMap<>();
+					for (String windowName : windowsByName.keySet()) {
+						if (state.has(windowName)) {
+							row.put(windowName, state.get(windowName).getAsString());
+						}
+					}
+					occupantByWindowForState.put(value, row);
+				}
+			}
+
+			Map<String, String> homeOccupantByWindow = occupantByWindowForState.get(initialState);
+			if (!windowsByName.isEmpty() && homeOccupantByWindow == null) {
+				log.appendMsg(source, "banking.initial_state " + initialState +
+					" not found in banking.states; skipping bank-state analysis");
+				return null;
+			}
+
+			return new BoardModel(mask, initialState, stateBitNames, fieldSpecs, windowsByName,
+				computedByName, occupantByWindowForState, homeOccupantByWindow);
+		}
+	}
 
 	/**
 	 * A helper function's modeled effect: a constant state, or null = caller-supplied. For
