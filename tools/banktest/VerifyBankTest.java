@@ -49,7 +49,11 @@ public class VerifyBankTest extends GhidraScript {
 	protected void run() throws Exception {
 		dump();
 
-		if (currentProgram.getName().contains("banktest2")) {
+		String name = currentProgram.getName();
+		if (name.contains("banktest3")) {
+			checkBanktest3();
+		}
+		else if (name.contains("banktest2")) {
 			checkBanktest2();
 		}
 		else {
@@ -193,6 +197,30 @@ public class VerifyBankTest extends GhidraScript {
 		Reference r = findOverlayRef(0x083F, "RAM_A000", 0xA000);
 		criterion("C7", r != null && r.getReferenceType().isRead(),
 			"join-point read of $A000 retargeted to RAM_A000 overlay: " + describe(r));
+	}
+
+	// ------------------------------------------------------------------
+	// banktest3.prg criteria (the two P1 value-recovery fixes)
+	// ------------------------------------------------------------------
+
+	private void checkBanktest3() {
+		// B1 (grm-5tl.1): the JSR at 0805 calls a helper that takes its bank argument in
+		// X (STX $01). The caller loads an unrelated immediate into A (LDA #$AA -> bank 2)
+		// and the real bank into X (LDX #$34 -> bank 4). The recovered bank must come from
+		// the register the helper actually reads (X = 4), not the old A-first guess (2).
+		String c = eol(0x0805);
+		criterion("B1",
+			c.contains("bank -> 4 (") && c.contains("via") && !c.contains("bank -> 2"),
+			"helper call recovers X argument (bank 4), not A (bank 2), at 0805: \"" + c + "\"");
+
+		// A1 (grm-5tl.2): the STA $01 at 080F is a branch-join target -- reached by
+		// fall-through from LDA #$36 (A=$36) and by the BEQ at 080B (A undetermined). The
+		// backward value scan must not confidently fold $36 at the join; the store is
+		// ambiguous -> WARNING bookmark, no "bank ->" comment.
+		criterion("A1",
+			hasWarningBookmark(0x080F) && !eol(0x080F).contains("bank ->"),
+			"join-target store is ambiguous at 080f: warning=" + hasWarningBookmark(0x080F) +
+				" comment=\"" + eol(0x080F) + "\"");
 	}
 
 	// ------------------------------------------------------------------

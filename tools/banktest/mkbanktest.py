@@ -125,13 +125,46 @@ BANKTEST2 = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# banktest3.prg -- the two P1 value-recovery fixes (beads grm-5tl.1 / grm-5tl.2)
+# (load $0801)
+#
+# 0801  A2 34     LDX #$34     ; bank arg 4 ($34 & 7) in X
+# 0803  A9 AA     LDA #$AA     ; unrelated immediate in A ($AA & 7 = 2)
+# 0805  20 12 08  JSR $0812    ; B1: helper takes bank in X (STX $01); the recovered
+#                              ;     bank must come from X (4), NOT the A-first guess (2)
+# 0808  AD 04 04  LDA $0404    ; condition (A undetermined on the taken path)
+# 080B  F0 02     BEQ $080F    ; -> join store, skipping the LDA #$36
+# 080D  A9 36     LDA #$36     ; fall-through path: A=$36
+# 080F  85 01     STA $01      ; A1: branch-join store -- reached with A=$36 (fall) and
+#                              ;     A=undetermined (taken); must be ambiguous -> WARNING,
+#                              ;     NOT a confident fold of $36 ("bank -> 6")
+# 0811  60        RTS
+# 0812  86 01     STX $01      ; helper body: bank field is the caller's X -> caller-supplied
+# 0814  60        RTS
+# ---------------------------------------------------------------------------
+BANKTEST3 = [
+    0xA2, 0x34,          # 0801 LDX #$34
+    0xA9, 0xAA,          # 0803 LDA #$AA
+    0x20, 0x12, 0x08,    # 0805 JSR $0812
+    0xAD, 0x04, 0x04,    # 0808 LDA $0404
+    0xF0, 0x02,          # 080B BEQ $080F
+    0xA9, 0x36,          # 080D LDA #$36
+    0x85, 0x01,          # 080F STA $01      (A1)
+    0x60,                # 0811 RTS
+    0x86, 0x01,          # 0812 STX $01      (B1 helper body)
+    0x60,                # 0814 RTS
+]
+
+
 def main():
     if len(sys.argv) != 2:
         sys.exit("usage: mkbanktest.py <output-dir>")
     outdir = sys.argv[1]
     os.makedirs(outdir, exist_ok=True)
 
-    for name, code in (("banktest.prg", BANKTEST), ("banktest2.prg", BANKTEST2)):
+    for name, code in (("banktest.prg", BANKTEST), ("banktest2.prg", BANKTEST2),
+                       ("banktest3.prg", BANKTEST3)):
         path = os.path.join(outdir, name)
         with open(path, "wb") as f:
             f.write(prg(code))
@@ -145,6 +178,13 @@ def main():
     assert BANKTEST2[0x0820 - LOAD_ADDR] == 0x20
     assert BANKTEST2[0x0821 - LOAD_ADDR] | (BANKTEST2[0x0822 - LOAD_ADDR] << 8) == 0x0843
     assert BANKTEST2[0x0843 - LOAD_ADDR] == 0x60
+
+    # Sanity-check banktest3's JSR/branch targets.
+    assert BANKTEST3[0x0805 - LOAD_ADDR] == 0x20  # JSR
+    assert BANKTEST3[0x0806 - LOAD_ADDR] | (BANKTEST3[0x0807 - LOAD_ADDR] << 8) == 0x0812
+    assert BANKTEST3[0x080B - LOAD_ADDR] == 0xF0  # BEQ
+    assert (0x080D + BANKTEST3[0x080C - LOAD_ADDR]) == 0x080F  # BEQ -> join store
+    assert BANKTEST3[0x0812 - LOAD_ADDR] == 0x86  # STX $01 (helper body)
 
 
 if __name__ == "__main__":
