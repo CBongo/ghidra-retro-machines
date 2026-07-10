@@ -214,21 +214,13 @@ final class StoredValueScanner {
 	 * Checks whether every bit of {@code mask} is already determined by the accumulator
 	 * alone, independent of whatever base register value {@code x} the scan eventually
 	 * finds, given {@code result = (x & aAcc) | oAcc}: bit {@code b} is so determined
-	 * iff {@code aAcc} clears it or {@code oAcc} sets it.
+	 * iff {@code aAcc} clears it or {@code oAcc} sets it -- i.e. iff {@code ~aAcc | oAcc}
+	 * covers every masked bit. (The exhaustive equivalence of this bit-parallel form to the
+	 * original per-bit loop is proved by {@code tools/bitalgebra}, run via
+	 * {@code gradle verifyBitAlgebra}.)
 	 */
 	private static boolean fullyDeterminedByAccumulator(int aAcc, int oAcc, int mask) {
-		for (int bit = 0; bit < 8; bit++) {
-			int bitMask = 1 << bit;
-			if ((mask & bitMask) == 0) {
-				continue; // not part of the tracked bank-state bits
-			}
-			boolean aClearsIt = (aAcc & bitMask) == 0;
-			boolean oSetsIt = (oAcc & bitMask) != 0;
-			if (!aClearsIt && !oSetsIt) {
-				return false; // this mask bit still depends on the base value
-			}
-		}
-		return true;
+		return (((~aAcc | oAcc) & mask) & 0xFF) == (mask & 0xFF);
 	}
 
 	/**
@@ -236,30 +228,16 @@ final class StoredValueScanner {
 	 * (possibly partially known) base {@link BankState} for {@code x}, reduced to
 	 * {@code mask}: {@code oAcc} setting a bit forces a known 1; otherwise {@code aAcc}
 	 * clearing it forces a known 0; otherwise the bit passes {@code x} through, so it is
-	 * known in the result iff it is known in {@code base}.
+	 * known in the result iff it is known in {@code base}. A result bit is 1 exactly when
+	 * {@code oAcc} sets it, or {@code aAcc} passes a known base 1 through -- the base's
+	 * <em>known</em> gate on that second term is what keeps result bits 0 in still-unknown
+	 * positions (so two states compare equal iff genuinely equal). Equivalence to the
+	 * original per-bit loop is proved exhaustively by {@code tools/bitalgebra}
+	 * ({@code gradle verifyBitAlgebra}).
 	 */
 	private static BankState combine(int aAcc, int oAcc, int mask, BankState base) {
-		int knownMask = 0;
-		int bits = 0;
-		for (int bit = 0; bit < 8; bit++) {
-			int bitMask = 1 << bit;
-			if ((mask & bitMask) == 0) {
-				continue;
-			}
-			if ((oAcc & bitMask) != 0) {
-				knownMask |= bitMask;
-				bits |= bitMask;
-			}
-			else if ((aAcc & bitMask) == 0) {
-				knownMask |= bitMask;
-			}
-			else if ((base.knownMask() & bitMask) != 0) {
-				knownMask |= bitMask;
-				if ((base.bits() & bitMask) != 0) {
-					bits |= bitMask;
-				}
-			}
-		}
+		int knownMask = mask & (oAcc | ~aAcc | base.knownMask()) & 0xFF;
+		int bits = mask & (oAcc | (aAcc & base.knownMask() & base.bits())) & 0xFF;
 		return new BankState(knownMask, bits);
 	}
 

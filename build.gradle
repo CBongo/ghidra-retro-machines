@@ -88,6 +88,13 @@ sourceSets {
 			srcDirs = ['tools/gdtbuilder/src/main/java']
 		}
 	}
+	// Pure-Java (no Ghidra dependency) exhaustive check that the collapsed bit-parallel
+	// forms in StoredValueScanner equal the original per-bit loops (bead grm-5tl.11).
+	bitAlgebraCheck {
+		java {
+			srcDirs = ['tools/bitalgebra']
+		}
+	}
 }
 
 dependencies {
@@ -175,6 +182,14 @@ task validateSketches {
 			}
 		}
 	}
+}
+
+task verifyBitAlgebra(type: JavaExec) {
+	group = "Ghidra Retro Machines"
+	description = "Exhaustively prove StoredValueScanner's bit-parallel combine/fullyDetermined forms equal the original per-bit loops (bead grm-5tl.11; no Ghidra dependency)"
+	dependsOn 'compileBitAlgebraCheckJava'
+	classpath = sourceSets.bitAlgebraCheck.runtimeClasspath
+	mainClass = 'BitAlgebraEquivalence'
 }
 
 //----------------------------------------------------------------------------------
