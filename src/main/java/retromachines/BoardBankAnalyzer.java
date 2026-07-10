@@ -167,6 +167,11 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				"; skipping bank-state analysis");
 			return true;
 		}
+		if (!banking.has("initial_state")) {
+			log.appendMsg(getName(), "banking.initial_state missing from " + mapPath +
+				"; skipping bank-state analysis");
+			return true;
+		}
 
 		int initialState = banking.get("initial_state").getAsInt();
 
@@ -205,7 +210,8 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// --- Parse windows (enumerated occupants OR computed maps:) + banking states ---
 		Map<String, WindowModel> windowsByName = new LinkedHashMap<>();
 		Map<String, ComputedWindowModel> computedByName = new LinkedHashMap<>();
-		for (JsonElement we : map.getAsJsonArray("windows")) {
+		JsonArray windows = map.has("windows") ? map.getAsJsonArray("windows") : new JsonArray();
+		for (JsonElement we : windows) {
 			JsonObject window = we.getAsJsonObject();
 			String name = window.get("name").getAsString();
 			long start = window.get("start").getAsLong();
@@ -699,8 +705,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			}
 			long offset = to.getOffset();
 			RefType refType = ref.getReferenceType();
-
-			String targetSpaceName = null;
+			int opIndex = ref.getOperandIndex();
 
 			WindowModel window = findWindow(board.windows(), offset);
 			if (window != null && stateRow != null) {
@@ -710,21 +715,37 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				if (occupant == null) {
 					continue;
 				}
-				String targetOccupant;
-				if (refType.isWrite()) {
-					targetOccupant =
-						occupant.onWrite() != null ? occupant.onWrite() : occupantName;
+				// The home occupant already lives in base space at this offset, so any target
+				// that resolves to it needs no overlay reference.
+				String homeOccupant = board.homeOccupantByWindow().get(window.name());
+				String readTarget = occupantName;
+				String writeTarget =
+					occupant.onWrite() != null ? occupant.onWrite() : occupantName;
+
+				if (refType.isRead() && refType.isWrite() && !readTarget.equals(writeTarget)) {
+					// A read-modify-write (e.g. INC $D000) across a write-under-ROM boundary
+					// reads one occupant and writes another; emit both sides rather than
+					// dropping the read. Keep the write primary (the pre-fix behavior) and add
+					// the read as a secondary reference.
+					boolean primaryTaken = false;
+					if (!writeTarget.equals(homeOccupant)) {
+						int n = addOverlayRef(program, refMgr, instr, offset, opIndex, writeTarget,
+							RefType.WRITE, true, monitor, log);
+						added += n;
+						primaryTaken = n > 0;
+					}
+					if (!readTarget.equals(homeOccupant)) {
+						added += addOverlayRef(program, refMgr, instr, offset, opIndex, readTarget,
+							RefType.READ, !primaryTaken, monitor, log);
+					}
 				}
 				else {
-					targetOccupant = occupantName;
+					String target = refType.isWrite() ? writeTarget : readTarget;
+					if (!target.equals(homeOccupant)) {
+						added += addOverlayRef(program, refMgr, instr, offset, opIndex, target,
+							refType, true, monitor, log);
+					}
 				}
-				String homeOccupant = board.homeOccupantByWindow().get(window.name());
-				if (targetOccupant.equals(homeOccupant)) {
-					// resolves to the home occupant, which already lives in base space at
-					// this offset -- the default reference is correct.
-					continue;
-				}
-				targetSpaceName = targetOccupant;
 			}
 			else {
 				ComputedWindowModel computed = findWindow(board.computedWindows(), offset);
@@ -742,47 +763,60 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 					// the home bank lives in base space at this offset -- default is right.
 					continue;
 				}
-				targetSpaceName = computed.name() + "_B" + bankValue;
-			}
-
-			AddressSpace overlaySpace = program.getAddressFactory().getAddressSpace(targetSpaceName);
-			if (overlaySpace == null) {
-				log.appendMsg(getName(), "No overlay address space named '" + targetSpaceName +
-					"'; cannot retarget reference from " + instr.getMinAddress());
-				continue;
-			}
-			Address overlayAddr = overlaySpace.getAddress(offset);
-
-			int opIndex = ref.getOperandIndex();
-			Reference existingAnalysisRef = null;
-			for (Reference r : refMgr.getReferencesFrom(instr.getMinAddress(), opIndex)) {
-				if (r.getToAddress().equals(overlayAddr)) {
-					existingAnalysisRef = r;
-					break;
-				}
-			}
-			Reference newRef = existingAnalysisRef != null ? existingAnalysisRef
-					: refMgr.addMemoryReference(instr.getMinAddress(), overlayAddr, refType,
-						SourceType.ANALYSIS, opIndex);
-			refMgr.setPrimary(newRef, true);
-			added++;
-
-			// Adding a reference does not by itself pull the target into analysis: a
-			// cross-bank JSR/JMP target in an overlay would stay undisassembled bytes.
-			// Kick disassembly (and function creation for calls) there; the framework
-			// then re-runs this analyzer over the new instructions until convergence
-			// (their in-overlay bank state comes from the residence clamp).
-			if (refType.isFlow() &&
-				program.getListing().getInstructionAt(overlayAddr) == null) {
-				new DisassembleCommand(overlayAddr, null, true).applyTo(program, monitor);
-				if (refType.isCall() &&
-					program.getListing().getInstructionAt(overlayAddr) != null &&
-					program.getFunctionManager().getFunctionAt(overlayAddr) == null) {
-					new CreateFunctionCmd(overlayAddr).applyTo(program, monitor);
-				}
+				added += addOverlayRef(program, refMgr, instr, offset, opIndex,
+					computed.name() + "_B" + bankValue, refType, true, monitor, log);
 			}
 		}
 		return added;
+	}
+
+	/**
+	 * Adds (or reuses) one analysis reference from {@code instr}'s operand {@code opIndex} to
+	 * {@code offset} within the overlay space named {@code targetSpaceName}, typed
+	 * {@code refType} and optionally marked primary. Flow references also kick disassembly
+	 * (and function creation for calls) at the overlay target so a cross-bank branch resolves.
+	 * Returns 1 if a reference was placed, 0 if no overlay space of that name exists.
+	 */
+	private int addOverlayRef(Program program, ReferenceManager refMgr, Instruction instr,
+			long offset, int opIndex, String targetSpaceName, RefType refType, boolean makePrimary,
+			TaskMonitor monitor, MessageLog log) {
+		AddressSpace overlaySpace = program.getAddressFactory().getAddressSpace(targetSpaceName);
+		if (overlaySpace == null) {
+			log.appendMsg(getName(), "No overlay address space named '" + targetSpaceName +
+				"'; cannot retarget reference from " + instr.getMinAddress());
+			return 0;
+		}
+		Address overlayAddr = overlaySpace.getAddress(offset);
+
+		Reference existingAnalysisRef = null;
+		for (Reference r : refMgr.getReferencesFrom(instr.getMinAddress(), opIndex)) {
+			if (r.getToAddress().equals(overlayAddr)) {
+				existingAnalysisRef = r;
+				break;
+			}
+		}
+		Reference newRef = existingAnalysisRef != null ? existingAnalysisRef
+				: refMgr.addMemoryReference(instr.getMinAddress(), overlayAddr, refType,
+					SourceType.ANALYSIS, opIndex);
+		if (makePrimary) {
+			refMgr.setPrimary(newRef, true);
+		}
+
+		// Adding a reference does not by itself pull the target into analysis: a cross-bank
+		// JSR/JMP target in an overlay would stay undisassembled bytes. Kick disassembly (and
+		// function creation for calls) there; the framework then re-runs this analyzer over the
+		// new instructions until convergence (their in-overlay bank state comes from the
+		// residence clamp).
+		if (refType.isFlow() &&
+			program.getListing().getInstructionAt(overlayAddr) == null) {
+			new DisassembleCommand(overlayAddr, null, true).applyTo(program, monitor);
+			if (refType.isCall() &&
+				program.getListing().getInstructionAt(overlayAddr) != null &&
+				program.getFunctionManager().getFunctionAt(overlayAddr) == null) {
+				new CreateFunctionCmd(overlayAddr).applyTo(program, monitor);
+			}
+		}
+		return 1;
 	}
 
 	/** The window (enumerated or computed) whose {@code [start, end]} contains {@code offset}, or null. */

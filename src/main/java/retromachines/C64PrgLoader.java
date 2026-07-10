@@ -154,34 +154,42 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 
 			// --- Banked windows: home occupant in base space, alternates in overlay spaces ---
 			JsonObject banking = map.getAsJsonObject("banking");
-			int initialState = banking.get("initial_state").getAsInt();
-			JsonObject homeState = null;
-			for (JsonElement se : banking.getAsJsonArray("states")) {
-				JsonObject state = se.getAsJsonObject();
-				if (state.get("value").getAsInt() == initialState) {
-					homeState = state;
-					break;
+			if (banking == null || !banking.has("initial_state") || !banking.has("states") ||
+				!map.has("windows")) {
+				log.appendMsg("c64.map banking section or windows incomplete " +
+					"(need initial_state, states, windows); skipping banked-window setup");
+			}
+			else {
+				int initialState = banking.get("initial_state").getAsInt();
+				JsonObject homeState = null;
+				for (JsonElement se : banking.getAsJsonArray("states")) {
+					JsonObject state = se.getAsJsonObject();
+					if (state.get("value").getAsInt() == initialState) {
+						homeState = state;
+						break;
+					}
 				}
-			}
-			if (homeState == null) {
-				log.appendMsg("banking.initial_state " + initialState +
-					" not found in banking.states; skipping window setup");
-			}
+				if (homeState == null) {
+					log.appendMsg("banking.initial_state " + initialState +
+						" not found in banking.states; skipping window setup");
+				}
 
-			JsonArray windows = map.getAsJsonArray("windows");
-			for (JsonElement we : windows) {
-				JsonObject window = we.getAsJsonObject();
-				String windowName = window.get("name").getAsString();
-				String homeOccupantName = homeState != null && homeState.has(windowName)
-						? homeState.get(windowName).getAsString()
-						: null;
+				JsonArray windows = map.getAsJsonArray("windows");
+				for (JsonElement we : windows) {
+					JsonObject window = we.getAsJsonObject();
+					String windowName = window.get("name").getAsString();
+					String homeOccupantName = homeState != null && homeState.has(windowName)
+							? homeState.get(windowName).getAsString()
+							: null;
 
-				JsonArray occupants = window.getAsJsonArray("occupants");
-				for (JsonElement oe : occupants) {
-					JsonObject occupant = oe.getAsJsonObject();
-					String occupantName = occupant.get("name").getAsString();
-					boolean isHome = occupantName.equals(homeOccupantName);
-					createWindowOccupant(program, baseSpace, occupant, window, isHome, gdtMgr, log);
+					JsonArray occupants = window.getAsJsonArray("occupants");
+					for (JsonElement oe : occupants) {
+						JsonObject occupant = oe.getAsJsonObject();
+						String occupantName = occupant.get("name").getAsString();
+						boolean isHome = occupantName.equals(homeOccupantName);
+						createWindowOccupant(program, baseSpace, occupant, window, isHome, gdtMgr,
+							log);
+					}
 				}
 			}
 

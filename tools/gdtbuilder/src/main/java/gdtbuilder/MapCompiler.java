@@ -623,7 +623,9 @@ public class MapCompiler {
 			}
 			int fieldValue = toInt(v);
 			int bits = field.getValue();
-			if (fieldValue < 0 || fieldValue >= (1 << bits)) {
+			// 1L (not 1): at bits==31, 1<<31 is Integer.MIN_VALUE (negative), so an int
+			// comparison would reject every non-negative value, including 0.
+			if (fieldValue < 0 || fieldValue >= (1L << bits)) {
 				throw new IllegalArgumentException(context + " value " + fieldValue +
 					" does not fit state field '" + field.getKey() + "' (" + bits + " bits)");
 			}

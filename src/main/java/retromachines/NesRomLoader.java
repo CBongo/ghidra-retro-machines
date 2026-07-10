@@ -100,8 +100,27 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 			if (h[0] != 'N' || h[1] != 'E' || h[2] != 'S' || h[3] != 0x1A) {
 				return null;
 			}
-			int mapper = (h[7] & 0xF0) | ((h[6] & 0xFF) >> 4);
-			return new InesHeader(h[4] & 0xFF, h[5] & 0xFF, mapper, (h[6] & 0x04) != 0);
+			int lowMapper = (h[6] & 0xFF) >> 4;
+			boolean nes2 = (h[7] & 0x0C) == 0x08;
+			int mapper;
+			int prgBanks;
+			if (nes2) {
+				// NES 2.0: 12-bit mapper (flags6 hi | flags7 hi | flags8 lo); PRG-ROM unit
+				// count is h[4] plus a high nibble in h[9]. h[9] low nibble == 0xF selects a
+				// rare exponent size form we don't model -- fall back to the low byte there.
+				mapper = ((h[8] & 0x0F) << 8) | (h[7] & 0xF0) | lowMapper;
+				int prgHi = h[9] & 0x0F;
+				prgBanks = prgHi == 0x0F ? (h[4] & 0xFF) : ((prgHi << 8) | (h[4] & 0xFF));
+			}
+			else {
+				// Archaic iNES: "DiskDude!"-style tools scribbled ASCII into bytes 7-15, so a
+				// non-zero tail (bytes 12-15) means flags7's high nibble is not a real mapper
+				// nibble -- trust only the low nibble. A clean iNES 1.0 header has 12-15 zero.
+				boolean archaic = h[12] != 0 || h[13] != 0 || h[14] != 0 || h[15] != 0;
+				mapper = archaic ? lowMapper : ((h[7] & 0xF0) | lowMapper);
+				prgBanks = h[4] & 0xFF;
+			}
+			return new InesHeader(prgBanks, h[5] & 0xFF, mapper, (h[6] & 0x04) != 0);
 		}
 	}
 
@@ -249,7 +268,8 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 			// the bank analyzer retargets references into.
 			List<PlacedWindow> placed = new ArrayList<>();
 			BankedFieldInfo bankedField = BankedFieldInfo.parse(map);
-			for (JsonElement we : map.getAsJsonArray("windows")) {
+			JsonArray windowArr = map.has("windows") ? map.getAsJsonArray("windows") : new JsonArray();
+			for (JsonElement we : windowArr) {
 				JsonObject window = we.getAsJsonObject();
 				String name = window.get("name").getAsString();
 				if (!window.has("maps")) {
@@ -351,8 +371,8 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 			Long fileOffset = fileOffsetOf(vector.slot(), header, placedWindows);
 			if (fileOffset == null) {
 				log.appendMsg("No placed window covers vector slot $" +
-					Long.toHexString(vector.slot()) + "; vectors not resolved");
-				return;
+					Long.toHexString(vector.slot()) + "; skipping it");
+				continue; // other slots may still be covered (e.g. RESET/IRQ after NMI)
 			}
 			byte[] bytes = provider.readBytes(fileOffset, 2);
 			long target = (bytes[0] & 0xFF) | ((bytes[1] & 0xFF) << 8);
@@ -389,7 +409,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 
 		static BankedFieldInfo parse(JsonObject map) {
 			JsonObject banking = map.getAsJsonObject("banking");
-			if (banking == null || !banking.has("state")) {
+			if (banking == null || !banking.has("state") || !banking.has("initial_state")) {
 				return null;
 			}
 			JsonArray state = banking.getAsJsonArray("state");
