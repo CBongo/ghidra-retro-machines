@@ -18,6 +18,7 @@ package retromachines;
 import com.google.gson.JsonObject;
 
 import ghidra.program.model.address.Address;
+import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Program;
@@ -65,9 +66,33 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	private int shift;
 	private boolean busConflict;
 
+	/**
+	 * Base-space shadow of every overlay memory block, snapshotted at {@link #configure}
+	 * time (an efficiency memoization for {@link #bankInvariantRomByte} -- see grm-5tl.13.1).
+	 * Loader-placed memory blocks are fixed before analyzers run and phase 2 of the engine
+	 * never adds blocks, so a snapshot taken here is valid for this strategy instance's
+	 * entire lifetime on this program. Each overlay block {@code b} contributes the base-space
+	 * range {@code [b.getStart().getOffset(), b.getEnd().getOffset()]} -- i.e. the same raw
+	 * offset comparison the original per-call linear scan performed, just precomputed into an
+	 * interval set instead of walking every block on every query.
+	 */
+	private AddressSet overlayCoveredRanges;
+
 	@Override
 	public String strategyName() {
 		return "memory-latch";
+	}
+
+	/**
+	 * {@code computeSwitch}'s {@code resolveLoad} hook resolves loads to a bank-invariant
+	 * ROM byte (a property of the program alone), never to {@code inStateAtStore}; the only
+	 * other place a base value can come from is {@link StoredValueScanner}'s own immediate-
+	 * value folding, also state-independent. So the whole result is a pure function of
+	 * {@code (program, instr)} -- safe to cache per address (grm-5tl.13.2).
+	 */
+	@Override
+	public boolean cacheable() {
+		return true;
 	}
 
 	@Override
@@ -78,6 +103,14 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 		mask = params.has("mask") ? params.get("mask").getAsInt() : stateMask;
 		shift = params.has("shift") ? params.get("shift").getAsInt() : 0;
 		busConflict = params.has("bus_conflict") && params.get("bus_conflict").getAsBoolean();
+
+		overlayCoveredRanges = new AddressSet();
+		for (MemoryBlock b : program.getMemory().getBlocks()) {
+			if (b.getStart().getAddressSpace().isOverlaySpace()) {
+				overlayCoveredRanges.addRange(space.getAddress(b.getStart().getOffset()),
+					space.getAddress(b.getEnd().getOffset()));
+			}
+		}
 	}
 
 	private final StoredValueScanner.Hooks hooks = new StoredValueScanner.Hooks() {
@@ -147,12 +180,11 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 		if (block == null || block.isWrite() || !block.isInitialized()) {
 			return null;
 		}
-		for (MemoryBlock b : program.getMemory().getBlocks()) {
-			AddressSpace bs = b.getStart().getAddressSpace();
-			if (bs.isOverlaySpace() && addr.getOffset() >= b.getStart().getOffset() &&
-				addr.getOffset() <= b.getEnd().getOffset()) {
-				return null;
-			}
+		// Normalize to a base-space address first: the interval set holds base-space
+		// shadows, but the pre-index code compared raw offsets, so an overlay-space addr
+		// covered by any overlay block (its own included) must still be refused here.
+		if (overlayCoveredRanges.contains(space.getAddress(addr.getOffset()))) {
+			return null;
 		}
 		try {
 			return program.getMemory().getByte(addr) & 0xFF;

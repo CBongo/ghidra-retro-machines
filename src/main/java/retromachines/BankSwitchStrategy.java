@@ -60,4 +60,16 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 *         a mechanism write at all and the state flows through unchanged
 	 */
 	BankState computeSwitch(Program program, Instruction instr, BankState inState);
+
+	/**
+	 * Whether {@link #computeSwitch}'s result at a given {@code (program, instr)} pair is
+	 * independent of {@code inState} -- i.e. a pure function of the program and instruction
+	 * alone, safe for the dataflow engine to memoize per-address across worklist dequeues
+	 * (grm-5tl.13.2). {@code false} (the default) is always safe; only override to
+	 * {@code true} when {@code computeSwitch} genuinely never consults {@code inState} (or
+	 * anything derived from it) to decide its return value.
+	 */
+	default boolean cacheable() {
+		return false;
+	}
 }

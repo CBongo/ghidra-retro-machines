@@ -295,6 +295,11 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		Map<Address, CallSwitch> callSwitches = new HashMap<>();
 		Deque<Address> worklist = new ArrayDeque<>();
 		Map<String, int[]> clampCache = new HashMap<>();
+		// Scoped to this runDataflow call (not a field): phase 1/2 separation guarantees no
+		// instruction appears mid-fixpoint, so per-call scoping sidesteps any staleness
+		// question. See the strategy-probe loop below for the soundness invariant this relies
+		// on (grm-5tl.13.2).
+		Map<Address, MatchInfo> matchCache = new HashMap<>();
 
 		Set<Address> seeds = new LinkedHashSet<>();
 		AddressIterator eps = program.getSymbolTable().getExternalEntryPointIterator();
@@ -321,13 +326,51 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			BankState inState = stateIn.get(addr);
 			BankState outState = inState;
 
-			for (BankSwitchStrategy strategy : strategies) {
-				BankState switched = strategy.computeSwitch(program, instr, inState);
-				if (switched != null) {
-					switchResults.put(addr, switched);
-					outState = switched;
-					break;
+			// Strategy-probe memoization (grm-5tl.13.2): both shipped strategies gate
+			// computeSwitch on an instruction-only predicate (MemoryLatch's writesInRange,
+			// RegisterWrite's writesMechanism) that fully determines whether the result is
+			// null -- neither ever returns null for an instruction its predicate accepts, so
+			// "which strategy matches this address" (if any) does not depend on inState, only
+			// the *value* a non-cacheable match produces does. That lets us cache the matched
+			// strategy's identity per address across dequeues and, on a cache hit, either reuse
+			// a cacheable strategy's state-independent result outright or re-probe only the one
+			// non-cacheable strategy that matched -- never the others, and never re-run the
+			// whole ordered loop. A future strategy whose match/no-match outcome genuinely
+			// depends on inState would violate this; the fallback below (treat an unexpected
+			// null from the cached strategy as no-match for this dequeue, rather than
+			// re-probing every strategy) stays conservative in that case instead of unsound.
+			MatchInfo cached = matchCache.get(addr);
+			BankState switched;
+			if (cached == null) {
+				BankSwitchStrategy matched = null;
+				BankState result = null;
+				for (BankSwitchStrategy strategy : strategies) {
+					result = strategy.computeSwitch(program, instr, inState);
+					if (result != null) {
+						matched = strategy;
+						break;
+					}
 				}
+				switched = matched == null ? null : result;
+				matchCache.put(addr, new MatchInfo(matched,
+					matched != null && matched.cacheable() ? result : null));
+			}
+			else if (cached.strategy() == null) {
+				// no strategy's instruction-level predicate matches this address
+				switched = null;
+			}
+			else if (cached.result() != null) {
+				// cacheable strategy matched before; its result here is state-independent
+				switched = cached.result();
+			}
+			else {
+				// non-cacheable strategy matched before; only it can match here, re-probe it
+				// alone with the current in-state
+				switched = cached.strategy().computeSwitch(program, instr, inState);
+			}
+			if (switched != null) {
+				switchResults.put(addr, switched);
+				outState = switched;
 			}
 
 			BankState fallState = outState;
@@ -942,6 +985,16 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 
 	/** A resolved call-site switch (for annotation, distinct from direct switches). */
 	private record CallSwitch(String helperName, BankState state) {}
+
+	/**
+	 * Per-address strategy-probe cache entry for {@link #runDataflow} (grm-5tl.13.2).
+	 * {@code strategy == null} records that no strategy's instruction-level predicate
+	 * matched this address at all. Otherwise {@code strategy} is the one strategy whose
+	 * predicate matched; {@code result} holds its state-independent result when
+	 * {@link BankSwitchStrategy#cacheable()} is true, or {@code null} when the match was
+	 * found but the value must be recomputed from the current in-state on every dequeue.
+	 */
+	private record MatchInfo(BankSwitchStrategy strategy, BankState result) {}
 
 	private record DataflowResult(Map<Address, BankState> stateIn,
 			Map<Address, BankState> switchResults, Map<Address, CallSwitch> callSwitches) {}
