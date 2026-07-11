@@ -181,8 +181,8 @@ optional — a bankless board like NES NROM has none). When present:
   select-data register pair *and* a mode bit in the same physical register. Each entry:
   `strategy` (which analyzer strategy class interprets it: `register-write`,
   `memory-latch`, `select-data`, `serial-shift`, `io-port`, `mode-register` —
-  `register-write`, `memory-latch`, and `select-data` are implemented today; the rest
-  belong to later milestones), `params` (strategy-specific, passed through from the YAML
+  `register-write`, `memory-latch`, `select-data`, and `serial-shift` are implemented
+  today; the rest belong to later milestones), `params` (strategy-specific, passed through from the YAML
   with numbers normalized to decimal ints and map keys stringified), and `sets` (which
   `state` fields this mechanism feeds, validated at compile time). For C64's
   register-write, `params.address`/`params.mask` mean: the state changes when the CPU
@@ -205,6 +205,26 @@ optional — a bankless board like NES NROM has none). When present:
   and injects it into `params._field_layout` (an analyzer-runtime addition, not something
   MapCompiler writes) before configuring the strategy, so a strategy never has to
   hand-duplicate offsets that must stay in lockstep with `state`'s declared order.
+  MMC1's `serial-shift` mechanism (`SerialShiftBankSwitchStrategy`, bead `grm-hsv.1`)
+  models a bit-serial shift register: five consecutive bit-7-clear writes anywhere in
+  `params.start`/`params.end` each contribute one bit (LSB first) of a byte that commits
+  on the fifth write, and a bit-7-*set* write to any address in range resets the shifter
+  instead. `params.targets` maps the 5th write's OWN ADDRESS bits 14:13 within the range
+  (0-3 — not a fixed constant; real games write non-canonical addresses inside a
+  register's 8 KiB window) to `{fields: [{name, shift, bits}, ...]}`: a MULTI-field
+  deposit from the one reassembled 5-bit value (MMC1 target 0 splits into `mirroring`
+  and `prg_mode`; target 3 is `prg_bank`; targets 1/2, CHR0/CHR1, are recognized but
+  omitted — same no-poison contract as `select-data`'s untracked CHR registers).
+  `params.reset` maps field name to a literal value deposited on a bit-7-set write
+  (MMC1: `{prg_mode: 3}` — every other field, including `mirroring`, survives a reset
+  untouched). The strategy's primary recognizer is a STATIC instruction-shape walk of
+  the fully-unrolled `STA/LSR A/STA/LSR A/.../STA` commit chain every surveyed
+  commercial mapper-1 game actually emits (never the counted `STA/LSR/DEY/BNE` loop
+  some references present as canonical) — see the class javadoc for the exact
+  backward/forward walk and its bit-7 resolution shortcut (an `LSR A`-preceded store's
+  bit 7 is known clear by construction, since `LSR` always shifts in a 0, so it never
+  needs — and must not use — the generic backward value scanner, which does not model
+  shifts bit-wise).
 - `states[]` — the enumerated truth table, present only for boards with
   enumerated-occupant windows: one row per reachable state, each row being `value` (the
   packed state — computed by MapCompiler from the YAML row's per-field values) plus one

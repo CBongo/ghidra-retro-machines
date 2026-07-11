@@ -57,7 +57,10 @@ public class VerifyBankTest extends GhidraScript {
 		dump();
 
 		String name = currentProgram.getName();
-		if (name.contains("nesmmc3test")) {
+		if (name.contains("nesserialtest")) {
+			checkNesSerialtest();
+		}
+		else if (name.contains("nesmmc3test")) {
 			checkNesMmc3test();
 		}
 		else if (name.contains("nesmodetest")) {
@@ -537,6 +540,120 @@ public class VerifyBankTest extends GhidraScript {
 			"instruction exists at WC000_M1_B2::C000");
 		criterion("F6:WA000_B3_A000", hasInstructionAt("WA000_B3", 0xA000),
 			"instruction exists at WA000_B3::A000");
+	}
+
+	// ------------------------------------------------------------------
+	// nesserialtest.nes criteria (SerialShiftBankSwitchStrategy, bead grm-hsv.1)
+	// ------------------------------------------------------------------
+
+	private void checkNesSerialtest() {
+		// F-reset: the bit-7-set write at $C002 (LDA #$80 / STA $8000) forces prg_mode=3
+		// known -- idempotent re-assertion of the seeded initial state (this board's home
+		// mode already is prg_mode=3), but the comment must show it as known, not "?".
+		String c = eol(0xC002);
+		criterion("F-reset", c.contains("prg_mode=3") && !c.contains("?"),
+			"bit-7 reset -> prg_mode=3 known at c002: \"" + c + "\"");
+
+		// F-unrolled: the 5th write of the canonical-address ($E000) chain at $C017
+		// commits prg_bank=5; the JSR $8000 right after it at $C01A retargets into the
+		// mode-3 (this board's home mode), non-home-bank overlay W8000_M3_B5.
+		c = eol(0xC017);
+		criterion("F-unrolled:comment", c.contains("prg_bank=5"),
+			"unrolled chain commits prg_bank=5 at c017: \"" + c + "\"");
+		Reference r = findOverlayRef(0xC01A, "W8000_M3_B5", 0x8000);
+		criterion("F-unrolled:jsr", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $8000 (prg_bank=5) retargeted to W8000_M3_B5 overlay, primary: " +
+				describe(r));
+
+		// Writes 1-4 of the unrolled chain (c007-c013) are no-change echoes: inState flows
+		// through UNCHANGED (still the seeded prg_bank=0), never the eventual prg_bank=5 --
+		// the commit is deferred entirely to write 5 (c017, checked above).
+		c = eol(0xC007);
+		criterion("F-unrolled:echo-not-early-commit", c.contains("prg_bank=0"),
+			"write 1 of the chain (c007) echoes the still-unchanged prg_bank=0, not an " +
+				"early commit: \"" + c + "\"");
+
+		// F-noncanonical: the 5th write of the $FFF9 chain (same 8K window as $E000,
+		// bits 14:13 both decode to target 3/PRG) at $C02F commits prg_bank=6 via a
+		// non-canonical address -- FF1's exact trick ($9FFF/$BFFF/$DFFF/$FFF9). The JSR
+		// $8000 at $C032 retargets into W8000_M3_B6.
+		c = eol(0xC02F);
+		criterion("F-noncanonical:comment", c.contains("prg_bank=6"),
+			"non-canonical-address chain commits prg_bank=6 at c02f: \"" + c + "\"");
+		r = findOverlayRef(0xC032, "W8000_M3_B6", 0x8000);
+		criterion("F-noncanonical:jsr", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $8000 (prg_bank=6, non-canonical commit) retargeted to W8000_M3_B6 " +
+				"overlay, primary: " + describe(r));
+
+		// F-chr-discard: the chain to $A000 (CHR0, target 1 -- no `targets` entry in the
+		// board's serial-shift mechanism) is recognized but discarded: prg_bank must
+		// SURVIVE untouched, proven by the JSR $8000 at $C04A still retargeting to
+		// W8000_M3_B6 (bank 6, set by F-noncanonical above, not clobbered by the CHR
+		// write in between).
+		r = findOverlayRef(0xC04A, "W8000_M3_B6", 0x8000);
+		criterion("F-chr-discard", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $8000 after a CHR0 chain still retargets to W8000_M3_B6 (prg_bank " +
+				"survived the discarded CHR commit): " + describe(r));
+
+		// F-loop: the counted-loop idiom (LDA #$03 / LDY #$05 / loop: STA $E000 / LSR A /
+		// DEY / BNE loop). The commit attaches to the BNE at $C056 (the secondary
+		// recognizer claims the branch in computeSwitch -- no engine hook; see
+		// SerialShiftBankSwitchStrategy's javadoc), fully known since every field was
+		// known coming in.
+		c = eol(0xC056);
+		criterion("F-loop:comment", c.contains("prg_bank=3") && !c.contains("?"),
+			"counted loop commits prg_bank=3 at its BNE (c056): \"" + c + "\"");
+
+		// The in-loop STA at $C051 must be suppressed (echo, not poison): no WARNING
+		// bookmark, and no CONFIDENT early commit of prg_bank=3. Its comment is the
+		// honest MERGE of its two predecessors -- the loop entry (pre-loop prg_bank=6)
+		// and the BNE's back edge (which carries the committed prg_bank=3, by design --
+		// see SerialShiftBankSwitchStrategy's javadoc on the back-edge flow) -- so the
+		// agreeing bits stay known and the disagreeing prg_bank bits degrade to "?",
+		// exactly what BankState.merge produces at any other join.
+		c = eol(0xC051);
+		criterion("F-loop:body-suppressed",
+			!hasWarningBookmark(0xC051) && !(c.contains("prg_bank=3") && !c.contains("?")),
+			"in-loop STA (c051) suppressed -- no warning, no confident early commit " +
+				"(merge of pre-loop 6 and back-edge 3): warning=" +
+				hasWarningBookmark(0xC051) + " comment=\"" + c + "\"");
+
+		// The JSR $8000 on the loop's exit edge at $C058 retargets into W8000_M3_B3.
+		r = findOverlayRef(0xC058, "W8000_M3_B3", 0x8000);
+		criterion("F-loop:jsr", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $8000 after the counted loop (prg_bank=3) retargeted to W8000_M3_B3 " +
+				"overlay, primary: " + describe(r));
+
+		// F-unresolvable: write 1 of the chain seeded from an opaque indexed load
+		// (LDX #$00 / LDA $C200,X) at $C060 can't have its own bit 7 resolved -> honest
+		// poison -> WARNING bookmark, no false "bank ->" claim. The chain's 5th write
+		// (c070) also degrades (target known from the address, value unresolvable) --
+		// neither site may claim a definite bank value.
+		criterion("F-unresolvable:write1",
+			hasWarningBookmark(0xC060) && !eol(0xC060).contains("bank ->"),
+			"unresolvable chain seed warns, no false comment, at c060: warning=" +
+				hasWarningBookmark(0xC060) + " comment=\"" + eol(0xC060) + "\"");
+		criterion("F-unresolvable:commit", !eol(0xC070).contains("prg_bank=6") &&
+			!eol(0xC070).contains("prg_bank=5") && !eol(0xC070).contains("prg_bank=3"),
+			"unresolvable chain's commit at c070 makes no false prg_bank claim: \"" +
+				eol(0xC070) + "\"");
+
+		// F-partial-bit7: an isolated (non-chained) write to $8000 whose stored value is
+		// unresolvable (LDX #$01 / LDA $C200,X / STA $8000, no preceding/following
+		// LSR/STA) at $C078 -- bit 7 unknown must poison, and critically must NOT be
+		// misclassified as a confident reset (no false prg_mode=3 claim).
+		criterion("F-partial-bit7",
+			hasWarningBookmark(0xC078) && !eol(0xC078).contains("prg_mode=3"),
+			"unresolvable isolated write warns, no false reset claim, at c078: warning=" +
+				hasWarningBookmark(0xC078) + " comment=\"" + eol(0xC078) + "\"");
+
+		// Disassembly sanity: the three JSR-target overlay instructions actually exist.
+		criterion("F5:W8000_M3_B3_8000", hasInstructionAt("W8000_M3_B3", 0x8000),
+			"instruction exists at W8000_M3_B3::8000");
+		criterion("F5:W8000_M3_B5_8000", hasInstructionAt("W8000_M3_B5", 0x8000),
+			"instruction exists at W8000_M3_B5::8000");
+		criterion("F5:W8000_M3_B6_8000", hasInstructionAt("W8000_M3_B6", 0x8000),
+			"instruction exists at W8000_M3_B6::8000");
 	}
 
 	private static String describeBlock(MemoryBlock b) {

@@ -183,10 +183,16 @@ PRG_SIZE = PRG_BANK_SIZE * PRG_BANKS
 MAPPER = 2          # UxROM (nesbanktest / nesbanktest2)
 MAPPER_MODETEST = 100  # synthetic nes-modetest board (NESdev-reserved test mapper)
 MAPPER_MMC3 = 4        # MMC3 (nesmmc3test)
+MAPPER_SERIALTEST = 222  # synthetic nes-serialtest board; see machines/nes-serialtest.yaml's
+                          # module doc for why 222 (not 100/101/102/248) was chosen
 
 MMC3_BANK_SIZE = 0x2000
 MMC3_BANKS = 8
 MMC3_PRG_SIZE = MMC3_BANK_SIZE * MMC3_BANKS
+
+# nesserialtest.nes: 8 x 16 KiB PRG banks (128 KiB, Metroid-class shape per bead grm-hsv.1).
+SERIAL_BANKS = 8
+SERIAL_PRG_SIZE = PRG_BANK_SIZE * SERIAL_BANKS
 
 
 def _bank3_putter(prg):
@@ -381,6 +387,210 @@ def make_prg_mmc3():
     return bytes(prg)
 
 
+class _Asm:
+    """Tiny sequential 6502 assembler over a bytearray, used only by
+    make_prg_serial() (bead grm-hsv.1): tracks its own CPU address so instruction
+    offsets don't have to be hand-counted the way the other fixtures above do --
+    this fixture has too many same-shaped chain instructions for that to stay
+    readable/correct by hand. put(addr, data) below (module-level helper reused
+    by the older fixtures) is the same idea; this class just automates the
+    CPU-address bookkeeping for a long straight-line stream."""
+
+    def __init__(self, prg, base_cpu, base_file):
+        self.prg = prg
+        self.base_cpu = base_cpu
+        self.base_file = base_file
+        self.cpu = base_cpu
+
+    def label(self):
+        return self.cpu
+
+    def _emit(self, data):
+        off = self.base_file + (self.cpu - self.base_cpu)
+        self.prg[off:off + len(data)] = bytes(data)
+        self.cpu += len(data)
+
+    def lda_imm(self, v):
+        self._emit([0xA9, v & 0xFF])
+
+    def ldx_imm(self, v):
+        self._emit([0xA2, v & 0xFF])
+
+    def ldy_imm(self, v):
+        self._emit([0xA0, v & 0xFF])
+
+    def dey(self):
+        self._emit([0x88])
+
+    def bne(self, target):
+        rel = target - (self.cpu + 2)
+        assert -128 <= rel <= 127, "BNE target out of range"
+        self._emit([0xD0, rel & 0xFF])
+
+    def sta_abs(self, addr):
+        self._emit([0x8D, addr & 0xFF, (addr >> 8) & 0xFF])
+
+    def lsr_a(self):
+        self._emit([0x4A])
+
+    def jsr(self, addr):
+        self._emit([0x20, addr & 0xFF, (addr >> 8) & 0xFF])
+
+    def jmp(self, addr):
+        self._emit([0x4C, addr & 0xFF, (addr >> 8) & 0xFF])
+
+    def lda_absx(self, addr):
+        self._emit([0xBD, addr & 0xFF, (addr >> 8) & 0xFF])
+
+    def rti(self):
+        self._emit([0x40])
+
+    def chain5(self, addr):
+        """Emits the fully-unrolled STA/LSR commit chain (5 stores, 4 shifts --
+        see machines/nes-serialtest.yaml / SerialShiftBankSwitchStrategy) to
+        `addr`; returns the 5 STA instructions' addresses (index 4 = the commit,
+        write 5)."""
+        addrs = []
+        for i in range(5):
+            addrs.append(self.label())
+            self.sta_abs(addr)
+            if i < 4:
+                self.lsr_a()
+        return addrs
+
+
+def make_prg_serial():
+    """SerialShiftBankSwitchStrategy end-to-end fixture (bead grm-hsv.1) for the
+    SYNTHETIC machines/nes-serialtest.yaml board (iNES mapper 222). banking.state is
+    mirroring(2)+prg_mode(2)+prg_bank(5), one serial-shift mechanism over the whole
+    $8000-$FFFF register range, targets {0: mirroring+prg_mode (Control), 3: prg_bank},
+    reset -> prg_mode=3. RESET runs entirely inside the fixed WC000 window (prg_mode
+    stays 3/fix-last throughout -- W8000 switches on prg_bank, WC000 = PRG[last] =
+    bank 7 = home, so file offset equals CPU address there, as in the other fixtures).
+
+    Seven scenarios, run back-to-back (bead grm-hsv.1's F-* criteria):
+      F-reset:        LDA #$80 / STA $8000 -- bit-7 reset; prg_mode=3 known (idempotent
+                       re-assertion of the seeded initial state).
+      F-unrolled:     LDA #$05 then the 5x STA/LSR chain to $E000 (canonical PRG target
+                       address) -- commits prg_bank=5; JSR $8000 retargets into the
+                       bank-5 overlay (W8000_M3_B5, since W8000 is mode-varying and
+                       prg_mode=3 is this board's home mode).
+      F-noncanonical: LDA #$06 then the chain to $FFF9 -- SAME target (PRG, bits 14:13
+                       of $FFF9 == bits 14:13 of $E000) via a non-canonical in-window
+                       address (FF1's exact trick) -- commits prg_bank=6; JSR $8000
+                       retargets into W8000_M3_B6.
+      F-chr-discard:  LDA #$AA then a chain to $A000 (CHR0, target 1 -- no `targets`
+                       entry) between the two PRG operations above and the next JSR --
+                       recognized, discarded; the following JSR $8000 still retargets to
+                       W8000_M3_B6, proving prg_bank survived.
+      F-loop:         the counted-loop idiom (the SECONDARY recognizer -- the wiki-
+                       canonical form no surveyed commercial game uses): LDA #$03 /
+                       LDY #$05 / loop: STA $E000 / LSR A / DEY / BNE loop -- the commit
+                       (prg_bank=3) attaches to the BNE itself (computeSwitch matches the
+                       branch; no engine hook -- see SerialShiftBankSwitchStrategy's
+                       javadoc), the in-loop STA is suppressed (echo, no poison), and the
+                       JSR $8000 after the loop retargets into W8000_M3_B3.
+      F-unresolvable: LDX #$00 / LDA $C200,X (opaque, indexed) feeding a chain to $E000
+                       -- write 1's own bit 7 can't be resolved (the scanner doesn't
+                       model LDA<indexed>) -> honest poison/WARNING at write 1; write 5's
+                       target is still known (address-derived) but its VALUE degrades to
+                       unknown -- no false "bank ->" claim anywhere in the chain.
+      F-partial-bit7: LDX #$01 / LDA $C200,X feeding a single, non-chained STA $8000 --
+                       bit 7 unresolvable -> poison/WARNING, and critically NOT
+                       misclassified as a confident reset (no false prg_mode=3 claim).
+
+    Vectors: RESET -> the chain above; NMI/IRQ -> a lone RTI right after the idle loop.
+    """
+    prg = bytearray([0x00] * SERIAL_PRG_SIZE)
+
+    for bank in range(SERIAL_BANKS):
+        prg[bank * PRG_BANK_SIZE] = bank  # bank marker, matching the other fixtures
+
+    # JSR $8000 targets: banks 3 (F-loop), 5, and 6, each an RTS at their window-local
+    # offset 0 (replacing the marker byte, as in nesmodetest/nesmmc3test).
+    prg[3 * PRG_BANK_SIZE] = 0x60
+    prg[5 * PRG_BANK_SIZE] = 0x60
+    prg[6 * PRG_BANK_SIZE] = 0x60
+
+    # Bank 7 == PRG[last] == the fixed WC000 window (prg_mode=3, this board's home mode);
+    # file offset equals CPU address there (bank7_base == 0xC000... no: WC000 is 16 KiB
+    # at CPU $C000, and bank 7's FILE offset is 7*0x4000 = 0x1C000, so CPU $C000+x maps to
+    # file 0x1C000+x -- the asm helper's base_file/base_cpu pair encodes that translation).
+    bank7_base = 7 * PRG_BANK_SIZE
+
+    def put7(cpu_addr, data):
+        off = bank7_base + (cpu_addr - 0xC000)
+        prg[off:off + len(data)] = bytes(data)
+
+    asm = _Asm(prg, 0xC000, bank7_base)
+
+    labels = {}
+    labels['reset'] = asm.label()
+    asm.lda_imm(0x80)
+    labels['f_reset'] = asm.label()
+    asm.sta_abs(0x8000)                      # F-reset: bit-7 set -> prg_mode=3 known
+
+    asm.lda_imm(0x05)
+    unrolled = asm.chain5(0xE000)            # F-unrolled: canonical PRG target
+    labels['f_unrolled_write1'] = unrolled[0]
+    labels['f_unrolled_commit'] = unrolled[4]
+    labels['f_unrolled_jsr'] = asm.label()
+    asm.jsr(0x8000)
+
+    asm.lda_imm(0x06)
+    noncanon = asm.chain5(0xFFF9)            # F-noncanonical: same target, odd address
+    labels['f_noncanonical_commit'] = noncanon[4]
+    labels['f_noncanonical_jsr'] = asm.label()
+    asm.jsr(0x8000)
+
+    asm.lda_imm(0xAA)
+    chrdiscard = asm.chain5(0xA000)          # F-chr-discard: CHR0, recognized/discarded
+    labels['f_chr_discard_commit'] = chrdiscard[4]
+    labels['f_chr_discard_jsr'] = asm.label()
+    asm.jsr(0x8000)
+
+    # F-loop: the counted-loop idiom (secondary recognizer; see module doc).
+    asm.lda_imm(0x03)                        # seed: prg_bank 3
+    labels['f_loop_counter'] = asm.label()
+    asm.ldy_imm(0x05)                        # trip count 5
+    labels['f_loop_head'] = asm.label()
+    asm.sta_abs(0xE000)                      # in-loop STA (suppressed: echo, no poison)
+    asm.lsr_a()
+    asm.dey()
+    labels['f_loop_bne'] = asm.label()
+    asm.bne(labels['f_loop_head'])           # the commit site (prg_bank=3)
+    labels['f_loop_jsr'] = asm.label()
+    asm.jsr(0x8000)                          # -> W8000_M3_B3::8000
+
+    asm.ldx_imm(0x00)
+    labels['f_unresolvable_load'] = asm.label()
+    asm.lda_absx(0xC200)                     # opaque indexed load -- unresolvable seed
+    unresolvable = asm.chain5(0xE000)        # F-unresolvable
+    labels['f_unresolvable_write1'] = unresolvable[0]
+    labels['f_unresolvable_commit'] = unresolvable[4]
+
+    asm.ldx_imm(0x01)
+    labels['f_partial_load'] = asm.label()
+    asm.lda_absx(0xC200)                     # opaque indexed load, reused table
+    labels['f_partial_write'] = asm.label()
+    asm.sta_abs(0x8000)                      # F-partial-bit7: isolated, not chained
+
+    labels['idle'] = asm.label()
+    asm.jmp(labels['idle'])                  # idle loop, in the fixed home WC000 window
+    labels['rti'] = asm.label()
+    asm.rti()                                # NMI/IRQ handler
+
+    # Unrelated data table backing the two "unresolvable" indexed loads above.
+    put7(0xC200, [0x11, 0x22])
+
+    # Vector table.
+    put7(0xFFFA, [labels['rti'] & 0xFF, (labels['rti'] >> 8) & 0xFF])
+    put7(0xFFFC, [labels['reset'] & 0xFF, (labels['reset'] >> 8) & 0xFF])
+    put7(0xFFFE, [labels['rti'] & 0xFF, (labels['rti'] >> 8) & 0xFF])
+
+    return bytes(prg), labels
+
+
 def make_ines_header(prg_banks, chr_banks, mapper):
     h = bytearray(16)
     h[0:4] = b"NES\x1a"
@@ -392,8 +602,8 @@ def make_ines_header(prg_banks, chr_banks, mapper):
     return bytes(h)
 
 
-def _write_rom(outdir, filename, prg, mapper=MAPPER):
-    header = make_ines_header(PRG_BANKS, 0, mapper)
+def _write_rom(outdir, filename, prg, mapper=MAPPER, prg_banks=PRG_BANKS):
+    header = make_ines_header(prg_banks, 0, mapper)
     rom = header + prg
     path = os.path.join(outdir, filename)
     with open(path, "wb") as f:
@@ -556,6 +766,25 @@ def main():
     assert (prgm3[0xFFFE] | (prgm3[0xFFFF] << 8)) == 0xE032  # IRQ vector
 
     _write_rom(outdir, "nesmmc3test.nes", prgm3, mapper=MAPPER_MMC3)
+
+    prgs, labels = make_prg_serial()
+
+    # Sanity-check the serial-shift fixture before writing (bead grm-hsv.1).
+    assert len(prgs) == SERIAL_PRG_SIZE
+    assert prgs[3 * PRG_BANK_SIZE] == 0x60  # RTS: W8000_M3_B3::8000 (F-loop)
+    assert prgs[5 * PRG_BANK_SIZE] == 0x60  # RTS: W8000_M3_B5::8000
+    assert prgs[6 * PRG_BANK_SIZE] == 0x60  # RTS: W8000_M3_B6::8000
+    bank7_file_base = 7 * PRG_BANK_SIZE
+    assert prgs[bank7_file_base + 0x0200] == 0x11 and prgs[bank7_file_base + 0x0201] == 0x22
+    vec = bank7_file_base + 0x3FFA  # CPU $FFFA -> file offset (bank 7 base + $3FFA)
+    assert (prgs[vec + 2] | (prgs[vec + 3] << 8)) == labels['reset']  # RESET @ $FFFC
+    assert (prgs[vec + 0] | (prgs[vec + 1] << 8)) == labels['rti']    # NMI @ $FFFA
+    assert (prgs[vec + 4] | (prgs[vec + 5] << 8)) == labels['rti']    # IRQ @ $FFFE
+    print("nesserialtest labels: " +
+          ", ".join("%s=$%04X" % (k, v) for k, v in labels.items()))
+
+    _write_rom(outdir, "nesserialtest.nes", prgs, mapper=MAPPER_SERIALTEST,
+               prg_banks=SERIAL_BANKS)
 
 
 if __name__ == "__main__":

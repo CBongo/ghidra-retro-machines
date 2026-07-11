@@ -1,0 +1,664 @@
+/* ###
+ * IP: GHIDRA
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package retromachines;
+
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+
+import ghidra.program.model.address.Address;
+import ghidra.program.model.address.AddressSpace;
+import ghidra.program.model.listing.Instruction;
+import ghidra.program.model.listing.Listing;
+import ghidra.program.model.listing.Program;
+import ghidra.program.model.symbol.Reference;
+
+/**
+ * The {@code serial-shift} mechanism class (bead {@code grm-hsv.1}): MMC1's 5-write
+ * bit-serial shift register (iNES mapper 1) -- any write to the register range with bit 7
+ * set resets the shifter and forces {@code prg_mode} to fix-last; five consecutive writes
+ * with bit 7 clear each contribute one low bit (LSB first), and the 5th write's ADDRESS
+ * (bits 14:13 within the range, not a fixed constant -- games write non-canonical
+ * addresses inside each register's 8K window) selects which physical register the
+ * reassembled 5-bit value commits to.
+ * <p>
+ * <b>Ground truth, not nesdev-wiki idealization</b> (see the bead's survey of verified
+ * mapper-1 disassemblies -- Zelda 1, Final Fantasy, Metroid): every surveyed commercial
+ * game emits the commit sequence as a fully UNROLLED, straight-line
+ * {@code STA/LSR A/STA/LSR A/STA/LSR A/STA/LSR A/STA} chain (5 stores, 4 shifts) -- never
+ * the counted {@code STA/LSR/DEY/BNE} loop the wiki presents as canonical. This strategy's
+ * primary recognizer is therefore a STATIC backward-and-forward walk over that unrolled
+ * shape; the counted-loop idiom is a deliberately separate, SECONDARY recognizer
+ * ({@link #matchCountedLoopBranch}) that shares nothing with the primary path except the
+ * field-deposit helpers.
+ * <p>
+ * <b>Counted-loop idiom -- no engine hook needed.</b> The bead sketched an optional
+ * {@code findIdioms(Program, Function)} engine hook for the loop form, on the theory that
+ * a loop's commit belongs to its EXIT EDGE, which a per-write {@code computeSwitch} can't
+ * express. Prototyping showed the hook is unnecessary: {@code BoardBankAnalyzer}'s
+ * dataflow probes {@code computeSwitch} on EVERY instruction (not just mechanism writes),
+ * so this strategy simply claims the loop's closing {@code BNE} as a switch site -- the
+ * committed state then flows out of the branch's fall-through (the exit edge) exactly like
+ * any other switch result, through the same {@code switchResults} fold, merge, annotation,
+ * retargeting, and helper machinery, with ZERO engine changes (perfect containment). The
+ * committed state also flows around the back edge into the final loop iteration, which is
+ * harmless: the body's only effect is the suppressed STA (below), and by the last
+ * iteration the hardware really has committed. The in-loop STA itself is recognized by
+ * {@link #isCountedLoopBody} -- which DELEGATES to the same branch matcher, so the two
+ * recognizers cannot disagree -- and echoes {@code inState} (no poison, no early commit);
+ * an STA whose surrounding loop the branch matcher rejects falls through to the primary
+ * chain walk and poisons, so a malformed loop can never be silently ignored.
+ * <p>
+ * Params:
+ * <ul>
+ * <li>{@code start}/{@code end} -- the register range ($8000-$FFFF on real MMC1).</li>
+ * <li>{@code targets} -- a map from write-5's address bits 14:13 (0-3: Control/CHR0/CHR1/
+ * PRG) to {@code {fields: [{name, shift, bits}, ...]}}: a MULTI-field deposit from the
+ * ONE reassembled 5-bit commit value (e.g. target 0 splits into {@code mirroring} at
+ * shift 0 width 2 and {@code prg_mode} at shift 2 width 2; target 3 is {@code prg_bank}
+ * at shift 0 width 5). A target index with no {@code targets} entry (MMC1's CHR0/CHR1)
+ * is recognized but deliberately left a no-op on every tracked field -- same no-poison
+ * contract as {@link SelectDataBankSwitchStrategy}'s untracked-select case.</li>
+ * <li>{@code reset} -- field name -> literal value deposited when a bit-7-set write is
+ * seen (MMC1: {@code {prg_mode: 3}} -- mirroring and prg_bank are UNTOUCHED by a
+ * reset, only prg_mode is forced to fix-last).</li>
+ * </ul>
+ * Field-local sub-offsets for every field name referenced above come from
+ * {@code params._field_layout}, the same {@code sets:}-derived injection
+ * {@link BoardBankAnalyzer#configureStrategies} performs for every multi-field mechanism
+ * (see {@link SelectDataBankSwitchStrategy}'s class javadoc).
+ * <p>
+ * <b>Chain-walk algorithm.</b> For a write {@code W} in range with a recognized store
+ * register:
+ * <ol>
+ * <li>Resolve {@code W}'s stored byte via {@link StoredValueScanner} (mask 0xFF). Bit 7
+ * UNKNOWN -> honest degrade: poison every field any target or the reset could touch (the
+ * "partially-known must not silently assume reset" case -- never guess).</li>
+ * <li>Bit 7 known SET -> reset: only the {@code reset} deposits are applied; every other
+ * field (including mirroring) passes {@code inState} through unchanged. Because this
+ * check runs independently for every write the dataflow visits, four consecutive bit-7-set
+ * writes (Zelda's/Metroid's belt-and-suspenders quad reset to all four register
+ * addresses) are four independent resets, never mistaken for shift-chain links -- the
+ * chain walk below only ever chains bit-7-CLEAR stores.</li>
+ * <li>Bit 7 known clear, store register not {@code 'A'} (LSR only shifts A or memory, and
+ * every surveyed game shifts A) -> not a recognized shift op -> poison.</li>
+ * <li>Otherwise, statically walk BOTH directions from {@code W} through the same basic
+ * block: backward while the immediately preceding pair is ({@code LSR A}, another
+ * STA-to-range with the same register), forward while the immediately following pair is
+ * the same shape -- each step requires an unbroken straight-line fall-through predecessor/
+ * successor with no incoming control-flow edge from elsewhere (a branch into the middle of
+ * what looks like a chain cannot be soundly attributed). This determines {@code W}'s
+ * 1-based position and the chain's total length WITHOUT inspecting any value (purely
+ * instruction shape) -- value inspection only happens per-instruction, independently, when
+ * the dataflow engine visits each individual write's own bit 7. A total length other than
+ * exactly 5 (an isolated write, or one a control-flow edge/other instruction breaks out of
+ * a would-be chain) -> poison: it DID hit the mapper register, so conservatism wins.
+ * Positions 1-4 of a valid 5-chain: {@code inState} echoed unchanged (no-change contract,
+ * same as {@link SelectDataBankSwitchStrategy}'s CHR case) -- the actual commit is deferred
+ * to position 5. Position 5: the target is decoded from {@code W}'s OWN address (bits
+ * 14:13, not a fixed constant -- covers FF1's non-canonical $9FFF/$BFFF/$DFFF/$FFF9), and
+ * the reassembled value comes from a SINGLE backward value-scan of the CHAIN START
+ * instruction (the original pre-shift accumulator load): committed bit {@code i} equals
+ * that pre-chain byte's bit {@code i}, because each store contributes its current bit 0
+ * before the next LSR shifts the next bit into position. An unresolvable pre-chain value
+ * degrades to unknown deposited into just that target's fields (the target itself is
+ * still certain from the address) -- never a guess, and never poisons unrelated
+ * targets.</li>
+ * </ol>
+ * <p>
+ * <b>Strategy-match cache compatibility.</b> Per {@code BoardBankAnalyzer#runDataflow}'s
+ * memoization invariant, a non-cacheable strategy's MATCH/no-match decision (is this
+ * instruction this mechanism's write at all) must be an instruction-only predicate,
+ * independent of {@code inState} -- only the resulting VALUE may vary. That holds here:
+ * {@link #computeSwitch} returns non-null for exactly (a) every instruction that writes
+ * anywhere in the configured range, unconditionally (reset, echo, commit, and poison are
+ * all non-null results), and (b) the closing BNE of a counted loop the shape matcher
+ * accepts; only which branch fires -- never whether a result exists --
+ * depends on state-independent, purely-instruction-shape analysis (bit 7's resolution
+ * itself never consults {@code inState} either, since this mechanism's {@link Hooks}
+ * implementation below never resolves a load back to the tracked state -- MMC1's shift
+ * register is write-only). {@link #cacheable()} nonetheless stays {@code false} (the
+ * default): the RESULT for positions 1-4 and for poison both echo/modify {@code inState}
+ * itself, so the value genuinely depends on it even though the match decision does not.
+ */
+public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
+
+	/** One tracked sub-field's field-local {@code [lsb, lsb+width)} bit position. */
+	private record FieldPos(int lsb, int width) {
+		int mask() {
+			return ((1 << width) - 1) << lsb;
+		}
+	}
+
+	/** One field deposit out of the reassembled 5-bit commit value: bits
+	 *  {@code [shift, shift+bits)} of that value land at {@code pos}. */
+	private record TargetField(FieldPos pos, int shift, int bits) {
+	}
+
+	/** One field deposit applied unconditionally on a bit-7 reset. */
+	private record ResetField(FieldPos pos, int value) {
+	}
+
+	/** The result of statically walking the unrolled STA/LSR chain containing one write. */
+	private record ChainInfo(int index, int total, Instruction chainStart) {
+	}
+
+	private AddressSpace space;
+	private long rangeStart;
+	private long rangeEnd;
+
+	private Map<Integer, List<TargetField>> targets;
+	private List<ResetField> resetFields;
+	private final Set<FieldPos> allPoisonFields = new LinkedHashSet<>();
+
+	@Override
+	public String strategyName() {
+		return "serial-shift";
+	}
+
+	@Override
+	public void configure(Program program, JsonObject params, int stateMask) {
+		space = program.getAddressFactory().getDefaultAddressSpace();
+		rangeStart = params.get("start").getAsLong();
+		rangeEnd = params.get("end").getAsLong();
+
+		JsonObject fieldLayout =
+			params.has("_field_layout") ? params.getAsJsonObject("_field_layout") : new JsonObject();
+
+		targets = new java.util.HashMap<>();
+		if (params.has("targets")) {
+			for (Map.Entry<String, JsonElement> e : params.getAsJsonObject("targets").entrySet()) {
+				int idx = Integer.parseInt(e.getKey());
+				List<TargetField> fields = new ArrayList<>();
+				for (JsonElement fe : e.getValue().getAsJsonObject().getAsJsonArray("fields")) {
+					JsonObject fo = fe.getAsJsonObject();
+					FieldPos pos = fieldPos(fieldLayout, fo.get("name").getAsString());
+					int shift = fo.get("shift").getAsInt();
+					int bits = fo.get("bits").getAsInt();
+					fields.add(new TargetField(pos, shift, bits));
+					allPoisonFields.add(pos);
+				}
+				targets.put(idx, fields);
+			}
+		}
+
+		resetFields = new ArrayList<>();
+		if (params.has("reset")) {
+			for (Map.Entry<String, JsonElement> e : params.getAsJsonObject("reset").entrySet()) {
+				FieldPos pos = fieldPos(fieldLayout, e.getKey());
+				resetFields.add(new ResetField(pos, e.getValue().getAsInt()));
+				allPoisonFields.add(pos);
+			}
+		}
+	}
+
+	private static FieldPos fieldPos(JsonObject fieldLayout, String fieldName) {
+		JsonObject fl = fieldLayout.has(fieldName) ? fieldLayout.getAsJsonObject(fieldName) : null;
+		if (fl == null) {
+			throw new IllegalArgumentException(
+				"serial-shift: no field-layout entry for '" + fieldName +
+					"' -- is it listed in this mechanism's 'sets:'?");
+		}
+		return new FieldPos(fl.get("lsb").getAsInt(), fl.get("width").getAsInt());
+	}
+
+	private final StoredValueScanner.Hooks hooks = new StoredValueScanner.Hooks() {
+		@Override
+		public boolean isMechanismWrite(Instruction instr) {
+			return writesInRange(instr) != null;
+		}
+
+		@Override
+		public BankState resolveLoad(Instruction loadInstr, BankState inStateAtStore) {
+			// MMC1's shift register is write-only -- nothing reads it back.
+			return null;
+		}
+	};
+
+	@Override
+	public BankState computeSwitch(Program program, Instruction instr, BankState inState) {
+		Long offset = writesInRange(instr);
+		if (offset == null) {
+			// Not a mechanism write. The ONLY non-write instruction this strategy claims is
+			// the closing BNE of a counted serial-shift loop (the SECONDARY recognizer --
+			// see the "counted-loop idiom" section of the class javadoc): the commit state
+			// attaches to the branch, so the loop's exit edge (and, harmlessly, its back
+			// edge) carries the committed value. Match decision (matchCountedLoopBranch) is
+			// instruction-shape-only, per the engine's strategy-match-cache invariant.
+			CountedLoop loop = matchCountedLoopBranch(program, instr);
+			if (loop == null) {
+				return null;
+			}
+			return commitCountedLoop(program, loop, inState);
+		}
+
+		Character reg = StoredValueScanner.storeRegister(instr);
+		if (reg == null) {
+			// A read-modify-write store (INC/ASL/... to the range) isn't a plain byte
+			// commit this scanner can attribute a value to; it DID hit the register.
+			return poisonAll(inState);
+		}
+
+		// Counted-loop body suppression: the STA inside a recognized counted loop is
+		// covered by the loop's own commit (attached to the BNE above); treating it as an
+		// isolated unchained write would poison the very fields the loop is committing.
+		// The check DELEGATES to matchCountedLoopBranch so the two recognizers can never
+		// disagree: a loop the BNE matcher rejects (wrong trip count, join into the body,
+		// unresolvable shape) leaves its STA to fall through to the chain walk below,
+		// which poisons -- unsound silence is impossible. Must run before the bit-7
+		// resolution: the loop-head STA is a branch target (the BNE's back edge), so the
+		// backward value scan aborts at the join and would misreport bit 7 unknown.
+		if (isCountedLoopBody(program, instr)) {
+			return inState;
+		}
+
+		// Structural shortcut, NOT a StoredValueScanner call: LSR unconditionally shifts a
+		// 0 into bit 7, so any store whose immediately preceding instruction (straight-line,
+		// no incoming control-flow edge) is "LSR A" has a bit 7 that is KNOWN CLEAR by
+		// construction -- true regardless of whatever value was shifted in earlier, and
+		// therefore true for every write 2-5 of a real chain. This matters because
+		// StoredValueScanner deliberately does NOT model LSR bit-wise (its javadoc: shifts
+		// leave the value wholly unknown from that point backward) -- calling it directly on
+		// writes 2-5 would always report bit 7 unknown and poison every chain before the
+		// chain walk ever ran. Only a write NOT immediately preceded by "LSR A" (a chain's
+		// write 1, a reset, or an isolated write) needs the general backward value scan.
+		boolean bit7Known;
+		boolean bit7Set;
+		if (precededByLsrA(program, instr)) {
+			bit7Known = true;
+			bit7Set = false;
+		}
+		else {
+			BankState storedByte =
+				StoredValueScanner.resolveStoredValue(program, instr, reg, inState, 0xFF, hooks);
+			bit7Known = (storedByte.knownMask() & 0x80) != 0;
+			bit7Set = bit7Known && (storedByte.bits() & 0x80) != 0;
+		}
+		if (!bit7Known) {
+			return poisonAll(inState);
+		}
+		if (bit7Set) {
+			return applyReset(inState);
+		}
+
+		if (reg != 'A') {
+			// LSR only shifts the accumulator (or memory, never modeled as the chain
+			// register); every surveyed game's commit chain shifts A.
+			return poisonAll(inState);
+		}
+
+		ChainInfo chain = analyzeChain(program, instr);
+		if (chain == null || chain.total() != 5) {
+			return poisonAll(inState);
+		}
+		if (chain.index() < 5) {
+			// Writes 1-4 of a valid 5-chain: no-change echo: the actual commit happens
+			// once the 5th write is examined.
+			return inState;
+		}
+
+		int targetIdx = (int) ((offset >>> 13) & 0x3);
+		List<TargetField> fields = targets.get(targetIdx);
+		if (fields == null) {
+			// CHR0/CHR1 (or any un-configured target): recognized, deliberately discarded
+			// -- see class javadoc's no-poison contract.
+			return inState;
+		}
+
+		BankState preChainByte = StoredValueScanner.resolveStoredValue(program, chain.chainStart(),
+			reg, inState, 0xFF, hooks);
+		BankState result = inState;
+		for (TargetField tf : fields) {
+			BankState fieldValue = extractByteField(preChainByte, tf.bits(), tf.shift());
+			result = setFieldFromByte(result, tf.pos(), fieldValue);
+		}
+		return result;
+	}
+
+	private BankState applyReset(BankState inState) {
+		BankState result = inState;
+		for (ResetField rf : resetFields) {
+			int widthMask = (1 << rf.pos().width()) - 1;
+			result = setFieldFromByte(result, rf.pos(), BankState.fullyKnown(widthMask, rf.value()));
+		}
+		return result;
+	}
+
+	private BankState poisonAll(BankState inState) {
+		BankState result = inState;
+		for (FieldPos fp : allPoisonFields) {
+			result = setUnknownField(result, fp);
+		}
+		return result;
+	}
+
+	// ------------------------------------------------------------------
+	// Counted-loop idiom (SECONDARY recognizer -- see class javadoc)
+	// ------------------------------------------------------------------
+
+	/** A matched counted serial-shift loop: {@code head} is the in-loop STA (also the
+	 *  BNE's target), {@code counterInit} the {@code LDX/LDY #5} immediately before it
+	 *  (the anchor for the pre-loop A-value scan), {@code staOffset} the STA's target
+	 *  address (target register = its bits 14:13). */
+	private record CountedLoop(Instruction head, Instruction counterInit, long staOffset) {
+	}
+
+	/**
+	 * Matches the counted serial-shift loop's closing branch -- the NESdev-wiki-canonical
+	 * (though never commercially surveyed) form:
+	 * <pre>
+	 *   LDA #value        ; or any A provenance further back (one backward scan)
+	 *   LDY #5            ; or LDX #5 -- must match the loop's own DEC register
+	 * loop:
+	 *   STA <range>       ; the ONLY mechanism write in the body
+	 *   LSR A
+	 *   DEY               ; or DEX
+	 *   BNE loop          ; <- the instruction this matcher accepts
+	 * </pre>
+	 * Guards: the four body instructions must be exactly this shape and order (each
+	 * linked by fall-through); no control-flow edge may enter the body anywhere except
+	 * the BNE's own back edge into the head; the counter init must immediately precede
+	 * the head, target the same register the body decrements, and load exactly 5 (the
+	 * trip count that makes the shift register commit precisely on the last iteration --
+	 * any other count either under-fills the shifter or spills into a second sequence,
+	 * neither of which this recognizer can attribute). The trip-count-4-with-pre-loop-STA
+	 * variant the bead mentions is NOT recognized (the pre-loop STA would be poisoned by
+	 * the primary path as an isolated write) -- acceptable for a secondary recognizer of
+	 * an idiom no surveyed commercial game uses; extend if a real title ever needs it.
+	 * Everything checked here is instruction shape only -- no value inspection -- which
+	 * is what keeps the match/no-match decision compatible with the engine's per-address
+	 * strategy-match cache.
+	 */
+	private CountedLoop matchCountedLoopBranch(Program program, Instruction instr) {
+		if (!instr.getMnemonicString().equalsIgnoreCase("BNE")) {
+			return null;
+		}
+		Address[] flows = instr.getFlows();
+		if (flows.length != 1) {
+			return null;
+		}
+		Listing listing = program.getListing();
+		Instruction head = listing.getInstructionAt(flows[0]);
+		if (head == null || !isChainStore(head)) {
+			return null;
+		}
+		Long staOffset = writesInRange(head);
+		Instruction lsr = nextFallThrough(listing, head);
+		if (lsr == null || !isLsrAccumulator(lsr)) {
+			return null;
+		}
+		Instruction dec = nextFallThrough(listing, lsr);
+		if (dec == null) {
+			return null;
+		}
+		String decMnem = dec.getMnemonicString().toUpperCase();
+		if (!decMnem.equals("DEX") && !decMnem.equals("DEY")) {
+			return null;
+		}
+		Instruction bne = nextFallThrough(listing, dec);
+		if (bne == null || !bne.getMinAddress().equals(instr.getMinAddress())) {
+			return null;
+		}
+
+		// No stray control flow into the body: the head's only incoming flow ref must be
+		// this BNE's back edge, and nothing may branch into the middle instructions.
+		if (!onlyFlowRefFrom(program, head, instr) || isControlFlowJoin(program, lsr, head) ||
+			isControlFlowJoin(program, dec, lsr) || isControlFlowJoin(program, instr, dec)) {
+			return null;
+		}
+
+		Instruction counterInit = listing.getInstructionBefore(head.getMinAddress());
+		if (counterInit == null || !fallsThroughTo(counterInit, head)) {
+			return null;
+		}
+		char counterReg = decMnem.charAt(2); // 'X' | 'Y'
+		if (!counterInit.getMnemonicString().equalsIgnoreCase("LD" + counterReg) ||
+			!StoredValueScanner.isImmediate(counterInit)) {
+			return null;
+		}
+		Integer tripCount = StoredValueScanner.immediateOperandValue(counterInit);
+		if (tripCount == null || tripCount != 5) {
+			return null;
+		}
+		return new CountedLoop(head, counterInit, staOffset);
+	}
+
+	/**
+	 * The counted loop's commit, attached to its closing BNE: reassembles the 5-bit value
+	 * from ONE backward scan of the pre-loop A value (anchored at the counter init, i.e.
+	 * scanning the straight-line code before the loop -- the head itself is a branch
+	 * target, so scanning from it would abort at its own back-edge join). Same LSB-first
+	 * semantics as the unrolled chain: each iteration stores bit 0 then shifts, so the
+	 * committed value is the seed's low 5 bits. A seed whose bit 7 is not known-clear
+	 * poisons instead of committing -- with bit 7 possibly set, iteration 1 would have
+	 * been a hardware RESET (and the remaining four writes an uncommitted partial
+	 * sequence), so nothing about the loop's effect can be trusted.
+	 */
+	private BankState commitCountedLoop(Program program, CountedLoop loop, BankState inState) {
+		BankState seed = StoredValueScanner.resolveStoredValue(program, loop.counterInit(), 'A',
+			inState, 0xFF, hooks);
+		boolean bit7KnownClear = (seed.knownMask() & 0x80) != 0 && (seed.bits() & 0x80) == 0;
+		if (!bit7KnownClear) {
+			return poisonAll(inState);
+		}
+
+		int targetIdx = (int) ((loop.staOffset() >>> 13) & 0x3);
+		List<TargetField> fields = targets.get(targetIdx);
+		if (fields == null) {
+			// CHR target: recognized, deliberately discarded -- same no-poison contract
+			// as the unrolled path.
+			return inState;
+		}
+		BankState result = inState;
+		for (TargetField tf : fields) {
+			result = setFieldFromByte(result, tf.pos(), extractByteField(seed, tf.bits(), tf.shift()));
+		}
+		return result;
+	}
+
+	/** Whether {@code staInstr} is the body store of a counted loop the branch matcher
+	 *  accepts -- found by locating the BNE three instructions ahead and DELEGATING to
+	 *  {@link #matchCountedLoopBranch}, so suppression and commit can never disagree. */
+	private boolean isCountedLoopBody(Program program, Instruction staInstr) {
+		Listing listing = program.getListing();
+		Instruction lsr = nextFallThrough(listing, staInstr);
+		if (lsr == null || !isLsrAccumulator(lsr)) {
+			return false;
+		}
+		Instruction dec = nextFallThrough(listing, lsr);
+		if (dec == null) {
+			return false;
+		}
+		Instruction bne = nextFallThrough(listing, dec);
+		if (bne == null) {
+			return false;
+		}
+		CountedLoop loop = matchCountedLoopBranch(program, bne);
+		return loop != null && loop.head().getMinAddress().equals(staInstr.getMinAddress());
+	}
+
+	/** The instruction at {@code from}'s fall-through address, or {@code null}. */
+	private static Instruction nextFallThrough(Listing listing, Instruction from) {
+		Address ft = from.getFallThrough();
+		return ft == null ? null : listing.getInstructionAt(ft);
+	}
+
+	/** Whether every incoming flow reference to {@code instr} comes from {@code only} --
+	 *  the loop-head variant of {@link #isControlFlowJoin}, where exactly one known
+	 *  branch (the loop's own back edge) is permitted. */
+	private static boolean onlyFlowRefFrom(Program program, Instruction instr, Instruction only) {
+		for (Reference ref : program.getReferenceManager().getReferencesTo(instr.getMinAddress())) {
+			if (ref.getReferenceType().isFlow() &&
+				!ref.getFromAddress().equals(only.getMinAddress())) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	// ------------------------------------------------------------------
+	// Static unrolled-chain walk
+	// ------------------------------------------------------------------
+
+	/**
+	 * Determines {@code sta}'s 1-based position and total length within the maximal
+	 * alternating {@code STA-to-range/LSR A} chain containing it, walking backward and
+	 * forward from {@code sta} through its basic block (see class javadoc's algorithm
+	 * section). Purely a static instruction-shape walk -- no value inspection.
+	 */
+	private ChainInfo analyzeChain(Program program, Instruction sta) {
+		Listing listing = program.getListing();
+
+		int backCount = 0;
+		Instruction chainStart = sta;
+		Instruction cur = sta;
+		while (true) {
+			Instruction prevLsr = listing.getInstructionBefore(cur.getMinAddress());
+			if (prevLsr == null || !fallsThroughTo(prevLsr, cur) ||
+				isControlFlowJoin(program, cur, prevLsr) || !isLsrAccumulator(prevLsr)) {
+				break;
+			}
+			Instruction prevSta = listing.getInstructionBefore(prevLsr.getMinAddress());
+			if (prevSta == null || !fallsThroughTo(prevSta, prevLsr) ||
+				isControlFlowJoin(program, prevLsr, prevSta) || !isChainStore(prevSta)) {
+				break;
+			}
+			backCount++;
+			chainStart = prevSta;
+			cur = prevSta;
+		}
+
+		int forwardCount = 0;
+		cur = sta;
+		while (true) {
+			Address ft1 = cur.getFallThrough();
+			if (ft1 == null) {
+				break;
+			}
+			Instruction nextLsr = listing.getInstructionAt(ft1);
+			if (nextLsr == null || !isLsrAccumulator(nextLsr) ||
+				isControlFlowJoin(program, nextLsr, cur)) {
+				break;
+			}
+			Address ft2 = nextLsr.getFallThrough();
+			if (ft2 == null) {
+				break;
+			}
+			Instruction nextSta = listing.getInstructionAt(ft2);
+			if (nextSta == null || !isChainStore(nextSta) ||
+				isControlFlowJoin(program, nextSta, nextLsr)) {
+				break;
+			}
+			forwardCount++;
+			cur = nextSta;
+		}
+
+		return new ChainInfo(backCount + 1, backCount + 1 + forwardCount, chainStart);
+	}
+
+	/** Whether {@code instr} is a same-shape chain link: a store of register A to the
+	 *  configured range (value/bit-7 is deliberately NOT inspected here -- see class
+	 *  javadoc; each such write gets its own independent bit-7 classification when the
+	 *  dataflow engine visits it directly). */
+	private boolean isChainStore(Instruction instr) {
+		return Character.valueOf('A').equals(StoredValueScanner.storeRegister(instr)) &&
+			writesInRange(instr) != null;
+	}
+
+	/** Whether {@code instr}'s straight-line, non-join predecessor is {@code LSR A} -- see
+	 *  the bit-7-known-clear shortcut in {@link #computeSwitch}. */
+	private boolean precededByLsrA(Program program, Instruction instr) {
+		Listing listing = program.getListing();
+		Instruction prev = listing.getInstructionBefore(instr.getMinAddress());
+		return prev != null && fallsThroughTo(prev, instr) &&
+			!isControlFlowJoin(program, instr, prev) && isLsrAccumulator(prev);
+	}
+
+	/** {@code LSR} in accumulator (implied) addressing -- zero operands, or a bare "A"
+	 *  operand representation, as opposed to {@code LSR <addr>} (memory RMW). */
+	private static boolean isLsrAccumulator(Instruction instr) {
+		if (!instr.getMnemonicString().equalsIgnoreCase("LSR")) {
+			return false;
+		}
+		if (instr.getNumOperands() == 0) {
+			return true;
+		}
+		String rep = instr.getDefaultOperandRepresentation(0);
+		return rep == null || rep.equalsIgnoreCase("A");
+	}
+
+	private static boolean fallsThroughTo(Instruction from, Instruction to) {
+		Address ft = from.getFallThrough();
+		return ft != null && ft.equals(to.getMinAddress());
+	}
+
+	/**
+	 * Whether {@code cur} is reachable other than by falling through from {@code prev} --
+	 * i.e. some other instruction branches/jumps/calls into it, making an attribution
+	 * that assumes only the {@code prev} path unsound. Same logic as
+	 * {@code StoredValueScanner}'s private join check, duplicated here (package-private
+	 * reuse isn't available across that class's private boundary).
+	 */
+	private static boolean isControlFlowJoin(Program program, Instruction cur, Instruction prev) {
+		Address curAddr = cur.getMinAddress();
+		Address prevAddr = prev.getMinAddress();
+		for (Reference ref : program.getReferenceManager().getReferencesTo(curAddr)) {
+			if (ref.getReferenceType().isFlow() && !ref.getFromAddress().equals(prevAddr)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// ------------------------------------------------------------------
+	// Field/byte helpers (same conventions as SelectDataBankSwitchStrategy)
+	// ------------------------------------------------------------------
+
+	private Long writesInRange(Instruction instr) {
+		for (Reference ref : instr.getReferencesFrom()) {
+			Address to = ref.getToAddress();
+			if (ref.getReferenceType().isWrite() && to.getAddressSpace().equals(space) &&
+				to.getOffset() >= rangeStart && to.getOffset() <= rangeEnd) {
+				return to.getOffset();
+			}
+		}
+		return null;
+	}
+
+	private static BankState extractByteField(BankState byteState, int bits, int shift) {
+		int widthMask = (1 << bits) - 1;
+		return new BankState((byteState.knownMask() >>> shift) & widthMask,
+			(byteState.bits() >>> shift) & widthMask);
+	}
+
+	private static BankState setUnknownField(BankState base, FieldPos field) {
+		int mask = field.mask();
+		return new BankState(base.knownMask() & ~mask, base.bits() & ~mask);
+	}
+
+	private static BankState setFieldFromByte(BankState base, FieldPos field, BankState fieldValue) {
+		int mask = field.mask();
+		int knownBits = (fieldValue.knownMask() << field.lsb()) & mask;
+		int valueBits = (fieldValue.bits() << field.lsb()) & mask;
+		return new BankState((base.knownMask() & ~mask) | knownBits,
+			(base.bits() & ~mask) | valueBits);
+	}
+}

@@ -1,0 +1,213 @@
+# SYNTHETIC TEST BOARD -- not real hardware. Built for bead grm-hsv.1 to exercise
+# SerialShiftBankSwitchStrategy (MMC1's 5-write bit-serial shift-register commit idiom)
+# end to end, exactly the way machines/nes-modetest.yaml proved out memory.layouts[] for
+# mode-dependent windows and machines/nes-mmc3.yaml proved out SelectDataBankSwitchStrategy.
+# NO real nes-mmc1.yaml board descriptor exists yet -- that is the NEXT bead (grm-hsv.2),
+# which will need a Metroid-shaped (128 KiB, 8 x 16 KiB) fixture whose commit values are
+# far less friendly than this synthetic board's (deferred/mailbox provenance, computed
+# values). See tools/banktest/mknesbanktest.py's nesserialtest fixture(s) for the
+# analyzer-facing scenarios this board sets up (F-reset, F-unrolled, F-noncanonical,
+# F-chr-discard, F-loop, F-unresolvable, F-partial-bit7).
+#
+# Mapper-number choice: the NESdev wiki marks exactly ONE iNES mapper number as formally
+# "reserved for use by tools, such as emulator internal use or private use during
+# development of a new mapper" -- mapper 100 (https://www.nesdev.org/wiki/Mapper) -- and
+# machines/nes-modetest.yaml already claims it. Mappers 101/102/248 (candidates one might
+# guess are similarly "safe") are actually documented as "duplicate mapper assigned by
+# mistake" -- i.e. a REAL board's number, just erroneously reused -- so claiming one of
+# those risks colliding with an actual cartridge's declared mapper. This descriptor
+# instead uses mapper 222, which the wiki's List of mappers page (surveyed 2026-07-11)
+# lists no board/name for at all in the 211-227 gap -- undocumented/unassigned rather than
+# formally reserved. Since this ROM is a purely local test fixture generated and consumed
+# only by tools/banktest/*, never distributed, the practical collision risk is nil either
+# way; this note exists so a future maintainer who DOES want to ship a real board under
+# mapper 222 knows to move this synthetic board off it first.
+#
+# One serial-shift mechanism watching the whole $8000-$FFFF register range (real MMC1's
+# range -- every window in it also carries on_write: mechanism, MMC3-style, since writes
+# there hit the mapper register regardless of what PRG content is currently mapped there):
+#   banking.state, LSB-first: mirroring(2) + prg_mode(2) + prg_bank(5) = 9 bits.
+#   targets: {0: mirroring+prg_mode (Control register), 3: prg_bank (PRG bank register)}
+#     -- targets 1/2 (CHR0/CHR1) are omitted: recognized but deliberately discarded, same
+#     no-poison contract as SelectDataBankSwitchStrategy's untracked CHR registers.
+#   reset: prg_mode -> 3 only (mirroring/prg_bank survive a reset untouched, matching real
+#     MMC1: a bit-7-set write ORs Control with $0C, forcing prg_mode to fix-last, and
+#     leaves mirroring and every other register alone).
+#
+# 32K-mode (prg_mode 0/1) design wrinkle, DECIDED (see bead grm-hsv.1's design note): real
+# MMC1 hardware ignores prg_bank's LSB in 32K mode, i.e. the window maps
+# PRG[(prg_bank >> 1) * 0x8000]. MapCompiler's maps: expression grammar
+# (DescriptorSupport.evalExpr) supports only integer literals, `last`/`second_last`, and
+# `+ - *` -- no shift or divide. Rather than extend that shared grammar for a synthetic
+# fixture whose PURPOSE is proving the shift-register commit/layout-selection plumbing
+# (already fully exercised by prg_mode 2/3 below, which DO depend on prg_bank), modes 0
+# and 1 here map a single FIXED 32 KiB window (PRG[0], no bank dependency at all) -- which
+# is not even a loss of hardware fidelity, since real MMC1 modes 0 and 1 are electrically
+# IDENTICAL (the mode-select encoding simply has two bit patterns for "32K mode", hardware
+# does not distinguish them either). This still exercises memory.layouts[] against all
+# FOUR prg_mode values (a distinct layout entry per value, single-window vs two-window
+# window-COUNT changing across entries) without needing new expression-grammar support.
+# grm-hsv.2's real nes-mmc1.yaml, if it wants byte-accurate 32K-mode addressing, will need
+# either a maps: grammar extension (>> or /) or a second derived state field (e.g.
+# prg_bank_32k, width 4, aliasing prg_bank's bits 1-4) -- flagged here for that bead.
+
+schema: 2
+
+system:
+  id: nes_serialtest
+  name: NES Serial-Shift (MMC1-style) Test Board (synthetic, iNES mapper 222)
+  board:
+    ines_mappers: [222]      # synthetic/unassigned test mapper number; see note above
+  cpu:
+    language: "6502:LE:16:default"
+
+physical:
+  - { name: PRG, image: prg_rom }
+
+memory:
+  regions:                        # always visible, never banked
+    - name: RAM
+      start: 0x0000
+      end: 0x07FF
+      kind: ram
+      comment: "2 KiB internal RAM; mirrored at $0800-$1FFF (mirrors noted, not modeled)"
+    - name: PPU_REGS
+      start: 0x2000
+      end: 0x2007
+      kind: io
+      type: NES_PPU
+      comment: "PPU registers; mirrored every 8 bytes through $3FFF (mirrors noted, not modeled)"
+    - name: APU_IO
+      start: 0x4000
+      end: 0x401F
+      kind: io
+      type: NES_APU_IO
+      comment: "APU, OAM DMA, controller, and 2A03 test-mode registers"
+
+  windows: []                     # every PRG window is mode-dependent -- see layouts
+
+  layouts:
+    # prg_mode 0/1 (32K mode, electrically identical on real MMC1 -- see module doc): one
+    # fixed 32 KiB window, no prg_bank dependency (the documented simplification).
+    - when: { prg_mode: 0 }
+      windows:
+        - { name: W8000, start: 0x8000, size: 0x8000, maps: "PRG[0]", on_write: mechanism }
+    - when: { prg_mode: 1 }
+      windows:
+        - { name: W8000, start: 0x8000, size: 0x8000, maps: "PRG[0]", on_write: mechanism }
+    # prg_mode 2 (fix-first): W8000 fixed to bank 0, WC000 switches on prg_bank.
+    - when: { prg_mode: 2 }
+      windows:
+        - { name: W8000, start: 0x8000, size: 0x4000, maps: "PRG[0]",              on_write: mechanism }
+        - { name: WC000, start: 0xC000, size: 0x4000, maps: "PRG[prg_bank * 0x4000]", on_write: mechanism }
+    # prg_mode 3 (fix-last, the reset-dance convention -- MMC1's initial_state below):
+    # W8000 switches on prg_bank, WC000 fixed to the last bank.
+    - when: { prg_mode: 3 }
+      windows:
+        - { name: W8000, start: 0x8000, size: 0x4000, maps: "PRG[prg_bank * 0x4000]", on_write: mechanism }
+        - { name: WC000, start: 0xC000, size: 0x4000, maps: "PRG[last]",              on_write: mechanism }
+
+banking:
+  state:
+    # LSB-first packing: mirroring bits 0-1, prg_mode bits 2-3, prg_bank bits 4-8.
+    - { name: mirroring, bits: 2 }
+    - { name: prg_mode,  bits: 2 }
+    - { name: prg_bank,  bits: 5 }
+  mechanisms:
+    - strategy: serial-shift
+      params:
+        start: 0x8000
+        end: 0xFFFF
+        targets:
+          # target index = write-5's address bits 14:13 within $8000-$FFFF (0=Control/
+          # $8000-$9FFF, 1=CHR0/$A000-$BFFF, 2=CHR1/$C000-$DFFF, 3=PRG/$E000-$FFFF).
+          # Targets 1/2 (CHR) are intentionally absent -- recognized, discarded.
+          0: { fields: [ { name: mirroring, shift: 0, bits: 2 }, { name: prg_mode, shift: 2, bits: 2 } ] }
+          3: { fields: [ { name: prg_bank, shift: 0, bits: 5 } ] }
+        reset: { prg_mode: 3 }
+      sets: [mirroring, prg_mode, prg_bank]
+  context_register: nesbank       # provisional name; see machines/nes-uxrom.yaml's note
+  # Power-on register contents are electrically undefined; the reset-dance convention
+  # (every real MMC1 game's first act is a bit-7-set write, forcing prg_mode=3) is what
+  # this board assumes as its power-on truth too -- prg_mode=3, prg_bank=0, mirroring=0.
+  initial_state: { mirroring: 0, prg_mode: 3, prg_bank: 0 }
+
+symbols:
+  - set: nes-mmio
+    default: on
+    inline:
+      - { addr: 0x2000, name: PPUCTRL,   kind: label, comment: "NMI enable, pattern/nametable select" }
+      - { addr: 0x2001, name: PPUMASK,   kind: label, comment: "render enable, color emphasis" }
+      - { addr: 0x2002, name: PPUSTATUS, kind: label, comment: "vblank/sprite0 flags; read clears latch" }
+      - { addr: 0x2003, name: OAMADDR,   kind: label }
+      - { addr: 0x2004, name: OAMDATA,   kind: label }
+      - { addr: 0x2005, name: PPUSCROLL, kind: label, comment: "x/y scroll (two writes)" }
+      - { addr: 0x2006, name: PPUADDR,   kind: label, comment: "VRAM address (two writes)" }
+      - { addr: 0x2007, name: PPUDATA,   kind: label, comment: "VRAM data port" }
+      - { addr: 0x4014, name: OAMDMA,    kind: label, comment: "OAM DMA source page" }
+      - { addr: 0x4015, name: SND_CHN,   kind: label, comment: "APU channel enable/status" }
+      - { addr: 0x4016, name: JOY1,      kind: label, comment: "controller 1 / strobe" }
+      - { addr: 0x4017, name: JOY2,      kind: label, comment: "controller 2 / APU frame counter" }
+      - { addr: 0xFFFA, name: NMI_VEC,   kind: vector }
+      - { addr: 0xFFFC, name: RESET_VEC, kind: vector }
+      - { addr: 0xFFFE, name: IRQ_VEC,   kind: vector }
+
+# types: duplicated verbatim from machines/nes-nrom.yaml (NES_PPU/NES_APU_IO structs are
+# identical across all NES boards). Accepted cost until an include mechanism lands.
+types:
+  - name: NES_PPU
+    kind: struct
+    fields:
+      - { offset: 0, name: PPUCTRL,   size: 1, comment: "NMI enable, sprite size, bg/sprite pattern table, VRAM increment, base nametable" }
+      - { offset: 1, name: PPUMASK,   size: 1, comment: "color emphasis, sprite/bg enable, greyscale" }
+      - { offset: 2, name: PPUSTATUS, size: 1, comment: "vblank, sprite 0 hit, sprite overflow (read resets $2005/$2006 latch)" }
+      - { offset: 3, name: OAMADDR,   size: 1 }
+      - { offset: 4, name: OAMDATA,   size: 1 }
+      - { offset: 5, name: PPUSCROLL, size: 1, comment: "x/y scroll (two writes)" }
+      - { offset: 6, name: PPUADDR,   size: 1, comment: "VRAM address (two writes, high then low)" }
+      - { offset: 7, name: PPUDATA,   size: 1, comment: "VRAM read/write (buffered reads)" }
+  - name: NES_APU_IO
+    kind: struct
+    fields:
+      - { offset: 0,  name: SQ1_VOL,    size: 1, comment: "pulse 1 duty, envelope" }
+      - { offset: 1,  name: SQ1_SWEEP,  size: 1 }
+      - { offset: 2,  name: SQ1_LO,     size: 1, comment: "pulse 1 timer low" }
+      - { offset: 3,  name: SQ1_HI,     size: 1, comment: "pulse 1 length counter load, timer high" }
+      - { offset: 4,  name: SQ2_VOL,    size: 1, comment: "pulse 2 duty, envelope" }
+      - { offset: 5,  name: SQ2_SWEEP,  size: 1 }
+      - { offset: 6,  name: SQ2_LO,     size: 1, comment: "pulse 2 timer low" }
+      - { offset: 7,  name: SQ2_HI,     size: 1, comment: "pulse 2 length counter load, timer high" }
+      - { offset: 8,  name: TRI_LINEAR, size: 1, comment: "triangle linear counter" }
+      - { offset: 9,  name: UNUSED_4009, size: 1 }
+      - { offset: 10, name: TRI_LO,     size: 1, comment: "triangle timer low" }
+      - { offset: 11, name: TRI_HI,     size: 1, comment: "triangle length counter load, timer high" }
+      - { offset: 12, name: NOISE_VOL,  size: 1, comment: "noise envelope" }
+      - { offset: 13, name: UNUSED_400D, size: 1 }
+      - { offset: 14, name: NOISE_LO,   size: 1, comment: "noise mode, period" }
+      - { offset: 15, name: NOISE_HI,   size: 1, comment: "noise length counter load" }
+      - { offset: 16, name: DMC_FREQ,   size: 1, comment: "DMC IRQ enable, loop, rate" }
+      - { offset: 17, name: DMC_RAW,    size: 1, comment: "DMC direct load (7-bit DAC)" }
+      - { offset: 18, name: DMC_START,  size: 1, comment: "DMC sample address" }
+      - { offset: 19, name: DMC_LEN,    size: 1, comment: "DMC sample length" }
+      - { offset: 20, name: OAMDMA,     size: 1, comment: "OAM DMA source page (write suspends CPU ~513 cycles)" }
+      - { offset: 21, name: SND_CHN,    size: 1, comment: "channel enable (write) / status (read)" }
+      - { offset: 22, name: JOY1,       size: 1, comment: "controller 1 data (read) / strobe (write)" }
+      - { offset: 23, name: JOY2,       size: 1, comment: "controller 2 data (read) / APU frame counter (write)" }
+      - { offset: 24, name: TEST_4018,  size: 1, comment: "2A03 test mode" }
+      - { offset: 25, name: TEST_4019,  size: 1, comment: "2A03 test mode" }
+      - { offset: 26, name: TEST_401A,  size: 1, comment: "2A03 test mode" }
+      - { offset: 27, name: TEST_401B,  size: 1, comment: "2A03 test mode" }
+      - { offset: 28, name: TEST_401C,  size: 1, comment: "2A03 test mode" }
+      - { offset: 29, name: TEST_401D,  size: 1, comment: "2A03 test mode" }
+      - { offset: 30, name: TEST_401E,  size: 1, comment: "2A03 test mode" }
+      - { offset: 31, name: TEST_401F,  size: 1, comment: "2A03 test mode" }
+
+formats:
+  ines:
+    extensions: [".nes"]
+
+validation:
+  oracle: none
+  checks:
+    - "SYNTHETIC test board; no real-hardware oracle applies -- verified against the
+       banktest suite's runtime behavior only (bead grm-hsv.1)."
