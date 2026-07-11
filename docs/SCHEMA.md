@@ -358,6 +358,55 @@ critical sets (KERNAL jump table) may be inline in the descriptor.
 when the KERNAL ROM slot is empty — calls from game code then resolve to named stubs
 instead of dangling into the void.
 
+## Types: struct, flags, and enum kinds
+
+`types[]` entries become `DataTypeManager` data types, built at Gradle time by
+`GdtBuilder` (`tools/gdtbuilder`) into the machine's `.gdt` archive — see "Resolved
+decisions" below. Every entry has `name:` and `kind:`; `kind:` selects one of:
+
+- **`struct`** — a register/memory-layout structure. Fields either inline
+  (`fields: [{offset, name, size|type, comment}]`) or pulled from an external
+  `source: <file>.yaml` (a file with a top-level `fields:` list, optionally `size:`) —
+  see `MOS6526_CIA` in `machines/c64.yaml` / `machines/generated/c64ref-cia.yaml`. A
+  field's `type:` may reference another `types[]` entry by name (cross-references are
+  topologically ordered, so declaration order doesn't matter).
+- **`flags`** — a bitmask enum. `bits: [{bit, name, comment}]`; each member's value is
+  derived as `1 << bit`, so members are inherently non-overlapping single-bit flags. See
+  `R6510_PORT_BITS`.
+- **`enum`** — a sequential-value enum for closed value sets that are *not* bit flags
+  (opcode tables, tokenizer byte tables, mode-select constants). `values: [{value, name,
+  comment}]`; **`value:` is required on every entry** — unlike `flags`, there is no
+  implicit 0..N-1 assignment, because these tables commonly start at a nonzero base
+  (e.g. BASIC tokens start at `$80`). A type-level `size:` (bytes; default 1) sets the
+  enum's underlying storage size. Duplicate member names or duplicate values within one
+  enum fail the build with a clear message (Ghidra's `EnumDataType` would otherwise
+  silently overwrite or alias them rather than erroring).
+
+  Like `struct`, an `enum` may pull its values from an external file instead of an
+  inline `values:` list, to let multiple archives/dialects share one transcription:
+  `source: <file>.yaml` + `lists: [name, ...]`. The source file has a top-level
+  `lists:` map of named value-entry lists; the type's `lists:` names one or more of
+  them to concatenate, in order. This is how `BASIC_V2_TOKEN` in `machines/c64.yaml`
+  pulls its 76 members from `machines/generated/basic-tokens.yaml`'s `basic2-base`
+  list — a later dialect (PET BASIC 4, C128 BASIC 7) adds a sibling extension list to
+  that same shared file plus one new `types:` entry (`lists: [basic2-base,
+  basicN-ext]`) in its own machine YAML, without re-transcribing or forking the base
+  list. See the header comment in `machines/generated/basic-tokens.yaml` for the full
+  dialect-fork model (BASIC 2/3.5/4/7 share `$80-$CB`; each dialect assigns different
+  keywords to the same `$CC+` byte values above that; C128 BASIC 7 additionally has
+  two-byte prefix tokens, planned as separate per-prefix enums, not yet implemented).
+
+  Member names should be the literal keyword/mnemonic where Ghidra's enum member
+  naming accepts it — verified empirically (`GdtBuilder`, ghidra 12.1.2): `EnumDataType`
+  stores member names as plain strings with no symbol-style character restriction, so
+  punctuation such as `#`, `(`, `$`, and single-character operator tokens (`+`, `=`,
+  `<`, ...) work directly as member names. One caveat found empirically: plain YAML
+  scalars that are YAML 1.1 boolean literals (`ON`, `OFF`, `YES`, `NO`, `TRUE`,
+  `FALSE`, `Y`, `N`, ...) must be quoted (`"ON"`) or the YAML parser hands `GdtBuilder`
+  a `Boolean` instead of a `String`. `comment:` should always repeat the exact
+  keyword/mnemonic regardless of what the member name ended up being, so a listing or
+  decompiler hover is unambiguous.
+
 ## Scaling preview (what will force schema revisions)
 
 - **NES**: the PRG side landed in schema 2 (computed windows, physical spaces,

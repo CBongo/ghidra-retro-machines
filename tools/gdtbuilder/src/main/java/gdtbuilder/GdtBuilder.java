@@ -33,6 +33,7 @@ import ghidra.GhidraApplicationLayout;
 import ghidra.program.model.data.ByteDataType;
 import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.DataTypeConflictHandler;
+import ghidra.program.model.data.Enum;
 import ghidra.program.model.data.EnumDataType;
 import ghidra.program.model.data.FileDataTypeManager;
 import ghidra.program.model.data.StructureDataType;
@@ -117,7 +118,14 @@ public class GdtBuilder {
 				"Verify: " + outputGdt.getAbsolutePath() + " contains " + all.size()
 					+ " data type(s):");
 			for (DataType dt : all) {
-				System.err.println("  " + dt.getName());
+				if (dt instanceof Enum) {
+					Enum e = (Enum) dt;
+					System.err.println(
+						"  " + dt.getName() + " (enum, " + e.getCount() + " member(s))");
+				}
+				else {
+					System.err.println("  " + dt.getName());
+				}
 			}
 			if (all.isEmpty()) {
 				throw new IllegalStateException(
@@ -162,6 +170,9 @@ public class GdtBuilder {
 			DataType dt;
 			if ("flags".equals(kind)) {
 				dt = buildFlags(typeDef);
+			}
+			else if ("enum".equals(kind)) {
+				dt = buildEnum(typeDef, descriptorDir);
 			}
 			else if ("struct".equals(kind)) {
 				dt = buildStruct(typeDef, fieldsByName.get(name), explicitSizeByName.get(name),
@@ -222,6 +233,55 @@ public class GdtBuilder {
 		Integer explicitSize = typeDef.containsKey("size") ? intValue(typeDef.get("size"))
 			: (sourceDoc.containsKey("size") ? intValue(sourceDoc.get("size")) : null);
 		return new StructSource(fields, explicitSize);
+	}
+
+	/**
+	 * Returns the value-entry list for an enum type, whether defined inline via
+	 * {@code values:} or pulled from a shared {@code source:} file's {@code lists:} map (see
+	 * {@link #buildEnum}). When {@code source:} is used, {@code lists:} on the type entry
+	 * names one or more lists in that file to concatenate, in order — this is how a later
+	 * dialect composes "shared base + my own extension range" without duplicating the base.
+	 */
+	@SuppressWarnings("unchecked")
+	private static List<Map<String, Object>> resolveEnumValues(Map<String, Object> typeDef,
+			File descriptorDir) throws IOException {
+		String name = (String) typeDef.get("name");
+		if (typeDef.containsKey("values")) {
+			return (List<Map<String, Object>>) typeDef.get("values");
+		}
+		String source = (String) typeDef.get("source");
+		if (source == null) {
+			throw new IllegalArgumentException(
+				"enum '" + name + "' has neither values: nor source:");
+		}
+		File sourceFile = new File(descriptorDir, source);
+		if (!sourceFile.isFile()) {
+			throw new IllegalArgumentException("enum '" + name
+				+ "' references source file that does not exist: " + sourceFile);
+		}
+		Map<String, Object> sourceDoc = YamlSupport.load(sourceFile);
+		Map<String, List<Map<String, Object>>> lists =
+			(Map<String, List<Map<String, Object>>>) sourceDoc.get("lists");
+		if (lists == null) {
+			throw new IllegalArgumentException(
+				"source file has no top-level 'lists:' map: " + sourceFile);
+		}
+		List<Object> listNames = (List<Object>) typeDef.get("lists");
+		if (listNames == null || listNames.isEmpty()) {
+			throw new IllegalArgumentException(
+				"enum '" + name + "' has source: but no lists: [...] naming which list(s) to use");
+		}
+		List<Map<String, Object>> combined = new ArrayList<>();
+		for (Object listNameObj : listNames) {
+			String listName = (String) listNameObj;
+			List<Map<String, Object>> list = lists.get(listName);
+			if (list == null) {
+				throw new IllegalArgumentException("enum '" + name + "' references unknown list '"
+					+ listName + "' in " + sourceFile);
+			}
+			combined.addAll(list);
+		}
+		return combined;
 	}
 
 	/**
@@ -286,6 +346,64 @@ public class GdtBuilder {
 				}
 				else {
 					enumDt.add(bitName, value);
+				}
+			}
+		}
+		String comment = (String) typeDef.get("comment");
+		if (comment != null) {
+			enumDt.setDescription(comment);
+		}
+		return enumDt;
+	}
+
+	/**
+	 * Builds a sequential-value enum: {@code values: [{value, name, comment}]}, either
+	 * inline or (like struct's {@code source:}) pulled from an external YAML file so
+	 * multiple archives/dialects can share one transcribed value list. Unlike {@code flags}
+	 * (a bitmask enum whose value is derived from `bit:`), every entry here must carry an
+	 * explicit `value:` — there is no implicit 0..N-1 assignment, since enums such as token
+	 * tables commonly start at a nonzero base (e.g. 0x80). Duplicate names or duplicate
+	 * values within one enum are rejected: {@link EnumDataType}'s underlying maps would
+	 * otherwise silently overwrite/alias them rather than failing the build.
+	 * <p>
+	 * External sharing shape (see {@code machines/generated/basic-tokens.yaml}): the source
+	 * file has a top-level {@code lists:} map of named value lists (e.g. a dialect's shared
+	 * base range plus, later, per-dialect extension ranges that fork above the base). The
+	 * type entry then names which lists to concatenate via {@code lists: [name, ...]}. This
+	 * lets a later dialect (e.g. BASIC 4/7) add one new list to the shared file and one new
+	 * `types:` entry (base list + its own extension list) without touching or re-transcribing
+	 * the existing base list or any other machine's descriptor.
+	 */
+	private static EnumDataType buildEnum(Map<String, Object> typeDef, File descriptorDir)
+			throws IOException {
+		String name = (String) typeDef.get("name");
+		int size = typeDef.containsKey("size") ? intValue(typeDef.get("size")) : 1;
+		EnumDataType enumDt = new EnumDataType(name, size);
+		List<Map<String, Object>> values = resolveEnumValues(typeDef, descriptorDir);
+		if (values != null) {
+			Set<String> seenNames = new HashSet<>();
+			Set<Long> seenValues = new HashSet<>();
+			for (Map<String, Object> entry : values) {
+				String entryName = (String) entry.get("name");
+				if (!entry.containsKey("value")) {
+					throw new IllegalArgumentException("enum '" + name + "' entry '" + entryName
+						+ "' has no explicit 'value:' (enum kind requires explicit values)");
+				}
+				long value = intValue(entry.get("value"));
+				String comment = (String) entry.get("comment");
+				if (!seenNames.add(entryName)) {
+					throw new IllegalArgumentException(
+						"enum '" + name + "' has duplicate member name '" + entryName + "'");
+				}
+				if (!seenValues.add(value)) {
+					throw new IllegalArgumentException("enum '" + name + "' has duplicate value "
+						+ value + " (member '" + entryName + "')");
+				}
+				if (comment != null) {
+					enumDt.add(entryName, value, comment);
+				}
+				else {
+					enumDt.add(entryName, value);
 				}
 			}
 		}

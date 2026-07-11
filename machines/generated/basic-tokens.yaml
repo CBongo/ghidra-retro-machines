@@ -1,0 +1,125 @@
+# Commodore BASIC tokenizer value lists, shared across BASIC dialects/machines via the
+# `enum` type kind's `source:` + `lists:` mechanism (see docs/SCHEMA.md and the
+# BASIC_V2_TOKEN entry in machines/c64.yaml). This is the single transcription of the
+# token table; per-dialect `types:` entries in machine YAMLs select which list(s) to
+# concatenate into their enum, so adding a dialect never re-transcribes or forks the
+# base list.
+#
+# Dialect model (verified against the C64 Programmer's Reference Guide token table and
+# cross-checked against c64-wiki.com's BASIC token list):
+#
+#   - `basic2-base` ($80-$CB, 76 tokens, END..GO) is IDENTICAL across BASIC 2 (C64),
+#     BASIC 3.5 (C16/Plus4), BASIC 4 (PET/CBM-II), and BASIC 7 (C128). It is the single
+#     source of truth for all four dialects' shared range.
+#
+#   - Above $CB the dialects FORK: each assigns the same $CC+ byte values to DIFFERENT
+#     keywords. BASIC 4 assigns $CC+ to disk-command keywords (CONCAT, DOPEN, DCLOSE,
+#     RECORD, HEADER, COLLECT, BACKUP, COPY, APPEND, DSAVE, DLOAD, CATALOG, RENAME,
+#     SCRATCH, DIRECTORY); BASIC 3.5/7 assign the same values to a different keyword set
+#     (RGR, RCLR, ...). A future dialect's `types:` entry therefore composes
+#     `lists: [basic2-base, basicN-ext]` — never a single linear list — and this file
+#     gains one new `basicN-ext` sibling list per dialect, added independently of the
+#     others.
+#
+#   - BASIC 7 (C128) additionally has TWO-BYTE tokens: a prefix byte ($CE or $FE)
+#     followed by a second byte selecting the extended keyword. Those are NOT
+#     implemented yet (no `lists:` entry below covers them). When they land, each
+#     prefix's second-byte table is its own list here (e.g. `basic7-fe-ext`) and builds
+#     as its own single-byte enum in the consuming machine YAML (e.g.
+#     `BASIC_V7_TOKEN_FE`, `kind: enum, size: 1, source: ..., lists: [basic7-fe-ext]`)
+#     since a single 1-byte Ghidra enum cannot represent a two-byte token space — the
+#     prefix byte itself is just BASIC_V7_TOKEN's normal $CE/$FE entry from its own
+#     extension list, and the analyzer (grm-odt.1, not this bead) is what would walk
+#     prefix -> second-byte.
+#
+# Member-naming note: entries whose keyword is not a valid-looking identifier (e.g.
+# "INPUT#", "TAB(", "+", "STR$") are still stored under the literal keyword as the enum
+# member `name:` — Ghidra's EnumDataType accepts arbitrary strings as member names (no
+# symbol-style character restriction; verified empirically against ghidra 12.1.2's
+# EnumDataType, which stores names as plain map keys). `comment:` always repeats the
+# exact keyword so a listing/decompiler hover is unambiguous either way.
+
+lists:
+  basic2-base:
+    - { value: 0x80, name: END, comment: "END" }
+    - { value: 0x81, name: FOR, comment: "FOR" }
+    - { value: 0x82, name: NEXT, comment: "NEXT" }
+    - { value: 0x83, name: DATA, comment: "DATA" }
+    - { value: 0x84, name: "INPUT#", comment: "INPUT#" }
+    - { value: 0x85, name: INPUT, comment: "INPUT" }
+    - { value: 0x86, name: DIM, comment: "DIM" }
+    - { value: 0x87, name: READ, comment: "READ" }
+    - { value: 0x88, name: LET, comment: "LET" }
+    - { value: 0x89, name: GOTO, comment: "GOTO" }
+    - { value: 0x8A, name: RUN, comment: "RUN" }
+    - { value: 0x8B, name: IF, comment: "IF" }
+    - { value: 0x8C, name: RESTORE, comment: "RESTORE" }
+    - { value: 0x8D, name: GOSUB, comment: "GOSUB" }
+    - { value: 0x8E, name: RETURN, comment: "RETURN" }
+    - { value: 0x8F, name: REM, comment: "REM" }
+    - { value: 0x90, name: STOP, comment: "STOP" }
+    - { value: 0x91, name: "ON", comment: "ON" }
+    - { value: 0x92, name: WAIT, comment: "WAIT" }
+    - { value: 0x93, name: LOAD, comment: "LOAD" }
+    - { value: 0x94, name: SAVE, comment: "SAVE" }
+    - { value: 0x95, name: VERIFY, comment: "VERIFY" }
+    - { value: 0x96, name: DEF, comment: "DEF" }
+    - { value: 0x97, name: POKE, comment: "POKE" }
+    - { value: 0x98, name: "PRINT#", comment: "PRINT#" }
+    - { value: 0x99, name: PRINT, comment: "PRINT" }
+    - { value: 0x9A, name: CONT, comment: "CONT" }
+    - { value: 0x9B, name: LIST, comment: "LIST" }
+    - { value: 0x9C, name: CLR, comment: "CLR" }
+    - { value: 0x9D, name: CMD, comment: "CMD" }
+    - { value: 0x9E, name: SYS, comment: "SYS" }
+    - { value: 0x9F, name: OPEN, comment: "OPEN" }
+    - { value: 0xA0, name: CLOSE, comment: "CLOSE" }
+    - { value: 0xA1, name: GET, comment: "GET" }
+    - { value: 0xA2, name: NEW, comment: "NEW" }
+    - { value: 0xA3, name: "TAB(", comment: "TAB(" }
+    - { value: 0xA4, name: TO, comment: "TO" }
+    - { value: 0xA5, name: FN, comment: "FN" }
+    - { value: 0xA6, name: "SPC(", comment: "SPC(" }
+    - { value: 0xA7, name: THEN, comment: "THEN" }
+    - { value: 0xA8, name: NOT, comment: "NOT" }
+    - { value: 0xA9, name: STEP, comment: "STEP" }
+    - { value: 0xAA, name: "+", comment: "+" }
+    - { value: 0xAB, name: "-", comment: "-" }
+    - { value: 0xAC, name: "*", comment: "*" }
+    - { value: 0xAD, name: "/", comment: "/" }
+    - { value: 0xAE, name: "^", comment: "^" }
+    - { value: 0xAF, name: AND, comment: "AND" }
+    - { value: 0xB0, name: OR, comment: "OR" }
+    - { value: 0xB1, name: ">", comment: ">" }
+    - { value: 0xB2, name: "=", comment: "=" }
+    - { value: 0xB3, name: "<", comment: "<" }
+    - { value: 0xB4, name: SGN, comment: "SGN" }
+    - { value: 0xB5, name: INT, comment: "INT" }
+    - { value: 0xB6, name: ABS, comment: "ABS" }
+    - { value: 0xB7, name: USR, comment: "USR" }
+    - { value: 0xB8, name: FRE, comment: "FRE" }
+    - { value: 0xB9, name: POS, comment: "POS" }
+    - { value: 0xBA, name: SQR, comment: "SQR" }
+    - { value: 0xBB, name: RND, comment: "RND" }
+    - { value: 0xBC, name: LOG, comment: "LOG" }
+    - { value: 0xBD, name: EXP, comment: "EXP" }
+    - { value: 0xBE, name: COS, comment: "COS" }
+    - { value: 0xBF, name: SIN, comment: "SIN" }
+    - { value: 0xC0, name: TAN, comment: "TAN" }
+    - { value: 0xC1, name: ATN, comment: "ATN" }
+    - { value: 0xC2, name: PEEK, comment: "PEEK" }
+    - { value: 0xC3, name: LEN, comment: "LEN" }
+    - { value: 0xC4, name: "STR$", comment: "STR$" }
+    - { value: 0xC5, name: VAL, comment: "VAL" }
+    - { value: 0xC6, name: ASC, comment: "ASC" }
+    - { value: 0xC7, name: "CHR$", comment: "CHR$" }
+    - { value: 0xC8, name: "LEFT$", comment: "LEFT$" }
+    - { value: 0xC9, name: "RIGHT$", comment: "RIGHT$" }
+    - { value: 0xCA, name: "MID$", comment: "MID$" }
+    - { value: 0xCB, name: GO, comment: "GO" }
+  # Future sibling lists (added independently, one per dialect, when that dialect's
+  # machine YAML lands — none of this is implemented yet):
+  #   basic4-ext:        # PET/CBM-II BASIC 4 disk keywords, $CC+
+  #   basic35-7-ext:      # C16/Plus4 (3.5) and C128 (7) shared $CC+ keywords, e.g. RGR/RCLR
+  #   basic7-ce-ext:      # C128 BASIC 7 two-byte prefix $CE second-byte table
+  #   basic7-fe-ext:      # C128 BASIC 7 two-byte prefix $FE second-byte table

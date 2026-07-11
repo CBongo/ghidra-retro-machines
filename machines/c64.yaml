@@ -239,6 +239,23 @@ types:
   - name: MOS6526_CIA
     kind: struct
     source: generated/c64ref-cia.yaml     # 16 registers; generated
+  - name: BASIC_V2_TOKEN
+    kind: enum
+    size: 1
+    source: generated/basic-tokens.yaml
+    lists: [basic2-base]
+    comment: >-
+      Stock BASIC V2 tokens, $80-$CB (C64 Programmer's Reference Guide token
+      table; cross-checked against c64-wiki.com's BASIC token list). The
+      $80-$CB range is shared verbatim by BASIC 2/3.5/4/7 — see
+      machines/generated/basic-tokens.yaml for the dialect-fork model above
+      $CB (disk keywords vs. RGR/RCLR-style keywords) and the two-byte C128
+      BASIC 7 prefix-token plan; neither is implemented here. Member names
+      are the literal keyword where Ghidra's enum member naming accepts it
+      (verified empirically: EnumDataType stores member names as plain
+      strings with no symbol-style character restriction, so punctuation
+      such as '#', '(', '$', and the operator tokens work directly); the
+      exact BASIC keyword is always in the comment regardless.
 
 formats:
   prg:
