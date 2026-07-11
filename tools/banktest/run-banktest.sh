@@ -108,6 +108,7 @@ for name in banktest banktest2 banktest3 banktest4; do
 done
 
 run_one nesbanktest "$WORK/nes/nesbanktest.nes" NesRomLoader
+run_one nesbanktest2 "$WORK/nes/nesbanktest2.nes" NesRomLoader
 
 if [ $fail -ne 0 ]; then
 	echo "SUITE FAILED (work dir kept for inspection: $WORK)"

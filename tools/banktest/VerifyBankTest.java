@@ -57,7 +57,10 @@ public class VerifyBankTest extends GhidraScript {
 		dump();
 
 		String name = currentProgram.getName();
-		if (name.contains("nesbanktest")) {
+		if (name.contains("nesbanktest2")) {
+			checkNesBanktest2();
+		}
+		else if (name.contains("nesbanktest")) {
 			checkNesBanktest();
 		}
 		else if (name.contains("banktest4")) {
@@ -339,6 +342,66 @@ public class VerifyBankTest extends GhidraScript {
 			"JSR $8005 in bank 2 retargeted to PRG_LO_B2 overlay, primary: " + describe(r));
 	}
 
+	// ------------------------------------------------------------------
+	// nesbanktest2.nes criteria (3-deep overlay-bank JSR chain, bead grm-5tl.13.3)
+	// ------------------------------------------------------------------
+
+	private void checkNesBanktest2() {
+		// F1: RESET's JSR $8005 at $C005, taken with bank=2 in effect, retargets into the
+		// PRG_LO_B2 overlay space -- round 1 evidence.
+		Reference r = findOverlayRef(0xC005, "PRG_LO_B2", 0x8005);
+		criterion("F1", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $8005 in bank 2 retargeted to PRG_LO_B2 overlay, primary: " + describe(r));
+
+		// F2: trampoline1's JSR $8010 at $C015 retargets into PRG_LO_B1 -- this instruction
+		// is only disassembled at all once round 1's flow-follow from PRG_LO_B2::8005's own
+		// JSR $C010 reaches it, and is only analyzed in round 2, so a resolved ref here is
+		// round-2 evidence.
+		r = findOverlayRef(0xC015, "PRG_LO_B1", 0x8010);
+		criterion("F2", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $8010 in bank 1 (trampoline1, round-2 evidence) retargeted to PRG_LO_B1 " +
+				"overlay, primary: " + describe(r));
+
+		// F3: trampoline2's JSR $8030 at $C025 retargets into PRG_LO_B3 -- reachable only
+		// through trampoline1's JSR $C020, itself only disassembled by round 2's flow-follow
+		// and only analyzed in round 3. This is the deepest reference in the chain, and its
+		// resolution is direct proof that at least 3 full analyzer rounds ran to convergence
+		// -- the load-bearing criterion for bead grm-5tl.13.3's fingerprint-skip guard.
+		r = findOverlayRef(0xC025, "PRG_LO_B3", 0x8030);
+		criterion("F3", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $8030 in bank 3 (trampoline2, round-3/deepest evidence -- proves >= 3 " +
+				"analyzer rounds converged) retargeted to PRG_LO_B3 overlay, primary: " +
+				describe(r));
+
+		// F4: fully-known bank-switch comments at the five latch-write sites (the two
+		// forward selects at c002/c012/c022, and the two restores at c01a/c02a).
+		String c = eol(0xC002);
+		criterion("F4:c002", c.contains("bank -> 2 (") && !c.contains("?"),
+			"fully known bank -> 2 comment at c002: \"" + c + "\"");
+		c = eol(0xC012);
+		criterion("F4:c012", c.contains("bank -> 1 (") && !c.contains("?"),
+			"fully known bank -> 1 comment at c012: \"" + c + "\"");
+		c = eol(0xC022);
+		criterion("F4:c022", c.contains("bank -> 3 (") && !c.contains("?"),
+			"fully known bank -> 3 comment at c022: \"" + c + "\"");
+		c = eol(0xC01A);
+		criterion("F4:c01a", c.contains("bank -> 2 (") && !c.contains("?"),
+			"fully known bank -> 2 (restore) comment at c01a: \"" + c + "\"");
+		c = eol(0xC02A);
+		criterion("F4:c02a", c.contains("bank -> 1 (") && !c.contains("?"),
+			"fully known bank -> 1 (restore) comment at c02a: \"" + c + "\"");
+
+		// F5: the phase-2 disassembly cascade actually produced instructions at all three
+		// deepest overlay targets -- without this, F1-F3's refs couldn't exist, but this
+		// checks the disassembly (not just the reference) landed where expected.
+		criterion("F5:PRG_LO_B2_8005", hasInstructionAt("PRG_LO_B2", 0x8005),
+			"instruction exists at PRG_LO_B2::8005");
+		criterion("F5:PRG_LO_B1_8010", hasInstructionAt("PRG_LO_B1", 0x8010),
+			"instruction exists at PRG_LO_B1::8010");
+		criterion("F5:PRG_LO_B3_8030", hasInstructionAt("PRG_LO_B3", 0x8030),
+			"instruction exists at PRG_LO_B3::8030");
+	}
+
 	private static String describeBlock(MemoryBlock b) {
 		if (b == null) {
 			return "<missing>";
@@ -395,6 +458,14 @@ public class VerifyBankTest extends GhidraScript {
 			}
 		}
 		return null;
+	}
+
+	private boolean hasInstructionAt(String spaceName, long offset) {
+		AddressSpace space = currentProgram.getAddressFactory().getAddressSpace(spaceName);
+		if (space == null) {
+			return false;
+		}
+		return currentProgram.getListing().getInstructionAt(space.getAddress(offset)) != null;
 	}
 
 	private int overlayRefCount(long from) {
