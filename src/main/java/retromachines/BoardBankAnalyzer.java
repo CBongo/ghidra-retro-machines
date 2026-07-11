@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.math.BigInteger;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -27,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.WeakHashMap;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -104,6 +106,55 @@ import ghidra.util.task.TaskMonitor;
  */
 public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 
+	/**
+	 * Fingerprint of the last <em>completed</em> {@link #added} run per program
+	 * (grm-5tl.13.3). Phase 2's overlay retargeting disassembles cross-bank targets, and
+	 * the framework answers each batch of new code by re-invoking {@code added()}, which
+	 * re-seeds the whole-program fixpoint from scratch -- deliberately so, because that
+	 * reseed is how bank state reaches the newly discovered code (its callers are outside
+	 * the delta set, so processing only {@code set} would silently under-annotate). The
+	 * consequence is up to O(rounds x whole-program) work; this cache skips a re-run
+	 * <em>only</em> when it is provably redundant: nothing this analyzer reads has changed
+	 * since the last run completed. All-or-nothing -- phase-1 output is never cached or
+	 * diff-merged across runs (annotateBankSwitch never overwrites an existing bank
+	 * comment, so a stale partial merge would compound).
+	 * <p>
+	 * Coverage assumptions behind the fingerprint (function count + instruction count,
+	 * both O(1) reads):
+	 * <ul>
+	 * <li>Everything the analysis consumes is a function of the instruction set, the
+	 * function entries (dataflow seeds and helper models), and the descriptor. New or
+	 * removed code/functions -- including this analyzer's own phase-2 side effects --
+	 * always move one of the two counts; the stored value is captured at run
+	 * <em>entry</em>, so a run's own mutations unmatch the very next invocation.</li>
+	 * <li>Operand/flow references (which strategies inspect via
+	 * {@code getReferencesFrom}) are laid down at disassembly time and by the reference
+	 * analyzers this analyzer is prioritized after -- reference changes relevant here do
+	 * not occur without accompanying instruction changes.</li>
+	 * <li>The descriptor is identified by {@code mapPath} (stored alongside the counts);
+	 * a program re-pointed at a different board map re-runs even with identical counts.
+	 * Edits to the map <em>file's content</em> under an unchanged path are not detected
+	 * -- acceptable for compiled resources bundled with the extension.</li>
+	 * <li>A run that throws (e.g. {@link CancelledException}) stores nothing and will
+	 * re-run in full. A future change that makes the analysis consume mutable inputs
+	 * outside these (say, reading a context register other analyzers write) must widen
+	 * the fingerprint or drop the cache.</li>
+	 * </ul>
+	 * Keyed weakly by {@link Program} identity so closed programs drop out; synchronized
+	 * because distinct programs may be analyzed on distinct threads.
+	 */
+	private static final Map<Program, RunStamp> LAST_COMPLETED =
+		Collections.synchronizedMap(new WeakHashMap<>());
+
+	/** What {@link #LAST_COMPLETED} remembers: entry-time fingerprint + descriptor path. */
+	private record RunStamp(long fingerprint, String mapPath) {}
+
+	/** Function and instruction counts packed into disjoint bit ranges (not a hash). */
+	private static long fingerprint(Program program) {
+		return ((long) program.getFunctionManager().getFunctionCount() << 40) ^
+			program.getListing().getNumInstructions();
+	}
+
 	protected BoardBankAnalyzer(String name, String description) {
 		super(name, description, AnalyzerType.INSTRUCTION_ANALYZER);
 		// Run after Ghidra's own reference analysis has laid down the default (base-space)
@@ -149,6 +200,15 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		String mapPath = getMapPath(program);
 		if (mapPath == null) {
 			return false;
+		}
+
+		// Redundant-re-run gate (grm-5tl.13.3): see LAST_COMPLETED for the invariants.
+		long fingerprint = fingerprint(program);
+		RunStamp last = LAST_COMPLETED.get(program);
+		if (last != null && last.fingerprint() == fingerprint && last.mapPath().equals(mapPath)) {
+			log.appendMsg(getName(), tag + ": no function/instruction changes since last " +
+				"completed run; skipping redundant whole-program re-analysis");
+			return true;
 		}
 		log.appendMsg(getName(), tag + " running (" + mapPath + ")");
 
@@ -230,6 +290,11 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		log.appendMsg(getName(), tag + ": " + flow.stateIn().size() + " instructions tracked, " +
 			refsAdded + " overlay references added/confirmed, " + warnings +
 			" unknown-state warnings");
+
+		// Record the ENTRY-time fingerprint only now that the run completed: phase 2's own
+		// disassembly/function side effects have moved the live counts past it, so the
+		// framework round they trigger will not match and will run in full.
+		LAST_COMPLETED.put(program, new RunStamp(fingerprint, mapPath));
 		return true;
 	}
 
