@@ -1,0 +1,23 @@
+BLOCK APU_IO 4000-401f overlay=false
+BLOCK MAPPER_BANK 5000-5fff overlay=false
+BLOCK MAPPER_MODE 6000-6fff overlay=false
+BLOCK PPU_REGS 2000-2007 overlay=false
+BLOCK RAM 0000-07ff overlay=false
+BLOCK W8000 8000-bfff overlay=false
+BLOCK W8000_M0_B1 8000-bfff overlay=true
+BLOCK W8000_M0_B2 8000-bfff overlay=true
+BLOCK W8000_M0_B3 8000-bfff overlay=true
+BLOCK W8000_M1 8000-bfff overlay=true
+BLOCK WC000 c000-ffff overlay=false
+BLOCK WC000_M1_B0 c000-ffff overlay=true
+BLOCK WC000_M1_B1 c000-ffff overlay=true
+BLOCK WC000_M1_B2 c000-ffff overlay=true
+BLOCK WC000_M1_B3 c000-ffff overlay=true
+COMMENT 8042 bank -> 2? (bank=2,prg_mode=0) [known: bank.0=0,bank.1=1; assumed from initial: prg_mode]
+COMMENT c002 bank -> 1? (bank=1,prg_mode=0) [known: bank.0=1,bank.1=0; assumed from initial: prg_mode]
+COMMENT c00a bank -> 4? (bank=0,prg_mode=1) [known: prg_mode=1; assumed from initial: bank.0,bank.1]
+COMMENT c00d bank -> 2? (bank=2,prg_mode=0) via FUN_W8000_M1__8040 [known: bank.0=0,bank.1=1; assumed from initial: prg_mode]
+REF 8045 -> WC000_M1_B2::c030 UNCONDITIONAL_CALL primary=true
+REF 8048 -> W8000_M1::8048 UNCONDITIONAL_JUMP primary=true
+REF c005 -> W8000_M0_B1::8000 UNCONDITIONAL_CALL primary=true
+REF c00d -> W8000_M1::8040 UNCONDITIONAL_CALL primary=true

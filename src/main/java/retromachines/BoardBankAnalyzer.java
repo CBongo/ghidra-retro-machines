@@ -624,6 +624,35 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				}
 				// null: not one of ours (e.g. a C64 occupant overlay) -- keep looking
 			}
+			if (board.modeField() != null) {
+				FieldSpec modeField = board.modeField();
+				Set<String> windowNames = new LinkedHashSet<>();
+				for (ModeWindowModel w : board.modeWindows()) {
+					windowNames.add(w.name());
+				}
+				for (String windowName : windowNames) {
+					DescriptorSupport.OverlayNaming.ModeBank mb =
+						DescriptorSupport.OverlayNaming.parseModeBankValue(windowName, name);
+					if (mb != null) {
+						ModeWindowModel instance =
+							findModeWindowInstance(board.modeWindows(), windowName, mb.mode());
+						if (instance != null && instance.bankField() != null) {
+							FieldSpec bankField = instance.bankField();
+							int posMask = modeField.positionedMask() | bankField.positionedMask();
+							int posBits =
+								((mb.mode() << modeField.lsb()) & modeField.positionedMask()) |
+									((mb.bank() << bankField.lsb()) & bankField.positionedMask());
+							return new int[] { posMask, posBits };
+						}
+						continue;
+					}
+					Integer mv = DescriptorSupport.OverlayNaming.parseModeValue(windowName, name);
+					if (mv != null) {
+						return new int[] { modeField.positionedMask(),
+							(mv << modeField.lsb()) & modeField.positionedMask() };
+					}
+				}
+			}
 			return new int[0];
 		});
 		if (clamp.length == 0) {
@@ -900,23 +929,57 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			}
 			else {
 				ComputedWindowModel computed = findWindow(board.computedWindows(), offset);
-				if (computed == null) {
-					continue;
+				if (computed != null) {
+					if (refType.isWrite() && "mechanism".equals(computed.onWrite())) {
+						// a store here is a mapper-latch poke, not a memory write; the
+						// strategy already models it -- nothing to retarget.
+						continue;
+					}
+					FieldSpec field = computed.field();
+					int bankValue = field.valueIn(effective);
+					if (bankValue == field.valueIn(board.initialState())) {
+						// the home bank lives in base space at this offset -- default is right.
+						continue;
+					}
+					added += addOverlayRef(program, refMgr, instr, offset, opIndex,
+						DescriptorSupport.OverlayNaming.bankBlockName(computed.name(), bankValue),
+						refType, true, monitor, log);
 				}
-				if (refType.isWrite() && "mechanism".equals(computed.onWrite())) {
-					// a store here is a mapper-latch poke, not a memory write; the
-					// strategy already models it -- nothing to retarget.
-					continue;
+				else if (board.modeField() != null) {
+					// memory.layouts[] mode-varying window: two-level lookup -- which layout
+					// (mode) is active, then which instance of this window that layout defines
+					// covers the offset.
+					int modeValue = board.modeField().valueIn(effective);
+					ModeWindowModel instance = findModeWindowAt(board.modeWindows(), modeValue, offset);
+					if (instance == null) {
+						// offset not covered by any instance of this window under the active mode
+						continue;
+					}
+					if (refType.isWrite() && "mechanism".equals(instance.onWrite())) {
+						continue;
+					}
+					if (instance.bankField() == null) {
+						// fixed instance for this mode
+						if (modeValue == board.homeModeValue()) {
+							// home mode's fixed instance lives in base space -- default is right.
+							continue;
+						}
+						added += addOverlayRef(program, refMgr, instr, offset, opIndex,
+							DescriptorSupport.OverlayNaming.modeBlockName(instance.name(), modeValue),
+							refType, true, monitor, log);
+					}
+					else {
+						int bank = instance.bankField().valueIn(effective);
+						if (modeValue == board.homeModeValue() &&
+							bank == instance.bankField().valueIn(board.initialState())) {
+							// home mode's home bank lives in base space -- default is right.
+							continue;
+						}
+						added += addOverlayRef(program, refMgr, instr, offset, opIndex,
+							DescriptorSupport.OverlayNaming.modeBankBlockName(instance.name(), modeValue,
+								bank), refType, true, monitor, log);
+					}
 				}
-				FieldSpec field = computed.field();
-				int bankValue = field.valueIn(effective);
-				if (bankValue == field.valueIn(board.initialState())) {
-					// the home bank lives in base space at this offset -- default is right.
-					continue;
-				}
-				added += addOverlayRef(program, refMgr, instr, offset, opIndex,
-					DescriptorSupport.OverlayNaming.bankBlockName(computed.name(), bankValue), refType,
-					true, monitor, log);
 			}
 		}
 		return added;
@@ -975,6 +1038,30 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	private static <T extends Bounded> T findWindow(Map<String, T> windowsByName, long offset) {
 		for (T w : windowsByName.values()) {
 			if (offset >= w.start() && offset <= w.end()) {
+				return w;
+			}
+		}
+		return null;
+	}
+
+	/** The mode-varying window instance active under {@code modeValue} whose {@code [start,
+	 *  end]} contains {@code offset}, or null (offset not covered by this window under this
+	 *  mode -- e.g. a mode that doesn't define a window at all at this location). */
+	private static ModeWindowModel findModeWindowAt(List<ModeWindowModel> modeWindows,
+			int modeValue, long offset) {
+		for (ModeWindowModel w : modeWindows) {
+			if (w.modeValue() == modeValue && offset >= w.start() && offset <= w.end()) {
+				return w;
+			}
+		}
+		return null;
+	}
+
+	/** The mode-varying window instance named {@code name} under {@code modeValue}, or null. */
+	private static ModeWindowModel findModeWindowInstance(List<ModeWindowModel> modeWindows,
+			String name, int modeValue) {
+		for (ModeWindowModel w : modeWindows) {
+			if (w.name().equals(name) && w.modeValue() == modeValue) {
 				return w;
 			}
 		}
@@ -1063,12 +1150,27 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	private record ComputedWindowModel(String name, long start, long end, FieldSpec field,
 			String onWrite) implements Bounded {}
 
+	/**
+	 * One {@code (windowName, modeValue)} instance out of {@code memory.layouts[]}
+	 * (bead grm-qvi): {@code bankField} is null for a mode-varying <em>fixed</em> window
+	 * instance (a constant {@code maps:} expr under this mode -- the loader's non-home
+	 * layout instances become {@code <name>_M<mode>} overlays), non-null for a
+	 * <em>switchable</em> instance (a single-field {@code maps:} expr -- the loader's
+	 * per-bank instances become {@code <name>_M<mode>_B<bank>} overlays). Mirrors
+	 * {@link NesRomLoader}'s realizeVaryingWindows fixed-vs-switchable test
+	 * ({@code referencedFields(expr).isEmpty()}), so the analyzer and loader agree on
+	 * which instances are fixed without re-deriving it differently.
+	 */
+	private record ModeWindowModel(String name, long start, long end, int modeValue,
+			FieldSpec bankField, String onWrite) {}
+
 	/** Everything phase-independent parsed out of the descriptor. */
 	private record BoardModel(int mask, int initialState, List<String> stateBitNames,
 			List<FieldSpec> fieldSpecs, Map<String, WindowModel> windows,
 			Map<String, ComputedWindowModel> computedWindows,
 			Map<Integer, Map<String, String>> occupantByWindowForState,
-			Map<String, String> homeOccupantByWindow) {
+			Map<String, String> homeOccupantByWindow, FieldSpec modeField, int homeModeValue,
+			List<ModeWindowModel> modeWindows) {
 
 		/**
 		 * Parses the {@code banking} and {@code windows} sections of a board descriptor into
@@ -1115,50 +1217,108 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			}
 			int mask = (1 << stateBitNames.size()) - 1;
 
-			// --- Parse windows (enumerated occupants OR computed maps:) + banking states ---
+			// --- Parse windows: enumerated occupants (C64-style, raw JSON -- PlannedWindow
+			// does not carry occupants) come straight off memory.windows[]; computed maps:
+			// windows (mode-invariant and mode-varying alike) are driven off the normalized
+			// DescriptorSupport.planWindows() plan so this engine and NesRomLoader agree on
+			// what a window's instances are without re-walking memory.layouts[] separately.
 			Map<String, WindowModel> windowsByName = new LinkedHashMap<>();
-			Map<String, ComputedWindowModel> computedByName = new LinkedHashMap<>();
 			JsonArray windows = map.has("windows") ? map.getAsJsonArray("windows") : new JsonArray();
 			for (JsonElement we : windows) {
 				JsonObject window = we.getAsJsonObject();
+				if (!window.has("occupants")) {
+					continue; // computed (maps:) windows are handled via the plan below
+				}
 				String name = window.get("name").getAsString();
 				long start = window.get("start").getAsLong();
 				long end = window.get("end").getAsLong();
-				if (window.has("occupants")) {
-					Map<String, OccupantModel> occupants = new LinkedHashMap<>();
-					for (JsonElement oe : window.getAsJsonArray("occupants")) {
-						JsonObject occ = oe.getAsJsonObject();
-						String occName = occ.get("name").getAsString();
-						String kind = occ.get("kind").getAsString();
-						String onWrite = occ.has("on_write") ? occ.get("on_write").getAsString() : null;
-						occupants.put(occName, new OccupantModel(occName, kind, onWrite));
-					}
-					windowsByName.put(name, new WindowModel(name, start, end, occupants));
+				Map<String, OccupantModel> occupants = new LinkedHashMap<>();
+				for (JsonElement oe : window.getAsJsonArray("occupants")) {
+					JsonObject occ = oe.getAsJsonObject();
+					String occName = occ.get("name").getAsString();
+					String kind = occ.get("kind").getAsString();
+					String onWrite = occ.has("on_write") ? occ.get("on_write").getAsString() : null;
+					occupants.put(occName, new OccupantModel(occName, kind, onWrite));
 				}
-				else if (window.has("maps")) {
-					String expr = window.getAsJsonObject("maps").get("expr").getAsString();
-					Set<String> fields = DescriptorSupport.referencedFields(expr);
-					if (fields.isEmpty()) {
-						continue; // fixed window -- placed by the loader, never retargeted
+				windowsByName.put(name, new WindowModel(name, start, end, occupants));
+			}
+
+			DescriptorSupport.LayoutPlan plan = DescriptorSupport.planWindows(map, log, mapPath);
+
+			Map<String, ComputedWindowModel> computedByName = new LinkedHashMap<>();
+			for (DescriptorSupport.PlannedWindow pw : plan.invariant()) {
+				if (pw.expr() == null) {
+					continue; // enumerated occupant window, already handled above
+				}
+				Set<String> fields = DescriptorSupport.referencedFields(pw.expr());
+				if (fields.isEmpty()) {
+					continue; // fixed window -- placed by the loader, never retargeted
+				}
+				if (fields.size() > 1) {
+					log.appendMsg(source, "computed window '" + pw.name() + "' uses " + fields +
+						"; multi-field windows are not supported yet -- not retargeting it");
+					continue;
+				}
+				String fieldName = fields.iterator().next();
+				FieldSpec fieldSpec = fieldSpecs.stream()
+						.filter(f -> f.name().equals(fieldName))
+						.findFirst()
+						.orElse(null);
+				if (fieldSpec == null) {
+					log.appendMsg(source, "computed window '" + pw.name() +
+						"' references unknown state field '" + fieldName + "'; skipping it");
+					continue;
+				}
+				computedByName.put(pw.name(),
+					new ComputedWindowModel(pw.name(), pw.start(), pw.end(), fieldSpec, pw.onWrite()));
+			}
+
+			// --- Mode-varying windows (memory.layouts[]) ---
+			FieldSpec modeField = null;
+			int homeModeValue = 0;
+			List<ModeWindowModel> modeWindows = new ArrayList<>();
+			if (plan.modeField() != null) {
+				modeField = fieldSpecs.stream()
+						.filter(f -> f.name().equals(plan.modeField()))
+						.findFirst()
+						.orElse(null);
+				if (modeField == null) {
+					log.appendMsg(source, "memory.layouts[] mode field '" + plan.modeField() +
+						"' not found in banking.state; skipping mode-varying windows");
+				}
+				else {
+					homeModeValue = modeField.valueIn(initialState);
+					for (DescriptorSupport.PlannedWindow pw : plan.varying()) {
+						if (pw.expr() == null) {
+							log.appendMsg(source, "Window '" + pw.name() +
+								"' has enumerated occupants; not supported for mode-varying windows");
+							continue;
+						}
+						Set<String> exprFields = DescriptorSupport.referencedFields(pw.expr());
+						FieldSpec bankField = null;
+						if (!exprFields.isEmpty()) {
+							if (exprFields.size() > 1) {
+								log.appendMsg(source, "mode-varying window '" + pw.name() + "' (mode " +
+									plan.modeField() + "=" + pw.modeValue() + ") uses " + exprFields +
+									"; multi-field windows are not supported -- skipping that instance");
+								continue;
+							}
+							String fieldName = exprFields.iterator().next();
+							bankField = fieldSpecs.stream()
+									.filter(f -> f.name().equals(fieldName))
+									.findFirst()
+									.orElse(null);
+							if (bankField == null) {
+								log.appendMsg(source, "mode-varying window '" + pw.name() + "' (mode " +
+									plan.modeField() + "=" + pw.modeValue() +
+									") references unknown state field '" + fieldName +
+									"'; skipping that instance");
+								continue;
+							}
+						}
+						modeWindows.add(new ModeWindowModel(pw.name(), pw.start(), pw.end(),
+							pw.modeValue(), bankField, pw.onWrite()));
 					}
-					if (fields.size() > 1) {
-						log.appendMsg(source, "computed window '" + name + "' uses " + fields +
-							"; multi-field windows are not supported yet -- not retargeting it");
-						continue;
-					}
-					String fieldName = fields.iterator().next();
-					FieldSpec fieldSpec = fieldSpecs.stream()
-							.filter(f -> f.name().equals(fieldName))
-							.findFirst()
-							.orElse(null);
-					if (fieldSpec == null) {
-						log.appendMsg(source, "computed window '" + name +
-							"' references unknown state field '" + fieldName + "'; skipping it");
-						continue;
-					}
-					String onWrite = window.has("on_write") ? window.get("on_write").getAsString() : null;
-					computedByName.put(name,
-						new ComputedWindowModel(name, start, end, fieldSpec, onWrite));
 				}
 			}
 
@@ -1185,7 +1345,8 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			}
 
 			return new BoardModel(mask, initialState, stateBitNames, fieldSpecs, windowsByName,
-				computedByName, occupantByWindowForState, homeOccupantByWindow);
+				computedByName, occupantByWindowForState, homeOccupantByWindow, modeField,
+				homeModeValue, modeWindows);
 		}
 	}
 

@@ -17,11 +17,11 @@
 # them. No window is invariant across both layouts (unlike MMC3's WA000/WE000), so this
 # board exercises ONLY the mode-varying path, not invariant-hoisting -- see
 # tools/banktest/mknesbanktest.py's nesmodetest fixture for the analyzer-facing scenario
-# this shape sets up (analyzer support itself is a later bead; the loader-side block
-# realization this descriptor exercises is grm-aqf's scope).
+# this shape sets up.
 #
-# NOT wired into tools/banktest/run-banktest.sh / VerifyBankTest.java goldens yet -- the
-# bank analyzer cannot retarget layout windows until the sibling bead lands.
+# Wired into tools/banktest/run-banktest.sh / VerifyBankTest.java goldens (bead grm-qvi):
+# BoardBankAnalyzer clamps residence and retargets references through mode-qualified
+# overlays the same way NesRomLoader (bead grm-aqf) realized them.
 
 schema: 2
 

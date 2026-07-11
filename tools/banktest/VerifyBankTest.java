@@ -57,7 +57,10 @@ public class VerifyBankTest extends GhidraScript {
 		dump();
 
 		String name = currentProgram.getName();
-		if (name.contains("nesbanktest2")) {
+		if (name.contains("nesmodetest")) {
+			checkNesModetest();
+		}
+		else if (name.contains("nesbanktest2")) {
 			checkNesBanktest2();
 		}
 		else if (name.contains("nesbanktest")) {
@@ -402,6 +405,71 @@ public class VerifyBankTest extends GhidraScript {
 			"instruction exists at PRG_LO_B3::8030");
 	}
 
+	// ------------------------------------------------------------------
+	// nesmodetest.nes criteria (memory.layouts[] mode-varying windows, bead grm-qvi)
+	// ------------------------------------------------------------------
+
+	private void checkNesModetest() {
+		// F1: RESET's JSR $8000 at $C005, taken with bank=1 in effect (mode still 0/home),
+		// retargets into the home layout's non-home-bank overlay W8000_M0_B1.
+		Reference r = findOverlayRef(0xC005, "W8000_M0_B1", 0x8000);
+		criterion("F1", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $8000 (mode0/bank1) retargeted to W8000_M0_B1 overlay, primary: " + describe(r));
+
+		// F2: RESET's JMP $8040 at $C00D, taken after the mode latch write (prg_mode -> 1),
+		// retargets into the mode-1 FIXED instance of W8000 (W8000_M1) -- proves the mode
+		// field alone (no bank field) drives a fixed-window instance's retargeting. The
+		// reference type is CALL, not JUMP: the W8000_M1 routine's only exit is its own
+		// self-loop (JMP $8048, never RTS), so Ghidra's stock non-returning-function
+		// analysis marks FUN_W8000_M1__8040 non-returning and reclassifies this tail-JMP
+		// as a call terminator -- a default Ghidra behavior orthogonal to bank retargeting,
+		// evidenced by the "via FUN_W8000_M1__8040" wording this also adds to c00d's
+		// bank-switch comment (see the F4 checks below, which do not depend on it).
+		r = findOverlayRef(0xC00D, "W8000_M1", 0x8040);
+		criterion("F2", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JMP $8040 (mode1) retargeted to W8000_M1 overlay (as a CALL -- Ghidra's " +
+				"non-returning-function reclassification), primary: " + describe(r));
+
+		// F3: the JSR $C030 at (overlay-relative) 8045 -- physically inside the W8000_M1
+		// overlay -- retargets into WC000_M1_B2. This is the load-bearing criterion: mode=1
+		// is known only because clampToResidence pins it from the instruction's own overlay
+		// (W8000_M1 exists only under prg_mode=1), and bank=2 comes from the latch write at
+		// 8042 inside that same overlay; the two-level mode -> window -> bank lookup then
+		// finds WC000's mode-1 switchable instance at bank 2. Structurally impossible before
+		// residence-clamping understood mode-qualified overlays.
+		r = findOverlayRefFrom(overlayAddr("W8000_M1", 0x8045), "WC000_M1_B2", 0xC030);
+		criterion("F3", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $C030 in W8000_M1 (mode1/bank2) retargeted to WC000_M1_B2 overlay, primary: " +
+				describe(r));
+
+		// F4: bank-switch comments at the three latch-write sites. Each write is recognized
+		// by a mechanism that owns only ONE of the two state fields (bank / prg_mode), so
+		// per the multi-mechanism engine's per-switch-effect annotation these are partial
+		// comments: the acted-on field is "known", the other field falls back to "assumed
+		// from initial" -- assert on the effective per-field breakdown, not exact wording.
+		String c = eol(0xC002);
+		criterion("F4:c002", c.contains("bank -> 1") && c.contains("bank=1") &&
+			c.contains("known: bank"),
+			"bank latch -> 1 (bank field known, prg_mode assumed) at c002: \"" + c + "\"");
+		c = eol(0xC00A);
+		criterion("F4:c00a", c.contains("prg_mode=1") && c.contains("known: prg_mode"),
+			"mode latch -> 1 (prg_mode field known, bank assumed) at c00a: \"" + c + "\"");
+		c = eol("W8000_M1", 0x8042);
+		criterion("F4:8042", c.contains("bank -> 2") && c.contains("bank=2") &&
+			c.contains("known: bank"),
+			"bank latch -> 2 inside overlay (bank field known, prg_mode assumed) at 8042: \"" +
+				c + "\"");
+
+		// F5: the phase-2 disassembly cascade actually produced instructions at all three
+		// overlay targets reached above.
+		criterion("F5:W8000_M0_B1_8000", hasInstructionAt("W8000_M0_B1", 0x8000),
+			"instruction exists at W8000_M0_B1::8000");
+		criterion("F5:W8000_M1_8040", hasInstructionAt("W8000_M1", 0x8040),
+			"instruction exists at W8000_M1::8040");
+		criterion("F5:WC000_M1_B2_C030", hasInstructionAt("WC000_M1_B2", 0xC030),
+			"instruction exists at WC000_M1_B2::C030");
+	}
+
 	private static String describeBlock(MemoryBlock b) {
 		if (b == null) {
 			return "<missing>";
@@ -434,6 +502,21 @@ public class VerifyBankTest extends GhidraScript {
 		return c == null ? "" : c;
 	}
 
+	/** Overlay-space address, or the base-space address if {@code spaceName} does not
+	 *  resolve (lets callers fail with a null-instruction criterion rather than an NPE). */
+	private Address overlayAddr(String spaceName, long offset) {
+		AddressSpace space = currentProgram.getAddressFactory().getAddressSpace(spaceName);
+		return space == null ? addr(offset) : space.getAddress(offset);
+	}
+
+	/** {@link #eol(long)}, but for an instruction physically located in an overlay space
+	 *  (e.g. a mode-qualified overlay -- {@code memory.layouts[]} instances, bead grm-qvi). */
+	private String eol(String spaceName, long offset) {
+		String c = currentProgram.getListing().getComment(CommentType.EOL,
+			overlayAddr(spaceName, offset));
+		return c == null ? "" : c;
+	}
+
 	private boolean hasWarningBookmark(long offset) {
 		for (Bookmark bm : currentProgram.getBookmarkManager().getBookmarks(addr(offset))) {
 			boolean ourCategory = CATEGORY_C64.equals(bm.getCategory()) ||
@@ -446,7 +529,13 @@ public class VerifyBankTest extends GhidraScript {
 	}
 
 	private Reference findOverlayRef(long from, String spaceName, long toOffset) {
-		Instruction instr = currentProgram.getListing().getInstructionAt(addr(from));
+		return findOverlayRefFrom(addr(from), spaceName, toOffset);
+	}
+
+	/** {@link #findOverlayRef}, but for an instruction physically located in an overlay
+	 *  space (see {@link #overlayAddr}) rather than base space. */
+	private Reference findOverlayRefFrom(Address from, String spaceName, long toOffset) {
+		Instruction instr = currentProgram.getListing().getInstructionAt(from);
 		if (instr == null) {
 			return null;
 		}

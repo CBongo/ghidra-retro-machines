@@ -109,6 +109,7 @@ done
 
 run_one nesbanktest "$WORK/nes/nesbanktest.nes" NesRomLoader
 run_one nesbanktest2 "$WORK/nes/nesbanktest2.nes" NesRomLoader
+run_one nesmodetest "$WORK/nes/nesmodetest.nes" NesRomLoader
 
 if [ $fail -ne 0 ]; then
 	echo "SUITE FAILED (work dir kept for inspection: $WORK)"

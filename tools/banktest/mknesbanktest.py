@@ -95,10 +95,10 @@ mask 0x03) -- two independent memory-latch mechanisms setting disjoint state fie
 The loader realizes the home layout's home instances in base space (W8000 = bank 0,
 WC000 = PRG[last]) and everything else as mode-qualified overlays: W8000_M0_B1/_B2/_B3
 (home layout, non-home banks), W8000_M1 (mode-1 fixed instance), and
-WC000_M1_B0/_B1/_B2/_B3 (mode-1 switchable instances). This fixture only pins down
-the loader-side block layout plus the multi-mechanism bank comments today; the
-overlay REFs into _M* spaces are the sibling analyzer bead's concern (nesmodetest is
-NOT yet wired into run-banktest.sh / VerifyBankTest goldens).
+WC000_M1_B0/_B1/_B2/_B3 (mode-1 switchable instances). BoardBankAnalyzer (bead grm-qvi)
+retargets references into the _M* overlays the same way it does the plain _B* ones,
+via a two-level mode -> window -> bank lookup; nesmodetest is wired into
+run-banktest.sh / VerifyBankTest's checkNesModetest() goldens.
 
 PRG is 4 x 16 KiB; WC000's home mapping is PRG[last] = file 0xC000-0xFFFF, so a CPU
 address $C000+x in the home mode equals PRG file offset 0xC000+x (code below is

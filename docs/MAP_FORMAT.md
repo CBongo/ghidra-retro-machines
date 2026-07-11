@@ -130,7 +130,35 @@ Present only for descriptors with `memory.layouts:` (schema v2): mode-dependent 
 sets. Each entry carries `when` — the state-field values that select this layout (e.g.
 MMC3's `{ "prg_mode": 0 }`) — and `windows`, identical in shape to the top-level
 `windows[]`. Windows in `memory.windows` are present in every mode; layout windows only
-when their `when` matches the current bank state.
+when their `when` matches the current bank state. Every layout's `when` must name the
+same single `banking.state` field (the "mode field"); a layout window defined
+identically (same start/end/`maps`/`on_write`) across every layout is hoisted and
+behaves exactly like a top-level `memory.windows[]` entry.
+
+**Runtime behavior.** `NesRomLoader` realizes each layout window's instances with
+"home-in-base" placement per mode: the home mode's home bank is the plain base-space
+block `NAME`; every other instance is an overlay, named to encode which mode (and, for
+a switchable expression, which bank) it belongs to:
+
+| Instance | Block/overlay name |
+| --- | --- |
+| Home mode, home bank (or a fixed expr) | `NAME` (base space) |
+| Home mode, non-home bank | `NAME_B<bank>` |
+| Non-home mode, fixed expr | `NAME_M<mode>` |
+| Non-home mode, bank `<bank>` | `NAME_M<mode>_B<bank>` |
+
+`BoardBankAnalyzer` consumes the same normalized plan (`DescriptorSupport.planWindows`)
+to retarget references and clamp bank state to residence: an instruction physically
+inside a `NAME_M<mode>` or `NAME_M<mode>_B<bank>` overlay has the mode field (and, for
+the latter, the bank field) forced known from the overlay it's found in, and a
+reference landing in a layout window's offset range is retargeted through a two-level
+lookup — the mode field picks which layout's instance covers the offset, then (for a
+switchable instance) the bank field picks which of that instance's per-bank overlays is
+the target — using the same home-in-base skip rule as `memory.windows[]` (a reference
+that resolves to the home mode's home bank needs no overlay reference at all). The
+single-mode-field constraint above is a hard runtime requirement, not just a build-time
+one: the analyzer skips `memory.layouts[]` entirely (logging why) if it can't determine
+one mode field the same way the loader did.
 
 ### `banking`
 
