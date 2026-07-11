@@ -18,6 +18,8 @@ package retromachines;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -491,6 +493,210 @@ final class DescriptorSupport {
 	}
 
 	// ------------------------------------------------------------------
+	// Bank-state field parsing (banking.state / initial_state)
+	// ------------------------------------------------------------------
+
+	/**
+	 * One {@code banking.state} field: its name, LSB position, and bit width within the
+	 * packed state int. Fields pack LSB-first in declaration order (mirrors
+	 * {@code MapCompiler.packState} at build time and {@code BoardBankAnalyzer.FieldSpec}
+	 * at analysis time -- all three must agree on this layout).
+	 */
+	record StateField(String name, int lsb, int width) {
+
+		long mask() {
+			return (1L << width) - 1;
+		}
+
+		/** This field's value as packed into {@code packedState}. */
+		long valueIn(long packedState) {
+			return (packedState >> lsb) & mask();
+		}
+	}
+
+	/**
+	 * Parses {@code banking.state} into its ordered field tuple, LSB-first. Returns an
+	 * empty list when the descriptor has no {@code banking} section (or no {@code state}).
+	 */
+	static List<StateField> parseStateFields(JsonObject map) {
+		List<StateField> fields = new ArrayList<>();
+		JsonObject banking = map.getAsJsonObject("banking");
+		if (banking == null || !banking.has("state")) {
+			return fields;
+		}
+		int lsb = 0;
+		for (JsonElement fe : banking.getAsJsonArray("state")) {
+			JsonObject f = fe.getAsJsonObject();
+			String name = f.get("name").getAsString();
+			int bits = f.get("bits").getAsInt();
+			fields.add(new StateField(name, lsb, bits));
+			lsb += bits;
+		}
+		return fields;
+	}
+
+	/**
+	 * {@code banking.initial_state}, the packed power-on state -- null when the descriptor
+	 * has no {@code banking} section or omits {@code initial_state}.
+	 */
+	static Long initialState(JsonObject map) {
+		JsonObject banking = map.getAsJsonObject("banking");
+		if (banking == null || !banking.has("initial_state")) {
+			return null;
+		}
+		return banking.get("initial_state").getAsLong();
+	}
+
+	/** Finds a field by name in a {@link #parseStateFields} result, or null. */
+	static StateField findField(List<StateField> fields, String name) {
+		for (StateField f : fields) {
+			if (f.name().equals(name)) {
+				return f;
+			}
+		}
+		return null;
+	}
+
+	// ------------------------------------------------------------------
+	// Window-plan normalization (memory.windows[] + memory.layouts[])
+	// ------------------------------------------------------------------
+
+	/**
+	 * One window instance in the normalized flat plan produced by {@link #planWindows}.
+	 * {@code expr} is null for an enumerated-{@code occupants:} window (C64-style; not
+	 * supported by the computed-window loaders -- callers should skip it and log).
+	 * {@code modeValue} is null for a mode-invariant window (a top-level
+	 * {@code memory.windows[]} entry, or a layout window hoisted because every layout
+	 * defines it identically); otherwise it is this instance's {@code when:} value of
+	 * {@link LayoutPlan#modeField()}.
+	 */
+	record PlannedWindow(String name, long start, long end, String expr, String onWrite,
+			Integer modeValue) {
+
+		long length() {
+			return end - start + 1;
+		}
+	}
+
+	/**
+	 * The normalized result of {@link #planWindows}: {@code invariant} windows are placed
+	 * once, unconditionally; {@code varying} windows are one instance per
+	 * {@code (name, modeValue)} pair (callers group by name to realize a window's full set
+	 * of per-mode instances together, the way {@link #placeHomeInBaseWindow} expects one
+	 * candidate list per window). {@code modeField} is the single banking.state field every
+	 * layout's {@code when:} keys off of, or null when the descriptor has no
+	 * {@code memory.layouts} (or they were ignored -- see {@link #planWindows}), in which
+	 * case {@code varying} is always empty.
+	 */
+	record LayoutPlan(String modeField, List<PlannedWindow> invariant, List<PlannedWindow> varying) {}
+
+	/**
+	 * Normalizes a descriptor's window set -- {@code memory.windows[]} (always
+	 * mode-invariant) plus {@code memory.layouts[]} (mode-dependent window sets), when
+	 * present -- into a flat plan both loaders and (a later bead) the bank analyzer can
+	 * consume without re-walking the JSON.
+	 *
+	 * <p>Runtime constraint, conservative by design (logs and ignores {@code layouts}
+	 * entirely rather than guessing): every layout's {@code when:} must name exactly one
+	 * field, and it must be the <em>same</em> field across every layout (the "mode field").
+	 * Duplicate {@code when:} values across layouts are likewise rejected. Both MMC1 and
+	 * MMC3 satisfy this.
+	 *
+	 * <p>Invariant hoisting: a window name that appears in <em>every</em> layout with an
+	 * identical compiled definition (same start/end/maps/on_write -- compared as JSON) is
+	 * mode-invariant and is folded into {@link LayoutPlan#invariant()} exactly like a
+	 * top-level window (e.g. MMC3's WA000/WE000, which are unchanged across both
+	 * {@code prg_mode} layouts). Every other layout window is mode-varying and lands in
+	 * {@link LayoutPlan#varying()}.
+	 */
+	static LayoutPlan planWindows(JsonObject map, MessageLog log, String source) {
+		List<PlannedWindow> invariant = new ArrayList<>();
+		List<PlannedWindow> varying = new ArrayList<>();
+
+		JsonArray topWindows = map.has("windows") ? map.getAsJsonArray("windows") : new JsonArray();
+		for (JsonElement we : topWindows) {
+			invariant.add(toPlannedWindow(we.getAsJsonObject(), null));
+		}
+
+		if (!map.has("layouts")) {
+			return new LayoutPlan(null, invariant, varying);
+		}
+
+		String modeField = null;
+		List<JsonObject> layoutObjs = new ArrayList<>();
+		Set<Integer> seenValues = new LinkedHashSet<>();
+		for (JsonElement le : map.getAsJsonArray("layouts")) {
+			JsonObject layout = le.getAsJsonObject();
+			JsonObject when = layout.getAsJsonObject("when");
+			if (when == null || when.entrySet().size() != 1) {
+				log.appendMsg(source, "memory.layouts[].when must name exactly one field; " +
+					"ignoring memory.layouts[] entirely");
+				return new LayoutPlan(null, invariant, varying);
+			}
+			Map.Entry<String, JsonElement> cond = when.entrySet().iterator().next();
+			if (modeField == null) {
+				modeField = cond.getKey();
+			}
+			else if (!modeField.equals(cond.getKey())) {
+				log.appendMsg(source, "memory.layouts[] mix mode fields ('" + modeField +
+					"' vs '" + cond.getKey() + "'); ignoring memory.layouts[] entirely");
+				return new LayoutPlan(null, invariant, varying);
+			}
+			if (!seenValues.add(cond.getValue().getAsInt())) {
+				log.appendMsg(source, "memory.layouts[] has a duplicate when: " + modeField +
+					"=" + cond.getValue().getAsInt() + "; ignoring memory.layouts[] entirely");
+				return new LayoutPlan(null, invariant, varying);
+			}
+			layoutObjs.add(layout);
+		}
+
+		Map<String, List<JsonObject>> byName = new LinkedHashMap<>();
+		for (JsonObject layout : layoutObjs) {
+			for (JsonElement lwe : layout.getAsJsonArray("windows")) {
+				JsonObject w = lwe.getAsJsonObject();
+				byName.computeIfAbsent(w.get("name").getAsString(), k -> new ArrayList<>()).add(w);
+			}
+		}
+		for (Map.Entry<String, List<JsonObject>> entry : byName.entrySet()) {
+			List<JsonObject> defs = entry.getValue();
+			if (defs.size() == layoutObjs.size() && allIdentical(defs)) {
+				invariant.add(toPlannedWindow(defs.get(0), null));
+				continue;
+			}
+			for (JsonObject layout : layoutObjs) {
+				int modeValue = layout.getAsJsonObject("when").get(modeField).getAsInt();
+				for (JsonElement lwe : layout.getAsJsonArray("windows")) {
+					JsonObject w = lwe.getAsJsonObject();
+					if (w.get("name").getAsString().equals(entry.getKey())) {
+						varying.add(toPlannedWindow(w, modeValue));
+					}
+				}
+			}
+		}
+		return new LayoutPlan(modeField, invariant, varying);
+	}
+
+	private static boolean allIdentical(List<JsonObject> defs) {
+		JsonObject first = defs.get(0);
+		for (int i = 1; i < defs.size(); i++) {
+			if (!first.equals(defs.get(i))) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static PlannedWindow toPlannedWindow(JsonObject w, Integer modeValue) {
+		String name = w.get("name").getAsString();
+		long start = w.get("start").getAsLong();
+		long end = w.has("end") ? w.get("end").getAsLong()
+				: start + w.get("size").getAsLong() - 1;
+		String expr = w.has("maps") ? w.getAsJsonObject("maps").get("expr").getAsString() : null;
+		String onWrite = w.has("on_write") ? w.get("on_write").getAsString() : null;
+		return new PlannedWindow(name, start, end, expr, onWrite, modeValue);
+	}
+
+	// ------------------------------------------------------------------
 	// Home-in-base window placement
 	// ------------------------------------------------------------------
 
@@ -536,10 +742,16 @@ final class DescriptorSupport {
 	// ------------------------------------------------------------------
 
 	/**
-	 * Naming convention for a computed window's non-home-bank overlay blocks:
-	 * {@code <windowName>_B<bankValue>}. Used both when a loader creates a bank's
-	 * overlay block at load time and when an analyzer later needs to resolve a
-	 * bank value back out of an overlay {@link AddressSpace}'s name.
+	 * Naming convention for a computed window's non-home overlay blocks:
+	 * {@code <windowName>_B<bankValue>} for a mode-invariant switchable window (the
+	 * original, single-mode form), extended by mode-dependent-layout support (bead
+	 * grm-aqf) with two mode-qualified forms: {@code <windowName>_M<modeValue>} for a
+	 * mode-varying <em>fixed</em> window's non-home layout instance, and
+	 * {@code <windowName>_M<modeValue>_B<bankValue>} for a mode-varying
+	 * <em>switchable</em> window's non-home (layout, bank) instance. Used both when a
+	 * loader creates an instance's overlay block at load time and when an analyzer later
+	 * needs to resolve a bank/mode value back out of an overlay {@link AddressSpace}'s
+	 * name.
 	 *
 	 * <p>The block name also becomes the overlay {@link AddressSpace}'s name --
 	 * {@code MemoryBlockUtils} names the overlay space after the block when
@@ -548,12 +760,20 @@ final class DescriptorSupport {
 	 * this exact string, so callers like {@link BoardBankAnalyzer}'s
 	 * {@code addOverlayRef()} can look the space up by {@code "<window>_B<bank>"}
 	 * with no separate name-mapping table.
+	 *
+	 * <p><b>Naming-contract caveat:</b> the three suffix forms ({@code _B<n>},
+	 * {@code _M<n>}, {@code _M<n>_B<n>}) are told apart purely by string shape (digits
+	 * after {@code _B} / {@code _M}, an optional {@code _B} segment after the mode
+	 * digits). A window name that itself ends in something shaped like {@code _M3} or
+	 * {@code _B2} would be ambiguous with these suffixes and must be avoided by
+	 * descriptor authors; none of the shipped or sketch descriptors do this.
 	 */
 	static final class OverlayNaming {
 		private OverlayNaming() {
 		}
 
-		/** Builds the {@code <windowName>_B<bankValue>} name for a non-home bank overlay. */
+		/** Builds the {@code <windowName>_B<bankValue>} name for a non-home bank overlay
+		 *  of a mode-invariant switchable window. */
 		static String bankBlockName(String windowName, int bankValue) {
 			return windowName + "_B" + bankValue;
 		}
@@ -561,20 +781,89 @@ final class DescriptorSupport {
 		/**
 		 * Parses a bank value back out of an overlay space name, given the owning
 		 * window's name. Returns {@code null} if {@code spaceName} does not start
-		 * with {@code "<windowName>_B"} or the remainder is not a valid integer
-		 * (e.g. a differently-named overlay space, such as a C64 occupant overlay).
+		 * with {@code "<windowName>_B"} or the remainder is not all decimal digits
+		 * (e.g. a differently-named overlay space, such as a C64 occupant overlay, or
+		 * one of the {@code _M...} mode-qualified forms below).
 		 */
 		static Integer parseBankValue(String windowName, String spaceName) {
 			String prefix = windowName + "_B";
 			if (!spaceName.startsWith(prefix)) {
 				return null;
 			}
-			try {
-				return Integer.parseInt(spaceName.substring(prefix.length()));
-			}
-			catch (NumberFormatException e) {
+			return parseDigits(spaceName.substring(prefix.length()));
+		}
+
+		/** Builds the {@code <windowName>_M<modeValue>} name for a mode-varying
+		 *  <em>fixed</em> window's non-home layout instance. */
+		static String modeBlockName(String windowName, int modeValue) {
+			return windowName + "_M" + modeValue;
+		}
+
+		/**
+		 * Parses a mode value back out of an overlay space name for a mode-varying
+		 * fixed window, given the owning window's name. Returns {@code null} if
+		 * {@code spaceName} does not start with {@code "<windowName>_M"} or the
+		 * remainder is not all decimal digits -- in particular, a
+		 * {@code "<windowName>_M<m>_B<v>"} space (see {@link #modeBankBlockName})
+		 * fails to parse here because its remainder contains {@code "_B"}.
+		 */
+		static Integer parseModeValue(String windowName, String spaceName) {
+			String prefix = windowName + "_M";
+			if (!spaceName.startsWith(prefix)) {
 				return null;
 			}
+			return parseDigits(spaceName.substring(prefix.length()));
+		}
+
+		/** A parsed {@code <windowName>_M<mode>_B<bank>} overlay name's (mode, bank)
+		 *  pair; see {@link #modeBankBlockName} / {@link #parseModeBankValue}. */
+		record ModeBank(int mode, int bank) {}
+
+		/** Builds the {@code <windowName>_M<modeValue>_B<bankValue>} name for a
+		 *  mode-varying <em>switchable</em> window's non-home (layout, bank) instance. */
+		static String modeBankBlockName(String windowName, int modeValue, int bankValue) {
+			return windowName + "_M" + modeValue + "_B" + bankValue;
+		}
+
+		/**
+		 * Parses the (mode, bank) pair back out of a {@code "<windowName>_M<m>_B<v>"}
+		 * overlay space name, given the owning window's name. Returns {@code null} if
+		 * {@code spaceName} does not have exactly that shape (both {@code <m>} and
+		 * {@code <v>} all decimal digits).
+		 */
+		static ModeBank parseModeBankValue(String windowName, String spaceName) {
+			String prefix = windowName + "_M";
+			if (!spaceName.startsWith(prefix)) {
+				return null;
+			}
+			String rest = spaceName.substring(prefix.length());
+			int bIdx = rest.indexOf("_B");
+			if (bIdx < 0) {
+				return null;
+			}
+			Integer mode = parseDigits(rest.substring(0, bIdx));
+			Integer bank = parseDigits(rest.substring(bIdx + 2));
+			if (mode == null || bank == null) {
+				return null;
+			}
+			return new ModeBank(mode, bank);
+		}
+
+		/** Strict decimal parse: non-empty, decimal digits only (no sign, no
+		 *  whitespace -- stricter than {@code Integer.parseInt}), else null. */
+		private static Integer parseDigits(String s) {
+			if (s.isEmpty()) {
+				return null;
+			}
+			int v = 0;
+			for (int i = 0; i < s.length(); i++) {
+				char c = s.charAt(i);
+				if (c < '0' || c > '9') {
+					return null;
+				}
+				v = v * 10 + (c - '0');
+			}
+			return v;
 		}
 	}
 }

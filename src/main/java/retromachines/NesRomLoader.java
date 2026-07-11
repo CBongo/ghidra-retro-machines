@@ -19,11 +19,11 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
@@ -66,6 +66,10 @@ import ghidra.util.exception.CancelledException;
  * windows (the discrete mappers' switchable PRG) get the "home-in-base" overlay
  * layout: the initial-state bank in base space, every other bank as an overlay block
  * {@code <window>_B<bank>} for {@link NesBankingAnalyzer} to retarget references into.
+ * Mode-dependent window sets ({@code memory.layouts[]}, e.g. MMC3's prg_mode) are
+ * normalized through {@link DescriptorSupport#planWindows} and realized the same way
+ * per layout, with non-home layouts' instances as mode-qualified overlays
+ * ({@code <window>_M<mode>} / {@code <window>_M<mode>_B<bank>}).
  */
 public class NesRomLoader extends AbstractProgramWrapperLoader {
 
@@ -269,79 +273,18 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 			// every other in-range bank value gets an overlay block <name>_B<value> that
 			// the bank analyzer retargets references into.
 			List<PlacedWindow> placed = new ArrayList<>();
-			BankedFieldInfo bankedField = BankedFieldInfo.parse(map);
-			JsonArray windowArr = map.has("windows") ? map.getAsJsonArray("windows") : new JsonArray();
-			for (JsonElement we : windowArr) {
-				JsonObject window = we.getAsJsonObject();
-				String name = window.get("name").getAsString();
-				if (!window.has("maps")) {
-					log.appendMsg("Window '" + name +
-						"' has enumerated occupants; not supported by this loader (C64-style " +
-						"overlay layout is the C64 loader's job)");
-					continue;
-				}
-				long start = window.get("start").getAsLong();
-				long end = window.get("end").getAsLong();
-				long length = end - start + 1;
-				String expr = window.getAsJsonObject("maps").get("expr").getAsString();
+			List<DescriptorSupport.StateField> fields = DescriptorSupport.parseStateFields(map);
+			Long initialState = DescriptorSupport.initialState(map);
+			DescriptorSupport.LayoutPlan plan =
+				DescriptorSupport.planWindows(map, log, board.mapPath());
 
-				try {
-					long srcOffset =
-						DescriptorSupport.evalConstantExpr(expr, header.prgSize(), length);
-					if (checkRange(name, expr, srcOffset, length, header, log)) {
-						createWindowBlock(program, baseSpace, false, name,
-							name + " = PRG[" + expr + "] (offset 0x" + Long.toHexString(srcOffset) +
-								")",
-							start, length, fileBytes, header.prgFileOffset() + srcOffset,
-							board.mapPath(), log);
-						placed.add(new PlacedWindow(name, start, end, srcOffset));
-					}
-					continue;
-				}
-				catch (IllegalArgumentException e) {
-					// falls through to the bank-state-dependent path below
-				}
-
-				Set<String> fields = DescriptorSupport.referencedFields(expr);
-				if (bankedField == null || fields.size() != 1 ||
-					!fields.iterator().next().equals(bankedField.name())) {
-					log.appendMsg("Window '" + name + "' skipped: '" + expr +
-						"' needs exactly one banking.state field" +
-						(bankedField == null ? " but the descriptor has no banking section"
-								: " (first field '" + bankedField.name() + "')"));
-					continue;
-				}
-				// Build one named candidate per in-range bank value, then hand them to the
-				// shared home-in-base placement policy (DescriptorSupport.placeHomeInBaseWindow);
-				// only the home candidate's srcOffset is needed here (for PlacedWindow
-				// bookkeeping), so we stash offsets by block name as we build the list.
-				Map<String, Long> srcOffsetsByName = new HashMap<>();
-				List<DescriptorSupport.NamedCandidate> candidates = new ArrayList<>();
-				for (int v = 0; v < (1 << bankedField.bits()); v++) {
-					long srcOffset = DescriptorSupport.evalExpr(expr, header.prgSize(), length,
-						Map.of(bankedField.name(), (long) v));
-					if (srcOffset < 0 || srcOffset + length > header.prgSize()) {
-						continue; // bank values beyond the image simply don't exist
-					}
-					boolean home = v == bankedField.initialValue();
-					// see DescriptorSupport.OverlayNaming for why blockName doubling as the
-					// overlay AddressSpace's name is safe to rely on here.
-					String blockName =
-						home ? name : DescriptorSupport.OverlayNaming.bankBlockName(name, v);
-					srcOffsetsByName.put(blockName, srcOffset);
-					String windowComment = name + " = PRG[" + expr + "], " + bankedField.name() + "=" +
-						v + " (offset 0x" + Long.toHexString(srcOffset) +
-						(home ? ", home bank in base space)" : ")");
-					long fileOffset = header.prgFileOffset() + srcOffset;
-					candidates.add(new DescriptorSupport.NamedCandidate(blockName,
-						(p, bs, isHome, l) -> createWindowBlock(p, bs, !isHome, blockName,
-							windowComment, start, length, fileBytes, fileOffset, board.mapPath(), l)));
-				}
-				DescriptorSupport.placeHomeInBaseWindow(program, baseSpace, candidates, name, log);
-				Long homeSrcOffset = srcOffsetsByName.get(name);
-				if (homeSrcOffset != null) {
-					placed.add(new PlacedWindow(name, start, end, homeSrcOffset));
-				}
+			for (DescriptorSupport.PlannedWindow pw : plan.invariant()) {
+				realizeInvariantWindow(program, baseSpace, pw, fields, initialState, header,
+					fileBytes, board.mapPath(), placed, log);
+			}
+			if (plan.modeField() != null && !plan.varying().isEmpty()) {
+				realizeVaryingWindows(program, baseSpace, plan, fields, initialState, header,
+					fileBytes, board.mapPath(), placed, log);
 			}
 
 			if (header.chrBanks() > 0) {
@@ -415,26 +358,207 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 	}
 
 	/**
-	 * The single bank-state field this loader can drive switchable windows with: the
-	 * <em>first</em> field of {@code banking.state} (matching the memory-latch
-	 * strategy's field-placement constraint), its width, and its {@code initial_state}
-	 * value (the home bank). Null when the descriptor has no banking section.
+	 * Realizes one mode-invariant window (a top-level {@code memory.windows[]} entry, or a
+	 * {@code memory.layouts[]} window hoisted because every layout defines it identically):
+	 * a fixed {@code maps:} expression becomes one base-space block; a switchable
+	 * expression (referencing exactly one {@code banking.state} field, resolved by name
+	 * against {@code fields} -- not necessarily the first declared field) gets the
+	 * "home-in-base" overlay layout ({@code name} in base space for the initial-state bank,
+	 * {@code <name>_B<bank>} overlays for every other in-range bank).
 	 */
-	private record BankedFieldInfo(String name, int bits, int initialValue) {
+	private static void realizeInvariantWindow(Program program, AddressSpace baseSpace,
+			DescriptorSupport.PlannedWindow pw, List<DescriptorSupport.StateField> fields,
+			Long initialState, InesHeader header, FileBytes fileBytes, String mapPath,
+			List<PlacedWindow> placed, MessageLog log) {
 
-		static BankedFieldInfo parse(JsonObject map) {
-			JsonObject banking = map.getAsJsonObject("banking");
-			if (banking == null || !banking.has("state") || !banking.has("initial_state")) {
-				return null;
+		String name = pw.name();
+		if (pw.expr() == null) {
+			log.appendMsg("Window '" + name +
+				"' has enumerated occupants; not supported by this loader (C64-style " +
+				"overlay layout is the C64 loader's job)");
+			return;
+		}
+		long start = pw.start();
+		long end = pw.end();
+		long length = pw.length();
+		String expr = pw.expr();
+
+		try {
+			long srcOffset = DescriptorSupport.evalConstantExpr(expr, header.prgSize(), length);
+			if (checkRange(name, expr, srcOffset, length, header, log)) {
+				createWindowBlock(program, baseSpace, false, name,
+					name + " = PRG[" + expr + "] (offset 0x" + Long.toHexString(srcOffset) + ")",
+					start, length, fileBytes, header.prgFileOffset() + srcOffset, mapPath, log);
+				placed.add(new PlacedWindow(name, start, end, srcOffset));
 			}
-			JsonArray state = banking.getAsJsonArray("state");
-			if (state.isEmpty()) {
-				return null;
+			return;
+		}
+		catch (IllegalArgumentException e) {
+			// falls through to the bank-state-dependent path below
+		}
+
+		Set<String> exprFields = DescriptorSupport.referencedFields(expr);
+		DescriptorSupport.StateField field = exprFields.size() == 1
+				? DescriptorSupport.findField(fields, exprFields.iterator().next())
+				: null;
+		if (field == null) {
+			log.appendMsg("Window '" + name + "' skipped: '" + expr +
+				"' needs exactly one banking.state field" +
+				(fields.isEmpty() ? " but the descriptor has no banking section"
+						: " (references " + exprFields + ")"));
+			return;
+		}
+		long fieldInitial = initialState == null ? 0 : field.valueIn(initialState);
+
+		// Build one named candidate per in-range bank value, then hand them to the shared
+		// home-in-base placement policy (DescriptorSupport.placeHomeInBaseWindow); only the
+		// home candidate's srcOffset is needed here (for PlacedWindow bookkeeping), so we
+		// stash offsets by block name as we build the list.
+		Map<String, Long> srcOffsetsByName = new HashMap<>();
+		List<DescriptorSupport.NamedCandidate> candidates = new ArrayList<>();
+		for (long v = 0; v < (1L << field.width()); v++) {
+			long srcOffset =
+				DescriptorSupport.evalExpr(expr, header.prgSize(), length, Map.of(field.name(), v));
+			if (srcOffset < 0 || srcOffset + length > header.prgSize()) {
+				continue; // bank values beyond the image simply don't exist
 			}
-			JsonObject first = state.get(0).getAsJsonObject();
-			int bits = first.get("bits").getAsInt();
-			int initial = banking.get("initial_state").getAsInt() & ((1 << bits) - 1);
-			return new BankedFieldInfo(first.get("name").getAsString(), bits, initial);
+			boolean home = v == fieldInitial;
+			// see DescriptorSupport.OverlayNaming for why blockName doubling as the overlay
+			// AddressSpace's name is safe to rely on here.
+			String blockName =
+				home ? name : DescriptorSupport.OverlayNaming.bankBlockName(name, (int) v);
+			srcOffsetsByName.put(blockName, srcOffset);
+			String windowComment = name + " = PRG[" + expr + "], " + field.name() + "=" + v +
+				" (offset 0x" + Long.toHexString(srcOffset) +
+				(home ? ", home bank in base space)" : ")");
+			long fileOffset = header.prgFileOffset() + srcOffset;
+			candidates.add(new DescriptorSupport.NamedCandidate(blockName,
+				(p, bs, isHome, l) -> createWindowBlock(p, bs, !isHome, blockName, windowComment,
+					start, length, fileBytes, fileOffset, mapPath, l)));
+		}
+		DescriptorSupport.placeHomeInBaseWindow(program, baseSpace, candidates, name, log);
+		Long homeSrcOffset = srcOffsetsByName.get(name);
+		if (homeSrcOffset != null) {
+			placed.add(new PlacedWindow(name, start, end, homeSrcOffset));
+		}
+	}
+
+	/**
+	 * Realizes every mode-varying window (from {@code memory.layouts[]}), grouped by
+	 * window name across all layouts so each window's full set of per-mode instances is
+	 * handed to {@link DescriptorSupport#placeHomeInBaseWindow} together -- exactly one
+	 * instance across every (layout, bank) combination is "home": the layout whose mode
+	 * value equals the mode field's {@code initial_state} value, and (for a switchable
+	 * expression) the bank value equal to that field's own initial value. Every other
+	 * instance becomes a mode-qualified overlay ({@code <name>_M<mode>} for a fixed
+	 * expression's non-home layout, {@code <name>_M<mode>_B<bank>} for a switchable
+	 * expression's non-home (layout, bank) pair).
+	 */
+	private static void realizeVaryingWindows(Program program, AddressSpace baseSpace,
+			DescriptorSupport.LayoutPlan plan, List<DescriptorSupport.StateField> fields,
+			Long initialState, InesHeader header, FileBytes fileBytes, String mapPath,
+			List<PlacedWindow> placed, MessageLog log) {
+
+		DescriptorSupport.StateField modeFieldSpec =
+			DescriptorSupport.findField(fields, plan.modeField());
+		if (modeFieldSpec == null || initialState == null) {
+			log.appendMsg("memory.layouts[] present but mode field '" + plan.modeField() +
+				"' not found in banking.state (or initial_state missing); skipping " +
+				"mode-varying windows");
+			return;
+		}
+		long homeModeValue = modeFieldSpec.valueIn(initialState);
+
+		Map<String, List<DescriptorSupport.PlannedWindow>> byName = new LinkedHashMap<>();
+		for (DescriptorSupport.PlannedWindow pw : plan.varying()) {
+			byName.computeIfAbsent(pw.name(), k -> new ArrayList<>()).add(pw);
+		}
+
+		for (Map.Entry<String, List<DescriptorSupport.PlannedWindow>> entry : byName.entrySet()) {
+			String name = entry.getKey();
+			List<DescriptorSupport.PlannedWindow> instances = entry.getValue();
+			if (instances.stream().anyMatch(pw -> pw.expr() == null)) {
+				log.appendMsg("Window '" + name +
+					"' has enumerated occupants; not supported by this loader");
+				continue;
+			}
+			Map<String, Long> srcOffsetsByName = new HashMap<>();
+			List<DescriptorSupport.NamedCandidate> candidates = new ArrayList<>();
+			// The home layout's instance defines where the base-space block (and the
+			// PlacedWindow used for vector reads) sits; layouts normally agree on a
+			// window's CPU-space location, but each instance's block uses its own
+			// declared start/length regardless.
+			long homeStart = instances.get(0).start();
+			long homeEnd = instances.get(0).end();
+
+			for (DescriptorSupport.PlannedWindow pw : instances) {
+				int m = pw.modeValue();
+				boolean isHomeLayout = m == homeModeValue;
+				String expr = pw.expr();
+				long start = pw.start();
+				long length = pw.length();
+				if (isHomeLayout) {
+					homeStart = pw.start();
+					homeEnd = pw.end();
+				}
+
+				try {
+					long srcOffset = DescriptorSupport.evalConstantExpr(expr, header.prgSize(), length);
+					if (!checkRange(name, expr, srcOffset, length, header, log)) {
+						continue;
+					}
+					String blockName = isHomeLayout ? name
+							: DescriptorSupport.OverlayNaming.modeBlockName(name, m);
+					srcOffsetsByName.put(blockName, srcOffset);
+					String comment = name + " = PRG[" + expr + "] (mode " + plan.modeField() + "=" +
+						m + ", offset 0x" + Long.toHexString(srcOffset) +
+						(isHomeLayout ? ", home mode in base space)" : ")");
+					long fileOffset = header.prgFileOffset() + srcOffset;
+					candidates.add(new DescriptorSupport.NamedCandidate(blockName,
+						(p, bs, isHome, l) -> createWindowBlock(p, bs, !isHome, blockName, comment,
+							start, length, fileBytes, fileOffset, mapPath, l)));
+					continue;
+				}
+				catch (IllegalArgumentException e) {
+					// falls through: bank-state-dependent within this mode
+				}
+
+				Set<String> exprFields = DescriptorSupport.referencedFields(expr);
+				DescriptorSupport.StateField bankField = exprFields.size() == 1
+						? DescriptorSupport.findField(fields, exprFields.iterator().next())
+						: null;
+				if (bankField == null) {
+					log.appendMsg("Window '" + name + "' (mode " + plan.modeField() + "=" + m +
+						") skipped: '" + expr + "' needs exactly one banking.state field" +
+						" (references " + exprFields + ")");
+					continue;
+				}
+				long bankInitial = bankField.valueIn(initialState);
+				for (long v = 0; v < (1L << bankField.width()); v++) {
+					long srcOffset = DescriptorSupport.evalExpr(expr, header.prgSize(), length,
+						Map.of(bankField.name(), v));
+					if (srcOffset < 0 || srcOffset + length > header.prgSize()) {
+						continue;
+					}
+					boolean home = isHomeLayout && v == bankInitial;
+					String blockName = home ? name
+							: DescriptorSupport.OverlayNaming.modeBankBlockName(name, m, (int) v);
+					srcOffsetsByName.put(blockName, srcOffset);
+					String comment = name + " = PRG[" + expr + "], mode " + plan.modeField() + "=" + m +
+						", " + bankField.name() + "=" + v + " (offset 0x" +
+						Long.toHexString(srcOffset) + (home ? ", home in base space)" : ")");
+					long fileOffset = header.prgFileOffset() + srcOffset;
+					candidates.add(new DescriptorSupport.NamedCandidate(blockName,
+						(p, bs, isHome, l) -> createWindowBlock(p, bs, !isHome, blockName, comment,
+							start, length, fileBytes, fileOffset, mapPath, l)));
+				}
+			}
+
+			DescriptorSupport.placeHomeInBaseWindow(program, baseSpace, candidates, name, log);
+			Long homeSrcOffset = srcOffsetsByName.get(name);
+			if (homeSrcOffset != null) {
+				placed.add(new PlacedWindow(name, homeStart, homeEnd, homeSrcOffset));
+			}
 		}
 	}
 

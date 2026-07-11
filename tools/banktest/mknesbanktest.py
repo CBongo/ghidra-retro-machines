@@ -1,19 +1,23 @@
 #!/usr/bin/env python3
 """Hand-assembles the NES banking-analyzer regression ROMs (bead grm-5tl.17,
-extended by grm-5tl.13.3).
+extended by grm-5tl.13.3 and grm-aqf).
 
 Usage: mknesbanktest.py <output-dir>
 
-Writes nesbanktest.nes and nesbanktest2.nes (each: 16-byte iNES header + 4 x 16 KiB
-PRG banks, no CHR) into <output-dir>. No dependencies beyond Python 3.
+Writes nesbanktest.nes, nesbanktest2.nes, and nesmodetest.nes (each: 16-byte iNES
+header + 4 x 16 KiB PRG banks, no CHR) into <output-dir>. No dependencies beyond
+Python 3.
 
-Both target the shipped UxROM board descriptor (machines/nes-uxrom.yaml, iNES mapper
-2): a switchable 16 KiB window at $8000-$BFFF (computed window PRG_LO, home bank = 0,
-memory-latch mechanism with bus_conflict) and a fixed 16 KiB window at $C000-$FFFF
-(PRG_HI = PRG[last]) holding RESET/NMI/IRQ code and the vector table. This exercises
-NesRomLoader's computed-window "home-in-base" overlay placement (PRG_LO_B1/_B2/_B3
-FileBytes-backed overlay blocks) and NesBankingAnalyzer/BoardBankAnalyzer reference
-retargeting through MemoryLatchBankSwitchStrategy's bus-conflict path.
+The first two target the shipped UxROM board descriptor (machines/nes-uxrom.yaml,
+iNES mapper 2): a switchable 16 KiB window at $8000-$BFFF (computed window PRG_LO,
+home bank = 0, memory-latch mechanism with bus_conflict) and a fixed 16 KiB window at
+$C000-$FFFF (PRG_HI = PRG[last]) holding RESET/NMI/IRQ code and the vector table.
+This exercises NesRomLoader's computed-window "home-in-base" overlay placement
+(PRG_LO_B1/_B2/_B3 FileBytes-backed overlay blocks) and
+NesBankingAnalyzer/BoardBankAnalyzer reference retargeting through
+MemoryLatchBankSwitchStrategy's bus-conflict path. The third targets the SYNTHETIC
+mode-dependent-layout test board (machines/nes-modetest.yaml, iNES mapper 100) --
+see its section below.
 
 nesbanktest.nes bank layout (16 KiB each, PRG image is 4 banks = 64 KiB):
   bank 0 (home, mapped at $8000-$BFFF by default): marker byte 0x00 at $8000, filler.
@@ -80,6 +84,51 @@ RESET ($C000):
                       maps to the same file byte as PRG_HI $C030 (dual-mapped, never
                       referenced as PRG_HI $C030)
   FFE0-FFE3           bank-number table (00 01 02 03), bus-conflict-safe latch targets
+
+nesmodetest.nes (bead grm-aqf): mode-dependent-layout fixture for the SYNTHETIC
+machines/nes-modetest.yaml board (iNES mapper 100, NESdev-reserved for test use). The
+board has two memory.layouts[] keyed off a 1-bit prg_mode field (latched by stores to
+$6000-$6FFF, mask 0x01) and a 2-bit bank field (latched by stores to $5000-$5FFF,
+mask 0x03) -- two independent memory-latch mechanisms setting disjoint state fields:
+  prg_mode 0 (home): W8000 = PRG[bank * 0x4000] (switchable), WC000 = PRG[last] (fixed)
+  prg_mode 1:        W8000 = PRG[last] (fixed),  WC000 = PRG[bank * 0x4000] (switchable)
+The loader realizes the home layout's home instances in base space (W8000 = bank 0,
+WC000 = PRG[last]) and everything else as mode-qualified overlays: W8000_M0_B1/_B2/_B3
+(home layout, non-home banks), W8000_M1 (mode-1 fixed instance), and
+WC000_M1_B0/_B1/_B2/_B3 (mode-1 switchable instances). This fixture only pins down
+the loader-side block layout plus the multi-mechanism bank comments today; the
+overlay REFs into _M* spaces are the sibling analyzer bead's concern (nesmodetest is
+NOT yet wired into run-banktest.sh / VerifyBankTest goldens).
+
+PRG is 4 x 16 KiB; WC000's home mapping is PRG[last] = file 0xC000-0xFFFF, so a CPU
+address $C000+x in the home mode equals PRG file offset 0xC000+x (code below is
+written at its CPU address, as in the fixtures above). Note W8000_M1 maps the SAME
+last bank, so CPU $8000+x in mode 1 also equals PRG file offset 0xC000+x.
+
+RESET ($C000, executes with the reset seed prg_mode=0/bank=0):
+  C000  A9 01        LDA #$01
+  C002  8D 00 50     STA $5000       ; bank latch -> 1 (mode still 0, known from seed)
+  C005  20 00 80     JSR $8000       ; mode0/bank1 -> analyzer target W8000_M0_B1::8000
+  C008  A9 01        LDA #$01
+  C00A  8D 00 60     STA $6000       ; mode latch -> 1 (bank=1 must SURVIVE: separate
+                      mechanisms position disjoint state fields)
+  C00D  4C 40 80     JMP $8040       ; mode1 -> W8000 fixed(last) -> W8000_M1::8040
+  C010  40           RTI             ; NMI/IRQ handler
+
+Mode-1 phase at PRG 0xC040 (= W8000_M1::8040). It executes in the $8000 window
+deliberately: with prg_mode=1 in effect, WC000 is the switchable window, so code
+lingering at $C0xx -- even an idle-loop JMP -- would be retargeted into a WC000_M1_B*
+overlay; hopping to the fixed $8000 window sidesteps that.
+  8040  A9 02        LDA #$02
+  8042  8D 00 50     STA $5000       ; bank -> 2 INSIDE a mode-qualified overlay
+                      (prg_mode=1 must be preserved by the bank mechanism)
+  8045  20 30 C0     JSR $C030       ; mode1/bank2 -> analyzer target WC000_M1_B2::C030
+  8048  4C 48 80     JMP $8048       ; self idle (overlay-internal ref, not retargeted)
+
+Routine targets:
+  PRG 0x4000 (bank 1 offset 0 = W8000_M0_B1::8000): 60 RTS (replaces the bank marker)
+  PRG 0x8030 (bank 2 offset 0x30 = WC000_M1_B2::C030): 60 RTS
+Vectors: NMI/IRQ -> $C010 (RTI), RESET -> $C000.
 """
 
 import sys
@@ -88,7 +137,8 @@ import os
 PRG_BANK_SIZE = 0x4000
 PRG_BANKS = 4
 PRG_SIZE = PRG_BANK_SIZE * PRG_BANKS
-MAPPER = 2  # UxROM
+MAPPER = 2          # UxROM (nesbanktest / nesbanktest2)
+MAPPER_MODETEST = 100  # synthetic nes-modetest board (NESdev-reserved test mapper)
 
 
 def _bank3_putter(prg):
@@ -187,6 +237,50 @@ def make_prg2():
     return bytes(prg)
 
 
+def make_prg_mode():
+    """The mode-dependent-layout fixture for nes-modetest (bead grm-aqf); see module doc."""
+    prg = bytearray([0x00] * PRG_SIZE)
+
+    # Bank markers at the first byte of each bank, matching the other fixtures' convention.
+    # Bank 1's marker is immediately replaced by its RTS routine, and bank 3's by RESET's
+    # first opcode -- both intentional (see the module doc's nesmodetest section).
+    for bank in range(PRG_BANKS):
+        prg[bank * PRG_BANK_SIZE] = bank
+
+    # Bank 1 offset 0 (= W8000_M0_B1::8000, the mode-0/bank-1 JSR target): RTS.
+    prg[1 * PRG_BANK_SIZE + 0x0000] = 0x60  # RTS
+
+    # Bank 2 offset 0x30 (= WC000_M1_B2::C030, the mode-1/bank-2 JSR target): RTS.
+    prg[2 * PRG_BANK_SIZE + 0x0030] = 0x60  # RTS
+
+    # Bank 3 = PRG[last]: the home-mode WC000 window (CPU $C000+) AND the mode-1 W8000
+    # window (CPU $8000+). put() addresses it by its home-mode CPU address.
+    put = _bank3_putter(prg)
+
+    # RESET phase (home mode prg_mode=0, bank seeded 0).
+    put(0xC000, [0xA9, 0x01])               # LDA #$01
+    put(0xC002, [0x8D, 0x00, 0x50])         # STA $5000 (bank latch -> 1)
+    put(0xC005, [0x20, 0x00, 0x80])         # JSR $8000 (mode0/bank1 -> W8000_M0_B1::8000)
+    put(0xC008, [0xA9, 0x01])               # LDA #$01
+    put(0xC00A, [0x8D, 0x00, 0x60])         # STA $6000 (mode latch -> 1; bank=1 survives)
+    put(0xC00D, [0x4C, 0x40, 0x80])         # JMP $8040 (mode1 -> W8000_M1::8040)
+    put(0xC010, [0x40])                     # RTI (NMI/IRQ handler)
+
+    # Mode-1 phase; written at PRG 0xC040 == W8000_M1's CPU $8040 (dual-mapped -- the
+    # code deliberately runs in the fixed $8000 window; see module doc).
+    put(0xC040, [0xA9, 0x02])               # 8040: LDA #$02
+    put(0xC042, [0x8D, 0x00, 0x50])         # 8042: STA $5000 (bank -> 2 inside overlay)
+    put(0xC045, [0x20, 0x30, 0xC0])         # 8045: JSR $C030 (mode1/bank2 -> WC000_M1_B2::C030)
+    put(0xC048, [0x4C, 0x48, 0x80])         # 8048: JMP $8048 (self idle)
+
+    # Vector table.
+    put(0xFFFA, [0x10, 0xC0])  # NMI   -> $C010 (RTI)
+    put(0xFFFC, [0x00, 0xC0])  # RESET -> $C000
+    put(0xFFFE, [0x10, 0xC0])  # IRQ   -> $C010 (RTI)
+
+    return bytes(prg)
+
+
 def make_ines_header(prg_banks, chr_banks, mapper):
     h = bytearray(16)
     h[0:4] = b"NES\x1a"
@@ -198,8 +292,8 @@ def make_ines_header(prg_banks, chr_banks, mapper):
     return bytes(h)
 
 
-def _write_rom(outdir, filename, prg):
-    header = make_ines_header(PRG_BANKS, 0, MAPPER)
+def _write_rom(outdir, filename, prg, mapper=MAPPER):
+    header = make_ines_header(PRG_BANKS, 0, mapper)
     rom = header + prg
     path = os.path.join(outdir, filename)
     with open(path, "wb") as f:
@@ -286,6 +380,41 @@ def main():
     assert (prg2[0xFFFE] | (prg2[0xFFFF] << 8)) == 0xC00B  # IRQ vector
 
     _write_rom(outdir, "nesbanktest2.nes", prg2)
+
+    prgm = make_prg_mode()
+
+    # Sanity-check the mode-dependent-layout fixture before writing (bead grm-aqf).
+    assert len(prgm) == PRG_SIZE
+    assert prgm[0 * PRG_BANK_SIZE] == 0x00  # bank 0 marker
+    assert prgm[1 * PRG_BANK_SIZE] == 0x60  # bank 1's RTS replaced its marker (W8000_M0_B1::8000)
+    assert prgm[2 * PRG_BANK_SIZE] == 0x02  # bank 2 marker
+    assert prgm[2 * PRG_BANK_SIZE + 0x30] == 0x60  # RTS at WC000_M1_B2::C030
+    # RESET phase (home mode).
+    assert prgm[0xC000] == 0xA9  # LDA opcode at RESET ($C000)
+    assert prgm[0xC002] == 0x8D  # STA opcode at $C002
+    assert (prgm[0xC003] | (prgm[0xC004] << 8)) == 0x5000  # bank latch
+    assert prgm[0xC005] == 0x20  # JSR opcode at $C005
+    assert (prgm[0xC006] | (prgm[0xC007] << 8)) == 0x8000
+    assert prgm[0xC008] == 0xA9  # LDA opcode at $C008
+    assert prgm[0xC00A] == 0x8D  # STA opcode at $C00A
+    assert (prgm[0xC00B] | (prgm[0xC00C] << 8)) == 0x6000  # mode latch
+    assert prgm[0xC00D] == 0x4C  # JMP opcode at $C00D
+    assert (prgm[0xC00E] | (prgm[0xC00F] << 8)) == 0x8040
+    assert prgm[0xC010] == 0x40  # RTI (NMI/IRQ handler)
+    # Mode-1 phase at PRG 0xC040 (executes as W8000_M1::8040).
+    assert prgm[0xC040] == 0xA9  # LDA opcode at $8040
+    assert prgm[0xC042] == 0x8D  # STA opcode at $8042
+    assert (prgm[0xC043] | (prgm[0xC044] << 8)) == 0x5000  # bank latch inside overlay
+    assert prgm[0xC045] == 0x20  # JSR opcode at $8045
+    assert (prgm[0xC046] | (prgm[0xC047] << 8)) == 0xC030
+    assert prgm[0xC048] == 0x4C  # JMP opcode at $8048
+    assert (prgm[0xC049] | (prgm[0xC04A] << 8)) == 0x8048  # self idle
+    # Vectors.
+    assert (prgm[0xFFFC] | (prgm[0xFFFD] << 8)) == 0xC000  # RESET vector
+    assert (prgm[0xFFFA] | (prgm[0xFFFB] << 8)) == 0xC010  # NMI vector
+    assert (prgm[0xFFFE] | (prgm[0xFFFF] << 8)) == 0xC010  # IRQ vector
+
+    _write_rom(outdir, "nesmodetest.nes", prgm, mapper=MAPPER_MODETEST)
 
 
 if __name__ == "__main__":
