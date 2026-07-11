@@ -227,9 +227,9 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		}
 
 		JsonObject banking = map.getAsJsonObject("banking");
-		List<BankSwitchStrategy> strategies = configureStrategies(program,
-			banking.getAsJsonArray("mechanisms"), board.mask(), log);
-		if (strategies.isEmpty()) {
+		List<ConfiguredMechanism> mechanisms = configureStrategies(program,
+			banking.getAsJsonArray("mechanisms"), board, log);
+		if (mechanisms.isEmpty()) {
 			log.appendMsg(getName(), "no usable bank-switch strategy in " + mapPath +
 				" banking; skipping bank-state analysis");
 			return true;
@@ -239,13 +239,13 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 
 		// --- Phase 1: forward dataflow to fixpoint; rerun with helper knowledge if any ---
 		Listing listing = program.getListing();
-		DataflowResult flow = runDataflow(program, monitor, listing, strategies, board, null);
+		DataflowResult flow = runDataflow(program, monitor, listing, mechanisms, board, null);
 
-		Map<Function, HelperModel> helpers = findHelpers(program, flow.switchResults(), board);
+		Map<Function, HelperModel> helpers = findHelpers(program, flow.switchResults());
 		if (!helpers.isEmpty()) {
 			log.appendMsg(getName(), helpers.size() + " bank-switch helper function(s): " +
 				helpers.keySet().stream().map(Function::getName).sorted().toList());
-			flow = runDataflow(program, monitor, listing, strategies, board, helpers);
+			flow = runDataflow(program, monitor, listing, mechanisms, board, helpers);
 		}
 
 		// --- Phase 2: annotate bank switches + retarget references ---
@@ -261,9 +261,9 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				continue;
 			}
 
-			BankState switched = flow.switchResults().get(addr);
-			if (switched != null) {
-				warnings += annotateOrWarn(program, listing, addr, switched, board, null,
+			SwitchResult switchResult = flow.switchResults().get(addr);
+			if (switchResult != null) {
+				warnings += annotateOrWarn(program, listing, addr, switchResult.effect(), board, null,
 					"Bank state becomes unknown here: mechanism write with a genuinely " +
 						"undeterminable value (value recovery could not pin down even one " +
 						"tracked bank bit -- e.g. a load of an unrelated address followed " +
@@ -306,12 +306,14 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * Instantiates and configures one {@link BankSwitchStrategy} per descriptor
 	 * mechanism entry, matching {@code mechanisms[].strategy} to implementations found
 	 * by ClassSearcher. Unknown strategy names are logged and skipped (they belong to
-	 * later milestones).
+	 * later milestones). Each mechanism is also positioned within the board's absolute
+	 * state bits (see {@link #mechanismPositioning}); a mechanism whose positioning
+	 * cannot be determined is likewise skipped.
 	 */
-	private List<BankSwitchStrategy> configureStrategies(Program program, JsonArray mechanisms,
-			int stateMask, MessageLog log) {
+	private List<ConfiguredMechanism> configureStrategies(Program program, JsonArray mechanisms,
+			BoardModel board, MessageLog log) {
 		List<BankSwitchStrategy> prototypes = ClassSearcher.getInstances(BankSwitchStrategy.class);
-		List<BankSwitchStrategy> configured = new ArrayList<>();
+		List<ConfiguredMechanism> configured = new ArrayList<>();
 		for (JsonElement me : mechanisms) {
 			JsonObject mechanism = me.getAsJsonObject();
 			String strategyName = mechanism.get("strategy").getAsString();
@@ -327,11 +329,21 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 					strategyName + "'; skipping that mechanism");
 				continue;
 			}
+
+			int[] positioning = mechanismPositioning(mechanism, board, log, strategyName);
+			if (positioning == null) {
+				continue;
+			}
+			int effectMask = positioning[0];
+			int lsb = positioning[1];
+
 			try {
 				BankSwitchStrategy instance =
 					prototype.getClass().getDeclaredConstructor().newInstance();
-				instance.configure(program, mechanism.getAsJsonObject("params"), stateMask);
-				configured.add(instance);
+				// Strategies always compute in field-local [0, width) coordinates; the mask
+				// they configure with is that field-local width, not the whole board mask.
+				instance.configure(program, mechanism.getAsJsonObject("params"), effectMask >>> lsb);
+				configured.add(new ConfiguredMechanism(instance, effectMask, lsb));
 			}
 			catch (Exception e) {
 				log.appendMsg(getName(), "failed to configure strategy '" + strategyName + "': " +
@@ -339,6 +351,57 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			}
 		}
 		return configured;
+	}
+
+	/**
+	 * Computes one mechanism's {@code (effectMask, lsb)}: where in the board's absolute
+	 * state bits this mechanism's writes land, derived from its {@code sets} field-name
+	 * list (the {@code banking.state} fields it writes) -- {@code effectMask} is the union
+	 * of those fields' {@link FieldSpec#positionedMask()}, {@code lsb} the lowest of their
+	 * lsbs. The engine uses this to translate between a strategy's field-local
+	 * {@code [0, width)} coordinate space (what {@link BankSwitchStrategy#computeSwitch}
+	 * actually computes in) and the board's absolute state bits, so one mechanism's switch
+	 * can fold into the tracked state without disturbing bits another mechanism owns
+	 * (grm-ezl). The union is REQUIRED to be one contiguous bit run starting at
+	 * {@code lsb} -- a mechanism whose {@code sets} fields are split or interleaved with
+	 * another mechanism's is unsupported and is conservatively skipped (logged, not
+	 * analyzed) rather than mispositioned.
+	 * <p>
+	 * A mechanism with no {@code sets} at all (older or minimal descriptors) falls back to
+	 * covering the whole board mask at {@code lsb} 0 -- today's single-mechanism-per-board
+	 * behavior, verbatim.
+	 *
+	 * @return {@code {effectMask, lsb}}, or {@code null} to skip this mechanism
+	 */
+	private int[] mechanismPositioning(JsonObject mechanism, BoardModel board, MessageLog log,
+			String strategyName) {
+		if (!mechanism.has("sets") || mechanism.getAsJsonArray("sets").size() == 0) {
+			return new int[] { board.mask(), 0 };
+		}
+		JsonArray sets = mechanism.getAsJsonArray("sets");
+		int effectMask = 0;
+		int lsb = Integer.MAX_VALUE;
+		for (JsonElement se : sets) {
+			String fieldName = se.getAsString();
+			FieldSpec field = board.fieldSpecs().stream()
+					.filter(f -> f.name().equals(fieldName))
+					.findFirst()
+					.orElse(null);
+			if (field == null) {
+				log.appendMsg(getName(), "mechanism '" + strategyName + "' sets unknown state " +
+					"field '" + fieldName + "'; skipping that mechanism");
+				return null;
+			}
+			effectMask |= field.positionedMask();
+			lsb = Math.min(lsb, field.lsb());
+		}
+		int widthMask = effectMask >>> lsb;
+		if (widthMask == 0 || (widthMask & (widthMask + 1)) != 0) {
+			log.appendMsg(getName(), "mechanism '" + strategyName + "' sets fields " + sets +
+				" that are not a contiguous bit run in banking.state; skipping that mechanism");
+			return null;
+		}
+		return new int[] { effectMask, lsb };
 	}
 
 	// ------------------------------------------------------------------
@@ -352,11 +415,11 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * still seeded with the in-state -- the switch happens inside the helper).
 	 */
 	private DataflowResult runDataflow(Program program, TaskMonitor monitor, Listing listing,
-			List<BankSwitchStrategy> strategies, BoardModel board,
+			List<ConfiguredMechanism> mechanisms, BoardModel board,
 			Map<Function, HelperModel> helpers) throws CancelledException {
 
 		Map<Address, BankState> stateIn = new HashMap<>();
-		Map<Address, BankState> switchResults = new HashMap<>();
+		Map<Address, SwitchResult> switchResults = new HashMap<>();
 		Map<Address, CallSwitch> callSwitches = new HashMap<>();
 		Deque<Address> worklist = new ArrayDeque<>();
 		Map<String, int[]> clampCache = new HashMap<>();
@@ -395,57 +458,77 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			// computeSwitch on an instruction-only predicate (MemoryLatch's writesInRange,
 			// RegisterWrite's writesMechanism) that fully determines whether the result is
 			// null -- neither ever returns null for an instruction its predicate accepts, so
-			// "which strategy matches this address" (if any) does not depend on inState, only
+			// "which mechanism matches this address" (if any) does not depend on inState, only
 			// the *value* a non-cacheable match produces does. That lets us cache the matched
-			// strategy's identity per address across dequeues and, on a cache hit, either reuse
+			// mechanism's identity per address across dequeues and, on a cache hit, either reuse
 			// a cacheable strategy's state-independent result outright or re-probe only the one
 			// non-cacheable strategy that matched -- never the others, and never re-run the
 			// whole ordered loop. A future strategy whose match/no-match outcome genuinely
 			// depends on inState would violate this; the fallback below (treat an unexpected
 			// null from the cached strategy as no-match for this dequeue, rather than
 			// re-probing every strategy) stays conservative in that case instead of unsound.
+			//
+			// Every strategy computes in its mechanism's field-local [0, width) coordinate
+			// space, never the board's absolute state bits: the in-state handed to
+			// computeSwitch is narrowed to that mechanism's effectMask/lsb, and a non-null
+			// result is positioned back into absolute bits before it touches stateIn.
 			MatchInfo cached = matchCache.get(addr);
-			BankState switched;
+			ConfiguredMechanism matchedMechanism;
+			BankState switchedLocal;
 			if (cached == null) {
-				BankSwitchStrategy matched = null;
+				ConfiguredMechanism matched = null;
 				BankState result = null;
-				for (BankSwitchStrategy strategy : strategies) {
-					result = strategy.computeSwitch(program, instr, inState);
+				for (ConfiguredMechanism cm : mechanisms) {
+					BankState localIn = toFieldLocal(inState, cm.lsb(), cm.effectMask());
+					result = cm.strategy().computeSwitch(program, instr, localIn);
 					if (result != null) {
-						matched = strategy;
+						matched = cm;
 						break;
 					}
 				}
-				switched = matched == null ? null : result;
+				matchedMechanism = matched;
+				switchedLocal = matched == null ? null : result;
 				matchCache.put(addr, new MatchInfo(matched,
-					matched != null && matched.cacheable() ? result : null));
+					matched != null && matched.strategy().cacheable() ? result : null));
 			}
-			else if (cached.strategy() == null) {
+			else if (cached.mechanism() == null) {
 				// no strategy's instruction-level predicate matches this address
-				switched = null;
+				matchedMechanism = null;
+				switchedLocal = null;
 			}
 			else if (cached.result() != null) {
 				// cacheable strategy matched before; its result here is state-independent
-				switched = cached.result();
+				matchedMechanism = cached.mechanism();
+				switchedLocal = cached.result();
 			}
 			else {
 				// non-cacheable strategy matched before; only it can match here, re-probe it
 				// alone with the current in-state
-				switched = cached.strategy().computeSwitch(program, instr, inState);
+				matchedMechanism = cached.mechanism();
+				BankState localIn =
+					toFieldLocal(inState, matchedMechanism.lsb(), matchedMechanism.effectMask());
+				switchedLocal = matchedMechanism.strategy().computeSwitch(program, instr, localIn);
 			}
-			if (switched != null) {
-				switchResults.put(addr, switched);
-				outState = switched;
+			if (switchedLocal != null) {
+				// Fold: this mechanism's switch REPLACES only the bits it owns (effectMask),
+				// preserving whatever the rest of the tracked state already knew about other
+				// mechanisms' fields. For a single-mechanism board effectMask covers every
+				// tracked bit, so this reduces exactly to the old whole-state replace.
+				BankState positionedEffect =
+					position(switchedLocal, matchedMechanism.lsb(), matchedMechanism.effectMask());
+				switchResults.put(addr, new SwitchResult(positionedEffect,
+					matchedMechanism.effectMask(), matchedMechanism.lsb()));
+				outState = overwrite(inState, positionedEffect, matchedMechanism.effectMask());
 			}
 
 			BankState fallState = outState;
 			if (helpers != null && instr.getFlowType().isCall()) {
 				HelperModel helper = calledHelper(program, instr, helpers);
 				if (helper != null) {
-					BankState afterCall = helper.constState() != null ? helper.constState()
-							: recoverCallArgument(program, instr, helper, board.mask());
-					callSwitches.put(addr, new CallSwitch(helper.function().getName(), afterCall));
-					fallState = afterCall;
+					BankState effect = helper.constState() != null ? helper.constState()
+							: recoverCallArgument(program, instr, helper);
+					callSwitches.put(addr, new CallSwitch(helper.function().getName(), effect));
+					fallState = overwrite(outState, effect, helper.effectMask());
 				}
 			}
 
@@ -459,6 +542,48 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			}
 		}
 		return new DataflowResult(stateIn, switchResults, callSwitches);
+	}
+
+	/**
+	 * Narrows a board-absolute {@link BankState} to one mechanism's field-local
+	 * {@code [0, width)} coordinate space: the bits outside {@code effectMask} are
+	 * discarded and the surviving bits are shifted down by {@code lsb}. This is what a
+	 * {@link BankSwitchStrategy} actually sees as its {@code inState} -- e.g. its own
+	 * mechanism read back ({@code LDA} of a register-write's own address/register)
+	 * resolves against only the field(s) that mechanism owns, not the whole board state.
+	 * The inverse of {@link #position}.
+	 */
+	private static BankState toFieldLocal(BankState state, int lsb, int effectMask) {
+		return new BankState((state.knownMask() & effectMask) >>> lsb,
+			(state.bits() & effectMask) >>> lsb);
+	}
+
+	/**
+	 * Positions a mechanism's field-local {@code [0, width)} result back into the board's
+	 * absolute state bits: shifted up by {@code lsb} and masked to {@code effectMask} (a
+	 * defensive mask -- a well-behaved strategy result is already {@code <= width} bits,
+	 * but this keeps a stray high bit from a strategy from ever leaking outside the
+	 * mechanism's own field). The inverse of {@link #toFieldLocal}.
+	 */
+	private static BankState position(BankState fieldLocal, int lsb, int effectMask) {
+		return new BankState((fieldLocal.knownMask() << lsb) & effectMask,
+			(fieldLocal.bits() << lsb) & effectMask);
+	}
+
+	/**
+	 * Folds a mechanism's positioned effect into a base state: bits inside {@code mask}
+	 * take the effect's knowledge (whether known or not), every other bit keeps whatever
+	 * {@code base} already knew. {@code effect}'s known bits are always a subset of
+	 * {@code mask} by construction ({@link #position} masks to it), so this is a clean
+	 * per-bit replace, not a merge -- one mechanism's switch never has to agree with what
+	 * was known before it fired. When {@code mask} covers every tracked bit (every shipped
+	 * board today, since each has exactly one mechanism spanning the whole board mask),
+	 * this reduces to replacing the state outright, matching the engine's original
+	 * single-mechanism behavior exactly.
+	 */
+	private static BankState overwrite(BankState base, BankState effect, int mask) {
+		return new BankState((base.knownMask() & ~mask) | effect.knownMask(),
+			(base.bits() & ~mask) | effect.bits());
 	}
 
 	private void mergeAndEnqueue(Address addr, BankState incoming, Map<Address, BankState> stateIn,
@@ -517,29 +642,49 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * When all of a helper's switch results are fully known and agree, calling it
 	 * unconditionally produces that state; otherwise the helper's effect depends on its
 	 * caller (bank-argument convention) and is recovered per call site.
+	 * <p>
+	 * A helper's sites all belonging to the same mechanism (the common case, and the only
+	 * case on every shipped board) merge exactly as before, keyed off that mechanism's
+	 * {@code effectMask}/{@code lsb}. A helper whose sites belong to <em>different</em>
+	 * mechanisms (e.g. one function that can be reached with either a bank-mechanism write
+	 * or a mode-mechanism write on different call paths) degrades conservatively: the
+	 * const/register agreement is dropped ({@code constState = argReg = null}, forcing
+	 * per-call-site {@link #recoverCallArgument} which itself returns unknown without an
+	 * argument register) and {@code effectMask} becomes the union of every site's mask, so
+	 * the caller-side unknown-effect fold in {@link #runDataflow} wipes every field this
+	 * helper might touch rather than under- or mis-covering it.
 	 */
 	private Map<Function, HelperModel> findHelpers(Program program,
-			Map<Address, BankState> switchResults, BoardModel board) {
+			Map<Address, SwitchResult> switchResults) {
 		Map<Function, HelperModel> helpers = new LinkedHashMap<>();
-		for (Map.Entry<Address, BankState> entry : switchResults.entrySet()) {
+		for (Map.Entry<Address, SwitchResult> entry : switchResults.entrySet()) {
 			Function f = program.getFunctionManager().getFunctionContaining(entry.getKey());
 			if (f == null) {
 				continue;
 			}
-			BankState result = entry.getValue();
+			SwitchResult site = entry.getValue();
+			BankState result = site.effect();
 			Instruction store = program.getListing().getInstructionAt(entry.getKey());
 			Character reg = store == null ? null : StoredValueScanner.storeRegister(store);
 
 			HelperModel existing = helpers.get(f);
 			if (existing == null) {
 				helpers.put(f, new HelperModel(f,
-					result.knownMask() == board.mask() ? result : null, reg));
+					result.knownMask() == site.effectMask() ? result : null, reg,
+					site.effectMask(), site.lsb()));
 			}
-			else {
+			else if (existing.effectMask() == site.effectMask() && existing.lsb() == site.lsb()) {
 				BankState constState = existing.constState() != null
 						&& !existing.constState().equals(result) ? null : existing.constState();
 				Character argReg = Objects.equals(existing.argReg(), reg) ? reg : null;
-				helpers.put(f, new HelperModel(f, constState, argReg));
+				helpers.put(f, new HelperModel(f, constState, argReg,
+					site.effectMask(), site.lsb()));
+			}
+			else {
+				// Sites in this helper belong to different mechanisms -- degrade to the
+				// conservative union (see javadoc above).
+				helpers.put(f, new HelperModel(f, null, null,
+					existing.effectMask() | site.effectMask(), 0));
 			}
 		}
 		return helpers;
@@ -567,18 +712,23 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * helper's own mechanism-write ({@link HelperModel#argReg}) rather than guessed, so a
 	 * caller that also loads an unrelated immediate into another register no longer misleads
 	 * the scan. By the helper convention the register holds the <em>field value itself</em>,
-	 * so no mechanism transform is applied beyond the state mask. Returns
-	 * {@link BankState#unknown()} when the argument register is unknown or its value does not
-	 * resolve -- the caller conservatively loses the bank state across the call.
+	 * so no mechanism transform is applied beyond the field-local width mask -- the scan
+	 * resolves in the helper's own mechanism's field-local {@code [0, width)} space (same
+	 * convention as {@link BankSwitchStrategy#computeSwitch}), and the result is positioned
+	 * back into the board's absolute state bits before returning, exactly as a direct
+	 * dataflow switch would be. Returns a positioned {@link BankState#unknown()} when the
+	 * argument register is unknown or its value does not resolve -- the caller conservatively
+	 * loses the bank state across the call.
 	 */
-	private BankState recoverCallArgument(Program program, Instruction callInstr, HelperModel helper,
-			int mask) {
+	private BankState recoverCallArgument(Program program, Instruction callInstr,
+			HelperModel helper) {
 		Character reg = helper.argReg();
 		if (reg == null) {
 			return BankState.unknown();
 		}
-		return StoredValueScanner.resolveStoredValue(program, callInstr, reg,
-			BankState.unknown(), mask, NO_HOOKS);
+		BankState local = StoredValueScanner.resolveStoredValue(program, callInstr, reg,
+			BankState.unknown(), helper.effectMask() >>> helper.lsb(), NO_HOOKS);
+		return position(local, helper.lsb(), helper.effectMask());
 	}
 
 	private static final StoredValueScanner.Hooks NO_HOOKS = new StoredValueScanner.Hooks() {
@@ -1040,27 +1190,54 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	}
 
 	/**
+	 * One descriptor mechanism entry, instantiated and positioned: {@code strategy} is the
+	 * configured {@link BankSwitchStrategy}, which computes entirely in its own field-local
+	 * {@code [0, width)} coordinate space; {@code effectMask} and {@code lsb} say where that
+	 * space lands in the board's absolute state bits (see {@link #mechanismPositioning}).
+	 * For every shipped (single-mechanism) board {@code effectMask == board.mask()} and
+	 * {@code lsb == 0}, so field-local and absolute coincide.
+	 */
+	private record ConfiguredMechanism(BankSwitchStrategy strategy, int effectMask, int lsb) {}
+
+	/**
+	 * One recognized switch site's positioned effect (grm-ezl): {@code effect} is the pure
+	 * effect of the mechanism that matched here -- positioned into absolute state bits, but
+	 * <em>not</em> folded against any in-state -- kept separately from the folded
+	 * {@code stateIn} because annotation and helper-classification key off the pure effect,
+	 * not the composite. {@code effectMask}/{@code lsb} identify which mechanism produced it
+	 * (the same pair as the matching {@link ConfiguredMechanism}), so downstream consumers
+	 * (helper classification, call-argument recovery) know which bits it's authoritative
+	 * over without re-deriving it from the descriptor.
+	 */
+	private record SwitchResult(BankState effect, int effectMask, int lsb) {}
+
+	/**
 	 * A helper function's modeled effect: a constant state, or null = caller-supplied. For
 	 * caller-supplied helpers, {@code argReg} is the register (A/X/Y) the helper stores into
 	 * its mechanism -- i.e. the register by which the caller passes the bank field -- or null
 	 * when the helper's switch sites disagree on that register or use a non-{@code ST<reg>}
-	 * write, in which case the argument convention is unknown.
+	 * write, in which case the argument convention is unknown. {@code effectMask}/{@code lsb}
+	 * are the mechanism's positioning (or the conservative union of several, when the
+	 * helper's sites span more than one mechanism -- see {@link #findHelpers}), used to fold
+	 * this helper's effect into only the state bits it actually owns.
 	 */
-	private record HelperModel(Function function, BankState constState, Character argReg) {}
+	private record HelperModel(Function function, BankState constState, Character argReg,
+			int effectMask, int lsb) {}
 
 	/** A resolved call-site switch (for annotation, distinct from direct switches). */
 	private record CallSwitch(String helperName, BankState state) {}
 
 	/**
 	 * Per-address strategy-probe cache entry for {@link #runDataflow} (grm-5tl.13.2).
-	 * {@code strategy == null} records that no strategy's instruction-level predicate
-	 * matched this address at all. Otherwise {@code strategy} is the one strategy whose
-	 * predicate matched; {@code result} holds its state-independent result when
-	 * {@link BankSwitchStrategy#cacheable()} is true, or {@code null} when the match was
-	 * found but the value must be recomputed from the current in-state on every dequeue.
+	 * {@code mechanism == null} records that no strategy's instruction-level predicate
+	 * matched this address at all. Otherwise {@code mechanism} is the one mechanism whose
+	 * strategy predicate matched; {@code result} holds its state-independent, field-local
+	 * result when {@link BankSwitchStrategy#cacheable()} is true, or {@code null} when the
+	 * match was found but the value must be recomputed from the current in-state on every
+	 * dequeue.
 	 */
-	private record MatchInfo(BankSwitchStrategy strategy, BankState result) {}
+	private record MatchInfo(ConfiguredMechanism mechanism, BankState result) {}
 
 	private record DataflowResult(Map<Address, BankState> stateIn,
-			Map<Address, BankState> switchResults, Map<Address, CallSwitch> callSwitches) {}
+			Map<Address, SwitchResult> switchResults, Map<Address, CallSwitch> callSwitches) {}
 }

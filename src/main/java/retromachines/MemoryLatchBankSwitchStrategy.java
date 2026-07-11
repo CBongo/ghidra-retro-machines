@@ -51,11 +51,17 @@ import ghidra.program.model.symbol.Reference;
  * games guarantee driven value == ROM byte there anyway, so the recovered driven value
  * is already the effective one.</li>
  * </ul>
- * M2 field-placement constraint: the recovered field is deposited at state bits
- * {@code [0, width)}, so the field a memory-latch mechanism {@code sets} must be the
- * <em>first</em> field of the {@code banking.state} tuple. Every discrete-mapper board
- * tracks a single field today; multi-latch boards (GB MBC's ROM+RAM bank registers)
- * will add a placement param when they arrive.
+ * Field positioning: this strategy always deposits the recovered field at bits
+ * {@code [0, width)} of its own field-local coordinate space (via {@code shift}/
+ * {@code mask} above, which describe the field's position within the <em>written
+ * byte</em>, not the board's state int). {@link BoardBankAnalyzer} then repositions that
+ * field-local result into the board's absolute state bits, using the mechanism's
+ * {@code sets} field-name list in the descriptor to work out where the field(s) it
+ * writes actually sit in {@code banking.state} (their union must form one contiguous bit
+ * run). The mechanism no longer needs its {@code sets} field to be first in
+ * {@code banking.state} -- a board with multiple latches (e.g. GB MBC's ROM+RAM bank
+ * registers, or a bank latch plus a separate mode latch) is supported as long as each
+ * mechanism's own fields are contiguous.
  */
 public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 

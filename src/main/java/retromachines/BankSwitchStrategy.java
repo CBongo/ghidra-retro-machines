@@ -46,8 +46,13 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 *
 	 * @param program   the program under analysis (for address-space resolution)
 	 * @param params    the mechanism's strategy-specific {@code params} object
-	 * @param stateMask the mask covering every tracked bank-state bit (from the
-	 *                  descriptor's {@code banking.state} field widths)
+	 * @param stateMask the field-local width mask of this mechanism's own {@code sets}
+	 *                  fields (bits {@code [0, width)}) -- <em>not</em> the whole board
+	 *                  mask, unless this mechanism's fields happen to be the whole board
+	 *                  mask (every shipped, single-mechanism board today). Every
+	 *                  {@code computeSwitch} result is likewise expected in this same
+	 *                  field-local space; {@link BoardBankAnalyzer} positions it into the
+	 *                  board's absolute state bits afterward.
 	 */
 	void configure(Program program, JsonObject params, int stateMask);
 
