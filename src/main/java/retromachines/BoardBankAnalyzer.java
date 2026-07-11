@@ -340,9 +340,38 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			try {
 				BankSwitchStrategy instance =
 					prototype.getClass().getDeclaredConstructor().newInstance();
+				JsonObject params = mechanism.getAsJsonObject("params");
+				// Field-local sub-offsets (grm-6a7.1): a mechanism with several 'sets' fields
+				// packed into one physical register (e.g. select-data's select/prg_mode/r6/r7)
+				// needs to know where EACH of its own fields sits within its own field-local
+				// [0, width) window, not just the window's own overall width. Rather than have
+				// every such strategy re-derive that from banking.state by hand (or have YAML
+				// authors hand-duplicate offsets that must stay in lockstep with the state
+				// tuple), inject it here from the single source of truth: board.fieldSpecs(),
+				// the same per-field (lsb, width) this method already used to compute
+				// effectMask/lsb above, just re-expressed field-local (subtract this
+				// mechanism's own lsb) and keyed by name under params._field_layout. A
+				// single-field mechanism (every strategy shipped before this one) never reads
+				// this key, so injecting it unconditionally cannot break them.
+				if (mechanism.has("sets")) {
+					JsonObject fieldLayout = new JsonObject();
+					for (JsonElement se : mechanism.getAsJsonArray("sets")) {
+						String fieldName = se.getAsString();
+						board.fieldSpecs().stream()
+								.filter(f -> f.name().equals(fieldName))
+								.findFirst()
+								.ifPresent(f -> {
+									JsonObject fl = new JsonObject();
+									fl.addProperty("lsb", f.lsb() - lsb);
+									fl.addProperty("width", f.width());
+									fieldLayout.add(fieldName, fl);
+								});
+					}
+					params.add("_field_layout", fieldLayout);
+				}
 				// Strategies always compute in field-local [0, width) coordinates; the mask
 				// they configure with is that field-local width, not the whole board mask.
-				instance.configure(program, mechanism.getAsJsonObject("params"), effectMask >>> lsb);
+				instance.configure(program, params, effectMask >>> lsb);
 				configured.add(new ConfiguredMechanism(instance, effectMask, lsb));
 			}
 			catch (Exception e) {

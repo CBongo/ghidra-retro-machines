@@ -57,7 +57,10 @@ public class VerifyBankTest extends GhidraScript {
 		dump();
 
 		String name = currentProgram.getName();
-		if (name.contains("nesmodetest")) {
+		if (name.contains("nesmmc3test")) {
+			checkNesMmc3test();
+		}
+		else if (name.contains("nesmodetest")) {
 			checkNesModetest();
 		}
 		else if (name.contains("nesbanktest2")) {
@@ -468,6 +471,72 @@ public class VerifyBankTest extends GhidraScript {
 			"instruction exists at W8000_M1::8040");
 		criterion("F5:WC000_M1_B2_C030", hasInstructionAt("WC000_M1_B2", 0xC030),
 			"instruction exists at WC000_M1_B2::C030");
+	}
+
+	// ------------------------------------------------------------------
+	// nesmmc3test.nes criteria (SelectDataBankSwitchStrategy, bead grm-6a7.1)
+	// ------------------------------------------------------------------
+
+	private void checkNesMmc3test() {
+		// F1: RESET's JSR $8000 at $E00A, with r6=2/prg_mode=0 in effect (just latched by
+		// the select=6/data=2 write pair), retargets into the mode-0 switchable instance's
+		// non-home-bank overlay W8000_M0_B2.
+		Reference r = findOverlayRef(0xE00A, "W8000_M0_B2", 0x8000);
+		criterion("F1", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $8000 (mode0/r6=2) retargeted to W8000_M0_B2 overlay, primary: " + describe(r));
+
+		// F2: RESET's second JSR $8000 at $E017 -- issued AFTER a select=0 (CHR)/data=$AA
+		// write pair in between -- retargets to the SAME W8000_M0_B2 overlay, proving r6
+		// SURVIVED the CHR write (SelectDataBankSwitchStrategy's no-poison contract).
+		r = findOverlayRef(0xE017, "W8000_M0_B2", 0x8000);
+		criterion("F2", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $8000 after a CHR-register write still retargets to W8000_M0_B2 (r6 " +
+				"survived the CHR write, no-poison contract holds): " + describe(r));
+
+		// F3: RESET's JSR $A000 at $E024, with r7=3 in effect, retargets into WA000_B3 --
+		// WA000 is INVARIANT-HOISTED (identical across both prg_mode layouts), so the
+		// overlay name carries no _M qualifier at all.
+		r = findOverlayRef(0xE024, "WA000_B3", 0xA000);
+		criterion("F3", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $A000 (r7=3) retargeted to hoisted WA000_B3 overlay (no _M qualifier), " +
+				"primary: " + describe(r));
+
+		// F4: RESET's JSR $C000 at $E02C, issued AFTER the mode-flip write (select=6,
+		// prg_mode=1, co-emitted from ONE byte), retargets into WC000's mode-1 switchable
+		// instance at the still-known r6=2 -- proves the mode bit and the select index
+		// were correctly split out of the same recovered byte, and that r6 survived every
+		// intervening write (including the CHR write at $E014).
+		r = findOverlayRef(0xE02C, "WC000_M1_B2", 0xC000);
+		criterion("F4", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $C000 after the mode flip (prg_mode=1, r6=2) retargeted to WC000_M1_B2 " +
+				"overlay, primary: " + describe(r));
+
+		// F5: bank-switch comments exist at the mechanism write sites -- the two select
+		// writes that flip prg_mode (home 0 stays known throughout, then the flip to 1)
+		// and the two data writes that set r6/r7.
+		String c = eol(0xE002);
+		criterion("F5:e002", c.contains("bank ->"),
+			"bank-switch comment at the select=6 write (e002): \"" + c + "\"");
+		c = eol(0xE007);
+		criterion("F5:e007", c.contains("bank ->"),
+			"bank-switch comment at the r6=2 data write (e007): \"" + c + "\"");
+		c = eol(0xE021);
+		criterion("F5:e021", c.contains("bank ->"),
+			"bank-switch comment at the r7=3 data write (e021): \"" + c + "\"");
+		c = eol(0xE029);
+		criterion("F5:e029", c.contains("bank ->") && c.contains("prg_mode=1"),
+			"bank-switch comment at the mode-flip select write (e029) shows prg_mode=1: \"" +
+				c + "\"");
+
+		// F6: the phase-2 disassembly cascade actually produced instructions at all three
+		// overlay targets reached above (the dual-mapped bank-2 RTS routine, referenced from
+		// two different overlay names, plus the bank-3 routine).
+		criterion("F6:W8000_M0_B2_8000", hasInstructionAt("W8000_M0_B2", 0x8000),
+			"instruction exists at W8000_M0_B2::8000");
+		criterion("F6:WC000_M1_B2_C000", hasInstructionAt("WC000_M1_B2", 0xC000),
+			"instruction exists at WC000_M1_B2::C000");
+		criterion("F6:WA000_B3_A000", hasInstructionAt("WA000_B3", 0xA000),
+			"instruction exists at WA000_B3::A000");
 	}
 
 	private static String describeBlock(MemoryBlock b) {

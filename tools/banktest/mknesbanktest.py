@@ -129,6 +129,49 @@ Routine targets:
   PRG 0x4000 (bank 1 offset 0 = W8000_M0_B1::8000): 60 RTS (replaces the bank marker)
   PRG 0x8030 (bank 2 offset 0x30 = WC000_M1_B2::C030): 60 RTS
 Vectors: NMI/IRQ -> $C010 (RTI), RESET -> $C000.
+
+nesmmc3test.nes (bead grm-6a7.1): exercises machines/nes-mmc3.yaml (iNES mapper 4) and
+SelectDataBankSwitchStrategy end to end. PRG is 8 x 8 KiB banks (64 KiB): bank 7 = PRG[last]
+(fixed WE000, home), bank 6 = PRG[second_last] (WC000's home in prg_mode 0, unused
+directly by this fixture), bank 1 = r7's initial value (WA000's home bank -- deliberately
+non-zero, see nes-mmc3.yaml's initial_state comment), bank 0 = r6's initial value (W8000's
+home bank in prg_mode 0). RESET runs entirely inside the fixed WE000 window ($E000-$FFFF,
+home -- file offset equals CPU address here, as in the fixtures above) so none of the
+straight-line control flow itself ever crosses a window whose mapping the code is about to
+change (the trap nesmodetest's module doc calls out avoiding).
+
+RESET ($E000, executes with the reset seed select=0/prg_mode=0/r6=0/r7=1):
+  E000  A9 06        LDA #$06        ; select R6 (bits 0-2 = 6, bit 6 = 0 -> mode stays 0)
+  E002  8D 00 80     STA $8000       ; select write (even) -- select=6, prg_mode=0 known
+  E005  A9 02        LDA #$02        ; bank value 2
+  E007  8D 01 80     STA $8001       ; data write (odd) -- select=6 known -> r6=2
+  E00A  20 00 80     JSR $8000       ; F1: mode0/r6=2 -> W8000_M0_B2::8000
+  E00D  A9 00        LDA #$00        ; select R0 (a CHR register, untracked)
+  E00F  8D 00 80     STA $8000       ; select=0, prg_mode=0 (unchanged) known
+  E012  A9 AA        LDA #$AA        ; arbitrary CHR data byte
+  E014  8D 01 80     STA $8001       ; select=0 (CHR, untracked) -> r6/r7 UNTOUCHED
+                      (SelectDataBankSwitchStrategy's no-poison contract, grm-6a7.1)
+  E017  20 00 80     JSR $8000       ; F2: r6=2 SURVIVED the CHR write -> still W8000_M0_B2
+  E01A  A9 07        LDA #$07        ; select R7
+  E01C  8D 00 80     STA $8000       ; select=7, prg_mode=0 known
+  E01F  A9 03        LDA #$03        ; bank value 3
+  E021  8D 01 80     STA $8001       ; select=7 known -> r7=3
+  E024  20 00 A0     JSR $A000       ; F3: r7=3, WA000 invariant-hoisted (no _M qualifier;
+                      home bank is r7's initial value 1, so bank 3 is non-home) ->
+                      WA000_B3::A000
+  E027  A9 46        LDA #$46        ; $46 = 0100_0110: bit 6 set (mode->1), bits 0-2 = 6
+  E029  8D 00 80     STA $8000       ; select=6, prg_mode=1 known -- mode flip co-emitted
+                      from the SAME byte as the select index (no separate mode mechanism)
+  E02C  20 00 C0     JSR $C000       ; F4: post-mode-flip -- WC000 is now switchable on r6
+                      (r6=2, still known -- survived every write above) -> WC000_M1_B2::C000
+                      (dual-mapped with W8000_M0_B2::8000 -- both are bank 2's PRG content)
+  E02F  4C 2F E0     JMP $E02F       ; idle loop, in the fixed home WE000 window (safe)
+  E032  40           RTI             ; NMI/IRQ handler
+
+Routine targets (all RTS):
+  PRG 0x4000 (bank 2 offset 0 = W8000_M0_B2::8000 AND WC000_M1_B2::C000, dual-mapped)
+  PRG 0x6000 (bank 3 offset 0 = WA000_B3::A000)
+Vectors: RESET -> $E000, NMI/IRQ -> $E032.
 """
 
 import sys
@@ -139,6 +182,11 @@ PRG_BANKS = 4
 PRG_SIZE = PRG_BANK_SIZE * PRG_BANKS
 MAPPER = 2          # UxROM (nesbanktest / nesbanktest2)
 MAPPER_MODETEST = 100  # synthetic nes-modetest board (NESdev-reserved test mapper)
+MAPPER_MMC3 = 4        # MMC3 (nesmmc3test)
+
+MMC3_BANK_SIZE = 0x2000
+MMC3_BANKS = 8
+MMC3_PRG_SIZE = MMC3_BANK_SIZE * MMC3_BANKS
 
 
 def _bank3_putter(prg):
@@ -281,6 +329,58 @@ def make_prg_mode():
     return bytes(prg)
 
 
+def make_prg_mmc3():
+    """The SelectDataBankSwitchStrategy end-to-end fixture (bead grm-6a7.1); see module doc."""
+    prg = bytearray([0x00] * MMC3_PRG_SIZE)
+
+    # Bank markers at the first byte of each bank (harmless -- not referenced directly,
+    # matches the other fixtures' convention of leaving a visible trace per bank).
+    for bank in range(MMC3_BANKS):
+        prg[bank * MMC3_BANK_SIZE] = bank
+
+    # Bank 2 offset 0 (dual-mapped: W8000_M0_B2::8000 AND WC000_M1_B2::C000): RTS.
+    prg[2 * MMC3_BANK_SIZE] = 0x60
+    # Bank 3 offset 0 (WA000_B3::A000): RTS.
+    prg[3 * MMC3_BANK_SIZE] = 0x60
+
+    # Bank 7 == PRG[last] == the fixed WE000 window; file offset == CPU address (WE000's
+    # CPU base $E000 equals its file offset 7 * 0x2000 = 0xE000).
+    bank7_base = 7 * MMC3_BANK_SIZE
+    assert bank7_base == 0xE000
+
+    def put(cpu_addr, data):
+        off = bank7_base + (cpu_addr - 0xE000)
+        prg[off:off + len(data)] = bytes(data)
+
+    put(0xE000, [0xA9, 0x06])              # LDA #$06 (select R6)
+    put(0xE002, [0x8D, 0x00, 0x80])        # STA $8000 (select=6, prg_mode=0)
+    put(0xE005, [0xA9, 0x02])              # LDA #$02
+    put(0xE007, [0x8D, 0x01, 0x80])        # STA $8001 (data -> r6=2)
+    put(0xE00A, [0x20, 0x00, 0x80])        # JSR $8000 (F1 -> W8000_M0_B2::8000)
+    put(0xE00D, [0xA9, 0x00])              # LDA #$00 (select R0, CHR -- untracked)
+    put(0xE00F, [0x8D, 0x00, 0x80])        # STA $8000 (select=0, prg_mode=0)
+    put(0xE012, [0xA9, 0xAA])              # LDA #$AA (arbitrary CHR data byte)
+    put(0xE014, [0x8D, 0x01, 0x80])        # STA $8001 (CHR data -- r6/r7 untouched)
+    put(0xE017, [0x20, 0x00, 0x80])        # JSR $8000 (F2 -- r6=2 survived -> W8000_M0_B2::8000)
+    put(0xE01A, [0xA9, 0x07])              # LDA #$07 (select R7)
+    put(0xE01C, [0x8D, 0x00, 0x80])        # STA $8000 (select=7, prg_mode=0)
+    put(0xE01F, [0xA9, 0x03])              # LDA #$03
+    put(0xE021, [0x8D, 0x01, 0x80])        # STA $8001 (data -> r7=3)
+    put(0xE024, [0x20, 0x00, 0xA0])        # JSR $A000 (F3 -> WA000_B3::A000, hoisted, no _M)
+    put(0xE027, [0xA9, 0x46])              # LDA #$46 (select=6, mode bit set)
+    put(0xE029, [0x8D, 0x00, 0x80])        # STA $8000 (select=6, prg_mode=1 -- mode flip)
+    put(0xE02C, [0x20, 0x00, 0xC0])        # JSR $C000 (F4 -> WC000_M1_B2::C000)
+    put(0xE02F, [0x4C, 0x2F, 0xE0])        # JMP $E02F (idle loop, fixed home window)
+    put(0xE032, [0x40])                     # RTI (NMI/IRQ handler)
+
+    # Vector table.
+    put(0xFFFA, [0x32, 0xE0])  # NMI   -> $E032 (RTI)
+    put(0xFFFC, [0x00, 0xE0])  # RESET -> $E000
+    put(0xFFFE, [0x32, 0xE0])  # IRQ   -> $E032 (RTI)
+
+    return bytes(prg)
+
+
 def make_ines_header(prg_banks, chr_banks, mapper):
     h = bytearray(16)
     h[0:4] = b"NES\x1a"
@@ -415,6 +515,47 @@ def main():
     assert (prgm[0xFFFE] | (prgm[0xFFFF] << 8)) == 0xC010  # IRQ vector
 
     _write_rom(outdir, "nesmodetest.nes", prgm, mapper=MAPPER_MODETEST)
+
+    prgm3 = make_prg_mmc3()
+
+    # Sanity-check the MMC3 select-data fixture before writing (bead grm-6a7.1).
+    assert len(prgm3) == MMC3_PRG_SIZE
+    for bank in range(MMC3_BANKS):
+        if bank in (2, 3, 7):
+            continue  # markers overwritten by routine RTS / RESET code below
+        assert prgm3[bank * MMC3_BANK_SIZE] == bank
+    assert prgm3[2 * MMC3_BANK_SIZE] == 0x60  # RTS: W8000_M0_B2::8000 / WC000_M1_B2::C000
+    assert prgm3[3 * MMC3_BANK_SIZE] == 0x60  # RTS: WA000_B3::A000
+    assert prgm3[0xE000] == 0xA9  # LDA opcode at RESET ($E000)
+    assert prgm3[0xE002] == 0x8D and prgm3[0xE003] == 0x00 and prgm3[0xE004] == 0x80
+    assert prgm3[0xE005] == 0xA9
+    assert prgm3[0xE007] == 0x8D and prgm3[0xE008] == 0x01 and prgm3[0xE009] == 0x80
+    assert prgm3[0xE00A] == 0x20  # JSR opcode at E00A
+    assert (prgm3[0xE00B] | (prgm3[0xE00C] << 8)) == 0x8000
+    assert prgm3[0xE00D] == 0xA9
+    assert prgm3[0xE00F] == 0x8D and prgm3[0xE010] == 0x00 and prgm3[0xE011] == 0x80
+    assert prgm3[0xE012] == 0xA9 and prgm3[0xE013] == 0xAA
+    assert prgm3[0xE014] == 0x8D and prgm3[0xE015] == 0x01 and prgm3[0xE016] == 0x80
+    assert prgm3[0xE017] == 0x20  # JSR opcode at E017
+    assert (prgm3[0xE018] | (prgm3[0xE019] << 8)) == 0x8000
+    assert prgm3[0xE01A] == 0xA9 and prgm3[0xE01B] == 0x07
+    assert prgm3[0xE01C] == 0x8D and prgm3[0xE01D] == 0x00 and prgm3[0xE01E] == 0x80
+    assert prgm3[0xE01F] == 0xA9 and prgm3[0xE020] == 0x03
+    assert prgm3[0xE021] == 0x8D and prgm3[0xE022] == 0x01 and prgm3[0xE023] == 0x80
+    assert prgm3[0xE024] == 0x20  # JSR opcode at E024
+    assert (prgm3[0xE025] | (prgm3[0xE026] << 8)) == 0xA000
+    assert prgm3[0xE027] == 0xA9 and prgm3[0xE028] == 0x46
+    assert prgm3[0xE029] == 0x8D and prgm3[0xE02A] == 0x00 and prgm3[0xE02B] == 0x80
+    assert prgm3[0xE02C] == 0x20  # JSR opcode at E02C
+    assert (prgm3[0xE02D] | (prgm3[0xE02E] << 8)) == 0xC000
+    assert prgm3[0xE02F] == 0x4C  # JMP opcode at E02F (self loop)
+    assert (prgm3[0xE030] | (prgm3[0xE031] << 8)) == 0xE02F
+    assert prgm3[0xE032] == 0x40  # RTI (NMI/IRQ handler)
+    assert (prgm3[0xFFFC] | (prgm3[0xFFFD] << 8)) == 0xE000  # RESET vector
+    assert (prgm3[0xFFFA] | (prgm3[0xFFFB] << 8)) == 0xE032  # NMI vector
+    assert (prgm3[0xFFFE] | (prgm3[0xFFFF] << 8)) == 0xE032  # IRQ vector
+
+    _write_rom(outdir, "nesmmc3test.nes", prgm3, mapper=MAPPER_MMC3)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,9 @@
 # NES MMC3 board descriptor — schema-v2 validation SKETCH (bead grm-os4).
+# SUPERSEDED as a hardware model by machines/nes-mmc3.yaml (bead grm-6a7.1), which fixes
+# two inaccuracies this sketch predates: fixed select/data addresses instead of the real
+# even/odd-mirrored $8000-$9FFF pair, and a separate mode-register mechanism instance
+# instead of co-emitting prg_mode from the same select-register byte. Kept as-is (still
+# referenced by docs/SCHEMA.md as a schema-expressiveness example); do not hand-diverge.
 # Deliverable of the M1 schema work: exercises the v2 shapes from
 # docs/vision-board-banking.md §5.3 (mode-dependent layouts) and §8 (protocol-tier row) to
 # validate schema v2 expressiveness. This is NOT a shipping board descriptor — the real

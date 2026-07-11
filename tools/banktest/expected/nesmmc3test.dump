@@ -1,0 +1,42 @@
+BLOCK APU_IO 4000-401f overlay=false
+BLOCK PPU_REGS 2000-2007 overlay=false
+BLOCK PRG_RAM 6000-7fff overlay=false
+BLOCK RAM 0000-07ff overlay=false
+BLOCK W8000 8000-9fff overlay=false
+BLOCK W8000_M0_B1 8000-9fff overlay=true
+BLOCK W8000_M0_B2 8000-9fff overlay=true
+BLOCK W8000_M0_B3 8000-9fff overlay=true
+BLOCK W8000_M0_B4 8000-9fff overlay=true
+BLOCK W8000_M0_B5 8000-9fff overlay=true
+BLOCK W8000_M0_B6 8000-9fff overlay=true
+BLOCK W8000_M0_B7 8000-9fff overlay=true
+BLOCK W8000_M1 8000-9fff overlay=true
+BLOCK WA000 a000-bfff overlay=false
+BLOCK WA000_B0 a000-bfff overlay=true
+BLOCK WA000_B2 a000-bfff overlay=true
+BLOCK WA000_B3 a000-bfff overlay=true
+BLOCK WA000_B4 a000-bfff overlay=true
+BLOCK WA000_B5 a000-bfff overlay=true
+BLOCK WA000_B6 a000-bfff overlay=true
+BLOCK WA000_B7 a000-bfff overlay=true
+BLOCK WC000 c000-dfff overlay=false
+BLOCK WC000_M1_B0 c000-dfff overlay=true
+BLOCK WC000_M1_B1 c000-dfff overlay=true
+BLOCK WC000_M1_B2 c000-dfff overlay=true
+BLOCK WC000_M1_B3 c000-dfff overlay=true
+BLOCK WC000_M1_B4 c000-dfff overlay=true
+BLOCK WC000_M1_B5 c000-dfff overlay=true
+BLOCK WC000_M1_B6 c000-dfff overlay=true
+BLOCK WC000_M1_B7 c000-dfff overlay=true
+BLOCK WE000 e000-ffff overlay=false
+COMMENT e002 bank -> 1030 (select=6,prg_mode=0,r6=0,r7=1)
+COMMENT e007 bank -> 1062 (select=6,prg_mode=0,r6=2,r7=1)
+COMMENT e00f bank -> 1056 (select=0,prg_mode=0,r6=2,r7=1)
+COMMENT e014 bank -> 1056 (select=0,prg_mode=0,r6=2,r7=1)
+COMMENT e01c bank -> 1063 (select=7,prg_mode=0,r6=2,r7=1)
+COMMENT e021 bank -> 3111 (select=7,prg_mode=0,r6=2,r7=3)
+COMMENT e029 bank -> 3118 (select=6,prg_mode=1,r6=2,r7=3)
+REF e00a -> W8000_M0_B2::8000 UNCONDITIONAL_CALL primary=true
+REF e017 -> W8000_M0_B2::8000 UNCONDITIONAL_CALL primary=true
+REF e024 -> WA000_B3::a000 UNCONDITIONAL_CALL primary=true
+REF e02c -> WC000_M1_B2::c000 UNCONDITIONAL_CALL primary=true

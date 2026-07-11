@@ -180,13 +180,31 @@ optional — a bankless board like NES NROM has none). When present:
   a single optional `mechanism`) because boards can have several — MMC3 has a
   select-data register pair *and* a mode bit in the same physical register. Each entry:
   `strategy` (which analyzer strategy class interprets it: `register-write`,
-  `memory-latch`, `select-data`, `serial-shift`, `io-port`, `mode-register` — only
-  `register-write` is implemented today), `params` (strategy-specific, passed through
-  from the YAML with numbers normalized to decimal ints and map keys stringified), and
-  `sets` (which `state` fields this mechanism feeds, validated at compile time). For
-  C64's register-write, `params.address`/`params.mask` mean: the state changes when the
-  CPU writes to `address` (1, i.e. `$01`); the new state is the written byte ANDed with
-  `mask` (7 — bits 0-2 are LORAM/HIRAM/CHAREN; bits 3-5 are cassette-port lines).
+  `memory-latch`, `select-data`, `serial-shift`, `io-port`, `mode-register` —
+  `register-write`, `memory-latch`, and `select-data` are implemented today; the rest
+  belong to later milestones), `params` (strategy-specific, passed through from the YAML
+  with numbers normalized to decimal ints and map keys stringified), and `sets` (which
+  `state` fields this mechanism feeds, validated at compile time). For C64's
+  register-write, `params.address`/`params.mask` mean: the state changes when the CPU
+  writes to `address` (1, i.e. `$01`); the new state is the written byte ANDed with
+  `mask` (7 — bits 0-2 are LORAM/HIRAM/CHAREN; bits 3-5 are cassette-port lines). MMC3's
+  `select-data` mechanism (`SelectDataBankSwitchStrategy`, bead `grm-6a7.1`) is the
+  richest shipped example of a multi-field mechanism: one physical even/odd register
+  pair (`params.start`/`params.end`, recognized by address parity, not two fixed
+  addresses) feeds FOUR `sets` fields at once (`select`, `prg_mode`, `r6`, `r7`) —
+  `params.select_field`/`select_mask`/`select_shift` say where the register-select index
+  sits in the byte a select (even-address) write recovers; `params.mode_field` (optional)
+  and `mode_mask`/`mode_shift` say where a co-emitted mode bit sits in that *same* byte
+  (MMC3 folds its "mode register" into the select write itself — no separate
+  `mode-register` mechanism instance); `params.targets` maps a select value to the
+  `state` field a data (odd-address) write targets when that value was last selected
+  (`{"6":"r6","7":"r7"}` — a data write whose select value has no `targets` entry, e.g.
+  MMC3's CHR registers 0-5, is a no-op on every tracked field by design). Every field name
+  a multi-field mechanism's params reference must also appear in `sets` — the analyzer
+  computes each such field's field-local `(lsb, width)` from the `state` tuple's packing
+  and injects it into `params._field_layout` (an analyzer-runtime addition, not something
+  MapCompiler writes) before configuring the strategy, so a strategy never has to
+  hand-duplicate offsets that must stay in lockstep with `state`'s declared order.
 - `states[]` — the enumerated truth table, present only for boards with
   enumerated-occupant windows: one row per reachable state, each row being `value` (the
   packed state — computed by MapCompiler from the YAML row's per-field values) plus one
