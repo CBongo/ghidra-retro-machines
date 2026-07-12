@@ -1,6 +1,8 @@
 # Design Vision: Machine-Independent, Data-Driven Board-Level Banking
 
-Status: draft v1 (2026-07-07). Companion to [rfc-banked-memory.md](rfc-banked-memory.md)
+Status: draft v1 (2026-07-07); M3 (protocol strategies + placement inference) is
+substantially complete as of 2026-07-12 — see §9 for what shipped and the two
+real-ROM-gated exit criteria still open. Companion to [rfc-banked-memory.md](rfc-banked-memory.md)
 (the upstream pitch, posted as ghidra discussion
 [#9349](https://github.com/NationalSecurityAgency/ghidra/discussions/9349)). The RFC argues
 for one narrow core capability — a bank-state-aware address-resolution step. This document
@@ -443,22 +445,78 @@ because its mappers span the whole strategy vocabulary.
   Acceptance: cross-bank `JSR`/`JMP` auto-resolve on real UNROM titles (Mega Man,
   Castlevania, Contra, DuckTales — which are also GME music-RE targets: `nes/megaman`,
   `nes/bionic`). *Proves: machine-independence of L2/L4 engine.*
-- **M3 — Protocol strategies + placement inference.** `serial-shift` (MMC1) and
-  `select-data` + `mode-register` (MMC3), including mode-dependent layouts;
-  bank-placement inference (MMC1's 16 KiB banks assigned to $8000/$C000 by following
-  flows, not import options — retiring the GhidraNes-style per-bank guess entirely);
-  function-level bank-state requirements and call-graph propagation (shipped as
-  `BoardBankAnalyzer#annotateBankRequirementViolations`, bead `grm-6a7.2`: per-function
+- **M3 — Protocol strategies + placement inference. COMPLETE except the two
+  real-ROM-gated exit criteria below.** `serial-shift` (MMC1, `SerialShiftBankSwitchStrategy`,
+  bead `grm-hsv.1`) and `select-data` + co-emitted mode bit (MMC3,
+  `SelectDataBankSwitchStrategy`, bead `grm-6a7.1`) both shipped, including the shared
+  mode-dependent-layouts runtime prerequisite (`memory.layouts[]` was schema-complete
+  but engine-absent going into M3; bead `grm-5tl.18` closed it in three parts — loader
+  mode-qualified per-mode/per-bank window realization, `DescriptorSupport.planWindows`
+  normalization, and the analyzer's two-level mode→window→bank retargeting,
+  `grm-qvi`). Real boards shipped: `machines/nes-mmc1.yaml` (all four `prg_mode`
+  layouts, byte-accurate — needed a new `>>` `maps:` operator for the 32K mode) and
+  `machines/nes-mmc3.yaml` (mirrored even/odd select/data range across $8000-$9FFF,
+  correcting the M1 schema-validation sketch's fixed-address assumption). Bank-placement inference's
+  Tier 1 — the load-bearing case: two-level tracked-state lookup with no upfront
+  per-bank import option, retiring the GhidraNes-style `BankAddressOption` combo-box
+  pattern by construction — shipped with `grm-hsv.2`; Tier 2 (self-reference-consistency
+  scoring for the rare case where mode/bank state is only partially known) remains open
+  as `grm-hsv.3` (P4, explicitly not required for acceptance-title correctness).
+  Function-level bank-state requirements and call-graph propagation shipped read-only
+  as `BoardBankAnalyzer`'s Phase 3 (bead `grm-6a7.2`): per-function
   `requiresOnEntry`/`modifiedMask`/`exitState` derived AFTER the Phase-1/2 dataflow
   fixpoint by a bottom-up chaotic-iteration walk of the direct call graph, used only to
   raise a WARNING bookmark at a direct call site whose caller-local in-state is missing
   bits the callee's dispatch needs — read-only; nothing feeds back into the fixpoint.
   Known-ness only, not value-level requirements; indirect calls are not propagated
   through. Back-propagation/narrowing Phase-1 state from these summaries — a mutual-
-  fixpoint/termination-risk problem — is explicitly deferred past M3). Acceptance on
-  major MMC1/MMC3 libraries (Metroid, Zelda / SMB3, Crystalis). *Proves: stateful
+  fixpoint/termination-risk problem — is explicitly deferred past M3 (see "M3
+  learnings" below). **Remaining M3 exit criteria (both require real ROMs, both
+  CI-excluded per convention):** overlay-scale measurement at SMB3/512K scale
+  (`grm-6a7.3` — block/space counts, import+analysis wall-clock vs the UxROM baseline,
+  qualitative UI navigability, recorded in docs and mirrored into Discussion #9349) and
+  the manual acceptance gate itself on major MMC1/MMC3 libraries (Metroid, Zelda, Final
+  Fantasy for MMC1; SMB3, Crystalis, Kirby's Adventure for MMC3). *Proves: stateful
   mechanisms fit the strategy interface; inference beats interrogation; overlay ceiling
-  is now measurably painful (64 × 2 blocks) — evidence for the core ask.*
+  is expected to be measurably painful (64 × 2 blocks) once grm-6a7.3 quantifies it —
+  the evidence package for the core ask is not yet complete without that number.*
+
+  **M3 learnings** (design reversals and corrections worth recording honestly, since
+  the M3 sub-bead design notes got each of these wrong going in):
+
+  (a) The `findIdioms` engine hook planned for MMC1's counted-loop bank-commit idiom
+  proved **unnecessary**. `runDataflow` already probes `computeSwitch` on every
+  instruction, so an idiom recognizer (the counted `STA/LSR/DEY/BNE` loop) can simply
+  claim the loop's closing `BNE` as the switch site and ride the existing
+  `switchResults`-fold machinery — strictly better containment than a new hook, and
+  zero added engine surface. The planned hook is not in the codebase.
+
+  (b) A real-game survey (Zelda, Final Fantasy, Metroid disassemblies) inverted the
+  wiki-derived assumption the M3 design started from: NESdev's wiki presents the
+  counted `STA/LSR/DEY/BNE` loop as MMC1's canonical bank-commit idiom, but every
+  surveyed commercial mapper-1 game instead emits a fully-unrolled 5×`STA`/`LSR`
+  chain — the counted loop does not appear in the survey at all. Matcher priority
+  follows what real code does, not what the reference documentation claims it does;
+  the unrolled-chain walk is `SerialShiftBankSwitchStrategy`'s primary recognizer, the
+  counted loop a secondary path kept for completeness (and validated by (a) above).
+
+  (c) Multi-target mechanisms (MMC3's shared select/data pair; MMC1's per-target field
+  lists) exposed a latent helper-argument-recovery gap: the engine's helper-call
+  argument recovery positioned recovered values using the mechanism-*wide* mask, which
+  silently mispositions once one mechanism drives more than one state field. Fixed via
+  `BankSwitchStrategy.depositHelperArgument`, a new default method returning
+  `HelperDeposit(ownedMask, value)` — `ownedMask` distinguishes "touched by this
+  mechanism but unresolved" (poison) from "untouched" (preserve state). The default
+  implementation reproduces the historical single-target behavior byte-for-byte;
+  `ownedMask == 0` makes a CHR-targeting helper call a verified no-op instead of
+  spuriously poisoning PRG state.
+
+  (d) Function-level bank-state summaries (`grm-6a7.2`) landed strictly read-only:
+  exit state, modified-bit mask, and requires-on-entry are derived once, after the
+  Phase-1/2 dataflow fixpoint, and only ever *raise a WARNING bookmark* — nothing
+  feeds back into or narrows the fixpoint. Phase-1 back-propagation from these
+  summaries is a genuine mutual-fixpoint/termination-risk problem, not a scope cut
+  made for convenience, and stays explicitly deferred to M4+.
 - **M4 — Scale + second console.** MMC5 (PRG modes, RAM/ROM select, SRAM banking); GB
   MBC1/5 via descriptors with near-zero new code — the machine-independence demo;
   performance and UX hardening (bank margin/comments at minimum).

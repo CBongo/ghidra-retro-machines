@@ -8,13 +8,19 @@ the loader sets up the complete machine around it: RAM/ROM regions, banked memor
 windows, IO chip register structs, system ROM slots, and symbol sets — all driven by a
 per-machine YAML descriptor with zero hard-coded system knowledge in Java.
 
-**Status: working pipeline, two machines, seven boards.** Descriptor schema v2 (state
-tuples, mechanism strategies, physical spaces, computed windows), a C64 PRG loader
-with bank-state analysis, and an iNES loader with a data-driven board registry all
-work end-to-end. The machine-independent bank engine tracks banking on the NES
-discrete mappers (NROM/UxROM/CNROM/AxROM/GxROM/BNROM boards): on Mega Man (UNROM) it
-resolves ~1,500 cross-bank JSR/JMP references into per-bank overlay spaces and pulls
-~7,400 instructions of banked code into analysis. See the [roadmap](#roadmap).
+**Status: working pipeline, two machines, eight NES boards plus C64.** Descriptor
+schema v2 (state tuples, mechanism strategies, physical spaces, computed windows,
+mode-dependent layouts), a C64 PRG loader with bank-state analysis (now including
+BASIC detokenization), and an iNES loader with a data-driven board registry all work
+end-to-end. The machine-independent bank engine tracks banking on the NES discrete
+mappers (NROM/UxROM/CNROM/AxROM/GxROM/BNROM) and, as of the M3 milestone, the protocol
+mappers MMC1 (serial-shift) and MMC3 (select-data + mode-swapped layouts): on Mega Man
+(UNROM) it resolves ~1,500 cross-bank JSR/JMP references into per-bank overlay spaces
+and pulls ~7,400 instructions of banked code into analysis. Real-ROM acceptance on
+MMC1/MMC3 commercial titles (Metroid, Zelda, SMB3, Crystalis) and an overlay-scale
+measurement are the two items still open before M3 closes — see the
+[banking design vision](docs/vision-board-banking.md) roadmap. See the
+[roadmap](#roadmap) below for the rest.
 
 ## Why
 
@@ -39,8 +45,13 @@ being re-executed by hand across the community — this extension automates it.
   `memory-latch` mechanism (store anywhere in the ROM range latches the bank, optional
   bus-conflict AND, field extraction via shift/mask), switchable windows realized as
   home-bank-in-base plus one overlay per alternate bank
-  ([machines/sketches/](machines/sketches/) keeps the MMC3 schema-validation sketch
-  the M3 milestone will graduate)
+- **machines/nes-mmc1.yaml** / **machines/nes-mmc3.yaml** — the M3 protocol-mapper
+  boards: `serial-shift` (MMC1's 5-write bit-serial commit protocol) and `select-data`
+  with a co-emitted mode bit (MMC3's even/odd bank-select/bank-data pair), both with
+  mode-dependent window layouts (`memory.layouts[]`) and function-level bank-state
+  requirement warnings ([machines/sketches/](machines/sketches/) keeps the original
+  schema-validation sketches as historical examples, superseded as hardware models by
+  the shipping descriptors above — see each sketch's header comment)
 
 ## Design highlights
 
@@ -70,11 +81,15 @@ being re-executed by hand across the community — this extension automates it.
    import with a stock-6502 safety fallback~~ (done)
 5. ~~Machine-independent bank analyzer + strategy library (`register-write`,
    `memory-latch`); NES discrete mappers with per-bank overlays, bank-switch-helper
-   call propagation, cross-bank flow retargeting~~ (done — UxROM tier); next:
-   MMC1/MMC3 protocol strategies —
-   see [docs/vision-board-banking.md](docs/vision-board-banking.md)
-6. More machines: GB, SNES, PS1
-7. Generalized string detection (PETSCII, screen codes, per-game tile tables)
+   call propagation, cross-bank flow retargeting~~ (done — UxROM tier)
+6. ~~MMC1/MMC3 protocol strategies (`serial-shift`, `select-data`), mode-dependent
+   layouts, function-level bank-state warnings~~ (done — see
+   [docs/vision-board-banking.md](docs/vision-board-banking.md) §9 M3; overlay-scale
+   measurement and real-ROM acceptance still open)
+7. ~~PETSCII display-string mapping + C64 BASIC detokenizing analyzer~~ (done — see
+   [docs/petscii.md](docs/petscii.md) and [docs/basic-analyzer.md](docs/basic-analyzer.md))
+8. More machines: GB, SNES, PS1
+9. Generalized string detection beyond PETSCII (screen codes, per-game tile tables)
 
 ## Building
 

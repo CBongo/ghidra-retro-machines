@@ -145,15 +145,26 @@ behaves exactly like a top-level `memory.windows[]` entry.
 
 **Runtime behavior.** `NesRomLoader` realizes each layout window's instances with
 "home-in-base" placement per mode: the home mode's home bank is the plain base-space
-block `NAME`; every other instance is an overlay, named to encode which mode (and, for
-a switchable expression, which bank) it belongs to:
+block `NAME`; every other instance is an overlay. A **mode-varying window** (its
+`maps`/`on_write`/shape differ across at least one layout) always carries the `_M<mode>`
+qualifier once it leaves the home mode+bank — there is no bare `NAME_B<bank>` form for
+these, because the same bank number under a different mode is unrelated content and the
+name must say so:
 
 | Instance | Block/overlay name |
 | --- | --- |
 | Home mode, home bank (or a fixed expr) | `NAME` (base space) |
-| Home mode, non-home bank | `NAME_B<bank>` |
+| Home mode, non-home bank | `NAME_M<mode>_B<bank>` |
 | Non-home mode, fixed expr | `NAME_M<mode>` |
 | Non-home mode, bank `<bank>` | `NAME_M<mode>_B<bank>` |
+
+A layout window whose definition (start/end/`maps`/`on_write`) is **identical across
+every mode** is hoisted (see above) and named exactly like a flat top-level
+`memory.windows[]` entry instead — plain `NAME` for the home bank, `NAME_B<bank>` for a
+non-home bank, **never** `_M<mode>`-qualified, since there is nothing mode-specific to
+distinguish (confirmed by the goldens: `nesmodetest.dump` shows mode-varying
+`W8000_M0_B1` even though mode 0 is the home mode; `nesmmc3test.dump` shows hoisted
+`WA000_B3` with no mode qualifier at all).
 
 `BoardBankAnalyzer` consumes the same normalized plan (`DescriptorSupport.planWindows`)
 to retarget references and clamp bank state to residence: an instruction physically

@@ -7,6 +7,11 @@ types the per-line link/line-number fields, writes petcat-compatible detokenized
 and marks the real machine-language entry point (from a `SYS <decimal>` line) instead of
 the load address that `C64PrgLoader` marks for every other PRG.
 
+Two dependencies documented elsewhere: byte-to-text rendering goes through `PetsciiMapper`
+(see [docs/petscii.md](petscii.md)), and the `BASIC_V2_TOKEN` table it reads is a `kind:
+enum` `types:` entry (see "Types: struct, flags, and enum kinds" in
+[docs/SCHEMA.md](SCHEMA.md)).
+
 ## Files
 
 - `src/main/java/retromachines/C64BasicWalker.java` -- dialect-agnostic line-link chain

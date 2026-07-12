@@ -1,8 +1,11 @@
 # NES UxROM board descriptor — schema-v2 validation SKETCH (bead grm-os4).
-# Deliverable of the M1 schema work: exercises the v2 shapes from
+# Deliverable of the M1 schema work: exercised the v2 shapes from
 # docs/vision-board-banking.md §5.3 (computed windows) and §8 (discrete-mapper row) to
-# validate schema v2 expressiveness. This is NOT a shipping board descriptor — the real
-# nes.yaml is a later bead (grm-9ux, M2-M3).
+# validate schema v2 expressiveness. This is NOT a shipping board descriptor — it is
+# SUPERSEDED as a hardware model by the real shipping descriptor,
+# machines/nes-uxrom.yaml (bead grm-9ux, M2), which has rom_images/symbols/types/
+# formats/validation filled in. Kept as-is for the schema-expressiveness record; do not
+# hand-diverge.
 # Hardware facts from the NESdev wiki: https://www.nesdev.org/wiki/UxROM
 #
 # rom_images / symbols / types / formats / validation sections omitted — sketch scope only.

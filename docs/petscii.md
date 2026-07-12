@@ -2,10 +2,11 @@
 
 ## Purpose
 
-A data-driven, Java-callable PETSCII byte -> display-string API, built for the future C64
-BASIC detokenizing analyzer (grm-odt.1) and PETSCII charset registration (parent bead
-grm-1.4). Given a raw PETSCII byte (or run of bytes) from memory, `PetsciiMapper` returns a
-readable ASCII string suitable for a listing, comment, or log line.
+A data-driven, Java-callable PETSCII byte -> display-string API, built for the C64 BASIC
+detokenizing analyzer ([docs/basic-analyzer.md](basic-analyzer.md), grm-odt.1 -- now shipped
+and consuming this mapper) and PETSCII charset registration (parent bead grm-1.4). Given a
+raw PETSCII byte (or run of bytes) from memory, `PetsciiMapper` returns a readable ASCII
+string suitable for a listing, comment, or log line.
 
 **Scope note:** this maps PETSCII byte values only -- what's in memory, what the keyboard
 sends. VIC-II *screen codes* (what's POKEd into screen RAM, a different numbering scheme)
@@ -125,7 +126,7 @@ petcat-named byte matches the independently-transcribed reference table, every u
 non-printable byte renders exactly `{$xx}`, and printable bytes render the expected
 character. Run with `gradle verifyPetsciiMapper`.
 
-## For future consumers (grm-odt.1, Charset registration in grm-1.4)
+## For consumers (the BASIC detokenizing analyzer, grm-odt.1; Charset registration in grm-1.4)
 
 - Call `PetsciiMapper.load()` once (it caches) rather than re-parsing `petscii.map` per use.
 - The two `Variant` values are a genuine input you must supply -- there is no "auto-detect"

@@ -118,10 +118,14 @@ banking:
 ```
 
 The strategy vocabulary (vision doc §5.2) is deliberately small: `register-write`,
-`memory-latch`, `select-data`, `serial-shift`, `io-port`, `mode-register`. Two have
-implementations today; the others are schema-validated names whose analyzer support
-lands with the MMC milestones. This mirrors emulator architecture (mapper classes
-keyed by iNES number) — deliberate, per the emulators-as-oracle principle.
+`memory-latch`, `select-data`, `serial-shift`, `io-port`, `mode-register`.
+`register-write`, `memory-latch`, `select-data` (bead `grm-6a7.1`), and `serial-shift`
+(bead `grm-hsv.1`) are implemented today — MMC1 and MMC3 both fold their mode bit into
+an existing mechanism's recovered byte rather than needing a standalone
+`mode-register` instance (see "Mechanisms" detail in `docs/MAP_FORMAT.md`); `io-port`
+and `mode-register` remain schema-validated names with no analyzer support yet. This
+mirrors emulator architecture (mapper classes keyed by iNES number) — deliberate, per
+the emulators-as-oracle principle.
 
 - **`register-write`** — the state changes on a store to one fixed port (C64 `$01`).
   Params: `address`, `mask` (which stored bits are state bits), and optional `register`
@@ -206,8 +210,12 @@ to `field = v` (execution implies mapping); (c) leaves *writes* into
 `on_write: mechanism` windows alone — those are latch pokes, already modeled by the
 strategy. Bank values whose slice falls outside the image simply get no block. A
 switchable window must reference exactly one state field for overlay naming to work;
-multi-field windows are rejected with a log message (MMC3's mode-swapped windows are
-an M3 problem).
+multi-field windows are rejected with a log message. This restriction still stands —
+a *window* never references more than one state field. Boards whose window
+*arrangement* depends on a second field (MMC3's `$8000` mode bit swapping which range
+is switchable, MMC1's `prg_mode`) express that with `memory.layouts[]` instead (below),
+whose runtime (loader + analyzer) landed in M3 (`grm-5tl.18`) — a different schema
+construct, not a lifting of this per-window constraint.
 
 Real code switches banks through helpers (`LDA #bank / JSR SelectBank` — often an
 indexed bus-conflict table store inside). The engine detects every function containing
@@ -252,8 +260,12 @@ memory:
         # ...
 ```
 
-`when:` keys must be declared state fields. See `machines/sketches/nes-mmc3.yaml` for
-the full worked example.
+`when:` keys must be declared state fields. `machines/sketches/nes-mmc3.yaml` is the
+original schema-expressiveness sketch (still kept as a validation example, but
+superseded as a hardware model — see its header comment); the shipping worked example
+with the runtime fully wired up is `machines/nes-mmc3.yaml` (bead `grm-6a7.1`) and
+`machines/nes-mmc1.yaml` (bead `grm-hsv.2`, whose four `prg_mode` layouts also exercise
+the `>>` operator above).
 
 ## Initial state
 

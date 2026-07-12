@@ -260,6 +260,24 @@ Motive for the split: Phase 1 is the smallest reviewable change carrying most of
 value; Phase 2's read-target ≠ write-target divergence is the conceptually novel part
 and benefits from landing on a proven Phase 1.
 
+## M3 status update (2026-07-12)
+
+Phase 0 (the overlay-side workaround this RFC argues is a ceiling, not a fix) has now
+been proven across the whole strategy vocabulary the vision doc's mapper survey
+targets, not just C64's `register-write` case: `memory-latch` (discrete NES mappers),
+`select-data` (MMC3), and `serial-shift` (MMC1) all flow-track their own protocol
+state and hand-patch cross-bank references the same way, including boards whose window
+*arrangement* itself is mode-dependent (`memory.layouts[]`) and boards where multiple
+mechanisms/targets share one physical register. None of this needed a core change —
+which is itself further evidence the ceiling is real: the overlay-side engine now
+covers every mechanism shape in scope for M3 and still cannot make *default*
+resolution, flow following, or the decompiler bank-aware, because that is exactly the
+part Phase 0 cannot reach by construction. The one piece of *quantitative* evidence
+this RFC's "Motivating case" section is still missing — overlay block-count/navigability
+pain at commercial-ROM scale (SMB3-sized MMC3: ~64 banks × 2 switchable windows) — is
+tracked as `grm-6a7.3`, pending real ROMs (CI-excluded per this repo's convention); no
+claim already made above needed correcting once that data is collected.
+
 ## Questions for maintainers
 
 1. Is there internal effort in this direction? (~~PIC18 banking issue #9052 was closed
