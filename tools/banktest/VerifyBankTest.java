@@ -63,6 +63,9 @@ public class VerifyBankTest extends GhidraScript {
 		else if (name.contains("nesserialtest")) {
 			checkNesSerialtest();
 		}
+		else if (name.contains("nesmmc3test2")) {
+			checkNesMmc3test2();
+		}
 		else if (name.contains("nesmmc3test")) {
 			checkNesMmc3test();
 		}
@@ -589,6 +592,37 @@ public class VerifyBankTest extends GhidraScript {
 			"instruction exists at WC000_M1_B2::C000");
 		criterion("F6:WA000_B3_A000", hasInstructionAt("WA000_B3", 0xA000),
 			"instruction exists at WA000_B3::A000");
+	}
+
+	// ------------------------------------------------------------------
+	// nesmmc3test2.nes criteria (function-level requires-on-entry, bead grm-6a7.2)
+	// ------------------------------------------------------------------
+
+	private void checkNesMmc3test2() {
+		// G1: CallerA establishes select=6 itself before JSR $E140 (H, the bare data-write
+		// helper) -- requiresOnEntry(H) is satisfied at that call site, so no violation
+		// WARNING bookmark lands on CallerA's JSR at $E107.
+		criterion("G1", !hasWarningBookmark(0xE107),
+			"no requirement-violation WARNING at CallerA's JSR $E140 (E107) -- select " +
+				"known there");
+
+		// G2: CallerB poisons select via an unresolvable load right before its own JSR
+		// $E140 at $E128 -- requiresOnEntry(H) (select, co-emitted prg_mode) is NOT
+		// satisfied there, so a violation WARNING bookmark lands on that call site.
+		criterion("G2", hasWarningBookmark(0xE128),
+			"requirement-violation WARNING at CallerB's JSR $E140 (E128) -- select " +
+				"unknown there");
+
+		// G3: the poisoning load/select-write pair itself does not ALSO trip the
+		// pre-existing "genuinely undeterminable switch value" WARNING path (that would
+		// indicate the new violation warning is riding on/duplicating the old one instead
+		// of being independently derived) -- SelectDataBankSwitchStrategy's select write
+		// still recovers a byte-shaped (if unknown) deposit, not a null computeSwitch, so
+		// $E123 itself gets no bookmark; the interesting one is purely at the call site.
+		criterion("G3", !hasWarningBookmark(0xE123),
+			"no WARNING at the select write itself (E123) -- only the call site (E128) " +
+				"is flagged, confirming the new warning is call-site-specific, not a " +
+				"restatement of an existing switch-site warning");
 	}
 
 	// ------------------------------------------------------------------

@@ -447,7 +447,15 @@ because its mappers span the whole strategy vocabulary.
   `select-data` + `mode-register` (MMC3), including mode-dependent layouts;
   bank-placement inference (MMC1's 16 KiB banks assigned to $8000/$C000 by following
   flows, not import options — retiring the GhidraNes-style per-bank guess entirely);
-  function-level bank-state requirements and call-graph propagation. Acceptance on
+  function-level bank-state requirements and call-graph propagation (shipped as
+  `BoardBankAnalyzer#annotateBankRequirementViolations`, bead `grm-6a7.2`: per-function
+  `requiresOnEntry`/`modifiedMask`/`exitState` derived AFTER the Phase-1/2 dataflow
+  fixpoint by a bottom-up chaotic-iteration walk of the direct call graph, used only to
+  raise a WARNING bookmark at a direct call site whose caller-local in-state is missing
+  bits the callee's dispatch needs — read-only; nothing feeds back into the fixpoint.
+  Known-ness only, not value-level requirements; indirect calls are not propagated
+  through. Back-propagation/narrowing Phase-1 state from these summaries — a mutual-
+  fixpoint/termination-risk problem — is explicitly deferred past M3). Acceptance on
   major MMC1/MMC3 libraries (Metroid, Zelda / SMB3, Crystalis). *Proves: stateful
   mechanisms fit the strategy interface; inference beats interrogation; overlay ceiling
   is now measurably painful (64 × 2 blocks) — evidence for the core ask.*

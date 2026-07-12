@@ -49,6 +49,7 @@ import ghidra.program.model.listing.BookmarkType;
 import ghidra.program.model.listing.CommentType;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.FunctionIterator;
+import ghidra.program.model.listing.FunctionManager;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
@@ -252,6 +253,10 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		ReferenceManager refMgr = program.getReferenceManager();
 		int refsAdded = 0;
 		int warnings = 0;
+		// Addresses that already carry a WARNING bookmark from this loop -- Phase 3's
+		// violation scan below dedupes against this set rather than stacking a second
+		// bookmark on a site the existing switch/call-switch warning already covers.
+		Set<Address> alreadyWarned = new LinkedHashSet<>();
 		for (Map.Entry<Address, BankState> entry : flow.stateIn().entrySet()) {
 			monitor.checkCancelled();
 			Address addr = entry.getKey();
@@ -263,11 +268,15 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 
 			SwitchResult switchResult = flow.switchResults().get(addr);
 			if (switchResult != null) {
-				warnings += annotateOrWarn(program, listing, addr, switchResult.effect(), board, null,
+				int w = annotateOrWarn(program, listing, addr, switchResult.effect(), board, null,
 					"Bank state becomes unknown here: mechanism write with a genuinely " +
 						"undeterminable value (value recovery could not pin down even one " +
 						"tracked bank bit -- e.g. a load of an unrelated address followed " +
 						"directly by the store, with no AND/ORA immediate to constrain it)");
+				warnings += w;
+				if (w > 0) {
+					alreadyWarned.add(addr);
+				}
 			}
 
 			CallSwitch callSwitch = flow.callSwitches().get(addr);
@@ -278,11 +287,15 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				// CallSwitch's javadoc.
 				BankState annotState = callSwitch.effect().knownMask() == 0
 						? callSwitch.effect() : callSwitch.stateAfter();
-				warnings += annotateOrWarn(program, listing, addr, annotState, board,
+				int w = annotateOrWarn(program, listing, addr, annotState, board,
 					callSwitch.helperName(),
 					"Bank state becomes unknown here: call to bank-switch helper " +
 						callSwitch.helperName() + " whose bank argument could not be " +
 						"recovered at this call site");
+				warnings += w;
+				if (w > 0) {
+					alreadyWarned.add(addr);
+				}
 			}
 
 			int effective = inState.effective(board.initialState(), board.mask());
@@ -290,12 +303,19 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				monitor, log);
 		}
 
+		// --- Phase 3: function-level bank-state summaries + call-site requirement
+		// violations (bead grm-6a7.2, design D, M3 scope: read-only annotation layer,
+		// derived AFTER the Phase-1/2 fixpoint above -- see the method's javadoc for what
+		// is and is not fed back into the dataflow) ---
+		int violations = annotateBankRequirementViolations(program, listing, flow, board,
+			alreadyWarned, log);
+
 		// --- Context stamping: only when the language actually declares the register ---
 		stampContextRegister(program, banking, flow.stateIn(), listing, board.mask(), log);
 
 		log.appendMsg(getName(), tag + ": " + flow.stateIn().size() + " instructions tracked, " +
 			refsAdded + " overlay references added/confirmed, " + warnings +
-			" unknown-state warnings");
+			" unknown-state warnings, " + violations + " bank-state requirement violations");
 
 		// Record the ENTRY-time fingerprint only now that the run completed: phase 2's own
 		// disassembly/function side effects have moved the live counts past it, so the
@@ -961,6 +981,258 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			return String.join(",", parts);
 		}
 		return "?";
+	}
+
+	// ------------------------------------------------------------------
+	// Function-level bank-state summaries (grm-6a7.2, M3 scope)
+	// ------------------------------------------------------------------
+
+	/**
+	 * Derives a {@link FunctionBankSummary} for every {@link Function} from the completed
+	 * Phase-1/2 dataflow ({@code flow}), then flags direct call sites that violate a
+	 * callee's {@code requiresOnEntry}: a WARNING bookmark, never a change to the tracked
+	 * state. This is a read-only annotation layer -- nothing computed here is fed back
+	 * into {@code flow} or re-influences {@link #runDataflow}; M3 deliberately excludes
+	 * any back-propagation/narrowing of Phase-1 state from these summaries (a mutual-
+	 * fixpoint/termination-risk problem left to M4+, see the module doc / vision doc §9).
+	 * <p>
+	 * <b>exitState</b>: {@code flow.stateIn()} only retains each instruction's IN-state,
+	 * not a separate OUT-state map. RTS/RTI never match a mechanism write (no shipped
+	 * strategy recognizes a return instruction as a switch site), so an RTS/RTI's retained
+	 * IN-state already equals its OUT-state -- the state control returns to the caller
+	 * with. Merging (agree-bit join, same as {@link BankState#merge}) over every such exit
+	 * instruction in a function's body is therefore a free, sound read-off; no separate
+	 * OUT-state tracking needed.
+	 * <p>
+	 * <b>modifiedMask</b>: the union of every switch site's {@code effectMask} inside the
+	 * function's own body, plus (bottom-up over the direct call graph) every directly
+	 * called function's own {@code modifiedMask}. Indirect calls (the call instruction's
+	 * flow does not resolve to a {@link Function} entry) are not found by the body walk
+	 * below at all, so they never propagate -- a deliberate M3 conservatism (an indirect
+	 * call's real target modifications are simply not counted; documented, not silently
+	 * unsound, since {@code modifiedMask} is only ever used to log summaries in M3, never
+	 * to gate anything).
+	 * <p>
+	 * <b>requiresOnEntry</b> (M3 scope: known-ness only -- value-level requirements, e.g.
+	 * "select must equal exactly 6", are NOT modeled, only "select must be KNOWN"):
+	 * for each switch site in a function's own body whose matched strategy is not
+	 * {@link BankSwitchStrategy#cacheable()} (i.e. {@code computeSwitch} may consult
+	 * {@code inState}), the bits the switch's OWN effect ends up NOT knowing that the
+	 * flowed-in {@code inState} ALSO did not know -- {@code effectMask & ~inState.knownMask
+	 * & ~effect.knownMask()}. That intersection is exactly "the dispatch needed this bit
+	 * and didn't have it": a cacheable strategy (pure function of program+instruction)
+	 * never contributes, and a non-cacheable strategy whose effect came out fully known
+	 * anyway (e.g. a plain {@code LDA #imm/STA} sequence, or a masked-RMW read-back that
+	 * resolved cleanly from known in-state) also contributes nothing, since
+	 * {@code ~effect.knownMask()} is empty there. Bits the function itself establishes
+	 * BEFORE a later consuming site are automatically excluded -- not by explicit program-
+	 * order subtraction, but because {@code flow.stateIn()} at that later site already
+	 * reflects every predecessor on the real CFG, including earlier code in the same
+	 * function; no separate bookkeeping is needed or attempted. This own-body requirement
+	 * is then unioned (again bottom-up over the direct call graph) with each directly
+	 * called function's own {@code requiresOnEntry}, narrowed at the call site by
+	 * {@code ~callSiteInState.knownMask()} -- exactly the same rule the violation check
+	 * below applies at every caller, so a function that reliably establishes a callee's
+	 * requirement before calling it does not itself inherit that requirement. Recursion
+	 * and mutual recursion are handled by plain chaotic iteration to a fixpoint (masks
+	 * only ever grow, so this always terminates) rather than an explicit SCC computation --
+	 * equivalent result, simpler code. Indirect calls: not propagated, same as
+	 * {@code modifiedMask} above.
+	 *
+	 * @return the number of new violation WARNING bookmarks placed
+	 */
+	private int annotateBankRequirementViolations(Program program, Listing listing,
+			DataflowResult flow, BoardModel board, Set<Address> alreadyWarned, MessageLog log) {
+
+		FunctionManager fm = program.getFunctionManager();
+
+		// --- own (intra-function) contribution from this function's own switch sites ---
+		Map<Function, Integer> ownModified = new LinkedHashMap<>();
+		Map<Function, Integer> ownRequires = new LinkedHashMap<>();
+		for (Map.Entry<Address, SwitchResult> e : flow.switchResults().entrySet()) {
+			Address addr = e.getKey();
+			Function f = fm.getFunctionContaining(addr);
+			if (f == null) {
+				continue; // switch site outside any known function -- not summarized
+			}
+			SwitchResult sr = e.getValue();
+			ownModified.merge(f, sr.effectMask(), (a, b) -> a | b);
+			if (sr.strategy() != null && !sr.strategy().cacheable()) {
+				BankState siteIn = flow.stateIn().get(addr);
+				if (siteIn != null) {
+					int required = sr.effectMask() & ~(siteIn.knownMask() & sr.effectMask()) &
+						~sr.effect().knownMask();
+					if (required != 0) {
+						ownRequires.merge(f, required, (a, b) -> a | b);
+					}
+				}
+			}
+		}
+
+		// --- direct call graph + exit points, one walk per function body (Ghidra's own
+		// FunctionManager/references -- an unresolved indirect call flow target is simply
+		// not a Function, so calledFunctions() below never includes it) ---
+		List<Function> functions = new ArrayList<>();
+		Map<Function, List<DirectCallSite>> callSites = new LinkedHashMap<>();
+		Map<Function, List<Address>> exitAddrs = new LinkedHashMap<>();
+		FunctionIterator allFuncs = fm.getFunctions(true);
+		for (Function f : allFuncs) {
+			functions.add(f);
+			List<DirectCallSite> calls = new ArrayList<>();
+			List<Address> exits = new ArrayList<>();
+			for (Instruction instr : listing.getInstructions(f.getBody(), true)) {
+				Address addr = instr.getMinAddress();
+				if (flow.stateIn().get(addr) == null) {
+					continue; // dataflow never reached this instruction (dead code)
+				}
+				if (instr.getFlowType().isCall()) {
+					for (Address flowAddr : instr.getFlows()) {
+						Function callee = fm.getFunctionAt(flowAddr);
+						if (callee != null) {
+							calls.add(new DirectCallSite(addr, callee));
+							break; // a direct call resolves to exactly one target
+						}
+					}
+				}
+				else if (instr.getFlowType().isTerminal()) {
+					exits.add(addr);
+				}
+			}
+			callSites.put(f, calls);
+			exitAddrs.put(f, exits);
+		}
+
+		// --- bottom-up propagation by chaotic iteration: modifiedMask/requiresOnEntry are
+		// monotone non-decreasing set unions over a finite universe (the board's state
+		// bits), so repeatedly relaxing every function against its direct callees
+		// converges regardless of call-graph shape -- recursive/mutually-recursive SCCs
+		// included, without singling them out for special handling ---
+		Map<Function, Integer> modifiedMask = new LinkedHashMap<>();
+		Map<Function, Integer> requiresOnEntry = new LinkedHashMap<>();
+		for (Function f : functions) {
+			modifiedMask.put(f, ownModified.getOrDefault(f, 0));
+			requiresOnEntry.put(f, ownRequires.getOrDefault(f, 0));
+		}
+		boolean changed = true;
+		while (changed) {
+			changed = false;
+			for (Function f : functions) {
+				int mMask = modifiedMask.get(f);
+				int rMask = requiresOnEntry.get(f);
+				for (DirectCallSite cs : callSites.get(f)) {
+					mMask |= modifiedMask.getOrDefault(cs.callee(), 0);
+					BankState callerIn = flow.stateIn().get(cs.addr());
+					if (callerIn != null) {
+						rMask |= requiresOnEntry.getOrDefault(cs.callee(), 0) & ~callerIn.knownMask();
+					}
+				}
+				if (mMask != modifiedMask.get(f) || rMask != requiresOnEntry.get(f)) {
+					modifiedMask.put(f, mMask);
+					requiresOnEntry.put(f, rMask);
+					changed = true;
+				}
+			}
+		}
+
+		// --- exitState + one DEBUG-ish log line per function with a non-trivial summary
+		// (M3 scope: log only, no persistence/UI) ---
+		for (Function f : functions) {
+			int mMask = modifiedMask.get(f);
+			int rMask = requiresOnEntry.get(f);
+			if (mMask == 0 && rMask == 0) {
+				continue;
+			}
+			BankState exitState = null;
+			for (Address addr : exitAddrs.get(f)) {
+				BankState s = flow.stateIn().get(addr);
+				if (s == null) {
+					continue;
+				}
+				exitState = exitState == null ? s : BankState.merge(exitState, s);
+			}
+			if (exitState == null) {
+				exitState = BankState.unknown();
+			}
+			log.appendMsg(getName(), "[bank-summary] " + f.getName() + ": modifies " +
+				describeBits(board, mMask) + "; requires on entry " + describeBits(board, rMask) +
+				"; exit " + exitState);
+		}
+
+		// --- violation scan: a direct call site whose caller in-state is missing bits the
+		// callee's requiresOnEntry needs. Dedupe policy: skip a site this run's own
+		// switch/call-switch warning loop already bookmarked (alreadyWarned) -- that
+		// existing WARNING already flags the site as bank-state-unsound; stacking a second
+		// bookmark there would be redundant, not additional signal. A callee recognized as
+		// a helper (findHelpers) is NOT unconditionally skipped: the existing helper-call
+		// annotation only warns when the call's OWN argument recovery came up empty, which
+		// is silent exactly in the case this feature targets (a data-only helper whose
+		// caller never established the dispatch field the helper's mechanism consumes) --
+		// see the module's bead report for the concrete MMC3 select+data investigation. ---
+		int violations = 0;
+		for (Function f : functions) {
+			for (DirectCallSite cs : callSites.get(f)) {
+				int required = requiresOnEntry.getOrDefault(cs.callee(), 0);
+				if (required == 0 || alreadyWarned.contains(cs.addr())) {
+					continue;
+				}
+				BankState callerIn = flow.stateIn().get(cs.addr());
+				if (callerIn == null) {
+					continue;
+				}
+				int missing = required & ~callerIn.knownMask();
+				if (missing == 0) {
+					continue;
+				}
+				program.getBookmarkManager().setBookmark(cs.addr(), BookmarkType.WARNING,
+					getBookmarkCategory(), "Bank state requirement violated: call to " +
+						cs.callee().getName() + " requires " + describeBits(board, missing) +
+						" known on entry, but it is unknown here");
+				violations++;
+			}
+		}
+		return violations;
+	}
+
+	/** One direct call site inside a function's body: {@code addr} is the call
+	 *  instruction, {@code callee} the {@link Function} its flow resolves to. */
+	private record DirectCallSite(Address addr, Function callee) {}
+
+	/**
+	 * A function's Phase-3 bank-state transfer summary (grm-6a7.2). {@code exitState} is
+	 * the agree-bit merge of the tracked IN-state at every RTS/RTI in the function's body
+	 * (its OUT-state too -- see {@link #annotateBankRequirementViolations}'s javadoc), or
+	 * {@link BankState#unknown()} when the function has no tracked exit instruction at all
+	 * (e.g. an infinite-loop routine). {@code modifiedMask} is which board state bits any
+	 * execution of this function (or anything it directly calls, transitively) may change.
+	 * {@code requiresOnEntry} is which board state bits must be KNOWN on entry for this
+	 * function's own switch dispatch and its (transitive, direct-call-only) callees' to be
+	 * sound -- known-ness only, not a required value (M3 scope). Currently computed
+	 * in-line by {@link #annotateBankRequirementViolations} rather than materialized as a
+	 * standalone map; this record documents the exact data model that computation
+	 * populates per function, for anything that wants to consume it wholesale later
+	 * (e.g. M4's UI/persistence).
+	 */
+	private record FunctionBankSummary(BankState exitState, int modifiedMask, int requiresOnEntry) {}
+
+	/** Human-readable rendering of a board state bitmask, by {@code banking.state} field
+	 *  name (deduplicated -- a multi-bit field's several tracked bits collapse to its one
+	 *  name), matching the field-name vocabulary {@link #annotateBankSwitch} already uses.
+	 *  {@code "(none)"} for an empty mask; a raw hex fallback for bits outside every known
+	 *  field (should not occur for a mask derived from {@code board.mask()}). */
+	private static String describeBits(BoardModel board, int bitMask) {
+		if (bitMask == 0) {
+			return "(none)";
+		}
+		List<String> names = new ArrayList<>();
+		for (FieldSpec f : board.fieldSpecs()) {
+			if ((f.positionedMask() & bitMask) != 0 && !names.contains(f.name())) {
+				names.add(f.name());
+			}
+		}
+		if (names.isEmpty()) {
+			return "0x" + Integer.toHexString(bitMask);
+		}
+		return String.join(",", names);
 	}
 
 	// ------------------------------------------------------------------
