@@ -53,13 +53,31 @@ bd close <id>         # Complete work
 
 ## Build & Test
 
-_Add your build and test commands here_
+One-command build+test loop:
 
 ```bash
-# Example:
-# npm install
-# npm test
+bash tools/banktest/build-and-test.sh check    # or: bless   (after reviewing diffs)
 ```
+
+This builds the extension (`gradle buildExtension`), installs the dist zip into a
+**per-git-worktree, isolated** Ghidra "user settings dir" under `build/ghidra-home`
+(gitignored), then runs the banktest regression suite against that isolated install. It
+**never touches the shared `%APPDATA%/ghidra/.../Extensions` dir** — so an open Ghidra GUI
+can't lock it out from under you, and parallel agents can't clobber each other's installed
+extension.
+
+Parallelization rules:
+- One agent per `git worktree` (`git worktree add <path> <ref>`); never two agents sharing
+  one working tree.
+- Gradle caches under `~/.gradle` are shared across worktrees and gradle file-locks them
+  itself — safe to build concurrently.
+- The shared Ghidra install (`D:/ghidra_12.1.2_PUBLIC`, override via `GRM_GHIDRA_INSTALL`)
+  is read-only to this loop.
+
+The manual GUI install (delete+unzip the dist zip into
+`%APPDATA%/ghidra/<version>/Extensions/`) is a separate, user-facing step — only needed when
+you want the interactive Ghidra GUI to see the new build; it is not part of the agent test
+loop.
 
 ## Architecture Overview
 

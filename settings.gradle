@@ -1,0 +1,9 @@
+// Pin the Gradle project name so build artifacts (the extension jar and the
+// dist zip) are named consistently regardless of the checkout directory's
+// basename. Without this, Gradle defaults rootProject.name to the containing
+// directory name -- which breaks builds done in a differently-named git
+// worktree (bead grm-r3h): the built jar (e.g. "grm-wt-r3h.jar") no longer
+// matches what the extension module expects once installed under the fixed
+// "ghidra-retro-machines" Extensions directory name, and Ghidra's headless
+// class search silently fails to discover the loaders/analyzers inside it.
+rootProject.name = 'ghidra-retro-machines'

@@ -279,5 +279,11 @@ task sleighCompile(type: JavaExec) {
 // distributeExtension task above); it doesn't exist at this file's configuration time, so
 // attach the dependency lazily once Gradle resolves the task graph.
 tasks.matching { it.name == 'buildExtension' }.configureEach {
-	dependsOn 'buildGdt', 'buildMap', 'sleighCompile'
+	// buildPetsciiMap must be here too: data/petscii.map is a gitignored build
+	// artifact that ships in the extension zip, and C64BasicAnalyzer needs it at
+	// runtime (PetsciiMapper.load()). Without this dependency a fresh checkout
+	// (e.g. a new git worktree) built a zip with no petscii.map and the C64 BASIC
+	// detokenizer silently produced nothing (found by bead grm-r3h's worktree
+	// smoke test; previously masked by a stale petscii.map in the main tree).
+	dependsOn 'buildGdt', 'buildMap', 'buildPetsciiMap', 'sleighCompile'
 }

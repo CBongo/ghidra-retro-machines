@@ -11,8 +11,18 @@
 #   bless            Same run, but (re)capture the dumps into expected/.
 #
 # Environment overrides:
-#   GHIDRA_HEADLESS  path to analyzeHeadless(.bat)
-#   PYTHON           python interpreter to use for mkbanktest.py
+#   GHIDRA_HEADLESS         path to analyzeHeadless(.bat)
+#   PYTHON                  python interpreter to use for mkbanktest.py
+#   BANKTEST_SETTINGS_BASE  if set, relocate Ghidra's user settings dir (and
+#                            therefore where it looks for installed
+#                            Extensions) to this directory via
+#                            -Dapplication.settingsdir, so the run reads a
+#                            per-worktree isolated Extensions install instead
+#                            of the shared %APPDATA%/ghidra one. Also sets
+#                            -Dapplication.cachedir under the same tree. Set
+#                            by build-and-test.sh; left unset here preserves
+#                            today's behavior (shared %APPDATA% install), so
+#                            the manual GUI-adjacent flow still works.
 #
 # Note: analyzeHeadless.bat chokes on parentheses in filenames -- keep every
 # generated path free of them.
@@ -37,6 +47,19 @@ fi
 native() {
 	if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else echo "$1"; fi
 }
+
+# Isolation mechanism (Ghidra 12.1.2 source):
+#   ApplicationUtilities.getDefaultUserSettingsDir honors -Dapplication.settingsdir
+#   to relocate the user settings dir (and GhidraApplicationLayout.
+#   findExtensionInstallationDirectories reads [settings dir]/Extensions first),
+#   and PROPERTY_CACHE_DIR / -Dapplication.cachedir relocates the user cache
+#   dir similarly. analyzeHeadless.bat appends GHIDRA_HEADLESS_JAVA_OPTIONS to
+#   its VM args, so we can inject both properties per-invocation without
+#   touching any install file. native() must be defined above this point.
+if [ -n "${BANKTEST_SETTINGS_BASE:-}" ]; then
+	base_native="$(native "$BANKTEST_SETTINGS_BASE")"
+	export GHIDRA_HEADLESS_JAVA_OPTIONS="${GHIDRA_HEADLESS_JAVA_OPTIONS:-} -Dapplication.settingsdir=$base_native -Dapplication.cachedir=$base_native/cache"
+fi
 
 WORK="$(mktemp -d)"
 fail=0
