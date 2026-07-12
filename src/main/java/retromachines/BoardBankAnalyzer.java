@@ -272,7 +272,13 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 
 			CallSwitch callSwitch = flow.callSwitches().get(addr);
 			if (callSwitch != null) {
-				warnings += annotateOrWarn(program, listing, addr, callSwitch.state(), board,
+				// Warn iff the call's OWN recovery came up empty (same rule a direct switch's
+				// pure effect gets); when it resolved, render the comment from the folded
+				// post-call state so unowned fields show their real dataflow knowledge -- see
+				// CallSwitch's javadoc.
+				BankState annotState = callSwitch.effect().knownMask() == 0
+						? callSwitch.effect() : callSwitch.stateAfter();
+				warnings += annotateOrWarn(program, listing, addr, annotState, board,
 					callSwitch.helperName(),
 					"Bank state becomes unknown here: call to bank-switch helper " +
 						callSwitch.helperName() + " whose bank argument could not be " +
@@ -546,7 +552,8 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				BankState positionedEffect =
 					position(switchedLocal, matchedMechanism.lsb(), matchedMechanism.effectMask());
 				switchResults.put(addr, new SwitchResult(positionedEffect,
-					matchedMechanism.effectMask(), matchedMechanism.lsb()));
+					matchedMechanism.effectMask(), matchedMechanism.lsb(),
+					matchedMechanism.strategy()));
 				outState = overwrite(inState, positionedEffect, matchedMechanism.effectMask());
 			}
 
@@ -554,10 +561,25 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			if (helpers != null && instr.getFlowType().isCall()) {
 				HelperModel helper = calledHelper(program, instr, helpers);
 				if (helper != null) {
-					BankState effect = helper.constState() != null ? helper.constState()
+					CallEffect callEffect = helper.constState() != null
+							? new CallEffect(helper.constState(), helper.effectMask())
 							: recoverCallArgument(program, instr, helper);
-					callSwitches.put(addr, new CallSwitch(helper.function().getName(), effect));
-					fallState = overwrite(outState, effect, helper.effectMask());
+					// ownedMask == 0 means this call site is a verified no-op on every tracked
+					// bit (e.g. a serial-shift helper whose switch site targets an unconfigured
+					// CHR register) -- skip both the fold (a no-op regardless, since
+					// callEffect.state()'s knownMask is always a subset of ownedMask by
+					// construction) and the annotation, so a provably-inert call gets neither a
+					// misleading "bank -> ?" comment nor a spurious WARNING bookmark.
+					if (callEffect.ownedMask() != 0) {
+						fallState = overwrite(outState, callEffect.state(), callEffect.ownedMask());
+						// The annotation state echoes the in-state only within the helper's own
+						// mechanism window -- see CallSwitch's javadoc.
+						BankState mechIn = new BankState(outState.knownMask() & helper.effectMask(),
+							outState.bits() & helper.effectMask());
+						callSwitches.put(addr, new CallSwitch(helper.function().getName(),
+							callEffect.state(),
+							overwrite(mechIn, callEffect.state(), callEffect.ownedMask())));
+					}
 				}
 			}
 
@@ -729,20 +751,33 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			if (existing == null) {
 				helpers.put(f, new HelperModel(f,
 					result.knownMask() == site.effectMask() ? result : null, reg,
-					site.effectMask(), site.lsb()));
+					site.effectMask(), site.lsb(), site.strategy(), entry.getKey()));
 			}
 			else if (existing.effectMask() == site.effectMask() && existing.lsb() == site.lsb()) {
 				BankState constState = existing.constState() != null
 						&& !existing.constState().equals(result) ? null : existing.constState();
 				Character argReg = Objects.equals(existing.argReg(), reg) ? reg : null;
+				// When several instructions in this helper share the same mechanism (e.g. a
+				// serial-shift chain's 5 stores), the switch site that decides WHICH sub-field
+				// a call-site argument commits through is the one whose own address encodes
+				// that decision -- for every idiom this engine recognizes, that is the LAST
+				// (highest-address) recognized write in program order (an unrolled chain's
+				// write-5 STA, or a counted loop's closing BNE, both of which sit after their
+				// chain's earlier writes). Keeping the max-address entry is a no-op for every
+				// single-instruction mechanism (register-write, memory-latch: exactly one site
+				// per helper) and picks the correct commit site for serial-shift.
+				Address switchSite = entry.getKey().compareTo(existing.switchSite()) > 0
+						? entry.getKey() : existing.switchSite();
 				helpers.put(f, new HelperModel(f, constState, argReg,
-					site.effectMask(), site.lsb()));
+					site.effectMask(), site.lsb(), site.strategy(), switchSite));
 			}
 			else {
 				// Sites in this helper belong to different mechanisms -- degrade to the
-				// conservative union (see javadoc above).
+				// conservative union (see javadoc above). argReg is forced null, so
+				// recoverCallArgument short-circuits before ever consulting strategy/
+				// switchSite -- both left null/unset is safe.
 				helpers.put(f, new HelperModel(f, null, null,
-					existing.effectMask() | site.effectMask(), 0));
+					existing.effectMask() | site.effectMask(), 0, null, null));
 			}
 		}
 		return helpers;
@@ -772,22 +807,54 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * the scan. By the helper convention the register holds the <em>field value itself</em>,
 	 * so no mechanism transform is applied beyond the field-local width mask -- the scan
 	 * resolves in the helper's own mechanism's field-local {@code [0, width)} space (same
-	 * convention as {@link BankSwitchStrategy#computeSwitch}), and the result is positioned
-	 * back into the board's absolute state bits before returning, exactly as a direct
-	 * dataflow switch would be. Returns a positioned {@link BankState#unknown()} when the
-	 * argument register is unknown or its value does not resolve -- the caller conservatively
-	 * loses the bank state across the call.
+	 * convention as {@link BankSwitchStrategy#computeSwitch}). The recovered byte is then
+	 * handed to the matched strategy's {@link BankSwitchStrategy#depositHelperArgument},
+	 * which knows -- from the helper's own recognized {@link HelperModel#switchSite} --
+	 * whether this mechanism's field-local space is one field (the recovered byte deposits
+	 * verbatim, owning the whole field-local width, the historical behavior) or several
+	 * disjoint sub-fields keyed by which switch site is in play (serial-shift): only that
+	 * call knows which sub-field the recovered value actually commits through, and
+	 * therefore which bits this call site may claim ownership of ({@link CallEffect#ownedMask}
+	 * -- see {@link BankSwitchStrategy.HelperDeposit}'s javadoc for why that is tracked
+	 * separately from the value's own known bits). Both the value and the owned-bits mask
+	 * are positioned back into the board's absolute state bits before returning, exactly as
+	 * a direct dataflow switch's result is. Returns an unknown value owning the WHOLE
+	 * mechanism when the argument register itself is unknown (the helper's sites disagreed
+	 * on it) -- conservatively wiping everything this helper's mechanism could possibly
+	 * touch, the historical behavior for that degrade case.
 	 */
-	private BankState recoverCallArgument(Program program, Instruction callInstr,
+	private CallEffect recoverCallArgument(Program program, Instruction callInstr,
 			HelperModel helper) {
 		Character reg = helper.argReg();
 		if (reg == null) {
-			return BankState.unknown();
+			return new CallEffect(BankState.unknown(), helper.effectMask());
 		}
+		int stateMask = helper.effectMask() >>> helper.lsb();
 		BankState local = StoredValueScanner.resolveStoredValue(program, callInstr, reg,
-			BankState.unknown(), helper.effectMask() >>> helper.lsb(), NO_HOOKS);
-		return position(local, helper.lsb(), helper.effectMask());
+			BankState.unknown(), stateMask, NO_HOOKS);
+		Instruction switchSite = helper.switchSite() == null ? null
+				: program.getListing().getInstructionAt(helper.switchSite());
+		if (helper.strategy() == null || switchSite == null) {
+			return new CallEffect(position(local, helper.lsb(), helper.effectMask()),
+				helper.effectMask());
+		}
+		BankSwitchStrategy.HelperDeposit deposit =
+			helper.strategy().depositHelperArgument(program, switchSite, local, stateMask);
+		BankState positionedValue = position(deposit.value(), helper.lsb(), helper.effectMask());
+		int positionedOwnedMask = (deposit.ownedMask() << helper.lsb()) & helper.effectMask();
+		return new CallEffect(positionedValue, positionedOwnedMask);
 	}
+
+	/**
+	 * A helper call site's positioned effect: {@code state} is the recovered value in the
+	 * board's absolute state bits (like {@link SwitchResult#effect}); {@code ownedMask} is
+	 * which of those absolute bits this call site is authoritative over -- the mask
+	 * {@link #runDataflow} folds {@code state} into via {@link #overwrite}, distinct from
+	 * {@code state.knownMask()} for exactly the reason {@link BankSwitchStrategy.HelperDeposit}
+	 * documents (a touched-but-unresolved bit is owned and poisoned; an untouched bit is
+	 * neither).
+	 */
+	private record CallEffect(BankState state, int ownedMask) {}
 
 	private static final StoredValueScanner.Hooks NO_HOOKS = new StoredValueScanner.Hooks() {
 		@Override
@@ -1397,9 +1464,13 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * not the composite. {@code effectMask}/{@code lsb} identify which mechanism produced it
 	 * (the same pair as the matching {@link ConfiguredMechanism}), so downstream consumers
 	 * (helper classification, call-argument recovery) know which bits it's authoritative
-	 * over without re-deriving it from the descriptor.
+	 * over without re-deriving it from the descriptor. {@code strategy} is the matched
+	 * mechanism's own strategy instance, carried through so a helper call site can later
+	 * ask it to position a recovered argument via
+	 * {@link BankSwitchStrategy#depositHelperArgument} instead of the engine guessing.
 	 */
-	private record SwitchResult(BankState effect, int effectMask, int lsb) {}
+	private record SwitchResult(BankState effect, int effectMask, int lsb,
+			BankSwitchStrategy strategy) {}
 
 	/**
 	 * A helper function's modeled effect: a constant state, or null = caller-supplied. For
@@ -1409,13 +1480,41 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * write, in which case the argument convention is unknown. {@code effectMask}/{@code lsb}
 	 * are the mechanism's positioning (or the conservative union of several, when the
 	 * helper's sites span more than one mechanism -- see {@link #findHelpers}), used to fold
-	 * this helper's effect into only the state bits it actually owns.
+	 * this helper's effect into only the state bits it actually owns. {@code strategy} is the
+	 * matched mechanism's strategy (null when the sites disagree, per {@code findHelpers}'s
+	 * degrade case -- unused there since {@code argReg} is also forced null and
+	 * {@link #recoverCallArgument} short-circuits before ever consulting {@code strategy});
+	 * {@code switchSite} is the recognized switch instruction (the highest-address one, when
+	 * a helper's sites span several instructions of the same mechanism -- e.g. a serial-shift
+	 * chain's 5 stores all resolve to the same target address here, but for an idiom where
+	 * they could legitimately differ, the LAST write is the one whose address actually
+	 * decides the target, per {@link SerialShiftBankSwitchStrategy}) that
+	 * {@link BankSwitchStrategy#depositHelperArgument} is asked to interpret a call site's
+	 * argument against.
 	 */
 	private record HelperModel(Function function, BankState constState, Character argReg,
-			int effectMask, int lsb) {}
+			int effectMask, int lsb, BankSwitchStrategy strategy, Address switchSite) {}
 
-	/** A resolved call-site switch (for annotation, distinct from direct switches). */
-	private record CallSwitch(String helperName, BankState state) {}
+	/**
+	 * A resolved call-site switch (for annotation, distinct from direct switches).
+	 * {@code effect} is the call's own recovered deposit (positioned, known bits limited to
+	 * what the argument scan resolved of the bits this call site owns) -- the WARN decision
+	 * keys off it, exactly as a direct switch warns off its pure effect. {@code stateAfter}
+	 * is the post-call state of the helper's own MECHANISM WINDOW: the in-state narrowed to
+	 * the helper's {@code effectMask}, overwritten by {@code effect} on the call's owned
+	 * bits. The COMMENT is rendered from it, because a helper deposit, unlike a
+	 * {@code computeSwitch} result, has no in-state echoed into it: without this, every
+	 * sibling field the call doesn't own would render as "assumed from initial" even when
+	 * the dataflow knows it perfectly well. Narrowing the echo to the mechanism window
+	 * (rather than folding over the whole tracked state) keeps the comment's knowledge
+	 * horizon identical to a direct switch's at the same spot -- a {@code computeSwitch}
+	 * result echoes exactly its own mechanism's in-state bits, never another mechanism's,
+	 * so a helper-call comment on a multi-mechanism board keeps showing other mechanisms'
+	 * fields as assumed, exactly as it always did. For a single-field helper (owned == the
+	 * whole mechanism window) {@code stateAfter == effect}, so the historical path is
+	 * unchanged byte-for-byte.
+	 */
+	private record CallSwitch(String helperName, BankState effect, BankState stateAfter) {}
 
 	/**
 	 * Per-address strategy-probe cache entry for {@link #runDataflow} (grm-5tl.13.2).

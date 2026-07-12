@@ -185,6 +185,7 @@ MAPPER_MODETEST = 100  # synthetic nes-modetest board (NESdev-reserved test mapp
 MAPPER_MMC3 = 4        # MMC3 (nesmmc3test)
 MAPPER_SERIALTEST = 222  # synthetic nes-serialtest board; see machines/nes-serialtest.yaml's
                           # module doc for why 222 (not 100/101/102/248) was chosen
+MAPPER_MMC1 = 1        # real MMC1 board (nesmmc1test); see machines/nes-mmc1.yaml
 
 MMC3_BANK_SIZE = 0x2000
 MMC3_BANKS = 8
@@ -193,6 +194,10 @@ MMC3_PRG_SIZE = MMC3_BANK_SIZE * MMC3_BANKS
 # nesserialtest.nes: 8 x 16 KiB PRG banks (128 KiB, Metroid-class shape per bead grm-hsv.1).
 SERIAL_BANKS = 8
 SERIAL_PRG_SIZE = PRG_BANK_SIZE * SERIAL_BANKS
+
+# nesmmc1test.nes: 8 x 16 KiB PRG banks (128 KiB, Metroid-shaped per bead grm-hsv.2).
+MMC1_BANKS = 8
+MMC1_PRG_SIZE = PRG_BANK_SIZE * MMC1_BANKS
 
 
 def _bank3_putter(prg):
@@ -445,6 +450,9 @@ class _Asm:
     def rti(self):
         self._emit([0x40])
 
+    def rts(self):
+        self._emit([0x60])
+
     def chain5(self, addr):
         """Emits the fully-unrolled STA/LSR commit chain (5 stores, 4 shifts --
         see machines/nes-serialtest.yaml / SerialShiftBankSwitchStrategy) to
@@ -582,6 +590,197 @@ def make_prg_serial():
 
     # Unrelated data table backing the two "unresolvable" indexed loads above.
     put7(0xC200, [0x11, 0x22])
+
+    # Vector table.
+    put7(0xFFFA, [labels['rti'] & 0xFF, (labels['rti'] >> 8) & 0xFF])
+    put7(0xFFFC, [labels['reset'] & 0xFF, (labels['reset'] >> 8) & 0xFF])
+    put7(0xFFFE, [labels['rti'] & 0xFF, (labels['rti'] >> 8) & 0xFF])
+
+    return bytes(prg), labels
+
+
+def make_prg_mmc1():
+    """SerialShiftBankSwitchStrategy end-to-end fixture for the REAL machines/nes-mmc1.yaml
+    board (bead grm-hsv.2, iNES mapper 1). Metroid-shaped (128 KiB, 8 x 16 KiB banks; see
+    scratchpad's mmc1-idioms.md ground-truth survey of Zelda1/FF1/Metroid), and -- unlike
+    nesserialtest.nes's chain5()-inline-in-caller shapes -- built around a genuine JSR'd
+    SWITCH HELPER subroutine (the dominant real-world idiom every surveyed game uses: a
+    fully unrolled 5x STA/LSR chain reached via JSR, never inlined at the call site), so
+    this fixture is what actually exercises BoardBankAnalyzer.findHelpers/
+    recoverCallArgument for SerialShiftBankSwitchStrategy -- nesserialtest never did,
+    since every one of its chains lived directly in the caller.
+
+    banking.state is mirroring(2)+prg_mode(2)+prg_bank(5), matching nes-serialtest.yaml
+    exactly; nes-mmc1.yaml's one difference is byte-accurate 32K-mode (prg_mode 0/1)
+    addressing via the new `>>` maps: operator (bead grm-hsv.2) -- not exercised by this
+    fixture, which stays in prg_mode 3 (fix-last, home) and prg_mode 2 (fix-first) only,
+    the two modes real MMC1 games actually run PRG switches in.
+
+    RESET runs entirely inside the fixed-last WC000 window (prg_mode=3, the reset-dance
+    convention/this board's home mode) until the deliberate mode-2 transition near the
+    end. PRG is 8 x 16 KiB banks; bank 7 == PRG[last] == WC000's home content, so CPU
+    $C000+x equals file offset (bank 7 base)+x throughout -- the asm objects below encode
+    that translation the same way nesserialtest's did.
+
+    Three separate code regions (three `_Asm` instances sharing one `prg` buffer):
+      main   @ $C000: RESET flow -- reset dance, two helper-mediated PRG switches with a
+             CHR chain sandwiched between them, the prg_mode->2 transition, and the
+             unresolvable-value call site.
+      helper @ $C200: SwitchBank -- the shared 5x STA/LSR chain to $E000 (canonical PRG
+             target address, register bits 14:13 of $E000 == target 3), ending RTS. Every
+             PRG switch in `main` reaches this ONE subroutine via JSR, Zelda1/FF1/Metroid-
+             style (LDA #imm / JSR SwitchBank) -- this is what makes findHelpers see a
+             call site rather than an inline chain.
+      target @ $C300: a lone RTS -- the JSR target that must retarget into the mode-2
+             layout's switchable WC000 overlay after the transition (see below).
+
+    RESET ($C000, seed prg_mode=3/prg_bank=0/mirroring=0):
+      LDA #$80 / STA $8000             -- reset dance: bit-7 write, prg_mode forced 3
+                                           (home, idempotent re-assertion of the seed).
+      LDA #$02 / JSR SwitchBank        -- call site 1 (helper argReg='A'): commits
+                                           prg_bank=2 via the shared helper.
+      JSR $8000                        -- retargets to W8000_M3_B2::8000 (mode3 is home;
+                                           bank 2 is non-home -> _M3_B2 overlay).
+      LDA #$AA + a 5x STA/LSR chain to $A000 (CHR0, target 1, no `targets` entry -- same
+                                           no-poison contract nesserialtest's F-chr-discard
+                                           exercises): recognized, discarded; prg_bank must
+                                           SURVIVE, proven by the next switch below.
+      LDA #$05 / JSR SwitchBank        -- call site 2 (SAME helper, different immediate):
+                                           commits prg_bank=5.
+      JSR $8000                        -- retargets to W8000_M3_B5::8000 (bank 5 also
+                                           non-home for W8000 -> _M3_B5 overlay). If
+                                           prg_bank had been clobbered by the CHR chain,
+                                           this would retarget somewhere else or fail --
+                                           this JSR is therefore also indirect proof the
+                                           CHR write stayed a no-op on prg_bank.
+      LDA #$07 / JSR SwitchBank        -- call site 3 (SAME helper, third immediate,
+                                           deliberately == `last`): commits prg_bank=7 --
+                                           see the mode-2 design note below for why 7. NOT
+                                           followed by a JSR $8000 (unlike sites 1/2): bank
+                                           7 IS the fixed-last bank WC000's home window
+                                           already shows, i.e. this fixture's own running
+                                           code -- a JSR $8000 here would dual-map into
+                                           RESET itself rather than a clean routine, which
+                                           is not the retargeting shape this call site is
+                                           for (it exists purely to stage prg_bank=7 ahead
+                                           of the mode flip).
+      LDA #$08 + a 5x STA/LSR chain to $8000 (Control, target 0): commits mirroring=0,
+                                           prg_mode=2 (fix-first) -- the mode transition.
+      JSR $C300                        -- retargets to WC000_M2_B7::C300 (see design note).
+      LDX #$00 / LDA $C400,X / JSR SwitchBank -- call site 4: an opaque indexed load (the
+                                           scanner does not model indexed addressing, same
+                                           as nesserialtest's F-unresolvable) feeds the SAME
+                                           helper's argReg='A'. recoverCallArgument's
+                                           backward scan for A fails to resolve -> honest
+                                           WARNING bookmark, no false "bank ->" claim --
+                                           the Metroid-mailbox analog for the *call-site*
+                                           value-recovery path specifically (nesserialtest's
+                                           F-unresolvable exercised the same failure mode
+                                           for an inline chain's own seed, not a helper
+                                           call's recovered argument).
+      JMP $<self>                      -- idle loop.
+      RTI                              -- NMI/IRQ handler.
+
+    Mode-2 transition design (the control-flow-discipline puzzle the bead's brief calls
+    out): in prg_mode 3, $8000 switches and $C000 is fixed-last; in prg_mode 2, $8000 is
+    fixed-first and $C000 switches -- there is no window fixed in BOTH modes, so code
+    physically resident at $C0xx during the transition would normally get its own ground
+    pulled out from under it. This fixture sidesteps that by making the SWITCHED WINDOW's
+    content identical across the transition instead of avoiding the switched window: call
+    site 3 above deliberately commits prg_bank=7, which is also `last` (the same physical
+    bank WC000's fixed-last mapping already showed) -- so when the mode-2 chain flips
+    prg_mode to 2, WC000 becomes switchable at the CURRENT prg_bank (7), which maps the
+    exact same bytes it mapped as the fixed window a moment ago. Every instruction from
+    RESET through the post-switch JSR $C300 physically sits in that one never-moving bank
+    (which is also why call site 3 above is deliberately NOT followed by a JSR into the
+    W8000 window the way sites 1/2 are -- bank 7 IS this running code, not a separate
+    routine); the only thing that changes is which *symbolic* window name a reference
+    into it resolves through (WC000 before the flip, WC000_M2_B7 after) -- exactly the
+    same dual-mapped-bytes pattern nesmmc3test's W8000_M0_B2/WC000_M1_B2 already
+    established for MMC3, now reproduced for a mode-dependent-layout mechanism whose
+    windows don't share a common fixed anchor the way MMC3's WA000/WE000 do.
+    """
+    prg = bytearray([0x00] * MMC1_PRG_SIZE)
+
+    for bank in range(MMC1_BANKS):
+        prg[bank * PRG_BANK_SIZE] = bank  # bank marker, matching the other fixtures
+
+    # Bank 2/5's JSR targets (W8000_M3_B2::8000 / W8000_M3_B5::8000): RTS, replacing the
+    # marker byte, as in nesserialtest/nesmmc3test. Bank 7 is deliberately NOT given a
+    # separate RTS here -- it IS this fixture's running code (see the mode-2 design note).
+    prg[2 * PRG_BANK_SIZE] = 0x60
+    prg[5 * PRG_BANK_SIZE] = 0x60
+
+    bank7_base = 7 * PRG_BANK_SIZE
+
+    def put7(cpu_addr, data):
+        off = bank7_base + (cpu_addr - 0xC000)
+        prg[off:off + len(data)] = bytes(data)
+
+    main = _Asm(prg, 0xC000, bank7_base)
+    helper = _Asm(prg, 0xC200, bank7_base + 0x200)
+    target = _Asm(prg, 0xC300, bank7_base + 0x300)
+
+    labels = {}
+
+    # --- helper @ $C200: the shared SwitchBank subroutine (Zelda1/FF1/Metroid idiom) ---
+    labels['switch_bank'] = helper.label()
+    helper.chain5(0xE000)
+    helper.rts()
+
+    # --- target @ $C300: the post-mode-switch WC000_M2_B7 JSR target ---
+    labels['mode2_target'] = target.label()
+    target.rts()
+
+    # --- main @ $C000: RESET flow ---
+    labels['reset'] = main.label()
+    main.lda_imm(0x80)
+    labels['f_reset'] = main.label()
+    main.sta_abs(0x8000)                     # reset dance: bit-7 set -> prg_mode=3 known
+
+    labels['call1_imm'] = main.label()
+    main.lda_imm(0x02)                       # bank 2
+    labels['call1_jsr'] = main.label()
+    main.jsr(labels['switch_bank'])          # call site 1 (argReg='A') -> prg_bank=2
+    labels['call1_use_jsr'] = main.label()
+    main.jsr(0x8000)                         # -> W8000_M3_B2::8000
+
+    main.lda_imm(0xAA)
+    chrchain = main.chain5(0xA000)           # CHR0 chain: recognized, discarded
+    labels['chr_commit'] = chrchain[4]
+
+    labels['call2_imm'] = main.label()
+    main.lda_imm(0x05)                       # bank 5
+    labels['call2_jsr'] = main.label()
+    main.jsr(labels['switch_bank'])          # call site 2 (SAME helper) -> prg_bank=5
+    labels['call2_use_jsr'] = main.label()
+    main.jsr(0x8000)                         # -> W8000_M3_B5::8000
+
+    labels['call3_imm'] = main.label()
+    main.lda_imm(0x07)                       # bank 7 (== last; see mode-2 design note)
+    labels['call3_jsr'] = main.label()
+    main.jsr(labels['switch_bank'])          # call site 3 (SAME helper) -> prg_bank=7
+                                              # (no follow-up JSR $8000 -- see design note)
+
+    main.lda_imm(0x08)                       # mirroring=0, prg_mode=2 (fix-first)
+    modechain = main.chain5(0x8000)          # Control (target 0) chain
+    labels['mode_commit'] = modechain[4]
+    labels['mode2_jsr'] = main.label()
+    main.jsr(labels['mode2_target'])         # -> WC000_M2_B7::C300 (post-switch)
+
+    main.ldx_imm(0x00)
+    labels['unresolvable_load'] = main.label()
+    main.lda_absx(0xC400)                    # opaque indexed load -- unresolvable seed
+    labels['unresolvable_jsr'] = main.label()
+    main.jsr(labels['switch_bank'])          # call site 4 -> recoverCallArgument fails
+
+    labels['idle'] = main.label()
+    main.jmp(labels['idle'])                 # idle loop
+    labels['rti'] = main.label()
+    main.rti()                               # NMI/IRQ handler
+
+    # Unrelated data table backing the unresolvable indexed load above.
+    put7(0xC400, [0x33, 0x44])
 
     # Vector table.
     put7(0xFFFA, [labels['rti'] & 0xFF, (labels['rti'] >> 8) & 0xFF])
@@ -785,6 +984,29 @@ def main():
 
     _write_rom(outdir, "nesserialtest.nes", prgs, mapper=MAPPER_SERIALTEST,
                prg_banks=SERIAL_BANKS)
+
+    prgm1, m1labels = make_prg_mmc1()
+
+    # Sanity-check the real MMC1 fixture before writing (bead grm-hsv.2).
+    assert len(prgm1) == MMC1_PRG_SIZE
+    assert prgm1[2 * PRG_BANK_SIZE] == 0x60  # RTS: W8000_M3_B2::8000
+    assert prgm1[5 * PRG_BANK_SIZE] == 0x60  # RTS: W8000_M3_B5::8000
+    m1bank7_base = 7 * PRG_BANK_SIZE
+    assert (m1labels['switch_bank']) == 0xC200
+    assert (m1labels['mode2_target']) == 0xC300
+    assert prgm1[m1bank7_base + 0x200] == 0x8D  # STA opcode, helper's chain write 1
+    assert prgm1[m1bank7_base + 0x300] == 0x60  # RTS at the mode-2 JSR target
+    assert prgm1[m1bank7_base + 0x000] == 0xA9  # LDA opcode at RESET ($C000)
+    assert prgm1[m1bank7_base + 0x002] == 0x8D  # STA opcode (reset dance) at $C002
+    assert (prgm1[m1bank7_base + 0x003] | (prgm1[m1bank7_base + 0x004] << 8)) == 0x8000
+    vec1 = m1bank7_base + 0x3FFA  # CPU $FFFA -> file offset (bank 7 base + $3FFA)
+    assert (prgm1[vec1 + 2] | (prgm1[vec1 + 3] << 8)) == m1labels['reset']  # RESET @ $FFFC
+    assert (prgm1[vec1 + 0] | (prgm1[vec1 + 1] << 8)) == m1labels['rti']    # NMI @ $FFFA
+    assert (prgm1[vec1 + 4] | (prgm1[vec1 + 5] << 8)) == m1labels['rti']    # IRQ @ $FFFE
+    print("nesmmc1test labels: " +
+          ", ".join("%s=$%04X" % (k, v) for k, v in m1labels.items()))
+
+    _write_rom(outdir, "nesmmc1test.nes", prgm1, mapper=MAPPER_MMC1, prg_banks=MMC1_BANKS)
 
 
 if __name__ == "__main__":

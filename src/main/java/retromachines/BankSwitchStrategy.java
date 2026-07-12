@@ -67,6 +67,62 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	BankState computeSwitch(Program program, Instruction instr, BankState inState);
 
 	/**
+	 * The field-local result of {@link #depositHelperArgument}: {@code ownedMask} marks
+	 * which bits of this mechanism's field-local space THIS call site is authoritative over
+	 * -- i.e. the set of bits {@link BoardBankAnalyzer} should fold the recovered
+	 * {@code value} into, replacing whatever those bits' prior knowledge was, while leaving
+	 * every bit outside {@code ownedMask} completely untouched (not even poisoned). This is
+	 * deliberately a SEPARATE concept from {@code value.knownMask()}: an owned bit whose
+	 * value could not be resolved is still owned (honest poison -- the bit becomes unknown,
+	 * because the call really did write it, just not to a value this scanner could pin
+	 * down), whereas an unowned bit is not touched at all, known or not (e.g. a serial-shift
+	 * helper site targeting a DIFFERENT field, or a CHR target this mechanism deliberately
+	 * tracks nothing for) -- a single {@link BankState} cannot represent that
+	 * touched-but-unresolved / untouched distinction, which is why this is a two-part
+	 * result rather than a bare {@code BankState}. {@code value.knownMask()} is always a
+	 * subset of {@code ownedMask} by construction.
+	 */
+	record HelperDeposit(int ownedMask, BankState value) {}
+
+	/**
+	 * Converts a helper call site's recovered argument byte into this mechanism's
+	 * field-local state deposit, given the switch site inside the helper that the call
+	 * ultimately reaches ({@link BoardBankAnalyzer}'s {@code HelperModel} carries this --
+	 * the instruction whose recognized-switch identity classified the containing function
+	 * as a helper in the first place). {@code argValue} is the register value recovered at
+	 * the call site (same convention as a mechanism write's own stored byte -- masked to
+	 * {@code stateMask}, this mechanism's field-local width), and {@code stateMask} is that
+	 * same field-local width mask passed to {@link #configure}.
+	 * <p>
+	 * The default reproduces the historical, pre-multi-target behavior byte-for-byte: the
+	 * recovered byte IS the field-local deposit, verbatim, and {@code ownedMask} is the
+	 * WHOLE {@code stateMask} (correct for any mechanism whose one switch site commits
+	 * exactly one field spanning the whole {@code stateMask}, i.e. every single-target
+	 * strategy: {@code register-write}, {@code memory-latch} -- calling such a helper always
+	 * replaces the mechanism's entire tracked state, known or not, exactly as before this
+	 * method existed). A mechanism whose single switch instruction shape can commit to
+	 * different DISJOINT sub-fields depending on the site itself (the {@code serial-shift}
+	 * mechanism's per-target write, keyed by the write's own address) must override this to
+	 * decode which sub-field {@code switchSite} commits to, return an {@code ownedMask}
+	 * covering ONLY that sub-field (so sibling fields this call site never touches are left
+	 * exactly as they were, not wiped to unknown -- there is no in-state to echo at a helper
+	 * call site the way {@link #computeSwitch} can), and deposit only that sub-field's bits
+	 * into {@code value} (0/unknown elsewhere). A target with no tracked fields at all (e.g.
+	 * serial-shift's CHR targets) should return {@code ownedMask = 0}: this call site is a
+	 * verified no-op on every tracked field, a stronger and more honest result than a
+	 * conservative poison.
+	 * <p>
+	 * {@code value} is FIELD-LOCAL, exactly like a {@link #computeSwitch} result --
+	 * {@link BoardBankAnalyzer} positions both it and {@code ownedMask} into the board's
+	 * absolute state bits the same way afterward.
+	 */
+	default HelperDeposit depositHelperArgument(Program program, Instruction switchSite,
+			BankState argValue, int stateMask) {
+		return new HelperDeposit(stateMask,
+			new BankState(argValue.knownMask() & stateMask, argValue.bits() & stateMask));
+	}
+
+	/**
 	 * Whether {@link #computeSwitch}'s result at a given {@code (program, instr)} pair is
 	 * independent of {@code inState} -- i.e. a pure function of the program and instruction
 	 * alone, safe for the dataflow engine to memoize per-address across worklist dequeues

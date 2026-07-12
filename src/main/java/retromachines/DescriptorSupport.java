@@ -314,10 +314,23 @@ final class DescriptorSupport {
 	 * Evaluates a computed-window {@code maps:} expression whose value does not depend
 	 * on bank state — integer literals (decimal or 0x hex), {@code last} /
 	 * {@code second_last} (byte offsets of the last / second-to-last window-sized bank
-	 * in the image), {@code + - *} with normal precedence, and parentheses. This covers
-	 * every fixed window (NROM's whole map, the fixed banks of UxROM/MMC3). State-field
-	 * identifiers throw {@link IllegalArgumentException} — resolving those is the bank
-	 * engine's job (M2+), not the loader's.
+	 * in the image), {@code + - * >>} with normal precedence, and parentheses. This
+	 * covers every fixed window (NROM's whole map, the fixed banks of UxROM/MMC3).
+	 * State-field identifiers throw {@link IllegalArgumentException} — resolving those
+	 * is the bank engine's job (M2+), not the loader's.
+	 * <p>
+	 * {@code >>} (bead {@code grm-hsv.2}, added for MMC1's 32K PRG mode, which ignores
+	 * {@code prg_bank}'s LSB: {@code PRG[(prg_bank >> 1) * 0x8000]}) is a logical
+	 * right-shift on the running {@code long} accumulator, binding at the SAME
+	 * precedence as {@code *} (left-associative, mirroring how {@code *} is folded into
+	 * {@link ExprParser#parseProduct}) — deliberately NOT C's looser-than-{@code +-}
+	 * shift precedence, since this grammar has no use case that needs the distinction
+	 * and a single, easy-to-state rule ("*, >> chain left-to-right, both bind tighter
+	 * than + -") is less surprising here than importing C's historical quirk.
+	 * Parenthesize when mixing {@code >>} with {@code *} if a specific grouping is
+	 * required. Divide ({@code /}) was considered and rejected: MMC1's actual hardware
+	 * operation is a bit shift, and {@code >>} makes that literal rather than relying on
+	 * integer-division truncation to coincidentally match.
 	 *
 	 * @param expr       the expression text from the map's {@code maps.expr}
 	 * @param imageSize  size in bytes of the physical space's image
@@ -401,10 +414,23 @@ final class DescriptorSupport {
 				if (eat('*')) {
 					v *= parseFactor();
 				}
+				else if (eatShr()) {
+					v >>>= parseFactor();
+				}
 				else {
 					return v;
 				}
 			}
+		}
+
+		/** Matches the two-character {@code >>} operator (not a bare {@code >}, which
+		 *  this grammar has no other use for and so leaves unrecognized). */
+		private boolean eatShr() {
+			if (pos + 1 < expr.length() && expr.charAt(pos) == '>' && expr.charAt(pos + 1) == '>') {
+				pos += 2;
+				return true;
+			}
+			return false;
 		}
 
 		long parseFactor() {

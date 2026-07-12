@@ -388,14 +388,17 @@ public class MapCompiler {
 	private static final Pattern MAPS_SHAPE =
 		Pattern.compile("^\\s*([A-Za-z_]\\w*)\\s*\\[(.+)]\\s*$");
 	private static final Pattern EXPR_TOKEN =
-		Pattern.compile("\\G\\s*(0[xX][0-9a-fA-F]+|\\d+|[A-Za-z_]\\w*|[-+*()])");
+		Pattern.compile("\\G\\s*(0[xX][0-9a-fA-F]+|\\d+|[A-Za-z_]\\w*|>>|[-+*()])");
 
 	/**
 	 * Validates a computed-window expression like {@code PRG[bank * 0x4000]} and returns
 	 * its structured form {@code {space, expr}}. The grammar is deliberately tiny
 	 * (vision doc §5.3): integers, declared state-field names, the keywords
-	 * {@code last}/{@code second_last}, {@code + - *}, and parentheses.
-	 * The expression is validated here but kept as a string in the .map; runtime
+	 * {@code last}/{@code second_last}, {@code + - * >>}, and parentheses. {@code >>}
+	 * (bead {@code grm-hsv.2}) is a logical right-shift binding at the same precedence
+	 * as {@code *} -- see {@code DescriptorSupport.evalExpr}'s javadoc for the full
+	 * rationale and precedence rule, which this validator must accept the same shapes
+	 * for. The expression is validated here but kept as a string in the .map; runtime
 	 * evaluation is the bank engine's job (M2+).
 	 */
 	private static Map<String, Object> parseMapsExpr(String maps, Set<String> physicalNames,
@@ -431,7 +434,7 @@ public class MapCompiler {
 				expectSyntax(!expectOperand && depth > 0, context, expr);
 				depth--;
 			}
-			else if (t.length() == 1 && "+-*".contains(t)) {
+			else if (">>".equals(t) || (t.length() == 1 && "+-*".contains(t))) {
 				expectSyntax(!expectOperand, context, expr);
 				expectOperand = true;
 			}

@@ -1,0 +1,69 @@
+BLOCK APU_IO 4000-401f overlay=false
+BLOCK PPU_REGS 2000-2007 overlay=false
+BLOCK PRG_RAM 6000-7fff overlay=false
+BLOCK RAM 0000-07ff overlay=false
+BLOCK W8000 8000-bfff overlay=false
+BLOCK W8000_M0_B0 8000-ffff overlay=true
+BLOCK W8000_M0_B1 8000-ffff overlay=true
+BLOCK W8000_M0_B2 8000-ffff overlay=true
+BLOCK W8000_M0_B3 8000-ffff overlay=true
+BLOCK W8000_M0_B4 8000-ffff overlay=true
+BLOCK W8000_M0_B5 8000-ffff overlay=true
+BLOCK W8000_M0_B6 8000-ffff overlay=true
+BLOCK W8000_M0_B7 8000-ffff overlay=true
+BLOCK W8000_M1_B0 8000-ffff overlay=true
+BLOCK W8000_M1_B1 8000-ffff overlay=true
+BLOCK W8000_M1_B2 8000-ffff overlay=true
+BLOCK W8000_M1_B3 8000-ffff overlay=true
+BLOCK W8000_M1_B4 8000-ffff overlay=true
+BLOCK W8000_M1_B5 8000-ffff overlay=true
+BLOCK W8000_M1_B6 8000-ffff overlay=true
+BLOCK W8000_M1_B7 8000-ffff overlay=true
+BLOCK W8000_M2 8000-bfff overlay=true
+BLOCK W8000_M3_B1 8000-bfff overlay=true
+BLOCK W8000_M3_B2 8000-bfff overlay=true
+BLOCK W8000_M3_B3 8000-bfff overlay=true
+BLOCK W8000_M3_B4 8000-bfff overlay=true
+BLOCK W8000_M3_B5 8000-bfff overlay=true
+BLOCK W8000_M3_B6 8000-bfff overlay=true
+BLOCK W8000_M3_B7 8000-bfff overlay=true
+BLOCK WC000 c000-ffff overlay=false
+BLOCK WC000_M2_B0 c000-ffff overlay=true
+BLOCK WC000_M2_B1 c000-ffff overlay=true
+BLOCK WC000_M2_B2 c000-ffff overlay=true
+BLOCK WC000_M2_B3 c000-ffff overlay=true
+BLOCK WC000_M2_B4 c000-ffff overlay=true
+BLOCK WC000_M2_B5 c000-ffff overlay=true
+BLOCK WC000_M2_B6 c000-ffff overlay=true
+BLOCK WC000_M2_B7 c000-ffff overlay=true
+COMMENT c002 bank -> 12 (mirroring=0,prg_mode=3,prg_bank=0)
+COMMENT c007 bank -> 44 (mirroring=0,prg_mode=3,prg_bank=2) via FUN_c200
+COMMENT c00f bank -> 44 (mirroring=0,prg_mode=3,prg_bank=2)
+COMMENT c013 bank -> 44 (mirroring=0,prg_mode=3,prg_bank=2)
+COMMENT c017 bank -> 44 (mirroring=0,prg_mode=3,prg_bank=2)
+COMMENT c01b bank -> 44 (mirroring=0,prg_mode=3,prg_bank=2)
+COMMENT c01f bank -> 44 (mirroring=0,prg_mode=3,prg_bank=2)
+COMMENT c024 bank -> 92 (mirroring=0,prg_mode=3,prg_bank=5) via FUN_c200
+COMMENT c02c bank -> 124 (mirroring=0,prg_mode=3,prg_bank=7) via FUN_c200
+COMMENT c031 bank -> 124 (mirroring=0,prg_mode=3,prg_bank=7)
+COMMENT c035 bank -> 124 (mirroring=0,prg_mode=3,prg_bank=7)
+COMMENT c039 bank -> 124 (mirroring=0,prg_mode=3,prg_bank=7)
+COMMENT c03d bank -> 124 (mirroring=0,prg_mode=3,prg_bank=7)
+COMMENT c041 bank -> 120 (mirroring=0,prg_mode=2,prg_bank=7)
+BOOKMARK Warning c04c
+BOOKMARK Warning c200
+BOOKMARK Warning c204
+BOOKMARK Warning c208
+BOOKMARK Warning c20c
+BOOKMARK Warning c210
+REF c00a -> W8000_M3_B2::8000 UNCONDITIONAL_CALL primary=true
+REF c027 -> W8000_M3_B5::8000 UNCONDITIONAL_CALL primary=true
+REF c044 -> WC000_M2_B7::c300 UNCONDITIONAL_CALL primary=true
+REF c049 -> WC000_M2_B7::c400 READ primary=true
+REF c04c -> WC000_M2_B7::c200 UNCONDITIONAL_CALL primary=true
+REF c04f -> WC000_M2_B0::c04f UNCONDITIONAL_JUMP primary=true
+REF c200 -> WC000_M2_B7::e000 DATA primary=true
+REF c204 -> WC000_M2_B7::e000 DATA primary=true
+REF c208 -> WC000_M2_B7::e000 DATA primary=true
+REF c20c -> WC000_M2_B7::e000 DATA primary=true
+REF c210 -> WC000_M2_B7::e000 DATA primary=true

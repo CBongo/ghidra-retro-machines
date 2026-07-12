@@ -94,11 +94,19 @@ or `maps` (computed).
 **Computed windows** (`maps`) show a slice of a physical space:
 `"maps": { "space": "PRG", "expr": "bank * 0x4000" }`. The expression was validated by
 MapCompiler at build time (grammar: integers, state-field names, `last`/`second_last`,
-`+ - *`, parentheses — see `docs/SCHEMA.md`) but is passed through as a
+`+ - * >>`, parentheses — see `docs/SCHEMA.md`) but is passed through as a
 string; the bank engine evaluates it at analysis time. A computed window may carry a
 window-level `on_write` (typically `"mechanism"`: stores into the range are bank-switch
 events, not memory writes). The YAML `size:` alternative to `end:` is resolved at
 compile time — the map always carries `end`.
+
+`>>` (added bead `grm-hsv.2`, for MMC1's 32K PRG mode, which ignores `prg_bank`'s LSB:
+`(prg_bank >> 1) * 0x8000`) is a logical right-shift on the running `long` accumulator,
+binding at the SAME precedence as `*` (left-associative) — deliberately not C's
+looser-than-`+-` shift precedence, since this grammar has no case needing the
+distinction and one rule ("`*`, `>>` chain left-to-right, both bind tighter than `+ -`")
+is simpler to state than importing C's historical quirk. Parenthesize explicitly when a
+specific grouping with `*` matters.
 
 **Enumerated windows** (`occupants`): each occupant may carry:
 
@@ -224,7 +232,11 @@ optional — a bankless board like NES NROM has none). When present:
   backward/forward walk and its bit-7 resolution shortcut (an `LSR A`-preceded store's
   bit 7 is known clear by construction, since `LSR` always shifts in a 0, so it never
   needs — and must not use — the generic backward value scanner, which does not model
-  shifts bit-wise).
+  shifts bit-wise). A JSR'd switch-helper wrapping a chain (the dominant commercial
+  idiom — `LDA #bank / JSR SwitchBank`) deposits the call-site argument through the
+  helper's own commit-site target's `targets` field list, not across the whole
+  mechanism window (`BankSwitchStrategy.depositHelperArgument`; a helper committing to
+  an unconfigured CHR target is a verified no-op at its call sites).
 - `states[]` — the enumerated truth table, present only for boards with
   enumerated-occupant windows: one row per reachable state, each row being `value` (the
   packed state — computed by MapCompiler from the YAML row's per-field values) plus one

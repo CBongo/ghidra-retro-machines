@@ -57,7 +57,10 @@ public class VerifyBankTest extends GhidraScript {
 		dump();
 
 		String name = currentProgram.getName();
-		if (name.contains("nesserialtest")) {
+		if (name.contains("nesmmc1test")) {
+			checkNesMmc1test();
+		}
+		else if (name.contains("nesserialtest")) {
 			checkNesSerialtest();
 		}
 		else if (name.contains("nesmmc3test")) {
@@ -654,6 +657,128 @@ public class VerifyBankTest extends GhidraScript {
 			"instruction exists at W8000_M3_B5::8000");
 		criterion("F5:W8000_M3_B6_8000", hasInstructionAt("W8000_M3_B6", 0x8000),
 			"instruction exists at W8000_M3_B6::8000");
+	}
+
+	// ------------------------------------------------------------------
+	// nesmmc1test.nes criteria (REAL machines/nes-mmc1.yaml board, bead grm-hsv.2)
+	// ------------------------------------------------------------------
+	//
+	// DESIGN NOTE (bug found by this fixture, since fixed): helper call-site argument
+	// recovery (BoardBankAnalyzer.recoverCallArgument) originally positioned the
+	// recovered register value with the MECHANISM-wide (effectMask, lsb) -- correct only
+	// for single-field mechanisms (register-write, memory-latch), wrong for serial-shift,
+	// whose ONE mechanism spans multiple disjoint targets (mirroring+prg_mode via target
+	// 0, prg_bank via target 3): LDA #$02 / JSR SwitchBank deposited 2 at the window's
+	// bit 0 (mirroring=2) instead of through prg_bank's field list. The fix gives the
+	// STRATEGY ownership of the deposit: BankSwitchStrategy.depositHelperArgument
+	// (default = historical verbatim-byte behavior, owning the whole field-local width)
+	// takes the helper's own recognized switch-site instruction -- HelperModel now
+	// carries the matched strategy and that site's address -- and SerialShift's override
+	// decodes the site's target (write-5 STA address bits 14:13, or a counted loop's STA
+	// via the BNE matcher) and deposits only through that target's TargetField list,
+	// returning an ownedMask so unowned sibling fields are left untouched (not poisoned;
+	// a CHR-target site owns nothing and the call is treated as a verified no-op).
+	// Helper-call EOL comments render from the mechanism-window post-call state (in-state
+	// echo narrowed to the helper's effectMask, like a direct computeSwitch result), while
+	// the WARNING decision still keys off the call's own recovered effect -- M9's honest
+	// warning is unchanged.
+
+	private void checkNesMmc1test() {
+		// Addresses per tools/banktest/mknesbanktest.py's make_prg_mmc1() label dump:
+		// switch_bank=$C200, mode2_target=$C300, reset=$C000, f_reset=$C002,
+		// call1_imm=$C005, call1_jsr=$C007, call1_use_jsr=$C00A, chr_commit=$C01F,
+		// call2_imm=$C022, call2_jsr=$C024, call2_use_jsr=$C027, call3_imm=$C02A,
+		// call3_jsr=$C02C, mode_commit=$C041, mode2_jsr=$C044, unresolvable_load=$C049,
+		// unresolvable_jsr=$C04C, idle=$C04F, rti=$C052.
+
+		// M1: the reset dance (LDA #$80 / STA $8000) at $C002 forces prg_mode=3 known --
+		// idempotent re-assertion of the seeded home mode, comment must show it known.
+		String c = eol(0xC002);
+		criterion("M1", c.contains("prg_mode=3") && !c.contains("?"),
+			"reset dance -> prg_mode=3 known at c002: \"" + c + "\"");
+
+		// M2: call site 1's JSR $C200 (SwitchBank) at $C007 -- the LOAD-BEARING check for
+		// this bead: findHelpers/recoverCallArgument must recognize $C200 as a bank-switch
+		// helper function (argReg='A', recovered from the helper's own chain-write-1
+		// register) and resolve THIS call's argument via a backward scan from the JSR
+		// itself (LDA #$02 immediately precedes it) -- fully known, no "?", carrying a
+		// "via <helper>" annotation (same shape as banktest3's B1 criterion).
+		c = eol(0xC007);
+		criterion("M2", c.contains("bank -> ") && c.contains("prg_bank=2") &&
+			!c.contains("?") && c.contains("via"),
+			"helper call site 1 resolves prg_bank=2 via SwitchBank, no '?', at c007: \"" +
+				c + "\"");
+
+		// M3: the JSR $8000 right after it, at $C00A, retargets to W8000_M3_B2 (mode 3 is
+		// this board's home mode; bank 2 is non-home -> the _M3_B2 overlay).
+		Reference r = findOverlayRef(0xC00A, "W8000_M3_B2", 0x8000);
+		criterion("M3", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $8000 (prg_bank=2) retargeted to W8000_M3_B2 overlay, primary: " +
+				describe(r));
+
+		// M4: call site 2's JSR $C200 at $C024 -- issued AFTER the CHR0 chain to $A000
+		// (target 1, no `targets` entry) sandwiched between the two PRG switches --
+		// resolves prg_bank=5 via the SAME helper, proving prg_bank survived the
+		// discarded CHR write (SerialShiftBankSwitchStrategy's no-poison contract).
+		c = eol(0xC024);
+		criterion("M4", c.contains("bank -> ") && c.contains("prg_bank=5") &&
+			!c.contains("?") && c.contains("via"),
+			"helper call site 2 resolves prg_bank=5 via SwitchBank (survived the CHR " +
+				"chain), no '?', at c024: \"" + c + "\"");
+
+		// M5: the JSR $8000 after it, at $C027, retargets to W8000_M3_B5.
+		r = findOverlayRef(0xC027, "W8000_M3_B5", 0x8000);
+		criterion("M5", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $8000 (prg_bank=5) retargeted to W8000_M3_B5 overlay, primary: " +
+				describe(r));
+
+		// M6: call site 3's JSR $C200 at $C02C resolves prg_bank=7 via the same helper --
+		// this is the commit that stages prg_bank=7 for the mode-2 transition below (bank
+		// 7 == `last`, matching WC000's fixed-last home content, so the transition doesn't
+		// move the ground out from under the running code -- see the fixture's module
+		// doc). Unlike M2/M5 there is no follow-up JSR $8000 (bank 7 IS this running
+		// code, not a separate routine).
+		c = eol(0xC02C);
+		criterion("M6", c.contains("bank -> ") && c.contains("prg_bank=7") &&
+			!c.contains("?") && c.contains("via"),
+			"helper call site 3 resolves prg_bank=7 via SwitchBank, no '?', at c02c: \"" +
+				c + "\"");
+
+		// M7: the mode-2 transition chain's commit (5th write of the inline Control chain
+		// to $8000) at $C041 shows prg_mode=2 (fix-first) fully known -- mirroring stays
+		// 0, prg_bank stays 7 (survived every write above), so the WHOLE state is known,
+		// no '?'.
+		c = eol(0xC041);
+		criterion("M7", c.contains("prg_mode=2") && !c.contains("?"),
+			"mode-2 transition commits prg_mode=2, fully known, at c041: \"" + c + "\"");
+
+		// M8: the JSR $C300 right after the transition, at $C044, retargets to
+		// WC000_M2_B7 -- WC000 just became the switchable window (mode 2), at the
+		// current prg_bank=7; this is the "post-switch control flow survives" check: the
+		// JSR instruction itself sits in the SAME physical bytes (bank 7) before and
+		// after the flip, only the symbolic window name changes.
+		r = findOverlayRef(0xC044, "WC000_M2_B7", 0xC300);
+		criterion("M8", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $C300 after the mode-2 transition retargeted to WC000_M2_B7 overlay, " +
+				"primary: " + describe(r));
+
+		// M9: call site 4's JSR $C200 at $C04C -- an opaque indexed load (LDX #$00 / LDA
+		// $C400,X) feeds the same helper's argReg='A'; recoverCallArgument's backward
+		// scan cannot resolve an indexed load (same limitation nesserialtest's
+		// F-unresolvable exercises for an inline chain's seed) -> honest WARNING
+		// bookmark at the JSR itself, no false "bank ->" claim. This is the Metroid-
+		// mailbox analog for the HELPER call-site value-recovery path specifically.
+		criterion("M9", hasWarningBookmark(0xC04C) && !eol(0xC04C).contains("bank ->"),
+			"unresolvable helper call warns, no false comment, at c04c: warning=" +
+				hasWarningBookmark(0xC04C) + " comment=\"" + eol(0xC04C) + "\"");
+
+		// M10: disassembly sanity -- the JSR-target overlay instructions actually exist.
+		criterion("M10:W8000_M3_B2_8000", hasInstructionAt("W8000_M3_B2", 0x8000),
+			"instruction exists at W8000_M3_B2::8000");
+		criterion("M10:W8000_M3_B5_8000", hasInstructionAt("W8000_M3_B5", 0x8000),
+			"instruction exists at W8000_M3_B5::8000");
+		criterion("M10:WC000_M2_B7_C300", hasInstructionAt("WC000_M2_B7", 0xC300),
+			"instruction exists at WC000_M2_B7::C300");
 	}
 
 	private static String describeBlock(MemoryBlock b) {

@@ -315,7 +315,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 			return inState;
 		}
 
-		int targetIdx = (int) ((offset >>> 13) & 0x3);
+		int targetIdx = targetIndex(offset);
 		List<TargetField> fields = targets.get(targetIdx);
 		if (fields == null) {
 			// CHR0/CHR1 (or any un-configured target): recognized, deliberately discarded
@@ -325,9 +325,79 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 
 		BankState preChainByte = StoredValueScanner.resolveStoredValue(program, chain.chainStart(),
 			reg, inState, 0xFF, hooks);
-		BankState result = inState;
+		return depositFields(inState, fields, preChainByte);
+	}
+
+	/**
+	 * Converts a helper call site's recovered argument byte into this mechanism's
+	 * field-local deposit: serial-shift is the one shipped mechanism whose single switch
+	 * instruction shape (the unrolled chain's write-5 STA, or a counted loop's closing BNE)
+	 * can commit to different DISJOINT target field lists depending on the site's OWN
+	 * address -- so unlike the interface default (which owns and deposits across the WHOLE
+	 * field-local width, correct only for a single-field mechanism), this decodes
+	 * {@code switchSite}'s target exactly as {@link #computeSwitch}/{@link #commitCountedLoop}
+	 * do and returns an {@code ownedMask} covering ONLY that target's own fields: a helper
+	 * call through the PRG target must not claim ownership of (and thereby wipe)
+	 * {@code mirroring}/{@code prg_mode}'s already-known bits, which it never touches --
+	 * there is no in-state to echo at a helper call site the way a direct dataflow switch
+	 * has, so "don't own it" (leave the caller's fold alone) is the only honest way to avoid
+	 * poisoning sibling fields. A target with no configured fields (CHR) owns nothing at all
+	 * ({@code ownedMask = 0}) -- the same no-poison-by-omission contract as
+	 * {@link #computeSwitch}'s CHR echo, expressed as "touches nothing" instead of "echoes
+	 * inState" since there is no inState to echo here.
+	 */
+	@Override
+	public HelperDeposit depositHelperArgument(Program program, Instruction switchSite,
+			BankState argValue, int stateMask) {
+		Integer targetIdx = targetIndexOf(program, switchSite);
+		if (targetIdx == null) {
+			// switchSite isn't a shape this strategy itself recognizes as a commit -- can't
+			// happen for a genuine HelperModel.switchSite (it was recorded because THIS
+			// strategy matched it), but stay conservative: own nothing rather than guess.
+			return new HelperDeposit(0, new BankState(0, 0));
+		}
+		List<TargetField> fields = targets.get(targetIdx);
+		if (fields == null) {
+			// CHR target: owns nothing -- see method javadoc.
+			return new HelperDeposit(0, new BankState(0, 0));
+		}
+		int owned = 0;
 		for (TargetField tf : fields) {
-			BankState fieldValue = extractByteField(preChainByte, tf.bits(), tf.shift());
+			owned |= tf.pos().mask();
+		}
+		return new HelperDeposit(owned, depositFields(new BankState(0, 0), fields, argValue));
+	}
+
+	/** The reassembled commit value's target register index (write-5's/the loop STA's
+	 *  address bits 14:13 -- Control/CHR0/CHR1/PRG). */
+	private static int targetIndex(long offset) {
+		return (int) ((offset >>> 13) & 0x3);
+	}
+
+	/** {@code targetIndex}, but starting from a switch-site INSTRUCTION rather than a known
+	 *  write offset: recognizes either shape this strategy claims as a switch site (an
+	 *  in-range write -- any position of a chain, though only write-5's address is
+	 *  meaningful when several share one target as they do on every shipped chain -- or a
+	 *  counted loop's closing BNE), or {@code null} if {@code instr} is neither. */
+	private Integer targetIndexOf(Program program, Instruction instr) {
+		Long offset = writesInRange(instr);
+		if (offset != null) {
+			return targetIndex(offset);
+		}
+		CountedLoop loop = matchCountedLoopBranch(program, instr);
+		return loop == null ? null : targetIndex(loop.staOffset());
+	}
+
+	/** Deposits each of {@code fields}' bits (sliced out of {@code byteValue} at its own
+	 *  {@code shift}/{@code bits}) into {@code base} at the field's own position -- the
+	 *  shared core of a chain commit, a counted-loop commit, and a helper call-site
+	 *  deposit; only what {@code base} is (the current in-state, or "nothing known" when
+	 *  there is none) differs between callers. */
+	private static BankState depositFields(BankState base, List<TargetField> fields,
+			BankState byteValue) {
+		BankState result = base;
+		for (TargetField tf : fields) {
+			BankState fieldValue = extractByteField(byteValue, tf.bits(), tf.shift());
 			result = setFieldFromByte(result, tf.pos(), fieldValue);
 		}
 		return result;
@@ -460,18 +530,14 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 			return poisonAll(inState);
 		}
 
-		int targetIdx = (int) ((loop.staOffset() >>> 13) & 0x3);
+		int targetIdx = targetIndex(loop.staOffset());
 		List<TargetField> fields = targets.get(targetIdx);
 		if (fields == null) {
 			// CHR target: recognized, deliberately discarded -- same no-poison contract
 			// as the unrolled path.
 			return inState;
 		}
-		BankState result = inState;
-		for (TargetField tf : fields) {
-			result = setFieldFromByte(result, tf.pos(), extractByteField(seed, tf.bits(), tf.shift()));
-		}
-		return result;
+		return depositFields(inState, fields, seed);
 	}
 
 	/** Whether {@code staInstr} is the body store of a counted loop the branch matcher
