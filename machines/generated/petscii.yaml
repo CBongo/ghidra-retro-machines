@@ -1,0 +1,167 @@
+# PETSCII byte -> display-string map (bead grm-1.4.1).
+#
+# Source of truth compiled by tools/gdtbuilder/src/main/java/gdtbuilder/PetsciiCompiler.java
+# into the runtime artifact data/petscii.map (JSON, gitignored, never committed), consumed
+# by src/main/java/retromachines/PetsciiMapper.java. Feeds the future C64 BASIC
+# detokenizing analyzer (grm-odt.1) and PETSCII charset registration (parent bead grm-1.4).
+#
+# SCOPE: this file maps PETSCII byte values (what's in memory / what the keyboard sends) to
+# a display string. VIC-II *screen codes* (what's poked into screen RAM, a DIFFERENT
+# numbering) are explicitly OUT OF SCOPE and not represented here at all.
+#
+# ---------------------------------------------------------------------------------------
+# FROZEN CONVENTION -- do not rename/reshape entries without updating every consumer and
+# regenerating golden dumps. The bracket-escape names below are VICE petcat's own SHORT
+# ctrl1[]/ctrl2[] name tables, transcribed verbatim byte-for-byte, plus petcat's own
+# lowercase-2-hex-digit "{$xx}" fallback convention for every byte petcat itself does not
+# name. See docs/petscii.md for the full policy writeup (variant model, ASCII-divergence
+# transliteration policy, graphics-range hex-fallback rationale).
+#
+# Verified against the canonical VICE source -- the official GitHub mirror of the upstream
+# SourceForge VICE project (git history preserved, not a random fork):
+#   repo:   https://github.com/VICE-Team/svn-mirror
+#   path:   vice/src/tools/petcat/petcat.c
+#   commit: dd98b495dd4b49612922fdba20ad71304361cd1f
+#   fetched: 2026-07-11
+# The scout's archived table (petscii-escapes.md, pulled through a third-party mirror) had
+# several errors corrected here: petcat's ctrl1[] filler names for otherwise-unnamed control
+# bytes (e.g. 0x01 "CTRL-A", 0x03 "stop", 0x0C "CTRL-L") are NOT blank as the scout's archive
+# claimed -- only 0x00 is truly blank. ctrl2[]'s function-key names are lowercase ("f1" not
+# "F1"). See the PetsciiCompiler.java header / grm-1.4.1 report for the full diff.
+# ---------------------------------------------------------------------------------------
+
+schema: 1
+
+provenance:
+  source: "VICE petcat.c ctrl1[]/ctrl2[] short-name tables (verbatim) + petcat's own {$xx} hex fallback"
+  canonical_repo: "https://github.com/VICE-Team/svn-mirror"
+  canonical_path: "vice/src/tools/petcat/petcat.c"
+  verified_commit: "dd98b495dd4b49612922fdba20ad71304361cd1f"
+  verified_date: "2026-07-11"
+
+# Every byte not covered by a rule below renders as "{$xx}" -- lowercase, 2 hex digits,
+# zero-padded -- petcat's own fallback format string. This is the default for: the 6
+# blank ctrl1/ctrl2 entries (0x00, 0x80, 0x82, 0x83, 0x84, 0x8F), 0x0A (see `literals`
+# note), 0x60 and 0x61-0x7F (ambiguous graphics/letter range -- see docs/petscii.md), and
+# the entire 0xA0-0xFF graphics half of the table (0xC0-0xDF/0xE0-0xFE mirror ranges
+# included) -- petcat names 0xA0-0xBF via its cbmkeys[] KEY-COMBO table (e.g. "SHIFT-K"),
+# which describes an INPUT gesture, not the glyph shown on screen, so this project
+# deliberately does not reuse those names (see the class javadoc / docs/petscii.md).
+default_fallback: hex
+
+# Control-code bracket names, byte -> petcat ctrl1[] (0x00-0x1F) / ctrl2[] (0x80-0x9F)
+# SHORT-table entry, rendered as "{name}". Transcribed verbatim; only non-blank entries
+# appear (0x00 and the 5 blank ctrl2 slots fall through to `default_fallback`), and the two
+# ctrl1 entries whose petcat value is a literal "\n" (0x0A, 0x0D) are handled under
+# `literals` below instead, since "\n" is not itself a bracket-escape mnemonic.
+named_controls:
+  # ctrl1[] -- 0x00-0x1F
+  - { byte: 0x01, name: "CTRL-A" }
+  - { byte: 0x02, name: "CTRL-B" }
+  - { byte: 0x03, name: "stop" }
+  - { byte: 0x04, name: "CTRL-D" }
+  - { byte: 0x05, name: "wht" }
+  - { byte: 0x06, name: "CTRL-F" }
+  - { byte: 0x07, name: "CTRL-G" }
+  - { byte: 0x08, name: "dish" }
+  - { byte: 0x09, name: "ensh" }
+  - { byte: 0x0B, name: "CTRL-K" }
+  - { byte: 0x0C, name: "CTRL-L" }
+  - { byte: 0x0E, name: "swlc" }
+  - { byte: 0x0F, name: "CTRL-O" }
+  - { byte: 0x10, name: "CTRL-P" }
+  - { byte: 0x11, name: "down" }
+  - { byte: 0x12, name: "rvon" }
+  - { byte: 0x13, name: "home" }
+  - { byte: 0x14, name: "del" }
+  - { byte: 0x15, name: "CTRL-U" }
+  - { byte: 0x16, name: "CTRL-V" }
+  - { byte: 0x17, name: "CTRL-W" }
+  - { byte: 0x18, name: "CTRL-X" }
+  - { byte: 0x19, name: "CTRL-Y" }
+  - { byte: 0x1A, name: "CTRL-Z" }
+  - { byte: 0x1B, name: "esc" }
+  - { byte: 0x1C, name: "red" }
+  - { byte: 0x1D, name: "rght" }
+  - { byte: 0x1E, name: "grn" }
+  - { byte: 0x1F, name: "blu" }
+  # ctrl2[] -- 0x80-0x9F
+  - { byte: 0x81, name: "orng" }
+  - { byte: 0x85, name: "f1" }
+  - { byte: 0x86, name: "f3" }
+  - { byte: 0x87, name: "f5" }
+  - { byte: 0x88, name: "f7" }
+  - { byte: 0x89, name: "f2" }
+  - { byte: 0x8A, name: "f4" }
+  - { byte: 0x8B, name: "f6" }
+  - { byte: 0x8C, name: "f8" }
+  - { byte: 0x8D, name: "sret" }
+  - { byte: 0x8E, name: "swuc" }
+  - { byte: 0x90, name: "blk" }
+  - { byte: 0x91, name: "up" }
+  - { byte: 0x92, name: "rvof" }
+  - { byte: 0x93, name: "clr" }
+  - { byte: 0x94, name: "inst" }
+  - { byte: 0x95, name: "brn" }
+  - { byte: 0x96, name: "lred" }
+  - { byte: 0x97, name: "gry1" }
+  - { byte: 0x98, name: "gry2" }
+  - { byte: 0x99, name: "lgrn" }
+  - { byte: 0x9A, name: "lblu" }
+  - { byte: 0x9B, name: "gry3" }
+  - { byte: 0x9C, name: "pur" }
+  - { byte: 0x9D, name: "left" }
+  - { byte: 0x9E, name: "yel" }
+  - { byte: 0x9F, name: "cyn" }
+
+# Bytes that render as a literal display character (not a bracket escape). Same in both
+# variants -- these six/seven bytes sit outside the $41-$5A letter range that differs by
+# variant (see `letter_range` below).
+literals:
+  - byte: 0x0D
+    char: "\n"
+    note: >
+      CBM RETURN. petcat is the one place in its whole conversion switch that is NOT
+      gated by its `ctrls` flag -- 0x0D always becomes a literal line break, never a
+      "{...}" escape, because it is how every BASIC line in a listing actually ends.
+  - byte: 0x40
+    char: "@"
+    note: "Same codepoint as ASCII; listed for completeness, not a divergence."
+  - byte: 0x5B
+    char: "["
+    note: "Same codepoint as ASCII; listed for completeness, not a divergence."
+  - byte: 0x5C
+    char: "\\"
+    note: >
+      PETSCII/ASCII DIVERGENCE: this byte displays as the British pound sign (£) on real
+      C64 hardware, not backslash. ASCII has no £, so this project follows petcat's own
+      transliteration verbatim and renders it as backslash.
+  - byte: 0x5D
+    char: "]"
+    note: "Same codepoint as ASCII; listed for completeness, not a divergence."
+  - byte: 0x5E
+    char: "^"
+    note: >
+      PETSCII/ASCII DIVERGENCE: this byte displays as an up-arrow glyph, not caret.
+      ASCII-safe transliteration, following petcat verbatim.
+  - byte: 0x5F
+    char: "_"
+    note: >
+      PETSCII/ASCII DIVERGENCE: this byte displays as a left-arrow glyph, not underscore.
+      ASCII-safe transliteration, following petcat verbatim.
+
+# Identity ranges: the PETSCII byte value equals the ASCII codepoint of the glyph shown
+# (digits, space, punctuation) -- same in both variants.
+identity_ranges:
+  - { start: 0x20, end: 0x3F }
+
+# THE range whose display differs between variants (the only one -- see docs/petscii.md
+# "Variant model"): unshifted/graphics shows these 26 codes as uppercase letters; shifted/
+# lowercase shows the SAME 26 codes as lowercase letters. Encoded as one range with a
+# per-variant case flag rather than 26 x 2 explicit entries, so the source file states the
+# rule once instead of duplicating the alphabet.
+letter_range:
+  start: 0x41
+  end: 0x5A
+  unshifted_graphics_case: upper
+  shifted_lowercase_case: lower

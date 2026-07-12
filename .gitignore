@@ -9,6 +9,9 @@ dist/
 # Generated runtime map files (JSON, see docs/MAP_FORMAT.md) — build output, never committed
 data/machines/*.map
 
+# Generated PETSCII display-string map (JSON, see docs/petscii.md) — build output, never committed
+data/petscii.map
+
 # Compiled sleigh languages — build output of the sleighCompile task (from the committed
 # .slaspec/.sinc sources); regenerated on every build, never committed
 data/languages/*.sla

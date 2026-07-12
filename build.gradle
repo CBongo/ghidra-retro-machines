@@ -95,6 +95,17 @@ sourceSets {
 			srcDirs = ['tools/bitalgebra']
 		}
 	}
+	// Exhaustive check that PetsciiMapper (src/main/java/retromachines) resolves all
+	// 256 bytes x 2 variants correctly (bead grm-1.4.1). Unlike bitAlgebraCheck, this
+	// exercises the real production class (via its file-based, non-Ghidra-runtime
+	// factory -- see PetsciiMapper.loadFromMapFile), so its classpath includes `main`'s
+	// compiled output; see the verifyPetsciiMapper task below for why no Ghidra jars
+	// are needed even though PetsciiMapper.java itself imports Ghidra types for load().
+	petsciiCheck {
+		java {
+			srcDirs = ['tools/petscii']
+		}
+	}
 }
 
 dependencies {
@@ -109,6 +120,19 @@ dependencies {
 
 	// YAML parsing for the builder only; never shipped (see note above).
 	gdtBuilderImplementation 'org.yaml:snakeyaml:2.2'
+
+	// petsciiCheck (bead grm-1.4.1) exercises the real retromachines.PetsciiMapper class
+	// (via its file-based, non-Ghidra-runtime factory), so it needs `main`'s compiled
+	// output on its classpath. It deliberately does NOT get the full Ghidra jar fileTree
+	// gdtBuilder gets above: PetsciiMapper.java's only Ghidra-touching method (load(),
+	// which calls Application.findDataFileInAnyModule) is never invoked by the verifier,
+	// and the JVM resolves/verifies each method's bytecode lazily on first call, so that
+	// method's Ghidra types never need to be resolved here -- only gson (used by
+	// PetsciiMapper's JSON parsing, invoked from the file-based path the verifier DOES
+	// use) is required at runtime.
+	petsciiCheckImplementation sourceSets.main.output
+	petsciiCheckImplementation fileTree(dir: ghidraInstallDir + '/Ghidra/Framework/Generic/lib',
+		include: 'gson-*.jar')
 }
 
 // Data-driven per-machine task generation (bead grm-9ux): one buildXxxGdt/buildXxxMap
@@ -167,6 +191,26 @@ task buildMap {
 	dependsOn machineMapTasks
 }
 
+// PETSCII byte -> display-string map (bead grm-1.4.1). A small, separate compiler from
+// MapCompiler on purpose: MapCompiler builds descriptor-schema-2 machine descriptors and
+// hard-validates that schema (physical spaces, banking state, windows...), none of which
+// applies to petscii.yaml's much simpler byte-table schema. See
+// machines/generated/petscii.yaml and docs/petscii.md for the frozen convention.
+task buildPetsciiMap(type: JavaExec) {
+	group = "Ghidra Retro Machines"
+	description = "Generate data/petscii.map from machines/generated/petscii.yaml (build artifact; never committed)"
+	dependsOn 'compileGdtBuilderJava'
+	classpath = sourceSets.gdtBuilder.runtimeClasspath
+	mainClass = 'gdtbuilder.PetsciiCompiler'
+	doFirst {
+		file('data').mkdirs()
+	}
+	args = [
+		file('machines/generated/petscii.yaml').absolutePath,
+		file('data/petscii.map').absolutePath
+	]
+}
+
 task validateSketches {
 	group = "Ghidra Retro Machines"
 	description = "Compile every machines/sketches/*.yaml through MapCompiler to prove the schema can express it (grm-os4 acceptance; outputs under build/sketches, never shipped)"
@@ -190,6 +234,15 @@ task verifyBitAlgebra(type: JavaExec) {
 	dependsOn 'compileBitAlgebraCheckJava'
 	classpath = sourceSets.bitAlgebraCheck.runtimeClasspath
 	mainClass = 'BitAlgebraEquivalence'
+}
+
+task verifyPetsciiMapper(type: JavaExec) {
+	group = "Ghidra Retro Machines"
+	description = "Exhaustively prove retromachines.PetsciiMapper resolves all 256 bytes x 2 variants against data/petscii.map (bead grm-1.4.1; runs outside a Ghidra runtime -- see build.gradle's petsciiCheckImplementation comment)"
+	dependsOn 'compilePetsciiCheckJava', 'buildPetsciiMap'
+	classpath = sourceSets.petsciiCheck.runtimeClasspath
+	mainClass = 'PetsciiMapperVerify'
+	args = [file('data/petscii.map').absolutePath]
 }
 
 //----------------------------------------------------------------------------------
