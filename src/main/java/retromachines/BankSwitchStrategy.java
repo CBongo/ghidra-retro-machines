@@ -115,9 +115,20 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * {@code value} is FIELD-LOCAL, exactly like a {@link #computeSwitch} result --
 	 * {@link BoardBankAnalyzer} positions both it and {@code ownedMask} into the board's
 	 * absolute state bits the same way afterward.
+	 * <p>
+	 * {@code inState} is the caller's tracked mechanism state AT THE CALL SITE (the state
+	 * the call executes under, i.e. after any direct switch at the call instruction itself),
+	 * already narrowed to this mechanism's FIELD-LOCAL {@code [0, width)} space -- the same
+	 * coordinate space as {@code argValue} and the returned {@code value} -- by
+	 * {@link BoardBankAnalyzer#recoverCallArgument}. It exists for mechanisms whose routing
+	 * (which sub-field a call's argument ultimately commits to) is decided by tracked STATE
+	 * rather than by the switch site's own address (contrast {@code serial-shift}, whose
+	 * routing is address-keyed and therefore ignores this parameter -- see
+	 * {@code SerialShiftBankSwitchStrategy}'s override). The default ignores it, since the
+	 * default's single-field-spans-the-whole-mask behavior needs no routing decision at all.
 	 */
 	default HelperDeposit depositHelperArgument(Program program, Instruction switchSite,
-			BankState argValue, int stateMask) {
+			BankState argValue, BankState inState, int stateMask) {
 		return new HelperDeposit(stateMask,
 			new BankState(argValue.knownMask() & stateMask, argValue.bits() & stateMask));
 	}

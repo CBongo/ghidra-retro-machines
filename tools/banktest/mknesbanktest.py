@@ -173,32 +173,37 @@ Routine targets (all RTS):
   PRG 0x6000 (bank 3 offset 0 = WA000_B3::A000)
 Vectors: RESET -> $E000, NMI/IRQ -> $E032.
 
-nesmmc3test2.nes (bead grm-6a7.2): function-level bank-state requires-on-entry/
-call-site-violation fixture, same board (machines/nes-mmc3.yaml). Deliberately does NOT
-touch nesmmc3test.nes (kept byte-for-byte to avoid golden churn on an unrelated bead).
-Exercises a bare DATA-write-only helper H -- STA $8001 with no accompanying select write
-of its own, the shape a real MMC3 driver commonly uses when several data writes share one
-earlier select (current findHelpers/HelperModel behavior for this shape: H is classified
-a helper with constState=null, argReg='A' (from H's own STA $8001), effectMask/lsb the
-select-data mechanism's full field width, switchSite = H's STA $8001; call-site recovery
-falls to depositHelperArgument's DEFAULT implementation -- SelectDataBankSwitchStrategy
-does not override it -- which deposits the recovered data byte across the WHOLE
-select+prg_mode+r6+r7 field width rather than routing it to the one target register the
-in-scope select actually picks; a real gap this bead's summary/warning layer is
-independent of and does not fix, see the bead report). Two callers JSR the SAME H:
+nesmmc3test2.nes (bead grm-6a7.2, extended by grm-snu): function-level bank-state
+requires-on-entry/call-site-violation fixture, same board (machines/nes-mmc3.yaml).
+Deliberately does NOT touch nesmmc3test.nes (kept byte-for-byte to avoid golden churn on
+an unrelated bead). Exercises a bare DATA-write-only helper H -- STA $8001 with no
+accompanying select write of its own, the shape a real MMC3 driver commonly uses when
+several data writes share one earlier select (current findHelpers/HelperModel behavior
+for this shape: H is classified a helper with constState=null, argReg='A' (from H's own
+STA $8001), effectMask/lsb the select-data mechanism's full field width, switchSite = H's
+STA $8001). Call-site recovery routes through
+SelectDataBankSwitchStrategy#depositHelperArgument's OWN override (bead grm-snu): the
+recovered data byte is routed to whichever target register the CALLER's own tracked
+select value picks at the call site -- select=6/7 (R6/R7) deposit only that one target
+field, an untracked select (CHR 0-5) is a verified no-op (no comment, no warning), and an
+unknown select honestly poisons every configured target field (R6+R7) without touching
+select/prg_mode, which a data write can never reach. Four callers JSR the SAME H:
 
 RESET ($E000, seed select=0/prg_mode=0/r6=0/r7=1):
   E000  20 00 E1     JSR $E100       ; CallerA
   E003  20 20 E1     JSR $E120       ; CallerB
-  E006  4C 06 E0     JMP $E006       ; idle loop
-  E009  40           RTI             ; NMI/IRQ handler
+  E006  20 60 E1     JSR $E160       ; CallerC
+  E009  20 80 E1     JSR $E180       ; CallerD
+  E00C  4C 0C E0     JMP $E00C       ; idle loop
+  E00F  40           RTI             ; NMI/IRQ handler
 
-CallerA ($E100) -- establishes select itself before calling H:
+CallerA ($E100) -- establishes select=6 (R6) itself before calling H:
   E100  A9 06        LDA #$06        ; select R6
   E102  8D 00 80     STA $8000       ; select=6, prg_mode=0 known
   E105  A9 02        LDA #$02        ; data byte = 2
   E107  20 40 E1     JSR $E140       ; call H -- select known here -> requiresOnEntry(H)
-                      satisfied -> NO WARNING at E107
+                      satisfied -> NO WARNING at E107; routed deposit: r6=2, select=6 and
+                      prg_mode=0 UNTOUCHED (fully known, no '?') -- bead grm-snu
   E10A  60           RTS
 
 CallerB ($E120) -- select genuinely unknown at its call to H:
@@ -209,8 +214,31 @@ CallerB ($E120) -- select genuinely unknown at its call to H:
   E126  A9 03        LDA #$03        ; data byte = 3 (itself known -- irrelevant; H's
                       dispatch needs SELECT known, not the data byte)
   E128  20 40 E1     JSR $E140       ; call H -- select unknown here -> requiresOnEntry(H)
-                      VIOLATED -> WARNING bookmark at E128
+                      VIOLATED -> WARNING bookmark at E128; routed deposit honestly
+                      poisons r6+r7 ONLY (the call could have hit either), leaving
+                      select/prg_mode as they already were (still unknown here, but never
+                      claimed by this call) -- bead grm-snu
   E12B  60           RTS
+
+CallerC ($E160) -- establishes select=0 (an untracked CHR register) before calling H:
+  E160  A9 00        LDA #$00        ; select R0 (CHR, untracked)
+  E162  8D 00 80     STA $8000       ; select=0, prg_mode=0 known
+  E165  A9 04        LDA #$04        ; data byte = 4 (irrelevant -- CHR target is
+                      untracked, so this call is a verified no-op)
+  E167  20 40 E1     JSR $E140       ; call H -- select known (CHR) -> requiresOnEntry(H)
+                      satisfied (select IS known) -> NO WARNING at E167; ownedMask=0 ->
+                      also NO bank-> comment at E167 (verified no-op, not merely unknown)
+                      -- bead grm-snu
+  E16A  60           RTS
+
+CallerD ($E180) -- establishes select=7 (R7) before calling H:
+  E180  A9 07        LDA #$07        ; select R7
+  E182  8D 00 80     STA $8000       ; select=7, prg_mode=0 known
+  E185  A9 04        LDA #$04        ; data byte = 4
+  E187  20 40 E1     JSR $E140       ; call H -- select known here -> requiresOnEntry(H)
+                      satisfied -> NO WARNING at E187; routed deposit: r7=4, select=7 and
+                      prg_mode=0 UNTOUCHED (fully known, no '?') -- bead grm-snu
+  E18A  60           RTS
 
 H ($E140) -- the bare data-write helper:
   E140  8D 01 80     STA $8001       ; data write; A = whatever the caller loaded
@@ -218,16 +246,16 @@ H ($E140) -- the bare data-write helper:
 
 Because the engine's Phase-1 dataflow merges state at every function entry across ALL
 its callers (context-insensitive), H's OWN internal in-state at its STA $8001 is the
-agree-bit merge of CallerA's and CallerB's states reaching it -- select/prg_mode come out
-unknown there regardless of caller (CallerB's poison dominates the merge). That is
-exactly what makes H's own requiresOnEntry come out non-empty (select+prg_mode: the
-switch's own effect ends up not knowing bits its in-state didn't know either -- see
+agree-bit merge of every caller's state reaching it -- select/prg_mode come out unknown
+there regardless of caller (CallerB's poison dominates the merge). That is exactly what
+makes H's own requiresOnEntry come out non-empty (select+prg_mode: the switch's own
+effect ends up not knowing bits its in-state didn't know either -- see
 BoardBankAnalyzer#annotateBankRequirementViolations's javadoc). The per-call-site
 violation check, though, is NOT context-insensitive: it re-examines each CALLER's own
-locally-tracked in-state at its own JSR address (CallerA's and CallerB's JSR instructions
-are different addresses with independently-tracked flow), which is where the caller-A/
-caller-B distinction actually comes from.
-Vectors: RESET -> $E000, NMI/IRQ -> $E009.
+locally-tracked in-state at its own JSR address (each caller's JSR instruction is a
+different address with independently-tracked flow), which is where the per-caller
+distinction -- and, per bead grm-snu, the per-caller ROUTING -- actually comes from.
+Vectors: RESET -> $E000, NMI/IRQ -> $E00F.
 """
 
 import sys
@@ -450,10 +478,12 @@ def make_prg_mmc3():
 
 def make_prg_mmc3_2():
     """The requires-on-entry / function-summary fixture (bead grm-6a7.2, design D, M3
-    scope) for SelectDataBankSwitchStrategy. See module doc's nesmmc3test2 section: a
+    scope) for SelectDataBankSwitchStrategy, extended by bead grm-snu to exercise the
+    state-routed depositHelperArgument override. See module doc's nesmmc3test2 section: a
     bare DATA-write-only helper (select assumed already established by its caller) is
-    called from a caller that sets select first (no violation) and a caller that leaves
-    select genuinely unknown (violation -> WARNING bookmark at the JSR).
+    called from callers with select known-and-tracked (R6/R7, routed deposit), known-and-
+    untracked (CHR, verified no-op), and genuinely unknown (violation -> WARNING bookmark
+    at the JSR, honest poison of R6+R7 only).
     """
     prg = bytearray([0x00] * MMC3_PRG_SIZE)
 
@@ -469,24 +499,34 @@ def make_prg_mmc3_2():
         off = bank7_base + (cpu_addr - 0xE000)
         prg[off:off + len(data)] = bytes(data)
 
-    # RESET ($E000): call CallerA (no violation), then CallerB (violation), then idle.
+    # RESET ($E000): call CallerA (no violation, routes to r6), CallerB (violation,
+    # poisons r6+r7), CallerC (no violation, verified no-op via untracked CHR select),
+    # CallerD (no violation, routes to r7), then idle.
     put(0xE000, [0x20, 0x00, 0xE1])        # JSR $E100 (CallerA)
     put(0xE003, [0x20, 0x20, 0xE1])        # JSR $E120 (CallerB)
-    put(0xE006, [0x4C, 0x06, 0xE0])        # JMP $E006 (idle loop)
-    put(0xE009, [0x40])                     # RTI (NMI/IRQ handler)
+    put(0xE006, [0x20, 0x60, 0xE1])        # JSR $E160 (CallerC)
+    put(0xE009, [0x20, 0x80, 0xE1])        # JSR $E180 (CallerD)
+    put(0xE00C, [0x4C, 0x0C, 0xE0])        # JMP $E00C (idle loop)
+    put(0xE00F, [0x40])                     # RTI (NMI/IRQ handler)
 
     # CallerA ($E100): establishes select=6 itself before calling the data-only helper
-    # -- requiresOnEntry(H) is satisfied here, so no WARNING at CallerA's JSR.
+    # -- requiresOnEntry(H) is satisfied here, so no WARNING at CallerA's JSR. bead
+    # grm-snu: the routed deposit lands data byte 2 in r6 alone, leaving select=6 and
+    # prg_mode=0 untouched (fully known).
     put(0xE100, [0xA9, 0x06])              # LDA #$06 (select R6)
     put(0xE102, [0x8D, 0x00, 0x80])        # STA $8000 (select=6, prg_mode=0 known)
     put(0xE105, [0xA9, 0x02])              # LDA #$02 (data byte)
-    put(0xE107, [0x20, 0x40, 0xE1])        # JSR $E140 (H) -- select known, no violation
+    put(0xE107, [0x20, 0x40, 0xE1])        # JSR $E140 (H) -- select known, no violation;
+                                             # routed deposit -> r6=2
     put(0xE10A, [0x60])                     # RTS
 
     # CallerB ($E120): poisons select via an unresolvable load (plain LDA of an address
     # select-data's hooks.resolveLoad never resolves -- the registers are write-only)
     # immediately before writing $8000, so select is genuinely unknown at its JSR --
-    # requiresOnEntry(H) is NOT satisfied here -> WARNING at CallerB's JSR.
+    # requiresOnEntry(H) is NOT satisfied here -> WARNING at CallerB's JSR. bead grm-snu:
+    # the routed deposit honestly poisons r6+r7 ONLY (never select/prg_mode, which a data
+    # write can't reach), rather than the pre-fix DEFAULT deposit that fabricated a known
+    # select value out of the data byte.
     put(0xE120, [0xAD, 0x00, 0xE2])        # LDA $E200 (unresolvable -- opaque load)
     put(0xE123, [0x8D, 0x00, 0x80])        # STA $8000 (select -> unknown)
     put(0xE126, [0xA9, 0x03])              # LDA #$03 (data byte -- itself known, doesn't
@@ -494,10 +534,32 @@ def make_prg_mmc3_2():
     put(0xE128, [0x20, 0x40, 0xE1])        # JSR $E140 (H) -- select unknown -> violation
     put(0xE12B, [0x60])                     # RTS
 
+    # CallerC ($E160) -- bead grm-snu: establishes select=0 (R0, an untracked CHR
+    # register) before calling H. select IS known here, so requiresOnEntry(H) is
+    # satisfied (no WARNING) -- but the routed deposit's ownedMask is 0 (verified no-op),
+    # so the call site also gets NO bank-> comment, and r6/r7's prior knowledge survives
+    # the call untouched.
+    put(0xE160, [0xA9, 0x00])              # LDA #$00 (select R0, CHR -- untracked)
+    put(0xE162, [0x8D, 0x00, 0x80])        # STA $8000 (select=0, prg_mode=0 known)
+    put(0xE165, [0xA9, 0x04])              # LDA #$04 (data byte -- irrelevant, CHR target)
+    put(0xE167, [0x20, 0x40, 0xE1])        # JSR $E140 (H) -- select known (CHR) ->
+                                             # verified no-op: no comment, no warning
+    put(0xE16A, [0x60])                     # RTS
+
+    # CallerD ($E180) -- bead grm-snu: establishes select=7 (R7) before calling H. Mirrors
+    # CallerA but routes to the OTHER tracked target, proving the routing genuinely reads
+    # the tracked select value rather than being hardcoded to R6.
+    put(0xE180, [0xA9, 0x07])              # LDA #$07 (select R7)
+    put(0xE182, [0x8D, 0x00, 0x80])        # STA $8000 (select=7, prg_mode=0 known)
+    put(0xE185, [0xA9, 0x04])              # LDA #$04 (data byte)
+    put(0xE187, [0x20, 0x40, 0xE1])        # JSR $E140 (H) -- select known, no violation;
+                                             # routed deposit -> r7=4
+    put(0xE18A, [0x60])                     # RTS
+
     # H ($E140): the bare data-write helper -- select is assumed already set by the
     # caller (real MMC3 code commonly amortizes one select write across several data
-    # writes); this is the "current HelperModel behavior" investigation subject the bead
-    # report documents (default depositHelperArgument -- see BankSwitchStrategy.HelperDeposit).
+    # writes). Call-site recovery routes through SelectDataBankSwitchStrategy's own
+    # depositHelperArgument override (bead grm-snu) rather than the interface DEFAULT.
     put(0xE140, [0x8D, 0x01, 0x80])        # STA $8001 (data write; A = caller's argument)
     put(0xE143, [0x60])                     # RTS
 
@@ -506,9 +568,9 @@ def make_prg_mmc3_2():
     put(0xE200, [0x00])
 
     # Vector table.
-    put(0xFFFA, [0x09, 0xE0])  # NMI   -> $E009 (RTI)
+    put(0xFFFA, [0x0F, 0xE0])  # NMI   -> $E00F (RTI)
     put(0xFFFC, [0x00, 0xE0])  # RESET -> $E000
-    put(0xFFFE, [0x09, 0xE0])  # IRQ   -> $E009 (RTI)
+    put(0xFFFE, [0x0F, 0xE0])  # IRQ   -> $E00F (RTI)
 
     return bytes(prg)
 
@@ -1089,10 +1151,13 @@ def main():
 
     prgm3b = make_prg_mmc3_2()
 
-    # Sanity-check the requires-on-entry fixture before writing (bead grm-6a7.2).
+    # Sanity-check the requires-on-entry fixture before writing (bead grm-6a7.2, extended
+    # by grm-snu with CallerC/CallerD).
     assert len(prgm3b) == MMC3_PRG_SIZE
     assert prgm3b[0xE000] == 0x20 and (prgm3b[0xE001] | (prgm3b[0xE002] << 8)) == 0xE100
     assert prgm3b[0xE003] == 0x20 and (prgm3b[0xE004] | (prgm3b[0xE005] << 8)) == 0xE120
+    assert prgm3b[0xE006] == 0x20 and (prgm3b[0xE007] | (prgm3b[0xE008] << 8)) == 0xE160
+    assert prgm3b[0xE009] == 0x20 and (prgm3b[0xE00A] | (prgm3b[0xE00B] << 8)) == 0xE180
     assert prgm3b[0xE100] == 0xA9 and prgm3b[0xE101] == 0x06  # CallerA: LDA #$06
     assert prgm3b[0xE102] == 0x8D and (prgm3b[0xE103] | (prgm3b[0xE104] << 8)) == 0x8000
     assert prgm3b[0xE107] == 0x20 and (prgm3b[0xE108] | (prgm3b[0xE109] << 8)) == 0xE140
@@ -1101,11 +1166,19 @@ def main():
     assert prgm3b[0xE123] == 0x8D and (prgm3b[0xE124] | (prgm3b[0xE125] << 8)) == 0x8000
     assert prgm3b[0xE128] == 0x20 and (prgm3b[0xE129] | (prgm3b[0xE12A] << 8)) == 0xE140
     assert prgm3b[0xE12B] == 0x60  # CallerB RTS
+    assert prgm3b[0xE160] == 0xA9 and prgm3b[0xE161] == 0x00  # CallerC: LDA #$00
+    assert prgm3b[0xE162] == 0x8D and (prgm3b[0xE163] | (prgm3b[0xE164] << 8)) == 0x8000
+    assert prgm3b[0xE167] == 0x20 and (prgm3b[0xE168] | (prgm3b[0xE169] << 8)) == 0xE140
+    assert prgm3b[0xE16A] == 0x60  # CallerC RTS
+    assert prgm3b[0xE180] == 0xA9 and prgm3b[0xE181] == 0x07  # CallerD: LDA #$07
+    assert prgm3b[0xE182] == 0x8D and (prgm3b[0xE183] | (prgm3b[0xE184] << 8)) == 0x8000
+    assert prgm3b[0xE187] == 0x20 and (prgm3b[0xE188] | (prgm3b[0xE189] << 8)) == 0xE140
+    assert prgm3b[0xE18A] == 0x60  # CallerD RTS
     assert prgm3b[0xE140] == 0x8D and (prgm3b[0xE141] | (prgm3b[0xE142] << 8)) == 0x8001
     assert prgm3b[0xE143] == 0x60  # H RTS
     assert (prgm3b[0xFFFC] | (prgm3b[0xFFFD] << 8)) == 0xE000  # RESET vector
-    assert (prgm3b[0xFFFA] | (prgm3b[0xFFFB] << 8)) == 0xE009  # NMI vector
-    assert (prgm3b[0xFFFE] | (prgm3b[0xFFFF] << 8)) == 0xE009  # IRQ vector
+    assert (prgm3b[0xFFFA] | (prgm3b[0xFFFB] << 8)) == 0xE00F  # NMI vector
+    assert (prgm3b[0xFFFE] | (prgm3b[0xFFFF] << 8)) == 0xE00F  # IRQ vector
 
     _write_rom(outdir, "nesmmc3test2.nes", prgm3b, mapper=MAPPER_MMC3)
 

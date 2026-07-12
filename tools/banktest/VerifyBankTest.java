@@ -623,6 +623,41 @@ public class VerifyBankTest extends GhidraScript {
 			"no WARNING at the select write itself (E123) -- only the call site (E128) " +
 				"is flagged, confirming the new warning is call-site-specific, not a " +
 				"restatement of an existing switch-site warning");
+
+		// G4 (bead grm-snu): CallerA's call to the bare data-write helper H at $E107 now
+		// routes through SelectDataBankSwitchStrategy's own depositHelperArgument override
+		// instead of the interface default -- select=6 was tracked at the call site, so
+		// the data byte (2) lands in r6 alone, leaving select/prg_mode untouched. The
+		// resulting comment must be FULLY known (no '?'): select=6, r6=2.
+		String c4 = eol(0xE107);
+		criterion("G4", c4.contains("select=6") && c4.contains("r6=2") && !c4.contains("?"),
+			"routed deposit at CallerA's JSR (E107) fully known, select=6/r6=2: \"" + c4 +
+				"\"");
+
+		// G5 (bead grm-snu): CallerB's call at $E128 has select genuinely unknown at the
+		// call site, so the routed deposit honestly poisons r6+r7 ONLY -- it must NOT
+		// fabricate a known select value out of the data byte the way the pre-fix DEFAULT
+		// deposit did (the old bug: data byte 3 misread as select=3).
+		String c5 = eol(0xE128);
+		criterion("G5", !c5.contains("select=3"),
+			"routed deposit at CallerB's JSR (E128) does not fabricate select from the " +
+				"data byte: \"" + c5 + "\"");
+
+		// G6 (bead grm-snu): CallerC establishes select=0 (CHR, untracked) before calling
+		// H -- select IS known (no requirement violation -> no WARNING), but the routed
+		// deposit's ownedMask is 0 (verified no-op on every tracked field), so the call
+		// site also gets NO bank-> comment at all.
+		criterion("G6", !hasWarningBookmark(0xE167) && eol(0xE167).isEmpty(),
+			"CallerC's JSR (E167, untracked CHR select) is a verified no-op -- no " +
+				"WARNING and no bank-> comment");
+
+		// G7 (bead grm-snu): CallerD mirrors CallerA but selects R7 instead of R6,
+		// proving the routing genuinely reads the tracked select value rather than being
+		// hardcoded to one target -- data byte 4 lands in r7, select=7/prg_mode=0 known.
+		String c7 = eol(0xE187);
+		criterion("G7", c7.contains("select=7") && c7.contains("r7=4") && !c7.contains("?"),
+			"routed deposit at CallerD's JSR (E187) fully known, select=7/r7=4: \"" + c7 +
+				"\"");
 	}
 
 	// ------------------------------------------------------------------

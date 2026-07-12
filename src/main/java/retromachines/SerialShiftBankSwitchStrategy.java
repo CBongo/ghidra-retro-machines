@@ -345,10 +345,17 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	 * ({@code ownedMask = 0}) -- the same no-poison-by-omission contract as
 	 * {@link #computeSwitch}'s CHR echo, expressed as "touches nothing" instead of "echoes
 	 * inState" since there is no inState to echo here.
+	 * <p>
+	 * {@code inState} (the caller's field-local mechanism state at the call site, per the
+	 * interface javadoc) is deliberately IGNORED here: serial-shift's routing is decided
+	 * entirely by {@code switchSite}'s own address (which physical register write-5/the
+	 * loop's closing BNE targets), never by tracked state -- unlike
+	 * {@link SelectDataBankSwitchStrategy}, which has no address-based routing signal and
+	 * must consult {@code inState}'s tracked select value instead.
 	 */
 	@Override
 	public HelperDeposit depositHelperArgument(Program program, Instruction switchSite,
-			BankState argValue, int stateMask) {
+			BankState argValue, BankState inState, int stateMask) {
 		Integer targetIdx = targetIndexOf(program, switchSite);
 		if (targetIdx == null) {
 			// switchSite isn't a shape this strategy itself recognizes as a commit -- can't

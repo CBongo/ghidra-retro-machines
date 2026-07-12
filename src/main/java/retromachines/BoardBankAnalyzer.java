@@ -583,7 +583,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				if (helper != null) {
 					CallEffect callEffect = helper.constState() != null
 							? new CallEffect(helper.constState(), helper.effectMask())
-							: recoverCallArgument(program, instr, helper);
+							: recoverCallArgument(program, instr, helper, outState);
 					// ownedMask == 0 means this call site is a verified no-op on every tracked
 					// bit (e.g. a serial-shift helper whose switch site targets an unconfigured
 					// CHR register) -- skip both the fold (a no-op regardless, since
@@ -832,19 +832,27 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * which knows -- from the helper's own recognized {@link HelperModel#switchSite} --
 	 * whether this mechanism's field-local space is one field (the recovered byte deposits
 	 * verbatim, owning the whole field-local width, the historical behavior) or several
-	 * disjoint sub-fields keyed by which switch site is in play (serial-shift): only that
-	 * call knows which sub-field the recovered value actually commits through, and
-	 * therefore which bits this call site may claim ownership of ({@link CallEffect#ownedMask}
-	 * -- see {@link BankSwitchStrategy.HelperDeposit}'s javadoc for why that is tracked
-	 * separately from the value's own known bits). Both the value and the owned-bits mask
-	 * are positioned back into the board's absolute state bits before returning, exactly as
-	 * a direct dataflow switch's result is. Returns an unknown value owning the WHOLE
-	 * mechanism when the argument register itself is unknown (the helper's sites disagreed
-	 * on it) -- conservatively wiping everything this helper's mechanism could possibly
-	 * touch, the historical behavior for that degrade case.
+	 * disjoint sub-fields keyed by which switch site is in play (serial-shift) OR by the
+	 * caller's own TRACKED STATE at the call site (select-data -- a bare data-write helper's
+	 * routing depends on whichever register the caller's select last picked, which the
+	 * switch site's address alone cannot tell us): only that call knows which sub-field the
+	 * recovered value actually commits through, and therefore which bits this call site may
+	 * claim ownership of ({@link CallEffect#ownedMask} -- see
+	 * {@link BankSwitchStrategy.HelperDeposit}'s javadoc for why that is tracked separately
+	 * from the value's own known bits). To support the state-routed case, {@code callSiteIn}
+	 * (the caller's board-absolute state under which this call executes -- the same
+	 * {@code outState} {@link #runDataflow} folds the call's own effect into) is narrowed to
+	 * this helper's mechanism's field-local space exactly like {@code argValue} before being
+	 * handed to {@link BankSwitchStrategy#depositHelperArgument}; a strategy whose routing is
+	 * address-keyed instead (serial-shift) simply ignores it. Both the value and the
+	 * owned-bits mask are positioned back into the board's absolute state bits before
+	 * returning, exactly as a direct dataflow switch's result is. Returns an unknown value
+	 * owning the WHOLE mechanism when the argument register itself is unknown (the helper's
+	 * sites disagreed on it) -- conservatively wiping everything this helper's mechanism
+	 * could possibly touch, the historical behavior for that degrade case.
 	 */
 	private CallEffect recoverCallArgument(Program program, Instruction callInstr,
-			HelperModel helper) {
+			HelperModel helper, BankState callSiteIn) {
 		Character reg = helper.argReg();
 		if (reg == null) {
 			return new CallEffect(BankState.unknown(), helper.effectMask());
@@ -858,8 +866,11 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			return new CallEffect(position(local, helper.lsb(), helper.effectMask()),
 				helper.effectMask());
 		}
+		BankState localIn = new BankState(
+			(callSiteIn.knownMask() & helper.effectMask()) >>> helper.lsb(),
+			(callSiteIn.bits() & helper.effectMask()) >>> helper.lsb());
 		BankSwitchStrategy.HelperDeposit deposit =
-			helper.strategy().depositHelperArgument(program, switchSite, local, stateMask);
+			helper.strategy().depositHelperArgument(program, switchSite, local, localIn, stateMask);
 		BankState positionedValue = position(deposit.value(), helper.lsb(), helper.effectMask());
 		int positionedOwnedMask = (deposit.ownedMask() << helper.lsb()) & helper.effectMask();
 		return new CallEffect(positionedValue, positionedOwnedMask);

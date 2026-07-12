@@ -214,6 +214,92 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 		return setFieldFromByte(inState, target, stored);
 	}
 
+	/**
+	 * Converts a bare helper call site's recovered data-argument byte into this mechanism's
+	 * field-local deposit, routing it by the CALLER'S TRACKED SELECT VALUE rather than by
+	 * {@code switchSite}'s own address -- select-data's mirror image of
+	 * {@link SerialShiftBankSwitchStrategy}'s override, and the reason the interface grew
+	 * an {@code inState} parameter in the first place. Unlike serial-shift, one select-data
+	 * switch-site SHAPE (an even-address select write, or an odd-address data write) does
+	 * NOT by itself say which target register a data write commits to -- MMC3 helpers
+	 * commonly amortize one select write across several data-write-only calls (see the
+	 * class javadoc's example and {@code nesmmc3test2}'s fixture), so the routing decision
+	 * has to come from the tracked select field at the call site instead.
+	 * <p>
+	 * Dispatches on {@code switchSite}'s own write-address parity first, exactly like
+	 * {@link #computeSwitch}:
+	 * <ul>
+	 * <li><b>Even (select-write helper):</b> {@code argValue} IS the select byte -- mirrors
+	 * {@link #computeSelectWrite}'s extraction (select field, and mode field when this board
+	 * tracks one) deposited into an empty state; {@code ownedMask} is the union of those
+	 * fields' masks. {@code inState} is irrelevant here (a select write's routing is fixed,
+	 * not state-dependent) and is ignored.</li>
+	 * <li><b>Odd (data-write helper):</b> dispatches on
+	 * {@code fieldValueIfFullyKnown(inState, selectField)}, mirroring
+	 * {@link #computeDataWrite}'s three-way split:
+	 * <ul>
+	 * <li>select known and a tracked target (MMC3 R6/R7): {@code ownedMask} is that target
+	 * field's mask ALONE (never select/prg_mode -- a data write never touches them); value
+	 * is {@code argValue} deposited into that field (partial per-bit knowledge of the
+	 * argument byte preserved, same as {@link #computeDataWrite}).</li>
+	 * <li>select known and untracked (MMC3 CHR 0-5): {@code ownedMask = 0} -- a verified
+	 * no-op, same no-poison contract as {@link #computeDataWrite}'s CHR case and
+	 * {@link SerialShiftBankSwitchStrategy}'s CHR-target override.</li>
+	 * <li>select unknown: this call could have hit ANY tracked target, so honest poison
+	 * covers the union of every configured target field's mask (never select/prg_mode,
+	 * which a data write cannot touch regardless of which target was picked); the value
+	 * itself is left wholly unknown, since which field the (known) argument byte would even
+	 * land in is itself unresolved.</li>
+	 * </ul>
+	 * </li>
+	 * </ul>
+	 */
+	@Override
+	public HelperDeposit depositHelperArgument(Program program, Instruction switchSite,
+			BankState argValue, BankState inState, int stateMask) {
+		Long offset = writesInRange(switchSite);
+		if (offset == null) {
+			// switchSite isn't a shape this strategy itself recognizes as a mechanism
+			// write -- can't happen for a genuine HelperModel.switchSite (it was recorded
+			// because THIS strategy matched it), but stay conservative: own nothing rather
+			// than guess (same stance as SerialShiftBankSwitchStrategy's override).
+			return new HelperDeposit(0, new BankState(0, 0));
+		}
+
+		if ((offset & 1) == 0) {
+			BankState empty = new BankState(0, 0);
+			BankState stored = new BankState(argValue.knownMask() & 0xFF, argValue.bits() & 0xFF);
+			BankState value =
+				setFieldFromByte(empty, selectField, extractByteField(stored, selectByteMask, selectByteShift));
+			int owned = selectField.mask();
+			if (modeField != null) {
+				value =
+					setFieldFromByte(value, modeField, extractByteField(stored, modeByteMask, modeByteShift));
+				owned |= modeField.mask();
+			}
+			return new HelperDeposit(owned, value);
+		}
+
+		Integer selectValue = fieldValueIfFullyKnown(inState, selectField);
+		if (selectValue == null) {
+			int owned = 0;
+			for (FieldPos target : targets.values()) {
+				owned |= target.mask();
+			}
+			return new HelperDeposit(owned, new BankState(0, 0));
+		}
+
+		FieldPos target = targets.get(selectValue);
+		if (target == null) {
+			// Untracked register (e.g. MMC3 CHR banks R0-R5): verified no-op -- see method
+			// javadoc.
+			return new HelperDeposit(0, new BankState(0, 0));
+		}
+
+		BankState value = setFieldFromByte(new BankState(0, 0), target, argValue);
+		return new HelperDeposit(target.mask(), value);
+	}
+
 	private Long writesInRange(Instruction instr) {
 		for (Reference ref : instr.getReferencesFrom()) {
 			Address to = ref.getToAddress();
