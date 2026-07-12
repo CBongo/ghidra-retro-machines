@@ -221,11 +221,27 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 			}
 
 			// --- Program entry point ---
+			// A BASIC-start PRG's bytes at the load address are the first BASIC line's
+			// link, not machine code -- marking a function there (the unconditional
+			// behavior prior to grm-odt.1) mislabels every such PRG. C64BasicAnalyzer
+			// walks the tokenized line chain and, if it finds a SYS line, marks the real
+			// ML entry point instead; this loader's job is only to recognize the case (a
+			// structural sniff of the line-link chain -- see C64BasicWalker.isBasicStart,
+			// which never compares loadAddr against a hardcoded address such as $0801)
+			// and stay out of the analyzer's way.
+			boolean basicStart = looksLikeBasicStart(provider, loadAddr, prgLength);
 			try {
 				Address entryAddr = baseSpace.getAddress(loadAddr);
 				program.getSymbolTable().addExternalEntryPoint(entryAddr);
 				program.getSymbolTable().createLabel(entryAddr, "entry", SourceType.IMPORTED);
-				markAsFunction(program, "entry", entryAddr);
+				if (basicStart) {
+					log.appendMsg("PRG looks like a BASIC-start program (well-formed line-link " +
+						"chain at 0x" + Long.toHexString(loadAddr) + "); not marking a function " +
+						"there -- C64BasicAnalyzer will locate the real ML entry from a SYS line");
+				}
+				else {
+					markAsFunction(program, "entry", entryAddr);
+				}
 			}
 			catch (Exception e) {
 				log.appendMsg("Failed to set entry point: " + e.getMessage());
@@ -241,6 +257,25 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 	// ------------------------------------------------------------------
 	// Descriptor / archive loading
 	// ------------------------------------------------------------------
+
+	/** {@link C64BasicWalker#isBasicStart} over this PRG's raw bytes (2-byte load-address
+	 *  header already consumed by the caller). */
+	private static boolean looksLikeBasicStart(ByteProvider provider, long loadAddr,
+			long prgLength) {
+		long limitAddr = loadAddr + prgLength;
+		C64BasicWalker.ByteSource src = addr -> {
+			if (addr < loadAddr || addr >= limitAddr) {
+				return -1;
+			}
+			try {
+				return provider.readByte((addr - loadAddr) + 2) & 0xFF;
+			}
+			catch (IOException e) {
+				return -1;
+			}
+		};
+		return C64BasicWalker.isBasicStart(src, loadAddr, limitAddr);
+	}
 
 	private static JsonObject loadMap() throws IOException {
 		return DescriptorSupport.loadMap(MAP_PATH);

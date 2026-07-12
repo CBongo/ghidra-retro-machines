@@ -75,6 +75,9 @@ public class VerifyBankTest extends GhidraScript {
 		else if (name.contains("nesbanktest")) {
 			checkNesBanktest();
 		}
+		else if (name.contains("c64basictest")) {
+			checkC64Basictest();
+		}
 		else if (name.contains("banktest4")) {
 			checkBanktest4();
 		}
@@ -300,6 +303,49 @@ public class VerifyBankTest extends GhidraScript {
 		criterion("D3", overlayRefCount(0x0805) == 1,
 			"exactly one overlay ref (the WRITE) at 0805 (" + overlayRefCount(0x0805) +
 				" found)");
+	}
+
+	// ------------------------------------------------------------------
+	// c64basictest.prg criteria (C64PrgLoader + C64BasicAnalyzer, bead grm-odt.1)
+	// ------------------------------------------------------------------
+
+	private void checkC64Basictest() {
+		// B1: exact petcat-compatible detokenized line comments (PRE comment at each
+		// line's link-word address). Line addresses/text mirror mkbasictest.py.
+		criterion("B1:0801", "10 FOR I=1 TO 10".equals(preComment(0x0801)),
+			"line 10 detokenizes exactly: \"" + preComment(0x0801) + "\"");
+		criterion("B1:0810", "20 PRINT\"{clr}HI{$a0}\"".equals(preComment(0x0810)),
+			"line 20 detokenizes exactly: \"" + preComment(0x0810) + "\"");
+		criterion("B1:081c", "30 REM{lgrn}\" OK".equals(preComment(0x081C)),
+			"line 30 detokenizes exactly: \"" + preComment(0x081C) + "\"");
+		criterion("B1:0827", "40 DATA 1,2:PRINT 3".equals(preComment(0x0827)),
+			"line 40 detokenizes exactly: \"" + preComment(0x0827) + "\"");
+		criterion("B1:0835", "50 SYS 2114".equals(preComment(0x0835)),
+			"line 50 detokenizes exactly: \"" + preComment(0x0835) + "\"");
+
+		// B2: the REM body's token-lookalike byte ($99, PRINT's token value elsewhere)
+		// rendered as its raw PETSCII control-code escape, not as the word "PRINT" --
+		// already implied by the exact-match B1:081c above, but check explicitly so a
+		// future accidental token-decode-inside-REM regression fails its own criterion.
+		String rem = preComment(0x081C);
+		criterion("B2", rem.contains("{lgrn}") && !rem.contains("PRINT"),
+			"REM body not token-decoded (raw {lgrn} escape, no \"PRINT\"): \"" + rem + "\"");
+
+		// B3: the quoted control byte in line 20 renders as {clr} (PetsciiMapper's name
+		// for $93), not as a token.
+		String pr = preComment(0x0810);
+		criterion("B3", pr.contains("{clr}"),
+			"quoted control byte renders as {clr}: \"" + pr + "\"");
+
+		// B4: the SYS target (2114, from line 50) is a real function, and the loader's
+		// usual load-address function mark did NOT happen for this BASIC-start PRG.
+		criterion("B4:funcAtSys", hasFunctionAt(0x0842),
+			"function exists at SYS target 0x0842");
+		criterion("B4:noFuncAtLoad", !hasFunctionAt(0x0801),
+			"no function at the load address 0x0801 (BASIC line data, not code)");
+
+		// B5 (golden byte-identical dump) is enforced by run-banktest.sh's diff against
+		// expected/c64basictest.dump; nothing further to check here.
 	}
 
 	// ------------------------------------------------------------------
@@ -811,6 +857,15 @@ public class VerifyBankTest extends GhidraScript {
 	private String eol(long offset) {
 		String c = currentProgram.getListing().getComment(CommentType.EOL, addr(offset));
 		return c == null ? "" : c;
+	}
+
+	private String preComment(long offset) {
+		String c = currentProgram.getListing().getComment(CommentType.PRE, addr(offset));
+		return c == null ? "" : c;
+	}
+
+	private boolean hasFunctionAt(long offset) {
+		return currentProgram.getListing().getFunctionAt(addr(offset)) != null;
 	}
 
 	/** Overlay-space address, or the base-space address if {@code spaceName} does not
