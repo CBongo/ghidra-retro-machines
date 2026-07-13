@@ -86,6 +86,12 @@ public class VerifyBankTest extends GhidraScript {
 			return;
 		}
 
+		if (name.contains("suspectdecrypt")) {
+			checkSuspectDecrypt();
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
+
 		dump();
 
 		if (name.contains("nesmmc1test")) {
@@ -250,6 +256,54 @@ public class VerifyBankTest extends GhidraScript {
 			"bm=" + (mark == null ? "<none>" : mark.getTypeString()));
 		criterion(idPrefix + "-comment-links-overlay", comment.contains(overlayName),
 			"eol=" + comment);
+	}
+
+	// Tier 2 SUSPECT case (grm-yxn): the key is read from a CIA register (EOR $DC00,X), which
+	// the emulator answers with a policy value and logs as an IO read. Recovery still happens
+	// (bytes = ciphertext, since the key reads as 0) but is downgraded to a WARNING bookmark.
+	private void checkSuspectDecrypt() {
+		final long entry = 0x2000;
+		final String overlayName = "DECRYPTED_2011";
+		final int len = 8;
+		byte[] expectedCipher = {(byte) 0xC1, (byte) 0xC2, (byte) 0xC3, (byte) 0xC4,
+			(byte) 0xC5, (byte) 0xC6, (byte) 0xC7, (byte) 0xC8};
+
+		MemoryBlock overlay = currentProgram.getMemory().getBlock(overlayName);
+		byte[] recovered = null;
+		if (overlay != null) {
+			try {
+				byte[] buf = new byte[len];
+				overlay.getBytes(overlay.getStart(), buf);
+				recovered = buf;
+			}
+			catch (Exception e) {
+				// leave null -> criterion fails visibly
+			}
+		}
+
+		Bookmark mark = null;
+		for (Bookmark bm : currentProgram.getBookmarkManager().getBookmarks(addr(entry))) {
+			if (DECRYPT_CATEGORY.equals(bm.getCategory())) {
+				mark = bm;
+				break;
+			}
+		}
+		String type = mark == null ? "<none>" : mark.getTypeString();
+		String comment = eol(entry);
+
+		println("=== BANKDUMP BEGIN ===");
+		println("OVERLAY " + (overlay == null ? "<missing>"
+				: overlay.getName() + " " + fmt(overlay.getStart()) + "-" + fmt(overlay.getEnd())));
+		println("RECOVERED " + hex(recovered));
+		println("BOOKMARK " + type + (mark == null ? "" : " @" + fmt(mark.getAddress())));
+		println("COMMENT " + comment);
+		println("=== BANKDUMP END ===");
+
+		criterion("suspect-overlay-exists", overlay != null, "block=" + overlayName);
+		criterion("suspect-recovered-ciphertext", Arrays.equals(recovered, expectedCipher),
+			"bytes=" + hex(recovered));
+		criterion("suspect-warning-bookmark", "Warning".equals(type), "bm=" + type);
+		criterion("suspect-comment-links-overlay", comment.contains(overlayName), "eol=" + comment);
 	}
 
 	private static String hex(byte[] bytes) {
