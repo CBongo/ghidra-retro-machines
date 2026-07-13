@@ -17,6 +17,8 @@ package retromachines;
 
 import java.io.ByteArrayInputStream;
 
+import ghidra.app.cmd.disassemble.DisassembleCommand;
+import ghidra.app.cmd.function.CreateFunctionCmd;
 import ghidra.app.services.AbstractAnalyzer;
 import ghidra.app.services.AnalysisPriority;
 import ghidra.app.services.AnalyzerType;
@@ -36,6 +38,7 @@ import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryAccessException;
+import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.scalar.Scalar;
 import ghidra.program.model.symbol.FlowType;
 import ghidra.util.task.TaskMonitor;
@@ -206,7 +209,8 @@ public class C64DecryptLoopAnalyzer extends AbstractAnalyzer {
 				return;
 			}
 			materialize(program, rd, plain,
-				String.format("static constant-EOR key $%02X", rd.key().constant()), false, log);
+				String.format("static constant-EOR key $%02X", rd.key().constant()), false, monitor,
+				log);
 		}
 		else {
 			// Tier 2: rolling/computed/unknown key -> emulate the loop and read back the range.
@@ -221,7 +225,7 @@ public class C64DecryptLoopAnalyzer extends AbstractAnalyzer {
 			// A hardware-tainted run (IO/uninit reads) still recovers bytes, but flags them
 			// suspect so the overlay is a WARNING, not an authoritative NOTE.
 			materialize(program, rd, plain, "emulated (" + kind + ")", res.provenance().suspect(),
-				log);
+				monitor, log);
 		}
 	}
 
@@ -247,18 +251,21 @@ public class C64DecryptLoopAnalyzer extends AbstractAnalyzer {
 			IoPolicy.volatileBlocks(program), monitor);
 	}
 
-	/** Create the {@code DECRYPTED_xxxx} overlay seeded with the recovered bytes and link it
-	 *  back to the decryptor with bookmarks and a comment. A suspect (emulation-derived,
-	 *  hardware-tainted) result gets a WARNING bookmark instead of NOTE. */
+	/** Create the {@code DECRYPTED_xxxx} overlay seeded with the recovered bytes, disassemble
+	 *  the payload there so it is navigable as code, and link it back to the decryptor with
+	 *  bookmarks and a comment. A suspect (emulation-derived, hardware-tainted) result gets a
+	 *  WARNING bookmark -- with a pointer to the accurate manual-recovery paths -- instead of
+	 *  an authoritative NOTE. */
 	private void materialize(Program program, RecognizedDecryptor rd, byte[] plain, String detail,
-			boolean suspect, MessageLog log) {
+			boolean suspect, TaskMonitor monitor, MessageLog log) {
 		Address base = rd.target().getMinAddress();
 		String name = "DECRYPTED_" + String.format("%04x", base.getOffset());
 		if (program.getMemory().getBlock(name) != null) {
 			return; // already recovered on a prior pass -- idempotent
 		}
+		MemoryBlock block;
 		try {
-			MemoryBlockUtils.createInitializedBlock(program, true, name, base,
+			block = MemoryBlockUtils.createInitializedBlock(program, true, name, base,
 				new ByteArrayInputStream(plain), plain.length,
 				"decrypted view of " + rd.target() + " (" + detail + ")", CATEGORY,
 				true, false, true, log, TaskMonitor.DUMMY);
@@ -267,9 +274,31 @@ public class C64DecryptLoopAnalyzer extends AbstractAnalyzer {
 			log.appendMsg(name + ": could not create overlay: " + e.getMessage());
 			return;
 		}
+		if (block == null) {
+			log.appendMsg(name + ": overlay creation failed");
+			return;
+		}
 
-		String kindTag = suspect ? "SUSPECT " : "";
-		String msg = kindTag + "decrypted " + rd.target() + " key=" + rd.key() + "; " + detail;
+		// Disassemble the recovered payload in the overlay so it reads as code -- the whole
+		// point of decrypting it. Same idiom BoardBankAnalyzer uses for cross-bank targets.
+		Address overlayStart = block.getStart();
+		if (program.getListing().getInstructionAt(overlayStart) == null) {
+			new DisassembleCommand(overlayStart, null, true).applyTo(program, monitor);
+			if (program.getListing().getInstructionAt(overlayStart) != null &&
+				program.getFunctionManager().getFunctionAt(overlayStart) == null) {
+				new CreateFunctionCmd(overlayStart).applyTo(program, monitor);
+			}
+		}
+
+		// Provenance. A suspect result also points at the manual paths that can get
+		// hardware-accurate bytes (tier 3), since the emulated value is not trustworthy.
+		String referral = suspect
+				? "; recovered value depends on hardware the emulator does not model -- for " +
+					"accurate bytes use a VICE .vsf snapshot import or the Debugger pure-emulation " +
+					"Copy-Into-Program"
+				: "";
+		String msg = (suspect ? "SUSPECT " : "") + "decrypted " + rd.target() + " key=" + rd.key() +
+			"; " + detail + referral;
 		program.getBookmarkManager().setBookmark(rd.entry(),
 			suspect ? BookmarkType.WARNING : BookmarkType.NOTE, CATEGORY, msg);
 		program.getBookmarkManager().setBookmark(base,

@@ -256,6 +256,9 @@ public class VerifyBankTest extends GhidraScript {
 			"bm=" + (mark == null ? "<none>" : mark.getTypeString()));
 		criterion(idPrefix + "-comment-links-overlay", comment.contains(overlayName),
 			"eol=" + comment);
+		boolean disassembled = overlay != null &&
+			currentProgram.getListing().getInstructionAt(overlay.getStart()) != null;
+		criterion(idPrefix + "-overlay-disassembled", disassembled, "instr@overlay=" + disassembled);
 	}
 
 	// Tier 2 SUSPECT case (grm-yxn): the key is read from a CIA register (EOR $DC00,X), which
@@ -304,6 +307,9 @@ public class VerifyBankTest extends GhidraScript {
 			"bytes=" + hex(recovered));
 		criterion("suspect-warning-bookmark", "Warning".equals(type), "bm=" + type);
 		criterion("suspect-comment-links-overlay", comment.contains(overlayName), "eol=" + comment);
+		boolean disassembled = overlay != null &&
+			currentProgram.getListing().getInstructionAt(overlay.getStart()) != null;
+		criterion("suspect-overlay-disassembled", disassembled, "instr@overlay=" + disassembled);
 	}
 
 	private static String hex(byte[] bytes) {
