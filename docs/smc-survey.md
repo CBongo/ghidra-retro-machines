@@ -163,10 +163,18 @@ lite). This bead pilots the shared harness (§6).
   port-write consumer modeling the IPL handshake state machine on the APU side —
   one consumer handles *every* game's uploader instead of per-game recognizers, and
   the same pattern covers C64→1541 drive-code upload later.
-- **Deliverable shape:** separate SPC700-language Program per unique uploaded image
-  (headless `Program` creation is standard importer API), cross-linked via bookmarks
-  at the upload site. Ghidra's one-language-per-Program constraint makes the separate
-  Program the *right* model, not a workaround.
+- **Deliverable shape:** **one** SPC700-language Program (a single 64K sound-RAM
+  image) per game, alongside the SNES ROM (65816) Program — *not* one Program per
+  uploaded image. A typical game runs the IPL **multiple times** to populate different
+  regions of the *same* SPC700 RAM (e.g. one upload transfers the SPC700 driver code,
+  another the static instrument/sample data, another filter/echo settings). The
+  recovery model is therefore **accumulate all IPL transfers into the one SPC700 RAM
+  image** at their respective target addresses — the same shape as loading a `.spc`
+  snapshot, which *is* that fully-populated 64K image. Each upload site in the ROM gets
+  a bookmark cross-linking to the target range it wrote in the SPC700 Program. Ghidra's
+  one-language-per-Program constraint still means SPC700 lives in its own Program
+  (separate from the 65816 ROM), but there is exactly **one** such Program per game,
+  built up from N uploads, not N Programs.
 
 ## 6. Cross-cutting: one shared recovery harness
 
