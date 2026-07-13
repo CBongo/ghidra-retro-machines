@@ -74,6 +74,12 @@ public class VerifyBankTest extends GhidraScript {
 			return;
 		}
 
+		if (name.contains("decryptloop")) {
+			checkDecryptLoop();
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
+
 		dump();
 
 		if (name.contains("nesmmc1test")) {
@@ -169,6 +175,59 @@ public class VerifyBankTest extends GhidraScript {
 			"suspect=" + result.provenance().suspect());
 		criterion("emu-dirty-covers-target", result.dirty().contains(target),
 			"dirty=" + dirtySb);
+	}
+
+	// ------------------------------------------------------------------
+	// C64DecryptLoopAnalyzer check (bead grm-1.7.2)
+	// ------------------------------------------------------------------
+
+	// Fixture contract from mkdecrypttest.py: constant-EOR (#$AA) in-place decrypt loop at
+	// $2000 over $2010..$2017 with a JMP into the range, so the analyzer auto-applies and
+	// creates the DECRYPTED_2010 overlay holding the plaintext $01..$08.
+	private static final String DECRYPT_CATEGORY = "C64DecryptLoopAnalyzer";
+	private static final long DECRYPT_ENTRY = 0x2000;
+	private static final String DECRYPT_OVERLAY = "DECRYPTED_2010";
+	private static final int DECRYPT_LEN = 8;
+
+	private void checkDecryptLoop() {
+		MemoryBlock overlay = currentProgram.getMemory().getBlock(DECRYPT_OVERLAY);
+		byte[] recovered = null;
+		if (overlay != null) {
+			try {
+				byte[] buf = new byte[DECRYPT_LEN];
+				overlay.getBytes(overlay.getStart(), buf);
+				recovered = buf;
+			}
+			catch (Exception e) {
+				// leave recovered null -> criterion fails with a visible dump
+			}
+		}
+
+		Bookmark mark = null;
+		for (Bookmark bm : currentProgram.getBookmarkManager().getBookmarks(addr(DECRYPT_ENTRY))) {
+			if (DECRYPT_CATEGORY.equals(bm.getCategory())) {
+				mark = bm;
+				break;
+			}
+		}
+		String comment = eol(DECRYPT_ENTRY);
+		byte[] expected = {1, 2, 3, 4, 5, 6, 7, 8};
+
+		println("=== BANKDUMP BEGIN ===");
+		println("OVERLAY " + (overlay == null ? "<missing>"
+				: overlay.getName() + " " + fmt(overlay.getStart()) + "-" + fmt(overlay.getEnd())));
+		println("DECRYPTED " + hex(recovered));
+		println("BOOKMARK " + (mark == null ? "<none>"
+				: mark.getTypeString() + " @" + fmt(mark.getAddress())));
+		println("COMMENT " + comment);
+		println("=== BANKDUMP END ===");
+
+		criterion("decrypt-overlay-exists", overlay != null, "block=" + DECRYPT_OVERLAY);
+		criterion("decrypt-recovered", Arrays.equals(recovered, expected), "bytes=" + hex(recovered));
+		criterion("decrypt-note-bookmark", mark != null, "bm=" +
+			(mark == null ? "<none>" : mark.getTypeString()));
+		criterion("decrypt-comment-links-overlay", comment.contains(DECRYPT_OVERLAY),
+			"eol=" + comment);
 	}
 
 	private static String hex(byte[] bytes) {

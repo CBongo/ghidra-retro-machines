@@ -68,6 +68,7 @@ fail=0
 "$PYTHON" "$SCRIPT_DIR/mknesbanktest.py" "$WORK/nes" || { echo "FAIL: mknesbanktest.py" >&2; exit 1; }
 "$PYTHON" "$SCRIPT_DIR/mkbasictest.py" "$WORK/prg" || { echo "FAIL: mkbasictest.py" >&2; exit 1; }
 "$PYTHON" "$SCRIPT_DIR/mkemutest.py" "$WORK/prg" || { echo "FAIL: mkemutest.py" >&2; exit 1; }
+"$PYTHON" "$SCRIPT_DIR/mkdecrypttest.py" "$WORK/prg" || { echo "FAIL: mkdecrypttest.py" >&2; exit 1; }
 
 # Imports $2 (a .prg or .nes fixture) via $3 (the loader name), runs VerifyBankTest.java,
 # extracts the normalized dump, and check|bless's it against expected/$1.dump.
@@ -135,6 +136,8 @@ done
 run_one c64basictest "$WORK/prg/c64basictest.prg" C64PrgLoader
 
 run_one emurecoverytest "$WORK/prg/emurecoverytest.prg" C64PrgLoader
+
+run_one decryptloop "$WORK/prg/decryptloop.prg" C64PrgLoader
 
 run_one nesbanktest "$WORK/nes/nesbanktest.nes" NesRomLoader
 run_one nesbanktest2 "$WORK/nes/nesbanktest2.nes" NesRomLoader
