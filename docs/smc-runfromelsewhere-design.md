@@ -64,10 +64,16 @@ fills via loader option") but **not consumed by any Java** — `C64PrgLoader.cre
 (`C64PrgLoader.java:360-386`) unconditionally calls `createUninitializedBlock` for ROM
 occupants. ZEROPAGE (`c64.yaml:28-31`, owns `$0073`) is likewise uninitialized.
 
-Consequence: **a byte-mapped block `$0073 → BASIC $E3A2` maps onto uninitialized source
-bytes and shows `??` until the user supplies a real BASIC ROM.** Populating the ROMs is
+Consequence: **a byte-mapped block `$0073 → KERNAL $E3A2` maps onto uninitialized source
+bytes and shows `??` until the user supplies a real KERNAL ROM.** Populating the ROMs is
 **grm-mbm** (optional user-supplied ROM files → initialized ROM blocks). The dual-home
 CHRGET view only "lights up" once grm-mbm lands.
+
+**ROM files located (2026-07-13):** `H:/emulators/c64/basic.c64` and
+`H:/emulators/c64/kernel.c64` (both 8192 bytes — genuine BASIC/KERNAL dumps; the KERNAL
+was confirmed by locating the CHRGET signature at the expected offset, see §4). A CHARGEN
+dump likely lives under the sibling VICE dirs. These are the user-supplied inputs grm-mbm
+consumes.
 
 Two ways to proceed given this:
 1. **grm-mbm first**, then Tier A CHRGET is fully real (dual-home with live ROM bytes).
@@ -90,17 +96,21 @@ region may host several independent ROM-sourced copies, so it is a list:
     - name: CHRGET
       start: 0x0073                  # destination sub-range
       end: 0x008A                    # 0x18 bytes
-      source: BASIC                  # source occupant/region name (resolved like on_write)
+      source: KERNAL                 # source occupant/region name (resolved like on_write)
       source_addr: 0xE3A2            # absolute source address in that block
-      comment: "CHRGET fetch routine, copied to zero page at BASIC init"
+      comment: "CHRGET fetch routine, copied to zero page at KERNAL init"
 ```
 
-The loader resolves `source: BASIC` to the BASIC block, then — per the descriptor
+The loader resolves `source: KERNAL` to the KERNAL block, then — per the descriptor
 principle "descriptor declares facts, loader decides representation" (`SCHEMA.md`
 principle 5) — chooses: byte-mapped block if the source is initialized, best-effort
-byte-mapped (or skip) if not. **CHRGET addresses ($0073-$008A, source $E3A2) are
-well-known folklore but not yet verified in this repo — confirm against a real BASIC ROM
-disassembly before baking them in.**
+byte-mapped (or skip) if not.
+
+**CHRGET constants VERIFIED (2026-07-13)** against `H:/emulators/c64/kernel.c64`: the
+CHRGET/CHRGOT routine (`E6 7A D0 02 E6 7B AD …`) sits at file offset `$03A2` → source
+**`$E3A2` in the KERNAL ROM** (`$E000-$FFFF`), *not* the BASIC ROM as the folklore had it.
+Destination `$0073-$008A` = `0x18` (24) bytes, matching the routine length. So the hint is
+`source: KERNAL, source_addr: 0xE3A2`.
 
 ## 5. Cross-space bridging (both tiers)
 
@@ -140,7 +150,9 @@ exactly as the decrypt tiers shared theirs.
 
 ## 8. Open questions
 
-1. **Verify CHRGET constants** ($0073-$008A / $E3A2) against a real BASIC ROM before use.
+1. ~~Verify CHRGET constants~~ **DONE (2026-07-13)**: dest `$0073-$008A` (`0x18`), source
+   **KERNAL `$E3A2`** (verified against `H:/emulators/c64/kernel.c64`; folklore's "BASIC"
+   was wrong — it is KERNAL).
 2. **Best-effort vs gated Tier A**: create the CHRGET byte-mapped block before grm-mbm
    (shows `??`, self-heals) or gate it on an initialized source? (Recommend best-effort +
    a log note, matching hardware truth.)
