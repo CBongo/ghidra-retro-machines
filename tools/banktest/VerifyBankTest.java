@@ -27,12 +27,15 @@
 //@category RetroMachines.Test
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 
 import ghidra.app.script.GhidraScript;
 import ghidra.program.model.address.Address;
+import ghidra.program.model.address.AddressRange;
+import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.listing.Bookmark;
 import ghidra.program.model.listing.CommentType;
@@ -40,6 +43,12 @@ import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.InstructionIterator;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.symbol.Reference;
+
+import retromachines.EmulationRecovery;
+import retromachines.IoPolicy;
+import retromachines.RecoveryResult;
+import retromachines.StopConditions;
+import retromachines.StopReason;
 
 public class VerifyBankTest extends GhidraScript {
 
@@ -54,9 +63,19 @@ public class VerifyBankTest extends GhidraScript {
 
 	@Override
 	protected void run() throws Exception {
+		String name = currentProgram.getName();
+
+		// The emulation-recovery fixture is not a loader/analyzer regression like the bank
+		// suites; it drives retromachines.EmulationRecovery directly and emits its own dump
+		// section, so it takes a separate path from dump() + the bank-fixture dispatch below.
+		if (name.contains("emurecoverytest")) {
+			checkEmuRecovery();
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
+
 		dump();
 
-		String name = currentProgram.getName();
 		if (name.contains("nesmmc1test")) {
 			checkNesMmc1test();
 		}
@@ -95,6 +114,75 @@ public class VerifyBankTest extends GhidraScript {
 		}
 
 		println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+	}
+
+	// ------------------------------------------------------------------
+	// EmulationRecovery harness check (bead grm-edg)
+	// ------------------------------------------------------------------
+
+	// Fixture contract from mkemutest.py: a constant-EOR (#$AA) in-place decrypt loop at
+	// $2000 rewriting the 8-byte payload at $2010..$2017; decrypted plaintext is $01..$08.
+	// Load address is inside RAM_MAIN so the loader carves the PRG into the base space.
+	private static final long EMU_ENTRY = 0x2000;
+	private static final long EMU_PAYLOAD = 0x2010;
+	private static final int EMU_LEN = 8;
+
+	private void checkEmuRecovery() {
+		Address entry = addr(EMU_ENTRY);
+		Address payloadStart = addr(EMU_PAYLOAD);
+		AddressSet target = new AddressSet(payloadStart, addr(EMU_PAYLOAD + EMU_LEN - 1));
+
+		// Dirty-watch on the payload range is the intended completion condition; fuel is a
+		// safety bound in case the watch never trips (the fixture's trailing JMP-self spins).
+		StopConditions stop = StopConditions.builder()
+				.dirtyWatch(target)
+				.instructionFuel(10_000)
+				.build();
+
+		RecoveryResult result = new EmulationRecovery(currentProgram)
+				.recover(entry, stop, IoPolicy.volatileBlocks(currentProgram), monitor);
+
+		byte[] recovered = result.recoveredBytes(payloadStart, EMU_LEN);
+		byte[] expected = {1, 2, 3, 4, 5, 6, 7, 8};
+
+		StringBuilder dirtySb = new StringBuilder();
+		for (AddressRange r : result.dirty().getAddressRanges()) {
+			if (dirtySb.length() > 0) {
+				dirtySb.append(" ");
+			}
+			dirtySb.append(fmt(r.getMinAddress())).append("-").append(fmt(r.getMaxAddress()));
+		}
+
+		println("=== BANKDUMP BEGIN ===");
+		println("STOPREASON " + result.stopReason());
+		println("STEPS " + result.stepsExecuted());
+		println("DIRTY " + dirtySb);
+		println("RECOVERED " + hex(recovered));
+		println("SUSPECT " + result.provenance().suspect());
+		println("=== BANKDUMP END ===");
+
+		criterion("emu-stopreason", result.stopReason() == StopReason.DIRTY_WATCH,
+			"stop=" + result.stopReason());
+		criterion("emu-recovered", Arrays.equals(recovered, expected),
+			"bytes=" + hex(recovered));
+		criterion("emu-not-suspect", !result.provenance().suspect(),
+			"suspect=" + result.provenance().suspect());
+		criterion("emu-dirty-covers-target", result.dirty().contains(target),
+			"dirty=" + dirtySb);
+	}
+
+	private static String hex(byte[] bytes) {
+		if (bytes == null) {
+			return "<none>";
+		}
+		StringBuilder sb = new StringBuilder();
+		for (byte b : bytes) {
+			if (sb.length() > 0) {
+				sb.append(" ");
+			}
+			sb.append(String.format("%02x", b & 0xFF));
+		}
+		return sb.toString();
 	}
 
 	// ------------------------------------------------------------------
