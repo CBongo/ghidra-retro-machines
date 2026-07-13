@@ -80,6 +80,12 @@ public class VerifyBankTest extends GhidraScript {
 			return;
 		}
 
+		if (name.contains("rollingdecrypt")) {
+			checkRollingDecrypt();
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
+
 		dump();
 
 		if (name.contains("nesmmc1test")) {
@@ -189,12 +195,27 @@ public class VerifyBankTest extends GhidraScript {
 	private static final String DECRYPT_OVERLAY = "DECRYPTED_2010";
 	private static final int DECRYPT_LEN = 8;
 
+	// Tier 1 (constant key): the analyzer decrypts inline.
 	private void checkDecryptLoop() {
-		MemoryBlock overlay = currentProgram.getMemory().getBlock(DECRYPT_OVERLAY);
+		verifyDecryptRecovery("decrypt", DECRYPT_ENTRY, DECRYPT_OVERLAY, DECRYPT_LEN);
+	}
+
+	// Tier 2 (rolling key): the analyzer routes to the EmulationRecovery harness (grm-yxn).
+	// Fixture from mkrollingtest.py: EOR $2011,X rolling key over ciphertext at $2019.
+	private void checkRollingDecrypt() {
+		verifyDecryptRecovery("rolling", 0x2000, "DECRYPTED_2019", 8);
+	}
+
+	/** Shared assertions for a recovered decrypt loop: the DECRYPTED overlay holds the
+	 *  expected plaintext ($01..$08), a provenance bookmark sits at the decryptor entry, and
+	 *  an EOL comment cross-links the two. Constant (inline) and rolling (emulated) recovery
+	 *  converge on this same result, so one check covers both. */
+	private void verifyDecryptRecovery(String idPrefix, long entry, String overlayName, int len) {
+		MemoryBlock overlay = currentProgram.getMemory().getBlock(overlayName);
 		byte[] recovered = null;
 		if (overlay != null) {
 			try {
-				byte[] buf = new byte[DECRYPT_LEN];
+				byte[] buf = new byte[len];
 				overlay.getBytes(overlay.getStart(), buf);
 				recovered = buf;
 			}
@@ -204,13 +225,13 @@ public class VerifyBankTest extends GhidraScript {
 		}
 
 		Bookmark mark = null;
-		for (Bookmark bm : currentProgram.getBookmarkManager().getBookmarks(addr(DECRYPT_ENTRY))) {
+		for (Bookmark bm : currentProgram.getBookmarkManager().getBookmarks(addr(entry))) {
 			if (DECRYPT_CATEGORY.equals(bm.getCategory())) {
 				mark = bm;
 				break;
 			}
 		}
-		String comment = eol(DECRYPT_ENTRY);
+		String comment = eol(entry);
 		byte[] expected = {1, 2, 3, 4, 5, 6, 7, 8};
 
 		println("=== BANKDUMP BEGIN ===");
@@ -222,11 +243,12 @@ public class VerifyBankTest extends GhidraScript {
 		println("COMMENT " + comment);
 		println("=== BANKDUMP END ===");
 
-		criterion("decrypt-overlay-exists", overlay != null, "block=" + DECRYPT_OVERLAY);
-		criterion("decrypt-recovered", Arrays.equals(recovered, expected), "bytes=" + hex(recovered));
-		criterion("decrypt-note-bookmark", mark != null, "bm=" +
-			(mark == null ? "<none>" : mark.getTypeString()));
-		criterion("decrypt-comment-links-overlay", comment.contains(DECRYPT_OVERLAY),
+		criterion(idPrefix + "-overlay-exists", overlay != null, "block=" + overlayName);
+		criterion(idPrefix + "-recovered", Arrays.equals(recovered, expected),
+			"bytes=" + hex(recovered));
+		criterion(idPrefix + "-note-bookmark", mark != null,
+			"bm=" + (mark == null ? "<none>" : mark.getTypeString()));
+		criterion(idPrefix + "-comment-links-overlay", comment.contains(overlayName),
 			"eol=" + comment);
 	}
 
