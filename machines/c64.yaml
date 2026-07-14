@@ -208,9 +208,16 @@ symbols:
     comment: "KERNAL/BASIC zero-page usage; off by default — games reuse this RAM"
   - set: basic-api
     default: off
-    source: generated/c64ref-basic.yaml
-    provenance: "mist64/c64ref, generator adaptation TBD"
     region: LOROM
+    # No clean BASIC symbol-NAME source exists in c64ref: its only BASIC-ROM material is
+    # Lee Davison's fully-commented ROM disassembly (src/c64disasm) -- free-text comments,
+    # not symbol names, and separately licensed from the BSD repo wrapper. So this set is a
+    # small inline seed of the two universally-documented BASIC entry vectors (the JMP
+    # targets at the very start of BASIC ROM -- pure facts). A fuller BASIC symbol set is
+    # deferred pending a clean, name-bearing source (see follow-up bead).
+    inline:
+      - { addr: 0xA000, name: BASIC_COLD, kind: vector, comment: "BASIC cold start vector" }
+      - { addr: 0xA002, name: BASIC_WARM, kind: vector, comment: "BASIC warm start vector" }
 
 types:
   # Struct definitions applied at region/subregion `type:` references above.
