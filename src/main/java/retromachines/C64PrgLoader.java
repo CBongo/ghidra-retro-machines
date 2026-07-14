@@ -21,6 +21,7 @@ import java.nio.file.AccessMode;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -109,7 +110,43 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 			String saved = gui ? Preferences.getProperty(slot.prefKey(), "", true) : "";
 			options.add(new RomFileOption(slot.optionName(), saved, slot.cmdArg()));
 		}
+		// A checkbox per descriptor symbol set (bead grm-zlj), defaulting to the set's
+		// descriptor `default:`. Lets the user apply or skip any set at import -- notably to
+		// enable the off-by-default BASIC/KERNAL zero-page and page-2/3 variable labels.
+		for (Map.Entry<String, Boolean> set : symbolSetDefaults().entrySet()) {
+			options.add(new Option(symbolOptionName(set.getKey()), Boolean.class, set.getValue(),
+				symbolOptionArg(set.getKey()), "Symbol sets"));
+		}
 		return options;
+	}
+
+	/** Ordered map of symbol-set name -&gt; descriptor {@code default:}, read from the compiled
+	 *  map. Empty if the map cannot be read (the checkboxes are then simply omitted and
+	 *  {@link #load} applies each set's descriptor default). */
+	private Map<String, Boolean> symbolSetDefaults() {
+		Map<String, Boolean> result = new LinkedHashMap<>();
+		try {
+			JsonArray symbolSets = loadMap().getAsJsonArray("symbols");
+			if (symbolSets != null) {
+				for (JsonElement se : symbolSets) {
+					JsonObject set = se.getAsJsonObject();
+					result.put(set.get("set").getAsString(),
+						set.has("default") && set.get("default").getAsBoolean());
+				}
+			}
+		}
+		catch (IOException e) {
+			// No map -> no symbol checkboxes; load() falls back to descriptor defaults.
+		}
+		return result;
+	}
+
+	private static String symbolOptionName(String setName) {
+		return "Apply symbols: " + setName;
+	}
+
+	private static String symbolOptionArg(String setName) {
+		return Loader.COMMAND_LINE_ARG_PREFIX + "-symbols-" + setName;
 	}
 
 	@Override
@@ -284,8 +321,18 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 			JsonArray symbolSets = map.getAsJsonArray("symbols");
 			for (JsonElement se : symbolSets) {
 				JsonObject set = se.getAsJsonObject();
+				String setName = set.get("set").getAsString();
+				// Whether to apply this set is exactly the per-set checkbox value (grm-zlj) --
+				// NOT OR-ed with the descriptor default. The checkbox's own default was seeded
+				// (in getDefaultOptions) to the descriptor `default:`, so an unattended import
+				// applies precisely the descriptor defaults, while a user can turn any set on
+				// or off (including unchecking an on-by-default set). The isDefault fallback
+				// here only applies if the checkbox is absent, e.g. the map failed to load
+				// during getDefaultOptions.
 				boolean isDefault = set.has("default") && set.get("default").getAsBoolean();
-				if (!isDefault) {
+				boolean enabled = OptionUtils.getOption(symbolOptionName(setName),
+					settings.options(), Boolean.valueOf(isDefault));
+				if (!enabled) {
 					continue;
 				}
 				DescriptorSupport.applySymbolSet(program, baseSpace, set,

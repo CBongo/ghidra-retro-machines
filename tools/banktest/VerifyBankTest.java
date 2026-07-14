@@ -43,6 +43,7 @@ import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.InstructionIterator;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.symbol.Reference;
+import ghidra.program.model.symbol.Symbol;
 
 import retromachines.EmulationRecovery;
 import retromachines.IoPolicy;
@@ -94,6 +95,12 @@ public class VerifyBankTest extends GhidraScript {
 
 		if (name.contains("romload")) {
 			checkRomLoad();
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
+
+		if (name.contains("symtoggle")) {
+			checkSymToggle();
 			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
 			return;
 		}
@@ -353,6 +360,43 @@ public class VerifyBankTest extends GhidraScript {
 		criterion("rom-basic-bytes", bB0 == 0x55, "b0=" + hx(bB0));
 		criterion("rom-chargen-initialized", cInit, "");
 		criterion("rom-chargen-bytes", cB0 == 0xAA, "b0=" + hx(cB0));
+	}
+
+	// ------------------------------------------------------------------
+	// Symbol-set toggle checkboxes (bead grm-zlj)
+	// ------------------------------------------------------------------
+
+	// Fixture imported with -loader-symbols-basic-zeropage true (enable the off-by-default
+	// BASIC zero-page set) while leaving kernal-zeropage off. Asserts the checkbox applied
+	// exactly that set: TXTTAB $002B present (basic-zp on via checkbox), no symbol at $0090
+	// (kernal-zp still off), CHROUT $FFD2 present (kernal-api default on).
+	private void checkSymToggle() {
+		boolean txttab = hasSymbol(0x002B, "TXTTAB");
+		boolean statusSym = hasAnySymbol(0x0090);
+		boolean chrout = hasSymbol(0xFFD2, "CHROUT");
+
+		println("=== BANKDUMP BEGIN ===");
+		println("TXTTAB@2B=" + txttab);
+		println("SYM@90=" + statusSym);
+		println("CHROUT@FFD2=" + chrout);
+		println("=== BANKDUMP END ===");
+
+		criterion("symtoggle-basic-zp-enabled", txttab, "TXTTAB@2B=" + txttab);
+		criterion("symtoggle-kernal-zp-skipped", !statusSym, "sym@90=" + statusSym);
+		criterion("symtoggle-kernal-api-on", chrout, "CHROUT@FFD2=" + chrout);
+	}
+
+	private boolean hasSymbol(long offset, String name) {
+		for (Symbol s : currentProgram.getSymbolTable().getSymbols(addr(offset))) {
+			if (name.equals(s.getName())) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private boolean hasAnySymbol(long offset) {
+		return currentProgram.getSymbolTable().getSymbols(addr(offset)).length > 0;
 	}
 
 	private int readByte(MemoryBlock block, long offsetInBlock) {

@@ -155,6 +155,12 @@ run_one suspectdecrypt "$WORK/prg/suspectdecrypt.prg" C64PrgLoader
 run_one romload "$WORK/prg/romload.prg" C64PrgLoader \
 	"-loader-kernalRom $(native "$WORK/prg/kernal.bin") -loader-basicRom $(native "$WORK/prg/basic.bin") -loader-chargenRom $(native "$WORK/prg/chargen.bin")"
 
+# Symbol-set toggle (bead grm-zlj): import with the basic-zeropage checkbox on (a
+# default-off set) and assert it -- and only it -- was applied. Reuses any valid C64 PRG.
+cp "$WORK/prg/romload.prg" "$WORK/prg/symtoggle.prg"
+run_one symtoggle "$WORK/prg/symtoggle.prg" C64PrgLoader \
+	"-loader-symbols-basic-zeropage true"
+
 run_one nesbanktest "$WORK/nes/nesbanktest.nes" NesRomLoader
 run_one nesbanktest2 "$WORK/nes/nesbanktest2.nes" NesRomLoader
 run_one nesmodetest "$WORK/nes/nesmodetest.nes" NesRomLoader
