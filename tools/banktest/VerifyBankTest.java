@@ -92,6 +92,12 @@ public class VerifyBankTest extends GhidraScript {
 			return;
 		}
 
+		if (name.contains("romload")) {
+			checkRomLoad();
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
+
 		dump();
 
 		if (name.contains("nesmmc1test")) {
@@ -310,6 +316,59 @@ public class VerifyBankTest extends GhidraScript {
 		boolean disassembled = overlay != null &&
 			currentProgram.getListing().getInstructionAt(overlay.getStart()) != null;
 		criterion("suspect-overlay-disassembled", disassembled, "instr@overlay=" + disassembled);
+	}
+
+	// ------------------------------------------------------------------
+	// Optional user-supplied ROM loading (bead grm-mbm)
+	// ------------------------------------------------------------------
+
+	// Fixture from mkromtest.py: romload.prg imported with -loader-{kernal,basic,chargen}Rom
+	// pointing at synthetic ROMs whose bytes are kernal[i]=i&0xFF, basic[i]=(i&0xFF)^0x55,
+	// chargen[i]=(i&0xFF)^0xAA. So each ROM block should come back initialized with a
+	// distinct, position-dependent pattern (proving each path landed in the right block).
+	private void checkRomLoad() {
+		MemoryBlock kernal = currentProgram.getMemory().getBlock("KERNAL");
+		MemoryBlock basic = currentProgram.getMemory().getBlock("BASIC");
+		MemoryBlock chargen = currentProgram.getMemory().getBlock("CHARGEN");
+
+		int kB0 = readByte(kernal, 0);          // kernal[0]      = 0x00
+		int kChrget = readByte(kernal, 0x3A2);  // kernal[0x3A2]  = 0xA2 (where CHRGET lives)
+		int bB0 = readByte(basic, 0);           // basic[0]       = 0x55
+		int cB0 = readByte(chargen, 0);         // chargen[0]     = 0xAA
+
+		boolean kInit = kernal != null && kernal.isInitialized();
+		boolean bInit = basic != null && basic.isInitialized();
+		boolean cInit = chargen != null && chargen.isInitialized();
+
+		println("=== BANKDUMP BEGIN ===");
+		println("KERNAL init=" + kInit + " b0=" + hx(kB0) + " b3A2=" + hx(kChrget));
+		println("BASIC init=" + bInit + " b0=" + hx(bB0));
+		println("CHARGEN init=" + cInit + " b0=" + hx(cB0));
+		println("=== BANKDUMP END ===");
+
+		criterion("rom-kernal-initialized", kInit, "");
+		criterion("rom-kernal-bytes", kB0 == 0x00 && kChrget == 0xA2,
+			"b0=" + hx(kB0) + " b3A2=" + hx(kChrget));
+		criterion("rom-basic-initialized", bInit, "");
+		criterion("rom-basic-bytes", bB0 == 0x55, "b0=" + hx(bB0));
+		criterion("rom-chargen-initialized", cInit, "");
+		criterion("rom-chargen-bytes", cB0 == 0xAA, "b0=" + hx(cB0));
+	}
+
+	private int readByte(MemoryBlock block, long offsetInBlock) {
+		if (block == null || !block.isInitialized()) {
+			return -1;
+		}
+		try {
+			return block.getByte(block.getStart().add(offsetInBlock)) & 0xFF;
+		}
+		catch (Exception e) {
+			return -1;
+		}
+	}
+
+	private static String hx(int b) {
+		return b < 0 ? "??" : String.format("%02x", b);
 	}
 
 	private static String hex(byte[] bytes) {

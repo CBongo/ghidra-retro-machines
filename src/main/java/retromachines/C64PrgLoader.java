@@ -15,7 +15,9 @@
  */
 package retromachines;
 
+import java.io.File;
 import java.io.IOException;
+import java.nio.file.AccessMode;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -27,10 +29,16 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
 import ghidra.app.util.MemoryBlockUtils;
+import ghidra.app.util.Option;
+import ghidra.app.util.OptionUtils;
 import ghidra.app.util.bin.ByteProvider;
+import ghidra.app.util.bin.FileByteProvider;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.app.util.opinion.AbstractProgramWrapperLoader;
 import ghidra.app.util.opinion.LoadSpec;
+import ghidra.app.util.opinion.Loader;
+import ghidra.framework.model.DomainObject;
+import ghidra.framework.preferences.Preferences;
 import ghidra.program.database.mem.FileBytes;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSpace;
@@ -39,7 +47,9 @@ import ghidra.program.model.lang.LanguageCompilerSpecPair;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.symbol.SourceType;
+import ghidra.util.SystemUtilities;
 import ghidra.util.exception.CancelledException;
+import ghidra.util.task.TaskMonitor;
 import retromachines.DescriptorSupport.Perms;
 
 /**
@@ -67,6 +77,59 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 	@Override
 	public String getName() {
 		return NAME;
+	}
+
+	// --- Optional user-supplied ROM loading (bead grm-mbm) --------------------------------
+	// Each slot ties a descriptor image name to its import-dialog option, command-line arg,
+	// persisted-preference key, and expected byte size (fixed C64 ROM sizes). The paths let
+	// the user initialize the otherwise-empty KERNAL/BASIC/CHARGEN blocks; the GUI remembers
+	// them in Preferences, while a command-line import neither reads nor writes those prefs.
+	private record RomSlot(String image, String optionName, String cmdArg, String prefKey,
+			long size) {}
+
+	// The command-line argument is the full "-loader-<name>" form: LoaderArgsOptionChooser
+	// matches a headless "-loader-kernalRom <path>" flag verbatim against Option.getArg().
+	private static final List<RomSlot> ROM_SLOTS = List.of(
+		new RomSlot("kernal", "KERNAL ROM path", Loader.COMMAND_LINE_ARG_PREFIX + "-kernalRom",
+			"retromachines.c64.kernalRomPath", 0x2000),
+		new RomSlot("basic", "BASIC ROM path", Loader.COMMAND_LINE_ARG_PREFIX + "-basicRom",
+			"retromachines.c64.basicRomPath", 0x2000),
+		new RomSlot("chargen", "CHARGEN ROM path", Loader.COMMAND_LINE_ARG_PREFIX + "-chargenRom",
+			"retromachines.c64.chargenRomPath", 0x1000));
+
+	@Override
+	public List<Option> getDefaultOptions(ByteProvider provider, LoadSpec loadSpec,
+			DomainObject domainObject, boolean loadIntoProgram, boolean mirrorFsLayout) {
+		List<Option> options = super.getDefaultOptions(provider, loadSpec, domainObject,
+			loadIntoProgram, mirrorFsLayout);
+		// Pre-fill from remembered paths in the GUI only; a headless/command-line import must
+		// not draw ROM paths from the persistent preferences (only from the -<arg> value).
+		boolean gui = !SystemUtilities.isInHeadlessMode();
+		for (RomSlot slot : ROM_SLOTS) {
+			String saved = gui ? Preferences.getProperty(slot.prefKey(), "", true) : "";
+			options.add(new RomFileOption(slot.optionName(), saved, slot.cmdArg()));
+		}
+		return options;
+	}
+
+	@Override
+	public String validateOptions(ByteProvider provider, LoadSpec loadSpec, List<Option> options,
+			Program program) {
+		for (RomSlot slot : ROM_SLOTS) {
+			String path = OptionUtils.getOption(slot.optionName(), options, "");
+			if (path == null || path.isBlank()) {
+				continue;
+			}
+			File f = new File(path.trim());
+			if (!f.isFile()) {
+				return slot.optionName() + ": file not found: " + path;
+			}
+			if (f.length() != slot.size()) {
+				return slot.optionName() + ": expected " + slot.size() + " bytes but " +
+					f.getName() + " is " + f.length() + " bytes";
+			}
+		}
+		return super.validateOptions(provider, loadSpec, options, program);
 	}
 
 	@Override
@@ -102,6 +165,15 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 
 		ByteProvider provider = settings.provider();
 		MessageLog log = settings.log();
+
+		// Optional user-supplied ROM images (bead grm-mbm), keyed by descriptor image name.
+		Map<String, String> romPaths = new HashMap<>();
+		for (RomSlot slot : ROM_SLOTS) {
+			String path = OptionUtils.getOption(slot.optionName(), settings.options(), "");
+			if (path != null && !path.isBlank()) {
+				romPaths.put(slot.image(), path.trim());
+			}
+		}
 
 		// --- Load the descriptor JSON ---
 		JsonObject map;
@@ -200,7 +272,7 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 						String occupantName = occupant.get("name").getAsString();
 						occupantCandidates.add(new DescriptorSupport.NamedCandidate(occupantName,
 							(p, bs, isHome, l) -> createWindowOccupant(p, bs, occupant, window,
-								isHome, gdtMgrForCandidates, l)));
+								isHome, gdtMgrForCandidates, romPaths, l)));
 					}
 					DescriptorSupport.placeHomeInBaseWindow(program, baseSpace, occupantCandidates,
 						homeOccupantName, log);
@@ -246,6 +318,9 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 			catch (Exception e) {
 				log.appendMsg("Failed to set entry point: " + e.getMessage());
 			}
+
+			// Remember the ROM paths used (GUI only) so the next import defaults to them.
+			saveRomPreferences(settings);
 		}
 		finally {
 			if (gdtMgr != null) {
@@ -359,7 +434,7 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 
 	private MemoryBlock createWindowOccupant(Program program, AddressSpace baseSpace,
 			JsonObject occupant, JsonObject window, boolean isHome, FileDataTypeManager gdtMgr,
-			MessageLog log) {
+			Map<String, String> romPaths, MessageLog log) {
 
 		String occupantName = occupant.get("name").getAsString();
 		String kind = occupant.get("kind").getAsString();
@@ -381,7 +456,66 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 		Address startAddr = baseSpace.getAddress(start);
 		String comment = occupantName + " (" + kind + ")";
 		Perms p = DescriptorSupport.perms(occupant, kind);
+
+		// If this is a ROM occupant the user supplied a dump for, initialize it from that file
+		// (bead grm-mbm) instead of leaving it empty -- makes ROM code disassemblable and gives
+		// ROM->RAM copies (e.g. CHRGET) a real source. Any failure falls back to uninitialized.
+		if (occupant.has("image")) {
+			String path = romPaths.get(occupant.get("image").getAsString());
+			if (path != null) {
+				MemoryBlock rom = createRomBlock(program, occupantName, startAddr, length,
+					isOverlay, path, p, log);
+				if (rom != null) {
+					return rom;
+				}
+			}
+		}
+
 		return MemoryBlockUtils.createUninitializedBlock(program, isOverlay, occupantName, startAddr,
 			length, comment, "c64.map", p.readable(), p.writable(), p.executable(), log);
+	}
+
+	/** Initialize a ROM occupant block from a user-supplied dump file, mirroring
+	 *  {@link #createPrgBlock}'s FileBytes pattern. Returns null (caller falls back to an
+	 *  uninitialized block) if the file is the wrong size or cannot be read. */
+	private MemoryBlock createRomBlock(Program program, String name, Address start, long length,
+			boolean isOverlay, String path, Perms p, MessageLog log) {
+		File file = new File(path);
+		if (file.length() != length) {
+			log.appendMsg(name + ": ROM file " + path + " is " + file.length() + " bytes, expected "
+				+ length + "; leaving " + name + " uninitialized");
+			return null;
+		}
+		try (FileByteProvider romProvider = new FileByteProvider(file, null, AccessMode.READ)) {
+			FileBytes fileBytes =
+				MemoryBlockUtils.createFileBytes(program, romProvider, TaskMonitor.DUMMY);
+			return MemoryBlockUtils.createInitializedBlock(program, isOverlay, name, start,
+				fileBytes, 0, length, name + " (user-supplied ROM: " + file.getName() + ")",
+				"user-rom", p.readable(), p.writable(), p.executable(), log);
+		}
+		catch (Exception e) {
+			log.appendMsg(name + ": failed to load ROM " + path + ": " + e.getMessage() +
+				"; leaving " + name + " uninitialized");
+			return null;
+		}
+	}
+
+	/** Remember the supplied ROM paths so the next GUI import defaults to them. Skipped in
+	 *  headless mode: a command-line import must neither read nor write these preferences. */
+	private void saveRomPreferences(ImporterSettings settings) {
+		if (SystemUtilities.isInHeadlessMode()) {
+			return;
+		}
+		boolean changed = false;
+		for (RomSlot slot : ROM_SLOTS) {
+			String path = OptionUtils.getOption(slot.optionName(), settings.options(), "");
+			if (path != null && !path.isBlank()) {
+				Preferences.setProperty(slot.prefKey(), path.trim());
+				changed = true;
+			}
+		}
+		if (changed) {
+			Preferences.store();
+		}
 	}
 }

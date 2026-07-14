@@ -71,18 +71,22 @@ fail=0
 "$PYTHON" "$SCRIPT_DIR/mkdecrypttest.py" "$WORK/prg" || { echo "FAIL: mkdecrypttest.py" >&2; exit 1; }
 "$PYTHON" "$SCRIPT_DIR/mkrollingtest.py" "$WORK/prg" || { echo "FAIL: mkrollingtest.py" >&2; exit 1; }
 "$PYTHON" "$SCRIPT_DIR/mksuspecttest.py" "$WORK/prg" || { echo "FAIL: mksuspecttest.py" >&2; exit 1; }
+"$PYTHON" "$SCRIPT_DIR/mkromtest.py" "$WORK/prg" || { echo "FAIL: mkromtest.py" >&2; exit 1; }
 
 # Imports $2 (a .prg or .nes fixture) via $3 (the loader name), runs VerifyBankTest.java,
 # extracts the normalized dump, and check|bless's it against expected/$1.dump.
 run_one() {
-	local name="$1" fixture="$2" loader="$3"
+	local name="$1" fixture="$2" loader="$3" extra="${4:-}"
 	local proj="$WORK/proj_$name"
 	mkdir -p "$proj"
 	local log="$WORK/$name.log"
 	echo "== $name: importing $(basename "$fixture") via analyzeHeadless ($loader) =="
+	# $extra is intentionally unquoted so multi-token loader args (e.g.
+	# "-loader-kernalRom <path>") word-split into separate arguments.
 	"$GHIDRA_HEADLESS" "$(native "$proj")" headless \
 		-import "$(native "$fixture")" \
 		-loader "$loader" \
+		$extra \
 		-scriptPath "$(native "$SCRIPT_DIR")" \
 		-postScript VerifyBankTest.java \
 		>"$log" 2>&1
@@ -144,6 +148,12 @@ run_one decryptloop "$WORK/prg/decryptloop.prg" C64PrgLoader
 run_one rollingdecrypt "$WORK/prg/rollingdecrypt.prg" C64PrgLoader
 
 run_one suspectdecrypt "$WORK/prg/suspectdecrypt.prg" C64PrgLoader
+
+# ROM loading (bead grm-mbm): import with synthetic ROM paths via the loaders'
+# command-line options (-loader-<arg>), asserting the ROM blocks come back
+# initialized. Exercises the same command-line option path a headless user would use.
+run_one romload "$WORK/prg/romload.prg" C64PrgLoader \
+	"-loader-kernalRom $(native "$WORK/prg/kernal.bin") -loader-basicRom $(native "$WORK/prg/basic.bin") -loader-chargenRom $(native "$WORK/prg/chargen.bin")"
 
 run_one nesbanktest "$WORK/nes/nesbanktest.nes" NesRomLoader
 run_one nesbanktest2 "$WORK/nes/nesbanktest2.nes" NesRomLoader
