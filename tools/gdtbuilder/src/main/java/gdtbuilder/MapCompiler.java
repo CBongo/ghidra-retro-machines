@@ -17,6 +17,7 @@ package gdtbuilder;
 
 import java.io.File;
 import java.io.FileWriter;
+import java.io.IOException;
 import java.io.Writer;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -118,7 +119,7 @@ public class MapCompiler {
 			mapDoc.put("banking", banking);
 		}
 		mapDoc.put("rom_images", buildRomImages(descriptor));
-		mapDoc.put("symbols", buildSymbols(descriptor));
+		mapDoc.put("symbols", buildSymbols(descriptor, descriptorFile.getParentFile()));
 
 		outputMap.getParentFile().mkdirs();
 		Gson gson = new GsonBuilder().setPrettyPrinting().create();
@@ -706,7 +707,8 @@ public class MapCompiler {
 	// ---- symbols ----
 
 	@SuppressWarnings("unchecked")
-	private static List<Map<String, Object>> buildSymbols(Map<String, Object> descriptor) {
+	private static List<Map<String, Object>> buildSymbols(Map<String, Object> descriptor,
+			File descriptorDir) throws IOException {
 		List<Map<String, Object>> symbols = (List<Map<String, Object>>) descriptor.get("symbols");
 		List<Map<String, Object>> out = new ArrayList<>();
 		if (symbols == null) {
@@ -714,26 +716,76 @@ public class MapCompiler {
 		}
 		for (Map<String, Object> set : symbols) {
 			Map<String, Object> s = new LinkedHashMap<>();
-			s.put("set", requireString(set, "set", "symbols[]"));
+			String setName = requireString(set, "set", "symbols[]");
+			s.put("set", setName);
 			s.put("default", parseDefault(set));
 			copyIfPresent(set, s, "region");
 
-			List<Map<String, Object>> inline = (List<Map<String, Object>>) set.get("inline");
+			// Entries come from an inline: list (hand-curated seed) and/or a source: file
+			// (bulk symbols generated from mist64/c64ref -- see machines/generated). Inline
+			// entries take precedence: an address present inline is not overwritten by the
+			// generated source, so the seed acts as authoritative overrides.
 			List<Map<String, Object>> entriesOut = new ArrayList<>();
+			Set<Integer> seenAddrs = new LinkedHashSet<>();
+
+			List<Map<String, Object>> inline = (List<Map<String, Object>>) set.get("inline");
 			if (inline != null) {
 				for (Map<String, Object> entry : inline) {
-					Map<String, Object> e = new LinkedHashMap<>();
-					e.put("addr", requireAddr(entry, "addr", "symbols entry"));
-					e.put("name", requireString(entry, "name", "symbols entry"));
-					e.put("kind", requireString(entry, "kind", "symbols entry"));
-					copyIfPresent(entry, e, "comment");
-					entriesOut.add(e);
+					Map<String, Object> e = symbolEntry(entry, seenAddrs);
+					if (e != null) {
+						entriesOut.add(e);
+					}
 				}
 			}
+
+			String source = (String) set.get("source");
+			if (source != null) {
+				File sourceFile = new File(descriptorDir, source);
+				if (sourceFile.isFile()) {
+					Map<String, Object> sourceDoc = YamlSupport.load(sourceFile);
+					List<Map<String, Object>> srcEntries =
+						(List<Map<String, Object>>) sourceDoc.get("entries");
+					if (srcEntries == null) {
+						throw new IllegalArgumentException("symbol set '" + setName +
+							"' source file has no top-level 'entries:' list: " + sourceFile);
+					}
+					for (Map<String, Object> entry : srcEntries) {
+						Map<String, Object> e = symbolEntry(entry, seenAddrs);
+						if (e != null) {
+							entriesOut.add(e);
+						}
+					}
+				}
+				else {
+					// Referenced but not yet generated -- keep the build working (inline entries
+					// still apply) and surface the gap loudly rather than silently producing none.
+					System.err.println("WARNING: symbol set '" + setName +
+						"' references source file that does not exist (using inline entries only): " +
+						sourceFile);
+				}
+			}
+
 			s.put("entries", entriesOut);
 			out.add(s);
 		}
 		return out;
+	}
+
+	/** Normalize one symbol entry ({@code addr}/{@code name}/{@code kind}/{@code comment}),
+	 *  or {@code null} if its address was already emitted for this set (dedup; the first
+	 *  occurrence -- inline before source -- wins). */
+	private static Map<String, Object> symbolEntry(Map<String, Object> entry,
+			Set<Integer> seenAddrs) {
+		int addr = requireAddr(entry, "addr", "symbols entry");
+		if (!seenAddrs.add(addr)) {
+			return null;
+		}
+		Map<String, Object> e = new LinkedHashMap<>();
+		e.put("addr", addr);
+		e.put("name", requireString(entry, "name", "symbols entry"));
+		e.put("kind", requireString(entry, "kind", "symbols entry"));
+		copyIfPresent(entry, e, "comment");
+		return e;
 	}
 
 	private static boolean parseDefault(Map<String, Object> set) {
