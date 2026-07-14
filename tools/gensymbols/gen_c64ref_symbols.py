@@ -2,13 +2,34 @@
 """Generate C64 symbol YAML files for ghidra-retro-machines from mist64/c64ref.
 
 This script reads the fixed-column plain-text reference files from a checkout
-of https://github.com/mist64/c64ref (default: D:/git/c64ref) and emits two
+of https://github.com/mist64/c64ref (default: D:/git/c64ref) and emits three
 symbol YAML files consumed by the ghidra-retro-machines C64 loader/compiler:
 
-  machines/generated/c64ref-kernal.yaml     - KERNAL ROM routine symbols
-                                               ($E000-$FFFF), kind: entry/vector
-  machines/generated/c64ref-c64mem-zp.yaml  - zero-page variables ($0000-$00FF),
-                                               kind: label
+  machines/generated/c64ref-kernal.yaml           - KERNAL ROM routine symbols
+                                                     ($E000-$FFFF), kind: entry/vector
+  machines/generated/c64ref-c64mem-basic-zp.yaml  - BASIC zero page
+                                                     ($0002-$008F), kind: label
+  machines/generated/c64ref-c64mem-kernal-zp.yaml - KERNAL/system zero page
+                                                     (< $0002 or $0090-$00FF),
+                                                     kind: label
+  machines/generated/c64ref-c64mem-page23.yaml    - pages 1-3 above zero page
+                                                     ($0100-$03FF), kind: label
+
+The low-RAM range ($0000-$03FF: zero page plus page 1 stack area, page 2, and
+page 3) is split into three files by each entry's START address:
+
+  $0002 <= addr <= $008F   -> BASIC zero page: working storage (floating-point
+                              accumulators, BASIC text/variable/array pointers
+                              TXTTAB etc., CHRGET area at $73)
+  addr < $0002 OR
+  $0090 <= addr <= $00FF   -> KERNAL zero page: the $00/$01 6510 on-chip I/O
+                              port, plus KERNAL/system state ($90 STATUS/ST,
+                              I/O status, file parameters, etc.)
+  $0100 <= addr <= $03FF   -> page23: page 1 (stack) + page 2 + page 3
+                              (KERNAL/BASIC vectors + I/O buffers), kept
+                              together as one combined set (NOT split further)
+
+$0090 is the canonical C64 BASIC/KERNAL zero-page boundary.
 
 Sources chosen (see c64ref/src/*/*.txt headers for column layout):
   - KERNAL:   src/kernal/kernal_prg.txt  (C64 Programmer's Reference Guide,
@@ -61,8 +82,17 @@ ZP_SOURCE = "c64mem_prg.txt"
 
 KERNAL_MIN = 0xE000
 KERNAL_MAX = 0xFFFF
-ZP_MIN = 0x0000
-ZP_MAX = 0x00FF
+# Low RAM: zero page + page 1 (stack) + page 2 + page 3 ($0000-$03FF).
+LOWRAM_MIN = 0x0000
+LOWRAM_MAX = 0x03FF
+
+# BASIC/KERNAL zero-page split boundary (see module docstring). BASIC working
+# storage occupies $0002-$008F; addresses below $0002 (the $00/$01 hardware
+# port) and $0090-$00FF are KERNAL/system zero page. $0100-$03FF (pages 1-3)
+# is one combined "page23" set.
+BASIC_ZP_MIN = 0x0002
+BASIC_ZP_MAX = 0x008F
+PAGE1_MIN = 0x0100
 
 # CPU hardware vectors: not present as data rows in any c64ref kernal source
 # file, added here from well-known, universally-documented C64 memory map
@@ -195,15 +225,46 @@ def main():
     kernal_out = out_dir / "c64ref-kernal.yaml"
     write_yaml(kernal_out, kernal_entries, note)
 
-    # --- Zero page ---
+    # --- Low RAM ($0000-$03FF), split into three files by START address ---
     zp_path = c64ref_dir / "src" / "c64mem" / ZP_SOURCE
-    zp_raw = parse_entries(zp_path, ZP_MIN, ZP_MAX)
-    zp_entries = [(addr, name, "label", comment) for addr, name, comment in zp_raw]
-    zp_entries.sort(key=lambda e: e[0])
-    zp_entries = dedupe_names(zp_entries)
+    lowram_raw = parse_entries(zp_path, LOWRAM_MIN, LOWRAM_MAX)
 
-    zp_out = out_dir / "c64ref-c64mem-zp.yaml"
-    write_yaml(zp_out, zp_entries, note)
+    def bucket(addr):
+        if addr < PAGE1_MIN:  # zero page: split at $0090 boundary
+            return "basic" if BASIC_ZP_MIN <= addr <= BASIC_ZP_MAX else "kernal"
+        return "page23"  # $0100-$03FF: one combined set
+
+    def build(bucket_name):
+        entries = [
+            (addr, name, "label", comment)
+            for addr, name, comment in lowram_raw
+            if bucket(addr) == bucket_name
+        ]
+        entries.sort(key=lambda e: e[0])
+        return dedupe_names(entries)
+
+    basic_entries = build("basic")
+    kernal_zp_entries = build("kernal")
+    page23_entries = build("page23")
+
+    basic_out = out_dir / "c64ref-c64mem-basic-zp.yaml"
+    kernal_zp_out = out_dir / "c64ref-c64mem-kernal-zp.yaml"
+    page23_out = out_dir / "c64ref-c64mem-page23.yaml"
+    write_yaml(basic_out, basic_entries, note)
+    write_yaml(kernal_zp_out, kernal_zp_entries, note)
+    write_yaml(page23_out, page23_entries, note)
+
+    # Remove output files from earlier iterations of this split so only the
+    # current three low-RAM files (plus c64ref-kernal.yaml) remain.
+    for stale in (
+        "c64ref-c64mem-zp.yaml",
+        "c64ref-basic-zp.yaml",
+        "c64ref-c64mem-kernal.yaml",
+        "c64ref-c64mem-basic.yaml",
+    ):
+        stale_path = out_dir / stale
+        if stale_path.exists():
+            stale_path.unlink()
 
     # --- Summary ---
     print(f"KERNAL source:   {kernal_path}")
@@ -211,9 +272,13 @@ def main():
           f"({len(kernal_raw)} parsed + {len(HARDWARE_VECTORS)} hardware vectors)")
     print(f"  written to:    {kernal_out}")
     print()
-    print(f"Zero page source: {zp_path}")
-    print(f"  entries:       {len(zp_entries)}")
-    print(f"  written to:    {zp_out}")
+    print(f"Low RAM source ($0000-$03FF): {zp_path}")
+    print(f"  BASIC zp ($0002-$008F) entries: {len(basic_entries)}")
+    print(f"  written to:     {basic_out}")
+    print(f"  KERNAL zp (<$0002 or $0090-$00FF) entries: {len(kernal_zp_entries)}")
+    print(f"  written to:     {kernal_zp_out}")
+    print(f"  page23 ($0100-$03FF) entries: {len(page23_entries)}")
+    print(f"  written to:     {page23_out}")
 
 
 if __name__ == "__main__":

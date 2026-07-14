@@ -200,12 +200,28 @@ symbols:
       - { addr: 0xFFFA, name: NMI_VEC,   kind: vector }
       - { addr: 0xFFFC, name: RESET_VEC, kind: vector }
       - { addr: 0xFFFE, name: IRQ_VEC,   kind: vector }
+  # Low-RAM variable sets, split from mist64/c64ref src/c64mem (PRG guide) by
+  # tools/gensymbols/gen_c64ref_symbols.py: BASIC zero page ($02-$8F), KERNAL zero page
+  # ($00-$01 + $90-$FF), and pages 1-3 ($0100-$03FF, stack + vectors + I/O buffers). All
+  # default off (games reuse this RAM); toggled at import via loader checkboxes (grm-zlj).
   - set: kernal-zeropage
     default: off
-    source: generated/c64ref-c64mem-zp.yaml
-    provenance: "mist64/c64ref src/c64mem, generator adaptation TBD"
+    source: generated/c64ref-c64mem-kernal-zp.yaml
+    provenance: "mist64/c64ref src/c64mem (PRG guide); KERNAL zero page $90-$FF + port $00-$01"
     region: ZEROPAGE
-    comment: "KERNAL/BASIC zero-page usage; off by default — games reuse this RAM"
+    comment: "KERNAL zero-page variables; off by default — games reuse this RAM"
+  - set: basic-zeropage
+    default: off
+    source: generated/c64ref-c64mem-basic-zp.yaml
+    provenance: "mist64/c64ref src/c64mem (PRG guide); BASIC zero page $02-$8F"
+    region: ZEROPAGE
+    comment: "BASIC zero-page variables; off by default — games reuse this RAM"
+  - set: page23
+    default: off
+    source: generated/c64ref-c64mem-page23.yaml
+    provenance: "mist64/c64ref src/c64mem (PRG guide); pages 1-3 $0100-$03FF"
+    region: OS_WORKSPACE
+    comment: "Page 1-3 variables, vectors, and I/O buffers ($0100-$03FF); off by default"
   - set: basic-api
     default: off
     region: LOROM
