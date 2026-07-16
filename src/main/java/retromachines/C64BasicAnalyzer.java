@@ -140,8 +140,11 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 		if (result.lines().isEmpty()) {
 			return true; // trivially empty BASIC program; nothing to annotate
 		}
-		log.appendMsg(getName(), NAME + " running: " + result.lines().size() +
-			" BASIC line(s) at 0x" + Long.toHexString(loadAddr));
+		boolean verbose = AnalyzerRunLog.isInitialRun(program, getClass());
+		if (verbose) {
+			log.appendMsg(getName(), NAME + " running: " + result.lines().size() +
+				" BASIC line(s) at 0x" + Long.toHexString(loadAddr));
+		}
 
 		FileDataTypeManager gdtMgr;
 		try {
@@ -149,6 +152,7 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 		}
 		catch (IOException e) {
 			log.appendMsg(getName(), "Failed to open " + GDT_PATH + ": " + e.getMessage());
+			AnalyzerRunLog.markCompleted(program, getClass());
 			return false;
 		}
 		PetsciiMapper petscii;
@@ -158,6 +162,7 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 		catch (IOException e) {
 			log.appendMsg(getName(), "Failed to load petscii.map: " + e.getMessage());
 			gdtMgr.close();
+			AnalyzerRunLog.markCompleted(program, getClass());
 			return false;
 		}
 
@@ -225,6 +230,7 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 			gdtMgr.close();
 		}
 
+		AnalyzerRunLog.markCompleted(program, getClass());
 		return true;
 	}
 

@@ -198,6 +198,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			throws CancelledException {
 
 		String tag = getClass().getSimpleName();
+		boolean verbose = AnalyzerRunLog.isInitialRun(program, getClass());
 		String mapPath = getMapPath(program);
 		if (mapPath == null) {
 			return false;
@@ -207,11 +208,16 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		long fingerprint = fingerprint(program);
 		RunStamp last = LAST_COMPLETED.get(program);
 		if (last != null && last.fingerprint() == fingerprint && last.mapPath().equals(mapPath)) {
-			log.appendMsg(getName(), tag + ": no function/instruction changes since last " +
-				"completed run; skipping redundant whole-program re-analysis");
+			if (verbose) {
+				log.appendMsg(getName(), tag + ": no function/instruction changes since last " +
+					"completed run; skipping redundant whole-program re-analysis");
+			}
+			AnalyzerRunLog.markCompleted(program, getClass());
 			return true;
 		}
-		log.appendMsg(getName(), tag + " running (" + mapPath + ")");
+		if (verbose) {
+			log.appendMsg(getName(), tag + " running (" + mapPath + ")");
+		}
 
 		JsonObject map;
 		try {
@@ -219,11 +225,13 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		}
 		catch (IOException e) {
 			log.appendMsg(getName(), "Failed to load " + mapPath + ": " + e.getMessage());
+			AnalyzerRunLog.markCompleted(program, getClass());
 			return false;
 		}
 
 		BoardModel board = BoardModel.parse(map, log, getName(), mapPath);
 		if (board == null) {
+			AnalyzerRunLog.markCompleted(program, getClass());
 			return true;
 		}
 
@@ -233,6 +241,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		if (mechanisms.isEmpty()) {
 			log.appendMsg(getName(), "no usable bank-switch strategy in " + mapPath +
 				" banking; skipping bank-state analysis");
+			AnalyzerRunLog.markCompleted(program, getClass());
 			return true;
 		}
 
@@ -244,8 +253,10 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 
 		Map<Function, HelperModel> helpers = findHelpers(program, flow.switchResults());
 		if (!helpers.isEmpty()) {
-			log.appendMsg(getName(), helpers.size() + " bank-switch helper function(s): " +
-				helpers.keySet().stream().map(Function::getName).sorted().toList());
+			if (verbose) {
+				log.appendMsg(getName(), helpers.size() + " bank-switch helper function(s): " +
+					helpers.keySet().stream().map(Function::getName).sorted().toList());
+			}
 			flow = runDataflow(program, monitor, listing, mechanisms, board, helpers);
 		}
 
@@ -308,19 +319,22 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// derived AFTER the Phase-1/2 fixpoint above -- see the method's javadoc for what
 		// is and is not fed back into the dataflow) ---
 		int violations = annotateBankRequirementViolations(program, listing, flow, board,
-			alreadyWarned, log);
+			alreadyWarned, log, verbose);
 
 		// --- Context stamping: only when the language actually declares the register ---
-		stampContextRegister(program, banking, flow.stateIn(), listing, board.mask(), log);
+		stampContextRegister(program, banking, flow.stateIn(), listing, board.mask(), log, verbose);
 
-		log.appendMsg(getName(), tag + ": " + flow.stateIn().size() + " instructions tracked, " +
-			refsAdded + " overlay references added/confirmed, " + warnings +
-			" unknown-state warnings, " + violations + " bank-state requirement violations");
+		if (verbose) {
+			log.appendMsg(getName(), tag + ": " + flow.stateIn().size() + " instructions tracked, " +
+				refsAdded + " overlay references added/confirmed, " + warnings +
+				" unknown-state warnings, " + violations + " bank-state requirement violations");
+		}
 
 		// Record the ENTRY-time fingerprint only now that the run completed: phase 2's own
 		// disassembly/function side effects have moved the live counts past it, so the
 		// framework round they trigger will not match and will run in full.
 		LAST_COMPLETED.put(program, new RunStamp(fingerprint, mapPath));
+		AnalyzerRunLog.markCompleted(program, getClass());
 		return true;
 	}
 
@@ -1053,7 +1067,8 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * @return the number of new violation WARNING bookmarks placed
 	 */
 	private int annotateBankRequirementViolations(Program program, Listing listing,
-			DataflowResult flow, BoardModel board, Set<Address> alreadyWarned, MessageLog log) {
+			DataflowResult flow, BoardModel board, Set<Address> alreadyWarned, MessageLog log,
+			boolean verbose) {
 
 		FunctionManager fm = program.getFunctionManager();
 
@@ -1164,9 +1179,11 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			if (exitState == null) {
 				exitState = BankState.unknown();
 			}
-			log.appendMsg(getName(), "[bank-summary] " + f.getName() + ": modifies " +
-				describeBits(board, mMask) + "; requires on entry " + describeBits(board, rMask) +
-				"; exit " + exitState);
+			if (verbose) {
+				log.appendMsg(getName(), "[bank-summary] " + f.getName() + ": modifies " +
+					describeBits(board, mMask) + "; requires on entry " + describeBits(board, rMask) +
+					"; exit " + exitState);
+			}
 		}
 
 		// --- violation scan: a direct call site whose caller in-state is missing bits the
@@ -1461,7 +1478,8 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * becomes worthwhile.
 	 */
 	private void stampContextRegister(Program program, JsonObject banking,
-			Map<Address, BankState> stateIn, Listing listing, int mask, MessageLog log) {
+			Map<Address, BankState> stateIn, Listing listing, int mask, MessageLog log,
+			boolean verbose) {
 		if (!banking.has("context_register")) {
 			return;
 		}
@@ -1490,7 +1508,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				return;
 			}
 		}
-		if (stamped > 0) {
+		if (verbose && stamped > 0) {
 			log.appendMsg(getName(),
 				"stamped " + register.getName() + " over " + stamped + " instructions");
 		}
