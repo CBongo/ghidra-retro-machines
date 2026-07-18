@@ -1,0 +1,5 @@
+FORMAT c64basic2=true
+PRE 0801=10 {$cc} {$d5} {$ce}{CTRL-B} {$fe}{CTRL-B}
+PRE 080f=20 SYS 2064+1
+TYPED=true loadFunction=false
+INVALID_SYS expressionNote=true functionAt0810=false

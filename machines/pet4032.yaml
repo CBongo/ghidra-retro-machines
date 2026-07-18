@@ -173,6 +173,12 @@ types:
   - name: MOS6545_CRTC
     kind: struct
     source: generated/pet-6545-crtc.yaml
+  - name: BASIC_V4_TOKEN
+    kind: enum
+    size: 1
+    source: generated/basic-tokens.yaml
+    lists: [basic2-base, basic4-pet-ext]
+    comment: "PET BASIC 4 keyword tokens: shared $80-$CB plus PET disk commands $CC-$DA."
 
 formats:
   prg:
@@ -180,7 +186,11 @@ formats:
     header:
       - { field: load_address, size: 2, endian: little }
     placement: load_address
-    comment: "PET PRG payload follows its saved address; a normal BASIC 4 program starts with header bytes $01,$04"
+    basic:
+      dialect: "Commodore BASIC 4.0 (PET)"
+      token_enum: BASIC_V4_TOKEN
+      petscii_variant: unshifted_graphics
+    comment: "PET PRG payload follows its saved address; a normal BASIC 4 program starts with header bytes $01,$04."
 
 validation:
   oracle: "VICE xpet -model 4032"

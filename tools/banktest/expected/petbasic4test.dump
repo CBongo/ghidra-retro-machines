@@ -1,0 +1,6 @@
+FORMAT petbasic4=true
+PRE 0401=10 CONCAT DOPEN DIRECTORY
+PRE 040b=20 PRINT"{$cc}{$cd}{$da}"
+PRE 0416=30 REM{$cc}"{$ce}
+PRE 041f=40 SYS 1068
+TYPED=true sysFunction=true loadFunction=false

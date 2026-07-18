@@ -137,6 +137,29 @@ public class VerifyBankTest extends GhidraScript {
 			return;
 		}
 
+		if (name.contains("c64basic2tokentest")) {
+			checkC64Basic2Dialect();
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
+		if (name.contains("c64basicoverflowtest")) {
+			checkC64BasicOverflowDialect();
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
+
+		if (name.contains("petbasic4test")) {
+			checkPetBasic4Dialect();
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
+
+		if (name.contains("c128basic7test")) {
+			checkC128Basic7Dialect();
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
+
 		dump();
 
 		if (name.contains("nesmmc1test")) {
@@ -559,6 +582,148 @@ public class VerifyBankTest extends GhidraScript {
 	}
 
 	// ------------------------------------------------------------------
+	// BASIC 2/4/7 dialect-detokenizer fixtures (grm-1.6.1)
+	// ------------------------------------------------------------------
+
+	private void checkC64Basic2Dialect() {
+		String line = preComment(0x0801);
+		String expressionSys = preComment(0x080f);
+		boolean format = "Commodore 64 PRG".equals(currentProgram.getExecutableFormat());
+		boolean typed = basicLineWordsTyped(0x0801) && basicLineWordsTyped(0x080f);
+		boolean noLoadFunction = !hasFunctionAt(0x0801);
+		boolean expressionSysNote = hasSysNoteBookmark(0x080f);
+		boolean noPrefixSysFunction = !hasFunctionAt(0x0810);
+
+		println("=== BANKDUMP BEGIN ===");
+		println("FORMAT c64basic2=" + format);
+		println("PRE 0801=" + line);
+		println("PRE 080f=" + expressionSys);
+		println("TYPED=" + typed + " loadFunction=" + !noLoadFunction);
+		println("INVALID_SYS expressionNote=" + expressionSysNote + " functionAt0810=" +
+			!noPrefixSysFunction);
+		println("=== BANKDUMP END ===");
+
+		criterion("basic2-format", format, currentProgram.getExecutableFormat());
+		criterion("basic2-cc-plus-raw",
+			"10 {$cc} {$d5} {$ce}{CTRL-B} {$fe}{CTRL-B}".equals(line), line);
+		criterion("basic2-line-typed", typed, "link/line-number words at $0801");
+		criterion("basic2-expression-sys",
+			"20 SYS 2064+1".equals(expressionSys) && expressionSysNote && noPrefixSysFunction,
+			expressionSys + " note=" + expressionSysNote + " function@0810=" +
+			!noPrefixSysFunction);
+		criterion("basic2-no-load-function", noLoadFunction, "BASIC link data at $0801");
+	}
+
+	private void checkC64BasicOverflowDialect() {
+		String line = preComment(0x0801);
+		boolean format = "Commodore 64 PRG".equals(currentProgram.getExecutableFormat());
+		boolean typed = basicLineWordsTyped(0x0801);
+		boolean invalidSysNote = hasSysNoteBookmark(0x0801);
+		boolean noLoadFunction = !hasFunctionAt(0x0801);
+		boolean noWrappedSysFunction = !hasFunctionAt(0x0000);
+
+		println("=== BANKDUMP BEGIN ===");
+		println("FORMAT c64basicoverflow=" + format);
+		println("PRE 0801=" + line);
+		println("TYPED=" + typed + " loadFunction=" + !noLoadFunction);
+		println("INVALID_SYS note=" + invalidSysNote + " functionAt0000=" +
+			!noWrappedSysFunction);
+		println("=== BANKDUMP END ===");
+
+		criterion("basic2-overflow-format", format, currentProgram.getExecutableFormat());
+		criterion("basic2-overflow-line", "10 SYS 65536".equals(line), line);
+		criterion("basic2-overflow-line-typed", typed, "link/line-number words at $0801");
+		criterion("basic2-overflow-sys", invalidSysNote && noWrappedSysFunction,
+			"note=" + invalidSysNote + " function@0000=" + !noWrappedSysFunction);
+		criterion("basic2-overflow-no-load-function", noLoadFunction, "BASIC link data at $0801");
+	}
+
+	private void checkPetBasic4Dialect() {
+		String line10 = preComment(0x0401);
+		String line20 = preComment(0x040b);
+		String line30 = preComment(0x0416);
+		String line40 = preComment(0x041f);
+		boolean format = "Commodore PET 4032 PRG".equals(currentProgram.getExecutableFormat());
+		boolean typed = basicLineWordsTyped(0x0401) && basicLineWordsTyped(0x040b) &&
+			basicLineWordsTyped(0x0416) && basicLineWordsTyped(0x041f);
+		boolean sysFunction = hasFunctionAt(0x042c);
+		boolean noLoadFunction = !hasFunctionAt(0x0401);
+
+		println("=== BANKDUMP BEGIN ===");
+		println("FORMAT petbasic4=" + format);
+		println("PRE 0401=" + line10);
+		println("PRE 040b=" + line20);
+		println("PRE 0416=" + line30);
+		println("PRE 041f=" + line40);
+		println("TYPED=" + typed + " sysFunction=" + sysFunction +
+			" loadFunction=" + !noLoadFunction);
+		println("=== BANKDUMP END ===");
+
+		criterion("basic4-format", format, currentProgram.getExecutableFormat());
+		criterion("basic4-disk-tokens", "10 CONCAT DOPEN DIRECTORY".equals(line10), line10);
+		criterion("basic4-quoted-raw", "20 PRINT\"{$cc}{$cd}{$da}\"".equals(line20), line20);
+		criterion("basic4-rem-raw", "30 REM{$cc}\"{$ce}".equals(line30), line30);
+		criterion("basic4-sys", "40 SYS 1068".equals(line40) && sysFunction,
+			line40 + " function@042c=" + sysFunction);
+		criterion("basic4-lines-typed", typed, "all line link/number words typed");
+		criterion("basic4-no-load-function", noLoadFunction, "BASIC link data at $0401");
+	}
+
+	private void checkC128Basic7Dialect() {
+		String line10 = preComment(0x1c01);
+		String line20 = preComment(0x1c0b);
+		String line30 = preComment(0x1c12);
+		String line40 = preComment(0x1c19);
+		String line50 = preComment(0x1c23);
+		String line60 = preComment(0x1c29);
+		String line70 = preComment(0x1c36);
+		String line80 = preComment(0x1c42);
+		boolean format = "Commodore 128 Native BASIC PRG".equals(
+			currentProgram.getExecutableFormat());
+		boolean typed = basicLineWordsTyped(0x1c01) && basicLineWordsTyped(0x1c0b) &&
+			basicLineWordsTyped(0x1c12) && basicLineWordsTyped(0x1c19) &&
+			basicLineWordsTyped(0x1c23) && basicLineWordsTyped(0x1c29) &&
+			basicLineWordsTyped(0x1c36) && basicLineWordsTyped(0x1c42);
+		boolean sysFunction = hasFunctionAt(0x1c4f);
+		boolean noLoadFunction = !hasFunctionAt(0x1c01);
+
+		println("=== BANKDUMP BEGIN ===");
+		println("FORMAT c128basic7=" + format);
+		println("PRE 1c01=" + line10);
+		println("PRE 1c0b=" + line20);
+		println("PRE 1c12=" + line30);
+		println("PRE 1c19=" + line40);
+		println("PRE 1c23=" + line50);
+		println("PRE 1c29=" + line60);
+		println("PRE 1c36=" + line70);
+		println("PRE 1c42=" + line80);
+		println("TYPED=" + typed + " sysFunction=" + sysFunction +
+			" loadFunction=" + !noLoadFunction);
+		println("=== BANKDUMP END ===");
+
+		criterion("basic7-format", format, currentProgram.getExecutableFormat());
+		criterion("basic7-base-tokens", "10 RGR ELSE DSAVE".equals(line10), line10);
+		criterion("basic7-ce-prefix", "20 POT".equals(line20), line20);
+		criterion("basic7-fe-prefix", "30 BANK".equals(line30), line30);
+		criterion("basic7-invalid-prefixes",
+			"35 {$ce}{lgrn} {$fe}{lgrn}".equals(line40) && !line40.contains("PRINT"), line40);
+		criterion("basic7-truncated-prefix", "37 {$ce}".equals(line50), line50);
+		criterion("basic7-quoted-raw",
+			"40 PRINT\"{$ce}{CTRL-B}{$fe}{CTRL-B}{$cc}\"".equals(line60), line60);
+		criterion("basic7-rem-raw",
+			"50 REM{$ce}{CTRL-B}{$fe}{CTRL-B}{$cc}\"".equals(line70), line70);
+		criterion("basic7-sys", "60 SYS 7247".equals(line80) && sysFunction,
+			line80 + " function@1c4f=" + sysFunction);
+		criterion("basic7-lines-typed", typed, "all line link/number words typed");
+		criterion("basic7-no-load-function", noLoadFunction, "BASIC link data at $1c01");
+	}
+
+	private boolean basicLineWordsTyped(long lineAddr) {
+		return dataTypeAt(lineAddr, "word") && dataTypeAt(lineAddr + 2, "word") &&
+			"line link".equals(eol(lineAddr)) && "line number".equals(eol(lineAddr + 2));
+	}
+
+	// ------------------------------------------------------------------
 	// C128 native BASIC fixed-map descriptor and shared CBM PRG loader
 	// ------------------------------------------------------------------
 
@@ -937,10 +1102,10 @@ public class VerifyBankTest extends GhidraScript {
 			"line 20 detokenizes exactly: \"" + preComment(0x0810) + "\"");
 		criterion("B1:081c", "30 REM{lgrn}\" OK".equals(preComment(0x081C)),
 			"line 30 detokenizes exactly: \"" + preComment(0x081C) + "\"");
-		criterion("B1:0827", "40 DATA 1,2:PRINT 3".equals(preComment(0x0827)),
+		criterion("B1:0827", "40 DATA 1,2{lgrn}:PRINT 3".equals(preComment(0x0827)),
 			"line 40 detokenizes exactly: \"" + preComment(0x0827) + "\"");
-		criterion("B1:0835", "50 SYS 2114".equals(preComment(0x0835)),
-			"line 50 detokenizes exactly: \"" + preComment(0x0835) + "\"");
+		criterion("B1:0836", "50 SYS 2115".equals(preComment(0x0836)),
+			"line 50 detokenizes exactly: \"" + preComment(0x0836) + "\"");
 
 		// B2: the REM body's token-lookalike byte ($99, PRINT's token value elsewhere)
 		// rendered as its raw PETSCII control-code escape, not as the word "PRINT" --
@@ -956,10 +1121,10 @@ public class VerifyBankTest extends GhidraScript {
 		criterion("B3", pr.contains("{clr}"),
 			"quoted control byte renders as {clr}: \"" + pr + "\"");
 
-		// B4: the SYS target (2114, from line 50) is a real function, and the loader's
+		// B4: the SYS target (2115, from line 50) is a real function, and the loader's
 		// usual load-address function mark did NOT happen for this BASIC-start PRG.
-		criterion("B4:funcAtSys", hasFunctionAt(0x0842),
-			"function exists at SYS target 0x0842");
+		criterion("B4:funcAtSys", hasFunctionAt(0x0843),
+			"function exists at SYS target 0x0843");
 		criterion("B4:noFuncAtLoad", !hasFunctionAt(0x0801),
 			"no function at the load address 0x0801 (BASIC line data, not code)");
 
@@ -1623,6 +1788,15 @@ public class VerifyBankTest extends GhidraScript {
 			boolean ourCategory = CATEGORY_C64.equals(bm.getCategory()) ||
 				CATEGORY_NES.equals(bm.getCategory());
 			if (ourCategory && "Warning".equals(bm.getTypeString())) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private boolean hasSysNoteBookmark(long offset) {
+		for (Bookmark bm : currentProgram.getBookmarkManager().getBookmarks(addr(offset))) {
+			if ("Note".equals(bm.getTypeString()) && bm.getComment().contains("SYS argument")) {
 				return true;
 			}
 		}

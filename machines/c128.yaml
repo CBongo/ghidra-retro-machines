@@ -161,6 +161,24 @@ types:
   - name: MOS6526_CIA
     kind: struct
     source: generated/c64ref-cia.yaml
+  - name: BASIC_V7_TOKEN
+    kind: enum
+    size: 1
+    source: generated/basic-tokens.yaml
+    lists: [basic2-base, basic7-single-ext]
+    comment: "C128 BASIC 7 single-byte tokens; $CE and $FE are deliberately excluded prefix bytes."
+  - name: BASIC_V7_TOKEN_CE
+    kind: enum
+    size: 1
+    source: generated/basic-tokens.yaml
+    lists: [basic7-ce-ext]
+    comment: "C128 BASIC 7 second-byte selector after the $CE prefix."
+  - name: BASIC_V7_TOKEN_FE
+    kind: enum
+    size: 1
+    source: generated/basic-tokens.yaml
+    lists: [basic7-fe-ext]
+    comment: "C128 BASIC 7 second-byte selector after the $FE prefix."
 
 formats:
   prg:
@@ -169,7 +187,14 @@ formats:
       - { field: load_address, size: 2, endian: little }
     placement: load_address
     initial_bank_state: default
-    comment: "The first two program-file bytes are its saved load address; native BASIC 7 programs normally begin at $1C01 (bytes $01,$1C). No BASIC 7 token decoding is declared."
+    basic:
+      dialect: "Commodore BASIC 7.0 (C128 native mode)"
+      token_enum: BASIC_V7_TOKEN
+      prefix_enums:
+        - { prefix: 0xCE, enum: BASIC_V7_TOKEN_CE }
+        - { prefix: 0xFE, enum: BASIC_V7_TOKEN_FE }
+      petscii_variant: unshifted_graphics
+    comment: "The first two program-file bytes are its saved load address; native BASIC 7 programs normally begin at $1C01 (bytes $01,$1C)."
 
 validation:
   oracle: "VICE x128, native C128 mode"
@@ -177,4 +202,4 @@ validation:
     - "buildC128Map selects only CR=$00: BASIC_LO, BASIC_HI, EDITOR, IO, KERNAL"
     - "a $1C01 PRG payload lands in BASIC_TEXT; its two-byte header is not mapped"
     - "MMU primary type is at $D500; $FF00-$FF04 are labels inside KERNAL, never overlapping MMIO blocks"
-    - "BASIC 7 CE/FE token interpretation and all non-CR=$00 MMU behavior remain deferred"
+    - "BASIC 7 CE/FE token interpretation is declared as metadata; all non-CR=$00 MMU behavior remains deferred"

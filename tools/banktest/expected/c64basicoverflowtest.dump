@@ -1,0 +1,4 @@
+FORMAT c64basicoverflow=true
+PRE 0801=10 SYS 65536
+TYPED=true loadFunction=false
+INVALID_SYS note=true functionAt0000=false

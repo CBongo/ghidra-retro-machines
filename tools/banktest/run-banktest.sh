@@ -15,6 +15,7 @@
 #   c64-loader    arbitrary-address PRGs, ROM loading, and symbol toggle
 #   c64-recovery  emulation and decrypt/recovery fixtures
 #   basic-petscii c64basictest
+#   basic-dialects PET BASIC 4/C128 BASIC 7 token dialects, plus C64 BASIC 2 regression
 #   pet-loader    PET 4032 descriptor, PRG placement, IO types, and fixed ROM slots
 #   c128-loader   C128 native BASIC PRG placement, fixed ROM slots, and MMU IO
 #   nes-banking   all NES banking/MMC fixtures
@@ -55,6 +56,7 @@ list_chunks() {
 		c64-loader \
 		c64-recovery \
 		basic-petscii \
+		basic-dialects \
 		pet-loader \
 		c128-loader \
 		nes-banking \
@@ -84,7 +86,7 @@ fi
 # fixtures, so a typo cannot leave partial output behind.
 for chunk in "${CHUNKS[@]}"; do
 	case "$chunk" in
-		c64-banking|c64-loader|c64-recovery|basic-petscii|pet-loader|c128-loader|nes-banking|all) ;;
+		c64-banking|c64-loader|c64-recovery|basic-petscii|basic-dialects|pet-loader|c128-loader|nes-banking|all) ;;
 		*)
 			echo "unknown chunk: $chunk" >&2
 			usage
@@ -146,7 +148,13 @@ if selected c64-recovery; then
 	generate mkrollingtest.py "$WORK/prg"
 	generate mksuspecttest.py "$WORK/prg"
 fi
-if selected basic-petscii; then generate mkbasictest.py "$WORK/prg"; fi
+if selected basic-petscii && ! selected basic-dialects; then
+	generate mkbasictest.py "$WORK/prg"
+fi
+if selected basic-dialects; then
+	generate mkbasictest.py "$WORK/prg"
+	generate mkdialectbasictest.py "$WORK/prg"
+fi
 if selected pet-loader; then generate mkpettest.py "$WORK/prg"; fi
 if selected c128-loader; then generate mkc128test.py "$WORK/prg"; fi
 if selected nes-banking; then generate mknesbanktest.py "$WORK/nes"; fi
@@ -219,8 +227,18 @@ if selected c64-banking; then
 	done
 fi
 
-if selected basic-petscii; then
+if selected basic-petscii && ! selected basic-dialects; then
 	run_one c64basictest "$WORK/prg/c64basictest.prg" C64PrgLoader
+fi
+
+if selected basic-dialects; then
+	# Keep the broad BASIC 2 fixture in this cross-dialect chunk, then prove the
+	# same token ranges select BASIC 2, 4, and 7 semantics per machine.
+	run_one c64basictest "$WORK/prg/c64basictest.prg" C64PrgLoader
+	run_one c64basic2tokentest "$WORK/prg/c64basic2tokentest.prg" C64PrgLoader
+	run_one c64basicoverflowtest "$WORK/prg/c64basicoverflowtest.prg" C64PrgLoader
+	run_one petbasic4test "$WORK/prg/petbasic4test.prg" PetPrgLoader
+	run_one c128basic7test "$WORK/prg/c128basic7test.prg" C128PrgLoader
 fi
 
 if selected pet-loader; then

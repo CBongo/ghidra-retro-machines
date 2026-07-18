@@ -16,10 +16,9 @@ The program exercises:
     value ($99, PRINT's token elsewhere) and a literal quote character,
     proving REM's rest-of-line-is-raw-PETSCII handling (no tokenizing, no
     quote-toggle) rather than crashing or mis-rendering
-  - a DATA line followed by a colon and more (re-tokenized) statement text,
-    proving DATA gets no special raw-text treatment (real BASIC 2 tokenizes
-    DATA argument text like anywhere else outside quotes -- see
-    C64BasicAnalyzer's class comment)
+  - a DATA payload containing a token-valued byte, followed by a colon and a
+    tokenized statement, proving DATA payload is raw PETSCII until the colon
+    and normal token scanning resumes after it
   - a SYS line with a decimal literal address, followed immediately by a
     tiny machine-language routine at that exact address (JSR to a
     sub-routine, then RTS), so C64BasicAnalyzer's SYS-target function mark
@@ -83,11 +82,12 @@ LINE30 = line_bytes(30, [
     0x20, ord('O'), ord('K'),
 ])
 
-# 40 DATA 1,2:PRINT 3  (colon continuation; PRINT after the colon is a real
-# token -- DATA text is not specially protected from tokenizing)
+# 40 DATA 1,2<$99>:PRINT 3.  DATA payload is raw through the colon: $99 is
+# PRINT elsewhere but must render as PETSCII {lgrn}; PRINT after ':' is again
+# a real token.
 LINE40 = line_bytes(40, [
     0x83,               # DATA
-    0x20, ord('1'), ord(','), ord('2'),
+    0x20, ord('1'), ord(','), ord('2'), 0x99,
     0x3A,               # :
     0x99,               # PRINT (re-tokenized after the colon)
     0x20, ord('3'),

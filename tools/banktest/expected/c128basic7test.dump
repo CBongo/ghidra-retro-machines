@@ -1,0 +1,10 @@
+FORMAT c128basic7=true
+PRE 1c01=10 RGR ELSE DSAVE
+PRE 1c0b=20 POT
+PRE 1c12=30 BANK
+PRE 1c19=35 {$ce}{lgrn} {$fe}{lgrn}
+PRE 1c23=37 {$ce}
+PRE 1c29=40 PRINT"{$ce}{CTRL-B}{$fe}{CTRL-B}{$cc}"
+PRE 1c36=50 REM{$ce}{CTRL-B}{$fe}{CTRL-B}{$cc}"
+PRE 1c42=60 SYS 7247
+TYPED=true sysFunction=true loadFunction=false

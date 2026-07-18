@@ -82,6 +82,7 @@ Chunk/source-area mapping:
 - `c64-loader`: C64 PRG placement/wrapping, ROM loading, and symbol toggles.
 - `c64-recovery`: C64 emulation and decrypt/recovery fixtures.
 - `basic-petscii`: C64 BASIC headless fixture and `verifyPetsciiMapper`.
+- `basic-dialects`: C64 BASIC 2 regression plus PET BASIC 4 and C128 BASIC 7 token-dialect fixtures.
 - `pet-loader`: PET 4032 descriptor, PRG placement, IO typing, and fixed ROM slots.
 - `c128-loader`: C128 native BASIC PRG placement, fixed ROM slots, and MMU I/O.
 - `nes-banking`: NES banking and MMC fixtures.

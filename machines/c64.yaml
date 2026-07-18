@@ -286,6 +286,10 @@ formats:
       - { field: load_address, size: 2, endian: little }
     placement: load_address
     initial_bank_state: default          # banking.initial_state (7)
+    basic:
+      dialect: "Commodore BASIC 2.0"
+      token_enum: BASIC_V2_TOKEN
+      petscii_variant: unshifted_graphics
   # crt: future — CHIP packets to cartridge windows; EXROM/GAME from header
   #      bytes 0x18/0x19 extend the bank state bits (gib.1 later phase)
   # d64/t64: future — filesystem providers, not loaders

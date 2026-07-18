@@ -16,7 +16,12 @@
 package retromachines;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
+
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 
 import ghidra.app.cmd.function.CreateFunctionCmd;
 import ghidra.app.services.AbstractAnalyzer;
@@ -40,7 +45,7 @@ import ghidra.util.exception.CancelledException;
 import ghidra.util.task.TaskMonitor;
 
 /**
- * Recognizes a tokenized-BASIC-start C64 PRG ({@link C64PrgLoader#NAME}), walks the
+ * Recognizes a descriptor-declared tokenized-CBM-BASIC PRG, walks the
  * line-link chain ({@link CbmBasicWalker}), types the link/line-number words, writes a
  * petcat-compatible detokenized comment per line, and fixes the loader's
  * function-at-load-address wart for these programs by locating the real machine-language
@@ -48,21 +53,17 @@ import ghidra.util.task.TaskMonitor;
  * (bead grm-odt.1).
  * <p>
  * <b>Token source of truth:</b> this class transcribes no token table. It reads the
- * {@code BASIC_V2_TOKEN} enum directly out of the bundled {@code machines/c64.gdt}
- * archive (see {@link BasicV2TokenLookup}) -- the same archive
- * {@link C64PrgLoader}/{@link DescriptorSupport} use for IO-chip register structs. The
- * enum is read from the archive's own data type manager, not resolved into the
+ * descriptor-selected primary and optional prefix-page enums directly out of that machine's
+ * bundled GDT archive (see {@link BasicDescriptorTokenLookup}) -- the same archive the
+ * descriptor loader uses for IO-chip register structs. The enums are read from the archive's
+ * own data type manager, not resolved into the
  * program's, because it is only ever queried for member names here (token bytes are
  * rendered into a listing comment, never typed onto the byte itself -- see the
  * class-level data-typing note below).
  * <p>
  * <b>Text rendering:</b> every non-token PETSCII byte (including everything inside a
- * quoted string, and the raw comment body after a {@code REM} token) goes through
- * {@link PetsciiMapper} with {@link PetsciiMapper.Variant#UNSHIFTED_GRAPHICS} -- the
- * variant a stock C64 boots into (uppercase/graphics mode), matching what a BASIC
- * program listing looks like on power-up. A future per-program variant override (for
- * programs that POKE the shift flag or issue a shift-lowercase control code) is not
- * implemented here.
+ * quoted string, or raw comment/DATA text) goes through {@link PetsciiMapper} using the
+ * descriptor-selected power-up variant. Dynamic charset changes remain out of scope.
  * <p>
  * <b>Data typing:</b> only the 2-byte link and 2-byte line-number fields are typed
  * ({@link WordDataType}, with an EOL comment naming the field); the tokenized text bytes
@@ -75,15 +76,22 @@ import ghidra.util.task.TaskMonitor;
  */
 public class C64BasicAnalyzer extends AbstractAnalyzer {
 
-	private static final String NAME = "C64 BASIC Detokenizer";
+	private static final String NAME = "CBM BASIC Detokenizer";
 	private static final String DESCRIPTION =
-		"Walks a tokenized-BASIC-start C64 PRG's line-link chain, types the line link/" +
+		"Walks a descriptor-declared tokenized CBM BASIC PRG's line-link chain, types the line link/" +
 			"number words, writes petcat-compatible detokenized comments, and marks the " +
 			"real ML entry point from a SYS line (instead of the loader's load-address " +
 			"function mark, which is wrong for BASIC-start programs).";
 
 	private static final String CATEGORY = "C64BasicAnalyzer";
-	private static final String GDT_PATH = "machines/c64.gdt";
+	private static final String LEGACY_C64_MAP_PATH = "machines/c64.map";
+
+	/** Descriptor-selected analyzer policy. The class/category remain C64-named for saved
+	 * Program and AnalyzerRunLog compatibility; only the token/archive policy varies. */
+	private record BasicConfig(String mapPath, String gdtPath, String tokenEnum,
+			List<BasicDescriptorTokenLookup.PrefixDefinition> prefixEnums,
+			PetsciiMapper.Variant petsciiVariant) {
+	}
 
 	public C64BasicAnalyzer() {
 		super(NAME, DESCRIPTION, AnalyzerType.BYTE_ANALYZER);
@@ -99,13 +107,102 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 
 	@Override
 	public boolean canAnalyze(Program program) {
+		try {
+			return basicConfig(program) != null;
+		}
+		catch (IOException | RuntimeException e) {
+			return false;
+		}
+	}
+
+	/** Resolves the compiled descriptor selected by the importing loader. C64 Programs saved
+	 * before the common map-path property retain their historical BASIC V2 behavior. */
+	private static BasicConfig basicConfig(Program program) throws IOException {
 		String format = program.getExecutableFormat();
-		return format != null && format.equals(C64PrgLoader.NAME);
+		String mapPath = program.getOptions(Program.PROGRAM_INFO).getString(
+			DescriptorSupport.MAP_PATH_PROPERTY, "");
+		if (mapPath == null || mapPath.isBlank()) {
+			return C64PrgLoader.NAME.equals(format) ? legacyC64Config() : null;
+		}
+
+		JsonObject map = DescriptorSupport.loadMap(mapPath);
+		JsonObject formats = map.getAsJsonObject("formats");
+		JsonObject prg = formats == null ? null : formats.getAsJsonObject("prg");
+		JsonObject basic = prg == null ? null : prg.getAsJsonObject("basic");
+		if (basic == null) {
+			// The C64 map predates formats.prg.basic. Keep it analyzable until a rebuilt
+			// descriptor carries the declarative form, and preserve old saved Programs too.
+			return LEGACY_C64_MAP_PATH.equals(mapPath) && C64PrgLoader.NAME.equals(format)
+					? legacyC64Config() : null;
+		}
+
+		String tokenEnum = requiredString(basic, "token_enum", "formats.prg.basic");
+		PetsciiMapper.Variant variant = parsePetsciiVariant(basic);
+		List<BasicDescriptorTokenLookup.PrefixDefinition> prefixes = new ArrayList<>();
+		JsonArray prefixArray = basic.has("prefix_enums")
+				? basic.getAsJsonArray("prefix_enums") : new JsonArray();
+		for (JsonElement element : prefixArray) {
+			JsonObject prefix = element.getAsJsonObject();
+			int value = prefix.get("prefix").getAsInt();
+			if (value < 0 || value > 0xff) {
+				throw new IllegalArgumentException("formats.prg.basic prefix is outside a byte: " +
+					value);
+			}
+			String enumName = requiredString(prefix, "enum", "formats.prg.basic.prefix_enums");
+			if (prefixes.stream().anyMatch(p -> p.prefix() == value)) {
+				throw new IllegalArgumentException("formats.prg.basic declares prefix 0x" +
+					Integer.toHexString(value) + " twice");
+			}
+			prefixes.add(new BasicDescriptorTokenLookup.PrefixDefinition(value, enumName));
+		}
+		return new BasicConfig(mapPath, gdtPathFor(mapPath), tokenEnum, List.copyOf(prefixes),
+			variant);
+	}
+
+	private static BasicConfig legacyC64Config() {
+		return new BasicConfig(LEGACY_C64_MAP_PATH, gdtPathFor(LEGACY_C64_MAP_PATH),
+			"BASIC_V2_TOKEN", List.of(), PetsciiMapper.Variant.UNSHIFTED_GRAPHICS);
+	}
+
+	private static String gdtPathFor(String mapPath) {
+		return mapPath.endsWith(".map")
+				? mapPath.substring(0, mapPath.length() - 4) + ".gdt" : mapPath + ".gdt";
+	}
+
+	private static String requiredString(JsonObject object, String key, String context) {
+		if (!object.has(key) || object.get(key).getAsString().isBlank()) {
+			throw new IllegalArgumentException(context + " is missing '" + key + "'");
+		}
+		return object.get(key).getAsString();
+	}
+
+	private static PetsciiMapper.Variant parsePetsciiVariant(JsonObject basic) {
+		String configured = basic.has("petscii_variant")
+				? basic.get("petscii_variant").getAsString() : "unshifted_graphics";
+		return switch (configured) {
+			case "unshifted_graphics" -> PetsciiMapper.Variant.UNSHIFTED_GRAPHICS;
+			case "shifted_lowercase" -> PetsciiMapper.Variant.SHIFTED_LOWERCASE;
+			default -> throw new IllegalArgumentException(
+				"formats.prg.basic has unknown petscii_variant '" + configured + "'");
+		};
 	}
 
 	@Override
 	public boolean added(Program program, AddressSetView set, TaskMonitor monitor, MessageLog log)
 			throws CancelledException {
+		BasicConfig config;
+		try {
+			config = basicConfig(program);
+		}
+		catch (IOException | RuntimeException e) {
+			log.appendMsg(getName(), "Failed to read CBM BASIC descriptor policy: " +
+				e.getMessage());
+			AnalyzerRunLog.markCompleted(program, getClass());
+			return false;
+		}
+		if (config == null) {
+			return true;
+		}
 
 		AddressSpace baseSpace = program.getAddressFactory().getDefaultAddressSpace();
 		long loadAddr = program.getOptions(Program.PROGRAM_INFO).getLong(
@@ -175,10 +272,10 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 
 		FileDataTypeManager gdtMgr;
 		try {
-			gdtMgr = DescriptorSupport.openGdt(GDT_PATH);
+			gdtMgr = DescriptorSupport.openGdt(config.gdtPath());
 		}
 		catch (IOException e) {
-			log.appendMsg(getName(), "Failed to open " + GDT_PATH + ": " + e.getMessage());
+			log.appendMsg(getName(), "Failed to open " + config.gdtPath() + ": " + e.getMessage());
 			AnalyzerRunLog.markCompleted(program, getClass());
 			return false;
 		}
@@ -194,11 +291,18 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 		}
 
 		try {
-			BasicTokenLookup tokenLookup = BasicV2TokenLookup.fromGdt(gdtMgr);
+			BasicDescriptorTokenLookup tokenLookup = BasicDescriptorTokenLookup.fromGdt(gdtMgr,
+				config.tokenEnum(), config.prefixEnums());
 			if (tokenLookup == null) {
 				log.appendMsg(getName(),
-					"BASIC_V2_TOKEN enum not found in " + GDT_PATH + "; token bytes will " +
-						"render as raw PETSCII escapes only");
+					config.tokenEnum() + " enum not found in " + config.gdtPath() +
+						"; token bytes will " +
+					"render as raw PETSCII escapes only");
+			}
+			else if (!tokenLookup.missingPrefixEnums().isEmpty()) {
+				log.appendMsg(getName(), "Configured BASIC prefix enum(s) missing from " +
+					config.gdtPath() + ": " + String.join(", ", tokenLookup.missingPrefixEnums()) +
+					"; affected prefix pairs will render as raw PETSCII");
 			}
 
 			boolean sysHandled = false;
@@ -225,7 +329,8 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 					continue;
 				}
 
-				LineRender rendered = renderLine(textBytes, tokenLookup, petscii);
+				LineRender rendered = renderLine(textBytes, tokenLookup, petscii,
+					config.petsciiVariant());
 				String listing = line.lineNumber() + " " + rendered.text();
 				program.getListing().setComment(lineAddr, CommentType.PRE, listing);
 
@@ -318,24 +423,19 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 	 * (as a side effect of the same single pass) detects a {@code SYS <decimal>}
 	 * occurrence in this line.
 	 * <p>
-	 * State machine: outside quotes and not past a {@code REM} token, a byte &gt;= $80 is
-	 * looked up as a token (dialect-supplied via {@code tokenLookup}); a {@code $22}
-	 * toggles quote state; every other byte -- including every byte once inside quotes
-	 * (control/graphics codes are literal PETSCII there, never tokens) and every byte
-	 * after a {@code REM} token (the rest of the line is raw PETSCII to the terminator,
-	 * matching the real tokenizer, which stops crunching entirely once it emits REM) --
-	 * renders via {@link PetsciiMapper}. Unlike REM, a {@code DATA} statement is
-	 * <em>not</em> given special raw-text treatment: real BASIC 2 tokenizes DATA argument
-	 * text exactly like anywhere else outside quotes (the well-known "DATA GOTO tokenizes
-	 * GOTO" gotcha, which petcat's tokenizer/detokenizer also reproduces), so no
-	 * DATA-specific branch exists here -- the general outside-quotes rule already does
-	 * the right thing, and a colon following DATA text needs no special casing either
-	 * (it is just PETSCII $3A, never a token, rendered like any other byte &lt; $80).
+	 * State machine: outside quotes and not in a raw tail, a byte &gt;= $80 is looked up as
+	 * a descriptor-supplied token; a {@code $22} toggles quote state. Every byte inside
+	 * quotes is literal PETSCII. {@code REM} makes the remainder of the line literal.
+	 * {@code DATA} makes its item text literal only through the next <em>unquoted</em>
+	 * colon, after which normal token scanning resumes; quote bytes remain significant in
+	 * DATA mode solely to distinguish a literal colon from a statement separator.
 	 */
-	private LineRender renderLine(byte[] data, BasicTokenLookup tokenLookup, PetsciiMapper petscii) {
+	private LineRender renderLine(byte[] data, BasicTokenLookup tokenLookup, PetsciiMapper petscii,
+			PetsciiMapper.Variant petsciiVariant) {
 		StringBuilder sb = new StringBuilder();
 		boolean inQuotes = false;
 		boolean afterRem = false;
+		boolean afterData = false;
 		Integer sysTarget = null;
 		boolean sysNonLiteral = false;
 		int i = 0;
@@ -345,17 +445,45 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 			int b = data[i] & 0xFF;
 
 			if (afterRem) {
-				sb.append(petscii.toDisplayEscaped(b, PetsciiMapper.Variant.UNSHIFTED_GRAPHICS));
+				sb.append(petscii.toDisplayEscaped(b, petsciiVariant));
 				i++;
+				continue;
+			}
+			if (afterData) {
+				// BASIC leaves DATA item bytes untokenized until an unquoted statement
+				// separator. The bytes are literal PETSCII, but quotes still protect a colon
+				// from ending DATA mode (and are rendered normally themselves).
+				boolean dataColon = !inQuotes && b == 0x3a;
+				if (b == 0x22) {
+					inQuotes = !inQuotes;
+				}
+				sb.append(petscii.toDisplayEscaped(b, petsciiVariant));
+				i++;
+				if (dataColon) {
+					afterData = false;
+				}
 				continue;
 			}
 
 			if (!inQuotes && b >= 0x80 && tokenLookup != null) {
 				BasicTokenLookup.Match m = tokenLookup.lookup(data, i);
 				if (m != null) {
+					if (m.name() == null) {
+						// A configured prefix owns its selector even when that pair is unknown.
+						// Keep both bytes raw and do not rescan the selector as a token, quote, or
+						// DATA/statement delimiter.
+						for (int j = 0; j < m.bytesConsumed(); j++) {
+							sb.append(petscii.toDisplayEscaped(data[i + j] & 0xff, petsciiVariant));
+						}
+						i += m.bytesConsumed();
+						continue;
+					}
 					sb.append(m.name());
 					if ("REM".equals(m.name())) {
 						afterRem = true;
+					}
+					else if ("DATA".equals(m.name())) {
+						afterData = true;
 					}
 					else if ("SYS".equals(m.name()) && sysTarget == null && !sysNonLiteral) {
 						int j = i + m.bytesConsumed();
@@ -364,16 +492,26 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 						}
 						long value = 0;
 						boolean any = false;
+						boolean outOfRange = false;
 						while (j < n) {
 							int d = data[j] & 0xFF;
 							if (d < 0x30 || d > 0x39) {
 								break;
 							}
-							value = value * 10 + (d - 0x30);
+							int digit = d - 0x30;
+							if (value > (0xffff - digit) / 10) {
+								outOfRange = true;
+							}
+							else {
+								value = value * 10 + digit;
+							}
 							any = true;
 							j++;
 						}
-						if (any) {
+						while (j < n && (data[j] & 0xFF) == 0x20) {
+							j++;
+						}
+						if (any && !outOfRange && (j == n || (data[j] & 0xFF) == 0x3a)) {
 							sysTarget = (int) value;
 						}
 						else {
@@ -390,7 +528,7 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 			if (b == 0x22) {
 				inQuotes = !inQuotes;
 			}
-			sb.append(petscii.toDisplayEscaped(b, PetsciiMapper.Variant.UNSHIFTED_GRAPHICS));
+			sb.append(petscii.toDisplayEscaped(b, petsciiVariant));
 			i++;
 		}
 

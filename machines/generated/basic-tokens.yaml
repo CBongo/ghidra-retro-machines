@@ -5,32 +5,35 @@
 # concatenate into their enum, so adding a dialect never re-transcribes or forks the
 # base list.
 #
-# Dialect model (verified against the C64 Programmer's Reference Guide token table and
-# cross-checked against c64-wiki.com's BASIC token list):
+# Dialect model and provenance:
+#
+#   - $80-$CB: Commodore BASIC 4 User's Reference Manual, Appendix A, and
+#     VICE's official petcat `keyword[]` table:
+#     https://sourceforge.net/p/vice-emu/code/HEAD/tree/trunk/vice/src/tools/petcat/petcat.c?format=raw
+#   - PET BASIC 4 $CC-$DA: Commodore BASIC 4 User's Reference Manual,
+#     Appendix A (the manual says $DB and later are syntax errors), cross-checked
+#     with VICE's `petkwcc[]` / `B_4` table:
+#     https://www.commodore.ca/wp-content/uploads/2018/11/Commodore_Basic_4_Users_Reference-Manual-1.pdf
+#   - C128 BASIC 7 single and prefix tables: VICE's official petcat
+#     `keyword[]`, `kwce[]`, and `kwfe[]` tables; the C128 Programmer's
+#     Reference Guide corroborates the keyword inventory and notes that OFF and
+#     QUIT are reserved but unimplemented:
+#     https://www.devili.iki.fi/pub/Commodore/docs/books/C128_Programmers_Reference_OCR.pdf
 #
 #   - `basic2-base` ($80-$CB, 76 tokens, END..GO) is IDENTICAL across BASIC 2 (C64),
 #     BASIC 3.5 (C16/Plus4), BASIC 4 (PET/CBM-II), and BASIC 7 (C128). It is the single
 #     source of truth for all four dialects' shared range.
 #
-#   - Above $CB the dialects FORK: each assigns the same $CC+ byte values to DIFFERENT
-#     keywords. BASIC 4 assigns $CC+ to disk-command keywords (CONCAT, DOPEN, DCLOSE,
-#     RECORD, HEADER, COLLECT, BACKUP, COPY, APPEND, DSAVE, DLOAD, CATALOG, RENAME,
-#     SCRATCH, DIRECTORY); BASIC 3.5/7 assign the same values to a different keyword set
-#     (RGR, RCLR, ...). A future dialect's `types:` entry therefore composes
-#     `lists: [basic2-base, basicN-ext]` — never a single linear list — and this file
-#     gains one new `basicN-ext` sibling list per dialect, added independently of the
-#     others.
+#   - Above $CB the dialects FORK. PET BASIC 4 assigns $CC-$DA to disk-command
+#     keywords. C128 BASIC 7 has single-byte keywords at $CC, $CD, and $CF-$FD;
+#     $CE and $FE are prefixes, so its primary enum deliberately excludes both.
+#     A dialect's `types:` entry composes `lists: [basic2-base, basicN-ext]` —
+#     never a single linear list.
 #
-#   - BASIC 7 (C128) additionally has TWO-BYTE tokens: a prefix byte ($CE or $FE)
-#     followed by a second byte selecting the extended keyword. Those are NOT
-#     implemented yet (no `lists:` entry below covers them). When they land, each
-#     prefix's second-byte table is its own list here (e.g. `basic7-fe-ext`) and builds
-#     as its own single-byte enum in the consuming machine YAML (e.g.
-#     `BASIC_V7_TOKEN_FE`, `kind: enum, size: 1, source: ..., lists: [basic7-fe-ext]`)
-#     since a single 1-byte Ghidra enum cannot represent a two-byte token space — the
-#     prefix byte itself is just BASIC_V7_TOKEN's normal $CE/$FE entry from its own
-#     extension list, and the analyzer (grm-odt.1, not this bead) is what would walk
-#     prefix -> second-byte.
+#   - BASIC 7's TWO-BYTE tokens use prefix byte $CE or $FE followed by a
+#     second-byte selector. Each second-byte table is its own one-byte enum;
+#     a detokenizer must consume the pair only outside strings, REM, and DATA
+#     payload. Unlisted second-byte values are intentional gaps, not aliases.
 #
 # Member-naming note: entries whose keyword is not a valid-looking identifier (e.g.
 # "INPUT#", "TAB(", "+", "STR$") are still stored under the literal keyword as the enum
@@ -117,9 +120,126 @@ lists:
     - { value: 0xC9, name: "RIGHT$", comment: "RIGHT$" }
     - { value: 0xCA, name: "MID$", comment: "MID$" }
     - { value: 0xCB, name: GO, comment: "GO" }
-  # Future sibling lists (added independently, one per dialect, when that dialect's
-  # machine YAML lands — none of this is implemented yet):
-  #   basic4-ext:        # PET/CBM-II BASIC 4 disk keywords, $CC+
-  #   basic35-7-ext:      # C16/Plus4 (3.5) and C128 (7) shared $CC+ keywords, e.g. RGR/RCLR
-  #   basic7-ce-ext:      # C128 BASIC 7 two-byte prefix $CE second-byte table
-  #   basic7-fe-ext:      # C128 BASIC 7 two-byte prefix $FE second-byte table
+  basic4-pet-ext:
+    - { value: 0xCC, name: CONCAT, comment: "CONCAT" }
+    - { value: 0xCD, name: DOPEN, comment: "DOPEN" }
+    - { value: 0xCE, name: DCLOSE, comment: "DCLOSE" }
+    - { value: 0xCF, name: RECORD, comment: "RECORD" }
+    - { value: 0xD0, name: HEADER, comment: "HEADER" }
+    - { value: 0xD1, name: COLLECT, comment: "COLLECT" }
+    - { value: 0xD2, name: BACKUP, comment: "BACKUP" }
+    - { value: 0xD3, name: COPY, comment: "COPY" }
+    - { value: 0xD4, name: APPEND, comment: "APPEND" }
+    - { value: 0xD5, name: DSAVE, comment: "DSAVE" }
+    - { value: 0xD6, name: DLOAD, comment: "DLOAD" }
+    - { value: 0xD7, name: CATALOG, comment: "CATALOG" }
+    - { value: 0xD8, name: RENAME, comment: "RENAME" }
+    - { value: 0xD9, name: SCRATCH, comment: "SCRATCH" }
+    - { value: 0xDA, name: DIRECTORY, comment: "DIRECTORY" }
+
+  basic7-single-ext:
+    - { value: 0xCC, name: RGR, comment: "RGR" }
+    - { value: 0xCD, name: RCLR, comment: "RCLR" }
+    # $CE is a prefix in BASIC 7 (not the BASIC 3.5 RLUM token).
+    - { value: 0xCF, name: JOY, comment: "JOY" }
+    - { value: 0xD0, name: RDOT, comment: "RDOT" }
+    - { value: 0xD1, name: DEC, comment: "DEC" }
+    - { value: 0xD2, name: "HEX$", comment: "HEX$" }
+    - { value: 0xD3, name: "ERR$", comment: "ERR$" }
+    - { value: 0xD4, name: INSTR, comment: "INSTR" }
+    - { value: 0xD5, name: ELSE, comment: "ELSE" }
+    - { value: 0xD6, name: RESUME, comment: "RESUME" }
+    - { value: 0xD7, name: TRAP, comment: "TRAP" }
+    - { value: 0xD8, name: TRON, comment: "TRON" }
+    - { value: 0xD9, name: TROFF, comment: "TROFF" }
+    - { value: 0xDA, name: SOUND, comment: "SOUND" }
+    - { value: 0xDB, name: VOL, comment: "VOL" }
+    - { value: 0xDC, name: AUTO, comment: "AUTO" }
+    - { value: 0xDD, name: PUDEF, comment: "PUDEF" }
+    - { value: 0xDE, name: GRAPHIC, comment: "GRAPHIC" }
+    - { value: 0xDF, name: PAINT, comment: "PAINT" }
+    - { value: 0xE0, name: CHAR, comment: "CHAR" }
+    - { value: 0xE1, name: BOX, comment: "BOX" }
+    - { value: 0xE2, name: CIRCLE, comment: "CIRCLE" }
+    - { value: 0xE3, name: GSHAPE, comment: "GSHAPE" }
+    - { value: 0xE4, name: SSHAPE, comment: "SSHAPE" }
+    - { value: 0xE5, name: DRAW, comment: "DRAW" }
+    - { value: 0xE6, name: LOCATE, comment: "LOCATE" }
+    - { value: 0xE7, name: COLOR, comment: "COLOR" }
+    - { value: 0xE8, name: SCNCLR, comment: "SCNCLR" }
+    - { value: 0xE9, name: SCALE, comment: "SCALE" }
+    - { value: 0xEA, name: HELP, comment: "HELP" }
+    - { value: 0xEB, name: DO, comment: "DO" }
+    - { value: 0xEC, name: LOOP, comment: "LOOP" }
+    - { value: 0xED, name: EXIT, comment: "EXIT" }
+    - { value: 0xEE, name: DIRECTORY, comment: "DIRECTORY" }
+    - { value: 0xEF, name: DSAVE, comment: "DSAVE" }
+    - { value: 0xF0, name: DLOAD, comment: "DLOAD" }
+    - { value: 0xF1, name: HEADER, comment: "HEADER" }
+    - { value: 0xF2, name: SCRATCH, comment: "SCRATCH" }
+    - { value: 0xF3, name: COLLECT, comment: "COLLECT" }
+    - { value: 0xF4, name: COPY, comment: "COPY" }
+    - { value: 0xF5, name: RENAME, comment: "RENAME" }
+    - { value: 0xF6, name: BACKUP, comment: "BACKUP" }
+    - { value: 0xF7, name: DELETE, comment: "DELETE" }
+    - { value: 0xF8, name: RENUMBER, comment: "RENUMBER" }
+    - { value: 0xF9, name: KEY, comment: "KEY" }
+    - { value: 0xFA, name: MONITOR, comment: "MONITOR" }
+    - { value: 0xFB, name: USING, comment: "USING" }
+    - { value: 0xFC, name: UNTIL, comment: "UNTIL" }
+    - { value: 0xFD, name: WHILE, comment: "WHILE" }
+    # $FE is a prefix in BASIC 7.
+
+  basic7-ce-ext:
+    # $CE00 and $CE01 are unassigned.
+    - { value: 0x02, name: POT, comment: "POT" }
+    - { value: 0x03, name: BUMP, comment: "BUMP" }
+    - { value: 0x04, name: PEN, comment: "PEN" }
+    - { value: 0x05, name: RSPPOS, comment: "RSPPOS" }
+    - { value: 0x06, name: RSPRITE, comment: "RSPRITE" }
+    - { value: 0x07, name: RSPCOLOR, comment: "RSPCOLOR" }
+    - { value: 0x08, name: XOR, comment: "XOR" }
+    - { value: 0x09, name: RWINDOW, comment: "RWINDOW" }
+    - { value: 0x0A, name: POINTER, comment: "POINTER" }
+    # $CE0B-$CEFF are unassigned.
+
+  basic7-fe-ext:
+    # $FE00 and $FE01 are unassigned.
+    - { value: 0x02, name: BANK, comment: "BANK" }
+    - { value: 0x03, name: FILTER, comment: "FILTER" }
+    - { value: 0x04, name: PLAY, comment: "PLAY" }
+    - { value: 0x05, name: TEMPO, comment: "TEMPO" }
+    - { value: 0x06, name: MOVSPR, comment: "MOVSPR" }
+    - { value: 0x07, name: SPRITE, comment: "SPRITE" }
+    - { value: 0x08, name: SPRCOLOR, comment: "SPRCOLOR" }
+    - { value: 0x09, name: RREG, comment: "RREG" }
+    - { value: 0x0A, name: ENVELOPE, comment: "ENVELOPE" }
+    - { value: 0x0B, name: SLEEP, comment: "SLEEP" }
+    - { value: 0x0C, name: CATALOG, comment: "CATALOG" }
+    - { value: 0x0D, name: DOPEN, comment: "DOPEN" }
+    - { value: 0x0E, name: APPEND, comment: "APPEND" }
+    - { value: 0x0F, name: DCLOSE, comment: "DCLOSE" }
+    - { value: 0x10, name: BSAVE, comment: "BSAVE" }
+    - { value: 0x11, name: BLOAD, comment: "BLOAD" }
+    - { value: 0x12, name: RECORD, comment: "RECORD" }
+    - { value: 0x13, name: CONCAT, comment: "CONCAT" }
+    - { value: 0x14, name: DVERIFY, comment: "DVERIFY" }
+    - { value: 0x15, name: DCLEAR, comment: "DCLEAR" }
+    - { value: 0x16, name: SPRSAV, comment: "SPRSAV" }
+    - { value: 0x17, name: COLLISION, comment: "COLLISION" }
+    - { value: 0x18, name: BEGIN, comment: "BEGIN" }
+    - { value: 0x19, name: BEND, comment: "BEND" }
+    - { value: 0x1A, name: WINDOW, comment: "WINDOW" }
+    - { value: 0x1B, name: BOOT, comment: "BOOT" }
+    - { value: 0x1C, name: WIDTH, comment: "WIDTH" }
+    - { value: 0x1D, name: SPRDEF, comment: "SPRDEF" }
+    - { value: 0x1E, name: QUIT, comment: "QUIT (reserved, unimplemented)" }
+    - { value: 0x1F, name: STASH, comment: "STASH" }
+    # $FE20 is unassigned.
+    - { value: 0x21, name: FETCH, comment: "FETCH" }
+    # $FE22 is unassigned.
+    - { value: 0x23, name: SWAP, comment: "SWAP" }
+    - { value: 0x24, name: "OFF", comment: "OFF (reserved, unimplemented)" }
+    - { value: 0x25, name: FAST, comment: "FAST" }
+    - { value: 0x26, name: SLOW, comment: "SLOW" }
+    # $FE27-$FEFF are unassigned.
