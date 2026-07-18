@@ -309,18 +309,24 @@ Overrides are for one-off exceptions; new kinds are for repeated behavior patter
 
 ## Load-time image target (`load_target`)
 
-Optional boolean field on `memory.regions[]` entries, omitted (== `false`) unless the
-region is where a machine's load-time image gets carved into (e.g. C64's `RAM_MAIN`, which
-a `.prg`'s load address/length split around at import time). MapCompiler passes it through
-only when present in the source YAML, exactly like `readable`/`writable`/`executable`, and
-**rejects a descriptor that sets it on more than one region** — a build-time error, since
-"which region is the load target" must be unambiguous.
+Optional legacy boolean field on `memory.regions[]` entries, omitted (== `false`) unless a
+loader has exactly one fixed region into which it carves its file image. MapCompiler passes
+it through only when present and rejects more than one such region.
 
-`load_target` is not required — a descriptor with zero `load_target: true` regions is
-valid (NES boards have none: PRG banks load as ROM windows, not into a RAM region). Whether
-a loader *needs* a load target is a property of that loader, not the schema; a loader that
-does (`C64PrgLoader`) logs clearly when the descriptor doesn't provide one rather than
-falling back to a hardcoded region name.
+It is deliberately **not** how C64 PRG placement is modeled. A PRG's 16-bit load address
+may target any ordinary RAM region, RAM beneath a banked ROM/I/O window, or wrap through
+`$FFFF` into low memory. `C64PrgLoader` derives a complete placement plan from the direct
+`kind: ram` regions and window occupants, splitting the file at map boundaries;
+`formats.prg.placement: load_address` selects this policy.
+
+Because direct RAM and RAM-under-ROM/I/O occupy different Ghidra address spaces, an
+instruction or fallthrough that itself straddles one of those boundaries cannot be represented
+as one contiguous instruction. The bytes and their original file offsets are still preserved on
+both sides; analysis at that rare cross-space boundary may require manual treatment.
+
+`load_target` is not required — C64 and NES descriptors correctly have none. Whether a
+loader uses the legacy single-target mechanism is a property of that loader, not the
+schema.
 
 `MapCompiler` passes these three fields through to the compiled `.map` verbatim, only when
 present in the YAML (no defaults are ever written into the JSON — the loader is the single

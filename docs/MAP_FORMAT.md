@@ -71,12 +71,11 @@ address space. `type`, when present, names a struct/enum defined in the companio
 archive (e.g. `R6510`); `comment` is documentation only. `readable`/`writable`/`executable`
 are optional sparse permission overrides — see below and `docs/SCHEMA.md`.
 
-`load_target` is an optional boolean, omitted (== `false`) unless a region is where a
-machine's load-time image (e.g. a C64 `.prg`'s bytes) gets carved into. At most one region
-in a descriptor may set it — MapCompiler rejects a descriptor with two. Machines whose
-loader has no notion of a load-time image (e.g. NES, which loads PRG banks as ROM windows,
-not into RAM) correctly have none; a loader that needs one logs clearly when the descriptor
-doesn't provide one instead of guessing a region by name.
+`load_target` is a legacy optional boolean for loaders with one fixed image-carve region;
+at most one region may set it. C64 PRGs do not use it: their header-selected image may span
+ordinary RAM regions, RAM-under-ROM/I/O occupants, and the `$FFFF` wrap boundary, so the
+C64 loader derives destinations from direct `kind: ram` regions/window occupants instead.
+NES boards also have none because their PRG banks are ROM windows rather than a RAM image.
 
 ### `physical`
 

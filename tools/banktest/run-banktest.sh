@@ -72,6 +72,7 @@ fail=0
 "$PYTHON" "$SCRIPT_DIR/mkrollingtest.py" "$WORK/prg" || { echo "FAIL: mkrollingtest.py" >&2; exit 1; }
 "$PYTHON" "$SCRIPT_DIR/mksuspecttest.py" "$WORK/prg" || { echo "FAIL: mksuspecttest.py" >&2; exit 1; }
 "$PYTHON" "$SCRIPT_DIR/mkromtest.py" "$WORK/prg" || { echo "FAIL: mkromtest.py" >&2; exit 1; }
+"$PYTHON" "$SCRIPT_DIR/mkprgloadtest.py" "$WORK/prg" || { echo "FAIL: mkprgloadtest.py" >&2; exit 1; }
 
 # Imports $2 (a .prg or .nes fixture) via $3 (the loader name), runs VerifyBankTest.java,
 # extracts the normalized dump, and check|bless's it against expected/$1.dump.
@@ -142,6 +143,12 @@ done
 run_one c64basictest "$WORK/prg/c64basictest.prg" C64PrgLoader
 
 run_one emurecoverytest "$WORK/prg/emurecoverytest.prg" C64PrgLoader
+
+# Arbitrary-address PRG placement (grm-dvx): base RAM, RAM beneath the three
+# banked windows, 16-bit wrapping through P6510, and base-space emulation at $C000.
+run_one prgplacementtest "$WORK/prg/prgplacementtest.prg" C64PrgLoader
+run_one prgwraptest "$WORK/prg/prgwraptest.prg" C64PrgLoader
+run_one c000emutest "$WORK/prg/c000emutest.prg" C64PrgLoader
 
 run_one decryptloop "$WORK/prg/decryptloop.prg" C64PrgLoader
 

@@ -107,20 +107,40 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 	public boolean added(Program program, AddressSetView set, TaskMonitor monitor, MessageLog log)
 			throws CancelledException {
 
-		MemoryBlock prgBlock = program.getMemory().getBlock("PRG");
-		if (prgBlock == null) {
-			return true; // nothing this analyzer can do without knowing the PRG's extent
-		}
 		AddressSpace baseSpace = program.getAddressFactory().getDefaultAddressSpace();
-		long loadAddr = prgBlock.getStart().getOffset();
-		long limitAddr = prgBlock.getEnd().getOffset() + 1;
+		long loadAddr = program.getOptions(Program.PROGRAM_INFO)
+				.getLong(C64PrgLoader.PRG_LOAD_ADDRESS_PROPERTY, -1);
+		long prgLength = program.getOptions(Program.PROGRAM_INFO)
+				.getLong(C64PrgLoader.PRG_LENGTH_PROPERTY, -1);
+		boolean wrapped = program.getOptions(Program.PROGRAM_INFO)
+				.getBoolean(C64PrgLoader.PRG_WRAPPED_PROPERTY, false);
+		if (wrapped) {
+			return true; // a tokenized BASIC line chain is not a wrapping address interval
+		}
+		if (loadAddr < 0 || prgLength < 0) {
+			// Compatibility with Programs imported before grm-dvx placement metadata.
+			MemoryBlock prgBlock = program.getMemory().getBlock("PRG");
+			if (prgBlock == null) {
+				return true;
+			}
+			loadAddr = prgBlock.getStart().getOffset();
+			prgLength = prgBlock.getSize();
+		}
+		long limitAddr = loadAddr + prgLength;
+		final long imageLoadAddr = loadAddr;
+		final long imageLimitAddr = limitAddr;
+		List<C64PrgLoader.LoadedSlice> loadedSlices = C64PrgLoader.getLoadedSlices(program);
 
 		C64BasicWalker.ByteSource src = addr -> {
-			if (addr < loadAddr || addr >= limitAddr) {
+			if (addr < imageLoadAddr || addr >= imageLimitAddr) {
 				return -1;
 			}
 			try {
-				return program.getMemory().getByte(baseSpace.getAddress(addr)) & 0xFF;
+				Address placed = C64PrgLoader.resolvePrgAddress(program, addr, loadedSlices);
+				if (placed == null) {
+					placed = baseSpace.getAddress(addr);
+				}
+				return program.getMemory().getByte(placed) & 0xFF;
 			}
 			catch (MemoryAccessException e) {
 				return -1;
@@ -178,15 +198,19 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 			for (C64BasicWalker.BasicLine line : result.lines()) {
 				monitor.checkCancelled();
 
-				Address lineAddr = baseSpace.getAddress(line.lineAddr());
-				Address lineNumAddr = baseSpace.getAddress(line.lineAddr() + 2);
+				Address lineAddr = placedAddress(program, baseSpace, loadedSlices, line.lineAddr());
+				Address lineNumAddr =
+					placedAddress(program, baseSpace, loadedSlices, line.lineAddr() + 2);
 				typeWord(program, lineAddr, "line link", log);
 				typeWord(program, lineNumAddr, "line number", log);
 
 				int textLen = (int) (line.terminatorAddr() - line.textStart());
 				byte[] textBytes = new byte[textLen];
 				try {
-					program.getMemory().getBytes(baseSpace.getAddress(line.textStart()), textBytes);
+					for (int i = 0; i < textBytes.length; i++) {
+						textBytes[i] = program.getMemory().getByte(
+							placedAddress(program, baseSpace, loadedSlices, line.textStart() + i));
+					}
 				}
 				catch (MemoryAccessException e) {
 					log.appendMsg(getName(), "Failed to read line text at 0x" +
@@ -201,8 +225,8 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 				if (!sysHandled && (rendered.sysTarget() != null || rendered.sysNonLiteral())) {
 					sysHandled = true;
 					if (rendered.sysTarget() != null) {
-						markSysEntry(program, monitor, baseSpace, rendered.sysTarget(),
-							line.lineNumber(), log);
+						markSysEntry(program, monitor, baseSpace, loadedSlices,
+							rendered.sysTarget(), line.lineNumber(), log);
 					}
 					else {
 						program.getBookmarkManager().setBookmark(lineAddr, BookmarkType.NOTE,
@@ -213,7 +237,8 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 			}
 
 			if (result.isMalformed()) {
-				Address at = baseSpace.getAddress(result.malformedAt());
+				Address at =
+					placedAddress(program, baseSpace, loadedSlices, result.malformedAt());
 				String detail = result.expectedNextAddr() == null
 						? "line link 0x" + Long.toHexString(result.malformedLink()) +
 							" is not readable/parseable as a valid next line"
@@ -234,6 +259,12 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 		return true;
 	}
 
+	private static Address placedAddress(Program program, AddressSpace baseSpace,
+			List<C64PrgLoader.LoadedSlice> loadedSlices, long offset) {
+		Address placed = C64PrgLoader.resolvePrgAddress(program, offset, loadedSlices);
+		return placed != null ? placed : baseSpace.getAddress(offset);
+	}
+
 	private void typeWord(Program program, Address at, String fieldName, MessageLog log) {
 		try {
 			DataUtilities.createData(program, at, WordDataType.dataType, -1,
@@ -247,9 +278,11 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 	}
 
 	private void markSysEntry(Program program, TaskMonitor monitor, AddressSpace baseSpace,
-			int sysTarget, int lineNumber, MessageLog log) {
+			List<C64PrgLoader.LoadedSlice> loadedSlices, int sysTarget, int lineNumber,
+			MessageLog log) {
 		try {
-			Address sysAddr = baseSpace.getAddress(sysTarget & 0xFFFF);
+			Address sysAddr =
+				placedAddress(program, baseSpace, loadedSlices, sysTarget & 0xFFFF);
 			program.getSymbolTable().addExternalEntryPoint(sysAddr);
 			if (program.getSymbolTable().getPrimarySymbol(sysAddr) == null) {
 				program.getSymbolTable().createLabel(sysAddr, "sys_entry", SourceType.IMPORTED);

@@ -25,9 +25,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 
 import ghidra.app.util.MemoryBlockUtils;
 import ghidra.app.util.Option;
@@ -39,6 +41,7 @@ import ghidra.app.util.opinion.AbstractProgramWrapperLoader;
 import ghidra.app.util.opinion.LoadSpec;
 import ghidra.app.util.opinion.Loader;
 import ghidra.framework.model.DomainObject;
+import ghidra.framework.options.Options;
 import ghidra.framework.preferences.Preferences;
 import ghidra.program.database.mem.FileBytes;
 import ghidra.program.model.address.Address;
@@ -46,6 +49,7 @@ import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.data.FileDataTypeManager;
 import ghidra.program.model.lang.LanguageCompilerSpecPair;
 import ghidra.program.model.listing.Program;
+import ghidra.program.model.mem.Memory;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.symbol.SourceType;
 import ghidra.util.SystemUtilities;
@@ -74,6 +78,32 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 
 	/** The executable-format name stamped on imports; gated on by {@link C64BankingAnalyzer}. */
 	public static final String NAME = "Commodore 64 PRG";
+
+	static final String PRG_LOAD_ADDRESS_PROPERTY = "Retro Machines.C64 PRG Load Address";
+	static final String PRG_LENGTH_PROPERTY = "Retro Machines.C64 PRG Payload Length";
+	static final String PRG_WRAPPED_PROPERTY = "Retro Machines.C64 PRG Wrapped";
+	static final String PRG_SLICES_PROPERTY = "Retro Machines.C64 PRG Slices";
+
+	private record SourceSpan(long start, long length, long fileOffset) {
+		long end() {
+			return start + length - 1;
+		}
+	}
+
+	private record RamTarget(String name, long start, long end, String kind) {}
+
+	private record PrgSlice(RamTarget target, long start, long length, long fileOffset) {
+		long end() {
+			return start + length - 1;
+		}
+	}
+
+	/** One persisted PRG slice, in original file order. */
+	static record LoadedSlice(long fileOffset, long length, String spaceName, long start) {
+		boolean contains(long cpuAddress) {
+			return cpuAddress >= start && cpuAddress < start + length;
+		}
+	}
 
 	@Override
 	public String getName() {
@@ -177,7 +207,7 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 		if (name == null || !name.toLowerCase().endsWith(".prg")) {
 			return loadSpecs;
 		}
-		if (provider.length() < 2) {
+		if (provider.length() < 3) {
 			return loadSpecs;
 		}
 
@@ -239,37 +269,45 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 			int loadAddrHigh = provider.readByte(1) & 0xFF;
 			long loadAddr = (loadAddrHigh << 8) | loadAddrLow;
 			long prgLength = provider.length() - 2;
+			if (prgLength == 0) {
+				throw new IOException(
+					"PRG file has no program bytes past the 2-byte load address header");
+			}
+			if (prgLength > 0x10000) {
+				throw new IOException("PRG payload is " + prgLength +
+					" bytes; a 16-bit C64 image may contain at most 65536 bytes");
+			}
+			boolean wrapped = prgLength > 0x10000 - loadAddr;
+			List<PrgSlice> prgSlices = planPrgSlices(map, loadAddr, prgLength);
+			Map<String, List<PrgSlice>> slicesByTarget = new HashMap<>();
+			for (PrgSlice slice : prgSlices) {
+				slicesByTarget.computeIfAbsent(slice.target().name(), k -> new ArrayList<>())
+					.add(slice);
+			}
+			FileBytes prgFileBytes =
+				MemoryBlockUtils.createFileBytes(program, provider, TaskMonitor.DUMMY);
+			Map<String, AddressSpace> placementSpaces = new HashMap<>();
 
 			// --- Always-visible regions ---
 			JsonArray regions = map.getAsJsonArray("regions");
-			Map<String, JsonObject> regionsByName = new HashMap<>();
+			Map<String, JsonObject> regionsByName = new LinkedHashMap<>();
 			for (JsonElement re : regions) {
 				JsonObject region = re.getAsJsonObject();
 				regionsByName.put(region.get("name").getAsString(), region);
 			}
 
-			boolean sawLoadTarget = false;
 			for (JsonObject region : regionsByName.values()) {
-				// The region flagged load_target: true (c64.map's RAM_MAIN) is carved around
-				// the PRG image; everything else is generic. Which region (if any) plays this
-				// role is entirely descriptor-driven -- see docs/MAP_FORMAT.md's load_target.
-				if (region.has("load_target") && region.get("load_target").getAsBoolean()) {
-					sawLoadTarget = true;
-					createRamMainSplit(program, baseSpace, region, loadAddr, prgLength, log);
+				String regionName = region.get("name").getAsString();
+				List<PrgSlice> slices = slicesByTarget.get(regionName);
+				if (slices != null) {
+					createCarvedTarget(program, baseSpace, region, regionName, false, prgFileBytes,
+						slices, gdtMgr, placementSpaces, log);
 				}
 				else {
 					DescriptorSupport.createRegionBlock(program, baseSpace, region, "c64.map",
 						gdtMgr, log);
 				}
 			}
-			if (!sawLoadTarget) {
-				log.appendMsg("c64.map has no region flagged load_target: true; PRG image will " +
-					"not be carved into any region (all regions created as generic uninitialized " +
-					"blocks)");
-			}
-
-			// --- PRG image block ---
-			createPrgBlock(program, baseSpace, provider, loadAddr, prgLength, log);
 
 			// --- Banked windows: home occupant in base space, alternates in overlay spaces ---
 			JsonObject banking = map.getAsJsonObject("banking");
@@ -309,11 +347,20 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 						String occupantName = occupant.get("name").getAsString();
 						occupantCandidates.add(new DescriptorSupport.NamedCandidate(occupantName,
 							(p, bs, isHome, l) -> createWindowOccupant(p, bs, occupant, window,
-								isHome, gdtMgrForCandidates, romPaths, l)));
+								isHome, gdtMgrForCandidates, romPaths,
+								slicesByTarget.get(occupantName), prgFileBytes, placementSpaces, l)));
 					}
 					DescriptorSupport.placeHomeInBaseWindow(program, baseSpace, occupantCandidates,
 						homeOccupantName, log);
 				}
+			}
+
+			persistPrgPlacement(program, loadAddr, prgLength, wrapped, prgSlices,
+				placementSpaces);
+			if (prgSlices.stream().anyMatch(s -> s.target().name().equals("P6510"))) {
+				log.appendMsg("PRG bytes were placed at the 6510 port registers $0000/$0001. " +
+					"This is a static address image only: loader chronology, DDR effects, and bank " +
+					"state changes from $01 are not simulated; descriptor initial banking is unchanged.");
 			}
 
 			// --- KERNAL API symbols ---
@@ -348,18 +395,33 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 			// structural sniff of the line-link chain -- see C64BasicWalker.isBasicStart,
 			// which never compares loadAddr against a hardcoded address such as $0801)
 			// and stay out of the analyzer's way.
-			boolean basicStart = looksLikeBasicStart(provider, loadAddr, prgLength);
+			boolean basicStart = !wrapped && looksLikeBasicStart(provider, loadAddr, prgLength);
 			try {
-				Address entryAddr = baseSpace.getAddress(loadAddr);
-				program.getSymbolTable().addExternalEntryPoint(entryAddr);
-				program.getSymbolTable().createLabel(entryAddr, "entry", SourceType.IMPORTED);
+				Address entryAddr = resolvePrgAddress(program, loadAddr);
+				if (entryAddr == null) {
+					throw new IOException("No placed PRG slice contains load address $" +
+						Long.toHexString(loadAddr));
+				}
+				program.getSymbolTable().createLabel(entryAddr,
+					entryAddr.getAddressSpace().equals(baseSpace) ? "entry" : "load_start",
+					SourceType.IMPORTED);
+				MemoryBlock entryBlock = program.getMemory().getBlock(entryAddr);
+				boolean executableEntry = entryBlock != null && entryBlock.isExecute();
+				if (executableEntry) {
+					program.getSymbolTable().addExternalEntryPoint(entryAddr);
+				}
 				if (basicStart) {
 					log.appendMsg("PRG looks like a BASIC-start program (well-formed line-link " +
 						"chain at 0x" + Long.toHexString(loadAddr) + "); not marking a function " +
 						"there -- C64BasicAnalyzer will locate the real ML entry from a SYS line");
 				}
-				else {
+				else if (executableEntry) {
 					markAsFunction(program, "entry", entryAddr);
+				}
+				if (!entryAddr.getAddressSpace().equals(baseSpace)) {
+					log.appendMsg("PRG load start $" + Long.toHexString(loadAddr) + " is in " +
+						entryAddr.getAddressSpace().getName() +
+						" beneath the initial-state ROM/IO mapping; no duplicate base entry was created");
 				}
 			}
 			catch (Exception e) {
@@ -408,71 +470,228 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 	}
 
 	// ------------------------------------------------------------------
-	// load_target region carve (the one region the generic path can't build: the
-	// PRG image lands inside it, and Ghidra can't overlap blocks)
+	// Descriptor-derived PRG placement (grm-dvx)
 	// ------------------------------------------------------------------
 
-	private void createRamMainSplit(Program program, AddressSpace baseSpace, JsonObject region,
-			long loadAddr, long prgLength, MessageLog log) {
-
-		String regionName = region.get("name").getAsString();
-		long start = region.get("start").getAsLong();
-		long end = region.get("end").getAsLong();
-		String comment = region.has("comment") ? region.get("comment").getAsString() : null;
-		Perms p = DescriptorSupport.perms(region, "ram");
-		long prgEnd = loadAddr + prgLength - 1;
-		boolean prgInRange = prgLength > 0 && loadAddr >= start && prgEnd <= end;
-
-		if (!prgInRange) {
-			// PRG doesn't land cleanly inside the load-target region (POC scope: log and
-			// create the plain region block; the PRG block created separately may
-			// overlap/land elsewhere).
-			log.appendMsg("PRG load address 0x" + Long.toHexString(loadAddr) +
-				" (length " + prgLength + ") does not fit within " + regionName + " [0x" +
-				Long.toHexString(start) + ",0x" + Long.toHexString(end) +
-				"]; creating " + regionName + " as a single block");
-			Address startAddr = baseSpace.getAddress(start);
-			MemoryBlockUtils.createUninitializedBlock(program, false, regionName, startAddr,
-				end - start + 1, comment, "c64.map", p.readable(), p.writable(), p.executable(), log);
-			return;
+	private static List<PrgSlice> planPrgSlices(JsonObject map, long loadAddr, long length)
+			throws IOException {
+		if (length == 0) {
+			return List.of();
 		}
 
-		// The PRG initialized block occupies part of the region's range, so the surrounding
-		// RAM is emitted as separate blocks (Ghidra can't overlap blocks, and join() can't
-		// merge an initialized FileBytes block with uninitialized RAM). Address-suffix the
-		// carved halves so they never share the region's plain name.
-		if (loadAddr > start) {
-			Address belowStart = baseSpace.getAddress(start);
-			MemoryBlockUtils.createUninitializedBlock(program, false,
-				regionName + String.format("_%04X", (int) start), belowStart,
-				loadAddr - start, comment, "c64.map", p.readable(), p.writable(), p.executable(), log);
+		List<RamTarget> targets = new ArrayList<>();
+		for (JsonElement re : map.getAsJsonArray("regions")) {
+			JsonObject region = re.getAsJsonObject();
+			String name = region.get("name").getAsString();
+			String kind = region.get("kind").getAsString();
+			// $0000/$0001 are address-visible 6510 registers, not general RAM, but wrapped
+			// PRGs in the wild deliberately place bytes across them on their way to low RAM.
+			if (kind.equals("ram") || name.equals("P6510")) {
+				targets.add(new RamTarget(name, region.get("start").getAsLong(),
+					region.get("end").getAsLong(), kind));
+			}
 		}
-		if (prgEnd < end) {
-			Address aboveStart = baseSpace.getAddress(prgEnd + 1);
-			MemoryBlockUtils.createUninitializedBlock(program, false,
-				regionName + String.format("_%04X", (int) (prgEnd + 1)), aboveStart,
-				end - prgEnd, comment, "c64.map", p.readable(), p.writable(), p.executable(), log);
+		for (JsonElement we : map.getAsJsonArray("windows")) {
+			JsonObject window = we.getAsJsonObject();
+			long start = window.get("start").getAsLong();
+			long end = window.get("end").getAsLong();
+			for (JsonElement oe : window.getAsJsonArray("occupants")) {
+				JsonObject occupant = oe.getAsJsonObject();
+				if (occupant.get("kind").getAsString().equals("ram")) {
+					targets.add(new RamTarget(occupant.get("name").getAsString(), start, end,
+						"ram"));
+				}
+			}
+		}
+		for (int i = 0; i < targets.size(); i++) {
+			RamTarget left = targets.get(i);
+			for (int j = i + 1; j < targets.size(); j++) {
+				RamTarget right = targets.get(j);
+				if (left.start() <= right.end() && right.start() <= left.end()) {
+					throw new IOException("C64 PRG placement targets " + left.name() + " and " +
+						right.name() + " overlap at $" +
+						String.format("%04X", Math.max(left.start(), right.start())));
+				}
+			}
+		}
+
+		long firstLength = Math.min(length, 0x10000 - loadAddr);
+		List<SourceSpan> spans = new ArrayList<>();
+		spans.add(new SourceSpan(loadAddr, firstLength, 2));
+		if (length > firstLength) {
+			spans.add(new SourceSpan(0, length - firstLength, 2 + firstLength));
+		}
+
+		List<PrgSlice> slices = new ArrayList<>();
+		for (SourceSpan span : spans) {
+			long cursor = span.start();
+			while (cursor <= span.end()) {
+				long address = cursor;
+				List<RamTarget> matching = targets.stream()
+					.filter(t -> address >= t.start() && address <= t.end()).toList();
+				if (matching.size() != 1) {
+					throw new IOException("PRG address $" + String.format("%04X", cursor) +
+						" has " + matching.size() + " physical placement targets in c64.map");
+				}
+				RamTarget target = matching.get(0);
+				long sliceEnd = Math.min(span.end(), target.end());
+				long fileOffset = span.fileOffset() + cursor - span.start();
+				slices.add(new PrgSlice(target, cursor, sliceEnd - cursor + 1, fileOffset));
+				cursor = sliceEnd + 1;
+			}
+		}
+		return List.copyOf(slices);
+	}
+
+	private void createCarvedTarget(Program program, AddressSpace baseSpace, JsonObject region,
+			String targetName, boolean overlay, FileBytes fileBytes, List<PrgSlice> slices,
+			FileDataTypeManager gdtMgr, Map<String, AddressSpace> placementSpaces, MessageLog log)
+			throws IOException {
+		AddressSpace targetSpace = createCarvedTarget(program, baseSpace, targetName,
+			region.get("start").getAsLong(), region.get("end").getAsLong(),
+			region.get("kind").getAsString(),
+			region.has("comment") ? region.get("comment").getAsString() : null, region, overlay,
+			fileBytes, slices, placementSpaces);
+		if (region.has("type") && gdtMgr != null) {
+			DescriptorSupport.applyStructType(program, targetSpace, gdtMgr, region, "c64.map", log);
 		}
 	}
 
-	private void createPrgBlock(Program program, AddressSpace baseSpace, ByteProvider provider,
-			long loadAddr, long prgLength, MessageLog log) {
-
-		if (prgLength <= 0) {
-			log.appendMsg("PRG file has no program bytes past the 2-byte load address header");
-			return;
-		}
+	private AddressSpace createCarvedTarget(Program program, AddressSpace baseSpace,
+			String targetName, long targetStart, long targetEnd, String kind, String comment,
+			JsonObject permsSource, boolean overlay, FileBytes fileBytes, List<PrgSlice> slices,
+			Map<String, AddressSpace> placementSpaces) throws IOException {
 		try {
-			FileBytes fileBytes =
-				MemoryBlockUtils.createFileBytes(program, provider, ghidra.util.task.TaskMonitor.DUMMY);
-			Address loadAddress = baseSpace.getAddress(loadAddr);
-			MemoryBlockUtils.createInitializedBlock(program, false, "PRG", loadAddress, fileBytes, 2,
-				prgLength, "PRG image loaded at $" + Long.toHexString(loadAddr), "c64prg", true, true,
-				true, log);
+			AddressSpace targetSpace = baseSpace;
+			if (overlay) {
+				targetSpace = program.getAddressFactory().getAddressSpace(targetName);
+				if (targetSpace == null) {
+					targetSpace = program.createOverlaySpace(targetName, baseSpace);
+				}
+			}
+			placementSpaces.put(targetName, targetSpace);
+
+			List<PrgSlice> ordered = slices.stream()
+				.sorted((a, b) -> Long.compare(a.start(), b.start())).toList();
+			long cursor = targetStart;
+			for (PrgSlice slice : ordered) {
+				if (cursor < slice.start()) {
+					createDirectBlock(program, targetSpace, targetName, targetStart,
+						cursor, slice.start() - cursor, kind, comment, permsSource, null, 0);
+				}
+				createDirectBlock(program, targetSpace, targetName, targetStart,
+					slice.start(), slice.length(), kind,
+					"PRG image bytes at $" + String.format("%04X", slice.start()), permsSource,
+					fileBytes, slice.fileOffset());
+				cursor = slice.end() + 1;
+			}
+			if (cursor <= targetEnd) {
+				createDirectBlock(program, targetSpace, targetName, targetStart,
+					cursor, targetEnd - cursor + 1, kind, comment, permsSource, null, 0);
+			}
+			return targetSpace;
 		}
 		catch (Exception e) {
-			log.appendMsg("Failed to create PRG block: " + e.getMessage());
+			throw new IOException("Failed to carve PRG bytes into " + targetName + ": " +
+				e.getMessage(), e);
 		}
+	}
+
+	private MemoryBlock createDirectBlock(Program program, AddressSpace space, String targetName,
+			long targetStart, long start, long length, String kind, String comment,
+			JsonObject permsSource, FileBytes fileBytes, long fileOffset) throws Exception {
+		boolean initialized = fileBytes != null;
+		String name;
+		if (start == targetStart && space.isOverlaySpace()) {
+			name = targetName; // preserve the block/space naming contract used by the analyzer
+		}
+		else if (start == targetStart && kind.equals("io")) {
+			name = targetName; // preserve P6510 for register typing and navigation
+		}
+		else if (initialized && fileOffset == 2 && !space.isOverlaySpace()) {
+			name = "PRG";
+		}
+		else {
+			name = (initialized ? "PRG" : targetName) + String.format("_%04X", start);
+		}
+
+		Memory memory = program.getMemory();
+		// An empty ProgramOverlayAddressSpace.getAddress(offset) deliberately falls back to
+		// the base space until a block covers that offset. Force the first fragment into the
+		// newly-created overlay; subsequent fragments can use the same form safely too.
+		Address address = space.isOverlaySpace()
+				? space.getAddressInThisSpaceOnly(start) : space.getAddress(start);
+		MemoryBlock block = initialized
+				? memory.createInitializedBlock(name, address, fileBytes, fileOffset, length, false)
+				: memory.createUninitializedBlock(name, address, length, false);
+		Perms p = DescriptorSupport.perms(permsSource, kind);
+		block.setComment(comment);
+		block.setSourceName(initialized ? "c64prg" : "c64.map");
+		block.setRead(p.readable());
+		block.setWrite(p.writable());
+		block.setExecute(p.executable());
+		DescriptorSupport.markVolatileIfIo(block, kind);
+		return block;
+	}
+
+	private static void persistPrgPlacement(Program program, long loadAddr, long length,
+			boolean wrapped, List<PrgSlice> slices, Map<String, AddressSpace> placementSpaces)
+			throws IOException {
+		JsonArray serialized = new JsonArray();
+		for (PrgSlice slice : slices) {
+			AddressSpace space = placementSpaces.get(slice.target().name());
+			if (space == null) {
+				throw new IOException("No address space was created for PRG target " +
+					slice.target().name());
+			}
+			JsonObject item = new JsonObject();
+			item.addProperty("file_offset", slice.fileOffset());
+			item.addProperty("length", slice.length());
+			item.addProperty("space", space.getName());
+			item.addProperty("start", slice.start());
+			serialized.add(item);
+		}
+		Options info = program.getOptions(Program.PROGRAM_INFO);
+		info.setLong(PRG_LOAD_ADDRESS_PROPERTY, loadAddr);
+		info.setLong(PRG_LENGTH_PROPERTY, length);
+		info.setBoolean(PRG_WRAPPED_PROPERTY, wrapped);
+		info.setString(PRG_SLICES_PROPERTY, new Gson().toJson(serialized));
+	}
+
+	static List<LoadedSlice> getLoadedSlices(Program program) {
+		String json = program.getOptions(Program.PROGRAM_INFO).getString(PRG_SLICES_PROPERTY, "[]");
+		try {
+			List<LoadedSlice> result = new ArrayList<>();
+			for (JsonElement element : JsonParser.parseString(json).getAsJsonArray()) {
+				JsonObject item = element.getAsJsonObject();
+				result.add(new LoadedSlice(item.get("file_offset").getAsLong(),
+					item.get("length").getAsLong(), item.get("space").getAsString(),
+					item.get("start").getAsLong()));
+			}
+			return List.copyOf(result);
+		}
+		catch (RuntimeException e) {
+			return List.of();
+		}
+	}
+
+	static Address resolvePrgAddress(Program program, long cpuAddress) {
+		return resolvePrgAddress(program, cpuAddress, getLoadedSlices(program));
+	}
+
+	static Address resolvePrgAddress(Program program, long cpuAddress,
+			List<LoadedSlice> loadedSlices) {
+		long address = cpuAddress & 0xFFFF;
+		for (LoadedSlice slice : loadedSlices) {
+			if (!slice.contains(address)) {
+				continue;
+			}
+			AddressSpace space = program.getAddressFactory().getAddressSpace(slice.spaceName());
+			if (space != null) {
+				return space.getAddress(address);
+			}
+		}
+		return null;
 	}
 
 	// ------------------------------------------------------------------
@@ -481,7 +700,8 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 
 	private MemoryBlock createWindowOccupant(Program program, AddressSpace baseSpace,
 			JsonObject occupant, JsonObject window, boolean isHome, FileDataTypeManager gdtMgr,
-			Map<String, String> romPaths, MessageLog log) {
+			Map<String, String> romPaths, List<PrgSlice> prgSlices, FileBytes prgFileBytes,
+			Map<String, AddressSpace> placementSpaces, MessageLog log) {
 
 		String occupantName = occupant.get("name").getAsString();
 		String kind = occupant.get("kind").getAsString();
@@ -504,6 +724,18 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 		String comment = occupantName + " (" + kind + ")";
 		Perms p = DescriptorSupport.perms(occupant, kind);
 
+		if (prgSlices != null && !prgSlices.isEmpty()) {
+			try {
+				AddressSpace targetSpace = createCarvedTarget(program, baseSpace, occupantName,
+					start, end, kind, comment, occupant, isOverlay, prgFileBytes, prgSlices,
+					placementSpaces);
+				return program.getMemory().getBlock(targetSpace.getAddress(start));
+			}
+			catch (IOException e) {
+				throw new RuntimeException(e);
+			}
+		}
+
 		// If this is a ROM occupant the user supplied a dump for, initialize it from that file
 		// (bead grm-mbm) instead of leaving it empty -- makes ROM code disassemblable and gives
 		// ROM->RAM copies (e.g. CHRGET) a real source. Any failure falls back to uninitialized.
@@ -523,7 +755,7 @@ public class C64PrgLoader extends AbstractProgramWrapperLoader {
 	}
 
 	/** Initialize a ROM occupant block from a user-supplied dump file, mirroring
-	 *  {@link #createPrgBlock}'s FileBytes pattern. Returns null (caller falls back to an
+	 *  the PRG slice FileBytes pattern. Returns null (caller falls back to an
 	 *  uninitialized block) if the file is the wrong size or cannot be read. */
 	private MemoryBlock createRomBlock(Program program, String name, Address start, long length,
 			boolean isOverlay, String path, Perms p, MessageLog log) {

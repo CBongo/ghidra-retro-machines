@@ -42,6 +42,7 @@ import ghidra.program.model.listing.CommentType;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.InstructionIterator;
 import ghidra.program.model.mem.MemoryBlock;
+import ghidra.program.model.mem.MemoryBlockSourceInfo;
 import ghidra.program.model.symbol.Reference;
 import ghidra.program.model.symbol.Symbol;
 
@@ -71,6 +72,24 @@ public class VerifyBankTest extends GhidraScript {
 		// section, so it takes a separate path from dump() + the bank-fixture dispatch below.
 		if (name.contains("emurecoverytest")) {
 			checkEmuRecovery();
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
+
+		if (name.contains("c000emutest")) {
+			checkC000EmuRecovery();
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
+
+		if (name.contains("prgplacementtest")) {
+			checkPrgPlacement();
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
+
+		if (name.contains("prgwraptest")) {
+			checkPrgWrap();
 			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
 			return;
 		}
@@ -200,6 +219,95 @@ public class VerifyBankTest extends GhidraScript {
 			"suspect=" + result.provenance().suspect());
 		criterion("emu-dirty-covers-target", result.dirty().contains(target),
 			"dirty=" + dirtySb);
+	}
+
+	// ------------------------------------------------------------------
+	// Arbitrary-address C64 PRG loading (bead grm-dvx)
+	// ------------------------------------------------------------------
+
+	private void checkPrgPlacement() {
+		MemoryBlock a = blockAt("RAM_A000", 0xa000);
+		MemoryBlock c = currentProgram.getMemory().getBlock(addr(0xc000));
+		MemoryBlock d = blockAt("RAM_D000", 0xd000);
+		MemoryBlock e = blockAt("RAM_E000", 0xe000);
+		MemoryBlock basic = currentProgram.getMemory().getBlock(addr(0xa000));
+		MemoryBlock io = currentProgram.getMemory().getBlock(addr(0xd000));
+		MemoryBlock kernal = currentProgram.getMemory().getBlock(addr(0xe000));
+
+		println("=== BANKDUMP BEGIN ===");
+		println("A000 " + describeBlock(a) + " BYTES " + bytesAt("RAM_A000", 0xa000, 4));
+		println("C000 " + describeBlock(c) + " BYTES " + bytesAt(null, 0xc000, 4));
+		println("D000 " + describeBlock(d) + " BYTES " + bytesAt("RAM_D000", 0xd000, 4));
+		println("E000 " + describeBlock(e) + " BYTES " + bytesAt("RAM_E000", 0xe000, 4));
+		println("HOME " + names(basic, io, kernal));
+		println("=== BANKDUMP END ===");
+
+		criterion("placement-a000", initializedOverlay(a, "RAM_A000") &&
+			"41 30 30 30".equals(bytesAt("RAM_A000", 0xa000, 4)), describeBlock(a));
+		criterion("placement-c000", c != null && c.isInitialized() && !c.isOverlay() &&
+			"43 30 30 30".equals(bytesAt(null, 0xc000, 4)), describeBlock(c));
+		criterion("placement-d000", initializedOverlay(d, "RAM_D000") &&
+			"44 30 30 30".equals(bytesAt("RAM_D000", 0xd000, 4)), describeBlock(d));
+		criterion("placement-e000", initializedOverlay(e, "RAM_E000") &&
+			"45 30 30 30".equals(bytesAt("RAM_E000", 0xe000, 4)), describeBlock(e));
+		criterion("placement-file-offsets", fileOffset(a) == 2 && fileOffset(c) == 0x2002 &&
+			fileOffset(d) == 0x3002 && fileOffset(e) == 0x4002,
+			"offsets=" + fileOffset(a) + "," + fileOffset(c) + "," + fileOffset(d) + "," +
+				fileOffset(e));
+		criterion("placement-home-in-base", basic != null && "BASIC".equals(basic.getName()) &&
+			io != null && !io.isOverlay() && kernal != null && "KERNAL".equals(kernal.getName()),
+			names(basic, io, kernal));
+	}
+
+	private void checkPrgWrap() {
+		MemoryBlock high = blockAt("RAM_E000", 0xfffc);
+		MemoryBlock p6510 = currentProgram.getMemory().getBlock(addr(0));
+		MemoryBlock zeroPage = currentProgram.getMemory().getBlock(addr(2));
+		MemoryBlock vectors = currentProgram.getMemory().getBlock(addr(0x300));
+
+		println("=== BANKDUMP BEGIN ===");
+		println("HIGH " + describeBlock(high) + " BYTES " + bytesAt("RAM_E000", 0xfffc, 4));
+		println("P6510 " + describeBlock(p6510) + " BYTES " + bytesAt(null, 0, 2));
+		println("LOW " + describeBlock(zeroPage) + " BYTES " + bytesAt(null, 2, 2));
+		println("VECTOR " + describeBlock(vectors) + " BYTES " + bytesAt(null, 0x300, 4));
+		println("=== BANKDUMP END ===");
+
+		criterion("wrap-high", initializedOverlay(high, "RAM_E000") &&
+			"fc fd fe ff".equals(bytesAt("RAM_E000", 0xfffc, 4)), describeBlock(high));
+		criterion("wrap-p6510", p6510 != null && p6510.isInitialized() &&
+			"d0 d1".equals(bytesAt(null, 0, 2)), describeBlock(p6510));
+		criterion("wrap-low", zeroPage != null && zeroPage.isInitialized() &&
+			"02 03".equals(bytesAt(null, 2, 2)), describeBlock(zeroPage));
+		criterion("wrap-vector", vectors != null && vectors.isInitialized() &&
+			"56 45 43 54".equals(bytesAt(null, 0x300, 4)), describeBlock(vectors));
+		criterion("wrap-file-offsets", fileOffset(high) == 2 && fileOffset(p6510) == 6 &&
+			fileOffset(zeroPage) == 8 && fileOffset(vectors, 0x300) == 0x306,
+			"offsets=" + fileOffset(high) + "," + fileOffset(p6510) + "," +
+				fileOffset(zeroPage) + "," + fileOffset(vectors, 0x300));
+	}
+
+	private void checkC000EmuRecovery() {
+		Address entry = addr(0xc000);
+		Address payload = addr(0xc010);
+		AddressSet target = new AddressSet(payload, addr(0xc017));
+		RecoveryResult result = new EmulationRecovery(currentProgram).recover(entry,
+			StopConditions.builder().dirtyWatch(target).instructionFuel(10_000).build(),
+			IoPolicy.volatileBlocks(currentProgram), monitor);
+		byte[] recovered = result.recoveredBytes(payload, 8);
+		byte[] expected = {1, 2, 3, 4, 5, 6, 7, 8};
+		MemoryBlock block = currentProgram.getMemory().getBlock(entry);
+
+		println("=== BANKDUMP BEGIN ===");
+		println("BLOCK " + describeBlock(block));
+		println("STOPREASON " + result.stopReason());
+		println("RECOVERED " + hex(recovered));
+		println("=== BANKDUMP END ===");
+
+		criterion("c000-base", block != null && block.isInitialized() && !block.isOverlay(),
+			describeBlock(block));
+		criterion("c000-emu-stop", result.stopReason() == StopReason.DIRTY_WATCH,
+			"stop=" + result.stopReason());
+		criterion("c000-emu-bytes", Arrays.equals(recovered, expected), "bytes=" + hex(recovered));
 	}
 
 	// ------------------------------------------------------------------
@@ -1234,6 +1342,56 @@ public class VerifyBankTest extends GhidraScript {
 		}
 		return b.getName() + " " + fmt(b.getStart()) + "-" + fmt(b.getEnd()) + " overlay=" +
 			b.isOverlay();
+	}
+
+	private static long fileOffset(MemoryBlock block) {
+		if (block == null || block.getSourceInfos().isEmpty()) {
+			return -1;
+		}
+		MemoryBlockSourceInfo info = block.getSourceInfos().get(0);
+		return info.getFileBytes() == null ? -1 : info.getFileBytesOffset();
+	}
+
+	private static long fileOffset(MemoryBlock block, long addressOffset) {
+		if (block == null || block.getSourceInfos().isEmpty()) {
+			return -1;
+		}
+		MemoryBlockSourceInfo info = block.getSourceInfos().get(0);
+		Address address = block.getStart().getAddressSpace().getAddress(addressOffset);
+		return info.getFileBytes() == null ? -1 : info.getFileBytesOffset(address);
+	}
+
+	private MemoryBlock blockAt(String spaceName, long offset) {
+		AddressSpace space = currentProgram.getAddressFactory().getAddressSpace(spaceName);
+		return space == null ? null : currentProgram.getMemory().getBlock(space.getAddress(offset));
+	}
+
+	private static boolean initializedOverlay(MemoryBlock block, String spaceName) {
+		return block != null && block.isInitialized() && block.isOverlay() &&
+			spaceName.equals(block.getStart().getAddressSpace().getName());
+	}
+
+	private String bytesAt(String spaceName, long offset, int length) {
+		try {
+			Address start = spaceName == null ? addr(offset) : overlayAddr(spaceName, offset);
+			byte[] bytes = new byte[length];
+			currentProgram.getMemory().getBytes(start, bytes);
+			return hex(bytes);
+		}
+		catch (Exception e) {
+			return "<unreadable>";
+		}
+	}
+
+	private static String names(MemoryBlock... blocks) {
+		StringBuilder result = new StringBuilder();
+		for (MemoryBlock block : blocks) {
+			if (result.length() > 0) {
+				result.append(" ");
+			}
+			result.append(block == null ? "<missing>" : block.getName());
+		}
+		return result.toString();
 	}
 
 	// ------------------------------------------------------------------

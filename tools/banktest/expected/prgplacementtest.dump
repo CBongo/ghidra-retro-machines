@@ -1,0 +1,5 @@
+A000 RAM_A000 a000-bfff overlay=true BYTES 41 30 30 30
+C000 PRG_C000 c000-cfff overlay=false BYTES 43 30 30 30
+D000 RAM_D000 d000-dfff overlay=true BYTES 44 30 30 30
+E000 RAM_E000 e000-ffff overlay=true BYTES 45 30 30 30
+HOME BASIC VIC KERNAL
