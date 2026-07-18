@@ -53,18 +53,49 @@ bd close <id>         # Complete work
 
 ## Build & Test
 
-One-command build+test loop:
+The full acceptance gate is:
 
 ```bash
-bash tools/banktest/build-and-test.sh check    # or: bless   (after reviewing diffs)
+bash tools/banktest/build-and-test.sh check
 ```
 
-This builds the extension (`gradle buildExtension`), installs the dist zip into a
-**per-git-worktree, isolated** Ghidra "user settings dir" under `build/ghidra-home`
-(gitignored), then runs the banktest regression suite against that isolated install. It
-**never touches the shared `%APPDATA%/ghidra/.../Extensions` dir** — so an open Ghidra GUI
-can't lock it out from under you, and parallel agents can't clobber each other's installed
-extension.
+It runs every headless golden fixture plus `verifyPetsciiMapper` and
+`verifyBitAlgebra`; use it before commits and for issue acceptance. `bless`
+updates selected golden files only after reviewing the diff:
+
+```bash
+bash tools/banktest/build-and-test.sh bless c64-banking
+```
+
+For the development loop, select one or more chunks (these are not substitutes
+for the full default gate):
+
+```bash
+bash tools/banktest/build-and-test.sh check c64-banking c64-loader
+bash tools/banktest/build-and-test.sh check bit-algebra  # skips extension build/install
+bash tools/banktest/build-and-test.sh --list-chunks
+```
+
+Chunk/source-area mapping:
+
+- `c64-banking`: `banktest` through `banktest4` C64 fixtures.
+- `c64-loader`: C64 PRG placement/wrapping, ROM loading, and symbol toggles.
+- `c64-recovery`: C64 emulation and decrypt/recovery fixtures.
+- `basic-petscii`: C64 BASIC headless fixture and `verifyPetsciiMapper`.
+- `nes-banking`: NES banking and MMC fixtures.
+- `bit-algebra`: `verifyBitAlgebra` only.
+- `all`: every chunk; the default when no chunk is supplied.
+
+There is deliberately no `quick` alias or cache-backed project mode: headless
+projects are created fresh, and a correct cache would need explicit invalidation
+rules. Use targeted chunks for safe iteration instead.
+
+For any headless chunk, this builds the extension (`gradle buildExtension`), installs the
+dist zip into a **per-git-worktree, isolated** Ghidra "user settings dir" under
+`build/ghidra-home` (gitignored), then runs the banktest regression suite against that
+isolated install. It **never touches the shared `%APPDATA%/ghidra/.../Extensions` dir** —
+so an open Ghidra GUI can't lock it out from under you, and parallel agents can't clobber
+each other's installed extension.
 
 Parallelization rules:
 - One agent per `git worktree` (`git worktree add <path> <ref>`); never two agents sharing

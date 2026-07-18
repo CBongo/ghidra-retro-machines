@@ -2,13 +2,23 @@
 # C64 + NES banking-analyzer regression suite driver (bead grm-wzl, extended to NES
 # by grm-5tl.17).
 #
-# Usage: run-banktest.sh [check|bless]
+# Usage: run-banktest.sh [check|bless] [chunk ...]
 #
 #   check (default)  Generate the test PRGs, import each with analyzeHeadless
 #                    using the C64PrgLoader, run VerifyBankTest.java, and fail
 #                    if any criterion fails or the normalized behavior dump
 #                    differs from the golden copies in expected/.
 #   bless            Same run, but (re)capture the dumps into expected/.
+#
+# Chunks (default: all):
+#   c64-banking   banktest through banktest4
+#   c64-loader    arbitrary-address PRGs, ROM loading, and symbol toggle
+#   c64-recovery  emulation and decrypt/recovery fixtures
+#   basic-petscii c64basictest
+#   nes-banking   all NES banking/MMC fixtures
+#   all           every chunk above
+#
+#   --list-chunks  print the available chunk names and exit
 #
 # Environment overrides:
 #   GHIDRA_HEADLESS         path to analyzeHeadless(.bat)
@@ -31,12 +41,61 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EXPECTED_DIR="$SCRIPT_DIR/expected"
 GHIDRA_HEADLESS="${GHIDRA_HEADLESS:-D:/ghidra_12.1.2_PUBLIC/support/analyzeHeadless.bat}"
-MODE="${1:-check}"
 
-case "$MODE" in
-	check|bless) ;;
-	*) echo "usage: $0 [check|bless]" >&2; exit 2 ;;
-esac
+usage() {
+	echo "usage: $0 [check|bless] [chunk ...]" >&2
+	echo "       $0 --list-chunks" >&2
+}
+
+list_chunks() {
+	printf '%s\n' \
+		c64-banking \
+		c64-loader \
+		c64-recovery \
+		basic-petscii \
+		nes-banking \
+		all
+}
+
+if [ "${1:-}" = "--list-chunks" ]; then
+	if [ $# -ne 1 ]; then
+		usage
+		exit 2
+	fi
+	list_chunks
+	exit 0
+fi
+
+MODE=check
+if [ $# -gt 0 ] && { [ "$1" = check ] || [ "$1" = bless ]; }; then
+	MODE="$1"
+	shift
+fi
+CHUNKS=("$@")
+if [ ${#CHUNKS[@]} -eq 0 ]; then
+	CHUNKS=(all)
+fi
+
+# Validate every requested chunk before creating a work directory or generating
+# fixtures, so a typo cannot leave partial output behind.
+for chunk in "${CHUNKS[@]}"; do
+	case "$chunk" in
+		c64-banking|c64-loader|c64-recovery|basic-petscii|nes-banking|all) ;;
+		*)
+			echo "unknown chunk: $chunk" >&2
+			usage
+			exit 2
+			;;
+	esac
+done
+
+selected() {
+	local wanted="$1" chunk
+	for chunk in "${CHUNKS[@]}"; do
+		[ "$chunk" = all ] || [ "$chunk" = "$wanted" ] && return 0
+	done
+	return 1
+}
 
 PYTHON="${PYTHON:-}"
 if [ -z "$PYTHON" ]; then
@@ -64,15 +123,27 @@ fi
 WORK="$(mktemp -d)"
 fail=0
 
-"$PYTHON" "$SCRIPT_DIR/mkbanktest.py" "$WORK/prg" || { echo "FAIL: mkbanktest.py" >&2; exit 1; }
-"$PYTHON" "$SCRIPT_DIR/mknesbanktest.py" "$WORK/nes" || { echo "FAIL: mknesbanktest.py" >&2; exit 1; }
-"$PYTHON" "$SCRIPT_DIR/mkbasictest.py" "$WORK/prg" || { echo "FAIL: mkbasictest.py" >&2; exit 1; }
-"$PYTHON" "$SCRIPT_DIR/mkemutest.py" "$WORK/prg" || { echo "FAIL: mkemutest.py" >&2; exit 1; }
-"$PYTHON" "$SCRIPT_DIR/mkdecrypttest.py" "$WORK/prg" || { echo "FAIL: mkdecrypttest.py" >&2; exit 1; }
-"$PYTHON" "$SCRIPT_DIR/mkrollingtest.py" "$WORK/prg" || { echo "FAIL: mkrollingtest.py" >&2; exit 1; }
-"$PYTHON" "$SCRIPT_DIR/mksuspecttest.py" "$WORK/prg" || { echo "FAIL: mksuspecttest.py" >&2; exit 1; }
-"$PYTHON" "$SCRIPT_DIR/mkromtest.py" "$WORK/prg" || { echo "FAIL: mkromtest.py" >&2; exit 1; }
-"$PYTHON" "$SCRIPT_DIR/mkprgloadtest.py" "$WORK/prg" || { echo "FAIL: mkprgloadtest.py" >&2; exit 1; }
+generate() {
+	local generator="$1" destination="$2"
+	"$PYTHON" "$SCRIPT_DIR/$generator" "$destination" || {
+		echo "FAIL: $generator" >&2
+		exit 1
+	}
+}
+
+if selected c64-banking; then generate mkbanktest.py "$WORK/prg"; fi
+if selected c64-loader; then
+	generate mkromtest.py "$WORK/prg"
+	generate mkprgloadtest.py "$WORK/prg"
+fi
+if selected c64-recovery; then
+	generate mkemutest.py "$WORK/prg"
+	generate mkdecrypttest.py "$WORK/prg"
+	generate mkrollingtest.py "$WORK/prg"
+	generate mksuspecttest.py "$WORK/prg"
+fi
+if selected basic-petscii; then generate mkbasictest.py "$WORK/prg"; fi
+if selected nes-banking; then generate mknesbanktest.py "$WORK/nes"; fi
 
 # Imports $2 (a .prg or .nes fixture) via $3 (the loader name), runs VerifyBankTest.java,
 # extracts the normalized dump, and check|bless's it against expected/$1.dump.
@@ -136,45 +207,52 @@ run_one() {
 	fi
 }
 
-for name in banktest banktest2 banktest3 banktest4; do
-	run_one "$name" "$WORK/prg/$name.prg" C64PrgLoader
-done
+if selected c64-banking; then
+	for name in banktest banktest2 banktest3 banktest4; do
+		run_one "$name" "$WORK/prg/$name.prg" C64PrgLoader
+	done
+fi
 
-run_one c64basictest "$WORK/prg/c64basictest.prg" C64PrgLoader
+if selected basic-petscii; then
+	run_one c64basictest "$WORK/prg/c64basictest.prg" C64PrgLoader
+fi
 
-run_one emurecoverytest "$WORK/prg/emurecoverytest.prg" C64PrgLoader
+if selected c64-recovery; then
+	run_one emurecoverytest "$WORK/prg/emurecoverytest.prg" C64PrgLoader
+	run_one decryptloop "$WORK/prg/decryptloop.prg" C64PrgLoader
+	run_one rollingdecrypt "$WORK/prg/rollingdecrypt.prg" C64PrgLoader
+	run_one suspectdecrypt "$WORK/prg/suspectdecrypt.prg" C64PrgLoader
+fi
 
-# Arbitrary-address PRG placement (grm-dvx): base RAM, RAM beneath the three
-# banked windows, 16-bit wrapping through P6510, and base-space emulation at $C000.
-run_one prgplacementtest "$WORK/prg/prgplacementtest.prg" C64PrgLoader
-run_one prgwraptest "$WORK/prg/prgwraptest.prg" C64PrgLoader
-run_one c000emutest "$WORK/prg/c000emutest.prg" C64PrgLoader
+if selected c64-loader; then
+	# Arbitrary-address PRG placement (grm-dvx): base RAM, RAM beneath the three
+	# banked windows, 16-bit wrapping through P6510, and base-space emulation at $C000.
+	run_one prgplacementtest "$WORK/prg/prgplacementtest.prg" C64PrgLoader
+	run_one prgwraptest "$WORK/prg/prgwraptest.prg" C64PrgLoader
+	run_one c000emutest "$WORK/prg/c000emutest.prg" C64PrgLoader
 
-run_one decryptloop "$WORK/prg/decryptloop.prg" C64PrgLoader
+	# ROM loading (bead grm-mbm): import with synthetic ROM paths via the loaders'
+	# command-line options (-loader-<arg>), asserting the ROM blocks come back
+	# initialized. Exercises the same command-line option path a headless user would use.
+	run_one romload "$WORK/prg/romload.prg" C64PrgLoader \
+		"-loader-kernalRom $(native "$WORK/prg/kernal.bin") -loader-basicRom $(native "$WORK/prg/basic.bin") -loader-chargenRom $(native "$WORK/prg/chargen.bin")"
 
-run_one rollingdecrypt "$WORK/prg/rollingdecrypt.prg" C64PrgLoader
+	# Symbol-set toggle (bead grm-zlj): import with the basic-zeropage checkbox on (a
+	# default-off set) and assert it -- and only it -- was applied. Reuses any valid C64 PRG.
+	cp -f "$WORK/prg/romload.prg" "$WORK/prg/symtoggle.prg"
+	run_one symtoggle "$WORK/prg/symtoggle.prg" C64PrgLoader \
+		"-loader-symbols-basic-zeropage true"
+fi
 
-run_one suspectdecrypt "$WORK/prg/suspectdecrypt.prg" C64PrgLoader
-
-# ROM loading (bead grm-mbm): import with synthetic ROM paths via the loaders'
-# command-line options (-loader-<arg>), asserting the ROM blocks come back
-# initialized. Exercises the same command-line option path a headless user would use.
-run_one romload "$WORK/prg/romload.prg" C64PrgLoader \
-	"-loader-kernalRom $(native "$WORK/prg/kernal.bin") -loader-basicRom $(native "$WORK/prg/basic.bin") -loader-chargenRom $(native "$WORK/prg/chargen.bin")"
-
-# Symbol-set toggle (bead grm-zlj): import with the basic-zeropage checkbox on (a
-# default-off set) and assert it -- and only it -- was applied. Reuses any valid C64 PRG.
-cp "$WORK/prg/romload.prg" "$WORK/prg/symtoggle.prg"
-run_one symtoggle "$WORK/prg/symtoggle.prg" C64PrgLoader \
-	"-loader-symbols-basic-zeropage true"
-
-run_one nesbanktest "$WORK/nes/nesbanktest.nes" NesRomLoader
-run_one nesbanktest2 "$WORK/nes/nesbanktest2.nes" NesRomLoader
-run_one nesmodetest "$WORK/nes/nesmodetest.nes" NesRomLoader
-run_one nesmmc3test "$WORK/nes/nesmmc3test.nes" NesRomLoader
-run_one nesmmc3test2 "$WORK/nes/nesmmc3test2.nes" NesRomLoader
-run_one nesserialtest "$WORK/nes/nesserialtest.nes" NesRomLoader
-run_one nesmmc1test "$WORK/nes/nesmmc1test.nes" NesRomLoader
+if selected nes-banking; then
+	run_one nesbanktest "$WORK/nes/nesbanktest.nes" NesRomLoader
+	run_one nesbanktest2 "$WORK/nes/nesbanktest2.nes" NesRomLoader
+	run_one nesmodetest "$WORK/nes/nesmodetest.nes" NesRomLoader
+	run_one nesmmc3test "$WORK/nes/nesmmc3test.nes" NesRomLoader
+	run_one nesmmc3test2 "$WORK/nes/nesmmc3test2.nes" NesRomLoader
+	run_one nesserialtest "$WORK/nes/nesserialtest.nes" NesRomLoader
+	run_one nesmmc1test "$WORK/nes/nesmmc1test.nes" NesRomLoader
+fi
 
 if [ $fail -ne 0 ]; then
 	echo "SUITE FAILED (work dir kept for inspection: $WORK)"

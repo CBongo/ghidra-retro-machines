@@ -8,7 +8,7 @@
 # read-only Ghidra install without serializing on a single Extensions dir,
 # and without an open Ghidra GUI locking files out from under a test run.
 #
-# Usage: build-and-test.sh [check|bless]
+# Usage: build-and-test.sh [check|bless] [chunk ...]
 #
 # Environment overrides:
 #   GRM_GHIDRA_INSTALL   Ghidra install dir (default D:/ghidra_12.1.2_PUBLIC).
@@ -37,11 +37,99 @@ REPO_ROOT="$(cd "$SCRIPT_DIR" && git rev-parse --show-toplevel)" || {
 	exit 1
 }
 
-MODE="${1:-check}"
-case "$MODE" in
-	check|bless) ;;
-	*) echo "usage: $0 [check|bless]" >&2; exit 2 ;;
-esac
+usage() {
+	cat <<EOF
+usage: $0 [check|bless] [chunk ...]
+
+Chunks: c64-banking c64-loader c64-recovery basic-petscii nes-banking
+        bit-algebra all
+
+With no chunks, all is selected. Use --list-chunks to print this list.
+EOF
+}
+
+list_chunks() {
+	cat <<'EOF'
+c64-banking   C64 banktest through banktest4 fixtures
+c64-loader    C64 PRG placement/wrapping, ROM loading, and symbol toggles
+c64-recovery  C64 emulation and decrypt/recovery fixtures
+basic-petscii C64 BASIC headless fixture plus verifyPetsciiMapper
+nes-banking   NES banking and MMC fixtures
+bit-algebra   verifyBitAlgebra (no extension build/install required alone)
+all           Every chunk (the default)
+EOF
+}
+
+if [ "${1:-}" = "--list-chunks" ]; then
+	if [ "$#" -ne 1 ]; then
+		echo "FAIL: --list-chunks cannot be combined with other arguments" >&2
+		exit 2
+	fi
+	list_chunks
+	exit 0
+fi
+
+MODE="check"
+if [ "${1:-}" = "check" ] || [ "${1:-}" = "bless" ]; then
+	MODE="$1"
+	shift
+fi
+
+if [ "$#" -eq 0 ]; then
+	REQUESTED_CHUNKS=(all)
+else
+	REQUESTED_CHUNKS=("$@")
+fi
+
+for chunk in "${REQUESTED_CHUNKS[@]}"; do
+	case "$chunk" in
+		c64-banking|c64-loader|c64-recovery|basic-petscii|nes-banking|bit-algebra|all) ;;
+		*)
+			echo "FAIL: unknown chunk '$chunk'" >&2
+			usage >&2
+			exit 2
+			;;
+	esac
+done
+
+has_chunk() {
+	local wanted="$1"
+	local chunk
+	for chunk in "${REQUESTED_CHUNKS[@]}"; do
+		[ "$chunk" = "$wanted" ] && return 0
+	done
+	return 1
+}
+
+# Expand `all` here rather than handing it to the wrapper as one of several
+# chunks: that keeps runner selection unambiguous and avoids duplicate work.
+RUN_HEADLESS=0
+RUNNER_CHUNKS=()
+GRADLE_CHECKS=()
+if has_chunk all; then
+	RUN_HEADLESS=1
+	RUNNER_CHUNKS=(all)
+	GRADLE_CHECKS=(verifyPetsciiMapper verifyBitAlgebra)
+else
+	for chunk in c64-banking c64-loader c64-recovery basic-petscii nes-banking; do
+		if has_chunk "$chunk"; then
+			RUN_HEADLESS=1
+			RUNNER_CHUNKS+=("$chunk")
+		fi
+	done
+	if has_chunk basic-petscii; then
+		GRADLE_CHECKS+=(verifyPetsciiMapper)
+	fi
+	if has_chunk bit-algebra; then
+		GRADLE_CHECKS+=(verifyBitAlgebra)
+	fi
+fi
+
+if [ "$MODE" = "bless" ] && [ "$RUN_HEADLESS" -ne 1 ]; then
+	echo "FAIL: bless requires at least one headless chunk with golden output" >&2
+	usage >&2
+	exit 2
+fi
 
 GRM_GHIDRA_INSTALL="${GRM_GHIDRA_INSTALL:-D:/ghidra_12.1.2_PUBLIC}"
 GRADLE="${GRADLE:-/d/gradle-8.13/bin/gradle}"
@@ -50,15 +138,27 @@ native() {
 	if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else echo "$1"; fi
 }
 
-# --- 1. Build -----------------------------------------------------------
-echo "== building extension (GHIDRA_INSTALL_DIR=$GRM_GHIDRA_INSTALL) =="
+# --- 1. Build and pure Gradle checks ------------------------------------
 export GHIDRA_INSTALL_DIR="$GRM_GHIDRA_INSTALL"
-"$GRADLE" -p "$REPO_ROOT" buildExtension || {
-	echo "FAIL: gradle buildExtension" >&2
+if [ "$RUN_HEADLESS" -eq 1 ]; then
+	GRADLE_TASKS=(buildExtension "${GRADLE_CHECKS[@]}")
+	echo "== building extension and running selected Gradle checks (GHIDRA_INSTALL_DIR=$GRM_GHIDRA_INSTALL) =="
+else
+	GRADLE_TASKS=("${GRADLE_CHECKS[@]}")
+	echo "== running selected Gradle checks (no extension build/install needed) =="
+fi
+"$GRADLE" -p "$REPO_ROOT" "${GRADLE_TASKS[@]}" || {
+	echo "FAIL: gradle ${GRADLE_TASKS[*]}" >&2
 	exit 1
 }
 
-# --- 2. Pick newest dist zip ---------------------------------------------
+# A bit-algebra-only selection has no headless fixture. It intentionally
+# stops after the Gradle verification above, avoiding the extension loop.
+if [ "$RUN_HEADLESS" -ne 1 ]; then
+	exit 0
+fi
+
+# --- 2. Pick newest dist zip ----------------------------------------------
 # NOTE: the zip's trailing name component is the gradle project name, which
 # (absent a settings.gradle rootProject.name) defaults to the checkout
 # directory's basename -- e.g. "ghidra-retro-machines" in the main tree, but
@@ -158,6 +258,6 @@ if [ ! -d "$EXT_TARGET" ]; then
 	exit 1
 fi
 
-# --- 5. Run the suite against the isolated settings dir -------------------
+# --- 5. Run selected headless chunks against the isolated settings dir -----
 export BANKTEST_SETTINGS_BASE="$SETTINGS_BASE"
-exec "$SCRIPT_DIR/run-banktest.sh" "$MODE"
+exec "$SCRIPT_DIR/run-banktest.sh" "$MODE" "${RUNNER_CHUNKS[@]}"
