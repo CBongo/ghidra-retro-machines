@@ -79,7 +79,7 @@ public class MapCompiler {
 		File descriptorFile = new File(args[0]).getCanonicalFile();
 		File outputMap = new File(args[1]).getCanonicalFile();
 
-		Map<String, Object> descriptor = YamlSupport.load(descriptorFile);
+		Map<String, Object> descriptor = YamlSupport.loadComposed(descriptorFile);
 
 		int schemaVersion = requireAddr(descriptor, "schema", "descriptor");
 		if (schemaVersion != 2) {
@@ -524,7 +524,15 @@ public class MapCompiler {
 		Map<String, Object> out = new LinkedHashMap<>();
 		out.put("initial_state",
 			packState(banking.get("initial_state"), stateFields, "banking.initial_state"));
-		out.put("context_register", requireString(banking, "context_register", "banking"));
+		if (banking.containsKey("context_register")) {
+			Object contextRegister = banking.get("context_register");
+			if (!(contextRegister instanceof String) ||
+				((String) contextRegister).trim().isEmpty()) {
+				throw new IllegalArgumentException(
+					"banking 'context_register:' must be a non-empty string when present");
+			}
+			out.put("context_register", contextRegister);
+		}
 
 		// state tuple (already validated by parseStateFields)
 		List<Map<String, Object>> stateOut = new ArrayList<>();

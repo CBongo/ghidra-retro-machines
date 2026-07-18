@@ -92,7 +92,6 @@ banking:
     - strategy: mode-register     # vision doc §5.2: value selects among window layouts
       params: { address: 0x8000, mask: 0x40, shift: 6 }
       sets: [prg_mode]
-  context_register: nesbank       # provisional name; the real register lands with grm-9ux
   # Power-on register contents are undefined; all-zeros is the conventional assumption.
   initial_state: { prg_mode: 0, R6: 0, R7: 0 }
   # No states: table — occupants are computed from the layouts' maps: expressions.

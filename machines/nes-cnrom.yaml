@@ -11,6 +11,8 @@
 
 schema: 2
 
+include: fragments/nes-common.yaml
+
 system:
   id: nes_cnrom
   name: NES CNROM (iNES mapper 3)
@@ -25,24 +27,6 @@ physical:
   - { name: PRG, image: prg_rom }
 
 memory:
-  regions:                        # always visible, never banked
-    - name: RAM
-      start: 0x0000
-      end: 0x07FF
-      kind: ram
-      comment: "2 KiB internal RAM; mirrored at $0800-$1FFF (mirrors noted, not modeled)"
-    - name: PPU_REGS
-      start: 0x2000
-      end: 0x2007
-      kind: io
-      type: NES_PPU
-      comment: "PPU registers; mirrored every 8 bytes through $3FFF (mirrors noted, not modeled)"
-    - name: APU_IO
-      start: 0x4000
-      end: 0x401F
-      kind: io
-      type: NES_APU_IO
-      comment: "APU, OAM DMA, controller, and 2A03 test-mode registers"
   # No PRG-RAM region at $6000 — CNROM's basic config carries none.
   # PPU/CHR address space: out of scope for the CPU map (vision doc §5.4 defers non-CPU spaces).
 
@@ -70,100 +54,9 @@ banking:
       # sites, nothing more. CHR/PPU address space itself is deferred (vision doc §5.4).
       params: { start: 0x8000, end: 0xFFFF, mask: 0x03, bus_conflict: true }
       sets: [chr_bank]
-  # DEVIATION from task spec ("no context_register: — no NES language declares one
-  # yet"): the current MapCompiler.buildBanking() unconditionally requires
-  # 'context_register:' whenever a banking: section is present (tools/gdtbuilder is
-  # off-limits for this change). Using the same provisional name as the nes-uxrom
-  # schema sketch (machines/sketches/nes-uxrom.yaml); the real register lands with a
-  # bundled 6502/2A03 language (roadmap item 4).
-  context_register: nesbank
   # No states: table — occupants are computed from the maps: expressions, not enumerated.
   # Power-on latch state is electrically undefined; 0 is the conventional assumption.
   initial_state: { chr_bank: 0 }
-
-symbols:
-  # Defaults tuned for game-music RE (this project's consumer is game-music extraction):
-  # the APU register block is covered by the NES_APU_IO struct; the labels below are the
-  # MMIO addresses music drivers touch constantly. Names match NESdev wiki conventions.
-  - set: nes-mmio
-    default: on
-    inline:
-      - { addr: 0x2000, name: PPUCTRL,   kind: label, comment: "NMI enable, pattern/nametable select" }
-      - { addr: 0x2001, name: PPUMASK,   kind: label, comment: "render enable, color emphasis" }
-      - { addr: 0x2002, name: PPUSTATUS, kind: label, comment: "vblank/sprite0 flags; read clears latch" }
-      - { addr: 0x2003, name: OAMADDR,   kind: label }
-      - { addr: 0x2004, name: OAMDATA,   kind: label }
-      - { addr: 0x2005, name: PPUSCROLL, kind: label, comment: "x/y scroll (two writes)" }
-      - { addr: 0x2006, name: PPUADDR,   kind: label, comment: "VRAM address (two writes)" }
-      - { addr: 0x2007, name: PPUDATA,   kind: label, comment: "VRAM data port" }
-      - { addr: 0x4014, name: OAMDMA,    kind: label, comment: "OAM DMA source page" }
-      - { addr: 0x4015, name: SND_CHN,   kind: label, comment: "APU channel enable/status" }
-      - { addr: 0x4016, name: JOY1,      kind: label, comment: "controller 1 / strobe" }
-      - { addr: 0x4017, name: JOY2,      kind: label, comment: "controller 2 / APU frame counter" }
-      - { addr: 0xFFFA, name: NMI_VEC,   kind: vector }
-      - { addr: 0xFFFC, name: RESET_VEC, kind: vector }
-      - { addr: 0xFFFE, name: IRQ_VEC,   kind: vector }
-
-# types: duplicated verbatim from machines/nes-nrom.yaml (NES_PPU/NES_APU_IO structs are
-# identical across all NES boards). Accepted cost until an include mechanism lands
-# (follow-up issue); do not hand-diverge these copies.
-types:
-  # Struct definitions applied at region `type:` references above. Offsets and register
-  # roles per NESdev wiki PPU_registers and APU pages.
-  - name: NES_PPU
-    kind: struct
-    fields:
-      - { offset: 0, name: PPUCTRL,   size: 1, comment: "NMI enable, sprite size, bg/sprite pattern table, VRAM increment, base nametable" }
-      - { offset: 1, name: PPUMASK,   size: 1, comment: "color emphasis, sprite/bg enable, greyscale" }
-      - { offset: 2, name: PPUSTATUS, size: 1, comment: "vblank, sprite 0 hit, sprite overflow (read resets $2005/$2006 latch)" }
-      - { offset: 3, name: OAMADDR,   size: 1 }
-      - { offset: 4, name: OAMDATA,   size: 1 }
-      - { offset: 5, name: PPUSCROLL, size: 1, comment: "x/y scroll (two writes)" }
-      - { offset: 6, name: PPUADDR,   size: 1, comment: "VRAM address (two writes, high then low)" }
-      - { offset: 7, name: PPUDATA,   size: 1, comment: "VRAM read/write (buffered reads)" }
-  - name: NES_APU_IO
-    kind: struct
-    fields:
-      - { offset: 0,  name: SQ1_VOL,    size: 1, comment: "pulse 1 duty, envelope" }
-      - { offset: 1,  name: SQ1_SWEEP,  size: 1 }
-      - { offset: 2,  name: SQ1_LO,     size: 1, comment: "pulse 1 timer low" }
-      - { offset: 3,  name: SQ1_HI,     size: 1, comment: "pulse 1 length counter load, timer high" }
-      - { offset: 4,  name: SQ2_VOL,    size: 1, comment: "pulse 2 duty, envelope" }
-      - { offset: 5,  name: SQ2_SWEEP,  size: 1 }
-      - { offset: 6,  name: SQ2_LO,     size: 1, comment: "pulse 2 timer low" }
-      - { offset: 7,  name: SQ2_HI,     size: 1, comment: "pulse 2 length counter load, timer high" }
-      - { offset: 8,  name: TRI_LINEAR, size: 1, comment: "triangle linear counter" }
-      - { offset: 9,  name: UNUSED_4009, size: 1 }
-      - { offset: 10, name: TRI_LO,     size: 1, comment: "triangle timer low" }
-      - { offset: 11, name: TRI_HI,     size: 1, comment: "triangle length counter load, timer high" }
-      - { offset: 12, name: NOISE_VOL,  size: 1, comment: "noise envelope" }
-      - { offset: 13, name: UNUSED_400D, size: 1 }
-      - { offset: 14, name: NOISE_LO,   size: 1, comment: "noise mode, period" }
-      - { offset: 15, name: NOISE_HI,   size: 1, comment: "noise length counter load" }
-      - { offset: 16, name: DMC_FREQ,   size: 1, comment: "DMC IRQ enable, loop, rate" }
-      - { offset: 17, name: DMC_RAW,    size: 1, comment: "DMC direct load (7-bit DAC)" }
-      - { offset: 18, name: DMC_START,  size: 1, comment: "DMC sample address" }
-      - { offset: 19, name: DMC_LEN,    size: 1, comment: "DMC sample length" }
-      - { offset: 20, name: OAMDMA,     size: 1, comment: "OAM DMA source page (write suspends CPU ~513 cycles)" }
-      - { offset: 21, name: SND_CHN,    size: 1, comment: "channel enable (write) / status (read)" }
-      - { offset: 22, name: JOY1,       size: 1, comment: "controller 1 data (read) / strobe (write)" }
-      - { offset: 23, name: JOY2,       size: 1, comment: "controller 2 data (read) / APU frame counter (write)" }
-      # 2A03 test-mode registers (normally disabled). GdtBuilder untyped fields must be
-      # size 1 or 2, so the 8-byte area is expressed as individual byte fields.
-      - { offset: 24, name: TEST_4018,  size: 1, comment: "2A03 test mode" }
-      - { offset: 25, name: TEST_4019,  size: 1, comment: "2A03 test mode" }
-      - { offset: 26, name: TEST_401A,  size: 1, comment: "2A03 test mode" }
-      - { offset: 27, name: TEST_401B,  size: 1, comment: "2A03 test mode" }
-      - { offset: 28, name: TEST_401C,  size: 1, comment: "2A03 test mode" }
-      - { offset: 29, name: TEST_401D,  size: 1, comment: "2A03 test mode" }
-      - { offset: 30, name: TEST_401E,  size: 1, comment: "2A03 test mode" }
-      - { offset: 31, name: TEST_401F,  size: 1, comment: "2A03 test mode" }
-
-formats:
-  ines:
-    extensions: [".nes"]
-    # header parsing (magic, PRG/CHR sizes, mapper, trainer) lives in NesRomLoader;
-    # this entry documents the accepted container
 
 # rom_images: omitted — PRG comes from the .nes container payload, not a user-supplied slot.
 

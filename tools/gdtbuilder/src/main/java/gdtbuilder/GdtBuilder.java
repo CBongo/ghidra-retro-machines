@@ -60,6 +60,21 @@ public class GdtBuilder {
 		}
 		File descriptorFile = new File(args[0]).getCanonicalFile();
 		File outputGdt = new File(args[1]).getCanonicalFile();
+		Map<String, Object> descriptor = YamlSupport.loadComposed(descriptorFile);
+		Object schema = descriptor.get("schema");
+		if (!(schema instanceof Number) || ((Number) schema).intValue() != 2) {
+			throw new IllegalArgumentException("unsupported 'schema: " + schema +
+				"' — this GdtBuilder builds descriptor schema 2 (see docs/SCHEMA.md)");
+		}
+		@SuppressWarnings("unchecked")
+		List<Map<String, Object>> typeDefs =
+			(List<Map<String, Object>>) descriptor.get("types");
+		if (typeDefs == null) {
+			typeDefs = new ArrayList<>();
+		}
+		// Composition appends lists. Reject duplicate type names before touching the
+		// last known-good archive, rather than discovering them inside buildTypes().
+		validateUniqueTypeNames(typeDefs);
 
 		if (!Application.isInitialized()) {
 			Application.initializeApplication(new GhidraApplicationLayout(),
@@ -76,13 +91,6 @@ public class GdtBuilder {
 			throw new IOException("Could not remove stale lock file: " + lockFile);
 		}
 		outputGdt.getParentFile().mkdirs();
-
-		Map<String, Object> descriptor = YamlSupport.load(descriptorFile);
-		@SuppressWarnings("unchecked")
-		List<Map<String, Object>> typeDefs = (List<Map<String, Object>>) descriptor.get("types");
-		if (typeDefs == null) {
-			typeDefs = new ArrayList<>();
-		}
 
 		FileDataTypeManager dtm = FileDataTypeManager.createFileArchive(outputGdt);
 		int txId = dtm.startTransaction("build types from YAML");
@@ -102,6 +110,21 @@ public class GdtBuilder {
 		}
 
 		verifyArchive(outputGdt);
+	}
+
+	static void validateUniqueTypeNames(List<Map<String, Object>> typeDefs) {
+		Set<String> names = new HashSet<>();
+		for (Map<String, Object> typeDef : typeDefs) {
+			Object nameValue = typeDef.get("name");
+			if (!(nameValue instanceof String) || ((String) nameValue).trim().isEmpty()) {
+				throw new IllegalArgumentException(
+					"types[] entry is missing a non-empty string 'name:'");
+			}
+			String name = (String) nameValue;
+			if (!names.add(name)) {
+				throw new IllegalArgumentException("types[] name '" + name + "' is declared twice");
+			}
+		}
 	}
 
 	/**
@@ -151,7 +174,9 @@ public class GdtBuilder {
 		Map<String, Integer> explicitSizeByName = new HashMap<>();
 		for (Map<String, Object> typeDef : typeDefs) {
 			String name = (String) typeDef.get("name");
-			byName.put(name, typeDef);
+			if (byName.put(name, typeDef) != null) {
+				throw new IllegalArgumentException("types[] name '" + name + "' is declared twice");
+			}
 			if ("struct".equals(typeDef.get("kind"))) {
 				StructSource src = resolveFields(typeDef, descriptorDir);
 				fieldsByName.put(name, src.fields);

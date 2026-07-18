@@ -42,7 +42,7 @@ the extension zip alongside the corresponding `.gdt`.
                  "maps": { "space", "expr" }, "on_write"? } ],
   "layouts"?: [ { "when": { "<stateField>": <int>, ... },
                   "windows": [ /* same shape as windows[] */ ] } ],
-  "banking"?: { "initial_state", "context_register",
+  "banking"?: { "initial_state", "context_register"?,
                 "state":      [ { "name", "bits" } ],
                 "mechanisms": [ { "strategy", "params": { ... }, "sets": [...] } ],
                 "states"?:    [ { "value", "<windowName>": "<occupantName>", ... } ] },
@@ -186,13 +186,15 @@ optional — a bankless board like NES NROM has none). When present:
 - `initial_state` — the packed initial bank-state value. The YAML may express it as a
   per-field map (`{ LORAM: 1, HIRAM: 1, CHAREN: 1 }`); MapCompiler packs it (first
   `state` field = bit 0, each subsequent field the bits above).
-- `context_register` — the Ghidra *language* context register name (which some
-  processor modules expose for the disassembler/decompiler's own use), as opposed to
-  `mechanisms` below, which is analyzer configuration.
+- `context_register` *(optional)* — the Ghidra *language* context register name (which
+  some processor modules expose for the disassembler/decompiler's own use), as opposed
+  to `mechanisms` below, which is analyzer configuration. When omitted, or when the
+  selected language does not expose the named register, only context stamping is skipped;
+  descriptor-driven bank analysis still uses `state`, `mechanisms`, and `initial_state`.
 - `state[]` — the ordered bank-state field tuple (`{ "name": "LORAM", "bits": 1 }`,
-  ...): the sub-fields of the context register. Replaces schema v1's flat `state_bits`
-  name list; a 1-bit-per-field tuple is equivalent to the old form, and multi-bit
-  fields (NES bank registers) are why the change was made.
+  ...): fields of the abstract bank state, whether or not a context register is present.
+  Replaces schema v1's flat `state_bits` name list; a 1-bit-per-field tuple is equivalent
+  to the old form, and multi-bit fields (NES bank registers) are why the change was made.
 - `mechanisms[]` — how a bank-aware static analyzer (e.g. `C64BankingAnalyzer`)
   recognizes and interprets writes that change the banking state. A list (schema v1 had
   a single optional `mechanism`) because boards can have several — MMC3 has a

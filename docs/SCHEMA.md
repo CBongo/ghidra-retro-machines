@@ -57,6 +57,38 @@ formats: {...}       # file formats the loader accepts for this system
 validation: {...}    # emulator-oracle cross-check metadata
 ```
 
+## Build-time descriptor composition
+
+A machine descriptor may share partial YAML fragments with other descriptors by adding
+`include:` at the top level. It accepts either one relative path or a list:
+
+```yaml
+include:
+  - fragments/cpu-common.yaml
+  - fragments/nes-common.yaml
+schema: 2
+memory:
+  windows: [...]     # board-specific additions
+```
+
+Includes are a build-time source convenience only. `MapCompiler` and `GdtBuilder`
+recursively expand them before validating schema 2; neither the directive nor SnakeYAML
+is shipped in the extension. Include paths are relative to the file containing the
+directive, must remain relative (absolute paths are rejected), and cycles or missing
+files fail the build with the include chain/path. Included fragments are partial and do
+not need to be valid descriptors by themselves; the root descriptor owns `schema: 2`.
+
+Composition is deterministic: includes merge left-to-right and the including file merges
+last. Mappings merge recursively, lists append in that same order, and a later scalar or
+value of a different type replaces the earlier value. Lists are never implicitly
+de-duplicated or merged by a guessed key. The `include` key itself is removed from the
+composed document.
+
+Only include paths use the directory of the fragment that names them. Existing semantic
+paths such as symbol/type `source:` values retain their established meaning: they are
+resolved relative to the root machine descriptor. In other words, fragment content is
+otherwise interpreted as if it had been pasted into that root.
+
 `banking:` is optional (a bankless board like NES NROM omits it), but windows with
 enumerated `occupants:` require it — the states table is what picks an occupant.
 
@@ -74,7 +106,7 @@ descriptors, so new boards need no Java).
 | `physical[]` | a physical backing space the banked content lives in **once** (interim realization: overlay blocks per resolved window slice; first-class realization is the RFC's resolution hook — vision doc §6 L4) |
 | `memory.windows[].maps` | window contents computed from bank state: a slice of a physical space at the expression's offset |
 | `memory.layouts[]` | window *sets* selected by mode fields (MMC1/MMC3 PRG modes); same window schema inside |
-| `banking.state[]` | sub-fields of the bank **context register** (lives in the bundled processor language, TMode-style); `RegisterValue`'s value+mask storage gives per-bit partial knowledge |
+| `banking.state[]` | ordered fields of the abstract bank state; when an optional language context register is configured, `RegisterValue`'s value+mask storage gives per-bit partial knowledge |
 | `banking.states[]` | enumerated truth table: packed context-register values → occupant per window; analyzer sets the register flow-wise on mechanism writes |
 | `banking.mechanisms[]` | configuration for the bank analyzer's **strategy** classes (the L2 code library — register-write, memory-latch, select-data, serial-shift, io-port, mode-register) |
 | `rom_images` | uninitialized block + applied symbols by default; initialized from user-supplied file via loader option or File → Add To Program |
@@ -85,7 +117,7 @@ descriptors, so new boards need no Java).
 ## Bank state: a named field tuple
 
 `banking.state` declares the abstract bank-state tuple as an ordered list of named
-fields — the sub-fields of the machine's bank context register:
+fields. When a language context register is configured, these are its logical sub-fields:
 
 ```yaml
 banking:
@@ -94,6 +126,13 @@ banking:
     - { name: HIRAM,  bits: 1 }
     - { name: CHAREN, bits: 1 }
 ```
+
+`banking.context_register` is optional. It names a compatible context register in the
+selected Ghidra language when one exists, allowing the analyzer to stamp fully known
+states into program context. Descriptors whose language has no such register (including
+the stock 6502 language used by NES boards) omit it; bank-state analysis still uses the
+descriptor's `state`, `mechanisms`, and `initial_state`. If the property is present but
+the selected language does not expose that name, context stamping is simply skipped.
 
 C64 needs three 1-bit fields; NES MMC3 needs `{prg_mode: 1, R6: 6, R7: 6}`. Everywhere
 a whole state value is expressed (`initial_state`, `states` rows), the descriptor uses
@@ -454,9 +493,10 @@ decisions" below. Every entry has `name:` and `kind:`; `kind:` selects one of:
    (provenance/license, `kind: entry|vector`, comments — needed for empty-ROM-slot entry
    stubs). The importer accepts community label files and users' own assembler output
    (cc65 `-Ln`, KickAssembler `--vicesymbols`).
-3. **Descriptor ↔ language agreement: load-time check.** At import, the loader verifies
-   the selected language actually declares `banking.context_register`; fails with a clear
-   error naming both sides. Catches field version-skew, needs no build infrastructure.
+3. **Descriptor ↔ language context is optional.** When `banking.context_register` names
+   a register exposed by the selected language, the analyzer stamps fully-known states
+   into it. Descriptors may omit the property, and a missing language register disables
+   only that context-stamping channel; descriptor-driven bank analysis still runs.
 
 ## Validation (emulator oracle)
 

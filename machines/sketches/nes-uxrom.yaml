@@ -70,7 +70,6 @@ banking:
       # the intended bank number. bus_conflict tells the analyzer to apply that AND.
       params: { start: 0x8000, end: 0xFFFF, mask: 0x0F, bus_conflict: true }
       sets: [bank]
-  context_register: nesbank       # provisional name; the real register lands with grm-9ux
   # Power-on latch state is electrically undefined; 0 is the conventional assumption
   # (reset code runs from the fixed $C000 window regardless).
   initial_state: { bank: 0 }

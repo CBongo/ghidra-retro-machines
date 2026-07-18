@@ -152,6 +152,10 @@ fileTree(dir: 'machines', include: '*.yaml').each { yamlFile ->
 		dependsOn 'compileGdtBuilderJava'
 		classpath = sourceSets.gdtBuilder.runtimeClasspath
 		mainClass = 'gdtbuilder.GdtBuilder'
+		// Includes and external type sources may live below machines/. A broad recursive
+		// input keeps composition changes correct; the compiler still receives only the
+		// top-level descriptor selected by the non-recursive task factory above.
+		inputs.files(fileTree(dir: 'machines', include: '**/*.yaml'))
 		doFirst {
 			file('data/machines').mkdirs()
 		}
@@ -168,6 +172,7 @@ fileTree(dir: 'machines', include: '*.yaml').each { yamlFile ->
 		dependsOn 'compileGdtBuilderJava'
 		classpath = sourceSets.gdtBuilder.runtimeClasspath
 		mainClass = 'gdtbuilder.MapCompiler'
+		inputs.files(fileTree(dir: 'machines', include: '**/*.yaml'))
 		doFirst {
 			file('data/machines').mkdirs()
 		}
@@ -245,6 +250,14 @@ task verifyPetsciiMapper(type: JavaExec) {
 	args = [file('data/petscii.map').absolutePath]
 }
 
+task verifyDescriptorComposition(type: JavaExec) {
+	group = "Ghidra Retro Machines"
+	description = "Verify recursive machine-descriptor include and merge semantics (bead grm-5zg)"
+	dependsOn 'compileGdtBuilderJava'
+	classpath = sourceSets.gdtBuilder.runtimeClasspath
+	mainClass = 'gdtbuilder.DescriptorCompositionVerify'
+}
+
 //----------------------------------------------------------------------------------
 // Bundled sleigh language build (bead grm-bk6): compile data/languages/*.slaspec -> .sla.
 //
@@ -285,5 +298,6 @@ tasks.matching { it.name == 'buildExtension' }.configureEach {
 	// (e.g. a new git worktree) built a zip with no petscii.map and the C64 BASIC
 	// detokenizer silently produced nothing (found by bead grm-r3h's worktree
 	// smoke test; previously masked by a stale petscii.map in the main tree).
-	dependsOn 'buildGdt', 'buildMap', 'buildPetsciiMap', 'sleighCompile'
+	dependsOn 'buildGdt', 'buildMap', 'buildPetsciiMap', 'sleighCompile',
+		'verifyDescriptorComposition'
 }
