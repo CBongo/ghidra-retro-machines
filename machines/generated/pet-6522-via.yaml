@@ -1,0 +1,23 @@
+# MOS 6522 VIA register shape used by the PET at $E840.
+# Offsets follow the MOS 6522 programming model and were cross-checked against
+# the Commodore 4016/4032 Technical Reference Manual.
+
+size: 0x10
+fields:
+  - { offset: 0x00, name: ORB_IRB, size: 1, comment: "port B output/input register" }
+  - { offset: 0x01, name: ORA_IRA, size: 1, comment: "port A output/input register with handshake" }
+  - { offset: 0x02, name: DDRB, size: 1, comment: "port B data-direction register" }
+  - { offset: 0x03, name: DDRA, size: 1, comment: "port A data-direction register" }
+  - { offset: 0x04, name: T1C_L, size: 1, comment: "timer 1 counter low" }
+  - { offset: 0x05, name: T1C_H, size: 1, comment: "timer 1 counter high" }
+  - { offset: 0x06, name: T1L_L, size: 1, comment: "timer 1 latch low" }
+  - { offset: 0x07, name: T1L_H, size: 1, comment: "timer 1 latch high" }
+  - { offset: 0x08, name: T2C_L, size: 1, comment: "timer 2 counter low" }
+  - { offset: 0x09, name: T2C_H, size: 1, comment: "timer 2 counter high" }
+  - { offset: 0x0A, name: SR, size: 1, comment: "shift register" }
+  - { offset: 0x0B, name: ACR, size: 1, comment: "auxiliary control register" }
+  - { offset: 0x0C, name: PCR, size: 1, comment: "peripheral control register" }
+  - { offset: 0x0D, name: IFR, size: 1, comment: "interrupt flag register" }
+  - { offset: 0x0E, name: IER, size: 1, comment: "interrupt enable register" }
+  - { offset: 0x0F, name: ORA_IRA_NOHS, size: 1, comment: "port A output/input register without handshake" }
+

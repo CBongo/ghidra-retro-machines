@@ -30,7 +30,7 @@ the extension zip alongside the corresponding `.gdt`.
 {
   "system":  { "id", "name", "language" },
   "physical"?: [ { "name", "image"?, "size"?, "comment"? } ],
-  "regions": [ { "name", "start", "end", "kind", "type"?, "comment"?,
+  "regions": [ { "name", "start", "end", "kind", "type"?, "image"?, "comment"?,
                  "readable"?, "writable"?, "executable"? } ],
   "windows": [ { "name", "start", "end",
                  // exactly one of:
@@ -48,7 +48,8 @@ the extension zip alongside the corresponding `.gdt`.
                 "states"?:    [ { "value", "<windowName>": "<occupantName>", ... } ] },
   "rom_images": { "<imageName>": { "size", "occupant" } },
   "symbols": [ { "set", "default": <bool>, "region"?,
-                 "entries": [ { "addr", "name", "kind", "comment"? } ] } ]
+                 "entries": [ { "addr", "name", "kind", "comment"? } ] } ],
+  "formats"?: { "<formatName>": { /* loader-policy metadata */ } }
 }
 ```
 
@@ -70,6 +71,12 @@ Direct translation of `memory.regions[]` — the always-visible (non-banked) par
 address space. `type`, when present, names a struct/enum defined in the companion `.gdt`
 archive (e.g. `R6510`); `comment` is documentation only. `readable`/`writable`/`executable`
 are optional sparse permission overrides — see below and `docs/SCHEMA.md`.
+
+`image`, when present on a fixed `kind: rom` region, names the corresponding
+`rom_images` slot. This optional reverse link is the bankless counterpart of an
+enumerated ROM occupant's `image`; the ROM slot's `occupant` target remains authoritative.
+A loader creates the region uninitialized when the user has supplied no ROM and
+initializes the same block when the slot is populated.
 
 `load_target` is a legacy optional boolean for loaders with one fixed image-carve region;
 at most one region may set it. C64 PRGs do not use it: their header-selected image may span
@@ -276,7 +283,20 @@ the same change to read the v2 keys.
 ### `rom_images`
 
 Direct translation of `rom_images:` — named ROM slots the loader can populate (from user
-input or `known_sha1` matching), each naming the window `occupant` it corresponds to.
+input or `known_sha1` matching). `occupant` is the target block name: it may name either a
+banked-window occupant (the original schema-2 use) or an always-visible `kind: rom`
+region. When it names a region, the slot size must equal the region. If the region also
+declares the optional reverse `image` link, it must name that slot. The existing key
+remains unchanged so descriptor loaders can treat window occupants and fixed regions
+uniformly.
+
+### `formats`
+
+When a descriptor has top-level `formats:`, MapCompiler preserves that mapping in the
+compiled map. Numeric YAML scalars are normalized to JSON integers, but the tree is
+otherwise loader-policy data: extension lists, headers, placement rules, and any
+format-specific initial state remain descriptor-defined rather than hard-coded in the
+compiler. The key is omitted when the source descriptor has no formats.
 
 ### `symbols`
 

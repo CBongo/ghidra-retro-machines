@@ -1,0 +1,193 @@
+# Commodore PET 4032 system descriptor.
+#
+# This descriptor intentionally names one concrete hardware configuration:
+#   - 32 KiB RAM
+#   - BASIC 4.0
+#   - 40-column graphics keyboard
+#   - later 12-inch display/mainboard with MOS 6545-compatible CRTC
+#
+# It does NOT describe the earlier 9-inch/non-CRTC 4032, the business-keyboard
+# 4032B, the 80-column 8032, the banked 8096/8296, or the dual-CPU SuperPET.
+#
+# Primary references:
+#   - Commodore BASIC 4 User's Reference Manual, appendices G/H
+#     https://www.commodore.ca/wp-content/uploads/2018/11/Commodore_Basic_4_Users_Reference-Manual-1.pdf
+#   - Commodore 4016/4032 Technical Reference Manual
+#     https://www.zimmers.net/anonftp/pub/cbm/schematics/computers/pet/4000_Series_4016-4032_Technical_Reference.pdf
+#   - VICE PET system-file and model documentation
+#     https://vice-emu.sourceforge.io/vice_3.html
+#     https://vice-emu.sourceforge.io/vice_7.html
+
+schema: 2
+
+system:
+  id: pet4032
+  name: "Commodore PET 4032 (32K, 40-column, 12-inch CRTC)"
+  cpu:
+    # The PET uses a plain MOS 6502.  Unlike the C64's 6510, it has no CPU-local
+    # $00/$01 I/O port and no CPU-controlled memory banking.
+    language: "6502:LE:16:default"
+
+memory:
+  regions:
+    - name: ZEROPAGE
+      start: 0x0000
+      end: 0x00FF
+      kind: ram
+      comment: "6502 zero page; BASIC 4 and KERNAL workspace when firmware is in use"
+    - name: STACK
+      start: 0x0100
+      end: 0x01FF
+      kind: ram
+      comment: "6502 hardware stack"
+    - name: BASIC_INPUT
+      start: 0x0200
+      end: 0x029F
+      kind: ram
+      comment: "BASIC input buffer"
+    - name: SYSTEM_WORKSPACE
+      start: 0x02A0
+      end: 0x03FF
+      kind: ram
+      comment: "BASIC/KERNAL absolute variables, buffers, and vectors"
+    - name: BASIC_RAM
+      start: 0x0400
+      end: 0x7FFF
+      kind: ram
+      load_target: true
+      comment: "32K model user RAM; $0400 is BASIC's leading zero and tokenized text starts at $0401"
+
+    # The 40-column board has 1 KiB of distinct CRT RAM at $8000-$83FF.
+    # CPU accesses at $8400-$87FF alias that same storage.  Schema v2/runtime
+    # cannot yet express RAM aliases, so the mirror aperture is represented as
+    # a separate block below; it must not be interpreted as independent RAM.
+    # In the stock 40x25 editor configuration, the 1000 displayed cells begin
+    # at $8000 and end at $83E7.
+    - name: SCREEN_RAM
+      start: 0x8000
+      end: 0x83FF
+      kind: ram
+      executable: false
+      comment: "1 KiB physical CRT RAM; stock 40x25 editor displays $8000-$83E7"
+    - name: SCREEN_MIRROR
+      start: 0x8400
+      end: 0x87FF
+      kind: ram
+      executable: false
+      comment: "CPU-visible mirror of $8000-$83FF; represented as a separate block only because schema/runtime aliases are unsupported"
+    - name: USER_IO
+      start: 0x8800
+      end: 0x8FFF
+      kind: io
+      comment: "user expansion I/O space; no expansion is assumed"
+    - name: ROM9
+      start: 0x9000
+      end: 0x9FFF
+      kind: rom
+      image: rom9
+      comment: "empty 4 KiB user ROM socket"
+    - name: ROMA
+      start: 0xA000
+      end: 0xAFFF
+      kind: rom
+      image: roma
+      comment: "empty 4 KiB user ROM socket"
+    - name: BASIC
+      start: 0xB000
+      end: 0xDFFF
+      kind: rom
+      image: basic
+      comment: "12 KiB Commodore BASIC 4 interpreter ROM slot"
+    - name: EDITOR
+      start: 0xE000
+      end: 0xE7FF
+      kind: rom
+      image: editor
+      comment: "2 KiB 40-column, graphics-keyboard CRTC editor ROM slot"
+
+    # System I/O is broadly decoded in $E800-$EFFF.  Splitting the four device
+    # blocks from the otherwise-reserved decode gives Ghidra exact register
+    # types without claiming that the gaps are RAM.
+    - { name: IO_E800, start: 0xE800, end: 0xE80F, kind: io, comment: "reserved system-I/O decode" }
+    - { name: PIA1, start: 0xE810, end: 0xE813, kind: io, type: MOS6520_PIA, comment: "keyboard, cassette, and interrupt PIA" }
+    - { name: IO_E814, start: 0xE814, end: 0xE81F, kind: io, comment: "reserved system-I/O decode" }
+    - { name: PIA2, start: 0xE820, end: 0xE823, kind: io, type: MOS6520_PIA, comment: "IEEE-488 PIA" }
+    - { name: IO_E824, start: 0xE824, end: 0xE83F, kind: io, comment: "reserved system-I/O decode" }
+    - { name: VIA, start: 0xE840, end: 0xE84F, kind: io, type: MOS6522_VIA, comment: "IEEE-488, user port, timers, cassette, and sound VIA" }
+    - { name: IO_E850, start: 0xE850, end: 0xE87F, kind: io, comment: "reserved system-I/O decode" }
+    - { name: CRTC, start: 0xE880, end: 0xE881, kind: io, type: MOS6545_CRTC, comment: "CRTC address and register-data ports" }
+    - { name: IO_E882, start: 0xE882, end: 0xEFFF, kind: io, comment: "reserved/mirrored system-I/O decode" }
+
+    - name: KERNAL
+      start: 0xF000
+      end: 0xFFFF
+      kind: rom
+      image: kernal
+      comment: "4 KiB BASIC 4 PET operating-system ROM slot"
+
+  windows: []
+
+# Copyright-safe slots only: the project ships no Commodore ROM bytes.  A real
+# loader must require exact-size user-owned dumps.  The non-CPU-visible 2 KiB
+# character-generator ROM is deliberately not offered as a CPU memory slot.
+rom_images:
+  rom9:
+    size: 0x1000
+    occupant: ROM9
+  roma:
+    size: 0x1000
+    occupant: ROMA
+  basic:
+    size: 0x3000
+    occupant: BASIC
+  editor:
+    size: 0x0800
+    occupant: EDITOR
+  kernal:
+    size: 0x1000
+    occupant: KERNAL
+
+symbols:
+  - set: basic4-workspace
+    default: off
+    source: generated/pet-basic4-workspace.yaml
+    provenance: "PET Memory Map — All Models, BASIC 4 column; factual address/role extraction"
+    region: ZEROPAGE
+    comment: "BASIC workspace is off by default because machine-language programs commonly reuse zero page"
+  - set: hardware-vectors
+    default: on
+    region: KERNAL
+    provenance: "MOS 6502 vector layout; Commodore PET BASIC 4 ROM map"
+    inline:
+      - { addr: 0xFFFA, name: NMI_VEC, kind: vector, comment: "6502 NMI vector (little endian)" }
+      - { addr: 0xFFFC, name: RESET_VEC, kind: vector, comment: "6502 reset vector (little endian)" }
+      - { addr: 0xFFFE, name: IRQ_VEC, kind: vector, comment: "6502 IRQ/BRK vector (little endian)" }
+
+types:
+  - name: MOS6520_PIA
+    kind: struct
+    source: generated/pet-6520-pia.yaml
+  - name: MOS6522_VIA
+    kind: struct
+    source: generated/pet-6522-via.yaml
+  - name: MOS6545_CRTC
+    kind: struct
+    source: generated/pet-6545-crtc.yaml
+
+formats:
+  prg:
+    extensions: [".prg"]
+    header:
+      - { field: load_address, size: 2, endian: little }
+    placement: load_address
+    comment: "PET PRG payload follows its saved address; a normal BASIC 4 program starts with header bytes $01,$04"
+
+validation:
+  oracle: "VICE xpet -model 4032"
+  checks:
+    - "compile descriptor and GDT without banking state"
+    - "place a synthetic PRG's payload at its two-byte little-endian load address"
+    - "verify a $0401 BASIC fixture lands in BASIC_RAM without mapping either header byte"
+    - "verify exact-size user ROM placement at $B000, $E000, and $F000; ship no ROM content"
+    - "verify SCREEN_RAM is $8000-$83FF and SCREEN_MIRROR documents $8400-$87FF as an alias, not independent storage"
+    - "compare PIA/VIA/CRTC register addresses with the Commodore 4016/4032 technical reference"

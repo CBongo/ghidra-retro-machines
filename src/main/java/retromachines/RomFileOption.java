@@ -31,8 +31,9 @@ import docking.widgets.filechooser.GhidraFileChooserMode;
 import ghidra.app.util.Option;
 
 /**
- * A loader {@link Option} for a path to an on-disk file (used by {@link C64PrgLoader} for
- * optional user-supplied ROM dumps). Its value is the path as a {@code String}.
+ * A loader {@link Option} for a path to an on-disk file (used by the descriptor-driven
+ * machine loaders for optional user-supplied ROM dumps). Its value is the path as a
+ * {@code String}.
  *
  * <p>The custom editor is an <b>editable</b> text field the user can type or paste a path
  * into directly, plus a <b>Browse</b> button that opens a local-filesystem

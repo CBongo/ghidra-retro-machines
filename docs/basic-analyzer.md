@@ -14,7 +14,7 @@ enum` `types:` entry (see "Types: struct, flags, and enum kinds" in
 
 ## Files
 
-- `src/main/java/retromachines/C64BasicWalker.java` -- dialect-agnostic line-link chain
+- `src/main/java/retromachines/CbmBasicWalker.java` -- dialect-agnostic line-link chain
   walker, shared by the loader (cheap structural sniff) and the analyzer (full walk).
 - `src/main/java/retromachines/BasicTokenLookup.java` -- the `(bytes consumed, name)`
   token-lookup interface (dialect seam for future BASIC 7 two-byte prefix tokens).
@@ -33,7 +33,7 @@ Prior to this bead, `C64PrgLoader` unconditionally labeled and `markAsFunction`'
 address for every PRG. For a BASIC-start PRG those bytes are the first line's link word,
 not code. The fix is split:
 
-- **The loader** runs `C64BasicWalker.isBasicStart` (a cheap structural sniff over the raw
+- **The loader** runs `CbmBasicWalker.isBasicStart` (a cheap structural sniff over the raw
   PRG bytes, no descriptor/gdt access needed) and skips the load-address function mark when
   it looks like BASIC. It still creates the `entry` label and external entry point at the
   load address (harmless, and consistent with every other PRG) -- it just doesn't call
@@ -54,7 +54,7 @@ exactly on the terminator-scan address, so the first-line-clean requirement reje
 earlier draft accepted any walk that produced >= 1 line, including one ending at the
 malformed-link stop condition on the very first line; this false-positived on the existing
 `banktest*.prg` machine-code fixtures, which is what surfaced the need for the stricter
-rule -- see the regression note in `C64BasicWalker.isBasicStart`'s javadoc.)
+rule -- see the regression note in `CbmBasicWalker.isBasicStart`'s javadoc.)
 
 ## Token-enum consumption path
 
@@ -178,7 +178,7 @@ before printing) is not implemented.
   `basic-tokens.yaml` `lists:` composition model are already shaped for this (see
   "Token-enum consumption path" above); adding a dialect means a new `BasicTokenLookup`
   implementation plus a new enum type entry in the relevant machine YAML, with no change to
-  `C64BasicWalker` or the analyzer's per-line loop. Tracked as follow-on work under
+  `CbmBasicWalker` or the analyzer's per-line loop. Tracked as follow-on work under
   grm-1.6.1.
 - **SYS argument scope** is a bare decimal literal only, matching the bead's stated scope.
   `SYS (2064)`, `SYS PEEK(43)*256+PEEK(44)`, and similar real-world patterns are not

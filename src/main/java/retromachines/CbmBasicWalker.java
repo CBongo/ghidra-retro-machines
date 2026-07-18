@@ -25,7 +25,7 @@ import java.util.List;
  * tokenized text bytes, then a {@code $00} terminator. The chain ends when a line's
  * link is {@code $0000}.
  * <p>
- * Shared by {@link C64PrgLoader} (a cheap structural sniff decides whether a freshly
+ * Shared by {@link AbstractCbmPrgLoader} (a cheap structural sniff decides whether a freshly
  * loaded PRG is BASIC-start at all -- see {@link #isBasicStart}, which deliberately
  * does <em>not</em> compare the load address against any hardcoded value such as
  * {@code $0801}: a well-formed line chain is itself the signal, at whatever address
@@ -39,9 +39,9 @@ import java.util.List;
  * follow that line's link further. {@link WalkResult#malformedAt} records the
  * address of the offending line so the caller can bookmark it.
  */
-final class C64BasicWalker {
+final class CbmBasicWalker {
 
-	private C64BasicWalker() {
+	private CbmBasicWalker() {
 	}
 
 	/** Byte source abstraction so the same walker runs over raw PRG bytes (loader,

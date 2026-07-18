@@ -258,6 +258,14 @@ task verifyDescriptorComposition(type: JavaExec) {
 	mainClass = 'gdtbuilder.DescriptorCompositionVerify'
 }
 
+task verifyMapCompiler(type: JavaExec) {
+	group = "Ghidra Retro Machines"
+	description = "Verify fixed-ROM region targets and compiled format metadata"
+	dependsOn 'compileGdtBuilderJava'
+	classpath = sourceSets.gdtBuilder.runtimeClasspath
+	mainClass = 'gdtbuilder.MapCompilerVerify'
+}
+
 //----------------------------------------------------------------------------------
 // Bundled sleigh language build (bead grm-bk6): compile data/languages/*.slaspec -> .sla.
 //
@@ -299,5 +307,5 @@ tasks.matching { it.name == 'buildExtension' }.configureEach {
 	// detokenizer silently produced nothing (found by bead grm-r3h's worktree
 	// smoke test; previously masked by a stale petscii.map in the main tree).
 	dependsOn 'buildGdt', 'buildMap', 'buildPetsciiMap', 'sleighCompile',
-		'verifyDescriptorComposition'
+		'verifyDescriptorComposition', 'verifyMapCompiler'
 }

@@ -41,7 +41,7 @@ import ghidra.util.task.TaskMonitor;
 
 /**
  * Recognizes a tokenized-BASIC-start C64 PRG ({@link C64PrgLoader#NAME}), walks the
- * line-link chain ({@link C64BasicWalker}), types the link/line-number words, writes a
+ * line-link chain ({@link CbmBasicWalker}), types the link/line-number words, writes a
  * petcat-compatible detokenized comment per line, and fixes the loader's
  * function-at-load-address wart for these programs by locating the real machine-language
  * entry point from a {@code SYS <decimal>} line and marking a function there instead
@@ -108,12 +108,18 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 			throws CancelledException {
 
 		AddressSpace baseSpace = program.getAddressFactory().getDefaultAddressSpace();
-		long loadAddr = program.getOptions(Program.PROGRAM_INFO)
-				.getLong(C64PrgLoader.PRG_LOAD_ADDRESS_PROPERTY, -1);
-		long prgLength = program.getOptions(Program.PROGRAM_INFO)
-				.getLong(C64PrgLoader.PRG_LENGTH_PROPERTY, -1);
-		boolean wrapped = program.getOptions(Program.PROGRAM_INFO)
-				.getBoolean(C64PrgLoader.PRG_WRAPPED_PROPERTY, false);
+		long loadAddr = program.getOptions(Program.PROGRAM_INFO).getLong(
+			AbstractCbmPrgLoader.PRG_LOAD_ADDRESS_PROPERTY,
+			program.getOptions(Program.PROGRAM_INFO)
+				.getLong(C64PrgLoader.PRG_LOAD_ADDRESS_PROPERTY, -1));
+		long prgLength = program.getOptions(Program.PROGRAM_INFO).getLong(
+			AbstractCbmPrgLoader.PRG_LENGTH_PROPERTY,
+			program.getOptions(Program.PROGRAM_INFO)
+				.getLong(C64PrgLoader.PRG_LENGTH_PROPERTY, -1));
+		boolean wrapped = program.getOptions(Program.PROGRAM_INFO).getBoolean(
+			AbstractCbmPrgLoader.PRG_WRAPPED_PROPERTY,
+			program.getOptions(Program.PROGRAM_INFO)
+				.getBoolean(C64PrgLoader.PRG_WRAPPED_PROPERTY, false));
 		if (wrapped) {
 			return true; // a tokenized BASIC line chain is not a wrapping address interval
 		}
@@ -129,14 +135,15 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 		long limitAddr = loadAddr + prgLength;
 		final long imageLoadAddr = loadAddr;
 		final long imageLimitAddr = limitAddr;
-		List<C64PrgLoader.LoadedSlice> loadedSlices = C64PrgLoader.getLoadedSlices(program);
+		List<AbstractCbmPrgLoader.LoadedSlice> loadedSlices =
+			AbstractCbmPrgLoader.getLoadedSlices(program);
 
-		C64BasicWalker.ByteSource src = addr -> {
+		CbmBasicWalker.ByteSource src = addr -> {
 			if (addr < imageLoadAddr || addr >= imageLimitAddr) {
 				return -1;
 			}
 			try {
-				Address placed = C64PrgLoader.resolvePrgAddress(program, addr, loadedSlices);
+				Address placed = AbstractCbmPrgLoader.resolvePrgAddress(program, addr, loadedSlices);
 				if (placed == null) {
 					placed = baseSpace.getAddress(addr);
 				}
@@ -148,15 +155,15 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 		};
 
 		// Same structural sniff C64PrgLoader used to decide whether to skip its
-		// load-address function mark -- see C64BasicWalker.isBasicStart's javadoc for why
+		// load-address function mark -- see CbmBasicWalker.isBasicStart's javadoc for why
 		// this (not "walk() found >= 1 line") is the right gate: plain machine code can
 		// spuriously produce a single bogus "line" out of a coincidental $00 byte, and
 		// without this same check here this analyzer would type/comment that bogus line
 		// (which is exactly what happened before this check was added -- see grm-odt.1).
-		if (!C64BasicWalker.isBasicStart(src, loadAddr, limitAddr)) {
+		if (!CbmBasicWalker.isBasicStart(src, loadAddr, limitAddr)) {
 			return true;
 		}
-		C64BasicWalker.WalkResult result = C64BasicWalker.walk(src, loadAddr, limitAddr);
+		CbmBasicWalker.WalkResult result = CbmBasicWalker.walk(src, loadAddr, limitAddr);
 		if (result.lines().isEmpty()) {
 			return true; // trivially empty BASIC program; nothing to annotate
 		}
@@ -195,7 +202,7 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 			}
 
 			boolean sysHandled = false;
-			for (C64BasicWalker.BasicLine line : result.lines()) {
+			for (CbmBasicWalker.BasicLine line : result.lines()) {
 				monitor.checkCancelled();
 
 				Address lineAddr = placedAddress(program, baseSpace, loadedSlices, line.lineAddr());
@@ -260,8 +267,8 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 	}
 
 	private static Address placedAddress(Program program, AddressSpace baseSpace,
-			List<C64PrgLoader.LoadedSlice> loadedSlices, long offset) {
-		Address placed = C64PrgLoader.resolvePrgAddress(program, offset, loadedSlices);
+			List<AbstractCbmPrgLoader.LoadedSlice> loadedSlices, long offset) {
+		Address placed = AbstractCbmPrgLoader.resolvePrgAddress(program, offset, loadedSlices);
 		return placed != null ? placed : baseSpace.getAddress(offset);
 	}
 
@@ -278,7 +285,7 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 	}
 
 	private void markSysEntry(Program program, TaskMonitor monitor, AddressSpace baseSpace,
-			List<C64PrgLoader.LoadedSlice> loadedSlices, int sysTarget, int lineNumber,
+			List<AbstractCbmPrgLoader.LoadedSlice> loadedSlices, int sysTarget, int lineNumber,
 			MessageLog log) {
 		try {
 			Address sysAddr =

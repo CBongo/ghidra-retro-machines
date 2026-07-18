@@ -1,0 +1,16 @@
+# Hand-curated factual symbols from the BASIC 4 column of:
+#   PET Memory Map — All Models
+#   https://www.zimmers.net/anonftp/pub/cbm/maps/PET%20Memory%20Map-all%20models-searchable.pdf
+#
+# These addresses differ from the later C64 BASIC V2 workspace.  In particular,
+# PET BASIC 4 TXTTAB is $28/$29, not the C64's $2B/$2C.
+
+entries:
+  - { addr: 0x0028, name: TXTTAB, kind: label, comment: "pointer to start of BASIC text (lo/hi); normally $0401" }
+  - { addr: 0x002A, name: VARTAB, kind: label, comment: "pointer to start of BASIC variables (lo/hi)" }
+  - { addr: 0x002C, name: ARYTAB, kind: label, comment: "pointer to start of BASIC arrays (lo/hi)" }
+  - { addr: 0x002E, name: STREND, kind: label, comment: "pointer to end of BASIC arrays (lo/hi)" }
+  - { addr: 0x0030, name: FRETOP, kind: label, comment: "pointer to bottom of string storage (lo/hi)" }
+  - { addr: 0x0032, name: FRESPC, kind: label, comment: "utility string pointer (lo/hi)" }
+  - { addr: 0x0034, name: MEMSIZ, kind: label, comment: "highest RAM address available to BASIC (lo/hi)" }
+

@@ -1,0 +1,12 @@
+# MOS 6520 PIA register shape used by the PET at $E810 and $E820.
+# Register roles and PET connections were cross-checked against the Commodore
+# 4016/4032 Technical Reference Manual.  Offsets are facts; no vendor ROM or
+# copyrighted implementation text is included.
+
+size: 0x04
+fields:
+  - { offset: 0x00, name: PORTA_DDRA, size: 1, comment: "port A data or DDRA, selected by CRA bit 2" }
+  - { offset: 0x01, name: CRA, size: 1, comment: "port A control register" }
+  - { offset: 0x02, name: PORTB_DDRB, size: 1, comment: "port B data or DDRB, selected by CRB bit 2" }
+  - { offset: 0x03, name: CRB, size: 1, comment: "port B control register" }
+

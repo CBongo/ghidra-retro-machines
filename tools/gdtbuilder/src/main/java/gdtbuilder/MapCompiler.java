@@ -104,7 +104,8 @@ public class MapCompiler {
 		if (physical != null) {
 			mapDoc.put("physical", buildPhysical(physical));
 		}
-		mapDoc.put("regions", buildRegions(descriptor));
+		List<Map<String, Object>> regions = buildRegions(descriptor);
+		mapDoc.put("regions", regions);
 		List<Map<String, Object>> windows =
 			buildWindows(descriptor, physicalNames, stateFields.keySet());
 		mapDoc.put("windows", windows);
@@ -118,8 +119,12 @@ public class MapCompiler {
 		if (banking != null) {
 			mapDoc.put("banking", banking);
 		}
-		mapDoc.put("rom_images", buildRomImages(descriptor));
+		mapDoc.put("rom_images", buildRomImages(descriptor, regions));
 		mapDoc.put("symbols", buildSymbols(descriptor, descriptorFile.getParentFile()));
+		Map<String, Object> formats = buildFormats(descriptor);
+		if (formats != null) {
+			mapDoc.put("formats", formats);
+		}
 
 		outputMap.getParentFile().mkdirs();
 		Gson gson = new GsonBuilder().setPrettyPrinting().create();
@@ -209,6 +214,7 @@ public class MapCompiler {
 			r.put("end", requireAddr(region, "end", "memory.regions[]"));
 			r.put("kind", requireString(region, "kind", "memory.regions[]"));
 			copyIfPresent(region, r, "type");
+			copyIfPresent(region, r, "image");
 			copyIfPresent(region, r, "comment");
 			copyIfPresent(region, r, "readable");
 			copyIfPresent(region, r, "writable");
@@ -696,7 +702,8 @@ public class MapCompiler {
 	// ---- rom_images ----
 
 	@SuppressWarnings("unchecked")
-	private static Map<String, Object> buildRomImages(Map<String, Object> descriptor) {
+	private static Map<String, Object> buildRomImages(Map<String, Object> descriptor,
+			List<Map<String, Object>> regions) {
 		Map<String, Object> romImages = (Map<String, Object>) descriptor.get("rom_images");
 		Map<String, Object> out = new LinkedHashMap<>();
 		if (romImages == null) {
@@ -705,11 +712,72 @@ public class MapCompiler {
 		for (Map.Entry<String, Object> entry : romImages.entrySet()) {
 			Map<String, Object> img = (Map<String, Object>) entry.getValue();
 			Map<String, Object> i = new LinkedHashMap<>();
-			i.put("size", requireAddr(img, "size", "rom_images." + entry.getKey()));
-			i.put("occupant", requireString(img, "occupant", "rom_images." + entry.getKey()));
+			String context = "rom_images." + entry.getKey();
+			int size = requireAddr(img, "size", context);
+			i.put("size", size);
+			String targetName = requireString(img, "occupant", context);
+			i.put("occupant", targetName);
+			Map<String, Object> region = findRegion(regions, targetName);
+			if (region != null) {
+				if (!"rom".equals(region.get("kind"))) {
+					throw new IllegalArgumentException(context + " targets region '" + targetName +
+						"', whose kind is not 'rom'");
+				}
+				int regionSize = ((Number) region.get("end")).intValue() -
+					((Number) region.get("start")).intValue() + 1;
+				if (size != regionSize) {
+					throw new IllegalArgumentException(context + " size " + size +
+						" does not match target region '" + targetName + "' size " + regionSize);
+				}
+				Object regionImage = region.get("image");
+				if (regionImage != null && !entry.getKey().equals(regionImage.toString())) {
+					throw new IllegalArgumentException("memory region '" + targetName +
+						"' must declare image: " + entry.getKey() + " to match " + context);
+				}
+			}
 			out.put(entry.getKey(), i);
 		}
+		for (Map<String, Object> region : regions) {
+			Object image = region.get("image");
+			if (image == null) {
+				continue;
+			}
+			Object slotObj = out.get(image.toString());
+			if (!(slotObj instanceof Map) ||
+					!region.get("name").equals(((Map<?, ?>) slotObj).get("occupant"))) {
+				throw new IllegalArgumentException("memory region '" + region.get("name") +
+					"' references image slot '" + image +
+					"', but that slot does not target this region");
+			}
+		}
 		return out;
+	}
+
+	private static Map<String, Object> findRegion(List<Map<String, Object>> regions, String name) {
+		for (Map<String, Object> region : regions) {
+			if (name.equals(region.get("name"))) {
+				return region;
+			}
+		}
+		return null;
+	}
+
+	// ---- formats ----
+
+	/**
+	 * Formats are loader policy data, not compiler behavior. Preserve the documented tree
+	 * while normalizing YAML numeric scalars and mapping keys exactly as strategy params are.
+	 */
+	@SuppressWarnings("unchecked")
+	private static Map<String, Object> buildFormats(Map<String, Object> descriptor) {
+		Object formats = descriptor.get("formats");
+		if (formats == null) {
+			return null;
+		}
+		if (!(formats instanceof Map)) {
+			throw new IllegalArgumentException("descriptor 'formats:' must be a mapping");
+		}
+		return (Map<String, Object>) normalizeValues(formats);
 	}
 
 	// ---- symbols ----

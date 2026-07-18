@@ -15,6 +15,7 @@
 #   c64-loader    arbitrary-address PRGs, ROM loading, and symbol toggle
 #   c64-recovery  emulation and decrypt/recovery fixtures
 #   basic-petscii c64basictest
+#   pet-loader    PET 4032 descriptor, PRG placement, IO types, and fixed ROM slots
 #   nes-banking   all NES banking/MMC fixtures
 #   all           every chunk above
 #
@@ -53,6 +54,7 @@ list_chunks() {
 		c64-loader \
 		c64-recovery \
 		basic-petscii \
+		pet-loader \
 		nes-banking \
 		all
 }
@@ -80,7 +82,7 @@ fi
 # fixtures, so a typo cannot leave partial output behind.
 for chunk in "${CHUNKS[@]}"; do
 	case "$chunk" in
-		c64-banking|c64-loader|c64-recovery|basic-petscii|nes-banking|all) ;;
+		c64-banking|c64-loader|c64-recovery|basic-petscii|pet-loader|nes-banking|all) ;;
 		*)
 			echo "unknown chunk: $chunk" >&2
 			usage
@@ -143,6 +145,7 @@ if selected c64-recovery; then
 	generate mksuspecttest.py "$WORK/prg"
 fi
 if selected basic-petscii; then generate mkbasictest.py "$WORK/prg"; fi
+if selected pet-loader; then generate mkpettest.py "$WORK/prg"; fi
 if selected nes-banking; then generate mknesbanktest.py "$WORK/nes"; fi
 
 # Imports $2 (a .prg or .nes fixture) via $3 (the loader name), runs VerifyBankTest.java,
@@ -215,6 +218,11 @@ fi
 
 if selected basic-petscii; then
 	run_one c64basictest "$WORK/prg/c64basictest.prg" C64PrgLoader
+fi
+
+if selected pet-loader; then
+	run_one pet4032test "$WORK/prg/pet4032test.prg" PetPrgLoader \
+		"-loader-basicRom $(native "$WORK/prg/pet-basic.bin") -loader-editorRom $(native "$WORK/prg/pet-editor.bin") -loader-kernalRom $(native "$WORK/prg/pet-kernal.bin")"
 fi
 
 if selected c64-recovery; then

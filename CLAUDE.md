@@ -82,6 +82,7 @@ Chunk/source-area mapping:
 - `c64-loader`: C64 PRG placement/wrapping, ROM loading, and symbol toggles.
 - `c64-recovery`: C64 emulation and decrypt/recovery fixtures.
 - `basic-petscii`: C64 BASIC headless fixture and `verifyPetsciiMapper`.
+- `pet-loader`: PET 4032 descriptor, PRG placement, IO typing, and fixed ROM slots.
 - `nes-banking`: NES banking and MMC fixtures.
 - `bit-algebra`: `verifyBitAlgebra` only.
 - `all`: every chunk; the default when no chunk is supplied.

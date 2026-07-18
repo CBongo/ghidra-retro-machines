@@ -39,6 +39,7 @@ import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.listing.Bookmark;
 import ghidra.program.model.listing.CommentType;
+import ghidra.program.model.listing.Data;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.InstructionIterator;
 import ghidra.program.model.mem.MemoryBlock;
@@ -120,6 +121,12 @@ public class VerifyBankTest extends GhidraScript {
 
 		if (name.contains("symtoggle")) {
 			checkSymToggle();
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
+
+		if (name.contains("pet4032test")) {
+			checkPet4032();
 			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
 			return;
 		}
@@ -468,6 +475,81 @@ public class VerifyBankTest extends GhidraScript {
 		criterion("rom-basic-bytes", bB0 == 0x55, "b0=" + hx(bB0));
 		criterion("rom-chargen-initialized", cInit, "");
 		criterion("rom-chargen-bytes", cB0 == 0xAA, "b0=" + hx(cB0));
+	}
+
+	// ------------------------------------------------------------------
+	// PET 4032 fixed-map descriptor and shared CBM PRG loader (grm-1.8)
+	// ------------------------------------------------------------------
+
+	private void checkPet4032() {
+		MemoryBlock prg = currentProgram.getMemory().getBlock(addr(0x0401));
+		MemoryBlock screen = currentProgram.getMemory().getBlock("SCREEN_RAM");
+		MemoryBlock screenMirror = currentProgram.getMemory().getBlock("SCREEN_MIRROR");
+		MemoryBlock basic = currentProgram.getMemory().getBlock("BASIC");
+		MemoryBlock editor = currentProgram.getMemory().getBlock("EDITOR");
+		MemoryBlock kernal = currentProgram.getMemory().getBlock("KERNAL");
+		MemoryBlock rom9 = currentProgram.getMemory().getBlock("ROM9");
+		MemoryBlock roma = currentProgram.getMemory().getBlock("ROMA");
+		MemoryBlock pia1 = currentProgram.getMemory().getBlock("PIA1");
+		MemoryBlock via = currentProgram.getMemory().getBlock("VIA");
+		MemoryBlock crtc = currentProgram.getMemory().getBlock("CRTC");
+
+		String mapPath = currentProgram.getOptions(currentProgram.PROGRAM_INFO)
+			.getString("Retro Machine Map", "");
+		boolean format = "Commodore PET 4032 PRG".equals(currentProgram.getExecutableFormat());
+		boolean prgPlaced = prg != null && prg.isInitialized() &&
+			prg.getStart().getOffset() == 0x0401 && fileOffset(prg) == 2 &&
+			readByte(prg, 0) == 0x0c && readByte(prg, 1) == 0x04;
+		boolean screenShape = screen != null && screen.getStart().getOffset() == 0x8000 &&
+			screen.getEnd().getOffset() == 0x83ff && !screen.isOverlay();
+		boolean screenMirrorShape = screenMirror != null &&
+			screenMirror.getStart().getOffset() == 0x8400 &&
+			screenMirror.getEnd().getOffset() == 0x87ff && !screenMirror.isOverlay() &&
+			screenMirror.getComment() != null &&
+			screenMirror.getComment().toLowerCase().contains("alias");
+		boolean fixedRoms = basic != null && basic.isInitialized() &&
+			editor != null && editor.isInitialized() && kernal != null && kernal.isInitialized() &&
+			readByte(basic, 0) == 0x40 && readByte(editor, 0) == 0x60 &&
+			readByte(kernal, 0) == 0x80;
+		boolean expansionEmpty = rom9 != null && !rom9.isInitialized() &&
+			roma != null && !roma.isInitialized();
+		boolean ioVolatile = pia1 != null && pia1.isVolatile() && via != null && via.isVolatile() &&
+			crtc != null && crtc.isVolatile();
+		boolean types = dataTypeAt(0xe810, "MOS6520_PIA") &&
+			dataTypeAt(0xe840, "MOS6522_VIA") && dataTypeAt(0xe880, "MOS6545_CRTC");
+		boolean reset = hasSymbol(0xfffc, "RESET_VEC");
+		boolean noBasicFunction = currentProgram.getFunctionManager().getFunctionAt(addr(0x0401)) == null;
+
+		println("=== BANKDUMP BEGIN ===");
+		println("FORMAT pet4032=" + format + " map=" + mapPath);
+		println("PRG " + describeBlock(prg) + " fileOffset=" + fileOffset(prg) +
+			" bytes=" + hx(readByte(prg, 0)) + " " + hx(readByte(prg, 1)));
+		println("SCREEN " + describeBlock(screen));
+		println("SCREEN_MIRROR " + describeBlock(screenMirror) +
+			" aliasDocumented=" + screenMirrorShape);
+		println("ROMS basic=" + describeBlock(basic) + " editor=" + describeBlock(editor) +
+			" kernal=" + describeBlock(kernal));
+		println("EXPANSION rom9=" + describeBlock(rom9) + " roma=" + describeBlock(roma));
+		println("IO volatile=" + ioVolatile + " types=" + types);
+		println("RESET_VEC=" + reset + " basicFunction=" + !noBasicFunction);
+		println("=== BANKDUMP END ===");
+
+		criterion("pet-format-map", format && "machines/pet4032.map".equals(mapPath), mapPath);
+		criterion("pet-prg-placement", prgPlaced, describeBlock(prg));
+		criterion("pet-screen-layout", screenShape, describeBlock(screen));
+		criterion("pet-screen-mirror", screenMirrorShape,
+			"$8400-$87ff mirror represented as documented alias-limitation block");
+		criterion("pet-fixed-roms", fixedRoms, "basic/editor/kernal initialized with fixture bytes");
+		criterion("pet-expansion-empty", expansionEmpty, "ROM9/ROMA stay copyright-safe empty slots");
+		criterion("pet-io-volatile", ioVolatile, "PIA1/VIA/CRTC volatile");
+		criterion("pet-io-types", types, "PIA/VIA/CRTC structs applied");
+		criterion("pet-reset-symbol", reset, "RESET_VEC@fffc");
+		criterion("pet-basic-no-function", noBasicFunction, "no function at BASIC line link $0401");
+	}
+
+	private boolean dataTypeAt(long offset, String expected) {
+		Data data = currentProgram.getListing().getDefinedDataAt(addr(offset));
+		return data != null && expected.equals(data.getDataType().getName());
 	}
 
 	// ------------------------------------------------------------------

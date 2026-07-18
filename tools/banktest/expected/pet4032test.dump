@@ -1,0 +1,8 @@
+FORMAT pet4032=true map=machines/pet4032.map
+PRG PRG 0401-040d overlay=false fileOffset=2 bytes=0c 04
+SCREEN SCREEN_RAM 8000-83ff overlay=false
+SCREEN_MIRROR SCREEN_MIRROR 8400-87ff overlay=false aliasDocumented=true
+ROMS basic=BASIC b000-dfff overlay=false editor=EDITOR e000-e7ff overlay=false kernal=KERNAL f000-ffff overlay=false
+EXPANSION rom9=ROM9 9000-9fff overlay=false roma=ROMA a000-afff overlay=false
+IO volatile=true types=true
+RESET_VEC=true basicFunction=false

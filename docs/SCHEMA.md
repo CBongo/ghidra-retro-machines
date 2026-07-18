@@ -114,6 +114,29 @@ descriptors, so new boards need no Java).
 | `types[]` | `DataTypeManager` structs/enums; applied at declared addresses; `repeat_to` applies at each mirror |
 | `formats` | `Loader` opinion + header parsing + placement rule |
 
+### Fixed ROM regions and ROM slots
+
+An always-visible, bankless ROM is an ordinary `memory.regions[]` entry. Its
+`rom_images` slot targets that region by name; the region may carry an optional `image`
+reverse link:
+
+```yaml
+memory:
+  regions:
+    - { name: KERNAL, start: 0xF000, end: 0xFFFF, kind: rom, image: kernal }
+  windows: []
+rom_images:
+  kernal: { size: 0x1000, occupant: KERNAL }
+```
+
+The existing `occupant` key is a target block name: it can name either a fixed region or
+the original banked-window occupant. When it names a region, that target must be
+`kind: rom`, its size must match the slot, and the region must point back with the same
+`image` name when that optional reverse link is present. An absent user ROM
+therefore still has a well-defined uninitialized block for symbols and types, while a
+supplied dump initializes that same fixed block. Window occupants continue to declare
+their own `image` exactly as before.
+
 ## Bank state: a named field tuple
 
 `banking.state` declares the abstract bank-state tuple as an ordered list of named

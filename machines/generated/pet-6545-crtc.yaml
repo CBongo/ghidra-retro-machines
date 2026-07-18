@@ -1,0 +1,10 @@
+# CPU-facing MOS 6545-compatible CRTC ports on the 12-inch PET 4032.
+# The CRTC has an indexed internal register file: $E880 selects the internal
+# register and $E881 reads/writes its value.  Internal CRTC registers are not
+# independently memory mapped and therefore do not appear as struct fields.
+
+size: 0x02
+fields:
+  - { offset: 0x00, name: ADDRESS, size: 1, comment: "CRTC internal-register address/select port" }
+  - { offset: 0x01, name: DATA, size: 1, comment: "selected CRTC register data port" }
+
