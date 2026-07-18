@@ -216,8 +216,15 @@ final class DescriptorSupport {
 			if (sub.has("repeat_to")) {
 				end = sub.get("repeat_to").getAsLong();
 			}
-			else {
+			else if (sub.has("end")) {
 				end = sub.get("end").getAsLong();
+			}
+			else if (sub.has("size")) {
+				end = start + sub.get("size").getAsLong() - 1;
+			}
+			else {
+				throw new IllegalArgumentException("I/O subregion '" + name +
+					"' needs end:, size:, or repeat_to:");
 			}
 			long length = end - start + 1;
 			String kind = sub.has("kind") ? sub.get("kind").getAsString() : "io";

@@ -1,0 +1,17 @@
+# MOS 8722 MMU primary register file, at $D500-$D50B when I/O is selected.
+# Commodore 128 Programmer's Reference Guide, ch. 13, Figure 13-6 / memory map.
+
+size: 0x0C
+fields:
+  - { offset: 0x00, name: CR,       size: 1, comment: "configuration register: I/O, ROM slots, and CPU RAM bank" }
+  - { offset: 0x01, name: PCR_A,    size: 1, comment: "preconfiguration register A" }
+  - { offset: 0x02, name: PCR_B,    size: 1, comment: "preconfiguration register B" }
+  - { offset: 0x03, name: PCR_C,    size: 1, comment: "preconfiguration register C" }
+  - { offset: 0x04, name: PCR_D,    size: 1, comment: "preconfiguration register D" }
+  - { offset: 0x05, name: MCR,      size: 1, comment: "mode configuration: processor, C128/C64 mode, 40/80 sense, cartridge, fast serial" }
+  - { offset: 0x06, name: RCR,      size: 1, comment: "RAM configuration: common-RAM and VIC RAM-bank controls" }
+  - { offset: 0x07, name: PAGE0_LO, size: 1, comment: "page-0 relocation pointer low byte" }
+  - { offset: 0x08, name: PAGE0_HI, size: 1, comment: "page-0 relocation pointer high byte / RAM bank" }
+  - { offset: 0x09, name: PAGE1_LO, size: 1, comment: "page-1 relocation pointer low byte" }
+  - { offset: 0x0A, name: PAGE1_HI, size: 1, comment: "page-1 relocation pointer high byte / RAM bank" }
+  - { offset: 0x0B, name: VERSION,  size: 1, comment: "MMU and RAM-bank version number" }

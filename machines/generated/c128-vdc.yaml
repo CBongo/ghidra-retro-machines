@@ -1,0 +1,8 @@
+# MOS 8563 VDC CPU-facing ports.  The VDC's internal register file and dedicated
+# display RAM are intentionally not modeled as CPU-addressable memory.
+# Commodore 128 Programmer's Reference Guide, ch. 10.
+
+size: 0x02
+fields:
+  - { offset: 0x00, name: ADDRESS_STATUS, size: 1, comment: "write: internal VDC register index; read: update-ready/light-pen/vertical-blank status" }
+  - { offset: 0x01, name: DATA,           size: 1, comment: "data for the internal VDC register selected through ADDRESS_STATUS" }

@@ -1,0 +1,7 @@
+FORMAT c128=true map=machines/c128.map
+PRG PRG 1c01-3fff overlay=false fileOffset=2 bytes=0b 1c prefixes=ce 02 fe 03
+SPAN RAM_4000 4000-7fff overlay=true fileOffset=9217
+ROMS basicLo=BASIC_LO 4000-7fff overlay=false basicHi=BASIC_HI 8000-bfff overlay=false editor=EDITOR c000-cfff overlay=false kernal=KERNAL e000-ffff overlay=false
+MMU MMU d500-d50b overlay=false volatile=true types=true shadowSymbols=true
+SCOPE staticCr00=true dynamicMmu=false
+basicFunction=false

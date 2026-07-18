@@ -131,6 +131,12 @@ public class VerifyBankTest extends GhidraScript {
 			return;
 		}
 
+		if (name.contains("c128nativebasic7test")) {
+			checkC128NativeBasic7();
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
+
 		dump();
 
 		if (name.contains("nesmmc1test")) {
@@ -550,6 +556,94 @@ public class VerifyBankTest extends GhidraScript {
 	private boolean dataTypeAt(long offset, String expected) {
 		Data data = currentProgram.getListing().getDefinedDataAt(addr(offset));
 		return data != null && expected.equals(data.getDataType().getName());
+	}
+
+	// ------------------------------------------------------------------
+	// C128 native BASIC fixed-map descriptor and shared CBM PRG loader
+	// ------------------------------------------------------------------
+
+	// Fixture from mkc128test.py: a native-mode BASIC program begins at $1C01,
+	// with a well-formed linked line whose text preserves raw BASIC 7 CE/FE
+	// prefixed-token pairs.  The initial C128 map deliberately models only the
+	// static power-up arrangement; $FF00-$FF04 are KERNAL-resident MMU-shadow
+	// controls represented by symbols rather than a physically-overlapping block.
+	private void checkC128NativeBasic7() {
+		MemoryBlock prg = currentProgram.getMemory().getBlock(addr(0x1c01));
+		MemoryBlock ram4000 = blockAt("RAM_4000", 0x4000);
+		MemoryBlock basicLo = currentProgram.getMemory().getBlock("BASIC_LO");
+		MemoryBlock basicHi = currentProgram.getMemory().getBlock("BASIC_HI");
+		MemoryBlock editor = currentProgram.getMemory().getBlock("EDITOR");
+		MemoryBlock kernal = currentProgram.getMemory().getBlock("KERNAL");
+		MemoryBlock mmu = currentProgram.getMemory().getBlock("MMU");
+
+		String mapPath = currentProgram.getOptions(currentProgram.PROGRAM_INFO)
+			.getString("Retro Machine Map", "");
+		boolean format = "Commodore 128 Native BASIC PRG".equals(
+			currentProgram.getExecutableFormat());
+		boolean prgPlaced = prg != null && prg.isInitialized() &&
+			prg.getStart().getOffset() == 0x1c01 && prg.getEnd().getOffset() == 0x3fff &&
+			fileOffset(prg, 0x1c01) == 2 && readByte(prg, 0) == 0x0b &&
+			readByte(prg, 1) == 0x1c;
+		boolean spansRamUnderBasicLo = initializedOverlay(ram4000, "RAM_4000") &&
+			ram4000.getStart().getOffset() == 0x4000 && ram4000.getEnd().getOffset() == 0x7fff &&
+			fileOffset(ram4000) == 0x2401;
+		String prefixes = bytesAt(null, 0x1c06, 4);
+		boolean prefixBytes = "ce 02 fe 03".equals(prefixes);
+		boolean noBasicFunction = currentProgram.getFunctionManager().getFunctionAt(addr(0x1c01)) == null;
+		boolean fixedRoms = initializedBlock(basicLo, 0x4000, 0x7fff, 0x10) &&
+			initializedBlock(basicHi, 0x8000, 0xbfff, 0x20) &&
+			initializedBlock(editor, 0xc000, 0xcfff, 0x30) &&
+			initializedBlock(kernal, 0xe000, 0xffff, 0x40);
+		boolean mmuVolatile = mmu != null && mmu.isVolatile() &&
+			mmu.getStart().getOffset() == 0xd500 && mmu.getEnd().getOffset() == 0xd50b;
+		boolean ioTypes = dataTypeAt(0x0000, "MOS8502_PORT") &&
+			dataTypeAt(0xd000, "MOS_VICIIE") &&
+			dataTypeAt(0xd400, "MOS6581_SID") &&
+			dataTypeAt(0xd500, "MOS8722_MMU") &&
+			dataTypeAt(0xd600, "MOS8563_VDC_PORTS") &&
+			dataTypeAt(0xdc00, "MOS6526_CIA") && dataTypeAt(0xdd00, "MOS6526_CIA");
+		boolean shadowSymbols = hasSymbol(0xff00, "MMU_CR_SHADOW") &&
+			hasSymbol(0xff01, "MMU_LCRA") && hasSymbol(0xff02, "MMU_LCRB") &&
+			hasSymbol(0xff03, "MMU_LCRC") && hasSymbol(0xff04, "MMU_LCRD");
+		boolean staticCr00 = basicLo != null && !basicLo.isOverlay() && basicHi != null &&
+			!basicHi.isOverlay() && editor != null && !editor.isOverlay() && kernal != null &&
+			!kernal.isOverlay() && mmu != null && !mmu.isOverlay();
+
+		println("=== BANKDUMP BEGIN ===");
+		println("FORMAT c128=" + format + " map=" + mapPath);
+		println("PRG " + describeBlock(prg) + " fileOffset=" + fileOffset(prg, 0x1c01) +
+			" bytes=" + hx(readByte(prg, 0)) + " " + hx(readByte(prg, 1)) +
+			" prefixes=" + prefixes);
+		println("SPAN " + describeBlock(ram4000) + " fileOffset=" + fileOffset(ram4000));
+		println("ROMS basicLo=" + describeBlock(basicLo) + " basicHi=" + describeBlock(basicHi) +
+			" editor=" + describeBlock(editor) + " kernal=" + describeBlock(kernal));
+		println("MMU " + describeBlock(mmu) + " volatile=" + mmuVolatile +
+			" types=" + ioTypes + " shadowSymbols=" + shadowSymbols);
+		println("SCOPE staticCr00=" + staticCr00 + " dynamicMmu=false");
+		println("basicFunction=" + !noBasicFunction);
+		println("=== BANKDUMP END ===");
+
+		criterion("c128-format-map", format && "machines/c128.map".equals(mapPath), mapPath);
+		criterion("c128-prg-placement", prgPlaced, describeBlock(prg));
+		criterion("c128-prg-spans-basic-lo", spansRamUnderBasicLo,
+			"payload crosses $4000 into RAM_4000 beneath BASIC_LO");
+		criterion("c128-basic7-prefixes", prefixBytes, "bytes@1c06=" + prefixes);
+		criterion("c128-basic-no-function", noBasicFunction,
+			"no function at BASIC line link $1c01");
+		criterion("c128-fixed-roms", fixedRoms,
+			"BASIC_LO/BASIC_HI/EDITOR/KERNAL initialized with fixture bytes");
+		criterion("c128-mmu-volatile", mmuVolatile, "$d500-$d50b MMU is volatile I/O");
+		criterion("c128-io-types", ioTypes,
+			"8502/VIC-IIe/MMU/VDC/CIA register types applied");
+		criterion("c128-mmu-shadow-symbols", shadowSymbols,
+			"MMU shadow controls represented at $ff00-$ff04");
+		criterion("c128-static-cr00", staticCr00,
+			"home blocks model only the CR=$00 native startup map; MMU switching is deferred");
+	}
+
+	private boolean initializedBlock(MemoryBlock block, long start, long end, int firstByte) {
+		return block != null && block.isInitialized() && block.getStart().getOffset() == start &&
+			block.getEnd().getOffset() == end && readByte(block, 0) == firstByte;
 	}
 
 	// ------------------------------------------------------------------

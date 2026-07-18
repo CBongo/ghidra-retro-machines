@@ -1,0 +1,180 @@
+# Commodore 128 native-mode PRG descriptor — deliberately a static, post-handoff view.
+#
+# Scope: original, unexpanded C128 in native C128 mode after the boot Z80 has handed
+# control to the 8502.  This is the documented CR=$00 / BASIC BANK 15 view only:
+# RAM bank 0, C128 BASIC, I/O, editor, and KERNAL.  It does not attempt to model
+# alternative MMU configurations, common-RAM geometry, relocated pages 0/1, C64 mode,
+# CP/M/Z80 operation, cartridge/function ROMs, REU/expanded RAM, or C128D variants.
+#
+# Primary source: Commodore 128 Programmer's Reference Guide (1986), chs. 13, 15, 16.
+# https://www.devili.iki.fi/pub/Commodore/docs/books/C128_Programmers_Reference_OCR.pdf
+
+schema: 2
+
+system:
+  id: c128
+  name: "Commodore 128 (native-mode static CR=$00)"
+  cpu:
+    # The 8502 is 6510/6502 compatible and retains the $00/$01 zero-page I/O port.
+    # The bundled 6510 language therefore accurately models this CPU-visible feature.
+    language: "6510:LE:16:default"
+
+memory:
+  regions:
+    - name: P8502
+      start: 0x0000
+      end: 0x0001
+      kind: io
+      type: MOS8502_PORT
+      comment: "8502 zero-page port: DDR at $00, data at $01; not the native-mode MMU control register"
+    - { name: ZEROPAGE, start: 0x0002, end: 0x00FF, kind: ram }
+    - { name: STACK, start: 0x0100, end: 0x01FF, kind: ram, comment: "8502 hardware stack" }
+    - name: SYSTEM_WORKSPACE
+      start: 0x0200
+      end: 0x03FF
+      kind: ram
+      comment: "native C128 KERNAL/BASIC workspace and indirect vectors"
+    - name: SCREEN_RAM
+      start: 0x0400
+      end: 0x07FF
+      kind: ram
+      comment: "default VIC-IIe 40-column screen matrix; relocatable"
+    - { name: RAM_MAIN, start: 0x0800, end: 0x12FF, kind: ram }
+    - name: APPLICATION_RAM
+      start: 0x1300
+      end: 0x1BFF
+      kind: ram
+      comment: "documented machine-language application area"
+    - name: BASIC_TEXT
+      start: 0x1C00
+      end: 0x3FFF
+      kind: ram
+      load_target: true
+      comment: "BASIC text area boundary is $1C00; normal BASIC 7 PRGs load first line at $1C01"
+
+  windows:
+    # Each window retains its RAM-under-ROM occupant so PRG placement and later MMU work
+    # have a factual backing target.  The sole state row below deliberately selects only
+    # the static CR=$00 power-up view; alternate mappings are not claimed here.
+    - name: BASIC_LO_WINDOW
+      start: 0x4000
+      end: 0x7FFF
+      occupants:
+        - { name: RAM_4000, kind: ram }
+        - { name: BASIC_LO, kind: rom, image: basic_lo, on_write: RAM_4000 }
+    - name: BASIC_HI_WINDOW
+      start: 0x8000
+      end: 0xBFFF
+      occupants:
+        - { name: RAM_8000, kind: ram }
+        - { name: BASIC_HI, kind: rom, image: basic_hi, on_write: RAM_8000 }
+    - name: EDITOR_WINDOW
+      start: 0xC000
+      end: 0xCFFF
+      occupants:
+        - { name: RAM_C000, kind: ram }
+        - { name: EDITOR, kind: rom, image: editor, on_write: RAM_C000 }
+    - name: CHARIO_WINDOW
+      start: 0xD000
+      end: 0xDFFF
+      occupants:
+        - { name: RAM_D000, kind: ram }
+        - name: IO
+          kind: io
+          subregions:
+            - { name: VICIIE, start: 0xD000, size: 0x40, repeat_to: 0xD3FF, type: MOS_VICIIE, comment: "VIC-IIe registers mirrored through $D3FF" }
+            - { name: SID, start: 0xD400, size: 0x20, repeat_to: 0xD4FF, type: MOS6581_SID, comment: "SID register decode/mirrors" }
+            - { name: MMU, start: 0xD500, size: 0x0C, type: MOS8722_MMU, comment: "MOS 8722 primary MMU registers" }
+            - { name: IO_D50C_D5FF, start: 0xD50C, end: 0xD5FF, kind: io, comment: "reserved I/O decode" }
+            - { name: VDC, start: 0xD600, size: 0x02, type: MOS8563_VDC_PORTS, comment: "8563 address/status and data ports" }
+            - { name: IO_D602_D7FF, start: 0xD602, end: 0xD7FF, kind: io, comment: "reserved I/O decode" }
+            - { name: COLOR_RAM, start: 0xD800, end: 0xDBFF, kind: ram, executable: false, comment: "CPU-visible aperture into the port-selected one of two 1 KiB VIC color RAM banks; 4-bit cells" }
+            - { name: CIA1, start: 0xDC00, size: 0x10, repeat_to: 0xDCFF, type: MOS6526_CIA, comment: "keyboard, joystick, paddle, light-pen, fast serial" }
+            - { name: CIA2, start: 0xDD00, size: 0x10, repeat_to: 0xDDFF, type: MOS6526_CIA, comment: "user port, RS-232, serial bus, VIC bank, NMI" }
+            - { name: IO1, start: 0xDE00, end: 0xDEFF, kind: io, comment: "expansion I/O 1; unpopulated in this scope" }
+            - { name: IO2, start: 0xDF00, end: 0xDFFF, kind: io, comment: "expansion I/O 2; an optional REU may decode DMA registers here, but no expansion is modeled" }
+    - name: KERNAL_WINDOW
+      start: 0xE000
+      end: 0xFFFF
+      occupants:
+        - { name: RAM_E000, kind: ram }
+        - { name: KERNAL, kind: rom, image: kernal, on_write: RAM_E000 }
+
+# The schema needs a state carrier to place enumerated windows.  This represents only
+# CR=$00, not a promise of dynamic MMU tracking: C128 has no registered bank analyzer,
+# and the state table intentionally contains no other CR values.  The actual CR register
+# is nevertheless identified at $D500 for static disassembly context.
+banking:
+  state:
+    - { name: CR, bits: 8 }
+  mechanisms:
+    - strategy: register-write
+      params: { address: 0xD500, mask: 0xFF }
+      sets: [CR]
+  initial_state: { CR: 0x00 }
+  states:
+    - { CR: 0x00, BASIC_LO_WINDOW: BASIC_LO, BASIC_HI_WINDOW: BASIC_HI, EDITOR_WINDOW: EDITOR, CHARIO_WINDOW: IO, KERNAL_WINDOW: KERNAL }
+
+rom_images:
+  # These are logical CPU-window extracts, never bundled ROM bytes.  Commodore's physical
+  # ROM organization/mode selection is more complex than these import-sized slots; users
+  # must supply an exact extract for the selected native view rather than a raw combined
+  # ROM image.  The character ROM is deliberately absent: CR=$00 exposes I/O at $D000.
+  basic_lo: { size: 0x4000, occupant: BASIC_LO }
+  basic_hi: { size: 0x4000, occupant: BASIC_HI }
+  editor:   { size: 0x1000, occupant: EDITOR }
+  kernal:   { size: 0x2000, occupant: KERNAL }
+
+symbols:
+  - set: native-vectors-and-mmu-shadow
+    default: on
+    region: KERNAL
+    provenance: "Commodore 128 Programmer's Reference Guide, ch. 13 / memory map"
+    inline:
+      - { addr: 0xFF00, name: MMU_CR_SHADOW, kind: register, comment: "always-visible secondary MMU configuration-register access; label only, not a volatile MMIO block" }
+      - { addr: 0xFF01, name: MMU_LCRA, kind: register, comment: "load configuration register A; label only inside KERNAL window" }
+      - { addr: 0xFF02, name: MMU_LCRB, kind: register, comment: "load configuration register B; label only inside KERNAL window" }
+      - { addr: 0xFF03, name: MMU_LCRC, kind: register, comment: "load configuration register C; label only inside KERNAL window" }
+      - { addr: 0xFF04, name: MMU_LCRD, kind: register, comment: "load configuration register D; label only inside KERNAL window" }
+      - { addr: 0xFFFA, name: NMI_VEC, kind: vector, comment: "8502 NMI vector (little endian)" }
+      - { addr: 0xFFFC, name: RESET_VEC, kind: vector, comment: "8502 reset vector (little endian)" }
+      - { addr: 0xFFFE, name: IRQ_VEC, kind: vector, comment: "8502 IRQ/BRK vector (little endian)" }
+
+types:
+  - name: MOS8502_PORT
+    kind: struct
+    fields:
+      - { offset: 0x00, name: DDR, size: 1, comment: "8502 zero-page port data-direction register" }
+      - { offset: 0x01, name: PORT, size: 1, comment: "8502 zero-page port data register" }
+  - name: MOS_VICIIE
+    kind: struct
+    source: generated/c128-vicii-e.yaml
+  - name: MOS6581_SID
+    kind: struct
+    source: generated/c64ref-sid.yaml
+  - name: MOS8722_MMU
+    kind: struct
+    source: generated/c128-mmu.yaml
+  - name: MOS8563_VDC_PORTS
+    kind: struct
+    source: generated/c128-vdc.yaml
+  - name: MOS6526_CIA
+    kind: struct
+    source: generated/c64ref-cia.yaml
+
+formats:
+  prg:
+    extensions: [".prg"]
+    header:
+      - { field: load_address, size: 2, endian: little }
+    placement: load_address
+    initial_bank_state: default
+    comment: "The first two program-file bytes are its saved load address; native BASIC 7 programs normally begin at $1C01 (bytes $01,$1C). No BASIC 7 token decoding is declared."
+
+validation:
+  oracle: "VICE x128, native C128 mode"
+  checks:
+    - "buildC128Map selects only CR=$00: BASIC_LO, BASIC_HI, EDITOR, IO, KERNAL"
+    - "a $1C01 PRG payload lands in BASIC_TEXT; its two-byte header is not mapped"
+    - "MMU primary type is at $D500; $FF00-$FF04 are labels inside KERNAL, never overlapping MMIO blocks"
+    - "BASIC 7 CE/FE token interpretation and all non-CR=$00 MMU behavior remain deferred"

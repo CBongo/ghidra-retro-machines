@@ -1,0 +1,18 @@
+# Conservative MOS VIC-IIe register seed at $D000, mirrored through $D3FF.
+# This is intentionally a typed hardware slice, not a full VIC-IIe register catalogue.
+# Commodore 128 Programmer's Reference Guide, ch. 15 memory map.
+
+size: 0x40
+fields:
+  - { offset: 0x11, name: CTRL1,       size: 1, comment: "control 1: raster MSB, bitmap/text, display enable, rows, vertical scroll" }
+  - { offset: 0x12, name: RASTER,      size: 1, comment: "raster compare/read register" }
+  - { offset: 0x16, name: CTRL2,       size: 1, comment: "control 2: multicolor, columns, horizontal scroll" }
+  - { offset: 0x18, name: MEMPTR,      size: 1, comment: "screen matrix and character/bitmap memory pointers" }
+  - { offset: 0x19, name: IRQ_FLAGS,   size: 1, comment: "interrupt flags" }
+  - { offset: 0x1A, name: IRQ_ENABLE,  size: 1, comment: "interrupt-enable mask" }
+  - { offset: 0x1E, name: SPR_BG_COLL, size: 1, comment: "sprite/background collision latches" }
+  - { offset: 0x1F, name: SPR_SPR_COLL,size: 1, comment: "sprite/sprite collision latches" }
+  - { offset: 0x20, name: BORDER,      size: 1, comment: "border color" }
+  - { offset: 0x21, name: BACKGROUND0, size: 1, comment: "background color 0" }
+  - { offset: 0x2F, name: KEYBOARD,    size: 1, comment: "C128 extended keyboard-line selector" }
+  - { offset: 0x30, name: CLOCK,       size: 1, comment: "C128 clock-speed control/test register; bit 0 selects 2 MHz" }

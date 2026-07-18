@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# C64 + NES banking-analyzer regression suite driver (bead grm-wzl, extended to NES
-# by grm-5tl.17).
+# C64 + C128 + NES banking-analyzer regression suite driver (bead grm-wzl, extended
+# to NES by grm-5tl.17).
 #
 # Usage: run-banktest.sh [check|bless] [chunk ...]
 #
@@ -16,6 +16,7 @@
 #   c64-recovery  emulation and decrypt/recovery fixtures
 #   basic-petscii c64basictest
 #   pet-loader    PET 4032 descriptor, PRG placement, IO types, and fixed ROM slots
+#   c128-loader   C128 native BASIC PRG placement, fixed ROM slots, and MMU IO
 #   nes-banking   all NES banking/MMC fixtures
 #   all           every chunk above
 #
@@ -55,6 +56,7 @@ list_chunks() {
 		c64-recovery \
 		basic-petscii \
 		pet-loader \
+		c128-loader \
 		nes-banking \
 		all
 }
@@ -82,7 +84,7 @@ fi
 # fixtures, so a typo cannot leave partial output behind.
 for chunk in "${CHUNKS[@]}"; do
 	case "$chunk" in
-		c64-banking|c64-loader|c64-recovery|basic-petscii|pet-loader|nes-banking|all) ;;
+		c64-banking|c64-loader|c64-recovery|basic-petscii|pet-loader|c128-loader|nes-banking|all) ;;
 		*)
 			echo "unknown chunk: $chunk" >&2
 			usage
@@ -146,6 +148,7 @@ if selected c64-recovery; then
 fi
 if selected basic-petscii; then generate mkbasictest.py "$WORK/prg"; fi
 if selected pet-loader; then generate mkpettest.py "$WORK/prg"; fi
+if selected c128-loader; then generate mkc128test.py "$WORK/prg"; fi
 if selected nes-banking; then generate mknesbanktest.py "$WORK/nes"; fi
 
 # Imports $2 (a .prg or .nes fixture) via $3 (the loader name), runs VerifyBankTest.java,
@@ -223,6 +226,11 @@ fi
 if selected pet-loader; then
 	run_one pet4032test "$WORK/prg/pet4032test.prg" PetPrgLoader \
 		"-loader-basicRom $(native "$WORK/prg/pet-basic.bin") -loader-editorRom $(native "$WORK/prg/pet-editor.bin") -loader-kernalRom $(native "$WORK/prg/pet-kernal.bin")"
+fi
+
+if selected c128-loader; then
+	run_one c128nativebasic7test "$WORK/prg/c128nativebasic7test.prg" C128PrgLoader \
+		"-loader-basicLoRom $(native "$WORK/prg/c128-basic-lo.bin") -loader-basicHiRom $(native "$WORK/prg/c128-basic-hi.bin") -loader-editorRom $(native "$WORK/prg/c128-editor.bin") -loader-kernalRom $(native "$WORK/prg/c128-kernal.bin")"
 fi
 
 if selected c64-recovery; then

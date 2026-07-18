@@ -41,7 +41,7 @@ usage() {
 	cat <<EOF
 usage: $0 [check|bless] [chunk ...]
 
-Chunks: c64-banking c64-loader c64-recovery basic-petscii pet-loader nes-banking
+Chunks: c64-banking c64-loader c64-recovery basic-petscii pet-loader c128-loader nes-banking
         bit-algebra all
 
 With no chunks, all is selected. Use --list-chunks to print this list.
@@ -55,6 +55,7 @@ c64-loader    C64 PRG placement/wrapping, ROM loading, and symbol toggles
 c64-recovery  C64 emulation and decrypt/recovery fixtures
 basic-petscii C64 BASIC headless fixture plus verifyPetsciiMapper
 pet-loader    PET 4032 descriptor, PRG placement, IO types, and fixed ROM slots
+c128-loader   C128 native BASIC PRG placement, fixed ROM slots, and MMU IO
 nes-banking   NES banking and MMC fixtures
 bit-algebra   verifyBitAlgebra (no extension build/install required alone)
 all           Every chunk (the default)
@@ -84,7 +85,7 @@ fi
 
 for chunk in "${REQUESTED_CHUNKS[@]}"; do
 	case "$chunk" in
-		c64-banking|c64-loader|c64-recovery|basic-petscii|pet-loader|nes-banking|bit-algebra|all) ;;
+		c64-banking|c64-loader|c64-recovery|basic-petscii|pet-loader|c128-loader|nes-banking|bit-algebra|all) ;;
 		*)
 			echo "FAIL: unknown chunk '$chunk'" >&2
 			usage >&2
@@ -112,7 +113,7 @@ if has_chunk all; then
 	RUNNER_CHUNKS=(all)
 	GRADLE_CHECKS=(verifyPetsciiMapper verifyBitAlgebra)
 else
-	for chunk in c64-banking c64-loader c64-recovery basic-petscii pet-loader nes-banking; do
+	for chunk in c64-banking c64-loader c64-recovery basic-petscii pet-loader c128-loader nes-banking; do
 		if has_chunk "$chunk"; then
 			RUN_HEADLESS=1
 			RUNNER_CHUNKS+=("$chunk")
