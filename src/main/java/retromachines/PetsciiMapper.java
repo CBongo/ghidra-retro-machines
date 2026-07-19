@@ -16,11 +16,17 @@
 package retromachines;
 
 import java.io.File;
-import java.io.FileReader;
+import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.Reader;
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.Map;
 
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
@@ -32,10 +38,17 @@ import com.google.gson.JsonParser;
  * YAML file's header for the frozen VICE-petcat-verbatim escape convention and full
  * provenance): this class contains no PETSCII knowledge of its own, only lookup logic.
  * <p>
- * <b>v1 scope:</b> output is ASCII-only bracket escapes (e.g. {@code "{clr}"},
- * {@code "{$a3}"}) -- no Unicode glyphs. A future {@code toDisplayUnicode()} that renders
- * control codes and graphics characters as real Unicode glyphs (PETSCII box-drawing lives in
- * the "Symbols for Legacy Computing" block) is anticipated but not implemented here.
+ * <b>v1 scope (schema 1):</b> {@link #toDisplayEscaped(int, Variant)} -- ASCII-only bracket
+ * escapes (e.g. {@code "{clr}"}, {@code "{$a3}"}).
+ * <p>
+ * <b>Unicode layer (schema 2, bead grm-1.4.2):</b> {@link #toDisplayUnicode(int, Variant)} --
+ * every byte resolves to a real Unicode codepoint: C0/C1 controls pass through as their own
+ * byte value, graphics render as true glyphs (box drawing, block elements, card suits, and
+ * "Symbols for Legacy Computing" U+1FB00-U+1FBFF for glyphs with no older codepoint), and the
+ * three PETSCII/ASCII divergences (0x5C/0x5E/0x5F) render as £/↑/← instead of the escaped
+ * layer's ASCII transliteration. See {@code machines/generated/petscii.yaml}'s {@code unicode:}
+ * section header for the full policy/provenance writeup. Entirely independent of
+ * {@code toDisplayEscaped} -- neither layer influences the other's output.
  * <p>
  * Screen codes (what is POKEd into screen RAM -- a different numbering from PETSCII) are
  * explicitly out of scope; every byte this class accepts is a PETSCII code (memory / keyboard
@@ -60,10 +73,38 @@ public final class PetsciiMapper {
 	private final String[] unshiftedGraphics;
 	private final String[] shiftedLowercase;
 
+	/** Unicode-layer decode tables (schema 2); {@code null} if the loaded map predates the
+	 *  unicode layer (schema 1) -- {@link #toDisplayUnicode} then throws rather than silently
+	 *  returning garbage. */
+	private final int[] unshiftedGraphicsUnicode;
+	private final int[] shiftedLowercaseUnicode;
+
+	/** Unicode-layer encode maps (codepoint -&gt; canonical byte), same nullability as the
+	 *  decode tables above. */
+	private final Map<Integer, Integer> unshiftedGraphicsEncode;
+	private final Map<Integer, Integer> shiftedLowercaseEncode;
+
 	private PetsciiMapper(JsonObject mapJson) {
 		JsonObject variants = mapJson.getAsJsonObject("variants");
 		this.unshiftedGraphics = toTable(variants.getAsJsonArray("unshifted_graphics"));
 		this.shiftedLowercase = toTable(variants.getAsJsonArray("shifted_lowercase"));
+
+		JsonObject unicodeVariants = mapJson.getAsJsonObject("unicode_variants");
+		JsonObject encode = mapJson.getAsJsonObject("encode");
+		if (unicodeVariants != null && encode != null) {
+			this.unshiftedGraphicsUnicode = toUnicodeTable(
+				unicodeVariants.getAsJsonArray("unshifted_graphics"));
+			this.shiftedLowercaseUnicode = toUnicodeTable(
+				unicodeVariants.getAsJsonArray("shifted_lowercase"));
+			this.unshiftedGraphicsEncode = toEncodeMap(encode.getAsJsonObject("unshifted_graphics"));
+			this.shiftedLowercaseEncode = toEncodeMap(encode.getAsJsonObject("shifted_lowercase"));
+		}
+		else {
+			this.unshiftedGraphicsUnicode = null;
+			this.shiftedLowercaseUnicode = null;
+			this.unshiftedGraphicsEncode = null;
+			this.shiftedLowercaseEncode = null;
+		}
 	}
 
 	private static String[] toTable(JsonArray array) {
@@ -81,6 +122,30 @@ public final class PetsciiMapper {
 			table[i] = s;
 		}
 		return table;
+	}
+
+	private static int[] toUnicodeTable(JsonArray array) {
+		if (array.size() != 256) {
+			throw new IllegalArgumentException(
+				"petscii.map unicode_variants table has " + array.size() +
+					" entries, expected 256");
+		}
+		int[] table = new int[256];
+		for (int i = 0; i < 256; i++) {
+			table[i] = array.get(i).getAsInt();
+		}
+		return table;
+	}
+
+	/** Parses an {@code encode} object (decimal-codepoint-string keys, see
+	 *  {@code gdtbuilder.PetsciiCompiler}'s output comment for why decimal) into a codepoint
+	 *  -&gt; canonical-byte map. */
+	private static Map<Integer, Integer> toEncodeMap(JsonObject encodeObj) {
+		Map<Integer, Integer> map = new HashMap<>();
+		for (Map.Entry<String, JsonElement> e : encodeObj.entrySet()) {
+			map.put(Integer.parseInt(e.getKey()), e.getValue().getAsInt());
+		}
+		return map;
 	}
 
 	/**
@@ -115,7 +180,18 @@ public final class PetsciiMapper {
 	 * on the freshly-built {@code data/petscii.map}, never {@link #load()}.
 	 */
 	public static PetsciiMapper loadFromMapFile(File mapFile) throws IOException {
-		try (Reader reader = new FileReader(mapFile)) {
+		try (InputStream in = new FileInputStream(mapFile)) {
+			return loadFromStream(in);
+		}
+	}
+
+	/** Parses a {@code petscii.map} document from an already-open stream (UTF-8). This is the
+	 *  seam {@link #loadFromMapFile(File)} delegates to; also usable directly by callers that
+	 *  already have the map as a classpath resource or other {@link InputStream} rather than
+	 *  a {@link File} (e.g. a future charset SPI provider -- see grm-1.4 Phase C). Closes
+	 *  {@code in} (via the wrapping reader) before returning. */
+	public static PetsciiMapper loadFromStream(InputStream in) throws IOException {
+		try (Reader reader = new InputStreamReader(in, StandardCharsets.UTF_8)) {
 			return new PetsciiMapper(JsonParser.parseReader(reader).getAsJsonObject());
 		}
 	}
@@ -134,5 +210,50 @@ public final class PetsciiMapper {
 			sb.append(toDisplayEscaped(b, variant));
 		}
 		return sb.toString();
+	}
+
+	/** The Unicode display string for one PETSCII byte in the given variant -- the codepoint
+	 *  as a {@link String} (a surrogate pair if the codepoint is above the Basic Multilingual
+	 *  Plane, via {@link Character#toChars(int)}; see class javadoc for the full policy).
+	 *  {@code byteValue} is masked to 8 bits.
+	 *
+	 * @throws IllegalStateException if the loaded {@code petscii.map} predates the unicode
+	 *     layer (schema 1, no {@code unicode_variants}/{@code encode} keys)
+	 */
+	public String toDisplayUnicode(int byteValue, Variant variant) {
+		int[] table = variant == Variant.SHIFTED_LOWERCASE ? shiftedLowercaseUnicode : unshiftedGraphicsUnicode;
+		if (table == null) {
+			throw new IllegalStateException(
+				"toDisplayUnicode requires a schema-2 petscii.map (unicode layer) -- " +
+					"the loaded map has no 'unicode_variants' section");
+		}
+		return new String(Character.toChars(table[byteValue & 0xFF]));
+	}
+
+	/** The concatenated Unicode display string for a run of PETSCII bytes in the given
+	 *  variant. */
+	public String toDisplayUnicode(byte[] bytes, Variant variant) {
+		StringBuilder sb = new StringBuilder(bytes.length);
+		for (byte b : bytes) {
+			sb.append(toDisplayUnicode(b, variant));
+		}
+		return sb.toString();
+	}
+
+	/** The Unicode codepoint -&gt; canonical-byte encode lookup for the given variant, or
+	 *  {@code null} if {@code codepoint} is not produced by any byte in this variant.
+	 *  "Canonical" means the LOWEST byte value that decodes to that codepoint (see
+	 *  {@code gdtbuilder.PetsciiCompiler#buildEncodeMap}). Primarily for
+	 *  {@code tools/petscii/PetsciiMapperVerify.java}'s round-trip checks and the future
+	 *  charset SPI encoder (grm-1.4 Phase C), not commonly needed by ordinary callers. */
+	public Integer encodeUnicode(int codepoint, Variant variant) {
+		Map<Integer, Integer> encode =
+			variant == Variant.SHIFTED_LOWERCASE ? shiftedLowercaseEncode : unshiftedGraphicsEncode;
+		if (encode == null) {
+			throw new IllegalStateException(
+				"encodeUnicode requires a schema-2 petscii.map (unicode layer) -- " +
+					"the loaded map has no 'encode' section");
+		}
+		return encode.get(codepoint);
 	}
 }

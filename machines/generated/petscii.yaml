@@ -30,7 +30,7 @@
 # "F1"). See the PetsciiCompiler.java header / grm-1.4.1 report for the full diff.
 # ---------------------------------------------------------------------------------------
 
-schema: 1
+schema: 2
 
 provenance:
   source: "VICE petcat.c ctrl1[]/ctrl2[] short-name tables (verbatim) + petcat's own {$xx} hex fallback"
@@ -165,3 +165,194 @@ letter_range:
   end: 0x5A
   unshifted_graphics_case: upper
   shifted_lowercase_case: lower
+
+# =========================================================================================
+# UNICODE LAYER (schema 2, bead grm-1.4.2) -- a SECOND, INDEPENDENT byte -> codepoint mapping,
+# added alongside the frozen escaped-display sections above WITHOUT touching them. Feeds
+# retromachines.PetsciiMapper.toDisplayUnicode() and (later, grm-1.4.3) the PETSCII charset
+# SPI. Where the escaped layer above transliterates graphics/ASCII-divergent bytes to safe
+# ASCII fallbacks (petcat's own convention, frozen), this layer resolves every byte to a real
+# Unicode codepoint -- true glyphs for graphics, C0/C1 control-code pass-through instead of
+# bracket names, and true divergence glyphs (£/↑/←) instead of ASCII transliterations. See
+# docs/petscii.md for the full policy writeup.
+#
+# PROVENANCE (verified 2026-07-19):
+#   Primary: Unicode Character Database NamesList.txt, block "Symbols for Legacy Computing"
+#     (U+1FB00-U+1FBFF, added Unicode 13.0; originally proposed by Rebecca Bettencourt et al.,
+#     L2/19-025 "Proposal to add additional characters used by legacy computers, terminals,
+#     and teletext to the UCS", https://www.unicode.org/L2/L2019/19025-terminals-prop.pdf).
+#     Fetched: https://www.unicode.org/Public/UCD/latest/ucd/NamesList.txt (2026-07-19) --
+#     confirms the exact codepoints for every SLC-block glyph used below (0x1FB82, 0x1FB83,
+#     0x1FB87, 0x1FB88, 0x1FB8C, 0x1FB8F) by name.
+#   Corroborating: Linus Walleij's PETSCII-to-Unicode tables (the basis for the Python
+#     "cbmcodecs2" package), Codeberg mirror:
+#       https://codeberg.org/irmen/cbmcodecs2/raw/branch/main/mappings/petscii_c64en_uc.txt
+#       https://codeberg.org/irmen/cbmcodecs2/raw/branch/main/mappings/petscii_c64en_lc.txt
+#     Pre-dates Unicode 13 and represents graphics glyphs with no *older* codepoint via
+#     Private-Use-Area "(CUS)" placeholders (e.g. 0xF130) -- used here only to corroborate
+#     GLYPH SHAPE/IDENTITY, never as a codepoint source (PUA codepoints are never emitted).
+#   Corroborating (variant/shift substitutions only): 9999years/Unicode-PETSCII's
+#     graphic-table.txt / table.txt (community table adapted from Wikipedia's PETSCII
+#     character-ROM chart image), https://github.com/9999years/Unicode-PETSCII -- the only
+#     source found that documents the small number of cells where the shifted-mode glyph at
+#     a byte genuinely differs from the unshifted-mode glyph at the same byte (see
+#     `shifted_overrides` below), and the 0x64-0x79-ish sub-block "eighth-offset line
+#     segment" glyphs never adopted into Unicode at all.
+#
+# DISCREPANCIES / KNOWN LIMITATIONS (see `default_fallback_codepoint`):
+#   1. Byte 0xBA (unshifted): Walleij/cbmcodecs2 names it "ONE EIGHTH BLOCK UP AND LEFT (CUS)"
+#      via a Private-Use-Area placeholder; no Unicode 13 Symbols-for-Legacy-Computing name was
+#      found that confidently matches this exact glyph shape (candidates like U+1FB7D "LEFT
+#      AND UPPER ONE EIGHTH BLOCK" are plausible but unconfirmed against a real character-ROM
+#      image) -- left as the fallback codepoint rather than guessed.
+#   2. Unshifted bytes 0x64, 0x65, 0x66, 0x67, 0x68, 0x6C, 0x6F, 0x70, 0x72, 0x74, 0x79 (the
+#      "2px sub-cell eighth-offset horizontal/vertical bar" glyphs): proposed in L2/19-025 but
+#      NOT adopted into the final Unicode 13.0 Symbols for Legacy Computing block under any
+#      confirmable name -- no standard codepoint exists for these PETSCII glyphs at all, in
+#      any Unicode version to date. Left as the fallback codepoint (also documented in
+#      9999years/Unicode-PETSCII's new.txt as still-unencoded).
+#   3. The 0xA7/0xA9/0xAA shifted-vs-unshifted substitution and the 0xBA shifted "check mark"
+#      (see `shifted_overrides`) are corroborated only by the community
+#      9999years/Unicode-PETSCII table (itself derived from a Wikipedia character-ROM chart
+#      image), not independently re-derived from a primary Commodore character-ROM dump; both
+#      community sources agree with each other, but this project could not independently
+#      re-verify against pixel data.
+#   4. U+1FB82/1FB83/1FB87/1FB88/1FB8C/1FB8F (used for unshifted 0xB7/0xB8/0xAA/0xB6/0x7C/0xA8)
+#      are NOT present in the Walleij/cbmcodecs2 table (predates Unicode 13; PUA-only for
+#      these) nor in the 9999years/Unicode-PETSCII community table (still shows them as
+#      unencoded -- apparently not refreshed since Unicode 13 shipped). Verified directly
+#      against the primary NamesList.txt per the note above and preferred over both
+#      corroborating sources for exactly these six bytes.
+unicode:
+  # Every byte not covered by a more specific rule below renders as this codepoint: the
+  # REPLACEMENT CHARACTER, standard Unicode convention for "no assigned glyph" -- see
+  # DISCREPANCIES #1/#2 above for the specific bytes that land here and why.
+  default_fallback_codepoint: 0xFFFD
+
+  # C0 (0x00-0x1F) and C1 (0x80-0x9F) controls: codepoint = byte value, verbatim. Same in
+  # both variants. (Deliberately NOT the escaped layer's petcat bracket names, and NOT the
+  # "real" ASCII control meaning where they differ, e.g. 0x8D is CBM shift-return, not LF --
+  # this layer is a pure, reversible byte<->codepoint identity for the control range.)
+  control_passthrough_ranges:
+    - { start: 0x00, end: 0x1F }
+    - { start: 0x80, end: 0x9F }
+
+  # Identity range: codepoint = byte value. Same in both variants.
+  identity_ranges:
+    - { start: 0x20, end: 0x3F }
+
+  # Bytes outside the two per-variant-divergent ranges below that render the same literal
+  # ASCII glyph in both variants (codepoint = byte value in every case; listed for
+  # completeness/documentation, same spirit as the escaped layer's `literals`).
+  literal_codepoints:
+    - { byte: 0x40, codepoint: 0x0040 } # @
+    - { byte: 0x5B, codepoint: 0x005B } # [
+    - { byte: 0x5D, codepoint: 0x005D } # ]
+
+  # PETSCII/ASCII divergences: true glyphs, NOT the escaped layer's ASCII transliteration.
+  ascii_divergences:
+    - { byte: 0x5C, codepoint: 0x00A3 } # £ POUND SIGN
+    - { byte: 0x5E, codepoint: 0x2191 } # ↑ UPWARDS ARROW
+    - { byte: 0x5F, codepoint: 0x2190 } # ← LEFTWARDS ARROW
+
+  # THE variant-divergent letter range (same range as the escaped layer's letter_range):
+  # codepoint = uppercase ASCII of the byte in unshifted_graphics, lowercase ASCII in
+  # shifted_lowercase.
+  letter_range:
+    start: 0x41
+    end: 0x5A
+    unshifted_graphics_case: upper
+    shifted_lowercase_case: lower
+
+  # THE OTHER variant-divergent range -- graphics glyphs in unshifted_graphics (true glyphs,
+  # not the escaped layer's {$xx} fallback), uppercase A-Z in shifted_lowercase (mirror image
+  # of letter_range: codepoint = uppercase ASCII of (byte - 0x20)). Bytes with no entry in
+  # `unshifted_graphics_codepoints` fall through to `default_fallback_codepoint` -- see
+  # DISCREPANCIES #2 above.
+  graphics_letter_range:
+    start: 0x61
+    end: 0x7A
+    shifted_lowercase_case: upper
+    unshifted_graphics_codepoints:
+      0x61: 0x2660 # ♠ BLACK SPADE SUIT
+      0x62: 0x2502 # │ BOX DRAWINGS LIGHT VERTICAL
+      0x63: 0x2500 # ─ BOX DRAWINGS LIGHT HORIZONTAL
+      0x69: 0x256E # ╮ BOX DRAWINGS LIGHT ARC DOWN AND LEFT
+      0x6A: 0x2570 # ╰ BOX DRAWINGS LIGHT ARC UP AND RIGHT
+      0x6B: 0x256F # ╯ BOX DRAWINGS LIGHT ARC UP AND LEFT
+      0x6D: 0x2572 # ╲ BOX DRAWINGS LIGHT DIAGONAL UPPER LEFT TO LOWER RIGHT
+      0x6E: 0x2571 # ╱ BOX DRAWINGS LIGHT DIAGONAL UPPER RIGHT TO LOWER LEFT
+      0x71: 0x25CF # ● BLACK CIRCLE
+      0x73: 0x2665 # ♥ BLACK HEART SUIT
+      0x75: 0x256D # ╭ BOX DRAWINGS LIGHT ARC DOWN AND RIGHT
+      0x76: 0x2573 # ╳ BOX DRAWINGS LIGHT DIAGONAL CROSS
+      0x77: 0x25CB # ○ WHITE CIRCLE
+      0x78: 0x2663 # ♣ BLACK CLUB SUIT
+      0x7A: 0x2666 # ♦ BLACK DIAMOND SUIT
+      # 0x64,0x65,0x66,0x67,0x68,0x6C,0x6F,0x70,0x72,0x74,0x79: see DISCREPANCIES #2.
+
+  # Graphics bytes shared by both variants outside the two ranges above (mostly identical
+  # between variants -- the small number of true per-variant substitutions are layered on
+  # top via `shifted_overrides`, applied after this table). Bytes with no entry fall through
+  # to `default_fallback_codepoint`.
+  graphics_codepoints:
+    0x60: 0x2500 # ─ BOX DRAWINGS LIGHT HORIZONTAL (restated for byte-range completeness)
+    0x7B: 0x253C # ┼ BOX DRAWINGS LIGHT VERTICAL AND HORIZONTAL
+    0x7C: 0x1FB8C # 🮌 LEFT HALF MEDIUM SHADE (see DISCREPANCIES #4)
+    0x7D: 0x2502 # │ BOX DRAWINGS LIGHT VERTICAL
+    0x7E: 0x03C0 # π GREEK SMALL LETTER PI (unshifted; shifted overridden below)
+    0x7F: 0x25E5 # ◥ BLACK UPPER RIGHT TRIANGLE (unshifted; shifted overridden below)
+    0xA0: 0x00A0 # NO-BREAK SPACE
+    0xA1: 0x258C # ▌ LEFT HALF BLOCK
+    0xA2: 0x2584 # ▄ LOWER HALF BLOCK
+    0xA3: 0x2594 # ▔ UPPER ONE EIGHTH BLOCK
+    0xA4: 0x2581 # ▁ LOWER ONE EIGHTH BLOCK
+    0xA5: 0x258F # ▏ LEFT ONE EIGHTH BLOCK
+    0xA6: 0x2592 # ▒ MEDIUM SHADE
+    0xA7: 0x2595 # ▕ RIGHT ONE EIGHTH BLOCK (unshifted; shifted overridden below)
+    0xA8: 0x1FB8F # 🮏 LOWER HALF MEDIUM SHADE (see DISCREPANCIES #4)
+    0xA9: 0x25E4 # ◤ BLACK UPPER LEFT TRIANGLE (unshifted; shifted overridden below)
+    0xAA: 0x1FB87 # 🮇 RIGHT ONE QUARTER BLOCK (unshifted; see DISCREPANCIES #4; shifted overridden below)
+    0xAB: 0x251C # ├ BOX DRAWINGS LIGHT VERTICAL AND RIGHT
+    0xAC: 0x2597 # ▗ QUADRANT LOWER RIGHT
+    0xAD: 0x2514 # └ BOX DRAWINGS LIGHT UP AND RIGHT
+    0xAE: 0x2510 # ┐ BOX DRAWINGS LIGHT DOWN AND LEFT
+    0xAF: 0x2582 # ▂ LOWER ONE QUARTER BLOCK
+    0xB0: 0x250C # ┌ BOX DRAWINGS LIGHT DOWN AND RIGHT
+    0xB1: 0x2534 # ┴ BOX DRAWINGS LIGHT UP AND HORIZONTAL
+    0xB2: 0x252C # ┬ BOX DRAWINGS LIGHT DOWN AND HORIZONTAL
+    0xB3: 0x2524 # ┤ BOX DRAWINGS LIGHT VERTICAL AND LEFT
+    0xB4: 0x258E # ▎ LEFT ONE QUARTER BLOCK
+    0xB5: 0x258D # ▍ LEFT THREE EIGHTHS BLOCK
+    0xB6: 0x1FB88 # 🮈 RIGHT THREE EIGHTHS BLOCK (see DISCREPANCIES #4)
+    0xB7: 0x1FB82 # 🮂 UPPER ONE QUARTER BLOCK (see DISCREPANCIES #4)
+    0xB8: 0x1FB83 # 🮃 UPPER THREE EIGHTHS BLOCK (see DISCREPANCIES #4)
+    0xB9: 0x2583 # ▃ LOWER THREE EIGHTHS BLOCK
+    0xBA: 0xFFFD # unshifted: see DISCREPANCIES #1 (shifted overridden below to U+2713)
+    0xBB: 0x2596 # ▖ QUADRANT LOWER LEFT
+    0xBC: 0x259D # ▝ QUADRANT UPPER RIGHT
+    0xBD: 0x2518 # ┘ BOX DRAWINGS LIGHT UP AND LEFT
+    0xBE: 0x2598 # ▘ QUADRANT UPPER LEFT
+    0xBF: 0x259A # ▚ QUADRANT UPPER LEFT AND LOWER RIGHT
+
+  # The handful of cells (see DISCREPANCIES #3) where shifted_lowercase's actual glyph at a
+  # byte differs from unshifted_graphics's glyph at the SAME byte (distinct character-ROM
+  # row, not merely case) -- applied on top of `graphics_codepoints` for shifted_lowercase
+  # only. A `null` codepoint means "no assigned Unicode codepoint in this variant" -- falls
+  # through to `default_fallback_codepoint`.
+  shifted_overrides:
+    0x7E: 0x2592 # ▒ MEDIUM SHADE (unshifted at 0x7E is π)
+    0x7F: null # unencoded (unshifted at 0x7F is ◥)
+    0xA7: null # unencoded (unshifted at 0xA7 is ▕ U+2595)
+    0xA9: null # unencoded (unshifted at 0xA9 is ◤ U+25E4)
+    0xAA: 0x2595 # ▕ RIGHT ONE EIGHTH BLOCK (unshifted at 0xAA is U+1FB87)
+    0xBA: 0x2713 # ✓ CHECK MARK (unshifted at 0xBA is unencoded, see DISCREPANCIES #1)
+
+  # Real PETSCII hardware mirror ranges: these bytes decode to the SAME codepoint as their
+  # canonical (low) partner, in whichever variant is active. Applied last, after all rules
+  # and overrides above (so it always mirrors the FINAL resolved codepoint of the partner
+  # byte, including shifted_overrides).
+  mirror_ranges:
+    - { start: 0xC0, end: 0xDF, mirrors_start: 0x60 }
+    - { start: 0xE0, end: 0xFE, mirrors_start: 0xA0 }
+    - { byte: 0xFF, mirrors: 0x7E }
