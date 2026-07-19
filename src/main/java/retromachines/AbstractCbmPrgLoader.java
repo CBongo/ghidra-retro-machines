@@ -276,6 +276,13 @@ abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader {
 	}
 
 	@Override
+	protected void createDefaultMemoryBlocks(Program program, ImporterSettings settings) {
+		// The descriptor memory map already covers the 6502 pspec's ZERO_PAGE/STACK
+		// ranges; suppress the stock loader's conflict log noise (bead grm-rua).
+		DescriptorSupport.createDefaultMemoryBlocksQuietly(program, settings.log());
+	}
+
+	@Override
 	protected void load(Program program, ImporterSettings settings)
 			throws CancelledException, IOException {
 

@@ -34,10 +34,13 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
 import generic.jar.ResourceFile;
+import ghidra.app.plugin.processors.generic.MemoryBlockDefinition;
 import ghidra.app.util.MemoryBlockUtils;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.framework.Application;
+import ghidra.framework.store.LockException;
 import ghidra.program.model.address.Address;
+import ghidra.program.model.address.AddressOverflowException;
 import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.data.CategoryPath;
 import ghidra.program.model.data.DataType;
@@ -50,9 +53,12 @@ import ghidra.program.model.lang.LanguageID;
 import ghidra.program.model.lang.LanguageNotFoundException;
 import ghidra.program.model.listing.CommentType;
 import ghidra.program.model.listing.Program;
+import ghidra.program.model.mem.InvalidAddressException;
 import ghidra.program.model.mem.MemoryBlock;
+import ghidra.program.model.mem.MemoryConflictException;
 import ghidra.program.model.symbol.SourceType;
 import ghidra.program.util.DefaultLanguageService;
+import ghidra.util.exception.AssertException;
 
 /**
  * The system-neutral half of the descriptor-driven loader stack: everything a loader
@@ -167,6 +173,37 @@ final class DescriptorSupport {
 	static void markVolatileIfIo(MemoryBlock block, String kind) {
 		if (block != null && kind.equals("io")) {
 			block.setVolatile(true);
+		}
+	}
+
+	/**
+	 * Creates the language's pspec-declared default memory blocks (e.g. 6502 ZERO_PAGE and
+	 * STACK), quietly skipping any that conflict with blocks already in memory. Descriptor
+	 * loaders override {@code AbstractProgramLoader.createDefaultMemoryBlocks} with this
+	 * because their memory maps already cover those ranges, making the conflict expected
+	 * rather than an error worth logging.
+	 */
+	static void createDefaultMemoryBlocksQuietly(Program program, MessageLog log) {
+		int id = program.startTransaction("Create default blocks");
+		try {
+			for (MemoryBlockDefinition blockDef : program.getLanguage().getDefaultMemoryBlocks()) {
+				try {
+					blockDef.createBlock(program);
+				}
+				catch (LockException e) {
+					throw new AssertException("Unexpected Error", e);
+				}
+				catch (MemoryConflictException e) {
+					// Descriptor-defined memory already covers this range.
+				}
+				catch (AddressOverflowException | InvalidAddressException e) {
+					log.appendMsg("Failed to add language defined memory block " + blockDef +
+						": " + e.getMessage());
+				}
+			}
+		}
+		finally {
+			program.endTransaction(id, true);
 		}
 	}
 
