@@ -87,7 +87,7 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 	private static final String LEGACY_C64_MAP_PATH = "machines/c64.map";
 
 	/** Descriptor-selected analyzer policy. The class/category remain C64-named for saved
-	 * Program and AnalyzerRunLog compatibility; only the token/archive policy varies. */
+	 * Program compatibility; only the token/archive policy varies. */
 	private record BasicConfig(String mapPath, String gdtPath, String tokenEnum,
 			List<BasicDescriptorTokenLookup.PrefixDefinition> prefixEnums,
 			PetsciiMapper.Variant petsciiVariant) {
@@ -190,6 +190,21 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 	@Override
 	public boolean added(Program program, AddressSetView set, TaskMonitor monitor, MessageLog log)
 			throws CancelledException {
+		boolean completed = analyze(program, set, monitor, log);
+		if (completed) {
+			AnalyzerRunLog.markCompleted(program, getClass());
+		}
+		return completed;
+	}
+
+	/**
+	 * Performs one analyzer run without changing the persistent run-log state. Keeping
+	 * completion recording in {@link #added} gives every exit the same policy: successful
+	 * work and successful no-ops are complete, while reported failures, cancellation, and
+	 * unexpected exceptions remain eligible for a later initial-run retry.
+	 */
+	private boolean analyze(Program program, AddressSetView set, TaskMonitor monitor,
+			MessageLog log) throws CancelledException {
 		BasicConfig config;
 		try {
 			config = basicConfig(program);
@@ -197,7 +212,6 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 		catch (IOException | RuntimeException e) {
 			log.appendMsg(getName(), "Failed to read CBM BASIC descriptor policy: " +
 				e.getMessage());
-			AnalyzerRunLog.markCompleted(program, getClass());
 			return false;
 		}
 		if (config == null) {
@@ -276,7 +290,6 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 		}
 		catch (IOException e) {
 			log.appendMsg(getName(), "Failed to open " + config.gdtPath() + ": " + e.getMessage());
-			AnalyzerRunLog.markCompleted(program, getClass());
 			return false;
 		}
 		PetsciiMapper petscii;
@@ -286,7 +299,6 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 		catch (IOException e) {
 			log.appendMsg(getName(), "Failed to load petscii.map: " + e.getMessage());
 			gdtMgr.close();
-			AnalyzerRunLog.markCompleted(program, getClass());
 			return false;
 		}
 
@@ -367,7 +379,6 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 			gdtMgr.close();
 		}
 
-		AnalyzerRunLog.markCompleted(program, getClass());
 		return true;
 	}
 

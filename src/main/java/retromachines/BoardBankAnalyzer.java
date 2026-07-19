@@ -156,6 +156,12 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			program.getListing().getNumInstructions();
 	}
 
+	/** Structural completion predicate, protected so the banktest lifecycle probe can
+	 * verify that changing rounds stay initial while stable rounds complete. */
+	protected static boolean reachedFixpoint(long entryFingerprint, long exitFingerprint) {
+		return entryFingerprint == exitFingerprint;
+	}
+
 	protected BoardBankAnalyzer(String name, String description) {
 		super(name, description, AnalyzerType.INSTRUCTION_ANALYZER);
 		// Run after Ghidra's own reference analysis has laid down the default (base-space)
@@ -225,13 +231,11 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		}
 		catch (IOException e) {
 			log.appendMsg(getName(), "Failed to load " + mapPath + ": " + e.getMessage());
-			AnalyzerRunLog.markCompleted(program, getClass());
 			return false;
 		}
 
 		BoardModel board = BoardModel.parse(map, log, getName(), mapPath);
 		if (board == null) {
-			AnalyzerRunLog.markCompleted(program, getClass());
 			return true;
 		}
 
@@ -241,7 +245,6 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		if (mechanisms.isEmpty()) {
 			log.appendMsg(getName(), "no usable bank-switch strategy in " + mapPath +
 				" banking; skipping bank-state analysis");
-			AnalyzerRunLog.markCompleted(program, getClass());
 			return true;
 		}
 
@@ -324,17 +327,25 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// --- Context stamping: only when the language actually declares the register ---
 		stampContextRegister(program, banking, flow.stateIn(), listing, board.mask(), log, verbose);
 
-		if (verbose) {
+		// A phase-2 retarget may have disassembled code or created functions. Such a
+		// round returned successfully, but it is deliberately not the completed initial
+		// analysis: the framework must invoke us again so the whole-program fixpoint can
+		// reach that newly discovered code. Keep first-run verbosity alive and defer the
+		// definitive summary until an invocation leaves the structural fingerprint stable.
+		boolean stable = reachedFixpoint(fingerprint, fingerprint(program));
+		if (verbose && stable) {
 			log.appendMsg(getName(), tag + ": " + flow.stateIn().size() + " instructions tracked, " +
 				refsAdded + " overlay references added/confirmed, " + warnings +
 				" unknown-state warnings, " + violations + " bank-state requirement violations");
 		}
 
-		// Record the ENTRY-time fingerprint only now that the run completed: phase 2's own
-		// disassembly/function side effects have moved the live counts past it, so the
-		// framework round they trigger will not match and will run in full.
-		LAST_COMPLETED.put(program, new RunStamp(fingerprint, mapPath));
-		AnalyzerRunLog.markCompleted(program, getClass());
+		// A structurally changing round is deliberately not complete and must not populate
+		// the completed-run cache. The framework follow-on therefore runs in full; only its
+		// stable entry fingerprint can become the redundant-rerun baseline.
+		if (stable) {
+			LAST_COMPLETED.put(program, new RunStamp(fingerprint, mapPath));
+			AnalyzerRunLog.markCompleted(program, getClass());
+		}
 		return true;
 	}
 

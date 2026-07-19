@@ -33,6 +33,8 @@ import java.util.Iterator;
 import java.util.List;
 
 import ghidra.app.script.GhidraScript;
+import ghidra.app.util.importer.MessageLog;
+import ghidra.framework.options.Options;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressRange;
 import ghidra.program.model.address.AddressSet;
@@ -42,11 +44,14 @@ import ghidra.program.model.listing.CommentType;
 import ghidra.program.model.listing.Data;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.InstructionIterator;
+import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.mem.MemoryBlockSourceInfo;
 import ghidra.program.model.symbol.Reference;
 import ghidra.program.model.symbol.Symbol;
 
+import retromachines.C64BasicAnalyzer;
+import retromachines.C64BankingAnalyzer;
 import retromachines.EmulationRecovery;
 import retromachines.IoPolicy;
 import retromachines.RecoveryResult;
@@ -977,6 +982,25 @@ public class VerifyBankTest extends GhidraScript {
 		c = eol(0x080D);
 		criterion("C6", c.contains("bank -> 5 (") && !c.contains("?"),
 			"fully known bank -> 5 comment at 080d: \"" + c + "\"");
+
+		// C7/C8 (grm-nip): the real autoanalysis reached and persisted a stable
+		// completion. C8 is the narrow unit check for the structural predicate used to
+		// distinguish a changing phase-2 round from its stable follow-on round.
+		String completionKey = "Retro Machines: initial run completed v2: " +
+			C64BankingAnalyzer.class.getName();
+		boolean completed = currentProgram.getOptions(Program.ANALYSIS_PROPERTIES)
+				.getBoolean(completionKey, false);
+		criterion("C7:lifecycle-completed", completed,
+			"stable banking autoanalysis persisted the v2 completion marker");
+		criterion("C8:lifecycle-fixpoint",
+			!BankLifecycleProbe.stable(17, 18) && BankLifecycleProbe.stable(18, 18),
+			"changing structural fingerprint stays initial; stable follow-on completes");
+	}
+
+	private static final class BankLifecycleProbe extends C64BankingAnalyzer {
+		private static boolean stable(long entryFingerprint, long exitFingerprint) {
+			return reachedFixpoint(entryFingerprint, exitFingerprint);
+		}
 	}
 
 	// ------------------------------------------------------------------
@@ -1093,7 +1117,7 @@ public class VerifyBankTest extends GhidraScript {
 	// c64basictest.prg criteria (C64PrgLoader + C64BasicAnalyzer, bead grm-odt.1)
 	// ------------------------------------------------------------------
 
-	private void checkC64Basictest() {
+	private void checkC64Basictest() throws Exception {
 		// B1: exact petcat-compatible detokenized line comments (PRE comment at each
 		// line's link-word address). Line addresses/text mirror mkbasictest.py.
 		criterion("B1:0801", "10 FOR I=1 TO 10".equals(preComment(0x0801)),
@@ -1128,7 +1152,95 @@ public class VerifyBankTest extends GhidraScript {
 		criterion("B4:noFuncAtLoad", !hasFunctionAt(0x0801),
 			"no function at the load address 0x0801 (BASIC line data, not code)");
 
-		// B5 (golden byte-identical dump) is enforced by run-banktest.sh's diff against
+		// B5: a completed normal run and a successful no-op both record completion, but a
+		// subsequent deliberately failed run must not do so. This exercises
+		// C64BasicAnalyzer's lifecycle wrapper directly: first force its wrapped-PRG no-op,
+		// then point the descriptor property at a missing map for the failure path.
+		Options analysis = currentProgram.getOptions(Program.ANALYSIS_PROPERTIES);
+		Options info = currentProgram.getOptions(Program.PROGRAM_INFO);
+		String completionKey =
+			"Retro Machines: initial run completed v2: " + C64BasicAnalyzer.class.getName();
+		String legacyCompletionKey =
+			"Retro Machines: initial run completed: " + C64BasicAnalyzer.class.getName();
+		boolean completedAfterSuccess = analysis.getBoolean(completionKey, false);
+		String mapProperty = "Retro Machine Map";
+		String wrappedProperty = "Retro Machines.CBM PRG Wrapped";
+		String originalMap = info.getString(mapProperty, "");
+		boolean originalWrapped = info.getBoolean(wrappedProperty, false);
+		boolean noOpReturn;
+		boolean completedAfterNoOp;
+		boolean failedReturn;
+		boolean completedAfterFailure;
+		boolean retryReturn;
+		boolean completedAfterRetry;
+		boolean retryWasVerbose;
+		boolean completionWasPresent = analysis.contains(completionKey);
+		boolean legacyCompletionWasPresent = analysis.contains(legacyCompletionKey);
+		boolean legacyCompletionValue = analysis.getBoolean(legacyCompletionKey, false);
+		boolean mapWasPresent = info.contains(mapProperty);
+		boolean wrappedWasPresent = info.contains(wrappedProperty);
+		try {
+			analysis.setBoolean(completionKey, false);
+			info.setBoolean(wrappedProperty, true);
+			noOpReturn = new C64BasicAnalyzer().added(currentProgram, new AddressSet(), monitor,
+				new MessageLog());
+			completedAfterNoOp = analysis.getBoolean(completionKey, false);
+
+			info.setBoolean(wrappedProperty, originalWrapped);
+			analysis.setBoolean(completionKey, false);
+			// Simulate a saved Program polluted by the pre-fix policy. The v2 lifecycle
+			// must ignore this old true marker and keep the failed run retryable/verbose.
+			analysis.setBoolean(legacyCompletionKey, true);
+			info.setString(mapProperty, "machines/missing-lifecycle-test.map");
+			failedReturn = new C64BasicAnalyzer().added(currentProgram, new AddressSet(), monitor,
+				new MessageLog());
+			completedAfterFailure = analysis.getBoolean(completionKey, false);
+
+			info.setString(mapProperty, originalMap);
+			MessageLog retryLog = new MessageLog();
+			retryReturn = new C64BasicAnalyzer().added(currentProgram, new AddressSet(), monitor,
+				retryLog);
+			completedAfterRetry = analysis.getBoolean(completionKey, false);
+			retryWasVerbose = retryLog.toString().contains("CBM BASIC Detokenizer running:");
+		}
+		finally {
+			if (mapWasPresent) {
+				info.setString(mapProperty, originalMap);
+			}
+			else {
+				info.removeOption(mapProperty);
+			}
+			if (wrappedWasPresent) {
+				info.setBoolean(wrappedProperty, originalWrapped);
+			}
+			else {
+				info.removeOption(wrappedProperty);
+			}
+			if (completionWasPresent) {
+				analysis.setBoolean(completionKey, completedAfterSuccess);
+			}
+			else {
+				analysis.removeOption(completionKey);
+			}
+			if (legacyCompletionWasPresent) {
+				analysis.setBoolean(legacyCompletionKey, legacyCompletionValue);
+			}
+			else {
+				analysis.removeOption(legacyCompletionKey);
+			}
+		}
+		criterion("B5", completedAfterSuccess && noOpReturn && completedAfterNoOp &&
+			!failedReturn && !completedAfterFailure && retryReturn && completedAfterRetry &&
+			retryWasVerbose,
+			"successful work/no-op record completion; failed run remains incomplete; " +
+				"the retry is verbose and completes " +
+				"(success=" + completedAfterSuccess + ", noOpReturn=" + noOpReturn +
+				", completedAfterNoOp=" + completedAfterNoOp + ", failedReturn=" +
+				failedReturn + ", completedAfterFailure=" + completedAfterFailure +
+				", retryReturn=" + retryReturn + ", completedAfterRetry=" +
+				completedAfterRetry + ", retryVerbose=" + retryWasVerbose + ")");
+
+		// B6 (golden byte-identical dump) is enforced by run-banktest.sh's diff against
 		// expected/c64basictest.dump; nothing further to check here.
 	}
 
