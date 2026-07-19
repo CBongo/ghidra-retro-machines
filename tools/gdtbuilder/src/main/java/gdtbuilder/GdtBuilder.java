@@ -174,9 +174,7 @@ public class GdtBuilder {
 		Map<String, Integer> explicitSizeByName = new HashMap<>();
 		for (Map<String, Object> typeDef : typeDefs) {
 			String name = (String) typeDef.get("name");
-			if (byName.put(name, typeDef) != null) {
-				throw new IllegalArgumentException("types[] name '" + name + "' is declared twice");
-			}
+			byName.put(name, typeDef);
 			if ("struct".equals(typeDef.get("kind"))) {
 				StructSource src = resolveFields(typeDef, descriptorDir);
 				fieldsByName.put(name, src.fields);

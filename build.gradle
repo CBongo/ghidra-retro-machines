@@ -152,10 +152,6 @@ fileTree(dir: 'machines', include: '*.yaml').each { yamlFile ->
 		dependsOn 'compileGdtBuilderJava'
 		classpath = sourceSets.gdtBuilder.runtimeClasspath
 		mainClass = 'gdtbuilder.GdtBuilder'
-		// Includes and external type sources may live below machines/. A broad recursive
-		// input keeps composition changes correct; the compiler still receives only the
-		// top-level descriptor selected by the non-recursive task factory above.
-		inputs.files(fileTree(dir: 'machines', include: '**/*.yaml'))
 		doFirst {
 			file('data/machines').mkdirs()
 		}
@@ -172,7 +168,6 @@ fileTree(dir: 'machines', include: '*.yaml').each { yamlFile ->
 		dependsOn 'compileGdtBuilderJava'
 		classpath = sourceSets.gdtBuilder.runtimeClasspath
 		mainClass = 'gdtbuilder.MapCompiler'
-		inputs.files(fileTree(dir: 'machines', include: '**/*.yaml'))
 		doFirst {
 			file('data/machines').mkdirs()
 		}
