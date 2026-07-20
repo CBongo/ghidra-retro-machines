@@ -112,7 +112,7 @@ GRADLE_CHECKS=()
 if has_chunk all; then
 	RUN_HEADLESS=1
 	RUNNER_CHUNKS=(all)
-	GRADLE_CHECKS=(verifyPetsciiMapper verifyBitAlgebra)
+	GRADLE_CHECKS=(verifyPetsciiMapper verifyCharsets verifyBitAlgebra)
 else
 	for chunk in c64-banking c64-loader c64-recovery basic-petscii basic-dialects pet-loader c128-loader nes-banking; do
 		if has_chunk "$chunk"; then
@@ -121,7 +121,7 @@ else
 		fi
 	done
 	if has_chunk basic-petscii || has_chunk basic-dialects; then
-		GRADLE_CHECKS+=(verifyPetsciiMapper)
+		GRADLE_CHECKS+=(verifyPetsciiMapper verifyCharsets)
 	fi
 	if has_chunk bit-algebra; then
 		GRADLE_CHECKS+=(verifyBitAlgebra)
