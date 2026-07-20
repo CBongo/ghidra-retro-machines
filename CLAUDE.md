@@ -105,7 +105,8 @@ Parallelization rules:
   one working tree.
 - Gradle caches under `~/.gradle` are shared across worktrees and gradle file-locks them
   itself — safe to build concurrently.
-- The shared Ghidra install (`D:/ghidra_12.1.2_PUBLIC`, override via `GRM_GHIDRA_INSTALL`)
+- The shared Ghidra install (`D:/ghidra_<ver>_PUBLIC` per gradle.properties'
+  `ghidraTargetVersion`, override via `GRM_GHIDRA_INSTALL`)
   is read-only to this loop.
 
 The manual GUI install (delete+unzip the dist zip into
@@ -119,23 +120,27 @@ _Add a brief overview of your project architecture_
 
 ## Reading Ghidra source code
 
-Frequent task. Use, in order of preference:
+Frequent task. **The targeted Ghidra version is defined ONCE, in `gradle.properties`'
+`ghidraTargetVersion`** (`<ver>` below). By convention the install lives at
+`D:/ghidra_<ver>_PUBLIC` and the source checkout is kept on tag `Ghidra_<ver>_build`;
+build.gradle hard-fails if the resolved install's version disagrees. Use, in order of
+preference:
 
 1. **Local full checkout `D:\git\ghidra`** — primary source: fast navigation
    (Grep/Read/Glob) AND version-exact, since it is kept checked out on the
-   `Ghidra_12.1.2_build` tag (matching the install we build against). **READ-ONLY: never
-   `git fetch`/`checkout`/modify it** — the user manages its state. If version exactness
-   matters, sanity-check first: `git -C D:/git/ghidra describe --tags` should print
-   `Ghidra_12.1.2_build`; if it prints something else, fall back to source #2/#3 for
-   API-sensitive details (and mention the mismatch to the user).
-2. **The 12.1.2 install `D:\ghidra_12.1.2_PUBLIC`** — always matches what we compile
-   against. `Ghidra/Features/Base/lib/**` has *extracted* `.java` files (grep/read them
+   `Ghidra_<ver>_build` tag. **READ-ONLY: never `git fetch`/`checkout`/modify it** — the
+   user manages its state. If version exactness matters, sanity-check first:
+   `git -C D:/git/ghidra describe --tags` should print `Ghidra_<ver>_build`; if it prints
+   something else, fall back to source #2/#3 for API-sensitive details (and mention the
+   mismatch to the user).
+2. **The install `D:\ghidra_<ver>_PUBLIC`** — always matches what we compile against.
+   `Ghidra/Features/Base/lib/**` has *extracted* `.java` files (grep/read them
    directly). Most other modules ship `lib/<Module>-src.zip` instead — list/read with
    `unzip -l` / `unzip -p <zip> path/To/File.java` (Bash). Fallback/cross-check.
 3. **GitHub MCP** (`mcp__github__get_file_contents`, repo `NationalSecurityAgency/ghidra`,
-   ref `Ghidra_12.1.2_build`) — tag-exact single files without touching the local checkout.
+   ref `Ghidra_<ver>_build`) — tag-exact single files without touching the local checkout.
 
-Always confirm version-sensitive APIs against 12.1.2 (source #2 or #3), not memory or web
+Always confirm version-sensitive APIs against the targeted version (source #2 or #3), not memory or web
 docs: 12.x broke 11.x-era APIs (e.g. `charset_info.xml`/`CharsetInfo` →
 `charset_info.json`/`ghidra.util.charset.CharsetInfoManager`; the classic 6-arg
 `Loader.load` → `ImporterSettings`).

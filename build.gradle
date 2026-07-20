@@ -42,6 +42,30 @@ else {
 	ghidraInstallDir = "<REPLACE>"
 }
 
+// Targeted-version guard (bead grm-9r7): gradle.properties' ghidraTargetVersion is the single
+// source of truth for which Ghidra this extension targets. The stock resolution above lets the
+// GHIDRA_INSTALL_DIR env var silently win over -P flags, so a stale env var would otherwise
+// build against the wrong Ghidra with no warning; instead, compare the resolved install's own
+// application.properties and fail loudly on any mismatch.
+def ghidraTargetVersion = project.property('ghidraTargetVersion')
+def ghidraAppPropsFile = new File(ghidraInstallDir, 'Ghidra/application.properties')
+if (!ghidraAppPropsFile.isFile()) {
+	throw new GradleException("Resolved GHIDRA_INSTALL_DIR '${ghidraInstallDir}' is not a " +
+		"Ghidra install (no Ghidra/application.properties). This project targets Ghidra " +
+		"${ghidraTargetVersion} -- expected at D:/ghidra_${ghidraTargetVersion}_PUBLIC.")
+}
+def ghidraInstalledVersion = new Properties().with { props ->
+	ghidraAppPropsFile.withInputStream { props.load(it) }
+	props.getProperty('application.version')
+}
+if (ghidraInstalledVersion != ghidraTargetVersion) {
+	throw new GradleException("Resolved Ghidra install is ${ghidraInstalledVersion} " +
+		"(${ghidraInstallDir}) but this project targets ${ghidraTargetVersion} " +
+		"(gradle.properties: ghidraTargetVersion). Set " +
+		"GHIDRA_INSTALL_DIR=D:/ghidra_${ghidraTargetVersion}_PUBLIC for this invocation, or " +
+		"update ghidraTargetVersion when deliberately retargeting.")
+}
+
 task distributeExtension {
 	group = "Ghidra"
 

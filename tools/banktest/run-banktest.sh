@@ -44,7 +44,10 @@ set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EXPECTED_DIR="$SCRIPT_DIR/expected"
-GHIDRA_HEADLESS="${GHIDRA_HEADLESS:-D:/ghidra_12.1.2_PUBLIC/support/analyzeHeadless.bat}"
+# Default headless path derives from gradle.properties' ghidraTargetVersion (single source of
+# truth for the targeted Ghidra version, bead grm-9r7); GHIDRA_HEADLESS still overrides.
+GRM_TARGET_VERSION="$(sed -n 's/^ghidraTargetVersion=//p' "$SCRIPT_DIR/../../gradle.properties")"
+GHIDRA_HEADLESS="${GHIDRA_HEADLESS:-D:/ghidra_${GRM_TARGET_VERSION}_PUBLIC/support/analyzeHeadless.bat}"
 
 usage() {
 	echo "usage: $0 [check|bless] [chunk ...]" >&2

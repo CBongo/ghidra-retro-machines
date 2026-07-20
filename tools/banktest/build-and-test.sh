@@ -11,7 +11,8 @@
 # Usage: build-and-test.sh [check|bless] [chunk ...]
 #
 # Environment overrides:
-#   GRM_GHIDRA_INSTALL   Ghidra install dir (default D:/ghidra_12.1.2_PUBLIC).
+#   GRM_GHIDRA_INSTALL   Ghidra install dir (default D:/ghidra_<ver>_PUBLIC, where <ver>
+#                        is gradle.properties' ghidraTargetVersion).
 #                        Exported as GHIDRA_INSTALL_DIR for the gradle build --
 #                        build.gradle checks the GHIDRA_INSTALL_DIR env var
 #                        FIRST, and the ambient one on this machine may point
@@ -135,7 +136,14 @@ if [ "$MODE" = "bless" ] && [ "$RUN_HEADLESS" -ne 1 ]; then
 	exit 2
 fi
 
-GRM_GHIDRA_INSTALL="${GRM_GHIDRA_INSTALL:-D:/ghidra_12.1.2_PUBLIC}"
+# Default install derives from gradle.properties' ghidraTargetVersion (the single source of
+# truth for the targeted Ghidra version, bead grm-9r7); GRM_GHIDRA_INSTALL still overrides.
+GRM_TARGET_VERSION="$(sed -n 's/^ghidraTargetVersion=//p' "$REPO_ROOT/gradle.properties")"
+if [ -z "$GRM_TARGET_VERSION" ]; then
+	echo "FAIL: ghidraTargetVersion not found in $REPO_ROOT/gradle.properties" >&2
+	exit 2
+fi
+GRM_GHIDRA_INSTALL="${GRM_GHIDRA_INSTALL:-D:/ghidra_${GRM_TARGET_VERSION}_PUBLIC}"
 GRADLE="${GRADLE:-/d/gradle-8.13/bin/gradle}"
 
 native() {
