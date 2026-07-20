@@ -117,6 +117,27 @@ loop.
 
 _Add a brief overview of your project architecture_
 
+## Reading Ghidra source code
+
+Frequent task. Use, in order of preference:
+
+1. **Local full checkout `D:\git\ghidra`** — fastest for navigation (Grep/Read/Glob).
+   **READ-ONLY: never `git fetch`/`checkout`/modify it.** It sits on `master` (newer than
+   the 12.1.2 we build against), and its `origin` is the CBongo fork (no 12.1.x tags).
+   Good for finding classes and understanding mechanisms; not authoritative for
+   version-exact APIs.
+2. **The 12.1.2 install `D:\ghidra_12.1.2_PUBLIC`** — authoritative for what we compile
+   against. `Ghidra/Features/Base/lib/**` has *extracted* `.java` files (grep/read them
+   directly). Most other modules ship `lib/<Module>-src.zip` instead — list/read with
+   `unzip -l` / `unzip -p <zip> path/To/File.java` (Bash). Slower; use to confirm details.
+3. **GitHub MCP** (`mcp__github__get_file_contents`, repo `NationalSecurityAgency/ghidra`,
+   ref `Ghidra_12.1.2_build`) — tag-exact single files without touching the local checkout.
+
+Always confirm version-sensitive APIs against 12.1.2 (source #2 or #3), not memory or web
+docs: 12.x broke 11.x-era APIs (e.g. `charset_info.xml`/`CharsetInfo` →
+`charset_info.json`/`ghidra.util.charset.CharsetInfoManager`; the classic 6-arg
+`Loader.load` → `ImporterSettings`).
+
 ## Conventions & Patterns
 
 _Add your project-specific conventions here_
