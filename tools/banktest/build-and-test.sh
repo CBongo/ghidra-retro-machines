@@ -42,7 +42,7 @@ usage() {
 usage: $0 [check|bless] [chunk ...]
 
 Chunks: c64-banking c64-loader c64-recovery basic-petscii basic-dialects pet-loader c128-loader nes-banking
-        bit-algebra all
+        petscii-strings bit-algebra all
 
 With no chunks, all is selected. Use --list-chunks to print this list.
 EOF
@@ -58,6 +58,7 @@ basic-dialects PET BASIC 4/C128 BASIC 7 token dialects plus C64 BASIC 2 regressi
 pet-loader    PET 4032 descriptor, PRG placement, IO types, and fixed ROM slots
 c128-loader   C128 native BASIC PRG placement, fixed ROM slots, and MMU IO
 nes-banking   NES banking and MMC fixtures
+petscii-strings PetsciiStringAnalyzer C64 PRG fixture, plus verifyCharsets
 bit-algebra   verifyBitAlgebra (no extension build/install required alone)
 all           Every chunk (the default)
 EOF
@@ -86,7 +87,7 @@ fi
 
 for chunk in "${REQUESTED_CHUNKS[@]}"; do
 	case "$chunk" in
-		c64-banking|c64-loader|c64-recovery|basic-petscii|basic-dialects|pet-loader|c128-loader|nes-banking|bit-algebra|all) ;;
+		c64-banking|c64-loader|c64-recovery|basic-petscii|basic-dialects|pet-loader|c128-loader|nes-banking|petscii-strings|bit-algebra|all) ;;
 		*)
 			echo "FAIL: unknown chunk '$chunk'" >&2
 			usage >&2
@@ -114,13 +115,13 @@ if has_chunk all; then
 	RUNNER_CHUNKS=(all)
 	GRADLE_CHECKS=(verifyPetsciiMapper verifyCharsets verifyBitAlgebra)
 else
-	for chunk in c64-banking c64-loader c64-recovery basic-petscii basic-dialects pet-loader c128-loader nes-banking; do
+	for chunk in c64-banking c64-loader c64-recovery basic-petscii basic-dialects pet-loader c128-loader nes-banking petscii-strings; do
 		if has_chunk "$chunk"; then
 			RUN_HEADLESS=1
 			RUNNER_CHUNKS+=("$chunk")
 		fi
 	done
-	if has_chunk basic-petscii || has_chunk basic-dialects; then
+	if has_chunk basic-petscii || has_chunk basic-dialects || has_chunk petscii-strings; then
 		GRADLE_CHECKS+=(verifyPetsciiMapper verifyCharsets)
 	fi
 	if has_chunk bit-algebra; then

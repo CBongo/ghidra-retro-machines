@@ -16,6 +16,11 @@ system:
     # time and only falls back to stock 6502 if it is somehow unavailable, so no
     # fallback_language is declared here.
     language: "6510:LE:16:default"
+  text:
+    encoding: petscii
+    variant: unshifted_graphics   # matches formats.prg.basic.petscii_variant below
+    string_search:
+      min_length: 4
 
 memory:
   regions:                        # always visible, never banked

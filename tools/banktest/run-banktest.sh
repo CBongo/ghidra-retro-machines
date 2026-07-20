@@ -19,6 +19,7 @@
 #   pet-loader    PET 4032 descriptor, PRG placement, IO types, and fixed ROM slots
 #   c128-loader   C128 native BASIC PRG placement, fixed ROM slots, and MMU IO
 #   nes-banking   all NES banking/MMC fixtures
+#   petscii-strings PetsciiStringAnalyzer C64 PRG fixture
 #   all           every chunk above
 #
 #   --list-chunks  print the available chunk names and exit
@@ -60,6 +61,7 @@ list_chunks() {
 		pet-loader \
 		c128-loader \
 		nes-banking \
+		petscii-strings \
 		all
 }
 
@@ -86,7 +88,7 @@ fi
 # fixtures, so a typo cannot leave partial output behind.
 for chunk in "${CHUNKS[@]}"; do
 	case "$chunk" in
-		c64-banking|c64-loader|c64-recovery|basic-petscii|basic-dialects|pet-loader|c128-loader|nes-banking|all) ;;
+		c64-banking|c64-loader|c64-recovery|basic-petscii|basic-dialects|pet-loader|c128-loader|nes-banking|petscii-strings|all) ;;
 		*)
 			echo "unknown chunk: $chunk" >&2
 			usage
@@ -158,6 +160,7 @@ fi
 if selected pet-loader; then generate mkpettest.py "$WORK/prg"; fi
 if selected c128-loader; then generate mkc128test.py "$WORK/prg"; fi
 if selected nes-banking; then generate mknesbanktest.py "$WORK/nes"; fi
+if selected petscii-strings; then generate mkpetsciistringtest.py "$WORK/prg"; fi
 
 # Imports $2 (a .prg or .nes fixture) via $3 (the loader name), runs VerifyBankTest.java,
 # extracts the normalized dump, and check|bless's it against expected/$1.dump.
@@ -286,6 +289,10 @@ if selected nes-banking; then
 	run_one nesmmc3test2 "$WORK/nes/nesmmc3test2.nes" NesRomLoader
 	run_one nesserialtest "$WORK/nes/nesserialtest.nes" NesRomLoader
 	run_one nesmmc1test "$WORK/nes/nesmmc1test.nes" NesRomLoader
+fi
+
+if selected petscii-strings; then
+	run_one petsciistringtest "$WORK/prg/petsciistringtest.prg" C64PrgLoader
 fi
 
 if [ $fail -ne 0 ]; then

@@ -165,6 +165,12 @@ public class VerifyBankTest extends GhidraScript {
 			return;
 		}
 
+		if (name.contains("petsciistringtest")) {
+			checkPetsciiStringTest();
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
+
 		dump();
 
 		if (name.contains("nesmmc1test")) {
@@ -1242,6 +1248,62 @@ public class VerifyBankTest extends GhidraScript {
 
 		// B6 (golden byte-identical dump) is enforced by run-banktest.sh's diff against
 		// expected/c64basictest.dump; nothing further to check here.
+	}
+
+	// ------------------------------------------------------------------
+	// petsciistringtest.prg criteria (C64PrgLoader + PetsciiStringAnalyzer, bead grm-1.4.4)
+	// ------------------------------------------------------------------
+
+	// Label addresses mirror mkpetsciistringtest.py's build() layout exactly.
+	private static final long PST_STR_A = 0x2001; // "TEST", null-terminated, len 4
+	private static final long PST_STR_B = 0x2006; // "ABCD", unterminated, len 4
+	private static final long PST_STR_C = 0x200B; // "HI!", 3 bytes, below min_length
+	private static final long PST_STR_D = 0x200F; // 0x61-0x64, outside PETSCII range
+	private static final long PST_STR_E = 0x2014; // "1,2;3", unterminated, len 5
+
+	private void checkPetsciiStringTest() {
+		Data a = currentProgram.getListing().getDefinedDataAt(addr(PST_STR_A));
+		Data b = currentProgram.getListing().getDefinedDataAt(addr(PST_STR_B));
+		Data c = currentProgram.getListing().getDefinedDataAt(addr(PST_STR_C));
+		Data d = currentProgram.getListing().getDefinedDataAt(addr(PST_STR_D));
+		Data e = currentProgram.getListing().getDefinedDataAt(addr(PST_STR_E));
+
+		println("=== BANKDUMP BEGIN ===");
+		println("STR_A " + describeData(a));
+		println("STR_B " + describeData(b));
+		println("STR_C " + describeData(c));
+		println("STR_D " + describeData(d));
+		println("STR_E " + describeData(e));
+		println("=== BANKDUMP END ===");
+
+		// P1: null-terminated run typed TerminatedPetsciiString over run+terminator.
+		criterion("P1:terminated", a != null &&
+			"TerminatedPetsciiString".equals(a.getDataType().getName()) && a.getLength() == 5,
+			describeData(a));
+
+		// P2: unterminated run typed PetsciiString over exactly the run (no terminator).
+		criterion("P2:fixed-unterminated", b != null &&
+			"PetsciiString".equals(b.getDataType().getName()) && b.getLength() == 4,
+			describeData(b));
+
+		// P3: below-min_length decoy stays untyped.
+		criterion("P3:decoy-untyped", c == null, describeData(c));
+
+		// P4: graphics/control bytes outside the recognizer's range never match.
+		criterion("P4:graphics-untyped", d == null, describeData(d));
+
+		// P5: ASCII-range punctuation/digits count as PETSCII text too.
+		criterion("P5:ascii-punct-typed", e != null &&
+			"PetsciiString".equals(e.getDataType().getName()) && e.getLength() == 5,
+			describeData(e));
+	}
+
+	private static String describeData(Data d) {
+		if (d == null) {
+			return "<undefined>";
+		}
+		return d.getDataType().getName() + " len=" + d.getLength() + " value=" +
+			d.getDefaultValueRepresentation();
 	}
 
 	// ------------------------------------------------------------------

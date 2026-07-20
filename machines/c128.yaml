@@ -18,6 +18,11 @@ system:
     # The 8502 is 6510/6502 compatible and retains the $00/$01 zero-page I/O port.
     # The bundled 6510 language therefore accurately models this CPU-visible feature.
     language: "6510:LE:16:default"
+  text:
+    encoding: petscii
+    variant: unshifted_graphics   # matches formats.prg.basic.petscii_variant below
+    string_search:
+      min_length: 4
 
 memory:
   regions:

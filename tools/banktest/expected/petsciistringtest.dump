@@ -1,0 +1,5 @@
+STR_A TerminatedPetsciiString len=5 value="TEST"
+STR_B PetsciiString len=4 value="ABCD"
+STR_C <undefined>
+STR_D <undefined>
+STR_E PetsciiString len=5 value="1,2;3"

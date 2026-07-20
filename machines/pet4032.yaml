@@ -27,6 +27,11 @@ system:
     # The PET uses a plain MOS 6502.  Unlike the C64's 6510, it has no CPU-local
     # $00/$01 I/O port and no CPU-controlled memory banking.
     language: "6502:LE:16:default"
+  text:
+    encoding: petscii
+    variant: unshifted_graphics   # matches formats.prg.basic.petscii_variant below
+    string_search:
+      min_length: 4
 
 memory:
   regions:

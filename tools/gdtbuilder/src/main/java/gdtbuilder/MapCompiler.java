@@ -169,6 +169,15 @@ public class MapCompiler {
 				out.put("board", b);
 			}
 		}
+		// Text/string-search policy (bead grm-1.4 Phase E): system-wide default text
+		// encoding, e.g. { encoding: petscii, variant: unshifted_graphics, string_search:
+		// { min_length: 4 } }. Passed through verbatim (numeric scalars normalized to
+		// ints, same as params/formats elsewhere) -- PetsciiStringAnalyzer interprets the
+		// keys, MapCompiler only shuttles them.
+		Map<String, Object> text = (Map<String, Object>) system.get("text");
+		if (text != null) {
+			out.put("text", normalizeValues(text));
+		}
 		return out;
 	}
 

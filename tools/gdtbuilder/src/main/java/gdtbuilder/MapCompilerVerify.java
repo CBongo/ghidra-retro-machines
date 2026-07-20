@@ -31,6 +31,7 @@ public class MapCompilerVerify {
 		try {
 			verifyFixedRomAndFormats(temp);
 			verifyRomTargetErrors(temp);
+			verifySystemText(temp);
 			System.err.println("Map compiler verification passed");
 		}
 		finally {
@@ -81,6 +82,42 @@ public class MapCompilerVerify {
 			"formats tree or numeric header metadata was not preserved");
 		check("load_address".equals(prg.get("placement").getAsString()),
 			"formats placement was not preserved");
+	}
+
+	/** {@code system.text} (bead grm-1.4 Phase E) passes through verbatim, with numeric
+	 *  scalars normalized to ints like every other opaque params tree. */
+	private static void verifySystemText(Path temp) throws Exception {
+		Path yaml = temp.resolve("text.yaml");
+		Path map = temp.resolve("text.map");
+		write(yaml, """
+			schema: 2
+			system:
+			  id: text-test
+			  name: Text Test
+			  cpu: { language: '6502:LE:16:default' }
+			  text:
+			    encoding: petscii
+			    variant: unshifted_graphics
+			    string_search:
+			      min_length: 4
+			memory:
+			  regions:
+			    - { name: RAM, start: 0, end: 0xffff, kind: ram }
+			  windows: []
+			""");
+		MapCompiler.main(new String[] { yaml.toString(), map.toString() });
+
+		JsonObject doc = JsonParser.parseString(Files.readString(map)).getAsJsonObject();
+		JsonObject text = doc.getAsJsonObject("system").getAsJsonObject("text");
+		check(text != null, "system.text was not emitted");
+		check("petscii".equals(text.get("encoding").getAsString()),
+			"system.text.encoding was not preserved");
+		check("unshifted_graphics".equals(text.get("variant").getAsString()),
+			"system.text.variant was not preserved");
+		JsonObject search = text.getAsJsonObject("string_search");
+		check(search != null, "system.text.string_search was not emitted");
+		check(search.get("min_length").getAsInt() == 4,
+			"system.text.string_search.min_length was not normalized to an int");
 	}
 
 	private static void verifyRomTargetErrors(Path temp) throws Exception {
