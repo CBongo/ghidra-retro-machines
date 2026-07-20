@@ -121,15 +121,17 @@ _Add a brief overview of your project architecture_
 
 Frequent task. Use, in order of preference:
 
-1. **Local full checkout `D:\git\ghidra`** — fastest for navigation (Grep/Read/Glob).
-   **READ-ONLY: never `git fetch`/`checkout`/modify it.** It sits on `master` (newer than
-   the 12.1.2 we build against), and its `origin` is the CBongo fork (no 12.1.x tags).
-   Good for finding classes and understanding mechanisms; not authoritative for
-   version-exact APIs.
-2. **The 12.1.2 install `D:\ghidra_12.1.2_PUBLIC`** — authoritative for what we compile
+1. **Local full checkout `D:\git\ghidra`** — primary source: fast navigation
+   (Grep/Read/Glob) AND version-exact, since it is kept checked out on the
+   `Ghidra_12.1.2_build` tag (matching the install we build against). **READ-ONLY: never
+   `git fetch`/`checkout`/modify it** — the user manages its state. If version exactness
+   matters, sanity-check first: `git -C D:/git/ghidra describe --tags` should print
+   `Ghidra_12.1.2_build`; if it prints something else, fall back to source #2/#3 for
+   API-sensitive details (and mention the mismatch to the user).
+2. **The 12.1.2 install `D:\ghidra_12.1.2_PUBLIC`** — always matches what we compile
    against. `Ghidra/Features/Base/lib/**` has *extracted* `.java` files (grep/read them
    directly). Most other modules ship `lib/<Module>-src.zip` instead — list/read with
-   `unzip -l` / `unzip -p <zip> path/To/File.java` (Bash). Slower; use to confirm details.
+   `unzip -l` / `unzip -p <zip> path/To/File.java` (Bash). Fallback/cross-check.
 3. **GitHub MCP** (`mcp__github__get_file_contents`, repo `NationalSecurityAgency/ghidra`,
    ref `Ghidra_12.1.2_build`) — tag-exact single files without touching the local checkout.
 
