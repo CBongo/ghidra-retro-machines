@@ -87,10 +87,33 @@ public final class CharsetProviderVerify {
 		cases += checkUnmappable(shifted);
 
 		// -----------------------------------------------------------------------------
-		// 5. Screen-code charsets: not yet supported (grm-1.4.5), checked tolerantly.
+		// 5. Screen-code charsets (bead grm-1.4.5): full check, same shape as the PETSCII
+		// checks above -- names resolve, decode matches the independently re-derived
+		// screen-code<->PETSCII permutation (composed with PetsciiMapper.toDisplayUnicode),
+		// canonical encode round-trip, and the unmappable encoder path.
 		// -----------------------------------------------------------------------------
-		cases += checkScreencode("x-c64-screencode-unshifted");
-		cases += checkScreencode("x-c64-screencode-shifted");
+		cases += checkNamesResolve("x-c64-screencode-unshifted", "c64-screencode",
+			"X-C64-Screencode-Unshifted");
+		cases += checkNamesResolve("x-c64-screencode-shifted");
+
+		Charset screenUnshifted = Charset.forName("x-c64-screencode-unshifted");
+		Charset screenShifted = Charset.forName("x-c64-screencode-shifted");
+
+		if (!available.containsKey(screenUnshifted.name())) {
+			throw new AssertionError(
+				"x-c64-screencode-unshifted missing from Charset.availableCharsets()");
+		}
+		if (!available.containsKey(screenShifted.name())) {
+			throw new AssertionError(
+				"x-c64-screencode-shifted missing from Charset.availableCharsets()");
+		}
+		cases += 2;
+
+		cases += checkScreencodeVariant(screenUnshifted, mapper, Variant.UNSHIFTED_GRAPHICS);
+		cases += checkScreencodeVariant(screenShifted, mapper, Variant.SHIFTED_LOWERCASE);
+
+		cases += checkUnmappable(screenUnshifted);
+		cases += checkUnmappable(screenShifted);
 
 		System.out.println("CHARSETS PASS (" + cases + " cases)");
 	}
@@ -190,24 +213,95 @@ public final class CharsetProviderVerify {
 		return 1;
 	}
 
-	/** Screen-code charsets are not yet backed by data (grm-1.4.5 ships screencode.map);
-	 *  RetroCharsetProvider is documented to silently serve nothing for them until then. This
-	 *  check is tolerant of either state: if the map has appeared (e.g. a future dev running
-	 *  this ahead of grm-1.4.5 landing officially), it just runs the same decode sanity check
-	 *  instead of failing. */
-	private static long checkScreencode(String name) {
-		if (!Charset.isSupported(name)) {
-			return 1;
+	// -----------------------------------------------------------------------------------
+	// Screen-code reference permutation (bead grm-1.4.5), independently re-derived here from
+	// machines/generated/screencode.yaml's header rather than trusted from the built table --
+	// same "catch a transcription/logic error in EITHER copy" spirit as
+	// tools/petscii/PetsciiMapperVerify.java's reference tables.
+	//
+	//   screen 0x00-0x1F <- petscii 0x40-0x5F
+	//   screen 0x20-0x3F <- petscii 0x20-0x3F (identity)
+	//   screen 0x40-0x5F <- petscii 0x60-0x7F
+	//   screen 0x60-0x7F <- petscii 0xA0-0xBF
+	//   screen 0x80-0xFF: same glyph as screen (b & 0x7F) (reverse video, lossy on decode)
+	// -----------------------------------------------------------------------------------
+
+	/** The PETSCII byte whose glyph screen code {@code b} (0x00-0x7F only) shares, per
+	 *  screencode.yaml's range_rules. */
+	private static int screenToPetsciiByte(int b) {
+		if (b >= 0x00 && b <= 0x1F) {
+			return 0x40 + b;
 		}
-		Charset cs = Charset.forName(name);
-		// Minimal sanity: every byte decodes to something, round-trips through the charset's
-		// own encoder for at least the identity/ASCII range.
+		if (b >= 0x20 && b <= 0x3F) {
+			return b;
+		}
+		if (b >= 0x40 && b <= 0x5F) {
+			return 0x60 + (b - 0x40);
+		}
+		if (b >= 0x60 && b <= 0x7F) {
+			return 0xA0 + (b - 0x60);
+		}
+		throw new AssertionError(String.format("screen byte 0x%02x not in the 0x00-0x7F " +
+			"primary-range domain", b));
+	}
+
+	/** The expected Unicode codepoint for screen code {@code b} in the given variant: resolved
+	 *  through the permutation above onto the SAME {@code PetsciiMapper.toDisplayUnicode}
+	 *  reference the PETSCII checks above use, folding 0x80-0xFF onto {@code b & 0x7F} first
+	 *  (reverse video -- see screencode.yaml's header). */
+	private static int expectedScreencodeCodepoint(int b, PetsciiMapper mapper, Variant variant) {
+		int low = b & 0x7F;
+		int petsciiByte = screenToPetsciiByte(low);
+		return mapper.toDisplayUnicode(petsciiByte, variant).codePointAt(0);
+	}
+
+	/** The lowest screen-code byte (0-255) whose expected codepoint equals {@code codepoint} in
+	 *  the given variant -- derived by brute-force scan of the reference permutation above
+	 *  (never assumed to be exactly {@code b & 0x7F}, per this bead's task instructions), used
+	 *  as the reference "canonical(b)" for the encode round-trip check below. */
+	private static int lowestScreenByteForCodepoint(int codepoint, PetsciiMapper mapper,
+			Variant variant) {
+		for (int b = 0; b < 256; b++) {
+			if (expectedScreencodeCodepoint(b, mapper, variant) == codepoint) {
+				return b;
+			}
+		}
+		throw new AssertionError(String.format(
+			"no screen byte decodes to U+%04X in variant %s", codepoint, variant));
+	}
+
+	/** Full screen-code charset check, mirroring {@link #checkVariant}: decode agreement with
+	 *  the independently re-derived reference permutation, and canonical encode round-trip
+	 *  (encode(decode(b)) == canonical(b), canonical derived from the table itself via
+	 *  {@link #lowestScreenByteForCodepoint}, not assumed to be {@code b & 0x7F}). */
+	private static long checkScreencodeVariant(Charset cs, PetsciiMapper mapper, Variant variant)
+			throws CharacterCodingException {
 		long cases = 0;
 		for (int b = 0; b < 256; b++) {
-			String decoded = new String(new byte[] { (byte) b }, cs);
-			if (decoded.isEmpty()) {
+			byte[] bytes = { (byte) b };
+
+			String decoded = new String(bytes, cs);
+			int expected = expectedScreencodeCodepoint(b, mapper, variant);
+			int decodedCp = decoded.codePointAt(0);
+			if (decodedCp != expected) {
 				throw new AssertionError(String.format(
-					"charset %s byte 0x%02x: decoded to empty string", name, b));
+					"charset %s byte 0x%02x: decoded U+%04X != expected screen-code " +
+						"permutation U+%04X", cs.name(), b, decodedCp, expected));
+			}
+			cases++;
+
+			int canonicalByte = lowestScreenByteForCodepoint(expected, mapper, variant);
+			ByteBuffer encoded = cs.newEncoder().encode(CharBuffer.wrap(decoded));
+			if (encoded.remaining() != 1) {
+				throw new AssertionError(String.format(
+					"charset %s byte 0x%02x: encoding decoded string produced %d bytes, expected 1",
+					cs.name(), b, encoded.remaining()));
+			}
+			int encodedByte = encoded.get() & 0xFF;
+			if (encodedByte != canonicalByte) {
+				throw new AssertionError(String.format(
+					"charset %s byte 0x%02x: encode(decode(byte))=0x%02x, expected canonical 0x%02x",
+					cs.name(), b, encodedByte, canonicalByte));
 			}
 			cases++;
 		}

@@ -158,7 +158,7 @@ public class PetsciiCompiler {
 		return arr;
 	}
 
-	private static JsonArray toJsonArray(int[] table) {
+	static JsonArray toJsonArray(int[] table) {
 		JsonArray arr = new JsonArray();
 		for (int cp : table) {
 			arr.add(cp);
@@ -169,7 +169,7 @@ public class PetsciiCompiler {
 	/** Builds the {@code encode} map for one variant: codepoint -&gt; canonical byte, where
 	 *  "canonical" means the LOWEST byte value that decodes to that codepoint (first-write-wins
 	 *  iterating bytes in ascending order). */
-	private static Map<Integer, Integer> buildEncodeMap(int[] unicodeTable) {
+	static Map<Integer, Integer> buildEncodeMap(int[] unicodeTable) {
 		Map<Integer, Integer> encode = new LinkedHashMap<>();
 		for (int b = 0; b < TABLE_SIZE; b++) {
 			encode.putIfAbsent(unicodeTable[b], b);
@@ -179,7 +179,7 @@ public class PetsciiCompiler {
 
 	/** Serializes an encode map as a JSON object keyed by DECIMAL codepoint string (see the
 	 *  {@code encode} comment at the call site for why decimal, not hex). */
-	private static JsonObject toEncodeJsonObject(Map<Integer, Integer> encode) {
+	static JsonObject toEncodeJsonObject(Map<Integer, Integer> encode) {
 		JsonObject obj = new JsonObject();
 		for (Map.Entry<Integer, Integer> e : encode.entrySet()) {
 			obj.addProperty(String.valueOf(e.getKey()), e.getValue());
@@ -280,8 +280,11 @@ public class PetsciiCompiler {
 		CONTROL, IDENTITY, LITERAL, DIVERGENCE, LETTER, GRAPHICS_LETTER, GRAPHICS
 	}
 
+	/** Package-visible (not private) so {@link ScreencodeCompiler} can reuse it to obtain
+	 *  the PETSCII unicode-layer tables its own permutation rules reference -- see that
+	 *  class's javadoc. */
 	@SuppressWarnings("unchecked")
-	private static void buildUnicodeLayer(Map<String, Object> doc, int[] unshiftedUnicode,
+	static void buildUnicodeLayer(Map<String, Object> doc, int[] unshiftedUnicode,
 			int[] shiftedUnicode) {
 		Map<String, Object> unicode = (Map<String, Object>) doc.get("unicode");
 		if (unicode == null) {
@@ -538,7 +541,7 @@ public class PetsciiCompiler {
 	/** Reads a YAML-parsed scalar (already a {@code Number} -- snakeyaml resolves {@code 0x..}
 	 *  hex literals to {@code Integer}/{@code Long} directly, no string parsing needed here)
 	 *  as an {@code int}. */
-	private static int hexInt(Object value) {
+	static int hexInt(Object value) {
 		return ((Number) value).intValue();
 	}
 }

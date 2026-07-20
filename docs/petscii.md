@@ -98,12 +98,23 @@ uppercase letters in the other) is treated uniformly across both variants in thi
 and falls to the `{$xx}` hex fallback, rather than trying to resolve that second ambiguity
 without more context than a single byte provides.
 
-### v1 has no Unicode
+### The Unicode layer (schema 2, bead grm-1.4.2)
 
-Output is ASCII-only bracket escapes. A `toDisplayUnicode()` that renders control codes and
-graphics glyphs as real Unicode characters (PETSCII's box-drawing/graphics range has a
-plausible target in the "Symbols for Legacy Computing" Unicode block) is a natural follow-up
-but is out of scope here.
+The escaped layer above remains the frozen v1 convention. Schema 2 added an independent
+`unicode:` layer to `petscii.yaml` — every byte resolves to a real Unicode codepoint via
+`PetsciiMapper.toDisplayUnicode()`: C0/C1 controls pass through as their own byte value,
+the three PETSCII/ASCII divergences render as true glyphs (`£`/`↑`/`←`), graphics use box
+drawing, block elements, and "Symbols for Legacy Computing" (U+1FB00–U+1FBFF, Unicode 13),
+and the mirror ranges decode to their canonical partner's glyph (encode always emits the
+canonical low byte). The same tables back the JVM charsets `x-petscii-unshifted`/
+`x-petscii-shifted` registered by `retromachines.charset.RetroCharsetProvider` (grm-1.4.3)
+and, via the screen-code permutation (`machines/generated/screencode.yaml`, grm-1.4.5),
+`x-c64-screencode-unshifted`/`-shifted`.
+
+Two caveats: a handful of PETSCII graphics glyphs were never adopted into Unicode and
+decode as U+FFFD (see the DISCREPANCIES block in `petscii.yaml`); and U+1FBxx glyphs render
+as tofu in fonts without Symbols-for-Legacy-Computing coverage — cosmetic only, the
+codepoints are correct.
 
 ## Runtime API
 

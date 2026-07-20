@@ -1,0 +1,137 @@
+# C64 VIC-II screen-code (screen RAM byte value) -> Unicode mapping (bead grm-1.4.5).
+#
+# Source of truth compiled by tools/gdtbuilder/src/main/java/gdtbuilder/ScreencodeCompiler.java
+# into the runtime artifact data/screencode.map (JSON, gitignored, never committed), consumed
+# by src/main/java/retromachines/charset/RetroCharsetProvider.java's
+# tableCharsetFromScreencodeJson (the "x-c64-screencode-unshifted"/"x-c64-screencode-shifted"
+# charsets, aliased "c64-screencode").
+#
+# SCOPE: screen codes are what the VIC-II reads out of screen RAM (what a POKE 1024,x or a
+# KERNAL PRINT ends up writing there) -- a DIFFERENT byte numbering from PETSCII (what's in
+# memory as text / what the keyboard sends). See machines/generated/petscii.yaml's header for
+# the PETSCII side of this split; this file is deliberately the mirror-image companion, kept
+# in a separate file so screen-code knowledge never leaks into the PETSCII source of truth.
+#
+# ---------------------------------------------------------------------------------------
+# PERMUTATION MODEL: screen codes are a KNOWN, FIXED PERMUTATION of the PETSCII glyph set --
+# every screen code shows the exact same glyph as some specific PETSCII byte, just filed under
+# a different number. Rather than re-stating the whole 256-entry unicode/graphics table a
+# second time (which would let the two copies drift, and would duplicate all the provenance
+# work already done in petscii.yaml's `unicode:` section), this file expresses ONLY the
+# permutation -- "screen code X uses the same glyph as PETSCII byte Y" -- and
+# ScreencodeCompiler resolves each screen code's actual codepoint (per variant) by looking up
+# the referenced PETSCII byte in petscii.yaml's already-verified `unicode:` layer. Glyph
+# knowledge (graphics shapes, per-variant letter case, ASCII divergences, mirror ranges, etc.)
+# therefore stays single-sourced in petscii.yaml; this file only ever adds NEW information
+# about how screen-code numbering maps onto that existing PETSCII byte space.
+#
+# The permutation has exactly four 32-byte range rules covering screen codes 0x00-0x7F, plus
+# one reverse-video rule covering 0x80-0xFF:
+#
+#   screen 0x00-0x1F <- petscii 0x40-0x5F   (@, A-Z, [, GBP, ], up-arrow, left-arrow)
+#   screen 0x20-0x3F <- petscii 0x20-0x3F   (identity: space .. punctuation/digits)
+#   screen 0x40-0x5F <- petscii 0x60-0x7F   (graphics block A)
+#   screen 0x60-0x7F <- petscii 0xA0-0xBF   (graphics block B)
+#   screen 0x80-0xFF: reverse video of screen (b & 0x7F) -- SAME glyph, no petscii reference
+#     of its own. NOTE on the mechanism: on C64/C128 this is NOT a video-chip inversion
+#     feature -- the character set data genuinely defines all 256 codes, and the stock
+#     CHARROM's 0x80-0xFF bitmaps happen to be pixel-inverted copies of 0x00-0x7F. (Hardware
+#     inversion of the upper half is an earlier-machine behavior, e.g. PET-era.) A custom
+#     charset could put anything in 0x80-0xFF; this mapping describes the STOCK ROM charset,
+#     where "0x80-0xFF = reverse-video twin of the low half" holds. This makes the
+#     screen-code -> glyph mapping LOSSY in that direction by design: decoding byte 0x80 and
+#     byte 0x00 both yield "@", indistinguishable once the reverse-video attribute itself is
+#     discarded. This is deliberate and documented, not a bug: a plain java.nio.charset
+#     Charset (java.lang.String, no color/attribute channel) has no way to carry "this glyph
+#     was shown in reverse video" alongside the character, so the decode necessarily folds
+#     0x80-0xFF onto their low-byte partner's glyph. The ENCODE direction canonicalizes the
+#     other way: encoding a codepoint always yields the LOWEST byte that decodes to it, which
+#     for every glyph in this table means the non-reverse-video (0x00-0x7F) screen code, never
+#     a 0x80-0xFF byte -- see ScreencodeCompiler's buildEncodeMap reuse from PetsciiCompiler.
+#
+# Both unicode_variants (unshifted_graphics/shifted_lowercase) fall out of this same
+# permutation for free: since each screen code is defined purely as "same glyph as petscii
+# byte Y", and petscii.yaml's unicode layer already carries a per-variant codepoint for every
+# byte Y, resolving the SAME permutation rule against petscii's shifted table automatically
+# yields the correct shifted screen-code table too -- no separate shifted permutation needs
+# to be hand-authored, and (per the verification note below) it also automatically reproduces
+# the correct real-hardware shifted-charset behavior without any per-byte override.
+# ---------------------------------------------------------------------------------------
+#
+# PROVENANCE (verified 2026-07-19):
+#   Primary: Commodore 64 Programmer's Reference Guide, Appendix B "Screen Display Codes"
+#     (screen-code <-> PETSCII conversion table; pages ~376-378 in the widely-mirrored PDF
+#     scan, e.g. https://www.commodore.ca/manuals/pdfs/commodore_64_programmers_reference_guide.pdf).
+#   Corroborating (fetched 2026-07-19): https://sta.c64.org/cbm64pettoscr.html, which states
+#     the PETSCII -> screen-code conversion algorithm as an explicit range table:
+#       PETSCII 0x00-0x1F -> screen 0x80-0x9F (add 0x80)
+#       PETSCII 0x20-0x3F -> screen 0x20-0x3F (no change)
+#       PETSCII 0x40-0x5F -> screen 0x00-0x1F (subtract 0x40)
+#       PETSCII 0x60-0x7F -> screen 0x40-0x5F (subtract 0x20)
+#       PETSCII 0x80-0x9F -> screen 0xC0-0xDF (add 0x40)
+#       PETSCII 0xA0-0xBF -> screen 0x60-0x7F (subtract 0x40)
+#       PETSCII 0xC0-0xDF -> screen 0x40-0x5F (subtract 0x80)
+#       PETSCII 0xE0-0xFE -> screen 0x60-0x7E (subtract 0x80)
+#       PETSCII 0xFF -> screen 0x5E (special case: BASIC's pi-symbol token)
+#     Inverting the four ranges this file cares about (the printable-glyph domain,
+#     screen 0x00-0x7F) confirms every range_rule below byte-for-byte: e.g. "PETSCII
+#     0x40-0x5F -> screen 0x00-0x1F" is the same fact as this file's "screen 0x00-0x1F <-
+#     petscii 0x40-0x5F". The reverse-video-of-low-127 model for screen 0x80-0xFF is
+#     standard, independently-documented C64 hardware behavior (VIC-II character generator
+#     only stores bitmaps for codes 0-127; bit 7 of the screen code selects reverse video of
+#     the same bitmap), consistent with -- but not itself asserted by -- the conversion table
+#     above (that table describes the PETSCII->screencode direction used by CHROUT/KERNAL
+#     PRINT, which never emits a reverse-video screen code for a plain PETSCII byte; the
+#     0x80-0xFF reverse-video screen-code half is a separate, purely-screen-RAM-side fact
+#     about how the VIC-II renders a POKE'd byte with bit 7 set).
+#
+#   Shifted-mode cross-check (per this bead's task instructions): screen 0x00-0x1F references
+#     petscii 0x40-0x5F, which includes petscii.yaml's `letter_range` (0x41-0x5A: upper in
+#     unshifted_graphics, LOWER in shifted_lowercase) -- so composing this file's permutation
+#     with petscii's per-variant unicode table makes screen codes 0x01-0x1A automatically
+#     render as lowercase a-z in the shifted variant, matching the real C64's lowercase
+#     charset (screen codes 1-26 show lowercase letters). Screen 0x40-0x5F references petscii
+#     0x60-0x7F, which includes petscii.yaml's `graphics_letter_range` (0x61-0x7A: graphics
+#     in unshifted_graphics, UPPER in shifted_lowercase) -- so screen codes 0x41-0x5A
+#     automatically render as uppercase A-Z in the shifted variant, matching the real C64's
+#     lowercase charset (screen codes 65-90 show uppercase letters, used for e.g. shifted
+#     keyboard input in lowercase mode). Both facts were checked against this table by hand
+#     (see the ScreencodeCompiler class javadoc for the code that composes them) and against
+#     https://www.pagetable.com/c64ref/charset/ (side-by-side screen-code charset images for
+#     both charsets) -- no cell disagreed with the reference chart, so NO per-byte override
+#     list was needed; the plain 4-range + reverse-video permutation, composed with
+#     petscii.yaml's existing per-variant tables, reproduces the real shifted screen charset
+#     exactly.
+# ---------------------------------------------------------------------------------------
+
+schema: 1
+
+provenance:
+  source: >
+    Commodore 64 Programmer's Reference Guide, Appendix B "Screen Display Codes"; corroborated
+    against sta.c64.org's PETSCII<->screen-code conversion table and pagetable.com/c64ref's
+    side-by-side charset chart images (see header for URLs and the exact cross-check
+    performed).
+  verified_date: "2026-07-19"
+
+# Each rule maps one 32-byte screen-code range onto a same-length PETSCII byte range: screen
+# code (screen_start + i) shows the SAME glyph as petscii byte (petscii_start + i), for i in
+# 0..(screen_end - screen_start). ScreencodeCompiler resolves that referenced PETSCII byte's
+# codepoint from petscii.yaml's unicode layer, separately per variant -- see this file's header
+# for why that alone is enough to get both variants right with no extra data here.
+range_rules:
+  - { screen_start: 0x00, screen_end: 0x1F, petscii_start: 0x40 }
+  - { screen_start: 0x20, screen_end: 0x3F, petscii_start: 0x20 } # identity
+  - { screen_start: 0x40, screen_end: 0x5F, petscii_start: 0x60 }
+  - { screen_start: 0x60, screen_end: 0x7F, petscii_start: 0xA0 }
+
+# Reverse-video half: screen codes 0x80-0xFF show the SAME glyph as screen code (b & 0x7F) --
+# no petscii reference of their own (see header "PERMUTATION MODEL" for why this is
+# deliberately lossy on encode). Expressed as a same-shape mirror rule (screen_start/
+# screen_end/mirrors_start, mirroring petscii.yaml's mirror_ranges convention) so
+# ScreencodeCompiler can treat it with the same "resolve after the primary ranges, then
+# consistency-recheck" two-pass structure PetsciiCompiler already uses for ITS mirror ranges.
+reverse_video:
+  screen_start: 0x80
+  screen_end: 0xFF
+  mirrors_start: 0x00
