@@ -252,7 +252,7 @@ abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader {
 		if (name == null || !name.toLowerCase().endsWith(".prg")) {
 			return loadSpecs;
 		}
-		if (provider.length() < 3) {
+		if (provider.length() < 2) {
 			return loadSpecs;
 		}
 		long loadAddress = (provider.readByte(1) & 0xffL) << 8 |
@@ -325,10 +325,9 @@ abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader {
 			int loadAddrHigh = provider.readByte(1) & 0xFF;
 			long loadAddr = (loadAddrHigh << 8) | loadAddrLow;
 			long prgLength = provider.length() - 2;
-			if (prgLength == 0) {
-				throw new IOException(
-					"PRG file has no program bytes past the 2-byte load address header");
-			}
+			// grm-z15: a bare 2-byte load-address header with no payload is a legal (if
+			// degenerate) PRG -- accept it and build the full memory map/symbols, just
+			// with no PRG bytes to place. See the prgLength == 0 handling below.
 			if (prgLength > 0x10000) {
 				throw new IOException("PRG payload is " + prgLength +
 					" bytes; a 16-bit CBM image may contain at most 65536 bytes");
@@ -340,8 +339,12 @@ abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader {
 				slicesByTarget.computeIfAbsent(slice.target().name(), k -> new ArrayList<>())
 					.add(slice);
 			}
-			FileBytes prgFileBytes =
-				MemoryBlockUtils.createFileBytes(program, provider, TaskMonitor.DUMMY);
+			// grm-z15: skip wrapping an empty provider in FileBytes for a zero-payload PRG --
+			// planPrgSlices returns no slices for length == 0, so nothing downstream needs
+			// prgFileBytes in that case, and an unused FileBytes over a 2-byte file would be
+			// a stray reference with no purpose.
+			FileBytes prgFileBytes = prgLength == 0 ? null
+					: MemoryBlockUtils.createFileBytes(program, provider, TaskMonitor.DUMMY);
 			Map<String, AddressSpace> placementSpaces = new HashMap<>();
 
 			// --- Always-visible regions ---
@@ -451,37 +454,72 @@ abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader {
 			// structural sniff of the line-link chain -- see CbmBasicWalker.isBasicStart,
 			// which never compares loadAddr against a hardcoded address such as $0801)
 			// and stay out of the analyzer's way.
-			boolean basicStart = !wrapped && looksLikeBasicStart(provider, loadAddr, prgLength);
-			try {
-				Address entryAddr = resolvePrgAddress(program, loadAddr);
-				if (entryAddr == null) {
-					throw new IOException("No placed PRG slice contains load address $" +
-						Long.toHexString(loadAddr));
-				}
-				program.getSymbolTable().createLabel(entryAddr,
-					entryAddr.getAddressSpace().equals(baseSpace) ? "entry" : "load_start",
-					SourceType.IMPORTED);
-				MemoryBlock entryBlock = program.getMemory().getBlock(entryAddr);
-				boolean executableEntry = entryBlock != null && entryBlock.isExecute();
-				if (executableEntry) {
+			if (prgLength == 0) {
+				// grm-z15: a zero-payload PRG places no bytes anywhere, so planPrgSlices/
+				// resolvePrgAddress have nothing to resolve -- the old code fell through to
+				// the "No placed PRG slice contains load address" IOException below, caught
+				// and logged as an ugly "Failed to set entry point". The memory map was
+				// already fully built above; just label the load address in base space
+				// directly. Not attempting basicStart detection here: a zero-length payload
+				// is trivially not a BASIC program.
+				try {
+					Address entryAddr = baseSpace.getAddress(loadAddr);
+					program.getSymbolTable().createLabel(entryAddr, "entry", SourceType.IMPORTED);
 					program.getSymbolTable().addExternalEntryPoint(entryAddr);
+					MemoryBlock entryBlock = program.getMemory().getBlock(entryAddr);
+					if (entryBlock != null && entryBlock.isExecute()) {
+						markAsFunction(program, "entry", entryAddr);
+					}
+					log.appendMsg("zero-payload PRG: built the memory map; no program bytes to " +
+						"place (labelled the load address $" + Long.toHexString(loadAddr) + ")");
 				}
-				if (basicStart) {
-					log.appendMsg("PRG looks like a BASIC-start program (well-formed line-link " +
-						"chain at 0x" + Long.toHexString(loadAddr) + "); not marking a function " +
-						"there -- a CBM BASIC analyzer can locate the real ML entry from a SYS line");
-				}
-				else if (executableEntry) {
-					markAsFunction(program, "entry", entryAddr);
-				}
-				if (!entryAddr.getAddressSpace().equals(baseSpace)) {
-					log.appendMsg("PRG load start $" + Long.toHexString(loadAddr) + " is in " +
-						entryAddr.getAddressSpace().getName() +
-						" beneath the initial-state ROM/IO mapping; no duplicate base entry was created");
+				catch (Exception e) {
+					log.appendMsg("Failed to set entry point: " + e.getMessage());
 				}
 			}
-			catch (Exception e) {
-				log.appendMsg("Failed to set entry point: " + e.getMessage());
+			else {
+				boolean basicStart = !wrapped && looksLikeBasicStart(provider, loadAddr, prgLength);
+				try {
+					Address entryAddr = resolvePrgAddress(program, loadAddr);
+					if (entryAddr == null) {
+						throw new IOException("No placed PRG slice contains load address $" +
+							Long.toHexString(loadAddr));
+					}
+					program.getSymbolTable().createLabel(entryAddr,
+						entryAddr.getAddressSpace().equals(baseSpace) ? "entry" : "load_start",
+						SourceType.IMPORTED);
+					MemoryBlock entryBlock = program.getMemory().getBlock(entryAddr);
+					boolean executableEntry = entryBlock != null && entryBlock.isExecute();
+					// grm-z15: addExternalEntryPoint (SymbolTable) merely records the address in
+					// the entry-point set -- it has no executability requirement and makes no
+					// code assumption, so call it unconditionally (this restores the pre-rework
+					// behavior; a load address landing in a non-executable block, e.g. the
+					// P6510 io block at $0000, must not be silently dropped from the entry-point
+					// set). Only the function mark below stays gated on executability.
+					program.getSymbolTable().addExternalEntryPoint(entryAddr);
+					if (basicStart) {
+						log.appendMsg("PRG looks like a BASIC-start program (well-formed line-link " +
+							"chain at 0x" + Long.toHexString(loadAddr) + "); not marking a function " +
+							"there -- a CBM BASIC analyzer can locate the real ML entry from a SYS line");
+					}
+					else if (executableEntry) {
+						markAsFunction(program, "entry", entryAddr);
+					}
+					else {
+						log.appendMsg("PRG load start $" + Long.toHexString(loadAddr) +
+							" is in non-executable block " +
+							(entryBlock == null ? "<none>" : entryBlock.getName()) +
+							"; recorded an external entry point but did not mark a function there");
+					}
+					if (!entryAddr.getAddressSpace().equals(baseSpace)) {
+						log.appendMsg("PRG load start $" + Long.toHexString(loadAddr) + " is in " +
+							entryAddr.getAddressSpace().getName() +
+							" beneath the initial-state ROM/IO mapping; no duplicate base entry was created");
+					}
+				}
+				catch (Exception e) {
+					log.appendMsg("Failed to set entry point: " + e.getMessage());
+				}
 			}
 
 			// Remember the ROM paths used (GUI only) so the next import defaults to them.

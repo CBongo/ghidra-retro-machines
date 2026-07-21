@@ -271,6 +271,16 @@ if selected c64-loader; then
 	run_one prgwraptest "$WORK/prg/prgwraptest.prg" C64PrgLoader
 	run_one c000emutest "$WORK/prg/c000emutest.prg" C64PrgLoader
 
+	# grm-z15.1: entry point in a non-executable block, and a zero-payload PRG.
+	run_one prgentrytest "$WORK/prg/prgentrytest.prg" C64PrgLoader
+	# A zero-payload PRG places no bytes anywhere, so with no ROM images supplied the
+	# whole memory map would stay uninitialized and analyzeHeadless refuses to import
+	# ("No memory blocks were defined") before VerifyBankTest ever runs. Supply the
+	# same synthetic ROMs romload.prg uses so there is initialized memory to import,
+	# while still exercising the zero-payload PRG placement path under test.
+	run_one prgemptytest "$WORK/prg/prgemptytest.prg" C64PrgLoader \
+		"-loader-kernalRom $(native "$WORK/prg/kernal.bin") -loader-basicRom $(native "$WORK/prg/basic.bin") -loader-chargenRom $(native "$WORK/prg/chargen.bin")"
+
 	# ROM loading (bead grm-mbm): import with synthetic ROM paths via the loaders'
 	# command-line options (-loader-<arg>), asserting the ROM blocks come back
 	# initialized. Exercises the same command-line option path a headless user would use.

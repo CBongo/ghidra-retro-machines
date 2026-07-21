@@ -100,6 +100,18 @@ public class VerifyBankTest extends GhidraScript {
 			return;
 		}
 
+		if (name.contains("prgentrytest")) {
+			checkPrgEntry();
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
+
+		if (name.contains("prgemptytest")) {
+			checkPrgEmpty();
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
+
 		if (name.contains("decryptloop")) {
 			checkDecryptLoop();
 			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
@@ -331,6 +343,50 @@ public class VerifyBankTest extends GhidraScript {
 			fileOffset(zeroPage) == 8 && fileOffset(vectors, 0x300) == 0x306,
 			"offsets=" + fileOffset(high) + "," + fileOffset(p6510) + "," +
 				fileOffset(zeroPage) + "," + fileOffset(vectors, 0x300));
+	}
+
+	// grm-z15.1: load address $0000 lands in the non-executable P6510 io block --
+	// an external entry point must still be recorded there (the label was already
+	// unconditional), but no function should be marked on non-executable memory.
+	private void checkPrgEntry() {
+		MemoryBlock block = currentProgram.getMemory().getBlock(addr(0));
+		boolean isEntryPoint = currentProgram.getSymbolTable().isExternalEntryPoint(addr(0));
+		boolean hasFunction = hasFunctionAt(0);
+		boolean nonExecutable = block != null && !block.isExecute();
+		boolean hasLabel = hasAnySymbol(0);
+
+		println("=== BANKDUMP BEGIN ===");
+		println("BLOCK " + describeBlock(block));
+		println("ENTRYPOINT " + isEntryPoint);
+		println("FUNCTION " + hasFunction);
+		println("LABEL " + hasLabel);
+		println("=== BANKDUMP END ===");
+
+		criterion("prgentry-external-entry-point", isEntryPoint,
+			"isExternalEntryPoint(0000)=" + isEntryPoint);
+		criterion("prgentry-no-function", !hasFunction, "function@0000=" + hasFunction);
+		criterion("prgentry-non-executable", nonExecutable, describeBlock(block));
+		criterion("prgentry-label-exists", hasLabel, "symbols@0000 present=" + hasLabel);
+	}
+
+	// grm-z15.1: a 2-byte PRG (load-address header, zero payload) must still import --
+	// the full memory map/symbols get built, but no PRG bytes are placed anywhere.
+	private void checkPrgEmpty() {
+		MemoryBlock kernal = currentProgram.getMemory().getBlock("KERNAL");
+		MemoryBlock prgBlock = currentProgram.getMemory().getBlock("PRG");
+		boolean mapBuilt = kernal != null && kernal.isInitialized();
+		boolean hasLabel = hasAnySymbol(0x0801);
+		boolean noPrgBlock = prgBlock == null;
+
+		println("=== BANKDUMP BEGIN ===");
+		println("KERNAL " + describeBlock(kernal));
+		println("LABEL@0801=" + hasLabel);
+		println("PRGBLOCK " + describeBlock(prgBlock));
+		println("=== BANKDUMP END ===");
+
+		criterion("prgempty-map-built", mapBuilt, describeBlock(kernal));
+		criterion("prgempty-label-exists", hasLabel, "symbols@0801 present=" + hasLabel);
+		criterion("prgempty-no-prg-block", noPrgBlock, describeBlock(prgBlock));
 	}
 
 	private void checkC000EmuRecovery() {

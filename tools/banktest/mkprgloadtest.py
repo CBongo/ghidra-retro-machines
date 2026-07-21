@@ -71,6 +71,12 @@ def main():
     write_prg(outdir, "prgplacementtest.prg", 0xa000, placement_payload())
     write_prg(outdir, "prgwraptest.prg", 0xfffc, wrapping_payload())
     write_prg(outdir, "c000emutest.prg", 0xc000, c000_emu_payload())
+    # grm-z15.1: load address $0000 lands the entry point in the non-executable
+    # P6510 io block -- proves an external entry point is still recorded there.
+    write_prg(outdir, "prgentrytest.prg", 0x0000, bytes((0x01, 0x02, 0x03)))
+    # grm-z15.1: a 2-byte PRG (load-address header only, zero payload) -- proves
+    # the loader still builds the full memory map and labels the load address.
+    write_prg(outdir, "prgemptytest.prg", 0x0801, b"")
 
 
 if __name__ == "__main__":
