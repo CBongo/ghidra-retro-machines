@@ -12,6 +12,9 @@ data/machines/*.map
 # Generated PETSCII display-string map (JSON, see docs/petscii.md) — build output, never committed
 data/petscii.map
 
+# Generated C64 screen-code map (JSON, permutation of the PETSCII map) — build output, never committed
+data/screencode.map
+
 # Compiled sleigh languages — build output of the sleighCompile task (from the committed
 # .slaspec/.sinc sources); regenerated on every build, never committed
 data/languages/*.sla
