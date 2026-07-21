@@ -271,6 +271,10 @@ if selected c64-loader; then
 	run_one prgwraptest "$WORK/prg/prgwraptest.prg" C64PrgLoader
 	run_one c000emutest "$WORK/prg/c000emutest.prg" C64PrgLoader
 
+	# grm-z15.2: 0x101-byte payload at $FF00 wraps 1 byte to $0000, straddling the
+	# P6510 R6510 struct's memory-block boundary (DDR initialized, PORT not).
+	run_one prgstraddletest "$WORK/prg/prgstraddletest.prg" C64PrgLoader
+
 	# grm-z15.1: entry point in a non-executable block, and a zero-payload PRG.
 	run_one prgentrytest "$WORK/prg/prgentrytest.prg" C64PrgLoader
 	# A zero-payload PRG places no bytes anywhere, so with no ROM images supplied the

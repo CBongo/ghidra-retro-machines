@@ -47,6 +47,16 @@ def wrapping_payload():
     return payload
 
 
+def straddling_payload():
+    """$FF00-$FFFF then 1 byte at $0000, straddling the P6510 DDR/PORT struct
+    (grm-z15.2): the wrap places exactly the DDR byte ($0000) in an initialized
+    block while PORT ($0001) stays uninitialized."""
+    payload = bytearray([0x5a] * 0x100)
+    payload[0xfc:0x100] = bytes((0xfc, 0xfd, 0xfe, 0xff))
+    payload += bytes((0xdd,))  # wraps to $0000 -- P6510 DDR marker byte
+    return payload
+
+
 def c000_emu_payload():
     key = 0xaa
     plaintext = bytes(range(1, 9))
@@ -70,6 +80,9 @@ def main():
     os.makedirs(outdir, exist_ok=True)
     write_prg(outdir, "prgplacementtest.prg", 0xa000, placement_payload())
     write_prg(outdir, "prgwraptest.prg", 0xfffc, wrapping_payload())
+    # grm-z15.2: 0x101-byte payload at $FF00 wraps exactly 1 byte to $0000,
+    # straddling the P6510 R6510 struct (DDR@$0000 initialized, PORT@$0001 not).
+    write_prg(outdir, "prgstraddletest.prg", 0xff00, straddling_payload())
     write_prg(outdir, "c000emutest.prg", 0xc000, c000_emu_payload())
     # grm-z15.1: load address $0000 lands the entry point in the non-executable
     # P6510 io block -- proves an external entry point is still recorded there.

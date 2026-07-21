@@ -106,6 +106,12 @@ public class VerifyBankTest extends GhidraScript {
 			return;
 		}
 
+		if (name.contains("prgstraddletest")) {
+			checkPrgStraddle();
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
+
 		if (name.contains("prgemptytest")) {
 			checkPrgEmpty();
 			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
@@ -343,6 +349,45 @@ public class VerifyBankTest extends GhidraScript {
 			fileOffset(zeroPage) == 8 && fileOffset(vectors, 0x300) == 0x306,
 			"offsets=" + fileOffset(high) + "," + fileOffset(p6510) + "," +
 				fileOffset(zeroPage) + "," + fileOffset(vectors, 0x300));
+	}
+
+	// grm-z15.2: a 0x101-byte payload at $FF00 wraps 1 byte to $0000, so the P6510 R6510
+	// struct straddles a carved memory-block boundary -- DDR@$0000 lands in an initialized
+	// 1-byte wrap block, PORT@$0001 in a separate uninitialized block. The grm-z15 review
+	// flagged this (item #3, PLAUSIBLE) as a case where whole-struct createData might fail
+	// and leave the port registers untyped; this fixture verifies it does NOT: in Ghidra
+	// 12.1.2 Listing.createData spans the boundary fine as long as every address is backed
+	// by some block, so the full R6510 struct is typed across the two blocks. Kept as a
+	// permanent guard that this non-bug stays a non-bug.
+	private void checkPrgStraddle() {
+		MemoryBlock ddrBlock = currentProgram.getMemory().getBlock(addr(0));
+		MemoryBlock portBlock = currentProgram.getMemory().getBlock(addr(1));
+		Data ddrData = currentProgram.getListing().getDefinedDataAt(addr(0));
+
+		println("=== BANKDUMP BEGIN ===");
+		println("DDRBLOCK " + describeBlock(ddrBlock));
+		println("PORTBLOCK " + describeBlock(portBlock));
+		println("DDRDATA " +
+			(ddrData == null ? "<none>" : ddrData.getDataType().getName() + " len=" + ddrData.getLength()));
+		println("BYTES " + bytesAt(null, 0, 1));
+		println("=== BANKDUMP END ===");
+
+		criterion("straddle-ddr-block-initialized", ddrBlock != null && ddrBlock.isInitialized(),
+			describeBlock(ddrBlock));
+		criterion("straddle-port-block-uninitialized",
+			portBlock != null && !portBlock.isInitialized(), describeBlock(portBlock));
+		criterion("straddle-distinct-blocks",
+			ddrBlock != null && portBlock != null && ddrBlock != portBlock,
+			"ddr=" + describeBlock(ddrBlock) + " port=" + describeBlock(portBlock));
+		// The whole R6510 struct (len 2) must come back typed at $0000, spanning the
+		// initialized DDR block and the uninitialized PORT block -- neither field silently
+		// dropped.
+		criterion("straddle-struct-typed",
+			ddrData != null && "R6510".equals(ddrData.getDataType().getName()) &&
+				ddrData.getLength() == 2,
+			ddrData == null ? "<none>" :
+				ddrData.getDataType().getName() + " len=" + ddrData.getLength());
+		criterion("straddle-ddr-byte", "dd".equals(bytesAt(null, 0, 1)), bytesAt(null, 0, 1));
 	}
 
 	// grm-z15.1: load address $0000 lands in the non-executable P6510 io block --
