@@ -1159,9 +1159,15 @@ public class VerifyBankTest extends GhidraScript {
 			"no function at the load address 0x0801 (BASIC line data, not code)");
 
 		// B5: a completed normal run and a successful no-op both record completion, but a
-		// subsequent deliberately failed run must not do so. This exercises
-		// C64BasicAnalyzer's lifecycle wrapper directly: first force its wrapped-PRG no-op,
-		// then point the descriptor property at a missing map for the failure path.
+		// subsequent deliberately failed run must not do so; a later retry with the
+		// descriptor property restored to its original value then completes again. This
+		// exercises C64BasicAnalyzer's lifecycle wrapper directly: first force its
+		// wrapped-PRG no-op, then point the descriptor property at a missing map for the
+		// failure path. Because that retry's inputs (map path, load address/length,
+		// slices) end up identical to the Program's already-completed initial analysis,
+		// it now also exercises the session-local redundant-re-run gate (grm-52z): the
+		// retry completes via a same-inputs SKIP, not by re-walking/re-detokenizing, so it
+		// logs the gate's skip message rather than "running:".
 		Options analysis = currentProgram.getOptions(Program.ANALYSIS_PROPERTIES);
 		Options info = currentProgram.getOptions(Program.PROGRAM_INFO);
 		String completionKey =
@@ -1179,7 +1185,7 @@ public class VerifyBankTest extends GhidraScript {
 		boolean completedAfterFailure;
 		boolean retryReturn;
 		boolean completedAfterRetry;
-		boolean retryWasVerbose;
+		boolean retrySkippedAsRedundant;
 		boolean completionWasPresent = analysis.contains(completionKey);
 		boolean legacyCompletionWasPresent = analysis.contains(legacyCompletionKey);
 		boolean legacyCompletionValue = analysis.getBoolean(legacyCompletionKey, false);
@@ -1207,7 +1213,10 @@ public class VerifyBankTest extends GhidraScript {
 			retryReturn = new C64BasicAnalyzer().added(currentProgram, new AddressSet(), monitor,
 				retryLog);
 			completedAfterRetry = analysis.getBoolean(completionKey, false);
-			retryWasVerbose = retryLog.toString().contains("CBM BASIC Detokenizer running:");
+			// grm-52z: same map path/load address/length/slices as the Program's original
+			// completed run, so the session-local gate short-circuits before the walk/GDT/
+			// PETSCII work that would otherwise log "running:".
+			retrySkippedAsRedundant = retryLog.toString().contains("skipping redundant re-analysis");
 		}
 		finally {
 			if (mapWasPresent) {
@@ -1237,14 +1246,15 @@ public class VerifyBankTest extends GhidraScript {
 		}
 		criterion("B5", completedAfterSuccess && noOpReturn && completedAfterNoOp &&
 			!failedReturn && !completedAfterFailure && retryReturn && completedAfterRetry &&
-			retryWasVerbose,
+			retrySkippedAsRedundant,
 			"successful work/no-op record completion; failed run remains incomplete; " +
-				"the retry is verbose and completes " +
+				"the retry completes via the same-inputs redundant-re-run gate " +
 				"(success=" + completedAfterSuccess + ", noOpReturn=" + noOpReturn +
 				", completedAfterNoOp=" + completedAfterNoOp + ", failedReturn=" +
 				failedReturn + ", completedAfterFailure=" + completedAfterFailure +
 				", retryReturn=" + retryReturn + ", completedAfterRetry=" +
-				completedAfterRetry + ", retryVerbose=" + retryWasVerbose + ")");
+				completedAfterRetry + ", retrySkippedAsRedundant=" + retrySkippedAsRedundant +
+				")");
 
 		// B6 (golden byte-identical dump) is enforced by run-banktest.sh's diff against
 		// expected/c64basictest.dump; nothing further to check here.

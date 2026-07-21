@@ -17,7 +17,11 @@ package retromachines;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.WeakHashMap;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -85,6 +89,32 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 
 	private static final String CATEGORY = "C64BasicAnalyzer";
 	private static final String LEGACY_C64_MAP_PATH = "machines/c64.map";
+
+	/**
+	 * Fingerprint of the last <em>completed</em> {@link #added} run per program (grm-52z,
+	 * mirrors {@code BoardBankAnalyzer.LAST_COMPLETED}/{@code RunStamp} from grm-5tl.13.3).
+	 * {@code added()} is a BYTE_ANALYZER callback that re-fires per DECRYPTED_ overlay
+	 * block the emulation-recovery analyzer produces; every round otherwise re-walks the
+	 * line chain, re-opens the GDT, reloads the PETSCII map, and re-types/re-comments every
+	 * line, all of which are no-ops once this analyzer's actual inputs -- the descriptor
+	 * path, the PRG's placement (load address/length), and the persisted slice list (the
+	 * PRG image bytes themselves are immutable after load) -- have not changed since the
+	 * last completed run. Session-local only (never persisted): unlike
+	 * {@link AnalyzerRunLog}'s flag, which must keep meaning "verbose logging on the
+	 * initial run only" and stay eligible to fire again in a fresh session, this cache's
+	 * only job is skipping <em>provably</em> redundant re-runs within one session. Keyed
+	 * weakly by {@link Program} identity so closed programs drop out; synchronized because
+	 * distinct programs may be analyzed on distinct threads.
+	 */
+	private static final Map<Program, RunStamp> LAST_COMPLETED =
+		Collections.synchronizedMap(new WeakHashMap<>());
+
+	/** What {@link #LAST_COMPLETED} remembers. {@code wrapped} is carried for documentation
+	 * parity with the analyzer's real input set even though only {@code false} ever reaches
+	 * the comparison site (a wrapped PRG returns before this stamp is built). */
+	private record RunStamp(String mapPath, long loadAddr, long prgLength, boolean wrapped,
+			List<AbstractCbmPrgLoader.LoadedSlice> loadedSlices) {
+	}
 
 	/** Descriptor-selected analyzer policy. The class/category remain C64-named for saved
 	 * Program compatibility; only the token/archive policy varies. */
@@ -249,20 +279,30 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 		List<AbstractCbmPrgLoader.LoadedSlice> loadedSlices =
 			AbstractCbmPrgLoader.getLoadedSlices(program);
 
+		boolean verbose = AnalyzerRunLog.isInitialRun(program, getClass());
+
+		// Redundant-re-run gate (grm-52z): see LAST_COMPLETED for the invariants. Checked
+		// before any walk/GDT-open/PETSCII-load work, since those are exactly what a
+		// same-inputs repeat round would otherwise redo for nothing.
+		RunStamp stamp = new RunStamp(config.mapPath(), loadAddr, prgLength, wrapped, loadedSlices);
+		if (stamp.equals(LAST_COMPLETED.get(program))) {
+			if (verbose) {
+				log.appendMsg(getName(), NAME + ": descriptor/placement/slices unchanged since " +
+					"the last completed run; skipping redundant re-analysis");
+			}
+			return true;
+		}
+
+		// One bulk-read pass per LoadedSlice (plus one per gap in legacy/unsliced
+		// coverage) instead of a per-byte resolvePrgAddress()+getByte() -- see
+		// buildByteCache's javadoc (grm-52z).
+		int[] byteCache = buildByteCache(program, baseSpace, loadedSlices, loadAddr, limitAddr);
+
 		CbmBasicWalker.ByteSource src = addr -> {
 			if (addr < imageLoadAddr || addr >= imageLimitAddr) {
 				return -1;
 			}
-			try {
-				Address placed = AbstractCbmPrgLoader.resolvePrgAddress(program, addr, loadedSlices);
-				if (placed == null) {
-					placed = baseSpace.getAddress(addr);
-				}
-				return program.getMemory().getByte(placed) & 0xFF;
-			}
-			catch (MemoryAccessException e) {
-				return -1;
-			}
+			return byteCache[(int) (addr - imageLoadAddr)];
 		};
 
 		// Same structural sniff C64PrgLoader used to decide whether to skip its
@@ -272,13 +312,14 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 		// without this same check here this analyzer would type/comment that bogus line
 		// (which is exactly what happened before this check was added -- see grm-odt.1).
 		if (!CbmBasicWalker.isBasicStart(src, loadAddr, limitAddr)) {
+			LAST_COMPLETED.put(program, stamp);
 			return true;
 		}
 		CbmBasicWalker.WalkResult result = CbmBasicWalker.walk(src, loadAddr, limitAddr);
 		if (result.lines().isEmpty()) {
+			LAST_COMPLETED.put(program, stamp);
 			return true; // trivially empty BASIC program; nothing to annotate
 		}
-		boolean verbose = AnalyzerRunLog.isInitialRun(program, getClass());
 		if (verbose) {
 			log.appendMsg(getName(), NAME + " running: " + result.lines().size() +
 				" BASIC line(s) at 0x" + Long.toHexString(loadAddr));
@@ -329,15 +370,23 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 
 				int textLen = (int) (line.terminatorAddr() - line.textStart());
 				byte[] textBytes = new byte[textLen];
-				try {
-					for (int i = 0; i < textBytes.length; i++) {
-						textBytes[i] = program.getMemory().getByte(
-							placedAddress(program, baseSpace, loadedSlices, line.textStart() + i));
+				// Same cache the ByteSource lambda uses (grm-52z) -- a missing/unreadable byte
+				// reports -1 there exactly as a failed Memory.getByte() did before, so this
+				// mirrors the previous per-line skip+log on any unavailable byte.
+				boolean textOk = true;
+				for (int i = 0; i < textBytes.length; i++) {
+					long taddr = line.textStart() + i;
+					int cached = (taddr >= imageLoadAddr && taddr < imageLimitAddr)
+							? byteCache[(int) (taddr - imageLoadAddr)] : -1;
+					if (cached < 0) {
+						textOk = false;
+						break;
 					}
+					textBytes[i] = (byte) cached;
 				}
-				catch (MemoryAccessException e) {
+				if (!textOk) {
 					log.appendMsg(getName(), "Failed to read line text at 0x" +
-						Long.toHexString(line.textStart()) + ": " + e.getMessage());
+						Long.toHexString(line.textStart()));
 					continue;
 				}
 
@@ -379,7 +428,82 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 			gdtMgr.close();
 		}
 
+		LAST_COMPLETED.put(program, stamp);
 		return true;
+	}
+
+	/**
+	 * Builds a one-shot byte cache over the CPU-address interval {@code [loadAddr,
+	 * limitAddr)}, indexed by {@code addr - loadAddr}: {@code -1} for an address this
+	 * program cannot supply a byte for, else the byte value (0-255). Replaces the previous
+	 * per-byte {@code resolvePrgAddress()} (linear slice scan + address-space name lookup)
+	 * + {@code Memory.getByte()} the walker and line-text loop used to do for every single
+	 * byte of the PRG (grm-52z) with one bulk {@link ghidra.program.model.mem.Memory#getBytes}
+	 * call per {@link AbstractCbmPrgLoader.LoadedSlice} (slices are assumed non-overlapping,
+	 * true of every producer of this metadata today) plus one per gap not covered by any
+	 * slice -- including, as a degenerate single "gap" spanning the whole interval, the
+	 * legacy case where {@code getLoadedSlices} returns an empty list for Programs saved
+	 * before slice metadata existed. Gaps fall back to {@code baseSpace}, matching
+	 * {@link #placedAddress}'s own fallback policy exactly (this method calls that helper
+	 * for the one Address it still needs per slice/gap, rather than re-implementing
+	 * {@code resolvePrgAddress}'s space-resolution policy here).
+	 */
+	private static int[] buildByteCache(Program program, AddressSpace baseSpace,
+			List<AbstractCbmPrgLoader.LoadedSlice> loadedSlices, long loadAddr, long limitAddr) {
+		int size = (int) (limitAddr - loadAddr);
+		int[] cache = new int[size];
+		Arrays.fill(cache, -1);
+		boolean[] covered = new boolean[size];
+
+		for (AbstractCbmPrgLoader.LoadedSlice slice : loadedSlices) {
+			long overlapStart = Math.max(slice.start(), loadAddr);
+			long overlapEnd = Math.min(slice.start() + slice.length(), limitAddr);
+			if (overlapStart >= overlapEnd) {
+				continue;
+			}
+			Address placedStart = placedAddress(program, baseSpace, loadedSlices, overlapStart);
+			readBulkInto(program, cache, covered, (int) (overlapStart - loadAddr), placedStart,
+				(int) (overlapEnd - overlapStart));
+		}
+
+		// Legacy/gap fallback: any stretch no slice claimed (including the whole interval
+		// when getLoadedSlices() is empty) is read from baseSpace in one shot per
+		// contiguous run, matching placedAddress's per-byte fallback exactly.
+		int i = 0;
+		while (i < size) {
+			if (covered[i]) {
+				i++;
+				continue;
+			}
+			int start = i;
+			while (i < size && !covered[i]) {
+				i++;
+			}
+			Address gapStart = baseSpace.getAddress(loadAddr + start);
+			readBulkInto(program, cache, covered, start, gapStart, i - start);
+		}
+		return cache;
+	}
+
+	/** Reads {@code len} bytes starting at {@code start} into {@code cache} at
+	 * {@code cacheOffset}, marking the whole requested run {@code covered} regardless of
+	 * how many bytes actually resolved -- an unreadable byte inside a claimed slice/gap
+	 * must report -1 (via the {@code cache} entry staying at its {@code Arrays.fill(-1)}
+	 * default), never be revisited by a later fallback pass. */
+	private static void readBulkInto(Program program, int[] cache, boolean[] covered,
+			int cacheOffset, Address start, int len) {
+		byte[] buf = new byte[len];
+		int n;
+		try {
+			n = program.getMemory().getBytes(start, buf);
+		}
+		catch (MemoryAccessException e) {
+			n = 0;
+		}
+		for (int j = 0; j < n; j++) {
+			cache[cacheOffset + j] = buf[j] & 0xFF;
+		}
+		Arrays.fill(covered, cacheOffset, cacheOffset + len, true);
 	}
 
 	private static Address placedAddress(Program program, AddressSpace baseSpace,
