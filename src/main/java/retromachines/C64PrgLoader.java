@@ -17,8 +17,6 @@ package retromachines;
 
 import java.util.List;
 
-import com.google.gson.JsonObject;
-
 import ghidra.program.model.listing.Program;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.framework.options.Options;
@@ -46,11 +44,6 @@ public class C64PrgLoader extends AbstractCbmPrgLoader {
 	@Override
 	protected String getMachineId() {
 		return "c64";
-	}
-
-	@Override
-	protected boolean isAdditionalPrgTarget(JsonObject node) {
-		return node.get("name").getAsString().equals("P6510");
 	}
 
 	@Override

@@ -20,6 +20,7 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.Writer;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -109,6 +110,9 @@ public class MapCompiler {
 		List<Map<String, Object>> windows =
 			buildWindows(descriptor, physicalNames, stateFields.keySet());
 		mapDoc.put("windows", windows);
+		if (usesLoadAddressPlacement(descriptor)) {
+			validateRamCoverage(regions, windows);
+		}
 		List<Map<String, Object>> layouts =
 			buildLayouts(descriptor, physicalNames, stateFields.keySet());
 		if (layouts != null) {
@@ -229,6 +233,7 @@ public class MapCompiler {
 			copyIfPresent(region, r, "writable");
 			copyIfPresent(region, r, "executable");
 			copyIfPresent(region, r, "load_target");
+			copyIfPresent(region, r, "prg_placeable");
 			if (Boolean.TRUE.equals(region.get("load_target"))) {
 				if (loadTargetName != null) {
 					throw new IllegalArgumentException(
@@ -241,6 +246,97 @@ public class MapCompiler {
 			out.add(r);
 		}
 		return out;
+	}
+
+	// ---- PRG/RAM placement coverage (grm-z15.4) ----
+
+	/**
+	 * True only for descriptors consumed by {@code AbstractCbmPrgLoader} (its
+	 * {@code planPrgSlices} is the only code path this coverage check protects): those
+	 * declare {@code formats.prg.placement: load_address}, the 2-byte CBM load-address
+	 * header convention. Boards loaded by other means (e.g. NES iNES-mapper descriptors,
+	 * which have no {@code formats.prg} at all) legitimately have non-contiguous RAM --
+	 * e.g. NES's console RAM at $0000-$07FF and cartridge PRG RAM at $6000-$7FFF are
+	 * separated by PPU/APU register space with no PRG byte ever placed there.
+	 */
+	@SuppressWarnings("unchecked")
+	private static boolean usesLoadAddressPlacement(Map<String, Object> descriptor) {
+		Object formats = descriptor.get("formats");
+		if (!(formats instanceof Map)) {
+			return false;
+		}
+		Object prg = ((Map<String, Object>) formats).get("prg");
+		if (!(prg instanceof Map)) {
+			return false;
+		}
+		return "load_address".equals(((Map<String, Object>) prg).get("placement"));
+	}
+
+	/** One named [start, end] range contributing to the RAM placement union: a
+	 * {@code kind: ram} or {@code prg_placeable: true} region, or a window collapsed to its
+	 * own [start, end] because at least one of its occupants is {@code kind: ram}. */
+	private record PlacementRange(String name, int start, int end) {}
+
+	/**
+	 * Validates that {@link AbstractCbmPrgLoader#planPrgSlices}'s placement-target union
+	 * (every {@code kind: ram} or {@code prg_placeable: true} region, plus every window that
+	 * has a {@code kind: ram} occupant, collapsed to the window's own range since its ram
+	 * occupants are mutually-exclusive banks sharing that range) is internally contiguous:
+	 * no two placement ranges overlap, and no gap separates the lowest range from the
+	 * highest. The union need not start at $0000 or reach $FFFF -- only the span between its
+	 * own lowest and highest member must have no hole, matching what planPrgSlices actually
+	 * requires (a spanning PRG import fails the moment a byte maps to zero or two targets).
+	 */
+	@SuppressWarnings("unchecked")
+	private static void validateRamCoverage(List<Map<String, Object>> regions,
+			List<Map<String, Object>> windows) {
+		List<PlacementRange> ranges = new ArrayList<>();
+		for (Map<String, Object> region : regions) {
+			boolean placeable = "ram".equals(region.get("kind")) ||
+				Boolean.TRUE.equals(region.get("prg_placeable"));
+			if (placeable) {
+				ranges.add(new PlacementRange((String) region.get("name"),
+					(Integer) region.get("start"), (Integer) region.get("end")));
+			}
+		}
+		for (Map<String, Object> window : windows) {
+			List<Map<String, Object>> occupants =
+				(List<Map<String, Object>>) window.get("occupants");
+			if (occupants == null) {
+				continue; // computed (maps:) window -- no enumerated occupant to be ram
+			}
+			boolean hasRamOccupant =
+				occupants.stream().anyMatch(o -> "ram".equals(o.get("kind")));
+			if (hasRamOccupant) {
+				ranges.add(new PlacementRange((String) window.get("name"),
+					(Integer) window.get("start"), (Integer) window.get("end")));
+			}
+		}
+		if (ranges.isEmpty()) {
+			return;
+		}
+		ranges.sort(Comparator.comparingInt(PlacementRange::start));
+		// Sorted-by-start + consecutive-pair comparison suffices to catch every overlap,
+		// even a non-adjacent one: if ranges[i] and ranges[k] (k > i+1) overlapped, then
+		// ranges[i+1].start (which lies between them) would also fall inside ranges[i]'s
+		// span, so the i/i+1 pair would already flag it. Once no consecutive pair overlaps,
+		// ends are strictly increasing in start order too, so a plain gap check between
+		// consecutive pairs is exact.
+		for (int i = 0; i + 1 < ranges.size(); i++) {
+			PlacementRange a = ranges.get(i);
+			PlacementRange b = ranges.get(i + 1);
+			if (a.start() <= b.end() && b.start() <= a.end()) {
+				throw new IllegalArgumentException(
+					"descriptor RAM placement targets '" + a.name() + "' and '" + b.name() +
+						"' overlap at $" + String.format("%04X", Math.max(a.start(), b.start())));
+			}
+			if (b.start() > a.end() + 1) {
+				throw new IllegalArgumentException(
+					"descriptor RAM placement coverage has a gap between '" + a.name() +
+						"' and '" + b.name() + "' at $" + String.format("%04X", a.end() + 1) +
+						"-$" + String.format("%04X", b.start() - 1));
+			}
+		}
 	}
 
 	// ---- windows (enumerated occupants OR computed maps:) ----

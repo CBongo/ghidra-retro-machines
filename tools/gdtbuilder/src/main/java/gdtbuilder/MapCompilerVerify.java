@@ -32,6 +32,7 @@ public class MapCompilerVerify {
 			verifyFixedRomAndFormats(temp);
 			verifyRomTargetErrors(temp);
 			verifySystemText(temp);
+			verifyRamCoverage(temp);
 			System.err.println("Map compiler verification passed");
 		}
 		finally {
@@ -139,6 +140,75 @@ public class MapCompilerVerify {
 			rom_images:
 			  test: %s
 			""".formatted(slot));
+		try {
+			MapCompiler.main(new String[] { yaml.toString(), temp.resolve(name + ".map").toString() });
+			throw new AssertionError("expected error containing '" + part + "'");
+		}
+		catch (IllegalArgumentException e) {
+			check(e.getMessage().contains(part),
+				"expected error containing '" + part + "', got: " + e.getMessage());
+		}
+	}
+
+	/** grm-z15.4: MapCompiler.validateRamCoverage must reject a RAM/prg_placeable union with
+	 *  an internal gap or overlap, and must accept a {@code prg_placeable: true} io region as
+	 *  a legitimate coverage contributor (mirroring C64's P6510). The check only fires for
+	 *  descriptors that declare {@code formats.prg.placement: load_address} (the
+	 *  AbstractCbmPrgLoader convention), so every fixture here declares that block. */
+	private static void verifyRamCoverage(Path temp) throws Exception {
+		expectCompileError(temp, "ram-gap", """
+			schema: 2
+			system: { id: ram-gap, name: RAM Gap, cpu: { language: '6502:LE:16:default' } }
+			memory:
+			  regions:
+			    - { name: RAM_LO, start: 0, end: 0x7fff, kind: ram }
+			    - { name: RAM_HI, start: 0x9000, end: 0xffff, kind: ram }
+			  windows: []
+			formats:
+			  prg:
+			    extensions: ['.prg']
+			    header: [{ field: load_address, size: 2, endian: little }]
+			    placement: load_address
+			""", "gap");
+		expectCompileError(temp, "ram-overlap", """
+			schema: 2
+			system: { id: ram-overlap, name: RAM Overlap, cpu: { language: '6502:LE:16:default' } }
+			memory:
+			  regions:
+			    - { name: RAM_LO, start: 0, end: 0x8fff, kind: ram }
+			    - { name: RAM_HI, start: 0x8000, end: 0xffff, kind: ram }
+			  windows: []
+			formats:
+			  prg:
+			    extensions: ['.prg']
+			    header: [{ field: load_address, size: 2, endian: little }]
+			    placement: load_address
+			""", "overlap");
+
+		Path yaml = temp.resolve("ram-prg-placeable.yaml");
+		Path map = temp.resolve("ram-prg-placeable.map");
+		write(yaml, """
+			schema: 2
+			system: { id: ram-ok, name: RAM OK, cpu: { language: '6502:LE:16:default' } }
+			memory:
+			  regions:
+			    - { name: P, start: 0, end: 1, kind: io, prg_placeable: true }
+			    - { name: RAM, start: 2, end: 0xffff, kind: ram }
+			  windows: []
+			formats:
+			  prg:
+			    extensions: ['.prg']
+			    header: [{ field: load_address, size: 2, endian: little }]
+			    placement: load_address
+			""");
+		MapCompiler.main(new String[] { yaml.toString(), map.toString() });
+		check(Files.exists(map), "gapless map with a prg_placeable io region failed to compile");
+	}
+
+	private static void expectCompileError(Path temp, String name, String yamlBody, String part)
+			throws Exception {
+		Path yaml = temp.resolve(name + ".yaml");
+		write(yaml, yamlBody);
 		try {
 			MapCompiler.main(new String[] { yaml.toString(), temp.resolve(name + ".map").toString() });
 			throw new AssertionError("expected error containing '" + part + "'");

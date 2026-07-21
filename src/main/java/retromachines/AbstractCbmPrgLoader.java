@@ -88,7 +88,7 @@ abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader {
 	protected abstract String getMachineId();
 
 	protected boolean isAdditionalPrgTarget(JsonObject node) {
-		return false;
+		return node.has("prg_placeable") && node.get("prg_placeable").getAsBoolean();
 	}
 
 	/** Extra recognition after the generic .prg/header/length checks. */

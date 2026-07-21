@@ -29,6 +29,7 @@ memory:
       end: 0x0001
       kind: io
       type: R6510                 # DDR + port struct; the banking register lives here
+      prg_placeable: true         # grm-z15.4: PRGs legitimately wrap bytes across $00/$01
       comment: "6510 on-die port: $00 DDR, $01 port (LORAM/HIRAM/CHAREN + cassette)"
     - name: ZEROPAGE
       start: 0x0002
