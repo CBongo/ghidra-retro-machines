@@ -376,6 +376,17 @@ abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader {
 			}
 			else if (banking == null || !banking.has("initial_state") ||
 					!banking.has("states")) {
+				// grm-z15: skipping window setup is only honest when nothing needed it. If a
+				// PRG slice targets a banked-window occupant, that occupant would never get a
+				// placement space and persistPrgPlacement would abort deep in the pipeline
+				// with a confusing "No address space was created" error -- fail up front with
+				// a clear message naming the unsatisfiable placement instead.
+				List<String> stranded = windowOccupantSliceTargets(windows, slicesByTarget);
+				if (!stranded.isEmpty()) {
+					throw new IOException(getMapPath() + " banking section is incomplete (need " +
+						"initial_state and states), but the PRG needs a banked-window placement " +
+						"for " + String.join(", ", stranded) + "; cannot import");
+				}
 				log.appendMsg(getMapPath() + " banking section incomplete " +
 					"(need initial_state and states); skipping banked-window setup");
 			}
@@ -555,6 +566,23 @@ abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader {
 		return CbmBasicWalker.isBasicStart(src, loadAddr, limitAddr);
 	}
 
+	/** Window-occupant placement targets that actually have PRG bytes to place (grm-z15).
+	 *  Lets {@link #load} tell, before it decides to skip banked-window setup, whether the
+	 *  skip would silently strand PRG slices that have nowhere else to go. */
+	private static List<String> windowOccupantSliceTargets(JsonArray windows,
+			Map<String, List<PrgSlice>> slicesByTarget) {
+		List<String> result = new ArrayList<>();
+		for (JsonElement we : windows) {
+			for (JsonElement oe : we.getAsJsonObject().getAsJsonArray("occupants")) {
+				String name = oe.getAsJsonObject().get("name").getAsString();
+				if (slicesByTarget.containsKey(name) && !result.contains(name)) {
+					result.add(name);
+				}
+			}
+		}
+		return result;
+	}
+
 	private JsonObject loadMap() throws IOException {
 		return DescriptorSupport.loadMap(getMapPath());
 	}
@@ -585,7 +613,10 @@ abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader {
 					region.get("end").getAsLong(), kind));
 			}
 		}
-		for (JsonElement we : map.getAsJsonArray("windows")) {
+		// grm-z15: mirror load()'s own map.has("windows") guard -- a windows-less descriptor
+		// (a shape load() explicitly supports) must plan region slices without an NPE here.
+		JsonArray windowArray = map.has("windows") ? map.getAsJsonArray("windows") : new JsonArray();
+		for (JsonElement we : windowArray) {
 			JsonObject window = we.getAsJsonObject();
 			long start = window.get("start").getAsLong();
 			long end = window.get("end").getAsLong();
