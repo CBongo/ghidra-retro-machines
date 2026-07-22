@@ -272,11 +272,26 @@ mechanisms/targets share one physical register. None of this needed a core chang
 which is itself further evidence the ceiling is real: the overlay-side engine now
 covers every mechanism shape in scope for M3 and still cannot make *default*
 resolution, flow following, or the decompiler bank-aware, because that is exactly the
-part Phase 0 cannot reach by construction. The one piece of *quantitative* evidence
-this RFC's "Motivating case" section is still missing — overlay block-count/navigability
-pain at commercial-ROM scale (SMB3-sized MMC3: ~64 banks × 2 switchable windows) — is
-tracked as `grm-6a7.3`, pending real ROMs (CI-excluded per this repo's convention); no
-claim already made above needed correcting once that data is collected.
+part Phase 0 cannot reach by construction.
+
+The *quantitative* evidence this RFC's "Motivating case" section was missing — overlay
+block-count/navigability pain at commercial-ROM scale — is now collected (`grm-6a7.3`,
+real ROMs, CI-excluded per convention; full data in
+[`mmc3-overlay-scale.md`](mmc3-overlay-scale.md)). Measured on Ghidra 12.1.2: loading a
+real MMC3 cartridge creates a deterministic **`3N − 1` overlay address spaces** for N
+in-range 8 KiB PRG banks, at load time, before any analysis — **191 overlay spaces** for a
+512 KiB game (Mega Man 4, 64 banks), a **~27× blow-up** over the UxROM baseline (**7**).
+Two corrections fell out of the measurement, neither touching a claim above: (a) *Super
+Mario Bros. 3* is 256 KiB PRG / 32 banks / 95 overlays, not the 512 KiB / 64-bank case
+earlier prose assumed (that conflated PRG with total ROM incl. CHR) — the true 64-bank
+title is Mega Man 4; (b) the cost is **not** compute — full auto-analysis of the
+191-overlay program runs in ~1 s (import+analysis wall-clock is flat from baseline to worst
+case), so the ceiling is representational and navigational, not performance. Sharper still:
+static resolution *into* those overlays is idiom-dependent and often near-zero (Crystalis,
+a 256 KiB MMC3 title, resolved **0** cross-bank references into its 95 overlay spaces and
+raised 12 unresolved-state warnings) — the `3N − 1` spaces are paid for regardless, while
+the banked code they hold stays disconnected from the call graph. That gap is exactly what
+Phase 1's bank-aware *default* resolution closes.
 
 ## Questions for maintainers
 

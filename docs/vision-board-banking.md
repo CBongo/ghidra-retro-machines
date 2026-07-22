@@ -471,15 +471,21 @@ because its mappers span the whole strategy vocabulary.
   Known-ness only, not value-level requirements; indirect calls are not propagated
   through. Back-propagation/narrowing Phase-1 state from these summaries — a mutual-
   fixpoint/termination-risk problem — is explicitly deferred past M3 (see "M3
-  learnings" below). **Remaining M3 exit criteria (both require real ROMs, both
-  CI-excluded per convention):** overlay-scale measurement at SMB3/512K scale
-  (`grm-6a7.3` — block/space counts, import+analysis wall-clock vs the UxROM baseline,
-  qualitative UI navigability, recorded in docs and mirrored into Discussion #9349) and
-  the manual acceptance gate itself on major MMC1/MMC3 libraries (Metroid, Zelda, Final
-  Fantasy for MMC1; SMB3, Crystalis, Kirby's Adventure for MMC3). *Proves: stateful
-  mechanisms fit the strategy interface; inference beats interrogation; overlay ceiling
-  is expected to be measurably painful (64 × 2 blocks) once grm-6a7.3 quantifies it —
-  the evidence package for the core ask is not yet complete without that number.*
+  learnings" below). **M3 exit criteria (both require real ROMs, both CI-excluded per
+  convention):** overlay-scale measurement — **DONE** (`grm-6a7.3`, 2026-07-22; full data
+  in [`mmc3-overlay-scale.md`](mmc3-overlay-scale.md), mirrored into Discussion #9349):
+  loading a real MMC3 cartridge creates a deterministic `3N − 1` overlay address spaces for
+  N in-range 8 KiB banks, at load time — 191 for a 512K game (Mega Man 4), a ~27× blow-up
+  over the UxROM baseline (7); the cost is structural/navigational, not compute (full
+  analysis of the 191-overlay program runs in ~1 s), and static resolution *into* the
+  overlays is idiom-dependent and often near-zero (Crystalis: 0 refs into 95 spaces).
+  *(Correction from the measurement: SMB3 is 256K/32 banks/95 overlays, not the 512K/64-bank
+  case earlier prose assumed — that conflated PRG with total ROM; the true 64-bank title is
+  Mega Man 4.)* Still open: the manual acceptance gate itself on major MMC1/MMC3 libraries
+  (Metroid, Zelda, Final Fantasy for MMC1; SMB3, Crystalis, Kirby's Adventure for MMC3).
+  *Proves: stateful mechanisms fit the strategy interface; inference beats interrogation;
+  the overlay ceiling is now measured — `3N − 1` spaces, unavoidable and mostly
+  unresolved-into — which is the quantitative core of the RFC's ask.*
 
   **M3 learnings** (design reversals and corrections worth recording honestly, since
   the M3 sub-bead design notes got each of these wrong going in):
