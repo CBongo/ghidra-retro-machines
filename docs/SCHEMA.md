@@ -155,7 +155,9 @@ selected Ghidra language when one exists, allowing the analyzer to stamp fully k
 states into program context. Descriptors whose language has no such register (including
 the stock 6502 language used by NES boards) omit it; bank-state analysis still uses the
 descriptor's `state`, `mechanisms`, and `initial_state`. If the property is present but
-the selected language does not expose that name, context stamping is simply skipped.
+the selected language does not expose that name, the analyzer logs a warning (this is
+treated as a likely typo, distinct from omitting the property entirely) and context
+stamping is skipped.
 
 C64 needs three 1-bit fields; NES MMC3 needs `{prg_mode: 1, R6: 6, R7: 6}`. Everywhere
 a whole state value is expressed (`initial_state`, `states` rows), the descriptor uses
@@ -518,8 +520,10 @@ decisions" below. Every entry has `name:` and `kind:`; `kind:` selects one of:
    (cc65 `-Ln`, KickAssembler `--vicesymbols`).
 3. **Descriptor ↔ language context is optional.** When `banking.context_register` names
    a register exposed by the selected language, the analyzer stamps fully-known states
-   into it. Descriptors may omit the property, and a missing language register disables
-   only that context-stamping channel; descriptor-driven bank analysis still runs.
+   into it. Descriptors may omit the property, which silently disables only that
+   context-stamping channel; descriptor-driven bank analysis still runs. If the property
+   is present but names a register the language doesn't expose, that's treated as a
+   likely typo and the analyzer logs a warning instead of skipping silently.
 
 ## Validation (emulator oracle)
 

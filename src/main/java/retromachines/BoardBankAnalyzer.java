@@ -1500,6 +1500,9 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		}
 		Register register = program.getRegister(banking.get("context_register").getAsString());
 		if (register == null) {
+			log.appendMsg(getName(), "context_register '" +
+				banking.get("context_register").getAsString() +
+				"' is not a register declared by this language; context stamping skipped");
 			return;
 		}
 		int stamped = 0;

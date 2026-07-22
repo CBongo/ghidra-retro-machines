@@ -33,6 +33,7 @@ public class MapCompilerVerify {
 			verifyRomTargetErrors(temp);
 			verifySystemText(temp);
 			verifyRamCoverage(temp);
+			verifyDuplicateNames(temp);
 			System.err.println("Map compiler verification passed");
 		}
 		finally {
@@ -203,6 +204,48 @@ public class MapCompilerVerify {
 			""");
 		MapCompiler.main(new String[] { yaml.toString(), map.toString() });
 		check(Files.exists(map), "gapless map with a prg_placeable io region failed to compile");
+	}
+
+	/** MapCompiler.validateUniqueNames must reject duplicate names/keys within
+	 *  {@code physical[]}, {@code memory.regions[]}, and {@code symbols[]}. */
+	private static void verifyDuplicateNames(Path temp) throws Exception {
+		expectCompileError(temp, "dup-region", """
+			schema: 2
+			system: { id: dup-region, name: Dup Region, cpu: { language: '6502:LE:16:default' } }
+			memory:
+			  regions:
+			    - { name: SAME, start: 0, end: 0x7fff, kind: ram }
+			    - { name: SAME, start: 0x8000, end: 0xffff, kind: ram }
+			  windows: []
+			""", "declared twice");
+		expectCompileError(temp, "dup-physical", """
+			schema: 2
+			system: { id: dup-physical, name: Dup Physical, cpu: { language: '6502:LE:16:default' } }
+			physical:
+			  - { name: PRG, image: prg_rom }
+			  - { name: PRG, image: prg_rom2 }
+			memory:
+			  regions:
+			    - { name: RAM, start: 0, end: 0xffff, kind: ram }
+			  windows: []
+			""", "declared twice");
+		expectCompileError(temp, "dup-symbol-set", """
+			schema: 2
+			system: { id: dup-symbol-set, name: Dup Symbol Set, cpu: { language: '6502:LE:16:default' } }
+			memory:
+			  regions:
+			    - { name: RAM, start: 0, end: 0xffff, kind: ram }
+			  windows: []
+			symbols:
+			  - set: mmio
+			    default: on
+			    inline:
+			      - { addr: 0x2000, name: FOO, kind: label }
+			  - set: mmio
+			    default: on
+			    inline:
+			      - { addr: 0x3000, name: BAR, kind: label }
+			""", "declared twice");
 	}
 
 	private static void expectCompileError(Path temp, String name, String yamlBody, String part)

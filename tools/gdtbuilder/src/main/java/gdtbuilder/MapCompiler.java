@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.io.Writer;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -92,6 +93,7 @@ public class MapCompiler {
 		// (maps: expressions reference physical spaces and state fields; states rows
 		// reference windows and state fields).
 		List<Map<String, Object>> physical = getPhysical(descriptor);
+		validateUniqueNames(physical, "name", "physical[] name");
 		Set<String> physicalNames = new LinkedHashSet<>();
 		if (physical != null) {
 			for (Map<String, Object> space : physical) {
@@ -106,6 +108,7 @@ public class MapCompiler {
 			mapDoc.put("physical", buildPhysical(physical));
 		}
 		List<Map<String, Object>> regions = buildRegions(descriptor);
+		validateUniqueNames(regions, "name", "memory.regions[] name");
 		mapDoc.put("regions", regions);
 		List<Map<String, Object>> windows =
 			buildWindows(descriptor, physicalNames, stateFields.keySet());
@@ -124,7 +127,10 @@ public class MapCompiler {
 			mapDoc.put("banking", banking);
 		}
 		mapDoc.put("rom_images", buildRomImages(descriptor, regions));
-		mapDoc.put("symbols", buildSymbols(descriptor, descriptorFile.getParentFile()));
+		List<Map<String, Object>> symbols =
+			buildSymbols(descriptor, descriptorFile.getParentFile());
+		validateUniqueNames(symbols, "set", "symbols[] set");
+		mapDoc.put("symbols", symbols);
 		Map<String, Object> formats = buildFormats(descriptor);
 		if (formats != null) {
 			mapDoc.put("formats", formats);
@@ -617,6 +623,26 @@ public class MapCompiler {
 				" bits exceeds 31; the packed bank state is a 32-bit int");
 		}
 		return fields;
+	}
+
+	/** Enforces uniqueness only: entries missing (or with a blank) {@code key} are skipped,
+	 *  since name-presence is validated elsewhere by the build* paths (e.g.
+	 *  {@link #requireString}). Mirrors {@link GdtBuilder#validateUniqueTypeNames}. */
+	private static void validateUniqueNames(List<Map<String, Object>> entries,
+			String key, String context) {
+		if (entries == null) {
+			return;
+		}
+		Set<String> seen = new HashSet<>();
+		for (Map<String, Object> e : entries) {
+			Object v = e.get(key);
+			if (!(v instanceof String s) || s.trim().isEmpty()) {
+				continue; // presence checked elsewhere
+			}
+			if (!seen.add(s)) {
+				throw new IllegalArgumentException(context + " '" + s + "' is declared twice");
+			}
+		}
 	}
 
 	@SuppressWarnings("unchecked")
