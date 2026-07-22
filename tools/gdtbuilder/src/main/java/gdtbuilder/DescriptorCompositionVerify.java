@@ -15,10 +15,12 @@
  */
 package gdtbuilder;
 
-import java.io.File;
+import static gdtbuilder.VerifyHarness.check;
+import static gdtbuilder.VerifyHarness.expectThrows;
+import static gdtbuilder.VerifyHarness.write;
+
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
@@ -26,17 +28,11 @@ import java.util.Map;
 public class DescriptorCompositionVerify {
 
 	public static void main(String[] args) throws Exception {
-		Path temp = Files.createTempDirectory("descriptor-composition-");
-		try {
-			verifyComposition(temp);
-			verifyErrors(temp);
-			System.err.println("Descriptor composition verification passed");
-		}
-		finally {
-			try (var paths = Files.walk(temp)) {
-				paths.sorted(Comparator.reverseOrder()).map(Path::toFile).forEach(File::delete);
-			}
-		}
+		VerifyHarness.run("descriptor-composition-", "Descriptor composition verification passed",
+			temp -> {
+				verifyComposition(temp);
+				verifyErrors(temp);
+			});
 	}
 
 	@SuppressWarnings("unchecked")
@@ -140,23 +136,6 @@ public class DescriptorCompositionVerify {
 	}
 
 	private static void expectError(Path file, String messagePart) throws Exception {
-		try {
-			YamlSupport.loadComposed(file.toFile());
-			throw new AssertionError("expected error containing '" + messagePart + "' for " + file);
-		}
-		catch (IllegalArgumentException e) {
-			check(e.getMessage().contains(messagePart),
-				"expected error containing '" + messagePart + "', got: " + e.getMessage());
-		}
-	}
-
-	private static void write(Path file, String text) throws Exception {
-		Files.writeString(file, text);
-	}
-
-	private static void check(boolean condition, String message) {
-		if (!condition) {
-			throw new AssertionError(message);
-		}
+		expectThrows(messagePart, () -> YamlSupport.loadComposed(file.toFile()));
 	}
 }

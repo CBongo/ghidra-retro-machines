@@ -15,10 +15,12 @@
  */
 package gdtbuilder;
 
-import java.io.File;
+import static gdtbuilder.VerifyHarness.check;
+import static gdtbuilder.VerifyHarness.expectThrows;
+import static gdtbuilder.VerifyHarness.write;
+
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Comparator;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -27,20 +29,13 @@ import com.google.gson.JsonParser;
 public class MapCompilerVerify {
 
 	public static void main(String[] args) throws Exception {
-		Path temp = Files.createTempDirectory("map-compiler-");
-		try {
+		VerifyHarness.run("map-compiler-", "Map compiler verification passed", temp -> {
 			verifyFixedRomAndFormats(temp);
 			verifyRomTargetErrors(temp);
 			verifySystemText(temp);
 			verifyRamCoverage(temp);
 			verifyDuplicateNames(temp);
-			System.err.println("Map compiler verification passed");
-		}
-		finally {
-			try (var paths = Files.walk(temp)) {
-				paths.sorted(Comparator.reverseOrder()).map(Path::toFile).forEach(File::delete);
-			}
-		}
+		});
 	}
 
 	private static void verifyFixedRomAndFormats(Path temp) throws Exception {
@@ -141,14 +136,8 @@ public class MapCompilerVerify {
 			rom_images:
 			  test: %s
 			""".formatted(slot));
-		try {
-			MapCompiler.main(new String[] { yaml.toString(), temp.resolve(name + ".map").toString() });
-			throw new AssertionError("expected error containing '" + part + "'");
-		}
-		catch (IllegalArgumentException e) {
-			check(e.getMessage().contains(part),
-				"expected error containing '" + part + "', got: " + e.getMessage());
-		}
+		expectThrows(part, () -> MapCompiler.main(
+			new String[] { yaml.toString(), temp.resolve(name + ".map").toString() }));
 	}
 
 	/** grm-z15.4: MapCompiler.validateRamCoverage must reject a RAM/prg_placeable union with
@@ -252,23 +241,7 @@ public class MapCompilerVerify {
 			throws Exception {
 		Path yaml = temp.resolve(name + ".yaml");
 		write(yaml, yamlBody);
-		try {
-			MapCompiler.main(new String[] { yaml.toString(), temp.resolve(name + ".map").toString() });
-			throw new AssertionError("expected error containing '" + part + "'");
-		}
-		catch (IllegalArgumentException e) {
-			check(e.getMessage().contains(part),
-				"expected error containing '" + part + "', got: " + e.getMessage());
-		}
-	}
-
-	private static void write(Path file, String text) throws Exception {
-		Files.writeString(file, text);
-	}
-
-	private static void check(boolean condition, String message) {
-		if (!condition) {
-			throw new AssertionError(message);
-		}
+		expectThrows(part, () -> MapCompiler.main(
+			new String[] { yaml.toString(), temp.resolve(name + ".map").toString() }));
 	}
 }
