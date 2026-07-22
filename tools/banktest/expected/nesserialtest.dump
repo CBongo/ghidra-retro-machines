@@ -37,7 +37,7 @@ COMMENT c03b bank -> 108 (mirroring=0,prg_mode=3,prg_bank=6)
 COMMENT c03f bank -> 108 (mirroring=0,prg_mode=3,prg_bank=6)
 COMMENT c043 bank -> 108 (mirroring=0,prg_mode=3,prg_bank=6)
 COMMENT c047 bank -> 108 (mirroring=0,prg_mode=3,prg_bank=6)
-COMMENT c051 bank -> 44? (mirroring=0,prg_mode=3,prg_bank=2) [known: mirroring.0=0,mirroring.1=0,prg_mode.0=1,prg_mode.1=1,prg_bank.1=1,prg_bank.3=0; assumed from initial: prg_bank.0,prg_bank.2]
+COMMENT c051 bank -> 44? (mirroring=0,prg_mode=3,prg_bank=2) [known: mirroring.0=0,mirroring.1=0,prg_mode.0=1,prg_mode.1=1,prg_bank.1=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: prg_bank.0,prg_bank.2]
 COMMENT c056 bank -> 60 (mirroring=0,prg_mode=3,prg_bank=3)
 BOOKMARK Warning c060
 BOOKMARK Warning c064

@@ -968,7 +968,11 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		else {
 			List<String> known = new ArrayList<>();
 			List<String> assumed = new ArrayList<>();
-			for (int bit = 0; bit < 8; bit++) {
+			// Walk every tracked state bit, not just the low 8: boards can carry >8
+			// (nes-serialtest = 9). mask is a contiguous low mask ((1<<N)-1), so its
+			// width is N; the mask guard below still skips any bit outside it.
+			int width = 32 - Integer.numberOfLeadingZeros(mask);
+			for (int bit = 0; bit < width; bit++) {
 				int bitMask = 1 << bit;
 				if ((mask & bitMask) == 0) {
 					continue;

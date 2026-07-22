@@ -34,7 +34,7 @@ COMMENT e006 bank -> 1024 (select=0,prg_mode=0,r6=0,r7=1) via FUN_e160
 COMMENT e009 bank -> 1031 (select=7,prg_mode=0,r6=0,r7=1) via FUN_e180
 COMMENT e102 bank -> 1030 (select=6,prg_mode=0,r6=0,r7=1)
 COMMENT e107 bank -> 1062 (select=6,prg_mode=0,r6=2,r7=1) via FUN_e140
-COMMENT e123 bank -> 1024? (select=0,prg_mode=0,r6=0,r7=1) [known: r6.0=0,r6.1=0,r6.2=0,r6.3=0; assumed from initial: select.0,select.1,select.2,prg_mode]
+COMMENT e123 bank -> 1024? (select=0,prg_mode=0,r6=0,r7=1) [known: r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0,r7.0=1,r7.1=0,r7.2=0,r7.3=0,r7.4=0,r7.5=0; assumed from initial: select.0,select.1,select.2,prg_mode]
 COMMENT e162 bank -> 1024 (select=0,prg_mode=0,r6=0,r7=1)
 COMMENT e182 bank -> 1031 (select=7,prg_mode=0,r6=0,r7=1)
 COMMENT e187 bank -> 4103 (select=7,prg_mode=0,r6=0,r7=4) via FUN_e140
