@@ -239,6 +239,8 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			return true;
 		}
 
+		Map<String, Integer> placementOverride = readPlacementOverride(program, log, verbose);
+
 		JsonObject banking = map.getAsJsonObject("banking");
 		List<ConfiguredMechanism> mechanisms = configureStrategies(program,
 			banking.getAsJsonArray("mechanisms"), board, log);
@@ -312,9 +314,8 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				}
 			}
 
-			int effective = inState.effective(board.initialState(), board.mask());
-			refsAdded += retargetReferences(program, refMgr, baseSpace, instr, board, effective,
-				monitor, log);
+			refsAdded += retargetReferences(program, refMgr, baseSpace, instr, board, inState,
+				placementOverride, monitor, log);
 		}
 
 		// --- Phase 3: function-level bank-state summaries + call-site requirement
@@ -991,12 +992,67 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				"]";
 		}
 
+		// Placement-provenance vocabulary (grm-hsv.3): tag dataflow-recovered switch values so
+		// they read distinctly from override placements ("[user override]", see
+		// annotatePlacementProvenance) and future self-ref inference. Gated to mode-varying
+		// boards -- the only ones where placement can be ambiguous -- so other boards' goldens
+		// stay byte-identical.
+		if (board.modeField() != null) {
+			bankComment += " [switch-value flow]";
+		}
+
 		String existing = listing.getComment(CommentType.EOL, addr);
 		if (existing == null || existing.isBlank()) {
 			listing.setComment(addr, CommentType.EOL, bankComment);
 		}
 		else if (!existing.contains("bank ->")) {
 			listing.setComment(addr, CommentType.EOL, existing + "; " + bankComment);
+		}
+	}
+
+	/**
+	 * Records that the reference at {@code addr} was placed into bank {@code bank} because the
+	 * user pinned it via the {@link DescriptorSupport#PLACEMENT_OVERRIDE_PROPERTY} override --
+	 * dataflow did not recover the switchable bank here (grm-hsv.3). Uses the {@code bank ->}
+	 * vocabulary so the provenance shows in the listing and the banktest dump, and defers to an
+	 * existing bank-switch annotation rather than clobbering it.
+	 */
+	private void annotatePlacementProvenance(Listing listing, Address addr, int bank) {
+		String comment = "bank -> " + bank + " [user override]";
+		String existing = listing.getComment(CommentType.EOL, addr);
+		if (existing == null || existing.isBlank()) {
+			listing.setComment(addr, CommentType.EOL, comment);
+		}
+		else if (!existing.contains("bank ->")) {
+			listing.setComment(addr, CommentType.EOL, existing + "; " + comment);
+		}
+	}
+
+	/**
+	 * Reads and parses the user bank-placement override
+	 * ({@link DescriptorSupport#PLACEMENT_OVERRIDE_PROPERTY}) a loader may have persisted:
+	 * a window-name -> bank map applied in {@link #retargetReferences} where dataflow left a
+	 * switchable bank unknown. Absent -> empty; a malformed value (should not happen -- the
+	 * loader validated it) is logged and ignored, matching the loader-degradation convention.
+	 */
+	private Map<String, Integer> readPlacementOverride(Program program, MessageLog log,
+			boolean verbose) {
+		String spec = program.getOptions(Program.PROGRAM_INFO)
+				.getString(DescriptorSupport.PLACEMENT_OVERRIDE_PROPERTY, null);
+		if (spec == null || spec.isBlank()) {
+			return Map.of();
+		}
+		try {
+			Map<String, Integer> override = DescriptorSupport.parsePlacementOverride(spec);
+			if (verbose && !override.isEmpty()) {
+				log.appendMsg(getName(), "placement override active: " + override);
+			}
+			return override;
+		}
+		catch (IllegalArgumentException e) {
+			log.appendMsg(getName(),
+				"ignoring malformed placement override '" + spec + "': " + e.getMessage());
+			return Map.of();
 		}
 	}
 
@@ -1283,9 +1339,10 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	// ------------------------------------------------------------------
 
 	private int retargetReferences(Program program, ReferenceManager refMgr,
-			AddressSpace baseSpace, Instruction instr, BoardModel board, int effective,
-			TaskMonitor monitor, MessageLog log) {
+			AddressSpace baseSpace, Instruction instr, BoardModel board, BankState inState,
+			Map<String, Integer> placementOverride, TaskMonitor monitor, MessageLog log) {
 
+		int effective = inState.effective(board.initialState(), board.mask());
 		Map<String, String> stateRow = board.occupantByWindowForState().get(effective);
 
 		int added = 0;
@@ -1381,6 +1438,17 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 					}
 					else {
 						int bank = instance.bankField().valueIn(effective);
+						// When dataflow did not pin the switchable bank at this site, the value
+						// above is just the initial-state fallback; a user placement override for
+						// this window instance takes over (flow always wins when it knows). See
+						// grm-hsv.3 -- the override is the residual escape hatch, never a guess.
+						boolean bankKnown =
+							(inState.knownMask() & instance.bankField().positionedMask()) != 0;
+						Integer overrideBank = placementOverride.get(instance.name());
+						boolean overridden = !bankKnown && overrideBank != null;
+						if (overridden) {
+							bank = overrideBank;
+						}
 						if (modeValue == board.homeModeValue() &&
 							bank == instance.bankField().valueIn(board.initialState())) {
 							// home mode's home bank lives in base space -- default is right.
@@ -1389,6 +1457,10 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 						added += addOverlayRef(program, refMgr, instr, offset, opIndex,
 							DescriptorSupport.OverlayNaming.modeBankBlockName(instance.name(), modeValue,
 								bank), refType, true, monitor, log);
+						if (overridden) {
+							annotatePlacementProvenance(program.getListing(), instr.getMinAddress(),
+								bank);
+						}
 					}
 				}
 			}

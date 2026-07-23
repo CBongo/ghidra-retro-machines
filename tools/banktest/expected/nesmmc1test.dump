@@ -36,20 +36,20 @@ BLOCK WC000_M2_B4 c000-ffff overlay=true
 BLOCK WC000_M2_B5 c000-ffff overlay=true
 BLOCK WC000_M2_B6 c000-ffff overlay=true
 BLOCK WC000_M2_B7 c000-ffff overlay=true
-COMMENT c002 bank -> 12 (mirroring=0,prg_mode=3,prg_bank=0)
-COMMENT c007 bank -> 44 (mirroring=0,prg_mode=3,prg_bank=2) via FUN_c200
-COMMENT c00f bank -> 44 (mirroring=0,prg_mode=3,prg_bank=2)
-COMMENT c013 bank -> 44 (mirroring=0,prg_mode=3,prg_bank=2)
-COMMENT c017 bank -> 44 (mirroring=0,prg_mode=3,prg_bank=2)
-COMMENT c01b bank -> 44 (mirroring=0,prg_mode=3,prg_bank=2)
-COMMENT c01f bank -> 44 (mirroring=0,prg_mode=3,prg_bank=2)
-COMMENT c024 bank -> 92 (mirroring=0,prg_mode=3,prg_bank=5) via FUN_c200
-COMMENT c02c bank -> 124 (mirroring=0,prg_mode=3,prg_bank=7) via FUN_c200
-COMMENT c031 bank -> 124 (mirroring=0,prg_mode=3,prg_bank=7)
-COMMENT c035 bank -> 124 (mirroring=0,prg_mode=3,prg_bank=7)
-COMMENT c039 bank -> 124 (mirroring=0,prg_mode=3,prg_bank=7)
-COMMENT c03d bank -> 124 (mirroring=0,prg_mode=3,prg_bank=7)
-COMMENT c041 bank -> 120 (mirroring=0,prg_mode=2,prg_bank=7)
+COMMENT c002 bank -> 12 (mirroring=0,prg_mode=3,prg_bank=0) [switch-value flow]
+COMMENT c007 bank -> 44 (mirroring=0,prg_mode=3,prg_bank=2) via FUN_c200 [switch-value flow]
+COMMENT c00f bank -> 44 (mirroring=0,prg_mode=3,prg_bank=2) [switch-value flow]
+COMMENT c013 bank -> 44 (mirroring=0,prg_mode=3,prg_bank=2) [switch-value flow]
+COMMENT c017 bank -> 44 (mirroring=0,prg_mode=3,prg_bank=2) [switch-value flow]
+COMMENT c01b bank -> 44 (mirroring=0,prg_mode=3,prg_bank=2) [switch-value flow]
+COMMENT c01f bank -> 44 (mirroring=0,prg_mode=3,prg_bank=2) [switch-value flow]
+COMMENT c024 bank -> 92 (mirroring=0,prg_mode=3,prg_bank=5) via FUN_c200 [switch-value flow]
+COMMENT c02c bank -> 124 (mirroring=0,prg_mode=3,prg_bank=7) via FUN_c200 [switch-value flow]
+COMMENT c031 bank -> 124 (mirroring=0,prg_mode=3,prg_bank=7) [switch-value flow]
+COMMENT c035 bank -> 124 (mirroring=0,prg_mode=3,prg_bank=7) [switch-value flow]
+COMMENT c039 bank -> 124 (mirroring=0,prg_mode=3,prg_bank=7) [switch-value flow]
+COMMENT c03d bank -> 124 (mirroring=0,prg_mode=3,prg_bank=7) [switch-value flow]
+COMMENT c041 bank -> 120 (mirroring=0,prg_mode=2,prg_bank=7) [switch-value flow]
 BOOKMARK Warning c04c
 BOOKMARK Warning c200
 BOOKMARK Warning c204

@@ -78,7 +78,60 @@ final class DescriptorSupport {
 	 */
 	static final String MAP_PATH_PROPERTY = "Retro Machine Map";
 
+	/**
+	 * Program-info property where a loader records a user-supplied bank-placement override:
+	 * space-separated {@code window:bank} pairs pinning a mode-varying switchable window
+	 * instance to hold PRG bank {@code N}. {@link BoardBankAnalyzer} consults it only where
+	 * dataflow did not determine the bank at a reference site (flow always wins when it
+	 * knows). Grammar and semantics: {@link #parsePlacementOverride}. Engine-generic
+	 * (window -> bank), so the read side lives in the machine-independent analyzer.
+	 */
+	static final String PLACEMENT_OVERRIDE_PROPERTY = "Retro Machines.Placement Override";
+
+	/** One {@code window:bank} token: capture group 1 = window name, 2 = bank digits. The
+	 *  separator is a colon, not '=': the headless {@code analyzeHeadless.bat} arg parser
+	 *  (cmd.exe) splits values on '=', so an '='-based grammar can't be passed on Windows. */
+	private static final Pattern PLACEMENT_PAIR = Pattern.compile("([A-Za-z0-9_]+):(\\d+)");
+
 	private DescriptorSupport() {
+	}
+
+	/**
+	 * Parses a placement-override spec -- space-separated {@code window:bank} pairs (e.g.
+	 * {@code "W8000:5 WC000:3"}, read as "window W8000 holds PRG bank 5") -- into an
+	 * insertion-ordered window-name -> bank map. Blank/null input yields an empty map.
+	 * Throws {@link IllegalArgumentException} with a user-facing message on malformed syntax
+	 * (bad token shape, out-of-range bank, or a repeated window). Window names and bank
+	 * ranges are deliberately NOT validated here -- that needs the board descriptor and is
+	 * the loader's job in {@code validateOptions}; this is the shared grammar both the loader
+	 * (validate) and analyzer (read) go through.
+	 */
+	static Map<String, Integer> parsePlacementOverride(String spec) {
+		Map<String, Integer> byWindow = new LinkedHashMap<>();
+		if (spec == null || spec.isBlank()) {
+			return byWindow;
+		}
+		for (String token : spec.trim().split("\\s+")) {
+			Matcher m = PLACEMENT_PAIR.matcher(token);
+			if (!m.matches()) {
+				throw new IllegalArgumentException("malformed placement override '" + token +
+					"'; expected window:bank (e.g. W8000:5)");
+			}
+			String window = m.group(1);
+			int bank;
+			try {
+				bank = Integer.parseInt(m.group(2));
+			}
+			catch (NumberFormatException e) {
+				throw new IllegalArgumentException(
+					"placement override '" + token + "': bank number out of range");
+			}
+			if (byWindow.putIfAbsent(window, bank) != null) {
+				throw new IllegalArgumentException(
+					"placement override names window '" + window + "' more than once");
+			}
+		}
+		return byWindow;
 	}
 
 	// ------------------------------------------------------------------

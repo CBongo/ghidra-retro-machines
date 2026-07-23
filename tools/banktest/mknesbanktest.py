@@ -973,6 +973,94 @@ def make_prg_mmc1():
     return bytes(prg), labels
 
 
+def make_prg_mmc1_override():
+    """Placement-override + provenance fixture for machines/nes-mmc1.yaml (bead grm-hsv.3).
+
+    Proves the two halves of the user bank-placement override the loader accepts as
+    `-loader-placement W8000:5` (window:bank; colon separator, not '=' -- cmd.exe's
+    analyzeHeadless.bat splits arg values on '=') and BoardBankAnalyzer applies:
+      1. OVERRIDE FIRES where dataflow left the switchable bank unknown -- a JSR $8000
+         after an *unresolvable* prg_bank commit retargets into W8000_M3_B5 (the pinned
+         bank), tagged "[user override]", instead of the home-bank fallback.
+      2. FLOW WINS over the override where dataflow DID recover the bank -- a later JSR
+         $8000 after a KNOWN prg_bank=3 commit retargets into W8000_M3_B3 (not the pinned
+         B5); the override is inert, no "[user override]" tag.
+
+    All in prg_mode 3 (home). The reset dance makes the whole state known (prg_mode=3,
+    prg_bank=0, mirroring=0 -- same as nesmmc1test's M1), so an *unresolvable* switch is
+    needed to drive prg_bank genuinely unknown: an opaque indexed load (LDA $C400,X --
+    recoverCallArgument/StoredValueScanner does not model indexed addressing) seeds the
+    unrolled commit chain, exactly nesserialtest's F-unresolvable / nesmmc1test's call-4
+    idiom, but here for an INLINE chain's own seed. Main runs entirely in the fixed-last
+    WC000 window (bank 7 == PRG[last]); banks 3 and 5 hold a lone RTS at offset 0 so the
+    two retargeted JSR targets disassemble.
+
+    RESET ($C000, seed prg_mode=3/prg_bank=0/mirroring=0):
+      C000 LDA #$80 / C002 STA $8000   -- reset dance: whole state known ([switch-value flow]).
+      C005 LDX #$00
+      C007 LDA $C400,X                 -- opaque indexed load: A unresolvable.
+      C00A chain5($E000)               -- commits prg_bank UNKNOWN (commit STA5 @ C01A).
+      C01D JSR $8000                   -- prg_bank unknown -> OVERRIDE -> W8000_M3_B5::8000.
+      C020 LDA #$03
+      C022 chain5($E000)               -- commits prg_bank=3 KNOWN (commit STA5 @ C032).
+      C035 JSR $8000                   -- prg_bank=3 known -> FLOW WINS -> W8000_M3_B3::8000.
+      C038 JMP $C038                   -- idle loop.
+      C03B RTI                         -- NMI/IRQ handler.
+    """
+    prg = bytearray([0x00] * MMC1_PRG_SIZE)
+
+    for bank in range(MMC1_BANKS):
+        prg[bank * PRG_BANK_SIZE] = bank  # bank marker, matching the other fixtures
+
+    # Banks 3 and 5's JSR targets (W8000_M3_B3::8000 / W8000_M3_B5::8000): lone RTS,
+    # replacing the marker byte, as in nesmmc1test's bank 2/5 targets.
+    prg[3 * PRG_BANK_SIZE] = 0x60
+    prg[5 * PRG_BANK_SIZE] = 0x60
+
+    bank7_base = 7 * PRG_BANK_SIZE
+
+    def put7(cpu_addr, data):
+        off = bank7_base + (cpu_addr - 0xC000)
+        prg[off:off + len(data)] = bytes(data)
+
+    main = _Asm(prg, 0xC000, bank7_base)
+    labels = {}
+
+    labels['reset'] = main.label()
+    main.lda_imm(0x80)
+    labels['f_reset'] = main.label()
+    main.sta_abs(0x8000)                     # reset dance: whole state known
+
+    main.ldx_imm(0x00)
+    labels['opaque_load'] = main.label()
+    main.lda_absx(0xC400)                    # opaque indexed load -> A unresolvable
+    uchain = main.chain5(0xE000)             # commits prg_bank UNKNOWN
+    labels['unknown_commit'] = uchain[4]
+    labels['override_jsr'] = main.label()
+    main.jsr(0x8000)                         # prg_bank unknown -> override -> W8000_M3_B5
+
+    main.lda_imm(0x03)                        # known seed
+    fchain = main.chain5(0xE000)             # commits prg_bank=3 KNOWN
+    labels['known_commit'] = fchain[4]
+    labels['flow_jsr'] = main.label()
+    main.jsr(0x8000)                         # prg_bank=3 known -> flow wins -> W8000_M3_B3
+
+    labels['idle'] = main.label()
+    main.jmp(labels['idle'])                 # idle loop
+    labels['rti'] = main.label()
+    main.rti()                               # NMI/IRQ handler
+
+    # Unrelated data table backing the unresolvable indexed load above.
+    put7(0xC400, [0x33, 0x44])
+
+    # Vector table.
+    put7(0xFFFA, [labels['rti'] & 0xFF, (labels['rti'] >> 8) & 0xFF])
+    put7(0xFFFC, [labels['reset'] & 0xFF, (labels['reset'] >> 8) & 0xFF])
+    put7(0xFFFE, [labels['rti'] & 0xFF, (labels['rti'] >> 8) & 0xFF])
+
+    return bytes(prg), labels
+
+
 def make_ines_header(prg_banks, chr_banks, mapper):
     h = bytearray(16)
     h[0:4] = b"NES\x1a"
@@ -1223,6 +1311,21 @@ def main():
           ", ".join("%s=$%04X" % (k, v) for k, v in m1labels.items()))
 
     _write_rom(outdir, "nesmmc1test.nes", prgm1, mapper=MAPPER_MMC1, prg_banks=MMC1_BANKS)
+
+    # nesmmc1overridetest.nes (bead grm-hsv.3): user placement override + provenance.
+    prgm1o, m1olabels = make_prg_mmc1_override()
+    m1obank7_base = 7 * PRG_BANK_SIZE
+    assert prgm1o[3 * PRG_BANK_SIZE] == 0x60  # RTS at W8000_M3_B3::8000 target
+    assert prgm1o[5 * PRG_BANK_SIZE] == 0x60  # RTS at W8000_M3_B5::8000 target
+    assert prgm1o[m1obank7_base + 0x002] == 0x8D  # STA opcode (reset dance) at $C002
+    assert prgm1o[m1obank7_base + 0x007] == 0xBD  # LDA abs,X opcode (opaque load) at $C007
+    veco = m1obank7_base + 0x3FFC
+    assert (prgm1o[veco] | (prgm1o[veco + 1] << 8)) == m1olabels['reset']  # RESET @ $FFFC
+    print("nesmmc1overridetest labels: " +
+          ", ".join("%s=$%04X" % (k, v) for k, v in m1olabels.items()))
+
+    _write_rom(outdir, "nesmmc1overridetest.nes", prgm1o, mapper=MAPPER_MMC1,
+               prg_banks=MMC1_BANKS)
 
 
 if __name__ == "__main__":

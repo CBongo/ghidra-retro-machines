@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -34,6 +35,7 @@ import ghidra.app.util.bin.ByteProvider;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.app.util.opinion.AbstractProgramWrapperLoader;
 import ghidra.app.util.opinion.LoadSpec;
+import ghidra.app.util.opinion.Loader;
 import ghidra.framework.model.DomainObject;
 import ghidra.program.database.mem.FileBytes;
 import ghidra.program.model.address.Address;
@@ -74,6 +76,18 @@ import ghidra.util.exception.CancelledException;
 public class NesRomLoader extends AbstractProgramWrapperLoader {
 
 	static final String BOARD_OPTION_NAME = "NES Board";
+
+	/**
+	 * User bank-placement override: space-separated {@code window:bank} pairs (e.g.
+	 * {@code "W8000:5"}) pinning a mode-varying switchable window to hold PRG bank N where
+	 * dataflow could not recover it. Persisted verbatim into
+	 * {@link DescriptorSupport#PLACEMENT_OVERRIDE_PROPERTY}; {@link NesBankingAnalyzer}
+	 * re-parses and applies it. Headless arg: {@code -loader-placement W8000:5} (colon
+	 * separator, not '=': cmd.exe's analyzeHeadless.bat splits arg values on '=').
+	 */
+	static final String PLACEMENT_OPTION_NAME = "NES Placement Override";
+
+	private static final String PLACEMENT_CMD_ARG = Loader.COMMAND_LINE_ARG_PREFIX + "-placement";
 
 	private static final String LANGUAGE_ID = "6502:LE:16:default";
 	private static final String COMPILER_SPEC_ID = "default";
@@ -176,6 +190,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 			// leave the default empty; validateOptions/load will complain if it matters
 		}
 		options.add(new Option(BOARD_OPTION_NAME, defaultBoard));
+		options.add(new Option(PLACEMENT_OPTION_NAME, "", String.class, PLACEMENT_CMD_ARG));
 		return options;
 	}
 
@@ -188,7 +203,77 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 				NesBoardRegistry.boards().stream().map(NesBoardRegistry.Board::id).toList();
 			return "Unknown NES board '" + boardId + "'; known boards: " + known;
 		}
+
+		String placement = OptionUtils.getOption(PLACEMENT_OPTION_NAME, options, "");
+		if (placement != null && !placement.isBlank()) {
+			Map<String, Integer> pairs;
+			try {
+				pairs = DescriptorSupport.parsePlacementOverride(placement);
+			}
+			catch (IllegalArgumentException e) {
+				return PLACEMENT_OPTION_NAME + ": " + e.getMessage();
+			}
+			// Window-name / bank-range checks need the descriptor + header. If the image can't
+			// be read, skip them (syntax is already validated; load() surfaces image errors).
+			// NB: in Ghidra 12.x validateOptions runs only from the GUI import dialogs, NOT the
+			// headless ProgramLoader path -- load() re-runs this same check as the headless
+			// safety net (see placementError there).
+			try {
+				InesHeader header = InesHeader.parse(provider);
+				NesBoardRegistry.Board board = boardId.isEmpty()
+						? (header == null ? null : NesBoardRegistry.forMapper(header.mapper()))
+						: NesBoardRegistry.forId(boardId);
+				if (header != null && board != null) {
+					String err = placementError(pairs, board, header.prgBanks());
+					if (err != null) {
+						return err;
+					}
+				}
+			}
+			catch (IOException e) {
+				// best-effort semantic check only; load() reports a truncated/bad image
+			}
+		}
 		return super.validateOptions(provider, loadSpec, options, program);
+	}
+
+	/**
+	 * First validation error in a parsed placement override against {@code board}'s
+	 * descriptor -- an unknown window name or an out-of-range bank -- or null if every pair
+	 * is well-formed. Shared by {@link #validateOptions} (GUI reject) and {@link #load}
+	 * (headless safety net).
+	 */
+	private static String placementError(Map<String, Integer> pairs, NesBoardRegistry.Board board,
+			int prgBanks) throws IOException {
+		Set<String> windows = descriptorWindowNames(board);
+		for (Map.Entry<String, Integer> pair : pairs.entrySet()) {
+			if (!windows.contains(pair.getKey())) {
+				return PLACEMENT_OPTION_NAME + ": unknown window '" + pair.getKey() +
+					"' for board " + board.id() + "; known windows: " + windows;
+			}
+			if (pair.getValue() >= prgBanks) {
+				return PLACEMENT_OPTION_NAME + ": bank " + pair.getValue() +
+					" out of range (ROM has " + prgBanks + " 16K PRG banks)";
+			}
+		}
+		return null;
+	}
+
+	/** Declared window-instance names for a board's descriptor (mode-invariant + varying),
+	 *  the legal {@code window} tokens for a {@link #PLACEMENT_OPTION_NAME} override. */
+	private static Set<String> descriptorWindowNames(NesBoardRegistry.Board board)
+			throws IOException {
+		JsonObject map = DescriptorSupport.loadMap(board.mapPath());
+		DescriptorSupport.LayoutPlan plan =
+			DescriptorSupport.planWindows(map, new MessageLog(), board.mapPath());
+		Set<String> names = new LinkedHashSet<>();
+		for (DescriptorSupport.PlannedWindow pw : plan.invariant()) {
+			names.add(pw.name());
+		}
+		for (DescriptorSupport.PlannedWindow pw : plan.varying()) {
+			names.add(pw.name());
+		}
+		return names;
 	}
 
 	@Override
@@ -238,6 +323,31 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 		// record the chosen board so the bank analyzer interprets with the same descriptor
 		program.getOptions(Program.PROGRAM_INFO)
 				.setString(DescriptorSupport.MAP_PATH_PROPERTY, board.mapPath());
+
+		// record a user placement override for the analyzer to apply to unresolved bank
+		// placements. validateOptions already vetted this in the GUI, but the headless
+		// ProgramLoader path never calls validateOptions (Ghidra 12.x), so re-check here and
+		// refuse a malformed/inapplicable override rather than persisting a misleading one.
+		String placement = OptionUtils.getOption(PLACEMENT_OPTION_NAME, settings.options(), "");
+		if (placement != null && !placement.isBlank()) {
+			Map<String, Integer> pairs;
+			try {
+				pairs = DescriptorSupport.parsePlacementOverride(placement);
+			}
+			catch (IllegalArgumentException e) {
+				log.appendMsg(PLACEMENT_OPTION_NAME + ": " + e.getMessage() +
+					" -- refusing to import with an invalid placement override");
+				return;
+			}
+			String err = placementError(pairs, board, header.prgBanks());
+			if (err != null) {
+				log.appendMsg(err + " -- refusing to import with an invalid placement override");
+				return;
+			}
+			program.getOptions(Program.PROGRAM_INFO)
+					.setString(DescriptorSupport.PLACEMENT_OVERRIDE_PROPERTY, placement.trim());
+			log.appendMsg("placement override: " + placement.trim());
+		}
 
 		JsonObject map = DescriptorSupport.loadMap(board.mapPath());
 

@@ -1,0 +1,52 @@
+BLOCK APU_IO 4000-401f overlay=false
+BLOCK PPU_REGS 2000-2007 overlay=false
+BLOCK PRG_RAM 6000-7fff overlay=false
+BLOCK RAM 0000-07ff overlay=false
+BLOCK W8000 8000-bfff overlay=false
+BLOCK W8000_M0_B0 8000-ffff overlay=true
+BLOCK W8000_M0_B1 8000-ffff overlay=true
+BLOCK W8000_M0_B2 8000-ffff overlay=true
+BLOCK W8000_M0_B3 8000-ffff overlay=true
+BLOCK W8000_M0_B4 8000-ffff overlay=true
+BLOCK W8000_M0_B5 8000-ffff overlay=true
+BLOCK W8000_M0_B6 8000-ffff overlay=true
+BLOCK W8000_M0_B7 8000-ffff overlay=true
+BLOCK W8000_M1_B0 8000-ffff overlay=true
+BLOCK W8000_M1_B1 8000-ffff overlay=true
+BLOCK W8000_M1_B2 8000-ffff overlay=true
+BLOCK W8000_M1_B3 8000-ffff overlay=true
+BLOCK W8000_M1_B4 8000-ffff overlay=true
+BLOCK W8000_M1_B5 8000-ffff overlay=true
+BLOCK W8000_M1_B6 8000-ffff overlay=true
+BLOCK W8000_M1_B7 8000-ffff overlay=true
+BLOCK W8000_M2 8000-bfff overlay=true
+BLOCK W8000_M3_B1 8000-bfff overlay=true
+BLOCK W8000_M3_B2 8000-bfff overlay=true
+BLOCK W8000_M3_B3 8000-bfff overlay=true
+BLOCK W8000_M3_B4 8000-bfff overlay=true
+BLOCK W8000_M3_B5 8000-bfff overlay=true
+BLOCK W8000_M3_B6 8000-bfff overlay=true
+BLOCK W8000_M3_B7 8000-bfff overlay=true
+BLOCK WC000 c000-ffff overlay=false
+BLOCK WC000_M2_B0 c000-ffff overlay=true
+BLOCK WC000_M2_B1 c000-ffff overlay=true
+BLOCK WC000_M2_B2 c000-ffff overlay=true
+BLOCK WC000_M2_B3 c000-ffff overlay=true
+BLOCK WC000_M2_B4 c000-ffff overlay=true
+BLOCK WC000_M2_B5 c000-ffff overlay=true
+BLOCK WC000_M2_B6 c000-ffff overlay=true
+BLOCK WC000_M2_B7 c000-ffff overlay=true
+COMMENT c002 bank -> 12 (mirroring=0,prg_mode=3,prg_bank=0) [switch-value flow]
+COMMENT c01d bank -> 5 [user override]
+COMMENT c032 bank -> 60? (mirroring=0,prg_mode=3,prg_bank=3) [known: prg_bank.0=1,prg_bank.1=1,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
+BOOKMARK Warning c00a
+BOOKMARK Warning c00e
+BOOKMARK Warning c012
+BOOKMARK Warning c016
+BOOKMARK Warning c01a
+BOOKMARK Warning c022
+BOOKMARK Warning c026
+BOOKMARK Warning c02a
+BOOKMARK Warning c02e
+REF c01d -> W8000_M3_B5::8000 UNCONDITIONAL_CALL primary=true
+REF c035 -> W8000_M3_B3::8000 UNCONDITIONAL_CALL primary=true

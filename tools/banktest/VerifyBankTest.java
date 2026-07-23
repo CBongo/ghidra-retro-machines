@@ -191,7 +191,10 @@ public class VerifyBankTest extends GhidraScript {
 
 		dump();
 
-		if (name.contains("nesmmc1test")) {
+		if (name.contains("nesmmc1overridetest")) {
+			checkNesMmc1Override();
+		}
+		else if (name.contains("nesmmc1test")) {
 			checkNesMmc1test();
 		}
 		else if (name.contains("nesserialtest")) {
@@ -1960,6 +1963,66 @@ public class VerifyBankTest extends GhidraScript {
 			"instruction exists at W8000_M3_B5::8000");
 		criterion("M10:WC000_M2_B7_C300", hasInstructionAt("WC000_M2_B7", 0xC300),
 			"instruction exists at WC000_M2_B7::C300");
+	}
+
+	private void checkNesMmc1Override() {
+		// Addresses per tools/banktest/mknesbanktest.py's make_prg_mmc1_override() label dump:
+		// reset=$C000, f_reset=$C002, opaque_load=$C007, unknown_commit=$C01A,
+		// override_jsr=$C01D, known_commit=$C032, flow_jsr=$C035, idle=$C038, rti=$C03B.
+		// Loaded with -loader-placement W8000:5 (window:bank; see run-banktest.sh).
+
+		// O1: the reset dance at $C002 recovers the whole state from dataflow (prg_mode=3
+		// known, no '?', same as nesmmc1test's M1) and now carries the provenance tag that
+		// distinguishes a flow-recovered switch from an override placement.
+		String c = eol(0xC002);
+		criterion("O1", c.contains("prg_mode=3") && !c.contains("?") &&
+			c.contains("[switch-value flow]"),
+			"reset dance -> flow-recovered, tagged [switch-value flow], at c002: \"" + c + "\"");
+
+		// O2: the inline chain commit at $C01A has a genuinely unrecoverable value (opaque
+		// LDA $C400,X seed) -> honest WARNING bookmark, no false "bank ->" claim (same rule as
+		// nesmmc1test's M9). prg_bank is unknown downstream from here -- which is exactly what
+		// makes the override load-bearing at the next reference (O3).
+		criterion("O2", hasWarningBookmark(0xC01A) && !eol(0xC01A).contains("bank ->"),
+			"unresolvable inline commit warns, no false comment, at c01a: warning=" +
+				hasWarningBookmark(0xC01A) + " comment=\"" + eol(0xC01A) + "\"");
+
+		// O3 (OVERRIDE FIRES): the JSR $8000 at $C01D, where prg_bank is unknown, retargets
+		// into W8000_M3_B5 -- the bank pinned by the override, NOT the home-bank fallback.
+		Reference r = findOverlayRef(0xC01D, "W8000_M3_B5", 0x8000);
+		criterion("O3", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $8000 with unknown prg_bank retargeted to the override's W8000_M3_B5, " +
+				"primary: " + describe(r));
+
+		// O4: the override site carries "[user override]" provenance in the listing/dump.
+		c = eol(0xC01D);
+		criterion("O4", c.contains("bank -> 5") && c.contains("[user override]"),
+			"override site tagged [user override] at c01d: \"" + c + "\"");
+
+		// O5: the known commit at $C032 recovers prg_bank=3 from dataflow. prg_mode/mirroring
+		// knownness was degraded by the unresolvable chain above (so the whole state carries a
+		// '?'), but prg_bank itself is known -- which is what drives placement -- and the
+		// switch is flow-sourced, so it is tagged [switch-value flow].
+		c = eol(0xC032);
+		criterion("O5", c.contains("prg_bank=3") && c.contains("known: prg_bank") &&
+			c.contains("[switch-value flow]"),
+			"known commit -> prg_bank=3 recovered, flow-tagged, at c032: \"" + c + "\"");
+
+		// O6 (FLOW WINS): the JSR $8000 at $C035, where prg_bank=3 IS known, retargets into
+		// W8000_M3_B3 -- dataflow beats the override (which pins W8000 to bank 5); no
+		// "[user override]" tag here, and no ref into B5.
+		r = findOverlayRef(0xC035, "W8000_M3_B3", 0x8000);
+		criterion("O6", r != null && r.getReferenceType().isCall() && r.isPrimary() &&
+			findOverlayRef(0xC035, "W8000_M3_B5", 0x8000) == null &&
+			!eol(0xC035).contains("[user override]"),
+			"JSR $8000 with known prg_bank=3 retargeted to W8000_M3_B3 (flow wins over " +
+				"override), primary: " + describe(r));
+
+		// O7: disassembly sanity -- both retargeted overlay targets exist.
+		criterion("O7:W8000_M3_B5_8000", hasInstructionAt("W8000_M3_B5", 0x8000),
+			"instruction exists at W8000_M3_B5::8000");
+		criterion("O7:W8000_M3_B3_8000", hasInstructionAt("W8000_M3_B3", 0x8000),
+			"instruction exists at W8000_M3_B3::8000");
 	}
 
 	private static String describeBlock(MemoryBlock b) {
