@@ -75,13 +75,13 @@ final acceptance and commits**. `build-and-test.sh --list-chunks` prints the cur
 | `c64-banking` | C64 `banktest`–`banktest4` fixtures |
 | `c64-loader` | C64 PRG placement/wrapping, ROM loading, symbol toggles |
 | `c64-recovery` | C64 emulation and decrypt/recovery fixtures |
-| `basic-petscii` | C64 BASIC headless fixture + the JUnit `test` suite |
+| `basic-petscii` | C64 BASIC headless fixture |
 | `basic-dialects` | PET BASIC 4 / C128 BASIC 7 token dialects + C64 BASIC 2 regression |
 | `pet-loader` | PET 4032 descriptor, PRG placement, IO types, fixed ROM slots |
 | `c128-loader` | C128 native BASIC PRG placement, fixed ROM slots, MMU IO |
 | `nes-banking` | NES banking and MMC fixtures |
-| `petscii-strings` | `PetsciiStringAnalyzer` C64 PRG fixture + the JUnit `test` suite |
-| `bit-algebra` | the JUnit `test` suite only (no extension build/install needed alone) |
+| `petscii-strings` | `PetsciiStringAnalyzer` C64 PRG fixture |
+| `unit` | the JUnit `gradle test` suite (all `src/test/java`; no extension build/install needed alone) |
 | `all` | every chunk (the default when no chunk is given) |
 
 ```bash
@@ -129,14 +129,17 @@ GHIDRA_INSTALL_DIR=D:/ghidra_<ver>_PUBLIC gradle test
 
 ### Status
 
-As of `grm-32f.4` the `test` suite **is run by `build-and-test.sh`** (in place of the retired
-`verify*` `JavaExec` tasks): the full `all` gate runs it, as do the `basic-petscii`,
-`basic-dialects`, `petscii-strings`, and `bit-algebra` chunks. It stays **out of
-`buildExtension`'s `dependsOn`** — `buildExtension` is packaging-only and the gate invokes
-`test` explicitly. The task is still monolithic (it runs the whole `src/test/java` suite
-wherever invoked); making test selection **per-chunk** (so, e.g., `nes-banking` runs only the
-relevant tests) is tracked as `grm-32f.5`. Tier 3 remains the acceptance authority; the JUnit
-suite is an additional gate, not a replacement.
+The `test` suite **is run by `build-and-test.sh`** (it replaced the retired `verify*`
+`JavaExec` tasks in `grm-32f.4`). As of `grm-32f.5` it has its **own chunk, `unit`**: run
+`build-and-test.sh check unit` to run just `gradle test` (no extension build/install), and the
+full `all` gate runs it alongside every headless fixture. Headless chunks (`basic-petscii`,
+`nes-banking`, …) run **only** their fixtures — they no longer drag in the JUnit suite — so a
+targeted dev loop stays fast. `test` itself is still monolithic (the whole `src/test/java`
+suite runs whenever `unit`/`all` is selected); the suite is small and fast (~seconds; one
+`AbstractGenericTest` class bootstraps `Application`), so finer per-`--tests` scoping was
+deliberately skipped. It stays **out of `buildExtension`'s `dependsOn`** — `buildExtension` is
+packaging-only and the gate invokes `test` explicitly. Tier 3 remains the acceptance
+authority; the JUnit suite is an additional gate, not a replacement.
 
 ## When to add which
 

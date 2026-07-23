@@ -43,7 +43,7 @@ usage() {
 usage: $0 [check|bless] [chunk ...]
 
 Chunks: c64-banking c64-loader c64-recovery basic-petscii basic-dialects pet-loader c128-loader nes-banking
-        petscii-strings bit-algebra all
+        petscii-strings unit all
 
 With no chunks, all is selected. Use --list-chunks to print this list.
 EOF
@@ -54,13 +54,13 @@ list_chunks() {
 c64-banking   C64 banktest through banktest4 fixtures
 c64-loader    C64 PRG placement/wrapping, ROM loading, and symbol toggles
 c64-recovery  C64 emulation and decrypt/recovery fixtures
-basic-petscii C64 BASIC headless fixture plus the JUnit `test` suite
+basic-petscii C64 BASIC headless fixture
 basic-dialects PET BASIC 4/C128 BASIC 7 token dialects plus C64 BASIC 2 regression
 pet-loader    PET 4032 descriptor, PRG placement, IO types, and fixed ROM slots
 c128-loader   C128 native BASIC PRG placement, fixed ROM slots, and MMU IO
 nes-banking   NES banking and MMC fixtures
-petscii-strings PetsciiStringAnalyzer C64 PRG fixture, plus the JUnit `test` suite
-bit-algebra   JUnit `test` suite only (no extension build/install required alone)
+petscii-strings PetsciiStringAnalyzer C64 PRG fixture
+unit          JUnit `gradle test` suite (all src/test/java; no extension build/install)
 all           Every chunk (the default)
 EOF
 }
@@ -88,7 +88,7 @@ fi
 
 for chunk in "${REQUESTED_CHUNKS[@]}"; do
 	case "$chunk" in
-		c64-banking|c64-loader|c64-recovery|basic-petscii|basic-dialects|pet-loader|c128-loader|nes-banking|petscii-strings|bit-algebra|all) ;;
+		c64-banking|c64-loader|c64-recovery|basic-petscii|basic-dialects|pet-loader|c128-loader|nes-banking|petscii-strings|unit|all) ;;
 		*)
 			echo "FAIL: unknown chunk '$chunk'" >&2
 			usage >&2
@@ -108,12 +108,14 @@ has_chunk() {
 
 # Expand `all` here rather than handing it to the wrapper as one of several
 # chunks: that keeps runner selection unambiguous and avoids duplicate work.
-# The former per-verifier Gradle checks (verifyBitAlgebra/verifyPetsciiMapper/verifyCharsets
-# /verifyMapCompiler/verifyDescriptorComposition) are now JUnit @Test classes run by the
-# single `test` task (bead grm-32f.4). `test` is monolithic today -- it runs the WHOLE
-# src/test/java suite wherever it is invoked; per-chunk test selection is bead grm-32f.5. So
-# the chunks that used to trigger a Gradle verifier now trigger `test`, and the full `all`
-# gate runs it (covering every migrated verifier + the program-fixture tests).
+# The migrated verifiers (bead grm-32f.4) and the program-fixture/pure unit tests all live in
+# the single JUnit `test` task. `test` is monolithic -- it runs the WHOLE src/test/java suite
+# wherever invoked -- so rather than making every headless chunk pay for it, it is exposed as
+# its OWN chunk, `unit` (bead grm-32f.5). Headless chunks run only their fixtures; `unit` runs
+# only `gradle test` (no extension build/install); and the full `all` gate runs both. The
+# suite is small and fast (~seconds; one AbstractGenericTest class bootstraps Application),
+# so finer per-chunk --tests scoping was deliberately not added -- a chunk->test-class map
+# would be fragile for negligible gain.
 RUN_HEADLESS=0
 RUNNER_CHUNKS=()
 RUN_JUNIT=0
@@ -128,8 +130,7 @@ else
 			RUNNER_CHUNKS+=("$chunk")
 		fi
 	done
-	if has_chunk basic-petscii || has_chunk basic-dialects || has_chunk petscii-strings \
-		|| has_chunk bit-algebra; then
+	if has_chunk unit; then
 		RUN_JUNIT=1
 	fi
 fi
@@ -170,8 +171,8 @@ fi
 	exit 1
 }
 
-# A bit-algebra-only selection has no headless fixture. It intentionally
-# stops after the Gradle verification above, avoiding the extension loop.
+# A `unit`-only selection has no headless fixture. It intentionally
+# stops after the Gradle `test` run above, avoiding the extension loop.
 if [ "$RUN_HEADLESS" -ne 1 ]; then
 	exit 0
 fi
