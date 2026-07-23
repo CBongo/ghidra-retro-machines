@@ -53,6 +53,10 @@ bd close <id>         # Complete work
 
 ## Build & Test
 
+> **See [docs/testing.md](docs/testing.md) for the full testing strategy** — the three test
+> tiers (pure JUnit / `ProgramBuilder` JUnit / E2E golden image), when to use each, the
+> bless-review discipline, and the chunk map. The essentials are below.
+
 The full acceptance gate is:
 
 ```bash

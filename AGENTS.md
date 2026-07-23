@@ -47,6 +47,15 @@ cp -rf source dest          # NOT: cp -r source dest
 - `apt-get` - use `-y` flag
 - `brew` - use `HOMEBREW_NO_AUTO_UPDATE=1` env var
 
+## Testing
+
+**Read [docs/testing.md](docs/testing.md) before writing or hunting for tests.** Short
+version: the end-to-end golden-image suite (`bash tools/banktest/build-and-test.sh check`)
+is the acceptance gate. A JUnit layer (`gradle test`, `src/test/java`) also exists as of
+`grm-32f.1` for pure logic and `ProgramBuilder` fixtures — but it is opt-in and does not
+replace the E2E gate. Don't add a bespoke `main()`+`JavaExec` verifier when a JUnit `@Test`
+fits; don't `bless` a golden diff you haven't reviewed.
+
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:7510c1e2 -->
 ## Beads Issue Tracker
 
