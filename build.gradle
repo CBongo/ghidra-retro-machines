@@ -106,40 +106,16 @@ dependencies {
 // `dependencies {}` above (which is what buildExtension.gradle copies).
 //----------------------------------------------------------------------------------
 
+// The gdtBuilder source set holds the build-time descriptor toolchain (MapCompiler,
+// GdtBuilder, YamlSupport, PetsciiCompiler, ScreencodeCompiler) driven by the buildXxxGdt/
+// buildXxxMap/buildPetsciiMap/buildScreencodeMap JavaExec tasks below. The former
+// bitAlgebraCheck/petsciiCheck/charsetCheck source sets and their verify* JavaExec tasks
+// were retired in bead grm-32f.4: those hand-rolled main()+System.exit verifiers are now
+// standard JUnit @Test classes under src/test/java, run by the `test` task (see below).
 sourceSets {
 	gdtBuilder {
 		java {
 			srcDirs = ['tools/gdtbuilder/src/main/java']
-		}
-	}
-	// Pure-Java (no Ghidra dependency) exhaustive check that the collapsed bit-parallel
-	// forms in StoredValueScanner equal the original per-bit loops (bead grm-5tl.11).
-	bitAlgebraCheck {
-		java {
-			srcDirs = ['tools/bitalgebra']
-		}
-	}
-	// Exhaustive check that PetsciiMapper (src/main/java/retromachines) resolves all
-	// 256 bytes x 2 variants correctly (bead grm-1.4.1). Unlike bitAlgebraCheck, this
-	// exercises the real production class (via its file-based, non-Ghidra-runtime
-	// factory -- see PetsciiMapper.loadFromMapFile), so its classpath includes `main`'s
-	// compiled output; see the verifyPetsciiMapper task below for why no Ghidra jars
-	// are needed even though PetsciiMapper.java itself imports Ghidra types for load().
-	petsciiCheck {
-		java {
-			srcDirs = ['tools/petscii']
-		}
-	}
-	// Pure-Java (no Ghidra dependency) proof that retromachines.charset.RetroCharsetProvider
-	// is discovered via the REAL java.util.ServiceLoader SPI path (bead grm-1.4 Phase F).
-	// Unlike petsciiCheck, this one's classpath must include the staged
-	// META-INF/services/java.nio.charset.spi.CharsetProvider + retromachines/charset/*.map
-	// resources (see the verifyCharsets task below) -- the JavaExec classpath IS the forked
-	// JVM's system classpath, which is what makes Charset.forName(...) actually exercise
-	// ServiceLoader discovery here instead of just calling the provider class directly.
-	charsetCheck {
-		java {
-			srcDirs = ['tools/charset']
 		}
 	}
 }
@@ -157,35 +133,18 @@ dependencies {
 	// YAML parsing for the builder only; never shipped (see note above).
 	gdtBuilderImplementation 'org.yaml:snakeyaml:2.2'
 
-	// petsciiCheck (bead grm-1.4.1) exercises the real retromachines.PetsciiMapper class
-	// (via its file-based, non-Ghidra-runtime factory), so it needs `main`'s compiled
-	// output on its classpath. It deliberately does NOT get the full Ghidra jar fileTree
-	// gdtBuilder gets above: PetsciiMapper.java's only Ghidra-touching method (load(),
-	// which calls Application.findDataFileInAnyModule) is never invoked by the verifier,
-	// and the JVM resolves/verifies each method's bytecode lazily on first call, so that
-	// method's Ghidra types never need to be resolved here -- only gson (used by
-	// PetsciiMapper's JSON parsing, invoked from the file-based path the verifier DOES
-	// use) is required at runtime.
-	petsciiCheckImplementation sourceSets.main.output
-	petsciiCheckImplementation fileTree(dir: ghidraInstallDir + '/Ghidra/Framework/Generic/lib',
-		include: 'gson-*.jar')
-
-	// charsetCheck (bead grm-1.4 Phase F) needs main's compiled output (retromachines.charset
-	// classes, plus retromachines.PetsciiMapper used as the independent decode/encode
-	// reference) and gson (PetsciiMapper's JSON parsing), same reasoning as petsciiCheck above.
-	charsetCheckImplementation sourceSets.main.output
-	charsetCheckImplementation fileTree(dir: ghidraInstallDir + '/Ghidra/Framework/Generic/lib',
-		include: 'gson-*.jar')
-
-	// JUnit spike (bead grm-32f.1): the `test` source set is supplied by the `java` plugin
-	// (srcDir src/test/java) -- only its dependencies and task config are added here. Mirrors
-	// the gdtBuilder/petsciiCheck classpath pattern above: Ghidra's own jars already carry
-	// AbstractGenericTest (Generic.jar) and ProgramBuilder (Base.jar) compiled in, so no
-	// Ghidra source is compiled for tests, only linked against. JUnit4 (not 5) + hamcrest come
-	// from Maven since Ghidra's shipped test scaffolding needs them at runtime; the `test`
-	// task below uses useJUnit() (vintage), not useJUnitPlatform(). Deliberately NOT wired
-	// into buildExtension's dependsOn (below) or any verify* gate yet -- opt-in via
-	// `gradle test` only, while this spike proves the fixture path out.
+	// JUnit layer (bead grm-32f.1 spike; verifiers migrated in grm-32f.4): the `test` source
+	// set is supplied by the `java` plugin (srcDir src/test/java) -- only its dependencies and
+	// task config are added here. Mirrors the gdtBuilder classpath pattern above: Ghidra's own
+	// jars already carry AbstractGenericTest (Generic.jar) and ProgramBuilder (Base.jar)
+	// compiled in, plus gson (Generic/lib) used by PetsciiMapper/MapCompiler, so no Ghidra
+	// source is compiled for tests, only linked against. sourceSets.main.output carries the
+	// retromachines/charset classes AND the staged classpath resources
+	// (META-INF/services/java.nio.charset.spi.CharsetProvider + retromachines/charset/*.map,
+	// via processResources -> stageCharsetResources) that RetroCharsetProviderTest's
+	// ServiceLoader discovery and PetsciiMapperTest's map load both depend on. JUnit4 (not 5)
+	// + hamcrest come from Maven since Ghidra's shipped test scaffolding needs them at runtime;
+	// the `test` task below uses useJUnit() (vintage), not useJUnitPlatform().
 	testImplementation fileTree(dir: ghidraInstallDir, includes: [
 		'Ghidra/Framework/*/lib/*.jar', 'Ghidra/Features/*/lib/*.jar'])
 	testImplementation sourceSets.main.output
@@ -303,7 +262,7 @@ task buildScreencodeMap(type: JavaExec) {
 // getClass().getResourceAsStream("/retromachines/charset/petscii.map") and (as of bead
 // grm-1.4.5) ".../screencode.map" -- i.e. as plain classpath resources, not through Ghidra's
 // Application/data-file resolution (that's what makes the provider usable from a bare
-// ServiceLoader in a plain JVM, see tools/charset/CharsetProviderVerify.java). Gradle's
+// ServiceLoader, see src/test/java/retromachines/RetroCharsetProviderTest.java). Gradle's
 // default resource root (src/main/resources) can't hold data/petscii.map itself, since that
 // file is a gitignored build artifact generated by buildPetsciiMap, not checked-in source --
 // so it is staged into a second, generated resources root instead of being duplicated.
@@ -342,57 +301,23 @@ task validateSketches {
 	}
 }
 
-task verifyBitAlgebra(type: JavaExec) {
-	group = "Ghidra Retro Machines"
-	description = "Exhaustively prove StoredValueScanner's bit-parallel combine/fullyDetermined forms equal the original per-bit loops (bead grm-5tl.11; no Ghidra dependency)"
-	dependsOn 'compileBitAlgebraCheckJava'
-	classpath = sourceSets.bitAlgebraCheck.runtimeClasspath
-	mainClass = 'BitAlgebraEquivalence'
-}
-
-task verifyPetsciiMapper(type: JavaExec) {
-	group = "Ghidra Retro Machines"
-	description = "Exhaustively prove retromachines.PetsciiMapper resolves all 256 bytes x 2 variants against data/petscii.map (bead grm-1.4.1; runs outside a Ghidra runtime -- see build.gradle's petsciiCheckImplementation comment)"
-	dependsOn 'compilePetsciiCheckJava', 'buildPetsciiMap'
-	classpath = sourceSets.petsciiCheck.runtimeClasspath
-	mainClass = 'PetsciiMapperVerify'
-	args = [file('data/petscii.map').absolutePath]
-}
-
-task verifyCharsets(type: JavaExec) {
-	group = "Ghidra Retro Machines"
-	description = "Prove retromachines.charset.RetroCharsetProvider is discovered via the real java.util.ServiceLoader SPI path and its charsets agree with retromachines.PetsciiMapper (bead grm-1.4 Phase F; runs outside a Ghidra runtime)"
-	dependsOn 'compileCharsetCheckJava', 'processResources'
-	// The JavaExec classpath IS the forked JVM's system classpath, so Charset.forName(...)
-	// inside CharsetProviderVerify exercises the REAL ServiceLoader SPI discovery path --
-	// including build/resources/main (populated by processResources, which depends on
-	// stageCharsetResources above), which is where both
-	// META-INF/services/java.nio.charset.spi.CharsetProvider and
-	// retromachines/charset/petscii.map need to resolve from for that to work.
-	classpath = sourceSets.charsetCheck.runtimeClasspath
-	mainClass = 'CharsetProviderVerify'
-}
-
-task verifyDescriptorComposition(type: JavaExec) {
-	group = "Ghidra Retro Machines"
-	description = "Verify recursive machine-descriptor include and merge semantics (bead grm-5zg)"
-	dependsOn 'compileGdtBuilderJava'
-	classpath = sourceSets.gdtBuilder.runtimeClasspath
-	mainClass = 'gdtbuilder.DescriptorCompositionVerify'
-}
-
-task verifyMapCompiler(type: JavaExec) {
-	group = "Ghidra Retro Machines"
-	description = "Verify fixed-ROM region targets and compiled format metadata"
-	dependsOn 'compileGdtBuilderJava'
-	classpath = sourceSets.gdtBuilder.runtimeClasspath
-	mainClass = 'gdtbuilder.MapCompilerVerify'
-}
-
-// JUnit spike (bead grm-32f.1): `gradle test` runs the src/test/java suite through Ghidra's
-// own shipped test scaffolding (AbstractGenericTest, ProgramBuilder) instead of a hand-rolled
-// main()+System.exit verifier. Kept separate from the verify* tasks above and out of
-// buildExtension's dependsOn (below) -- opt-in only, not yet part of the acceptance gate.
+// `gradle test` runs the src/test/java JUnit suite through Ghidra's own shipped test
+// scaffolding (AbstractGenericTest, ProgramBuilder). As of bead grm-32f.4 it is also the home
+// of the migrated verifiers -- the former verifyBitAlgebra / verifyPetsciiMapper /
+// verifyCharsets / verifyDescriptorComposition / verifyMapCompiler JavaExec tasks are now
+// @Test classes here (BitAlgebraEquivalenceTest, PetsciiMapperTest, RetroCharsetProviderTest,
+// DescriptorCompositionTest, MapCompilerTest), giving per-assertion reporting instead of the
+// old first-mismatch System.exit. The banktest acceptance gate (tools/banktest/
+// build-and-test.sh) invokes this task in place of those verify* tasks; whole-suite vs.
+// per-chunk test selection is bead grm-32f.5. Deliberately NOT wired into buildExtension's
+// dependsOn: buildExtension stays packaging-only, and the gate runs `test` explicitly.
+//
+// RetroCharsetProviderTest note (the grm-32f.4 caveat, resolved): a Gradle Test-worker fork
+// puts the test runtime classpath on the JVM system classpath, so Charset.forName(...) still
+// exercises the REAL java.util.ServiceLoader SPI discovery of RetroCharsetProvider here --
+// verified green -- exactly as the old JavaExec classpath did. The staged
+// META-INF/services/java.nio.charset.spi.CharsetProvider + retromachines/charset/*.map
+// resources reach the fork via testImplementation sourceSets.main.output (processResources).
 test {
 	useJUnit()
 	maxHeapSize = '2g'
@@ -441,6 +366,5 @@ tasks.matching { it.name == 'buildExtension' }.configureEach {
 	// smoke test; previously masked by a stale petscii.map in the main tree).
 	// buildScreencodeMap (bead grm-1.4.5) ships data/screencode.map for the same
 	// reason -- RetroCharsetProvider's screen-code charsets need it at runtime.
-	dependsOn 'buildGdt', 'buildMap', 'buildPetsciiMap', 'buildScreencodeMap', 'sleighCompile',
-		'verifyDescriptorComposition', 'verifyMapCompiler'
+	dependsOn 'buildGdt', 'buildMap', 'buildPetsciiMap', 'buildScreencodeMap', 'sleighCompile'
 }

@@ -19,11 +19,13 @@ Tiers 1–2 are **additive and opt-in today** (`gradle test`; not yet run by the
 gate — see status below). Tier 3 is the authority and always runs. A change is not accepted
 until Tier 3 is green.
 
-There is also a set of **legacy bespoke verifiers** (`verifyBitAlgebra`, `verifyMapCompiler`,
-`verifyDescriptorComposition`, `verifyPetsciiMapper`, `verifyCharsets`) — hand-rolled
-`main()`+`System.exit` checks wired as `JavaExec` tasks and run inside Tier 3. They predate
-the JUnit layer and are the natural migration target for Tier 1 (tracked as `grm-32f.4`).
-Prefer adding new pure checks as Tier-1 JUnit, not as another bespoke verifier.
+The project **used** to carry a set of bespoke `main()`+`System.exit` verifiers
+(`verifyBitAlgebra`, `verifyMapCompiler`, `verifyDescriptorComposition`, `verifyPetsciiMapper`,
+`verifyCharsets`) wired as `JavaExec` tasks. As of `grm-32f.4` they are **all migrated to
+JUnit** `@Test` classes under `src/test/java` (`BitAlgebraEquivalenceTest`, `MapCompilerTest`,
+`DescriptorCompositionTest`, `PetsciiMapperTest`, `RetroCharsetProviderTest`) and run by the
+`test` task, which gives per-assertion reporting instead of first-mismatch `System.exit`. Add
+new pure checks as Tier-1 JUnit — do not reintroduce a bespoke `main()` verifier.
 
 ## Tier 3 — the E2E golden-image suite (the acceptance authority)
 
@@ -73,13 +75,13 @@ final acceptance and commits**. `build-and-test.sh --list-chunks` prints the cur
 | `c64-banking` | C64 `banktest`–`banktest4` fixtures |
 | `c64-loader` | C64 PRG placement/wrapping, ROM loading, symbol toggles |
 | `c64-recovery` | C64 emulation and decrypt/recovery fixtures |
-| `basic-petscii` | C64 BASIC headless fixture + `verifyPetsciiMapper` |
+| `basic-petscii` | C64 BASIC headless fixture + the JUnit `test` suite |
 | `basic-dialects` | PET BASIC 4 / C128 BASIC 7 token dialects + C64 BASIC 2 regression |
 | `pet-loader` | PET 4032 descriptor, PRG placement, IO types, fixed ROM slots |
 | `c128-loader` | C128 native BASIC PRG placement, fixed ROM slots, MMU IO |
 | `nes-banking` | NES banking and MMC fixtures |
-| `petscii-strings` | `PetsciiStringAnalyzer` C64 PRG fixture + `verifyCharsets` |
-| `bit-algebra` | `verifyBitAlgebra` (no extension build/install needed alone) |
+| `petscii-strings` | `PetsciiStringAnalyzer` C64 PRG fixture + the JUnit `test` suite |
+| `bit-algebra` | the JUnit `test` suite only (no extension build/install needed alone) |
 | `all` | every chunk (the default when no chunk is given) |
 
 ```bash
@@ -98,8 +100,10 @@ shipped test scaffolding** — no GhidraDev/Eclipse tooling required. It runs he
 the binary install. Reference tests from the spike:
 
 - `src/test/java/retromachines/BankStateTest.java` — Tier 1, pure logic, zero Ghidra imports.
-- `src/test/java/gdtbuilder/MapCompilerParsingTest.java` — Tier 1, `MapCompiler` via
-  `TemporaryFolder` + `assertThrows` (the JUnit analogue of the `MapCompilerVerify` idiom).
+- `src/test/java/gdtbuilder/MapCompilerTest.java` — Tier 1, `MapCompiler` via
+  `TemporaryFolder` + `assertThrows` (the migrated `verifyMapCompiler`); its sibling
+  `DescriptorCompositionTest`, plus `BitAlgebraEquivalenceTest`, `PetsciiMapperTest`, and
+  `RetroCharsetProviderTest`, are the other migrated verifiers (`grm-32f.4`).
 - `src/test/java/retromachines/BankStrategyProgramTest.java` — Tier 2, `AbstractGenericTest`
   + `ProgramBuilder`, exercising the real `RegisterWriteBankSwitchStrategy` →
   `StoredValueScanner` path against a built `LDA #imm ; STA $01` fixture.
@@ -125,10 +129,14 @@ GHIDRA_INSTALL_DIR=D:/ghidra_<ver>_PUBLIC gradle test
 
 ### Status
 
-The JUnit layer is **opt-in**: it is deliberately **not** in `buildExtension`'s `dependsOn`
-and **not** run by `build-and-test.sh`, so Tier 3 remains the sole gate for now. Wiring
-`gradle test` into the acceptance gate as a fast chunk is tracked as `grm-32f.5`; migrating
-the bespoke verifiers into it is `grm-32f.4`.
+As of `grm-32f.4` the `test` suite **is run by `build-and-test.sh`** (in place of the retired
+`verify*` `JavaExec` tasks): the full `all` gate runs it, as do the `basic-petscii`,
+`basic-dialects`, `petscii-strings`, and `bit-algebra` chunks. It stays **out of
+`buildExtension`'s `dependsOn`** — `buildExtension` is packaging-only and the gate invokes
+`test` explicitly. The task is still monolithic (it runs the whole `src/test/java` suite
+wherever invoked); making test selection **per-chunk** (so, e.g., `nes-banking` runs only the
+relevant tests) is tracked as `grm-32f.5`. Tier 3 remains the acceptance authority; the JUnit
+suite is an additional gate, not a replacement.
 
 ## When to add which
 

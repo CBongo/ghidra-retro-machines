@@ -125,17 +125,19 @@ String line = mapper.toDisplayEscaped(byteArray, PetsciiMapper.Variant.SHIFTED_L
 ```
 
 `load()` requires a running Ghidra application (`Application.findDataFileInAnyModule`).
-Tools that run outside a Ghidra runtime (e.g. the verifier below) use
-`PetsciiMapper.loadFromMapFile(File)` instead, which parses `data/petscii.map` directly.
+Tools that run outside a Ghidra runtime (e.g. the test below) use
+`PetsciiMapper.loadFromMapFile(File)`/`loadFromStream(InputStream)` instead, which parse the
+compiled `petscii.map` directly.
 
 ## Verification
 
-`tools/petscii/PetsciiMapperVerify.java` (own Gradle source set `petsciiCheck`, own task
-`verifyPetsciiMapper`, structured after `tools/bitalgebra/BitAlgebraEquivalence.java`)
+`src/test/java/retromachines/PetsciiMapperTest.java` (JUnit, run by `gradle test`; migrated
+from the former `tools/petscii/PetsciiMapperVerify.java` bespoke verifier in bead `grm-32f.4`)
 exhaustively checks all 256 bytes x 2 variants: non-null/non-empty display strings, every
 petcat-named byte matches the independently-transcribed reference table, every unnamed
 non-printable byte renders exactly `{$xx}`, and printable bytes render the expected
-character. Run with `gradle verifyPetsciiMapper`.
+character. It loads the compiled map from the staged classpath resource
+`/retromachines/charset/petscii.map`. Run with `gradle test`.
 
 ## For consumers (the BASIC detokenizing analyzer, grm-odt.1; Charset registration in grm-1.4)
 

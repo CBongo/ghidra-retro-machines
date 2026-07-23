@@ -54,13 +54,13 @@ list_chunks() {
 c64-banking   C64 banktest through banktest4 fixtures
 c64-loader    C64 PRG placement/wrapping, ROM loading, and symbol toggles
 c64-recovery  C64 emulation and decrypt/recovery fixtures
-basic-petscii C64 BASIC headless fixture plus verifyPetsciiMapper
+basic-petscii C64 BASIC headless fixture plus the JUnit `test` suite
 basic-dialects PET BASIC 4/C128 BASIC 7 token dialects plus C64 BASIC 2 regression
 pet-loader    PET 4032 descriptor, PRG placement, IO types, and fixed ROM slots
 c128-loader   C128 native BASIC PRG placement, fixed ROM slots, and MMU IO
 nes-banking   NES banking and MMC fixtures
-petscii-strings PetsciiStringAnalyzer C64 PRG fixture, plus verifyCharsets
-bit-algebra   verifyBitAlgebra (no extension build/install required alone)
+petscii-strings PetsciiStringAnalyzer C64 PRG fixture, plus the JUnit `test` suite
+bit-algebra   JUnit `test` suite only (no extension build/install required alone)
 all           Every chunk (the default)
 EOF
 }
@@ -108,13 +108,19 @@ has_chunk() {
 
 # Expand `all` here rather than handing it to the wrapper as one of several
 # chunks: that keeps runner selection unambiguous and avoids duplicate work.
+# The former per-verifier Gradle checks (verifyBitAlgebra/verifyPetsciiMapper/verifyCharsets
+# /verifyMapCompiler/verifyDescriptorComposition) are now JUnit @Test classes run by the
+# single `test` task (bead grm-32f.4). `test` is monolithic today -- it runs the WHOLE
+# src/test/java suite wherever it is invoked; per-chunk test selection is bead grm-32f.5. So
+# the chunks that used to trigger a Gradle verifier now trigger `test`, and the full `all`
+# gate runs it (covering every migrated verifier + the program-fixture tests).
 RUN_HEADLESS=0
 RUNNER_CHUNKS=()
-GRADLE_CHECKS=()
+RUN_JUNIT=0
 if has_chunk all; then
 	RUN_HEADLESS=1
 	RUNNER_CHUNKS=(all)
-	GRADLE_CHECKS=(verifyPetsciiMapper verifyCharsets verifyBitAlgebra)
+	RUN_JUNIT=1
 else
 	for chunk in c64-banking c64-loader c64-recovery basic-petscii basic-dialects pet-loader c128-loader nes-banking petscii-strings; do
 		if has_chunk "$chunk"; then
@@ -122,13 +128,13 @@ else
 			RUNNER_CHUNKS+=("$chunk")
 		fi
 	done
-	if has_chunk basic-petscii || has_chunk basic-dialects || has_chunk petscii-strings; then
-		GRADLE_CHECKS+=(verifyPetsciiMapper verifyCharsets)
-	fi
-	if has_chunk bit-algebra; then
-		GRADLE_CHECKS+=(verifyBitAlgebra)
+	if has_chunk basic-petscii || has_chunk basic-dialects || has_chunk petscii-strings \
+		|| has_chunk bit-algebra; then
+		RUN_JUNIT=1
 	fi
 fi
+GRADLE_CHECKS=()
+[ "$RUN_JUNIT" -eq 1 ] && GRADLE_CHECKS=(test)
 
 if [ "$MODE" = "bless" ] && [ "$RUN_HEADLESS" -ne 1 ]; then
 	echo "FAIL: bless requires at least one headless chunk with golden output" >&2

@@ -13,38 +13,31 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-// Exhaustive check that retromachines.PetsciiMapper resolves every byte correctly against
-// the compiled data/petscii.map (bead grm-1.4.1; unicode-layer checks added grm-1.4.2).
-//
-// Structured after tools/bitalgebra/BitAlgebraEquivalence.java: its own Gradle source set
-// (petsciiCheck), its own task (verifyPetsciiMapper), same PASS-line convention. The key
-// difference from BitAlgebraEquivalence is that this tool exercises the REAL production
-// class rather than a transcribed reference implementation -- PetsciiMapper.loadFromMapFile
-// is the seam that makes that possible without a live Ghidra runtime (no
-// Application.initializeApplication(), no headless analyzer): it parses data/petscii.map
-// directly from disk with plain gson, the same code path PetsciiMapper.load() uses
-// internally once the JSON is in hand, just reached without Application.findDataFileInAnyModule.
-//
-// Run via `gradle verifyPetsciiMapper` (classpath = main's compiled retromachines classes +
-// gson only -- no Ghidra jars; see build.gradle's petsciiCheckImplementation comment for why
-// that is safe even though PetsciiMapper.java itself imports Ghidra types for load()) or
-// plainly: javac -cp <main classes>:<gson.jar> + java -cp ... PetsciiMapperVerify <petscii.map>
-//
-// Exits non-zero (throws) on the first mismatch; prints "PETSCIIMAPPER PASS (<n> cases)" when
-// every case agrees.
+package retromachines;
 
-import java.io.File;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.fail;
+
+import java.io.InputStream;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import retromachines.PetsciiMapper;
+import org.junit.Before;
+import org.junit.Test;
+
 import retromachines.PetsciiMapper.Variant;
 
-public final class PetsciiMapperVerify {
-
-	private PetsciiMapperVerify() {
-	}
+/**
+ * JUnit migration of {@code tools/petscii/PetsciiMapperVerify.java} (bead grm-32f.4):
+ * exhaustive check that {@link PetsciiMapper} resolves every byte correctly against the
+ * compiled {@code petscii.map} (bead grm-1.4.1; unicode-layer checks added grm-1.4.2).
+ * <p>
+ * The mapper is loaded once in {@link #setUp()} from the classpath resource
+ * {@code /retromachines/charset/petscii.map} that the build stages, rather than from a CLI
+ * argument pointing at {@code data/petscii.map} directly.
+ */
+public class PetsciiMapperTest {
 
 	// Verbatim VICE petcat ctrl1[]/ctrl2[] short-name tables (see
 	// machines/generated/petscii.yaml's header for full provenance/verification details).
@@ -116,6 +109,16 @@ public final class PetsciiMapperVerify {
 		SHIFTED_OVERRIDES.put(0xBA, 0x2713);
 	}
 
+	private PetsciiMapper mapper;
+
+	@Before
+	public void setUp() throws Exception {
+		try (InputStream in = getClass().getResourceAsStream("/retromachines/charset/petscii.map")) {
+			assertNotNull("classpath resource /retromachines/charset/petscii.map not found", in);
+			mapper = PetsciiMapper.loadFromStream(in);
+		}
+	}
+
 	/** Independently re-derives the expected unicode-layer codepoint for one byte/variant,
 	 *  per the policy documented in petscii.yaml's {@code unicode:} section header. */
 	private static int expectedUnicodeCodepoint(int b, Variant variant) {
@@ -168,202 +171,6 @@ public final class PetsciiMapperVerify {
 		throw new AssertionError("byte 0x" + Integer.toHexString(b) + " not covered by reference logic");
 	}
 
-	public static void main(String[] args) throws Exception {
-		if (args.length != 1) {
-			System.err.println("Usage: PetsciiMapperVerify <petscii.map>");
-			System.exit(1);
-		}
-		PetsciiMapper mapper = PetsciiMapper.loadFromMapFile(new File(args[0]));
-
-		long cases = 0;
-
-		for (Variant variant : Variant.values()) {
-			for (int b = 0; b < 256; b++) {
-				String s = mapper.toDisplayEscaped(b, variant);
-				cases++;
-
-				// 1. Every byte, every variant: non-null, non-empty.
-				if (s == null || s.isEmpty()) {
-					throw new AssertionError(String.format(
-						"byte 0x%02x variant %s: display string is null/empty", b, variant));
-				}
-
-				// 2. Multi-byte overload agrees with the single-byte overload.
-				String viaArray = mapper.toDisplayEscaped(new byte[] { (byte) b }, variant);
-				if (!viaArray.equals(s)) {
-					throw new AssertionError(String.format(
-						"byte 0x%02x variant %s: byte[] overload '%s' != int overload '%s'",
-						b, variant, viaArray, s));
-				}
-				cases++;
-
-				// 3. Every petcat-named control byte matches the verified table exactly,
-				// in both variants (control-code names are variant-invariant).
-				String expectedName = null;
-				if (b < 0x20 && !CTRL1[b].isEmpty() && !CTRL1[b].equals("\n")) {
-					expectedName = CTRL1[b];
-				}
-				else if (b >= 0x80 && b < 0xA0 && !CTRL2[b - 0x80].isEmpty()) {
-					expectedName = CTRL2[b - 0x80];
-				}
-				if (expectedName != null) {
-					String expected = "{" + expectedName + "}";
-					if (!expected.equals(s)) {
-						throw new AssertionError(String.format(
-							"byte 0x%02x variant %s: expected named escape '%s', got '%s'",
-							b, variant, expected, s));
-					}
-					cases++;
-				}
-
-				// 4. 0x0D (CBM RETURN) is always a literal newline, both variants -- the one
-				// petcat control code that is never escaped.
-				if (b == 0x0D) {
-					if (!"\n".equals(s)) {
-						throw new AssertionError(String.format(
-							"byte 0x0d variant %s: expected literal newline, got '%s'", variant, s));
-					}
-					cases++;
-				}
-
-				// 5. Every byte that is neither a named control code, the 0x0D literal, nor
-				// a printable char, renders exactly "{$xx}" (lowercase 2-hex-digit).
-				boolean isNamedControl = expectedName != null;
-				boolean isPrintableAscii = b >= 0x20 && b < 0x7F && isKnownPrintable(b, variant);
-				if (!isNamedControl && b != 0x0D && !isPrintableAscii) {
-					Matcher m = HEX_ESCAPE.matcher(s);
-					if (!m.matches()) {
-						throw new AssertionError(String.format(
-							"byte 0x%02x variant %s: expected hex fallback '{$%02x}', got '%s'",
-							b, variant, b, s));
-					}
-					int parsed = Integer.parseInt(s.substring(2, 4), 16);
-					if (parsed != b) {
-						throw new AssertionError(String.format(
-							"byte 0x%02x variant %s: hex fallback encodes wrong byte: '%s'",
-							b, variant, s));
-					}
-					cases++;
-				}
-
-				// 6. Printable-range sanity: identity-range and letter-range bytes render as
-				// a single expected ASCII character.
-				if (isPrintableAscii) {
-					char expectedChar = expectedPrintableChar(b, variant);
-					if (s.length() != 1 || s.charAt(0) != expectedChar) {
-						throw new AssertionError(String.format(
-							"byte 0x%02x variant %s: expected printable char '%c', got '%s'",
-							b, variant, expectedChar, s));
-					}
-					cases++;
-				}
-			}
-		}
-
-		// 7. The one variant-dependent range: 0x41-0x5A must differ in case between variants;
-		// everything else must be IDENTICAL across variants (petcat has no shift-state
-		// parameter, and petscii.yaml's letter_range is the only per-variant override).
-		for (int b = 0; b < 256; b++) {
-			String unshifted = mapper.toDisplayEscaped(b, Variant.UNSHIFTED_GRAPHICS);
-			String shifted = mapper.toDisplayEscaped(b, Variant.SHIFTED_LOWERCASE);
-			boolean inLetterRange = b >= 0x41 && b <= 0x5A;
-			if (inLetterRange) {
-				if (unshifted.equals(shifted)) {
-					throw new AssertionError(String.format(
-						"byte 0x%02x: expected variants to differ (letter range), both gave '%s'",
-						b, unshifted));
-				}
-				if (!unshifted.equalsIgnoreCase(shifted)) {
-					throw new AssertionError(String.format(
-						"byte 0x%02x: variants differ by more than case: '%s' vs '%s'",
-						b, unshifted, shifted));
-				}
-			}
-			else if (!unshifted.equals(shifted)) {
-				throw new AssertionError(String.format(
-					"byte 0x%02x: expected identical variants outside the letter range, " +
-						"got '%s' vs '%s'", b, unshifted, shifted));
-			}
-			cases++;
-		}
-
-		// ------------------------------------------------------------------------------
-		// Unicode layer (bead grm-1.4.2): independent re-derivation cross-check, encode/
-		// decode round-trip, and toDisplayUnicode agreement.
-		// ------------------------------------------------------------------------------
-		for (Variant variant : Variant.values()) {
-			for (int b = 0; b < 256; b++) {
-				int cp = codepointOf(mapper.toDisplayUnicode(b, variant));
-
-				// 8. Every codepoint is a valid Unicode scalar value: non-negative, within
-				// range, and not a lone surrogate.
-				if (cp < 0 || cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) {
-					throw new AssertionError(String.format(
-						"byte 0x%02x variant %s: invalid unicode codepoint U+%X", b, variant, cp));
-				}
-				cases++;
-
-				// 9. Matches the independently re-derived reference codepoint.
-				int expected = expectedUnicodeCodepoint(b, variant);
-				if (cp != expected) {
-					throw new AssertionError(String.format(
-						"byte 0x%02x variant %s: expected unicode codepoint U+%04X, got U+%04X",
-						b, variant, expected, cp));
-				}
-				cases++;
-
-				// 10. byte[] overload agrees with the int overload.
-				String viaArray = mapper.toDisplayUnicode(new byte[] { (byte) b }, variant);
-				if (!viaArray.equals(mapper.toDisplayUnicode(b, variant))) {
-					throw new AssertionError(String.format(
-						"byte 0x%02x variant %s: unicode byte[] overload disagrees with int overload",
-						b, variant));
-				}
-				cases++;
-
-				// 11. encode(decode(b)) == canonical(b): the encode map, applied to this
-				// byte's own decoded codepoint, must return the LOWEST byte that decodes to
-				// that same codepoint.
-				int canonical = lowestByteDecodingTo(mapper, cp, variant);
-				Integer encoded = mapper.encodeUnicode(cp, variant);
-				if (encoded == null || encoded != canonical) {
-					throw new AssertionError(String.format(
-						"byte 0x%02x variant %s: encode(decode(byte))=%s, expected canonical 0x%02x",
-						b, variant, encoded, canonical));
-				}
-				cases++;
-
-				// 12. toDisplayUnicode's string round-trips through the encode map: decoding
-				// the encoded codepoint back out of the string yields the same codepoint.
-				String rendered = mapper.toDisplayUnicode(b, variant);
-				int roundTripCp = rendered.codePointAt(0);
-				if (roundTripCp != cp) {
-					throw new AssertionError(String.format(
-						"byte 0x%02x variant %s: rendered string does not round-trip to U+%04X",
-						b, variant, cp));
-				}
-				cases++;
-			}
-		}
-
-		// 13. Mirror-range consistency: every mirror byte decodes to the SAME codepoint as
-		// its canonical (low) partner, in both variants.
-		for (Variant variant : Variant.values()) {
-			for (int b = 0xC0; b <= 0xDF; b++) {
-				assertMirrorsMatch(mapper, b, b - 0x60, variant);
-				cases++;
-			}
-			for (int b = 0xE0; b <= 0xFE; b++) {
-				assertMirrorsMatch(mapper, b, b - 0x40, variant);
-				cases++;
-			}
-			assertMirrorsMatch(mapper, 0xFF, 0x7E, variant);
-			cases++;
-		}
-
-		System.out.println("PETSCIIMAPPER PASS (" + cases + " cases)");
-	}
-
 	/** Extracts the single codepoint from a {@code toDisplayUnicode} result (handling
 	 *  surrogate pairs). */
 	private static int codepointOf(String s) {
@@ -373,8 +180,8 @@ public final class PetsciiMapperVerify {
 	/** The lowest byte value (0-255) whose {@code toDisplayUnicode} decodes to
 	 *  {@code codepoint} in the given variant -- an independent re-implementation of
 	 *  {@code gdtbuilder.PetsciiCompiler#buildEncodeMap}'s canonicalization rule, used to
-	 *  cross-check {@link retromachines.PetsciiMapper#encodeUnicode}. */
-	private static int lowestByteDecodingTo(PetsciiMapper mapper, int codepoint, Variant variant) {
+	 *  cross-check {@link PetsciiMapper#encodeUnicode}. */
+	private int lowestByteDecodingTo(int codepoint, Variant variant) {
 		for (int b = 0; b < 256; b++) {
 			if (codepointOf(mapper.toDisplayUnicode(b, variant)) == codepoint) {
 				return b;
@@ -383,12 +190,11 @@ public final class PetsciiMapperVerify {
 		throw new AssertionError("no byte decodes to U+" + Integer.toHexString(codepoint));
 	}
 
-	private static void assertMirrorsMatch(PetsciiMapper mapper, int mirrorByte, int canonicalByte,
-			Variant variant) {
+	private void assertMirrorsMatch(int mirrorByte, int canonicalByte, Variant variant) {
 		int mirrorCp = codepointOf(mapper.toDisplayUnicode(mirrorByte, variant));
 		int canonicalCp = codepointOf(mapper.toDisplayUnicode(canonicalByte, variant));
 		if (mirrorCp != canonicalCp) {
-			throw new AssertionError(String.format(
+			fail(String.format(
 				"byte 0x%02x variant %s: mirror codepoint U+%04X != canonical 0x%02x's U+%04X",
 				mirrorByte, variant, mirrorCp, canonicalByte, canonicalCp));
 		}
@@ -421,6 +227,187 @@ public final class PetsciiMapperVerify {
 				return '_';
 			default:
 				return (char) b;
+		}
+	}
+
+	/** Checks 1-6: per-byte, per-variant display-escaped rendering (naming, hex fallback,
+	 *  printable-char sanity, and the special-cased 0x0D literal newline). */
+	@Test
+	public void displayEscapedEveryByteBothVariants() {
+		for (Variant variant : Variant.values()) {
+			for (int b = 0; b < 256; b++) {
+				String s = mapper.toDisplayEscaped(b, variant);
+
+				// 1. Every byte, every variant: non-null, non-empty.
+				if (s == null || s.isEmpty()) {
+					fail(String.format(
+						"byte 0x%02x variant %s: display string is null/empty", b, variant));
+				}
+
+				// 2. Multi-byte overload agrees with the single-byte overload.
+				String viaArray = mapper.toDisplayEscaped(new byte[] { (byte) b }, variant);
+				if (!viaArray.equals(s)) {
+					fail(String.format(
+						"byte 0x%02x variant %s: byte[] overload '%s' != int overload '%s'",
+						b, variant, viaArray, s));
+				}
+
+				// 3. Every petcat-named control byte matches the verified table exactly,
+				// in both variants (control-code names are variant-invariant).
+				String expectedName = null;
+				if (b < 0x20 && !CTRL1[b].isEmpty() && !CTRL1[b].equals("\n")) {
+					expectedName = CTRL1[b];
+				}
+				else if (b >= 0x80 && b < 0xA0 && !CTRL2[b - 0x80].isEmpty()) {
+					expectedName = CTRL2[b - 0x80];
+				}
+				if (expectedName != null) {
+					String expected = "{" + expectedName + "}";
+					if (!expected.equals(s)) {
+						fail(String.format(
+							"byte 0x%02x variant %s: expected named escape '%s', got '%s'",
+							b, variant, expected, s));
+					}
+				}
+
+				// 4. 0x0D (CBM RETURN) is always a literal newline, both variants -- the one
+				// petcat control code that is never escaped.
+				if (b == 0x0D) {
+					if (!"\n".equals(s)) {
+						fail(String.format(
+							"byte 0x0d variant %s: expected literal newline, got '%s'", variant, s));
+					}
+				}
+
+				// 5. Every byte that is neither a named control code, the 0x0D literal, nor
+				// a printable char, renders exactly "{$xx}" (lowercase 2-hex-digit).
+				boolean isNamedControl = expectedName != null;
+				boolean isPrintableAscii = b >= 0x20 && b < 0x7F && isKnownPrintable(b, variant);
+				if (!isNamedControl && b != 0x0D && !isPrintableAscii) {
+					Matcher m = HEX_ESCAPE.matcher(s);
+					if (!m.matches()) {
+						fail(String.format(
+							"byte 0x%02x variant %s: expected hex fallback '{$%02x}', got '%s'",
+							b, variant, b, s));
+					}
+					int parsed = Integer.parseInt(s.substring(2, 4), 16);
+					if (parsed != b) {
+						fail(String.format(
+							"byte 0x%02x variant %s: hex fallback encodes wrong byte: '%s'",
+							b, variant, s));
+					}
+				}
+
+				// 6. Printable-range sanity: identity-range and letter-range bytes render as
+				// a single expected ASCII character.
+				if (isPrintableAscii) {
+					char expectedChar = expectedPrintableChar(b, variant);
+					if (s.length() != 1 || s.charAt(0) != expectedChar) {
+						fail(String.format(
+							"byte 0x%02x variant %s: expected printable char '%c', got '%s'",
+							b, variant, expectedChar, s));
+					}
+				}
+			}
+		}
+	}
+
+	/** Check 7: the one variant-dependent range: 0x41-0x5A must differ in case between
+	 *  variants; everything else must be IDENTICAL across variants (petcat has no shift-state
+	 *  parameter, and petscii.yaml's letter_range is the only per-variant override). */
+	@Test
+	public void letterRangeVariantDivergence() {
+		for (int b = 0; b < 256; b++) {
+			String unshifted = mapper.toDisplayEscaped(b, Variant.UNSHIFTED_GRAPHICS);
+			String shifted = mapper.toDisplayEscaped(b, Variant.SHIFTED_LOWERCASE);
+			boolean inLetterRange = b >= 0x41 && b <= 0x5A;
+			if (inLetterRange) {
+				if (unshifted.equals(shifted)) {
+					fail(String.format(
+						"byte 0x%02x: expected variants to differ (letter range), both gave '%s'",
+						b, unshifted));
+				}
+				if (!unshifted.equalsIgnoreCase(shifted)) {
+					fail(String.format(
+						"byte 0x%02x: variants differ by more than case: '%s' vs '%s'",
+						b, unshifted, shifted));
+				}
+			}
+			else if (!unshifted.equals(shifted)) {
+				fail(String.format(
+					"byte 0x%02x: expected identical variants outside the letter range, " +
+						"got '%s' vs '%s'", b, unshifted, shifted));
+			}
+		}
+	}
+
+	/** Checks 8-12 (bead grm-1.4.2): independent re-derivation cross-check, encode/decode
+	 *  round-trip, and toDisplayUnicode agreement. */
+	@Test
+	public void unicodeLayer() {
+		for (Variant variant : Variant.values()) {
+			for (int b = 0; b < 256; b++) {
+				int cp = codepointOf(mapper.toDisplayUnicode(b, variant));
+
+				// 8. Every codepoint is a valid Unicode scalar value: non-negative, within
+				// range, and not a lone surrogate.
+				if (cp < 0 || cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) {
+					fail(String.format(
+						"byte 0x%02x variant %s: invalid unicode codepoint U+%X", b, variant, cp));
+				}
+
+				// 9. Matches the independently re-derived reference codepoint.
+				int expected = expectedUnicodeCodepoint(b, variant);
+				if (cp != expected) {
+					fail(String.format(
+						"byte 0x%02x variant %s: expected unicode codepoint U+%04X, got U+%04X",
+						b, variant, expected, cp));
+				}
+
+				// 10. byte[] overload agrees with the int overload.
+				String viaArray = mapper.toDisplayUnicode(new byte[] { (byte) b }, variant);
+				if (!viaArray.equals(mapper.toDisplayUnicode(b, variant))) {
+					fail(String.format(
+						"byte 0x%02x variant %s: unicode byte[] overload disagrees with int overload",
+						b, variant));
+				}
+
+				// 11. encode(decode(b)) == canonical(b): the encode map, applied to this
+				// byte's own decoded codepoint, must return the LOWEST byte that decodes to
+				// that same codepoint.
+				int canonical = lowestByteDecodingTo(cp, variant);
+				Integer encoded = mapper.encodeUnicode(cp, variant);
+				if (encoded == null || encoded != canonical) {
+					fail(String.format(
+						"byte 0x%02x variant %s: encode(decode(byte))=%s, expected canonical 0x%02x",
+						b, variant, encoded, canonical));
+				}
+
+				// 12. toDisplayUnicode's string round-trips through the encode map: decoding
+				// the encoded codepoint back out of the string yields the same codepoint.
+				String rendered = mapper.toDisplayUnicode(b, variant);
+				int roundTripCp = rendered.codePointAt(0);
+				if (roundTripCp != cp) {
+					fail(String.format(
+						"byte 0x%02x variant %s: rendered string does not round-trip to U+%04X",
+						b, variant, cp));
+				}
+			}
+		}
+	}
+
+	/** Check 13: mirror-range consistency: every mirror byte decodes to the SAME codepoint as
+	 *  its canonical (low) partner, in both variants. */
+	@Test
+	public void mirrorRangeConsistency() {
+		for (Variant variant : Variant.values()) {
+			for (int b = 0xC0; b <= 0xDF; b++) {
+				assertMirrorsMatch(b, b - 0x60, variant);
+			}
+			for (int b = 0xE0; b <= 0xFE; b++) {
+				assertMirrorsMatch(b, b - 0x40, variant);
+			}
+			assertMirrorsMatch(0xFF, 0x7E, variant);
 		}
 	}
 }

@@ -15,33 +15,34 @@
  */
 package gdtbuilder;
 
-import static gdtbuilder.VerifyHarness.check;
-import static gdtbuilder.VerifyHarness.expectThrows;
-import static gdtbuilder.VerifyHarness.write;
+import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertTrue;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import org.junit.Rule;
+import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
+
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
-/** Focused standalone checks for schema fields emitted by {@link MapCompiler}. */
-public class MapCompilerVerify {
+/**
+ * JUnit migration of {@code tools/gdtbuilder/src/main/java/gdtbuilder/MapCompilerVerify.java}
+ * (bead grm-32f.4): focused checks for schema fields emitted by {@link MapCompiler}.
+ */
+public class MapCompilerTest {
 
-	public static void main(String[] args) throws Exception {
-		VerifyHarness.run("map-compiler-", "Map compiler verification passed", temp -> {
-			verifyFixedRomAndFormats(temp);
-			verifyRomTargetErrors(temp);
-			verifySystemText(temp);
-			verifyRamCoverage(temp);
-			verifyDuplicateNames(temp);
-		});
-	}
+	@Rule
+	public TemporaryFolder tmp = new TemporaryFolder();
 
-	private static void verifyFixedRomAndFormats(Path temp) throws Exception {
+	@Test
+	public void fixedRomAndFormats() throws Exception {
+		Path temp = tmp.getRoot().toPath();
 		Path yaml = temp.resolve("valid.yaml");
 		Path map = temp.resolve("valid.map");
-		write(yaml, """
+		Files.writeString(yaml, """
 			schema: 2
 			system: { id: fixed, name: Fixed ROM, cpu: { language: '6502:LE:16:default' } }
 			memory:
@@ -64,29 +65,58 @@ public class MapCompilerVerify {
 
 		JsonObject doc = JsonParser.parseString(Files.readString(map)).getAsJsonObject();
 		JsonObject kernalRegion = doc.getAsJsonArray("regions").get(2).getAsJsonObject();
-		check("kernal".equals(kernalRegion.get("image").getAsString()),
-			"region image metadata was not emitted");
+		assertTrue("region image metadata was not emitted",
+			"kernal".equals(kernalRegion.get("image").getAsString()));
 		JsonObject slots = doc.getAsJsonObject("rom_images");
-		check("KERNAL".equals(slots.getAsJsonObject("kernal").get("occupant").getAsString()),
-			"fixed ROM region target was not emitted");
-		check("EDITOR".equals(slots.getAsJsonObject("editor").get("occupant").getAsString()),
-			"fixed ROM target without a reverse region image was not emitted");
-		check("LEGACY_ROM".equals(
-			slots.getAsJsonObject("legacy").get("occupant").getAsString()),
-			"legacy occupant target was not preserved");
+		assertTrue("fixed ROM region target was not emitted",
+			"KERNAL".equals(slots.getAsJsonObject("kernal").get("occupant").getAsString()));
+		assertTrue("fixed ROM target without a reverse region image was not emitted",
+			"EDITOR".equals(slots.getAsJsonObject("editor").get("occupant").getAsString()));
+		assertTrue("legacy occupant target was not preserved",
+			"LEGACY_ROM".equals(slots.getAsJsonObject("legacy").get("occupant").getAsString()));
 		JsonObject prg = doc.getAsJsonObject("formats").getAsJsonObject("prg");
-		check(prg.getAsJsonArray("header").get(0).getAsJsonObject().get("size").getAsInt() == 2,
-			"formats tree or numeric header metadata was not preserved");
-		check("load_address".equals(prg.get("placement").getAsString()),
-			"formats placement was not preserved");
+		assertTrue("formats tree or numeric header metadata was not preserved",
+			prg.getAsJsonArray("header").get(0).getAsJsonObject().get("size").getAsInt() == 2);
+		assertTrue("formats placement was not preserved",
+			"load_address".equals(prg.get("placement").getAsString()));
+	}
+
+	@Test
+	public void romTargetErrors() throws Exception {
+		Path temp = tmp.getRoot().toPath();
+		expectError(temp, "neither", "{ size: 0x1000 }", "occupant");
+		expectError(temp, "wrong-kind", "{ size: 0x1000, occupant: RAM }", "kind is not 'rom'");
+	}
+
+	private static void expectError(Path temp, String name, String slot, String part)
+			throws Exception {
+		Path yaml = temp.resolve(name + ".yaml");
+		Files.writeString(yaml, """
+			schema: 2
+			system: { id: error, name: Error, cpu: { language: '6502:LE:16:default' } }
+			memory:
+			  regions:
+			    - { name: RAM, start: 0, end: 0x0fff, kind: ram }
+			    - { name: KERNAL, start: 0xf000, end: 0xffff, kind: rom, image: test }
+			  windows: []
+			rom_images:
+			  test: %s
+			""".formatted(slot));
+		Path map = temp.resolve(name + ".map");
+		IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+			() -> MapCompiler.main(new String[] { yaml.toString(), map.toString() }));
+		assertTrue("expected error containing '" + part + "', got: " + e.getMessage(),
+			e.getMessage().contains(part));
 	}
 
 	/** {@code system.text} (bead grm-1.4 Phase E) passes through verbatim, with numeric
 	 *  scalars normalized to ints like every other opaque params tree. */
-	private static void verifySystemText(Path temp) throws Exception {
+	@Test
+	public void systemText() throws Exception {
+		Path temp = tmp.getRoot().toPath();
 		Path yaml = temp.resolve("text.yaml");
 		Path map = temp.resolve("text.map");
-		write(yaml, """
+		Files.writeString(yaml, """
 			schema: 2
 			system:
 			  id: text-test
@@ -106,38 +136,15 @@ public class MapCompilerVerify {
 
 		JsonObject doc = JsonParser.parseString(Files.readString(map)).getAsJsonObject();
 		JsonObject text = doc.getAsJsonObject("system").getAsJsonObject("text");
-		check(text != null, "system.text was not emitted");
-		check("petscii".equals(text.get("encoding").getAsString()),
-			"system.text.encoding was not preserved");
-		check("unshifted_graphics".equals(text.get("variant").getAsString()),
-			"system.text.variant was not preserved");
+		assertTrue("system.text was not emitted", text != null);
+		assertTrue("system.text.encoding was not preserved",
+			"petscii".equals(text.get("encoding").getAsString()));
+		assertTrue("system.text.variant was not preserved",
+			"unshifted_graphics".equals(text.get("variant").getAsString()));
 		JsonObject search = text.getAsJsonObject("string_search");
-		check(search != null, "system.text.string_search was not emitted");
-		check(search.get("min_length").getAsInt() == 4,
-			"system.text.string_search.min_length was not normalized to an int");
-	}
-
-	private static void verifyRomTargetErrors(Path temp) throws Exception {
-		expectError(temp, "neither", "{ size: 0x1000 }", "occupant");
-		expectError(temp, "wrong-kind", "{ size: 0x1000, occupant: RAM }", "kind is not 'rom'");
-	}
-
-	private static void expectError(Path temp, String name, String slot, String part)
-			throws Exception {
-		Path yaml = temp.resolve(name + ".yaml");
-		write(yaml, """
-			schema: 2
-			system: { id: error, name: Error, cpu: { language: '6502:LE:16:default' } }
-			memory:
-			  regions:
-			    - { name: RAM, start: 0, end: 0x0fff, kind: ram }
-			    - { name: KERNAL, start: 0xf000, end: 0xffff, kind: rom, image: test }
-			  windows: []
-			rom_images:
-			  test: %s
-			""".formatted(slot));
-		expectThrows(part, () -> MapCompiler.main(
-			new String[] { yaml.toString(), temp.resolve(name + ".map").toString() }));
+		assertTrue("system.text.string_search was not emitted", search != null);
+		assertTrue("system.text.string_search.min_length was not normalized to an int",
+			search.get("min_length").getAsInt() == 4);
 	}
 
 	/** grm-z15.4: MapCompiler.validateRamCoverage must reject a RAM/prg_placeable union with
@@ -145,7 +152,9 @@ public class MapCompilerVerify {
 	 *  a legitimate coverage contributor (mirroring C64's P6510). The check only fires for
 	 *  descriptors that declare {@code formats.prg.placement: load_address} (the
 	 *  AbstractCbmPrgLoader convention), so every fixture here declares that block. */
-	private static void verifyRamCoverage(Path temp) throws Exception {
+	@Test
+	public void ramCoverage() throws Exception {
+		Path temp = tmp.getRoot().toPath();
 		expectCompileError(temp, "ram-gap", """
 			schema: 2
 			system: { id: ram-gap, name: RAM Gap, cpu: { language: '6502:LE:16:default' } }
@@ -177,7 +186,7 @@ public class MapCompilerVerify {
 
 		Path yaml = temp.resolve("ram-prg-placeable.yaml");
 		Path map = temp.resolve("ram-prg-placeable.map");
-		write(yaml, """
+		Files.writeString(yaml, """
 			schema: 2
 			system: { id: ram-ok, name: RAM OK, cpu: { language: '6502:LE:16:default' } }
 			memory:
@@ -192,12 +201,15 @@ public class MapCompilerVerify {
 			    placement: load_address
 			""");
 		MapCompiler.main(new String[] { yaml.toString(), map.toString() });
-		check(Files.exists(map), "gapless map with a prg_placeable io region failed to compile");
+		assertTrue("gapless map with a prg_placeable io region failed to compile",
+			Files.exists(map));
 	}
 
 	/** MapCompiler.validateUniqueNames must reject duplicate names/keys within
 	 *  {@code physical[]}, {@code memory.regions[]}, and {@code symbols[]}. */
-	private static void verifyDuplicateNames(Path temp) throws Exception {
+	@Test
+	public void duplicateNames() throws Exception {
+		Path temp = tmp.getRoot().toPath();
 		expectCompileError(temp, "dup-region", """
 			schema: 2
 			system: { id: dup-region, name: Dup Region, cpu: { language: '6502:LE:16:default' } }
@@ -240,8 +252,11 @@ public class MapCompilerVerify {
 	private static void expectCompileError(Path temp, String name, String yamlBody, String part)
 			throws Exception {
 		Path yaml = temp.resolve(name + ".yaml");
-		write(yaml, yamlBody);
-		expectThrows(part, () -> MapCompiler.main(
-			new String[] { yaml.toString(), temp.resolve(name + ".map").toString() }));
+		Files.writeString(yaml, yamlBody);
+		Path map = temp.resolve(name + ".map");
+		IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+			() -> MapCompiler.main(new String[] { yaml.toString(), map.toString() }));
+		assertTrue("expected error containing '" + part + "', got: " + e.getMessage(),
+			e.getMessage().contains(part));
 	}
 }

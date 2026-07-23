@@ -13,29 +13,32 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-// Exhaustive equivalence check for the bit-parallel collapse of
-// StoredValueScanner.combine() and .fullyDeterminedByAccumulator() (bead grm-5tl.11).
-//
-// The two production methods are pure bit algebra over five 8-bit inputs
-// (aAcc, oAcc, mask, base.knownMask, base.bits). This standalone tool holds a REFERENCE
-// implementation transcribed bit-for-bit from the original per-bit for-loops, and the
-// COLLAPSED one-line forms that replaced them, and proves them identical.
-//
-// Because every operation is bitwise-independent (AND/OR/NOT/mask, no carries or shifts
-// across positions), enumerating all 32 single-bit input combinations across all 8 bit
-// positions is a COMPLETE proof of equivalence; a large full-width random fuzz is added
-// on top to guard the byte assembly and masking. Run via `gradle verifyBitAlgebra` (no
-// Ghidra dependency) or plainly: javac + java BitAlgebraEquivalence.
-//
-// Exits non-zero (throws) on the first mismatch, printing the offending inputs; prints
-// "BITALGEBRA PASS (<n> cases)" when every case agrees.
+package retromachines;
+
+import static org.junit.Assert.assertEquals;
 
 import java.util.Random;
 
-public final class BitAlgebraEquivalence {
+import org.junit.Test;
 
-	private BitAlgebraEquivalence() {
-	}
+/**
+ * JUnit migration of {@code tools/bitalgebra/BitAlgebraEquivalence.java} (bead grm-32f.4):
+ * exhaustive equivalence check for the bit-parallel collapse of
+ * {@code StoredValueScanner.combine()} and {@code .fullyDeterminedByAccumulator()} (bead
+ * grm-5tl.11).
+ * <p>
+ * The two production methods are pure bit algebra over five 8-bit inputs (aAcc, oAcc, mask,
+ * base.knownMask, base.bits). This class holds a REFERENCE implementation transcribed
+ * bit-for-bit from the original per-bit for-loops, and the COLLAPSED one-line forms that
+ * replaced them, and proves them identical.
+ * <p>
+ * Because every operation is bitwise-independent (AND/OR/NOT/mask, no carries or shifts
+ * across positions), enumerating all 32 single-bit input combinations across all 8 bit
+ * positions is a COMPLETE proof of equivalence ({@link #exhaustivePerBitEnumeration()}); a
+ * large full-width random fuzz ({@link #fullWidthRandomFuzz()}) is added on top to guard the
+ * byte assembly and masking.
+ */
+public class BitAlgebraEquivalenceTest {
 
 	// ------------------------------------------------------------------
 	// Reference implementations: transcribed bit-for-bit from the ORIGINAL
@@ -99,9 +102,24 @@ public final class BitAlgebraEquivalence {
 
 	// ------------------------------------------------------------------
 
-	public static void main(String[] args) {
-		long cases = 0;
+	private void check(int aAcc, int oAcc, int mask, int baseKnown, int baseBits) {
+		boolean refFd = refFullyDetermined(aAcc, oAcc, mask);
+		boolean oneFd = oneLineFullyDetermined(aAcc, oAcc, mask);
+		assertEquals(String.format(
+			"fullyDetermined mismatch: aAcc=%02x oAcc=%02x mask=%02x -> ref=%b oneLine=%b",
+			aAcc, oAcc, mask, refFd, oneFd), refFd, oneFd);
 
+		int ref = refCombine(aAcc, oAcc, mask, baseKnown, baseBits);
+		int one = oneLineCombine(aAcc, oAcc, mask, baseKnown, baseBits);
+		assertEquals(String.format(
+			"combine mismatch: aAcc=%02x oAcc=%02x mask=%02x baseKnown=%02x baseBits=%02x " +
+				"-> ref(known=%02x bits=%02x) oneLine(known=%02x bits=%02x)",
+			aAcc, oAcc, mask, baseKnown, baseBits, ref >> 8, ref & 0xFF, one >> 8, one & 0xFF),
+			ref, one);
+	}
+
+	@Test
+	public void exhaustivePerBitEnumeration() {
 		// Complete per-bit enumeration: every 32-way (aBit,oBit,maskBit,kBit,bBit) combo,
 		// placed at each of the 8 positions (with all other positions zero). Independence
 		// of the algebra makes this an exhaustive proof.
@@ -114,37 +132,17 @@ public final class BitAlgebraEquivalence {
 				int baseKnown = (combo & 8) != 0 ? bm : 0;
 				int baseBits = (combo & 16) != 0 ? bm : 0;
 				check(aAcc, oAcc, mask, baseKnown, baseBits);
-				cases++;
 			}
 		}
+	}
 
+	@Test
+	public void fullWidthRandomFuzz() {
 		// Full-width random fuzz to guard byte assembly / cross-bit masking.
 		Random rng = new Random(0xB17A16EBL); // fixed seed -> reproducible
 		for (int i = 0; i < 20_000_000; i++) {
 			check(rng.nextInt(256), rng.nextInt(256), rng.nextInt(256), rng.nextInt(256),
 				rng.nextInt(256));
-			cases++;
-		}
-
-		System.out.println("BITALGEBRA PASS (" + cases + " cases)");
-	}
-
-	private static void check(int aAcc, int oAcc, int mask, int baseKnown, int baseBits) {
-		boolean refFd = refFullyDetermined(aAcc, oAcc, mask);
-		boolean oneFd = oneLineFullyDetermined(aAcc, oAcc, mask);
-		if (refFd != oneFd) {
-			throw new AssertionError(String.format(
-				"fullyDetermined mismatch: aAcc=%02x oAcc=%02x mask=%02x -> ref=%b oneLine=%b",
-				aAcc, oAcc, mask, refFd, oneFd));
-		}
-
-		int ref = refCombine(aAcc, oAcc, mask, baseKnown, baseBits);
-		int one = oneLineCombine(aAcc, oAcc, mask, baseKnown, baseBits);
-		if (ref != one) {
-			throw new AssertionError(String.format(
-				"combine mismatch: aAcc=%02x oAcc=%02x mask=%02x baseKnown=%02x baseBits=%02x " +
-					"-> ref(known=%02x bits=%02x) oneLine(known=%02x bits=%02x)",
-				aAcc, oAcc, mask, baseKnown, baseBits, ref >> 8, ref & 0xFF, one >> 8, one & 0xFF));
 		}
 	}
 }

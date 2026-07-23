@@ -63,8 +63,9 @@ The full acceptance gate is:
 bash tools/banktest/build-and-test.sh check
 ```
 
-It runs every headless golden fixture plus `verifyPetsciiMapper` and
-`verifyBitAlgebra`; use it before commits and for issue acceptance. `bless`
+It runs every headless golden fixture plus the JUnit `test` suite (which as of
+`grm-32f.4` holds the migrated bit-algebra/petscii/charset/map-compiler/descriptor
+verifiers); use it before commits and for issue acceptance. `bless`
 updates selected golden files only after reviewing the diff:
 
 ```bash
@@ -85,12 +86,12 @@ Chunk/source-area mapping:
 - `c64-banking`: `banktest` through `banktest4` C64 fixtures.
 - `c64-loader`: C64 PRG placement/wrapping, ROM loading, and symbol toggles.
 - `c64-recovery`: C64 emulation and decrypt/recovery fixtures.
-- `basic-petscii`: C64 BASIC headless fixture and `verifyPetsciiMapper`.
+- `basic-petscii`: C64 BASIC headless fixture and the JUnit `test` suite.
 - `basic-dialects`: C64 BASIC 2 regression plus PET BASIC 4 and C128 BASIC 7 token-dialect fixtures.
 - `pet-loader`: PET 4032 descriptor, PRG placement, IO typing, and fixed ROM slots.
 - `c128-loader`: C128 native BASIC PRG placement, fixed ROM slots, and MMU I/O.
 - `nes-banking`: NES banking and MMC fixtures.
-- `bit-algebra`: `verifyBitAlgebra` only.
+- `bit-algebra`: the JUnit `test` suite only (no extension build/install).
 - `all`: every chunk; the default when no chunk is supplied.
 
 There is deliberately no `quick` alias or cache-backed project mode: headless
