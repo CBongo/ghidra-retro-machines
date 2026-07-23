@@ -176,6 +176,27 @@ dependencies {
 	charsetCheckImplementation sourceSets.main.output
 	charsetCheckImplementation fileTree(dir: ghidraInstallDir + '/Ghidra/Framework/Generic/lib',
 		include: 'gson-*.jar')
+
+	// JUnit spike (bead grm-32f.1): the `test` source set is supplied by the `java` plugin
+	// (srcDir src/test/java) -- only its dependencies and task config are added here. Mirrors
+	// the gdtBuilder/petsciiCheck classpath pattern above: Ghidra's own jars already carry
+	// AbstractGenericTest (Generic.jar) and ProgramBuilder (Base.jar) compiled in, so no
+	// Ghidra source is compiled for tests, only linked against. JUnit4 (not 5) + hamcrest come
+	// from Maven since Ghidra's shipped test scaffolding needs them at runtime; the `test`
+	// task below uses useJUnit() (vintage), not useJUnitPlatform(). Deliberately NOT wired
+	// into buildExtension's dependsOn (below) or any verify* gate yet -- opt-in via
+	// `gradle test` only, while this spike proves the fixture path out.
+	testImplementation fileTree(dir: ghidraInstallDir, includes: [
+		'Ghidra/Framework/*/lib/*.jar', 'Ghidra/Features/*/lib/*.jar'])
+	testImplementation sourceSets.main.output
+	testImplementation sourceSets.gdtBuilder.output
+	// MapCompiler reads its descriptor via snakeyaml (YamlSupport); sourceSets.gdtBuilder.output
+	// carries only its compiled classes, not that build-only dep, and Ghidra ships no
+	// snakeyaml on the fileTree above -- so the test runtime needs it explicitly, same
+	// version the gdtBuilder set uses.
+	testImplementation 'org.yaml:snakeyaml:2.2'
+	testImplementation 'junit:junit:4.13.2'
+	testImplementation 'org.hamcrest:hamcrest:2.2'
 }
 
 // Data-driven per-machine task generation (bead grm-9ux): one buildXxxGdt/buildXxxMap
@@ -366,6 +387,16 @@ task verifyMapCompiler(type: JavaExec) {
 	dependsOn 'compileGdtBuilderJava'
 	classpath = sourceSets.gdtBuilder.runtimeClasspath
 	mainClass = 'gdtbuilder.MapCompilerVerify'
+}
+
+// JUnit spike (bead grm-32f.1): `gradle test` runs the src/test/java suite through Ghidra's
+// own shipped test scaffolding (AbstractGenericTest, ProgramBuilder) instead of a hand-rolled
+// main()+System.exit verifier. Kept separate from the verify* tasks above and out of
+// buildExtension's dependsOn (below) -- opt-in only, not yet part of the acceptance gate.
+test {
+	useJUnit()
+	maxHeapSize = '2g'
+	environment 'GHIDRA_INSTALL_DIR', ghidraInstallDir
 }
 
 //----------------------------------------------------------------------------------
