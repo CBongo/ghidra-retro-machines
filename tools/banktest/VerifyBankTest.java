@@ -209,6 +209,9 @@ public class VerifyBankTest extends GhidraScript {
 		else if (name.contains("nesmodetest")) {
 			checkNesModetest();
 		}
+		else if (name.contains("nesbandaitest")) {
+			checkNesBandaitest();
+		}
 		else if (name.contains("nesbanktest2")) {
 			checkNesBanktest2();
 		}
@@ -1469,6 +1472,53 @@ public class VerifyBankTest extends GhidraScript {
 		// home bank is 0), retargets into the PRG_LO_B2 overlay space.
 		Reference r = findOverlayRef(0xC005, "PRG_LO_B2", 0x8005);
 		criterion("N5", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $8005 in bank 2 retargeted to PRG_LO_B2 overlay, primary: " + describe(r));
+	}
+
+	// ------------------------------------------------------------------
+	// nesbandaitest.nes criteria (Bandai FCG/LZ93D50 register-file decode, bead grm-9ty)
+	// ------------------------------------------------------------------
+
+	private void checkNesBandaitest() {
+		// D1: same UxROM-shaped block layout -- fixed PRG_HI and home PRG_LO in base space,
+		// non-home banks 1/2/3 as PRG_LO_B<bank> overlays.
+		MemoryBlock prgHi = currentProgram.getMemory().getBlock("PRG_HI");
+		criterion("D1a", prgHi != null && !prgHi.isOverlay(),
+			"PRG_HI fixed block exists in base space: " + describeBlock(prgHi));
+		MemoryBlock prgLo = currentProgram.getMemory().getBlock("PRG_LO");
+		criterion("D1b", prgLo != null && !prgLo.isOverlay(),
+			"PRG_LO home-bank block exists un-suffixed in base space: " + describeBlock(prgLo));
+		MemoryBlock b1 = currentProgram.getMemory().getBlock("PRG_LO_B1");
+		MemoryBlock b2 = currentProgram.getMemory().getBlock("PRG_LO_B2");
+		MemoryBlock b3 = currentProgram.getMemory().getBlock("PRG_LO_B3");
+		criterion("D1c", b1 != null && b1.isOverlay() && b2 != null && b2.isOverlay() &&
+			b3 != null && b3.isOverlay(),
+			"PRG_LO_B1/_B2/_B3 overlay blocks exist: " + describeBlock(b1) + ", " +
+				describeBlock(b2) + ", " + describeBlock(b3));
+
+		// D2: the PRG-register write (LDA #$02 / STA $8008, register $8) at $C002 gets a
+		// fully-known "bank -> 2" comment. FCG has no bus conflict, so the recovered value
+		// is just the driven immediate (no ROM-byte AND).
+		String c002 = eol(0xC002);
+		criterion("D2", c002.contains("bank -> 2 (") && !c002.contains("?"),
+			"fully known bank -> 2 comment at c002 (STA $8008): \"" + c002 + "\"");
+
+		// D3/D4: THE address-decode proof. The intervening writes to register $0 (STA $8000,
+		// CHR, decoy value 1) at $C007 and register $A (STA $800A, IRQ, decoy value 3) at
+		// $C00C are in the same $8000-$FFFF latch range but must NOT be treated as PRG-bank
+		// latches -- so neither carries a "bank ->" comment. If the addr_mask/addr_match
+		// predicate were absent, one of these decoys would have re-latched prg_bank.
+		String c007 = eol(0xC007);
+		criterion("D3", !c007.contains("bank ->"),
+			"CHR register write (STA $8000) at c007 is NOT a prg_bank latch: \"" + c007 + "\"");
+		String c00c = eol(0xC00C);
+		criterion("D4", !c00c.contains("bank ->"),
+			"IRQ register write (STA $800A) at c00c is NOT a prg_bank latch: \"" + c00c + "\"");
+
+		// D5: the JSR $8005 at $C00F, taken with prg_bank still 2 (the decoys did not move
+		// it), retargets into the PRG_LO_B2 overlay -- the positive counterpart to D3/D4.
+		Reference r = findOverlayRef(0xC00F, "PRG_LO_B2", 0x8005);
+		criterion("D5", r != null && r.getReferenceType().isCall() && r.isPrimary(),
 			"JSR $8005 in bank 2 retargeted to PRG_LO_B2 overlay, primary: " + describe(r));
 	}
 

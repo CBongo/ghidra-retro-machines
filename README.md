@@ -13,7 +13,8 @@ schema v2 (state tuples, mechanism strategies, physical spaces, computed windows
 mode-dependent layouts), a C64 PRG loader with bank-state analysis (now including
 BASIC detokenization), and an iNES loader with a data-driven board registry all work
 end-to-end. The machine-independent bank engine tracks banking on the NES discrete
-mappers (NROM/UxROM/CNROM/AxROM/GxROM/BNROM) and, as of the M3 milestone, the protocol
+mappers (NROM/UxROM/CNROM/AxROM/GxROM/BNROM), the register-file board Bandai FCG/LZ93D50
+(mappers 16/157/159, address-decoded memory-latch) and, as of the M3 milestone, the protocol
 mappers MMC1 (serial-shift) and MMC3 (select-data + mode-swapped layouts): on Mega Man
 (UNROM) it resolves ~1,500 cross-bank JSR/JMP references into per-bank overlay spaces
 and pulls ~7,400 instructions of banked code into analysis. Real-ROM acceptance on

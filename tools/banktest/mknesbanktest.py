@@ -270,6 +270,7 @@ MAPPER_MMC3 = 4        # MMC3 (nesmmc3test)
 MAPPER_SERIALTEST = 222  # synthetic nes-serialtest board; see machines/nes-serialtest.yaml's
                           # module doc for why 222 (not 100/101/102/248) was chosen
 MAPPER_MMC1 = 1        # real MMC1 board (nesmmc1test); see machines/nes-mmc1.yaml
+MAPPER_BANDAI = 16     # Bandai FCG/LZ93D50 board (nesbandaitest); see machines/nes-bandai-fcg.yaml
 
 MMC3_BANK_SIZE = 0x2000
 MMC3_BANKS = 8
@@ -323,6 +324,64 @@ def make_prg():
     put(0xFFFA, [0x0B, 0xC0])  # NMI   -> $C00B (RTI)
     put(0xFFFC, [0x00, 0xC0])  # RESET -> $C000
     put(0xFFFE, [0x0B, 0xC0])  # IRQ   -> $C00B (RTI)
+
+    return bytes(prg)
+
+
+def make_prg_bandai():
+    """MemoryLatchBankSwitchStrategy address-decode fixture for the Bandai FCG/LZ93D50
+    board (bead grm-9ty, machines/nes-bandai-fcg.yaml, iNES mapper 16). Same 4-bank /
+    64 KiB shape as nesbanktest.nes (bank 3 == the fixed PRG_HI window, file offset ==
+    CPU address), but the mechanism is a register-file latch: writes anywhere in
+    $8000-$FFFF hit one of 14 registers selected by the address's low nibble, and only
+    nibble $8 is the PRG bank. Unlike UxROM there is NO bus conflict (FCG has a dedicated
+    latch), so the recovered bank is just the driven immediate.
+
+    The fixture's whole point is to prove the addr_mask/addr_match decode: RESET selects
+    PRG bank 2 via STA $8008 (register $8), then deliberately writes a CHR register
+    (STA $8000, decoy value 1) and an IRQ register (STA $800A, decoy value 3) -- both in
+    the latch range, both with values that, if the decode were absent (a plain whole-range
+    memory-latch), would clobber prg_bank to 1 then 3. The following JSR $8005 must still
+    retarget into bank 2's overlay (PRG_LO_B2::8005); if either decoy had latched, it would
+    resolve elsewhere. So the single `COMMENT ... prg_bank=2` and the one REF into _B2 are
+    together direct proof the sibling registers are non-latches.
+
+    RESET ($C000, in the fixed PRG_HI/bank-3 window):
+      C000  A9 02      LDA #$02        ; PRG bank 2
+      C002  8D 08 80   STA $8008       ; register $8 -> prg_bank=2 (the real select)
+      C005  A9 01      LDA #$01        ; decoy value 1
+      C007  8D 00 80   STA $8000       ; register $0 (CHR) -- must NOT move prg_bank
+      C00A  A9 03      LDA #$03        ; decoy value 3
+      C00C  8D 0A 80   STA $800A       ; register $A (IRQ enable) -- must NOT move prg_bank
+      C00F  20 05 80   JSR $8005       ; -> PRG_LO_B2::8005 (proves prg_bank survived as 2)
+      C012  4C 12 C0   JMP $C012       ; self loop
+      C015  40         RTI             ; NMI/IRQ handler
+    """
+    prg = bytearray([0x00] * PRG_SIZE)
+
+    # Bank markers at the first byte of each bank (offset $8000 once mapped in).
+    for bank in range(PRG_BANKS):
+        prg[bank * PRG_BANK_SIZE] = bank
+
+    # Bank 2's JSR target routine at CPU $8005 -> file offset 2*0x4000 + 5.
+    prg[2 * PRG_BANK_SIZE + 0x0005] = 0x60  # RTS
+
+    put = _bank3_putter(prg)
+
+    put(0xC000, [0xA9, 0x02])              # LDA #$02
+    put(0xC002, [0x8D, 0x08, 0x80])         # STA $8008  (register $8: PRG bank)
+    put(0xC005, [0xA9, 0x01])              # LDA #$01
+    put(0xC007, [0x8D, 0x00, 0x80])         # STA $8000  (register $0: CHR -- decoy)
+    put(0xC00A, [0xA9, 0x03])              # LDA #$03
+    put(0xC00C, [0x8D, 0x0A, 0x80])         # STA $800A  (register $A: IRQ -- decoy)
+    put(0xC00F, [0x20, 0x05, 0x80])         # JSR $8005
+    put(0xC012, [0x4C, 0x12, 0xC0])         # JMP $C012 (self loop)
+    put(0xC015, [0x40])                     # RTI
+
+    # Vector table.
+    put(0xFFFA, [0x15, 0xC0])  # NMI   -> $C015 (RTI)
+    put(0xFFFC, [0x00, 0xC0])  # RESET -> $C000
+    put(0xFFFE, [0x15, 0xC0])  # IRQ   -> $C015 (RTI)
 
     return bytes(prg)
 
@@ -1326,6 +1385,21 @@ def main():
 
     _write_rom(outdir, "nesmmc1overridetest.nes", prgm1o, mapper=MAPPER_MMC1,
                prg_banks=MMC1_BANKS)
+
+    # nesbandaitest.nes (bead grm-9ty): Bandai FCG/LZ93D50 register-file decode fixture.
+    prgb = make_prg_bandai()
+    assert len(prgb) == PRG_SIZE
+    assert prgb[2 * PRG_BANK_SIZE + 0x0005] == 0x60  # RTS: PRG_LO_B2::8005 target
+    bbank3_base = 3 * PRG_BANK_SIZE
+    assert prgb[bbank3_base + 0x0000] == 0xA9 and prgb[bbank3_base + 0x0001] == 0x02  # LDA #$02
+    assert prgb[bbank3_base + 0x0002] == 0x8D and \
+        (prgb[bbank3_base + 0x0003] | (prgb[bbank3_base + 0x0004] << 8)) == 0x8008  # STA $8008
+    assert prgb[bbank3_base + 0x0007] == 0x8D and \
+        (prgb[bbank3_base + 0x0008] | (prgb[bbank3_base + 0x0009] << 8)) == 0x8000  # STA $8000 decoy
+    assert prgb[bbank3_base + 0x000F] == 0x20 and \
+        (prgb[bbank3_base + 0x0010] | (prgb[bbank3_base + 0x0011] << 8)) == 0x8005  # JSR $8005
+    assert (prgb[bbank3_base + 0x3FFC] | (prgb[bbank3_base + 0x3FFD] << 8)) == 0xC000  # RESET vec
+    _write_rom(outdir, "nesbandaitest.nes", prgb, mapper=MAPPER_BANDAI)
 
 
 if __name__ == "__main__":

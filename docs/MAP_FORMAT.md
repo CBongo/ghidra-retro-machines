@@ -256,6 +256,17 @@ optional — a bankless board like NES NROM has none). When present:
   helper's own commit-site target's `targets` field list, not across the whole
   mechanism window (`BankSwitchStrategy.depositHelperArgument`; a helper committing to
   an unconfigured CHR target is a verified no-op at its call sites).
+  A `memory-latch` mechanism (`MemoryLatchBankSwitchStrategy`) latches on a store
+  *anywhere* in `params.start`/`params.end`, extracting the field with `params.mask`/
+  `shift` (GxROM's PRG bits 4-5 = `{shift: 4, mask: 0x3}`) and optionally ANDing the
+  driven value with a constant, bank-invariant ROM byte at the store target when
+  `params.bus_conflict` is set (boards without bus isolation, e.g. UxROM). Optional
+  `params.addr_mask`/`addr_match` restrict the latch to writes whose address satisfies
+  `(offset & addr_mask) == addr_match` — a register-file board (Bandai FCG/LZ93D50,
+  mappers 16/157/159, bead `grm-9ty`) mirrors many registers across one range and
+  decodes the target from low address bits, so the PRG register (`{addr_mask: 0x000F,
+  addr_match: 0x0008}`, register `$8`) latches while its CHR/mirroring/IRQ siblings in
+  the same range do not.
 - `states[]` — the enumerated truth table, present only for boards with
   enumerated-occupant windows: one row per reachable state, each row being `value` (the
   packed state — computed by MapCompiler from the YAML row's per-field values) plus one

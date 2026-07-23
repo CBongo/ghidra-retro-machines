@@ -34,6 +34,21 @@ import ghidra.program.model.symbol.Reference;
  * shifting), {@code shift} (bit position of the field within the written byte, e.g. 4
  * for GxROM's PRG bits 4-5), {@code bus_conflict} (see below).
  * <p>
+ * <b>Address-decode predicate</b> (optional {@code addr_mask}/{@code addr_match}): a
+ * register-file board mirrors several independent registers across one address range and
+ * decodes <em>which</em> register a write hits from low address bits, not from the data
+ * value. Bandai's FCG/LZ93D50 (iNES mappers 16/157/159) is the shipped example: the mapper
+ * decodes only the write address's low nibble ({@code A & 0x0F}), where nibble {@code 0x8}
+ * is the 16 KiB PRG bank register and nibbles {@code 0-7}/{@code 9-D} are CHR/mirroring/IRQ
+ * registers that must NOT disturb the PRG bank. When {@code addr_mask} is present, a write
+ * latches only if {@code (offset & addr_mask) == addr_match} -- so one mechanism can own the
+ * PRG register while ignoring every sibling register sharing the same {@code [start,end]}
+ * range (those sibling writes still get {@code on_write: mechanism} at the window level, so
+ * they are not misread as ROM writes; they simply are not <em>this</em> latch). Absent (the
+ * discrete-mapper default: UxROM/AxROM/CNROM/GxROM/BNROM), any write in range latches,
+ * exactly as before. The predicate is purely address-based, so {@link #cacheable()} stays
+ * true.
+ * <p>
  * Differences from {@code register-write} injected via {@link StoredValueScanner.Hooks}:
  * <ul>
  * <li>The latch is write-only -- reading a latch-range address reads the underlying ROM
@@ -73,6 +88,15 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	private boolean busConflict;
 
 	/**
+	 * Optional address-decode predicate for register-file boards (see class javadoc): when
+	 * {@code addrMask != 0}, a write latches only if {@code (offset & addrMask) == addrMatch}.
+	 * {@code addrMask == 0} (the default when the descriptor omits {@code addr_mask}) means
+	 * "no predicate" -- any write in {@code [rangeStart, rangeEnd]} latches, as before.
+	 */
+	private long addrMask;
+	private long addrMatch;
+
+	/**
 	 * Base-space shadow of every overlay memory block, snapshotted at {@link #configure}
 	 * time (an efficiency memoization for {@link #bankInvariantRomByte} -- see grm-5tl.13.1).
 	 * Loader-placed memory blocks are fixed before analyzers run and phase 2 of the engine
@@ -109,6 +133,8 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 		mask = params.has("mask") ? params.get("mask").getAsInt() : stateMask;
 		shift = params.has("shift") ? params.get("shift").getAsInt() : 0;
 		busConflict = params.has("bus_conflict") && params.get("bus_conflict").getAsBoolean();
+		addrMask = params.has("addr_mask") ? params.get("addr_mask").getAsLong() : 0;
+		addrMatch = params.has("addr_match") ? params.get("addr_match").getAsLong() : 0;
 
 		overlayCoveredRanges = new AddressSet();
 		for (MemoryBlock b : program.getMemory().getBlocks()) {
@@ -168,11 +194,22 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 		for (Reference ref : instr.getReferencesFrom()) {
 			Address to = ref.getToAddress();
 			if (ref.getReferenceType().isWrite() && to.getAddressSpace().equals(space) &&
-				to.getOffset() >= rangeStart && to.getOffset() <= rangeEnd) {
+				to.getOffset() >= rangeStart && to.getOffset() <= rangeEnd &&
+				matchesDecode(to.getOffset())) {
 				return true;
 			}
 		}
 		return false;
+	}
+
+	/**
+	 * The register-file address-decode predicate (class javadoc): true unless an
+	 * {@code addr_mask} is configured and this write's low address bits do not select the
+	 * register this mechanism owns. With no {@code addr_mask} (discrete mappers) every
+	 * in-range write matches.
+	 */
+	private boolean matchesDecode(long offset) {
+		return addrMask == 0 || (offset & addrMask) == addrMatch;
 	}
 
 	/**

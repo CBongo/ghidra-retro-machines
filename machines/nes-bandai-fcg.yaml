@@ -1,0 +1,107 @@
+# NES Bandai FCG / LZ93D50 board descriptor (iNES mappers 16, 157, 159) -- SHIPPING
+# descriptor (bead grm-9ty). A register-file board: a bank of independent registers is
+# mirrored across the whole $8000-$FFFF range and the mapper decodes WHICH register a
+# write hits from the write address's low nibble (A0-A3), not from the data value. This
+# is the first descriptor to use memory-latch's address-decode predicate
+# (addr_mask/addr_match -- see MemoryLatchBankSwitchStrategy's class javadoc), which
+# isolates the one PRG register from its CHR/mirroring/IRQ siblings sharing the range.
+#
+# Hardware facts, cross-checked against the NESdev wiki (https://www.nesdev.org/wiki/INES_Mapper_016)
+# and the FCEU reference implementation (Z:/nes/fceu/mappers/16.c, Mapper16_write, which
+# does `A &= 0xF` then dispatches on the low nibble):
+#   Register select = write address & 0x000F (mirrored throughout $8000-$FFFF):
+#     0x0-0x7 = CHR bank registers (PPU-side, out of scope -- vision doc §5.4).
+#     0x8     = PRG bank: 16 KiB window at $8000-$BFFF, value bits 0-3 (ROM_BANK16).
+#     0x9     = nametable mirroring (PPU-side, out of scope).
+#     0xA     = IRQ enable/acknowledge; 0xB/0xC = IRQ latch low/high (not modeled).
+#     0xD     = serial EEPROM / RAM control (24C01 on mapper 159, 24C02 on mapper 16.4;
+#               a 1-bit serial line, NOT general PRG-RAM -- out of scope).
+#   $C000-$FFFF is fixed to the last 16 KiB bank.
+#
+# 157 (Datach Joint ROM System) and 159 (LZ93D50 + 24C01 EEPROM) differ from 16 only in
+# EEPROM/barcode wiring, which is irrelevant to PRG banking -- one descriptor covers all
+# three. Mapper 153 (Famicom Jump II) is a DISTINCT board (a 256 KiB outer-bank hack
+# co-driven by a CHR register; FCEU's separate Mapper153_write) and is NOT claimed here.
+#
+# Register base: this descriptor models the LZ93D50 generation, whose registers live at
+# $8000-$FFFF (submapper 16.4/16.5, and mappers 157/159). The legacy FCG-1/FCG-2
+# generation (submapper 16.1/16.2) instead exposes the same register file at
+# $6000-$7FFF; iNES 1.0 headers carry no submapper, and the real-ROM exercisers for this
+# bead (the Dragon Ball collection at Z:/nes/db) are all LZ93D50 boards, so the $6000
+# variant is flagged here rather than modeled.
+
+schema: 2
+
+include: fragments/nes-common.yaml
+
+system:
+  id: nes_bandai_fcg
+  name: NES Bandai FCG/LZ93D50 (iNES mapper 16/157/159)
+  board:
+    ines_mappers: [16, 157, 159]   # board registry key: iNES mapper numbers this board serves
+  cpu:
+    # Stock 6502 language -- the 2A03 core is a 6502 minus decimal mode, invisible here.
+    language: "6502:LE:16:default"
+
+physical:
+  # PRG ROM laid out once, in file order. No size: — it comes from the iNES header
+  # (PRG-ROM size field) at load time.
+  - { name: PRG, image: prg_rom }
+
+memory:
+  # No PRG-RAM region: the LZ93D50 EEPROM ($D register / a bit read back at $6000) is a
+  # 1-bit serial line, not an 8 KiB PRG-RAM window -- out of scope (vision doc §5.4).
+  # PPU/CHR address space is likewise out of scope for the CPU map.
+
+  windows:                        # computed occupants — slices of PRG driven by bank state
+    - name: PRG_LO                # switchable 16 KiB bank (register $8: ROM_BANK16 @ $8000)
+      start: 0x8000
+      end: 0xBFFF
+      maps: PRG[prg_bank * 0x4000]
+      on_write: mechanism         # every store in $8000-$FFFF is a mapper register write
+    - name: PRG_HI                # fixed to the last 16 KiB bank in the image
+      start: 0xC000
+      end: 0xFFFF
+      maps: PRG[last]
+      on_write: mechanism         # CHR/mirroring/IRQ registers mirror up here too
+
+banking:
+  state:
+    # 4-bit PRG bank: register $8's data bits 0-3 (ROM_BANK16), up to 16 x 16 KiB = 256 KiB
+    # PRG -- the LZ93D50's full PRG reach. Banks beyond the actual image size don't exist.
+    - { name: prg_bank, bits: 4 }
+  mechanisms:
+    # The PRG bank register, selected by low-nibble == 0x8 anywhere in $8000-$FFFF. The
+    # addr_mask/addr_match predicate is what makes a store to register $0-$7 (CHR), $9
+    # (mirroring), or $A-$D (IRQ/EEPROM) a NON-latch here even though it lands in the same
+    # range -- those writes are still on_write: mechanism at the window level (not misread
+    # as ROM writes), they simply do not feed prg_bank. FCG boards have bus isolation (a
+    # dedicated latch), so no bus-conflict AND is applied.
+    - strategy: memory-latch
+      params:
+        start: 0x8000
+        end: 0xFFFF
+        addr_mask: 0x000F         # decode: only the write address's low nibble selects the register
+        addr_match: 0x0008        # register $8 is the PRG bank
+        mask: 0x0F                # data bits 0-3 = 16 KiB bank number
+        bus_conflict: false
+      sets: [prg_bank]
+  # Power-on register contents are electrically undefined; 0 is the conventional
+  # assumption (reset code runs from the fixed $C000 window regardless of prg_bank).
+  initial_state: { prg_bank: 0 }
+
+# rom_images: omitted -- PRG comes from the .nes container payload, not a user-supplied slot.
+
+validation:
+  oracle: none
+  checks:
+    - "PRG-side bank layout and the low-nibble register decode cross-checked against the
+       NESdev wiki (https://www.nesdev.org/wiki/INES_Mapper_016) and the FCEU reference
+       (Z:/nes/fceu/mappers/16.c); no emulator oracle run yet. Verified against the
+       banktest suite's runtime behavior (bead grm-9ty, nesbandaitest.nes: a PRG select
+       via register $8 with intervening CHR ($8000) and IRQ ($800A) register writes whose
+       decoy values must NOT move prg_bank -- the address-decode predicate's proof).
+       CHR banking, nametable mirroring, the scanline IRQ counter, and the serial EEPROM
+       are all out of scope (vision doc §5.4 / this bead). The legacy FCG-1/FCG-2
+       $6000-$7FFF register base (submapper 16.1/16.2) and mapper 153's 256 KiB outer-bank
+       hack are not modeled -- see the module note above."

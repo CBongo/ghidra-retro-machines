@@ -308,6 +308,7 @@ if selected nes-banking; then
 	run_one nesmmc1test "$WORK/nes/nesmmc1test.nes" NesRomLoader
 	run_one nesmmc1overridetest "$WORK/nes/nesmmc1overridetest.nes" NesRomLoader \
 		"-loader-placement W8000:5"
+	run_one nesbandaitest "$WORK/nes/nesbandaitest.nes" NesRomLoader
 fi
 
 if selected petscii-strings; then

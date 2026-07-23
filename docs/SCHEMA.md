@@ -211,7 +211,14 @@ the emulators-as-oracle principle.
   `{ shift: 4, mask: 0x3 }`), `bus_conflict` (boards without bus isolation AND the
   driven value with the ROM byte at the written address; when the store target is
   constant and bank-invariant the analyzer applies that AND, turning the ROM byte's 0
-  bits into *known* zeros). The latch is write-only — reads of the range read ROM —
+  bits into *known* zeros). Optional `addr_mask`/`addr_match` add an **address-decode
+  predicate** for register-file boards that mirror several independent registers across
+  one range and select which register a write hits from low address bits: a write
+  latches only when `(offset & addr_mask) == addr_match`, so one mechanism can own just
+  the PRG register and ignore its CHR/IRQ siblings in the same range (Bandai FCG/LZ93D50,
+  mappers 16/157/159: `{ addr_mask: 0x000F, addr_match: 0x0008 }` — register `$8`, bead
+  `grm-9ty`). Absent, any in-range write latches (the discrete-mapper default). The latch
+  is write-only — reads of the range read ROM —
   so value recovery resolves plain absolute loads of bank-invariant ROM bytes to
   constants instead of consulting the in-state. Constraint: the field a memory-latch
   `sets` must currently be the **first** field of `banking.state` (the recovered value
