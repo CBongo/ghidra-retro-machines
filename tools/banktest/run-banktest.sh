@@ -134,6 +134,76 @@ fi
 WORK="$(mktemp -d)"
 fail=0
 
+# --- candidate-dump cache (bead grm-lne) --------------------------------
+# The review-then-bless loop runs `check` (imports every fixture and diffs its
+# dump against the golden) and then `bless` (which otherwise re-imports every
+# fixture just to recapture the identical dump). analyzeHeadless import is the
+# expensive step, so `check` stashes each freshly produced dump in a
+# content-addressed cache and `bless` reuses it -- but ONLY when the cache key
+# still matches the current inputs, so a stale candidate is never blessed.
+#
+# The key folds in everything that can change a dump: the fixture bytes, the
+# loader name, the loader options (each existing-file argument replaced by its
+# own hash so a volatile per-run mktemp path does not perturb the key), the
+# VerifyBankTest dump script, and the installed extension's identity. If that
+# identity cannot be established (run standalone against the shared %APPDATA%
+# install with no isolated Extensions tree) or sha256sum/unzip are unavailable,
+# caching is disabled and bless re-imports as before -- correctness over speed.
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+CACHE_DIR="$REPO_ROOT/build/banktest-cache"
+
+ext_identity() {
+	# Content fingerprint of the installed extension jar(s), or non-zero if it
+	# cannot be determined (=> caching disabled). NOT a file mtime/stamp: gradle
+	# rewrites the dist zip on every build (new timestamps, identical bytecode),
+	# so an mtime-based id never matches across a check->bless pair. unzip -v's
+	# CRC-32 column depends only on entry content, so hashing the sorted
+	# (CRC, name) pairs across the installed Extensions jars yields an id that is
+	# stable across a no-op rebuild yet changes the moment any compiled class or
+	# bundled data file changes.
+	local base="${BANKTEST_SETTINGS_BASE:-}" jars out
+	[ -n "$base" ] || return 1
+	command -v unzip >/dev/null 2>&1 || return 1
+	jars="$(find "$base" -type f -name '*.jar' -path '*/Extensions/*' 2>/dev/null | LC_ALL=C sort)"
+	[ -n "$jars" ] || return 1
+	out="$(printf '%s\n' "$jars" | while IFS= read -r j; do
+		unzip -v "$j" 2>/dev/null | awk '$7 ~ /^[0-9a-fA-F]{8}$/ {print $7, $NF}'
+	done | LC_ALL=C sort | sha256sum | cut -d' ' -f1)"
+	[ -n "$out" ] || return 1
+	printf '%s' "$out"
+}
+# Compute the extension identity once; empty => caching disabled for this run.
+EXT_ID="$(ext_identity)" || EXT_ID=""
+
+normalize_opts() {
+	# Echo the loader-opts string with each existing-file argument replaced by
+	# its sha256, so ROM-content changes invalidate the key but the volatile
+	# mktemp path prefix does not. $1 is intentionally word-split like $extra.
+	local out="" tok
+	for tok in $1; do
+		if [ -f "$tok" ]; then
+			out="$out $(sha256sum "$tok" | cut -d' ' -f1)"
+		else
+			out="$out $tok"
+		fi
+	done
+	printf '%s' "$out"
+}
+
+cache_key() {
+	# args: fixture loader extra  ->  sha256 key on stdout, or empty if disabled
+	local fixture="$1" loader="$2" extra="$3"
+	command -v sha256sum >/dev/null 2>&1 || { printf ''; return 0; }
+	[ -n "$EXT_ID" ] || { printf ''; return 0; }
+	{
+		printf 'fixture:'; sha256sum "$fixture" | cut -d' ' -f1
+		printf 'loader:%s\n' "$loader"
+		printf 'opts:%s\n' "$(normalize_opts "$extra")"
+		printf 'dumpscript:'; sha256sum "$SCRIPT_DIR/VerifyBankTest.java" | cut -d' ' -f1
+		printf 'ext:%s\n' "$EXT_ID"
+	} | sha256sum | cut -d' ' -f1
+}
+
 generate() {
 	local generator="$1" destination="$2"
 	"$PYTHON" "$SCRIPT_DIR/$generator" "$destination" || {
@@ -169,6 +239,33 @@ if selected petscii-strings; then generate mkpetsciistringtest.py "$WORK/prg"; f
 # extracts the normalized dump, and check|bless's it against expected/$1.dump.
 run_one() {
 	local name="$1" fixture="$2" loader="$3" extra="${4:-}"
+	local key cached
+	key="$(cache_key "$fixture" "$loader" "$extra")"
+	cached="$CACHE_DIR/$key.dump"
+
+	# bless fast path: a prior check already produced the exact candidate for
+	# these inputs -- reuse it (reprint its criteria, show the golden diff) and
+	# skip the expensive re-import. Mirrors the non-cache bless below: copy the
+	# candidate regardless, but flag the suite if its cached criteria failed.
+	if [ "$MODE" = bless ] && [ -n "$key" ] && [ -f "$cached" ]; then
+		echo "== $name: reusing cached candidate from prior check (no re-import) =="
+		[ -f "$CACHE_DIR/$key.crit" ] && cat "$CACHE_DIR/$key.crit"
+		mkdir -p "$EXPECTED_DIR"
+		if [ -f "$EXPECTED_DIR/$name.dump" ]; then
+			diff -u <(tr -d '\r' <"$EXPECTED_DIR/$name.dump") "$cached" \
+				&& echo "no change vs golden: $name"
+		else
+			echo "no existing golden for $name -- creating it"
+		fi
+		cp "$cached" "$EXPECTED_DIR/$name.dump"
+		echo "blessed (from cache) $EXPECTED_DIR/$name.dump"
+		if [ -f "$CACHE_DIR/$key.crit" ] && ! grep -q '^SUITE PASS$' "$CACHE_DIR/$key.crit"; then
+			echo "FAIL: cached criteria did not pass for $name"
+			fail=1
+		fi
+		return
+	fi
+
 	local proj="$WORK/proj_$name"
 	mkdir -p "$proj"
 	local log="$WORK/$name.log"
@@ -208,6 +305,15 @@ run_one() {
 	if ! grep -q '^SUITE PASS$' "$stripped"; then
 		echo "FAIL: criteria failed for $name (log: $log)"
 		fail=1
+	fi
+
+	# Stash this valid candidate (and its criteria verdict) so a follow-up bless
+	# can reuse it without re-importing. Keyed by inputs, so a later
+	# rebuild/edit misses and forces a fresh import.
+	if [ -n "$key" ]; then
+		mkdir -p "$CACHE_DIR"
+		cp "$WORK/$name.dump" "$cached"
+		grep -E '^(CRITERION |SUITE (PASS|FAIL))' "$stripped" >"$CACHE_DIR/$key.crit" || true
 	fi
 
 	if [ "$MODE" = bless ]; then

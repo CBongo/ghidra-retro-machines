@@ -90,6 +90,46 @@ if ! command -v sha256sum >/dev/null 2>&1; then
 	exit 2
 fi
 
+# --- candidate-dump cache (bead grm-lne) --------------------------------
+# Mirror build-and-test.sh's cache: `check` stashes each freshly imported dump
+# so a follow-up `bless` reuses it instead of paying the ~1min+ real-ROM import
+# again. Keyed by the pinned ROM sha, the loader options, the RealRomDump
+# script, and the installed extension identity, so a rebuild or manifest edit
+# forces a fresh import. Disabled (bless re-imports) when the extension identity
+# is unknown (e.g. falling back to the shared %APPDATA% install).
+CACHE_DIR="$REPO_ROOT/build/realrom-cache"
+
+ext_identity() {
+	# Content fingerprint of the installed extension jar(s); see the fuller note
+	# in run-banktest.sh. NOT a file mtime/stamp -- gradle rewrites the dist zip
+	# every build with identical bytecode, so an mtime-based id never matches
+	# across a check->bless pair. unzip -v's CRC-32 column is content-only.
+	local base="${BANKTEST_SETTINGS_BASE:-}" jars out
+	[ -n "$base" ] || return 1
+	command -v unzip >/dev/null 2>&1 || return 1
+	jars="$(find "$base" -type f -name '*.jar' -path '*/Extensions/*' 2>/dev/null | LC_ALL=C sort)"
+	[ -n "$jars" ] || return 1
+	out="$(printf '%s\n' "$jars" | while IFS= read -r j; do
+		unzip -v "$j" 2>/dev/null | awk '$7 ~ /^[0-9a-fA-F]{8}$/ {print $7, $NF}'
+	done | LC_ALL=C sort | sha256sum | cut -d' ' -f1)"
+	[ -n "$out" ] || return 1
+	printf '%s' "$out"
+}
+# Compute the extension identity once; empty => caching disabled for this run.
+EXT_ID="$(ext_identity)" || EXT_ID=""
+
+realrom_cache_key() {
+	# args: rom_sha opts  ->  sha256 key on stdout, or empty if disabled
+	local rom_sha="$1" opts="$2"
+	[ -n "$EXT_ID" ] || { printf ''; return 0; }
+	{
+		printf 'rom:%s\n' "$rom_sha"
+		printf 'opts:%s\n' "$opts"
+		printf 'dumpscript:'; sha256sum "$SCRIPT_DIR/RealRomDump.java" | cut -d' ' -f1
+		printf 'ext:%s\n' "$EXT_ID"
+	} | sha256sum | cut -d' ' -f1
+}
+
 WORK="${REALROM_WORK_DIR:-$(mktemp -d)}"
 mkdir -p "$WORK"
 echo "== work dir: $WORK =="
@@ -186,8 +226,27 @@ while IFS=$'\t' read -r id title sha mapper board golden opts || [ -n "${id:-}" 
 		continue
 	fi
 
-	echo "-- $id ($title): importing $(basename "$rom")"
 	out="$WORK/${id}.dump"
+	key="$(realrom_cache_key "$sha" "$opts")"
+	cached="$CACHE_DIR/$key.dump"
+
+	# bless fast path: reuse the candidate a prior check imported for this exact
+	# ROM + opts + build, showing the golden diff before accepting it. The
+	# cached dump was only stored after its sha recheck passed, so it is
+	# known-good.
+	if [ "$MODE" = bless ] && [ -n "$key" ] && [ -f "$cached" ]; then
+		echo "-- $id ($title): reusing cached candidate from prior check (no re-import)"
+		if [ -f "$golden_path" ]; then
+			diff -u "$golden_path" "$cached" && echo "    no change vs golden"
+		fi
+		cp -f "$cached" "$golden_path"
+		ROW_ID+=("$id"); ROW_STATUS+=("BLESS"); ROW_DETAIL+=("$golden (cached)")
+		n_bless=$((n_bless + 1))
+		echo "    blessed (from cache) -> $golden_path"
+		continue
+	fi
+
+	echo "-- $id ($title): importing $(basename "$rom")"
 	if ! import_and_dump "$id" "$rom" "$opts" "$out"; then
 		ROW_ID+=("$id"); ROW_STATUS+=("FAIL"); ROW_DETAIL+=("import/dump error")
 		n_fail=$((n_fail + 1))
@@ -203,6 +262,13 @@ while IFS=$'\t' read -r id title sha mapper board golden opts || [ -n "${id:-}" 
 		n_fail=$((n_fail + 1))
 		echo "    FAIL: program sha256 $dumped_sha != manifest $sha"
 		continue
+	fi
+
+	# Known-good candidate (sha recheck passed): stash it so a follow-up bless
+	# reuses it without re-importing.
+	if [ -n "$key" ]; then
+		mkdir -p "$CACHE_DIR"
+		cp -f "$out" "$cached"
 	fi
 
 	if [ "$MODE" = bless ]; then

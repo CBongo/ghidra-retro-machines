@@ -65,6 +65,17 @@ auto-accept.** Read the diff first and confirm the new behavior is intended; onl
 bless, and only the specific chunk you reviewed. Blessing to make a red suite green without
 understanding the diff defeats the entire suite.
 
+> **Candidate cache (`grm-lne`).** A `check` run stashes each freshly imported dump in a
+> content-addressed cache under `build/` (gitignored), and a following `bless` reuses it
+> instead of re-running the expensive `analyzeHeadless` import — so the normal
+> review-then-bless loop imports once, not twice (biggest win on the ~1min+ real-ROM tier).
+> The cache key folds in the fixture bytes, loader + options, the dump script, and a
+> **content** fingerprint of the installed extension jar (CRC-based, not an mtime, since
+> gradle rewrites the dist zip every build). Any of those changing forces a fresh import, so
+> a stale candidate is never blessed; `bless` still prints the `expected/*.dump` diff before
+> accepting. It is a pure speedup with no workflow change — clear it any time with
+> `rm -rf build/banktest-cache build/realrom-cache`.
+
 ### Chunks (partitioning — `grm-32f.2`)
 
 For the dev loop, run only the chunk(s) relevant to your change; the **full suite still gates
