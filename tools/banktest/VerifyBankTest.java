@@ -136,6 +136,18 @@ public class VerifyBankTest extends GhidraScript {
 			return;
 		}
 
+		if (name.contains("copyloop")) {
+			checkCopyLoop();
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
+
+		if (name.contains("copydata")) {
+			checkCopyData();
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
+
 		if (name.contains("romload")) {
 			checkRomLoad();
 			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
@@ -585,6 +597,89 @@ public class VerifyBankTest extends GhidraScript {
 		boolean disassembled = overlay != null &&
 			currentProgram.getListing().getInstructionAt(overlay.getStart()) != null;
 		criterion("suspect-overlay-disassembled", disassembled, "instr@overlay=" + disassembled);
+	}
+
+	// ------------------------------------------------------------------
+	// C64CopyLoopAnalyzer check (bead grm-1.7.1)
+	// ------------------------------------------------------------------
+
+	// Fixture contract from mkcopytest.py: a verbatim indexed copy loop whose counter init
+	// (the provenance anchor) is at $2000. copyloop.prg copies $200E -> $C000 and ends with a
+	// JMP into the range (AUTO -> the COPY_c000 overlay is disassembled); copydata.prg copies
+	// $200C -> $C100 with no jump (CANDIDATE -> COPY_c100 materialized as data, not disassembled).
+	private static final String COPY_CATEGORY = "C64CopyLoopAnalyzer";
+	private static final long COPY_ENTRY = 0x2000;
+
+	private void checkCopyLoop() {
+		verifyCopy("copyloop", "COPY_c000", 0x200e,
+			new byte[] {1, 2, 3, 4, 5, 6, 7, 8}, true);
+	}
+
+	private void checkCopyData() {
+		verifyCopy("copydata", "COPY_c100", 0x200c,
+			new byte[] {0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18}, false);
+	}
+
+	/** Shared assertions for a recovered verbatim copy: the COPY_xxxx byte-mapped overlay holds
+	 *  the source bytes (read through the 1:1 map), its mapped range points back at the source, a
+	 *  NOTE provenance bookmark + EOL comment cross-link the copy loop, and the payload is
+	 *  disassembled only when the copy is proven code (AUTO), never for a data copy (CANDIDATE). */
+	private void verifyCopy(String idPrefix, String overlayName, long srcStart, byte[] expected,
+			boolean expectDisassembled) {
+		MemoryBlock overlay = currentProgram.getMemory().getBlock(overlayName);
+		byte[] recovered = null;
+		String mapped = "<none>";
+		if (overlay != null) {
+			try {
+				byte[] buf = new byte[expected.length];
+				overlay.getBytes(overlay.getStart(), buf);
+				recovered = buf;
+			}
+			catch (Exception e) {
+				// leave null -> criterion fails visibly
+			}
+			if (!overlay.getSourceInfos().isEmpty()) {
+				java.util.Optional<AddressRange> r =
+					overlay.getSourceInfos().get(0).getMappedRange();
+				if (r.isPresent()) {
+					mapped = fmt(r.get().getMinAddress());
+				}
+			}
+		}
+
+		Bookmark mark = null;
+		for (Bookmark bm : currentProgram.getBookmarkManager().getBookmarks(addr(COPY_ENTRY))) {
+			if (COPY_CATEGORY.equals(bm.getCategory())) {
+				mark = bm;
+				break;
+			}
+		}
+		String comment = eol(COPY_ENTRY);
+		boolean disassembled = overlay != null &&
+			currentProgram.getListing().getInstructionAt(overlay.getStart()) != null;
+
+		println("=== BANKDUMP BEGIN ===");
+		println("OVERLAY " + (overlay == null ? "<missing>"
+				: overlay.getName() + " " + fmt(overlay.getStart()) + "-" + fmt(overlay.getEnd())));
+		println("MAPPED " + mapped);
+		println("COPIED " + hex(recovered));
+		println("DISASM " + disassembled);
+		println("BOOKMARK " + (mark == null ? "<none>"
+				: mark.getTypeString() + " @" + fmt(mark.getAddress())));
+		println("COMMENT " + comment);
+		println("=== BANKDUMP END ===");
+
+		criterion(idPrefix + "-overlay-exists", overlay != null, "block=" + overlayName);
+		criterion(idPrefix + "-mapped-to-source", mapped.equals(String.format("%04x", srcStart)),
+			"mapped=" + mapped);
+		criterion(idPrefix + "-copied-bytes", Arrays.equals(recovered, expected),
+			"bytes=" + hex(recovered));
+		criterion(idPrefix + "-note-bookmark", mark != null && "Note".equals(mark.getTypeString()),
+			"bm=" + (mark == null ? "<none>" : mark.getTypeString()));
+		criterion(idPrefix + "-comment-links-overlay", comment.contains(overlayName),
+			"eol=" + comment);
+		criterion(idPrefix + "-disassembly", disassembled == expectDisassembled,
+			"disassembled=" + disassembled + " expected=" + expectDisassembled);
 	}
 
 	// ------------------------------------------------------------------

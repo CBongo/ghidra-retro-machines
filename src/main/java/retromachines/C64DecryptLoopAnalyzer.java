@@ -39,8 +39,6 @@ import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryAccessException;
 import ghidra.program.model.mem.MemoryBlock;
-import ghidra.program.model.scalar.Scalar;
-import ghidra.program.model.symbol.FlowType;
 import ghidra.util.task.TaskMonitor;
 
 /**
@@ -78,11 +76,6 @@ public class C64DecryptLoopAnalyzer extends AbstractAnalyzer {
 			"exposes it as a DECRYPTED_xxxx overlay block.";
 	private static final String CATEGORY = "C64DecryptLoopAnalyzer";
 
-	// How far back to look for the loop-counter init, and how far past the loop for the
-	// jump-into-range; both are small because a decrypt stub is a tight, local construct.
-	private static final int COUNTER_LOOKBACK = 8;
-	private static final int JUMP_LOOKAHEAD = 6;
-
 	public C64DecryptLoopAnalyzer() {
 		super(NAME, DESCRIPTION, AnalyzerType.INSTRUCTION_ANALYZER);
 		// After reference analysis so branch flows exist (back-edge + jump-into-range).
@@ -104,7 +97,7 @@ public class C64DecryptLoopAnalyzer extends AbstractAnalyzer {
 			if (monitor.isCancelled()) {
 				break;
 			}
-			if (!mnem(eor).equals("EOR")) {
+			if (!LoopIdioms.mnem(eor).equals("EOR")) {
 				continue;
 			}
 			tryRecognize(program, listing, eor, monitor, log);
@@ -117,15 +110,16 @@ public class C64DecryptLoopAnalyzer extends AbstractAnalyzer {
 			TaskMonitor monitor, MessageLog log) {
 		Instruction lda = listing.getInstructionBefore(eor.getAddress());
 		Instruction sta = listing.getInstructionAfter(eor.getAddress());
-		if (lda == null || sta == null || !mnem(lda).equals("LDA") || !mnem(sta).equals("STA")) {
+		if (lda == null || sta == null || !LoopIdioms.mnem(lda).equals("LDA") ||
+			!LoopIdioms.mnem(sta).equals("STA")) {
 			return;
 		}
 
 		// Invariant 1: indexed load and store to the SAME base and index register (in place).
-		Address base = indexedBase(lda);
-		Register idx = indexReg(lda);
-		Address staBase = indexedBase(sta);
-		Register staIdx = indexReg(sta);
+		Address base = LoopIdioms.indexedBase(lda);
+		Register idx = LoopIdioms.indexReg(lda);
+		Address staBase = LoopIdioms.indexedBase(sta);
+		Register staIdx = LoopIdioms.indexReg(sta);
 		if (base == null || staBase == null || idx == null || staIdx == null) {
 			return;
 		}
@@ -142,8 +136,8 @@ public class C64DecryptLoopAnalyzer extends AbstractAnalyzer {
 			}
 			key = RecognizedDecryptor.KeyModel.constant(k);
 		}
-		else if (indexedBase(eor) != null) {
-			key = RecognizedDecryptor.KeyModel.rolling(indexedBase(eor));
+		else if (LoopIdioms.indexedBase(eor) != null) {
+			key = RecognizedDecryptor.KeyModel.rolling(LoopIdioms.indexedBase(eor));
 		}
 		else {
 			key = RecognizedDecryptor.KeyModel.of(RecognizedDecryptor.KeyModel.Kind.UNKNOWN);
@@ -152,14 +146,14 @@ public class C64DecryptLoopAnalyzer extends AbstractAnalyzer {
 		// Invariant 3: index step + conditional back-branch to the loop head (the LDA).
 		Instruction step = listing.getInstructionAfter(sta.getAddress());
 		Instruction branch = step == null ? null : listing.getInstructionAfter(step.getAddress());
-		boolean downCount = step != null && mnem(step).equals(decMnemonic(idx));
-		boolean bpl = branch != null && mnem(branch).equals("BPL");
-		boolean backEdge = branch != null && branchTargets(branch, lda.getAddress());
+		boolean downCount = step != null && LoopIdioms.mnem(step).equals(LoopIdioms.decMnemonic(idx));
+		boolean bpl = branch != null && LoopIdioms.mnem(branch).equals("BPL");
+		boolean backEdge = branch != null && LoopIdioms.branchTargets(branch, lda.getAddress());
 
 		// Bound the range. Only the clean form -- LDX/LDY #(len-1); ...; DEX/DEY; BPL loop --
 		// gives a range certain to be [base, base+len); other counter/branch forms have
 		// off-by-one traps, so we recognize but do not auto-apply them.
-		Instruction init = findCounterInit(listing, lda, idx);
+		Instruction init = LoopIdioms.findCounterInit(listing, lda, idx);
 		Integer n = init == null ? null : StoredValueScanner.immediateOperandValue(init);
 		if (!(downCount && bpl && backEdge) || n == null) {
 			program.getBookmarkManager().setBookmark(lda.getAddress(), BookmarkType.WARNING,
@@ -177,7 +171,7 @@ public class C64DecryptLoopAnalyzer extends AbstractAnalyzer {
 		}
 
 		Address entry = init.getAddress();
-		Address jumpInto = findJumpIntoRange(listing, branch, base, len);
+		Address jumpInto = LoopIdioms.findJumpIntoRange(listing, branch, base, len);
 		RecognizedDecryptor.Confidence conf = jumpInto != null
 				? RecognizedDecryptor.Confidence.AUTO
 				: RecognizedDecryptor.Confidence.CANDIDATE;
@@ -305,129 +299,5 @@ public class C64DecryptLoopAnalyzer extends AbstractAnalyzer {
 			suspect ? BookmarkType.WARNING : BookmarkType.NOTE, CATEGORY,
 			"decrypted range start; see overlay " + name);
 		program.getListing().setComment(rd.entry(), CommentType.EOL, "decrypt loop -> " + name);
-	}
-
-	// ------------------------------------------------------------------
-	// Recognition helpers (6502 operand/flow idioms; see StoredValueScanner)
-	// ------------------------------------------------------------------
-
-	private static String mnem(Instruction instr) {
-		return instr.getMnemonicString().toUpperCase();
-	}
-
-	/** The DEX/DEY mnemonic that decrements index register {@code idx}, or "" if neither. */
-	private static String decMnemonic(Register idx) {
-		String n = idx.getName().toUpperCase();
-		if (n.equals("X")) {
-			return "DEX";
-		}
-		if (n.equals("Y")) {
-			return "DEY";
-		}
-		return "";
-	}
-
-	/** The single base address of an indexed operand (abs,X / abs,Y / zp,X), or null when the
-	 *  operand is not indexed or names more than one base. An indexed operand's base arrives
-	 *  as a {@link Scalar} (no static reference is made for a runtime base+index target), so
-	 *  this is the inverse of {@link StoredValueScanner#plainAbsoluteTarget}, which handles
-	 *  only the unindexed {@link Address} case. */
-	private static Address indexedBase(Instruction instr) {
-		Long base = null;
-		boolean indexed = false;
-		for (Object obj : instr.getOpObjects(0)) {
-			if (obj instanceof Register) {
-				indexed = true;
-			}
-			else if (obj instanceof Address a) {
-				if (base != null) {
-					return null;
-				}
-				base = a.getOffset();
-			}
-			else if (obj instanceof Scalar s) {
-				if (base != null) {
-					return null;
-				}
-				base = s.getUnsignedValue();
-			}
-		}
-		if (!indexed || base == null) {
-			return null;
-		}
-		try {
-			return instr.getMinAddress().getAddressSpace().getAddress(base);
-		}
-		catch (AddressOutOfBoundsException e) {
-			return null;
-		}
-	}
-
-	private static Register indexReg(Instruction instr) {
-		for (Object obj : instr.getOpObjects(0)) {
-			if (obj instanceof Register r) {
-				return r;
-			}
-		}
-		return null;
-	}
-
-	/** Whether {@code branch} is a conditional jump that targets {@code target}. */
-	private static boolean branchTargets(Instruction branch, Address target) {
-		FlowType ft = branch.getFlowType();
-		if (ft == null || !ft.isJump() || !ft.isConditional()) {
-			return false;
-		}
-		for (Address a : branch.getFlows()) {
-			if (a.equals(target)) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	/** Walk back from {@code lda} for the {@code LDX/LDY #imm} that seeds index {@code idx}. */
-	private Instruction findCounterInit(Listing listing, Instruction lda, Register idx) {
-		String load = "LDX";
-		if (idx.getName().equalsIgnoreCase("Y")) {
-			load = "LDY";
-		}
-		else if (!idx.getName().equalsIgnoreCase("X")) {
-			return null;
-		}
-		Instruction cur = listing.getInstructionBefore(lda.getAddress());
-		for (int i = 0; i < COUNTER_LOOKBACK && cur != null; i++) {
-			if (mnem(cur).equals(load) && StoredValueScanner.isImmediate(cur)) {
-				return cur;
-			}
-			cur = listing.getInstructionBefore(cur.getAddress());
-		}
-		return null;
-	}
-
-	/** A {@code JMP}/{@code JSR} into {@code [base, base+len)} shortly after the loop, or null. */
-	private Address findJumpIntoRange(Listing listing, Instruction branch, Address base, int len) {
-		if (branch == null || branch.getFallThrough() == null) {
-			return null;
-		}
-		Address end;
-		try {
-			end = base.add(len - 1);
-		}
-		catch (AddressOutOfBoundsException e) {
-			return null;
-		}
-		Instruction cur = listing.getInstructionAt(branch.getFallThrough());
-		for (int i = 0; i < JUMP_LOOKAHEAD && cur != null; i++) {
-			String m = mnem(cur);
-			if (m.equals("JMP") || m.equals("JSR")) {
-				Address t = StoredValueScanner.plainAbsoluteTarget(cur);
-				if (t != null && t.compareTo(base) >= 0 && t.compareTo(end) <= 0) {
-					return cur.getAddress();
-				}
-			}
-			cur = listing.getInstructionAfter(cur.getAddress());
-		}
-		return null;
 	}
 }

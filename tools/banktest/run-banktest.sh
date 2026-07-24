@@ -222,6 +222,7 @@ if selected c64-recovery; then
 	generate mkdecrypttest.py "$WORK/prg"
 	generate mkrollingtest.py "$WORK/prg"
 	generate mksuspecttest.py "$WORK/prg"
+	generate mkcopytest.py "$WORK/prg"
 fi
 if selected basic-petscii && ! selected basic-dialects; then
 	generate mkbasictest.py "$WORK/prg"
@@ -368,6 +369,8 @@ if selected c64-recovery; then
 	run_one decryptloop "$WORK/prg/decryptloop.prg" C64PrgLoader
 	run_one rollingdecrypt "$WORK/prg/rollingdecrypt.prg" C64PrgLoader
 	run_one suspectdecrypt "$WORK/prg/suspectdecrypt.prg" C64PrgLoader
+	run_one copyloop "$WORK/prg/copyloop.prg" C64PrgLoader
+	run_one copydata "$WORK/prg/copydata.prg" C64PrgLoader
 fi
 
 if selected c64-loader; then
