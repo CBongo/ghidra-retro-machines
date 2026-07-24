@@ -29,6 +29,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.WeakHashMap;
+import java.util.stream.Collectors;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -45,6 +46,8 @@ import ghidra.program.model.address.AddressIterator;
 import ghidra.program.model.address.AddressSetView;
 import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.lang.Register;
+import ghidra.program.model.listing.Bookmark;
+import ghidra.program.model.listing.BookmarkManager;
 import ghidra.program.model.listing.BookmarkType;
 import ghidra.program.model.listing.CommentType;
 import ghidra.program.model.listing.Function;
@@ -344,10 +347,62 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// the completed-run cache. The framework follow-on therefore runs in full; only its
 		// stable entry fingerprint can become the redundant-rerun baseline.
 		if (stable) {
+			manageNoMechanismWriteDiagnostic(program, mechanisms, flow, log, verbose);
 			LAST_COMPLETED.put(program, new RunStamp(fingerprint, mapPath));
 			AnalyzerRunLog.markCompleted(program, getClass());
 		}
 		return true;
+	}
+
+	/**
+	 * Category for the "declared a mechanism but observed no write" diagnostic bookmark.
+	 * Deliberately distinct from {@link #getBookmarkCategory()} so the single
+	 * program-level diagnostic can be set/retracted unambiguously; it is still a
+	 * {@link BookmarkType#WARNING} so tooling that counts warnings by type sees it.
+	 */
+	private static final String NO_WRITE_CATEGORY = "no bank-switch write observed";
+
+	/**
+	 * On a settled (fixpoint-stable) run, reconcile the "board declares a bank-switch
+	 * mechanism but no mechanism write was observed anywhere" diagnostic. The concern
+	 * (grm-9oz) is silence: some real ROMs (Contra/UxROM, Dragon Ball 3/Bandai FCG) load
+	 * with the correct overlay layout yet the forward dataflow never classifies any store
+	 * as a mechanism write -- so no bank comments, no cross-bank refs, and, before this,
+	 * no warning either.
+	 *
+	 * <p>The zero can be transient: the analyzer re-runs to a whole-program fixpoint and is
+	 * re-triggered whenever another analyzer later disassembles the switch routine. So this
+	 * only fires on the settled run, and it <em>retracts</em> itself if a later settled run
+	 * does observe a write -- i.e. the diagnostic reflects the settled state, not any
+	 * intermediate round. The bookmark is anchored at the image base (a stable,
+	 * non-switch-site address) so set and retract target the same one.
+	 */
+	private void manageNoMechanismWriteDiagnostic(Program program,
+			List<ConfiguredMechanism> mechanisms, DataflowResult flow, MessageLog log,
+			boolean verbose) {
+		BookmarkManager bm = program.getBookmarkManager();
+		Address at = program.getImageBase();
+		boolean observedWrite =
+			!flow.switchResults().isEmpty() || !flow.callSwitches().isEmpty();
+		if (observedWrite) {
+			Bookmark stale = bm.getBookmark(at, BookmarkType.WARNING, NO_WRITE_CATEGORY);
+			if (stale != null) {
+				bm.removeBookmark(stale);
+			}
+			return;
+		}
+		String strategies = mechanisms.stream()
+				.map(m -> m.strategy().strategyName())
+				.distinct()
+				.collect(Collectors.joining(", "));
+		String msg = "Board declares " + mechanisms.size() + " bank-switch mechanism(s) [" +
+			strategies + "] but no mechanism write was observed in analyzed code; no bank " +
+			"annotations were produced. The switch routine may be unreached (e.g. entered " +
+			"only via an indirect/table jump auto-analysis did not disassemble).";
+		bm.setBookmark(at, BookmarkType.WARNING, NO_WRITE_CATEGORY, msg);
+		if (verbose) {
+			log.appendMsg(getName(), getClass().getSimpleName() + ": " + msg);
+		}
 	}
 
 	// ------------------------------------------------------------------

@@ -21,5 +21,6 @@ REALROM count spaces.overlay 7
 REALROM count refs.intoOverlay 0
 REALROM count instrs.inOverlay 0
 REALROM count bankComments 0
-REALROM count warnings 0
+REALROM count warnings 1
+REALROM sample.warn 0000 [no bank-switch write observed] Board declares 1 bank-switch mechanism(s) [memory-latch] but no mechanism write was observed in analyzed code; no bank annotations were produced. The switch routine may be unreached (e.g. entered only via an indirect/table jump auto-analysis did not disassemble).
 === REALROM END ===
