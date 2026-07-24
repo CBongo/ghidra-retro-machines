@@ -36,9 +36,9 @@ BLOCK WC000_M2_B4 c000-ffff overlay=true
 BLOCK WC000_M2_B5 c000-ffff overlay=true
 BLOCK WC000_M2_B6 c000-ffff overlay=true
 BLOCK WC000_M2_B7 c000-ffff overlay=true
-COMMENT c002 bank -> 12 (mirroring=0,prg_mode=3,prg_bank=0) [switch-value flow]
+COMMENT c002 bank -> mirroring=0,prg_mode=3,prg_bank=0 [switch-value flow]
 COMMENT c01d bank -> 5 [user override]
-COMMENT c032 bank -> 60? (mirroring=0,prg_mode=3,prg_bank=3) [known: prg_bank.0=1,prg_bank.1=1,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
+COMMENT c032 bank -> mirroring=0,prg_mode=3,prg_bank=3? [known: prg_bank.0=1,prg_bank.1=1,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 BOOKMARK Warning c00a
 BOOKMARK Warning c00e
 BOOKMARK Warning c012

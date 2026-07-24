@@ -29,13 +29,13 @@ BLOCK WC000_M1_B5 c000-dfff overlay=true
 BLOCK WC000_M1_B6 c000-dfff overlay=true
 BLOCK WC000_M1_B7 c000-dfff overlay=true
 BLOCK WE000 e000-ffff overlay=false
-COMMENT e002 bank -> 1030 (select=6,prg_mode=0,r6=0,r7=1) [switch-value flow]
-COMMENT e007 bank -> 1062 (select=6,prg_mode=0,r6=2,r7=1) [switch-value flow]
-COMMENT e00f bank -> 1056 (select=0,prg_mode=0,r6=2,r7=1) [switch-value flow]
-COMMENT e014 bank -> 1056 (select=0,prg_mode=0,r6=2,r7=1) [switch-value flow]
-COMMENT e01c bank -> 1063 (select=7,prg_mode=0,r6=2,r7=1) [switch-value flow]
-COMMENT e021 bank -> 3111 (select=7,prg_mode=0,r6=2,r7=3) [switch-value flow]
-COMMENT e029 bank -> 3118 (select=6,prg_mode=1,r6=2,r7=3) [switch-value flow]
+COMMENT e002 bank -> select=6,prg_mode=0,r6=0,r7=1 [switch-value flow]
+COMMENT e007 bank -> select=6,prg_mode=0,r6=2,r7=1 [switch-value flow]
+COMMENT e00f bank -> select=0,prg_mode=0,r6=2,r7=1 [switch-value flow]
+COMMENT e014 bank -> select=0,prg_mode=0,r6=2,r7=1 [switch-value flow]
+COMMENT e01c bank -> select=7,prg_mode=0,r6=2,r7=1 [switch-value flow]
+COMMENT e021 bank -> select=7,prg_mode=0,r6=2,r7=3 [switch-value flow]
+COMMENT e029 bank -> select=6,prg_mode=1,r6=2,r7=3 [switch-value flow]
 REF e00a -> W8000_M0_B2::8000 UNCONDITIONAL_CALL primary=true
 REF e017 -> W8000_M0_B2::8000 UNCONDITIONAL_CALL primary=true
 REF e024 -> WA000_B3::a000 UNCONDITIONAL_CALL primary=true

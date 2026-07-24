@@ -931,13 +931,19 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 
 	/**
 	 * Annotates a resolved bank-switch site with an EOL comment. When {@code newState}
-	 * is fully known, the comment is {@code bank -> 5 (RAM_A000/IO/RAM_E000)} (occupant
-	 * row on enumerated boards, {@code bank=5} field values on computed boards). When
-	 * only some bits are known, the comment marks the effective state with a trailing
+	 * is fully known, the comment is {@code bank -> 5 (RAM_A000/IO/RAM_E000)} on
+	 * enumerated boards (occupant row) and {@code bank -> 5 (bank=5)} on single-field
+	 * computed boards (the {@code effective} value IS the bank there). On a multi-field
+	 * computed board (MMC1/MMC3/Bandai FCG) the {@code effective} value is a packed state
+	 * tuple, not a bank index, so instead of a cryptic decimal the comment leads with the
+	 * field breakdown itself: {@code bank -> select=0,prg_mode=1,r6=0,r7=1} (grm-y20).
+	 * When only some bits are known, the comment marks the state with a trailing
 	 * {@code ?} and spells out, by {@code banking.state} field name, which bits are
 	 * actually known versus merely assumed from {@code banking.initial_state} -- e.g.
 	 * {@code bank -> 7? (BASIC/IO/KERNAL) [known: LORAM=1; assumed from initial:
-	 * HIRAM,CHAREN]}. Call-site switches carry the helper's name.
+	 * HIRAM,CHAREN]} (enumerated) or {@code bank -> select=7,...,r7=26? [known: ...;
+	 * assumed from initial: ...]} (packed tuple). Call-site switches carry the helper's
+	 * name.
 	 */
 	/**
 	 * Records one recovered switch site: an EOL annotation when at least one tracked bank
@@ -962,9 +968,28 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		String desc = describeState(board, effective);
 		String via = viaHelper == null ? "" : " via " + viaHelper;
 
+		// Whether describeState resolved this state to an occupant ROW (enumerated board,
+		// e.g. C64 BASIC/IO/KERNAL) rather than a field tuple. Mirrors describeState's
+		// first branch.
+		boolean enumerated = !board.windows().isEmpty()
+				&& board.occupantByWindowForState().get(effective) != null;
+		// On a multi-field computed board (MMC1/MMC3/Bandai FCG) the "effective" value is a
+		// PACKED state tuple, not a PRG bank index -- rendering it as a bare decimal
+		// ("bank -> 26639") is cryptic and fully redundant with the field breakdown that
+		// follows. Lead with the field tuple itself instead (grm-y20). Single-field boards
+		// keep the plain "bank -> 5 (bank=5)" form (there the number IS the bank), and
+		// enumerated boards keep "bank -> 5 (occupants)".
+		boolean packedTuple = !enumerated && board.fieldSpecs().size() > 1;
+		// Fully-known head, and the partial head with the "?" uncertainty marker in its
+		// conventional spot: right after the state value for enumerated/single-field
+		// boards ("7? (BASIC/IO/KERNAL)"), right after the field tuple for packed boards
+		// ("select=7,...,r7=26?").
+		String head = packedTuple ? desc : effective + " (" + desc + ")";
+		String headQ = packedTuple ? desc + "?" : effective + "? (" + desc + ")";
+
 		String bankComment;
 		if (newState.knownMask() == mask) {
-			bankComment = "bank -> " + effective + " (" + desc + ")" + via;
+			bankComment = "bank -> " + head + via;
 		}
 		else {
 			List<String> known = new ArrayList<>();
@@ -987,7 +1012,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 					assumed.add(name);
 				}
 			}
-			bankComment = "bank -> " + effective + "? (" + desc + ")" + via + " [known: " +
+			bankComment = "bank -> " + headQ + via + " [known: " +
 				String.join(",", known) + "; assumed from initial: " + String.join(",", assumed) +
 				"]";
 		}

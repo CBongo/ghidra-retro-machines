@@ -48,22 +48,22 @@ REALROM count refs.intoOverlay 39
 REALROM count instrs.inOverlay 264
 REALROM count bankComments 16
 REALROM count warnings 17
-REALROM sample.bankcomment e446 bank -> 92? (mirroring=0,prg_mode=3,prg_bank=5) via FUN_ffac [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
-REALROM sample.bankcomment e4be bank -> 108 (mirroring=0,prg_mode=3,prg_bank=6) via FUN_ffac [switch-value flow]
-REALROM sample.bankcomment e4e4 bank -> 92 (mirroring=0,prg_mode=3,prg_bank=5) via FUN_ffac [switch-value flow]
-REALROM sample.bankcomment e55e bank -> 12 (mirroring=0,prg_mode=3,prg_bank=0) via FUN_ffac [switch-value flow]
-REALROM sample.bankcomment e8fe bank -> 28 (mirroring=0,prg_mode=3,prg_bank=1) via FUN_ffac [switch-value flow]
-REALROM sample.bankcomment e906 bank -> 108 (mirroring=0,prg_mode=3,prg_bank=6) via FUN_ffac [switch-value flow]
-REALROM sample.bankcomment e91b bank -> 92 (mirroring=0,prg_mode=3,prg_bank=5) via FUN_ffac [switch-value flow]
-REALROM sample.bankcomment eb32 bank -> 44 (mirroring=0,prg_mode=3,prg_bank=2) via FUN_ffac [switch-value flow]
-REALROM sample.bankcomment ff6a bank -> 12 (mirroring=0,prg_mode=3,prg_bank=0) [switch-value flow]
-REALROM sample.bankcomment ff78 bank -> 15? (mirroring=3,prg_mode=3,prg_bank=0) via FUN_ff98 [known: mirroring.0=1,mirroring.1=1,prg_mode.0=1,prg_mode.1=1; assumed from initial: prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
-REALROM sample.bankcomment ff7d bank -> 15? (mirroring=3,prg_mode=3,prg_bank=0) [known: mirroring.0=1,mirroring.1=1,prg_mode.0=1,prg_mode.1=1; assumed from initial: prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
-REALROM sample.bankcomment ff81 bank -> 15? (mirroring=3,prg_mode=3,prg_bank=0) [known: mirroring.0=1,mirroring.1=1,prg_mode.0=1,prg_mode.1=1; assumed from initial: prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
-REALROM sample.bankcomment ff85 bank -> 15? (mirroring=3,prg_mode=3,prg_bank=0) [known: mirroring.0=1,mirroring.1=1,prg_mode.0=1,prg_mode.1=1; assumed from initial: prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
-REALROM sample.bankcomment ff89 bank -> 15? (mirroring=3,prg_mode=3,prg_bank=0) [known: mirroring.0=1,mirroring.1=1,prg_mode.0=1,prg_mode.1=1; assumed from initial: prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
-REALROM sample.bankcomment ff8d bank -> 15? (mirroring=3,prg_mode=3,prg_bank=0) [known: mirroring.0=1,mirroring.1=1,prg_mode.0=1,prg_mode.1=1; assumed from initial: prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
-REALROM sample.bankcomment ff92 bank -> 127 (mirroring=3,prg_mode=3,prg_bank=7) via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment e446 bank -> mirroring=0,prg_mode=3,prg_bank=5? via FUN_ffac [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
+REALROM sample.bankcomment e4be bank -> mirroring=0,prg_mode=3,prg_bank=6 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment e4e4 bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment e55e bank -> mirroring=0,prg_mode=3,prg_bank=0 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment e8fe bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment e906 bank -> mirroring=0,prg_mode=3,prg_bank=6 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment e91b bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment eb32 bank -> mirroring=0,prg_mode=3,prg_bank=2 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment ff6a bank -> mirroring=0,prg_mode=3,prg_bank=0 [switch-value flow]
+REALROM sample.bankcomment ff78 bank -> mirroring=3,prg_mode=3,prg_bank=0? via FUN_ff98 [known: mirroring.0=1,mirroring.1=1,prg_mode.0=1,prg_mode.1=1; assumed from initial: prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
+REALROM sample.bankcomment ff7d bank -> mirroring=3,prg_mode=3,prg_bank=0? [known: mirroring.0=1,mirroring.1=1,prg_mode.0=1,prg_mode.1=1; assumed from initial: prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
+REALROM sample.bankcomment ff81 bank -> mirroring=3,prg_mode=3,prg_bank=0? [known: mirroring.0=1,mirroring.1=1,prg_mode.0=1,prg_mode.1=1; assumed from initial: prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
+REALROM sample.bankcomment ff85 bank -> mirroring=3,prg_mode=3,prg_bank=0? [known: mirroring.0=1,mirroring.1=1,prg_mode.0=1,prg_mode.1=1; assumed from initial: prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
+REALROM sample.bankcomment ff89 bank -> mirroring=3,prg_mode=3,prg_bank=0? [known: mirroring.0=1,mirroring.1=1,prg_mode.0=1,prg_mode.1=1; assumed from initial: prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
+REALROM sample.bankcomment ff8d bank -> mirroring=3,prg_mode=3,prg_bank=0? [known: mirroring.0=1,mirroring.1=1,prg_mode.0=1,prg_mode.1=1; assumed from initial: prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
+REALROM sample.bankcomment ff92 bank -> mirroring=3,prg_mode=3,prg_bank=7 via FUN_ffac [switch-value flow]
 REALROM sample.ref 808e -> W8000_M3_B6::8028 READ primary=true
 REALROM sample.ref 8094 -> W8000_M3_B6::8029 READ primary=true
 REALROM sample.ref 8099 -> W8000_M3_B6::80c6 UNCONDITIONAL_CALL primary=true

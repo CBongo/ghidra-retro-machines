@@ -29,15 +29,15 @@ BLOCK WC000_M1_B5 c000-dfff overlay=true
 BLOCK WC000_M1_B6 c000-dfff overlay=true
 BLOCK WC000_M1_B7 c000-dfff overlay=true
 BLOCK WE000 e000-ffff overlay=false
-COMMENT e000 bank -> 1030 (select=6,prg_mode=0,r6=0,r7=1) via FUN_e100 [switch-value flow]
-COMMENT e006 bank -> 1024 (select=0,prg_mode=0,r6=0,r7=1) via FUN_e160 [switch-value flow]
-COMMENT e009 bank -> 1031 (select=7,prg_mode=0,r6=0,r7=1) via FUN_e180 [switch-value flow]
-COMMENT e102 bank -> 1030 (select=6,prg_mode=0,r6=0,r7=1) [switch-value flow]
-COMMENT e107 bank -> 1062 (select=6,prg_mode=0,r6=2,r7=1) via FUN_e140 [switch-value flow]
-COMMENT e123 bank -> 1024? (select=0,prg_mode=0,r6=0,r7=1) [known: r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0,r7.0=1,r7.1=0,r7.2=0,r7.3=0,r7.4=0,r7.5=0; assumed from initial: select.0,select.1,select.2,prg_mode] [switch-value flow]
-COMMENT e162 bank -> 1024 (select=0,prg_mode=0,r6=0,r7=1) [switch-value flow]
-COMMENT e182 bank -> 1031 (select=7,prg_mode=0,r6=0,r7=1) [switch-value flow]
-COMMENT e187 bank -> 4103 (select=7,prg_mode=0,r6=0,r7=4) via FUN_e140 [switch-value flow]
+COMMENT e000 bank -> select=6,prg_mode=0,r6=0,r7=1 via FUN_e100 [switch-value flow]
+COMMENT e006 bank -> select=0,prg_mode=0,r6=0,r7=1 via FUN_e160 [switch-value flow]
+COMMENT e009 bank -> select=7,prg_mode=0,r6=0,r7=1 via FUN_e180 [switch-value flow]
+COMMENT e102 bank -> select=6,prg_mode=0,r6=0,r7=1 [switch-value flow]
+COMMENT e107 bank -> select=6,prg_mode=0,r6=2,r7=1 via FUN_e140 [switch-value flow]
+COMMENT e123 bank -> select=0,prg_mode=0,r6=0,r7=1? [known: r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0,r7.0=1,r7.1=0,r7.2=0,r7.3=0,r7.4=0,r7.5=0; assumed from initial: select.0,select.1,select.2,prg_mode] [switch-value flow]
+COMMENT e162 bank -> select=0,prg_mode=0,r6=0,r7=1 [switch-value flow]
+COMMENT e182 bank -> select=7,prg_mode=0,r6=0,r7=1 [switch-value flow]
+COMMENT e187 bank -> select=7,prg_mode=0,r6=0,r7=4 via FUN_e140 [switch-value flow]
 BOOKMARK Warning e003
 BOOKMARK Warning e128
 BOOKMARK Warning e140

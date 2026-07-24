@@ -1625,14 +1625,14 @@ public class VerifyBankTest extends GhidraScript {
 		// comments: the acted-on field is "known", the other field falls back to "assumed
 		// from initial" -- assert on the effective per-field breakdown, not exact wording.
 		String c = eol(0xC002);
-		criterion("F4:c002", c.contains("bank -> 1") && c.contains("bank=1") &&
+		criterion("F4:c002", c.contains("bank ->") && c.contains("bank=1") &&
 			c.contains("known: bank"),
 			"bank latch -> 1 (bank field known, prg_mode assumed) at c002: \"" + c + "\"");
 		c = eol(0xC00A);
 		criterion("F4:c00a", c.contains("prg_mode=1") && c.contains("known: prg_mode"),
 			"mode latch -> 1 (prg_mode field known, bank assumed) at c00a: \"" + c + "\"");
 		c = eol("W8000_M1", 0x8042);
-		criterion("F4:8042", c.contains("bank -> 2") && c.contains("bank=2") &&
+		criterion("F4:8042", c.contains("bank ->") && c.contains("bank=2") &&
 			c.contains("known: bank"),
 			"bank latch -> 2 inside overlay (bank field known, prg_mode assumed) at 8042: \"" +
 				c + "\"");
