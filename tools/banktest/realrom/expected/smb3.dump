@@ -1,0 +1,191 @@
+=== REALROM BEGIN ===
+REALROM program smb3.nes
+REALROM sha256 4377a7f5e6eb50bdd2ac6f249bf1a7085500aca8eb41f38545c3a2731c51a579
+REALROM map machines/nes-mmc3.map
+REALROM placement NONE
+REALROM block APU_IO 4000-401f overlay=false
+REALROM block PPU_REGS 2000-2007 overlay=false
+REALROM block PRG_RAM 6000-7fff overlay=false
+REALROM block RAM 0000-07ff overlay=false
+REALROM block W8000 8000-9fff overlay=false
+REALROM block W8000_M0_B1 8000-9fff overlay=true
+REALROM block W8000_M0_B10 8000-9fff overlay=true
+REALROM block W8000_M0_B11 8000-9fff overlay=true
+REALROM block W8000_M0_B12 8000-9fff overlay=true
+REALROM block W8000_M0_B13 8000-9fff overlay=true
+REALROM block W8000_M0_B14 8000-9fff overlay=true
+REALROM block W8000_M0_B15 8000-9fff overlay=true
+REALROM block W8000_M0_B16 8000-9fff overlay=true
+REALROM block W8000_M0_B17 8000-9fff overlay=true
+REALROM block W8000_M0_B18 8000-9fff overlay=true
+REALROM block W8000_M0_B19 8000-9fff overlay=true
+REALROM block W8000_M0_B2 8000-9fff overlay=true
+REALROM block W8000_M0_B20 8000-9fff overlay=true
+REALROM block W8000_M0_B21 8000-9fff overlay=true
+REALROM block W8000_M0_B22 8000-9fff overlay=true
+REALROM block W8000_M0_B23 8000-9fff overlay=true
+REALROM block W8000_M0_B24 8000-9fff overlay=true
+REALROM block W8000_M0_B25 8000-9fff overlay=true
+REALROM block W8000_M0_B26 8000-9fff overlay=true
+REALROM block W8000_M0_B27 8000-9fff overlay=true
+REALROM block W8000_M0_B28 8000-9fff overlay=true
+REALROM block W8000_M0_B29 8000-9fff overlay=true
+REALROM block W8000_M0_B3 8000-9fff overlay=true
+REALROM block W8000_M0_B30 8000-9fff overlay=true
+REALROM block W8000_M0_B31 8000-9fff overlay=true
+REALROM block W8000_M0_B4 8000-9fff overlay=true
+REALROM block W8000_M0_B5 8000-9fff overlay=true
+REALROM block W8000_M0_B6 8000-9fff overlay=true
+REALROM block W8000_M0_B7 8000-9fff overlay=true
+REALROM block W8000_M0_B8 8000-9fff overlay=true
+REALROM block W8000_M0_B9 8000-9fff overlay=true
+REALROM block W8000_M1 8000-9fff overlay=true
+REALROM block WA000 a000-bfff overlay=false
+REALROM block WA000_B0 a000-bfff overlay=true
+REALROM block WA000_B10 a000-bfff overlay=true
+REALROM block WA000_B11 a000-bfff overlay=true
+REALROM block WA000_B12 a000-bfff overlay=true
+REALROM block WA000_B13 a000-bfff overlay=true
+REALROM block WA000_B14 a000-bfff overlay=true
+REALROM block WA000_B15 a000-bfff overlay=true
+REALROM block WA000_B16 a000-bfff overlay=true
+REALROM block WA000_B17 a000-bfff overlay=true
+REALROM block WA000_B18 a000-bfff overlay=true
+REALROM block WA000_B19 a000-bfff overlay=true
+REALROM block WA000_B2 a000-bfff overlay=true
+REALROM block WA000_B20 a000-bfff overlay=true
+REALROM block WA000_B21 a000-bfff overlay=true
+REALROM block WA000_B22 a000-bfff overlay=true
+REALROM block WA000_B23 a000-bfff overlay=true
+REALROM block WA000_B24 a000-bfff overlay=true
+REALROM block WA000_B25 a000-bfff overlay=true
+REALROM block WA000_B26 a000-bfff overlay=true
+REALROM block WA000_B27 a000-bfff overlay=true
+REALROM block WA000_B28 a000-bfff overlay=true
+REALROM block WA000_B29 a000-bfff overlay=true
+REALROM block WA000_B3 a000-bfff overlay=true
+REALROM block WA000_B30 a000-bfff overlay=true
+REALROM block WA000_B31 a000-bfff overlay=true
+REALROM block WA000_B4 a000-bfff overlay=true
+REALROM block WA000_B5 a000-bfff overlay=true
+REALROM block WA000_B6 a000-bfff overlay=true
+REALROM block WA000_B7 a000-bfff overlay=true
+REALROM block WA000_B8 a000-bfff overlay=true
+REALROM block WA000_B9 a000-bfff overlay=true
+REALROM block WC000 c000-dfff overlay=false
+REALROM block WC000_M1_B0 c000-dfff overlay=true
+REALROM block WC000_M1_B1 c000-dfff overlay=true
+REALROM block WC000_M1_B10 c000-dfff overlay=true
+REALROM block WC000_M1_B11 c000-dfff overlay=true
+REALROM block WC000_M1_B12 c000-dfff overlay=true
+REALROM block WC000_M1_B13 c000-dfff overlay=true
+REALROM block WC000_M1_B14 c000-dfff overlay=true
+REALROM block WC000_M1_B15 c000-dfff overlay=true
+REALROM block WC000_M1_B16 c000-dfff overlay=true
+REALROM block WC000_M1_B17 c000-dfff overlay=true
+REALROM block WC000_M1_B18 c000-dfff overlay=true
+REALROM block WC000_M1_B19 c000-dfff overlay=true
+REALROM block WC000_M1_B2 c000-dfff overlay=true
+REALROM block WC000_M1_B20 c000-dfff overlay=true
+REALROM block WC000_M1_B21 c000-dfff overlay=true
+REALROM block WC000_M1_B22 c000-dfff overlay=true
+REALROM block WC000_M1_B23 c000-dfff overlay=true
+REALROM block WC000_M1_B24 c000-dfff overlay=true
+REALROM block WC000_M1_B25 c000-dfff overlay=true
+REALROM block WC000_M1_B26 c000-dfff overlay=true
+REALROM block WC000_M1_B27 c000-dfff overlay=true
+REALROM block WC000_M1_B28 c000-dfff overlay=true
+REALROM block WC000_M1_B29 c000-dfff overlay=true
+REALROM block WC000_M1_B3 c000-dfff overlay=true
+REALROM block WC000_M1_B30 c000-dfff overlay=true
+REALROM block WC000_M1_B31 c000-dfff overlay=true
+REALROM block WC000_M1_B4 c000-dfff overlay=true
+REALROM block WC000_M1_B5 c000-dfff overlay=true
+REALROM block WC000_M1_B6 c000-dfff overlay=true
+REALROM block WC000_M1_B7 c000-dfff overlay=true
+REALROM block WC000_M1_B8 c000-dfff overlay=true
+REALROM block WC000_M1_B9 c000-dfff overlay=true
+REALROM block WE000 e000-ffff overlay=false
+REALROM count blocks.total 103
+REALROM count blocks.overlay 95
+REALROM count spaces.overlay 95
+REALROM count refs.intoOverlay 871
+REALROM count instrs.inOverlay 4263
+REALROM count bankComments 104
+REALROM count warnings 50
+REALROM sample.bankcomment c5f7 bank -> 1039? (select=7,prg_mode=1,r6=0,r7=1) [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment c5fc bank -> 26639? (select=7,prg_mode=1,r6=0,r7=26) [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment c9f9 bank -> 1039? (select=7,prg_mode=1,r6=0,r7=1) [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment c9fe bank -> 26639? (select=7,prg_mode=1,r6=0,r7=26) [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment ca23 bank -> 27663? (select=7,prg_mode=1,r6=0,r7=27) via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=1,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment ca2e bank -> 26639? (select=7,prg_mode=1,r6=0,r7=26) via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment f829 bank -> 1032 (select=0,prg_mode=1,r6=0,r7=1) [switch-value flow]
+REALROM sample.bankcomment f82f bank -> 1032 (select=0,prg_mode=1,r6=0,r7=1) [switch-value flow]
+REALROM sample.bankcomment f834 bank -> 1033 (select=1,prg_mode=1,r6=0,r7=1) [switch-value flow]
+REALROM sample.bankcomment f83a bank -> 1033 (select=1,prg_mode=1,r6=0,r7=1) [switch-value flow]
+REALROM sample.bankcomment f83f bank -> 1034 (select=2,prg_mode=1,r6=0,r7=1) [switch-value flow]
+REALROM sample.bankcomment f845 bank -> 1034 (select=2,prg_mode=1,r6=0,r7=1) [switch-value flow]
+REALROM sample.bankcomment f84a bank -> 1035 (select=3,prg_mode=1,r6=0,r7=1) [switch-value flow]
+REALROM sample.bankcomment f850 bank -> 1035 (select=3,prg_mode=1,r6=0,r7=1) [switch-value flow]
+REALROM sample.bankcomment f855 bank -> 1036 (select=4,prg_mode=1,r6=0,r7=1) [switch-value flow]
+REALROM sample.bankcomment f85b bank -> 1036 (select=4,prg_mode=1,r6=0,r7=1) [switch-value flow]
+REALROM sample.bankcomment f860 bank -> 1037 (select=5,prg_mode=1,r6=0,r7=1) [switch-value flow]
+REALROM sample.bankcomment f866 bank -> 1037 (select=5,prg_mode=1,r6=0,r7=1) [switch-value flow]
+REALROM sample.bankcomment f873 bank -> 1032 (select=0,prg_mode=1,r6=0,r7=1) [switch-value flow]
+REALROM sample.bankcomment f879 bank -> 1032 (select=0,prg_mode=1,r6=0,r7=1) [switch-value flow]
+REALROM sample.bankcomment f87e bank -> 1033 (select=1,prg_mode=1,r6=0,r7=1) [switch-value flow]
+REALROM sample.bankcomment f884 bank -> 1033 (select=1,prg_mode=1,r6=0,r7=1) [switch-value flow]
+REALROM sample.bankcomment f889 bank -> 1034 (select=2,prg_mode=1,r6=0,r7=1) [switch-value flow]
+REALROM sample.bankcomment f88f bank -> 1034 (select=2,prg_mode=1,r6=0,r7=1) [switch-value flow]
+REALROM sample.bankcomment f894 bank -> 1035 (select=3,prg_mode=1,r6=0,r7=1) [switch-value flow]
+REALROM sample.ref 8420 -> W8000_M1::841d CONDITIONAL_JUMP primary=true
+REALROM sample.ref 843c -> W8000_M1::8437 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8444 -> W8000_M1::8437 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8448 -> W8000_M1::96ce UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 84d5 -> W8000_M1::84d1 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8530 -> W8000_M1::94bb UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 853a -> W8000_M1::853f CONDITIONAL_JUMP primary=true
+REALROM sample.ref 854c -> W8000_M1::8542 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 856b -> W8000_M1::8552 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 859c -> W8000_M1::85a5 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 85a2 -> W8000_M1::85a5 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 85ad -> W8000_M1::94bb UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 85b0 -> WC000_M1_B0::d1ac UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 85be -> W8000_M1::951b UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 85c4 -> W8000_M1::85ce CONDITIONAL_JUMP primary=true
+REALROM sample.ref 85e0 -> W8000_M1::968e UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 85f2 -> W8000_M1::94cd UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 85f7 -> W8000_M1::8000 DATA primary=true
+REALROM sample.ref 85fc -> W8000_M1::8001 DATA primary=true
+REALROM sample.ref 860d -> W8000_M1::94cd UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8610 -> W8000_M1::9aba UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 861b -> W8000_M1::8617 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8620 -> W8000_M1::8625 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8622 -> WC000_M1_B0::c392 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 862a -> W8000_M1::8634 CONDITIONAL_JUMP primary=true
+REALROM sample.warn 8960 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2 whose bank argument could not be recovered at this call site
+REALROM sample.warn 89c2 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_ca46 requires select,prg_mode,r6,r7 known on entry, but it is unknown here
+REALROM sample.warn 89df [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2 whose bank argument could not be recovered at this call site
+REALROM sample.warn 8fa5 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_cb61 whose bank argument could not be recovered at this call site
+REALROM sample.warn 94ca [NesBankingAnalyzer] Bank state requirement violated: call to FUN_ffbf requires r6,r7 known on entry, but it is unknown here
+REALROM sample.warn 94df [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2 whose bank argument could not be recovered at this call site
+REALROM sample.warn 94ee [NesBankingAnalyzer] Bank state requirement violated: call to FUN_W8000_M1__94bb requires r6,r7 known on entry, but it is unknown here
+REALROM sample.warn 9ace [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2 whose bank argument could not be recovered at this call site
+REALROM sample.warn 9ad1 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_W8000_M1__9bd5 requires r6,r7 known on entry, but it is unknown here
+REALROM sample.warn 9ad9 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2 whose bank argument could not be recovered at this call site
+REALROM sample.warn 9b0d [NesBankingAnalyzer] Bank state requirement violated: call to FUN_W8000_M1__94bb requires r6,r7 known on entry, but it is unknown here
+REALROM sample.warn 9b2f [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2 whose bank argument could not be recovered at this call site
+REALROM sample.warn 9b32 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_W8000_M1__9bc0 requires r6,r7 known on entry, but it is unknown here
+REALROM sample.warn 9b3a [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2 whose bank argument could not be recovered at this call site
+REALROM sample.warn 9bc9 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2 whose bank argument could not be recovered at this call site
+REALROM sample.warn 9bde [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2 whose bank argument could not be recovered at this call site
+REALROM sample.warn 9c71 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_W8000_M1__94bb requires r6,r7 known on entry, but it is unknown here
+REALROM sample.warn c5b0 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_d1ac requires r6,r7 known on entry, but it is unknown here
+REALROM sample.warn c5b8 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2 whose bank argument could not be recovered at this call site
+REALROM sample.warn c60d [NesBankingAnalyzer] Bank state requirement violated: call to FUN_W8000_M1__94cd requires r6 known on entry, but it is unknown here
+REALROM sample.warn c62e [NesBankingAnalyzer] Bank state requirement violated: call to FUN_W8000_M1__94cd requires r6 known on entry, but it is unknown here
+REALROM sample.warn c631 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2 whose bank argument could not be recovered at this call site
+REALROM sample.warn c662 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2 whose bank argument could not be recovered at this call site
+REALROM sample.warn c6b5 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2 whose bank argument could not be recovered at this call site
+REALROM sample.warn c6c5 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2 whose bank argument could not be recovered at this call site
+=== REALROM END ===

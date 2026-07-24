@@ -1,0 +1,18 @@
+=== REALROM BEGIN ===
+REALROM program smb.nes
+REALROM sha256 0b3d9e1f01ed1668205bab34d6c82b0e281456e137352e4f36a9b2cfa3b66dea
+REALROM map machines/nes-nrom.map
+REALROM placement NONE
+REALROM block APU_IO 4000-401f overlay=false
+REALROM block PPU_REGS 2000-2007 overlay=false
+REALROM block PRG_HI c000-ffff overlay=false
+REALROM block PRG_LO 8000-bfff overlay=false
+REALROM block RAM 0000-07ff overlay=false
+REALROM count blocks.total 5
+REALROM count blocks.overlay 0
+REALROM count spaces.overlay 0
+REALROM count refs.intoOverlay 0
+REALROM count instrs.inOverlay 0
+REALROM count bankComments 0
+REALROM count warnings 0
+=== REALROM END ===

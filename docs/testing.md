@@ -155,3 +155,30 @@ authority; the JUnit suite is an additional gate, not a replacement.
   stays the acceptance authority.
 - **Reworking behavior of an existing fixture** → change the code, run the chunk, review the
   `expected/*.dump` diff, and bless it deliberately.
+
+## Optional real-ROM tier (`grm-zai`, hash-pinned)
+
+Tiers 1–3 use synthetic inputs so the whole gate ships in-repo. The **real-ROM tier** is a
+separate, opt-in regression net that runs the shipped NES board descriptors against *actual
+commercial cartridges* — the fidelity check synthetic fixtures can't give (real games pass
+bank numbers through tables/helpers, hit ~191 overlays, etc.). It is **not** part of the
+default gate: ROM binaries are copyrighted and user-supplied, so nothing here runs in CI and
+it is never a `run-banktest.sh` chunk (whose `all` would otherwise pull it in).
+
+- **Driver:** `tools/banktest/realrom-test.sh check|bless <romdir> [<romdir> …]` (or
+  `GRM_ROM_DIR`). Lives alongside `measure-overlay-scale.sh` and reuses the same
+  `build/ghidra-home` isolation, so run `build-and-test.sh check nes-banking` once first.
+- **Hash-pinned identity:** `tools/banktest/realrom/manifest.tsv` pins each title by whole-file
+  **SHA-256**. The driver hash-indexes the supplied dir(s) and matches by content, so it is
+  filename-independent (sidesteps the parenthesis-rename and bad-dump-header traps) and a ROM
+  that is absent or a *different* dump **SKIPs** — never a spurious FAIL. Only a present,
+  hash-matched ROM whose dump differs from its golden FAILs. A run that matches nothing exits 0
+  (`SKIPPED`), so the tier is safe to ship for users without ROMs.
+- **Copyright-safe goldens:** `RealRomDump.java` (name-agnostic, read-only) emits only *derived*
+  metadata — block/overlay layout, overlay-space/ref/comment/warning counts, the program
+  SHA-256, and a bounded, sorted **sample** of `bank -> …` comments, cross-bank overlay refs,
+  and warning bookmarks. **No ROM bytes and no disassembled instructions**, so `expected/*.dump`
+  is committable though the ROMs are not.
+- **Bless discipline:** same as Tier 3 — regenerate with `bless`, review the `expected/*.dump`
+  diff, commit deliberately. Because ROMs aren't in the repo, only someone with the pinned dump
+  can re-bless.

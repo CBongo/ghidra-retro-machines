@@ -1,0 +1,21 @@
+=== REALROM BEGIN ===
+REALROM program shenlong.nes
+REALROM sha256 2a7e4c99771c4292cc9d1261a01af1d93f4d94e6865d1c257e2a19fc4dca6451
+REALROM map machines/nes-gxrom.map
+REALROM placement NONE
+REALROM block APU_IO 4000-401f overlay=false
+REALROM block PPU_REGS 2000-2007 overlay=false
+REALROM block PRG_ALL 8000-ffff overlay=false
+REALROM block PRG_ALL_B1 8000-ffff overlay=true
+REALROM block PRG_ALL_B2 8000-ffff overlay=true
+REALROM block PRG_ALL_B3 8000-ffff overlay=true
+REALROM block RAM 0000-07ff overlay=false
+REALROM count blocks.total 7
+REALROM count blocks.overlay 3
+REALROM count spaces.overlay 3
+REALROM count refs.intoOverlay 0
+REALROM count instrs.inOverlay 0
+REALROM count bankComments 0
+REALROM count warnings 1
+REALROM sample.warn a03f [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+=== REALROM END ===

@@ -1,0 +1,78 @@
+=== REALROM BEGIN ===
+REALROM program megaman.nes
+REALROM sha256 e5bbc798798a0f5ae6e6d22a35df2fc3d08cefe6a1b278ed7f1cc325e8ee19e0
+REALROM map machines/nes-uxrom.map
+REALROM placement NONE
+REALROM block APU_IO 4000-401f overlay=false
+REALROM block PPU_REGS 2000-2007 overlay=false
+REALROM block PRG_HI c000-ffff overlay=false
+REALROM block PRG_LO 8000-bfff overlay=false
+REALROM block PRG_LO_B1 8000-bfff overlay=true
+REALROM block PRG_LO_B2 8000-bfff overlay=true
+REALROM block PRG_LO_B3 8000-bfff overlay=true
+REALROM block PRG_LO_B4 8000-bfff overlay=true
+REALROM block PRG_LO_B5 8000-bfff overlay=true
+REALROM block PRG_LO_B6 8000-bfff overlay=true
+REALROM block PRG_LO_B7 8000-bfff overlay=true
+REALROM block RAM 0000-07ff overlay=false
+REALROM count blocks.total 12
+REALROM count blocks.overlay 7
+REALROM count spaces.overlay 7
+REALROM count refs.intoOverlay 1781
+REALROM count instrs.inOverlay 7437
+REALROM count bankComments 153
+REALROM count warnings 3
+REALROM sample.bankcomment 8001 bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment 8d17 bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment 8d1f bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment 8d1f bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment 8d3b bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment 8d68 bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment 8d6f bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment 8dbf bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment 8de7 bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment 8de8 bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment 9067 bank -> 6 (bank=6) via FUN_d846
+REALROM sample.bankcomment 90ec bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment 90ed bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment 9160 bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment 9173 bank -> 6 (bank=6) via FUN_c3bf
+REALROM sample.bankcomment 91bc bank -> 6 (bank=6) via FUN_d896
+REALROM sample.bankcomment 91bf bank -> 6 (bank=6) via FUN_d131
+REALROM sample.bankcomment 9251 bank -> 5 (bank=5) via FUN_c219
+REALROM sample.bankcomment 949e bank -> 6 (bank=6) via FUN_d131
+REALROM sample.bankcomment 9782 bank -> 6 (bank=6) via caseD_a4
+REALROM sample.bankcomment 9d00 bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment 9d04 bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment 9d05 bank -> 6 (bank=6) via FUN_c55d
+REALROM sample.bankcomment 9d08 bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment a044 bank -> 6 (bank=6) via FUN_d131
+REALROM sample.ref 80b2 -> PRG_LO_B5::80c4 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 9000 -> PRG_LO_B4::923f UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 9005 -> PRG_LO_B4::900a CONDITIONAL_JUMP primary=true
+REALROM sample.ref 9007 -> PRG_LO_B4::912a UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 9008 -> PRG_LO_B5::9005 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 900c -> PRG_LO_B4::9011 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 900d -> PRG_LO_B5::900a CONDITIONAL_JUMP primary=true
+REALROM sample.ref 900e -> PRG_LO_B4::912e UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 9010 -> PRG_LO_B5::9005 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 9013 -> PRG_LO_B4::9020 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 901b -> PRG_LO_B5::9017 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 901d -> PRG_LO_B4::913f UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 9022 -> PRG_LO_B4::902f CONDITIONAL_JUMP primary=true
+REALROM sample.ref 9026 -> PRG_LO_B5::9023 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 902c -> PRG_LO_B4::9193 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 902e -> PRG_LO_B5::9021 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 9031 -> PRG_LO_B4::9a60 DATA primary=true
+REALROM sample.ref 9037 -> PRG_LO_B4::9a60 DATA primary=true
+REALROM sample.ref 9043 -> PRG_LO_B4::90bc CONDITIONAL_JUMP primary=true
+REALROM sample.ref 904d -> PRG_LO_B4::9050 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 9050 -> PRG_LO_B5::904d CONDITIONAL_JUMP primary=true
+REALROM sample.ref 9061 -> PRG_LO_B5::905e CONDITIONAL_JUMP primary=true
+REALROM sample.ref 9065 -> PRG_LO_B5::906a CONDITIONAL_JUMP primary=true
+REALROM sample.ref 906e -> PRG_LO_B5::9075 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 9070 -> PRG_LO_B5::9424 DATA primary=true
+REALROM sample.warn a604 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn a908 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn db98 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_dc21 whose bank argument could not be recovered at this call site
+=== REALROM END ===

@@ -1,0 +1,36 @@
+=== REALROM BEGIN ===
+REALROM program dbz_datach.nes
+REALROM sha256 17fec54a27a7783c6e36739c00cc7ad1c9447d7788e6458486b169354e9a36fa
+REALROM map machines/nes-bandai-fcg.map
+REALROM placement NONE
+REALROM block APU_IO 4000-401f overlay=false
+REALROM block PPU_REGS 2000-2007 overlay=false
+REALROM block PRG_HI c000-ffff overlay=false
+REALROM block PRG_LO 8000-bfff overlay=false
+REALROM block PRG_LO_B1 8000-bfff overlay=true
+REALROM block PRG_LO_B10 8000-bfff overlay=true
+REALROM block PRG_LO_B11 8000-bfff overlay=true
+REALROM block PRG_LO_B12 8000-bfff overlay=true
+REALROM block PRG_LO_B13 8000-bfff overlay=true
+REALROM block PRG_LO_B14 8000-bfff overlay=true
+REALROM block PRG_LO_B15 8000-bfff overlay=true
+REALROM block PRG_LO_B2 8000-bfff overlay=true
+REALROM block PRG_LO_B3 8000-bfff overlay=true
+REALROM block PRG_LO_B4 8000-bfff overlay=true
+REALROM block PRG_LO_B5 8000-bfff overlay=true
+REALROM block PRG_LO_B6 8000-bfff overlay=true
+REALROM block PRG_LO_B7 8000-bfff overlay=true
+REALROM block PRG_LO_B8 8000-bfff overlay=true
+REALROM block PRG_LO_B9 8000-bfff overlay=true
+REALROM block RAM 0000-07ff overlay=false
+REALROM count blocks.total 20
+REALROM count blocks.overlay 15
+REALROM count spaces.overlay 15
+REALROM count refs.intoOverlay 0
+REALROM count instrs.inOverlay 0
+REALROM count bankComments 0
+REALROM count warnings 3
+REALROM sample.warn c099 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn cc11 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_cc28 whose bank argument could not be recovered at this call site
+REALROM sample.warn cc2a [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+=== REALROM END ===

@@ -1,0 +1,25 @@
+=== REALROM BEGIN ===
+REALROM program db3.nes
+REALROM sha256 b7f865e4f7e80064982979f16afc659d9607519b8b858482f3d02475fb986c2b
+REALROM map machines/nes-bandai-fcg.map
+REALROM placement NONE
+REALROM block APU_IO 4000-401f overlay=false
+REALROM block PPU_REGS 2000-2007 overlay=false
+REALROM block PRG_HI c000-ffff overlay=false
+REALROM block PRG_LO 8000-bfff overlay=false
+REALROM block PRG_LO_B1 8000-bfff overlay=true
+REALROM block PRG_LO_B2 8000-bfff overlay=true
+REALROM block PRG_LO_B3 8000-bfff overlay=true
+REALROM block PRG_LO_B4 8000-bfff overlay=true
+REALROM block PRG_LO_B5 8000-bfff overlay=true
+REALROM block PRG_LO_B6 8000-bfff overlay=true
+REALROM block PRG_LO_B7 8000-bfff overlay=true
+REALROM block RAM 0000-07ff overlay=false
+REALROM count blocks.total 12
+REALROM count blocks.overlay 7
+REALROM count spaces.overlay 7
+REALROM count refs.intoOverlay 0
+REALROM count instrs.inOverlay 0
+REALROM count bankComments 0
+REALROM count warnings 0
+=== REALROM END ===
