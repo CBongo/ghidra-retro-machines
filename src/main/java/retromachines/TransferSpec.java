@@ -22,7 +22,7 @@ import ghidra.program.model.address.Address;
  * run-from-elsewhere subsystem (grm-1.7.x). Something is copied from {@link #srcStart} to
  * {@link #dstStart} for {@link #len} bytes, optionally passed through a {@link #transform},
  * and lands in a {@link #target} of the given kind. The recognizer (or, in a later
- * increment, a manual command or a descriptor {@code copied_to} hint) builds one of these;
+ * increment, a manual command or a descriptor {@code copied_from} hint) builds one of these;
  * a single materializer consumes it. No front-end knows about the others.
  *
  * <p>The <b>disassembly directive</b> ({@link #disassemble}, {@link #makeFunction},
@@ -34,8 +34,8 @@ import ghidra.program.model.address.Address;
  * materializer merely honors it.
  *
  * <p>This increment (grm-1.7.1) only ever produces {@code transform=IDENTITY},
- * {@code target=SAME_SPACE_OVERLAY}; the other enum members mark the axes that later beads
- * fill in ({@code *_XOR} unifies grm-1.7.2 decrypt; {@code SEPARATE_PROGRAM} is the SPC700
+ * {@code target=SAME_SPACE}; the other enum members mark the axes that later beads fill in
+ * ({@code *_XOR} unifies grm-1.7.2 decrypt; {@code SEPARATE_PROGRAM} is the SPC700
  * cross-processor case, grm-1.7.3).
  *
  * @param srcStart      first source byte (the master the copy mirrors)
@@ -67,9 +67,21 @@ record TransferSpec(Address srcStart, Address dstStart, int len, Transform trans
 		ROLLING_XOR;
 	}
 
-	/** Where recovered bytes land. Only SAME_SPACE_OVERLAY is implemented in grm-1.7.1. */
+	/**
+	 * Where recovered bytes land. A front-end normally asks for {@link #SAME_SPACE} and lets
+	 * {@link TransferMaterializer} pick between carving the destination in place and mapping it
+	 * as an overlay; the two explicit members exist for a front-end that knows better (grm-chu).
+	 */
 	enum TargetKind {
-		/** A dual-home byte-mapped overlay in the same address space (grm-1.7.1). */
+		/** In the destination's own address space; the materializer chooses how (grm-chu). */
+		SAME_SPACE,
+		/**
+		 * Force the in-place carve: initialize the destination range where it really lives, so
+		 * references resolve without bridging. Falls back to an overlay, with a log note, when
+		 * the destination cannot be carved.
+		 */
+		SAME_SPACE_INPLACE,
+		/** Force a dual-home byte-mapped overlay in its own address space (grm-1.7.1). */
 		SAME_SPACE_OVERLAY,
 		/** A separate Program in another processor's space (SPC700 upload, grm-1.7.3). */
 		SEPARATE_PROGRAM;

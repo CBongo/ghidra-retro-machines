@@ -371,6 +371,7 @@ if selected c64-recovery; then
 	run_one suspectdecrypt "$WORK/prg/suspectdecrypt.prg" C64PrgLoader
 	run_one copyloop "$WORK/prg/copyloop.prg" C64PrgLoader
 	run_one copydata "$WORK/prg/copydata.prg" C64PrgLoader
+	run_one copyoverlay "$WORK/prg/copyoverlay.prg" C64PrgLoader
 fi
 
 if selected c64-loader; then

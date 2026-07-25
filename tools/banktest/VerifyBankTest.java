@@ -148,6 +148,12 @@ public class VerifyBankTest extends GhidraScript {
 			return;
 		}
 
+		if (name.contains("copyoverlay")) {
+			checkCopyOverlay();
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
+
 		if (name.contains("romload")) {
 			checkRomLoad();
 			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
@@ -600,52 +606,89 @@ public class VerifyBankTest extends GhidraScript {
 	}
 
 	// ------------------------------------------------------------------
-	// C64CopyLoopAnalyzer check (bead grm-1.7.1)
+	// C64CopyLoopAnalyzer / TransferMaterializer placement check (bead grm-1.7.1, grm-chu)
 	// ------------------------------------------------------------------
 
 	// Fixture contract from mkcopytest.py: a verbatim indexed copy loop whose counter init
-	// (the provenance anchor) is at $2000. copyloop.prg copies $200E -> $C000 and ends with a
-	// JMP into the range (AUTO -> the COPY_c000 overlay is disassembled); copydata.prg copies
-	// $200C -> $C100 with no jump (CANDIDATE -> COPY_c100 materialized as data, not disassembled).
+	// (the provenance anchor) is always at $2000. copyloop.prg copies $200E -> $C000 (RAM_C000
+	// wholly uninitialized -> carved IN PLACE at the block's own start) and ends with a JMP into
+	// the range (AUTO -> disassembled); copydata.prg copies $200C -> $C100 (interior of RAM_C000
+	// -> carved IN PLACE with a leftover fragment on each side) with no jump (CANDIDATE -> data,
+	// not disassembled); copyoverlay.prg copies $2016 -> $200E, a destination that sits inside
+	// this PRG's own already-initialized image, so the in-place precondition fails and the
+	// materializer falls back to a byte-mapped OVERLAY (with a JMP into range, same as copyloop,
+	// so bridgeJump gets exercised too).
 	private static final String COPY_CATEGORY = "C64CopyLoopAnalyzer";
 	private static final long COPY_ENTRY = 0x2000;
 
+	/** A carved leftover fragment expected to survive a carve: name, range, and (always)
+	 *  uninitialized -- see {@code TransferMaterializer.carveInPlace}'s fragment naming. */
+	private static final class Neighbor {
+		final String name;
+		final long start;
+		final long end;
+
+		Neighbor(String name, long start, long end) {
+			this.name = name;
+			this.start = start;
+			this.end = end;
+		}
+	}
+
 	private void checkCopyLoop() {
-		verifyCopy("copyloop", "COPY_c000", 0x200e,
-			new byte[] {1, 2, 3, 4, 5, 6, 7, 8}, true);
+		verifyCopy("copyloop", "COPY_c000", 0xc000, 0x200e,
+			new byte[] {1, 2, 3, 4, 5, 6, 7, 8}, true, true, true,
+			new Neighbor[] {new Neighbor("RAM_C000_C008", 0xc008, 0xcfff)}, 0x200bL);
 	}
 
 	private void checkCopyData() {
-		verifyCopy("copydata", "COPY_c100", 0x200c,
-			new byte[] {0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18}, false);
+		verifyCopy("copydata", "COPY_c100", 0xc100, 0x200c,
+			new byte[] {0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18}, false, true, true,
+			new Neighbor[] {new Neighbor("RAM_C000", 0xc000, 0xc0ff),
+				new Neighbor("RAM_C000_C108", 0xc108, 0xcfff)},
+			null);
 	}
 
-	/** Shared assertions for a recovered verbatim copy: the COPY_xxxx byte-mapped overlay holds
-	 *  the source bytes (read through the 1:1 map), its mapped range points back at the source, a
-	 *  NOTE provenance bookmark + EOL comment cross-link the copy loop, and the payload is
-	 *  disassembled only when the copy is proven code (AUTO), never for a data copy (CANDIDATE). */
-	private void verifyCopy(String idPrefix, String overlayName, long srcStart, byte[] expected,
-			boolean expectDisassembled) {
-		MemoryBlock overlay = currentProgram.getMemory().getBlock(overlayName);
+	private void checkCopyOverlay() {
+		verifyCopy("copyoverlay", "COPY_200e", 0x200e, 0x2016,
+			new byte[] {(byte) 0x91, (byte) 0x92, (byte) 0x93, (byte) 0x94, (byte) 0x95,
+				(byte) 0x96, (byte) 0x97, (byte) 0x98},
+			true, false, false, new Neighbor[0], 0x200bL);
+	}
+
+	/** Shared assertions for a recovered verbatim copy under the grm-chu placement policy: the
+	 *  COPY_xxxx block holds the source bytes (read directly for an in-place carve, through the
+	 *  1:1 map for an overlay), its recorded provenance points back at the source, a NOTE
+	 *  provenance bookmark + EOL comment cross-link the copy loop, any carved leftover fragments
+	 *  are present and still uninitialized, the payload is disassembled only when the copy is
+	 *  proven code (AUTO), and -- the point of grm-chu -- the entering JMP's primary reference
+	 *  actually resolves into the materialized copy, wherever it landed. */
+	private void verifyCopy(String idPrefix, String blockName, long dstStart, long srcStart,
+			byte[] expected, boolean expectDisassembled, boolean expectInBaseSpace,
+			boolean expectBlockInitialized, Neighbor[] expectedNeighbors, Long jumpSite) {
+		MemoryBlock block = currentProgram.getMemory().getBlock(blockName);
+		boolean inBaseSpace = block != null && block.getStart().getAddressSpace()
+				.equals(currentProgram.getAddressFactory().getDefaultAddressSpace());
+		String placementLabel = block == null ? "<missing>" : inBaseSpace ? "inplace" : "overlay";
+
 		byte[] recovered = null;
-		String mapped = "<none>";
-		if (overlay != null) {
+		String copiedLine;
+		if (block == null) {
+			copiedLine = "<none>";
+		}
+		else {
 			try {
 				byte[] buf = new byte[expected.length];
-				overlay.getBytes(overlay.getStart(), buf);
+				block.getBytes(block.getStart(), buf);
 				recovered = buf;
+				copiedLine = hex(buf);
 			}
 			catch (Exception e) {
-				// leave null -> criterion fails visibly
-			}
-			if (!overlay.getSourceInfos().isEmpty()) {
-				java.util.Optional<AddressRange> r =
-					overlay.getSourceInfos().get(0).getMappedRange();
-				if (r.isPresent()) {
-					mapped = fmt(r.get().getMinAddress());
-				}
+				copiedLine = "<unreadable>";
 			}
 		}
+
+		String source = recordedSource(block, inBaseSpace);
 
 		Bookmark mark = null;
 		for (Bookmark bm : currentProgram.getBookmarkManager().getBookmarks(addr(COPY_ENTRY))) {
@@ -655,31 +698,115 @@ public class VerifyBankTest extends GhidraScript {
 			}
 		}
 		String comment = eol(COPY_ENTRY);
-		boolean disassembled = overlay != null &&
-			currentProgram.getListing().getInstructionAt(overlay.getStart()) != null;
+		boolean disassembled =
+			block != null && currentProgram.getListing().getInstructionAt(block.getStart()) != null;
+
+		Reference callref = jumpSite == null ? null : primaryReferenceFrom(addr(jumpSite));
+		String callrefLine = callref == null ? "<none>"
+				: callref.getToAddress().getAddressSpace().getName() + ":" +
+					fmt(callref.getToAddress());
 
 		println("=== BANKDUMP BEGIN ===");
-		println("OVERLAY " + (overlay == null ? "<missing>"
-				: overlay.getName() + " " + fmt(overlay.getStart()) + "-" + fmt(overlay.getEnd())));
-		println("MAPPED " + mapped);
-		println("COPIED " + hex(recovered));
+		println("COPYBLOCK " + (block == null ? "<missing>"
+				: block.getName() + " " + fmt(block.getStart()) + "-" + fmt(block.getEnd()) +
+					" init=" + block.isInitialized()));
+		println("PLACEMENT " + placementLabel);
+		println("SPACE " + (block == null ? "<none>" : block.getStart().getAddressSpace().getName()));
+		println("SOURCE " + source);
+		if (expectedNeighbors.length == 0) {
+			println("NEIGHBORS <none>");
+		}
+		else {
+			for (Neighbor n : expectedNeighbors) {
+				MemoryBlock nb = currentProgram.getMemory().getBlock(addr(n.start));
+				println("NEIGHBORS " + (nb == null ? n.name + " <missing>"
+						: nb.getName() + " " + fmt(nb.getStart()) + "-" + fmt(nb.getEnd()) +
+							" init=" + nb.isInitialized()));
+			}
+		}
+		println("COPIED " + copiedLine);
 		println("DISASM " + disassembled);
+		println("CALLREF " + callrefLine);
 		println("BOOKMARK " + (mark == null ? "<none>"
 				: mark.getTypeString() + " @" + fmt(mark.getAddress())));
 		println("COMMENT " + comment);
 		println("=== BANKDUMP END ===");
 
-		criterion(idPrefix + "-overlay-exists", overlay != null, "block=" + overlayName);
-		criterion(idPrefix + "-mapped-to-source", mapped.equals(String.format("%04x", srcStart)),
-			"mapped=" + mapped);
+		criterion(idPrefix + "-copyblock-exists",
+			block != null && block.getStart().getOffset() == dstStart,
+			"block=" + blockName + " start=" + (block == null ? "<missing>" : fmt(block.getStart())));
+		criterion(idPrefix + "-in-base-space", inBaseSpace == expectInBaseSpace,
+			"inBaseSpace=" + inBaseSpace + " expected=" + expectInBaseSpace);
+		criterion(idPrefix + "-block-initialized",
+			block != null && block.isInitialized() == expectBlockInitialized,
+			"initialized=" + (block == null ? "<missing>" : block.isInitialized()) +
+				" expected=" + expectBlockInitialized);
+		criterion(idPrefix + "-source-recorded", source.equals(String.format("%04x", srcStart)),
+			"source=" + source);
 		criterion(idPrefix + "-copied-bytes", Arrays.equals(recovered, expected),
-			"bytes=" + hex(recovered));
+			"bytes=" + copiedLine);
 		criterion(idPrefix + "-note-bookmark", mark != null && "Note".equals(mark.getTypeString()),
 			"bm=" + (mark == null ? "<none>" : mark.getTypeString()));
-		criterion(idPrefix + "-comment-links-overlay", comment.contains(overlayName),
+		criterion(idPrefix + "-comment-links-block", comment.contains(blockName),
 			"eol=" + comment);
 		criterion(idPrefix + "-disassembly", disassembled == expectDisassembled,
 			"disassembled=" + disassembled + " expected=" + expectDisassembled);
+
+		boolean neighborsOk = true;
+		for (Neighbor n : expectedNeighbors) {
+			MemoryBlock nb = currentProgram.getMemory().getBlock(addr(n.start));
+			neighborsOk &= nb != null && n.name.equals(nb.getName()) &&
+				nb.getStart().equals(addr(n.start)) && nb.getEnd().equals(addr(n.end)) &&
+				!nb.isInitialized();
+		}
+		criterion(idPrefix + "-neighbors", neighborsOk,
+			expectedNeighbors.length == 0 ? "none expected" : "see NEIGHBORS lines above");
+
+		boolean callrefOk = jumpSite == null ? callref == null
+				: callref != null && block != null && callref.getToAddress().equals(block.getStart()) &&
+					currentProgram.getListing().getInstructionAt(callref.getToAddress()) != null;
+		criterion(idPrefix + "-callref-hits-code", callrefOk, "callref=" + callrefLine);
+	}
+
+	/** The source address a materialized copy recorded, however it recorded it: an overlay's
+	 *  byte-map points straight back at it ({@link MemoryBlockSourceInfo#getMappedRange()}); an
+	 *  in-place carve has no such map, so {@code TransferMaterializer.carveInPlace} records the
+	 *  source in the block's own {@code sourceName} field as "<space>:<offset>". Returns a bare
+	 *  "%04x" offset (no space prefix) either way, or "<none>" if it cannot be recovered. */
+	private String recordedSource(MemoryBlock block, boolean inBaseSpace) {
+		if (block == null) {
+			return "<none>";
+		}
+		if (!inBaseSpace) {
+			if (!block.getSourceInfos().isEmpty()) {
+				java.util.Optional<AddressRange> r = block.getSourceInfos().get(0).getMappedRange();
+				if (r.isPresent()) {
+					return fmt(r.get().getMinAddress());
+				}
+			}
+			return "<none>";
+		}
+		String sourceName = block.getSourceName();
+		if (sourceName == null || sourceName.isBlank()) {
+			return "<none>";
+		}
+		int colon = sourceName.indexOf(':');
+		return colon >= 0 ? sourceName.substring(colon + 1) : sourceName;
+	}
+
+	/** The primary reference out of the instruction at {@code from}, or null if there is no
+	 *  instruction there or none of its references is primary. */
+	private Reference primaryReferenceFrom(Address from) {
+		Instruction instr = currentProgram.getListing().getInstructionAt(from);
+		if (instr == null) {
+			return null;
+		}
+		for (Reference r : instr.getReferencesFrom()) {
+			if (r.isPrimary()) {
+				return r;
+			}
+		}
+		return null;
 	}
 
 	// ------------------------------------------------------------------

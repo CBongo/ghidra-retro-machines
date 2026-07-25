@@ -28,6 +28,15 @@ problem, solvable statically with no emulation:
 
 ## 2. Representation: dual-home via `createByteMappedBlock`
 
+> **No longer the default (2026-07-25, grm-chu).** The byte-mapped block described below is the
+> representation for **transformed** copies and for destinations that **cannot be carved**
+> (already initialized, spanning two blocks, or sitting in an overlay space). The default for a
+> **verbatim copy into uninitialized RAM** is now an in-place carve plus an initialized snapshot
+> in the base address space, so a real `JSR $0073` resolves to the materialized code with no
+> bridging. See [`smc-inplace-vs-overlay.md`](smc-inplace-vs-overlay.md) for the verdict (no
+> Ghidra core change needed), the three strategies weighed, and the placement policy — Gate 0
+> plus preconditions 1-4 — that chooses between the two.
+
 The key mechanic (new to this repo — no existing use, confirmed). A **byte-mapped block**
 maps its bytes 1:1 (or by ratio) onto another region; `Memory.java:49-51`:
 "byte read/write operations are **passed-through** the mapped region." So a byte-mapped
@@ -153,9 +162,16 @@ exactly as the decrypt tiers shared theirs.
 1. ~~Verify CHRGET constants~~ **DONE (2026-07-13)**: dest `$0073-$008A` (`0x18`), source
    **KERNAL `$E3A2`** (verified against `H:/emulators/c64/kernel.c64`; folklore's "BASIC"
    was wrong — it is KERNAL).
-2. **Best-effort vs gated Tier A**: create the CHRGET byte-mapped block before grm-mbm
-   (shows `??`, self-heals) or gate it on an initialized source? (Recommend best-effort +
-   a log note, matching hardware truth.)
+2. ~~Best-effort vs gated Tier A~~ **ANSWERED (2026-07-25, grm-chu)** — and the earlier
+   recommendation (best-effort materialization against an uninitialized source) is
+   **reversed**. Tier A now **gates on a readable source**: if the source bytes are not in
+   `getAllInitializedAddressSet()`, the boot-copy hint (§4) is **ignored** — log note only, no
+   block of any kind, and explicitly **no overlay fallback**. Self-healing is recovered by
+   re-running instead of by live mapping: the materializer is idempotent and the analyzer
+   declares `supportsOneTimeAnalysis`, so a later-supplied ROM materializes the copy on a
+   re-run. That makes an analyzer/command front-end a requirement for Tier A rather than
+   loader-time-only work, or the "ROM added later" path is unreachable. Rationale and the full
+   placement policy: `docs/smc-inplace-vs-overlay.md` §5-6.
 3. **Banked sources**: the survey flags that a copy source may live in a banked window;
    the mapped block must reference the correct bank's bytes. Defer until a banked-source
    case appears.
@@ -163,6 +179,8 @@ exactly as the decrypt tiers shared theirs.
 ## 9. Deliverable status
 
 - [x] Mechanic (`createByteMappedBlock` semantics, 1:1 dual-home, fallbacks) — §2
+- [x] Placement decision (in-place carve vs overlay, and when each applies) — grm-chu,
+      `docs/smc-inplace-vs-overlay.md`
 - [x] ROM prerequisite identified (grm-mbm) + proceed-options — §3
 - [x] `copied_from` descriptor schema — §4
 - [x] Tier-B recognizer plan (reuses grm-1.7.2 machinery) — §6
