@@ -135,14 +135,15 @@ banking:
         register: PORT            # on-die port register (6510: STA $01 -> PORT = A)
         mask: 0x07                # bits 0-2; bits 3-5 are cassette lines
       sets: [LORAM, HIRAM, CHAREN]
-  # Names the (future) application-layer channel that will carry bank state into
-  # reference resolution (the RFC #9349 hook). Per the grm-bk6 design correction the
-  # bundled 6510 language is SYSTEM-NEUTRAL and deliberately declares NO such register --
-  # the port bits' banking meaning is C64 board wiring, not 6510 CPU architecture -- so no
-  # register named c64bank exists yet and stampContextRegister stays dormant (it no-ops
-  # when the register is absent). Bank state is carried analyzer-side (BankState value+mask)
-  # until that channel is realized (a per-system pspec alias or the resolution hook).
-  context_register: c64bank
+  # NO context_register here, deliberately. It would name the application-layer channel
+  # carrying bank state into reference resolution (the RFC #9349 hook), but per the grm-bk6
+  # design correction the bundled 6510 language is SYSTEM-NEUTRAL and declares NO bank-state
+  # register -- the port bits' banking meaning is C64 board wiring, not 6510 CPU
+  # architecture. Naming a nonexistent register is not free: since grm-tpg an unresolvable
+  # context_register logs a warning on every analysis run (the typo diagnostic), so per
+  # SCHEMA.md the property is omitted until a real register exists (a per-system pspec alias
+  # or the resolution hook). Bank state is carried analyzer-side meanwhile (BankState
+  # value+mask), exactly as the NES boards do.
   initial_state: { LORAM: 1, HIRAM: 1, CHAREN: 1 }   # PRG default: ($37 & 7) = %111
   # PLA truth table, no cartridge (GAME/EXROM high), keyed by state-field values (the
   # packed row value is computed at map-compile time). Source: c64-wiki Memory_Map;
