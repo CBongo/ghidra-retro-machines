@@ -228,6 +228,31 @@ dependencies {
 def machineGdtTasks = []
 def machineMapTasks = []
 
+// Incremental-build inputs for the descriptor pipeline (bead grm-c9f). These are plain
+// JavaExec tasks, which declare no inputs/outputs of their own, so without this every
+// `gradle buildExtension` -- including every tools/install-gui.ps1 run -- re-forked one JVM
+// per machine per artifact to recompile byte-identical .gdt/.map files from unchanged YAML.
+//
+// A descriptor's own .yaml is NOT a sufficient input. Both compilers reach further:
+//   * YamlSupport.loadComposed follows `include:` directives, resolved relative to the
+//     descriptor's own directory (today: machines/fragments/nes-common.yaml);
+//   * MapCompiler and GdtBuilder both resolve `source:` keys (register sets, type defs) the
+//     same relative way (today: machines/generated/*.yaml).
+// So the shared input set is "everything under machines/ EXCEPT the sibling top-level
+// descriptors" -- which keeps editing one board from rebuilding the other twelve, while
+// staying correct for any new shared subdirectory someone adds later (it is covered
+// automatically, rather than needing to be remembered here). The one shape this does not
+// cover is a top-level descriptor including another top-level descriptor; there are none,
+// and a board composed from a sibling board would want its own fragment anyway.
+//
+// The compiled builder classes are an input too: editing MapCompiler/GdtBuilder must
+// invalidate what they emit. sourceSets.gdtBuilder.output also carries the task dependency
+// on compileGdtBuilderJava implicitly, but the explicit dependsOn below is kept for clarity.
+// ('*.yaml' is an Ant-style pattern anchored at the tree root and a single '*' does not cross
+// '/', so this drops machines/c64.yaml but keeps machines/generated/*.yaml and
+// machines/fragments/*.yaml -- exactly the "shared, not sibling" split described above.)
+def descriptorSharedInputs = fileTree(dir: 'machines', excludes: ['*.yaml'])
+
 fileTree(dir: 'machines', include: '*.yaml').each { yamlFile ->
 	def baseName = yamlFile.name.replace('.yaml', '')
 	// Capitalize each hyphen-separated component so e.g. nes-uxrom -> NesUxrom, yielding
@@ -247,6 +272,11 @@ fileTree(dir: 'machines', include: '*.yaml').each { yamlFile ->
 			yamlFile.absolutePath,
 			file("data/machines/${baseName}.gdt").absolutePath
 		]
+
+		inputs.file(yamlFile)
+		inputs.files(descriptorSharedInputs)
+		inputs.files(sourceSets.gdtBuilder.output)
+		outputs.file(file("data/machines/${baseName}.gdt"))
 	}
 	machineGdtTasks << gdtTask
 
@@ -263,6 +293,11 @@ fileTree(dir: 'machines', include: '*.yaml').each { yamlFile ->
 			yamlFile.absolutePath,
 			file("data/machines/${baseName}.map").absolutePath
 		]
+
+		inputs.file(yamlFile)
+		inputs.files(descriptorSharedInputs)
+		inputs.files(sourceSets.gdtBuilder.output)
+		outputs.file(file("data/machines/${baseName}.map"))
 	}
 	machineMapTasks << mapTask
 }
@@ -297,6 +332,13 @@ task buildPetsciiMap(type: JavaExec) {
 		file('machines/generated/petscii.yaml').absolutePath,
 		file('data/petscii.map').absolutePath
 	]
+
+	// Incremental inputs (bead grm-c9f). Unlike the machine descriptors above, PetsciiCompiler
+	// does a plain YamlSupport.load -- no `include:`/`source:` resolution -- so the single
+	// descriptor plus the builder classes is the complete input set.
+	inputs.file('machines/generated/petscii.yaml')
+	inputs.files(sourceSets.gdtBuilder.output)
+	outputs.file(file('data/petscii.map'))
 }
 
 // C64 screen-code (VIC-II screen RAM byte value) -> Unicode map (bead grm-1.4.5). Mirrors
@@ -318,6 +360,14 @@ task buildScreencodeMap(type: JavaExec) {
 		file('machines/generated/screencode.yaml').absolutePath,
 		file('data/screencode.map').absolutePath
 	]
+
+	// Incremental inputs (bead grm-c9f). Both descriptors are inputs -- ScreencodeCompiler
+	// reads petscii.yaml for its unicode layer as well as screencode.yaml -- and both are
+	// plain loads, so this is the complete set.
+	inputs.file('machines/generated/petscii.yaml')
+	inputs.file('machines/generated/screencode.yaml')
+	inputs.files(sourceSets.gdtBuilder.output)
+	outputs.file(file('data/screencode.map'))
 }
 
 //----------------------------------------------------------------------------------
