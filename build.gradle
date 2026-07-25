@@ -90,8 +90,73 @@ dependencies {
 	// this extension is built.
 }
 
-// Exclude additional files from the built extension
-// Ex: buildExtension.exclude '.idea/**'
+//----------------------------------------------------------------------------------
+// What ships in the extension zip (bead grm-6gl).
+//
+// This is the hook the stock build.gradle skeleton reserves for `buildExtension.exclude`.
+// We drive it from an ALLOWLIST rather than writing excludes by hand, deliberately.
+//
+// Why: buildExtension (in <ghidra>/support/buildExtension.gradle, which our DO NOT MODIFY
+// section applies) builds the zip from three child copy specs -- the token-filtered
+// extension.properties, project.jar into lib/, and `from(project.projectDir)` carrying a
+// FIXED, Eclipse-era exclude list (build, *.gradle, dist, bin, src, .gradle, .vscode,
+// .classpath, .project, .settings, gradlew...). That denylist knows nothing about this
+// repo's layout, so it packaged the whole working tree: .beads (the 30 MB Dolt issue-tracker
+// DB), .claude, .agents, .codex, docs, machines, tools, gradle.properties -- a 31 MB zip
+// delivering 0.4 MB of extension, and a copy of the project issue tracker dropped into every
+// user's Ghidra Extensions dir.
+//
+// A denylist has the wrong failure mode: forget to add the next new top-level dir and it
+// ships silently (exactly how this bug arose). The allowlist below fails the safe way --
+// forget an entry and the resource is MISSING, which the acceptance gate catches loudly.
+//
+// Mechanics: the patterns are drawn from projectDir's own top-level entries, so although
+// Gradle propagates parent-spec excludes to the child specs, they cannot match the child
+// specs' files (the jar is `ghidra-retro-machines.jar`, the source zip
+// `ghidra-retro-machines-src.zip`; neither is a top-level projectDir entry, and
+// extension.properties -- which is -- is on the allowlist). That is why this is expressed as
+// generated excludes and NOT as a root-level `include`, which would filter those children out.
+//----------------------------------------------------------------------------------
+
+// Top-level entries the extension is allowed to ship.
+//   data                 -- runtime-required: loaders read data/machines/<id>.map and the
+//                           .gdt archives via Application.findDataFileInAnyModule, and
+//                           NesBoardRegistry scans data/ for *.map
+//                           (Application.findFilesByExtensionInMyModule searches the module's
+//                           data dir only); also carries data/languages (bundled sleigh) and
+//                           data/ExtensionPoint.manifest.
+//   extension.properties,
+//   Module.manifest      -- Ghidra-required extension metadata.
+//   ghidra_scripts       -- Ghidra-required module dir (currently empty).
+//   lib                  -- the jar + -src.zip; produced by buildExtension's own child specs
+//                           rather than copied from projectDir, listed here for clarity.
+//   README.md, LICENSE   -- what a user unpacking the extension should find.
+// Everything else at the top level -- .agents, .beads, .claude, .codex, AGENTS.md, CLAUDE.md,
+// docs, gsrc, gradle.properties, machines, tools -- is repo/build-time material. In
+// particular machines/ holds the authored YAML that gdtBuilder compiles INTO data/ at build
+// time; nothing reads it at runtime.
+def SHIPPED_TOP_LEVEL = [
+	'lib', 'data', 'ghidra_scripts', 'extension.properties', 'Module.manifest',
+	'README.md', 'LICENSE'
+] as Set
+
+projectDir.listFiles().each { f ->
+	if (!(f.name in SHIPPED_TOP_LEVEL)) {
+		buildExtension.exclude f.name
+		buildExtension.exclude f.name + '/**'
+	}
+}
+
+// Fail loudly if an allowlisted path that must exist on disk has gone missing, so a rename
+// can't quietly turn "shipped" into "excluded by omission". (lib/ is intentionally absent:
+// buildExtension synthesizes it.)
+['data', 'extension.properties', 'Module.manifest'].each { required ->
+	if (!new File(projectDir, required).exists()) {
+		throw new GradleException("Extension packaging allowlist (bead grm-6gl) names " +
+			"'${required}', but it does not exist in ${projectDir}. Update SHIPPED_TOP_LEVEL " +
+			"in build.gradle if the layout changed deliberately.")
+	}
+}
 
 //----------------------------------------------------------------------------------
 // YAML -> .gdt data-type archive build pipeline (bead grm-1.5).
