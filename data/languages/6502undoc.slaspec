@@ -1,0 +1,14 @@
+# Sleigh specification for the NMOS 6502 with the undocumented opcodes enabled, language
+# id 6502:LE:16:undoc. This is the plain 6502 core plus the vendored undocumented-opcode
+# semantics -- no 6510 on-die I/O port, so $00/$01 are ordinary memory. Use it for NMOS
+# 6502 systems (Atari 8-bit, Apple II, NES 2A03-adjacent code, ...) whose software relies
+# on the undocumented instructions.
+#
+# Opt-in on purpose: with all 256 opcode bytes decodable, the disassembler will happily
+# run straight through data regions instead of stopping on an invalid instruction. Prefer
+# the default variant unless the target actually uses these opcodes.
+#
+# See 6510undoc.slaspec for the same instruction set with 6510 port routing.
+
+@include "6502core.sinc"
+@include "6510_illegal.sinc"

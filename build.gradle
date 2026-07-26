@@ -131,14 +131,18 @@ dependencies {
 //                           (RunFromElsewhereTransfer.java, bead grm-1.7.1.1).
 //   lib                  -- the jar + -src.zip; produced by buildExtension's own child specs
 //                           rather than copied from projectDir, listed here for clarity.
-//   README.md, LICENSE   -- what a user unpacking the extension should find.
+//   README.md, LICENSE,
+//   NOTICE               -- what a user unpacking the extension should find. NOTICE records
+//                           attribution for vendored third-party material shipped inside
+//                           data/ (currently data/languages/6510_illegal.sinc, Apache-2.0),
+//                           so it has to travel with the extension, not just the repo.
 // Everything else at the top level -- .agents, .beads, .claude, .codex, AGENTS.md, CLAUDE.md,
 // docs, gsrc, gradle.properties, machines, tools -- is repo/build-time material. In
 // particular machines/ holds the authored YAML that gdtBuilder compiles INTO data/ at build
 // time; nothing reads it at runtime.
 def SHIPPED_TOP_LEVEL = [
 	'lib', 'data', 'ghidra_scripts', 'extension.properties', 'Module.manifest',
-	'README.md', 'LICENSE'
+	'README.md', 'LICENSE', 'NOTICE'
 ] as Set
 
 projectDir.listFiles().each { f ->

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- See Relax specification: Ghidra/Framework/SoftwareModeling/data/languages/language_definitions.rxg -->
+
+<language_definitions>
+
+  <language processor="6502"
+            endian="little"
+            size="16"
+            variant="undoc"
+            version="1.0"
+            slafile="6502undoc.sla"
+            processorspec="6502undoc.pspec"
+            id="6502:LE:16:undoc">
+    <description>NMOS 6502 with undocumented opcodes enabled (SLO/RLA/LAX/SAX/...); opt-in, because with all 256 opcodes decodable the disassembler will run through data regions instead of stopping on an invalid instruction</description>
+    <compiler name="default" spec="6502undoc.cspec" id="default"/>
+    <external_name tool="IDA-PRO" name="m6502"/>
+  </language>
+
+</language_definitions>

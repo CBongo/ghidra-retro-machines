@@ -1,0 +1,24 @@
+ghidra-retro-machines
+Copyright 2026 Chris Bongaarts
+
+This product includes software developed by third parties, as recorded below.
+All of it is licensed under the Apache License, Version 2.0 (see LICENSE), the
+same license as this project.
+
+--------------------------------------------------------------------------------
+data/languages/6510_illegal.sinc
+
+  SLEIGH semantics for the undocumented ("illegal") NMOS 6510/6502 opcodes.
+
+  Copyright 2026 Josh Bailey
+  Licensed under the Apache License, Version 2.0
+
+  Upstream: https://github.com/anarkiwi/deity-informant
+  Commit:   1ec8c31646f142e11e77b84215bfb970f7675fce
+  Path:     ghidra/6510/data/languages/6510_illegal.sinc
+
+  Vendored verbatim; the only modification is a prepended attribution header.
+  Its file name and body retain upstream's "illegal" terminology so that future
+  re-syncs remain a clean diff. This project's own prose and identifiers say
+  "undocumented" / "undoc" instead.
+--------------------------------------------------------------------------------

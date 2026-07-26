@@ -1,0 +1,62 @@
+# Sleigh specification for the MOS 6510 with the undocumented opcodes enabled, language
+# id 6510:LE:16:undoc. Same as 6510.slaspec (6502 core + on-die I/O port routing) plus the
+# vendored undocumented-opcode semantics.
+#
+# Opt-in on purpose: with all 256 opcode bytes decodable, the disassembler will happily
+# run straight through data regions instead of stopping on an invalid instruction. Prefer
+# 6510:LE:16:default unless the target actually uses these opcodes -- C64 demos, packers
+# and crunchers routinely do.
+#
+# SYSTEM NEUTRALITY (bead grm-bk6): as in 6510.slaspec, PORT/PORTDDR carry NO banking
+# meaning; per-system interpretation lives in the machine descriptor and bank analyzer.
+
+@include "6502core.sinc"
+@include "6510port.sinc"
+@include "6510_illegal.sinc"
+
+# ---------------------------------------------------------------------------------------
+# Port routing for the undocumented opcodes.
+#
+# 6510_illegal.sinc is vendored verbatim and knows nothing about the on-die port, so its
+# operand table routes zero page and absolute straight to memory. Left alone, `SLO $01`
+# would be a memory store in a program where `STA $01` is PORT dataflow -- the analyzer
+# would see the bank-switch write disappear. The constructors below restore the same
+# "statically-known target routes, runtime-computed target does not" rule that
+# 6510port.sinc applies to the documented instruction set.
+#
+# These are strictly more constrained than the vendored generic forms (they pin imm8/imm16
+# to a literal value), so sleigh's most-constrained-first resolution picks them -- exactly
+# how 6510port.sinc's `OP1: "PORT"` already coexists with 6502core.sinc's `OP1: imm8`.
+# ---------------------------------------------------------------------------------------
+
+# OP3 is the vendored RMW operand table, shared by SLO / RLA / SRE / RRA / DCP / ISC.
+# Routing it here covers all six at once.
+OP3: "PORTDDR"  is bbb=1; imm8=0x00		{ export PORTDDR; }
+OP3: "PORT"     is bbb=1; imm8=0x01		{ export PORT; }
+OP3: "PORTDDR"  is bbb=3; imm16=0x0000	{ export PORTDDR; }
+OP3: "PORT"     is bbb=3; imm16=0x0001	{ export PORT; }
+
+# SAX and LAX need explicit per-opcode forms: the vendored sinc spells their addressing
+# modes out one opcode at a time (they use LDX-family Y indexing, which does not fit the
+# bbb layout), so there is no shared table to override. Only the zero page ($87/$A7) and
+# absolute ($8F/$AF) forms are statically addressed.
+#
+# The port has to be reached through an operand TABLE, not written inline as
+# `:SAX "PORT" is op=0x87; imm8=0x01`. In that inline form the quoted "PORT" is a literal
+# display string rather than an operand, so the instruction ends up with NO operands at
+# all: the listing prints a bare `SAX` with the target invisible, and
+# getDefaultOperandRepresentation(0) reports <UNSUPPORTED>. Routing through these two
+# tables gives the port a real operand slot, exactly as OP1/OP2/OP3 do above.
+ZPPORT:  "PORTDDR" is imm8=0x00		{ export PORTDDR; }
+ZPPORT:  "PORT"    is imm8=0x01		{ export PORT; }
+ABSPORT: "PORTDDR" is imm16=0x0000	{ export PORTDDR; }
+ABSPORT: "PORT"    is imm16=0x0001	{ export PORT; }
+
+:SAX ZPPORT  is op=0x87; ZPPORT		{ ZPPORT = A & X; }
+:SAX ABSPORT is op=0x8F; ABSPORT	{ ABSPORT = A & X; }
+:LAX ZPPORT  is op=0xA7; ZPPORT		{ A = ZPPORT;  X = A; resultFlags(A); }
+:LAX ABSPORT is op=0xAF; ABSPORT	{ A = ABSPORT; X = A; resultFlags(A); }
+
+# Deliberately NOT routed, because their effective address is computed at runtime:
+# $83/$A3 (zp,X indirect), $97/$B7 (zp,Y), $B3 ((zp),Y), $BF (abs,Y), and the whole
+# unstable store group ($93 SHA (zp),Y, $9B TAS, $9C SHY, $9E SHX, $9F SHA abs,Y).

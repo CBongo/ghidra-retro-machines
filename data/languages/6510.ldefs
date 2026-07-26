@@ -17,4 +17,17 @@
     <external_name tool="IDA-PRO" name="m6502"/>
   </language>
 
+  <language processor="6510"
+            endian="little"
+            size="16"
+            variant="undoc"
+            version="1.0"
+            slafile="6510undoc.sla"
+            processorspec="6510.pspec"
+            id="6510:LE:16:undoc">
+    <description>MOS 6510 with undocumented NMOS opcodes enabled (SLO/RLA/LAX/SAX/...); opt-in, because with all 256 opcodes decodable the disassembler will run through data regions instead of stopping on an invalid instruction</description>
+    <compiler name="default" spec="6510.cspec" id="default"/>
+    <external_name tool="IDA-PRO" name="m6502"/>
+  </language>
+
 </language_definitions>

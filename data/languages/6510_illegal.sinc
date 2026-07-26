@@ -1,0 +1,268 @@
+# ----------------------------------------------------------------------------------------
+# VENDORED THIRD-PARTY FILE -- keep byte-identical to upstream so re-syncs stay a clean diff.
+#
+#   Upstream: https://github.com/anarkiwi/deity-informant
+#   Commit:   1ec8c31646f142e11e77b84215bfb970f7675fce
+#   Path:     ghidra/6510/data/languages/6510_illegal.sinc
+#
+#   Copyright 2026 Josh Bailey
+#
+#   Licensed under the Apache License, Version 2.0 (the "License");
+#   you may not use this file except in compliance with the License.
+#   You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+#   Unless required by applicable law or agreed to in writing, software
+#   distributed under the License is distributed on an "AS IS" BASIS,
+#   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#   See the License for the specific language governing permissions and
+#   limitations under the License.
+#
+# Modifications: none beyond this header. In particular the upstream body's use of the
+# term "illegal" (including this file's name) is retained verbatim; our own prose,
+# identifiers and file names use "undocumented"/"undoc" instead.
+# ----------------------------------------------------------------------------------------
+
+# NMOS 6510 undocumented ("illegal") opcodes -- SLEIGH semantics.
+#
+# @include'd AFTER the stock 6502.slaspec, so it reuses that spec's tokens
+# (op/aaa/bbb/cc, imm8/imm16), registers (A X Y S N V Z C), and macros
+# (resultFlags, subtraction_flags1, carry). Adds the 105 opcode bytes the base
+# 6502 spec leaves undefined, so Ghidra's disassembler AND decompiler -- and
+# pypcode -- become illegal-aware.
+#
+# Semantics follow "No More Secrets - NMOS 6510 Unintended Opcodes" (v0.91).
+# This spec targets readable decompilation and consistency with the base 6502
+# spec's idioms; byte/cycle-exact *execution* is owned by the deity_informant Python
+# VM (validated against the sidplayfp oracle). Where the base spec models a flag
+# approximately (e.g. ADC's V), the derived illegals (RRA/ARR/ISC) mirror it.
+#
+# The "magic constant" for the unstable ANE/LXA group is chip-/temperature-
+# dependent (NMS lists $00/$FF/$EE); $EE matches the validated oracle. Override
+# at build time with sleigh -DMAGIC=0x00 etc.
+@ifdef MAGIC
+@else
+@define MAGIC "0xee"
+@endif
+
+# ---- RMW illegals: read-modify-write, LDA-family bbb indexing (cc=3) ----------
+# OP3 mirrors the base OP1 memory modes (no immediate / bbb=2 slot), exporting a
+# writable 1-byte location so `local v = OP3; ...; OP3 = v;` is a true RMW.
+OP3: (imm8,X)  is bbb=0 & X; imm8   { addr:2 = zext(imm8 + X); tmp:2 = *:2 addr; export *:1 tmp; }
+OP3: imm8      is bbb=1; imm8       { export *:1 imm8; }
+OP3: imm16     is bbb=3; imm16      { export *:1 imm16; }
+OP3: (imm8),Y  is bbb=4 & Y; imm8   { addr:2 = imm8; tmp:2 = *:2 addr; tmp = tmp + zext(Y); export *:1 tmp; }
+OP3: imm8,X    is bbb=5 & X; imm8   { tmp:2 = zext(imm8 + X); export *:1 tmp; }
+OP3: imm16,Y   is bbb=6 & Y; imm16  { tmp:2 = imm16 + zext(Y); export *:1 tmp; }
+OP3: imm16,X   is bbb=7 & X; imm16  { tmp:2 = imm16 + zext(X); export *:1 tmp; }
+
+# SLO (ASO) = ASL memory, then ORA
+:SLO OP3    is (cc=3 & aaa=0) ... & OP3
+{
+    local v = OP3;
+    C = v >> 7;
+    v = v << 1;
+    OP3 = v;
+    A = A | v;
+    resultFlags(A);
+}
+
+# RLA (RLN) = ROL memory, then AND
+:RLA OP3    is (cc=3 & aaa=1) ... & OP3
+{
+    local tmpC = C;
+    local v = OP3;
+    C = v >> 7;
+    v = (v << 1) | tmpC;
+    OP3 = v;
+    A = A & v;
+    resultFlags(A);
+}
+
+# SRE (LSE) = LSR memory, then EOR
+:SRE OP3    is (cc=3 & aaa=2) ... & OP3
+{
+    local v = OP3;
+    C = v & 1;
+    v = v >> 1;
+    OP3 = v;
+    A = A ^ v;
+    resultFlags(A);
+}
+
+# RRA (RRD) = ROR memory, then ADC
+:RRA OP3    is (cc=3 & aaa=3) ... & OP3
+{
+    local oldC = C << 7;
+    local v = OP3;
+    C = v & 1;
+    v = (v >> 1) | oldC;
+    OP3 = v;
+    local tmpC = C;
+    C = carry(A, v);
+    A = A + v + tmpC;
+    resultFlags(A);
+    V = C;
+}
+
+# DCP (DCM) = DEC memory, then CMP
+:DCP OP3    is (cc=3 & aaa=6) ... & OP3
+{
+    local v = OP3 - 1;
+    OP3 = v;
+    local tmp = A - v;
+    resultFlags(tmp);
+    C = (A >= v);
+}
+
+# ISC (ISB, INS) = INC memory, then SBC
+:ISC OP3    is (cc=3 & aaa=7) ... & OP3
+{
+    local v = OP3 + 1;
+    OP3 = v;
+    local result = A - v - !C;
+    subtraction_flags1(A, v, result);
+    A = result;
+}
+
+# ---- SAX (AXS, AAX): store A & X (no flags), LDX-family Y indexing ------------
+:SAX (imm8,X)  is op=0x83 & X; imm8   { local p:2 = zext(imm8 + X); local ea:2 = *:2 p; *:1 ea = A & X; }
+:SAX imm8      is op=0x87; imm8   { local ea:2 = imm8; *:1 ea = A & X; }
+:SAX imm16     is op=0x8F; imm16  { local ea:2 = imm16; *:1 ea = A & X; }
+:SAX imm8,Y    is op=0x97 & Y; imm8   { local ea:2 = zext(imm8 + Y); *:1 ea = A & X; }
+
+# ---- LAX (LXA family for #imm handled separately): A = X = memory ------------
+:LAX (imm8,X)  is op=0xA3 & X; imm8   { local p:2 = zext(imm8 + X); local ea:2 = *:2 p; A = *:1 ea; X = A; resultFlags(A); }
+:LAX imm8      is op=0xA7; imm8   { local ea:2 = imm8; A = *:1 ea; X = A; resultFlags(A); }
+:LAX imm16     is op=0xAF; imm16  { local ea:2 = imm16; A = *:1 ea; X = A; resultFlags(A); }
+:LAX (imm8),Y  is op=0xB3 & Y; imm8   { local p:2 = imm8; local ea:2 = *:2 p; ea = ea + zext(Y); A = *:1 ea; X = A; resultFlags(A); }
+:LAX imm8,Y    is op=0xB7 & Y; imm8   { local ea:2 = zext(imm8 + Y); A = *:1 ea; X = A; resultFlags(A); }
+:LAX imm16,Y   is op=0xBF & Y; imm16  { local ea:2 = imm16 + zext(Y); A = *:1 ea; X = A; resultFlags(A); }
+
+# ---- immediate / implied group (explicit opcodes) ----------------------------
+# ANC: AND #imm, then copy bit7 into C (NMS p.25)
+:ANC "#"imm8   is (op=0x0B | op=0x2B); imm8
+{
+    A = A & imm8;
+    resultFlags(A);
+    C = A >> 7;
+}
+
+# ALR (ASR): AND #imm, then LSR A (NMS p.27)
+:ALR "#"imm8   is op=0x4B; imm8
+{
+    A = A & imm8;
+    C = A & 1;
+    A = A >> 1;
+    resultFlags(A);
+}
+
+# ARR: AND #imm, then ROR A; C = bit6, V = bit6 ^ bit5 (NMS p.29; non-decimal)
+:ARR "#"imm8   is op=0x6B; imm8
+{
+    A = A & imm8;
+    local c = C;
+    A = (A >> 1) | (c << 7);
+    resultFlags(A);
+    C = (A >> 6) & 1;
+    V = ((A >> 6) & 1) ^ ((A >> 5) & 1);
+}
+
+# SBX (AXS, SAX imm): X = (A & X) - #imm, C from the compare (NMS p.32)
+:SBX "#"imm8   is op=0xCB; imm8
+{
+    local ax = A & X;
+    C = (ax >= imm8);
+    X = ax - imm8;
+    resultFlags(X);
+}
+
+# SBC #imm illegal alias ($EB), identical to legal SBC (NMS p.36)
+:SBC "#"imm8   is op=0xEB; imm8
+{
+    local result = A - imm8 - !C;
+    subtraction_flags1(A, imm8, result);
+    A = result;
+}
+
+# ANE (XAA): A = (A | CONST) & X & #imm -- unstable magic constant (NMS p.51)
+:ANE "#"imm8   is op=0x8B; imm8
+{
+    A = (A | $(MAGIC)) & X & imm8;
+    resultFlags(A);
+}
+
+# LXA (LAX #imm, ATX, OAL): A = X = (A | CONST) & #imm -- magic constant (NMS p.53)
+:LXA "#"imm8   is op=0xAB; imm8
+{
+    A = (A | $(MAGIC)) & imm8;
+    X = A;
+    resultFlags(A);
+}
+
+# LAS (LAR, LAE): A = X = S = memory & S (NMS p.37)
+:LAS imm16,Y   is op=0xBB & Y; imm16
+{
+    local ea:2 = imm16 + zext(Y);
+    local v:1 = (*:1 ea) & S;
+    A = v; X = v; S = v;
+    resultFlags(v);
+}
+
+# ---- unstable "address high" store group (stable AND form; NMS pp.43-50) ------
+# {addr} = REG & (high(base)+1). Page-cross / RDY-drop-off instabilities are
+# non-deterministic and intentionally not modelled.
+:SHA (imm8),Y  is op=0x93 & Y; imm8
+{
+    local p:2 = imm8;
+    local ptr:2 = *:2 p;
+    local h:1 = ptr(1) + 1;
+    local tgt:2 = ptr + zext(Y);
+    *:1 tgt = A & X & h;
+}
+:SHA imm16,Y   is op=0x9F & Y; imm16
+{
+    local base:2 = imm16;
+    local h:1 = base(1) + 1;
+    local tgt:2 = base + zext(Y);
+    *:1 tgt = A & X & h;
+}
+:SHX imm16,Y   is op=0x9E & Y; imm16
+{
+    local base:2 = imm16;
+    local h:1 = base(1) + 1;
+    local tgt:2 = base + zext(Y);
+    *:1 tgt = X & h;
+}
+:SHY imm16,X   is op=0x9C & X; imm16
+{
+    local base:2 = imm16;
+    local h:1 = base(1) + 1;
+    local tgt:2 = base + zext(X);
+    *:1 tgt = Y & h;
+}
+:TAS imm16,Y   is op=0x9B & Y; imm16
+{
+    S = A & X;
+    local base:2 = imm16;
+    local h:1 = base(1) + 1;
+    local tgt:2 = base + zext(Y);
+    *:1 tgt = S & h;
+}
+
+# ---- NOP illegals (DOP/TOP): no effect; memory modes still read (NMS p.40) ----
+:NOP           is (op=0x1A | op=0x3A | op=0x5A | op=0x7A | op=0xDA | op=0xFA)  { }
+:NOP "#"imm8   is (op=0x80 | op=0x82 | op=0x89 | op=0xC2 | op=0xE2); imm8      { }
+:NOP imm8      is (op=0x04 | op=0x44 | op=0x64); imm8      { local ea:2 = imm8; local v:1 = *:1 ea; }
+:NOP imm8,X    is (op=0x14 | op=0x34 | op=0x54 | op=0x74 | op=0xD4 | op=0xF4) & X; imm8
+                                                          { local ea:2 = zext(imm8 + X); local v:1 = *:1 ea; }
+:NOP imm16     is op=0x0C; imm16      { local ea:2 = imm16; local v:1 = *:1 ea; }
+:NOP imm16,X   is (op=0x1C | op=0x3C | op=0x5C | op=0x7C | op=0xDC | op=0xFC) & X; imm16
+                                                          { local ea:2 = imm16 + zext(X); local v:1 = *:1 ea; }
+
+# ---- JAM (KIL, HLT): CPU lock-up ---------------------------------------------
+:JAM   is (op=0x02 | op=0x12 | op=0x22 | op=0x32 | op=0x42 | op=0x52 | op=0x62 | op=0x72 | op=0x92 | op=0xB2 | op=0xD2 | op=0xF2)
+{
+    goto inst_start;
+}

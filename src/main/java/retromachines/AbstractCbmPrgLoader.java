@@ -272,6 +272,17 @@ abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader {
 		}
 		LanguageCompilerSpecPair pair = new LanguageCompilerSpecPair(languageId, COMPILER_SPEC_ID);
 		loadSpecs.add(new LoadSpec(this, 0, pair, true));
+
+		// Offer the undocumented-opcode variant as a second, NON-preferred choice (bead
+		// grm-azg), so it shows up in the import dialog's language list instead of being
+		// something the user has to know exists. Not the default: decoding all 256 opcode
+		// bytes means speculative disassembly runs through data tables instead of stopping,
+		// which costs more than it gains on anything that doesn't actually use them.
+		String undocId = DescriptorSupport.undocVariantOf(languageId);
+		if (undocId != null) {
+			loadSpecs.add(new LoadSpec(this, 0,
+				new LanguageCompilerSpecPair(undocId, COMPILER_SPEC_ID), false));
+		}
 		return loadSpecs;
 	}
 

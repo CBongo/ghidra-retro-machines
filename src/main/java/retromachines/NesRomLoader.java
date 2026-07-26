@@ -168,6 +168,16 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 
 		LanguageCompilerSpecPair pair = new LanguageCompilerSpecPair(LANGUAGE_ID, COMPILER_SPEC_ID);
 		loadSpecs.add(new LoadSpec(this, 0, pair, true));
+
+		// Second, NON-preferred choice: the undocumented-opcode variant (bead grm-azg). NES
+		// games lean on these at least as hard as C64 code does. Kept out of the default for
+		// the usual reason -- with all 256 bytes decodable, disassembly runs through the
+		// graphics and music tables that fill a PRG bank instead of stopping.
+		String undocId = DescriptorSupport.undocVariantOf(LANGUAGE_ID);
+		if (undocId != null) {
+			loadSpecs.add(new LoadSpec(this, 0,
+				new LanguageCompilerSpecPair(undocId, COMPILER_SPEC_ID), false));
+		}
 		return loadSpecs;
 	}
 

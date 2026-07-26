@@ -169,6 +169,35 @@ final class DescriptorSupport {
 		return safetyFallbackId;
 	}
 
+	/** Variant field of the language IDs that decode the undocumented NMOS opcodes. */
+	private static final String UNDOC_VARIANT = "undoc";
+
+	/**
+	 * The undocumented-opcode sibling of {@code languageId} -- e.g.
+	 * {@code 6510:LE:16:default} to {@code 6510:LE:16:undoc} (bead grm-azg) -- or
+	 * {@code null} when this build ships no such variant. A Ghidra language ID is
+	 * {@code processor:endian:size:variant}, so the sibling differs only in the last field.
+	 * <p>
+	 * Loaders use this to OFFER the variant as an additional, non-preferred
+	 * {@link ghidra.app.util.opinion.LoadSpec}, so returning {@code null} for anything
+	 * unrecognized or unavailable is the point: a missing variant must quietly mean "don't
+	 * offer it", never an exception on an import path.
+	 */
+	static String undocVariantOf(String languageId) {
+		if (languageId == null) {
+			return null;
+		}
+		int lastColon = languageId.lastIndexOf(':');
+		if (lastColon < 0) {
+			return null;
+		}
+		String sibling = languageId.substring(0, lastColon + 1) + UNDOC_VARIANT;
+		if (sibling.equals(languageId) || !languageAvailable(sibling)) {
+			return null;
+		}
+		return sibling;
+	}
+
 	private static boolean languageAvailable(String id) {
 		try {
 			DefaultLanguageService.getLanguageService()
