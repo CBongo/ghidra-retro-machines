@@ -44,7 +44,7 @@ import ghidra.util.task.TaskMonitor;
  * Each test builds its own minimal memory map with a plain {@code ProgramBuilder} (no loader, no
  * analyzer) so the placement decision and the carve/overlay mechanics are exercised in isolation,
  * mirroring {@link BankStrategyProgramTest}'s style. {@code TransferMaterializer},
- * {@code TransferSpec}, and {@code TransferMaterializer.Placement} are all package-private, so
+ * {@code TransferSpec}, and {@code TransferPlacement} are all package-private, so
  * this test lives in {@code retromachines} to reach them directly -- there is no public API to
  * test through.
  *
@@ -63,11 +63,11 @@ public class TransferMaterializerTest extends AbstractGenericTest {
 
 	/** Runs {@link TransferMaterializer#materialize} inside its own transaction, as production
 	 *  callers (the analyzer, the loader) always do. */
-	private TransferMaterializer.Placement materialize(ProgramDB program, TransferSpec spec) {
+	private TransferPlacement materialize(ProgramDB program, TransferSpec spec) {
 		int tx = program.startTransaction("materialize");
 		boolean commit = false;
 		try {
-			TransferMaterializer.Placement placement =
+			TransferPlacement placement =
 				TransferMaterializer.materialize(program, spec, CATEGORY, TaskMonitor.DUMMY,
 					new MessageLog());
 			commit = true;
@@ -82,9 +82,10 @@ public class TransferMaterializerTest extends AbstractGenericTest {
 	 *  decision and the memory map are what these tests exercise, not disassembly -- that is
 	 *  covered by the headless {@code copyloop}/{@code copydata}/{@code copyoverlay} fixtures). */
 	private static TransferSpec identitySpec(Address src, Address dst, int len,
-			TransferSpec.TargetKind target, Address provenanceSite) {
-		return new TransferSpec(src, dst, len, TransferSpec.Transform.IDENTITY, target,
-			provenanceSite, TransferSpec.Confidence.CANDIDATE, false, false, dst, null);
+			TransferTarget target, Address provenanceSite) {
+		return new TransferSpec(src, dst, len, TransferTransform.IDENTITY, target,
+			provenanceSite, TransferSpec.Confidence.CANDIDATE, false, false, dst, null,
+			"copy loop");
 	}
 
 	private static void assertBlock(MemoryBlock block, String name, Address start, Address end,
@@ -134,11 +135,11 @@ public class TransferMaterializerTest extends AbstractGenericTest {
 		Address src = builder.addr("0x2000");
 		Address dst = builder.addr("0xC000");
 		TransferSpec spec =
-			identitySpec(src, dst, 8, TransferSpec.TargetKind.SAME_SPACE, src);
+			identitySpec(src, dst, 8, TransferTarget.SAME_SPACE, src);
 
-		TransferMaterializer.Placement placement = materialize(program, spec);
+		TransferPlacement placement = materialize(program, spec);
 
-		assertEquals(TransferMaterializer.Placement.SKIPPED, placement);
+		assertEquals(TransferPlacement.SKIPPED, placement);
 		assertNull("no COPY_ block should exist", program.getMemory().getBlock("COPY_c000"));
 		// Destination's containing block is untouched: same name, same start/end, still
 		// uninitialized -- gate 0 fires before any split/convert/write is attempted.
@@ -178,13 +179,13 @@ public class TransferMaterializerTest extends AbstractGenericTest {
 		// (grm-1.7.2) from carving a destination and overwriting its real encrypted bytes with a
 		// synthetic fill -- canCarve re-checks the same condition independently for exactly that
 		// reason (see TransferMaterializer's class javadoc).
-		TransferSpec spec = new TransferSpec(src, dst, 8, TransferSpec.Transform.CONSTANT_XOR,
-			TransferSpec.TargetKind.SAME_SPACE, src, TransferSpec.Confidence.CANDIDATE, false,
-			false, dst, null);
+		TransferSpec spec = new TransferSpec(src, dst, 8, TransferTransform.CONSTANT_XOR,
+			TransferTarget.SAME_SPACE, src, TransferSpec.Confidence.CANDIDATE, false,
+			false, dst, null, "copy loop");
 
-		TransferMaterializer.Placement placement = materialize(program, spec);
+		TransferPlacement placement = materialize(program, spec);
 
-		assertEquals(TransferMaterializer.Placement.SKIPPED, placement);
+		assertEquals(TransferPlacement.SKIPPED, placement);
 		assertNull(program.getMemory().getBlock("COPY_c000"));
 		assertBlock(program.getMemory().getBlock(dst), "RAM_C000", dst, end, false);
 	}
@@ -205,11 +206,11 @@ public class TransferMaterializerTest extends AbstractGenericTest {
 		Address src = builder.addr("0x2000");
 		Address dst = builder.addr("0xC000");
 		Address end = builder.addr("0xC00f");
-		TransferSpec spec = identitySpec(src, dst, 8, TransferSpec.TargetKind.SAME_SPACE, src);
+		TransferSpec spec = identitySpec(src, dst, 8, TransferTarget.SAME_SPACE, src);
 
-		TransferMaterializer.Placement placement = materialize(program, spec);
+		TransferPlacement placement = materialize(program, spec);
 
-		assertEquals(TransferMaterializer.Placement.OVERLAY, placement);
+		assertEquals(TransferPlacement.OVERLAY, placement);
 		MemoryBlock overlay = program.getMemory().getBlock("COPY_c000");
 		assertNotNull(overlay);
 		assertTrue("carved-overlay block should be an overlay block", overlay.isOverlay());
@@ -234,11 +235,11 @@ public class TransferMaterializerTest extends AbstractGenericTest {
 
 		Address src = builder.addr("0x2000");
 		Address dst = builder.addr("0xC002"); // range C002-C005: half in A, half in B
-		TransferSpec spec = identitySpec(src, dst, 4, TransferSpec.TargetKind.SAME_SPACE, src);
+		TransferSpec spec = identitySpec(src, dst, 4, TransferTarget.SAME_SPACE, src);
 
-		TransferMaterializer.Placement placement = materialize(program, spec);
+		TransferPlacement placement = materialize(program, spec);
 
-		assertEquals(TransferMaterializer.Placement.OVERLAY, placement);
+		assertEquals(TransferPlacement.OVERLAY, placement);
 		MemoryBlock overlay = program.getMemory().getBlock("COPY_c002");
 		assertNotNull(overlay);
 		assertTrue(overlay.isOverlay());
@@ -247,6 +248,56 @@ public class TransferMaterializerTest extends AbstractGenericTest {
 			builder.addr("0xC000"), builder.addr("0xC003"), false);
 		assertBlock(program.getMemory().getBlock(builder.addr("0xC004")), "BLOCK_B",
 			builder.addr("0xC004"), builder.addr("0xC007"), false);
+	}
+
+	// ------------------------------------------------------------------
+	// 4b. Wholly unmapped destination -> NEW_BLOCK (grm-1.7.6)
+	// ------------------------------------------------------------------
+
+	@Test
+	public void whollyUnmappedDestinationGetsItsOwnBaseSpaceBlock() throws Exception {
+		ProgramBuilder builder = newBuilder();
+		builder.createMemory("SRC", "0x2000", 0x10);
+		builder.setBytes("0x2000", "01 02 03 04 05 06 07 08");
+		// Nothing at all covers 0x6000 -- the case of an NES board whose descriptor declares no
+		// PRG-RAM region. There is no block to carve, but equally no conflict to avoid, so an
+		// overlay would be the worst of the three placements: the bytes belong in the base space
+		// where a JSR into them resolves for free.
+		ProgramDB program = builder.getProgram();
+
+		Address src = builder.addr("0x2000");
+		Address dst = builder.addr("0x6000");
+		TransferSpec spec = identitySpec(src, dst, 8, TransferTarget.SAME_SPACE, src);
+
+		TransferPlacement placement = materialize(program, spec);
+
+		assertEquals(TransferPlacement.NEW_BLOCK, placement);
+		MemoryBlock block = program.getMemory().getBlock("COPY_6000");
+		assertBlock(block, "COPY_6000", dst, builder.addr("0x6007"), true);
+		assertFalse("the whole point is a base-space block, not an overlay", block.isOverlay());
+		assertArrayEquals(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8 }, readBlock(block, 8));
+	}
+
+	@Test
+	public void destinationStartingInAHoleButEndingInABlockFallsBackToOverlay() throws Exception {
+		ProgramBuilder builder = newBuilder();
+		builder.createMemory("SRC", "0x2000", 0x10);
+		builder.setBytes("0x2000", "01 02 03 04 05 06 07 08");
+		builder.createUninitializedMemory("RAM_6004", "0x6004", 4); // 6004-6007; 6000-6003 is a hole
+		ProgramDB program = builder.getProgram();
+
+		Address src = builder.addr("0x2000");
+		Address dst = builder.addr("0x6000"); // range 6000-6007: half hole, half block
+
+		TransferPlacement placement =
+			materialize(program, identitySpec(src, dst, 8, TransferTarget.SAME_SPACE, src));
+
+		// getBlock(dst) is null here too, so the emptiness test has to be whole-range: creating a
+		// block over this range would collide with RAM_6004.
+		assertEquals(TransferPlacement.OVERLAY, placement);
+		assertTrue(program.getMemory().getBlock("COPY_6000").isOverlay());
+		assertBlock(program.getMemory().getBlock(builder.addr("0x6004")), "RAM_6004",
+			builder.addr("0x6004"), builder.addr("0x6007"), false);
 	}
 
 	// ------------------------------------------------------------------
@@ -266,11 +317,11 @@ public class TransferMaterializerTest extends AbstractGenericTest {
 		Address dst = builder.addr("0xC000");
 		Address end = builder.addr("0xC00f");
 		TransferSpec spec =
-			identitySpec(src, dst, 8, TransferSpec.TargetKind.SAME_SPACE_OVERLAY, src);
+			identitySpec(src, dst, 8, TransferTarget.SAME_SPACE_OVERLAY, src);
 
-		TransferMaterializer.Placement placement = materialize(program, spec);
+		TransferPlacement placement = materialize(program, spec);
 
-		assertEquals(TransferMaterializer.Placement.OVERLAY, placement);
+		assertEquals(TransferPlacement.OVERLAY, placement);
 		MemoryBlock overlay = program.getMemory().getBlock("COPY_c000");
 		assertNotNull(overlay);
 		assertTrue(overlay.isOverlay());
@@ -293,11 +344,11 @@ public class TransferMaterializerTest extends AbstractGenericTest {
 
 		Address src = builder.addr("0x2000");
 		Address dst = builder.addr("0xC100"); // strictly interior
-		TransferSpec spec = identitySpec(src, dst, 8, TransferSpec.TargetKind.SAME_SPACE, src);
+		TransferSpec spec = identitySpec(src, dst, 8, TransferTarget.SAME_SPACE, src);
 
-		TransferMaterializer.Placement placement = materialize(program, spec);
+		TransferPlacement placement = materialize(program, spec);
 
-		assertEquals(TransferMaterializer.Placement.IN_PLACE, placement);
+		assertEquals(TransferPlacement.IN_PLACE, placement);
 		// 3 carve pieces (RAM_C000, COPY_c100, RAM_C000_C108) + the untouched SRC block.
 		assertEquals(4, program.getMemory().getBlocks().length);
 		assertBlock(program.getMemory().getBlock(builder.addr("0xC000")), "RAM_C000",
@@ -321,11 +372,11 @@ public class TransferMaterializerTest extends AbstractGenericTest {
 
 		Address src = builder.addr("0x200e");
 		Address dst = builder.addr("0xC000"); // dst == block start
-		TransferSpec spec = identitySpec(src, dst, 8, TransferSpec.TargetKind.SAME_SPACE, src);
+		TransferSpec spec = identitySpec(src, dst, 8, TransferTarget.SAME_SPACE, src);
 
-		TransferMaterializer.Placement placement = materialize(program, spec);
+		TransferPlacement placement = materialize(program, spec);
 
-		assertEquals(TransferMaterializer.Placement.IN_PLACE, placement);
+		assertEquals(TransferPlacement.IN_PLACE, placement);
 		// 2 carve pieces (COPY_c000, RAM_C000_C008) + the untouched SRC block.
 		assertEquals(3, program.getMemory().getBlocks().length);
 		// The bare name RAM_C000 is consumed by the carve -- there is no lower fragment to keep it.
@@ -348,11 +399,11 @@ public class TransferMaterializerTest extends AbstractGenericTest {
 
 		Address src = builder.addr("0x2000");
 		Address dst = builder.addr("0xCFF8"); // dst end (0xCFFF) == block end
-		TransferSpec spec = identitySpec(src, dst, 8, TransferSpec.TargetKind.SAME_SPACE, src);
+		TransferSpec spec = identitySpec(src, dst, 8, TransferTarget.SAME_SPACE, src);
 
-		TransferMaterializer.Placement placement = materialize(program, spec);
+		TransferPlacement placement = materialize(program, spec);
 
-		assertEquals(TransferMaterializer.Placement.IN_PLACE, placement);
+		assertEquals(TransferPlacement.IN_PLACE, placement);
 		// 2 carve pieces (RAM_C000, COPY_cff8) + the untouched SRC block.
 		assertEquals(3, program.getMemory().getBlocks().length);
 		assertBlock(program.getMemory().getBlock(builder.addr("0xC000")), "RAM_C000",
@@ -374,11 +425,11 @@ public class TransferMaterializerTest extends AbstractGenericTest {
 
 		Address src = builder.addr("0x2000");
 		Address dst = builder.addr("0xC000");
-		TransferSpec spec = identitySpec(src, dst, 8, TransferSpec.TargetKind.SAME_SPACE, src);
+		TransferSpec spec = identitySpec(src, dst, 8, TransferTarget.SAME_SPACE, src);
 
-		TransferMaterializer.Placement placement = materialize(program, spec);
+		TransferPlacement placement = materialize(program, spec);
 
-		assertEquals(TransferMaterializer.Placement.IN_PLACE, placement);
+		assertEquals(TransferPlacement.IN_PLACE, placement);
 		// 1 carve piece (COPY_c000, no splits at all) + the untouched SRC block.
 		assertEquals(2, program.getMemory().getBlocks().length);
 		MemoryBlock copy = program.getMemory().getBlock("COPY_c000");
@@ -402,12 +453,12 @@ public class TransferMaterializerTest extends AbstractGenericTest {
 
 		Address src = builder.addr("0x200e");
 		Address dst = builder.addr("0xC000");
-		TransferSpec spec = identitySpec(src, dst, 8, TransferSpec.TargetKind.SAME_SPACE, src);
+		TransferSpec spec = identitySpec(src, dst, 8, TransferTarget.SAME_SPACE, src);
 
-		assertEquals(TransferMaterializer.Placement.IN_PLACE, materialize(program, spec));
+		assertEquals(TransferPlacement.IN_PLACE, materialize(program, spec));
 		List<String> before = snapshotBlocks(program);
 
-		assertEquals(TransferMaterializer.Placement.SKIPPED, materialize(program, spec));
+		assertEquals(TransferPlacement.SKIPPED, materialize(program, spec));
 		List<String> after = snapshotBlocks(program);
 
 		assertEquals("a re-run must not touch the map a prior pass already materialized", before,

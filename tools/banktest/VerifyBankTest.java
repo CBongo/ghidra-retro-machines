@@ -606,7 +606,7 @@ public class VerifyBankTest extends GhidraScript {
 	}
 
 	// ------------------------------------------------------------------
-	// C64CopyLoopAnalyzer / TransferMaterializer placement check (bead grm-1.7.1, grm-chu)
+	// CopyLoopAnalyzer / TransferMaterializer placement check (bead grm-1.7.1, grm-chu)
 	// ------------------------------------------------------------------
 
 	// Fixture contract from mkcopytest.py: a verbatim indexed copy loop whose counter init
@@ -618,7 +618,9 @@ public class VerifyBankTest extends GhidraScript {
 	// this PRG's own already-initialized image, so the in-place precondition fails and the
 	// materializer falls back to a byte-mapped OVERLAY (with a JMP into range, same as copyloop,
 	// so bridgeJump gets exercised too).
-	private static final String COPY_CATEGORY = "C64CopyLoopAnalyzer";
+	// Renamed with the analyzer in grm-1.7.6: the recognizer is not C64-specific, it is gated on
+	// the descriptor plus a 6502/6510 language, so the NES boards get it too.
+	private static final String COPY_CATEGORY = "CopyLoopAnalyzer";
 	private static final long COPY_ENTRY = 0x2000;
 
 	/** A carved leftover fragment expected to survive a carve: name, range, and (always)

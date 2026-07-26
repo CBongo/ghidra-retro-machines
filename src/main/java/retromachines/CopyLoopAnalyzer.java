@@ -21,12 +21,15 @@ import ghidra.app.services.AnalyzerType;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSetView;
+import ghidra.program.model.lang.Processor;
 import ghidra.program.model.lang.Register;
 import ghidra.program.model.listing.BookmarkType;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
 import ghidra.util.task.TaskMonitor;
+
+import java.util.Set;
 
 /**
  * Recovers run-from-elsewhere self-modifying code: 6502 loops that copy a range of bytes
@@ -53,24 +56,36 @@ import ghidra.util.task.TaskMonitor;
  * (e.g. CHRGET: copied at boot, invoked much later) is materialized as data and left as bytes,
  * since disassembling data would poison analysis.
  *
- * <p>Where the bytes land -- carved into the destination's own block, or a byte-mapped overlay
- * when that is impossible -- is {@link TransferMaterializer}'s decision, not this recognizer's;
- * it emits {@link TransferSpec.TargetKind#SAME_SPACE} and lets the materializer choose. Keeping
- * the recovery core front-end-agnostic is what lets a later manual command, a descriptor
- * {@code copied_from} hint, or the SPC700 separate-Program target (grm-1.7.3) reuse it. Shared
- * 6502 loop-idiom recognition lives in {@link LoopIdioms}.
+ * <p>Where the bytes land -- carved into the destination's own block, a fresh block where nothing
+ * is mapped, or a byte-mapped overlay when neither is possible -- is
+ * {@link TransferMaterializer}'s decision, not this recognizer's; it emits
+ * {@link TransferTarget#SAME_SPACE} and lets the materializer choose. Keeping the recovery core
+ * front-end-agnostic is what lets the manual command (grm-1.7.1.1), the descriptor
+ * {@code copied_from} hint (grm-1.7.1.2), or the SPC700 separate-Program target (grm-1.7.3) reuse
+ * it through {@link RunFromElsewhere}. Shared 6502 loop-idiom recognition lives in
+ * {@link LoopIdioms}.
+ *
+ * <p><b>Not C64-specific</b>, despite where it started (grm-1.7.6). The idiom is plain 6502 and
+ * the materializer is machine-neutral, so the gate is the language, not the loader: any program
+ * carrying one of our descriptors and running a 6502/6510 qualifies, which brings the NES boards
+ * in. Note that widening the gate only widens what the <em>recognizer</em> can see -- a copy
+ * written as an indirect-indexed pointer walk rather than this indexed idiom still needs the
+ * manual front-end, which is what that front-end is for.
  */
-public class C64CopyLoopAnalyzer extends AbstractAnalyzer {
+public class CopyLoopAnalyzer extends AbstractAnalyzer {
 
-	private static final String NAME = "C64 Copy Loop";
+	private static final String NAME = "Retro Copy Loop";
 	private static final String DESCRIPTION =
 		"Recovers run-from-elsewhere SMC: recognizes verbatim ROM/image->RAM copy loops and " +
 			"materializes the copied bytes at the destination -- carved into its own memory " +
 			"block where possible, otherwise a dual-home byte-mapped COPY_xxxx overlay -- " +
 			"disassembling them only when a jump into the range proves they are code.";
-	private static final String CATEGORY = "C64CopyLoopAnalyzer";
+	private static final String CATEGORY = "CopyLoopAnalyzer";
 
-	public C64CopyLoopAnalyzer() {
+	/** The processors whose mnemonics {@link LoopIdioms} knows. */
+	private static final Set<String> SUPPORTED_PROCESSORS = Set.of("6502", "6510");
+
+	public CopyLoopAnalyzer() {
 		super(NAME, DESCRIPTION, AnalyzerType.INSTRUCTION_ANALYZER);
 		// After reference analysis so branch flows exist (back-edge + jump-into-range).
 		setPriority(AnalysisPriority.REFERENCE_ANALYSIS.after());
@@ -80,8 +95,15 @@ public class C64CopyLoopAnalyzer extends AbstractAnalyzer {
 
 	@Override
 	public boolean canAnalyze(Program program) {
-		String format = program.getExecutableFormat();
-		return format != null && format.equals(C64PrgLoader.NAME);
+		// Gate on the descriptor plus the ISA rather than on a specific loader: LoopIdioms is
+		// 6502 mnemonics and nothing else, and every machine we load is one of ours.
+		String mapPath = program.getOptions(Program.PROGRAM_INFO)
+				.getString(DescriptorSupport.MAP_PATH_PROPERTY, "");
+		if (mapPath.isEmpty()) {
+			return false;
+		}
+		Processor processor = program.getLanguage().getProcessor();
+		return processor != null && SUPPORTED_PROCESSORS.contains(processor.toString());
 	}
 
 	@Override
@@ -94,9 +116,9 @@ public class C64CopyLoopAnalyzer extends AbstractAnalyzer {
 			if (!LoopIdioms.mnem(sta).equals("STA")) {
 				continue;
 			}
-			TransferSpec spec = tryRecognize(program, listing, sta);
-			if (spec != null) {
-				TransferMaterializer.materialize(program, spec, CATEGORY, monitor, log);
+			RunFromElsewhere.Request request = tryRecognize(program, listing, sta);
+			if (request != null) {
+				RunFromElsewhere.apply(program, request, CATEGORY, monitor, log);
 			}
 		}
 		return true;
@@ -105,7 +127,8 @@ public class C64CopyLoopAnalyzer extends AbstractAnalyzer {
 	/** Recognize a verbatim copy loop whose store step is {@code sta}, or return null. Anchors
 	 *  on the STA (a copy has no transform between the load and store, unlike the decrypt
 	 *  analyzer which anchors on the EOR). */
-	private TransferSpec tryRecognize(Program program, Listing listing, Instruction sta) {
+	private RunFromElsewhere.Request tryRecognize(Program program, Listing listing,
+			Instruction sta) {
 		Instruction lda = listing.getInstructionBefore(sta.getAddress());
 		if (lda == null || !LoopIdioms.mnem(lda).equals("LDA")) {
 			return null;
@@ -123,6 +146,10 @@ public class C64CopyLoopAnalyzer extends AbstractAnalyzer {
 		if (src.equals(dst) || !idx.equals(staIdx)) {
 			return null;
 		}
+		// Both operands were built in the executing instruction's space, which is a bank overlay
+		// on a banked machine; re-home them where their bytes actually live (grm-1.7.6).
+		src = LoopIdioms.resolve(program, src);
+		dst = LoopIdioms.resolve(program, dst);
 
 		// Index step + conditional back-branch to the loop head (the LDA).
 		Instruction step = listing.getInstructionAfter(sta.getAddress());
@@ -146,14 +173,17 @@ public class C64CopyLoopAnalyzer extends AbstractAnalyzer {
 		}
 		int len = n + 1;
 
-		Address entry = init.getAddress();
 		Address jumpInto = LoopIdioms.findJumpIntoRange(listing, branch, dst, len);
-		TransferSpec.Confidence conf = jumpInto != null
-				? TransferSpec.Confidence.AUTO
-				: TransferSpec.Confidence.CANDIDATE;
-		boolean code = conf == TransferSpec.Confidence.AUTO;
+		// A jump into the range is the only evidence that the payload is code; without it the
+		// bytes are placed but left as data, since disassembling data would poison analysis.
+		boolean code = jumpInto != null;
 
-		return new TransferSpec(src, dst, len, TransferSpec.Transform.IDENTITY,
-			TransferSpec.TargetKind.SAME_SPACE, entry, conf, code, code, dst, jumpInto);
+		return RunFromElsewhere.request(src, dst, len)
+				.target(TransferTarget.SAME_SPACE)
+				.provenanceSite(init.getAddress())
+				.disassemble(code)
+				.makeFunction(code)
+				.jumpSite(jumpInto)
+				.originLabel("copy loop");
 	}
 }

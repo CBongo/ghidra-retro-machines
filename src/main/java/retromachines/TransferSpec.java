@@ -23,7 +23,8 @@ import ghidra.program.model.address.Address;
  * {@link #dstStart} for {@link #len} bytes, optionally passed through a {@link #transform},
  * and lands in a {@link #target} of the given kind. The recognizer (or, in a later
  * increment, a manual command or a descriptor {@code copied_from} hint) builds one of these;
- * a single materializer consumes it. No front-end knows about the others.
+ * a single materializer consumes it. No front-end knows about the others; they reach the
+ * materializer through {@link RunFromElsewhere}.
  *
  * <p>The <b>disassembly directive</b> ({@link #disassemble}, {@link #makeFunction},
  * {@link #entryPoint}) is the key seam: a copy can carry <em>data or code</em>, so
@@ -33,10 +34,11 @@ import ghidra.program.model.address.Address;
  * explicitly (the author knows it is code, and knows the entry may sit mid-block). The
  * materializer merely honors it.
  *
- * <p>This increment (grm-1.7.1) only ever produces {@code transform=IDENTITY},
- * {@code target=SAME_SPACE}; the other enum members mark the axes that later beads fill in
- * ({@code *_XOR} unifies grm-1.7.2 decrypt; {@code SEPARATE_PROGRAM} is the SPC700
- * cross-processor case, grm-1.7.3).
+ * <p>This is the subsystem's <em>internal</em> currency and is deliberately package-private:
+ * it has grown a field per front-end and will grow more, so publishing it would make every such
+ * addition a source-breaking change. {@link RunFromElsewhere} is the public entry point, and its
+ * builder is what external callers construct. If a thirteenth component is ever needed, convert
+ * this record to a package-private builder rather than adding another positional argument.
  *
  * @param srcStart      first source byte (the master the copy mirrors)
  * @param dstStart      first destination byte (where the copy runs)
@@ -44,7 +46,9 @@ import ghidra.program.model.address.Address;
  * @param transform     how source bytes map to destination bytes
  * @param target        where the recovered bytes are materialized
  * @param provenanceSite the instruction the provenance bookmark/comment anchor to (the copy
- *                       loop's counter init, for the auto recognizer)
+ *                       loop's counter init, for the auto recognizer); <b>null</b> when the
+ *                       front-end has no instruction to annotate, as a descriptor
+ *                       {@code copied_from} directive does not
  * @param confidence    AUTO (code proven -> disassemble) vs CANDIDATE (materialize as data)
  * @param disassemble   whether to disassemble the destination after materializing
  * @param makeFunction  whether to create a function at {@link #entryPoint} after disassembly
@@ -52,40 +56,13 @@ import ghidra.program.model.address.Address;
  *                       be mid-block when a descriptor front-end says so)
  * @param jumpSite       the call/jump instruction that enters the range, for the cross-space
  *                       reference bridge; null when there is none (data / CANDIDATE)
+ * @param originLabel   what produced this transfer, as it should read in provenance text
+ *                       ("copy loop", "descriptor copied_from hint", "manual transfer") -- three
+ *                       front-ends now share the materializer, and only one of them has a loop
  */
-record TransferSpec(Address srcStart, Address dstStart, int len, Transform transform,
-		TargetKind target, Address provenanceSite, Confidence confidence, boolean disassemble,
-		boolean makeFunction, Address entryPoint, Address jumpSite) {
-
-	/** How source bytes map to destination bytes. Only IDENTITY is implemented in grm-1.7.1. */
-	enum Transform {
-		/** Verbatim 1:1 copy (grm-1.7.1). */
-		IDENTITY,
-		/** Constant-key EOR (static; unifies grm-1.7.2 tier 1) -- not yet wired here. */
-		CONSTANT_XOR,
-		/** Rolling/computed-key EOR (emulated; grm-1.7.2 tier 2) -- not yet wired here. */
-		ROLLING_XOR;
-	}
-
-	/**
-	 * Where recovered bytes land. A front-end normally asks for {@link #SAME_SPACE} and lets
-	 * {@link TransferMaterializer} pick between carving the destination in place and mapping it
-	 * as an overlay; the two explicit members exist for a front-end that knows better (grm-chu).
-	 */
-	enum TargetKind {
-		/** In the destination's own address space; the materializer chooses how (grm-chu). */
-		SAME_SPACE,
-		/**
-		 * Force the in-place carve: initialize the destination range where it really lives, so
-		 * references resolve without bridging. Falls back to an overlay, with a log note, when
-		 * the destination cannot be carved.
-		 */
-		SAME_SPACE_INPLACE,
-		/** Force a dual-home byte-mapped overlay in its own address space (grm-1.7.1). */
-		SAME_SPACE_OVERLAY,
-		/** A separate Program in another processor's space (SPC700 upload, grm-1.7.3). */
-		SEPARATE_PROGRAM;
-	}
+record TransferSpec(Address srcStart, Address dstStart, int len, TransferTransform transform,
+		TransferTarget target, Address provenanceSite, Confidence confidence, boolean disassemble,
+		boolean makeFunction, Address entryPoint, Address jumpSite, String originLabel) {
 
 	/** Recovery confidence, which gates auto-disassembly. */
 	enum Confidence {

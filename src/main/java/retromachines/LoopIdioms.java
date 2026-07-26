@@ -20,12 +20,13 @@ import ghidra.program.model.address.AddressOutOfBoundsException;
 import ghidra.program.model.lang.Register;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
+import ghidra.program.model.listing.Program;
 import ghidra.program.model.scalar.Scalar;
 import ghidra.program.model.symbol.FlowType;
 
 /**
  * Shared 6502 loop-idiom recognition helpers used by the run-from-elsewhere family of
- * analyzers ({@link C64DecryptLoopAnalyzer}, grm-1.7.2; {@link C64CopyLoopAnalyzer},
+ * analyzers ({@link C64DecryptLoopAnalyzer}, grm-1.7.2; {@link CopyLoopAnalyzer},
  * grm-1.7.1). Both recognize the same down-counting indexed loop
  * ({@code LDX #n; loop: LDA base,X; ...; STA base,X; DEX; BPL loop}); they differ only in
  * the per-step transform (an EOR for decrypt, nothing for a verbatim copy) and in whether
@@ -93,6 +94,27 @@ final class LoopIdioms {
 		catch (AddressOutOfBoundsException e) {
 			return null;
 		}
+	}
+
+	/**
+	 * The space where {@code a} actually has bytes: its own if a block lives there, otherwise the
+	 * underlying physical (base) address, otherwise {@code a} unchanged.
+	 *
+	 * <p>{@link #indexedBase} necessarily builds its result in the <em>executing instruction's</em>
+	 * space, since that is all an operand scalar tells you. On a banked machine the copy loop runs
+	 * inside a bank overlay, so an NES {@code STA $6C90} executing from overlay {@code W8000_M3_B1}
+	 * yields {@code W8000_M3_B1:6c90} -- an offset outside that block's own {@code 8000-bfff}
+	 * range, where no block exists at all. Left alone it would defeat the in-place carve and
+	 * silently produce an overlay copy instead. PRG-RAM lives in the base space, and
+	 * {@code getPhysicalAddress()} maps an overlay address to the base one at the same offset, so
+	 * this lands the address where its bytes really are. A no-op wherever no overlay is involved.
+	 */
+	static Address resolve(Program program, Address a) {
+		if (a == null || program.getMemory().getBlock(a) != null) {
+			return a;
+		}
+		Address physical = a.getPhysicalAddress();
+		return program.getMemory().getBlock(physical) != null ? physical : a;
 	}
 
 	static Register indexReg(Instruction instr) {

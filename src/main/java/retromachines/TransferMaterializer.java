@@ -37,13 +37,15 @@ import ghidra.program.model.symbol.RefType;
 import ghidra.program.model.symbol.Reference;
 import ghidra.program.model.symbol.ReferenceManager;
 import ghidra.program.model.symbol.SourceType;
+import ghidra.util.exception.CancelledException;
 import ghidra.util.task.TaskMonitor;
 
 /**
  * Turns a recovered {@link TransferSpec} into real bytes in the Program -- the single,
- * front-end-agnostic materializer shared by the auto copy-loop recognizer, a later manual
- * command (grm-1.7.1.1), and the descriptor {@code copied_from} hint (grm-1.7.1.2), which runs
- * from the loader rather than an analyzer.
+ * front-end-agnostic materializer shared by the auto copy-loop recognizer
+ * ({@link CopyLoopAnalyzer}), the manual command (grm-1.7.1.1), and the descriptor
+ * {@code copied_from} hint ({@link DescriptorCopyHintAnalyzer}, grm-1.7.1.2). Front-ends do not
+ * call this directly -- they go through {@link RunFromElsewhere}, which validates their input.
  *
  * <p><b>Placement (grm-chu).</b> The destination of a run-from-elsewhere copy normally sits
  * inside a loader-created <em>uninitialized</em> block, so grm-1.7.1 originally materialized it
@@ -51,8 +53,11 @@ import ghidra.util.task.TaskMonitor;
  * {@code JSR $0073} resolves to {@code base:$0073}, never to an overlay copy, so every entering
  * reference had to be hand-bridged one site at a time. We now carve the destination out of its
  * containing block and initialize it <b>in place</b>, so the copied bytes live at the address
- * the CPU actually runs them from and references resolve with no bridging at all. The overlay
- * remains as the fallback for destinations that cannot be carved.
+ * the CPU actually runs them from and references resolve with no bridging at all. When nothing is
+ * mapped over the destination at all there is no block to carve <em>and</em> no conflict to avoid,
+ * so a plain new block goes in the base space instead (grm-1.7.6). The overlay remains as the
+ * fallback for destinations that can be neither carved nor freshly created -- already
+ * initialized, straddling two blocks, or themselves inside an overlay.
  *
  * <p>The carve is the pattern Ghidra core blesses -- {@code split} the containing block around
  * the destination, {@link Memory#convertToInitialized} the isolated piece, write the bytes --
@@ -87,16 +92,6 @@ final class TransferMaterializer {
 	private TransferMaterializer() {
 	}
 
-	/** Where a transfer's bytes actually ended up. */
-	enum Placement {
-		/** Carved out of the containing uninitialized block and initialized at the real address. */
-		IN_PLACE,
-		/** A byte-mapped overlay in its own address space (destination was not carvable). */
-		OVERLAY,
-		/** Nothing was materialized. */
-		SKIPPED;
-	}
-
 	/**
 	 * Materialize {@code spec}, honoring its disassembly directive, and cross-link the result to
 	 * the copy site with provenance.
@@ -108,38 +103,47 @@ final class TransferMaterializer {
 	 * @param log      import/analysis log for the cases that produce nothing
 	 * @return where the bytes landed
 	 */
-	static Placement materialize(Program program, TransferSpec spec, String category,
+	static TransferPlacement materialize(Program program, TransferSpec spec, String category,
 			TaskMonitor monitor, MessageLog log) {
 
-		if (spec.target() == TransferSpec.TargetKind.SEPARATE_PROGRAM) {
+		if (spec.target() == TransferTarget.SEPARATE_PROGRAM) {
 			log.appendMsg(category, "cross-processor transfers are not implemented (grm-1.7.3)");
-			return Placement.SKIPPED;
+			return TransferPlacement.SKIPPED;
 		}
-		if (spec.transform() != TransferSpec.Transform.IDENTITY) {
+		if (spec.transform() != TransferTransform.IDENTITY) {
 			// grm-1.7.1 recovers verbatim copies only; a transformed transfer has no computed
 			// bytes to place. (Carving is independently fenced to IDENTITY in canCarve.)
 			log.appendMsg(category,
 				"unsupported transform (" + spec.transform() + "); only IDENTITY is implemented");
-			return Placement.SKIPPED;
+			return TransferPlacement.SKIPPED;
 		}
 
 		String name = BLOCK_PREFIX + String.format("%04x", spec.dstStart().getOffset());
 		if (program.getMemory().getBlock(name) != null) {
-			return Placement.SKIPPED; // already recovered on a prior pass -- idempotent
+			return TransferPlacement.SKIPPED; // already recovered on a prior pass -- idempotent
 		}
 
 		// Gate 0: a snapshot needs readable source bytes. Produce nothing rather than invent them.
 		byte[] bytes = readSource(program, spec);
 		if (bytes == null) {
-			program.getBookmarkManager().setBookmark(spec.provenanceSite(), BookmarkType.WARNING,
-				category, "copy " + fmt(spec.srcStart()) + " -> " + fmt(spec.dstStart()) +
-					" not materialized: source bytes are uninitialized (supply the ROM image, " +
-					"then re-run this analyzer)");
-			return Placement.SKIPPED;
+			String why = "copy " + fmt(spec.srcStart()) + " -> " + fmt(spec.dstStart()) +
+				" not materialized: source bytes are uninitialized (supply the ROM image, " +
+				"then re-run)";
+			// A front-end with no instruction to annotate (a descriptor directive) gets a log note
+			// only -- which is exactly the "directive is ignored, log note only" rule of
+			// docs/smc-inplace-vs-overlay.md section 6.
+			if (spec.provenanceSite() != null) {
+				program.getBookmarkManager().setBookmark(spec.provenanceSite(),
+					BookmarkType.WARNING, category, why);
+			}
+			else {
+				log.appendMsg(category, why);
+			}
+			return TransferPlacement.SKIPPED;
 		}
 
-		MemoryBlock block;
-		Placement placement;
+		MemoryBlock block = null;
+		TransferPlacement placement;
 		if (canCarve(program, spec)) {
 			try {
 				block = carveInPlace(program, spec, name, bytes);
@@ -148,20 +152,24 @@ final class TransferMaterializer {
 			catch (LockException | MemoryAccessException | IllegalArgumentException e) {
 				log.appendMsg(category, name + ": in-place carve failed (" + e.getMessage() +
 					"); no block materialized");
-				return Placement.SKIPPED;
+				return TransferPlacement.SKIPPED;
 			}
-			placement = Placement.IN_PLACE;
+			placement = TransferPlacement.IN_PLACE;
+		}
+		else if (canCreateNewBlock(program, spec) &&
+			(block = createNewBlock(program, spec, name, bytes, monitor, log)) != null) {
+			placement = TransferPlacement.NEW_BLOCK;
 		}
 		else {
-			if (spec.target() == TransferSpec.TargetKind.SAME_SPACE_INPLACE) {
+			if (spec.target() == TransferTarget.SAME_SPACE_INPLACE) {
 				log.appendMsg(category, name + ": in-place placement was requested but the " +
 					"destination is not carvable; using a byte-mapped overlay instead");
 			}
 			block = createOverlay(program, spec, name, log);
 			if (block == null) {
-				return Placement.SKIPPED;
+				return TransferPlacement.SKIPPED;
 			}
-			placement = Placement.OVERLAY;
+			placement = TransferPlacement.OVERLAY;
 		}
 
 		recordProvenance(program, spec, block, category, placement);
@@ -170,7 +178,7 @@ final class TransferMaterializer {
 			return placement;
 		}
 		disassemble(program, spec, block, monitor);
-		if (placement == Placement.OVERLAY) {
+		if (placement == TransferPlacement.OVERLAY) {
 			// Only an overlay copy needs help: the entering jump's own operand already resolves
 			// to the in-place bytes, which is the whole point of carving.
 			bridgeJump(program, spec, block);
@@ -191,10 +199,10 @@ final class TransferMaterializer {
 		// The fence: only a verbatim copy into content-free memory may be overwritten with a
 		// synthetic fill. Kept here as well as at the top of materialize() so that unifying the
 		// decrypt transforms onto this materializer cannot silently enable carving.
-		if (spec.transform() != TransferSpec.Transform.IDENTITY) {
+		if (spec.transform() != TransferTransform.IDENTITY) {
 			return false;
 		}
-		if (spec.target() == TransferSpec.TargetKind.SAME_SPACE_OVERLAY) {
+		if (spec.target() == TransferTarget.SAME_SPACE_OVERLAY) {
 			return false; // front-end explicitly asked for the overlay representation
 		}
 		if (spec.dstStart().getAddressSpace().isOverlaySpace()) {
@@ -212,6 +220,32 @@ final class TransferMaterializer {
 		// stays navigable), and Memory.split rejects mapped blocks.
 		return !block.isInitialized() && !block.isMapped() &&
 			block.getType() == MemoryBlockType.DEFAULT;
+	}
+
+	/**
+	 * Whether nothing at all is mapped over the destination, so a plain new block can simply be
+	 * created there (grm-1.7.6). This is the case the descriptors do not cover -- an NES board
+	 * whose YAML declares no PRG-RAM region, say -- where {@link #canCarve} fails only because
+	 * there is no containing block to carve. Falling through to an overlay there would be the
+	 * worst of the three placements: with the range wholly unmapped there is no conflict to
+	 * avoid, so the bytes belong in the base space where references resolve for free.
+	 *
+	 * <p>The emptiness test is deliberately whole-range ({@link Memory#intersects}) rather than
+	 * {@code getBlock(dst) == null}: a range that starts in a hole but ends inside a block has no
+	 * block at its start yet cannot host a new one, and would throw on creation.
+	 */
+	private static boolean canCreateNewBlock(Program program, TransferSpec spec) {
+		if (spec.transform() != TransferTransform.IDENTITY) {
+			return false;
+		}
+		if (spec.target() == TransferTarget.SAME_SPACE_OVERLAY) {
+			return false;
+		}
+		if (spec.dstStart().getAddressSpace().isOverlaySpace()) {
+			return false;
+		}
+		Address dstEnd = endOf(spec);
+		return dstEnd != null && !program.getMemory().intersects(spec.dstStart(), dstEnd);
 	}
 
 	// ------------------------------------------------------------------
@@ -257,6 +291,35 @@ final class TransferMaterializer {
 	}
 
 	/**
+	 * Create a fresh, non-overlay initialized block at the destination and fill it, for the case
+	 * where nothing was mapped there at all. Preconditions are {@link #canCreateNewBlock}'s.
+	 * Returns null on failure, so the caller falls through to the overlay.
+	 *
+	 * <p>Holds the same carve-range == write-range invariant as {@link #carveInPlace}: the block
+	 * is exactly {@code len} bytes and every one of them is overwritten, so the zero fill
+	 * {@link Memory#createInitializedBlock} lays down never survives.
+	 */
+	private static MemoryBlock createNewBlock(Program program, TransferSpec spec, String name,
+			byte[] bytes, TaskMonitor monitor, MessageLog log) {
+		try {
+			Memory memory = program.getMemory();
+			MemoryBlock block = memory.createInitializedBlock(name, spec.dstStart(), spec.len(),
+				(byte) 0, monitor, false);
+			memory.setBytes(spec.dstStart(), bytes);
+			block.setComment("run-from-elsewhere copy of " + fmt(spec.srcStart()) + " (" +
+				spec.len() + " bytes); nothing was mapped here, so the copy is its own block");
+			block.setSourceName(fmt(spec.srcStart()));
+			return block;
+		}
+		catch (LockException | MemoryConflictException | AddressOverflowException |
+				MemoryAccessException | CancelledException | IllegalArgumentException e) {
+			log.appendMsg(name + ": could not create a block at the unmapped destination: " +
+				e.getMessage());
+			return null;
+		}
+	}
+
+	/**
 	 * The fallback representation: a dual-home byte-mapped overlay mapped 1:1 back at the source,
 	 * so the copy and its master stay the same live bytes. Used when the destination cannot be
 	 * carved -- it already holds real bytes, straddles blocks, or is itself in an overlay.
@@ -282,25 +345,34 @@ final class TransferMaterializer {
 	// Provenance, disassembly, reference bridging
 	// ------------------------------------------------------------------
 
-	/** Cross-link the copy site and the destination, whatever the placement. */
+	/**
+	 * Cross-link the copy site and the destination, whatever the placement. The destination
+	 * bookmark is unconditional; the site bookmark and EOL comment are skipped when the
+	 * front-end has no instruction to anchor them to (a descriptor directive).
+	 */
 	private static void recordProvenance(Program program, TransferSpec spec, MemoryBlock block,
-			String category, Placement placement) {
-		String where = placement == Placement.IN_PLACE
-				? "initialized in place as " + block.getName()
-				: "byte-mapped overlay " + block.getName();
+			String category, TransferPlacement placement) {
+		String where = switch (placement) {
+			case IN_PLACE -> "initialized in place as " + block.getName();
+			case NEW_BLOCK -> "initialized as new block " + block.getName() +
+				" (nothing was mapped here)";
+			default -> "byte-mapped overlay " + block.getName();
+		};
 		String kindNote = spec.disassemble()
 				? "; disassembled as code"
 				: "; materialized as data, not disassembled -- no call into range observed " +
 					"(may be data, or a deferred-call routine like CHRGET)";
 
 		BookmarkManager bm = program.getBookmarkManager();
-		bm.setBookmark(spec.provenanceSite(), BookmarkType.NOTE, category,
-			"copy loop -> " + block.getName() + ": " + spec.len() + " bytes " +
-				fmt(spec.srcStart()) + " -> " + fmt(spec.dstStart()) + kindNote);
+		if (spec.provenanceSite() != null) {
+			bm.setBookmark(spec.provenanceSite(), BookmarkType.NOTE, category,
+				spec.originLabel() + " -> " + block.getName() + ": " + spec.len() + " bytes " +
+					fmt(spec.srcStart()) + " -> " + fmt(spec.dstStart()) + kindNote);
+			program.getListing().setComment(spec.provenanceSite(), CommentType.EOL,
+				spec.originLabel() + " -> " + block.getName());
+		}
 		bm.setBookmark(spec.dstStart(), BookmarkType.NOTE, category,
 			"run-from-elsewhere copy of " + fmt(spec.srcStart()) + "; " + where);
-		program.getListing().setComment(spec.provenanceSite(), CommentType.EOL,
-			"copy loop -> " + block.getName());
 	}
 
 	/** Disassemble from the (possibly mid-range) entry point and optionally make it a function. */
