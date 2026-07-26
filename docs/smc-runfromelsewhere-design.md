@@ -153,6 +153,24 @@ source range is initialized and the destination is later executed (a `JMP`/`JSR`
 else candidate/WARN. This tier is **testable now with a self-contained PRG fixture**
 (source bytes live in the loaded PRG, hence initialized) — no ROM dependency.
 
+> **The evidence gate is strict, and that was settled by real ROMs (2026-07-25, grm-1.7.6).**
+> The first increment softened the rule above: it materialized *every* recognized copy and
+> withheld only *disassembly* when no jump into the range was found, on the theory that placing
+> bytes is always safe and CHRGET-shaped deferred calls would otherwise be missed. Widening the
+> recognizer past the C64 disproved it. This loop shape is simply how 6502 code moves **data**,
+> so on real NES cartridges the permissive rule snapshotted ordinary runtime buffers — Ironsword
+> materialized a block over the **stack page**, Mega Man three short blocks in work RAM, SMB3 one
+> at `$0715` — each fragmenting the RAM block and marking a buffer that changes every frame as
+> "initialized" from one meaningless sample. A data copy's destination holds nothing fixed, so
+> there is nothing honest to put there. The recognizer now materializes **only** with a
+> jump into the range, and otherwise leaves a NOTE bookmark recording what it saw.
+>
+> What makes the strict rule affordable is that the deferred-call case it was protecting now has
+> its own front-end: CHRGET is a §4 `copied_from` directive, where the board's author *states*
+> that the payload is code, and a human who spots a missed copy has the manual transfer script
+> (grm-1.7.1.1). Evidence-free materialization was the auto recognizer covering for front-ends
+> that did not exist yet.
+
 ## 7. Recommended sequencing
 
 1. **grm-mbm (ROM loading)** — unblocks the canonical Tier-A CHRGET dual-home and is

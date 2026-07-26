@@ -672,12 +672,48 @@ public class VerifyBankTest extends GhidraScript {
 			addr(COPY_ENTRY), addr(0x200b));
 	}
 
+	/**
+	 * The evidence gate: this fixture's loop ends in RTS with nothing jumping into $C100, so the
+	 * recognizer must place NOTHING and say why. It used to assert the opposite -- a materialized
+	 * COPY_c100 left undisassembled -- until real NES cartridges showed that materializing on the
+	 * loop shape alone snapshots ordinary runtime buffers (Ironsword over the stack page, Mega Man
+	 * in work RAM). What is asserted here is therefore the absence of a block AND the absence of
+	 * collateral damage: RAM_C000 must still be one whole uninitialized block, not split around a
+	 * carve that should never have happened.
+	 */
 	private void checkCopyData() {
-		verifyCopy("copydata", "COPY_c100", 0xc100, 0x200c,
-			new byte[] {0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18}, false, true, true,
-			new Neighbor[] {new Neighbor("RAM_C000", 0xc000, 0xc0ff),
-				new Neighbor("RAM_C000_C108", 0xc108, 0xcfff)},
-			addr(COPY_ENTRY), null);
+		MemoryBlock copy = currentProgram.getMemory().getBlock("COPY_c100");
+		MemoryBlock ram = currentProgram.getMemory().getBlock(addr(0xc000));
+		String ramLine = ram == null ? "<none>"
+				: ram.getName() + " " + fmt(ram.getStart()) + "-" + fmt(ram.getEnd()) +
+					" init=" + ram.isInitialized();
+		boolean intact = ram != null && "RAM_C000".equals(ram.getName()) &&
+			ram.getStart().getOffset() == 0xc000 && ram.getEnd().getOffset() == 0xcfff &&
+			!ram.isInitialized();
+
+		Bookmark mark = null;
+		for (Bookmark bm : currentProgram.getBookmarkManager().getBookmarks(addr(COPY_ENTRY))) {
+			if (COPY_CATEGORY.equals(bm.getCategory())) {
+				mark = bm;
+				break;
+			}
+		}
+		String note = mark == null ? "<none>" : mark.getComment();
+
+		println("=== BANKDUMP BEGIN ===");
+		println("COPYBLOCK " + (copy == null ? "<none>" : copy.getName()));
+		println("NEIGHBORS " + ramLine);
+		println("BOOKMARK " + (mark == null ? "<none>" : mark.getTypeString()));
+		println("DECLINED " + (note.contains("NOT materialized") ? "yes" : "no"));
+		println("=== BANKDUMP END ===");
+
+		criterion("copydata-not-materialized", copy == null,
+			"block=" + (copy == null ? "<none>" : copy.getName()));
+		criterion("copydata-destination-block-unsplit", intact, "ram=" + ramLine);
+		// Recognized-but-declined must still be visible to the analyst, or a real run-from-
+		// elsewhere copy the recognizer saw and skipped would vanish without trace.
+		criterion("copydata-declined-bookmark",
+			mark != null && note.contains("NOT materialized"), "bm=" + note);
 	}
 
 	private void checkCopyOverlay() {

@@ -50,11 +50,26 @@ import java.util.Set;
  *       JMP dst       ; optional: a jump INTO the copy proves it runs as code -> AUTO
  * </pre>
  *
- * <p><b>Materialize is not disassemble.</b> A copy can carry data or code, so the destination
- * bytes are always placed (safe, and makes them visible), but the payload is disassembled only
- * when a {@code JMP}/{@code JSR} into the range proves it is code. A copy with no such call
- * (e.g. CHRGET: copied at boot, invoked much later) is materialized as data and left as bytes,
- * since disassembling data would poison analysis.
+ * <p><b>The evidence gate: no jump into the range, no materialization.</b> A recognized loop is
+ * materialized only when a {@code JMP}/{@code JSR} into the destination proves the payload is
+ * code. Otherwise the loop gets a NOTE bookmark saying what was seen and nothing is placed.
+ *
+ * <p>This is deliberately stricter than the first increment, which placed every recognized copy's
+ * bytes and merely withheld <em>disassembly</em> without such proof. Real ROMs settled it: this
+ * idiom is how 6502 code moves <em>data</em>, not just code, so on real NES cartridges the
+ * permissive rule snapshotted ordinary runtime buffers -- Ironsword materialized a block over the
+ * <em>stack page</em>, Mega Man three short blocks in work RAM -- each one fragmenting the RAM
+ * block and marking a buffer whose contents change every frame as "initialized" from a single
+ * meaningless sample. A data copy's destination genuinely holds nothing fixed, so there is nothing
+ * honest to place there.
+ *
+ * <p>The permissive rule existed for one case: CHRGET, copied at boot and called from arbitrarily
+ * far away, so no jump sits near the loop. That case now has its own front-end -- a descriptor
+ * {@link DescriptorCopyHintAnalyzer} directive, where the board's author states outright that the
+ * payload is code -- which is what makes the strict rule affordable here. A human who spots a
+ * missed copy has the manual script for the same reason. See
+ * {@code docs/smc-runfromelsewhere-design.md} section 6, whose "apply when ... the destination is
+ * later executed; else candidate/WARN" this restores.
  *
  * <p>Where the bytes land -- carved into the destination's own block, a fresh block where nothing
  * is mapped, or a byte-mapped overlay when neither is possible -- is
@@ -169,16 +184,24 @@ public class CopyLoopAnalyzer extends AbstractAnalyzer {
 		}
 		int len = n + 1;
 
+		// A JMP/JSR into the destination is the only evidence this loop moves CODE, and without
+		// it we do not materialize at all -- see the "evidence gate" note in the class javadoc.
 		Address jumpInto = LoopIdioms.findJumpIntoRange(listing, branch, dst, len);
-		// A jump into the range is the only evidence that the payload is code; without it the
-		// bytes are placed but left as data, since disassembling data would poison analysis.
-		boolean code = jumpInto != null;
+		if (jumpInto == null) {
+			program.getBookmarkManager().setBookmark(init.getAddress(), BookmarkType.NOTE,
+				CATEGORY, "copy-shaped loop " + TransferMaterializer.fmt(src) + " -> " +
+					TransferMaterializer.fmt(dst) + " (" + len + " bytes) recognized but NOT " +
+					"materialized: nothing jumps into the destination, so there is no evidence " +
+					"it holds code. If it does, materialize it with the Run From Elsewhere " +
+					"Transfer script or a descriptor copied_from hint.");
+			return null;
+		}
 
 		return RunFromElsewhere.request(src, dst, len)
 				.target(TransferTarget.SAME_SPACE)
 				.provenanceSite(init.getAddress())
-				.disassemble(code)
-				.makeFunction(code)
+				.disassemble(true)
+				.makeFunction(true)
 				.jumpSite(jumpInto)
 				.originLabel("copy loop");
 	}

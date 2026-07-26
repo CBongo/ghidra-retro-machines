@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Hand-assembles the C64CopyLoopAnalyzer regression PRGs (bead grm-1.7.1, extended by grm-chu).
+"""Hand-assembles the CopyLoopAnalyzer regression PRGs (bead grm-1.7.1, extended by grm-chu).
 
 Usage: mkcopytest.py <output-dir>
 
-Writes three PRGs that exercise the run-from-elsewhere recognizer's materialize/disassemble
-split AND the grm-chu placement policy (carve the destination in place vs. fall back to a
-byte-mapped overlay):
+Writes three PRGs that exercise the run-from-elsewhere recognizer's EVIDENCE GATE (does a
+jump into the destination prove the payload is code?) AND the grm-chu placement policy
+(carve the destination in place vs. fall back to a byte-mapped overlay):
 
   copyloop.prg    -- a verbatim indexed copy loop into the free, uninitialized RAM_C000
                       block, ENDING WITH A JUMP into the destination, proving the copied
@@ -15,9 +15,14 @@ byte-mapped overlay):
                       directly, no bridging.
 
   copydata.prg    -- the SAME shape but with NO jump into the destination (it just
-                      RTSes). Insufficient evidence the bytes are code, so the destination
-                      is still carved in place (COPY_c100, interior of RAM_C000) but left
-                      as DATA -- not disassembled.
+                      RTSes). No evidence the bytes are code, so NOTHING is materialized:
+                      the loop gets a NOTE bookmark explaining the refusal and RAM_C000 is
+                      left whole and uninitialized. (Until grm-1.7.6 this case carved
+                      COPY_c100 anyway and merely withheld disassembly; real NES cartridges
+                      showed that snapshots ordinary runtime buffers -- this idiom is how
+                      6502 moves DATA, not just code. A copy whose payload really is code
+                      but has no nearby jump, like CHRGET, is now the descriptor
+                      copied_from directive's job, or the manual script's.)
 
   copyoverlay.prg -- the destination lands INSIDE the loaded PRG image itself (already
                       initialized real file bytes), so the grm-chu in-place precondition
