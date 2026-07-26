@@ -76,4 +76,22 @@ public class BundledLanguageVisibilityTest extends AbstractBundledLanguageTest {
 		assertEquals("STA", sta.getMnemonicString());
 		assertEquals("PORT", sta.getDefaultOperandRepresentation(0));
 	}
+
+	@Test
+	public void absoluteAccessToZeroPageOneAlsoRoutesThroughThePort() throws Exception {
+		// The same on-die register reached the long way: LDA $0001 (AD 01 00) rather than
+		// LDA $01 (A5 01). The hardware decodes both to the identical register, but only
+		// the zero-page form routed until bead grm-azg -- assemblers fold to zero page, so
+		// the gap stayed hidden until generated and self-modifying code hit it.
+		builder.setBytes("0x8000", "ad 01 00", true); // LDA $0001
+		builder.setBytes("0x8003", "8d 00 00", true); // STA $0000
+
+		Instruction lda = program.getListing().getInstructionAt(builder.addr("0x8000"));
+		assertNotNull("LDA $0001 did not disassemble", lda);
+		assertEquals("PORT", lda.getDefaultOperandRepresentation(0));
+
+		Instruction sta = program.getListing().getInstructionAt(builder.addr("0x8003"));
+		assertNotNull("STA $0000 did not disassemble", sta);
+		assertEquals("PORTDDR", sta.getDefaultOperandRepresentation(0));
+	}
 }

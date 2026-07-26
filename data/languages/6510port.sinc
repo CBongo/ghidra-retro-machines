@@ -1,0 +1,51 @@
+# MOS 6510 on-die I/O port: the one architectural addition the 6510 makes to the 6502.
+# It is accessed through the two lowest memory addresses ($00 = data-direction register,
+# $01 = data register). Decode and semantics are otherwise byte-for-byte identical to the
+# stock 6502, so everything else lives in 6502core.sinc and this file layers the port on
+# top. @include'd after 6502core.sinc; never compiled on its own.
+#
+# SYSTEM NEUTRALITY (bead grm-bk6, per the 2026-07-07 design correction): the port is on
+# the CPU die, so modeling it as a register belongs in the *language*. But what the port
+# bits DO is external board wiring, not CPU architecture -- on the C64 bits 0-2 drive the
+# PLA (LORAM/HIRAM/CHAREN bank the memory map); on the 6510T in the 1551 disk drive the
+# identical port drives drive-control lines. So this language names the port ONLY
+# anonymously (PORT / PORTDDR) and encodes NO banking meaning, no LORAM/HIRAM/CHAREN, no
+# bank-state context register. Per-system interpretation of the port bits lives in the
+# machine descriptor and the bank analyzer, never here.
+#
+# The specialized operand constructors below route DIRECT accesses to $00/$01 through
+# these registers instead of RAM, so port reads/writes are ordinary register dataflow:
+# STA $01 becomes PORT = A (a register COPY, not a memory store), and the C64 bank-switch
+# idiom LDA $01 / AND #$F8 / ORA #$05 / STA $01 operates entirely on the PORT register --
+# exactly what SymbolicPropogator and the bank analyzer need.
+#
+# The routing constructors' DISPLAY names are quoted string literals ("PORT"/"PORTDDR"),
+# not the bare register symbols: an unquoted PORT in a constructor's display position is
+# read by sleigh as an operand reference, which breaks export-size inference for the whole
+# OP1/OP2 table. Quoted, they are literal mnemonics and the constructors cleanly export the
+# registers (a static register export coexists with the tables' memory exports, exactly as
+# stock 6502's `OP2: A` accumulator constructor already does). They also win over the
+# generic `OP1: imm8` / `OP1: imm16` constructors in 6502core.sinc by sleigh's
+# most-constrained-first resolution.
+define register offset=0x40 size=1 [ PORTDDR PORT ];
+
+# The routing rule is "statically-known target routes, runtime-computed target does not".
+#
+# Zero page: LDA $01 (A5 01) / STA $00 (85 00).
+OP1: "PORTDDR"  is bbb=1; imm8=0x00		{ export PORTDDR; }
+OP1: "PORT"     is bbb=1; imm8=0x01		{ export PORT; }
+# Absolute: the same two locations reached the long way, LDA $0001 (AD 01 00). The
+# hardware decodes $0001 and $01 to the identical on-die register, and real code does emit
+# the absolute form, so it must route too.
+OP1: "PORTDDR"  is bbb=3; imm16=0x0000	{ export PORTDDR; }
+OP1: "PORT"     is bbb=3; imm16=0x0001	{ export PORT; }
+
+OP2: "PORTDDR"  is bbb=1; imm8=0x00		{ export PORTDDR; }
+OP2: "PORT"     is bbb=1; imm8=0x01		{ export PORT; }
+OP2: "PORTDDR"  is bbb=3; imm16=0x0000	{ export PORTDDR; }
+OP2: "PORT"     is bbb=3; imm16=0x0001	{ export PORT; }
+
+# Indexed modes (zp,X / abs,X / abs,Y / (zp,X) / (zp),Y) intentionally stay memory: their
+# effective address is computed at runtime from an index register, so the constructor
+# cannot know statically that it lands on $00/$01. Modeling them as PORT would be a lie in
+# every case where the index is non-zero.
