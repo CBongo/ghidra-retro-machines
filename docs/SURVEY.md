@@ -63,6 +63,15 @@ merges external PRs).
   bundle a 6510 language in the extension (extensions may ship `data/languages`;
   ghidra-c64helpers proves it). The 6510 language is also the natural home for the
   bank-context register, since `$00`/`$01` are on-die.
+  > **Since acted on, and partly superseded.** The language was bundled in `grm-bk6`
+  > (`6510:LE:16:default`), and `grm-azg` added the opt-in `6510:LE:16:undoc` /
+  > `6502:LE:16:undoc` variants carrying the undocumented NMOS opcodes. But the
+  > bank-context idea above was **rejected** by the 2026-07-07 design correction: the port
+  > is on the die, so modeling it as a register belongs in the language, yet what its bits
+  > *mean* is board wiring (C64 PLA vs. 1551 drive control). The language therefore names
+  > the port anonymously (`PORT`/`PORTDDR`) and encodes no banking meaning at all;
+  > per-system interpretation lives in the machine descriptor and bank analyzer. See the
+  > header of `data/languages/6510port.sinc`.
 - Loader API: `ghidra.app.util.opinion` — `Loader` → `AbstractProgramLoader` →
   `AbstractProgramWrapperLoader`. Closest templates: `BinaryLoader`,
   `MotorolaHexLoader`. No console loaders in-tree.

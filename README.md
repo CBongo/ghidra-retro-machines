@@ -66,6 +66,19 @@ being re-executed by hand across the community — this extension automates it.
   bytes present.
 - **Emulators as oracle**: hardware facts are cross-checked against accuracy-focused
   emulators (VICE, Mesen2) — validated design, not transcribed folklore.
+- **A real 6510 language**: Ghidra ships no 6510, so the extension bundles one
+  (`6510:LE:16:default`). It models the on-die I/O port at `$00`/`$01` as registers, so the
+  C64 bank-switch idiom `LDA $01 / AND #$F8 / ORA #$05 / STA $01` becomes ordinary register
+  dataflow that the bank analyzer can follow. The port is named anonymously and carries no
+  banking meaning — what its bits *do* is board wiring, so that lives in the machine
+  descriptor.
+- **Undocumented opcodes, opt-in**: sibling `6510:LE:16:undoc` and `6502:LE:16:undoc`
+  variants decode the undocumented (commonly "illegal") NMOS opcodes — `SLO`, `LAX`, `SAX`,
+  `DCP` and the rest — that demos, packers and music drivers use as load-bearing
+  instructions. Deliberately not the default: once all 256 opcode bytes decode, speculative
+  disassembly runs *through* data tables instead of stopping at an invalid byte, which costs
+  more than it gains on anything that doesn't use them. Pick the variant in the import
+  dialog's language list, or pass `-processor 6510:LE:16:undoc` headlessly.
 
 ## Roadmap
 
@@ -169,4 +182,13 @@ are the machines whose music drivers that project reverses.
 
 ## License
 
-[Apache 2.0](LICENSE)
+[Apache 2.0](LICENSE). Third-party material bundled here is recorded in
+[NOTICE](NOTICE) — currently the undocumented-opcode SLEIGH semantics in
+`data/languages/6510_illegal.sinc`, vendored from
+[anarkiwi/deity-informant](https://github.com/anarkiwi/deity-informant) (also Apache 2.0)
+and kept byte-identical to upstream so re-syncs stay a clean diff.
+
+Note that project, and [grue74/ghidra-c64helpers](https://github.com/grue74/ghidra-c64helpers),
+each also publish a language with the id `6510:LE:16:default`. Ghidra requires language ids
+to be unique, so installing two of them at once will conflict; that is the only situation in
+which it matters.
