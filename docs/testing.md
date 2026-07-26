@@ -44,7 +44,7 @@ This is the load-bearing suite. It lives in `tools/banktest/` and works like thi
    post-script.
 4. **`VerifyBankTest.java`** asserts per-fixture `CRITERION` checks and emits a normalized
    behavior **dump** (blocks, overlay references, switch comments, bookmarks) that is diffed
-   against the committed golden in `tools/banktest/expected/<name>.dump` (31 goldens today).
+   against the committed golden in `tools/banktest/expected/<name>.dump` (38 goldens today).
 
 Run the full gate before every commit and for issue acceptance:
 

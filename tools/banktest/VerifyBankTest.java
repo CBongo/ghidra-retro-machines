@@ -154,6 +154,21 @@ public class VerifyBankTest extends GhidraScript {
 			return;
 		}
 
+		// The NES copy fixture takes the same focused COPYBLOCK dump as the C64 ones above
+		// (not the NES bank dump()), so it returns here rather than falling into the
+		// nes* chain below.
+		if (name.contains("nescopytest")) {
+			checkNesCopyLoop();
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
+
+		if (name.contains("rfemanual")) {
+			checkRfeManual();
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
+
 		if (name.contains("romload")) {
 			checkRomLoad();
 			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
@@ -640,7 +655,8 @@ public class VerifyBankTest extends GhidraScript {
 	private void checkCopyLoop() {
 		verifyCopy("copyloop", "COPY_c000", 0xc000, 0x200e,
 			new byte[] {1, 2, 3, 4, 5, 6, 7, 8}, true, true, true,
-			new Neighbor[] {new Neighbor("RAM_C000_C008", 0xc008, 0xcfff)}, 0x200bL);
+			new Neighbor[] {new Neighbor("RAM_C000_C008", 0xc008, 0xcfff)},
+			addr(COPY_ENTRY), addr(0x200b));
 	}
 
 	private void checkCopyData() {
@@ -648,14 +664,68 @@ public class VerifyBankTest extends GhidraScript {
 			new byte[] {0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18}, false, true, true,
 			new Neighbor[] {new Neighbor("RAM_C000", 0xc000, 0xc0ff),
 				new Neighbor("RAM_C000_C108", 0xc108, 0xcfff)},
-			null);
+			addr(COPY_ENTRY), null);
 	}
 
 	private void checkCopyOverlay() {
 		verifyCopy("copyoverlay", "COPY_200e", 0x200e, 0x2016,
 			new byte[] {(byte) 0x91, (byte) 0x92, (byte) 0x93, (byte) 0x94, (byte) 0x95,
 				(byte) 0x96, (byte) 0x97, (byte) 0x98},
-			true, false, false, new Neighbor[0], 0x200bL);
+			true, false, false, new Neighbor[0], addr(COPY_ENTRY), addr(0x200b));
+	}
+
+	// ------------------------------------------------------------------
+	// CopyLoopAnalyzer on an NES ROM with bank overlays (bead grm-1.7.6)
+	// ------------------------------------------------------------------
+
+	// Fixture contract from mknescopytest.py (nescopytest.nes, MMC1 / iNES mapper 1): RESET
+	// runs in the fixed WC000 window, commits prg_bank=1 through the unrolled serial-shift
+	// chain, and JMPs into $8000 -- which BoardBankAnalyzer retargets into the bank-1 overlay
+	// W8000_M3_B1. The copy loop therefore EXECUTES inside a bank overlay:
+	//   W8000_M3_B1::8000  LDX #$04 / LDA $8010,X / STA $6C90,X / DEX / BPL / JMP $6C90
+	// Its source ($8010) is inside that same overlay, but its destination ($6C90) is the
+	// base-space PRG_RAM block nes-mmc1.yaml declares at $6000-$7FFF -- an offset OUTSIDE the
+	// executing overlay's own $8000-$BFFF range. This fixture is the only automated coverage
+	// of grm-1.7.6's widened CopyLoopAnalyzer gate (a descriptor + a 6502/6510 language rather
+	// than "the C64 loader ran"), and the only place the destination address of a recognized
+	// copy has to cross out of an overlay space at all.
+	//
+	// That crossing re-homes itself, which is why no code here does it: Ghidra's
+	// OverlayAddressSpace.getAddress(long) (:128-134) falls back to the overlayed base space
+	// whenever contains(offset) is false, and ProgramOverlayAddressSpace.contains (:90-98) tests
+	// the overlay's defined block set -- so LoopIdioms.indexedBase already yields RAM:6c90. The
+	// "nescopy-in-base-space" criterion below is the regression guard for that contract: if the
+	// destination ever stayed in the executing overlay, canCarve would refuse it (dstStart in an
+	// overlay space) and the copy would silently degrade to a byte-mapped overlay instead of the
+	// in-place carve asserted here.
+	private static final String NESCOPY_OVERLAY = "W8000_M3_B1";
+	private static final long NESCOPY_ENTRY = 0x8000;   // the LDX #imm -- provenance anchor
+	private static final long NESCOPY_JUMP = 0x800b;    // the JMP into the copied range
+	private static final long NESCOPY_SRC = 0x8010;
+	private static final long NESCOPY_DST = 0x6c90;
+
+	private void checkNesCopyLoop() {
+		// PRG_RAM ($6000-$7FFF) is uninitialized and the destination sits in its interior, so
+		// carveInPlace splits a leftover fragment off each side: the lower piece keeps the
+		// original name, the upper one is renamed "<orig>_<start>".
+		verifyCopy("nescopy", "COPY_6c90", NESCOPY_DST, NESCOPY_SRC,
+			new byte[] {(byte) 0xa9, (byte) 0x5a, (byte) 0x85, (byte) 0x10, (byte) 0x60},
+			true, true, true,
+			new Neighbor[] {new Neighbor("PRG_RAM", 0x6000, 0x6c8f),
+				new Neighbor("PRG_RAM_6C95", 0x6c95, 0x7fff)},
+			overlayAddr(NESCOPY_OVERLAY, NESCOPY_ENTRY),
+			overlayAddr(NESCOPY_OVERLAY, NESCOPY_JUMP));
+
+		// The recognizer only ever sees this loop if the retargeted JMP $8000 actually put
+		// disassembled instructions in the bank-1 overlay; assert that directly so a
+		// regression there fails as "the loop never ran from an overlay" rather than as a
+		// confusing cascade of missing-copy failures.
+		Address loopTop = overlayAddr(NESCOPY_OVERLAY, NESCOPY_ENTRY);
+		Instruction ldx = currentProgram.getListing().getInstructionAt(loopTop);
+		criterion("nescopy-loop-runs-from-overlay",
+			ldx != null && loopTop.getAddressSpace().isOverlaySpace(),
+			"space=" + loopTop.getAddressSpace().getName() + " instr=" +
+				(ldx == null ? "<none>" : ldx.getMnemonicString()));
 	}
 
 	/** Shared assertions for a recovered verbatim copy under the grm-chu placement policy: the
@@ -664,10 +734,18 @@ public class VerifyBankTest extends GhidraScript {
 	 *  provenance bookmark + EOL comment cross-link the copy loop, any carved leftover fragments
 	 *  are present and still uninitialized, the payload is disassembled only when the copy is
 	 *  proven code (AUTO), and -- the point of grm-chu -- the entering JMP's primary reference
-	 *  actually resolves into the materialized copy, wherever it landed. */
+	 *  actually resolves into the materialized copy, wherever it landed.
+	 *
+	 *  <p>{@code entry} (the loop-counter init the provenance bookmark/comment hang off) and
+	 *  {@code jumpSite} are full {@link Address}es, not base-space offsets: on the NES fixture
+	 *  the loop executes inside a bank overlay, so both live in an overlay space (grm-1.7.6).
+	 *  {@code srcStart} stays an offset -- {@code recordedSource} already strips the space
+	 *  prefix off the recorded provenance, which is what makes the same comparison work for an
+	 *  overlay source. */
 	private void verifyCopy(String idPrefix, String blockName, long dstStart, long srcStart,
 			byte[] expected, boolean expectDisassembled, boolean expectInBaseSpace,
-			boolean expectBlockInitialized, Neighbor[] expectedNeighbors, Long jumpSite) {
+			boolean expectBlockInitialized, Neighbor[] expectedNeighbors, Address entry,
+			Address jumpSite) {
 		MemoryBlock block = currentProgram.getMemory().getBlock(blockName);
 		boolean inBaseSpace = block != null && block.getStart().getAddressSpace()
 				.equals(currentProgram.getAddressFactory().getDefaultAddressSpace());
@@ -693,17 +771,18 @@ public class VerifyBankTest extends GhidraScript {
 		String source = recordedSource(block, inBaseSpace);
 
 		Bookmark mark = null;
-		for (Bookmark bm : currentProgram.getBookmarkManager().getBookmarks(addr(COPY_ENTRY))) {
+		for (Bookmark bm : currentProgram.getBookmarkManager().getBookmarks(entry)) {
 			if (COPY_CATEGORY.equals(bm.getCategory())) {
 				mark = bm;
 				break;
 			}
 		}
-		String comment = eol(COPY_ENTRY);
+		String c = currentProgram.getListing().getComment(CommentType.EOL, entry);
+		String comment = c == null ? "" : c;
 		boolean disassembled =
 			block != null && currentProgram.getListing().getInstructionAt(block.getStart()) != null;
 
-		Reference callref = jumpSite == null ? null : primaryReferenceFrom(addr(jumpSite));
+		Reference callref = jumpSite == null ? null : primaryReferenceFrom(jumpSite);
 		String callrefLine = callref == null ? "<none>"
 				: callref.getToAddress().getAddressSpace().getName() + ":" +
 					fmt(callref.getToAddress());
@@ -768,6 +847,104 @@ public class VerifyBankTest extends GhidraScript {
 				: callref != null && block != null && callref.getToAddress().equals(block.getStart()) &&
 					currentProgram.getListing().getInstructionAt(callref.getToAddress()) != null;
 		criterion(idPrefix + "-callref-hits-code", callrefOk, "callref=" + callrefLine);
+	}
+
+	// ------------------------------------------------------------------
+	// Manual run-from-elsewhere front-end (bead grm-1.7.1.1)
+	// ------------------------------------------------------------------
+
+	// Fixture: copyloop.prg under the name rfemanual.prg, imported with
+	// ghidra_scripts/RunFromElsewhereTransfer.java as a -preScript
+	// ("src:200e dst:c800 len:8 disassemble:false"). So the SAME image produces two copies from
+	// two different front-ends: the script's hand-specified $200E -> $C800 (this check) and, once
+	// auto-analysis runs, CopyLoopAnalyzer's recognized $200E -> $C000 (checkCopyLoop's subject).
+	// This is the only coverage the manual front-ends have; the GUI plugin adapter cannot be
+	// tested at all (docs/testing.md: no AbstractGuiTest/TestEnv, and this harness is headless),
+	// which is why everything testable lives behind RunFromElsewhere.
+	private static final String MANUAL_CATEGORY = "RunFromElsewhere";
+
+	// Deliberately NOT verifyCopy(): that helper asserts a provenance bookmark and EOL comment at
+	// the copy site ($2000) and a resolved entering call reference, and a manual transfer has
+	// neither -- it is specified by a human with no instruction to anchor to, so
+	// TransferMaterializer.recordProvenance emits only the destination bookmark. Contorting
+	// verifyCopy to make those optional would weaken it for the three fixtures it does fit.
+	private void checkRfeManual() {
+		final String blockName = "COPY_c800";
+		final long dstStart = 0xc800;
+		byte[] expected = {1, 2, 3, 4, 5, 6, 7, 8};   // copyloop.prg's $200E payload
+
+		MemoryBlock block = currentProgram.getMemory().getBlock(blockName);
+		boolean inBaseSpace = block != null && block.getStart().getAddressSpace()
+				.equals(currentProgram.getAddressFactory().getDefaultAddressSpace());
+
+		byte[] recovered = null;
+		String copiedLine = "<none>";
+		if (block != null) {
+			try {
+				byte[] buf = new byte[expected.length];
+				block.getBytes(block.getStart(), buf);
+				recovered = buf;
+				copiedLine = hex(buf);
+			}
+			catch (Exception e) {
+				copiedLine = "<unreadable>";
+			}
+		}
+
+		// Provenance for a manual transfer is the destination bookmark alone, filed under the
+		// category the script passes ("RunFromElsewhere") -- which is what distinguishes it from
+		// the recognizer's copy in the very same program.
+		Bookmark mark = null;
+		for (Bookmark bm : currentProgram.getBookmarkManager().getBookmarks(addr(dstStart))) {
+			if (MANUAL_CATEGORY.equals(bm.getCategory())) {
+				mark = bm;
+				break;
+			}
+		}
+		boolean disassembled =
+			block != null && currentProgram.getListing().getInstructionAt(block.getStart()) != null;
+
+		// The auto recognizer's own copy, carved out of what the manual carve left of RAM_C000.
+		MemoryBlock autoBlock = currentProgram.getMemory().getBlock("COPY_c000");
+
+		println("=== BANKDUMP BEGIN ===");
+		println("MANUALBLOCK " + (block == null ? "<missing>"
+				: block.getName() + " " + fmt(block.getStart()) + "-" + fmt(block.getEnd()) +
+					" init=" + block.isInitialized()));
+		println("SPACE " + (block == null ? "<none>" : block.getStart().getAddressSpace().getName()));
+		println("SOURCE " + recordedSource(block, inBaseSpace));
+		println("COPIED " + copiedLine);
+		println("DISASM " + disassembled);
+		println("BOOKMARK " + (mark == null ? "<none>"
+				: mark.getTypeString() + " @" + fmt(mark.getAddress())));
+		// $2000's EOL comment belongs to the RECOGNIZER's copy (-> COPY_c000), not this one: a
+		// manual transfer names no provenance site, so it writes no site comment at all. Dumped
+		// to keep that visible -- if this line ever mentions COPY_c800, the manual front-end has
+		// started annotating an instruction it was never told about.
+		println("SITECOMMENT " + eol(COPY_ENTRY));
+		println("AUTOBLOCK " + (autoBlock == null ? "<missing>"
+				: autoBlock.getName() + " " + fmt(autoBlock.getStart()) + "-" +
+					fmt(autoBlock.getEnd()) + " init=" + autoBlock.isInitialized()));
+		println("=== BANKDUMP END ===");
+
+		criterion("rfemanual-block-exists",
+			block != null && block.getStart().getOffset() == dstStart,
+			"block=" + blockName + " start=" + (block == null ? "<missing>" : fmt(block.getStart())));
+		criterion("rfemanual-block-initialized", block != null && block.isInitialized(),
+			"initialized=" + (block == null ? "<missing>" : block.isInitialized()));
+		criterion("rfemanual-in-base-space", inBaseSpace, "inBaseSpace=" + inBaseSpace);
+		criterion("rfemanual-copied-bytes", Arrays.equals(recovered, expected),
+			"bytes=" + copiedLine);
+		criterion("rfemanual-note-bookmark", mark != null && "Note".equals(mark.getTypeString()),
+			"bm=" + (mark == null ? "<none>" : mark.getTypeString()));
+		// disassemble:false was passed, and a manual transfer supplies no jump site, so the
+		// payload must stay data -- the script must not quietly upgrade it.
+		criterion("rfemanual-not-disassembled", !disassembled, "disassembled=" + disassembled);
+		// Both front-ends materialized into the same program without stepping on each other.
+		criterion("rfemanual-auto-copy-coexists",
+			autoBlock != null && autoBlock.isInitialized() &&
+				autoBlock.getStart().getOffset() == 0xc000,
+			"auto=" + (autoBlock == null ? "<missing>" : fmt(autoBlock.getStart())));
 	}
 
 	/** The source address a materialized copy recorded, however it recorded it: an overlay's

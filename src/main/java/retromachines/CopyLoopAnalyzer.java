@@ -146,10 +146,6 @@ public class CopyLoopAnalyzer extends AbstractAnalyzer {
 		if (src.equals(dst) || !idx.equals(staIdx)) {
 			return null;
 		}
-		// Both operands were built in the executing instruction's space, which is a bank overlay
-		// on a banked machine; re-home them where their bytes actually live (grm-1.7.6).
-		src = LoopIdioms.resolve(program, src);
-		dst = LoopIdioms.resolve(program, dst);
 
 		// Index step + conditional back-branch to the loop head (the LDA).
 		Instruction step = listing.getInstructionAfter(sta.getAddress());

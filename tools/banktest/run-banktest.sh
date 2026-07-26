@@ -191,8 +191,8 @@ normalize_opts() {
 }
 
 cache_key() {
-	# args: fixture loader extra  ->  sha256 key on stdout, or empty if disabled
-	local fixture="$1" loader="$2" extra="$3"
+	# args: fixture loader extra hargs  ->  sha256 key on stdout, or empty if disabled
+	local fixture="$1" loader="$2" extra="$3" hargs="${4:-}"
 	command -v sha256sum >/dev/null 2>&1 || { printf ''; return 0; }
 	[ -n "$EXT_ID" ] || { printf ''; return 0; }
 	{
@@ -201,6 +201,16 @@ cache_key() {
 		printf 'opts:%s\n' "$(normalize_opts "$extra")"
 		printf 'dumpscript:'; sha256sum "$SCRIPT_DIR/VerifyBankTest.java" | cut -d' ' -f1
 		printf 'ext:%s\n' "$EXT_ID"
+		# Only fixtures that pass extra headless args run one of the repo's ghidra_scripts/
+		# scripts (via the installed extension), so fold those inputs in ONLY for them -- an
+		# unconditional term would invalidate every other fixture's cached candidate on any
+		# script edit. They need a term of their own because EXT_ID fingerprints the installed
+		# *.jar entries only, and a ghidra_scripts/*.java file ships beside the jar, not in it.
+		if [ -n "$hargs" ]; then
+			printf 'hargs:%s\n' "$hargs"
+			printf 'repo_scripts:'
+			cat "$REPO_ROOT"/ghidra_scripts/*.java 2>/dev/null | sha256sum | cut -d' ' -f1
+		fi
 	} | sha256sum | cut -d' ' -f1
 }
 
@@ -233,15 +243,26 @@ if selected basic-dialects; then
 fi
 if selected pet-loader; then generate mkpettest.py "$WORK/prg"; fi
 if selected c128-loader; then generate mkc128test.py "$WORK/prg"; fi
-if selected nes-banking; then generate mknesbanktest.py "$WORK/nes"; fi
+if selected nes-banking; then
+	generate mknesbanktest.py "$WORK/nes"
+	generate mknescopytest.py "$WORK/nes"
+fi
 if selected petscii-strings; then generate mkpetsciistringtest.py "$WORK/prg"; fi
 
 # Imports $2 (a .prg or .nes fixture) via $3 (the loader name), runs VerifyBankTest.java,
 # extracts the normalized dump, and check|bless's it against expected/$1.dump.
+#
+#   run_one <name> <fixture> <Loader> ["extra loader opts"] ["extra headless args"]
+#
+# $4 carries loader options (-loader-xxx ...); $5 carries analyzeHeadless arguments that are
+# NOT loader options -- today only "-preScript <script> <args...>", which is how the manual
+# run-from-elsewhere front-end (grm-1.7.1.1) gets exercised. They are separate parameters
+# because normalize_opts hashes $4's file arguments for the candidate cache, which is
+# meaningless (and would mangle key:value script args) for $5.
 run_one() {
-	local name="$1" fixture="$2" loader="$3" extra="${4:-}"
+	local name="$1" fixture="$2" loader="$3" extra="${4:-}" hargs="${5:-}"
 	local key cached
-	key="$(cache_key "$fixture" "$loader" "$extra")"
+	key="$(cache_key "$fixture" "$loader" "$extra" "$hargs")"
 	cached="$CACHE_DIR/$key.dump"
 
 	# bless fast path: a prior check already produced the exact candidate for
@@ -271,12 +292,22 @@ run_one() {
 	mkdir -p "$proj"
 	local log="$WORK/$name.log"
 	echo "== $name: importing $(basename "$fixture") via analyzeHeadless ($loader) =="
-	# $extra is intentionally unquoted so multi-token loader args (e.g.
-	# "-loader-kernalRom <path>") word-split into separate arguments.
+	# $extra and $hargs are intentionally unquoted so multi-token arguments (e.g.
+	# "-loader-kernalRom <path>", "-preScript X.java k:v") word-split into separate arguments.
+	#
+	# -scriptPath names ONLY this harness dir, deliberately. The repo's own ghidra_scripts/ is
+	# not added: HeadlessOptions.setScriptDirectories appends the install's default script
+	# directories (GhidraScriptUtil's Application.findModuleSubDirectories("ghidra_scripts")),
+	# and build-and-test.sh has already installed the extension -- ghidra_scripts and all --
+	# into the isolated Ghidra home, so a shipped script is found there as the SHIPPED artifact.
+	# That is also the only workable form: -scriptPath's ';'-separated list
+	# (HeadlessOptions.java:266-269) cannot survive analyzeHeadless.bat, which re-tokenizes its
+	# arguments and splits a quoted "path1;path2" back into two ("Bad argument: <path2>").
 	"$GHIDRA_HEADLESS" "$(native "$proj")" headless \
 		-import "$(native "$fixture")" \
 		-loader "$loader" \
 		$extra \
+		$hargs \
 		-scriptPath "$(native "$SCRIPT_DIR")" \
 		-postScript VerifyBankTest.java \
 		>"$log" 2>&1
@@ -372,6 +403,31 @@ if selected c64-recovery; then
 	run_one copyloop "$WORK/prg/copyloop.prg" C64PrgLoader
 	run_one copydata "$WORK/prg/copydata.prg" C64PrgLoader
 	run_one copyoverlay "$WORK/prg/copyoverlay.prg" C64PrgLoader
+
+	# The MANUAL run-from-elsewhere front-end (grm-1.7.1.1): the shipped
+	# ghidra_scripts/RunFromElsewhereTransfer.java driven as a -preScript, which is the only
+	# regression path the manual front-ends have (the GUI plugin is untestable here -- see
+	# docs/testing.md). Deliberately reuses copyloop.prg rather than generating a fixture: its
+	# $200E payload is a known 8 bytes and its $C000-$CFFF RAM block is uninitialized, so a
+	# hand-specified $200E -> $C800 transfer exercises the same carve-in-place path with
+	# arguments that came from a person instead of a recognizer. Copied to a distinct name
+	# because VerifyBankTest dispatches on the program name (a file still called copyloop.prg
+	# would take checkCopyLoop's branch), the same trick symtoggle uses.
+	#
+	# Running BEFORE auto-analysis also proves the two front-ends do not collide: the manual
+	# COPY_c800 carve happens first, then CopyLoopAnalyzer carves COPY_c000 out of what is left
+	# of RAM_C000.
+	cp -f "$WORK/prg/copyloop.prg" "$WORK/prg/rfemanual.prg"
+	run_one rfemanual "$WORK/prg/rfemanual.prg" C64PrgLoader "" \
+		"-preScript RunFromElsewhereTransfer.java src:200e dst:c800 len:8 disassemble:false"
+	# The script's own verdict line, which lives outside the dump markers so VerifyBankTest
+	# cannot assert on it. Skipped when bless reused a cached candidate: that path runs no
+	# import, so there is no fresh log to read.
+	if [ -f "$WORK/rfemanual.log" ] &&
+		! grep -q 'RFE placement IN_PLACE block COPY_c800' "$WORK/rfemanual.log"; then
+		echo "FAIL: RunFromElsewhereTransfer did not report an in-place COPY_c800 placement"
+		fail=1
+	fi
 fi
 
 if selected c64-loader; then
@@ -419,6 +475,13 @@ if selected nes-banking; then
 	run_one nesmmc1overridetest "$WORK/nes/nesmmc1overridetest.nes" NesRomLoader \
 		"-loader-placement W8000:5"
 	run_one nesbandaitest "$WORK/nes/nesbandaitest.nes" NesRomLoader
+
+	# grm-1.7.6: CopyLoopAnalyzer is gated on the descriptor + a 6502/6510 language, not on
+	# the C64 loader, so it fires on NES ROMs too. This is the only fixture where the copy
+	# loop runs from a bank overlay and stores into base-space PRG RAM -- i.e. the only
+	# coverage of that widened gate, and the only fixture where a recognized copy's
+	# destination has to cross out of an overlay space to be carved in place.
+	run_one nescopytest "$WORK/nes/nescopytest.nes" NesRomLoader
 fi
 
 if selected petscii-strings; then

@@ -127,7 +127,8 @@ dependencies {
 //                           data/ExtensionPoint.manifest.
 //   extension.properties,
 //   Module.manifest      -- Ghidra-required extension metadata.
-//   ghidra_scripts       -- Ghidra-required module dir (currently empty).
+//   ghidra_scripts       -- Ghidra-required module dir; carries the shipped script front-ends
+//                           (RunFromElsewhereTransfer.java, bead grm-1.7.1.1).
 //   lib                  -- the jar + -src.zip; produced by buildExtension's own child specs
 //                           rather than copied from projectDir, listed here for clarity.
 //   README.md, LICENSE   -- what a user unpacking the extension should find.
