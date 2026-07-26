@@ -169,6 +169,19 @@ public class VerifyBankTest extends GhidraScript {
 			return;
 		}
 
+		// Order matters: "copyhintnorom" also contains "copyhint".
+		if (name.contains("copyhintnorom")) {
+			checkCopyHintNoRom();
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
+
+		if (name.contains("copyhint")) {
+			checkCopyHint();
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
+
 		if (name.contains("romload")) {
 			checkRomLoad();
 			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
@@ -986,6 +999,90 @@ public class VerifyBankTest extends GhidraScript {
 			}
 		}
 		return null;
+	}
+
+	// ------------------------------------------------------------------
+	// Descriptor copied_from boot-copy hint (bead grm-1.7.1.2)
+	// ------------------------------------------------------------------
+
+	// Both fixtures are romload.prg re-imported under another name; what differs is the ROM
+	// options. machines/c64.yaml declares ZEROPAGE.copied_from CHRGET = 0x18 bytes of KERNAL
+	// $E3A2 -> $0073, and mkromtest.py's synthetic kernal.bin is byte[i] = i & 0xFF, so $E3A2
+	// reads $A2 and the copied run is the deterministic $A2..$B9. (A copyright-safe stand-in;
+	// never a real ROM.) copyhinttest supplies the ROM and must materialize the copy in the base
+	// space; copyhintnorom supplies none and must materialize NOTHING -- the ROM-gated rule of
+	// docs/smc-inplace-vs-overlay.md section 6, and the more important of the two.
+	private static final String COPY_HINT_BLOCK = "COPY_0073";
+	private static final int CHRGET_LEN = 0x18;
+
+	private void checkCopyHint() {
+		MemoryBlock copy = currentProgram.getMemory().getBlock(COPY_HINT_BLOCK);
+		boolean inBaseSpace = copy != null && copy.getStart().getAddressSpace()
+				.equals(currentProgram.getAddressFactory().getDefaultAddressSpace());
+		boolean initialized = copy != null && copy.isInitialized();
+		boolean range = copy != null && copy.getStart().getOffset() == 0x0073 &&
+			copy.getEnd().getOffset() == 0x008a;
+
+		byte[] expected = new byte[CHRGET_LEN];
+		for (int i = 0; i < CHRGET_LEN; i++) {
+			expected[i] = (byte) (0xA2 + i);
+		}
+		byte[] recovered = null;
+		if (initialized) {
+			try {
+				byte[] buf = new byte[CHRGET_LEN];
+				copy.getBytes(copy.getStart(), buf);
+				recovered = buf;
+			}
+			catch (Exception e) {
+				recovered = null;
+			}
+		}
+
+		println("=== BANKDUMP BEGIN ===");
+		println("COPYBLOCK " + (copy == null ? "<missing>"
+				: copy.getName() + " " + fmt(copy.getStart()) + "-" + fmt(copy.getEnd()) +
+					" init=" + copy.isInitialized()));
+		println("SPACE " + (copy == null ? "<none>" : copy.getStart().getAddressSpace().getName()));
+		println("SOURCE " + recordedSource(copy, inBaseSpace));
+		println("BYTES " + hex(recovered));
+		println("=== BANKDUMP END ===");
+
+		criterion("copyhint-block-present", copy != null, "block=" + COPY_HINT_BLOCK);
+		criterion("copyhint-initialized", initialized, "init=" + initialized);
+		criterion("copyhint-in-base-space", inBaseSpace,
+			"space=" + (copy == null ? "<none>" : copy.getStart().getAddressSpace().getName()));
+		criterion("copyhint-range", range, "range=" + (copy == null ? "<none>"
+				: fmt(copy.getStart()) + "-" + fmt(copy.getEnd())));
+		criterion("copyhint-bytes", Arrays.equals(expected, recovered),
+			"bytes=" + hex(recovered));
+	}
+
+	private void checkCopyHintNoRom() {
+		MemoryBlock copy = currentProgram.getMemory().getBlock(COPY_HINT_BLOCK);
+		MemoryBlock kernal = currentProgram.getMemory().getBlock("KERNAL");
+		MemoryBlock zeropage = currentProgram.getMemory().getBlock(addr(0x0073));
+
+		println("=== BANKDUMP BEGIN ===");
+		println("COPYBLOCK " + (copy == null ? "<missing>" : describeBlock(copy)));
+		println("KERNAL init=" + (kernal != null && kernal.isInitialized()));
+		println("ZP0073 " + describeBlock(zeropage));
+		println("=== BANKDUMP END ===");
+
+		// The whole rule: with no readable source the directive is ignored outright -- no block of
+		// any kind, and specifically no overlay fallback.
+		criterion("copyhint-norom-no-block", copy == null,
+			"block=" + (copy == null ? "<none>" : copy.getName()));
+		criterion("copyhint-norom-kernal-uninitialized",
+			kernal != null && !kernal.isInitialized(),
+			"kernal=" + describeBlock(kernal));
+		// And the destination region is left exactly as the loader made it: one unsplit,
+		// uninitialized ZEROPAGE block.
+		criterion("copyhint-norom-zeropage-intact",
+			zeropage != null && "ZEROPAGE".equals(zeropage.getName()) &&
+				!zeropage.isInitialized() && zeropage.getStart().getOffset() == 0x0002 &&
+				zeropage.getEnd().getOffset() == 0x00ff,
+			"zp=" + describeBlock(zeropage));
 	}
 
 	// ------------------------------------------------------------------

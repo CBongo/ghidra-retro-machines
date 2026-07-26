@@ -15,6 +15,7 @@
  */
 package gdtbuilder;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
@@ -248,6 +249,125 @@ public class MapCompilerTest {
 			      - { addr: 0x3000, name: BAR, kind: label }
 			""", "declared twice");
 	}
+
+	/**
+	 * grm-1.7.1.2: {@code memory.regions[].copied_from} must survive compilation with every
+	 * address key normalized to a JSON <em>number</em>. The normalization is the point of the
+	 * test, not decoration: {@code buildRegions} is a {@code copyIfPresent} whitelist, so before
+	 * this key was added the whole block vanished silently, and a plain {@code copyIfPresent}
+	 * would have passed hex scalars through as strings where the runtime calls {@code getAsLong}.
+	 * <p>
+	 * The fixture mirrors the shipped C64 shape: the source ({@code KERNAL}) is a window
+	 * <b>occupant</b>, not a region, since that is the resolution space {@code on_write} uses.
+	 */
+	@Test
+	public void copiedFrom() throws Exception {
+		Path temp = tmp.getRoot().toPath();
+		Path yaml = temp.resolve("copyhint.yaml");
+		Path map = temp.resolve("copyhint.map");
+		Files.writeString(yaml, COPY_HINT_PREAMBLE + """
+			      copied_from:
+			        - name: CHRGET
+			          start: 0x0073
+			          end: 0x008a
+			          source: KERNAL
+			          source_addr: 0xe3a2
+			          entry: 0x0075
+			          disassemble: true
+			          create_function: true
+			          comment: "CHRGET fetch routine"
+			""" + COPY_HINT_TAIL);
+		MapCompiler.main(new String[] { yaml.toString(), map.toString() });
+
+		JsonObject doc = JsonParser.parseString(Files.readString(map)).getAsJsonObject();
+		JsonObject zeropage = doc.getAsJsonArray("regions").get(0).getAsJsonObject();
+		JsonObject hint = zeropage.getAsJsonArray("copied_from").get(0).getAsJsonObject();
+		assertEquals("copied_from name was not preserved", "CHRGET",
+			hint.get("name").getAsString());
+		assertEquals("copied_from start was not normalized to a number", 0x0073,
+			hint.get("start").getAsInt());
+		assertEquals("copied_from end was not normalized to a number", 0x008a,
+			hint.get("end").getAsInt());
+		assertEquals("copied_from source was not preserved", "KERNAL",
+			hint.get("source").getAsString());
+		assertEquals("copied_from source_addr was not normalized to a number", 0xe3a2,
+			hint.get("source_addr").getAsInt());
+		assertEquals("copied_from entry was not normalized to a number", 0x0075,
+			hint.get("entry").getAsInt());
+		assertTrue("copied_from disassemble was not preserved",
+			hint.get("disassemble").getAsBoolean());
+		assertTrue("copied_from create_function was not preserved",
+			hint.get("create_function").getAsBoolean());
+		assertTrue("copied_from comment was not preserved",
+			"CHRGET fetch routine".equals(hint.get("comment").getAsString()));
+		// Numbers, not strings: DescriptorCopyHintAnalyzer calls getAsLong() on all four.
+		for (String key : new String[] { "start", "end", "source_addr", "entry" }) {
+			assertTrue(key + " was emitted as a JSON string, not a number",
+				hint.get(key).getAsJsonPrimitive().isNumber());
+		}
+	}
+
+	/** A {@code copied_from} typo must fail the build. A silently-dropped key is exactly the
+	 *  failure mode this whitelist has already been bitten by, and at runtime a bad hint looks
+	 *  identical to the legitimate "no ROM supplied, directive ignored" skip. */
+	@Test
+	public void copiedFromErrors() throws Exception {
+		Path temp = tmp.getRoot().toPath();
+		expectCopyHintError(temp, "copy-bad-source", """
+			        - { name: CHRGET, start: 0x0073, end: 0x008a, source: KRENAL, source_addr: 0xe3a2 }
+			""", "neither a declared region nor a window occupant");
+		expectCopyHintError(temp, "copy-reversed", """
+			        - { name: CHRGET, start: 0x008a, end: 0x0073, source: KERNAL, source_addr: 0xe3a2 }
+			""", "before start");
+		expectCopyHintError(temp, "copy-outside-region", """
+			        - { name: CHRGET, start: 0x0073, end: 0x0110, source: KERNAL, source_addr: 0xe3a2 }
+			""", "is not inside region 'ZEROPAGE'");
+		expectCopyHintError(temp, "copy-entry-outside", """
+			        - { name: CHRGET, start: 0x0073, end: 0x008a, source: KERNAL, source_addr: 0xe3a2,
+			            entry: 0x0090 }
+			""", "not inside the copied range");
+	}
+
+	private static void expectCopyHintError(Path temp, String name, String hints, String part)
+			throws Exception {
+		expectCompileError(temp, name,
+			COPY_HINT_PREAMBLE + "      copied_from:\n" + hints + COPY_HINT_TAIL, part);
+	}
+
+	/** A minimal C64-shaped descriptor up to (and including) the ZEROPAGE region's keys; the
+	 *  test appends a {@code copied_from:} block and {@link #COPY_HINT_TAIL}. */
+	private static final String COPY_HINT_PREAMBLE = """
+		schema: 2
+		system: { id: copyhint, name: Copy Hint, cpu: { language: '6502:LE:16:default' } }
+		memory:
+		  regions:
+		    - name: ZEROPAGE
+		      start: 0x0000
+		      end: 0x00ff
+		      kind: ram
+		""";
+
+	/** The banked $E000 window whose KERNAL occupant the hints above name as their source. */
+	private static final String COPY_HINT_TAIL = """
+		    - { name: RAM_MAIN, start: 0x0100, end: 0xdfff, kind: ram }
+		  windows:
+		    - name: HIROM
+		      start: 0xe000
+		      end: 0xffff
+		      occupants:
+		        - { name: RAM_E000, kind: ram }
+		        - { name: KERNAL, kind: rom }
+		banking:
+		  state: [{ name: HIRAM, bits: 1 }]
+		  mechanisms:
+		    - strategy: register-write
+		      params: { address: 0x0001, mask: 0x02 }
+		      sets: [HIRAM]
+		  initial_state: { HIRAM: 1 }
+		  states:
+		    - { HIRAM: 1, HIROM: KERNAL }
+		    - { HIRAM: 0, HIROM: RAM_E000 }
+		""";
 
 	private static void expectCompileError(Path temp, String name, String yamlBody, String part)
 			throws Exception {

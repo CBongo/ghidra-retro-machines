@@ -457,6 +457,17 @@ if selected c64-loader; then
 	run_one romload "$WORK/prg/romload.prg" C64PrgLoader \
 		"-loader-kernalRom $(native "$WORK/prg/kernal.bin") -loader-basicRom $(native "$WORK/prg/basic.bin") -loader-chargenRom $(native "$WORK/prg/chargen.bin")"
 
+	# Descriptor copied_from boot-copy hint (bead grm-1.7.1.2): machines/c64.yaml declares
+	# CHRGET as 0x18 bytes of KERNAL $E3A2 copied to $0073. With the synthetic KERNAL supplied
+	# the hint must materialize in the base space holding $A2..$B9; with NO ROM option the
+	# directive must be ignored outright (no block, no overlay fallback) -- the ROM-gated rule
+	# of docs/smc-inplace-vs-overlay.md section 6. Reuses romload.prg as an ordinary C64 PRG.
+	cp -f "$WORK/prg/romload.prg" "$WORK/prg/copyhinttest.prg"
+	run_one copyhinttest "$WORK/prg/copyhinttest.prg" C64PrgLoader \
+		"-loader-kernalRom $(native "$WORK/prg/kernal.bin")"
+	cp -f "$WORK/prg/romload.prg" "$WORK/prg/copyhintnorom.prg"
+	run_one copyhintnorom "$WORK/prg/copyhintnorom.prg" C64PrgLoader
+
 	# Symbol-set toggle (bead grm-zlj): import with the basic-zeropage checkbox on (a
 	# default-off set) and assert it -- and only it -- was applied. Reuses any valid C64 PRG.
 	cp -f "$WORK/prg/romload.prg" "$WORK/prg/symtoggle.prg"

@@ -107,17 +107,22 @@ public class MapCompiler {
 		if (physical != null) {
 			mapDoc.put("physical", buildPhysical(physical));
 		}
-		List<Map<String, Object>> regions = buildRegions(descriptor);
-		validateUniqueNames(regions, "name", "memory.regions[] name");
-		mapDoc.put("regions", regions);
+		// Windows and layouts are built before regions purely so that a region's
+		// copied_from source name can be resolved against the window occupants (a boot copy's
+		// source is normally a banked ROM occupant such as the C64's KERNAL, not a region).
+		// mapDoc's key order is unchanged -- the puts below still run regions-then-windows.
 		List<Map<String, Object>> windows =
 			buildWindows(descriptor, physicalNames, stateFields.keySet());
+		List<Map<String, Object>> layouts =
+			buildLayouts(descriptor, physicalNames, stateFields.keySet());
+		List<Map<String, Object>> regions = buildRegions(descriptor);
+		validateUniqueNames(regions, "name", "memory.regions[] name");
+		validateCopiedFromSources(regions, windows, layouts);
+		mapDoc.put("regions", regions);
 		mapDoc.put("windows", windows);
 		if (usesLoadAddressPlacement(descriptor)) {
 			validateRamCoverage(regions, windows);
 		}
-		List<Map<String, Object>> layouts =
-			buildLayouts(descriptor, physicalNames, stateFields.keySet());
 		if (layouts != null) {
 			mapDoc.put("layouts", layouts);
 		}
@@ -229,9 +234,15 @@ public class MapCompiler {
 			Map<String, Object> r = new LinkedHashMap<>();
 			String name = requireString(region, "name", "memory.regions[]");
 			r.put("name", name);
-			r.put("start", requireAddr(region, "start", "memory.regions[]"));
-			r.put("end", requireAddr(region, "end", "memory.regions[]"));
+			int start = requireAddr(region, "start", "memory.regions[]");
+			int end = requireAddr(region, "end", "memory.regions[]");
+			r.put("start", start);
+			r.put("end", end);
 			r.put("kind", requireString(region, "kind", "memory.regions[]"));
+			List<Map<String, Object>> copiedFrom = buildCopiedFrom(region, name, start, end);
+			if (copiedFrom != null) {
+				r.put("copied_from", copiedFrom);
+			}
 			copyIfPresent(region, r, "type");
 			copyIfPresent(region, r, "image");
 			copyIfPresent(region, r, "comment");
@@ -252,6 +263,134 @@ public class MapCompiler {
 			out.add(r);
 		}
 		return out;
+	}
+
+	// ---- boot-copy hints (copied_from, grm-1.7.1.2) ----
+
+	/**
+	 * Builds a destination region's {@code copied_from[]} boot-copy hints -- "this sub-range of
+	 * me is a verbatim copy of bytes that live over there" (docs/SCHEMA.md, grm-1.7.1.2). The
+	 * canonical case is the C64 KERNAL copying CHRGET from ROM {@code $E3A2} into zero page
+	 * {@code $0073} at init, which is invisible statically because the destination is
+	 * uninitialized RAM.
+	 * <p>
+	 * Every address key goes through {@link #requireAddr}/{@link #copyAddrIfPresent} rather than
+	 * plain {@link #copyIfPresent}: snakeyaml hands {@code 0x0073} back as a {@code String} when
+	 * it is quoted or otherwise not scalar-parsed, and gson would then emit a JSON string where
+	 * {@code DescriptorCopyHintAnalyzer} calls {@code getAsLong()}.
+	 * <p>
+	 * The range checks are here rather than at load time deliberately: a hint whose range escapes
+	 * its own region, or whose {@code end} precedes its {@code start}, is a descriptor typo, and
+	 * an unreadable-source hint is silently ignored at runtime by design
+	 * (docs/smc-inplace-vs-overlay.md §6) -- so a typo that never materializes anything would
+	 * otherwise look exactly like the legitimate "user supplied no ROM" case. The {@code source}
+	 * name is validated separately, by {@link #validateCopiedFromSources}, because it may name a
+	 * region or occupant declared later in the file.
+	 *
+	 * @return the normalized hint list, or null when the region declares none
+	 */
+	@SuppressWarnings("unchecked")
+	private static List<Map<String, Object>> buildCopiedFrom(Map<String, Object> region,
+			String regionName, int regionStart, int regionEnd) {
+		List<Map<String, Object>> hints =
+			(List<Map<String, Object>>) region.get("copied_from");
+		if (hints == null) {
+			return null;
+		}
+		String regionContext = "memory.regions[] '" + regionName + "' copied_from[]";
+		List<Map<String, Object>> out = new ArrayList<>();
+		for (Map<String, Object> hint : hints) {
+			String name = requireString(hint, "name", regionContext);
+			String context = regionContext + " '" + name + "'";
+			Map<String, Object> c = new LinkedHashMap<>();
+			c.put("name", name);
+			int start = requireAddr(hint, "start", context);
+			int end = requireAddr(hint, "end", context);
+			c.put("start", start);
+			c.put("end", end);
+			c.put("source", requireString(hint, "source", context));
+			c.put("source_addr", requireAddr(hint, "source_addr", context));
+			copyAddrIfPresent(hint, c, "entry");
+			copyIfPresent(hint, c, "disassemble");
+			copyIfPresent(hint, c, "create_function");
+			copyIfPresent(hint, c, "comment");
+
+			if (end < start) {
+				throw new IllegalArgumentException(context + " has end $" +
+					String.format("%04X", end) + " before start $" + String.format("%04X", start));
+			}
+			if (start < regionStart || end > regionEnd) {
+				throw new IllegalArgumentException(context + " range $" +
+					String.format("%04X", start) + "-$" + String.format("%04X", end) +
+					" is not inside region '" + regionName + "' ($" +
+					String.format("%04X", regionStart) + "-$" +
+					String.format("%04X", regionEnd) + ")");
+			}
+			if (c.containsKey("entry")) {
+				int entry = ((Number) c.get("entry")).intValue();
+				if (entry < start || entry > end) {
+					throw new IllegalArgumentException(context + " entry $" +
+						String.format("%04X", entry) + " is not inside the copied range $" +
+						String.format("%04X", start) + "-$" + String.format("%04X", end));
+				}
+			}
+			out.add(c);
+		}
+		validateUniqueNames(out, "name", regionContext + " name");
+		return out;
+	}
+
+	/**
+	 * Checks every {@code copied_from[].source} against the same name space {@code on_write}
+	 * resolves in: a declared {@code memory.regions[]} name or a window occupant name (including
+	 * occupants that only appear inside a {@code memory.layouts[]} window set). On the C64 the
+	 * canonical source, {@code KERNAL}, is a window OCCUPANT (machines/c64.yaml:124) rather than
+	 * a region, so both halves of the set are load-bearing.
+	 * <p>
+	 * This fails the build rather than warning. {@code buildRegions} is otherwise a
+	 * {@link #copyIfPresent} whitelist, so a misspelled key vanishes silently -- a failure mode
+	 * this repo has already been bitten by -- and a hint naming a block that does not exist can
+	 * never materialize anything at load time either.
+	 */
+	@SuppressWarnings("unchecked")
+	private static void validateCopiedFromSources(List<Map<String, Object>> regions,
+			List<Map<String, Object>> windows, List<Map<String, Object>> layouts) {
+		Set<String> targets = new LinkedHashSet<>();
+		for (Map<String, Object> region : regions) {
+			targets.add((String) region.get("name"));
+		}
+		List<Map<String, Object>> allWindows = new ArrayList<>(windows);
+		if (layouts != null) {
+			for (Map<String, Object> layout : layouts) {
+				allWindows.addAll((List<Map<String, Object>>) layout.get("windows"));
+			}
+		}
+		for (Map<String, Object> window : allWindows) {
+			List<Map<String, Object>> occupants =
+				(List<Map<String, Object>>) window.get("occupants");
+			if (occupants == null) {
+				continue; // computed (maps:) window -- no enumerated occupant to name
+			}
+			for (Map<String, Object> occupant : occupants) {
+				targets.add((String) occupant.get("name"));
+			}
+		}
+		for (Map<String, Object> region : regions) {
+			List<Map<String, Object>> hints =
+				(List<Map<String, Object>>) region.get("copied_from");
+			if (hints == null) {
+				continue;
+			}
+			for (Map<String, Object> hint : hints) {
+				String source = (String) hint.get("source");
+				if (!targets.contains(source)) {
+					throw new IllegalArgumentException("memory.regions[] '" +
+						region.get("name") + "' copied_from[] '" + hint.get("name") +
+						"' names source '" + source +
+						"', which is neither a declared region nor a window occupant");
+				}
+			}
+		}
 	}
 
 	// ---- PRG/RAM placement coverage (grm-z15.4) ----

@@ -102,6 +102,7 @@ descriptors, so new boards need no Java).
 | Descriptor construct | Ghidra realization |
 |---|---|
 | `memory.regions[]` | one `MemoryBlock` each (initialized for loaded file content, uninitialized otherwise) |
+| `memory.regions[].copied_from[]` | a declared boot copy: `DescriptorCopyHintAnalyzer` carves the destination sub-range out of its region block and initializes it with the source bytes — but only when those bytes are readable (see below) |
 | `memory.windows[].occupants[]` | one **overlay** `MemoryBlock` per occupant in the window's range; the state-selected default occupant may be the non-overlay "home" block |
 | `physical[]` | a physical backing space the banked content lives in **once** (interim realization: overlay blocks per resolved window slice; first-class realization is the RFC's resolution hook — vision doc §6 L4) |
 | `memory.windows[].maps` | window contents computed from bank state: a slice of a physical space at the expression's offset |
@@ -437,6 +438,48 @@ mitigation: an analyzer annotates stores into ROM-mapped ranges with a reference
 address resolution hook must be *access-type-aware* — `(context, address, access) →
 block` — because even perfect per-context overlay selection cannot represent
 write-under-ROM.
+
+## Boot copies (`copied_from`)
+
+Some code is not where it runs. The C64 KERNAL copies the CHRGET byte-fetch routine out of
+ROM into zero page during its own init, so a loaded PRG contains no copy loop to recognize,
+yet every BASIC-interpreter trace runs through `$0073` — which statically reads as
+uninitialized RAM. That is a *machine* fact, so the descriptor states it once, on the
+**destination** region (a RAM region may host several independent copies, hence a list):
+
+```yaml
+- name: ZEROPAGE
+  start: 0x0002
+  end: 0x00FF
+  kind: ram
+  copied_from:
+    - name: CHRGET
+      start: 0x0073          # destination sub-range, inside this region
+      end: 0x008A            # 0x18 = 24 bytes
+      source: KERNAL         # region OR window-occupant name, resolved like on_write
+      source_addr: 0xE3A2    # absolute source address
+      disassemble: true      # optional, default false
+      create_function: true  # optional, default false
+      # entry: 0x0075        # optional mid-range entry, for a headered payload
+      comment: "CHRGET fetch routine, copied to zero page at KERNAL init"
+```
+
+`source` shares `on_write`'s name space — a declared `memory.regions[]` name or a window
+occupant name — which is why `KERNAL` works here even though it is an occupant of the
+`HIROM` window rather than a region.
+
+**ROM-gated.** Per descriptor principle 5 ("descriptor declares facts, loader decides
+representation") the directive is a claim about the hardware, not an instruction to produce a
+block. `DescriptorCopyHintAnalyzer` materializes it only when the source bytes are actually
+readable; with no user-supplied KERNAL image the directive is **ignored outright** — no block,
+no overlay fallback, a log note only (`docs/smc-inplace-vs-overlay.md` §6). Because that makes
+"supply the ROM, then re-run" the recovery path, this is analyzer work rather than loader
+work, and the analyzer supports one-shot re-running.
+
+**`MapCompiler` fails the build** on an unknown `source`, on `end < start`, on a range that
+escapes its owning region, or on an `entry` outside the range. `memory.regions[]` compiles
+through a key whitelist, so an unvalidated typo would simply vanish from the `.map`; and at
+runtime a bad hint is indistinguishable from the legitimate "no ROM supplied" skip.
 
 ## Symbols: sets and provenance
 

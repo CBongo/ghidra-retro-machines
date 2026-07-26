@@ -31,7 +31,10 @@ the extension zip alongside the corresponding `.gdt`.
   "system":  { "id", "name", "language" },
   "physical"?: [ { "name", "image"?, "size"?, "comment"? } ],
   "regions": [ { "name", "start", "end", "kind", "type"?, "image"?, "comment"?,
-                 "readable"?, "writable"?, "executable"? } ],
+                 "readable"?, "writable"?, "executable"?,
+                 "copied_from"?: [ { "name", "start", "end", "source", "source_addr",
+                                     "entry"?, "disassemble"?, "create_function"?,
+                                     "comment"? } ] } ],
   "windows": [ { "name", "start", "end",
                  // exactly one of:
                  "occupants": [ { "name", "kind", "image"?, "on_write"?,
@@ -77,6 +80,21 @@ are optional sparse permission overrides — see below and `docs/SCHEMA.md`.
 enumerated ROM occupant's `image`; the ROM slot's `occupant` target remains authoritative.
 A loader creates the region uninitialized when the user has supplied no ROM and
 initializes the same block when the slot is populated.
+
+`copied_from`, when present, is the region's list of **boot-copy hints** (grm-1.7.1.2): each
+entry declares that the destination sub-range `[start, end]` of *this* region is a verbatim
+copy of `source_addr` in the block named by `source`. `source` is resolved in the same name
+space `on_write` uses — a declared region **or** a window occupant (on the C64 the CHRGET
+source, `KERNAL`, is an occupant, not a region). `entry` optionally names a mid-range
+disassembly start for a headered payload; `disassemble` / `create_function` are the payload's
+code directives (both default false); `comment` is documentation. All four address keys are
+compiled to plain JSON integers.
+
+`MapCompiler` fails the build if `source` names nothing declared, if `end < start`, if the
+range escapes its owning region, or if `entry` falls outside the range — a typo would
+otherwise be indistinguishable at runtime from the legitimate "user supplied no ROM" case,
+since `DescriptorCopyHintAnalyzer` ignores a hint whose source bytes are unreadable
+(`docs/smc-inplace-vs-overlay.md` §6).
 
 `load_target` is a legacy optional boolean for loaders with one fixed image-carve region;
 at most one region may set it. C64 PRGs do not use it: their header-selected image may span

@@ -35,6 +35,25 @@ memory:
       start: 0x0002
       end: 0x00FF
       kind: ram
+      # Boot-copy hint (grm-1.7.1.2). The KERNAL's init copies the CHRGET/CHRGOT byte-fetch
+      # routine into zero page so BASIC can self-modify its text pointer; statically $0073 is
+      # just uninitialized RAM, so the routine every BASIC-interpreter trace runs through is
+      # invisible. Constants verified against a real KERNAL dump (docs/smc-runfromelsewhere-
+      # design.md §4): the E6 7A D0 02 E6 7B AD ... sequence sits at ROM offset $03A2, i.e.
+      # $E3A2 in the KERNAL ROM -- NOT the BASIC ROM, as the folklore has it.
+      # ROM-GATED (docs/smc-inplace-vs-overlay.md §6): with no user-supplied KERNAL image the
+      # source bytes are uninitialized and this directive is ignored outright -- no block, no
+      # overlay fallback, a log note only. Supplying the ROM and re-running the one-shot
+      # DescriptorCopyHintAnalyzer materializes it then.
+      copied_from:
+        - name: CHRGET
+          start: 0x0073
+          end: 0x008A                 # 0x18 = 24 bytes
+          source: KERNAL              # window occupant (see HIROM below), resolved like on_write
+          source_addr: 0xE3A2
+          disassemble: true
+          create_function: true
+          comment: "CHRGET fetch routine, copied to zero page at KERNAL init"
     - name: STACK
       start: 0x0100
       end: 0x01FF

@@ -107,8 +107,16 @@ region may host several independent ROM-sourced copies, so it is a list:
       end: 0x008A                    # 0x18 bytes
       source: KERNAL                 # source occupant/region name (resolved like on_write)
       source_addr: 0xE3A2            # absolute source address in that block
+      disassemble: true              # optional (default false)
+      create_function: true          # optional (default false)
+      # entry: 0x0075                # optional mid-range entry, for a headered payload
       comment: "CHRGET fetch routine, copied to zero page at KERNAL init"
 ```
+
+As implemented (grm-1.7.1.2) `MapCompiler` normalizes every address key to a JSON integer and
+**fails the build** on an unknown `source`, `end < start`, a range escaping its owning region,
+or an `entry` outside the range; `DescriptorCopyHintAnalyzer` applies the result. See
+`docs/SCHEMA.md` ("Boot copies") and `docs/MAP_FORMAT.md` (`regions`) for the frozen wording.
 
 The loader resolves `source: KERNAL` to the KERNAL block, then — per the descriptor
 principle "descriptor declares facts, loader decides representation" (`SCHEMA.md`
@@ -185,4 +193,8 @@ exactly as the decrypt tiers shared theirs.
 - [x] `copied_from` descriptor schema — §4
 - [x] Tier-B recognizer plan (reuses grm-1.7.2 machinery) — §6
 - [x] Sequencing recommendation — §7
-- [ ] Implementation (blocked on sequencing decision: grm-mbm-first vs Tier-B-first)
+- [x] Implementation — grm-mbm (ROM loading), grm-1.7.1 (Tier-B recognizer, now
+      `CopyLoopAnalyzer`), grm-chu (in-place placement), grm-1.7.1.1 (the `RunFromElsewhere`
+      facade), and grm-1.7.1.2 (Tier-A: the `copied_from` schema key in `MapCompiler`, the C64
+      CHRGET hint in `machines/c64.yaml`, and `DescriptorCopyHintAnalyzer` applying it under the
+      ROM gate)

@@ -249,4 +249,5 @@ readable source, ignore the directive otherwise.
 - [x] Unreadable-source rule (skip, do not fall back) — §6
 - [x] Implementation (`TransferMaterializer` carve path + placement decision matrix, with
       `C64CopyLoopAnalyzer` reduced to recognition) — landed with grm-chu
-- [ ] Tier-A analyzer/command front-end so the "ROM added later" path is reachable — grm-1.7.1.2
+- [x] Tier-A analyzer/command front-end so the "ROM added later" path is reachable — grm-1.7.1.2
+      (`DescriptorCopyHintAnalyzer`, a one-shot-capable `BYTE_ANALYZER`)
