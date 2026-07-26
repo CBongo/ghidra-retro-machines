@@ -120,8 +120,11 @@ the binary install. Reference tests from the spike:
   `StoredValueScanner` path against a built `LDA #imm ; STA $01` fixture.
 
 ```bash
-GHIDRA_INSTALL_DIR=D:/ghidra_<ver>_PUBLIC gradle test
+gradle test
 ```
+
+(With `ghidraInstallRoot` set in `~/.gradle/gradle.properties` per the README's "Building"
+section, the install dir resolves from `ghidraTargetVersion` — no env var or `-P` needed.)
 
 ### Constraints (do not rediscover these the hard way)
 

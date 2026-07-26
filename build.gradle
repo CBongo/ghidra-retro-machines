@@ -25,6 +25,30 @@
 //
 //     > gradle -PGHIDRA_INSTALL_DIR=<Absolute path to Ghidra>
 //
+// (Per upstream, the environment variable takes precedence over the -P property.)
+//
+// This project adds a third, lower-precedence option for a development machine: name the
+// directory Ghidra installs live UNDER, once, in the machine-local ~/.gradle/gradle.properties,
+// and let the version come from this repo's gradle.properties (ghidraTargetVersion):
+//
+//     ghidraInstallRoot=<Absolute path to the directory holding ghidra_<ver>_PUBLIC>
+//     > gradle
+//
+// Use a trailing FORWARD slash ("<drive>:/"): a bare drive letter is drive-relative on Windows,
+// and a trailing backslash is a .properties line-continuation.
+//
+// Because it sits below the stock branches, GHIDRA_INSTALL_DIR -- if set at all -- wins and this
+// is skipped entirely. Blank it for a single invocation to fall through to ghidraInstallRoot
+// without touching the machine's environment:
+//
+//     > GHIDRA_INSTALL_DIR= gradle buildExtension
+//
+// That assigns the EMPTY STRING rather than unsetting the variable; it works because the stock
+// branch below is a Groovy truthiness test and "" is falsy. Do not "tighten" that condition to
+// `!= null` -- it would silently break this escape hatch, which is the only in-place remedy for
+// a stale env var inherited by a long-running shell or agent session (`env -u
+// GHIDRA_INSTALL_DIR gradle ...` is the equivalent that truly unsets).
+//
 // Gradle should be invoked from the directory of the project to build.  Please see the
 // application.gradle.version property in <GHIDRA_INSTALL_DIR>/Ghidra/application.properties
 // for the correction version of Gradle to use for the Ghidra installation you specify.
@@ -38,6 +62,23 @@ if (System.env.GHIDRA_INSTALL_DIR) {
 else if (project.hasProperty("GHIDRA_INSTALL_DIR")) {
 	ghidraInstallDir = project.getProperty("GHIDRA_INSTALL_DIR")
 }
+else if (project.hasProperty("ghidraInstallRoot")) {
+	// Added below the two stock branches, so upstream precedence is untouched: this fires only
+	// when neither GHIDRA_INSTALL_DIR form is supplied. It separates the two concerns that were
+	// previously conflated in one absolute path -- WHERE Ghidra installs live (ghidraInstallRoot,
+	// set once in the machine-local ~/.gradle/gradle.properties, so no developer drive letter is
+	// ever committed) from WHICH version this project targets (gradle.properties'
+	// ghidraTargetVersion, the single source of truth, bead grm-9r7). Retargeting is then one
+	// line in gradle.properties and nothing outside the repo needs touching -- useful when
+	// several ghidra_<ver>_PUBLIC installs sit side by side.
+	//
+	// ghidraInstallRoot needs a trailing FORWARD slash (e.g. "D:/"). A bare drive letter is
+	// drive-RELATIVE on Windows ("D:" means the current directory on D:, composing to
+	// "D:ghidra_<ver>_PUBLIC"), and .properties treats "\" as an escape character, so a trailing
+	// backslash is read as a line-continuation and silently leaves the bare drive letter.
+	ghidraInstallDir = new File(project.property("ghidraInstallRoot").toString(),
+		"ghidra_${project.property('ghidraTargetVersion')}_PUBLIC").path
+}
 else {
 	ghidraInstallDir = "<REPLACE>"
 }
@@ -48,11 +89,14 @@ else {
 // build against the wrong Ghidra with no warning; instead, compare the resolved install's own
 // application.properties and fail loudly on any mismatch.
 def ghidraTargetVersion = project.property('ghidraTargetVersion')
+def ghidraInstallHint = "set ghidraInstallRoot=<dir holding ghidra_${ghidraTargetVersion}_PUBLIC> " +
+	"in ~/.gradle/gradle.properties (absolute, trailing FORWARD slash), or pass " +
+	"-PGHIDRA_INSTALL_DIR=<install> for this invocation"
 def ghidraAppPropsFile = new File(ghidraInstallDir, 'Ghidra/application.properties')
 if (!ghidraAppPropsFile.isFile()) {
-	throw new GradleException("Resolved GHIDRA_INSTALL_DIR '${ghidraInstallDir}' is not a " +
+	throw new GradleException("Resolved Ghidra install '${ghidraInstallDir}' is not a " +
 		"Ghidra install (no Ghidra/application.properties). This project targets Ghidra " +
-		"${ghidraTargetVersion} -- expected at D:/ghidra_${ghidraTargetVersion}_PUBLIC.")
+		"${ghidraTargetVersion} -- ${ghidraInstallHint}.")
 }
 def ghidraInstalledVersion = new Properties().with { props ->
 	ghidraAppPropsFile.withInputStream { props.load(it) }
@@ -61,9 +105,11 @@ def ghidraInstalledVersion = new Properties().with { props ->
 if (ghidraInstalledVersion != ghidraTargetVersion) {
 	throw new GradleException("Resolved Ghidra install is ${ghidraInstalledVersion} " +
 		"(${ghidraInstallDir}) but this project targets ${ghidraTargetVersion} " +
-		"(gradle.properties: ghidraTargetVersion). Set " +
-		"GHIDRA_INSTALL_DIR=D:/ghidra_${ghidraTargetVersion}_PUBLIC for this invocation, or " +
-		"update ghidraTargetVersion when deliberately retargeting.")
+		"(gradle.properties: ghidraTargetVersion). Either ${ghidraInstallHint}, or update " +
+		"ghidraTargetVersion when deliberately retargeting. NOTE a GHIDRA_INSTALL_DIR env var " +
+		"wins over both (upstream precedence) and is snapshotted when a shell starts, so a " +
+		"stale one cannot be corrected in place -- blank it for this run with " +
+		"'GHIDRA_INSTALL_DIR= gradle <task>' to fall through to ghidraInstallRoot.")
 }
 
 task distributeExtension {

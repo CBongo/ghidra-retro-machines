@@ -97,13 +97,68 @@ being re-executed by hand across the community — this extension automates it.
 Requires a [Ghidra](https://ghidra-sre.org/) installation (12.x) and a matching Gradle
 (see `application.gradle.version` in the install's `Ghidra/application.properties`):
 
+The recommended setup names the install *root* once, in your machine-local
+`~/.gradle/gradle.properties` (never in the repo — this keeps developer drive letters out
+of every committed file):
+
+```properties
+# ~/.gradle/gradle.properties — the directory that holds ghidra_<ver>_PUBLIC.
+# Absolute, WITH a trailing separator: on Windows a bare drive letter is drive-relative
+# ("D:" means the current directory on D:), which resolves to "D:ghidra_<ver>_PUBLIC".
+# Use a forward slash. A .properties file treats "\" as an escape character, so a
+# trailing backslash is read as a line-continuation and silently leaves you with "D:".
+ghidraInstallRoot=D:/
+```
+
+The build then composes that root with `ghidraTargetVersion` from `gradle.properties`, so
+plain `gradle buildExtension` works and **retargeting to a new Ghidra is one line in
+`gradle.properties`** — nothing outside the repo needs touching:
+
+```
+gradle buildExtension
+```
+
+The distributable zip lands in `dist/`.
+
+### Overriding the install dir
+
+Resolution order keeps the stock Ghidra skeleton's precedence unchanged, with
+`ghidraInstallRoot` appended as a further fallback:
+
+```
+GHIDRA_INSTALL_DIR (env)  →  -PGHIDRA_INSTALL_DIR  →  ghidraInstallRoot
+```
+
 ```
 gradle -PGHIDRA_INSTALL_DIR=<path-to-ghidra> buildExtension
 ```
 
-The distributable zip lands in `dist/`. Note: a `GHIDRA_INSTALL_DIR` *environment
-variable* takes precedence over the `-P` property (standard Ghidra skeleton behavior) —
-if both exist, the env var silently wins.
+Note the upstream quirk this preserves: a `GHIDRA_INSTALL_DIR` *environment variable*
+takes precedence over the `-P` property, so if both exist the env var silently wins.
+
+Consequently `ghidraInstallRoot` is skipped entirely whenever `GHIDRA_INSTALL_DIR` is
+defined. To fall through to it for a single invocation without touching your environment,
+blank the variable on the command line:
+
+```bash
+GHIDRA_INSTALL_DIR= gradle buildExtension
+```
+
+That assigns the empty string rather than unsetting the variable, and works because the
+resolution check is a Groovy truthiness test — `""` is falsy, so it falls through.
+(`env -u GHIDRA_INSTALL_DIR gradle …` is the equivalent that genuinely unsets.)
+
+This is the remedy for the one failure mode `ghidraInstallRoot` exists to avoid: an
+environment variable is snapshotted when a shell — or a long-running agent session — starts,
+so one that outlives a Ghidra retarget cannot be corrected in place, and the version guard
+below will fail every build until the session restarts. `ghidraInstallRoot` is instead
+re-read from disk on every invocation and composes with whatever `ghidraTargetVersion`
+currently says. If you'd rather not think about it, leave `GHIDRA_INSTALL_DIR` unset
+permanently.
+
+Whatever the source, `build.gradle` compares the resolved install's own
+`application.version` against `ghidraTargetVersion` and fails the build on any mismatch,
+so a wrong install can never be used silently.
 
 ## Relationship to game-music-extraction
 

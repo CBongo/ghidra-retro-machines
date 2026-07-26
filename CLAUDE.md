@@ -57,6 +57,27 @@ bd close <id>         # Complete work
 > tiers (pure JUnit / `ProgramBuilder` JUnit / E2E golden image), when to use each, the
 > bless-review discipline, and the chunk map. The essentials are below.
 
+**Do not prefix gradle invocations with `GHIDRA_INSTALL_DIR=…`.** Plain `gradle <task>` is
+correct: the install dir resolves from `ghidraInstallRoot` (machine-local
+`~/.gradle/gradle.properties`, "where Ghidra installs live") composed with
+`gradle.properties`' `ghidraTargetVersion` ("which version this project targets"), so it
+stays correct across a retarget with nothing outside the repo to update.
+
+Precedence is the stock Ghidra skeleton's, unchanged — `GHIDRA_INSTALL_DIR` env var, then
+`-P`, then `ghidraInstallRoot`. An inline `GHIDRA_INSTALL_DIR=<path>` prefix therefore
+*overrides* correct resolution rather than helping it, and pins the very thing that goes
+stale: a session snapshots the environment at startup and cannot correct it in place.
+
+**If the version guard fires complaining about a stale `GHIDRA_INSTALL_DIR`, blank it for
+that run** — do not restart, and do not paste a version-pinned path:
+
+```bash
+GHIDRA_INSTALL_DIR= gradle <task>      # empty value is falsy -> falls through to ghidraInstallRoot
+```
+
+The `tools/banktest` scripts export their own `GHIDRA_INSTALL_DIR` derived from
+`ghidraTargetVersion`, so they are unaffected either way.
+
 The full acceptance gate is:
 
 ```bash
