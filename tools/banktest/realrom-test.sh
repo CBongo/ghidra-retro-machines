@@ -213,6 +213,12 @@ import_and_dump() {
 while IFS=$'\t' read -r id title sha mapper board golden opts || [ -n "${id:-}" ]; do
 	# Skip blank lines and comments.
 	case "${id:-}" in ""|\#*) continue ;; esac
+	# Strip the CR off the row's LAST field. The manifest is checked out with CRLF endings on
+	# Windows, and whichever field happens to be last on a row carries the \r into a path or an
+	# argument -- which fails as a mystifying "golden not found" for a file that plainly exists.
+	# Which field is last varies by row (the opts column is optional), so strip all of them.
+	id="${id%$'\r'}"; title="${title%$'\r'}"; mapper="${mapper%$'\r'}"
+	board="${board%$'\r'}"; golden="${golden%$'\r'}"; opts="${opts%$'\r'}"
 	sha="$(printf '%s' "$sha" | tr 'A-Z' 'a-z' | tr -d '[:space:]')"
 	golden="${golden:-$id.dump}"
 	opts="${opts:-}"
