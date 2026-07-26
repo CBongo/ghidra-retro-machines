@@ -438,6 +438,15 @@ test {
 	useJUnit()
 	maxHeapSize = '2g'
 	environment 'GHIDRA_INSTALL_DIR', ghidraInstallDir
+
+	// Bundled-language visibility for Tier-2 tests (bead grm-2pi). Ghidra finds languages by
+	// scanning module data dirs, not the classpath, and the stock test layout only discovers
+	// modules under the Ghidra install -- so data/languages/*.ldefs is invisible to JUnit by
+	// default. AbstractBundledLanguageTest grafts this module into the test application
+	// layout; it needs to be told where the module is, and needs the .sla to exist first
+	// (sleighCompile's output is gitignored, so a fresh checkout has none).
+	dependsOn 'sleighCompile'
+	systemProperty 'grm.moduleDir', projectDir.absolutePath
 }
 
 //----------------------------------------------------------------------------------

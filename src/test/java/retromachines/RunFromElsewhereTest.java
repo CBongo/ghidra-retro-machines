@@ -24,7 +24,6 @@ import static org.junit.Assert.fail;
 
 import org.junit.Test;
 
-import generic.test.AbstractGenericTest;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.program.database.ProgramBuilder;
 import ghidra.program.database.ProgramDB;
@@ -52,7 +51,7 @@ import ghidra.util.task.TaskMonitor;
  * program by calling straight through.</li>
  * </ul>
  */
-public class RunFromElsewhereTest extends AbstractGenericTest {
+public class RunFromElsewhereTest extends AbstractBundledLanguageTest {
 
 	private static final String CATEGORY = "Test";
 

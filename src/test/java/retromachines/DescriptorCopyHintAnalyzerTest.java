@@ -26,7 +26,6 @@ import org.junit.Test;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
-import generic.test.AbstractGenericTest;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.program.database.ProgramBuilder;
 import ghidra.program.database.ProgramDB;
@@ -53,7 +52,7 @@ import ghidra.util.task.TaskMonitor;
  * end-to-end path (real descriptor, real loader, real ROM option) is the headless
  * {@code copyhinttest}/{@code copyhintnorom} fixtures' job.
  */
-public class DescriptorCopyHintAnalyzerTest extends AbstractGenericTest {
+public class DescriptorCopyHintAnalyzerTest extends AbstractBundledLanguageTest {
 
 	/**
 	 * The shipped C64 shape reduced to what the directive needs: ZEROPAGE as the destination

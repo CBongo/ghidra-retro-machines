@@ -27,7 +27,6 @@ import java.util.List;
 
 import org.junit.Test;
 
-import generic.test.AbstractGenericTest;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.program.database.ProgramBuilder;
 import ghidra.program.database.ProgramDB;
@@ -37,7 +36,7 @@ import ghidra.program.model.mem.MemoryBlock;
 import ghidra.util.task.TaskMonitor;
 
 /**
- * Tier-2 ({@code AbstractGenericTest} + {@code ProgramBuilder}) coverage of
+ * Tier-2 ({@code AbstractBundledLanguageTest} + {@code ProgramBuilder}) coverage of
  * {@link TransferMaterializer#materialize} -- the grm-chu placement policy that decides whether a
  * recovered run-from-elsewhere copy is carved into its containing block <em>in place</em> or
  * falls back to a byte-mapped {@code OVERLAY}, plus the carve geometry itself (bead grm-chu).
@@ -53,7 +52,7 @@ import ghidra.util.task.TaskMonitor;
  * writes bytes, bookmarks) and {@code ProgramBuilder}'s own transaction helper is not in scope
  * once the builder has handed back its {@code ProgramDB}.
  */
-public class TransferMaterializerTest extends AbstractGenericTest {
+public class TransferMaterializerTest extends AbstractBundledLanguageTest {
 
 	private static final String CATEGORY = "Test";
 

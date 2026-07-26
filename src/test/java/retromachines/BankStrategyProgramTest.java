@@ -36,7 +36,9 @@ import ghidra.program.model.listing.Listing;
  * Ghidra GUI/headless-analyzer launcher. {@code ToyProgramBuilder} is deliberately NOT used
  * here -- its {@code Toy:*:builder} pseudo-language is not part of the binary install and
  * throws {@code LanguageNotFoundException}; {@code "6502:LE:16:default"} is a real shipped
- * language and works from a plain {@code ProgramBuilder}.
+ * language and works from a plain {@code ProgramBuilder}. It extends
+ * {@link AbstractBundledLanguageTest} so the whole module shares one grafted application
+ * layout (bead grm-2pi).
  * <p>
  * Template: {@code ghidra.app.analyzers.CondenseFillerBytesAnalyzerTest} in the Ghidra
  * source tree (Features/Base/src/test), with {@code ToyProgramBuilder} swapped for
@@ -48,7 +50,7 @@ import ghidra.program.model.listing.Listing;
  * package-private {@link StoredValueScanner#resolveStoredValue} backward mask-algebra
  * scan -- the same production path {@code BoardBankAnalyzer} drives.
  */
-public class BankStrategyProgramTest extends AbstractGenericTest {
+public class BankStrategyProgramTest extends AbstractBundledLanguageTest {
 
 	private ProgramBuilder builder;
 	private ProgramDB program;
