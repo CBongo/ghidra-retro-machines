@@ -133,19 +133,36 @@ final class LoopIdioms {
 	 *  the base-space target, and behavior is what it was before banked destinations were resolved
 	 *  at all.
 	 *
+	 *  <p>Matched across the <em>whole destination range</em>, not at {@code base} alone, because an
+	 *  indexed store's references are written by the constant reference analyzer at whatever index
+	 *  values it managed to resolve -- a {@code STA $E000,X} over an 8-byte loop yields references
+	 *  to {@code $E006}/{@code $E007}, never to {@code $E000} itself (bead grm-phv is about exactly
+	 *  that). Any one of them identifies the occupant, since a single store instruction writes the
+	 *  whole range through one window. The returned address re-homes {@code base} into that
+	 *  occupant's space, so the caller gets the start of the destination and not whichever index
+	 *  the analyzer happened to pin down.
+	 *
 	 *  @param store the storing instruction a copy loop is anchored on (the {@code STA})
 	 *  @param base  that store's base-space target, from {@link #indexedBase}
+	 *  @param len   destination length in bytes, bounding the range references may fall in
 	 */
-	static Address overlayWriteTarget(Instruction store, Address base) {
+	static Address overlayWriteTarget(Instruction store, Address base, int len) {
 		for (Reference ref : store.getReferencesFrom()) {
 			if (!ref.getReferenceType().isWrite()) {
 				continue;
 			}
 			Address to = ref.getToAddress();
-			// Same offset, different space: addOverlayRef only ever re-homes an offset into another
-			// occupant's space, so a reference to some other offset belongs to a different operand.
-			if (to.getAddressSpace().isOverlaySpace() && to.getOffset() == base.getOffset()) {
-				return to;
+			if (!to.getAddressSpace().isOverlaySpace()) {
+				continue;
+			}
+			long delta = to.getOffset() - base.getOffset();
+			if (delta >= 0 && delta < len) {
+				try {
+					return to.getAddressSpace().getAddress(base.getOffset());
+				}
+				catch (AddressOutOfBoundsException e) {
+					return null;
+				}
 			}
 		}
 		return null;

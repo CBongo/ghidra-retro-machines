@@ -211,7 +211,7 @@ public class CopyLoopAnalyzer extends AbstractAnalyzer {
 		// take that answer. Deliberately after the src/dst and jump-into-range tests above, both of
 		// which need the base-space address: re-homing dst first would make "src != dst" trivially
 		// true, and a base-space JMP would no longer land inside the destination range.
-		Address resolved = LoopIdioms.overlayWriteTarget(sta, dst);
+		Address resolved = LoopIdioms.overlayWriteTarget(sta, dst, len);
 
 		return RunFromElsewhere.request(src, resolved != null ? resolved : dst, len)
 				.target(resolved != null ? TransferTarget.RESOLVED_SPACE : TransferTarget.SAME_SPACE)

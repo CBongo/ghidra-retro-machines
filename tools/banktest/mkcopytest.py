@@ -76,6 +76,28 @@ COPY_200e byte-mapped overlay onto $2016):
                        source payload so a COPIED check that read the wrong side would
                        be caught)
   $2016  91..98       source payload
+
+copybanked.prg ($A1..$A8 payload copied to $E000 -- UNDER the KERNAL window, which is the
+real idiom this models: games run code from the RAM the KERNAL ROM normally covers). The
+base-space block at $E000 is the HIROM window's home occupant, KERNAL, so before grm-bqs
+the carve fired on it and shredded a ROM image into KERNAL / COPY_e000 / KERNAL_E008. The
+write actually lands in the RAM_E000 occupant, and BoardBankAnalyzer has already re-homed
+this store's write reference there, so the copy is carved inside the RAM_E000 overlay and
+KERNAL is left whole:
+
+  $2000  A2 07        LDX #$07
+  $2002  BD 0E 20     LDA $200E,X       ; load source byte      (loop top)
+  $2005  9D 00 E0     STA $E000,X       ; store UNDER the KERNAL ROM
+  $2008  CA           DEX
+  $2009  10 F7        BPL $2002
+  $200B  4C 00 E0     JMP $E000         ; JUMP INTO the copy -> AUTO (code)
+  $200E  A1..A8       source payload
+
+Run TWICE by the harness, as copybanked (no ROM) and copybankedrom (-loader-kernalRom),
+because the placement must come out identical either way: which occupant a write reaches is
+a hardware fact, not a fallback for an uninitialized ROM block. Before grm-bqs the two runs
+disagreed -- with a dump supplied KERNAL was initialized, so the carve was refused and the
+bug hid.
 """
 
 import sys
@@ -129,6 +151,20 @@ def build_copyoverlay():
     return code + dest_placeholder + payload
 
 
+def build_copybanked():
+    code = bytes([
+        0xA2, 0x07,             # LDX #$07
+        0xBD, 0x0E, 0x20,       # LDA $200E,X   (source)
+        0x9D, 0x00, 0xE0,       # STA $E000,X   (destination -- UNDER the KERNAL window)
+        0xCA,                   # DEX
+        0x10, 0xF7,             # BPL $2002
+        0x4C, 0x00, 0xE0,       # JMP $E000     (into the copy -> AUTO)
+    ])
+    payload = bytes(range(0xA1, 0xA9))      # $A1..$A8, distinct from copyloop's $01..$08
+    assert LOAD_ADDR + len(code) == 0x200E, "payload must sit exactly at $200E"
+    return code + payload
+
+
 def write_prg(outdir, name, body):
     header = bytes([LOAD_ADDR & 0xFF, LOAD_ADDR >> 8])
     path = os.path.join(outdir, name)
@@ -145,6 +181,7 @@ def main():
     write_prg(outdir, "copyloop.prg", build_copyloop())
     write_prg(outdir, "copydata.prg", build_copydata())
     write_prg(outdir, "copyoverlay.prg", build_copyoverlay())
+    write_prg(outdir, "copybanked.prg", build_copybanked())
 
 
 if __name__ == "__main__":

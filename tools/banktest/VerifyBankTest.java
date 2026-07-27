@@ -47,6 +47,7 @@ import ghidra.program.model.listing.InstructionIterator;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.mem.MemoryBlockSourceInfo;
+import ghidra.program.model.mem.MemoryBlockType;
 import ghidra.program.model.symbol.Reference;
 import ghidra.program.model.symbol.Symbol;
 
@@ -150,6 +151,15 @@ public class VerifyBankTest extends GhidraScript {
 
 		if (name.contains("copyoverlay")) {
 			checkCopyOverlay();
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
+
+		// One branch serves both the no-ROM and ROM-supplied runs -- "copybankedrom" contains
+		// "copybanked", and checkCopyBanked keys off the full name for the single criterion that
+		// differs. No ordering hazard here, unlike copyhint/copyhintnorom below.
+		if (name.contains("copybanked")) {
+			checkCopyBanked();
 			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
 			return;
 		}
@@ -657,12 +667,86 @@ public class VerifyBankTest extends GhidraScript {
 		final String name;
 		final long start;
 		final long end;
+		/** Overlay space the fragment lives in, or null for the default (base) space. A banked
+		 *  carve (grm-bqs) splits its leftovers inside the occupant's overlay, not the base. */
+		final String space;
 
 		Neighbor(String name, long start, long end) {
+			this(name, start, end, null);
+		}
+
+		Neighbor(String name, long start, long end, String space) {
 			this.name = name;
 			this.start = start;
 			this.end = end;
+			this.space = space;
 		}
+	}
+
+	/** Where a {@link Neighbor} should be looked up: its overlay space, or the base space. */
+	private Address neighborAddr(Neighbor n) {
+		return n.space == null ? addr(n.start) : overlayAddr(n.space, n.start);
+	}
+
+	/**
+	 * grm-bqs: a copy loop landing under the KERNAL window. Run against both {@code copybanked}
+	 * (no ROM dump) and {@code copybankedrom} (dump supplied), which must agree on everything but
+	 * whether KERNAL holds bytes -- where a write lands is a hardware fact, not a fallback for an
+	 * uninitialized ROM block, and the pre-fix code only misbehaved in the no-dump case precisely
+	 * because it keyed on that.
+	 *
+	 * <p>The regression guard proper is {@code kernal-intact}: before the fix the no-dump import
+	 * carved the ROM occupant, leaving {@code COPY_e000} at base {@code $E000} with KERNAL shredded
+	 * into {@code KERNAL / COPY_e000 / KERNAL_E008}.
+	 */
+	private void checkCopyBanked() {
+		boolean romSupplied = currentProgram.getName().contains("copybankedrom");
+
+		verifyCopy("copybanked", "COPY_e000", 0xe000, 0x200e,
+			new byte[] {(byte) 0xa1, (byte) 0xa2, (byte) 0xa3, (byte) 0xa4, (byte) 0xa5,
+				(byte) 0xa6, (byte) 0xa7, (byte) 0xa8},
+			true, false, true,
+			new Neighbor[] {new Neighbor("RAM_E000_E008", 0xe008, 0xffff, "RAM_E000")},
+			addr(COPY_ENTRY), null);
+
+		MemoryBlock copy = currentProgram.getMemory().getBlock("COPY_e000");
+		criterion("copybanked-copyblock-space",
+			copy != null && "RAM_E000".equals(copy.getStart().getAddressSpace().getName()),
+			"space=" + (copy == null ? "<missing>"
+					: copy.getStart().getAddressSpace().getName()) + " expected=RAM_E000");
+
+		// The ROM occupant must be whole, still named KERNAL, and initialized iff a dump was given.
+		MemoryBlock kernal = currentProgram.getMemory().getBlock(addr(0xe000));
+		boolean intact = kernal != null && "KERNAL".equals(kernal.getName()) &&
+			kernal.getStart().equals(addr(0xe000)) && kernal.getEnd().equals(addr(0xffff)) &&
+			kernal.isInitialized() == romSupplied;
+		criterion("copybanked-kernal-intact", intact,
+			"kernal=" + (kernal == null ? "<missing>"
+					: kernal.getName() + " " + fmt(kernal.getStart()) + "-" + fmt(kernal.getEnd()) +
+						" init=" + kernal.isInitialized()) +
+				" expectedInit=" + romSupplied);
+
+		// Belt-and-braces on the same point from the other side: no carve fragment of the ROM
+		// block may exist anywhere, under any name.
+		String strays = "";
+		for (MemoryBlock b : currentProgram.getMemory().getBlocks()) {
+			if (b.getName().startsWith("KERNAL_")) {
+				strays += (strays.isEmpty() ? "" : ",") + b.getName();
+			}
+		}
+		criterion("copybanked-kernal-not-split", strays.isEmpty(),
+			"strayFragments=" + (strays.isEmpty() ? "<none>" : strays));
+
+		// The entering JMP must reach the copy. Deliberately "a reference", not "the primary
+		// one": CopyLoopAnalyzer's bridgeJump and BoardBankAnalyzer's addOverlayRef both call
+		// setPrimary, so which one wins is not a contract worth pinning here.
+		Reference bridged = findOverlayRef(0x200b, "RAM_E000", 0xe000);
+		criterion("copybanked-callref-reaches-copy",
+			bridged != null &&
+				currentProgram.getListing().getInstructionAt(bridged.getToAddress()) != null,
+			"ref=" + (bridged == null ? "<none>"
+					: bridged.getToAddress().getAddressSpace().getName() + ":" +
+						fmt(bridged.getToAddress()) + " " + bridged.getReferenceType()));
 	}
 
 	private void checkCopyLoop() {
@@ -798,7 +882,9 @@ public class VerifyBankTest extends GhidraScript {
 		MemoryBlock block = currentProgram.getMemory().getBlock(blockName);
 		boolean inBaseSpace = block != null && block.getStart().getAddressSpace()
 				.equals(currentProgram.getAddressFactory().getDefaultAddressSpace());
-		String placementLabel = block == null ? "<missing>" : inBaseSpace ? "inplace" : "overlay";
+		String placementLabel = block == null ? "<missing>"
+				: block.getType() == MemoryBlockType.BYTE_MAPPED ? "overlay"
+				: inBaseSpace ? "inplace" : "banked";
 
 		byte[] recovered = null;
 		String copiedLine;
@@ -848,7 +934,7 @@ public class VerifyBankTest extends GhidraScript {
 		}
 		else {
 			for (Neighbor n : expectedNeighbors) {
-				MemoryBlock nb = currentProgram.getMemory().getBlock(addr(n.start));
+				MemoryBlock nb = currentProgram.getMemory().getBlock(neighborAddr(n));
 				println("NEIGHBORS " + (nb == null ? n.name + " <missing>"
 						: nb.getName() + " " + fmt(nb.getStart()) + "-" + fmt(nb.getEnd()) +
 							" init=" + nb.isInitialized()));
@@ -884,9 +970,10 @@ public class VerifyBankTest extends GhidraScript {
 
 		boolean neighborsOk = true;
 		for (Neighbor n : expectedNeighbors) {
-			MemoryBlock nb = currentProgram.getMemory().getBlock(addr(n.start));
+			MemoryBlock nb = currentProgram.getMemory().getBlock(neighborAddr(n));
 			neighborsOk &= nb != null && n.name.equals(nb.getName()) &&
-				nb.getStart().equals(addr(n.start)) && nb.getEnd().equals(addr(n.end)) &&
+				nb.getStart().equals(neighborAddr(n)) &&
+				nb.getEnd().equals(neighborAddr(n).getNewAddress(n.end)) &&
 				!nb.isInitialized();
 		}
 		criterion(idPrefix + "-neighbors", neighborsOk,
@@ -1005,16 +1092,18 @@ public class VerifyBankTest extends GhidraScript {
 		if (block == null) {
 			return "<none>";
 		}
-		if (!inBaseSpace) {
-			if (!block.getSourceInfos().isEmpty()) {
-				java.util.Optional<AddressRange> r = block.getSourceInfos().get(0).getMappedRange();
-				if (r.isPresent()) {
-					return fmt(r.get().getMinAddress());
-				}
+		// sourceName first, byte-map second -- NOT keyed on inBaseSpace, because a banked carve
+		// (grm-bqs) is an in-place carve that lives in an overlay: it records sourceName like any
+		// other carve and has no byte-map at all. createOverlay never sets sourceName, so the
+		// byte-mapped fallback still reaches its own branch below.
+		String sourceName = block.getSourceName();
+		if ((sourceName == null || sourceName.isBlank()) && !block.getSourceInfos().isEmpty()) {
+			java.util.Optional<AddressRange> r = block.getSourceInfos().get(0).getMappedRange();
+			if (r.isPresent()) {
+				return fmt(r.get().getMinAddress());
 			}
 			return "<none>";
 		}
-		String sourceName = block.getSourceName();
 		if (sourceName == null || sourceName.isBlank()) {
 			return "<none>";
 		}

@@ -228,6 +228,10 @@ if selected c64-loader; then
 	generate mkprgloadtest.py "$WORK/prg"
 fi
 if selected c64-recovery; then
+	# copybankedrom needs kernal.bin, which mkromtest.py generates. Only the c64-loader branch
+	# above asks for it, so this chunk would fail when selected on its own; generate is
+	# idempotent, so selecting both chunks simply runs it twice.
+	generate mkromtest.py "$WORK/prg"
 	generate mkemutest.py "$WORK/prg"
 	generate mkdecrypttest.py "$WORK/prg"
 	generate mkrollingtest.py "$WORK/prg"
@@ -403,6 +407,18 @@ if selected c64-recovery; then
 	run_one copyloop "$WORK/prg/copyloop.prg" C64PrgLoader
 	run_one copydata "$WORK/prg/copydata.prg" C64PrgLoader
 	run_one copyoverlay "$WORK/prg/copyoverlay.prg" C64PrgLoader
+
+	# grm-bqs: a copy loop landing UNDER the KERNAL window. The base-space block at $E000 is
+	# the window's home occupant (KERNAL), but the write reaches RAM_E000, so the copy must be
+	# carved inside that overlay and KERNAL must survive whole. Run BOTH ways -- no ROM and
+	# ROM supplied -- because the placement has to be identical either way: which occupant a
+	# write reaches is a hardware fact, not a fallback for an uninitialized ROM block. That is
+	# also what hid the bug, since a supplied dump made KERNAL initialized and refused the
+	# carve for the wrong reason. Same copyhinttest/copyhintnorom pattern used below.
+	run_one copybanked "$WORK/prg/copybanked.prg" C64PrgLoader
+	cp -f "$WORK/prg/copybanked.prg" "$WORK/prg/copybankedrom.prg"
+	run_one copybankedrom "$WORK/prg/copybankedrom.prg" C64PrgLoader \
+		"-loader-kernalRom $(native "$WORK/prg/kernal.bin")"
 
 	# The MANUAL run-from-elsewhere front-end (grm-1.7.1.1): the shipped
 	# ghidra_scripts/RunFromElsewhereTransfer.java driven as a -preScript, which is the only
