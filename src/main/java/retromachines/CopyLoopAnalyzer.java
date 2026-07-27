@@ -102,8 +102,14 @@ public class CopyLoopAnalyzer extends AbstractAnalyzer {
 
 	public CopyLoopAnalyzer() {
 		super(NAME, DESCRIPTION, AnalyzerType.INSTRUCTION_ANALYZER);
-		// After reference analysis so branch flows exist (back-edge + jump-into-range).
-		setPriority(AnalysisPriority.REFERENCE_ANALYSIS.after());
+		// After reference analysis so branch flows exist (back-edge + jump-into-range), and one
+		// step later again so it also lands after BoardBankAnalyzer, which sits at
+		// REFERENCE_ANALYSIS.after() itself. That ordering is a real dependency, not tidiness:
+		// tryRecognize reads the banking analyzer's re-homed write reference to learn where a
+		// store into a banked window actually lands (grm-bqs). Equal priority would leave the
+		// order undefined. Degradation is safe -- with no such reference we keep the base-space
+		// destination, which is the pre-grm-bqs behavior.
+		setPriority(AnalysisPriority.REFERENCE_ANALYSIS.after().after());
 		setDefaultEnablement(true);
 		setSupportsOneTimeAnalysis();
 	}
@@ -197,8 +203,18 @@ public class CopyLoopAnalyzer extends AbstractAnalyzer {
 			return null;
 		}
 
-		return RunFromElsewhere.request(src, dst, len)
-				.target(TransferTarget.SAME_SPACE)
+		// grm-bqs: dst so far is a BASE-space address, because an indexed operand's scalar carries
+		// no space of its own. On a banked machine that names the window's home occupant -- at
+		// $E000 with no ROM supplied, the uninitialized KERNAL block, which the materializer would
+		// happily carve. BoardBankAnalyzer has already resolved this very store against the bank
+		// state live here and re-homed its write reference into the occupant the write reaches, so
+		// take that answer. Deliberately after the src/dst and jump-into-range tests above, both of
+		// which need the base-space address: re-homing dst first would make "src != dst" trivially
+		// true, and a base-space JMP would no longer land inside the destination range.
+		Address resolved = LoopIdioms.overlayWriteTarget(sta, dst);
+
+		return RunFromElsewhere.request(src, resolved != null ? resolved : dst, len)
+				.target(resolved != null ? TransferTarget.RESOLVED_SPACE : TransferTarget.SAME_SPACE)
 				.provenanceSite(init.getAddress())
 				.disassemble(true)
 				.makeFunction(true)

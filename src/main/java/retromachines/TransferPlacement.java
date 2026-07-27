@@ -19,13 +19,21 @@ package retromachines;
  * Where a transfer's bytes actually ended up -- {@link TransferMaterializer}'s verdict, reported
  * back through {@link RunFromElsewhere.Result}.
  *
- * <p>The three materializing members are ordered by how well references resolve to the result:
+ * <p>The four materializing members are ordered by how well references resolve to the result:
  * {@link #IN_PLACE} and {@link #NEW_BLOCK} both put real bytes at the address the CPU runs them
- * from, so a call site resolves natively; {@link #OVERLAY} does not, and needs bridging.
+ * from, so a call site resolves natively; {@link #IN_PLACE_BANKED} and {@link #OVERLAY} put them in
+ * an overlay space, so the entering jump needs bridging.
  */
 public enum TransferPlacement {
 	/** Carved out of the containing uninitialized block and initialized at the real address. */
 	IN_PLACE,
+	/**
+	 * Carved in place, but inside the overlay of the banked-window occupant the destination
+	 * resolves to -- on a C64, the RAM under a ROM (grm-bqs). The bytes are where the CPU runs
+	 * them from <em>in that bank state</em>, which is as native as a banked machine gets; a
+	 * base-space call site still names the home occupant, so the entering jump is bridged.
+	 */
+	IN_PLACE_BANKED,
 	/**
 	 * A fresh non-overlay block at the destination, because nothing was mapped there at all.
 	 * There was no containing block to carve and no conflict to avoid, so the bytes go straight

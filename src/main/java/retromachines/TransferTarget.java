@@ -34,6 +34,15 @@ public enum TransferTarget {
 	SAME_SPACE_INPLACE,
 	/** Force a dual-home byte-mapped overlay in its own address space (grm-1.7.1). */
 	SAME_SPACE_OVERLAY,
+	/**
+	 * The destination address has already been resolved by the front-end to the space where the
+	 * bytes really come to rest -- a banked-window write target read off the storing instruction's
+	 * own reference (grm-bqs). Carve there even though it is an overlay space: this is the one
+	 * overlay {@link TransferMaterializer} may carve, because it did not <em>fall back</em> into it,
+	 * it was <em>aimed</em> at it. A destination that merely happens to sit in an overlay still
+	 * asks for {@link #SAME_SPACE} and is still refused the carve.
+	 */
+	RESOLVED_SPACE,
 	/** A separate Program in another processor's space (SPC700 upload, grm-1.7.3). */
 	SEPARATE_PROGRAM;
 }

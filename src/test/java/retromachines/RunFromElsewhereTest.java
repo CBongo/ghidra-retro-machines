@@ -67,7 +67,7 @@ public class RunFromElsewhereTest extends AbstractBundledLanguageTest {
 	private ProgramDB carvableProgram(ProgramBuilder builder) throws Exception {
 		builder.createMemory("SRC", "0x2000", 0x10);
 		builder.setBytes("0x2000", "01 02 03 04 05 06 07 08");
-		builder.createUninitializedMemory("RAM_C000", "0xC000", 0x1000);
+		uninitializedRam(builder, "RAM_C000", "0xC000", 0x1000);
 		return builder.getProgram();
 	}
 
@@ -250,7 +250,7 @@ public class RunFromElsewhereTest extends AbstractBundledLanguageTest {
 	public void unreadableSourceWithNoSiteProducesNothingAndNoWarningBookmark() throws Exception {
 		ProgramBuilder builder = newBuilder();
 		builder.createUninitializedMemory("ROM", "0xE000", 0x100);
-		builder.createUninitializedMemory("RAM_C000", "0xC000", 0x100);
+		uninitializedRam(builder, "RAM_C000", "0xC000", 0x100);
 		ProgramDB program = builder.getProgram();
 
 		// The ROM-gated rule of docs/smc-inplace-vs-overlay.md section 6: no readable source means

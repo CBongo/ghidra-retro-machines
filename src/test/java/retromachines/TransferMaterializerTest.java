@@ -128,7 +128,7 @@ public class TransferMaterializerTest extends AbstractBundledLanguageTest {
 		ProgramBuilder builder = newBuilder();
 		// Source range is uninitialized -- Memory.getBytes over it throws, so gate 0 fails.
 		builder.createUninitializedMemory("SRC", "0x2000", 0x10);
-		builder.createUninitializedMemory("RAM_C000", "0xC000", 0x10);
+		uninitializedRam(builder, "RAM_C000", "0xC000", 0x10);
 		ProgramDB program = builder.getProgram();
 
 		Address src = builder.addr("0x2000");
@@ -167,7 +167,7 @@ public class TransferMaterializerTest extends AbstractBundledLanguageTest {
 		builder.setBytes("0x2000", "01 02 03 04 05 06 07 08");
 		// A destination that WOULD be perfectly carvable under IDENTITY -- proves the transform
 		// check is its own fence, not a side effect of an unreadable source or bad geometry.
-		builder.createUninitializedMemory("RAM_C000", "0xC000", 0x10);
+		uninitializedRam(builder, "RAM_C000", "0xC000", 0x10);
 		ProgramDB program = builder.getProgram();
 
 		Address src = builder.addr("0x2000");
@@ -228,8 +228,8 @@ public class TransferMaterializerTest extends AbstractBundledLanguageTest {
 		builder.createMemory("SRC", "0x2000", 0x10);
 		builder.setBytes("0x2000", "01 02 03 04 05 06 07 08");
 		// Two adjacent uninitialized blocks; dst..dst+len-1 crosses the boundary between them.
-		builder.createUninitializedMemory("BLOCK_A", "0xC000", 4); // C000-C003
-		builder.createUninitializedMemory("BLOCK_B", "0xC004", 4); // C004-C007
+		uninitializedRam(builder, "BLOCK_A", "0xC000", 4); // C000-C003
+		uninitializedRam(builder, "BLOCK_B", "0xC004", 4); // C004-C007
 		ProgramDB program = builder.getProgram();
 
 		Address src = builder.addr("0x2000");
@@ -282,7 +282,7 @@ public class TransferMaterializerTest extends AbstractBundledLanguageTest {
 		ProgramBuilder builder = newBuilder();
 		builder.createMemory("SRC", "0x2000", 0x10);
 		builder.setBytes("0x2000", "01 02 03 04 05 06 07 08");
-		builder.createUninitializedMemory("RAM_6004", "0x6004", 4); // 6004-6007; 6000-6003 is a hole
+		uninitializedRam(builder, "RAM_6004", "0x6004", 4); // 6004-6007; 6000-6003 is a hole
 		ProgramDB program = builder.getProgram();
 
 		Address src = builder.addr("0x2000");
@@ -309,7 +309,7 @@ public class TransferMaterializerTest extends AbstractBundledLanguageTest {
 		builder.createMemory("SRC", "0x2000", 0x10);
 		builder.setBytes("0x2000", "01 02 03 04 05 06 07 08");
 		// A destination that is otherwise perfectly carvable (whole uninitialized DEFAULT block).
-		builder.createUninitializedMemory("RAM_C000", "0xC000", 0x10);
+		uninitializedRam(builder, "RAM_C000", "0xC000", 0x10);
 		ProgramDB program = builder.getProgram();
 
 		Address src = builder.addr("0x2000");
@@ -338,7 +338,7 @@ public class TransferMaterializerTest extends AbstractBundledLanguageTest {
 		ProgramBuilder builder = newBuilder();
 		builder.createMemory("SRC", "0x2000", 0x10);
 		builder.setBytes("0x2000", "11 12 13 14 15 16 17 18");
-		builder.createUninitializedMemory("RAM_C000", "0xC000", 0x1000); // C000-CFFF
+		uninitializedRam(builder, "RAM_C000", "0xC000", 0x1000); // C000-CFFF
 		ProgramDB program = builder.getProgram();
 
 		Address src = builder.addr("0x2000");
@@ -366,7 +366,7 @@ public class TransferMaterializerTest extends AbstractBundledLanguageTest {
 		ProgramBuilder builder = newBuilder();
 		builder.createMemory("SRC", "0x200e", 0x10);
 		builder.setBytes("0x200e", "01 02 03 04 05 06 07 08");
-		builder.createUninitializedMemory("RAM_C000", "0xC000", 0x1000); // C000-CFFF
+		uninitializedRam(builder, "RAM_C000", "0xC000", 0x1000); // C000-CFFF
 		ProgramDB program = builder.getProgram();
 
 		Address src = builder.addr("0x200e");
@@ -393,7 +393,7 @@ public class TransferMaterializerTest extends AbstractBundledLanguageTest {
 		ProgramBuilder builder = newBuilder();
 		builder.createMemory("SRC", "0x2000", 0x10);
 		builder.setBytes("0x2000", "21 22 23 24 25 26 27 28");
-		builder.createUninitializedMemory("RAM_C000", "0xC000", 0x1000); // C000-CFFF
+		uninitializedRam(builder, "RAM_C000", "0xC000", 0x1000); // C000-CFFF
 		ProgramDB program = builder.getProgram();
 
 		Address src = builder.addr("0x2000");
@@ -419,7 +419,7 @@ public class TransferMaterializerTest extends AbstractBundledLanguageTest {
 		ProgramBuilder builder = newBuilder();
 		builder.createMemory("SRC", "0x2000", 0x10);
 		builder.setBytes("0x2000", "31 32 33 34 35 36 37 38");
-		builder.createUninitializedMemory("RAM_C000", "0xC000", 8); // C000-C007, exactly len
+		uninitializedRam(builder, "RAM_C000", "0xC000", 8); // C000-C007, exactly len
 		ProgramDB program = builder.getProgram();
 
 		Address src = builder.addr("0x2000");
@@ -447,7 +447,7 @@ public class TransferMaterializerTest extends AbstractBundledLanguageTest {
 		ProgramBuilder builder = newBuilder();
 		builder.createMemory("SRC", "0x200e", 0x10);
 		builder.setBytes("0x200e", "01 02 03 04 05 06 07 08");
-		builder.createUninitializedMemory("RAM_C000", "0xC000", 0x1000);
+		uninitializedRam(builder, "RAM_C000", "0xC000", 0x1000);
 		ProgramDB program = builder.getProgram();
 
 		Address src = builder.addr("0x200e");
@@ -462,5 +462,140 @@ public class TransferMaterializerTest extends AbstractBundledLanguageTest {
 
 		assertEquals("a re-run must not touch the map a prior pass already materialized", before,
 			after);
+	}
+
+	// ------------------------------------------------------------------
+	// 8. Banked destinations (grm-bqs)
+	// ------------------------------------------------------------------
+	// The C64 arrangement that produced the bug: the HIROM window's home occupant is KERNAL, so
+	// the BASE-space block at $E000 is the ROM -- uninitialized when no dump was supplied, and
+	// therefore carvable-looking. The RAM the copy really lands in is the RAM_E000 overlay. Note
+	// this is the mirror image of DescriptorCopyHintAnalyzerTest's inverted fixture, which puts
+	// RAM_E000 in the base space to exercise SOURCE resolution.
+
+	/** KERNAL home in the base space (a ROM: readable, NOT writable), RAM_E000 as the overlay. */
+	private static void c64HiromWindow(ProgramBuilder builder) throws Exception {
+		builder.createUninitializedMemory("KERNAL", "0xE000", 0x2000); // rom: no write flag
+		uninitializedRamOverlay(builder, "RAM_E000", "0xE000", 0x2000);
+	}
+
+	@Test
+	public void resolvedOverlayDestinationIsCarvedThere() throws Exception {
+		ProgramBuilder builder = newBuilder();
+		builder.createMemory("SRC", "0x200e", 0x10);
+		builder.setBytes("0x200e", "a1 a2 a3 a4 a5 a6 a7 a8");
+		c64HiromWindow(builder);
+		ProgramDB program = builder.getProgram();
+
+		Address src = builder.addr("0x200e");
+		// The front-end resolved the store's write reference into the RAM_E000 overlay.
+		Address dst = program.getAddressFactory().getAddressSpace("RAM_E000").getAddress(0xE000);
+		TransferSpec spec = identitySpec(src, dst, 8, TransferTarget.RESOLVED_SPACE, src);
+
+		TransferPlacement placement = materialize(program, spec);
+
+		assertEquals(TransferPlacement.IN_PLACE_BANKED, placement);
+		MemoryBlock copy = program.getMemory().getBlock("COPY_e000");
+		assertBlock(copy, "COPY_e000", dst, dst.add(7), true);
+		assertEquals("the copy belongs to the occupant the write reaches", "RAM_E000",
+			copy.getStart().getAddressSpace().getName());
+		assertArrayEquals(new byte[] {(byte) 0xa1, (byte) 0xa2, (byte) 0xa3, (byte) 0xa4,
+			(byte) 0xa5, (byte) 0xa6, (byte) 0xa7, (byte) 0xa8}, readBlock(copy, 8));
+		// The whole point: the ROM block is untouched, not split into KERNAL/COPY_e000/KERNAL_E008.
+		assertBlock(program.getMemory().getBlock(builder.addr("0xE000")), "KERNAL",
+			builder.addr("0xE000"), builder.addr("0xFFFF"), false);
+		assertNoSplitNames(program);
+	}
+
+	@Test
+	public void redirectHappensEvenWhenTheRomOccupantIsInitialized() throws Exception {
+		ProgramBuilder builder = newBuilder();
+		builder.createMemory("SRC", "0x200e", 0x10);
+		builder.setBytes("0x200e", "a1 a2 a3 a4 a5 a6 a7 a8");
+		builder.createMemory("KERNAL", "0xE000", 0x2000); // a real ROM dump WAS supplied
+		uninitializedRamOverlay(builder, "RAM_E000", "0xE000", 0x2000);
+		ProgramDB program = builder.getProgram();
+
+		Address src = builder.addr("0x200e");
+		Address dst = program.getAddressFactory().getAddressSpace("RAM_E000").getAddress(0xE000);
+		TransferSpec spec = identitySpec(src, dst, 8, TransferTarget.RESOLVED_SPACE, src);
+
+		// Where the write lands is a hardware fact, not a fallback for an uninitialized ROM block:
+		// supplying the dump must not change the placement.
+		assertEquals(TransferPlacement.IN_PLACE_BANKED, materialize(program, spec));
+		assertEquals("RAM_E000", program.getMemory().getBlock("COPY_e000").getStart()
+				.getAddressSpace().getName());
+	}
+
+	@Test
+	public void unresolvedOverlayDestinationIsStillRefused() throws Exception {
+		ProgramBuilder builder = newBuilder();
+		builder.createMemory("SRC", "0x200e", 0x10);
+		builder.setBytes("0x200e", "a1 a2 a3 a4 a5 a6 a7 a8");
+		c64HiromWindow(builder);
+		ProgramDB program = builder.getProgram();
+
+		Address src = builder.addr("0x200e");
+		Address dst = program.getAddressFactory().getAddressSpace("RAM_E000").getAddress(0xE000);
+		// Same destination, but NOT resolved by the front-end -- it merely happens to be in an
+		// overlay. This is the nescopytest contract (VerifyBankTest:747-749): a destination that
+		// stayed in its executing overlay must not be carved.
+		TransferSpec spec = identitySpec(src, dst, 8, TransferTarget.SAME_SPACE, src);
+
+		// SKIPPED rather than OVERLAY, and that is long-standing behavior rather than anything
+		// grm-bqs changed: createByteMappedBlock only allocates a fresh overlay space when the
+		// destination is NOT already in one (MemoryMapDB guards the createOverlaySpace call on
+		// exactly that), so for an overlay destination it tries to build the block inside the
+		// existing space and collides with the occupant already there. An unresolved overlay
+		// destination therefore has no representation at all -- which is the point: it is the
+		// resolution that earns the carve.
+		assertEquals(TransferPlacement.SKIPPED, materialize(program, spec));
+		assertNull("nothing may be materialized for an unresolved overlay destination",
+			program.getMemory().getBlock("COPY_e000"));
+	}
+
+	@Test
+	public void romOccupantIsNeverCarvedByAFrontEndWithNothingToResolve() throws Exception {
+		ProgramBuilder builder = newBuilder();
+		builder.createMemory("SRC", "0x200e", 0x10);
+		builder.setBytes("0x200e", "a1 a2 a3 a4 a5 a6 a7 a8");
+		c64HiromWindow(builder);
+		ProgramDB program = builder.getProgram();
+
+		Address src = builder.addr("0x200e");
+		Address dst = builder.addr("0xE000"); // the BASE-space ROM block, as a descriptor hint
+		                                      // or the manual command would name it
+		TransferSpec spec = identitySpec(src, dst, 8, TransferTarget.SAME_SPACE, src);
+
+		// Uninitialized, DEFAULT, unmapped, wholly containing -- carvable on every pre-grm-bqs
+		// test. Refused now because a ROM occupant is not writable.
+		assertEquals(TransferPlacement.OVERLAY, materialize(program, spec));
+		assertBlock(program.getMemory().getBlock(dst), "KERNAL", builder.addr("0xE000"),
+			builder.addr("0xFFFF"), false);
+		assertNoSplitNames(program);
+	}
+
+	@Test
+	public void volatileIoBlockIsNeverCarved() throws Exception {
+		ProgramBuilder builder = newBuilder();
+		builder.createMemory("SRC", "0x200e", 0x10);
+		builder.setBytes("0x200e", "a1 a2 a3 a4 a5 a6 a7 a8");
+		// The C64 CHARIO window with I/O banked in: the base-space block is a VIC register file.
+		// Writable (registers are written) but volatile, so it is not somewhere bytes come to rest.
+		MemoryBlock vic = builder.createUninitializedMemory("VIC", "0xD000", 0x400);
+		builder.setWrite(vic, true);
+		int tx = builder.getProgram().startTransaction("volatile");
+		vic.setVolatile(true);
+		builder.getProgram().endTransaction(tx, true);
+		ProgramDB program = builder.getProgram();
+
+		Address src = builder.addr("0x200e");
+		Address dst = builder.addr("0xD000");
+		TransferSpec spec = identitySpec(src, dst, 8, TransferTarget.SAME_SPACE, src);
+
+		assertEquals(TransferPlacement.OVERLAY, materialize(program, spec));
+		assertBlock(program.getMemory().getBlock(dst), "VIC", builder.addr("0xD000"),
+			builder.addr("0xD3ff"), false);
+		assertNoSplitNames(program);
 	}
 }

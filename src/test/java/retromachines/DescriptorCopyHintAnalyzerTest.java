@@ -88,7 +88,7 @@ public class DescriptorCopyHintAnalyzerTest extends AbstractBundledLanguageTest 
 	 * placement policy.
 	 */
 	private static void addZeroPage(ProgramBuilder builder) throws Exception {
-		builder.createUninitializedMemory("ZEROPAGE", "0x0002", 0xFE);
+		uninitializedRam(builder, "ZEROPAGE", "0x0002", 0xFE);
 	}
 
 	/** Runs the analyzer's directive pass inside its own transaction, as auto-analysis does. */

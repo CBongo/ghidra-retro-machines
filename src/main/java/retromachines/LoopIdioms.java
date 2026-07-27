@@ -22,6 +22,7 @@ import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.scalar.Scalar;
 import ghidra.program.model.symbol.FlowType;
+import ghidra.program.model.symbol.Reference;
 
 /**
  * Shared 6502 loop-idiom recognition helpers used by the run-from-elsewhere family of
@@ -107,6 +108,47 @@ final class LoopIdioms {
 		catch (AddressOutOfBoundsException e) {
 			return null;
 		}
+	}
+
+	/** Where a store's bytes actually land, when the banking analyzer has re-homed the store's own
+	 *  write reference into another address space -- or null when it has not, which is every
+	 *  unbanked destination and the normal case.
+	 *
+	 *  <p>On a banked machine the base-space block at a store's target is only the <em>home</em>
+	 *  occupant of the containing window. A C64 copy loop writing to {@code $E000} targets the RAM
+	 *  under the KERNAL ROM, but {@link #indexedBase} can only name {@code base:$E000}, which is
+	 *  where the loader put the KERNAL block -- so carving there would shred a ROM image
+	 *  (bead grm-bqs).
+	 *
+	 *  <p><b>The descriptor alone cannot settle this, and does not have to.</b> Which occupant a
+	 *  write reaches is bank-state-dependent in general: a C64 store to {@code $D000} hits the I/O
+	 *  registers when I/O is banked in and {@code RAM_D000} when it is not, and the schema has no
+	 *  {@code on_read} key at all because a read simply goes to whichever occupant is live. But
+	 *  {@code BoardBankAnalyzer.retargetReferences} has already resolved this store against the bank
+	 *  state live at this very instruction and attached a WRITE reference to the occupant the write
+	 *  actually reaches. Read that answer instead of deriving a weaker one from the descriptor.
+	 *
+	 *  <p>Requires the banking analyzer to have run first -- {@link CopyLoopAnalyzer} orders itself
+	 *  after it for exactly this reason. If it has not, no such reference exists, the caller keeps
+	 *  the base-space target, and behavior is what it was before banked destinations were resolved
+	 *  at all.
+	 *
+	 *  @param store the storing instruction a copy loop is anchored on (the {@code STA})
+	 *  @param base  that store's base-space target, from {@link #indexedBase}
+	 */
+	static Address overlayWriteTarget(Instruction store, Address base) {
+		for (Reference ref : store.getReferencesFrom()) {
+			if (!ref.getReferenceType().isWrite()) {
+				continue;
+			}
+			Address to = ref.getToAddress();
+			// Same offset, different space: addOverlayRef only ever re-homes an offset into another
+			// occupant's space, so a reference to some other offset belongs to a different operand.
+			if (to.getAddressSpace().isOverlaySpace() && to.getOffset() == base.getOffset()) {
+				return to;
+			}
+		}
+		return null;
 	}
 
 	static Register indexReg(Instruction instr) {

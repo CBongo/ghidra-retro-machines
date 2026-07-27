@@ -24,6 +24,9 @@ import generic.jar.ResourceFile;
 import generic.test.AbstractGenericTest;
 import ghidra.GhidraTestApplicationLayout;
 import ghidra.framework.GModule;
+import ghidra.program.database.ProgramBuilder;
+import ghidra.program.database.ProgramDB;
+import ghidra.program.model.mem.MemoryBlock;
 import ghidra.util.exception.AssertException;
 import utility.application.ApplicationLayout;
 
@@ -71,6 +74,50 @@ public abstract class AbstractBundledLanguageTest extends AbstractGenericTest {
 				return modules;
 			}
 		};
+	}
+
+	/**
+	 * An uninitialized block that actually claims to be RAM -- writable and non-volatile.
+	 *
+	 * <p>Use this, not {@code ProgramBuilder.createUninitializedMemory}, for any block standing in
+	 * for free RAM. Every {@code Memory.create*Block} entry point in Ghidra core creates a block
+	 * with {@code MemoryBlock.READ} and nothing else ({@code MemoryMapDB:781}), so a raw
+	 * {@code ProgramBuilder} block reports {@code isWrite() == false} -- indistinguishable from a
+	 * ROM occupant. Our loaders set the flags explicitly from the descriptor's {@code kind}
+	 * ({@code DescriptorSupport.perms}/{@code markVolatileIfIo}), and code that keys on that
+	 * distinction (notably {@code TransferMaterializer.canCarve}, which refuses to carve anything
+	 * that is not plain RAM) needs fixtures that model a real import rather than the bare default.
+	 */
+	protected static MemoryBlock uninitializedRam(ProgramBuilder builder, String name,
+			String address, int size) throws Exception {
+		MemoryBlock block = builder.createUninitializedMemory(name, address, size);
+		builder.setWrite(block, true);
+		return block;
+	}
+
+	/**
+	 * An <em>uninitialized</em> RAM block in its own overlay space -- what a loader creates for a
+	 * non-home window occupant with no image behind it, such as the C64's RAM under the KERNAL
+	 * ({@code AbstractCbmPrgLoader.createWindowOccupant} -> {@code createUninitializedBlock} with
+	 * {@code isOverlay}). {@code ProgramBuilder.createOverlayMemory} is not a substitute: it goes
+	 * through {@code createInitializedBlock}, so the block reports initialized and anything keying
+	 * on "uninitialized, therefore free" behaves differently than it would on a real import.
+	 */
+	protected static MemoryBlock uninitializedRamOverlay(ProgramBuilder builder, String name,
+			String address, int size) throws Exception {
+		ProgramDB program = builder.getProgram();
+		int tx = program.startTransaction("create overlay " + name);
+		boolean commit = false;
+		try {
+			MemoryBlock block = program.getMemory()
+					.createUninitializedBlock(name, builder.addr(address), size, true);
+			block.setWrite(true);
+			commit = true;
+			return block;
+		}
+		finally {
+			program.endTransaction(tx, commit);
+		}
 	}
 
 	/**

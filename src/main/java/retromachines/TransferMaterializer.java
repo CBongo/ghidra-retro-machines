@@ -78,6 +78,20 @@ import ghidra.util.task.TaskMonitor;
  * overwrite every byte of it, so no fill byte survives. Never carve wider than can be filled.</li>
  * </ol>
  *
+ * <p><b>A banked destination is resolved by the front-end, not guessed here (grm-bqs).</b> On a
+ * banked machine the base-space block at a destination is only the window's <em>home</em> occupant:
+ * a C64 copy to {@code $E000} finds {@code KERNAL}, which with no ROM supplied is uninitialized and
+ * would therefore be carved -- shredding a ROM image into {@code KERNAL / COPY_e000 / KERNAL_E008}
+ * and labelling a RAM copy as ROM. The right destination is the RAM under the ROM, and which
+ * occupant a write reaches is <em>bank-state-dependent</em> in general (a C64 store to {@code $D000}
+ * hits I/O registers or {@code RAM_D000} depending on the state), so the descriptor cannot answer it
+ * alone. It does not have to: {@code BoardBankAnalyzer} has already resolved every store against the
+ * bank state live at that instruction, so {@link CopyLoopAnalyzer} reads the answer off the store's
+ * own reference ({@code LoopIdioms.overlayWriteTarget}) and hands us a destination already homed in
+ * the right space, marked {@link TransferTarget#RESOLVED_SPACE}. Front-ends with no instruction to
+ * read -- a descriptor directive, the manual command -- are covered instead by the blanket rule that
+ * only plain RAM is ever carved: never a block that is unwritable (ROM) or volatile (I/O).
+ *
  * <p><b>An unreadable source materializes nothing.</b> A snapshot needs bytes to snapshot; when
  * the source range is uninitialized (a {@code copied_from} hint naming a KERNAL ROM the user
  * never supplied) the transfer is skipped entirely rather than inventing bytes or falling back to
@@ -154,7 +168,9 @@ final class TransferMaterializer {
 					"); no block materialized");
 				return TransferPlacement.SKIPPED;
 			}
-			placement = TransferPlacement.IN_PLACE;
+			placement = spec.dstStart().getAddressSpace().isOverlaySpace()
+					? TransferPlacement.IN_PLACE_BANKED
+					: TransferPlacement.IN_PLACE;
 		}
 		else if (canCreateNewBlock(program, spec) &&
 			(block = createNewBlock(program, spec, name, bytes, monitor, log)) != null) {
@@ -178,9 +194,12 @@ final class TransferMaterializer {
 			return placement;
 		}
 		disassemble(program, spec, block, monitor);
-		if (placement == TransferPlacement.OVERLAY) {
-			// Only an overlay copy needs help: the entering jump's own operand already resolves
-			// to the in-place bytes, which is the whole point of carving.
+		if (placement == TransferPlacement.OVERLAY ||
+			placement == TransferPlacement.IN_PLACE_BANKED) {
+			// A base-space carve needs no help -- the entering jump's own operand already resolves
+			// to the bytes, which is the whole point of carving. Both overlay-homed placements do:
+			// the jump names a base-space address, and for a banked carve that address is the
+			// window's home occupant, not the RAM the copy landed in.
 			bridgeJump(program, spec, block);
 		}
 		return placement;
@@ -205,8 +224,11 @@ final class TransferMaterializer {
 		if (spec.target() == TransferTarget.SAME_SPACE_OVERLAY) {
 			return false; // front-end explicitly asked for the overlay representation
 		}
-		if (spec.dstStart().getAddressSpace().isOverlaySpace()) {
-			return false; // carving inside an overlay would not fix reference resolution
+		if (spec.dstStart().getAddressSpace().isOverlaySpace() &&
+			spec.target() != TransferTarget.RESOLVED_SPACE) {
+			// Carving inside an overlay does not fix reference resolution -- unless the front-end
+			// aimed at that overlay because it is where the write really lands (grm-bqs).
+			return false;
 		}
 		Address dstEnd = endOf(spec);
 		if (dstEnd == null) {
@@ -215,6 +237,15 @@ final class TransferMaterializer {
 		MemoryBlock block = program.getMemory().getBlock(spec.dstStart());
 		if (block == null || !block.contains(dstEnd)) {
 			return false; // must lie wholly within one block; multi-block carve is out of scope
+		}
+		// Never carve memory that is not plain RAM (grm-bqs). A copied payload comes to rest in
+		// RAM: a ROM occupant is not writable and an IO occupant is volatile
+		// (DescriptorSupport.canWrite/markVolatileIfIo), so a destination reported as either is a
+		// window's home occupant standing in for the RAM behind it, not somewhere bytes can land.
+		// This is the safety net for the front-ends that have no storing instruction to resolve
+		// through -- a descriptor copied_from directive, or the manual command.
+		if (!block.isWrite() || block.isVolatile()) {
+			return false;
 		}
 		// Uninitialized and splittable: never overwrite loaded file bytes (the pre-copy image
 		// stays navigable), and Memory.split rejects mapped blocks.
@@ -241,6 +272,11 @@ final class TransferMaterializer {
 		if (spec.target() == TransferTarget.SAME_SPACE_OVERLAY) {
 			return false;
 		}
+		// Deliberately strict where canCarve is not: a resolved banked destination
+		// (TransferTarget.RESOLVED_SPACE) is always in an overlay, and a hole inside the occupant
+		// the write resolves to means the loader and the descriptor disagree. Inventing a block
+		// there on that evidence is worse than the byte-mapped fallback. Belt-and-braces --
+		// createCarvedTarget and createUninitializedBlock between them cover a whole window.
 		if (spec.dstStart().getAddressSpace().isOverlaySpace()) {
 			return false;
 		}
@@ -354,6 +390,9 @@ final class TransferMaterializer {
 			String category, TransferPlacement placement) {
 		String where = switch (placement) {
 			case IN_PLACE -> "initialized in place as " + block.getName();
+			case IN_PLACE_BANKED -> "initialized in place as " + block.getName() + " in the " +
+				block.getStart().getAddressSpace().getName() + " overlay -- the write lands in that " +
+				"banked-window occupant, so the occupant homed here in the base space is untouched";
 			case NEW_BLOCK -> "initialized as new block " + block.getName() +
 				" (nothing was mapped here)";
 			default -> "byte-mapped overlay " + block.getName();
