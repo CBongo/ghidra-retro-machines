@@ -35,7 +35,10 @@ problem, solvable statically with no emulation:
 > in the base address space, so a real `JSR $0073` resolves to the materialized code with no
 > bridging. See [`smc-inplace-vs-overlay.md`](smc-inplace-vs-overlay.md) for the verdict (no
 > Ghidra core change needed), the three strategies weighed, and the placement policy — Gate 0
-> plus preconditions 1-4 — that chooses between the two.
+> plus preconditions 1-4 — that chooses between the two. **Amended 2026-07-27 (grm-bqs):** a
+> destination inside a banked window is carved into the occupant the *write* actually reaches, read
+> off the storing instruction's own re-homed reference, so a copy landing under the C64 KERNAL goes
+> into `RAM_E000` and leaves the ROM occupant whole — `smc-inplace-vs-overlay.md` §5, Gate 0.5.
 
 The key mechanic (new to this repo — no existing use, confirmed). A **byte-mapped block**
 maps its bytes 1:1 (or by ratio) onto another region; `Memory.java:49-51`:
@@ -86,9 +89,11 @@ consumes.
 
 Two ways to proceed given this:
 1. **grm-mbm first**, then Tier A CHRGET is fully real (dual-home with live ROM bytes).
-2. **Best-effort now**: create the byte-mapped block unconditionally (it matches hardware
+2. ~~**Best-effort now**: create the byte-mapped block unconditionally (it matches hardware
    truth and auto-populates when ROM bytes arrive); a test can assert the block exists
-   with the correct mapping + provenance even while its bytes read `??`.
+   with the correct mapping + provenance even while its bytes read `??`.~~
+   **REVERSED (2026-07-25, grm-chu)** — materializing against an uninitialized source is exactly
+   what §8 q2 now forbids; the answer is the ROM gate. Kept for the record.
 
 ## 4. Descriptor schema: `copied_from`
 
@@ -118,10 +123,13 @@ As implemented (grm-1.7.1.2) `MapCompiler` normalizes every address key to a JSO
 or an `entry` outside the range; `DescriptorCopyHintAnalyzer` applies the result. See
 `docs/SCHEMA.md` ("Boot copies") and `docs/MAP_FORMAT.md` (`regions`) for the frozen wording.
 
-The loader resolves `source: KERNAL` to the KERNAL block, then — per the descriptor
-principle "descriptor declares facts, loader decides representation" (`SCHEMA.md`
-principle 5) — chooses: byte-mapped block if the source is initialized, best-effort
-byte-mapped (or skip) if not.
+`DescriptorCopyHintAnalyzer` — **not** the loader, since the ROM may be supplied after import
+(§8 q2) — resolves `source: KERNAL` to the KERNAL block, then applies the placement policy of
+[`smc-inplace-vs-overlay.md`](smc-inplace-vs-overlay.md) §5, per the descriptor principle
+"descriptor declares facts, loader decides representation" (`SCHEMA.md` principle 5). An
+unreadable source means the directive is ignored outright (log note, no block of any kind);
+otherwise an in-place carve at the destination, with the byte-mapped overlay as the fallback.
+There is no best-effort option.
 
 **CHRGET constants VERIFIED (2026-07-13)** against `H:/emulators/c64/kernel.c64`: the
 CHRGET/CHRGOT routine (`E6 7A D0 02 E6 7B AD …`) sits at file offset `$03A2` → source
@@ -136,8 +144,11 @@ The value is navigability: a `JSR $0073` at a call site should reach the CHRGET 
 - **Provenance**: NOTE bookmark + PRE/EOL comments cross-linking destination ↔ source
   (mirror `C64DecryptLoopAnalyzer`'s materialize).
 - **References**: where a call/jump targets the destination, ensure it resolves to the
-  dual-home block; where useful, a back-reference from the destination to the source
-  master.
+  materialized block. Automatic for a plain in-place carve — the operand already names the
+  destination — but explicitly bridged for an overlay copy **and for a banked-window carve**,
+  since the copy then lives in an overlay space (`TransferMaterializer.bridgeJump`, mirroring
+  `BoardBankAnalyzer.addOverlayRef`). Where useful, a back-reference from the destination to the
+  source master.
 - **Disassembly**: disassemble the destination once it has bytes (byte-mapped from an
   initialized source, or an initialized copy) — same `DisassembleCommand`/`CreateFunctionCmd`
   idiom `C64DecryptLoopAnalyzer` now uses.
@@ -175,13 +186,16 @@ else candidate/WARN. This tier is **testable now with a self-contained PRG fixtu
 
 1. **grm-mbm (ROM loading)** — unblocks the canonical Tier-A CHRGET dual-home and is
    broadly useful (ROM routines become disassemblable). Do first if Tier A is the goal.
-2. **Tier A `copied_from` schema + loader** — descriptor hint → `createByteMappedBlock`;
-   CHRGET as the fixture (real bytes once grm-mbm lands, best-effort before).
+2. **Tier A `copied_from` schema + front-end** — descriptor hint → the shared materializer
+   (in-place carve, banked redirect, overlay fallback); CHRGET as the fixture.
 3. **Tier B copy-loop recognizer** — reuse `C64DecryptLoopAnalyzer` machinery; testable
    immediately with a PRG-internal copy fixture, independent of ROM.
 
-Tiers A and B share the materialization (byte-mapped dual-home + provenance + disassembly),
+Tiers A and B share `TransferMaterializer` (placement decision + provenance + disassembly),
 exactly as the decrypt tiers shared theirs.
+
+This section records the **original** sequencing recommendation; all three steps have since
+landed, and step 2's mechanic changed on the way — see the §2 banner.
 
 ## 8. Open questions
 
@@ -199,12 +213,29 @@ exactly as the decrypt tiers shared theirs.
    loader-time-only work, or the "ROM added later" path is unreachable. Rationale and the full
    placement policy: `docs/smc-inplace-vs-overlay.md` §5-6.
 3. **Banked sources**: the survey flags that a copy source may live in a banked window;
-   the mapped block must reference the correct bank's bytes. Defer until a banked-source
-   case appears.
+   the mapped block must reference the correct bank's bytes. Still open — but **a smaller ask
+   than when this was written**, and for an instructive reason.
+
+   The *destination* half was closed by grm-bqs (2026-07-27) not by adding a schema key but by
+   **consuming what the banking engine had already worked out**: `BoardBankAnalyzer` resolves every
+   store against the bank state live at that instruction and re-homes its write reference into the
+   occupant reached, so the copy recognizer just reads that off the `STA`. A static descriptor walk
+   could not have done it — within the C64 `CHARIO` window a write reaches the VIC registers or
+   `RAM_D000` depending on bank state, and there is no `on_read` key at all because a read simply
+   goes to whichever occupant is live.
+
+   The source half is the same shape. `grm-5tl.9` already made the engine emit **READ** references
+   as well as write ones (the RMW split), so a banked source should be readable off the `LDA` the
+   way the destination is off the `STA` — `LoopIdioms.overlayWriteTarget` with the polarity
+   flipped. That is the concrete next step, in place of "defer until a case appears"; what is
+   genuinely missing is a fixture with a banked source, not a mechanism.
 
 ## 9. Deliverable status
 
-- [x] Mechanic (`createByteMappedBlock` semantics, 1:1 dual-home, fallbacks) — §2
+- [x] Mechanic (`createByteMappedBlock` semantics, 1:1 dual-home, fallbacks) — §2; now the
+      **fallback** representation only, the default being the in-place carve (see the §2 banner)
+- [x] Banked destinations resolve through the store's own re-homed write reference — grm-bqs,
+      `docs/smc-inplace-vs-overlay.md` §5 Gate 0.5
 - [x] Placement decision (in-place carve vs overlay, and when each applies) — grm-chu,
       `docs/smc-inplace-vs-overlay.md`
 - [x] ROM prerequisite identified (grm-mbm) + proceed-options — §3

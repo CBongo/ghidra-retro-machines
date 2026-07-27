@@ -169,10 +169,11 @@ initializing over them would destroy the pre-decryption view that `docs/smc-decr
 deliberately preserves so a static reading of the decryptor stub still sees what the CPU saw
 (`docs/smc-decrypt-design.md:172-175`).
 
-`TransferSpec.Transform` already anticipates `CONSTANT_XOR` / `ROLLING_XOR` being unified onto
-this materializer, so the fence must be **structural, not incidental**:
+`TransferTransform` (a top-level enum, `retromachines.TransferTransform` — not a type nested in
+`TransferSpec`) already anticipates `CONSTANT_XOR` / `ROLLING_XOR` being unified onto this
+materializer, so the fence must be **structural, not incidental**:
 
-- **In-place requires `Transform.IDENTITY`.** Anything transformed keeps the overlay
+- **In-place requires `TransferTransform.IDENTITY`.** Anything transformed keeps the overlay
   representation, unconditionally. (Precondition 3 of §5 — destination must be uninitialized —
   happens to block the decrypt case too, but relying on that is an accident waiting to be
   refactored away.)
@@ -194,15 +195,53 @@ as failure, which is equivalent to an `getAllInitializedAddressSet()` containmen
 and allocation-free. On failure: **skip**, provenance only (§6). This applies to every placement,
 overlay included.
 
+**Gate 0.5 — is the destination even where it looks? (amended 2026-07-27, grm-bqs.)** On a banked
+machine the base-space block at a destination is only the window's **home** occupant. A C64 copy
+targeting `$E000` finds `KERNAL`, which with no ROM dump supplied is uninitialized and therefore
+satisfies preconditions 1-4 below — so the original policy carved it, shredding a ROM image into
+`KERNAL / COPY_e000 / KERNAL_E008` and labelling a RAM copy as ROM.
+
+The descriptor cannot settle this on its own, and it is worth being precise about why, because the
+plausible fix is wrong. Which occupant a write reaches is **bank-state-dependent**: within the C64
+`CHARIO` window a store to `$D000` reaches the VIC registers when I/O is banked in and `RAM_D000`
+when it is not, and reads differ again — the schema has no `on_read` key at all, because a read
+simply goes to whichever occupant is live. A static `windows[].occupants[].on_write` walk can only
+answer the cases where every occupant happens to agree, and would have to refuse `CHARIO` outright.
+
+It does not need to. `BoardBankAnalyzer.retargetReferences:1440-1451` already resolves **every**
+store against the bank state live at that instruction and re-homes its write reference into the
+occupant the write reaches. So the resolution belongs in the front-end, which has the storing
+instruction in hand: `CopyLoopAnalyzer` reads that answer off the `STA` it is already anchored on
+(`LoopIdioms.overlayWriteTarget`) and hands the materializer a destination already homed in the
+right space, marked `TransferTarget.RESOLVED_SPACE`. Precise rather than merely safe: `$D000` gets
+the *right* answer per bank state instead of a refusal.
+
+Matched across the whole destination range, not at `dst` alone — an indexed store's references are
+written by the constant reference analyzer at whatever index values it resolved, so `STA $E000,X`
+over an 8-byte loop yields references to `$E006`/`$E007` and never to `$E000` itself (grm-phv).
+
+Front-ends with **no instruction to resolve through** — a descriptor `copied_from` directive, the
+manual command — get a blanket rule instead, precondition 5 below. A declarative front-end that
+wants a banked destination should name the occupant explicitly; the vocabulary already exists
+(`RunFromElsewhereTransfer` accepts space-qualified addresses such as `src:W8000_M3_B1:a500`).
+
 **Then in-place** iff *all* of the following hold, otherwise **overlay** (today's behavior,
 unchanged):
 
 | # | Precondition | Why |
 |---|---|---|
-| 1 | `spec.transform() == Transform.IDENTITY` | The §4 fence: never synthesize bytes over meaningful content. |
+| 1 | `spec.transform() == TransferTransform.IDENTITY` | The §4 fence: never synthesize bytes over meaningful content. |
 | 2 | `[dst, dst+len)` lies wholly within **one** block | Multi-block carve is out of scope for v1. |
 | 3 | That block is **uninitialized** | Never overwrite loaded file bytes — the pre-copy image stays navigable. |
-| 4 | Block is `MemoryBlockType.DEFAULT`, not mapped, **not in an overlay space** | Splittable per `MemoryMapDB.split`; base space is the entire point (refs resolve there). |
+| 4 | Block is `MemoryBlockType.DEFAULT`, not mapped, and **not in an overlay space unless Gate 0.5 put it there** | Splittable per `MemoryMapDB.split`; base space is the point (refs resolve there) — except for the one overlay we were *aimed* at rather than *fell back* into. |
+| 5 | Block is **writable and non-volatile** | Only plain RAM is ever carved: a ROM occupant is not writable and an I/O occupant is volatile, both derived from the descriptor's `kind` by `DescriptorSupport.perms`/`markVolatileIfIo`. This is what protects the front-ends Gate 0.5 cannot help. |
+
+A carve that Gate 0.5 redirected is reported as `TransferPlacement.IN_PLACE_BANKED`, not
+`IN_PLACE`: the bytes are where the CPU runs them from *in that bank state*, which is as native as
+a banked machine gets, but a base-space `JSR $E000` still names the home occupant — so it takes the
+same entering-jump bridge `OVERLAY` takes. Honest scope: only that one jump is bridged. Other call
+sites into `$E000` still resolve per live bank state, which is correct — with KERNAL banked in, a
+`JSR $E000` really does hit KERNAL.
 
 ## 6. Unreadable source: produce nothing, do not fall back
 
@@ -231,7 +270,13 @@ readable source, ignore the directive otherwise.
 
 - **grm-r6f** (reference-precedence retargeting: redirect refs from base to a copied overlay)
   **narrows**: in-place copies resolve natively in the base space and need no retargeting at all,
-  so the bead applies only to the overlay-fallback path of §3.1 and to banking.
+  so the bead applies only to the overlay-fallback path of §3.1 and to banking. Qualified by
+  grm-bqs: a Gate 0.5 *redirected* carve lives in an overlay and does **not** resolve natively, so
+  it still needs the entering-jump bridge.
+- **grm-bqs** (banked destinations) **amends §5**, adding Gate 0.5 and precondition 5. Its wider
+  lesson is a reuse boundary: the placement decision consumes `BoardBankAnalyzer`'s resolved write
+  reference rather than re-deriving an answer from the descriptor, because only the analyzer has
+  the bank state the answer depends on.
 - **grm-1.7.1.2** (Tier-A `copied_from` descriptor directive) **inherits the ROM-gated placement
   rule** of §5 and §6 — materialize in place when the source ROM is readable, ignore the
   directive when it is not, and provide an analyzer/command front-end so a later-supplied ROM can
@@ -241,13 +286,21 @@ readable source, ignore the directive otherwise.
 
 ## 8. Deliverable status
 
+Every box below shipped as scoped. The §5 policy has since been **amended once**; the amendment is
+listed with its own bead rather than folded into the original items, so this stays a record of what
+shipped and when, not of what the note originally imagined.
+
 - [x] Verdict: no Ghidra core change, no upstream ask, not an RFC #9349 item — §2
 - [x] Five API findings with citations against `Ghidra_12.1.2_build` — §2
 - [x] Three strategies weighed, including the rejected base-space byte map — §3
-- [x] `Transform.IDENTITY` fence + carve == write invariant — §4
+- [x] `TransferTransform.IDENTITY` fence + carve == write invariant — §4
 - [x] Placement policy (Gate 0 + preconditions 1-4) — §5
 - [x] Unreadable-source rule (skip, do not fall back) — §6
 - [x] Implementation (`TransferMaterializer` carve path + placement decision matrix, with
       `C64CopyLoopAnalyzer` reduced to recognition) — landed with grm-chu
 - [x] Tier-A analyzer/command front-end so the "ROM added later" path is reachable — grm-1.7.1.2
       (`DescriptorCopyHintAnalyzer`, a one-shot-capable `BYTE_ANALYZER`)
+- [x] **Amended 2026-07-27, grm-bqs**: banked destinations — Gate 0.5 (resolve through the store's
+      own re-homed write reference) plus precondition 5 (carve only plain RAM), and the
+      `IN_PLACE_BANKED` placement — §5. Regression fixtures `copybanked`/`copybankedrom`, whose
+      goldens are deliberately byte-identical.
