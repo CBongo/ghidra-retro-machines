@@ -67,7 +67,7 @@ REALROM sample.bankcomment ff89 bank -> mirroring=3,prg_mode=3,prg_bank=0? [know
 REALROM sample.bankcomment ff8d bank -> mirroring=3,prg_mode=3,prg_bank=0? [known: mirroring.0=1,mirroring.1=1,prg_mode.0=1,prg_mode.1=1; assumed from initial: prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
 REALROM sample.bankcomment ff92 bank -> mirroring=3,prg_mode=3,prg_bank=7 via FUN_ffac [switch-value flow]
 REALROM sample.ref 808e -> W8000_M3_B6::8028 READ primary=true
-REALROM sample.ref 8094 -> W8000_M3_B6::8029 READ primary=true
+REALROM sample.ref 8094 -> W8000_M3_B6::8028 READ primary=true
 REALROM sample.ref 8099 -> W8000_M3_B6::80c6 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 809c -> W8000_M3_B6::80d7 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 80e1 -> W8000_M3_B6::80ec CONDITIONAL_JUMP primary=true

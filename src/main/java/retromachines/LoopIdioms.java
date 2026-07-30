@@ -134,13 +134,17 @@ final class LoopIdioms {
 	 *  at all.
 	 *
 	 *  <p>Matched across the <em>whole destination range</em>, not at {@code base} alone, because an
-	 *  indexed store's references are written by the constant reference analyzer at whatever index
-	 *  values it managed to resolve -- a {@code STA $E000,X} over an 8-byte loop yields references
-	 *  to {@code $E006}/{@code $E007}, never to {@code $E000} itself (bead grm-phv is about exactly
-	 *  that). Any one of them identifies the occupant, since a single store instruction writes the
-	 *  whole range through one window. The returned address re-homes {@code base} into that
-	 *  occupant's space, so the caller gets the start of the destination and not whichever index
-	 *  the analyzer happened to pin down.
+	 *  indexed store's write reference is not guaranteed to land on {@code base}. With
+	 *  {@link MosConstantReferenceAnalyzer} enabled it does -- that is what bead grm-phv built --
+	 *  but the range match must survive its absence: the analyzer carries a user-facing
+	 *  "Reference indexed operand base" option, any analyzer can be switched off entirely, and a
+	 *  program analyzed by an older build of this extension keeps the references it was given. In
+	 *  those cases the stock behavior applies and a {@code STA $E000,X} over an 8-byte loop yields
+	 *  references to {@code $E006}/{@code $E007} rather than to {@code $E000}. Any one of them
+	 *  identifies the occupant, since a single store instruction writes the whole range through one
+	 *  window, so the range match is correct either way -- do not narrow it to an exact match on
+	 *  {@code base}. The returned address re-homes {@code base} into that occupant's space, so the
+	 *  caller gets the start of the destination and not whichever index was pinned down.
 	 *
 	 *  @param store the storing instruction a copy loop is anchored on (the {@code STA})
 	 *  @param base  that store's base-space target, from {@link #indexedBase}

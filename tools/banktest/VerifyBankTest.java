@@ -747,6 +747,19 @@ public class VerifyBankTest extends GhidraScript {
 			"ref=" + (bridged == null ? "<none>"
 					: bridged.getToAddress().getAddressSpace().getName() + ":" +
 						fmt(bridged.getToAddress()) + " " + bridged.getReferenceType()));
+
+		// grm-phv: MosConstantReferenceAnalyzer's whole reason for existing (bead grm-bqs) is
+		// that the STA $E000,X at $2005 must reference the addressing mode's BASE, $E000, not
+		// whichever address the symbolic propagator's loop walk happened to compute
+		// ($E006/$E007 under stock ConstantPropagationAnalyzer -- see that class's javadoc).
+		// findOverlayRef already re-homes through BoardBankAnalyzer's overlay retargeting, so
+		// this is the same "did the write land in RAM_E000" check as callref-reaches-copy
+		// above, aimed at the STA instead of the entering JMP.
+		Reference indexedWrite = findOverlayRef(0x2005, "RAM_E000", 0xe000);
+		criterion("copybanked-indexed-write-base", indexedWrite != null,
+			"ref=" + (indexedWrite == null ? "<none>"
+					: indexedWrite.getToAddress().getAddressSpace().getName() + ":" +
+						fmt(indexedWrite.getToAddress()) + " " + indexedWrite.getReferenceType()));
 	}
 
 	private void checkCopyLoop() {

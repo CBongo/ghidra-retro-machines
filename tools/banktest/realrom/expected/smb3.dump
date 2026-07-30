@@ -109,7 +109,7 @@ REALROM block WE000 e000-ffff overlay=false
 REALROM count blocks.total 103
 REALROM count blocks.overlay 95
 REALROM count spaces.overlay 95
-REALROM count refs.intoOverlay 871
+REALROM count refs.intoOverlay 846
 REALROM count instrs.inOverlay 4263
 REALROM count bankComments 104
 REALROM count warnings 50
