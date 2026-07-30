@@ -21,6 +21,9 @@ REALROM count spaces.overlay 7
 REALROM count refs.intoOverlay 0
 REALROM count instrs.inOverlay 0
 REALROM count bankComments 0
-REALROM count warnings 1
+REALROM count warnings 4
 REALROM sample.warn 0000 [no bank-switch write observed] Board declares 1 bank-switch mechanism(s) [memory-latch] but no mechanism write was observed in analyzed code; no bank annotations were produced. The switch routine may be unreached (e.g. entered only via an indirect/table jump auto-analysis did not disassemble).
+REALROM sample.warn e69e [CopyLoopAnalyzer] copy-shaped loop RAM:e7d4 -> RAM:0200 could not be bounded; not applied
+REALROM sample.warn e707 [CopyLoopAnalyzer] copy-shaped loop RAM:e826 -> RAM:0200 could not be bounded; not applied
+REALROM sample.warn e712 [CopyLoopAnalyzer] copy-shaped loop RAM:e7fd -> RAM:0200 could not be bounded; not applied
 === REALROM END ===
