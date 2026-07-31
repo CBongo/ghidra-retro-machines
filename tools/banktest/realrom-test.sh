@@ -183,6 +183,12 @@ import_and_dump() {
 	mkdir -p "$proj"
 	log="$WORK/${safe}.log"
 
+	# REALROM_EXTRA_POSTSCRIPT runs one more script (e.g. BankReachProbe.java) on the same
+	# import, so a diagnostic does not cost a second ~1min+ analysis. Goldens are unaffected:
+	# the awk carve below extracts only the REALROM block, and every other script fences its
+	# own output. Give it its OWN invocation rather than piggybacking a routine run, though --
+	# realrom_cache_key() above hashes RealRomDump.java only, so a `bless` (or a re-`check`)
+	# can legitimately reuse a cached dump and never run the extra script at all.
 	# shellcheck disable=SC2086
 	"$GHIDRA_HEADLESS" "$(native "$proj")" headless \
 		-import "$(native "$rom_copy")" \
@@ -190,6 +196,7 @@ import_and_dump() {
 		$opts \
 		-scriptPath "$(native "$SCRIPT_DIR")" \
 		-postScript RealRomDump.java \
+		${REALROM_EXTRA_POSTSCRIPT:+-postScript "$REALROM_EXTRA_POSTSCRIPT"} \
 		-deleteProject \
 		>"$log" 2>&1
 	local status=$?
