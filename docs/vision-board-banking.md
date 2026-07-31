@@ -91,10 +91,22 @@ What "first-class" means, described as a user session:
    recovered bank value is mapped into and which window's addresses the bank's own code
    references (internal absolute refs, vector targets), and *assigns placements by
    following the flows*. Import-time options become overrides for the rare ambiguous
-   case, not required upfront knowledge.
+   case, not required upfront knowledge. What the analyzer genuinely *cannot* discover
+   is recorded once (item 9) rather than re-derived by every user in every session.
 8. **Adding a new board is writing YAML.** No Java, unless the board introduces a
    genuinely new *mechanism class* (strategy), which is rare — the strategy vocabulary
-   below covers every system in the survey with six entries.
+   below covers every system in the survey with six entries. Adding a *game* is writing
+   YAML too (§5.5) — the same authoring format, the same compiler, the same validation.
+9. **What the user discovers travels with the title.** The user works out that Contra's
+   bank-switch routine is entered through a vector built in RAM, names it, and exports a
+   game descriptor. That file is simultaneously: a drop-in for their own descriptor
+   directory, a thing they can hand to someone else, and a valid pull request into the
+   curated set — so the next person to open that ROM gets the answer at import, from the
+   ordinary descriptor machinery, with provenance attached. The same channel carries
+   symbol sets harvested from the public disassemblies that already exist for Zelda,
+   Metroid, Mega Man and SMB, and carries the user's own labels and comments across an
+   extension upgrade or a fresh import. Reverse → export → share → curate, with the
+   analyzer improving underneath so each round of files gets smaller.
 
 ## 4. Design principles
 
@@ -125,6 +137,27 @@ What "first-class" means, described as a user session:
    reason existing tools front-load these as user guesses is that they have no analyzer
    to derive them. Options exist as overrides, defaults come from the descriptor, and
    the analyzer refines placements as evidence accumulates.
+
+   **Interrogation is not the same as recording, and this principle only forbids the
+   first.** Asking every user to guess a bank placement at import is a tax levied on
+   everyone, forever, for a fact the tool could have derived. Persisting a fact one
+   person established by actually reverse engineering the game is the opposite: a cost
+   paid once, by one person, that everyone after them inherits. Same input channel,
+   opposite economics. Static analysis has a real ceiling — a switch routine entered
+   only through a computed jump, or copied to RAM and executed there, is not reachable
+   by any amount of dataflow (§10, and the measured Contra/Dragon Ball 3 cases) — and
+   above that ceiling the honest answer is to record the answer, not to interrogate the
+   next user for it.
+7. **Discoveries are data, not sessions.** What a human learns about a specific title is
+   descriptor data of the same kind as what we already know about a board: durable,
+   reviewable, diffable, shareable, and applied by the same machinery. It belongs in a
+   **per-game descriptor** (§5.5), not in one person's project file. This cuts three
+   ways, and the same artifact serves all three: hints that unblock analysis where it
+   provably stalls; annotation harvested from the mature public disassemblies that
+   already exist for popular titles, so a first import reads as something better than
+   `FUN_c34a` soup; and portability, since exporting your own annotation layer and
+   replaying it onto a fresh import is that same file pointed the other way. Automation's
+   job is to keep those files *small* — never to make them unnecessary.
 
 ## 5. Board descriptor schema v2
 
@@ -241,6 +274,43 @@ schema v1. Non-CPU spaces (NES PPU/CHR, which GhidraNes wrongly parks in CPU spa
 $0000) become additional physical spaces with their own windows — same machinery, and
 explicitly out of the critical path for code-RE milestones.
 
+### 5.5 Per-game descriptors (the title tier)
+
+Descriptors today describe a *machine* (`c64.yaml`) or a *board* (`nes-mmc3.yaml`). A third
+tier describes a **title**, keyed by ROM content rather than by mapper number. Full design:
+[per-game-descriptors-design.md](per-game-descriptors-design.md).
+
+The boundary is the one `DescriptorCopyHintAnalyzer` already draws in its own javadoc —
+*some copies are machine facts, not program facts*. Board descriptors carry machine facts.
+Game descriptors carry program facts: the bank-switch site that no dataflow reaches because
+the routine is entered through a RAM-built vector; a bank number arriving from a table rather
+than an immediate; the labels, comments and types that a mature public disassembly of that
+title already established.
+
+Three properties make this a descriptor tier rather than a pile of per-game special cases:
+
+- **It reuses the existing schema almost entirely.** A per-game symbol set is
+  `entries: [{addr, name, kind, comment}]` with its own `provenance` block — the same shape as
+  the generated `c64ref-*.yaml` sets, carrying the upstream project, license and generation
+  date the symbol schema already requires, so the licensing question that governs any harvested
+  corpus has a designed home. It needs exactly one addition: a `block:` bank qualifier, because
+  the existing `region:` assumes one always-visible location and a game label at `$8000` is
+  ambiguous across a board's banks.
+- **Hints are declarative claims, not instructions.** A site hint states "a bank-switch write
+  lives here"; the analyzer seeds its dataflow there and its ordinary strategy still decides.
+  A hint that is wrong therefore produces *no* annotation rather than a confident falsehood —
+  the same degrade-honestly discipline as `copied_from`, which is ignored outright when its
+  preconditions fail.
+- **It never outranks evidence.** Site hints are seeds, so no precedence question arises: they
+  cannot contradict analysis, only give it somewhere to start. Value hints sit exactly where
+  placement overrides already sit — below recovered dataflow values, above descriptor
+  defaults. Flow always wins when it knows.
+
+Distribution is two-source, one format: a curated set in-repo, compiled and shipped like every
+other descriptor, plus a user directory scanned at runtime. Both read the same YAML through the
+same compiler, so the runtime and the build cannot drift apart on schema semantics, and an
+exported file is directly usable as a pull request.
+
 ## 6. Layer-by-layer architecture
 
 ### L1 — CPU assist (optional, per-CPU)
@@ -288,6 +358,21 @@ ranges its references miss); (c) fixed-window anchors — reset/IRQ vectors and 
 descriptor's `last`/`second_last` rules pin the fixed banks, giving inference a known
 starting frame. Placements start as descriptor defaults, upgrade to inferred with
 provenance recorded, and remain user-overridable.
+
+**Where recorded per-game facts enter** (§5.5). They are not a fourth entry in that list,
+because they are not the same kind of thing — the list ranks *inferences the analyzer draws*,
+and a recorded fact is an input, not an inference. Two distinct entry points:
+
+- A **site hint** enters at step 1, as an additional seed for the candidate scan and the
+  dataflow that follows — disassembling first if nothing is there yet. It ranks nowhere,
+  because it competes with nothing: it tells the analyzer where to look, and the strategy
+  still decides what it found. This is the answer for switch routines static analysis cannot
+  reach at all — entered through a computed jump, or copied to RAM and executed there (§10).
+- A **value hint** enters at step 2, ranked **below (a) recovered switch values and above
+  the descriptor's `initial_state` defaults** — the same slot user placement overrides
+  already occupy, for the same reason: flow always wins when it knows, and a recorded fact
+  fills the gap where it does not. Every annotation derived from one carries hint provenance,
+  so a reader can always tell an inference from a recording.
 
 ### L3 — Interpretation
 
@@ -526,6 +611,16 @@ because its mappers span the whole strategy vocabulary.
 - **M4 — Scale + second console.** MMC5 (PRG modes, RAM/ROM select, SRAM banking); GB
   MBC1/5 via descriptors with near-zero new code — the machine-independence demo;
   performance and UX hardening (bank margin/comments at minimum).
+- **M4b — The per-game descriptor tier** (§5.5, [design](per-game-descriptors-design.md)).
+  Independent of M4's scale work and sequenced by evidence rather than by console count:
+  real-ROM measurement (`grm-2yx`, `grm-m95`) established that static resolution stalls
+  outright on some commercial titles — Contra and Dragon Ball 3 build a correct layout and
+  resolve nothing, where Mega Man on the same board resolves 1781 references. Content-keyed
+  title identity, a curated set plus a user-directory overlay, hint consumption as dataflow
+  seeds, symbol/comment harvest from existing public disassemblies, and the export/reapply
+  round trip. Ships the descriptor compiler in the extension so both paths read one format
+  through one validator. Analyzer improvements continue underneath: the measure of success
+  is that each generation of hint files is *smaller* than the last.
 - **M5 — Core integration (gated on #9349 signal).** Physical-space windows + the
   `resolve(context, address, access_type)` hook implemented in the Ghidra fork; migrate
   L4 off overlay generation; decompiler + emulator plumbing; upstream PRs per Path A.
@@ -551,6 +646,31 @@ strategy extraction in M2.
    tables + code, not graphics).
 5. **Descriptor expression creep** — the mini-language must stay enumerable +
    arithmetic; anything richer becomes a strategy. Guard in review.
+6. **Hint staleness** (§5.5) — a recorded fact is pinned to an address, and addresses are
+   stable only while the loader's placement is. A descriptor revision that changes block
+   layout can silently invalidate every hint written against the old one. Mitigations to
+   design, not assume: hints carry the schema version they were authored against, and a
+   hint whose preconditions no longer hold must degrade the `copied_from` way — ignored
+   with a log note, never applied to whatever now happens to sit at that address.
+7. **Trust and provenance of shared descriptors** — a game descriptor is executable
+   influence over someone else's analysis session, obtained from a stranger. It cannot
+   run code, but it can seed disassembly at a chosen address and attach authoritative-
+   looking labels and comments. Curated files get review; overlay files get none, so
+   provenance must be recorded and surfaced rather than assumed, and an overlay descriptor
+   shadowing a curated one must be logged rather than silent.
+8. **Licensing of harvested annotation** — public disassemblies of popular titles range
+   from explicitly public-domain to entirely unlicensed, and the same concern already
+   arose for C64 reference data (`grm-p5w`, `grm-54p`). The symbol schema's `provenance`
+   block (project, license, date) is the designed answer, with build-time exclusion of
+   sets that may not be redistributed — but it is a per-source judgment, not a policy
+   settled once.
+9. **The hint tier as an excuse** — the failure mode is recording a fact the analyzer
+   should have derived, quietly capping how good automation ever gets. Guard in review:
+   before a hint is curated, the reason automation missed it must be understood and, if
+   it is a defect rather than a genuine ceiling, filed. Contra is the live example — its
+   miss may be a `writesInRange` bug (refless indexed store, or a write reference in an
+   overlay space) rather than an unreachable routine, and if so it warrants a fix, not a
+   hint.
 
 ## 11. Relationship to GME
 
