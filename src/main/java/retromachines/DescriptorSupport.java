@@ -16,8 +16,11 @@
 package retromachines;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -88,10 +91,42 @@ final class DescriptorSupport {
 	 */
 	static final String PLACEMENT_OVERRIDE_PROPERTY = "Retro Machines.Placement Override";
 
+	/**
+	 * Program-info property carrying this program's per-game identity, computed at import from
+	 * the image bytes: {@code prg:<64 hex> file:<64 hex>} -- SHA-256 over the cartridge's
+	 * program-ROM content only (the primary key; header and trainer excluded, so header rot
+	 * does not change it) and SHA-256 over the whole file (the alias key, which is the same
+	 * string {@code tools/banktest/realrom/manifest.tsv} pins its rows by).
+	 * <p>
+	 * Written whether or not any game descriptor matches, because the identity is a fact about
+	 * the file rather than a resolution result: a user who later authors an overlay descriptor
+	 * reads the key to write off this property. Grammar and semantics:
+	 * {@link #parseGameIdentity}. Design: docs/per-game-descriptors-design.md section 2.
+	 */
+	static final String GAME_IDENTITY_PROPERTY = "Retro Machines.Game Identity";
+
+	/**
+	 * Program-info property where a game-descriptor resolver records the resolved descriptor's
+	 * path, absent when nothing matched -- the title-tier counterpart of
+	 * {@link #MAP_PATH_PROPERTY}.
+	 * <p>
+	 * <b>Declared, never written (bead grm-hb6.1).</b> Nothing in this extension resolves a game
+	 * descriptor yet; the resolver and its writer are beads grm-hb6.2/grm-hb6.3. The constant
+	 * exists now so the property NAME is fixed alongside the {@link #GAME_IDENTITY_PROPERTY} it
+	 * keys off of, and so the harness scripts that re-declare these names as literals
+	 * (tools/banktest/RealRomDump.java) have one place to agree with.
+	 */
+	static final String GAME_DESCRIPTOR_PROPERTY = "Retro Machines.Game Descriptor";
+
 	/** One {@code window:bank} token: capture group 1 = window name, 2 = bank digits. The
 	 *  separator is a colon, not '=': the headless {@code analyzeHeadless.bat} arg parser
 	 *  (cmd.exe) splits values on '=', so an '='-based grammar can't be passed on Windows. */
 	private static final Pattern PLACEMENT_PAIR = Pattern.compile("([A-Za-z0-9_]+):(\\d+)");
+
+	/** One {@code prg:}/{@code file:} token of the identity grammar: capture group 1 = key,
+	 *  2 = the 64 hex digits. Colon, not '=', for the reason recorded at
+	 *  {@link #PLACEMENT_PAIR} -- every grammar in this tier inherits that rule. */
+	private static final Pattern IDENTITY_PAIR = Pattern.compile("(prg|file):([0-9a-fA-F]{64})");
 
 	private DescriptorSupport() {
 	}
@@ -132,6 +167,127 @@ final class DescriptorSupport {
 			}
 		}
 		return byWindow;
+	}
+
+	// ------------------------------------------------------------------
+	// Per-game identity (bead grm-hb6.1)
+	// ------------------------------------------------------------------
+
+	/**
+	 * A program's per-game identity: the program-ROM digest (the primary key, computed over
+	 * cartridge content with container headers excluded) and the whole-file digest (the alias
+	 * key), each 64 hex characters. Both are normalized to lowercase on construction, so two
+	 * identities parsed from differently-cased text compare equal -- ROM managers print
+	 * uppercase and a hand-authored descriptor will paste whatever the user had.
+	 */
+	record GameIdentity(String prgSha256, String fileSha256) {
+
+		GameIdentity {
+			prgSha256 = requireSha256(prgSha256, "prg");
+			fileSha256 = requireSha256(fileSha256, "file");
+		}
+
+		private static String requireSha256(String digest, String key) {
+			if (digest == null || !digest.matches("[0-9a-fA-F]{64}")) {
+				throw new IllegalArgumentException(
+					"game identity '" + key + "' must be 64 hex digits, got: " + digest);
+			}
+			return digest.toLowerCase();
+		}
+
+		/** The {@link #GAME_IDENTITY_PROPERTY} value: {@code prg:<hex> file:<hex>}. */
+		String toPropertyValue() {
+			return "prg:" + prgSha256 + " file:" + fileSha256;
+		}
+	}
+
+	/**
+	 * Parses a {@link #GAME_IDENTITY_PROPERTY} value -- whitespace-separated
+	 * {@code prg:<64 hex>} and {@code file:<64 hex>} tokens, order-independent, both required.
+	 * <p>
+	 * Returns {@code null} for null/blank input, deliberately NOT mirroring
+	 * {@link #parsePlacementOverride}'s empty-collection-on-blank: "this program has no
+	 * identity" is a distinct state from "an identity whose halves are empty", and only the
+	 * former can occur (a loader either writes both halves or writes nothing). Throws
+	 * {@link IllegalArgumentException} on anything else malformed -- an unknown key, a repeated
+	 * key, a missing half, or a value that is not exactly 64 hex digits.
+	 */
+	static GameIdentity parseGameIdentity(String spec) {
+		if (spec == null || spec.isBlank()) {
+			return null;
+		}
+		String prg = null;
+		String file = null;
+		for (String token : spec.trim().split("\\s+")) {
+			Matcher m = IDENTITY_PAIR.matcher(token);
+			if (!m.matches()) {
+				throw new IllegalArgumentException("malformed game identity '" + token +
+					"'; expected prg:<64 hex> or file:<64 hex>");
+			}
+			boolean isPrg = "prg".equals(m.group(1));
+			if ((isPrg ? prg : file) != null) {
+				throw new IllegalArgumentException(
+					"game identity names '" + m.group(1) + "' more than once");
+			}
+			if (isPrg) {
+				prg = m.group(2);
+			}
+			else {
+				file = m.group(2);
+			}
+		}
+		if (prg == null || file == null) {
+			throw new IllegalArgumentException(
+				"game identity needs both prg: and file: digests, got: " + spec.trim());
+		}
+		return new GameIdentity(prg, file);
+	}
+
+	/**
+	 * SHA-256 of {@code length} bytes read from {@code in} ({@code length < 0} reads to EOF), as
+	 * 64 lowercase hex characters. Does not close {@code in}; throws {@link IOException} if EOF
+	 * arrives before {@code length} bytes were read.
+	 * <p>
+	 * Plain {@link MessageDigest} rather than {@code generic.hash.HashUtilities} (which is on
+	 * the classpath and is what Ghidra's own {@code setExecutableSHA256} goes through): this is
+	 * the one piece of the identity path a pure-JUnit test must exercise with no Ghidra class on
+	 * the stack, and the hex casing is then ours to state rather than to inherit from a Ghidra
+	 * internal. Agreement with {@code Program.getExecutableSHA256()} -- and so with
+	 * {@code tools/banktest/realrom/manifest.tsv} -- is asserted by a banktest criterion rather
+	 * than assumed from a shared implementation.
+	 */
+	static String sha256Hex(InputStream in, long length) throws IOException {
+		MessageDigest digest;
+		try {
+			digest = MessageDigest.getInstance("SHA-256");
+		}
+		catch (NoSuchAlgorithmException e) {
+			// SHA-256 is a required algorithm on every conformant JRE
+			throw new AssertException("SHA-256 unavailable", e);
+		}
+		byte[] buf = new byte[8192];
+		long remaining = length;
+		while (remaining != 0) {
+			int want = remaining < 0 ? buf.length : (int) Math.min(buf.length, remaining);
+			int got = in.read(buf, 0, want);
+			if (got < 0) {
+				if (remaining > 0) {
+					throw new IOException(
+						"unexpected end of data: " + remaining + " bytes short of " + length);
+				}
+				break;
+			}
+			digest.update(buf, 0, got);
+			if (remaining > 0) {
+				remaining -= got;
+			}
+		}
+		StringBuilder hex = new StringBuilder(64);
+		for (byte b : digest.digest()) {
+			hex.append(Character.forDigit((b >> 4) & 0xF, 16));
+			hex.append(Character.forDigit(b & 0xF, 16));
+		}
+		return hex.toString();
 	}
 
 	// ------------------------------------------------------------------

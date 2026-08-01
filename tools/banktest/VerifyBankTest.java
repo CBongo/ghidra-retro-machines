@@ -26,6 +26,11 @@
 // running against by the program name.
 //@category RetroMachines.Test
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -67,6 +72,13 @@ public class VerifyBankTest extends GhidraScript {
 	// script covers both suites.
 	private static final String CATEGORY_C64 = "C64BankingAnalyzer";
 	private static final String CATEGORY_NES = "NesBankingAnalyzer";
+
+	// Program-info property a loader stamps with the image's per-game identity
+	// (DescriptorSupport.GAME_IDENTITY_PROPERTY -- package-private, so it is re-declared as a
+	// literal here rather than referenced; this script links against only the public analyzer
+	// classes). Same convention as the "Retro Machine Map" literal in checkPet4032() and the
+	// literals at tools/banktest/RealRomDump.java:57-60.
+	private static final String GAME_IDENTITY_PROPERTY = "Retro Machines.Game Identity";
 
 	private boolean allPassed = true;
 
@@ -178,6 +190,11 @@ public class VerifyBankTest extends GhidraScript {
 		// nes* chain below.
 		if (name.contains("nescopytest")) {
 			checkNesCopyLoop();
+			// Its dump block is COPYBLOCK-shaped and carries no IDENTITY line, but it is still an
+			// NES import, so the identity criteria apply -- called here so all ten NES fixtures
+			// are covered, not just the nine that reach dump(). Criterion lines print after
+			// verifyCopy's "=== BANKDUMP END ===", so this moves no golden.
+			checkGameIdentity();
 			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
 			return;
 		}
@@ -255,6 +272,7 @@ public class VerifyBankTest extends GhidraScript {
 		}
 
 		dump();
+		checkGameIdentity();
 
 		if (name.contains("nesmmc1overridetest")) {
 			checkNesMmc1Override();
@@ -1812,6 +1830,13 @@ public class VerifyBankTest extends GhidraScript {
 		Collections.sort(refs);
 
 		println("=== BANKDUMP BEGIN ===");
+		// Per-game identity (bead grm-hb6.1), only when the loader stamped one -- today that is
+		// every NES import and no CBM one, so this line is presence-gated to keep the C64/PET/C128
+		// goldens still. The criteria that give it meaning are in checkGameIdentity().
+		String identity = gameIdentityValue();
+		if (identity != null) {
+			println("IDENTITY " + identity);
+		}
 		for (String line : blocks) {
 			println(line);
 		}
@@ -1825,6 +1850,148 @@ public class VerifyBankTest extends GhidraScript {
 			println(line);
 		}
 		println("=== BANKDUMP END ===");
+	}
+
+	// ------------------------------------------------------------------
+	// Per-game identity criteria (bead grm-hb6.1)
+	// ------------------------------------------------------------------
+
+	/**
+	 * Checks the per-game identity a loader stamped on this program (bead grm-hb6.1). Gated on
+	 * the property being present, so it covers all ten NES fixtures and is silently a no-op on
+	 * every CBM one -- no loader there writes it. The CRITERION lines print outside the
+	 * BANKDUMP markers that run-banktest.sh carves the goldens from, so these cost no golden
+	 * churn.
+	 * <p>
+	 * GID1 pins the grammar on a real import: both halves present, 64 hex digits each,
+	 * lowercase, and colon-separated rather than '='-separated (an '=' grammar cannot survive
+	 * analyzeHeadless.bat's cmd.exe arg parser). GID2 asserts the {@code file:} half equals
+	 * Ghidra's own {@link Program#getExecutableSHA256()}: the extension computes that digest
+	 * itself rather than reading Ghidra's, so this is the assertion that ties our hex formatting
+	 * to Ghidra's -- and hence to the hashes tools/banktest/realrom/manifest.tsv pins its rows
+	 * by.
+	 * <p>
+	 * GID3 is why this check exists. A golden IDENTITY line blessed from the implementation
+	 * proves the hash is stable, never that it covers the right bytes; only an independent
+	 * recomputation proves the slice bounds. So GID3 re-reads the imported file from
+	 * {@link Program#getExecutablePath()}, parses the 16 iNES header bytes here rather than
+	 * asking the loader, and recomputes SHA-256 over
+	 * {@code [16 + 512*trainer, + 16384*prgBanks)}. It emits no ROM bytes, only a digest, so it
+	 * stays copyright-safe. An unreadable file FAILs with the path in the detail rather than
+	 * skipping: these fixtures are generated locally and are always present, so a silent skip
+	 * would rot into a criterion that verifies nothing.
+	 */
+	private void checkGameIdentity() {
+		String value = gameIdentityValue();
+		if (value == null) {
+			return;
+		}
+
+		criterion("GID1", value.matches("^prg:[0-9a-f]{64} file:[0-9a-f]{64}$"),
+			"identity property value: " + value);
+
+		String prgHalf = identityToken(value, "prg");
+		String fileHalf = identityToken(value, "file");
+		String ghidraSha = currentProgram.getExecutableSHA256();
+		criterion("GID2", fileHalf != null && fileHalf.equals(ghidraSha),
+			"identity file:" + fileHalf + " vs getExecutableSHA256()=" + ghidraSha);
+
+		String path = currentProgram.getExecutablePath();
+		String independent;
+		String detail;
+		try {
+			independent = recomputePrgSha256(path);
+			detail = "independent recompute -> " + independent + " from " + path;
+		}
+		catch (Exception e) {
+			independent = null;
+			detail = "cannot recompute PRG digest from '" + path + "': " + e;
+		}
+		criterion("GID3", independent != null && independent.equals(prgHalf),
+			detail + "; identity prg:" + prgHalf);
+	}
+
+	/** The identity property's raw value, or null when no loader stamped one. */
+	private String gameIdentityValue() {
+		return currentProgram.getOptions(Program.PROGRAM_INFO)
+				.getString(GAME_IDENTITY_PROPERTY, null);
+	}
+
+	/** The {@code <key>:} token's digest text out of an identity value, or null if absent. */
+	private static String identityToken(String value, String key) {
+		String prefix = key + ":";
+		for (String token : value.trim().split("\\s+")) {
+			if (token.startsWith(prefix)) {
+				return token.substring(prefix.length());
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * The oracle for GID3: SHA-256 over the PRG slice of the .nes file at {@code executablePath},
+	 * computed from a header parse done here so it is independent of the loader's. Throws if the
+	 * file cannot be read or is not a usable iNES image -- GID3 turns that into a FAIL.
+	 */
+	private static String recomputePrgSha256(String executablePath) throws Exception {
+		byte[] image = Files.readAllBytes(resolveImagePath(executablePath));
+		if (image.length < 16 || image[0] != 'N' || image[1] != 'E' || image[2] != 'S' ||
+			image[3] != 0x1A) {
+			throw new IOException("not an iNES image (bad magic or short header)");
+		}
+		int prgBanks = image[4] & 0xFF;
+		// The banktest fixtures are all plain iNES 1.0, where h[4] alone is the 16K PRG unit
+		// count; keep the NES 2.0 case to the one line it needs. An NES 2.0 header ((h[7] & 0x0C)
+		// == 0x08) carries a PRG high nibble in h[9]; 0xF there selects the exponent size form,
+		// which the loader declines to key an identity on at all, so it is not folded in.
+		if ((image[7] & 0x0C) == 0x08) {
+			int prgHi = image[9] & 0x0F;
+			if (prgHi != 0 && prgHi != 0x0F) {
+				prgBanks |= prgHi << 8;
+			}
+		}
+		int start = 16 + (((image[6] & 0x04) != 0) ? 512 : 0);
+		long length = 16384L * prgBanks;
+		if (prgBanks == 0 || start + length > image.length) {
+			throw new IOException("PRG slice [" + start + ", +" + length + ") does not fit in " +
+				image.length + " bytes");
+		}
+		MessageDigest digest = MessageDigest.getInstance("SHA-256");
+		digest.update(image, start, (int) length);
+		StringBuilder hex = new StringBuilder(64);
+		for (byte b : digest.digest()) {
+			hex.append(String.format("%02x", b & 0xFF));
+		}
+		return hex.toString();
+	}
+
+	/**
+	 * The imported file as a readable {@link Path}. {@code getExecutablePath()} may be a Windows
+	 * path with mixed separators (which {@code Path.of} handles) and Ghidra sometimes records it
+	 * in a URL-ish {@code /C:/dir/file} form (which needs the leading slash trimmed), so both
+	 * spellings are tried before giving up.
+	 */
+	private static Path resolveImagePath(String executablePath) throws IOException {
+		if (executablePath == null || executablePath.isBlank()) {
+			throw new IOException("program records no executable path");
+		}
+		List<String> candidates = new ArrayList<>();
+		candidates.add(executablePath);
+		if (executablePath.matches("^/[A-Za-z]:.*")) {
+			candidates.add(executablePath.substring(1));
+		}
+		for (String candidate : candidates) {
+			try {
+				Path p = Path.of(candidate);
+				if (Files.isReadable(p)) {
+					return p;
+				}
+			}
+			catch (InvalidPathException e) {
+				// not spellable as a path on this platform; try the next candidate
+			}
+		}
+		throw new IOException("no readable file at that path");
 	}
 
 	// ------------------------------------------------------------------

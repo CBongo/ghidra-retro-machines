@@ -190,9 +190,10 @@ it is never a `run-banktest.sh` chunk (whose `all` would otherwise pull it in).
   (`SKIPPED`), so the tier is safe to ship for users without ROMs.
 - **Copyright-safe goldens:** `RealRomDump.java` (name-agnostic, read-only) emits only *derived*
   metadata — block/overlay layout, overlay-space/ref/comment/warning counts, the program
-  SHA-256, and a bounded, sorted **sample** of `bank -> …` comments, cross-bank overlay refs,
-  and warning bookmarks. **No ROM bytes and no disassembled instructions**, so `expected/*.dump`
-  is committable though the ROMs are not.
+  SHA-256, the SHA-256 of the **PRG slice** alone (the per-game identity key a curated
+  descriptor is written against), and a bounded, sorted **sample** of `bank -> …` comments,
+  cross-bank overlay refs, and warning bookmarks. **No ROM bytes and no disassembled
+  instructions**, so `expected/*.dump` is committable though the ROMs are not.
 - **Bless discipline:** same as Tier 3 — regenerate with `bless`, review the `expected/*.dump`
   diff, commit deliberately. Because ROMs aren't in the repo, only someone with the pinned dump
   can re-bless.

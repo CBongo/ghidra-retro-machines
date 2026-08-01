@@ -996,9 +996,12 @@ document does not hedge in the sections above.
 
 ## 10. Deliverable status
 
-Design only; nothing below is implemented.
+Design only, except for the identity line below, which ships in bead grm-hb6.1: every NES import
+now carries `Retro Machines.Game Identity` (`prg:<64 hex> file:<64 hex>`), and its companion
+`Retro Machines.Game Descriptor` is *declared but never written* — nothing resolves a game
+descriptor yet, which is beads grm-hb6.2/grm-hb6.3. Nothing else below is implemented.
 
-- [ ] Identity: PRG-slice + whole-file SHA-256, two Program Info properties — §2
+- [x] Identity: PRG-slice + whole-file SHA-256, two Program Info properties — §2
 - [ ] `game:` schema section, `switch_sites[]`, and the schema-version ruling — §3, §3.3
 - [ ] Symbol reuse plus the `block:` bank qualifier — §3b.2, §3b.3
 - [ ] Curated set `machines/games/*.yaml` → `data/games/*.gmap` (+ `.gitignore`) — §4.1

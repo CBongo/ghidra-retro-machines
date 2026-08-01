@@ -16,6 +16,7 @@
 package retromachines;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -101,7 +102,8 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 	private record PlacedWindow(String name, long cpuStart, long cpuEnd, long srcOffset) {}
 
 	/** The iNES header facts this loader consumes. */
-	private record InesHeader(int prgBanks, int chrBanks, int mapper, boolean trainer) {
+	private record InesHeader(int prgBanks, int chrBanks, int mapper, boolean trainer,
+			boolean exponentPrgSize) {
 
 		long prgSize() {
 			return prgBanks * 0x4000L;
@@ -124,13 +126,18 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 			boolean nes2 = (h[7] & 0x0C) == 0x08;
 			int mapper;
 			int prgBanks;
+			boolean exponentPrgSize = false;
 			if (nes2) {
 				// NES 2.0: 12-bit mapper (flags6 hi | flags7 hi | flags8 lo); PRG-ROM unit
 				// count is h[4] plus a high nibble in h[9]. h[9] low nibble == 0xF selects a
-				// rare exponent size form we don't model -- fall back to the low byte there.
+				// rare exponent size form we don't model -- fall back to the low byte there,
+				// and record that we did so: the resulting prgSize() is a guess, which is
+				// tolerable for window placement but not for a content hash, so gameIdentity()
+				// declines these rather than key a descriptor on the wrong slice.
 				mapper = ((h[8] & 0x0F) << 8) | (h[7] & 0xF0) | lowMapper;
 				int prgHi = h[9] & 0x0F;
-				prgBanks = prgHi == 0x0F ? (h[4] & 0xFF) : ((prgHi << 8) | (h[4] & 0xFF));
+				exponentPrgSize = prgHi == 0x0F;
+				prgBanks = exponentPrgSize ? (h[4] & 0xFF) : ((prgHi << 8) | (h[4] & 0xFF));
 			}
 			else {
 				// Archaic iNES: "DiskDude!"-style tools scribbled ASCII into bytes 7-15, so a
@@ -140,8 +147,52 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 				mapper = archaic ? lowMapper : ((h[7] & 0xF0) | lowMapper);
 				prgBanks = h[4] & 0xFF;
 			}
-			return new InesHeader(prgBanks, h[5] & 0xFF, mapper, (h[6] & 0x04) != 0);
+			return new InesHeader(prgBanks, h[5] & 0xFF, mapper, (h[6] & 0x04) != 0,
+				exponentPrgSize);
 		}
+	}
+
+	/**
+	 * This image's per-game identity (bead grm-hb6.1) -- SHA-256 over the PRG slice, excluding
+	 * the 16-byte iNES header and any trainer, plus SHA-256 over the whole file -- or
+	 * {@code null} when the image has no identity this loader is willing to claim.
+	 * <p>
+	 * The PRG digest is the primary key precisely because header rot is endemic: headerless
+	 * dumps, headers "corrected" by a ROM manager, NES 2.0 headers regenerated over iNES 1.0
+	 * originals and {@code DiskDude!}-scribbled archaic headers (special-cased in
+	 * {@link InesHeader#parse}) all differ as whole files while carrying identical PRG content,
+	 * about which every claim in a descriptor is equally true.
+	 * <p>
+	 * Computed from the {@link ByteProvider} at import, never read back from {@code Memory}:
+	 * that would mean reassembling PRG order from the window/overlay layout -- loader policy,
+	 * and mode-dependent -- and would silently change meaning the first time an analyzer patched
+	 * a byte.
+	 * <p>
+	 * Declines (returns {@code null}) for bad magic, zero declared PRG banks, a PRG slice
+	 * running past EOF, and the NES 2.0 exponent PRG-size form. Each of those would still yield
+	 * a well-formed 64-hex key -- for zero banks, the fixed empty-input digest that every such
+	 * file would share -- and a wrong key is invisible where an absent one is diagnosable.
+	 * Package-private so a pure-JUnit test can drive it over synthetic images.
+	 */
+	static DescriptorSupport.GameIdentity gameIdentity(ByteProvider provider) throws IOException {
+		InesHeader header = InesHeader.parse(provider);
+		if (header == null || header.prgBanks() == 0 || header.exponentPrgSize()) {
+			return null;
+		}
+		long prgOffset = header.prgFileOffset();
+		long prgLength = header.prgSize();
+		if (prgOffset + prgLength > provider.length()) {
+			return null;
+		}
+		String prgSha;
+		try (InputStream in = provider.getInputStream(prgOffset)) {
+			prgSha = DescriptorSupport.sha256Hex(in, prgLength);
+		}
+		String fileSha;
+		try (InputStream in = provider.getInputStream(0)) {
+			fileSha = DescriptorSupport.sha256Hex(in, -1);
+		}
+		return new DescriptorSupport.GameIdentity(prgSha, fileSha);
 	}
 
 	/** The executable-format name stamped on imports; gated on by {@link NesBankingAnalyzer}. */
@@ -316,6 +367,27 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 				declaredEnd + " but the file is only " + provider.length() +
 				" bytes; refusing to load a truncated ROM");
 			return;
+		}
+
+		// Per-game identity (bead grm-hb6.1, docs/per-game-descriptors-design.md section 2): a
+		// fact about the FILE, so it is derived here -- after the truncation guard above proves
+		// the PRG slice readable, and before any board policy runs, since identity neither
+		// depends on which board won nor may be lost to the no-board return below. It is
+		// recorded even when nothing consumes it: the logged value is the key a user pastes
+		// into an overlay descriptor.
+		DescriptorSupport.GameIdentity identity = gameIdentity(provider);
+		if (identity != null) {
+			program.getOptions(Program.PROGRAM_INFO)
+					.setString(DescriptorSupport.GAME_IDENTITY_PROPERTY,
+						identity.toPropertyValue());
+			log.appendMsg("game identity " + identity.toPropertyValue());
+		}
+		else if (header.exponentPrgSize()) {
+			log.appendMsg("NES 2.0 exponent PRG-size form (header byte 9 low nibble = $F) is " +
+				"not modeled, so the PRG slice bounds are a guess; skipping game identity");
+		}
+		else {
+			log.appendMsg("iNES header declares no usable PRG slice; skipping game identity");
 		}
 
 		String boardId = OptionUtils.getOption(BOARD_OPTION_NAME, settings.options(), "");

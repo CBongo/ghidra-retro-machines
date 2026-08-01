@@ -21,7 +21,9 @@
 // Emits a BOUNDED, NORMALIZED, COPYRIGHT-SAFE block between
 //   === REALROM BEGIN ===  /  === REALROM END ===
 // containing ONLY our own derived analysis metadata -- board identity, the program's
-// SHA-256, memory-block layout (name/range/overlay-ness), counts of overlay spaces /
+// SHA-256, the SHA-256 of its PRG slice alone (the loader's per-game identity key, bead
+// grm-hb6.1 -- this is the value a curated per-game descriptor's `prg_sha256` field is
+// copied from), memory-block layout (name/range/overlay-ness), counts of overlay spaces /
 // cross-bank references / bank-switch comments / warning bookmarks / banked
 // instructions, and a bounded, sorted SAMPLE of the bank-switch comments, cross-bank
 // overlay references, and warning bookmarks. It never emits ROM bytes or disassembled
@@ -58,6 +60,11 @@ public class RealRomDump extends GhidraScript {
 	// literals here so this script needs no extension classes on its path).
 	private static final String MAP_PATH_PROPERTY = "Retro Machine Map";
 	private static final String PLACEMENT_OVERRIDE_PROPERTY = "Retro Machines.Placement Override";
+
+	// Program-info property the loader stamps with this image's per-game identity,
+	// "prg:<64 hex> file:<64 hex>" (DescriptorSupport.GAME_IDENTITY_PROPERTY -- kept as a
+	// literal here for the same reason as the two above).
+	private static final String GAME_IDENTITY_PROPERTY = "Retro Machines.Game Identity";
 
 	@Override
 	protected void run() throws Exception {
@@ -129,10 +136,13 @@ public class RealRomDump extends GhidraScript {
 				.getString(MAP_PATH_PROPERTY, null);
 		String placement = currentProgram.getOptions(Program.PROGRAM_INFO)
 				.getString(PLACEMENT_OVERRIDE_PROPERTY, null);
+		String prgSha = prgSha256(currentProgram.getOptions(Program.PROGRAM_INFO)
+				.getString(GAME_IDENTITY_PROPERTY, null));
 
 		println("=== REALROM BEGIN ===");
 		println("REALROM program " + currentProgram.getName());
 		println("REALROM sha256 " + (sha == null ? "NONE" : sha));
+		println("REALROM prgsha256 " + prgSha);
 		println("REALROM map " + (mapPath == null ? "NONE" : mapPath));
 		println("REALROM placement " + (placement == null ? "NONE" : placement));
 
@@ -154,6 +164,21 @@ public class RealRomDump extends GhidraScript {
 		emitSample("warn", warnings);
 
 		println("=== REALROM END ===");
+	}
+
+	// The "prg:" half of a "prg:<64 hex> file:<64 hex>" identity value -- the per-game key a
+	// curated descriptor is written against. The "file:" half is already emitted as
+	// "REALROM sha256", so only this one is new. NONE (the file's sentinel for an absent
+	// property) when no loader stamped an identity or the value carries no prg: token.
+	private String prgSha256(String identity) {
+		if (identity != null) {
+			for (String token : identity.trim().split("\\s+")) {
+				if (token.startsWith("prg:")) {
+					return token.substring("prg:".length());
+				}
+			}
+		}
+		return "NONE";
 	}
 
 	// Print the first SAMPLE (sorted) entries of a category, so the golden stays small
