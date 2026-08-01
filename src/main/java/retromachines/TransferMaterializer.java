@@ -87,10 +87,18 @@ import ghidra.util.task.TaskMonitor;
  * hits I/O registers or {@code RAM_D000} depending on the state), so the descriptor cannot answer it
  * alone. It does not have to: {@code BoardBankAnalyzer} has already resolved every store against the
  * bank state live at that instruction, so {@link CopyLoopAnalyzer} reads the answer off the store's
- * own reference ({@code LoopIdioms.overlayWriteTarget}) and hands us a destination already homed in
+ * own reference ({@code LoopIdioms.overlayAccessTarget}) and hands us a destination already homed in
  * the right space, marked {@link TransferTarget#RESOLVED_SPACE}. Front-ends with no instruction to
  * read -- a descriptor directive, the manual command -- are covered instead by the blanket rule that
  * only plain RAM is ever carved: never a block that is unwritable (ROM) or volatile (I/O).
+ *
+ * <p><b>A banked source is resolved the same way (grm-9a0), and needs nothing here.</b> The same
+ * helper read with READ polarity off the {@code LDA} gives a source already homed in the live
+ * occupant's overlay -- a C64 loop reading {@code $D000} with {@code CHAREN} cleared is copying the
+ * character ROM, not the I/O registers the base space holds there. {@code readSource} takes the
+ * source address as given, so an overlay source needs no special case: it simply reads the
+ * occupant's bytes, and if that occupant is an unsupplied ROM image the "unreadable source" gate
+ * below refuses, exactly as it does for a base-space ROM.
  *
  * <p><b>An unreadable source materializes nothing.</b> A snapshot needs bytes to snapshot; when
  * the source range is uninitialized (a {@code copied_from} hint naming a KERNAL ROM the user

@@ -1,0 +1,10 @@
+COPYBLOCK COPY_c000 c000-c007 init=true
+PLACEMENT inplace
+SPACE RAM
+SOURCE d000
+NEIGHBORS RAM_C000_C008 c008-cfff init=false
+COPIED aa ab a8 a9 ae af ac ad
+DISASM true
+CALLREF RAM:c000
+BOOKMARK Note @2004
+COMMENT copy loop -> COPY_c000

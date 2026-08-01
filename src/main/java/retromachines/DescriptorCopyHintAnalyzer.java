@@ -257,6 +257,18 @@ public class DescriptorCopyHintAnalyzer extends AbstractAnalyzer {
 	 * Falls back to the base space when no such block exists, or when it does not cover the
 	 * address -- a descriptor may legitimately name a source whose block the loader split or
 	 * renamed (the loader's own carve produces {@code RAM_MAIN_0800}-style fragments).
+	 * <p>
+	 * <b>Deliberately a separate path from {@code LoopIdioms.overlayAccessTarget}</b> (grm-9a0),
+	 * which resolves the same question for {@link CopyLoopAnalyzer}'s recognized loops by reading
+	 * {@code BoardBankAnalyzer}'s re-homed READ reference off the {@code LDA}. They are not
+	 * converged because they answer from fundamentally different evidence: that one has an
+	 * instruction and a bank state resolved at it, this one has only a block <em>name</em> a human
+	 * wrote in a descriptor and no instruction to resolve against. Sharing code would require
+	 * inventing a fake instruction here, or degrading that one to a descriptor-only derivation --
+	 * which cannot work, because which occupant a read reaches is bank-state-dependent and the
+	 * schema deliberately has no {@code on_read} key ({@code docs/smc-runfromelsewhere-design.md}
+	 * section 8 open question 3). The naming here is the descriptor author's own statement of
+	 * intent, and is the right and only available evidence on this path.
 	 */
 	private static Address resolveSource(Program program, AddressSpace baseSpace, String source,
 			long sourceAddr) {

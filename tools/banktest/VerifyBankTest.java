@@ -155,6 +155,15 @@ public class VerifyBankTest extends GhidraScript {
 			return;
 		}
 
+		// Order matters: "copybankedsrc"/"copybankedsrcrom" also contain "copybanked". One branch
+		// serves both, keying off the full name -- unlike the copybanked pair below, these two runs
+		// are REQUIRED to differ (grm-9a0).
+		if (name.contains("copybankedsrc")) {
+			checkCopyBankedSrc();
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
+
 		// One branch serves both the no-ROM and ROM-supplied runs -- "copybankedrom" contains
 		// "copybanked", and checkCopyBanked keys off the full name for the single criterion that
 		// differs. No ordering hazard here, unlike copyhint/copyhintnorom below.
@@ -760,6 +769,126 @@ public class VerifyBankTest extends GhidraScript {
 			"ref=" + (indexedWrite == null ? "<none>"
 					: indexedWrite.getToAddress().getAddressSpace().getName() + ":" +
 						fmt(indexedWrite.getToAddress()) + " " + indexedWrite.getReferenceType()));
+	}
+
+	/**
+	 * grm-9a0: the mirror of {@link #checkCopyBanked} -- a copy loop whose SOURCE is a banked,
+	 * NON-HOME occupant. The fixture (mkcopytest.py {@code copybankedsrc.prg}) pins the bank state
+	 * itself with {@code LDA #$33 / STA $01} (CHAREN=0), which banks the character ROM in over
+	 * {@code $D000}, then copies 8 bytes of it down to {@code $C000} -- an ordinary base-space RAM
+	 * destination, outside every window, so the read is the only banked thing in the fixture and
+	 * the source half is isolated. Loop top (the {@code LDA}) is {@code $2006}, the counter init
+	 * and provenance anchor is the {@code LDX} at {@code $2004}, the entering {@code JMP} is
+	 * {@code $200F}.
+	 *
+	 * <p>Run against both {@code copybankedsrc} (no dump) and {@code copybankedsrcrom}
+	 * ({@code -loader-chargenRom}), and unlike the copybanked pair these two MUST DIFFER: an
+	 * unreadable source materializes nothing (TransferMaterializer gate 0), a readable one
+	 * materializes the character ROM's own bytes. That difference is the regression guard. Before
+	 * the fix {@code LoopIdioms.indexedBase} named base-space {@code $D000} -- the {@code CHARIO}
+	 * window's HOME occupant, which is IO -- in both runs, so supplying the dump changed nothing
+	 * and the character ROM was never read.
+	 *
+	 * <p>{@code srcref-resolved} is the mechanism check proper and holds in BOTH runs, since where
+	 * a read lands is a hardware fact independent of whether the user supplied an image.
+	 */
+	private void checkCopyBankedSrc() {
+		boolean romSupplied = currentProgram.getName().contains("copybankedsrcrom");
+		final long srcEntry = 0x2004;    // the LDX -- provenance anchor, not $2000 here
+		final long ldaSite = 0x2006;     // the loop top, whose READ reference carries the answer
+
+		if (romSupplied) {
+			// mkromtest.py's chargen.bin is byte[i] = (i & 0xFF) ^ 0xAA, so $D000..$D007 reads
+			// AA AB A8 A9 AE AF AC AD -- bytes that exist nowhere in the PRG image, so seeing them
+			// at the destination proves the character ROM itself was the source.
+			verifyCopy("copybankedsrc", "COPY_c000", 0xc000, 0xd000,
+				new byte[] {(byte) 0xaa, (byte) 0xab, (byte) 0xa8, (byte) 0xa9, (byte) 0xae,
+					(byte) 0xaf, (byte) 0xac, (byte) 0xad},
+				true, true, true,
+				new Neighbor[] {new Neighbor("RAM_C000_C008", 0xc008, 0xcfff)},
+				addr(srcEntry), addr(0x200f));
+		}
+		else {
+			checkCopyBankedSrcRefused(srcEntry);
+		}
+
+		// The banked-source resolution itself: BoardBankAnalyzer must have re-homed the LDA's READ
+		// reference into the CHARGEN overlay, which is what LoopIdioms.overlayAccessTarget reads.
+		// Asserted in both runs -- the pre-fix code had no such consumer, not no such reference.
+		Reference srcRef = findOverlayRef(ldaSite, "CHARGEN", 0xd000);
+		criterion("copybankedsrc-srcref-resolved",
+			srcRef != null && srcRef.getReferenceType().isRead(),
+			"ref=" + (srcRef == null ? "<none>"
+					: srcRef.getToAddress().getAddressSpace().getName() + ":" +
+						fmt(srcRef.getToAddress()) + " " + srcRef.getReferenceType()));
+
+		// The CHARGEN occupant must be a whole 4K overlay block either way, initialized iff a dump
+		// was supplied. Nothing in this fixture may carve or split the source.
+		MemoryBlock chargen = currentProgram.getMemory().getBlock("CHARGEN");
+		boolean chargenOk = chargen != null &&
+			chargen.getStart().getAddressSpace().isOverlaySpace() &&
+			chargen.getStart().getOffset() == 0xd000 && chargen.getEnd().getOffset() == 0xdfff &&
+			chargen.isInitialized() == romSupplied;
+		criterion("copybankedsrc-chargen-intact", chargenOk,
+			"chargen=" + (chargen == null ? "<missing>"
+					: chargen.getName() + " " + fmt(chargen.getStart()) + "-" +
+						fmt(chargen.getEnd()) + " init=" + chargen.isInitialized()) +
+				" expectedInit=" + romSupplied);
+	}
+
+	/**
+	 * The no-dump half of {@link #checkCopyBankedSrc}: the recognizer resolved the source into the
+	 * CHARGEN overlay, which holds no bytes, so TransferMaterializer's gate 0 must refuse and place
+	 * nothing -- and say so at the copy site rather than silently. RAM_C000 must also survive whole,
+	 * the same collateral-damage check {@link #checkCopyData} makes.
+	 */
+	private void checkCopyBankedSrcRefused(long srcEntry) {
+		MemoryBlock copy = currentProgram.getMemory().getBlock("COPY_c000");
+		MemoryBlock ram = currentProgram.getMemory().getBlock(addr(0xc000));
+		String ramLine = ram == null ? "<none>"
+				: ram.getName() + " " + fmt(ram.getStart()) + "-" + fmt(ram.getEnd()) +
+					" init=" + ram.isInitialized();
+		boolean intact = ram != null && "RAM_C000".equals(ram.getName()) &&
+			ram.getStart().getOffset() == 0xc000 && ram.getEnd().getOffset() == 0xcfff &&
+			!ram.isInitialized();
+
+		Bookmark mark = null;
+		for (Bookmark bm : currentProgram.getBookmarkManager().getBookmarks(addr(srcEntry))) {
+			if (COPY_CATEGORY.equals(bm.getCategory())) {
+				mark = bm;
+				break;
+			}
+		}
+		String note = mark == null ? "<none>" : mark.getComment();
+
+		// The refusal note reads "copy <space:offset> -> <space:offset> not materialized: ...", so
+		// the source token it names is the ONLY place this run records which occupant the
+		// recognizer resolved to. Without it the no-dump run's dump is bit-identical before and
+		// after the fix (both refuse, for different reasons), and only the dump-supplied run would
+		// guard the regression. Pre-fix this read "RAM:d000" -- the IO home occupant.
+		String declinedSource = "<none>";
+		int arrow = note.indexOf(" -> ");
+		if (note.startsWith("copy ") && arrow > 0) {
+			declinedSource = note.substring("copy ".length(), arrow);
+		}
+
+		println("=== BANKDUMP BEGIN ===");
+		println("COPYBLOCK " + (copy == null ? "<none>" : copy.getName()));
+		println("SOURCE " + declinedSource);
+		println("NEIGHBORS " + ramLine);
+		println("BOOKMARK " + (mark == null ? "<none>" : mark.getTypeString()));
+		println("DECLINED " + (note.contains("source bytes are uninitialized") ? "yes" : "no"));
+		println("=== BANKDUMP END ===");
+
+		criterion("copybankedsrc-norom-not-materialized", copy == null,
+			"block=" + (copy == null ? "<none>" : copy.getName()));
+		criterion("copybankedsrc-norom-destination-unsplit", intact, "ram=" + ramLine);
+		criterion("copybankedsrc-norom-refusal-recorded",
+			mark != null && "Warning".equals(mark.getTypeString()) &&
+				note.contains("source bytes are uninitialized"),
+			"bm=" + (mark == null ? "<none>" : mark.getTypeString() + " " + note));
+		criterion("copybankedsrc-norom-source-resolved", "CHARGEN:d000".equals(declinedSource),
+			"declinedSource=" + declinedSource + " expected=CHARGEN:d000");
 	}
 
 	private void checkCopyLoop() {

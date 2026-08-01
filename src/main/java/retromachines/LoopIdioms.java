@@ -22,7 +22,10 @@ import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.scalar.Scalar;
 import ghidra.program.model.symbol.FlowType;
+import ghidra.program.model.symbol.RefType;
 import ghidra.program.model.symbol.Reference;
+
+import java.util.function.Predicate;
 
 /**
  * Shared 6502 loop-idiom recognition helpers used by the run-from-elsewhere family of
@@ -110,49 +113,78 @@ final class LoopIdioms {
 		}
 	}
 
-	/** Where a store's bytes actually land, when the banking analyzer has re-homed the store's own
-	 *  write reference into another address space -- or null when it has not, which is every
-	 *  unbanked destination and the normal case.
+	/** Where an indexed access's bytes actually land or come from, when the banking analyzer has
+	 *  re-homed that access's own reference into another address space -- or null when it has not,
+	 *  which is every unbanked operand and the normal case.
 	 *
-	 *  <p>On a banked machine the base-space block at a store's target is only the <em>home</em>
+	 *  <p>On a banked machine the base-space block at an access's target is only the <em>home</em>
 	 *  occupant of the containing window. A C64 copy loop writing to {@code $E000} targets the RAM
 	 *  under the KERNAL ROM, but {@link #indexedBase} can only name {@code base:$E000}, which is
 	 *  where the loader put the KERNAL block -- so carving there would shred a ROM image
-	 *  (bead grm-bqs).
+	 *  (bead grm-bqs). The read side is the same mistake with the polarity flipped (bead grm-9a0):
+	 *  a loop reading {@code $D000} with {@code CHAREN} cleared is copying the CHARACTER ROM, but
+	 *  {@code base:$D000} is where the loader put the I/O registers, the {@code CHARIO} window's
+	 *  home occupant.
 	 *
-	 *  <p><b>The descriptor alone cannot settle this, and does not have to.</b> Which occupant a
-	 *  write reaches is bank-state-dependent in general: a C64 store to {@code $D000} hits the I/O
-	 *  registers when I/O is banked in and {@code RAM_D000} when it is not, and the schema has no
-	 *  {@code on_read} key at all because a read simply goes to whichever occupant is live. But
-	 *  {@code BoardBankAnalyzer.retargetReferences} has already resolved this store against the bank
-	 *  state live at this very instruction and attached a WRITE reference to the occupant the write
-	 *  actually reaches. Read that answer instead of deriving a weaker one from the descriptor.
+	 *  <p><b>The descriptor alone cannot settle this, and does not have to.</b> Which occupant an
+	 *  access reaches is bank-state-dependent in general: a C64 store to {@code $D000} hits the I/O
+	 *  registers when I/O is banked in and {@code RAM_D000} when it is not. But
+	 *  {@code BoardBankAnalyzer.retargetReferences} has already resolved this instruction against
+	 *  the bank state live at this very site and attached a reference to the occupant the access
+	 *  actually reaches -- WRITE references from {@code grm-bqs}, READ references too since the
+	 *  {@code grm-5tl.9} read-modify-write split. Read that answer instead of deriving a weaker one
+	 *  from the descriptor.
+	 *
+	 *  <p><b>The two polarities are not symmetric, and the asymmetry is the instructive part.</b>
+	 *  The descriptor has an {@code on_write} key because a write's destination is
+	 *  bank-state-<em>independent</em>: you cannot write to ROM, so a store to {@code $E000} reaches
+	 *  {@code RAM_E000} whether the KERNAL is banked in or not, and the occupant can state that fact
+	 *  statically. There is deliberately <em>no</em> {@code on_read} key, because a read goes to
+	 *  whichever occupant is <em>live</em> -- so the read-side answer is bank-state-dependent by
+	 *  nature and only the banking analyzer's per-instruction resolution can supply it. That is why
+	 *  a static descriptor walk could never have closed the source half, and why this method is the
+	 *  only route to it.
 	 *
 	 *  <p>Requires the banking analyzer to have run first -- {@link CopyLoopAnalyzer} orders itself
 	 *  after it for exactly this reason. If it has not, no such reference exists, the caller keeps
-	 *  the base-space target, and behavior is what it was before banked destinations were resolved
+	 *  the base-space target, and behavior is what it was before banked accesses were resolved
 	 *  at all.
 	 *
-	 *  <p>Matched across the <em>whole destination range</em>, not at {@code base} alone, because an
-	 *  indexed store's write reference is not guaranteed to land on {@code base}. With
+	 *  <p>Matched across the <em>whole accessed range</em>, not at {@code base} alone, because an
+	 *  indexed access's reference is not guaranteed to land on {@code base}. With
 	 *  {@link MosConstantReferenceAnalyzer} enabled it does -- that is what bead grm-phv built --
 	 *  but the range match must survive its absence: the analyzer carries a user-facing
 	 *  "Reference indexed operand base" option, any analyzer can be switched off entirely, and a
 	 *  program analyzed by an older build of this extension keeps the references it was given. In
 	 *  those cases the stock behavior applies and a {@code STA $E000,X} over an 8-byte loop yields
 	 *  references to {@code $E006}/{@code $E007} rather than to {@code $E000}. Any one of them
-	 *  identifies the occupant, since a single store instruction writes the whole range through one
+	 *  identifies the occupant, since a single instruction accesses the whole range through one
 	 *  window, so the range match is correct either way -- do not narrow it to an exact match on
 	 *  {@code base}. The returned address re-homes {@code base} into that occupant's space, so the
-	 *  caller gets the start of the destination and not whichever index was pinned down.
+	 *  caller gets the start of the range and not whichever index was pinned down.
 	 *
-	 *  @param store the storing instruction a copy loop is anchored on (the {@code STA})
-	 *  @param base  that store's base-space target, from {@link #indexedBase}
-	 *  @param len   destination length in bytes, bounding the range references may fall in
+	 *  <p><b>Deliberately not shared with {@code DescriptorCopyHintAnalyzer.resolveSource}</b>
+	 *  (grm-9a0), which answers the same question -- "which occupant do these source bytes really
+	 *  live in?" -- by preferring the memory block a descriptor directive <em>names</em> and taking
+	 *  its address space. The two are kept separate because the evidence is different in kind:
+	 *  there, a human-authored block name and no instruction at all; here, an instruction whose
+	 *  reference the banking analyzer has already resolved against the live bank state. Converging
+	 *  them would mean either inventing a fake instruction for the descriptor path or weakening this
+	 *  one to a descriptor-only derivation -- and the second is impossible in principle, since a
+	 *  static descriptor walk cannot settle a bank-state-dependent read (see the asymmetry above,
+	 *  and {@code docs/smc-runfromelsewhere-design.md} section 8 open question 3).
+	 *
+	 *  @param access   the accessing instruction a copy loop is anchored on -- the {@code STA} for
+	 *                  the destination, the {@code LDA} for the source
+	 *  @param base     that access's base-space target, from {@link #indexedBase}
+	 *  @param len      range length in bytes, bounding the range references may fall in
+	 *  @param polarity which reference to believe: {@code RefType::isWrite} for a store's
+	 *                  destination, {@code RefType::isRead} for a load's source
 	 */
-	static Address overlayWriteTarget(Instruction store, Address base, int len) {
-		for (Reference ref : store.getReferencesFrom()) {
-			if (!ref.getReferenceType().isWrite()) {
+	static Address overlayAccessTarget(Instruction access, Address base, int len,
+			Predicate<RefType> polarity) {
+		for (Reference ref : access.getReferencesFrom()) {
+			if (!polarity.test(ref.getReferenceType())) {
 				continue;
 			}
 			Address to = ref.getToAddress();

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Hand-assembles the CopyLoopAnalyzer regression PRGs (bead grm-1.7.1, extended by grm-chu).
+"""Hand-assembles the CopyLoopAnalyzer regression PRGs (bead grm-1.7.1, extended by grm-chu,
+grm-bqs and grm-9a0).
 
 Usage: mkcopytest.py <output-dir>
 
-Writes three PRGs that exercise the run-from-elsewhere recognizer's EVIDENCE GATE (does a
+Writes five PRGs that exercise the run-from-elsewhere recognizer's EVIDENCE GATE (does a
 jump into the destination prove the payload is code?) AND the grm-chu placement policy
 (carve the destination in place vs. fall back to a byte-mapped overlay):
 
@@ -98,6 +99,36 @@ because the placement must come out identical either way: which occupant a write
 a hardware fact, not a fallback for an uninitialized ROM block. Before grm-bqs the two runs
 disagreed -- with a dump supplied KERNAL was initialized, so the carve was refused and the
 bug hid.
+
+copybankedsrc.prg is the mirror image of copybanked.prg: it isolates the SOURCE half of
+banked-window resolution (grm-9a0), which copybanked.prg cannot see because its source is an
+ordinary base-space payload inside the PRG. Here the source is the C64 CHARACTER ROM -- a
+NON-HOME occupant of the CHARIO window ($D000-$DFFF, whose home occupant is IO, because the
+descriptor's initial_state has CHAREN=1) -- and the destination is deliberately an ORDINARY
+base-space RAM destination ($C000, outside every window), so the only banked thing in the
+fixture is the read. Copying the character ROM down into RAM is the canonical real-world C64
+idiom for this shape.
+
+The fixture DELIBERATELY PINS the bank state first, because in the default state every C64
+window's live occupant IS its home occupant and there would be nothing to resolve:
+
+  $2000  A9 33        LDA #$33          ; LORAM=1, HIRAM=1, CHAREN=0
+  $2002  85 01        STA $01           ; mechanism write: banks CHARGEN in over $D000
+  $2004  A2 07        LDX #$07          ; index 7..0 -> 8 bytes
+  $2006  BD 00 D0     LDA $D000,X       ; SOURCE: reads CHARGEN, a NON-HOME occupant (loop top)
+  $2009  9D 00 C0     STA $C000,X       ; destination: free uninitialized RAM_C000, base space
+  $200C  CA           DEX
+  $200D  10 F7        BPL $2006
+  $200F  4C 00 C0     JMP $C000         ; JUMP INTO the copy -> AUTO (code)
+
+Run TWICE by the harness, as copybankedsrc (no ROM) and copybankedsrcrom
+(-loader-chargenRom), and here the two runs must DIFFER -- that split is the point of the
+fixture. Without a dump the CHARGEN occupant is uninitialized, so TransferMaterializer's
+gate 0 ("an unreadable source materializes nothing") must refuse and place nothing; with the
+dump supplied the copy materializes carrying the character ROM's own bytes, which
+mkromtest.py generates as byte[i] = (i & 0xFF) ^ 0xAA, i.e. AA AB A8 A9 AE AF AC AD at $C000.
+Before grm-9a0 the recognizer named the base-space $D000 -- the IO home occupant -- in BOTH
+runs, so supplying the character ROM changed nothing at all and its bytes were never reached.
 """
 
 import sys
@@ -165,6 +196,25 @@ def build_copybanked():
     return code + payload
 
 
+def build_copybankedsrc():
+    code = bytes([
+        0xA9, 0x33,             # LDA #$33      (LORAM=1, HIRAM=1, CHAREN=0)
+        0x85, 0x01,             # STA $01       (bank CHARGEN in over $D000)
+        0xA2, 0x07,             # LDX #$07
+        0xBD, 0x00, 0xD0,       # LDA $D000,X   (SOURCE -- the CHARGEN occupant, not IO)
+        0x9D, 0x00, 0xC0,       # STA $C000,X   (destination -- ordinary base-space RAM)
+        0xCA,                   # DEX
+        0x10, 0xF7,             # BPL $2006
+        0x4C, 0x00, 0xC0,       # JMP $C000     (into the copy -> AUTO)
+    ])
+    # The loop top is the LDA, and BPL is a signed 8-bit displacement from the byte AFTER
+    # its operand: $2006 - $200F = -9 = $F7.
+    assert LOAD_ADDR + 6 == 0x2006, "loop top (the LDA) must sit at $2006"
+    assert (0x2006 - (LOAD_ADDR + 15)) & 0xFF == 0xF7, "BPL displacement must reach the LDA"
+    assert LOAD_ADDR + len(code) == 0x2012, "code must end at $2012 (no payload follows)"
+    return code
+
+
 def write_prg(outdir, name, body):
     header = bytes([LOAD_ADDR & 0xFF, LOAD_ADDR >> 8])
     path = os.path.join(outdir, name)
@@ -182,6 +232,7 @@ def main():
     write_prg(outdir, "copydata.prg", build_copydata())
     write_prg(outdir, "copyoverlay.prg", build_copyoverlay())
     write_prg(outdir, "copybanked.prg", build_copybanked())
+    write_prg(outdir, "copybankedsrc.prg", build_copybankedsrc())
 
 
 if __name__ == "__main__":

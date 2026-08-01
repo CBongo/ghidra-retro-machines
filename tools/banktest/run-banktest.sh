@@ -420,6 +420,21 @@ if selected c64-recovery; then
 	run_one copybankedrom "$WORK/prg/copybankedrom.prg" C64PrgLoader \
 		"-loader-kernalRom $(native "$WORK/prg/kernal.bin")"
 
+	# grm-9a0: the mirror case -- a copy loop whose SOURCE is a banked, NON-HOME occupant (the
+	# character ROM, banked in over $D000 by the fixture's own LDA #$33 / STA $01), with an
+	# ordinary base-space RAM destination so only the read is banked. Run BOTH ways for the
+	# opposite reason to copybanked above: here the two runs MUST DIFFER, and that difference is
+	# the whole demonstration. With no chargen dump the source occupant is uninitialized, so
+	# TransferMaterializer's gate 0 refuses and materializes nothing; with the dump supplied the
+	# copy lands carrying the character ROM's own bytes. Before the fix the recognizer named the
+	# base-space $D000 -- the IO home occupant -- in BOTH runs, so supplying the dump changed
+	# nothing and the character ROM's bytes were never reached. chargen.bin comes from
+	# mkromtest.py, already generated for this chunk above.
+	run_one copybankedsrc "$WORK/prg/copybankedsrc.prg" C64PrgLoader
+	cp -f "$WORK/prg/copybankedsrc.prg" "$WORK/prg/copybankedsrcrom.prg"
+	run_one copybankedsrcrom "$WORK/prg/copybankedsrcrom.prg" C64PrgLoader \
+		"-loader-chargenRom $(native "$WORK/prg/chargen.bin")"
+
 	# The MANUAL run-from-elsewhere front-end (grm-1.7.1.1): the shipped
 	# ghidra_scripts/RunFromElsewhereTransfer.java driven as a -preScript, which is the only
 	# regression path the manual front-ends have (the GUI plugin is untestable here -- see

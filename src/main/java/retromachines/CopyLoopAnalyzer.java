@@ -27,6 +27,7 @@ import ghidra.program.model.listing.BookmarkType;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
+import ghidra.program.model.symbol.RefType;
 import ghidra.util.task.TaskMonitor;
 
 import java.util.Set;
@@ -105,10 +106,11 @@ public class CopyLoopAnalyzer extends AbstractAnalyzer {
 		// After reference analysis so branch flows exist (back-edge + jump-into-range), and one
 		// step later again so it also lands after BoardBankAnalyzer, which sits at
 		// REFERENCE_ANALYSIS.after() itself. That ordering is a real dependency, not tidiness:
-		// tryRecognize reads the banking analyzer's re-homed write reference to learn where a
-		// store into a banked window actually lands (grm-bqs). Equal priority would leave the
-		// order undefined. Degradation is safe -- with no such reference we keep the base-space
-		// destination, which is the pre-grm-bqs behavior.
+		// tryRecognize reads the banking analyzer's re-homed references to learn where a store
+		// into a banked window actually lands (grm-bqs) and which occupant a load out of one
+		// actually reads (grm-9a0). Equal priority would leave the order undefined. Degradation
+		// is safe -- with no such reference we keep the base-space address, which is the
+		// pre-grm-bqs behavior.
 		setPriority(AnalysisPriority.REFERENCE_ANALYSIS.after().after());
 		setDefaultEnablement(true);
 		setSupportsOneTimeAnalysis();
@@ -203,17 +205,26 @@ public class CopyLoopAnalyzer extends AbstractAnalyzer {
 			return null;
 		}
 
-		// grm-bqs: dst so far is a BASE-space address, because an indexed operand's scalar carries
-		// no space of its own. On a banked machine that names the window's home occupant -- at
-		// $E000 with no ROM supplied, the uninitialized KERNAL block, which the materializer would
-		// happily carve. BoardBankAnalyzer has already resolved this very store against the bank
-		// state live here and re-homed its write reference into the occupant the write reaches, so
-		// take that answer. Deliberately after the src/dst and jump-into-range tests above, both of
-		// which need the base-space address: re-homing dst first would make "src != dst" trivially
-		// true, and a base-space JMP would no longer land inside the destination range.
-		Address resolved = LoopIdioms.overlayWriteTarget(sta, dst, len);
+		// grm-bqs (destination) / grm-9a0 (source): src and dst so far are BASE-space addresses,
+		// because an indexed operand's scalar carries no space of its own. On a banked machine that
+		// names the window's HOME occupant -- at $E000 with no ROM supplied, the uninitialized
+		// KERNAL block, which the materializer would happily carve; at $D000 with CHAREN cleared,
+		// the I/O registers rather than the character ROM the loop is really reading.
+		// BoardBankAnalyzer has already resolved both of these instructions against the bank state
+		// live here and re-homed their references into the occupants actually reached, so take that
+		// answer on both sides. Deliberately after the src/dst and jump-into-range tests above, all
+		// of which need the base-space addresses: re-homing first would make "src != dst" trivially
+		// true (an in-place-looking LDA $A000,Y / STA $A000,Y that reads BASIC and writes RAM_A000
+		// is a real C64 idiom, but admitting it is a separate behavior change), and a base-space JMP
+		// would no longer land inside the destination range.
+		//
+		// Only the DESTINATION drives TransferTarget: RESOLVED_SPACE tells the materializer where
+		// to place bytes, and a re-homed source changes only where they are read from.
+		Address resolved = LoopIdioms.overlayAccessTarget(sta, dst, len, RefType::isWrite);
+		Address resolvedSrc = LoopIdioms.overlayAccessTarget(lda, src, len, RefType::isRead);
 
-		return RunFromElsewhere.request(src, resolved != null ? resolved : dst, len)
+		return RunFromElsewhere.request(resolvedSrc != null ? resolvedSrc : src,
+			resolved != null ? resolved : dst, len)
 				.target(resolved != null ? TransferTarget.RESOLVED_SPACE : TransferTarget.SAME_SPACE)
 				.provenanceSite(init.getAddress())
 				.disassemble(true)

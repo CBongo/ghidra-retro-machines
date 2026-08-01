@@ -212,9 +212,10 @@ landed, and step 2's mechanic changed on the way — see the §2 banner.
    re-run. That makes an analyzer/command front-end a requirement for Tier A rather than
    loader-time-only work, or the "ROM added later" path is unreachable. Rationale and the full
    placement policy: `docs/smc-inplace-vs-overlay.md` §5-6.
-3. **Banked sources**: the survey flags that a copy source may live in a banked window;
-   the mapped block must reference the correct bank's bytes. Still open — but **a smaller ask
-   than when this was written**, and for an instructive reason.
+3. ~~**Banked sources**~~ **DONE (2026-07-31, grm-9a0)**: the survey flagged that a copy source
+   may live in a banked window and the materialized block must carry the correct bank's bytes.
+   It turned out to be **a smaller ask than when this was written**, and for an instructive
+   reason.
 
    The *destination* half was closed by grm-bqs (2026-07-27) not by adding a schema key but by
    **consuming what the banking engine had already worked out**: `BoardBankAnalyzer` resolves every
@@ -224,11 +225,27 @@ landed, and step 2's mechanic changed on the way — see the §2 banner.
    `RAM_D000` depending on bank state, and there is no `on_read` key at all because a read simply
    goes to whichever occupant is live.
 
-   The source half is the same shape. `grm-5tl.9` already made the engine emit **READ** references
-   as well as write ones (the RMW split), so a banked source should be readable off the `LDA` the
-   way the destination is off the `STA` — `LoopIdioms.overlayWriteTarget` with the polarity
-   flipped. That is the concrete next step, in place of "defer until a case appears"; what is
-   genuinely missing is a fixture with a banked source, not a mechanism.
+   The source half was the same shape, and closed the same way. `grm-5tl.9` had already made the
+   engine emit **READ** references as well as write ones (the RMW split), so the banked source is
+   readable off the `LDA` exactly as the destination is off the `STA`:
+   `LoopIdioms.overlayWriteTarget` generalized to `overlayAccessTarget(access, base, len,
+   polarity)` and called twice, once per polarity. What was genuinely missing was a fixture, not a
+   mechanism — `copybankedsrc.prg` (tools/banktest/mkcopytest.py), a loop that pins `CHAREN=0`
+   itself and copies the character ROM down to `$C000`, run both without and with
+   `-loader-chargenRom`.
+
+   **The asymmetry is the part worth keeping.** `on_write` exists in the schema because a write's
+   destination is bank-state-*independent* — you cannot write to ROM, so a store to `$E000` reaches
+   `RAM_E000` either way, and the occupant can state that statically. There is deliberately no
+   `on_read` key because a read goes to whichever occupant is *live*, so the read-side answer is
+   bank-state-dependent by nature and only a per-instruction resolution can supply it. That is why
+   a static descriptor walk could never have closed this half.
+
+   `DescriptorCopyHintAnalyzer.resolveSource` answers the same question for the declarative
+   front-end by preferring the block a directive *names* and taking its address space. The two are
+   deliberately **not** converged: same question, fundamentally different evidence (a
+   human-authored block name with no instruction, vs. an instruction with a bank state resolved at
+   it). Both sites carry a javadoc note saying so.
 
 ## 9. Deliverable status
 
@@ -236,6 +253,7 @@ landed, and step 2's mechanic changed on the way — see the §2 banner.
       **fallback** representation only, the default being the in-place carve (see the §2 banner)
 - [x] Banked destinations resolve through the store's own re-homed write reference — grm-bqs,
       `docs/smc-inplace-vs-overlay.md` §5 Gate 0.5
+- [x] Banked **sources** resolve through the load's own re-homed read reference — grm-9a0, §8 Q3
 - [x] Placement decision (in-place carve vs overlay, and when each applies) — grm-chu,
       `docs/smc-inplace-vs-overlay.md`
 - [x] ROM prerequisite identified (grm-mbm) + proceed-options — §3
