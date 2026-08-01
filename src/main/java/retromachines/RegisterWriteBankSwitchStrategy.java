@@ -86,8 +86,10 @@ public class RegisterWriteBankSwitchStrategy implements BankSwitchStrategy {
 		}
 
 		@Override
-		public BankState resolveLoad(Instruction loadInstr, BankState inStateAtStore) {
-			// x is the port's value as tracked in-state at our own store.
+		public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+				BankState inStateAtStore) {
+			// x is the port's value as tracked in-state at our own store. resolvedTarget is
+			// irrelevant here: the mechanism is a CPU register, matched by identity.
 			return readsMechanism(loadInstr) ? inStateAtStore : null;
 		}
 	};

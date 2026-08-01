@@ -62,10 +62,14 @@ import ghidra.program.model.symbol.Reference;
  * effective latched value is the CPU-driven byte AND the ROM byte at the written
  * address. When the store target is constant and bank-invariant ROM, the recovered
  * value is ANDed with that byte -- each 0 bit in the ROM byte becomes a <em>known</em>
- * 0 regardless of what the CPU drove. Indexed stores (the classic
- * {@code STA banktable,X} idiom) have no static target, so no AND is applied; correct
- * games guarantee driven value == ROM byte there anyway, so the recovered driven value
- * is already the effective one.</li>
+ * 0 regardless of what the CPU drove. An <em>indexed</em> store (the classic
+ * {@code STA banktable,X} idiom) has a static target too whenever its index register
+ * resolves to a constant ({@link StoredValueScanner#effectiveOperandTarget}, grm-hum), and
+ * the AND applies there exactly as it does to an absolute store -- which is how Mega Man's
+ * {@code STA $C000,Y} is pinned to bank 0 even though the driven value itself is
+ * unrecoverable. Only a still-unresolvable index gets no AND; there the old justification
+ * still holds, since correct games guarantee driven value == ROM byte at a bus-conflict
+ * board, so the recovered driven value is already the effective one.</li>
  * </ul>
  * Field positioning: this strategy always deposits the recovered field at bits
  * {@code [0, width)} of its own field-local coordinate space (via {@code shift}/
@@ -118,8 +122,24 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * {@code computeSwitch}'s {@code resolveLoad} hook resolves loads to a bank-invariant
 	 * ROM byte (a property of the program alone), never to {@code inStateAtStore}; the only
 	 * other place a base value can come from is {@link StoredValueScanner}'s own immediate-
-	 * value folding, also state-independent. So the whole result is a pure function of
-	 * {@code (program, instr)} -- safe to cache per address (grm-5tl.13.2).
+	 * value folding, also state-independent. Effective-address resolution (grm-hum) reads only
+	 * instructions, operands and bank-invariant ROM bytes, and is handed
+	 * {@link RegisterEnv#NONE} plus a {@link BankState#unknown()} in-state by construction. So
+	 * the whole result stays a pure function of {@code (program, instr)} -- safe to cache per
+	 * address (grm-5tl.13.2).
+	 * <p>
+	 * <b>Tripwire.</b> If any future change routes a real {@link RegisterEnv} into
+	 * {@link #computeSwitch}, or makes {@code resolveLoad} state-dependent (a bank-identifying
+	 * read-back would), this <b>must</b> become {@code false}: {@code BoardBankAnalyzer}'s
+	 * {@code matchCache} is keyed by address alone (:611-639), so it would hand back an
+	 * env-free result for an env-bearing query. {@link RegisterWriteBankSwitchStrategy} is the
+	 * precedent for how a state-dependent strategy behaves. Note the helper path of grm-hum
+	 * increment 2 ({@link #depositHelperArgument}, which really does evaluate under a caller's
+	 * {@link RegisterEnv}) does <em>not</em> trip it, and this was re-checked when it landed: it
+	 * calls {@link #evaluateLatch} directly, never through {@link #computeSwitch} and never
+	 * through {@code matchCache}, and its result is consumed only as that one call site's
+	 * effect. {@link #computeSwitch} itself still passes {@link RegisterEnv#NONE}
+	 * unconditionally.
 	 */
 	@Override
 	public boolean cacheable() {
@@ -153,12 +173,14 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 		}
 
 		@Override
-		public BankState resolveLoad(Instruction loadInstr, BankState inStateAtStore) {
-			// The ROM byte a plain absolute load reads is a compile-time constant when
-			// nothing can rebank it out from under us.
-			Address target = StoredValueScanner.plainAbsoluteTarget(loadInstr);
-			Integer romByte = target == null ? null
-					: bankInvariantRomByte(loadInstr.getProgram(), target);
+		public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+				BankState inStateAtStore) {
+			// The ROM byte a load with a statically certain target reads is a compile-time
+			// constant when nothing can rebank it out from under us. The target is whatever
+			// the scanner resolved -- plain absolute, or absolute-indexed with a constant
+			// index (grm-hum); this hook deliberately does not re-derive it.
+			Integer romByte = resolvedTarget == null ? null
+					: bankInvariantRomByte(loadInstr.getProgram(), resolvedTarget);
 			return romByte == null ? null : BankState.fullyKnown(0xFF, romByte);
 		}
 	};
@@ -168,16 +190,39 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 		if (!writesInRange(instr)) {
 			return null;
 		}
+		// RegisterEnv.NONE, always -- see cacheable()'s tripwire.
+		return evaluateLatch(program, instr, RegisterEnv.NONE);
+	}
 
-		Character reg = StoredValueScanner.storeRegister(instr);
+	/**
+	 * The latch semantics themselves, given that {@code store} <em>is</em> a mechanism write:
+	 * recover the stored byte, apply the bus-conflict AND, and deposit the field at state bits
+	 * {@code [0, width)}.
+	 * <p>
+	 * Split out of {@link #computeSwitch} (everything but its {@link #writesInRange} gate) so
+	 * that grm-hum increment 2's helper path -- which knows a call site's register values and
+	 * must re-evaluate the helper's switch site under them -- reuses this verbatim instead of
+	 * reimplementing "what does this store latch?" against
+	 * {@code BoardBankAnalyzer.recoverCallArgument}'s weaker "the register holds the field
+	 * value verbatim" convention. The direct path and the helper path therefore cannot drift.
+	 * {@link #depositHelperArgument} is that helper path; {@code env} is
+	 * {@link RegisterEnv#NONE} for every direct-path call.
+	 * <p>
+	 * {@link BankState#unknown()} is passed as the scanner's in-state rather than a caller's:
+	 * this strategy's {@code resolveLoad} never consults it (the latch is write-only, so a load
+	 * in range reads ROM, not bank state), so this is behavior-identical and makes the purity
+	 * {@link #cacheable()} claims structural rather than incidental.
+	 */
+	private BankState evaluateLatch(Program program, Instruction store, RegisterEnv env) {
+		Character reg = StoredValueScanner.storeRegister(store);
 		if (reg == null) {
 			return BankState.unknown();
 		}
-		BankState stored =
-			StoredValueScanner.resolveStoredValue(program, instr, reg, inState, 0xFF, hooks);
+		BankState stored = StoredValueScanner.resolveStoredValue(program, store, reg,
+			BankState.unknown(), 0xFF, hooks, env);
 
 		if (busConflict) {
-			Address target = StoredValueScanner.plainAbsoluteTarget(instr);
+			Address target = StoredValueScanner.effectiveOperandTarget(program, store, hooks, env);
 			Integer romByte = target == null ? null : bankInvariantRomByte(program, target);
 			if (romByte != null) {
 				// effective = driven AND rom: rom's 0 bits are known 0 whatever was driven
@@ -189,6 +234,42 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 		// deposit the extracted field at state bits [0, width) -- see class javadoc
 		return new BankState((stored.knownMask() >> shift) & mask,
 			(stored.bits() >> shift) & mask);
+	}
+
+	/**
+	 * <b>Mini-inlines the helper</b> (grm-hum increment 2): re-runs this latch's real switch
+	 * semantics at {@code switchSite} under the calling site's registers, rather than accepting
+	 * {@code argValue}'s convention that the helper's argument register already holds the
+	 * field value verbatim.
+	 * <p>
+	 * {@code argValue} is deliberately <b>ignored</b>. That convention is wrong here in two
+	 * ways this override fixes: it skips {@code shift}/{@code mask} extraction, so it
+	 * misreports any board whose field is not at bit 0 of the written byte; and it skips the
+	 * bus-conflict AND, so a bus-conflict board called with a variable argument reports the
+	 * driven value rather than the effective one. It is also blind to the argument arriving in
+	 * a register other than the one the mechanism write happens to store -- Contra's helper
+	 * ({@code LDA $FFD0,Y / STA $FFD0,Y / RTS}) takes its bank in <b>Y</b>, but
+	 * {@code findHelpers} necessarily records the {@code STA}'s register, {@code A}. Handing
+	 * {@link #evaluateLatch} all three of A/X/Y and letting its demand-driven backward scan
+	 * pull whichever it needs sidesteps the question entirely -- no input-register discovery
+	 * is required.
+	 * <p>
+	 * {@code ownedMask} is the whole {@code stateMask}: memory-latch has exactly one switch
+	 * site per helper committing one field spanning its entire field-local width, so a call
+	 * really does replace all of it -- known or not, exactly as the inherited default does.
+	 * <p>
+	 * <b>This is not a caching path.</b> It calls {@link #evaluateLatch} directly, never
+	 * {@link #computeSwitch} and never {@code BoardBankAnalyzer}'s address-keyed
+	 * {@code matchCache}, which is why {@link #cacheable()} can stay {@code true} while an
+	 * env-bearing evaluation exists at all. The result is used for this one call site's
+	 * {@code CallEffect} and is never attributed to {@code switchSite}.
+	 */
+	@Override
+	public HelperDeposit depositHelperArgument(Program program, Instruction switchSite,
+			BankState argValue, BankState inState, int stateMask, RegisterEnv callerRegs) {
+		BankState evaluated = evaluateLatch(program, switchSite, callerRegs);
+		return new HelperDeposit(stateMask,
+			new BankState(evaluated.knownMask() & stateMask, evaluated.bits() & stateMask));
 	}
 
 	/**
@@ -244,6 +325,15 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * Only the base is range-tested, never {@code base + 0xFF}: the canonical bank table sits
 	 * at the very top of the range (Contra's {@code STA $FFD0,X}), so requiring the whole
 	 * indexed span to fit would reject the exact idiom this tier exists to catch.
+	 * <p>
+	 * <b>Deliberately still {@link StoredValueScanner#plainAbsoluteTarget}, not
+	 * {@link StoredValueScanner#effectiveOperandTarget}</b> (grm-hum increment 1). The ruling
+	 * above does evaporate for an indexed store whose index resolves to a constant -- there
+	 * {@code (base + X) & 0x0F} <em>is</em> statically known, so the decode predicate could be
+	 * applied exactly. Acting on that would newly latch (or newly decline) Bandai FCG register
+	 * writes and so puts the four Bandai real-ROM goldens in play, for no benefit to the UxROM
+	 * titles this bead is about. Left as a follow-up (grm-hum bead F); the current behavior is
+	 * the safe under-reporting direction either way.
 	 */
 	private boolean operandStoresInRange(Instruction instr) {
 		if (StoredValueScanner.storeRegister(instr) == null) {

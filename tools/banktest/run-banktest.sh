@@ -509,6 +509,7 @@ fi
 if selected nes-banking; then
 	run_one nesbanktest "$WORK/nes/nesbanktest.nes" NesRomLoader
 	run_one nesbanktest2 "$WORK/nes/nesbanktest2.nes" NesRomLoader
+	run_one nesuxhelpertest "$WORK/nes/nesuxhelpertest.nes" NesRomLoader
 	run_one nesmodetest "$WORK/nes/nesmodetest.nes" NesRomLoader
 	run_one nesmmc3test "$WORK/nes/nesmmc3test.nes" NesRomLoader
 	run_one nesmmc3test2 "$WORK/nes/nesmmc3test2.nes" NesRomLoader

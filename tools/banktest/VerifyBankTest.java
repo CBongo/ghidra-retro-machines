@@ -295,6 +295,9 @@ public class VerifyBankTest extends GhidraScript {
 		else if (name.contains("nesbandaitest")) {
 			checkNesBandaitest();
 		}
+		else if (name.contains("nesuxhelpertest")) {
+			checkNesUxHelpertest();
+		}
 		else if (name.contains("nesbanktest2")) {
 			checkNesBanktest2();
 		}
@@ -2512,6 +2515,101 @@ public class VerifyBankTest extends GhidraScript {
 			"instruction exists at PRG_LO_B1::8010");
 		criterion("F5:PRG_LO_B3_8030", hasInstructionAt("PRG_LO_B3", 0x8030),
 			"instruction exists at PRG_LO_B3::8030");
+	}
+
+	// ------------------------------------------------------------------
+	// nesuxhelpertest.nes criteria (bank-switch helper ARGUMENT recovery, bead grm-hum)
+	// ------------------------------------------------------------------
+
+	/**
+	 * Both real-cartridge idioms grm-3x1 made visible but could not recover a value from.
+	 * See {@code mknesbanktest.py}'s {@code make_prg_uxhelper()} for the full listing; the
+	 * shapes come from Contra (U) $C13F and Mega Man (U) FUN_d846, with SHA-256s pinned in
+	 * {@code realrom/manifest.tsv}.
+	 * <p>
+	 * The load-bearing pair is <b>U1 vs U3</b>. U1 proves an argument passed in Y is
+	 * recovered even though the mechanism write is an {@code STA} (before grm-hum the
+	 * argument register was read off the store, so the engine hunted for an {@code LDA #imm}
+	 * that had nothing to do with the bank -- a latent WRONG-answer risk, not merely a
+	 * missing annotation). U3 proves the honest half stayed honest: an argument that really
+	 * does come from RAM must NOT resolve. Anything that "fixes" the remaining warnings by
+	 * guessing passes U1 and fails U3.
+	 */
+	private void checkNesUxHelpertest() {
+		// U1: LDY #$02 / JSR $C140 -- the Contra idiom. The bank argument is in Y; the
+		// helper's own mechanism write is STA $FFD0,Y.
+		String c = eol(0xC002);
+		criterion("U1", c.contains("bank -> 2 (") && !c.contains("?") && c.contains("via"),
+			"Y-passed helper argument recovered at c002: \"" + c + "\"");
+
+		// U2: and the recovery is load-bearing -- the following JSR $8005 retargets into
+		// bank 2's overlay. Without U1 there is no bank state to retarget against.
+		Reference r = findOverlayRef(0xC005, "PRG_LO_B2", 0x8005);
+		criterion("U2", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $8005 retargeted to PRG_LO_B2 overlay, primary: " + describe(r));
+		criterion("U2:disasm", hasInstructionAt("PRG_LO_B2", 0x8005),
+			"instruction exists at PRG_LO_B2::8005");
+
+		// U3: LDY $10 / JSR $C140 -- same helper, argument from zero-page RAM. ANTI-OVERREACH:
+		// this must stay unresolved. Do not "fix" it; see the class comment above.
+		criterion("U3", hasWarningBookmark(0xC00A) && !eol(0xC00A).contains("bank ->"),
+			"RAM-sourced helper argument stays unresolved at c00a: warning=" +
+				hasWarningBookmark(0xC00A) + " eol=\"" + eol(0xC00A) + "\"");
+
+		// U4: STA $FFD0,Y at $C12D -- a refless INDEXED store whose index resolves through
+		// TAY <- LDA $D81E,X <- TAX <- ASL A <- LDA #$00. Increment 1 alone: no helper
+		// machinery involved, and the bus-conflict AND against $FFD1 is what pins it.
+		c = eol(0xC12D);
+		criterion("U4", c.contains("bank -> 1 (") && !c.contains("?"),
+			"indexed store with resolved index at c12d: \"" + c + "\"");
+
+		// U5: JSR $C120 -- the helper has TWO switch sites that disagree (bank 3 then bank 1),
+		// so the constState model cannot describe it; the call must resolve to the bank that
+		// actually survives the RTS. This is Mega Man FUN_d846's exact shape, and the reason
+		// its pre-grm-3x1 golden was confidently wrong.
+		c = eol(0xC00D);
+		criterion("U5", c.contains("bank -> 1 (") && !c.contains("?") && c.contains("via"),
+			"two-switch helper resolves to the LAST switch at c00d: \"" + c + "\"");
+
+		// U6: and again load-bearing -- JSR $8010 lands in bank 1, not bank 3. Note this
+		// holds despite U3 having poisoned the tracked state two calls earlier: the helper's
+		// deposit owns the whole field regardless of what the caller knew.
+		r = findOverlayRef(0xC010, "PRG_LO_B1", 0x8010);
+		criterion("U6", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $8010 retargeted to PRG_LO_B1 overlay (switch #2 beat switch #1), primary: " +
+				describe(r));
+		criterion("U6:disasm", hasInstructionAt("PRG_LO_B1", 0x8010),
+			"instruction exists at PRG_LO_B1::8010");
+
+		// U7: switch #1 inside the same helper does not regress now that switch #2 is visible.
+		c = eol(0xC122);
+		criterion("U7", c.contains("bank -> 3 (") && !c.contains("?"),
+			"first switch still resolved at c122: \"" + c + "\"");
+
+		// U8: LDA #$09 / STA $FFD9 on a 4-bank image. $FFD9 holds 0x09 so the bus-conflict AND
+		// does NOT launder the value into a legal bank first -- the guard has to fire on a
+		// bank the hardware really would have latched. Warn, and do not annotate or retarget.
+		criterion("U8", hasWarningBookmark(0xC01E) && !eol(0xC01E).contains("bank ->"),
+			"impossible bank 9 of 4 warns and does not annotate at c01e: warning=" +
+				hasWarningBookmark(0xC01E) + " eol=\"" + eol(0xC01E) + "\"");
+
+		// U9: TAIL CALL. FUN_c160's own highest-address switch says bank 3, but it does not
+		// return -- it JMPs to FUN_c170, which latches bank 2 and returns to FUN_c160's caller.
+		// A helper summarized by the last switch in its OWN body answers 3 here, confidently and
+		// wrongly. This is Mega Man's FUN_d846 -> FUN_c3b3 shape (also FUN_d131, FUN_c55d), and
+		// the wrong answer is what ships today for those.
+		c = eol(0xC016);
+		criterion("U9", c.contains("bank -> 2 (") && !c.contains("?"),
+			"tail-calling helper resolves to the TAIL-CALLEE's bank, not its own last switch, " +
+				"at c016: \"" + c + "\"");
+
+		// U10: and load-bearing -- the following JSR $8020 must land in bank 2's overlay. If the
+		// composition were skipped this retargets into PRG_LO_B3 instead, so the two banks are
+		// distinguishable rather than coincidentally equal.
+		r = findOverlayRef(0xC019, "PRG_LO_B2", 0x8020);
+		criterion("U10", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $8020 after the tail-call helper retargeted to PRG_LO_B2 overlay, primary: " +
+				describe(r));
 	}
 
 	// ------------------------------------------------------------------

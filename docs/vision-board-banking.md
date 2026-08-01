@@ -667,10 +667,24 @@ strategy extraction in M2.
 9. **The hint tier as an excuse** — the failure mode is recording a fact the analyzer
    should have derived, quietly capping how good automation ever gets. Guard in review:
    before a hint is curated, the reason automation missed it must be understood and, if
-   it is a defect rather than a genuine ceiling, filed. Contra is the live example — its
-   miss may be a `writesInRange` bug (refless indexed store, or a write reference in an
-   overlay space) rather than an unreachable routine, and if so it warrants a fix, not a
-   hint.
+   it is a defect rather than a genuine ceiling, filed. **Contra was the live example, and
+   it came out on the "fix, not hint" side twice.** Its miss was indeed a `writesInRange`
+   bug (refless indexed store plus overlay-space write references) — fixed in `grm-3x1`.
+   That exposed a second defect underneath: its helper's argument register was inferred
+   from the mechanism write's `ST<reg>` rather than from the helper's entry, so the engine
+   looked for the bank in `A` when Contra passes it in `Y` (`LDA $FFD0,Y / STA $FFD0,Y`) —
+   fixed in `grm-hum`. Two rounds of "this looks like a hint candidate" turned out to be
+   two analyzer bugs, which is roughly the ratio this guard exists to protect.
+10. **Out-of-range bank requests and incomplete address decoding** — a recovered bank
+    index with no corresponding image is normally a *recovery bug*, and `grm-hum` makes it
+    a warning that suppresses annotation and retargeting. But it is not universally an
+    error: a board that decodes fewer address/latch bits than the field is wide will
+    **alias** rather than fault, so a GxROM asked for bank 5 with only four banks fitted
+    may effectively select bank 1. Which happens is board wiring, not a general rule, and
+    it would have to be declared per board rather than assumed. Ruling for now: **warn,
+    do not fold.** Modeling aliasing on speculation would turn a loud, diagnosable wrong
+    answer into a quiet plausible one. Revisit if real titles show up that depend on it —
+    on NES this looks rare.
 
 ## 11. Relationship to GME
 

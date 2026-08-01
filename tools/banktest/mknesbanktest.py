@@ -439,6 +439,146 @@ def make_prg2():
     return bytes(prg)
 
 
+def make_prg_uxhelper():
+    """Bank-switch helper ARGUMENT recovery fixture (bead grm-hum). Same 4-bank / 64 KiB
+    UxROM shape as nesbanktest.nes (bank 3 == the fixed PRG_HI window, file offset == CPU
+    address), carrying the two real-cartridge idioms that grm-3x1 made visible but could
+    not recover a value from. Both are transcribed from ROMs whose SHA-256s are pinned in
+    tools/banktest/realrom/manifest.tsv; the addresses here are the fixture's, the SHAPES
+    are the cartridges'.
+
+    IDIOM 1 -- "argument in Y", from Contra (U) $C13F. The canonical bus-conflict-safe
+    UxROM switch: index a table of bank numbers with the argument register, then store the
+    byte you just read back to the address you read it from, so the CPU-driven value and
+    the ROM byte agree and the board's missing bus isolation cannot corrupt the latch.
+
+      SelectBank ($C140):
+        C140  B9 D0 FF   LDA $FFD0,Y      ; bank argument arrives in Y, NOT in A
+        C143  99 D0 FF   STA $FFD0,Y      ; mechanism write
+        C146  60         RTS
+
+    Before grm-hum the engine recorded this helper's argument register as A -- taken from
+    the STA -- and then scanned each call site for an LDA #imm that has nothing to do with
+    the bank. Recovering it requires evaluating the helper's own switch site under the call
+    site's register environment (the argument is in Y) AND resolving an indexed load whose
+    index is a known constant (the table read).
+
+    IDIOM 2 -- "two switches, the last one wins", from Mega Man (U) FUN_d846. A helper
+    whose FIRST switch is a plain immediate and whose SECOND is a refless indexed store
+    fed by a ROM table read. Before grm-3x1 only the first was visible, so the engine
+    confidently reported the wrong bank for every call site; grm-3x1 made the second
+    visible, which correctly demoted the whole helper to "unrecoverable" -- and grm-hum
+    resolves it to the bank that actually survives the RTS.
+
+      TwoSwitch ($C120):
+        C120  A9 03      LDA #$03
+        C122  8D D3 FF   STA $FFD3        ; switch #1 -> bank 3
+        C125  A9 00      LDA #$00
+        C127  0A         ASL A            ; A = 0 (constant across the shift)
+        C128  AA         TAX              ; X = 0
+        C129  BD 1E D8   LDA $D81E,X      ; index table -> 0x01
+        C12C  A8         TAY              ; Y = 1
+        C12D  99 D0 FF   STA $FFD0,Y      ; switch #2 -> bank 1  (refless, indexed)
+        C130  60         RTS              ; the board is left in bank 1, NOT bank 3
+
+    RESET ($C000) exercises both, and deliberately keeps one honest gap so a future change
+    that "fixes" the remaining warnings by guessing fails loudly:
+
+      C000  A0 02      LDY #$02
+      C002  20 40 C1   JSR $C140     ; recoverable  -> bank 2
+      C005  20 05 80   JSR $8005     ; -> PRG_LO_B2::8005 (the recovery is load-bearing)
+      C008  A4 10      LDY $10       ; zero-page RAM -- genuinely not statically knowable
+      C00A  20 40 C1   JSR $C140     ; MUST NOT resolve
+      C00D  20 20 C1   JSR $C120     ; -> bank 1, regardless of the poison left by $C00A
+      C010  20 10 80   JSR $8010     ; -> PRG_LO_B1::8010 (proves switch #2 beat switch #1)
+      C013  A9 09      LDA #$09
+      C015  8D D9 FF   STA $FFD9     ; bank 9 on a 4-bank image -- impossible, must warn
+      C018  4C 18 C0   JMP $C018     ; self loop
+      C01B  40         RTI           ; NMI/IRQ handler
+
+    Note $FFD9 holds 0x09 so the bus-conflict AND is a faithful no-op there: the
+    impossible-bank guard must fire on a value the hardware really would have latched,
+    not on one the AND had already reduced to something legal.
+    """
+    prg = bytearray([0x00] * PRG_SIZE)
+
+    # Bank markers at the first byte of each bank (offset $8000 once mapped in). This is
+    # also, incidentally, the "bank-identifying byte" idiom Contra uses at $8000 -- see
+    # bead A in grm-hum's plan; nothing in this fixture reads it yet.
+    for bank in range(PRG_BANKS):
+        prg[bank * PRG_BANK_SIZE] = bank
+
+    # Bank 1's routine at CPU $8010, bank 2's at CPU $8005 and $8020 -- the retarget targets.
+    prg[1 * PRG_BANK_SIZE + 0x0010] = 0x60  # RTS
+    prg[2 * PRG_BANK_SIZE + 0x0005] = 0x60  # RTS
+    prg[2 * PRG_BANK_SIZE + 0x0020] = 0x60  # RTS (tail-call test's target)
+
+    put = _bank3_putter(prg)
+
+    # --- RESET ---
+    put(0xC000, [0xA0, 0x02])              # LDY #$02
+    put(0xC002, [0x20, 0x40, 0xC1])         # JSR $C140   (recoverable -> bank 2)
+    put(0xC005, [0x20, 0x05, 0x80])         # JSR $8005   (-> PRG_LO_B2::8005)
+    put(0xC008, [0xA4, 0x10])              # LDY $10     (RAM -- unrecoverable on purpose)
+    put(0xC00A, [0x20, 0x40, 0xC1])         # JSR $C140   (must NOT resolve)
+    put(0xC00D, [0x20, 0x20, 0xC1])         # JSR $C120   (-> bank 1)
+    put(0xC010, [0x20, 0x10, 0x80])         # JSR $8010   (-> PRG_LO_B1::8010)
+    put(0xC013, [0x20, 0x70, 0xC1])         # JSR $C170   (makes SetBank2 a real function)
+    put(0xC016, [0x20, 0x60, 0xC1])         # JSR $C160   (tail-call helper -> bank 2, NOT 3)
+    put(0xC019, [0x20, 0x20, 0x80])         # JSR $8020   (-> PRG_LO_B2::8020)
+    put(0xC01C, [0xA9, 0x09])              # LDA #$09
+    put(0xC01E, [0x8D, 0xD9, 0xFF])         # STA $FFD9   (impossible bank 9 of 4)
+    put(0xC021, [0x4C, 0x21, 0xC0])         # JMP $C021   (self loop)
+    put(0xC024, [0x40])                     # RTI
+
+    # --- TailSwitch ($C160) / SetBank2 ($C170): the MEGA MAN FUN_d846 -> FUN_c3b3 shape ---
+    # TailSwitch's own highest-address switch says bank 3, but it does not RETURN -- it tail
+    # jumps to SetBank2, which latches bank 2 and returns to TailSwitch's caller. So the bank
+    # live after JSR $C160 is 2. Summarizing a helper by the last switch in its OWN body gets
+    # this wrong, which is exactly what Mega Man's FUN_d846/FUN_d131/FUN_c55d do to $C3B3.
+    # SetBank2 is JSR'd directly from RESET as well, so Ghidra makes it a separate function
+    # and the JMP is a genuine inter-function tail call rather than an intra-function jump
+    # that would fold the two bodies together and hide the whole problem.
+    put(0xC160, [0xA9, 0x03])              # LDA #$03
+    put(0xC162, [0x8D, 0xD3, 0xFF])         # STA $FFD3   (switch -> bank 3)
+    put(0xC165, [0x4C, 0x70, 0xC1])         # JMP $C170   (TAIL CALL -- control leaves here)
+    put(0xC170, [0xA9, 0x02])              # LDA #$02
+    put(0xC172, [0x8D, 0xD2, 0xFF])         # STA $FFD2   (switch -> bank 2)
+    put(0xC175, [0x60])                     # RTS
+
+    # --- TwoSwitch ($C120): Mega Man FUN_d846 idiom ---
+    put(0xC120, [0xA9, 0x03])              # LDA #$03
+    put(0xC122, [0x8D, 0xD3, 0xFF])         # STA $FFD3   (switch #1 -> bank 3)
+    put(0xC125, [0xA9, 0x00])              # LDA #$00
+    put(0xC127, [0x0A])                     # ASL A
+    put(0xC128, [0xAA])                     # TAX         (X = 0)
+    put(0xC129, [0xBD, 0x1E, 0xD8])         # LDA $D81E,X (-> 0x01)
+    put(0xC12C, [0xA8])                     # TAY         (Y = 1)
+    put(0xC12D, [0x99, 0xD0, 0xFF])         # STA $FFD0,Y (switch #2 -> bank 1)
+    put(0xC130, [0x60])                     # RTS
+
+    # --- SelectBank ($C140): Contra $C13F idiom ---
+    put(0xC140, [0xB9, 0xD0, 0xFF])         # LDA $FFD0,Y
+    put(0xC143, [0x99, 0xD0, 0xFF])         # STA $FFD0,Y
+    put(0xC146, [0x60])                     # RTS
+
+    # Index table read by TwoSwitch with a statically known X=0. Sited well away from the
+    # bank table so a scan that confuses the two cannot accidentally pass.
+    put(0xD81E, [0x01])
+
+    # UxROM bank-number table: bus-conflict-safe latch targets, byte at $FFD0+N == N.
+    put(0xFFD0, [0x00, 0x01, 0x02, 0x03])
+    # Impossible-bank probe target: 0x09 so the bus-conflict AND does not launder it.
+    put(0xFFD9, [0x09])
+
+    # Vector table.
+    put(0xFFFA, [0x1B, 0xC0])  # NMI   -> $C01B (RTI)
+    put(0xFFFC, [0x00, 0xC0])  # RESET -> $C000
+    put(0xFFFE, [0x1B, 0xC0])  # IRQ   -> $C01B (RTI)
+
+    return bytes(prg)
+
+
 def make_prg_mode():
     """The mode-dependent-layout fixture for nes-modetest (bead grm-aqf); see module doc."""
     prg = bytearray([0x00] * PRG_SIZE)
@@ -1219,6 +1359,87 @@ def main():
     assert (prg2[0xFFFE] | (prg2[0xFFFF] << 8)) == 0xC00B  # IRQ vector
 
     _write_rom(outdir, "nesbanktest2.nes", prg2)
+
+    prgux = make_prg_uxhelper()
+
+    # Sanity-check the helper-argument fixture (bead grm-hum) before writing.
+    assert len(prgux) == PRG_SIZE
+    # Banks 0-2 only: bank 3's marker lives at file offset 0xC000, which IS CPU $C000, so
+    # RESET's first opcode overwrites it. Same in make_prg(); the marker is a convenience
+    # for reading a hex dump, not something the fixture's criteria depend on.
+    for bank in range(PRG_BANKS - 1):
+        assert prgux[bank * PRG_BANK_SIZE] == bank
+    assert prgux[3 * PRG_BANK_SIZE] == 0xA0  # LDY, i.e. RESET won the overlap
+    assert prgux[1 * PRG_BANK_SIZE + 0x0010] == 0x60  # RTS at bank 1's $8010
+    assert prgux[2 * PRG_BANK_SIZE + 0x0005] == 0x60  # RTS at bank 2's $8005
+    # RESET
+    assert prgux[0xC000] == 0xA0 and prgux[0xC001] == 0x02      # LDY #$02
+    assert prgux[0xC002] == 0x20                                 # JSR
+    assert (prgux[0xC003] | (prgux[0xC004] << 8)) == 0xC140
+    assert prgux[0xC005] == 0x20
+    assert (prgux[0xC006] | (prgux[0xC007] << 8)) == 0x8005
+    assert prgux[0xC008] == 0xA4 and prgux[0xC009] == 0x10       # LDY $10
+    assert prgux[0xC00A] == 0x20
+    assert (prgux[0xC00B] | (prgux[0xC00C] << 8)) == 0xC140
+    assert prgux[0xC00D] == 0x20
+    assert (prgux[0xC00E] | (prgux[0xC00F] << 8)) == 0xC120
+    assert prgux[0xC010] == 0x20
+    assert (prgux[0xC011] | (prgux[0xC012] << 8)) == 0x8010
+    assert prgux[0xC013] == 0x20
+    assert (prgux[0xC014] | (prgux[0xC015] << 8)) == 0xC170
+    assert prgux[0xC016] == 0x20
+    assert (prgux[0xC017] | (prgux[0xC018] << 8)) == 0xC160
+    assert prgux[0xC019] == 0x20
+    assert (prgux[0xC01A] | (prgux[0xC01B] << 8)) == 0x8020
+    assert prgux[0xC01C] == 0xA9 and prgux[0xC01D] == 0x09       # LDA #$09
+    assert prgux[0xC01E] == 0x8D
+    assert (prgux[0xC01F] | (prgux[0xC020] << 8)) == 0xFFD9
+    assert prgux[0xC021] == 0x4C
+    assert (prgux[0xC022] | (prgux[0xC023] << 8)) == 0xC021
+    assert prgux[0xC024] == 0x40                                 # RTI
+    # TailSwitch / SetBank2: the inter-function tail call
+    assert prgux[0xC160] == 0xA9 and prgux[0xC161] == 0x03
+    assert prgux[0xC162] == 0x8D
+    assert (prgux[0xC163] | (prgux[0xC164] << 8)) == 0xFFD3
+    assert prgux[0xC165] == 0x4C                                 # JMP -- tail call, not JSR
+    assert (prgux[0xC166] | (prgux[0xC167] << 8)) == 0xC170
+    assert prgux[0xC170] == 0xA9 and prgux[0xC171] == 0x02
+    assert prgux[0xC172] == 0x8D
+    assert (prgux[0xC173] | (prgux[0xC174] << 8)) == 0xFFD2
+    assert prgux[0xC175] == 0x60                                 # RTS
+    assert prgux[2 * PRG_BANK_SIZE + 0x0020] == 0x60             # bank 2 @ $8020
+    # TwoSwitch ($C120): both switch sites, and the index chain between them
+    assert prgux[0xC120] == 0xA9 and prgux[0xC121] == 0x03
+    assert prgux[0xC122] == 0x8D
+    assert (prgux[0xC123] | (prgux[0xC124] << 8)) == 0xFFD3
+    assert prgux[0xC125] == 0xA9 and prgux[0xC126] == 0x00
+    assert prgux[0xC127] == 0x0A                                 # ASL A
+    assert prgux[0xC128] == 0xAA                                 # TAX
+    assert prgux[0xC129] == 0xBD                                 # LDA abs,X
+    assert (prgux[0xC12A] | (prgux[0xC12B] << 8)) == 0xD81E
+    assert prgux[0xC12C] == 0xA8                                 # TAY
+    assert prgux[0xC12D] == 0x99                                 # STA abs,Y
+    assert (prgux[0xC12E] | (prgux[0xC12F] << 8)) == 0xFFD0
+    assert prgux[0xC130] == 0x60                                 # RTS
+    # SelectBank ($C140): the Contra idiom
+    assert prgux[0xC140] == 0xB9                                 # LDA abs,Y
+    assert (prgux[0xC141] | (prgux[0xC142] << 8)) == 0xFFD0
+    assert prgux[0xC143] == 0x99                                 # STA abs,Y
+    assert (prgux[0xC144] | (prgux[0xC145] << 8)) == 0xFFD0
+    assert prgux[0xC146] == 0x60                                 # RTS
+    # Tables. The bank table must be the identity so the bus-conflict AND is a no-op for a
+    # correctly recovered bank; the index table must NOT be, or a scan that read the wrong
+    # one would still produce the expected answer and the test would prove nothing.
+    assert list(prgux[0xFFD0:0xFFD4]) == [0x00, 0x01, 0x02, 0x03]
+    assert prgux[0xFFD9] == 0x09
+    assert prgux[0xD81E] == 0x01
+    assert 0xD81E not in range(0xFFD0, 0xFFD4)
+    # Vectors.
+    assert (prgux[0xFFFC] | (prgux[0xFFFD] << 8)) == 0xC000  # RESET vector
+    assert (prgux[0xFFFA] | (prgux[0xFFFB] << 8)) == 0xC01B  # NMI vector
+    assert (prgux[0xFFFE] | (prgux[0xFFFF] << 8)) == 0xC01B  # IRQ vector
+
+    _write_rom(outdir, "nesuxhelpertest.nes", prgux)
 
     prgm = make_prg_mode()
 

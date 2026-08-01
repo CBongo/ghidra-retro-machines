@@ -144,8 +144,10 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 		}
 
 		@Override
-		public BankState resolveLoad(Instruction loadInstr, BankState inStateAtStore) {
-			// MMC3-style select/data registers are write-only -- nothing reads them back.
+		public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+				BankState inStateAtStore) {
+			// MMC3-style select/data registers are write-only -- nothing reads them back,
+			// at any resolvedTarget.
 			return null;
 		}
 	};

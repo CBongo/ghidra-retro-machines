@@ -134,6 +134,38 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	}
 
 	/**
+	 * {@link #depositHelperArgument} with the call site's whole register environment available,
+	 * for a strategy that would rather <em>re-evaluate its own switch semantics</em> at
+	 * {@code switchSite} under those registers than trust the "the argument register holds the
+	 * field value verbatim" convention {@code argValue} encodes (grm-hum increment 2's
+	 * mini-inlining). This is the form {@link BoardBankAnalyzer} actually calls; the default
+	 * delegates to the 5-argument form above, so a strategy that has no use for the registers
+	 * overrides that one and is unaffected.
+	 * <p>
+	 * <b>{@code argValue} keeps its exact meaning</b> in both forms -- the value recovered in
+	 * the helper's {@link BoardBankAnalyzer}-chosen argument register at the call site, already
+	 * masked to {@code stateMask}. It is emphatically <em>not</em> redefined as "the evaluated
+	 * switch effect": {@code SelectDataBankSwitchStrategy} decodes a byte <em>field</em> out of
+	 * it, and a strategy that wants the evaluated form must compute it itself here (as
+	 * {@code MemoryLatchBankSwitchStrategy} does) rather than have it substituted underneath
+	 * every existing override.
+	 * <p>
+	 * {@code callerRegs} carries the helper function's entry point as its stop address, so a
+	 * backward scan started inside the helper adopts the caller's A/X/Y at the entry instead of
+	 * walking into the unrelated code that physically precedes it. Any register the call site
+	 * could not pin down arrives {@link BankState#unknown()}, so an unresolvable call site
+	 * degrades to an unresolved deposit rather than to a guess.
+	 * <p>
+	 * <b>Soundness.</b> A result derived from {@code callerRegs} is valid for THIS call site
+	 * only and must never be cached per switch-site address or attributed to the switch site --
+	 * see {@link RegisterEnv}'s class javadoc.
+	 */
+	default HelperDeposit depositHelperArgument(Program program, Instruction switchSite,
+			BankState argValue, BankState inState, int stateMask, RegisterEnv callerRegs) {
+		return depositHelperArgument(program, switchSite, argValue, inState, stateMask);
+	}
+
+	/**
 	 * Whether {@link #computeSwitch}'s result at a given {@code (program, instr)} pair is
 	 * independent of {@code inState} -- i.e. a pure function of the program and instruction
 	 * alone, safe for the dataflow engine to memoize per-address across worklist dequeues

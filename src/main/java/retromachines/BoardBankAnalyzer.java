@@ -564,6 +564,13 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// question. See the strategy-probe loop below for the soundness invariant this relies
 		// on (grm-5tl.13.2).
 		Map<Address, MatchInfo> matchCache = new HashMap<>();
+		// Likewise scoped to this runDataflow call: the A/X/Y a helper call site supplies
+		// (grm-hum increment 2). Purely an efficiency memo -- callSiteRegisters is a function of
+		// (program, call address) alone, since its three scans use NO_HOOKS and never consult
+		// tracked state -- but a necessary one: without it, three backward scans plus a
+		// strategy's mini-inline would rerun on EVERY dequeue of every helper call address across
+		// the whole fixpoint. Mega Man (25 switch sites, a large fixpoint) is where that bites.
+		Map<Address, RegisterEnv> callSiteRegCache = new HashMap<>();
 
 		Set<Address> seeds = new LinkedHashSet<>();
 		AddressIterator eps = program.getSymbolTable().getExternalEntryPointIterator();
@@ -664,7 +671,8 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				if (helper != null) {
 					CallEffect callEffect = helper.constState() != null
 							? new CallEffect(helper.constState(), helper.effectMask())
-							: recoverCallArgument(program, instr, helper, outState);
+							: recoverCallArgument(program, instr, helper, outState,
+								callSiteRegCache);
 					// ownedMask == 0 means this call site is a verified no-op on every tracked
 					// bit (e.g. a serial-shift helper whose switch site targets an unconfigured
 					// CHR register) -- skip both the fold (a no-op regardless, since
@@ -834,6 +842,31 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * argument register) and {@code effectMask} becomes the union of every site's mask, so
 	 * the caller-side unknown-effect fold in {@link #runDataflow} wipes every field this
 	 * helper might touch rather than under- or mis-covering it.
+	 * <p>
+	 * <b>Two of the rules below became load-bearing in new ways with grm-hum increment 2</b>,
+	 * and neither needed a code change for it -- which is worth saying out loud, because both
+	 * are now depended on by a path they were not written for:
+	 * <ul>
+	 * <li><b>{@code constState} disagreement -&gt; {@code null}</b> (just below) is what routes a
+	 * multi-site helper into per-call recovery <em>at all</em>. Mega Man's {@code FUN_d846}
+	 * switches to bank 6, then to a loop-carried unknown, then back to 6; those three disagree,
+	 * so the helper has no constant effect and every call site is recovered individually. Had
+	 * they agreed, the mini-inline would never run.</li>
+	 * <li><b>The max-address {@code switchSite} rule</b> (see the comment on it below) now
+	 * decides which site a <em>memory-latch</em> multi-site helper commits through, not just
+	 * which sub-field a serial-shift chain selects: it is the site
+	 * {@link BankSwitchStrategy#depositHelperArgument} mini-inlines. That is right for
+	 * {@code FUN_d846}, whose last site by address ({@code $D88D}, the post-loop restore) is
+	 * also the last one executed <em>inside its own body</em>. <b>It is a heuristic, and
+	 * address order is not execution order in general</b> -- a helper whose exit path branches
+	 * backward to an earlier switch would be committed to the wrong site by it. Nothing shipped
+	 * does that today; a helper that did would need real terminal-site analysis rather than a
+	 * max().</li>
+	 * </ul>
+	 * <p>
+	 * The map this returns is post-processed by {@link #composeTailCalls} before anything sees
+	 * it, because the body-local answer is not the whole answer: see that method for why a
+	 * helper's effect is the state at its RETURN, not at the last write in its own body.
 	 */
 	private Map<Function, HelperModel> findHelpers(Program program,
 			Map<Address, SwitchResult> switchResults) {
@@ -931,9 +964,23 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * owning the WHOLE mechanism when the argument register itself is unknown (the helper's
 	 * sites disagreed on it) -- conservatively wiping everything this helper's mechanism
 	 * could possibly touch, the historical behavior for that degrade case.
+	 * <p>
+	 * <b>The "register holds the field value" convention is a fallback, not the whole story</b>
+	 * (grm-hum increment 2). It is blind in three ways: the argument may arrive in a register
+	 * other than the one the helper's mechanism write stores (Contra's helper takes its bank in
+	 * Y and stores A, and {@link #findHelpers} can only see the store); the value may need the
+	 * mechanism's own {@code shift}/{@code mask} extraction; and on a bus-conflict board the
+	 * driven value is not the latched one. So this also hands the strategy the CALL SITE'S WHOLE
+	 * REGISTER ENVIRONMENT ({@link #callSiteRegisters}), letting a strategy that can do better --
+	 * {@code memory-latch} does -- re-evaluate its own switch site under those registers instead.
+	 * {@code argValue} keeps its exact prior meaning either way, because {@code select-data}
+	 * decodes a byte field out of it.
+	 * <p>
+	 * {@code envCache} memoizes that environment per call address for the duration of one
+	 * {@link #runDataflow}; see its declaration there for why it is not optional.
 	 */
 	private CallEffect recoverCallArgument(Program program, Instruction callInstr,
-			HelperModel helper, BankState callSiteIn) {
+			HelperModel helper, BankState callSiteIn, Map<Address, RegisterEnv> envCache) {
 		Character reg = helper.argReg();
 		if (reg == null) {
 			return new CallEffect(BankState.unknown(), helper.effectMask());
@@ -950,11 +997,46 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		BankState localIn = new BankState(
 			(callSiteIn.knownMask() & helper.effectMask()) >>> helper.lsb(),
 			(callSiteIn.bits() & helper.effectMask()) >>> helper.lsb());
-		BankSwitchStrategy.HelperDeposit deposit =
-			helper.strategy().depositHelperArgument(program, switchSite, local, localIn, stateMask);
+		RegisterEnv callerRegs = envCache.computeIfAbsent(callInstr.getMinAddress(),
+			a -> callSiteRegisters(program, callInstr, helper.function().getEntryPoint()));
+		BankSwitchStrategy.HelperDeposit deposit = helper.strategy()
+				.depositHelperArgument(program, switchSite, local, localIn, stateMask, callerRegs);
 		BankState positionedValue = position(deposit.value(), helper.lsb(), helper.effectMask());
 		int positionedOwnedMask = (deposit.ownedMask() << helper.lsb()) & helper.effectMask();
 		return new CallEffect(positionedValue, positionedOwnedMask);
+	}
+
+	/**
+	 * What A, X and Y hold at {@code callInstr}, packaged with {@code entryAddr} (the called
+	 * helper's entry) as the address a backward scan started inside that helper must stop at.
+	 * This is what makes {@link BankSwitchStrategy#depositHelperArgument}'s mini-inlining
+	 * possible without any input-register discovery: the scan inside the helper is
+	 * demand-driven, so supplying all three registers and letting it pull whichever it actually
+	 * reads is both simpler and strictly more capable than deducing an argument convention
+	 * (grm-hum increment 2 -- Contra's helper takes its bank in Y while {@link #findHelpers}
+	 * can only see the {@code STA}'s A).
+	 * <p>
+	 * <b>Masked to {@code 0xFF}, deliberately not to the mechanism's {@code stateMask}.</b> An
+	 * index register is not the mechanism's field: Contra's UxROM latch has {@code mask: 0x0F},
+	 * and narrowing Y to four bits would truncate the very index used to read the bank table.
+	 * {@code argValue}'s {@code stateMask} narrowing in {@link #recoverCallArgument} is a
+	 * different question (the field value itself) and keeps it.
+	 * <p>
+	 * {@link #NO_HOOKS} is used because the scan runs in the CALLER, outside any mechanism's
+	 * interpretation: the caller's mechanism writes are not this helper's, and no strategy's
+	 * load resolution applies to a register the caller is merely setting up. A register the
+	 * scan cannot pin down comes back {@link BankState#unknown()}, which is what keeps a
+	 * RAM-sourced argument honestly unresolved instead of guessed.
+	 */
+	private RegisterEnv callSiteRegisters(Program program, Instruction callInstr,
+			Address entryAddr) {
+		return new RegisterEnv(entryAddr,
+			StoredValueScanner.resolveStoredValue(program, callInstr, 'A', BankState.unknown(),
+				0xFF, NO_HOOKS),
+			StoredValueScanner.resolveStoredValue(program, callInstr, 'X', BankState.unknown(),
+				0xFF, NO_HOOKS),
+			StoredValueScanner.resolveStoredValue(program, callInstr, 'Y', BankState.unknown(),
+				0xFF, NO_HOOKS));
 	}
 
 	/**
@@ -975,7 +1057,8 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		}
 
 		@Override
-		public BankState resolveLoad(Instruction loadInstr, BankState inStateAtStore) {
+		public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+				BankState inStateAtStore) {
 			return null;
 		}
 	};

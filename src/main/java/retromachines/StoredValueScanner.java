@@ -18,10 +18,12 @@ package retromachines;
 import java.util.Set;
 
 import ghidra.program.model.address.Address;
+import ghidra.program.model.address.AddressOutOfBoundsException;
 import ghidra.program.model.lang.Register;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
+import ghidra.program.model.mem.MemoryAccessException;
 import ghidra.program.model.scalar.Scalar;
 import ghidra.program.model.symbol.Reference;
 
@@ -40,9 +42,11 @@ import ghidra.program.model.symbol.Reference;
  * <li>{@code LDA/LDX/LDY #imm} into the matching register fully resolves {@code x}, so
  * the scan folds it through the accumulator and stops.</li>
  * <li>A non-immediate {@code LD<reg>} is offered to the strategy's
- * {@link Hooks#resolveLoad} (register-write resolves a read-back of its own mechanism
- * register to the tracked in-state; memory-latch resolves a plain absolute load of a
- * bank-invariant ROM byte to that byte); an unresolved load leaves {@code x} wholly
+ * {@link Hooks#resolveLoad}, together with the single address it reads when that is
+ * statically certain ({@link #effectiveOperandTarget}: plain absolute/zero-page, or
+ * absolute-indexed with a constant-resolvable index). Register-write resolves a read-back
+ * of its own mechanism register to the tracked in-state; memory-latch resolves a load of a
+ * bank-invariant ROM byte to that byte. An unresolved load leaves {@code x} wholly
  * unknown.</li>
  * <li>Any other instruction that modifies the register (transfers, ADC/SBC, shifts,
  * INC/DEC, EOR#imm -- deliberately not modeled bit-wise) leaves {@code x} wholly
@@ -53,6 +57,13 @@ import ghidra.program.model.symbol.Reference;
  * unsound. The scan aborts to a wholly-unknown base.</li>
  * <li>A subroutine call may clobber any register; its fall-through satisfies the
  * block-linkage check, so it is treated as a clobber explicitly.</li>
+ * <li>A caller-supplied {@link RegisterEnv}'s entry address ends the walk and adopts that
+ * environment's value for the register being asked about -- grm-hum increment 2's
+ * mini-inlining of a bank-switch helper's own switch site under one call site's registers.
+ * With {@link RegisterEnv#NONE} (every path but that one) it never fires and the scan
+ * behaves exactly as it always has. See {@link RegisterEnv}'s javadoc for why stopping at
+ * a function entry is an argued exception to the control-flow-join refusal rather than a
+ * hole in it.</li>
  * </ul>
  * The mnemonic tables are 6502-family, which covers every board strategy currently
  * shipped (C64 register-write, NES memory-latch); other CPU families will parameterize
@@ -69,11 +80,37 @@ final class StoredValueScanner {
 		/**
 		 * Resolves the base value loaded by a non-immediate {@code LD<reg>} the strategy
 		 * understands, or {@code null} to treat the load as an opaque register clobber.
+		 *
+		 * @param loadInstr       the load
+		 * @param resolvedTarget  the single address the load actually reads, from
+		 *                        {@link #effectiveOperandTarget} -- plain absolute/zero-page
+		 *                        as before, plus absolute-indexed whose index register the
+		 *                        scanner could pin to a constant (grm-hum). {@code null} when
+		 *                        the target is not statically determinable. Supplied by the
+		 *                        scanner rather than recomputed per hook so that the indexed
+		 *                        case is resolved once, under one shared step budget.
+		 * @param inStateAtStore  the strategy's tracked in-state at the store being scanned
 		 */
-		BankState resolveLoad(Instruction loadInstr, BankState inStateAtStore);
+		BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+				BankState inStateAtStore);
 	}
 
 	private static final int MAX_BACKWARD_SCAN = 16;
+
+	/**
+	 * How deep {@link #constantRegisterValue} may recurse through register-to-register
+	 * dependencies (a {@code TAX} asks about A, whose {@code LDA table,X} asks about X, ...).
+	 */
+	private static final int MAX_RESOLVE_DEPTH = 4;
+
+	/**
+	 * Instructions one whole {@link #effectiveOperandTarget} query tree may inspect. The depth
+	 * cap alone is not a bound worth relying on -- at {@link #MAX_BACKWARD_SCAN} steps per
+	 * level it permits {@code 16^depth} instruction visits -- so every visit also spends from
+	 * a single {@link Budget} shared across the entire tree. Mega Man's real chain
+	 * ({@code LDA #$00 / STA $0C / ASL A / TAX / LDA $D81E,X}) uses depth 3 and about 10 steps.
+	 */
+	private static final int MAX_RESOLVE_STEPS = 64;
 
 	private static final Set<String> A_MODIFIERS = Set.of("LDA", "TXA", "TYA", "PLA", "ADC", "SBC",
 		"AND", "ORA", "EOR", "ASL", "LSR", "ROL", "ROR");
@@ -81,6 +118,21 @@ final class StoredValueScanner {
 	private static final Set<String> Y_MODIFIERS = Set.of("LDY", "TAY", "INY", "DEY");
 
 	private StoredValueScanner() {
+	}
+
+	/** Mutable step counter shared across one {@link #effectiveOperandTarget} query tree. */
+	static final class Budget {
+
+		private int steps;
+
+		Budget(int steps) {
+			this.steps = steps;
+		}
+
+		/** Spends one step; false once the budget is exhausted. */
+		boolean spend() {
+			return steps-- > 0;
+		}
 	}
 
 	/**
@@ -97,6 +149,28 @@ final class StoredValueScanner {
 	 */
 	static BankState resolveStoredValue(Program program, Instruction storeInstr, char reg,
 			BankState inStateAtStore, int mask, Hooks hooks) {
+		return resolveStoredValue(program, storeInstr, reg, inStateAtStore, mask, hooks,
+			RegisterEnv.NONE);
+	}
+
+	/**
+	 * {@link #resolveStoredValue} evaluated under a caller-supplied {@link RegisterEnv}: the
+	 * backward walk additionally stops at {@code env}'s entry address and adopts what that
+	 * environment says the register holds there, instead of walking into whatever code
+	 * physically precedes the entry (which is some unrelated function, not a predecessor).
+	 * <p>
+	 * This is the mini-inlining entry point (grm-hum increment 2): a bank-switch helper's own
+	 * switch site is re-evaluated with the A/X/Y a specific call site supplies, which is how a
+	 * helper taking its bank argument in Y ({@code LDA $FFD0,Y / STA $FFD0,Y / RTS} -- Contra)
+	 * is resolved at all. The 6-argument form above delegates here with {@link RegisterEnv#NONE},
+	 * so every pre-existing caller is byte-identical.
+	 * <p>
+	 * <b>An env-derived result may only ever be used for the one call site whose registers
+	 * {@code env} describes</b> -- see {@link RegisterEnv}'s class javadoc for the soundness
+	 * argument and the structural enforcement.
+	 */
+	static BankState resolveStoredValue(Program program, Instruction storeInstr, char reg,
+			BankState inStateAtStore, int mask, Hooks hooks, RegisterEnv env) {
 		Listing listing = program.getListing();
 		Set<String> modifiers = registerModifiers(reg);
 		String loadMnemonic = "LD" + reg;
@@ -106,6 +180,14 @@ final class StoredValueScanner {
 
 		Instruction cur = storeInstr;
 		for (int i = 0; i < MAX_BACKWARD_SCAN; i++) {
+			if (env.stopsAt(cur.getMinAddress())) {
+				// Reached the entry this query was asked on behalf of: the register's value
+				// here is the caller's, not whatever code happens to sit at a lower address.
+				// Deliberately BEFORE the linkage/join/mechanism-write checks -- an entry has
+				// no fall-through predecessor to check, and its incoming flows are other call
+				// sites, which is exactly what the env already answers for.
+				return combine(aAcc, oAcc, mask, env.get(reg));
+			}
 			Instruction prev = listing.getInstructionBefore(cur.getMinAddress());
 			if (prev == null) {
 				return combine(aAcc, oAcc, mask, BankState.unknown());
@@ -168,7 +250,11 @@ final class StoredValueScanner {
 			}
 
 			if (mnem.equals(loadMnemonic)) {
-				BankState base = hooks.resolveLoad(prev, inStateAtStore);
+				// The target is resolved here, not in the hook: an absolute-indexed load's
+				// target needs the whole constant-index evaluator, and doing it once keeps
+				// every strategy's hook a pure "do I understand this address" question.
+				Address target = effectiveOperandTarget(program, prev, hooks, env);
+				BankState base = hooks.resolveLoad(prev, target, inStateAtStore);
 				if (base != null) {
 					return combine(aAcc, oAcc, mask, base);
 				}
@@ -216,8 +302,9 @@ final class StoredValueScanner {
 	 * finds, given {@code result = (x & aAcc) | oAcc}: bit {@code b} is so determined
 	 * iff {@code aAcc} clears it or {@code oAcc} sets it -- i.e. iff {@code ~aAcc | oAcc}
 	 * covers every masked bit. (The exhaustive equivalence of this bit-parallel form to the
-	 * original per-bit loop is proved by {@code tools/bitalgebra}, run via
-	 * {@code gradle verifyBitAlgebra}.)
+	 * original per-bit loop is proved by
+	 * {@code src/test/java/retromachines/BitAlgebraEquivalenceTest.java}, run by
+	 * {@code gradle test}.)
 	 */
 	private static boolean fullyDeterminedByAccumulator(int aAcc, int oAcc, int mask) {
 		return (((~aAcc | oAcc) & mask) & 0xFF) == (mask & 0xFF);
@@ -232,13 +319,289 @@ final class StoredValueScanner {
 	 * {@code oAcc} sets it, or {@code aAcc} passes a known base 1 through -- the base's
 	 * <em>known</em> gate on that second term is what keeps result bits 0 in still-unknown
 	 * positions (so two states compare equal iff genuinely equal). Equivalence to the
-	 * original per-bit loop is proved exhaustively by {@code tools/bitalgebra}
-	 * ({@code gradle verifyBitAlgebra}).
+	 * original per-bit loop is proved exhaustively by
+	 * {@code src/test/java/retromachines/BitAlgebraEquivalenceTest.java} ({@code gradle test}).
 	 */
 	private static BankState combine(int aAcc, int oAcc, int mask, BankState base) {
 		int knownMask = mask & (oAcc | ~aAcc | base.knownMask()) & 0xFF;
 		int bits = mask & (oAcc | (aAcc & base.knownMask() & base.bits())) & 0xFF;
 		return new BankState(knownMask, bits);
+	}
+
+	// ------------------------------------------------------------------
+	// Known effective address (grm-hum GAP 1)
+	// ------------------------------------------------------------------
+
+	/**
+	 * The single address {@code instr}'s operand 0 actually accesses, when that is statically
+	 * certain: {@link #plainAbsoluteTarget} when the operand is unindexed (unchanged behavior),
+	 * otherwise an <em>absolute</em>-indexed operand whose index register
+	 * {@link #constantRegisterValue} pins to a fully known byte.
+	 * <p>
+	 * <b>Absolute-indexed only, deliberately.</b> Zero-page indexed wraps inside the zero page
+	 * ({@code LDA $80,X} with {@code X == $FF} reads {@code $7F}, not {@code $17F} -- real 6502
+	 * behavior, sleigh {@code tmp:2 = zext(imm8 + X)}), and both indirect modes read a pointer
+	 * this scanner does not model. Absolute indexed does <em>not</em> wrap at a page boundary,
+	 * so {@code base + idx} is exact -- and requiring a <em>fully</em> known index is what makes
+	 * it exact rather than merely likely. Anything else declines.
+	 *
+	 * @param env register values to adopt at an entry stop -- {@link RegisterEnv#NONE} on every
+	 *            path except a helper call site's mini-inline (grm-hum increment 2), which is
+	 *            what lets Contra's {@code LDA $FFD0,Y} resolve from the caller's Y
+	 */
+	static Address effectiveOperandTarget(Program program, Instruction instr, Hooks hooks,
+			RegisterEnv env) {
+		return effectiveTarget(program, instr, hooks, env, new Budget(MAX_RESOLVE_STEPS), 0);
+	}
+
+	/** {@link #effectiveOperandTarget} within an ongoing query tree's depth and step budget. */
+	private static Address effectiveTarget(Program program, Instruction instr, Hooks hooks,
+			RegisterEnv env, Budget budget, int depth) {
+		Address plain = plainAbsoluteTarget(instr);
+		if (plain != null) {
+			return plain;
+		}
+		if (depth > MAX_RESOLVE_DEPTH || !isAbsoluteIndexed(instr)) {
+			return null;
+		}
+		Address base = LoopIdioms.indexedBase(instr);
+		Register idx = LoopIdioms.indexReg(instr);
+		if (base == null || idx == null) {
+			return null;
+		}
+		String idxName = idx.getName().toUpperCase();
+		if (!idxName.equals("X") && !idxName.equals("Y")) {
+			return null;
+		}
+		Integer value =
+			constantRegisterValue(program, instr, idxName.charAt(0), hooks, env, budget, depth);
+		if (value == null) {
+			return null;
+		}
+		try {
+			return base.add(value & 0xFF);
+		}
+		catch (AddressOutOfBoundsException e) {
+			return null;
+		}
+	}
+
+	/**
+	 * The fully known byte {@code reg} holds immediately before {@code at}, or {@code null}
+	 * when any step of the chain is not modeled.
+	 * <p>
+	 * <b>All-or-nothing on purpose.</b> This is a separate evaluator from
+	 * {@link #resolveStoredValue}'s mask algebra and does <em>not</em> share its per-bit
+	 * machinery: an effective address needs all eight index bits or it needs none, so a
+	 * partially known register is simply a decline. Keeping the two apart is also what lets
+	 * {@code BitAlgebraEquivalenceTest} stand as the untouched proof that grm-hum did not
+	 * disturb the proven algebra.
+	 * <p>
+	 * Modeled: {@code LD<reg> #imm}; a {@code LD<reg> <mem>} whose target resolves and whose
+	 * {@link Hooks#resolveLoad} answers with all eight bits known; {@code TAX/TAY/TXA/TYA};
+	 * {@code INX/INY/DEX/DEY}; {@code ASL A}/{@code LSR A}; {@code AND/ORA/EOR #imm} on A.
+	 * {@code ROL}/{@code ROR} <b>decline</b> -- the carry flag is not modeled anywhere in this
+	 * scanner, and guessing it would be a wrong answer rather than a missing one. Any other
+	 * instruction in the register's modifier set, and any call, declines.
+	 * <p>
+	 * Every guard {@link #resolveStoredValue} applies is reused verbatim: fall-through block
+	 * linkage, {@link #isControlFlowJoin}, the {@link Hooks#isMechanismWrite} mid-scan abort,
+	 * and {@link #MAX_BACKWARD_SCAN}. The mechanism-write abort in particular is <em>not</em>
+	 * relaxed here: a base value read further back would predate that write. {@code env}'s
+	 * entry stop is honored the same way it is there, and is likewise all-or-nothing: a
+	 * partially known caller register declines, because an effective address needs all eight
+	 * index bits.
+	 * <p>
+	 * <b>{@link BankState#unknown()} is passed to {@link Hooks#resolveLoad}, never a caller's
+	 * in-state.</b> That is load-bearing for {@link BankSwitchStrategy#cacheable()}: an
+	 * effective address computed from the in-state would make {@code computeSwitch} a function
+	 * of {@code (program, instr, inState)}, while {@code BoardBankAnalyzer}'s {@code matchCache}
+	 * is keyed by address alone. A strategy whose {@code resolveLoad} is state-dependent
+	 * (register-write's port read-back) therefore contributes nothing here -- which is correct,
+	 * since it also declines to be cached.
+	 */
+	static Integer constantRegisterValue(Program program, Instruction at, char reg, Hooks hooks,
+			RegisterEnv env, Budget budget) {
+		return constantRegisterValue(program, at, reg, hooks, env, budget, 0);
+	}
+
+	private static Integer constantRegisterValue(Program program, Instruction at, char reg,
+			Hooks hooks, RegisterEnv env, Budget budget, int depth) {
+		if (depth > MAX_RESOLVE_DEPTH) {
+			return null;
+		}
+		Listing listing = program.getListing();
+		Set<String> modifiers = registerModifiers(reg);
+		String loadMnemonic = "LD" + reg;
+
+		Instruction cur = at;
+		for (int i = 0; i < MAX_BACKWARD_SCAN; i++) {
+			if (env.stopsAt(cur.getMinAddress())) {
+				// The entry stop, same rule as resolveStoredValue's: adopt the caller's value
+				// rather than walking past the entry. All-or-nothing here too -- a partially
+				// known caller register is not an index.
+				BankState entryValue = env.get(reg);
+				return (entryValue.knownMask() & 0xFF) == 0xFF ? entryValue.bits() & 0xFF : null;
+			}
+			if (!budget.spend()) {
+				return null;
+			}
+			Instruction prev = listing.getInstructionBefore(cur.getMinAddress());
+			if (prev == null) {
+				return null;
+			}
+			Address prevFallThrough = prev.getFallThrough();
+			if (prevFallThrough == null || !prevFallThrough.equals(cur.getMinAddress())) {
+				return null; // left the basic block
+			}
+			if (isControlFlowJoin(program, cur, prev)) {
+				return null; // another path reaches cur and may leave a different value
+			}
+			if (hooks.isMechanismWrite(prev)) {
+				// NOT relaxed for this evaluator: see the class javadoc's mid-scan rule.
+				return null;
+			}
+
+			String mnem = prev.getMnemonicString().toUpperCase();
+
+			if (mnem.equals(loadMnemonic)) {
+				if (isImmediate(prev)) {
+					Integer imm = immediateOperandValue(prev);
+					return imm == null ? null : imm & 0xFF;
+				}
+				Address target = effectiveTarget(program, prev, hooks, env, budget, depth + 1);
+				// unknown() in-state, never a caller's -- see this method's javadoc
+				BankState base = hooks.resolveLoad(prev, target, BankState.unknown());
+				if (base == null || (base.knownMask() & 0xFF) != 0xFF) {
+					return null;
+				}
+				return base.bits() & 0xFF;
+			}
+
+			Character source = transferSource(mnem, reg);
+			if (source != null) {
+				return constantRegisterValue(program, prev, source, hooks, env, budget, depth + 1);
+			}
+
+			Integer delta = incDecDelta(mnem, reg);
+			if (delta != null) {
+				Integer before =
+					constantRegisterValue(program, prev, reg, hooks, env, budget, depth + 1);
+				return before == null ? null : (before + delta) & 0xFF;
+			}
+
+			if (reg == 'A' && (mnem.equals("ROL") || mnem.equals("ROR")) &&
+				isAccumulatorForm(prev)) {
+				return null; // carry is not modeled -- decline rather than guess a bit
+			}
+
+			if (reg == 'A' && (mnem.equals("ASL") || mnem.equals("LSR")) &&
+				isAccumulatorForm(prev)) {
+				Integer before =
+					constantRegisterValue(program, prev, 'A', hooks, env, budget, depth + 1);
+				if (before == null) {
+					return null;
+				}
+				return mnem.equals("ASL") ? (before << 1) & 0xFF : (before >> 1) & 0xFF;
+			}
+
+			if (reg == 'A' && isImmediate(prev) &&
+				(mnem.equals("AND") || mnem.equals("ORA") || mnem.equals("EOR"))) {
+				Integer imm = immediateOperandValue(prev);
+				if (imm == null) {
+					return null;
+				}
+				Integer before =
+					constantRegisterValue(program, prev, 'A', hooks, env, budget, depth + 1);
+				if (before == null) {
+					return null;
+				}
+				return switch (mnem) {
+					case "AND" -> before & imm & 0xFF;
+					case "ORA" -> (before | imm) & 0xFF;
+					default -> (before ^ imm) & 0xFF;
+				};
+			}
+
+			if (modifiers.contains(mnem)) {
+				return null;
+			}
+			if (prev.getFlowType().isCall()) {
+				return null; // a subroutine may clobber any register
+			}
+			cur = prev;
+		}
+		return null;
+	}
+
+	/**
+	 * The source register of a transfer that writes {@code reg} ({@code TAX}/{@code TAY} write
+	 * X/Y from A; {@code TXA}/{@code TYA} write A from X/Y), or {@code null} when {@code mnem}
+	 * is not such a transfer. {@code TSX} is deliberately absent: the stack pointer is not
+	 * tracked.
+	 */
+	private static Character transferSource(String mnem, char reg) {
+		return switch (mnem) {
+			case "TAX" -> reg == 'X' ? 'A' : null;
+			case "TAY" -> reg == 'Y' ? 'A' : null;
+			case "TXA" -> reg == 'A' ? 'X' : null;
+			case "TYA" -> reg == 'A' ? 'Y' : null;
+			default -> null;
+		};
+	}
+
+	/** {@code +1}/{@code -1} when {@code mnem} increments or decrements {@code reg}, else null. */
+	private static Integer incDecDelta(String mnem, char reg) {
+		return switch (mnem) {
+			case "INX" -> reg == 'X' ? 1 : null;
+			case "DEX" -> reg == 'X' ? -1 : null;
+			case "INY" -> reg == 'Y' ? 1 : null;
+			case "DEY" -> reg == 'Y' ? -1 : null;
+			default -> null;
+		};
+	}
+
+	/**
+	 * Whether operand 0 uses an <em>absolute</em>-indexed addressing mode ({@code abs,X} /
+	 * {@code abs,Y}), the only indexed mode with a statically exact effective address.
+	 * <p>
+	 * Classified from the raw opcode byte, reusing {@code MosConstantReferenceAnalyzer.classify}'s
+	 * reasoning rather than inventing a second discriminator: 6502 opcodes encode as
+	 * {@code aaabbbcc} with {@code bbb = (op >> 2) & 7} selecting the addressing-mode column, so
+	 * {@code op & 0x1f} identifies the mode independently of which instruction occupies it.
+	 * {@code bbb = 6} ({@code abs,Y}) and {@code bbb = 7} ({@code abs,X}, plus {@code abs,Y} for
+	 * the {@code cc=2} column's {@code LDX}) are exactly {@code (op & 0x1f) >= 0x18}. That
+	 * excludes zero-page indexed ({@code bbb = 5}, {@code 0x14-0x17}), {@code (zp,X)}
+	 * ({@code 0x01}/{@code 0x03}) and {@code (zp),Y} ({@code 0x11}/{@code 0x13}).
+	 * <p>
+	 * Like {@code classify}, this narrows by opcode only -- the non-indexed instructions that
+	 * share those columns (e.g. {@code TXS}, {@code CLC}) are rejected by
+	 * {@link LoopIdioms#indexedBase}/{@link LoopIdioms#indexReg} returning null. And as that
+	 * javadoc warns, {@code OperandType.INDIRECT} does not work for this: it tests for indirect
+	 * <em>flow</em>, so both indirect data modes report false.
+	 */
+	private static boolean isAbsoluteIndexed(Instruction instr) {
+		try {
+			return (instr.getByte(0) & 0x1F) >= 0x18;
+		}
+		catch (MemoryAccessException e) {
+			return false;
+		}
+	}
+
+	/**
+	 * Whether {@code instr} uses the accumulator addressing mode ({@code ASL A} and friends)
+	 * rather than a memory operand -- the {@code bbb = 2}, {@code cc = 2} column, i.e.
+	 * {@code (op & 0x1f) == 0x0A}. Callers gate on the mnemonic first, so the other
+	 * instructions in that column (e.g. {@code TAX}, {@code NOP}) never reach here.
+	 */
+	private static boolean isAccumulatorForm(Instruction instr) {
+		try {
+			return (instr.getByte(0) & 0x1F) == 0x0A;
+		}
+		catch (MemoryAccessException e) {
+			return false;
+		}
 	}
 
 	// ------------------------------------------------------------------
@@ -337,6 +700,11 @@ final class StoredValueScanner {
 	 * operand is indexed/indirect (any register participates) or names no address --
 	 * i.e. non-null exactly for plain absolute/zero-page addressing, where the target
 	 * is statically certain.
+	 * <p>
+	 * Still the right predicate wherever "is this operand unindexed?" is the actual question
+	 * (the {@code addr_mask} decode ruling, {@code JMP} target extraction). Where the question
+	 * is "which address does this access reach?", prefer {@link #effectiveOperandTarget}, which
+	 * answers this and additionally resolves an absolute-indexed operand with a constant index.
 	 */
 	static Address plainAbsoluteTarget(Instruction instr) {
 		Address addr = null;

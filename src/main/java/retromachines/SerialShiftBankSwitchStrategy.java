@@ -227,8 +227,10 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 		}
 
 		@Override
-		public BankState resolveLoad(Instruction loadInstr, BankState inStateAtStore) {
-			// MMC1's shift register is write-only -- nothing reads it back.
+		public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+				BankState inStateAtStore) {
+			// MMC1's shift register is write-only -- nothing reads it back, at any
+			// resolvedTarget.
 			return null;
 		}
 	};
