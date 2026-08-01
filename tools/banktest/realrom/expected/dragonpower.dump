@@ -16,8 +16,11 @@ REALROM count spaces.overlay 3
 REALROM count refs.intoOverlay 0
 REALROM count instrs.inOverlay 0
 REALROM count bankComments 0
-REALROM count warnings 3
+REALROM count warnings 6
 REALROM sample.warn 8ee4 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_8eeb whose bank argument could not be recovered at this call site
+REALROM sample.warn 9913 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffbe whose bank argument could not be recovered at this call site
 REALROM sample.warn e3bb [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn e906 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn ffc8 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn ffea [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffbe whose bank argument could not be recovered at this call site
 === REALROM END ===

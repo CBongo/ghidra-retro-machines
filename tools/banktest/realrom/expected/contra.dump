@@ -21,6 +21,11 @@ REALROM count spaces.overlay 7
 REALROM count refs.intoOverlay 0
 REALROM count instrs.inOverlay 0
 REALROM count bankComments 0
-REALROM count warnings 1
-REALROM sample.warn 0000 [no bank-switch write observed] Board declares 1 bank-switch mechanism(s) [memory-latch] but no mechanism write was observed in analyzed code; no bank annotations were produced. The switch routine may be unreached (e.g. entered only via an indirect/table jump auto-analysis did not disassemble).
+REALROM count warnings 6
+REALROM sample.warn c0cb [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c13f whose bank argument could not be recovered at this call site
+REALROM sample.warn c0d3 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c13f whose bank argument could not be recovered at this call site
+REALROM sample.warn c142 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn c149 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c13f whose bank argument could not be recovered at this call site
+REALROM sample.warn c157 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c13f whose bank argument could not be recovered at this call site
+REALROM sample.warn c164 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c13f whose bank argument could not be recovered at this call site
 === REALROM END ===
