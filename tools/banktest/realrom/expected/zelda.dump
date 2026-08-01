@@ -1,6 +1,7 @@
 === REALROM BEGIN ===
 REALROM program zelda.nes
 REALROM sha256 8f72dc2e98572eb4ba7c3a902bca5f69c448fc4391837e5f8f0d4556280440ac
+REALROM prgsha256 085e5397a3487357c263dfa159fb0fe20a5f3ea8ef82d7af6a7e848d3b9364e8
 REALROM map machines/nes-mmc1.map
 REALROM placement NONE
 REALROM block APU_IO 4000-401f overlay=false

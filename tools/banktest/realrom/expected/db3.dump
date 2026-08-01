@@ -1,6 +1,7 @@
 === REALROM BEGIN ===
 REALROM program db3.nes
 REALROM sha256 b7f865e4f7e80064982979f16afc659d9607519b8b858482f3d02475fb986c2b
+REALROM prgsha256 12dd60f65b45ac8ab93440b8797e248770fa58a756969de1acebbc61af806220
 REALROM map machines/nes-bandai-fcg.map
 REALROM placement NONE
 REALROM block APU_IO 4000-401f overlay=false

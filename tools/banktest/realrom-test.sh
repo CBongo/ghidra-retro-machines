@@ -5,10 +5,20 @@
 # user-supplied, so this lives alongside measure-overlay-scale.sh and is invoked by
 # hand:
 #
-#   bash tools/banktest/realrom-test.sh check  <romdir> [<romdir> ...]
-#   bash tools/banktest/realrom-test.sh bless  <romdir> [<romdir> ...]
+#   bash tools/banktest/realrom-test.sh check  [--only|--except <ids>] <romdir> [<romdir> ...]
+#   bash tools/banktest/realrom-test.sh bless  [--only|--except <ids>] <romdir> [<romdir> ...]
 #
 # (romdirs may also be supplied via GRM_ROM_DIR, space-separated.)
+#
+# --only/--except take comma-separated manifest ids and select which rows the run
+# considers at all. --except exists for the recurring case this tier actually hits: one
+# title is deliberately held back at a pre-regression golden (megaman, per grm-g73 and
+# grm-hum) while every other title needs re-blessing, and blessing it would erase the
+# record the bead depends on. Before these flags the only way to scope a bless was to
+# stage the wanted ROMs into a separate directory, which is easy to get quietly wrong.
+# An id that is not in the manifest is a hard ERROR, never a silent no-op: a typo in
+# `--except megman` must not bless megaman. Filtered rows are omitted from the run and
+# counted separately -- deliberately NOT reported as SKIP, which means "ROM absent".
 #
 # Each pinned title is identified by its whole-file SHA-256 in
 # tools/banktest/realrom/manifest.tsv, so the harness validates against the exact
@@ -28,14 +38,46 @@
 #   GRM_ROM_DIR             default rom dir(s) if none given on the command line
 set -u
 
+USAGE="usage: $0 check|bless [--only <ids>|--except <ids>] <romdir> [<romdir> ...]"
+
 MODE="${1:-}"
 case "$MODE" in
 	check|bless) shift ;;
 	*)
-		echo "usage: $0 check|bless <romdir> [<romdir> ...]" >&2
+		echo "$USAGE" >&2
 		exit 2
 		;;
 esac
+
+# Row selection (see the header note). Empty ONLY_IDS means "every row"; EXCEPT_IDS is
+# applied on top. Both are kept as comma-delimited strings with sentinel commas so a
+# membership test is a plain substring match -- no associative arrays, matching the
+# portability level of the rest of this script.
+ONLY_IDS=""
+EXCEPT_IDS=""
+while [ $# -gt 0 ]; do
+	case "$1" in
+		--only|--except)
+			[ $# -ge 2 ] || { echo "ERROR: $1 needs a comma-separated id list" >&2; exit 2; }
+			# Normalize to ",a,b,c," so ",$id," can never match a partial id.
+			list=",$(printf '%s' "$2" | tr -d '[:space:]'),"
+			if [ "$1" = "--only" ]; then ONLY_IDS="$list"; else EXCEPT_IDS="$list"; fi
+			shift 2
+			;;
+		--)
+			shift
+			break
+			;;
+		-*)
+			echo "ERROR: unknown option '$1'" >&2
+			echo "$USAGE" >&2
+			exit 2
+			;;
+		*)
+			break
+			;;
+	esac
+done
 
 ROM_DIRS=("$@")
 if [ ${#ROM_DIRS[@]} -eq 0 ] && [ -n "${GRM_ROM_DIR:-}" ]; then
@@ -43,7 +85,7 @@ if [ ${#ROM_DIRS[@]} -eq 0 ] && [ -n "${GRM_ROM_DIR:-}" ]; then
 	ROM_DIRS=($GRM_ROM_DIR)
 fi
 if [ ${#ROM_DIRS[@]} -eq 0 ]; then
-	echo "usage: $0 $MODE <romdir> [<romdir> ...]   (or set GRM_ROM_DIR)" >&2
+	echo "$USAGE   (or set GRM_ROM_DIR)" >&2
 	exit 2
 fi
 
@@ -58,6 +100,33 @@ if [ ! -f "$MANIFEST" ]; then
 	exit 2
 fi
 mkdir -p "$EXPECTED_DIR"
+
+# Validate --only/--except ids against the manifest BEFORE importing anything. An
+# unknown id is an error rather than a no-op: the whole point of --except is to protect a
+# deliberately-stale golden, and a silently-ignored typo would bless the very title the
+# caller was trying to spare. (Same reasoning as the manifest's own hash pinning: the
+# expensive failure here is the one that looks like success.)
+if [ -n "$ONLY_IDS$EXCEPT_IDS" ]; then
+	manifest_ids=",$(awk -F'\t' '!/^#/ && NF { sub(/\r$/, "", $1); printf "%s,", $1 }' "$MANIFEST")"
+	for spec in "$ONLY_IDS" "$EXCEPT_IDS"; do
+		[ -n "$spec" ] || continue
+		# Strip the sentinel commas, then walk the ids.
+		inner="${spec#,}"; inner="${inner%,}"
+		IFS=',' read -r -a want <<< "$inner"
+		for w in "${want[@]}"; do
+			[ -n "$w" ] || continue
+			case "$manifest_ids" in
+				*",$w,"*) ;;
+				*)
+					echo "ERROR: '$w' is not an id in $MANIFEST" >&2
+					known="${manifest_ids#,}"
+					echo "known ids: ${known%,}" >&2
+					exit 2
+					;;
+			esac
+		done
+	done
+fi
 
 # Default headless path derives from gradle.properties' ghidraTargetVersion (single
 # source of truth); GHIDRA_HEADLESS still overrides.
@@ -170,7 +239,7 @@ shopt -u nullglob nocaseglob
 # Walk the manifest.
 # ------------------------------------------------------------------
 declare -a ROW_ID ROW_STATUS ROW_DETAIL
-n_pass=0; n_fail=0; n_skip=0; n_bless=0
+n_pass=0; n_fail=0; n_skip=0; n_bless=0; n_filtered=0
 
 import_and_dump() {
 	# $1 id  $2 rom_path  $3 loader_opts  -> writes normalized dump to $4
@@ -226,6 +295,16 @@ while IFS=$'\t' read -r id title sha mapper board golden opts || [ -n "${id:-}" 
 	# Which field is last varies by row (the opts column is optional), so strip all of them.
 	id="${id%$'\r'}"; title="${title%$'\r'}"; mapper="${mapper%$'\r'}"
 	board="${board%$'\r'}"; golden="${golden%$'\r'}"; opts="${opts%$'\r'}"
+
+	# Row selection (--only/--except). Applied after the CR strip so the id compared here
+	# is the same one the caller typed, and before any import work so a filtered row costs
+	# nothing. Filtered rows are counted but produce no ROW_* entry: they are not results.
+	if { [ -n "$ONLY_IDS" ] && [ "${ONLY_IDS#*,$id,}" = "$ONLY_IDS" ]; } ||
+		{ [ -n "$EXCEPT_IDS" ] && [ "${EXCEPT_IDS#*,$id,}" != "$EXCEPT_IDS" ]; }; then
+		n_filtered=$((n_filtered + 1))
+		echo "-- $id ($title): filtered out"
+		continue
+	fi
 	sha="$(printf '%s' "$sha" | tr 'A-Z' 'a-z' | tr -d '[:space:]')"
 	golden="${golden:-$id.dump}"
 	opts="${opts:-}"
@@ -317,7 +396,9 @@ for i in "${!ROW_ID[@]}"; do
 	printf '%-16s %-6s %s\n' "${ROW_ID[$i]}" "${ROW_STATUS[$i]}" "${ROW_DETAIL[$i]}"
 done
 echo
-echo "summary: pass=$n_pass fail=$n_fail skip=$n_skip bless=$n_bless   (work: $WORK)"
+filtered_note=""
+[ "$n_filtered" -gt 0 ] && filtered_note=" filtered=$n_filtered"
+echo "summary: pass=$n_pass fail=$n_fail skip=$n_skip bless=$n_bless$filtered_note   (work: $WORK)"
 
 if [ "$n_fail" -gt 0 ]; then
 	echo "REALROM $MODE: FAIL"

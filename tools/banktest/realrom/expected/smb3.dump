@@ -1,6 +1,7 @@
 === REALROM BEGIN ===
 REALROM program smb3.nes
 REALROM sha256 4377a7f5e6eb50bdd2ac6f249bf1a7085500aca8eb41f38545c3a2731c51a579
+REALROM prgsha256 f4130ba655229d9999fa3b2c59984165810c9b9b125c43b1ff899872e7fedff4
 REALROM map machines/nes-mmc3.map
 REALROM placement NONE
 REALROM block APU_IO 4000-401f overlay=false

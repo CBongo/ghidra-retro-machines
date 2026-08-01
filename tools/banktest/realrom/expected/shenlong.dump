@@ -1,6 +1,7 @@
 === REALROM BEGIN ===
 REALROM program shenlong.nes
 REALROM sha256 2a7e4c99771c4292cc9d1261a01af1d93f4d94e6865d1c257e2a19fc4dca6451
+REALROM prgsha256 b17cd9d5723cf748969e247a987e1b814d0376eb009600f1ffa77f4c9a45212b
 REALROM map machines/nes-gxrom.map
 REALROM placement NONE
 REALROM block APU_IO 4000-401f overlay=false

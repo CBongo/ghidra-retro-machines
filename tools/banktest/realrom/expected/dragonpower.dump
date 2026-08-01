@@ -1,6 +1,7 @@
 === REALROM BEGIN ===
 REALROM program dragonpower.nes
 REALROM sha256 e52cc421c726181a35f0cc9e8969a8aad50abd17bdc7eea59dc065990a576147
+REALROM prgsha256 1ffdddca20ec238e5fca32579314a7d757e8924db229e372025e26429142e1fa
 REALROM map machines/nes-gxrom.map
 REALROM placement NONE
 REALROM block APU_IO 4000-401f overlay=false

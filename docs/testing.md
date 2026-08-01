@@ -179,9 +179,16 @@ bank numbers through tables/helpers, hit ~191 overlays, etc.). It is **not** par
 default gate: ROM binaries are copyrighted and user-supplied, so nothing here runs in CI and
 it is never a `run-banktest.sh` chunk (whose `all` would otherwise pull it in).
 
-- **Driver:** `tools/banktest/realrom-test.sh check|bless <romdir> [<romdir> …]` (or
-  `GRM_ROM_DIR`). Lives alongside `measure-overlay-scale.sh` and reuses the same
-  `build/ghidra-home` isolation, so run `build-and-test.sh check nes-banking` once first.
+- **Driver:** `tools/banktest/realrom-test.sh check|bless [--only|--except <ids>] <romdir>
+  [<romdir> …]` (or `GRM_ROM_DIR`). Lives alongside `measure-overlay-scale.sh` and reuses the
+  same `build/ghidra-home` isolation, so run `build-and-test.sh check nes-banking` once first.
+- **Row selection:** `--only`/`--except` take comma-separated manifest ids. `--except` is the
+  one that earns its keep: this tier's recurring shape is *one title deliberately held back at
+  a pre-regression golden while every other title needs re-blessing* — `megaman` has been that
+  title twice (grm-g73, then grm-hum), and blessing it would erase the record the bead depends
+  on. An id not in the manifest is a hard **error**, never a silent no-op, because a typo in
+  `--except megman` must not bless megaman. Filtered rows are reported as `filtered=N`, not as
+  `SKIP` — `SKIP` means the ROM was absent, which is a different fact.
 - **Hash-pinned identity:** `tools/banktest/realrom/manifest.tsv` pins each title by whole-file
   **SHA-256**. The driver hash-indexes the supplied dir(s) and matches by content, so it is
   filename-independent (sidesteps the parenthesis-rename and bad-dump-header traps) and a ROM

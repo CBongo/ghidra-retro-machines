@@ -1,6 +1,7 @@
 === REALROM BEGIN ===
 REALROM program dbz_saiyan.nes
 REALROM sha256 02ef93c157c226101bf0790639845bdfa8173df894e095e687f396bbddf583ce
+REALROM prgsha256 81b5e12dc7f17e09a6111ff5a0f5685648b1771a06734b6f7c7b09f77fa5e466
 REALROM map machines/nes-bandai-fcg.map
 REALROM placement NONE
 REALROM block APU_IO 4000-401f overlay=false
