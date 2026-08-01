@@ -19,6 +19,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -27,8 +28,13 @@ import com.google.gson.JsonObject;
 
 import ghidra.program.database.ProgramBuilder;
 import ghidra.program.database.ProgramDB;
+import ghidra.program.model.address.Address;
+import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.listing.Instruction;
+import ghidra.program.model.mem.MemoryBlock;
+import ghidra.program.model.symbol.RefType;
 import ghidra.program.model.symbol.Reference;
+import ghidra.program.model.symbol.SourceType;
 
 /**
  * Pins {@link MemoryLatchBankSwitchStrategy}'s mechanism-write predicate, in particular the
@@ -108,6 +114,23 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		for (Reference ref : instr.getReferencesFrom()) {
 			assertFalse("fixture no longer models the refless case: " + instr + " -> " + ref,
 				ref.getReferenceType().isWrite());
+		}
+	}
+
+	/**
+	 * Adds a write reference by hand. Needed for the reference-tier tests: a bare
+	 * {@link ProgramBuilder} disassembly inside an overlay block lays down no operand reference
+	 * at all, so the reference those tests are about has to be constructed rather than observed.
+	 */
+	private void addWriteReference(Instruction instr, Address to) {
+		int tx = program.startTransaction("add write reference");
+		try {
+			program.getReferenceManager()
+					.addMemoryReference(instr.getMinAddress(), to, RefType.READ_WRITE,
+						SourceType.ANALYSIS, 0);
+		}
+		finally {
+			program.endTransaction(tx, true);
 		}
 	}
 
@@ -230,5 +253,60 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 
 		assertNull("nibble-0 write belongs to a sibling register, not the PRG latch",
 			strategy.computeSwitch(program, siblingWrite, BankState.unknown()));
+	}
+
+	// ------------------------------------------------------------------
+	// GAP 2: write references living in an overlay space
+	// ------------------------------------------------------------------
+
+	/**
+	 * A latch store executing from inside a bank overlay gets its write reference in that
+	 * overlay's space, and it is the same physical bus address either way -- the reference tier
+	 * must not require the default space.
+	 * <p>
+	 * An RMW store is used deliberately: it is exactly the case {@link
+	 * MemoryLatchBankSwitchStrategy#operandStoresInRange} declines, so a pass here can only come
+	 * from the reference tier and cannot be the operand tier answering for the wrong reason.
+	 */
+	@Test
+	public void writeReferenceInOverlaySpaceLatches() throws Exception {
+		MemoryBlock overlay = builder.createOverlayMemory("PRG_LO_B1", "0x8000", 0x4000);
+		Address site = overlay.getStart();
+		builder.setBytes(site.toString(), "ee 00 90", true); // INC $9000, from inside the overlay
+
+		Instruction store = program.getListing().getInstructionAt(site);
+		assertNotNull("nothing disassembled at " + site, store);
+
+		Address overlayTarget = site.getAddressSpace().getAddress(0x9000);
+		assertTrue("fixture must name the target in overlay space",
+			overlayTarget.getAddressSpace().isOverlaySpace());
+		addWriteReference(store, overlayTarget);
+
+		BankState result = discreteLatch().computeSwitch(program, store, BankState.unknown());
+
+		assertNotNull("overlay-space write reference was not seen as a mechanism write", result);
+		assertEquals("an RMW store's value is not modelled", 0x00, result.knownMask());
+	}
+
+	/**
+	 * The space test is a normalization, not a free-for-all: an in-range <em>offset</em> in a
+	 * space that is not the code space (nor an overlay over it) still cannot latch. {@code OTHER}
+	 * stands in for any such space -- it is where Ghidra parks addresses that have no place in
+	 * the processor's memory map at all.
+	 */
+	@Test
+	public void writeReferenceOutsideTheCodeSpaceDoesNotLatch() throws Exception {
+		builder.setBytes("0x8000", "ee 00 90", true); // INC $9000
+
+		Instruction store = instructionAt("0x8000");
+		stripWriteReferences(store);
+
+		AddressSpace other = program.getAddressFactory().getAddressSpace(AddressSpace.OTHER_SPACE
+				.getName());
+		assertNotNull("no OTHER space to model a foreign-space reference with", other);
+		addWriteReference(store, other.getAddress(0x9000));
+
+		assertNull("only the code space (or an overlay over it) carries the latch",
+			discreteLatch().computeSwitch(program, store, BankState.unknown()));
 	}
 }

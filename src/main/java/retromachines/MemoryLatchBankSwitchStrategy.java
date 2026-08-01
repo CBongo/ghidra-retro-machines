@@ -197,7 +197,10 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * <ol>
 	 * <li><b>Write references.</b> Authoritative when present: a reference names the
 	 * <em>resolved</em> target, so an indexed store whose base+index constant propagation
-	 * pinned down is tested at its true address, decode predicate included.</li>
+	 * pinned down is tested at its true address, decode predicate included. The range test
+	 * accepts an overlay over the code space as well as the code space itself -- a latch store
+	 * executing from inside a {@code PRG_LO_B<n>} window gets its write reference in that
+	 * overlay's space, and used to be skipped for it.</li>
 	 * <li><b>Operand decode</b> ({@link #operandStoresInRange}). References are not always
 	 * there to be had: a 6502 indexed operand's base arrives as a {@code Scalar}, so
 	 * {@code CodeManager} lays down no default operand reference at disassembly time, and
@@ -211,8 +214,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	private boolean writesInRange(Instruction instr) {
 		for (Reference ref : instr.getReferencesFrom()) {
 			Address to = ref.getToAddress();
-			if (ref.getReferenceType().isWrite() && to.getAddressSpace().equals(space) &&
-				to.getOffset() >= rangeStart && to.getOffset() <= rangeEnd &&
+			if (ref.getReferenceType().isWrite() && inLatchRange(to) &&
 				matchesDecode(to.getOffset())) {
 				return true;
 			}
