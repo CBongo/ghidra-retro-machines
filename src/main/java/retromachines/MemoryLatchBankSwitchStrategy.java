@@ -47,7 +47,8 @@ import ghidra.program.model.symbol.Reference;
  * they are not misread as ROM writes; they simply are not <em>this</em> latch). Absent (the
  * discrete-mapper default: UxROM/AxROM/CNROM/GxROM/BNROM), any write in range latches,
  * exactly as before. The predicate is purely address-based, so {@link #cacheable()} stays
- * true.
+ * true. It is also the one case where an <em>indexed</em> store cannot be judged from its
+ * operand alone -- see the soundness ruling on {@link #operandStoresInRange}.
  * <p>
  * Differences from {@code register-write} injected via {@link StoredValueScanner.Hooks}:
  * <ul>
@@ -190,6 +191,23 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 			(stored.bits() >> shift) & mask);
 	}
 
+	/**
+	 * Whether {@code instr} writes into this latch's range -- the mechanism-write predicate.
+	 * Two tiers, tried in order (grm-3x1):
+	 * <ol>
+	 * <li><b>Write references.</b> Authoritative when present: a reference names the
+	 * <em>resolved</em> target, so an indexed store whose base+index constant propagation
+	 * pinned down is tested at its true address, decode predicate included.</li>
+	 * <li><b>Operand decode</b> ({@link #operandStoresInRange}). References are not always
+	 * there to be had: a 6502 indexed operand's base arrives as a {@code Scalar}, so
+	 * {@code CodeManager} lays down no default operand reference at disassembly time, and
+	 * const-prop -- the only thing that would supply one later -- covers function bodies
+	 * only. The canonical UxROM bus-conflict switch is exactly that shape
+	 * ({@code LDA #n / TAX / STA banktable,X}), and measurement (grm-2yx probe) found refless
+	 * plain-absolute stores too, in code const-prop never reached. Tier 1 alone therefore
+	 * misses live switch sites in real ROMs (contra, dragonpower, wizwarr, megaman).</li>
+	 * </ol>
+	 */
 	private boolean writesInRange(Instruction instr) {
 		for (Reference ref : instr.getReferencesFrom()) {
 			Address to = ref.getToAddress();
@@ -199,7 +217,59 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 				return true;
 			}
 		}
-		return false;
+		return operandStoresInRange(instr);
+	}
+
+	/**
+	 * Tier 2 of {@link #writesInRange}: read the store's target straight off its operand,
+	 * for the stores that carry no write reference at all.
+	 * <p>
+	 * Gated on {@link StoredValueScanner#storeRegister} being non-null, i.e. a true
+	 * {@code STA}/{@code STX}/{@code STY}. The read-modify-write stores ({@code INC $8000}
+	 * and friends) keep tier-1-only behaviour deliberately: {@code computeSwitch} answers
+	 * {@link BankState#unknown()} for them, so newly <em>seeing</em> one would poison bank
+	 * state rather than recover it -- a reachability fix must not widen into that.
+	 * <p>
+	 * <b>Soundness: an indexed operand under an {@code addr_mask} declines.</b> Tier 2 knows
+	 * only the base, and {@code base & 0x0F} says nothing whatever about
+	 * {@code (base + X) & 0x0F}. On Bandai FCG that is the difference between the PRG bank
+	 * register and an IRQ register sharing the same range -- claiming a match would latch
+	 * {@code prg_bank} off an IRQ write, precisely what {@code addr_mask} exists to prevent.
+	 * Declining under-reports, which is this predicate's pre-existing failure mode and is
+	 * safe; answering {@link BankState#unknown()} instead would be a fresh source of WARNINGs
+	 * across the Bandai titles as a side effect of a fix aimed elsewhere.
+	 * <p>
+	 * Only the base is range-tested, never {@code base + 0xFF}: the canonical bank table sits
+	 * at the very top of the range (Contra's {@code STA $FFD0,X}), so requiring the whole
+	 * indexed span to fit would reject the exact idiom this tier exists to catch.
+	 */
+	private boolean operandStoresInRange(Instruction instr) {
+		if (StoredValueScanner.storeRegister(instr) == null) {
+			return false;
+		}
+		Address target = StoredValueScanner.plainAbsoluteTarget(instr);
+		if (target != null) {
+			return inLatchRange(target) && matchesDecode(target.getOffset());
+		}
+		Address base = LoopIdioms.indexedBase(instr);
+		if (base == null || addrMask != 0) {
+			return false; // see the soundness ruling above
+		}
+		return inLatchRange(base);
+	}
+
+	/**
+	 * Whether {@code addr} falls in {@code [rangeStart, rangeEnd]} of this program's code
+	 * space. An overlay over the default space counts: on a banked machine a latch store
+	 * executing from inside a {@code PRG_LO_B<n>} window names its target in that overlay's
+	 * space, and it is the same physical bus address either way.
+	 */
+	private boolean inLatchRange(Address addr) {
+		if (!addr.getAddressSpace().getPhysicalSpace().equals(space)) {
+			return false;
+		}
+		long offset = addr.getOffset();
+		return offset >= rangeStart && offset <= rangeEnd;
 	}
 
 	/**
