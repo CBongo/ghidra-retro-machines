@@ -258,33 +258,65 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * site per helper committing one field spanning its entire field-local width, so a call
 	 * really does replace all of it -- known or not, exactly as the inherited default does.
 	 * <p>
-	 * <b>Evaluation first, convention as the fallback</b> -- deliberately a union of the two
-	 * models, because measurement showed neither dominates (grm-hum). Evaluating the switch
-	 * site is strictly better when it resolves: it applies the real shift/mask/bus-conflict
-	 * semantics and it reads whichever register the helper actually consumes. But it can only
-	 * see what the backward scan can derive from the helper's own body, and a real helper's
-	 * body often launders the argument through memory first. Ironsword's {@code FUN_ffc0} is
-	 * the measured case:
-	 * <pre>
-	 *   FFC2: STA $C3        ; stash the caller's bank argument
-	 *   FFC4: LDA $C5 / PHA  ; save the current shadow
-	 *   FFC7: AND #$18       ; keep the untracked VRAM bits from the shadow
-	 *   FFC9: ORA $C3        ; splice the argument back in -- NON-IMMEDIATE, so the scan stops
-	 *   FFCD: STA $8000      ; the commit
-	 * </pre>
-	 * Bits 0-2 (this board's whole tracked field) come entirely from {@code $C3}, i.e. from the
-	 * caller's {@code A} -- so the convention's answer is not merely lucky here, it is exactly
-	 * what the code computes. The engine simply cannot derive it without zero-page store-to-load
-	 * propagation, which it does not have. Evaluating {@code FUN_ffc0}'s max-address site is
-	 * worse still: that site is the {@code STA $8000} that RESTORES the saved bank from a
-	 * {@code PLA}, which is unrecoverable by construction.
+	 * <b>Evaluation only. There is deliberately no convention fallback</b> -- grm-6pi removed the
+	 * one grm-hum added, because the assumption underneath it is false on a real cartridge and was
+	 * producing confident wrong answers.
 	 * <p>
-	 * So: prefer the derived answer, and keep the assumed one for when nothing was derived.
-	 * A fallback can only ever fill in where the evaluation was silent, so it cannot overwrite
-	 * a derived answer with a weaker assumed one. Contra (argument in {@code Y}, which the
-	 * convention cannot see) and Ironsword (argument laundered through zero page, which the
-	 * evaluation cannot see) are each recovered by exactly one of the two paths, and the
-	 * measured real-ROM numbers move only in the intended direction for both.
+	 * The convention says "the argument register holds the field value verbatim". That is a claim
+	 * about a <em>particular site</em> -- the one that commits the argument. But this method is
+	 * handed {@code switchSite}, which {@code findHelpers} defines as the last recognized write on
+	 * the path to the helper's RETURN. In a switch/call/restore trampoline those are two different
+	 * instructions, and the convention then describes neither the right value nor the right point
+	 * in time. Ironsword's ({@code wizwarr}'s) {@code FUN_ffc0}, transcribed byte-exact from the
+	 * pinned dump:
+	 * <pre>
+	 *   FFC0: STY $C1 / STA $C3   ; save the target-pointer low byte and the bank argument
+	 *   FFC4: LDA $C5 / PHA       ; save the CURRENT bank shadow on the stack
+	 *   FFC7: AND #$18            ; keep the untracked VRAM bits
+	 *   FFC9: ORA $C3             ; splice the requested bank into bits 0-2
+	 *   FFCB: STA $C5
+	 *   FFCD: STA $8000           ; COMMIT -- switch to the requested bank
+	 *   FFD0: JSR $FFDA           ; -> JMP ($00C1): run the target routine IN that bank
+	 *   FFD3: PLA / STA $C5
+	 *   FFD6: STA $8000           ; RESTORE -- the saved shadow goes back
+	 *   FFD9: RTS
+	 * </pre>
+	 * The requested bank is live only for the inner {@code JSR $FFDA}. By the time the caller
+	 * resumes, {@code $FFD6} has put the old bank back -- so a call site's effect on the caller's
+	 * own state is <em>no change</em>, and {@code argValue} is the one answer that is definitely
+	 * wrong. {@code switchSite} is {@code $FFD6}, correctly; it is unrecoverable only because its
+	 * value arrives via {@code PLA}.
+	 * <p>
+	 * <b>Measured (grm-6pi), and it is not a close call.</b> Callers set the shadow explicitly
+	 * before calling -- {@code $80AB LDA #$00 / STA $C5} then {@code LDA #$07 / JSR $FFC0}, and
+	 * {@code $D680 LDA #$00 / STA $C5} then {@code LDA #$01 / JSR $FFC0} -- so the restore
+	 * genuinely returns bank 0, not the requested bank. With the fallback in place the engine
+	 * annotated "bank -&gt; 7" and retargeted the following calls into bank 7's overlay. The ROM
+	 * bytes at those targets settle it:
+	 * <pre>
+	 *   $8C4B bank 0: a5 00 29 7f 8d 00 20 ...  LDA $00 / AND #$7F / STA $2000   -- code
+	 *   $8C4B bank 7: 82 30 82 00 52 30 52 ...                                   -- graphics data
+	 *   $E530 bank 0: ad 02 20 a9 10 8d 00 20   LDA $2002 / LDA #$10 / STA $2000 -- code
+	 *   $E530 bank 3: aa 10 65 5a b5 02 33 ...                                   -- graphics data
+	 * </pre>
+	 * The engine's own output contradicted itself too: {@code $E91D JSR $E530} resolved in base
+	 * space while {@code $D571 JSR $E530} was retargeted into bank 3 -- the same routine placed in
+	 * two banks, one of them data. Removing the fallback dropped {@code instrs.inOverlay} from 55
+	 * to 0: every one of those 55 instructions had been disassembled out of graphics data.
+	 * <p>
+	 * So when evaluation pins nothing down, <b>decline</b>: deposit unknown, which raises the
+	 * ordinary "bank state becomes unknown here" warning and leaves references to resolve against
+	 * {@code initial_state}. That is grm-hum's own prescription for this situation -- "losing 78
+	 * refs beats shipping a wrong bank" -- applied to the case it did not recognize it was in.
+	 * Nothing else measured depended on the fallback: Contra is recovered by evaluation (its
+	 * argument is in {@code Y}, which the convention cannot see anyway), and Mega Man by tail-call
+	 * composition; every other pinned title and every synthetic golden is byte-identical.
+	 * <p>
+	 * <b>Unknown is honest, not optimal.</b> The true post-call effect here is "unchanged", which
+	 * {@link HelperDeposit} can already express as {@code ownedMask = 0}. Claiming it requires
+	 * verifying the save/restore pair, i.e. pairing the {@code PHA} at {@code $FFC6} with the
+	 * {@code PLA} at {@code $FFD3} -- grm-mej.3. Until then, declining is the sound answer and
+	 * asserting no-op would be another guess.
 	 * <p>
 	 * <b>This is not a caching path.</b> It calls {@link #evaluateLatch} directly, never
 	 * {@link #computeSwitch} and never {@code BoardBankAnalyzer}'s address-keyed
@@ -295,12 +327,9 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	@Override
 	public HelperDeposit depositHelperArgument(Program program, Instruction switchSite,
 			BankState argValue, BankState inState, int stateMask, RegisterEnv callerRegs) {
+		// argValue is unused on purpose -- see the javadoc. Evaluation is the only model here;
+		// when it pins nothing down the deposit is unknown, which warns rather than guesses.
 		BankState evaluated = evaluateLatch(program, switchSite, callerRegs);
-		if ((evaluated.knownMask() & stateMask) == 0) {
-			// Evaluation pinned down nothing -- fall back to the convention (grm-hum).
-			return new HelperDeposit(stateMask,
-				new BankState(argValue.knownMask() & stateMask, argValue.bits() & stateMask));
-		}
 		return new HelperDeposit(stateMask,
 			new BankState(evaluated.knownMask() & stateMask, evaluated.bits() & stateMask));
 	}

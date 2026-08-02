@@ -199,6 +199,51 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 		assertBank(5, deposit.value());
 	}
 
+	/**
+	 * <b>The grm-6pi regression guard.</b> The full Ironsword trampoline, including the restore,
+	 * evaluated at the site {@code findHelpers} actually picks -- the max-address one, {@code
+	 * STA $8000} after the {@code PLA}. That site's value is unrecoverable by construction, and
+	 * the deposit must therefore be UNKNOWN.
+	 * <p>
+	 * {@code argValue} is passed a fully known bank 5 here, the exact opposite of
+	 * {@link #ironswordCommitSiteDerivesArgumentLaunderedThroughRam}. If a convention fallback is
+	 * ever reintroduced, this test starts reporting bank 5 and fails. That fallback shipped
+	 * briefly and was wrong on the real cartridge: callers set the shadow to 0 before calling
+	 * ({@code $80AB LDA #$00 / STA $C5}), so the restore returns bank 0 and the caller does NOT
+	 * resume in the requested bank. The engine had been retargeting the following calls into bank
+	 * 7's and bank 3's overlays, where the ROM bytes are graphics data rather than code.
+	 * <p>
+	 * The genuinely correct answer for a verified save/restore pair is "unchanged"
+	 * ({@code ownedMask == 0}), which needs {@code PHA}/{@code PLA} pairing -- grm-mej.3. Until
+	 * then unknown is the honest answer, and this test pins that rather than the ideal one.
+	 */
+	@Test
+	public void restoreSiteOfASaveRestoreTrampolineDepositsUnknownNotTheArgument() throws Exception {
+		builder.setBytes("0x8000", "84 c1", true); // STY $C1     <- helper entry
+		builder.setBytes("0x8002", "85 c3", true); // STA $C3
+		builder.setBytes("0x8004", "a5 c5", true); // LDA $C5
+		builder.setBytes("0x8006", "48", true); // PHA         <- save the shadow
+		builder.setBytes("0x8007", "29 18", true); // AND #$18
+		builder.setBytes("0x8009", "05 c3", true); // ORA $C3
+		builder.setBytes("0x800b", "85 c5", true); // STA $C5
+		builder.setBytes("0x800d", "8d 00 80", true); // STA $8000    <- COMMIT
+		builder.setBytes("0x8010", "20 20 80", true); // JSR $8020    <- run the target routine
+		builder.setBytes("0x8013", "68", true); // PLA         <- restore the shadow
+		builder.setBytes("0x8014", "85 c5", true); // STA $C5
+		builder.setBytes("0x8016", "8d 00 80", true); // STA $8000    <- RESTORE (max-address site)
+		builder.setBytes("0x8019", "60", true); // RTS
+		builder.setBytes("0x8020", "60", true); // RTS
+
+		RegisterEnv callerRegs = new RegisterEnv(builder.addr("0x8000"),
+			BankState.fullyKnown(0xFF, 0x05), BankState.unknown(), BankState.unknown());
+
+		BankSwitchStrategy.HelperDeposit deposit =
+			axromLatch().depositHelperArgument(program, instructionAt("0x8016"),
+				BankState.fullyKnown(0x07, 0x05), BankState.unknown(), 0x07, callerRegs);
+
+		assertUnresolved(deposit.value());
+	}
+
 	// ------------------------------------------------------------------
 	// Forwarding declines
 	// ------------------------------------------------------------------

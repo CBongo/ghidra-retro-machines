@@ -18,44 +18,23 @@ REALROM block RAM 0000-07ff overlay=false
 REALROM count blocks.total 11
 REALROM count blocks.overlay 7
 REALROM count spaces.overlay 7
-REALROM count refs.intoOverlay 17
-REALROM count instrs.inOverlay 55
-REALROM count bankComments 11
-REALROM count warnings 8
-REALROM sample.bankcomment 80c2 bank -> 7 (bank=7) via FUN_ffc0
+REALROM count refs.intoOverlay 0
+REALROM count instrs.inOverlay 0
+REALROM count bankComments 4
+REALROM count warnings 11
 REALROM sample.bankcomment d567 bank -> 0 (bank=0) via FUN_d677
-REALROM sample.bankcomment d56e bank -> 3 (bank=3) via FUN_ffc0
 REALROM sample.bankcomment d684 bank -> 0 (bank=0)
-REALROM sample.bankcomment d691 bank -> 1 (bank=1) via FUN_ffc0
-REALROM sample.bankcomment e5b1 bank -> 1 (bank=1) via FUN_ffc0
-REALROM sample.bankcomment e924 bank -> 4 (bank=4) via FUN_ffc0
-REALROM sample.bankcomment e92b bank -> 6 (bank=6) via FUN_ffc0
-REALROM sample.bankcomment e942 bank -> 4 (bank=4) via FUN_ffc0
 REALROM sample.bankcomment ff94 bank -> 0 (bank=0)
 REALROM sample.bankcomment ffe0 bank -> 0 (bank=0)
-REALROM sample.ref 80ca -> PRG_ALL_B7::8c4b UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 80cd -> PRG_ALL_B7::8b8b UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 8bab -> PRG_ALL_B7::da2f COMPUTED_JUMP primary=true
-REALROM sample.ref d571 -> PRG_ALL_B3::e530 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref e531 -> PRG_ALL_B3::e598 CONDITIONAL_JUMP primary=true
-REALROM sample.ref e59b -> PRG_ALL_B3::e605 CONDITIONAL_JUMP primary=true
-REALROM sample.ref e59d -> PRG_ALL_B3::e5a6 CONDITIONAL_JUMP primary=true
-REALROM sample.ref e92b -> PRG_ALL_B4::ffc0 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref e930 -> PRG_ALL_B6::e5ab UNCONDITIONAL_CALL primary=true
-REALROM sample.ref e937 -> PRG_ALL_B6::e98e UNCONDITIONAL_CALL primary=true
-REALROM sample.ref e942 -> PRG_ALL_B6::ffc0 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref ffcd -> PRG_ALL_B4::8000 DATA primary=true
-REALROM sample.ref ffcd -> PRG_ALL_B6::8000 DATA primary=true
-REALROM sample.ref ffd0 -> PRG_ALL_B4::ffda UNCONDITIONAL_CALL primary=true
-REALROM sample.ref ffd0 -> PRG_ALL_B6::ffda UNCONDITIONAL_CALL primary=true
-REALROM sample.ref ffd6 -> PRG_ALL_B4::8000 DATA primary=true
-REALROM sample.ref ffd6 -> PRG_ALL_B6::8000 DATA primary=true
+REALROM sample.warn 80c2 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc0 whose bank argument could not be recovered at this call site
 REALROM sample.warn 80cd [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_8b8b whose bank argument could not be recovered at this call site
 REALROM sample.warn 8bea [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn d56e [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc0 whose bank argument could not be recovered at this call site
+REALROM sample.warn d691 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc0 whose bank argument could not be recovered at this call site
+REALROM sample.warn e5b1 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc0 whose bank argument could not be recovered at this call site
+REALROM sample.warn e924 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc0 whose bank argument could not be recovered at this call site
+REALROM sample.warn e92b [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc0 whose bank argument could not be recovered at this call site
+REALROM sample.warn e942 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc0 whose bank argument could not be recovered at this call site
 REALROM sample.warn ffcd [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
-REALROM sample.warn ffcd [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
-REALROM sample.warn ffcd [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
-REALROM sample.warn ffd6 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
-REALROM sample.warn ffd6 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn ffd6 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 === REALROM END ===
