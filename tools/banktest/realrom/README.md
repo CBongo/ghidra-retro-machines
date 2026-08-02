@@ -117,6 +117,30 @@ away.
 3. Review what the run reports, then `bless --only <id>` and inspect the new
    `expected/<id>.dump` before committing it.
 
+## Diagnostics
+
+Two read-only probes answer "why did this title resolve nothing?", run alongside a normal
+import via `REALROM_EXTRA_POSTSCRIPT`. Give each its **own** invocation — the cache key does
+not cover them, so a cached `bless` would skip the import they need. Their output is
+diagnostic-only and never reaches a golden (the driver's awk carve extracts only the
+`REALROM` block). Read the scripts' headers for details; both are commented at length.
+
+```bash
+REALROM_EXTRA_POSTSCRIPT=BankReachProbe.java  bash tools/banktest/realrom-test.sh check --only <id> <romdir>
+REALROM_EXTRA_POSTSCRIPT=HelperShapeProbe.java bash tools/banktest/realrom-test.sh check --only <id> <romdir>
+```
+
+- **`BankReachProbe.java`** — separates the three reasons a **memory-latch** store never
+  fired: never disassembled, disassembled but in no function, or reachable but invisible to
+  `writesInRange`. It requires a `memory-latch` mechanism and reports an error on boards
+  without one (MMC1 is `serial-shift`).
+- **`HelperShapeProbe.java`** — board-agnostic. For every warning bookmark, reports the
+  containing function, its callers (distinguishing `JSR` from a tail-call `JMP`), the
+  instructions feeding each site, and **which sites carry incoming flow of their own**. That
+  last one finds mid-body entry points — an address the helper model cannot describe, because
+  `findHelpers` keys on the containing *function* while the real argument convention belongs
+  to the entry actually jumped to (grm-nju).
+
 ## Bless discipline
 
 Regenerate with `bless`, review the `expected/*.dump` diff, commit deliberately — same
