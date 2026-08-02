@@ -33,7 +33,7 @@ import ghidra.program.model.mem.MemoryBlock;
  * through a memory cell earlier in the same basic block is followed, so a helper that stashes its
  * register argument and splices it back in is <em>derived</em> rather than assumed.
  * <p>
- * The motivating shape is Ironsword's (= {@code wizwarr}'s) {@code FUN_ffc0}, reproduced by
+ * The motivating shape is Ironsword's {@code FUN_ffc0}, reproduced by
  * {@link #ironswordCommitSiteDerivesArgumentLaunderedThroughRam()}:
  * <pre>
  *   STA $C3        ; stash the caller's bank argument
@@ -43,7 +43,7 @@ import ghidra.program.model.mem.MemoryBlock;
  *   STA $8000      ; the commit
  * </pre>
  * <b>Read this before treating that test as a real-ROM claim.</b> Deriving the commit site is not
- * the same as improving {@code wizwarr}'s analysis today, and measurement says it does not:
+ * the same as improving Ironsword's analysis today, and measurement says it does not:
  * {@code findHelpers} summarizes {@code FUN_ffc0} by its MAX-ADDRESS switch site, which is the
  * {@code $FFD6} RESTORE ({@code PLA / STA $C5 / STA $8000}), not the {@code $FFCD} commit. So
  * {@code depositHelperArgument} evaluates a chain that begins with a {@code PLA} and forwarding

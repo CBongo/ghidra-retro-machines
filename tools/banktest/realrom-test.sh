@@ -38,11 +38,11 @@
 #   GRM_ROM_DIR             default rom dir(s) if none given on the command line
 set -u
 
-USAGE="usage: $0 check|bless [--only <ids>|--except <ids>] <romdir> [<romdir> ...]"
+USAGE="usage: $0 check|bless|nominate [--gme] [--only <ids>|--except <ids>] <romdir> [<romdir> ...]"
 
 MODE="${1:-}"
 case "$MODE" in
-	check|bless) shift ;;
+	check|bless|nominate) shift ;;
 	*)
 		echo "$USAGE" >&2
 		exit 2
@@ -55,8 +55,17 @@ esac
 # portability level of the rest of this script.
 ONLY_IDS=""
 EXCEPT_IDS=""
+# --gme adds realrom/manifest-gme.tsv (the game-music-extraction titles of interest) on top
+# of the curated board-representative set. Off by default and deliberately so: that set is a
+# reference point for planning and an occasional thorough check, not a gate, and each row
+# costs a ~1min+ headless import.
+INCLUDE_GME=0
 while [ $# -gt 0 ]; do
 	case "$1" in
+		--gme)
+			INCLUDE_GME=1
+			shift
+			;;
 		--only|--except)
 			[ $# -ge 2 ] || { echo "ERROR: $1 needs a comma-separated id list" >&2; exit 2; }
 			# Normalize to ",a,b,c," so ",$id," can never match a partial id.
@@ -93,13 +102,38 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 REALROM_DIR="$SCRIPT_DIR/realrom"
 MANIFEST="$REALROM_DIR/manifest.tsv"
+GME_MANIFEST="$REALROM_DIR/manifest-gme.tsv"
 EXPECTED_DIR="$REALROM_DIR/expected"
 
 if [ ! -f "$MANIFEST" ]; then
 	echo "ERROR: manifest not found: $MANIFEST" >&2
 	exit 2
 fi
+MANIFESTS=("$MANIFEST")
+if [ "$INCLUDE_GME" = 1 ]; then
+	if [ ! -f "$GME_MANIFEST" ]; then
+		echo "ERROR: --gme given but $GME_MANIFEST does not exist." >&2
+		echo "       Populate it with: $0 nominate <romdir> [<romdir> ...]" >&2
+		exit 2
+	fi
+	MANIFESTS+=("$GME_MANIFEST")
+fi
 mkdir -p "$EXPECTED_DIR"
+
+# One id must mean one row. Ids name goldens (expected/<id>.dump), name the ROM copy the
+# import sees (so they reach the golden as `REALROM program <id>.nes`), and are what
+# --only/--except match -- so a duplicate across the two manifests would import twice and
+# have the second row silently overwrite the first's golden. Same reasoning as the
+# unknown-id error below: the expensive failure here is the one that looks like success.
+dupe_ids="$(cat "${MANIFESTS[@]}" | tr -d '\r' \
+	| awk -F'\t' '!/^#/ && NF && $1 != "id" { print $1 }' \
+	| LC_ALL=C sort | uniq -d)"
+if [ -n "$dupe_ids" ]; then
+	echo "ERROR: id(s) appear in more than one manifest:" >&2
+	printf '  %s\n' $dupe_ids >&2
+	echo "       Each id must be unique across ${MANIFESTS[*]}" >&2
+	exit 2
+fi
 
 # Validate --only/--except ids against the manifest BEFORE importing anything. An
 # unknown id is an error rather than a no-op: the whole point of --except is to protect a
@@ -107,7 +141,7 @@ mkdir -p "$EXPECTED_DIR"
 # caller was trying to spare. (Same reasoning as the manifest's own hash pinning: the
 # expensive failure here is the one that looks like success.)
 if [ -n "$ONLY_IDS$EXCEPT_IDS" ]; then
-	manifest_ids=",$(awk -F'\t' '!/^#/ && NF && $1 != "id" { sub(/\r$/, "", $1); printf "%s,", $1 }' "$MANIFEST")"
+	manifest_ids=",$(awk -F'\t' '!/^#/ && NF && $1 != "id" { sub(/\r$/, "", $1); printf "%s,", $1 }' "${MANIFESTS[@]}")"
 	for spec in "$ONLY_IDS" "$EXCEPT_IDS"; do
 		[ -n "$spec" ] || continue
 		# Strip the sentinel commas, then walk the ids.
@@ -118,7 +152,8 @@ if [ -n "$ONLY_IDS$EXCEPT_IDS" ]; then
 			case "$manifest_ids" in
 				*",$w,"*) ;;
 				*)
-					echo "ERROR: '$w' is not an id in $MANIFEST" >&2
+					echo "ERROR: '$w' is not an id in ${MANIFESTS[*]}" >&2
+					[ "$INCLUDE_GME" = 1 ] || echo "hint: --gme adds the game-music-extraction titles" >&2
 					known="${manifest_ids#,}"
 					echo "known ids: ${known%,}" >&2
 					exit 2
@@ -126,6 +161,132 @@ if [ -n "$ONLY_IDS$EXCEPT_IDS" ]; then
 			esac
 		done
 	done
+fi
+
+# ------------------------------------------------------------------
+# nominate: emit paste-ready manifest rows for the ROMs in the supplied dir(s).
+#
+# Adding a title by hand means hashing the dump, decoding the iNES mapper byte and
+# looking up which board claims it -- three chances to transcribe something wrong into a
+# file whose whole job is being exactly right. This does all three from the ROM itself.
+# It runs before any Ghidra setup because it needs none: no extension install, no
+# headless, no project.
+# ------------------------------------------------------------------
+if [ "$MODE" = nominate ]; then
+	if ! command -v od >/dev/null 2>&1; then
+		echo "ERROR: od not found on PATH (needed to decode iNES headers)." >&2
+		exit 2
+	fi
+	if ! command -v sha256sum >/dev/null 2>&1; then
+		echo "ERROR: sha256sum not found on PATH (needed to pin ROMs by hash)." >&2
+		exit 2
+	fi
+
+	ines_mapper() {
+		# $1 rom -> iNES mapper number on stdout; non-zero if not an iNES image.
+		# Mirrors NesRomLoader.InesHeader.parse (src/main/java/retromachines/NesRomLoader.java),
+		# including both header-rot cases it handles: NES 2.0's 12-bit mapper, and the
+		# "DiskDude!"-style archaic headers that scribble ASCII into bytes 7-15, where
+		# flags7's high nibble is not a mapper nibble and only the low nibble may be trusted.
+		local h
+		# shellcheck disable=SC2207
+		h=($(od -An -tu1 -N16 -v "$1" 2>/dev/null)) || return 1
+		[ "${#h[@]}" -eq 16 ] || return 1
+		# "NES\x1a"
+		[ "${h[0]}" -eq 78 ] && [ "${h[1]}" -eq 69 ] &&
+			[ "${h[2]}" -eq 83 ] && [ "${h[3]}" -eq 26 ] || return 1
+		local low=$(( h[6] >> 4 ))
+		if [ $(( h[7] & 0x0C )) -eq 8 ]; then
+			printf '%d' $(( ((h[8] & 0x0F) << 8) | (h[7] & 0xF0) | low ))
+		elif [ "${h[12]}" -ne 0 ] || [ "${h[13]}" -ne 0 ] ||
+			[ "${h[14]}" -ne 0 ] || [ "${h[15]}" -ne 0 ]; then
+			printf '%d' "$low"
+		else
+			printf '%d' $(( (h[7] & 0xF0) | low ))
+		fi
+	}
+
+	board_for_mapper() {
+		# $1 mapper -> board id (the descriptor's `id:`) on stdout, or empty.
+		# Reads the shipped descriptors' `ines_mappers:` directly rather than duplicating
+		# the table, so a newly-shipped board is nominatable the day it lands.
+		local want="$1" f list
+		for f in "$REPO_ROOT"/machines/nes-*.yaml; do
+			list="$(awk -F'ines_mappers:' '/ines_mappers:/{print $2; exit}' "$f" |
+				tr -cd '0-9,' )"
+			case ",$list," in
+				*",$want,"*) awk '/^[[:space:]]*id:/{print $2; exit}' "$f"; return 0 ;;
+			esac
+		done
+		return 1
+	}
+
+	# Hashes already spoken for, so a title pinned anywhere is reported rather than
+	# re-nominated under a second id (which the duplicate guard above would reject anyway).
+	# Deliberately scans EVERY manifest, not just the selected ones: "is this already
+	# pinned?" is a question about the repo, not about how this invocation was flagged, and
+	# answering it from a narrower set would nominate a duplicate of a row that exists.
+	nominate_known=("$MANIFEST")
+	[ -f "$GME_MANIFEST" ] && nominate_known+=("$GME_MANIFEST")
+	known_shas=" $(cat "${nominate_known[@]}" | tr -d '\r' |
+		awk -F'\t' '!/^#/ && NF && $1 != "id" { printf "%s:%s ", tolower($3), $1 }')"
+
+	echo "# Nominated rows -- review, then paste into realrom/manifest-gme.tsv."
+	echo "# id is the containing directory name where the ROM sits in a per-title subdir"
+	echo "# (your game-music-extraction shorthand), else the file's base name."
+	n_new=0; n_known=0; n_unsupported=0; n_notines=0
+	shopt -s nullglob nocaseglob
+	for dir in "${ROM_DIRS[@]}"; do
+		# Normalize away trailing slashes so the "is it in a per-title subdir?" test below
+		# is an exact path comparison rather than a basename guess.
+		while [ "${dir%/}" != "$dir" ]; do dir="${dir%/}"; done
+		for f in "$dir"/*.nes "$dir"/*/*.nes; do
+			[ -f "$f" ] || continue
+			base="$(basename "$f" .nes)"
+			# A per-title subdir names the row; a ROM sitting loose in a scanned dir does not.
+			if [ "$(dirname "$f")" = "$dir" ]; then
+				id_raw="$base"
+			else
+				id_raw="$(basename "$(dirname "$f")")"
+			fi
+			id="$(printf '%s' "$id_raw" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9' '_' | sed 's/__*/_/g; s/^_//; s/_$//')"
+			sha="$(sha256sum "$f" | cut -d' ' -f1)"
+
+			case "$known_shas" in
+				*" $sha:"*)
+					was="${known_shas##*" $sha:"}"; was="${was%% *}"
+					echo "# already pinned as '$was': $base"
+					n_known=$((n_known + 1))
+					continue
+					;;
+			esac
+
+			if ! mapper="$(ines_mapper "$f")"; then
+				echo "# NOT an iNES image (no NES\\x1a magic), skipped: $f"
+				n_notines=$((n_notines + 1))
+				continue
+			fi
+			if board="$(board_for_mapper "$mapper")"; then
+				# Trailing tab is deliberate: GitHub's tabular viewer wants every row to have
+				# the same field count as the header, so rows with no loader_opts carry an
+				# explicit empty final field rather than ending short. `read` treats the two
+				# identically, so an editor that strips it costs rendering, never correctness.
+				printf '%s\t%s\t%s\t%s\t%s\t%s.dump\t\n' "$id" "$base" "$sha" "$mapper" "$board" "$id"
+				n_new=$((n_new + 1))
+			else
+				# Not a failure -- this is the planning signal the expanded set exists to give.
+				printf '# NO SHIPPED BOARD claims mapper %s -- %s (id would be %s)\n' \
+					"$mapper" "$base" "$id"
+				n_unsupported=$((n_unsupported + 1))
+			fi
+		done
+	done
+	shopt -u nullglob nocaseglob
+	echo "#"
+	echo "# nominated=$n_new  already-pinned=$n_known  unsupported-mapper=$n_unsupported  not-ines=$n_notines"
+	[ "$n_unsupported" -eq 0 ] ||
+		echo "# An unsupported mapper is a board gap, not a bad dump: it is a candidate for a new descriptor."
+	exit 0
 fi
 
 # Default headless path derives from gradle.properties' ghidraTargetVersion (single
@@ -388,7 +549,7 @@ while IFS=$'\t' read -r id title sha mapper board golden opts || [ -n "${id:-}" 
 # result at `done` -- while still exiting 0. The `tr` is a second layer behind
 # .gitattributes' `*.tsv text eol=lf`, covering a working-tree copy an editor rewrote with
 # CRLF after checkout; a stray \r on the row's last field otherwise rides into a path.
-done < <(tr -d '\r' < "$MANIFEST")
+done < <(cat "${MANIFESTS[@]}" | tr -d '\r')
 
 echo
 printf '%-16s %-6s %s\n' "ID" "STATUS" "DETAIL"

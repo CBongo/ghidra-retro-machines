@@ -267,7 +267,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * handed {@code switchSite}, which {@code findHelpers} defines as the last recognized write on
 	 * the path to the helper's RETURN. In a switch/call/restore trampoline those are two different
 	 * instructions, and the convention then describes neither the right value nor the right point
-	 * in time. Ironsword's ({@code wizwarr}'s) {@code FUN_ffc0}, transcribed byte-exact from the
+	 * in time. Ironsword's {@code FUN_ffc0}, transcribed byte-exact from the
 	 * pinned dump:
 	 * <pre>
 	 *   FFC0: STY $C1 / STA $C3   ; save the target-pointer low byte and the bank argument
@@ -351,7 +351,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * only. The canonical UxROM bus-conflict switch is exactly that shape
 	 * ({@code LDA #n / TAX / STA banktable,X}), and measurement (grm-2yx probe) found refless
 	 * plain-absolute stores too, in code const-prop never reached. Tier 1 alone therefore
-	 * misses live switch sites in real ROMs (contra, dragonpower, wizwarr, megaman).</li>
+	 * misses live switch sites in real ROMs (contra, dragonpower, ironsword, megaman).</li>
 	 * </ol>
 	 */
 	private boolean writesInRange(Instruction instr) {

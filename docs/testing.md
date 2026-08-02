@@ -179,9 +179,22 @@ bank numbers through tables/helpers, hit ~191 overlays, etc.). It is **not** par
 default gate: ROM binaries are copyrighted and user-supplied, so nothing here runs in CI and
 it is never a `run-banktest.sh` chunk (whose `all` would otherwise pull it in).
 
-- **Driver:** `tools/banktest/realrom-test.sh check|bless [--only|--except <ids>] <romdir>
-  [<romdir> …]` (or `GRM_ROM_DIR`). Lives alongside `measure-overlay-scale.sh` and reuses the
-  same `build/ghidra-home` isolation, so run `build-and-test.sh check nes-banking` once first.
+- **Driver:** `tools/banktest/realrom-test.sh check|bless|nominate [--gme]
+  [--only|--except <ids>] <romdir> [<romdir> …]` (or `GRM_ROM_DIR`). Lives alongside
+  `measure-overlay-scale.sh` and reuses the same `build/ghidra-home` isolation, so run
+  `build-and-test.sh check nes-banking` once first.
+- **Two row sets.** `realrom/manifest.tsv` is the curated minimum — one representative title
+  per shipped board. `realrom/manifest-gme.tsv` is an expanded reference set of titles of
+  interest to the parent game-music-extraction project, included only with `--gme`. It is
+  deliberately not a gate: a reference point for planning and an occasional thorough check,
+  since each row costs a ~1min+ headless import. Ids must be unique across both files, and
+  the driver hard-errors on a collision — an id names a golden *and* names the ROM copy the
+  import sees, so a duplicate would let one row silently overwrite another's golden.
+- **`nominate`** hashes a ROM dir, decodes each iNES mapper (mirroring `NesRomLoader`'s NES 2.0
+  and `DiskDude!`-archaic handling) and resolves the claiming board from the shipped
+  descriptors' `ines_mappers`, emitting paste-ready rows. It needs no Ghidra install. A mapper
+  no descriptor claims is reported as a **board gap** — the most useful signal the expanded
+  set produces, and a candidate for a new descriptor rather than a test failure.
 - **Row selection:** `--only`/`--except` take comma-separated manifest ids. `--except` is the
   one that earns its keep: this tier's recurring shape is *one title deliberately held back at
   a pre-regression golden while every other title needs re-blessing* — `megaman` has been that

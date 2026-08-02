@@ -17,11 +17,49 @@ bash tools/banktest/realrom-test.sh bless [--only|--except <ids>] <romdir> [<rom
 (or set `GRM_ROM_DIR`). The goldens under `expected/` — our derived, copyright-safe
 analysis metadata, never ROM bytes or disassembly — *are* committed.
 
-## Coverage
+## Two sets
 
-One representative title per shipped board, plus fuller coverage of the boards where a
-single title proves least — Bandai FCG (mappers 16/157/159) and GxROM (66), which were the
-newest additions when this set was assembled.
+| file | what it is | when it runs |
+| --- | --- | --- |
+| `manifest.tsv` | The **curated minimum**: one representative title per shipped board, plus fuller coverage of the boards where a single title proves least — Bandai FCG (mappers 16/157/159) and GxROM (66), the newest additions when the set was assembled. | Always. |
+| `manifest-gme.tsv` | The **expanded reference set**: titles of interest to the parent game-music-extraction project. Deliberately *not* a gate — it is a reference point for planning and an occasional thorough check. | Only with `--gme`. |
+
+```bash
+bash tools/banktest/realrom-test.sh check <romdir>          # curated set only
+bash tools/banktest/realrom-test.sh check --gme <romdir>    # both
+```
+
+Each row costs a ~1min+ headless import, which is the whole reason the expanded set is
+opt-in. An id must be unique **across both files** — ids name goldens and name the ROM
+copy the import sees, so a duplicate would import twice and let the second row silently
+overwrite the first's golden. The driver hard-errors on that rather than letting it look
+like success.
+
+### Populating the expanded set
+
+`nominate` does the three error-prone steps for you — hashing the dump, decoding the iNES
+mapper byte (including the NES 2.0 and `DiskDude!`-archaic header forms that
+`NesRomLoader` special-cases), and resolving which shipped board claims that mapper:
+
+```bash
+bash tools/banktest/realrom-test.sh nominate <romdir> [<romdir> ...]
+```
+
+It emits paste-ready rows. Where a ROM sits in a per-title subdirectory, that directory
+name becomes the `id`; otherwise the file's base name does. Titles already pinned in
+either manifest are reported rather than re-nominated, and it needs no Ghidra install.
+
+A mapper no shipped descriptor claims is reported as a comment rather than a row. **That
+is a board gap, not a bad dump** — it is the most useful thing the expanded set surfaces,
+and a candidate for a new descriptor.
+
+## A note on `wizwarr`
+
+`wizwarr` in game-music-extraction means **Wizards & Warriors (U)**. The row this
+repository originally called `wizwarr` is its *sequel*, Ironsword — so that row is now
+`ironsword`, freeing the shorthand to mean what it means everywhere else. Both are worth
+keeping: Ironsword's `FUN_ffc0` drove the store-forwarding work (grm-mej.1, grm-6pi) and
+exercises idioms likely to appear elsewhere.
 
 ## Why every row is pinned by hash
 
@@ -46,7 +84,13 @@ headers and every other line becomes a row. Notes belong here, not in the data f
 | `mapper` | iNES mapper number. **Documentation only** — parsed but never used by the driver. |
 | `board` | Board descriptor the mapper selects. **Documentation only**, same as `mapper`. |
 | `golden` | Golden file under `expected/`. Defaults to `<id>.dump` when empty. |
-| `loader_opts` | Optional; extra `analyzeHeadless` arguments for this title. Trailing column, so most rows simply end early. |
+| `loader_opts` | Optional; extra `analyzeHeadless` arguments for this title. Empty on most rows. |
+
+**Every row carries all seven fields**, so rows without `loader_opts` end in an explicit
+empty final field — a trailing tab. GitHub's tabular viewer wants a uniform column count
+and renders ragged rows badly. The parser treats a trailing empty field and a missing one
+identically, so an editor that strips trailing whitespace costs you the rendering, never
+the test.
 
 `loader_opts` is expanded **unquoted** onto the headless command line, and it is folded
 into the candidate-dump cache key — so editing it forces a fresh import rather than
