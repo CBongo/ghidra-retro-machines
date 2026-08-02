@@ -22,14 +22,29 @@
 # claims as a board gap. It needs no Ghidra install.
 #
 # --only/--except take comma-separated manifest ids and select which rows the run
-# considers at all. --except exists for the recurring case this tier actually hits: one
-# title is deliberately held back at a pre-regression golden (megaman, per grm-g73 and
-# grm-hum) while every other title needs re-blessing, and blessing it would erase the
-# record the bead depends on. Before these flags the only way to scope a bless was to
-# stage the wanted ROMs into a separate directory, which is easy to get quietly wrong.
-# An id that is not in the manifest is a hard ERROR, never a silent no-op: a typo in
-# `--except megman` must not bless megaman. Filtered rows are omitted from the run and
-# counted separately -- deliberately NOT reported as SKIP, which means "ROM absent".
+# considers at all. --except exists for the recurring case this tier actually hits: ONE title
+# is held back at a known-good golden while every other title needs re-blessing, and blessing
+# it would erase the record a bead depends on. megaman has twice been that title (grm-g73,
+# grm-hum). Before these flags the only way to scope a bless was to stage the wanted ROMs into
+# a separate directory, which is easy to get quietly wrong. An id that is not in the manifest
+# is a hard ERROR, never a silent no-op: a typo in `--except megman` must not bless megaman.
+# Filtered rows are omitted from the run and counted separately -- deliberately NOT reported as
+# SKIP, which means "ROM absent".
+#
+# KNOWN-FLAKY ROW -- read this before believing a megaman FAIL. megaman is no longer held back
+# (grm-hum blessed it), but it is BISTABLE (grm-g73): two identical imports of the same ROM
+# against the same build produce one of two dumps, differing ONLY in
+#   REALROM count refs.intoOverlay     1704  <-> 1703
+#   REALROM count instrs.inOverlay     7429  <-> 7431
+# always moving in opposite directions. So the row flaps PASS/FAIL on an unchanged build. THE
+# RULE: if those two lines are the only diff, it is grm-g73, not a regression; any other line
+# moving is real. This harness deliberately does NOT retry or tolerate the delta -- a golden
+# whose diff you can trust is the entire point of this tier, and hiding a known-noisy row would
+# cost that for every other row too. See docs/testing.md's real-ROM section.
+# Cause is grm-eyn: Ghidra over-reads several of this ROM's jump tables, and the resulting
+# spurious computed-jump targets race the real instruction flow for the same bytes (6502
+# alignment is 1, so both decodings are self-consistent). No configuration workaround exists.
+# Diagnose with DeterminismProbe.java via REALROM_EXTRA_POSTSCRIPT, below.
 #
 # Each pinned title is identified by its whole-file SHA-256 in
 # tools/banktest/realrom/manifest.tsv, so the harness validates against the exact

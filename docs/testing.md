@@ -206,12 +206,36 @@ it is never a `run-banktest.sh` chunk (whose `all` would otherwise pull it in).
   no descriptor claims is reported as a **board gap** — the most useful signal the expanded
   set produces, and a candidate for a new descriptor rather than a test failure.
 - **Row selection:** `--only`/`--except` take comma-separated manifest ids. `--except` is the
-  one that earns its keep: this tier's recurring shape is *one title deliberately held back at
-  a pre-regression golden while every other title needs re-blessing* — `megaman` has been that
-  title twice (grm-g73, then grm-hum), and blessing it would erase the record the bead depends
-  on. An id not in the manifest is a hard **error**, never a silent no-op, because a typo in
+  one that earns its keep: this tier's recurring shape is *one title held back at a known-good
+  golden while every other title needs re-blessing* — `megaman` has been that title twice
+  (grm-g73, then grm-hum), and blessing it would erase the record the bead depends on. An id not
+  in the manifest is a hard **error**, never a silent no-op, because a typo in
   `--except megman` must not bless megaman. Filtered rows are reported as `filtered=N`, not as
   `SKIP` — `SKIP` means the ROM was absent, which is a different fact.
+- **One row is known-flaky: `megaman` (grm-g73).** Two identical imports of the same ROM against
+  the same build produce one of two dumps, differing *only* in these lines and always moving in
+  opposite directions:
+
+  ```
+  REALROM count refs.intoOverlay    1704  <->  1703
+  REALROM count instrs.inOverlay    7429  <->  7431
+  ```
+
+  So the row flaps PASS/FAIL with nothing changed. **The rule: if those two lines are the only
+  diff, it is grm-g73, not a regression — any other line moving is real.** It is *not* held back
+  any more (grm-hum blessed it at 1704/7429); it simply flaps. The harness deliberately does not
+  retry the row or tolerate the delta: a golden whose diff you can trust is what this tier is
+  *for*, and special-casing a noisy row would weaken that guarantee for every other row. The
+  expected steady state today is **11 PASS / 1 SKIP** (`smb`, that exact dump not present), with
+  megaman intermittently the 12th.
+
+  The cause is **grm-eyn**: Ghidra's switch recovery over-reads several of this ROM's jump
+  tables, planting spurious computed-jump targets that act as disassembly seeds. Because 6502
+  instruction alignment is 1, a spurious seed and the legitimate instruction flow produce two
+  different, self-consistent decodings of the same bytes, and whichever lands first wins. There
+  is no configuration workaround — forcing single-threaded analysis
+  (`-Dcpu.core.override=1`) changes the values and lowers the rate but does not remove it.
+  Diagnose with `tools/banktest/DeterminismProbe.java`.
 - **Hash-pinned identity:** `tools/banktest/realrom/manifest.tsv` — documented in
   `tools/banktest/realrom/README.md`, which also explains why the manifest carries no `#`
   preamble — pins each title by whole-file
