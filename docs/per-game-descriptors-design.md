@@ -59,8 +59,8 @@ These are different failures needing different hint kinds (a *site* hint and a *
 
 ### 1.3 The feature already exists, in the wrong place
 
-`tools/banktest/realrom/manifest.tsv:10` — the zelda row — carries a hand-authored per-game hint
-keyed by whole-file SHA-256:
+The zelda row of `tools/banktest/realrom/manifest.tsv` carries a hand-authored per-game hint
+keyed by whole-file SHA-256, in its `loader_opts` column:
 
 ```
 -preScript RunFromElsewhereTransfer.java src:W8000_M3_B1:a500 dst:6c90 len:0x1270 \
@@ -243,7 +243,8 @@ symbols:
 ```
 
 `prg_sha256` above is a **placeholder**, spelled as one; the `file_sha256` is the real value, copied
-from `tools/banktest/realrom/manifest.tsv:12`, which is exactly the copy-from-the-manifest workflow
+from the `contra` row of `tools/banktest/realrom/manifest.tsv`, which is exactly the
+copy-from-the-manifest workflow
 §2.3 describes. Addresses are hex in YAML and decimal integers in the compiled artifact, per
 `docs/MAP_FORMAT.md`'s conventions section — the game tier changes nothing there.
 
@@ -359,7 +360,7 @@ entry (an override), naming an overlay/occupant block: `W8000_M3_B1`, `PRG_LO_B7
 no block resolve in the base space, which is right for RAM and zero-page symbols.
 
 This reuses vocabulary that already exists rather than inventing any: `RunFromElsewhereTransfer`
-accepts space-qualified addresses (`src:W8000_M3_B1:a500`, `manifest.tsv:10`) and its arg parser
+accepts space-qualified addresses (`src:W8000_M3_B1:a500`, the manifest's zelda row) and its arg parser
 splits `key:value` with `split(":", 2)` specifically to keep them intact
 (`ghidra_scripts/RunFromElsewhereTransfer.java:166-171`); the block names themselves come from
 `DescriptorSupport.OverlayNaming` (`BoardBankAnalyzer.java:1515-1539`) and are documented in
@@ -399,7 +400,7 @@ sub-decision.
   c64ref** and should be answered once for both. The game tier must not grow a second mechanism.
 
 Zelda is the natural first harvest target: the real-ROM tier already pins it
-(`manifest.tsv:10`) and it has mature public disassemblies.
+(the `zelda` row of `manifest.tsv`) and it has mature public disassemblies.
 
 #### 3b.6 grm-54p is the C64 instance of this idea, and they must converge
 

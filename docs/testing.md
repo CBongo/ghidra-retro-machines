@@ -189,7 +189,9 @@ it is never a `run-banktest.sh` chunk (whose `all` would otherwise pull it in).
   on. An id not in the manifest is a hard **error**, never a silent no-op, because a typo in
   `--except megman` must not bless megaman. Filtered rows are reported as `filtered=N`, not as
   `SKIP` — `SKIP` means the ROM was absent, which is a different fact.
-- **Hash-pinned identity:** `tools/banktest/realrom/manifest.tsv` pins each title by whole-file
+- **Hash-pinned identity:** `tools/banktest/realrom/manifest.tsv` — documented in
+  `tools/banktest/realrom/README.md`, which also explains why the manifest carries no `#`
+  preamble — pins each title by whole-file
   **SHA-256**. The driver hash-indexes the supplied dir(s) and matches by content, so it is
   filename-independent (sidesteps the parenthesis-rename and bad-dump-header traps) and a ROM
   that is absent or a *different* dump **SKIPs** — never a spurious FAIL. Only a present,

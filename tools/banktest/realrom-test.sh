@@ -107,7 +107,7 @@ mkdir -p "$EXPECTED_DIR"
 # caller was trying to spare. (Same reasoning as the manifest's own hash pinning: the
 # expensive failure here is the one that looks like success.)
 if [ -n "$ONLY_IDS$EXCEPT_IDS" ]; then
-	manifest_ids=",$(awk -F'\t' '!/^#/ && NF { sub(/\r$/, "", $1); printf "%s,", $1 }' "$MANIFEST")"
+	manifest_ids=",$(awk -F'\t' '!/^#/ && NF && $1 != "id" { sub(/\r$/, "", $1); printf "%s,", $1 }' "$MANIFEST")"
 	for spec in "$ONLY_IDS" "$EXCEPT_IDS"; do
 		[ -n "$spec" ] || continue
 		# Strip the sentinel commas, then walk the ids.
@@ -287,18 +287,13 @@ import_and_dump() {
 }
 
 while IFS=$'\t' read -r id title sha mapper board golden opts || [ -n "${id:-}" ]; do
-	# Skip blank lines and comments.
-	case "${id:-}" in ""|\#*) continue ;; esac
-	# Strip the CR off the row's LAST field. The manifest is checked out with CRLF endings on
-	# Windows, and whichever field happens to be last on a row carries the \r into a path or an
-	# argument -- which fails as a mystifying "golden not found" for a file that plainly exists.
-	# Which field is last varies by row (the opts column is optional), so strip all of them.
-	id="${id%$'\r'}"; title="${title%$'\r'}"; mapper="${mapper%$'\r'}"
-	board="${board%$'\r'}"; golden="${golden%$'\r'}"; opts="${opts%$'\r'}"
+	# Skip blank lines, the bare header row, and comments. The manifest deliberately carries
+	# no `#` preamble (GitHub's tabular viewer has no comment syntax and would render it as
+	# rows) -- see realrom/README.md -- but a one-off comment stays legal.
+	case "${id:-}" in ""|id|\#*) continue ;; esac
 
-	# Row selection (--only/--except). Applied after the CR strip so the id compared here
-	# is the same one the caller typed, and before any import work so a filtered row costs
-	# nothing. Filtered rows are counted but produce no ROW_* entry: they are not results.
+	# Row selection (--only/--except). Applied before any import work, so a filtered row
+	# costs nothing. Filtered rows are counted but produce no ROW_* entry: they are not results.
 	if { [ -n "$ONLY_IDS" ] && [ "${ONLY_IDS#*,$id,}" = "$ONLY_IDS" ]; } ||
 		{ [ -n "$EXCEPT_IDS" ] && [ "${EXCEPT_IDS#*,$id,}" != "$EXCEPT_IDS" ]; }; then
 		n_filtered=$((n_filtered + 1))
@@ -388,7 +383,12 @@ while IFS=$'\t' read -r id title sha mapper board golden opts || [ -n "${id:-}" 
 		echo "    FAIL: dump differs from golden (see $WORK/${id}.diff)"
 		sed -n '1,40p' "$WORK/${id}.diff"
 	fi
-done < "$MANIFEST"
+# Process substitution, NOT a pipe: the loop body appends to ROW_ID/ROW_STATUS/ROW_DETAIL
+# and bumps the n_* counters, and a pipe would run it in a subshell that discards every
+# result at `done` -- while still exiting 0. The `tr` is a second layer behind
+# .gitattributes' `*.tsv text eol=lf`, covering a working-tree copy an editor rewrote with
+# CRLF after checkout; a stray \r on the row's last field otherwise rides into a path.
+done < <(tr -d '\r' < "$MANIFEST")
 
 echo
 printf '%-16s %-6s %s\n' "ID" "STATUS" "DETAIL"

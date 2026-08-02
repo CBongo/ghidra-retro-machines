@@ -5,3 +5,11 @@
 # byte-identical -- the diagnostic trap bead grm-g73 records, where a handful of changed
 # lines present as "78 deleted, 101 added" and badly overstate an apparent regression.
 *.dump text eol=lf
+
+# The real-ROM manifest is tab-separated with an optional trailing column, so *which*
+# field is last varies row to row. Under core.autocrlf=true that field carries a trailing
+# CR into a path or a headless argument, and the failure presents as "golden not found"
+# for a file that plainly exists -- a trap worth spending one line to close rather than
+# re-deriving from the symptom. tools/banktest/realrom-test.sh keeps a cheap `tr -d '\r'`
+# on its input as a second layer, for a working-tree copy an editor rewrote after checkout.
+*.tsv text eol=lf
