@@ -46,8 +46,21 @@ import ghidra.program.model.symbol.Reference;
  * statically certain ({@link #effectiveOperandTarget}: plain absolute/zero-page, or
  * absolute-indexed with a constant-resolvable index). Register-write resolves a read-back
  * of its own mechanism register to the tracked in-state; memory-latch resolves a load of a
- * bank-invariant ROM byte to that byte. An unresolved load leaves {@code x} wholly
- * unknown.</li>
+ * bank-invariant ROM byte to that byte. When no strategy claims the load,
+ * {@link #forwardedStoreValue} tries local store-to-load forwarding (below). An
+ * otherwise unresolved load leaves {@code x} wholly unknown.</li>
+ * <li><b>Local store-to-load forwarding</b> (grm-mej.1): a load, or a non-immediate
+ * {@code AND}/{@code ORA} operand, whose target is statically certain is answered from the
+ * nearest preceding store to that same cell <em>within the same basic block</em>, by
+ * recursing into this very scan on that store. This is what lets a helper that stashes its
+ * register argument in memory and splices it back in be <em>derived</em> rather than assumed
+ * -- Ironsword's {@code STA $C3 ... ORA $C3 / STA $8000}, quoted in
+ * {@link MemoryLatchBankSwitchStrategy}'s {@code depositHelperArgument}. The forwarding is
+ * deliberately <b>not</b> restricted to the zero page: the measured examples happen to live
+ * there, but Contra's save slots are {@code $07EC}/{@code $07ED}, and
+ * {@link #plainAbsoluteTarget} already treats zero-page and absolute operands identically.
+ * If anything the zero page is the <em>worse</em>-supported case, since zero-page indexed
+ * wraps inside the page and {@link #effectiveOperandTarget} therefore declines it.</li>
  * <li>Any other instruction that modifies the register (transfers, ADC/SBC, shifts,
  * INC/DEC, EOR#imm -- deliberately not modeled bit-wise) leaves {@code x} wholly
  * unknown from that point backward.</li>
@@ -117,6 +130,17 @@ final class StoredValueScanner {
 	private static final Set<String> X_MODIFIERS = Set.of("LDX", "TAX", "TSX", "INX", "DEX");
 	private static final Set<String> Y_MODIFIERS = Set.of("LDY", "TAY", "INY", "DEY");
 
+	/**
+	 * 6502 mnemonics that write memory, for {@link #writesMemory}'s third detector. The stores
+	 * are here as well as in {@link #storeRegister} because that method deliberately excludes the
+	 * read-modify-write forms, which write memory just the same. The shift/rotate entries write
+	 * memory only in their non-accumulator addressing modes, which {@link #writesMemory} tests.
+	 * Stack pushes are absent on purpose: the stack page is not a cell this scanner ever forwards
+	 * through, and a call -- the other way the stack is written -- ends the walk anyway.
+	 */
+	private static final Set<String> MEMORY_WRITERS =
+		Set.of("STA", "STX", "STY", "INC", "DEC", "ASL", "LSR", "ROL", "ROR");
+
 	private StoredValueScanner() {
 	}
 
@@ -171,6 +195,25 @@ final class StoredValueScanner {
 	 */
 	static BankState resolveStoredValue(Program program, Instruction storeInstr, char reg,
 			BankState inStateAtStore, int mask, Hooks hooks, RegisterEnv env) {
+		return resolveStoredValue(program, storeInstr, reg, inStateAtStore, mask, hooks, env,
+			new Budget(MAX_RESOLVE_STEPS), 0);
+	}
+
+	/**
+	 * {@link #resolveStoredValue} within an ongoing store-to-load forwarding chain's depth and
+	 * step budget. Only {@link #forwardedStoreValue} passes a non-fresh budget: every public
+	 * entry point starts a new one, so a top-level scan is unaffected by this parameterization.
+	 * <p>
+	 * Note the {@link #effectiveOperandTarget} call in the {@code LD<reg>} branch below
+	 * deliberately keeps starting a <em>fresh</em> budget rather than spending from this one.
+	 * That is exactly what it did before forwarding existed, and preserving it keeps this change
+	 * from silently withdrawing effective-address resolution that a long scan relies on today.
+	 * The forwarding lookups are the only ones that share {@code budget}, which is what bounds
+	 * the recursion this method can now enter.
+	 */
+	private static BankState resolveStoredValue(Program program, Instruction storeInstr, char reg,
+			BankState inStateAtStore, int mask, Hooks hooks, RegisterEnv env, Budget budget,
+			int depth) {
 		Listing listing = program.getListing();
 		Set<String> modifiers = registerModifiers(reg);
 		String loadMnemonic = "LD" + reg;
@@ -213,10 +256,10 @@ final class StoredValueScanner {
 			String mnem = prev.getMnemonicString().toUpperCase();
 
 			if (reg == 'A' && mnem.equals("AND")) {
-				Integer imm = isImmediate(prev) ? immediateOperandValue(prev) : null;
+				Integer imm = operandByte(program, prev, inStateAtStore, hooks, env, budget, depth);
 				if (imm == null) {
-					// non-immediate AND (or an operand we couldn't pull a scalar out of)
-					// is an opaque modifier of A.
+					// an operand we couldn't pull a scalar out of, and couldn't forward a store
+					// to either, is an opaque modifier of A.
 					return combine(aAcc, oAcc, mask, BankState.unknown());
 				}
 				aAcc = imm & aAcc;
@@ -228,7 +271,7 @@ final class StoredValueScanner {
 			}
 
 			if (reg == 'A' && mnem.equals("ORA")) {
-				Integer imm = isImmediate(prev) ? immediateOperandValue(prev) : null;
+				Integer imm = operandByte(program, prev, inStateAtStore, hooks, env, budget, depth);
 				if (imm == null) {
 					return combine(aAcc, oAcc, mask, BankState.unknown());
 				}
@@ -257,6 +300,15 @@ final class StoredValueScanner {
 				BankState base = hooks.resolveLoad(prev, target, inStateAtStore);
 				if (base != null) {
 					return combine(aAcc, oAcc, mask, base);
+				}
+				// No strategy claims this address; try to forward a store to it from earlier in
+				// this same block (grm-mej.1). A partial answer is fine here -- combine() folds
+				// a partially known base per bit -- unlike the AND/ORA operand case, which needs
+				// all eight bits to compose into the accumulator.
+				BankState forwarded = forwardedStoreValue(program, prev, target, inStateAtStore,
+					hooks, env, budget, depth);
+				if (forwarded.knownMask() != 0) {
+					return combine(aAcc, oAcc, mask, forwarded);
 				}
 			}
 
@@ -326,6 +378,175 @@ final class StoredValueScanner {
 		int knownMask = mask & (oAcc | ~aAcc | base.knownMask()) & 0xFF;
 		int bits = mask & (oAcc | (aAcc & base.knownMask() & base.bits())) & 0xFF;
 		return new BankState(knownMask, bits);
+	}
+
+	// ------------------------------------------------------------------
+	// Local store-to-load forwarding (grm-mej.1)
+	// ------------------------------------------------------------------
+
+	/**
+	 * The fully known byte an {@code AND}/{@code ORA} operand contributes: its immediate value, or
+	 * -- when the operand names memory whose address is statically certain -- the value forwarded
+	 * from a store to that cell earlier in the same basic block. {@code null} when neither
+	 * applies, which is the pre-grm-mej.1 behavior for every non-immediate operand.
+	 * <p>
+	 * <b>All-or-nothing, deliberately.</b> The mask algebra composes an operand into
+	 * {@code (aAcc, oAcc)} as if it were an immediate, and that composition has no way to say
+	 * "this bit of the operand was unknown" -- expressing it would need a third accumulator for
+	 * bits forced unknown, perturbing the algebra that
+	 * {@code src/test/java/retromachines/BitAlgebraEquivalenceTest.java} proves exhaustively.
+	 * Requiring all eight bits keeps that proof untouched and costs nothing on the measured case
+	 * (Ironsword's {@code $C3} holds either the caller's fully known {@code A} or nothing). This
+	 * is the same reasoning {@link #constantRegisterValue} already records for itself.
+	 * <p>
+	 * <b>{@link Hooks#resolveLoad} is deliberately NOT consulted here</b>, only forwarding. A
+	 * strategy resolving an {@code ORA} operand (a bank-invariant ROM byte, or a bank mirror) is
+	 * a real further capability with its own blast radius, and belongs to grm-mej.2 where it can
+	 * be measured on its own. Adding it is one line at the top of this method.
+	 */
+	private static Integer operandByte(Program program, Instruction instr, BankState inStateAtStore,
+			Hooks hooks, RegisterEnv env, Budget budget, int depth) {
+		if (isImmediate(instr)) {
+			return immediateOperandValue(instr);
+		}
+		Address target = effectiveOperandTarget(program, instr, hooks, env);
+		BankState forwarded =
+			forwardedStoreValue(program, instr, target, inStateAtStore, hooks, env, budget, depth);
+		return (forwarded.knownMask() & 0xFF) == 0xFF ? forwarded.bits() & 0xFF : null;
+	}
+
+	/**
+	 * The value {@code target} holds when {@code useInstr} reads it, forwarded from the nearest
+	 * preceding store to that same cell <em>within {@code useInstr}'s own basic block</em>, by
+	 * recursing into {@link #resolveStoredValue} on that store. {@link BankState#unknown()} when
+	 * no such store is provably reached.
+	 * <p>
+	 * This is the piece grm-hum could only work around. Ironsword's {@code FUN_ffc0} launders the
+	 * caller's bank argument through {@code $C3} ({@code STA $C3 ... ORA $C3 / STA $8000}), so the
+	 * whole of AxROM's tracked field is derivable only if the scan can follow a value through a
+	 * memory cell. A local forward within one block is much cheaper than general memory dataflow
+	 * and covers the idiom, because a helper that stashes an argument and splices it back in does
+	 * both in straight-line code.
+	 * <p>
+	 * <b>Not restricted to the zero page.</b> See the class javadoc: the measured cells happen to
+	 * be zero-page, but Contra's save slots are {@code $07EC}/{@code $07ED}, and the scanner has
+	 * no zero-page-specific path to restrict in the first place.
+	 * <p>
+	 * <b>Soundness.</b> Every guard {@link #resolveStoredValue} applies is reused verbatim rather
+	 * than reimplemented -- block linkage, {@link #isControlFlowJoin}, the
+	 * {@link Hooks#isMechanismWrite} mid-scan abort, {@link #MAX_BACKWARD_SCAN} -- and on top of
+	 * them this walk declines on <em>any</em> intervening instruction that might write
+	 * {@code target} without being a store this scanner can place: an indexed or indirect store,
+	 * a read-modify-write, or a call. A store the walk can prove targets a <em>different</em>
+	 * cell is stepped over; anything it cannot place at all ends the walk. Declining
+	 * under-reports, which is this scanner's failure mode everywhere else.
+	 * <p>
+	 * The {@code env} entry stop ends the walk with {@link BankState#unknown()} rather than
+	 * adopting anything: {@link RegisterEnv} describes a call site's <em>registers</em>, and says
+	 * nothing whatever about memory. A caller's zero page is not modeled and must not be guessed.
+	 */
+	private static BankState forwardedStoreValue(Program program, Instruction useInstr,
+			Address target, BankState inStateAtStore, Hooks hooks, RegisterEnv env, Budget budget,
+			int depth) {
+		if (target == null || depth >= MAX_RESOLVE_DEPTH || inStackPage(target)) {
+			return BankState.unknown();
+		}
+		Listing listing = program.getListing();
+		Instruction cur = useInstr;
+		for (int i = 0; i < MAX_BACKWARD_SCAN; i++) {
+			if (env.stopsAt(cur.getMinAddress())) {
+				return BankState.unknown(); // the caller's memory is not modeled -- see javadoc
+			}
+			if (!budget.spend()) {
+				return BankState.unknown();
+			}
+			Instruction prev = listing.getInstructionBefore(cur.getMinAddress());
+			if (prev == null) {
+				return BankState.unknown();
+			}
+			Address prevFallThrough = prev.getFallThrough();
+			if (prevFallThrough == null || !prevFallThrough.equals(cur.getMinAddress())) {
+				return BankState.unknown(); // left the basic block
+			}
+			if (isControlFlowJoin(program, cur, prev)) {
+				return BankState.unknown(); // another path reaches cur with a different cell value
+			}
+			if (hooks.isMechanismWrite(prev)) {
+				// Same rule as the register scan's: a value read further back would predate the
+				// mechanism change, so nothing beyond this point may be attributed forward.
+				return BankState.unknown();
+			}
+
+			if (writesMemory(prev)) {
+				Character storeReg = storeRegister(prev);
+				// The store's own target shares this query tree's budget, unlike the LD<reg>
+				// branch's -- see resolveStoredValue's private overload for why only the
+				// forwarding lookups do.
+				Address storeTarget = storeReg == null ? null
+						: effectiveTarget(program, prev, hooks, env, budget, depth + 1);
+				if (storeTarget == null) {
+					return BankState.unknown(); // a memory write this scanner cannot place
+				}
+				if (storeTarget.equals(target)) {
+					return resolveStoredValue(program, prev, storeReg, inStateAtStore, 0xFF, hooks,
+						env, budget, depth + 1);
+				}
+				// provably a different cell -- harmless, keep walking
+			}
+			if (prev.getFlowType().isCall()) {
+				return BankState.unknown(); // a subroutine may write anywhere
+			}
+			cur = prev;
+		}
+		return BankState.unknown();
+	}
+
+	/**
+	 * Whether {@code addr} is in the 6502 stack page, {@code $0100-$01FF}.
+	 * <p>
+	 * {@link #forwardedStoreValue} refuses to forward through a stack cell, and this guard is
+	 * load-bearing rather than decorative. {@code PHA}/{@code PHP} write the stack without naming
+	 * an address any of {@link #writesMemory}'s detectors can see, so without this a push between
+	 * a store and a load of the same stack cell would be stepped over and the stale value
+	 * attributed forward. Declining the whole page is the cheap sound answer; carrying values
+	 * across a push/pull pair is a separate dataflow domain and belongs to grm-mej.3.
+	 * <p>
+	 * The alternative -- treating {@code PHA}/{@code PHP} as memory writes -- was rejected because
+	 * it would end the walk for <em>every</em> target, and Ironsword's {@code FUN_ffc0} has a
+	 * {@code PHA} at {@code $FFC6} sitting between the {@code STA $C3} this forwards from and the
+	 * {@code ORA $C3} that consumes it. That is the motivating case, so the guard has to key on
+	 * the cell being read, not on the instructions passed over.
+	 */
+	private static boolean inStackPage(Address addr) {
+		long offset = addr.getOffset();
+		return offset >= 0x0100 && offset <= 0x01FF;
+	}
+
+	/**
+	 * Whether {@code instr} may write memory -- the predicate {@link #forwardedStoreValue} uses to
+	 * decide that a cell's value can no longer be attributed past this instruction.
+	 * <p>
+	 * Three independent detectors, deliberately unioned rather than ranked, because each one
+	 * alone has a blind spot: {@link Instruction#getResultObjects} reports a concrete destination
+	 * address for {@code STA $C3} but not for a computed one like {@code STA ($10),Y}; a write
+	 * reference exists only where something laid one down (the same refless-store gap
+	 * {@code MemoryLatchBankSwitchStrategy.writesInRange} needs two tiers for); and the mnemonic
+	 * test covers the read-modify-write stores, which {@link #storeRegister} deliberately does not
+	 * recognize. Over-reporting merely forfeits a forward; under-reporting would be unsound.
+	 */
+	private static boolean writesMemory(Instruction instr) {
+		for (Object o : instr.getResultObjects()) {
+			if (!(o instanceof Register)) {
+				return true;
+			}
+		}
+		for (Reference ref : instr.getReferencesFrom()) {
+			if (ref.getReferenceType().isWrite()) {
+				return true;
+			}
+		}
+		return MEMORY_WRITERS.contains(instr.getMnemonicString().toUpperCase()) &&
+			!isAccumulatorForm(instr);
 	}
 
 	// ------------------------------------------------------------------
