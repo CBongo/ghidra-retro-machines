@@ -7,13 +7,13 @@ BLOCK PRG_LO_B1 8000-bfff overlay=true
 BLOCK PRG_LO_B2 8000-bfff overlay=true
 BLOCK PRG_LO_B3 8000-bfff overlay=true
 BLOCK RAM 0000-07ff overlay=false
+COMMENT 8005 bank -> 2 (bank=2) via FUN_c010
+COMMENT 8010 bank -> 1 (bank=1) via FUN_c020
 COMMENT c002 bank -> 2 (bank=2)
 COMMENT c012 bank -> 1 (bank=1)
 COMMENT c01a bank -> 2 (bank=2)
 COMMENT c022 bank -> 3 (bank=3)
 COMMENT c02a bank -> 1 (bank=1)
-BOOKMARK Warning 8005
-BOOKMARK Warning 8010
 REF c005 -> PRG_LO_B2::8005 UNCONDITIONAL_CALL primary=true
 REF c015 -> PRG_LO_B1::8010 UNCONDITIONAL_CALL primary=true
 REF c025 -> PRG_LO_B3::8030 UNCONDITIONAL_CALL primary=true

@@ -259,7 +259,8 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		Listing listing = program.getListing();
 		DataflowResult flow = runDataflow(program, monitor, listing, mechanisms, board, null);
 
-		Map<Function, HelperModel> helpers = findHelpers(program, flow.switchResults());
+		Map<Function, HelperModel> helpers =
+			composeTailCalls(program, findHelpers(program, flow.switchResults()));
 		if (!helpers.isEmpty()) {
 			if (verbose) {
 				log.appendMsg(getName(), helpers.size() + " bank-switch helper function(s): " +
@@ -276,6 +277,10 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// violation scan below dedupes against this set rather than stacking a second
 		// bookmark on a site the existing switch/call-switch warning already covers.
 		Set<Address> alreadyWarned = new LinkedHashSet<>();
+		// Which banks each switchable window actually has an image slice for (grm-hum
+		// increment 3). Derived once, here, because it is a property of the loaded program and
+		// cannot change under the annotation loop.
+		Map<String, Set<Integer>> bankUniverse = bankUniverse(program, board);
 		for (Map.Entry<Address, BankState> entry : flow.stateIn().entrySet()) {
 			monitor.checkCancelled();
 			Address addr = entry.getKey();
@@ -287,7 +292,8 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 
 			SwitchResult switchResult = flow.switchResults().get(addr);
 			if (switchResult != null) {
-				int w = annotateOrWarn(program, listing, addr, switchResult.effect(), board, null,
+				int w = annotateOrWarn(program, listing, addr, switchResult.effect(), board,
+					bankUniverse, null,
 					"Bank state becomes unknown here: mechanism write with a genuinely " +
 						"undeterminable value (value recovery could not pin down even one " +
 						"tracked bank bit -- e.g. a load of an unrelated address followed " +
@@ -306,7 +312,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				// CallSwitch's javadoc.
 				BankState annotState = callSwitch.effect().knownMask() == 0
 						? callSwitch.effect() : callSwitch.stateAfter();
-				int w = annotateOrWarn(program, listing, addr, annotState, board,
+				int w = annotateOrWarn(program, listing, addr, annotState, board, bankUniverse,
 					callSwitch.helperName(),
 					"Bank state becomes unknown here: call to bank-switch helper " +
 						callSwitch.helperName() + " whose bank argument could not be " +
@@ -855,13 +861,16 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * <li><b>The max-address {@code switchSite} rule</b> (see the comment on it below) now
 	 * decides which site a <em>memory-latch</em> multi-site helper commits through, not just
 	 * which sub-field a serial-shift chain selects: it is the site
-	 * {@link BankSwitchStrategy#depositHelperArgument} mini-inlines. That is right for
-	 * {@code FUN_d846}, whose last site by address ({@code $D88D}, the post-loop restore) is
-	 * also the last one executed <em>inside its own body</em>. <b>It is a heuristic, and
+	 * {@link BankSwitchStrategy#depositHelperArgument} mini-inlines. That picks the right site
+	 * <em>inside the body</em> for {@code FUN_d846}, whose last site by address ({@code $D88D},
+	 * the post-loop restore) is also the last one its body executes. <b>It is a heuristic, and
 	 * address order is not execution order in general</b> -- a helper whose exit path branches
 	 * backward to an earlier switch would be committed to the wrong site by it. Nothing shipped
 	 * does that today; a helper that did would need real terminal-site analysis rather than a
-	 * max().</li>
+	 * max(). And "inside the body" is a real qualifier, not a formality: {@code FUN_d846} then
+	 * tail-jumps to {@code FUN_c3b3}, so the bank live at its RETURN is 5 rather than the 6
+	 * {@code $D88D} deposits -- see {@link #composeTailCalls}, which is what makes the
+	 * body-local answer safe to build here.</li>
 	 * </ul>
 	 * <p>
 	 * The map this returns is post-processed by {@link #composeTailCalls} before anything sees
@@ -894,12 +903,17 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				// When several instructions in this helper share the same mechanism (e.g. a
 				// serial-shift chain's 5 stores), the switch site that decides WHICH sub-field
 				// a call-site argument commits through is the one whose own address encodes
-				// that decision -- for every idiom this engine recognizes, that is the LAST
-				// (highest-address) recognized write in program order (an unrolled chain's
-				// write-5 STA, or a counted loop's closing BNE, both of which sit after their
-				// chain's earlier writes). Keeping the max-address entry is a no-op for every
-				// single-instruction mechanism (register-write, memory-latch: exactly one site
-				// per helper) and picks the correct commit site for serial-shift.
+				// that decision. What we actually want is THE LAST RECOGNIZED WRITE ON THE PATH
+				// TO THIS HELPER'S RETURN; the highest-address one is a PROXY for that, and the
+				// proxy is only valid while control cannot leave the function body -- see
+				// HelperModel.switchSite's javadoc and composeTailCalls, which repairs the one
+				// way control routinely does leave it (a tail call). Within the body the proxy
+				// holds for every idiom this engine recognizes: the last write in program order
+				// is an unrolled chain's write-5 STA, or a counted loop's closing BNE, both of
+				// which sit after their chain's earlier writes. Keeping the max-address entry is
+				// a no-op for every single-instruction mechanism (register-write, memory-latch:
+				// exactly one site per helper) and picks the correct commit site for
+				// serial-shift.
 				Address switchSite = entry.getKey().compareTo(existing.switchSite()) > 0
 						? entry.getKey() : existing.switchSite();
 				helpers.put(f, new HelperModel(f, constState, argReg,
@@ -915,6 +929,181 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			}
 		}
 		return helpers;
+	}
+
+	/**
+	 * Depth cap for {@link #composeTailCalls}' fixpoint. Real chains are one or two links
+	 * (Mega Man's {@code FUN_d846 -> FUN_c3b3} is one); the cap exists so a pathological
+	 * chain declines instead of running away, alongside the visited-set cycle guard that
+	 * {@code FUN_f105} (which tail-jumps to ITSELF at {@code $F10F}) makes non-hypothetical.
+	 */
+	private static final int MAX_TAIL_CALL_DEPTH = 8;
+
+	/**
+	 * Re-summarizes every helper whose control flow LEAVES ITS BODY by a tail call, so its
+	 * modeled effect is the bank state at its RETURN rather than at the last recognized write
+	 * inside its own body (bead grm-hum increment 2b).
+	 * <p>
+	 * <b>The defect this repairs shipped wrong answers.</b> {@link #findHelpers} summarizes a
+	 * helper by the max-address recognized write in its own body, which is a sound proxy for
+	 * "the last write before the return" only while control cannot leave that body. A tail call
+	 * is exactly when it can. On Mega Man, {@code FUN_d131}'s only own site is
+	 * {@code $D135 STA $C006}, so it modeled as a constant bank 6 and every call to it folded
+	 * bank 6 -- but it ends {@code $D159 JMP $C3B3}, and {@code FUN_c3b3} latches bank 5, so the
+	 * live bank after the call is 5. {@code FUN_d846} and {@code FUN_c55d} tail-jump to the same
+	 * routine with the same consequence.
+	 * <p>
+	 * <b>This is a SUMMARY fix, not a dataflow fix.</b> {@link #runDataflow} already treats a
+	 * {@code CALL_TERMINATOR} jump as a call ({@code getFlowType().isCall()} is true for it --
+	 * Ghidra's shared-return analysis rewrites a jump to another function's entry that way) and
+	 * already folds the callee helper's effect there, so the tracked state at the end of these
+	 * functions was right all along. Only {@link HelperModel} discarded it.
+	 * <p>
+	 * <b>The rule is NARROWED, not replaced.</b> A helper with no tail call to a recognized
+	 * helper is returned completely untouched, so the max-address summary keeps deciding
+	 * every case it was already right about -- a serial-shift chain's commit site, and the
+	 * restore-before-RTS trampolines in {@code nesbanktest2}, whose last write really is the
+	 * last one executed. A tail call to a function this engine does not model as a helper is
+	 * likewise a no-op, which is exactly what {@link #runDataflow} folds for a call to one.
+	 * <p>
+	 * <b>Where it composes:</b> a tail-callee that is a recognized helper with a
+	 * caller-independent effect (its own {@code constState}, or one it composes to) overwrites
+	 * the bits it owns on top of the caller's own deposit -- callee wins on its own bits, which
+	 * is just {@link #overwrite}. When the callee owns every bit the caller's body could touch,
+	 * the composite is caller-independent even if the caller's body alone was not; that is Mega
+	 * Man's {@code FUN_d846}, whose own three sites disagree (6 / loop-carried unknown / 6) yet
+	 * whose exit is unconditionally {@code FUN_c3b3}'s bank 5.
+	 * <p>
+	 * <b>Everywhere else it DECLINES</b> -- returns a helper owning the mechanism with no
+	 * recovered value, which yields a WARNING bookmark at each call site instead of an
+	 * annotation. That covers a caller-dependent tail-callee, several exits whose composed
+	 * effects disagree, a cycle, and the depth cap. Losing an annotation beats shipping a wrong
+	 * bank; that is the whole point of this pass.
+	 */
+	private Map<Function, HelperModel> composeTailCalls(Program program,
+			Map<Function, HelperModel> helpers) {
+		Map<Function, HelperModel> composed = new LinkedHashMap<>(helpers);
+		for (Function f : helpers.keySet()) {
+			TailEffect effect = exitEffect(program, f, helpers, new LinkedHashSet<>(), 0);
+			if (!effect.composed()) {
+				continue; // no tail call out of this body -- the body-local summary stands
+			}
+			// argReg/strategy/switchSite are deliberately dropped: they describe the helper's
+			// OWN body, which is no longer what this model asserts. A composed constant needs
+			// none of them (runDataflow uses constState directly), and a decline needs none
+			// either (recoverCallArgument short-circuits on the null argReg).
+			composed.put(f,
+				new HelperModel(f, effect.constState(), null, effect.effectMask(), 0, null, null));
+		}
+		return composed;
+	}
+
+	/**
+	 * One helper's composed exit effect. {@code declined} means "no value may be asserted for
+	 * this helper" (the caller must warn); otherwise a null {@code constState} means the effect
+	 * is caller-dependent and the body-local {@link HelperModel} still describes it.
+	 * {@code composed} records whether a tail call to a recognized helper actually contributed
+	 * -- when it is false the helper must be left exactly as {@link #findHelpers} built it.
+	 */
+	private record TailEffect(BankState constState, int effectMask, boolean declined,
+			boolean composed) {}
+
+	/**
+	 * The effect {@code f} leaves behind when it returns to ITS caller, following tail calls.
+	 * See {@link #composeTailCalls} for the rules; {@code onStack} is the cycle guard and
+	 * {@code depth} the bound.
+	 */
+	private TailEffect exitEffect(Program program, Function f, Map<Function, HelperModel> helpers,
+			Set<Function> onStack, int depth) {
+		HelperModel model = helpers.get(f);
+		int ownMask = model.effectMask();
+		if (depth > MAX_TAIL_CALL_DEPTH || !onStack.add(f)) {
+			return new TailEffect(null, ownMask, true, true);
+		}
+		try {
+			TailEffect merged = null;
+			boolean sawHelperTailCall = false;
+			for (Instruction exit : exitInstructions(program, f)) {
+				HelperModel callee = exit.getFlowType().isCall()
+						? calledHelper(program, exit, helpers)
+						: null;
+				TailEffect here;
+				if (callee == null) {
+					// RTS/RTI, or a tail call to a function this engine does not model as a
+					// bank-switch helper -- the same no-op runDataflow folds for a call to one.
+					here = new TailEffect(model.constState(), ownMask, false, false);
+				}
+				else {
+					sawHelperTailCall = true;
+					here = composeWithCallee(model,
+						exitEffect(program, callee.function(), helpers, onStack, depth + 1));
+				}
+				merged = merged == null ? here : agreeOrDecline(merged, here, ownMask);
+			}
+			if (merged == null || !sawHelperTailCall) {
+				return new TailEffect(model.constState(), ownMask, false, false);
+			}
+			return merged;
+		}
+		finally {
+			onStack.remove(f);
+		}
+	}
+
+	/** {@code model}'s own deposit with its tail-callee's laid over the bits the callee owns. */
+	private TailEffect composeWithCallee(HelperModel model, TailEffect callee) {
+		int ownMask = model.effectMask();
+		int union = ownMask | callee.effectMask();
+		if (callee.declined() || callee.constState() == null) {
+			// nothing assertable about the callee, so nothing assertable about this helper
+			return new TailEffect(null, union, true, true);
+		}
+		if (model.constState() != null) {
+			return new TailEffect(overwrite(model.constState(), callee.constState(),
+				callee.effectMask()), union, false, true);
+		}
+		if ((callee.effectMask() & ownMask) == ownMask) {
+			// The callee overwrites every bit this helper's own body could touch, so whatever
+			// the body did with them is irrelevant and the composite is caller-independent even
+			// though the body alone was not. Mega Man's FUN_d846 lands here.
+			return new TailEffect(callee.constState(), union, false, true);
+		}
+		return new TailEffect(null, union, true, true);
+	}
+
+	/** Two exits' composed effects when they agree, a decline owning both masks when they don't. */
+	private TailEffect agreeOrDecline(TailEffect a, TailEffect b, int ownMask) {
+		int union = a.effectMask() | b.effectMask() | ownMask;
+		if (!a.declined() && !b.declined() && a.effectMask() == b.effectMask() &&
+			Objects.equals(a.constState(), b.constState())) {
+			return new TailEffect(a.constState(), a.effectMask(), false,
+				a.composed() || b.composed());
+		}
+		return new TailEffect(null, union, true, true);
+	}
+
+	/**
+	 * Every instruction in {@code f} that ends a path through it: {@code RTS}/{@code RTI}
+	 * ({@code TERMINATOR}) and a tail call out of the body ({@code CALL_TERMINATOR} -- a jump
+	 * to another function's entry, which Ghidra's shared-return analysis rewrites into a
+	 * call-with-no-fall-through). Both report {@link ghidra.program.model.symbol.FlowType#isTerminal()};
+	 * they are told apart by {@code isCall()}, the same test {@link #runDataflow} already uses
+	 * to route a {@code CALL_TERMINATOR} jump through the helper-call path.
+	 * <p>
+	 * A plain unconditional jump that leaves the body WITHOUT landing on a function entry is
+	 * not terminal and so is not seen here. Ghidra normally absorbs such a target into this
+	 * function's body instead, which makes it an internal branch the max-address rule already
+	 * covers; a genuinely bodiless jump out would be a gap, not a wrong answer, since it can
+	 * only leave the body-local summary in place.
+	 */
+	private static List<Instruction> exitInstructions(Program program, Function f) {
+		List<Instruction> exits = new ArrayList<>();
+		for (Instruction instr : program.getListing().getInstructions(f.getBody(), true)) {
+			if (instr.getFlowType().isTerminal()) {
+				exits.add(instr);
+			}
+		}
+		return exits;
 	}
 
 	/** The helper this call instruction targets, or null. */
@@ -1085,18 +1274,187 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 */
 	/**
 	 * Records one recovered switch site: an EOL annotation when at least one tracked bank
-	 * bit is known, or the {@code warning} bookmark when value recovery pinned down no bit
-	 * at all. Returns the number of warnings raised (0 or 1) for the caller's tally.
+	 * bit is known, or a warning bookmark -- the caller's {@code warning} when value recovery
+	 * pinned down no bit at all, or the impossible-bank diagnostic when it pinned down a bank
+	 * the image has no slice for ({@link #impossibleBank}). Returns the number of warnings
+	 * raised (0 or 1) for the caller's tally.
 	 */
 	private int annotateOrWarn(Program program, Listing listing, Address addr, BankState state,
-			BoardModel board, String viaHelper, String warning) {
+			BoardModel board, Map<String, Set<Integer>> bankUniverse, String viaHelper,
+			String warning) {
 		if (state.knownMask() == 0) {
 			program.getBookmarkManager()
 					.setBookmark(addr, BookmarkType.WARNING, getBookmarkCategory(), warning);
 			return 1;
 		}
+		ImpossibleBank impossible = impossibleBank(board, state, bankUniverse);
+		if (impossible != null) {
+			program.getBookmarkManager().setBookmark(addr, BookmarkType.WARNING,
+				getBookmarkCategory(), impossible.message());
+			return 1;
+		}
 		annotateBankSwitch(listing, addr, state, board, viaHelper);
 		return 0;
+	}
+
+	/**
+	 * A recovered bank index for which the loaded image holds no slice (bead grm-hum
+	 * increment 3): {@code window} is the switchable window whose field named it,
+	 * {@code bank} the recovered value, {@code realized} how many banks that window actually
+	 * has.
+	 */
+	private record ImpossibleBank(String window, int bank, int realized) {
+		String message() {
+			return "Bank state becomes unknown here: recovered bank " + bank + " for window " +
+				window + ", but this image provides only " + realized + " bank(s) for it. " +
+				"A bank index with no corresponding image slice is a value-RECOVERY bug, not a " +
+				"game behavior, so this site is left unannotated and nothing is retargeted from " +
+				"it. Hardware aliasing (a board that decodes fewer latch bits than the field is " +
+				"wide selects some in-range bank instead of faulting) is deliberately NOT " +
+				"modeled: that is per-board wiring, and folding it on speculation would turn a " +
+				"loud wrong answer into a quiet plausible one -- see docs/vision-board-banking.md " +
+				"section 10 item 10, bead grm-hum.";
+		}
+	}
+
+	/**
+	 * The first switchable window whose FULLY RECOVERED bank field names a bank this image does
+	 * not have, or null when every such window resolves to a real occupant.
+	 * <p>
+	 * Only fields whose bits are entirely known in {@code state} are checked. A partially known
+	 * field renders from {@code banking.initial_state} in the annotation
+	 * ({@link BankState#effective}), and the initial state is a descriptor-declared, in-range
+	 * value -- flagging it would be flagging the fallback, not a recovered value.
+	 * <p>
+	 * "Does not have" is read off the program itself rather than recomputed from the container
+	 * header: the loader creates one block per bank value whose slice fits inside the image and
+	 * skips the rest ("bank values beyond the image simply don't exist",
+	 * {@code NesRomLoader.realizeComputedWindow}), so the realized set IS the image's statement
+	 * of how many banks the board is fitted with, and it is by construction the same set
+	 * {@link #retargetReferences} can find an overlay space for.
+	 */
+	private ImpossibleBank impossibleBank(BoardModel board, BankState state,
+			Map<String, Set<Integer>> bankUniverse) {
+		if (bankUniverse.isEmpty()) {
+			return null;
+		}
+		int effective = state.effective(board.initialState(), board.mask());
+		for (ComputedWindowModel w : board.computedWindows().values()) {
+			ImpossibleBank bad =
+				checkBank(bankUniverse, w.name(), w.name(), w.field(), state, effective);
+			if (bad != null) {
+				return bad;
+			}
+		}
+		FieldSpec modeField = board.modeField();
+		if (modeField != null &&
+			(state.knownMask() & modeField.positionedMask()) == modeField.positionedMask()) {
+			int mode = modeField.valueIn(effective);
+			for (ModeWindowModel w : board.modeWindows()) {
+				if (w.modeValue() != mode || w.bankField() == null) {
+					continue;
+				}
+				ImpossibleBank bad = checkBank(bankUniverse, modeBankKey(w.name(), mode), w.name(),
+					w.bankField(), state, effective);
+				if (bad != null) {
+					return bad;
+				}
+			}
+		}
+		return null;
+	}
+
+	/** One window's bank field against its realized bank set; see {@link #impossibleBank}. */
+	private ImpossibleBank checkBank(Map<String, Set<Integer>> bankUniverse, String key,
+			String windowName, FieldSpec field, BankState state, int effective) {
+		if ((state.knownMask() & field.positionedMask()) != field.positionedMask()) {
+			return null;
+		}
+		Set<Integer> realized = bankUniverse.get(key);
+		if (realized == null || realized.isEmpty()) {
+			return null; // nothing realized for this window at all -- not our diagnostic to make
+		}
+		int bank = field.valueIn(effective);
+		return realized.contains(bank) ? null
+				: new ImpossibleBank(windowName, bank, realized.size());
+	}
+
+	/** Key under which {@link #bankUniverse} files a mode-varying window instance's banks. */
+	private static String modeBankKey(String windowName, int modeValue) {
+		return windowName + "_M" + modeValue;
+	}
+
+	/**
+	 * Which bank values each switchable window actually has an image slice for, keyed by window
+	 * name (mode-invariant computed windows) or by {@link #modeBankKey} (one mode-varying
+	 * window instance). Derived once per run from the program's own address spaces plus the
+	 * one home bank the loader realizes in BASE space rather than as an overlay -- see
+	 * {@link DescriptorSupport.OverlayNaming} for the naming contract this parses back, and
+	 * {@link #impossibleBank} for why the program rather than the container header is the
+	 * authority.
+	 */
+	private Map<String, Set<Integer>> bankUniverse(Program program, BoardModel board) {
+		Map<String, Set<Integer>> universe = new LinkedHashMap<>();
+		for (ComputedWindowModel w : board.computedWindows().values()) {
+			universe.put(w.name(), realizedBanks(program, w.name(),
+				w.field().valueIn(board.initialState())));
+		}
+		FieldSpec modeField = board.modeField();
+		for (ModeWindowModel w : board.modeWindows()) {
+			if (w.bankField() == null) {
+				continue;
+			}
+			boolean homeMode = modeField != null && w.modeValue() == board.homeModeValue();
+			universe.put(modeBankKey(w.name(), w.modeValue()), realizedModeBanks(program, w.name(),
+				w.modeValue(), homeMode ? w.bankField().valueIn(board.initialState()) : null));
+		}
+		return universe;
+	}
+
+	/**
+	 * The bank values realized for a mode-invariant computed window: {@code homeBank}, which
+	 * the loader places in base space, plus every {@code <window>_B<n>} overlay space it
+	 * created. Package-private for the Tier-2 test that pins the derivation.
+	 */
+	static Set<Integer> realizedBanks(Program program, String windowName, int homeBank) {
+		Set<Integer> banks = new LinkedHashSet<>();
+		banks.add(homeBank);
+		for (AddressSpace space : program.getAddressFactory().getAddressSpaces()) {
+			if (!space.isOverlaySpace()) {
+				continue;
+			}
+			Integer v =
+				DescriptorSupport.OverlayNaming.parseBankValue(windowName, space.getName());
+			if (v != null) {
+				banks.add(v);
+			}
+		}
+		return banks;
+	}
+
+	/**
+	 * The bank values realized for one mode-varying window instance: every
+	 * {@code <window>_M<mode>_B<n>} overlay space, plus {@code homeBank} when this instance is
+	 * the home layout (exactly one (mode, bank) pair across the whole window lives in base
+	 * space; {@code homeBank} is null for every other mode).
+	 */
+	static Set<Integer> realizedModeBanks(Program program, String windowName, int modeValue,
+			Integer homeBank) {
+		Set<Integer> banks = new LinkedHashSet<>();
+		if (homeBank != null) {
+			banks.add(homeBank);
+		}
+		for (AddressSpace space : program.getAddressFactory().getAddressSpaces()) {
+			if (!space.isOverlaySpace()) {
+				continue;
+			}
+			DescriptorSupport.OverlayNaming.ModeBank mb =
+				DescriptorSupport.OverlayNaming.parseModeBankValue(windowName, space.getName());
+			if (mb != null && mb.mode() == modeValue) {
+				banks.add(mb.bank());
+			}
+		}
+		return banks;
 	}
 
 	private void annotateBankSwitch(Listing listing, Address addr, BankState newState,
@@ -1643,6 +2001,13 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			TaskMonitor monitor, MessageLog log) {
 		AddressSpace overlaySpace = program.getAddressFactory().getAddressSpace(targetSpaceName);
 		if (overlaySpace == null) {
+			// Reaching here with a bank suffix means the state named a bank the image has no
+			// slice for. That is not silent any more: the site that RECOVERED the impossible
+			// value carries the WARNING bookmark (annotateOrWarn -> impossibleBank, grm-hum
+			// increment 3), which is both a better place to look and a user-visible finding
+			// rather than a log line. This branch stays as the belt-and-braces "retarget
+			// nothing" half of that ruling, and still covers a descriptor/loader mismatch that
+			// no recovered value is to blame for.
 			log.appendMsg(getName(), "No overlay address space named '" + targetSpaceName +
 				"'; cannot retarget reference from " + instr.getMinAddress());
 			return 0;
@@ -2038,13 +2403,28 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * matched mechanism's strategy (null when the sites disagree, per {@code findHelpers}'s
 	 * degrade case -- unused there since {@code argReg} is also forced null and
 	 * {@link #recoverCallArgument} short-circuits before ever consulting {@code strategy});
-	 * {@code switchSite} is the recognized switch instruction (the highest-address one, when
-	 * a helper's sites span several instructions of the same mechanism -- e.g. a serial-shift
-	 * chain's 5 stores all resolve to the same target address here, but for an idiom where
-	 * they could legitimately differ, the LAST write is the one whose address actually
-	 * decides the target, per {@link SerialShiftBankSwitchStrategy}) that
+	 * {@code switchSite} is the recognized switch instruction that
 	 * {@link BankSwitchStrategy#depositHelperArgument} is asked to interpret a call site's
 	 * argument against.
+	 * <p>
+	 * <b>What {@code switchSite} MEANS is "the last recognized write on the path to this
+	 * helper's RETURN".</b> {@link #findHelpers} implements that as the highest-address site
+	 * when a helper's sites span several instructions of the same mechanism -- e.g. a
+	 * serial-shift chain's 5 stores all resolve to the same target address here, but for an
+	 * idiom where they could legitimately differ, the LAST write is the one whose address
+	 * actually decides the target, per {@link SerialShiftBankSwitchStrategy}.
+	 * <p>
+	 * <b>Max-address is only a PROXY for that meaning, and it is valid only while control
+	 * cannot leave the function body.</b> A tail call is exactly when it can: Mega Man's
+	 * {@code FUN_d131} contains one site ({@code $D135 STA $C006}, bank 6) and then ends
+	 * {@code $D159 JMP $C3B3}, so the bank live at its return is {@code FUN_c3b3}'s 5, not its
+	 * own 6. {@link #composeTailCalls} post-processes {@link #findHelpers}' map to repair that
+	 * -- composing the callee's effect in where it can, declining where it cannot -- so nothing
+	 * downstream ever sees a body-local summary of a helper that tail-calls another one. The
+	 * proxy is still a heuristic WITHIN the body (address order is not execution order in
+	 * general: a helper whose exit path branches backward to an earlier switch would be
+	 * committed to the wrong site by it); nothing shipped does that today, and a helper that
+	 * did would need real terminal-site analysis rather than a max().
 	 */
 	private record HelperModel(Function function, BankState constState, Character argReg,
 			int effectMask, int lsb, BankSwitchStrategy strategy, Address switchSite) {}

@@ -19,14 +19,41 @@ REALROM block RAM 0000-07ff overlay=false
 REALROM count blocks.total 12
 REALROM count blocks.overlay 7
 REALROM count spaces.overlay 7
-REALROM count refs.intoOverlay 0
-REALROM count instrs.inOverlay 0
-REALROM count bankComments 0
+REALROM count refs.intoOverlay 257
+REALROM count instrs.inOverlay 849
+REALROM count bankComments 2
 REALROM count warnings 6
-REALROM sample.warn c0cb [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c13f whose bank argument could not be recovered at this call site
+REALROM sample.bankcomment c0cb bank -> 1 (bank=1) via FUN_c13f
+REALROM sample.bankcomment c157 bank -> 1 (bank=1) via FUN_c13f
+REALROM sample.ref 8072 -> PRG_LO_B1::8705 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8075 -> PRG_LO_B1::808d CONDITIONAL_JUMP primary=true
+REALROM sample.ref 807f -> PRG_LO_B1::806d CONDITIONAL_JUMP primary=true
+REALROM sample.ref 808a -> PRG_LO_B1::8705 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8093 -> PRG_LO_B1::8705 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 809c -> PRG_LO_B1::8705 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 80a4 -> PRG_LO_B1::80d4 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 80ab -> PRG_LO_B1::80b0 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 80ad -> PRG_LO_B1::8751 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 80b3 -> PRG_LO_B1::80c8 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 80b8 -> PRG_LO_B1::80c0 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 80c4 -> PRG_LO_B1::8081 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 80cb -> PRG_LO_B1::80d4 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 80d1 -> PRG_LO_B1::8077 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 80d5 -> PRG_LO_B1::809f UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 80e5 -> PRG_LO_B1::80eb CONDITIONAL_JUMP primary=true
+REALROM sample.ref 80e8 -> PRG_LO_B1::8103 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 80ee -> PRG_LO_B1::8102 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 80f2 -> PRG_LO_B1::80f9 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 80f6 -> PRG_LO_B1::80fe UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 80ff -> PRG_LO_B1::80dc UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8106 -> PRG_LO_B1::810f CONDITIONAL_JUMP primary=true
+REALROM sample.ref 810d -> PRG_LO_B1::8102 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 810f -> PRG_LO_B1::861d UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8118 -> PRG_LO_B1::811d CONDITIONAL_JUMP primary=true
+REALROM sample.warn 811a [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_PRG_LO_B1__8259 whose bank argument could not be recovered at this call site
+REALROM sample.warn 8efc [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn c0d3 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c13f whose bank argument could not be recovered at this call site
 REALROM sample.warn c142 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn c149 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c13f whose bank argument could not be recovered at this call site
-REALROM sample.warn c157 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c13f whose bank argument could not be recovered at this call site
 REALROM sample.warn c164 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c13f whose bank argument could not be recovered at this call site
 === REALROM END ===

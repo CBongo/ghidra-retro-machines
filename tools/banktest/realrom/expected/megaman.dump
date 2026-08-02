@@ -1,6 +1,7 @@
 === REALROM BEGIN ===
 REALROM program megaman.nes
 REALROM sha256 e5bbc798798a0f5ae6e6d22a35df2fc3d08cefe6a1b278ed7f1cc325e8ee19e0
+REALROM prgsha256 05117c775581eb63f7686f58c24f1c9da0fa0669eede1e7bad12eed40e58935e
 REALROM map machines/nes-uxrom.map
 REALROM placement NONE
 REALROM block APU_IO 4000-401f overlay=false
@@ -18,10 +19,10 @@ REALROM block RAM 0000-07ff overlay=false
 REALROM count blocks.total 12
 REALROM count blocks.overlay 7
 REALROM count spaces.overlay 7
-REALROM count refs.intoOverlay 1781
-REALROM count instrs.inOverlay 7437
-REALROM count bankComments 153
-REALROM count warnings 3
+REALROM count refs.intoOverlay 1704
+REALROM count instrs.inOverlay 7429
+REALROM count bankComments 156
+REALROM count warnings 32
 REALROM sample.bankcomment 8001 bank -> 5 (bank=5) via RESET
 REALROM sample.bankcomment 8d17 bank -> 5 (bank=5) via RESET
 REALROM sample.bankcomment 8d1f bank -> 5 (bank=5) via RESET
@@ -32,21 +33,21 @@ REALROM sample.bankcomment 8d6f bank -> 5 (bank=5) via RESET
 REALROM sample.bankcomment 8dbf bank -> 5 (bank=5) via RESET
 REALROM sample.bankcomment 8de7 bank -> 5 (bank=5) via RESET
 REALROM sample.bankcomment 8de8 bank -> 5 (bank=5) via RESET
-REALROM sample.bankcomment 9067 bank -> 6 (bank=6) via FUN_d846
+REALROM sample.bankcomment 9067 bank -> 5 (bank=5) via FUN_d846
 REALROM sample.bankcomment 90ec bank -> 5 (bank=5) via RESET
 REALROM sample.bankcomment 90ed bank -> 5 (bank=5) via RESET
 REALROM sample.bankcomment 9160 bank -> 5 (bank=5) via RESET
 REALROM sample.bankcomment 9173 bank -> 6 (bank=6) via FUN_c3bf
-REALROM sample.bankcomment 91bc bank -> 6 (bank=6) via FUN_d896
-REALROM sample.bankcomment 91bf bank -> 6 (bank=6) via FUN_d131
+REALROM sample.bankcomment 91bf bank -> 5 (bank=5) via FUN_d131
 REALROM sample.bankcomment 9251 bank -> 5 (bank=5) via FUN_c219
-REALROM sample.bankcomment 949e bank -> 6 (bank=6) via FUN_d131
+REALROM sample.bankcomment 949e bank -> 5 (bank=5) via FUN_d131
 REALROM sample.bankcomment 9782 bank -> 6 (bank=6) via caseD_a4
 REALROM sample.bankcomment 9d00 bank -> 5 (bank=5) via RESET
 REALROM sample.bankcomment 9d04 bank -> 5 (bank=5) via RESET
-REALROM sample.bankcomment 9d05 bank -> 6 (bank=6) via FUN_c55d
+REALROM sample.bankcomment 9d05 bank -> 5 (bank=5) via FUN_c55d
 REALROM sample.bankcomment 9d08 bank -> 5 (bank=5) via RESET
-REALROM sample.bankcomment a044 bank -> 6 (bank=6) via FUN_d131
+REALROM sample.bankcomment a044 bank -> 5 (bank=5) via FUN_d131
+REALROM sample.bankcomment a082 bank -> 5 (bank=5) via FUN_d131
 REALROM sample.ref 80b2 -> PRG_LO_B5::80c4 CONDITIONAL_JUMP primary=true
 REALROM sample.ref 9000 -> PRG_LO_B4::923f UNCONDITIONAL_JUMP primary=true
 REALROM sample.ref 9005 -> PRG_LO_B4::900a CONDITIONAL_JUMP primary=true
@@ -72,7 +73,29 @@ REALROM sample.ref 9061 -> PRG_LO_B5::905e CONDITIONAL_JUMP primary=true
 REALROM sample.ref 9065 -> PRG_LO_B5::906a CONDITIONAL_JUMP primary=true
 REALROM sample.ref 906e -> PRG_LO_B5::9075 CONDITIONAL_JUMP primary=true
 REALROM sample.ref 9070 -> PRG_LO_B5::9424 DATA primary=true
+REALROM sample.warn 91bc [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_d896 whose bank argument could not be recovered at this call site
 REALROM sample.warn a604 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn a908 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
-REALROM sample.warn db98 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_dc21 whose bank argument could not be recovered at this call site
+REALROM sample.warn ac9f [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c666 whose bank argument could not be recovered at this call site
+REALROM sample.warn c3ab [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn c403 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn c483 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c39c whose bank argument could not be recovered at this call site
+REALROM sample.warn c613 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c39c whose bank argument could not be recovered at this call site
+REALROM sample.warn c625 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c39c whose bank argument could not be recovered at this call site
+REALROM sample.warn c63f [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c39c whose bank argument could not be recovered at this call site
+REALROM sample.warn c64a [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c39c whose bank argument could not be recovered at this call site
+REALROM sample.warn c658 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c39c whose bank argument could not be recovered at this call site
+REALROM sample.warn c6ac [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn c6cd [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c39c whose bank argument could not be recovered at this call site
+REALROM sample.warn c75b [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c39c whose bank argument could not be recovered at this call site
+REALROM sample.warn c778 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c39c whose bank argument could not be recovered at this call site
+REALROM sample.warn cb6f [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c39c whose bank argument could not be recovered at this call site
+REALROM sample.warn cc11 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c39c whose bank argument could not be recovered at this call site
+REALROM sample.warn cc2d [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c39c whose bank argument could not be recovered at this call site
+REALROM sample.warn cd72 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c39c whose bank argument could not be recovered at this call site
+REALROM sample.warn cde8 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c39c whose bank argument could not be recovered at this call site
+REALROM sample.warn cf23 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c39c whose bank argument could not be recovered at this call site
+REALROM sample.warn d09e [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c39c whose bank argument could not be recovered at this call site
+REALROM sample.warn d0b1 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c39c whose bank argument could not be recovered at this call site
+REALROM sample.warn d571 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 === REALROM END ===

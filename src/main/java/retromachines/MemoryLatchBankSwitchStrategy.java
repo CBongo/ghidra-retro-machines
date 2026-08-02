@@ -258,6 +258,34 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * site per helper committing one field spanning its entire field-local width, so a call
 	 * really does replace all of it -- known or not, exactly as the inherited default does.
 	 * <p>
+	 * <b>Evaluation first, convention as the fallback</b> -- deliberately a union of the two
+	 * models, because measurement showed neither dominates (grm-hum). Evaluating the switch
+	 * site is strictly better when it resolves: it applies the real shift/mask/bus-conflict
+	 * semantics and it reads whichever register the helper actually consumes. But it can only
+	 * see what the backward scan can derive from the helper's own body, and a real helper's
+	 * body often launders the argument through memory first. Ironsword's {@code FUN_ffc0} is
+	 * the measured case:
+	 * <pre>
+	 *   FFC2: STA $C3        ; stash the caller's bank argument
+	 *   FFC4: LDA $C5 / PHA  ; save the current shadow
+	 *   FFC7: AND #$18       ; keep the untracked VRAM bits from the shadow
+	 *   FFC9: ORA $C3        ; splice the argument back in -- NON-IMMEDIATE, so the scan stops
+	 *   FFCD: STA $8000      ; the commit
+	 * </pre>
+	 * Bits 0-2 (this board's whole tracked field) come entirely from {@code $C3}, i.e. from the
+	 * caller's {@code A} -- so the convention's answer is not merely lucky here, it is exactly
+	 * what the code computes. The engine simply cannot derive it without zero-page store-to-load
+	 * propagation, which it does not have. Evaluating {@code FUN_ffc0}'s max-address site is
+	 * worse still: that site is the {@code STA $8000} that RESTORES the saved bank from a
+	 * {@code PLA}, which is unrecoverable by construction.
+	 * <p>
+	 * So: prefer the derived answer, and keep the assumed one for when nothing was derived.
+	 * A fallback can only ever fill in where the evaluation was silent, so it cannot overwrite
+	 * a derived answer with a weaker assumed one. Contra (argument in {@code Y}, which the
+	 * convention cannot see) and Ironsword (argument laundered through zero page, which the
+	 * evaluation cannot see) are each recovered by exactly one of the two paths, and the
+	 * measured real-ROM numbers move only in the intended direction for both.
+	 * <p>
 	 * <b>This is not a caching path.</b> It calls {@link #evaluateLatch} directly, never
 	 * {@link #computeSwitch} and never {@code BoardBankAnalyzer}'s address-keyed
 	 * {@code matchCache}, which is why {@link #cacheable()} can stay {@code true} while an
@@ -268,6 +296,11 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	public HelperDeposit depositHelperArgument(Program program, Instruction switchSite,
 			BankState argValue, BankState inState, int stateMask, RegisterEnv callerRegs) {
 		BankState evaluated = evaluateLatch(program, switchSite, callerRegs);
+		if ((evaluated.knownMask() & stateMask) == 0) {
+			// Evaluation pinned down nothing -- fall back to the convention (grm-hum).
+			return new HelperDeposit(stateMask,
+				new BankState(argValue.knownMask() & stateMask, argValue.bits() & stateMask));
+		}
 		return new HelperDeposit(stateMask,
 			new BankState(evaluated.knownMask() & stateMask, evaluated.bits() & stateMask));
 	}

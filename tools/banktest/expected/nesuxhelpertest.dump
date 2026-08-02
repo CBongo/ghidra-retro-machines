@@ -1,0 +1,24 @@
+IDENTITY prg:5e6313a94a683b9877fa0b9800dac9e1c843c4ad8f82fba8d87ea2000a7b0ca0 file:15eba3cd1ccb1c1516ddbbb82447e592e093af22bfd5d24352e8933780edc72d
+BLOCK APU_IO 4000-401f overlay=false
+BLOCK PPU_REGS 2000-2007 overlay=false
+BLOCK PRG_HI c000-ffff overlay=false
+BLOCK PRG_LO 8000-bfff overlay=false
+BLOCK PRG_LO_B1 8000-bfff overlay=true
+BLOCK PRG_LO_B2 8000-bfff overlay=true
+BLOCK PRG_LO_B3 8000-bfff overlay=true
+BLOCK RAM 0000-07ff overlay=false
+COMMENT c002 bank -> 2 (bank=2) via FUN_c140
+COMMENT c00d bank -> 1 (bank=1) via FUN_c120
+COMMENT c013 bank -> 2 (bank=2) via FUN_c170
+COMMENT c016 bank -> 2 (bank=2) via FUN_c160
+COMMENT c122 bank -> 3 (bank=3)
+COMMENT c12d bank -> 1 (bank=1)
+COMMENT c162 bank -> 3 (bank=3)
+COMMENT c165 bank -> 2 (bank=2) via FUN_c170
+COMMENT c172 bank -> 2 (bank=2)
+BOOKMARK Warning c00a
+BOOKMARK Warning c01e
+BOOKMARK Warning c143
+REF c005 -> PRG_LO_B2::8005 UNCONDITIONAL_CALL primary=true
+REF c010 -> PRG_LO_B1::8010 UNCONDITIONAL_CALL primary=true
+REF c019 -> PRG_LO_B2::8020 UNCONDITIONAL_CALL primary=true

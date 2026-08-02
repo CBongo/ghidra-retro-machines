@@ -951,4 +951,95 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		assertEquals("the evaluated switch semantics win over the register convention",
 			fromUnknownArg, fromMisleadingArg);
 	}
+
+	// ------------------------------------------------------------------
+	// Increment 3: the impossible-bank guard
+	// ------------------------------------------------------------------
+
+	/**
+	 * Lays a 4-bank UxROM image's overlay spaces: bank 0 is home (base space, no overlay of its
+	 * own), banks 1-3 each get a {@code PRG_LO_B<n>} overlay -- the naming contract
+	 * {@link DescriptorSupport.OverlayNaming} defines and the loader realizes. Bank 9's block is
+	 * pointedly absent, because "bank values beyond the image simply don't exist".
+	 */
+	private void layFourBankOverlays() {
+		for (int bank = 1; bank <= 3; bank++) {
+			builder.createOverlayMemory("PRG_LO_B" + bank, "0x8000", 0x4000);
+		}
+	}
+
+	/**
+	 * An out-of-range immediate: {@code LDA #$09 / STA $FFD9} on an image with four banks. The
+	 * store target's ROM byte is {@code 0x09} on purpose, so the bus-conflict AND is a faithful
+	 * no-op and the recovered value is one the hardware really would have latched -- the guard
+	 * has to fire on that, not on a value the AND had already laundered into a legal bank.
+	 * <p>
+	 * Recovery itself is working correctly here; the bank index is simply impossible, which is
+	 * a value-recovery bug rather than a game behavior. Tier 3 ({@code nesuxhelpertest} U8) pins
+	 * the resulting WARNING-instead-of-annotation end to end; this pins the two halves the
+	 * analyzer joins -- that recovery does produce 9, and that 9 is not in the image's realized
+	 * bank set.
+	 */
+	@Test
+	public void outOfRangeRecoveredBankIsNotRealizedByTheImage() throws Exception {
+		builder.setBytes("0xffd0", "00 01 02 03 04 05 06 07 08 09"); // $FFD9 = 0x09
+		builder.setBytes("0x8000", "a9 09", true); // LDA #$09
+		builder.setBytes("0x8002", "8d d9 ff", true); // STA $FFD9
+		romifyPrg();
+		layFourBankOverlays();
+
+		Instruction store = instructionAt("0x8002");
+		stripWriteReferences(store);
+
+		BankState result = busConflictLatch().computeSwitch(program, store, BankState.unknown());
+
+		assertNotNull(result);
+		assertEquals("the AND against ROM byte 0x09 leaves the driven 9 intact", 0x0F,
+			result.knownMask());
+		assertEquals(0x09, result.bits());
+
+		java.util.Set<Integer> realized =
+			BoardBankAnalyzer.realizedBanks(program, "PRG_LO", 0);
+		assertEquals("home bank 0 in base space plus overlays for 1-3", 4, realized.size());
+		assertFalse("bank 9 has no image slice, so it must not pass for an occupant",
+			realized.contains(result.bits()));
+	}
+
+	/**
+	 * The other half of the same guard: an in-range recovered bank must still be accepted, or
+	 * the tripwire would suppress every annotation instead of the wrong ones.
+	 */
+	@Test
+	public void inRangeRecoveredBankIsRealizedByTheImage() throws Exception {
+		builder.setBytes("0xffd0", "00 01 02 03");
+		builder.setBytes("0x8000", "a9 02", true); // LDA #$02
+		builder.setBytes("0x8002", "8d d2 ff", true); // STA $FFD2
+		romifyPrg();
+		layFourBankOverlays();
+
+		Instruction store = instructionAt("0x8002");
+		stripWriteReferences(store);
+
+		BankState result = busConflictLatch().computeSwitch(program, store, BankState.unknown());
+
+		assertNotNull(result);
+		assertEquals(0x02, result.bits());
+		assertTrue("bank 2 is realized as the PRG_LO_B2 overlay",
+			BoardBankAnalyzer.realizedBanks(program, "PRG_LO", 0).contains(result.bits()));
+	}
+
+	/**
+	 * The home bank is realized in BASE space, not as a {@code PRG_LO_B0} overlay, so it has to
+	 * be added from the descriptor's {@code initial_state} rather than discovered by scanning
+	 * spaces. Missing that would make every home-bank annotation warn.
+	 */
+	@Test
+	public void homeBankCountsAsRealizedEvenWithNoOverlayOfItsOwn() throws Exception {
+		layFourBankOverlays();
+
+		assertTrue("home bank lives in base space",
+			BoardBankAnalyzer.realizedBanks(program, "PRG_LO", 0).contains(0));
+		assertFalse("a differently-named window's overlays are not this window's banks",
+			BoardBankAnalyzer.realizedBanks(program, "PRG_HI", 3).contains(1));
+	}
 }
