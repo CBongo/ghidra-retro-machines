@@ -1,0 +1,123 @@
+=== REALROM BEGIN ===
+REALROM program kicarus.nes
+REALROM sha256 caa6e5a173c403618e0fb2a9389ffed9836a1fa4aec7084ea71e548f8288fadc
+REALROM prgsha256 dce8aa6c598c0a5db89512ea55f0090b8af1d4646db3e4232ef7c042655b997a
+REALROM map machines/nes-mmc1.map
+REALROM placement NONE
+REALROM block APU_IO 4000-401f overlay=false
+REALROM block PPU_REGS 2000-2007 overlay=false
+REALROM block PRG_RAM 6000-7fff overlay=false
+REALROM block RAM 0000-07ff overlay=false
+REALROM block W8000 8000-bfff overlay=false
+REALROM block W8000_M0_B0 8000-ffff overlay=true
+REALROM block W8000_M0_B1 8000-ffff overlay=true
+REALROM block W8000_M0_B2 8000-ffff overlay=true
+REALROM block W8000_M0_B3 8000-ffff overlay=true
+REALROM block W8000_M0_B4 8000-ffff overlay=true
+REALROM block W8000_M0_B5 8000-ffff overlay=true
+REALROM block W8000_M0_B6 8000-ffff overlay=true
+REALROM block W8000_M0_B7 8000-ffff overlay=true
+REALROM block W8000_M1_B0 8000-ffff overlay=true
+REALROM block W8000_M1_B1 8000-ffff overlay=true
+REALROM block W8000_M1_B2 8000-ffff overlay=true
+REALROM block W8000_M1_B3 8000-ffff overlay=true
+REALROM block W8000_M1_B4 8000-ffff overlay=true
+REALROM block W8000_M1_B5 8000-ffff overlay=true
+REALROM block W8000_M1_B6 8000-ffff overlay=true
+REALROM block W8000_M1_B7 8000-ffff overlay=true
+REALROM block W8000_M2 8000-bfff overlay=true
+REALROM block W8000_M3_B1 8000-bfff overlay=true
+REALROM block W8000_M3_B2 8000-bfff overlay=true
+REALROM block W8000_M3_B3 8000-bfff overlay=true
+REALROM block W8000_M3_B4 8000-bfff overlay=true
+REALROM block W8000_M3_B5 8000-bfff overlay=true
+REALROM block W8000_M3_B6 8000-bfff overlay=true
+REALROM block W8000_M3_B7 8000-bfff overlay=true
+REALROM block WC000 c000-ffff overlay=false
+REALROM block WC000_M2_B0 c000-ffff overlay=true
+REALROM block WC000_M2_B1 c000-ffff overlay=true
+REALROM block WC000_M2_B2 c000-ffff overlay=true
+REALROM block WC000_M2_B3 c000-ffff overlay=true
+REALROM block WC000_M2_B4 c000-ffff overlay=true
+REALROM block WC000_M2_B5 c000-ffff overlay=true
+REALROM block WC000_M2_B6 c000-ffff overlay=true
+REALROM block WC000_M2_B7 c000-ffff overlay=true
+REALROM count blocks.total 38
+REALROM count blocks.overlay 32
+REALROM count spaces.overlay 32
+REALROM count refs.intoOverlay 50
+REALROM count instrs.inOverlay 215
+REALROM count bankComments 31
+REALROM count warnings 21
+REALROM sample.bankcomment c024 bank -> mirroring=3,prg_mode=3,prg_bank=0 via FUN_eb07 [switch-value flow]
+REALROM sample.bankcomment c0d4 bank -> mirroring=0,prg_mode=3,prg_bank=0? via FUN_c17f [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
+REALROM sample.bankcomment c0ff bank -> mirroring=0,prg_mode=3,prg_bank=1? via FUN_c17f [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
+REALROM sample.bankcomment c84b bank -> mirroring=0,prg_mode=3,prg_bank=4? via FUN_c17f [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=0,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
+REALROM sample.bankcomment c85b bank -> mirroring=0,prg_mode=3,prg_bank=4? via FUN_c17f [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=0,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
+REALROM sample.bankcomment caad bank -> mirroring=0,prg_mode=3,prg_bank=0? [known: prg_mode.0=1,prg_mode.1=1; assumed from initial: mirroring.0,mirroring.1,prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
+REALROM sample.bankcomment cab1 bank -> mirroring=0,prg_mode=3,prg_bank=0? [known: prg_mode.0=1,prg_mode.1=1; assumed from initial: mirroring.0,mirroring.1,prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
+REALROM sample.bankcomment cab5 bank -> mirroring=0,prg_mode=3,prg_bank=0? [known: prg_mode.0=1,prg_mode.1=1; assumed from initial: mirroring.0,mirroring.1,prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
+REALROM sample.bankcomment cab9 bank -> mirroring=0,prg_mode=3,prg_bank=0? [known: prg_mode.0=1,prg_mode.1=1; assumed from initial: mirroring.0,mirroring.1,prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
+REALROM sample.bankcomment cabd bank -> mirroring=0,prg_mode=3,prg_bank=6? [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
+REALROM sample.bankcomment eb09 bank -> mirroring=0,prg_mode=3,prg_bank=0? [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
+REALROM sample.bankcomment eb0d bank -> mirroring=0,prg_mode=3,prg_bank=0? [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
+REALROM sample.bankcomment eb11 bank -> mirroring=0,prg_mode=3,prg_bank=0? [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
+REALROM sample.bankcomment eb15 bank -> mirroring=0,prg_mode=3,prg_bank=0? [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
+REALROM sample.bankcomment eb19 bank -> mirroring=3,prg_mode=3,prg_bank=0 [switch-value flow]
+REALROM sample.bankcomment ff87 bank -> mirroring=0,prg_mode=3,prg_bank=0 [switch-value flow]
+REALROM sample.bankcomment ff8c bank -> mirroring=0,prg_mode=3,prg_bank=0 [switch-value flow]
+REALROM sample.bankcomment ff90 bank -> mirroring=0,prg_mode=3,prg_bank=0 [switch-value flow]
+REALROM sample.bankcomment ff94 bank -> mirroring=0,prg_mode=3,prg_bank=0 [switch-value flow]
+REALROM sample.bankcomment ff98 bank -> mirroring=0,prg_mode=3,prg_bank=0 [switch-value flow]
+REALROM sample.bankcomment ff9c bank -> mirroring=3,prg_mode=3,prg_bank=0 [switch-value flow]
+REALROM sample.bankcomment ffa1 bank -> mirroring=3,prg_mode=3,prg_bank=0 [switch-value flow]
+REALROM sample.bankcomment ffa5 bank -> mirroring=3,prg_mode=3,prg_bank=0 [switch-value flow]
+REALROM sample.bankcomment ffa9 bank -> mirroring=3,prg_mode=3,prg_bank=0 [switch-value flow]
+REALROM sample.bankcomment ffad bank -> mirroring=3,prg_mode=3,prg_bank=0 [switch-value flow]
+REALROM sample.ref a000 -> W8000_M3_B4::a006 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref a003 -> W8000_M3_B4::a0fd UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref a02f -> W8000_M3_B4::a02b CONDITIONAL_JUMP primary=true
+REALROM sample.ref a0fd -> W8000_M3_B4::a2cd UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref a215 -> W8000_M3_B4::a22c CONDITIONAL_JUMP primary=true
+REALROM sample.ref a21c -> W8000_M3_B4::a22c CONDITIONAL_JUMP primary=true
+REALROM sample.ref a223 -> W8000_M3_B4::a22c CONDITIONAL_JUMP primary=true
+REALROM sample.ref a22a -> W8000_M3_B4::a22c CONDITIONAL_JUMP primary=true
+REALROM sample.ref a22c -> W8000_M3_B4::a3d7 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref a237 -> W8000_M3_B4::a22c UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref a247 -> W8000_M3_B4::a3d7 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref a24a -> W8000_M3_B4::ac0d UNCONDITIONAL_CALL primary=true
+REALROM sample.ref a24d -> W8000_M3_B4::ac1d UNCONDITIONAL_CALL primary=true
+REALROM sample.ref a26e -> W8000_M3_B4::a271 CONDITIONAL_JUMP primary=true
+REALROM sample.ref a278 -> W8000_M3_B4::a284 CONDITIONAL_JUMP primary=true
+REALROM sample.ref a27c -> W8000_M3_B4::a284 CONDITIONAL_JUMP primary=true
+REALROM sample.ref a280 -> W8000_M3_B4::a284 CONDITIONAL_JUMP primary=true
+REALROM sample.ref a29a -> W8000_M3_B4::a292 CONDITIONAL_JUMP primary=true
+REALROM sample.ref a2a0 -> W8000_M3_B4::a35a UNCONDITIONAL_CALL primary=true
+REALROM sample.ref a2aa -> W8000_M3_B4::a29d CONDITIONAL_JUMP primary=true
+REALROM sample.ref a2af -> W8000_M3_B4::a2c4 CONDITIONAL_JUMP primary=true
+REALROM sample.ref a2b3 -> W8000_M3_B4::a2cc CONDITIONAL_JUMP primary=true
+REALROM sample.ref a2b7 -> W8000_M3_B4::a2bd CONDITIONAL_JUMP primary=true
+REALROM sample.ref a2bb -> W8000_M3_B4::a2bf CONDITIONAL_JUMP primary=true
+REALROM sample.ref a2c2 -> W8000_M3_B4::a2c9 CONDITIONAL_JUMP primary=true
+REALROM sample.warn c024 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_eb07 requires mirroring known on entry, but it is unknown here
+REALROM sample.warn c080 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_c1d4 requires mirroring known on entry, but it is unknown here
+REALROM sample.warn c085 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_c0c9 requires mirroring known on entry, but it is unknown here
+REALROM sample.warn c093 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_c331 requires mirroring known on entry, but it is unknown here
+REALROM sample.warn c0d4 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_c17f requires mirroring known on entry, but it is unknown here
+REALROM sample.warn c0ff [NesBankingAnalyzer] Bank state requirement violated: call to FUN_c17f requires mirroring known on entry, but it is unknown here
+REALROM sample.warn c134 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c17f whose bank argument could not be recovered at this call site
+REALROM sample.warn c14f [NesBankingAnalyzer] Bank state becomes unknown here: recovered bank 16 for window W8000, but this image provides only 8 bank(s) for it. A bank index with no corresponding image slice is a value-RECOVERY bug, not a game behavior, so this site is left unannotated and nothing is retargeted from it. Hardware aliasing (a board that decodes fewer latch bits than the field is wide selects some in-range bank instead of faulting) is deliberately NOT modeled: that is per-board wiring, and folding it on speculation would turn a loud wrong answer into a quiet plausible one -- see docs/vision-board-banking.md section 10 item 10, bead grm-hum.
+REALROM sample.warn c18b [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn c18f [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn c193 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn c197 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn c19b [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn c1dc [NesBankingAnalyzer] Bank state requirement violated: call to FUN_c26f requires mirroring known on entry, but it is unknown here
+REALROM sample.warn c29d [NesBankingAnalyzer] Bank state requirement violated: call to FUN_c331 requires mirroring known on entry, but it is unknown here
+REALROM sample.warn c336 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_c856 requires mirroring known on entry, but it is unknown here
+REALROM sample.warn c84b [NesBankingAnalyzer] Bank state requirement violated: call to FUN_c17f requires mirroring known on entry, but it is unknown here
+REALROM sample.warn c852 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c17f whose bank argument could not be recovered at this call site
+REALROM sample.warn c85b [NesBankingAnalyzer] Bank state requirement violated: call to FUN_c17f requires mirroring known on entry, but it is unknown here
+REALROM sample.warn c862 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c17f whose bank argument could not be recovered at this call site
+REALROM sample.warn c872 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c17f whose bank argument could not be recovered at this call site
+=== REALROM END ===

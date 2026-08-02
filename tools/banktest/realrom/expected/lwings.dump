@@ -1,0 +1,88 @@
+=== REALROM BEGIN ===
+REALROM program lwings.nes
+REALROM sha256 73c05c708e699875178a8944cb3446087939e9b12e17cd867d4150fe8680a857
+REALROM prgsha256 d2a585ff6febf59447f9bd9fbb387ae4985385d6f6f61a70e145a5ee69523018
+REALROM map machines/nes-uxrom.map
+REALROM placement NONE
+REALROM block APU_IO 4000-401f overlay=false
+REALROM block PPU_REGS 2000-2007 overlay=false
+REALROM block PRG_HI c000-ffff overlay=false
+REALROM block PRG_LO 8000-bfff overlay=false
+REALROM block PRG_LO_B1 8000-bfff overlay=true
+REALROM block PRG_LO_B2 8000-bfff overlay=true
+REALROM block PRG_LO_B3 8000-bfff overlay=true
+REALROM block PRG_LO_B4 8000-bfff overlay=true
+REALROM block PRG_LO_B5 8000-bfff overlay=true
+REALROM block PRG_LO_B6 8000-bfff overlay=true
+REALROM block PRG_LO_B7 8000-bfff overlay=true
+REALROM block RAM 0000-07ff overlay=false
+REALROM count blocks.total 12
+REALROM count blocks.overlay 7
+REALROM count spaces.overlay 7
+REALROM count refs.intoOverlay 1077
+REALROM count instrs.inOverlay 4649
+REALROM count bankComments 37
+REALROM count warnings 12
+REALROM sample.bankcomment 8194 bank -> 6 (bank=6) via caseD_f8
+REALROM sample.bankcomment 93a4 bank -> 3 (bank=3) via FUN_c389
+REALROM sample.bankcomment 9622 bank -> 0? (bank=0) [known: bank.0=0,bank.1=0,bank.2=0; assumed from initial: bank.3]
+REALROM sample.bankcomment c199 bank -> 6 (bank=6) via FUN_c34c
+REALROM sample.bankcomment c22f bank -> 6 (bank=6) via FUN_c34c
+REALROM sample.bankcomment c25f bank -> 5 (bank=5) via FUN_c34c
+REALROM sample.bankcomment c2d1 bank -> 6 (bank=6) via caseD_f8
+REALROM sample.bankcomment c36c bank -> 3 (bank=3) via caseD_f8
+REALROM sample.bankcomment c37e bank -> 3 (bank=3) via FUN_c34c
+REALROM sample.bankcomment c393 bank -> 3 (bank=3)
+REALROM sample.bankcomment c808 bank -> 6 (bank=6) via FUN_c34c
+REALROM sample.bankcomment c81e bank -> 6 (bank=6) via FUN_c34c
+REALROM sample.bankcomment c875 bank -> 4 (bank=4) via caseD_f8
+REALROM sample.bankcomment c881 bank -> 6 (bank=6) via caseD_f8
+REALROM sample.bankcomment ca06 bank -> 4 (bank=4) via caseD_f8
+REALROM sample.bankcomment cb06 bank -> 6 (bank=6) via FUN_c34c
+REALROM sample.bankcomment cb25 bank -> 3 (bank=3) via FUN_c34c
+REALROM sample.bankcomment d289 bank -> 6 (bank=6) via caseD_f8
+REALROM sample.bankcomment d2a8 bank -> 6 (bank=6) via caseD_f8
+REALROM sample.bankcomment d319 bank -> 6 (bank=6) via caseD_f8
+REALROM sample.bankcomment d349 bank -> 6 (bank=6) via caseD_f8
+REALROM sample.bankcomment d34f bank -> 6 (bank=6) via caseD_f8
+REALROM sample.bankcomment d7bd bank -> 4 (bank=4) via FUN_c34c
+REALROM sample.bankcomment d812 bank -> 5 (bank=5) via FUN_c34c
+REALROM sample.bankcomment d86a bank -> 4 (bank=4) via caseD_f8
+REALROM sample.ref 8000 -> PRG_LO_B3::805c UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8003 -> PRG_LO_B3::862c UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8009 -> PRG_LO_B3::aa8f DATA primary=true
+REALROM sample.ref 800e -> PRG_LO_B3::8951 DATA primary=true
+REALROM sample.ref 802b -> PRG_LO_B3::803d CONDITIONAL_JUMP primary=true
+REALROM sample.ref 802f -> PRG_LO_B3::8020 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 803f -> PRG_LO_B3::8032 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 804d -> PRG_LO_B3::8046 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 804d -> PRG_LO_B6::8161 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8054 -> PRG_LO_B3::805b CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8057 -> PRG_LO_B6::818f UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 805c -> PRG_LO_B3::8042 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8068 -> PRG_LO_B3::807f CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8071 -> PRG_LO_B3::8076 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8073 -> PRG_LO_B3::8092 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8078 -> PRG_LO_B6::817c UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 807c -> PRG_LO_B3::806e CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8081 -> PRG_LO_B6::819f UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8084 -> PRG_LO_B6::83bb UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8086 -> PRG_LO_B3::808b CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8088 -> PRG_LO_B3::8092 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8089 -> PRG_LO_B6::81ad UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 808f -> PRG_LO_B3::8083 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8091 -> PRG_LO_B6::81ad UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8097 -> PRG_LO_B3::80bf CONDITIONAL_JUMP primary=true
+REALROM sample.warn a5c6 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn c1fd [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper caseD_f8 whose bank argument could not be recovered at this call site
+REALROM sample.warn c27c [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper caseD_f8 whose bank argument could not be recovered at this call site
+REALROM sample.warn c34f [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn c375 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper caseD_f8 whose bank argument could not be recovered at this call site
+REALROM sample.warn c385 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper caseD_f8 whose bank argument could not be recovered at this call site
+REALROM sample.warn c39c [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper caseD_f8 whose bank argument could not be recovered at this call site
+REALROM sample.warn c3c1 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper caseD_f8 whose bank argument could not be recovered at this call site
+REALROM sample.warn cabf [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper caseD_f8 whose bank argument could not be recovered at this call site
+REALROM sample.warn cb2c [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper caseD_f8 whose bank argument could not be recovered at this call site
+REALROM sample.warn f9ed [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper caseD_f8 whose bank argument could not be recovered at this call site
+REALROM sample.warn ff42 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ec5c whose bank argument could not be recovered at this call site
+=== REALROM END ===

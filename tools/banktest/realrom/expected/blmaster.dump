@@ -1,0 +1,80 @@
+=== REALROM BEGIN ===
+REALROM program blmaster.nes
+REALROM sha256 af1ddc67e01436573fc633b73730e13d1add1d64acb3f2a77d880efe9d67ba68
+REALROM prgsha256 8f0eb1e74ab31ffb8c1e168cbafbb07472cb86deef71ea3de8769c841cc09647
+REALROM map machines/nes-mmc1.map
+REALROM placement NONE
+REALROM block APU_IO 4000-401f overlay=false
+REALROM block PPU_REGS 2000-2007 overlay=false
+REALROM block PRG_RAM 6000-7fff overlay=false
+REALROM block RAM 0000-07ff overlay=false
+REALROM block W8000 8000-bfff overlay=false
+REALROM block W8000_M0_B0 8000-ffff overlay=true
+REALROM block W8000_M0_B1 8000-ffff overlay=true
+REALROM block W8000_M0_B2 8000-ffff overlay=true
+REALROM block W8000_M0_B3 8000-ffff overlay=true
+REALROM block W8000_M0_B4 8000-ffff overlay=true
+REALROM block W8000_M0_B5 8000-ffff overlay=true
+REALROM block W8000_M0_B6 8000-ffff overlay=true
+REALROM block W8000_M0_B7 8000-ffff overlay=true
+REALROM block W8000_M1_B0 8000-ffff overlay=true
+REALROM block W8000_M1_B1 8000-ffff overlay=true
+REALROM block W8000_M1_B2 8000-ffff overlay=true
+REALROM block W8000_M1_B3 8000-ffff overlay=true
+REALROM block W8000_M1_B4 8000-ffff overlay=true
+REALROM block W8000_M1_B5 8000-ffff overlay=true
+REALROM block W8000_M1_B6 8000-ffff overlay=true
+REALROM block W8000_M1_B7 8000-ffff overlay=true
+REALROM block W8000_M2 8000-bfff overlay=true
+REALROM block W8000_M3_B1 8000-bfff overlay=true
+REALROM block W8000_M3_B2 8000-bfff overlay=true
+REALROM block W8000_M3_B3 8000-bfff overlay=true
+REALROM block W8000_M3_B4 8000-bfff overlay=true
+REALROM block W8000_M3_B5 8000-bfff overlay=true
+REALROM block W8000_M3_B6 8000-bfff overlay=true
+REALROM block W8000_M3_B7 8000-bfff overlay=true
+REALROM block WC000 c000-ffff overlay=false
+REALROM block WC000_M2_B0 c000-ffff overlay=true
+REALROM block WC000_M2_B1 c000-ffff overlay=true
+REALROM block WC000_M2_B2 c000-ffff overlay=true
+REALROM block WC000_M2_B3 c000-ffff overlay=true
+REALROM block WC000_M2_B4 c000-ffff overlay=true
+REALROM block WC000_M2_B5 c000-ffff overlay=true
+REALROM block WC000_M2_B6 c000-ffff overlay=true
+REALROM block WC000_M2_B7 c000-ffff overlay=true
+REALROM count blocks.total 38
+REALROM count blocks.overlay 32
+REALROM count spaces.overlay 32
+REALROM count refs.intoOverlay 0
+REALROM count instrs.inOverlay 0
+REALROM count bankComments 3
+REALROM count warnings 93
+REALROM sample.bankcomment e68e bank -> mirroring=0,prg_mode=3,prg_bank=0? [known: prg_mode.0=1,prg_mode.1=1; assumed from initial: mirroring.0,mirroring.1,prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
+REALROM sample.bankcomment ec53 bank -> mirroring=0,prg_mode=3,prg_bank=5? via FUN_e63c [known: mirroring.0=0,prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.1] [switch-value flow]
+REALROM sample.bankcomment f25f bank -> mirroring=2,prg_mode=3,prg_bank=0? via FUN_e678 [known: mirroring.0=0,mirroring.1=1,prg_mode.0=1,prg_mode.1=1; assumed from initial: prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
+REALROM sample.warn c253 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_dec2 requires mirroring,prg_bank known on entry, but it is unknown here
+REALROM sample.warn c2a1 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_dec2 requires mirroring,prg_bank known on entry, but it is unknown here
+REALROM sample.warn c2b4 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_dec2 requires mirroring,prg_bank known on entry, but it is unknown here
+REALROM sample.warn c2c0 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_cdba requires mirroring,prg_bank known on entry, but it is unknown here
+REALROM sample.warn c2c3 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_f5d9 requires mirroring,prg_bank known on entry, but it is unknown here
+REALROM sample.warn c2db [NesBankingAnalyzer] Bank state requirement violated: call to FUN_dec2 requires mirroring,prg_bank known on entry, but it is unknown here
+REALROM sample.warn c32e [NesBankingAnalyzer] Bank state requirement violated: call to FUN_e692 requires mirroring,prg_bank known on entry, but it is unknown here
+REALROM sample.warn c39b [NesBankingAnalyzer] Bank state requirement violated: call to FUN_cc35 requires mirroring,prg_bank known on entry, but it is unknown here
+REALROM sample.warn c39e [NesBankingAnalyzer] Bank state requirement violated: call to FUN_dcfc requires mirroring,prg_bank known on entry, but it is unknown here
+REALROM sample.warn c3a7 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_c742 requires mirroring,prg_bank known on entry, but it is unknown here
+REALROM sample.warn c3cf [Bad Instruction] Disassembly not permitted within uninitialized memory block (flow from c3cf)
+REALROM sample.warn c3db [NesBankingAnalyzer] Bank state requirement violated: call to FUN_d883 requires mirroring,prg_bank known on entry, but it is unknown here
+REALROM sample.warn c519 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_f6a7 requires mirroring,prg_bank known on entry, but it is unknown here
+REALROM sample.warn c51c [NesBankingAnalyzer] Bank state requirement violated: call to FUN_cdba requires mirroring,prg_bank known on entry, but it is unknown here
+REALROM sample.warn c52a [NesBankingAnalyzer] Bank state requirement violated: call to FUN_dec2 requires mirroring,prg_bank known on entry, but it is unknown here
+REALROM sample.warn c540 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_f71c requires mirroring,prg_bank known on entry, but it is unknown here
+REALROM sample.warn c545 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_cdba requires mirroring,prg_bank known on entry, but it is unknown here
+REALROM sample.warn c554 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_cdba requires mirroring,prg_bank known on entry, but it is unknown here
+REALROM sample.warn c55f [NesBankingAnalyzer] Bank state requirement violated: call to FUN_e61b requires mirroring,prg_bank known on entry, but it is unknown here
+REALROM sample.warn c562 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_f833 requires mirroring,prg_bank known on entry, but it is unknown here
+REALROM sample.warn c56d [NesBankingAnalyzer] Bank state requirement violated: call to FUN_dec2 requires mirroring,prg_bank known on entry, but it is unknown here
+REALROM sample.warn c57a [NesBankingAnalyzer] Bank state requirement violated: call to FUN_e61b requires mirroring,prg_bank known on entry, but it is unknown here
+REALROM sample.warn c695 [CopyLoopAnalyzer] copy-shaped loop RAM:c6bf -> RAM:0660 could not be bounded; not applied
+REALROM sample.warn c767 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_e9b8 requires mirroring,prg_bank known on entry, but it is unknown here
+REALROM sample.warn cc3b [NesBankingAnalyzer] Bank state requirement violated: call to FUN_cc6d requires mirroring,prg_bank known on entry, but it is unknown here
+=== REALROM END ===

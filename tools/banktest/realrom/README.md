@@ -19,15 +19,21 @@ analysis metadata, never ROM bytes or disassembly — *are* committed.
 
 ## Two sets
 
-| file | what it is | when it runs |
+| file | what it is | selected by |
 | --- | --- | --- |
-| `manifest.tsv` | The **curated minimum**: one representative title per shipped board, plus fuller coverage of the boards where a single title proves least — Bandai FCG (mappers 16/157/159) and GxROM (66), the newest additions when the set was assembled. | Always. |
-| `manifest-gme.tsv` | The **expanded reference set**: titles of interest to the parent game-music-extraction project. Deliberately *not* a gate — it is a reference point for planning and an occasional thorough check. | Only with `--gme`. |
+| `manifest.tsv` | The **curated minimum**: one representative title per shipped board, plus fuller coverage of the boards where a single title proves least — Bandai FCG (mappers 16/157/159) and GxROM (66), the newest additions when the set was assembled. | *(default)* |
+| `manifest-gme.tsv` | The **expanded reference set**: titles of interest to the parent game-music-extraction project. Deliberately *not* a gate — it is a reference point for planning and an occasional thorough check. | `--gme` |
+| both | The thorough pass. | `--all` |
 
 ```bash
-bash tools/banktest/realrom-test.sh check <romdir>          # curated set only
-bash tools/banktest/realrom-test.sh check --gme <romdir>    # both
+bash tools/banktest/realrom-test.sh check <romdir>          # curated set
+bash tools/banktest/realrom-test.sh check --gme <romdir>    # GME set only
+bash tools/banktest/realrom-test.sh check --all <romdir>    # both
 ```
+
+The flags **select** a set rather than adding to one, and every run announces which set it
+picked. `--gme` meaning "the GME set *plus* the curated twelve" is a costly surprise under
+`bless`, where it silently re-blesses goldens you never asked about.
 
 Each row costs a ~1min+ headless import, which is the whole reason the expanded set is
 opt-in. An id must be unique **across both files** — ids name goldens and name the ROM

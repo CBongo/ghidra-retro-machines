@@ -1,0 +1,41 @@
+=== REALROM BEGIN ===
+REALROM program wizwarr.nes
+REALROM sha256 463018ac63de3b31a006882538fa1e0b500ba113ad7263e09669039e1193d7dc
+REALROM prgsha256 3ba4f6fd63a74338e438df43ddd1195f8913d69c11f6668d3bbf23a2a3cea459
+REALROM map machines/nes-axrom.map
+REALROM placement NONE
+REALROM block APU_IO 4000-401f overlay=false
+REALROM block PPU_REGS 2000-2007 overlay=false
+REALROM block PRG_ALL 8000-ffff overlay=false
+REALROM block PRG_ALL_B1 8000-ffff overlay=true
+REALROM block PRG_ALL_B2 8000-ffff overlay=true
+REALROM block PRG_ALL_B3 8000-ffff overlay=true
+REALROM block RAM 0000-07ff overlay=false
+REALROM count blocks.total 7
+REALROM count blocks.overlay 3
+REALROM count spaces.overlay 3
+REALROM count refs.intoOverlay 0
+REALROM count instrs.inOverlay 0
+REALROM count bankComments 15
+REALROM count warnings 5
+REALROM sample.bankcomment 8062 bank -> 0 (bank=0)
+REALROM sample.bankcomment 8163 bank -> 0 (bank=0)
+REALROM sample.bankcomment 8184 bank -> 0 (bank=0)
+REALROM sample.bankcomment 882b bank -> 0 (bank=0)
+REALROM sample.bankcomment 88f4 bank -> 0 (bank=0) via FUN_cf81
+REALROM sample.bankcomment 894b bank -> 0 (bank=0)
+REALROM sample.bankcomment bc88 bank -> 0 (bank=0) via FUN_cf81
+REALROM sample.bankcomment c4b4 bank -> 0 (bank=0) via FUN_cf81
+REALROM sample.bankcomment ce86 bank -> 0 (bank=0) via FUN_ce8b
+REALROM sample.bankcomment cf94 bank -> 0 (bank=0)
+REALROM sample.bankcomment e9f2 bank -> 0 (bank=0) via FUN_cf81
+REALROM sample.bankcomment ff8d bank -> 0 (bank=0)
+REALROM sample.bankcomment ff9e bank -> 0 (bank=0)
+REALROM sample.bankcomment ffb9 bank -> 0 (bank=0)
+REALROM sample.bankcomment ffbc bank -> 0 (bank=0) via FUN_804d
+REALROM sample.warn bc0a [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ff69 whose bank argument could not be recovered at this call site
+REALROM sample.warn ce8b [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn ff76 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn ff7f [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn ffa6 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+=== REALROM END ===

@@ -1,0 +1,99 @@
+=== REALROM BEGIN ===
+REALROM program rcransom.nes
+REALROM sha256 b95f8def04c0012604b7cc68cf4ed8f49b2dfe4beda6182051de4b2423bea7b1
+REALROM prgsha256 254fb57592ed397d4fd4a247b22810ab97f001d53a89632647cf48d11154a7f9
+REALROM map machines/nes-mmc3.map
+REALROM placement NONE
+REALROM block APU_IO 4000-401f overlay=false
+REALROM block PPU_REGS 2000-2007 overlay=false
+REALROM block PRG_RAM 6000-7fff overlay=false
+REALROM block RAM 0000-07ff overlay=false
+REALROM block W8000 8000-9fff overlay=false
+REALROM block W8000_M0_B1 8000-9fff overlay=true
+REALROM block W8000_M0_B10 8000-9fff overlay=true
+REALROM block W8000_M0_B11 8000-9fff overlay=true
+REALROM block W8000_M0_B12 8000-9fff overlay=true
+REALROM block W8000_M0_B13 8000-9fff overlay=true
+REALROM block W8000_M0_B14 8000-9fff overlay=true
+REALROM block W8000_M0_B15 8000-9fff overlay=true
+REALROM block W8000_M0_B2 8000-9fff overlay=true
+REALROM block W8000_M0_B3 8000-9fff overlay=true
+REALROM block W8000_M0_B4 8000-9fff overlay=true
+REALROM block W8000_M0_B5 8000-9fff overlay=true
+REALROM block W8000_M0_B6 8000-9fff overlay=true
+REALROM block W8000_M0_B7 8000-9fff overlay=true
+REALROM block W8000_M0_B8 8000-9fff overlay=true
+REALROM block W8000_M0_B9 8000-9fff overlay=true
+REALROM block W8000_M1 8000-9fff overlay=true
+REALROM block WA000 a000-bfff overlay=false
+REALROM block WA000_B0 a000-bfff overlay=true
+REALROM block WA000_B10 a000-bfff overlay=true
+REALROM block WA000_B11 a000-bfff overlay=true
+REALROM block WA000_B12 a000-bfff overlay=true
+REALROM block WA000_B13 a000-bfff overlay=true
+REALROM block WA000_B14 a000-bfff overlay=true
+REALROM block WA000_B15 a000-bfff overlay=true
+REALROM block WA000_B2 a000-bfff overlay=true
+REALROM block WA000_B3 a000-bfff overlay=true
+REALROM block WA000_B4 a000-bfff overlay=true
+REALROM block WA000_B5 a000-bfff overlay=true
+REALROM block WA000_B6 a000-bfff overlay=true
+REALROM block WA000_B7 a000-bfff overlay=true
+REALROM block WA000_B8 a000-bfff overlay=true
+REALROM block WA000_B9 a000-bfff overlay=true
+REALROM block WC000 c000-dfff overlay=false
+REALROM block WC000_M1_B0 c000-dfff overlay=true
+REALROM block WC000_M1_B1 c000-dfff overlay=true
+REALROM block WC000_M1_B10 c000-dfff overlay=true
+REALROM block WC000_M1_B11 c000-dfff overlay=true
+REALROM block WC000_M1_B12 c000-dfff overlay=true
+REALROM block WC000_M1_B13 c000-dfff overlay=true
+REALROM block WC000_M1_B14 c000-dfff overlay=true
+REALROM block WC000_M1_B15 c000-dfff overlay=true
+REALROM block WC000_M1_B2 c000-dfff overlay=true
+REALROM block WC000_M1_B3 c000-dfff overlay=true
+REALROM block WC000_M1_B4 c000-dfff overlay=true
+REALROM block WC000_M1_B5 c000-dfff overlay=true
+REALROM block WC000_M1_B6 c000-dfff overlay=true
+REALROM block WC000_M1_B7 c000-dfff overlay=true
+REALROM block WC000_M1_B8 c000-dfff overlay=true
+REALROM block WC000_M1_B9 c000-dfff overlay=true
+REALROM block WE000 e000-ffff overlay=false
+REALROM count blocks.total 55
+REALROM count blocks.overlay 47
+REALROM count spaces.overlay 47
+REALROM count refs.intoOverlay 0
+REALROM count instrs.inOverlay 0
+REALROM count bankComments 38
+REALROM count warnings 5
+REALROM sample.bankcomment b80b bank -> select=0,prg_mode=0,r6=0,r7=1 [switch-value flow]
+REALROM sample.bankcomment e315 bank -> select=2,prg_mode=0,r6=0,r7=1 via FUN_fea1 [switch-value flow]
+REALROM sample.bankcomment e323 bank -> select=3,prg_mode=0,r6=0,r7=1 via FUN_fead [switch-value flow]
+REALROM sample.bankcomment e331 bank -> select=4,prg_mode=0,r6=0,r7=1 via FUN_feb9 [switch-value flow]
+REALROM sample.bankcomment e33f bank -> select=5,prg_mode=0,r6=0,r7=1 via FUN_fec5 [switch-value flow]
+REALROM sample.bankcomment fae3 bank -> select=0,prg_mode=0,r6=0,r7=1 via FUN_ba78 [switch-value flow]
+REALROM sample.bankcomment fe5b bank -> select=0,prg_mode=0,r6=0,r7=1 [switch-value flow]
+REALROM sample.bankcomment fe62 bank -> select=0,prg_mode=0,r6=0,r7=1 [switch-value flow]
+REALROM sample.bankcomment fe67 bank -> select=1,prg_mode=0,r6=0,r7=1 [switch-value flow]
+REALROM sample.bankcomment fe6d bank -> select=1,prg_mode=0,r6=0,r7=1 [switch-value flow]
+REALROM sample.bankcomment fe76 bank -> select=2,prg_mode=0,r6=0,r7=1 [switch-value flow]
+REALROM sample.bankcomment fe7c bank -> select=2,prg_mode=0,r6=0,r7=1 [switch-value flow]
+REALROM sample.bankcomment fe81 bank -> select=3,prg_mode=0,r6=0,r7=1 [switch-value flow]
+REALROM sample.bankcomment fe87 bank -> select=3,prg_mode=0,r6=0,r7=1 [switch-value flow]
+REALROM sample.bankcomment fe8c bank -> select=4,prg_mode=0,r6=0,r7=1 [switch-value flow]
+REALROM sample.bankcomment fe92 bank -> select=4,prg_mode=0,r6=0,r7=1 [switch-value flow]
+REALROM sample.bankcomment fe97 bank -> select=5,prg_mode=0,r6=0,r7=1 [switch-value flow]
+REALROM sample.bankcomment fe9d bank -> select=5,prg_mode=0,r6=0,r7=1 [switch-value flow]
+REALROM sample.bankcomment fea3 bank -> select=2,prg_mode=0,r6=0,r7=1 [switch-value flow]
+REALROM sample.bankcomment fea9 bank -> select=2,prg_mode=0,r6=0,r7=1 [switch-value flow]
+REALROM sample.bankcomment feaf bank -> select=3,prg_mode=0,r6=0,r7=1 [switch-value flow]
+REALROM sample.bankcomment feb5 bank -> select=3,prg_mode=0,r6=0,r7=1 [switch-value flow]
+REALROM sample.bankcomment febb bank -> select=4,prg_mode=0,r6=0,r7=1 [switch-value flow]
+REALROM sample.bankcomment fec1 bank -> select=4,prg_mode=0,r6=0,r7=1 [switch-value flow]
+REALROM sample.bankcomment fec7 bank -> select=5,prg_mode=0,r6=0,r7=1 [switch-value flow]
+REALROM sample.warn f1d0 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ff07 whose bank argument could not be recovered at this call site
+REALROM sample.warn f21d [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ff29 whose bank argument could not be recovered at this call site
+REALROM sample.warn ff21 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn ff25 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn ff4b [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+=== REALROM END ===

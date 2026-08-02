@@ -179,17 +179,27 @@ bank numbers through tables/helpers, hit ~191 overlays, etc.). It is **not** par
 default gate: ROM binaries are copyrighted and user-supplied, so nothing here runs in CI and
 it is never a `run-banktest.sh` chunk (whose `all` would otherwise pull it in).
 
-- **Driver:** `tools/banktest/realrom-test.sh check|bless|nominate [--gme]
+- **Driver:** `tools/banktest/realrom-test.sh check|bless|nominate [--gme|--all]
   [--only|--except <ids>] <romdir> [<romdir> …]` (or `GRM_ROM_DIR`). Lives alongside
   `measure-overlay-scale.sh` and reuses the same `build/ghidra-home` isolation, so run
   `build-and-test.sh check nes-banking` once first.
-- **Two row sets.** `realrom/manifest.tsv` is the curated minimum — one representative title
-  per shipped board. `realrom/manifest-gme.tsv` is an expanded reference set of titles of
-  interest to the parent game-music-extraction project, included only with `--gme`. It is
-  deliberately not a gate: a reference point for planning and an occasional thorough check,
-  since each row costs a ~1min+ headless import. Ids must be unique across both files, and
-  the driver hard-errors on a collision — an id names a golden *and* names the ROM copy the
-  import sees, so a duplicate would let one row silently overwrite another's golden.
+- **Two row sets, selected not accumulated.** `realrom/manifest.tsv` is the curated minimum
+  (one representative title per shipped board) and is the default; `realrom/manifest-gme.tsv`
+  is an expanded reference set of titles of interest to the parent game-music-extraction
+  project, chosen by `--gme`; `--all` runs both. The flags *select*, because `--gme` also
+  re-blessing the curated twelve is a costly surprise. The expanded set is deliberately not a
+  gate: a reference point for planning and an occasional thorough check, since each row costs
+  a ~1min+ headless import. Ids must be unique across both files — checked repo-wide
+  regardless of which set a run selected — because an id names a golden *and* names the ROM
+  copy the import sees, so a duplicate would let one row silently overwrite another's golden.
+- **Candidate cache correctness.** `bless` may reuse a candidate a prior `check` imported.
+  Its key must cover *everything that can change the dump*: the row id (it becomes the ROM
+  copy name and lands in the dump as `REALROM program <id>.nes`), the ROM hash, the loader
+  options, `RealRomDump.java`, and the installed extension — where "extension" includes the
+  **loose `data/machines/*.map` descriptors**, not just the jars, since a board descriptor
+  edit changes the very layout the dump records. A reused candidate is additionally asserted
+  to name this row and this ROM before it is accepted, so the next key omission fails loudly
+  instead of blessing a stale dump.
 - **`nominate`** hashes a ROM dir, decodes each iNES mapper (mirroring `NesRomLoader`'s NES 2.0
   and `DiskDude!`-archaic handling) and resolves the claiming board from the shipped
   descriptors' `ines_mappers`, emitting paste-ready rows. It needs no Ghidra install. A mapper

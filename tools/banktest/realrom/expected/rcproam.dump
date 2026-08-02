@@ -1,0 +1,88 @@
+=== REALROM BEGIN ===
+REALROM program rcproam.nes
+REALROM sha256 4aaaa0f1c125e96f2f76af926bec72f657a0331e80aeb697123be27cd81d870a
+REALROM prgsha256 7c75ab09008ae1240be2851d777c8ee9cd4c9ba6c020abd9986452c65776c225
+REALROM map machines/nes-mmc1.map
+REALROM placement NONE
+REALROM block APU_IO 4000-401f overlay=false
+REALROM block PPU_REGS 2000-2007 overlay=false
+REALROM block PRG_RAM 6000-7fff overlay=false
+REALROM block RAM 0000-07ff overlay=false
+REALROM block W8000 8000-bfff overlay=false
+REALROM block W8000_M0_B0 8000-ffff overlay=true
+REALROM block W8000_M0_B1 8000-ffff overlay=true
+REALROM block W8000_M1_B0 8000-ffff overlay=true
+REALROM block W8000_M1_B1 8000-ffff overlay=true
+REALROM block W8000_M2 8000-bfff overlay=true
+REALROM block W8000_M3_B1 8000-bfff overlay=true
+REALROM block WC000 c000-ffff overlay=false
+REALROM block WC000_M2_B0 c000-ffff overlay=true
+REALROM block WC000_M2_B1 c000-ffff overlay=true
+REALROM count blocks.total 14
+REALROM count blocks.overlay 8
+REALROM count spaces.overlay 8
+REALROM count refs.intoOverlay 1298
+REALROM count instrs.inOverlay 4810
+REALROM count bankComments 10
+REALROM count warnings 47
+REALROM sample.bankcomment 8011 bank -> mirroring=0,prg_mode=0,prg_bank=0 via caseD_1d [switch-value flow]
+REALROM sample.bankcomment 801b bank -> mirroring=0,prg_mode=0,prg_bank=0 via FUN_ffc5 [switch-value flow]
+REALROM sample.bankcomment 9327 bank -> mirroring=0,prg_mode=0,prg_bank=0 via caseD_1d [switch-value flow]
+REALROM sample.bankcomment 9515 bank -> mirroring=1,prg_mode=0,prg_bank=0 via caseD_1d [switch-value flow]
+REALROM sample.bankcomment 9a4b bank -> mirroring=0,prg_mode=0,prg_bank=0 via caseD_1d [switch-value flow]
+REALROM sample.bankcomment 9e13 bank -> mirroring=0,prg_mode=0,prg_bank=0 via caseD_1d [switch-value flow]
+REALROM sample.bankcomment a128 bank -> mirroring=0,prg_mode=0,prg_bank=0 via caseD_1d [switch-value flow]
+REALROM sample.bankcomment a130 bank -> mirroring=1,prg_mode=0,prg_bank=0 via caseD_1d [switch-value flow]
+REALROM sample.bankcomment ff85 bank -> mirroring=0,prg_mode=3,prg_bank=0 [switch-value flow]
+REALROM sample.bankcomment ffea bank -> mirroring=0,prg_mode=3,prg_bank=0 via FUN_ff83 [switch-value flow]
+REALROM sample.ref 801b -> W8000_M0_B0::ffc5 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8021 -> W8000_M0_B0::801e CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8021 -> W8000_M0_B0::801e CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8026 -> W8000_M0_B0::8023 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8026 -> W8000_M0_B0::8023 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8028 -> W8000_M0_B0::a10c UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8028 -> W8000_M0_B0::a10c UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 802b -> W8000_M0_B0::a026 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 802b -> W8000_M0_B0::a026 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 802e -> W8000_M0_B0::c30b UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 802e -> W8000_M0_B0::c30b UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 803b -> W8000_M0_B0::a0f8 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 803e -> W8000_M0_B0::a03c UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8048 -> W8000_M0_B0::804d CONDITIONAL_JUMP primary=true
+REALROM sample.ref 804a -> W8000_M0_B0::cfbe UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8055 -> W8000_M0_B0::8059 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 805e -> W8000_M0_B0::806b READ primary=true
+REALROM sample.ref 8063 -> W8000_M0_B0::806c READ primary=true
+REALROM sample.ref 8068 -> W8000_M0_B0::8077 COMPUTED_JUMP primary=true
+REALROM sample.ref 8068 -> W8000_M0_B0::80a2 COMPUTED_JUMP primary=false
+REALROM sample.ref 8068 -> W8000_M0_B0::80f0 COMPUTED_JUMP primary=false
+REALROM sample.ref 8068 -> W8000_M0_B0::812a COMPUTED_JUMP primary=false
+REALROM sample.ref 8068 -> W8000_M0_B0::818a COMPUTED_JUMP primary=false
+REALROM sample.ref 8068 -> W8000_M0_B0::8500 COMPUTED_JUMP primary=false
+REALROM sample.ref 8068 -> W8000_M0_B0::8509 COMPUTED_JUMP primary=false
+REALROM sample.warn 804a [NesBankingAnalyzer] Bank state requirement violated: call to FUN_cfbe requires prg_mode known on entry, but it is unknown here
+REALROM sample.warn 81d6 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_8ff4 requires prg_mode known on entry, but it is unknown here
+REALROM sample.warn 81de [NesBankingAnalyzer] Bank state requirement violated: call to FUN_92ca requires prg_mode known on entry, but it is unknown here
+REALROM sample.warn 8678 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_a126 requires prg_mode known on entry, but it is unknown here
+REALROM sample.warn 86a5 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_a008 requires prg_mode known on entry, but it is unknown here
+REALROM sample.warn 8888 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_a126 requires prg_mode known on entry, but it is unknown here
+REALROM sample.warn 8894 [NesBankingAnalyzer] Bank state requirement violated: call to caseD_3e requires prg_mode known on entry, but it is unknown here
+REALROM sample.warn 8899 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_ffb1 requires prg_mode known on entry, but it is unknown here
+REALROM sample.warn 8d7f [NesBankingAnalyzer] Bank state requirement violated: call to FUN_8ff4 requires prg_mode known on entry, but it is unknown here
+REALROM sample.warn 8ff9 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_ffb1 requires prg_mode known on entry, but it is unknown here
+REALROM sample.warn 8ffc [NesBankingAnalyzer] Bank state requirement violated: call to FUN_a126 requires prg_mode known on entry, but it is unknown here
+REALROM sample.warn 92d4 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_a126 requires prg_mode known on entry, but it is unknown here
+REALROM sample.warn 92da [NesBankingAnalyzer] Bank state requirement violated: call to FUN_9513 requires prg_mode known on entry, but it is unknown here
+REALROM sample.warn 9327 [NesBankingAnalyzer] Bank state requirement violated: call to caseD_1d requires prg_mode known on entry, but it is unknown here
+REALROM sample.warn 934e [NesBankingAnalyzer] Bank state requirement violated: call to caseD_3e requires prg_mode known on entry, but it is unknown here
+REALROM sample.warn 9515 [NesBankingAnalyzer] Bank state requirement violated: call to caseD_1d requires prg_mode known on entry, but it is unknown here
+REALROM sample.warn 9a4b [NesBankingAnalyzer] Bank state requirement violated: call to caseD_1d requires prg_mode known on entry, but it is unknown here
+REALROM sample.warn a00a [NesBankingAnalyzer] Bank state requirement violated: call to caseD_3e requires prg_mode known on entry, but it is unknown here
+REALROM sample.warn a00f [NesBankingAnalyzer] Bank state requirement violated: call to FUN_ffb1 requires prg_mode known on entry, but it is unknown here
+REALROM sample.warn a128 [NesBankingAnalyzer] Bank state requirement violated: call to caseD_1d requires prg_mode known on entry, but it is unknown here
+REALROM sample.warn b1a3 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_becf requires prg_mode known on entry, but it is unknown here
+REALROM sample.warn b1a6 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_a14a requires prg_mode known on entry, but it is unknown here
+REALROM sample.warn bda1 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn bf14 [NesBankingAnalyzer] Bank state requirement violated: call to switchD requires prg_mode known on entry, but it is unknown here
+REALROM sample.warn cfc6 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_a126 requires prg_mode known on entry, but it is unknown here
+=== REALROM END ===

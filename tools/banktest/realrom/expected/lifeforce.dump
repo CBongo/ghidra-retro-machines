@@ -1,0 +1,56 @@
+=== REALROM BEGIN ===
+REALROM program lifeforce.nes
+REALROM sha256 803f1c82ae197d73f6522410eaab79424ee8cfbbc24e4127053e8e39cb1ef586
+REALROM prgsha256 dbd530e6ca07cc4b255b1b885cd5b6b2e23b8d3cac4733c3e4d96acd7d751c28
+REALROM map machines/nes-uxrom.map
+REALROM placement NONE
+REALROM block APU_IO 4000-401f overlay=false
+REALROM block PPU_REGS 2000-2007 overlay=false
+REALROM block PRG_HI c000-ffff overlay=false
+REALROM block PRG_LO 8000-bfff overlay=false
+REALROM block PRG_LO_B1 8000-bfff overlay=true
+REALROM block PRG_LO_B2 8000-bfff overlay=true
+REALROM block PRG_LO_B3 8000-bfff overlay=true
+REALROM block PRG_LO_B4 8000-bfff overlay=true
+REALROM block PRG_LO_B5 8000-bfff overlay=true
+REALROM block PRG_LO_B6 8000-bfff overlay=true
+REALROM block PRG_LO_B7 8000-bfff overlay=true
+REALROM block RAM 0000-07ff overlay=false
+REALROM count blocks.total 12
+REALROM count blocks.overlay 7
+REALROM count spaces.overlay 7
+REALROM count refs.intoOverlay 231
+REALROM count instrs.inOverlay 796
+REALROM count bankComments 2
+REALROM count warnings 3
+REALROM sample.bankcomment e62f bank -> 3 (bank=3) via FUN_e61e
+REALROM sample.bankcomment e7f2 bank -> 3 (bank=3) via FUN_e61e
+REALROM sample.ref 8004 -> PRG_LO_B3::800b CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8009 -> PRG_LO_B3::8021 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 800d -> PRG_LO_B3::8021 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8017 -> PRG_LO_B3::8021 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 801c -> PRG_LO_B3::8021 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8023 -> PRG_LO_B3::8030 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8028 -> PRG_LO_B3::803f CONDITIONAL_JUMP primary=true
+REALROM sample.ref 802a -> PRG_LO_B3::86ef UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 802d -> PRG_LO_B3::803f UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8033 -> PRG_LO_B3::803f CONDITIONAL_JUMP primary=true
+REALROM sample.ref 803a -> PRG_LO_B3::803f CONDITIONAL_JUMP primary=true
+REALROM sample.ref 803c -> PRG_LO_B3::8308 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8050 -> PRG_LO_B3::8055 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8052 -> PRG_LO_B3::805b UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8058 -> PRG_LO_B3::8048 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 805d -> PRG_LO_B3::8062 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 805f -> PRG_LO_B3::80b1 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8065 -> PRG_LO_B3::80b1 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8069 -> PRG_LO_B3::80b1 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 806d -> PRG_LO_B3::8086 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8072 -> PRG_LO_B3::80b1 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 807e -> PRG_LO_B3::80b1 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8083 -> PRG_LO_B3::80b1 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8089 -> PRG_LO_B3::80b1 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8093 -> PRG_LO_B3::80b1 CONDITIONAL_JUMP primary=true
+REALROM sample.warn e621 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn e63b [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_e61e whose bank argument could not be recovered at this call site
+REALROM sample.warn e7fa [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_e61e whose bank argument could not be recovered at this call site
+=== REALROM END ===

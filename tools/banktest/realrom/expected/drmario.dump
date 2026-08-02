@@ -1,0 +1,104 @@
+=== REALROM BEGIN ===
+REALROM program drmario.nes
+REALROM sha256 33bf00489ec593bdf1d5255154735912503754de2f2d679c00b8229e5f024812
+REALROM prgsha256 ace0456db2526659619a53d1fcdf3c023f6c15385396c26b98ac30a5f31556bc
+REALROM map machines/nes-mmc1.map
+REALROM placement NONE
+REALROM block APU_IO 4000-401f overlay=false
+REALROM block PPU_REGS 2000-2007 overlay=false
+REALROM block PRG_RAM 6000-7fff overlay=false
+REALROM block RAM 0000-07ff overlay=false
+REALROM block W8000 8000-bfff overlay=false
+REALROM block W8000_M0_B0 8000-ffff overlay=true
+REALROM block W8000_M0_B1 8000-ffff overlay=true
+REALROM block W8000_M0_B2 8000-ffff overlay=true
+REALROM block W8000_M0_B3 8000-ffff overlay=true
+REALROM block W8000_M0_B4 8000-ffff overlay=true
+REALROM block W8000_M0_B5 8000-ffff overlay=true
+REALROM block W8000_M0_B6 8000-ffff overlay=true
+REALROM block W8000_M0_B7 8000-ffff overlay=true
+REALROM block W8000_M1_B0 8000-ffff overlay=true
+REALROM block W8000_M1_B1 8000-ffff overlay=true
+REALROM block W8000_M1_B2 8000-ffff overlay=true
+REALROM block W8000_M1_B3 8000-ffff overlay=true
+REALROM block W8000_M1_B4 8000-ffff overlay=true
+REALROM block W8000_M1_B5 8000-ffff overlay=true
+REALROM block W8000_M1_B6 8000-ffff overlay=true
+REALROM block W8000_M1_B7 8000-ffff overlay=true
+REALROM block W8000_M2 8000-bfff overlay=true
+REALROM block W8000_M3_B1 8000-bfff overlay=true
+REALROM block W8000_M3_B2 8000-bfff overlay=true
+REALROM block W8000_M3_B3 8000-bfff overlay=true
+REALROM block W8000_M3_B4 8000-bfff overlay=true
+REALROM block W8000_M3_B5 8000-bfff overlay=true
+REALROM block W8000_M3_B6 8000-bfff overlay=true
+REALROM block W8000_M3_B7 8000-bfff overlay=true
+REALROM block WC000 c000-ffff overlay=false
+REALROM block WC000_M2_B0 c000-ffff overlay=true
+REALROM block WC000_M2_B1 c000-ffff overlay=true
+REALROM block WC000_M2_B2 c000-ffff overlay=true
+REALROM block WC000_M2_B3 c000-ffff overlay=true
+REALROM block WC000_M2_B4 c000-ffff overlay=true
+REALROM block WC000_M2_B5 c000-ffff overlay=true
+REALROM block WC000_M2_B6 c000-ffff overlay=true
+REALROM block WC000_M2_B7 c000-ffff overlay=true
+REALROM count blocks.total 38
+REALROM count blocks.overlay 32
+REALROM count spaces.overlay 32
+REALROM count refs.intoOverlay 394
+REALROM count instrs.inOverlay 1650
+REALROM count bankComments 2
+REALROM count warnings 34
+REALROM sample.bankcomment ff1b bank -> mirroring=0,prg_mode=0,prg_bank=0? via FUN_b8cc [known: mirroring.0=0,mirroring.1=0,prg_mode.0=0,prg_mode.1=0; assumed from initial: prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
+REALROM sample.bankcomment ff2a bank -> mirroring=0,prg_mode=0,prg_bank=0 via FUN_b908 [switch-value flow]
+REALROM sample.ref 8002 -> W8000_M0_B0::8036 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 805b -> W8000_M0_B0::8058 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 805f -> W8000_M0_B0::8058 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8080 -> W8000_M0_B0::9fed READ primary=true
+REALROM sample.ref 8085 -> W8000_M0_B0::808d CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8088 -> W8000_M0_B0::807b CONDITIONAL_JUMP primary=true
+REALROM sample.ref 808a -> W8000_M0_B0::80dc UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 80d3 -> W8000_M0_B0::9fed READ primary=true
+REALROM sample.ref 80da -> W8000_M0_B0::80d3 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 80fd -> W8000_M0_B0::ffd6 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8100 -> W8000_M0_B0::ffd3 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8117 -> W8000_M0_B0::b67c UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 811a -> W8000_M0_B0::b6a2 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 811f -> W8000_M0_B0::b6ac UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8124 -> W8000_M0_B0::b6ac UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8129 -> W8000_M0_B0::b6ac UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 812e -> W8000_M0_B0::b6ac UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8135 -> W8000_M0_B0::90c9 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8138 -> W8000_M0_B0::b695 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 813b -> W8000_M0_B0::b654 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 813e -> W8000_M0_B0::b689 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8141 -> W8000_M0_B0::b654 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8148 -> W8000_M0_B0::8157 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 814b -> W8000_M0_B0::978e UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 814e -> W8000_M0_B0::b654 UNCONDITIONAL_CALL primary=true
+REALROM sample.warn 8002 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_8036 requires prg_mode known on entry, but it is unknown here
+REALROM sample.warn 813b [NesBankingAnalyzer] Bank state requirement violated: call to FUN_b654 requires prg_mode known on entry, but it is unknown here
+REALROM sample.warn 8141 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_b654 requires prg_mode known on entry, but it is unknown here
+REALROM sample.warn 814b [NesBankingAnalyzer] Bank state requirement violated: call to FUN_978e requires prg_mode known on entry, but it is unknown here
+REALROM sample.warn 814e [NesBankingAnalyzer] Bank state requirement violated: call to FUN_b654 requires prg_mode known on entry, but it is unknown here
+REALROM sample.warn 87a2 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_89c9 requires prg_mode known on entry, but it is unknown here
+REALROM sample.warn 89d0 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_b8f4 requires prg_mode known on entry, but it is unknown here
+REALROM sample.warn 97b6 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_b654 requires prg_mode known on entry, but it is unknown here
+REALROM sample.warn 97e2 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_b654 requires prg_mode known on entry, but it is unknown here
+REALROM sample.warn b658 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_87a2 requires prg_mode known on entry, but it is unknown here
+REALROM sample.warn b8cc [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn b8d0 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn b8d4 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn b8d8 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn b8dc [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn b8e0 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn b8e4 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn b8e8 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn b8ec [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn b8f0 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn b8f4 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn b8f8 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn b8fc [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn b900 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn b904 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+=== REALROM END ===

@@ -5,10 +5,21 @@
 # user-supplied, so this lives alongside measure-overlay-scale.sh and is invoked by
 # hand:
 #
-#   bash tools/banktest/realrom-test.sh check  [--only|--except <ids>] <romdir> [<romdir> ...]
-#   bash tools/banktest/realrom-test.sh bless  [--only|--except <ids>] <romdir> [<romdir> ...]
+#   bash tools/banktest/realrom-test.sh check    [--gme|--all] [--only|--except <ids>] <romdir> ...
+#   bash tools/banktest/realrom-test.sh bless    [--gme|--all] [--only|--except <ids>] <romdir> ...
+#   bash tools/banktest/realrom-test.sh nominate <romdir> ...
 #
 # (romdirs may also be supplied via GRM_ROM_DIR, space-separated.)
+#
+# There are two row sets and the flags SELECT one rather than adding to it: no flag =
+# realrom/manifest.tsv (the curated board-representative set), --gme = realrom/manifest-gme.tsv
+# (game-music-extraction titles of interest), --all = both. Additive --gme was the first
+# design and it was wrong: `bless --gme` then silently re-blessed all twelve curated goldens
+# alongside the ones asked for. Every run announces the set it picked.
+#
+# `nominate` emits paste-ready manifest rows for a ROM dir -- hashing each dump, decoding its
+# iNES mapper and resolving the claiming board -- and flags any mapper no shipped descriptor
+# claims as a board gap. It needs no Ghidra install.
 #
 # --only/--except take comma-separated manifest ids and select which rows the run
 # considers at all. --except exists for the recurring case this tier actually hits: one
@@ -38,7 +49,10 @@
 #   GRM_ROM_DIR             default rom dir(s) if none given on the command line
 set -u
 
-USAGE="usage: $0 check|bless|nominate [--gme] [--only <ids>|--except <ids>] <romdir> [<romdir> ...]"
+USAGE="usage: $0 check|bless|nominate [--gme|--all] [--only <ids>|--except <ids>] <romdir> [<romdir> ...]
+  (no set flag) realrom/manifest.tsv      -- the curated board-representative set
+  --gme         realrom/manifest-gme.tsv  -- the game-music-extraction set ONLY
+  --all         both manifests"
 
 MODE="${1:-}"
 case "$MODE" in
@@ -55,15 +69,20 @@ esac
 # portability level of the rest of this script.
 ONLY_IDS=""
 EXCEPT_IDS=""
-# --gme adds realrom/manifest-gme.tsv (the game-music-extraction titles of interest) on top
-# of the curated board-representative set. Off by default and deliberately so: that set is a
-# reference point for planning and an occasional thorough check, not a gate, and each row
-# costs a ~1min+ headless import.
-INCLUDE_GME=0
+# Which manifest(s) this run considers. Default is the curated board-representative set.
+# --gme SELECTS the game-music-extraction set instead of it, rather than adding to it: that
+# set is a reference point for planning and an occasional thorough check, not a gate, and
+# `bless --gme` meaning "also re-bless all twelve curated goldens" is a surprise that costs
+# real work to undo. --all is the explicit way to ask for both.
+MANIFEST_SET=core
 while [ $# -gt 0 ]; do
 	case "$1" in
 		--gme)
-			INCLUDE_GME=1
+			MANIFEST_SET=gme
+			shift
+			;;
+		--all)
+			MANIFEST_SET=all
 			shift
 			;;
 		--only|--except)
@@ -109,15 +128,30 @@ if [ ! -f "$MANIFEST" ]; then
 	echo "ERROR: manifest not found: $MANIFEST" >&2
 	exit 2
 fi
-MANIFESTS=("$MANIFEST")
-if [ "$INCLUDE_GME" = 1 ]; then
-	if [ ! -f "$GME_MANIFEST" ]; then
-		echo "ERROR: --gme given but $GME_MANIFEST does not exist." >&2
-		echo "       Populate it with: $0 nominate <romdir> [<romdir> ...]" >&2
-		exit 2
-	fi
-	MANIFESTS+=("$GME_MANIFEST")
+MANIFESTS=()
+case "$MANIFEST_SET" in
+	core) MANIFESTS=("$MANIFEST") ;;
+	gme)  MANIFESTS=("$GME_MANIFEST") ;;
+	all)  MANIFESTS=("$MANIFEST" "$GME_MANIFEST") ;;
+esac
+if [ "$MANIFEST_SET" != core ] && [ ! -f "$GME_MANIFEST" ]; then
+	echo "ERROR: --$MANIFEST_SET needs $GME_MANIFEST, which does not exist." >&2
+	echo "       Populate it with: $0 nominate <romdir> [<romdir> ...]" >&2
+	exit 2
 fi
+echo "== manifest set: $MANIFEST_SET (${#MANIFESTS[@]} file(s)) =="
+
+# Ragged rows are a RENDERING defect, never a correctness one -- `read` treats a missing
+# trailing field and an empty one identically -- so this warns and continues. It exists
+# because the fix (a trailing tab on rows with no loader_opts) is invisible whitespace that
+# editors and paste buffers strip, so without a reminder the GitHub table quietly degrades.
+for m in "${MANIFESTS[@]}"; do
+	ragged="$(tr -d '\r' < "$m" | awk -F'\t' '!/^#/ && NF && NF != 7 { printf "%s ", $1 }')"
+	[ -z "$ragged" ] || {
+		echo "NOTE: $(basename "$m") has rows that are not 7 fields wide: $ragged" >&2
+		echo "      GitHub's table view wants a uniform column count; pad with a trailing tab." >&2
+	}
+done
 mkdir -p "$EXPECTED_DIR"
 
 # One id must mean one row. Ids name goldens (expected/<id>.dump), name the ROM copy the
@@ -125,13 +159,18 @@ mkdir -p "$EXPECTED_DIR"
 # --only/--except match -- so a duplicate across the two manifests would import twice and
 # have the second row silently overwrite the first's golden. Same reasoning as the
 # unknown-id error below: the expensive failure here is the one that looks like success.
-dupe_ids="$(cat "${MANIFESTS[@]}" | tr -d '\r' \
+# Checks EVERY manifest, not just the selected ones: uniqueness is a property of the repo,
+# not of how this invocation was flagged, and a `--gme` run that skipped the check would
+# happily bless a row whose id collides with a curated one.
+all_manifests=("$MANIFEST")
+[ -f "$GME_MANIFEST" ] && all_manifests+=("$GME_MANIFEST")
+dupe_ids="$(cat "${all_manifests[@]}" | tr -d '\r' \
 	| awk -F'\t' '!/^#/ && NF && $1 != "id" { print $1 }' \
 	| LC_ALL=C sort | uniq -d)"
 if [ -n "$dupe_ids" ]; then
 	echo "ERROR: id(s) appear in more than one manifest:" >&2
 	printf '  %s\n' $dupe_ids >&2
-	echo "       Each id must be unique across ${MANIFESTS[*]}" >&2
+	echo "       Each id must be unique across ${all_manifests[*]}" >&2
 	exit 2
 fi
 
@@ -153,7 +192,9 @@ if [ -n "$ONLY_IDS$EXCEPT_IDS" ]; then
 				*",$w,"*) ;;
 				*)
 					echo "ERROR: '$w' is not an id in ${MANIFESTS[*]}" >&2
-					[ "$INCLUDE_GME" = 1 ] || echo "hint: --gme adds the game-music-extraction titles" >&2
+					[ "$MANIFEST_SET" = all ] ||
+						echo "hint: this run covers the '$MANIFEST_SET' set only; --gme selects the" \
+							"game-music-extraction titles, --all covers both" >&2
 					known="${manifest_ids#,}"
 					echo "known ids: ${known%,}" >&2
 					exit 2
@@ -289,6 +330,35 @@ if [ "$MODE" = nominate ]; then
 	exit 0
 fi
 
+# A golden must be ABOUT the row that points at it: it records `REALROM program <id>.nes`
+# and `REALROM sha256 <the row's hash>`, both derived from the row. Checking that at rest
+# costs two greps per file and needs no ROMs, so even a `check` that SKIPs everything still
+# verifies it -- which is precisely the situation the stale-candidate bug (grm-c9u) survived.
+# An ABSENT golden is not an error here: adding a row before blessing it is the documented
+# workflow, and the row walk already reports that as a FAIL with a clearer message.
+if [ "$MODE" = check ]; then
+	mismatched=""
+	while IFS=$'\t' read -r g_id g_title g_sha _ _ g_golden _; do
+		case "${g_id:-}" in ""|id|\#*) continue ;; esac
+		g_path="$EXPECTED_DIR/${g_golden:-$g_id.dump}"
+		[ -f "$g_path" ] || continue
+		g_prog="$(awk '/^REALROM program /{print $3; exit}' "$g_path")"
+		g_gsha="$(awk '/^REALROM sha256 /{print tolower($3); exit}' "$g_path")"
+		g_want="$(printf '%s' "$g_sha" | tr 'A-Z' 'a-z' | tr -d '[:space:]')"
+		if [ "$g_prog" != "$g_id.nes" ] || [ "$g_gsha" != "$g_want" ]; then
+			mismatched="$mismatched  $g_id: $(basename "$g_path") says program=$g_prog sha=${g_gsha:0:12}...
+"
+		fi
+	done < <(cat "${MANIFESTS[@]}" | tr -d '\r')
+	if [ -n "$mismatched" ]; then
+		echo "ERROR: golden(s) do not describe the manifest row pointing at them:" >&2
+		printf '%s' "$mismatched" >&2
+		echo "       Usually an id was renamed without re-blessing, or a stale candidate was" >&2
+		echo "       blessed. Re-bless the affected rows: $0 bless --only <ids> <romdir>" >&2
+		exit 2
+	fi
+fi
+
 # Default headless path derives from gradle.properties' ghidraTargetVersion (single
 # source of truth); GHIDRA_HEADLESS still overrides.
 GRM_TARGET_VERSION="$(sed -n 's/^ghidraTargetVersion=//p' "$REPO_ROOT/gradle.properties")"
@@ -334,14 +404,26 @@ ext_identity() {
 	# in run-banktest.sh. NOT a file mtime/stamp -- gradle rewrites the dist zip
 	# every build with identical bytecode, so an mtime-based id never matches
 	# across a check->bless pair. unzip -v's CRC-32 column is content-only.
-	local base="${BANKTEST_SETTINGS_BASE:-}" jars out
+	local base="${BANKTEST_SETTINGS_BASE:-}" jars loose out
 	[ -n "$base" ] || return 1
 	command -v unzip >/dev/null 2>&1 || return 1
 	jars="$(find "$base" -type f -name '*.jar' -path '*/Extensions/*' 2>/dev/null | LC_ALL=C sort)"
 	[ -n "$jars" ] || return 1
-	out="$(printf '%s\n' "$jars" | while IFS= read -r j; do
-		unzip -v "$j" 2>/dev/null | awk '$7 ~ /^[0-9a-fA-F]{8}$/ {print $7, $NF}'
-	done | LC_ALL=C sort | sha256sum | cut -d' ' -f1)"
+	# The compiled board descriptors ship LOOSE, as data/machines/*.map next to the jar --
+	# only the two charset maps live inside it. Fingerprinting jars alone therefore missed
+	# the single most common change in this repo: editing machines/nes-*.yaml recompiles a
+	# .map, changes the block/overlay layout the dump records, and left the cache key
+	# identical, so a bless could serve a candidate from before the descriptor change.
+	# sha256sum (not mtime) for the same content-only reason the jar branch uses CRCs.
+	loose="$(find "$base" -type f -path '*/Extensions/*' ! -name '*.jar' 2>/dev/null | LC_ALL=C sort)"
+	out="$( {
+		printf '%s\n' "$jars" | while IFS= read -r j; do
+			unzip -v "$j" 2>/dev/null | awk '$7 ~ /^[0-9a-fA-F]{8}$/ {print $7, $NF}'
+		done
+		[ -z "$loose" ] || printf '%s\n' "$loose" | while IFS= read -r p; do
+			printf '%s %s\n' "$(sha256sum "$p" | cut -d' ' -f1)" "${p#"$base"}"
+		done
+	} | LC_ALL=C sort | sha256sum | cut -d' ' -f1)"
 	[ -n "$out" ] || return 1
 	printf '%s' "$out"
 }
@@ -349,10 +431,17 @@ ext_identity() {
 EXT_ID="$(ext_identity)" || EXT_ID=""
 
 realrom_cache_key() {
-	# args: rom_sha opts  ->  sha256 key on stdout, or empty if disabled
-	local rom_sha="$1" opts="$2"
+	# args: id rom_sha opts  ->  sha256 key on stdout, or empty if disabled
+	#
+	# The id is part of the key because it is part of the OUTPUT: import_and_dump names the
+	# ROM copy after it, so it reaches the dump as `REALROM program <id>.nes`. Leaving it out
+	# meant renaming a row (wizwarr -> ironsword) left the key untouched, so a bless reused
+	# the pre-rename candidate and wrote the old name straight back into the golden. Anything
+	# that can change the dump has to be in here.
+	local id="$1" rom_sha="$2" opts="$3"
 	[ -n "$EXT_ID" ] || { printf ''; return 0; }
 	{
+		printf 'id:%s\n' "$id"
 		printf 'rom:%s\n' "$rom_sha"
 		printf 'opts:%s\n' "$opts"
 		printf 'dumpscript:'; sha256sum "$SCRIPT_DIR/RealRomDump.java" | cut -d' ' -f1
@@ -475,7 +564,7 @@ while IFS=$'\t' read -r id title sha mapper board golden opts || [ -n "${id:-}" 
 	fi
 
 	out="$WORK/${id}.dump"
-	key="$(realrom_cache_key "$sha" "$opts")"
+	key="$(realrom_cache_key "$id" "$sha" "$opts")"
 	cached="$CACHE_DIR/$key.dump"
 
 	# bless fast path: reuse the candidate a prior check imported for this exact
@@ -483,15 +572,30 @@ while IFS=$'\t' read -r id title sha mapper board golden opts || [ -n "${id:-}" 
 	# cached dump was only stored after its sha recheck passed, so it is
 	# known-good.
 	if [ "$MODE" = bless ] && [ -n "$key" ] && [ -f "$cached" ]; then
-		echo "-- $id ($title): reusing cached candidate from prior check (no re-import)"
-		if [ -f "$golden_path" ]; then
-			diff -u "$golden_path" "$cached" && echo "    no change vs golden"
+		# Assert the candidate is about THIS row before believing the key. A cache key is a
+		# claim that nothing outside it can change the dump, and that claim has been wrong
+		# twice: the id was missing (a rename reused the pre-rename candidate and wrote the
+		# old name back into the golden) and the loose data/machines/*.map descriptors were
+		# outside ext_identity. Both are fixed above; this check is what makes the NEXT
+		# omission fail loudly instead of silently blessing a stale dump, which is the whole
+		# failure mode this tier exists to prevent.
+		cached_prog="$(awk '/^REALROM program /{print $3; exit}' "$cached")"
+		cached_sha="$(awk '/^REALROM sha256 /{print tolower($3); exit}' "$cached")"
+		if [ "$cached_prog" != "$id.nes" ] || [ "$cached_sha" != "$sha" ]; then
+			echo "    stale cache entry ignored (program='$cached_prog' want='$id.nes'," \
+				"sha='$cached_sha' want='$sha') -- re-importing" >&2
+			rm -f "$cached"
+		else
+			echo "-- $id ($title): reusing cached candidate from prior check (no re-import)"
+			if [ -f "$golden_path" ]; then
+				diff -u "$golden_path" "$cached" && echo "    no change vs golden"
+			fi
+			cp -f "$cached" "$golden_path"
+			ROW_ID+=("$id"); ROW_STATUS+=("BLESS"); ROW_DETAIL+=("$golden (cached)")
+			n_bless=$((n_bless + 1))
+			echo "    blessed (from cache) -> $golden_path"
+			continue
 		fi
-		cp -f "$cached" "$golden_path"
-		ROW_ID+=("$id"); ROW_STATUS+=("BLESS"); ROW_DETAIL+=("$golden (cached)")
-		n_bless=$((n_bless + 1))
-		echo "    blessed (from cache) -> $golden_path"
-		continue
 	fi
 
 	echo "-- $id ($title): importing $(basename "$rom")"

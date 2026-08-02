@@ -1,0 +1,159 @@
+=== REALROM BEGIN ===
+REALROM program megaman2.nes
+REALROM sha256 27b5a635df33ed57ed339dfc7fd62fc603b39c1d1603adb5cdc3562a0b0d555b
+REALROM prgsha256 1e588d435e75d80c5c0b578b4fa8d196f2cf4346c11c9a7b7e435d768828ad01
+REALROM map machines/nes-mmc1.map
+REALROM placement NONE
+REALROM block APU_IO 4000-401f overlay=false
+REALROM block PPU_REGS 2000-2007 overlay=false
+REALROM block PRG_RAM 6000-7fff overlay=false
+REALROM block RAM 0000-07ff overlay=false
+REALROM block W8000 8000-bfff overlay=false
+REALROM block W8000_M0_B0 8000-ffff overlay=true
+REALROM block W8000_M0_B1 8000-ffff overlay=true
+REALROM block W8000_M0_B10 8000-ffff overlay=true
+REALROM block W8000_M0_B11 8000-ffff overlay=true
+REALROM block W8000_M0_B12 8000-ffff overlay=true
+REALROM block W8000_M0_B13 8000-ffff overlay=true
+REALROM block W8000_M0_B14 8000-ffff overlay=true
+REALROM block W8000_M0_B15 8000-ffff overlay=true
+REALROM block W8000_M0_B2 8000-ffff overlay=true
+REALROM block W8000_M0_B3 8000-ffff overlay=true
+REALROM block W8000_M0_B4 8000-ffff overlay=true
+REALROM block W8000_M0_B5 8000-ffff overlay=true
+REALROM block W8000_M0_B6 8000-ffff overlay=true
+REALROM block W8000_M0_B7 8000-ffff overlay=true
+REALROM block W8000_M0_B8 8000-ffff overlay=true
+REALROM block W8000_M0_B9 8000-ffff overlay=true
+REALROM block W8000_M1_B0 8000-ffff overlay=true
+REALROM block W8000_M1_B1 8000-ffff overlay=true
+REALROM block W8000_M1_B10 8000-ffff overlay=true
+REALROM block W8000_M1_B11 8000-ffff overlay=true
+REALROM block W8000_M1_B12 8000-ffff overlay=true
+REALROM block W8000_M1_B13 8000-ffff overlay=true
+REALROM block W8000_M1_B14 8000-ffff overlay=true
+REALROM block W8000_M1_B15 8000-ffff overlay=true
+REALROM block W8000_M1_B2 8000-ffff overlay=true
+REALROM block W8000_M1_B3 8000-ffff overlay=true
+REALROM block W8000_M1_B4 8000-ffff overlay=true
+REALROM block W8000_M1_B5 8000-ffff overlay=true
+REALROM block W8000_M1_B6 8000-ffff overlay=true
+REALROM block W8000_M1_B7 8000-ffff overlay=true
+REALROM block W8000_M1_B8 8000-ffff overlay=true
+REALROM block W8000_M1_B9 8000-ffff overlay=true
+REALROM block W8000_M2 8000-bfff overlay=true
+REALROM block W8000_M3_B1 8000-bfff overlay=true
+REALROM block W8000_M3_B10 8000-bfff overlay=true
+REALROM block W8000_M3_B11 8000-bfff overlay=true
+REALROM block W8000_M3_B12 8000-bfff overlay=true
+REALROM block W8000_M3_B13 8000-bfff overlay=true
+REALROM block W8000_M3_B14 8000-bfff overlay=true
+REALROM block W8000_M3_B15 8000-bfff overlay=true
+REALROM block W8000_M3_B2 8000-bfff overlay=true
+REALROM block W8000_M3_B3 8000-bfff overlay=true
+REALROM block W8000_M3_B4 8000-bfff overlay=true
+REALROM block W8000_M3_B5 8000-bfff overlay=true
+REALROM block W8000_M3_B6 8000-bfff overlay=true
+REALROM block W8000_M3_B7 8000-bfff overlay=true
+REALROM block W8000_M3_B8 8000-bfff overlay=true
+REALROM block W8000_M3_B9 8000-bfff overlay=true
+REALROM block WC000 c000-ffff overlay=false
+REALROM block WC000_M2_B0 c000-ffff overlay=true
+REALROM block WC000_M2_B1 c000-ffff overlay=true
+REALROM block WC000_M2_B10 c000-ffff overlay=true
+REALROM block WC000_M2_B11 c000-ffff overlay=true
+REALROM block WC000_M2_B12 c000-ffff overlay=true
+REALROM block WC000_M2_B13 c000-ffff overlay=true
+REALROM block WC000_M2_B14 c000-ffff overlay=true
+REALROM block WC000_M2_B15 c000-ffff overlay=true
+REALROM block WC000_M2_B2 c000-ffff overlay=true
+REALROM block WC000_M2_B3 c000-ffff overlay=true
+REALROM block WC000_M2_B4 c000-ffff overlay=true
+REALROM block WC000_M2_B5 c000-ffff overlay=true
+REALROM block WC000_M2_B6 c000-ffff overlay=true
+REALROM block WC000_M2_B7 c000-ffff overlay=true
+REALROM block WC000_M2_B8 c000-ffff overlay=true
+REALROM block WC000_M2_B9 c000-ffff overlay=true
+REALROM count blocks.total 70
+REALROM count blocks.overlay 64
+REALROM count spaces.overlay 64
+REALROM count refs.intoOverlay 1455
+REALROM count instrs.inOverlay 6683
+REALROM count bankComments 74
+REALROM count warnings 324
+REALROM sample.bankcomment 802a bank -> mirroring=2,prg_mode=3,prg_bank=14 via FUN_c05d [switch-value flow]
+REALROM sample.bankcomment 8044 bank -> mirroring=2,prg_mode=3,prg_bank=14 [switch-value flow]
+REALROM sample.bankcomment 8048 bank -> mirroring=2,prg_mode=3,prg_bank=14 [switch-value flow]
+REALROM sample.bankcomment 804c bank -> mirroring=2,prg_mode=3,prg_bank=14 [switch-value flow]
+REALROM sample.bankcomment 8050 bank -> mirroring=2,prg_mode=3,prg_bank=14 [switch-value flow]
+REALROM sample.bankcomment 8054 bank -> mirroring=2,prg_mode=3,prg_bank=14 [switch-value flow]
+REALROM sample.bankcomment 9688 bank -> mirroring=3,prg_mode=3,prg_bank=13 via FUN_c05d [switch-value flow]
+REALROM sample.bankcomment 99c2 bank -> mirroring=2,prg_mode=3,prg_bank=13 via FUN_c05d [switch-value flow]
+REALROM sample.bankcomment 9ef7 bank -> mirroring=3,prg_mode=3,prg_bank=13 via FUN_c05d [switch-value flow]
+REALROM sample.bankcomment a2b9 bank -> mirroring=2,prg_mode=3,prg_bank=13 via FUN_c05d [switch-value flow]
+REALROM sample.bankcomment c034 bank -> mirroring=0,prg_mode=3,prg_bank=12? [known: prg_bank.0=0,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
+REALROM sample.bankcomment c073 bank -> mirroring=0,prg_mode=3,prg_bank=13? via FUN_c000 [known: mirroring.0=0,prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.1] [switch-value flow]
+REALROM sample.bankcomment c07b bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_c000 [known: mirroring.0=0,prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.1] [switch-value flow]
+REALROM sample.bankcomment c0a7 bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_c000 [known: mirroring.0=0,prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.1] [switch-value flow]
+REALROM sample.bankcomment c0d3 bank -> mirroring=0,prg_mode=3,prg_bank=13? via FUN_c000 [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
+REALROM sample.bankcomment c0fc bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_c000 [known: mirroring.0=0,prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.1] [switch-value flow]
+REALROM sample.bankcomment c19a bank -> mirroring=0,prg_mode=3,prg_bank=0? via FUN_c000 [known: mirroring.0=0,prg_mode.0=1,prg_mode.1=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.1,prg_bank.0,prg_bank.1,prg_bank.2] [switch-value flow]
+REALROM sample.bankcomment c1b3 bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_c000 [known: mirroring.0=0,prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.1] [switch-value flow]
+REALROM sample.bankcomment c1c0 bank -> mirroring=0,prg_mode=3,prg_bank=13? via FUN_c000 [known: mirroring.0=0,prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.1] [switch-value flow]
+REALROM sample.bankcomment c1c8 bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_c000 [known: mirroring.0=0,prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.1] [switch-value flow]
+REALROM sample.bankcomment c230 bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_c000 [known: mirroring.0=0,prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.1] [switch-value flow]
+REALROM sample.bankcomment c249 bank -> mirroring=0,prg_mode=3,prg_bank=13? via FUN_c000 [known: mirroring.0=0,prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.1] [switch-value flow]
+REALROM sample.bankcomment c251 bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_c000 [known: mirroring.0=0,prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.1] [switch-value flow]
+REALROM sample.bankcomment c26b bank -> mirroring=0,prg_mode=3,prg_bank=13? via FUN_c000 [known: mirroring.0=0,prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.1] [switch-value flow]
+REALROM sample.bankcomment c354 bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_c000 [known: mirroring.0=0,prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.1] [switch-value flow]
+REALROM sample.ref 8000 -> W8000_M3_B11::a451 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8000 -> W8000_M3_B12::8235 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8000 -> W8000_M3_B13::8015 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8003 -> W8000_M3_B13::90ec UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8005 -> W8000_M3_B12::800a CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8006 -> W8000_M3_B13::9678 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8007 -> W8000_M3_B12::8129 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8009 -> W8000_M3_B13::9ee7 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8009 -> W8000_M3_B14::8006 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 800c -> W8000_M3_B12::8011 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 800c -> W8000_M3_B13::b101 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 800d -> W8000_M3_B11::8017 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 800e -> W8000_M3_B12::812d UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 800e -> W8000_M3_B14::800b CONDITIONAL_JUMP primary=true
+REALROM sample.ref 800f -> W8000_M3_B11::802b DATA primary=true
+REALROM sample.ref 800f -> W8000_M3_B13::b6f1 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8011 -> W8000_M3_B14::8006 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8012 -> W8000_M3_B11::8017 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8012 -> W8000_M3_B13::bae0 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8013 -> W8000_M3_B12::8020 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8014 -> W8000_M3_B11::8063 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8019 -> W8000_M3_B11::801e CONDITIONAL_JUMP primary=true
+REALROM sample.ref 801b -> W8000_M3_B11::9fd3 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 801d -> W8000_M3_B12::813a UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 801e -> W8000_M3_B11::8047 DATA primary=true
+REALROM sample.warn 8026 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_W8000_M3_B13__843c requires mirroring known on entry, but it is unknown here
+REALROM sample.warn 802a [NesBankingAnalyzer] Bank state requirement violated: call to FUN_c05d requires mirroring known on entry, but it is unknown here
+REALROM sample.warn 8068 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_W8000_M3_B11__a52d requires mirroring known on entry, but it is unknown here
+REALROM sample.warn 8076 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_c565 requires mirroring known on entry, but it is unknown here
+REALROM sample.warn 807f [NesBankingAnalyzer] Bank state requirement violated: call to FUN_c071 requires mirroring known on entry, but it is unknown here
+REALROM sample.warn 80a8 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_c0ab requires mirroring known on entry, but it is unknown here
+REALROM sample.warn 80c1 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_c45d requires mirroring known on entry, but it is unknown here
+REALROM sample.warn 80c2 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_c0ab requires mirroring known on entry, but it is unknown here
+REALROM sample.warn 80d2 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_c4cd requires mirroring known on entry, but it is unknown here
+REALROM sample.warn 80f5 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_W8000_M3_B14__907d requires mirroring known on entry, but it is unknown here
+REALROM sample.warn 80fd [NesBankingAnalyzer] Bank state requirement violated: call to FUN_W8000_M3_B14__907d requires mirroring known on entry, but it is unknown here
+REALROM sample.warn 814c [NesBankingAnalyzer] Bank state requirement violated: call to FUN_c70c requires mirroring known on entry, but it is unknown here
+REALROM sample.warn 8150 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_c07f requires mirroring known on entry, but it is unknown here
+REALROM sample.warn 8165 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_c7b5 requires mirroring known on entry, but it is unknown here
+REALROM sample.warn 816a [NesBankingAnalyzer] Bank state requirement violated: call to FUN_c0ab requires mirroring known on entry, but it is unknown here
+REALROM sample.warn 816e [NesBankingAnalyzer] Bank state requirement violated: call to FUN_W8000_M3_B14__8223 requires mirroring known on entry, but it is unknown here
+REALROM sample.warn 817e [NesBankingAnalyzer] Bank state requirement violated: call to FUN_c573 requires mirroring known on entry, but it is unknown here
+REALROM sample.warn 818a [NesBankingAnalyzer] Bank state requirement violated: call to FUN_d658 requires mirroring known on entry, but it is unknown here
+REALROM sample.warn 818d [NesBankingAnalyzer] Bank state requirement violated: call to FUN_c5a9 requires mirroring known on entry, but it is unknown here
+REALROM sample.warn 8190 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_W8000_M3_B14__925b requires mirroring known on entry, but it is unknown here
+REALROM sample.warn 8193 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_cc77 requires mirroring known on entry, but it is unknown here
+REALROM sample.warn 819a [NesBankingAnalyzer] Bank state requirement violated: call to FUN_W8000_M3_B14__8278 requires mirroring known on entry, but it is unknown here
+REALROM sample.warn 81a2 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_c723 requires mirroring known on entry, but it is unknown here
+REALROM sample.warn 81a9 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_c0d7 requires mirroring known on entry, but it is unknown here
+REALROM sample.warn 81b0 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_c07f requires mirroring known on entry, but it is unknown here
+=== REALROM END ===

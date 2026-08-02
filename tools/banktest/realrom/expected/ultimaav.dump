@@ -1,0 +1,135 @@
+=== REALROM BEGIN ===
+REALROM program ultimaav.nes
+REALROM sha256 8acaea14008b73f5564b35b3c09c2ac404cf1a64e87817e491d9540679354e9d
+REALROM prgsha256 bb625b8df6ddbeb991bb1cbf9b818a5352dcd4856d84640612b2df66148c442f
+REALROM map machines/nes-mmc1.map
+REALROM placement NONE
+REALROM block APU_IO 4000-401f overlay=false
+REALROM block PPU_REGS 2000-2007 overlay=false
+REALROM block PRG_RAM 6000-7fff overlay=false
+REALROM block RAM 0000-07ff overlay=false
+REALROM block W8000 8000-bfff overlay=false
+REALROM block W8000_M0_B0 8000-ffff overlay=true
+REALROM block W8000_M0_B1 8000-ffff overlay=true
+REALROM block W8000_M0_B10 8000-ffff overlay=true
+REALROM block W8000_M0_B11 8000-ffff overlay=true
+REALROM block W8000_M0_B12 8000-ffff overlay=true
+REALROM block W8000_M0_B13 8000-ffff overlay=true
+REALROM block W8000_M0_B14 8000-ffff overlay=true
+REALROM block W8000_M0_B15 8000-ffff overlay=true
+REALROM block W8000_M0_B2 8000-ffff overlay=true
+REALROM block W8000_M0_B3 8000-ffff overlay=true
+REALROM block W8000_M0_B4 8000-ffff overlay=true
+REALROM block W8000_M0_B5 8000-ffff overlay=true
+REALROM block W8000_M0_B6 8000-ffff overlay=true
+REALROM block W8000_M0_B7 8000-ffff overlay=true
+REALROM block W8000_M0_B8 8000-ffff overlay=true
+REALROM block W8000_M0_B9 8000-ffff overlay=true
+REALROM block W8000_M1_B0 8000-ffff overlay=true
+REALROM block W8000_M1_B1 8000-ffff overlay=true
+REALROM block W8000_M1_B10 8000-ffff overlay=true
+REALROM block W8000_M1_B11 8000-ffff overlay=true
+REALROM block W8000_M1_B12 8000-ffff overlay=true
+REALROM block W8000_M1_B13 8000-ffff overlay=true
+REALROM block W8000_M1_B14 8000-ffff overlay=true
+REALROM block W8000_M1_B15 8000-ffff overlay=true
+REALROM block W8000_M1_B2 8000-ffff overlay=true
+REALROM block W8000_M1_B3 8000-ffff overlay=true
+REALROM block W8000_M1_B4 8000-ffff overlay=true
+REALROM block W8000_M1_B5 8000-ffff overlay=true
+REALROM block W8000_M1_B6 8000-ffff overlay=true
+REALROM block W8000_M1_B7 8000-ffff overlay=true
+REALROM block W8000_M1_B8 8000-ffff overlay=true
+REALROM block W8000_M1_B9 8000-ffff overlay=true
+REALROM block W8000_M2 8000-bfff overlay=true
+REALROM block W8000_M3_B1 8000-bfff overlay=true
+REALROM block W8000_M3_B10 8000-bfff overlay=true
+REALROM block W8000_M3_B11 8000-bfff overlay=true
+REALROM block W8000_M3_B12 8000-bfff overlay=true
+REALROM block W8000_M3_B13 8000-bfff overlay=true
+REALROM block W8000_M3_B14 8000-bfff overlay=true
+REALROM block W8000_M3_B15 8000-bfff overlay=true
+REALROM block W8000_M3_B2 8000-bfff overlay=true
+REALROM block W8000_M3_B3 8000-bfff overlay=true
+REALROM block W8000_M3_B4 8000-bfff overlay=true
+REALROM block W8000_M3_B5 8000-bfff overlay=true
+REALROM block W8000_M3_B6 8000-bfff overlay=true
+REALROM block W8000_M3_B7 8000-bfff overlay=true
+REALROM block W8000_M3_B8 8000-bfff overlay=true
+REALROM block W8000_M3_B9 8000-bfff overlay=true
+REALROM block WC000 c000-ffff overlay=false
+REALROM block WC000_M2_B0 c000-ffff overlay=true
+REALROM block WC000_M2_B1 c000-ffff overlay=true
+REALROM block WC000_M2_B10 c000-ffff overlay=true
+REALROM block WC000_M2_B11 c000-ffff overlay=true
+REALROM block WC000_M2_B12 c000-ffff overlay=true
+REALROM block WC000_M2_B13 c000-ffff overlay=true
+REALROM block WC000_M2_B14 c000-ffff overlay=true
+REALROM block WC000_M2_B15 c000-ffff overlay=true
+REALROM block WC000_M2_B2 c000-ffff overlay=true
+REALROM block WC000_M2_B3 c000-ffff overlay=true
+REALROM block WC000_M2_B4 c000-ffff overlay=true
+REALROM block WC000_M2_B5 c000-ffff overlay=true
+REALROM block WC000_M2_B6 c000-ffff overlay=true
+REALROM block WC000_M2_B7 c000-ffff overlay=true
+REALROM block WC000_M2_B8 c000-ffff overlay=true
+REALROM block WC000_M2_B9 c000-ffff overlay=true
+REALROM count blocks.total 70
+REALROM count blocks.overlay 64
+REALROM count spaces.overlay 64
+REALROM count refs.intoOverlay 175
+REALROM count instrs.inOverlay 678
+REALROM count bankComments 1
+REALROM count warnings 27
+REALROM sample.bankcomment f1e9 bank -> mirroring=0,prg_mode=3,prg_bank=14 via FUN_f333 [switch-value flow]
+REALROM sample.ref 808f -> W8000_M3_B14::808c CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8091 -> W8000_M3_B14::80f0 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8097 -> W8000_M3_B14::80ef CONDITIONAL_JUMP primary=true
+REALROM sample.ref 80af -> W8000_M3_B14::80b9 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 80b1 -> W8000_M3_B14::81d1 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 80b7 -> W8000_M3_B14::80b1 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 80ca -> W8000_M3_B14::80ea CONDITIONAL_JUMP primary=true
+REALROM sample.ref 80ce -> W8000_M3_B14::80ea CONDITIONAL_JUMP primary=true
+REALROM sample.ref 80d2 -> W8000_M3_B14::80ea CONDITIONAL_JUMP primary=true
+REALROM sample.ref 80d7 -> W8000_M3_B14::80e3 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 80dc -> W8000_M3_B14::80e3 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 80de -> W8000_M3_B14::85c3 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 80e5 -> W8000_M3_B14::80ea CONDITIONAL_JUMP primary=true
+REALROM sample.ref 80e7 -> W8000_M3_B14::854a UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 80ed -> W8000_M3_B14::80bf CONDITIONAL_JUMP primary=true
+REALROM sample.ref 80f2 -> W8000_M3_B14::8142 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 80f7 -> W8000_M3_B14::813e CONDITIONAL_JUMP primary=true
+REALROM sample.ref 80f9 -> W8000_M3_B14::813e CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8103 -> W8000_M3_B14::bd1d DATA primary=true
+REALROM sample.ref 8116 -> W8000_M3_B14::811a CONDITIONAL_JUMP primary=true
+REALROM sample.ref 811a -> W8000_M3_B14::bd1e DATA primary=true
+REALROM sample.ref 811f -> W8000_M3_B14::bd1f DATA primary=true
+REALROM sample.ref 8126 -> W8000_M3_B14::813e CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8145 -> W8000_M3_B14::819e CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8154 -> W8000_M3_B14::8197 CONDITIONAL_JUMP primary=true
+REALROM sample.warn 8816 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_8861 requires prg_bank known on entry, but it is unknown here
+REALROM sample.warn 8881 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_9724 requires prg_bank known on entry, but it is unknown here
+REALROM sample.warn 9761 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_97b6 requires prg_bank known on entry, but it is unknown here
+REALROM sample.warn 976a [NesBankingAnalyzer] Bank state requirement violated: call to FUN_97b6 requires prg_bank known on entry, but it is unknown here
+REALROM sample.warn 97ba [NesBankingAnalyzer] Bank state requirement violated: call to FUN_97c4 requires prg_bank known on entry, but it is unknown here
+REALROM sample.warn 98f4 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_98fa requires prg_bank known on entry, but it is unknown here
+REALROM sample.warn 9952 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_f516 requires prg_bank known on entry, but it is unknown here
+REALROM sample.warn c020 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_f045 requires mirroring,prg_mode,prg_bank known on entry, but it is unknown here
+REALROM sample.warn de2f [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_f313 whose bank argument could not be recovered at this call site
+REALROM sample.warn f045 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_f35f requires mirroring,prg_mode,prg_bank known on entry, but it is unknown here
+REALROM sample.warn f1f1 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_f333 whose bank argument could not be recovered at this call site
+REALROM sample.warn f319 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn f31c [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn f31f [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn f322 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn f325 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn f335 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn f339 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn f33d [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn f341 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn f345 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn f355 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn f35f [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_f34b whose bank argument could not be recovered at this call site
+REALROM sample.warn f505 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_f313 whose bank argument could not be recovered at this call site
+REALROM sample.warn f51d [NesBankingAnalyzer] Bank state requirement violated: call to FUN_f504 requires prg_bank known on entry, but it is unknown here
+=== REALROM END ===
