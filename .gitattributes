@@ -1,0 +1,7 @@
+# Golden test fixtures are byte-compared against harness output, and the harness always
+# writes LF (tools/banktest/run-banktest.sh and realrom-test.sh both normalize CR away
+# before writing). Without this, core.autocrlf=true rewrites a golden to CRLF on checkout
+# and every subsequent `check` reports a WHOLE-FILE diff for a file whose content is
+# byte-identical -- the diagnostic trap bead grm-g73 records, where a handful of changed
+# lines present as "78 deleted, 101 added" and badly overstate an apparent regression.
+*.dump text eol=lf
