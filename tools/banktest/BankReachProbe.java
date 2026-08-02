@@ -27,13 +27,24 @@
 //   (ii)  the store was never disassembled -- the bytes are there, but nothing flowed to
 //         them, so there is no Instruction for runDataflow to see at all (mergeAndEnqueue,
 //         :744-747, silently drops any address with no instruction).
-//   (iii) the store is reachable AND in a function and STILL invisible, because
-//         MemoryLatchBankSwitchStrategy.writesInRange (:193-203) inspects only
-//         instr.getReferencesFrom() looking for a write ref in [start,end] in the DEFAULT
-//         address space. A 6502 indexed operand (STA table,X) arrives as a Scalar and gets
-//         no reference until constant propagation manufactures one; and a store living in a
-//         bank overlay can carry a write ref in an OVERLAY space, which fails production's
-//         `to.getAddressSpace().equals(space)` test even though the offset is in range.
+//   (iii) the store is reachable AND in a function and STILL invisible to
+//         MemoryLatchBankSwitchStrategy.writesInRange, which is TWO TIERS: an authoritative
+//         write reference first, then operand decode (operandStoresInRange) for the stores
+//         that carry no reference at all. A 6502 indexed operand (STA table,X) arrives as a
+//         Scalar and gets no reference until constant propagation manufactures one, and
+//         const-prop covers function bodies only -- tier 2 is what catches those.
+//
+//         BOTH TIERS ARE MIRRORED BELOW AND BOTH MUST STAY MIRRORED. grm-8cq: this script
+//         reproduced tier 1 alone, long after grm-3x1 added tier 2, so every refless indexed
+//         store reported today=NO while production saw it perfectly well -- a confidently
+//         wrong reading that cost a real investigation. today= is now reported split as
+//         today.ref=/today.operand= so a future drift localizes to the tier that caused it.
+//
+//         Two once-true claims this list used to make are now RETIRED, and are recorded only
+//         so the change is not re-derived from scratch: production's range test used to
+//         require the DEFAULT address space, so a store executing from a bank overlay was
+//         skipped for carrying its write ref in an overlay space; inLatchRange now tests the
+//         PHYSICAL space and overlays count.
 //
 // Emits a bounded block between
 //   === BANKREACH BEGIN ===  /  === BANKREACH END ===
@@ -182,7 +193,13 @@ public class BankReachProbe extends GhidraScript {
 		boolean reach;
 		int refs;
 		boolean write;
-		boolean today;
+		boolean todayRef;
+		boolean todayOperand;
+
+		/** What production actually answers: tier 1 OR tier 2 (grm-8cq). */
+		boolean today() {
+			return todayRef || todayOperand;
+		}
 	}
 
 	// ------------------------------------------------------------------
@@ -330,7 +347,8 @@ public class BankReachProbe extends GhidraScript {
 			s.reach = reached.contains(s.at);
 			s.refs = instr.getReferencesFrom().length;
 			s.write = writesRangeAnySpace(instr, mech);
-			s.today = writesInRange(instr, mech, defaultSpace);
+			s.todayRef = writesInRangeTier1(instr, mech, defaultSpace);
+			s.todayOperand = writesInRangeTier2(instr, mech, defaultSpace);
 			sites.add(s);
 		}
 
@@ -345,7 +363,7 @@ public class BankReachProbe extends GhidraScript {
 		List<Site> invisible = new ArrayList<>();
 		List<Site> visible = new ArrayList<>();
 		for (Site s : sites) {
-			(s.today ? visible : invisible).add(s);
+			(s.today() ? visible : invisible).add(s);
 		}
 		invisible.sort(byAddress);
 		visible.sort(byAddress);
@@ -431,7 +449,7 @@ public class BankReachProbe extends GhidraScript {
 
 		// --- 10. verdicts -----------------------------------------------------------
 		long invisibleReachable =
-			sites.stream().filter(s -> s.reach && !"NONE".equals(s.func) && !s.today).count();
+			sites.stream().filter(s -> s.reach && !"NONE".equals(s.func) && !s.today()).count();
 		println("BANKREACH verdict.i orphan-sites " + orphan);
 		println("BANKREACH verdict.ii no-site-in-disassembled-code " + sites.isEmpty());
 		println("BANKREACH verdict.iii invisible-reachable-sites " + invisibleReachable);
@@ -503,21 +521,71 @@ public class BankReachProbe extends GhidraScript {
 	// ------------------------------------------------------------------
 
 	/**
-	 * VERBATIM re-implementation of MemoryLatchBankSwitchStrategy.writesInRange (:193-203),
-	 * including the default-space equality test. This is the "would production see it?"
-	 * column: whenever it disagrees with {@link #writesRangeAnySpace}, the difference is
-	 * purely the address space the reference landed in.
+	 * Re-implementation of {@code MemoryLatchBankSwitchStrategy.writesInRange}, which is TWO
+	 * TIERS and both must be reproduced here. This is the "would production see it?" column,
+	 * and it is the column the whole script exists to be trusted on -- so when production's
+	 * predicate changes, this is the thing that has to change with it.
+	 * <p>
+	 * <b>Both tiers, or the answer inverts.</b> grm-8cq: this mirrored tier 1 alone, long after
+	 * grm-3x1 added tier 2, so every refless indexed store -- exactly the sites tier 2 exists to
+	 * catch -- reported {@code today=NO} while production saw them perfectly well via tier 2.
+	 * On megaman that produced an apparently decisive "production does not see these sites"
+	 * reading and sent an investigation down a blind alley. A diagnostic that is confidently
+	 * wrong is worse than no diagnostic.
+	 * <p>
+	 * <b>Tier 1 accepts overlays</b>, via {@code getPhysicalSpace()}. Production's
+	 * {@code inLatchRange} tests the PHYSICAL space, so a latch store executing from inside a
+	 * {@code PRG_LO_B<n>} window -- whose write reference lands in that overlay's space -- is in
+	 * range. An earlier production did test the space strictly, which is what root cause (iii)
+	 * in the file header describes; that test is gone and the header now says so.
+	 * <p>
+	 * <b>Tier 2 mirrors {@code operandStoresInRange}</b>, including its two soundness rulings:
+	 * only true {@code STA}/{@code STX}/{@code STY} qualify (a read-modify-write keeps
+	 * tier-1-only behaviour deliberately, because production answers {@code unknown()} for those
+	 * and newly seeing one would poison rather than recover), and an INDEXED operand under a
+	 * configured {@code addr_mask} declines, because {@code base & mask} says nothing about
+	 * {@code (base + X) & mask}. Only the base is range-tested, never {@code base + 0xFF}.
+	 * <p>
+	 * Reported split as {@code today.ref}/{@code today.operand} so a future divergence localizes
+	 * itself to the tier that drifted instead of presenting as one opaque wrong answer.
 	 */
 	private boolean writesInRange(Instruction instr, Mech mech, AddressSpace space) {
+		return writesInRangeTier1(instr, mech, space) || writesInRangeTier2(instr, mech, space);
+	}
+
+	/** Tier 1: an authoritative write reference. Physical-space test, so overlays count. */
+	private boolean writesInRangeTier1(Instruction instr, Mech mech, AddressSpace space) {
 		for (Reference ref : instr.getReferencesFrom()) {
 			Address to = ref.getToAddress();
-			if (ref.getReferenceType().isWrite() && to.getAddressSpace().equals(space) &&
-				to.getOffset() >= mech.start && to.getOffset() <= mech.end &&
-				mech.matchesDecode(to.getOffset())) {
+			if (ref.getReferenceType().isWrite() &&
+				to.getAddressSpace().getPhysicalSpace().equals(space) &&
+				mech.inRange(to.getOffset()) && mech.matchesDecode(to.getOffset())) {
 				return true;
 			}
 		}
 		return false;
+	}
+
+	/** Tier 2: operand decode, for the stores that carry no write reference at all. */
+	private boolean writesInRangeTier2(Instruction instr, Mech mech, AddressSpace space) {
+		if (storeRegister(instr) == null) {
+			return false; // RMW stores stay tier-1-only, as in production
+		}
+		Address target = plainAbsoluteTarget(instr);
+		if (target != null) {
+			return inPhysical(target, space) && mech.inRange(target.getOffset()) &&
+				mech.matchesDecode(target.getOffset());
+		}
+		Address base = indexedBase(instr);
+		if (base == null || mech.addrMask != 0) {
+			return false; // base & mask says nothing about (base + X) & mask
+		}
+		return inPhysical(base, space) && mech.inRange(base.getOffset());
+	}
+
+	/** Production's {@code inLatchRange} space half: an overlay over the code space counts. */
+	private static boolean inPhysical(Address addr, AddressSpace space) {
+		return addr.getAddressSpace().getPhysicalSpace().equals(space);
 	}
 
 	/**
@@ -761,7 +829,9 @@ public class BankReachProbe extends GhidraScript {
 		return "site " + fmt(s.at) + " mech=" + s.mech.index + " reg=" + s.reg + " mode=" +
 			(s.indexed ? "IDX" : "ABS") + " base=" + off(s.base) + " ovl=" + s.ovl + " decode=" +
 			s.decode + " func=" + s.func + " reach=" + (s.reach ? "YES" : "NO") + " refs=" +
-			s.refs + " write=" + (s.write ? "YES" : "NO") + " today=" + (s.today ? "YES" : "NO") +
+			s.refs + " write=" + (s.write ? "YES" : "NO") + " today=" + (s.today() ? "YES" : "NO") +
+			" today.ref=" + (s.todayRef ? "YES" : "NO") +
+			" today.operand=" + (s.todayOperand ? "YES" : "NO") +
 			" space=" + s.at.getAddressSpace().getName();
 	}
 
