@@ -823,6 +823,9 @@ class _Asm:
     def lsr_a(self):
         self._emit([0x4A])
 
+    def inc_abs(self, addr):
+        self._emit([0xEE, addr & 0xFF, (addr >> 8) & 0xFF])
+
     def jsr(self, addr):
         self._emit([0x20, addr & 0xFF, (addr >> 8) & 0xFF])
 
@@ -861,7 +864,7 @@ def make_prg_serial():
     stays 3/fix-last throughout -- W8000 switches on prg_bank, WC000 = PRG[last] =
     bank 7 = home, so file offset equals CPU address there, as in the other fixtures).
 
-    Seven scenarios, run back-to-back (bead grm-hsv.1's F-* criteria):
+    Eight scenarios, run back-to-back (bead grm-hsv.1's F-* criteria, plus grm-4kc's):
       F-reset:        LDA #$80 / STA $8000 -- bit-7 reset; prg_mode=3 known (idempotent
                        re-assertion of the seeded initial state).
       F-unrolled:     LDA #$05 then the 5x STA/LSR chain to $E000 (canonical PRG target
@@ -891,6 +894,15 @@ def make_prg_serial():
       F-partial-bit7: LDX #$01 / LDA $C200,X feeding a single, non-chained STA $8000 --
                        bit 7 unresolvable -> poison/WARNING, and critically NOT
                        misclassified as a confident reset (no false prg_mode=3 claim).
+      F-rmw-reset:    INC <its own address> -- the self-modifying reset idiom (bionic's
+                       RESET, $FFE1: EE E1 FF  INC $FFE1). A read-modify-write into the
+                       register range used to poison unconditionally, because
+                       storeRegister() knows only STA/STX/STY; but the byte it reads is
+                       its own $EE opcode -- knowable by SELF-REFERENCE, with no
+                       memory-map reasoning, since whichever bank is mapped the byte read
+                       is the one the CPU just fetched as this opcode. Bit 7 set -> reset
+                       -> prg_mode=3. Placed immediately after F-partial-bit7 so it
+                       restores prg_mode from UNKNOWN rather than re-asserting a known 3.
 
     Vectors: RESET -> the chain above; NMI/IRQ -> a lone RTI right after the idle loop.
     """
@@ -967,6 +979,14 @@ def make_prg_serial():
     asm.lda_absx(0xC200)                     # opaque indexed load, reused table
     labels['f_partial_write'] = asm.label()
     asm.sta_abs(0x8000)                      # F-partial-bit7: isolated, not chained
+
+    # F-rmw-reset (bead grm-4kc): the self-modifying reset idiom, transcribed in shape from
+    # Bionic Commando's RESET ($FFE1: EE E1 FF  INC $FFE1). Deliberately placed HERE, directly
+    # after F-partial-bit7 -- that scenario poisons all three fields, so this reset is visibly
+    # restoring prg_mode from UNKNOWN to a known 3 rather than idempotently re-asserting a
+    # value that was already known, which is what it would be anywhere else in this fixture.
+    labels['f_rmw_reset'] = asm.label()
+    asm.inc_abs(labels['f_rmw_reset'])       # INC <itself>: reads its own $EE opcode -> $EF
 
     labels['idle'] = asm.label()
     asm.jmp(labels['idle'])                  # idle loop, in the fixed home WC000 window

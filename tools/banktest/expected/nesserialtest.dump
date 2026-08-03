@@ -1,4 +1,4 @@
-IDENTITY prg:df79a99f8c5c534b032bfc5a404b1384b667a5b27aeb1ec124f6a2eb1711b86f file:bf9afb0d116230967c97df3ab79830b693a05a20a9f7ea11f16336ee6f0db284
+IDENTITY prg:6e78208bc8391443598fd3fb090c509acc0c848efa6be723a7c9aef8f273a379 file:4f819d3e162dbdf7e1aa6d8cc6c504597dbd7a0c92c6fd7f723b34d91ce39f89
 BLOCK APU_IO 4000-401f overlay=false
 BLOCK PPU_REGS 2000-2007 overlay=false
 BLOCK RAM 0000-07ff overlay=false
@@ -40,6 +40,7 @@ COMMENT c043 bank -> mirroring=0,prg_mode=3,prg_bank=6 [switch-value flow]
 COMMENT c047 bank -> mirroring=0,prg_mode=3,prg_bank=6 [switch-value flow]
 COMMENT c051 bank -> mirroring=0,prg_mode=3,prg_bank=2? [known: mirroring.0=0,mirroring.1=0,prg_mode.0=1,prg_mode.1=1,prg_bank.1=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: prg_bank.0,prg_bank.2] [switch-value flow]
 COMMENT c056 bank -> mirroring=0,prg_mode=3,prg_bank=3 [switch-value flow]
+COMMENT c07b bank -> mirroring=0,prg_mode=3,prg_bank=0? [known: prg_mode.0=1,prg_mode.1=1; assumed from initial: mirroring.0,mirroring.1,prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
 BOOKMARK Warning c060
 BOOKMARK Warning c064
 BOOKMARK Warning c068

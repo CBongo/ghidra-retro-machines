@@ -2914,6 +2914,26 @@ public class VerifyBankTest extends GhidraScript {
 			"unresolvable isolated write warns, no false reset claim, at c078: warning=" +
 				hasWarningBookmark(0xC078) + " comment=\"" + eol(0xC078) + "\"");
 
+		// F-rmw-reset (bead grm-4kc): the self-modifying reset idiom at $C07B --
+		// "INC $C07B", an INC on its own opcode byte, transcribed in shape from bionic's
+		// RESET ($FFE1: EE E1 FF  INC $FFE1). A read-modify-write into the register range
+		// used to poison unconditionally, because StoredValueScanner.storeRegister knows
+		// only STA/STX/STY. It is in fact exactly determinable: the byte read is this
+		// instruction's own $EE opcode, known by SELF-REFERENCE rather than by any
+		// memory-map argument -- whichever bank is mapped, the byte at that address is the
+		// one the CPU just fetched to get here. $EE has bit 7 set, so the shifter resets
+		// and prg_mode is forced to 3.
+		//
+		// The placement is what makes this criterion mean something: F-partial-bit7
+		// immediately above poisons all three fields, so prg_mode arrives here UNKNOWN and
+		// this write restores it to a known 3. Anywhere else in this fixture prg_mode is
+		// already 3 and the assertion would pass without the feature.
+		c = eol(0xC07B);
+		criterion("F-rmw-reset",
+			c.contains("prg_mode=3") && !hasWarningBookmark(0xC07B),
+			"self-modifying INC resets the shifter -> prg_mode=3, no warning, at c07b: " +
+				"warning=" + hasWarningBookmark(0xC07B) + " comment=\"" + c + "\"");
+
 		// Disassembly sanity: the three JSR-target overlay instructions actually exist.
 		criterion("F5:W8000_M3_B3_8000", hasInstructionAt("W8000_M3_B3", 0x8000),
 			"instruction exists at W8000_M3_B3::8000");

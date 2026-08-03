@@ -79,8 +79,8 @@ REALROM count blocks.overlay 64
 REALROM count spaces.overlay 64
 REALROM count refs.intoOverlay 1455
 REALROM count instrs.inOverlay 6683
-REALROM count bankComments 74
-REALROM count warnings 333
+REALROM count bankComments 75
+REALROM count warnings 332
 REALROM sample.bankcomment 802a bank -> mirroring=2,prg_mode=3,prg_bank=14 via FUN_c05d [switch-value flow]
 REALROM sample.bankcomment 8044 bank -> mirroring=2,prg_mode=3,prg_bank=14 [switch-value flow]
 REALROM sample.bankcomment 8048 bank -> mirroring=2,prg_mode=3,prg_bank=14 [switch-value flow]

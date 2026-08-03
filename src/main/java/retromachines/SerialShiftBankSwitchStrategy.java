@@ -254,8 +254,12 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 
 		Character reg = StoredValueScanner.storeRegister(instr);
 		if (reg == null) {
-			// A read-modify-write store (INC/ASL/... to the range) isn't a plain byte
-			// commit this scanner can attribute a value to; it DID hit the register.
+			// A read-modify-write store (INC/ASL/... to the range) isn't a plain byte commit
+			// this scanner can attribute a value to; it DID hit the register. It poisons --
+			// UNLESS it is the self-modifying reset idiom, which is exactly determinable.
+			if (selfModifyingRmwResetsShifter(instr, offset)) {
+				return applyReset(inState);
+			}
 			return poisonAll(inState);
 		}
 
@@ -410,6 +414,93 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 			result = setFieldFromByte(result, tf.pos(), fieldValue);
 		}
 		return result;
+	}
+
+	/**
+	 * Whether a read-modify-write into the register range is certainly the self-modifying
+	 * shifter-reset idiom (bead grm-4kc). False means "not derivable", and the caller keeps
+	 * poisoning -- this only ever converts a poison into a reset, never the reverse.
+	 * <p>
+	 * <b>The idiom.</b> Bionic Commando's RESET is {@code $FFE1: EE E1 FF  INC $FFE1} -- an
+	 * {@code INC} whose operand is its OWN opcode byte. Any write to {@code $8000-$FFFF}
+	 * with bit 7 set resets the shifter and forces {@code prg_mode = 3}, and {@code $EE} has
+	 * bit 7 set, so this is the most determinable write in the program -- yet
+	 * {@link StoredValueScanner#storeRegister} knows only {@code STA}/{@code STX}/{@code STY}
+	 * and the whole mechanism was being poisoned at the program's reset vector, which is the
+	 * seed every later inference hangs off.
+	 * <p>
+	 * <b>Why the byte is knowable without any memory-map reasoning.</b> The instruction reads
+	 * the address it occupies, so the byte it reads is the byte the CPU just fetched as this
+	 * instruction's own opcode. That holds whichever bank is mapped -- invariance comes from
+	 * self-reference, not from the block being fixed. It is worth being explicit that the
+	 * obvious alternative does NOT work here:
+	 * {@link MemoryLatchBankSwitchStrategy}-style "read a bank-invariant ROM byte" refuses any
+	 * address an overlay shadows, and {@code nes-mmc1.map} emits 32K-mode overlays
+	 * ({@code W8000_M0_B*}) spanning {@code $8000-$FFFF}, so on an MMC1 board it can only ever
+	 * answer no. See grm-4kc for the deferred non-self-referential tier.
+	 * <p>
+	 * <b>A 6502 RMW puts TWO writes on the bus</b> -- the unmodified byte, then the modified
+	 * one on the next cycle. {@code INC $FFE1} presents {@code $EE}, then {@code $EF}. Per the
+	 * nesdev wiki the MMC1's response to that is asymmetric, and the asymmetry is what decides
+	 * this method's rule:
+	 * <blockquote>
+	 * When the serial port is written to on consecutive cycles, it ignores every write after
+	 * the first. In practice, this only happens when the CPU executes read-modify-write
+	 * instructions, which first write the original value before writing the modified one on
+	 * the next cycle. <b>This restriction only applies to the data being written on bit 0; the
+	 * bit 7 reset is never ignored.</b> Bill &amp; Ted's Excellent Adventure does a reset by
+	 * using INC on a ROM location containing {@code $FF} and requires that the {@code $00}
+	 * write on the next cycle is ignored. Shinsenden, however, uses illegal instruction
+	 * {@code $7F} (RRA abs,X) to set bit 7 on the second write and will crash [...] if this
+	 * reset is ignored.
+	 * </blockquote>
+	 * So the test is an <b>OR, not an AND</b>: bit 7 set in EITHER write is a reset. Each half
+	 * has a game behind it -- Bill &amp; Ted ({@code $FF -> $00}, set then clear) proves an AND
+	 * would decline a real reset; Shinsenden (clear then set) proves the second write counts.
+	 * <p>
+	 * <b>Two tiers, and the first needs no mnemonic table.</b> The first write is always the
+	 * unmodified byte, so bit 7 of that byte means "reset" whatever the instruction is --
+	 * which is why {@code ASL}/{@code LSR}/{@code ROL}/{@code ROR}, and even an illegal RMW
+	 * opcode this sleigh may not decode, are handled correctly without being enumerated. Only
+	 * the clear-then-set direction needs to know the operation, and only {@code INC}/
+	 * {@code DEC} are modeled there: {@code LSR} can never set bit 7 (so returning false is
+	 * exhaustive, not a gap), {@code ASL}/{@code ROL} would be bit 6 of the byte but no
+	 * surveyed game spells the reset that way, and {@code ROR}/{@code RRA} put the CARRY in
+	 * bit 7, which is genuinely underivable here. An unmodeled spelling falls through to
+	 * {@code poisonAll}, which raises a WARNING bookmark at the instruction -- so it surfaces
+	 * as a diagnosable warning rather than as silence.
+	 */
+	private boolean selfModifyingRmwResetsShifter(Instruction instr, long offset) {
+		// Self-reference: does the write land inside this instruction's own bytes? Comparing
+		// raw offsets is right even across spaces -- writesInRange already pinned the target
+		// to the base space, and an overlay shares the base offset, which is the point: the
+		// instruction may well be executing out of one.
+		long idx = offset - instr.getMinAddress().getOffset();
+		if (idx < 0 || idx >= instr.getLength()) {
+			return false;
+		}
+		int original;
+		try {
+			original = instr.getByte((int) idx) & 0xFF;
+		}
+		catch (Exception e) {
+			return false;
+		}
+		if ((original & 0x80) != 0) {
+			return true; // tier A: the first write is the unmodified byte, op-independent
+		}
+		String mnem = instr.getMnemonicString().toUpperCase();
+		int modified;
+		if (mnem.equals("INC")) {
+			modified = (original + 1) & 0xFF;
+		}
+		else if (mnem.equals("DEC")) {
+			modified = (original - 1) & 0xFF;
+		}
+		else {
+			return false;
+		}
+		return (modified & 0x80) != 0; // tier B: the second write sets bit 7
 	}
 
 	private BankState applyReset(BankState inState) {
