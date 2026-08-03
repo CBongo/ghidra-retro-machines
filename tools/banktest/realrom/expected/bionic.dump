@@ -77,10 +77,41 @@ REALROM block WC000_M2_B9 c000-ffff overlay=true
 REALROM count blocks.total 70
 REALROM count blocks.overlay 64
 REALROM count spaces.overlay 64
-REALROM count refs.intoOverlay 0
-REALROM count instrs.inOverlay 0
-REALROM count bankComments 0
-REALROM count warnings 11
+REALROM count refs.intoOverlay 127
+REALROM count instrs.inOverlay 706
+REALROM count bankComments 4
+REALROM count warnings 14
+REALROM sample.bankcomment c04b bank -> mirroring=2,prg_mode=3,prg_bank=0? via FUN_dcc3 [known: mirroring.0=0,mirroring.1=1,prg_mode.0=1,prg_mode.1=1; assumed from initial: prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
+REALROM sample.bankcomment c13f bank -> mirroring=0,prg_mode=3,prg_bank=12? via LAB_dcaa (mid-body entry in FUN_dca8) [known: mirroring.0=0,prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.1] [switch-value flow]
+REALROM sample.bankcomment c14a bank -> mirroring=0,prg_mode=3,prg_bank=12? via LAB_dcaa (mid-body entry in FUN_dca8) [known: mirroring.0=0,prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.1] [switch-value flow]
+REALROM sample.bankcomment c5e0 bank -> mirroring=0,prg_mode=3,prg_bank=12? via LAB_dcaa (mid-body entry in FUN_dca8) [known: mirroring.0=0,prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.1] [switch-value flow]
+REALROM sample.ref 8000 -> W8000_M3_B12::8235 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8224 -> W8000_M3_B12::822f CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8239 -> W8000_M3_B12::823c CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8261 -> W8000_M3_B12::8266 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8263 -> W8000_M3_B12::856d UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8269 -> W8000_M3_B12::826e CONDITIONAL_JUMP primary=true
+REALROM sample.ref 826b -> W8000_M3_B12::8286 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8275 -> W8000_M3_B12::8286 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8280 -> W8000_M3_B12::86b4 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8283 -> W8000_M3_B12::8294 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8289 -> W8000_M3_B12::8294 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8291 -> W8000_M3_B12::8222 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8296 -> W8000_M3_B12::829e CONDITIONAL_JUMP primary=true
+REALROM sample.ref 82a0 -> W8000_M3_B12::82b9 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 82b6 -> W8000_M3_B12::824c UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 82bd -> W8000_M3_B12::82dd CONDITIONAL_JUMP primary=true
+REALROM sample.ref 82c1 -> W8000_M3_B12::82dd CONDITIONAL_JUMP primary=true
+REALROM sample.ref 82cf -> W8000_M3_B12::82dd CONDITIONAL_JUMP primary=true
+REALROM sample.ref 82d3 -> W8000_M3_B12::82d9 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 82df -> W8000_M3_B12::82e3 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 82f4 -> W8000_M3_B12::82f8 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 82fe -> W8000_M3_B12::832b CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8306 -> W8000_M3_B12::8310 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 830e -> W8000_M3_B12::830a CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8313 -> W8000_M3_B12::8324 CONDITIONAL_JUMP primary=true
+REALROM sample.warn c043 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_dca8 whose bank argument could not be recovered at this call site
+REALROM sample.warn c04b [NesBankingAnalyzer] Bank state requirement violated: call to FUN_dcc3 requires mirroring,prg_mode,prg_bank known on entry, but it is unknown here
 REALROM sample.warn dcaa [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn dcae [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn dcb2 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
@@ -92,4 +123,5 @@ REALROM sample.warn dccb [NesBankingAnalyzer] Bank state becomes unknown here: m
 REALROM sample.warn dccf [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn dcd3 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn ffe1 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn ffe4 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_c000 requires mirroring,prg_mode,prg_bank known on entry, but it is unknown here
 === REALROM END ===

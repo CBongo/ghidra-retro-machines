@@ -135,11 +135,17 @@ REALROM_EXTRA_POSTSCRIPT=HelperShapeProbe.java bash tools/banktest/realrom-test.
   `writesInRange`. It requires a `memory-latch` mechanism and reports an error on boards
   without one (MMC1 is `serial-shift`).
 - **`HelperShapeProbe.java`** — board-agnostic. For every warning bookmark, reports the
-  containing function, its callers (distinguishing `JSR` from a tail-call `JMP`), the
-  instructions feeding each site, and **which sites carry incoming flow of their own**. That
-  last one finds mid-body entry points — an address the helper model cannot describe, because
-  `findHelpers` keys on the containing *function* while the real argument convention belongs
-  to the entry actually jumped to (grm-nju).
+  containing function, its callers (distinguishing `JSR` from a tail-call `JMP`, with the
+  instructions preceding each call), the instructions feeding each site, and **which sites
+  carry incoming flow of their own**. That last one finds mid-body entry points — an address
+  the helper model cannot describe, because `findHelpers` keys on the containing *function*
+  while the real argument convention belongs to the entry actually jumped to (grm-nju).
+  Its **section 5** carries a private copy of `BoardBankAnalyzer.reachableEntries` and walks
+  every call through it, reporting the hop chain, whether the entry reached is mid-body, and
+  whether the argument is a constant — i.e. it answers "how much would this be worth?" before
+  the work is done. That is how grm-nju was sized: bionic 4 of 5 call sites constant and all 5
+  hop-only, ff1 54 of 59, and cv2/blmaster/tmnt zero hops (so **not** this bead's shape —
+  their zero resolution has some other cause).
 
 ## Bless discipline
 

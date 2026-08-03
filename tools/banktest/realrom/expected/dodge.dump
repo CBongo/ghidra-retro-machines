@@ -48,7 +48,7 @@ REALROM count spaces.overlay 32
 REALROM count refs.intoOverlay 2739
 REALROM count instrs.inOverlay 10692
 REALROM count bankComments 30
-REALROM count warnings 289
+REALROM count warnings 299
 REALROM sample.bankcomment bd85 bank -> mirroring=0,prg_mode=3,prg_bank=1? [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
 REALROM sample.bankcomment bd89 bank -> mirroring=0,prg_mode=3,prg_bank=1? [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
 REALROM sample.bankcomment bd8d bank -> mirroring=0,prg_mode=3,prg_bank=1? [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]

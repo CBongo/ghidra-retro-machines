@@ -2949,11 +2949,16 @@ public class VerifyBankTest extends GhidraScript {
 
 	private void checkNesMmc1test() {
 		// Addresses per tools/banktest/mknesbanktest.py's make_prg_mmc1() label dump:
-		// switch_bank=$C200, mode2_target=$C300, reset=$C000, f_reset=$C002,
-		// call1_imm=$C005, call1_jsr=$C007, call1_use_jsr=$C00A, chr_commit=$C01F,
-		// call2_imm=$C022, call2_jsr=$C024, call2_use_jsr=$C027, call3_imm=$C02A,
-		// call3_jsr=$C02C, mode_commit=$C041, mode2_jsr=$C044, unresolvable_load=$C049,
-		// unresolvable_jsr=$C04C, idle=$C04F, rti=$C052.
+		// switch_bank=$C200, shadow_entry=$C250, shadow_midbody=$C252,
+		// relay_to_entry=$C280, relay_to_midbody=$C286, mode2_target=$C300, reset=$C000,
+		// f_reset=$C002, call1_imm=$C005, call1_jsr=$C007, call1_use_jsr=$C00A,
+		// chr_commit=$C01F, call2_imm=$C022, call2_jsr=$C024, call2_use_jsr=$C027,
+		// relay_to_shadow=$C283, relay_entry_imm=$C02A, relay_entry_jsr=$C02C,
+		// relay_entry_use_jsr=$C02F, shadow_jsr=$C032, relay_mid_imm=$C035,
+		// relay_mid_jsr=$C037, relay_mid_use_jsr=$C03A, call3_imm=$C03D,
+		// call3_jsr=$C03F, mode_commit=$C054,
+		// mode2_jsr=$C057, unresolvable_load=$C05C, unresolvable_jsr=$C05F, idle=$C062,
+		// rti=$C065.
 
 		// M1: the reset dance (LDA #$80 / STA $8000) at $C002 forces prg_mode=3 known --
 		// idempotent re-assertion of the seeded home mode, comment must show it known.
@@ -2996,51 +3001,121 @@ public class VerifyBankTest extends GhidraScript {
 			"JSR $8000 (prg_bank=5) retargeted to W8000_M3_B5 overlay, primary: " +
 				describe(r));
 
-		// M6: call site 3's JSR $C200 at $C02C resolves prg_bank=7 via the same helper --
+		// M11 (bead grm-nju): call site 5's JSR $C280 at $C02C resolves prg_bank=3. $C280
+		// is a 3-byte relay slot -- JMP $C200 -- whose target is the helper's ENTRY, so
+		// Ghidra types it thunk_FUN_c200. The thunk is a different Function than the
+		// helper, so calledHelper's getFunctionAt + helper-map lookup used to miss it and
+		// return null, which runDataflow folds as a call that touches no bank state: a
+		// SILENT miss, neither annotation nor warning. Measured on real cartridges this
+		// was the whole story for Final Fantasy (all 59 of its bank call sites route
+		// through one such thunk) and half of it for Bionic Commando.
+		c = eol(0xC02C);
+		criterion("M11", c.contains("bank -> ") && c.contains("prg_bank=3") &&
+			!c.contains("?") && c.contains("via"),
+			"relay-to-entry call site resolves prg_bank=3 through a thunk, no '?', at " +
+				"c02c: \"" + c + "\"");
+
+		// M11b: and the resolved bank is load-bearing -- the JSR $8000 at $C02F retargets
+		// to W8000_M3_B3. A recovered value nothing retargets against would not be worth
+		// much.
+		r = findOverlayRef(0xC02F, "W8000_M3_B3", 0x8000);
+		criterion("M11b", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $8000 (prg_bank=3, via thunk relay) retargeted to W8000_M3_B3 overlay, " +
+				"primary: " + describe(r));
+
+		// M12 (bead grm-nju): call site 7's JSR $C286 at $C037 resolves prg_bank=4. This
+		// is the harder half. $C286 is JMP $C252, and $C252 is MID-BODY of FUN_c250 --
+		// the shadow helper's chain write 1, past the $C250 `LDA $65` prologue that would
+		// have clobbered the argument. Ghidra cannot type this slot a thunk (its target
+		// is not a function entry), so it stays an ordinary one-instruction function that
+		// is neither the helper nor contains a switch site. Resolving it requires reading
+		// "an address with incoming flow that is not its function's entry" as a distinct
+		// entry with its own argument convention -- which is exactly what the backward
+		// value scan's join-refusal at that address was already detecting and discarding.
+		// Bionic Commando's $D6E2 -> $DCAA, byte for byte in shape.
+		// M12a: FIXTURE INTEGRITY, and it must be checked rather than assumed. Whether
+		// $C252 stays mid-body is Ghidra's decision, not the fixture's: thunk analysis
+		// creates a function at each thunk destination, so if it reached $C252 before
+		// $C250 there would be no mid-body entry left and M12 below would quietly be
+		// testing the thunk path a second time. The fixture stacks the deck by ordering
+		// the relay slots and their call sites the way bionic's are; this asserts the
+		// deck actually came out that way.
+		criterion("M12a", !isFunctionEntry(0xC252) && isFunctionEntry(0xC250),
+			"fixture models a mid-body entry: c252 is inside a function but not its " +
+				"entry (functionAt(c252)=" + isFunctionEntry(0xC252) + ", functionAt(c250)=" +
+				isFunctionEntry(0xC250) + ")");
+
+		c = eol(0xC037);
+		criterion("M12", c.contains("bank -> ") && c.contains("prg_bank=4") &&
+			!c.contains("?") && c.contains("via"),
+			"relay-to-mid-body call site resolves prg_bank=4, no '?', at c037: \"" + c +
+				"\"");
+
+		// M12b: likewise load-bearing -- JSR $8000 at $C03A retargets to W8000_M3_B4.
+		r = findOverlayRef(0xC03A, "W8000_M3_B4", 0x8000);
+		criterion("M12b", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $8000 (prg_bank=4, via mid-body relay) retargeted to W8000_M3_B4 " +
+				"overlay, primary: " + describe(r));
+
+		// M13 (bead grm-nju): call site 6's JSR $C283 at $C032 -- reaching the shadow
+		// helper's OWN entry, where the bank is loaded from $65 and A is stale. The
+		// mid-body work must NOT make this one resolve: reaching a helper is not the same
+		// as knowing its argument, and attributing a stale register here would ship a
+		// wrong bank. Honest WARNING, no "bank ->" claim. Recovering it needs
+		// cross-function store-to-load forwarding through the RAM shadow -- grm-mej.3.
+		criterion("M13", hasWarningBookmark(0xC032) && !eol(0xC032).contains("bank ->"),
+			"shadow-entry call declines honestly at c032: warning=" +
+				hasWarningBookmark(0xC032) + " comment=\"" + eol(0xC032) + "\"");
+
+		// M6: call site 3's JSR $C200 at $C03F resolves prg_bank=7 via the same helper --
 		// this is the commit that stages prg_bank=7 for the mode-2 transition below (bank
 		// 7 == `last`, matching WC000's fixed-last home content, so the transition doesn't
 		// move the ground out from under the running code -- see the fixture's module
 		// doc). Unlike M2/M5 there is no follow-up JSR $8000 (bank 7 IS this running
 		// code, not a separate routine).
-		c = eol(0xC02C);
+		c = eol(0xC03F);
 		criterion("M6", c.contains("bank -> ") && c.contains("prg_bank=7") &&
 			!c.contains("?") && c.contains("via"),
-			"helper call site 3 resolves prg_bank=7 via SwitchBank, no '?', at c02c: \"" +
+			"helper call site 3 resolves prg_bank=7 via SwitchBank, no '?', at c03f: \"" +
 				c + "\"");
 
 		// M7: the mode-2 transition chain's commit (5th write of the inline Control chain
-		// to $8000) at $C041 shows prg_mode=2 (fix-first) fully known -- mirroring stays
+		// to $8000) at $C054 shows prg_mode=2 (fix-first) fully known -- mirroring stays
 		// 0, prg_bank stays 7 (survived every write above), so the WHOLE state is known,
 		// no '?'.
-		c = eol(0xC041);
+		c = eol(0xC054);
 		criterion("M7", c.contains("prg_mode=2") && !c.contains("?"),
-			"mode-2 transition commits prg_mode=2, fully known, at c041: \"" + c + "\"");
+			"mode-2 transition commits prg_mode=2, fully known, at c054: \"" + c + "\"");
 
-		// M8: the JSR $C300 right after the transition, at $C044, retargets to
+		// M8: the JSR $C300 right after the transition, at $C057, retargets to
 		// WC000_M2_B7 -- WC000 just became the switchable window (mode 2), at the
 		// current prg_bank=7; this is the "post-switch control flow survives" check: the
 		// JSR instruction itself sits in the SAME physical bytes (bank 7) before and
 		// after the flip, only the symbolic window name changes.
-		r = findOverlayRef(0xC044, "WC000_M2_B7", 0xC300);
+		r = findOverlayRef(0xC057, "WC000_M2_B7", 0xC300);
 		criterion("M8", r != null && r.getReferenceType().isCall() && r.isPrimary(),
 			"JSR $C300 after the mode-2 transition retargeted to WC000_M2_B7 overlay, " +
 				"primary: " + describe(r));
 
-		// M9: call site 4's JSR $C200 at $C04C -- an opaque indexed load (LDX #$00 / LDA
+		// M9: call site 4's JSR $C200 at $C05F -- an opaque indexed load (LDX #$00 / LDA
 		// $C400,X) feeds the same helper's argReg='A'; recoverCallArgument's backward
 		// scan cannot resolve an indexed load (same limitation nesserialtest's
 		// F-unresolvable exercises for an inline chain's seed) -> honest WARNING
 		// bookmark at the JSR itself, no false "bank ->" claim. This is the Metroid-
 		// mailbox analog for the HELPER call-site value-recovery path specifically.
-		criterion("M9", hasWarningBookmark(0xC04C) && !eol(0xC04C).contains("bank ->"),
-			"unresolvable helper call warns, no false comment, at c04c: warning=" +
-				hasWarningBookmark(0xC04C) + " comment=\"" + eol(0xC04C) + "\"");
+		criterion("M9", hasWarningBookmark(0xC05F) && !eol(0xC05F).contains("bank ->"),
+			"unresolvable helper call warns, no false comment, at c05f: warning=" +
+				hasWarningBookmark(0xC05F) + " comment=\"" + eol(0xC05F) + "\"");
 
 		// M10: disassembly sanity -- the JSR-target overlay instructions actually exist.
 		criterion("M10:W8000_M3_B2_8000", hasInstructionAt("W8000_M3_B2", 0x8000),
 			"instruction exists at W8000_M3_B2::8000");
 		criterion("M10:W8000_M3_B5_8000", hasInstructionAt("W8000_M3_B5", 0x8000),
 			"instruction exists at W8000_M3_B5::8000");
+		criterion("M10:W8000_M3_B3_8000", hasInstructionAt("W8000_M3_B3", 0x8000),
+			"instruction exists at W8000_M3_B3::8000");
+		criterion("M10:W8000_M3_B4_8000", hasInstructionAt("W8000_M3_B4", 0x8000),
+			"instruction exists at W8000_M3_B4::8000");
 		criterion("M10:WC000_M2_B7_C300", hasInstructionAt("WC000_M2_B7", 0xC300),
 			"instruction exists at WC000_M2_B7::C300");
 	}
@@ -3250,6 +3325,14 @@ public class VerifyBankTest extends GhidraScript {
 			}
 		}
 		return null;
+	}
+
+	/** True when a function's ENTRY POINT is exactly this base-space address. */
+	private boolean isFunctionEntry(long offset) {
+		return currentProgram.getFunctionManager()
+				.getFunctionAt(currentProgram.getAddressFactory()
+						.getDefaultAddressSpace()
+						.getAddress(offset)) != null;
 	}
 
 	private boolean hasInstructionAt(String spaceName, long offset) {

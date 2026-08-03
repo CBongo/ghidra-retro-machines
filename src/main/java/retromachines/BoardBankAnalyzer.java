@@ -60,6 +60,7 @@ import ghidra.program.model.symbol.Reference;
 import ghidra.program.model.symbol.ReferenceManager;
 import ghidra.program.model.symbol.RefType;
 import ghidra.program.model.symbol.SourceType;
+import ghidra.program.model.symbol.Symbol;
 import ghidra.util.classfinder.ClassSearcher;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.task.TaskMonitor;
@@ -691,7 +692,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 						// mechanism window -- see CallSwitch's javadoc.
 						BankState mechIn = new BankState(outState.knownMask() & helper.effectMask(),
 							outState.bits() & helper.effectMask());
-						callSwitches.put(addr, new CallSwitch(helper.function().getName(),
+						callSwitches.put(addr, new CallSwitch(helperLabel(program, helper),
 							callEffect.state(),
 							overwrite(mechIn, callEffect.state(), callEffect.ownedMask())));
 					}
@@ -892,9 +893,10 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 
 			HelperModel existing = helpers.get(f);
 			if (existing == null) {
-				helpers.put(f, new HelperModel(f,
+				helpers.put(f, new HelperModel(f, f.getEntryPoint(),
 					result.knownMask() == site.effectMask() ? result : null, reg,
-					site.effectMask(), site.lsb(), site.strategy(), entry.getKey()));
+					site.effectMask(), site.lsb(), site.strategy(), entry.getKey(),
+					entry.getKey()));
 			}
 			else if (existing.effectMask() == site.effectMask() && existing.lsb() == site.lsb()) {
 				BankState constState = existing.constState() != null
@@ -916,16 +918,23 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				// serial-shift.
 				Address switchSite = entry.getKey().compareTo(existing.switchSite()) > 0
 						? entry.getKey() : existing.switchSite();
-				helpers.put(f, new HelperModel(f, constState, argReg,
-					site.effectMask(), site.lsb(), site.strategy(), switchSite));
+				// The mirror of the max above, and NOT a proxy for anything: the lowest-addressed
+				// site is exactly what midBodyEntryHelper needs to decide whether entering
+				// somewhere other than the top still runs every site this model summarizes.
+				Address firstSite = entry.getKey().compareTo(existing.firstSite()) < 0
+						? entry.getKey() : existing.firstSite();
+				helpers.put(f, new HelperModel(f, f.getEntryPoint(), constState, argReg,
+					site.effectMask(), site.lsb(), site.strategy(), switchSite, firstSite));
 			}
 			else {
 				// Sites in this helper belong to different mechanisms -- degrade to the
 				// conservative union (see javadoc above). argReg is forced null, so
 				// recoverCallArgument short-circuits before ever consulting strategy/
-				// switchSite -- both left null/unset is safe.
-				helpers.put(f, new HelperModel(f, null, null,
-					existing.effectMask() | site.effectMask(), 0, null, null));
+				// switchSite -- both left null/unset is safe. firstSite goes with them: a null
+				// there makes midBodyEntryHelper decline, which is the right answer for a model
+				// that no longer describes one coherent mechanism.
+				helpers.put(f, new HelperModel(f, f.getEntryPoint(), null, null,
+					existing.effectMask() | site.effectMask(), 0, null, null, null));
 			}
 		}
 		return helpers;
@@ -992,8 +1001,8 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			// OWN body, which is no longer what this model asserts. A composed constant needs
 			// none of them (runDataflow uses constState directly), and a decline needs none
 			// either (recoverCallArgument short-circuits on the null argReg).
-			composed.put(f,
-				new HelperModel(f, effect.constState(), null, effect.effectMask(), 0, null, null));
+			composed.put(f, new HelperModel(f, f.getEntryPoint(), effect.constState(), null,
+				effect.effectMask(), 0, null, null, null));
 		}
 		return composed;
 	}
@@ -1106,19 +1115,164 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		return exits;
 	}
 
+	/**
+	 * Hop cap for {@link #reachableEntries}. A real argument relay is one link -- a jump-table
+	 * slot, or Ghidra's own thunk typing of the same. Three is slack, not a modeled depth.
+	 */
+	private static final int MAX_RELAY_HOPS = 3;
+
+	/**
+	 * The addresses control can actually arrive at from this call: its direct flow targets,
+	 * then each one followed through Ghidra thunks and one-instruction unconditional-jump
+	 * trampolines, in that order (nearest first, so a direct hit always wins over a hop).
+	 * <p>
+	 * <b>Why a call's flow target is not always where it lands.</b> Games route bank switches
+	 * through a jump table of 3-byte slots, and Ghidra types those two different ways depending
+	 * on nothing the game did. Bionic Commando's {@code $D751 JMP $DCC3} becomes
+	 * {@code thunk_FUN_dcc3} because {@code $DCC3} happens to be a function entry; its
+	 * {@code $D6E2 JMP $DCAA} stays an ordinary one-instruction function, because {@code $DCAA}
+	 * is mid-body. Both are the same idiom and both were invisible: the thunk is a different
+	 * {@code Function} than the helper, and the trampoline is not the helper at all, so the old
+	 * {@code getFunctionAt} + map lookup missed both and returned null -- which
+	 * {@link #runDataflow} folds as a call that does nothing to bank state. A SILENT miss, and
+	 * measurably the whole story on two real cartridges: every one of Bionic Commando's 5 bank
+	 * call sites and all 59 of Final Fantasy's reach their helper only through a hop.
+	 * <p>
+	 * Package-private and static so it can be tested against a {@code ProgramBuilder} program
+	 * on its own -- it is a function of {@code (program, callInstr)} and nothing else, with no
+	 * analyzer state, no board, and no dependence on any helper having been found yet.
+	 */
+	static List<Address> reachableEntries(Program program, Instruction callInstr) {
+		List<Address> entries = new ArrayList<>();
+		for (Address flow : callInstr.getFlows()) {
+			Set<Address> seen = new LinkedHashSet<>();
+			Address cur = flow;
+			for (int hop = 0; cur != null && seen.add(cur); hop++) {
+				entries.add(cur);
+				cur = hop < MAX_RELAY_HOPS ? relayTarget(program, cur) : null;
+			}
+		}
+		return entries;
+	}
+
+	/**
+	 * One hop from {@code at} through a thunk or a one-instruction unconditional-jump
+	 * trampoline, or null if {@code at} is neither.
+	 * <p>
+	 * The one-instruction requirement is what keeps this from following ordinary tail jumps.
+	 * A {@code JMP} at the end of a longer body is reached only after that body has run, so
+	 * attributing the jump's target to a call that entered at the top would credit the caller
+	 * with a helper it reaches only via other code -- and that case already has an owner:
+	 * {@link #composeTailCalls}, which composes the two effects rather than substituting one
+	 * for the other. Here the trampoline body IS the jump, so there is nothing to compose.
+	 */
+	private static Address relayTarget(Program program, Address at) {
+		FunctionManager fm = program.getFunctionManager();
+		Function f = fm.getFunctionAt(at);
+		if (f != null && f.isThunk()) {
+			Function thunked = f.getThunkedFunction(true);
+			if (thunked != null) {
+				return thunked.getEntryPoint();
+			}
+		}
+		Instruction instr = program.getListing().getInstructionAt(at);
+		// isCall() is deliberately NOT excluded: shared-return analysis retypes a tail JMP as
+		// CALL_TERMINATOR, which reports both isCall() and isJump(). A one-instruction body
+		// that does that is still a relay. A JSR is isCall() but not isJump(), so it is out.
+		//
+		// isComputed() IS excluded, and that exclusion is load-bearing rather than tidiness.
+		// A relay's defining property is that its target is encoded in the instruction, so
+		// "where this call lands" stays a static fact; a computed jump's target is read from
+		// memory at run time and is not that instruction's property at all. Measured cost of
+		// getting this wrong, on Mega Man 2: the 6502's BRK is specified as
+		// `goto [*:2 0xFFFE]`, so every filler $00 byte Ghidra disassembles becomes a
+		// one-instruction "relay" into the IRQ handler. Following those reached RESET from
+		// unrelated call sites, poisoning bank state that nothing had written, and cost 285
+		// resolved overlay instructions -- a silent miss traded for a loud wrong answer.
+		if (instr == null || !instr.getFlowType().isJump() ||
+			instr.getFlowType().isConditional() || instr.getFlowType().isComputed()) {
+			return null;
+		}
+		Function owner = fm.getFunctionContaining(at);
+		if (owner != null && (!owner.getEntryPoint().equals(at) ||
+			owner.getBody().getNumAddresses() != instr.getLength())) {
+			return null;
+		}
+		Address[] flows = instr.getFlows();
+		return flows.length == 1 ? flows[0] : null;
+	}
+
+	/**
+	 * How a helper is named in a user-visible warning. The function's name, except for a
+	 * mid-body entry, where naming the function would point the reader at {@code FUN_dca8}
+	 * when the call actually went to {@code LAB_dcaa} -- an address whose whole significance
+	 * is that it is NOT the function entry.
+	 */
+	private static String helperLabel(Program program, HelperModel helper) {
+		if (helper.entry().equals(helper.function().getEntryPoint())) {
+			return helper.function().getName();
+		}
+		Symbol sym = program.getSymbolTable().getPrimarySymbol(helper.entry());
+		return (sym == null ? helper.entry().toString() : sym.getName()) + " (mid-body entry in " +
+			helper.function().getName() + ")";
+	}
+
 	/** The helper this call instruction targets, or null. */
 	private HelperModel calledHelper(Program program, Instruction callInstr,
 			Map<Function, HelperModel> helpers) {
-		for (Address flowAddr : callInstr.getFlows()) {
-			Function f = program.getFunctionManager().getFunctionAt(flowAddr);
+		FunctionManager fm = program.getFunctionManager();
+		for (Address entry : reachableEntries(program, callInstr)) {
+			Function f = fm.getFunctionAt(entry);
 			if (f != null) {
 				HelperModel helper = helpers.get(f);
 				if (helper != null) {
 					return helper;
 				}
+				continue; // a real function that is not a helper -- not a mid-body entry either
+			}
+			HelperModel midBody = midBodyEntryHelper(program, entry, helpers);
+			if (midBody != null) {
+				return midBody;
 			}
 		}
 		return null;
+	}
+
+	/**
+	 * A helper model for control arriving INSIDE a helper's body rather than at its entry, or
+	 * null when this address is not an admissible mid-body entry.
+	 * <p>
+	 * <b>The admission test is "no recognized site strictly precedes {@code entry}".</b> That
+	 * is what makes reusing the containing function's summary exact rather than a guess:
+	 * entering here still runs the body's entire recognized site set, in the same order, so
+	 * {@code effectMask}, {@code lsb}, {@code strategy} and {@code switchSite} all still
+	 * describe this path -- no reachability over- or under-approximation is involved. Entering
+	 * PAST a site (a {@code JSR} into the middle of a serial-shift chain) fails the test and is
+	 * declined rather than guessed at: its real effect is a partial chain, which this model has
+	 * no way to express. {@code constState} is dropped regardless; see
+	 * {@link HelperModel#atMidBodyEntry}.
+	 * <p>
+	 * Resolution is demand-driven -- only an address some call actually reaches is ever tested
+	 * -- rather than enumerating every branch target in every helper body. A mid-body entry
+	 * that nothing calls cannot change any answer, and enumerating would mean inventing a rule
+	 * for which of a loop's internal labels count as entry points.
+	 */
+	private HelperModel midBodyEntryHelper(Program program, Address entry,
+			Map<Function, HelperModel> helpers) {
+		FunctionManager fm = program.getFunctionManager();
+		if (fm.getFunctionAt(entry) != null) {
+			return null; // a function entry, not a mid-body one -- calledHelper handles it
+		}
+		Function owner = fm.getFunctionContaining(entry);
+		if (owner == null) {
+			return null;
+		}
+		HelperModel model = helpers.get(owner);
+		if (model == null || model.firstSite() == null ||
+			entry.compareTo(model.firstSite()) > 0) {
+			return null;
+		}
+		return model.atMidBodyEntry(entry);
 	}
 
 	/**
@@ -1186,8 +1340,11 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		BankState localIn = new BankState(
 			(callSiteIn.knownMask() & helper.effectMask()) >>> helper.lsb(),
 			(callSiteIn.bits() & helper.effectMask()) >>> helper.lsb());
+		// helper.entry(), not function().getEntryPoint(): the mini-inline scan must stop where
+		// control actually arrived. For a mid-body entry those differ, and stopping at the
+		// function entry would walk the scan back through the very prologue this call skipped.
 		RegisterEnv callerRegs = envCache.computeIfAbsent(callInstr.getMinAddress(),
-			a -> callSiteRegisters(program, callInstr, helper.function().getEntryPoint()));
+			a -> callSiteRegisters(program, callInstr, helper.entry()));
 		BankSwitchStrategy.HelperDeposit deposit = helper.strategy()
 				.depositHelperArgument(program, switchSite, local, localIn, stateMask, callerRegs);
 		BankState positionedValue = position(deposit.value(), helper.lsb(), helper.effectMask());
@@ -1704,12 +1861,19 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 					continue; // dataflow never reached this instruction (dead code)
 				}
 				if (instr.getFlowType().isCall()) {
-					for (Address flowAddr : instr.getFlows()) {
+					// reachableEntries, not getFlows(), so a call through a thunk or a relay
+					// trampoline contributes the real callee to this graph rather than a
+					// 3-byte stub that modifies nothing. Only getFunctionAt hits are taken:
+					// this graph's nodes are Functions, and a mid-body entry has no Function
+					// to be a node -- attributing it to its container would claim the caller
+					// runs a body it entered partway into.
+					for (Address flowAddr : reachableEntries(program, instr)) {
 						Function callee = fm.getFunctionAt(flowAddr);
-						if (callee != null) {
-							calls.add(new DirectCallSite(addr, callee));
-							break; // a direct call resolves to exactly one target
+						if (callee == null || callee.isThunk()) {
+							continue; // keep hopping: a thunk modifies nothing itself
 						}
+						calls.add(new DirectCallSite(addr, callee));
+						break; // a direct call resolves to exactly one target
 					}
 				}
 				else if (instr.getFlowType().isTerminal()) {
@@ -2425,9 +2589,43 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * general: a helper whose exit path branches backward to an earlier switch would be
 	 * committed to the wrong site by it); nothing shipped does that today, and a helper that
 	 * did would need real terminal-site analysis rather than a max().
+	 * <p>
+	 * <b>{@code entry} is WHERE CONTROL ARRIVED, which is not always {@code function}'s entry
+	 * point.</b> A game may jump directly into the middle of a switch routine, deliberately
+	 * skipping a prologue that would clobber the argument register -- Bionic Commando's
+	 * {@code $D6E2 JMP $DCAA} lands on the first {@code STA $E000} of a 5-write chain, past the
+	 * {@code $DCA8 LDA $65} that would have overwritten A. Ghidra keeps {@code $DCAA} mid-body,
+	 * so {@code getFunctionContaining} answers {@code FUN_dca8} and a model keyed on the
+	 * function alone describes the argument at the WRONG entry. See
+	 * {@link #midBodyEntryHelper} for how such an entry is admitted and what it costs.
+	 * {@code entry} is also the {@link RegisterEnv} stop address {@link #recoverCallArgument}
+	 * hands the mini-inline scan, which must stop where control actually entered.
+	 * <p>
+	 * {@code firstSite} is the LOWEST-addressed recognized site in the body, the mirror of
+	 * {@code switchSite}'s max. It exists solely as {@link #midBodyEntryHelper}'s admission
+	 * test and is null in the same degraded cases {@code switchSite} is.
 	 */
-	private record HelperModel(Function function, BankState constState, Character argReg,
-			int effectMask, int lsb, BankSwitchStrategy strategy, Address switchSite) {}
+	private record HelperModel(Function function, Address entry, BankState constState,
+			Character argReg, int effectMask, int lsb, BankSwitchStrategy strategy,
+			Address switchSite, Address firstSite) {
+
+		/**
+		 * This helper re-keyed to a mid-body {@code entry}, with {@code constState} dropped.
+		 * <p>
+		 * Dropping the constant is the one thing that cannot be reused. A constant is a claim
+		 * about what the whole body does when entered at the top, and a mid-body entry is
+		 * precisely a path that skipped part of that -- shipping it would ship a wrong bank,
+		 * which this engine treats as strictly worse than shipping none. Nulling it routes the
+		 * call through {@link #recoverCallArgument}, which re-derives the value from the call
+		 * site's own registers. Everything else survives because
+		 * {@link #midBodyEntryHelper}'s admission test guarantees the entry still runs the
+		 * body's entire recognized site set.
+		 */
+		HelperModel atMidBodyEntry(Address midBody) {
+			return new HelperModel(function, midBody, null, argReg, effectMask, lsb, strategy,
+				switchSite, firstSite);
+		}
+	}
 
 	/**
 	 * A resolved call-site switch (for annotation, distinct from direct switches).

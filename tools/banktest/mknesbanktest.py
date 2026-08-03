@@ -800,6 +800,9 @@ class _Asm:
     def lda_imm(self, v):
         self._emit([0xA9, v & 0xFF])
 
+    def lda_zp(self, addr):
+        self._emit([0xA5, addr & 0xFF])
+
     def ldx_imm(self, v):
         self._emit([0xA2, v & 0xFF])
 
@@ -1004,17 +1007,47 @@ def make_prg_mmc1():
     $C000+x equals file offset (bank 7 base)+x throughout -- the asm objects below encode
     that translation the same way nesserialtest's did.
 
-    Three separate code regions (three `_Asm` instances sharing one `prg` buffer):
+    Five separate code regions (five `_Asm` instances sharing one `prg` buffer):
       main   @ $C000: RESET flow -- reset dance, two helper-mediated PRG switches with a
-             CHR chain sandwiched between them, the prg_mode->2 transition, and the
-             unresolvable-value call site.
+             CHR chain sandwiched between them, the three relay/mid-body call sites, the
+             prg_mode->2 transition, and the unresolvable-value call site.
       helper @ $C200: SwitchBank -- the shared 5x STA/LSR chain to $E000 (canonical PRG
              target address, register bits 14:13 of $E000 == target 3), ending RTS. Every
              PRG switch in `main` reaches this ONE subroutine via JSR, Zelda1/FF1/Metroid-
              style (LDA #imm / JSR SwitchBank) -- this is what makes findHelpers see a
              call site rather than an inline chain.
+      shadow @ $C250: the grm-nju two-convention helper -- `LDA $65` then the same chain.
+      relay  @ $C280: two 3-byte jump-table slots, one per grm-nju idiom (see below).
       target @ $C300: a lone RTS -- the JSR target that must retarget into the mode-2
              layout's switchable WC000 overlay after the transition (see below).
+
+    THE grm-nju IDIOMS (call sites 5-7, transcribed in shape from Bionic Commando, whose
+    every bank switch routes through a jump table and which resolved ZERO bank values
+    before this). A call's flow target is not always where control lands:
+
+      $C280  JMP $C200   -- targets a function ENTRY, so Ghidra types it thunk_FUN_c200.
+                            The thunk is a different Function than the helper, so a
+                            helper map keyed on Function missed it.
+      $C283  JMP $C250   -- likewise a thunk, to the shadow helper's own entry.
+      $C286  JMP $C252   -- targets MID-BODY, so Ghidra cannot type it a thunk and leaves
+                            it an ordinary one-instruction function. It is not the helper
+                            and contains no switch site, so the map missed it too.
+
+    Both misses were SILENT: calledHelper returned null and runDataflow folded the call as
+    a no-op on bank state -- neither an annotation nor a warning. The shadow helper exists
+    to make $C252 genuinely mid-body: its $C250 prologue reloads the bank from RAM, so the
+    function has two argument conventions (entering at $C250 ignores A; entering at $C252
+    takes the bank in A), and only the second is the one the relay uses.
+
+      LDA #$03 / JSR $C280  -- call site 5: resolves prg_bank=3 through the thunk form.
+      JSR $8000             -- -> W8000_M3_B3::8000, proving the reference retarget too.
+      JSR $C283             -- call site 6: the shadow helper's OWN entry, where the bank
+                               comes from $65 and A is stale. Must DECLINE with a warning:
+                               reaching a helper is not the same as knowing its argument.
+                               Recovering this one needs cross-function store forwarding
+                               and belongs to grm-mej.3, not here.
+      LDA #$04 / JSR $C286  -- call site 7: resolves prg_bank=4 through the mid-body form.
+      JSR $8000             -- -> W8000_M3_B4::8000.
 
     RESET ($C000, seed prg_mode=3/prg_bank=0/mirroring=0):
       LDA #$80 / STA $8000             -- reset dance: bit-7 write, prg_mode forced 3
@@ -1092,6 +1125,9 @@ def make_prg_mmc1():
     # separate RTS here -- it IS this fixture's running code (see the mode-2 design note).
     prg[2 * PRG_BANK_SIZE] = 0x60
     prg[5 * PRG_BANK_SIZE] = 0x60
+    # Banks 3 and 4 likewise, for the two grm-nju relay call sites' follow-up JSR $8000.
+    prg[3 * PRG_BANK_SIZE] = 0x60
+    prg[4 * PRG_BANK_SIZE] = 0x60
 
     bank7_base = 7 * PRG_BANK_SIZE
 
@@ -1101,6 +1137,8 @@ def make_prg_mmc1():
 
     main = _Asm(prg, 0xC000, bank7_base)
     helper = _Asm(prg, 0xC200, bank7_base + 0x200)
+    shadow = _Asm(prg, 0xC250, bank7_base + 0x250)
+    relay = _Asm(prg, 0xC280, bank7_base + 0x280)
     target = _Asm(prg, 0xC300, bank7_base + 0x300)
 
     labels = {}
@@ -1109,6 +1147,38 @@ def make_prg_mmc1():
     labels['switch_bank'] = helper.label()
     helper.chain5(0xE000)
     helper.rts()
+
+    # --- shadow helper @ $C250: Bionic Commando's FUN_dca8 shape (bead grm-nju).
+    # A prologue that reloads the bank from a RAM shadow, then the same 5x chain. The
+    # consequence is that the function has TWO argument conventions: entering at $C250
+    # takes the bank from $65 and ignores A entirely, while entering at $C252 -- the
+    # chain's first write, which the game reaches by jumping straight there -- takes it
+    # in A. Ghidra keeps $C252 mid-body, so a helper model keyed on the containing
+    # function can only describe one of the two, and describes it at the wrong entry.
+    labels['shadow_entry'] = shadow.label()
+    shadow.lda_zp(0x65)
+    labels['shadow_midbody'] = shadow.label()
+    shadow.chain5(0xE000)
+    shadow.rts()
+
+    # --- relay table @ $C280: the 3-byte jump-table slots real cartridges route bank
+    # switches through (bionic's $D6BB/$D6E2/$D751). Ghidra types the two slots below
+    # differently for reasons that have nothing to do with the game: the first targets a
+    # function entry and becomes a thunk, the second targets mid-body and stays an
+    # ordinary one-instruction function. Both were invisible to the old
+    # getFunctionAt-based call-site lookup, and both must now resolve.
+    # SLOT ORDER IS LOad-BEARING, and it is bionic's. Ghidra's thunk analysis creates a
+    # function at each thunk's DESTINATION, so whichever of $C250/$C252 it reaches first
+    # becomes a function entry -- and if that were $C252 there would be no mid-body entry
+    # left to model. Bionic wins this race by address order ($D6BB->$DCA8 precedes
+    # $D6E2->$DCAA), so the shadow-entry slot is placed below the mid-body slot here for
+    # the same reason. VerifyBankTest asserts the resulting shape rather than assuming it.
+    labels['relay_to_entry'] = relay.label()
+    relay.jmp(labels['switch_bank'])
+    labels['relay_to_shadow'] = relay.label()
+    relay.jmp(labels['shadow_entry'])
+    labels['relay_to_midbody'] = relay.label()
+    relay.jmp(labels['shadow_midbody'])
 
     # --- target @ $C300: the post-mode-switch WC000_M2_B7 JSR target ---
     labels['mode2_target'] = target.label()
@@ -1137,6 +1207,34 @@ def make_prg_mmc1():
     main.jsr(labels['switch_bank'])          # call site 2 (SAME helper) -> prg_bank=5
     labels['call2_use_jsr'] = main.label()
     main.jsr(0x8000)                         # -> W8000_M3_B5::8000
+
+    # --- the three grm-nju call sites, all before the mode flip (prg_mode still 3, so
+    # W8000 is the switchable window and the follow-up JSRs retarget through it). They
+    # sit here rather than after the flip so the bank-7 staging immediately below still
+    # runs last, leaving the mode-2 transition narrative exactly as it was. ---
+    labels['relay_entry_imm'] = main.label()
+    main.lda_imm(0x03)                       # bank 3, passed in A
+    labels['relay_entry_jsr'] = main.label()
+    main.jsr(labels['relay_to_entry'])       # call site 5: JSR -> relay -> SwitchBank
+    labels['relay_entry_use_jsr'] = main.label()
+    main.jsr(0x8000)                         # -> W8000_M3_B3::8000, proving the retarget
+
+    # Call site 6: the shadow helper's OWN entry, reached through its own relay slot. The
+    # bank comes from $65, not from A, and A here is whatever the JSR above left --
+    # unknown. It must decline with an honest WARNING rather than attribute a stale
+    # register. It is ALSO what gives the fixture its shape: this is the thunk whose
+    # destination Ghidra turns into FUN_C250 with a body spanning $C252, which is what
+    # leaves $C252 a mid-body address rather than a function of its own. It therefore
+    # comes BEFORE the mid-body call site, as it does in bionic.
+    labels['shadow_jsr'] = main.label()
+    main.jsr(labels['relay_to_shadow'])      # -> prg_bank unknown (poisoned)
+
+    labels['relay_mid_imm'] = main.label()
+    main.lda_imm(0x04)                       # bank 4, passed in A
+    labels['relay_mid_jsr'] = main.label()
+    main.jsr(labels['relay_to_midbody'])     # call site 7: JSR -> relay -> $C252 mid-body
+    labels['relay_mid_use_jsr'] = main.label()
+    main.jsr(0x8000)                         # -> W8000_M3_B4::8000, proving the retarget
 
     labels['call3_imm'] = main.label()
     main.lda_imm(0x07)                       # bank 7 (== last; see mode-2 design note)
@@ -1575,9 +1673,35 @@ def main():
     assert len(prgm1) == MMC1_PRG_SIZE
     assert prgm1[2 * PRG_BANK_SIZE] == 0x60  # RTS: W8000_M3_B2::8000
     assert prgm1[5 * PRG_BANK_SIZE] == 0x60  # RTS: W8000_M3_B5::8000
+    assert prgm1[3 * PRG_BANK_SIZE] == 0x60  # RTS: W8000_M3_B3::8000 (grm-nju relay site)
+    assert prgm1[4 * PRG_BANK_SIZE] == 0x60  # RTS: W8000_M3_B4::8000 (grm-nju mid-body site)
     m1bank7_base = 7 * PRG_BANK_SIZE
     assert (m1labels['switch_bank']) == 0xC200
     assert (m1labels['mode2_target']) == 0xC300
+    # grm-nju regions. The mid-body entry must be the shadow helper's chain write 1 and
+    # must NOT be its function entry -- that difference is the whole point of the fixture.
+    assert (m1labels['shadow_entry']) == 0xC250
+    assert (m1labels['shadow_midbody']) == 0xC252
+    assert (m1labels['relay_to_entry']) == 0xC280
+    assert (m1labels['relay_to_shadow']) == 0xC283
+    assert (m1labels['relay_to_midbody']) == 0xC286
+    # The shadow-ENTRY relay must sit below the MID-BODY relay, and its call site must
+    # come first -- see the slot-order note in make_prg_mmc1().
+    assert m1labels['relay_to_shadow'] < m1labels['relay_to_midbody']
+    assert m1labels['shadow_jsr'] < m1labels['relay_mid_jsr']
+    assert prgm1[m1bank7_base + 0x250] == 0xA5  # LDA zp opcode: the shadow prologue
+    assert prgm1[m1bank7_base + 0x252] == 0x8D  # STA opcode: shadow chain write 1
+    assert prgm1[m1bank7_base + 0x280] == 0x4C  # JMP opcode: relay to a function entry
+    assert prgm1[m1bank7_base + 0x283] == 0x4C  # JMP opcode: relay to the shadow entry
+    assert prgm1[m1bank7_base + 0x286] == 0x4C  # JMP opcode: relay into a function body
+    assert (prgm1[m1bank7_base + 0x281] | (prgm1[m1bank7_base + 0x282] << 8)) == 0xC200
+    assert (prgm1[m1bank7_base + 0x284] | (prgm1[m1bank7_base + 0x285] << 8)) == 0xC250
+    assert (prgm1[m1bank7_base + 0x287] | (prgm1[m1bank7_base + 0x288] << 8)) == 0xC252
+    # The three new call sites must sit before the bank-7 staging that precedes the mode
+    # flip, or the mode-2 transition this fixture also pins would no longer hold.
+    assert m1labels['relay_entry_jsr'] < m1labels['call3_jsr']
+    assert m1labels['relay_mid_jsr'] < m1labels['call3_jsr']
+    assert m1labels['shadow_jsr'] < m1labels['call3_jsr']
     assert prgm1[m1bank7_base + 0x200] == 0x8D  # STA opcode, helper's chain write 1
     assert prgm1[m1bank7_base + 0x300] == 0x60  # RTS at the mode-2 JSR target
     assert prgm1[m1bank7_base + 0x000] == 0xA9  # LDA opcode at RESET ($C000)

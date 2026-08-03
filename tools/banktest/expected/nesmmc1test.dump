@@ -1,4 +1,4 @@
-IDENTITY prg:9857c906924e3cc2a3159201d4ce563a3aa20dde15b1b52e19a956aacfff06d1 file:6a37ac0723d4b0576ffe1e338d294177380db7d4cf0fd98dacac8be256e53bd9
+IDENTITY prg:c0df87390c2f8bf2e4cabfcc994e5497ebf691550e4cfa5619796071ebe0caaa file:6d822ed6696520351a9c3d843533274340587fe855ffc7daf299468ffb2f08f0
 BLOCK APU_IO 4000-401f overlay=false
 BLOCK PPU_REGS 2000-2007 overlay=false
 BLOCK PRG_RAM 6000-7fff overlay=false
@@ -45,24 +45,34 @@ COMMENT c017 bank -> mirroring=0,prg_mode=3,prg_bank=2 [switch-value flow]
 COMMENT c01b bank -> mirroring=0,prg_mode=3,prg_bank=2 [switch-value flow]
 COMMENT c01f bank -> mirroring=0,prg_mode=3,prg_bank=2 [switch-value flow]
 COMMENT c024 bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_c200 [switch-value flow]
-COMMENT c02c bank -> mirroring=0,prg_mode=3,prg_bank=7 via FUN_c200 [switch-value flow]
-COMMENT c031 bank -> mirroring=0,prg_mode=3,prg_bank=7 [switch-value flow]
-COMMENT c035 bank -> mirroring=0,prg_mode=3,prg_bank=7 [switch-value flow]
-COMMENT c039 bank -> mirroring=0,prg_mode=3,prg_bank=7 [switch-value flow]
-COMMENT c03d bank -> mirroring=0,prg_mode=3,prg_bank=7 [switch-value flow]
-COMMENT c041 bank -> mirroring=0,prg_mode=2,prg_bank=7 [switch-value flow]
-BOOKMARK Warning c04c
+COMMENT c02c bank -> mirroring=0,prg_mode=3,prg_bank=3 via FUN_c200 [switch-value flow]
+COMMENT c037 bank -> mirroring=0,prg_mode=3,prg_bank=4 via LAB_c252 (mid-body entry in FUN_c250) [switch-value flow]
+COMMENT c03f bank -> mirroring=0,prg_mode=3,prg_bank=7 via FUN_c200 [switch-value flow]
+COMMENT c044 bank -> mirroring=0,prg_mode=3,prg_bank=7 [switch-value flow]
+COMMENT c048 bank -> mirroring=0,prg_mode=3,prg_bank=7 [switch-value flow]
+COMMENT c04c bank -> mirroring=0,prg_mode=3,prg_bank=7 [switch-value flow]
+COMMENT c050 bank -> mirroring=0,prg_mode=3,prg_bank=7 [switch-value flow]
+COMMENT c054 bank -> mirroring=0,prg_mode=2,prg_bank=7 [switch-value flow]
+BOOKMARK Warning c032
+BOOKMARK Warning c05f
 BOOKMARK Warning c200
 BOOKMARK Warning c204
 BOOKMARK Warning c208
 BOOKMARK Warning c20c
 BOOKMARK Warning c210
+BOOKMARK Warning c252
+BOOKMARK Warning c256
+BOOKMARK Warning c25a
+BOOKMARK Warning c25e
+BOOKMARK Warning c262
 REF c00a -> W8000_M3_B2::8000 UNCONDITIONAL_CALL primary=true
 REF c027 -> W8000_M3_B5::8000 UNCONDITIONAL_CALL primary=true
-REF c044 -> WC000_M2_B7::c300 UNCONDITIONAL_CALL primary=true
-REF c049 -> WC000_M2_B7::c400 READ primary=true
-REF c04c -> WC000_M2_B7::c200 UNCONDITIONAL_CALL primary=true
-REF c04f -> WC000_M2_B0::c04f UNCONDITIONAL_JUMP primary=true
+REF c02f -> W8000_M3_B3::8000 UNCONDITIONAL_CALL primary=true
+REF c03a -> W8000_M3_B4::8000 UNCONDITIONAL_CALL primary=true
+REF c057 -> WC000_M2_B7::c300 UNCONDITIONAL_CALL primary=true
+REF c05c -> WC000_M2_B7::c400 READ primary=true
+REF c05f -> WC000_M2_B7::c200 UNCONDITIONAL_CALL primary=true
+REF c062 -> WC000_M2_B0::c062 UNCONDITIONAL_JUMP primary=true
 REF c200 -> WC000_M2_B7::e000 DATA primary=true
 REF c204 -> WC000_M2_B7::e000 DATA primary=true
 REF c208 -> WC000_M2_B7::e000 DATA primary=true
