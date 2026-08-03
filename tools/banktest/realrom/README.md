@@ -119,21 +119,34 @@ away.
 
 ## Diagnostics
 
-Two read-only probes answer "why did this title resolve nothing?", run alongside a normal
+Three read-only probes answer "why did this title resolve nothing?", run alongside a normal
 import via `REALROM_EXTRA_POSTSCRIPT`. Give each its **own** invocation — the cache key does
 not cover them, so a cached `bless` would skip the import they need. Their output is
 diagnostic-only and never reaches a golden (the driver's awk carve extracts only the
-`REALROM` block). Read the scripts' headers for details; both are commented at length.
+`REALROM` block). Read the scripts' headers for details; all three are commented at length.
 
 ```bash
-REALROM_EXTRA_POSTSCRIPT=BankReachProbe.java  bash tools/banktest/realrom-test.sh check --only <id> <romdir>
-REALROM_EXTRA_POSTSCRIPT=HelperShapeProbe.java bash tools/banktest/realrom-test.sh check --only <id> <romdir>
+REALROM_EXTRA_POSTSCRIPT=BankReachProbe.java    bash tools/banktest/realrom-test.sh check --only <id> <romdir>
+REALROM_EXTRA_POSTSCRIPT=HelperShapeProbe.java  bash tools/banktest/realrom-test.sh check --only <id> <romdir>
+REALROM_EXTRA_POSTSCRIPT=BankConsumerProbe.java bash tools/banktest/realrom-test.sh check --only <id> <romdir>
 ```
 
-- **`BankReachProbe.java`** — separates the three reasons a **memory-latch** store never
-  fired: never disassembled, disassembled but in no function, or reachable but invisible to
-  `writesInRange`. It requires a `memory-latch` mechanism and reports an error on boards
-  without one (MMC1 is `serial-shift`).
+They divide the pipeline in three, and it is worth picking the right one rather than running
+all three: `BankReachProbe` asks whether the mechanism **write** was seen, `HelperShapeProbe`
+asks whether the **call** into a switch helper was resolvable, and `BankConsumerProbe` asks
+whether anything **consumes** the switchable window once a bank is known.
+
+- **`BankReachProbe.java`** — separates the three reasons a bank-switch store never fired:
+  never disassembled, disassembled but in no function, or reachable and in a function yet
+  never annotated. Runs on `memory-latch` (UxROM/AxROM/BNROM/Bandai FCG), `serial-shift`
+  (MMC1) and `select-data` (MMC3) — all three take their range from the same `start`/`end`
+  params; any other strategy is reported unsupported *by name* rather than silently probed.
+  Its `today=` column is production's own output (a `bank ->` EOL comment, or a
+  `Bank state becomes unknown here:` warning bookmark — the Phase-3
+  `Bank state requirement violated:` bookmarks are excluded, they mark call sites), so it is
+  authoritative rather than re-derived. The re-implemented `writesInRange` survives as the
+  `mirror.*` columns purely as a cross-check: a non-zero `count mirror.disagree` means one of
+  the two is wrong and is always worth chasing (grm-8cq, grm-8iy.2).
 - **`HelperShapeProbe.java`** — board-agnostic. For every warning bookmark, reports the
   containing function, its callers (distinguishing `JSR` from a tail-call `JMP`, with the
   instructions preceding each call), the instructions feeding each site, and **which sites
@@ -146,6 +159,17 @@ REALROM_EXTRA_POSTSCRIPT=HelperShapeProbe.java bash tools/banktest/realrom-test.
   the work is done. That is how grm-nju was sized: bionic 4 of 5 call sites constant and all 5
   hop-only, ff1 54 of 59, and cv2/blmaster/tmnt zero hops (so **not** this bead's shape —
   their zero resolution has some other cause).
+- **`BankConsumerProbe.java`** — the **consumer** side, i.e. the half the other two cannot
+  see. Derives the switchable/fixed offset ranges from the descriptor (not from block names —
+  on MMC1 the overlay-name union is `8000-ffff`, which cannot distinguish home-mode switchable
+  `8000-bfff` from home-mode fixed `c000-ffff`, and that distinction is the whole question),
+  censuses every reference into a switchable range by source bucket and ref type, counts
+  indirect dispatches, and walks forward from each **fully-known non-home** switch site to see
+  whether the recovered bank ever reaches a consumer. Its `refs.intoOverlay.retargeted` is the
+  honest fix metric that `RealRomDump`'s `refs.intoOverlay` is not — the latter also counts
+  intra-overlay references, which dominate on a healthy title (grm-jwh).
+  Used in grm-8iy to refute a consumer-side gate hypothesis and localize all six remaining
+  zero-resolvers to call-site helper-argument recovery instead.
 
 ## Bless discipline
 
