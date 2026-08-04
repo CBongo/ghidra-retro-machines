@@ -1068,6 +1068,13 @@ def make_prg_mmc1():
                                and belongs to grm-mej.3, not here.
       LDA #$04 / JSR $C286  -- call site 7: resolves prg_bank=4 through the mid-body form.
       JSR $8000             -- -> W8000_M3_B4::8000.
+      LDA #$06 / JSR $C283  -- call site 8 (bead grm-mu7): the shadow helper's own entry
+                               a second time, now with a KNOWN bank in A. Must decline
+                               too -- the prologue clobbers A before the chain reads it,
+                               so the caller's value is not the helper's argument no
+                               matter how well the scan resolved it. Site 6's twin, and
+                               the only one of the two that can tell the prologue check
+                               apart from "the scan found nothing".
 
     RESET ($C000, seed prg_mode=3/prg_bank=0/mirroring=0):
       LDA #$80 / STA $8000             -- reset dance: bit-7 write, prg_mode forced 3
@@ -1255,6 +1262,34 @@ def make_prg_mmc1():
     main.jsr(labels['relay_to_midbody'])     # call site 7: JSR -> relay -> $C252 mid-body
     labels['relay_mid_use_jsr'] = main.label()
     main.jsr(0x8000)                         # -> W8000_M3_B4::8000, proving the retarget
+
+    # Call site 8 (bead grm-mu7): the shadow helper's OWN entry AGAIN, but this time with
+    # a KNOWN bank in A. It is call site 6's A/B twin and the only one of the pair that
+    # can prove WHY the engine declines.
+    #
+    # Site 6 declines with A unknown, so its decline is equally explained by "the backward
+    # scan found nothing" -- the same reason M9 already covers. This one leaves A fully
+    # known, in range, and otherwise unused by the fixture, so the scan succeeds and the
+    # ONLY remaining reason to decline is the prologue clobber itself: $C250's `LDA $65`
+    # overwrites A before the chain that reads it. Before grm-mu7 nothing checked that,
+    # and this call site reported a confident prg_bank=6 -- a WRONG bank, which this
+    # engine rates strictly worse than no bank, since findHelpers necessarily takes
+    # argReg='A' from the chain's STA and cannot see that the prologue got there first.
+    #
+    # Placed here, between site 7's follow-up JSR and the bank-7 staging below, so the
+    # honest poison it deposits is immediately overwritten by call site 3's known
+    # prg_bank=7 and cannot reach the mode-2 transition's narrative.
+    #
+    # One deliberate side effect of that placement: call site 3's JSR now runs with
+    # prg_bank unknown on entry, so the bank-requirement scan flags it -- an extra WARNING
+    # bookmark at $C044 that sits alongside its own fully-resolved prg_bank=7 annotation.
+    # That is kept rather than designed around, because it proves the decline PROPAGATES
+    # instead of merely suppressing a comment; VerifyBankTest's M14b pins it, and explains
+    # both why it lands there and why the requirement itself is imprecise (grm-izu).
+    labels['clobber_imm'] = main.label()
+    main.lda_imm(0x06)                       # a KNOWN bank the helper must NOT believe
+    labels['clobber_jsr'] = main.label()
+    main.jsr(labels['relay_to_shadow'])      # -> prg_bank unknown (honest poison), NOT 6
 
     labels['call3_imm'] = main.label()
     main.lda_imm(0x07)                       # bank 7 (== last; see mode-2 design note)

@@ -1319,6 +1319,19 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * {@code argValue} keeps its exact prior meaning either way, because {@code select-data}
 	 * decodes a byte field out of it.
 	 * <p>
+	 * <b>The convention also assumes the helper does not eat its own argument</b> (grm-mu7).
+	 * {@code argReg} is whatever register the mechanism write STORES, which is the only
+	 * evidence {@link #findHelpers} has -- but a helper whose prologue reloads the bank from
+	 * RAM ({@code LDA $65 / STA $E000}) stores A without ever reading the caller's A, so the
+	 * caller's value is not the argument and depositing it would ship a confident wrong bank.
+	 * {@link #argumentSurvivesPrologue} tests that precondition over {@code entry..firstSite},
+	 * and a failure withholds {@code argValue} (leaving it unknown) rather than short-
+	 * circuiting, so the strategy still decides ownership and only the bits this call really
+	 * writes are poisoned. It is skipped for a strategy that re-derives the value inside the
+	 * helper instead of consuming {@code argValue} -- see
+	 * {@link BankSwitchStrategy#consumesHelperArgument}, and note that memory-latch's Contra
+	 * helper is a prologue-clobber case that must keep resolving.
+	 * <p>
 	 * {@code envCache} memoizes that environment per call address for the duration of one
 	 * {@link #runDataflow}; see its declaration there for why it is not optional.
 	 */
@@ -1331,6 +1344,16 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		int stateMask = helper.effectMask() >>> helper.lsb();
 		BankState local = StoredValueScanner.resolveStoredValue(program, callInstr, reg,
 			BankState.unknown(), stateMask, NO_HOOKS);
+		// grm-mu7: what the caller left in argReg is this helper's argument only if the helper
+		// still has it when the first switch site reads it. Withholding the value (rather than
+		// short-circuiting the whole call) is deliberate -- it routes the call down the exact
+		// path an unresolvable caller-side scan already takes, so the strategy still decides
+		// which bits this site owns and poisons only those. Strategies that re-derive the value
+		// inside the helper are exempt; see BankSwitchStrategy.consumesHelperArgument.
+		if ((helper.strategy() == null || helper.strategy().consumesHelperArgument()) &&
+			!argumentSurvivesPrologue(program, helper.entry(), helper.firstSite(), reg)) {
+			local = BankState.unknown();
+		}
 		Instruction switchSite = helper.switchSite() == null ? null
 				: program.getListing().getInstructionAt(helper.switchSite());
 		if (helper.strategy() == null || switchSite == null) {
@@ -1350,6 +1373,71 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		BankState positionedValue = position(deposit.value(), helper.lsb(), helper.effectMask());
 		int positionedOwnedMask = (deposit.ownedMask() << helper.lsb()) & helper.effectMask();
 		return new CallEffect(positionedValue, positionedOwnedMask);
+	}
+
+	/**
+	 * Whether a value the CALLER left in {@code reg} is still there when the helper's first
+	 * recognized switch site reads it -- the soundness precondition for
+	 * {@link #recoverCallArgument} handing that value to a strategy that takes it at face
+	 * value (grm-mu7).
+	 * <p>
+	 * <b>The bound is {@code firstSite}, emphatically not {@code switchSite}.</b> The argument
+	 * has to survive as far as the FIRST site because that is where the mechanism consumes it;
+	 * what happens after is the mechanism's own business, and a serial-shift chain's
+	 * {@code STA/LSR A/STA/...} clobbers A four times between its first write and its last by
+	 * design. Walking to {@code switchSite} would therefore decline every serial-shift helper
+	 * on the planet -- it would "fix" this bug by disabling the feature.
+	 * <p>
+	 * <b>{@code entry}, not the function's entry point.</b> The prologue this must inspect is
+	 * the part of it a given call actually runs. Bionic Commando's {@code FUN_dca8} is exactly
+	 * why: entering at {@code $DCA8} runs {@code LDA $65} and the caller's A is irrelevant,
+	 * while entering at {@code $DCAA} -- the mid-body entry its jump table really uses -- skips
+	 * that load and takes the bank in A. One function, two answers, told apart by nothing but
+	 * this address; a mid-body entry equal to {@code firstSite} walks an empty range and
+	 * correctly keeps its argument.
+	 * <p>
+	 * Declining conditions, all conservative -- a false decline costs one annotation, a false
+	 * accept ships a wrong bank:
+	 * <ul>
+	 * <li><b>Anything that writes {@code reg}</b>, asked of the language rather than a mnemonic
+	 * list so an undocumented or synthetic opcode cannot slip past.</li>
+	 * <li><b>Any call</b>: the callee's register effects are not modeled here at all.</li>
+	 * <li><b>A gap in the disassembly</b>, i.e. the walk cannot reach {@code firstSite} through
+	 * contiguous instructions. Undisassembled bytes in the middle of a helper body are bytes
+	 * whose register effects are unknown, which is not the same as harmless.</li>
+	 * <li><b>A missing {@code firstSite}</b> -- {@code findHelpers}' multi-mechanism degrade
+	 * case, where the model no longer describes one coherent mechanism and there is nothing
+	 * meaningful to walk to.</li>
+	 * </ul>
+	 * The walk is linear in address order, which is a proxy for execution order in the same way
+	 * {@code HelperModel.switchSite}'s max-address rule is: a prologue that branches AROUND a
+	 * clobbering instruction is declined even though the argument would have survived the taken
+	 * path. That is the safe direction of the approximation, and it is also arguably the right
+	 * answer -- the other path really does clobber it.
+	 */
+	static boolean argumentSurvivesPrologue(Program program, Address entry, Address firstSite,
+			char reg) {
+		if (entry == null || firstSite == null || entry.compareTo(firstSite) > 0) {
+			return false;
+		}
+		Register register = program.getLanguage().getRegister(String.valueOf(reg));
+		if (register == null) {
+			return false; // cannot ask the question -> do not assume the favorable answer
+		}
+		Listing listing = program.getListing();
+		Address cursor = entry;
+		while (cursor.compareTo(firstSite) < 0) {
+			Instruction instr = listing.getInstructionAt(cursor);
+			if (instr == null || instr.getFlowType().isCall() ||
+				StoredValueScanner.writesRegister(instr, register)) {
+				return false;
+			}
+			cursor = instr.getMaxAddress().next();
+			if (cursor == null) {
+				return false; // ran off the end of the space before reaching firstSite
+			}
+		}
+		return cursor.equals(firstSite);
 	}
 
 	/**
@@ -2602,8 +2690,12 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * hands the mini-inline scan, which must stop where control actually entered.
 	 * <p>
 	 * {@code firstSite} is the LOWEST-addressed recognized site in the body, the mirror of
-	 * {@code switchSite}'s max. It exists solely as {@link #midBodyEntryHelper}'s admission
-	 * test and is null in the same degraded cases {@code switchSite} is.
+	 * {@code switchSite}'s max, and is null in the same degraded cases {@code switchSite} is.
+	 * It has two consumers, both of which want "the first thing this body does that matters":
+	 * {@link #midBodyEntryHelper}'s admission test (does entering here still run every site?)
+	 * and {@link #argumentSurvivesPrologue}'s walk bound (does the caller's argument survive
+	 * as far as the site that consumes it?). Together with {@code entry} it delimits exactly
+	 * the prologue a given call runs before the mechanism reads its argument.
 	 */
 	private record HelperModel(Function function, Address entry, BankState constState,
 			Character argReg, int effectMask, int lsb, BankSwitchStrategy strategy,

@@ -335,6 +335,33 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	}
 
 	/**
+	 * {@code false}: the override above ignores {@code argValue} entirely, so this strategy is
+	 * immune to the stale-argument hazard {@code BoardBankAnalyzer}'s prologue guard exists for
+	 * -- and must be exempted from it, because the guard would otherwise forfeit the answers
+	 * this mini-inline was built to produce (grm-mu7).
+	 * <p>
+	 * <b>Contra is the case that makes this load-bearing rather than a micro-optimization.</b>
+	 * Its helper is {@code LDA $FFD0,Y / STA $FFD0,Y}, whose prologue writes A -- the exact
+	 * shape the guard declines on. Here that write is not a hazard but the mechanism itself:
+	 * {@link #evaluateLatch}'s backward scan starts at {@code switchSite} and walks straight
+	 * through the {@code LDA}, resolving the ROM table read under the caller's own Y. A guard
+	 * that fired here would turn a correct bank into no bank.
+	 * <p>
+	 * The general reason it is safe: this strategy never trusts a value recovered in the
+	 * CALLER, so no assumption about what survives the prologue is being made. It re-derives
+	 * the value INSIDE the helper, where a clobbering prologue is simply part of the code the
+	 * scan reads -- and where a genuinely unresolvable one (Bionic Commando's
+	 * {@code LDA $65}, reading RAM) comes back {@link BankState#unknown()} on its own merits.
+	 * <p>
+	 * Keep this in sync with {@link #depositHelperArgument} above: if that override ever grows
+	 * a path that reads {@code argValue}, this must go back to the default {@code true}.
+	 */
+	@Override
+	public boolean consumesHelperArgument() {
+		return false;
+	}
+
+	/**
 	 * Whether {@code instr} writes into this latch's range -- the mechanism-write predicate.
 	 * Two tiers, tried in order (grm-3x1):
 	 * <ol>

@@ -166,6 +166,46 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	}
 
 	/**
+	 * Whether this strategy's {@link #depositHelperArgument} actually READS {@code argValue}
+	 * -- i.e. whether a helper call site's answer depends on the caller's argument register
+	 * still holding the bank when control reaches the helper's first switch site (grm-mu7).
+	 * <p>
+	 * <b>What this gates.</b> {@code BoardBankAnalyzer.findHelpers} necessarily takes a
+	 * helper's argument register from the register its mechanism write STORES -- the
+	 * {@code STA}/{@code STX}/{@code STY} at the switch site is the only evidence available
+	 * there -- and {@code recoverCallArgument} then scans the CALLER for that register. That
+	 * chain silently assumes the helper's own prologue leaves the register alone. A helper
+	 * that reloads the bank from a RAM shadow breaks the assumption:
+	 * <pre>
+	 *   $DCA8  LDA $65      ; the bank really comes from RAM
+	 *   $DCAA  STA $E000    ; ...but this is where argReg='A' is recorded
+	 * </pre>
+	 * Called as {@code LDA #$09 / JSR $DCA8}, the caller's 9 is not this helper's argument at
+	 * all, and depositing it verbatim ships a confident WRONG bank -- strictly worse, in this
+	 * engine, than shipping none. So {@code recoverCallArgument} walks entry..firstSite and
+	 * withholds the recovered value when anything there clobbers the register.
+	 * <p>
+	 * <b>Why it is a per-strategy question rather than a blanket rule.</b> A blanket "decline
+	 * when the prologue writes argReg" would break the very case grm-hum increment 2 was
+	 * built for. Contra's helper is {@code LDA $FFD0,Y / STA $FFD0,Y} -- its prologue writes
+	 * A, and {@code MemoryLatchBankSwitchStrategy} nonetheless answers it correctly, because
+	 * it ignores {@code argValue} entirely and re-evaluates its own switch site under the
+	 * caller's {@link RegisterEnv}: that mini-inline SEES the prologue, so a clobber there is
+	 * not a hazard but an input. Declining for such a strategy would forfeit real answers to
+	 * protect against a wrong one it cannot produce.
+	 * <p>
+	 * {@code true} (the default) is the SAFE answer and is correct for every strategy that
+	 * takes {@code argValue} at face value -- the default deposit, {@code serial-shift}, and
+	 * {@code select-data} (which decodes a byte field out of it). Only override to
+	 * {@code false} when {@code depositHelperArgument} genuinely never consults
+	 * {@code argValue}, and re-check this method when changing that override's body: the two
+	 * must agree, or the guard protects the wrong strategy.
+	 */
+	default boolean consumesHelperArgument() {
+		return true;
+	}
+
+	/**
 	 * Whether {@link #computeSwitch}'s result at a given {@code (program, instr)} pair is
 	 * independent of {@code inState} -- i.e. a pure function of the program and instruction
 	 * alone, safe for the dataflow engine to memoize per-address across worklist dequeues

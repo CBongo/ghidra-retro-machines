@@ -3083,49 +3083,98 @@ public class VerifyBankTest extends GhidraScript {
 		// as knowing its argument, and attributing a stale register here would ship a
 		// wrong bank. Honest WARNING, no "bank ->" claim. Recovering it needs
 		// cross-function store-to-load forwarding through the RAM shadow -- grm-mej.3.
+		// This one declines because A is UNKNOWN; M14 below is its twin that declines
+		// with A known, which is what actually pins the prologue check (grm-mu7).
 		criterion("M13", hasWarningBookmark(0xC032) && !eol(0xC032).contains("bank ->"),
 			"shadow-entry call declines honestly at c032: warning=" +
 				hasWarningBookmark(0xC032) + " comment=\"" + eol(0xC032) + "\"");
 
-		// M6: call site 3's JSR $C200 at $C03F resolves prg_bank=7 via the same helper --
+		// M14 (bead grm-mu7): call site 8's JSR $C283 at $C03F -- the shadow helper's own
+		// entry AGAIN, but reached with a KNOWN bank in A (LDA #$06 at $C03D). This is
+		// M13's A/B twin and the only one of the pair that pins the PROLOGUE guard:
+		// M13's argument register is unknown, so its decline is equally explained by the
+		// backward scan finding nothing (M9's reason), whereas here the scan succeeds and
+		// the sole remaining reason to decline is that $C250's `LDA $65` clobbers A
+		// before the chain reads it. Without the guard this reported a confident
+		// prg_bank=6 -- findHelpers takes argReg='A' from the chain's STA and cannot see
+		// that the prologue got there first, so recoverCallArgument handed the caller's
+		// stale A to a strategy that deposits it verbatim.
+		//
+		// The check is deliberately in two parts. The warning + no-"bank ->" half is the
+		// honest-decline shape M9/M13 share; the explicit !prg_bank=6 half is what would
+		// have caught the bug even if the deposit had been rendered some other way, and
+		// it names the exact wrong answer this call site is built to provoke.
+		c = eol(0xC03F);
+		criterion("M14", hasWarningBookmark(0xC03F) && !c.contains("bank ->") &&
+			!c.contains("prg_bank=6"),
+			"prologue-clobbered helper call declines despite a known argument, at c03f: " +
+				"warning=" + hasWarningBookmark(0xC03F) + " comment=\"" + c + "\"");
+
+		// M14b: the decline is not cosmetic -- it propagates. The poison M14 deposits
+		// leaves prg_bank UNKNOWN across the next direct helper call (M6's JSR $C200 at
+		// $C044), and the bank-requirement scan says so with its own warning there. Two
+		// things are worth pinning about that bookmark, because a reader meeting it in
+		// the golden will wonder:
+		//   1. It is NOT the helper-call warning. That one fires only when a call's own
+		//      recovery pinned down nothing (annotateOrWarn's knownMask == 0 branch), and
+		//      $C044's recovery succeeded -- M6 asserts a fully known prg_bank=7 comment
+		//      at the same address. A site carrying BOTH a resolved annotation and a
+		//      warning is exactly the requirement scan's signature.
+		//   2. It appears at $C044 and not at the relay call sites ($C032/$C03F) because
+		//      the scan walks DIRECT calls: those two resolve to the one-instruction
+		//      relay functions, which reach the helper by JMP and so never inherit its
+		//      requiresOnEntry. $C044 calls FUN_c200 outright.
+		// The requirement itself is the M3 known-ness heuristic being conservative: a
+		// caller-supplied helper analyzed standalone has an unknown argument, so its
+		// chain's effect comes out unknown from an unknown in-state, which the scan reads
+		// as "the dispatch needed this bit". For a full-overwrite mechanism that is
+		// imprecise (the helper OVERWRITES prg_bank rather than consuming it) -- filed as
+		// grm-izu, and deliberately not touched here: grm-mu7 changes what the engine
+		// knows, not how the requirement layer infers.
+		criterion("M14b", hasWarningBookmark(0xC044) && eol(0xC044).contains("prg_bank=7"),
+			"the honest poison propagates: the next direct helper call is flagged " +
+				"bank-state-unsound while still resolving its own argument, at c044: " +
+				"warning=" + hasWarningBookmark(0xC044) + " comment=\"" + eol(0xC044) + "\"");
+
+		// M6: call site 3's JSR $C200 at $C044 resolves prg_bank=7 via the same helper --
 		// this is the commit that stages prg_bank=7 for the mode-2 transition below (bank
 		// 7 == `last`, matching WC000's fixed-last home content, so the transition doesn't
 		// move the ground out from under the running code -- see the fixture's module
 		// doc). Unlike M2/M5 there is no follow-up JSR $8000 (bank 7 IS this running
 		// code, not a separate routine).
-		c = eol(0xC03F);
+		c = eol(0xC044);
 		criterion("M6", c.contains("bank -> ") && c.contains("prg_bank=7") &&
 			!c.contains("?") && c.contains("via"),
-			"helper call site 3 resolves prg_bank=7 via SwitchBank, no '?', at c03f: \"" +
+			"helper call site 3 resolves prg_bank=7 via SwitchBank, no '?', at c044: \"" +
 				c + "\"");
 
 		// M7: the mode-2 transition chain's commit (5th write of the inline Control chain
-		// to $8000) at $C054 shows prg_mode=2 (fix-first) fully known -- mirroring stays
-		// 0, prg_bank stays 7 (survived every write above), so the WHOLE state is known,
-		// no '?'.
-		c = eol(0xC054);
+		// to $8000) at $C059 shows prg_mode=2 (fix-first) fully known -- mirroring stays
+		// 0, prg_bank stays 7 (survived every write above, including M14's honest poison,
+		// which M6's call site overwrote), so the WHOLE state is known, no '?'.
+		c = eol(0xC059);
 		criterion("M7", c.contains("prg_mode=2") && !c.contains("?"),
-			"mode-2 transition commits prg_mode=2, fully known, at c054: \"" + c + "\"");
+			"mode-2 transition commits prg_mode=2, fully known, at c059: \"" + c + "\"");
 
-		// M8: the JSR $C300 right after the transition, at $C057, retargets to
+		// M8: the JSR $C300 right after the transition, at $C05C, retargets to
 		// WC000_M2_B7 -- WC000 just became the switchable window (mode 2), at the
 		// current prg_bank=7; this is the "post-switch control flow survives" check: the
 		// JSR instruction itself sits in the SAME physical bytes (bank 7) before and
 		// after the flip, only the symbolic window name changes.
-		r = findOverlayRef(0xC057, "WC000_M2_B7", 0xC300);
+		r = findOverlayRef(0xC05C, "WC000_M2_B7", 0xC300);
 		criterion("M8", r != null && r.getReferenceType().isCall() && r.isPrimary(),
 			"JSR $C300 after the mode-2 transition retargeted to WC000_M2_B7 overlay, " +
 				"primary: " + describe(r));
 
-		// M9: call site 4's JSR $C200 at $C05F -- an opaque indexed load (LDX #$00 / LDA
+		// M9: call site 4's JSR $C200 at $C064 -- an opaque indexed load (LDX #$00 / LDA
 		// $C400,X) feeds the same helper's argReg='A'; recoverCallArgument's backward
 		// scan cannot resolve an indexed load (same limitation nesserialtest's
 		// F-unresolvable exercises for an inline chain's seed) -> honest WARNING
 		// bookmark at the JSR itself, no false "bank ->" claim. This is the Metroid-
 		// mailbox analog for the HELPER call-site value-recovery path specifically.
-		criterion("M9", hasWarningBookmark(0xC05F) && !eol(0xC05F).contains("bank ->"),
-			"unresolvable helper call warns, no false comment, at c05f: warning=" +
-				hasWarningBookmark(0xC05F) + " comment=\"" + eol(0xC05F) + "\"");
+		criterion("M9", hasWarningBookmark(0xC064) && !eol(0xC064).contains("bank ->"),
+			"unresolvable helper call warns, no false comment, at c064: warning=" +
+				hasWarningBookmark(0xC064) + " comment=\"" + eol(0xC064) + "\"");
 
 		// M10: disassembly sanity -- the JSR-target overlay instructions actually exist.
 		criterion("M10:W8000_M3_B2_8000", hasInstructionAt("W8000_M3_B2", 0x8000),
