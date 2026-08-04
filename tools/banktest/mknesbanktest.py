@@ -835,6 +835,12 @@ class _Asm:
     def lda_absx(self, addr):
         self._emit([0xBD, addr & 0xFF, (addr >> 8) & 0xFF])
 
+    def pha(self):
+        self._emit([0x48])
+
+    def pla(self):
+        self._emit([0x68])
+
     def rti(self):
         self._emit([0x40])
 
@@ -1027,7 +1033,7 @@ def make_prg_mmc1():
     $C000+x equals file offset (bank 7 base)+x throughout -- the asm objects below encode
     that translation the same way nesserialtest's did.
 
-    Five separate code regions (five `_Asm` instances sharing one `prg` buffer):
+    Six separate code regions (six `_Asm` instances sharing one `prg` buffer):
       main   @ $C000: RESET flow -- reset dance, two helper-mediated PRG switches with a
              CHR chain sandwiched between them, the three relay/mid-body call sites, the
              prg_mode->2 transition, and the unresolvable-value call site.
@@ -1037,6 +1043,12 @@ def make_prg_mmc1():
              style (LDA #imm / JSR SwitchBank) -- this is what makes findHelpers see a
              call site rather than an inline chain.
       shadow @ $C250: the grm-nju two-convention helper -- `LDA $65` then the same chain.
+      saver  @ $C2A0: the grm-mu7 save/restore helper -- `PHA / LDA #$01 / STA $0103 / PLA`
+             then the same chain. Castlevania 2's FUN_c187 byte for byte: the prologue
+             clobbers the argument register and then puts it back, so the argument DOES
+             reach the chain and the call must resolve. It is the shadow helper's opposite
+             number, and the pair is what forces the guard to distinguish a clobber that
+             loses the argument from one that does not.
       relay  @ $C280: two 3-byte jump-table slots, one per grm-nju idiom (see below).
       target @ $C300: a lone RTS -- the JSR target that must retarget into the mode-2
              layout's switchable WC000 overlay after the transition (see below).
@@ -1155,6 +1167,8 @@ def make_prg_mmc1():
     # Banks 3 and 4 likewise, for the two grm-nju relay call sites' follow-up JSR $8000.
     prg[3 * PRG_BANK_SIZE] = 0x60
     prg[4 * PRG_BANK_SIZE] = 0x60
+    # Bank 1 likewise, for the grm-mu7 save/restore call site's follow-up JSR $8000.
+    prg[1 * PRG_BANK_SIZE] = 0x60
 
     bank7_base = 7 * PRG_BANK_SIZE
 
@@ -1166,6 +1180,7 @@ def make_prg_mmc1():
     helper = _Asm(prg, 0xC200, bank7_base + 0x200)
     shadow = _Asm(prg, 0xC250, bank7_base + 0x250)
     relay = _Asm(prg, 0xC280, bank7_base + 0x280)
+    saver = _Asm(prg, 0xC2A0, bank7_base + 0x2A0)
     target = _Asm(prg, 0xC300, bank7_base + 0x300)
 
     labels = {}
@@ -1187,6 +1202,26 @@ def make_prg_mmc1():
     labels['shadow_midbody'] = shadow.label()
     shadow.chain5(0xE000)
     shadow.rts()
+
+    # --- saver helper @ $C2A0: Castlevania 2's FUN_c187 shape (bead grm-mu7, second
+    # increment). A prologue that CLOBBERS the argument register and then puts it back:
+    #
+    #     PHA / LDA #$01 / STA $0103 / PLA / <the same 5x chain>
+    #
+    # The `LDA #$01` writes A before the chain's first store, so a guard that asks only
+    # "does anything write argReg between entry and the first site" declines here -- and
+    # that is exactly what the first version of grm-mu7's guard did, silently destroying
+    # three real ROMs (kicarus -215 overlay instrs, dodge -10692, cv2 -2 bank comments)
+    # while all 45 synthetic goldens stayed green, because not one of them saved and
+    # restored. This helper exists so the SYNTHETIC gate covers the idiom: the real-ROM
+    # tier is not part of build-and-test.sh, so it cannot be what protects this.
+    labels['saver_entry'] = saver.label()
+    saver.pha()
+    saver.lda_imm(0x01)
+    saver.sta_abs(0x0103)                    # the side effect the argument is saved across
+    saver.pla()                              # ...and here it comes back
+    saver.chain5(0xE000)
+    saver.rts()
 
     # --- relay table @ $C280: the 3-byte jump-table slots real cartridges route bank
     # switches through (bionic's $D6BB/$D6E2/$D751). Ghidra types the two slots below
@@ -1262,6 +1297,23 @@ def make_prg_mmc1():
     main.jsr(labels['relay_to_midbody'])     # call site 7: JSR -> relay -> $C252 mid-body
     labels['relay_mid_use_jsr'] = main.label()
     main.jsr(0x8000)                         # -> W8000_M3_B4::8000, proving the retarget
+
+    # Call site 9 (bead grm-mu7, second increment): the SAVE/RESTORE helper. Its prologue
+    # clobbers A and then restores it across the stack, so the argument really does reach
+    # the chain and this MUST resolve -- it is call site 8's opposite number. Together the
+    # two pin the distinction the guard has to draw: site 8 clobbers and never restores
+    # (decline), site 9 clobbers and restores (resolve). A guard that only asks "was argReg
+    # written" cannot tell them apart, and answers site 9 wrong.
+    #
+    # Placed BEFORE site 8 on purpose: site 8's honest poison has to be the last thing to
+    # touch prg_bank before call site 3, or M14b's downstream-propagation check loses the
+    # very unknown it asserts.
+    labels['saver_imm'] = main.label()
+    main.lda_imm(0x01)                       # bank 1, saved and restored by the helper
+    labels['saver_jsr'] = main.label()
+    main.jsr(labels['saver_entry'])          # call site 9 -> prg_bank=1, NOT declined
+    labels['saver_use_jsr'] = main.label()
+    main.jsr(0x8000)                         # -> W8000_M3_B1::8000, proving the retarget
 
     # Call site 8 (bead grm-mu7): the shadow helper's OWN entry AGAIN, but this time with
     # a KNOWN bank in A. It is call site 6's A/B twin and the only one of the pair that

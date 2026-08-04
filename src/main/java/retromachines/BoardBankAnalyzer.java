@@ -1409,11 +1409,61 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * case, where the model no longer describes one coherent mechanism and there is nothing
 	 * meaningful to walk to.</li>
 	 * </ul>
-	 * The walk is linear in address order, which is a proxy for execution order in the same way
-	 * {@code HelperModel.switchSite}'s max-address rule is: a prologue that branches AROUND a
-	 * clobbering instruction is declined even though the argument would have survived the taken
-	 * path. That is the safe direction of the approximation, and it is also arguably the right
-	 * answer -- the other path really does clobber it.
+	 * <b>A CLOBBER IS NOT A LOSS WHEN THE PROLOGUE SAVED THE ARGUMENT FIRST.</b> This is not a
+	 * refinement, it is the difference between working and not working, and it was measured the
+	 * expensive way: the first version of this method tested only "does anything write
+	 * {@code reg}", and that silently destroyed three real ROMs. Castlevania 2's {@code FUN_c187},
+	 * byte-exact:
+	 * <pre>
+	 *   c187  PHA            ; save the caller's bank argument
+	 *   c188  LDA #$01       ; the naive test declines HERE
+	 *   c18a  STA $0103
+	 *   c18d  PLA            ; ...but this puts the argument back
+	 *   c18e  STA $FFFF      ; firstSite: the chain consumes A, correctly
+	 * </pre>
+	 * The argument survives perfectly well -- across the stack. Declining cost Kid Icarus all 215
+	 * of its overlay instructions, Dodgeball all 10692 of its, and Castlevania 2 both of its bank
+	 * comments; the synthetic goldens all passed, because none of them saves and restores.
+	 * <p>
+	 * So the walk carries an abstract state instead of a single flag: whether {@code reg} still
+	 * holds the caller's value, a shadow stack of which pushed bytes ARE that value, and the set
+	 * of memory cells it was stored to and not yet overwritten. {@code PHA} pushes the current
+	 * answer, {@code PLA} pops it back, and {@code PHP}/{@code PLP} are modelled purely to keep
+	 * the depth honest so an interleaved status push cannot make a later {@code PLA} pop the
+	 * wrong byte. Anything else that moves the stack pointer abandons the model rather than guess
+	 * at the new depth.
+	 * <p>
+	 * <b>The memory half is not optional either</b> -- the same three ROMs need both. Double
+	 * Dribble's {@code FUN_ff08} restores from the stack and then immediately parks the argument
+	 * in RAM, because it needs A again for an unrelated shadow:
+	 * <pre>
+	 *   ff11  PLA            ; the argument is back...
+	 *   ff12  STA $0103      ; ...and immediately parked in memory
+	 *   ff15  LDA $ff        ; A reused for the mirroring shadow
+	 *   ff1a  STA $ff
+	 *   ff1c  LDA $0103      ; the argument is reloaded HERE
+	 *   ff1f  STA $FFFF      ; firstSite
+	 * </pre>
+	 * A load counts as a restore only when it reads a cell this walk watched the argument being
+	 * written to and nothing has written since; every other write to {@code reg} loses it. An
+	 * indexed store forgets every tracked cell, since its target is runtime-dependent and could
+	 * have landed on any of them.
+	 * <p>
+	 * <b>This is a PRESERVATION model, not a value model.</b> It answers only "does the caller's
+	 * byte still reach the first site", never "what is it" -- the value still comes from the
+	 * caller-side scan. Teaching {@link StoredValueScanner} to carry values through the stack and
+	 * across blocks is a different and much larger capability, tracked by {@code grm-mej.3} and
+	 * blocked on {@code grm-mej.2}; nothing here anticipates it.
+	 * <p>
+	 * <b>Soundness of the save/restore half.</b> The clobber half of this walk is linear in
+	 * address order, which is a proxy for execution order in the same way
+	 * {@code HelperModel.switchSite}'s max-address rule is, and it errs SAFE: a prologue that
+	 * branches around a clobber is declined even though the argument survives the taken path.
+	 * The save/restore half does not get that for free -- a branch that skipped a {@code PLA}
+	 * would make "restored" a claim about a path that never runs, and that error points the
+	 * unsafe way. It is therefore trusted only over genuinely straight-line code: any
+	 * non-fall-through flow in the range abandons the shadow stack, after which a {@code PLA} is
+	 * an ordinary clobber again. Clobber detection itself is unaffected and stays conservative.
 	 */
 	static boolean argumentSurvivesPrologue(Program program, Address entry, Address firstSite,
 			char reg) {
@@ -1424,20 +1474,150 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		if (register == null) {
 			return false; // cannot ask the question -> do not assume the favorable answer
 		}
+		Register stackPointer = program.getCompilerSpec().getStackPointer();
 		Listing listing = program.getListing();
+		// Does argReg still hold what the CALLER left in it?
+		boolean holdsArgument = true;
+		// The saved-value stack: one entry per byte this walk watched being pushed, true when
+		// that byte IS the caller's argument. Only consulted while straightLine holds.
+		Deque<Boolean> saved = new ArrayDeque<>();
+		// The memory half of the same idea: cells this walk watched the argument being stored to
+		// and which nothing has overwritten since, so a load from one is a restore.
+		Set<Address> argumentCells = new LinkedHashSet<>();
+		// Whether the save/restore model is still trustworthy. Cleared by anything that moves
+		// the stack pointer in a way this does not model, and by any non-fall-through flow --
+		// see the javadoc's soundness note.
+		boolean straightLine = true;
 		Address cursor = entry;
 		while (cursor.compareTo(firstSite) < 0) {
 			Instruction instr = listing.getInstructionAt(cursor);
-			if (instr == null || instr.getFlowType().isCall() ||
-				StoredValueScanner.writesRegister(instr, register)) {
+			if (instr == null || instr.getFlowType().isCall()) {
 				return false;
+			}
+			boolean modelled = false;
+			if (reg == 'A') {
+				switch (instr.getMnemonicString()) {
+					case "PHA" -> {
+						if (straightLine) {
+							saved.push(holdsArgument);
+						}
+						modelled = true;
+					}
+					case "PLA" -> {
+						if (straightLine && !saved.isEmpty()) {
+							holdsArgument = saved.pop();
+						}
+						else {
+							// Popping a byte this walk never watched being pushed: it belongs to
+							// the caller's frame or to code we did not model, and the depth is out
+							// of step from here on either way.
+							holdsArgument = false;
+							straightLine = false;
+						}
+						modelled = true;
+					}
+					case "PHP" -> {
+						// Modelled only to keep the DEPTH right, so an interleaved status push
+						// cannot make a later PLA pop the wrong byte. A status byte is never the
+						// argument.
+						if (straightLine) {
+							saved.push(Boolean.FALSE);
+						}
+						modelled = true;
+					}
+					case "PLP" -> {
+						if (straightLine && !saved.isEmpty()) {
+							saved.pop();
+						}
+						else {
+							straightLine = false;
+						}
+						modelled = true;
+					}
+					default -> {
+						// fall through to the generic tests below
+					}
+				}
+			}
+			if (!modelled) {
+				// Any write to a cell we were relying on ends that reliance, whatever wrote it
+				// (a plain store, or an INC/ASL-style read-modify-write).
+				argumentCells.removeIf(cell -> StoredValueScanner.writesAddress(instr, cell));
+				Character stored = StoredValueScanner.storeRegister(instr);
+				if (stored != null && stored.charValue() == reg && holdsArgument && straightLine) {
+					Address cell = StoredValueScanner.plainAbsoluteTarget(instr);
+					if (cell != null) {
+						argumentCells.add(cell);
+					}
+					else {
+						// An indexed store's target is runtime-dependent, so it may have landed on
+						// any tracked cell. Forget all of them rather than pick.
+						argumentCells.clear();
+					}
+				}
+				if (StoredValueScanner.writesRegister(instr, register)) {
+					// A load is a RESTORE when it reads back a cell this walk watched the argument
+					// being written to; every other write to argReg loses it.
+					Address from = argumentReloadSource(instr, reg);
+					holdsArgument = straightLine && from != null && argumentCells.contains(from);
+				}
+				// Anything else that touches the stack pointer (TXS, or a PHX/PLX-style push on a
+				// variant that has one) desynchronises the depth, so stop believing the model
+				// rather than let a later PLA pop the wrong entry.
+				if (stackPointer == null || writesStackPointer(instr, stackPointer)) {
+					straightLine = false;
+				}
+			}
+			// A branch or jump means the walk's straight line is not necessarily a real path, so
+			// a PLA after it cannot be trusted to pair with a PHA before it. Plain clobber
+			// detection is unaffected and stays conservative.
+			if (instr.getFlows().length > 0) {
+				straightLine = false;
+				argumentCells.clear();
 			}
 			cursor = instr.getMaxAddress().next();
 			if (cursor == null) {
 				return false; // ran off the end of the space before reaching firstSite
 			}
 		}
-		return cursor.equals(firstSite);
+		return cursor.equals(firstSite) && holdsArgument;
+	}
+
+	/**
+	 * The address {@code instr} reloads {@code reg} from, when it is a plain load whose target is
+	 * statically certain -- the memory half of {@link #argumentSurvivesPrologue}'s save/restore
+	 * model. Null for anything else, including an immediate load (no address operand at all) and
+	 * an indexed one ({@link StoredValueScanner#plainAbsoluteTarget} refuses those, since their
+	 * target is runtime-dependent).
+	 */
+	private static Address argumentReloadSource(Instruction instr, char reg) {
+		if (!("LD" + reg).equals(instr.getMnemonicString())) {
+			return null;
+		}
+		return StoredValueScanner.plainAbsoluteTarget(instr);
+	}
+
+	/**
+	 * Whether {@code instr} moves the stack pointer, for {@link #argumentSurvivesPrologue}'s
+	 * shadow stack.
+	 * <p>
+	 * <b>Compared by BASE register, not by identity.</b> The 6502 declares the stack pointer
+	 * twice over the same bytes -- a two-byte {@code SP} and a one-byte {@code S} -- and
+	 * {@code CompilerSpec.getStackPointer()} answers one while {@code TXS}'s p-code writes the
+	 * other. An {@code equals} test (which is what {@link StoredValueScanner#writesRegister}
+	 * deliberately does, and must keep doing for A/X/Y) therefore reports that {@code TXS} does
+	 * not touch the stack, and the shadow stack would go on trusting a depth that had just moved
+	 * underneath it. Measured, not theorised: the {@code TXS} case was the one unit test that
+	 * failed on the identity comparison.
+	 */
+	private static boolean writesStackPointer(Instruction instr, Register stackPointer) {
+		Register wanted = stackPointer.getBaseRegister();
+		for (Object o : instr.getResultObjects()) {
+			if (o instanceof Register r && wanted.equals(r.getBaseRegister())) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**

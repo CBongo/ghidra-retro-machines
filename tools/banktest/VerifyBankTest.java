@@ -3104,11 +3104,38 @@ public class VerifyBankTest extends GhidraScript {
 		// honest-decline shape M9/M13 share; the explicit !prg_bank=6 half is what would
 		// have caught the bug even if the deposit had been rendered some other way, and
 		// it names the exact wrong answer this call site is built to provoke.
+		// M15 (bead grm-mu7, second increment): call site 9's JSR $C2A0 at $C03F -- the
+		// SAVE/RESTORE helper (PHA / LDA #$01 / STA $0103 / PLA / chain). Its prologue
+		// clobbers A and then puts it back across the stack, so the argument really does
+		// reach the chain and this MUST resolve to prg_bank=1.
+		//
+		// This is M14's opposite number, and the pair is the point: both helpers write A
+		// between entry and the first switch site, and the ONLY difference is whether the
+		// value comes back. A guard that asks merely "was argReg written" cannot tell them
+		// apart and gets this one wrong -- which is precisely what shipped in the first
+		// grm-mu7 increment, costing kicarus all 215 of its overlay instructions, dodge
+		// 10692, and cv2 both its bank comments, while every synthetic golden stayed green
+		// because not one of them saved and restored. Castlevania 2's FUN_c187 is this
+		// shape byte for byte.
 		c = eol(0xC03F);
-		criterion("M14", hasWarningBookmark(0xC03F) && !c.contains("bank ->") &&
+		criterion("M15", c.contains("bank -> ") && c.contains("prg_bank=1") &&
+			!c.contains("?") && c.contains("via") && !hasWarningBookmark(0xC03F),
+			"save/restore helper call resolves prg_bank=1 -- a restored clobber is not a " +
+				"loss -- at c03f: warning=" + hasWarningBookmark(0xC03F) + " comment=\"" + c +
+				"\"");
+
+		// M15b: load-bearing, like M11b/M12b -- the JSR $8000 at $C042 retargets to
+		// W8000_M3_B1. A recovered value nothing retargets against would not be worth much.
+		r = findOverlayRef(0xC042, "W8000_M3_B1", 0x8000);
+		criterion("M15b", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $8000 (prg_bank=1, via save/restore helper) retargeted to W8000_M3_B1 " +
+				"overlay, primary: " + describe(r));
+
+		c = eol(0xC047);
+		criterion("M14", hasWarningBookmark(0xC047) && !c.contains("bank ->") &&
 			!c.contains("prg_bank=6"),
-			"prologue-clobbered helper call declines despite a known argument, at c03f: " +
-				"warning=" + hasWarningBookmark(0xC03F) + " comment=\"" + c + "\"");
+			"prologue-clobbered helper call declines despite a known argument, at c047: " +
+				"warning=" + hasWarningBookmark(0xC047) + " comment=\"" + c + "\"");
 
 		// M14b: the decline is not cosmetic -- it propagates. The poison M14 deposits
 		// leaves prg_bank UNKNOWN across the next direct helper call (M6's JSR $C200 at
@@ -3131,10 +3158,10 @@ public class VerifyBankTest extends GhidraScript {
 		// imprecise (the helper OVERWRITES prg_bank rather than consuming it) -- filed as
 		// grm-izu, and deliberately not touched here: grm-mu7 changes what the engine
 		// knows, not how the requirement layer infers.
-		criterion("M14b", hasWarningBookmark(0xC044) && eol(0xC044).contains("prg_bank=7"),
+		criterion("M14b", hasWarningBookmark(0xC04C) && eol(0xC04C).contains("prg_bank=7"),
 			"the honest poison propagates: the next direct helper call is flagged " +
-				"bank-state-unsound while still resolving its own argument, at c044: " +
-				"warning=" + hasWarningBookmark(0xC044) + " comment=\"" + eol(0xC044) + "\"");
+				"bank-state-unsound while still resolving its own argument, at c04c: " +
+				"warning=" + hasWarningBookmark(0xC04C) + " comment=\"" + eol(0xC04C) + "\"");
 
 		// M6: call site 3's JSR $C200 at $C044 resolves prg_bank=7 via the same helper --
 		// this is the commit that stages prg_bank=7 for the mode-2 transition below (bank
@@ -3142,26 +3169,26 @@ public class VerifyBankTest extends GhidraScript {
 		// move the ground out from under the running code -- see the fixture's module
 		// doc). Unlike M2/M5 there is no follow-up JSR $8000 (bank 7 IS this running
 		// code, not a separate routine).
-		c = eol(0xC044);
+		c = eol(0xC04C);
 		criterion("M6", c.contains("bank -> ") && c.contains("prg_bank=7") &&
 			!c.contains("?") && c.contains("via"),
-			"helper call site 3 resolves prg_bank=7 via SwitchBank, no '?', at c044: \"" +
+			"helper call site 3 resolves prg_bank=7 via SwitchBank, no '?', at c04c: \"" +
 				c + "\"");
 
 		// M7: the mode-2 transition chain's commit (5th write of the inline Control chain
 		// to $8000) at $C059 shows prg_mode=2 (fix-first) fully known -- mirroring stays
 		// 0, prg_bank stays 7 (survived every write above, including M14's honest poison,
 		// which M6's call site overwrote), so the WHOLE state is known, no '?'.
-		c = eol(0xC059);
+		c = eol(0xC061);
 		criterion("M7", c.contains("prg_mode=2") && !c.contains("?"),
-			"mode-2 transition commits prg_mode=2, fully known, at c059: \"" + c + "\"");
+			"mode-2 transition commits prg_mode=2, fully known, at c061: \"" + c + "\"");
 
 		// M8: the JSR $C300 right after the transition, at $C05C, retargets to
 		// WC000_M2_B7 -- WC000 just became the switchable window (mode 2), at the
 		// current prg_bank=7; this is the "post-switch control flow survives" check: the
 		// JSR instruction itself sits in the SAME physical bytes (bank 7) before and
 		// after the flip, only the symbolic window name changes.
-		r = findOverlayRef(0xC05C, "WC000_M2_B7", 0xC300);
+		r = findOverlayRef(0xC064, "WC000_M2_B7", 0xC300);
 		criterion("M8", r != null && r.getReferenceType().isCall() && r.isPrimary(),
 			"JSR $C300 after the mode-2 transition retargeted to WC000_M2_B7 overlay, " +
 				"primary: " + describe(r));
@@ -3172,9 +3199,9 @@ public class VerifyBankTest extends GhidraScript {
 		// F-unresolvable exercises for an inline chain's seed) -> honest WARNING
 		// bookmark at the JSR itself, no false "bank ->" claim. This is the Metroid-
 		// mailbox analog for the HELPER call-site value-recovery path specifically.
-		criterion("M9", hasWarningBookmark(0xC064) && !eol(0xC064).contains("bank ->"),
-			"unresolvable helper call warns, no false comment, at c064: warning=" +
-				hasWarningBookmark(0xC064) + " comment=\"" + eol(0xC064) + "\"");
+		criterion("M9", hasWarningBookmark(0xC06C) && !eol(0xC06C).contains("bank ->"),
+			"unresolvable helper call warns, no false comment, at c06c: warning=" +
+				hasWarningBookmark(0xC06C) + " comment=\"" + eol(0xC06C) + "\"");
 
 		// M10: disassembly sanity -- the JSR-target overlay instructions actually exist.
 		criterion("M10:W8000_M3_B2_8000", hasInstructionAt("W8000_M3_B2", 0x8000),

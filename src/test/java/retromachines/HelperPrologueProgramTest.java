@@ -56,6 +56,11 @@ public class HelperPrologueProgramTest extends AbstractBundledLanguageTest {
 	public void setUp() throws Exception {
 		builder = new ProgramBuilder("Test", "6502:LE:16:default");
 		builder.createMemory("PRG", "0x8000", 0x8000);
+		// The save/restore tests park the argument in RAM, and the "was this cell overwritten"
+		// half of that model reads Ghidra's write REFERENCES -- which only exist for an operand
+		// that names real memory. Without a RAM block those stores reference nothing, every cell
+		// looks permanently untouched, and the overwrite tests would pass for the wrong reason.
+		builder.createMemory("RAM", "0x0000", 0x800);
 		program = builder.getProgram();
 	}
 
@@ -124,6 +129,149 @@ public class HelperPrologueProgramTest extends AbstractBundledLanguageTest {
 		assertTrue(survives("0x9002", "0x9002", 'A'));
 		// The same body entered at the top is the hazard case, immediately below.
 		assertFalse(survives("0x9000", "0x9002", 'A'));
+	}
+
+	// ------------------------------------------------------------------
+	// Save and restore: a clobber is not a loss when the prologue saved first
+	// ------------------------------------------------------------------
+
+	/**
+	 * <b>Castlevania 2's {@code FUN_c187}, byte-exact, and the case that proves the whole
+	 * save/restore model necessary.</b> The first version of this guard tested only "does
+	 * anything write the register", declined here, and destroyed three real ROMs — Kid Icarus
+	 * lost all 215 of its overlay instructions, Dodgeball all 10692, Castlevania 2 both of its
+	 * bank comments — while all 45 synthetic goldens passed, because none of them saves and
+	 * restores. The argument survives perfectly well; it just spends the middle of the prologue
+	 * on the stack.
+	 */
+	@Test
+	public void anArgumentSavedAndRestoredAcrossTheStackSurvives() throws Exception {
+		builder.setBytes("0x9000", "48", true); // PHA        -- save the argument
+		builder.setBytes("0x9001", "a9 01", true); // LDA #$01   -- the naive test declined HERE
+		builder.setBytes("0x9003", "8d 03 01", true); // STA $0103
+		builder.setBytes("0x9006", "68", true); // PLA        -- and this puts it back
+		builder.setBytes("0x9007", "8d 00 e0", true); // STA $E000  <- first site
+
+		assertTrue(survives("0x9000", "0x9007", 'A'));
+	}
+
+	/**
+	 * The depth has to be right, not just the pairing: a status push between the {@code PHA} and
+	 * the {@code PLA} would make a naive "pop whatever" model return the flags byte as if it were
+	 * the bank. {@code PHP}/{@code PLP} are modelled for exactly this reason.
+	 */
+	@Test
+	public void anInterleavedStatusPushKeepsTheStackDepthHonest() throws Exception {
+		builder.setBytes("0x9000", "48", true); // PHA
+		builder.setBytes("0x9001", "08", true); // PHP
+		builder.setBytes("0x9002", "a9 01", true); // LDA #$01
+		builder.setBytes("0x9004", "28", true); // PLP
+		builder.setBytes("0x9005", "68", true); // PLA  -- must pop the argument, not the flags
+		builder.setBytes("0x9006", "8d 00 e0", true); // STA $E000  <- first site
+
+		assertTrue(survives("0x9000", "0x9006", 'A'));
+	}
+
+	/**
+	 * <b>Double Dribble's {@code FUN_ff08}</b>, the memory half of the same idiom: the argument
+	 * comes back off the stack, is immediately parked in RAM because A is needed for an unrelated
+	 * shadow, and is reloaded just before the chain. A stack-only model still declines this one.
+	 */
+	@Test
+	public void anArgumentParkedInMemoryAndReloadedSurvives() throws Exception {
+		builder.setBytes("0x9000", "48", true); // PHA
+		builder.setBytes("0x9001", "a5 ff", true); // LDA $ff     -- A reused
+		builder.setBytes("0x9003", "68", true); // PLA         -- argument back
+		builder.setBytes("0x9004", "8d 03 01", true); // STA $0103   -- parked in memory
+		builder.setBytes("0x9007", "a5 ff", true); // LDA $ff     -- A reused again
+		builder.setBytes("0x9009", "85 ff", true); // STA $ff
+		builder.setBytes("0x900b", "ad 03 01", true); // LDA $0103   -- reloaded HERE
+		builder.setBytes("0x900e", "8d 00 e0", true); // STA $E000   <- first site
+
+		assertTrue(survives("0x9000", "0x900e", 'A'));
+	}
+
+	/**
+	 * The cell has to still hold the argument. Here something else overwrites {@code $0103}
+	 * between the park and the reload, so the reload brings back the wrong byte.
+	 */
+	@Test
+	public void aCellOverwrittenBeforeTheReloadIsNoLongerTheArgument() throws Exception {
+		builder.setBytes("0x9000", "8d 03 01", true); // STA $0103  -- park the argument
+		builder.setBytes("0x9003", "a9 07", true); // LDA #$07
+		builder.setBytes("0x9005", "8d 03 01", true); // STA $0103  -- ...overwritten
+		builder.setBytes("0x9008", "ad 03 01", true); // LDA $0103  -- reloads a 7, not the bank
+		builder.setBytes("0x900b", "8d 00 e0", true); // STA $E000  <- first site
+
+		assertFalse(survives("0x9000", "0x900b", 'A'));
+	}
+
+	/**
+	 * A load from a cell the argument was never stored to is an ordinary clobber -- this is
+	 * Bionic Commando's {@code LDA $65}, the shape the whole guard exists for, and it must keep
+	 * declining now that loads can also be restores.
+	 */
+	@Test
+	public void aLoadFromAnUnrelatedCellIsStillAClobber() throws Exception {
+		builder.setBytes("0x9000", "8d 03 01", true); // STA $0103  -- park the argument
+		builder.setBytes("0x9003", "a5 65", true); // LDA $65    -- ...but read a DIFFERENT cell
+		builder.setBytes("0x9005", "8d 00 e0", true); // STA $E000  <- first site
+
+		assertFalse(survives("0x9000", "0x9005", 'A'));
+	}
+
+	/** A save with no matching restore is just a clobber with extra steps. */
+	@Test
+	public void aPushWithoutAMatchingPullDoesNotRestore() throws Exception {
+		builder.setBytes("0x9000", "48", true); // PHA
+		builder.setBytes("0x9001", "a9 01", true); // LDA #$01
+		builder.setBytes("0x9003", "8d 00 e0", true); // STA $E000  <- first site
+
+		assertFalse(survives("0x9000", "0x9003", 'A'));
+	}
+
+	/**
+	 * A pull this walk never watched being pushed takes its byte from the caller's frame, not
+	 * from a save, so it is an ordinary clobber.
+	 */
+	@Test
+	public void aPullWithoutAPushIsAnOrdinaryClobber() throws Exception {
+		builder.setBytes("0x9000", "68", true); // PLA
+		builder.setBytes("0x9001", "8d 00 e0", true); // STA $E000  <- first site
+
+		assertFalse(survives("0x9000", "0x9001", 'A'));
+	}
+
+	/**
+	 * The soundness limit, asserted rather than assumed. The clobber half of the walk errs safe
+	 * under the linear-order approximation, but "restored" is a claim that points the UNSAFE way
+	 * if a branch could skip the {@code PLA} — so any non-fall-through flow abandons the shadow
+	 * stack and the {@code PLA} degrades to an ordinary clobber.
+	 */
+	@Test
+	public void aBranchInTheRangeAbandonsTheSaveRestoreModel() throws Exception {
+		builder.setBytes("0x9000", "48", true); // PHA
+		builder.setBytes("0x9001", "a9 01", true); // LDA #$01
+		builder.setBytes("0x9003", "d0 00", true); // BNE $9005  -- the walk is no longer a path
+		builder.setBytes("0x9005", "68", true); // PLA
+		builder.setBytes("0x9006", "8d 00 e0", true); // STA $E000  <- first site
+
+		assertFalse(survives("0x9000", "0x9006", 'A'));
+	}
+
+	/**
+	 * Anything that moves the stack pointer outside the modelled pushes desynchronises the depth,
+	 * so a later {@code PLA} would pop the wrong byte. Abandon the model rather than guess.
+	 */
+	@Test
+	public void aStackPointerWriteAbandonsTheSaveRestoreModel() throws Exception {
+		builder.setBytes("0x9000", "48", true); // PHA
+		builder.setBytes("0x9001", "a9 01", true); // LDA #$01
+		builder.setBytes("0x9003", "9a", true); // TXS  -- stack pointer moved out from under us
+		builder.setBytes("0x9004", "68", true); // PLA
+		builder.setBytes("0x9005", "8d 00 e0", true); // STA $E000  <- first site
+
+		assertFalse(survives("0x9000", "0x9005", 'A'));
 	}
 
 	// ------------------------------------------------------------------
