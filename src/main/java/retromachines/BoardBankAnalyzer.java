@@ -1352,7 +1352,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// inside the helper are exempt; see BankSwitchStrategy.consumesHelperArgument.
 		if ((helper.strategy() == null || helper.strategy().consumesHelperArgument()) &&
 			!argumentSurvivesPrologue(program, helper.entry(), helper.firstSite(), reg)) {
-			local = BankState.unknown();
+			local = valueSuppliedInsideHelper(program, helper, reg, stateMask);
 		}
 		Instruction switchSite = helper.switchSite() == null ? null
 				: program.getListing().getInstructionAt(helper.switchSite());
@@ -1581,6 +1581,52 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			}
 		}
 		return cursor.equals(firstSite) && holdsArgument;
+	}
+
+	/**
+	 * The byte the helper puts into {@code reg} itself, for the case where
+	 * {@link #argumentSurvivesPrologue} has just proved the CALLER's byte does not reach the
+	 * first switch site (grm-cxb).
+	 * <p>
+	 * <b>Declining is not the only honest answer there.</b> Something reaches that site, and once
+	 * the caller's value is ruled out it can only have come from inside the helper. Kid Icarus's
+	 * {@code FUN_eb07} is the shape that makes this worth doing:
+	 * <pre>
+	 *   eb07  LDA #$0F       ; the helper supplies its OWN value
+	 *   eb09  STA $9FFF      ; firstSite -- $9FFF decodes to MMC1 target 0, Control
+	 *   eb0c  LSR A / STA $9FFF / ...
+	 * </pre>
+	 * It takes no argument at all, and {@code 0x0F} commits {@code mirroring=3, prg_mode=3}. But a
+	 * chain helper never has a {@code constState} -- writes 1-4 of a chain echo the in-state and
+	 * write 5 commits, so {@link #findHelpers}' multi-site disagreement rule nulls it, by design
+	 * -- so every one of them is routed through per-call recovery, where the prologue guard sees
+	 * that {@code LDA #$0F} clobber and declines. Scanning here recovers the answer the helper's
+	 * own body already knows: {@code SerialShiftBankSwitchStrategy.computeSwitch} resolves exactly
+	 * this byte, from exactly this instruction, when it evaluates the chain's commit.
+	 * <p>
+	 * <b>The caller's registers are passed as explicitly UNKNOWN</b>, not omitted. The scan must
+	 * stop at {@code entry} -- otherwise it walks back into whatever code physically precedes the
+	 * helper and reads it as a prologue -- but it must also not adopt the caller's values there,
+	 * because the whole reason we are here is that those values provably do not survive.
+	 * {@link RegisterEnv} carries both halves of that: the stop address, and what to believe at
+	 * it.
+	 * <p>
+	 * Bionic Commando's {@code FUN_dca8} ({@code LDA $65}) still declines, on its own merits: the
+	 * scan reaches a RAM load it cannot resolve and returns unknown. That is the difference this
+	 * whole area turns on -- a helper that supplies a CONSTANT is knowable, one that supplies a
+	 * RAM read is not, and neither has anything to do with the caller.
+	 */
+	private static BankState valueSuppliedInsideHelper(Program program, HelperModel helper,
+			char reg, int stateMask) {
+		Instruction firstSite = helper.firstSite() == null ? null
+				: program.getListing().getInstructionAt(helper.firstSite());
+		if (firstSite == null) {
+			return BankState.unknown();
+		}
+		RegisterEnv insideOnly = new RegisterEnv(helper.entry(), BankState.unknown(),
+			BankState.unknown(), BankState.unknown());
+		return StoredValueScanner.resolveStoredValue(program, firstSite, reg, BankState.unknown(),
+			stateMask, NO_HOOKS, insideOnly);
 	}
 
 	/**
