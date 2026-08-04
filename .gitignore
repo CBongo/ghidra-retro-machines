@@ -37,3 +37,13 @@ Thumbs.db
 
 # Claude Code agent worktrees (transient, per-agent isolated checkouts)
 .claude/worktrees/
+
+# Local real-ROM library surveys (tools/banktest/realrom-test.sh nominate output).
+# The driver only ever reads manifest.tsv and manifest-gme.tsv, both by hardcoded name, so
+# any OTHER manifest-*.tsv is a machine-specific scratch survey of whatever ROM library the
+# author happens to have -- useful for finding new test samples or comparing dumps, but not a
+# curated, hash-pinned test input and not reproducible for anyone else. Ignored by default;
+# re-include explicitly (as manifest-gme.tsv is below) if a survey is ever promoted to a
+# curated set.
+tools/banktest/realrom/manifest-*.tsv
+!tools/banktest/realrom/manifest-gme.tsv
