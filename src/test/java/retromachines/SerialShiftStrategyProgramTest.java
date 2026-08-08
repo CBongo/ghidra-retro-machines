@@ -16,6 +16,7 @@
 package retromachines;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 
 import org.junit.Before;
@@ -277,5 +278,31 @@ public class SerialShiftStrategyProgramTest extends AbstractBundledLanguageTest 
 		builder.setBytes("0x8002", "8d 00 80", true); // STA $8000
 
 		assertPoisoned(switchAt("0x8002"));
+	}
+
+	// ------------------------------------------------------------------
+	// effectDependsOnPriorState() -- grm-izu: the fix for false "requires on entry"
+	// violations: serial-shift never reads tracked state back, so an unknown outcome here
+	// is never evidence a dispatch needed a state bit it lacked (see the class javadoc's
+	// "Strategy-match cache compatibility" paragraph and BankSwitchStrategy's own javadoc).
+	// ------------------------------------------------------------------
+
+	/**
+	 * {@code cacheable()} stays {@code false} (positions 1-4 and the poison branch echo
+	 * {@code inState}), but the mechanism overrides {@code effectDependsOnPriorState()} to
+	 * {@code false} explicitly rather than inheriting the {@code !cacheable()} default,
+	 * because MMC1's shift register is write-only and never resolves a load back to tracked
+	 * state.
+	 */
+	@Test
+	public void effectDoesNotDependOnPriorStateEvenThoughNotCacheable() {
+		SerialShiftBankSwitchStrategy strategy = mmc1();
+
+		assertFalse("serial-shift's match/echo behavior keeps it non-cacheable",
+			strategy.cacheable());
+		assertFalse(
+			"serial-shift's registers are write-only, so an unknown outcome is never " +
+				"evidence of a missing state bit",
+			strategy.effectDependsOnPriorState());
 	}
 }

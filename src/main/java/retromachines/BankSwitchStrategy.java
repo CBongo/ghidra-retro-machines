@@ -216,4 +216,30 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	default boolean cacheable() {
 		return false;
 	}
+
+	/**
+	 * Whether this mechanism's switch RESULT can depend on the tracked bank state that flowed
+	 * into the site -- i.e. whether an unknown outcome at the site is evidence the dispatch
+	 * NEEDED a state bit it did not have on entry. {@code BoardBankAnalyzer
+	 * .annotateBankRequirementViolations} gates its {@code ownRequires} contribution on this
+	 * predicate, so it decides whether "the site's effect came out unknown" is allowed to be
+	 * blamed on missing bank state.
+	 * <p>
+	 * {@code true} is the SAFE answer and is what a masked read-modify-write mechanism needs,
+	 * since an RMW genuinely consumes its prior value to compute the new one. The default
+	 * derives from {@link #cacheable()} so behavior is unchanged for every existing strategy
+	 * except where explicitly overridden: a cacheable strategy is by definition a pure function
+	 * of program and instruction alone and so cannot depend on prior state, while a
+	 * non-cacheable one is assumed to depend on it until it says otherwise.
+	 * <p>
+	 * Merely ECHOING {@code inState} -- returning it unchanged for a no-op, a deferred-commit
+	 * branch, or a poison branch -- is NOT a dependence; that is why this is a separate question
+	 * from {@link #cacheable()} rather than a synonym for it. Only override to {@code false}
+	 * when the mechanism's registers are genuinely write-only and never resolved back to tracked
+	 * state, so an unknown outcome there reflects something else (an unresolved DATA value, for
+	 * instance) rather than a missing state bit.
+	 */
+	default boolean effectDependsOnPriorState() {
+		return !cacheable();
+	}
 }

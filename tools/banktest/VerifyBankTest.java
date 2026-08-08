@@ -3140,30 +3140,40 @@ public class VerifyBankTest extends GhidraScript {
 			"prologue-clobbered helper call declines despite a known argument, at c047: " +
 				"warning=" + hasWarningBookmark(0xC047) + " comment=\"" + c + "\"");
 
-		// M14b: the decline is not cosmetic -- it propagates. The poison M14 deposits
-		// leaves prg_bank UNKNOWN across the next direct helper call (M6's JSR $C200 at
-		// $C044), and the bank-requirement scan says so with its own warning there. Two
-		// things are worth pinning about that bookmark, because a reader meeting it in
-		// the golden will wonder:
-		//   1. It is NOT the helper-call warning. That one fires only when a call's own
-		//      recovery pinned down nothing (annotateOrWarn's knownMask == 0 branch), and
-		//      $C044's recovery succeeded -- M6 asserts a fully known prg_bank=7 comment
-		//      at the same address. A site carrying BOTH a resolved annotation and a
-		//      warning is exactly the requirement scan's signature.
-		//   2. It appears at $C044 and not at the relay call sites ($C032/$C03F) because
-		//      the scan walks DIRECT calls: those two resolve to the one-instruction
-		//      relay functions, which reach the helper by JMP and so never inherit its
-		//      requiresOnEntry. $C044 calls FUN_c200 outright.
-		// The requirement itself is the M3 known-ness heuristic being conservative: a
-		// caller-supplied helper analyzed standalone has an unknown argument, so its
-		// chain's effect comes out unknown from an unknown in-state, which the scan reads
-		// as "the dispatch needed this bit". For a full-overwrite mechanism that is
-		// imprecise (the helper OVERWRITES prg_bank rather than consuming it) -- filed as
-		// grm-izu, and deliberately not touched here: grm-mu7 changes what the engine
-		// knows, not how the requirement layer infers.
-		criterion("M14b", hasWarningBookmark(0xC04C) && eol(0xC04C).contains("prg_bank=7"),
-			"the honest poison propagates: the next direct helper call is flagged " +
-				"bank-state-unsound while still resolving its own argument, at c04c: " +
+		// M14b: INVERTED BY grm-izu -- this criterion used to REQUIRE a warning bookmark at
+		// $C04C, and now requires its absence. Read it as the regression guard against the
+		// bug it once pinned.
+		//
+		// What used to happen. The poison M14 deposits leaves prg_bank UNKNOWN across the
+		// next direct helper call (M6's JSR $C200 at $C04C), and the bank-requirement scan
+		// reported that as "call to FUN_c200 requires prg_bank known on entry". That is the
+		// requirement scan's signature and NOT the helper-call warning, which fires only
+		// when a call's own recovery pinned down nothing (annotateOrWarn's knownMask == 0
+		// branch) -- $C04C's recovery SUCCEEDED, and M6 below asserts a fully known
+		// prg_bank=7 comment at this very address. So the golden carried a site with a
+		// resolved annotation and a "you don't know the bank here" warning at once, which
+		// is self-contradictory on its face.
+		//
+		// Why it was wrong. FUN_c200 is the plain SwitchBank shape: a 5x STA/LSR serial
+		// chain that OVERWRITES prg_bank and reads nothing back. Analyzed standalone its
+		// argument register is unknown, so its effect came out unknown from an unknown
+		// in-state -- which the M3 known-ness heuristic read as "the dispatch needed this
+		// bit". It did not; it needed its ARGUMENT, which is not board state at all. The
+		// fix is at strategy level rather than a special case here: serial-shift answers
+		// BankSwitchStrategy.effectDependsOnPriorState() false (MMC1's shift register is
+		// write-only and this mechanism never resolves a load back to tracked state), so
+		// its sites no longer contribute to requiresOnEntry on any branch -- commit, reset,
+		// echo, or poison. A masked-RMW mechanism, which genuinely does consume its prior
+		// value, still answers true and still gets the requirement.
+		//
+		// Note what did NOT change: the poison itself still propagates through the tracked
+		// state exactly as M14 establishes -- only the false INFERENCE drawn from it is
+		// gone. And the relay call sites ($C032/$C03F) never carried this warning either
+		// way, since the scan walks DIRECT calls and those resolve to one-instruction relay
+		// functions that reach the helper by JMP, never inheriting its requiresOnEntry.
+		criterion("M14b", !hasWarningBookmark(0xC04C) && eol(0xC04C).contains("prg_bank=7"),
+			"a full-overwrite helper call is NOT flagged as requiring the bank it " +
+				"overwrites, while still resolving its own argument, at c04c: " +
 				"warning=" + hasWarningBookmark(0xC04C) + " comment=\"" + eol(0xC04C) + "\"");
 
 		// M6: call site 3's JSR $C200 at $C044 resolves prg_bank=7 via the same helper --

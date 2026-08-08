@@ -46,7 +46,6 @@ COMMENT c031 bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_c144 [switch-valu
 COMMENT c036 bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_c183 [switch-value flow]
 COMMENT c03b bank -> mirroring=0,prg_mode=3,prg_bank=7 via FUN_c203 [switch-value flow]
 BOOKMARK Warning c01d
-BOOKMARK Warning c02c
 BOOKMARK Warning c102
 BOOKMARK Warning c106
 BOOKMARK Warning c10a

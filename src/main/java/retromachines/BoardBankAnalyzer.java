@@ -2318,19 +2318,27 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * <p>
 	 * <b>requiresOnEntry</b> (M3 scope: known-ness only -- value-level requirements, e.g.
 	 * "select must equal exactly 6", are NOT modeled, only "select must be KNOWN"):
-	 * for each switch site in a function's own body whose matched strategy is not
-	 * {@link BankSwitchStrategy#cacheable()} (i.e. {@code computeSwitch} may consult
-	 * {@code inState}), the bits the switch's OWN effect ends up NOT knowing that the
-	 * flowed-in {@code inState} ALSO did not know -- {@code effectMask & ~inState.knownMask
-	 * & ~effect.knownMask()}. That intersection is exactly "the dispatch needed this bit
-	 * and didn't have it": a cacheable strategy (pure function of program+instruction)
-	 * never contributes, and a non-cacheable strategy whose effect came out fully known
-	 * anyway (e.g. a plain {@code LDA #imm/STA} sequence, or a masked-RMW read-back that
-	 * resolved cleanly from known in-state) also contributes nothing, since
-	 * {@code ~effect.knownMask()} is empty there. Bits the function itself establishes
-	 * BEFORE a later consuming site are automatically excluded -- not by explicit program-
-	 * order subtraction, but because {@code flow.stateIn()} at that later site already
-	 * reflects every predecessor on the real CFG, including earlier code in the same
+	 * for each switch site in a function's own body whose matched strategy answers
+	 * {@link BankSwitchStrategy#effectDependsOnPriorState()} {@code true} (i.e. an unknown
+	 * outcome at the site is evidence the dispatch NEEDED a state bit it did not have on
+	 * entry, not merely that {@code computeSwitch} happened to consult {@code inState}),
+	 * the bits the switch's OWN effect ends up NOT knowing that the flowed-in
+	 * {@code inState} ALSO did not know -- {@code effectMask & ~inState.knownMask &
+	 * ~effect.knownMask()}. That intersection is exactly "the dispatch needed this bit
+	 * and didn't have it": a strategy that does not depend on prior state (every cacheable
+	 * strategy qualifies automatically, since {@code effectDependsOnPriorState()} defaults
+	 * to {@code !cacheable()}) never contributes, and one that does but whose effect came
+	 * out fully known anyway (e.g. a plain {@code LDA #imm/STA} sequence, or a masked-RMW
+	 * read-back that resolved cleanly from known in-state) also contributes nothing, since
+	 * {@code ~effect.knownMask()} is empty there. The predicate is deliberately not
+	 * {@link BankSwitchStrategy#cacheable()} itself: a write-only mechanism such as
+	 * serial-shift (MMC1) is non-cacheable purely because it ECHOES {@code inState}
+	 * unchanged on its no-op branches, and inferring a requirement from its unknown
+	 * outcome would produce false violations whose unknown-ness actually came from an
+	 * unresolved DATA value, never from missing bank state. Bits the function itself
+	 * establishes BEFORE a later consuming site are automatically excluded -- not by explicit
+	 * program-order subtraction, but because {@code flow.stateIn()} at that later site
+	 * already reflects every predecessor on the real CFG, including earlier code in the same
 	 * function; no separate bookkeeping is needed or attempted. This own-body requirement
 	 * is then unioned (again bottom-up over the direct call graph) with each directly
 	 * called function's own {@code requiresOnEntry}, narrowed at the call site by
@@ -2361,7 +2369,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			}
 			SwitchResult sr = e.getValue();
 			ownModified.merge(f, sr.effectMask(), (a, b) -> a | b);
-			if (sr.strategy() != null && !sr.strategy().cacheable()) {
+			if (sr.strategy() != null && sr.strategy().effectDependsOnPriorState()) {
 				BankState siteIn = flow.stateIn().get(addr);
 				if (siteIn != null) {
 					int required = sr.effectMask() & ~(siteIn.knownMask() & sr.effectMask()) &

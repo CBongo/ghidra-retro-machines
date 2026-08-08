@@ -56,7 +56,6 @@ COMMENT c05d bank -> mirroring=0,prg_mode=3,prg_bank=7 [switch-value flow]
 COMMENT c061 bank -> mirroring=0,prg_mode=2,prg_bank=7 [switch-value flow]
 BOOKMARK Warning c032
 BOOKMARK Warning c047
-BOOKMARK Warning c04c
 BOOKMARK Warning c06c
 BOOKMARK Warning c200
 BOOKMARK Warning c204

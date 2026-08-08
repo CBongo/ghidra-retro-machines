@@ -138,6 +138,12 @@ import ghidra.program.model.symbol.Reference;
  * register is write-only). {@link #cacheable()} nonetheless stays {@code false} (the
  * default): the RESULT for positions 1-4 and for poison both echo/modify {@code inState}
  * itself, so the value genuinely depends on it even though the match decision does not.
+ * {@link #effectDependsOnPriorState()} asks a related but distinct question -- not whether
+ * the result VARIES with {@code inState}, but whether an unknown result is EVIDENCE of a
+ * missing state bit -- and is answered {@code false} here: echoing {@code inState}
+ * unchanged is not a dependence, and nothing in this mechanism ever reads tracked state to
+ * decide a value, so this class overrides that method explicitly rather than inheriting its
+ * {@link #cacheable()}-derived default.
  */
 public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 
@@ -332,6 +338,25 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 		BankState preChainByte = StoredValueScanner.resolveStoredValue(program, chain.chainStart(),
 			reg, inState, 0xFF, hooks);
 		return depositFields(inState, fields, preChainByte);
+	}
+
+	/**
+	 * {@code false}: none of the four branches above decide a VALUE by consulting
+	 * {@code inState}. The position-5 COMMIT comes from a backward value-scan of the
+	 * pre-chain accumulator load ({@code chain.chainStart()}), never from tracked state; the
+	 * bit-7-set RESET deposits fixed literals from {@code resetFields}; positions 1-4 and the
+	 * bit-7-unknown POISON branch merely pass {@code inState} through unchanged. That last
+	 * pair is exactly why {@link #cacheable()} stays {@code false} (see the class javadoc's
+	 * "Strategy-match cache compatibility" paragraph) -- an echo makes the RESULT vary with
+	 * {@code inState} without making it a genuine dependence, which is precisely the
+	 * distinction this method exists to draw. MMC1's shift register is write-only and this
+	 * strategy's {@link StoredValueScanner.Hooks} never resolves a load back to tracked
+	 * state, so there is no mechanism by which an unknown outcome here could reflect a
+	 * missing bank-state bit.
+	 */
+	@Override
+	public boolean effectDependsOnPriorState() {
+		return false;
 	}
 
 	/**
