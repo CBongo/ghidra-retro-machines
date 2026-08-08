@@ -2,6 +2,37 @@
 
 This file provides instructions and context for AI coding agents working on this project.
 
+## Stop and ask when a human would be more efficient
+
+**If you hit work where human analysis is likely cheaper or better than spending agent tokens,
+STOP and ASK before proceeding.** State what you'd do, roughly what it would cost, what the
+human alternative is, and let the user choose. They may take it on themselves, hand it back, or
+split it. Do not silently grind through it, and do not silently skip it.
+
+This is not a suggestion to be timid — most work is yours to do. It is about a specific class of
+task where the economics genuinely invert:
+
+- **Hand reverse-engineering a specific ROM.** Answering "where does the bank number at this
+  store come from?" costs a human with a disassembler minutes, and costs an agent a
+  build/measure/interpret cycle per question — with a worse answer, because the human can also
+  say what the game is *doing*. The `grm-8iy.5` def-use passes are the worked example.
+- **Ground truth that needs an emulator.** "Is bank 6 actually live at `$9067` at runtime?" is
+  one breakpoint for a human and unanswerable by static analysis.
+- **A yes/no that needs a handful of addresses read.** If the next step is "does Ghidra create a
+  function at `c183`?", ask — don't build a probe.
+- **Licensing, sourcing, and product judgment.** Which community disassembly to ingest, submodule
+  vs. committed artifacts, whether a board is worth shipping. These need a decision, not analysis.
+- **Anything needing the user's identity.** Upstream GitHub issues and PRs, CLA agreements.
+- **A measure/interpret loop that isn't converging.** Two rounds of "run the probe, read the
+  numbers, still unclear" is the signal. Say so and ask rather than starting round three.
+
+When the user takes a task on, record the result with `bd comment` on the owning bead and note
+open human-side work in `docs/human-research-todo.md` — that file is the running TODO for work
+that is deliberately *not* agent work.
+
+Counter-signal, so this does not become an excuse: implementation, refactoring, test writing,
+running the gates, reading this codebase, and tracing existing code are agent work. Do them.
+
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:7510c1e2 -->
 ## Beads Issue Tracker
 
