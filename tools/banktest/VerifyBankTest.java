@@ -274,7 +274,10 @@ public class VerifyBankTest extends GhidraScript {
 		dump();
 		checkGameIdentity();
 
-		if (name.contains("nesmmc1overridetest")) {
+		if (name.contains("neswrappertest")) {
+			checkNesWrapperTest();
+		}
+		else if (name.contains("nesmmc1overridetest")) {
 			checkNesMmc1Override();
 		}
 		else if (name.contains("nesmmc1test")) {
@@ -3214,6 +3217,186 @@ public class VerifyBankTest extends GhidraScript {
 			"instruction exists at W8000_M3_B4::8000");
 		criterion("M10:WC000_M2_B7_C300", hasInstructionAt("WC000_M2_B7", 0xC300),
 			"instruction exists at WC000_M2_B7::C300");
+	}
+
+	// ------------------------------------------------------------------
+	// neswrappertest.nes criteria (REAL machines/nes-mmc1.yaml board, bead grm-2dr
+	// increment 1: pass-through-wrapper recognition)
+	// ------------------------------------------------------------------
+	//
+	// DESIGN NOTE: a pass-through wrapper is a function that (a) writes no mechanism
+	// itself, (b) is a straight run of plain fall-through instructions -- no branch, no
+	// jump, no JSR, not terminal -- and (c) whose LAST instruction falls through exactly
+	// into the ENTRY of a real bank-switch helper (or of another such wrapper). Calls
+	// landing on the wrapper must resolve their bank argument, because the argument
+	// register survives across the wrapper body into the helper's prologue. Two real-ROM
+	// shapes motivate this (see make_prg_wrapper()'s docstring): Castlevania 2's
+	// FUN_c183/FUN_c185/FUN_c187 stack, and TMNT's FUN_cea5/FUN_cea7. This fixture is
+	// deliberately separate from nesmmc1test.nes (which contains no fallthrough-wrapper
+	// shape at all) so that fixture's golden stays byte-identical -- a prior helper
+	// change (grm-mu7) regressed three real ROMs while all 45 synthetic goldens stayed
+	// green, precisely because none of them exercised this shape.
+	private void checkNesWrapperTest() {
+		// Addresses per tools/banktest/mknesbanktest.py's make_prg_wrapper() label dump:
+		// single_wrapper=$C100, single_helper=$C102, outer_wrapper=$C140,
+		// inner_wrapper=$C142, helper2=$C144, harmless_target=$C1F0, jsr_pred=$C180,
+		// helper3=$C183, rts_pred=$C200, rts_pred_rts=$C202, helper4=$C203, reset=$C000,
+		// f_reset=$C002, w1a_imm=$C005, w1a_jsr=$C007, w1a_use_jsr=$C00A, w1b_imm=$C00D,
+		// w1b_jsr=$C00F, w1b_use_jsr=$C012, w2_imm=$C015, w2_jsr=$C017,
+		// w2_use_jsr=$C01A, w3_jsr=$C01D, w4_imm=$C020, w4_jsr=$C022, w5_imm=$C025,
+		// w5_jsr=$C027, direct1_imm=$C02A, direct1_jsr=$C02C, direct2_imm=$C02F,
+		// direct2_jsr=$C031, direct3_imm=$C034, direct3_jsr=$C036, direct4_imm=$C039,
+		// direct4_jsr=$C03B, idle=$C03E, rti=$C041.
+
+		// W1: the reset dance (LDA #$80 / STA $8000) at $C002 forces prg_mode=3 known,
+		// same shape as nesmmc1test's M1 -- sanity-checks the fixture's own base state
+		// before anything wrapper-specific is asserted.
+		String c = eol(0xC002);
+		criterion("W1", c.contains("prg_mode=3") && !c.contains("?"),
+			"reset dance -> prg_mode=3 known at c002: \"" + c + "\"");
+
+		// W2: the LOAD-BEARING check for this increment. Call site W1a's JSR $C100 at
+		// $C007 lands on single_wrapper -- a bare `STA $20` (writes no mechanism, A
+		// untouched) that falls straight through into single_helper's chain5 entry at
+		// $C102. The call's argument (prg_bank=3, from the immediate at $C005) must now
+		// resolve THROUGH the wrapper, carrying a "via" annotation.
+		c = eol(0xC007);
+		criterion("W2", c.contains("bank -> ") && c.contains("prg_bank=3") &&
+			!c.contains("?") && c.contains("via"),
+			"single-wrapper call resolves prg_bank=3 via the wrapper, no '?', at c007: \"" +
+				c + "\"");
+
+		// W2b: load-bearing -- the JSR $8000 right after it, at $C00A, retargets to
+		// W8000_M3_B3 (bank 3 is non-home). A recovered value nothing retargets against
+		// would not be worth much.
+		Reference r = findOverlayRef(0xC00A, "W8000_M3_B3", 0x8000);
+		criterion("W2b", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $8000 (prg_bank=3, via single wrapper) retargeted to W8000_M3_B3 " +
+				"overlay, primary: " + describe(r));
+
+		// W3: call site W1b's JSR $C100 at $C00F -- the SAME wrapper, a distinct
+		// immediate (prg_bank=6), proving the resolution genuinely tracks each call
+		// site's own argument rather than caching the first one seen.
+		c = eol(0xC00F);
+		criterion("W3", c.contains("bank -> ") && c.contains("prg_bank=6") &&
+			!c.contains("?") && c.contains("via"),
+			"single-wrapper call (2nd, distinct immediate) resolves prg_bank=6 via the " +
+				"wrapper, no '?', at c00f: \"" + c + "\"");
+
+		// W3b: load-bearing -- the JSR $8000 at $C012 retargets to W8000_M3_B6.
+		r = findOverlayRef(0xC012, "W8000_M3_B6", 0x8000);
+		criterion("W3b", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $8000 (prg_bank=6, via single wrapper) retargeted to W8000_M3_B6 " +
+				"overlay, primary: " + describe(r));
+
+		// W4: the Castlevania 2 stacked shape, and the only real test of the fixpoint (a
+		// wrapper falling into ANOTHER wrapper). Call site W2's JSR $C140 at $C017 lands
+		// on outer_wrapper (`STA $21`), which falls into inner_wrapper (`LDA $21`), which
+		// falls into helper2's chain. `STA $21` then `LDA $21` of the SAME cell is a
+		// save/restore the prologue guard already models (the memory analog of grm-mu7's
+		// stack-based PHA/PLA case), so the argument (prg_bank=4) survives the round trip
+		// and must resolve.
+		c = eol(0xC017);
+		criterion("W4", c.contains("bank -> ") && c.contains("prg_bank=4") &&
+			!c.contains("?") && c.contains("via"),
+			"stacked-wrapper OUTER call resolves prg_bank=4 (same-cell save/restore), " +
+				"no '?', at c017: \"" + c + "\"");
+
+		// W4b: load-bearing -- the JSR $8000 at $C01A retargets to W8000_M3_B4.
+		r = findOverlayRef(0xC01A, "W8000_M3_B4", 0x8000);
+		criterion("W4b", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $8000 (prg_bank=4, via stacked outer wrapper) retargeted to " +
+				"W8000_M3_B4 overlay, primary: " + describe(r));
+
+		// W5: the stacked pair's INNER call -- JSR $C142 at $C01D, entering DIRECTLY at
+		// `LDA $21` with no immediate beforehand (and no visibility into outer_wrapper's
+		// `STA $21` -- that instruction is not part of this entry's own function). From
+		// this entry point the body is just an opaque read of an untracked zero-page
+		// shadow, the same category as nesmmc1test's `LDA $65` shadow helper (M13). Must
+		// decline honestly: WARNING, no "bank ->" claim.
+		criterion("W5", hasWarningBookmark(0xC01D) && !eol(0xC01D).contains("bank ->"),
+			"stacked-wrapper INNER call declines honestly (untracked shadow) at c01d: " +
+				"warning=" + hasWarningBookmark(0xC01D) + " comment=\"" + eol(0xC01D) +
+				"\"");
+
+		// W6 (negative control 1): call site W4's JSR $C180 at $C022 lands on jsr_pred,
+		// whose body is `JSR harmless_target` before it falls through into helper3's
+		// entry. The JSR disqualifies it as a pass-through wrapper -- a body containing a
+		// call is not "plain fall-through" -- so this call must NOT resolve a bank at
+		// all, despite jsr_pred sitting immediately above a real helper. This is the
+		// boundary the increment does NOT cover: blmaster's FUN_e61b reaches its helper
+		// via JSR rather than fallthrough and stays out of scope.
+		criterion("W6", !eol(0xC022).contains("bank ->"),
+			"JSR-bodied predecessor does not resolve a bank at c022: \"" + eol(0xC022) +
+				"\"");
+
+		// W7 (negative control 2): call site W5's JSR $C200 at $C027 lands on rts_pred
+		// (`LDA #imm` / `RTS`), which sits immediately adjacent to helper4 in address --
+		// contiguous, exactly like the positive cases -- but is TERMINAL, so it never
+		// falls through into helper4. Adjacency alone must not be mistaken for the
+		// fallthrough shape: this call must NOT resolve a bank.
+		criterion("W7", !eol(0xC027).contains("bank ->"),
+			"RTS-terminal predecessor does not resolve a bank at c027: \"" + eol(0xC027) +
+				"\"");
+
+		// W8-W11: fixture integrity for the ordinary (non-wrapper) call sites -- direct
+		// JSRs straight to each helper's own entry, bypassing the wrapper/negative-control
+		// predecessor above it. These must resolve normally like any other helper call,
+		// proving each helper is a genuine bank-switch helper on its own; the negative
+		// controls above fail only because THEY are not recognized as wrappers, not
+		// because the helpers they sit next to are broken.
+		c = eol(0xC02C);
+		criterion("W8", c.contains("bank -> ") && c.contains("prg_bank=2") &&
+			!c.contains("?") && c.contains("via"),
+			"direct call to single_helper resolves prg_bank=2, no '?', at c02c: \"" + c +
+				"\"");
+		c = eol(0xC031);
+		criterion("W9", c.contains("bank -> ") && c.contains("prg_bank=5") &&
+			!c.contains("?") && c.contains("via"),
+			"direct call to helper2 resolves prg_bank=5, no '?', at c031: \"" + c + "\"");
+		c = eol(0xC036);
+		criterion("W10", c.contains("bank -> ") && c.contains("prg_bank=1") &&
+			!c.contains("?") && c.contains("via"),
+			"direct call to helper3 resolves prg_bank=1 (helper3 itself is a genuine " +
+				"helper; only jsr_pred fails to forward into it), no '?', at c036: \"" + c +
+				"\"");
+		c = eol(0xC03B);
+		criterion("W11", c.contains("bank -> ") && c.contains("prg_bank=7") &&
+			!c.contains("?") && c.contains("via"),
+			"direct call to helper4 resolves prg_bank=7 (helper4 itself is a genuine " +
+				"helper; only rts_pred fails to forward into it), no '?', at c03b: \"" + c +
+				"\"");
+
+		// W12: FIXTURE INTEGRITY, and it must be checked rather than assumed -- the whole
+		// design depends on getFunctionAt(wrapperEntry)/getFunctionAt(helperEntry) being
+		// non-null for every wrapper and every helper (each is reached by at least one
+		// direct JSR of its own; see make_prg_wrapper()'s docstring).
+		criterion("W12",
+			isFunctionEntry(0xC100) && isFunctionEntry(0xC102) &&
+				isFunctionEntry(0xC140) && isFunctionEntry(0xC142) &&
+				isFunctionEntry(0xC144) && isFunctionEntry(0xC180) &&
+				isFunctionEntry(0xC183) && isFunctionEntry(0xC200) &&
+				isFunctionEntry(0xC203),
+			"every wrapper and helper entry is its own Ghidra function: " +
+				"single_wrapper=" + isFunctionEntry(0xC100) +
+				" single_helper=" + isFunctionEntry(0xC102) +
+				" outer_wrapper=" + isFunctionEntry(0xC140) +
+				" inner_wrapper=" + isFunctionEntry(0xC142) +
+				" helper2=" + isFunctionEntry(0xC144) +
+				" jsr_pred=" + isFunctionEntry(0xC180) +
+				" helper3=" + isFunctionEntry(0xC183) +
+				" rts_pred=" + isFunctionEntry(0xC200) +
+				" helper4=" + isFunctionEntry(0xC203));
+
+		// W13: disassembly sanity -- the JSR-target overlay instructions actually exist,
+		// so the retargeted references above point at real code (same style as
+		// nesmmc1test's M10).
+		criterion("W13:W8000_M3_B3_8000", hasInstructionAt("W8000_M3_B3", 0x8000),
+			"instruction exists at W8000_M3_B3::8000");
+		criterion("W13:W8000_M3_B6_8000", hasInstructionAt("W8000_M3_B6", 0x8000),
+			"instruction exists at W8000_M3_B6::8000");
+		criterion("W13:W8000_M3_B4_8000", hasInstructionAt("W8000_M3_B4", 0x8000),
+			"instruction exists at W8000_M3_B4::8000");
 	}
 
 	private void checkNesMmc1Override() {

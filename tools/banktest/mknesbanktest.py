@@ -803,6 +803,9 @@ class _Asm:
     def lda_zp(self, addr):
         self._emit([0xA5, addr & 0xFF])
 
+    def sta_zp(self, addr):
+        self._emit([0x85, addr & 0xFF])
+
     def ldx_imm(self, v):
         self._emit([0xA2, v & 0xFF])
 
@@ -1465,6 +1468,244 @@ def make_prg_mmc1_override():
     return bytes(prg), labels
 
 
+def make_prg_wrapper():
+    """Pass-through-wrapper fixture (bead grm-2dr, increment 1) for the REAL
+    machines/nes-mmc1.yaml board (iNES mapper 1) -- same board descriptor as
+    make_prg_mmc1(), left byte-identical by this fixture living entirely on its own.
+
+    Exercises BoardBankAnalyzer's new pass-through-wrapper recognition: a function that
+    (a) writes no mechanism itself, (b) is a straight run of plain fall-through
+    instructions -- no branch, no jump, no JSR, not terminal -- and (c) whose LAST
+    instruction falls through exactly into the ENTRY of a real bank-switch helper (or of
+    another such wrapper), must now have calls landing on it resolve their bank argument,
+    because the argument register survives across the wrapper body into the helper's
+    prologue. Two real-ROM shapes motivate this: Castlevania 2's FUN_c183 (STA $1C) ->
+    FUN_c185 (LDA $1C) -> FUN_c187 (the MMC1 chain), and TMNT's FUN_cea5 (STA $21) ->
+    FUN_cea7 (the chain).
+
+    `nesmmc1test`/`nesuxhelpertest` contain no fallthrough-wrapper shape at all, so a
+    prior helper-prologue change (grm-mu7) regressed three real ROMs while all 45
+    synthetic goldens stayed green -- this fixture exists to close that coverage gap
+    without touching those two (make_prg_mmc1() stays untouched, keeping nesmmc1test.dump
+    byte-identical).
+
+    Five contiguous helper/wrapper REGIONS, each its own `_Asm` with an EXPLICIT base
+    address chosen so a wrapper's last byte abuts its helper's first byte exactly (the
+    whole point of the shape under test), plus `main` (the RESET flow):
+
+      wrap1 @ $C100: single_wrapper (`STA $20`, 2 bytes, preserves A) falls straight into
+             single_helper (chain5($E000) + RTS) at $C102 -- the simplest positive case.
+      wrap2 @ $C140: outer_wrapper (`STA $21`) falls into inner_wrapper (`LDA $21`) falls
+             into helper2 (chain5($E000) + RTS) -- the Castlevania 2 stacked shape, and
+             the only real test of the fixpoint (a wrapper falling into ANOTHER wrapper).
+      neg1  @ $C180: jsr_pred (`JSR harmless_target` then falls through) -> helper3 --
+             negative control: a JSR in the body disqualifies it as a wrapper even though
+             it still falls through into a real helper's entry. Pins the boundary the
+             increment does NOT cover: blmaster's FUN_e61b reaches its helper via JSR, not
+             fallthrough, and stays out of scope.
+      harmless @ $C1F0: jsr_pred's harmless JSR target (a lone RTS).
+      neg2  @ $C200: rts_pred (`LDA #imm` / `RTS`) is immediately adjacent to helper4 --
+             contiguous in address, exactly like the positive cases -- but TERMINAL, so it
+             never falls through. Negative control: adjacency alone must not be mistaken
+             for the fallthrough shape.
+
+    Every wrapper AND every helper is also reached by a direct JSR of its own (`main`'s
+    call sites below), so each gets its own Ghidra Function -- the design depends on
+    `getFunctionAt(wrapperEntry)`/`getFunctionAt(helperEntry)` being non-null.
+
+    RESET ($C000, seed prg_mode=3/prg_bank=0/mirroring=0, same reset dance as
+    make_prg_mmc1()):
+      LDA #$80 / STA $8000             -- reset dance: prg_mode=3 known.
+
+      LDA #$03 / JSR single_wrapper    -- W1: resolves prg_bank=3 through the wrapper.
+      JSR $8000                        -- -> W8000_M3_B3::8000, proving the retarget.
+      LDA #$06 / JSR single_wrapper    -- W2: SAME wrapper, distinct immediate ->
+                                           prg_bank=6, distinguishable from W1.
+      JSR $8000                        -- -> W8000_M3_B6::8000.
+
+      LDA #$04 / JSR outer_wrapper     -- W3: the OUTER call of the stacked pair. Must
+                                           resolve: `STA $21` then `LDA $21` is a
+                                           same-cell save/restore, which the prologue
+                                           guard (extended from grm-mu7's stack-based
+                                           PHA/PLA case) already models -> prg_bank=4.
+      JSR $8000                        -- -> W8000_M3_B4::8000.
+      JSR inner_wrapper                -- W4: the INNER call, entering directly at
+                                           `LDA $21` with no immediate beforehand. Must
+                                           NOT resolve: from this entry point the body is
+                                           just `LDA $21` -- an opaque read of an untracked
+                                           zero-page shadow, the same category as
+                                           nesmmc1test's `LDA $65` shadow helper. Honest
+                                           WARNING, no "bank ->" claim.
+
+      LDA #$07 / JSR jsr_pred          -- W6 (negative control 1): the JSR-bodied
+                                           predecessor. Must NOT resolve at all -- not
+                                           recognized as a wrapper, so the call is
+                                           ordinary and untouched by this feature.
+      LDA #$01 / JSR rts_pred          -- W7 (negative control 2): the RTS-terminal
+                                           predecessor. Must NOT resolve -- terminal, so
+                                           it never reaches helper4 by fallthrough despite
+                                           sitting immediately next to it.
+
+      LDA #$02 / JSR single_helper     -- fixture integrity: direct call to single_helper
+                                           itself (bypassing the wrapper) -- ordinary
+                                           helper call, must still resolve prg_bank=2, and
+                                           forces single_helper to be its own Function.
+      LDA #$05 / JSR helper2           -- likewise for helper2 -> prg_bank=5.
+      LDA #$01 / JSR helper3           -- likewise for helper3 -> prg_bank=1 (helper3 is a
+                                           genuine helper; only jsr_pred fails to forward
+                                           into it).
+      LDA #$07 / JSR helper4           -- likewise for helper4 -> prg_bank=7 (helper4 is a
+                                           genuine helper; only rts_pred fails to forward
+                                           into it).
+
+      JMP $<self>                      -- idle loop.
+      RTI                              -- NMI/IRQ handler.
+    """
+    prg = bytearray([0x00] * MMC1_PRG_SIZE)
+
+    for bank in range(MMC1_BANKS):
+        prg[bank * PRG_BANK_SIZE] = bank  # bank marker, matching make_prg_mmc1()
+
+    # JSR $8000 targets for the three RESOLVING wrapper call sites (W1/W2/W3): RTS,
+    # replacing the marker byte, as in make_prg_mmc1(). Banks used only by the
+    # fixture-integrity direct calls (2, 5, 1, 7) need no RTS -- nothing retargets
+    # against them.
+    prg[3 * PRG_BANK_SIZE] = 0x60  # W8000_M3_B3::8000 (single wrapper, call A)
+    prg[6 * PRG_BANK_SIZE] = 0x60  # W8000_M3_B6::8000 (single wrapper, call B)
+    prg[4 * PRG_BANK_SIZE] = 0x60  # W8000_M3_B4::8000 (stacked pair, outer call)
+
+    bank7_base = 7 * PRG_BANK_SIZE
+
+    def put7(cpu_addr, data):
+        off = bank7_base + (cpu_addr - 0xC000)
+        prg[off:off + len(data)] = bytes(data)
+
+    labels = {}
+
+    # --- wrap1 @ $C100: single forwarding wrapper, contiguous with its helper ---
+    wrap1 = _Asm(prg, 0xC100, bank7_base + 0x100)
+    labels['single_wrapper'] = wrap1.label()
+    wrap1.sta_zp(0x20)                        # writes no mechanism; A survives untouched
+    labels['single_helper'] = wrap1.label()   # falls straight through -- addresses abut
+    wrap1.chain5(0xE000)
+    wrap1.rts()
+
+    # --- wrap2 @ $C140: stacked pair (Castlevania 2 shape), both contiguous ---
+    wrap2 = _Asm(prg, 0xC140, bank7_base + 0x140)
+    labels['outer_wrapper'] = wrap2.label()
+    wrap2.sta_zp(0x21)                        # save A to $21
+    labels['inner_wrapper'] = wrap2.label()   # abuts outer_wrapper exactly
+    wrap2.lda_zp(0x21)                        # restore A from $21 (round-trips the value)
+    labels['helper2'] = wrap2.label()         # abuts inner_wrapper exactly
+    wrap2.chain5(0xE000)
+    wrap2.rts()
+
+    # --- harmless @ $C1F0: jsr_pred's harmless JSR target (built before neg1 so neg1 can
+    # reference its label rather than a bare literal) ---
+    harmless = _Asm(prg, 0xC1F0, bank7_base + 0x1F0)
+    labels['harmless_target'] = harmless.label()
+    harmless.rts()
+
+    # --- neg1 @ $C180: negative control 1 -- a JSR in the body disqualifies it as a
+    # wrapper even though it still falls through into a real helper's entry ---
+    neg1 = _Asm(prg, 0xC180, bank7_base + 0x180)
+    labels['jsr_pred'] = neg1.label()
+    neg1.jsr(labels['harmless_target'])       # a JSR -- not a "plain fall-through" body
+    labels['helper3'] = neg1.label()          # abuts jsr_pred exactly regardless
+    neg1.chain5(0xE000)
+    neg1.rts()
+
+    # --- neg2 @ $C200: negative control 2 -- terminal (RTS), so despite sitting
+    # immediately next to a real helper it never reaches it by fallthrough ---
+    neg2 = _Asm(prg, 0xC200, bank7_base + 0x200)
+    labels['rts_pred'] = neg2.label()
+    neg2.lda_imm(0x09)                        # arbitrary; this function never forwards it
+    labels['rts_pred_rts'] = neg2.label()
+    neg2.rts()                                # terminal -- control flow stops here
+    labels['helper4'] = neg2.label()          # adjacent in address, NOT in control flow
+    neg2.chain5(0xE000)
+    neg2.rts()
+
+    # --- main @ $C000: RESET flow ---
+    main = _Asm(prg, 0xC000, bank7_base)
+    labels['reset'] = main.label()
+    main.lda_imm(0x80)
+    labels['f_reset'] = main.label()
+    main.sta_abs(0x8000)                      # reset dance: prg_mode=3 known
+
+    # W1: single wrapper, call A -- bank 3.
+    labels['w1a_imm'] = main.label()
+    main.lda_imm(0x03)
+    labels['w1a_jsr'] = main.label()
+    main.jsr(labels['single_wrapper'])
+    labels['w1a_use_jsr'] = main.label()
+    main.jsr(0x8000)                          # -> W8000_M3_B3::8000
+
+    # W2: single wrapper, call B -- SAME wrapper, bank 6 (distinct immediate).
+    labels['w1b_imm'] = main.label()
+    main.lda_imm(0x06)
+    labels['w1b_jsr'] = main.label()
+    main.jsr(labels['single_wrapper'])
+    labels['w1b_use_jsr'] = main.label()
+    main.jsr(0x8000)                          # -> W8000_M3_B6::8000
+
+    # W3: stacked pair, OUTER call -- bank 4; must resolve (same-cell save/restore).
+    labels['w2_imm'] = main.label()
+    main.lda_imm(0x04)
+    labels['w2_jsr'] = main.label()
+    main.jsr(labels['outer_wrapper'])
+    labels['w2_use_jsr'] = main.label()
+    main.jsr(0x8000)                          # -> W8000_M3_B4::8000
+
+    # W4: stacked pair, INNER call -- no immediate; must NOT resolve (untracked shadow).
+    labels['w3_jsr'] = main.label()
+    main.jsr(labels['inner_wrapper'])
+
+    # W6 (negative control 1): JSR-bodied predecessor; must NOT resolve at all.
+    labels['w4_imm'] = main.label()
+    main.lda_imm(0x07)
+    labels['w4_jsr'] = main.label()
+    main.jsr(labels['jsr_pred'])
+
+    # W7 (negative control 2): RTS-terminal predecessor; must NOT resolve at all.
+    labels['w5_imm'] = main.label()
+    main.lda_imm(0x01)
+    labels['w5_jsr'] = main.label()
+    main.jsr(labels['rts_pred'])
+
+    # Fixture integrity: direct JSRs to every helper's OWN entry (bypassing the
+    # wrapper/negative-control predecessor above it), so each becomes its own Ghidra
+    # Function and resolves normally as an ordinary helper call.
+    labels['direct1_imm'] = main.label()
+    main.lda_imm(0x02)
+    labels['direct1_jsr'] = main.label()
+    main.jsr(labels['single_helper'])
+    labels['direct2_imm'] = main.label()
+    main.lda_imm(0x05)
+    labels['direct2_jsr'] = main.label()
+    main.jsr(labels['helper2'])
+    labels['direct3_imm'] = main.label()
+    main.lda_imm(0x01)
+    labels['direct3_jsr'] = main.label()
+    main.jsr(labels['helper3'])
+    labels['direct4_imm'] = main.label()
+    main.lda_imm(0x07)
+    labels['direct4_jsr'] = main.label()
+    main.jsr(labels['helper4'])
+
+    labels['idle'] = main.label()
+    main.jmp(labels['idle'])                  # idle loop
+    labels['rti'] = main.label()
+    main.rti()                                # NMI/IRQ handler
+
+    # Vector table.
+    put7(0xFFFA, [labels['rti'] & 0xFF, (labels['rti'] >> 8) & 0xFF])
+    put7(0xFFFC, [labels['reset'] & 0xFF, (labels['reset'] >> 8) & 0xFF])
+    put7(0xFFFE, [labels['rti'] & 0xFF, (labels['rti'] >> 8) & 0xFF])
+
+    return bytes(prg), labels
+
+
 def make_ines_header(prg_banks, chr_banks, mapper):
     h = bytearray(16)
     h[0:4] = b"NES\x1a"
@@ -1837,6 +2078,39 @@ def main():
 
     _write_rom(outdir, "nesmmc1overridetest.nes", prgm1o, mapper=MAPPER_MMC1,
                prg_banks=MMC1_BANKS)
+
+    # neswrappertest.nes (bead grm-2dr, increment 1): pass-through-wrapper fixture.
+    prgw, wlabels = make_prg_wrapper()
+    wbank7_base = 7 * PRG_BANK_SIZE
+    assert len(prgw) == MMC1_PRG_SIZE
+    assert prgw[3 * PRG_BANK_SIZE] == 0x60  # RTS: W8000_M3_B3::8000 (W1)
+    assert prgw[6 * PRG_BANK_SIZE] == 0x60  # RTS: W8000_M3_B6::8000 (W2)
+    assert prgw[4 * PRG_BANK_SIZE] == 0x60  # RTS: W8000_M3_B4::8000 (W3)
+    # The wrapper/helper pairs must abut exactly -- that IS the shape under test.
+    assert wlabels['single_helper'] == wlabels['single_wrapper'] + 2   # STA $20 is 2 bytes
+    assert wlabels['inner_wrapper'] == wlabels['outer_wrapper'] + 2    # STA $21 is 2 bytes
+    assert wlabels['helper2'] == wlabels['inner_wrapper'] + 2          # LDA $21 is 2 bytes
+    assert wlabels['helper3'] == wlabels['jsr_pred'] + 3               # JSR is 3 bytes
+    # The negative control is adjacent but NOT reachable by fallthrough (RTS in between).
+    assert wlabels['helper4'] == wlabels['rts_pred'] + 3               # LDA #imm + RTS
+    assert prgw[wbank7_base + 0x100] == 0x85  # STA zp opcode: single_wrapper
+    assert prgw[wbank7_base + 0x102] == 0x8D  # STA abs opcode: single_helper chain write 1
+    assert prgw[wbank7_base + 0x140] == 0x85  # STA zp opcode: outer_wrapper
+    assert prgw[wbank7_base + 0x142] == 0xA5  # LDA zp opcode: inner_wrapper
+    assert prgw[wbank7_base + 0x144] == 0x8D  # STA abs opcode: helper2 chain write 1
+    assert prgw[wbank7_base + 0x180] == 0x20  # JSR opcode: jsr_pred
+    assert prgw[wbank7_base + 0x183] == 0x8D  # STA abs opcode: helper3 chain write 1
+    assert prgw[wbank7_base + 0x200] == 0xA9  # LDA imm opcode: rts_pred
+    assert prgw[wbank7_base + 0x202] == 0x60  # RTS: rts_pred is terminal
+    assert prgw[wbank7_base + 0x203] == 0x8D  # STA abs opcode: helper4 chain write 1
+    vecw = wbank7_base + 0x3FFA  # CPU $FFFA -> file offset (bank 7 base + $3FFA)
+    assert (prgw[vecw + 2] | (prgw[vecw + 3] << 8)) == wlabels['reset']  # RESET @ $FFFC
+    assert (prgw[vecw + 0] | (prgw[vecw + 1] << 8)) == wlabels['rti']    # NMI @ $FFFA
+    assert (prgw[vecw + 4] | (prgw[vecw + 5] << 8)) == wlabels['rti']    # IRQ @ $FFFE
+    print("neswrappertest labels: " +
+          ", ".join("%s=$%04X" % (k, v) for k, v in wlabels.items()))
+
+    _write_rom(outdir, "neswrappertest.nes", prgw, mapper=MAPPER_MMC1, prg_banks=MMC1_BANKS)
 
     # nesbandaitest.nes (bead grm-9ty): Bandai FCG/LZ93D50 register-file decode fixture.
     prgb = make_prg_bandai()

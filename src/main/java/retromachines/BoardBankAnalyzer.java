@@ -260,8 +260,9 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		Listing listing = program.getListing();
 		DataflowResult flow = runDataflow(program, monitor, listing, mechanisms, board, null);
 
-		Map<Function, HelperModel> helpers =
-			composeTailCalls(program, findHelpers(program, flow.switchResults()));
+		Map<Function, HelperModel> helpers = findPassThroughWrappers(program,
+			composeTailCalls(program, findHelpers(program, flow.switchResults())),
+			flow.switchResults());
 		if (!helpers.isEmpty()) {
 			if (verbose) {
 				log.appendMsg(getName(), helpers.size() + " bank-switch helper function(s): " +
@@ -834,7 +835,14 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	// ------------------------------------------------------------------
 
 	/**
-	 * Every function containing a recognized mechanism write is a bank-switch helper.
+	 * Every function containing a recognized mechanism write is a bank-switch helper. This
+	 * deliberately misses a real shape: a pass-through wrapper that writes no mechanism of
+	 * its own and simply falls through into the function that does (Castlevania 2's
+	 * {@code FUN_c183 -> FUN_c185 -> FUN_c187}, TMNT's {@code FUN_cea5 -> FUN_cea7}, Wizards
+	 * & Warriors' AxROM {@code $ce89 -> $ce8b}). {@link #findPassThroughWrappers} admits
+	 * those into the map afterward, by re-keying rather than by relaxing this containment
+	 * rule.
+	 * <p>
 	 * When all of a helper's switch results are fully known and agree, calling it
 	 * unconditionally produces that state; otherwise the helper's effect depends on its
 	 * caller (bank-argument convention) and is recovered per call site.
@@ -947,6 +955,18 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * {@code FUN_f105} (which tail-jumps to ITSELF at {@code $F10F}) makes non-hypothetical.
 	 */
 	private static final int MAX_TAIL_CALL_DEPTH = 8;
+
+	/**
+	 * Round cap for {@link #findPassThroughWrappers}'s fixpoint. This is a POLICY bound, not
+	 * a termination crutch -- termination is already STRUCTURAL: each round only admits a
+	 * wrapper strictly BELOW, in address order, the model it wraps ({@code
+	 * isPassThroughInto} requires the wrapper's body to fall straight through into
+	 * {@code model.entry()}), and the result map's keys dedupe, so nothing can be
+	 * re-admitted or looped on. Castlevania 2's three-function stack
+	 * ({@code FUN_c183 -> FUN_c185 -> FUN_c187}) is the deepest chain measured on any
+	 * shipped board.
+	 */
+	private static final int MAX_WRAPPER_CHAIN = 3;
 
 	/**
 	 * Re-summarizes every helper whose control flow LEAVES ITS BODY by a tail call, so its
@@ -1092,6 +1112,192 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	}
 
 	/**
+	 * Admits pass-through wrapper functions into {@code helpers} by re-keying each helper's
+	 * model onto the entry of a function that falls straight through into it without
+	 * writing any mechanism of its own (bead grm-2dr increment 1).
+	 * <p>
+	 * <b>Why {@link #findHelpers} misses these.</b> {@link #findHelpers} admits a function
+	 * as a helper only if it CONTAINS a recognized mechanism write. Real NES ROMs route
+	 * bank switching through small trampolines that write nothing and simply fall through
+	 * into the real helper -- Castlevania 2's {@code FUN_c183} ({@code STA $1C}) falls into
+	 * {@code FUN_c185} ({@code LDA $1C}), which falls into {@code FUN_c187} (the MMC1
+	 * serial-shift chain itself, {@code firstSite} {@code $c18e}); TMNT's {@code FUN_cea5}
+	 * ({@code STA $21}) falls into {@code FUN_cea7} (whose own body starts {@code SEC / ROR
+	 * $F0} before the chain at {@code $ceaa}); Wizards & Warriors' {@code $ce89} falls into
+	 * {@code $ce8b}, an AxROM single-write latch -- named specifically because this rule is
+	 * NOT scoped to serial-shift boards. Calls land on the wrapper's entry, which is not a
+	 * key {@link #findHelpers} ever produces, so {@link #calledHelper} misses and the call
+	 * site's argument is never recovered.
+	 * <p>
+	 * <b>Why re-keying alone is sound.</b> {@link #argumentSurvivesPrologue} walks LINEARLY
+	 * BY ADDRESS from {@code entry} to {@code firstSite} with NO REFERENCE TO FUNCTION
+	 * BOUNDARIES. Because a wrapper is address-contiguous with the helper it falls into,
+	 * re-keying the helper's model onto the wrapper's entry makes that ONE EXISTING WALK
+	 * cover the wrapper's body and the helper's own prologue with no change to that method
+	 * at all. On cv2: {@code STA $1C} records {@code $1C} in {@code argumentCells};
+	 * {@code LDA $1C} is recognized as a restore via {@code argumentReloadSource} so
+	 * {@code holdsArgument} stays true; then {@code FUN_c187}'s own {@code PHA} /
+	 * {@code LDA #$01} / {@code STA $0103} / {@code PLA} save-restore pair resolves exactly
+	 * as it already does today.
+	 * <p>
+	 * <b>OUT OF SCOPE, deliberately:</b> blmaster's {@code FUN_e61b} reaches its helper by
+	 * an internal {@code JSR}, so it is not address-contiguous with it. {@link
+	 * #isPassThroughInto}'s {@code getFlows().length == 0} condition (a call's flows include
+	 * its target) excludes that BY CONSTRUCTION -- there is no special case for it here, and
+	 * there should not be one.
+	 * <p>
+	 * {@code switchResults} is threaded through so "the wrapper writes no mechanism" is
+	 * asserted LOCALLY, against the same map the rest of this analysis already trusts,
+	 * rather than by assuming {@link #findHelpers} completely characterizes every function
+	 * that is not a helper.
+	 * <p>
+	 * Runs in rounds, capped by {@link #MAX_WRAPPER_CHAIN}, so a stack of wrappers is
+	 * admitted one link per round: on cv2, round 1 admits {@code FUN_c185} against
+	 * {@code FUN_c187}'s model, and round 2 admits {@code FUN_c183} against the model NOW
+	 * keyed on {@code FUN_c185}'s entry -- matched against {@link HelperModel#entry}, NOT
+	 * {@code model.function().getEntryPoint()}, which is exactly what lets round 2 see round
+	 * 1's work. Each round scans a SNAPSHOT of the map's keys ({@code List.copyOf}), never
+	 * the live map, so a wrapper admitted mid-round cannot itself be re-wrapped in the same
+	 * pass -- preserving the deterministic ordering the backing {@link LinkedHashMap} exists
+	 * for. A round that admits nothing ends the fixpoint early.
+	 * <p>
+	 * A helper whose model {@link #composeTailCalls} already composed is NOT skipped here --
+	 * both outcomes of wrapping one are already correct without a special case: a composed
+	 * constant takes {@link #runDataflow}'s {@code constState} branch directly and never
+	 * touches the nulled {@code argReg}/{@code switchSite} fields a wrapper would also leave
+	 * untouched, and a composed decline short-circuits in {@link #recoverCallArgument} on
+	 * the null {@code argReg}, producing a warning plus honest poison exactly as a direct
+	 * call to it would.
+	 */
+	private Map<Function, HelperModel> findPassThroughWrappers(Program program,
+			Map<Function, HelperModel> helpers, Map<Address, SwitchResult> switchResults) {
+		Map<Function, HelperModel> result = new LinkedHashMap<>(helpers);
+		FunctionManager fm = program.getFunctionManager();
+		for (int round = 0; round < MAX_WRAPPER_CHAIN; round++) {
+			boolean added = false;
+			for (Function key : List.copyOf(result.keySet())) {
+				HelperModel model = result.get(key);
+				Address before = model.entry().previous();
+				if (before == null) {
+					continue;
+				}
+				Function wrapper = fm.getFunctionContaining(before);
+				if (wrapper == null || result.containsKey(wrapper)) {
+					continue;
+				}
+				if (isPassThroughInto(program, wrapper, model.entry(), switchResults)) {
+					result.put(wrapper, model.atFallThroughWrapper(wrapper));
+					added = true;
+				}
+			}
+			if (!added) {
+				break;
+			}
+		}
+		return result;
+	}
+
+	/**
+	 * Whether {@code wrapper} does nothing but fall straight through into {@code target}: no
+	 * branch, no jump, no call, no fallthrough override, no gap in disassembly, and no
+	 * recognized mechanism write anywhere in its body. Structured as one linear cursor walk
+	 * from {@code wrapper.getEntryPoint()} to {@code target}, deliberately shaped like
+	 * {@link #argumentSurvivesPrologue} so the two read alike -- both exist to answer "does
+	 * this straight-line stretch of code preserve something", the caller's byte there versus
+	 * the fact that nothing has happened yet here.
+	 * <p>
+	 * EVERY condition below must hold for every instruction on the walk:
+	 * <ul>
+	 * <li>{@code wrapper.getBody()} is a single contiguous range starting at
+	 * {@code wrapper.getEntryPoint()} -- a disjoint body would make "walk linearly to the
+	 * end" meaningless.</li>
+	 * <li>{@code getInstructionAt(cursor) != null} at every step -- disassembly
+	 * completeness. This is LOAD-BEARING in a way it is not for
+	 * {@code argumentSurvivesPrologue}: the {@code constState}-inherit path in
+	 * {@link HelperModel#atFallThroughWrapper} bypasses {@code argumentSurvivesPrologue}
+	 * entirely (a constant helper never calls it), so nothing else on that path ever checks
+	 * for a disassembly gap in the wrapper's body -- this method is the only place that
+	 * does.</li>
+	 * <li>{@code instr.getFlows().length == 0} -- no branch, no jump, and no {@code JSR} (a
+	 * call's flows include its target). This is what excludes blmaster's {@code FUN_e61b} by
+	 * construction, since it reaches its helper via an internal {@code JSR} rather than a
+	 * fallthrough.</li>
+	 * <li>{@code !instr.getFlowType().isTerminal()} -- NOT redundant with the flows check
+	 * above: {@code RTS}/{@code RTI} have zero flows too, and neither falls through
+	 * anywhere.</li>
+	 * <li>{@code instr.getFallThrough()} equals {@code instr.getMaxAddress().next()} -- the
+	 * fallthrough-OVERRIDE check. Ghidra allows an instruction's fallthrough to be
+	 * overridden even when it has no flows and is not terminal, which would falsify both the
+	 * pass-through claim and the linear-by-address walk this entire design -- here and in
+	 * {@code argumentSurvivesPrologue} -- rests on.</li>
+	 * <li>{@code !switchResults.containsKey(cursor)} -- writes no mechanism, asserted
+	 * locally against the same map the rest of the analysis trusts rather than assuming
+	 * {@link #findHelpers} completely characterizes every non-helper function.</li>
+	 * </ul>
+	 * The walk must land EXACTLY on {@code target}; overshooting or undershooting it is not
+	 * a pass-through. Package-private static, not private, so a JUnit test can pin it
+	 * directly, following the precedent of {@link #reachableEntries} and
+	 * {@link #argumentSurvivesPrologue}.
+	 * <p>
+	 * <b>Why bounding the walk by {@code getBody()} is safe, and not merely convenient.</b>
+	 * Ghidra function bodies CANNOT OVERLAP: both {@code FunctionManagerDB.createFunction}
+	 * and {@code setFunctionBody} route through the namespace manager and convert an
+	 * {@code OverlappingNamespaceException} into an {@code OverlappingFunctionException}
+	 * (verified against the targeted Ghidra source). Body assignment is therefore
+	 * first-come-claims-it: whichever function is created first owns the addresses, and a
+	 * later one is clipped at that boundary. So a wrapper's body is GUARANTEED to stop at or
+	 * before {@code target}, and the early return when the cursor reaches {@code target}
+	 * cannot silently accept a body that overruns it.
+	 * <p>
+	 * The same rule explains, from the other side, why this shape exists at all -- and why
+	 * bead grm-78b is its mirror image. Whether a fallthrough chain surfaces as ONE BIG
+	 * FUNCTION or as WRAPPER PLUS HELPER is decided purely by what got created first. On cv2
+	 * all three entries were created, so each body was clipped and the wrappers are visible
+	 * here; on blmaster nothing created a function at {@code f23b}, so {@code FUN_f1ca}'s
+	 * body swallowed the RESET routine whole and its register writes were misattributed.
+	 * Same mechanism, opposite outcomes.
+	 * <p>
+	 * Note this bound is a property of the FUNCTION MODEL, not of the decompiler, which is
+	 * not bounded by function bodies at all: {@code Funcdata::startProcessing} calls
+	 * {@code followFlow} over the whole address space, so a decompiled listing happily
+	 * continues past a body's end. Do not read decompiler output as evidence about where a
+	 * function's body stops.
+	 */
+	static boolean isPassThroughInto(Program program, Function wrapper, Address target,
+			Map<Address, SwitchResult> switchResults) {
+		AddressSetView body = wrapper.getBody();
+		if (body.getNumAddressRanges() != 1 ||
+			!body.getMinAddress().equals(wrapper.getEntryPoint())) {
+			return false;
+		}
+		Listing listing = program.getListing();
+		Address end = body.getMaxAddress();
+		Address cursor = wrapper.getEntryPoint();
+		while (cursor != null && cursor.compareTo(end) <= 0) {
+			Instruction instr = listing.getInstructionAt(cursor);
+			if (instr == null) {
+				return false;
+			}
+			if (instr.getFlows().length > 0 || instr.getFlowType().isTerminal()) {
+				return false;
+			}
+			Address next = instr.getMaxAddress().next();
+			Address fallThrough = instr.getFallThrough();
+			if (next == null || fallThrough == null || !fallThrough.equals(next)) {
+				return false;
+			}
+			if (switchResults.containsKey(cursor)) {
+				return false;
+			}
+			if (next.equals(target)) {
+				return true;
+			}
+			cursor = next;
+		}
+		return false;
+	}
+
+	/**
 	 * Every instruction in {@code f} that ends a path through it: {@code RTS}/{@code RTI}
 	 * ({@code TERMINATOR}) and a tail call out of the body ({@code CALL_TERMINATOR} -- a jump
 	 * to another function's entry, which Ghidra's shared-return analysis rewrites into a
@@ -1217,7 +1423,16 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			helper.function().getName() + ")";
 	}
 
-	/** The helper this call instruction targets, or null. */
+	/**
+	 * The helper this call instruction targets, or null.
+	 * <p>
+	 * This relies on {@code helpers} already containing an entry keyed on the actual call
+	 * target, which is why a call landing on a pass-through wrapper's entry (Castlevania
+	 * 2's {@code FUN_c183}, TMNT's {@code FUN_cea5}, Wizards & Warriors' {@code $ce89}) does
+	 * not silently miss here: {@link #findPassThroughWrappers} re-keys the wrapped helper's
+	 * model onto the wrapper's own entry BEFORE this method ever runs, so the lookup below
+	 * hits it the same way it would hit a direct call.
+	 */
 	private HelperModel calledHelper(Program program, Instruction callInstr,
 			Map<Function, HelperModel> helpers) {
 		FunctionManager fm = program.getFunctionManager();
@@ -2942,6 +3157,37 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		HelperModel atMidBodyEntry(Address midBody) {
 			return new HelperModel(function, midBody, null, argReg, effectMask, lsb, strategy,
 				switchSite, firstSite);
+		}
+
+		/**
+		 * This helper re-keyed onto a pass-through wrapper that falls straight through into
+		 * it, for {@link #findPassThroughWrappers} (bead grm-2dr increment 1).
+		 * <p>
+		 * {@code function} MUST become {@code wrapper}, not stay the wrapped helper's own
+		 * function: {@link #helperLabel} compares {@code entry} against
+		 * {@code function.getEntryPoint()} to decide whether to print a plain function name
+		 * or a "mid-body entry in ..." qualifier, so leaving {@code function} pointed at the
+		 * helper would print the misleading claim that the wrapper's entry is a mid-body
+		 * entry INTO the helper's own function. It also keeps this record's {@code function}
+		 * field equal to its own map key, which {@link #exitEffect}'s
+		 * {@code helpers.get(callee.function())} lookup depends on to find a callee's model
+		 * again by its own key.
+		 * <p>
+		 * {@code constState} is INHERITED, not dropped -- and that is an IDENTITY, not a
+		 * guess, and the exact DUAL of {@link #atMidBodyEntry}: a mid-body entry runs a
+		 * SUBSET of the body (it drops the constant because the skipped prefix might have
+		 * been where the summarized effect came from), while a pass-through wrapper's caller
+		 * runs a SUPERSET of the body -- an inert prefix (the wrapper itself) plus the
+		 * ENTIRE wrapped body, unabridged. {@link #isPassThroughInto}'s admission predicate
+		 * already guarantees the wrapper's body is fully disassembled, writes no mechanism,
+		 * makes no call, and transfers control to nothing but {@code target} (this helper's
+		 * own {@code entry}) -- so it changes no tracked bank bit, and whatever constant this
+		 * helper asserts when entered at the top still holds when entered at the wrapper's
+		 * top instead.
+		 */
+		HelperModel atFallThroughWrapper(Function wrapper) {
+			return new HelperModel(wrapper, wrapper.getEntryPoint(), constState, argReg,
+				effectMask, lsb, strategy, switchSite, firstSite);
 		}
 	}
 

@@ -274,6 +274,35 @@ public class HelperPrologueProgramTest extends AbstractBundledLanguageTest {
 		assertFalse(survives("0x9000", "0x9005", 'A'));
 	}
 
+	/**
+	 * The exact Castlevania 2 {@code FUN_c187} byte sequence grm-2dr increment 1's
+	 * pass-through-wrapper admission rests on. {@code FUN_c185}'s wrapper body ({@code STA $1C};
+	 * {@code LDA $1C}) is address-contiguous with {@code FUN_c187}'s own prologue
+	 * ({@code PHA}/{@code LDA #$01}/{@code STA $0103}/{@code PLA}), so this ONE existing linear
+	 * walk -- from the wrapper's entry all the way to the helper's first mechanism site -- covers
+	 * both the wrapper's body and the helper's own save/restore prologue with no change to this
+	 * method at all: {@code STA $1C} records {@code $1C} as an argument cell, and {@code LDA $1C}
+	 * is recognized as a RESTORE from that cell rather than a clobber, so {@code holdsArgument}
+	 * stays true all the way through {@code FUN_c187}'s own {@code PHA}/{@code PLA} pair.
+	 * <p>
+	 * That recognition only works because grm-mu7 increment 2 added the memory half of the
+	 * save/restore model. Without it, {@code LDA $1C} reads as a plain clobber -- the shape
+	 * {@code aLoadFromAnUnrelatedCellIsStillAClobber} above pins as declining -- and all nine of
+	 * Castlevania 2's bank-4 call sites would decline too.
+	 */
+	@Test
+	public void aWrapperFallingIntoASaveRestorePrologueSurvivesAsOneWalk() throws Exception {
+		builder.setBytes("0xc183", "85 1c", true); // STA $1C     -- wrapper: records $1C as an argument cell
+		builder.setBytes("0xc185", "a5 1c", true); // LDA $1C     -- wrapper: a RESTORE, not a clobber
+		builder.setBytes("0xc187", "48", true); // PHA         -- helper prologue: save the argument
+		builder.setBytes("0xc188", "a9 01", true); // LDA #$01
+		builder.setBytes("0xc18a", "8d 03 01", true); // STA $0103
+		builder.setBytes("0xc18d", "68", true); // PLA         -- restore the argument
+		builder.setBytes("0xc18e", "8d 00 e0", true); // STA $E000   <- first mechanism site
+
+		assertTrue(survives("0xc183", "0xc18e", 'A'));
+	}
+
 	// ------------------------------------------------------------------
 	// The argument does not survive
 	// ------------------------------------------------------------------

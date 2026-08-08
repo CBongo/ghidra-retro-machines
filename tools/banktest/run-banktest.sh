@@ -517,6 +517,13 @@ if selected nes-banking; then
 	run_one nesmmc1test "$WORK/nes/nesmmc1test.nes" NesRomLoader
 	run_one nesmmc1overridetest "$WORK/nes/nesmmc1overridetest.nes" NesRomLoader \
 		"-loader-placement W8000:5"
+
+	# grm-2dr increment 1: pass-through-wrapper recognition (a fallthrough-only function
+	# whose last instruction lands exactly on a real bank-switch helper's entry). Separate
+	# fixture from nesmmc1test so that one stays byte-identical -- see make_prg_wrapper()'s
+	# docstring for the real-ROM shapes (Castlevania 2, TMNT) it models.
+	run_one neswrappertest "$WORK/nes/neswrappertest.nes" NesRomLoader
+
 	run_one nesbandaitest "$WORK/nes/nesbandaitest.nes" NesRomLoader
 
 	# grm-1.7.6: CopyLoopAnalyzer is gated on the descriptor + a 6502/6510 language, not on

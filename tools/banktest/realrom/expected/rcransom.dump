@@ -64,13 +64,15 @@ REALROM count blocks.overlay 47
 REALROM count spaces.overlay 47
 REALROM count refs.intoOverlay 0
 REALROM count instrs.inOverlay 0
-REALROM count bankComments 38
-REALROM count warnings 5
+REALROM count bankComments 40
+REALROM count warnings 3
 REALROM sample.bankcomment b80b bank -> select=0,prg_mode=0,r6=0,r7=1 [switch-value flow]
 REALROM sample.bankcomment e315 bank -> select=2,prg_mode=0,r6=0,r7=1 via FUN_fea1 [switch-value flow]
 REALROM sample.bankcomment e323 bank -> select=3,prg_mode=0,r6=0,r7=1 via FUN_fead [switch-value flow]
 REALROM sample.bankcomment e331 bank -> select=4,prg_mode=0,r6=0,r7=1 via FUN_feb9 [switch-value flow]
 REALROM sample.bankcomment e33f bank -> select=5,prg_mode=0,r6=0,r7=1 via FUN_fec5 [switch-value flow]
+REALROM sample.bankcomment f1d0 bank -> select=6,prg_mode=0,r6=0,r7=1 via FUN_ff07 [switch-value flow]
+REALROM sample.bankcomment f21d bank -> select=6,prg_mode=0,r6=0,r7=1 via FUN_ff29 [switch-value flow]
 REALROM sample.bankcomment fae3 bank -> select=0,prg_mode=0,r6=0,r7=1 via FUN_ba78 [switch-value flow]
 REALROM sample.bankcomment fe5b bank -> select=0,prg_mode=0,r6=0,r7=1 [switch-value flow]
 REALROM sample.bankcomment fe62 bank -> select=0,prg_mode=0,r6=0,r7=1 [switch-value flow]
@@ -89,10 +91,6 @@ REALROM sample.bankcomment fea9 bank -> select=2,prg_mode=0,r6=0,r7=1 [switch-va
 REALROM sample.bankcomment feaf bank -> select=3,prg_mode=0,r6=0,r7=1 [switch-value flow]
 REALROM sample.bankcomment feb5 bank -> select=3,prg_mode=0,r6=0,r7=1 [switch-value flow]
 REALROM sample.bankcomment febb bank -> select=4,prg_mode=0,r6=0,r7=1 [switch-value flow]
-REALROM sample.bankcomment fec1 bank -> select=4,prg_mode=0,r6=0,r7=1 [switch-value flow]
-REALROM sample.bankcomment fec7 bank -> select=5,prg_mode=0,r6=0,r7=1 [switch-value flow]
-REALROM sample.warn f1d0 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ff07 whose bank argument could not be recovered at this call site
-REALROM sample.warn f21d [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ff29 whose bank argument could not be recovered at this call site
 REALROM sample.warn ff21 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn ff25 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn ff4b [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
