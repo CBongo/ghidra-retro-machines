@@ -105,29 +105,25 @@ change what the numbers mean:
 3. **Is there a bank shadow?** 4 of 4 titles, 7 shadows. Note whether it holds a bank *number* or a
    whole composite register (wizwarr's `$00`).
 
-- [ ] **contra / dragonpower / shenlong** (`grm-hum`, P1 — the only P1 besides `grm-2dr`)
-      Helper identified on each (`FUN_c13f`, `FUN_ffbe`, `FUN_8eeb`) but the argument unrecoverable
-      at the call sites. dragonpower and shenlong are both GxROM Dragon Ball titles and likely share
-      one engine — **one trace probably covers two.**
+- [ ] **dragonpower / shenlong** (`grm-hum`, P1 — the only P1 besides `grm-2dr`)
+      Helper identified on each (`FUN_ffbe`, `FUN_8eeb`) but the argument unrecoverable at the call
+      sites. Both are GxROM Dragon Ball titles and likely share one engine — **one trace probably
+      covers two.**
 
-      **contra is now much cheaper than the other two, and its numbers below are corrected.** Its
-      wrapper is solved (`grm-3t8`, 2026-08-09): `FUN_c139` sets the bank shadow `$07ec` from the
-      bank id at `$8000` and falls through into `FUN_c13f`. The golden is blessed and current, so
-      the outstanding question is exactly **the ten warnings the current golden carries**:
+      **contra is DONE and was removed from this item** (traced 2026-08-09, see the Answered table).
+      All ten of its warnings are classified: three are recoverable and blocked on one fix
+      (`grm-k90`), one is a five-valued ROM table, three are shadow/read-back restores (`grm-mej`),
+      one is the helper's own mechanism write, and two are phantoms from a switch-table over-read
+      (`grm-eyn`). Do not re-trace it, and in particular **do not trace `811a` →
+      `FUN_PRG_LO_B1__8259`** — that "third helper in overlay space" is not real code.
 
-      - **7 helper calls** — `c094`, `c0a2`, `c21b`, `c9c0` → `FUN_c139` (the wrapper);
-        `c0d3`, `c149`, `c164` → `FUN_c13f` (the helper proper)
-      - **2 mechanism writes** with genuinely undeterminable values — `c142` and `8efc`
-      - **1 call in overlay space** — `811a` → `FUN_PRG_LO_B1__8259`, a *third* helper living in a
-        switched window and worth confirming is real before tracing it
-
-      Apply the one question to each: what computes A immediately before it? contra is **not** at
-      0 refs / 0 comments as this item used to claim — it stands at `refs.intoOverlay 257`,
-      `instrs.inOverlay 849`, `bankComments 2` (`c0cb`, `c157`, both `bank -> 1 via FUN_c13f`), so
-      two sites already resolve and the trace only has to explain why the rest do not.
-      **Check the shadow first:** if `$07ec` is the bank holder, the unrecovered sites are likely
-      shadow *restores* (`LDA $07ec`) rather than genuine unknowns — the same shape blmaster's
-      `LDA $D3` sites turned out to be, which is `grm-mej` scope, not a contra defect.
+      Note before starting these two: `grm-hum`'s 2026-08-01 comment already records both engines'
+      disassembly, the `$F2` shadow, the `$FFDC` inline far-call trampoline, and the measured
+      cross-bank invariant regions. It also records a **structural blocker** independent of dataflow
+      — both descriptors declare a single fully-overlaid `PRG_ALL` window, so
+      `bankInvariantRomByte` returns null for every address and the `$FFCC` table is unreadable to
+      the engine even with a perfect index (`grm-e7v`). Read that comment before spending anything
+      here; the trace may not be the binding constraint.
 
 - [ ] **smb2** (`grm-8iy.4` P2)
       Zero constant-arg call sites. And separately: smb2's fixed window `WC000` is 100%
@@ -244,3 +240,4 @@ Agents can't file these — they need an account and CLA agreement.
 | Why does contra's realrom result depend on run scope? | **It doesn't — the premise was false.** Ten consecutive `--only contra` runs gave **one** dump sha, and a mixed-title invocation fails contra in **both** scopes. The `--only` PASS / `--all` FAIL correlation was an artifact of *when* the runs happened: the PASSing ones consumed a `build/ghidra-home` install predating `788f09b`, the FAILing ones an install after it — same source, different installed extension. contra is a **stale golden**, the twin of `grm-bj6` (`788f09b` re-blessed seven goldens and skipped exactly smb3 and contra), and cheaper to settle: its diff is purely additive annotation, no count-line or resolved-value movement. **No cross-title contamination exists — do not bisect for it.** Side finding, real but *not* the cause: `run-banktest.sh`'s `ext_identity` omits the loose `data/machines/*.map` files that `realrom-test.sh`'s includes, but `EXT_ID` feeds only `*_cache_key()`, the cache is **read** solely under `[ "$MODE" = bless ]` (`realrom-test.sh:589`), and the two scripts use **separate** cache dirs — so it can cause a stale *bless*, never a wrong *check*. **Settled 2026-08-09:** `FUN_c139` confirmed a genuine helper — sets the bank shadow `$07ec` from the bank id at `$8000`, then falls through to the PRG register write at `c13f`, a textbook pass-through wrapper — so the recognition was right and the golden was stale. Blessed; diff was the 4 warnings and the count line, nothing else | `grm-3t8` **closed**; `grm-9mw` for the script library; premise retired on `grm-lwu`; bless recorded on `grm-2dr` |
 | Are smb3's new `ca23`/`ca2e` values (`r7=27`/`26` -> `r7=7`) right, or is the argument coming from the wrong site? | **Wrong site — a REGRESSION, and the golden is correct. smb3 must not be blessed.** MMC3 is a two-write protocol and smb3's helper `ffc2` does both halves: `LDA #$47 ; STA $0721 ; STA $8000 ; LDA $0720 ; STA $8001`. `$8000` takes the register-SELECT byte, `$8001` the bank — which arrives via RAM shadow `$0720`, not a register. Production now reports `$47 & $3F = 7`, i.e. the select constant leaking into the bank field. **Direct proof:** `ca23` is preceded by `LDA #$1b ; STA $0720` and `ca2e` by `LDA #$1a ; STA $0720`, so `$1B`=27 and `$1A`=26 *are* the call-site constants the old golden recorded. Corroboration: both sites collapse to one value (a helper-body constant, not a call-site one), and the direct sites `c5f5`/`c9f7` (`LDA #$1a ; STA $8001`, no shadow update) still read 26 correctly. The count movement fits a regression, not a fix — a wrong bank retargets into a wrong/absent overlay, hence `refs 846->822`, `instrs 4263->4173`. **Shadow map recorded for the per-game tier:** `$0721` = `$8000` select/mode, `$0720` = R7 bank, `$071F` = R6 bank; `ffd1` sets R6, `ffbf` (`JSR $ffd1` + fallthrough) sets both; the IRQ handler restores `$8000` from `$0721` on exit; PRG mode 1 confirmed (`$8000` bit 6 always set), so R6 drives `$C000` | `grm-67g` filed **P1**; `grm-bj6` retitled and blocked on it; `grm-evn` for the unrelated `FUN_c542` leftover |
 | Are rcransom's `f1d0`/`f21d` values (`select=6,prg_mode=0,r6=0,r7=1`) real, or the same `firstSite` artifact as smb3's `r7=7`? | **Artifacts — both of them, and wrong in TWO ways.** `FUN_ff07`/`FUN_ff29` are interrupt-exit RESTORE routines (called immediately before the NMI and IRQ handlers return). Each writes R6 from shadow `$fc` and R7 from `$fd`, then rewrites `$8000` itself from `$ff`/`$fb`. So (1) the reported `select=6` is the state after the helper's FIRST select write, not its net effect — the LAST select write loads `$8000` from RAM and is statically unknown; and (2) `r6=0,r7=1` were stale in-state values claimed as fully known (those lines carry no `[known:…]` bracket at all) because the mis-anchored deposit owned only `select`+`prg_mode` and never poisoned r6/r7 across a helper that overwrites both. A confident stale bank is the same defect class as smb3's confident wrong one. `grm-67g`'s fix replaces both with warnings, which is the honest answer, so **rcransom was a second correctness win, not collateral** — blessed. Stable under the planned `grm-mej` follow-up: the data comes from cells the caller never writes, so it stays unknown. **New gap this exposed:** bank state across an INTERRUPT boundary — a handler that restores banking on exit means the interrupted code's state is preserved, which the engine has no way to express | `grm-1fv` **closed**; unblocked `grm-67g`; rcransom removed from the section-2 def-use list |
+| What are contra's ten remaining warnings? | **All classified; contra needs no further tracing.** Engine: `c13f` (`LDA $ffd0,Y` / `STA $ffd0,Y`, bank arrives in **Y**), wrapper `c139` (sets shadow `$07ec` from `$8000`, falls through), plus a **second** shadow `$07ed` used only by the `c14c`/`c15e` save-restore bracket. Split: **3 recoverable** — `c094`/`c0a2` (`LDY #1`) and `c21b` (`LDY #6`) call the *wrapper* and warn, while the identical `LDY #imm` idiom calling `c13f` directly (`c0cb`, `c157`) resolves; **1 honest** — `c9c0` takes Y from a 3-byte-stride CHR-pointer table at `$c950` (`LDA $c952,X / AND #7 / TAY`) reaching five banks {0,2,4,5,6}, so no static value exists; **3 out of scope** — `c0d3` (reads live bank back from `$8000` through the stack), `c149` (`LDY $07ec`), `c164` (`LDY $07ed`) are all `grm-mej` shadow/read-back restores where unknown *is* correct, same disposition as rcransom; **1 by construction** — `c142` is the helper's own mechanism write; **2 phantoms** — `8efc` and `811a` are cruft from a switch-table over-read at `8492`, so **`FUN_PRG_LO_B1__8259` is not real code, do not trace it**. Ceiling is 3 more sites, +3 if `grm-mej` lands | `grm-hum`; fix on `grm-k90` (retitled, P3→P2); over-read on `grm-eyn` |
