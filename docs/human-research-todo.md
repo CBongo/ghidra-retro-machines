@@ -70,11 +70,27 @@ Each is minutes of work and settles something specific. Highest value per unit e
       **undisassembled**, so they are not instructions and cannot warn. Not a defect; expect it
       to self-resolve as coverage rises. Full table in the bead.
 
-      **Fallout worth knowing:** the `isCall()` gating hypothesis (`BoardBankAnalyzer:676`) is
-      not refuted, it is *unmeasurable corpus-wide today* — every title with `JMP`-reached call
-      sites has its helper rejected before flow type is consulted. blmaster's golden annotates
-      **none** of `FUN_e61b`'s twelve sites, including the seven `JSR` ones, because `e61b` is a
-      shadow-*establishing* wrapper. Recorded on `grm-mej.2`: re-measure blmaster when it lands.
+      ~~**Fallout worth knowing:** the `isCall()` gating hypothesis (`BoardBankAnalyzer:676`) is
+      not refuted, it is *unmeasurable corpus-wide today* … blmaster's golden annotates **none**
+      of `FUN_e61b`'s twelve sites … because `e61b` is a shadow-*establishing* wrapper. Recorded
+      on `grm-mej.2`: re-measure blmaster when it lands.~~ (**BOTH HALVES SUPERSEDED**, 2026-08-09,
+      by `grm-2dr` increment 2 — measured, not argued.)
+
+      **(1) `e61b` was misclassified.** It is a *forwarding* wrapper, not an establishing one:
+      it `STA $DB` on entry and reloads `$DB` **inside its own body**, which `grm-mu7`'s
+      `argumentCells`/`argumentReloadSource` save-restore model already covers. cv2's `c185` —
+      the wrapper it was grouped with — loads a cell that a *different function* wrote, which is
+      the real establishing shape. blmaster was therefore never blocked on `grm-mej.2`; it was
+      blocked on the *call edge*, and it is fixed.
+
+      **(2) The `isCall()` gate is refuted, not merely unmeasured.** `df07` is a `JMP`-reached
+      site and it now resolves `prg_bank=5` — shared-return analysis retypes the `JMP` to
+      `CALL_TERMINATOR`, which reports `isCall()`. All four plain-immediate sites resolve
+      regardless of reach (`c55f`/`c57a`/`e2c3` by `JSR`, `df07` by `JMP`), and the three that
+      still decline split 2 `JMP` / 1 `JSR`. **No reach asymmetry exists.** Do not file an
+      `isCall()` bead, and strike the "re-measure when `grm-mej.2` lands" note there. Full table
+      on `grm-093`. What the remaining sites need is shadow-*restore* modelling (`LDA $D3`),
+      which is genuinely `grm-mej` scope.
 
 - [ ] **Bistable-golden distribution.** (`grm-g73` P2, `grm-4nr` P2)
       Run the tier ~10 times, keep every dump. How many distinct outcomes exist; do megaman and ff1
