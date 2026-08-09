@@ -80,7 +80,7 @@ REALROM count spaces.overlay 64
 REALROM count refs.intoOverlay 225
 REALROM count instrs.inOverlay 867
 REALROM count bankComments 8
-REALROM count warnings 33
+REALROM count warnings 17
 REALROM sample.bankcomment c181 bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_f331 [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment c1db bank -> mirroring=0,prg_mode=3,prg_bank=13? via FUN_f331 [known: prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment c1e4 bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_f331 [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
@@ -114,21 +114,8 @@ REALROM sample.ref 8091 -> W8000_M3_B14::80f0 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8097 -> W8000_M3_B14::80ef CONDITIONAL_JUMP primary=true
 REALROM sample.ref 80af -> W8000_M3_B14::80b9 CONDITIONAL_JUMP primary=true
 REALROM sample.ref 80b1 -> W8000_M3_B14::81d1 UNCONDITIONAL_CALL primary=true
-REALROM sample.warn 8816 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_8861 requires prg_bank known on entry, but it is unknown here
-REALROM sample.warn 8881 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_9724 requires prg_bank known on entry, but it is unknown here
-REALROM sample.warn 940b [NesBankingAnalyzer] Bank state requirement violated: call to FUN_f516 requires mirroring known on entry, but it is unknown here
-REALROM sample.warn 9761 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_97b6 requires prg_bank known on entry, but it is unknown here
-REALROM sample.warn 976a [NesBankingAnalyzer] Bank state requirement violated: call to FUN_97b6 requires prg_bank known on entry, but it is unknown here
-REALROM sample.warn 97ba [NesBankingAnalyzer] Bank state requirement violated: call to FUN_97c4 requires prg_bank known on entry, but it is unknown here
-REALROM sample.warn 98f4 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_98fa requires prg_bank known on entry, but it is unknown here
-REALROM sample.warn 9952 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_f516 requires prg_bank known on entry, but it is unknown here
-REALROM sample.warn c020 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_f045 requires mirroring,prg_mode,prg_bank known on entry, but it is unknown here
-REALROM sample.warn c02f [NesBankingAnalyzer] Bank state requirement violated: call to FUN_c18c requires mirroring known on entry, but it is unknown here
-REALROM sample.warn c1de [NesBankingAnalyzer] Bank state requirement violated: call to FUN_W8000_M3_B13__9406 requires mirroring known on entry, but it is unknown here
-REALROM sample.warn de2f [NesBankingAnalyzer] Bank state requirement violated: call to FUN_f313 requires prg_bank known on entry, but it is unknown here
 REALROM sample.warn e6e3 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_f331 whose bank argument could not be recovered at this call site
 REALROM sample.warn ef13 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_f331 whose bank argument could not be recovered at this call site
-REALROM sample.warn f045 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_f35f requires mirroring,prg_mode,prg_bank known on entry, but it is unknown here
 REALROM sample.warn f1f1 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_f333 whose bank argument could not be recovered at this call site
 REALROM sample.warn f319 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn f31c [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
@@ -139,4 +126,9 @@ REALROM sample.warn f335 [NesBankingAnalyzer] Bank state becomes unknown here: m
 REALROM sample.warn f339 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn f33d [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn f341 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn f345 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn f355 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn f35f [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_f34b whose bank argument could not be recovered at this call site
+REALROM sample.warn f522 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_f331 whose bank argument could not be recovered at this call site
+REALROM sample.warn ffda [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 === REALROM END ===

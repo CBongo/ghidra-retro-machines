@@ -48,7 +48,7 @@ REALROM count spaces.overlay 32
 REALROM count refs.intoOverlay 241
 REALROM count instrs.inOverlay 944
 REALROM count bankComments 2
-REALROM count warnings 24
+REALROM count warnings 21
 REALROM sample.bankcomment ff1b bank -> mirroring=0,prg_mode=0,prg_bank=0? via FUN_aca3 [known: mirroring.0=0,mirroring.1=0,prg_mode.0=0,prg_mode.1=0; assumed from initial: prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
 REALROM sample.bankcomment ff2a bank -> mirroring=0,prg_mode=0,prg_bank=0 via FUN_acdf [switch-value flow]
 REALROM sample.ref 8002 -> W8000_M0_B0::805a UNCONDITIONAL_JUMP primary=true
@@ -97,7 +97,4 @@ REALROM sample.warn ace7 [NesBankingAnalyzer] Bank state becomes unknown here: m
 REALROM sample.warn aceb [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn acef [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn ff16 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
-REALROM sample.warn ff1b [NesBankingAnalyzer] Bank state requirement violated: call to FUN_aca3 requires mirroring,prg_mode,prg_bank known on entry, but it is unknown here
-REALROM sample.warn ff25 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_accb requires prg_bank known on entry, but it is unknown here
-REALROM sample.warn ff2a [NesBankingAnalyzer] Bank state requirement violated: call to FUN_acdf requires prg_bank known on entry, but it is unknown here
 === REALROM END ===

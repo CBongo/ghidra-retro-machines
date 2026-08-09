@@ -80,7 +80,7 @@ REALROM count spaces.overlay 64
 REALROM count refs.intoOverlay 127
 REALROM count instrs.inOverlay 706
 REALROM count bankComments 5
-REALROM count warnings 12
+REALROM count warnings 11
 REALROM sample.bankcomment c04b bank -> mirroring=2,prg_mode=3,prg_bank=0? via FUN_dcc3 [known: mirroring.0=0,mirroring.1=1,prg_mode.0=1,prg_mode.1=1; assumed from initial: prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
 REALROM sample.bankcomment c13f bank -> mirroring=0,prg_mode=3,prg_bank=12? via LAB_dcaa (mid-body entry in FUN_dca8) [known: mirroring.0=0,prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.1] [switch-value flow]
 REALROM sample.bankcomment c14a bank -> mirroring=0,prg_mode=3,prg_bank=12? via LAB_dcaa (mid-body entry in FUN_dca8) [known: mirroring.0=0,prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.1] [switch-value flow]
@@ -112,7 +112,6 @@ REALROM sample.ref 8306 -> W8000_M3_B12::8310 CONDITIONAL_JUMP primary=true
 REALROM sample.ref 830e -> W8000_M3_B12::830a CONDITIONAL_JUMP primary=true
 REALROM sample.ref 8313 -> W8000_M3_B12::8324 CONDITIONAL_JUMP primary=true
 REALROM sample.warn c043 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_dca8 whose bank argument could not be recovered at this call site
-REALROM sample.warn c04b [NesBankingAnalyzer] Bank state requirement violated: call to FUN_dcc3 requires prg_bank known on entry, but it is unknown here
 REALROM sample.warn dcaa [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn dcae [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn dcb2 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)

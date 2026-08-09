@@ -25,13 +25,20 @@ bash tools/banktest/realrom-test.sh nominate H:/emulators/nes/roms   # board-gap
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
-- [ ] **Does `grm-izu` explain `grm-lwu`?** (`grm-izu` P2, `grm-lwu` P2)
-      Do blmaster's violation bookmarks name bits its own serial chains overwrite? `grm-izu`
-      describes `annotateBankRequirementViolations` concluding a full-overwrite helper requires on
-      entry the bits it overwrites; blmaster's four helpers are all 5×`STA`/`LSR` chains of that
-      shape. If yes, one `ownRequires` exclusion drops most of the 66 violation bookmarks and
-      `grm-lwu` becomes its acceptance measurement. `grm-lwu` is currently marked blocked by
-      `grm-izu` on this hypothesis — **unlink it if the check disproves it.**
+- [ ] **Why does contra's realrom result depend on run scope?** (`grm-lwu` comment, 2026-08-08)
+      contra PASSES when run as `--only contra` but FAILS as part of the full `--all` set, and both
+      outcomes reproduce exactly. The diff is always the same four added helper-call warnings at
+      `c094`/`c0a2`/`c21b`/`c9c0` naming `FUN_c139`, a helper the golden doesn't know about. It is
+      **not** `grm-izu`'s fix — applying that fix's three files inside a clean baseline worktree
+      still PASSES, so the source is exonerated by A/B.
+
+      **The check:** does `build-and-test.sh`'s install into `build/ghidra-home` differ from what
+      `realrom-test.sh` puts there? Prime suspect is the hazard `realrom-cache-key-invariant`
+      already documents — the 16 compiled board descriptors ship **loose** as `data/machines/*.map`
+      next to the jar, so an install can drift from the source that supposedly produced it. If a
+      stale `nes-uxrom.map` is what varies, that is a live footgun for every measurement in this
+      tier, not a contra quirk. contra is also one of the two goldens `788f09b` skipped (see
+      `grm-bj6` for the other, smb3) — worth checking together.
 
 - [ ] **Read blmaster's `c9a4` pointer tables.** (`grm-wul` P2)
       `FUN_c9a4` selects bank 4 or 6, reads pointers from `$8000`, dispatches indirectly. How many
@@ -40,11 +47,6 @@ Each is minutes of work and settles something specific. Highest value per unit e
       together, so this is the only thing that says whether the combined work is worth it. Also:
       are the pointers read *after* the switch (table in bank 4/6) or before (table in bank 0,
       already in base space)?
-
-- [ ] **`grm-78b` root cause** — what does the RESET vector at `$FFFC` point to, and does anything
-      reference `f23b` directly? Decides between (a) Ghidra's function-body assignment ran past an
-      always-looping branch pair → upstream, like `grm-b3m`/`grm-6xh`; and (b) `f23b` never got its
-      own function → a seeding gap on our side. Different fixes.
 
 - [ ] **`grm-oiu`** — compare tmnt's argument recovery at `cea7` against an unguarded MMC1 helper
       (`blmaster e63c`, `cv2 c187`). Walking back from tmnt's first `STA` hits `ROR $F0`, an RMW to
@@ -208,3 +210,5 @@ Agents can't file these — they need an account and CLA agreement.
 | Do cv2/tmnt have pre-body entry points? | No — Ghidra creates functions at all of them. Both are *wrapper* cases | `grm-i7v` **closed, no instances** |
 | Does tmnt's `$F0` guard interleave with the serial chain? | No — it brackets it. Chain is contiguous and standard | `grm-oiu` (premise disproven, dropped to P3) |
 | Is the wrapper idiom an MMC1 artifact? | No — wizwarr's AxROM single-write latch has it too | `grm-2dr` |
+| Does `grm-izu` explain `grm-lwu`? | Yes, via the POISON branch, not the unknown-commit one. `c2a1 → dec2 → df05 → e61b → e63c`; `e61b` round-trips A through `$DB`, so bit 7 is unresolvable and the chain poisons every field — mirroring included. Fixed at strategy level (`effectDependsOnPriorState()`); blmaster 90 → 24 warnings, exactly as predicted | `grm-izu` **closed** |
+| `grm-78b` root cause: (a) over-extension or (b) seeding gap? | (a). RESET → `fff4` (`INC RESET`, the MMC1 reset idiom) → `JMP f23b`, so `f23b` **is** referenced; `FUN_f1ca`'s body simply claimed those bytes first by running past the always-looping pair at `f237`. Acceptance amended — `f23b` is a JMP target, so it should belong to the RESET function, not become standalone | `grm-78b` |
