@@ -37,71 +37,87 @@ Each is minutes of work and settles something specific. Highest value per unit e
       **not** `grm-izu`'s fix — applying that fix's three files inside a clean baseline worktree
       still PASSES, so the source is exonerated by A/B.
 
-      **The check:** does `build-and-test.sh`'s install into `build/ghidra-home` differ from what
-      `realrom-test.sh` puts there? Prime suspect is the hazard `realrom-cache-key-invariant`
-      already documents — the 16 compiled board descriptors ship **loose** as `data/machines/*.map`
-      next to the jar, so an install can drift from the source that supposedly produced it. If a
-      stale `nes-uxrom.map` is what varies, that is a live footgun for every measurement in this
-      tier, not a contra quirk. contra is also one of the two goldens `788f09b` skipped (see
-      `grm-bj6` for the other, smb3) — worth checking together.
+      **Already eliminated (2026-08-09, on paper — do not re-check).** It is *not* a manifest
+      difference. `contra` has exactly one gating row (`realrom/manifest.tsv:4`), and `--all` is
+      `manifest.tsv` + `manifest-gme.tsv`, in which contra does not appear. So `id`, `sha256` and
+      `loader_opts` are byte-identical across both runs. (`manifest-goodnes.tsv`'s `contra_u`
+      rows are a different SHA and non-gating.)
 
-- [x] ~~**`grm-oiu`** — compare tmnt's argument recovery at `cea7` against an unguarded MMC1
-      helper.~~ (**ANSWERED and CLOSED not-a-bug**, 2026-08-08) All three behave alike, so the
-      bead's own close condition fired. The `$F0` guard is empirically harmless: tmnt's golden
-      carries real recoveries *through* the guarded helpers (`c003 prg_bank=2 via FUN_cea7`, plus
-      `via FUN_ce56` and six `via FUN_cea5`), which could not exist if the bracket defeated
-      argument identification.
+      **Reframe:** the *failing* run finds **more**, not less — which is what `grm-4nr`/`grm-g73`
+      bistability looks like. The `--only`/`--all` correlation may simply be coincidence, and
+      that is the cheapest thing to rule out.
 
-      **`cv2 c187` was the strong control:** `PHA / LDA #1 / STA $0103 / PLA` sits between entry
-      and its chain — an unrelated memory write *and* a stack save-restore of the tracked
-      parameter — and recovery still works. `blmaster e63c` tests nothing on this axis: its
-      `STA $FFFF` *is* the entry instruction, so there is nowhere to walk back to; its failure is
-      caller-side (`$DB`) and belongs to `grm-mej.2`.
+      **Step 1 — is contra just bistable?** (~10 min; either settles it or eliminates it)
+      ```bash
+      for i in $(seq 1 10); do
+        REALROM_WORK_DIR=$PWD/build/contra$i \
+          bash tools/banktest/realrom-test.sh check --only contra H:/emulators/nes/roms
+      done
+      sha256sum build/contra*/contra.dump | awk '{print $1}' | sort | uniq -c
+      ```
+      More than one distinct hash ⇒ contra is bistable, run scope is a red herring, and this item
+      **merges into the bistable-distribution check below**. Stop there.
 
-      **Reframe worth carrying forward:** "24 of 30 direct stores recover nothing" was counting
-      the five in-body serial stores per helper, which are parameter-valued by construction in
-      *every* MMC1 title. Count call-site chains, not mechanism stores — same correction as
-      check #1 in section 2 below. Recorded on `grm-8iy.5`.
+      **Step 2 — only if step 1 is 10/10 identical.** Then scope really is the variable, and the
+      suspect is state shared *across titles within one invocation*: `$WORK` and the Ghidra
+      settings/cache dirs (`-Dapplication.settingsdir` / `-Dapplication.cachedir`,
+      `realrom-test.sh:400`). Bisect for the smallest set that flips it:
+      ```bash
+      bash tools/banktest/realrom-test.sh check --only contra,megaman H:/emulators/nes/roms
+      bash tools/banktest/realrom-test.sh check --all --only contra,megaman,cv2,tmnt H:/…
+      ```
+      A **two-title** set that flips contra means cross-title contamination; only the *full* set
+      flipping it means load or timing.
 
-- [x] ~~**Why does cv2 recover only 2 of its 10 `c183` call sites?**~~ (`grm-093` — **ANSWERED
-      and CLOSED**, 2026-08-08) Only **two** xrefs to `c183` exist in the program at all — `c081`
-      and `c4de`, both `JSR`, both base space — and production annotates both. Recovery is 2 of 2.
-      The ~30 further `JSR $c183` and 3 `JMP $c183` found by byte search are base-space but
-      **undisassembled**, so they are not instructions and cannot warn. Not a defect; expect it
-      to self-resolve as coverage rises. Full table in the bead.
-
-      ~~**Fallout worth knowing:** the `isCall()` gating hypothesis (`BoardBankAnalyzer:676`) is
-      not refuted, it is *unmeasurable corpus-wide today* … blmaster's golden annotates **none**
-      of `FUN_e61b`'s twelve sites … because `e61b` is a shadow-*establishing* wrapper. Recorded
-      on `grm-mej.2`: re-measure blmaster when it lands.~~ (**BOTH HALVES SUPERSEDED**, 2026-08-09,
-      by `grm-2dr` increment 2 — measured, not argued.)
-
-      **(1) `e61b` was misclassified.** It is a *forwarding* wrapper, not an establishing one:
-      it `STA $DB` on entry and reloads `$DB` **inside its own body**, which `grm-mu7`'s
-      `argumentCells`/`argumentReloadSource` save-restore model already covers. cv2's `c185` —
-      the wrapper it was grouped with — loads a cell that a *different function* wrote, which is
-      the real establishing shape. blmaster was therefore never blocked on `grm-mej.2`; it was
-      blocked on the *call edge*, and it is fixed.
-
-      **(2) The `isCall()` gate is refuted, not merely unmeasured.** `df07` is a `JMP`-reached
-      site and it now resolves `prg_bank=5` — shared-return analysis retypes the `JMP` to
-      `CALL_TERMINATOR`, which reports `isCall()`. All four plain-immediate sites resolve
-      regardless of reach (`c55f`/`c57a`/`e2c3` by `JSR`, `df07` by `JMP`), and the three that
-      still decline split 2 `JMP` / 1 `JSR`. **No reach asymmetry exists.** Do not file an
-      `isCall()` bead, and strike the "re-measure when `grm-mej.2` lands" note there. Full table
-      on `grm-093`. What the remaining sites need is shadow-*restore* modelling (`LDA $D3`),
-      which is genuinely `grm-mej` scope.
+      **Step 3 — the descriptor-drift check** this item originally named: does `build-and-test.sh`'s
+      install into `build/ghidra-home` differ from what `realrom-test.sh` puts there?
+      `ext_identity()` (`realrom-test.sh:417`) already fingerprints the installed jars **and** the
+      loose `data/machines/*.map` descriptors — print `EXT_ID` in both runs and compare. If it
+      differs, the two installs differ and that alone explains everything. This is the
+      `realrom-cache-key-invariant` hazard: the 16 compiled board descriptors ship **loose** next
+      to the jar, so an install can drift from the source that supposedly produced it. If a stale
+      `nes-uxrom.map` is what varies, that is a live footgun for every measurement in this tier,
+      not a contra quirk. contra is also one of the two goldens `788f09b` skipped (see `grm-bj6`
+      for the other, smb3) — worth checking together.
 
 - [ ] **Bistable-golden distribution.** (`grm-g73` P2, `grm-4nr` P2)
-      Run the tier ~10 times, keep every dump. How many distinct outcomes exist; do megaman and ff1
-      flip *together*; is ff1's delta always exactly −33/−44/−14? Co-flipping implies one shared
-      nondeterministic input, independent flips implies two causes.
+      Run the tier ~10 times, keep every dump. How many distinct outcomes exist per title; do
+      megaman and ff1 flip *together*; is ff1's delta always exactly −33/−44/−14? Co-flipping
+      implies one shared nondeterministic input, independent flips implies two causes.
+
+      **Verified, so the loop is sound:** `check` **never reads** the candidate cache — the reuse
+      fast path (`realrom-test.sh:589`) is gated on `MODE = bless`. Every iteration is a genuine
+      fresh import, and `-deleteProject` gives each one a fresh Ghidra project.
+
+      **Footgun — read this before blessing anything afterwards.** Every `check` still *writes*
+      `build/realrom-cache/<key>.dump`. After a loop like this, a later `bless` will silently
+      serve whichever outcome the **last** iteration happened to produce. Run
+      `rm -rf build/realrom-cache` before blessing any title that appears here.
+
+      Fold contra (see above) and the other two suspects into one loop — same cost per run, four
+      more answers. Budget ~1 min/title/run, so ~50 min for 5 titles × 10 runs; run it detached.
       ```bash
       for i in $(seq 1 10); do
         REALROM_WORK_DIR=$PWD/build/bistable$i \
-          bash tools/banktest/realrom-test.sh check --gme --only megaman,ff1 H:/emulators/nes/roms
+          bash tools/banktest/realrom-test.sh check --all \
+            --only megaman,ff1,contra,dodge,rcproam H:/emulators/nes/roms
+      done
+      # distinct outcomes per title
+      for t in megaman ff1 contra dodge rcproam; do
+        echo "== $t"; sha256sum build/bistable*/$t.dump | awk '{print $1}' | sort | uniq -c
+      done
+      # co-flip matrix: one row per run, one column per title
+      for i in $(seq 1 10); do
+        printf '%2d' "$i"
+        for t in megaman ff1 contra dodge rcproam; do
+          printf ' %.8s' "$(sha256sum build/bistable$i/$t.dump 2>/dev/null | cut -c1-8)"
+        done; echo
       done
       ```
+      **What to record on the bead:** the per-title outcome count, the co-flip matrix, and for any
+      title with exactly two outcomes, the `diff -u` between them. A count-line-only delta is
+      jitter; a changed or vanished `sample.bankcomment … via FUN_xxx` line is a real behavioural
+      difference and names the nondeterministic input.
 
 ---
 
@@ -217,7 +233,6 @@ Agents can't file these — they need an account and CLA agreement.
 - [ ] **`grm-6xh`** (P3) — the one-line `setMinStoreLoadOffset` field-assignment bug (assigns
       `maxSpeculativeOffset`). Verified tag-exact against `Ghidra_12.1.2_build`; affects the base
       analyzer and all 13 per-processor subclasses. Trivial PR, high goodwill.
-- [ ] **`grm-78b`**, if its root cause turns out to be (a) — see §1.
 
 ---
 
@@ -234,3 +249,6 @@ Agents can't file these — they need an account and CLA agreement.
 | Does `grm-izu` explain `grm-lwu`? | Yes, via the POISON branch, not the unknown-commit one. `c2a1 → dec2 → df05 → e61b → e63c`; `e61b` round-trips A through `$DB`, so bit 7 is unresolvable and the chain poisons every field — mirroring included. Fixed at strategy level (`effectDependsOnPriorState()`); blmaster 90 → 24 warnings, exactly as predicted | `grm-izu` **closed** |
 | How big is blmaster's `c9a4` prize? | **~281 targets** — ~136 entries in bank 4, ~145 in bank 6, on a title currently at 0 refs / 0 instrs in overlay. Tables live in the *switched* window (bank switch precedes the first pointer fetch), so nothing is readable before the merge is solved. Targets stay in-bank, so retargeting is unambiguous once the bank is known. Table base differs per bank (`4:$8006` / `6:$8002`), which argues for path-forking over set-valued state | `grm-wul` |
 | `grm-78b` root cause: (a) over-extension or (b) seeding gap? | (a). RESET → `fff4` (`INC RESET`, the MMC1 reset idiom) → `JMP f23b`, so `f23b` **is** referenced; `FUN_f1ca`'s body simply claimed those bytes first by running past the always-looping pair at `f237`. Acceptance amended — `f23b` is a JMP target, so it should belong to the RESET function, not become standalone | `grm-78b` |
+| Does tmnt's `$F0` helper guard defeat argument recovery? (`cea7` vs an unguarded MMC1 helper) | No — all three behave alike, so the bead's own close condition fired. The guard is empirically harmless: tmnt's golden carries real recoveries *through* the guarded helpers (`c003 prg_bank=2 via FUN_cea7`, plus `via FUN_ce56` and six `via FUN_cea5`), which could not exist if the bracket defeated argument identification. **cv2 `c187` was the strong control** — a `PHA / LDA #1 / STA $0103 / PLA` sits between entry and its chain (an unrelated memory write *and* a stack save-restore of the tracked parameter) and recovery still works. **Reframe worth carrying forward:** "24 of 30 direct stores recover nothing" was counting the five in-body serial stores per helper, which are parameter-valued by construction in *every* MMC1 title — count call-site chains, not mechanism stores (recorded on `grm-8iy.5`) | `grm-oiu` **closed not-a-bug** |
+| Why does cv2 recover only 2 of its 10 `c183` call sites? | It recovers 2 of **2**. Only two xrefs to `c183` exist in the program at all — `c081` and `c4de`, both `JSR`, both base space — and production annotates both. The ~30 further `JSR $c183` and 3 `JMP $c183` found by byte search are base-space but **undisassembled**, so they are not instructions and cannot warn. Not a defect; expect it to self-resolve as coverage rises. Full table in the bead | `grm-093` **closed** |
+| Does `BoardBankAnalyzer`'s `isCall()` gate silently drop `JMP`-reached call sites? | **No — refuted, not merely unmeasured** (`grm-2dr` increment 2, measured rather than argued). `df07` is a `JMP`-reached site and it resolves `prg_bank=5`: shared-return analysis retypes the `JMP` to `CALL_TERMINATOR`, which reports `isCall()`. All four plain-immediate sites resolve regardless of reach (`c55f`/`c57a`/`e2c3` by `JSR`, `df07` by `JMP`), and the three that still decline split 2 `JMP` / 1 `JSR`. **No reach asymmetry exists — do not file an `isCall()` bead.** Also corrected in the same pass: `e61b` was *misclassified* as a shadow-**establishing** wrapper. It is a **forwarding** wrapper — `STA $DB` on entry, reloads `$DB` **inside its own body** — which `grm-mu7`'s `argumentCells`/`argumentReloadSource` save-restore model already covers. cv2's `c185`, the wrapper it was grouped with, loads a cell a *different function* wrote, and that is the real establishing shape. blmaster was therefore never blocked on `grm-mej.2`; it was blocked on the *call edge*, and that is fixed. What its remaining sites need is shadow-**restore** modelling (`LDA $D3`), which is genuine `grm-mej` scope | `grm-093` / `grm-2dr` |
