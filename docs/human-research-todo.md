@@ -43,6 +43,37 @@ bash tools/banktest/realrom-test.sh nominate H:/emulators/nes/roms   # board-gap
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
+- [ ] **Are rcransom's `f1d0`/`f21d` bank values real, or the same artifact as smb3's `r7=7`?**
+      (`grm-1fv` P2 — **blocks landing `grm-67g`'s fix**, which is written and held uncommitted)
+
+      `grm-67g`'s soundness fix turns these two comments into warnings, and nothing else on the
+      title moves (`bankComments` 40→38, `warnings` 3→5):
+
+          f1d0  bank -> select=6,prg_mode=0,r6=0,r7=1 via FUN_ff07   ->  warning
+          f21d  bank -> select=6,prg_mode=0,r6=0,r7=1 via FUN_ff29   ->  warning
+
+      They were produced by the **same code path** that shipped smb3's confident wrong `r7=7`:
+      MMC3 select-data, value read at the helper's `firstSite`. So the prior is that they are
+      artifacts and the fix is deleting garbage — but that is a prior, and smb3 only got a correct
+      verdict because someone read the ROM instead of reasoning from shape.
+
+      **The question, in the same form the smb3 trace answered:** disassemble `FUN_ff07` and
+      `FUN_ff29`. How many writes into `$8000-$9fff` does each contain, at what parity (even =
+      select, odd = data), and what value reaches each? Does either reload the bank from a RAM
+      shadow the way smb3's `ffc2` does from `$0720`? At `f1d0`/`f21d`, what is in `A`, and is
+      there a `LDA #bank ; STA <shadow>` before the call?
+
+      **One thing to check regardless of provenance:** `select=6` routes a data write to **R6**, so
+      a comment that selects 6 while naming **`r7`** looks wrong on its face.
+
+      Context: `grm-8iy.4` already records that rcransom has zero constant-arg call sites and that
+      its real PRG switching is `FUN_ff07`/`FUN_ff29` with undeterminable writes at
+      `ff21`/`ff25`/`ff4b` — which leans toward "artifact", without being evidence about these two.
+
+      ```bash
+      bash tools/banktest/realrom-test.sh check --all --only rcransom H:/emulators/nes/roms
+      ```
+
 - [ ] **Bistable-golden distribution.** (`grm-g73` P2, `grm-4nr` P2)
       Run the tier ~10 times, keep every dump. How many distinct outcomes exist per title; do
       megaman and ff1 flip *together*; is ff1's delta always exactly −33/−44/−14? Co-flipping
