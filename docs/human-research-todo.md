@@ -30,55 +30,22 @@ bash tools/banktest/realrom-test.sh nominate H:/emulators/nes/roms   # board-gap
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
-- [ ] **Why does contra's realrom result depend on run scope?** (`grm-lwu` comment, 2026-08-08)
-      contra PASSES when run as `--only contra` but FAILS as part of the full `--all` set, and both
-      outcomes reproduce exactly. The diff is always the same four added helper-call warnings at
-      `c094`/`c0a2`/`c21b`/`c9c0` naming `FUN_c139`, a helper the golden doesn't know about. It is
-      **not** `grm-izu`'s fix — applying that fix's three files inside a clean baseline worktree
-      still PASSES, so the source is exonerated by A/B.
+- [x] **Why does contra's realrom result depend on run scope?** — **ANSWERED 2026-08-09. It doesn't.**
+      Ten consecutive `--only contra` runs produced **one** dump sha, and a mixed-title invocation
+      fails contra in **both** scopes. The `--only` PASS / `--all` FAIL correlation was an artifact
+      of *when* the runs happened: the PASSing ones consumed a `build/ghidra-home` install predating
+      `788f09b`, the FAILing ones an install after it. Same source, different installed extension.
+      contra is simply a **stale golden**, the twin of `grm-bj6` — `788f09b` re-blessed seven
+      goldens and skipped exactly smb3 and contra. Now tracked as **`grm-3t8`**, and easier than
+      smb3: contra's diff is purely additive annotation (four warnings, no count-line or resolved-
+      value movement). Steps 2 and 3 below are moot — **do not run them.** In particular there is
+      no cross-title contamination to bisect for.
 
-      **Already eliminated (2026-08-09, on paper — do not re-check).** It is *not* a manifest
-      difference. `contra` has exactly one gating row (`realrom/manifest.tsv:4`), and `--all` is
-      `manifest.tsv` + `manifest-gme.tsv`, in which contra does not appear. So `id`, `sha256` and
-      `loader_opts` are byte-identical across both runs. (`manifest-goodnes.tsv`'s `contra_u`
-      rows are a different SHA and non-gating.)
-
-      **Reframe:** the *failing* run finds **more**, not less — which is what `grm-4nr`/`grm-g73`
-      bistability looks like. The `--only`/`--all` correlation may simply be coincidence, and
-      that is the cheapest thing to rule out.
-
-      **Step 1 — is contra just bistable?** (~10 min; either settles it or eliminates it)
-      ```bash
-      for i in $(seq 1 10); do
-        REALROM_WORK_DIR=$PWD/build/contra$i \
-          bash tools/banktest/realrom-test.sh check --only contra H:/emulators/nes/roms
-      done
-      sha256sum build/contra*/contra.dump | awk '{print $1}' | sort | uniq -c
-      ```
-      More than one distinct hash ⇒ contra is bistable, run scope is a red herring, and this item
-      **merges into the bistable-distribution check below**. Stop there.
-
-      **Step 2 — only if step 1 is 10/10 identical.** Then scope really is the variable, and the
-      suspect is state shared *across titles within one invocation*: `$WORK` and the Ghidra
-      settings/cache dirs (`-Dapplication.settingsdir` / `-Dapplication.cachedir`,
-      `realrom-test.sh:400`). Bisect for the smallest set that flips it:
-      ```bash
-      bash tools/banktest/realrom-test.sh check --only contra,megaman H:/emulators/nes/roms
-      bash tools/banktest/realrom-test.sh check --all --only contra,megaman,cv2,tmnt H:/…
-      ```
-      A **two-title** set that flips contra means cross-title contamination; only the *full* set
-      flipping it means load or timing.
-
-      **Step 3 — the descriptor-drift check** this item originally named: does `build-and-test.sh`'s
-      install into `build/ghidra-home` differ from what `realrom-test.sh` puts there?
-      `ext_identity()` (`realrom-test.sh:417`) already fingerprints the installed jars **and** the
-      loose `data/machines/*.map` descriptors — print `EXT_ID` in both runs and compare. If it
-      differs, the two installs differ and that alone explains everything. This is the
-      `realrom-cache-key-invariant` hazard: the 16 compiled board descriptors ship **loose** next
-      to the jar, so an install can drift from the source that supposedly produced it. If a stale
-      `nes-uxrom.map` is what varies, that is a live footgun for every measurement in this tier,
-      not a contra quirk. contra is also one of the two goldens `788f09b` skipped (see `grm-bj6`
-      for the other, smb3) — worth checking together.
+      **The `ext_identity` divergence found along the way is real but was NOT the cause**, and the
+      reasoning is worth keeping: `EXT_ID` feeds *only* `*_cache_key()`, the cache is **read** solely
+      under `[ "$MODE" = bless ]` (`realrom-test.sh:589`), and the two scripts use **separate** cache
+      dirs, so a weaker `ext_identity` can cause a stale *bless* but never a wrong *check*. Tracked
+      as **`grm-9mw`** (shared shell library for the banktest scripts).
 
 - [ ] **Bistable-golden distribution.** (`grm-g73` P2, `grm-4nr` P2)
       Run the tier ~10 times, keep every dump. How many distinct outcomes exist per title; do
@@ -94,8 +61,9 @@ Each is minutes of work and settles something specific. Highest value per unit e
       serve whichever outcome the **last** iteration happened to produce. Run
       `rm -rf build/realrom-cache` before blessing any title that appears here.
 
-      Fold contra (see above) and the other two suspects into one loop — same cost per run, four
-      more answers. Budget ~1 min/title/run, so ~50 min for 5 titles × 10 runs; run it detached.
+      **contra is no longer a suspect** (see above — deterministic, stale golden, `grm-3t8`); it is
+      kept in the loop below only as a cheap *control*, since a title known to be stable makes a
+      co-flip matrix easier to read. Fold in the other suspects — same cost per run, more answers. Budget ~1 min/title/run, so ~50 min for 5 titles × 10 runs; run it detached.
       ```bash
       for i in $(seq 1 10); do
         REALROM_WORK_DIR=$PWD/build/bistable$i \
