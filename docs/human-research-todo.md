@@ -11,6 +11,11 @@ they're answered.
 **Where answers go:** `bd comment <id>` on the owning bead. That's what the next session reads.
 This file only tracks *what still needs a human*; the findings themselves live in beads.
 
+**`docs/human recon notes.txt` is NOT an answer source.** It is untracked scratch holding the
+raw observations that *prompted* the questions below — not their answers. Anything useful in it
+has already been carried into beads. Mine it for new questions if you like; do not treat a line
+in it as a recorded finding, and do not sweep it into beads.
+
 **Useful commands**
 
 ```bash
@@ -40,12 +45,23 @@ Each is minutes of work and settles something specific. Highest value per unit e
       tier, not a contra quirk. contra is also one of the two goldens `788f09b` skipped (see
       `grm-bj6` for the other, smb3) — worth checking together.
 
-- [ ] **`grm-oiu`** — compare tmnt's argument recovery at `cea7` against an unguarded MMC1 helper
-      (`blmaster e63c`, `cv2 c187`). Walking back from tmnt's first `STA` hits `ROR $F0`, an RMW to
-      memory; `grm-hum` records that `StoredValueScanner` aborts when it steps over a *mechanism*
-      write, and `$F0` isn't one — but if the scan is conservative about RMW generally, all four
-      tmnt helpers lose their argument for a reason unrelated to the chain. If all three behave
-      alike, **close the bead as not-a-bug.**
+- [x] ~~**`grm-oiu`** — compare tmnt's argument recovery at `cea7` against an unguarded MMC1
+      helper.~~ (**ANSWERED and CLOSED not-a-bug**, 2026-08-08) All three behave alike, so the
+      bead's own close condition fired. The `$F0` guard is empirically harmless: tmnt's golden
+      carries real recoveries *through* the guarded helpers (`c003 prg_bank=2 via FUN_cea7`, plus
+      `via FUN_ce56` and six `via FUN_cea5`), which could not exist if the bracket defeated
+      argument identification.
+
+      **`cv2 c187` was the strong control:** `PHA / LDA #1 / STA $0103 / PLA` sits between entry
+      and its chain — an unrelated memory write *and* a stack save-restore of the tracked
+      parameter — and recovery still works. `blmaster e63c` tests nothing on this axis: its
+      `STA $FFFF` *is* the entry instruction, so there is nowhere to walk back to; its failure is
+      caller-side (`$DB`) and belongs to `grm-mej.2`.
+
+      **Reframe worth carrying forward:** "24 of 30 direct stores recover nothing" was counting
+      the five in-body serial stores per helper, which are parameter-valued by construction in
+      *every* MMC1 title. Count call-site chains, not mechanism stores — same correction as
+      check #1 in section 2 below. Recorded on `grm-8iy.5`.
 
 - [x] ~~**Why does cv2 recover only 2 of its 10 `c183` call sites?**~~ (`grm-093` — **ANSWERED
       and CLOSED**, 2026-08-08) Only **two** xrefs to `c183` exist in the program at all — `c081`
