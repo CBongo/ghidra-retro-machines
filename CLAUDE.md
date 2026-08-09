@@ -30,6 +30,12 @@ When the user takes a task on, record the result with `bd comment` on the owning
 open human-side work in `docs/human-research-todo.md` — that file is the running TODO for work
 that is deliberately *not* agent work.
 
+**When one of those items comes back answered, retire it — do not check it off.** Delete the item
+from its section and add a row to the `## Answered` table at the bottom of that file. Never mark it
+`- [x]`: the numbered sections hold only open questions, and a checked box both reads as open work
+and loses the finding from the archive. The file's own preamble states the procedure; read it
+before editing, and read to the bottom of the file so you see the table's format.
+
 Counter-signal, so this does not become an excuse: implementation, refactoring, test writing,
 running the gates, reading this codebase, and tracing existing code are agent work. Do them.
 

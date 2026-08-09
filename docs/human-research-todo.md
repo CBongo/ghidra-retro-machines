@@ -5,11 +5,24 @@ a judgment call gets there faster and better than an agent burning tokens on a
 build/measure/interpret loop.
 
 This is a running list, not a snapshot. Add to it whenever an agent stops and asks (see the
-"Stop and ask when a human would be more efficient" directive in `CLAUDE.md`), and strike items as
-they're answered.
+"Stop and ask when a human would be more efficient" directive in `CLAUDE.md`).
 
-**Where answers go:** `bd comment <id>` on the owning bead. That's what the next session reads.
-This file only tracks *what still needs a human*; the findings themselves live in beads.
+## Retiring an answered item — the exact procedure
+
+Sections 1–5 hold **only open questions**. An answered item does not stay here in any form.
+
+1. `bd comment <id>` the finding on the owning bead. That is what the next session actually reads.
+2. **Delete the item from its section**, entirely — heading line, body, code blocks, all of it.
+3. **Add one row to the `## Answered` table at the bottom of this file** (`question | answer |
+   bead`). Condense to a few sentences; the full record lives in the bead. If the answer *retires*
+   a line of investigation, say so imperatively in the row — "do not bisect for it", "do not file
+   an `isCall()` bead" — so nobody re-spends the tokens.
+
+**Never mark an item `- [x]`.** The checkbox has exactly one state here. A checked box left in
+place looks like open work to the next reader and silently drops the finding out of the archive,
+which is the one thing this file exists to prevent. *(This mistake has been made more than once —
+the `- [ ]` syntax invites it, and the archive table is far enough down the file that a targeted
+read of a single item never sees that it exists. Scroll to the bottom before editing.)*
 
 **`docs/human recon notes.txt` is NOT an answer source.** It is untracked scratch holding the
 raw observations that *prompted* the questions below — not their answers. Anything useful in it
@@ -29,23 +42,6 @@ bash tools/banktest/realrom-test.sh nominate H:/emulators/nes/roms   # board-gap
 ## 1. Small decisive checks
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
-
-- [x] **Why does contra's realrom result depend on run scope?** — **ANSWERED 2026-08-09. It doesn't.**
-      Ten consecutive `--only contra` runs produced **one** dump sha, and a mixed-title invocation
-      fails contra in **both** scopes. The `--only` PASS / `--all` FAIL correlation was an artifact
-      of *when* the runs happened: the PASSing ones consumed a `build/ghidra-home` install predating
-      `788f09b`, the FAILing ones an install after it. Same source, different installed extension.
-      contra is simply a **stale golden**, the twin of `grm-bj6` — `788f09b` re-blessed seven
-      goldens and skipped exactly smb3 and contra. Now tracked as **`grm-3t8`**, and easier than
-      smb3: contra's diff is purely additive annotation (four warnings, no count-line or resolved-
-      value movement). Steps 2 and 3 below are moot — **do not run them.** In particular there is
-      no cross-title contamination to bisect for.
-
-      **The `ext_identity` divergence found along the way is real but was NOT the cause**, and the
-      reasoning is worth keeping: `EXT_ID` feeds *only* `*_cache_key()`, the cache is **read** solely
-      under `[ "$MODE" = bless ]` (`realrom-test.sh:589`), and the two scripts use **separate** cache
-      dirs, so a weaker `ext_identity` can cause a stale *bless* but never a wrong *check*. Tracked
-      as **`grm-9mw`** (shared shell library for the banktest scripts).
 
 - [ ] **Bistable-golden distribution.** (`grm-g73` P2, `grm-4nr` P2)
       Run the tier ~10 times, keep every dump. How many distinct outcomes exist per title; do
@@ -220,3 +216,4 @@ Agents can't file these — they need an account and CLA agreement.
 | Does tmnt's `$F0` helper guard defeat argument recovery? (`cea7` vs an unguarded MMC1 helper) | No — all three behave alike, so the bead's own close condition fired. The guard is empirically harmless: tmnt's golden carries real recoveries *through* the guarded helpers (`c003 prg_bank=2 via FUN_cea7`, plus `via FUN_ce56` and six `via FUN_cea5`), which could not exist if the bracket defeated argument identification. **cv2 `c187` was the strong control** — a `PHA / LDA #1 / STA $0103 / PLA` sits between entry and its chain (an unrelated memory write *and* a stack save-restore of the tracked parameter) and recovery still works. **Reframe worth carrying forward:** "24 of 30 direct stores recover nothing" was counting the five in-body serial stores per helper, which are parameter-valued by construction in *every* MMC1 title — count call-site chains, not mechanism stores (recorded on `grm-8iy.5`) | `grm-oiu` **closed not-a-bug** |
 | Why does cv2 recover only 2 of its 10 `c183` call sites? | It recovers 2 of **2**. Only two xrefs to `c183` exist in the program at all — `c081` and `c4de`, both `JSR`, both base space — and production annotates both. The ~30 further `JSR $c183` and 3 `JMP $c183` found by byte search are base-space but **undisassembled**, so they are not instructions and cannot warn. Not a defect; expect it to self-resolve as coverage rises. Full table in the bead | `grm-093` **closed** |
 | Does `BoardBankAnalyzer`'s `isCall()` gate silently drop `JMP`-reached call sites? | **No — refuted, not merely unmeasured** (`grm-2dr` increment 2, measured rather than argued). `df07` is a `JMP`-reached site and it resolves `prg_bank=5`: shared-return analysis retypes the `JMP` to `CALL_TERMINATOR`, which reports `isCall()`. All four plain-immediate sites resolve regardless of reach (`c55f`/`c57a`/`e2c3` by `JSR`, `df07` by `JMP`), and the three that still decline split 2 `JMP` / 1 `JSR`. **No reach asymmetry exists — do not file an `isCall()` bead.** Also corrected in the same pass: `e61b` was *misclassified* as a shadow-**establishing** wrapper. It is a **forwarding** wrapper — `STA $DB` on entry, reloads `$DB` **inside its own body** — which `grm-mu7`'s `argumentCells`/`argumentReloadSource` save-restore model already covers. cv2's `c185`, the wrapper it was grouped with, loads a cell a *different function* wrote, and that is the real establishing shape. blmaster was therefore never blocked on `grm-mej.2`; it was blocked on the *call edge*, and that is fixed. What its remaining sites need is shadow-**restore** modelling (`LDA $D3`), which is genuine `grm-mej` scope | `grm-093` / `grm-2dr` |
+| Why does contra's realrom result depend on run scope? | **It doesn't — the premise was false.** Ten consecutive `--only contra` runs gave **one** dump sha, and a mixed-title invocation fails contra in **both** scopes. The `--only` PASS / `--all` FAIL correlation was an artifact of *when* the runs happened: the PASSing ones consumed a `build/ghidra-home` install predating `788f09b`, the FAILing ones an install after it — same source, different installed extension. contra is a **stale golden**, the twin of `grm-bj6` (`788f09b` re-blessed seven goldens and skipped exactly smb3 and contra), and cheaper to settle: its diff is purely additive annotation, no count-line or resolved-value movement. **No cross-title contamination exists — do not bisect for it.** Side finding, real but *not* the cause: `run-banktest.sh`'s `ext_identity` omits the loose `data/machines/*.map` files that `realrom-test.sh`'s includes, but `EXT_ID` feeds only `*_cache_key()`, the cache is **read** solely under `[ "$MODE" = bless ]` (`realrom-test.sh:589`), and the two scripts use **separate** cache dirs — so it can cause a stale *bless*, never a wrong *check* | `grm-3t8` filed; `grm-9mw` for the script library; premise retired on `grm-lwu` |
