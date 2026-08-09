@@ -40,14 +40,6 @@ Each is minutes of work and settles something specific. Highest value per unit e
       tier, not a contra quirk. contra is also one of the two goldens `788f09b` skipped (see
       `grm-bj6` for the other, smb3) — worth checking together.
 
-- [ ] **Read blmaster's `c9a4` pointer tables.** (`grm-wul` P2)
-      `FUN_c9a4` selects bank 4 or 6, reads pointers from `$8000`, dispatches indirectly. How many
-      entries, and where do they point? That count *is* the payoff estimate for
-      `grm-wul` + `grm-mej.2` + `grm-mej.3` combined — all four of its blockers must be fixed
-      together, so this is the only thing that says whether the combined work is worth it. Also:
-      are the pointers read *after* the switch (table in bank 4/6) or before (table in bank 0,
-      already in base space)?
-
 - [ ] **`grm-oiu`** — compare tmnt's argument recovery at `cea7` against an unguarded MMC1 helper
       (`blmaster e63c`, `cv2 c187`). Walking back from tmnt's first `STA` hits `ROR $F0`, an RMW to
       memory; `grm-hum` records that `StoredValueScanner` aborts when it steps over a *mechanism*
@@ -211,4 +203,5 @@ Agents can't file these — they need an account and CLA agreement.
 | Does tmnt's `$F0` guard interleave with the serial chain? | No — it brackets it. Chain is contiguous and standard | `grm-oiu` (premise disproven, dropped to P3) |
 | Is the wrapper idiom an MMC1 artifact? | No — wizwarr's AxROM single-write latch has it too | `grm-2dr` |
 | Does `grm-izu` explain `grm-lwu`? | Yes, via the POISON branch, not the unknown-commit one. `c2a1 → dec2 → df05 → e61b → e63c`; `e61b` round-trips A through `$DB`, so bit 7 is unresolvable and the chain poisons every field — mirroring included. Fixed at strategy level (`effectDependsOnPriorState()`); blmaster 90 → 24 warnings, exactly as predicted | `grm-izu` **closed** |
+| How big is blmaster's `c9a4` prize? | **~281 targets** — ~136 entries in bank 4, ~145 in bank 6, on a title currently at 0 refs / 0 instrs in overlay. Tables live in the *switched* window (bank switch precedes the first pointer fetch), so nothing is readable before the merge is solved. Targets stay in-bank, so retargeting is unambiguous once the bank is known. Table base differs per bank (`4:$8006` / `6:$8002`), which argues for path-forking over set-valued state | `grm-wul` |
 | `grm-78b` root cause: (a) over-extension or (b) seeding gap? | (a). RESET → `fff4` (`INC RESET`, the MMC1 reset idiom) → `JMP f23b`, so `f23b` **is** referenced; `FUN_f1ca`'s body simply claimed those bytes first by running past the always-looping pair at `f237`. Acceptance amended — `f23b` is a JMP target, so it should belong to the RESET function, not become standalone | `grm-78b` |
