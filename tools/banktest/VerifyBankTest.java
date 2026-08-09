@@ -274,7 +274,10 @@ public class VerifyBankTest extends GhidraScript {
 		dump();
 		checkGameIdentity();
 
-		if (name.contains("neswrappertest")) {
+		if (name.contains("nesrelaytest")) {
+			checkNesRelayTest();
+		}
+		else if (name.contains("neswrappertest")) {
 			checkNesWrapperTest();
 		}
 		else if (name.contains("nesmmc1overridetest")) {
@@ -3227,6 +3230,141 @@ public class VerifyBankTest extends GhidraScript {
 			"instruction exists at W8000_M3_B4::8000");
 		criterion("M10:WC000_M2_B7_C300", hasInstructionAt("WC000_M2_B7", 0xC300),
 			"instruction exists at WC000_M2_B7::C300");
+	}
+
+	// ------------------------------------------------------------------
+	// nesrelaytest.nes criteria (REAL machines/nes-mmc1.yaml board, bead grm-2dr
+	// increment 2: call-edge-wrapper recognition)
+	// ------------------------------------------------------------------
+	//
+	// DESIGN NOTE: a call-edge wrapper is a function that (a) writes no mechanism itself,
+	// (b) reaches a real bank-switch helper by an interior JSR rather than by falling
+	// through into it, (c) makes exactly ONE such call, and (d) reaches that call
+	// unconditionally with the caller's argument register intact. blmaster's FUN_e61b is
+	// the real-ROM shape: `STA $DB` on entry, A reloaded from that shadow, then
+	// `$e627 JSR $e63c` into the MMC1 chain -- twelve call sites, none of them recovered
+	// before this increment.
+	//
+	// ADMISSION TAKES TWO GATES AND R6/R7 PIN THEM SEPARATELY, because neither subsumes
+	// the other. The structural gate (isPassThroughInto over the prefix) proves the relay
+	// is reached UNCONDITIONALLY; the value gate (argumentSurvivesPrologue over two
+	// segments) proves the caller's byte is still in the argument register when the
+	// helper reads it. R6 in particular is the case that is easy to get wrong: a branch
+	// does NOT make argumentSurvivesPrologue decline -- a nonzero getFlows() only clears
+	// its straight-line state and the walk continues -- so branch_pred passes the VALUE
+	// gate and must be rejected by the STRUCTURAL one.
+	//
+	// Separate fixture from neswrappertest.nes on purpose: THAT golden staying
+	// byte-identical is the proof increment 2 left increment 1's pass-through
+	// recognition alone.
+	private void checkNesRelayTest() {
+		// Addresses per tools/banktest/mknesbanktest.py's make_prg_relay() label dump:
+		// relay_wrapper=$C100, relay_wrapper_jsr=$C104, two_call_pred=$C120,
+		// nonhelper_pred=$C140, branch_pred=$C160, branch_pred_ldx=$C162,
+		// branch_pred_jsr=$C164, clobber_pred=$C180, clobber_pred_jsr=$C182,
+		// harmless_target=$C1A0, relay_helper=$C200, helper_b=$C214,
+		// helper_branch=$C228, helper_clobber=$C23C, reset=$C000, f_reset=$C002,
+		// r1_imm=$C005, r1_jsr=$C007, r1_use_jsr=$C00A, r2_imm=$C00D, r2_jsr=$C00F,
+		// r2_use_jsr=$C012, r3_imm=$C015, r3_jsr=$C017, r4_imm=$C01A, r4_jsr=$C01C,
+		// r5_imm=$C01F, r5_jsr=$C021, r6_imm=$C024, r6_jsr=$C026, direct1_imm=$C029,
+		// direct1_jsr=$C02B, direct2_imm=$C02E, direct2_jsr=$C030, direct3_imm=$C033,
+		// direct3_jsr=$C035, direct4_imm=$C038, direct4_jsr=$C03A, idle=$C03D,
+		// rti=$C040.
+
+		// R1: the reset dance (LDA #$80 / STA $8000) at $C002 forces prg_mode=3 known --
+		// sanity-checks the fixture's own base state before anything relay-specific.
+		String c = eol(0xC002);
+		criterion("R1", c.contains("prg_mode=3") && !c.contains("?"),
+			"reset dance -> prg_mode=3 known at c002: \"" + c + "\"");
+
+		// R2: THE LOAD-BEARING CHECK for this increment. Call site R1's JSR $C100 at
+		// $C007 lands on relay_wrapper -- `STA $22` / `LDA $22` / `JSR relay_helper`,
+		// which writes no mechanism and reaches the real helper by a CALL, not a
+		// fallthrough. The argument (prg_bank=3, from the immediate at $C005) must
+		// resolve through the relay, carrying a "via" annotation.
+		c = eol(0xC007);
+		criterion("R2", c.contains("bank -> ") && c.contains("prg_bank=3") &&
+			!c.contains("?") && c.contains("via"),
+			"call-edge-wrapper call resolves prg_bank=3 via the wrapper, no '?', at " +
+				"c007: \"" + c + "\"");
+
+		// R2b: load-bearing -- the JSR $8000 right after it, at $C00A, retargets to
+		// W8000_M3_B3 (bank 3 is non-home). A recovered value nothing retargets against
+		// would not be worth much.
+		Reference r = findOverlayRef(0xC00A, "W8000_M3_B3", 0x8000);
+		criterion("R2b", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $8000 (prg_bank=3, via call-edge wrapper) retargeted to W8000_M3_B3 " +
+				"overlay, primary: " + describe(r));
+
+		// R3: the SAME wrapper with a distinct immediate (prg_bank=6), proving the
+		// resolution tracks each call site's own argument rather than caching the first.
+		c = eol(0xC00F);
+		criterion("R3", c.contains("bank -> ") && c.contains("prg_bank=6") &&
+			!c.contains("?") && c.contains("via"),
+			"call-edge-wrapper call (2nd, distinct immediate) resolves prg_bank=6 via " +
+				"the wrapper, no '?', at c00f: \"" + c + "\"");
+
+		// R3b: load-bearing -- the JSR $8000 at $C012 retargets to W8000_M3_B6.
+		r = findOverlayRef(0xC012, "W8000_M3_B6", 0x8000);
+		criterion("R3b", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $8000 (prg_bank=6, via call-edge wrapper) retargeted to W8000_M3_B6 " +
+				"overlay, primary: " + describe(r));
+
+		// R4: negative control -- two_call_pred makes TWO known-helper calls, so the
+		// effect at its return is not either helper's and it must not be admitted. This
+		// is the same rule that keeps blmaster's FUN_eb98 out.
+		c = eol(0xC017);
+		criterion("R4", !c.contains("bank -> "),
+			"two-helper-call predecessor is NOT admitted as a wrapper at c017: \"" + c +
+				"\"");
+
+		// R5: negative control -- nonhelper_pred's only call is to a lone RTS, so there
+		// is no relay to key on and the call stays ordinary.
+		c = eol(0xC01C);
+		criterion("R5", !c.contains("bank -> "),
+			"non-helper-call predecessor is NOT admitted as a wrapper at c01c: \"" + c +
+				"\"");
+
+		// R6: THE STRUCTURAL GATE, and the case the value gate cannot catch. branch_pred
+		// is `BNE +2` / `LDX #$00` / `JSR helper_branch`: nothing writes A, so
+		// argumentSurvivesPrologue ACCEPTS the prefix, but the relay is only conditionally
+		// reached and admitting it would rest every claim about the wrapper's effect on a
+		// call that might not run.
+		c = eol(0xC021);
+		criterion("R6", !c.contains("bank -> "),
+			"branching predecessor is NOT admitted (structural gate; the value gate " +
+				"accepts it) at c021: \"" + c + "\"");
+
+		// R7: THE VALUE GATE. clobber_pred is structurally a perfect pass-through into
+		// its relay, but `LDA #$01` eats the caller's argument first, so the caller's
+		// byte is not this helper's argument and must not be deposited.
+		c = eol(0xC026);
+		criterion("R7", !c.contains("bank -> "),
+			"argument-clobbering predecessor is NOT admitted (value gate) at c026: \"" +
+				c + "\"");
+
+		// R7b: anti-vacuity for R7 -- clobber_pred's OWN inner call at $C182 carries the
+		// value it supplied (prg_bank=1) and must still resolve. Without this, R7 would
+		// pass just as well if helper_clobber were simply broken.
+		c = eol(0xC182);
+		criterion("R7b", c.contains("bank -> ") && c.contains("prg_bank=1") &&
+			!c.contains("?"),
+			"clobber_pred's own inner call still resolves prg_bank=1 at c182: \"" + c +
+				"\"");
+
+		// R8-R11: fixture integrity. Every helper is also called directly, so each gets
+		// its own Ghidra Function and resolves as an ordinary helper call. This is what
+		// makes R4-R7 evidence about the PREDECESSORS' shapes rather than about their
+		// helpers being broken.
+		int[][] directs = { { 0xC02B, 2 }, { 0xC030, 5 }, { 0xC035, 1 }, { 0xC03A, 4 } };
+		for (int i = 0; i < directs.length; i++) {
+			c = eol(directs[i][0]);
+			criterion("R" + (8 + i),
+				c.contains("bank -> ") && c.contains("prg_bank=" + directs[i][1]) &&
+					!c.contains("?"),
+				"direct helper call resolves prg_bank=" + directs[i][1] + " at " +
+					Integer.toHexString(directs[i][0]) + ": \"" + c + "\"");
+		}
 	}
 
 	// ------------------------------------------------------------------

@@ -1706,6 +1706,236 @@ def make_prg_wrapper():
     return bytes(prg), labels
 
 
+def make_prg_relay():
+    """Call-edge-wrapper fixture (bead grm-2dr, increment 2) for the REAL
+    machines/nes-mmc1.yaml board (iNES mapper 1).
+
+    A SEPARATE ROM from neswrappertest.nes on purpose, for the same reason that one is
+    separate from nesmmc1test.nes: `neswrappertest.dump` staying byte-identical is the
+    proof that increment 2 did not disturb increment 1's pass-through recognition, and
+    extending it would destroy exactly that signal.
+
+    Exercises BoardBankAnalyzer.findCallEdgeWrappers: a function that (a) writes no
+    mechanism itself, (b) reaches a real bank-switch helper by an interior JSR rather
+    than by falling through into it, (c) makes exactly ONE such call, and (d) reaches
+    that call unconditionally with the caller's argument register intact, must now have
+    calls landing on IT resolve their bank argument. blmaster's FUN_e61b is the real-ROM
+    shape: `STA $DB` on entry, A reloaded from that shadow, then `$e627 JSR $e63c` into
+    the MMC1 chain -- twelve call sites, none of them recovered before this.
+
+    ADMISSION NEEDS TWO GATES AND THE NEGATIVE CONTROLS BELOW PIN BOTH SEPARATELY,
+    because neither subsumes the other. `branch_pred` is the important one: a branch does
+    NOT make argumentSurvivesPrologue decline (a nonzero getFlows() only clears its
+    straight-line state and the walk continues), so a prefix that branches around the
+    relay but never touches A passes the VALUE gate and must be rejected by the
+    STRUCTURAL one (isPassThroughInto over the prefix).
+
+    Regions, each its own `_Asm` with an explicit base address. Unlike
+    make_prg_wrapper()'s, these do NOT need to abut -- the relay is a JSR, so the helpers
+    live in their own block:
+
+      relay_wrapper @ $C100: `STA $22` / `LDA $22` / `JSR relay_helper` / `RTS` -- the
+             blmaster shape and the only ADMITTED function here. The store/reload pair is
+             load-bearing: it is what grm-mu7's argumentCells/argumentReloadSource model
+             recognizes, and without it the `LDA` would read as a plain clobber.
+      two_call_pred @ $C120: `JSR relay_helper` / `JSR helper_b` / `RTS` -- negative
+             control: TWO known-helper calls, so the effect at its return is not either
+             helper's. This is the rule that also keeps blmaster's FUN_eb98 out.
+      nonhelper_pred @ $C140: `JSR harmless_target` / `RTS` -- negative control: calls
+             something that is not a helper at all, so there is no relay to key on and
+             the call stays ordinary.
+      branch_pred @ $C160: `BNE +2` / `LDX #$00` / `JSR helper_branch` / `RTS` --
+             negative control for the STRUCTURAL gate specifically. Nothing here writes
+             A, so the value gate accepts the prefix; the branch must reject it anyway,
+             because the relay is not reached unconditionally.
+      clobber_pred @ $C180: `LDA #$01` / `JSR helper_clobber` / `RTS` -- negative control
+             for the VALUE gate specifically: structurally a perfect pass-through into
+             its relay, but it eats the caller's argument first, so the caller's byte is
+             not this helper's argument.
+      harmless @ $C1A0: nonhelper_pred's JSR target (a lone RTS).
+      helpers @ $C200: relay_helper, helper_b, helper_branch, helper_clobber -- four
+             ordinary MMC1 chain5($E000)+RTS helpers, one per region above so a rejected
+             predecessor cannot be confused with a broken helper.
+
+    RESET ($C000, same reset dance as make_prg_mmc1()):
+      LDA #$80 / STA $8000             -- prg_mode=3 known.
+
+      LDA #$03 / JSR relay_wrapper     -- R1: MUST resolve prg_bank=3 through the relay.
+      JSR $8000                        -- -> W8000_M3_B3::8000, proving the retarget.
+      LDA #$06 / JSR relay_wrapper     -- R2: SAME wrapper, distinct immediate ->
+                                          prg_bank=6, so the recovery is per-call-site
+                                          rather than a constant folded onto the wrapper.
+      JSR $8000                        -- -> W8000_M3_B6::8000.
+
+      LDA #$07 / JSR two_call_pred     -- R3: must NOT resolve (exactly-one rule).
+      LDA #$07 / JSR nonhelper_pred    -- R4: must NOT resolve (no helper call at all).
+      LDA #$05 / JSR branch_pred       -- R5: must NOT resolve (structural gate).
+      LDA #$03 / JSR clobber_pred      -- R6: must NOT resolve (value gate).
+
+      LDA #$02 / JSR relay_helper      -- fixture integrity: every helper is also called
+      LDA #$05 / JSR helper_b             directly, so each gets its own Ghidra Function
+      LDA #$01 / JSR helper_branch        and resolves normally. This is what proves the
+      LDA #$04 / JSR helper_clobber       negative controls fail on their OWN shape
+                                          rather than because their helper is broken.
+      JMP $<self>                      -- idle loop.
+      RTI                              -- NMI/IRQ handler.
+    """
+    prg = bytearray([0x00] * MMC1_PRG_SIZE)
+
+    for bank in range(MMC1_BANKS):
+        prg[bank * PRG_BANK_SIZE] = bank  # bank marker, matching make_prg_mmc1()
+
+    # JSR $8000 targets for the two RESOLVING call sites (R1/R2): RTS, replacing the
+    # marker byte, as in make_prg_mmc1(). Banks reached only by the fixture-integrity
+    # direct calls need no RTS -- nothing retargets against them.
+    prg[3 * PRG_BANK_SIZE] = 0x60  # W8000_M3_B3::8000 (relay wrapper, call A)
+    prg[6 * PRG_BANK_SIZE] = 0x60  # W8000_M3_B6::8000 (relay wrapper, call B)
+
+    bank7_base = 7 * PRG_BANK_SIZE
+
+    def put7(cpu_addr, data):
+        off = bank7_base + (cpu_addr - 0xC000)
+        prg[off:off + len(data)] = bytes(data)
+
+    labels = {}
+
+    # --- helpers @ $C200: four ordinary MMC1 helpers, built first so the predecessor
+    # regions below can reference their labels rather than bare literals ---
+    helpers = _Asm(prg, 0xC200, bank7_base + 0x200)
+    labels['relay_helper'] = helpers.label()
+    helpers.chain5(0xE000)
+    helpers.rts()
+    labels['helper_b'] = helpers.label()
+    helpers.chain5(0xE000)
+    helpers.rts()
+    labels['helper_branch'] = helpers.label()
+    helpers.chain5(0xE000)
+    helpers.rts()
+    labels['helper_clobber'] = helpers.label()
+    helpers.chain5(0xE000)
+    helpers.rts()
+
+    # --- harmless @ $C1A0: nonhelper_pred's JSR target ---
+    harmless = _Asm(prg, 0xC1A0, bank7_base + 0x1A0)
+    labels['harmless_target'] = harmless.label()
+    harmless.rts()
+
+    # --- relay_wrapper @ $C100: THE POSITIVE CASE (blmaster FUN_e61b's shape) ---
+    relay = _Asm(prg, 0xC100, bank7_base + 0x100)
+    labels['relay_wrapper'] = relay.label()
+    relay.sta_zp(0x22)                        # stash the caller's bank in the shadow
+    relay.lda_zp(0x22)                        # reload it -- the save/restore pair
+    labels['relay_wrapper_jsr'] = relay.label()
+    relay.jsr(labels['relay_helper'])         # the relay call
+    relay.rts()
+
+    # --- two_call_pred @ $C120: negative control -- two known-helper calls ---
+    neg_two = _Asm(prg, 0xC120, bank7_base + 0x120)
+    labels['two_call_pred'] = neg_two.label()
+    neg_two.jsr(labels['relay_helper'])
+    neg_two.jsr(labels['helper_b'])
+    neg_two.rts()
+
+    # --- nonhelper_pred @ $C140: negative control -- the only call is to a non-helper ---
+    neg_non = _Asm(prg, 0xC140, bank7_base + 0x140)
+    labels['nonhelper_pred'] = neg_non.label()
+    neg_non.jsr(labels['harmless_target'])
+    neg_non.rts()
+
+    # --- branch_pred @ $C160: negative control for the STRUCTURAL gate. Nothing writes
+    # A, so the value gate accepts this prefix; the branch must reject it anyway ---
+    neg_branch = _Asm(prg, 0xC160, bank7_base + 0x160)
+    labels['branch_pred'] = neg_branch.label()
+    neg_branch.bne(0xC164)                    # skips the LDX; either way reaches the JSR
+    labels['branch_pred_ldx'] = neg_branch.label()
+    neg_branch.ldx_imm(0x00)                  # deliberately does NOT touch A
+    labels['branch_pred_jsr'] = neg_branch.label()
+    neg_branch.jsr(labels['helper_branch'])
+    neg_branch.rts()
+
+    # --- clobber_pred @ $C180: negative control for the VALUE gate. Structurally a
+    # perfect pass-through into its relay, but it eats the caller's argument first ---
+    neg_clobber = _Asm(prg, 0xC180, bank7_base + 0x180)
+    labels['clobber_pred'] = neg_clobber.label()
+    neg_clobber.lda_imm(0x01)                 # supplies its own value, ignoring the caller
+    labels['clobber_pred_jsr'] = neg_clobber.label()
+    neg_clobber.jsr(labels['helper_clobber'])
+    neg_clobber.rts()
+
+    # --- main @ $C000: RESET flow ---
+    main = _Asm(prg, 0xC000, bank7_base)
+    labels['reset'] = main.label()
+    main.lda_imm(0x80)
+    labels['f_reset'] = main.label()
+    main.sta_abs(0x8000)                      # reset dance: prg_mode=3 known
+
+    # R1: the relay wrapper, call A -- bank 3. MUST resolve.
+    labels['r1_imm'] = main.label()
+    main.lda_imm(0x03)
+    labels['r1_jsr'] = main.label()
+    main.jsr(labels['relay_wrapper'])
+    labels['r1_use_jsr'] = main.label()
+    main.jsr(0x8000)                          # -> W8000_M3_B3::8000
+
+    # R2: SAME wrapper, bank 6 -- proves per-call-site recovery, not a folded constant.
+    labels['r2_imm'] = main.label()
+    main.lda_imm(0x06)
+    labels['r2_jsr'] = main.label()
+    main.jsr(labels['relay_wrapper'])
+    labels['r2_use_jsr'] = main.label()
+    main.jsr(0x8000)                          # -> W8000_M3_B6::8000
+
+    # R3-R6: the four negative controls; none may produce a "bank ->" claim.
+    labels['r3_imm'] = main.label()
+    main.lda_imm(0x07)
+    labels['r3_jsr'] = main.label()
+    main.jsr(labels['two_call_pred'])
+    labels['r4_imm'] = main.label()
+    main.lda_imm(0x07)
+    labels['r4_jsr'] = main.label()
+    main.jsr(labels['nonhelper_pred'])
+    labels['r5_imm'] = main.label()
+    main.lda_imm(0x05)
+    labels['r5_jsr'] = main.label()
+    main.jsr(labels['branch_pred'])
+    labels['r6_imm'] = main.label()
+    main.lda_imm(0x03)
+    labels['r6_jsr'] = main.label()
+    main.jsr(labels['clobber_pred'])
+
+    # Fixture integrity: a direct JSR to every helper's own entry, so each becomes its
+    # own Ghidra Function and resolves as an ordinary helper call. This is what makes the
+    # negative controls above evidence about THEIR shape rather than about their helper.
+    labels['direct1_imm'] = main.label()
+    main.lda_imm(0x02)
+    labels['direct1_jsr'] = main.label()
+    main.jsr(labels['relay_helper'])
+    labels['direct2_imm'] = main.label()
+    main.lda_imm(0x05)
+    labels['direct2_jsr'] = main.label()
+    main.jsr(labels['helper_b'])
+    labels['direct3_imm'] = main.label()
+    main.lda_imm(0x01)
+    labels['direct3_jsr'] = main.label()
+    main.jsr(labels['helper_branch'])
+    labels['direct4_imm'] = main.label()
+    main.lda_imm(0x04)
+    labels['direct4_jsr'] = main.label()
+    main.jsr(labels['helper_clobber'])
+
+    labels['idle'] = main.label()
+    main.jmp(labels['idle'])                  # idle loop
+    labels['rti'] = main.label()
+    main.rti()                                # NMI/IRQ handler
+
+    # Vector table.
+    put7(0xFFFA, [labels['rti'] & 0xFF, (labels['rti'] >> 8) & 0xFF])
+    put7(0xFFFC, [labels['reset'] & 0xFF, (labels['reset'] >> 8) & 0xFF])
+    put7(0xFFFE, [labels['rti'] & 0xFF, (labels['rti'] >> 8) & 0xFF])
+
+    return bytes(prg), labels
+
+
 def make_ines_header(prg_banks, chr_banks, mapper):
     h = bytearray(16)
     h[0:4] = b"NES\x1a"
@@ -2111,6 +2341,37 @@ def main():
           ", ".join("%s=$%04X" % (k, v) for k, v in wlabels.items()))
 
     _write_rom(outdir, "neswrappertest.nes", prgw, mapper=MAPPER_MMC1, prg_banks=MMC1_BANKS)
+
+    # nesrelaytest.nes (bead grm-2dr, increment 2): call-edge-wrapper fixture.
+    prgr, rlabels = make_prg_relay()
+    rbank7_base = 7 * PRG_BANK_SIZE
+    assert len(prgr) == MMC1_PRG_SIZE
+    assert prgr[3 * PRG_BANK_SIZE] == 0x60  # RTS: W8000_M3_B3::8000 (R1)
+    assert prgr[6 * PRG_BANK_SIZE] == 0x60  # RTS: W8000_M3_B6::8000 (R2)
+    # The relay wrapper's shape IS the thing under test: store, reload, then the JSR.
+    assert prgr[rbank7_base + 0x100] == 0x85  # STA zp opcode: relay_wrapper entry
+    assert prgr[rbank7_base + 0x102] == 0xA5  # LDA zp opcode: the reload
+    assert prgr[rbank7_base + 0x104] == 0x20  # JSR opcode: the relay call
+    assert rlabels['relay_wrapper_jsr'] == rlabels['relay_wrapper'] + 4  # 2 + 2 bytes
+    # Unlike a pass-through wrapper, the relay target must NOT abut the wrapper.
+    assert rlabels['relay_helper'] > rlabels['relay_wrapper'] + 8
+    # Negative controls must really be in the shape their names claim.
+    assert prgr[rbank7_base + 0x120] == 0x20  # JSR: two_call_pred's first call
+    assert prgr[rbank7_base + 0x123] == 0x20  # JSR: ...and its second, the disqualifier
+    assert prgr[rbank7_base + 0x160] == 0xD0  # BNE opcode: branch_pred
+    assert prgr[rbank7_base + 0x162] == 0xA2  # LDX imm: does NOT touch A (value gate passes)
+    assert prgr[rbank7_base + 0x164] == 0x20  # JSR: branch_pred's relay
+    assert rlabels['branch_pred_jsr'] == 0xC164  # the BNE's own target: both paths reach it
+    assert prgr[rbank7_base + 0x180] == 0xA9  # LDA imm: clobber_pred eats the argument
+    assert prgr[rbank7_base + 0x182] == 0x20  # JSR: clobber_pred's relay
+    vecr = rbank7_base + 0x3FFA  # CPU $FFFA -> file offset (bank 7 base + $3FFA)
+    assert (prgr[vecr + 2] | (prgr[vecr + 3] << 8)) == rlabels['reset']  # RESET @ $FFFC
+    assert (prgr[vecr + 0] | (prgr[vecr + 1] << 8)) == rlabels['rti']    # NMI @ $FFFA
+    assert (prgr[vecr + 4] | (prgr[vecr + 5] << 8)) == rlabels['rti']    # IRQ @ $FFFE
+    print("nesrelaytest labels: " +
+          ", ".join("%s=$%04X" % (k, v) for k, v in rlabels.items()))
+
+    _write_rom(outdir, "nesrelaytest.nes", prgr, mapper=MAPPER_MMC1, prg_banks=MMC1_BANKS)
 
     # nesbandaitest.nes (bead grm-9ty): Bandai FCG/LZ93D50 register-file decode fixture.
     prgb = make_prg_bandai()

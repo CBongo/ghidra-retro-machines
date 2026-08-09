@@ -260,8 +260,13 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		Listing listing = program.getListing();
 		DataflowResult flow = runDataflow(program, monitor, listing, mechanisms, board, null);
 
-		Map<Function, HelperModel> helpers = findPassThroughWrappers(program,
-			composeTailCalls(program, findHelpers(program, flow.switchResults())),
+		// Order is load-bearing. findCallEdgeWrappers runs LAST so its relay lookups see
+		// pass-through wrappers as helpers; it is also why exitEffect never encounters a relay
+		// model. See findCallEdgeWrappers' javadoc for the one gap this order leaves open.
+		Map<Function, HelperModel> helpers = findCallEdgeWrappers(program,
+			findPassThroughWrappers(program,
+				composeTailCalls(program, findHelpers(program, flow.switchResults())),
+				flow.switchResults()),
 			flow.switchResults());
 		if (!helpers.isEmpty()) {
 			if (verbose) {
@@ -904,7 +909,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				helpers.put(f, new HelperModel(f, f.getEntryPoint(),
 					result.knownMask() == site.effectMask() ? result : null, reg,
 					site.effectMask(), site.lsb(), site.strategy(), entry.getKey(),
-					entry.getKey()));
+					entry.getKey(), null));
 			}
 			else if (existing.effectMask() == site.effectMask() && existing.lsb() == site.lsb()) {
 				BankState constState = existing.constState() != null
@@ -932,7 +937,8 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				Address firstSite = entry.getKey().compareTo(existing.firstSite()) < 0
 						? entry.getKey() : existing.firstSite();
 				helpers.put(f, new HelperModel(f, f.getEntryPoint(), constState, argReg,
-					site.effectMask(), site.lsb(), site.strategy(), switchSite, firstSite));
+					site.effectMask(), site.lsb(), site.strategy(), switchSite, firstSite,
+					null));
 			}
 			else {
 				// Sites in this helper belong to different mechanisms -- degrade to the
@@ -942,7 +948,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				// there makes midBodyEntryHelper decline, which is the right answer for a model
 				// that no longer describes one coherent mechanism.
 				helpers.put(f, new HelperModel(f, f.getEntryPoint(), null, null,
-					existing.effectMask() | site.effectMask(), 0, null, null, null));
+					existing.effectMask() | site.effectMask(), 0, null, null, null, null));
 			}
 		}
 		return helpers;
@@ -1022,7 +1028,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			// none of them (runDataflow uses constState directly), and a decline needs none
 			// either (recoverCallArgument short-circuits on the null argReg).
 			composed.put(f, new HelperModel(f, f.getEntryPoint(), effect.constState(), null,
-				effect.effectMask(), 0, null, null, null));
+				effect.effectMask(), 0, null, null, null, null));
 		}
 		return composed;
 	}
@@ -1140,11 +1146,13 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * {@code LDA #$01} / {@code STA $0103} / {@code PLA} save-restore pair resolves exactly
 	 * as it already does today.
 	 * <p>
-	 * <b>OUT OF SCOPE, deliberately:</b> blmaster's {@code FUN_e61b} reaches its helper by
+	 * <b>NOT HANDLED HERE, deliberately:</b> blmaster's {@code FUN_e61b} reaches its helper by
 	 * an internal {@code JSR}, so it is not address-contiguous with it. {@link
 	 * #isPassThroughInto}'s {@code getFlows().length == 0} condition (a call's flows include
 	 * its target) excludes that BY CONSTRUCTION -- there is no special case for it here, and
-	 * there should not be one.
+	 * there should not be one. That edge is {@link #findCallEdgeWrappers}' job (grm-2dr
+	 * increment 2), which reuses this method's sibling predicate on the wrapper's PREFIX rather
+	 * than widening this one.
 	 * <p>
 	 * {@code switchResults} is threaded through so "the wrapper writes no mechanism" is
 	 * asserted LOCALLY, against the same map the rest of this analysis already trusts,
@@ -1219,9 +1227,9 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * for a disassembly gap in the wrapper's body -- this method is the only place that
 	 * does.</li>
 	 * <li>{@code instr.getFlows().length == 0} -- no branch, no jump, and no {@code JSR} (a
-	 * call's flows include its target). This is what excludes blmaster's {@code FUN_e61b} by
-	 * construction, since it reaches its helper via an internal {@code JSR} rather than a
-	 * fallthrough.</li>
+	 * call's flows include its target). This is what keeps blmaster's {@code FUN_e61b} out of
+	 * {@link #findPassThroughWrappers} by construction, since it reaches its helper via an
+	 * internal {@code JSR} rather than a fallthrough.</li>
 	 * <li>{@code !instr.getFlowType().isTerminal()} -- NOT redundant with the flows check
 	 * above: {@code RTS}/{@code RTI} have zero flows too, and neither falls through
 	 * anywhere.</li>
@@ -1238,6 +1246,15 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * a pass-through. Package-private static, not private, so a JUnit test can pin it
 	 * directly, following the precedent of {@link #reachableEntries} and
 	 * {@link #argumentSurvivesPrologue}.
+	 * <p>
+	 * <b>{@code target} has TWO meanings, by two callers</b> (grm-2dr increment 2).
+	 * {@link #findPassThroughWrappers} passes a wrapped HELPER'S ENTRY, asking "does this
+	 * wrapper fall straight into that helper?". {@link #findCallEdgeWrappers} passes a CALL SITE
+	 * INSIDE the wrapper's own body, asking "does control reach that call unconditionally, with
+	 * nothing bank-relevant happening first?". The predicate is identical for both because the
+	 * question is: every step from the entry to here is plain, disassembled, inert
+	 * fallthrough. In the second use the body-max bound never binds -- the target lies inside
+	 * the body, so the walk returns on reaching it.
 	 * <p>
 	 * <b>Why bounding the walk by {@code getBody()} is safe, and not merely convenient.</b>
 	 * Ghidra function bodies CANNOT OVERLAP: both {@code FunctionManagerDB.createFunction}
@@ -1295,6 +1312,153 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			cursor = next;
 		}
 		return false;
+	}
+
+	/**
+	 * {@code helpers}, plus every CALL-EDGE wrapper of one: a function that writes no mechanism
+	 * itself and reaches a real helper by an interior {@code JSR} rather than by falling through
+	 * into it (bead grm-2dr increment 2). The sibling of {@link #findPassThroughWrappers}, for
+	 * the edge that one excludes by construction.
+	 * <p>
+	 * blmaster's {@code FUN_e61b} is the shape the increment exists for -- twelve call sites, and
+	 * before this every one of them silently unrecovered:
+	 * <pre>
+	 *   e61b  STA $DB        ; stash the caller's requested PRG bank in the shadow
+	 *         ...            ; straight-line, reloads A from $DB
+	 *   e627  JSR $e63c      ; the relay -- FUN_e63c is the real MMC1 serial-shift helper
+	 *         ...            ; calls FUN_eb98 in a loop
+	 *         RTS
+	 * </pre>
+	 * Call RECOGNITION already worked: the golden warned at {@code e627} naming
+	 * {@code FUN_e63c}. What failed was ARGUMENT recovery, because the caller's {@code LDA #imm}
+	 * is two frames from the store and {@code e61b} was not a helper, so nothing looked.
+	 * <p>
+	 * <b>TWO gates, and the second does not subsume the first.</b>
+	 * <ul>
+	 * <li>STRUCTURAL: {@link #isPassThroughInto} with {@code target} = the relay call site. The
+	 * reuse is exact rather than opportunistic -- <em>the prefix of a call-edge wrapper, up to
+	 * its relay call, is precisely a pass-through into that call site</em> -- and it is what
+	 * proves the relay is REACHED UNCONDITIONALLY. Its body-max bound is harmless because the
+	 * call site is inside the body, so the walk lands on it and returns first.</li>
+	 * <li>VALUE: {@link #argumentSurvivesPrologue} over {@link #prologueSegments}, which proves
+	 * the caller's byte is still in {@code argReg} when the helper's first site reads it. On
+	 * blmaster this is exactly the {@code argumentCells}/{@code argumentReloadSource}
+	 * save-restore model (grm-mu7 increment 2) recognizing the {@code STA $DB} / {@code LDA $DB}
+	 * pair -- the same machinery that made cv2's {@code STA $1C} / {@code LDA $1C} work in
+	 * increment 1.</li>
+	 * </ul>
+	 * <b>The value gate alone would be unsound, which is not obvious.</b> A branch does NOT make
+	 * {@link #argumentSurvivesPrologue} decline: a nonzero {@code getFlows().length} only clears
+	 * {@code straightLine} and {@code argumentCells}, and the walk CONTINUES. A prefix that
+	 * branches around the relay call but never writes {@code argReg} would pass it -- and then
+	 * every claim below about the wrapper's effect would rest on a call that might not run.
+	 * <p>
+	 * A tail {@code JMP} that Ghidra's shared-return analysis retyped {@code CALL_TERMINATOR}
+	 * reports {@code isCall()} and counts as a relay. It is the SOUNDER case: control never
+	 * returns to the wrapper, so there is no post-relay body to assume anything about.
+	 * <p>
+	 * <b>What is checked versus what is ASSUMED.</b> Checked: the prefix is inert and
+	 * unconditional; no recognized mechanism write appears ANYWHERE in the wrapper's body (the
+	 * whole body, not just the prefix -- a write after the relay would make the wrapper's effect
+	 * not the helper's); no SECOND known-helper call appears there either. Assumed: that calls
+	 * after the relay to functions this engine does not model as helpers are bank-neutral.
+	 * <p>
+	 * <b>{@code FUN_eb98} is the load-bearing instance of that assumption and it holds BY
+	 * ACCIDENT, not by construction.</b> {@code e61b}'s loop calls it; {@code eb98} itself
+	 * {@code JSR}s {@code e63c} twice -- {@code ec53} with a constant 5 for the duration of some
+	 * work, then {@code ec5b} with the {@code $DB} value to put the requested bank back. The net
+	 * effect at {@code e61b}'s return is the requested bank, so the model is right; it would not
+	 * be if the restore were missing. {@code eb98} escapes admission here twice over: it
+	 * contains no mechanism write, so {@link #findHelpers} never sees it, and it makes TWO
+	 * known-helper calls, so the exactly-one rule rejects it as a wrapper. Both facts are
+	 * load-bearing for {@code e61b} -- were {@code eb98} ever a helper, {@code e61b} would see
+	 * two relay candidates and be rejected, which would then be the correct conservative answer.
+	 * <p>
+	 * This EXTENDS an existing standard rather than introducing a new unsoundness:
+	 * {@link #runDataflow} already folds a call to a non-helper as a no-op on bank state, and
+	 * {@link #composeTailCalls} already writes that down for the tail-call case. But the
+	 * extension is real and worth naming -- increment 1 CHECKED inertness per instruction over
+	 * the whole wrapper body, while this checks it over the prefix and ASSUMES it over the tail.
+	 * <p>
+	 * {@link #exitEffect} is not reusable here, for a one-sentence reason: it composes effects at
+	 * a function's EXIT instructions and deliberately nulls {@code argReg}/{@code strategy}/
+	 * {@code switchSite} because they describe a body its result no longer summarizes -- while a
+	 * relay is MID-BODY and exists precisely to PRESERVE {@code argReg} so the caller's value can
+	 * be recovered. The two machineries want opposite things from the same fields.
+	 * <p>
+	 * <b>ONE ROUND, and the exactly-one count is taken against the IMMUTABLE INPUT map.</b> That
+	 * is a correctness requirement, not a budget: the exactly-one rule is NON-MONOTONE in the
+	 * helper set, so admitting X could flip Y's count from one to two and turn an admission into
+	 * a rejection. With rounds, the answer would depend on candidate iteration order -- the same
+	 * class of bug increment 1's snapshot guards against, but one a snapshot alone does NOT fix,
+	 * since the snapshot would grow between rounds. Counting against the input makes this a
+	 * PURE, ORDER-INDEPENDENT function of its arguments. Note the contrast with
+	 * {@link #findPassThroughWrappers}, which looks similar but whose termination is STRUCTURAL
+	 * with {@link #MAX_WRAPPER_CHAIN} merely a policy cap; here termination is trivially one
+	 * pass.
+	 * <p>
+	 * Runs LAST in the helper-discovery chain, so it sees the richest helper set -- a relay
+	 * landing on a pass-through wrapper admitted by increment 1 resolves through
+	 * {@link #calledHelper} and counts toward the exactly-one tally. The converse, a pass-through
+	 * wrapper OF a call-edge wrapper, is not reachable under this order; that is a documented gap
+	 * with no measured instance, cheaply closed later by a second
+	 * {@link #findPassThroughWrappers} call, which would stay deterministic because call-edge
+	 * decisions are fixed by then. A wrapped model that ALREADY carries a relay is rejected: the
+	 * prologue would need three segments, and {@link #prologueSegments} expresses two.
+	 */
+	private Map<Function, HelperModel> findCallEdgeWrappers(Program program,
+			Map<Function, HelperModel> helpers, Map<Address, SwitchResult> switchResults) {
+		Map<Function, HelperModel> result = new LinkedHashMap<>(helpers);
+		// Address-ordered and materialized before use, matching findPassThroughWrappers'
+		// List.copyOf discipline: the enumeration must not depend on live map or iterator state.
+		List<Function> candidates = new ArrayList<>();
+		program.getFunctionManager().getFunctions(true).forEach(candidates::add);
+		Listing listing = program.getListing();
+		for (Function wrapper : candidates) {
+			// helpers, never result: the count that decides admission is taken against the
+			// immutable input, which is what makes this pass order-independent.
+			if (helpers.containsKey(wrapper)) {
+				continue;
+			}
+			if (wrapper.getBody().getNumAddressRanges() != 1) {
+				continue;
+			}
+			Address relayCall = null;
+			HelperModel wrapped = null;
+			boolean rejected = false;
+			for (Instruction instr : listing.getInstructions(wrapper.getBody(), true)) {
+				if (switchResults.containsKey(instr.getMinAddress())) {
+					rejected = true; // writes a mechanism -- a helper, not a wrapper
+					break;
+				}
+				if (!instr.getFlowType().isCall()) {
+					continue;
+				}
+				HelperModel target = calledHelper(program, instr, helpers);
+				if (target == null) {
+					continue; // a call to something this engine does not model -- assumed inert
+				}
+				if (relayCall != null) {
+					rejected = true; // a second known-helper call
+					break;
+				}
+				relayCall = instr.getMinAddress();
+				wrapped = target;
+			}
+			if (rejected || relayCall == null || wrapped.relay() != null ||
+				wrapped.argReg() == null || wrapped.firstSite() == null) {
+				continue;
+			}
+			if (!isPassThroughInto(program, wrapper, relayCall, switchResults)) {
+				continue;
+			}
+			HelperModel model = wrapped.atCallEdgeWrapper(wrapper, relayCall);
+			if (!argumentSurvivesPrologue(program, prologueSegments(model), model.argReg())) {
+				continue;
+			}
+			result.put(wrapper, model);
+		}
+		return result;
 	}
 
 	/**
@@ -1471,6 +1635,18 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * -- rather than enumerating every branch target in every helper body. A mid-body entry
 	 * that nothing calls cannot change any answer, and enumerating would mean inventing a rule
 	 * for which of a loop's internal labels count as entry points.
+	 * <p>
+	 * <b>A CALL-EDGE wrapper is declined outright, and the admission test above cannot be
+	 * trusted to do it</b> (bead grm-2dr increment 2). Such a model's {@code firstSite} lives in
+	 * a DIFFERENT function and is therefore greater than every address in {@code owner}'s body,
+	 * so {@code entry > firstSite} is false for every mid-body address in the wrapper --
+	 * including ones PAST the relay call, where the {@code JSR} into the real helper has already
+	 * been skipped and no bank switch happens on that path at all. The test's whole
+	 * justification -- "entering here still runs the body's entire recognized site set" -- does
+	 * not survive a relay, because the site set is not in this body and a branch inside the
+	 * wrapper could route around the call that reaches it. The check is deliberately blunt
+	 * ({@code relay != null}) rather than {@code entry <= relay.callSite()}: nothing measured
+	 * needs the finer rule, and the coarse one cannot be wrong.
 	 */
 	private HelperModel midBodyEntryHelper(Program program, Address entry,
 			Map<Function, HelperModel> helpers) {
@@ -1483,7 +1659,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			return null;
 		}
 		HelperModel model = helpers.get(owner);
-		if (model == null || model.firstSite() == null ||
+		if (model == null || model.relay() != null || model.firstSite() == null ||
 			entry.compareTo(model.firstSite()) > 0) {
 			return null;
 		}
@@ -1566,7 +1742,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// which bits this site owns and poisons only those. Strategies that re-derive the value
 		// inside the helper are exempt; see BankSwitchStrategy.consumesHelperArgument.
 		if ((helper.strategy() == null || helper.strategy().consumesHelperArgument()) &&
-			!argumentSurvivesPrologue(program, helper.entry(), helper.firstSite(), reg)) {
+			!argumentSurvivesPrologue(program, prologueSegments(helper), reg)) {
 			local = valueSuppliedInsideHelper(program, helper, reg, stateMask);
 		}
 		Instruction switchSite = helper.switchSite() == null ? null
@@ -1581,8 +1757,12 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// helper.entry(), not function().getEntryPoint(): the mini-inline scan must stop where
 		// control actually arrived. For a mid-body entry those differ, and stopping at the
 		// function entry would walk the scan back through the very prologue this call skipped.
+		// For a CALL-EDGE wrapper it is the relay's callee entry instead: the scan runs inside
+		// the WRAPPED helper, so stopping at the wrapper's entry would let it run off the
+		// helper's own entry and back into the wrapper's tail (grm-2dr increment 2).
+		Address scanStop = insideHelperEntry(helper);
 		RegisterEnv callerRegs = envCache.computeIfAbsent(callInstr.getMinAddress(),
-			a -> callSiteRegisters(program, callInstr, helper.entry()));
+			a -> callSiteRegisters(program, callInstr, scanStop));
 		BankSwitchStrategy.HelperDeposit deposit = helper.strategy()
 				.depositHelperArgument(program, switchSite, local, localIn, stateMask, callerRegs);
 		BankState positionedValue = position(deposit.value(), helper.lsb(), helper.effectMask());
@@ -1838,7 +2018,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		if (firstSite == null) {
 			return BankState.unknown();
 		}
-		RegisterEnv insideOnly = new RegisterEnv(helper.entry(), BankState.unknown(),
+		RegisterEnv insideOnly = new RegisterEnv(insideHelperEntry(helper), BankState.unknown(),
 			BankState.unknown(), BankState.unknown());
 		return StoredValueScanner.resolveStoredValue(program, firstSite, reg, BankState.unknown(),
 			stateMask, NO_HOOKS, insideOnly);
@@ -1851,6 +2031,103 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * an indexed one ({@link StoredValueScanner#plainAbsoluteTarget} refuses those, since their
 	 * target is runtime-dependent).
 	 */
+	/**
+	 * Where a backward scan that runs INSIDE the helper must stop -- the address control
+	 * arrived at in the body that actually contains {@code firstSite}.
+	 * <p>
+	 * For every ordinary helper, and for a pass-through wrapper, that is {@code entry}: the
+	 * wrapper is address-contiguous with the helper, so one body's worth of addresses runs from
+	 * {@code entry} to {@code firstSite} and stopping at {@code entry} is right. For a CALL-EDGE
+	 * wrapper it is emphatically not: {@code entry} is the WRAPPER's, while {@code firstSite}
+	 * lives in the wrapped helper, and the addresses between them are the wrapper's own tail.
+	 * A scan bounded by the wrapper's entry would run off the helper's entry, walk backwards
+	 * through that tail, and read instructions the call never executed as the helper's prologue
+	 * -- the precise hazard {@link #valueSuppliedInsideHelper}'s javadoc already warns about for
+	 * the unbounded case.
+	 * <p>
+	 * Two consumers: {@link #valueSuppliedInsideHelper}'s {@link RegisterEnv} stop address, and
+	 * the one {@link #recoverCallArgument} hands {@link #callSiteRegisters} for
+	 * {@link BankSwitchStrategy#depositHelperArgument}'s mini-inlining.
+	 */
+	private static Address insideHelperEntry(HelperModel helper) {
+		return helper.relay() == null ? helper.entry() : helper.relay().calleeEntry();
+	}
+
+	/**
+	 * One half-open, linear-by-address stretch {@code [from, to)} of the prologue a call runs
+	 * before the helper's mechanism reads its argument (bead grm-2dr increment 2).
+	 * <p>
+	 * Package-private so a Tier 2 test can construct one; {@code BoardBankAnalyzer}'s own
+	 * records are private, which is what kept increment 1's wrapper tests at the predicate
+	 * level.
+	 */
+	record PrologueSegment(Address from, Address to) {}
+
+	/**
+	 * {@link #argumentSurvivesPrologue} over a prologue that is more than one contiguous span:
+	 * a literal AND, evaluating each segment independently (bead grm-2dr increment 2).
+	 * <p>
+	 * <b>The single-segment case is byte-for-byte unchanged</b> -- same method, same body, same
+	 * answer -- because a one-element list delegates once and returns exactly what the three-
+	 * address form returns. Only a call-edge wrapper ever supplies two.
+	 * <p>
+	 * <b>Resetting the save/restore model between segments is deliberate, and it errs in the
+	 * safe direction.</b> Each delegated call starts with fresh {@code holdsArgument},
+	 * {@code saved}, {@code argumentCells} and {@code straightLine}, so a {@code PHA} in
+	 * segment 1 cannot pair with a {@code PLA} in segment 2, and a cell the argument was stored
+	 * to in segment 1 cannot make a segment-2 load read as a restore. Both refusals
+	 * UNDER-approximate survival, so the cost is at most a missing annotation -- never a
+	 * confidently wrong bank, which this engine treats as strictly worse. blmaster is
+	 * unaffected either way: its {@code STA $DB} and {@code LDA $DB} both live in segment 1.
+	 * <p>
+	 * An EMPTY segment ({@code from.equals(to)}) is trivially true, and that is load-bearing
+	 * rather than incidental: the loop's bound test is {@code cursor < to}, so it never
+	 * executes and the method returns {@code cursor.equals(to) && holdsArgument}. That is
+	 * exactly blmaster's second segment, since {@code FUN_e63c}'s {@code STA $FFFF} IS its entry
+	 * instruction and so its {@code entry} and {@code firstSite} coincide.
+	 * <p>
+	 * An EMPTY LIST is false, not vacuously true -- there is no prologue to have proved
+	 * anything about, and returning true there would hand a strategy a caller's byte on no
+	 * evidence at all.
+	 */
+	static boolean argumentSurvivesPrologue(Program program, List<PrologueSegment> segments,
+			char reg) {
+		if (segments.isEmpty()) {
+			return false;
+		}
+		for (PrologueSegment segment : segments) {
+			if (!argumentSurvivesPrologue(program, segment.from(), segment.to(), reg)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * The stretches of code a call into {@code helper} runs before its mechanism reads the
+	 * argument: one span for an ordinary helper, two for a call-edge wrapper.
+	 * <p>
+	 * DERIVED, not stored on {@link HelperModel}. It is a pure function of {@code entry},
+	 * {@code firstSite} and {@code relay}, all already on the record; storing it would duplicate
+	 * state that {@link HelperModel#atMidBodyEntry} and
+	 * {@link HelperModel#atFallThroughWrapper} re-key underneath, and would drag a list into the
+	 * record's equality.
+	 * <p>
+	 * <b>Why passing the relay's call site as segment 1's END bound does not trip
+	 * {@link #argumentSurvivesPrologue}'s own {@code isCall()} rejection.</b> That loop's bound
+	 * test is {@code cursor.compareTo(to) < 0}, so it STOPS BEFORE INSPECTING the instruction at
+	 * {@code to} -- the relay {@code JSR} is the boundary, never a walked instruction. This
+	 * looks like an accident and is not: it is the whole reason segmenting works without
+	 * touching the predicate.
+	 */
+	private static List<PrologueSegment> prologueSegments(HelperModel helper) {
+		if (helper.relay() == null) {
+			return List.of(new PrologueSegment(helper.entry(), helper.firstSite()));
+		}
+		return List.of(new PrologueSegment(helper.entry(), helper.relay().callSite()),
+			new PrologueSegment(helper.relay().calleeEntry(), helper.firstSite()));
+	}
+
 	private static Address argumentReloadSource(Instruction instr, char reg) {
 		if (!("LD" + reg).equals(instr.getMnemonicString())) {
 			return null;
@@ -3144,11 +3421,21 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * {@link #midBodyEntryHelper}'s admission test (does entering here still run every site?)
 	 * and {@link #argumentSurvivesPrologue}'s walk bound (does the caller's argument survive
 	 * as far as the site that consumes it?). Together with {@code entry} it delimits exactly
-	 * the prologue a given call runs before the mechanism reads its argument.
+	 * the prologue a given call runs before the mechanism reads its argument -- EXCEPT when
+	 * {@code relay} is non-null, which is precisely the case where that stops being one span;
+	 * see {@link Relay} and {@link #prologueSegments}.
+	 * <p>
+	 * <b>{@code relay} is the one field that is not about this helper's own body</b> (bead
+	 * grm-2dr increment 2). It is null for every model {@link #findHelpers},
+	 * {@link #composeTailCalls} and {@link #findPassThroughWrappers} produce, and non-null only
+	 * for a CALL-EDGE wrapper -- a function that writes no mechanism and reaches the real helper
+	 * by an interior {@code JSR} rather than by falling through into it. Every other field is
+	 * then inherited from the wrapped helper and describes ITS body, while {@code entry}
+	 * describes the wrapper's; {@code relay} is what stitches the two together.
 	 */
 	private record HelperModel(Function function, Address entry, BankState constState,
 			Character argReg, int effectMask, int lsb, BankSwitchStrategy strategy,
-			Address switchSite, Address firstSite) {
+			Address switchSite, Address firstSite, Relay relay) {
 
 		/**
 		 * This helper re-keyed to a mid-body {@code entry}, with {@code constState} dropped.
@@ -3164,7 +3451,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		 */
 		HelperModel atMidBodyEntry(Address midBody) {
 			return new HelperModel(function, midBody, null, argReg, effectMask, lsb, strategy,
-				switchSite, firstSite);
+				switchSite, firstSite, relay);
 		}
 
 		/**
@@ -3192,12 +3479,79 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		 * own {@code entry}) -- so it changes no tracked bank bit, and whatever constant this
 		 * helper asserts when entered at the top still holds when entered at the wrapper's
 		 * top instead.
+		 * <p>
+		 * {@code relay} is carried through rather than nulled. Under the phase order at
+		 * {@link #added}'s helper-discovery chain, {@link #findCallEdgeWrappers} runs
+		 * LAST, so this method can never actually see a non-null one today -- but a pass-through
+		 * wrapper OF a call-edge wrapper is address-contiguous and inert, so the first prologue
+		 * segment simply widens to start at the outer wrapper's entry and stays correct.
+		 * Dropping it would be a latent bug the day that order changes.
 		 */
 		HelperModel atFallThroughWrapper(Function wrapper) {
 			return new HelperModel(wrapper, wrapper.getEntryPoint(), constState, argReg,
-				effectMask, lsb, strategy, switchSite, firstSite);
+				effectMask, lsb, strategy, switchSite, firstSite, relay);
+		}
+
+		/**
+		 * This helper re-keyed onto a CALL-EDGE wrapper -- one that reaches it by an interior
+		 * {@code JSR} (or a tail {@code JMP} retyped {@code CALL_TERMINATOR}) rather than by
+		 * falling through into it, for {@link #findCallEdgeWrappers} (bead grm-2dr increment 2).
+		 * blmaster's {@code FUN_e61b} is the shape: {@code STA $DB} on entry, the argument
+		 * reloaded from that shadow, then {@code $e627 JSR $e63c} into the real MMC1 chain.
+		 * <p>
+		 * {@code function} MUST become {@code wrapper} for both reasons
+		 * {@link #atFallThroughWrapper} documents -- {@link #helperLabel}'s "mid-body entry in
+		 * ..." qualifier, and keeping this record's {@code function} equal to its own map key
+		 * for {@link #exitEffect}'s lookup.
+		 * <p>
+		 * <b>The {@link Relay}'s callee entry is {@code entry}, NOT
+		 * {@code function().getEntryPoint()}.</b> If the helper being wrapped is itself a
+		 * pass-through wrapper, {@code entry} is where control actually arrives and is the
+		 * correct start for the second prologue segment; the function's own entry point would
+		 * be the same address only by coincidence.
+		 * <p>
+		 * <b>{@code constState} is INHERITED, and this is the WEAKEST of the three re-keyings.</b>
+		 * Place it on the axis: {@link #atMidBodyEntry} inherits a SUBSET of the body and so must
+		 * drop the constant; {@link #atFallThroughWrapper} inherits a strict SUPERSET (inert
+		 * prefix plus the entire wrapped body) and so inherits it as an IDENTITY; a call-edge
+		 * wrapper is NEITHER, because its body continues after the relay call. Inheriting rests
+		 * on four conditions {@link #findCallEdgeWrappers} checks -- the prefix
+		 * {@code [entry, callSite)} is inert and unconditional, no recognized mechanism write
+		 * appears ANYWHERE in the wrapper's body, no second known-helper call appears there
+		 * either, and the relay call is therefore guaranteed to execute -- plus one it ASSUMES:
+		 * that calls after the relay to functions this engine does not model as helpers are
+		 * bank-neutral. That last one is genuinely weaker than
+		 * {@link #atFallThroughWrapper}'s, where inertness is CHECKED per instruction over the
+		 * whole body rather than assumed over the tail. Inheriting rather than dropping is the
+		 * consistent choice: the same assumption already underwrites the {@code argReg} path,
+		 * so declining it only for the constant would buy nothing.
+		 */
+		HelperModel atCallEdgeWrapper(Function wrapper, Address callSite) {
+			return new HelperModel(wrapper, wrapper.getEntryPoint(), constState, argReg,
+				effectMask, lsb, strategy, switchSite, firstSite, new Relay(callSite, entry));
 		}
 	}
+
+	/**
+	 * A call-edge wrapper's relay: the call instruction inside the wrapper that reaches the real
+	 * bank-switch helper, and the address that call lands on (bead grm-2dr increment 2).
+	 * <p>
+	 * Its whole job is to record that a {@link HelperModel}'s prologue is TWO DISJOINT SPANS
+	 * rather than one. For an ordinary helper the caller's argument has to survive
+	 * {@code [entry, firstSite)}, one linear-by-address stretch. For a call-edge wrapper it has
+	 * to survive {@code [wrapper entry, callSite)} and then {@code [calleeEntry, firstSite)} --
+	 * and the addresses BETWEEN those two spans are the wrapper's own tail, which the call never
+	 * executes on its way in. Walking straight from the wrapper's entry to the helper's first
+	 * site would walk over that tail and read it as prologue, which is why this cannot be
+	 * expressed by re-keying {@code entry} alone the way {@link HelperModel#atFallThroughWrapper}
+	 * does.
+	 * <p>
+	 * Three consumers, all of which would otherwise silently use the wrapper's entry where the
+	 * WRAPPED HELPER's is meant: {@link #prologueSegments}, {@link #valueSuppliedInsideHelper}
+	 * and {@link #callSiteRegisters}'s stop address. A fourth, {@link #midBodyEntryHelper},
+	 * declines outright on a non-null relay.
+	 */
+	private record Relay(Address callSite, Address calleeEntry) {}
 
 	/**
 	 * A resolved call-site switch (for annotation, distinct from direct switches).

@@ -1,0 +1,73 @@
+IDENTITY prg:2e4f25dec4fe41854b95d05d928dcaf7172925f193c26d03c5fbf81e2ab9129a file:427b59b8acda218d05545ce6a7b5f124f228b81dcbc80cd3bf798a87073a2b79
+BLOCK APU_IO 4000-401f overlay=false
+BLOCK PPU_REGS 2000-2007 overlay=false
+BLOCK PRG_RAM 6000-7fff overlay=false
+BLOCK RAM 0000-07ff overlay=false
+BLOCK W8000 8000-bfff overlay=false
+BLOCK W8000_M0_B0 8000-ffff overlay=true
+BLOCK W8000_M0_B1 8000-ffff overlay=true
+BLOCK W8000_M0_B2 8000-ffff overlay=true
+BLOCK W8000_M0_B3 8000-ffff overlay=true
+BLOCK W8000_M0_B4 8000-ffff overlay=true
+BLOCK W8000_M0_B5 8000-ffff overlay=true
+BLOCK W8000_M0_B6 8000-ffff overlay=true
+BLOCK W8000_M0_B7 8000-ffff overlay=true
+BLOCK W8000_M1_B0 8000-ffff overlay=true
+BLOCK W8000_M1_B1 8000-ffff overlay=true
+BLOCK W8000_M1_B2 8000-ffff overlay=true
+BLOCK W8000_M1_B3 8000-ffff overlay=true
+BLOCK W8000_M1_B4 8000-ffff overlay=true
+BLOCK W8000_M1_B5 8000-ffff overlay=true
+BLOCK W8000_M1_B6 8000-ffff overlay=true
+BLOCK W8000_M1_B7 8000-ffff overlay=true
+BLOCK W8000_M2 8000-bfff overlay=true
+BLOCK W8000_M3_B1 8000-bfff overlay=true
+BLOCK W8000_M3_B2 8000-bfff overlay=true
+BLOCK W8000_M3_B3 8000-bfff overlay=true
+BLOCK W8000_M3_B4 8000-bfff overlay=true
+BLOCK W8000_M3_B5 8000-bfff overlay=true
+BLOCK W8000_M3_B6 8000-bfff overlay=true
+BLOCK W8000_M3_B7 8000-bfff overlay=true
+BLOCK WC000 c000-ffff overlay=false
+BLOCK WC000_M2_B0 c000-ffff overlay=true
+BLOCK WC000_M2_B1 c000-ffff overlay=true
+BLOCK WC000_M2_B2 c000-ffff overlay=true
+BLOCK WC000_M2_B3 c000-ffff overlay=true
+BLOCK WC000_M2_B4 c000-ffff overlay=true
+BLOCK WC000_M2_B5 c000-ffff overlay=true
+BLOCK WC000_M2_B6 c000-ffff overlay=true
+BLOCK WC000_M2_B7 c000-ffff overlay=true
+COMMENT c002 bank -> mirroring=0,prg_mode=3,prg_bank=0 [switch-value flow]
+COMMENT c007 bank -> mirroring=0,prg_mode=3,prg_bank=3 via FUN_c100 [switch-value flow]
+COMMENT c00f bank -> mirroring=0,prg_mode=3,prg_bank=6 via FUN_c100 [switch-value flow]
+COMMENT c02b bank -> mirroring=0,prg_mode=3,prg_bank=2 via FUN_c200 [switch-value flow]
+COMMENT c030 bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_c214 [switch-value flow]
+COMMENT c035 bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_c228 [switch-value flow]
+COMMENT c03a bank -> mirroring=0,prg_mode=3,prg_bank=4 via FUN_c23c [switch-value flow]
+COMMENT c182 bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_c23c [switch-value flow]
+BOOKMARK Warning c104
+BOOKMARK Warning c120
+BOOKMARK Warning c123
+BOOKMARK Warning c164
+BOOKMARK Warning c200
+BOOKMARK Warning c204
+BOOKMARK Warning c208
+BOOKMARK Warning c20c
+BOOKMARK Warning c210
+BOOKMARK Warning c214
+BOOKMARK Warning c218
+BOOKMARK Warning c21c
+BOOKMARK Warning c220
+BOOKMARK Warning c224
+BOOKMARK Warning c228
+BOOKMARK Warning c22c
+BOOKMARK Warning c230
+BOOKMARK Warning c234
+BOOKMARK Warning c238
+BOOKMARK Warning c23c
+BOOKMARK Warning c240
+BOOKMARK Warning c244
+BOOKMARK Warning c248
+BOOKMARK Warning c24c
+REF c00a -> W8000_M3_B3::8000 UNCONDITIONAL_CALL primary=true
+REF c012 -> W8000_M3_B6::8000 UNCONDITIONAL_CALL primary=true

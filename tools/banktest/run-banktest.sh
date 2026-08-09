@@ -524,6 +524,12 @@ if selected nes-banking; then
 	# docstring for the real-ROM shapes (Castlevania 2, TMNT) it models.
 	run_one neswrappertest "$WORK/nes/neswrappertest.nes" NesRomLoader
 
+	# grm-2dr increment 2: call-edge-wrapper recognition (a function that reaches its
+	# helper by an interior JSR rather than by falling through). Separate again from
+	# neswrappertest, so THAT golden staying byte-identical remains the proof increment 2
+	# left increment 1 alone -- see make_prg_relay()'s docstring for blmaster's FUN_e61b.
+	run_one nesrelaytest "$WORK/nes/nesrelaytest.nes" NesRomLoader
+
 	run_one nesbandaitest "$WORK/nes/nesbandaitest.nes" NesRomLoader
 
 	# grm-1.7.6: CopyLoopAnalyzer is gated on the descriptor + a 6502/6510 language, not on
