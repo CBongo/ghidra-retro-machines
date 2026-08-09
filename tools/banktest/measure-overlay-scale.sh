@@ -37,18 +37,13 @@ if [ $# -eq 0 ]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# Establishes REPO_ROOT and GRM_TARGET_VERSION, and defines native() etc.
+. "$SCRIPT_DIR/lib/common.sh"
 
 # Default headless path derives from gradle.properties' ghidraTargetVersion (single
 # source of truth for the targeted Ghidra version, bead grm-9r7); GHIDRA_HEADLESS
 # still overrides.
-GRM_TARGET_VERSION="$(sed -n 's/^ghidraTargetVersion=//p' "$REPO_ROOT/gradle.properties")"
-GHIDRA_HEADLESS="${GHIDRA_HEADLESS:-D:/ghidra_${GRM_TARGET_VERSION}_PUBLIC/support/analyzeHeadless.bat}"
-
-# Native (Windows) path form for arguments handed to analyzeHeadless.bat.
-native() {
-	if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else echo "$1"; fi
-}
+grm_default_headless
 
 # Isolation mechanism -- same as run-banktest.sh: relocate the user settings dir
 # (and therefore where analyzeHeadless looks for installed Extensions) to the
@@ -56,20 +51,8 @@ native() {
 # of the shared %APPDATA%/ghidra install. Default matches build-and-test.sh's
 # SETTINGS_BASE derivation exactly (REPO_ROOT/build/ghidra-home); honor an
 # already-exported BANKTEST_SETTINGS_BASE if the caller set one.
-if [ -z "${BANKTEST_SETTINGS_BASE:-}" ]; then
-	if [ -d "$REPO_ROOT/build/ghidra-home" ]; then
-		BANKTEST_SETTINGS_BASE="$REPO_ROOT/build/ghidra-home"
-	else
-		echo "NOTE: $REPO_ROOT/build/ghidra-home not found (run" \
-			"'bash tools/banktest/build-and-test.sh check nes-banking' first to install the" \
-			"isolated extension); falling back to the shared %APPDATA%/ghidra install." >&2
-		BANKTEST_SETTINGS_BASE=
-	fi
-fi
-if [ -n "${BANKTEST_SETTINGS_BASE:-}" ]; then
-	base_native="$(native "$BANKTEST_SETTINGS_BASE")"
-	export GHIDRA_HEADLESS_JAVA_OPTIONS="${GHIDRA_HEADLESS_JAVA_OPTIONS:-} -Dapplication.settingsdir=$base_native -Dapplication.cachedir=$base_native/cache"
-fi
+grm_settings_base_fallback nes-banking
+grm_apply_settings_base
 
 WORK="${MEASURE_WORK_DIR:-$(mktemp -d)}"
 mkdir -p "$WORK"

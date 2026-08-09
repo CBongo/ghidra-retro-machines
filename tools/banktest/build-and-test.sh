@@ -33,10 +33,8 @@
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR" && git rev-parse --show-toplevel)" || {
-	echo "FAIL: could not resolve repo root from $SCRIPT_DIR" >&2
-	exit 1
-}
+# Establishes REPO_ROOT and GRM_TARGET_VERSION, and defines native() etc.
+. "$SCRIPT_DIR/lib/common.sh"
 
 usage() {
 	cat <<EOF
@@ -145,17 +143,8 @@ fi
 
 # Default install derives from gradle.properties' ghidraTargetVersion (the single source of
 # truth for the targeted Ghidra version, bead grm-9r7); GRM_GHIDRA_INSTALL still overrides.
-GRM_TARGET_VERSION="$(sed -n 's/^ghidraTargetVersion=//p' "$REPO_ROOT/gradle.properties")"
-if [ -z "$GRM_TARGET_VERSION" ]; then
-	echo "FAIL: ghidraTargetVersion not found in $REPO_ROOT/gradle.properties" >&2
-	exit 2
-fi
-GRM_GHIDRA_INSTALL="${GRM_GHIDRA_INSTALL:-D:/ghidra_${GRM_TARGET_VERSION}_PUBLIC}"
+grm_default_ghidra_install
 GRADLE="${GRADLE:-/d/gradle-8.13/bin/gradle}"
-
-native() {
-	if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else echo "$1"; fi
-}
 
 # --- 1. Build and pure Gradle checks ------------------------------------
 export GHIDRA_INSTALL_DIR="$GRM_GHIDRA_INSTALL"

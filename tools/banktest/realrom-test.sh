@@ -133,7 +133,8 @@ if [ ${#ROM_DIRS[@]} -eq 0 ]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# Establishes REPO_ROOT and GRM_TARGET_VERSION, and defines native() etc.
+. "$SCRIPT_DIR/lib/common.sh"
 REALROM_DIR="$SCRIPT_DIR/realrom"
 MANIFEST="$REALROM_DIR/manifest.tsv"
 GME_MANIFEST="$REALROM_DIR/manifest-gme.tsv"
@@ -376,29 +377,12 @@ fi
 
 # Default headless path derives from gradle.properties' ghidraTargetVersion (single
 # source of truth); GHIDRA_HEADLESS still overrides.
-GRM_TARGET_VERSION="$(sed -n 's/^ghidraTargetVersion=//p' "$REPO_ROOT/gradle.properties")"
-GHIDRA_HEADLESS="${GHIDRA_HEADLESS:-D:/ghidra_${GRM_TARGET_VERSION}_PUBLIC/support/analyzeHeadless.bat}"
-
-native() {
-	if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else echo "$1"; fi
-}
+grm_default_headless
 
 # Same isolation as measure-overlay-scale.sh: point Ghidra's settings/Extensions dir at
 # the per-worktree build/ghidra-home tree that build-and-test.sh populates.
-if [ -z "${BANKTEST_SETTINGS_BASE:-}" ]; then
-	if [ -d "$REPO_ROOT/build/ghidra-home" ]; then
-		BANKTEST_SETTINGS_BASE="$REPO_ROOT/build/ghidra-home"
-	else
-		echo "NOTE: $REPO_ROOT/build/ghidra-home not found (run" \
-			"'bash tools/banktest/build-and-test.sh check nes-banking' first to install the" \
-			"isolated extension); falling back to the shared %APPDATA%/ghidra install." >&2
-		BANKTEST_SETTINGS_BASE=
-	fi
-fi
-if [ -n "${BANKTEST_SETTINGS_BASE:-}" ]; then
-	base_native="$(native "$BANKTEST_SETTINGS_BASE")"
-	export GHIDRA_HEADLESS_JAVA_OPTIONS="${GHIDRA_HEADLESS_JAVA_OPTIONS:-} -Dapplication.settingsdir=$base_native -Dapplication.cachedir=$base_native/cache"
-fi
+grm_settings_base_fallback nes-banking
+grm_apply_settings_base
 
 if ! command -v sha256sum >/dev/null 2>&1; then
 	echo "ERROR: sha256sum not found on PATH (needed to hash-pin ROMs)." >&2
@@ -414,34 +398,7 @@ fi
 # is unknown (e.g. falling back to the shared %APPDATA% install).
 CACHE_DIR="$REPO_ROOT/build/realrom-cache"
 
-ext_identity() {
-	# Content fingerprint of the installed extension jar(s); see the fuller note
-	# in run-banktest.sh. NOT a file mtime/stamp -- gradle rewrites the dist zip
-	# every build with identical bytecode, so an mtime-based id never matches
-	# across a check->bless pair. unzip -v's CRC-32 column is content-only.
-	local base="${BANKTEST_SETTINGS_BASE:-}" jars loose out
-	[ -n "$base" ] || return 1
-	command -v unzip >/dev/null 2>&1 || return 1
-	jars="$(find "$base" -type f -name '*.jar' -path '*/Extensions/*' 2>/dev/null | LC_ALL=C sort)"
-	[ -n "$jars" ] || return 1
-	# The compiled board descriptors ship LOOSE, as data/machines/*.map next to the jar --
-	# only the two charset maps live inside it. Fingerprinting jars alone therefore missed
-	# the single most common change in this repo: editing machines/nes-*.yaml recompiles a
-	# .map, changes the block/overlay layout the dump records, and left the cache key
-	# identical, so a bless could serve a candidate from before the descriptor change.
-	# sha256sum (not mtime) for the same content-only reason the jar branch uses CRCs.
-	loose="$(find "$base" -type f -path '*/Extensions/*' ! -name '*.jar' 2>/dev/null | LC_ALL=C sort)"
-	out="$( {
-		printf '%s\n' "$jars" | while IFS= read -r j; do
-			unzip -v "$j" 2>/dev/null | awk '$7 ~ /^[0-9a-fA-F]{8}$/ {print $7, $NF}'
-		done
-		[ -z "$loose" ] || printf '%s\n' "$loose" | while IFS= read -r p; do
-			printf '%s %s\n' "$(sha256sum "$p" | cut -d' ' -f1)" "${p#"$base"}"
-		done
-	} | LC_ALL=C sort | sha256sum | cut -d' ' -f1)"
-	[ -n "$out" ] || return 1
-	printf '%s' "$out"
-}
+# ext_identity() lives in lib/common.sh (shared with run-banktest.sh).
 # Compute the extension identity once; empty => caching disabled for this run.
 EXT_ID="$(ext_identity)" || EXT_ID=""
 

@@ -43,11 +43,12 @@
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Establishes REPO_ROOT and GRM_TARGET_VERSION, and defines native() etc.
+. "$SCRIPT_DIR/lib/common.sh"
 EXPECTED_DIR="$SCRIPT_DIR/expected"
 # Default headless path derives from gradle.properties' ghidraTargetVersion (single source of
 # truth for the targeted Ghidra version, bead grm-9r7); GHIDRA_HEADLESS still overrides.
-GRM_TARGET_VERSION="$(sed -n 's/^ghidraTargetVersion=//p' "$SCRIPT_DIR/../../gradle.properties")"
-GHIDRA_HEADLESS="${GHIDRA_HEADLESS:-D:/ghidra_${GRM_TARGET_VERSION}_PUBLIC/support/analyzeHeadless.bat}"
+grm_default_headless
 
 usage() {
 	echo "usage: $0 [check|bless] [chunk ...]" >&2
@@ -113,23 +114,10 @@ if [ -z "$PYTHON" ]; then
 	if command -v python3 >/dev/null 2>&1; then PYTHON=python3; else PYTHON=python; fi
 fi
 
-# Native (Windows) path form for arguments handed to analyzeHeadless.bat.
-native() {
-	if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else echo "$1"; fi
-}
-
-# Isolation mechanism (Ghidra 12.1.2 source):
-#   ApplicationUtilities.getDefaultUserSettingsDir honors -Dapplication.settingsdir
-#   to relocate the user settings dir (and GhidraApplicationLayout.
-#   findExtensionInstallationDirectories reads [settings dir]/Extensions first),
-#   and PROPERTY_CACHE_DIR / -Dapplication.cachedir relocates the user cache
-#   dir similarly. analyzeHeadless.bat appends GHIDRA_HEADLESS_JAVA_OPTIONS to
-#   its VM args, so we can inject both properties per-invocation without
-#   touching any install file. native() must be defined above this point.
-if [ -n "${BANKTEST_SETTINGS_BASE:-}" ]; then
-	base_native="$(native "$BANKTEST_SETTINGS_BASE")"
-	export GHIDRA_HEADLESS_JAVA_OPTIONS="${GHIDRA_HEADLESS_JAVA_OPTIONS:-} -Dapplication.settingsdir=$base_native -Dapplication.cachedir=$base_native/cache"
-fi
+# Relocate the user settings dir (and therefore the Extensions dir) when the
+# caller exported BANKTEST_SETTINGS_BASE; see lib/common.sh for the mechanism.
+# No fallback here: left unset, this run uses the shared %APPDATA% install.
+grm_apply_settings_base
 
 WORK="$(mktemp -d)"
 fail=0
@@ -149,29 +137,9 @@ fail=0
 # identity cannot be established (run standalone against the shared %APPDATA%
 # install with no isolated Extensions tree) or sha256sum/unzip are unavailable,
 # caching is disabled and bless re-imports as before -- correctness over speed.
-REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 CACHE_DIR="$REPO_ROOT/build/banktest-cache"
 
-ext_identity() {
-	# Content fingerprint of the installed extension jar(s), or non-zero if it
-	# cannot be determined (=> caching disabled). NOT a file mtime/stamp: gradle
-	# rewrites the dist zip on every build (new timestamps, identical bytecode),
-	# so an mtime-based id never matches across a check->bless pair. unzip -v's
-	# CRC-32 column depends only on entry content, so hashing the sorted
-	# (CRC, name) pairs across the installed Extensions jars yields an id that is
-	# stable across a no-op rebuild yet changes the moment any compiled class or
-	# bundled data file changes.
-	local base="${BANKTEST_SETTINGS_BASE:-}" jars out
-	[ -n "$base" ] || return 1
-	command -v unzip >/dev/null 2>&1 || return 1
-	jars="$(find "$base" -type f -name '*.jar' -path '*/Extensions/*' 2>/dev/null | LC_ALL=C sort)"
-	[ -n "$jars" ] || return 1
-	out="$(printf '%s\n' "$jars" | while IFS= read -r j; do
-		unzip -v "$j" 2>/dev/null | awk '$7 ~ /^[0-9a-fA-F]{8}$/ {print $7, $NF}'
-	done | LC_ALL=C sort | sha256sum | cut -d' ' -f1)"
-	[ -n "$out" ] || return 1
-	printf '%s' "$out"
-}
+# ext_identity() lives in lib/common.sh (shared with realrom-test.sh).
 # Compute the extension identity once; empty => caching disabled for this run.
 EXT_ID="$(ext_identity)" || EXT_ID=""
 
@@ -204,8 +172,10 @@ cache_key() {
 		# Only fixtures that pass extra headless args run one of the repo's ghidra_scripts/
 		# scripts (via the installed extension), so fold those inputs in ONLY for them -- an
 		# unconditional term would invalidate every other fixture's cached candidate on any
-		# script edit. They need a term of their own because EXT_ID fingerprints the installed
-		# *.jar entries only, and a ghidra_scripts/*.java file ships beside the jar, not in it.
+		# script edit. The term survives grm-9mw's move to the shared loose-inclusive
+		# ext_identity, which DOES now cover the installed ghidra_scripts/*.java, because it
+		# hashes a different thing: the SOURCE tree copy. Editing a script without rebuilding
+		# leaves EXT_ID untouched, so only this term forces the conservative re-import.
 		if [ -n "$hargs" ]; then
 			printf 'hargs:%s\n' "$hargs"
 			printf 'repo_scripts:'
