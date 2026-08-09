@@ -302,6 +302,19 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 		return new HelperDeposit(target.mask(), value);
 	}
 
+	/**
+	 * {@code false}: read the helper's own supplied value at {@code switchSite}, not
+	 * {@code firstSite} (bead grm-67g). Unique to this strategy among those shipped, because it
+	 * is the only one whose helper can carry TWO mechanism writes holding DIFFERENT values --
+	 * the {@code $8000} register-select byte and the {@code $8001} bank byte. See the interface
+	 * javadoc for smb3's {@code FUN_ffc2}, the case where reading {@code firstSite} deposited the
+	 * select byte into a bank field.
+	 */
+	@Override
+	public boolean suppliesHelperValueAtFirstSite() {
+		return false;
+	}
+
 	private Long writesInRange(Instruction instr) {
 		for (Reference ref : instr.getReferencesFrom()) {
 			Address to = ref.getToAddress();

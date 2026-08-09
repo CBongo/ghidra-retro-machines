@@ -206,6 +206,42 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	}
 
 	/**
+	 * Where inside a multi-site helper the HELPER'S OWN supplied value lives, when the caller's
+	 * argument has been ruled out and {@code BoardBankAnalyzer.valueSuppliedInsideHelper} goes
+	 * looking for what the body itself puts there: {@code true} (the default) reads the argument
+	 * register at the helper's {@code firstSite}, {@code false} reads it at {@code switchSite}.
+	 * <p>
+	 * <b>For every single-site mechanism the two are the same instruction</b> (register-write and
+	 * memory-latch record exactly one site per helper), so this question only has teeth for the
+	 * two multi-site shapes -- and they want OPPOSITE answers, which is why it cannot be a
+	 * constant:
+	 * <ul>
+	 * <li>{@code serial-shift} wants {@code firstSite} (the default). Kid Icarus's
+	 * {@code FUN_eb07} is the motivating case: {@code LDA #$0F / STA $9FFF / LSR A / STA $9FFF /
+	 * ...} re-derives each successive write from the first by shifting, so the committed byte is
+	 * the one live at the FIRST write. Reading the last write's register would see {@code $0F}
+	 * already shifted away and report a wrong bank.</li>
+	 * <li>{@code select-data} wants {@code switchSite} (bead grm-67g). It is the first shape
+	 * where one helper carries two mechanism writes holding DIFFERENT values -- MMC3's
+	 * {@code $8000} register-select byte and its {@code $8001} bank byte. smb3's {@code FUN_ffc2}
+	 * is {@code LDA #$47 / STA $0721 / STA $8000 / LDA $0720 / STA $8001}: {@code firstSite}
+	 * holds {@code $47}, the SELECT byte, which is not this deposit's operand at all. Depositing
+	 * it truncated it into the 6-bit {@code r7} field and shipped a confident {@code r7=7} where
+	 * the answer is {@code $1B}.</li>
+	 * </ul>
+	 * <p>
+	 * The invariant to reason from: {@code depositHelperArgument} mini-inlines
+	 * {@code switchSite}, so {@code switchSite} is where the value is CONSUMED. Returning
+	 * {@code true} therefore asserts something extra about the body -- that the value at
+	 * {@code firstSite} is the same one {@code switchSite} commits -- which is true of a
+	 * re-derived chain and false in general. It stays the default only because it is what every
+	 * shipped strategy but this one needs.
+	 */
+	default boolean suppliesHelperValueAtFirstSite() {
+		return true;
+	}
+
+	/**
 	 * Whether {@link #computeSwitch}'s result at a given {@code (program, instr)} pair is
 	 * independent of {@code inState} -- i.e. a pure function of the program and instruction
 	 * alone, safe for the dataflow engine to memoize per-address across worklist dequeues

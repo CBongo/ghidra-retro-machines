@@ -1716,9 +1716,13 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * RAM ({@code LDA $65 / STA $E000}) stores A without ever reading the caller's A, so the
 	 * caller's value is not the argument and depositing it would ship a confident wrong bank.
 	 * {@link #argumentSurvivesPrologue} tests that precondition over {@code entry..firstSite},
-	 * and a failure withholds {@code argValue} (leaving it unknown) rather than short-
-	 * circuiting, so the strategy still decides ownership and only the bits this call really
-	 * writes are poisoned. It is skipped for a strategy that re-derives the value inside the
+	 * and a failure falls through to {@link #valueSuppliedInsideHelper} (grm-cxb) rather than
+	 * short-circuiting, so the strategy still decides ownership and only the bits this call
+	 * really writes are poisoned. That fallback answers with the helper's OWN value where the
+	 * body supplies a constant, and with unknown where it does not -- so a decline is not by
+	 * itself a guarantee of silence, and the site it reads is the strategy's call (bead grm-67g,
+	 * {@link BankSwitchStrategy#suppliesHelperValueAtFirstSite}). It is skipped for a strategy
+	 * that re-derives the value inside the
 	 * helper instead of consuming {@code argValue} -- see
 	 * {@link BankSwitchStrategy#consumesHelperArgument}, and note that memory-latch's Contra
 	 * helper is a prologue-clobber case that must keep resolving.
@@ -2013,14 +2017,21 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 */
 	private static BankState valueSuppliedInsideHelper(Program program, HelperModel helper,
 			char reg, int stateMask) {
-		Instruction firstSite = helper.firstSite() == null ? null
-				: program.getListing().getInstructionAt(helper.firstSite());
-		if (firstSite == null) {
+		// WHICH site to read is the strategy's call, not a constant (bead grm-67g). For every
+		// single-site mechanism these are the same instruction; the two multi-site shapes want
+		// opposite answers, and select-data reading firstSite is what shipped smb3's confident
+		// wrong r7=7 -- firstSite there holds the $8000 register-SELECT byte, not the bank.
+		// See BankSwitchStrategy.suppliesHelperValueAtFirstSite.
+		Address readAt = helper.strategy() == null || helper.strategy().suppliesHelperValueAtFirstSite()
+				? helper.firstSite()
+				: helper.switchSite();
+		Instruction site = readAt == null ? null : program.getListing().getInstructionAt(readAt);
+		if (site == null) {
 			return BankState.unknown();
 		}
 		RegisterEnv insideOnly = new RegisterEnv(insideHelperEntry(helper), BankState.unknown(),
 			BankState.unknown(), BankState.unknown());
-		return StoredValueScanner.resolveStoredValue(program, firstSite, reg, BankState.unknown(),
+		return StoredValueScanner.resolveStoredValue(program, site, reg, BankState.unknown(),
 			stateMask, NO_HOOKS, insideOnly);
 	}
 

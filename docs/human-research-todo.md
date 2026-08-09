@@ -43,37 +43,6 @@ bash tools/banktest/realrom-test.sh nominate H:/emulators/nes/roms   # board-gap
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
-- [ ] **Are rcransom's `f1d0`/`f21d` bank values real, or the same artifact as smb3's `r7=7`?**
-      (`grm-1fv` P2 — **blocks landing `grm-67g`'s fix**, which is written and held uncommitted)
-
-      `grm-67g`'s soundness fix turns these two comments into warnings, and nothing else on the
-      title moves (`bankComments` 40→38, `warnings` 3→5):
-
-          f1d0  bank -> select=6,prg_mode=0,r6=0,r7=1 via FUN_ff07   ->  warning
-          f21d  bank -> select=6,prg_mode=0,r6=0,r7=1 via FUN_ff29   ->  warning
-
-      They were produced by the **same code path** that shipped smb3's confident wrong `r7=7`:
-      MMC3 select-data, value read at the helper's `firstSite`. So the prior is that they are
-      artifacts and the fix is deleting garbage — but that is a prior, and smb3 only got a correct
-      verdict because someone read the ROM instead of reasoning from shape.
-
-      **The question, in the same form the smb3 trace answered:** disassemble `FUN_ff07` and
-      `FUN_ff29`. How many writes into `$8000-$9fff` does each contain, at what parity (even =
-      select, odd = data), and what value reaches each? Does either reload the bank from a RAM
-      shadow the way smb3's `ffc2` does from `$0720`? At `f1d0`/`f21d`, what is in `A`, and is
-      there a `LDA #bank ; STA <shadow>` before the call?
-
-      **One thing to check regardless of provenance:** `select=6` routes a data write to **R6**, so
-      a comment that selects 6 while naming **`r7`** looks wrong on its face.
-
-      Context: `grm-8iy.4` already records that rcransom has zero constant-arg call sites and that
-      its real PRG switching is `FUN_ff07`/`FUN_ff29` with undeterminable writes at
-      `ff21`/`ff25`/`ff4b` — which leans toward "artifact", without being evidence about these two.
-
-      ```bash
-      bash tools/banktest/realrom-test.sh check --all --only rcransom H:/emulators/nes/roms
-      ```
-
 - [ ] **Bistable-golden distribution.** (`grm-g73` P2, `grm-4nr` P2)
       Run the tier ~10 times, keep every dump. How many distinct outcomes exist per title; do
       megaman and ff1 flip *together*; is ff1's delta always exactly −33/−44/−14? Co-flipping
@@ -160,11 +129,17 @@ change what the numbers mean:
       shadow *restores* (`LDA $07ec`) rather than genuine unknowns — the same shape blmaster's
       `LDA $D3` sites turned out to be, which is `grm-mej` scope, not a contra defect.
 
-- [ ] **smb2 / rcransom** (`grm-8iy.4` P2)
-      Both have zero constant-arg call sites. rcransom's real PRG switching is `FUN_ff07` /
-      `FUN_ff29` (warnings at `f1d0`, `f21d`) plus undeterminable writes at `ff21`/`ff25`/`ff4b`.
-      Separately: smb2's fixed window `WC000` is 100% undisassembled — 8192 bytes, 0 instructions,
-      while the others hold 1501/559/2053. Genuinely unreachable, or an entry nothing follows?
+- [ ] **smb2** (`grm-8iy.4` P2)
+      Zero constant-arg call sites. And separately: smb2's fixed window `WC000` is 100%
+      undisassembled — 8192 bytes, 0 instructions, while the others hold 1501/559/2053. Genuinely
+      unreachable, or an entry nothing follows?
+
+      **rcransom is DONE and was removed from this item** (traced 2026-08-09, see the Answered
+      table). Its `FUN_ff07`/`FUN_ff29` are interrupt-exit *restore* routines that write R6 and R7
+      from shadows `$fc`/`$fd` and rewrite `$8000` from `$ff`/`$fb`, so "unknown" is the honest
+      answer at every one of its call sites — the bank values are simply not statically knowable
+      there. Do not re-trace it under the def-use template; the remaining rcransom work is
+      shadow propagation (`grm-mej`), not call-site classification.
 
 - [ ] **DB3** (`grm-azv` P3) — three copy loops at `e69e`/`e707`/`e712` copy from
       `e7d4`/`e826`/`e7fd` into `RAM:0200`; the bank-switch stub executes there and its ROM image is
@@ -268,3 +243,4 @@ Agents can't file these — they need an account and CLA agreement.
 | Does `BoardBankAnalyzer`'s `isCall()` gate silently drop `JMP`-reached call sites? | **No — refuted, not merely unmeasured** (`grm-2dr` increment 2, measured rather than argued). `df07` is a `JMP`-reached site and it resolves `prg_bank=5`: shared-return analysis retypes the `JMP` to `CALL_TERMINATOR`, which reports `isCall()`. All four plain-immediate sites resolve regardless of reach (`c55f`/`c57a`/`e2c3` by `JSR`, `df07` by `JMP`), and the three that still decline split 2 `JMP` / 1 `JSR`. **No reach asymmetry exists — do not file an `isCall()` bead.** Also corrected in the same pass: `e61b` was *misclassified* as a shadow-**establishing** wrapper. It is a **forwarding** wrapper — `STA $DB` on entry, reloads `$DB` **inside its own body** — which `grm-mu7`'s `argumentCells`/`argumentReloadSource` save-restore model already covers. cv2's `c185`, the wrapper it was grouped with, loads a cell a *different function* wrote, and that is the real establishing shape. blmaster was therefore never blocked on `grm-mej.2`; it was blocked on the *call edge*, and that is fixed. What its remaining sites need is shadow-**restore** modelling (`LDA $D3`), which is genuine `grm-mej` scope | `grm-093` / `grm-2dr` |
 | Why does contra's realrom result depend on run scope? | **It doesn't — the premise was false.** Ten consecutive `--only contra` runs gave **one** dump sha, and a mixed-title invocation fails contra in **both** scopes. The `--only` PASS / `--all` FAIL correlation was an artifact of *when* the runs happened: the PASSing ones consumed a `build/ghidra-home` install predating `788f09b`, the FAILing ones an install after it — same source, different installed extension. contra is a **stale golden**, the twin of `grm-bj6` (`788f09b` re-blessed seven goldens and skipped exactly smb3 and contra), and cheaper to settle: its diff is purely additive annotation, no count-line or resolved-value movement. **No cross-title contamination exists — do not bisect for it.** Side finding, real but *not* the cause: `run-banktest.sh`'s `ext_identity` omits the loose `data/machines/*.map` files that `realrom-test.sh`'s includes, but `EXT_ID` feeds only `*_cache_key()`, the cache is **read** solely under `[ "$MODE" = bless ]` (`realrom-test.sh:589`), and the two scripts use **separate** cache dirs — so it can cause a stale *bless*, never a wrong *check*. **Settled 2026-08-09:** `FUN_c139` confirmed a genuine helper — sets the bank shadow `$07ec` from the bank id at `$8000`, then falls through to the PRG register write at `c13f`, a textbook pass-through wrapper — so the recognition was right and the golden was stale. Blessed; diff was the 4 warnings and the count line, nothing else | `grm-3t8` **closed**; `grm-9mw` for the script library; premise retired on `grm-lwu`; bless recorded on `grm-2dr` |
 | Are smb3's new `ca23`/`ca2e` values (`r7=27`/`26` -> `r7=7`) right, or is the argument coming from the wrong site? | **Wrong site — a REGRESSION, and the golden is correct. smb3 must not be blessed.** MMC3 is a two-write protocol and smb3's helper `ffc2` does both halves: `LDA #$47 ; STA $0721 ; STA $8000 ; LDA $0720 ; STA $8001`. `$8000` takes the register-SELECT byte, `$8001` the bank — which arrives via RAM shadow `$0720`, not a register. Production now reports `$47 & $3F = 7`, i.e. the select constant leaking into the bank field. **Direct proof:** `ca23` is preceded by `LDA #$1b ; STA $0720` and `ca2e` by `LDA #$1a ; STA $0720`, so `$1B`=27 and `$1A`=26 *are* the call-site constants the old golden recorded. Corroboration: both sites collapse to one value (a helper-body constant, not a call-site one), and the direct sites `c5f5`/`c9f7` (`LDA #$1a ; STA $8001`, no shadow update) still read 26 correctly. The count movement fits a regression, not a fix — a wrong bank retargets into a wrong/absent overlay, hence `refs 846->822`, `instrs 4263->4173`. **Shadow map recorded for the per-game tier:** `$0721` = `$8000` select/mode, `$0720` = R7 bank, `$071F` = R6 bank; `ffd1` sets R6, `ffbf` (`JSR $ffd1` + fallthrough) sets both; the IRQ handler restores `$8000` from `$0721` on exit; PRG mode 1 confirmed (`$8000` bit 6 always set), so R6 drives `$C000` | `grm-67g` filed **P1**; `grm-bj6` retitled and blocked on it; `grm-evn` for the unrelated `FUN_c542` leftover |
+| Are rcransom's `f1d0`/`f21d` values (`select=6,prg_mode=0,r6=0,r7=1`) real, or the same `firstSite` artifact as smb3's `r7=7`? | **Artifacts — both of them, and wrong in TWO ways.** `FUN_ff07`/`FUN_ff29` are interrupt-exit RESTORE routines (called immediately before the NMI and IRQ handlers return). Each writes R6 from shadow `$fc` and R7 from `$fd`, then rewrites `$8000` itself from `$ff`/`$fb`. So (1) the reported `select=6` is the state after the helper's FIRST select write, not its net effect — the LAST select write loads `$8000` from RAM and is statically unknown; and (2) `r6=0,r7=1` were stale in-state values claimed as fully known (those lines carry no `[known:…]` bracket at all) because the mis-anchored deposit owned only `select`+`prg_mode` and never poisoned r6/r7 across a helper that overwrites both. A confident stale bank is the same defect class as smb3's confident wrong one. `grm-67g`'s fix replaces both with warnings, which is the honest answer, so **rcransom was a second correctness win, not collateral** — blessed. Stable under the planned `grm-mej` follow-up: the data comes from cells the caller never writes, so it stays unknown. **New gap this exposed:** bank state across an INTERRUPT boundary — a handler that restores banking on exit means the interrupted code's state is preserved, which the engine has no way to express | `grm-1fv` **closed**; unblocked `grm-67g`; rcransom removed from the section-2 def-use list |
