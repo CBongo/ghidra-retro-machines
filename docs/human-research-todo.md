@@ -47,21 +47,18 @@ Each is minutes of work and settles something specific. Highest value per unit e
       tmnt helpers lose their argument for a reason unrelated to the chain. If all three behave
       alike, **close the bead as not-a-bug.**
 
-- [ ] **Why does cv2 recover only 2 of its 10 `c183` call sites?** (`grm-093` P4)
-      After `grm-2dr` increment 1 landed, cv2's wrapper *is* recognized — the golden carries
-      `c4de bank -> prg_bank=4 via FUN_c183` and a real retarget to `W8000_M3_B4::8326`. But the
-      hand pass found **ten** callers of `c183` (nine preceded by `LDA #4`) and production
-      annotates two. The other eight emit neither a comment nor a warning, which is the odd part
-      — a *declined* site would still warn.
+- [x] ~~**Why does cv2 recover only 2 of its 10 `c183` call sites?**~~ (`grm-093` — **ANSWERED
+      and CLOSED**, 2026-08-08) Only **two** xrefs to `c183` exist in the program at all — `c081`
+      and `c4de`, both `JSR`, both base space — and production annotates both. Recovery is 2 of 2.
+      The ~30 further `JSR $c183` and 3 `JMP $c183` found by byte search are base-space but
+      **undisassembled**, so they are not instructions and cannot warn. Not a defect; expect it
+      to self-resolve as coverage rises. Full table in the bead.
 
-      **The check:** for each xref to `FUN_c183`, record two facts — `JSR` or `JMP`, and base
-      space or overlay.
-      - Mostly **overlay** → chicken-and-egg (those callers aren't disassembled yet), *not* a
-        defect; expect it to self-resolve as cv2's overlay coverage rises.
-      - Mostly **JMP** → a real gap: `runDataflow`'s helper block is gated on
-        `instr.getFlowType().isCall()` (`BoardBankAnalyzer:676`), so a plain `JMP` never reaches
-        `calledHelper`. That would also cost blmaster, five of whose twelve `e61b` call sites are
-        reached by `JMP`. File separately and raise the priority if so.
+      **Fallout worth knowing:** the `isCall()` gating hypothesis (`BoardBankAnalyzer:676`) is
+      not refuted, it is *unmeasurable corpus-wide today* — every title with `JMP`-reached call
+      sites has its helper rejected before flow type is consulted. blmaster's golden annotates
+      **none** of `FUN_e61b`'s twelve sites, including the seven `JSR` ones, because `e61b` is a
+      shadow-*establishing* wrapper. Recorded on `grm-mej.2`: re-measure blmaster when it lands.
 
 - [ ] **Bistable-golden distribution.** (`grm-g73` P2, `grm-4nr` P2)
       Run the tier ~10 times, keep every dump. How many distinct outcomes exist; do megaman and ff1
