@@ -1716,12 +1716,21 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * RAM ({@code LDA $65 / STA $E000}) stores A without ever reading the caller's A, so the
 	 * caller's value is not the argument and depositing it would ship a confident wrong bank.
 	 * {@link #argumentSurvivesPrologue} tests that precondition over {@code entry..firstSite},
-	 * and a failure falls through to {@link #valueSuppliedInsideHelper} (grm-cxb) rather than
-	 * short-circuiting, so the strategy still decides ownership and only the bits this call
-	 * really writes are poisoned. That fallback answers with the helper's OWN value where the
-	 * body supplies a constant, and with unknown where it does not -- so a decline is not by
-	 * itself a guarantee of silence, and the site it reads is the strategy's call (bead grm-67g,
-	 * {@link BankSwitchStrategy#suppliesHelperValueAtFirstSite}). It is skipped for a strategy
+	 * and a failure falls through rather than short-circuiting, so the strategy still decides
+	 * ownership and only the bits this call really writes are poisoned.
+	 * <p>
+	 * <b>That fallback has THREE outcomes, not two</b> (bead grm-67g), tried in this order once
+	 * the caller's register is ruled out:
+	 * <ol>
+	 * <li>the caller's byte arriving through MEMORY -- {@link #inboundArgumentCell} proves the
+	 * helper consumes a cell it never writes, and {@link StoredValueScanner#callerCellValue}
+	 * reads what the caller stored there (smb3's {@code $0720});</li>
+	 * <li>the helper's OWN value where its body supplies a constant --
+	 * {@link #valueSuppliedInsideHelper} (grm-cxb), reading whichever site the strategy says
+	 * consumes the byte ({@link #helperValueSite});</li>
+	 * <li>unknown.</li>
+	 * </ol>
+	 * So a failed prologue test is not by itself a guarantee of silence. It is skipped for a strategy
 	 * that re-derives the value inside the
 	 * helper instead of consuming {@code argValue} -- see
 	 * {@link BankSwitchStrategy#consumesHelperArgument}, and note that memory-latch's Contra
@@ -1745,9 +1754,26 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// path an unresolvable caller-side scan already takes, so the strategy still decides
 		// which bits this site owns and poisons only those. Strategies that re-derive the value
 		// inside the helper are exempt; see BankSwitchStrategy.consumesHelperArgument.
+		//
+		// grm-67g: the caller's byte may still reach the site THROUGH MEMORY even when it does not
+		// reach it in the register -- smb3's `LDA #$1b / STA $0720 / JSR $ffc2` against a helper
+		// that reloads A from $0720. So this branch makes two attempts before giving up, in the
+		// order caller's-cell then helper's-own-constant, and both are strictly additive: it only
+		// ever runs where the register answer was already discarded.
 		if ((helper.strategy() == null || helper.strategy().consumesHelperArgument()) &&
 			!argumentSurvivesPrologue(program, prologueSegments(helper), reg)) {
-			local = valueSuppliedInsideHelper(program, helper, reg, stateMask);
+			Address inbound = inboundArgumentCell(program, helper, reg);
+			BankState viaCell = inbound == null ? BankState.unknown()
+					: StoredValueScanner.callerCellValue(program, callInstr, inbound, stateMask,
+						NO_HOOKS);
+			// Partial knowledge counts, matching how combine() and setFieldFromByte already treat
+			// a per-bit answer. NO_HOOKS for the same reason the caller-side register scan above
+			// uses it: that scan runs in the CALLER, outside any mechanism's interpretation -- see
+			// callSiteRegisters. With no resolveLoad there is also nothing whose validity a
+			// mid-scan mechanism write could invalidate; a store to $8000 is stepped over on the
+			// strength of being a provably different cell, which is the honest reason.
+			local = viaCell.knownMask() != 0 ? viaCell
+					: valueSuppliedInsideHelper(program, helper, reg, stateMask);
 		}
 		Instruction switchSite = helper.switchSite() == null ? null
 				: program.getListing().getInstructionAt(helper.switchSite());
@@ -1882,6 +1908,11 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		Deque<Boolean> saved = new ArrayDeque<>();
 		// The memory half of the same idea: cells this walk watched the argument being stored to
 		// and which nothing has overwritten since, so a load from one is a restore.
+		//
+		// Note the DUAL of this set, inboundArgumentCell (grm-67g): a cell enters here only when
+		// the HELPER stores argReg into it, and enters there only when the helper never does. A
+		// helper cannot satisfy both, which is what lets recoverCallArgument try them in sequence
+		// without the order mattering.
 		Set<Address> argumentCells = new LinkedHashSet<>();
 		// Whether the save/restore model is still trustworthy. Cleared by anything that moves
 		// the stack pointer in a way this does not model, and by any non-fall-through flow --
@@ -2014,17 +2045,17 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * scan reaches a RAM load it cannot resolve and returns unknown. That is the difference this
 	 * whole area turns on -- a helper that supplies a CONSTANT is knowable, one that supplies a
 	 * RAM read is not, and neither has anything to do with the caller.
+	 * <p>
+	 * <b>This is now the LAST resort, not the only one</b> (bead grm-67g):
+	 * {@link #recoverCallArgument} tries {@link #inboundArgumentCell} first, so a RAM load whose
+	 * cell the CALLER wrote is answered there. The {@code FUN_dca8} decline therefore stands only
+	 * where no caller stored to {@code $65} in the same basic block -- which is the honest
+	 * refinement, since "the helper reads RAM" was never the real question. "Whose byte is in that
+	 * RAM" is.
 	 */
 	private static BankState valueSuppliedInsideHelper(Program program, HelperModel helper,
 			char reg, int stateMask) {
-		// WHICH site to read is the strategy's call, not a constant (bead grm-67g). For every
-		// single-site mechanism these are the same instruction; the two multi-site shapes want
-		// opposite answers, and select-data reading firstSite is what shipped smb3's confident
-		// wrong r7=7 -- firstSite there holds the $8000 register-SELECT byte, not the bank.
-		// See BankSwitchStrategy.suppliesHelperValueAtFirstSite.
-		Address readAt = helper.strategy() == null || helper.strategy().suppliesHelperValueAtFirstSite()
-				? helper.firstSite()
-				: helper.switchSite();
+		Address readAt = helperValueSite(helper);
 		Instruction site = readAt == null ? null : program.getListing().getInstructionAt(readAt);
 		if (site == null) {
 			return BankState.unknown();
@@ -2036,12 +2067,36 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	}
 
 	/**
-	 * The address {@code instr} reloads {@code reg} from, when it is a plain load whose target is
-	 * statically certain -- the memory half of {@link #argumentSurvivesPrologue}'s save/restore
-	 * model. Null for anything else, including an immediate load (no address operand at all) and
-	 * an indexed one ({@link StoredValueScanner#plainAbsoluteTarget} refuses those, since their
-	 * target is runtime-dependent).
+	 * The site at which this helper's mechanism CONSUMES the byte in {@code argReg} -- which of a
+	 * multi-write helper's sites is the one whose value ends up in the tracked field (bead
+	 * grm-67g).
+	 * <p>
+	 * WHICH site that is, is the strategy's call and not a constant. For every single-site
+	 * mechanism {@code firstSite} and {@code switchSite} are the same instruction and the question
+	 * does not arise; the two multi-site shapes want opposite answers, and select-data reading
+	 * {@code firstSite} is what shipped smb3's confident wrong {@code r7=7} -- {@code firstSite}
+	 * there holds the {@code $8000} register-SELECT byte, not the bank. See
+	 * {@link BankSwitchStrategy#suppliesHelperValueAtFirstSite}.
+	 * <p>
+	 * <b>This is NOT the same bound as {@link #argumentSurvivesPrologue}'s</b>, which is
+	 * emphatically {@code firstSite} for every strategy -- and the two are consistent rather than
+	 * in tension. That predicate asks whether the CALLER's byte is still in the register when the
+	 * mechanism starts, and a serial-shift chain clobbers A four times between its first write and
+	 * its last BY DESIGN, so walking to {@code switchSite} there would decline every serial-shift
+	 * helper on the planet. The clobbers that make that true all fall AFTER {@code firstSite}, so
+	 * for serial-shift this method answers {@code firstSite} too and both walks stop short of
+	 * them. One selector therefore serves both multi-site shapes without a special case.
+	 * <p>
+	 * Two consumers: {@link #valueSuppliedInsideHelper} (what the helper's own body puts in the
+	 * register) and {@link #inboundArgumentCell} (what cell the caller's byte arrives in). Same
+	 * question, different storage class.
 	 */
+	private static Address helperValueSite(HelperModel helper) {
+		return helper.strategy() == null || helper.strategy().suppliesHelperValueAtFirstSite()
+				? helper.firstSite()
+				: helper.switchSite();
+	}
+
 	/**
 	 * Where a backward scan that runs INSIDE the helper must stop -- the address control
 	 * arrived at in the body that actually contains {@code firstSite}.
@@ -2139,11 +2194,150 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			new PrologueSegment(helper.relay().calleeEntry(), helper.firstSite()));
 	}
 
+	/**
+	 * The address {@code instr} reloads {@code reg} from, when it is a plain load whose target is
+	 * statically certain -- the memory half of {@link #argumentSurvivesPrologue}'s save/restore
+	 * model, and the load-side predicate of {@link #inboundArgumentCell}. Null for anything else,
+	 * including an immediate load (no address operand at all) and an indexed one
+	 * ({@link StoredValueScanner#plainAbsoluteTarget} refuses those, since their target is
+	 * runtime-dependent).
+	 */
 	private static Address argumentReloadSource(Instruction instr, char reg) {
 		if (!("LD" + reg).equals(instr.getMnemonicString())) {
 			return null;
 		}
 		return StoredValueScanner.plainAbsoluteTarget(instr);
+	}
+
+	/**
+	 * The memory cell a helper takes its argument IN, when the caller passes the bank through RAM
+	 * rather than in a register (bead grm-67g) -- or null when no such cell is provable.
+	 * <p>
+	 * <b>The claim.</b> If the helper's LAST write to {@code reg} before its value-consuming site
+	 * is a plain load from cell C, and nothing between the entry and that site could have written
+	 * C, then C still holds what the CALLER put there. C is therefore an inbound argument, and its
+	 * value must be resolved at the CALL SITE ({@link StoredValueScanner#callerCellValue}) rather
+	 * than by scanning for {@code reg} there.
+	 * <p>
+	 * <b>This is the exact dual of {@link #argumentSurvivesPrologue}'s {@code argumentCells}
+	 * set</b>, and the two are MUTUALLY EXCLUSIVE by construction. That set admits C only when the
+	 * HELPER stores {@code reg} into it (a save/restore across the prologue); this admits C only
+	 * when the helper NEVER stores to it. So a helper cannot satisfy both, which is why the order
+	 * in which {@link #recoverCallArgument} tries them is not a judgement call -- hoisting this
+	 * above the survives-prologue test could not change an answer, only cost a walk.
+	 * <p>
+	 * <b>Worked example</b>, smb3's {@code FUN_ffc2} with {@code reg == 'A'} and the value site at
+	 * {@code $FFC7} (select-data consumes at {@code switchSite}, not {@code firstSite}):
+	 * <pre>
+	 *   ffc2  LDA #$47      ; clears cell -- an immediate is not a reload
+	 *   ffc4  STA $0721     ; lands in `written`, and PROVES a different cell than $0720
+	 *   ffc6  STA $8000     ; firstSite, walked THROUGH: the select byte is not the bank
+	 *   ffc7  LDA $0720     ; sets cell = $0720   &lt;- the answer
+	 *   ffc9  STA $8001     ; the value site; walk stops here
+	 * </pre>
+	 * The caller side then finishes it: {@code ca23 LDA #$1b / STA $0720 / JSR $ffc2} resolves
+	 * {@code $0720} to {@code $1b = 27}. And the counter-example {@code written} exists for is one
+	 * instruction away -- a helper whose {@code $FFC4} were {@code STA $0720} would be supplying
+	 * its OWN byte, and without that set this would confidently ship {@code $47} as the bank,
+	 * which is the very number the regression this bead tracks shipped.
+	 * <p>
+	 * <b>Not a restoration of anything.</b> smb3's correct {@code r7=27/26} predates the prologue
+	 * guard, but it was never sourced from the shadow: {@code local} was simply the caller-side
+	 * REGISTER scan, and {@code LDA #$1b / STA $0720 / JSR} happens to leave {@code $1b} still in
+	 * A. That is luck the idiom happens to grant, not a mechanism. This rule reaches the same
+	 * number for a sound reason, and keeps reaching it when the caller's A is clobbered.
+	 * <p>
+	 * <b>The bound is {@link #helperValueSite}, not {@code firstSite}</b> -- see that method for
+	 * why the two predicates want opposite-looking bounds for the same underlying reason.
+	 * <p>
+	 * <b>{@link #insideHelperEntry}, not the function's entry point.</b> Bionic Commando's
+	 * {@code FUN_dca8} ({@code LDA $65 / STA $E000}) is a real inbound-cell helper when entered at
+	 * {@code $DCA8}; entered mid-body at {@code $DCAA} the walk starts past the load, finds no
+	 * reload, and correctly returns null -- one function, two answers, exactly as
+	 * {@link #argumentSurvivesPrologue} documents for its own walk. It also means a FALL-THROUGH
+	 * wrapper's prefix IS walked, which matters more than it looks: {@code isPassThroughInto}
+	 * forbids a wrapper from writing the MECHANISM but not from writing ordinary RAM, so a
+	 * wrapper containing {@code STA $0720} is admissible and only the walk starting at the
+	 * wrapper's entry catches it.
+	 * <p>
+	 * <b>A CALL-EDGE wrapper declines outright.</b> There {@link #insideHelperEntry} is the
+	 * relay's callee entry, so the walk would cover only the second prologue segment and never see
+	 * the wrapper's own prefix. blmaster's shape is the counterexample: a wrapper doing
+	 * {@code STA $22 / LDA $22 / JSR helper} in front of a helper whose body begins {@code LDA $22}
+	 * would look like an inbound cell, and the value would be resolved at the JSR INTO THE WRAPPER
+	 * -- i.e. the byte the wrapper was about to overwrite. Stale, confident, wrong. Today the
+	 * branch that calls this is unreachable for a relay model at all ({@code findCallEdgeWrappers}
+	 * uses {@link #argumentSurvivesPrologue} as its ADMISSION gate, so every relay helper in the
+	 * map already answers true there), so this guard is defensive -- but the invariant is one
+	 * refactor away from moving. A generalization over {@link #prologueSegments} must NOT reset
+	 * {@code written} per segment the way {@link #argumentSurvivesPrologue} resets its shadow
+	 * stack: that reset under-approximates and errs safe, while forgetting the wrapper's
+	 * {@code STA $22} errs the unsafe way. Same segment list, opposite discipline.
+	 * <p>
+	 * <b>Every flow declines here</b>, where {@link #argumentSurvivesPrologue} merely stops
+	 * trusting its save/restore model. A branch costs that predicate a fold; here it would let a
+	 * linear-by-address walk skip a write to C, or count one that never executes, and both point
+	 * the unsafe way.
+	 * <p>
+	 * <b>{@link StoredValueScanner#writesMemory}, not {@code writesAddress}.</b> The reference-only
+	 * test under-reports (an indirect store has no concrete result address, refless stores exist,
+	 * and the read-modify-write mnemonics are invisible to {@code storeRegister}). In the
+	 * save/restore model a missed write is bounded by {@code holdsArgument}; here it is directly a
+	 * confident wrong bank.
+	 *
+	 * @param entry     where control actually arrives -- {@link #insideHelperEntry}
+	 * @param valueSite where the mechanism consumes the byte -- {@link #helperValueSite}
+	 */
+	static Address inboundArgumentCell(Program program, Address entry, Address valueSite, char reg) {
+		if (entry == null || valueSite == null || entry.compareTo(valueSite) > 0) {
+			return null;
+		}
+		Register register = program.getLanguage().getRegister(String.valueOf(reg));
+		if (register == null) {
+			return null; // cannot ask the question -> do not assume the favorable answer
+		}
+		Listing listing = program.getListing();
+		// The cell reg was LAST plainly loaded from, or null when reg's current value came from
+		// anywhere else. Set and cleared by the same statement, which is the whole trick.
+		Address cell = null;
+		// Every address this walk saw written, accumulated over the WHOLE range rather than tested
+		// as we go: in FUN_ffc2 the STA $0721 precedes the LDA $0720 that names the cell, so a
+		// check applied only after the load would miss a store in the same position.
+		Set<Address> written = new LinkedHashSet<>();
+		Address cursor = entry;
+		while (cursor.compareTo(valueSite) < 0) {
+			Instruction instr = listing.getInstructionAt(cursor);
+			if (instr == null || instr.getFlowType().isCall() || instr.getFlowType().isTerminal() ||
+				instr.getFlows().length > 0) {
+				return null;
+			}
+			Address fallThrough = instr.getFallThrough();
+			Address next = instr.getMaxAddress().next();
+			if (next == null || fallThrough == null || !fallThrough.equals(next)) {
+				return null; // a gap, an override, or the end of the space -- not one linear path
+			}
+			if (StoredValueScanner.writesMemory(instr)) {
+				Address target = StoredValueScanner.effectiveOperandTarget(program, instr, NO_HOOKS,
+					RegisterEnv.NONE);
+				if (target == null) {
+					return null; // a write this scanner cannot place may have landed on the cell
+				}
+				written.add(target);
+			}
+			if (StoredValueScanner.writesRegister(instr, register)) {
+				cell = argumentReloadSource(instr, reg);
+			}
+			cursor = next;
+		}
+		return cursor.equals(valueSite) && cell != null && !written.contains(cell) ? cell : null;
+	}
+
+	/** {@link #inboundArgumentCell} asked of a helper model; null for a call-edge wrapper. */
+	private static Address inboundArgumentCell(Program program, HelperModel helper, char reg) {
+		if (helper.relay() != null) {
+			return null;
+		}
+		return inboundArgumentCell(program, insideHelperEntry(helper), helperValueSite(helper), reg);
 	}
 
 	/**

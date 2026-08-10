@@ -1,4 +1,4 @@
-IDENTITY prg:f592a05b262fc4ca72036b8d874c8b760226064e012761b87427ecd2a3a3adab file:30e6ed354a5f8cb7160187dace01bfb16dc29610d18fe58b8a2e1754bfa89a02
+IDENTITY prg:464df438253f6b29a062a23c2c16e40295329a14688fbe82a9db987ebb7f0009 file:534d7d365c700c57dad5691b61bdfbf06504491ec8ade12f2769a8fcedcc9c5d
 BLOCK APU_IO 4000-401f overlay=false
 BLOCK PPU_REGS 2000-2007 overlay=false
 BLOCK PRG_RAM 6000-7fff overlay=false
@@ -33,12 +33,25 @@ BLOCK WE000 e000-ffff overlay=false
 COMMENT e000 bank -> select=6,prg_mode=0,r6=0,r7=1 via FUN_e100 [switch-value flow]
 COMMENT e006 bank -> select=0,prg_mode=0,r6=0,r7=1 via FUN_e160 [switch-value flow]
 COMMENT e009 bank -> select=7,prg_mode=0,r6=0,r7=1 via FUN_e180 [switch-value flow]
+COMMENT e00c bank -> select=7,prg_mode=1,r6=0,r7=1 via FUN_e220 [switch-value flow]
+COMMENT e00f bank -> select=7,prg_mode=1,r6=0,r7=1 via FUN_e240 [switch-value flow]
+COMMENT e012 bank -> select=7,prg_mode=1,r6=0,r7=1 via FUN_e280 [switch-value flow]
 COMMENT e102 bank -> select=6,prg_mode=0,r6=0,r7=1 [switch-value flow]
 COMMENT e107 bank -> select=6,prg_mode=0,r6=2,r7=1 via FUN_e140 [switch-value flow]
 COMMENT e123 bank -> select=0,prg_mode=0,r6=0,r7=1? [known: r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0,r7.0=1,r7.1=0,r7.2=0,r7.3=0,r7.4=0,r7.5=0; assumed from initial: select.0,select.1,select.2,prg_mode] [switch-value flow]
 COMMENT e162 bank -> select=0,prg_mode=0,r6=0,r7=1 [switch-value flow]
 COMMENT e182 bank -> select=7,prg_mode=0,r6=0,r7=1 [switch-value flow]
 COMMENT e187 bank -> select=7,prg_mode=0,r6=0,r7=4 via FUN_e140 [switch-value flow]
+COMMENT e215 bank -> select=7,prg_mode=1,r6=0,r7=1 [switch-value flow]
+COMMENT e21b bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0; assumed from initial: r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+COMMENT e222 bank -> select=7,prg_mode=1,r6=0,r7=1 [switch-value flow]
+COMMENT e22c bank -> select=7,prg_mode=1,r6=0,r7=5 via FUN_e210 [switch-value flow]
+COMMENT e242 bank -> select=7,prg_mode=1,r6=0,r7=1 [switch-value flow]
+COMMENT e265 bank -> select=7,prg_mode=1,r6=0,r7=1 [switch-value flow]
+COMMENT e26b bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0; assumed from initial: r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+COMMENT e282 bank -> select=7,prg_mode=1,r6=0,r7=1 [switch-value flow]
+COMMENT e28a bank -> select=7,prg_mode=1,r6=0,r7=7 via FUN_e260 [switch-value flow]
 BOOKMARK Warning e003
 BOOKMARK Warning e128
 BOOKMARK Warning e140
+BOOKMARK Warning e24d

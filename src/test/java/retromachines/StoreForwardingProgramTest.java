@@ -25,6 +25,7 @@ import com.google.gson.JsonObject;
 
 import ghidra.program.database.ProgramBuilder;
 import ghidra.program.database.ProgramDB;
+import ghidra.program.model.address.Address;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.mem.MemoryBlock;
 
@@ -114,6 +115,36 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 	private void assertUnresolved(BankState actual) {
 		assertEquals("expected no tracked bit to be pinned down, got " + actual, 0,
 			actual.knownMask());
+	}
+
+	/**
+	 * Hooks that answer neither question: no instruction is a mechanism write, and no load
+	 * resolves beyond forwarding. The exact shape of {@code BoardBankAnalyzer}'s own
+	 * {@code NO_HOOKS}, reproduced here rather than exposed, since
+	 * {@link StoredValueScanner#callerCellValue}'s sole production caller
+	 * ({@code BoardBankAnalyzer.inboundArgumentCell}'s caller-side half) always passes it: the
+	 * scan runs at the CALL SITE, outside any mechanism's interpretation, so a strategy's load
+	 * resolution has nothing to say about a cell the caller is merely setting up ahead of the
+	 * call.
+	 */
+	private static final StoredValueScanner.Hooks NO_HOOKS = new StoredValueScanner.Hooks() {
+		@Override
+		public boolean isMechanismWrite(Instruction instr) {
+			return false;
+		}
+
+		@Override
+		public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+				BankState inStateAtStore) {
+			return null;
+		}
+	};
+
+	/** A resolved, fully-known {@code cell} value reduced to {@code mask}. */
+	private void assertCellValue(int expectedKnownMask, int expectedBits, BankState actual) {
+		assertEquals("tracked bits not fully known: " + actual, expectedKnownMask,
+			actual.knownMask());
+		assertEquals(expectedBits, actual.bits());
 	}
 
 	// ------------------------------------------------------------------
@@ -352,5 +383,69 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 
 		assertUnresolved(axromLatch().computeSwitch(program, instructionAt("0x800a"),
 			BankState.unknown()));
+	}
+
+	// ------------------------------------------------------------------
+	// callerCellValue -- the CALLER-side half of grm-67g's inbound-cell shape
+	// ------------------------------------------------------------------
+
+	/**
+	 * Pins {@link StoredValueScanner#callerCellValue}: the memory dual of
+	 * {@link StoredValueScanner#resolveStoredValue}'s register query, asked at the CALL SITE
+	 * rather than inside the helper. This is the other half of smb3's {@code FUN_ffc2} shape
+	 * ({@link HelperInboundCellProgramTest} pins the helper-side half,
+	 * {@code BoardBankAnalyzer.inboundArgumentCell}, which proves {@code $0720} arrives at the
+	 * helper unmodified): once that is proved, THIS method answers what byte the caller actually
+	 * put there.
+	 * <pre>
+	 *   ca23  LDA #$1b / STA $0720 / JSR $ffc2     &lt;- useInstr is the JSR, cell is $0720
+	 * </pre>
+	 * Every guard is inherited from {@code StoredValueScanner.forwardedStoreValue} -- this is a
+	 * thin entry point onto it, not a second scanner -- so this test is deliberately the simplest
+	 * possible shape: an immediate load, a store to the cell, then the call.
+	 */
+	@Test
+	public void resolvesCallerCellStashedInRamBeforeTheCall() throws Exception {
+		builder.setBytes("0x8000", "a9 1b", true); // LDA #$1B
+		builder.setBytes("0x8002", "8d 20 07", true); // STA $0720
+		builder.setBytes("0x8005", "20 c2 ff", true); // JSR $FFC2   <- useInstr
+		builder.setBytes("0xffc2", "60", true); // RTS (callee, not otherwise touched)
+
+		assertCellValue(0xFF, 0x1B, StoredValueScanner.callerCellValue(program,
+			instructionAt("0x8005"), builder.addr("0x0720"), 0xFF, NO_HOOKS));
+	}
+
+	/**
+	 * A subroutine may write anywhere, so an intervening call between the stash and the switch
+	 * call ends the walk -- the identical rule {@link #declinesWhenCallIntervenes} pins for the
+	 * register-side scan, exercised here on the memory side.
+	 */
+	@Test
+	public void declinesAcrossAnInterveningCall() throws Exception {
+		builder.setBytes("0x8000", "8d 20 07", true); // STA $0720
+		builder.setBytes("0x8003", "20 20 80", true); // JSR $8020   -- unrelated call, intervenes
+		builder.setBytes("0x8006", "20 c2 ff", true); // JSR $FFC2   <- useInstr
+		builder.setBytes("0x8020", "60", true); // RTS
+		builder.setBytes("0xffc2", "60", true); // RTS
+
+		assertUnresolved(StoredValueScanner.callerCellValue(program, instructionAt("0x8006"),
+			builder.addr("0x0720"), 0xFF, NO_HOOKS));
+	}
+
+	/**
+	 * The resolved byte is reduced to a narrow {@code mask}, exactly like
+	 * {@link BoardBankAnalyzer#inboundArgumentCell}'s callers narrow to a mechanism's field width
+	 * rather than the whole byte -- {@code $B5} masked to the low nibble is {@code $05}, and both
+	 * the known bits and the value itself must come back narrowed together.
+	 */
+	@Test
+	public void reducesTheResolvedByteToTheSuppliedMask() throws Exception {
+		builder.setBytes("0x8000", "a9 b5", true); // LDA #$B5
+		builder.setBytes("0x8002", "8d 20 07", true); // STA $0720
+		builder.setBytes("0x8005", "20 c2 ff", true); // JSR $FFC2   <- useInstr
+		builder.setBytes("0xffc2", "60", true); // RTS
+
+		assertCellValue(0x0F, 0x05, StoredValueScanner.callerCellValue(program,
+			instructionAt("0x8005"), builder.addr("0x0720"), 0x0F, NO_HOOKS));
 	}
 }

@@ -200,6 +200,12 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * {@code false} when {@code depositHelperArgument} genuinely never consults
 	 * {@code argValue}, and re-check this method when changing that override's body: the two
 	 * must agree, or the guard protects the wrong strategy.
+	 * <p>
+	 * <b>This gate now also governs the INBOUND-CELL path</b> (bead grm-67g), which recovers the
+	 * caller's byte when it is passed through RAM rather than a register. That is the same
+	 * question in a different storage class, so it belongs behind the same answer: a strategy that
+	 * never reads {@code argValue} has no use for the cell either, and keeping memory-latch
+	 * outside makes its blast radius from that rule provably zero.
 	 */
 	default boolean consumesHelperArgument() {
 		return true;

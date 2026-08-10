@@ -416,6 +416,47 @@ final class StoredValueScanner {
 	}
 
 	/**
+	 * The value {@code cell} holds when {@code useInstr} executes, reduced to {@code mask} -- the
+	 * MEMORY dual of {@link #resolveStoredValue}'s register query, asked at the same instruction
+	 * (bead grm-67g).
+	 * <p>
+	 * A bank-switch helper does not always take its argument in a register. smb3's {@code FUN_ffc2}
+	 * is handed the bank through RAM shadow {@code $0720}:
+	 * <pre>
+	 *   ca23  LDA #$1b / STA $0720 / JSR $ffc2     &lt;- useInstr is the JSR, cell is $0720
+	 *   ffc2  ... LDA $0720 / STA $8001            &lt;- the helper consumes it here
+	 * </pre>
+	 * Once {@code BoardBankAnalyzer.inboundArgumentCell} has proved the helper reaches its switch
+	 * site holding {@code $0720}'s value unmodified, this answers the other half: what the CALLER
+	 * put there. Every guard that makes the answer trustworthy already exists in
+	 * {@link #forwardedStoreValue} -- block linkage, {@link #isControlFlowJoin}, the
+	 * {@link Hooks#isMechanismWrite} abort, the unplaceable-store and call aborts, the stack-page
+	 * refusal -- so this is an entry point onto it, not a second scanner.
+	 * <p>
+	 * <b>A fresh {@link Budget}</b>, like every other public entry point: only the internal
+	 * forwarding chain shares one (see {@link #resolveStoredValue}'s private overload). A caller's
+	 * cell query must not be weakened by whatever some earlier query spent.
+	 * <p>
+	 * <b>{@link RegisterEnv#NONE} deliberately.</b> This scan runs in the CALLER, where there is no
+	 * entry to stop at and nothing to adopt -- the mirror of the reason
+	 * {@code valueSuppliedInsideHelper} needs an env and this does not.
+	 * <p>
+	 * <b>{@code inStateAtStore} is {@link BankState#unknown()} deliberately.</b> It is consulted
+	 * only through {@code hooks.resolveLoad}, and the sole production caller passes
+	 * {@code NO_HOOKS}; the only state it could otherwise supply describes the CALL, not the store
+	 * this scans back to, and feeding a strategy a state that is off by the intervening
+	 * instructions would be a fresh unsoundness for no measured gain.
+	 */
+	static BankState callerCellValue(Program program, Instruction useInstr, Address cell, int mask,
+			Hooks hooks) {
+		BankState value = forwardedStoreValue(program, useInstr, cell, BankState.unknown(), hooks,
+			RegisterEnv.NONE, new Budget(MAX_RESOLVE_STEPS), 0);
+		// Equivalent to combine(0xFF, 0x00, mask, value), spelled out because there is no
+		// accumulated AND/ORA transform to fold here -- the cell's byte arrives verbatim.
+		return new BankState(value.knownMask() & mask, value.bits() & mask);
+	}
+
+	/**
 	 * The value {@code target} holds when {@code useInstr} reads it, forwarded from the nearest
 	 * preceding store to that same cell <em>within {@code useInstr}'s own basic block</em>, by
 	 * recursing into {@link #resolveStoredValue} on that store. {@link BankState#unknown()} when
@@ -533,8 +574,16 @@ final class StoredValueScanner {
 	 * {@code MemoryLatchBankSwitchStrategy.writesInRange} needs two tiers for); and the mnemonic
 	 * test covers the read-modify-write stores, which {@link #storeRegister} deliberately does not
 	 * recognize. Over-reporting merely forfeits a forward; under-reporting would be unsound.
+	 * <p>
+	 * <b>Package-private for a second consumer</b> (bead grm-67g):
+	 * {@code BoardBankAnalyzer.inboundArgumentCell} asks the identical question -- "may this
+	 * instruction have written the cell I am attributing a value to?" -- over a FORWARD walk
+	 * through a helper body rather than this backward one, and the three-detector union is
+	 * load-bearing for both. The reference-only {@link #writesAddress} is the tempting shortcut
+	 * there and is not sound for it: a missed write costs that predicate a confident wrong bank,
+	 * not merely a forfeited forward.
 	 */
-	private static boolean writesMemory(Instruction instr) {
+	static boolean writesMemory(Instruction instr) {
 		for (Object o : instr.getResultObjects()) {
 			if (!(o instanceof Register)) {
 				return true;

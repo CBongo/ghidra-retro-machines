@@ -255,7 +255,80 @@ violation check, though, is NOT context-insensitive: it re-examines each CALLER'
 locally-tracked in-state at its own JSR address (each caller's JSR instruction is a
 different address with independently-tracked flow), which is where the per-caller
 distinction -- and, per bead grm-snu, the per-caller ROUTING -- actually comes from.
-Vectors: RESET -> $E000, NMI/IRQ -> $E00F.
+
+CallerE/CallerF/H2 and CallerG/H3 (bead grm-67g): the INBOUND ARGUMENT CELL shape,
+where the caller passes H2's data byte through a RAM shadow ($0720) instead of a
+register, and the helper's own register-select write ($0721/$8000) sits between the
+caller's store and the helper's read of it. This is smb3's FUN_ffc2 transcribed byte
+for byte (see BoardBankAnalyzer#inboundArgumentCell's worked example) -- the shape
+grm-67g's fix (bead 8cc0517) added the machinery for, but that machinery had no
+synthetic regression coverage of its own: the real-ROM tier smb3 exercises it through
+is not part of build-and-test.sh (grm-mu7's first guard silently destroyed three real
+ROMs while all 45 synthetic goldens stayed green -- see this module doc's own account
+above; a real-ROM-only regression check is exactly the kind of gap that leaves open).
+Three scenarios. CallerE/F/G each establish select+prg_mode THEMSELVES (LDA #$47 /
+STA $8000, the same fixture idiom CallerA/C/D use above) before their JSR: select-data's
+routed deposit needs a KNOWN select at the call site to know which register the $8001
+data write targets, and select is write-only register state that does not survive as
+"inherited" from an unrelated earlier caller the way a RAM cell does -- relying on that
+would silently poison the deposit (select UNKNOWN -> no "bank ->" comment at all) rather
+than testing the inbound-argument-cell shape these scenarios exist for.
+
+  H2 ($E210): LDA #$47 / STA $0721 / STA $8000 / LDA $0720 / STA $8001 / RTS -- the
+              bare two-write helper. STA $0721 is a decoy cell one byte off the real
+              one; the helper's OWN select write is constant ($47 -> select=7,
+              prg_mode=1), and the DATA byte comes from whatever the caller left at
+              $0720, which the helper itself never writes.
+  CallerE ($E220): LDA #$47 / STA $8000 / LDA #$05 / STA $0720 / LDA #$03 / JSR H2 --
+              the positive case: after establishing select itself, it stores $05 (5)
+              to $0720 immediately before the call, so inboundArgumentCell's caller-side
+              forward scan (StoredValueScanner#callerCellValue) attributes $05 cleanly.
+              Right before the JSR it loads A with $03 -- a DECOY distinct from the
+              cell's value, so a recovered r7=3 would prove the strategy is (wrongly)
+              register-sourcing the bank from A while r7=5 proves it is genuinely
+              cell-sourced. Expect select=7, prg_mode=1, r7=5 (never r7=3), fully
+              known, no warning at the JSR $E210 (E22C).
+
+              EVERY BANK NUMBER IN THIS TRIO MUST BE IN RANGE (0-7), and that is a
+              correctness requirement rather than tidiness. This fixture ships 8 PRG
+              banks, and BoardBankAnalyzer refuses to annotate a recovered bank with no
+              corresponding image slice -- it emits a "value-RECOVERY bug" warning and
+              leaves the site bare (bead grm-hum, docs/vision-board-banking.md section 10
+              item 10). smb3's real numbers are 27 and 26; transcribing them here made
+              the positive case fail with a fully CORRECT recovery, and worse, made the
+              negative controls pass without testing anything, since an out-of-range
+              wrong answer is suppressed on its way out whatever produced it.
+  CallerF ($E240): LDA #$47 / STA $8000 / LDA #$05 / STA $0720 / JSR Harmless / JSR H2 --
+              the control: an intervening call between the store and the JSR to H2. A
+              JSR may write anywhere, so the caller-side scan (which declines at any
+              call it cannot see through -- see StoredValueScanner#forwardedStoreValue)
+              cannot attribute the store across it. Expect a WARNING at the JSR $E210
+              (E24D), not a value (no r7=5 claim).
+  H3 ($E260) / CallerG ($E280): LDA #$47 / STA $0720 / STA $8000 / LDA $0720 /
+              STA $8001 / RTS -- the self-written-cell shape: H3 writes the SAME cell
+              it later reads back, so the byte at $0720 when H3's LDA runs is H3's own
+              $47, not whatever CallerG (LDA #$47 / STA $8000 / LDA #$05 / STA $0720 /
+              JSR H3) put there. inboundArgumentCell's `written` set exists precisely to
+              catch this ($0720 is both read and written inside the helper) and decline
+              the cell. Expect select=7, prg_mode=1, r7=7, fully known, no warning at the
+              JSR $E260 (E28A) -- and specifically NOT r7=5. H3 really does put $47 into
+              $8001, so r7 = $47 & $3F = 7 is the TRUTH here and valueSuppliedInsideHelper
+              recovers it correctly by forwarding H3's own store to its own load.
+              CallerG's $05 is a DEAD store; attributing it would ship r7=5, a confident
+              wrong bank taken from a caller whose byte the helper threw away -- and 5 is
+              a REAL bank in this image, so that wrong answer would be annotated rather
+              than caught by the range guard. CallerE vs. CallerG is the A/B pair --
+              identical caller bytes, 5 where the cell is inbound and 7 where it is not.
+              Note this is a DIFFERENT defect from the one that shipped: smb3's r7=7 was
+              wrong because it was read at the $8000 SELECT site rather than the $8001
+              bank site, which suppliesHelperValueAtFirstSite fixed in increment 1.
+              Reading a helper's own value is not the error; reading it from the wrong
+              site was.
+
+Vectors: RESET -> $E000, NMI/IRQ -> $E018 (the RESET flow's idle loop and RTI moved
+from $E00C/$E00F to $E015/$E018 to make room for the three new dispatch calls). H3
+moved from $E250 to $E260 and CallerG from $E260 to $E280 because CallerF now runs
+through $E250 (it needs three extra bytes for its own select-establishing LDA/STA).
 """
 
 import sys
@@ -700,13 +773,19 @@ def make_prg_mmc3_2():
 
     # RESET ($E000): call CallerA (no violation, routes to r6), CallerB (violation,
     # poisons r6+r7), CallerC (no violation, verified no-op via untracked CHR select),
-    # CallerD (no violation, routes to r7), then idle.
+    # CallerD (no violation, routes to r7), then the grm-67g inbound-argument-cell
+    # trio (CallerE positive, CallerF intervening-call control, CallerG self-written-
+    # cell control), then idle. The idle loop and NMI/IRQ RTI moved from $E00C/$E00F
+    # to $E015/$E018 to make room for the three new dispatch calls.
     put(0xE000, [0x20, 0x00, 0xE1])        # JSR $E100 (CallerA)
     put(0xE003, [0x20, 0x20, 0xE1])        # JSR $E120 (CallerB)
     put(0xE006, [0x20, 0x60, 0xE1])        # JSR $E160 (CallerC)
     put(0xE009, [0x20, 0x80, 0xE1])        # JSR $E180 (CallerD)
-    put(0xE00C, [0x4C, 0x0C, 0xE0])        # JMP $E00C (idle loop)
-    put(0xE00F, [0x40])                     # RTI (NMI/IRQ handler)
+    put(0xE00C, [0x20, 0x20, 0xE2])        # JSR $E220 (CallerE)
+    put(0xE00F, [0x20, 0x40, 0xE2])        # JSR $E240 (CallerF)
+    put(0xE012, [0x20, 0x80, 0xE2])        # JSR $E280 (CallerG -- moved from $E260)
+    put(0xE015, [0x4C, 0x15, 0xE0])        # JMP $E015 (idle loop)
+    put(0xE018, [0x40])                     # RTI (NMI/IRQ handler)
 
     # CallerA ($E100): establishes select=6 itself before calling the data-only helper
     # -- requiresOnEntry(H) is satisfied here, so no WARNING at CallerA's JSR. bead
@@ -766,10 +845,113 @@ def make_prg_mmc3_2():
     # the point is that value recovery cannot pin it down at all).
     put(0xE200, [0x00])
 
+    # ------------------------------------------------------------------
+    # grm-67g: inbound-argument-cell trio (H2/CallerE/CallerF, H3/CallerG).
+    #
+    # Each of CallerE/F/G now establishes select+prg_mode ITSELF (LDA #$47 / STA $8000,
+    # matching CallerA/C/D's idiom above) before its JSR. Select-data's routed deposit
+    # (SelectDataBankSwitchStrategy#depositHelperArgument) needs a KNOWN select to know
+    # which register the $8001 data write targets; select is write-only register state
+    # that does not survive as "inherited" across a JSR the way a RAM cell does, so
+    # relying on state left behind by an earlier, unrelated caller silently poisons the
+    # deposit (select UNKNOWN -> no "bank ->" comment at all, criteria G5/CallerB's
+    # documented behaviour) rather than warning about it. H2/H3 still additionally
+    # perform their OWN $8000 write; the shape under test -- one helper doing both
+    # mechanism writes (select+prg_mode via its own constant, bank via an inbound RAM
+    # cell) -- is unchanged.
+    # ------------------------------------------------------------------
+
+    # H2 ($E210): smb3's FUN_ffc2 transcribed byte for byte -- a two-write helper whose
+    # register-select write ($8000) is CONSTANT ($47 -> select=7, prg_mode=1) and whose
+    # data write ($8001) is fed from RAM shadow $0720, a cell H2 itself never writes.
+    # STA $0721 is the decoy: one byte off the real cell, present so
+    # BoardBankAnalyzer#inboundArgumentCell has something to rule out via its `written`
+    # set before it settles on $0720.
+    put(0xE210, [0xA9, 0x47])              # LDA #$47 (select=7, prg_mode=1 -- constant)
+    put(0xE212, [0x8D, 0x21, 0x07])        # STA $0721 (decoy cell, NOT the argument cell)
+    put(0xE215, [0x8D, 0x00, 0x80])        # STA $8000 (select=7, prg_mode=1 known)
+    put(0xE218, [0xAD, 0x20, 0x07])        # LDA $0720 (the argument cell -- caller-supplied)
+    put(0xE21B, [0x8D, 0x01, 0x80])        # STA $8001 (data write -> r7 = whatever $0720 held)
+    put(0xE21E, [0x60])                     # RTS
+
+    # CallerE ($E220): the positive case -- establishes select=7/prg_mode=1 itself (its
+    # own $47 -> $8000, the fixture idiom) so H2's routed deposit has a known select to
+    # target, then stores $05 to $0720 immediately before the JSR so the caller-side
+    # forward scan (StoredValueScanner#callerCellValue) attributes it cleanly. Right
+    # before the JSR it loads A with $03 -- a DECOY distinct from the cell's value,
+    # present so a recovered r7=3 would prove the strategy is (wrongly) register-
+    # sourcing the bank from A, while r7=5 proves it is genuinely cell-sourced. Both
+    # values are IN RANGE (this image ships 8 PRG banks): an out-of-range bank is
+    # suppressed on its way out with a value-recovery warning, which would make this
+    # criterion fail on a CORRECT recovery and make the controls below pass vacuously.
+    # Expect select=7, prg_mode=1, r7=5 (never r7=3), fully known, no warning at the
+    # JSR $E210 (E22C).
+    put(0xE220, [0xA9, 0x47])              # LDA #$47 (select=7, prg_mode=1 -- fixture idiom)
+    put(0xE222, [0x8D, 0x00, 0x80])        # STA $8000 (select=7, prg_mode=1 known)
+    put(0xE225, [0xA9, 0x05])              # LDA #$05 (5 -- the real bank, IN RANGE)
+    put(0xE227, [0x8D, 0x20, 0x07])        # STA $0720 (the argument cell)
+    put(0xE22A, [0xA9, 0x03])              # LDA #$03 (3 -- DECOY in A, also in range;
+                                             # would (wrongly) give r7=3)
+    put(0xE22C, [0x20, 0x10, 0xE2])        # JSR $E210 (H2) -> select=7/prg_mode=1/r7=5
+    put(0xE22F, [0x60])                     # RTS
+
+    # Harmless ($E230): an arbitrary intervening subroutine CallerF calls between its
+    # store to $0720 and its call to H2 -- content doesn't matter, only that it is a CALL
+    # (a JSR may write anywhere, so the caller-side scan must decline across it).
+    put(0xE230, [0x60])                     # RTS
+
+    # CallerF ($E240): the intervening-call control -- establishes select=7/prg_mode=1
+    # itself (same idiom as CallerE), then is otherwise identical to CallerE except a JSR
+    # to Harmless sits between the store and the JSR to H2. That breaks
+    # forwardedStoreValue's straight-line/no-call requirement, so the $0720 store cannot
+    # be attributed across the call. Expect a WARNING at the JSR $E210 (E24D), not a value
+    # (no r7=5 claim).
+    put(0xE240, [0xA9, 0x47])              # LDA #$47 (select=7, prg_mode=1 -- fixture idiom)
+    put(0xE242, [0x8D, 0x00, 0x80])        # STA $8000 (select=7, prg_mode=1 known)
+    put(0xE245, [0xA9, 0x05])              # LDA #$05 (5)
+    put(0xE247, [0x8D, 0x20, 0x07])        # STA $0720 (the argument cell)
+    put(0xE24A, [0x20, 0x30, 0xE2])        # JSR $E230 (Harmless) -- breaks the forward scan
+    put(0xE24D, [0x20, 0x10, 0xE2])        # JSR $E210 (H2) -> select=7/prg_mode=1 known,
+                                             # r7 UNKNOWN -- WARNING, no "bank ->" for r7
+    put(0xE250, [0x60])                     # RTS
+
+    # H3 ($E260) -- moved from $E250 because CallerF now runs through $E250: the
+    # self-written-cell control -- same shape as H2, EXCEPT the decoy write lands on
+    # $0720 itself (not $0721), so H3 both writes and reads the same cell.
+    # inboundArgumentCell's `written` set exists precisely to catch this and decline the
+    # cell, so the CALLER's byte is never attributed. What remains is H3's own $47, which
+    # valueSuppliedInsideHelper then recovers correctly -- and r7 = 0x47 & 0x3F = 7 is the
+    # TRUTH here, because H3 really does write $47 to $8001. The wrong answer to guard
+    # against is r7=5, the caller's dead byte -- and 5 is a real bank here, so that wrong
+    # answer would be annotated rather than suppressed by the out-of-range guard.
+    put(0xE260, [0xA9, 0x47])              # LDA #$47 (select=7, prg_mode=1 -- constant)
+    put(0xE262, [0x8D, 0x20, 0x07])        # STA $0720 (SELF-writes the cell it reads below)
+    put(0xE265, [0x8D, 0x00, 0x80])        # STA $8000 (select=7, prg_mode=1 known)
+    put(0xE268, [0xAD, 0x20, 0x07])        # LDA $0720 (reads back H3's OWN $47, not the
+                                             # caller's byte)
+    put(0xE26B, [0x8D, 0x01, 0x80])        # STA $8001 (data write -- r7=7 is correct here;
+                                             # r7=5 would be the caller's dead byte)
+    put(0xE26E, [0x60])                     # RTS
+
+    # CallerG ($E280) -- moved from $E260: establishes select=7/prg_mode=1 itself (same
+    # idiom as CallerE/F), then mirrors CallerE's store shape (same $05) so the only
+    # variable between this scenario and CallerE's is H3 vs. H2 -- which is what makes
+    # the difference in outcome attributable to the self-written cell rather than to the
+    # caller. CallerG's own $0720 write is dead: H3 overwrites it before reading it back.
+    # 5 is a REAL bank here, so a wrong attribution would be ANNOTATED rather than caught
+    # by the out-of-range guard -- which is what makes this a control and not a formality.
+    # Expect r7=7 (H3's own byte), and specifically NOT r7=5, at the JSR $E260 (E28A).
+    put(0xE280, [0xA9, 0x47])              # LDA #$47 (select=7, prg_mode=1 -- fixture idiom)
+    put(0xE282, [0x8D, 0x00, 0x80])        # STA $8000 (select=7, prg_mode=1 known)
+    put(0xE285, [0xA9, 0x05])              # LDA #$05 (5, but H3 never sees it)
+    put(0xE287, [0x8D, 0x20, 0x07])        # STA $0720 (dead store -- H3 overwrites this)
+    put(0xE28A, [0x20, 0x60, 0xE2])        # JSR $E260 (H3) -> r7=7, never r7=5
+    put(0xE28D, [0x60])                     # RTS
+
     # Vector table.
-    put(0xFFFA, [0x0F, 0xE0])  # NMI   -> $E00F (RTI)
+    put(0xFFFA, [0x18, 0xE0])  # NMI   -> $E018 (RTI)
     put(0xFFFC, [0x00, 0xE0])  # RESET -> $E000
-    put(0xFFFE, [0x0F, 0xE0])  # IRQ   -> $E00F (RTI)
+    put(0xFFFE, [0x18, 0xE0])  # IRQ   -> $E018 (RTI)
 
     return bytes(prg)
 
@@ -2196,7 +2378,8 @@ def main():
     prgm3b = make_prg_mmc3_2()
 
     # Sanity-check the requires-on-entry fixture before writing (bead grm-6a7.2, extended
-    # by grm-snu with CallerC/CallerD).
+    # by grm-snu with CallerC/CallerD, and by grm-67g with the H2/CallerE/CallerF and
+    # H3/CallerG inbound-argument-cell trio).
     assert len(prgm3b) == MMC3_PRG_SIZE
     assert prgm3b[0xE000] == 0x20 and (prgm3b[0xE001] | (prgm3b[0xE002] << 8)) == 0xE100
     assert prgm3b[0xE003] == 0x20 and (prgm3b[0xE004] | (prgm3b[0xE005] << 8)) == 0xE120
@@ -2220,9 +2403,67 @@ def main():
     assert prgm3b[0xE18A] == 0x60  # CallerD RTS
     assert prgm3b[0xE140] == 0x8D and (prgm3b[0xE141] | (prgm3b[0xE142] << 8)) == 0x8001
     assert prgm3b[0xE143] == 0x60  # H RTS
+
+    # grm-67g: inbound-argument-cell trio dispatch (moved the idle loop/RTI to make room).
+    assert prgm3b[0xE00C] == 0x20 and (prgm3b[0xE00D] | (prgm3b[0xE00E] << 8)) == 0xE220
+    assert prgm3b[0xE00F] == 0x20 and (prgm3b[0xE010] | (prgm3b[0xE011] << 8)) == 0xE240
+    assert prgm3b[0xE012] == 0x20 and (prgm3b[0xE013] | (prgm3b[0xE014] << 8)) == 0xE280
+    assert prgm3b[0xE015] == 0x4C and (prgm3b[0xE016] | (prgm3b[0xE017] << 8)) == 0xE015
+    assert prgm3b[0xE018] == 0x40  # RTI (NMI/IRQ handler)
+
+    # H2 ($E210): the smb3 FUN_ffc2 shape -- constant select write, data from $0720.
+    assert prgm3b[0xE210] == 0xA9 and prgm3b[0xE211] == 0x47  # LDA #$47
+    assert prgm3b[0xE212] == 0x8D and (prgm3b[0xE213] | (prgm3b[0xE214] << 8)) == 0x0721
+    assert prgm3b[0xE215] == 0x8D and (prgm3b[0xE216] | (prgm3b[0xE217] << 8)) == 0x8000
+    assert prgm3b[0xE218] == 0xAD and (prgm3b[0xE219] | (prgm3b[0xE21A] << 8)) == 0x0720
+    assert prgm3b[0xE21B] == 0x8D and (prgm3b[0xE21C] | (prgm3b[0xE21D] << 8)) == 0x8001
+    assert prgm3b[0xE21E] == 0x60  # H2 RTS
+
+    # CallerE ($E220): positive case -- establishes select itself, stores the real bank
+    # ($1B/27) immediately before the call, then loads a DECOY ($3F/63) into A right
+    # before the JSR so a recovered r7=3 would expose register-sourcing. Both are in range
+    # (8 PRG banks); an out-of-range bank is suppressed with a value-recovery warning.
+    assert prgm3b[0xE220] == 0xA9 and prgm3b[0xE221] == 0x47  # LDA #$47
+    assert prgm3b[0xE222] == 0x8D and (prgm3b[0xE223] | (prgm3b[0xE224] << 8)) == 0x8000
+    assert prgm3b[0xE225] == 0xA9 and prgm3b[0xE226] == 0x05  # LDA #$05
+    assert prgm3b[0xE227] == 0x8D and (prgm3b[0xE228] | (prgm3b[0xE229] << 8)) == 0x0720
+    assert prgm3b[0xE22A] == 0xA9 and prgm3b[0xE22B] == 0x03  # LDA #$03 (decoy)
+    assert prgm3b[0xE22C] == 0x20 and (prgm3b[0xE22D] | (prgm3b[0xE22E] << 8)) == 0xE210
+    assert prgm3b[0xE22F] == 0x60  # CallerE RTS
+
+    assert prgm3b[0xE230] == 0x60  # Harmless RTS
+
+    # CallerF ($E240): intervening-call control -- establishes select itself, otherwise
+    # identical to CallerE but with a JSR to Harmless breaking the forward scan.
+    assert prgm3b[0xE240] == 0xA9 and prgm3b[0xE241] == 0x47  # LDA #$47
+    assert prgm3b[0xE242] == 0x8D and (prgm3b[0xE243] | (prgm3b[0xE244] << 8)) == 0x8000
+    assert prgm3b[0xE245] == 0xA9 and prgm3b[0xE246] == 0x05  # LDA #$05
+    assert prgm3b[0xE247] == 0x8D and (prgm3b[0xE248] | (prgm3b[0xE249] << 8)) == 0x0720
+    assert prgm3b[0xE24A] == 0x20 and (prgm3b[0xE24B] | (prgm3b[0xE24C] << 8)) == 0xE230
+    assert prgm3b[0xE24D] == 0x20 and (prgm3b[0xE24E] | (prgm3b[0xE24F] << 8)) == 0xE210
+    assert prgm3b[0xE250] == 0x60  # CallerF RTS
+
+    # H3 ($E260) -- moved from $E250: self-written-cell control -- decoy write lands on
+    # $0720 itself.
+    assert prgm3b[0xE260] == 0xA9 and prgm3b[0xE261] == 0x47  # LDA #$47
+    assert prgm3b[0xE262] == 0x8D and (prgm3b[0xE263] | (prgm3b[0xE264] << 8)) == 0x0720
+    assert prgm3b[0xE265] == 0x8D and (prgm3b[0xE266] | (prgm3b[0xE267] << 8)) == 0x8000
+    assert prgm3b[0xE268] == 0xAD and (prgm3b[0xE269] | (prgm3b[0xE26A] << 8)) == 0x0720
+    assert prgm3b[0xE26B] == 0x8D and (prgm3b[0xE26C] | (prgm3b[0xE26D] << 8)) == 0x8001
+    assert prgm3b[0xE26E] == 0x60  # H3 RTS
+
+    # CallerG ($E280) -- moved from $E260: establishes select itself, then mirrors
+    # CallerE's store shape exactly against H3 instead of H2.
+    assert prgm3b[0xE280] == 0xA9 and prgm3b[0xE281] == 0x47  # LDA #$47
+    assert prgm3b[0xE282] == 0x8D and (prgm3b[0xE283] | (prgm3b[0xE284] << 8)) == 0x8000
+    assert prgm3b[0xE285] == 0xA9 and prgm3b[0xE286] == 0x05  # LDA #$05
+    assert prgm3b[0xE287] == 0x8D and (prgm3b[0xE288] | (prgm3b[0xE289] << 8)) == 0x0720
+    assert prgm3b[0xE28A] == 0x20 and (prgm3b[0xE28B] | (prgm3b[0xE28C] << 8)) == 0xE260
+    assert prgm3b[0xE28D] == 0x60  # CallerG RTS
+
     assert (prgm3b[0xFFFC] | (prgm3b[0xFFFD] << 8)) == 0xE000  # RESET vector
-    assert (prgm3b[0xFFFA] | (prgm3b[0xFFFB] << 8)) == 0xE00F  # NMI vector
-    assert (prgm3b[0xFFFE] | (prgm3b[0xFFFF] << 8)) == 0xE00F  # IRQ vector
+    assert (prgm3b[0xFFFA] | (prgm3b[0xFFFB] << 8)) == 0xE018  # NMI vector
+    assert (prgm3b[0xFFFE] | (prgm3b[0xFFFF] << 8)) == 0xE018  # IRQ vector
 
     _write_rom(outdir, "nesmmc3test2.nes", prgm3b, mapper=MAPPER_MMC3)
 

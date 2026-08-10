@@ -2813,6 +2813,71 @@ public class VerifyBankTest extends GhidraScript {
 		criterion("G7", c7.contains("select=7") && c7.contains("r7=4") && !c7.contains("?"),
 			"routed deposit at CallerD's JSR (E187) fully known, select=7/r7=4: \"" + c7 +
 				"\"");
+
+		// G8 (bead grm-67g): CallerE ($E220) is the inbound-argument-cell POSITIVE case --
+		// smb3's FUN_ffc2 transcribed byte for byte as H2 ($E210: LDA #$47 / STA $0721 /
+		// STA $8000 / LDA $0720 / STA $8001). CallerE establishes select=7/prg_mode=1
+		// itself (LDA #$47 / STA $8000, the fixture idiom) before storing $1B (27) to
+		// $0720 immediately before the JSR, so BoardBankAnalyzer#inboundArgumentCell
+		// proves H2 consumes a cell it never writes, and
+		// StoredValueScanner#callerCellValue reads CallerE's own $1B at the call site.
+		// Right before the JSR, CallerE loads A with a DECOY ($3F/63) distinct from the
+		// cell's value -- present so that r7=3 in the comment would expose the strategy
+		// (wrongly) register-sourcing the bank from A, while r7=5 proves it is genuinely
+		// cell-sourced. Expect r7=5 (not the decoy's 3, and not r6), fully known, no
+		// warning at the JSR $E210 (E22C).
+		String c8 = eol(0xE22C);
+		criterion("G8", !hasWarningBookmark(0xE22C) && c8.contains("select=7") &&
+			c8.contains("prg_mode=1") && c8.contains("r7=5") && !c8.contains("r7=3") &&
+			!c8.contains("?"),
+			"inbound-argument-cell call resolves select=7/prg_mode=1/r7=5 (never the " +
+				"decoy r7=3 left in A) via H2's caller-side $0720, no warning, at " +
+				"CallerE's JSR (E22C): \"" + c8 + "\" warning=\"" +
+				warningBookmarkText(0xE22C) + "\"");
+
+		// G9 (bead grm-67g): CallerF ($E240) is the intervening-call CONTROL -- establishes
+		// select=7/prg_mode=1 itself like CallerE, then is otherwise identical except a JSR
+		// to a harmless subroutine ($E230) sits between the store to $0720 and the JSR to
+		// H2. A JSR may write anywhere (StoredValueScanner#forwardedStoreValue's call-
+		// abort), so the caller-side forward scan cannot attribute the $0720 store across
+		// it. This is the control that proves G8 is not merely pattern-matching H2's shape:
+		// without a provable store reaching the call, the ONLY sound answer is a warning,
+		// and specifically not a confident r7=5 that CallerE's OWN value happens to equal.
+		criterion("G9", hasWarningBookmark(0xE24D) && !eol(0xE24D).contains("r7=5"),
+			"an intervening call between the store and the JSR to H2 blocks caller-side " +
+				"attribution -- warning, no r7=5 claim, at CallerF's JSR (E24D): warning=" +
+				hasWarningBookmark(0xE24D) + " comment=\"" + eol(0xE24D) + "\"");
+
+		// G10 (bead grm-67g): H3/CallerG ($E260/$E280) is the SELF-WRITTEN-CELL control --
+		// H3 is byte-identical to H2 except its decoy write lands on $0720 ITSELF (not the
+		// off-by-one $0721), so H3 both writes and reads the same cell. CallerG establishes
+		// select=7/prg_mode=1 itself (like CallerE/F) and otherwise mirrors CallerE's exact
+		// caller-side shape (LDA #$1B / STA $0720 / JSR), so the ONLY variable between G8
+		// and this criterion is H2 vs. H3, which is what makes any difference in outcome
+		// attributable to the self-write rather than to the caller.
+		//
+		// WHAT MUST NOT HAPPEN IS r7=5, NOT r7=7. H3 really does put $47 into $8001, so
+		// r7 = $47 & $3F = 7 is the TRUTH here and reporting it -- fully known, no warning --
+		// is correct; BoardBankAnalyzer#valueSuppliedInsideHelper recovers it by forwarding
+		// H3's own STA $0720 to its own LDA $0720. CallerG's $1B is a DEAD store, and
+		// attributing it would ship r7=5: a confident wrong bank sourced from a caller whose
+		// byte the helper threw away. That is precisely what inboundArgumentCell's `written`
+		// set exists to prevent, and G8 vs. G10 is the A/B pair that proves it -- same caller
+		// bytes, same call shape, 5 where the cell is inbound and 7 where it is not. Note 5
+		// is a REAL bank in this 8-bank image, so a wrong attribution here would be ANNOTATED
+		// rather than suppressed by the out-of-range value-recovery guard -- which is what
+		// makes this a control and not a formality (bead grm-hum).
+		//
+		// Note this is a DIFFERENT defect from the one that shipped: smb3's r7=7 was wrong
+		// because it was read at the $8000 SELECT site instead of the $8001 bank site, which
+		// BankSwitchStrategy#suppliesHelperValueAtFirstSite fixed in increment 1. Reading a
+		// helper's own value is not the error; reading it from the wrong site was.
+		String c10 = eol(0xE28A);
+		criterion("G10", !hasWarningBookmark(0xE28A) && c10.contains("r7=7") &&
+			!c10.contains("r7=5") && !c10.contains("?"),
+			"a helper that overwrites its own argument cell reports ITS OWN $47 (r7=7), not " +
+				"the caller's dead $05 (r7=5), at CallerG's JSR (E28A): warning=" +
+				hasWarningBookmark(0xE28A) + " comment=\"" + c10 + "\"");
 	}
 
 	// ------------------------------------------------------------------
@@ -3722,6 +3787,24 @@ public class VerifyBankTest extends GhidraScript {
 			}
 		}
 		return false;
+	}
+
+	/**
+	 * The text of our own Warning bookmark at {@code offset}, or "" when there is none --
+	 * companion to {@link #hasWarningBookmark} for criteria whose diagnosis depends on WHICH
+	 * warning fired. A bank-state requirement violation and an unrecoverable helper argument
+	 * both present as an empty EOL comment plus a warning, and telling them apart from the
+	 * criterion line alone is otherwise impossible (bead grm-67g).
+	 */
+	private String warningBookmarkText(long offset) {
+		for (Bookmark bm : currentProgram.getBookmarkManager().getBookmarks(addr(offset))) {
+			boolean ourCategory = CATEGORY_C64.equals(bm.getCategory()) ||
+				CATEGORY_NES.equals(bm.getCategory());
+			if (ourCategory && "Warning".equals(bm.getTypeString())) {
+				return bm.getComment() == null ? "" : bm.getComment();
+			}
+		}
+		return "";
 	}
 
 	private boolean hasSysNoteBookmark(long offset) {
