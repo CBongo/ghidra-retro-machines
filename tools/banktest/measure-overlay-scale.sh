@@ -29,6 +29,10 @@
 #                            to <repo>/build/ghidra-home, matching
 #                            build-and-test.sh's derivation, so this script
 #                            works standalone after that install has run.
+#   GRM_BANKTEST_WORK       base dir for per-run work dirs (defaults to
+#                            <repo>/build/banktest-work; this script always
+#                            keeps its work dir)
+#   MEASURE_WORK_DIR        use this exact dir instead of a fresh one
 set -u
 
 if [ $# -eq 0 ]; then
@@ -54,7 +58,7 @@ grm_default_headless
 grm_settings_base_fallback nes-banking
 grm_apply_settings_base
 
-WORK="${MEASURE_WORK_DIR:-$(mktemp -d)}"
+WORK="${MEASURE_WORK_DIR:-$(grm_work_dir measure)}"
 mkdir -p "$WORK"
 echo "== work dir: $WORK =="
 

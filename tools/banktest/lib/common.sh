@@ -101,6 +101,30 @@ grm_apply_settings_base() {
 	fi
 }
 
+# A fresh per-run work directory, REPO-LOCAL by default (bead grm-419).
+#
+# These scripts keep the work dir on failure and print its path so the dump, the
+# diff and the analyzeHeadless log can be read -- that is the primary way a
+# failing fixture gets diagnosed. Under $TMPDIR that path lies outside every
+# configured agent working directory, so every such read costs a permission
+# prompt; under build/ it does not. build/ is already gitignored and already
+# holds the other per-worktree scratch (build/ghidra-home, build/banktest-cache,
+# build/realrom-cache), so this keeps one run's artifacts with the worktree that
+# produced them and lets `git clean`/`rm -rf build` collect them.
+#
+# Still one fresh directory per run, so concurrent runs cannot collide and the
+# candidate-dump cache keys that deliberately exclude this volatile path (see
+# run-banktest.sh's normalize_opts) are unaffected. Override the BASE with
+# GRM_BANKTEST_WORK; the per-script REALROM_WORK_DIR / MEASURE_WORK_DIR still
+# override the whole directory and take precedence over this.
+#
+# $1 is a short tag naming the caller, so a kept directory says which run left it.
+grm_work_dir() {
+	local base="${GRM_BANKTEST_WORK:-$REPO_ROOT/build/banktest-work}"
+	mkdir -p "$base" || return 1
+	mktemp -d "$base/${1:-run}.XXXXXXXX"
+}
+
 ext_identity() {
 	# Content fingerprint of the installed extension, or non-zero if it cannot be
 	# determined (=> the caller's candidate-dump cache is disabled). NOT a file

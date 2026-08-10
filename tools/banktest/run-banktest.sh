@@ -119,7 +119,7 @@ fi
 # No fallback here: left unset, this run uses the shared %APPDATA% install.
 grm_apply_settings_base
 
-WORK="$(mktemp -d)"
+WORK="$(grm_work_dir banktest)"
 fail=0
 
 # --- candidate-dump cache (bead grm-lne) --------------------------------

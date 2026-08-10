@@ -243,7 +243,10 @@ if [ -f "$STAMP_FILE" ] && [ "$(cat "$STAMP_FILE")" = "$ZIP_STAMP" ] && [ -d "$E
 else
 	echo "== installing extension into $EXT_TARGET =="
 	rm -rf "$EXT_TARGET"
-	TMP_UNZIP="$(mktemp -d)"
+	# Repo-local staging (bead grm-419), which matters here beyond consistency:
+	# EXT_TARGET lives under build/, so staging there too makes the mv below a
+	# same-volume rename instead of a full copy+delete of the extension tree.
+	TMP_UNZIP="$(grm_work_dir extinstall)"
 	unzip -q "$ZIP" -d "$TMP_UNZIP" || {
 		echo "FAIL: unzip $ZIP failed" >&2
 		rm -rf "$TMP_UNZIP"

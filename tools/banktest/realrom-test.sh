@@ -62,6 +62,9 @@
 #   BANKTEST_SETTINGS_BASE  relocate Ghidra user-settings/Extensions dir (defaults to
 #                            <repo>/build/ghidra-home)
 #   GRM_ROM_DIR             default rom dir(s) if none given on the command line
+#   GRM_BANKTEST_WORK       base dir for per-run work dirs (defaults to
+#                            <repo>/build/banktest-work; kept on failure)
+#   REALROM_WORK_DIR        use this exact dir instead of a fresh one
 set -u
 
 USAGE="usage: $0 check|bless|nominate [--gme|--all] [--only <ids>|--except <ids>] <romdir> [<romdir> ...]
@@ -421,7 +424,7 @@ realrom_cache_key() {
 	} | sha256sum | cut -d' ' -f1
 }
 
-WORK="${REALROM_WORK_DIR:-$(mktemp -d)}"
+WORK="${REALROM_WORK_DIR:-$(grm_work_dir realrom)}"
 mkdir -p "$WORK"
 echo "== work dir: $WORK =="
 
