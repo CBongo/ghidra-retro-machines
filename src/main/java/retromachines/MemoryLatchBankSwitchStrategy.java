@@ -15,6 +15,8 @@
  */
 package retromachines;
 
+import java.util.Set;
+
 import com.google.gson.JsonObject;
 
 import ghidra.program.model.address.Address;
@@ -113,37 +115,58 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 */
 	private AddressSet overlayCoveredRanges;
 
+	/**
+	 * The addresses that MIRROR THE LIVE BANK on this program (bead grm-mej.2), delivered by
+	 * {@link #observeMirrors} between {@code BoardBankAnalyzer}'s two dataflow passes. Empty for
+	 * pass 1 and for every board with no derivable mirror, in which case this strategy behaves
+	 * exactly as it did before mirrors existed.
+	 */
+	private BankMirrors mirrors = BankMirrors.none();
+
 	@Override
 	public String strategyName() {
 		return "memory-latch";
 	}
 
+	@Override
+	public void observeMirrors(BankMirrors observed) {
+		mirrors = observed == null ? BankMirrors.none() : observed;
+	}
+
 	/**
-	 * {@code computeSwitch}'s {@code resolveLoad} hook resolves loads to a bank-invariant
-	 * ROM byte (a property of the program alone), never to {@code inStateAtStore}; the only
-	 * other place a base value can come from is {@link StoredValueScanner}'s own immediate-
-	 * value folding, also state-independent. Effective-address resolution (grm-hum) reads only
-	 * instructions, operands and bank-invariant ROM bytes, and is handed
-	 * {@link RegisterEnv#NONE} plus a {@link BankState#unknown()} in-state by construction. So
-	 * the whole result stays a pure function of {@code (program, instr)} -- safe to cache per
-	 * address (grm-5tl.13.2).
+	 * <b>{@code false} since grm-mej.2</b> -- the tripwire this javadoc used to describe has
+	 * fired, exactly as predicted and for the predicted reason.
 	 * <p>
-	 * <b>Tripwire.</b> If any future change routes a real {@link RegisterEnv} into
-	 * {@link #computeSwitch}, or makes {@code resolveLoad} state-dependent (a bank-identifying
-	 * read-back would), this <b>must</b> become {@code false}: {@code BoardBankAnalyzer}'s
-	 * {@code matchCache} is keyed by address alone (:611-639), so it would hand back an
-	 * env-free result for an env-bearing query. {@link RegisterWriteBankSwitchStrategy} is the
-	 * precedent for how a state-dependent strategy behaves. Note the helper path of grm-hum
-	 * increment 2 ({@link #depositHelperArgument}, which really does evaluate under a caller's
-	 * {@link RegisterEnv}) does <em>not</em> trip it, and this was re-checked when it landed: it
-	 * calls {@link #evaluateLatch} directly, never through {@link #computeSwitch} and never
-	 * through {@code matchCache}, and its result is consumed only as that one call site's
-	 * effect. {@link #computeSwitch} itself still passes {@link RegisterEnv#NONE}
-	 * unconditionally.
+	 * It used to read: "if any future change makes {@code resolveLoad} state-dependent (a
+	 * bank-identifying read-back would), this <b>must</b> become {@code false}, because
+	 * {@code BoardBankAnalyzer}'s {@code matchCache} is keyed by address alone and would hand
+	 * back a state-free result for a state-bearing query." That is now what happens:
+	 * {@link StoredValueScanner.Hooks#resolveMirrorLoad} answers a load of a bank mirror from
+	 * {@code inStateAtStore}, and {@link #computeSwitch} threads its real {@code inState} through
+	 * to it. Two dequeues of the same address with different in-states can therefore produce
+	 * different effects, and memoizing either would be unsound.
+	 * <p>
+	 * <b>The cost is re-probing, and nothing else.</b> {@code matchCache} still caches which
+	 * mechanism matched this address -- that decision is instruction-level ({@link #writesInRange})
+	 * and genuinely state-free -- so a cache hit re-runs this one strategy rather than the whole
+	 * ordered loop.
+	 * <p>
+	 * <b>What this flip must NOT drag with it</b> is the bank-known-on-entry derivation. Before
+	 * grm-mej.2 that read {@link #effectDependsOnPriorState()}, whose default is {@code !cacheable()},
+	 * so flipping this alone would have made EVERY unresolved latch site on EVERY NES board declare
+	 * an entry requirement and emit a violation WARNING -- Mega Man's {@code FUN_c39c} fails because
+	 * it reads {@code $31}, not because it needed the bank on entry. The per-site overload
+	 * {@link #effectDependsOnPriorState(Program, Instruction, BankState)} below is what keeps the
+	 * two questions apart; the two changes are one change and cannot be landed separately.
+	 * <p>
+	 * Termination is unaffected. {@code stateIn[addr]} only ever loses known bits
+	 * ({@code BankState.merge} is a monotone agree-join), so a mirror-derived effect can only
+	 * degrade across dequeues and the downstream state with it -- the same argument
+	 * {@link RegisterWriteBankSwitchStrategy} has always relied on.
 	 */
 	@Override
 	public boolean cacheable() {
-		return true;
+		return false;
 	}
 
 	@Override
@@ -183,15 +206,95 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 					: bankInvariantRomByte(loadInstr.getProgram(), resolvedTarget);
 			return romByte == null ? null : BankState.fullyKnown(0xFF, romByte);
 		}
+
+		@Override
+		public BankState resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
+				BankState inStateAtStore) {
+			return mirroredByte(resolvedTarget, inStateAtStore);
+		}
 	};
+
+	/**
+	 * The RAW BYTE a load of {@code target} yields when {@code target} mirrors the live bank, or
+	 * {@code null} when it mirrors nothing this strategy may answer from tracked state.
+	 * <p>
+	 * <b>Only two of the four {@link BankMirrors.Kind}s answer.</b> {@link BankMirrors.Kind#INPUT}
+	 * holds the bank a caller is ASKING for, live only after the wrapper runs;
+	 * {@link BankMirrors.Kind#SAVE_SLOT} holds the OLD bank by intent -- TMNT's {@code cec0} does
+	 * {@code LDA $8000 / STA $59} precisely BECAUSE it is about to change the bank, so at the
+	 * restore, in-state says bank 0 while {@code $59} holds the bank being restored. Answering
+	 * either from in-state ships a confidently wrong bank, which this engine rates strictly worse
+	 * than no bank. Both kinds are nonetheless delivered here with full provenance, for grm-mej.3's
+	 * cross-block forwarding and grm-mej.4's labelling; declining is this method's whole
+	 * contribution to them.
+	 * <p>
+	 * <b>COORDINATE CONVERSION -- the easiest place in this increment to ship a wrong bank.</b>
+	 * {@code inStateAtStore} arrives in this mechanism's FIELD-LOCAL {@code [0, width)} space (the
+	 * engine narrows it at {@code BoardBankAnalyzer}'s {@code toFieldLocal} before calling
+	 * {@link #computeSwitch}), while this hook's contract is to answer in the RAW WRITTEN BYTE,
+	 * because {@link #evaluateLatch} applies the byte-to-field extraction
+	 * {@code (stored >> shift) & mask} afterwards. So the conversion runs that extraction
+	 * BACKWARDS, and it belongs here because this is the only place that knows {@code shift}.
+	 * GxROM ({@code shift=4}, {@code mask=0x3}) is the worked case: field-local {@code prg=2}
+	 * converts to byte {@code 0x20}, and {@code (0x20 >> 4) & 0x3} is 2 again, round trip intact.
+	 * <p>
+	 * <b>How bad getting it wrong is depends on {@code shift} versus the field width, and the
+	 * dangerous half is the one that does NOT look dangerous.</b> Omitting the {@code << shift}
+	 * puts the known bits at byte positions {@code [0, width)} while the deposit step reads back
+	 * {@code [shift, shift+width)}:
+	 * <ul>
+	 * <li>{@code shift >= width} -- the two ranges are DISJOINT, so nothing survives and the
+	 * answer degrades to wholly unknown. GxROM is here (shift 4, width 2). Useless, but safe: it
+	 * declines rather than guessing, and a bug of this shape shows up as lost recovery.</li>
+	 * <li>{@code shift < width} -- the ranges OVERLAP, and the surviving bits form a
+	 * partially-known WRONG bank. A 3-bit field at {@code shift=1} turns field-local 5 into 2 with
+	 * bits 0-1 reported as KNOWN. That is the real hazard: no warning, wrong overlay, full
+	 * confidence in the bits it kept.</li>
+	 * </ul>
+	 * So the round-trip test is worth having on both kinds of board, and the fact that GxROM
+	 * happens to fail safe is a property of GxROM's geometry rather than of this conversion.
+	 * <p>
+	 * <b>{@code byteShift} differs by kind, and that asymmetry is the point.</b> A
+	 * {@link BankMirrors.Kind#WRITE_THROUGH} cell holds a copy of the byte that was WRITTEN to the
+	 * latch, so its content is already in raw-byte coordinates and the field sits at
+	 * {@code shift}. A {@link BankMirrors.Kind#ROM_IDENTIFYING} offset holds the bank NUMBER,
+	 * right-justified by cartridge convention -- Contra's {@code $8000} reads {@code 00 01 02 ...}
+	 * across banks 0..7, not {@code 00 10 20 ...} -- so it converts with no shift at all. On a
+	 * board with {@code shift != 0} that makes a bare {@code LDA <ident> / STA <latch>} come out
+	 * as bank 0; no such code exists, because a game on such a board must shift the number itself
+	 * before storing it, and the scan loses the value at that shift instruction anyway.
+	 * <p>
+	 * Bits outside the field come back UNKNOWN rather than zero: tracked state says nothing about
+	 * the rest of the written byte, and on a multi-latch board those bits belong to another
+	 * mechanism.
+	 */
+	private BankState mirroredByte(Address target, BankState inStateAtStore) {
+		if (target == null || mirrors.isEmpty()) {
+			return null;
+		}
+		Set<BankMirrors.Kind> kinds = mirrors.kindsAt(target);
+		int byteShift;
+		if (kinds.contains(BankMirrors.Kind.ROM_IDENTIFYING)) {
+			byteShift = 0;
+		}
+		else if (kinds.contains(BankMirrors.Kind.WRITE_THROUGH)) {
+			byteShift = shift;
+		}
+		else {
+			return null; // INPUT, SAVE_SLOT, or not a mirror at all -- see above
+		}
+		return new BankState(((inStateAtStore.knownMask() & mask) << byteShift) & 0xFF,
+			((inStateAtStore.bits() & mask) << byteShift) & 0xFF);
+	}
 
 	@Override
 	public BankState computeSwitch(Program program, Instruction instr, BankState inState) {
 		if (!writesInRange(instr)) {
 			return null;
 		}
-		// RegisterEnv.NONE, always -- see cacheable()'s tripwire.
-		return evaluateLatch(program, instr, RegisterEnv.NONE);
+		// RegisterEnv.NONE, always: no caller's registers are in scope on the direct path. The
+		// real inState IS threaded through now (grm-mej.2) -- that is what made cacheable() false.
+		return evaluateLatch(program, instr, RegisterEnv.NONE, inState, hooks);
 	}
 
 	/**
@@ -208,18 +311,25 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * {@link #depositHelperArgument} is that helper path; {@code env} is
 	 * {@link RegisterEnv#NONE} for every direct-path call.
 	 * <p>
-	 * {@link BankState#unknown()} is passed as the scanner's in-state rather than a caller's:
-	 * this strategy's {@code resolveLoad} never consults it (the latch is write-only, so a load
-	 * in range reads ROM, not bank state), so this is behavior-identical and makes the purity
-	 * {@link #cacheable()} claims structural rather than incidental.
+	 * <b>{@code inState} is the mechanism's FIELD-LOCAL tracked state at this store</b> and is
+	 * consulted only through {@link StoredValueScanner.Hooks#resolveMirrorLoad} -- see
+	 * {@link #mirroredByte} for the coordinate conversion that lands on. Before grm-mej.2 this was
+	 * hardcoded {@link BankState#unknown()}, which was behavior-identical then because no hook
+	 * here read it, and is what made {@link #cacheable()} structurally true. Both halves of that
+	 * sentence have now changed together.
+	 * <p>
+	 * {@code hooks} is a parameter rather than the field so that
+	 * {@link #effectDependsOnPriorState(Program, Instruction, BankState)} can re-run this exact
+	 * evaluation under an instrumented wrapper. Every other caller passes the field.
 	 */
-	private BankState evaluateLatch(Program program, Instruction store, RegisterEnv env) {
+	private BankState evaluateLatch(Program program, Instruction store, RegisterEnv env,
+			BankState inState, StoredValueScanner.Hooks hooks) {
 		Character reg = StoredValueScanner.storeRegister(store);
 		if (reg == null) {
 			return BankState.unknown();
 		}
 		BankState stored = StoredValueScanner.resolveStoredValue(program, store, reg,
-			BankState.unknown(), 0xFF, hooks, env);
+			inState, 0xFF, hooks, env);
 
 		if (busConflict) {
 			Address target = StoredValueScanner.effectiveOperandTarget(program, store, hooks, env);
@@ -329,7 +439,10 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 			BankState argValue, BankState inState, int stateMask, RegisterEnv callerRegs) {
 		// argValue is unused on purpose -- see the javadoc. Evaluation is the only model here;
 		// when it pins nothing down the deposit is unknown, which warns rather than guesses.
-		BankState evaluated = evaluateLatch(program, switchSite, callerRegs);
+		// inState IS used: it is the caller's own field-local state at the call, which is the
+		// right answer for a mirror read INSIDE the helper, since the helper has not switched yet
+		// at the point the scan reaches back to.
+		BankState evaluated = evaluateLatch(program, switchSite, callerRegs, inState, hooks);
 		return new HelperDeposit(stateMask,
 			new BankState(evaluated.knownMask() & stateMask, evaluated.bits() & stateMask));
 	}
@@ -359,6 +472,76 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	@Override
 	public boolean consumesHelperArgument() {
 		return false;
+	}
+
+	/**
+	 * <b>The guard that makes {@link #cacheable()}{@code == false} landable</b> (grm-mej.2 §2d).
+	 * <p>
+	 * {@code BoardBankAnalyzer.annotateBankRequirementViolations} counts a switch site as imposing
+	 * a bank-known-on-entry requirement only when its strategy's effect can depend on the state
+	 * that flowed in. The inherited default answers that per STRATEGY, as
+	 * {@code !cacheable()}. Flipping this strategy's {@link #cacheable()} without this override
+	 * would therefore make every unresolved latch site on every NES board -- the overwhelming
+	 * majority, since most fail for reasons having nothing to do with bank state -- declare a
+	 * requirement, propagate it up the call graph, and emit fresh violation WARNING bookmarks
+	 * across all twelve real-ROM goldens and the synthetic NES fixtures. Not one of those would be
+	 * a real finding: Mega Man's {@code FUN_c39c} comes out unknown because it reads {@code $31},
+	 * a stateful counter, not because it needed the bank on entry.
+	 * <p>
+	 * So the question is asked PER SITE instead: re-run {@link #evaluateLatch} under a hook wrapper
+	 * that records whether a MIRROR load was actually reached and answered, and report only that.
+	 * A site that never reads a mirror cannot have depended on prior state, whatever else went
+	 * wrong there.
+	 * <p>
+	 * <b>Why the real {@code siteInState} and not {@link BankState#unknown()}</b>: this must count
+	 * the sites that consulted a mirror AND CAME UP UNKNOWN, since those are exactly the ones that
+	 * needed a bank they did not have -- so the probe has to see the same in-state the real
+	 * evaluation saw, or it is measuring a different evaluation. {@link #mirroredByte} answers
+	 * non-null even when wholly unknown for this reason.
+	 * <p>
+	 * Called once per site in the analyzer's phase 3, never inside the fixpoint, so re-running the
+	 * evaluation here is not on any hot path.
+	 */
+	@Override
+	public boolean effectDependsOnPriorState(Program program, Instruction site,
+			BankState siteInState) {
+		if (mirrors.isEmpty() || site == null || !writesInRange(site)) {
+			return false;
+		}
+		MirrorProbe probe = new MirrorProbe();
+		evaluateLatch(program, site, RegisterEnv.NONE, siteInState, probe);
+		return probe.consultedMirror;
+	}
+
+	/**
+	 * {@link #hooks} with one bit of instrumentation: did this evaluation actually resolve a load
+	 * of a bank mirror? Delegates everything, so the run it observes is the same run
+	 * {@link #computeSwitch} performs.
+	 */
+	private final class MirrorProbe implements StoredValueScanner.Hooks {
+
+		private boolean consultedMirror;
+
+		@Override
+		public boolean isMechanismWrite(Instruction instr) {
+			return hooks.isMechanismWrite(instr);
+		}
+
+		@Override
+		public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+				BankState inStateAtStore) {
+			return hooks.resolveLoad(loadInstr, resolvedTarget, inStateAtStore);
+		}
+
+		@Override
+		public BankState resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
+				BankState inStateAtStore) {
+			BankState mirrored = hooks.resolveMirrorLoad(loadInstr, resolvedTarget, inStateAtStore);
+			if (mirrored != null) {
+				consultedMirror = true;
+			}
+			return mirrored;
+		}
 	}
 
 	/**

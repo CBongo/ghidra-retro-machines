@@ -480,6 +480,11 @@ if selected nes-banking; then
 	run_one nesbanktest "$WORK/nes/nesbanktest.nes" NesRomLoader
 	run_one nesbanktest2 "$WORK/nes/nesbanktest2.nes" NesRomLoader
 	run_one nesuxhelpertest "$WORK/nes/nesuxhelpertest.nes" NesRomLoader
+
+	# grm-mej.2 increment 2 (Tier 3): bank-MIRROR derive/observe/consume/annotate/retarget
+	# end-to-end, plus the SS2d requiresOnEntry guard -- see make_prg_mirrortest()'s docstring.
+	run_one nesmirrortest "$WORK/nes/nesmirrortest.nes" NesRomLoader
+
 	run_one nesmodetest "$WORK/nes/nesmodetest.nes" NesRomLoader
 	run_one nesmmc3test "$WORK/nes/nesmmc3test.nes" NesRomLoader
 	run_one nesmmc3test2 "$WORK/nes/nesmmc3test2.nes" NesRomLoader

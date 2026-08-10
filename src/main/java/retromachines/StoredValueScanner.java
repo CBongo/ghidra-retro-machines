@@ -47,8 +47,9 @@ import ghidra.program.model.symbol.Reference;
  * absolute-indexed with a constant-resolvable index). Register-write resolves a read-back
  * of its own mechanism register to the tracked in-state; memory-latch resolves a load of a
  * bank-invariant ROM byte to that byte. When no strategy claims the load,
- * {@link #forwardedStoreValue} tries local store-to-load forwarding (below). An
- * otherwise unresolved load leaves {@code x} wholly unknown.</li>
+ * {@link #forwardedStoreValue} tries local store-to-load forwarding (below), and only if
+ * THAT comes back empty is the load offered to {@link Hooks#resolveMirrorLoad} (bead
+ * grm-mej.2). An otherwise unresolved load leaves {@code x} wholly unknown.</li>
  * <li><b>Local store-to-load forwarding</b> (grm-mej.1): a load, or a non-immediate
  * {@code AND}/{@code ORA} operand, whose target is statically certain is answered from the
  * nearest preceding store to that same cell <em>within the same basic block</em>, by
@@ -115,6 +116,48 @@ final class StoredValueScanner {
 		 */
 		BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
 				BankState inStateAtStore);
+
+		/**
+		 * <b>Last resort</b> (bead grm-mej.2): resolves a load of an address that MIRRORS THE
+		 * LIVE BANK -- a bank-identifying ROM offset, or a RAM cell the game writes the bank
+		 * through -- from {@code inStateAtStore}. {@code null} (the default) means this strategy
+		 * recovers nothing from a mirror, which is what every strategy did before mirrors existed.
+		 * <p>
+		 * <b>Why this is a second hook and not a branch inside {@link #resolveLoad}.</b> A
+		 * write-through shadow is written BEFORE the value reaches the mechanism, so in the gap
+		 * between the two the shadow holds the NEW bank while tracked in-state still holds the
+		 * OLD one. Castlevania 2 is exactly that shape:
+		 * <pre>
+		 *   c183: STA $1C     ; shadow := the new bank, still only in A
+		 *   c185: LDA $1C     ; &lt;-- reads the NEW bank
+		 *   c187: 5x STA/LSR  ; commit
+		 * </pre>
+		 * {@link #resolveStoredValue}'s {@code LD<reg>} branch returns on ANY non-null
+		 * {@link #resolveLoad} answer, short-circuiting {@link #forwardedStoreValue}. Answering
+		 * mirrors there would therefore preempt grm-mej.1's correct forwarded value with the stale
+		 * in-state -- a silently wrong bank on the easiest case in the bead. Ranking mirrors below
+		 * forwarding makes the precedence explicit and unmissable.
+		 * <p>
+		 * {@link #resolveLoad} keeps its first-place slot for the opposite reason: it answers with
+		 * a NON-writable ROM byte, and nothing can store to non-writable memory, so forwarding can
+		 * never have a better answer to preempt it with.
+		 * <p>
+		 * <b>A non-null answer may be wholly unknown</b>, and that is meaningful rather than a
+		 * degenerate null: it says "this site read the bank back and the bank was not known here",
+		 * which is precisely what
+		 * {@link BankSwitchStrategy#effectDependsOnPriorState(Program, Instruction, BankState)}
+		 * reports as a bank-known-on-entry requirement. Callers must therefore treat non-null as
+		 * authoritative, not test {@code knownMask() != 0}.
+		 *
+		 * @param loadInstr       the load
+		 * @param resolvedTarget  the single address it reads, as for {@link #resolveLoad}
+		 * @param inStateAtStore  the strategy's tracked in-state at the store being scanned, in
+		 *                        that mechanism's field-local {@code [0, width)} coordinates
+		 */
+		default BankState resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
+				BankState inStateAtStore) {
+			return null;
+		}
 	}
 
 	private static final int MAX_BACKWARD_SCAN = 16;
@@ -323,6 +366,13 @@ final class StoredValueScanner {
 				if (forwarded.knownMask() != 0) {
 					return combine(aAcc, oAcc, mask, forwarded);
 				}
+				// Last resort (grm-mej.2): does this address MIRROR the live bank? Strictly below
+				// forwarding -- see Hooks.resolveMirrorLoad for the cv2 case that ordering exists
+				// for. A non-null answer is authoritative even when wholly unknown.
+				BankState mirrored = hooks.resolveMirrorLoad(prev, target, inStateAtStore);
+				if (mirrored != null) {
+					return combine(aAcc, oAcc, mask, mirrored);
+				}
 			}
 
 			if (modifiers.contains(mnem)) {
@@ -417,10 +467,20 @@ final class StoredValueScanner {
 	 * (Ironsword's {@code $C3} holds either the caller's fully known {@code A} or nothing). This
 	 * is the same reasoning {@link #constantRegisterValue} already records for itself.
 	 * <p>
-	 * <b>{@link Hooks#resolveLoad} is deliberately NOT consulted here</b>, only forwarding. A
-	 * strategy resolving an {@code ORA} operand (a bank-invariant ROM byte, or a bank mirror) is
-	 * a real further capability with its own blast radius, and belongs to grm-mej.2 where it can
-	 * be measured on its own. Adding it is one line at the top of this method.
+	 * <b>{@link Hooks#resolveMirrorLoad} IS consulted, below forwarding</b> (grm-mej.2), in the
+	 * same order and for the same reason as the {@code LD<reg>} branch of
+	 * {@link #resolveStoredValue}: a bank spliced into an {@code ORA} operand is the same claim
+	 * about the same cell, and letting the two branches disagree about precedence would be a bug
+	 * waiting to be found by whichever board splices rather than loads. The all-or-nothing rule
+	 * above still applies afterwards, so a mirror narrower than the whole byte -- every board
+	 * whose latch field is not eight bits wide -- contributes nothing here and declines exactly as
+	 * before.
+	 * <p>
+	 * <b>{@link Hooks#resolveLoad} is still deliberately NOT consulted here</b>, only forwarding
+	 * and mirrors. A strategy resolving an {@code ORA} operand to a bank-invariant ROM byte is a
+	 * separate further capability with its own blast radius across every pinned title, and unlike
+	 * the mirror path it is not needed by anything measured. Adding it is one line at the top of
+	 * this method.
 	 */
 	private static Integer operandByte(Program program, Instruction instr, BankState inStateAtStore,
 			Hooks hooks, RegisterEnv env, Budget budget, int depth) {
@@ -430,7 +490,16 @@ final class StoredValueScanner {
 		Address target = effectiveOperandTarget(program, instr, hooks, env);
 		BankState forwarded =
 			forwardedStoreValue(program, instr, target, inStateAtStore, hooks, env, budget, depth);
-		return (forwarded.knownMask() & 0xFF) == 0xFF ? forwarded.bits() & 0xFF : null;
+		if ((forwarded.knownMask() & 0xFF) == 0xFF) {
+			return forwarded.bits() & 0xFF;
+		}
+		if (forwarded.knownMask() == 0) {
+			BankState mirrored = hooks.resolveMirrorLoad(instr, target, inStateAtStore);
+			if (mirrored != null && (mirrored.knownMask() & 0xFF) == 0xFF) {
+				return mirrored.bits() & 0xFF;
+			}
+		}
+		return null;
 	}
 
 	/**

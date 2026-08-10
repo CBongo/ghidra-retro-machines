@@ -33,14 +33,26 @@
 #
 # KNOWN-FLAKY ROW -- read this before believing a megaman FAIL. megaman is no longer held back
 # (grm-hum blessed it), but it is BISTABLE (grm-g73): two identical imports of the same ROM
-# against the same build produce one of two dumps, differing ONLY in
+# against the same build produce one of several dumps. The lines observed moving are
 #   REALROM count refs.intoOverlay     1704  <-> 1703
 #   REALROM count instrs.inOverlay     7429  <-> 7431
-# always moving in opposite directions. So the row flaps PASS/FAIL on an unchanged build. THE
-# RULE: if those two lines are the only diff, it is grm-g73, not a regression; any other line
-# moving is real. This harness deliberately does NOT retry or tolerate the delta -- a golden
-# whose diff you can trust is the entire point of this tier, and hiding a known-noisy row would
-# cost that for every other row too. See docs/testing.md's real-ROM section.
+#   REALROM count bankComments          156  <->  157
+# So the row flaps PASS/FAIL on an unchanged build.
+#
+# DO NOT USE A LINE-WHITELIST AS THE TEST. An earlier version of this comment said the first two
+# lines "always move in opposite directions" and that "any other line moving is real". Both
+# halves are too strong, measured 2026-08-10 during grm-mej.2 increment 2: bankComments moved
+# 156->157 while BOTH overlay counts stayed on the golden side, which the whitelist rule would
+# have called a regression. There are more than two states and the lines are not locked together.
+#
+# THE RULE THAT ACTUALLY HOLDS: settle authorship by re-running, not by reading. `git stash -u`,
+# rebuild, `realrom-test.sh check --only megaman`, and diff that dump against the same row's dump
+# from your working tree. Byte-identical means pre-existing, whatever lines moved against the
+# golden. That test costs one extra run and cannot be fooled.
+#
+# This harness deliberately does NOT retry or tolerate the delta -- a golden whose diff you can
+# trust is the entire point of this tier, and hiding a known-noisy row would cost that for every
+# other row too. See docs/testing.md's real-ROM section.
 # Cause is grm-eyn: Ghidra over-reads several of this ROM's jump tables, and the resulting
 # spurious computed-jump targets race the real instruction flow for the same bytes (6502
 # alignment is 1, so both decodings are self-consistent). No configuration workaround exists.

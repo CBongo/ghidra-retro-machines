@@ -652,6 +652,184 @@ def make_prg_uxhelper():
     return bytes(prg)
 
 
+def make_prg_mirrortest():
+    """Bank-MIRROR derive/observe/consume/annotate/retarget end-to-end fixture (bead
+    grm-mej.2 increment 2, Tier 3). Same 4-bank / 64 KiB UxROM shape as the other UxROM
+    fixtures (machines/nes-uxrom.yaml: memory-latch, shift=0, mask=0x0F, bus_conflict,
+    range $8000-$FFFF). 4 realized PRG_LO banks clears BankMirrors.MIN_IDENTIFYING_BANKS
+    (3) with one bank of headroom.
+
+    IDENTIFYING OFFSET IS $8200, NOT $8000. Bank 3 is dual-mapped: it is both the fixed
+    PRG_HI window ($C000-$FFFF, where RESET's own code lives) and, because PRG_LO's
+    switchable window covers the whole image, the overlay PRG_LO_B3 ($8000-$BFFF content
+    identical to bank 3's file bytes). RESET's own opcodes therefore stomp on whatever
+    bank 3 holds at low PRG_LO offsets -- offset 0 (Contra's real convention, and every
+    other fixture's marker byte) collides with $C000, RESET's very first opcode. $8200
+    (file $C200 in bank 3) sits safely past this fixture's code, which never reaches
+    $C114.
+
+    Tier 2 (BankMirrorConsumptionProgramTest) already pins the per-kind resolve/decline
+    rules in isolation. This fixture's job is the pipeline Tier 2 cannot exercise: a real
+    derive pass finding these addresses from program content/code, BoardBankAnalyzer
+    handing them to the strategy between its two dataflow passes, consumption changing a
+    real switch site's recovered bank, that bank retargeting a real overlay reference, and
+    (grm-mej.2 SS2d) the per-site effectDependsOnPriorState override keeping an unrelated
+    unresolved latch site from fabricating a bank-requirement violation.
+
+    RESET ($C000):
+      C000  A9 02        LDA #$02
+      C002  8D D2 FF     STA $FFD2       ; latch -> bank 2 ($FFD2 = 0x02, bus-conflict-safe)
+      C005  AD 00 82     LDA $8200       ; ROM_IDENTIFYING mirror: bank 2's own identifying
+                          byte (every realized bank's $8200 == that bank's number)
+      C008  8D D2 FF     STA $FFD2       ; re-latch FROM THE MIRROR -- must resolve to
+                          bank 2 (not poison), since it is a genuine re-latch of the live
+                          bank read back through a ROM offset, not a fresh guess
+      C00B  20 05 80     JSR $8005       ; load-bearing: retargets into PRG_LO_B2::8005
+                          only because C008 resolved
+      C00E  A9 01        LDA #$01
+      C010  85 42        STA $42         ; WRITE_THROUGH shadow store #1 (bank 1)
+      C012  8D D1 FF     STA $FFD1       ; latch -> bank 1 ($FFD1 = 0x01)
+      C015  A9 03        LDA #$03
+      C017  85 42        STA $42         ; WRITE_THROUGH shadow store #2 (bank 3) --
+                          corroboration: 2 distinct store sites into $42
+      C019  8D D3 FF     STA $FFD3       ; latch -> bank 3 ($FFD3 = 0x03)
+      C01C  A5 42        LDA $42         ; WRITE_THROUGH mirror: $42 tracks the live bank
+      C01E  8D D3 FF     STA $FFD3       ; re-latch FROM THE SHADOW -- must resolve to
+                          bank 3 from tracked state
+      C021  A9 01        LDA #$01        ; H1 ORDERING (Castlevania 2's shape): the
+                          forwarded immediate (1) DISAGREES with tracked state (3)
+      C023  85 42        STA $42         ; plain RAM store -- NOT a mechanism write ($42
+                          is outside $8000-$FFFF)
+      C025  A5 42        LDA $42         ; local store-to-load forwarding must win over
+                          the mirror: this must read back the JUST-STORED 1, not the
+                          stale tracked bank 3
+      C027  8D D1 FF     STA $FFD1       ; latch -> bank 1 (the forwarded value), proving
+                          forwarding outranks resolveMirrorLoad
+      C02A  AD 00 82     LDA $8200       ; SAVE_SLOT derivation shape (TMNT's cec0): read
+                          the current bank back...
+      C02D  85 59        STA $59         ; ...and stash it in $59 immediately before...
+      C02F  8D D1 FF     STA $FFD1       ; ...re-committing the SAME bank (1) -- this is
+                          the walk BankMirrors.Discovery needs to type $59 SAVE_SLOT
+                          (read-back-then-restore), never WRITE_THROUGH
+      C032  A5 30        LDA $30         ; poisons tracked bank state to UNKNOWN before
+      C034  8D DA FF     STA $FFDA       ; the call below ($FFDA = 0xFF, bus-conflict
+                          AND is then a no-op, so this stays genuinely unresolvable) --
+                          needed so the requirement-violation guard below is a real test,
+                          not a vacuous one (a caller that already knows the bank can
+                          never trip the callee's entry requirement regardless of the bug)
+      C037  20 00 C1     JSR $C100       ; SS2D GUARD CHECKPOINT -- see FUN_C100 below
+      C03A  4C 3A C0     JMP $C03A       ; self loop
+      C03D  40           RTI             ; NMI/IRQ handler
+
+    FUN_C100 -- the SS2d (grm-mej.2 "requiresOnEntry" guard) fixture. Two switch sites
+    whose value recovery declines for reasons that have NOTHING to do with the bank being
+    unknown on entry, followed by one plain, always-resolvable switch:
+
+      C100  A5 59        LDA $59         ; SAVE_SLOT DECLINES: $59 holds the OLD bank by
+                          intent (see the derivation above) -- resolving it from state
+                          would ship a confidently WRONG bank, so it must not
+      C102  8D DB FF     STA $FFDB       ; latch write; must stay UNRESOLVED (warning
+                          bookmark, no "bank ->") -- $FFDB = 0xFF keeps the bus-conflict
+                          AND a no-op so the unresolved-ness isn't accidentally laundered
+      C105  A5 31        LDA $31         ; ANTI-OVERREACH (U3-shaped): a RAM cell with NO
+                          shadow and no in-block store at all -- not derived as anything
+      C107  8D DC FF     STA $FFDC       ; must ALSO stay UNRESOLVED ($FFDC = 0xFF, same
+                          reason)
+      C10A  A9 01        LDA #$01        ; the LAST (max-address) switch site in this
+                          function -- plain immediate, unconditionally resolvable
+      C10C  8D D1 FF     STA $FFD1       ; -- so depositHelperArgument's mini-inline
+                          (which re-evaluates exactly this site) hands the JSR $C100 call
+                          site a FULLY KNOWN effect regardless of caller registers. That
+                          keeps this call OUT of the ordinary "helper argument could not
+                          be recovered" warning path, which is what makes the guard below
+                          a clean read: any WARNING that lands on JSR $C100 (C037) can
+                          only have come from the bank-requirement-violation check.
+      C10F  60           RTS
+
+    THE GUARD ITSELF: before grm-mej.2's per-site effectDependsOnPriorState override
+    landed alongside cacheable()->false, C102 and C107 -- unresolved for reasons that have
+    nothing to do with missing entry state -- would each have been credited (under the
+    old !cacheable() strategy-wide default) with "this site needed the bank known on
+    entry, and didn't have it". That would set FUN_C100's requiresOnEntry nonzero, which
+    (bank genuinely unknown at C037, by construction above) propagates straight to a fresh
+    "Bank state requirement violated" WARNING bookmark AT C037 -- a confident-sounding but
+    entirely spurious finding, invented out of two sites that were never asking for
+    anything the caller could have supplied. The fix asks the question per SITE instead
+    (did THIS site actually consult a bank mirror and come up empty?), and C102/C107
+    never do (SAVE_SLOT and "not a mirror at all" both decline before ever setting that
+    flag) -- so FUN_C100's requiresOnEntry stays 0 and C037 gets no such bookmark.
+    """
+    prg = bytearray([0x00] * PRG_SIZE)
+
+    IDENT_OFFSET = 0x0200  # see module doc above for why not offset 0 on this board
+
+    # ROM_IDENTIFYING marker: byte IDENT_OFFSET of every realized PRG_LO bank equals that
+    # bank's own number (Contra's $8000 convention, relocated -- see module doc).
+    for bank in range(PRG_BANKS):
+        prg[bank * PRG_BANK_SIZE + IDENT_OFFSET] = bank
+
+    # Bank 2's routine at CPU $8005 -- the JSR target once bank 2 is (re-)selected.
+    prg[2 * PRG_BANK_SIZE + 0x0005] = 0x60  # RTS
+
+    put = _bank3_putter(prg)
+
+    # --- RESET ---
+    put(0xC000, [0xA9, 0x02])              # LDA #$02
+    put(0xC002, [0x8D, 0xD2, 0xFF])         # STA $FFD2   (latch -> bank 2)
+    put(0xC005, [0xAD, 0x00, 0x82])         # LDA $8200   (ROM_IDENTIFYING mirror)
+    put(0xC008, [0x8D, 0xD2, 0xFF])         # STA $FFD2   (re-latch from mirror -> bank 2)
+    put(0xC00B, [0x20, 0x05, 0x80])         # JSR $8005   (-> PRG_LO_B2::8005, load-bearing)
+    put(0xC00E, [0xA9, 0x01])              # LDA #$01
+    put(0xC010, [0x85, 0x42])              # STA $42     (write-through shadow store #1)
+    put(0xC012, [0x8D, 0xD1, 0xFF])         # STA $FFD1   (latch -> bank 1)
+    put(0xC015, [0xA9, 0x03])              # LDA #$03
+    put(0xC017, [0x85, 0x42])              # STA $42     (write-through shadow store #2)
+    put(0xC019, [0x8D, 0xD3, 0xFF])         # STA $FFD3   (latch -> bank 3)
+    put(0xC01C, [0xA5, 0x42])              # LDA $42     (write-through mirror)
+    put(0xC01E, [0x8D, 0xD3, 0xFF])         # STA $FFD3   (re-latch from shadow -> bank 3)
+    put(0xC021, [0xA9, 0x01])              # LDA #$01    (H1: forwarded value disagrees)
+    put(0xC023, [0x85, 0x42])              # STA $42     (plain RAM store, not a switch)
+    put(0xC025, [0xA5, 0x42])              # LDA $42     (must forward the 1, not mirror
+                                             #  the stale tracked 3)
+    put(0xC027, [0x8D, 0xD1, 0xFF])         # STA $FFD1   (latch -> bank 1, forwarded)
+    put(0xC02A, [0xAD, 0x00, 0x82])         # LDA $8200   (SAVE_SLOT derivation: read-back)
+    put(0xC02D, [0x85, 0x59])              # STA $59     (stash the read-back bank)
+    put(0xC02F, [0x8D, 0xD1, 0xFF])         # STA $FFD1   (re-commit same bank -- types
+                                             #  $59 SAVE_SLOT, never WRITE_THROUGH)
+    put(0xC032, [0xA5, 0x30])              # LDA $30     (poison: unresolvable RAM load)
+    put(0xC034, [0x8D, 0xDA, 0xFF])         # STA $FFDA   (mechanism write -> unknown;
+                                             #  bank state is now genuinely unknown)
+    put(0xC037, [0x20, 0x00, 0xC1])         # JSR $C100   (SS2d guard checkpoint)
+    put(0xC03A, [0x4C, 0x3A, 0xC0])         # JMP $C03A   (self loop)
+    put(0xC03D, [0x40])                     # RTI (NMI/IRQ handler)
+
+    # --- FUN_C100: the SS2d (requiresOnEntry) guard fixture ---
+    put(0xC100, [0xA5, 0x59])              # LDA $59     (SAVE_SLOT -- must decline)
+    put(0xC102, [0x8D, 0xDB, 0xFF])         # STA $FFDB   (stays UNRESOLVED)
+    put(0xC105, [0xA5, 0x31])              # LDA $31     (no shadow at all -- must decline)
+    put(0xC107, [0x8D, 0xDC, 0xFF])         # STA $FFDC   (stays UNRESOLVED)
+    put(0xC10A, [0xA9, 0x01])              # LDA #$01    (last site: always resolvable)
+    put(0xC10C, [0x8D, 0xD1, 0xFF])         # STA $FFD1   (-> bank 1, unconditionally)
+    put(0xC10F, [0x60])                     # RTS
+
+    # Latch targets: bus-conflict-safe bytes. $FFD1/$FFD2/$FFD3 hold the bank number they
+    # latch (the canonical table idiom); $FFDA/$FFDB/$FFDC hold 0xFF so the bus-conflict
+    # AND is a no-op and a genuinely-unresolved store stays genuinely unresolved.
+    put(0xFFD1, [0x01])
+    put(0xFFD2, [0x02])
+    put(0xFFD3, [0x03])
+    put(0xFFDA, [0xFF])
+    put(0xFFDB, [0xFF])
+    put(0xFFDC, [0xFF])
+
+    # Vector table.
+    put(0xFFFA, [0x3D, 0xC0])  # NMI   -> $C03D (RTI)
+    put(0xFFFC, [0x00, 0xC0])  # RESET -> $C000
+    put(0xFFFE, [0x3D, 0xC0])  # IRQ   -> $C03D (RTI)
+
+    return bytes(prg)
+
+
 def make_prg_mode():
     """The mode-dependent-layout fixture for nes-modetest (bead grm-aqf); see module doc."""
     prg = bytearray([0x00] * PRG_SIZE)
@@ -2298,6 +2476,78 @@ def main():
     assert (prgux[0xFFFE] | (prgux[0xFFFF] << 8)) == 0xC01B  # IRQ vector
 
     _write_rom(outdir, "nesuxhelpertest.nes", prgux)
+
+    prgmirror = make_prg_mirrortest()
+
+    # Sanity-check the bank-mirror fixture (bead grm-mej.2 increment 2) before writing.
+    assert len(prgmirror) == PRG_SIZE
+    IDENT_OFFSET = 0x0200
+    for bank in range(PRG_BANKS):
+        assert prgmirror[bank * PRG_BANK_SIZE + IDENT_OFFSET] == bank
+    assert prgmirror[2 * PRG_BANK_SIZE + 0x0005] == 0x60  # RTS at bank 2's $8005
+    # RESET
+    assert prgmirror[0xC000] == 0xA9 and prgmirror[0xC001] == 0x02        # LDA #$02
+    assert prgmirror[0xC002] == 0x8D
+    assert (prgmirror[0xC003] | (prgmirror[0xC004] << 8)) == 0xFFD2
+    assert prgmirror[0xC005] == 0xAD                                      # LDA $8200
+    assert (prgmirror[0xC006] | (prgmirror[0xC007] << 8)) == 0x8200
+    assert prgmirror[0xC008] == 0x8D
+    assert (prgmirror[0xC009] | (prgmirror[0xC00A] << 8)) == 0xFFD2
+    assert prgmirror[0xC00B] == 0x20                                      # JSR $8005
+    assert (prgmirror[0xC00C] | (prgmirror[0xC00D] << 8)) == 0x8005
+    assert prgmirror[0xC00E] == 0xA9 and prgmirror[0xC00F] == 0x01        # LDA #$01
+    assert prgmirror[0xC010] == 0x85 and prgmirror[0xC011] == 0x42        # STA $42
+    assert prgmirror[0xC012] == 0x8D
+    assert (prgmirror[0xC013] | (prgmirror[0xC014] << 8)) == 0xFFD1
+    assert prgmirror[0xC015] == 0xA9 and prgmirror[0xC016] == 0x03        # LDA #$03
+    assert prgmirror[0xC017] == 0x85 and prgmirror[0xC018] == 0x42        # STA $42
+    assert prgmirror[0xC019] == 0x8D
+    assert (prgmirror[0xC01A] | (prgmirror[0xC01B] << 8)) == 0xFFD3
+    assert prgmirror[0xC01C] == 0xA5 and prgmirror[0xC01D] == 0x42        # LDA $42
+    assert prgmirror[0xC01E] == 0x8D
+    assert (prgmirror[0xC01F] | (prgmirror[0xC020] << 8)) == 0xFFD3
+    assert prgmirror[0xC021] == 0xA9 and prgmirror[0xC022] == 0x01        # LDA #$01
+    assert prgmirror[0xC023] == 0x85 and prgmirror[0xC024] == 0x42        # STA $42
+    assert prgmirror[0xC025] == 0xA5 and prgmirror[0xC026] == 0x42        # LDA $42
+    assert prgmirror[0xC027] == 0x8D
+    assert (prgmirror[0xC028] | (prgmirror[0xC029] << 8)) == 0xFFD1
+    assert prgmirror[0xC02A] == 0xAD                                      # LDA $8200
+    assert (prgmirror[0xC02B] | (prgmirror[0xC02C] << 8)) == 0x8200
+    assert prgmirror[0xC02D] == 0x85 and prgmirror[0xC02E] == 0x59        # STA $59
+    assert prgmirror[0xC02F] == 0x8D
+    assert (prgmirror[0xC030] | (prgmirror[0xC031] << 8)) == 0xFFD1
+    assert prgmirror[0xC032] == 0xA5 and prgmirror[0xC033] == 0x30        # LDA $30
+    assert prgmirror[0xC034] == 0x8D
+    assert (prgmirror[0xC035] | (prgmirror[0xC036] << 8)) == 0xFFDA
+    assert prgmirror[0xC037] == 0x20                                      # JSR $C100
+    assert (prgmirror[0xC038] | (prgmirror[0xC039] << 8)) == 0xC100
+    assert prgmirror[0xC03A] == 0x4C                                      # JMP $C03A
+    assert (prgmirror[0xC03B] | (prgmirror[0xC03C] << 8)) == 0xC03A
+    assert prgmirror[0xC03D] == 0x40                                      # RTI
+    # FUN_C100 (the SS2d guard fixture)
+    assert prgmirror[0xC100] == 0xA5 and prgmirror[0xC101] == 0x59        # LDA $59
+    assert prgmirror[0xC102] == 0x8D
+    assert (prgmirror[0xC103] | (prgmirror[0xC104] << 8)) == 0xFFDB
+    assert prgmirror[0xC105] == 0xA5 and prgmirror[0xC106] == 0x31        # LDA $31
+    assert prgmirror[0xC107] == 0x8D
+    assert (prgmirror[0xC108] | (prgmirror[0xC109] << 8)) == 0xFFDC
+    assert prgmirror[0xC10A] == 0xA9 and prgmirror[0xC10B] == 0x01        # LDA #$01
+    assert prgmirror[0xC10C] == 0x8D
+    assert (prgmirror[0xC10D] | (prgmirror[0xC10E] << 8)) == 0xFFD1
+    assert prgmirror[0xC10F] == 0x60                                      # RTS
+    # Latch target table.
+    assert prgmirror[0xFFD1] == 0x01
+    assert prgmirror[0xFFD2] == 0x02
+    assert prgmirror[0xFFD3] == 0x03
+    assert prgmirror[0xFFDA] == 0xFF
+    assert prgmirror[0xFFDB] == 0xFF
+    assert prgmirror[0xFFDC] == 0xFF
+    # Vectors.
+    assert (prgmirror[0xFFFC] | (prgmirror[0xFFFD] << 8)) == 0xC000  # RESET vector
+    assert (prgmirror[0xFFFA] | (prgmirror[0xFFFB] << 8)) == 0xC03D  # NMI vector
+    assert (prgmirror[0xFFFE] | (prgmirror[0xFFFF] << 8)) == 0xC03D  # IRQ vector
+
+    _write_rom(outdir, "nesmirrortest.nes", prgmirror)
 
     prgm = make_prg_mode()
 

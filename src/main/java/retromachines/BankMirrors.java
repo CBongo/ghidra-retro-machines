@@ -138,6 +138,26 @@ public final class BankMirrors {
 		return EMPTY;
 	}
 
+	/**
+	 * A mirror set stated outright rather than derived -- for tests of the CONSUMPTION rules
+	 * (grm-mej.2 increment 2), which are about "given that $42 is a write-through shadow, what
+	 * does a load of it resolve to" and have no business also re-proving how $42 was found. The
+	 * derivation is {@link Discovery}'s, exercised on its own by
+	 * {@code BankMirrorDerivationProgramTest}; keeping the two separable is what stops a
+	 * consumption regression from hiding behind a derivation one.
+	 * <p>
+	 * Package-private on purpose: production code has exactly one route into this type, and it is
+	 * {@link Discovery#build()}.
+	 */
+	static BankMirrors of(AddressSpace baseSpace, Map<Long, Set<Kind>> byOffset) {
+		if (byOffset.isEmpty()) {
+			return EMPTY;
+		}
+		Map<Long, Set<Kind>> frozen = new LinkedHashMap<>();
+		byOffset.forEach((k, v) -> frozen.put(k, Set.copyOf(v)));
+		return new BankMirrors(baseSpace, Collections.unmodifiableMap(frozen));
+	}
+
 	public boolean isEmpty() {
 		return byOffset.isEmpty();
 	}

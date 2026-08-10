@@ -1,0 +1,24 @@
+IDENTITY prg:eb4f730bdd1b7a1fd419f76b94e646c582dc2ccc3504ea893fc6e7716db9e0a9 file:9c410bcf1c26a68000940cdb51d3962d20d889d22e844e49c87204af7d32a4e6
+BLOCK APU_IO 4000-401f overlay=false
+BLOCK PPU_REGS 2000-2007 overlay=false
+BLOCK PRG_HI c000-ffff overlay=false
+BLOCK PRG_LO 8000-bfff overlay=false
+BLOCK PRG_LO_B1 8000-bfff overlay=true
+BLOCK PRG_LO_B2 8000-bfff overlay=true
+BLOCK PRG_LO_B3 8000-bfff overlay=true
+BLOCK RAM 0000-07ff overlay=false
+COMMENT c002 bank -> 2 (bank=2)
+COMMENT c008 bank -> 2 (bank=2)
+COMMENT c012 bank -> 1 (bank=1)
+COMMENT c019 bank -> 3 (bank=3)
+COMMENT c01e bank -> 3 (bank=3)
+COMMENT c027 bank -> 1 (bank=1)
+COMMENT c02f bank -> 1 (bank=1)
+COMMENT c037 bank -> 1 (bank=1) via FUN_c100
+COMMENT c10c bank -> 1 (bank=1)
+BOOKMARK Warning c034
+BOOKMARK Warning c102
+BOOKMARK Warning c107
+REF c005 -> PRG_LO_B2::8200 READ primary=true
+REF c00b -> PRG_LO_B2::8005 UNCONDITIONAL_CALL primary=true
+REF c02a -> PRG_LO_B1::8200 READ primary=true

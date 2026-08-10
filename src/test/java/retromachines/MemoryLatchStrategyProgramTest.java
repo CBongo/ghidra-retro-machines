@@ -722,13 +722,19 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 	}
 
 	/**
-	 * The {@link MemoryLatchBankSwitchStrategy#cacheable()} contract: {@code computeSwitch} is a
-	 * pure function of {@code (program, instr)}, so two different in-states must give the same
-	 * answer. {@code BoardBankAnalyzer}'s {@code matchCache} is keyed by address alone and
-	 * relies on it -- including for the paths GAP 1 newly resolves.
+	 * <b>With no mirrors observed, {@code computeSwitch} is still a pure function of
+	 * {@code (program, instr)}</b> -- two different in-states give the same answer. That was the
+	 * whole {@link MemoryLatchBankSwitchStrategy#cacheable()} contract before grm-mej.2, and it
+	 * remains true of every board with no derivable bank mirror and of pass 1 on every board,
+	 * since {@code observeMirrors} has not been called yet there.
+	 * <p>
+	 * What changed is that it is no longer true in GENERAL, so it can no longer be MEMOIZED:
+	 * {@code cacheable()} is now {@code false} unconditionally rather than conditionally on a
+	 * property the strategy cannot check per address. See
+	 * {@code BankMirrorConsumptionProgramTest} for the state-DEPENDENT half.
 	 */
 	@Test
-	public void computeSwitchIsIndependentOfInState() throws Exception {
+	public void computeSwitchIsIndependentOfInStateWithoutMirrors() throws Exception {
 		builder.setBytes("0xffd0", "00 01 02 03 04 05 06 07 08 09"); // $FFD9 = 0x09
 		builder.setBytes("0x8000", "a9 09", true); // LDA #$09
 		builder.setBytes("0x8002", "aa", true); // TAX
@@ -742,8 +748,9 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		BankState fromKnown =
 			strategy.computeSwitch(program, store, BankState.fullyKnown(0x0F, 0x02));
 
-		assertTrue("cacheable() promises a state-independent result", strategy.cacheable());
 		assertEquals(fromUnknown, fromKnown);
+		assertFalse("a mirror read makes computeSwitch state-dependent in general (grm-mej.2)",
+			strategy.cacheable());
 	}
 
 	// ------------------------------------------------------------------

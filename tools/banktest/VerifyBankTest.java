@@ -304,6 +304,9 @@ public class VerifyBankTest extends GhidraScript {
 		else if (name.contains("nesuxhelpertest")) {
 			checkNesUxHelpertest();
 		}
+		else if (name.contains("nesmirrortest")) {
+			checkNesMirrortest();
+		}
 		else if (name.contains("nesbanktest2")) {
 			checkNesBanktest2();
 		}
@@ -2616,6 +2619,88 @@ public class VerifyBankTest extends GhidraScript {
 		criterion("U10", r != null && r.getReferenceType().isCall() && r.isPrimary(),
 			"JSR $8020 after the tail-call helper retargeted to PRG_LO_B2 overlay, primary: " +
 				describe(r));
+	}
+
+	// ------------------------------------------------------------------
+	// nesmirrortest.nes criteria (bank-MIRROR derive/observe/consume/annotate/retarget
+	// end-to-end, bead grm-mej.2 increment 2, Tier 3)
+	// ------------------------------------------------------------------
+
+	/**
+	 * See {@code mknesbanktest.py}'s {@code make_prg_mirrortest()} for the full listing and
+	 * the reasoning behind every address. {@code BankMirrorConsumptionProgramTest} (Tier 2)
+	 * already pins the per-kind resolve/decline rules against a hand-built {@code BankMirrors}
+	 * in isolation; this exercises the whole pipeline through the real analyzer -- a real
+	 * derive pass, {@code observeMirrors}, consumption changing a real switch site, that
+	 * changing a real overlay retarget, and (M1/M2 below) the grm-mej.2 SS2d guard that keeps
+	 * an unrelated unresolved latch site from fabricating a bank-requirement violation.
+	 */
+	private void checkNesMirrortest() {
+		// M1: ROM_IDENTIFYING derived (from image content: byte $8200 of every realized
+		// PRG_LO bank equals that bank's own number) AND consumed -- the re-latch at c008
+		// reads $8200 (mirrors the live bank, currently 2) and re-commits it. Must resolve
+		// to bank 2, not poison to unknown.
+		String c = eol(0xC008);
+		criterion("M1", c.contains("bank -> 2 (") && !c.contains("?"),
+			"ROM_IDENTIFYING mirror re-latch resolves to bank 2 at c008: \"" + c + "\"");
+
+		// M2: and load-bearing -- JSR $8005 right after retargets into PRG_LO_B2::8005 only
+		// because c008 actually resolved.
+		Reference r = findOverlayRef(0xC00B, "PRG_LO_B2", 0x8005);
+		criterion("M2", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $8005 retargeted to PRG_LO_B2 overlay, primary: " + describe(r));
+		criterion("M2:disasm", hasInstructionAt("PRG_LO_B2", 0x8005),
+			"instruction exists at PRG_LO_B2::8005");
+
+		// M3: WRITE_THROUGH derived (two distinct stores into $42, corroborating each other)
+		// AND consumed -- the reload at c01e must resolve to bank 3 (the second store's
+		// value) from tracked state.
+		c = eol(0xC01E);
+		criterion("M3", c.contains("bank -> 3 (") && !c.contains("?"),
+			"WRITE_THROUGH mirror re-latch resolves to bank 3 at c01e: \"" + c + "\"");
+
+		// M4: H1 ordering (Castlevania 2's shape) -- a forwarded immediate (1) that
+		// DISAGREES with tracked in-state (3) must win: the annotation shows the forwarded
+		// value, never the stale tracked one.
+		c = eol(0xC027);
+		criterion("M4", c.contains("bank -> 1 (") && !c.contains("?") &&
+			!c.contains("bank -> 3"),
+			"forwarding outranks the stale mirror at c027: \"" + c + "\"");
+
+		// M5: SAVE_SLOT declines. $59 was typed SAVE_SLOT by the read-back-then-restore walk
+		// at c02a-c02f; a later reload inside FUN_C100 (c102) must stay UNRESOLVED --
+		// warning bookmark present, no "bank ->" in the EOL comment. This is rated strictly
+		// worse than no bank if it were answered wrong, per the module's own ranking.
+		criterion("M5", hasWarningBookmark(0xC102) && !eol(0xC102).contains("bank ->"),
+			"SAVE_SLOT reload stays unresolved at c102: warning=" + hasWarningBookmark(0xC102) +
+				" eol=\"" + eol(0xC102) + "\"");
+
+		// M6: ANTI-OVERREACH (U3-shaped) -- a RAM cell ($31) with no shadow and no in-block
+		// store at all must ALSO stay unresolved.
+		criterion("M6", hasWarningBookmark(0xC107) && !eol(0xC107).contains("bank ->"),
+			"no-shadow RAM load stays unresolved at c107: warning=" + hasWarningBookmark(0xC107) +
+				" eol=\"" + eol(0xC107) + "\"");
+
+		// M7: and load-bearing in the OTHER direction -- FUN_C100's own last switch (c10c, a
+		// plain immediate) still resolves fully, proving M5/M6's declines didn't poison the
+		// function's own later, unrelated site.
+		c = eol(0xC10C);
+		criterion("M7", c.contains("bank -> 1 (") && !c.contains("?"),
+			"FUN_C100's own trailing plain switch still resolves at c10c: \"" + c + "\"");
+
+		// M8: THE SS2d GUARD -- the reason this fixture exists. c037 (JSR $C100, called with
+		// bank state genuinely unknown by construction) must NOT carry a bank-state
+		// requirement-violation WARNING. Before the per-site effectDependsOnPriorState
+		// override landed alongside cacheable()->false, M5/M6's declining sites (unresolved
+		// for reasons having nothing to do with missing entry state) would each have been
+		// blamed on a missing bank-known-on-entry requirement, propagating a fresh violation
+		// bookmark here. c10a-c10c's plain, always-resolvable last switch keeps this call out
+		// of the ordinary "helper argument could not be recovered" warning path (see the
+		// module doc), so any warning landing here can only be the spurious violation this
+		// guard exists to prevent.
+		criterion("M8", !warningBookmarkText(0xC037).contains("requirement violated"),
+			"no spurious bank-state requirement violation at c037 (JSR $C100): warning=\"" +
+				warningBookmarkText(0xC037) + "\"");
 	}
 
 	// ------------------------------------------------------------------

@@ -305,4 +305,37 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	default boolean effectDependsOnPriorState() {
 		return !cacheable();
 	}
+
+	/**
+	 * The same question asked about ONE SITE rather than about the mechanism as a whole (bead
+	 * grm-mej.2 §2d) -- and the one {@code BoardBankAnalyzer
+	 * .annotateBankRequirementViolations} actually calls. The default defers to the
+	 * strategy-wide {@link #effectDependsOnPriorState()} above, so every strategy that does not
+	 * override this behaves exactly as it did before the overload existed.
+	 * <p>
+	 * <b>Why a site-level question exists at all.</b> The strategy-wide answer is the right
+	 * granularity for a mechanism that consumes its prior value structurally -- a masked
+	 * read-modify-write does it at every site by construction. It is the wrong granularity for a
+	 * mechanism that consumes prior state only at the sites that happen to READ THE BANK BACK,
+	 * which is what a bank mirror is: on a real cartridge those are a handful of sites among
+	 * hundreds, and answering {@code true} for all of them turns "this site came out unknown"
+	 * into a bank-known-on-entry claim at every site that came out unknown for any other reason
+	 * whatsoever. {@link MemoryLatchBankSwitchStrategy} is the shipped case.
+	 * <p>
+	 * <b>{@code siteInState} is not optional and must not be stubbed with
+	 * {@link BankState#unknown()}.</b> The sites this predicate exists to FIND are precisely those
+	 * that wanted a state bit and did not get it, so an implementation that re-derives its effect
+	 * to answer has to re-derive it under the state the real evaluation saw. It arrives in the
+	 * mechanism's own field-local {@code [0, width)} coordinates, like every other in-state a
+	 * strategy is handed.
+	 *
+	 * @param program     the program
+	 * @param site        the recognized switch site; may be {@code null} if the listing no longer
+	 *                    has an instruction there, in which case implementations must fall back
+	 * @param siteInState the field-local tracked state flowing into {@code site}
+	 */
+	default boolean effectDependsOnPriorState(Program program, Instruction site,
+			BankState siteInState) {
+		return effectDependsOnPriorState();
+	}
 }

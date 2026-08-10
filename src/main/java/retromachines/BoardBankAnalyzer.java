@@ -3063,7 +3063,8 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * <b>requiresOnEntry</b> (M3 scope: known-ness only -- value-level requirements, e.g.
 	 * "select must equal exactly 6", are NOT modeled, only "select must be KNOWN"):
 	 * for each switch site in a function's own body whose matched strategy answers
-	 * {@link BankSwitchStrategy#effectDependsOnPriorState()} {@code true} (i.e. an unknown
+	 * {@link BankSwitchStrategy#effectDependsOnPriorState(Program, Instruction, BankState)}
+	 * {@code true} <em>at that site</em> (i.e. an unknown
 	 * outcome at the site is evidence the dispatch NEEDED a state bit it did not have on
 	 * entry, not merely that {@code computeSwitch} happened to consult {@code inState}),
 	 * the bits the switch's OWN effect ends up NOT knowing that the flowed-in
@@ -3079,7 +3080,11 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * serial-shift (MMC1) is non-cacheable purely because it ECHOES {@code inState}
 	 * unchanged on its no-op branches, and inferring a requirement from its unknown
 	 * outcome would produce false violations whose unknown-ness actually came from an
-	 * unresolved DATA value, never from missing bank state. Bits the function itself
+	 * unresolved DATA value, never from missing bank state. The question is asked per SITE
+	 * for the same reason it is not asked as {@code cacheable()}, one level finer: memory-latch
+	 * became non-cacheable in grm-mej.2 because it reads the bank back at the few sites that
+	 * load a bank MIRROR, and answering per strategy there would have declared a requirement at
+	 * every latch site that came out unknown for any reason at all. Bits the function itself
 	 * establishes BEFORE a later consuming site are automatically excluded -- not by explicit
 	 * program-order subtraction, but because {@code flow.stateIn()} at that later site
 	 * already reflects every predecessor on the real CFG, including earlier code in the same
@@ -3113,14 +3118,21 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			}
 			SwitchResult sr = e.getValue();
 			ownModified.merge(f, sr.effectMask(), (a, b) -> a | b);
-			if (sr.strategy() != null && sr.strategy().effectDependsOnPriorState()) {
-				BankState siteIn = flow.stateIn().get(addr);
-				if (siteIn != null) {
-					int required = sr.effectMask() & ~(siteIn.knownMask() & sr.effectMask()) &
-						~sr.effect().knownMask();
-					if (required != 0) {
-						ownRequires.merge(f, required, (a, b) -> a | b);
-					}
+			BankState siteIn = flow.stateIn().get(addr);
+			// Per SITE, not per strategy (grm-mej.2 §2d): a mechanism that reads the bank back
+			// only at the handful of sites that actually do so must not blame every OTHER site's
+			// unknown outcome on missing bank state. The strategy-wide predicate is the default
+			// this resolves to for every strategy that does not override the overload. The real
+			// site in-state is passed, narrowed to the mechanism's field-local coordinates as
+			// everywhere else -- BankState.unknown() would over-report, since a mirror read
+			// resolves (to unknown) whether or not the bank was known here.
+			if (sr.strategy() != null && siteIn != null &&
+				sr.strategy().effectDependsOnPriorState(program, listing.getInstructionAt(addr),
+					toFieldLocal(siteIn, sr.lsb(), sr.effectMask()))) {
+				int required = sr.effectMask() & ~(siteIn.knownMask() & sr.effectMask()) &
+					~sr.effect().knownMask();
+				if (required != 0) {
+					ownRequires.merge(f, required, (a, b) -> a | b);
 				}
 			}
 		}
