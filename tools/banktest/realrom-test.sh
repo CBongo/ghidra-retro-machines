@@ -31,24 +31,33 @@
 # Filtered rows are omitted from the run and counted separately -- deliberately NOT reported as
 # SKIP, which means "ROM absent".
 #
-# KNOWN-FLAKY ROW -- read this before believing a megaman FAIL. megaman is no longer held back
-# (grm-hum blessed it), but it is BISTABLE (grm-g73): two identical imports of the same ROM
-# against the same build produce one of several dumps. The lines observed moving are
-#   REALROM count refs.intoOverlay     1704  <-> 1703
-#   REALROM count instrs.inOverlay     7429  <-> 7431
-#   REALROM count bankComments          156  <->  157
-# So the row flaps PASS/FAIL on an unchanged build.
+# KNOWN-FAILING ROW -- read this before believing a megaman FAIL. TWO SEPARATE THINGS ail this
+# row, and conflating them is how a real regression gets waved through:
 #
-# DO NOT USE A LINE-WHITELIST AS THE TEST. An earlier version of this comment said the first two
-# lines "always move in opposite directions" and that "any other line moving is real". Both
-# halves are too strong, measured 2026-08-10 during grm-mej.2 increment 2: bankComments moved
-# 156->157 while BOTH overlay counts stayed on the golden side, which the whitelist rule would
-# have called a regression. There are more than two states and the lines are not locked together.
+#   1. JITTER (grm-g73). megaman is bistable: two identical imports of the same ROM against the
+#      same build produce one of two dumps, differing ONLY in
+#        REALROM count refs.intoOverlay     1704  <-> 1703
+#        REALROM count instrs.inOverlay     7429  <-> 7431
+#      moving in OPPOSITE directions. Measured over ten fresh imports (grm-g73, 2026-08-10):
+#      8/2 in favour of the golden, so the row flaps PASS/FAIL at about a 20% rate on an
+#      unchanged build. In all ten runs bankComments and warnings were CONSTANT and no sample.*
+#      line moved -- count-line-only with no sample movement is this bead's own jitter criterion.
 #
-# THE RULE THAT ACTUALLY HOLDS: settle authorship by re-running, not by reading. `git stash -u`,
-# rebuild, `realrom-test.sh check --only megaman`, and diff that dump against the same row's dump
-# from your working tree. Byte-identical means pre-existing, whatever lines moved against the
-# golden. That test costs one extra run and cannot be fooled.
+#   2. A STALE GOLDEN LINE, found 2026-08-10 during grm-mej.2 increment 2:
+#        REALROM count bankComments          156  ->  157
+#      This is NOT jitter. It is stable across runs and reproduces byte-identically on a stashed
+#      clean HEAD, and grm-g73's ten-run set shows bankComments does not flip. megaman's golden
+#      was last blessed at 71959b1 (grm-hum); 09d9c97 (grm-k90's wrapper split) re-blessed
+#      contra, lifeforce and wizwarr and skipped megaman -- the same way smb3's golden went
+#      stale. Attribution to 09d9c97 is strongly indicated but NOT yet verified; the one command
+#      that would settle it is a `--only megaman` run at 09d9c97^ versus 09d9c97.
+#
+# SO: DO NOT JUDGE THIS ROW BY A LINE WHITELIST. The old wording here ("if those two lines are
+# the only diff it is grm-g73; any other line moving is real") would have called finding 2 a
+# fresh regression. Settle authorship by RE-RUNNING, not by reading: `git stash -u`, rebuild,
+# `realrom-test.sh check --only megaman`, and diff that dump against your working tree's. Byte-
+# identical means pre-existing, whatever lines moved against the golden. One extra run, and it
+# cannot be fooled. (`rm -rf build/realrom-cache` first if you are about to bless -- see grm-g73.)
 #
 # This harness deliberately does NOT retry or tolerate the delta -- a golden whose diff you can
 # trust is the entire point of this tier, and hiding a known-noisy row would cost that for every
