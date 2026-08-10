@@ -183,6 +183,15 @@ it is never a `run-banktest.sh` chunk (whose `all` would otherwise pull it in).
   [--only|--except <ids>] <romdir> [<romdir> …]` (or `GRM_ROM_DIR`). Lives alongside
   `measure-overlay-scale.sh` and reuses the same `build/ghidra-home` isolation, so run
   `build-and-test.sh check nes-banking` once first.
+- **Several romdirs are normal, and a `SKIP` usually means one is missing.** Dirs are indexed at
+  **depth 1 only** — a title one directory down is invisible — so a collection split across two
+  places needs both named, and the curated set on the primary dev machine does. `GRM_ROM_DIR`
+  holds them space-separated and is the intended way to supply them; set it once per machine
+  (it is machine-local, so it belongs in your environment or `.claude/settings.local.json`,
+  never committed) and every invocation below can then omit the paths entirely. **Read a `SKIP`
+  as "this run did not look everywhere" before reading it as "this machine lacks the ROM"** —
+  the driver prints the dir list it actually used alongside the skip count for exactly this
+  reason, and the `gme-rom-location` bd memory records where each set lives.
 - **Two row sets, selected not accumulated.** `realrom/manifest.tsv` is the curated minimum
   (one representative title per shipped board) and is the default; `realrom/manifest-gme.tsv`
   is an expanded reference set of titles of interest to the parent game-music-extraction

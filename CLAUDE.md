@@ -152,6 +152,22 @@ Chunk/source-area mapping:
 - `unit`: the JUnit `gradle test` suite (all `src/test/java`; no extension build/install).
 - `all`: every chunk; the default when no chunk is supplied.
 
+**The real-ROM tier is separate, opt-in, and takes NO paths — just run it:**
+
+```bash
+bash tools/banktest/build-and-test.sh check nes-banking   # once, for the isolated install
+bash tools/banktest/realrom-test.sh check                 # romdirs come from GRM_ROM_DIR
+```
+
+`GRM_ROM_DIR` is set per machine (`.claude/settings.local.json`, gitignored) and holds **several
+space-separated dirs**, because the curated manifest is split across more than one and the driver
+indexes each at **depth 1 only**. So: **never conclude "this machine doesn't have the ROM" from a
+`SKIP`** — suspect the dir list first, and look at the dirs the driver prints beside the skip
+count. Two rows (`megaman`, `smb3`) FAIL on an unchanged tree by design; see the
+`realrom-expected-baseline-fails` bd memory before treating either as a regression, and do not
+bless them. To decide whether some *other* movement is yours, re-run the row against a stashed
+baseline and diff the two `build/banktest-work/realrom.*/<id>.diff` files.
+
 There is deliberately no `quick` alias or cache-backed project mode: headless
 projects are created fresh, and a correct cache would need explicit invalidation
 rules. Use targeted chunks for safe iteration instead.

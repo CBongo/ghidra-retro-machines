@@ -640,6 +640,21 @@ filtered_note=""
 [ "$n_filtered" -gt 0 ] && filtered_note=" filtered=$n_filtered"
 echo "summary: pass=$n_pass fail=$n_fail skip=$n_skip bless=$n_bless$filtered_note   (work: $WORK)"
 
+# A SKIP is reported per row and is easy to accept as "that ROM does not exist here" when the
+# real cause is a romdir that was never passed -- this tier indexes each dir at DEPTH 1 ONLY, so
+# a title one directory down is invisible and a collection split across two dirs needs both named.
+# That misreading has cost a re-measurement more than once (an agent concluded "6 of 12 rows are
+# unmeasurable on this machine" while the missing six sat in a second dir the memory names), so
+# say it out loud at the point the count is printed rather than only in this file's header.
+if [ "$n_skip" -gt 0 ]; then
+	echo "note: $n_skip row(s) SKIPPED for want of a ROM. If that is unexpected, suspect the DIR"
+	echo "      LIST before concluding the ROMs are absent: dirs are indexed at depth 1 only, and"
+	echo "      several may be given (GRM_ROM_DIR holds them space-separated). Supplied here:"
+	for dir in "${ROM_DIRS[@]}"; do
+		echo "        $dir"
+	done
+fi
+
 if [ "$n_fail" -gt 0 ]; then
 	echo "REALROM $MODE: FAIL"
 	exit 1
