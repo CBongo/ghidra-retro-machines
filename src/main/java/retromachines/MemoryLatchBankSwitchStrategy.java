@@ -254,37 +254,61 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * So the round-trip test is worth having on both kinds of board, and the fact that GxROM
 	 * happens to fail safe is a property of GxROM's geometry rather than of this conversion.
 	 * <p>
-	 * <b>{@code byteShift} differs by kind, and that asymmetry is the point.</b> A
-	 * {@link BankMirrors.Kind#WRITE_THROUGH} cell holds a copy of the byte that was WRITTEN to the
-	 * latch, so its content is already in raw-byte coordinates and the field sits at
-	 * {@code shift}. A {@link BankMirrors.Kind#ROM_IDENTIFYING} offset holds the bank NUMBER,
-	 * right-justified by cartridge convention -- Contra's {@code $8000} reads {@code 00 01 02 ...}
-	 * across banks 0..7, not {@code 00 10 20 ...} -- so it converts with no shift at all. On a
-	 * board with {@code shift != 0} that makes a bare {@code LDA <ident> / STA <latch>} come out
-	 * as bank 0; no such code exists, because a game on such a board must shift the number itself
-	 * before storing it, and the scan loses the value at that shift instruction anyway.
+	 * <b>THE TWO KINDS CONVERT DIFFERENTLY, AND KNOW DIFFERENT AMOUNTS.</b> This is not a shared
+	 * formula with a varying shift; they are two facts of different strength.
+	 * <ul>
+	 * <li>{@link BankMirrors.Kind#WRITE_THROUGH} -- the cell holds a COPY OF THE BYTE that was
+	 * written to the latch. It is already in raw-byte coordinates, so the field sits at
+	 * {@code shift}. Everything OUTSIDE the field comes back unknown, and honestly so: tracked
+	 * state says nothing about the rest of that byte, and on a multi-latch board those bits belong
+	 * to another mechanism entirely.</li>
+	 * <li>{@link BankMirrors.Kind#ROM_IDENTIFYING} -- the offset holds THE BANK NUMBER ITSELF,
+	 * right-justified by cartridge convention (Contra's {@code $8000} reads {@code 00 01 02 ...}
+	 * across banks 0..7, not {@code 00 10 20 ...}). So it converts with no shift -- and, unlike a
+	 * shadow, the WHOLE BYTE is determined, not just the field. {@code byte == bank} is exactly
+	 * what {@code BankMirrors.romIdentifyingOffsets} verified against every realized bank's image
+	 * before admitting the offset, and the bank is by construction a value this mechanism's
+	 * {@code mask} can hold. Therefore every bit ABOVE the field is a KNOWN ZERO, whether or not
+	 * the bank itself is known. That is a derivation, not an assumption, and it is the difference
+	 * between the two kinds: a shadow's upper bits are unknowable, an identifying byte's are
+	 * proved.</li>
+	 * </ul>
+	 * <b>Why the known-zero upper bits are worth deriving</b> (grm-mej.2 increment 3): they are
+	 * what a mechanism that reads the WHOLE byte needs. Memory-latch discards them at the
+	 * extraction below and so cannot tell the difference -- but MMC1's serial-shift register
+	 * treats bit 7 as an out-of-band RESET signal and refuses to believe ANY of a byte whose bit 7
+	 * it does not know, poisoning every tracked field instead. Answering only the field width
+	 * there is worth exactly nothing. Both strategies read the mirror by the same rule, so the
+	 * rule is stated once, here and in {@code SerialShiftBankSwitchStrategy.mirroredByte}.
 	 * <p>
-	 * Bits outside the field come back UNKNOWN rather than zero: tracked state says nothing about
-	 * the rest of the written byte, and on a multi-latch board those bits belong to another
-	 * mechanism.
+	 * <b>ROM_IDENTIFYING DECLINES OUTRIGHT ON A {@code shift != 0} BOARD, and that refusal is
+	 * load-bearing rather than tidy.</b> With the upper bits now known zero, synthesizing a byte
+	 * on such a board would put KNOWN ZEROES exactly where the extraction reads
+	 * ({@code [shift, shift+width)}), turning what used to be a safe decline into a confident
+	 * {@code bank 0} -- no warning, wrong overlay. The honest reading is that a bare
+	 * {@code LDA <ident> / STA <latch>} is not a coherent instruction sequence on a board whose
+	 * field is not at bit 0: a real game must shift the number into place first, and the backward
+	 * scan loses the value at that shift instruction anyway. Declining says "I cannot interpret
+	 * this", which is true, instead of answering the one bank that is certainly wrong.
 	 */
 	private BankState mirroredByte(Address target, BankState inStateAtStore) {
 		if (target == null || mirrors.isEmpty()) {
 			return null;
 		}
 		Set<BankMirrors.Kind> kinds = mirrors.kindsAt(target);
-		int byteShift;
 		if (kinds.contains(BankMirrors.Kind.ROM_IDENTIFYING)) {
-			byteShift = 0;
+			if (shift != 0) {
+				return null; // would deposit a confident bank 0 -- see above
+			}
+			// byte == bank exactly, so bits above the field are PROVED zero.
+			return new BankState((inStateAtStore.knownMask() & mask) | (~mask & 0xFF),
+				inStateAtStore.bits() & mask);
 		}
-		else if (kinds.contains(BankMirrors.Kind.WRITE_THROUGH)) {
-			byteShift = shift;
+		if (kinds.contains(BankMirrors.Kind.WRITE_THROUGH)) {
+			return new BankState(((inStateAtStore.knownMask() & mask) << shift) & 0xFF,
+				((inStateAtStore.bits() & mask) << shift) & 0xFF);
 		}
-		else {
-			return null; // INPUT, SAVE_SLOT, or not a mirror at all -- see above
-		}
-		return new BankState(((inStateAtStore.knownMask() & mask) << byteShift) & 0xFF,
-			((inStateAtStore.bits() & mask) << byteShift) & 0xFF);
+		return null; // INPUT, SAVE_SLOT, or not a mirror at all -- see above
 	}
 
 	@Override

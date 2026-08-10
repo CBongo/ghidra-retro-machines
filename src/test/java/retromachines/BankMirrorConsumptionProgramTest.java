@@ -247,16 +247,25 @@ public class BankMirrorConsumptionProgramTest extends AbstractBundledLanguageTes
 	 * <li>on a {@code shift=0} board the two byteShifts coincide, so {@code ROM_IDENTIFYING}
 	 * resolves straight to the in-state value, indistinguishable from {@code WRITE_THROUGH} there
 	 * (case 2 above);</li>
-	 * <li>on a {@code shift!=0} board (GxROM) they no longer coincide: the identifying byte's known
-	 * bits land at byte-position {@code [0, width)} while the deposit step extracts
-	 * {@code [shift, shift+width)}, so a mirror load that would have resolved cleanly under
-	 * {@code WRITE_THROUGH} (case 1 above, same in-state) comes back with nothing known at all --
-	 * the asymmetry is not merely documented, it is measurable side by side with case 1.</li>
+	 * <li>on a {@code shift!=0} board (GxROM) {@code ROM_IDENTIFYING} DECLINES OUTRIGHT, so a
+	 * mirror load that resolves cleanly under {@code WRITE_THROUGH} (case 1 above, same in-state)
+	 * comes back with nothing known at all.</li>
 	 * </ul>
+	 * <b>The decline is deliberate and the assertion below distinguishes it from the erasure it
+	 * used to be</b> (grm-mej.2 increment 3). Before the identifying byte's upper bits were
+	 * derived as known zero, this case came back unknown by accident: the known bits landed at
+	 * byte positions {@code [0, width)} while the extraction read {@code [shift, shift+width)}, and
+	 * the two ranges are disjoint on GxROM. Once the upper bits are PROVED zero (byte == bank),
+	 * that same synthesis would put KNOWN ZEROES exactly where the extraction reads and report a
+	 * confident {@code bank 0} -- valid-looking, unwarned, wrong overlay. So {@code mirroredByte}
+	 * now refuses the combination explicitly. The extra
+	 * {@code effectDependsOnPriorState} assertion is what tells the two apart: a declined mirror
+	 * was never consulted, an erased one was.
+	 * <p>
 	 * No real cartridge is known to combine {@code shift != 0} with a bare
-	 * {@code LDA <ident> / STA <latch>} (a game on such a board would have to shift the number
-	 * itself first, and the scan would lose the value at that shift instruction anyway), so the
-	 * second bullet is a mechanical demonstration of the asymmetry, not a reproduction.
+	 * {@code LDA <ident> / STA <latch>} -- a game on such a board must shift the number into place
+	 * first, and the scan loses the value at that shift instruction anyway -- so this is a
+	 * mechanical demonstration of the rule, not a reproduction.
 	 */
 	@Test
 	public void romIdentifyingConvertsWithNoShiftUnlikeWriteThrough() throws Exception {
@@ -283,10 +292,15 @@ public class BankMirrorConsumptionProgramTest extends AbstractBundledLanguageTes
 
 		assertNotNull(onGxrom);
 		assertEquals(
-			"byteShift stuck at 0 on a shift=4 board must NOT reproduce WRITE_THROUGH's clean "
-				+ "round trip (case 1) under the identical in-state -- the known bits land at "
-				+ "byte position [0,2) but the deposit step reads back [4,6), so nothing survives",
+			"ROM_IDENTIFYING on a shift=4 board must NOT reproduce WRITE_THROUGH's clean round "
+				+ "trip (case 1) under the identical in-state",
 			0x0, onGxrom.knownMask());
+		assertFalse(
+			"and it must come back unknown because the mirror DECLINED, not because a synthesized "
+				+ "byte was erased by the extraction -- with the upper bits proved zero, "
+				+ "synthesizing here would report a confident bank 0",
+			gxrom.effectDependsOnPriorState(program, instructionAt("0x8012"),
+				BankState.fullyKnown(0x3, 2)));
 	}
 
 	// ------------------------------------------------------------------
