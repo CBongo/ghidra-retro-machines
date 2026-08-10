@@ -18,6 +18,7 @@ package retromachines;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.util.Map;
@@ -242,5 +243,85 @@ public class HelperWrapperProgramTest extends AbstractBundledLanguageTest {
 			redirect, instr.getFallThrough());
 
 		assertFalse(passesThroughInto("0x9090", "0x9091"));
+	}
+
+	// ------------------------------------------------------------------
+	// grm-k90: which join a mini-inline scan may cross
+	// ------------------------------------------------------------------
+
+	/**
+	 * {@link BoardBankAnalyzer#crossableWrapperJoin} over addresses, which is all it reads.
+	 * Same predicate-level discipline as {@link #passesThroughInto} above and for the same
+	 * reason: {@code HelperModel} is private to {@code BoardBankAnalyzer}, so the method takes
+	 * {@code firstSite} and {@code scanStop} loose rather than a model.
+	 */
+	private Address crossableJoin(String firstSite, String scanStop) {
+		return BoardBankAnalyzer.crossableWrapperJoin(program, builder.addr(firstSite),
+			builder.addr(scanStop));
+	}
+
+	/**
+	 * <b>The case grm-k90 exists for.</b> A pass-through wrapper at {@code $9100} falling into a
+	 * helper at {@code $9103}: the stop is the wrapper's entry, the helper's own entry lies
+	 * strictly between it and {@code firstSite}, and that entry is nominated as crossable.
+	 * <p>
+	 * Contra's real geometry, one page down: {@code c139 < c13f <= c142}.
+	 */
+	@Test
+	public void aPassThroughWrappersHelperEntryIsNominated() throws Exception {
+		builder.setBytes("0x9100", "ad 00 80", true); // LDA $8000  <- wrapper entry
+		builder.createEmptyFunction("wrapper", "0x9100", 3, null);
+		builder.setBytes("0x9103", "b9 d0 ff", true); // LDA $FFD0,Y  <- helper entry
+		builder.setBytes("0x9106", "99 d0 ff", true); // STA $FFD0,Y  <- firstSite
+		builder.createEmptyFunction("helper", "0x9103", 6, null);
+
+		assertEquals(builder.addr("0x9103"), crossableJoin("0x9106", "0x9100"));
+	}
+
+	/**
+	 * An ORDINARY helper nominates nothing: the body containing {@code firstSite} is entered at
+	 * the stop itself, so the nominee is not strictly after it. This is the no-change case, and
+	 * it is the reason the fix could land without re-blessing goldens -- every helper that is not
+	 * behind a wrapper takes exactly the path it always did.
+	 */
+	@Test
+	public void anOrdinaryHelperNominatesNothing() throws Exception {
+		builder.setBytes("0x9200", "b9 d0 ff", true); // LDA $FFD0,Y  <- entry AND stop
+		builder.setBytes("0x9203", "99 d0 ff", true); // STA $FFD0,Y  <- firstSite
+		builder.createEmptyFunction("helper", "0x9200", 6, null);
+
+		assertNull(crossableJoin("0x9203", "0x9200"));
+	}
+
+	/**
+	 * <b>A MID-BODY ENTRY nominates nothing, and this is the non-regression that matters most.</b>
+	 * Bionic Commando's {@code $D6E2 JMP $DCAA} lands past the {@code $DCA8 LDA $65} that would
+	 * have clobbered the argument, so the containing function's entry is BEFORE the stop. The
+	 * window's strictly-after test rejects it.
+	 * <p>
+	 * Getting this wrong would be worse than the bug being fixed: licensing a join behind the stop
+	 * would walk the scan straight back into the prologue the call deliberately skipped, and
+	 * report the value that prologue produces as the caller's.
+	 */
+	@Test
+	public void aMidBodyEntryNominatesNothing() throws Exception {
+		builder.setBytes("0x9300", "a5 65", true); // LDA $65   <- function entry, SKIPPED
+		builder.setBytes("0x9302", "8d 00 e0", true); // STA $E000 <- mid-body entry AND firstSite
+		builder.createEmptyFunction("helper", "0x9300", 5, null);
+
+		assertNull("the containing function's entry is before the stop -- never crossable",
+			crossableJoin("0x9302", "0x9302"));
+	}
+
+	/**
+	 * No function containing {@code firstSite} means no nominee. Not a shape any admitted model
+	 * has -- {@code findHelpers} works from function bodies -- but the derivation reads the
+	 * function manager, so the null it can return is answered explicitly rather than thrown.
+	 */
+	@Test
+	public void firstSiteOutsideAnyFunctionNominatesNothing() throws Exception {
+		builder.setBytes("0x9400", "99 d0 ff", true); // STA $FFD0,Y, in no function at all
+
+		assertNull(crossableJoin("0x9400", "0x9400"));
 	}
 }

@@ -77,6 +77,15 @@ import ghidra.program.model.symbol.Reference;
  * behaves exactly as it always has. See {@link RegisterEnv}'s javadoc for why stopping at
  * a function entry is an argued exception to the control-flow-join refusal rather than a
  * hole in it.</li>
+ * <li>That same env may nominate ONE control-flow join the walk is allowed to cross
+ * ({@link RegisterEnv#mayCrossJoinAt}, bead grm-k90), which is what lets a query asked on
+ * behalf of a call into a PASS-THROUGH WRAPPER reach the wrapper's entry at all: the wrapped
+ * helper's own entry lies between the two and is a join, so without this the walk dies there
+ * and the env's stop is unreachable. It suppresses the join refusal and NOTHING else --
+ * fall-through linkage, the mechanism-write abort and {@link #MAX_BACKWARD_SCAN} all still
+ * apply at that instruction -- and it is honored identically by all three of this class's
+ * backward walks, because the licence is a property of the env (a proved straight-line inert
+ * fallthrough edge) and not of which question is being asked across it.</li>
  * </ul>
  * The mnemonic tables are 6502-family, which covers every board strategy currently
  * shipped (C64 register-write, NES memory-latch); other CPU families will parameterize
@@ -240,10 +249,14 @@ final class StoredValueScanner {
 				// not a straight-line predecessor of cur -- left the basic block
 				return combine(aAcc, oAcc, mask, BankState.unknown());
 			}
-			if (isControlFlowJoin(program, cur, prev)) {
+			if (isControlFlowJoin(program, cur, prev) && !env.mayCrossJoinAt(cur.getMinAddress())) {
 				// cur is also a branch target: some other path reaches it and may leave a
 				// different register value, so prev's fall-through value can't be attributed
-				// to the store with confidence.
+				// to the store with confidence. The one exception is the join an env explicitly
+				// licenses (grm-k90): there prev IS cur's predecessor on the path this
+				// context-sensitive query is asked about, and the span beyond it was proved
+				// straight-line before the env was built. Only the join test is skipped -- the
+				// linkage test above and the mechanism-write abort below still run.
 				return combine(aAcc, oAcc, mask, BankState.unknown());
 			}
 
@@ -336,6 +349,11 @@ final class StoredValueScanner {
 	 * {@code prev} whose target is also its own fall-through is excluded). Unresolved
 	 * computed jumps leave no reference and so are not detected -- conservative in the safe
 	 * direction (a missed join only forfeits a fold the scan would otherwise have made).
+	 * <p>
+	 * This stays a pure structural predicate: the one licensed exception (grm-k90) is applied by
+	 * each caller as {@code !env.mayCrossJoinAt(...)} alongside it, rather than folded in here,
+	 * so "is this a join" and "may this query cross it" remain separable questions and a reader
+	 * of either walk can see the licence being spent at the point it is spent.
 	 */
 	private static boolean isControlFlowJoin(Program program, Instruction cur, Instruction prev) {
 		Address curAddr = cur.getMinAddress();
@@ -509,8 +527,15 @@ final class StoredValueScanner {
 			if (prevFallThrough == null || !prevFallThrough.equals(cur.getMinAddress())) {
 				return BankState.unknown(); // left the basic block
 			}
-			if (isControlFlowJoin(program, cur, prev)) {
-				return BankState.unknown(); // another path reaches cur with a different cell value
+			if (isControlFlowJoin(program, cur, prev) && !env.mayCrossJoinAt(cur.getMinAddress())) {
+				// another path reaches cur with a different cell value -- unless the env licenses
+				// this exact join (grm-k90), in which case prev is the real predecessor on the
+				// path asked about and a store in the wrapper's prefix genuinely did execute.
+				// Honored here as well as in the register walks deliberately: the licence
+				// describes the EDGE, not the kind of value being carried across it, and a
+				// forwarding walk that refused where a register walk crossed would make the two
+				// disagree about what the same instruction stream did.
+				return BankState.unknown();
 			}
 			if (hooks.isMechanismWrite(prev)) {
 				// Same rule as the register scan's: a value read further back would predate the
@@ -680,7 +705,9 @@ final class StoredValueScanner {
 	 * relaxed here: a base value read further back would predate that write. {@code env}'s
 	 * entry stop is honored the same way it is there, and is likewise all-or-nothing: a
 	 * partially known caller register declines, because an effective address needs all eight
-	 * index bits.
+	 * index bits. So is {@code env}'s licensed join ({@link RegisterEnv#mayCrossJoinAt}) --
+	 * and this walk is the one that actually needs it, since Contra's caller-supplied Y is
+	 * consumed as the INDEX of the switch site's operand rather than as its stored value.
 	 * <p>
 	 * <b>{@link BankState#unknown()} is passed to {@link Hooks#resolveLoad}, never a caller's
 	 * in-state.</b> That is load-bearing for {@link BankSwitchStrategy#cacheable()}: an
@@ -724,8 +751,12 @@ final class StoredValueScanner {
 			if (prevFallThrough == null || !prevFallThrough.equals(cur.getMinAddress())) {
 				return null; // left the basic block
 			}
-			if (isControlFlowJoin(program, cur, prev)) {
-				return null; // another path reaches cur and may leave a different value
+			if (isControlFlowJoin(program, cur, prev) && !env.mayCrossJoinAt(cur.getMinAddress())) {
+				// another path reaches cur and may leave a different value -- except at the one
+				// join the env licenses (grm-k90). This evaluator is the one that actually
+				// carries Contra: the switch site's own scan never sees the wrapper split, but
+				// resolving the index of its `LDA $ffd0,Y` walks straight back into it.
+				return null;
 			}
 			if (hooks.isMechanismWrite(prev)) {
 				// NOT relaxed for this evaluator: see the class javadoc's mid-scan rule.

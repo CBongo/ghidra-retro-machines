@@ -787,6 +787,117 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		return new RegisterEnv(entry, BankState.unknown(), BankState.unknown(), y);
 	}
 
+	private RegisterEnv envAt(Address entry, Address crossableJoin, BankState y) {
+		return new RegisterEnv(entry, crossableJoin, BankState.unknown(), BankState.unknown(), y);
+	}
+
+	/**
+	 * Contra's helper as it is actually reached by four of its six call sites: behind the
+	 * pass-through wrapper {@code FUN_c139}, which falls straight through into it (bead grm-k90).
+	 * Real addresses again, and the shape is the whole point:
+	 *
+	 * <pre>
+	 * C139: LDA $8000     &lt;- wrapper entry; clobbers A, and $8000 is a RESOLVABLE ROM byte
+	 * C13C: STA $00EC     &lt;- inert store (Contra's is $07EC; zero page is this fixture's RAM)
+	 * C13F: LDA $FFD0,Y   &lt;- wrapped helper's entry -- AND A CONTROL-FLOW JOIN
+	 * C142: STA $FFD0,Y   &lt;- the mechanism write
+	 * C145: RTS
+	 * C157: LDY #$01 / JSR $C13F   &lt;- a direct caller that BYPASSES the wrapper
+	 * </pre>
+	 *
+	 * <b>{@code $C157}'s {@code JSR} is not scenery.</b> It is what makes {@code $C13F} a genuine
+	 * join, and without it these tests would pass for the wrong reason -- the scan would walk from
+	 * the switch site to the wrapper entry unobstructed and never exercise the licence at all.
+	 * Contra has five such direct callers; one is enough to reproduce the refusal.
+	 * <p>
+	 * The {@code LDA $8000} is the mirror of {@link #layContraHelper}'s {@code LDY #$07} trap: PRG
+	 * is ROM here, so A really is resolvable to a ROM byte across that instruction. A recovery
+	 * that confused the two registers would therefore answer confidently and wrongly rather than
+	 * miss, which is the failure mode this engine treats as strictly worse.
+	 */
+	private void layContraWrapper() throws Exception {
+		builder.setBytes("0xffd0", "00 01 02 03 04 05 06 07"); // the real Contra bank table
+		builder.setBytes("0xc139", "ad 00 80", true); // LDA $8000    <- wrapper entry
+		builder.setBytes("0xc13c", "8d ec 00", true); // STA $00EC
+		builder.setBytes("0xc13f", "b9 d0 ff", true); // LDA $FFD0,Y  <- wrapped entry / join
+		builder.setBytes("0xc142", "99 d0 ff", true); // STA $FFD0,Y  <- switch site
+		builder.setBytes("0xc145", "60", true); // RTS
+		builder.setBytes("0xc157", "a0 01 20 3f c1", true); // LDY #$01 / JSR $C13F
+		romifyPrg();
+	}
+
+	/** The pass-through wrapper's entry -- where control arrives, and the env's stop. */
+	private Address contraWrapperEntry() {
+		return builder.addr("0xc139");
+	}
+
+	/**
+	 * <b>The grm-k90 headline.</b> A call into the wrapper resolves to the caller's bank, which
+	 * before the licensed join it could not: the scan needs Y for {@code $C13F}'s indexed load,
+	 * walks back one instruction, meets the join at {@code $C13F} itself and -- until now --
+	 * refused there, two instructions short of the env's stop at {@code $C139}.
+	 * <p>
+	 * That refusal is why Contra's golden showed the same {@code LDY #imm / JSR} idiom resolving
+	 * at {@code c0cb}/{@code c157} (direct: the stop IS the join, and {@code stopsAt} is tested
+	 * first) and warning at {@code c094}/{@code c0a2}/{@code c21b} (through the wrapper).
+	 */
+	@Test
+	public void helperMiniInlineCrossesTheWrapperSplitJoin() throws Exception {
+		layContraWrapper();
+
+		BankSwitchStrategy.HelperDeposit deposit = busConflictLatch().depositHelperArgument(program,
+			instructionAt("0xc142"), BankState.unknown(), BankState.unknown(), 0x0F,
+			envAt(contraWrapperEntry(), contraEntry(), BankState.fullyKnown(0xFF, 0x02)));
+
+		assertEquals("a memory-latch call replaces this mechanism's whole field", 0x0F,
+			deposit.ownedMask());
+		assertEquals(0x0F, deposit.value().knownMask());
+		assertEquals("$FFD0 + Y=2 is the table's bank 2, reached across the wrapper split", 0x02,
+			deposit.value().bits());
+	}
+
+	/**
+	 * <b>The mechanism pin.</b> Identical to the test above in every respect but one -- the env
+	 * nominates no crossable join -- and it must NOT resolve.
+	 * <p>
+	 * This exists so the licence cannot be quietly refactored away. Without it, a future change
+	 * that dropped {@code crossableJoin} entirely would leave the test above passing on any
+	 * fixture where {@code $C13F} stopped being a join, and the regression would surface only in
+	 * the real-ROM tier. Failing here says exactly which mechanism carries Contra.
+	 */
+	@Test
+	public void helperMiniInlineWithoutTheLicensedJoinStaysUnknown() throws Exception {
+		layContraWrapper();
+
+		BankSwitchStrategy.HelperDeposit deposit = busConflictLatch().depositHelperArgument(program,
+			instructionAt("0xc142"), BankState.unknown(), BankState.unknown(), 0x0F,
+			envAt(contraWrapperEntry(), null, BankState.fullyKnown(0xFF, 0x02)));
+
+		assertEquals("the call still writes the field -- it is owned, just unresolved", 0x0F,
+			deposit.ownedMask());
+		assertEquals("the join refusal must still fire when nothing licenses it", 0x00,
+			deposit.value().knownMask());
+	}
+
+	/**
+	 * The wrapper clobbering A does not matter, and this says so out loud. {@code $C139 LDA $8000}
+	 * writes A from a readable ROM byte, so A across the wrapper is both wrong and confidently
+	 * resolvable -- exactly the trap. Y is what the latch consumes, Y is what survives, and a
+	 * caller putting {@code $06} in Y reaches bank 6 ({@code c21b}'s real answer) with A never
+	 * consulted.
+	 */
+	@Test
+	public void wrapperClobberOfAnUnreadRegisterDoesNotSuppressTheRecovery() throws Exception {
+		layContraWrapper();
+
+		BankSwitchStrategy.HelperDeposit deposit = busConflictLatch().depositHelperArgument(program,
+			instructionAt("0xc142"), BankState.unknown(), BankState.unknown(), 0x0F,
+			envAt(contraWrapperEntry(), contraEntry(), BankState.fullyKnown(0xFF, 0x06)));
+
+		assertEquals(0x0F, deposit.value().knownMask());
+		assertEquals("$FFD0 + Y=6 is the table's bank 6", 0x06, deposit.value().bits());
+	}
+
 	/**
 	 * The headline case: a call site that puts {@code $02} in Y reaches bank 2, recovered by
 	 * re-running the latch's own semantics at the switch site with the caller's Y supplied at

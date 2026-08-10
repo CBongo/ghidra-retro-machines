@@ -578,11 +578,21 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// on (grm-5tl.13.2).
 		Map<Address, MatchInfo> matchCache = new HashMap<>();
 		// Likewise scoped to this runDataflow call: the A/X/Y a helper call site supplies
-		// (grm-hum increment 2). Purely an efficiency memo -- callSiteRegisters is a function of
-		// (program, call address) alone, since its three scans use NO_HOOKS and never consult
-		// tracked state -- but a necessary one: without it, three backward scans plus a
-		// strategy's mini-inline would rerun on EVERY dequeue of every helper call address across
-		// the whole fixpoint. Mega Man (25 switch sites, a large fixpoint) is where that bites.
+		// (grm-hum increment 2). Purely an efficiency memo -- but a necessary one: without it,
+		// three backward scans plus a strategy's mini-inline would rerun on EVERY dequeue of
+		// every helper call address across the whole fixpoint. Mega Man (25 switch sites, a
+		// large fixpoint) is where that bites.
+		//
+		// The memoized value is a function of (program, call address, HELPER MODEL) -- the model
+		// entered the signature with grm-k90's prologue filter and crossable join, where it had
+		// previously been (program, call address) alone. Keying on the address only is still
+		// correct, and the reason is worth stating rather than assuming: one call instruction
+		// dispatches to exactly one callee, and the helper map is FIXED before runDataflow begins
+		// (phase 1/2 separation, same invariant matchCache above relies on), so within one
+		// fixpoint a given call address resolves to one and only one model. The three scans
+		// themselves remain state-independent -- they use NO_HOOKS and never consult tracked
+		// state -- and argumentSurvivesPrologue is a pure function of the listing.
+
 		Map<Address, RegisterEnv> callSiteRegCache = new HashMap<>();
 
 		Set<Address> seeds = new LinkedHashSet<>();
@@ -1738,6 +1748,40 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * <p>
 	 * {@code envCache} memoizes that environment per call address for the duration of one
 	 * {@link #runDataflow}; see its declaration there for why it is not optional.
+	 * <p>
+	 * <b>The environment is PROLOGUE-FILTERED, per register</b> (bead grm-k90). What
+	 * {@link #callSiteRegisters} scans is the caller's raw A/X/Y, and for a WRAPPER model the
+	 * wrapper's body executes between the caller and the point the env claims to describe -- it
+	 * may freely write X or Y, and {@link #isPassThroughInto} admits an {@code LDX #imm} without
+	 * blinking. For a CALL-EDGE wrapper it is worse than theoretical: the scan stops at
+	 * {@code relay.calleeEntry()} and never walks the wrapper's prefix at all, so an unfiltered
+	 * env would hand a strategy a register value the wrapper had already overwritten. Each of
+	 * A/X/Y is therefore passed through only where
+	 * {@link #argumentSurvivesPrologue(Program, List, char)} holds for THAT register over
+	 * {@link #prologueSegments}, and comes back {@link BankState#unknown()} otherwise. The test
+	 * is per-register precisely because the answers differ: on Contra's {@code FUN_c139} wrapper
+	 * ({@code LDA $8000 / STA $07ec}, falling into {@code FUN_c13f}) A does not survive and Y
+	 * does, and it is Y the latch actually consumes.
+	 * <p>
+	 * This is uniform across ordinary helpers, pass-through wrappers and call-edge wrappers, and
+	 * for an ordinary helper it is not a behavior change in any measured case -- the same
+	 * predicate over the same span already gated {@code argValue} just above. Note the
+	 * interaction with the crossable join below: for a PASS-THROUGH wrapper the scan now walks
+	 * the wrapper's prefix itself, so a register the filter would have zeroed is one the scan
+	 * clobbers on its own before ever reaching the stop. The filter is therefore
+	 * redundant-but-harmless there, and load-bearing for the call-edge case where the prefix is
+	 * never walked. It is kept for both because "the env describes the caller's registers as
+	 * they are at the point the env stops" is the invariant, and an invariant that holds only on
+	 * the paths that happen to re-derive it is not one.
+	 * <p>
+	 * <b>And it nominates the join the scan may cross</b> ({@link #crossableWrapperJoin}), which
+	 * is what makes the stop reachable at all for a pass-through wrapper. The bead's own filed
+	 * hypothesis -- that these call sites fail because {@code recoverCallArgument} gates the
+	 * whole path on {@code argumentSurvivesPrologue} with {@code reg == argReg == 'A'} -- is
+	 * WRONG for memory-latch, and worth recording so nobody re-derives it: that gate is skipped
+	 * entirely, because {@link BankSwitchStrategy#consumesHelperArgument} is false for
+	 * memory-latch. The real failure was the join refusal killing the walk two instructions
+	 * short of the env's stop.
 	 */
 	private CallEffect recoverCallArgument(Program program, Instruction callInstr,
 			HelperModel helper, BankState callSiteIn, Map<Address, RegisterEnv> envCache) {
@@ -1792,7 +1836,8 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// helper's own entry and back into the wrapper's tail (grm-2dr increment 2).
 		Address scanStop = insideHelperEntry(helper);
 		RegisterEnv callerRegs = envCache.computeIfAbsent(callInstr.getMinAddress(),
-			a -> callSiteRegisters(program, callInstr, scanStop));
+			a -> callSiteRegisters(program, callInstr, scanStop,
+				crossableWrapperJoin(program, helper.firstSite(), scanStop), helper));
 		BankSwitchStrategy.HelperDeposit deposit = helper.strategy()
 				.depositHelperArgument(program, switchSite, local, localIn, stateMask, callerRegs);
 		BankState positionedValue = position(deposit.value(), helper.lsb(), helper.effectMask());
@@ -2114,6 +2159,16 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * Two consumers: {@link #valueSuppliedInsideHelper}'s {@link RegisterEnv} stop address, and
 	 * the one {@link #recoverCallArgument} hands {@link #callSiteRegisters} for
 	 * {@link BankSwitchStrategy#depositHelperArgument}'s mini-inlining.
+	 * <p>
+	 * <b>For a pass-through wrapper, contiguity makes the walk POSSIBLE but does not make this
+	 * stop REACHABLE</b> (bead grm-k90) -- the gap in the paragraph above, and the whole of
+	 * Contra's defect. The addresses do run linearly from {@code entry} to {@code firstSite}, so
+	 * the answer here is right; what the argument omits is that the WRAPPED helper's own entry
+	 * sits on that line and is a control-flow join, because the callers who bypass the wrapper
+	 * jump straight to it. {@code StoredValueScanner}'s join refusal fires there and the scan
+	 * returns unknown two instructions short of this stop. That is repaired by licensing exactly
+	 * that one join rather than by moving the stop -- see {@link #crossableWrapperJoin}, which
+	 * also records why moving it would have been the worse fix.
 	 */
 	private static Address insideHelperEntry(HelperModel helper) {
 		return helper.relay() == null ? helper.entry() : helper.relay().calleeEntry();
@@ -2384,16 +2439,138 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * load resolution applies to a register the caller is merely setting up. A register the
 	 * scan cannot pin down comes back {@link BankState#unknown()}, which is what keeps a
 	 * RAM-sourced argument honestly unresolved instead of guessed.
+	 * <p>
+	 * <b>Each register is then filtered by whether it SURVIVES the prologue</b> (bead grm-k90).
+	 * The three scans above run in the caller and answer "what did the caller leave here"; the
+	 * env claims something stronger -- "what holds at {@code entryAddr}" -- and for a WRAPPER
+	 * model those differ, because the wrapper's own body runs in between and nothing forbids it
+	 * writing X or Y ({@link #isPassThroughInto} admits an {@code LDX #imm} without blinking).
+	 * {@link #argumentSurvivesPrologue(Program, List, char)} over {@link #prologueSegments} is
+	 * exactly the question, so it is asked ONCE PER REGISTER rather than once for
+	 * {@link HelperModel#argReg}, and a register that does not survive is handed back as
+	 * {@link BankState#unknown()} instead of the caller's stale value. Per-register is the whole
+	 * point: on Contra's {@code FUN_c139} A does not survive ({@code LDA $8000}) while Y does,
+	 * and Y is the one the latch consumes -- running the test on {@code argReg} alone would let
+	 * a clobber of a register nobody reads suppress a correct recovery.
+	 * <p>
+	 * For an ordinary helper this cannot change an answer that was already right: the scan
+	 * inside the helper walks that same prologue itself and meets any clobber before it reaches
+	 * the stop. It is LOAD-BEARING for a CALL-EDGE wrapper, where the scan stops at
+	 * {@code relay.calleeEntry()} and the wrapper's prefix is never walked at all -- that is the
+	 * soundness hole this bead was originally filed on, and it is closed here rather than by
+	 * forcing X/Y to unknown for wrapper models wholesale (considered and rejected in grm-2dr
+	 * increment 2 as strictly less precise).
+	 * <p>
+	 * {@code crossableJoin} is passed through untouched; see {@link #crossableWrapperJoin} for
+	 * where it comes from and {@link RegisterEnv} for why crossing it is sound.
 	 */
 	private RegisterEnv callSiteRegisters(Program program, Instruction callInstr,
-			Address entryAddr) {
-		return new RegisterEnv(entryAddr,
-			StoredValueScanner.resolveStoredValue(program, callInstr, 'A', BankState.unknown(),
-				0xFF, NO_HOOKS),
-			StoredValueScanner.resolveStoredValue(program, callInstr, 'X', BankState.unknown(),
-				0xFF, NO_HOOKS),
-			StoredValueScanner.resolveStoredValue(program, callInstr, 'Y', BankState.unknown(),
-				0xFF, NO_HOOKS));
+			Address entryAddr, Address crossableJoin, HelperModel helper) {
+		List<PrologueSegment> prologue = prologueSegments(helper);
+		return new RegisterEnv(entryAddr, crossableJoin,
+			surviving(program, callInstr, 'A', prologue),
+			surviving(program, callInstr, 'X', prologue),
+			surviving(program, callInstr, 'Y', prologue));
+	}
+
+	/**
+	 * What the caller left in {@code reg}, or {@link BankState#unknown()} when the helper's
+	 * prologue does not preserve it as far as the site that reads it -- one register's worth of
+	 * {@link #callSiteRegisters}' filter (bead grm-k90).
+	 * <p>
+	 * The survival test is evaluated FIRST and the scan skipped when it fails, which is a small
+	 * efficiency win but mostly a statement of intent: a value that cannot be attributed is not
+	 * merely discarded afterwards, it is never derived.
+	 */
+	private static BankState surviving(Program program, Instruction callInstr, char reg,
+			List<PrologueSegment> prologue) {
+		if (!argumentSurvivesPrologue(program, prologue, reg)) {
+			return BankState.unknown();
+		}
+		return StoredValueScanner.resolveStoredValue(program, callInstr, reg, BankState.unknown(),
+			0xFF, NO_HOOKS);
+	}
+
+	/**
+	 * The one control-flow join a mini-inline scan for {@code helper} may walk through, or
+	 * {@code null} for the overwhelmingly common "none" (bead grm-k90).
+	 * <p>
+	 * <b>The problem it solves.</b> For a PASS-THROUGH WRAPPER, {@link #insideHelperEntry}
+	 * correctly reports the WRAPPER's entry as where control arrived -- but that stop is not
+	 * REACHABLE. The scan starts at the switch site, inside the wrapped helper, and the wrapped
+	 * helper's own entry lies between it and the stop. That entry is a genuine control-flow join,
+	 * because the direct callers who bypass the wrapper jump straight to it, so
+	 * {@code StoredValueScanner}'s join refusal fires and the walk dies short of the env. On
+	 * Contra this is the entire defect: {@code c0cb LDY #1 / JSR $c13f} resolves because its stop
+	 * IS the join and {@code stopsAt} is tested first, while the identical {@code c094 LDY #1 /
+	 * JSR $c139} warns because its stop is two instructions further back and the join wins the
+	 * race.
+	 * <p>
+	 * <b>What is nominated.</b> "The entry of the body that actually contains {@code firstSite}"
+	 * -- which is what {@link #insideHelperEntry}'s javadoc already claims to compute and, for a
+	 * pass-through wrapper, does not. It is taken from the function containing {@code firstSite}
+	 * rather than stored on {@link HelperModel} deliberately: {@link HelperModel#atFallThroughWrapper}
+	 * overwrites {@code entry} with the wrapper's, so recording the wrapped entry would mean a
+	 * new field on a ten-field record, and one that would have to be threaded correctly through a
+	 * CHAIN of wrappers. Deriving it gets the chained case right for free -- every outer wrapper
+	 * is contiguous with the next and contributes no join of its own, so the function containing
+	 * {@code firstSite} is the innermost helper however many wrappers are stacked on it.
+	 * <p>
+	 * <b>The window test is what keeps it honest</b>, and it is not a formality -- it is the only
+	 * thing standing between this and licensing a join nobody proved anything about. The nominee
+	 * must lie STRICTLY after {@code scanStop} and at or before {@code firstSite}. Walk the four
+	 * model shapes:
+	 * <ul>
+	 * <li>ORDINARY HELPER: the nominee IS {@code scanStop}, not strictly after it, so
+	 * {@code null}. Byte-for-byte no change, which is what lets this land without re-blessing
+	 * every golden.</li>
+	 * <li>MID-BODY ENTRY (Bionic Commando's {@code $DCAA} inside {@code FUN_dca8}): the nominee is
+	 * {@code dca8}, BEFORE the stop, so {@code null}. That case must not regress and structurally
+	 * cannot -- the whole point of a mid-body entry is that the prologue was skipped, and
+	 * licensing a join behind the stop would walk the scan into exactly the code the call
+	 * avoided.</li>
+	 * <li>PASS-THROUGH WRAPPER (Contra): {@code c139 < c13f <= c142}. Nominated. This is the
+	 * fix.</li>
+	 * <li>CALL-EDGE WRAPPER: {@code scanStop} is {@code relay.calleeEntry()}. If the wrapped model
+	 * is itself a pass-through wrapper the nominee is after it and crossing is licensed by THAT
+	 * wrapper's own {@link #isPassThroughInto} proof; otherwise the nominee is the stop and this
+	 * returns {@code null}.</li>
+	 * </ul>
+	 * In every nominated case the span between stop and nominee is a pass-through wrapper's body,
+	 * which {@link #isPassThroughInto} has already proved is straight-line, fully disassembled,
+	 * mechanism-inert and reached only by unconditional fallthrough. That proof is the licence;
+	 * see {@link RegisterEnv}'s class javadoc for why it is sufficient.
+	 * <p>
+	 * <b>Why the join is crossed rather than the stop simply MOVED to the nominee.</b> Moving it
+	 * would have been a smaller change and it is the wrong one. The scan would then stop at the
+	 * wrapped helper's entry and adopt {@link #callSiteRegisters}' prologue-FILTERED values,
+	 * throwing away whatever the wrapper's own body supplies -- a wrapper of the shape
+	 * {@code LDY #3} / fall-through-into-helper would report Y unknown (the filter correctly says
+	 * Y does not survive a prologue that writes it) where today's scan reads the {@code LDY #3}
+	 * directly. Crossing keeps the walk going through the wrapper's prefix, so its writes and
+	 * loads are read natively by the machinery that already knows how, and the filter is left to
+	 * do its work only at the true outer stop.
+	 * <p>
+	 * Takes {@code firstSite} and {@code scanStop} loose rather than a {@link HelperModel},
+	 * and is package-private static, for one reason: {@code HelperModel} is private, so a test
+	 * that wanted a model could not build one -- the constraint that kept grm-2dr increment 1's
+	 * wrapper tests at the predicate level. Same precedent as {@link #argumentSurvivesPrologue}
+	 * and {@link #isPassThroughInto}, and the two parameters are the only two the window test
+	 * reads anyway.
+	 */
+	static Address crossableWrapperJoin(Program program, Address firstSite, Address scanStop) {
+		if (firstSite == null || scanStop == null) {
+			return null;
+		}
+		Function body = program.getFunctionManager().getFunctionContaining(firstSite);
+		if (body == null) {
+			return null;
+		}
+		Address nominee = body.getEntryPoint();
+		if (nominee.compareTo(scanStop) <= 0 || nominee.compareTo(firstSite) > 0) {
+			return null;
+		}
+		return nominee;
 	}
 
 	/**
