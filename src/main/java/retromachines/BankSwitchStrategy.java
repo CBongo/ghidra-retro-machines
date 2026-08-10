@@ -248,6 +248,27 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	}
 
 	/**
+	 * Delivers the addresses that MIRROR THE LIVE BANK on this program (bead grm-mej.2) --
+	 * a bank-identifying ROM offset, a write-through RAM shadow -- so a strategy's value
+	 * recovery can answer a load of one from tracked bank state instead of declining.
+	 * <p>
+	 * <b>Why this is a lifecycle method rather than a {@link #configure} parameter.</b>
+	 * Strategies are constructed and configured once per mechanism, before any dataflow has
+	 * run; mirror discovery needs pass 1's recognized switch sites, so it necessarily happens
+	 * afterwards. {@code BoardBankAnalyzer} calls this once per configured mechanism between
+	 * its two dataflow passes -- the same slot {@code findHelpers} occupies, for the same
+	 * reason -- and re-runs pass 2 when the set is non-empty, so a strategy that consumes
+	 * mirrors sees them at every site.
+	 * <p>
+	 * The default ignores them, which is what every strategy did before the set existed.
+	 * A strategy that overrides this and lets a mirror change {@link #computeSwitch}'s answer
+	 * becomes state-dependent and must revisit {@link #cacheable()}.
+	 */
+	default void observeMirrors(BankMirrors mirrors) {
+		// no-op: this strategy recovers nothing from a bank mirror
+	}
+
+	/**
 	 * Whether {@link #computeSwitch}'s result at a given {@code (program, instr)} pair is
 	 * independent of {@code inState} -- i.e. a pure function of the program and instruction
 	 * alone, safe for the dataflow engine to memoize per-address across worklist dequeues

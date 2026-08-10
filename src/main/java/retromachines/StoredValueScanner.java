@@ -355,7 +355,7 @@ final class StoredValueScanner {
 	 * so "is this a join" and "may this query cross it" remain separable questions and a reader
 	 * of either walk can see the licence being spent at the point it is spent.
 	 */
-	private static boolean isControlFlowJoin(Program program, Instruction cur, Instruction prev) {
+	static boolean isControlFlowJoin(Program program, Instruction cur, Instruction prev) {
 		Address curAddr = cur.getMinAddress();
 		Address prevAddr = prev.getMinAddress();
 		for (Reference ref : program.getReferenceManager().getReferencesTo(curAddr)) {
@@ -965,6 +965,20 @@ final class StoredValueScanner {
 			}
 		}
 		return false;
+	}
+
+	/**
+	 * Whether {@code instr} writes {@code reg}, by the same mnemonic sets this scanner's own
+	 * backward walks stop on. Exposed for {@link BankMirrors}' discovery walks (grm-mej.2), which
+	 * are structurally the same walk asking a different question and must agree with these on
+	 * what clobbers a register -- a discovery pass that walked past a modifier this scanner stops
+	 * at would nominate a cell the scanner can then never resolve through.
+	 * <p>
+	 * A call is deliberately NOT covered: {@code JSR} modifies every register but is not in any
+	 * modifier set, so every walk tests {@code getFlowType().isCall()} separately.
+	 */
+	static boolean modifiesRegister(Instruction instr, char reg) {
+		return registerModifiers(reg).contains(instr.getMnemonicString().toUpperCase());
 	}
 
 	private static Set<String> registerModifiers(char reg) {

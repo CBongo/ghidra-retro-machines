@@ -268,11 +268,36 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				composeTailCalls(program, findHelpers(program, flow.switchResults())),
 				flow.switchResults()),
 			flow.switchResults());
-		if (!helpers.isEmpty()) {
-			if (verbose) {
-				log.appendMsg(getName(), helpers.size() + " bank-switch helper function(s): " +
-					helpers.keySet().stream().map(Function::getName).sorted().toList());
-			}
+		if (!helpers.isEmpty() && verbose) {
+			log.appendMsg(getName(), helpers.size() + " bank-switch helper function(s): " +
+				helpers.keySet().stream().map(Function::getName).sorted().toList());
+		}
+
+		// Which banks each switchable window actually has an image slice for (grm-hum
+		// increment 3). Derived once, here, because it is a property of the loaded program and
+		// cannot change under the analysis. Hoisted above the second dataflow pass by grm-mej.2:
+		// bank-mirror derivation asks the same realized-bank question, and deriving it twice
+		// would let the two answers drift.
+		Map<String, Set<Integer>> bankUniverse = bankUniverse(program, board);
+
+		// --- Bank mirrors (grm-mej.2): the addresses that mirror the LIVE bank, derived from
+		// pass 1's recognized switch sites plus the loaded bank images, and handed to every
+		// configured strategy BEFORE the second pass so a strategy that consumes them sees them
+		// at every site rather than at the ones pass 2 happens to revisit. ---
+		BankMirrors mirrors = deriveBankMirrors(program, board, bankUniverse, flow, helpers);
+		for (ConfiguredMechanism cm : mechanisms) {
+			cm.strategy().observeMirrors(mirrors);
+		}
+		if (verbose && !mirrors.isEmpty()) {
+			log.appendMsg(getName(), "bank mirrors: " + mirrors);
+		}
+
+		// The second pass is what lets the analysis see anything pass 1 structurally could not.
+		// Helpers were the original reason; mirrors are a second one, and gating on EITHER is
+		// what makes a board with mirrors but no helper actually benefit. Passing an EMPTY
+		// helper map is deliberately equivalent to pass 1's null (runDataflow's helper branch is
+		// a lookup that misses), so a mirrors-only rerun changes nothing on its own.
+		if (!helpers.isEmpty() || !mirrors.isEmpty()) {
 			flow = runDataflow(program, monitor, listing, mechanisms, board, helpers);
 		}
 
@@ -284,10 +309,6 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// violation scan below dedupes against this set rather than stacking a second
 		// bookmark on a site the existing switch/call-switch warning already covers.
 		Set<Address> alreadyWarned = new LinkedHashSet<>();
-		// Which banks each switchable window actually has an image slice for (grm-hum
-		// increment 3). Derived once, here, because it is a property of the loaded program and
-		// cannot change under the annotation loop.
-		Map<String, Set<Integer>> bankUniverse = bankUniverse(program, board);
 		for (Map.Entry<Address, BankState> entry : flow.stateIn().entrySet()) {
 			monitor.checkCancelled();
 			Address addr = entry.getKey();
@@ -2722,6 +2743,70 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		int bank = field.valueIn(effective);
 		return realized.contains(bank) ? null
 				: new ImpossibleBank(windowName, bank, realized.size());
+	}
+
+	/**
+	 * Every address on this program that mirrors the live bank (bead grm-mej.2) -- see
+	 * {@link BankMirrors} for what each kind means and {@link BankSwitchStrategy#observeMirrors}
+	 * for how it reaches the strategies.
+	 * <p>
+	 * Runs between the two dataflow passes because both halves need pass 1: the code half scans
+	 * back from {@code flow.switchResults()}' recognized mechanism writes, and the argument-cell
+	 * half needs the helper models built from them. It is the same slot, and the same reason,
+	 * that puts {@link #findHelpers} here.
+	 * <p>
+	 * <b>Only mode-INVARIANT switchable windows are content-scanned.</b> A mode-varying window's
+	 * bank images live under {@code <name>_M<mode>_B<bank>} and its realized-bank set is per
+	 * mode instance, so "the byte at K identifies the bank" would have to be qualified by mode
+	 * to mean anything. No board that has one also has the ROM-identifying convention (it is a
+	 * cartridge idiom, and mode windows are the home-computer shape), so it is left out rather
+	 * than guessed at.
+	 */
+	private BankMirrors deriveBankMirrors(Program program, BoardModel board,
+			Map<String, Set<Integer>> bankUniverse, DataflowResult flow,
+			Map<Function, HelperModel> helpers) {
+		BankMirrors.Discovery discovery =
+			new BankMirrors.Discovery(program.getAddressFactory().getDefaultAddressSpace());
+		for (ComputedWindowModel w : board.computedWindows().values()) {
+			Set<Integer> banks = bankUniverse.get(w.name());
+			if (banks != null) {
+				discovery.addRomIdentifying(BankMirrors.romIdentifyingOffsets(program, w.name(),
+					w.start(), w.end(), banks));
+			}
+		}
+		discovery.scanWriteThroughShadows(program, flow.switchResults().keySet());
+		discovery.scanArgumentCells(program, helperArgumentCallSites(program, flow, helpers));
+		return discovery.build();
+	}
+
+	/**
+	 * Every call site that reaches a bank-switch helper taking its bank in a known register,
+	 * paired with that register -- the starting points for {@link BankMirrors}' argument-cell
+	 * route (b).
+	 * <p>
+	 * Resolution goes through {@link #calledHelper} rather than through the reference manager so
+	 * that pass-through wrappers, mid-body entries and relays are followed exactly as the
+	 * dataflow follows them; a discovery pass that resolved calls its own way would nominate
+	 * cells for call sites the engine does not agree are helper calls.
+	 */
+	private Map<Address, Character> helperArgumentCallSites(Program program, DataflowResult flow,
+			Map<Function, HelperModel> helpers) {
+		Map<Address, Character> sites = new LinkedHashMap<>();
+		if (helpers.isEmpty()) {
+			return sites;
+		}
+		Listing listing = program.getListing();
+		for (Address addr : flow.stateIn().keySet()) {
+			Instruction instr = listing.getInstructionAt(addr);
+			if (instr == null || !instr.getFlowType().isCall()) {
+				continue;
+			}
+			HelperModel helper = calledHelper(program, instr, helpers);
+			if (helper != null && helper.argReg() != null) {
+				sites.put(addr, helper.argReg());
+			}
+		}
+		return sites;
 	}
 
 	/** Key under which {@link #bankUniverse} files a mode-varying window instance's banks. */
