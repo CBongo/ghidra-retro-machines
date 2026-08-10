@@ -43,45 +43,8 @@ bash tools/banktest/realrom-test.sh nominate H:/emulators/nes/roms   # board-gap
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
-- [ ] **Bistable-golden distribution.** (`grm-g73` P2, `grm-4nr` P2)
-      Run the tier ~10 times, keep every dump. How many distinct outcomes exist per title; do
-      megaman and ff1 flip *together*; is ff1's delta always exactly −33/−44/−14? Co-flipping
-      implies one shared nondeterministic input, independent flips implies two causes.
-
-      **Verified, so the loop is sound:** `check` **never reads** the candidate cache — the reuse
-      fast path (`realrom-test.sh:589`) is gated on `MODE = bless`. Every iteration is a genuine
-      fresh import, and `-deleteProject` gives each one a fresh Ghidra project.
-
-      **Footgun — read this before blessing anything afterwards.** Every `check` still *writes*
-      `build/realrom-cache/<key>.dump`. After a loop like this, a later `bless` will silently
-      serve whichever outcome the **last** iteration happened to produce. Run
-      `rm -rf build/realrom-cache` before blessing any title that appears here.
-
-      **contra is no longer a suspect** (see above — deterministic, stale golden, `grm-3t8`); it is
-      kept in the loop below only as a cheap *control*, since a title known to be stable makes a
-      co-flip matrix easier to read. Fold in the other suspects — same cost per run, more answers. Budget ~1 min/title/run, so ~50 min for 5 titles × 10 runs; run it detached.
-      ```bash
-      for i in $(seq 1 10); do
-        REALROM_WORK_DIR=$PWD/build/bistable$i \
-          bash tools/banktest/realrom-test.sh check --all \
-            --only megaman,ff1,contra,dodge,rcproam H:/emulators/nes/roms
-      done
-      # distinct outcomes per title
-      for t in megaman ff1 contra dodge rcproam; do
-        echo "== $t"; sha256sum build/bistable*/$t.dump | awk '{print $1}' | sort | uniq -c
-      done
-      # co-flip matrix: one row per run, one column per title
-      for i in $(seq 1 10); do
-        printf '%2d' "$i"
-        for t in megaman ff1 contra dodge rcproam; do
-          printf ' %.8s' "$(sha256sum build/bistable$i/$t.dump 2>/dev/null | cut -c1-8)"
-        done; echo
-      done
-      ```
-      **What to record on the bead:** the per-title outcome count, the co-flip matrix, and for any
-      title with exactly two outcomes, the `diff -u` between them. A count-line-only delta is
-      jitter; a changed or vanished `sample.bankcomment … via FUN_xxx` line is a real behavioural
-      difference and names the nondeterministic input.
+_(No open items. The bistable-golden distribution question was answered 2026-08-09 — see the
+Answered table.)_
 
 ---
 
@@ -229,4 +192,5 @@ Agents can't file these — they need an account and CLA agreement.
 | Are smb3's new `ca23`/`ca2e` values (`r7=27`/`26` -> `r7=7`) right, or is the argument coming from the wrong site? | **Wrong site — a REGRESSION, and the golden is correct. smb3 must not be blessed.** MMC3 is a two-write protocol and smb3's helper `ffc2` does both halves: `LDA #$47 ; STA $0721 ; STA $8000 ; LDA $0720 ; STA $8001`. `$8000` takes the register-SELECT byte, `$8001` the bank — which arrives via RAM shadow `$0720`, not a register. Production now reports `$47 & $3F = 7`, i.e. the select constant leaking into the bank field. **Direct proof:** `ca23` is preceded by `LDA #$1b ; STA $0720` and `ca2e` by `LDA #$1a ; STA $0720`, so `$1B`=27 and `$1A`=26 *are* the call-site constants the old golden recorded. Corroboration: both sites collapse to one value (a helper-body constant, not a call-site one), and the direct sites `c5f5`/`c9f7` (`LDA #$1a ; STA $8001`, no shadow update) still read 26 correctly. The count movement fits a regression, not a fix — a wrong bank retargets into a wrong/absent overlay, hence `refs 846->822`, `instrs 4263->4173`. **Shadow map recorded for the per-game tier:** `$0721` = `$8000` select/mode, `$0720` = R7 bank, `$071F` = R6 bank; `ffd1` sets R6, `ffbf` (`JSR $ffd1` + fallthrough) sets both; the IRQ handler restores `$8000` from `$0721` on exit; PRG mode 1 confirmed (`$8000` bit 6 always set), so R6 drives `$C000` | `grm-67g` filed **P1**; `grm-bj6` retitled and blocked on it; `grm-evn` for the unrelated `FUN_c542` leftover |
 | Are rcransom's `f1d0`/`f21d` values (`select=6,prg_mode=0,r6=0,r7=1`) real, or the same `firstSite` artifact as smb3's `r7=7`? | **Artifacts — both of them, and wrong in TWO ways.** `FUN_ff07`/`FUN_ff29` are interrupt-exit RESTORE routines (called immediately before the NMI and IRQ handlers return). Each writes R6 from shadow `$fc` and R7 from `$fd`, then rewrites `$8000` itself from `$ff`/`$fb`. So (1) the reported `select=6` is the state after the helper's FIRST select write, not its net effect — the LAST select write loads `$8000` from RAM and is statically unknown; and (2) `r6=0,r7=1` were stale in-state values claimed as fully known (those lines carry no `[known:…]` bracket at all) because the mis-anchored deposit owned only `select`+`prg_mode` and never poisoned r6/r7 across a helper that overwrites both. A confident stale bank is the same defect class as smb3's confident wrong one. `grm-67g`'s fix replaces both with warnings, which is the honest answer, so **rcransom was a second correctness win, not collateral** — blessed. Stable under the planned `grm-mej` follow-up: the data comes from cells the caller never writes, so it stays unknown. **New gap this exposed:** bank state across an INTERRUPT boundary — a handler that restores banking on exit means the interrupted code's state is preserved, which the engine has no way to express | `grm-1fv` **closed**; unblocked `grm-67g`; rcransom removed from the section-2 def-use list |
 | Why does smb2 have zero constant-arg call sites, and is its 100%-undisassembled `WC000` a defect? | **Neither is a gap — smb2 is a stack/shadow title and `WC000` is data. Do not re-trace it, do not file a coverage bead for `WC000`.** The whole PRG mechanism is one wrapper plus one helper: `ff85` (`STA $06f2`, falls through) into `ff88` (`ASL A ; PHA / LDA #$86 / STA $8000 / PLA / STA $8001 ; ORA #1 ; PHA / LDA #$87 / STA $8000 / PLA / STA $8001`). `$86`/`$87` select R6/R7 with bit 6 clear (prg_mode 0), so **R6 = raw×2, R7 = raw×2+1** — a UxROM-shaped contiguous 16K window at `$8000-bfff` driven by a single 16K index. The user found **no other refs to `$8000`/`$8001`** in disassembled code, which closes site accounting exactly at the probe's `sites.total 6` (four in `ff88`, two in the `ff73` CHR helper, which loads from a table at `$06f7`). So nothing is undiscovered; the bank simply crosses a `PHA`/`PLA` pair — with an `LDA #imm / STA $8000` clobbering A in between — at **every** mechanism site, making `grm-mej.3` the binding constraint, plus arithmetic in the deposit (`ASL`/`ORA #1`) and scaling on the shadow: **`$06f2` holds the *unscaled* 16K index, unlike smb3's `$0720` or rcransom's `$fc`/`$fd` which hold register banks directly.** `WC000` is bank 14, the prg_mode-0 fixed second-last bank, and per the Xkeeper0/smb2 disassembly it is mostly DPCM samples and ending event data — data, not an unreached entry | `grm-8iy.4`; second motivating case recorded on `grm-mej.3` |
+| How is the bistable-golden outcome distributed — how many states per title, do megaman and ff1 flip together, is ff1's delta always −33/−44/−14? | **Two states each for megaman/dodge/rcproam, ONE for ff1, and the flips are INDEPENDENT — do not hunt for a single shared nondeterministic input.** Ten fresh imports × five titles: megaman 8/2, dodge 9/1, rcproam 8/2, ff1 **10/10 identical**, contra 10/10 (control — so the loop and harness add no noise of their own). Only run 4 flipped two titles at once (megaman+dodge), which is what independence predicts at those rates (expected 0.2 joint occurrences in 10 runs); megaman also flipped alone. Every diff is **count-line-only**, no `sample.*` line moves, `bankComments`/`warnings` constant — jitter by the bead's own criterion. megaman refs 1704→1703 / instrs 7429→7431 (opposite signs, the same 1-ref/2-instr signature since 2026-07-25); dodge refs 2739→**2740** with instrs pinned, a *third* known value alongside 2736/2739; rcproam refs 1298→1296, instrs pinned. The golden is the majority state in all four, so the unchanged-tree FAIL rate is megaman 20%, rcproam 20%, dodge 10%, ff1 0%. **ff1's 40% rate is dead** (P(0 in 10 \| p=0.4) = 0.6%), most likely removed by the grm-izu / grm-2dr work, though n=10 leaves a low residual rate unexcluded and no bisect was run — **do not spend one speculatively; a future ff1 FAIL is the cheap signal.** Two operational notes: `build/realrom-cache` now holds run 10's dumps, so `rm -rf build/realrom-cache` before blessing any of these five; and the whole `bistable1..10` set predates 09d9c97, so contra's dumps legitimately differ from today's golden and the set is **not** a baseline against HEAD | `grm-g73`; ff1 result on `grm-4nr` (candidate to close not-reproducible) |
 | What are contra's ten remaining warnings? | **All classified; contra needs no further tracing.** Engine: `c13f` (`LDA $ffd0,Y` / `STA $ffd0,Y`, bank arrives in **Y**), wrapper `c139` (sets shadow `$07ec` from `$8000`, falls through), plus a **second** shadow `$07ed` used only by the `c14c`/`c15e` save-restore bracket. Split: **3 recoverable** — `c094`/`c0a2` (`LDY #1`) and `c21b` (`LDY #6`) call the *wrapper* and warn, while the identical `LDY #imm` idiom calling `c13f` directly (`c0cb`, `c157`) resolves; **1 honest** — `c9c0` takes Y from a 3-byte-stride CHR-pointer table at `$c950` (`LDA $c952,X / AND #7 / TAY`) reaching five banks {0,2,4,5,6}, so no static value exists; **3 out of scope** — `c0d3` (reads live bank back from `$8000` through the stack), `c149` (`LDY $07ec`), `c164` (`LDY $07ed`) are all `grm-mej` shadow/read-back restores where unknown *is* correct, same disposition as rcransom; **1 by construction** — `c142` is the helper's own mechanism write; **2 phantoms** — `8efc` and `811a` are cruft from a switch-table over-read at `8492`, so **`FUN_PRG_LO_B1__8259` is not real code, do not trace it**. Ceiling is 3 more sites, +3 if `grm-mej` lands | `grm-hum`; fix on `grm-k90` (retitled, P3→P2); over-read on `grm-eyn` |
