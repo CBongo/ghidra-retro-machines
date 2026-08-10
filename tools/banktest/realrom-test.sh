@@ -43,21 +43,31 @@
 #      unchanged build. In all ten runs bankComments and warnings were CONSTANT and no sample.*
 #      line moved -- count-line-only with no sample movement is this bead's own jitter criterion.
 #
-#   2. A STALE GOLDEN LINE, found 2026-08-10 during grm-mej.2 increment 2:
-#        REALROM count bankComments          156  ->  157
-#      This is NOT jitter. It is stable across runs and reproduces byte-identically on a stashed
-#      clean HEAD, and grm-g73's ten-run set shows bankComments does not flip. megaman's golden
-#      was last blessed at 71959b1 (grm-hum); 09d9c97 (grm-k90's wrapper split) re-blessed
-#      contra, lifeforce and wizwarr and skipped megaman -- the same way smb3's golden went
-#      stale. Attribution to 09d9c97 is strongly indicated but NOT yet verified; the one command
-#      that would settle it is a `--only megaman` run at 09d9c97^ versus 09d9c97.
+#   2. AN UNBLESSED REAL CHANGE (grm-ii6), not a stale golden and not jitter:
+#        REALROM count bankComments          156  ->  157   (the new one is d571 bank -> 4)
+#      grm-mej.2 increment 2 (ac77ee6) introduced it -- measured by rebuilding at ac77ee6^ and
+#      at ac77ee6 and running this row against each. It is stable: 157 at three independently
+#      built later states, including BOTH of megaman's jitter states, so it is orthogonal to
+#      finding 1. Whether `d571 bank -> 4` is CORRECT is an open question on grm-ii6; do not
+#      bless it until someone has read the ROM there.
 #
 # SO: DO NOT JUDGE THIS ROW BY A LINE WHITELIST. The old wording here ("if those two lines are
 # the only diff it is grm-g73; any other line moving is real") would have called finding 2 a
-# fresh regression. Settle authorship by RE-RUNNING, not by reading: `git stash -u`, rebuild,
-# `realrom-test.sh check --only megaman`, and diff that dump against your working tree's. Byte-
-# identical means pre-existing, whatever lines moved against the golden. One extra run, and it
-# cannot be fooled. (`rm -rf build/realrom-cache` first if you are about to bless -- see grm-g73.)
+# fresh regression, and a later attempt to widen the whitelist to include bankComments would
+# have hidden a real behaviour change instead. A whitelist cannot tell those apart. Only a
+# rebuilt A/B can:
+#
+#   git stash -u
+#   bash tools/banktest/build-and-test.sh check nes-banking     # <-- NOT OPTIONAL
+#   bash tools/banktest/realrom-test.sh check --only megaman
+#   ... then restore, rebuild again, re-run, and diff the two dumps.
+#
+# THE REBUILD IS THE WHOLE TEST. This script does not build; skipping it analyzes both sides
+# with the same installed extension, which returns byte-identical dumps and reads as "my change
+# moved nothing". That is how ac77ee6 shipped a zero-movement claim that was wrong on two rows.
+# Every run now prints the installed extension identity -- if it does not CHANGE between the two
+# sides, throw the comparison away. (`rm -rf build/realrom-cache` first if you are about to
+# bless -- see grm-g73.)
 #
 # This harness deliberately does NOT retry or tolerate the delta -- a golden whose diff you can
 # trust is the entire point of this tier, and hiding a known-noisy row would cost that for every
@@ -425,6 +435,26 @@ CACHE_DIR="$REPO_ROOT/build/realrom-cache"
 # ext_identity() lives in lib/common.sh (shared with run-banktest.sh).
 # Compute the extension identity once; empty => caching disabled for this run.
 EXT_ID="$(ext_identity)" || EXT_ID=""
+
+# ANNOUNCE IT. This script does NOT build -- it analyzes with whatever extension is already
+# installed in build/ghidra-home -- and that turns the single most common use of this tier, an
+# A/B against a stashed baseline, into a silent no-op if you forget to rebuild between the two
+# sides. The failure mode gives no error and no suspicious output: the "baseline" run analyzes
+# with the working tree's extension, the dumps come back byte-identical, and identical is exactly
+# what you were hoping to see, so it reads as "my change moved nothing" (grm-mej.2, 2026-08-10 --
+# it cost an incorrect zero-movement claim that had already been committed). Printing the
+# identity makes it checkable in one glance: if both sides of an A/B print the SAME line, the
+# comparison is worthless no matter what the dumps say.
+if [ -n "$EXT_ID" ]; then
+	echo "== installed extension: $EXT_ID =="
+	echo "   (this script does NOT build. For an A/B, rebuild between sides with"
+	echo "    'bash tools/banktest/build-and-test.sh check nes-banking' and expect this line"
+	echo "    to CHANGE -- if it does not, you are comparing a build against itself.)"
+else
+	echo "== installed extension: UNKNOWN (not the isolated build/ghidra-home install) =="
+	echo "   Run 'bash tools/banktest/build-and-test.sh check nes-banking' first; results from"
+	echo "   an unidentified install cannot be attributed to a source state at all."
+fi
 
 realrom_cache_key() {
 	# args: id rom_sha opts  ->  sha256 key on stdout, or empty if disabled

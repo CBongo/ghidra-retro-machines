@@ -43,8 +43,32 @@ bash tools/banktest/realrom-test.sh nominate H:/emulators/nes/roms   # board-gap
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
-_(No open items. The bistable-golden distribution question was answered 2026-08-09 — see the
-Answered table.)_
+- [ ] **Are `grm-mej.2` increment 2's two new bank annotations RIGHT?** (`grm-ii6`, blocks blessing
+      two goldens.) Increment 2 (`ac77ee6`, pushed) made a mirror read resolve from tracked bank
+      state, and it produced exactly two new confident claims across all 31 real-ROM rows. Both are
+      `memory-latch` boards, which is what that commit changed. Neither has been read against the
+      ROM, and a wrong one is the failure mode this whole bead rates worst — a confident bank
+      pointing at the wrong overlay, with the warning that used to flag it now removed:
+
+      | title | address | before | after |
+      |---|---|---|---|
+      | megaman (UxROM) | `d571` | *(no comment)* | `bank -> 4 (bank=4)` |
+      | wizwarr (AxROM) | `ffa6` | `Bank state becomes unknown here` warning | `bank -> 0 (bank=0)`, warning gone |
+
+      **The question in each case:** what loads the value stored at that site, is that source
+      address one the engine derived as a bank mirror, and does it genuinely hold the LIVE bank at
+      that point — or is it a save slot / stale copy, making the new annotation confidently wrong?
+      `wizwarr`'s `ffa6` is the more suspicious of the two: `$C5` is that title's bank shadow and
+      the surrounding Rare code uses a `PHA / … / PLA / STA $C5 / STA $8000` save-restore bracket,
+      which is exactly the shape `H2` says must NOT resolve from in-state (a restore puts the OLD
+      bank back). If `ffa6` is the restore store, `bank -> 0` is wrong and the mirror kind is
+      mis-derived. `megaman`'s `d571` is a plain new claim with no prior warning.
+
+      Attribution is already settled and needs no re-measuring: rebuilt A/B at `ac77ee6^` vs
+      `ac77ee6` pins both to increment 2; the later widening commit (`d0e295d`) and increment 3
+      move nothing on any row. Do **not** bless megaman or wizwarr until this is answered — and
+      note megaman independently carries `grm-g73` jitter, so read `d571` specifically rather than
+      the count line.
 
 ---
 

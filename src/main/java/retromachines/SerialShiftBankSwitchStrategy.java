@@ -175,9 +175,19 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	private List<ResetField> resetFields;
 	private final Set<FieldPos> allPoisonFields = new LinkedHashSet<>();
 
+	/** The addresses that MIRROR THE LIVE BANK (grm-mej.2), delivered by {@link #observeMirrors}
+	 *  between the analyzer's two dataflow passes. Empty for pass 1 and for any board with no
+	 *  derivable mirror, where this strategy behaves exactly as it did before they existed. */
+	private BankMirrors mirrors = BankMirrors.none();
+
 	@Override
 	public String strategyName() {
 		return "serial-shift";
+	}
+
+	@Override
+	public void observeMirrors(BankMirrors observed) {
+		mirrors = observed == null ? BankMirrors.none() : observed;
 	}
 
 	@Override
@@ -241,6 +251,94 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 		}
 	};
 
+	/**
+	 * {@link #hooks} plus mirror consumption for ONE target's field layout (grm-mej.2
+	 * increment 3). The target has to be baked in because {@link StoredValueScanner.Hooks} is
+	 * handed a load, not a destination, while the byte being reassembled means nothing until you
+	 * know WHICH mapper register it is bound for -- so every scan site decodes its own target
+	 * (which it already must, from the write's address) and asks with that.
+	 * <p>
+	 * {@code fields} may be {@code null} (an unconfigured target, i.e. CHR), in which case no
+	 * mirror is consulted and this degrades to {@link #hooks} exactly.
+	 */
+	private StoredValueScanner.Hooks hooksFor(List<TargetField> fields) {
+		if (fields == null || mirrors.isEmpty()) {
+			return hooks;
+		}
+		return new StoredValueScanner.Hooks() {
+			@Override
+			public boolean isMechanismWrite(Instruction instr) {
+				return hooks.isMechanismWrite(instr);
+			}
+
+			@Override
+			public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+					BankState inStateAtStore) {
+				return hooks.resolveLoad(loadInstr, resolvedTarget, inStateAtStore);
+			}
+
+			@Override
+			public BankState resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
+					BankState inStateAtStore) {
+				return mirroredByte(resolvedTarget, inStateAtStore, fields);
+			}
+		};
+	}
+
+	/**
+	 * The RAW PRE-CHAIN BYTE a load of {@code target} yields when {@code target} mirrors the live
+	 * bank, or {@code null} when it mirrors nothing this strategy may answer from tracked state.
+	 * The inverse of {@link #depositFields}, plus the one thing the inverse alone cannot give.
+	 * <p>
+	 * <b>ONLY {@link BankMirrors.Kind#ROM_IDENTIFYING} ANSWERS HERE, and the restriction is not
+	 * the same one memory-latch applies.</b> There, {@link BankMirrors.Kind#WRITE_THROUGH} answers
+	 * too, because a partial byte is enough: the extraction keeps the field bits and throws the
+	 * rest away. Here it is worth nothing, and the reason is MMC1's own wire protocol -- bit 7 of
+	 * a written byte is an out-of-band RESET signal, so {@link #computeSwitch} refuses to believe
+	 * ANY of a byte whose bit 7 it cannot resolve and poisons every tracked field instead
+	 * (see the {@code bit7Known} gate). A shadow reconstructed from tracked state knows the field
+	 * bits and nothing else, so it would arrive at that gate with bit 7 still unknown, poison
+	 * exactly as before, and -- because the poison lands on write 1 and the commit reads state at
+	 * write 5 -- destroy the very state a later mirror read would have been answered from. Two
+	 * symptoms, one cause; supplying bit 7 dissolves both.
+	 * <p>
+	 * {@code ROM_IDENTIFYING} supplies it and a shadow cannot. {@code BankMirrors
+	 * .romIdentifyingOffsets} admitted the offset only after verifying {@code byte == bank} in
+	 * EVERY realized bank's image, so the whole byte is determined by the bank number: every bit
+	 * above the reconstructed field range is a PROVED zero, bit 7 among them. That is why
+	 * grm-mej.2's "serial-shift consumption is nearly free, its resolveLoad is orthogonal to a RAM
+	 * shadow" premise holds only for the identifying half. Admitting {@code WRITE_THROUGH} would
+	 * need a further ruling -- that a value currently live in these fields must have been
+	 * committed, and a committed byte had bit 7 clear -- which is a real inference and is
+	 * deliberately not made here.
+	 * <p>
+	 * <b>A single field at byte shift 0, or decline.</b> The identifying byte is a BANK NUMBER,
+	 * right-justified. A target whose layout is anything else is not a register that takes a bank:
+	 * MMC1's Control ({@code mirroring} at shift 0 plus {@code prg_mode} at shift 2) would happily
+	 * accept a reconstruction and produce confident nonsense, because a bank number committed to
+	 * Control is not a coherent program. This is the same refusal, for the same reason, that
+	 * {@code MemoryLatchBankSwitchStrategy.mirroredByte} makes when its {@code shift != 0}.
+	 */
+	private BankState mirroredByte(Address target, BankState inState, List<TargetField> fields) {
+		if (target == null || !mirrors.is(target, BankMirrors.Kind.ROM_IDENTIFYING)) {
+			return null;
+		}
+		if (fields.size() != 1 || fields.get(0).shift() != 0) {
+			return null; // not a "takes a bank number" register -- see above
+		}
+		TargetField tf = fields.get(0);
+		// Undo setFieldFromByte: lift the tracked field back down to bit 0 of the byte. Both
+		// widths are applied -- the board field's and the byte field's -- because a descriptor may
+		// legitimately declare a byte field wider than the state field behind it (MMC1's prg_bank
+		// takes 5 bits on the wire for a 4-bit bank universe).
+		int byteMask = ((1 << tf.bits()) - 1) & (((1 << tf.pos().width()) - 1));
+		int known = (inState.knownMask() >>> tf.pos().lsb()) & byteMask;
+		int bits = (inState.bits() >>> tf.pos().lsb()) & byteMask;
+		// byte == bank, so everything above the bank's own bits is a PROVED zero -- which is what
+		// makes bit 7 resolvable and the whole consumption path reachable at all.
+		return new BankState(known | (~byteMask & 0xFF), bits);
+	}
+
 	@Override
 	public BankState computeSwitch(Program program, Instruction instr, BankState inState) {
 		Long offset = writesInRange(instr);
@@ -299,8 +397,12 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 			bit7Set = false;
 		}
 		else {
-			BankState storedByte =
-				StoredValueScanner.resolveStoredValue(program, instr, reg, inState, 0xFF, hooks);
+			// The write's OWN address decodes the target, which is what lets a mirror read be
+			// interpreted at all (grm-mej.2 increment 3) -- and it must be available HERE, not
+			// only at the write-5 commit below, because this gate runs first and a poison here
+			// wipes the state the commit would have read.
+			BankState storedByte = StoredValueScanner.resolveStoredValue(program, instr, reg,
+				inState, 0xFF, hooksFor(targets.get(targetIndex(offset))));
 			bit7Known = (storedByte.knownMask() & 0x80) != 0;
 			bit7Set = bit7Known && (storedByte.bits() & 0x80) != 0;
 		}
@@ -336,7 +438,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 		}
 
 		BankState preChainByte = StoredValueScanner.resolveStoredValue(program, chain.chainStart(),
-			reg, inState, 0xFF, hooks);
+			reg, inState, 0xFF, hooksFor(fields));
 		return depositFields(inState, fields, preChainByte);
 	}
 
@@ -349,14 +451,96 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	 * pair is exactly why {@link #cacheable()} stays {@code false} (see the class javadoc's
 	 * "Strategy-match cache compatibility" paragraph) -- an echo makes the RESULT vary with
 	 * {@code inState} without making it a genuine dependence, which is precisely the
-	 * distinction this method exists to draw. MMC1's shift register is write-only and this
-	 * strategy's {@link StoredValueScanner.Hooks} never resolves a load back to tracked
-	 * state, so there is no mechanism by which an unknown outcome here could reflect a
-	 * missing bank-state bit.
+	 * distinction this method exists to draw.
+	 * <p>
+	 * <b>The last clause of this javadoc used to be "and this strategy's {@link
+	 * StoredValueScanner.Hooks} never resolves a load back to tracked state, so there is no
+	 * mechanism by which an unknown outcome here could reflect a missing bank-state bit". That
+	 * stopped being true in grm-mej.2 increment 3</b>, which lets a load of a bank-identifying ROM
+	 * offset resolve from tracked state. A site that reads one and comes up empty DID need a state
+	 * bit it did not have. So the strategy-wide answer stays {@code false} -- it is still right for
+	 * every site that does not read a mirror, which on a real cartridge is nearly all of them --
+	 * and the per-site overload below answers the sites where it is not.
 	 */
 	@Override
 	public boolean effectDependsOnPriorState() {
 		return false;
+	}
+
+	/**
+	 * The per-site question (grm-mej.2 §2d), answered by re-running this site's own value scan
+	 * under an instrumented hook and reporting whether a MIRROR load was actually resolved.
+	 * <p>
+	 * Same shape and same reason as {@code MemoryLatchBankSwitchStrategy}'s override, but arrived
+	 * at from the opposite direction. There the strategy-wide default flipped to {@code true} when
+	 * {@code cacheable()} went {@code false}, and the override exists to stop it over-reporting.
+	 * Here the strategy-wide answer is an explicit {@code false} that would now UNDER-report: a
+	 * chain whose pre-chain byte came from an identifying read-back genuinely does depend on the
+	 * bank being known on entry, and silently dropping that is how a real bank-requirement
+	 * violation goes unreported.
+	 * <p>
+	 * Cheap by construction: the mirror set is empty on every board that has none, and the whole
+	 * probe short-circuits there. Called once per site in the analyzer's phase 3, never inside the
+	 * fixpoint.
+	 */
+	@Override
+	public boolean effectDependsOnPriorState(Program program, Instruction site,
+			BankState siteInState) {
+		if (mirrors.isEmpty() || site == null) {
+			return false;
+		}
+		Integer targetIdx = targetIndexOf(program, site);
+		if (targetIdx == null) {
+			return false;
+		}
+		List<TargetField> fields = targets.get(targetIdx);
+		if (fields == null) {
+			return false;
+		}
+		boolean[] consulted = new boolean[1];
+		StoredValueScanner.Hooks probe = new StoredValueScanner.Hooks() {
+			@Override
+			public boolean isMechanismWrite(Instruction instr) {
+				return hooks.isMechanismWrite(instr);
+			}
+
+			@Override
+			public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+					BankState inStateAtStore) {
+				return hooks.resolveLoad(loadInstr, resolvedTarget, inStateAtStore);
+			}
+
+			@Override
+			public BankState resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
+					BankState inStateAtStore) {
+				BankState mirrored = mirroredByte(resolvedTarget, inStateAtStore, fields);
+				if (mirrored != null) {
+					consulted[0] = true;
+				}
+				return mirrored;
+			}
+		};
+		Instruction scanFrom = scanOriginFor(program, site);
+		if (scanFrom == null) {
+			return false;
+		}
+		StoredValueScanner.resolveStoredValue(program, scanFrom, 'A', siteInState, 0xFF, probe);
+		return consulted[0];
+	}
+
+	/**
+	 * Where this site's value scan starts: an unrolled chain's own pre-chain load position (the
+	 * chain start, so a write-5 commit is probed at the instruction whose value it actually
+	 * reassembles, not at write 5 itself), or a counted loop's counter init. {@code null} when
+	 * {@code site} is neither shape.
+	 */
+	private Instruction scanOriginFor(Program program, Instruction site) {
+		if (writesInRange(site) != null) {
+			ChainInfo chain = analyzeChain(program, site);
+			return chain == null ? site : chain.chainStart();
+		}
+		CountedLoop loop = matchCountedLoopBranch(program, site);
+		return loop == null ? null : loop.counterInit();
 	}
 
 	/**
@@ -648,15 +832,19 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	 * sequence), so nothing about the loop's effect can be trusted.
 	 */
 	private BankState commitCountedLoop(Program program, CountedLoop loop, BankState inState) {
+		// Target decoded BEFORE the seed scan (grm-mej.2 increment 3): a mirror read inside that
+		// scan can only be interpreted against the register the loop is committing to, and the
+		// bit-7 gate below is exactly what a mirror answer exists to get past.
+		int targetIdx = targetIndex(loop.staOffset());
+		List<TargetField> fields = targets.get(targetIdx);
+
 		BankState seed = StoredValueScanner.resolveStoredValue(program, loop.counterInit(), 'A',
-			inState, 0xFF, hooks);
+			inState, 0xFF, hooksFor(fields));
 		boolean bit7KnownClear = (seed.knownMask() & 0x80) != 0 && (seed.bits() & 0x80) == 0;
 		if (!bit7KnownClear) {
 			return poisonAll(inState);
 		}
 
-		int targetIdx = targetIndex(loop.staOffset());
-		List<TargetField> fields = targets.get(targetIdx);
 		if (fields == null) {
 			// CHR target: recognized, deliberately discarded -- same no-poison contract
 			// as the unrolled path.

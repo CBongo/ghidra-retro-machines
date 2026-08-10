@@ -1,0 +1,167 @@
+Note to agents: this file consists of human generated notes that are used to provide input to agents after human review and collation.  Notes were collected over time and may not reflect current code.  Do not treat information in this file as truth; only use it as a basis for questions to the user.
+----
+
+one line per address: <addr> — <classification> — <detail>, so it can be read as a table.
+what computes the value in the accumulator immediately before this store? Classify it as one of:
+
+immediate constant (should have recovered — then why didn't it?)
+load from a RAM location → which location, and who writes it, and is that writer itself constant-fed?
+load from a ROM table → table base, index register, index provenance
+computed (AND/ORA/shift/arithmetic chain) → the full expression
+passed in from a caller → through which register, and are the callers constant?
+
+
+REALROM sample.bankcomment e68e bank -> mirroring=0,prg_mode=3,prg_bank=0? [known: mirroring.0=0,prg_mode.0=1,prg_mode.1=1; assumed from initial: mirroring.1,prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow] (GhidraScript)
+
+
+REALROM sample.bankcomment ec53 bank -> mirroring=0,prg_mode=3,prg_bank=5? via FUN_e63c [known: mirroring.0=0,prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.1] [switch-value flow] (GhidraScript)
+
+context: right at startup
+REALROM sample.bankcomment f25a bank -> mirroring=0,prg_mode=3,prg_bank=0 via FUN_e68c [switch-value flow] (GhidraScript)
+f25a: JSR e68c
+  e68c: lda #$80; sta $FFFF; RTS
+
+REALROM sample.bankcomment f25f bank -> mirroring=2,prg_mode=3,prg_bank=0 via FUN_e678 [switch-value flow] (GhidraScript)
+f25e: LDA #$1e
+f25f: JSR e678
+  e678: (sta $9fff; lsr x 5); RTS
+
+blmaster:
+df05 - LDA #5, JMP e61b
+df0a - LDA $D3, JMP e61b
+e61b - function takes PRG bank in A, stores in ZP $DB, calls e63c with $DB value then calls eb98 in a loop.  most callers either load a constant or load from ZP $D3 (likely "current" bank holder). exception: ea41 does 4xLSR A before invocation - upper bits hold bank, lower bits used as index into a table
+e63c - sets $FFFF PRG reg 5x(STA/LSR) - passed in from callers FUN_e61b:e627, FUN_eb98:ec53, FUN_eb98:ec5b
+e678 - sets $9FFF CTRL reg 5x(STA/LSR) - passed in from caller, standard MMC1 unrolled STA/LSR - MMC1 control reg
+e68c - immediate constant $80 - e68c: LDA #$80; STA $FFFF; RTS.  MMC1 reset; no args.
+eb98 - tail of function ec51 calls e63c with constant 5, calls deeb, then calls e63c with ZP $DB value (restore "current" bank)
+f25a - calls e68c - MMC1 reset
+f25f - calls e678 with A=#$1e - e678 sets control reg; 1e = 4k CHR banks, PRG mode 3, v mirror.
+fff4 - self-INC RESET - INC $FFF4
+
+c55f - JSR FUN_e61b - LDA #0 immediately before
+c57a - JSR FUN_e61b - LDA #0 immediately before
+cc6a - JMP FUN_e61b - LDA $D3 immediately before
+df07 - JMP FUN_e61b - LDA #5 immediately before
+df0c - JMP FUN_e61b - LDA $D3 immediately before
+e2c3 - JSR FUN_e61b - LDA #2 immediately before
+e304 - JSR FUN_e61b - LDA $D3 immediately before
+e694 - JMP FUN_e61b - STA $D3 immediately before (entry point), called from c32e which is right after LDA #0
+e9cb - JSR FUN_e61b - LDA $D3 immediately before
+e9ff - JSR FUN_e61b - LDA $D3 immediately before
+ea41 - JSR FUN_e61b - 4xLSR immediately before; called from cc74 and d97c (both load A from tables where high bits are 0, 1, or 2)
+f026 - JMP FUN_e61b - LDA $D3 immediately before
+
+c251 - LDA #0, STA $D3, JSR $DEC2
+c9ba - sets D3 to either 4 or 6 depending on bit 3 of $14. this reads pointers from $8000 (possibly only from bank 0?) to get pointers to functions that are then called with an indirect jump.
+e692 - sets $D3 then immediately calls e61b.  called from c32e which sets A=0 beforehand.
+e9bb - sets D3 to DB, then calls ea3a (which reads the pointers mentioned at c9ba) with A=30 and calls eb51 and e953, the loads A from D3 and calls e61b (which restores DB to its value at the start of the e9b8 function)
+e9d5 - same as e9bb (set D3 to DB and restore at the end) with different functions called in the middle
+
+megaman:
+c39c: helper, saves P, A, X, then sets PRG bank, $42 from $31 (subtracts 6 first if $31 > 6)
+d846: set PRG bank, $42 to #6 (needlessly?); send 10 chunks of data to PPU, setting PRG bank from table at d81e (stride 2) for each chunk. then sets bank, $42 to #6 and calls b53f (via thunk at bff6). finally jmps to c3b3 which sets bank, $42 to #5 and returns.
+d890: default ref to 0:bff6 alongside proper bank 6:bff6 should be eliminated (already a bead to look at this i think)
+
+cv2:
+c140: set mmc1ctrl from $100.  set CHR0 bank from $101.  set CHR1 bank from $102. $100 is set to #$1e at reset; no other refs found yet.
+c183: helper sets $1C to A, then sets PRG bank from A
+c185: helper sets PRG bank from $1C
+c187: helper sets PRG bank from A
+
+tmnt:
+sets mmc1control to 1F on startup (prg mode 3), then PRG bank 7.
+first byte of all ROM banks ($8000/$C000) is bank number; (possibly temporary) shadow in $59 - cec0 saves $8000 in $59 before setting bank 0 then calling 9016 and finally calling cf0b to reset PRG bank to $59 value.
+ce56: helper sets mmc1control from A.  first LSR is converted to SEC; ROR $F0 with an ASL $F0 just before return, used as a guard (e.g. NMI handler returns if bit 7 of $F0 is set so as to avoid interrupting the bank switch)
+ce6f: helper sets CHR0 bank to A with $F0 bit 7 as lock bit same method as ce56.
+ce8a: helper sets CHR1 bank to A with $F0 bit 7 as lock bit same method as ce56.
+cea5: helper saves A to $21 (likely shadow) then falls through to cea7
+cea7: helper sets PRG bank to A with $F0 bit 7 as lock bit same as ce56.  this and cea5 appear to be primary bank switch helpers.
+ced0: helper restores PRG bank from $21
+cf0b: helper restores PRG bank from $59
+context for cea7: LDA #2 (1x), LDA $8000;PHA;...;PLA (1x), LDA #0 (3x)
+context for cea5: LDA #1 (3x), LDA #6 (2x), LDA #3 (1x), LDA #4 (1x).  looks like there are several more calls that are not yet reached by automated disassembly as well.
+
+wizwarr:
+reset sets bank to 0 explicitly at 894b.
+STA $8000 contexts:  LDA #0 (3x, 1x LDX/STX), LDA $00;AND #$18 (1x), LDA $00 (1x), FUN_ff69 special (1x), LDA #0 with other intervening stores (3x), LDA #$10 (1x), LDA #$10; STA $00 (1x)
+bc0a: tail call to ff69 for two functions using BIT to hide a second entry point. bc05 got disassembled first so no function was established at bc08 due to it already having been disassembled as the parameter to BIT.
+bc05: LDA #2; BIT $03A9; JMP $FF69
+bc08: LDA #3; JMP $FF69
+cdaf: initializes RAM. copies a number of routines in the ceXX region to 03xx.  copy loop analyzer is noticing them and ignoring them for lack of jump refs.  ce38->033d, ce4b->032d, ce5b->0300 appear to be code (they are not yet disassembled automatically by the analyser, but all three write to the AXROM register); the others appear to be data.
+ce38/033d: LDA $00; PHA; AND #$f8; ORA #2; STA $8000; LDA ($9D),Y; TAY; PLA; STA $8000; RTS
+ce4b/032d: STA $8000; send PPU data; after loop X is 0 and it does STX $8000; RTS
+ce5b/0300: STA $00; STA $8000; sends PPU data; LDA #3; STA $00; STA $8000; RTS
+ce8b: sets register from A on entry, then clears VRAM at $2000
+ce89: set A to zero then fall through to ce8b
+ce84: sets A to #$10, calls ce8b, then falls through to ce89.  only called as part of RESET (so far)
+ff69: STA $1D; LDA $00; PHA; AND #$18; ORA $1D; STA $00; STA $8000; ... ; PLA; STA $00; STA $8000   Looks like $00 is a shadow for the whole AXROM register, and this is saving and restoring the bank portion while leaving the VRAM page size (#$18) alone. The ellipsis JSRs to an indirect jump, so this apparatus looks like a "far call" setup.
+
+for whether izu explains lwu: maybe the best example is the bookmark at c2a1, a call to dec2 which is immediately
+  preceded by a LDX #$FF; TXS stack pointer reset. dec2 is simply JSR df05 (sets bank 5 via e61b); JSR bfe5; JSR
+  df0a(restores bank in $D3 via e61b); RTS.  e61b saves A in $DB immediately, then later loads A from $DB then calls
+  e63c which does the PRG bank set directly.
+
+grm-78b: blmaster RESET points to fff4 which is simply a self-referencing INC RESET to trigger an MMC1 reset, then JMP f23b. no other refs to f23b at this point; it is effectively only the bulk of the reset handling (it starts with the usual SEI;CLD;LDX#$FF;TXS followed by various hardware register initialization).
+
+blmaster c9a4: 
+  s0 = $14 & 8 ? $60 : $40;
+  push s0
+  ea3a(s0)
+   LDX #$7a
+   save s0 in Y
+   e61b(bank from s0 - 4 or 6)
+   restore s0 in A from Y
+   AND #$0F; ASL A
+   load ptr from 8000/1,Y -> 0/1,X ($7a = 04:8006 or 06:8002)
+   LDY #0 
+  pull s0
+  set $d3 from high bits of s0
+  A = $46 - 1
+  eb51
+    ASL A
+    TAY
+    INC $7B if carry set from ASL
+    (7a),Y/Y+1 -> 7a/b
+    LDY #0
+  if $15 == 0
+    $7a/b += 3
+  JMP ($7a)
+
+cv2 c183:
+c081 - JSR - base
+c4de - JSR - base
+
+smb3:
+ca23/2e call ffc2 helper: lda #$47; STA $0721; STA $8000; LDA $0720; STA $8001
+ffd1 helper: lda #$46; STA $0721; STA $8000; LDA $071F; STA $8001
+ffc2 sets R7 (window $A000).  ffd1 sets R6 (window $8000/$C000; smb3 seems to use prg mode1 so this is switching $C000).
+so $0721 appears to be a shadow for $8000,  $0720 for $8001 R7, and $071F for $8001 R6.  IRQ handler sets $8000 to $0721 prior to exit after manipulating it to set CHR banks.
+ffbf helper: JSR $ffd1 then falls through to ffc2 - sets both R6 and R7
+c5f5,c9f7: both are LDA #$47; STA $8000; LDA #$1a; STA $8001 - force PRG bank 1A without updating shadows
+common bank switch idiom for R7: LDA #bank; STA $0720; JSR $ffc2
+all disassembled direct writes to $8000 are accounted for above.  lots of calls to ffc2 but only 2 (plus ffbf) to ffd1, so R7 gets switched a lot more than R6 at this point.  $8000 bit 6 has been set at all times observed so far, so mode 1 seems confirmed.
+
+contra (grm-hum):
+c094,c0a2: in NMI handler. LDY #1; JSR $c139
+c21b: LDY #6; JSR $c139
+c9c0: inside function c9a3, which takes an input param in A and uses it as an index into a 3-byte wide table at $c950.  at c9ba, X is set to the original A * 3 and the code goes LDA $c952,X; AND #7; TAY; JSR $c139.  banks 0 (1x), 2 (1x), 4 (12x), 5 (8x), and 6 (5x) appear in the table. the table appears to be pointers (with bank and a double-byte flag in byte 3) to CHR data that is sent to the PPU.  on exit from the function it calls $c146 helper to restore PRG bank from $7ec.
+c0d3: also in NMI handler.  preceded by LDA $8000; PHA;...;PLA;TAY;JSR $c13f.  there is a LDY #1;JSR $c13f in the ellipsis conditional on bit 7 clear of $1b that is detected correctly and makes the JSR at c0ce point to the correct 1:$80d5 function.
+c149: part of c146 helper: LDY $07ec; JMP $c13f (restore PRG to current shadow)
+c14c: saves A and Y on stack; sets $07ed to current bank (from $8000), LDY #1; JSR $c13f; restore A/Y
+c164: part of c15e helper, counterpart to c14c: saves A and Y on stack; LDY $07ed; JSR $c13f; restore A/Y
+c142: part of c13f helper, idiomatic bus conflict bank switch LDA $ffd0,Y; STA $ffd0,Y (ffd0..7 is 00,01,...,07).  c13f does NOT set a shadow reg.
+c139: LDA $8000; STA $07ec then falls through to c13f
+8efc: data mistakenly disassembled due to switch table overrun at 8492, ignore
+811a/b1:8259: picked up the 8efc reference so this is also cruft from the 8492 overrun
+
+rcransom (grm-1fv):
+ff07: LDA #6; STA $8000; LDA $fc; STA $8001; LDA #7; STA $8000; LDA $fd; STA $8001; finally, $8000 = ($ff != 0) ? $ff : $fb
+ff29: LDA #0; STA $ff; LDA #6; STA $ff; STA $8000; LDA $fc; STA $8001; LDA #7; STA $ff; STA $8000; LDA $fd; STA $8001; LDA #0; STA $ff; LDA $fb; STA $8000
+Looks like $fc is shadow for R6 and $fd for R7. $ff and $fb are shadows for $8000.  ff07 is called right before the NMI handler returns, while ff29 is called right before the IRQ handler returns.
+
+smb2 (grm-8iy.4 P2):
+ff85: helper. STA $06f2 then fall through to ff88
+ff88: ASL A; PHA; LDA #$86; STA $8000; PLA; STA $8001; ORA #1; PHA; LDA #$87; STA $8000; PLA; STA $8001
+seems like $06f2 is a "raw" shadow; it is multplied by 2 and used to set R6, then 1 is added and sets R7.
+ff73: CHR helper sets all CHR banks from table at $06f7.
+no other refs to $8000/1 in current dissassembled code.  disassembly from https://github.com/Xkeeper0/smb2 suggests that the $c000 (bank 14) is mostly DPCM samples and ending event data so not surprising there may be no refs there yet. 
