@@ -19,12 +19,15 @@ REALROM block RAM 0000-07ff overlay=false
 REALROM count blocks.total 12
 REALROM count blocks.overlay 7
 REALROM count spaces.overlay 7
-REALROM count refs.intoOverlay 257
-REALROM count instrs.inOverlay 849
-REALROM count bankComments 2
-REALROM count warnings 10
+REALROM count refs.intoOverlay 298
+REALROM count instrs.inOverlay 1044
+REALROM count bankComments 5
+REALROM count warnings 7
+REALROM sample.bankcomment c094 bank -> 1 (bank=1) via FUN_c139
+REALROM sample.bankcomment c0a2 bank -> 1 (bank=1) via FUN_c139
 REALROM sample.bankcomment c0cb bank -> 1 (bank=1) via FUN_c13f
 REALROM sample.bankcomment c157 bank -> 1 (bank=1) via FUN_c13f
+REALROM sample.bankcomment c21b bank -> 6 (bank=6) via FUN_c139
 REALROM sample.ref 8072 -> PRG_LO_B1::8705 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8075 -> PRG_LO_B1::808d CONDITIONAL_JUMP primary=true
 REALROM sample.ref 807f -> PRG_LO_B1::806d CONDITIONAL_JUMP primary=true
@@ -52,12 +55,9 @@ REALROM sample.ref 810f -> PRG_LO_B1::861d UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8118 -> PRG_LO_B1::811d CONDITIONAL_JUMP primary=true
 REALROM sample.warn 811a [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_PRG_LO_B1__8259 whose bank argument could not be recovered at this call site
 REALROM sample.warn 8efc [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
-REALROM sample.warn c094 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c139 whose bank argument could not be recovered at this call site
-REALROM sample.warn c0a2 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c139 whose bank argument could not be recovered at this call site
 REALROM sample.warn c0d3 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c13f whose bank argument could not be recovered at this call site
 REALROM sample.warn c142 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn c149 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c13f whose bank argument could not be recovered at this call site
 REALROM sample.warn c164 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c13f whose bank argument could not be recovered at this call site
-REALROM sample.warn c21b [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c139 whose bank argument could not be recovered at this call site
 REALROM sample.warn c9c0 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c139 whose bank argument could not be recovered at this call site
 === REALROM END ===
