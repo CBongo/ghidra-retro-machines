@@ -2776,6 +2776,9 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		}
 		discovery.scanWriteThroughShadows(program, flow.switchResults().keySet());
 		discovery.scanArgumentCells(program, helperArgumentCallSites(program, flow, helpers));
+		// Route (c) LAST and deliberately so: "a copy of something that already mirrors the live
+		// bank" can only be judged once (a) and (b) have established what does.
+		discovery.scanSaveSlotCopies(program);
 		return discovery.build();
 	}
 

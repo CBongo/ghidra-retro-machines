@@ -475,6 +475,283 @@ public class BankMirrorDerivationProgramTest extends AbstractBundledLanguageTest
 	}
 
 	// ------------------------------------------------------------------
+	// Route (c): a copy of an already-established mirror is a save slot
+	// ------------------------------------------------------------------
+
+	/**
+	 * Establishes {@code $DB} as a {@link BankMirrors.Kind#WRITE_THROUGH} shadow the ordinary
+	 * route (a) way -- two distinct store sites alongside two mechanism writes, Mega Man's
+	 * {@code $42} shape -- so tests below can exercise route (c)'s forward walk against a source
+	 * that genuinely qualifies without re-deriving that qualification each time. Placed at
+	 * {@code $8100}-{@code $810B} so callers are free to lay their own copy-site code at
+	 * {@code $8000}/{@code $9000} without collision.
+	 */
+	private BankMirrors.Discovery discoveryWithEstablishedShadow() throws Exception {
+		builder.setBytes("0x8100", "a9 05", true); // LDA #$05
+		builder.setBytes("0x8102", "85 db", true); // STA $DB
+		builder.setBytes("0x8104", "8d 00 c0", true); // STA $C000  <- switch site
+		builder.setBytes("0x8107", "a9 06", true); // LDA #$06
+		builder.setBytes("0x8109", "85 db", true); // STA $DB
+		builder.setBytes("0x810b", "8d 00 c0", true); // STA $C000  <- switch site
+
+		BankMirrors.Discovery discovery = discovery();
+		discovery.scanWriteThroughShadows(program, List.of(addr("0x8104"), addr("0x810b")));
+		return discovery;
+	}
+
+	/**
+	 * <b>Blaster Master's {@code $D3}, the headline case route (c) exists for.</b> {@code $DB} is
+	 * established as a corroborated {@code WRITE_THROUGH} shadow the ordinary route (a) way, and
+	 * separately, in two functions that contain no mechanism write at all, the game does
+	 * {@code LDA $DB / STA $D3} -- stashing a copy of the live-tracking shadow. Route (a) cannot
+	 * reach either copy site (no mechanism write nearby to walk back from); route (c) is the only
+	 * one that can.
+	 * <p>
+	 * The negative assertion is the point of the test, not a formality: flattening {@code $D3}
+	 * into {@code WRITE_THROUGH} would later answer its reload with the LIVE bank, when the whole
+	 * reason the game stashed it was that the bank was about to change -- exactly the
+	 * confidently-wrong-bank hazard {@link BankMirrors.Kind#SAVE_SLOT} exists to prevent.
+	 */
+	@Test
+	public void aCopyOfAnEstablishedShadowIsASaveSlotNotAWriteThroughMirror() throws Exception {
+		BankMirrors.Discovery discovery = discoveryWithEstablishedShadow();
+
+		builder.setBytes("0x8010", "a5 db", true); // LDA $DB
+		builder.setBytes("0x8012", "85 d3", true); // STA $D3   <- copy site 1, no switch nearby
+		builder.setBytes("0x8020", "a5 db", true); // LDA $DB
+		builder.setBytes("0x8022", "85 d3", true); // STA $D3   <- copy site 2, no switch nearby
+
+		discovery.scanSaveSlotCopies(program);
+		BankMirrors mirrors = discovery.build();
+
+		assertEquals(Set.of(BankMirrors.Kind.WRITE_THROUGH), kindsAt(mirrors, "0xdb"));
+		assertEquals(Set.of(BankMirrors.Kind.SAVE_SLOT), kindsAt(mirrors, "0xd3"));
+		assertFalse("flattening the copy into WRITE_THROUGH is the exact failure this rule "
+			+ "exists to prevent",
+			mirrors.is(addr("0xd3"), BankMirrors.Kind.WRITE_THROUGH));
+	}
+
+	/**
+	 * <b>TMNT's {@code $59} shape, reached via route (c) instead of route (a).</b> The existing
+	 * {@code aCellFilledFromABankReadBackIsASaveSlotNotAShadow} test above pins this same shape
+	 * when the {@code LDA $8000 / STA $59} sits on the walk back from a mechanism write; this test
+	 * places two occurrences of the identical load/store pair with NO switch site anywhere nearby,
+	 * so only route (c) -- which treats every {@code ROM_IDENTIFYING} offset as an unconditional
+	 * mirror source via {@code liveMirrorOffsets} -- can classify it. Two occurrences, not one:
+	 * {@code walkToCopyDestination} records only a store site, never a corroborating load, so
+	 * {@code build()}'s corroboration rule needs a second copy site here exactly as it needs a
+	 * second store site from route (a) -- see {@code aSingleUncorroboratedStoreIsNotAShadow} above
+	 * for the identical rule on that route.
+	 */
+	@Test
+	public void aCopyFromARomIdentifyingOffsetIsASaveSlotViaRouteC() throws Exception {
+		layBankOverlays(4);
+		for (int bank = 0; bank < 4; bank++) {
+			setBankByte(bank, 0x8000, bank);
+		}
+		builder.setBytes("0x9000", "ad 00 80", true); // LDA $8000  <- the identifying offset
+		builder.setBytes("0x9003", "85 59", true); // STA $59      <- copy site 1, no switch nearby
+		builder.setBytes("0x9010", "ad 00 80", true); // LDA $8000
+		builder.setBytes("0x9013", "85 59", true); // STA $59      <- copy site 2, no switch nearby
+
+		BankMirrors.Discovery discovery = discovery();
+		discovery.addRomIdentifying(identifyingOffsets(4));
+		discovery.scanSaveSlotCopies(program);
+		BankMirrors mirrors = discovery.build();
+
+		assertEquals(Set.of(BankMirrors.Kind.SAVE_SLOT), kindsAt(mirrors, "0x59"));
+	}
+
+	/**
+	 * <b>The anti-coincidence guard.</b> {@code $42} has exactly one store site and no
+	 * corroborating load feeding a mechanism write, so it does not qualify as a mirror on its own
+	 * evidence (the same corroboration rule route (a) itself enforces). A copy out of it must
+	 * therefore NOT make its destination a save slot -- {@code liveMirrorOffsets} recomputes from
+	 * raw evidence for exactly this reason, rather than trusting that "some cell got stored twice
+	 * somewhere" is enough.
+	 */
+	@Test
+	public void aCopyFromAnUncorroboratedCellIsNotASaveSlot() throws Exception {
+		builder.setBytes("0x8000", "a9 05", true); // LDA #$05
+		builder.setBytes("0x8002", "85 42", true); // STA $42   <- one store, no corroboration
+		builder.setBytes("0x8004", "8d 00 c0", true); // STA $C000  <- switch site
+
+		builder.setBytes("0x9000", "a5 42", true); // LDA $42
+		builder.setBytes("0x9002", "85 99", true); // STA $99
+
+		BankMirrors.Discovery discovery = discovery();
+		discovery.scanWriteThroughShadows(program, List.of(addr("0x8004")));
+		discovery.scanSaveSlotCopies(program);
+		BankMirrors mirrors = discovery.build();
+
+		assertEquals("an uncorroborated single store does not qualify as a mirror source",
+			Set.of(), kindsAt(mirrors, "0x42"));
+		assertEquals("so nothing copied from it may be typed a save slot",
+			Set.of(), kindsAt(mirrors, "0x99"));
+	}
+
+	/**
+	 * <b>A save slot cannot seed another save slot.</b> {@code $59} is filled from a bank
+	 * READ-BACK (TMNT's shape) and so comes out {@code SAVE_SLOT} with
+	 * {@code savedFromReadBack} set; {@code liveMirrorOffsets} excludes exactly that flag from its
+	 * source set. A further {@code LDA $59 / STA $77} must therefore not propagate -- if it did,
+	 * a chain of stashed copies would each certify the next as live-tracking, which is precisely
+	 * backwards.
+	 */
+	@Test
+	public void aSaveSlotCannotSeedAnotherSaveSlot() throws Exception {
+		layBankOverlays(4);
+		for (int bank = 0; bank < 4; bank++) {
+			setBankByte(bank, 0x8000, bank);
+		}
+		builder.setBytes("0x9000", "ad 00 80", true); // LDA $8000
+		builder.setBytes("0x9003", "85 59", true); // STA $59
+		builder.setBytes("0x9005", "8d 00 c0", true); // STA $C000   <- switch site
+		builder.setBytes("0x9008", "ad 00 80", true); // LDA $8000
+		builder.setBytes("0x900b", "85 59", true); // STA $59
+		builder.setBytes("0x900d", "8d 00 c0", true); // STA $C000   <- switch site
+
+		builder.setBytes("0x9010", "a5 59", true); // LDA $59   <- $59 is a save slot, not a source
+		builder.setBytes("0x9012", "85 77", true); // STA $77
+
+		BankMirrors.Discovery discovery = discovery();
+		discovery.addRomIdentifying(identifyingOffsets(4));
+		discovery.scanWriteThroughShadows(program, List.of(addr("0x9005"), addr("0x900d")));
+		discovery.scanSaveSlotCopies(program);
+		BankMirrors mirrors = discovery.build();
+
+		assertEquals(Set.of(BankMirrors.Kind.SAVE_SLOT), kindsAt(mirrors, "0x59"));
+		assertEquals("a save slot must not itself seed another save slot", Set.of(),
+			kindsAt(mirrors, "0x77"));
+	}
+
+	/**
+	 * A register clobber between the load off the mirror source and the store into the candidate
+	 * destination breaks the copy -- the same walk discipline route (a) enforces on its own
+	 * backward scan, mirrored here on the forward one.
+	 */
+	@Test
+	public void aRegisterClobberBetweenLoadAndStoreBreaksTheCopy() throws Exception {
+		BankMirrors.Discovery discovery = discoveryWithEstablishedShadow();
+
+		builder.setBytes("0x9000", "a5 db", true); // LDA $DB    <- source
+		builder.setBytes("0x9002", "a9 00", true); // LDA #$00   <- clobbers A before the store
+		builder.setBytes("0x9004", "85 d3", true); // STA $D3
+
+		discovery.scanSaveSlotCopies(program);
+		BankMirrors mirrors = discovery.build();
+
+		assertEquals(Set.of(), kindsAt(mirrors, "0xd3"));
+	}
+
+	/**
+	 * A control-flow join between the load and the store breaks the copy for the same reason
+	 * route (a)'s backward walk refuses one: another path reaches the store with a register value
+	 * this walk cannot vouch for. The {@code JMP $9002} makes {@code $9002} reachable other than
+	 * by falling through from the load at {@code $9000}.
+	 */
+	@Test
+	public void aControlFlowJoinBetweenLoadAndStoreBreaksTheCopy() throws Exception {
+		BankMirrors.Discovery discovery = discoveryWithEstablishedShadow();
+
+		builder.setBytes("0x9000", "a5 db", true); // LDA $DB   <- source
+		builder.setBytes("0x9002", "85 d3", true); // STA $D3   <- also reachable from $9010
+		builder.setBytes("0x9010", "4c 02 90", true); // JMP $9002
+
+		discovery.scanSaveSlotCopies(program);
+		BankMirrors mirrors = discovery.build();
+
+		assertEquals(Set.of(), kindsAt(mirrors, "0xd3"));
+	}
+
+	/**
+	 * A store into non-writable memory names no cell at all -- "outside the latch range" is
+	 * enforced as "in writable memory", the identical rule route (a) applies to its own stores.
+	 */
+	@Test
+	public void aStoreIntoNonWritableMemoryIsNotACopyDestination() throws Exception {
+		BankMirrors.Discovery discovery = discoveryWithEstablishedShadow();
+
+		builder.setBytes("0x9000", "a5 db", true); // LDA $DB
+		builder.setBytes("0x9002", "8d 20 90", true); // STA $9020   <- ROM, not RAM
+
+		discovery.scanSaveSlotCopies(program);
+		BankMirrors mirrors = discovery.build();
+
+		assertEquals(Set.of(), kindsAt(mirrors, "0x9020"));
+	}
+
+	/**
+	 * The 6502 stack page is refused as a copy destination for {@code StoredValueScanner
+	 * .inStackPage}'s reason: a {@code PHA} writes it without naming an address any detector here
+	 * can see, so a value forwarded through it could be stale.
+	 */
+	@Test
+	public void aStackPageDestinationIsRefusedAsACopyDestination() throws Exception {
+		BankMirrors.Discovery discovery = discoveryWithEstablishedShadow();
+
+		builder.setBytes("0x9000", "a5 db", true); // LDA $DB
+		builder.setBytes("0x9002", "8d 40 01", true); // STA $0140   <- stack page
+
+		discovery.scanSaveSlotCopies(program);
+		BankMirrors mirrors = discovery.build();
+
+		assertEquals(Set.of(), kindsAt(mirrors, "0x140"));
+	}
+
+	/**
+	 * <b>One cell, both roles -- Blaster Master's {@code $D3} in full.</b> The same address is
+	 * loaded as a bank ARGUMENT before two switch-helper calls (route (b), typed {@code INPUT})
+	 * AND filled by copying the {@code $DB} shadow at TWO separate sites (route (c), typed
+	 * {@code SAVE_SLOT} -- two sites because {@code walkToCopyDestination} records only a store,
+	 * never a corroborating load, so {@code build()}'s corroboration rule needs the second site the
+	 * same way it needs a second store site from route (a)). The bead's whole point about
+	 * {@code $D3} is that provenance is carried, not flattened, so both kinds must survive at the
+	 * one offset -- and route (c) must run after route (b) without disturbing what it found.
+	 */
+	@Test
+	public void oneCellCanCarryBothAnInputAndASaveSlotRole() throws Exception {
+		builder.setBytes("0x8000", "a5 d3", true); // LDA $D3
+		builder.setBytes("0x8002", "20 00 90", true); // JSR $9000
+		builder.setBytes("0x8010", "a5 d3", true); // LDA $D3
+		builder.setBytes("0x8012", "20 00 90", true); // JSR $9000
+
+		builder.setBytes("0x8020", "a9 05", true); // LDA #$05
+		builder.setBytes("0x8022", "85 db", true); // STA $DB
+		builder.setBytes("0x8024", "8d 00 c0", true); // STA $C000   <- switch site
+		builder.setBytes("0x8027", "a9 06", true); // LDA #$06
+		builder.setBytes("0x8029", "85 db", true); // STA $DB
+		builder.setBytes("0x802b", "8d 00 c0", true); // STA $C000   <- switch site
+
+		builder.setBytes("0x8030", "a5 db", true); // LDA $DB   <- copy site 1, into the SAME cell
+		builder.setBytes("0x8032", "85 d3", true); // STA $D3      as the input
+		builder.setBytes("0x8040", "a5 db", true); // LDA $DB   <- copy site 2
+		builder.setBytes("0x8042", "85 d3", true); // STA $D3
+
+		Map<Address, Character> sites = new LinkedHashMap<>();
+		sites.put(addr("0x8002"), 'A');
+		sites.put(addr("0x8012"), 'A');
+		BankMirrors.Discovery discovery = discovery();
+		discovery.scanWriteThroughShadows(program, List.of(addr("0x8024"), addr("0x802b")));
+		discovery.scanArgumentCells(program, sites);
+		// Route (c) LAST and deliberately so, exactly as BoardBankAnalyzer.deriveBankMirrors
+		// orders it: "already established as mirroring" is only knowable once (a) and (b) ran.
+		discovery.scanSaveSlotCopies(program);
+		BankMirrors mirrors = discovery.build();
+
+		assertEquals(Set.of(BankMirrors.Kind.WRITE_THROUGH), kindsAt(mirrors, "0xdb"));
+		assertEquals(Set.of(BankMirrors.Kind.INPUT, BankMirrors.Kind.SAVE_SLOT),
+			kindsAt(mirrors, "0xd3"));
+	}
+
+	// Note: "neither INPUT nor SAVE_SLOT resolves from tracked in-state" is a CONSUMPTION rule,
+	// not a derivation one -- it is already pinned directly against MemoryLatchBankSwitchStrategy
+	// by BankMirrorConsumptionProgramTest's saveSlotMirrorDeclinesEvenWithAFullyKnownInState and
+	// inputMirrorDeclinesEvenWithAFullyKnownInState. Re-asserting it here, against a mirror set
+	// this file never hands to a strategy, would not exercise anything those two do not already
+	// cover, so it is intentionally left out of this file.
+
+	// ------------------------------------------------------------------
 	// The empty case
 	// ------------------------------------------------------------------
 

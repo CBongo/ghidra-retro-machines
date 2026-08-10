@@ -502,6 +502,135 @@ public final class BankMirrors {
 		}
 
 		/**
+		 * Discovery route (c): a cell filled by COPYING one that already mirrors the live bank --
+		 * {@code LD<r> <mirror> / ST<r> S} -- which makes {@code S} a {@link Kind#SAVE_SLOT}.
+		 * <p>
+		 * <b>The role route (a) is structurally unable to see, on the one title that was traced by
+		 * hand for it.</b> Blaster Master's {@code $D3} carries TWO roles at ONE address: a bank
+		 * REQUEST written before a switch (c251, e692, c9ba), and a SAVE SLOT holding a copy of the
+		 * {@code $DB} shadow stashed across a region and written back at the end (e9bb, e9d5). Route
+		 * (a) walks backward from a mechanism write and none of those five sites has one nearby;
+		 * route (b) starts from a switch-helper call and sees only the LOAD side. So before this,
+		 * {@code $D3} came out {@link Kind#INPUT} alone and its save-slot role was invisible -- and
+		 * the bead's own warning about that shape is explicit: "the DISCOVERY pass has to tell the
+		 * two apart or it will treat a save slot as a bank request".
+		 * <p>
+		 * <b>This is the existing save-slot rule, one notch more general, not a new idea.</b>
+		 * {@link #walkFromMechanismWrite} already retypes a cell {@code SAVE_SLOT} when the register
+		 * that filled it was carrying a READ-BACK of a {@link Kind#ROM_IDENTIFYING} offset (TMNT's
+		 * {@code LDA $8000 / STA $59}). The only thing special about an identifying offset there is
+		 * that reading it yields the live bank -- which is equally true of a {@link
+		 * Kind#WRITE_THROUGH} shadow. So the source set is widened from "the identifying offset" to
+		 * "anything already established as mirroring the live bank", and the destination is typed
+		 * the same way for the same reason: a stashed COPY is a snapshot. It held the live bank at
+		 * the instant it was written and stops tracking the moment the next switch happens, which is
+		 * exactly what makes resolving it from in-state a confidently wrong answer.
+		 * <p>
+		 * <b>Runs after the other two routes and reads their result</b>, because "already
+		 * established as mirroring" is only knowable once they have. Only cells that would qualify
+		 * on their own evidence are treated as sources ({@link #liveMirrorOffsets}), so a
+		 * single-store coincidence cannot seed a chain of save slots. The scan is forward rather
+		 * than backward -- the copy's destination comes AFTER the load -- but honours the identical
+		 * discipline: same basic block, unbroken fall-through, no control-flow join, no intervening
+		 * modification of the register, {@link #MAX_BACKWARD_SCAN} steps.
+		 * <p>
+		 * <b>TWO copy sites are required, not one</b>, because this route records only a store into
+		 * {@link Cell#writeThroughStores} and {@link #build} then applies its ordinary corroboration
+		 * rule. That is deliberate rather than incidental: it is the same "one site is a
+		 * coincidence" threshold route (a) enforces, and the measured case clears it (blmaster's
+		 * {@code $D3} has two, e9bb and e9d5). It is arguably stricter than this route needs --
+		 * {@code LD<r> <established mirror> / ST<r> S} is a specific two-instruction pattern rather
+		 * than mere proximity to a mechanism write, so one occurrence is better evidence here than
+		 * it is there -- but the threshold errs toward under-reporting, which for a KIND that only
+		 * ever causes a decline is the harmless direction. Loosen it only with a case that needs it.
+		 * <p>
+		 * <b>This can REMOVE a recovered bank, which is the one way it is not inert.</b> Save slots
+		 * do not resolve from in-state in either strategy, so nothing new resolves because of this
+		 * route -- but a cell route (a) had typed {@link Kind#WRITE_THROUGH} and that this route
+		 * retypes {@link Kind#SAVE_SLOT} stops resolving. That is the intended direction: if the
+		 * cell really is a stash, the bank it was answering with was the OLD one, and losing a
+		 * confidently wrong answer is a fix rather than a regression. It does mean this route's
+		 * blast radius has to be measured on real ROMs and not assumed away.
+		 * <p>
+		 * Otherwise this exists so that grm-mej.3's cross-block forwarding and grm-mej.4's labelling
+		 * are handed the right KIND rather than having to re-derive it -- and, more immediately, so
+		 * that a cell carrying both roles cannot be silently flattened into the request half.
+		 */
+		void scanSaveSlotCopies(Program program) {
+			Set<Long> sources = liveMirrorOffsets();
+			if (sources.isEmpty()) {
+				return;
+			}
+			Listing listing = program.getListing();
+			for (Instruction load : listing.getInstructions(true)) {
+				String mnem = load.getMnemonicString().toUpperCase();
+				if (mnem.length() != 3 || !mnem.startsWith("LD") ||
+					StoredValueScanner.isImmediate(load)) {
+					continue;
+				}
+				char reg = mnem.charAt(2);
+				if (reg != 'A' && reg != 'X' && reg != 'Y') {
+					continue;
+				}
+				Long from = normalizedOffset(StoredValueScanner.plainAbsoluteTarget(load));
+				if (from == null || !sources.contains(from)) {
+					continue;
+				}
+				walkToCopyDestination(program, listing, load, reg);
+			}
+		}
+
+		/** Forward half of route (c): from {@code LD<reg> <mirror>}, find the {@code ST<reg> S}
+		 *  that stashes it, stopping at anything that could have changed {@code reg} on the way. */
+		private void walkToCopyDestination(Program program, Listing listing, Instruction load,
+				char reg) {
+			String storeMnem = "ST" + reg;
+			Instruction cur = load;
+			for (int i = 0; i < MAX_BACKWARD_SCAN; i++) {
+				Address fallThrough = cur.getFallThrough();
+				if (fallThrough == null) {
+					return;
+				}
+				Instruction next = listing.getInstructionAt(fallThrough);
+				if (next == null || StoredValueScanner.isControlFlowJoin(program, next, cur) ||
+					next.getFlowType().isCall()) {
+					return;
+				}
+				if (next.getMnemonicString().toUpperCase().equals(storeMnem)) {
+					Long offset = writableCellOffset(program, next);
+					if (offset != null) {
+						Cell cell = cells.computeIfAbsent(offset, k -> new Cell());
+						cell.writeThroughStores.add(next.getMinAddress());
+						cell.savedFromReadBack = true;
+					}
+					return; // the copy's destination, whatever it was
+				}
+				if (StoredValueScanner.modifiesRegister(next, reg)) {
+					return;
+				}
+				cur = next;
+			}
+		}
+
+		/**
+		 * The offsets that, on the evidence gathered so far, genuinely track the LIVE bank -- the
+		 * only cells a copy may be attributed to by {@link #scanSaveSlotCopies}. Deliberately
+		 * recomputed from raw evidence rather than from {@link #build}'s output, so that a cell this
+		 * very pass is about to retype {@code SAVE_SLOT} cannot act as a source for another one.
+		 */
+		private Set<Long> liveMirrorOffsets() {
+			Set<Long> live = new LinkedHashSet<>(romIdentifying);
+			for (Map.Entry<Long, Cell> entry : cells.entrySet()) {
+				Cell cell = entry.getValue();
+				if (!cell.savedFromReadBack && (cell.writeThroughStores.size() >= 2 ||
+					(cell.writeThroughStores.size() == 1 && !cell.writeThroughLoads.isEmpty()))) {
+					live.add(entry.getKey());
+				}
+			}
+			return live;
+		}
+
+		/**
 		 * Classifies the accumulated evidence into the immutable set.
 		 * <p>
 		 * <b>The corroboration rule.</b> One store site is a coincidence, so a write-through
