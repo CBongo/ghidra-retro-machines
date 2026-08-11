@@ -122,7 +122,7 @@ public final class BankMirrors {
 	private static final long STACK_PAGE_START = 0x0100;
 	private static final long STACK_PAGE_END = 0x01FF;
 
-	private static final BankMirrors EMPTY = new BankMirrors(null, Map.of(), Map.of());
+	private static final BankMirrors EMPTY = new BankMirrors(null, Map.of(), Map.of(), Map.of());
 
 	/** Null exactly when this set is empty, in which case no query can match anyway. */
 	private final AddressSpace baseSpace;
@@ -130,12 +130,16 @@ public final class BankMirrors {
 	/** Per cell, the mechanism writes it is known to be kept in step with -- see
 	 *  {@link #pairedSwitchSites} and bead grm-p9y. */
 	private final Map<Long, Set<Address>> pairedByOffset;
+	/** Per cell, the instructions that established it as a mirror -- see {@link #evidenceSites}
+	 *  and bead grm-mej.4, which needs this to write a "how do you know" comment. */
+	private final Map<Long, Set<Address>> evidenceByOffset;
 
 	private BankMirrors(AddressSpace baseSpace, Map<Long, Set<Kind>> byOffset,
-			Map<Long, Set<Address>> pairedByOffset) {
+			Map<Long, Set<Address>> pairedByOffset, Map<Long, Set<Address>> evidenceByOffset) {
 		this.baseSpace = baseSpace;
 		this.byOffset = byOffset;
 		this.pairedByOffset = pairedByOffset;
+		this.evidenceByOffset = evidenceByOffset;
 	}
 
 	/** The empty set -- what every board with no derivable mirror gets. */
@@ -160,7 +164,7 @@ public final class BankMirrors {
 		}
 		Map<Long, Set<Kind>> frozen = new LinkedHashMap<>();
 		byOffset.forEach((k, v) -> frozen.put(k, Set.copyOf(v)));
-		return new BankMirrors(baseSpace, Collections.unmodifiableMap(frozen), Map.of());
+		return new BankMirrors(baseSpace, Collections.unmodifiableMap(frozen), Map.of(), Map.of());
 	}
 
 	public boolean isEmpty() {
@@ -199,6 +203,21 @@ public final class BankMirrors {
 	public Set<Address> pairedSwitchSites(Address addr) {
 		Long offset = normalizedQueryOffset(addr);
 		return offset == null ? Set.of() : pairedByOffset.getOrDefault(offset, Set.of());
+	}
+
+	/**
+	 * The instructions that established {@code addr} as a mirror -- the union of the cell's
+	 * {@code writeThroughStores} (route (a)/(c)) and {@code argumentLoads} (route (b)), i.e. the
+	 * evidence {@link Discovery#build} actually classified on. {@code writeThroughLoads} is
+	 * deliberately excluded: those are corroboration for a store elsewhere, not an independent
+	 * site establishing the cell, and grm-mej.4's naming pass wants "where do I look to see why
+	 * this is a mirror," not every instruction the backward walk happened to pass through. Empty
+	 * when {@code addr} is not a mirror at all, including for a set stated outright via
+	 * {@link #of}.
+	 */
+	public Set<Address> evidenceSites(Address addr) {
+		Long offset = normalizedQueryOffset(addr);
+		return offset == null ? Set.of() : evidenceByOffset.getOrDefault(offset, Set.of());
 	}
 
 	/** {@code addr}'s offset on the physical bus, or null when it is not on this program's. */
@@ -712,14 +731,23 @@ public final class BankMirrors {
 			Map<Long, Set<Kind>> frozen = new LinkedHashMap<>();
 			byOffset.forEach((k, v) -> frozen.put(k, Collections.unmodifiableSet(v)));
 			Map<Long, Set<Address>> paired = new LinkedHashMap<>();
+			Map<Long, Set<Address>> evidence = new LinkedHashMap<>();
 			cells.forEach((offset, cell) -> {
-				if (byOffset.containsKey(offset) && !cell.pairedSwitchSites.isEmpty()) {
+				if (!byOffset.containsKey(offset)) {
+					return;
+				}
+				if (!cell.pairedSwitchSites.isEmpty()) {
 					paired.put(offset, Collections.unmodifiableSet(
 						new LinkedHashSet<>(cell.pairedSwitchSites)));
 				}
+				Set<Address> established = new LinkedHashSet<>(cell.writeThroughStores);
+				established.addAll(cell.argumentLoads);
+				if (!established.isEmpty()) {
+					evidence.put(offset, Collections.unmodifiableSet(established));
+				}
 			});
 			return new BankMirrors(baseSpace, Collections.unmodifiableMap(frozen),
-				Collections.unmodifiableMap(paired));
+				Collections.unmodifiableMap(paired), Collections.unmodifiableMap(evidence));
 		}
 
 		/** Whether the fall-through path from {@code prev} is exactly {@code cur} -- the block

@@ -63,6 +63,7 @@ import ghidra.program.model.symbol.SourceType;
 import ghidra.program.model.symbol.Symbol;
 import ghidra.util.classfinder.ClassSearcher;
 import ghidra.util.exception.CancelledException;
+import ghidra.util.exception.InvalidInputException;
 import ghidra.util.task.TaskMonitor;
 
 /**
@@ -318,6 +319,13 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			flow = runDataflow(program, monitor, listing, mechanisms, board, helpers,
 				restoringTrampolines);
 		}
+
+		// --- Bank mirror naming (grm-mej.4): turn the derived mirror set into symbols and
+		// comments, so the documentary payoff of grm-mej.2's derivation is visible in the
+		// listing rather than only in the strategies that consume it. After pass 2 (mirrors
+		// are already final by then) and before Phase 2, which is unrelated annotation work
+		// over the same listing. ---
+		nameBankMirrors(program, listing, mirrors, baseSpace);
 
 		// --- Phase 2: annotate bank switches + retarget references ---
 		ReferenceManager refMgr = program.getReferenceManager();
@@ -3006,6 +3014,122 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// bank" can only be judged once (a) and (b) have established what does.
 		discovery.scanSaveSlotCopies(program);
 		return discovery.build();
+	}
+
+	/**
+	 * The symbol-name prefix for each {@link BankMirrors.Kind}, iterated in NAME precedence
+	 * order (highest first) by {@link #nameBankMirrors} -- a {@link LinkedHashMap} so insertion
+	 * order doubles as the precedence order rather than needing a second table.
+	 * <p>
+	 * {@code SAVE_SLOT} and {@code INPUT} precede {@code WRITE_THROUGH} and
+	 * {@code ROM_IDENTIFYING} deliberately: they are the two kinds that hold a bank which is
+	 * NOT the live one (see {@link BankMirrors.Kind}'s javadoc), and a cell that reads like a
+	 * live shadow but is actually one of those is exactly the trap this labelling exists to
+	 * flag -- so when a cell carries both, the name should say the dangerous thing, not the
+	 * safe one. The full kind set still goes in the comment ({@link #nameBankMirrors}), so
+	 * nothing is lost to the one-name-per-address limit; this ordering only decides what wins
+	 * the symbol table's single primary label.
+	 */
+	private static final Map<BankMirrors.Kind, String> MIRROR_NAME_PREFIX = new LinkedHashMap<>();
+	static {
+		MIRROR_NAME_PREFIX.put(BankMirrors.Kind.SAVE_SLOT, "bank_saved_");
+		MIRROR_NAME_PREFIX.put(BankMirrors.Kind.INPUT, "bank_request_");
+		MIRROR_NAME_PREFIX.put(BankMirrors.Kind.WRITE_THROUGH, "bank_shadow_");
+		MIRROR_NAME_PREFIX.put(BankMirrors.Kind.ROM_IDENTIFYING, "bank_id_");
+	}
+
+	/**
+	 * How many evidence addresses {@link #nameBankMirrors} lists in one cell's comment before
+	 * truncating. Blaster Master's {@code $D3} -- the one multi-role cell traced by hand for
+	 * grm-mej.2 -- has five write sites across five functions, so a cap has to clear that
+	 * without the comment running unbounded on some future board with a more diffuse idiom; 6
+	 * clears the measured case with one slot to spare and stays a one-line comment.
+	 */
+	private static final int MIRROR_COMMENT_EVIDENCE_CAP = 6;
+
+	/**
+	 * Turns the mirror set {@link #deriveBankMirrors} derived into symbols and comments (bead
+	 * grm-mej.4) -- the documentary payoff of grm-mej.2's derivation, otherwise invisible in the
+	 * listing. Runs once, after pass 2 (mirror classification does not change after that) and
+	 * before Phase 2's unrelated annotation work over the same listing.
+	 * <p>
+	 * <b>The offset suffix is unconditional</b>, appended to every name regardless of whether it
+	 * would collide without it. A board legitimately has more than one mirror of the same kind --
+	 * Blaster Master has two write-through shadows, {@code $DB} and {@code $D3} -- and a
+	 * "bare name unless it collides" rule would make the bare-vs-suffixed choice depend on
+	 * discovery order, which is not a property a symbol name should expose. Matches this
+	 * codebase's other derived-name convention ({@code COPY_6c90}, {@code DECRYPTED_%04x}): the
+	 * offset is always in the name.
+	 * <p>
+	 * <b>One name per address</b>, chosen by {@link #MIRROR_NAME_PREFIX}'s precedence, because
+	 * Ghidra gives one primary label per address and a cell can carry several kinds at once
+	 * (Blaster Master's {@code $D3} is {@code INPUT|SAVE_SLOT}). The comment carries the full
+	 * kind set regardless of which one won the name.
+	 * <p>
+	 * Routed entirely through {@link AnnotationGuard}, so a {@code USER_DEFINED} label or a
+	 * comment a human already wrote here is never displaced, and re-running the analyzer (the
+	 * framework does, per {@code added()}'s own re-run gate) neither churns the symbol table nor
+	 * stacks a second copy of the comment -- {@link AnnotationGuard#applyLabel} is a no-op once
+	 * the name exists, and {@link AnnotationGuard#addComment}'s {@code "bank mirror:"} marker
+	 * stops the comment from growing on a second pass.
+	 * <p>
+	 * <b>The comment must never contain the literal {@code "bank ->"}.</b> Both golden dumps
+	 * (headless {@code VerifyBankTest}, real-ROM {@code RealRomDump}) count EOL comments
+	 * containing exactly that substring as {@code bankComments}, and it is the vocabulary
+	 * {@link #annotateBankSwitch} and {@link #annotatePlacementProvenance} use for switch-value
+	 * provenance -- a mirror comment using it too would inflate a metric other beads reason
+	 * against. Hence {@code "bank mirror:"} rather than anything starting with {@code "bank"}
+	 * that could textually collide.
+	 */
+	// Package-private and static (rather than private) so BankMirrorNamingProgramTest can drive
+	// it directly against a hand-built BankMirrors set, without needing a full board descriptor
+	// and added() run -- the same reasoning that keeps BankMirrors.Discovery's derivation and
+	// MemoryLatchBankSwitchStrategy's consumption separately testable (see
+	// BankMirrorConsumptionProgramTest's class javadoc).
+	static void nameBankMirrors(Program program, Listing listing, BankMirrors mirrors,
+			AddressSpace baseSpace) {
+		for (Map.Entry<Long, Set<BankMirrors.Kind>> entry : mirrors.byOffset().entrySet()) {
+			long offset = entry.getKey();
+			Set<BankMirrors.Kind> kinds = entry.getValue();
+			Address addr = baseSpace.getAddress(offset);
+
+			BankMirrors.Kind primary = null;
+			for (BankMirrors.Kind candidate : MIRROR_NAME_PREFIX.keySet()) {
+				if (kinds.contains(candidate)) {
+					primary = candidate;
+					break;
+				}
+			}
+			if (primary == null) {
+				continue; // defensive: every kind in the enum has a prefix above
+			}
+			String name = MIRROR_NAME_PREFIX.get(primary) + String.format("%04x", offset);
+			try {
+				AnnotationGuard.applyLabel(program, addr, name, SourceType.ANALYSIS);
+			}
+			catch (InvalidInputException e) {
+				// Generated names are letters/digits/underscore only, so this is unreachable in
+				// practice -- surface it loudly rather than silently dropping the label.
+				throw new RuntimeException(
+					"bank mirror label '" + name + "' at " + addr + " rejected: " +
+						e.getMessage(), e);
+			}
+
+			List<String> kindNames = kinds.stream().map(Enum::name).sorted().toList();
+			List<Address> evidence = new ArrayList<>(mirrors.evidenceSites(addr));
+			Collections.sort(evidence);
+			List<String> evidenceHex = new ArrayList<>();
+			for (int i = 0; i < evidence.size() && i < MIRROR_COMMENT_EVIDENCE_CAP; i++) {
+				evidenceHex.add(String.format("%04x", evidence.get(i).getOffset()));
+			}
+			String more = evidence.size() > MIRROR_COMMENT_EVIDENCE_CAP
+					? " (+" + (evidence.size() - MIRROR_COMMENT_EVIDENCE_CAP) + " more)" : "";
+			String comment = evidenceHex.isEmpty()
+					? "bank mirror: " + kindNames
+					: "bank mirror: " + kindNames + " established at " +
+						String.join(", ", evidenceHex) + more;
+			AnnotationGuard.addComment(listing, addr, CommentType.EOL, comment, "bank mirror:");
+		}
 	}
 
 	/**
