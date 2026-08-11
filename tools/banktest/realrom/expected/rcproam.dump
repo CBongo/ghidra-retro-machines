@@ -25,7 +25,7 @@ REALROM count refs.intoOverlay 1298
 REALROM count instrs.inOverlay 4810
 REALROM count bankComments 10
 REALROM count warnings 22
-REALROM count symbols 1940
+REALROM count symbols 18
 REALROM sample.bankcomment 8011 bank -> mirroring=0,prg_mode=0,prg_bank=0 via caseD_1d [switch-value flow]
 REALROM sample.bankcomment 801b bank -> mirroring=0,prg_mode=0,prg_bank=0 via FUN_ffc5 [switch-value flow]
 REALROM sample.bankcomment 9327 bank -> mirroring=0,prg_mode=0,prg_bank=0 via caseD_1d [switch-value flow]
@@ -83,29 +83,22 @@ REALROM sample.warn ffc9 [NesBankingAnalyzer] Bank state becomes unknown here: m
 REALROM sample.warn ffcd [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn ffd1 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn ffd5 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
-REALROM sample.symbol 0020 caseD_fe ANALYSIS primary=false
-REALROM sample.symbol 0020 caseD_fe ANALYSIS primary=true
-REALROM sample.symbol 005b caseD_9a ANALYSIS primary=false
-REALROM sample.symbol 005b caseD_9a ANALYSIS primary=true
-REALROM sample.symbol 0069 caseD_ba ANALYSIS primary=false
-REALROM sample.symbol 0069 caseD_ba ANALYSIS primary=true
-REALROM sample.symbol 008d caseD_57 ANALYSIS primary=true
-REALROM sample.symbol 009d caseD_20 ANALYSIS primary=false
-REALROM sample.symbol 009d caseD_20 ANALYSIS primary=true
-REALROM sample.symbol 009d caseD_78 ANALYSIS primary=false
-REALROM sample.symbol 009d caseD_78 ANALYSIS primary=false
-REALROM sample.symbol 00a0 caseD_32 ANALYSIS primary=false
-REALROM sample.symbol 00a0 caseD_32 ANALYSIS primary=false
-REALROM sample.symbol 00a0 caseD_80 ANALYSIS primary=false
-REALROM sample.symbol 00a0 caseD_80 ANALYSIS primary=false
-REALROM sample.symbol 00a0 caseD_8a ANALYSIS primary=false
-REALROM sample.symbol 00a0 caseD_8a ANALYSIS primary=true
-REALROM sample.symbol 00a0 caseD_b8 ANALYSIS primary=false
-REALROM sample.symbol 00a0 caseD_b8 ANALYSIS primary=false
-REALROM sample.symbol 00a2 caseD_50 ANALYSIS primary=false
-REALROM sample.symbol 00a2 caseD_d4 ANALYSIS primary=false
-REALROM sample.symbol 00a2 caseD_d4 ANALYSIS primary=true
-REALROM sample.symbol 00a9 caseD_3e ANALYSIS primary=false
-REALROM sample.symbol 00a9 caseD_66 ANALYSIS primary=false
-REALROM sample.symbol 00a9 caseD_66 ANALYSIS primary=true
+REALROM sample.symbol 2000 PPUCTRL IMPORTED primary=true
+REALROM sample.symbol 2001 PPUMASK IMPORTED primary=true
+REALROM sample.symbol 2002 PPUSTATUS IMPORTED primary=true
+REALROM sample.symbol 2003 OAMADDR IMPORTED primary=true
+REALROM sample.symbol 2004 OAMDATA IMPORTED primary=true
+REALROM sample.symbol 2005 PPUSCROLL IMPORTED primary=true
+REALROM sample.symbol 2006 PPUADDR IMPORTED primary=true
+REALROM sample.symbol 2007 PPUDATA IMPORTED primary=true
+REALROM sample.symbol 4014 OAMDMA IMPORTED primary=true
+REALROM sample.symbol 4015 SND_CHN IMPORTED primary=true
+REALROM sample.symbol 4016 JOY1 IMPORTED primary=true
+REALROM sample.symbol 4017 JOY2 IMPORTED primary=true
+REALROM sample.symbol 9aab NMI IMPORTED primary=true
+REALROM sample.symbol ffe9 RESET IMPORTED primary=true
+REALROM sample.symbol fff0 IRQ IMPORTED primary=true
+REALROM sample.symbol fffa NMI_VEC IMPORTED primary=true
+REALROM sample.symbol fffc RESET_VEC IMPORTED primary=true
+REALROM sample.symbol fffe IRQ_VEC IMPORTED primary=true
 === REALROM END ===

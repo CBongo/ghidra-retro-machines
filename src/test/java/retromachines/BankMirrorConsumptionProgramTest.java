@@ -33,6 +33,7 @@ import ghidra.program.database.ProgramBuilder;
 import ghidra.program.database.ProgramDB;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSpace;
+import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.mem.MemoryBlock;
 
@@ -653,5 +654,291 @@ public class BankMirrorConsumptionProgramTest extends AbstractBundledLanguageTes
 		assertNotNull(narrowResult);
 		assertEquals("a mirror narrower than the whole byte must contribute nothing through ORA",
 			0x00, narrowResult.knownMask());
+	}
+
+	// ------------------------------------------------------------------
+	// 14. shadowCoherentAt -- one test per branch (bead grm-p9y)
+	// ------------------------------------------------------------------
+	//
+	// A write-through shadow is a COPY of the live bank, only as current as the last switch
+	// that bothered to update it -- not a synonym for the bank. mirroredByte used to answer a
+	// WRITE_THROUGH load from tracked in-state with no proof of coherence, and both of its
+	// real-ROM outputs (megaman, wizwarr) were confidently wrong. shadowCoherentAt is the
+	// bounded backward walk that now gates every WRITE_THROUGH answer; each test below pins
+	// exactly one of its branches and states, in its own javadoc, which real cartridge (if any)
+	// motivates it.
+
+	/** Repeats {@code hex} {@code times} times, space-joined, for a long filler instruction run. */
+	private String repeatedBytes(String hex, int times) {
+		StringBuilder sb = new StringBuilder();
+		for (int i = 0; i < times; i++) {
+			sb.append(hex).append(' ');
+		}
+		return sb.toString().trim();
+	}
+
+	/**
+	 * COHERENT branch 1: a store into the cell immediately before the load. The shadow was just
+	 * refreshed, so it is current -- the base case every write-through fixture elsewhere in this
+	 * file already relies on implicitly (e.g. case 7's Castlevania 2 shape); this test pins the
+	 * rule directly and in isolation.
+	 */
+	@Test
+	public void shadowCoherentAtIsCoherentWhenTheCellIsStoredImmediatelyBeforeTheLoad()
+			throws Exception {
+		MemoryLatchBankSwitchStrategy latch = discreteLatch();
+		latch.observeMirrors(mirrorsOf(0x42, BankMirrors.Kind.WRITE_THROUGH));
+
+		builder.setBytes("0x8000", "85 42", true); // STA $42   -- shadow refreshed
+		builder.setBytes("0x8002", "a5 42", true); // LDA $42   -- the load
+		builder.setBytes("0x8004", "8d 00 c0", true); // STA $C000 -- the write under test
+
+		BankState result =
+			latch.computeSwitch(program, instructionAt("0x8004"), BankState.fullyKnown(0x0F, 6));
+
+		assertNotNull(result);
+		assertEquals("a store into the cell right before the load makes the shadow current",
+			0x0F, result.knownMask());
+		assertEquals(6, result.bits());
+	}
+
+	/**
+	 * COHERENT branch 2: no predecessor at all -- the load is the very first instruction. Nothing
+	 * can have bypassed a shadow when there is no instruction before the load to have done so.
+	 */
+	@Test
+	public void shadowCoherentAtIsCoherentWhenTheLoadHasNoPredecessor() throws Exception {
+		MemoryLatchBankSwitchStrategy latch = discreteLatch();
+		latch.observeMirrors(mirrorsOf(0x42, BankMirrors.Kind.WRITE_THROUGH));
+
+		builder.setBytes("0x8000", "a5 42", true); // LDA $42 -- first instruction, no predecessor
+		builder.setBytes("0x8002", "8d 00 c0", true); // STA $C000 -- the write under test
+
+		BankState result =
+			latch.computeSwitch(program, instructionAt("0x8002"), BankState.fullyKnown(0x0F, 3));
+
+		assertNotNull(result);
+		assertEquals("a load with nothing before it cannot have been bypassed", 0x0F,
+			result.knownMask());
+		assertEquals(3, result.bits());
+	}
+
+	/**
+	 * COHERENT branch 3: the load sits at the containing function's entry point -- the bead's own
+	 * rule that the CALLER maintains the shadow. The fixture places an UNPAIRED mechanism write
+	 * ({@code STA $C004}) immediately before the function, which would make this STALE (branch 5,
+	 * below) if the walk ever reached it; it must not, because the entry-point check fires first.
+	 * A real {@link Function} is created so {@code getFunctionContaining} has something to find.
+	 */
+	@Test
+	public void shadowCoherentAtIsCoherentWhenTheLoadIsAtTheContainingFunctionsEntry()
+			throws Exception {
+		MemoryLatchBankSwitchStrategy latch = discreteLatch();
+		latch.observeMirrors(mirrorsOf(0x42, BankMirrors.Kind.WRITE_THROUGH));
+
+		builder.setBytes("0x8000", "8d 04 c0", true); // STA $C004 -- unpaired switch, NOT in the
+														// function; would prove STALE if reached
+		builder.setBytes("0x8003", "a5 42", true); // LDA $42 -- the load, at the function's entry
+		builder.setBytes("0x8005", "8d 00 c0", true); // STA $C000 -- the write under test
+		builder.createEmptyFunction("handler", "0x8003", 5, null);
+
+		BankState result =
+			latch.computeSwitch(program, instructionAt("0x8005"), BankState.fullyKnown(0x0F, 4));
+
+		assertNotNull(result);
+		assertEquals(
+			"the entry-point rule must resolve this, not a lucky walk past the unpaired switch "
+				+ "before it",
+			0x0F, result.knownMask());
+		assertEquals(4, result.bits());
+	}
+
+	/**
+	 * COHERENT branch 4: a mechanism write that IS among {@link BankMirrors#pairedSwitchSites}
+	 * for this cell -- the canonical {@code STA $42 / STA $C000} write-through idiom.
+	 * <p>
+	 * <b>This is the case that proves the grm-p9y fix did not simply disable the write-through
+	 * feature.</b> Every other test in this section states its mirror set outright via
+	 * {@link BankMirrors#of} (which -- see that factory's own javadoc -- always returns EMPTY
+	 * paired sites), so none of them could ever exercise the "paired switch, keep walking" branch
+	 * of {@code shadowCoherentAt}. Here the mirror set is built for real through
+	 * {@link BankMirrors.Discovery}, so {@code $42}'s paired switch sites are genuinely populated,
+	 * and the walk has to pass THROUGH a paired mechanism write ({@code STA $C000} at
+	 * {@code $8002}) to reach the underlying {@code STA $42} at {@code $8000} before it can answer
+	 * COHERENT. A second, unrelated switch/shadow pair at {@code $9000}/{@code $9002} exists only
+	 * to satisfy {@code Discovery}'s two-site corroboration rule for classifying {@code $42} as
+	 * {@code WRITE_THROUGH} at all.
+	 */
+	@Test
+	public void shadowCoherentAtIsCoherentThroughAPairedSwitchSite() throws Exception {
+		builder.setBytes("0x8000", "85 42", true); // STA $42   -- shadow write
+		builder.setBytes("0x8002", "8d 00 c0", true); // STA $C000 -- switch site A (paired)
+		builder.setBytes("0x8005", "a5 42", true); // LDA $42   -- the load
+		builder.setBytes("0x8007", "8d 01 c0", true); // STA $C001 -- the write under test
+
+		// A second switch/shadow pair, purely for Discovery's corroboration threshold.
+		builder.setBytes("0x9000", "85 42", true); // STA $42
+		builder.setBytes("0x9002", "8d 02 c0", true); // STA $C002 -- switch site B (paired)
+
+		BankMirrors.Discovery discovery = new BankMirrors.Discovery(baseSpace);
+		discovery.scanWriteThroughShadows(program,
+			Set.of(builder.addr("0x8002"), builder.addr("0x9002")));
+		BankMirrors mirrors = discovery.build();
+		assertFalse("the derivation must have actually classified $42 as WRITE_THROUGH, or this "
+			+ "test proves nothing about the paired-site branch", mirrors.isEmpty());
+		assertTrue("the switch at $8002 must be a recorded paired site, or the walk below cannot "
+			+ "exercise the branch under test",
+			mirrors.pairedSwitchSites(builder.addr("0x42")).contains(builder.addr("0x8002")));
+
+		MemoryLatchBankSwitchStrategy latch = discreteLatch();
+		latch.observeMirrors(mirrors);
+
+		BankState result =
+			latch.computeSwitch(program, instructionAt("0x8007"), BankState.fullyKnown(0x0F, 6));
+
+		assertNotNull(result);
+		assertEquals("a paired switch does not itself resolve the shadow -- the walk must "
+			+ "continue through it to the STA $42 that actually refreshed it", 0x0F,
+			result.knownMask());
+		assertEquals(6, result.bits());
+	}
+
+	/**
+	 * STALE branch: a mechanism write NOT in {@code pairedSwitchSites} between the shadow write
+	 * and the load -- the actual grm-p9y defect, megaman's {@code d54e STA $C004} /
+	 * {@code d56e LDA $42} shape. The NMI switches the latch directly (to bank 4) without
+	 * touching {@code $42}, so at the reload {@code $42} still holds the INTERRUPTED bank, not
+	 * the one that is actually live. The mirror set here is stated via {@link BankMirrors#of},
+	 * whose paired sites are always empty, so the intervening {@code STA $C004} can never be
+	 * "paired" -- exactly the unpaired-switch shape that must decline.
+	 */
+	@Test
+	public void shadowCoherentAtIsStaleAcrossAnUnpairedMechanismWriteMegaman() throws Exception {
+		MemoryLatchBankSwitchStrategy latch = discreteLatch();
+		latch.observeMirrors(mirrorsOf(0x42, BankMirrors.Kind.WRITE_THROUGH));
+
+		builder.setBytes("0x8000", "8d 04 c0", true); // STA $C004 -- switch to bank 4, does NOT
+														// touch $42 (megaman's NMI shape)
+		builder.setBytes("0x8003", "a5 42", true); // LDA $42 -- still holds the interrupted bank
+		builder.setBytes("0x8005", "8d 00 c0", true); // STA $C000 -- the restore under test
+
+		BankState result =
+			latch.computeSwitch(program, instructionAt("0x8005"), BankState.fullyKnown(0x0F, 4));
+
+		assertNotNull(result);
+		assertEquals("an unpaired switch between the shadow write and the load must decline the "
+			+ "whole answer -- this is the megaman defect grm-p9y exists to fix", 0x00,
+			result.knownMask());
+	}
+
+	/**
+	 * STALE branch: a CALL between the shadow and the load -- wizwarr's {@code ffa1 JSR $EE55} /
+	 * {@code ffa4 LDA $00} shape. The callee may switch banks freely and this bounded walk cannot
+	 * see whether it did, so a call is treated as STALE unconditionally (deliberately blunter
+	 * than tracking whether the callee's {@code CallEffect} actually owns the mechanism -- see
+	 * {@code shadowCoherentAt}'s javadoc for why that refinement was not worth building).
+	 */
+	@Test
+	public void shadowCoherentAtIsStaleAcrossACallWizwarr() throws Exception {
+		MemoryLatchBankSwitchStrategy latch = discreteLatch();
+		latch.observeMirrors(mirrorsOf(0x00, BankMirrors.Kind.WRITE_THROUGH));
+
+		builder.setBytes("0x8000", "8d 00 80", true); // STA $8000 -- switch to bank 0, does NOT
+														// store back to $00
+		builder.setBytes("0x8003", "20 00 90", true); // JSR $9000
+		builder.setBytes("0x8006", "a5 00", true); // LDA $00 -- still holds the interrupted bank
+		builder.setBytes("0x8008", "8d 01 80", true); // STA $8001 -- the restore under test
+
+		BankState result =
+			latch.computeSwitch(program, instructionAt("0x8008"), BankState.fullyKnown(0x0F, 5));
+
+		assertNotNull(result);
+		assertEquals("a call between the shadow and the load must decline -- the callee is opaque "
+			+ "to this bounded walk", 0x00, result.knownMask());
+	}
+
+	/**
+	 * STALE branch: a control-flow join before the load. Another path could reach the load having
+	 * bypassed the shadow entirely, so the walk must refuse even though the immediate predecessor
+	 * by address IS a refreshing store -- the {@code JMP $8002} from elsewhere makes {@code $8002}
+	 * reachable other than by falling through from {@code $8000}, exactly the shape
+	 * {@code BankMirrorDerivationProgramTest.aControlFlowJoinBetweenLoadAndStoreBreaksTheCopy}
+	 * uses for the analogous join rule in {@code BankMirrors.Discovery}.
+	 */
+	@Test
+	public void shadowCoherentAtIsStaleAtAControlFlowJoin() throws Exception {
+		MemoryLatchBankSwitchStrategy latch = discreteLatch();
+		latch.observeMirrors(mirrorsOf(0x42, BankMirrors.Kind.WRITE_THROUGH));
+
+		builder.setBytes("0x8000", "85 42", true); // STA $42   -- would refresh the shadow...
+		builder.setBytes("0x8002", "a5 42", true); // LDA $42   -- ...but this is also reachable
+													// from $9000, below
+		builder.setBytes("0x8004", "8d 00 c0", true); // STA $C000 -- the write under test
+		builder.setBytes("0x9000", "4c 02 80", true); // JMP $8002 -- the join
+
+		BankState result =
+			latch.computeSwitch(program, instructionAt("0x8004"), BankState.fullyKnown(0x0F, 7));
+
+		assertNotNull(result);
+		assertEquals("a control-flow join before the load must decline even though the "
+			+ "fall-through predecessor alone would have been coherent", 0x00,
+			result.knownMask());
+	}
+
+	/**
+	 * STALE branch: budget exhaustion. More than {@code MAX_COHERENCE_SCAN} (64) plain, decisive-
+	 * nothing instructions precede the load before any of the other branches can fire, so the walk
+	 * must fail closed rather than run unbounded. 70 filler {@code NOP}s put the walk's 64-step
+	 * budget short of address {@code $8000}, where the block actually begins -- if the budget were
+	 * not enforced, the walk would eventually reach "no predecessor" (branch 2) and answer
+	 * COHERENT instead.
+	 */
+	@Test
+	public void shadowCoherentAtIsStaleWhenTheScanBudgetIsExhausted() throws Exception {
+		MemoryLatchBankSwitchStrategy latch = discreteLatch();
+		latch.observeMirrors(mirrorsOf(0x42, BankMirrors.Kind.WRITE_THROUGH));
+
+		int nopCount = 70; // > MAX_COHERENCE_SCAN (64)
+		builder.setBytes("0x8000", repeatedBytes("ea", nopCount), true); // NOP * 70, no decision
+		Address loadAddr = builder.addr(String.format("0x%X", 0x8000 + nopCount));
+		builder.setBytes(loadAddr.toString(), "a5 42", true); // LDA $42 -- the load
+		Address storeAddr = loadAddr.add(2);
+		builder.setBytes(storeAddr.toString(), "8d 00 c0", true); // STA $C000 -- write under test
+
+		BankState result =
+			latch.computeSwitch(program, instructionAt(storeAddr), BankState.fullyKnown(0x0F, 2));
+
+		assertNotNull(result);
+		assertEquals("exhausting the scan budget must decline even though the walk would "
+			+ "eventually have reached 'no predecessor' outside its budget", 0x00,
+			result.knownMask());
+	}
+
+	/**
+	 * {@code ROM_IDENTIFYING} is NOT subject to {@code shadowCoherentAt} at all -- a ROM byte
+	 * cannot go stale, only a RAM shadow can. This fixture is byte-for-byte the megaman-shaped
+	 * STALE fixture above (an unpaired mechanism write directly before the load), which would
+	 * decline if this were a {@code WRITE_THROUGH} cell; here the same shape resolves cleanly
+	 * because {@link MemoryLatchBankSwitchStrategy#mirroredByte} answers {@code ROM_IDENTIFYING}
+	 * before it ever calls {@code shadowCoherentAt}.
+	 */
+	@Test
+	public void romIdentifyingMirrorIsNotSubjectToTheCoherenceCheck() throws Exception {
+		MemoryLatchBankSwitchStrategy latch = discreteLatch();
+		latch.observeMirrors(mirrorsOf(0x50, BankMirrors.Kind.ROM_IDENTIFYING));
+
+		builder.setBytes("0x8000", "8d 04 c0", true); // STA $C004 -- an unpaired switch that
+														// would make this STALE under WRITE_THROUGH
+		builder.setBytes("0x8003", "a5 50", true); // LDA $50 -- the identifying-offset load
+		builder.setBytes("0x8005", "8d 00 c0", true); // STA $C000 -- the write under test
+
+		BankState result =
+			latch.computeSwitch(program, instructionAt("0x8005"), BankState.fullyKnown(0x0F, 6));
+
+		assertNotNull(result);
+		assertEquals(
+			"ROM_IDENTIFYING must resolve regardless of the coherence-breaking shape around it",
+			0x0F, result.knownMask());
+		assertEquals(6, result.bits());
 	}
 }

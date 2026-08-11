@@ -23,6 +23,7 @@ REALROM count refs.intoOverlay 1704
 REALROM count instrs.inOverlay 7429
 REALROM count bankComments 156
 REALROM count warnings 32
+REALROM count symbols 18
 REALROM sample.bankcomment 8001 bank -> 5 (bank=5) via RESET
 REALROM sample.bankcomment 8d17 bank -> 5 (bank=5) via RESET
 REALROM sample.bankcomment 8d1f bank -> 5 (bank=5) via RESET
@@ -98,4 +99,22 @@ REALROM sample.warn cf23 [NesBankingAnalyzer] Bank state becomes unknown here: c
 REALROM sample.warn d09e [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c39c whose bank argument could not be recovered at this call site
 REALROM sample.warn d0b1 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c39c whose bank argument could not be recovered at this call site
 REALROM sample.warn d571 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.symbol 2000 PPUCTRL IMPORTED primary=true
+REALROM sample.symbol 2001 PPUMASK IMPORTED primary=true
+REALROM sample.symbol 2002 PPUSTATUS IMPORTED primary=true
+REALROM sample.symbol 2003 OAMADDR IMPORTED primary=true
+REALROM sample.symbol 2004 OAMDATA IMPORTED primary=true
+REALROM sample.symbol 2005 PPUSCROLL IMPORTED primary=true
+REALROM sample.symbol 2006 PPUADDR IMPORTED primary=true
+REALROM sample.symbol 2007 PPUDATA IMPORTED primary=true
+REALROM sample.symbol 4014 OAMDMA IMPORTED primary=true
+REALROM sample.symbol 4015 SND_CHN IMPORTED primary=true
+REALROM sample.symbol 4016 JOY1 IMPORTED primary=true
+REALROM sample.symbol 4017 JOY2 IMPORTED primary=true
+REALROM sample.symbol c008 IRQ IMPORTED primary=false
+REALROM sample.symbol c008 RESET IMPORTED primary=true
+REALROM sample.symbol d4a8 NMI IMPORTED primary=true
+REALROM sample.symbol fffa NMI_VEC IMPORTED primary=true
+REALROM sample.symbol fffc RESET_VEC IMPORTED primary=true
+REALROM sample.symbol fffe IRQ_VEC IMPORTED primary=true
 === REALROM END ===

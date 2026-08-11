@@ -128,18 +128,31 @@ public class RealRomDump extends GhidraScript {
 			}
 		}
 
-		// Deliberately named symbols (bead grm-mej.4). SourceType.DEFAULT is excluded: Ghidra
-		// generates FUN_/LAB_/DAT_ defaults in the thousands on a real ROM, so emitting them would
-		// make this list track DISASSEMBLY rather than intent -- it would churn on every unrelated
-		// change and nobody would read the diff. What is left is what something chose to name, and
-		// the source type is carried because it is the observable half of the
-		// never-overwrite-user-work rule.
+		// Deliberately named symbols (bead grm-mej.4). IMPORTED and USER_DEFINED only -- and the
+		// exclusion of ANALYSIS is the whole point, learned the hard way.
+		//
+		// DEFAULT was the obvious filter (it is what hides Ghidra's FUN_/LAB_/DAT_ names) and it is
+		// what the synthetic dump in VerifyBankTest uses. It is not enough here. Ghidra's own
+		// jump-table analyzer tags its switch-case labels ANALYSIS, not DEFAULT, so on a real ROM
+		// that filter admits them in bulk: megaman alone contributed 1522 lines of caseD_* -- on a
+		// row that is simultaneously bistable (grm-g73) and carries a known jump-table over-read
+		// (grm-eyn), so every one of them is free to flap. That is exactly the "tracks DISASSEMBLY
+		// rather than intent, churns on every unrelated change, nobody reads the diff" failure the
+		// filter exists to prevent, arriving through a door DEFAULT does not close.
+		//
+		// The synthetic fixtures could not have caught this: none of them has a switch table.
+		//
+		// CONSEQUENCE, stated rather than hidden: an analyzer-created label (ANALYSIS) is invisible
+		// in THIS dump. Naming is pinned by Tier 2 and by the synthetic goldens, which do emit it;
+		// real-ROM coverage of analyzer-created names would need a way to tell ours from Ghidra's,
+		// and there is none today.
 		List<String> symbols = new ArrayList<>();
 		long symbolCount = 0;
 		for (Symbol sym : currentProgram.getSymbolTable().getAllSymbols(false)) {
-			if (sym.getSource() != SourceType.DEFAULT) {
+			SourceType src = sym.getSource();
+			if (src == SourceType.IMPORTED || src == SourceType.USER_DEFINED) {
 				symbolCount++;
-				symbols.add(fmt(sym.getAddress()) + " " + sym.getName() + " " + sym.getSource() +
+				symbols.add(fmt(sym.getAddress()) + " " + sym.getName() + " " + src +
 					(sym.isPrimary() ? " primary=true" : " primary=false"));
 			}
 		}

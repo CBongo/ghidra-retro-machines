@@ -81,7 +81,7 @@ REALROM count refs.intoOverlay 1455
 REALROM count instrs.inOverlay 6683
 REALROM count bankComments 75
 REALROM count warnings 32
-REALROM count symbols 275
+REALROM count symbols 18
 REALROM sample.bankcomment 802a bank -> mirroring=2,prg_mode=3,prg_bank=14 via FUN_c05d [switch-value flow]
 REALROM sample.bankcomment 8044 bank -> mirroring=2,prg_mode=3,prg_bank=14 [switch-value flow]
 REALROM sample.bankcomment 8048 bank -> mirroring=2,prg_mode=3,prg_bank=14 [switch-value flow]
@@ -157,29 +157,22 @@ REALROM sample.warn c628 [NesBankingAnalyzer] Bank state becomes unknown here: c
 REALROM sample.warn c66a [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c000 whose bank argument could not be recovered at this call site
 REALROM sample.warn c70c [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c000 whose bank argument could not be recovered at this call site
 REALROM sample.warn c78d [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c000 whose bank argument could not be recovered at this call site
-REALROM sample.symbol 0012 caseD_9b ANALYSIS primary=true
-REALROM sample.symbol 0020 caseD_48 ANALYSIS primary=true
-REALROM sample.symbol 0029 caseD_77 ANALYSIS primary=true
-REALROM sample.symbol 0040 caseD_90 ANALYSIS primary=true
-REALROM sample.symbol 004a caseD_b3 ANALYSIS primary=true
-REALROM sample.symbol 009d caseD_72 ANALYSIS primary=true
-REALROM sample.symbol 00ad caseD_5f ANALYSIS primary=true
-REALROM sample.symbol 0104 caseD_20 ANALYSIS primary=true
-REALROM sample.symbol 0104 caseD_f8 ANALYSIS primary=false
-REALROM sample.symbol 010c caseD_45 ANALYSIS primary=true
-REALROM sample.symbol 010f caseD_ba ANALYSIS primary=true
-REALROM sample.symbol 0110 caseD_3f ANALYSIS primary=true
-REALROM sample.symbol 0120 caseD_c3 ANALYSIS primary=true
-REALROM sample.symbol 0120 caseD_e2 ANALYSIS primary=false
-REALROM sample.symbol 0160 caseD_69 ANALYSIS primary=true
-REALROM sample.symbol 0160 caseD_b1 ANALYSIS primary=false
-REALROM sample.symbol 01ad caseD_65 ANALYSIS primary=true
-REALROM sample.symbol 01ba caseD_af ANALYSIS primary=true
-REALROM sample.symbol 01ee caseD_19 ANALYSIS primary=true
-REALROM sample.symbol 01ee caseD_1d ANALYSIS primary=false
-REALROM sample.symbol 0206 caseD_ad ANALYSIS primary=true
-REALROM sample.symbol 029d caseD_32 ANALYSIS primary=true
-REALROM sample.symbol 02a6 caseD_4b ANALYSIS primary=true
-REALROM sample.symbol 02f0 caseD_ca ANALYSIS primary=true
-REALROM sample.symbol 0310 caseD_2e ANALYSIS primary=true
+REALROM sample.symbol 2000 PPUCTRL IMPORTED primary=true
+REALROM sample.symbol 2001 PPUMASK IMPORTED primary=true
+REALROM sample.symbol 2002 PPUSTATUS IMPORTED primary=true
+REALROM sample.symbol 2003 OAMADDR IMPORTED primary=true
+REALROM sample.symbol 2004 OAMDATA IMPORTED primary=true
+REALROM sample.symbol 2005 PPUSCROLL IMPORTED primary=true
+REALROM sample.symbol 2006 PPUADDR IMPORTED primary=true
+REALROM sample.symbol 2007 PPUDATA IMPORTED primary=true
+REALROM sample.symbol 4014 OAMDMA IMPORTED primary=true
+REALROM sample.symbol 4015 SND_CHN IMPORTED primary=true
+REALROM sample.symbol 4016 JOY1 IMPORTED primary=true
+REALROM sample.symbol 4017 JOY2 IMPORTED primary=true
+REALROM sample.symbol cff0 NMI IMPORTED primary=true
+REALROM sample.symbol ffe0 IRQ IMPORTED primary=false
+REALROM sample.symbol ffe0 RESET IMPORTED primary=true
+REALROM sample.symbol fffa NMI_VEC IMPORTED primary=true
+REALROM sample.symbol fffc RESET_VEC IMPORTED primary=true
+REALROM sample.symbol fffe IRQ_VEC IMPORTED primary=true
 === REALROM END ===

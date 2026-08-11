@@ -22,7 +22,9 @@ import com.google.gson.JsonObject;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.address.AddressSpace;
+import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Instruction;
+import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.symbol.Reference;
@@ -123,6 +125,13 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 */
 	private BankMirrors mirrors = BankMirrors.none();
 
+	/** Instruction budget for {@link #shadowCoherentAt}'s backward walk. Generous next to
+	 *  the two-to-five-instruction idioms elsewhere, because the span between a switch and
+	 *  a later restore is a whole interrupt handler's body -- megaman's is ~32 instructions.
+	 *  Exhausting it answers STALE, so a larger budget can only ever recover more, never
+	 *  assert more. */
+	private static final int MAX_COHERENCE_SCAN = 64;
+
 	@Override
 	public String strategyName() {
 		return "memory-latch";
@@ -210,7 +219,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 		@Override
 		public BankState resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
 				BankState inStateAtStore) {
-			return mirroredByte(resolvedTarget, inStateAtStore);
+			return mirroredByte(loadInstr, resolvedTarget, inStateAtStore);
 		}
 	};
 
@@ -291,7 +300,8 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * scan loses the value at that shift instruction anyway. Declining says "I cannot interpret
 	 * this", which is true, instead of answering the one bank that is certainly wrong.
 	 */
-	private BankState mirroredByte(Address target, BankState inStateAtStore) {
+	private BankState mirroredByte(Instruction loadInstr, Address target,
+			BankState inStateAtStore) {
 		if (target == null || mirrors.isEmpty()) {
 			return null;
 		}
@@ -305,10 +315,95 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 				inStateAtStore.bits() & mask);
 		}
 		if (kinds.contains(BankMirrors.Kind.WRITE_THROUGH)) {
+			if (!shadowCoherentAt(loadInstr, target)) {
+				return null; // the shadow has gone stale -- see shadowCoherentAt
+			}
 			return new BankState(((inStateAtStore.knownMask() & mask) << shift) & 0xFF,
 				((inStateAtStore.bits() & mask) << shift) & 0xFF);
 		}
 		return null; // INPUT, SAVE_SLOT, or not a mirror at all -- see above
+	}
+
+	/**
+	 * Whether the write-through shadow {@code cell} still agrees with the live bank at
+	 * {@code load} (bead grm-p9y). <b>A shadow is not a synonym for the bank; it is a copy that
+	 * is only as current as the last switch that bothered to update it.</b>
+	 * <p>
+	 * <b>The defect this exists to stop, measured on two pinned ROMs.</b> Increment 2 answered a
+	 * write-through load from tracked in-state with no proof of coherence, and both of its
+	 * real-ROM outputs were confidently wrong -- 0 for 2. The shape is not exotic; it is the
+	 * standard interrupt-handler idiom: switch the latch DIRECTLY (leaving the shadow holding the
+	 * interrupted bank), do the work, then restore with a bare {@code LDA shadow / STA latch}.
+	 * <pre>
+	 *   megaman NMI   D54E STA $C004   ; -> bank 4, does NOT touch $42
+	 *                 D551 JSR $9000   ; ... NMI work, running in bank 4
+	 *                 D56E LDA $42     ; still holds the INTERRUPTED bank
+	 *                 D571 STA $C000,X ; RESTORE -- was reported "bank -> 4". Wrong.
+	 *   wizwarr NMI   FF9E STA $8000   ; -> bank 0, does NOT store back to $00
+	 *                 FFA1 JSR $EE55
+	 *                 FFA4 LDA $00     ; still holds the INTERRUPTED bank
+	 *                 FFA6 STA $8000   ; RESTORE -- was reported "bank -> 0". Wrong.
+	 * </pre>
+	 * <b>The constraint that rules out every value-based fix:</b> wizwarr's {@code ff9e bank -> 0}
+	 * is CORRECT and {@code ffa6 bank -> 0} two instructions later is WRONG. Same value, same
+	 * handler, same cell. Only coherence separates them.
+	 * <p>
+	 * <b>The walk.</b> Bounded, backward from the load, in the same idiom as
+	 * {@code BankMirrors.Discovery.walkFromMechanismWrite} and
+	 * {@code BoardBankAnalyzer.restoresEntryBank}:
+	 * <ul>
+	 * <li>a store INTO the cell -- the shadow was just refreshed, so it is current: COHERENT;</li>
+	 * <li>a mechanism write NOT among {@link BankMirrors#pairedSwitchSites} for this cell -- a
+	 * switch that did not maintain the shadow, which is exactly the bug: STALE;</li>
+	 * <li>a CALL: STALE. The callee may switch banks freely and this walk cannot see whether it
+	 * did. Deliberately blunter than the bead's "a call whose {@code CallEffect} owns nothing is
+	 * harmless" -- that refinement needs the analyzer's call-effect map here and buys nothing
+	 * measured, since the write-through half currently resolves nothing on any real ROM;</li>
+	 * <li>a control-flow join or a predecessor that does not fall through to here: STALE, because
+	 * another path could have reached this load having bypassed the shadow;</li>
+	 * <li>the containing function's entry, or no predecessor at all: COHERENT. This is the bead's
+	 * own rule -- the caller maintains the shadow, and a load with nothing before it cannot have
+	 * been bypassed by anything this walk could have seen;</li>
+	 * <li>budget exhausted: STALE. Fail closed.</li>
+	 * </ul>
+	 * ROM_IDENTIFYING does not come here and must not: a ROM byte cannot go stale.
+	 */
+	private boolean shadowCoherentAt(Instruction load, Address cell) {
+		if (load == null) {
+			return false;
+		}
+		Program program = load.getProgram();
+		Set<Address> paired = mirrors.pairedSwitchSites(cell);
+		Function containing = program.getFunctionManager().getFunctionContaining(
+			load.getMinAddress());
+		Listing listing = program.getListing();
+
+		Instruction cur = load;
+		for (int i = 0; i < MAX_COHERENCE_SCAN; i++) {
+			if (containing != null && cur.getMinAddress().equals(containing.getEntryPoint())) {
+				return true; // the caller maintains it
+			}
+			Instruction prev = listing.getInstructionBefore(cur.getMinAddress());
+			if (prev == null) {
+				return true; // nothing before this can have bypassed the shadow
+			}
+			Address fallThrough = prev.getFallThrough();
+			if (fallThrough == null || !fallThrough.equals(cur.getMinAddress()) ||
+				StoredValueScanner.isControlFlowJoin(program, cur, prev)) {
+				return false; // another path could arrive here having bypassed the shadow
+			}
+			if (prev.getFlowType().isCall()) {
+				return false; // the callee may have switched banks without touching the shadow
+			}
+			if (StoredValueScanner.writesAddress(prev, cell)) {
+				return true; // the shadow was refreshed here
+			}
+			if (writesInRange(prev) && !paired.contains(prev.getMinAddress())) {
+				return false; // a switch that did not maintain this shadow -- the grm-p9y defect
+			}
+			cur = prev;
+		}
+		return false; // budget exhausted: fail closed
 	}
 
 	@Override

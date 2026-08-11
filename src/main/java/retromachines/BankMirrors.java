@@ -122,15 +122,20 @@ public final class BankMirrors {
 	private static final long STACK_PAGE_START = 0x0100;
 	private static final long STACK_PAGE_END = 0x01FF;
 
-	private static final BankMirrors EMPTY = new BankMirrors(null, Map.of());
+	private static final BankMirrors EMPTY = new BankMirrors(null, Map.of(), Map.of());
 
 	/** Null exactly when this set is empty, in which case no query can match anyway. */
 	private final AddressSpace baseSpace;
 	private final Map<Long, Set<Kind>> byOffset;
+	/** Per cell, the mechanism writes it is known to be kept in step with -- see
+	 *  {@link #pairedSwitchSites} and bead grm-p9y. */
+	private final Map<Long, Set<Address>> pairedByOffset;
 
-	private BankMirrors(AddressSpace baseSpace, Map<Long, Set<Kind>> byOffset) {
+	private BankMirrors(AddressSpace baseSpace, Map<Long, Set<Kind>> byOffset,
+			Map<Long, Set<Address>> pairedByOffset) {
 		this.baseSpace = baseSpace;
 		this.byOffset = byOffset;
+		this.pairedByOffset = pairedByOffset;
 	}
 
 	/** The empty set -- what every board with no derivable mirror gets. */
@@ -155,7 +160,7 @@ public final class BankMirrors {
 		}
 		Map<Long, Set<Kind>> frozen = new LinkedHashMap<>();
 		byOffset.forEach((k, v) -> frozen.put(k, Set.copyOf(v)));
-		return new BankMirrors(baseSpace, Collections.unmodifiableMap(frozen));
+		return new BankMirrors(baseSpace, Collections.unmodifiableMap(frozen), Map.of());
 	}
 
 	public boolean isEmpty() {
@@ -178,6 +183,31 @@ public final class BankMirrors {
 	/** Whether {@code addr} is a mirror of exactly this kind. */
 	public boolean is(Address addr, Kind kind) {
 		return kindsAt(addr).contains(kind);
+	}
+
+	/**
+	 * The mechanism-write sites this cell is known to be kept in step with -- the switches whose
+	 * own backward walk found it (bead grm-p9y). Empty when nothing is known, including for a set
+	 * stated outright via {@link #of}.
+	 * <p>
+	 * This is what makes "is the shadow still coherent with the live bank?" answerable. A
+	 * write-through shadow tracks the bank only for as long as every switch keeps updating it; a
+	 * mechanism write OUTSIDE this set wrote the latch and left the shadow holding the previous
+	 * bank. That is not an oddity but the standard interrupt-handler idiom, and it is why
+	 * increment 2's write-through read-back shipped two confidently wrong banks.
+	 */
+	public Set<Address> pairedSwitchSites(Address addr) {
+		Long offset = normalizedQueryOffset(addr);
+		return offset == null ? Set.of() : pairedByOffset.getOrDefault(offset, Set.of());
+	}
+
+	/** {@code addr}'s offset on the physical bus, or null when it is not on this program's. */
+	private Long normalizedQueryOffset(Address addr) {
+		if (addr == null || baseSpace == null ||
+			!addr.getAddressSpace().getPhysicalSpace().equals(baseSpace)) {
+			return null;
+		}
+		return addr.getOffset();
 	}
 
 	/** Every mirror offset with its kinds, in discovery order -- for logging and for tests. */
@@ -309,6 +339,14 @@ public final class BankMirrors {
 	private static final class Cell {
 		/** Distinct {@code ST<r> S} instructions on a path into a mechanism write. */
 		final Set<Address> writeThroughStores = new LinkedHashSet<>();
+		/**
+		 * The MECHANISM WRITES whose backward walk found this cell -- i.e. the switch sites this
+		 * cell is known to be kept in step with (bead grm-p9y). Retained because "is this shadow
+		 * still coherent with the live bank?" is answerable only against the set of switches that
+		 * maintain it: a mechanism write OUTSIDE this set wrote the latch and left the shadow
+		 * behind, which is the standard interrupt-handler idiom and the defect grm-p9y is about.
+		 */
+		final Set<Address> pairedSwitchSites = new LinkedHashSet<>();
 		/** Distinct {@code LD<r> S} instructions feeding a mechanism write -- corroboration. */
 		final Set<Address> writeThroughLoads = new LinkedHashSet<>();
 		/** Distinct {@code LD<argReg> S} instructions feeding a call to a bank-switch helper. */
@@ -410,6 +448,7 @@ public final class BankMirrors {
 					if (offset != null) {
 						Cell cell = cells.computeIfAbsent(offset, k -> new Cell());
 						cell.writeThroughStores.add(prev.getMinAddress());
+						cell.pairedSwitchSites.add(store.getMinAddress());
 						storedOnThisWalk.add(cell);
 					}
 					cur = prev;
@@ -672,7 +711,15 @@ public final class BankMirrors {
 			}
 			Map<Long, Set<Kind>> frozen = new LinkedHashMap<>();
 			byOffset.forEach((k, v) -> frozen.put(k, Collections.unmodifiableSet(v)));
-			return new BankMirrors(baseSpace, Collections.unmodifiableMap(frozen));
+			Map<Long, Set<Address>> paired = new LinkedHashMap<>();
+			cells.forEach((offset, cell) -> {
+				if (byOffset.containsKey(offset) && !cell.pairedSwitchSites.isEmpty()) {
+					paired.put(offset, Collections.unmodifiableSet(
+						new LinkedHashSet<>(cell.pairedSwitchSites)));
+				}
+			});
+			return new BankMirrors(baseSpace, Collections.unmodifiableMap(frozen),
+				Collections.unmodifiableMap(paired));
 		}
 
 		/** Whether the fall-through path from {@code prev} is exactly {@code cur} -- the block

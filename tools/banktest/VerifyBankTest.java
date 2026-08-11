@@ -1844,6 +1844,11 @@ public class VerifyBankTest extends GhidraScript {
 		// invisible to every gate in the project.
 		//
 		// SourceType.DEFAULT IS EXCLUDED, and that filter is the whole design of this list.
+		// NOTE the sibling filter in RealRomDump is STRICTER (IMPORTED/USER_DEFINED only): Ghidra's
+		// jump-table analyzer tags switch-case labels ANALYSIS, which on a real ROM runs to
+		// thousands. No synthetic fixture has a switch table, so DEFAULT is a sufficient filter
+		// here -- and it has to be, because an analyzer-created label is ANALYSIS and this is the
+		// only golden tier that can see one.
 		// Ghidra generates FUN_/LAB_/DAT_ defaults in the thousands; emitting them would bury a
 		// handful of intentional names in noise that tracks DISASSEMBLY rather than intent, so
 		// every unrelated change would churn it and nobody would read the diff. What is left is

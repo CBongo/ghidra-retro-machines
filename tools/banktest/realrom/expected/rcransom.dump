@@ -66,7 +66,7 @@ REALROM count refs.intoOverlay 0
 REALROM count instrs.inOverlay 0
 REALROM count bankComments 38
 REALROM count warnings 5
-REALROM count symbols 156
+REALROM count symbols 18
 REALROM sample.bankcomment b80b bank -> select=0,prg_mode=0,r6=0,r7=1 [switch-value flow]
 REALROM sample.bankcomment e315 bank -> select=2,prg_mode=0,r6=0,r7=1 via FUN_fea1 [switch-value flow]
 REALROM sample.bankcomment e323 bank -> select=3,prg_mode=0,r6=0,r7=1 via FUN_fead [switch-value flow]
@@ -97,29 +97,22 @@ REALROM sample.warn f21d [NesBankingAnalyzer] Bank state becomes unknown here: c
 REALROM sample.warn ff21 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn ff25 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn ff4b [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
-REALROM sample.symbol 00a9 caseD_42 ANALYSIS primary=true
-REALROM sample.symbol 00c9 caseD_62 ANALYSIS primary=true
-REALROM sample.symbol 00c9 caseD_7a ANALYSIS primary=false
-REALROM sample.symbol 0269 caseD_1a ANALYSIS primary=true
-REALROM sample.symbol 0369 caseD_b6 ANALYSIS primary=true
-REALROM sample.symbol 03f0 caseD_80 ANALYSIS primary=true
-REALROM sample.symbol 04c7 caseD_5c ANALYSIS primary=true
-REALROM sample.symbol 04c7 caseD_76 ANALYSIS primary=false
-REALROM sample.symbol 04d0 caseD_64 ANALYSIS primary=true
-REALROM sample.symbol 04d0 caseD_7c ANALYSIS primary=false
-REALROM sample.symbol 0545 caseD_32 ANALYSIS primary=true
-REALROM sample.symbol 0545 caseD_3a ANALYSIS primary=false
-REALROM sample.symbol 0545 caseD_70 ANALYSIS primary=false
-REALROM sample.symbol 0545 caseD_86 ANALYSIS primary=false
-REALROM sample.symbol 0545 caseD_be ANALYSIS primary=false
-REALROM sample.symbol 0545 caseD_f2 ANALYSIS primary=false
-REALROM sample.symbol 0545 caseD_fa ANALYSIS primary=false
-REALROM sample.symbol 05f0 caseD_68 ANALYSIS primary=true
-REALROM sample.symbol 0769 caseD_d4 ANALYSIS primary=true
-REALROM sample.symbol 0a1a caseD_22 ANALYSIS primary=true
-REALROM sample.symbol 0f29 caseD_78 ANALYSIS primary=true
-REALROM sample.symbol 1804 caseD_d2 ANALYSIS primary=true
-REALROM sample.symbol 1805 caseD_4e ANALYSIS primary=true
-REALROM sample.symbol 1806 caseD_b4 ANALYSIS primary=true
-REALROM sample.symbol 180a caseD_16 ANALYSIS primary=true
+REALROM sample.symbol 2000 PPUCTRL IMPORTED primary=true
+REALROM sample.symbol 2001 PPUMASK IMPORTED primary=true
+REALROM sample.symbol 2002 PPUSTATUS IMPORTED primary=true
+REALROM sample.symbol 2003 OAMADDR IMPORTED primary=true
+REALROM sample.symbol 2004 OAMDATA IMPORTED primary=true
+REALROM sample.symbol 2005 PPUSCROLL IMPORTED primary=true
+REALROM sample.symbol 2006 PPUADDR IMPORTED primary=true
+REALROM sample.symbol 2007 PPUDATA IMPORTED primary=true
+REALROM sample.symbol 4014 OAMDMA IMPORTED primary=true
+REALROM sample.symbol 4015 SND_CHN IMPORTED primary=true
+REALROM sample.symbol 4016 JOY1 IMPORTED primary=true
+REALROM sample.symbol 4017 JOY2 IMPORTED primary=true
+REALROM sample.symbol f1d9 IRQ IMPORTED primary=true
+REALROM sample.symbol ff4f NMI IMPORTED primary=true
+REALROM sample.symbol ff76 RESET IMPORTED primary=true
+REALROM sample.symbol fffa NMI_VEC IMPORTED primary=true
+REALROM sample.symbol fffc RESET_VEC IMPORTED primary=true
+REALROM sample.symbol fffe IRQ_VEC IMPORTED primary=true
 === REALROM END ===
