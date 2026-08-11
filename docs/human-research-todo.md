@@ -43,6 +43,27 @@ bash tools/banktest/realrom-test.sh nominate H:/emulators/nes/roms   # board-gap
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
+- [ ] **Is wizwarr's `FUN_ff69` a save/restore trampoline?** (`grm-mej.3` increment 1, blocks
+      blessing two goldens.) The increment proves a helper is a verified no-op when it saves the live
+      bank on entry, switches, calls out, and restores before returning — such a call then deposits
+      `ownedMask = 0` and its "bank argument could not be recovered" warning disappears. Measured on
+      a rebuilt A/B, exactly eight warnings went:
+
+      | title | sites | helper | status |
+      |---|---|---|---|
+      | ironsword | `80c2`, `d56e`, `d691`, `e5b1`, `e924`, `e92b`, `e942` | `FUN_ffc0` | **already verified** — these are precisely the seven `grm-6pi` hand-traced, and its finding was that the requested bank is live only for the inner call while the caller resumes unchanged |
+      | wizwarr | `bc0a` | `FUN_ff69` | **unverified** |
+
+      **The question:** does `FUN_ff69` really restore the entry bank before returning — i.e. is the
+      byte it saves read from the bank shadow *before* its own switch, and is the restore on every
+      path out? A wrong answer here is the silent kind: `ownedMask = 0` removes the warning and adds
+      no comment, so the engine asserts "this call changed nothing" with nothing to flag it.
+      Note nothing was retargeted on the strength of it (`refs.intoOverlay` and `instrs.inOverlay`
+      did not move on any row), so no disassembly currently rests on the claim.
+
+      Do **not** bless ironsword or wizwarr until this is answered. Note wizwarr is also carrying the
+      separate open `ffa6` question below.
+
 - [ ] **Are `grm-mej.2` increment 2's two new bank annotations RIGHT?** (`grm-ii6`, blocks blessing
       two goldens.) Increment 2 (`ac77ee6`, pushed) made a mirror read resolve from tracked bank
       state, and it produced exactly two new confident claims across all 31 real-ROM rows. Both are
