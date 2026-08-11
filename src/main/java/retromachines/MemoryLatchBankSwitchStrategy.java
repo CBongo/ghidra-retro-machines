@@ -446,11 +446,19 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * argument is in {@code Y}, which the convention cannot see anyway), and Mega Man by tail-call
 	 * composition; every other pinned title and every synthetic golden is byte-identical.
 	 * <p>
-	 * <b>Unknown is honest, not optimal.</b> The true post-call effect here is "unchanged", which
-	 * {@link HelperDeposit} can already express as {@code ownedMask = 0}. Claiming it requires
-	 * verifying the save/restore pair, i.e. pairing the {@code PHA} at {@code $FFC6} with the
-	 * {@code PLA} at {@code $FFD3} -- grm-mej.3. Until then, declining is the sound answer and
-	 * asserting no-op would be another guess.
+	 * <b>Unknown was honest, not optimal -- and grm-mej.3 has now made the better answer
+	 * available.</b> The true post-call effect here is "unchanged", which {@link HelperDeposit}
+	 * expresses as {@code ownedMask = 0}. This javadoc used to say claiming it "requires verifying
+	 * the save/restore pair, i.e. pairing the {@code PHA} at {@code $FFC6} with the {@code PLA} at
+	 * {@code $FFD3}", and that verification now exists:
+	 * {@code BoardBankAnalyzer.restoresEntryBank} proves it once per helper and
+	 * {@code recoverCallArgument} answers the call site before this method is ever reached. So on
+	 * this exact trampoline the deposit below no longer runs.
+	 * <p>
+	 * What still arrives here is every helper the proof DECLINES -- one whose saved byte was not
+	 * read from a live-bank mirror, whose restore is not provably reached on a straight line, or
+	 * which leaves the fall-through altogether. For those, declining remains the sound answer and
+	 * asserting no-op would still be a guess.
 	 * <p>
 	 * <b>This is not a caching path.</b> It calls {@link #evaluateLatch} directly, never
 	 * {@link #computeSwitch} and never {@code BoardBankAnalyzer}'s address-keyed
