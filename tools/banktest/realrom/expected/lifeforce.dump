@@ -23,6 +23,7 @@ REALROM count refs.intoOverlay 232
 REALROM count instrs.inOverlay 796
 REALROM count bankComments 4
 REALROM count warnings 4
+REALROM count symbols 18
 REALROM sample.bankcomment e62f bank -> 3 (bank=3) via FUN_e61e
 REALROM sample.bankcomment e665 bank -> 3 (bank=3) via FUN_e619
 REALROM sample.bankcomment e7ae bank -> 3 (bank=3) via FUN_e619
@@ -56,4 +57,22 @@ REALROM sample.warn e621 [NesBankingAnalyzer] Bank state becomes unknown here: m
 REALROM sample.warn e63b [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_e61e whose bank argument could not be recovered at this call site
 REALROM sample.warn e6d0 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_e618 whose bank argument could not be recovered at this call site
 REALROM sample.warn e7fa [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_e61e whose bank argument could not be recovered at this call site
+REALROM sample.symbol 2000 PPUCTRL IMPORTED primary=true
+REALROM sample.symbol 2001 PPUMASK IMPORTED primary=true
+REALROM sample.symbol 2002 PPUSTATUS IMPORTED primary=true
+REALROM sample.symbol 2003 OAMADDR IMPORTED primary=true
+REALROM sample.symbol 2004 OAMDATA IMPORTED primary=true
+REALROM sample.symbol 2005 PPUSCROLL IMPORTED primary=true
+REALROM sample.symbol 2006 PPUADDR IMPORTED primary=true
+REALROM sample.symbol 2007 PPUDATA IMPORTED primary=true
+REALROM sample.symbol 4014 OAMDMA IMPORTED primary=true
+REALROM sample.symbol 4015 SND_CHN IMPORTED primary=true
+REALROM sample.symbol 4016 JOY1 IMPORTED primary=true
+REALROM sample.symbol 4017 JOY2 IMPORTED primary=true
+REALROM sample.symbol e70a RESET IMPORTED primary=true
+REALROM sample.symbol e76b NMI IMPORTED primary=true
+REALROM sample.symbol e7d1 IRQ IMPORTED primary=true
+REALROM sample.symbol fffa NMI_VEC IMPORTED primary=true
+REALROM sample.symbol fffc RESET_VEC IMPORTED primary=true
+REALROM sample.symbol fffe IRQ_VEC IMPORTED primary=true
 === REALROM END ===

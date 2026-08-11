@@ -81,6 +81,7 @@ REALROM count refs.intoOverlay 1847
 REALROM count instrs.inOverlay 7382
 REALROM count bankComments 75
 REALROM count warnings 34
+REALROM count symbols 605
 REALROM sample.bankcomment c02c bank -> mirroring=0,prg_mode=3,prg_bank=0? via FUN_fe1a [known: prg_bank.0=0,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment c069 bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_fe1a [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment c071 bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_fe1a [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
@@ -156,4 +157,29 @@ REALROM sample.warn fe4d [NesBankingAnalyzer] Bank state becomes unknown here: m
 REALROM sample.warn fe50 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn fe53 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn fe5b [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.symbol 009d caseD_86 ANALYSIS primary=true
+REALROM sample.symbol 00a0 caseD_28 ANALYSIS primary=false
+REALROM sample.symbol 00a0 caseD_aa ANALYSIS primary=true
+REALROM sample.symbol 00a9 caseD_10 ANALYSIS primary=true
+REALROM sample.symbol 00a9 caseD_12 ANALYSIS primary=false
+REALROM sample.symbol 00a9 caseD_2c ANALYSIS primary=false
+REALROM sample.symbol 00b9 caseD_a2 ANALYSIS primary=true
+REALROM sample.symbol 00b9 caseD_a6 ANALYSIS primary=false
+REALROM sample.symbol 00b9 caseD_ce ANALYSIS primary=false
+REALROM sample.symbol 00d9 caseD_ae ANALYSIS primary=true
+REALROM sample.symbol 018d caseD_12 ANALYSIS primary=true
+REALROM sample.symbol 01c9 caseD_a2 ANALYSIS primary=true
+REALROM sample.symbol 02a0 caseD_de ANALYSIS primary=true
+REALROM sample.symbol 0300 caseD_5c ANALYSIS primary=true
+REALROM sample.symbol 030a caseD_52 ANALYSIS primary=true
+REALROM sample.symbol 030b caseD_84 ANALYSIS primary=true
+REALROM sample.symbol 04ee caseD_fa ANALYSIS primary=true
+REALROM sample.symbol 05a9 caseD_d8 ANALYSIS primary=true
+REALROM sample.symbol 05f0 caseD_a0 ANALYSIS primary=true
+REALROM sample.symbol 06a9 caseD_e0 ANALYSIS primary=true
+REALROM sample.symbol 0890 caseD_da ANALYSIS primary=true
+REALROM sample.symbol 08ad caseD_ce ANALYSIS primary=true
+REALROM sample.symbol 08b0 caseD_9c ANALYSIS primary=true
+REALROM sample.symbol 08ee caseD_d8 ANALYSIS primary=true
+REALROM sample.symbol 09a9 caseD_94 ANALYSIS primary=true
 === REALROM END ===

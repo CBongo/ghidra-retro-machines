@@ -18,10 +18,36 @@ REALROM count refs.intoOverlay 0
 REALROM count instrs.inOverlay 0
 REALROM count bankComments 0
 REALROM count warnings 6
+REALROM count symbols 1011
 REALROM sample.warn 8ee4 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_8eeb whose bank argument could not be recovered at this call site
 REALROM sample.warn 9913 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffbe whose bank argument could not be recovered at this call site
 REALROM sample.warn a03f [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn d9a9 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn ffc8 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn ffea [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffbe whose bank argument could not be recovered at this call site
+REALROM sample.symbol 0001 caseD_b2 ANALYSIS primary=true
+REALROM sample.symbol 004b caseD_4b ANALYSIS primary=false
+REALROM sample.symbol 004b caseD_70 ANALYSIS primary=true
+REALROM sample.symbol 0065 caseD_f8 ANALYSIS primary=true
+REALROM sample.symbol 0069 caseD_da ANALYSIS primary=true
+REALROM sample.symbol 006c caseD_52 ANALYSIS primary=true
+REALROM sample.symbol 0084 caseD_68 ANALYSIS primary=true
+REALROM sample.symbol 00a0 caseD_23 ANALYSIS primary=true
+REALROM sample.symbol 00a9 caseD_18 ANALYSIS primary=false
+REALROM sample.symbol 00a9 caseD_46 ANALYSIS primary=false
+REALROM sample.symbol 00a9 caseD_4c ANALYSIS primary=true
+REALROM sample.symbol 00a9 caseD_a9 ANALYSIS primary=false
+REALROM sample.symbol 00a9 caseD_c ANALYSIS primary=false
+REALROM sample.symbol 00b9 caseD_58 ANALYSIS primary=true
+REALROM sample.symbol 00bd caseD_3e ANALYSIS primary=true
+REALROM sample.symbol 00bd caseD_60 ANALYSIS primary=false
+REALROM sample.symbol 00bd caseD_70 ANALYSIS primary=false
+REALROM sample.symbol 00bd caseD_e2 ANALYSIS primary=false
+REALROM sample.symbol 00e9 caseD_c6 ANALYSIS primary=true
+REALROM sample.symbol 00f0 caseD_86 ANALYSIS primary=true
+REALROM sample.symbol 0101 caseD_aa ANALYSIS primary=true
+REALROM sample.symbol 0102 caseD_98 ANALYSIS primary=true
+REALROM sample.symbol 0104 caseD_96 ANALYSIS primary=true
+REALROM sample.symbol 0104 caseD_a6 ANALYSIS primary=false
+REALROM sample.symbol 0105 caseD_b0 ANALYSIS primary=true
 === REALROM END ===

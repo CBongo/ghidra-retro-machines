@@ -23,6 +23,7 @@ REALROM count refs.intoOverlay 1077
 REALROM count instrs.inOverlay 4649
 REALROM count bankComments 37
 REALROM count warnings 12
+REALROM count symbols 307
 REALROM sample.bankcomment 8194 bank -> 6 (bank=6) via caseD_f8
 REALROM sample.bankcomment 93a4 bank -> 3 (bank=3) via FUN_c389
 REALROM sample.bankcomment 9622 bank -> 0? (bank=0) [known: bank.0=0,bank.1=0,bank.2=0; assumed from initial: bank.3]
@@ -85,4 +86,29 @@ REALROM sample.warn cabf [NesBankingAnalyzer] Bank state becomes unknown here: c
 REALROM sample.warn cb2c [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper caseD_f8 whose bank argument could not be recovered at this call site
 REALROM sample.warn f9ed [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper caseD_f8 whose bank argument could not be recovered at this call site
 REALROM sample.warn ff42 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ec5c whose bank argument could not be recovered at this call site
+REALROM sample.symbol 0085 caseD_84 ANALYSIS primary=true
+REALROM sample.symbol 0085 caseD_8c ANALYSIS primary=false
+REALROM sample.symbol 0085 caseD_8c ANALYSIS primary=false
+REALROM sample.symbol 00a0 caseD_d6 ANALYSIS primary=true
+REALROM sample.symbol 00e5 caseD_8a ANALYSIS primary=true
+REALROM sample.symbol 0185 caseD_32 ANALYSIS primary=true
+REALROM sample.symbol 0185 caseD_f0 ANALYSIS primary=false
+REALROM sample.symbol 01ad caseD_e ANALYSIS primary=true
+REALROM sample.symbol 0220 caseD_ac ANALYSIS primary=false
+REALROM sample.symbol 0220 caseD_d0 ANALYSIS primary=true
+REALROM sample.symbol 0220 caseD_de ANALYSIS primary=false
+REALROM sample.symbol 0285 caseD_9e ANALYSIS primary=true
+REALROM sample.symbol 0290 caseD_70 ANALYSIS primary=true
+REALROM sample.symbol 029d caseD_c0 ANALYSIS primary=true
+REALROM sample.symbol 02a2 caseD_d4 ANALYSIS primary=true
+REALROM sample.symbol 02a5 caseD_fa ANALYSIS primary=true
+REALROM sample.symbol 02bd caseD_34 ANALYSIS primary=true
+REALROM sample.symbol 02bd caseD_74 ANALYSIS primary=false
+REALROM sample.symbol 02bd caseD_a8 ANALYSIS primary=false
+REALROM sample.symbol 02d0 caseD_b2 ANALYSIS primary=true
+REALROM sample.symbol 0302 caseD_10 ANALYSIS primary=true
+REALROM sample.symbol 0307 caseD_1a ANALYSIS primary=true
+REALROM sample.symbol 03a9 caseD_4e ANALYSIS primary=true
+REALROM sample.symbol 03a9 caseD_96 ANALYSIS primary=false
+REALROM sample.symbol 03d0 caseD_b2 ANALYSIS primary=true
 === REALROM END ===

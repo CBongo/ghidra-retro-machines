@@ -54,6 +54,7 @@ import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.mem.MemoryBlockSourceInfo;
 import ghidra.program.model.mem.MemoryBlockType;
 import ghidra.program.model.symbol.Reference;
+import ghidra.program.model.symbol.SourceType;
 import ghidra.program.model.symbol.Symbol;
 
 import retromachines.C64BasicAnalyzer;
@@ -1800,6 +1801,7 @@ public class VerifyBankTest extends GhidraScript {
 		List<String> comments = new ArrayList<>();
 		List<String> bookmarks = new ArrayList<>();
 		List<String> refs = new ArrayList<>();
+		List<String> symbols = new ArrayList<>();
 
 		// Load-time memory layout (bead grm-5tl.17): locks block names, ranges, and
 		// overlay-ness as a regression net for the loader refactor tracked by grm-5tl.14.
@@ -1836,10 +1838,30 @@ public class VerifyBankTest extends GhidraScript {
 			}
 		}
 
+		// Deliberately named symbols (bead grm-mej.4). Until this landed the dump captured NO
+		// symbol at all, so anything that named something -- the loaders' entry points and vector
+		// handlers, a descriptor symbol set, and shortly the analyzer's bank-mirror names -- was
+		// invisible to every gate in the project.
+		//
+		// SourceType.DEFAULT IS EXCLUDED, and that filter is the whole design of this list.
+		// Ghidra generates FUN_/LAB_/DAT_ defaults in the thousands; emitting them would bury a
+		// handful of intentional names in noise that tracks DISASSEMBLY rather than intent, so
+		// every unrelated change would churn it and nobody would read the diff. What is left is
+		// exactly the set something chose to create. The source type is printed alongside the name
+		// because it is the observable half of the never-overwrite-user-work rule: an annotation
+		// that arrived as USER_DEFINED must never be replaced by one of ours.
+		for (Symbol sym : currentProgram.getSymbolTable().getAllSymbols(false)) {
+			if (sym.getSource() != SourceType.DEFAULT) {
+				symbols.add("SYMBOL " + fmt(sym.getAddress()) + " " + sym.getName() + " " +
+					sym.getSource() + (sym.isPrimary() ? " primary=true" : " primary=false"));
+			}
+		}
+
 		Collections.sort(blocks);
 		Collections.sort(comments);
 		Collections.sort(bookmarks);
 		Collections.sort(refs);
+		Collections.sort(symbols);
 
 		println("=== BANKDUMP BEGIN ===");
 		// Per-game identity (bead grm-hb6.1), only when the loader stamped one -- today that is
@@ -1859,6 +1881,9 @@ public class VerifyBankTest extends GhidraScript {
 			println(line);
 		}
 		for (String line : refs) {
+			println(line);
+		}
+		for (String line : symbols) {
 			println(line);
 		}
 		println("=== BANKDUMP END ===");

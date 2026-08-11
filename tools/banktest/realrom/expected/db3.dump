@@ -23,8 +23,34 @@ REALROM count refs.intoOverlay 0
 REALROM count instrs.inOverlay 0
 REALROM count bankComments 0
 REALROM count warnings 4
+REALROM count symbols 408
 REALROM sample.warn 0000 [no bank-switch write observed] Board declares 1 bank-switch mechanism(s) [memory-latch] but no mechanism write was observed in analyzed code; no bank annotations were produced. The switch routine may be unreached (e.g. entered only via an indirect/table jump auto-analysis did not disassemble).
 REALROM sample.warn e69e [CopyLoopAnalyzer] copy-shaped loop RAM:e7d4 -> RAM:0200 could not be bounded; not applied
 REALROM sample.warn e707 [CopyLoopAnalyzer] copy-shaped loop RAM:e826 -> RAM:0200 could not be bounded; not applied
 REALROM sample.warn e712 [CopyLoopAnalyzer] copy-shaped loop RAM:e7fd -> RAM:0200 could not be bounded; not applied
+REALROM sample.symbol 0005 caseD_a2 ANALYSIS primary=true
+REALROM sample.symbol 008d caseD_9c ANALYSIS primary=true
+REALROM sample.symbol 008d caseD_f0 ANALYSIS primary=false
+REALROM sample.symbol 00a9 caseD_4c ANALYSIS primary=false
+REALROM sample.symbol 00a9 caseD_5c ANALYSIS primary=true
+REALROM sample.symbol 00a9 caseD_7a ANALYSIS primary=false
+REALROM sample.symbol 00a9 caseD_86 ANALYSIS primary=false
+REALROM sample.symbol 00a9 caseD_92 ANALYSIS primary=false
+REALROM sample.symbol 00a9 caseD_e4 ANALYSIS primary=false
+REALROM sample.symbol 0107 caseD_be ANALYSIS primary=true
+REALROM sample.symbol 0112 caseD_b8 ANALYSIS primary=true
+REALROM sample.symbol 0114 caseD_ca ANALYSIS primary=true
+REALROM sample.symbol 01a9 caseD_f8 ANALYSIS primary=true
+REALROM sample.symbol 01db caseD_60 ANALYSIS primary=true
+REALROM sample.symbol 0264 caseD_b2 ANALYSIS primary=true
+REALROM sample.symbol 0266 caseD_c4 ANALYSIS primary=true
+REALROM sample.symbol 0268 caseD_d6 ANALYSIS primary=true
+REALROM sample.symbol 026a caseD_e8 ANALYSIS primary=true
+REALROM sample.symbol 026b caseD_ee ANALYSIS primary=true
+REALROM sample.symbol 028d caseD_a6 ANALYSIS primary=true
+REALROM sample.symbol 028d caseD_d8 ANALYSIS primary=false
+REALROM sample.symbol 028d caseD_f8 ANALYSIS primary=false
+REALROM sample.symbol 0290 caseD_56 ANALYSIS primary=true
+REALROM sample.symbol 02a9 caseD_80 ANALYSIS primary=false
+REALROM sample.symbol 02a9 caseD_82 ANALYSIS primary=true
 === REALROM END ===

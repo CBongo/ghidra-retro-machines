@@ -47,6 +47,8 @@ import ghidra.program.model.listing.InstructionIterator;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.symbol.Reference;
+import ghidra.program.model.symbol.SourceType;
+import ghidra.program.model.symbol.Symbol;
 
 public class RealRomDump extends GhidraScript {
 
@@ -126,7 +128,24 @@ public class RealRomDump extends GhidraScript {
 			}
 		}
 
+		// Deliberately named symbols (bead grm-mej.4). SourceType.DEFAULT is excluded: Ghidra
+		// generates FUN_/LAB_/DAT_ defaults in the thousands on a real ROM, so emitting them would
+		// make this list track DISASSEMBLY rather than intent -- it would churn on every unrelated
+		// change and nobody would read the diff. What is left is what something chose to name, and
+		// the source type is carried because it is the observable half of the
+		// never-overwrite-user-work rule.
+		List<String> symbols = new ArrayList<>();
+		long symbolCount = 0;
+		for (Symbol sym : currentProgram.getSymbolTable().getAllSymbols(false)) {
+			if (sym.getSource() != SourceType.DEFAULT) {
+				symbolCount++;
+				symbols.add(fmt(sym.getAddress()) + " " + sym.getName() + " " + sym.getSource() +
+					(sym.isPrimary() ? " primary=true" : " primary=false"));
+			}
+		}
+
 		Collections.sort(blocks);
+		Collections.sort(symbols);
 		Collections.sort(bankComments);
 		Collections.sort(overlayRefs);
 		Collections.sort(warnings);
@@ -158,10 +177,12 @@ public class RealRomDump extends GhidraScript {
 		println("REALROM count instrs.inOverlay " + instrsInOverlay);
 		println("REALROM count bankComments " + bankComments.size());
 		println("REALROM count warnings " + warningCount);
+		println("REALROM count symbols " + symbolCount);
 
 		emitSample("bankcomment", bankComments);
 		emitSample("ref", overlayRefs);
 		emitSample("warn", warnings);
+		emitSample("symbol", symbols);
 
 		println("=== REALROM END ===");
 	}
