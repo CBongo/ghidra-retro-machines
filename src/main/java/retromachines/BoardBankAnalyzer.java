@@ -3181,13 +3181,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			bankComment += " [switch-value flow]";
 		}
 
-		String existing = listing.getComment(CommentType.EOL, addr);
-		if (existing == null || existing.isBlank()) {
-			listing.setComment(addr, CommentType.EOL, bankComment);
-		}
-		else if (!existing.contains("bank ->")) {
-			listing.setComment(addr, CommentType.EOL, existing + "; " + bankComment);
-		}
+		AnnotationGuard.addComment(listing, addr, CommentType.EOL, bankComment, "bank ->");
 	}
 
 	/**
@@ -3199,13 +3193,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 */
 	private void annotatePlacementProvenance(Listing listing, Address addr, int bank) {
 		String comment = "bank -> " + bank + " [user override]";
-		String existing = listing.getComment(CommentType.EOL, addr);
-		if (existing == null || existing.isBlank()) {
-			listing.setComment(addr, CommentType.EOL, comment);
-		}
-		else if (!existing.contains("bank ->")) {
-			listing.setComment(addr, CommentType.EOL, existing + "; " + comment);
-		}
+		AnnotationGuard.addComment(listing, addr, CommentType.EOL, comment, "bank ->");
 	}
 
 	/**
@@ -3710,7 +3698,11 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		Reference newRef = existingAnalysisRef != null ? existingAnalysisRef
 				: refMgr.addMemoryReference(instr.getMinAddress(), overlayAddr, refType,
 					SourceType.ANALYSIS, opIndex);
-		if (makePrimary) {
+		// grm-mej.4: setPrimary would bump whatever reference currently holds primacy on this
+		// operand. If that is a USER_DEFINED reference -- the user pinned a different target by
+		// hand -- an analysis-derived overlay ref must not displace it.
+		if (makePrimary &&
+			AnnotationGuard.mayDisplace(refMgr.getPrimaryReferenceFrom(instr.getMinAddress(), opIndex))) {
 			refMgr.setPrimary(newRef, true);
 		}
 

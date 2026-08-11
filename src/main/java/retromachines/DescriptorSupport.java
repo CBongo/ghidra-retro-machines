@@ -572,13 +572,20 @@ final class DescriptorSupport {
 
 			Address symAddr = baseSpace.getAddress(addr);
 			try {
-				program.getSymbolTable().createLabel(symAddr, name, SourceType.IMPORTED);
+				AnnotationGuard.applyLabel(program, symAddr, name, SourceType.IMPORTED);
 				if (kind.equals("entry")) {
 					program.getSymbolTable().addExternalEntryPoint(symAddr);
 					functionMarker.accept(name, symAddr);
 				}
 				if (comment != null) {
-					program.getListing().setComment(symAddr, CommentType.EOL, comment);
+					// AnnotationGuard.addComment (grm-mej.4): descriptor-applied comments must
+					// never clobber a USER_DEFINED one. Comments carry no SourceType, so the
+					// guard uses the append-only proxy documented on that method; the comment
+					// text itself is the idempotence marker, since (unlike the analyzer's
+					// "bank ->" annotations) there is no shared prefix across descriptor
+					// comments to key on.
+					AnnotationGuard.addComment(program.getListing(), symAddr, CommentType.EOL,
+						comment, comment);
 				}
 			}
 			catch (Exception e) {
