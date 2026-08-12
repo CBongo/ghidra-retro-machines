@@ -21,20 +21,32 @@ REALROM count spaces.overlay 7
 REALROM count refs.intoOverlay 0
 REALROM count instrs.inOverlay 0
 REALROM count bankComments 4
-REALROM count warnings 11
+REALROM count warnings 4
+REALROM count symbols 18
 REALROM sample.bankcomment d567 bank -> 0 (bank=0) via FUN_d677
 REALROM sample.bankcomment d684 bank -> 0 (bank=0)
 REALROM sample.bankcomment ff94 bank -> 0 (bank=0)
 REALROM sample.bankcomment ffe0 bank -> 0 (bank=0)
-REALROM sample.warn 80c2 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc0 whose bank argument could not be recovered at this call site
 REALROM sample.warn 80cd [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_8b8b whose bank argument could not be recovered at this call site
 REALROM sample.warn 8bea [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
-REALROM sample.warn d56e [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc0 whose bank argument could not be recovered at this call site
-REALROM sample.warn d691 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc0 whose bank argument could not be recovered at this call site
-REALROM sample.warn e5b1 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc0 whose bank argument could not be recovered at this call site
-REALROM sample.warn e924 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc0 whose bank argument could not be recovered at this call site
-REALROM sample.warn e92b [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc0 whose bank argument could not be recovered at this call site
-REALROM sample.warn e942 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc0 whose bank argument could not be recovered at this call site
 REALROM sample.warn ffcd [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn ffd6 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.symbol 2000 PPUCTRL IMPORTED primary=true
+REALROM sample.symbol 2001 PPUMASK IMPORTED primary=true
+REALROM sample.symbol 2002 PPUSTATUS IMPORTED primary=true
+REALROM sample.symbol 2003 OAMADDR IMPORTED primary=true
+REALROM sample.symbol 2004 OAMDATA IMPORTED primary=true
+REALROM sample.symbol 2005 PPUSCROLL IMPORTED primary=true
+REALROM sample.symbol 2006 PPUADDR IMPORTED primary=true
+REALROM sample.symbol 2007 PPUDATA IMPORTED primary=true
+REALROM sample.symbol 4014 OAMDMA IMPORTED primary=true
+REALROM sample.symbol 4015 SND_CHN IMPORTED primary=true
+REALROM sample.symbol 4016 JOY1 IMPORTED primary=true
+REALROM sample.symbol 4017 JOY2 IMPORTED primary=true
+REALROM sample.symbol a020 IRQ IMPORTED primary=true
+REALROM sample.symbol ff91 RESET IMPORTED primary=true
+REALROM sample.symbol ffdd NMI IMPORTED primary=true
+REALROM sample.symbol fffa NMI_VEC IMPORTED primary=true
+REALROM sample.symbol fffc RESET_VEC IMPORTED primary=true
+REALROM sample.symbol fffe IRQ_VEC IMPORTED primary=true
 === REALROM END ===
