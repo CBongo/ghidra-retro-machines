@@ -43,8 +43,42 @@ bash tools/banktest/realrom-test.sh nominate H:/emulators/nes/roms   # board-gap
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
-*Nothing open here right now.* The `wizwarr FUN_ff69` question was answered 2026-08-11 — see the
-Answered table.
+- [ ] **Does any real Bandai cart write an FCG register with an *indexed* store?** (`grm-egw` P3.)
+      The soundness hole is verified in code, not merely suspected:
+      `MosConstantReferenceAnalyzer.addBaseReferenceOnce` replaces a computed reference with one to
+      the operand *base*, and Bandai FCG decodes `addr_mask 0xF / addr_match 0x8` — so `$8008`
+      matches but the `$8000` that replaces it misses, and an indexed register write stops being
+      detected. The bead calls the triggering shape (`STA reg,X` into a mapper register file)
+      "ordinary", but **no shipped title exercises it** — the four Bandai goldens did not move when
+      the bug was introduced.
+
+      **The question:** in `db3` / `dbz2` / `dbz_datach` / `dbz_saiyan`, does any indexed store
+      (`9D`/`99` opcodes) target `$8000-$FFFF`? A byte search finds candidates in seconds; deciding
+      whether a hit is a genuine mapper-register write rather than data needs eyes on the
+      surrounding code, which is the part that costs an agent a build/measure cycle per candidate.
+
+      **"No" is a valuable answer** — it justifies leaving `grm-egw` at P3 indefinitely rather than
+      pre-emptively hardening a path nothing uses. "Yes" makes it a live correctness bug on a
+      shipped board and should raise the priority.
+
+- [ ] **Does any corpus title run the 6502 stack deep enough to reach the low stack page?**
+      (`grm-mej.3` increment 2, commit `ba1efc3`.) Increment 2 removed
+      `StoredValueScanner`'s blanket refusal to forward values through `$0100-$01FF`, on the ruling
+      that a `PHA` would need a ~253-byte-deep stack to alias a scratch cell like dodge's `$0103`,
+      and that games park scratch low in the page precisely because the stack never reaches them.
+      `argumentSurvivesPrologue` already assumed the same thing, so the refusal was inconsistent
+      rather than conservative.
+
+      **The residual risk was accepted, not eliminated,** and it is documented that way in
+      `forwardedStoreValue`'s javadoc. **The question:** does the stack in any pinned title ever
+      descend far enough to write a cell the scanner now forwards through — i.e. does `S` ever go
+      below roughly `$20`? One watchpoint or a min-`S` trace in an emulator answers it for a whole
+      title; static analysis cannot answer it at all, which is why this is here rather than on the
+      bead as agent work.
+
+      A confirmed "never below ~`$80`" retires the concern permanently and is worth recording. A
+      title that *does* run deep is a genuine counter-example and would justify re-introducing a
+      narrowed guard (refusing only the upper part of the page) rather than the blanket one.
 
 ---
 
@@ -137,6 +171,53 @@ board with very little agent time. Per mapper:
 ## 4. Decisions only you can make
 
 Blocked on judgment, not effort.
+
+- [ ] **Should `bless` still write a golden when the fixture's criteria failed?** (`grm-aqi`, filed
+      **P1** by the 2026-08-10 quality review.) The review found that `run-banktest.sh:311-314`
+      records the failure and then copies into `expected/` anyway at `:325-328`, and that the cache
+      path is worse — `:256` copies *before* checking the cached criteria at `:258-261`.
+
+      **What the review missed, and why this is your call:** the behavior is **deliberate**. The
+      comment at `:244-245` states the intent — *"Mirrors the non-cache bless below: copy the
+      candidate regardless, but flag the suite if its cached criteria failed."* Someone chose to
+      always produce a candidate for inspection. So fixing this overturns a design decision, not an
+      oversight, and an agent should not do that unilaterally.
+
+      **The case for changing it:** `bless` is the only thing between a bad run and a committed
+      oracle, and the whole gate discipline rests on goldens being trustworthy. **The case for
+      leaving it:** `bless` is a manual command, it prints FAIL, it exits nonzero, and the change is
+      visible in `git diff` before commit — so it cannot silently corrupt anything, and always
+      producing the candidate makes a failing run diagnosable.
+
+      Whichever way you rule, the atomic-write half of `grm-z34` is the same work and is already
+      linked as blocked on this.
+
+- [ ] **CI and dependency locking: yes or no?** (`grm-e7w` P2, already narrowed to just these two
+      questions; the mechanical half — the hardcoded `/d/gradle-8.13/bin/gradle` default — was split
+      out to `grm-ycv` and needs no decision.)
+
+      1. **Should this repo have CI at all?** Enforcing the synthetic gate means a runner that
+         fetches and pins a Ghidra install matching `ghidraTargetVersion`. Feasible — Ghidra is
+         publicly downloadable — but it is an ongoing cost and a hosting choice. The real-ROM tier
+         must stay opt-in regardless; those ROMs are copyrighted and machine-local.
+      2. **Is Gradle dependency locking + verification metadata worth it here?** Version strings are
+         already pinned in `build.gradle`. Full verification metadata is real supply-chain hardening
+         with real maintenance friction for a project this size.
+
+      A "no" on either is a perfectly good answer — record it and close that half, so the question
+      does not get re-opened by the next review.
+
+- [ ] **Close `grm-4nr` (ff1 bistability) as not-reproducible?** (P2.) The bead was filed on five
+      runs splitting 3:2 between two states (`refs -33 / instrs -44 / warnings -14`). `grm-g73`'s
+      answer then measured ff1 at **10/10 identical**, making the old 40% rate statistically dead
+      (P = 0.6%), most likely killed by the `grm-izu` / `grm-2dr` work. It explicitly says **do not
+      spend a bisect speculatively — a future ff1 FAIL is the cheap signal.**
+
+      Since then ff1 has passed every observed run, including the full GME sweep on 2026-08-11
+      (19/19). So the bead is tracking a defect nobody can currently reproduce. **The question is
+      bead hygiene, not analysis:** close it not-reproducible with the evidence recorded, or keep it
+      open as a standing watch item? Closing risks losing the signature if it returns; keeping it
+      open leaves a P2 that no one can act on.
 
 - [ ] **Community disassembly licensing survey** (`grm-hb6.6` P3). The bead names licensing as "the
       gating constraint and a per-source judgment, not a policy set once". Deliverable: a table of
