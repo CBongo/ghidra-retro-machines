@@ -321,9 +321,13 @@ public class BankMirrorDerivationProgramTest extends AbstractBundledLanguageTest
 	}
 
 	/**
-	 * The stack page is refused for {@code StoredValueScanner.inStackPage}'s reason: a {@code PHA}
-	 * writes it without naming an address any detector here can see, so a value forwarded through
-	 * it could be stale. Carrying a bank across a push/pull pair is grm-mej.3's domain.
+	 * The stack page is refused as a mirror cell -- see {@code BankMirrors}'
+	 * {@code STACK_PAGE_START}/{@code STACK_PAGE_END} javadoc: a {@code PHA} writes it without
+	 * naming an address any detector here can see, so this discovery walk cannot tell a genuine
+	 * write-through mirror from a cell that merely sits beneath a push. Independent of, and
+	 * stricter than, {@code StoredValueScanner}'s own stack-page forwarding stance (grm-mej.3
+	 * increment 2), which now accepts the low-stack-depth aliasing risk for VALUE forwarding but
+	 * not for MIRROR discovery.
 	 */
 	@Test
 	public void aStackPageCellIsNotAShadow() throws Exception {
@@ -682,9 +686,10 @@ public class BankMirrorDerivationProgramTest extends AbstractBundledLanguageTest
 	}
 
 	/**
-	 * The 6502 stack page is refused as a copy destination for {@code StoredValueScanner
-	 * .inStackPage}'s reason: a {@code PHA} writes it without naming an address any detector here
-	 * can see, so a value forwarded through it could be stale.
+	 * The 6502 stack page is refused as a copy destination -- see {@code BankMirrors}'
+	 * {@code STACK_PAGE_START}/{@code STACK_PAGE_END} javadoc: a {@code PHA} writes it without
+	 * naming an address any detector here can see, so a discovered copy through it could be
+	 * stale.
 	 */
 	@Test
 	public void aStackPageDestinationIsRefusedAsACopyDestination() throws Exception {

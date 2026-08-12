@@ -117,8 +117,16 @@ public final class BankMirrors {
 	 */
 	private static final int MAX_BACKWARD_SCAN = 16;
 
-	/** The 6502 stack page, refused as a mirror cell for {@code StoredValueScanner.inStackPage}'s
-	 *  reason: a {@code PHA} writes it without naming an address any detector here can see. */
+	/**
+	 * The 6502 stack page, refused as a mirror cell independently of
+	 * {@code StoredValueScanner}'s own (now-relaxed, grm-mej.3 increment 2) stack-page
+	 * forwarding stance: {@code PHA} writes it without naming an address any detector here can
+	 * see, so this discovery walk cannot tell a genuine write-through mirror in the stack page
+	 * from a cell that merely happens to sit beneath a push. Mirror discovery has a different
+	 * risk profile than value forwarding -- a wrongly nominated mirror poisons every later query
+	 * against it, not just one -- so it keeps the conservative blanket refusal rather than
+	 * adopting the low-stack-depth aliasing assumption {@code StoredValueScanner} now accepts.
+	 */
 	private static final long STACK_PAGE_START = 0x0100;
 	private static final long STACK_PAGE_END = 0x01FF;
 

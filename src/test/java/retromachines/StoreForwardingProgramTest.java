@@ -351,20 +351,29 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 	}
 
 	/**
-	 * The stack page is refused outright. {@code PHA}/{@code PHP} write it without naming an
-	 * address any of {@code writesMemory}'s detectors can see, so a push between the store and the
-	 * load would otherwise be stepped over and a stale value attributed forward. Carrying values
-	 * across a push/pull pair is grm-mej.3's job.
+	 * <b>The stack page is now forwarded through</b> (grm-mej.3 increment 2 -- this test used to
+	 * be named {@code declinesForwardingThroughTheStackPage} and asserted the opposite). The
+	 * blanket refusal was ruled over-conservative: dodge's {@code FUN_ff08} parks its argument at
+	 * {@code $0103} and reloads it past an intervening, unrelated {@code PHA}, and refusing the
+	 * whole page declined that case even though nothing pushed onto the stack could plausibly
+	 * alias a low-page cell like {@code $0150} without the stack running ~253 bytes deep --
+	 * {@code BoardBankAnalyzer.argumentSurvivesPrologue} already makes the identical assumption
+	 * over the same dodge routine. See {@code StoredValueScanner.forwardedStoreValue}'s javadoc
+	 * for the full ruling and its residual risk.
+	 * <p>
+	 * {@code PHA} here is still invisible to {@code writesMemory}'s detectors -- it is simply no
+	 * longer treated as reason enough to refuse the whole page, only to (correctly) step over it
+	 * without attributing anything to it.
 	 */
 	@Test
-	public void declinesForwardingThroughTheStackPage() throws Exception {
+	public void forwardsThroughTheStackPageNowThatTheGuardIsRelaxed() throws Exception {
 		builder.setBytes("0x8000", "a9 05", true); // LDA #$05
 		builder.setBytes("0x8002", "8d 50 01", true); // STA $0150
-		builder.setBytes("0x8005", "48", true); // PHA          (invisible stack write)
+		builder.setBytes("0x8005", "48", true); // PHA          (invisible stack write, irrelevant)
 		builder.setBytes("0x8006", "ad 50 01", true); // LDA $0150
 		builder.setBytes("0x8009", "8d 00 80", true); // STA $8000
 
-		assertUnresolved(axromLatch().computeSwitch(program, instructionAt("0x8009"),
+		assertBank(5, axromLatch().computeSwitch(program, instructionAt("0x8009"),
 			BankState.unknown()));
 	}
 

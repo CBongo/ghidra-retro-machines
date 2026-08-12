@@ -2662,8 +2662,14 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * not touch the stack, and the shadow stack would go on trusting a depth that had just moved
 	 * underneath it. Measured, not theorised: the {@code TXS} case was the one unit test that
 	 * failed on the identity comparison.
+	 * <p>
+	 * Package-private for a second consumer (grm-mej.3 increment 2):
+	 * {@code StoredValueScanner.findMatchingPush} needs the identical base-register-aware test
+	 * for its own PHA/PLA depth pairing, over a BACKWARD walk rather than this method's forward
+	 * one. Reused verbatim rather than reimplemented so the two walks cannot silently drift apart
+	 * on what "moves the stack pointer" means.
 	 */
-	private static boolean writesStackPointer(Instruction instr, Register stackPointer) {
+	static boolean writesStackPointer(Instruction instr, Register stackPointer) {
 		Register wanted = stackPointer.getBaseRegister();
 		for (Object o : instr.getResultObjects()) {
 			if (o instanceof Register r && wanted.equals(r.getBaseRegister())) {

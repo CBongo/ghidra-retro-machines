@@ -62,6 +62,13 @@ import ghidra.program.model.symbol.Reference;
  * {@link #plainAbsoluteTarget} already treats zero-page and absolute operands identically.
  * If anything the zero page is the <em>worse</em>-supported case, since zero-page indexed
  * wraps inside the page and {@link #effectiveOperandTarget} therefore declines it.</li>
+ * <li>{@code PLA} (register A only) is paired to the {@code PHA} it pops, BY STACK DEPTH rather
+ * than address, over an intra-block straight-line walk (grm-mej.3 increment 2, see
+ * {@link #findMatchingPush}). Once found, the scan continues from the instruction before that
+ * {@code PHA} with the accumulators intact, so composition after the pop (e.g. {@code PLA / AND
+ * #imm / STA}) still applies. A {@code PLA} paired to a {@code PHP} (a status byte, never a
+ * value), one with no matching push in range, or one separated from its push by ANY control
+ * flow all leave {@code x} wholly unknown, exactly like the fallback below.</li>
  * <li>Any other instruction that modifies the register (transfers, ADC/SBC, shifts,
  * INC/DEC, EOR#imm -- deliberately not modeled bit-wise) leaves {@code x} wholly
  * unknown from that point backward.</li>
@@ -187,8 +194,11 @@ final class StoredValueScanner {
 	 * are here as well as in {@link #storeRegister} because that method deliberately excludes the
 	 * read-modify-write forms, which write memory just the same. The shift/rotate entries write
 	 * memory only in their non-accumulator addressing modes, which {@link #writesMemory} tests.
-	 * Stack pushes are absent on purpose: the stack page is not a cell this scanner ever forwards
-	 * through, and a call -- the other way the stack is written -- ends the walk anyway.
+	 * Stack pushes ({@code PHA}/{@code PHP}) are absent on purpose, and this is still true after
+	 * grm-mej.3 increment 2 relaxed {@link #forwardedStoreValue}'s stack-page refusal: they write
+	 * the stack without naming an address any detector here can see, so they are still stepped
+	 * over as inert rather than recognized as writing whatever cell the walk is forwarding. A
+	 * call -- the other way the stack is written -- ends the walk anyway.
 	 */
 	private static final Set<String> MEMORY_WRITERS =
 		Set.of("STA", "STX", "STY", "INC", "DEC", "ASL", "LSR", "ROL", "ROR");
@@ -274,7 +284,14 @@ final class StoredValueScanner {
 		int oAcc = 0x00;
 
 		Instruction cur = storeInstr;
-		for (int i = 0; i < MAX_BACKWARD_SCAN; i++) {
+		// A plain for(i...) can no longer express the budget: pairing a PLA to its PHA
+		// (below) must spend from this SAME MAX_BACKWARD_SCAN budget rather than a fresh one,
+		// and the amount it spends is not known until the pairing search returns. i is
+		// therefore incremented by hand -- by exactly 1 for every ordinary step, matching the
+		// for-loop's old semantics exactly, and by the pairing search's own step count on a
+		// PLA. See findMatchingPush.
+		int i = 0;
+		while (i < MAX_BACKWARD_SCAN) {
 			if (env.stopsAt(cur.getMinAddress())) {
 				// Reached the entry this query was asked on behalf of: the register's value
 				// here is the caller's, not whatever code happens to sit at a lower address.
@@ -308,6 +325,11 @@ final class StoredValueScanner {
 				// would predate that write, so it's unsound to fall back to the in-state.
 				return combine(aAcc, oAcc, mask, BankState.unknown());
 			}
+
+			// Every prev reached past this point is examined and stepped over -- exactly the
+			// for-loop's old per-iteration i++, now explicit because the PLA branch below may
+			// additionally consume several more steps from this same budget in one go.
+			i++;
 
 			String mnem = prev.getMnemonicString().toUpperCase();
 
@@ -375,6 +397,23 @@ final class StoredValueScanner {
 				}
 			}
 
+			if (reg == 'A' && mnem.equals("PLA")) {
+				// grm-mej.3 increment 2: rather than surrender to the generic clobber below, find
+				// the PHA this PLA pairs with (by stack DEPTH, not address -- see
+				// findMatchingPush) and keep resolving from the value A held right before it. The
+				// accumulators are intact and keep composing across the pop, which is what makes
+				// "PLA / AND #imm / STA" resolve correctly and not just a bare "PLA / STA".
+				int[] stepsConsumed = new int[1];
+				Instruction pha = findMatchingPush(program, prev, MAX_BACKWARD_SCAN - i, hooks,
+					env, stepsConsumed);
+				i += stepsConsumed[0];
+				if (pha == null) {
+					return combine(aAcc, oAcc, mask, BankState.unknown());
+				}
+				cur = pha;
+				continue;
+			}
+
 			if (modifiers.contains(mnem)) {
 				return combine(aAcc, oAcc, mask, BankState.unknown());
 			}
@@ -384,6 +423,127 @@ final class StoredValueScanner {
 			cur = prev;
 		}
 		return combine(aAcc, oAcc, mask, BankState.unknown());
+	}
+
+	/**
+	 * Finds the {@code PHA} that a {@code PLA} pairs with, walking backward from the
+	 * instruction immediately preceding {@code pla} and matching by STACK DEPTH rather than
+	 * address (grm-mej.3 increment 2). A counter starts at 1 (one push is owed); {@code PHA}/
+	 * {@code PHP} decrement it and a nested {@code PLA}/{@code PLP} increment it, so an inner
+	 * push/pull pair fully balances before an outer pairing is considered. The match is the
+	 * push instruction seen when the counter reaches 0.
+	 * <p>
+	 * <b>Returns {@code null} (abandon) when:</b>
+	 * <ul>
+	 * <li>the matching push is a {@code PHP} -- a status byte pushed by {@code PHP} is never a
+	 * value, so a {@code PLA} that pairs with one cannot be resolved as one either;</li>
+	 * <li>the stack pointer moves by anything other than {@code PHA}/{@code PHP}/{@code PLA}/
+	 * {@code PLP} -- compared by BASE register via {@link BoardBankAnalyzer#writesStackPointer},
+	 * reused rather than reimplemented because the 6502 stack-pointer-by-two-names trap it
+	 * guards against ({@code TXS}'s p-code writing the 1-byte {@code S} while
+	 * {@code CompilerSpec.getStackPointer()} answers the 2-byte {@code SP}) applies here
+	 * identically;</li>
+	 * <li>any instruction in the span has {@code getFlows().length > 0}, a null fall-through, or
+	 * is a call -- this walk is intra-block and straight-line only, matching the increment's own
+	 * name, and is what makes the pairing sound: if any control flow could enter between the
+	 * {@code PHA} and the {@code PLA}, a different path could have pushed a different byte, and
+	 * attributing the pop to THIS push would be a confident wrong value rather than a missing
+	 * one (see the class javadoc's PLA bullet for the full soundness argument);</li>
+	 * <li>{@code cur} is a control-flow join not licensed by {@code env}
+	 * ({@link #isControlFlowJoin}) -- the same reasoning as every other backward walk in this
+	 * class: a join means some other path reaches this point in the span with a potentially
+	 * different stack depth, which is exactly the hazard the bullet above describes for an
+	 * outgoing branch, mirrored for an incoming one;</li>
+	 * <li>a mechanism write ({@link Hooks#isMechanismWrite}) is seen anywhere in the span --
+	 * mirroring {@link #resolveStoredValue}'s identical mid-scan abort, and load-bearing for the
+	 * SAME reason there: once a matching {@code PHA} is found, the enclosing walk resumes
+	 * resolving from BEFORE it, and any value it eventually reads from {@code inStateAtStore}
+	 * (a write-through mirror load, say) would be attributed the state AFTER the final store --
+	 * i.e. after a mechanism write this span skipped over. That is a confident WRONG value, not
+	 * a missing one, which is the failure direction this scanner exists to avoid.
+	 * <b>Deliberately not relaxed</b>, even though it is exactly what blocks smb2's
+	 * {@code ff88} shape ({@code ASL A / PHA / LDA #imm / STA <mechanism> / PLA / STA <chain>}):
+	 * a value resolved from in-state must never cross a mechanism write, but a value resolved
+	 * from pure immediates could safely do so, and telling the two apart is bead grm-mej.3 item
+	 * 5's job (which also needs bit-wise {@code ASL} modeling to be of any use on that shape --
+	 * {@code ASL A} is today an opaque A-modifier regardless). Relaxing this abort here, before
+	 * that distinction exists, would reintroduce the exact wrong-value hazard this bullet
+	 * prevents;</li>
+	 * <li>{@code env} claims this address as its entry -- the caller's stack contents are not
+	 * modeled, mirroring {@link #forwardedStoreValue}'s identical refusal for memory;</li>
+	 * <li>the instruction before {@code cur} does not exist ({@code null}) -- the block's start
+	 * was reached with the counter still nonzero, i.e. an unbalanced pop;</li>
+	 * <li>{@code budgetSteps} is exhausted before a match is found.</li>
+	 * </ul>
+	 *
+	 * @param budgetSteps    how many further instructions this search may step over -- SPENT
+	 *                       FROM the caller's {@link #MAX_BACKWARD_SCAN} budget, not a fresh one,
+	 *                       so a save/restore spanning more than the budget degrades to unknown
+	 *                       rather than silently scanning further
+	 * @param stepsConsumed  single-element out-param: how many instructions this search actually
+	 *                       stepped over, valid on every return path (including a null one) so
+	 *                       the caller's own counter stays accurate whether or not a match was
+	 *                       found
+	 */
+	private static Instruction findMatchingPush(Program program, Instruction pla, int budgetSteps,
+			Hooks hooks, RegisterEnv env, int[] stepsConsumed) {
+		Register stackPointer = program.getCompilerSpec().getStackPointer();
+		if (stackPointer == null) {
+			stepsConsumed[0] = 0;
+			return null; // cannot verify the depth model -- do not assume the favorable answer
+		}
+		Listing listing = program.getListing();
+		int depth = 1; // one push is owed
+		Instruction cur = pla;
+		int steps = 0;
+		while (steps < budgetSteps) {
+			if (env.stopsAt(cur.getMinAddress())) {
+				break; // the caller's stack is not modeled -- mirrors forwardedStoreValue
+			}
+			Instruction prev = listing.getInstructionBefore(cur.getMinAddress());
+			if (prev == null) {
+				break; // block start reached with the counter still nonzero -- unbalanced
+			}
+			Address prevFallThrough = prev.getFallThrough();
+			if (prevFallThrough == null || !prevFallThrough.equals(cur.getMinAddress())) {
+				break; // left the basic block
+			}
+			if (isControlFlowJoin(program, cur, prev) && !env.mayCrossJoinAt(cur.getMinAddress())) {
+				break; // another path could reach here with a different stack depth
+			}
+			if (prev.getFlows().length > 0 || prev.getFlowType().isCall()) {
+				break; // not straight-line -- see this method's javadoc
+			}
+			if (hooks.isMechanismWrite(prev)) {
+				break; // a value later resolved from in-state must not cross this -- see javadoc
+			}
+			steps++;
+			String mnem = prev.getMnemonicString().toUpperCase();
+			switch (mnem) {
+				case "PHA" -> {
+					if (--depth == 0) {
+						stepsConsumed[0] = steps;
+						return prev;
+					}
+				}
+				case "PHP" -> {
+					if (--depth == 0) {
+						stepsConsumed[0] = steps;
+						return null; // the matching push is a status byte, not a value
+					}
+				}
+				case "PLA", "PLP" -> depth++;
+				default -> {
+					if (BoardBankAnalyzer.writesStackPointer(prev, stackPointer)) {
+						stepsConsumed[0] = steps;
+						return null; // the stack pointer moved under us -- see javadoc
+					}
+				}
+			}
+			cur = prev;
+		}
+		stepsConsumed[0] = steps;
+		return null; // budget exhausted before a match was found
 	}
 
 	/**
@@ -517,8 +677,8 @@ final class StoredValueScanner {
 	 * site holding {@code $0720}'s value unmodified, this answers the other half: what the CALLER
 	 * put there. Every guard that makes the answer trustworthy already exists in
 	 * {@link #forwardedStoreValue} -- block linkage, {@link #isControlFlowJoin}, the
-	 * {@link Hooks#isMechanismWrite} abort, the unplaceable-store and call aborts, the stack-page
-	 * refusal -- so this is an entry point onto it, not a second scanner.
+	 * {@link Hooks#isMechanismWrite} abort, and the unplaceable-store and call aborts -- so this
+	 * is an entry point onto it, not a second scanner.
 	 * <p>
 	 * <b>A fresh {@link Budget}</b>, like every other public entry point: only the internal
 	 * forwarding chain shares one (see {@link #resolveStoredValue}'s private overload). A caller's
@@ -572,11 +732,45 @@ final class StoredValueScanner {
 	 * The {@code env} entry stop ends the walk with {@link BankState#unknown()} rather than
 	 * adopting anything: {@link RegisterEnv} describes a call site's <em>registers</em>, and says
 	 * nothing whatever about memory. A caller's zero page is not modeled and must not be guessed.
+	 * <p>
+	 * <b>Stack-page cells ($0100-$01FF) ARE forwarded through, deliberately</b> (grm-mej.3
+	 * increment 2; the ruling below is the project owner's, recorded here for the implementation
+	 * that carries it out). Before this increment the whole page was refused outright: a blanket
+	 * guard existed because {@code PHA}/{@code PHP} write the stack without naming an address any
+	 * of {@link #writesMemory}'s detectors can see, so a push between a store and a load of the
+	 * same stack cell would be stepped over and a stale value attributed forward -- and because
+	 * treating {@code PHA}/{@code PHP} as memory writes to reject that case would have ended the
+	 * walk for <em>every</em> target, Ironsword's {@code FUN_ffc0} has a {@code PHA} sitting
+	 * between the {@code STA $C3} this forwards from and the {@code ORA $C3} that consumes it.
+	 * <p>
+	 * The guard is now accepted to be over-conservative for a low-in-the-page cell: dodge's
+	 * {@code FUN_ff08} parks its argument at {@code $0103} and reloads it several instructions
+	 * later, stepping over an intervening {@code PHA} that is unrelated to {@code $0103}
+	 * entirely. Refusing the whole page declines that case even though nothing pushed onto the
+	 * stack could plausibly alias {@code $0103} -- doing so would need the stack to run ~253
+	 * bytes deep at the moment of the push, which does not happen in practice; games park scratch
+	 * cells low in the stack page precisely because the stack never reaches them. This is the
+	 * identical aliasing assumption {@code BoardBankAnalyzer.argumentSurvivesPrologue} already
+	 * makes over this same dodge routine, so refusing here was internally inconsistent rather
+	 * than conservative -- one code path trusted the low stack page and the other did not, over
+	 * the same bytes of the same ROM.
+	 * <p>
+	 * <b>The residual risk</b> is exactly that ~253-byte-deep-stack scenario: a push that
+	 * genuinely does reach a cell this walk is now willing to forward through would alias a value
+	 * that was never really stored there, and nothing here detects it. That risk is accepted, not
+	 * eliminated -- it mirrors what {@code argumentSurvivesPrologue} already accepts.
+	 * <p>
+	 * The motivating reason the guard had to key on the CELL being read rather than on the
+	 * instructions passed over remains true and still shapes this method even though the refusal
+	 * itself is gone: {@code PHA}/{@code PHP} are still invisible to {@link #writesMemory}, so a
+	 * push that genuinely does write the forwarded cell (the accepted residual risk above) is
+	 * still stepped over rather than caught -- there is no cheaper per-instruction detector for
+	 * it, only the low-probability argument above.
 	 */
 	private static BankState forwardedStoreValue(Program program, Instruction useInstr,
 			Address target, BankState inStateAtStore, Hooks hooks, RegisterEnv env, Budget budget,
 			int depth) {
-		if (target == null || depth >= MAX_RESOLVE_DEPTH || inStackPage(target)) {
+		if (target == null || depth >= MAX_RESOLVE_DEPTH) {
 			return BankState.unknown();
 		}
 		Listing listing = program.getListing();
@@ -634,27 +828,6 @@ final class StoredValueScanner {
 			cur = prev;
 		}
 		return BankState.unknown();
-	}
-
-	/**
-	 * Whether {@code addr} is in the 6502 stack page, {@code $0100-$01FF}.
-	 * <p>
-	 * {@link #forwardedStoreValue} refuses to forward through a stack cell, and this guard is
-	 * load-bearing rather than decorative. {@code PHA}/{@code PHP} write the stack without naming
-	 * an address any of {@link #writesMemory}'s detectors can see, so without this a push between
-	 * a store and a load of the same stack cell would be stepped over and the stale value
-	 * attributed forward. Declining the whole page is the cheap sound answer; carrying values
-	 * across a push/pull pair is a separate dataflow domain and belongs to grm-mej.3.
-	 * <p>
-	 * The alternative -- treating {@code PHA}/{@code PHP} as memory writes -- was rejected because
-	 * it would end the walk for <em>every</em> target, and Ironsword's {@code FUN_ffc0} has a
-	 * {@code PHA} at {@code $FFC6} sitting between the {@code STA $C3} this forwards from and the
-	 * {@code ORA $C3} that consumes it. That is the motivating case, so the guard has to key on
-	 * the cell being read, not on the instructions passed over.
-	 */
-	private static boolean inStackPage(Address addr) {
-		long offset = addr.getOffset();
-		return offset >= 0x0100 && offset <= 0x01FF;
 	}
 
 	/**
