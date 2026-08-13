@@ -198,7 +198,10 @@ final class StoredValueScanner {
 	 * grm-mej.3 increment 2 relaxed {@link #forwardedStoreValue}'s stack-page refusal: they write
 	 * the stack without naming an address any detector here can see, so they are still stepped
 	 * over as inert rather than recognized as writing whatever cell the walk is forwarding. A
-	 * call -- the other way the stack is written -- ends the walk anyway.
+	 * call -- the other way the stack is written -- ends the walk anyway. What keeps that sound
+	 * is {@link StackFloor}, applied at the cell being forwarded rather than here: no
+	 * per-instruction detector for a push's target is possible without tracking {@code S}, so
+	 * the guard has to key on the address the walk cares about instead.
 	 */
 	private static final Set<String> MEMORY_WRITERS =
 		Set.of("STA", "STX", "STY", "INC", "DEC", "ASL", "LSR", "ROL", "ROR");
@@ -733,8 +736,9 @@ final class StoredValueScanner {
 	 * adopting anything: {@link RegisterEnv} describes a call site's <em>registers</em>, and says
 	 * nothing whatever about memory. A caller's zero page is not modeled and must not be guessed.
 	 * <p>
-	 * <b>Stack-page cells ($0100-$01FF) ARE forwarded through, deliberately</b> (grm-mej.3
-	 * increment 2; the ruling below is the project owner's, recorded here for the implementation
+	 * <b>Stack-page cells BELOW the assumed stack floor ARE forwarded through, deliberately</b>
+	 * ({@link StackFloor}; grm-mej.3 increment 2, narrowed by the floor afterwards -- the ruling
+	 * below is the project owner's, recorded here for the implementation
 	 * that carries it out). Before this increment the whole page was refused outright: a blanket
 	 * guard existed because {@code PHA}/{@code PHP} write the stack without naming an address any
 	 * of {@link #writesMemory}'s detectors can see, so a push between a store and a load of the
@@ -755,10 +759,15 @@ final class StoredValueScanner {
 	 * than conservative -- one code path trusted the low stack page and the other did not, over
 	 * the same bytes of the same ROM.
 	 * <p>
-	 * <b>The residual risk</b> is exactly that ~253-byte-deep-stack scenario: a push that
-	 * genuinely does reach a cell this walk is now willing to forward through would alias a value
-	 * that was never really stored there, and nothing here detects it. That risk is accepted, not
-	 * eliminated -- it mirrors what {@code argumentSurvivesPrologue} already accepts.
+	 * <b>The residual risk</b> is exactly that deep-stack scenario: a push that genuinely does
+	 * reach a cell this walk is willing to forward through would alias a value that was never
+	 * really stored there, and nothing here detects it. It is now <em>bounded</em> rather than
+	 * merely accepted: {@link StackFloor#mayAliasStack} refuses any cell at or above the assumed
+	 * floor, so the risk is confined to a title whose stack runs deeper than that floor, and the
+	 * remedy for such a title is to move the floor rather than to re-litigate this method.
+	 * {@code argumentSurvivesPrologue} and {@code inboundArgumentCell} consult the same floor,
+	 * which is what keeps the three walks agreeing about the same bytes of the same ROM -- the
+	 * inconsistency that motivated increment 2 in the first place.
 	 * <p>
 	 * The motivating reason the guard had to key on the CELL being read rather than on the
 	 * instructions passed over remains true and still shapes this method even though the refusal
@@ -771,6 +780,10 @@ final class StoredValueScanner {
 			Address target, BankState inStateAtStore, Hooks hooks, RegisterEnv env, Budget budget,
 			int depth) {
 		if (target == null || depth >= MAX_RESOLVE_DEPTH) {
+			return BankState.unknown();
+		}
+		if (StackFloor.mayAliasStack(program, target)) {
+			// A push between the store and the use would be stepped over silently -- see javadoc.
 			return BankState.unknown();
 		}
 		Listing listing = program.getListing();

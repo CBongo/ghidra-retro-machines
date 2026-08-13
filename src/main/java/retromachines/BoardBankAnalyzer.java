@@ -1991,7 +1991,27 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * unsafe way. It is therefore trusted only over genuinely straight-line code: any
 	 * non-fall-through flow in the range abandons the shadow stack, after which a {@code PLA} is
 	 * an ordinary clobber again. Clobber detection itself is unaffected and stays conservative.
+	 * <p>
+	 * <b>Where the memory half and the stack half collide</b>: a push writes memory too, at
+	 * {@code $0100 + S}, so a tracked cell in the stack page could be clobbered by the very
+	 * {@code PHA} this walk models as a pure save. {@link StackFloor} draws that line, applied
+	 * by {@link #forgetCellsThePushMayHaveHit}; the same floor governs
+	 * {@code StoredValueScanner.forwardedStoreValue} and {@link #inboundArgumentCell}, so all
+	 * three walks now make one assumption instead of three tacit ones.
 	 */
+	/**
+	 * Drops every tracked cell a {@code PHA}/{@code PHP} could have landed on, per
+	 * {@link StackFloor}. The pushes are otherwise {@code modelled = true} and so skip the
+	 * generic {@code argumentCells.removeIf} below -- which is right for the register half (a
+	 * push does not clobber {@code reg}) and wrong for the memory half, since a push does write
+	 * memory, at an address no detector in {@link StoredValueScanner} can name because it is
+	 * {@code $0100 + S}. Below the floor this removes nothing, which is the whole point: the
+	 * measured cell in Double Dribble and Castlevania 2 is {@code $0103}.
+	 */
+	private static void forgetCellsThePushMayHaveHit(Program program, Set<Address> argumentCells) {
+		argumentCells.removeIf(cell -> StackFloor.mayAliasStack(program, cell));
+	}
+
 	static boolean argumentSurvivesPrologue(Program program, Address entry, Address firstSite,
 			char reg) {
 		if (entry == null || firstSite == null || entry.compareTo(firstSite) > 0) {
@@ -2033,6 +2053,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 						if (straightLine) {
 							saved.push(holdsArgument);
 						}
+						forgetCellsThePushMayHaveHit(program, argumentCells);
 						modelled = true;
 					}
 					case "PLA" -> {
@@ -2055,6 +2076,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 						if (straightLine) {
 							saved.push(Boolean.FALSE);
 						}
+						forgetCellsThePushMayHaveHit(program, argumentCells);
 						modelled = true;
 					}
 					case "PLP" -> {
@@ -2595,6 +2617,13 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * save/restore model a missed write is bounded by {@code holdsArgument}; here it is directly a
 	 * confident wrong bank.
 	 *
+	 * <b>A cell in the live part of the stack page is refused</b> ({@link StackFloor}). This walk
+	 * is the one place where the hazard is not hypothetical: the caller reached {@code entry}
+	 * through a {@code JSR}, which pushed two bytes, and neither that nor a {@code PHA} inside
+	 * the range is visible to {@link StoredValueScanner#writesMemory}. Unlike the other two
+	 * consumers of the floor, a wrong answer here is a confident wrong bank rather than a
+	 * forfeited forward, so the guard matters most here even though the code is smallest.
+	 *
 	 * @param entry     where control actually arrives -- {@link #insideHelperEntry}
 	 * @param valueSite where the mechanism consumes the byte -- {@link #helperValueSite}
 	 */
@@ -2639,7 +2668,13 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			}
 			cursor = next;
 		}
-		return cursor.equals(valueSite) && cell != null && !written.contains(cell) ? cell : null;
+		// StackFloor: the caller's own JSR pushed a return address, and any PHA in the range was
+		// stepped over as inert, both at addresses writesMemory cannot name. A cell at or above
+		// the floor may therefore have been clobbered between the caller's store and this load.
+		// (The null-cell case reaches mayAliasStack's "unplaceable reads as unsafe" answer and
+		// would be rejected by the cell != null test below regardless -- same verdict either way.)
+		return cursor.equals(valueSite) && cell != null && !written.contains(cell) &&
+			!StackFloor.mayAliasStack(program, cell) ? cell : null;
 	}
 
 	/** {@link #inboundArgumentCell} asked of a helper model; null for a call-edge wrapper. */

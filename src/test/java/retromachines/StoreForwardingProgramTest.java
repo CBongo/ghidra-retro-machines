@@ -27,6 +27,7 @@ import ghidra.program.database.ProgramBuilder;
 import ghidra.program.database.ProgramDB;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.listing.Instruction;
+import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryBlock;
 
 /**
@@ -205,7 +206,7 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 	 * Note the {@code PHA} at {@code $8006} sitting between the {@code STA $C3} and the
 	 * {@code ORA $C3}. It is load-bearing: treating pushes as opaque memory writes would end the
 	 * walk here, which is why the stack is guarded by the CELL being read
-	 * ({@code StoredValueScanner.inStackPage}) rather than by the instructions passed over.
+	 * ({@link StackFloor#mayAliasStack}) rather than by the instructions passed over.
 	 */
 	@Test
 	public void ironswordCommitSiteDerivesArgumentLaunderedThroughRam() throws Exception {
@@ -351,29 +352,74 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 	}
 
 	/**
-	 * <b>The stack page is now forwarded through</b> (grm-mej.3 increment 2 -- this test used to
-	 * be named {@code declinesForwardingThroughTheStackPage} and asserted the opposite). The
-	 * blanket refusal was ruled over-conservative: dodge's {@code FUN_ff08} parks its argument at
-	 * {@code $0103} and reloads it past an intervening, unrelated {@code PHA}, and refusing the
-	 * whole page declined that case even though nothing pushed onto the stack could plausibly
-	 * alias a low-page cell like {@code $0150} without the stack running ~253 bytes deep --
-	 * {@code BoardBankAnalyzer.argumentSurvivesPrologue} already makes the identical assumption
-	 * over the same dodge routine. See {@code StoredValueScanner.forwardedStoreValue}'s javadoc
-	 * for the full ruling and its residual risk.
+	 * <b>The stack page BELOW the floor is forwarded through</b> (grm-mej.3 increment 2 -- this
+	 * test used to be named {@code declinesForwardingThroughTheStackPage} and asserted the
+	 * opposite). The blanket refusal was ruled over-conservative: dodge's {@code FUN_ff08} parks
+	 * its argument at {@code $0103}, exactly as modelled here, and reloads it past an
+	 * intervening, unrelated {@code PHA}. Refusing the whole page declined that case even though
+	 * nothing pushed onto the stack could reach {@code $0103} without the stack running ~253
+	 * bytes deep -- {@code BoardBankAnalyzer.argumentSurvivesPrologue} already makes the
+	 * identical assumption over the same dodge routine. See {@link StackFloor} for the full
+	 * ruling and {@code StoredValueScanner.forwardedStoreValue} for its residual risk.
 	 * <p>
 	 * {@code PHA} here is still invisible to {@code writesMemory}'s detectors -- it is simply no
 	 * longer treated as reason enough to refuse the whole page, only to (correctly) step over it
 	 * without attributing anything to it.
 	 */
 	@Test
-	public void forwardsThroughTheStackPageNowThatTheGuardIsRelaxed() throws Exception {
+	public void forwardsThroughTheStackPageBelowTheFloor() throws Exception {
 		builder.setBytes("0x8000", "a9 05", true); // LDA #$05
-		builder.setBytes("0x8002", "8d 50 01", true); // STA $0150
+		builder.setBytes("0x8002", "8d 03 01", true); // STA $0103
 		builder.setBytes("0x8005", "48", true); // PHA          (invisible stack write, irrelevant)
-		builder.setBytes("0x8006", "ad 50 01", true); // LDA $0150
+		builder.setBytes("0x8006", "ad 03 01", true); // LDA $0103
 		builder.setBytes("0x8009", "8d 00 80", true); // STA $8000
 
 		assertBank(5, axromLatch().computeSwitch(program, instructionAt("0x8009"),
+			BankState.unknown()));
+	}
+
+	/**
+	 * The other side of the same line: {@code $0150} is inside the stack under
+	 * {@link StackFloor#DEFAULT_FLOOR}, so the identical instruction sequence declines. The
+	 * {@code PHA} at {@code $8005} is exactly the write that cannot be seen -- if the stack is
+	 * only 45 bytes deep here it lands on {@code $0150} itself and the value forwarded would be
+	 * the pushed byte, not the {@code 5}.
+	 */
+	@Test
+	public void declinesForwardingThroughTheStackPageAboveTheFloor() throws Exception {
+		builder.setBytes("0x8000", "a9 05", true); // LDA #$05
+		builder.setBytes("0x8002", "8d 50 01", true); // STA $0150
+		builder.setBytes("0x8005", "48", true); // PHA
+		builder.setBytes("0x8006", "ad 50 01", true); // LDA $0150
+		builder.setBytes("0x8009", "8d 00 80", true); // STA $8000
+
+		assertUnresolved(axromLatch().computeSwitch(program, instructionAt("0x8009"),
+			BankState.unknown()));
+	}
+
+	/**
+	 * The floor is a knob, not a constant: raising it on the program moves the same {@code $0103}
+	 * cell from "scratch" to "stack" without any other change. This is the mechanism a per-game
+	 * descriptor would use if a title were ever found whose stack runs deep, and the reason the
+	 * question was closed by a threshold rather than by an emulator trace of every title.
+	 */
+	@Test
+	public void programPropertyMovesTheFloor() throws Exception {
+		builder.setBytes("0x8000", "a9 05", true); // LDA #$05
+		builder.setBytes("0x8002", "8d 03 01", true); // STA $0103
+		builder.setBytes("0x8005", "48", true); // PHA
+		builder.setBytes("0x8006", "ad 03 01", true); // LDA $0103
+		builder.setBytes("0x8009", "8d 00 80", true); // STA $8000
+
+		int tx = program.startTransaction("set stack floor");
+		try {
+			program.getOptions(Program.PROGRAM_INFO).setString(StackFloor.PROPERTY, "$00");
+		}
+		finally {
+			program.endTransaction(tx, true);
+		}
+
+		assertUnresolved(axromLatch().computeSwitch(program, instructionAt("0x8009"),
 			BankState.unknown()));
 	}
 
