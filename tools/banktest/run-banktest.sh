@@ -2,13 +2,17 @@
 # C64 + C128 + NES banking-analyzer regression suite driver (bead grm-wzl, extended
 # to NES by grm-5tl.17).
 #
-# Usage: run-banktest.sh [check|bless] [chunk ...]
+# Usage: run-banktest.sh [check|bless] [--force-criteria] [chunk ...]
 #
 #   check (default)  Generate the test PRGs, import each with analyzeHeadless
 #                    using the C64PrgLoader, run VerifyBankTest.java, and fail
 #                    if any criterion fails or the normalized behavior dump
 #                    differs from the golden copies in expected/.
-#   bless            Same run, but (re)capture the dumps into expected/.
+#   bless            Same run, but (re)capture the dumps into expected/ --
+#                    EXCEPT for a fixture whose criteria failed, which is
+#                    refused and left byte-identical (bead grm-aqi).
+#   --force-criteria bless a fixture even though its criteria failed. Only
+#                    meaningful with bless; reports every row it forced.
 #
 # Chunks (default: all):
 #   c64-banking   banktest through banktest4
@@ -51,7 +55,7 @@ EXPECTED_DIR="$SCRIPT_DIR/expected"
 grm_default_headless
 
 usage() {
-	echo "usage: $0 [check|bless] [chunk ...]" >&2
+	echo "usage: $0 [check|bless] [--force-criteria] [chunk ...]" >&2
 	echo "       $0 --list-chunks" >&2
 }
 
@@ -82,6 +86,24 @@ MODE=check
 if [ $# -gt 0 ] && { [ "$1" = check ] || [ "$1" = bless ]; }; then
 	MODE="$1"
 	shift
+fi
+
+# --force-criteria is parsed as a leading flag rather than a chunk name so the
+# chunk validator below keeps rejecting typos outright.
+FORCE_CRITERIA=0
+while [ $# -gt 0 ]; do
+	case "$1" in
+		--force-criteria) FORCE_CRITERIA=1; shift ;;
+		--) shift; break ;;
+		*) break ;;
+	esac
+done
+# A check run writes no goldens, so the flag could only mislead there -- refuse
+# it rather than accept a no-op that reads as "and bless the failures too".
+if [ "$FORCE_CRITERIA" -eq 1 ] && [ "$MODE" != bless ]; then
+	echo "--force-criteria is only meaningful with bless" >&2
+	usage
+	exit 2
 fi
 CHUNKS=("$@")
 if [ ${#CHUNKS[@]} -eq 0 ]; then
@@ -121,6 +143,10 @@ grm_apply_settings_base
 
 WORK="$(grm_work_dir banktest)"
 fail=0
+# Rows bless_candidate refused (criteria failed) or forced through anyway, so the
+# end-of-run summary can name them instead of leaving them in the scrollback.
+REFUSED=()
+FORCED=()
 
 # --- candidate-dump cache (bead grm-lne) --------------------------------
 # The review-then-bless loop runs `check` (imports every fixture and diffs its
@@ -223,6 +249,64 @@ if selected nes-banking; then
 fi
 if selected petscii-strings; then generate mkpetsciistringtest.py "$WORK/prg"; fi
 
+# The ENTIRE tail of a bless, shared by the cached fast path and the fresh-import
+# path below (bead grm-aqi). Both used to carry their own copy of this, and the two
+# drifted -- only the cached one showed the golden diff, and they flagged failed
+# criteria on opposite sides of the copy. Anything a bless decides belongs here, so
+# "cached and uncached behave the same" holds by construction rather than by review.
+#
+#   bless_candidate <name> <candidate-dump> <criteria-ok 0|1>
+#
+# The criteria verdict arrives as a plain flag because its SOURCE differs -- the
+# cached path reads a stored .crit, the fresh path the live headless output -- while
+# the decision made from it must not.
+bless_candidate() {
+	local name="$1" candidate="$2" crit_ok="$3"
+	local golden="$EXPECTED_DIR/$name.dump"
+	mkdir -p "$EXPECTED_DIR"
+
+	# Print the diff BEFORE the gate: on a refusal this is what you would have
+	# blessed, which is the thing worth seeing.
+	if [ -f "$golden" ]; then
+		diff -u <(tr -d '\r' <"$golden") "$candidate" \
+			&& echo "no change vs golden: $name"
+	else
+		echo "no existing golden for $name -- creating it"
+	fi
+
+	# Fail closed. A criteria failure says the fixture's own asserted invariants are
+	# violated -- a different claim from "the dump moved", which is what bless exists
+	# to accept. It also leaves no trace in the artifact: the golden holds only the
+	# BANKDUMP section, never the SUITE verdict, so a blessed-over-a-failure oracle is
+	# indistinguishable from a good one afterwards and `git diff` cannot show it.
+	if [ "$crit_ok" -ne 1 ] && [ "$FORCE_CRITERIA" -ne 1 ]; then
+		echo "REFUSED: criteria failed for $name -- golden left unchanged"
+		echo "         re-run with --force-criteria to bless it anyway"
+		fail=1
+		REFUSED+=("$name")
+		return
+	fi
+
+	# Publish atomically (grm-aqi acceptance criteria; shared with grm-z34): write a
+	# sibling temp and rename, so an interrupted or out-of-space run leaves the old
+	# oracle intact rather than a truncated one. Sibling by construction, so mv is a
+	# same-filesystem rename.
+	local tmp="$golden.tmp.$$"
+	if ! cp "$candidate" "$tmp" || ! mv -f "$tmp" "$golden"; then
+		rm -f "$tmp"
+		echo "FAIL: could not write $golden"
+		fail=1
+		return
+	fi
+
+	if [ "$crit_ok" -ne 1 ]; then
+		echo "FORCED bless over failed criteria: $golden"
+		FORCED+=("$name")
+	else
+		echo "blessed $golden"
+	fi
+}
+
 # Imports $2 (a .prg or .nes fixture) via $3 (the loader name), runs VerifyBankTest.java,
 # extracts the normalized dump, and check|bless's it against expected/$1.dump.
 #
@@ -241,24 +325,19 @@ run_one() {
 
 	# bless fast path: a prior check already produced the exact candidate for
 	# these inputs -- reuse it (reprint its criteria, show the golden diff) and
-	# skip the expensive re-import. Mirrors the non-cache bless below: copy the
-	# candidate regardless, but flag the suite if its cached criteria failed.
+	# skip the expensive re-import. The bless itself is bless_candidate's, exactly
+	# as on the fresh path, so the two cannot decide differently.
 	if [ "$MODE" = bless ] && [ -n "$key" ] && [ -f "$cached" ]; then
 		echo "== $name: reusing cached candidate from prior check (no re-import) =="
 		[ -f "$CACHE_DIR/$key.crit" ] && cat "$CACHE_DIR/$key.crit"
-		mkdir -p "$EXPECTED_DIR"
-		if [ -f "$EXPECTED_DIR/$name.dump" ]; then
-			diff -u <(tr -d '\r' <"$EXPECTED_DIR/$name.dump") "$cached" \
-				&& echo "no change vs golden: $name"
-		else
-			echo "no existing golden for $name -- creating it"
-		fi
-		cp "$cached" "$EXPECTED_DIR/$name.dump"
-		echo "blessed (from cache) $EXPECTED_DIR/$name.dump"
-		if [ -f "$CACHE_DIR/$key.crit" ] && ! grep -q '^SUITE PASS$' "$CACHE_DIR/$key.crit"; then
-			echo "FAIL: cached criteria did not pass for $name"
-			fail=1
-		fi
+		# A .crit that is missing (or empty, which is what the `|| true` on its
+		# writer leaves when the run produced no verdict at all) counts as a
+		# failure, not as a pass: the cache lives under build/ and is disposable,
+		# so the cost of that is one re-check, and the alternative is blessing on
+		# the strength of an absent record.
+		local crit_ok=0
+		grep -q '^SUITE PASS$' "$CACHE_DIR/$key.crit" 2>/dev/null && crit_ok=1
+		bless_candidate "$name" "$cached" "$crit_ok"
 		return
 	fi
 
@@ -296,7 +375,10 @@ run_one() {
 		"$log" >"$stripped"
 	awk '/^=== BANKDUMP BEGIN ===$/{f=1;next} /^=== BANKDUMP END ===$/{f=0} f' \
 		"$stripped" >"$WORK/$name.dump"
-	grep '^CRITERION ' "$stripped" || true
+	# Same shape the cached path replays from .crit (and the same regex that writes
+	# it below), so a fresh bless and a cached one print the same thing -- including
+	# the SUITE verdict line, which a fresh run used to swallow.
+	grep -E '^(CRITERION |SUITE (PASS|FAIL))' "$stripped" || true
 
 	if [ $status -ne 0 ]; then
 		echo "FAIL: analyzeHeadless exited $status for $name (log: $log)"
@@ -308,9 +390,16 @@ run_one() {
 		fail=1
 		return
 	fi
+	local crit_ok=1
 	if ! grep -q '^SUITE PASS$' "$stripped"; then
-		echo "FAIL: criteria failed for $name (log: $log)"
-		fail=1
+		crit_ok=0
+		# In bless mode the verdict is bless_candidate's to act on (refuse, or force
+		# and report). Flagging the suite here as well would make --force-criteria
+		# unable to exit 0, i.e. an override that does not actually override.
+		if [ "$MODE" != bless ]; then
+			echo "FAIL: criteria failed for $name (log: $log)"
+			fail=1
+		fi
 	fi
 
 	# Stash this valid candidate (and its criteria verdict) so a follow-up bless
@@ -323,9 +412,7 @@ run_one() {
 	fi
 
 	if [ "$MODE" = bless ]; then
-		mkdir -p "$EXPECTED_DIR"
-		cp "$WORK/$name.dump" "$EXPECTED_DIR/$name.dump"
-		echo "blessed $EXPECTED_DIR/$name.dump"
+		bless_candidate "$name" "$WORK/$name.dump" "$crit_ok"
 	else
 		if [ ! -f "$EXPECTED_DIR/$name.dump" ]; then
 			echo "FAIL: missing golden $EXPECTED_DIR/$name.dump (run bless first)"
@@ -517,6 +604,15 @@ fi
 
 if selected petscii-strings; then
 	run_one petsciistringtest "$WORK/prg/petsciistringtest.prg" C64PrgLoader
+fi
+
+# Name the rows bless_candidate acted unusually on. A bless over a whole chunk
+# scrolls, and both of these are exactly the lines you must not miss.
+if [ ${#REFUSED[@]} -gt 0 ]; then
+	echo "REFUSED to bless (criteria failed, goldens unchanged): ${REFUSED[*]}"
+fi
+if [ ${#FORCED[@]} -gt 0 ]; then
+	echo "FORCED bless over failed criteria (--force-criteria): ${FORCED[*]}"
 fi
 
 if [ $fail -ne 0 ]; then

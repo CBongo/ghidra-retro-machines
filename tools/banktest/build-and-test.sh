@@ -8,7 +8,10 @@
 # read-only Ghidra install without serializing on a single Extensions dir,
 # and without an open Ghidra GUI locking files out from under a test run.
 #
-# Usage: build-and-test.sh [check|bless] [chunk ...]
+# Usage: build-and-test.sh [check|bless] [--force-criteria] [chunk ...]
+#
+# bless refuses a fixture whose criteria failed and leaves its golden unchanged
+# (bead grm-aqi); --force-criteria overrides that, and names every row it forced.
 #
 # Environment overrides:
 #   GRM_GHIDRA_INSTALL   Ghidra install dir (default D:/ghidra_<ver>_PUBLIC, where <ver>
@@ -38,12 +41,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 usage() {
 	cat <<EOF
-usage: $0 [check|bless] [chunk ...]
+usage: $0 [check|bless] [--force-criteria] [chunk ...]
 
 Chunks: c64-banking c64-loader c64-recovery basic-petscii basic-dialects pet-loader c128-loader nes-banking
         petscii-strings unit all
 
 With no chunks, all is selected. Use --list-chunks to print this list.
+
+--force-criteria  bless a fixture even though its criteria failed (bless only).
 EOF
 }
 
@@ -76,6 +81,21 @@ MODE="check"
 if [ "${1:-}" = "check" ] || [ "${1:-}" = "bless" ]; then
 	MODE="$1"
 	shift
+fi
+
+# Passed straight through to run-banktest.sh, which owns the semantics; validated
+# there too, so the two front ends cannot disagree about when it is legal.
+RUNNER_FLAGS=()
+while [ "$#" -gt 0 ]; do
+	case "${1:-}" in
+		--force-criteria) RUNNER_FLAGS+=("$1"); shift ;;
+		*) break ;;
+	esac
+done
+if [ "${#RUNNER_FLAGS[@]}" -gt 0 ] && [ "$MODE" != "bless" ]; then
+	echo "FAIL: --force-criteria is only meaningful with bless" >&2
+	usage >&2
+	exit 2
 fi
 
 if [ "$#" -eq 0 ]; then
@@ -271,4 +291,4 @@ fi
 
 # --- 5. Run selected headless chunks against the isolated settings dir -----
 export BANKTEST_SETTINGS_BASE="$SETTINGS_BASE"
-exec "$SCRIPT_DIR/run-banktest.sh" "$MODE" "${RUNNER_CHUNKS[@]}"
+exec "$SCRIPT_DIR/run-banktest.sh" "$MODE" ${RUNNER_FLAGS[@]+"${RUNNER_FLAGS[@]}"} "${RUNNER_CHUNKS[@]}"

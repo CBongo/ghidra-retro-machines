@@ -65,6 +65,34 @@ auto-accept.** Read the diff first and confirm the new behavior is intended; onl
 bless, and only the specific chunk you reviewed. Blessing to make a red suite green without
 understanding the diff defeats the entire suite.
 
+> **`bless` fails closed on criteria failures (`grm-aqi`).** A fixture whose `SUITE PASS`
+> criteria failed is **refused**: its golden is left byte-identical, the row is named in a
+> `REFUSED to bless` summary line, and the suite exits nonzero. The other rows in the same
+> run still bless normally. Both routes — a fresh import and a reused cached candidate —
+> take the same code path (`bless_candidate`), so they cannot decide differently.
+>
+> The reasoning is worth knowing, because it is *not* "failures are bad". `bless` exists to
+> accept **dump movement**, a judgment you form while reading the diff. A criteria failure is
+> a different claim — the fixture's own asserted invariants are violated — and one you
+> probably never evaluated when you typed `bless`. It also leaves **no trace in the
+> artifact**: the golden holds only the `BANKDUMP` section, never the `SUITE` verdict, so a
+> blessed-over-a-failure oracle is indistinguishable from a good one afterwards and `git
+> diff` cannot reveal it. The pre-`grm-aqi` mitigations (prints FAIL, exits nonzero) all
+> lived in terminal scrollback.
+>
+> Override with `--force-criteria`, which blesses anyway and reports every row it forced.
+> The legitimate use is a criterion that has gone *stale* because you deliberately changed
+> what it asserts, and you intend to fix the criterion separately:
+>
+> ```bash
+> bash tools/banktest/build-and-test.sh bless --force-criteria nes-banking
+> ```
+>
+> Structural failures (headless exited nonzero, no `BANKDUMP` section) have always refused
+> and still do — `--force-criteria` does not reach them, since there is no trustworthy dump
+> to bless. Golden writes are atomic (temp + rename), so an interrupted bless leaves the old
+> oracle intact rather than a truncated one.
+
 > **Candidate cache (`grm-lne`).** A `check` run stashes each freshly imported dump in a
 > content-addressed cache under `build/` (gitignored), and a following `bless` reuses it
 > instead of re-running the expensive `analyzeHeadless` import — so the normal

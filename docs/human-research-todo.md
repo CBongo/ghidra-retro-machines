@@ -172,26 +172,6 @@ board with very little agent time. Per mapper:
 
 Blocked on judgment, not effort.
 
-- [ ] **Should `bless` still write a golden when the fixture's criteria failed?** (`grm-aqi`, filed
-      **P1** by the 2026-08-10 quality review.) The review found that `run-banktest.sh:311-314`
-      records the failure and then copies into `expected/` anyway at `:325-328`, and that the cache
-      path is worse — `:256` copies *before* checking the cached criteria at `:258-261`.
-
-      **What the review missed, and why this is your call:** the behavior is **deliberate**. The
-      comment at `:244-245` states the intent — *"Mirrors the non-cache bless below: copy the
-      candidate regardless, but flag the suite if its cached criteria failed."* Someone chose to
-      always produce a candidate for inspection. So fixing this overturns a design decision, not an
-      oversight, and an agent should not do that unilaterally.
-
-      **The case for changing it:** `bless` is the only thing between a bad run and a committed
-      oracle, and the whole gate discipline rests on goldens being trustworthy. **The case for
-      leaving it:** `bless` is a manual command, it prints FAIL, it exits nonzero, and the change is
-      visible in `git diff` before commit — so it cannot silently corrupt anything, and always
-      producing the candidate makes a failing run diagnosable.
-
-      Whichever way you rule, the atomic-write half of `grm-z34` is the same work and is already
-      linked as blocked on this.
-
 - [ ] **CI and dependency locking: yes or no?** (`grm-e7w` P2, already narrowed to just these two
       questions; the mechanical half — the hardcoded `/d/gradle-8.13/bin/gradle` default — was split
       out to `grm-ycv` and needs no decision.)
@@ -257,6 +237,7 @@ Agents can't file these — they need an account and CLA agreement.
 
 | question | answer | bead |
 |---|---|---|
+| Should `bless` still write a golden when the fixture's criteria failed? | **No — ruled 2026-08-12: fail closed, with a `--force-criteria` override.** The "deliberate design decision" the bead warned about was real but made about a different harness: the unconditional bless dates to the suite's *first* commit (`159ce7e`, 2026-07-08), and the candidate cache arrived two weeks later (`c915ec2`, `grm-lne`) and simply *mirrored* it — nobody ever weighed it against the check-then-bless workflow. Two findings killed the case for leaving it. **The stated rationale was never load-bearing:** `check` already writes the candidate to `$WORK` and prints the full `diff -u`, and since `grm-lne` also persists it to the cache with a `.crit` verdict — nothing about diagnosing a failure ever required overwriting `expected/`. **And the golden carries no record of the verdict:** the dump is only the `BANKDUMP` section, so a blessed-over-a-failure oracle is byte-indistinguishable from a good one, which makes "visible in `git diff`" false as a mitigation — every durable artifact says "fine". Also settled: `bless` was never "bless no matter what" anyway (headless-nonzero and missing-`BANKDUMP` already refused; only `SUITE FAIL` fell through), so this makes the three cases uniform rather than inventing a new rule. **Implemented as one shared `bless_candidate` helper both routes call**, because the cached and fresh paths had already drifted in four ways (only the cached one showed the golden diff; they flagged criteria on opposite sides of the copy; only the cached one printed the `SUITE` line; only the cached one announced a missing golden) — parity by construction, not by review. Refusal is per row, so good rows in the same run still bless. Missing/empty `.crit` counts as failure. `--force-criteria` exits 0 and names what it forced. Atomic temp+rename included, which closes `grm-aqi`'s own acceptance criteria — **`grm-z34` keeps only its remaining non-`run_one` write sites** | `grm-aqi` **closed**; unblocks `grm-z34` |
 | blmaster's 13 constant-arg sites vs 4 comments | Measurement artifact — a warning-derived helper population inflated 5 helpers to 36 and constArg 2 to 13 | `grm-8iy.3` **closed** |
 | Was megaman's `9067` regression real? | No — the *old* annotation was wrong. `d846`'s tail `JMP c3b3` sets bank 5 on exit; old "bank 6" came from the last write in its own body. `bankComments` 156 now exceeds the pre-regression 153 | `grm-hum` |
 | Are megaman's `c39c` warnings lost information? | No — `$31` is a stateful counter with a wrap-adjust; the declines are honest | `grm-hum` |

@@ -130,6 +130,12 @@ updates selected golden files only after reviewing the diff:
 bash tools/banktest/build-and-test.sh bless c64-banking
 ```
 
+`bless` **refuses** any fixture whose criteria failed — that golden is left byte-identical, the
+row is named in a `REFUSED to bless` summary line, and the suite exits nonzero (`grm-aqi`). The
+fresh-import and cached-candidate routes share one code path, so they always agree. Override
+only when a criterion has gone stale by intent, and fix the criterion separately:
+`bless --force-criteria <chunk>`. See docs/testing.md for the reasoning.
+
 For the development loop, select one or more chunks (these are not substitutes
 for the full default gate):
 
