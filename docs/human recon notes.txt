@@ -174,3 +174,31 @@ ffa4: LDA $00; STA $8000.  $00 seems to be (correctly) identified as a write-thr
 
 wizwarr (grm-mej.3 inc 1)
 ff69: saves Y in $1B, saves $00 on stack; sets bank to A (via $1D); calls $ff83 (which does JMP($1b)); restores $00 and sets bank from stack. definitely a trampoline.
+
+db3:
+uses $6008 for prg bank switch (mapper 16.4).  nes-bandai-fcg.yaml thinks 16.4 uses $8000-$FFFF but it does not. helper at db2f stores shadow $6a and register $6008. no occurrences of "99 00 60" nor "9D 00 60".  copy loops at e69e/e707/e712 are data not code.
+dbz2:
+helper at d12f stores shadow $4c and register $8008. possible additional sub-shadow at $C5 (ref: d681; pushes $4C on stack first). no occurrences of "9D 00 80"; several occurrences of "99 00 80", all of which are loops where Y goes from 7 to 0 so only affect CHR regs.
+dbz_datach:
+helper at cc28 stores shadow $59 and register $8008.  No occurrences of "99 00 80" nor "9d 00 80".
+dbz_saiyan:
+helper at c9c0 stores shadow $49 and register $8008. No occurrences of "9D 00 80".  Three occurrences of "99 00 80"; all of which are loops where Y goes from 7 to 0 so only affect CHR regs.
+
+dragonpower:
+8ee4/8eeb: overread jump table at 8f00 ($1e actual entries) - no obvious bank switching.
+e3bb: data not code from jump table overread at 91af.
+e906: bogus mid-instruction disassembly from jump table overread at 9076
+ffbe: called from $9913 as first instr of function, and by ffe8.
+ffe8: STA $f2; JSR $ffbe; JMP ($17). called from 983f: saves $f2 on stack, sets $17/18 from table indexed by Y (table is 8000, 8003, 8006, etc. for 6 entries); LDA #1; JSR $ffe8.  the routines terminate by calling helper at ffdc to restore bank from stack.
+ffdc: sets $17/18 from caller return address + 1, pulls saved bank from stack, falls through to ffe8.
+all 4 banks are essentially identical ff88-fff9.
+$f2 is only written by $ffe8 (in so-far disassembled code).
+
+shenlong:
+all 4 banks are essentially identical to each other and to dragonpower.
+
+  Next session's shortest path
+
+  1. bd list --label background-ok → farm out immediately (grm-hhd first; it blocks every parallel agent).
+  2. Fork Phase 0 step 2 — D:/git/ghidra-fork branched with deps fetched, unpatched build not started.
+  3. grm-4nr is open again and wants a DeterminismProbe localization run — still never done.

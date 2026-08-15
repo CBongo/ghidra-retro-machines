@@ -43,23 +43,8 @@ bash tools/banktest/realrom-test.sh nominate H:/emulators/nes/roms   # board-gap
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
-- [ ] **Does any real Bandai cart write an FCG register with an *indexed* store?** (`grm-egw` P3.)
-      The soundness hole is verified in code, not merely suspected:
-      `MosConstantReferenceAnalyzer.addBaseReferenceOnce` replaces a computed reference with one to
-      the operand *base*, and Bandai FCG decodes `addr_mask 0xF / addr_match 0x8` — so `$8008`
-      matches but the `$8000` that replaces it misses, and an indexed register write stops being
-      detected. The bead calls the triggering shape (`STA reg,X` into a mapper register file)
-      "ordinary", but **no shipped title exercises it** — the four Bandai goldens did not move when
-      the bug was introduced.
-
-      **The question:** in `db3` / `dbz2` / `dbz_datach` / `dbz_saiyan`, does any indexed store
-      (`9D`/`99` opcodes) target `$8000-$FFFF`? A byte search finds candidates in seconds; deciding
-      whether a hit is a genuine mapper-register write rather than data needs eyes on the
-      surrounding code, which is the part that costs an agent a build/measure cycle per candidate.
-
-      **"No" is a valuable answer** — it justifies leaving `grm-egw` at P3 indefinitely rather than
-      pre-emptively hardening a path nothing uses. "Yes" makes it a live correctness bug on a
-      shipped board and should raise the priority.
+*Nothing open here right now — the Bandai indexed-store question was answered 2026-08-15 (see the
+Answered table). Add the next one as it comes up.*
 
 ---
 
@@ -83,94 +68,23 @@ change what the numbers mean:
 3. **Is there a bank shadow?** 4 of 4 titles, 7 shadows. Note whether it holds a bank *number* or a
    whole composite register (wizwarr's `$00`).
 
-- [ ] **dragonpower / shenlong** (`grm-hum`, P1 — the only P1 besides `grm-2dr`)
-      Helper identified on each (`FUN_ffbe`, `FUN_8eeb`) but the argument unrecoverable at the call
-      sites. Both are GxROM Dragon Ball titles and likely share one engine — **one trace probably
-      covers two**, but verify that first (see the byte-compare below); it is asserted, not
-      measured.
+- [ ] **shenlong `a03f` and `d9a9`** (`grm-hum`, P1) — **two addresses, and that is all that is
+      left of this item.** The dragonpower/shenlong pass was completed 2026-08-15 (see the Answered
+      table): the engine is byte-identical across the two titles, five of the six warned sites per
+      title are dispositioned, and `FUN_8eeb` turned out not to be code at all. These two are
+      shenlong-only warned "mechanism writes" that nobody has read.
 
-      **contra is DONE and was removed from this item** (traced 2026-08-09, see the Answered table).
-      All ten of its warnings are classified: three are recoverable and blocked on one fix
-      (`grm-k90`), one is a five-valued ROM table, three are shadow/read-back restores (`grm-mej`),
-      one is the helper's own mechanism write, and two are phantoms from a switch-table over-read
-      (`grm-eyn`). Do not re-trace it, and in particular **do not trace `811a` →
-      `FUN_PRG_LO_B1__8259`** — that "third helper in overlay space" is not real code.
+      **Read them and say whether they are code.** dragonpower's two title-unique sites (`e3bb`,
+      `e906`) were both jump-table over-read phantoms, so the prior strongly favours the same
+      answer here — but it is a prediction, not a reading, and a genuine per-bank switch outside
+      the shared engine would be the one thing the completed pass did not account for.
 
-      **ALREADY SETTLED by `grm-hum`'s 2026-08-01 comment — do not re-derive any of it.** That
-      comment is *engine anatomy*, written as reconnaissance before this section's method existed;
-      it is not a def-use pass. It records: the `$FFBE` helper body
-      (`LDA $F2 / ASL / ASL / ORA $F9 / TAY / LDA $FFCC,Y / STA $FFCC,Y / RTS`); the `$FFDC` inline
-      far-call trampoline (pops the return address, `INC`s it, switches, `JMP ($0017)`, so execution
-      resumes at the next instruction in a *different* bank — `grm-v60`); `$F2` = PRG shadow and
-      `$F9` = CHR shadow; and the measured per-offset cross-bank invariant regions
-      (`$FF68-$FFF9` dragonpower / `$FEE0-$FFF9` shenlong, both containing the whole switch engine —
-      compute per offset, **never** as a common suffix, or you get zero).
-
-      It also records a **structural blocker** independent of dataflow: both descriptors declare a
-      single fully-overlaid `PRG_ALL` window, so `bankInvariantRomByte` returns null for every
-      address and the `$FFCC` table is unreadable to the engine even with a perfect index
-      (`grm-e7v`). Anatomy does not predict dispositions, though — contra had a fully-disassembled
-      helper from the same 8/1 comment and its 8/9 pass still produced four new dispositions,
-      including two sites that were not code at all.
-
-      **THE SIX WARNED SITES PER TITLE** (from the blessed goldens; both are at 0 refs / 0 bank
-      comments / 6 warnings, so this is the entire population):
-
-      ```
-      shared by both   8ee4  9913  ffc8  ffea
-      dragonpower only e3bb  e906
-      shenlong only    a03f  d9a9
-      ```
-
-      `8ee4`/`9913`/`ffea` are helper *call sites*; `ffc8`/`e3bb`/`e906`/`a03f`/`d9a9` are raw
-      mechanism writes. **Five open questions, in the order they pay off:**
-
-      1. **Is `FUN_8eeb` PRG or CHR?** (check #1.) Named as a co-equal second helper but never
-         disassembled. Sharper than usual here: mapper 66 packs CHR in bits 4–5 and PRG in bits 0–1
-         of *one* write, so `$FFBE`'s `LDA $F2 / ASL / ASL / ORA $F9` composes a **composite
-         register** — wizwarr's `$00` shape, not a bank number. If `8eeb`/`8ee4` is the CHR path,
-         its warning is cv2-class noise for `refs.intoOverlay` and should be scored as such.
-      2. **The call-site table** (`site · reach · arg class · value · notes`). `ffea` is
-         *inferable* as the trampoline's own `JSR $FFBE`, bank arriving via the caller's `PHA`
-         ⇒ stack class ⇒ `grm-mej.3` — but confirm it, and more importantly enumerate **who calls
-         `$FFDC`, and with what**. That caller set is what decides whether these titles can ever
-         reach a nonzero ref count. `9913` and `8ee4` are wholly open. `ffc8` is probably the
-         helper's own `STA $FFCC,Y` (contra's `c142` disposition, honest by construction) — one
-         address to confirm.
-      3. **The four unexplained mechanism writes**: `e3bb`/`e906` (dp), `a03f`/`d9a9` (sl). These
-         sit **outside** the invariant region, i.e. per-bank code switching without the helper.
-         Nobody has read them, and they are the sites most likely to be answerable *without*
-         `grm-e7v`/`grm-mej`.
-      4. **Wrapper set** (check #2; 4 of 4 traced titles had one). Not enumerated. `$FFDC` is a
-         trampoline, not a wrapper in the `argumentSurvivesPrologue` sense. This has teeth now that
-         `grm-k90` shipped — that fix moved contra 2→5 comments and picked up wizwarr and lifeforce
-         *unanticipated*, purely on wrapper shape.
-      5. **Shadow-writer table** (check #3). `$F2`/`$F9` are named but their writers are not.
-         Write-through (store adjacent to the mechanism write, same register) is `grm-mej.2`'s
-         discovery route (a) and gets picked up automatically; written far from the switch needs a
-         hint (`grm-hb6.11`). Also settles whether both titles really use the same ZP pair.
-
-      **Cheap prerequisite, one command:** byte-compare `$FF68-$FFF9` across the two ROMs. "One
-      trace covers two" is asserted, not verified — the invariant regions are *different sizes*
-      (146 vs 282) and two of six warnings sit at different addresses. This decides whether this is
-      one task or two.
-
-      **Sequencing is a judgment call, and it is yours.** Even a perfect call-site table leaves both
-      titles at 0 refs until three beads land: `grm-e7v` (open) unlocks `$FFCC`, `grm-mej.2`
-      (in progress) unlocks the `$F2`/`$F9` reads, `grm-mej.3` (in progress) unlocks the
-      stack-passed bank at the trampoline. Trace *now* if you want Q3 and Q4 — both plausibly
-      independent of all three, and Q4 could be another free `grm-k90`-shaped win. Trace *after*
-      `grm-e7v` if the likely answer at every site is "blocked on infrastructure," in which case the
-      table is documentation rather than a lever.
-
-- [ ] **DB3** (`grm-azv` P3) — three copy loops at `e69e`/`e707`/`e712` copy from
-      `e7d4`/`e826`/`e7fd` into `RAM:0200`; the bank-switch stub executes there and its ROM image is
-      never disassembled. Trace source, length, destination; disassemble the copied bytes; identify
-      the switch site and argument convention. Your answer *is* the per-game tier's first hint, and
-      it bypasses the `grm-1.7` epic. Probe raw material, explicitly unverified: `cand.total 580`,
-      `cand.decodeMatch 124`, `verdict.hint` listed `8d00` first.
-      **Note `grm-k5m` may partly subsume this** — same RAM-resident-code class, found on wizwarr,
-      where the ROM images turned out to be readable in place.
+      **Do not re-derive any of the following**, all settled: the `$FFE8` / `$FFBE` / `$FFDC`
+      far-call engine and its calling convention; that `$F2` has exactly one writer (`STA $F2` at
+      `$FFE8`); that `ffc8` is the helper's own mechanism write and `ffea` its internal
+      `JSR $FFBE`; that `9913` calls a helper which takes **no register argument** (suspected
+      `grm-xym`); that `8ee4`/`e3bb`/`e906` are `grm-eyn` phantoms; and that one trace covers both
+      titles. Full record in `grm-hum`'s 2026-08-15 comment.
 
 ---
 
@@ -307,3 +221,6 @@ Agents can't file these — they need an account and CLA agreement.
 | Should this repo have CI at all? | **No, not at this time — ruled 2026-08-15.** We are the sole contributors, so there is no integration to continuously integrate: CI would only re-run the testing already required before every push, at the cost of a runner that fetches and pins a Ghidra install matching `ghidraTargetVersion`. **Revisit trigger is people, not effort** — when outside contributors start submitting changes, CI stops being redundant re-testing and becomes the only way to trust a contributor's claim that the gate was green. `grm-e7w` dropped P2 → P4 and marked `blocked-on-human`, grouped with `grm-9ut`/`grm-fy0` behind the public-release decision; of the three, **`grm-9ut` lands first** (release builds serve people who USE the extension, a real audience; CI serves people who DEVELOP it, which is hypothetical). The dependency-locking half of the original question is still open — it stays in section 4 | `grm-e7w` (deferred, not closed) |
 | Does the real-ROM tier need to run in the default gate, given contributors without ROMs? | **No — question dissolved, 2026-08-15.** `grm-6kv` carried an open design question ("what should the gate do on a machine with no ROMs?") that assumed a contributor who lacks them. For both current contributors the ROMs are **always** present, and the ROM-less contributor is hypothetical — so there is nothing to design around. **Do not redesign the tier model.** The resolution is process, not architecture: make the real-ROM pass a documented local pre-push requirement, make *not having run it* visible via a staleness signal (the `grm-mu7` failure mode was that nothing told anyone the tier had not run), and skip LOUDLY when `GRM_ROM_DIR` is unset rather than reporting a clean gate. This moved `grm-6kv` off the planning list and onto the mechanical/farm-out list at unchanged P2 | `grm-6kv` |
 | Is mapper 9 (MMC2) worth a descriptor for essentially one game? | **Yes — ship it, ruled 2026-08-15.** Punch-Out!! is in scope for the GME project, which is the consuming use case, so a one-game board is justified. This retires the decision `grm-tas` existed to hold; what remains is ordinary implementation (8K switchable at `$8000-9fff`, three fixed 8K banks above, following the existing per-board descriptor pattern). **Do not model the latch-driven CHR banking** — it is irrelevant to PRG analysis. Run `realrom-test.sh nominate` first in case a second unclaimed mapper can ride along on the same work | `grm-tas` |
+| Does any real Bandai cart write an FCG register with an *indexed* store? | **No — and structurally, not by luck. Leave `grm-egw` at P3 indefinitely; do not pre-emptively harden the path.** Indexed stores into the register file are common (dbz2 has "several" `99 00 80`, dbz_saiyan three) but every one is a `STA $8000,Y` loop with **Y counting 7 down to 0**, i.e. `$8000-$8007` — the eight CHR registers. The PRG register is `$8008` and Y never reaches 8. That is the register file's own layout: CHR occupies the low 8 slots and forms a natural 8-iteration loop, PRG is a single slot past the end, and nothing has a reason to index to it. Compounding it, the bug needs a **known** index to fire (`addBaseReferenceOnce` only retargets when the index resolves) and a loop-carried Y presents no constant. Per-title: db3 register base `$6008`, no `99 00 60`/`9D 00 60`, helper db2f (shadow `$6a`); dbz2 helper d12f (shadow `$4c`) → `$8008`, no `9D 00 80`; dbz_datach helper cc28 (shadow `$59`) → `$8008`, neither pattern; dbz_saiyan helper c9c0 (shadow `$49`) → `$8008`, no `9D 00 80`. Unchanged by `grm-46h`'s new `$6000-$7FFF` range (same $x008 geometry, and db3 has no indexed stores there either). If it is ever fixed, the `writesInRange` fallback must still DECLINE on (addr_mask present AND indexed operand) | `grm-egw` |
+| Where is DB3's bank-switch stub copied into RAM `$0200`, and what is its argument convention? | **Wrong question — there is no stub. `grm-azv`'s premise was disproven on both counts, and this exposed a live descriptor bug.** db3 switches PRG with an ordinary ROM helper at **db2f** writing shadow `$6a` and register **`$6008`**; the copy loops at e69e/e707/e712 copy **data, not code**. We saw no mechanism write because `nes-bandai-fcg.yaml` declares one latch range, `$8000-$FFFF`. **db3 is iNES mapper 16 submapper 4 (FCG-1/2), which decodes registers only in `$6000-$7FFF`** — and the descriptor's module header has the submapper table backwards, calling 16.4 an LZ93D50 `$8000` board and 16.1/16.2 the legacy generation. NESdev's actual table: 16.1/16.2/16.3 are deprecated aliases for mappers 159/157/153; **16.4 = FCG-1/2, `$6000-$7FFF`; 16.5 = LZ93D50, `$8000-$FFFF`**. All four pinned fixtures carry **NES 2.0** headers with the submapper in `h[8]`'s high nibble (db3 `40` → 4; dbz2 `50` → 5; datach/saiyan are mappers 157/159), matching the observed register bases exactly — and `NesRomLoader.InesHeader.parse` reads `h[8]` only for the mapper's high bits and **discards the submapper**. Fix is a second memory-latch mechanism at `$6000-$7FFF` (NESdev's own submapper-0 prescription: model both ranges; each real board responds in only one). **Do not pursue the RAM-resident route, and do not use db3 as `grm-hb6`'s first customer** — it needs a descriptor change, not a per-game hint, so the hint tier needs a new acceptance target. "Dragon Ball - Daimaou Fukkatsu" is a second local submapper-4 title, so this is not a one-off | `grm-46h` filed **P2**; `grm-azv` retitled and blocked on it; copy-loop premise retired on `grm-7pp` |
+| dragonpower / shenlong def-use pass: is `FUN_8eeb` PRG or CHR, what is the call-site table, and what are the four unexplained mechanism writes? | **Pass complete; one trace did cover two, now measured. `FUN_8eeb` IS NOT CODE.** All four banks of dragonpower are essentially identical over `ff88-fff9`, and shenlong's four are identical to each other *and to dragonpower* — the byte-compare prerequisite is settled and every finding transfers. **Engine, completed:** `$FFE8` (`STA $F2 / JSR $FFBE / JMP ($17)`) is the far-call entry, bank arriving in **A**; `$FFBE` recomposes the mapper-66 composite register from shadows `$F2`/`$F9` and **takes no register argument**; `$FFDC` is the far-*return* (sets `$17/$18` from the caller's return address + 1, pulls the saved bank, falls through to `$FFE8`). Worked call site: `$983F` pushes `$F2`, sets `$17/$18` from a 3-byte-stride 6-entry table at `$8000`, then `LDA #1 / JSR $FFE8` — a **constant** bank argument does exist. Shadow-writer table is a one-liner: **`$F2` is written by exactly one instruction**, `$FFE8`'s `STA $F2`. **Site dispositions (6 per title):** `8ee4` phantom from an over-read jump table at `$8F00` (30 real entries) — this is where "`FUN_8eeb`, co-equal second helper" came from, so **stop looking for one**; `e3bb` phantom (data-as-code, table at `$91AF`); `e906` phantom (mid-instruction resync, table at `$9076`); `ffc8` is `$FFBE`'s own `STA $FFCC,Y` (contra's c142 disposition, honest by construction); `ffea` is `$FFE8`'s internal `JSR $FFBE` — **but the bank arrives via the `$F2` shadow one instruction earlier, so this is `grm-mej.2`, not the `grm-mej.3` stack case previously predicted**; `9913` calls the no-argument `$FFBE`, so "argument could not be recovered" is a misframing and likely a **`grm-xym`** spurious warning. Wrapper set (check #2) is empty by elimination. **Three of dragonpower's six warnings are `grm-eyn` phantoms from three distinct over-read tables in one title** — denser than megaman's single `a737`, and it means the warning count on these titles overstates the real gap ~2×. Ceiling still gated on `grm-e7v` (`$FFCC` unreadable under a single fully-overlaid `PRG_ALL` window) plus `grm-mej.2`; `grm-mej.3` is **not** on the critical path. Only shenlong's `a03f`/`d9a9` remain unread | `grm-hum`; phantom density on `grm-eyn`; spurious-warning suspicion on `grm-xym` |
