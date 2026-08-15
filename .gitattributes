@@ -13,3 +13,10 @@
 # re-deriving from the symptom. tools/banktest/realrom-test.sh keeps a cheap `tr -d '\r'`
 # on its input as a second layer, for a working-tree copy an editor rewrote after checkout.
 *.tsv text eol=lf
+
+# Committed Gradle wrapper (bead grm-ycv). gradlew is invoked directly (its own shebang),
+# so it must always check out with LF -- core.autocrlf=true would otherwise rewrite it to
+# CRLF and break the "#!/bin/sh" interpreter line ("bad interpreter"). gradlew.bat is a
+# native Windows batch file and wants CRLF regardless of platform.
+/gradlew text eol=lf
+/gradlew.bat text eol=crlf

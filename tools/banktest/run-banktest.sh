@@ -287,13 +287,10 @@ bless_candidate() {
 		return
 	fi
 
-	# Publish atomically (grm-aqi acceptance criteria; shared with grm-z34): write a
-	# sibling temp and rename, so an interrupted or out-of-space run leaves the old
-	# oracle intact rather than a truncated one. Sibling by construction, so mv is a
-	# same-filesystem rename.
-	local tmp="$golden.tmp.$$"
-	if ! cp "$candidate" "$tmp" || ! mv -f "$tmp" "$golden"; then
-		rm -f "$tmp"
+	# Publish atomically (grm-aqi acceptance criteria; grm_atomic_publish shared with
+	# grm-z34, lib/common.sh): write a sibling temp and rename, so an interrupted or
+	# out-of-space run leaves the old oracle intact rather than a truncated one.
+	if ! grm_atomic_publish "$candidate" "$golden"; then
 		echo "FAIL: could not write $golden"
 		fail=1
 		return
@@ -405,10 +402,24 @@ run_one() {
 	# Stash this valid candidate (and its criteria verdict) so a follow-up bless
 	# can reuse it without re-importing. Keyed by inputs, so a later
 	# rebuild/edit misses and forces a fresh import.
+	#
+	# This cache lives under build/ and is disposable (a miss just costs one re-import), so
+	# a write failure here (grm-z34) does not fail the run -- but it also must not leave a
+	# torn/partial entry for a LATER run to read back as valid, nor silently claim success.
+	# grm_atomic_publish[_stdin] publish via a sibling temp + rename, so a half-written
+	# .dump/.crit never lands; on failure the entry is simply left absent (equivalent to a
+	# cache miss) and reported, matching the existing "caching disabled" degrade path used
+	# when EXT_ID/sha256sum/unzip are unavailable.
 	if [ -n "$key" ]; then
-		mkdir -p "$CACHE_DIR"
-		cp "$WORK/$name.dump" "$cached"
-		grep -E '^(CRITERION |SUITE (PASS|FAIL))' "$stripped" >"$CACHE_DIR/$key.crit" || true
+		if ! mkdir -p "$CACHE_DIR"; then
+			echo "NOTE: could not create $CACHE_DIR -- candidate cache disabled for $name" >&2
+		elif ! grm_atomic_publish "$WORK/$name.dump" "$cached"; then
+			echo "NOTE: could not write candidate cache for $name -- skipping" >&2
+			rm -f "$cached"
+		elif ! grep -E '^(CRITERION |SUITE (PASS|FAIL))' "$stripped" | grm_atomic_publish_stdin "$CACHE_DIR/$key.crit"; then
+			echo "NOTE: could not write criteria cache for $name -- invalidating candidate cache entry" >&2
+			rm -f "$cached" "$CACHE_DIR/$key.crit"
+		fi
 	fi
 
 	if [ "$MODE" = bless ]; then

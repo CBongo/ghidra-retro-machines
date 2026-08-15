@@ -188,6 +188,25 @@ bash tools/banktest/build-and-test.sh check nes-banking   # once, for the isolat
 bash tools/banktest/realrom-test.sh check                 # romdirs come from GRM_ROM_DIR
 ```
 
+**`tools/banktest/realrom-test.sh check` is REQUIRED before committing any change that touches
+analysis behaviour** (`BoardBankAnalyzer`, any `BankSwitchStrategy`, `StoredValueScanner`, or
+similar), alongside `build-and-test.sh check` — not a substitute for it, an addition to it. This
+is not optional-nice-to-have: `build-and-test.sh check`'s synthetic goldens, by construction, only
+contain idioms someone already thought of, and grm-mu7 (2026-08-04) shipped a broken guard that
+passed the full synthetic gate cleanly while destroying three pinned real ROMs (kicarus, dodge,
+cv2) — caught only because an unrelated task happened to run the real-ROM tier a day later. See
+bead `grm-6kv` for the incident and the ruling that keeps this a required *local* step rather than
+a redesigned gate (the tier cannot be a hard CI gate: it needs user-supplied, hash-pinned ROMs the
+repo cannot ship).
+
+Both `realrom-test.sh` and `build-and-test.sh check` print a `REALROM STALENESS:` line naming the
+commit (or "absent") of the last real-ROM run *that actually verified rows* — including a run that
+ended `FAIL` on the two known-baseline rows above, since the point is "did anyone run this
+lately", not "did it pass"; only a run that matched no ROMs at all leaves the stamp untouched. A
+gate that never ran that tier says so out loud instead of reporting a quiet green. Do not treat a
+stale/absent stamp as informational only — if it names a commit behind changes you are about to
+commit that touch analysis behaviour, run the tier before committing, per the paragraph above.
+
 `GRM_ROM_DIR` is set per machine (`.claude/settings.local.json`, gitignored) and holds **several
 space-separated dirs**, because the curated manifest is split across more than one and the driver
 indexes each at **depth 1 only**. The driver reads it as `ROM_DIRS=($GRM_ROM_DIR)` — unquoted,
@@ -203,6 +222,10 @@ unrelated jitter (`grm-g73`) rather than failing every run. See the
 revised as rows get fixed/reclassified and supersedes any older summary, including this one. To
 decide whether some *other* movement is yours, re-run the row against a stashed baseline and diff
 the two `build/banktest-work/realrom.*/<id>.diff` files.
+
+When `GRM_ROM_DIR` is unset and no romdir is passed, `realrom-test.sh` refuses to run (nonzero
+exit, loud stderr message) rather than silently doing nothing — it never reports a clean gate for
+a tier that did not execute.
 
 There is deliberately no `quick` alias or cache-backed project mode: headless
 projects are created fresh, and a correct cache would need explicit invalidation

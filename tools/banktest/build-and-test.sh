@@ -21,7 +21,8 @@
 #                        FIRST, and the ambient one on this machine may point
 #                        at a stale install, so we always override it here
 #                        rather than inherit it.
-#   GRADLE                gradle binary to use (default /d/gradle-8.13/bin/gradle)
+#   GRADLE                gradle binary to use (default: the committed ./gradlew wrapper;
+#                        falls back to `gradle` on PATH if the wrapper is missing)
 #
 # Isolation mechanism (verified against Ghidra 12.1.2 source; see comments
 # below and in run-banktest.sh for citations): passing
@@ -164,7 +165,23 @@ fi
 # Default install derives from gradle.properties' ghidraTargetVersion (the single source of
 # truth for the targeted Ghidra version, bead grm-9r7); GRM_GHIDRA_INSTALL still overrides.
 grm_default_ghidra_install
-GRADLE="${GRADLE:-/d/gradle-8.13/bin/gradle}"
+# Resolve the gradle binary (bead grm-ycv): GRADLE env var wins if set; otherwise prefer
+# the committed wrapper (REPO_ROOT/gradlew), which pins the exact distribution+checksum in
+# gradle/wrapper/gradle-wrapper.properties and needs nothing pre-installed on a fresh
+# checkout; otherwise fall back to `gradle` on PATH; otherwise fail loudly rather than
+# defaulting to some one-off developer install path.
+if [ -n "${GRADLE:-}" ]; then
+	: # explicit override wins
+elif [ -x "$REPO_ROOT/gradlew" ]; then
+	GRADLE="$REPO_ROOT/gradlew"
+elif command -v gradle >/dev/null 2>&1; then
+	GRADLE="$(command -v gradle)"
+else
+	echo "FAIL: no gradle binary found. Tried: \$GRADLE (unset), $REPO_ROOT/gradlew (missing" \
+		"or not executable), 'gradle' on PATH (not found). Set GRADLE=/path/to/gradle or" \
+		"restore the committed gradlew wrapper." >&2
+	exit 1
+fi
 
 # --- 1. Build and pure Gradle checks ------------------------------------
 export GHIDRA_INSTALL_DIR="$GRM_GHIDRA_INSTALL"
@@ -281,7 +298,15 @@ else
 	fi
 	mv "$SRC_DIR" "$EXT_TARGET"
 	rm -rf "$TMP_UNZIP"
-	echo "$ZIP_STAMP" >"$STAMP_FILE"
+	# Atomic + checked (bead grm-z34): a torn stamp write is not a correctness risk here
+	# (the up-to-date check below is an exact string match, so a truncated stamp just
+	# reads as "stale" and reinstalls next time), but it must still not be silently
+	# swallowed -- an unreported failure to write the stamp gives no signal that every
+	# future run will pay the reinstall cost it was meant to avoid.
+	if ! grm_atomic_publish_stdin "$STAMP_FILE" <<<"$ZIP_STAMP"; then
+		echo "FAIL: could not write $STAMP_FILE" >&2
+		exit 1
+	fi
 fi
 
 if [ ! -d "$EXT_TARGET" ]; then
@@ -291,4 +316,14 @@ fi
 
 # --- 5. Run selected headless chunks against the isolated settings dir -----
 export BANKTEST_SETTINGS_BASE="$SETTINGS_BASE"
+
+# This gate does NOT run the real-ROM tier (bead grm-6kv): it needs user-supplied,
+# hash-pinned ROMs the repo cannot ship, so it stays a separate, manual, pre-commit step
+# (`bash tools/banktest/realrom-test.sh check`; see CLAUDE.md, "Build & Test"). Printing the
+# staleness note here -- not just inside realrom-test.sh itself -- means a normal
+# `build-and-test.sh check` surfaces "the real-ROM tier hasn't run since <commit>" even for
+# someone who never invokes realrom-test.sh directly, instead of silently reporting a clean
+# gate that never touched real cartridge idioms (grm_realrom_staleness_note, lib/common.sh).
+grm_realrom_staleness_note
+
 exec "$SCRIPT_DIR/run-banktest.sh" "$MODE" ${RUNNER_FLAGS[@]+"${RUNNER_FLAGS[@]}"} "${RUNNER_CHUNKS[@]}"

@@ -125,18 +125,128 @@ grm_work_dir() {
 	mktemp -d "$base/${1:-run}.XXXXXXXX"
 }
 
+# Python interpreter for ext_identity()'s native zip-CRC read (bead grm-4w6). Resolved
+# lazily (only when ext_identity actually runs) and cached in GRM_EXT_ID_PYTHON so repeat
+# calls in one process don't re-probe PATH. run-banktest.sh already requires Python for its
+# mk*.py generators (usually via its own PYTHON var, resolved separately) -- honor that
+# var here too so the two never disagree about which interpreter is in play -- but this
+# probe is independent, since realrom-test.sh has no such var and previously had no Python
+# dependency at all: ext_identity() used to shell out to `unzip -v` + awk instead. That is
+# the one new dependency this bead adds for realrom-test.sh; if no interpreter is found,
+# caching is simply disabled (correctness over speed), exactly as when sha256sum/unzip were
+# missing before.
+grm_ext_id_python() {
+	if [ -n "${GRM_EXT_ID_PYTHON:-}" ]; then
+		printf '%s' "$GRM_EXT_ID_PYTHON"
+		return 0
+	fi
+	local py
+	if [ -n "${PYTHON:-}" ] && command -v "$PYTHON" >/dev/null 2>&1; then
+		py="$PYTHON"
+	elif command -v python3 >/dev/null 2>&1; then
+		py=python3
+	elif command -v python >/dev/null 2>&1; then
+		py=python
+	else
+		return 1
+	fi
+	GRM_EXT_ID_PYTHON="$py"
+	printf '%s' "$py"
+}
+
+# Atomically publish SRC as DEST via a sibling temp + rename (bead grm-z34): an interrupted
+# or out-of-space write leaves the previous DEST intact rather than truncated, and a failed
+# cp/mv is reported (nonzero) rather than silently treated as success. Sibling by
+# construction (same directory as DEST), so mv is a same-filesystem rename, not a copy.
+# Cleans up its temp on any failure so a half-written sibling never lingers to be picked up
+# by a later run.
+grm_atomic_publish() {
+	local src="$1" dest="$2" tmp
+	tmp="$dest.tmp.$$"
+	if ! cp "$src" "$tmp"; then
+		rm -f "$tmp"
+		return 1
+	fi
+	if ! mv -f "$tmp" "$dest"; then
+		rm -f "$tmp"
+		return 1
+	fi
+	return 0
+}
+
+# Same publish discipline as grm_atomic_publish, but the content comes from stdin (e.g. a
+# grep/awk pipeline) instead of an existing file.
+grm_atomic_publish_stdin() {
+	local dest="$1" tmp
+	tmp="$dest.tmp.$$"
+	if ! cat >"$tmp"; then
+		rm -f "$tmp"
+		return 1
+	fi
+	if ! mv -f "$tmp" "$dest"; then
+		rm -f "$tmp"
+		return 1
+	fi
+	return 0
+}
+
+# Real-ROM tier staleness (bead grm-6kv). realrom-test.sh writes GRM_REALROM_STAMP whenever
+# rows actually ran -- including a FAIL, since megaman/smb3 fail by design on an unchanged
+# tree and gating the stamp on a clean pass would mean it could never update in practice
+# (see there for the full reasoning); only a SKIPPED run (no ROMs matched) leaves it
+# untouched. Both realrom-test.sh and build-and-test.sh's default gate print this note so
+# "nobody has run the real-ROM tier" is visible instead of silent -- the gap that let
+# grm-mu7 destroy three pinned ROMs unnoticed for a day. Shared here rather than duplicated
+# so the two call sites cannot drift on the message or the stamp format.
+GRM_REALROM_STAMP="$REPO_ROOT/build/realrom-cache/.last-verified"
+grm_realrom_staleness_note() {
+	local head stamp_commit stamp_when behind
+	head="$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+	if [ ! -f "$GRM_REALROM_STAMP" ]; then
+		echo "REALROM STALENESS: no realrom-test.sh run recorded for this worktree" \
+			"yet ($GRM_REALROM_STAMP absent). Real-ROM regressions have never been checked here" \
+			"-- see CLAUDE.md, 'Build & Test': tools/banktest/realrom-test.sh check is required" \
+			"before committing changes that touch analysis behaviour."
+		return
+	fi
+	stamp_commit="$(sed -n '1p' "$GRM_REALROM_STAMP")"
+	stamp_when="$(sed -n '2p' "$GRM_REALROM_STAMP")"
+	if [ -n "$stamp_commit" ] && [ "$stamp_commit" = "$head" ]; then
+		echo "REALROM STALENESS: last verified run was AT current HEAD ($stamp_commit, $stamp_when)."
+	else
+		behind="?"
+		if [ -n "$stamp_commit" ] && [ "$stamp_commit" != unknown ] && [ "$head" != unknown ]; then
+			behind="$(git -C "$REPO_ROOT" rev-list --count "$stamp_commit..$head" 2>/dev/null || echo '?')"
+		fi
+		echo "REALROM STALENESS: last verified run was at commit ${stamp_commit:-unknown}" \
+			"($stamp_when), $behind commit(s) behind current HEAD ($head)." \
+			"Changes since then have NOT been checked against real ROMs."
+	fi
+}
+
 ext_identity() {
 	# Content fingerprint of the installed extension, or non-zero if it cannot be
 	# determined (=> the caller's candidate-dump cache is disabled). NOT a file
 	# mtime/stamp: gradle rewrites the dist zip on every build (new timestamps,
 	# identical bytecode), so an mtime-based id never matches across a
-	# check->bless pair. unzip -v's CRC-32 column depends only on entry content,
-	# so hashing the sorted (CRC, name) pairs across the installed Extensions jars
-	# yields an id that is stable across a no-op rebuild yet changes the moment
-	# any compiled class or bundled data file changes.
-	local base="${BANKTEST_SETTINGS_BASE:-}" jars loose out
+	# check->bless pair.
+	#
+	# The per-jar CRC read (bead grm-4w6) uses Python's zipfile module directly rather than
+	# shelling out to `unzip -v` and awk-parsing its human-readable column layout: that
+	# parse was brittle (depended on unzip's table format, and `$NF` truncated any entry
+	# name containing a space) and needed the `unzip` binary on PATH. zipfile.ZipInfo.CRC
+	# reads the same CRC-32 the zip format already stores per entry, so hashing the sorted
+	# (CRC, name) pairs across the installed Extensions jars still yields an id that is
+	# stable across a no-op rebuild yet changes the moment any compiled class or bundled
+	# data file changes -- only the CRC *source* changed, not the key formula.
+	#
+	# MIGRATION NOTE: switching readers changes the emitted line format (e.g. spacing/case
+	# of the hex CRC), which changes this function's output and therefore invalidates any
+	# existing build/*-cache entries the first time it runs post-upgrade. Harmless: a cache
+	# miss just re-imports once and repopulates under the new key.
+	local base="${BANKTEST_SETTINGS_BASE:-}" jars loose out py
 	[ -n "$base" ] || return 1
-	command -v unzip >/dev/null 2>&1 || return 1
+	py="$(grm_ext_id_python)" || return 1
 	jars="$(find "$base" -type f -name '*.jar' -path '*/Extensions/*' 2>/dev/null | LC_ALL=C sort)"
 	[ -n "$jars" ] || return 1
 	# The compiled board descriptors ship LOOSE, as data/machines/*.map next to the jar --
@@ -147,9 +257,17 @@ ext_identity() {
 	# sha256sum (not mtime) for the same content-only reason the jar branch uses CRCs.
 	loose="$(find "$base" -type f -path '*/Extensions/*' ! -name '*.jar' 2>/dev/null | LC_ALL=C sort)"
 	out="$( {
-		printf '%s\n' "$jars" | while IFS= read -r j; do
-			unzip -v "$j" 2>/dev/null | awk '$7 ~ /^[0-9a-fA-F]{8}$/ {print $7, $NF}'
-		done
+		if [ -n "$jars" ]; then
+			printf '%s\n' "$jars" | "$py" -c '
+import sys, zipfile
+for path in sys.stdin.read().splitlines():
+    if not path:
+        continue
+    with zipfile.ZipFile(path) as zf:
+        for zi in zf.infolist():
+            print("%08x %s" % (zi.CRC, zi.filename))
+' 2>/dev/null
+		fi
 		[ -z "$loose" ] || printf '%s\n' "$loose" | while IFS= read -r p; do
 			printf '%s %s\n' "$(sha256sum "$p" | cut -d' ' -f1)" "${p#"$base"}"
 		done

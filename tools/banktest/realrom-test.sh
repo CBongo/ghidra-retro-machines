@@ -156,19 +156,36 @@ while [ $# -gt 0 ]; do
 	esac
 done
 
+# Sourced BEFORE the GRM_ROM_DIR/ROM_DIRS check (bead grm-6kv), unlike every other block
+# below that only needs it once ROM dirs are known: the staleness note below must still
+# print on the "no ROM dirs supplied" exit path, and doing that needs REPO_ROOT/git.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Establishes REPO_ROOT and GRM_TARGET_VERSION, and defines native() etc.
+. "$SCRIPT_DIR/lib/common.sh"
+
+# Staleness signal (bead grm-6kv, rescoped per the 2026-08-15 user ruling: this tier stays
+# manual/opt-in -- build-and-test.sh's default gate still does not invoke it -- but "nobody
+# ran it" must be VISIBLE rather than silent, which is exactly what let grm-mu7 destroy three
+# pinned ROMs unnoticed for a day). grm_realrom_staleness_note()/GRM_REALROM_STAMP live in
+# lib/common.sh, shared with build-and-test.sh so the two cannot drift on the message or the
+# stamp format. Printed on every invocation (check, bless, nominate, and even the "no ROM
+# dirs" usage-exit below), so no code path through this script goes quiet about how long
+# it's been.
+grm_realrom_staleness_note
+
 ROM_DIRS=("$@")
 if [ ${#ROM_DIRS[@]} -eq 0 ] && [ -n "${GRM_ROM_DIR:-}" ]; then
 	# shellcheck disable=SC2206
 	ROM_DIRS=($GRM_ROM_DIR)
 fi
 if [ ${#ROM_DIRS[@]} -eq 0 ]; then
+	echo "REALROM: SKIPPED -- no ROM dirs supplied and GRM_ROM_DIR is unset. This tier was" \
+		"NOT run; nothing about real-ROM regressions was checked. Set GRM_ROM_DIR (it may" \
+		"hold several space-separated dirs) or pass romdir arguments." >&2
 	echo "$USAGE   (or set GRM_ROM_DIR)" >&2
 	exit 2
 fi
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# Establishes REPO_ROOT and GRM_TARGET_VERSION, and defines native() etc.
-. "$SCRIPT_DIR/lib/common.sh"
 REALROM_DIR="$SCRIPT_DIR/realrom"
 MANIFEST="$REALROM_DIR/manifest.tsv"
 GME_MANIFEST="$REALROM_DIR/manifest-gme.tsv"
@@ -616,7 +633,15 @@ while IFS=$'\t' read -r id title sha mapper board golden opts || [ -n "${id:-}" 
 			if [ -f "$golden_path" ]; then
 				diff -u "$golden_path" "$cached" && echo "    no change vs golden"
 			fi
-			cp -f "$cached" "$golden_path"
+			# Atomic + fail-closed (grm-z34): a failed publish must not claim BLESS. No
+			# criteria-refusal concept here (realrom-test.sh has none, per grm-z34's scoping
+			# comment) -- only the write itself can fail.
+			if ! grm_atomic_publish "$cached" "$golden_path"; then
+				ROW_ID+=("$id"); ROW_STATUS+=("FAIL"); ROW_DETAIL+=("could not write $golden")
+				n_fail=$((n_fail + 1))
+				echo "    FAIL: could not write $golden_path"
+				continue
+			fi
 			ROW_ID+=("$id"); ROW_STATUS+=("BLESS"); ROW_DETAIL+=("$golden (cached)")
 			n_bless=$((n_bless + 1))
 			echo "    blessed (from cache) -> $golden_path"
@@ -643,14 +668,26 @@ while IFS=$'\t' read -r id title sha mapper board golden opts || [ -n "${id:-}" 
 	fi
 
 	# Known-good candidate (sha recheck passed): stash it so a follow-up bless
-	# reuses it without re-importing.
+	# reuses it without re-importing. Disposable (build/-cache) same as run-banktest.sh's
+	# candidate cache, so a write failure (grm-z34) disables caching for this row rather
+	# than failing it -- but the publish is still atomic, so a torn write is never read
+	# back as a valid entry.
 	if [ -n "$key" ]; then
-		mkdir -p "$CACHE_DIR"
-		cp -f "$out" "$cached"
+		if ! mkdir -p "$CACHE_DIR"; then
+			echo "    NOTE: could not create $CACHE_DIR -- candidate cache disabled for $id" >&2
+		elif ! grm_atomic_publish "$out" "$cached"; then
+			echo "    NOTE: could not write candidate cache for $id -- skipping" >&2
+			rm -f "$cached"
+		fi
 	fi
 
 	if [ "$MODE" = bless ]; then
-		cp -f "$out" "$golden_path"
+		if ! grm_atomic_publish "$out" "$golden_path"; then
+			ROW_ID+=("$id"); ROW_STATUS+=("FAIL"); ROW_DETAIL+=("could not write $golden")
+			n_fail=$((n_fail + 1))
+			echo "    FAIL: could not write $golden_path"
+			continue
+		fi
 		ROW_ID+=("$id"); ROW_STATUS+=("BLESS"); ROW_DETAIL+=("$golden")
 		n_bless=$((n_bless + 1))
 		echo "    blessed -> $golden_path"
@@ -706,13 +743,38 @@ if [ "$n_skip" -gt 0 ]; then
 	done
 fi
 
+# SKIPPED means nothing was actually verified (no ROMs matched) -- do not stamp, so the
+# "nobody ran this" signal stays honest.
+if [ "$n_pass" -eq 0 ] && [ "$n_fail" -eq 0 ] && [ "$n_bless" -eq 0 ]; then
+	echo "REALROM $MODE: SKIPPED (no matching ROMs supplied) -- nothing verified"
+	exit 0
+fi
+
+# Refresh the staleness stamp (bead grm-6kv) whenever rows actually ran -- INCLUDING a FAIL.
+# The stamp answers "has anyone run this tier lately", not "did it pass": megaman/smb3 fail
+# on an unchanged tree BY DESIGN (see the header note), so gating the stamp on n_fail==0
+# would mean it can never update on an ordinary row set and the staleness signal would
+# permanently read "never run" even when someone diligently runs it every time. A FAIL is
+# already loud on its own (nonzero exit, "REALROM $MODE: FAIL" below) -- recording that a
+# run happened at this commit is a separate, additional fact, not a claim that it was clean.
+# Best-effort: a failure to write the stamp does not change the pass/fail verdict below, but
+# is not swallowed silently either -- atomic via grm_atomic_publish_stdin (lib/common.sh,
+# grm-z34), so an interrupted write is never read back as a valid (and misleadingly fresh)
+# stamp.
+if mkdir -p "$(dirname "$GRM_REALROM_STAMP")" 2>/dev/null; then
+	stamp_head="$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+	stamp_content="$stamp_head
+$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+	if ! printf '%s\n' "$stamp_content" | grm_atomic_publish_stdin "$GRM_REALROM_STAMP"; then
+		echo "NOTE: could not update $GRM_REALROM_STAMP (staleness signal will be stale itself)" >&2
+	fi
+else
+	echo "NOTE: could not create $(dirname "$GRM_REALROM_STAMP") -- staleness stamp not updated" >&2
+fi
+
 if [ "$n_fail" -gt 0 ]; then
 	echo "REALROM $MODE: FAIL"
 	exit 1
-fi
-if [ "$n_pass" -eq 0 ] && [ "$n_bless" -eq 0 ]; then
-	echo "REALROM $MODE: SKIPPED (no matching ROMs supplied) -- nothing verified"
-	exit 0
 fi
 echo "REALROM $MODE: OK"
 exit 0
