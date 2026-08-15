@@ -2,6 +2,22 @@
 
 This file provides instructions and context for AI coding agents working on this project.
 
+## Run commands through git bash, not PowerShell
+
+**Git bash is the normal shell for this project — reach for the Bash tool first.** Nearly all
+the tooling here is POSIX shell (`tools/banktest/*.sh`, the gradle invocations, `bd`), the
+documented command lines throughout this file are written for it, and the permission
+allowlist is tuned for that route — so a bash call is far more likely to run without
+prompting than the PowerShell equivalent of the same thing.
+
+Two practical consequences:
+
+- **Long or multi-line arguments go in a file, not on the command line.** Prompts to approve a
+  wall of inline text get rejected. Write the text to a scratchpad file and pass it by path:
+  `bd comment <id> --file notes.txt`, `git commit -F msg.txt`.
+- PowerShell is still the right tool for genuinely Windows-shaped work (`%APPDATA%` paths,
+  `tools/install-gui.ps1`, registry, ACLs). Use it there and nowhere else.
+
 ## Stop and ask when a human would be more efficient
 
 **If you hit work where human analysis is likely cheaper or better than spending agent tokens,
@@ -29,6 +45,12 @@ task where the economics genuinely invert:
 When the user takes a task on, record the result with `bd comment` on the owning bead and note
 open human-side work in `docs/human-research-todo.md` — that file is the running TODO for work
 that is deliberately *not* agent work.
+
+`docs/human recon notes.txt` is the user's own raw record of hand reverse-engineering, kept to
+share with others. **Agents must NEVER modify it** — read it, quote it into beads, ask questions
+about it, but leave the file alone. Read its preamble before using anything in it: the notes were
+collected over time, may not match current code, and are a basis for questions to the user rather
+than ground truth. It may be committed and pushed at any time.
 
 **When one of those items comes back answered, retire it — do not check it off.** Delete the item
 from its section and add a row to the `## Answered` table at the bottom of that file. Never mark it

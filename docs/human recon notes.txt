@@ -1,4 +1,4 @@
-Note to agents: this file consists of human generated notes that are used to provide input to agents after human review and collation.  Notes were collected over time and may not reflect current code.  Do not treat information in this file as truth; only use it as a basis for questions to the user.
+Note to agents: this file consists of human generated notes that are used to provide input to agents after human review and collation.  Notes were collected over time and may not reflect current code.  Do not treat information in this file as truth; only use it as a basis for questions to the user.  It is OK to commit this file to git and push at any time, but it should NEVER be modified by an agent.
 ----
 
 one line per address: <addr> — <classification> — <detail>, so it can be read as a table.
@@ -165,3 +165,12 @@ ff88: ASL A; PHA; LDA #$86; STA $8000; PLA; STA $8001; ORA #1; PHA; LDA #$87; ST
 seems like $06f2 is a "raw" shadow; it is multplied by 2 and used to set R6, then 1 is added and sets R7.
 ff73: CHR helper sets all CHR banks from table at $06f7.
 no other refs to $8000/1 in current dissassembled code.  disassembly from https://github.com/Xkeeper0/smb2 suggests that the $c000 (bank 14) is mostly DPCM samples and ending event data so not surprising there may be no refs there yet. 
+
+grm-ii6:
+megaman:
+d56e: LDA $42; TAX; STA $c000,X. $42 seems to be (correctly) identified as a write-through shadow. the enclosing function is the NMI handler, and the store is near the end. this is almost certainly restoring the bank before returning from the interrupt.  it should probably not specify bank 4 at this point, though.
+wizwarr:
+ffa4: LDA $00; STA $8000.  $00 seems to be (correctly) identified as a write-through shadow.  the enclosing function is the NMI handler, and the store is immediately before the return sequence.  this is clearly restoring bank before returning.  it should probably not specify bank 0 though.
+
+wizwarr (grm-mej.3 inc 1)
+ff69: saves Y in $1B, saves $00 on stack; sets bank to A (via $1D); calls $ff83 (which does JMP($1b)); restores $00 and sets bank from stack. definitely a trampoline.
