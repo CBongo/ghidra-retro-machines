@@ -86,7 +86,8 @@ change what the numbers mean:
 - [ ] **dragonpower / shenlong** (`grm-hum`, P1 — the only P1 besides `grm-2dr`)
       Helper identified on each (`FUN_ffbe`, `FUN_8eeb`) but the argument unrecoverable at the call
       sites. Both are GxROM Dragon Ball titles and likely share one engine — **one trace probably
-      covers two.**
+      covers two**, but verify that first (see the byte-compare below); it is asserted, not
+      measured.
 
       **contra is DONE and was removed from this item** (traced 2026-08-09, see the Answered table).
       All ten of its warnings are classified: three are recoverable and blocked on one fix
@@ -95,13 +96,72 @@ change what the numbers mean:
       (`grm-eyn`). Do not re-trace it, and in particular **do not trace `811a` →
       `FUN_PRG_LO_B1__8259`** — that "third helper in overlay space" is not real code.
 
-      Note before starting these two: `grm-hum`'s 2026-08-01 comment already records both engines'
-      disassembly, the `$F2` shadow, the `$FFDC` inline far-call trampoline, and the measured
-      cross-bank invariant regions. It also records a **structural blocker** independent of dataflow
-      — both descriptors declare a single fully-overlaid `PRG_ALL` window, so
-      `bankInvariantRomByte` returns null for every address and the `$FFCC` table is unreadable to
-      the engine even with a perfect index (`grm-e7v`). Read that comment before spending anything
-      here; the trace may not be the binding constraint.
+      **ALREADY SETTLED by `grm-hum`'s 2026-08-01 comment — do not re-derive any of it.** That
+      comment is *engine anatomy*, written as reconnaissance before this section's method existed;
+      it is not a def-use pass. It records: the `$FFBE` helper body
+      (`LDA $F2 / ASL / ASL / ORA $F9 / TAY / LDA $FFCC,Y / STA $FFCC,Y / RTS`); the `$FFDC` inline
+      far-call trampoline (pops the return address, `INC`s it, switches, `JMP ($0017)`, so execution
+      resumes at the next instruction in a *different* bank — `grm-v60`); `$F2` = PRG shadow and
+      `$F9` = CHR shadow; and the measured per-offset cross-bank invariant regions
+      (`$FF68-$FFF9` dragonpower / `$FEE0-$FFF9` shenlong, both containing the whole switch engine —
+      compute per offset, **never** as a common suffix, or you get zero).
+
+      It also records a **structural blocker** independent of dataflow: both descriptors declare a
+      single fully-overlaid `PRG_ALL` window, so `bankInvariantRomByte` returns null for every
+      address and the `$FFCC` table is unreadable to the engine even with a perfect index
+      (`grm-e7v`). Anatomy does not predict dispositions, though — contra had a fully-disassembled
+      helper from the same 8/1 comment and its 8/9 pass still produced four new dispositions,
+      including two sites that were not code at all.
+
+      **THE SIX WARNED SITES PER TITLE** (from the blessed goldens; both are at 0 refs / 0 bank
+      comments / 6 warnings, so this is the entire population):
+
+      ```
+      shared by both   8ee4  9913  ffc8  ffea
+      dragonpower only e3bb  e906
+      shenlong only    a03f  d9a9
+      ```
+
+      `8ee4`/`9913`/`ffea` are helper *call sites*; `ffc8`/`e3bb`/`e906`/`a03f`/`d9a9` are raw
+      mechanism writes. **Five open questions, in the order they pay off:**
+
+      1. **Is `FUN_8eeb` PRG or CHR?** (check #1.) Named as a co-equal second helper but never
+         disassembled. Sharper than usual here: mapper 66 packs CHR in bits 4–5 and PRG in bits 0–1
+         of *one* write, so `$FFBE`'s `LDA $F2 / ASL / ASL / ORA $F9` composes a **composite
+         register** — wizwarr's `$00` shape, not a bank number. If `8eeb`/`8ee4` is the CHR path,
+         its warning is cv2-class noise for `refs.intoOverlay` and should be scored as such.
+      2. **The call-site table** (`site · reach · arg class · value · notes`). `ffea` is
+         *inferable* as the trampoline's own `JSR $FFBE`, bank arriving via the caller's `PHA`
+         ⇒ stack class ⇒ `grm-mej.3` — but confirm it, and more importantly enumerate **who calls
+         `$FFDC`, and with what**. That caller set is what decides whether these titles can ever
+         reach a nonzero ref count. `9913` and `8ee4` are wholly open. `ffc8` is probably the
+         helper's own `STA $FFCC,Y` (contra's `c142` disposition, honest by construction) — one
+         address to confirm.
+      3. **The four unexplained mechanism writes**: `e3bb`/`e906` (dp), `a03f`/`d9a9` (sl). These
+         sit **outside** the invariant region, i.e. per-bank code switching without the helper.
+         Nobody has read them, and they are the sites most likely to be answerable *without*
+         `grm-e7v`/`grm-mej`.
+      4. **Wrapper set** (check #2; 4 of 4 traced titles had one). Not enumerated. `$FFDC` is a
+         trampoline, not a wrapper in the `argumentSurvivesPrologue` sense. This has teeth now that
+         `grm-k90` shipped — that fix moved contra 2→5 comments and picked up wizwarr and lifeforce
+         *unanticipated*, purely on wrapper shape.
+      5. **Shadow-writer table** (check #3). `$F2`/`$F9` are named but their writers are not.
+         Write-through (store adjacent to the mechanism write, same register) is `grm-mej.2`'s
+         discovery route (a) and gets picked up automatically; written far from the switch needs a
+         hint (`grm-hb6.11`). Also settles whether both titles really use the same ZP pair.
+
+      **Cheap prerequisite, one command:** byte-compare `$FF68-$FFF9` across the two ROMs. "One
+      trace covers two" is asserted, not verified — the invariant regions are *different sizes*
+      (146 vs 282) and two of six warnings sit at different addresses. This decides whether this is
+      one task or two.
+
+      **Sequencing is a judgment call, and it is yours.** Even a perfect call-site table leaves both
+      titles at 0 refs until three beads land: `grm-e7v` (open) unlocks `$FFCC`, `grm-mej.2`
+      (in progress) unlocks the `$F2`/`$F9` reads, `grm-mej.3` (in progress) unlocks the
+      stack-passed bank at the trampoline. Trace *now* if you want Q3 and Q4 — both plausibly
+      independent of all three, and Q4 could be another free `grm-k90`-shaped win. Trace *after*
+      `grm-e7v` if the likely answer at every site is "blocked on infrastructure," in which case the
+      table is documentation rather than a lever.
 
 - [ ] **DB3** (`grm-azv` P3) — three copy loops at `e69e`/`e707`/`e712` copy from
       `e7d4`/`e826`/`e7fd` into `RAM:0200`; the bank-switch stub executes there and its ROM image is
