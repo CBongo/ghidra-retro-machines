@@ -168,3 +168,4 @@
 {"id":"int-885209f5","kind":"field_change","created_at":"2026-08-15T17:54:07.6839073Z","actor":"Chris Bongaarts","issue_id":"grm-fy0","extra":{"field":"status","new_value":"blocked","old_value":"open"}}
 {"id":"int-e8a3e686","kind":"field_change","created_at":"2026-08-15T17:54:09.8746747Z","actor":"Chris Bongaarts","issue_id":"grm-9ut","extra":{"field":"status","new_value":"blocked","old_value":"open"}}
 {"id":"int-74dac4c5","kind":"field_change","created_at":"2026-08-15T17:54:12.0913642Z","actor":"Chris Bongaarts","issue_id":"grm-e7w","extra":{"field":"status","new_value":"blocked","old_value":"open"}}
+{"id":"int-94d767af","kind":"field_change","created_at":"2026-08-15T18:17:30.6788535Z","actor":"Chris Bongaarts","issue_id":"grm-4nr","extra":{"field":"status","new_value":"closed","old_value":"open","reason":"not-reproducible: ff1 measured 10/10 then 19/19 identical; original 40% rate statistically dead (P=0.6%). User ruling 2026-08-15."}}
