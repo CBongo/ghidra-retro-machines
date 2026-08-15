@@ -114,6 +114,25 @@ public class VerifyBankTest extends GhidraScript {
 			return;
 		}
 
+		// bead grm-gea: exhaustive size/wrap-boundary coverage, following up grm-dvx.
+		if (name.contains("prgnowraptest")) {
+			checkPrgNoWrap();
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
+
+		if (name.contains("prgwrap1test")) {
+			checkPrgWrap1();
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
+
+		if (name.contains("prgfulltest")) {
+			checkPrgFull();
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
+
 		if (name.contains("prgentrytest")) {
 			checkPrgEntry();
 			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
@@ -345,22 +364,12 @@ public class VerifyBankTest extends GhidraScript {
 	private static final int EMU_LEN = 8;
 
 	private void checkEmuRecovery() {
-		Address entry = addr(EMU_ENTRY);
 		Address payloadStart = addr(EMU_PAYLOAD);
 		AddressSet target = new AddressSet(payloadStart, addr(EMU_PAYLOAD + EMU_LEN - 1));
 
-		// Dirty-watch on the payload range is the intended completion condition; fuel is a
-		// safety bound in case the watch never trips (the fixture's trailing JMP-self spins).
-		StopConditions stop = StopConditions.builder()
-				.dirtyWatch(target)
-				.instructionFuel(10_000)
-				.build();
-
-		RecoveryResult result = new EmulationRecovery(currentProgram)
-				.recover(entry, stop, IoPolicy.volatileBlocks(currentProgram), monitor);
+		RecoveryResult result = verifyEmuRecovery("emu", EMU_ENTRY, EMU_PAYLOAD, EMU_LEN);
 
 		byte[] recovered = result.recoveredBytes(payloadStart, EMU_LEN);
-		byte[] expected = {1, 2, 3, 4, 5, 6, 7, 8};
 
 		StringBuilder dirtySb = new StringBuilder();
 		for (AddressRange r : result.dirty().getAddressRanges()) {
@@ -377,15 +386,54 @@ public class VerifyBankTest extends GhidraScript {
 		println("RECOVERED " + hex(recovered));
 		println("SUSPECT " + result.provenance().suspect());
 		println("=== BANKDUMP END ===");
+	}
 
-		criterion("emu-stopreason", result.stopReason() == StopReason.DIRTY_WATCH,
+	/** Shared EmulationRecovery harness check (bead grm-w8a): runs the emulator to a
+	 *  dirty-watch stop condition over the payload range and asserts stop reason, recovered
+	 *  plaintext ($01..$len), non-suspect provenance, and dirty-coverage of the target range.
+	 *  Callers print their own BANKDUMP section (the two fixtures' dump shapes differ) using
+	 *  the returned RecoveryResult; this only emits CRITERION lines, which sit outside the
+	 *  BANKDUMP markers and so cannot move a golden. */
+	private RecoveryResult verifyEmuRecovery(String idPrefix, long entryAddr, long payloadAddr,
+			int len) {
+		Address entry = addr(entryAddr);
+		Address payloadStart = addr(payloadAddr);
+		AddressSet target = new AddressSet(payloadStart, addr(payloadAddr + len - 1));
+
+		// Dirty-watch on the payload range is the intended completion condition; fuel is a
+		// safety bound in case the watch never trips (the fixture's trailing JMP-self spins).
+		StopConditions stop = StopConditions.builder()
+				.dirtyWatch(target)
+				.instructionFuel(10_000)
+				.build();
+
+		RecoveryResult result = new EmulationRecovery(currentProgram)
+				.recover(entry, stop, IoPolicy.volatileBlocks(currentProgram), monitor);
+
+		byte[] recovered = result.recoveredBytes(payloadStart, len);
+		byte[] expected = new byte[len];
+		for (int i = 0; i < len; i++) {
+			expected[i] = (byte) (i + 1);
+		}
+
+		StringBuilder dirtySb = new StringBuilder();
+		for (AddressRange r : result.dirty().getAddressRanges()) {
+			if (dirtySb.length() > 0) {
+				dirtySb.append(" ");
+			}
+			dirtySb.append(fmt(r.getMinAddress())).append("-").append(fmt(r.getMaxAddress()));
+		}
+
+		criterion(idPrefix + "-stopreason", result.stopReason() == StopReason.DIRTY_WATCH,
 			"stop=" + result.stopReason());
-		criterion("emu-recovered", Arrays.equals(recovered, expected),
+		criterion(idPrefix + "-recovered", Arrays.equals(recovered, expected),
 			"bytes=" + hex(recovered));
-		criterion("emu-not-suspect", !result.provenance().suspect(),
+		criterion(idPrefix + "-not-suspect", !result.provenance().suspect(),
 			"suspect=" + result.provenance().suspect());
-		criterion("emu-dirty-covers-target", result.dirty().contains(target),
+		criterion(idPrefix + "-dirty-covers-target", result.dirty().contains(target),
 			"dirty=" + dirtySb);
+
+		return result;
 	}
 
 	// ------------------------------------------------------------------
@@ -451,6 +499,89 @@ public class VerifyBankTest extends GhidraScript {
 			fileOffset(zeroPage) == 8 && fileOffset(vectors, 0x300) == 0x306,
 			"offsets=" + fileOffset(high) + "," + fileOffset(p6510) + "," +
 				fileOffset(zeroPage) + "," + fileOffset(vectors, 0x300));
+	}
+
+	// grm-gea: dedicated size/wrap-boundary coverage, following up grm-dvx. The
+	// implementation already enforces every one of these limits (AbstractCbmPrgLoader.load());
+	// these fixtures close the acceptance-test coverage gap.
+	private static final String PRG_WRAPPED_PROPERTY = "Retro Machines.CBM PRG Wrapped";
+
+	// Load $FFFE + 2 payload bytes: ends exactly at $FFFF, no wrap.
+	private void checkPrgNoWrap() {
+		MemoryBlock high = blockAt("RAM_E000", 0xfffe);
+		MemoryBlock lowBlock = currentProgram.getMemory().getBlock(addr(0));
+		boolean wrappedProperty = currentProgram.getOptions(Program.PROGRAM_INFO)
+				.getBoolean(PRG_WRAPPED_PROPERTY, true);
+
+		println("=== BANKDUMP BEGIN ===");
+		println("HIGH " + describeBlock(high) + " BYTES " + bytesAt("RAM_E000", 0xfffe, 2));
+		println("LOWBLOCK " + describeBlock(lowBlock));
+		println("WRAPPED " + wrappedProperty);
+		println("=== BANKDUMP END ===");
+
+		criterion("nowrap-high", initializedOverlay(high, "RAM_E000") &&
+			"10 11".equals(bytesAt("RAM_E000", 0xfffe, 2)), describeBlock(high));
+		criterion("nowrap-property-false", !wrappedProperty, "wrapped=" + wrappedProperty);
+		criterion("nowrap-file-offsets", fileOffset(high) == 2, "offset=" + fileOffset(high));
+	}
+
+	// Load $FFFE + 3 payload bytes: the 3rd byte wraps 1 byte into $0000 (P6510 DDR) --
+	// the minimal wrap case, one byte over checkPrgNoWrap's boundary.
+	private void checkPrgWrap1() {
+		MemoryBlock high = blockAt("RAM_E000", 0xfffe);
+		MemoryBlock p6510 = currentProgram.getMemory().getBlock(addr(0));
+		boolean wrappedProperty = currentProgram.getOptions(Program.PROGRAM_INFO)
+				.getBoolean(PRG_WRAPPED_PROPERTY, false);
+
+		println("=== BANKDUMP BEGIN ===");
+		println("HIGH " + describeBlock(high) + " BYTES " + bytesAt("RAM_E000", 0xfffe, 2));
+		println("P6510 " + describeBlock(p6510) + " BYTES " + bytesAt(null, 0, 1));
+		println("WRAPPED " + wrappedProperty);
+		println("=== BANKDUMP END ===");
+
+		criterion("wrap1-high", initializedOverlay(high, "RAM_E000") &&
+			"10 11".equals(bytesAt("RAM_E000", 0xfffe, 2)), describeBlock(high));
+		criterion("wrap1-p6510", p6510 != null && p6510.isInitialized() && !p6510.isOverlay() &&
+			"12".equals(bytesAt(null, 0, 1)), describeBlock(p6510));
+		criterion("wrap1-property-true", wrappedProperty, "wrapped=" + wrappedProperty);
+		criterion("wrap1-file-offsets", fileOffset(high) == 2 && fileOffset(p6510) == 4,
+			"offsets=" + fileOffset(high) + "," + fileOffset(p6510));
+	}
+
+	// Exactly 65536 (0x10000) payload bytes loaded at $0000: the largest a 16-bit CBM image
+	// can hold, fills the whole address space with no wrap. mkprgloadtest.py's
+	// full_space_payload() sets byte i to (i>>8)&0xFF, so with load_addr==0 (source offset ==
+	// address) the byte at any address directly encodes that address's own high byte --
+	// "source offsets preserved" is then just reading a handful of addresses back correctly.
+	private void checkPrgFull() {
+		MemoryBlock a000 = blockAt("RAM_A000", 0xa000);
+		MemoryBlock c000 = currentProgram.getMemory().getBlock(addr(0xc000));
+		MemoryBlock e000 = blockAt("RAM_E000", 0xe000);
+		boolean wrappedProperty = currentProgram.getOptions(Program.PROGRAM_INFO)
+				.getBoolean(PRG_WRAPPED_PROPERTY, true);
+
+		println("=== BANKDUMP BEGIN ===");
+		println("A000 " + describeBlock(a000) + " BYTES " + bytesAt("RAM_A000", 0xa000, 1));
+		println("C000 " + describeBlock(c000) + " BYTES " + bytesAt(null, 0xc000, 1));
+		println("E000 " + describeBlock(e000) + " BYTES " + bytesAt("RAM_E000", 0xe000, 1));
+		println("LOW " + bytesAt(null, 0, 1));
+		println("HIGH " + bytesAt("RAM_E000", 0xffff, 1));
+		println("WRAPPED " + wrappedProperty);
+		println("=== BANKDUMP END ===");
+
+		criterion("full-a000", initializedOverlay(a000, "RAM_A000") &&
+			"a0".equals(bytesAt("RAM_A000", 0xa000, 1)), describeBlock(a000));
+		criterion("full-c000", c000 != null && c000.isInitialized() && !c000.isOverlay() &&
+			"c0".equals(bytesAt(null, 0xc000, 1)), describeBlock(c000));
+		criterion("full-e000", initializedOverlay(e000, "RAM_E000") &&
+			"e0".equals(bytesAt("RAM_E000", 0xe000, 1)), describeBlock(e000));
+		criterion("full-low-byte", "00".equals(bytesAt(null, 0, 1)), bytesAt(null, 0, 1));
+		criterion("full-high-byte", "ff".equals(bytesAt("RAM_E000", 0xffff, 1)),
+			bytesAt("RAM_E000", 0xffff, 1));
+		criterion("full-property-false", !wrappedProperty, "wrapped=" + wrappedProperty);
+		criterion("full-file-offsets", fileOffset(a000) == 2 + 0xa000 &&
+			fileOffset(c000) == 2 + 0xc000 && fileOffset(e000) == 2 + 0xe000,
+			"offsets=" + fileOffset(a000) + "," + fileOffset(c000) + "," + fileOffset(e000));
 	}
 
 	// grm-z15.2: a 0x101-byte payload at $FF00 wraps 1 byte to $0000, so the P6510 R6510
@@ -537,14 +668,14 @@ public class VerifyBankTest extends GhidraScript {
 	}
 
 	private void checkC000EmuRecovery() {
-		Address entry = addr(0xc000);
-		Address payload = addr(0xc010);
-		AddressSet target = new AddressSet(payload, addr(0xc017));
-		RecoveryResult result = new EmulationRecovery(currentProgram).recover(entry,
-			StopConditions.builder().dirtyWatch(target).instructionFuel(10_000).build(),
-			IoPolicy.volatileBlocks(currentProgram), monitor);
+		long entryAddr = 0xc000;
+		long payloadAddr = 0xc010;
+		Address entry = addr(entryAddr);
+		Address payload = addr(payloadAddr);
+
+		RecoveryResult result = verifyEmuRecovery("c000-emu", entryAddr, payloadAddr, 8);
+
 		byte[] recovered = result.recoveredBytes(payload, 8);
-		byte[] expected = {1, 2, 3, 4, 5, 6, 7, 8};
 		MemoryBlock block = currentProgram.getMemory().getBlock(entry);
 
 		println("=== BANKDUMP BEGIN ===");
@@ -555,9 +686,6 @@ public class VerifyBankTest extends GhidraScript {
 
 		criterion("c000-base", block != null && block.isInitialized() && !block.isOverlay(),
 			describeBlock(block));
-		criterion("c000-emu-stop", result.stopReason() == StopReason.DIRTY_WATCH,
-			"stop=" + result.stopReason());
-		criterion("c000-emu-bytes", Arrays.equals(recovered, expected), "bytes=" + hex(recovered));
 	}
 
 	// ------------------------------------------------------------------

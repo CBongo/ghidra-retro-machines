@@ -213,18 +213,29 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 		}
 		// Only offer the loader when a board descriptor exists for the mapper; other
 		// mappers fall through to the raw-binary loader until their boards land.
-		if (NesBoardRegistry.forMapper(header.mapper()) == null) {
+		NesBoardRegistry.Board board = NesBoardRegistry.forMapper(header.mapper());
+		if (board == null) {
 			return loadSpecs;
 		}
 
-		LanguageCompilerSpecPair pair = new LanguageCompilerSpecPair(LANGUAGE_ID, COMPILER_SPEC_ID);
+		// Load with the descriptor's declared language; fall back to the stock constant only
+		// if that language is unavailable. See DescriptorSupport.resolveLanguageId.
+		String languageId = LANGUAGE_ID;
+		try {
+			languageId = DescriptorSupport.resolveLanguageId(DescriptorSupport.loadMap(board.mapPath()),
+				LANGUAGE_ID);
+		}
+		catch (IOException e) {
+			// descriptor unreadable here -> keep the safety fallback; load() will report it
+		}
+		LanguageCompilerSpecPair pair = new LanguageCompilerSpecPair(languageId, COMPILER_SPEC_ID);
 		loadSpecs.add(new LoadSpec(this, 0, pair, true));
 
 		// Second, NON-preferred choice: the undocumented-opcode variant (bead grm-azg). NES
 		// games lean on these at least as hard as C64 code does. Kept out of the default for
 		// the usual reason -- with all 256 bytes decodable, disassembly runs through the
 		// graphics and music tables that fill a PRG bank instead of stopping.
-		String undocId = DescriptorSupport.undocVariantOf(LANGUAGE_ID);
+		String undocId = DescriptorSupport.undocVariantOf(languageId);
 		if (undocId != null) {
 			loadSpecs.add(new LoadSpec(this, 0,
 				new LanguageCompilerSpecPair(undocId, COMPILER_SPEC_ID), false));

@@ -329,14 +329,22 @@ compiler. The key is omitted when the source descriptor has no formats.
 
 ### `symbols`
 
-**Inline entries only, for now.** Each entry in the descriptor's `symbols:` list becomes
-one output set carrying `set`, `default` (converted from the YAML `on`/`off` string to a
-JSON boolean), an optional `region`, and `entries[]`. Only the descriptor's `inline:` list
-(if present) is compiled into `entries[]` — sets that instead reference a `source:` file
-(bulk symbol data generated from an external reference, not yet implemented) get an empty
-`entries: []` while still carrying their `set`/`default`/`region` metadata. When the
-`source:`-based generation pipeline lands, those sets will gain populated `entries[]` too;
-the schema does not need to change.
+Each entry in the descriptor's `symbols:` list becomes one output set carrying `set`,
+`default` (converted from the YAML `on`/`off` string to a JSON boolean), an optional
+`region`, and `entries[]`. `entries[]` is assembled from up to two sources, merged in this
+order:
+
+1. The set's `inline:` list (a hand-curated seed), if present.
+2. A `source:` file (bulk symbol data, e.g. generated from mist64/c64ref — see
+   `machines/generated/`), if present and readable. The file must have a top-level
+   `entries:` list; if the referenced file does not exist, `MapCompiler` prints a warning
+   and falls back to the inline entries only (the build still succeeds).
+
+**Inline entries take precedence over `source:` entries at the same address**: entries are
+deduplicated by `addr`, first occurrence wins, and inline is always processed first — so an
+address named inline is never overwritten by the generated source, and an inline list can be
+used as an authoritative override on top of a bulk-generated set. Both `inline:` and
+`source:` may be used together on the same set, or either alone.
 
 ## Conventions
 

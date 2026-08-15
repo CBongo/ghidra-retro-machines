@@ -43,18 +43,32 @@ PLAINTEXT = bytes(range(1, 9))          # $01..$08
 PAYLOAD_ADDR = 0x2010
 
 
-def build():
+def build(load_addr=LOAD_ADDR):
+    """Build the constant-EOR decrypt loop loaded at load_addr, encrypting an
+    8-byte payload at load_addr+$10 (bead grm-w8a: shared by mkemutest.py's own
+    $2000 fixture and mkprgloadtest.py's $C000 one -- the two were previously
+    byte-identical except these load-address-dependent operand bytes).
+
+    The BPL branch offset ($F5 = -11) is relative displacement within the loop
+    body, so it is the same literal regardless of load_addr; only the LDA/STA
+    absolute operand (payload_addr) and the trailing JMP's spin-target operand
+    (load_addr+$0D) vary with the load address.
+    """
+    payload_addr = load_addr + 0x10
+    payload_lo, payload_hi = payload_addr & 0xFF, payload_addr >> 8
+    spin_addr = load_addr + 0x0D
+    spin_lo, spin_hi = spin_addr & 0xFF, spin_addr >> 8
     code = bytes([
-        0xA2, 0x07,             # LDX #$07
-        0xBD, 0x10, 0x20,       # LDA $2010,X
-        0x49, KEY,              # EOR #$AA
-        0x9D, 0x10, 0x20,       # STA $2010,X
-        0xCA,                   # DEX
-        0x10, 0xF5,             # BPL $2002   ($2002 - $200D = -11 = $F5)
-        0x4C, 0x0D, 0x20,       # JMP $200D   (spin)
+        0xA2, 0x07,                        # LDX #$07
+        0xBD, payload_lo, payload_hi,      # LDA payload_addr,X
+        0x49, KEY,                         # EOR #$AA
+        0x9D, payload_lo, payload_hi,      # STA payload_addr,X
+        0xCA,                              # DEX
+        0x10, 0xF5,                        # BPL loop-top (-11, layout-invariant)
+        0x4C, spin_lo, spin_hi,            # JMP spin_addr (spin)
     ])
-    assert LOAD_ADDR + len(code) == PAYLOAD_ADDR, \
-        "code length must place payload exactly at $C010"
+    assert load_addr + len(code) == payload_addr, \
+        "code length must place payload exactly at load_addr+$10"
     encrypted = bytes(b ^ KEY for b in PLAINTEXT)
     return code + encrypted
 

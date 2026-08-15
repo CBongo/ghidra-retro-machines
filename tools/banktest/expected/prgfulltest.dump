@@ -1,0 +1,6 @@
+A000 RAM_A000 a000-bfff overlay=true BYTES a0
+C000 PRG_C000 c000-cfff overlay=false BYTES c0
+E000 RAM_E000 e000-ffff overlay=true BYTES e0
+LOW 00
+HIGH ff
+WRAPPED false

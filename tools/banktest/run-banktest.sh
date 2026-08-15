@@ -426,6 +426,52 @@ run_one() {
 	fi
 }
 
+# Imports a fixture expected to be REJECTED by the loader (bead grm-gea): asserts the
+# log both names the expected rejection reason and reports "Import failed", and that
+# the per-fixture project holds no saved Program (no partial layout left behind by the
+# aborted import). Unlike run_one there is no golden dump to diff -- a rejected import
+# produces none -- so this has no bless mode; check and bless both just verify the same
+# invariants.
+#
+# NOT exit-status-based: analyzeHeadless logs a per-file "ERROR REPORT" and an
+# "Import failed for file:" line for a Loader.load() exception, but still exits 0 for
+# the overall (multi-file-capable) run -- confirmed empirically against this exact
+# fixture. The log content is therefore the only reliable signal.
+#
+# "No partial layout" is asserted by absence of a saved-domain-file (*.db) under the
+# project directory: every project.rep/ directory carries its own bookkeeping
+# (idata/~index.dat, project.prp, ...) whether or not anything was imported, but only a
+# *committed* Program adds a numbered idata/<NN>/ folder holding a ~NNNNNNNN.db --
+# confirmed empirically by diffing a successful project directory against this one.
+run_reject() {
+	local name="$1" fixture="$2" loader="$3" expect_msg="$4"
+	local proj="$WORK/proj_$name"
+	mkdir -p "$proj"
+	local log="$WORK/$name.log"
+	echo "== $name: importing $(basename "$fixture") via analyzeHeadless ($loader), expecting rejection =="
+	"$GHIDRA_HEADLESS" "$(native "$proj")" headless \
+		-import "$(native "$fixture")" \
+		-loader "$loader" \
+		>"$log" 2>&1
+
+	if ! grep -qF "$expect_msg" "$log"; then
+		echo "FAIL: $name log does not mention the expected rejection reason ($expect_msg) (log: $log)"
+		fail=1
+		return
+	fi
+	if ! grep -q '^ERROR REPORT: Import failed for file:' "$log"; then
+		echo "FAIL: $name log does not report an import failure (log: $log)"
+		fail=1
+		return
+	fi
+	if find "$proj" -iname '*.db' 2>/dev/null | grep -q .; then
+		echo "FAIL: $name left a partial Program layout (*.db found under $proj)"
+		fail=1
+		return
+	fi
+	echo "PASS: $name rejected as expected ($expect_msg), no partial layout"
+}
+
 if selected c64-banking; then
 	for name in banktest banktest2 banktest3 banktest4; do
 		run_one "$name" "$WORK/prg/$name.prg" C64PrgLoader
@@ -524,6 +570,15 @@ if selected c64-loader; then
 	run_one prgplacementtest "$WORK/prg/prgplacementtest.prg" C64PrgLoader
 	run_one prgwraptest "$WORK/prg/prgwraptest.prg" C64PrgLoader
 	run_one c000emutest "$WORK/prg/c000emutest.prg" C64PrgLoader
+
+	# grm-gea: exhaustive size/wrap-boundary coverage, following up grm-dvx. The
+	# implementation already enforces every one of these; these fixtures close the
+	# acceptance-test coverage gap identified in grm-dvx's final review.
+	run_one prgnowraptest "$WORK/prg/prgnowraptest.prg" C64PrgLoader
+	run_one prgwrap1test "$WORK/prg/prgwrap1test.prg" C64PrgLoader
+	run_one prgfulltest "$WORK/prg/prgfulltest.prg" C64PrgLoader
+	run_reject prgoverflowtest "$WORK/prg/prgoverflowtest.prg" C64PrgLoader \
+		"16-bit CBM image may contain at most 65536 bytes"
 
 	# grm-z15.2: 0x101-byte payload at $FF00 wraps 1 byte to $0000, straddling the
 	# P6510 R6510 struct's memory-block boundary (DDR initialized, PORT not).

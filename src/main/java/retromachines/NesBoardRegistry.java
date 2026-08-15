@@ -18,7 +18,10 @@ package retromachines;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -81,6 +84,15 @@ final class NesBoardRegistry {
 	private static List<Board> scan() {
 		List<Board> found = new ArrayList<>();
 		for (ResourceFile mapFile : Application.findFilesByExtensionInMyModule(".map")) {
+			// Board descriptors are compiled machine maps living under data/machines/; scope
+			// the scan there explicitly so a future data/games/*.map (compiled game
+			// descriptors, per docs/per-game-descriptors-design.md section 4.1, are supposed
+			// to be .gmap instead) can never be picked up here even if that convention were
+			// ever violated (bead grm-hb6.10).
+			ResourceFile parent = mapFile.getParentFile();
+			if (parent == null || !"machines".equals(parent.getName())) {
+				continue;
+			}
 			try (InputStreamReader reader =
 					new InputStreamReader(mapFile.getInputStream(), StandardCharsets.UTF_8)) {
 				JsonObject map = JsonParser.parseReader(reader).getAsJsonObject();
@@ -106,6 +118,42 @@ final class NesBoardRegistry {
 					"Skipping unparseable board descriptor " + mapFile.getName() + ": " + e);
 			}
 		}
+		// Deterministic ownership (bead grm-7j5): forMapper()/forId() return the first match,
+		// so scan order must not depend on filesystem/directory-listing order.
+		found.sort(Comparator.comparing(Board::id));
+		validateUnique(found);
 		return found;
+	}
+
+	/**
+	 * Fails loudly when two board descriptors disagree about who owns something: the same
+	 * iNES mapper number claimed by two boards (nondeterministic {@link #forMapper}
+	 * resolution) or two boards sharing an {@code id} (nondeterministic {@link #forId}
+	 * resolution, and a broken "NES Board" import-option override). Bead grm-7j5: this is the
+	 * closest thing a runtime-scanned registry has to a build-time gate -- it fires the first
+	 * time anything triggers registry construction, including the JUnit suite
+	 * ({@code NesBoardRegistryTest}), so a genuine conflict fails the gate instead of being
+	 * resolved by an unspecified scan order.
+	 */
+	static void validateUnique(List<Board> boards) {
+		Map<String, Board> byId = new HashMap<>();
+		for (Board board : boards) {
+			Board prior = byId.putIfAbsent(board.id(), board);
+			if (prior != null) {
+				throw new IllegalStateException("Duplicate NES board id '" + board.id() +
+					"' claimed by both " + prior.mapPath() + " and " + board.mapPath());
+			}
+		}
+		Map<Integer, Board> byMapper = new HashMap<>();
+		for (Board board : boards) {
+			for (Integer mapper : board.mappers()) {
+				Board prior = byMapper.putIfAbsent(mapper, board);
+				if (prior != null && prior != board) {
+					throw new IllegalStateException("iNES mapper " + mapper +
+						" is claimed by both board '" + prior.id() + "' (" + prior.mapPath() +
+						") and board '" + board.id() + "' (" + board.mapPath() + ")");
+				}
+			}
+		}
 	}
 }

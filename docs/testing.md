@@ -15,9 +15,10 @@ a given test belongs in.
 | **2. Program-fixture JUnit** | `AbstractGenericTest` + `ProgramBuilder` | `gradle test` (`src/test/java`) | Loader/analyzer/strategy logic that needs a real `Program`/`Instruction` but not the full import pipeline |
 | **3. E2E golden image** | Real loaders + `analyzeHeadless` + behavior-dump diff | `tools/banktest/build-and-test.sh` (bash, out-of-process) | Acceptance: the real import + analysis pipeline end to end. **The gate.** |
 
-Tiers 1–2 are **additive and opt-in today** (`gradle test`; not yet run by the acceptance
-gate — see status below). Tier 3 is the authority and always runs. A change is not accepted
-until Tier 3 is green.
+Tiers 1–2 are **additive**, not a replacement for Tier 3: `gradle test` runs them directly,
+and `build-and-test.sh` also runs them as part of the acceptance gate via the `unit` chunk
+(pulled in by `unit` or `all`; see status below). Tier 3 is the authority and always runs. A
+change is not accepted until Tier 3 is green.
 
 The project **used** to carry a set of bespoke `main()`+`System.exit` verifiers
 (`verifyBitAlgebra`, `verifyMapCompiler`, `verifyDescriptorComposition`, `verifyPetsciiMapper`,
@@ -44,7 +45,9 @@ This is the load-bearing suite. It lives in `tools/banktest/` and works like thi
    post-script.
 4. **`VerifyBankTest.java`** asserts per-fixture `CRITERION` checks and emits a normalized
    behavior **dump** (blocks, overlay references, switch comments, bookmarks) that is diffed
-   against the committed golden in `tools/banktest/expected/<name>.dump` (38 goldens today).
+   against the committed golden in `tools/banktest/expected/<name>.dump` — one golden per
+   fixture; new fixtures land often enough that a count here would drift, so count them
+   directly: `ls tools/banktest/expected/*.dump | wc -l`.
 
 Run the full gate before every commit and for issue acceptance:
 

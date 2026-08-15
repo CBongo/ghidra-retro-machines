@@ -8,20 +8,20 @@ the loader sets up the complete machine around it: RAM/ROM regions, banked memor
 windows, IO chip register structs, system ROM slots, and symbol sets — all driven by a
 per-machine YAML descriptor with zero hard-coded system knowledge in Java.
 
-**Status: working pipeline, two machines, eight NES boards plus C64.** Descriptor
-schema v2 (state tuples, mechanism strategies, physical spaces, computed windows,
-mode-dependent layouts), a C64 PRG loader with bank-state analysis (now including
-BASIC detokenization), and an iNES loader with a data-driven board registry all work
-end-to-end. The machine-independent bank engine tracks banking on the NES discrete
-mappers (NROM/UxROM/CNROM/AxROM/GxROM/BNROM), the register-file board Bandai FCG/LZ93D50
-(mappers 16/157/159, address-decoded memory-latch) and, as of the M3 milestone, the protocol
-mappers MMC1 (serial-shift) and MMC3 (select-data + mode-swapped layouts): on Mega Man
-(UNROM) it resolves ~1,500 cross-bank JSR/JMP references into per-bank overlay spaces
-and pulls ~7,400 instructions of banked code into analysis. Real-ROM acceptance on
-MMC1/MMC3 commercial titles (Metroid, Zelda, SMB3, Crystalis) and an overlay-scale
-measurement are the two items still open before M3 closes — see the
-[banking design vision](docs/vision-board-banking.md) roadmap. See the
-[roadmap](#roadmap) below for the rest.
+**Status: working pipeline, three home-computer descriptors (C64, C128, PET 4032) and one
+NES descriptor family spanning nine boards.** Descriptor schema v2 (state tuples, mechanism
+strategies, physical spaces, computed windows, mode-dependent layouts), PRG loaders with
+bank-state analysis (including BASIC detokenization for C64/PET/C128), and an iNES loader
+with a data-driven board registry all work end-to-end. The machine-independent bank engine
+tracks banking on the NES discrete mappers (NROM/UxROM/CNROM/AxROM/GxROM/BNROM), the
+register-file board Bandai FCG/LZ93D50 (mappers 16/157/159, address-decoded memory-latch)
+and, as of the M3 milestone, the protocol mappers MMC1 (serial-shift) and MMC3 (select-data
++ mode-swapped layouts): on Mega Man (UNROM) it resolves ~1,500 cross-bank JSR/JMP
+references into per-bank overlay spaces and pulls ~7,400 instructions of banked code into
+analysis. The overlay-scale measurement is done, and an initial real-ROM acceptance pass
+against MMC1/MMC3 commercial titles has been recorded — see the
+[banking design vision](docs/vision-board-banking.md) §9 M3 for current per-board results
+and what remains open. See the [roadmap](#roadmap) below for the rest.
 
 ## Why
 
@@ -38,7 +38,14 @@ being re-executed by hand across the community — this extension automates it.
   copyright-safe ROM slots; loads with the bundled
   [6510 language](data/languages/6510.slaspec) that models the on-die `$00`/`$01` port
   as registers
-- **[machines/nes-nrom.yaml](machines/nes-nrom.yaml)** — NES NROM, the second machine: physical
+- **[machines/pet4032.yaml](machines/pet4032.yaml)** — the Commodore PET 4032 (32K,
+  40-column, 12-inch CRTC): BASIC 4.0 workspace/token tables, 6520 PIA/6522 VIA/6545 CRTC
+  register structs, fixed ROM slots; no banked memory
+- **[machines/c128.yaml](machines/c128.yaml)** — the Commodore 128 in native mode
+  (documented `CR=$00`/BASIC bank 15 power-up view): BASIC 7.0 with two-byte prefix
+  tokens, MMU register struct, VIC-IIe/VDC/SID/CIA register structs; runs on the same
+  6510 language as the C64 (the 8502 is 6510/6502-compatible)
+- **[machines/nes-nrom.yaml](machines/nes-nrom.yaml)** — NES NROM: physical
   PRG space with computed windows (`PRG[last]` handles NROM-128 mirroring and NROM-256
   with one expression), PPU/APU register structs, board registry keyed by iNES mapper
   number
@@ -46,6 +53,9 @@ being re-executed by hand across the community — this extension automates it.
   `memory-latch` mechanism (store anywhere in the ROM range latches the bank, optional
   bus-conflict AND, field extraction via shift/mask), switchable windows realized as
   home-bank-in-base plus one overlay per alternate bank
+- **[machines/nes-bandai-fcg.yaml](machines/nes-bandai-fcg.yaml)** — the Bandai
+  FCG/LZ93D50 register-file board (iNES mappers 16/157/159): address-decoded
+  memory-latch, no serial-shift/select-data protocol
 - **machines/nes-mmc1.yaml** / **machines/nes-mmc3.yaml** — the M3 protocol-mapper
   boards: `serial-shift` (MMC1's 5-write bit-serial commit protocol) and `select-data`
   with a co-emitted mode bit (MMC3's even/odd bank-select/bank-data pair), both with
@@ -99,11 +109,14 @@ being re-executed by hand across the community — this extension automates it.
 6. ~~MMC1/MMC3 protocol strategies (`serial-shift`, `select-data`), mode-dependent
    layouts, function-level bank-state warnings~~ (done — see
    [docs/vision-board-banking.md](docs/vision-board-banking.md) §9 M3; overlay-scale
-   measurement and real-ROM acceptance still open)
+   measurement is done, real-ROM acceptance has an initial pass recorded but is not yet
+   closed against the full title list)
 7. ~~PETSCII display-string mapping + C64 BASIC detokenizing analyzer~~ (done — see
    [docs/petscii.md](docs/petscii.md) and [docs/basic-analyzer.md](docs/basic-analyzer.md))
-8. More machines: GB, SNES, PS1
-9. Generalized string detection beyond PETSCII (screen codes, per-game tile tables)
+8. ~~PET 4032 and C128 native-mode descriptors + PRG loaders, BASIC 4/7 token-dialect
+   detokenizing (including C128's two-byte prefix tokens)~~ (done)
+9. More machines: GB, SNES, PS1
+10. Generalized string detection beyond PETSCII (screen codes, per-game tile tables)
 
 ## Building
 

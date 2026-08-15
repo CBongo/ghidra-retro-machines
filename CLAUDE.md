@@ -177,6 +177,7 @@ Chunk/source-area mapping:
 - `pet-loader`: PET 4032 descriptor, PRG placement, IO typing, and fixed ROM slots.
 - `c128-loader`: C128 native BASIC PRG placement, fixed ROM slots, and MMU I/O.
 - `nes-banking`: NES banking and MMC fixtures.
+- `petscii-strings`: `PetsciiStringAnalyzer` C64 PRG fixture.
 - `unit`: the JUnit `gradle test` suite (all `src/test/java`; no extension build/install).
 - `all`: every chunk; the default when no chunk is supplied.
 
@@ -189,12 +190,19 @@ bash tools/banktest/realrom-test.sh check                 # romdirs come from GR
 
 `GRM_ROM_DIR` is set per machine (`.claude/settings.local.json`, gitignored) and holds **several
 space-separated dirs**, because the curated manifest is split across more than one and the driver
-indexes each at **depth 1 only**. So: **never conclude "this machine doesn't have the ROM" from a
-`SKIP`** — suspect the dir list first, and look at the dirs the driver prints beside the skip
-count. Two rows (`megaman`, `smb3`) FAIL on an unchanged tree by design; see the
-`realrom-expected-baseline-fails` bd memory before treating either as a regression, and do not
-bless them. To decide whether some *other* movement is yours, re-run the row against a stashed
-baseline and diff the two `build/banktest-work/realrom.*/<id>.diff` files.
+indexes each at **depth 1 only**. The driver reads it as `ROM_DIRS=($GRM_ROM_DIR)` — unquoted,
+so it splits on *any* whitespace with no escaping: multiple dirs separated by spaces work, but a
+**single directory whose own name contains a space cannot be represented** this way (pass it on
+the command line instead, where each argument is a distinct dir regardless of its contents). So:
+**never conclude "this machine doesn't have the ROM" from a `SKIP`** — suspect the dir list first,
+and look at the dirs the driver prints beside the skip count. On the curated (no-flag) manifest,
+`smb3` FAILs on an unchanged tree by design (golden correct, output wrong; blocked on `grm-67g`)
+— never bless it. `megaman` is not a guaranteed fail: it flaps at roughly a 20% rate from
+unrelated jitter (`grm-g73`) rather than failing every run. See the
+`realrom-expected-baseline-fails` bd memory for the current, authoritative row list — it is
+revised as rows get fixed/reclassified and supersedes any older summary, including this one. To
+decide whether some *other* movement is yours, re-run the row against a stashed baseline and diff
+the two `build/banktest-work/realrom.*/<id>.diff` files.
 
 There is deliberately no `quick` alias or cache-backed project mode: headless
 projects are created fresh, and a correct cache would need explicit invalidation

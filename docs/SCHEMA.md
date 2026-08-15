@@ -396,9 +396,14 @@ instruction or fallthrough that itself straddles one of those boundaries cannot 
 as one contiguous instruction. The bytes and their original file offsets are still preserved on
 both sides; analysis at that rare cross-space boundary may require manual treatment.
 
-`load_target` is not required — C64 and NES descriptors correctly have none. Whether a
-loader uses the legacy single-target mechanism is a property of that loader, not the
-schema.
+`load_target` is not required — C64 and NES descriptors correctly have none.
+`machines/pet4032.yaml` and `machines/c128.yaml` each now mark one `kind: ram` region
+`load_target: true` (`BASIC_TEXT` in each case). Whether a loader uses the legacy single-target mechanism
+is a property of that loader, not the schema — though as of this writing `AbstractCbmPrgLoader`
+(shared by `C64PrgLoader`, `PetPrgLoader`, and `C128PrgLoader`) derives PRG placement
+uniformly from `kind: ram` regions and `prg_placeable` regions for all three machines, so
+`load_target` itself is not read by any loader in `src/main/java`; `MapCompiler` only
+validates that at most one region declares it.
 
 `MapCompiler` passes these three fields through to the compiled `.map` verbatim, only when
 present in the YAML (no defaults are ever written into the JSON — the loader is the single
@@ -529,7 +534,10 @@ decisions" below. Every entry has `name:` and `kind:`; `kind:` selects one of:
   list. See the header comment in `machines/generated/basic-tokens.yaml` for the full
   dialect-fork model (BASIC 2/3.5/4/7 share `$80-$CB`; each dialect assigns different
   keywords to the same `$CC+` byte values above that; C128 BASIC 7 additionally has
-  two-byte prefix tokens, planned as separate per-prefix enums, not yet implemented).
+  two-byte prefix tokens, implemented as separate per-prefix enums: `machines/c128.yaml`'s
+  `formats.prg.basic.prefix_enums` maps prefix bytes `0xCE`/`0xFE` to the `BASIC_V7_TOKEN_CE`/
+  `BASIC_V7_TOKEN_FE` enums, consumed by `BasicDescriptorTokenLookup` in
+  `src/main/java/retromachines/`).
 
   Member names should be the literal keyword/mnemonic where Ghidra's enum member
   naming accepts it — verified empirically (`GdtBuilder`, ghidra 12.1.2): `EnumDataType`

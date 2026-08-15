@@ -177,7 +177,20 @@ change what the numbers mean:
 ## 3. Board documentation
 
 Descriptors are declarative YAML in `machines/`, so a complete fact sheet converts to a shipped
-board with very little agent time. Per mapper:
+board with very little agent time.
+
+**Source of record: the NESdev wiki iNES 1.0 mapper grid — <https://www.nesdev.org/wiki/Mapper>.**
+That is the project owner's own primary reference for mapper behavior (2026-08-15); use it, and
+cite it in board work. Note its structure: the grid is an **index** (mapper numbers 000–255 with
+manufacturer icons, each linking out) and carries none of the detail below — register addresses,
+bit layouts, power-on state and write protocol live on the **individual mapper pages** one click
+away. Grid = coverage map; per-mapper page = the fact sheet.
+
+Because those per-mapper pages are web-fetchable, **assembling a fact sheet is agent work.** What
+genuinely belongs in this file is the judgment (is this board worth shipping at all?) and anything
+needing the local dumps — sample counts, header scans — which require `GRM_ROM_DIR`.
+
+Per mapper:
 
 - window layout — which ranges switchable, which fixed, at what granularity
 - register addresses, plus the `addr_mask` / `addr_match` decode that distinguishes the PRG register
