@@ -185,11 +185,20 @@ Chunk/source-area mapping:
 
 ```bash
 bash tools/banktest/build-and-test.sh check nes-banking   # once, for the isolated install
-bash tools/banktest/realrom-test.sh check                 # romdirs come from GRM_ROM_DIR
+bash tools/banktest/realrom-test.sh check --all           # romdirs come from GRM_ROM_DIR
 ```
 
-**`tools/banktest/realrom-test.sh check` is REQUIRED before committing any change that touches
-analysis behaviour** (`BoardBankAnalyzer`, any `BankSwitchStrategy`, `StoredValueScanner`, or
+**Use `--all`, and note that the manifests do NOT accumulate.** No flag = `manifest.tsv`, the
+curated board-representative set (12 rows). `--gme` = `manifest-gme.tsv` *only* (19 rows).
+`--all` = both. This trips people because a bare `check` looks like "the real-ROM tier" and is
+actually a third of it — and *every* title this project discusses constantly (wizwarr, blmaster,
+cv2, tmnt, smb2, rcransom, ff1, dodge, rcproam) lives in the **GME** set, so a bare `check` never
+touches one of them. Sharpest illustration: all three ROMs the grm-mu7 incident below destroyed —
+kicarus, dodge, cv2 — are GME rows, so a bare `check` would not have caught the very regression
+this requirement exists to prevent.
+
+**`tools/banktest/realrom-test.sh check --all` is REQUIRED before committing any change that
+touches analysis behaviour** (`BoardBankAnalyzer`, any `BankSwitchStrategy`, `StoredValueScanner`, or
 similar), alongside `build-and-test.sh check` — not a substitute for it, an addition to it. This
 is not optional-nice-to-have: `build-and-test.sh check`'s synthetic goldens, by construction, only
 contain idioms someone already thought of, and grm-mu7 (2026-08-04) shipped a broken guard that

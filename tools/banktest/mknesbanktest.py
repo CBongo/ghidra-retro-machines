@@ -344,10 +344,18 @@ MAPPER_SERIALTEST = 222  # synthetic nes-serialtest board; see machines/nes-seri
                           # module doc for why 222 (not 100/101/102/248) was chosen
 MAPPER_MMC1 = 1        # real MMC1 board (nesmmc1test); see machines/nes-mmc1.yaml
 MAPPER_BANDAI = 16     # Bandai FCG/LZ93D50 board (nesbandaitest); see machines/nes-bandai-fcg.yaml
+MAPPER_MMC2 = 9        # MMC2 board (nesmmc2test); see machines/nes-mmc2.yaml
 
 MMC3_BANK_SIZE = 0x2000
 MMC3_BANKS = 8
 MMC3_PRG_SIZE = MMC3_BANK_SIZE * MMC3_BANKS
+
+# nesmmc2test.nes: 8 x 8 KiB PRG banks (64 KiB) -- same shape as MMC3's (8 KiB banks),
+# distinct constants for readability since the two boards' bank counts/sizes could
+# diverge independently of each other.
+MMC2_BANK_SIZE = 0x2000
+MMC2_BANKS = 8
+MMC2_PRG_SIZE = MMC2_BANK_SIZE * MMC2_BANKS
 
 # nesserialtest.nes: 8 x 16 KiB PRG banks (128 KiB, Metroid-class shape per bead grm-hsv.1).
 SERIAL_BANKS = 8
@@ -648,6 +656,74 @@ def make_prg_uxhelper():
     put(0xFFFA, [0x1B, 0xC0])  # NMI   -> $C01B (RTI)
     put(0xFFFC, [0x00, 0xC0])  # RESET -> $C000
     put(0xFFFE, [0x1B, 0xC0])  # IRQ   -> $C01B (RTI)
+
+    return bytes(prg)
+
+
+def make_prg_mmc2():
+    """MMC2 (bead grm-tas, machines/nes-mmc2.yaml, iNES mapper 9) end-to-end fixture.
+
+    8 x 8 KiB PRG banks (64 KiB): W8000 ($8000-$9FFF) is the switchable window; WA000/
+    WC000/WE000 ($A000-$FFFF) are ALWAYS the last three banks (5, 6, 7) -- fixed, no PRG
+    mode. Bank 7's file base (7 * 0x2000 = 0xE000) equals WE000's CPU base, and banks 5/6
+    immediately precede it, so file offset == CPU address across the WHOLE $A000-$FFFF
+    range (not just the last bank, unlike the UxROM-family fixtures) -- put() below relies
+    on this directly, no bank3-style CPU-address translation needed.
+
+    RESET runs from $E000 (bank 7, home -- fixed regardless of prg_bank) and:
+      1. Selects prg_bank=2 via a single write to $A005 (anywhere in $A000-$AFFF works;
+         $A005 is deliberately non-canonical, proving the mechanism decodes the whole
+         4 KiB register range, not one fixed address).
+      2. Writes a decoy value to $B000 (the CHR0 register, immediately past $AFFF) that
+         would corrupt prg_bank to 5 if the memory-latch mechanism's start/end decode
+         were wrong (whole-range instead of $A000-$AFFF-only) -- mirrors nesbandaitest's
+         decoy-write proof of address-decode correctness.
+      3. JSRs to $8005, which must resolve into W8000_B2's overlay -- proof prg_bank
+         survived the decoy at 2, not 5.
+
+    RESET ($E000):
+      E000  A9 02        LDA #$02        ; prg_bank = 2
+      E002  8D 05 A0     STA $A005       ; PRG register write, non-canonical address
+      E005  A9 05        LDA #$05        ; decoy value (would be prg_bank=5, WRONG, if the
+                          mechanism wrongly claimed $B000 too)
+      E007  8D 00 B0     STA $B000       ; CHR0 register write -- must NOT move prg_bank
+      E00A  20 05 80     JSR $8005       ; -> W8000_B2::8005 (load-bearing: proves prg_bank
+                          is still 2, and that the CHR write was correctly a no-op)
+      E00D  4C 0D E0     JMP $E00D       ; self loop
+      E010  40           RTI             ; NMI/IRQ handler
+
+    Bank 2's routine at CPU $8005 (file offset 2 * 0x2000 + 5 = 0x4005): RTS.
+    """
+    prg = bytearray([0x00] * MMC2_PRG_SIZE)
+
+    # Bank markers at the first byte of each bank (harmless trace, matches the other
+    # fixtures' convention). Bank 7's marker is overwritten by RESET's own code below
+    # (same collision every other fixture's home/fixed bank has -- see module doc).
+    for bank in range(MMC2_BANKS):
+        prg[bank * MMC2_BANK_SIZE] = bank
+
+    # Bank 2's JSR target at CPU $8005 -> file offset 2 * 0x2000 + 5.
+    prg[2 * MMC2_BANK_SIZE + 0x0005] = 0x60  # RTS
+
+    bank7_base = 7 * MMC2_BANK_SIZE
+    assert bank7_base == 0xE000
+
+    def put(cpu_addr, data):
+        # File offset == CPU address across the whole $A000-$FFFF range (see module doc).
+        prg[cpu_addr:cpu_addr + len(data)] = bytes(data)
+
+    put(0xE000, [0xA9, 0x02])              # LDA #$02
+    put(0xE002, [0x8D, 0x05, 0xA0])         # STA $A005 (PRG register -> prg_bank=2)
+    put(0xE005, [0xA9, 0x05])              # LDA #$05 (decoy)
+    put(0xE007, [0x8D, 0x00, 0xB0])         # STA $B000 (CHR0 register -- must not latch)
+    put(0xE00A, [0x20, 0x05, 0x80])         # JSR $8005 (-> W8000_B2::8005)
+    put(0xE00D, [0x4C, 0x0D, 0xE0])         # JMP $E00D (self loop)
+    put(0xE010, [0x40])                     # RTI (NMI/IRQ handler)
+
+    # Vector table.
+    put(0xFFFA, [0x10, 0xE0])  # NMI   -> $E010 (RTI)
+    put(0xFFFC, [0x00, 0xE0])  # RESET -> $E000
+    put(0xFFFE, [0x10, 0xE0])  # IRQ   -> $E010 (RTI)
 
     return bytes(prg)
 
@@ -2878,6 +2954,29 @@ def main():
         (prgb[bbank3_base + 0x0010] | (prgb[bbank3_base + 0x0011] << 8)) == 0x8005  # JSR $8005
     assert (prgb[bbank3_base + 0x3FFC] | (prgb[bbank3_base + 0x3FFD] << 8)) == 0xC000  # RESET vec
     _write_rom(outdir, "nesbandaitest.nes", prgb, mapper=MAPPER_BANDAI)
+
+    # nesmmc2test.nes (bead grm-tas): MMC2 PRG bank-select + address-decode fixture.
+    prgm2 = make_prg_mmc2()
+    assert len(prgm2) == MMC2_PRG_SIZE
+    assert prgm2[2 * MMC2_BANK_SIZE + 0x0005] == 0x60  # RTS: W8000_B2::8005 target
+    assert prgm2[0xE000] == 0xA9 and prgm2[0xE001] == 0x02        # LDA #$02
+    assert prgm2[0xE002] == 0x8D and \
+        (prgm2[0xE003] | (prgm2[0xE004] << 8)) == 0xA005          # STA $A005
+    assert prgm2[0xE005] == 0xA9 and prgm2[0xE006] == 0x05        # LDA #$05 (decoy)
+    assert prgm2[0xE007] == 0x8D and \
+        (prgm2[0xE008] | (prgm2[0xE009] << 8)) == 0xB000          # STA $B000 (decoy)
+    assert prgm2[0xE00A] == 0x20 and \
+        (prgm2[0xE00B] | (prgm2[0xE00C] << 8)) == 0x8005          # JSR $8005
+    assert prgm2[0xE00D] == 0x4C and \
+        (prgm2[0xE00E] | (prgm2[0xE00F] << 8)) == 0xE00D          # JMP $E00D
+    assert prgm2[0xE010] == 0x40                                   # RTI
+    assert (prgm2[0xFFFC] | (prgm2[0xFFFD] << 8)) == 0xE000       # RESET vector
+    assert (prgm2[0xFFFA] | (prgm2[0xFFFB] << 8)) == 0xE010       # NMI vector
+    assert (prgm2[0xFFFE] | (prgm2[0xFFFF] << 8)) == 0xE010       # IRQ vector
+    # _write_rom's prg_banks counts 16 KiB iNES header units, not this fixture's 8 KiB
+    # internal bank size -- 8 x 8 KiB = 64 KiB = 4 x 16 KiB, i.e. the function default
+    # (PRG_BANKS = 4), same as nesmmc3test.nes's identically-sized (8 x 8 KiB) fixture.
+    _write_rom(outdir, "nesmmc2test.nes", prgm2, mapper=MAPPER_MMC2)
 
 
 if __name__ == "__main__":

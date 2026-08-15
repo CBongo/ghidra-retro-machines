@@ -660,6 +660,11 @@ if selected nes-banking; then
 
 	run_one nesbandaitest "$WORK/nes/nesbandaitest.nes" NesRomLoader
 
+	# grm-tas: MMC2 board (machines/nes-mmc2.yaml, iNES mapper 9) -- PRG bank select at
+	# $A000-$AFFF plus the CHR0-register decoy proving the mechanism does not also claim
+	# $B000-$BFFF. See make_prg_mmc2()'s docstring.
+	run_one nesmmc2test "$WORK/nes/nesmmc2test.nes" NesRomLoader
+
 	# grm-1.7.6: CopyLoopAnalyzer is gated on the descriptor + a 6502/6510 language, not on
 	# the C64 loader, so it fires on NES ROMs too. This is the only fixture where the copy
 	# loop runs from a bank overlay and stores into base-space PRG RAM -- i.e. the only

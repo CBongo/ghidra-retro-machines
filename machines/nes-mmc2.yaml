@@ -1,0 +1,132 @@
+# NES MMC2 board descriptor (iNES mapper 9) -- SHIPPING descriptor (bead grm-tas).
+# MMC2 exists essentially for one game (Mike Tyson's Punch-Out!!); shipping it anyway is
+# a deliberate, already-made call (see the bead's 2026-08-15 ruling) -- the GME project
+# that consumes this engine's output has Punch-Out!! in scope.
+#
+# Hardware facts (NESdev wiki, https://www.nesdev.org/wiki/MMC2, indexed from the mapper
+# list at https://www.nesdev.org/wiki/Mapper -> "009" -> INES_Mapper_009, which redirects
+# to the same MMC2 page):
+#   CPU $8000-$9FFF: one 8 KiB PRG ROM window, switchable.
+#   CPU $A000-$FFFF: three 8 KiB PRG ROM windows, ALL FIXED to the last three banks of
+#     the image, in file order ($A000 = third-to-last, $C000 = second-to-last,
+#     $E000 = last). No PRG mode bit anywhere -- this arrangement is the only one MMC2
+#     has; nothing switches it.
+#   PRG bank select register: $A000-$AFFF (any address in that 4 KiB range), single
+#     write, no latch/shift protocol:
+#       7  bit  0
+#       ---- ----
+#       xxxx PPPP
+#            ++++- select the 8 KiB PRG bank for CPU $8000-$9FFF (bits 3-0; bits 7-4
+#                   unused). 16 banks (4 bits) covers Punch-Out!!'s 128 KiB PRG (16 x
+#                   8 KiB) exactly.
+#     Wiki states explicitly: "No" bus conflicts on this register.
+#   Power-on/reset PRG-bank state: NOT DOCUMENTED on the wiki page (checked both the MMC2
+#     detail page and the mapper index; neither states a reset value for the $A000-$AFFF
+#     register). 0 is this descriptor's conventional assumption, matching every other
+#     descriptor here that faces the same gap (UxROM, MMC1, MMC3, Bandai FCG) -- not a
+#     hardware fact, just the project's standing convention for undocumented power-on
+#     latch contents.
+#
+# Register/window address overlap, same pattern as MMC3's scanline-IRQ aliasing (see
+# machines/nes-mmc3.yaml's module note): $A000-$AFFF is simultaneously PRG ROM data (on
+# READ) and the PRG bank register (on WRITE). $B000-$EFFF further overlaps four CHR bank
+# registers ($B000-$BFFF, $C000-$CFFF, $D000-$DFFF, $E000-$EFFF -- one per PPU-side latch
+# target), which sit *inside* the two upper fixed PRG windows (WC000 covers $C000-$DFFF,
+# WE000 covers $E000-$FFFF). So WA000, WC000, and WE000 are all marked on_write:
+# mechanism: real hardware really does treat a write anywhere in $A000-$FFFF as hitting
+# SOME register (PRG or CHR), never as an ordinary ROM write. The memory-latch mechanism
+# below only recognizes $A000-$AFFF, so a write into $B000-$FFFF is still "a mechanism
+# write" at the window level (correctly not misread as a plain memory store) but simply
+# isn't claimed by any tracked field -- falls through untracked, same no-poison contract
+# as MMC3's R0-R5/IRQ writes. $8000-$9FFF has NO register at all per the wiki (only
+# $A000 and up are register-mapped) -- it is left plain ROM (no on_write) rather than
+# guessed at.
+#
+# *** CHR banking explicitly OUT OF SCOPE. *** MMC2's defining feature -- and the whole
+# reason it exists, since it lets Punch-Out!! swap the boxer's 2KB sprite mid-scanline --
+# is latch-driven CHR banking: reading PPU tile $0FD8/$0FE8 (latch 0, top-row-only) or
+# $1FD8-$1FDF/$1FE8-$1FEF (latch 1, every row) flips one of two 1-bit state machines,
+# which in turn selects between two of the four CHR registers ($B000/$C000 for latch 0,
+# $D000/$E000 for latch 1). This is driven by PPU *reads* of tile data, not CPU
+# instructions -- there is no CPU-side "bank switch" to recover at all, and it is PPU/CHR
+# address space regardless (vision doc SS5.4 defers non-CPU spaces same as every other NES
+# descriptor here). Not modeled; the four CHR registers are recognized only as
+# non-PRG on_write: mechanism traffic that must not be misread as ROM writes or
+# mis-attributed to prg_bank (see the overlap note above).
+
+schema: 2
+
+include: fragments/nes-common.yaml
+
+system:
+  id: nes_mmc2
+  name: NES MMC2 (iNES mapper 9)
+  board:
+    ines_mappers: [9]        # board registry key: iNES mapper numbers this board serves
+  cpu:
+    # Stock 6502 language -- the 2A03 core is a 6502 minus decimal mode, invisible here.
+    language: "6502:LE:16:default"
+
+physical:
+  # PRG ROM laid out once, in file order. No size: — it comes from the iNES header
+  # (PRG-ROM size field) at load time.
+  - { name: PRG, image: prg_rom }
+
+memory:
+  # No PRG-RAM region: MMC2/Punch-Out!! carries none.
+  # PPU/CHR address space: out of scope for the CPU map (vision doc §5.4 defers non-CPU
+  # spaces) -- see the CHR-latch note above for why this board's CHR banking specifically
+  # is not modeled even in outline.
+
+  windows:                        # single fixed arrangement -- no prg_mode, no layouts
+    - name: W8000                 # switchable 8 KiB bank; no register here (see note above)
+      start: 0x8000
+      end: 0x9FFF
+      maps: "PRG[prg_bank * 0x2000]"
+    - name: WA000                 # fixed: third-to-last 8 KiB bank; also the PRG register
+      start: 0xA000
+      end: 0xBFFF
+      maps: "PRG[second_last - 0x2000]"
+      on_write: mechanism         # $A000-$AFFF = PRG register, $B000-$BFFF = CHR0 register
+    - name: WC000                 # fixed: second-to-last 8 KiB bank
+      start: 0xC000
+      end: 0xDFFF
+      maps: "PRG[second_last]"
+      on_write: mechanism         # $C000-$CFFF = CHR1, $D000-$DFFF = CHR2 (both registers)
+    - name: WE000                 # fixed: last 8 KiB bank
+      start: 0xE000
+      end: 0xFFFF
+      maps: "PRG[last]"
+      on_write: mechanism         # $E000-$EFFF = CHR3 register; $F000-$FFFF undocumented,
+                                   # conservatively treated the same as MMC3's WE000
+
+banking:
+  state:
+    # 4-bit PRG bank (bits 3-0 of the $A000-$AFFF write; bits 7-4 unused per the wiki
+    # diagram) -- 16 banks covers Punch-Out!!'s 128 KiB PRG (16 x 8 KiB) exactly.
+    - { name: prg_bank, bits: 4 }
+  mechanisms:
+    - strategy: memory-latch      # single write, no shift/latch protocol (wiki: "No" bus conflicts)
+      params: { start: 0xA000, end: 0xAFFF, mask: 0x0F, bus_conflict: false }
+      sets: [prg_bank]
+  # Power-on register contents are not documented by the wiki (see the module note above)
+  # -- 0 is the conventional assumption used throughout this project for undocumented
+  # mapper-latch reset state.
+  initial_state: { prg_bank: 0 }
+  # No states: table -- occupants are computed from the windows' maps: expressions.
+
+# rom_images: omitted -- PRG comes from the .nes container payload, not a user-supplied slot.
+
+validation:
+  oracle: none
+  checks:
+    - "PRG-side window layout, register address/bit-layout, and write protocol
+       cross-checked against the NESdev wiki (https://www.nesdev.org/wiki/MMC2); no
+       emulator oracle run yet. Verified against the banktest suite's runtime behavior
+       (bead grm-tas, nesmmc2test.nes). Power-on PRG-bank state is NOT documented by the
+       wiki (checked both /wiki/MMC2 and /wiki/INES_Mapper_009) -- 0 is this project's
+       standing convention for undocumented mapper reset state, not a confirmed hardware
+       fact. CHR banking (the PPU-read-triggered latch mechanism that is MMC2's defining
+       feature), nametable mirroring, and PRG-RAM are all out of scope (vision doc §5.4 /
+       this bead) -- see the module note above for why CHR specifically is not modeled
+       even in outline."

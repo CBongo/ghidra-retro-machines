@@ -318,6 +318,9 @@ public class VerifyBankTest extends GhidraScript {
 		else if (name.contains("nesmodetest")) {
 			checkNesModetest();
 		}
+		else if (name.contains("nesmmc2test")) {
+			checkNesMmc2test();
+		}
 		else if (name.contains("nesbandaitest")) {
 			checkNesBandaitest();
 		}
@@ -2622,6 +2625,58 @@ public class VerifyBankTest extends GhidraScript {
 		Reference r = findOverlayRef(0xC00F, "PRG_LO_B2", 0x8005);
 		criterion("D5", r != null && r.getReferenceType().isCall() && r.isPrimary(),
 			"JSR $8005 in bank 2 retargeted to PRG_LO_B2 overlay, primary: " + describe(r));
+	}
+
+	// ------------------------------------------------------------------
+	// nesmmc2test.nes criteria (MMC2 PRG bank select + address decode, bead grm-tas)
+	// ------------------------------------------------------------------
+
+	private void checkNesMmc2test() {
+		// M1: home-bank block layout -- W8000 (home = prg_bank 0) unqualified in base
+		// space, non-home bank 2 realized as the W8000_B2 overlay. The three fixed
+		// windows (WA000/WC000/WE000) don't reference bank state, so they never get a
+		// _B<n> overlay of their own -- just the one base-space block each.
+		MemoryBlock w8000 = currentProgram.getMemory().getBlock("W8000");
+		criterion("M1a", w8000 != null && !w8000.isOverlay(),
+			"W8000 home-bank block exists un-suffixed in base space: " + describeBlock(w8000));
+		MemoryBlock w8000B2 = currentProgram.getMemory().getBlock("W8000_B2");
+		criterion("M1b", w8000B2 != null && w8000B2.isOverlay(),
+			"W8000_B2 overlay block exists: " + describeBlock(w8000B2));
+		MemoryBlock wa000 = currentProgram.getMemory().getBlock("WA000");
+		MemoryBlock wc000 = currentProgram.getMemory().getBlock("WC000");
+		MemoryBlock we000 = currentProgram.getMemory().getBlock("WE000");
+		criterion("M1c", wa000 != null && !wa000.isOverlay() && wc000 != null &&
+			!wc000.isOverlay() && we000 != null && !we000.isOverlay(),
+			"WA000/WC000/WE000 fixed blocks exist in base space: " + describeBlock(wa000) +
+				", " + describeBlock(wc000) + ", " + describeBlock(we000));
+
+		// M2: the PRG-register write (LDA #$02 / STA $A005, non-canonical address inside
+		// $A000-$AFFF) at $E002 gets a fully-known "bank -> 2" comment. MMC2 has no bus
+		// conflict, so the recovered value is just the driven immediate.
+		String e002 = eol(0xE002);
+		criterion("M2", e002.contains("bank -> 2 (") && !e002.contains("?"),
+			"fully known bank -> 2 comment at e002 (STA $A005): \"" + e002 + "\"");
+
+		// M3: THE address-decode proof. The decoy write to $B000 (the CHR0 register,
+		// immediately past the PRG register's $A000-$AFFF range) at $E007 must NOT be
+		// treated as a prg_bank latch -- if the mechanism's start/end decode were wrong
+		// (claiming the whole $A000-$FFFF register-mirrored range instead of just
+		// $A000-$AFFF), this decoy's value (5) would have re-latched prg_bank.
+		String e007 = eol(0xE007);
+		criterion("M3", !e007.contains("bank ->"),
+			"CHR0 register write (STA $B000) at e007 is NOT a prg_bank latch: \"" + e007 + "\"");
+
+		// M4: the JSR $8005 at $E00A, taken with prg_bank still 2 (the decoy did not move
+		// it), retargets into the W8000_B2 overlay -- the positive counterpart to M3.
+		Reference r = findOverlayRef(0xE00A, "W8000_B2", 0x8005);
+		criterion("M4", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $8005 in bank 2 retargeted to W8000_B2 overlay, primary: " + describe(r));
+
+		// M5: the phase-2 disassembly cascade actually produced an instruction at the
+		// overlay target -- without this, M4's ref couldn't exist, but this checks the
+		// disassembly (not just the reference) landed where expected.
+		criterion("M5", hasInstructionAt("W8000_B2", 0x8005),
+			"instruction exists at W8000_B2::8005");
 	}
 
 	// ------------------------------------------------------------------
