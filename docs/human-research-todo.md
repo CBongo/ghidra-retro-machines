@@ -166,11 +166,22 @@ Agents can't file these — they need an account and CLA agreement.
       before investing in the patch (`caheckman` owns `jumptable.cc`); that guidance has not
       arrived and waiting on it is unbounded. Hence the local-fork-first decision — see `grm-eyn`.
 
-      The PR is a bigger job than the fork, and deliberately so: `findSmallestNormal` is
-      **architecture-independent**, so reviewers will ask whether tightening the guard loses
-      legitimate switch recovery on x86/ARM/PowerPC — and our whole evidence base is 6502. The
-      fork only has to be right for our corpus; the PR has to be defensible everywhere. Do not
-      let the second block the first.
+      **The fork was built and the patch was measured, 2026-08-15 — DO NOT OPEN THE PR ON THE
+      STRIDE-GUARD FORMULATION.** It is a net loss on our own corpus. It sheds the predicted
+      phantoms (dragonpower/shenlong warnings 6→2, contra 7→5) but destroys legitimate dispatch
+      recovery elsewhere: tmnt refs 44→0, rcproam instrs 4810→1275, megaman instrs 7429→5342.
+      Rejecting the switch variable does not *bound* the table, it *deletes* it — and on 6502 the
+      unbounded doubled byte is the normal legitimate table idiom, so the upstream guard's premise
+      does not hold here. Full A/B on `grm-b3m`; fix direction reverts to the lowest-target
+      fixpoint (`grm-eyn`).
+
+      So the reviewer question below is **answered, against us**: `findSmallestNormal` is
+      **architecture-independent**, and reviewers would have asked whether tightening the guard
+      loses legitimate switch recovery — it does, measurably, on 6502 before anyone even reaches
+      x86/ARM/PowerPC. What remains worth a human's GitHub identity is **posting that measurement
+      to [#9447](https://github.com/NationalSecurityAgency/ghidra/issues/9447)**: 31 real programs
+      showing the obvious fix regresses recovery is a better contribution than the patch would
+      have been, and it is what might draw `caheckman` into the fix-shape conversation.
 - [ ] **`grm-6xh`** (P3) — the one-line `setMinStoreLoadOffset` field-assignment bug (assigns
       `maxSpeculativeOffset`). Verified tag-exact against `Ghidra_12.1.2_build`; affects the base
       analyzer and all 13 per-processor subclasses. Trivial PR, high goodwill.
