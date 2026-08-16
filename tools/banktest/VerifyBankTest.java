@@ -2832,6 +2832,30 @@ public class VerifyBankTest extends GhidraScript {
 		criterion("U10", r != null && r.getReferenceType().isCall() && r.isPrimary(),
 			"JSR $8020 after the tail-call helper retargeted to PRG_LO_B2 overlay, primary: " +
 				describe(r));
+
+		// U11: TAIL-CALL DECLINE (bead grm-432), the only one of composeTailCalls' four decline
+		// branches with dump-level coverage. FUN_c180 and FUN_c190 tail-jump to each other, so
+		// composing either one's exit effect has no fixpoint -- exitEffect's cycle guard refuses
+		// rather than guessing, and BOTH call sites must WARN instead of annotating. The shipped
+		// analogue is Mega Man's FUN_f105, which tail-jumps to ITSELF at $F10F; that literal
+		// self-jump is unreachable here because Ghidra will not retype it as a call (see
+		// make_prg_uxhelper's docstring), so it is pinned at Tier 2 instead, alongside the other
+		// three branches, by TailCallCompositionProgramTest.
+		criterion("U11a", hasWarningBookmark(0xC021) && !eol(0xC021).contains("bank ->"),
+			"tail-call cycle declines and warns at c021: warning=" +
+				hasWarningBookmark(0xC021) + " eol=\"" + eol(0xC021) + "\"");
+		criterion("U11b", hasWarningBookmark(0xC024) && !eol(0xC024).contains("bank ->"),
+			"the cycle's other half declines and warns at c024: warning=" +
+				hasWarningBookmark(0xC024) + " eol=\"" + eol(0xC024) + "\"");
+
+		// U12: ANTI-VACUITY for U11, and the U7-shaped half of it -- the decline is about what
+		// is live at the helper's RETURN, not about failing to see its write. The switch INSIDE
+		// FUN_c180's body still resolves to bank 1. If this ever goes unresolved, U11 is
+		// passing for the wrong reason (the site was never recognized at all, so there was no
+		// helper to decline).
+		c = eol(0xC182);
+		criterion("U12", c.contains("bank -> 1 (") && !c.contains("?"),
+			"the declining helper's own switch site still resolves at c182: \"" + c + "\"");
 	}
 
 	// ------------------------------------------------------------------

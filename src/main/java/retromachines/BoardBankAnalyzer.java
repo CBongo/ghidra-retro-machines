@@ -1016,8 +1016,26 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	/**
 	 * Depth cap for {@link #composeTailCalls}' fixpoint. Real chains are one or two links
 	 * (Mega Man's {@code FUN_d846 -> FUN_c3b3} is one); the cap exists so a pathological
-	 * chain declines instead of running away, alongside the visited-set cycle guard that
-	 * {@code FUN_f105} (which tail-jumps to ITSELF at {@code $F10F}) makes non-hypothetical.
+	 * chain declines instead of running away, alongside the visited-set cycle guard in
+	 * {@link #exitEffect}.
+	 * <p>
+	 * <b>This javadoc used to cite Mega Man's {@code FUN_f105} (which tail-jumps to ITSELF at
+	 * {@code $F10F}) as what made the cycle guard non-hypothetical. That was wrong</b>, measured
+	 * while writing grm-432's coverage. Ghidra's {@code SharedReturnAnalysisCmd} explicitly
+	 * SKIPS a jump whose containing function's entry is the jump target ("just an internal jump
+	 * reference to the top of the function"), so a self-{@code JMP} never receives
+	 * {@code CALL_RETURN}, never becomes {@code CALL_TERMINATOR}, and so is never terminal --
+	 * which means {@link #exitInstructions} never yields it and the cycle guard is never reached
+	 * by that route at all. {@code FUN_f105} does not exercise this guard.
+	 * <p>
+	 * The guard is still load-bearing and still correct: a cycle of TWO OR MORE functions is
+	 * presented normally, each tail {@code JMP} landing on a different function's entry, and
+	 * reaches {@code !onStack.add(f)} exactly as intended. That mutual shape is what
+	 * {@code nesuxhelpertest}'s {@code PingA}/{@code PingB} pair and
+	 * {@code TailCallCompositionProgramTest} pin. Note the depth cap BACKSTOPS the cycle guard
+	 * -- deleting the cycle check alone still terminates, by running to depth 9 and declining
+	 * there -- so the two must be covered by distinguishing which branch is taken, not by
+	 * deleting one and watching for a hang.
 	 */
 	private static final int MAX_TAIL_CALL_DEPTH = 8;
 
@@ -1074,7 +1092,12 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * effects disagree, a cycle, and the depth cap. Losing an annotation beats shipping a wrong
 	 * bank; that is the whole point of this pass.
 	 */
-	private Map<Function, HelperModel> composeTailCalls(Program program,
+	// Package-private (not private) so TailCallCompositionProgramTest (grm-432) can drive the
+	// four DECLINE branches directly against a hand-built helper map -- the same precedent as
+	// HelperModel and restoresEntryBank, and the only reachable seam: everything above this in
+	// added() needs a board descriptor and a real import, which is the Tier 3 tier. No behavior
+	// change: every other member keeps its own visibility.
+	Map<Function, HelperModel> composeTailCalls(Program program,
 			Map<Function, HelperModel> helpers) {
 		Map<Function, HelperModel> composed = new LinkedHashMap<>(helpers);
 		for (Function f : helpers.keySet()) {

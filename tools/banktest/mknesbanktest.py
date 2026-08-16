@@ -572,10 +572,40 @@ def make_prg_uxhelper():
       C00A  20 40 C1   JSR $C140     ; MUST NOT resolve
       C00D  20 20 C1   JSR $C120     ; -> bank 1, regardless of the poison left by $C00A
       C010  20 10 80   JSR $8010     ; -> PRG_LO_B1::8010 (proves switch #2 beat switch #1)
-      C013  A9 09      LDA #$09
-      C015  8D D9 FF   STA $FFD9     ; bank 9 on a 4-bank image -- impossible, must warn
-      C018  4C 18 C0   JMP $C018     ; self loop
-      C01B  40         RTI           ; NMI/IRQ handler
+      C013  20 70 C1   JSR $C170     ; makes SetBank2 a real function
+      C016  20 60 C1   JSR $C160     ; tail-call helper -> bank 2, NOT its own last switch 3
+      C019  20 20 80   JSR $8020     ; -> PRG_LO_B2::8020 (the composition is load-bearing)
+      C01C  A9 09      LDA #$09
+      C01E  8D D9 FF   STA $FFD9     ; bank 9 on a 4-bank image -- impossible, must warn
+      C021  20 80 C1   JSR $C180     ; tail-call cycle -- must WARN, not annotate
+      C024  20 90 C1   JSR $C190     ; the cycle's other half -- must also WARN
+      C027  4C 27 C0   JMP $C027     ; self loop
+      C02A  40         RTI           ; NMI/IRQ handler
+
+    IDIOM 3 -- "the tail call DECLINES": a CYCLE in the tail-call graph (bead grm-432).
+    Tail-call composition follows a helper's exit jump to recover the bank live at its
+    RETURN; a cycle has no fixpoint to recover, so exitEffect's cycle guard refuses to
+    assert anything and every call site warns instead of annotating. Losing an annotation
+    beats shipping a wrong bank, and that decline is the whole point of the pass.
+
+      PingA ($C180):                        PingB ($C190):
+        C180  A9 01      LDA #$01             C190  A9 02      LDA #$02
+        C182  8D D1 FF   STA $FFD1  -> bank 1 C192  8D D2 FF   STA $FFD2  -> bank 2
+        C185  4C 90 C1   JMP $C190  ------->  C195  4C 80 C1   JMP $C180  --> back to PingA
+
+    THE CYCLE IS MUTUAL, NOT A SELF-JUMP, AND THAT IS FORCED BY GHIDRA. The shipped
+    real-ROM analogue is Mega Man (U) FUN_f105, which tail-jumps to ITSELF at $F10F -- but
+    a self-jump is UNREACHABLE from this tier. Ghidra's SharedReturnAnalysisCmd is what
+    retypes a tail JMP as CALL_TERMINATOR, and it explicitly skips a jump whose containing
+    function's entry IS the jump target ("just an internal jump reference to the top of the
+    function"). So a literal self-tail-call stays an ordinary intra-function backward jump:
+    it is not terminal, exitInstructions never sees it, and composeTailCalls leaves the
+    helper alone. Measured, not assumed -- a $C180/$C185 self-jump build of this fixture
+    annotated "bank -> 1 (bank=1) via FUN_c180" at the call site, with no warning at all.
+    Two mutually tail-calling functions are the smallest shape Ghidra will actually present
+    as a cycle, and they exercise the identical guard. The self-jump branch is pinned at
+    Tier 2 by TailCallCompositionProgramTest instead, where the CALL_RETURN override can be
+    set directly.
 
     Note $FFD9 holds 0x09 so the bus-conflict AND is a faithful no-op there: the
     impossible-bank guard must fire on a value the hardware really would have latched,
@@ -609,8 +639,10 @@ def make_prg_uxhelper():
     put(0xC019, [0x20, 0x20, 0x80])         # JSR $8020   (-> PRG_LO_B2::8020)
     put(0xC01C, [0xA9, 0x09])              # LDA #$09
     put(0xC01E, [0x8D, 0xD9, 0xFF])         # STA $FFD9   (impossible bank 9 of 4)
-    put(0xC021, [0x4C, 0x21, 0xC0])         # JMP $C021   (self loop)
-    put(0xC024, [0x40])                     # RTI
+    put(0xC021, [0x20, 0x80, 0xC1])         # JSR $C180   (tail-call CYCLE -- must WARN)
+    put(0xC024, [0x20, 0x90, 0xC1])         # JSR $C190   (makes PingB a real function)
+    put(0xC027, [0x4C, 0x27, 0xC0])         # JMP $C027   (self loop)
+    put(0xC02A, [0x40])                     # RTI
 
     # --- TailSwitch ($C160) / SetBank2 ($C170): the MEGA MAN FUN_d846 -> FUN_c3b3 shape ---
     # TailSwitch's own highest-address switch says bank 3, but it does not RETURN -- it tail
@@ -626,6 +658,24 @@ def make_prg_uxhelper():
     put(0xC170, [0xA9, 0x02])              # LDA #$02
     put(0xC172, [0x8D, 0xD2, 0xFF])         # STA $FFD2   (switch -> bank 2)
     put(0xC175, [0x60])                     # RTS
+
+    # --- PingA ($C180) / PingB ($C190): the tail-call CYCLE, the DECLINE half of grm-hum's
+    # composition pass (bead grm-432). Each helper commits a bank and then tail-jumps to the
+    # other, so composing either one's exit effect walks back into itself and there is no
+    # fixpoint to recover. exitEffect's cycle guard refuses instead, and both call sites must
+    # get a WARNING bookmark and NO bank annotation -- while $C182 (the switch inside PingA's
+    # body) keeps its own annotation, because the decline is about what is live at the RETURN,
+    # not about failing to see the write. See the docstring for why this is a mutual cycle
+    # rather than Mega Man's literal FUN_f105 self-jump: Ghidra will not type a self-jump as a
+    # call, so that exact shape is unreachable from this tier and is pinned at Tier 2 instead.
+    # Both are JSR'd from RESET so Ghidra makes each a real function and each JMP is a genuine
+    # inter-function tail call rather than an intra-function jump.
+    put(0xC180, [0xA9, 0x01])              # LDA #$01
+    put(0xC182, [0x8D, 0xD1, 0xFF])         # STA $FFD1   (switch -> bank 1)
+    put(0xC185, [0x4C, 0x90, 0xC1])         # JMP $C190   (TAIL CALL -> PingB)
+    put(0xC190, [0xA9, 0x02])              # LDA #$02
+    put(0xC192, [0x8D, 0xD2, 0xFF])         # STA $FFD2   (switch -> bank 2)
+    put(0xC195, [0x4C, 0x80, 0xC1])         # JMP $C180   (TAIL CALL -> PingA: THE CYCLE)
 
     # --- TwoSwitch ($C120): Mega Man FUN_d846 idiom ---
     put(0xC120, [0xA9, 0x03])              # LDA #$03
@@ -2516,9 +2566,24 @@ def main():
     assert prgux[0xC01C] == 0xA9 and prgux[0xC01D] == 0x09       # LDA #$09
     assert prgux[0xC01E] == 0x8D
     assert (prgux[0xC01F] | (prgux[0xC020] << 8)) == 0xFFD9
-    assert prgux[0xC021] == 0x4C
-    assert (prgux[0xC022] | (prgux[0xC023] << 8)) == 0xC021
-    assert prgux[0xC024] == 0x40                                 # RTI
+    assert prgux[0xC021] == 0x20                                 # JSR PingA
+    assert (prgux[0xC022] | (prgux[0xC023] << 8)) == 0xC180
+    assert prgux[0xC024] == 0x20                                 # JSR PingB
+    assert (prgux[0xC025] | (prgux[0xC026] << 8)) == 0xC190
+    assert prgux[0xC027] == 0x4C
+    assert (prgux[0xC028] | (prgux[0xC029] << 8)) == 0xC027
+    assert prgux[0xC02A] == 0x40                                 # RTI
+    # PingA / PingB: the mutual tail-call cycle (bead grm-432)
+    assert prgux[0xC180] == 0xA9 and prgux[0xC181] == 0x01
+    assert prgux[0xC182] == 0x8D
+    assert (prgux[0xC183] | (prgux[0xC184] << 8)) == 0xFFD1
+    assert prgux[0xC185] == 0x4C                                 # JMP -- tail call, not JSR
+    assert (prgux[0xC186] | (prgux[0xC187] << 8)) == 0xC190      # ... into PingB
+    assert prgux[0xC190] == 0xA9 and prgux[0xC191] == 0x02
+    assert prgux[0xC192] == 0x8D
+    assert (prgux[0xC193] | (prgux[0xC194] << 8)) == 0xFFD2
+    assert prgux[0xC195] == 0x4C                                 # JMP -- tail call, not JSR
+    assert (prgux[0xC196] | (prgux[0xC197] << 8)) == 0xC180      # ... back into PingA
     # TailSwitch / SetBank2: the inter-function tail call
     assert prgux[0xC160] == 0xA9 and prgux[0xC161] == 0x03
     assert prgux[0xC162] == 0x8D
