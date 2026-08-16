@@ -47,18 +47,31 @@ native() {
 	if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else echo "$1"; fi
 }
 
-# Default the path to analyzeHeadless(.bat) from GRM_TARGET_VERSION; the
-# GHIDRA_HEADLESS env var still overrides.
-grm_default_headless() {
-	GHIDRA_HEADLESS="${GHIDRA_HEADLESS:-D:/ghidra_${GRM_TARGET_VERSION}_PUBLIC/support/analyzeHeadless.bat}"
-}
-
 # Default the Ghidra install dir from GRM_TARGET_VERSION; the GRM_GHIDRA_INSTALL
 # env var still overrides. (build-and-test.sh needs the install root itself, to
 # export as GHIDRA_INSTALL_DIR for gradle and to read application.properties
-# from; the runners only ever need the analyzeHeadless path above.)
+# from; the runners only ever need the analyzeHeadless path below.)
 grm_default_ghidra_install() {
 	GRM_GHIDRA_INSTALL="${GRM_GHIDRA_INSTALL:-D:/ghidra_${GRM_TARGET_VERSION}_PUBLIC}"
+}
+
+# Default the path to analyzeHeadless(.bat). Derives from GRM_GHIDRA_INSTALL
+# (bead grm-k0h) rather than independently re-deriving from GRM_TARGET_VERSION,
+# so that a caller who sets GRM_GHIDRA_INSTALL to a non-default install (e.g. a
+# native A/B against a patched decompile.exe) gets analyzeHeadless from THAT
+# install rather than silently launching the default one -- previously the two
+# knobs were derived independently and GRM_GHIDRA_INSTALL was very nearly inert
+# for the headless runners. GHIDRA_HEADLESS itself still overrides. Calls
+# grm_default_ghidra_install() first (idempotent) so GRM_GHIDRA_INSTALL is
+# resolved before this reads it, regardless of what the caller has already
+# called -- ordering is load-bearing here, not just documentation.
+#
+# Defaults are unchanged when neither var is set: GRM_GHIDRA_INSTALL still
+# defaults to D:/ghidra_${GRM_TARGET_VERSION}_PUBLIC and GHIDRA_HEADLESS to
+# that install's support/analyzeHeadless.bat.
+grm_default_headless() {
+	grm_default_ghidra_install
+	GHIDRA_HEADLESS="${GHIDRA_HEADLESS:-$GRM_GHIDRA_INSTALL/support/analyzeHeadless.bat}"
 }
 
 # Fall back to the per-worktree isolated settings base when the caller has not
@@ -101,6 +114,23 @@ grm_apply_settings_base() {
 	fi
 }
 
+# True if PATH contains a '/'-separated segment starting with '.' (other than
+# the leading-slash/root marker). Ghidra's ProjectLocator/NamingUtilities
+# rejects any such segment in a project location (bead grm-hhd) -- this is used
+# to detect REPO_ROOT paths that would trip it, e.g. an Agent-tool worktree
+# under ".claude/worktrees/agent-<id>".
+#
+# A segment starts with '.' exactly when the path contains "/." or itself begins
+# with '.', so this is a two-pattern case rather than an IFS='/' split loop --
+# the split form would additionally glob-expand the unquoted path, and '[' is a
+# legal character in a Windows directory name.
+_grm_path_has_dot_segment() {
+	case "$1" in
+	.* | */.*) return 0 ;;
+	esac
+	return 1
+}
+
 # A fresh per-run work directory, REPO-LOCAL by default (bead grm-419).
 #
 # These scripts keep the work dir on failure and print its path so the dump, the
@@ -118,9 +148,32 @@ grm_apply_settings_base() {
 # GRM_BANKTEST_WORK; the per-script REALROM_WORK_DIR / MEASURE_WORK_DIR still
 # override the whole directory and take precedence over this.
 #
+# AUTOMATIC FALLBACK (bead grm-hhd): if REPO_ROOT itself contains a dot-leading
+# segment -- e.g. an Agent-tool worktree at .../.claude/worktrees/agent-<id> --
+# then $REPO_ROOT/build/banktest-work inherits that segment and EVERY headless
+# fixture fails before it starts, with a stack trace that looks unrelated to
+# whatever the caller changed. Detect that case and redirect the base outside
+# the repo tree instead, under the platform temp dir, keyed off REPO_ROOT so
+# concurrent worktrees still land in distinct directories and never collide.
+# GRM_BANKTEST_WORK still overrides this fallback exactly like the normal case.
+#
 # $1 is a short tag naming the caller, so a kept directory says which run left it.
 grm_work_dir() {
-	local base="${GRM_BANKTEST_WORK:-$REPO_ROOT/build/banktest-work}"
+	local base="${GRM_BANKTEST_WORK:-}"
+	if [ -z "$base" ]; then
+		if _grm_path_has_dot_segment "$REPO_ROOT"; then
+			local safe_root tmp_root
+			safe_root="$(printf '%s' "$REPO_ROOT" | tr -c 'A-Za-z0-9' '_')"
+			tmp_root="${TMPDIR:-${TEMP:-/tmp}}"
+			base="$tmp_root/grm-banktest-work-$safe_root"
+			echo "NOTE: REPO_ROOT ($REPO_ROOT) has a dot-leading path segment" \
+				"(e.g. .claude/worktrees/...), which Ghidra's project-name validation" \
+				"rejects; redirecting the banktest work dir to $base." \
+				"Override with GRM_BANKTEST_WORK if you want it elsewhere." >&2
+		else
+			base="$REPO_ROOT/build/banktest-work"
+		fi
+	fi
 	mkdir -p "$base" || return 1
 	mktemp -d "$base/${1:-run}.XXXXXXXX"
 }

@@ -472,6 +472,14 @@ else
 	echo "   Run 'bash tools/banktest/build-and-test.sh check nes-banking' first; results from"
 	echo "   an unidentified install cannot be attributed to a source state at all."
 fi
+# Resolved Ghidra install root (bead grm-k0h): GHIDRA_HEADLESS -- not GRM_GHIDRA_INSTALL --
+# is what actually launches Ghidra, so a native-side A/B (decompile.exe, sleigh.exe) needs
+# GRM_GHIDRA_INSTALL set AND this to name the install it resolved to, or a stray default
+# install silently gets measured instead. This is inert-by-name-alone, not just informational:
+# GRM_GHIDRA_INSTALL now feeds GHIDRA_HEADLESS's default (grm_default_headless above), but the
+# env var still wins if the caller set it explicitly, so the two can point at different
+# installs -- print both rather than assume they agree.
+echo "== ghidra install: $GRM_GHIDRA_INSTALL (headless: $GHIDRA_HEADLESS) =="
 
 realrom_cache_key() {
 	# args: id rom_sha opts  ->  sha256 key on stdout, or empty if disabled
