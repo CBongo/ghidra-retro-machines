@@ -3011,8 +3011,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			}
 		}
 		FieldSpec modeField = board.modeField();
-		if (modeField != null &&
-			(state.knownMask() & modeField.positionedMask()) == modeField.positionedMask()) {
+		if (modeField != null && modeField.fullyKnownIn(state)) {
 			int mode = modeField.valueIn(effective);
 			for (ModeWindowModel w : board.modeWindows()) {
 				if (w.modeValue() != mode || w.bankField() == null) {
@@ -3031,7 +3030,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	/** One window's bank field against its realized bank set; see {@link #impossibleBank}. */
 	private ImpossibleBank checkBank(Map<String, Set<Integer>> bankUniverse, String key,
 			String windowName, FieldSpec field, BankState state, int effective) {
-		if ((state.knownMask() & field.positionedMask()) != field.positionedMask()) {
+		if (!field.fullyKnownIn(state)) {
 			return null;
 		}
 		Set<Integer> realized = bankUniverse.get(key);
@@ -3825,8 +3824,10 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 						// above is just the initial-state fallback; a user placement override for
 						// this window instance takes over (flow always wins when it knows). See
 						// grm-hsv.3 -- the override is the residual escape hatch, never a guess.
-						boolean bankKnown =
-							(inState.knownMask() & instance.bankField().positionedMask()) != 0;
+						// Knowledge is all-or-nothing per field -- see FieldSpec.fullyKnownIn; a
+						// partially known multi-bit bank select must NOT suppress the override
+						// (grm-v6o).
+						boolean bankKnown = instance.bankField().fullyKnownIn(inState);
 						Integer overrideBank = placementOverride.get(instance.name());
 						boolean overridden = !bankKnown && overrideBank != null;
 						if (overridden) {
@@ -4002,11 +4003,27 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	// Descriptor model
 	// ------------------------------------------------------------------
 
-	/** One {@code banking.state} field: its bit position and width within the state int. */
-	private record FieldSpec(String name, int lsb, int width) {
+	/**
+	 * One {@code banking.state} field: its bit position and width within the state int.
+	 * Package-private (not private) only so {@code FieldSpecKnownTest} can exercise
+	 * {@link #fullyKnownIn}; nothing outside this class uses it.
+	 */
+	record FieldSpec(String name, int lsb, int width) {
 
 		int positionedMask() {
 			return ((1 << width) - 1) << lsb;
+		}
+
+		/**
+		 * True when dataflow pinned EVERY bit of this field in {@code state}. Knowledge of a
+		 * field is all-or-nothing: {@link #valueIn} on a partially known field silently fills
+		 * the unknown bits from the board's initial state, so a caller that treats "some bit
+		 * known" as knowledge manufactures a bank number nothing actually pinned (grm-v6o).
+		 * Note the two forms coincide for a single-bit field, which is what let the wrong test
+		 * survive; prefer this method over open-coding either one.
+		 */
+		boolean fullyKnownIn(BankState state) {
+			return (state.knownMask() & positionedMask()) == positionedMask();
 		}
 
 		int valueIn(int state) {
