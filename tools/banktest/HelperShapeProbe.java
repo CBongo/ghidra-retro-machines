@@ -469,6 +469,7 @@ public class HelperShapeProbe extends GhidraScript {
 		Set<Address> callInstrsMech = new LinkedHashSet<>();
 		Set<Address> callInstrsWarn = new LinkedHashSet<>();
 		Set<Address> constArgMech = new LinkedHashSet<>();
+		Set<Address> notRequiredMech = new LinkedHashSet<>();
 		Set<Address> constArgWarn = new LinkedHashSet<>();
 		Set<Address> constArgRegMatch = new LinkedHashSet<>();
 		Set<Address> constArgRegMismatch = new LinkedHashSet<>();
@@ -503,14 +504,21 @@ public class HelperShapeProbe extends GhidraScript {
 				boolean mid = !entry.equals(owner.getEntryPoint());
 				Instruction prev = listing.getInstructionBefore(call.getMinAddress());
 				Character immReg = destReg(prev);
-				String arg = immReg != null ? "CONST" : "computed/unknown";
+				// grm-xym: ask whether this helper takes an argument at all BEFORE asking what the
+				// caller passed. A helper that loads the store register with an immediate in its
+				// own body has no parameter, so "CONST"/"computed/unknown" are both answers to a
+				// question that does not apply -- see helperSuppliesOwnArgument.
+				boolean selfSupplied = helperSuppliesOwnArgument(listing, entry, ma);
+				String arg = selfSupplied ? "not-required"
+						: immReg != null ? "CONST" : "computed/unknown";
 				// helperArgReg mirrors production's own register-consistency rule
 				// (Site 1's storeReg), independently re-derived: NONE when the owner carries no
-				// mech-population data at all (a WARN-ONLY function), MIXED when its mech sites
-				// disagree on register, else the single register all its sites share.
-				String helperArgReg = ma != null ? ma.storeRegText() : "NONE";
+				// mech-population data at all (a WARN-ONLY function) or when the helper supplies
+				// its own value (no parameter to name), MIXED when its mech sites disagree on
+				// register, else the single register all its sites share.
+				String helperArgReg = ma == null || selfSupplied ? "NONE" : ma.storeRegText();
 				String regMatch;
-				if (ma == null || "MIXED".equals(helperArgReg) || immReg == null) {
+				if (ma == null || selfSupplied || "MIXED".equals(helperArgReg) || immReg == null) {
 					// NA, deliberately, in all three cases -- including immReg==null. YES/NO is a
 					// claim that two known registers agree or disagree, and with no immediate at
 					// all there is no second register to compare; printing NO there would read as
@@ -535,7 +543,13 @@ public class HelperShapeProbe extends GhidraScript {
 						midBodyMech++;
 					}
 					callInstrsMech.add(callAddr);
-					if (immReg != null) {
+					if (selfSupplied) {
+						// Counted on its own, and deliberately kept OUT of constArg* below: a
+						// caller that happens to hold an immediate before a call to a helper that
+						// takes no argument is a coincidence, not a passed constant (grm-xym).
+						notRequiredMech.add(callAddr);
+					}
+					if (immReg != null && !selfSupplied) {
 						constArgMech.add(callAddr);
 						if ("YES".equals(regMatch)) {
 							constArgRegMatch.add(callAddr);
@@ -591,7 +605,8 @@ public class HelperShapeProbe extends GhidraScript {
 		if (mechAvailable) {
 			println("HELPERSHAPE  TALLY.mech helperFuncs=" + mechByFunc.size() +
 				" reachableCallSites=" + totalMech + " callInstrs=" + callInstrsMech.size() +
-				" constArg=" + constArgMech.size() + " constArgRegMatch=" +
+				" constArg=" + constArgMech.size() + " argNotRequired=" +
+				notRequiredMech.size() + " constArgRegMatch=" +
 				constArgRegMatch.size() + " constArgRegMismatch=" + constArgRegMismatch.size() +
 				" constArgRegMixed=" + constArgRegMixed.size() + " viaThunkOrTrampoline=" +
 				viaHopMech + " midBodyEntry=" + midBodyMech + " tailCall=" + tailCallMech.size());
@@ -623,6 +638,113 @@ public class HelperShapeProbe extends GhidraScript {
 		println("HELPERSHAPE  TALLY.delta helperFuncs.both=" + both + " helperFuncs.mechOnly=" +
 			mechOnly + " helperFuncs.warnOnly=" + warnOnly + " constArg.mechOnly=" +
 			constArgMechOnly.size() + " constArg.warnOnly=" + constArgWarnOnly.size());
+	}
+
+	/**
+	 * Whether the helper supplies its OWN mechanism value, so a call to it takes NO argument
+	 * and asking what the caller left in a register is an INAPPLICABLE question (bead grm-xym).
+	 * <p>
+	 * <b>The defect this removes.</b> {@code helperArgReg} is otherwise just the register the
+	 * mechanism STORES, which for a helper like Blaster Master's {@code FUN_e68c} --
+	 * {@code LDA #$80 / STA $FFFF / RTS}, the whole of the MMC1 reset -- names a register that is
+	 * a LOCAL of the helper, not a parameter. The probe then read the instruction before the call
+	 * ({@code BPL $F255}), found no immediate, and reported {@code arg=computed/unknown}: "this
+	 * helper's argument could not be recovered", about a helper that has no argument. There is
+	 * nothing at the call site that COULD load it and nothing that should.
+	 * <p>
+	 * <b>Why it is worth suppressing rather than tolerating.</b> This probe's output is what
+	 * populations get filed from, and an inapplicable question answered "unknown" is
+	 * indistinguishable from a real recovery failure. grm-8iy.3 was filed on 31 phantom helpers
+	 * and 11 phantom constant-arg sites for exactly this class of reason, so the {@code constArg*}
+	 * tallies below deliberately EXCLUDE self-supplied sites: a caller that happens to have an
+	 * immediate before the call is a coincidence, not an argument.
+	 * <p>
+	 * <b>The rule, and it is conservative on purpose.</b> Walk linearly by address from
+	 * {@code entry} -- where control actually arrived, which for a mid-body entry is not the
+	 * function's entry point -- to the helper's single mech site. The helper supplies its own
+	 * value iff the LAST writer of the store register in that span is a load-immediate. Any join
+	 * in the span (an address with incoming flow, i.e. another path reaches it) makes the linear
+	 * walk unrepresentative of every path, so the answer is withheld; likewise a MIXED store
+	 * register, where "the" register is not well defined. A false NO costs the old, noisier
+	 * wording; a false YES would hide a real recovery failure, which is the direction that must
+	 * not happen.
+	 * <p>
+	 * <b>SINGLE-SITE ONLY, and that restriction is load-bearing rather than laziness.</b> With
+	 * more than one mech site, WHICH site consumes the argument is a strategy decision this probe
+	 * does not model -- production spends {@code BoardBankAnalyzer.helperValueSite} and
+	 * {@code BankSwitchStrategy.suppliesHelperValueAtFirstSite} on exactly that question. Super
+	 * Mario Bros. 2's {@code FUN_ff88} is the counterexample that forced this clause, and it is
+	 * measured, not imagined:
+	 * <pre>
+	 *   ff88  ASL A        &lt;- doubles the CALLER's A (its one call site does LDA #$02)
+	 *   ff89  PHA          &lt;- stashes it
+	 *   ff8a  LDA #$86     &lt;- an immediate, but it is the MMC3 register-SELECT byte
+	 *   ff8c  STA $8000    &lt;- first mech site: the SELECT write
+	 *   ff90  STA $8001    &lt;- the DATA write, where the caller's stashed byte actually lands
+	 * </pre>
+	 * Walking to the FIRST site there finds a load-immediate and would conclude "takes no
+	 * argument" about a helper whose entire body is argument handling -- the same shape that
+	 * shipped smb3's confident wrong {@code r7=7}. A serial-shift chain rules out the opposite
+	 * fix of walking to the LAST site: it clobbers A four times between its first write and its
+	 * last BY DESIGN, so that would decline every serial-shift helper. One site means first,
+	 * last, and consuming site are the same instruction and the question does not arise.
+	 */
+	private boolean helperSuppliesOwnArgument(Listing listing, Address entry, MechAgg ma) {
+		if (ma == null || ma.mixed || ma.reg == null || ma.first == null ||
+			ma.sites.size() != 1 || entry.compareTo(ma.first) > 0) {
+			return false;
+		}
+		char reg = ma.reg.charValue();
+		boolean immediate = false;
+		Instruction instr = listing.getInstructionAt(entry);
+		while (instr != null && instr.getMinAddress().compareTo(ma.first) < 0) {
+			Address at = instr.getMinAddress();
+			if (!at.equals(entry) && hasIncomingFlow(at)) {
+				return false; // a join: this walk is not the only path to the mech site
+			}
+			Character dest = destReg(instr);
+			if (dest != null && dest.charValue() == reg) {
+				immediate = true;
+			}
+			else if (writesRegister(instr, reg)) {
+				immediate = false; // clobbered by something that is not an immediate
+			}
+			instr = listing.getInstructionAfter(at);
+		}
+		return immediate;
+	}
+
+	/** Whether any FLOW reference targets {@code a} -- i.e. control can arrive other than by
+	 *  falling through the instruction before it. Same test {@link #reportIncoming} prints. */
+	private boolean hasIncomingFlow(Address a) {
+		ReferenceIterator refs = currentProgram.getReferenceManager().getReferencesTo(a);
+		while (refs.hasNext()) {
+			if (refs.next().getReferenceType().isFlow()) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Whether {@code instr} writes 6502 register {@code reg} by any means OTHER than the
+	 *  load-immediate {@link #destReg} already recognizes. Deliberately over-broad: every
+	 *  mnemonic listed clobbers, so an unlisted one can only cause a false NO. */
+	private boolean writesRegister(Instruction instr, char reg) {
+		String m = instr.getMnemonicString();
+		switch (reg) {
+			case 'A':
+				return m.equals("LDA") || m.equals("PLA") || m.equals("TXA") || m.equals("TYA") ||
+					m.equals("AND") || m.equals("ORA") || m.equals("EOR") || m.equals("ADC") ||
+					m.equals("SBC") || ((m.equals("ASL") || m.equals("LSR") || m.equals("ROL") ||
+						m.equals("ROR")) && instr.getNumOperands() == 0);
+			case 'X':
+				return m.equals("LDX") || m.equals("TAX") || m.equals("TSX") || m.equals("INX") ||
+					m.equals("DEX");
+			case 'Y':
+				return m.equals("LDY") || m.equals("TAY") || m.equals("INY") || m.equals("DEY");
+			default:
+				return false;
+		}
 	}
 
 	/** The {@code n} instructions physically preceding {@code at}, oldest first. */
