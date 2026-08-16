@@ -75,7 +75,8 @@ final class CbmBasicWalker {
 	 * code, for a BASIC-start PRG).
 	 * <p>
 	 * True when either (a) the program is a trivially empty BASIC program (link ==
-	 * {@code $0000} right at {@code loadAddr}), or (b) at least one well-formed line was
+	 * {@code $0000} right at {@code loadAddr} <em>and nothing follows it</em> -- see below),
+	 * or (b) at least one well-formed line was
 	 * parsed <em>and the first line itself was not the malformed one</em>. Machine code
 	 * happening to contain a {@code $00} byte early on can otherwise produce a spurious
 	 * one-line "chain" purely by coincidence (its bogus link almost never lands exactly
@@ -84,6 +85,23 @@ final class CbmBasicWalker {
 	 * A real BASIC program that happens to be corrupt starting at its second or later
 	 * line is still recognized as BASIC-start (the malformed condition there stops the
 	 * walk, but the clean first line already parsed is enough signal).
+	 * <p>
+	 * <b>Case (a) must also require that the payload ENDS at the terminator, and the bug it
+	 * caused is the reason this is spelled out.</b> A zero first link on its own is two bytes
+	 * of evidence for the strongest possible conclusion ("this whole PRG is BASIC, do not
+	 * disassemble it"), and machine code beginning {@code 00 00} is entirely ordinary -- a
+	 * zeroed field, a table, a vector slot. MEASURED: a real, non-packed SID player
+	 * ({@code sid.obj.64.prg}, 3153 bytes of 6502 at {@code $C000}) begins {@code 00 00}, so
+	 * the loader declined to mark a function at the load address, no BASIC analyzer found a
+	 * {@code SYS} line to redirect to, and the ENTIRE PROGRAM was left undisassembled -- zero
+	 * instructions in the listing.
+	 * <p>
+	 * The costs are wildly asymmetric, which settles which way to lean. Wrongly saying "not
+	 * BASIC" about a genuinely empty BASIC program marks a function on a two-byte payload that
+	 * contains nothing anyway. Wrongly saying "BASIC" about machine code loses the whole
+	 * program silently. And the two cases are cleanly separable without heuristics: a real
+	 * empty BASIC program is EXACTLY its two-byte terminator -- {@code SAVE} with no program
+	 * writes a 4-byte file -- so anything with payload beyond {@code loadAddr + 2} is not one.
 	 */
 	static boolean isBasicStart(ByteSource src, long loadAddr, long limitAddr) {
 		int lo = src.byteAt(loadAddr);
@@ -93,7 +111,9 @@ final class CbmBasicWalker {
 		}
 		long firstLink = (hi << 8) | lo;
 		if (firstLink == 0) {
-			return true; // trivially empty BASIC program
+			// Trivially empty BASIC program ONLY if the payload stops here; otherwise those
+			// two zero bytes are just the first two bytes of something else. See the javadoc.
+			return loadAddr + 2 >= limitAddr;
 		}
 		WalkResult result = walk(src, loadAddr, limitAddr);
 		if (result.lines().isEmpty()) {
