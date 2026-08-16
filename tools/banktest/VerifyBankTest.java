@@ -49,6 +49,7 @@ import ghidra.program.model.listing.CommentType;
 import ghidra.program.model.listing.Data;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.InstructionIterator;
+import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.mem.MemoryBlockSourceInfo;
@@ -326,6 +327,9 @@ public class VerifyBankTest extends GhidraScript {
 		}
 		else if (name.contains("nesuxhelpertest")) {
 			checkNesUxHelpertest();
+		}
+		else if (name.contains("nesskiptest")) {
+			checkNesSkiptest();
 		}
 		else if (name.contains("nesmirrortest")) {
 			checkNesMirrortest();
@@ -2856,6 +2860,122 @@ public class VerifyBankTest extends GhidraScript {
 		c = eol(0xC182);
 		criterion("U12", c.contains("bank -> 1 (") && !c.contains("?"),
 			"the declining helper's own switch site still resolves at c182: \"" + c + "\"");
+	}
+
+	// ------------------------------------------------------------------
+	// nesskiptest.nes criteria (6502 SKIP-IDIOM recovery, bead grm-pfp)
+	// ------------------------------------------------------------------
+
+	/**
+	 * The only regression path {@code ghidra_scripts/FixSkipInstructions.java} has. The
+	 * fixture is imported with that script as a {@code -postScript} (it MUST run after
+	 * disassembly -- the conflict it repairs does not exist until then), and the criteria
+	 * below assert what the repair did and, just as importantly, what it left alone. See
+	 * {@code mknesbanktest.py}'s {@code make_prg_skip()} for the full listing; the shape is
+	 * Wizards &amp; Warriors (U) $BC05/$BC08, whose SHA-256 is pinned in
+	 * {@code realrom/manifest-gme.tsv}.
+	 * <p>
+	 * Three criteria carry the weight and none of them may be weakened to make a run pass.
+	 * <b>S3</b> is the anti-corruption one: the repair must expose the hidden instruction
+	 * WITHOUT redirecting the visible stream into it. <b>S5</b> is the anti-vacuity one:
+	 * the recovered entry has to actually change the program's bank state, not merely
+	 * exist. <b>S7</b> is the anti-overreach one: a structurally identical but
+	 * uncorroborated carrier must be reported and left untouched.
+	 */
+	private void checkNesSkiptest() {
+		Listing listing = currentProgram.getListing();
+		// S1: the offcut was repaired -- the bytes A9 01, previously claimed as the BIT's
+		// operand, are now an instruction in their own right.
+		// Matched WHOLE, not by substring: "contains 0x1" also accepts LDA #0x10 and LDA
+		// #0x1f, and the operand is the entire point here -- it is the bank the recovered
+		// stream asks for, and S5 turns on it being 1 rather than 2.
+		Instruction hidden = listing.getInstructionAt(addr(0xC158));
+		criterion("S1", hidden != null && "LDA #0x1".equals(hidden.toString()),
+			"hidden entry disassembled at c158: " +
+				(hidden == null ? "<no instruction>" : hidden.toString()));
+
+		// S2: and it was repaired the upstream way -- by TRUNCATING the carrier with a
+		// length override, not by clearing and re-disassembling it. The prototype stays 3
+		// bytes long (which is what keeps the fallthrough honest; see S3) while the carrier
+		// occupies only the one byte that is genuinely its own.
+		Instruction carrier = listing.getInstructionAt(addr(0xC157));
+		boolean overridden = carrier != null && carrier.isLengthOverridden();
+		criterion("S2", overridden && carrier.getLength() == 1 && carrier.getParsedLength() == 3,
+			"carrier truncated at c157: " + (carrier == null ? "<no instruction>"
+					: carrier.getMnemonicString() + " overridden=" + carrier.isLengthOverridden() +
+						" length=" + carrier.getLength() +
+						" parsedLength=" + carrier.getParsedLength()));
+
+		// S3: THE VISIBLE STREAM SURVIVED. The truncated carrier still falls through to the
+		// SHARED TAIL at $C15A, not into the bytes it just exposed. If it ever falls through
+		// to $C158 instead, the $C150 stream silently acquires the hidden LDA #$01 and every
+		// call site reached through it reports the WRONG BANK with full confidence -- a
+		// confidently wrong answer, which is strictly worse than the missing instruction the
+		// script exists to recover. Ghidra gets this right because
+		// InstructionDB.getDefaultFallThroughOffset returns the PROTOTYPE's length, so the
+		// override does not move the default fallthrough; this criterion is what stops that
+		// from silently changing under us. Do NOT relax it.
+		Address fell = carrier == null ? null : carrier.getFallThrough();
+		criterion("S3", fell != null && fell.equals(addr(0xC15A)),
+			"truncated carrier still falls through to the shared tail c15a, not to the " +
+				"hidden entry c158: fallThrough=" + (fell == null ? "<none>" : fmt(fell)));
+
+		// S4: and the visible entry's own meaning is unchanged -- JSR $C150 still establishes
+		// bank 2, from the STA $FFD2 at $C152 that belongs to the visible stream alone, and
+		// the JSR right after it still retargets into bank 2's overlay. This is the
+		// observable, end-to-end form of S3: the repair truncated an instruction in the
+		// middle of this function's body and split a function entry out of it, and the
+		// stream that was already correct came through unchanged.
+		String c = eol(0xC000);
+		criterion("S4", c.contains("bank -> 2 (") && !c.contains("?"),
+			"visible entry still resolves bank 2 at c000: \"" + c + "\"");
+		Reference r = findOverlayRef(0xC003, "PRG_LO_B2", 0x8005);
+		criterion("S4:retarget", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $8005 retargeted to PRG_LO_B2 overlay, primary: " + describe(r));
+
+		// S5: THE PAYOFF, and the anti-vacuity check for S1. The recovered $C158 entry
+		// establishes bank 1 (LDA #$01 into the shared latch), so the JSR that follows it in
+		// RESET retargets into bank 1's overlay. This exists ONLY because the offcut was
+		// repaired, given a function, and re-analyzed: without the repair, RESET's
+		// JSR $C158 points at an address holding no instruction at all, nothing establishes
+		// bank 1 anywhere in the image, and this reference stays in the home bank. Bank 1
+		// and bank 2 are deliberately different so a repair that merged the two streams
+		// (see S3) would answer this WRONGLY rather than coincidentally right.
+		r = findOverlayRef(0xC009, "PRG_LO_B1", 0x8010);
+		criterion("S5", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $8010 after the recovered entry retargeted to PRG_LO_B1 overlay, primary: " +
+				describe(r));
+		criterion("S5:disasm", hasInstructionAt("PRG_LO_B1", 0x8010),
+			"instruction exists at PRG_LO_B1::8010");
+
+		// S6: the STRONG tier fired with no reference to lean on. Nothing in the image names
+		// $C173 (make_prg_skip asserts that), so upstream FixOffcutInstructionScript's
+		// reference gate has nothing to act on here and only this script's pattern match --
+		// carrier hides an instruction that ends where the carrier ends, corroborated by the
+		// LDA falling INTO it -- can reach the entry. The function is what makes the recovered
+		// instruction analyzable: a loose instruction belongs to no function body, so no
+		// dataflow pass ever evaluates it.
+		Instruction strongEntry = listing.getInstructionAt(addr(0xC173));
+		criterion("S6", hasFunctionAt(0xC173) && strongEntry != null &&
+			"LDA #0x1".equals(strongEntry.toString()),
+			"STRONG-tier entry recovered at c173 with a function: function=" +
+				hasFunctionAt(0xC173) + " instruction=" +
+				(strongEntry == null ? "<none>" : strongEntry.toString()));
+
+		// S7: ANTI-OVERREACH -- the WEAK decoy at $C181 is untouched. BIT $10A5 hides a
+		// structurally perfect LDA $10, but nothing corroborates it: SEC is not LDA and no
+		// reference lands on $C182. Applying it would truncate a genuine memory read AND
+		// invent an instruction inside its operand, destroying two real instructions to
+		// manufacture one imaginary entry point. The script REPORTS it (see the SKIPFIX
+		// summary assertion in run-banktest.sh, which pins weak=1) and does not apply it.
+		// Do not "fix" this: a change that makes structural validity alone sufficient passes
+		// S1/S6 and fails here, which is the entire point of the tiering.
+		Instruction decoy = listing.getInstructionAt(addr(0xC181));
+		criterion("S7", listing.getInstructionAt(addr(0xC182)) == null &&
+			decoy != null && !decoy.isLengthOverridden(),
+			"WEAK decoy left alone at c181: carrierOverridden=" +
+				(decoy == null ? "<no instruction>" : String.valueOf(decoy.isLengthOverridden())) +
+				" offcutDisassembled=" + (listing.getInstructionAt(addr(0xC182)) != null));
 	}
 
 	// ------------------------------------------------------------------

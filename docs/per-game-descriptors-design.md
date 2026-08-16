@@ -858,8 +858,9 @@ seed-don't-inject ruling, and it is most of the reason for it.
 
 ## 7. Export: `ghidra_scripts/ExportGameDescriptor.java`
 
-A `GhidraScript` alongside the existing `RunFromElsewhereTransfer.java` (the only current occupant
-of `ghidra_scripts/`, which `build.gradle:189-192` already ships). It writes a YAML game descriptor
+A `GhidraScript` alongside the existing `RunFromElsewhereTransfer.java` and
+`FixSkipInstructions.java` (the current occupants of `ghidra_scripts/`, which
+`build.gradle:189-192` already ships). It writes a YAML game descriptor
 containing:
 
 - the computed identity (§2), read back from the `Retro Machines.Game Identity` property so the

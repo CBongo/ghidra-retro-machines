@@ -126,6 +126,19 @@ final acceptance and commits**. `build-and-test.sh --list-chunks` prints the cur
 | `unit` | the JUnit `gradle test` suite (all `src/test/java`; no extension build/install needed alone) |
 | `all` | every chunk (the default when no chunk is given) |
 
+**The shipped `ghidra_scripts/` front-ends are regression-tested inside these chunks, and nowhere
+else.** The GUI plugins are untestable here (see below), so a headless fixture that drives the
+script as a `-preScript`/`-postScript` is the only coverage either one has — which also means the
+chunk holding it is not the one you would guess from the script's subject:
+
+| Script | Fixture | Chunk | Driven as |
+|---|---|---|---|
+| `RunFromElsewhereTransfer.java` | `rfemanual` | `c64-recovery` | `-preScript` (before auto-analysis, so the manual carve precedes `CopyLoopAnalyzer`'s) |
+| `FixSkipInstructions.java` | `nesskiptest` | `nes-banking` | `-postScript` (the offcut conflict it repairs does not exist until after disassembly) |
+
+Each also asserts on the script's own verdict line by grepping the headless log, because that line
+falls outside the `BANKDUMP` markers and so is invisible to `VerifyBankTest`.
+
 ```bash
 bash tools/banktest/build-and-test.sh check nes-banking c64-banking   # dev loop subset
 ```

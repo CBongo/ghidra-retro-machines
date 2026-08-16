@@ -634,6 +634,33 @@ if selected nes-banking; then
 	run_one nesbanktest2 "$WORK/nes/nesbanktest2.nes" NesRomLoader
 	run_one nesuxhelpertest "$WORK/nes/nesuxhelpertest.nes" NesRomLoader
 
+	# The 6502 SKIP-IDIOM front-end (bead grm-pfp): the shipped
+	# ghidra_scripts/FixSkipInstructions.java driven as a -postScript, which is the only
+	# regression path that script has -- and it MUST be a postScript, because the conflict it
+	# repairs (a BIT whose operand bytes are themselves an instruction, so the offcut entry can
+	# be neither disassembled nor made a function) does not exist until after disassembly.
+	# See make_prg_skip()'s docstring for the fixture's three sites and what each one proves;
+	# the shape is Wizards & Warriors (U) $BC05/$BC08.
+	#
+	# $5 is run_one's slot for non-loader headless arguments and is placed BEFORE
+	# -postScript VerifyBankTest.java, so the repair happens first and VerifyBankTest observes
+	# the repaired program. function:true is the default, stated explicitly because S6 asserts
+	# on it: a recovered entry that is not a function belongs to no body and is never analyzed.
+	run_one nesskiptest "$WORK/nes/nesskiptest.nes" NesRomLoader "" \
+		"-postScript FixSkipInstructions.java function:true"
+	# The script's own verdict line, which lives outside the dump markers so VerifyBankTest
+	# cannot assert on it -- and it is the only place the WEAK candidate is visible at all,
+	# since not applying it leaves nothing in the program to observe. The counts pin the whole
+	# classification: three carriers found, one per confidence tier, and only the two confident
+	# ones acted on. Skipped when bless reused a cached candidate: that path runs no import, so
+	# there is no fresh log to read.
+	if [ -f "$WORK/nesskiptest.log" ] &&
+		! grep -q 'SKIPFIX summary candidates=3 referenced=1 strong=1 weak=1 applied=2 failed=0' \
+			"$WORK/nesskiptest.log"; then
+		echo "FAIL: FixSkipInstructions did not report 3 candidates (1/1/1) with 2 applied"
+		fail=1
+	fi
+
 	# grm-mej.2 increment 2 (Tier 3): bank-MIRROR derive/observe/consume/annotate/retarget
 	# end-to-end, plus the SS2d requiresOnEntry guard -- see make_prg_mirrortest()'s docstring.
 	run_one nesmirrortest "$WORK/nes/nesmirrortest.nes" NesRomLoader

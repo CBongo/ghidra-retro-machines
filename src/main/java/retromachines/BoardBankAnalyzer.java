@@ -3902,6 +3902,22 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// residence clamp).
 		if (refType.isFlow() &&
 			program.getListing().getInstructionAt(overlayAddr) == null) {
+			// getInstructionAt matches only instruction START addresses, so it is null at an
+			// address INTERIOR to an existing instruction as well as at undisassembled bytes.
+			// Those two cases need different handling: CodeManager.checkInstructionSet
+			// truncates a block before the conflicting unit and throws nothing, so a
+			// DisassembleCommand aimed at an offcut address FAILS SILENTLY -- it returns fewer
+			// addresses and leaves only an ERROR bookmark behind. Say so instead (grm-pfp);
+			// ghidra_scripts/FixSkipInstructions.java is what repairs the 6502 skip idiom that
+			// produces this, and it must be a deliberate act, not a side effect of retargeting.
+			Instruction occupant = program.getListing().getInstructionContaining(overlayAddr);
+			if (occupant != null) {
+				log.appendMsg(getName(), "Reference from " + instr.getMinAddress() + " targets " +
+					overlayAddr + ", which is interior to the instruction at " +
+					occupant.getMinAddress() + "; not disassembling (run FixSkipInstructions.java " +
+					"if this is a skip-idiom entry point)");
+				return 1;
+			}
 			new DisassembleCommand(overlayAddr, null, true).applyTo(program, monitor);
 			if (refType.isCall() &&
 				program.getListing().getInstructionAt(overlayAddr) != null &&

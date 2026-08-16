@@ -1,0 +1,38 @@
+IDENTITY prg:a721e896d33b471a4280bfcb9c23229b6e7a0da061d9eedc88d7ca49f386bbbb file:9d6691985281a0175e2017239bd7eb335d73d2a9f700db94696003c8ac4c92e2
+BLOCK APU_IO 4000-401f overlay=false
+BLOCK PPU_REGS 2000-2007 overlay=false
+BLOCK PRG_HI c000-ffff overlay=false
+BLOCK PRG_LO 8000-bfff overlay=false
+BLOCK PRG_LO_B1 8000-bfff overlay=true
+BLOCK PRG_LO_B2 8000-bfff overlay=true
+BLOCK PRG_LO_B3 8000-bfff overlay=true
+BLOCK RAM 0000-07ff overlay=false
+COMMENT c000 bank -> 2 (bank=2) via FUN_c150
+COMMENT c006 bank -> 1 (bank=1) via FUN_c158
+COMMENT c00c bank -> 2 (bank=2) via FUN_c170
+COMMENT c014 bank -> 0 (bank=0) via FUN_c15a
+COMMENT c019 bank -> 0 (bank=0) via FUN_c175
+COMMENT c152 bank -> 2 (bank=2)
+BOOKMARK Warning c15b
+BOOKMARK Warning c176
+REF c003 -> PRG_LO_B2::8005 UNCONDITIONAL_CALL primary=true
+REF c009 -> PRG_LO_B1::8010 UNCONDITIONAL_CALL primary=true
+REF c009 -> PRG_LO_B2::8010 UNCONDITIONAL_CALL primary=false
+SYMBOL 2000 PPUCTRL IMPORTED primary=true
+SYMBOL 2001 PPUMASK IMPORTED primary=true
+SYMBOL 2002 PPUSTATUS IMPORTED primary=true
+SYMBOL 2003 OAMADDR IMPORTED primary=true
+SYMBOL 2004 OAMDATA IMPORTED primary=true
+SYMBOL 2005 PPUSCROLL IMPORTED primary=true
+SYMBOL 2006 PPUADDR IMPORTED primary=true
+SYMBOL 2007 PPUDATA IMPORTED primary=true
+SYMBOL 4014 OAMDMA IMPORTED primary=true
+SYMBOL 4015 SND_CHN IMPORTED primary=true
+SYMBOL 4016 JOY1 IMPORTED primary=true
+SYMBOL 4017 JOY2 IMPORTED primary=true
+SYMBOL c000 RESET IMPORTED primary=true
+SYMBOL c01f IRQ IMPORTED primary=false
+SYMBOL c01f NMI IMPORTED primary=true
+SYMBOL fffa NMI_VEC IMPORTED primary=true
+SYMBOL fffc RESET_VEC IMPORTED primary=true
+SYMBOL fffe IRQ_VEC IMPORTED primary=true

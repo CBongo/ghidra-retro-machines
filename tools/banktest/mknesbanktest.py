@@ -710,6 +710,171 @@ def make_prg_uxhelper():
     return bytes(prg)
 
 
+def make_prg_skip():
+    """6502 SKIP-IDIOM recovery fixture (bead grm-pfp) -- the only end-to-end regression
+    path ghidra_scripts/FixSkipInstructions.java has. Same 4-bank / 64 KiB UxROM shape as
+    nesbanktest.nes and make_prg_uxhelper() above (bank 3 == the fixed PRG_HI window, so
+    file offset == CPU address and _bank3_putter can address bank 3 by CPU address).
+
+    THE IDIOM. A "skip" (BIT-skip / skip2 / skipword) is a harmless instruction whose
+    OPERAND BYTES are themselves a valid instruction. Entering at the carrier consumes them
+    as data; entering one byte later executes them as code -- two entry points, one shared
+    tail, no branch. The shape is transcribed from Wizards & Warriors (U) $BC05, whose
+    SHA-256 is pinned in tools/banktest/realrom/manifest-gme.tsv:
+
+      bc05:  LDA #$02
+      bc07:  BIT $03A9        ; assembles as 2C A9 03
+             JMP $FF69        ; the shared tail -- a far-call bank helper
+      bc08:   LDA #$03        ; ... i.e. the A9 03 operand bytes of the BIT above
+
+    $BC05 is disassembled first, so $BC08's bytes are already claimed as the BIT's operand
+    and Ghidra can create neither an instruction nor a function there. In wizwarr that
+    silently deletes a whole call site -- and with it the bank that site establishes. The
+    script repairs the carrier with setLengthOverride + disassemble + a function at the
+    recovered entry: the ADDRESSES below are the fixture's, the SHAPE is the cartridge's.
+
+    THREE SITES, one per confidence tier the script classifies, because the tiering is the
+    part that can regress in either direction -- into a miss or into a wrong answer.
+
+    SITE A ($C150) -- REFERENCED, the dispositive tier, and the only site with bank
+    criteria on it. RESET JSRs the hidden entry $C158 directly, so a flow reference already
+    lands on the offcut, which is upstream FixOffcutInstructionScript's own criterion:
+
+      C150  A9 02      LDA #$02
+      C152  8D D2 FF   STA $FFD2    ; the VISIBLE entry's OWN switch -> bank 2
+      C155  A9 02      LDA #$02     ; the latch argument for the visible stream
+      C157  2C A9 01   BIT $01A9    ; carrier; operand bytes A9 01 == LDA #$01
+      C15A  AA         TAX          ; ... the shared tail: Latch A's entry
+      (hidden entry $C158: LDA #$01, falling through into the same TAX at $C15A)
+
+    Both entries end in the same bus-conflict-safe UxROM latch, with the bank number
+    arriving in A -- wizwarr's shared tail is likewise a bank helper, which is exactly why
+    losing the hidden entry loses a bank:
+
+      C15A  AA         TAX          ; Latch A (its own Ghidra function; see below)
+      C15B  9D D0 FF   STA $FFD0,X  ; value == X == bank; table byte at $FFD0+N is N
+      C15E  60         RTS
+
+    So $C150 asserts bank 2 and $C158 asserts bank 1, and RESET follows each with a JSR
+    into the corresponding bank's overlay. The two banks are deliberately DIFFERENT: a
+    repair that let the visible stream fall through into the hidden LDA -- the silent
+    disaster the script's fix() guards against, and VerifyBankTest's S3 -- would change the
+    answer at a real call site rather than coinciding with the right one.
+
+    WHY THE VISIBLE ENTRY GETS ITS OWN SWITCH AT $C152, rather than relying on the latch
+    like the hidden entry does. MEASURED, not assumed: with both entries relying on the
+    shared latch, exactly ONE of the two call sites resolves. Both $C150 and $C158 are then
+    fallthrough wrappers (grm-2dr's shape) into the same helper, the engine admits one of
+    them, and which one it admits moved between runs of otherwise identical images -- the
+    offcut usually won, leaving JSR $C150 with no annotation at all. That is an analyzer
+    limitation, not something this fixture can or should assert about: a skip carrier is
+    inherently two paths through one instruction stream, and a path-insensitive summary has
+    only one answer to give. Giving the visible entry a switch of its own takes it off the
+    contested mechanism entirely, so both call sites resolve, both retargets are pinned,
+    and the criteria stay about the REPAIR instead of about wrapper admission order.
+
+    LATCH A IS REACHED BY A DIRECT JSR FROM RESET ($C014), which is what makes it its own
+    Ghidra function -- the same trick make_prg_uxhelper() uses on SetBank2. Without it the
+    latch is merely the tail of FUN_c150's body, the recovered $C158 entry is a
+    two-instruction stub falling into the middle of another function, and no exit effect
+    can be recovered for it. Latch B ($C175) is called from $C019 for the same reason.
+
+    SITE B ($C170) -- STRONG, the tier that has to find its OWN evidence. Nothing anywhere
+    in the image references $C173 (asserted in main()), so upstream's reference gate has
+    nothing to fire on and only the pattern match can reach the entry. Its corroboration is
+    that the instruction falling through INTO the carrier (LDA #$02) has the same mnemonic
+    as the hidden one (LDA #$01) -- two entries choosing between alternative parameter
+    loads before converging, which is what a hand-written skip almost always looks like:
+
+      C170  A9 02      LDA #$02
+      C172  2C A9 01   BIT $01A9    ; carrier; hides LDA #$01 at $C173
+      C175  AA         TAX          ; shared tail: Latch B
+      C176  9D D0 FF   STA $FFD0,X
+      C179  60         RTS
+
+    SITE C ($C180) -- WEAK, and the anti-overreach case. MUST NOT be touched by default.
+    BIT $10A5 hides a perfectly valid LDA $10, structurally indistinguishable from a real
+    skip, but nothing corroborates it: SEC is not LDA and no reference lands on $C182.
+    Firing here would truncate a genuine memory read AND invent an instruction inside its
+    operand -- two real instructions destroyed to manufacture one imaginary entry point.
+    This is why the script tiers at all rather than acting on structure alone:
+
+      C180  38         SEC
+      C181  2C A5 10   BIT $10A5    ; operand bytes A5 10 == LDA $10 -- valid, uncorroborated
+      C184  60         RTS
+
+    The bank-number table at $FFD0 is the identity (byte at $FFD0+N == N) so the UxROM
+    strategy's bus-conflict AND is a faithful no-op for a correctly recovered bank, and
+    $FFD2 holds 0x02 for the same reason at the visible entry's own store.
+    """
+    prg = bytearray([0x00] * PRG_SIZE)
+
+    # Bank markers at the first byte of each bank (offset $8000 once mapped in). Bank 3's
+    # lands at file offset 0xC000, which IS CPU $C000, so RESET's first opcode overwrites
+    # it -- same as make_prg_uxhelper(); the markers are a hex-dump convenience only.
+    for bank in range(PRG_BANKS):
+        prg[bank * PRG_BANK_SIZE] = bank
+
+    # The retarget targets: bank 1's routine at CPU $8010, bank 2's at CPU $8005.
+    prg[1 * PRG_BANK_SIZE + 0x0010] = 0x60  # RTS
+    prg[2 * PRG_BANK_SIZE + 0x0005] = 0x60  # RTS
+
+    put = _bank3_putter(prg)
+
+    # --- RESET ---
+    put(0xC000, [0x20, 0x50, 0xC1])         # JSR $C150 (site A, VISIBLE entry -> bank 2)
+    put(0xC003, [0x20, 0x05, 0x80])         # JSR $8005 (-> PRG_LO_B2::8005)
+    put(0xC006, [0x20, 0x58, 0xC1])         # JSR $C158 (site A, HIDDEN entry -> bank 1)
+    put(0xC009, [0x20, 0x10, 0x80])         # JSR $8010 (-> PRG_LO_B1::8010, the payoff)
+    put(0xC00C, [0x20, 0x70, 0xC1])         # JSR $C170 (site B's visible entry)
+    put(0xC00F, [0x20, 0x80, 0xC1])         # JSR $C180 (the WEAK decoy)
+    put(0xC012, [0xA9, 0x00])              # LDA #$00
+    put(0xC014, [0x20, 0x5A, 0xC1])         # JSR $C15A (makes Latch A its own function)
+    put(0xC017, [0xA9, 0x00])              # LDA #$00
+    put(0xC019, [0x20, 0x75, 0xC1])         # JSR $C175 (makes Latch B its own function)
+    put(0xC01C, [0x4C, 0x1C, 0xC0])         # JMP $C01C (self loop)
+    put(0xC01F, [0x40])                     # RTI
+
+    # --- Site A ($C150): REFERENCED. RESET JSRs $C158, so a flow reference already lands on
+    # the offcut and upstream's own gate would fire -- if anything had put it there. The
+    # switch at $C152 belongs to the VISIBLE stream alone and is what keeps that stream's
+    # call site off the contested wrapper mechanism; see the docstring. ---
+    put(0xC150, [0xA9, 0x02])              # LDA #$02
+    put(0xC152, [0x8D, 0xD2, 0xFF])         # STA $FFD2   (visible entry's OWN switch -> 2)
+    put(0xC155, [0xA9, 0x02])              # LDA #$02    (latch argument, visible stream)
+    put(0xC157, [0x2C, 0xA9, 0x01])         # BIT $01A9   (carrier; hides LDA #$01 at $C158)
+    put(0xC15A, [0xAA])                     # TAX         <- Latch A entry: the SHARED TAIL
+    put(0xC15B, [0x9D, 0xD0, 0xFF])         # STA $FFD0,X (value == X == bank)
+    put(0xC15E, [0x60])                     # RTS
+
+    # --- Site B ($C170): STRONG. Nothing references $C173, so only the pattern match plus
+    # the LDA/LDA fallthrough corroboration can reach it. No bank criteria ride on this
+    # site -- its whole job is to prove the STRONG tier fires with no reference to lean
+    # on, which is the half of the classifier that is net-new relative to upstream. ---
+    put(0xC170, [0xA9, 0x02])              # LDA #$02
+    put(0xC172, [0x2C, 0xA9, 0x01])         # BIT $01A9   (carrier; hides LDA #$01 at $C173)
+    put(0xC175, [0xAA])                     # TAX         <- Latch B entry: the SHARED TAIL
+    put(0xC176, [0x9D, 0xD0, 0xFF])         # STA $FFD0,X
+    put(0xC179, [0x60])                     # RTS
+
+    # --- Site C ($C180): WEAK decoy. The hidden LDA $10 is a real, ordinary operand of a
+    # real, ordinary BIT; "repairing" it would destroy both instructions. Must be REPORTED
+    # (the SKIPFIX summary line pins weak=1) and NOT applied. ---
+    put(0xC180, [0x38])                     # SEC         (mnemonic != LDA: no corroboration)
+    put(0xC181, [0x2C, 0xA5, 0x10])         # BIT $10A5   (operand bytes A5 10 == LDA $10)
+    put(0xC184, [0x60])                     # RTS
+
+    # UxROM bank-number table: identity, so the bus-conflict AND is a no-op (byte == index).
+    put(0xFFD0, [0x00, 0x01, 0x02, 0x03])
+
+    # Vector table.
+    put(0xFFFA, [0x1F, 0xC0])  # NMI   -> $C01F (RTI)
+    put(0xFFFC, [0x00, 0xC0])  # RESET -> $C000
+    put(0xFFFE, [0x1F, 0xC0])  # IRQ   -> $C01F (RTI)
+
+    return bytes(prg)
+
+
 def make_prg_mmc2():
     """MMC2 (bead grm-tas, machines/nes-mmc2.yaml, iNES mapper 9) end-to-end fixture.
 
@@ -2627,6 +2792,90 @@ def main():
     assert (prgux[0xFFFE] | (prgux[0xFFFF] << 8)) == 0xC01B  # IRQ vector
 
     _write_rom(outdir, "nesuxhelpertest.nes", prgux)
+
+    prgskip = make_prg_skip()
+
+    # Sanity-check the skip-idiom fixture (bead grm-pfp) before writing. The carriers are
+    # checked BYTE BY BYTE rather than as whole instructions on purpose: the whole point of
+    # this fixture is that two different instruction streams read the same bytes, so an
+    # encoding typo here would not fail loudly -- it would quietly produce a ROM in which
+    # the hidden entry is not the instruction the criteria expect.
+    assert len(prgskip) == PRG_SIZE
+    for bank in range(PRG_BANKS - 1):
+        assert prgskip[bank * PRG_BANK_SIZE] == bank
+    assert prgskip[3 * PRG_BANK_SIZE] == 0x20  # JSR, i.e. RESET won the bank-3 overlap
+    assert prgskip[1 * PRG_BANK_SIZE + 0x0010] == 0x60  # RTS at bank 1's $8010
+    assert prgskip[2 * PRG_BANK_SIZE + 0x0005] == 0x60  # RTS at bank 2's $8005
+    # RESET
+    assert prgskip[0xC000] == 0x20
+    assert (prgskip[0xC001] | (prgskip[0xC002] << 8)) == 0xC150  # site A, VISIBLE entry
+    assert prgskip[0xC003] == 0x20
+    assert (prgskip[0xC004] | (prgskip[0xC005] << 8)) == 0x8005
+    assert prgskip[0xC006] == 0x20
+    assert (prgskip[0xC007] | (prgskip[0xC008] << 8)) == 0xC158  # site A, HIDDEN entry
+    assert prgskip[0xC009] == 0x20
+    assert (prgskip[0xC00A] | (prgskip[0xC00B] << 8)) == 0x8010
+    assert prgskip[0xC00C] == 0x20
+    assert (prgskip[0xC00D] | (prgskip[0xC00E] << 8)) == 0xC170  # site B, visible entry
+    assert prgskip[0xC00F] == 0x20
+    assert (prgskip[0xC010] | (prgskip[0xC011] << 8)) == 0xC180  # the WEAK decoy
+    # The two direct latch calls, which are what make each latch its own Ghidra function
+    # (see the docstring -- without them the recovered offcut entry is a stub inside
+    # another function's body and no exit effect can be recovered for it).
+    assert prgskip[0xC012] == 0xA9 and prgskip[0xC013] == 0x00
+    assert prgskip[0xC014] == 0x20
+    assert (prgskip[0xC015] | (prgskip[0xC016] << 8)) == 0xC15A  # Latch A entry
+    assert prgskip[0xC017] == 0xA9 and prgskip[0xC018] == 0x00
+    assert prgskip[0xC019] == 0x20
+    assert (prgskip[0xC01A] | (prgskip[0xC01B] << 8)) == 0xC175  # Latch B entry
+    assert prgskip[0xC01C] == 0x4C
+    assert (prgskip[0xC01D] | (prgskip[0xC01E] << 8)) == 0xC01C
+    assert prgskip[0xC01F] == 0x40                               # RTI
+    # Site A. The visible entry's own switch, then the carrier hiding LDA #$01, then the
+    # shared tail both entries converge on.
+    assert prgskip[0xC150] == 0xA9 and prgskip[0xC151] == 0x02
+    assert prgskip[0xC152] == 0x8D                               # STA abs -- visible switch
+    assert (prgskip[0xC153] | (prgskip[0xC154] << 8)) == 0xFFD2
+    assert prgskip[0xC155] == 0xA9 and prgskip[0xC156] == 0x02   # LDA #$02 (latch argument)
+    assert prgskip[0xC157] == 0x2C                               # BIT abs -- the carrier
+    assert prgskip[0xC158] == 0xA9 and prgskip[0xC159] == 0x01   # ... == LDA #$01 offcut
+    assert (prgskip[0xC158] | (prgskip[0xC159] << 8)) == 0x01A9  # ... == the BIT's operand
+    assert prgskip[0xC15A] == 0xAA                               # TAX -- the shared tail
+    assert prgskip[0xC15B] == 0x9D                               # STA abs,X
+    assert (prgskip[0xC15C] | (prgskip[0xC15D] << 8)) == 0xFFD0
+    assert prgskip[0xC15E] == 0x60
+    # The visible and hidden banks MUST differ, or the retarget criteria prove nothing:
+    # a repair that merged the two streams would land on the right answer by coincidence.
+    assert prgskip[0xC156] != prgskip[0xC159]
+    # Site B: carrier plus shared tail, with the LDA/LDA corroboration the STRONG tier
+    # needs, and -- critically -- no JSR/JMP anywhere in the image naming $C173. If that
+    # ever stops holding, site B silently becomes a second REFERENCED case and the STRONG
+    # tier loses its only end-to-end coverage.
+    assert prgskip[0xC170] == 0xA9 and prgskip[0xC171] == 0x02
+    assert prgskip[0xC172] == 0x2C                               # BIT abs -- the carrier
+    assert prgskip[0xC173] == 0xA9 and prgskip[0xC174] == 0x01   # ... == LDA #$01 offcut
+    assert prgskip[0xC175] == 0xAA                               # TAX -- the shared tail
+    assert prgskip[0xC176] == 0x9D
+    assert (prgskip[0xC177] | (prgskip[0xC178] << 8)) == 0xFFD0
+    assert prgskip[0xC179] == 0x60
+    assert prgskip.count(bytes([0x20, 0x73, 0xC1])) == 0  # no JSR $C173 anywhere
+    assert prgskip.count(bytes([0x4C, 0x73, 0xC1])) == 0  # no JMP $C173 anywhere
+    # Site C ($C180): the WEAK decoy. A5 10 is a genuine LDA $10, not a planted skip.
+    assert prgskip[0xC180] == 0x38                               # SEC (mnemonic != LDA)
+    assert prgskip[0xC181] == 0x2C                               # BIT abs
+    assert prgskip[0xC182] == 0xA5 and prgskip[0xC183] == 0x10   # ... == LDA $10 offcut
+    assert (prgskip[0xC182] | (prgskip[0xC183] << 8)) == 0x10A5  # ... == the BIT's operand
+    assert prgskip[0xC184] == 0x60                               # RTS -- the shared tail
+    assert prgskip.count(bytes([0x20, 0x82, 0xC1])) == 0  # no JSR $C182 anywhere
+    assert prgskip.count(bytes([0x4C, 0x82, 0xC1])) == 0  # no JMP $C182 anywhere
+    # Bank table (identity, so the bus-conflict AND is a no-op) and vectors. $FFD2 doubles
+    # as the visible entry's own store target, and holds 0x02 for the same reason.
+    assert list(prgskip[0xFFD0:0xFFD4]) == [0x00, 0x01, 0x02, 0x03]
+    assert (prgskip[0xFFFC] | (prgskip[0xFFFD] << 8)) == 0xC000  # RESET vector
+    assert (prgskip[0xFFFA] | (prgskip[0xFFFB] << 8)) == 0xC01F  # NMI vector
+    assert (prgskip[0xFFFE] | (prgskip[0xFFFF] << 8)) == 0xC01F  # IRQ vector
+
+    _write_rom(outdir, "nesskiptest.nes", prgskip)
 
     prgmirror = make_prg_mirrortest()
 
