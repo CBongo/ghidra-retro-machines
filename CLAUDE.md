@@ -10,8 +10,15 @@ documented command lines throughout this file are written for it, and the permis
 allowlist is tuned for that route — so a bash call is far more likely to run without
 prompting than the PowerShell equivalent of the same thing.
 
-Two practical consequences:
+Three practical consequences:
 
+- **Never prefix a command with `cd` to the repo root.** The Bash tool already starts in
+  `D:/git/ghidra-retro-machines` and its working directory persists between calls, so
+  `cd D:/git/ghidra-retro-machines && <cmd>` is pure overhead — and it *costs* you, because the
+  `cd` turns an otherwise-allowlisted command into a compound one the permission matcher can no
+  longer clear. This was measured at ~200 needless prompts across 50 sessions, the single
+  largest source of them. Just run `<cmd>`. When you genuinely need a different directory, prefer
+  a tool that takes one (`git -C <dir> …`, `bash tools/… <path>`) over `cd`.
 - **Long or multi-line arguments go in a file, not on the command line.** Prompts to approve a
   wall of inline text get rejected. Write the text to a scratchpad file and pass it by path:
   `bd comment <id> --file notes.txt`, `git commit -F msg.txt`.
