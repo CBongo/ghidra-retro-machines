@@ -2383,7 +2383,17 @@ def make_ines_header(prg_banks, chr_banks, mapper):
     return bytes(h)
 
 
-def _write_rom(outdir, filename, prg, mapper=MAPPER, prg_banks=PRG_BANKS):
+def _write_rom(outdir, filename, prg, mapper=MAPPER, prg_banks=None):
+    # prg_banks is the iNES header's PRG-size field, defined by the format in 16 KiB
+    # units -- NOT this module's per-board bank size (8 KiB for MMC3/MMC2, 16 KiB for
+    # everyone else). Leave it None (the normal case) and it's derived from the payload,
+    # so no call site has to know or restate the units. Pass it explicitly only to
+    # deliberately declare a wrong/unusual header (e.g. NES 2.0 exponent form, malformed
+    # loader-degrade fixtures).
+    if prg_banks is None:
+        assert len(prg) % 0x4000 == 0, \
+            "PRG payload %d is not a whole number of 16 KiB iNES units" % len(prg)
+        prg_banks = len(prg) // 0x4000
     header = make_ines_header(prg_banks, 0, mapper)
     rom = header + prg
     path = os.path.join(outdir, filename)
@@ -2809,8 +2819,7 @@ def main():
     print("nesserialtest labels: " +
           ", ".join("%s=$%04X" % (k, v) for k, v in labels.items()))
 
-    _write_rom(outdir, "nesserialtest.nes", prgs, mapper=MAPPER_SERIALTEST,
-               prg_banks=SERIAL_BANKS)
+    _write_rom(outdir, "nesserialtest.nes", prgs, mapper=MAPPER_SERIALTEST)
 
     prgm1, m1labels = make_prg_mmc1()
 
@@ -2859,7 +2868,7 @@ def main():
     print("nesmmc1test labels: " +
           ", ".join("%s=$%04X" % (k, v) for k, v in m1labels.items()))
 
-    _write_rom(outdir, "nesmmc1test.nes", prgm1, mapper=MAPPER_MMC1, prg_banks=MMC1_BANKS)
+    _write_rom(outdir, "nesmmc1test.nes", prgm1, mapper=MAPPER_MMC1)
 
     # nesmmc1overridetest.nes (bead grm-hsv.3): user placement override + provenance.
     prgm1o, m1olabels = make_prg_mmc1_override()
@@ -2873,8 +2882,7 @@ def main():
     print("nesmmc1overridetest labels: " +
           ", ".join("%s=$%04X" % (k, v) for k, v in m1olabels.items()))
 
-    _write_rom(outdir, "nesmmc1overridetest.nes", prgm1o, mapper=MAPPER_MMC1,
-               prg_banks=MMC1_BANKS)
+    _write_rom(outdir, "nesmmc1overridetest.nes", prgm1o, mapper=MAPPER_MMC1)
 
     # neswrappertest.nes (bead grm-2dr, increment 1): pass-through-wrapper fixture.
     prgw, wlabels = make_prg_wrapper()
@@ -2907,7 +2915,7 @@ def main():
     print("neswrappertest labels: " +
           ", ".join("%s=$%04X" % (k, v) for k, v in wlabels.items()))
 
-    _write_rom(outdir, "neswrappertest.nes", prgw, mapper=MAPPER_MMC1, prg_banks=MMC1_BANKS)
+    _write_rom(outdir, "neswrappertest.nes", prgw, mapper=MAPPER_MMC1)
 
     # nesrelaytest.nes (bead grm-2dr, increment 2): call-edge-wrapper fixture.
     prgr, rlabels = make_prg_relay()
@@ -2938,7 +2946,7 @@ def main():
     print("nesrelaytest labels: " +
           ", ".join("%s=$%04X" % (k, v) for k, v in rlabels.items()))
 
-    _write_rom(outdir, "nesrelaytest.nes", prgr, mapper=MAPPER_MMC1, prg_banks=MMC1_BANKS)
+    _write_rom(outdir, "nesrelaytest.nes", prgr, mapper=MAPPER_MMC1)
 
     # nesbandaitest.nes (bead grm-9ty): Bandai FCG/LZ93D50 register-file decode fixture.
     prgb = make_prg_bandai()
@@ -2973,9 +2981,6 @@ def main():
     assert (prgm2[0xFFFC] | (prgm2[0xFFFD] << 8)) == 0xE000       # RESET vector
     assert (prgm2[0xFFFA] | (prgm2[0xFFFB] << 8)) == 0xE010       # NMI vector
     assert (prgm2[0xFFFE] | (prgm2[0xFFFF] << 8)) == 0xE010       # IRQ vector
-    # _write_rom's prg_banks counts 16 KiB iNES header units, not this fixture's 8 KiB
-    # internal bank size -- 8 x 8 KiB = 64 KiB = 4 x 16 KiB, i.e. the function default
-    # (PRG_BANKS = 4), same as nesmmc3test.nes's identically-sized (8 x 8 KiB) fixture.
     _write_rom(outdir, "nesmmc2test.nes", prgm2, mapper=MAPPER_MMC2)
 
 
