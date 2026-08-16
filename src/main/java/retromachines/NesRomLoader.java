@@ -21,9 +21,9 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableSet;
 import java.util.Set;
 
 import com.google.gson.JsonElement;
@@ -296,7 +296,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 						? (header == null ? null : NesBoardRegistry.forMapper(header.mapper()))
 						: NesBoardRegistry.forId(boardId);
 				if (header != null && board != null) {
-					String err = placementError(pairs, board, header.prgBanks());
+					String err = placementError(pairs, board, header);
 					if (err != null) {
 						return err;
 					}
@@ -311,41 +311,67 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 
 	/**
 	 * First validation error in a parsed placement override against {@code board}'s
-	 * descriptor -- an unknown window name or an out-of-range bank -- or null if every pair
-	 * is well-formed. Shared by {@link #validateOptions} (GUI reject) and {@link #load}
-	 * (headless safety net).
+	 * descriptor -- an unknown window name, a window with no bank to place, or a bank the
+	 * image cannot back -- or null if every pair is well-formed. Shared by
+	 * {@link #validateOptions} (GUI reject) and {@link #load} (headless safety net), so both
+	 * routes accept exactly the same overrides.
+	 * <p>
+	 * The legal bank set is per window, computed by
+	 * {@link DescriptorSupport#placeableBanks} from that window's own expression and length
+	 * against the PRG byte size -- <em>not</em> from the iNES header's 16 KiB bank count,
+	 * which is a container unit unrelated to what a given window's bank field selects
+	 * (bead grm-n5f: a 32 KiB MMC3 image has four placeable 8 KiB banks but
+	 * {@code prgBanks == 2}). This is the same predicate the realization loops in
+	 * {@link #realizeInvariantWindow} / {@link #realizeVaryingWindows} use to decide which
+	 * bank overlays to create, so validation accepts a bank exactly when the load can
+	 * realize a block for it.
 	 */
 	private static String placementError(Map<String, Integer> pairs, NesBoardRegistry.Board board,
-			int prgBanks) throws IOException {
-		Set<String> windows = descriptorWindowNames(board);
+			InesHeader header) throws IOException {
+		JsonObject map = DescriptorSupport.loadMap(board.mapPath());
+		Map<String, NavigableSet<Integer>> placeable = DescriptorSupport.placeableBanks(map,
+			header.prgSize(), new MessageLog(), board.mapPath());
+		return placementError(pairs, placeable, board.id(), header.prgSize());
+	}
+
+	/**
+	 * The descriptor-free half of {@link #placementError(Map, NesBoardRegistry.Board,
+	 * InesHeader)}: checks parsed pairs against an already-computed legal bank set. Split out
+	 * so the rule is exercisable without an {@code Application} bootstrap
+	 * ({@code NesPlacementValidationTest}); the loader route only adds descriptor loading.
+	 */
+	static String placementError(Map<String, Integer> pairs,
+			Map<String, NavigableSet<Integer>> placeable, String boardId, long prgSize) {
 		for (Map.Entry<String, Integer> pair : pairs.entrySet()) {
-			if (!windows.contains(pair.getKey())) {
+			NavigableSet<Integer> banks = placeable.get(pair.getKey());
+			if (banks == null) {
 				return PLACEMENT_OPTION_NAME + ": unknown window '" + pair.getKey() +
-					"' for board " + board.id() + "; known windows: " + windows;
+					"' for board " + boardId + "; known windows: " + placeable.keySet();
 			}
-			if (pair.getValue() >= prgBanks) {
+			if (banks.isEmpty()) {
+				return PLACEMENT_OPTION_NAME + ": window '" + pair.getKey() + "' on board " +
+					boardId + " holds no switchable bank, so there is nothing to override";
+			}
+			if (!banks.contains(pair.getValue())) {
 				return PLACEMENT_OPTION_NAME + ": bank " + pair.getValue() +
-					" out of range (ROM has " + prgBanks + " 16K PRG banks)";
+					" out of range for window '" + pair.getKey() + "' (board " + boardId +
+					", " + (prgSize / 1024) + "K PRG); placeable banks: " + describeBanks(banks);
 			}
 		}
 		return null;
 	}
 
-	/** Declared window-instance names for a board's descriptor (mode-invariant + varying),
-	 *  the legal {@code window} tokens for a {@link #PLACEMENT_OPTION_NAME} override. */
-	private static Set<String> descriptorWindowNames(NesBoardRegistry.Board board)
-			throws IOException {
-		JsonObject map = DescriptorSupport.loadMap(board.mapPath());
-		DescriptorSupport.LayoutPlan plan =
-			DescriptorSupport.planWindows(map, new MessageLog(), board.mapPath());
-		Set<String> names = new LinkedHashSet<>();
-		for (DescriptorSupport.PlannedWindow pw : plan.invariant()) {
-			names.add(pw.name());
+	/** Compact rendering of a legal bank set for an error message: {@code "0-3"} when the
+	 *  set is the contiguous run it almost always is, the explicit set otherwise (a
+	 *  descriptor whose expression skips values -- e.g. an alignment mask -- must not be
+	 *  described as a range it isn't). */
+	private static String describeBanks(NavigableSet<Integer> banks) {
+		int lo = banks.first();
+		int hi = banks.last();
+		if (hi - lo + 1 == banks.size()) {
+			return lo == hi ? String.valueOf(lo) : lo + "-" + hi;
 		}
-		for (DescriptorSupport.PlannedWindow pw : plan.varying()) {
-			names.add(pw.name());
-		}
-		return names;
+		return banks.toString();
 	}
 
 	@Override
@@ -432,7 +458,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 					" -- refusing to import with an invalid placement override");
 				return;
 			}
-			String err = placementError(pairs, board, header.prgBanks());
+			String err = placementError(pairs, board, header);
 			if (err != null) {
 				log.appendMsg(err + " -- refusing to import with an invalid placement override");
 				return;

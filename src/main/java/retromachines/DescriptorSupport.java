@@ -26,7 +26,9 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableSet;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.function.BiConsumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -1009,6 +1011,71 @@ final class DescriptorSupport {
 		String expr = w.has("maps") ? w.getAsJsonObject("maps").get("expr").getAsString() : null;
 		String onWrite = w.has("on_write") ? w.get("on_write").getAsString() : null;
 		return new PlannedWindow(name, start, end, expr, onWrite, modeValue);
+	}
+
+	/**
+	 * The bank values each planned window can actually be placed at, for an image of
+	 * {@code imageSize} bytes: window name -> the sorted set of {@code banking.state} field
+	 * values whose {@code maps:} expression lands a whole window inside the image. This is
+	 * the legal bank set of a placement override (bead grm-n5f), and it is deliberately
+	 * derived from the same three inputs the loaders' realization loops use -- the window's
+	 * own compiled expression, its own length, and the image size -- rather than from any
+	 * container-level "bank" unit.
+	 * <p>
+	 * Why not divide the image size by a fixed unit: a bank value is a <em>field</em> value
+	 * fed to the expression, and neither the field's unit nor the window's length is a
+	 * property of the container. MMC3's windows are 8 KiB, so a 32 KiB image has four banks
+	 * where the iNES header counts two 16 KiB ones; MMC1's mode-0 window is 32 KiB wide but
+	 * its expression ({@code (prg_bank >> 1) * 0x8000}) still takes bank values in 16 KiB
+	 * units. Evaluating the expression over the field's whole value range and keeping the
+	 * in-range results answers both without special-casing either.
+	 * <p>
+	 * Every planned window name is a key, so callers can tell an unknown window from one
+	 * with no placeable bank. The value is empty when the window has no bank to place at
+	 * all: enumerated occupants (no expression), a fixed expression (every layout of it
+	 * evaluates without a field), or an expression this code cannot resolve to exactly one
+	 * declared field -- the same three cases the loaders' realization loops skip. Values are
+	 * the union across a mode-varying window's per-layout instances, since a bank is legal
+	 * if <em>some</em> reachable mode can hold it.
+	 */
+	static Map<String, NavigableSet<Integer>> placeableBanks(JsonObject map, long imageSize,
+			MessageLog log, String source) {
+
+		LayoutPlan plan = planWindows(map, log, source);
+		List<StateField> fields = parseStateFields(map);
+		List<PlannedWindow> all = new ArrayList<>(plan.invariant());
+		all.addAll(plan.varying());
+
+		Map<String, NavigableSet<Integer>> byWindow = new LinkedHashMap<>();
+		for (PlannedWindow pw : all) {
+			NavigableSet<Integer> banks =
+				byWindow.computeIfAbsent(pw.name(), k -> new TreeSet<>());
+			if (pw.expr() == null) {
+				continue; // enumerated occupants: no bank values at all
+			}
+			try {
+				evalConstantExpr(pw.expr(), imageSize, pw.length());
+				continue; // fixed instance: nothing to place a bank into
+			}
+			catch (IllegalArgumentException e) {
+				// falls through: bank-state-dependent, like the loaders' realization loops
+			}
+			Set<String> exprFields = referencedFields(pw.expr());
+			StateField field = exprFields.size() == 1
+					? findField(fields, exprFields.iterator().next())
+					: null;
+			if (field == null) {
+				continue; // not resolvable to one declared field; the loader skips it too
+			}
+			for (long v = 0; v < (1L << field.width()); v++) {
+				long srcOffset =
+					evalExpr(pw.expr(), imageSize, pw.length(), Map.of(field.name(), v));
+				if (srcOffset >= 0 && srcOffset + pw.length() <= imageSize) {
+					banks.add((int) v);
+				}
+			}
+		}
+		return byWindow;
 	}
 
 	// ------------------------------------------------------------------
