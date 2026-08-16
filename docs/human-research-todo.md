@@ -43,6 +43,32 @@ bash tools/banktest/realrom-test.sh nominate H:/emulators/nes/roms   # board-gap
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
+### 1a. What is smb3's `FUN_c542`? (`grm-evn`)
+
+**This item's own gate has fired.** `grm-evn` said to re-check after `grm-67g` landed and to ask for
+a human look *only if the warnings survived*. `grm-67g` is closed, and they survived — stably, at
+HEAD, on two builds, byte-identical `.diff` files (2026-08-09 and again 2026-08-10).
+
+- [ ] **Is `FUN_c542` a real bank-switch helper, or a false one?** Two warnings, at `867b` and
+      `ac6d`, both "call to bank-switch helper `FUN_c542` whose bank argument could not be recovered
+      at this call site". They are **the only remaining difference** between smb3's production dump
+      and its golden — `refs`, `instrs`, `bankComments` and `ca23`/`ca2e` all match line for line
+      since `grm-67g`, leaving `warnings 50` vs `52`. So smb3's row and `grm-bj6` (P2) are blocked on
+      exactly this.
+
+      Your own smb3 trace (`ffc2`/`ffd1`/`ffbf` plus the direct sites `c5f5`/`c9f7`) accounts for
+      every disassembled write to `$8000`/`$8001` and does not mention `c542` at all. **The
+      question is just: what does `c542` do, and where does its argument come from at `867b` and
+      `ac6d`?** If it genuinely writes a mapper register, the warnings are honest and the golden is
+      simply stale by two lines; if it does not, something is admitting a false helper and that is a
+      bug worth its own bead. Reproduce with
+      `bash tools/banktest/realrom-test.sh check --only smb3`.
+
+      **Do not bless smb3 to absorb these** — the rest of that golden is verified correct line for
+      line, which is what makes the `+2` a clean signal.
+
+### 1b. The lowest-target jump-table bound (`grm-eyn`)
+
 Both items below adjudicate the **lowest-target jump-table bound** (`grm-eyn`, fork branch
 `grm/jumptable-lowest-target`, commit `475cf359`). It is the first fix that moves the corpus the
 right way on both axes — dragonpower/shenlong warnings 6→2 while megaman *gains* instructions
@@ -138,15 +164,21 @@ Per mapper:
 - whether PRG mode itself is switchable, and how
 - write protocol: single write, serial shift, or latch
 
-- [ ] **mapper 9 (MMC2)** (`grm-tas` P3) — the sanctioned next descriptor. 8K switchable at
-      `8000-9fff`, three fixed 8K above; latch-driven CHR banking is irrelevant to PRG but worth
-      documenting *as explicitly ignored*. Seven local Punch-Out!! dumps already available. Once it
-      ships, `realrom-test.sh nominate` flips those rows from comments into paste-ready TSV.
-
 - [ ] **Wider gap**, by local sample count: MMC5 (5) 16 · MMC2 (9) 7 · 118 5 · FME-7 (69) 4 · 87 3 ·
-      206 3 · 68 2 · 23 2 · 18 2 · 119 2 · Color Dreams (11) 2, then singletons. Beyond MMC2,
+      206 3 · 68 2 · 23 2 · 18 2 · 119 2 · Color Dreams (11) 2, then singletons. **MMC2 shipped and
+      MMC5 is sanctioned** (see the Answered table), so what is left to judge is the tail:
       **FME-7** and **Color Dreams** are the best effort-to-payoff — both simple single-write
-      latches. MMC5 has the most samples and is a far bigger board.
+      latches — and everything below them is 3 samples or fewer. The open question is whether the
+      tail is worth shipping at all, or whether the board list should now be considered closed
+      pending a title that demands one.
+
+- [ ] **Heads-up, not yet a question: MMC5 will probably bounce a schema decision back to you.**
+      (`grm-fxm` P3.) The fact sheet is agent work and the descriptor follows the shipped pattern,
+      but two shapes may not be expressible in the current vocabulary: **four** switchable PRG modes
+      (32K / 16K+16K / 16K+8K / 8K×4), and a bank register whose high bit selects **PRG-RAM instead
+      of ROM** — a bank number meaning two different memories is new here. The bead's standing
+      instruction is to surface that early rather than invent schema, so expect the ask before any
+      YAML is written, not after.
 
 - [ ] **NES 2.0 exponent PRG size** (`grm-dfj` P3) — scan local headers for `h[9] & 0x0F == 0x0F`.
       The bead says fix it "when a real image demands it rather than speculatively", so **"none
@@ -163,6 +195,36 @@ Per mapper:
 ## 4. Decisions only you can make
 
 Blocked on judgment, not effort.
+
+- [ ] **Do you want to cut a public release, and when?** This is the single largest blocked-on-human
+      item in the tracker — **three beads are held on it**, and none of them can be picked up from a
+      ready-queue scan:
+
+      | bead | P | what it ships |
+      |---|---|---|
+      | `grm-9ut` | **2** | GitHub Actions release build (workflow_dispatch, matrix from the 12.0 floor, draft release) |
+      | `grm-fy0` | 3 | end-user README — what the extension does, how to use it, known-limitation workarounds |
+      | `grm-e7w` | 4 | CI enforcement — trails until *outside contributors* exist, per its own ruling |
+
+      Everything technical is already decided: the trigger mechanism (2026-07-12), the hard floor at
+      Ghidra 12.0, the reference workflow, and the release order (`grm-9ut` and `grm-fy0` **together**
+      — a release zip nobody can use is half a deliverable). What is missing is only the product
+      call: **is there an audience yet?** Until you say so, this work is speculative, which is
+      exactly why it was set to `blocked` rather than left in the queue on 2026-08-15. A "not yet,
+      revisit at <milestone>" is a complete answer and costs nothing to record.
+
+- [ ] **Overlay blocks for PRG modes a ROM never uses — prune, script, hint, or leave?** (`grm-ic5`
+      P3, your own idea.) smb3 carries `blocks.total 103 / blocks.overlay 95`, and its `$8000` bit 6
+      is set at every observed write, so the mode-0 window blocks are never live. Three shapes are
+      filed and **none is chosen**: (a) post-analysis prune on evidence (zero instructions, zero
+      inbound refs, no resolved mode-selecting write), (b) a user-invoked script — explicit and
+      undoable, (c) a per-game `grm-hb6` hint declaring the live mode as a recorded fact.
+
+      This needs your call rather than more analysis because the bead already concedes the value is
+      **convenience, not correctness** (you noted the blocks are easy to delete by hand today), and
+      that judgment is what decides how much machinery is justified. Note the trap the bead records:
+      load-time suppression is the one shape that cannot work, since the evidence does not exist
+      until after analysis has run.
 
 - [ ] **Is Gradle dependency locking + verification metadata worth it here?** (`grm-e7w`, now P4 and
       `blocked-on-human`.) Version strings are already pinned in `build.gradle`. Full verification
@@ -199,8 +261,12 @@ Agents can't file these — they need an account and CLA agreement.
       FILED:** [#9447](https://github.com/NationalSecurityAgency/ghidra/issues/9447), 2026-08-02.
       Only the **PR** is still open work here. **Unblocks `grm-g73`.**
 
-      Status checked 2026-08-15: open, labelled `Feature: Decompiler` + `Status: Triage`, **zero
-      comments** after 13 days. The bead says to watch for maintainer guidance on the fix shape
+      Status re-checked 2026-08-16: open, labelled `Feature: Decompiler` + `Status: Triage`, **zero
+      comments** after 14 days — but now **assigned to `caheckman`**, who owns `jumptable.cc` (the
+      one change since the 08-15 check; issue last updated 2026-08-10). An assignment with no
+      comment is not guidance, so the reasoning below is unchanged; it does mean a measurement
+      posted to the thread would land in front of the right person. The bead says to watch for
+      maintainer guidance on the fix shape
       before investing in the patch (`caheckman` owns `jumptable.cc`); that guidance has not
       arrived and waiting on it is unbounded. Hence the local-fork-first decision — see `grm-eyn`.
 
@@ -255,7 +321,8 @@ Agents can't file these — they need an account and CLA agreement.
 | Is ff1's bistability still real — close `grm-4nr` or keep it as a standing watch item? | **Closed not-reproducible 2026-08-15 — then REOPENED THE SAME DAY when it reproduced.** The close reasoned from consecutive runs (3:2 at filing, then 10/10, then 19/19; P = 0.6%). Hours later a full `realrom-test.sh check --all` at afe399a produced **the same two states as 12 days earlier** — refs 1847↔1880, instrs 7382↔7426, an identical ±33/±44 delta, everything else byte-identical (bankComments 75, warnings 34 both ways). So the bistability was never removed and the grm-izu/grm-2dr speculation was wrong; only the *warnings* component vanished, because the warning population itself collapsed ~600→34. **The real lesson is methodological: these states are STICKY, not independent per-run draws.** ff1's golden was re-blessed on 08-11 to the *opposite* state from the one originally blessed, so the title had migrated and then sat there — meaning a long clean streak shows it is PARKED IN ONE STATE, not that the other is gone. Binomial/rule-of-three reasoning systematically understates this; **do not close a bistable-golden bead on a clean streak.** Caught only because the run used `--all` (ff1 is a GME row; a bare `check` reads just the 12 curated rows). Still NOT linked to megaman's jump table — megaman failed in the same run with its own distinct grm-g73 signature (refs 1704→1703, instrs pinned). Next step, still never done: a DeterminismProbe localization run on ff1 | `grm-4nr` **REOPENED P2**; memory `bistable-golden-sticky-states` |
 | Should this repo have CI at all? | **No, not at this time — ruled 2026-08-15.** We are the sole contributors, so there is no integration to continuously integrate: CI would only re-run the testing already required before every push, at the cost of a runner that fetches and pins a Ghidra install matching `ghidraTargetVersion`. **Revisit trigger is people, not effort** — when outside contributors start submitting changes, CI stops being redundant re-testing and becomes the only way to trust a contributor's claim that the gate was green. `grm-e7w` dropped P2 → P4 and marked `blocked-on-human`, grouped with `grm-9ut`/`grm-fy0` behind the public-release decision; of the three, **`grm-9ut` lands first** (release builds serve people who USE the extension, a real audience; CI serves people who DEVELOP it, which is hypothetical). The dependency-locking half of the original question is still open — it stays in section 4 | `grm-e7w` (deferred, not closed) |
 | Does the real-ROM tier need to run in the default gate, given contributors without ROMs? | **No — question dissolved, 2026-08-15.** `grm-6kv` carried an open design question ("what should the gate do on a machine with no ROMs?") that assumed a contributor who lacks them. For both current contributors the ROMs are **always** present, and the ROM-less contributor is hypothetical — so there is nothing to design around. **Do not redesign the tier model.** The resolution is process, not architecture: make the real-ROM pass a documented local pre-push requirement, make *not having run it* visible via a staleness signal (the `grm-mu7` failure mode was that nothing told anyone the tier had not run), and skip LOUDLY when `GRM_ROM_DIR` is unset rather than reporting a clean gate. This moved `grm-6kv` off the planning list and onto the mechanical/farm-out list at unchanged P2 | `grm-6kv` |
-| Is mapper 9 (MMC2) worth a descriptor for essentially one game? | **Yes — ship it, ruled 2026-08-15.** Punch-Out!! is in scope for the GME project, which is the consuming use case, so a one-game board is justified. This retires the decision `grm-tas` existed to hold; what remains is ordinary implementation (8K switchable at `$8000-9fff`, three fixed 8K banks above, following the existing per-board descriptor pattern). **Do not model the latch-driven CHR banking** — it is irrelevant to PRG analysis. Run `realrom-test.sh nominate` first in case a second unclaimed mapper can ride along on the same work | `grm-tas` |
+| Is mapper 9 (MMC2) worth a descriptor for essentially one game? | **Yes — ship it, ruled 2026-08-15, and it SHIPPED the same day** (`c4424cc`, `machines/nes-mmc2.yaml`). Punch-Out!! is in scope for the GME project, which is the consuming use case, so a one-game board is justified. **Do not model the latch-driven CHR banking** — it is PPU-read-triggered, so there is no CPU-recoverable switch to find at all. Two modelling choices worth carrying to the next board: the three FIXED windows carry `on_write: mechanism` (real hardware routes *every* write in `$A000-$FFFF` to some register), and the third-to-last bank is expressed as `second_last - 0x2000` rather than inventing a `third_last` keyword. Two traps it surfaced: `_write_rom`'s `prg_banks` counts 16 KiB *header* units, not the fixture's internal bank size; and **a fixture name not registered in `VerifyBankTest.java`'s dispatch chain falls through to the C64 default and prints nonsense instead of failing** — adding a board is a two-side job | `grm-tas` **closed** |
+| Is MMC5 (mapper 5) worth the effort, given it is the biggest board Nintendo shipped? | **Yes — "we should absolutely do MMC5", ruled 2026-08-15.** 16 local samples, the largest count in the corpus survey, so the payoff is real rather than speculative. Filed as `grm-fxm` **separately from `grm-tas` on purpose** — folding the most capable Nintendo mapper into the one-window MMC2 bead would hide a large piece of work behind a small one. Sequencing is MMC2 first (it establishes a fresh end-to-end precedent against the current tree), then MMC5 against that pattern; MMC2 has since shipped, so MMC5 is unblocked. ExRAM, split-screen, the multiplier and the vertical-split modes are PPU-side and out of scope — but say so *explicitly in the descriptor comments* rather than leaving the next reader wondering. **One thing may still come back to you:** the four-mode PRG plan and the ROM-vs-RAM bank-select bit may not be expressible in the current vocabulary, and the standing instruction is to surface that as a schema decision early rather than invent one — see section 3 | `grm-fxm` |
 | Does any real Bandai cart write an FCG register with an *indexed* store? | **No — and structurally, not by luck. Leave `grm-egw` at P3 indefinitely; do not pre-emptively harden the path.** Indexed stores into the register file are common (dbz2 has "several" `99 00 80`, dbz_saiyan three) but every one is a `STA $8000,Y` loop with **Y counting 7 down to 0**, i.e. `$8000-$8007` — the eight CHR registers. The PRG register is `$8008` and Y never reaches 8. That is the register file's own layout: CHR occupies the low 8 slots and forms a natural 8-iteration loop, PRG is a single slot past the end, and nothing has a reason to index to it. Compounding it, the bug needs a **known** index to fire (`addBaseReferenceOnce` only retargets when the index resolves) and a loop-carried Y presents no constant. Per-title: db3 register base `$6008`, no `99 00 60`/`9D 00 60`, helper db2f (shadow `$6a`); dbz2 helper d12f (shadow `$4c`) → `$8008`, no `9D 00 80`; dbz_datach helper cc28 (shadow `$59`) → `$8008`, neither pattern; dbz_saiyan helper c9c0 (shadow `$49`) → `$8008`, no `9D 00 80`. Unchanged by `grm-46h`'s new `$6000-$7FFF` range (same $x008 geometry, and db3 has no indexed stores there either). If it is ever fixed, the `writesInRange` fallback must still DECLINE on (addr_mask present AND indexed operand) | `grm-egw` |
 | Where is DB3's bank-switch stub copied into RAM `$0200`, and what is its argument convention? | **Wrong question — there is no stub. `grm-azv`'s premise was disproven on both counts, and this exposed a live descriptor bug.** db3 switches PRG with an ordinary ROM helper at **db2f** writing shadow `$6a` and register **`$6008`**; the copy loops at e69e/e707/e712 copy **data, not code**. We saw no mechanism write because `nes-bandai-fcg.yaml` declares one latch range, `$8000-$FFFF`. **db3 is iNES mapper 16 submapper 4 (FCG-1/2), which decodes registers only in `$6000-$7FFF`** — and the descriptor's module header has the submapper table backwards, calling 16.4 an LZ93D50 `$8000` board and 16.1/16.2 the legacy generation. NESdev's actual table: 16.1/16.2/16.3 are deprecated aliases for mappers 159/157/153; **16.4 = FCG-1/2, `$6000-$7FFF`; 16.5 = LZ93D50, `$8000-$FFFF`**. All four pinned fixtures carry **NES 2.0** headers with the submapper in `h[8]`'s high nibble (db3 `40` → 4; dbz2 `50` → 5; datach/saiyan are mappers 157/159), matching the observed register bases exactly — and `NesRomLoader.InesHeader.parse` reads `h[8]` only for the mapper's high bits and **discards the submapper**. Fix is a second memory-latch mechanism at `$6000-$7FFF` (NESdev's own submapper-0 prescription: model both ranges; each real board responds in only one). **Do not pursue the RAM-resident route, and do not use db3 as `grm-hb6`'s first customer** — it needs a descriptor change, not a per-game hint, so the hint tier needs a new acceptance target. "Dragon Ball - Daimaou Fukkatsu" is a second local submapper-4 title, so this is not a one-off | `grm-46h` filed **P2**; `grm-azv` retitled and blocked on it; copy-loop premise retired on `grm-7pp` |
 | dragonpower / shenlong def-use pass: is `FUN_8eeb` PRG or CHR, what is the call-site table, and what are the four unexplained mechanism writes? | **Pass complete; one trace did cover two, now measured. `FUN_8eeb` IS NOT CODE.** All four banks of dragonpower are essentially identical over `ff88-fff9`, and shenlong's four are identical to each other *and to dragonpower* — the byte-compare prerequisite is settled and every finding transfers. **Engine, completed:** `$FFE8` (`STA $F2 / JSR $FFBE / JMP ($17)`) is the far-call entry, bank arriving in **A**; `$FFBE` recomposes the mapper-66 composite register from shadows `$F2`/`$F9` and **takes no register argument**; `$FFDC` is the far-*return* (sets `$17/$18` from the caller's return address + 1, pulls the saved bank, falls through to `$FFE8`). Worked call site: `$983F` pushes `$F2`, sets `$17/$18` from a 3-byte-stride 6-entry table at `$8000`, then `LDA #1 / JSR $FFE8` — a **constant** bank argument does exist. Shadow-writer table is a one-liner: **`$F2` is written by exactly one instruction**, `$FFE8`'s `STA $F2`. **Site dispositions (6 per title):** `8ee4` phantom from an over-read jump table at `$8F00` (30 real entries) — this is where "`FUN_8eeb`, co-equal second helper" came from, so **stop looking for one**; `e3bb` phantom (data-as-code, table at `$91AF`); `e906` phantom (mid-instruction resync, table at `$9076`); `ffc8` is `$FFBE`'s own `STA $FFCC,Y` (contra's c142 disposition, honest by construction); `ffea` is `$FFE8`'s internal `JSR $FFBE` — **but the bank arrives via the `$F2` shadow one instruction earlier, so this is `grm-mej.2`, not the `grm-mej.3` stack case previously predicted**; `9913` calls the no-argument `$FFBE`, so "argument could not be recovered" is a misframing and likely a **`grm-xym`** spurious warning. Wrapper set (check #2) is empty by elimination. **Three of dragonpower's six warnings are `grm-eyn` phantoms from three distinct over-read tables in one title** — denser than megaman's single `a737`, and it means the warning count on these titles overstates the real gap ~2×. Ceiling still gated on `grm-e7v` (`$FFCC` unreadable under a single fully-overlaid `PRG_ALL` window) plus `grm-mej.2`; `grm-mej.3` is **not** on the critical path. **Closed out the same day:** shenlong's last two sites are phantoms too — `a03f` from an over-read table at `$87D0`, `d9a9` from one at `$9076`. So **all four** "unexplained mechanism writes outside the invariant region" were the same artifact, and the hypothesis they supported — per-bank code switching that bypasses the helper — is **dead on both titles; do not revive it.** Each title's six warnings are now 3 phantoms + 1 by-construction + 2 engine-internal, identically. `$9076` is over-read in **both** ROMs at the same address (they share a codebase well past the engine region), making the pair `grm-eyn`'s best regression case: one root cause, two images, two distinct symptoms. **Read the result precisely:** no *unexplained* site remains, but nothing is *resolved* either — both titles stay at 0 refs, gated on `grm-e7v` + `grm-mej.2`. The result is that **no new mechanism is missing**: the entire gap is attributable to four named beads with no residual unknown, which accounts for two of `grm-8iy`'s eight zero-instruction GME titles | `grm-hum`; phantom density and the regression pair on `grm-eyn`; spurious-warning suspicion on `grm-xym` |
