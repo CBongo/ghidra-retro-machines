@@ -43,8 +43,46 @@ bash tools/banktest/realrom-test.sh nominate H:/emulators/nes/roms   # board-gap
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
-*Nothing open here right now — the Bandai indexed-store question was answered 2026-08-15 (see the
-Answered table). Add the next one as it comes up.*
+Both items below adjudicate the **lowest-target jump-table bound** (`grm-eyn`, fork branch
+`grm/jumptable-lowest-target`, commit `475cf359`). It is the first fix that moves the corpus the
+right way on both axes — dragonpower/shenlong warnings 6→2 while megaman *gains* instructions
+(7429→7471) and sheds bogus refs (1704→1656), with tmnt/contra/lwings untouched. These two
+questions are what stand between it and a bless. **Nothing may be blessed until they are
+answered**: each moved count line is a claim about a real cartridge.
+
+To reproduce either, run against the fork build (see `D:/ghidra_12.1.2_PATCHED/GRM-README.txt`;
+**both** env vars are required or you silently measure stock Ghidra — `grm-k0h`):
+
+```bash
+GHIDRA_HEADLESS=D:/ghidra_12.1.2_PATCHED/support/analyzeHeadless.bat \
+GRM_GHIDRA_INSTALL=D:/ghidra_12.1.2_PATCHED \
+bash tools/banktest/realrom-test.sh check --only rcproam
+```
+
+- [ ] **What is the real extent of rcproam's jump table at `8068`?** (`grm-eyn`) The bound costs
+      this title refs 1298→931 and instrs 4810→4094 — the only clear loss in the corpus. The site
+      is a `COMPUTED_JUMP` into `W8000_M0_B0`; the targets it stops recovering are `80a2`, `80f0`,
+      `812a`, `8500`, `8509`. **The question is just: how many entries does that table really
+      have?** If it is genuinely longer than the bound computes, then a legitimate target sits
+      close below the table — the rule's documented failure mode — and the fix needs a decline
+      condition it currently lacks, because right now it truncates instead of declining.
+
+      One hypothesis has already been tried and **refuted by measurement**, so do not re-spend it:
+      that unrelated fixed-address LOADs were inflating the per-entry byte extent. A slot-filtered
+      build ignoring non-moving LOADs was byte-identical on 30 of 31 titles and left rcproam at
+      931/4094 exactly. The truncation comes from genuine table LOADs.
+
+- [ ] **Are megaman's 12 shed bank comments real losses or phantoms?** (`grm-eyn`) `bankComments`
+      156→144 under the same fix, all of the form `bank -> 5 (bank=5) via RESET` in the
+      `8d1f`–`8dbf` region. Since the fix *removes* over-read tables, the honest answer could be
+      either: those comments may have been attached to code that only existed because a bogus jump
+      target seeded disassembly there (in which case losing them is the fix working), or they may
+      be real annotation lost to an over-tight bound (in which case it is the same defect as
+      rcproam's). **The decisive read: is there real code at `8d1f`–`8dbf`, or is that region data
+      that was being decoded as code?**
+
+      Note the counts move *against* each other on this title — instructions went UP by 42 while
+      these comments went down by 12 — so this is not a simple "less was recovered" case.
 
 ---
 
