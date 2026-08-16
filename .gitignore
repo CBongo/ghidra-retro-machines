@@ -18,6 +18,18 @@ data/games/*
 # Generated PETSCII display-string map (JSON, see docs/petscii.md) — build output, never committed
 data/petscii.map
 
+# Python bytecode caches (bead grm-r9x). CPython writes these only for modules that are
+# IMPORTED, not run as scripts — which is why exactly one ever got committed: the fixture
+# generators are all invoked directly, and mkemutest is the only one another generator also
+# imports as a module (mkprgloadtest.py, to reuse its build() at a different load address). The
+# cached file is derived output whose source is tracked beside it, and its name embeds the
+# interpreter version (mkemutest.cpython-313.pyc), so a committed copy is wrong by construction
+# for anyone on a different Python. Tracking one meant it showed up modified after every
+# generator run and got swept into unrelated commits; its binary hunk also broke `git apply` on
+# a patch that had picked it up.
+__pycache__/
+*.pyc
+
 # Generated C64 screen-code map (JSON, permutation of the PETSCII map) — build output, never committed
 data/screencode.map
 
