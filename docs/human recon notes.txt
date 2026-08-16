@@ -196,7 +196,16 @@ $f2 is only written by $ffe8 (in so-far disassembled code).
 
 shenlong:
 all 4 banks are essentially identical to each other and to dragonpower.
+a03f,d9a9: mid-instruction disassembly from jump table overreads at 87d0, 9076 respectively
 
+smb3:
+c542: complex function that sets a specific value for PRG bank $1a (c5f5 is part of c542's function body) and then restores it later with a call to $ffc2.
+rcproam:
+8068: jump table at 806b has 6 entries; first is 8077 which is first addr after table. valid targets are 8077, 818a, 8675, 884d (818a is target of three indexes).
+megaman:
+8d1f-8dbf: all data, no code. overruns at e000 (e0ed, actual length 18), e121 (e2a2, actual 19), e44e (e55a, actual 10) are the sources of the bad refs.
+
+  
   Next session's shortest path
 
   1. bd list --label background-ok → farm out immediately (grm-hhd first; it blocks every parallel agent).

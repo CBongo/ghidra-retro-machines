@@ -230,9 +230,12 @@ so it splits on *any* whitespace with no escaping: multiple dirs separated by sp
 **single directory whose own name contains a space cannot be represented** this way (pass it on
 the command line instead, where each argument is a distinct dir regardless of its contents). So:
 **never conclude "this machine doesn't have the ROM" from a `SKIP`** — suspect the dir list first,
-and look at the dirs the driver prints beside the skip count. On the curated (no-flag) manifest,
-`smb3` FAILs on an unchanged tree by design (golden correct, output wrong; blocked on `grm-67g`)
-— never bless it. `megaman` is not a guaranteed fail: it flaps at roughly a 20% rate from
+and look at the dirs the driver prints beside the skip count. The curated (no-flag) manifest has
+**no expected failure any more**: `smb3` was blessed 2026-08-16 once a hand pass established that
+its two remaining warnings are honest (`FUN_c542` really is a bank-switch helper — `c5f5` is
+inside its body — so the output was right and the golden was two lines stale). The long-standing
+"golden correct, output wrong; never bless it" rule was written before `grm-67g` closed the
+`ca23`/`ca2e` half of that diff, and no longer applies. `megaman` is not a guaranteed fail: it flaps at roughly a 20% rate from
 unrelated jitter (`grm-g73`) rather than failing every run. See the
 `realrom-expected-baseline-fails` bd memory for the current, authoritative row list — it is
 revised as rows get fixed/reclassified and supersedes any older summary, including this one. To

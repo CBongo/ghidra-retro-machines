@@ -189,3 +189,6 @@
 {"id":"int-4dcf8b70","kind":"field_change","created_at":"2026-08-16T13:53:02.9329794Z","actor":"Chris Bongaarts","issue_id":"grm-xym","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}
 {"id":"int-01201180","kind":"field_change","created_at":"2026-08-16T17:16:33.6211793Z","actor":"Chris Bongaarts","issue_id":"grm-v6o","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}
 {"id":"int-5f875ed2","kind":"field_change","created_at":"2026-08-16T18:32:16.6470502Z","actor":"Chris Bongaarts","issue_id":"grm-n5f","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}
+{"id":"int-4cc58854","kind":"field_change","created_at":"2026-08-16T21:14:28.1282432Z","actor":"Chris Bongaarts","issue_id":"grm-pfp","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}
+{"id":"int-a1ad9ac2","kind":"field_change","created_at":"2026-08-16T21:24:06.7094812Z","actor":"Chris Bongaarts","issue_id":"grm-evn","extra":{"field":"status","new_value":"closed","old_value":"open","reason":"Closed"}}
+{"id":"int-c0ce91ac","kind":"field_change","created_at":"2026-08-16T21:25:04.598665Z","actor":"Chris Bongaarts","issue_id":"grm-bj6","extra":{"field":"status","new_value":"closed","old_value":"open","reason":"Closed"}}

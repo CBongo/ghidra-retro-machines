@@ -47,8 +47,12 @@
 //               before converging, and it is what a hand-written skip almost always looks like.
 //   WEAK        structurally valid, no corroboration. Reported, not applied, unless weak:true.
 //
-// Interactive: run with no arguments; scans the selection if there is one, else the whole
-// program, and reports every candidate it finds before applying the confident ones.
+// Interactive: run with no arguments and answer the two prompts. It scans the selection if there
+// is one, else the whole program, and reports every candidate it finds -- with its tier -- to the
+// console whether or not it applies anything. THE FIRST PROMPT DEFAULTS SAFE: declining it (or
+// dismissing the dialog, which askYesNo reports as "no") reports and changes nothing, so a user
+// meeting an unfamiliar ROM can look before leaping. The GUI cannot pass script arguments, so
+// these prompts are the ONLY way to reach dry-run from the Script Manager.
 //
 // Headless: pass whitespace-free key:value tokens as script arguments, e.g.
 //
@@ -94,6 +98,9 @@ import ghidra.program.model.symbol.Reference;
 
 public class FixSkipInstructions extends GhidraScript {
 
+	/** Dialog title for the interactive prompts. */
+	private static final String TITLE = "Fix Skip Instructions";
+
 	/** Bookmark category for provenance, matching upstream FixOffcutInstructionScript's. */
 	private static final String INFO_BOOKMARK_CATEGORY = "Offcut Instruction";
 	private static final String INFO_BOOKMARK_COMMENT = "Fixed skip-idiom offcut instruction";
@@ -137,7 +144,17 @@ public class FixSkipInstructions extends GhidraScript {
 			printerr("no program is open");
 			return;
 		}
-		if (getScriptArgs().length != 0 && !parseArgs(getScriptArgs())) {
+		// The branch exists for the reason RunFromElsewhereTransfer's does:
+		// GhidraScript.loadAskValue consumes ONE POSITIONAL script argument per ask* call
+		// whenever any arguments are present, matching by call order and never by name. A
+		// conditional prompt (and the second one below IS conditional) would therefore shift the
+		// argument stream out of alignment. So the headless path parses named tokens itself and
+		// calls no ask* method at all, and the interactive path is reachable only with an empty
+		// argument array.
+		if (getScriptArgs().length == 0) {
+			askForOptions();
+		}
+		else if (!parseArgs(getScriptArgs())) {
 			return; // parseArgs already reported the reason
 		}
 
@@ -357,6 +374,39 @@ public class FixSkipInstructions extends GhidraScript {
 		}
 		bookmarks.setBookmark(at, BookmarkType.INFO, INFO_BOOKMARK_CATEGORY,
 			INFO_BOOKMARK_COMMENT);
+	}
+
+	// ------------------------------------------------------------------
+	// Interactive front-end
+	// ------------------------------------------------------------------
+
+	/**
+	 * Prompt for the two choices that can change what lands in the program. Only reachable with
+	 * an empty argument array, which is what makes the CONDITIONAL second prompt safe here (see
+	 * the branch in {@code run}).
+	 * <p>
+	 * <b>The first question is phrased so that "no" is the safe answer, and that is deliberate.</b>
+	 * {@code askYesNo} does not throw {@code CancelledException} -- a dismissed dialog is simply
+	 * "no" -- so a user who closes the window rather than answering must land on "report and
+	 * change nothing". Asking "dry run?" instead would give the opposite default and turn a
+	 * dismissed dialog into instruction truncation the user never agreed to.
+	 * <p>
+	 * The remaining options ({@code carriers}, {@code function}, {@code reanalyze},
+	 * {@code range}) are not prompted for: each has a defensible default, a selection already
+	 * expresses {@code range} in the GUI's own idiom, and every extra dialog is one more thing to
+	 * click through before the answer everyone actually wants. They stay reachable headless.
+	 */
+	private void askForOptions() {
+		boolean apply = askYesNo(TITLE,
+			"Apply the repairs?\n\nChoosing No -- or dismissing this dialog -- reports every " +
+				"candidate found, with its confidence tier, and changes nothing.");
+		dryRun = !apply;
+		applyWeak = apply && askYesNo(TITLE,
+			"Also apply WEAK candidates?\n\nWEAK means the bytes decode to a valid instruction " +
+				"but nothing corroborates it -- no reference, and no matching load falling into " +
+				"the carrier. Across the measured NES corpus 32 of 41 candidates were WEAK and " +
+				"they hid BRK/SEI/BVS, i.e. decoded noise. Say No unless you have a specific " +
+				"reason.");
 	}
 
 	// ------------------------------------------------------------------
