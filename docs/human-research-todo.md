@@ -43,72 +43,9 @@ bash tools/banktest/realrom-test.sh nominate H:/emulators/nes/roms   # board-gap
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
-### 1a. What is smb3's `FUN_c542`? (`grm-evn`)
-
-**This item's own gate has fired.** `grm-evn` said to re-check after `grm-67g` landed and to ask for
-a human look *only if the warnings survived*. `grm-67g` is closed, and they survived — stably, at
-HEAD, on two builds, byte-identical `.diff` files (2026-08-09 and again 2026-08-10).
-
-- [ ] **Is `FUN_c542` a real bank-switch helper, or a false one?** Two warnings, at `867b` and
-      `ac6d`, both "call to bank-switch helper `FUN_c542` whose bank argument could not be recovered
-      at this call site". They are **the only remaining difference** between smb3's production dump
-      and its golden — `refs`, `instrs`, `bankComments` and `ca23`/`ca2e` all match line for line
-      since `grm-67g`, leaving `warnings 50` vs `52`. So smb3's row and `grm-bj6` (P2) are blocked on
-      exactly this.
-
-      Your own smb3 trace (`ffc2`/`ffd1`/`ffbf` plus the direct sites `c5f5`/`c9f7`) accounts for
-      every disassembled write to `$8000`/`$8001` and does not mention `c542` at all. **The
-      question is just: what does `c542` do, and where does its argument come from at `867b` and
-      `ac6d`?** If it genuinely writes a mapper register, the warnings are honest and the golden is
-      simply stale by two lines; if it does not, something is admitting a false helper and that is a
-      bug worth its own bead. Reproduce with
-      `bash tools/banktest/realrom-test.sh check --only smb3`.
-
-      **Do not bless smb3 to absorb these** — the rest of that golden is verified correct line for
-      line, which is what makes the `+2` a clean signal.
-
-### 1b. The lowest-target jump-table bound (`grm-eyn`)
-
-Both items below adjudicate the **lowest-target jump-table bound** (`grm-eyn`, fork branch
-`grm/jumptable-lowest-target`, commit `475cf359`). It is the first fix that moves the corpus the
-right way on both axes — dragonpower/shenlong warnings 6→2 while megaman *gains* instructions
-(7429→7471) and sheds bogus refs (1704→1656), with tmnt/contra/lwings untouched. These two
-questions are what stand between it and a bless. **Nothing may be blessed until they are
-answered**: each moved count line is a claim about a real cartridge.
-
-To reproduce either, run against the fork build (see `D:/ghidra_12.1.2_PATCHED/GRM-README.txt`;
-**both** env vars are required or you silently measure stock Ghidra — `grm-k0h`):
-
-```bash
-GHIDRA_HEADLESS=D:/ghidra_12.1.2_PATCHED/support/analyzeHeadless.bat \
-GRM_GHIDRA_INSTALL=D:/ghidra_12.1.2_PATCHED \
-bash tools/banktest/realrom-test.sh check --only rcproam
-```
-
-- [ ] **What is the real extent of rcproam's jump table at `8068`?** (`grm-eyn`) The bound costs
-      this title refs 1298→931 and instrs 4810→4094 — the only clear loss in the corpus. The site
-      is a `COMPUTED_JUMP` into `W8000_M0_B0`; the targets it stops recovering are `80a2`, `80f0`,
-      `812a`, `8500`, `8509`. **The question is just: how many entries does that table really
-      have?** If it is genuinely longer than the bound computes, then a legitimate target sits
-      close below the table — the rule's documented failure mode — and the fix needs a decline
-      condition it currently lacks, because right now it truncates instead of declining.
-
-      One hypothesis has already been tried and **refuted by measurement**, so do not re-spend it:
-      that unrelated fixed-address LOADs were inflating the per-entry byte extent. A slot-filtered
-      build ignoring non-moving LOADs was byte-identical on 30 of 31 titles and left rcproam at
-      931/4094 exactly. The truncation comes from genuine table LOADs.
-
-- [ ] **Are megaman's 12 shed bank comments real losses or phantoms?** (`grm-eyn`) `bankComments`
-      156→144 under the same fix, all of the form `bank -> 5 (bank=5) via RESET` in the
-      `8d1f`–`8dbf` region. Since the fix *removes* over-read tables, the honest answer could be
-      either: those comments may have been attached to code that only existed because a bogus jump
-      target seeded disassembly there (in which case losing them is the fix working), or they may
-      be real annotation lost to an over-tight bound (in which case it is the same defect as
-      rcproam's). **The decisive read: is there real code at `8d1f`–`8dbf`, or is that region data
-      that was being decoded as code?**
-
-      Note the counts move *against* each other on this title — instructions went UP by 42 while
-      these comments went down by 12 — so this is not a simple "less was recovered" case.
+*Nothing open here right now — every item in this section has been answered; see the
+**Answered** table at the bottom. This section stays because it is the highest-value shape of
+question on the list, not because it is empty.*
 
 ---
 
@@ -326,3 +263,6 @@ Agents can't file these — they need an account and CLA agreement.
 | Does any real Bandai cart write an FCG register with an *indexed* store? | **No — and structurally, not by luck. Leave `grm-egw` at P3 indefinitely; do not pre-emptively harden the path.** Indexed stores into the register file are common (dbz2 has "several" `99 00 80`, dbz_saiyan three) but every one is a `STA $8000,Y` loop with **Y counting 7 down to 0**, i.e. `$8000-$8007` — the eight CHR registers. The PRG register is `$8008` and Y never reaches 8. That is the register file's own layout: CHR occupies the low 8 slots and forms a natural 8-iteration loop, PRG is a single slot past the end, and nothing has a reason to index to it. Compounding it, the bug needs a **known** index to fire (`addBaseReferenceOnce` only retargets when the index resolves) and a loop-carried Y presents no constant. Per-title: db3 register base `$6008`, no `99 00 60`/`9D 00 60`, helper db2f (shadow `$6a`); dbz2 helper d12f (shadow `$4c`) → `$8008`, no `9D 00 80`; dbz_datach helper cc28 (shadow `$59`) → `$8008`, neither pattern; dbz_saiyan helper c9c0 (shadow `$49`) → `$8008`, no `9D 00 80`. Unchanged by `grm-46h`'s new `$6000-$7FFF` range (same $x008 geometry, and db3 has no indexed stores there either). If it is ever fixed, the `writesInRange` fallback must still DECLINE on (addr_mask present AND indexed operand) | `grm-egw` |
 | Where is DB3's bank-switch stub copied into RAM `$0200`, and what is its argument convention? | **Wrong question — there is no stub. `grm-azv`'s premise was disproven on both counts, and this exposed a live descriptor bug.** db3 switches PRG with an ordinary ROM helper at **db2f** writing shadow `$6a` and register **`$6008`**; the copy loops at e69e/e707/e712 copy **data, not code**. We saw no mechanism write because `nes-bandai-fcg.yaml` declares one latch range, `$8000-$FFFF`. **db3 is iNES mapper 16 submapper 4 (FCG-1/2), which decodes registers only in `$6000-$7FFF`** — and the descriptor's module header has the submapper table backwards, calling 16.4 an LZ93D50 `$8000` board and 16.1/16.2 the legacy generation. NESdev's actual table: 16.1/16.2/16.3 are deprecated aliases for mappers 159/157/153; **16.4 = FCG-1/2, `$6000-$7FFF`; 16.5 = LZ93D50, `$8000-$FFFF`**. All four pinned fixtures carry **NES 2.0** headers with the submapper in `h[8]`'s high nibble (db3 `40` → 4; dbz2 `50` → 5; datach/saiyan are mappers 157/159), matching the observed register bases exactly — and `NesRomLoader.InesHeader.parse` reads `h[8]` only for the mapper's high bits and **discards the submapper**. Fix is a second memory-latch mechanism at `$6000-$7FFF` (NESdev's own submapper-0 prescription: model both ranges; each real board responds in only one). **Do not pursue the RAM-resident route, and do not use db3 as `grm-hb6`'s first customer** — it needs a descriptor change, not a per-game hint, so the hint tier needs a new acceptance target. "Dragon Ball - Daimaou Fukkatsu" is a second local submapper-4 title, so this is not a one-off | `grm-46h` filed **P2**; `grm-azv` retitled and blocked on it; copy-loop premise retired on `grm-7pp` |
 | dragonpower / shenlong def-use pass: is `FUN_8eeb` PRG or CHR, what is the call-site table, and what are the four unexplained mechanism writes? | **Pass complete; one trace did cover two, now measured. `FUN_8eeb` IS NOT CODE.** All four banks of dragonpower are essentially identical over `ff88-fff9`, and shenlong's four are identical to each other *and to dragonpower* — the byte-compare prerequisite is settled and every finding transfers. **Engine, completed:** `$FFE8` (`STA $F2 / JSR $FFBE / JMP ($17)`) is the far-call entry, bank arriving in **A**; `$FFBE` recomposes the mapper-66 composite register from shadows `$F2`/`$F9` and **takes no register argument**; `$FFDC` is the far-*return* (sets `$17/$18` from the caller's return address + 1, pulls the saved bank, falls through to `$FFE8`). Worked call site: `$983F` pushes `$F2`, sets `$17/$18` from a 3-byte-stride 6-entry table at `$8000`, then `LDA #1 / JSR $FFE8` — a **constant** bank argument does exist. Shadow-writer table is a one-liner: **`$F2` is written by exactly one instruction**, `$FFE8`'s `STA $F2`. **Site dispositions (6 per title):** `8ee4` phantom from an over-read jump table at `$8F00` (30 real entries) — this is where "`FUN_8eeb`, co-equal second helper" came from, so **stop looking for one**; `e3bb` phantom (data-as-code, table at `$91AF`); `e906` phantom (mid-instruction resync, table at `$9076`); `ffc8` is `$FFBE`'s own `STA $FFCC,Y` (contra's c142 disposition, honest by construction); `ffea` is `$FFE8`'s internal `JSR $FFBE` — **but the bank arrives via the `$F2` shadow one instruction earlier, so this is `grm-mej.2`, not the `grm-mej.3` stack case previously predicted**; `9913` calls the no-argument `$FFBE`, so "argument could not be recovered" is a misframing and likely a **`grm-xym`** spurious warning. Wrapper set (check #2) is empty by elimination. **Three of dragonpower's six warnings are `grm-eyn` phantoms from three distinct over-read tables in one title** — denser than megaman's single `a737`, and it means the warning count on these titles overstates the real gap ~2×. Ceiling still gated on `grm-e7v` (`$FFCC` unreadable under a single fully-overlaid `PRG_ALL` window) plus `grm-mej.2`; `grm-mej.3` is **not** on the critical path. **Closed out the same day:** shenlong's last two sites are phantoms too — `a03f` from an over-read table at `$87D0`, `d9a9` from one at `$9076`. So **all four** "unexplained mechanism writes outside the invariant region" were the same artifact, and the hypothesis they supported — per-bank code switching that bypasses the helper — is **dead on both titles; do not revive it.** Each title's six warnings are now 3 phantoms + 1 by-construction + 2 engine-internal, identically. `$9076` is over-read in **both** ROMs at the same address (they share a codebase well past the engine region), making the pair `grm-eyn`'s best regression case: one root cause, two images, two distinct symptoms. **Read the result precisely:** no *unexplained* site remains, but nothing is *resolved* either — both titles stay at 0 refs, gated on `grm-e7v` + `grm-mej.2`. The result is that **no new mechanism is missing**: the entire gap is attributable to four named beads with no residual unknown, which accounts for two of `grm-8iy`'s eight zero-instruction GME titles | `grm-hum`; phantom density and the regression pair on `grm-eyn`; spurious-warning suspicion on `grm-xym` |
+| Is smb3's `FUN_c542` a real bank-switch helper, or a false one? | **Real.** `c5f5` — already in your earlier smb3 trace as a direct `$8000`/`$8001` write — is *inside* `c542`'s body, which is why that trace listed the site but never named the function. `c542` sets PRG bank `$1a` and restores it later via a call to `$ffc2`. So the `867b`/`ac6d` warnings are honest, the production output is correct, and **smb3's golden is stale by exactly two lines** — the opposite of the standing "golden correct, output wrong" rule in `CLAUDE.md`, which was written when the diff still held the `ca23`/`ca2e` regression `grm-67g` has since closed. Update that rule in the same change that blesses. **Second, separate finding: the warning text is itself wrong.** A helper that deposits a *constant* has no argument to recover, so `867b`/`ac6d` should annotate bank `$1a`, not warn. Suspected cause (hypothesis, not measured): `c542` is a save/switch/restore shape like wizwarr `ff69`, "last switch wins" lands on the `$ffc2` restore, and `restoresEntryBank` is not firing — every case it has handled so far is AxROM/UxROM, and smb3 is MMC3. | `grm-evn`; unblocks `grm-bj6` |
+| What is the real extent of rcproam's jump table at `$8068`? | **Six entries, at `$806b`, holding four distinct targets: `8077`, `818a` ×3, `8675`, `884d`.** Entry 0 (`8077`) is the first address *after* the table — a self-terminating layout, and direct corroboration that the lowest-target bound's premise is sound here. **Decisive: none of the five targets the bound stops recovering (`80a2`, `80f0`, `812a`, `8500`, `8509`) is a real target.** So rcproam's refs 1298→931 / instrs 4810→4094 is the fix removing code seeded by an over-read, not a loss — the corpus's "only clear loss" was the fix working. **Do not add a decline condition on rcproam's evidence**; there is no legitimate target sitting below the table. Still to measure agent-side: that the bound computes 6 rather than truncating further (check refs to all four targets against the PATCHED install — both env vars, `grm-k0h`). | `grm-eyn` |
+| Are megaman's 12 shed bank comments real losses or phantoms? | **Phantoms — `8d1f`–`8dbf` is all data, no code.** The `bank -> 5 (bank=5) via RESET` comments hung off instructions that existed only because a bogus jump target seeded disassembly into a data region, so `bankComments` 156→144 is a correction. Explains the counts moving against each other (instrs +42, comments −12): phantom code removed in one region, real code recovered in another. **Bonus, and the more actionable half — three more over-read tables named with true lengths: `e000` (over-read to `e0ed`, true 18), `e121` (`e2a2`, true 19), `e44e` (`e55a`, true 10)**, "the sources of the bad refs". So megaman's over-read problem is at least four tables, not just `a737`. Pin 18/19/10 as acceptance expectations rather than re-deriving them. | `grm-eyn` |
