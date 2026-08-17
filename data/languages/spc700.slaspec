@@ -1,0 +1,17 @@
+# Sleigh specification for the Sony SPC700 (the sound co-processor in the SNES, driving
+# the S-DSP), language id SPC700:LE:16:retro. The decode table below is vendored verbatim
+# from the SPCdra project (bead grm-c9d.1): spc700core.sinc is its shared register/token/
+# macro layer and spc700ops.sinc is its 256 opcode constructors.
+#
+# IMPORTANT: the p-code SEMANTICS in spc700ops.sinc are carried over unmodified from
+# upstream and are KNOWN TO BE INCORRECT in places. Landing the broken baseline here is
+# deliberate -- bead grm-c9d.3 rewrites the semantics against this file as a diff base, so
+# do not "fix" anything here. Disassembly (mnemonics, operand text, instruction length) is
+# sound and is what this extension currently relies on; do not trust decompiler output or
+# any p-code-derived analysis for this language until grm-c9d.3 lands.
+#
+# The "retro" variant deliberately avoids colliding with SPCdra's own upstream language id
+# (spc700:LE:16:default) so both extensions can be installed side by side; see README.md.
+
+@include "spc700core.sinc"
+@include "spc700ops.sinc"

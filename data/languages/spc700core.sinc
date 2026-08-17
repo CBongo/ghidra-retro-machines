@@ -1,0 +1,141 @@
+# ----------------------------------------------------------------------------------------
+# VENDORED THIRD-PARTY FILE -- fork point, not a re-sync target.
+#
+#   Upstream: https://github.com/qwertymodo/SPCdra
+#   Commit:   295b552f768eb23abf601c46e27a6d5d3e10a03b
+#   Path:     data/languages/spc700.sinc
+#
+#   Copyright the SPCdra authors (https://github.com/qwertymodo/SPCdra)
+#
+#   Licensed under the Apache License, Version 2.0 (the "License");
+#   you may not use this file except in compliance with the License.
+#   You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+#   Unless required by applicable law or agreed to in writing, software
+#   distributed under the License is distributed on an "AS IS" BASIS,
+#   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#   See the License for the specific language governing permissions and
+#   limitations under the License.
+#
+# This is a fork point, not a sync target: the commit above is where we forked FROM, not
+# something we intend to track. The decode table (registers, tokens, ADDR8/ADDR16/RADDR8,
+# pcodeops, macros) below is upstream SPCdra's and is expected to stay stable. The p-code
+# SEMANTICS built on top of it (in spc700ops.sinc) are known-incorrect and are being
+# rewritten by this project (bead grm-c9d.3) -- once that lands the two projects' semantics
+# diverge permanently, so there is no future re-sync to keep clean. Outbound contribution
+# back upstream is still intended for anything worth sharing (bead grm-c9d.6); this file's
+# body is upstream's, unmodified, at the commit above, so the first divergence is legible.
+# ----------------------------------------------------------------------------------------
+
+# Common definitions for the SPC700 processor definitions
+define endian=little;
+define alignment=1;
+
+define space ram     type=ram_space      size=2  default;
+define space register type=register_space size=1;
+
+define register offset=0x00 size=2 [ YA _ ];
+define register offset=0x00 size=1 [ A Y X PSW ];
+define register offset=0x04 size=2 [ PC SP ];
+
+#define 	bitrange CF=PSW[0,1]
+#		bitrange ZF=PSW[1,1]
+#		bitrange IF=PSW[2,1]
+#		bitrange HF=PSW[3,1]
+#		bitrange BF=PSW[4,1]
+#		bitrange PF=PSW[5,1]
+#		bitrange VF=PSW[6,1]
+#		bitrange NF=PSW[7,1]
+#;
+@define CF "PSW[0,1]"
+@define ZF "PSW[1,1]"
+@define IF "PSW[2,1]"
+@define HF "PSW[3,1]"
+@define BF "PSW[4,1]"
+@define PF "PSW[5,1]"
+@define VF "PSW[6,1]"
+@define NF "PSW[7,1]"
+
+define token opcode (8)
+   op		= (0,7)
+   op_hi	= (4,7)
+   op_lo	= (0,3)
+   aaa		= (5,7)
+   bbb		= (2,4)
+   cc		= (0,1)
+;
+
+define token data8 (8)
+   imm8		= (0,7)
+   simm8	= (0,7) signed
+;
+
+define token movearg (8)
+   srcaddr	= (0,7)
+   dstaddr	= (0,7)
+;
+
+define token data16 (16)
+   imm16        = (0,15)
+;
+
+ADDR8: 	imm8 	is imm8 	{ local tmp:2 = zext(imm8:1); export *:2 tmp; }
+ADDR16: imm16 	is imm16	{ export *:2 imm16; }
+RADDR8:	addr 	is simm8	[ addr = inst_next + simm8; ] { export *:1 addr; }
+
+define pcodeop daa;
+define pcodeop das;
+define pcodeop nop;
+define pcodeop sleep;
+define pcodeop stop;
+
+################################################################
+# Macros
+################################################################
+macro push8(value) {
+	SP = SP - 1;
+	*:1 (SP) = value;
+}
+
+macro pop8(result) {
+	result = *:1 (SP);
+	SP = SP + 1;
+}
+
+macro push16(value) {
+	SP = SP - 2;
+	*:2 (SP) = value;
+}
+
+macro pop16(result) {
+	result = *:2 (SP);
+	SP = SP + 2;
+}
+
+macro resultFlags(value) {
+	$(ZF) = (value == 0);
+	$(NF) = (value s< 0);
+}
+
+macro aluADC(op8, result) {
+	local c = $(CF);
+	$(NF) = 0;
+	$(HF) = (((A & 0xF) + (op8 & 0xF) + c) & 0x10) != 0;
+	$(CF) = carry(A, op8);
+	result = A + op8;
+	$(CF) = $(CF) || carry(result, c);
+	result = result + c;
+	$(ZF) = (result == 0);
+}
+
+macro aluSBC(op8, result) {
+	local c = $(CF);
+	$(HF) = (((A & 0xF) - (op8 & 0xF) - c) & 0x10) != 0;
+	$(CF) = A < op8;
+	result = A - op8;
+	$(CF) = $(CF) || result < c;
+	result = result - c;
+	resultFlags(result);
+}

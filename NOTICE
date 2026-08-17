@@ -22,3 +22,26 @@ data/languages/6510_illegal.sinc
   re-syncs remain a clean diff. This project's own prose and identifiers say
   "undocumented" / "undoc" instead.
 --------------------------------------------------------------------------------
+data/languages/spc700core.sinc
+data/languages/spc700ops.sinc
+
+  SLEIGH decode table (registers, tokens, macros, and the 256 opcode
+  constructors) for the Sony SPC700. The p-code semantics carried in these
+  files are known-incorrect and are being rewritten by this project (bead
+  grm-c9d.3); the decode table itself is what is vendored here.
+
+  Copyright the SPCdra authors (https://github.com/qwertymodo/SPCdra)
+  Licensed under the Apache License, Version 2.0
+
+  Upstream: https://github.com/qwertymodo/SPCdra
+  Commit:   295b552f768eb23abf601c46e27a6d5d3e10a03b
+  Path:     data/languages/spc700.sinc (-> spc700core.sinc)
+            data/languages/spc700-native.slaspec (-> spc700ops.sinc)
+
+  This is a fork point, not a re-sync target: grm-c9d.3 rewrites the
+  semantics on top of this decode table by design, so the files diverge
+  permanently from upstream after that lands. Vendored verbatim at the
+  commit above (spc700ops.sinc additionally drops upstream's leading
+  "@include spc700.sinc" line, since our spc700.slaspec does the including);
+  the only other modification is a prepended attribution header.
+--------------------------------------------------------------------------------

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- See Relax specification: Ghidra/Framework/SoftwareModeling/data/languages/language_definitions.rxg -->
+
+<language_definitions>
+
+  <language processor="SPC700"
+            endian="little"
+            size="16"
+            variant="retro"
+            version="1.0"
+            slafile="spc700.sla"
+            processorspec="spc700.pspec"
+            id="SPC700:LE:16:retro">
+    <description>Sony SPC700 (SNES sound co-processor); decode table vendored from SPCdra -- disassembly is sound, but p-code semantics are known-incorrect and under active repair (bead grm-c9d.3)</description>
+    <compiler name="default" spec="spc700.cspec" id="default"/>
+  </language>
+
+</language_definitions>
