@@ -89,6 +89,11 @@ being re-executed by hand across the community — this extension automates it.
   disassembly runs *through* data tables instead of stopping at an invalid byte, which costs
   more than it gains on anything that doesn't use them. Pick the variant in the import
   dialog's language list, or pass `-processor 6510:LE:16:undoc` headlessly.
+- **A vendored SPC700 language, decode-only so far**: `SPC700:LE:16:retro` bundles the
+  SPCdra project's SLEIGH decode table for the SNES sound co-processor. Disassembly
+  (mnemonics, operands, instruction length) is sound; the p-code semantics carried over
+  from upstream are known-incorrect and are being rewritten (bead grm-c9d.3) — don't trust
+  decompiler output for this language yet.
 
 ## Roadmap
 
@@ -199,9 +204,15 @@ are the machines whose music drivers that project reverses.
 [NOTICE](NOTICE) — currently the undocumented-opcode SLEIGH semantics in
 `data/languages/6510_illegal.sinc`, vendored from
 [anarkiwi/deity-informant](https://github.com/anarkiwi/deity-informant) (also Apache 2.0)
-and kept byte-identical to upstream so re-syncs stay a clean diff.
+and kept byte-identical to upstream so re-syncs stay a clean diff; and the SPC700 decode
+table in `data/languages/spc700core.sinc`/`spc700ops.sinc`, vendored from
+[qwertymodo/SPCdra](https://github.com/qwertymodo/SPCdra) (also Apache 2.0) as a fork
+point rather than a sync target, since the p-code semantics built on top of it diverge
+permanently once bead grm-c9d.3 rewrites them.
 
 Note that project, and [grue74/ghidra-c64helpers](https://github.com/grue74/ghidra-c64helpers),
 each also publish a language with the id `6510:LE:16:default`. Ghidra requires language ids
 to be unique, so installing two of them at once will conflict; that is the only situation in
-which it matters.
+which it matters. Likewise, SPCdra itself publishes `spc700:LE:16:default`; this extension's
+SPC700 language deliberately uses the id `SPC700:LE:16:retro` instead, so both can be
+installed side by side without conflict.
