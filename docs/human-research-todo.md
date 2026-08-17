@@ -194,38 +194,15 @@ Blocked on judgment, not effort.
 
 Agents can't file these — they need an account and CLA agreement.
 
-- [ ] **`grm-b3m`** (P2) — `jumptable.cc findSmallestNormal` stride-aware guard. **The issue is
-      FILED:** [#9447](https://github.com/NationalSecurityAgency/ghidra/issues/9447), 2026-08-02.
-      Only the **PR** is still open work here. **Unblocks `grm-g73`.**
+*Nothing open here right now — both items were dispatched 2026-08-16/17 (see the **Answered**
+table). Two things learned that the next upstream item should inherit:*
 
-      Status re-checked 2026-08-16: open, labelled `Feature: Decompiler` + `Status: Triage`, **zero
-      comments** after 14 days — but now **assigned to `caheckman`**, who owns `jumptable.cc` (the
-      one change since the 08-15 check; issue last updated 2026-08-10). An assignment with no
-      comment is not guidance, so the reasoning below is unchanged; it does mean a measurement
-      posted to the thread would land in front of the right person. The bead says to watch for
-      maintainer guidance on the fix shape
-      before investing in the patch (`caheckman` owns `jumptable.cc`); that guidance has not
-      arrived and waiting on it is unbounded. Hence the local-fork-first decision — see `grm-eyn`.
-
-      **The fork was built and the patch was measured, 2026-08-15 — DO NOT OPEN THE PR ON THE
-      STRIDE-GUARD FORMULATION.** It is a net loss on our own corpus. It sheds the predicted
-      phantoms (dragonpower/shenlong warnings 6→2, contra 7→5) but destroys legitimate dispatch
-      recovery elsewhere: tmnt refs 44→0, rcproam instrs 4810→1275, megaman instrs 7429→5342.
-      Rejecting the switch variable does not *bound* the table, it *deletes* it — and on 6502 the
-      unbounded doubled byte is the normal legitimate table idiom, so the upstream guard's premise
-      does not hold here. Full A/B on `grm-b3m`; fix direction reverts to the lowest-target
-      fixpoint (`grm-eyn`).
-
-      So the reviewer question below is **answered, against us**: `findSmallestNormal` is
-      **architecture-independent**, and reviewers would have asked whether tightening the guard
-      loses legitimate switch recovery — it does, measurably, on 6502 before anyone even reaches
-      x86/ARM/PowerPC. What remains worth a human's GitHub identity is **posting that measurement
-      to [#9447](https://github.com/NationalSecurityAgency/ghidra/issues/9447)**: 31 real programs
-      showing the obvious fix regresses recovery is a better contribution than the patch would
-      have been, and it is what might draw `caheckman` into the fix-shape conversation.
-- [ ] **`grm-6xh`** (P3) — the one-line `setMinStoreLoadOffset` field-assignment bug (assigns
-      `maxSpeculativeOffset`). Verified tag-exact against `Ghidra_12.1.2_build`; affects the base
-      analyzer and all 13 per-processor subclasses. Trivial PR, high goodwill.
+- *`CBongo/ghidra` now exists as a fork, and `D:/git/ghidra-fork` is a full clone whose `origin`
+  is the **read-only reference checkout**, not GitHub — name the GitHub remote explicitly, cut the
+  branch from a freshly fetched `master` (not `HEAD`), and use `git worktree add` so the b3m fork
+  build tree stays on its own branch. Full recipe on `grm-6xh`.*
+- *An agent cannot confirm a fork exists by searching for it: GitHub repo search omits forks unless
+  the query carries `fork:true`. Check the fork's `master` head directly instead.*
 
 ---
 
@@ -266,3 +243,5 @@ Agents can't file these — they need an account and CLA agreement.
 | Is smb3's `FUN_c542` a real bank-switch helper, or a false one? | **Real.** `c5f5` — already in your earlier smb3 trace as a direct `$8000`/`$8001` write — is *inside* `c542`'s body, which is why that trace listed the site but never named the function. `c542` sets PRG bank `$1a` and restores it later via a call to `$ffc2`. So the `867b`/`ac6d` warnings are honest, the production output is correct, and **smb3's golden is stale by exactly two lines** — the opposite of the standing "golden correct, output wrong" rule in `CLAUDE.md`, which was written when the diff still held the `ca23`/`ca2e` regression `grm-67g` has since closed. Update that rule in the same change that blesses. **Second, separate finding: the warning text is itself wrong.** A helper that deposits a *constant* has no argument to recover, so `867b`/`ac6d` should annotate bank `$1a`, not warn. Suspected cause (hypothesis, not measured): `c542` is a save/switch/restore shape like wizwarr `ff69`, "last switch wins" lands on the `$ffc2` restore, and `restoresEntryBank` is not firing — every case it has handled so far is AxROM/UxROM, and smb3 is MMC3. | `grm-evn`; unblocks `grm-bj6` |
 | What is the real extent of rcproam's jump table at `$8068`? | **Six entries, at `$806b`, holding four distinct targets: `8077`, `818a` ×3, `8675`, `884d`.** Entry 0 (`8077`) is the first address *after* the table — a self-terminating layout, and direct corroboration that the lowest-target bound's premise is sound here. **Decisive: none of the five targets the bound stops recovering (`80a2`, `80f0`, `812a`, `8500`, `8509`) is a real target.** So rcproam's refs 1298→931 / instrs 4810→4094 is the fix removing code seeded by an over-read, not a loss — the corpus's "only clear loss" was the fix working. **Do not add a decline condition on rcproam's evidence**; there is no legitimate target sitting below the table. Still to measure agent-side: that the bound computes 6 rather than truncating further (check refs to all four targets against the PATCHED install — both env vars, `grm-k0h`). | `grm-eyn` |
 | Are megaman's 12 shed bank comments real losses or phantoms? | **Phantoms — `8d1f`–`8dbf` is all data, no code.** The `bank -> 5 (bank=5) via RESET` comments hung off instructions that existed only because a bogus jump target seeded disassembly into a data region, so `bankComments` 156→144 is a correction. Explains the counts moving against each other (instrs +42, comments −12): phantom code removed in one region, real code recovered in another. **Bonus, and the more actionable half — three more over-read tables named with true lengths: `e000` (over-read to `e0ed`, true 18), `e121` (`e2a2`, true 19), `e44e` (`e55a`, true 10)**, "the sources of the bad refs". So megaman's over-read problem is at least four tables, not just `a737`. Pin 18/19/10 as acceptance expectations rather than re-deriving them. | `grm-eyn` |
+| What is worth a human's GitHub identity on `grm-b3m` — the stride-guard PR, or something else? | **Neither, as written. Posted the fix-shape argument to [#9447](https://github.com/NationalSecurityAgency/ghidra/issues/9447#issuecomment-5310139901) on 2026-08-16 — but built around the *working* fix, not the failure report this item described.** This entry predated grm-eyn's 2026-08-16 adjudication; by posting time the lowest-target rule was validated against hand disassembly, so the comment leads with it and uses the stride guard's collapse only to motivate it. Two mechanism facts carry the argument, and they are the reusable part: `sanityCheck` already owns the truncation machinery *and* its `diff > 0xffff` test is dead code on 16-bit targets (the slot is vacant), and it runs **before** `LoadTable::collapseTable`, so per-entry LOADs are still live and **no stride inference is needed anywhere**. Safety rests on `minTarget > tableStart`, which declines on the `.rodata` arrangement. **Every per-title measurement table was deliberately cut** (~780 → ~440 words): they argue a case upstream has not disputed, and the comment's job is to demand minimal attention — post them only if asked. One number survived, `44 → 0` refs. Corpus-is-6502-only and the proven-identical control build were stated up front. **The stride formulation stays dead and `grm-g73` stays blocked.** Next signal is a `caheckman` reply naming a preferred fix shape; **continued silence is not a reason to send a patch speculatively** | `grm-b3m` (open, waiting on upstream) |
+| `grm-6xh` — file the trivial setter PR | **Submitted 2026-08-17: [#9513](https://github.com/NationalSecurityAgency/ghidra/pull/9513)**, one file, +3/−3, cut from master `d5f144c2`. **It is a two-line fix, not the one line the bead recorded:** the javadoc above the setter was copy-pasted from `setMaxSpeculativeOffset` and wrong in the same direction as the bug, so shipping the assignment alone would have left the method contradicting its own documentation. Bug re-verified on **master** before filing rather than trusted from the 12.1.2-tag investigation. The framing that answers "how did nobody notice this" — and the line worth reusing — is that the **three-argument constructor assigns both fields correctly, so the bug is reachable only through the fluent form, which is the form the analyzer itself uses**. `mergeable_state: blocked` at submission is the normal fresh-PR state pending the CLA check | `grm-6xh` (open, pending merge) |
