@@ -81,8 +81,22 @@ define token data16 (16)
    imm16        = (0,15)
 ;
 
-ADDR8: 	imm8 	is imm8 	{ local tmp:2 = zext(imm8:1); export *:2 tmp; }
+# ADDR8 exports the direct-page ADDRESS VALUE (0x0000|dp or 0x0100|dp per the P flag),
+# not the byte/word stored there -- constructor bodies in spc700ops.sinc dereference it
+# themselves (*:1 ADDR8, *:2 ADDR8, ADDR8 + zext(X), etc). P must be read at runtime
+# (SETP/CLRP mutate PSW), so this cannot be folded into a context variable.
+ADDR8: 	imm8 	is imm8 	{ local p:1 = $(PF); local lo:2 = zext(imm8:1); local hi:2 = zext(p) << 8; local dpaddr:2 = lo | hi; export dpaddr; }
+
+# ADDR16 (dynamic export) is for control-flow targets ONLY -- goto/call on a dynamic
+# export uses the export's ADDRESS (imm16 itself), giving a direct, statically-analyzable
+# branch/call. Do not use it for data references or address arithmetic: dereferencing it
+# again (*:1 ADDR16) reads the memory AT imm16 instead of imm16 itself.
 ADDR16: imm16 	is imm16	{ export *:2 imm16; }
+
+# ADDR16V (value export) is for everything else: data reads/writes and address arithmetic
+# (ADDR16V + zext(X)/zext(Y)), where the constructor body needs the numeric address imm16.
+# Same match pattern and print piece as ADDR16, so operand display text is identical.
+ADDR16V: imm16 	is imm16	{ local absaddr:2 = imm16; export absaddr; }
 RADDR8:	addr 	is simm8	[ addr = inst_next + simm8; ] { export *:1 addr; }
 
 define pcodeop daa;

@@ -71,21 +71,21 @@
 	resultFlags(A);
 }
 
-:MOV A," !"^ADDR16 is op=0xE5 & A; ADDR16 {
-	A = *:1 ADDR16;
+:MOV A," !"^ADDR16V is op=0xE5 & A; ADDR16V {
+	A = *:1 ADDR16V;
 	
 	resultFlags(A);
 }
 
-:MOV A," !"^ADDR16+X is op=0xF5 & A & X; ADDR16 {
-	local addr:2 = ADDR16 + zext(X);
+:MOV A," !"^ADDR16V+X is op=0xF5 & A & X; ADDR16V {
+	local addr:2 = ADDR16V + zext(X);
 	A = *:1 addr;
 	
 	resultFlags(A);
 }
 
-:MOV A," !"^ADDR16+Y is op=0xF6 & A & Y; ADDR16 {
-	local addr:2 = ADDR16 + zext(Y);
+:MOV A," !"^ADDR16V+Y is op=0xF6 & A & Y; ADDR16V {
+	local addr:2 = ADDR16V + zext(Y);
 	A = *:1 addr;
 	
 	resultFlags(A);
@@ -126,8 +126,8 @@
 	resultFlags(X);
 }
 
-:MOV X," !"^ADDR16 is op=0xE9 & X; ADDR16 {
-	X = *:1 ADDR16;
+:MOV X," !"^ADDR16V is op=0xE9 & X; ADDR16V {
+	X = *:1 ADDR16V;
 	
 	resultFlags(X);
 }
@@ -151,8 +151,8 @@
 	resultFlags(Y);
 }
 
-:MOV Y," !"^ADDR16 is op=0xEC & Y; ADDR16 {
-	Y = *:1 ADDR16;
+:MOV Y," !"^ADDR16V is op=0xEC & Y; ADDR16V {
+	Y = *:1 ADDR16V;
 	
 	resultFlags(Y);
 }
@@ -180,17 +180,17 @@
 	*:1 addr = A;
 }
 
-:MOV "!"^ADDR16,A is op=0xC5 & A; ADDR16 {
-	*:1 ADDR16 = A;
+:MOV "!"^ADDR16V,A is op=0xC5 & A; ADDR16V {
+	*:1 ADDR16V = A;
 }
 
-:MOV "!"^ADDR16+X,A is op=0xD5 & A & X; ADDR16 {
-	local addr:2 = ADDR16 + zext(X);
+:MOV "!"^ADDR16V+X,A is op=0xD5 & A & X; ADDR16V {
+	local addr:2 = ADDR16V + zext(X);
 	*:1 addr = A;
 }
 
-:MOV "!"^ADDR16+Y,A is op=0xD6 & A & Y; ADDR16 {
-	local addr:2 = ADDR16 + zext(Y);
+:MOV "!"^ADDR16V+Y,A is op=0xD6 & A & Y; ADDR16V {
+	local addr:2 = ADDR16V + zext(Y);
 	*:1 addr = A;
 }
 
@@ -216,8 +216,8 @@
 	*:1 addr = X;
 }
 
-:MOV "!"^ADDR16,X is op=0xC9 & X; ADDR16 {
-	*:1 ADDR16 = X;
+:MOV "!"^ADDR16V,X is op=0xC9 & X; ADDR16V {
+	*:1 ADDR16V = X;
 }
 
 :MOV ADDR8,Y is op=0xCB & Y; ADDR8 {
@@ -230,8 +230,8 @@
 	*:1 addr = Y;
 }
 
-:MOV "!"^ADDR16,Y is op=0xCC & Y; ADDR16 {
-	*:1 ADDR16 = Y;
+:MOV "!"^ADDR16V,Y is op=0xCC & Y; ADDR16V {
+	*:1 ADDR16V = Y;
 }
 
 #======================================================#
@@ -314,23 +314,23 @@
 	A = result;
 }
 
-:ADC A," !"^ADDR16 is op=0x85 & A; ADDR16 {
-	local tmp:1 = *:1 ADDR16;
+:ADC A," !"^ADDR16V is op=0x85 & A; ADDR16V {
+	local tmp:1 = *:1 ADDR16V;
 	local result:1;
 	aluADC(tmp,result);
 	A = result;
 }
 
-:ADC A," !"^ADDR16+X is op=0x95 & A & X; ADDR16 {
-	local addr:2 = ADDR16 + zext(X);
+:ADC A," !"^ADDR16V+X is op=0x95 & A & X; ADDR16V {
+	local addr:2 = ADDR16V + zext(X);
 	local tmp:1 = *:1 addr;
 	local result:1;
 	aluADC(tmp,result);
 	A = result;
 }
 
-:ADC A," !"^ADDR16+Y is op=0x96 & A & Y; ADDR16 {
-	local addr:2 = ADDR16 + zext(Y);
+:ADC A," !"^ADDR16V+Y is op=0x96 & A & Y; ADDR16V {
+	local addr:2 = ADDR16V + zext(Y);
 	local tmp:1 = *:1 addr;
 	local result:1;
 	aluADC(tmp,result);
@@ -411,23 +411,23 @@
 	A = result;
 }
 
-:SBC A," !"^ADDR16 is op=0xA5 & A; ADDR16 {
-	local tmp:1 = *:1 ADDR16;
+:SBC A," !"^ADDR16V is op=0xA5 & A; ADDR16V {
+	local tmp:1 = *:1 ADDR16V;
 	local result:1;
 	aluSBC(tmp,result);
 	A = result;
 }
 
-:SBC A," !"^ADDR16+X is op=0xB5 & A & X; ADDR16 {
-	local addr:2 = ADDR16 + zext(X);
+:SBC A," !"^ADDR16V+X is op=0xB5 & A & X; ADDR16V {
+	local addr:2 = ADDR16V + zext(X);
 	local tmp:1 = *:1 addr;
 	local result:1;
 	aluSBC(tmp,result);
 	A = result;
 }
 
-:SBC A," !"^ADDR16+Y is op=0xB6 & A & Y; ADDR16 {
-	local addr:2 = ADDR16 + zext(Y);
+:SBC A," !"^ADDR16V+Y is op=0xB6 & A & Y; ADDR16V {
+	local addr:2 = ADDR16V + zext(Y);
 	local tmp:1 = *:1 addr;
 	local result:1;
 	aluSBC(tmp,result);
@@ -516,8 +516,8 @@
 	$(CF) = (A < tmp);
 }
 
-:CMP A," !"^ADDR16 is op=0x65 & A; ADDR16 {
-	local tmp:1 = *:1 ADDR16;
+:CMP A," !"^ADDR16V is op=0x65 & A; ADDR16V {
+	local tmp:1 = *:1 ADDR16V;
 	local result:1 = A - tmp;
 	
 	$(NF) = (result s< 0);
@@ -525,8 +525,8 @@
 	$(CF) = (A < tmp);
 }
 
-:CMP A," !"^ADDR16+X is op=0x75 & A & X; ADDR16 {
-	local ptr:2 = ADDR16 + zext(X);
+:CMP A," !"^ADDR16V+X is op=0x75 & A & X; ADDR16V {
+	local ptr:2 = ADDR16V + zext(X);
 	local tmp:1 = *:1 ptr;
 	local result:1 = A - tmp;
 	
@@ -535,8 +535,8 @@
 	$(CF) = (A < tmp);
 }
 
-:CMP A," !"^ADDR16+Y is op=0x76 & A & Y; ADDR16 {
-	local ptr:2 = ADDR16 + zext(Y);
+:CMP A," !"^ADDR16V+Y is op=0x76 & A & Y; ADDR16V {
+	local ptr:2 = ADDR16V + zext(Y);
 	local tmp:1 = *:1 ptr;
 	local result:1 = A - tmp;
 	
@@ -618,8 +618,8 @@
 	$(CF) = (X < tmp);
 }
 
-:CMP X," !"^ADDR16 is op=0x1E & X; ADDR16 {
-	local tmp:1 = *:1 ADDR16;
+:CMP X," !"^ADDR16V is op=0x1E & X; ADDR16V {
+	local tmp:1 = *:1 ADDR16V;
 	local result:1 = X - tmp;
 	
 	$(NF) = (result s< 0);
@@ -644,8 +644,8 @@
 	$(CF) = (Y < tmp);
 }
 
-:CMP Y," !"^ADDR16 is op=0x5E & Y; ADDR16 {
-	local tmp:1 = *:1 ADDR16;
+:CMP Y," !"^ADDR16V is op=0x5E & Y; ADDR16V {
+	local tmp:1 = *:1 ADDR16V;
 	local result:1 = Y - tmp;
 	
 	$(NF) = (result s< 0);
@@ -694,8 +694,8 @@
 	$(ZF) = (result == 0);
 }
 
-:AND A," !"^ADDR16 is op=0x25 & A; ADDR16 {
-	local tmp:1 = *:1 ADDR16;
+:AND A," !"^ADDR16V is op=0x25 & A; ADDR16V {
+	local tmp:1 = *:1 ADDR16V;
 	local result:1 = A & tmp;
 	
 	A = result;
@@ -703,8 +703,8 @@
 	$(ZF) = (result == 0);
 }
 
-:AND A," !"^ADDR16+X is op=0x35 & A & X; ADDR16 {
-	local ptr:2 = ADDR16 + zext(X);
+:AND A," !"^ADDR16V+X is op=0x35 & A & X; ADDR16V {
+	local ptr:2 = ADDR16V + zext(X);
 	local tmp:1 = *:1 ptr;
 	local result:1 = A & tmp;
 	
@@ -713,8 +713,8 @@
 	$(ZF) = (result == 0);
 }
 
-:AND A," !"^ADDR16+Y is op=0x36 & A & Y; ADDR16 {
-	local ptr:2 = ADDR16 + zext(Y);
+:AND A," !"^ADDR16V+Y is op=0x36 & A & Y; ADDR16V {
+	local ptr:2 = ADDR16V + zext(Y);
 	local tmp:1 = *:1 ptr;
 	local result:1 = A & tmp;
 	
@@ -816,8 +816,8 @@
 	$(ZF) = (result == 0);
 }
 
-:OR A," !"^ADDR16 is op=0x05 & A; ADDR16 {
-	local tmp:1 = *:1 ADDR16;
+:OR A," !"^ADDR16V is op=0x05 & A; ADDR16V {
+	local tmp:1 = *:1 ADDR16V;
 	local result:1 = A | tmp;
 	
 	A = result;
@@ -825,8 +825,8 @@
 	$(ZF) = (result == 0);
 }
 
-:OR A," !"^ADDR16+X is op=0x15 & A & X; ADDR16 {
-	local ptr:2 = ADDR16 + zext(X);
+:OR A," !"^ADDR16V+X is op=0x15 & A & X; ADDR16V {
+	local ptr:2 = ADDR16V + zext(X);
 	local tmp:1 = *:1 ptr;
 	local result:1 = A | tmp;
 	
@@ -835,8 +835,8 @@
 	$(ZF) = (result == 0);
 }
 
-:OR A," !"^ADDR16+Y is op=0x16 & A & Y; ADDR16 {
-	local ptr:2 = ADDR16 + zext(Y);
+:OR A," !"^ADDR16V+Y is op=0x16 & A & Y; ADDR16V {
+	local ptr:2 = ADDR16V + zext(Y);
 	local tmp:1 = *:1 ptr;
 	local result:1 = A | tmp;
 	
@@ -938,8 +938,8 @@
 	$(ZF) = (result == 0);
 }
 
-:EOR A," !"^ADDR16 is op=0x45 & A; ADDR16 {
-	local tmp:1 = *:1 ADDR16;
+:EOR A," !"^ADDR16V is op=0x45 & A; ADDR16V {
+	local tmp:1 = *:1 ADDR16V;
 	local result:1 = A ^ tmp;
 	
 	A = result;
@@ -947,8 +947,8 @@
 	$(ZF) = (result == 0);
 }
 
-:EOR A," !"^ADDR16+X is op=0x55 & A & X; ADDR16 {
-	local ptr:2 = ADDR16 + zext(X);
+:EOR A," !"^ADDR16V+X is op=0x55 & A & X; ADDR16V {
+	local ptr:2 = ADDR16V + zext(X);
 	local tmp:1 = *:1 ptr;
 	local result:1 = A ^ tmp;
 	
@@ -957,8 +957,8 @@
 	$(ZF) = (result == 0);
 }
 
-:EOR A," !"^ADDR16+Y is op=0x56 & A & Y; ADDR16 {
-	local ptr:2 = ADDR16 + zext(Y);
+:EOR A," !"^ADDR16V+Y is op=0x56 & A & Y; ADDR16V {
+	local ptr:2 = ADDR16V + zext(Y);
 	local tmp:1 = *:1 ptr;
 	local result:1 = A ^ tmp;
 	
@@ -1032,7 +1032,7 @@
 
 :INC ADDR8+X is op=0xBB & X; ADDR8 { local addr:2 = ADDR8 + zext(X); local tmp:1 = *:1 addr; *:1 addr = tmp + 1; }
 
-:INC "!"^ADDR16 is op=0xAC; ADDR16 { local tmp:1 = *:1 ADDR16; *:1 ADDR16 = tmp + 1; }
+:INC "!"^ADDR16V is op=0xAC; ADDR16V { local tmp:1 = *:1 ADDR16V; *:1 ADDR16V = tmp + 1; }
 
 :INC X is op=0x3D & X { X = X + 1; }
 
@@ -1045,7 +1045,7 @@
 
 :DEC ADDR8+X is op=0x9B & X; ADDR8 { local addr:2 = ADDR8 + zext(X); local tmp:1 = *:1 addr; *:1 addr = tmp - 1; }
 
-:DEC "!"^ADDR16 is op=0x8C; ADDR16 { local tmp:1 = *:1 ADDR16; *:1 ADDR16 = tmp - 1; }
+:DEC "!"^ADDR16V is op=0x8C; ADDR16V { local tmp:1 = *:1 ADDR16V; *:1 ADDR16V = tmp - 1; }
 
 :DEC X is op=0x1D & X { X = X - 1; }
 
@@ -1084,11 +1084,11 @@
 	$(ZF) = (tmp == 0);
 }
 
-:ASL "!"^ADDR16 is op=0x0C; ADDR16 {
-	local tmp:1 = *:1 ADDR16;
+:ASL "!"^ADDR16V is op=0x0C; ADDR16V {
+	local tmp:1 = *:1 ADDR16V;
 	$(CF) = (tmp & 0x80);
 	tmp = tmp << 1;
-	*:1 ADDR16 = tmp;
+	*:1 ADDR16V = tmp;
 	
 	$(NF) = (tmp s< 0);
 	$(ZF) = (tmp == 0);
@@ -1124,11 +1124,11 @@
 	$(ZF) = (tmp == 0);
 }
 
-:LSR "!"^ADDR16 is op=0x4C; ADDR16 {
-	local tmp:1 = *:1 ADDR16;
+:LSR "!"^ADDR16V is op=0x4C; ADDR16V {
+	local tmp:1 = *:1 ADDR16V;
 	$(CF) = (tmp & 0x01);
 	tmp = tmp >> 1;
-	*:1 ADDR16 = tmp;
+	*:1 ADDR16V = tmp;
 	
 	$(NF) = 0;
 	$(ZF) = (tmp == 0);
@@ -1167,12 +1167,12 @@
 	$(ZF) = (tmp == 0);
 }
 
-:ROL "!"^ADDR16 is op=0x2C; ADDR16 {
+:ROL "!"^ADDR16V is op=0x2C; ADDR16V {
 	local c:1 = $(CF);
-	local tmp:1 = *:1 ADDR16;
+	local tmp:1 = *:1 ADDR16V;
 	$(CF) = (tmp & 0x80);
 	tmp = (tmp << 1) | c;
-	*:1 ADDR16 = tmp;
+	*:1 ADDR16V = tmp;
 	
 	$(NF) = (tmp s< 0);
 	$(ZF) = (tmp == 0);
@@ -1211,12 +1211,12 @@
 	$(ZF) = (tmp == 0);
 }
 
-:ROR "!"^ADDR16 is op=0x6C; ADDR16 {
+:ROR "!"^ADDR16V is op=0x6C; ADDR16V {
 	local c:1 = $(CF) << 7;
-	local tmp:1 = *:1 ADDR16;
+	local tmp:1 = *:1 ADDR16V;
 	$(CF) = (tmp & 0x01);
 	tmp = (tmp >> 1) | c;
-	*:1 ADDR16 = tmp;
+	*:1 ADDR16V = tmp;
 	
 	$(NF) = (tmp s< 0);
 	$(ZF) = (tmp == 0);
@@ -1340,7 +1340,7 @@
 
 :JMP "!"^ADDR16 is op=0x5F; ADDR16 { goto ADDR16; }
 
-:JMP ["!"^ADDR16+X] is op=0x1F & X; ADDR16 { local ptr = ADDR16 + zext(X); goto [ptr]; }
+:JMP ["!"^ADDR16V+X] is op=0x1F & X; ADDR16V { local ptr = ADDR16V + zext(X); goto [ptr]; }
 
 #======================================================#
 # Table C-16: Subroutine Call,Return Commands         #
@@ -1422,16 +1422,16 @@
 	*:1 ADDR8 = tmp;
 }
 
-:TSET1 "!"^ADDR16 is op=0x0E; ADDR16 {
-	local tmp:1 = *:1 ADDR16;
+:TSET1 "!"^ADDR16V is op=0x0E; ADDR16V {
+	local tmp:1 = *:1 ADDR16V;
 	local result:1 = tmp | A;
-	*:1 ADDR16 = result;
+	*:1 ADDR16V = result;
 }
 
-:TCLR1 "!"^ADDR16 is op=0x4E; ADDR16 {
-	local tmp:1 = *:1 ADDR16;
+:TCLR1 "!"^ADDR16V is op=0x4E; ADDR16V {
+	local tmp:1 = *:1 ADDR16V;
 	local result:1 = tmp & ~A;
-	*:1 ADDR16 = result;
+	*:1 ADDR16V = result;
 }
 
 :AND1 "C," ADDR8^"."imm8 is op=0x4A; imm8; ADDR8 {
