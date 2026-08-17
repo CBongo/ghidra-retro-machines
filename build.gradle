@@ -497,6 +497,49 @@ test {
 	// (sleighCompile's output is gitignored, so a fresh checkout has none).
 	dependsOn 'sleighCompile'
 	systemProperty 'grm.moduleDir', projectDir.absolutePath
+
+	// Spc700VectorSampleTest's baseline-regeneration switch (bead grm-c9d.2) must be forwarded
+	// explicitly: `test` forks a separate worker JVM that does NOT inherit -D properties from
+	// the launching `gradle` invocation, so `gradle test -Dgrm.spc700.regenerateBaseline=true`
+	// would otherwise silently do nothing -- the test sees no property, finds no baseline,
+	// Assume-skips, and the run reports GREEN. That is a failure in the flattering direction
+	// (a green run masking "the regeneration never happened"), the exact shape this project
+	// treats as worse than an honest red, so it is forwarded here rather than left as a footgun.
+	// Unlike an inherited environment variable, a `-D` given on the `gradle` command line IS
+	// read fresh by the Gradle client on every invocation (it is not subject to the daemon's
+	// stale-environment-at-startup problem documented in CLAUDE.md for GHIDRA_INSTALL_DIR), so
+	// a plain conditional read at configuration time is sufficient here.
+	if (System.getProperty('grm.spc700.regenerateBaseline') != null) {
+		systemProperty 'grm.spc700.regenerateBaseline',
+			System.getProperty('grm.spc700.regenerateBaseline')
+	}
+
+	// Spc700VectorExhaustiveTest (bead grm-c9d.2) is its OWN chunk (`spc700-vectors`), not part
+	// of `unit`/`all`: it needs a large, user-supplied vector clone (GRM_SPC700_VECTORS) this
+	// repo cannot ship, mirroring why the real-ROM tier is excluded from the default gate. If it
+	// ran here too, `unit`/`all` would fail loudly (by design -- see that test's class doc)
+	// every time GRM_SPC700_VECTORS is unset, which is nearly always. spc700VectorTest below
+	// runs it, and only it.
+	exclude '**/vectors/Spc700VectorExhaustiveTest.class'
+}
+
+// The exhaustive SPC700 vector regression (bead grm-c9d.2), split out of `test` per the comment
+// above. Mirrors `test`'s own config (bundled-language visibility, GHIDRA_INSTALL_DIR) since
+// Spc700VectorExhaustiveTest needs the same bundled-module grafting as everything else under
+// AbstractBundledLanguageTest.
+task spc700VectorTest(type: Test) {
+	group = "Ghidra Retro Machines"
+	description = "Exhaustive SPC700 vector regression (grm-c9d.2); requires GRM_SPC700_VECTORS " +
+		"(refuses loudly otherwise). Not part of `test`/`unit`/`all` -- see build-and-test.sh's " +
+		"`spc700-vectors` chunk."
+	useJUnit()
+	maxHeapSize = '2g'
+	environment 'GHIDRA_INSTALL_DIR', ghidraInstallDir
+	dependsOn 'sleighCompile'
+	systemProperty 'grm.moduleDir', projectDir.absolutePath
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	include '**/vectors/Spc700VectorExhaustiveTest.class'
 }
 
 //----------------------------------------------------------------------------------

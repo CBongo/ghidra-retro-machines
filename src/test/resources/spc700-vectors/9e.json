@@ -1,0 +1,2978 @@
+[
+ {
+  "name": "9E 0000",
+  "initial": {
+   "pc": 21182,
+   "a": 225,
+   "x": 83,
+   "y": 128,
+   "sp": 31,
+   "psw": 97,
+   "ram": [
+    [
+     21182,
+     158
+    ]
+   ]
+  },
+  "final": {
+   "a": 141,
+   "x": 83,
+   "y": 42,
+   "sp": 31,
+   "pc": 21183,
+   "psw": 225,
+   "ram": [
+    [
+     21182,
+     158
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    21182,
+    158,
+    "read"
+   ],
+   [
+    21183,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "9E 0001",
+  "initial": {
+   "pc": 37761,
+   "a": 233,
+   "x": 153,
+   "y": 85,
+   "sp": 2,
+   "psw": 122,
+   "ram": [
+    [
+     37761,
+     158
+    ]
+   ]
+  },
+  "final": {
+   "a": 143,
+   "x": 153,
+   "y": 114,
+   "sp": 2,
+   "pc": 37762,
+   "psw": 176,
+   "ram": [
+    [
+     37761,
+     158
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    37761,
+    158,
+    "read"
+   ],
+   [
+    37762,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "9E 0002",
+  "initial": {
+   "pc": 3227,
+   "a": 37,
+   "x": 221,
+   "y": 136,
+   "sp": 115,
+   "psw": 184,
+   "ram": [
+    [
+     3227,
+     158
+    ]
+   ]
+  },
+  "final": {
+   "a": 157,
+   "x": 221,
+   "y": 156,
+   "sp": 115,
+   "pc": 3228,
+   "psw": 176,
+   "ram": [
+    [
+     3227,
+     158
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    3227,
+    158,
+    "read"
+   ],
+   [
+    3228,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "9E 0003",
+  "initial": {
+   "pc": 59800,
+   "a": 176,
+   "x": 243,
+   "y": 208,
+   "sp": 91,
+   "psw": 129,
+   "ram": [
+    [
+     59800,
+     158
+    ]
+   ]
+  },
+  "final": {
+   "a": 219,
+   "x": 243,
+   "y": 207,
+   "sp": 91,
+   "pc": 59801,
+   "psw": 129,
+   "ram": [
+    [
+     59800,
+     158
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    59800,
+    158,
+    "read"
+   ],
+   [
+    59801,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "9E 0004",
+  "initial": {
+   "pc": 12823,
+   "a": 167,
+   "x": 149,
+   "y": 134,
+   "sp": 123,
+   "psw": 46,
+   "ram": [
+    [
+     12823,
+     158
+    ]
+   ]
+  },
+  "final": {
+   "a": 231,
+   "x": 149,
+   "y": 52,
+   "sp": 123,
+   "pc": 12824,
+   "psw": 172,
+   "ram": [
+    [
+     12823,
+     158
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    12823,
+    158,
+    "read"
+   ],
+   [
+    12824,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "9E 0005",
+  "initial": {
+   "pc": 12100,
+   "a": 174,
+   "x": 82,
+   "y": 209,
+   "sp": 8,
+   "psw": 104,
+   "ram": [
+    [
+     12100,
+     158
+    ]
+   ]
+  },
+  "final": {
+   "a": 188,
+   "x": 82,
+   "y": 118,
+   "sp": 8,
+   "pc": 12101,
+   "psw": 224,
+   "ram": [
+    [
+     12100,
+     158
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    12100,
+    158,
+    "read"
+   ],
+   [
+    12101,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "9E 0006",
+  "initial": {
+   "pc": 45560,
+   "a": 112,
+   "x": 2,
+   "y": 173,
+   "sp": 70,
+   "psw": 140,
+   "ram": [
+    [
+     45560,
+     158
+    ]
+   ]
+  },
+  "final": {
+   "a": 85,
+   "x": 2,
+   "y": 198,
+   "sp": 70,
+   "pc": 45561,
+   "psw": 76,
+   "ram": [
+    [
+     45560,
+     158
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    45560,
+    158,
+    "read"
+   ],
+   [
+    45561,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "9E 0007",
+  "initial": {
+   "pc": 62906,
+   "a": 47,
+   "x": 152,
+   "y": 120,
+   "sp": 15,
+   "psw": 101,
+   "ram": [
+    [
+     62906,
+     158
+    ]
+   ]
+  },
+  "final": {
+   "a": 202,
+   "x": 152,
+   "y": 63,
+   "sp": 15,
+   "pc": 62907,
+   "psw": 173,
+   "ram": [
+    [
+     62906,
+     158
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    62906,
+    158,
+    "read"
+   ],
+   [
+    62907,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "9E 0008",
+  "initial": {
+   "pc": 36671,
+   "a": 170,
+   "x": 181,
+   "y": 231,
+   "sp": 159,
+   "psw": 66,
+   "ram": [
+    [
+     36671,
+     158
+    ]
+   ]
+  },
+  "final": {
+   "a": 71,
+   "x": 181,
+   "y": 119,
+   "sp": 159,
+   "pc": 36672,
+   "psw": 72,
+   "ram": [
+    [
+     36671,
+     158
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    36671,
+    158,
+    "read"
+   ],
+   [
+    36672,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "9E 0009",
+  "initial": {
+   "pc": 49749,
+   "a": 208,
+   "x": 54,
+   "y": 83,
+   "sp": 40,
+   "psw": 154,
+   "ram": [
+    [
+     49749,
+     158
+    ]
+   ]
+  },
+  "final": {
+   "a": 141,
+   "x": 54,
+   "y": 18,
+   "sp": 40,
+   "pc": 49750,
+   "psw": 208,
+   "ram": [
+    [
+     49749,
+     158
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    49749,
+    158,
+    "read"
+   ],
+   [
+    49750,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "9E 000A",
+  "initial": {
+   "pc": 58570,
+   "a": 12,
+   "x": 111,
+   "y": 174,
+   "sp": 100,
+   "psw": 43,
+   "ram": [
+    [
+     58570,
+     158
+    ]
+   ]
+  },
+  "final": {
+   "a": 145,
+   "x": 111,
+   "y": 45,
+   "sp": 100,
+   "pc": 58571,
+   "psw": 225,
+   "ram": [
+    [
+     58570,
+     158
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    58570,
+    158,
+    "read"
+   ],
+   [
+    58571,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "9E 000B",
+  "initial": {
+   "pc": 27166,
+   "a": 191,
+   "x": 88,
+   "y": 140,
+   "sp": 220,
+   "psw": 105,
+   "ram": [
+    [
+     27166,
+     158
+    ]
+   ]
+  },
+  "final": {
+   "a": 153,
+   "x": 88,
+   "y": 39,
+   "sp": 220,
+   "pc": 27167,
+   "psw": 233,
+   "ram": [
+    [
+     27166,
+     158
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    27166,
+    158,
+    "read"
+   ],
+   [
+    27167,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "9E 000C",
+  "initial": {
+   "pc": 9952,
+   "a": 37,
+   "x": 224,
+   "y": 184,
+   "sp": 152,
+   "psw": 117,
+   "ram": [
+    [
+     9952,
+     158
+    ]
+   ]
+  },
+  "final": {
+   "a": 210,
+   "x": 224,
+   "y": 101,
+   "sp": 152,
+   "pc": 9953,
+   "psw": 189,
+   "ram": [
+    [
+     9952,
+     158
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    9952,
+    158,
+    "read"
+   ],
+   [
+    9953,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "9E 000D",
+  "initial": {
+   "pc": 46095,
+   "a": 157,
+   "x": 127,
+   "y": 20,
+   "sp": 134,
+   "psw": 242,
+   "ram": [
+    [
+     46095,
+     158
+    ]
+   ]
+  },
+  "final": {
+   "a": 41,
+   "x": 127,
+   "y": 70,
+   "sp": 134,
+   "pc": 46096,
+   "psw": 48,
+   "ram": [
+    [
+     46095,
+     158
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    46095,
+    158,
+    "read"
+   ],
+   [
+    46096,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "9E 000E",
+  "initial": {
+   "pc": 4224,
+   "a": 115,
+   "x": 61,
+   "y": 69,
+   "sp": 100,
+   "psw": 209,
+   "ram": [
+    [
+     4224,
+     158
+    ]
+   ]
+  },
+  "final": {
+   "a": 35,
+   "x": 61,
+   "y": 28,
+   "sp": 100,
+   "pc": 4225,
+   "psw": 81,
+   "ram": [
+    [
+     4224,
+     158
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    4224,
+    158,
+    "read"
+   ],
+   [
+    4225,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "9E 000F",
+  "initial": {
+   "pc": 20730,
+   "a": 39,
+   "x": 216,
+   "y": 5,
+   "sp": 115,
+   "psw": 153,
+   "ram": [
+    [
+     20730,
+     158
+    ]
+   ]
+  },
+  "final": {
+   "a": 6,
+   "x": 216,
+   "y": 23,
+   "sp": 115,
+   "pc": 20731,
+   "psw": 17,
+   "ram": [
+    [
+     20730,
+     158
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    20730,
+    158,
+    "read"
+   ],
+   [
+    20731,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "9E 0010",
+  "initial": {
+   "pc": 54769,
+   "a": 172,
+   "x": 222,
+   "y": 65,
+   "sp": 171,
+   "psw": 82,
+   "ram": [
+    [
+     54769,
+     158
+    ]
+   ]
+  },
+  "final": {
+   "a": 75,
+   "x": 222,
+   "y": 162,
+   "sp": 171,
+   "pc": 54770,
+   "psw": 16,
+   "ram": [
+    [
+     54769,
+     158
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    54769,
+    158,
+    "read"
+   ],
+   [
+    54770,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "9E 0011",
+  "initial": {
+   "pc": 18244,
+   "a": 28,
+   "x": 17,
+   "y": 98,
+   "sp": 211,
+   "psw": 149,
+   "ram": [
+    [
+     18244,
+     158
+    ]
+   ]
+  },
+  "final": {
+   "a": 187,
+   "x": 17,
+   "y": 177,
+   "sp": 211,
+   "pc": 18245,
+   "psw": 221,
+   "ram": [
+    [
+     18244,
+     158
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    18244,
+    158,
+    "read"
+   ],
+   [
+    18245,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "9E 0012",
+  "initial": {
+   "pc": 9276,
+   "a": 51,
+   "x": 28,
+   "y": 16,
+   "sp": 221,
+   "psw": 69,
+   "ram": [
+    [
+     9276,
+     158
+    ]
+   ]
+  },
+  "final": {
+   "a": 148,
+   "x": 28,
+   "y": 3,
+   "sp": 221,
+   "pc": 9277,
+   "psw": 133,
+   "ram": [
+    [
+     9276,
+     158
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    9276,
+    158,
+    "read"
+   ],
+   [
+    9277,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "9E 0013",
+  "initial": {
+   "pc": 14144,
+   "a": 132,
+   "x": 243,
+   "y": 101,
+   "sp": 112,
+   "psw": 81,
+   "ram": [
+    [
+     14144,
+     158
+    ]
+   ]
+  },
+  "final": {
+   "a": 106,
+   "x": 243,
+   "y": 230,
+   "sp": 112,
+   "pc": 14145,
+   "psw": 25,
+   "ram": [
+    [
+     14144,
+     158
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    14144,
+    158,
+    "read"
+   ],
+   [
+    14145,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "9E 0014",
+  "initial": {
+   "pc": 2537,
+   "a": 219,
+   "x": 223,
+   "y": 51,
+   "sp": 219,
+   "psw": 238,
+   "ram": [
+    [
+     2537,
+     158
+    ]
+   ]
+  },
+  "final": {
+   "a": 59,
+   "x": 223,
+   "y": 118,
+   "sp": 219,
+   "pc": 2538,
+   "psw": 36,
+   "ram": [
+    [
+     2537,
+     158
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    2537,
+    158,
+    "read"
+   ],
+   [
+    2538,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "9E 0015",
+  "initial": {
+   "pc": 42430,
+   "a": 138,
+   "x": 118,
+   "y": 160,
+   "sp": 77,
+   "psw": 213,
+   "ram": [
+    [
+     42430,
+     158
+    ]
+   ]
+  },
+  "final": {
+   "a": 92,
+   "x": 118,
+   "y": 34,
+   "sp": 77,
+   "pc": 42431,
+   "psw": 85,
+   "ram": [
+    [
+     42430,
+     158
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    42430,
+    158,
+    "read"
+   ],
+   [
+    42431,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "9E 0016",
+  "initial": {
+   "pc": 9506,
+   "a": 122,
+   "x": 217,
+   "y": 30,
+   "sp": 169,
+   "psw": 151,
+   "ram": [
+    [
+     9506,
+     158
+    ]
+   ]
+  },
+  "final": {
+   "a": 35,
+   "x": 217,
+   "y": 207,
+   "sp": 169,
+   "pc": 9507,
+   "psw": 29,
+   "ram": [
+    [
+     9506,
+     158
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    9506,
+    158,
+    "read"
+   ],
+   [
+    9507,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "9E 0017",
+  "initial": {
+   "pc": 45185,
+   "a": 137,
+   "x": 159,
+   "y": 117,
+   "sp": 222,
+   "psw": 210,
+   "ram": [
+    [
+     45185,
+     158
+    ]
+   ]
+  },
+  "final": {
+   "a": 189,
+   "x": 159,
+   "y": 38,
+   "sp": 222,
+   "pc": 45186,
+   "psw": 144,
+   "ram": [
+    [
+     45185,
+     158
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    45185,
+    158,
+    "read"
+   ],
+   [
+    45186,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "9E 0018",
+  "initial": {
+   "pc": 64752,
+   "a": 90,
+   "x": 182,
+   "y": 15,
+   "sp": 97,
+   "psw": 59,
+   "ram": [
+    [
+     64752,
+     158
+    ]
+   ]
+  },
+  "final": {
+   "a": 21,
+   "x": 182,
+   "y": 108,
+   "sp": 97,
+   "pc": 64753,
+   "psw": 57,
+   "ram": [
+    [
+     64752,
+     158
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    64752,
+    158,
+    "read"
+   ],
+   [
+    64753,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "9E 0019",
+  "initial": {
+   "pc": 32046,
+   "a": 123,
+   "x": 221,
+   "y": 58,
+   "sp": 205,
+   "psw": 70,
+   "ram": [
+    [
+     32046,
+     158
+    ]
+   ]
+  },
+  "final": {
+   "a": 67,
+   "x": 221,
+   "y": 164,
+   "sp": 205,
+   "pc": 32047,
+   "psw": 4,
+   "ram": [
+    [
+     32046,
+     158
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    32046,
+    158,
+    "read"
+   ],
+   [
+    32047,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "9E 001A",
+  "initial": {
+   "pc": 26698,
+   "a": 246,
+   "x": 145,
+   "y": 39,
+   "sp": 87,
+   "psw": 76,
+   "ram": [
+    [
+     26698,
+     158
+    ]
+   ]
+  },
+  "final": {
+   "a": 70,
+   "x": 145,
+   "y": 80,
+   "sp": 87,
+   "pc": 26699,
+   "psw": 12,
+   "ram": [
+    [
+     26698,
+     158
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    26698,
+    158,
+    "read"
+   ],
+   [
+    26699,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "9E 001B",
+  "initial": {
+   "pc": 38599,
+   "a": 137,
+   "x": 189,
+   "y": 173,
+   "sp": 186,
+   "psw": 179,
+   "ram": [
+    [
+     38599,
+     158
+    ]
+   ]
+  },
+  "final": {
+   "a": 235,
+   "x": 189,
+   "y": 10,
+   "sp": 186,
+   "pc": 38600,
+   "psw": 185,
+   "ram": [
+    [
+     38599,
+     158
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    38599,
+    158,
+    "read"
+   ],
+   [
+    38600,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "9E 001C",
+  "initial": {
+   "pc": 49573,
+   "a": 165,
+   "x": 20,
+   "y": 210,
+   "sp": 15,
+   "psw": 245,
+   "ram": [
+    [
+     49573,
+     158
+    ]
+   ]
+  },
+  "final": {
+   "a": 70,
+   "x": 20,
+   "y": 45,
+   "sp": 15,
+   "pc": 49574,
+   "psw": 117,
+   "ram": [
+    [
+     49573,
+     158
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    49573,
+    158,
+    "read"
+   ],
+   [
+    49574,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "9E 001D",
+  "initial": {
+   "pc": 25582,
+   "a": 172,
+   "x": 129,
+   "y": 60,
+   "sp": 209,
+   "psw": 151,
+   "ram": [
+    [
+     25582,
+     158
+    ]
+   ]
+  },
+  "final": {
+   "a": 120,
+   "x": 129,
+   "y": 52,
+   "sp": 209,
+   "pc": 25583,
+   "psw": 29,
+   "ram": [
+    [
+     25582,
+     158
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    25582,
+    158,
+    "read"
+   ],
+   [
+    25583,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "9E 001E",
+  "initial": {
+   "pc": 27606,
+   "a": 174,
+   "x": 77,
+   "y": 25,
+   "sp": 123,
+   "psw": 214,
+   "ram": [
+    [
+     27606,
+     158
+    ]
+   ]
+  },
+  "final": {
+   "a": 85,
+   "x": 77,
+   "y": 29,
+   "sp": 123,
+   "pc": 27607,
+   "psw": 20,
+   "ram": [
+    [
+     27606,
+     158
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    27606,
+    158,
+    "read"
+   ],
+   [
+    27607,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "9E 001F",
+  "initial": {
+   "pc": 26199,
+   "a": 38,
+   "x": 129,
+   "y": 154,
+   "sp": 112,
+   "psw": 162,
+   "ram": [
+    [
+     26199,
+     158
+    ]
+   ]
+  },
+  "final": {
+   "a": 49,
+   "x": 129,
+   "y": 117,
+   "sp": 112,
+   "pc": 26200,
+   "psw": 104,
+   "ram": [
+    [
+     26199,
+     158
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    26199,
+    158,
+    "read"
+   ],
+   [
+    26200,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ }
+]

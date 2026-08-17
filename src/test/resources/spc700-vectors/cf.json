@@ -1,0 +1,2498 @@
+[
+ {
+  "name": "CF 0000",
+  "initial": {
+   "pc": 15795,
+   "a": 25,
+   "x": 125,
+   "y": 157,
+   "sp": 169,
+   "psw": 8,
+   "ram": [
+    [
+     15795,
+     207
+    ]
+   ]
+  },
+  "final": {
+   "a": 85,
+   "x": 125,
+   "y": 15,
+   "sp": 169,
+   "pc": 15796,
+   "psw": 8,
+   "ram": [
+    [
+     15795,
+     207
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    15795,
+    207,
+    "read"
+   ],
+   [
+    15796,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "CF 0001",
+  "initial": {
+   "pc": 15811,
+   "a": 17,
+   "x": 219,
+   "y": 152,
+   "sp": 183,
+   "psw": 105,
+   "ram": [
+    [
+     15811,
+     207
+    ]
+   ]
+  },
+  "final": {
+   "a": 24,
+   "x": 219,
+   "y": 10,
+   "sp": 183,
+   "pc": 15812,
+   "psw": 105,
+   "ram": [
+    [
+     15811,
+     207
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    15811,
+    207,
+    "read"
+   ],
+   [
+    15812,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "CF 0002",
+  "initial": {
+   "pc": 46968,
+   "a": 135,
+   "x": 64,
+   "y": 82,
+   "sp": 41,
+   "psw": 151,
+   "ram": [
+    [
+     46968,
+     207
+    ]
+   ]
+  },
+  "final": {
+   "a": 62,
+   "x": 64,
+   "y": 43,
+   "sp": 41,
+   "pc": 46969,
+   "psw": 21,
+   "ram": [
+    [
+     46968,
+     207
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    46968,
+    207,
+    "read"
+   ],
+   [
+    46969,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "CF 0003",
+  "initial": {
+   "pc": 11240,
+   "a": 104,
+   "x": 173,
+   "y": 146,
+   "sp": 63,
+   "psw": 215,
+   "ram": [
+    [
+     11240,
+     207
+    ]
+   ]
+  },
+  "final": {
+   "a": 80,
+   "x": 173,
+   "y": 59,
+   "sp": 63,
+   "pc": 11241,
+   "psw": 85,
+   "ram": [
+    [
+     11240,
+     207
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    11240,
+    207,
+    "read"
+   ],
+   [
+    11241,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "CF 0004",
+  "initial": {
+   "pc": 21539,
+   "a": 221,
+   "x": 127,
+   "y": 53,
+   "sp": 213,
+   "psw": 148,
+   "ram": [
+    [
+     21539,
+     207
+    ]
+   ]
+  },
+  "final": {
+   "a": 193,
+   "x": 127,
+   "y": 45,
+   "sp": 213,
+   "pc": 21540,
+   "psw": 20,
+   "ram": [
+    [
+     21539,
+     207
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    21539,
+    207,
+    "read"
+   ],
+   [
+    21540,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "CF 0005",
+  "initial": {
+   "pc": 17909,
+   "a": 193,
+   "x": 4,
+   "y": 190,
+   "sp": 185,
+   "psw": 121,
+   "ram": [
+    [
+     17909,
+     207
+    ]
+   ]
+  },
+  "final": {
+   "a": 62,
+   "x": 4,
+   "y": 143,
+   "sp": 185,
+   "pc": 17910,
+   "psw": 249,
+   "ram": [
+    [
+     17909,
+     207
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    17909,
+    207,
+    "read"
+   ],
+   [
+    17910,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "CF 0006",
+  "initial": {
+   "pc": 50570,
+   "a": 112,
+   "x": 133,
+   "y": 77,
+   "sp": 109,
+   "psw": 110,
+   "ram": [
+    [
+     50570,
+     207
+    ]
+   ]
+  },
+  "final": {
+   "a": 176,
+   "x": 133,
+   "y": 33,
+   "sp": 109,
+   "pc": 50571,
+   "psw": 108,
+   "ram": [
+    [
+     50570,
+     207
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    50570,
+    207,
+    "read"
+   ],
+   [
+    50571,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "CF 0007",
+  "initial": {
+   "pc": 16990,
+   "a": 35,
+   "x": 33,
+   "y": 16,
+   "sp": 132,
+   "psw": 175,
+   "ram": [
+    [
+     16990,
+     207
+    ]
+   ]
+  },
+  "final": {
+   "a": 48,
+   "x": 33,
+   "y": 2,
+   "sp": 132,
+   "pc": 16991,
+   "psw": 45,
+   "ram": [
+    [
+     16990,
+     207
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    16990,
+    207,
+    "read"
+   ],
+   [
+    16991,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "CF 0008",
+  "initial": {
+   "pc": 1513,
+   "a": 245,
+   "x": 162,
+   "y": 95,
+   "sp": 123,
+   "psw": 71,
+   "ram": [
+    [
+     1513,
+     207
+    ]
+   ]
+  },
+  "final": {
+   "a": 235,
+   "x": 162,
+   "y": 90,
+   "sp": 123,
+   "pc": 1514,
+   "psw": 69,
+   "ram": [
+    [
+     1513,
+     207
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    1513,
+    207,
+    "read"
+   ],
+   [
+    1514,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "CF 0009",
+  "initial": {
+   "pc": 61108,
+   "a": 233,
+   "x": 133,
+   "y": 104,
+   "sp": 86,
+   "psw": 252,
+   "ram": [
+    [
+     61108,
+     207
+    ]
+   ]
+  },
+  "final": {
+   "a": 168,
+   "x": 133,
+   "y": 94,
+   "sp": 86,
+   "pc": 61109,
+   "psw": 124,
+   "ram": [
+    [
+     61108,
+     207
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    61108,
+    207,
+    "read"
+   ],
+   [
+    61109,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "CF 000A",
+  "initial": {
+   "pc": 22960,
+   "a": 56,
+   "x": 92,
+   "y": 255,
+   "sp": 76,
+   "psw": 158,
+   "ram": [
+    [
+     22960,
+     207
+    ]
+   ]
+  },
+  "final": {
+   "a": 200,
+   "x": 92,
+   "y": 55,
+   "sp": 76,
+   "pc": 22961,
+   "psw": 28,
+   "ram": [
+    [
+     22960,
+     207
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    22960,
+    207,
+    "read"
+   ],
+   [
+    22961,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "CF 000B",
+  "initial": {
+   "pc": 37567,
+   "a": 144,
+   "x": 126,
+   "y": 90,
+   "sp": 218,
+   "psw": 94,
+   "ram": [
+    [
+     37567,
+     207
+    ]
+   ]
+  },
+  "final": {
+   "a": 160,
+   "x": 126,
+   "y": 50,
+   "sp": 218,
+   "pc": 37568,
+   "psw": 92,
+   "ram": [
+    [
+     37567,
+     207
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    37567,
+    207,
+    "read"
+   ],
+   [
+    37568,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "CF 000C",
+  "initial": {
+   "pc": 51763,
+   "a": 229,
+   "x": 245,
+   "y": 152,
+   "sp": 8,
+   "psw": 161,
+   "ram": [
+    [
+     51763,
+     207
+    ]
+   ]
+  },
+  "final": {
+   "a": 248,
+   "x": 245,
+   "y": 135,
+   "sp": 8,
+   "pc": 51764,
+   "psw": 161,
+   "ram": [
+    [
+     51763,
+     207
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    51763,
+    207,
+    "read"
+   ],
+   [
+    51764,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "CF 000D",
+  "initial": {
+   "pc": 53004,
+   "a": 103,
+   "x": 81,
+   "y": 233,
+   "sp": 106,
+   "psw": 45,
+   "ram": [
+    [
+     53004,
+     207
+    ]
+   ]
+  },
+  "final": {
+   "a": 191,
+   "x": 81,
+   "y": 93,
+   "sp": 106,
+   "pc": 53005,
+   "psw": 45,
+   "ram": [
+    [
+     53004,
+     207
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    53004,
+    207,
+    "read"
+   ],
+   [
+    53005,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "CF 000E",
+  "initial": {
+   "pc": 25644,
+   "a": 210,
+   "x": 212,
+   "y": 110,
+   "sp": 78,
+   "psw": 177,
+   "ram": [
+    [
+     25644,
+     207
+    ]
+   ]
+  },
+  "final": {
+   "a": 60,
+   "x": 212,
+   "y": 90,
+   "sp": 78,
+   "pc": 25645,
+   "psw": 49,
+   "ram": [
+    [
+     25644,
+     207
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    25644,
+    207,
+    "read"
+   ],
+   [
+    25645,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "CF 000F",
+  "initial": {
+   "pc": 15668,
+   "a": 69,
+   "x": 135,
+   "y": 5,
+   "sp": 127,
+   "psw": 33,
+   "ram": [
+    [
+     15668,
+     207
+    ]
+   ]
+  },
+  "final": {
+   "a": 89,
+   "x": 135,
+   "y": 1,
+   "sp": 127,
+   "pc": 15669,
+   "psw": 33,
+   "ram": [
+    [
+     15668,
+     207
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    15668,
+    207,
+    "read"
+   ],
+   [
+    15669,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "CF 0010",
+  "initial": {
+   "pc": 42364,
+   "a": 159,
+   "x": 165,
+   "y": 186,
+   "sp": 32,
+   "psw": 15,
+   "ram": [
+    [
+     42364,
+     207
+    ]
+   ]
+  },
+  "final": {
+   "a": 134,
+   "x": 165,
+   "y": 115,
+   "sp": 32,
+   "pc": 42365,
+   "psw": 13,
+   "ram": [
+    [
+     42364,
+     207
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    42364,
+    207,
+    "read"
+   ],
+   [
+    42365,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "CF 0011",
+  "initial": {
+   "pc": 15485,
+   "a": 37,
+   "x": 44,
+   "y": 41,
+   "sp": 249,
+   "psw": 213,
+   "ram": [
+    [
+     15485,
+     207
+    ]
+   ]
+  },
+  "final": {
+   "a": 237,
+   "x": 44,
+   "y": 5,
+   "sp": 249,
+   "pc": 15486,
+   "psw": 85,
+   "ram": [
+    [
+     15485,
+     207
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    15485,
+    207,
+    "read"
+   ],
+   [
+    15486,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "CF 0012",
+  "initial": {
+   "pc": 43259,
+   "a": 60,
+   "x": 85,
+   "y": 240,
+   "sp": 189,
+   "psw": 143,
+   "ram": [
+    [
+     43259,
+     207
+    ]
+   ]
+  },
+  "final": {
+   "a": 64,
+   "x": 85,
+   "y": 56,
+   "sp": 189,
+   "pc": 43260,
+   "psw": 13,
+   "ram": [
+    [
+     43259,
+     207
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    43259,
+    207,
+    "read"
+   ],
+   [
+    43260,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "CF 0013",
+  "initial": {
+   "pc": 63254,
+   "a": 58,
+   "x": 16,
+   "y": 104,
+   "sp": 252,
+   "psw": 71,
+   "ram": [
+    [
+     63254,
+     207
+    ]
+   ]
+  },
+  "final": {
+   "a": 144,
+   "x": 16,
+   "y": 23,
+   "sp": 252,
+   "pc": 63255,
+   "psw": 69,
+   "ram": [
+    [
+     63254,
+     207
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    63254,
+    207,
+    "read"
+   ],
+   [
+    63255,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "CF 0014",
+  "initial": {
+   "pc": 38491,
+   "a": 169,
+   "x": 51,
+   "y": 205,
+   "sp": 42,
+   "psw": 54,
+   "ram": [
+    [
+     38491,
+     207
+    ]
+   ]
+  },
+  "final": {
+   "a": 85,
+   "x": 51,
+   "y": 135,
+   "sp": 42,
+   "pc": 38492,
+   "psw": 180,
+   "ram": [
+    [
+     38491,
+     207
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    38491,
+    207,
+    "read"
+   ],
+   [
+    38492,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "CF 0015",
+  "initial": {
+   "pc": 4382,
+   "a": 37,
+   "x": 61,
+   "y": 41,
+   "sp": 52,
+   "psw": 144,
+   "ram": [
+    [
+     4382,
+     207
+    ]
+   ]
+  },
+  "final": {
+   "a": 237,
+   "x": 61,
+   "y": 5,
+   "sp": 52,
+   "pc": 4383,
+   "psw": 16,
+   "ram": [
+    [
+     4382,
+     207
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    4382,
+    207,
+    "read"
+   ],
+   [
+    4383,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "CF 0016",
+  "initial": {
+   "pc": 55235,
+   "a": 239,
+   "x": 165,
+   "y": 110,
+   "sp": 255,
+   "psw": 58,
+   "ram": [
+    [
+     55235,
+     207
+    ]
+   ]
+  },
+  "final": {
+   "a": 178,
+   "x": 165,
+   "y": 102,
+   "sp": 255,
+   "pc": 55236,
+   "psw": 56,
+   "ram": [
+    [
+     55235,
+     207
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    55235,
+    207,
+    "read"
+   ],
+   [
+    55236,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "CF 0017",
+  "initial": {
+   "pc": 37772,
+   "a": 125,
+   "x": 172,
+   "y": 169,
+   "sp": 228,
+   "psw": 1,
+   "ram": [
+    [
+     37772,
+     207
+    ]
+   ]
+  },
+  "final": {
+   "a": 133,
+   "x": 172,
+   "y": 82,
+   "sp": 228,
+   "pc": 37773,
+   "psw": 1,
+   "ram": [
+    [
+     37772,
+     207
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    37772,
+    207,
+    "read"
+   ],
+   [
+    37773,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "CF 0018",
+  "initial": {
+   "pc": 25726,
+   "a": 213,
+   "x": 171,
+   "y": 201,
+   "sp": 94,
+   "psw": 158,
+   "ram": [
+    [
+     25726,
+     207
+    ]
+   ]
+  },
+  "final": {
+   "a": 61,
+   "x": 171,
+   "y": 167,
+   "sp": 94,
+   "pc": 25727,
+   "psw": 156,
+   "ram": [
+    [
+     25726,
+     207
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    25726,
+    207,
+    "read"
+   ],
+   [
+    25727,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "CF 0019",
+  "initial": {
+   "pc": 35725,
+   "a": 153,
+   "x": 170,
+   "y": 180,
+   "sp": 228,
+   "psw": 217,
+   "ram": [
+    [
+     35725,
+     207
+    ]
+   ]
+  },
+  "final": {
+   "a": 148,
+   "x": 170,
+   "y": 107,
+   "sp": 228,
+   "pc": 35726,
+   "psw": 89,
+   "ram": [
+    [
+     35725,
+     207
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    35725,
+    207,
+    "read"
+   ],
+   [
+    35726,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "CF 001A",
+  "initial": {
+   "pc": 23152,
+   "a": 157,
+   "x": 93,
+   "y": 25,
+   "sp": 26,
+   "psw": 82,
+   "ram": [
+    [
+     23152,
+     207
+    ]
+   ]
+  },
+  "final": {
+   "a": 85,
+   "x": 93,
+   "y": 15,
+   "sp": 26,
+   "pc": 23153,
+   "psw": 80,
+   "ram": [
+    [
+     23152,
+     207
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    23152,
+    207,
+    "read"
+   ],
+   [
+    23153,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "CF 001B",
+  "initial": {
+   "pc": 54679,
+   "a": 88,
+   "x": 43,
+   "y": 56,
+   "sp": 178,
+   "psw": 155,
+   "ram": [
+    [
+     54679,
+     207
+    ]
+   ]
+  },
+  "final": {
+   "a": 64,
+   "x": 43,
+   "y": 19,
+   "sp": 178,
+   "pc": 54680,
+   "psw": 25,
+   "ram": [
+    [
+     54679,
+     207
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    54679,
+    207,
+    "read"
+   ],
+   [
+    54680,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "CF 001C",
+  "initial": {
+   "pc": 58435,
+   "a": 206,
+   "x": 239,
+   "y": 216,
+   "sp": 158,
+   "psw": 52,
+   "ram": [
+    [
+     58435,
+     207
+    ]
+   ]
+  },
+  "final": {
+   "a": 208,
+   "x": 239,
+   "y": 173,
+   "sp": 158,
+   "pc": 58436,
+   "psw": 180,
+   "ram": [
+    [
+     58435,
+     207
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    58435,
+    207,
+    "read"
+   ],
+   [
+    58436,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "CF 001D",
+  "initial": {
+   "pc": 43499,
+   "a": 181,
+   "x": 72,
+   "y": 208,
+   "sp": 84,
+   "psw": 4,
+   "ram": [
+    [
+     43499,
+     207
+    ]
+   ]
+  },
+  "final": {
+   "a": 16,
+   "x": 72,
+   "y": 147,
+   "sp": 84,
+   "pc": 43500,
+   "psw": 132,
+   "ram": [
+    [
+     43499,
+     207
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    43499,
+    207,
+    "read"
+   ],
+   [
+    43500,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "CF 001E",
+  "initial": {
+   "pc": 20957,
+   "a": 235,
+   "x": 138,
+   "y": 138,
+   "sp": 103,
+   "psw": 124,
+   "ram": [
+    [
+     20957,
+     207
+    ]
+   ]
+  },
+  "final": {
+   "a": 174,
+   "x": 138,
+   "y": 126,
+   "sp": 103,
+   "pc": 20958,
+   "psw": 124,
+   "ram": [
+    [
+     20957,
+     207
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    20957,
+    207,
+    "read"
+   ],
+   [
+    20958,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ },
+ {
+  "name": "CF 001F",
+  "initial": {
+   "pc": 34928,
+   "a": 18,
+   "x": 194,
+   "y": 14,
+   "sp": 19,
+   "psw": 105,
+   "ram": [
+    [
+     34928,
+     207
+    ]
+   ]
+  },
+  "final": {
+   "a": 252,
+   "x": 194,
+   "y": 0,
+   "sp": 19,
+   "pc": 34929,
+   "psw": 107,
+   "ram": [
+    [
+     34928,
+     207
+    ]
+   ]
+  },
+  "cycles": [
+   [
+    34928,
+    207,
+    "read"
+   ],
+   [
+    34929,
+    null,
+    "read"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ],
+   [
+    null,
+    null,
+    "wait"
+   ]
+  ]
+ }
+]

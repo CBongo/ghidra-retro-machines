@@ -2,8 +2,8 @@ ghidra-retro-machines
 Copyright 2026 Chris Bongaarts
 
 This product includes software developed by third parties, as recorded below.
-All of it is licensed under the Apache License, Version 2.0 (see LICENSE), the
-same license as this project.
+Each block states its own license; most are the Apache License, Version 2.0
+(see LICENSE), the same license as this project, but not all.
 
 --------------------------------------------------------------------------------
 data/languages/6510_illegal.sinc
@@ -44,4 +44,43 @@ data/languages/spc700ops.sinc
   commit above (spc700ops.sinc additionally drops upstream's leading
   "@include spc700.sinc" line, since our spc700.slaspec does the including);
   the only other modification is a prepended attribution header.
+--------------------------------------------------------------------------------
+src/test/resources/spc700-vectors/*.json
+
+  A deterministic sample (first 32 of each file's cases; see MANIFEST.txt in
+  that directory) of the SingleStepTests SPC700 single-step test-vector suite,
+  used by the p-code semantic verification harness (bead grm-c9d.2) to check
+  emulated instruction semantics against known-correct final register/memory
+  state.
+
+  Copyright (c) 2024 SingleStepTests
+  Licensed under the MIT License:
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the
+    "Software"), to deal in the Software without restriction, including
+    without limitation the rights to use, copy, modify, merge, publish,
+    distribute, sublicense, and/or sell copies of the Software, and to
+    permit persons to whom the Software is furnished to do so, subject to
+    the following conditions:
+
+    The above copyright notice and this permission notice shall be included
+    in all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+    OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+    IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+    CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+    TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+    SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+  Upstream: https://github.com/SingleStepTests/spc700
+  Commit:   67d15f492b2740964abd4efd1229e0ec9c342228
+  Path:     v1/<opcode-hex>.json
+
+  Sampled, not vendored verbatim: tools/spc700/sample-vectors.py takes the
+  first N cases of each of the 256 upstream per-opcode files (N=32 by
+  default) with no reordering, so the sample is a byte-for-byte prefix of
+  upstream content, regenerable at any N against a fresh clone.
 --------------------------------------------------------------------------------

@@ -45,7 +45,7 @@ usage() {
 usage: $0 [check|bless] [--force-criteria] [chunk ...]
 
 Chunks: c64-banking c64-loader c64-recovery basic-petscii basic-dialects pet-loader c128-loader nes-banking
-        petscii-strings unit all
+        petscii-strings unit spc700-vectors all
 
 With no chunks, all is selected. Use --list-chunks to print this list.
 
@@ -65,7 +65,8 @@ c128-loader   C128 native BASIC PRG placement, fixed ROM slots, and MMU IO
 nes-banking   NES banking and MMC fixtures
 petscii-strings PetsciiStringAnalyzer C64 PRG fixture
 unit          JUnit `gradle test` suite (all src/test/java; no extension build/install)
-all           Every chunk (the default)
+spc700-vectors Exhaustive SPC700 vector regression (needs GRM_SPC700_VECTORS; opt-in, not in `all`)
+all           Every chunk (the default; does NOT include spc700-vectors -- see its own row)
 EOF
 }
 
@@ -107,7 +108,7 @@ fi
 
 for chunk in "${REQUESTED_CHUNKS[@]}"; do
 	case "$chunk" in
-		c64-banking|c64-loader|c64-recovery|basic-petscii|basic-dialects|pet-loader|c128-loader|nes-banking|petscii-strings|unit|all) ;;
+		c64-banking|c64-loader|c64-recovery|basic-petscii|basic-dialects|pet-loader|c128-loader|nes-banking|petscii-strings|unit|spc700-vectors|all) ;;
 		*)
 			echo "FAIL: unknown chunk '$chunk'" >&2
 			usage >&2
@@ -135,9 +136,14 @@ has_chunk() {
 # suite is small and fast (~seconds; one AbstractGenericTest class bootstraps Application),
 # so finer per-chunk --tests scoping was deliberately not added -- a chunk->test-class map
 # would be fragile for negligible gain.
+# spc700-vectors (bead grm-c9d.2) is deliberately NOT expanded by `all`, unlike every other
+# chunk: it needs a large, user-supplied SPC700 vector clone (GRM_SPC700_VECTORS) this repo
+# cannot ship, so -- exactly like the real-ROM tier -- it stays manual/opt-in rather than part
+# of the default gate. It must be named explicitly to run.
 RUN_HEADLESS=0
 RUNNER_CHUNKS=()
 RUN_JUNIT=0
+RUN_SPC700_VECTORS=0
 if has_chunk all; then
 	RUN_HEADLESS=1
 	RUNNER_CHUNKS=(all)
@@ -153,8 +159,12 @@ else
 		RUN_JUNIT=1
 	fi
 fi
+if has_chunk spc700-vectors; then
+	RUN_SPC700_VECTORS=1
+fi
 GRADLE_CHECKS=()
-[ "$RUN_JUNIT" -eq 1 ] && GRADLE_CHECKS=(test)
+[ "$RUN_JUNIT" -eq 1 ] && GRADLE_CHECKS+=(test)
+[ "$RUN_SPC700_VECTORS" -eq 1 ] && GRADLE_CHECKS+=(spc700VectorTest)
 
 if [ "$MODE" = "bless" ] && [ "$RUN_HEADLESS" -ne 1 ]; then
 	echo "FAIL: bless requires at least one headless chunk with golden output" >&2

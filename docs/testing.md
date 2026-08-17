@@ -124,7 +124,8 @@ final acceptance and commits**. `build-and-test.sh --list-chunks` prints the cur
 | `nes-banking` | NES banking and MMC fixtures |
 | `petscii-strings` | `PetsciiStringAnalyzer` C64 PRG fixture |
 | `unit` | the JUnit `gradle test` suite (all `src/test/java`; no extension build/install needed alone) |
-| `all` | every chunk (the default when no chunk is given) |
+| `spc700-vectors` | exhaustive SPC700 p-code vector regression (`gradle spc700VectorTest`); needs `GRM_SPC700_VECTORS`, refuses loudly otherwise; opt-in, **not** included by `all` (see below) |
+| `all` | every chunk (the default when no chunk is given) — **except** `spc700-vectors`, which must be named explicitly |
 
 **The shipped `ghidra_scripts/` front-ends are regression-tested inside these chunks, and nowhere
 else.** The GUI plugins are untestable here (see below), so a headless fixture that drives the
@@ -198,6 +199,41 @@ suite runs whenever `unit`/`all` is selected); the suite is small and fast (~sec
 deliberately skipped. It stays **out of `buildExtension`'s `dependsOn`** — `buildExtension` is
 packaging-only and the gate invokes `test` explicitly. Tier 3 remains the acceptance
 authority; the JUnit suite is an additional gate, not a replacement.
+
+### P-code semantic vector harness (`grm-c9d.2`)
+
+`src/test/java/retromachines/vectors/` is a language-agnostic harness that steps Ghidra's
+interpreted `PcodeEmulator` one instruction at a time and compares the resulting
+register/memory state against a SingleStepTests-shaped JSON vector (`VectorCase`/
+`VectorParser`/`VectorRunner`). Its first consumer is SPC700 (vendored in `grm-c9d.1`); `grm-o9k`
+reuses it against the 65x02 suites for the ADC/RRA flag bug.
+
+Because it is meant to report — not hide — failures against a spec known to be broken while it
+is being fixed, it does not use plain JUnit assertions for the SPC700 opcode-by-opcode result:
+it compares against a committed per-opcode baseline (`OpcodeBaseline`,
+`src/test/resources/spc700-vector-baseline.txt`), this project's bless idiom applied to a defect
+list instead of a golden dump. A baseline `FAIL` row is not a test failure; only a *regression*
+(an opcode moving `PASS` → `FAIL`) or the harness measuring fewer opcodes / zero failures than
+the baseline expects is. See `OpcodeBaseline`'s class doc for the exact rules, and its own
+header comment for how to regenerate it.
+
+Two SPC700 test classes split by cost and gating:
+
+- `Spc700VectorSampleTest` (the `unit` chunk) runs the vendored 8192-case sample
+  (`src/test/resources/spc700-vectors/`, 32 cases/opcode; provenance in that directory's
+  `MANIFEST.txt` and in `NOTICE`) against the committed baseline.
+- `Spc700VectorExhaustiveTest` (its own `spc700-vectors` chunk, **not** included by `all`) runs
+  the full ~131,072-case suite against a full clone named by `GRM_SPC700_VECTORS` — refusing
+  loudly (fails, does not skip) when that variable is unset, mirroring
+  `tools/banktest/realrom-test.sh`'s "never report a clean gate for a tier that did not
+  execute" rule. Regenerate the clone with `git clone --depth 1
+  https://github.com/SingleStepTests/spc700 <dir>`; regenerate the vendored sample with
+  `python3 tools/spc700/sample-vectors.py --source <dir>`.
+
+Both SPC700 test classes Assume-skip (green, not red) rather than fail while the SPC700
+language itself is unavailable in a given worktree — see their class docs. `VectorHarness6502Test`
+(also `unit`) proves the harness mechanics — including that it actually detects a corrupted
+expectation — against Ghidra's stock `6502:LE:16:default`, with no dependency on SPC700 at all.
 
 ## When to add which
 
