@@ -157,24 +157,48 @@ define pcodeop stop;
 ################################################################
 # Macros
 ################################################################
+# The SPC700 stack is an 8-bit SP implicitly in page 1 ($0100-$01FF): SP itself only ever holds
+# 0x00-0xFF (confirmed against the vectors -- MOV SP,X's own vectors show SP taking X's raw
+# value, not 0x0100+X), and every access folds in the page at dereference time. SP wraps within
+# 0-255 (an 8-bit decrement/increment on SP:1, not a 16-bit one), and push/pop are asymmetric:
+# push WRITES then decrements (so the byte lands at the CURRENT SP, before it moves); pop
+# INCREMENTS then reads (so the byte comes from the NEW SP, after it moves) -- confirmed off the
+# vectors' cycles/final.ram fields (grm-c9d.3 increment 8), not reasoned from the manual, per the
+# explicit instruction that push/pop order is easy to get backwards from prose.
 macro push8(value) {
-	SP = SP - 1;
-	*:1 (SP) = value;
+	local addr:2 = 0x0100 | zext(SP:1);
+	*:1 addr = value;
+	local newSp:1 = SP:1 - 1;
+	SP = zext(newSp);
 }
 
 macro pop8(result) {
-	result = *:1 (SP);
-	SP = SP + 1;
+	local newSp:1 = SP:1 + 1;
+	SP = zext(newSp);
+	local addr:2 = 0x0100 | zext(SP:1);
+	result = *:1 addr;
 }
 
+# push16/pop16: HIGH byte pushed first (lands at the current, higher SP), then LOW byte (lands
+# one below it after the first push8's decrement) -- confirmed against CALL's and BRK's vectors
+# (e.g. CALL: original SP gets the return address' high byte, SP-1 gets the low byte). pop16
+# reverses that: SP+1 (nearer the two pushed bytes' low end) yields the low byte first, SP+2
+# yields the high byte.
 macro push16(value) {
-	SP = SP - 2;
-	*:2 (SP) = value;
+	local v:2 = value;
+	local hiWide:2 = v >> 8;
+	local hi:1 = hiWide:1;
+	local lo:1 = v:1;
+	push8(hi);
+	push8(lo);
 }
 
 macro pop16(result) {
-	result = *:2 (SP);
-	SP = SP + 2;
+	local lo:1;
+	local hi:1;
+	pop8(lo);
+	pop8(hi);
+	result = (zext(hi) << 8) | zext(lo);
 }
 
 macro resultFlags(value) {

@@ -268,7 +268,7 @@
 }
 
 :MOV SP,X is op=0xBD & X & SP {
-	SP = 0x0100 + zext(X);
+	SP = zext(X);
 }
 
 :MOV dstaddr,srcaddr is op=0xFA; srcaddr; dstaddr {
@@ -1417,12 +1417,12 @@
 # Table C-16: Subroutine Call,Return Commands         #
 #======================================================#
 :CALL ADDR16 is op=0x3F; ADDR16 {
-	#push16(&:2 inst_next);
+	push16(inst_next);
 	call ADDR16;
 }
 
 :PCALL imm8 is op=0x4F; imm8 {
-	#push16(&:2 inst_next);
+	push16(inst_next);
 	local ptr:2 = 0xFF00 + zext(imm8:1);
 	call [ptr];
 }
@@ -1431,19 +1431,24 @@
 	local idx:1 = op_hi + 1;
 	local ptr:2 = 0xFFE0 - zext(idx * 2);
 	local addr:2 = *:2 ptr;
-	
-	#push16(&:2 inst_next);
-	call [addr]; 
+
+	push16(inst_next);
+	call [addr];
 }
 
 :BRK is op=0x0F {
-	push16(PC);
+	push16(inst_next);
 	push8(PSW);
-	
+
 	$(BF) = 1;
 	$(IF) = 0;
-	
-	PC = 0xFFDE;
+
+	# $FFDE is a VECTOR TABLE entry (like TCALL's $FFC0-$FFDF table), not the handler address
+	# itself -- goto [PC] jumps directly to whatever value PC holds, so the table entry must be
+	# dereferenced into PC first (confirmed against the vectors: PC ended up AT $FFDE instead of
+	# the word stored there, grm-c9d.3 increment 8).
+	local vec:2 = 0xFFDE;
+	PC = *:2 vec;
 	goto [PC];
 }
 
@@ -1453,9 +1458,12 @@
 }
 
 :RETI is op=0x7F {
-	pop16(PC);
+	# Pop in the REVERSE of BRK's push order: BRK pushes PC then PSW, so PSW is nearer the
+	# current SP and must come off FIRST (confirmed against the vectors, grm-c9d.3 increment 8 --
+	# popping PC first reads PSW's bytes as part of the address and vice versa).
 	pop8(PSW);
-	
+	pop16(PC);
+
 	return [PC];
 }
 
