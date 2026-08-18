@@ -1123,8 +1123,8 @@
 	local tmp:1 = *:1 ptr;
 	$(CF) = (tmp & 0x80) != 0;
 	tmp = tmp << 1;
-	*:1 ADDR8 = ptr;
-	
+	*:1 ptr = tmp;
+
 	$(NF) = (tmp s< 0);
 	$(ZF) = (tmp == 0);
 }
@@ -1163,8 +1163,8 @@
 	local tmp:1 = *:1 ptr;
 	$(CF) = (tmp & 0x01) != 0;
 	tmp = tmp >> 1;
-	*:1 ADDR8 = ptr;
-	
+	*:1 ptr = tmp;
+
 	$(NF) = 0;
 	$(ZF) = (tmp == 0);
 }
@@ -1206,8 +1206,8 @@
 	local tmp:1 = *:1 ptr;
 	$(CF) = (tmp & 0x80) != 0;
 	tmp = (tmp << 1) | c;
-	*:1 ADDR8 = ptr;
-	
+	*:1 ptr = tmp;
+
 	$(NF) = (tmp s< 0);
 	$(ZF) = (tmp == 0);
 }
@@ -1250,8 +1250,8 @@
 	local tmp:1 = *:1 ptr;
 	$(CF) = (tmp & 0x01) != 0;
 	tmp = (tmp >> 1) | c;
-	*:1 ADDR8 = ptr;
-	
+	*:1 ptr = tmp;
+
 	$(NF) = (tmp s< 0);
 	$(ZF) = (tmp == 0);
 }
