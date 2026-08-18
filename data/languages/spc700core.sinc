@@ -109,6 +109,28 @@ macro dpIndex(base, idx, result) {
 	result = page | zext(lo);
 }
 
+# dpWordRead/dpWordWrite: the 16-bit dp accesses (MOVW/INCW/DECW/ADDW/SUBW/CMPW) read/write TWO
+# bytes at a direct-page address, but the high byte wraps WITHIN THE PAGE too -- at dp=0xFF the
+# high byte comes from dp=0x00 of the SAME page, not from the next page's byte 0 (confirmed
+# against the exhaustive vector suite, grm-c9d.3 increment 6: BA 0164 with P=0, dp=0xFF reads its
+# high byte from 0x0000, not 0x0100; 9A 00FB with P=1, dp=0xFF reads its high byte from 0x0100,
+# not 0x0200). An ordinary `*:2 base` does a plain 16-bit access and gets this wrong at the page
+# boundary, so both bytes are addressed explicitly via dpIndex(base,1,...) instead.
+macro dpWordRead(base, result) {
+	local lo:1 = *:1 base;
+	local hiAddr:2; dpIndex(base, 1, hiAddr);
+	local hi:1 = *:1 hiAddr;
+	result = (zext(hi) << 8) | zext(lo);
+}
+
+macro dpWordWrite(base, value) {
+	local v:2 = value;
+	local hi:2 = v >> 8;
+	*:1 base = v:1;
+	local hiAddr:2; dpIndex(base, 1, hiAddr);
+	*:1 hiAddr = hi:1;
+}
+
 # ADDR8 exports the direct-page ADDRESS VALUE (0x0000|dp or 0x0100|dp per the P flag),
 # not the byte/word stored there -- constructor bodies in spc700ops.sinc dereference it
 # themselves (*:1 ADDR8, *:2 ADDR8, dpIndex(ADDR8,X,...), etc).

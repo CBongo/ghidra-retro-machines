@@ -1234,23 +1234,23 @@
 #======================================================#
 # Table C-11: 16-bit Data Transmission Commands        #
 #======================================================#
-:MOVW YA,ADDR8 is op=0xBA & YA; ADDR8 { local tmp:2 = *:2 ADDR8; YA = tmp; }
+:MOVW YA,ADDR8 is op=0xBA & YA; ADDR8 { local tmp:2; dpWordRead(ADDR8, tmp); YA = tmp; }
 
-:MOVW ADDR8,YA is op=0xDA & YA; ADDR8 { local tmp:2 = YA; *:2 ADDR8 = tmp; }
+:MOVW ADDR8,YA is op=0xDA & YA; ADDR8 { local tmp:2 = YA; dpWordWrite(ADDR8, tmp); }
 
 #======================================================#
 # Table C-12: 16-bit Operation Commands                #
 #======================================================#
-:INCW ADDR8 is op=0x3A; ADDR8 { local tmp:2 = *:2 ADDR8; *:2 ADDR8 = tmp + 1; }
+:INCW ADDR8 is op=0x3A; ADDR8 { local tmp:2; dpWordRead(ADDR8, tmp); tmp = tmp + 1; dpWordWrite(ADDR8, tmp); }
 
-:DECW ADDR8 is op=0x1A; ADDR8 { local tmp:2 = *:2 ADDR8; *:2 ADDR8 = tmp - 1; }
+:DECW ADDR8 is op=0x1A; ADDR8 { local tmp:2; dpWordRead(ADDR8, tmp); tmp = tmp - 1; dpWordWrite(ADDR8, tmp); }
 
-:ADDW YA,ADDR8 is op=0x7A & YA; ADDR8 { local tmp:2 = YA; YA = tmp + *:2 ADDR8; }
+:ADDW YA,ADDR8 is op=0x7A & YA; ADDR8 { local operand:2; dpWordRead(ADDR8, operand); local tmp:2 = YA; YA = tmp + operand; }
 
-:SUBW YA,ADDR8 is op=0x9A & YA; ADDR8 { local tmp:2 = YA; YA = tmp - *:2 ADDR8; }
+:SUBW YA,ADDR8 is op=0x9A & YA; ADDR8 { local operand:2; dpWordRead(ADDR8, operand); local tmp:2 = YA; YA = tmp - operand; }
 
 :CMPW YA,ADDR8 is op=0x5A & YA; ADDR8 {
-	local tmp:2 = *:2 ADDR8;
+	local tmp:2; dpWordRead(ADDR8, tmp);
 	local result:2 = YA - tmp;
 	
 	$(NF) = (result s< 0);
