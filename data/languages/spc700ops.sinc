@@ -1326,22 +1326,46 @@
 :MUL YA is op=0xCF & YA { local tmp:2 = zext(Y) * zext(A); YA = tmp; resultFlags(Y); }
 
 :DIV YA,X is op=0x9E & YA & X {
-	# NOT FIXED (grm-c9d.3 increment 7): real hardware does NOT do a plain truncating 16/8
-	# division here -- it is a documented quirky restoring-division algorithm that produces a
-	# DIFFERENT (wrong-looking) quotient/remainder once the true quotient would overflow 8
-	# bits, which is common (confirmed against the exhaustive vectors: e.g. Y=0xD1,A=0xAE,X=0x52
-	# expects A=0xBC,Y=0x76, not the plain-division A=0x8E,Y=0x32 this body computes). Since A/Y
-	# are already wrong in those cases, V/H cannot be verified against them either, so flags are
-	# deliberately left unset rather than guessed against an unverifiable baseline -- this needs
-	# its own increment implementing the real algorithm, then flags on top of a value that's
-	# actually right.
-	local dividend:2 = YA;
-	local divisor:2 = zext(X);
-	local quotient:2 = dividend / divisor;
-	local part:2 = quotient * divisor;
-	local remainder:2 = dividend - part;
-	A = quotient:1;
-	Y = remainder:1;
+	# FIXED (grm-c9d.3 increment 12 / grm-hu76): real hardware does NOT do a plain truncating
+	# 16/8 division -- it only agrees with that when the true quotient fits in 8 bits. Derived
+	# from all 1000 exhaustive vector cases (0 mismatches) as a single unified closed form; no
+	# need to special-case X==0 or to branch on original Y vs X at all:
+	#   temp = YA - (X << 9)            -- true (unbounded) value; needs >=17 bits of headroom,
+	#                                       hence the :4 locals below rather than :2 (a :2/:2
+	#                                       computation wraps mod 65536 and misclassifies ~1/3
+	#                                       of cases as the wrong branch -- caught by re-checking
+	#                                       against the vectors after the first attempt)
+	#   if temp >= 0:  A = 255 - temp / (256-X),  Y = X + temp % (256-X)
+	#   else:          A = YA / X,                Y = YA % X
+	# V and H, by contrast, DO match commonly cited documentation once A/Y are actually right:
+	#   V = (original Y >= X)     -- NOT the same predicate as the temp>=0 arithmetic-branch
+	#                                 split above: 275/1000 vectors have original Y >= X but
+	#                                 temp < 0 (so they still run the "else" arithmetic), yet
+	#                                 still report V=1. V tracks the register comparison, not
+	#                                 which arithmetic branch actually ran.
+	#   H = (original Y & 0xF) >= (X & 0xF)
+	# N/Z come from the usual resultFlags(A); C/I/B/P confirmed unaffected in all 1000 cases.
+	local origY:1 = Y;
+	$(HF) = (origY & 0xF) >= (X & 0xF);
+	$(VF) = origY >= X;
+
+	local ya:4 = zext(YA);
+	local xw:4 = zext(X);
+	local divisor2:4 = 256 - xw;
+	local temp:4 = ya - (xw << 9);
+	local quot:4;
+	local rem:4;
+	if (temp s< 0) goto <divNormal>;
+	quot = 255 - (temp / divisor2);
+	rem = xw + (temp % divisor2);
+	goto <divDone>;
+	<divNormal>
+	quot = ya / xw;
+	rem = ya % xw;
+	<divDone>
+	A = quot:1;
+	Y = rem:1;
+	resultFlags(A);
 }
 
 #======================================================#
