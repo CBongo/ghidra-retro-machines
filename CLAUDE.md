@@ -264,15 +264,16 @@ classes' baseline-regeneration switches.
 tier, not a gate** — the third opt-in tier, and the one with the weakest claim on you. It needs
 `GRM_SPC700_DIS_CORPUS` (the project owner's game-music-extraction `snes/` directory) and
 Assume-*skips* when unset rather than refusing loudly, because unlike the other two it asserts
-almost nothing. It compares our disassembly text against nine hand-annotated `.dis` listings of
-real shipped drivers and writes per-row TSVs to `build/spc700-dis-corpus/` for triage.
+almost nothing. It compares our disassembly text against ten hand-annotated listings of real
+shipped drivers and writes per-row TSVs to `build/spc700-dis-corpus/` for triage.
 
 **Those listings are NOT an oracle — a disagreement is a question, not a verdict, and which side
 is wrong is open every time.** Never "fix" the language to match a `.dis` file, and never add
 golden-file assertions over them. Reach for it after a change to `data/languages/spc700*.sinc`
 that could move decode text (mnemonic, operand form, length), which the vector tiers do not
-cover at all. First full run: 29,236 instructions, 254/256 opcodes, 16 residual rows, none of
-them ours (bead `grm-uy9s`). See docs/testing.md for the residue's breakdown.
+cover at all. 31,404 instructions, 254/256 opcodes, 55 residual rows, none of them ours (bead
+`grm-uy9s`) — and the residue is concentrated entirely in the two earliest listings, which an
+earlier version of that disassembler got wrong. See docs/testing.md for the breakdown.
 
 There is deliberately no `quick` alias or cache-backed project mode: headless
 projects are created fresh, and a correct cache would need explicit invalidation

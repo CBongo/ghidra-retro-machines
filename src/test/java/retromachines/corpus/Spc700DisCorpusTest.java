@@ -78,8 +78,21 @@ public class Spc700DisCorpusTest extends AbstractBundledLanguageTest {
 	private static final String LANGUAGE_ID = "SPC700:LE:16:retro";
 	private static final String CORPUS_ENV = "GRM_SPC700_DIS_CORPUS";
 
-	/** Title subdirectory to listing filename, in the bead's hand-comment-count priority order. */
+	/**
+	 * Title subdirectory to listing filename, in the bead's hand-comment-count priority order --
+	 * except for ff2, which leads on the owner's account rather than on any measurement.
+	 *
+	 * <p>ff2 is the origin title (May 2000, a year before the rest) and the most thoroughly
+	 * analyzed in the corpus, but most of that analysis was done <em>on a paper printout, in
+	 * pencil</em>, so it is also among the least annotated on disk -- 132 commented lines of
+	 * 2224. Ranking by comment density would put it near the bottom, which is exactly backwards,
+	 * and no inspection of the files could reveal that. Its listing is a {@code .txt}, not a
+	 * {@code .dis}, and covers only the driver's code block ($0800-$19A8, verified byte-for-byte
+	 * against the ROM extraction -- see {@code tools/spc700/extract-upload-blocks.py}), not the
+	 * seven sample and directory-table blocks that ship with it.
+	 */
 	private static final String[][] LISTINGS = {
+		{ "ff2", "ff2spc.txt" },
 		{ "ff3", "ff3spc.dis" },
 		{ "ff5", "ff5spc.dis" },
 		{ "som", "somspc.dis" },

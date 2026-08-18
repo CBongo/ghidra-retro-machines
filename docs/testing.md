@@ -261,7 +261,7 @@ expectation — against Ghidra's stock `6502:LE:16:default`, with no dependency 
 
 The vector harness above covers SPC700 *semantics* and says nothing about the decode side —
 which mnemonic, which operand form, which length. `Spc700DisCorpusTest` (its own
-`spc700-dis-corpus` chunk, **not** included by `all`) covers that half, against nine
+`spc700-dis-corpus` chunk, **not** included by `all`) covers that half, against ten
 hand-annotated disassembly listings of real shipped SPC700 drivers in the project owner's
 game-music-extraction working tree, named by `GRM_SPC700_DIS_CORPUS`:
 
@@ -287,12 +287,34 @@ normalizer's doc in `Spc700DisCorpusTest` records exactly which spelling differe
 (radix, the `!` absolute marker, bit-index punctuation, the tool's `<d>`/`<s>` annotations) and
 why each is a spelling difference rather than a decode dispute.
 
-As of the first full run: **29,236 instructions compared, 254 of 256 opcodes exercised, 16
-residual disagreements, none of them ours.** Five of the nine listings agree on every single
-instruction. The residue is 8 deliberate overlapping-instruction sites (a one-byte opcode whose
+Across all ten listings: **31,404 instructions compared, 254 of 256 opcodes exercised, 55
+residual disagreements, none of them ours.** Six of the ten listings agree on every single
+instruction. The residue is 13 deliberate overlapping-instruction sites (a short opcode whose
 immediate operand *is* the next instruction, used to skip it — the ff3 listing annotates these
-by hand as "pseudo op to skip instruction") and 8 errors in the listings themselves, mostly
-`ff3spc.dis` failing to split the 13-bit-address/3-bit-index operand of the bit instructions.
+by hand as "pseudo op to skip instruction") and 42 errors in the listings themselves, all of
+them in `ff2spc.txt` and `ff3spc.dis`.
+
+That concentration is the finding, not a coincidence: **the two earliest titles were produced by
+an earlier, buggier version of the same disassembler, and the corpus dates the fixes.** ff2 (May
+2000) reverses the operand order of every `dp,dp` form — its own `<d>`/`<s>` annotations make
+the claim explicit and unambiguous, and the vector suite settles it (case `09 0000` writes the
+*second* operand byte's address, which is what we print). ff3 (Feb 2001) has that right but
+still prints the bit instructions' raw 16-bit operand instead of splitting it into a 3-bit index
+and 13-bit address; the project owner confirms the correctly-split lines in that file are his own
+hand corrections. Both files compute a short branch with offset exactly `0x7F` one page low — a
+sign test written `>= 0x7F` instead of `>= 0x80` — while getting `0x7E` and every negative offset
+right, and by fzero (Aug 2001) that is fixed too. ff2 additionally mis-decodes a handful of
+individual opcodes (`5A` as `MOVW` rather than `CMPW`, `3B` as `ROR` rather than `ROL`, `BE` as
+`DAS YA` rather than `DAS A`, `A7` dropping the `+X`) that no later listing gets wrong.
+
+`tools/spc700/extract-upload-blocks.py` pulls the driver's upload stream straight out of a SNES
+ROM — the `length, address, data…` block format nearly every SNES driver hands the SPC700,
+terminated by a zero length and the execution address. It writes the stream verbatim, matching
+the `*spc.bin` convention already in that tree, or `--image` for the flat 64K SPC memory image.
+ff2 has no `.bin` of its own, so its listing was checked against a fresh extraction from
+`ff2.smc` (block table at `04/8683`, per that title's `work.txt`): eight blocks matching the
+title's `notes.txt` exactly, and 4,521 bytes of listing agreeing with the ROM byte for byte with
+zero disagreements.
 
 A by-product worth as much as the comparison: `<title>-datamap.tsv` extracts each listing's
 code/data map — contiguous data regions with the section heading that introduces them and the
