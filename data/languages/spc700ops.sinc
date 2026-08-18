@@ -271,11 +271,13 @@
 	SP = zext(X);
 }
 
+# dstaddr/srcaddr are direct-page offsets like ADDR8, not raw 16-bit addresses -- P-folded the
+# same way as the ADC/SBC dstaddr,srcaddr forms in increment 7 (grm-c9d.3 increment 10).
 :MOV dstaddr,srcaddr is op=0xFA; srcaddr; dstaddr {
-	local src:2 = zext(srcaddr:1);
-	local dst:2 = zext(dstaddr:1);
+	local src:2; dpFold(srcaddr, src);
+	local dst:2; dpFold(dstaddr, dst);
 	*:1 dst = *:1 src;
-} 
+}
 
 :MOV ADDR8," #"^imm8 is op=0x8F; imm8; ADDR8 {
 	*:1 ADDR8 = imm8;
@@ -622,12 +624,12 @@
 	$(CF) = (op1 >= op2);
 }
 
+# dstaddr/srcaddr P-folded like MOV above (grm-c9d.3 increment 10).
 :CMP dstaddr,srcaddr is op=0x69; srcaddr; dstaddr {
-	local dst:2 = zext(dstaddr:1);
-	local src:2 = zext(srcaddr:1);
+	local dst:2; dpFold(dstaddr, dst);
+	local src:2; dpFold(srcaddr, src);
 	local op1:1 = *:1 dst;
 	local op2:1 = *:1 src;
-	#TODO: Confirm whether this should be op1 - op2 or op2 - op1 
 	local result:1 = op1 - op2;
 	
 	$(NF) = (result s< 0);
