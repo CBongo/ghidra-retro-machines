@@ -79,6 +79,14 @@ Each is minutes of work and settles something specific. Highest value per unit e
       serve, so the resident case is documented; the open question is only about the *streamed*
       ones.
 
+*Not an item — a note, so it isn't re-raised as one.* `lufia/lufia.idb` in the same corpus is an
+IDA Pro database, and reading it does **not** need IDA: two permissively-licensed pure-Python
+parsers exist (`williballenthin/python-idb`, Apache-2.0, archived May 2025; `nlitsme/idbutil`,
+MIT, active) — archived is acceptable for a one-off read we don't carry as a dependency. So
+"what's in the Lufia database" is **cheap agent work, not a judgment call**, and it may be the
+richest item in the corpus: an `.idb` can hold named functions, typed data and comments in a
+structured form the flat `.dis` text files cannot. Ask for it whenever it's wanted.
+
 ---
 
 ## 2. Def-use passes on untraced titles
@@ -223,10 +231,8 @@ Blocked on judgment, not effort.
       third-party format with a name? It decides whether we document it as "the GME upload format"
       or as ours — and whether anything derived from it could ever be committed here.
 
-      Also in that corpus and unexamined: `lufia/lufia.idb`, an **IDA Pro database** — a different
-      toolchain from everything else there. Reading it needs IDA or an `.idb` parser. Worth a
-      moment's thought on whether it holds anything the `.dis` files don't, since the cost of
-      finding out is not zero.
+      *(The `lufia/lufia.idb` half of this item moved out — reading it turns out to be cheap
+      agent work, not a judgment call. See the note under section 1.)*
 
 ---
 
