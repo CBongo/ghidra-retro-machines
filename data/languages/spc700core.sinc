@@ -135,13 +135,15 @@ macro resultFlags(value) {
 
 macro aluADC(op8, result) {
 	local c = $(CF);
-	$(NF) = 0;
+	local operand:1 = op8;
 	$(HF) = (((A & 0xF) + (op8 & 0xF) + c) & 0x10) != 0;
 	$(CF) = carry(A, op8);
 	result = A + op8;
 	$(CF) = $(CF) || carry(result, c);
 	result = result + c;
-	$(ZF) = (result == 0);
+	# Signed overflow: set when both operands share a sign that differs from the result's.
+	$(VF) = ((A ^ result) & (operand ^ result) & 0x80) != 0;
+	resultFlags(result);
 }
 
 macro aluSBC(op8, result) {
@@ -151,10 +153,16 @@ macro aluSBC(op8, result) {
 	# the previous two-step approximation).
 	local c:1 = ($(CF) == 0);
 	local operand:1 = op8;
-	$(HF) = (((A & 0xF) - (op8 & 0xF) - c) & 0x10) != 0;
+	# H is likewise an inverted (nibble) borrow: set when NO borrow out of bit 3 occurs,
+	# not when one does -- confirmed against the vectors (grm-c9d.3 increment 3): the old
+	# `!= 0` sense was wrong on essentially every case with a nibble borrow either way.
+	$(HF) = (((A & 0xF) - (op8 & 0xF) - c) & 0x10) == 0;
 	local wideA:2 = zext(A);
 	local wideSub:2 = zext(operand) + zext(c);
 	$(CF) = wideA >= wideSub;
 	result = A - op8 - c;
+	# Signed overflow: set when the operands' signs differ and the result took the
+	# subtrahend's sign instead of the minuend's.
+	$(VF) = ((A ^ operand) & (A ^ result) & 0x80) != 0;
 	resultFlags(result);
 }
