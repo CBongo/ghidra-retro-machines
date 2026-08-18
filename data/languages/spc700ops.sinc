@@ -43,14 +43,14 @@
 }
 
 :MOV A,(X) is op=0xE6 & A & X {
-	local ptr:2 = zext(X);
+	local ptr:2; dpFold(X, ptr);
 	A = *:1 ptr;
 	
 	resultFlags(A);
 }
 
 :MOV A,(X)+ is op=0xBF & A & X {
-	local ptr:2 = zext(X);
+	local ptr:2; dpFold(X, ptr);
 	A = *:1 ptr;
 	X = X + 1;
 	
@@ -65,7 +65,7 @@
 }
 
 :MOV A,ADDR8+X is op=0xF4 & A & X; ADDR8 {
-	local ptr:2 = ADDR8 + zext(X);
+	local ptr:2; dpIndex(ADDR8, X, ptr);
 	A = *:1 ptr;
 	
 	resultFlags(A);
@@ -92,7 +92,7 @@
 }
 
 :MOV A,[ADDR8+X] is op=0xE7 & A & X; ADDR8 {
-	local ptr:2 = ADDR8 + zext(X);
+	local ptr:2; dpIndex(ADDR8, X, ptr);
 	local addr:2 = *:2 ptr;
 	A = *:1 addr;
 	
@@ -120,7 +120,7 @@
 }
 
 :MOV X,ADDR8+Y is op=0xF9 & X & Y; ADDR8 {
-	local addr:2 = ADDR8 + zext(Y);
+	local addr:2; dpIndex(ADDR8, Y, addr);
 	X = *:1 addr;
 	
 	resultFlags(X);
@@ -145,7 +145,7 @@
 }
 
 :MOV Y,ADDR8+X is op=0xFB & X & Y; ADDR8 {
-	local addr:2 = ADDR8 + zext(X);
+	local addr:2; dpIndex(ADDR8, X, addr);
 	Y = *:1 addr;
 	
 	resultFlags(Y);
@@ -161,12 +161,12 @@
 # Table C-5: 8-bit Data Transmission Commands,Group 2 #
 #======================================================#
 :MOV (X),A is op=0xC6 & A & X {
-	local addr:2 = zext(X);
+	local addr:2; dpFold(X, addr);
 	*:1 addr = A;
 }
 
 :MOV (X)+,A is op=0xAF & A & X {
-	local addr:2 = zext(X);
+	local addr:2; dpFold(X, addr);
 	X = X + 1;
 	*:1 addr = A;
 }
@@ -176,7 +176,7 @@
 }
 
 :MOV ADDR8+X,A is op=0xD4 & A & X; ADDR8{
-	local addr:2 = ADDR8 + zext(X);
+	local addr:2; dpIndex(ADDR8, X, addr);
 	*:1 addr = A;
 }
 
@@ -195,7 +195,7 @@
 }
 
 :MOV [ADDR8+X],A is op=0xC7 & A & X; ADDR8 {
-	local ptr:2 = ADDR8 + zext(X);
+	local ptr:2; dpIndex(ADDR8, X, ptr);
 	local addr:2 = *:2 ptr;
 	*:1 addr = A;
 }
@@ -207,12 +207,12 @@
 }
 
 :MOV ADDR8,X is op=0xD8 & X; ADDR8 {
-	local addr:2 = ADDR8 + zext(X);
+	local addr:2; dpIndex(ADDR8, X, addr);
 	*:1 addr = X;
 }
 
 :MOV ADDR8+Y,X is op=0xD9 & X & Y; ADDR8 {
-	local addr:2 = ADDR8 + zext(Y);
+	local addr:2; dpIndex(ADDR8, Y, addr);
 	*:1 addr = X;
 }
 
@@ -221,12 +221,12 @@
 }
 
 :MOV ADDR8,Y is op=0xCB & Y; ADDR8 {
-	local addr:2 = ADDR8 + zext(Y);
+	local addr:2; dpIndex(ADDR8, Y, addr);
 	*:1 addr = Y;
 }
 
 :MOV ADDR8+X,Y is op=0xDB & X & Y; ADDR8 {
-	local addr:2 = ADDR8 + zext(X);
+	local addr:2; dpIndex(ADDR8, X, addr);
 	*:1 addr = Y;
 }
 
@@ -292,7 +292,7 @@
 }
 
 :ADC A,(X) is op=0x86 & A & X {
-	local addr:2 = zext(X);
+	local addr:2; dpFold(X, addr);
 	local tmp:1 = *:1 addr;
 	local result:1;
 	aluADC(tmp,result);
@@ -307,7 +307,7 @@
 }
 
 :ADC A,ADDR8+X is op=0x94 & A & X; ADDR8 {
-	local addr:2 = ADDR8 + zext(X);
+	local addr:2; dpIndex(ADDR8, X, addr);
 	local tmp:1 = *:1 addr;
 	local result:1;
 	aluADC(tmp,result);
@@ -338,7 +338,7 @@
 }
 
 :ADC A,[ADDR8+X] is op=0x87 & A & X; ADDR8 {
-	local ptr:2 = ADDR8 + zext(X);
+	local ptr:2; dpIndex(ADDR8, X, ptr);
 	local addr:2 = *:2 ptr;
 	local tmp:1 = *:1 addr;
 	local result:1;
@@ -357,8 +357,8 @@
 
 :ADC (X),(Y) is op=0x99 & X & Y {
 	local c:1 = $(CF);
-	local dst:2 = zext(X);
-	local src:2 = zext(Y);
+	local dst:2; dpFold(X, dst);
+	local src:2; dpFold(Y, src);
 	local tmp:1 = *:1 dst;
 	*:1 dst = tmp + *:1 src + c;
 	#TODO: Set flags NV..H.ZC
@@ -389,7 +389,7 @@
 }
 
 :SBC A,(X) is op=0xA6 & A & X {
-	local addr:2 = zext(X);
+	local addr:2; dpFold(X, addr);
 	local tmp:1 = *:1 addr;
 	local result:1;
 	aluSBC(tmp,result);
@@ -404,7 +404,7 @@
 }
 
 :SBC A,ADDR8+X is op=0xB4 & A & X; ADDR8 {
-	local addr:2 = ADDR8 + zext(X);
+	local addr:2; dpIndex(ADDR8, X, addr);
 	local tmp:1 = *:1 addr;
 	local result:1;
 	aluSBC(tmp,result);
@@ -435,7 +435,7 @@
 }
 
 :SBC A,[ADDR8+X] is op=0xA7 & A & X; ADDR8 {
-	local ptr:2 = ADDR8 + zext(X);
+	local ptr:2; dpIndex(ADDR8, X, ptr);
 	local addr:2 = *:2 ptr;
 	local tmp:1 = *:1 addr;
 	local result:1;
@@ -454,8 +454,8 @@
 
 :SBC (X),(Y) is op=0xB9 & X & Y {
 	local c:1 = $(CF);
-	local dst:2 = zext(X);
-	local src:2 = zext(Y);
+	local dst:2; dpFold(X, dst);
+	local src:2; dpFold(Y, src);
 	local tmp:1 = *:1 dst;
 	*:1 dst = tmp - *:1 src - c;
 	#TODO: Set flags NV..H.ZC
@@ -488,7 +488,7 @@
 }
 
 :CMP A,(X) is op=0x66 & A & X {
-	local ptr:2 = zext(X);
+	local ptr:2; dpFold(X, ptr);
 	local tmp:1 = *:1 ptr;
 	local result:1 = A - tmp;
 	
@@ -507,7 +507,7 @@
 }
 
 :CMP A,ADDR8+X is op=0x74 & A & X; ADDR8 {
-	local ptr:2 = ADDR8 + zext(X);
+	local ptr:2; dpIndex(ADDR8, X, ptr);
 	local tmp:1 = *:1 ptr;
 	local result:1 = A - tmp;
 	
@@ -546,7 +546,7 @@
 }
 
 :CMP A,[ADDR8+X] is op=0x67 & A & X; ADDR8 {
-	local ptr:2 = ADDR8 + zext(X);
+	local ptr:2; dpIndex(ADDR8, X, ptr);
 	local addr:2 = *:2 ptr;
 	local tmp:1 = *:1 addr;
 	local result:1 = A - tmp;
@@ -568,8 +568,8 @@
 }
 
 :CMP (X),(Y) is op=0x79 & X & Y {
-	local dst:2 = zext(X);
-	local src:2 = zext(Y);
+	local dst:2; dpFold(X, dst);
+	local src:2; dpFold(Y, src);
 	local op1:1 = *:1 dst;
 	local op2:1 = *:1 src;
 	local result:1 = op1 - op2;
@@ -666,7 +666,7 @@
 }
 
 :AND A,(X) is op=0x26 & A & X {
-	local ptr:2 = zext(X);
+	local ptr:2; dpFold(X, ptr);
 	local tmp:1 = *:1 ptr;
 	local result:1 = A & tmp;
 	
@@ -685,7 +685,7 @@
 }
 
 :AND A,ADDR8+X is op=0x34 & A & X; ADDR8 {
-	local ptr:2 = ADDR8 + zext(X);
+	local ptr:2; dpIndex(ADDR8, X, ptr);
 	local tmp:1 = *:1 ptr;
 	local result:1 = A & tmp;
 	
@@ -724,7 +724,7 @@
 }
 
 :AND A,[ADDR8+X] is op=0x27 & A & X; ADDR8 {
-	local ptr:2 = ADDR8 + zext(X);
+	local ptr:2; dpIndex(ADDR8, X, ptr);
 	local addr:2 = *:2 ptr;
 	local tmp:1 = *:1 addr;
 	local result:1 = A & tmp;
@@ -746,8 +746,8 @@
 }
 
 :AND (X),(Y) is op=0x39 & X & Y {
-	local dst:2 = zext(X);
-	local src:2 = zext(Y);
+	local dst:2; dpFold(X, dst);
+	local src:2; dpFold(Y, src);
 	local op1:1 = *:1 dst;
 	local op2:1 = *:1 src;
 	local result:1 = op1 & op2;
@@ -788,7 +788,7 @@
 }
 
 :OR A,(X) is op=0x06 & A & X {
-	local ptr:2 = zext(X);
+	local ptr:2; dpFold(X, ptr);
 	local tmp:1 = *:1 ptr;
 	local result:1 = A | tmp;
 	
@@ -807,7 +807,7 @@
 }
 
 :OR A,ADDR8+X is op=0x14 & A & X; ADDR8 {
-	local ptr:2 = ADDR8 + zext(X);
+	local ptr:2; dpIndex(ADDR8, X, ptr);
 	local tmp:1 = *:1 ptr;
 	local result:1 = A | tmp;
 	
@@ -846,7 +846,7 @@
 }
 
 :OR A,[ADDR8+X] is op=0x07 & A & X; ADDR8 {
-	local ptr:2 = ADDR8 + zext(X);
+	local ptr:2; dpIndex(ADDR8, X, ptr);
 	local addr:2 = *:2 ptr;
 	local tmp:1 = *:1 addr;
 	local result:1 = A | tmp;
@@ -868,8 +868,8 @@
 }
 
 :OR (X),(Y) is op=0x19 & X & Y {
-	local dst:2 = zext(X);
-	local src:2 = zext(Y);
+	local dst:2; dpFold(X, dst);
+	local src:2; dpFold(Y, src);
 	local op1:1 = *:1 dst;
 	local op2:1 = *:1 src;
 	local result:1 = op1 | op2;
@@ -910,7 +910,7 @@
 }
 
 :EOR A,(X) is op=0x46 & A & X {
-	local ptr:2 = zext(X);
+	local ptr:2; dpFold(X, ptr);
 	local tmp:1 = *:1 ptr;
 	local result:1 = A ^ tmp;
 	
@@ -929,7 +929,7 @@
 }
 
 :EOR A,ADDR8+X is op=0x54 & A & X; ADDR8 {
-	local ptr:2 = ADDR8 + zext(X);
+	local ptr:2; dpIndex(ADDR8, X, ptr);
 	local tmp:1 = *:1 ptr;
 	local result:1 = A ^ tmp;
 	
@@ -968,7 +968,7 @@
 }
 
 :EOR A,[ADDR8+X] is op=0x47 & A & X; ADDR8 {
-	local ptr:2 = ADDR8 + zext(X);
+	local ptr:2; dpIndex(ADDR8, X, ptr);
 	local addr:2 = *:2 ptr;
 	local tmp:1 = *:1 addr;
 	local result:1 = A ^ tmp;
@@ -990,8 +990,8 @@
 }
 
 :EOR (X),(Y) is op=0x59 & X & Y {
-	local dst:2 = zext(X);
-	local src:2 = zext(Y);
+	local dst:2; dpFold(X, dst);
+	local src:2; dpFold(Y, src);
 	local op1:1 = *:1 dst;
 	local op2:1 = *:1 src;
 	local result:1 = op1 ^ op2;
@@ -1030,7 +1030,7 @@
 
 :INC ADDR8 is op=0xAB; ADDR8 { local tmp:1 = *:1 ADDR8; *:1 ADDR8 = tmp + 1; }
 
-:INC ADDR8+X is op=0xBB & X; ADDR8 { local addr:2 = ADDR8 + zext(X); local tmp:1 = *:1 addr; *:1 addr = tmp + 1; }
+:INC ADDR8+X is op=0xBB & X; ADDR8 { local addr:2; dpIndex(ADDR8, X, addr); local tmp:1 = *:1 addr; *:1 addr = tmp + 1; }
 
 :INC "!"^ADDR16V is op=0xAC; ADDR16V { local tmp:1 = *:1 ADDR16V; *:1 ADDR16V = tmp + 1; }
 
@@ -1043,7 +1043,7 @@
 
 :DEC ADDR8 is op=0x8B; ADDR8 { local tmp:1 = *:1 ADDR8; *:1 ADDR8 = tmp - 1; }
 
-:DEC ADDR8+X is op=0x9B & X; ADDR8 { local addr:2 = ADDR8 + zext(X); local tmp:1 = *:1 addr; *:1 addr = tmp - 1; }
+:DEC ADDR8+X is op=0x9B & X; ADDR8 { local addr:2; dpIndex(ADDR8, X, addr); local tmp:1 = *:1 addr; *:1 addr = tmp - 1; }
 
 :DEC "!"^ADDR16V is op=0x8C; ADDR16V { local tmp:1 = *:1 ADDR16V; *:1 ADDR16V = tmp - 1; }
 
@@ -1074,7 +1074,7 @@
 }
 
 :ASL ADDR8+X is op=0x1B & X; ADDR8 {
-	local ptr:2 = ADDR8 + zext(X);
+	local ptr:2; dpIndex(ADDR8, X, ptr);
 	local tmp:1 = *:1 ptr;
 	$(CF) = (tmp & 0x80);
 	tmp = tmp << 1;
@@ -1114,7 +1114,7 @@
 }
 
 :LSR ADDR8+X is op=0x5B & X; ADDR8 {
-	local ptr:2 = ADDR8 + zext(X);
+	local ptr:2; dpIndex(ADDR8, X, ptr);
 	local tmp:1 = *:1 ptr;
 	$(CF) = (tmp & 0x01);
 	tmp = tmp >> 1;
@@ -1157,7 +1157,7 @@
 
 :ROL ADDR8+X is op=0x3B & X; ADDR8 {
 	local c:1 = $(CF);
-	local ptr:2 = ADDR8 + zext(X);
+	local ptr:2; dpIndex(ADDR8, X, ptr);
 	local tmp:1 = *:1 ptr;
 	$(CF) = (tmp & 0x80);
 	tmp = (tmp << 1) | c;
@@ -1201,7 +1201,7 @@
 
 :ROR ADDR8+X is op=0x7B & X; ADDR8 {
 	local c:1 = $(CF) << 7;
-	local ptr:2 = ADDR8 + zext(X);
+	local ptr:2; dpIndex(ADDR8, X, ptr);
 	local tmp:1 = *:1 ptr;
 	$(CF) = (tmp & 0x01);
 	tmp = (tmp >> 1) | c;
@@ -1321,7 +1321,7 @@
 }
 
 :CBNE ADDR8+X,RADDR8 is op=0xDE & X; ADDR8; RADDR8 {
-	local ptr:2 = ADDR8 + zext(X);
+	local ptr:2; dpIndex(ADDR8, X, ptr);
 	local tmp:1 = *:1 ptr;
 	if (A != tmp) goto RADDR8;
 }

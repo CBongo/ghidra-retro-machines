@@ -81,11 +81,38 @@ define token data16 (16)
    imm16        = (0,15)
 ;
 
+# ----------------------------------------------------------------------------------------
+# Direct-page effective-address helpers (grm-c9d.3 increment 4).
+#
+# Both the P-flag fold and the 8-bit direct-page wrap live here ONCE, so every addressing
+# site that needs them -- ADDR8 itself, dp+X/dp+Y indexing, and the (X)/(X)+/(Y)
+# implied-register forms, which bypass ADDR8's token entirely -- gets them from the same
+# place instead of open-coding (and re-breaking) the computation at each of ~30 sites.
+# ----------------------------------------------------------------------------------------
+
+# dpFold: forms a direct-page address from a bare 8-bit offset (an immediate or a register
+# like X/Y): (P<<8) | off. P must be read at runtime (SETP/CLRP mutate PSW), so this cannot
+# be folded into a context variable.
+macro dpFold(off, result) {
+	local p:1 = $(PF);
+	local o:1 = off;
+	result = (zext(p) << 8) | zext(o);
+}
+
+# dpIndex: adds an 8-bit index to a direct-page address that already has P folded in (e.g.
+# ADDR8's export), wrapping the addition WITHIN the page -- hardware never lets dp+idx carry
+# out of the page, unlike ordinary 16-bit address arithmetic (ADDR16V+X/Y, which is not
+# page-relative and must NOT wrap).
+macro dpIndex(base, idx, result) {
+	local page:2 = base & 0xFF00;
+	local lo:1 = base:1 + idx;
+	result = page | zext(lo);
+}
+
 # ADDR8 exports the direct-page ADDRESS VALUE (0x0000|dp or 0x0100|dp per the P flag),
 # not the byte/word stored there -- constructor bodies in spc700ops.sinc dereference it
-# themselves (*:1 ADDR8, *:2 ADDR8, ADDR8 + zext(X), etc). P must be read at runtime
-# (SETP/CLRP mutate PSW), so this cannot be folded into a context variable.
-ADDR8: 	imm8 	is imm8 	{ local p:1 = $(PF); local lo:2 = zext(imm8:1); local hi:2 = zext(p) << 8; local dpaddr:2 = lo | hi; export dpaddr; }
+# themselves (*:1 ADDR8, *:2 ADDR8, dpIndex(ADDR8,X,...), etc).
+ADDR8: 	imm8 	is imm8 	{ local dpaddr:2; dpFold(imm8, dpaddr); export dpaddr; }
 
 # ADDR16 (dynamic export) is for control-flow targets ONLY -- goto/call on a dynamic
 # export uses the export's ADDRESS (imm16 itself), giving a direct, statically-analyzable
