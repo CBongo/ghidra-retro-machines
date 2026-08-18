@@ -37,7 +37,7 @@ import retromachines.vectors.VectorRunner.CaseResult;
 /**
  * Shared plumbing for the two SPC700 vector JUnit tests (bead grm-c9d.2):
  * {@code Spc700VectorSampleTest} (the vendored 8192-case sample, `unit` chunk) and
- * {@code Spc700VectorExhaustiveTest} (the full 131,072-case suite against
+ * {@code Spc700VectorExhaustiveTest} (the full 256,000-case suite against
  * {@code GRM_SPC700_VECTORS}, `spc700-vectors` chunk). Neither test class depends on this
  * repository actually shipping the SPC700 language yet (bead grm-c9d.1, landing in parallel) --
  * both resolve it defensively and let the caller decide how to react when it is absent.

@@ -246,6 +246,20 @@ When `GRM_ROM_DIR` is unset and no romdir is passed, `realrom-test.sh` refuses t
 exit, loud stderr message) rather than silently doing nothing — it never reports a clean gate for
 a tier that did not execute.
 
+**The exhaustive SPC700 vector tier (`spc700-vectors` chunk) has the same standing as the
+real-ROM tier**: opt-in, needs user-supplied data (`GRM_SPC700_VECTORS`, a full clone of
+`https://github.com/SingleStepTests/spc700`), refuses loudly (fails, not skips) when unset, and
+is excluded from `all` because this repo cannot ship the clone — but it is routine local
+verification, not a ceremonial final check, whenever that env var is configured. It runs the full
+upstream suite (1000 cases/opcode, 256,000 total, ~15s measured) against
+`spc700-vector-baseline-exhaustive.txt`, a separate baseline from the `unit` chunk's 32-case/opcode
+sample (`spc700-vector-baseline.txt`) — the sample is fast enough for every run but narrow enough
+to miss edge cases (e.g. a page-boundary condition occurring in only 11 of 1000 upstream cases for
+one opcode) that the full suite catches. Reach for `bash tools/banktest/build-and-test.sh check
+spc700-vectors` after any change touching `data/languages/spc700*.sinc`, not only before closing
+out work on it. See `docs/testing.md`'s p-code semantic vector harness section for the two test
+classes' baseline-regeneration switches.
+
 There is deliberately no `quick` alias or cache-backed project mode: headless
 projects are created fresh, and a correct cache would need explicit invalidation
 rules. Use targeted chunks for safe iteration instead.

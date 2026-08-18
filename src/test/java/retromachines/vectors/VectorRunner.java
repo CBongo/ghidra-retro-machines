@@ -51,7 +51,7 @@ import retromachines.vectors.VectorCase.RamByte;
  * map and language id.
  *
  * <p><b>One shared emulator, reset per case.</b> Constructing a fresh {@code PcodeEmulator} per
- * vector is what makes an exhaustive 131,072-vector SPC700 run (or a 65x02 equivalent)
+ * vector is what makes an exhaustive 256,000-vector SPC700 run (or a 65x02 equivalent)
  * impractical; see the class's constructor for how reset is implemented and
  * {@code docs/} / the grm-c9d.2 bead history for the measured per-case cost.
  */
@@ -150,7 +150,7 @@ public final class VectorRunner {
 	 * (via {@code PcodeThread.branched()} on the decoder) -- {@link PcodeThread#overrideCounter}
 	 * does NOT invalidate it. So when case N+1 reuses the same starting {@code pc} value as case
 	 * N (a real hazard: SPC700/6502 vector suites draw {@code pc} from the full 16-bit space, so
-	 * a same-address collision across ~131,072 cases is not vanishingly rare), the reused thread
+	 * a same-address collision across ~256,000 cases is not vanishingly rare), the reused thread
 	 * silently re-executes the STALE cached instruction from case N instead of decoding the freshly
 	 * seeded bytes for case N+1 -- confirmed directly: a hand-written two-case repro (INX at
 	 * $1000, then TAX at $1000) reused the cached INX and produced X=1, not the TAX result. A
@@ -164,7 +164,7 @@ public final class VectorRunner {
 	 * measured well under a millisecond per call, and {@code AbstractPcodeMachine}'s per-machine
 	 * thread registry (which this project's targeted Ghidra version has no public API to shrink)
 	 * grows by one small entry per case for the life of a {@link VectorRunner} -- acceptable for
-	 * a bounded ~131,072-case exhaustive run in a short-lived JVM (one gradle test task), not
+	 * a bounded ~256,000-case exhaustive run in a short-lived JVM (one gradle test task), not
 	 * something to hold open indefinitely.
 	 */
 	private void reset() {
