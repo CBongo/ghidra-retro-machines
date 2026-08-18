@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -43,9 +44,17 @@ import java.util.stream.Collectors;
  * E8  MOV A,#imm    PASS  32/32
  * E4  MOV A,dp      FAIL   0/32  A,PSW
  * EF  SLEEP         N/A    0/32  legitimately halts the processor pending an interrupt
+ * 9E  DIV YA,X      PASS  999/999  (1 decode-boundary)
  * </pre>
  * Blank lines and lines starting with {@code #} (a header/comment block explaining provenance
  * and how to regenerate -- see the per-suite test that owns the real file) are ignored.
+ *
+ * <p>The optional trailing {@code (N decode-boundary)} token (see {@link #decodeBoundaryCount})
+ * records cases excluded from the ratio because they hit the harness's decode-boundary artifact
+ * (see {@code VectorRunner#isDecodeBoundaryCase}) -- a THIRD category, distinct from both
+ * PASS/FAIL and from {@link Status#NOT_APPLICABLE}, and per-<em>case</em> rather than
+ * per-<em>opcode</em>. It always renders (when nonzero) even on a row that also has mismatched
+ * fields, so the excluded count stays visible rather than folded silently into the denominator.
  *
  * <h2>{@code N/A}, not {@code PASS} or {@code FAIL} (grm-c9d.3 increment 9)</h2>
  * A small, explicit set of opcodes (currently {@code SLEEP}/{@code STOP} -- see
@@ -60,7 +69,17 @@ import java.util.stream.Collectors;
  * "exceptions don't count".
  */
 public record OpcodeBaseline(String opcodeHex, String mnemonic, Status status, int passedCount,
-		int totalCount, List<String> mismatchedFields) {
+		int totalCount, List<String> mismatchedFields, int decodeBoundaryCount) {
+
+	/**
+	 * Convenience constructor for callers with no decode-boundary cases to report (the common
+	 * case, and every pre-existing call site before grm-c9d.3 increment 12): equivalent to the
+	 * canonical constructor with {@code decodeBoundaryCount = 0}.
+	 */
+	public OpcodeBaseline(String opcodeHex, String mnemonic, Status status, int passedCount,
+			int totalCount, List<String> mismatchedFields) {
+		this(opcodeHex, mnemonic, status, passedCount, totalCount, mismatchedFields, 0);
+	}
 
 	/** A row's outcome: fully matched, at least one mismatch, or not applicable (see class doc). */
 	public enum Status {
@@ -89,15 +108,20 @@ public record OpcodeBaseline(String opcodeHex, String mnemonic, Status status, i
 	}
 
 	private static final Pattern SPLIT = Pattern.compile("\\s{2,}");
+	private static final Pattern BOUNDARY_TOKEN = Pattern.compile("^\\((\\d+) decode-boundary\\)$");
 
 	/** Renders this row in the committed file's format (see class doc). */
 	public String format() {
-		String base = opcodeHex + "  " + mnemonic + "  " + status.label + "  " +
-			passedCount + "/" + totalCount;
-		if (mismatchedFields.isEmpty()) {
-			return base;
+		StringBuilder sb = new StringBuilder();
+		sb.append(opcodeHex).append("  ").append(mnemonic).append("  ").append(status.label)
+				.append("  ").append(passedCount).append("/").append(totalCount);
+		if (decodeBoundaryCount > 0) {
+			sb.append("  (").append(decodeBoundaryCount).append(" decode-boundary)");
 		}
-		return base + "  " + String.join(",", mismatchedFields);
+		if (!mismatchedFields.isEmpty()) {
+			sb.append("  ").append(String.join(",", mismatchedFields));
+		}
+		return sb.toString();
 	}
 
 	/** Renders a whole row set, one line per row, no header. */
@@ -138,10 +162,21 @@ public record OpcodeBaseline(String opcodeHex, String mnemonic, Status status, i
 		}
 		int passedCount = Integer.parseInt(ratio[0]);
 		int totalCount = Integer.parseInt(ratio[1]);
-		List<String> mismatched = fields.length >= 5
-				? List.of(fields[4].split(","))
+
+		int decodeBoundaryCount = 0;
+		int nextField = 4;
+		if (fields.length > nextField) {
+			Matcher m = BOUNDARY_TOKEN.matcher(fields[nextField]);
+			if (m.matches()) {
+				decodeBoundaryCount = Integer.parseInt(m.group(1));
+				nextField++;
+			}
+		}
+		List<String> mismatched = fields.length > nextField
+				? List.of(fields[nextField].split(","))
 				: List.of();
-		return new OpcodeBaseline(opcodeHex, mnemonic, status, passedCount, totalCount, mismatched);
+		return new OpcodeBaseline(opcodeHex, mnemonic, status, passedCount, totalCount, mismatched,
+			decodeBoundaryCount);
 	}
 
 	/**

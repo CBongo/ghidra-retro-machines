@@ -108,6 +108,7 @@ public class Spc700VectorExhaustiveTest extends AbstractBundledLanguageTest {
 		for (File f : opcodeFiles) {
 			actual.add(Spc700VectorHarnessSupport.runOpcodeFile(runner, f));
 		}
+		Spc700VectorHarnessSupport.assertDecodeBoundaryCapNotExceeded(actual);
 
 		File moduleRoot = new File(System.getProperty(MODULE_DIR_PROPERTY));
 		File baselineFile = new File(moduleRoot, "src/test/resources/" + BASELINE_FILENAME);

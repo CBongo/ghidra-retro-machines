@@ -22,6 +22,7 @@ import java.util.Objects;
 
 import ghidra.pcode.emu.PcodeEmulator;
 import ghidra.pcode.emu.PcodeThread;
+import ghidra.pcode.exec.DecodePcodeExecutionException;
 import ghidra.pcode.exec.PcodeArithmetic;
 import ghidra.pcode.exec.PcodeArithmetic.Purpose;
 import ghidra.pcode.exec.PcodeExecutorState;
@@ -66,12 +67,23 @@ import retromachines.vectors.VectorCase.RamByte;
  */
 public final class VectorRunner {
 
-	/** The result of running one {@link VectorCase}. */
-	public record CaseResult(String name, boolean pass, List<String> mismatches) {
+	/**
+	 * The result of running one {@link VectorCase}.
+	 *
+	 * @param decodeBoundary true iff this case did not run at all because the decoder's
+	 *        lookahead ran off the end of the address space (see {@link #isDecodeBoundaryCase}) --
+	 *        a harness artifact, not a semantic verdict either way. Callers that tally PASS/FAIL
+	 *        counts must exclude these cases rather than counting {@link #pass} for them.
+	 */
+	public record CaseResult(String name, boolean pass, List<String> mismatches,
+			boolean decodeBoundary) {
 
 		/** One-line summary, e.g. {@code "00 0000: PASS"} or the case name plus every mismatch. */
 		@Override
 		public String toString() {
+			if (decodeBoundary) {
+				return name + ": DECODE-BOUNDARY (excluded)";
+			}
 			if (pass) {
 				return name + ": PASS";
 			}
@@ -90,11 +102,20 @@ public final class VectorRunner {
 	 */
 	public static final int DEFAULT_REBUILD_INTERVAL = 2000;
 
+	/**
+	 * Disables {@code DecodePcodeExecutionException} boundary classification (see
+	 * {@link #isDecodeBoundaryCase}): every such exception is then reported as an ordinary
+	 * failure, exactly as before this classification existed. The default, so existing callers
+	 * (e.g. {@code VectorHarness6502Test}) are unaffected unless they opt in.
+	 */
+	public static final int NO_DECODE_BOUNDARY_DETECTION = 0;
+
 	private final Language language;
 	private final Map<String, Register> registerMap;
 	private final String pcField;
 	private final Map<String, FlagLayout> flagLayouts;
 	private final int rebuildInterval;
+	private final int decodeBoundaryWindowBytes;
 
 	private PcodeEmulator emulator;
 	private PcodeArithmetic<byte[]> arithmetic;
@@ -118,9 +139,13 @@ public final class VectorRunner {
 	 *                        register with no entry here is reported as a plain scalar diff.
 	 * @param rebuildInterval construct a fresh {@code PcodeEmulator} every this many cases (see
 	 *                        the class doc); must be positive.
+	 * @param decodeBoundaryWindowBytes see {@link #isDecodeBoundaryCase}; pass
+	 *                        {@link #NO_DECODE_BOUNDARY_DETECTION} to disable (every
+	 *                        {@code DecodePcodeExecutionException} is then an ordinary failure).
 	 */
 	public VectorRunner(Language language, Map<String, Register> registerMap, String pcField,
-			Map<String, FlagLayout> flagLayouts, int rebuildInterval) {
+			Map<String, FlagLayout> flagLayouts, int rebuildInterval,
+			int decodeBoundaryWindowBytes) {
 		this.language = Objects.requireNonNull(language, "language");
 		this.registerMap = Map.copyOf(registerMap);
 		this.pcField = Objects.requireNonNull(pcField, "pcField");
@@ -134,13 +159,27 @@ public final class VectorRunner {
 				rebuildInterval);
 		}
 		this.rebuildInterval = rebuildInterval;
+		if (decodeBoundaryWindowBytes < 0) {
+			throw new IllegalArgumentException("decodeBoundaryWindowBytes must be >= 0, got " +
+				decodeBoundaryWindowBytes);
+		}
+		this.decodeBoundaryWindowBytes = decodeBoundaryWindowBytes;
 
 		this.defaultSpace = language.getAddressFactory().getDefaultAddressSpace();
 		rebuildEmulator();
 		reset();
 	}
 
-	/** Convenience constructor: {@link #DEFAULT_REBUILD_INTERVAL}. */
+	/** Convenience constructor: no decode-boundary classification (see
+	 *  {@link #NO_DECODE_BOUNDARY_DETECTION}). */
+	public VectorRunner(Language language, Map<String, Register> registerMap, String pcField,
+			Map<String, FlagLayout> flagLayouts, int rebuildInterval) {
+		this(language, registerMap, pcField, flagLayouts, rebuildInterval,
+			NO_DECODE_BOUNDARY_DETECTION);
+	}
+
+	/** Convenience constructor: {@link #DEFAULT_REBUILD_INTERVAL}, no decode-boundary
+	 *  classification. */
 	public VectorRunner(Language language, Map<String, Register> registerMap, String pcField,
 			Map<String, FlagLayout> flagLayouts) {
 		this(language, registerMap, pcField, flagLayouts, DEFAULT_REBUILD_INTERVAL);
@@ -161,12 +200,55 @@ public final class VectorRunner {
 		try {
 			thread.stepInstruction();
 		}
+		catch (DecodePcodeExecutionException e) {
+			if (isDecodeBoundaryCase(c)) {
+				return new CaseResult(c.name(), true, List.of(), true);
+			}
+			return new CaseResult(c.name(), false, List.of("execution failed: " + e), false);
+		}
 		catch (RuntimeException e) {
-			return new CaseResult(c.name(), false,
-				List.of("execution failed: " + e));
+			return new CaseResult(c.name(), false, List.of("execution failed: " + e), false);
 		}
 		List<String> mismatches = compare(c);
-		return new CaseResult(c.name(), mismatches.isEmpty(), mismatches);
+		return new CaseResult(c.name(), mismatches.isEmpty(), mismatches, false);
+	}
+
+	/**
+	 * True iff {@code c}'s initial PC sits in the top {@link #decodeBoundaryWindowBytes} bytes of
+	 * the address space -- the narrow, precise condition (bead grm-c9d.3 increment 12) under
+	 * which a {@link DecodePcodeExecutionException} is a harness artifact rather than a semantic
+	 * failure.
+	 *
+	 * <p><b>Why this exists at all.</b> {@code SleighInstructionDecoder.parseNewBlock} needs a
+	 * lookahead window past the current instruction to decode it, and that lookahead can run off
+	 * the end of a 16-bit (or any bounded) address space even for a real, one-byte instruction
+	 * that hardware executes normally -- e.g. a one-byte {@code EI} at {@code $FFF9} is seven
+	 * bytes from the top of SPC700's space and decodes fine on real hardware. This is a Ghidra
+	 * decoder-lookahead limitation, not anything {@code spc700ops.sinc} can fix, and is NOT the
+	 * same thing as a genuinely undefined hardware behaviour.
+	 *
+	 * <p><b>Deliberately narrow, matching {@link DecodePcodeExecutionException}'s call site's own
+	 * javadoc warning against becoming a blanket "exceptions don't count":</b> both this specific
+	 * exception type (not any {@code RuntimeException}) AND initial PC within the top-of-space
+	 * window must hold. Measured directly against the full 256,000-case SPC700 exhaustive suite
+	 * (grm-c9d.3 increment 12): exactly 30 cases throw this exception, every one with initial PC
+	 * in {@code $FFF9}-{@code $FFFF} (histogram: fff9x5, fffbx10, fffcx2, fffdx3, fffex4, ffffx6 --
+	 * {@code $FFFA} never appears, so this is length-dependent per case, not a flat address band).
+	 * An 8-byte window ({@code $FFF8}-{@code $FFFF}) comfortably covers the observed range with
+	 * one byte of margin. See {@link Spc700VectorHarnessSupport#DECODE_BOUNDARY_CAP} for the guard
+	 * that keeps this classification from silently absorbing an unrelated regression.
+	 */
+	private boolean isDecodeBoundaryCase(VectorCase c) {
+		if (decodeBoundaryWindowBytes <= 0) {
+			return false;
+		}
+		Integer pcValue = c.initialRegs().get(pcField);
+		if (pcValue == null) {
+			return false;
+		}
+		long pc = Integer.toUnsignedLong(pcValue);
+		long maxAddr = defaultSpace.getMaxAddress().getOffset();
+		return pc > maxAddr - decodeBoundaryWindowBytes;
 	}
 
 	/**

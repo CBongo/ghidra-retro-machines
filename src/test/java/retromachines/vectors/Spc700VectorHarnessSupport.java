@@ -83,9 +83,47 @@ final class Spc700VectorHarnessSupport {
 		return map;
 	}
 
+	/**
+	 * Top-of-address-space window (bytes) within which a {@code DecodePcodeExecutionException} is
+	 * classified as a decode-boundary harness artifact rather than a semantic failure -- see
+	 * {@link VectorRunner#isDecodeBoundaryCase}. 8 comfortably covers the measured
+	 * {@code $FFF9}-{@code $FFFF} range (grm-c9d.3 increment 12) with margin.
+	 */
+	private static final int DECODE_BOUNDARY_WINDOW_BYTES = 8;
+
+	/**
+	 * Hard cap on the TOTAL number of decode-boundary cases across a whole run (all 256 opcodes
+	 * combined), enforced by {@link #assertDecodeBoundaryCapNotExceeded}. Measured directly: the
+	 * full 256,000-case exhaustive suite has exactly 30. 100 is generous headroom for that count
+	 * while still catching a future change that starts throwing decode exceptions broadly --
+	 * exceeding the cap fails the run loudly instead of quietly absorbing a real regression into
+	 * this exemption (see {@link OpcodeBaseline}'s class doc on why this classification must never
+	 * become a blanket "exceptions don't count").
+	 */
+	static final int DECODE_BOUNDARY_CAP = 100;
+
 	static VectorRunner newRunner(Language language) {
 		return new VectorRunner(language, registerMap(language), "pc",
-			Map.of("psw", FlagLayout.SPC700_PSW));
+			Map.of("psw", FlagLayout.SPC700_PSW), VectorRunner.DEFAULT_REBUILD_INTERVAL,
+			DECODE_BOUNDARY_WINDOW_BYTES);
+	}
+
+	/**
+	 * Fails loudly (not a quiet skip) if the total decode-boundary case count across every row in
+	 * {@code rows} exceeds {@link #DECODE_BOUNDARY_CAP}. Call this after building the full
+	 * per-opcode result list and before comparing against (or regenerating) a baseline, so a
+	 * future change that starts throwing {@code DecodePcodeExecutionException} broadly turns the
+	 * gate red instead of silently growing this exemption.
+	 */
+	static void assertDecodeBoundaryCapNotExceeded(List<OpcodeBaseline> rows) {
+		int total = rows.stream().mapToInt(OpcodeBaseline::decodeBoundaryCount).sum();
+		if (total > DECODE_BOUNDARY_CAP) {
+			throw new AssertionError("decode-boundary case count (" + total + ") exceeds the cap (" +
+				DECODE_BOUNDARY_CAP + ") -- this classification is meant for a small, measured " +
+				"number of top-of-address-space harness artifacts (30 measured at grm-c9d.3 " +
+				"increment 12), not a growing blanket exemption; investigate what started " +
+				"throwing DecodePcodeExecutionException before raising this cap");
+		}
 	}
 
 	/**
@@ -123,13 +161,21 @@ final class Spc700VectorHarnessSupport {
 			// anyway would add nothing but noise (and cost) to what's already a known, named
 			// exemption.
 			return new OpcodeBaseline(opcodeHex, mnemonic, OpcodeBaseline.Status.NOT_APPLICABLE,
-				0, cases.size(), List.of(naReason));
+				0, cases.size(), List.of(naReason), 0);
 		}
 
 		int passed = 0;
+		int decodeBoundary = 0;
 		TreeSet<String> mismatchedFields = new TreeSet<>();
 		for (VectorCase c : cases) {
 			CaseResult result = runner.run(c);
+			if (result.decodeBoundary()) {
+				// A harness artifact (see VectorRunner#isDecodeBoundaryCase), not a semantic
+				// verdict -- excluded from both the numerator and denominator below, and counted
+				// separately so the row's ratio always means "of the cases that actually ran".
+				decodeBoundary++;
+				continue;
+			}
 			if (result.pass()) {
 				passed++;
 			}
@@ -139,10 +185,11 @@ final class Spc700VectorHarnessSupport {
 				}
 			}
 		}
+		int total = cases.size() - decodeBoundary;
 		OpcodeBaseline.Status status =
-			passed == cases.size() ? OpcodeBaseline.Status.PASS : OpcodeBaseline.Status.FAIL;
-		return new OpcodeBaseline(opcodeHex, mnemonic, status, passed, cases.size(),
-			List.copyOf(mismatchedFields));
+			passed == total ? OpcodeBaseline.Status.PASS : OpcodeBaseline.Status.FAIL;
+		return new OpcodeBaseline(opcodeHex, mnemonic, status, passed, total,
+			List.copyOf(mismatchedFields), decodeBoundary);
 	}
 
 	// ------------------------------------------------------------------

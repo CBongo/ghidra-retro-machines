@@ -44,6 +44,29 @@ public class OpcodeBaselineTest {
 	}
 
 	@Test
+	public void formatAndParseRoundTripWithDecodeBoundaryAnnotation() {
+		// The (N decode-boundary) token (grm-c9d.3 increment 12) must render, parse back
+		// unchanged, and coexist with a mismatched-fields list without swapping field order.
+		OpcodeBaseline boundaryOnly =
+			new OpcodeBaseline("9E", "DIV YA,X", OpcodeBaseline.Status.PASS, 999, 999, List.of(), 1);
+		assertEquals("9E  DIV YA,X  PASS  999/999  (1 decode-boundary)", boundaryOnly.format());
+		assertEquals(boundaryOnly, OpcodeBaseline.parseLine(boundaryOnly.format()));
+
+		OpcodeBaseline boundaryAndMismatch = new OpcodeBaseline("9E", "DIV YA,X",
+			OpcodeBaseline.Status.FAIL, 998, 999, List.of("A", "PSW"), 1);
+		assertEquals("9E  DIV YA,X  FAIL  998/999  (1 decode-boundary)  A,PSW",
+			boundaryAndMismatch.format());
+		assertEquals(boundaryAndMismatch, OpcodeBaseline.parseLine(boundaryAndMismatch.format()));
+
+		// The pre-existing (no-boundary) 6-arg constructor must still default to 0 and format
+		// exactly as before -- no annotation at all.
+		OpcodeBaseline noBoundary =
+			new OpcodeBaseline("E8", "MOV A,#imm", OpcodeBaseline.Status.PASS, 32, 32, List.of());
+		assertEquals(0, noBoundary.decodeBoundaryCount());
+		assertEquals("E8  MOV A,#imm  PASS  32/32", noBoundary.format());
+	}
+
+	@Test
 	public void parseSkipsBlankAndCommentLines() {
 		List<OpcodeBaseline> parsed = OpcodeBaseline.parse(List.of(
 			"# generated; review the diff, do not hand-edit casually",
