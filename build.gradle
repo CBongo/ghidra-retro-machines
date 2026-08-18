@@ -533,13 +533,32 @@ task spc700VectorTest(type: Test) {
 		"(refuses loudly otherwise). Not part of `test`/`unit`/`all` -- see build-and-test.sh's " +
 		"`spc700-vectors` chunk."
 	useJUnit()
-	maxHeapSize = '2g'
+	// 4g, not `test`'s 2g: this task runs ~256,000 emulated cases in one JVM (vs. `unit`'s 8192
+	// SPC700 cases plus everything else), and 2g OOM'd partway through a real run (grm-c9d.3
+	// increment 6) -- VectorRunner's per-case PcodeThread registry growth (documented on its
+	// reset()) is cheap per-case but adds up at this case count.
+	maxHeapSize = '6g'
 	environment 'GHIDRA_INSTALL_DIR', ghidraInstallDir
 	dependsOn 'sleighCompile'
 	systemProperty 'grm.moduleDir', projectDir.absolutePath
 	testClassesDirs = sourceSets.test.output.classesDirs
 	classpath = sourceSets.test.runtimeClasspath
 	include '**/vectors/Spc700VectorExhaustiveTest.class'
+
+	// Spc700VectorExhaustiveTest's OWN baseline-regeneration switch (grm-c9d.3 increment 6),
+	// deliberately a different -D property from `test`'s grm.spc700.regenerateBaseline above --
+	// forwarded here for the identical reason: this is a separate Test task with its own forked
+	// worker JVM, which does NOT inherit -D properties from the launching `gradle` invocation
+	// (nor from the `test` task's config block above, since spc700VectorTest is a wholly separate
+	// task, not a variant of `test`). Without this block, `gradle spc700VectorTest
+	// -Dgrm.spc700.regenerateExhaustiveBaseline=true` would silently no-op: the test would see no
+	// property, fall through to comparing against the existing baseline instead of regenerating
+	// it, most likely fail on drift, or -- worse -- pass and look like nothing happened. Verified
+	// by hand: without this block the property never reaches the forked worker.
+	if (System.getProperty('grm.spc700.regenerateExhaustiveBaseline') != null) {
+		systemProperty 'grm.spc700.regenerateExhaustiveBaseline',
+			System.getProperty('grm.spc700.regenerateExhaustiveBaseline')
+	}
 }
 
 //----------------------------------------------------------------------------------

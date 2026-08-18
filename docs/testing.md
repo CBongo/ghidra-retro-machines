@@ -124,7 +124,7 @@ final acceptance and commits**. `build-and-test.sh --list-chunks` prints the cur
 | `nes-banking` | NES banking and MMC fixtures |
 | `petscii-strings` | `PetsciiStringAnalyzer` C64 PRG fixture |
 | `unit` | the JUnit `gradle test` suite (all `src/test/java`; no extension build/install needed alone) |
-| `spc700-vectors` | exhaustive SPC700 p-code vector regression (`gradle spc700VectorTest`); needs `GRM_SPC700_VECTORS`, refuses loudly otherwise; opt-in, **not** included by `all` (see below) |
+| `spc700-vectors` | exhaustive SPC700 p-code vector regression, 1000 cases/opcode (256,000 total) vs. the `unit` chunk's 32/opcode sample (`gradle spc700VectorTest`); needs `GRM_SPC700_VECTORS`, refuses loudly otherwise; opt-in, **not** included by `all` (see below), but routine (not just ceremonial) whenever the env var is configured — same standing as the real-ROM tier — and worth an explicit run after any SPC700 `.sinc` change, since the sample chunk can and does miss narrow edge cases (page-boundary wraps and the like) that the full suite catches |
 | `all` | every chunk (the default when no chunk is given) — **except** `spc700-vectors`, which must be named explicitly |
 
 **The shipped `ghidra_scripts/` front-ends are regression-tested inside these chunks, and nowhere
@@ -217,18 +217,39 @@ list instead of a golden dump. A baseline `FAIL` row is not a test failure; only
 the baseline expects is. See `OpcodeBaseline`'s class doc for the exact rules, and its own
 header comment for how to regenerate it.
 
-Two SPC700 test classes split by cost and gating:
+Two SPC700 test classes split by cost and gating, each with its own committed baseline (the
+per-opcode PASS/FAIL ratios differ at different case counts, so the two files cannot share one —
+see `Spc700VectorExhaustiveTest`'s class doc):
 
 - `Spc700VectorSampleTest` (the `unit` chunk) runs the vendored 8192-case sample
   (`src/test/resources/spc700-vectors/`, 32 cases/opcode; provenance in that directory's
-  `MANIFEST.txt` and in `NOTICE`) against the committed baseline.
+  `MANIFEST.txt` and in `NOTICE`) against `spc700-vector-baseline.txt`. Regenerate with
+  `gradle test -Dgrm.spc700.regenerateBaseline=true --tests '*Spc700VectorSampleTest'`.
 - `Spc700VectorExhaustiveTest` (its own `spc700-vectors` chunk, **not** included by `all`) runs
-  the full ~131,072-case suite against a full clone named by `GRM_SPC700_VECTORS` — refusing
-  loudly (fails, does not skip) when that variable is unset, mirroring
-  `tools/banktest/realrom-test.sh`'s "never report a clean gate for a tier that did not
-  execute" rule. Regenerate the clone with `git clone --depth 1
+  the full upstream suite — 1000 cases/opcode, 256,000 cases total (measured directly across all
+  256 upstream files) — against a full clone named by `GRM_SPC700_VECTORS`, comparing against
+  `spc700-vector-baseline-exhaustive.txt`. Refuses loudly (fails, does not skip) when that
+  variable is unset, mirroring `tools/banktest/realrom-test.sh`'s "never report a clean gate for
+  a tier that did not execute" rule. Regenerate the clone with `git clone --depth 1
   https://github.com/SingleStepTests/spc700 <dir>`; regenerate the vendored sample with
-  `python3 tools/spc700/sample-vectors.py --source <dir>`.
+  `python3 tools/spc700/sample-vectors.py --source <dir>`; regenerate this baseline with
+  `gradle spc700VectorTest -Dgrm.spc700.regenerateExhaustiveBaseline=true` (a *different* `-D`
+  property from the sample test's, forwarded to this task's own forked worker in `build.gradle` —
+  Gradle does not forward `-D` properties across Test tasks automatically, only within one task's
+  own config block, so each baseline-regeneration switch needs its own explicit forwarding line).
+
+  **Routine, not ceremonial** (grm-c9d.3 increment 6): now that a full vector clone is cheap to
+  keep around locally and the run itself takes on the order of 15 seconds (measured at ~58
+  µs/case), reach for this tier as part of routine local verification whenever
+  `GRM_SPC700_VECTORS` is configured — the same standing as the real-ROM tier
+  (`tools/banktest/realrom-test.sh`), not only as a final check before closing out a body of work.
+  It stays out of `all` for the same reason the real-ROM tier does: it needs a large, user-supplied
+  clone this repo cannot ship, so it cannot be a hard CI gate. The sample tier's 32 cases/opcode
+  (3.2% of the full suite) is what runs by default and in CI; it is fast but can and does miss
+  narrow edge cases the full suite catches — e.g. `dp=0xFF` page-wrap behavior occurs in only 11
+  of `BA`'s 1000 upstream cases, so a 32-case sample has under a 1-in-3 chance of ever exercising
+  it. When in doubt whether a change is fully correct rather than merely sample-clean, run this
+  tier.
 
 Both SPC700 test classes Assume-skip (green, not red) rather than fail while the SPC700
 language itself is unavailable in a given worktree — see their class docs. `VectorHarness6502Test`

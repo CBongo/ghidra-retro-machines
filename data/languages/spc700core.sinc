@@ -81,8 +81,71 @@ define token data16 (16)
    imm16        = (0,15)
 ;
 
-ADDR8: 	imm8 	is imm8 	{ local tmp:2 = zext(imm8:1); export *:2 tmp; }
+# ----------------------------------------------------------------------------------------
+# Direct-page effective-address helpers (grm-c9d.3 increment 4).
+#
+# Both the P-flag fold and the 8-bit direct-page wrap live here ONCE, so every addressing
+# site that needs them -- ADDR8 itself, dp+X/dp+Y indexing, and the (X)/(X)+/(Y)
+# implied-register forms, which bypass ADDR8's token entirely -- gets them from the same
+# place instead of open-coding (and re-breaking) the computation at each of ~30 sites.
+# ----------------------------------------------------------------------------------------
+
+# dpFold: forms a direct-page address from a bare 8-bit offset (an immediate or a register
+# like X/Y): (P<<8) | off. P must be read at runtime (SETP/CLRP mutate PSW), so this cannot
+# be folded into a context variable.
+macro dpFold(off, result) {
+	local p:1 = $(PF);
+	local o:1 = off;
+	result = (zext(p) << 8) | zext(o);
+}
+
+# dpIndex: adds an 8-bit index to a direct-page address that already has P folded in (e.g.
+# ADDR8's export), wrapping the addition WITHIN the page -- hardware never lets dp+idx carry
+# out of the page, unlike ordinary 16-bit address arithmetic (ADDR16V+X/Y, which is not
+# page-relative and must NOT wrap).
+macro dpIndex(base, idx, result) {
+	local page:2 = base & 0xFF00;
+	local lo:1 = base:1 + idx;
+	result = page | zext(lo);
+}
+
+# dpWordRead/dpWordWrite: the 16-bit dp accesses (MOVW/INCW/DECW/ADDW/SUBW/CMPW) read/write TWO
+# bytes at a direct-page address, but the high byte wraps WITHIN THE PAGE too -- at dp=0xFF the
+# high byte comes from dp=0x00 of the SAME page, not from the next page's byte 0 (confirmed
+# against the exhaustive vector suite, grm-c9d.3 increment 6: BA 0164 with P=0, dp=0xFF reads its
+# high byte from 0x0000, not 0x0100; 9A 00FB with P=1, dp=0xFF reads its high byte from 0x0100,
+# not 0x0200). An ordinary `*:2 base` does a plain 16-bit access and gets this wrong at the page
+# boundary, so both bytes are addressed explicitly via dpIndex(base,1,...) instead.
+macro dpWordRead(base, result) {
+	local lo:1 = *:1 base;
+	local hiAddr:2; dpIndex(base, 1, hiAddr);
+	local hi:1 = *:1 hiAddr;
+	result = (zext(hi) << 8) | zext(lo);
+}
+
+macro dpWordWrite(base, value) {
+	local v:2 = value;
+	local hi:2 = v >> 8;
+	*:1 base = v:1;
+	local hiAddr:2; dpIndex(base, 1, hiAddr);
+	*:1 hiAddr = hi:1;
+}
+
+# ADDR8 exports the direct-page ADDRESS VALUE (0x0000|dp or 0x0100|dp per the P flag),
+# not the byte/word stored there -- constructor bodies in spc700ops.sinc dereference it
+# themselves (*:1 ADDR8, *:2 ADDR8, dpIndex(ADDR8,X,...), etc).
+ADDR8: 	imm8 	is imm8 	{ local dpaddr:2; dpFold(imm8, dpaddr); export dpaddr; }
+
+# ADDR16 (dynamic export) is for control-flow targets ONLY -- goto/call on a dynamic
+# export uses the export's ADDRESS (imm16 itself), giving a direct, statically-analyzable
+# branch/call. Do not use it for data references or address arithmetic: dereferencing it
+# again (*:1 ADDR16) reads the memory AT imm16 instead of imm16 itself.
 ADDR16: imm16 	is imm16	{ export *:2 imm16; }
+
+# ADDR16V (value export) is for everything else: data reads/writes and address arithmetic
+# (ADDR16V + zext(X)/zext(Y)), where the constructor body needs the numeric address imm16.
+# Same match pattern and print piece as ADDR16, so operand display text is identical.
+ADDR16V: imm16 	is imm16	{ local absaddr:2 = imm16; export absaddr; }
 RADDR8:	addr 	is simm8	[ addr = inst_next + simm8; ] { export *:1 addr; }
 
 define pcodeop daa;
@@ -94,24 +157,48 @@ define pcodeop stop;
 ################################################################
 # Macros
 ################################################################
+# The SPC700 stack is an 8-bit SP implicitly in page 1 ($0100-$01FF): SP itself only ever holds
+# 0x00-0xFF (confirmed against the vectors -- MOV SP,X's own vectors show SP taking X's raw
+# value, not 0x0100+X), and every access folds in the page at dereference time. SP wraps within
+# 0-255 (an 8-bit decrement/increment on SP:1, not a 16-bit one), and push/pop are asymmetric:
+# push WRITES then decrements (so the byte lands at the CURRENT SP, before it moves); pop
+# INCREMENTS then reads (so the byte comes from the NEW SP, after it moves) -- confirmed off the
+# vectors' cycles/final.ram fields (grm-c9d.3 increment 8), not reasoned from the manual, per the
+# explicit instruction that push/pop order is easy to get backwards from prose.
 macro push8(value) {
-	SP = SP - 1;
-	*:1 (SP) = value;
+	local addr:2 = 0x0100 | zext(SP:1);
+	*:1 addr = value;
+	local newSp:1 = SP:1 - 1;
+	SP = zext(newSp);
 }
 
 macro pop8(result) {
-	result = *:1 (SP);
-	SP = SP + 1;
+	local newSp:1 = SP:1 + 1;
+	SP = zext(newSp);
+	local addr:2 = 0x0100 | zext(SP:1);
+	result = *:1 addr;
 }
 
+# push16/pop16: HIGH byte pushed first (lands at the current, higher SP), then LOW byte (lands
+# one below it after the first push8's decrement) -- confirmed against CALL's and BRK's vectors
+# (e.g. CALL: original SP gets the return address' high byte, SP-1 gets the low byte). pop16
+# reverses that: SP+1 (nearer the two pushed bytes' low end) yields the low byte first, SP+2
+# yields the high byte.
 macro push16(value) {
-	SP = SP - 2;
-	*:2 (SP) = value;
+	local v:2 = value;
+	local hiWide:2 = v >> 8;
+	local hi:1 = hiWide:1;
+	local lo:1 = v:1;
+	push8(hi);
+	push8(lo);
 }
 
 macro pop16(result) {
-	result = *:2 (SP);
-	SP = SP + 2;
+	local lo:1;
+	local hi:1;
+	pop8(lo);
+	pop8(hi);
+	result = (zext(hi) << 8) | zext(lo);
 }
 
 macro resultFlags(value) {
@@ -121,21 +208,34 @@ macro resultFlags(value) {
 
 macro aluADC(op8, result) {
 	local c = $(CF);
-	$(NF) = 0;
+	local operand:1 = op8;
 	$(HF) = (((A & 0xF) + (op8 & 0xF) + c) & 0x10) != 0;
 	$(CF) = carry(A, op8);
 	result = A + op8;
 	$(CF) = $(CF) || carry(result, c);
 	result = result + c;
-	$(ZF) = (result == 0);
+	# Signed overflow: set when both operands share a sign that differs from the result's.
+	$(VF) = ((A ^ result) & (operand ^ result) & 0x80) != 0;
+	resultFlags(result);
 }
 
 macro aluSBC(op8, result) {
-	local c = $(CF);
-	$(HF) = (((A & 0xF) - (op8 & 0xF) - c) & 0x10) != 0;
-	$(CF) = A < op8;
-	result = A - op8;
-	$(CF) = $(CF) || result < c;
-	result = result - c;
+	# C is an inverted borrow: C=1 means no borrow occurred. So the incoming
+	# borrow-in is (C==0), and the outgoing C is set when A >= op8 + borrowIn
+	# (i.e. no borrow at all, computed in one widened comparison rather than
+	# the previous two-step approximation).
+	local c:1 = ($(CF) == 0);
+	local operand:1 = op8;
+	# H is likewise an inverted (nibble) borrow: set when NO borrow out of bit 3 occurs,
+	# not when one does -- confirmed against the vectors (grm-c9d.3 increment 3): the old
+	# `!= 0` sense was wrong on essentially every case with a nibble borrow either way.
+	$(HF) = (((A & 0xF) - (op8 & 0xF) - c) & 0x10) == 0;
+	local wideA:2 = zext(A);
+	local wideSub:2 = zext(operand) + zext(c);
+	$(CF) = wideA >= wideSub;
+	result = A - op8 - c;
+	# Signed overflow: set when the operands' signs differ and the result took the
+	# subtrahend's sign instead of the minuend's.
+	$(VF) = ((A ^ operand) & (A ^ result) & 0x80) != 0;
 	resultFlags(result);
 }
