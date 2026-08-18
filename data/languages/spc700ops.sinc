@@ -1619,7 +1619,7 @@
 
 :SETC is op=0x80 { $(CF) = 1; }
 
-:NOTC is op=0xED { $(CF) = ~$(CF); }
+:NOTC is op=0xED { $(CF) = ($(CF) == 0); }
 
 :CLRV is op=0xE0 { $(VF) = 0; $(HF) = 0; }
 

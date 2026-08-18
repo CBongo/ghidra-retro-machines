@@ -250,7 +250,7 @@ E9  MOV X,!0x2f3  PASS  1000/1000
 EA  NOT1 !0x180e.0x3  PASS  1000/1000
 EB  MOV Y,0x52  PASS  1000/1000
 EC  MOV Y,!0xb39f  PASS  1000/1000
-ED  NOTC  FAIL  4/1000  PSW,execution
+ED  NOTC  FAIL  999/1000  execution
 EE  POP Y  FAIL  999/1000  execution
 EF  SLEEP  N/A  0/1000  SLEEP halts the processor pending an interrupt; no post-single-step state exists
 F0  BEQ 0x117d  PASS  1000/1000

@@ -247,7 +247,7 @@ E9  MOV X,!0x2f3  PASS  32/32
 EA  NOT1 !0x180e.0x3  PASS  32/32
 EB  MOV Y,0x52  PASS  32/32
 EC  MOV Y,!0xb39f  PASS  32/32
-ED  NOTC  FAIL  0/32  PSW
+ED  NOTC  PASS  32/32
 EE  POP Y  PASS  32/32
 EF  SLEEP  N/A  0/32  SLEEP halts the processor pending an interrupt; no post-single-step state exists
 F0  BEQ 0x117d  PASS  32/32
