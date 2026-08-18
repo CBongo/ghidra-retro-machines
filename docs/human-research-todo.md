@@ -55,6 +55,22 @@ Each is minutes of work and settles something specific. Highest value per unit e
       port accesses" as the way to locate the interesting code, and a method that silently finds
       nothing on two of nine titles needs to be understood before it is relied on.
 
+- [ ] **In `ff3spc.dis`, is the raw `NOT1 $E04D` form the tool's output and the `NOT1 $004D.7`
+      form your hand correction?** (`grm-uy9s`.) The corpus differential compared 29,236
+      instructions and found 16 disagreements, none of them ours. Six are ff3 printing a bit
+      instruction's raw 16-bit operand instead of splitting it into a 3-bit index and a 13-bit
+      address (`090B NOT1 $0098`, `0FBC MOV1 $C086,C`, `1134 NOT1 $8086`, `121D MOV1 C,$E0A2`,
+      `1223`/`1229 NOT1 $E04D`). It is **intermittent, not systematic**: the same file gets it
+      right at `0C77`, `1205`, `1286` — and those correct lines use a bare `.7` while the tool's
+      normal output everywhere else in the corpus is `.#7`.
+
+      That pattern reads as hand correction of rawer tool output, which would date ff3's listing
+      to an earlier tool version than the rest. **You are the only source for that**, and it is
+      worth a sentence rather than any analysis: if true, other ff3-only oddities should be read
+      as hand edits first (the `0E92 BEQ $0E13` one-character typo, where the correct target is
+      `$0F13` and the tool demonstrably handles `0x7F` offsets correctly elsewhere) rather than
+      as evidence about the decoder.
+
 - [ ] **Is F-Zero's upload fully resident, or does it stream too?** (`grm-ced`, `grm-1.7.3`.) You
       established that on-demand sample loading is an AKAO trait and that you don't recall how the
       others handled it. F-Zero is the one non-AKAO title where we can nearly guess: five blocks
