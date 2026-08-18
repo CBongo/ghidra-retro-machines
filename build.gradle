@@ -497,6 +497,14 @@ test {
 	// (sleighCompile's output is gitignored, so a fresh checkout has none).
 	dependsOn 'sleighCompile'
 	systemProperty 'grm.moduleDir', projectDir.absolutePath
+	// The bundled languages are a real input to any test that decodes an instruction, but they
+	// reach the test through grm.moduleDir -- a filesystem path, not the classpath -- so Gradle
+	// cannot infer it. Without this declaration, editing data/languages/*.sinc re-runs
+	// sleighCompile (which does declare its own inputs) and then reports this task UP-TO-DATE,
+	// so the run goes green having exercised the PREVIOUS .sla. `dependsOn` alone does not help:
+	// it orders the tasks, it does not invalidate this one's result. Verified by hand --
+	// spc700VectorTest went UP-TO-DATE on a repeat run before this was added.
+	inputs.files(fileTree(dir: 'data/languages')).withPropertyName('bundledLanguages')
 
 	// Spc700VectorSampleTest's baseline-regeneration switch (bead grm-c9d.2) must be forwarded
 	// explicitly: `test` forks a separate worker JVM that does NOT inherit -D properties from
@@ -521,6 +529,40 @@ test {
 	// every time GRM_SPC700_VECTORS is unset, which is nearly always. spc700VectorTest below
 	// runs it, and only it.
 	exclude '**/vectors/Spc700VectorExhaustiveTest.class'
+
+	// Spc700DisCorpusTest (bead grm-uy9s) is excluded for the same "user-supplied data this repo
+	// cannot ship" reason: it reads the project owner's game-music-extraction .dis listings via
+	// GRM_SPC700_DIS_CORPUS. Unlike the vector tier it Assume-skips rather than failing when
+	// unset (it asserts almost nothing -- see that class's doc), so leaving it in `test` would be
+	// harmless but pointless noise; spc700DisCorpusTest below runs it, and only it.
+	exclude '**/corpus/Spc700DisCorpusTest.class'
+}
+
+// The .dis corpus differential (bead grm-uy9s). A reporting tier, not a gate: it writes
+// build/spc700-dis-corpus/*.tsv for offline triage and asserts only that listing-declared code
+// actually disassembles. See Spc700DisCorpusTest's class doc for why the listings are not an
+// oracle and why this must not grow golden-file assertions.
+task spc700DisCorpusTest(type: Test) {
+	group = "Ghidra Retro Machines"
+	description = "Differential-compare SPC700 disassembly against the hand-annotated .dis " +
+		"listings named by GRM_SPC700_DIS_CORPUS (grm-uy9s); skips when unset."
+	useJUnit()
+	maxHeapSize = '2g'
+	environment 'GHIDRA_INSTALL_DIR', ghidraInstallDir
+	dependsOn 'sleighCompile'
+	systemProperty 'grm.moduleDir', projectDir.absolutePath
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	include '**/corpus/Spc700DisCorpusTest.class'
+	testLogging { showStandardStreams = true }
+
+	// Never up-to-date: the whole input to this task -- the .dis listings under
+	// GRM_SPC700_DIS_CORPUS -- lives outside the project tree and is not a declared Gradle
+	// input, so Gradle's staleness check cannot see it change. Without this, editing a listing
+	// (or pointing the env var at a different corpus) and re-running prints a green UP-TO-DATE
+	// having compared nothing, and the TSV reports under build/spc700-dis-corpus stay stale
+	// while looking freshly produced.
+	outputs.upToDateWhen { false }
 }
 
 // The exhaustive SPC700 vector regression (bead grm-c9d.2), split out of `test` per the comment
@@ -545,6 +587,14 @@ task spc700VectorTest(type: Test) {
 	environment 'GHIDRA_INSTALL_DIR', ghidraInstallDir
 	dependsOn 'sleighCompile'
 	systemProperty 'grm.moduleDir', projectDir.absolutePath
+	// The bundled languages are a real input to any test that decodes an instruction, but they
+	// reach the test through grm.moduleDir -- a filesystem path, not the classpath -- so Gradle
+	// cannot infer it. Without this declaration, editing data/languages/*.sinc re-runs
+	// sleighCompile (which does declare its own inputs) and then reports this task UP-TO-DATE,
+	// so the run goes green having exercised the PREVIOUS .sla. `dependsOn` alone does not help:
+	// it orders the tasks, it does not invalidate this one's result. Verified by hand --
+	// spc700VectorTest went UP-TO-DATE on a repeat run before this was added.
+	inputs.files(fileTree(dir: 'data/languages')).withPropertyName('bundledLanguages')
 	testClassesDirs = sourceSets.test.output.classesDirs
 	classpath = sourceSets.test.runtimeClasspath
 	include '**/vectors/Spc700VectorExhaustiveTest.class'

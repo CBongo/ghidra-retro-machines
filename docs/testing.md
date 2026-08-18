@@ -125,7 +125,8 @@ final acceptance and commits**. `build-and-test.sh --list-chunks` prints the cur
 | `petscii-strings` | `PetsciiStringAnalyzer` C64 PRG fixture |
 | `unit` | the JUnit `gradle test` suite (all `src/test/java`; no extension build/install needed alone) |
 | `spc700-vectors` | exhaustive SPC700 p-code vector regression, 1000 cases/opcode (256,000 total) vs. the `unit` chunk's 32/opcode sample (`gradle spc700VectorTest`); needs `GRM_SPC700_VECTORS`, refuses loudly otherwise; opt-in, **not** included by `all` (see below), but routine (not just ceremonial) whenever the env var is configured — same standing as the real-ROM tier — and worth an explicit run after any SPC700 `.sinc` change, since the sample chunk can and does miss narrow edge cases (page-boundary wraps and the like) that the full suite catches |
-| `all` | every chunk (the default when no chunk is given) — **except** `spc700-vectors`, which must be named explicitly |
+| `spc700-dis-corpus` | SPC700 *disassembly text* differential against nine hand-annotated `.dis` listings of real drivers (`gradle spc700DisCorpusTest`); needs `GRM_SPC700_DIS_CORPUS`, Assume-skips otherwise; opt-in, **not** included by `all`. A reporting tier, not a gate — the listings are leads, not an oracle. See its own section below |
+| `all` | every chunk (the default when no chunk is given) — **except** `spc700-vectors` and `spc700-dis-corpus`, which must be named explicitly |
 
 **The shipped `ghidra_scripts/` front-ends are regression-tested inside these chunks, and nowhere
 else.** The GUI plugins are untestable here (see below), so a headless fixture that drives the
@@ -255,6 +256,48 @@ Both SPC700 test classes Assume-skip (green, not red) rather than fail while the
 language itself is unavailable in a given worktree — see their class docs. `VectorHarness6502Test`
 (also `unit`) proves the harness mechanics — including that it actually detects a corrupted
 expectation — against Ghidra's stock `6502:LE:16:default`, with no dependency on SPC700 at all.
+
+### Disassembly-text corpus differential (`grm-uy9s`)
+
+The vector harness above covers SPC700 *semantics* and says nothing about the decode side —
+which mnemonic, which operand form, which length. `Spc700DisCorpusTest` (its own
+`spc700-dis-corpus` chunk, **not** included by `all`) covers that half, against nine
+hand-annotated disassembly listings of real shipped SPC700 drivers in the project owner's
+game-music-extraction working tree, named by `GRM_SPC700_DIS_CORPUS`:
+
+```bash
+GRM_SPC700_DIS_CORPUS=<snes dir> bash tools/banktest/build-and-test.sh check spc700-dis-corpus
+```
+
+**These listings are not an oracle, and this must never become a golden-file test over them.**
+The 2000–2001 disassembler that produced them is not presumed more accurate than Ghidra's, so a
+disagreement is a question with both sides open, not a failure — the opposite of the vector
+tier, where SingleStepTests *is* an oracle because its expected state is machine-generated. The
+class therefore reports (per-row TSVs under `build/spc700-dis-corpus/`) and asserts only what is
+ours to get right regardless of who is correct about the mnemonics: that every byte sequence the
+listings call code disassembles at all, and that the parse stays sound. It Assume-skips when the
+variable is unset rather than refusing loudly, because unlike the vector tier there is no green
+here worth protecting.
+
+The comparison is seeded from each listing's own code/data separation — the seed set is exactly
+the addresses it marks as instructions, with `followFlow` off — so row-to-row alignment stays
+exact and the disassembler never wanders into a pointer table. That makes it a test of the
+decode table rather than of flow recovery. `DisListing`'s doc has the line grammar; the
+normalizer's doc in `Spc700DisCorpusTest` records exactly which spelling differences are folded
+(radix, the `!` absolute marker, bit-index punctuation, the tool's `<d>`/`<s>` annotations) and
+why each is a spelling difference rather than a decode dispute.
+
+As of the first full run: **29,236 instructions compared, 254 of 256 opcodes exercised, 16
+residual disagreements, none of them ours.** Five of the nine listings agree on every single
+instruction. The residue is 8 deliberate overlapping-instruction sites (a one-byte opcode whose
+immediate operand *is* the next instruction, used to skip it — the ff3 listing annotates these
+by hand as "pseudo op to skip instruction") and 8 errors in the listings themselves, mostly
+`ff3spc.dis` failing to split the 13-bit-address/3-bit-index operand of the bit instructions.
+
+A by-product worth as much as the comparison: `<title>-datamap.tsv` extracts each listing's
+code/data map — contiguous data regions with the section heading that introduces them and the
+per-entry index labels (`vcmd dispatch table (D2-FF)`, `table for CPU cmds 80-8F and F0-FF`,
+`opcode length table`). A fresh Ghidra import of an SPC image has nothing like it.
 
 ## When to add which
 

@@ -45,7 +45,7 @@ usage() {
 usage: $0 [check|bless] [--force-criteria] [chunk ...]
 
 Chunks: c64-banking c64-loader c64-recovery basic-petscii basic-dialects pet-loader c128-loader nes-banking
-        petscii-strings unit spc700-vectors all
+        petscii-strings unit spc700-vectors spc700-dis-corpus all
 
 With no chunks, all is selected. Use --list-chunks to print this list.
 
@@ -66,7 +66,8 @@ nes-banking   NES banking and MMC fixtures
 petscii-strings PetsciiStringAnalyzer C64 PRG fixture
 unit          JUnit `gradle test` suite (all src/test/java; no extension build/install)
 spc700-vectors Exhaustive SPC700 vector regression (needs GRM_SPC700_VECTORS; opt-in, not in `all`)
-all           Every chunk (the default; does NOT include spc700-vectors -- see its own row)
+spc700-dis-corpus SPC700 disassembly vs. the hand .dis listings (needs GRM_SPC700_DIS_CORPUS; opt-in, reports)
+all           Every chunk (the default; does NOT include spc700-vectors/spc700-dis-corpus -- see their rows)
 EOF
 }
 
@@ -108,7 +109,7 @@ fi
 
 for chunk in "${REQUESTED_CHUNKS[@]}"; do
 	case "$chunk" in
-		c64-banking|c64-loader|c64-recovery|basic-petscii|basic-dialects|pet-loader|c128-loader|nes-banking|petscii-strings|unit|spc700-vectors|all) ;;
+		c64-banking|c64-loader|c64-recovery|basic-petscii|basic-dialects|pet-loader|c128-loader|nes-banking|petscii-strings|unit|spc700-vectors|spc700-dis-corpus|all) ;;
 		*)
 			echo "FAIL: unknown chunk '$chunk'" >&2
 			usage >&2
@@ -140,10 +141,17 @@ has_chunk() {
 # chunk: it needs a large, user-supplied SPC700 vector clone (GRM_SPC700_VECTORS) this repo
 # cannot ship, so -- exactly like the real-ROM tier -- it stays manual/opt-in rather than part
 # of the default gate. It must be named explicitly to run.
+# spc700-dis-corpus (bead grm-uy9s) is out of `all` for the same user-supplied-data reason
+# (GRM_SPC700_DIS_CORPUS names the hand-annotated .dis listings), but it is a REPORTING tier,
+# not a gate: it writes build/spc700-dis-corpus/*.tsv for triage and asserts only that every
+# byte sequence the listings call code disassembles at all. Those listings are not an oracle --
+# their 2001-era disassembler is not presumed more accurate than Ghidra's -- so a difference is
+# a question, not a failure, and this chunk must never grow golden-file assertions over them.
 RUN_HEADLESS=0
 RUNNER_CHUNKS=()
 RUN_JUNIT=0
 RUN_SPC700_VECTORS=0
+RUN_SPC700_DIS_CORPUS=0
 if has_chunk all; then
 	RUN_HEADLESS=1
 	RUNNER_CHUNKS=(all)
@@ -162,9 +170,13 @@ fi
 if has_chunk spc700-vectors; then
 	RUN_SPC700_VECTORS=1
 fi
+if has_chunk spc700-dis-corpus; then
+	RUN_SPC700_DIS_CORPUS=1
+fi
 GRADLE_CHECKS=()
 [ "$RUN_JUNIT" -eq 1 ] && GRADLE_CHECKS+=(test)
 [ "$RUN_SPC700_VECTORS" -eq 1 ] && GRADLE_CHECKS+=(spc700VectorTest)
+[ "$RUN_SPC700_DIS_CORPUS" -eq 1 ] && GRADLE_CHECKS+=(spc700DisCorpusTest)
 
 if [ "$MODE" = "bless" ] && [ "$RUN_HEADLESS" -ne 1 ]; then
 	echo "FAIL: bless requires at least one headless chunk with golden output" >&2
