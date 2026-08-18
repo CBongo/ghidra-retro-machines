@@ -1548,52 +1548,66 @@
 	resultFlags(cmp);
 }
 
-:AND1 "C," ADDR8^"."imm8 is op=0x4A; imm8; ADDR8 {
-	local tmp = *:1 ADDR8;
-	tmp = tmp & (1 << imm8);
-	$(CF) = $(CF) & (tmp != 0);
+# All six bodies below fixed the SAME class of logic bug the decode-table fix exposed (grm-c9d.3
+# increment 10): AND1/OR1/EOR1 tested whether the whole (already-modified) byte was nonzero
+# instead of isolating the ORIGINAL value of just the target bit. That meant OR1's `tmp | mask`
+# and AND1/OR1's `/` (complement) forms produced a byte that was “nonzero” almost unconditionally,
+# so e.g. OR1 C,mem.bit set carry to 1 every time regardless of the bit's actual value. MOV1 and
+# NOT1 already isolated/toggled the correct single bit and needed no logic change, only the
+# decode fix above.
+:AND1 "C," "!"^bitAddr^"."^bitIdx is op=0x4A; bitAddr & bitIdx {
+	local addr:2 = bitAddr:2;
+	local tmp:1 = *:1 addr;
+	local bit:1 = (tmp & (1 << bitIdx)) != 0;
+	$(CF) = $(CF) & bit;
 }
 
-:AND1 "C," "/"^ADDR8^"."imm8 is op=0x6A; imm8; ADDR8 {
-	local tmp = *:1 ADDR8;
-	tmp = tmp & ~(1 << imm8);
-	$(CF) = $(CF) & (tmp != 0);
+:AND1 "C," "/!"^bitAddr^"."^bitIdx is op=0x6A; bitAddr & bitIdx {
+	local addr:2 = bitAddr:2;
+	local tmp:1 = *:1 addr;
+	local bit:1 = (tmp & (1 << bitIdx)) == 0;
+	$(CF) = $(CF) & bit;
 }
 
-:OR1 "C," ADDR8^"."imm8 is op=0x0A; imm8; ADDR8 {
-	local tmp = *:1 ADDR8;
-	tmp = tmp | (1 << imm8);
-	$(CF) = $(CF) | (tmp != 0);
+:OR1 "C," "!"^bitAddr^"."^bitIdx is op=0x0A; bitAddr & bitIdx {
+	local addr:2 = bitAddr:2;
+	local tmp:1 = *:1 addr;
+	local bit:1 = (tmp & (1 << bitIdx)) != 0;
+	$(CF) = $(CF) | bit;
 }
 
-:OR1 "C," "/"^ADDR8^"."imm8 is op=0x2A; imm8; ADDR8 {
-	local tmp = *:1 ADDR8;
-	tmp = tmp | ~(1 << imm8);
-	$(CF) = $(CF) | (tmp != 0);
+:OR1 "C," "/!"^bitAddr^"."^bitIdx is op=0x2A; bitAddr & bitIdx {
+	local addr:2 = bitAddr:2;
+	local tmp:1 = *:1 addr;
+	local bit:1 = (tmp & (1 << bitIdx)) == 0;
+	$(CF) = $(CF) | bit;
 }
 
-:EOR1 "C," ADDR8^"."imm8 is op=0x8A; imm8; ADDR8 {
-	local tmp = *:1 ADDR8;
-	tmp = tmp ^ (1 << imm8);
-	$(CF) = $(CF) ^ (tmp != 0);
+:EOR1 "C," "!"^bitAddr^"."^bitIdx is op=0x8A; bitAddr & bitIdx {
+	local addr:2 = bitAddr:2;
+	local tmp:1 = *:1 addr;
+	local bit:1 = (tmp & (1 << bitIdx)) != 0;
+	$(CF) = $(CF) ^ bit;
 }
 
-:NOT1 ADDR8^"."imm8 is op=0xEA; imm8; ADDR8 {
-	local tmp = *:1 ADDR8;
-	tmp = tmp ^ (1 << imm8);
-	*:1 ADDR8 = tmp;
+:NOT1 "!"^bitAddr^"."^bitIdx is op=0xEA; bitAddr & bitIdx {
+	local addr:2 = bitAddr:2;
+	local tmp:1 = *:1 addr;
+	tmp = tmp ^ (1 << bitIdx);
+	*:1 addr = tmp;
 }
 
-:MOV1 "C," ADDR8^"."imm8 is op=0xAA; imm8; ADDR8 {
-	local tmp = *:1 ADDR8;
-	tmp = tmp & (1 << imm8);
-	$(CF) = (tmp != 0);
+:MOV1 "C," "!"^bitAddr^"."^bitIdx is op=0xAA; bitAddr & bitIdx {
+	local addr:2 = bitAddr:2;
+	local tmp:1 = *:1 addr;
+	$(CF) = (tmp & (1 << bitIdx)) != 0;
 }
 
-:MOV1 ADDR8^"."imm8^", C" is op=0xCA; imm8; ADDR8 {
-	local tmp = *:1 ADDR8;
-	tmp = tmp & ~(1 << imm8);
-	*:1 ADDR8 = tmp | ($(CF) << imm8);
+:MOV1 "!"^bitAddr^"."^bitIdx^", C" is op=0xCA; bitAddr & bitIdx {
+	local addr:2 = bitAddr:2;
+	local tmp:1 = *:1 addr;
+	tmp = tmp & ~(1 << bitIdx);
+	*:1 addr = tmp | ($(CF) << bitIdx);
 }
 
 #======================================================#
