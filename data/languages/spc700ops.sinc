@@ -1056,7 +1056,7 @@
 #======================================================#
 #=ASL=
 :ASL A is op=0x1C & A {
-	$(CF) = (A & 0x80);
+	$(CF) = (A & 0x80) != 0;
 	A = A << 1;
 	
 	$(NF) = (A s< 0);
@@ -1065,7 +1065,7 @@
 
 :ASL ADDR8 is op=0x0B; ADDR8 {
 	local tmp:1 = *:1 ADDR8;
-	$(CF) = (tmp & 0x80);
+	$(CF) = (tmp & 0x80) != 0;
 	tmp = tmp << 1;
 	*:1 ADDR8 = tmp;
 	
@@ -1076,7 +1076,7 @@
 :ASL ADDR8+X is op=0x1B & X; ADDR8 {
 	local ptr:2; dpIndex(ADDR8, X, ptr);
 	local tmp:1 = *:1 ptr;
-	$(CF) = (tmp & 0x80);
+	$(CF) = (tmp & 0x80) != 0;
 	tmp = tmp << 1;
 	*:1 ADDR8 = ptr;
 	
@@ -1086,7 +1086,7 @@
 
 :ASL "!"^ADDR16V is op=0x0C; ADDR16V {
 	local tmp:1 = *:1 ADDR16V;
-	$(CF) = (tmp & 0x80);
+	$(CF) = (tmp & 0x80) != 0;
 	tmp = tmp << 1;
 	*:1 ADDR16V = tmp;
 	
@@ -1096,7 +1096,7 @@
 
 #=LSR=
 :LSR A is op=0x5C & A {
-	$(CF) = (A & 0x01);
+	$(CF) = (A & 0x01) != 0;
 	A = A >> 1;
 	
 	$(NF) = 0;
@@ -1105,7 +1105,7 @@
 
 :LSR ADDR8 is op=0x4B; ADDR8 {
 	local tmp:1 = *:1 ADDR8;
-	$(CF) = (tmp & 0x01);
+	$(CF) = (tmp & 0x01) != 0;
 	tmp = tmp >> 1;
 	*:1 ADDR8 = tmp;
 	
@@ -1116,7 +1116,7 @@
 :LSR ADDR8+X is op=0x5B & X; ADDR8 {
 	local ptr:2; dpIndex(ADDR8, X, ptr);
 	local tmp:1 = *:1 ptr;
-	$(CF) = (tmp & 0x01);
+	$(CF) = (tmp & 0x01) != 0;
 	tmp = tmp >> 1;
 	*:1 ADDR8 = ptr;
 	
@@ -1126,7 +1126,7 @@
 
 :LSR "!"^ADDR16V is op=0x4C; ADDR16V {
 	local tmp:1 = *:1 ADDR16V;
-	$(CF) = (tmp & 0x01);
+	$(CF) = (tmp & 0x01) != 0;
 	tmp = tmp >> 1;
 	*:1 ADDR16V = tmp;
 	
@@ -1137,7 +1137,7 @@
 #=ROL=
 :ROL A is op=0x3C & A {
 	local c:1 = $(CF);
-	$(CF) = (A & 0x80);
+	$(CF) = (A & 0x80) != 0;
 	A = (A << 1) | c;
 	
 	$(NF) = (A s< 0);
@@ -1147,7 +1147,7 @@
 :ROL ADDR8 is op=0x2B; ADDR8 {
 	local c:1 = $(CF);
 	local tmp:1 = *:1 ADDR8;
-	$(CF) = (tmp & 0x80);
+	$(CF) = (tmp & 0x80) != 0;
 	tmp = (tmp << 1) | c;
 	*:1 ADDR8 = tmp;
 	
@@ -1159,7 +1159,7 @@
 	local c:1 = $(CF);
 	local ptr:2; dpIndex(ADDR8, X, ptr);
 	local tmp:1 = *:1 ptr;
-	$(CF) = (tmp & 0x80);
+	$(CF) = (tmp & 0x80) != 0;
 	tmp = (tmp << 1) | c;
 	*:1 ADDR8 = ptr;
 	
@@ -1170,7 +1170,7 @@
 :ROL "!"^ADDR16V is op=0x2C; ADDR16V {
 	local c:1 = $(CF);
 	local tmp:1 = *:1 ADDR16V;
-	$(CF) = (tmp & 0x80);
+	$(CF) = (tmp & 0x80) != 0;
 	tmp = (tmp << 1) | c;
 	*:1 ADDR16V = tmp;
 	
@@ -1181,7 +1181,7 @@
 #=ROR=
 :ROR A is op=0x7C & A {
 	local c:1 = $(CF) << 7;
-	$(CF) = (A & 0x01);
+	$(CF) = (A & 0x01) != 0;
 	A = (A >> 1) | c;
 	
 	$(NF) = (A s< 0);
@@ -1191,7 +1191,7 @@
 :ROR ADDR8 is op=0x6B; ADDR8 {
 	local c:1 = $(CF) << 7;
 	local tmp:1 = *:1 ADDR8;
-	$(CF) = (tmp & 0x01);
+	$(CF) = (tmp & 0x01) != 0;
 	tmp = (tmp >> 1) | c;
 	*:1 ADDR8 = tmp;
 	
@@ -1203,7 +1203,7 @@
 	local c:1 = $(CF) << 7;
 	local ptr:2; dpIndex(ADDR8, X, ptr);
 	local tmp:1 = *:1 ptr;
-	$(CF) = (tmp & 0x01);
+	$(CF) = (tmp & 0x01) != 0;
 	tmp = (tmp >> 1) | c;
 	*:1 ADDR8 = ptr;
 	
@@ -1214,7 +1214,7 @@
 :ROR "!"^ADDR16V is op=0x6C; ADDR16V {
 	local c:1 = $(CF) << 7;
 	local tmp:1 = *:1 ADDR16V;
-	$(CF) = (tmp & 0x01);
+	$(CF) = (tmp & 0x01) != 0;
 	tmp = (tmp >> 1) | c;
 	*:1 ADDR16V = tmp;
 	
