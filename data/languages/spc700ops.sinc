@@ -1440,7 +1440,11 @@
 
 :JMP "!"^ADDR16 is op=0x5F; ADDR16 { goto ADDR16; }
 
-:JMP ["!"^ADDR16V+X] is op=0x1F & X; ADDR16V { local ptr = ADDR16V + zext(X); goto [ptr]; }
+:JMP ["!"^ADDR16V+X] is op=0x1F & X; ADDR16V {
+	local tableAddr:2 = ADDR16V + zext(X);
+	local dest:2 = *:2 tableAddr;
+	goto [dest];
+}
 
 #======================================================#
 # Table C-16: Subroutine Call,Return Commands         #
