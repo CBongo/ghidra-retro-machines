@@ -43,9 +43,41 @@ bash tools/banktest/realrom-test.sh nominate H:/emulators/nes/roms   # board-gap
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
-*Nothing open here right now — every item in this section has been answered; see the
-**Answered** table at the bottom. This section stays because it is the highest-value shape of
-question on the list, not because it is empty.*
+- [ ] **Why do Lemmings and Mario show zero SPC-side port references?** (`grm-ced`.) Counting
+      direct-page `$F4`–`$F7` accesses across the `*spc.dis` listings gives sd3 113, ct 87, ff3 78,
+      som 60, ff5 49 — then g3 5, fzero 2, **lem 0, mario 0**. A working driver must talk to the
+      65816 somehow, so zero is not a fact about those drivers, it is a fact about those files.
+      Three candidates: the listing covers only part of the image, the disassembler wrote those
+      operands in a form the grep missed, or the driver really does poll differently.
+
+      **Opening one of those two listings settles it in a minute** and is not worth an agent
+      round trip. It matters because `grm-uy9s` and any future protocol work will use "find the
+      port accesses" as the way to locate the interesting code, and a method that silently finds
+      nothing on two of nine titles needs to be understood before it is relied on.
+
+- [ ] **Is F-Zero's upload fully resident, or does it stream too?** (`grm-ced`, `grm-1.7.3`.) You
+      established that on-demand sample loading is an AKAO trait and that you don't recall how the
+      others handled it. F-Zero is the one non-AKAO title where we can nearly guess: five blocks
+      totalling ~24 KB, two of them large (13306 at `$0800`, 10381 at `$A080`), which is a lot to
+      be pure code — so it *looks* fully resident. **That is an inference from size and is recorded
+      as such, not as a measurement.**
+
+      Worth settling because it is the discriminating case for the recovery model: if a driver
+      uploads everything once, `accumulate-all-transfers` yields a *complete* image and every
+      recovered region is stable; if it streams, the image is a point in time. One example of each
+      would let the design be written against both ends of the spectrum instead of one.
+
+- [ ] **Does the SPC driver compute the BRR directory, or does the 65816 send it?** (`grm-1.7.3`.)
+      You flagged that it's been too long to recall. The answer changes what an analyzer should
+      expect: if the 65816 sends it, the directory in SPC RAM has *no writer visible in the SPC
+      image* and an analyzer should say so rather than leaving an unexplained data region; if the
+      driver builds it, the writer is right there and should be found.
+
+      An agent already recorded the wrong half of this as fact once and had to retract it, which is
+      the argument for answering it from the code rather than from inference. FF2's `notes.txt`
+      names three uploaded dir tables (`$1E00`, `$1D00`, `$FD00`) with the sample regions they
+      serve, so the resident case is documented; the open question is only about the *streamed*
+      ones.
 
 ---
 
@@ -164,6 +196,37 @@ Blocked on judgment, not effort.
 - [ ] **c64ref sourcing** (`grm-p5w`, typed as a `decision`) — generator + committed
       `generated/*.yaml`, or git submodule + build-time generation. Binds `grm-hb6.6` and `grm-54p`
       too. Decide once.
+
+- [ ] **Is SNES a supported machine, or only a means to the SPC700 end?** (`grm-9nxj`, filed P4
+      2026-08-17 precisely because nobody had ever decided.) The SPC700 is now a first-class
+      platform with a vendored, vector-verified language, and `grm-1.7.3` wants to extract uploads
+      *from a SNES ROM* — but this project has no SNES loader, no 65816 language and no descriptor.
+
+      This is the same call `grm-y7d` settled for SPC700 ("worthy, it's a primary platform"), and
+      it has the same shape: not a scoping question but a product one. A "no, ROM-side stays
+      minimal — just enough to find and extract the upload" is a complete and cheap answer that
+      keeps `grm-1.7.3` moving. A "yes" pulls in LoROM/HiROM mapping, header detection and the
+      `$2100-$43FF` register block as real work.
+
+      One input worth having before deciding: **Ghidra ships a 65816 processor.** If it is sound,
+      the expensive half of a "yes" is free. Evaluating it is agent work (the `grm-y7d` SPCdra
+      evaluation is the template) — say the word and it can be priced before you rule.
+
+- [ ] **The `game-music-extraction` corpus: is it durable, and whose format is it?** (`grm-ced`.)
+      Two small questions that together decide how far we can lean on it.
+
+      *Durability:* can a test hash-pin one of those `.bin` extracts the way the real-ROM tier pins
+      ROMs, or are they reproduced by the `dumpspc.pl` scripts on demand? If they're regenerable
+      rather than archival, the pinning story changes and the scripts become the artifact of record.
+
+      *Provenance:* is the `[len][addr][data]…[0][entry]` container your own convention, or a
+      third-party format with a name? It decides whether we document it as "the GME upload format"
+      or as ours — and whether anything derived from it could ever be committed here.
+
+      Also in that corpus and unexamined: `lufia/lufia.idb`, an **IDA Pro database** — a different
+      toolchain from everything else there. Reading it needs IDA or an `.idb` parser. Worth a
+      moment's thought on whether it holds anything the `.dis` files don't, since the cost of
+      finding out is not zero.
 
 ---
 
