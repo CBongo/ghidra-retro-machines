@@ -803,8 +803,8 @@
 }
 
 :AND dstaddr,srcaddr is op=0x29; srcaddr; dstaddr {
-	local dst:2 = zext(dstaddr:1);
-	local src:2 = zext(srcaddr:1);
+	local dst:2; dpFold(dstaddr, dst);
+	local src:2; dpFold(srcaddr, src);
 	local op1:1 = *:1 dst;
 	local op2:1 = *:1 src;
 	local result:1 = op1 & op2;
@@ -925,8 +925,8 @@
 }
 
 :OR dstaddr,srcaddr is op=0x09; srcaddr; dstaddr {
-	local dst:2 = zext(dstaddr:1);
-	local src:2 = zext(srcaddr:1);
+	local dst:2; dpFold(dstaddr, dst);
+	local src:2; dpFold(srcaddr, src);
 	local op1:1 = *:1 dst;
 	local op2:1 = *:1 src;
 	local result:1 = op1 | op2;
@@ -1047,8 +1047,8 @@
 }
 
 :EOR dstaddr,srcaddr is op=0x49; srcaddr; dstaddr {
-	local dst:2 = zext(dstaddr:1);
-	local src:2 = zext(srcaddr:1);
+	local dst:2; dpFold(dstaddr, dst);
+	local src:2; dpFold(srcaddr, src);
 	local op1:1 = *:1 dst;
 	local op2:1 = *:1 src;
 	local result:1 = op1 ^ op2;
