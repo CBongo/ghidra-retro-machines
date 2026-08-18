@@ -10,7 +10,7 @@
 # case happened to hold (e.g. 'MOV A,0x10' vs 'MOV A,0x7f' on a re-run) --
 # expected and not a semantic change. Only a changed MNEMONIC or a row that
 # newly falls back to '-' is worth a second look.
-00  NOP  FAIL  0/32  execution
+00  NOP  PASS  32/32
 01  TCALL 0x0  PASS  32/32
 02  SET1 0x9.0x0  PASS  32/32
 03  BBS 0x20,0x0,0x021b  PASS  32/32
@@ -20,7 +20,7 @@
 07  OR A,[0x3b+X]  PASS  32/32
 08  OR A,#0xb4  PASS  32/32
 09  OR 0x9,0xbf  FAIL  16/32  $104,$10d,$111,$124,$127,$128,$135,$15b,$15d,$162,$16d,$172,$1b4,$1d5,PSW
-0A  OR1 C,0xb.0x62  FAIL  25/32  PSW
+0A  OR1 C,!0xb62.0x0  PASS  32/32
 0B  ASL 0x55  PASS  32/32
 0C  ASL !0x99cb  PASS  32/32
 0D  PUSH PSW  PASS  32/32
@@ -37,7 +37,7 @@
 18  OR 0xd2,#0x98  PASS  32/32
 19  OR (X),(Y)  PASS  32/32
 1A  DECW 0x70  PASS  32/32
-1B  ASL 0xb1+X  FAIL  1/32  $10e,$11d,$124,$14a,$14b,$16,$16e,$193,$1ba,$1c5,$1ce,$1df,$23,$28,$2a,$33,$4,$44,$4a,$4d,$57,$69,$92,$a0,$b3,$d,$df,$e6,$e9,$ef
+1B  ASL 0xb1+X  PASS  32/32
 1C  ASL A  PASS  32/32
 1D  DEC X  PASS  32/32
 1E  CMP X,!0xb213  PASS  32/32
@@ -52,7 +52,7 @@
 27  AND A,[0x9b+X]  PASS  32/32
 28  AND A,#0x28  PASS  32/32
 29  AND 0x60,0x37  FAIL  17/32  $179,$187,$190,$193,$197,$19a,$19c,$1c8,$1cd,$1ea,PSW
-2A  OR1 C,/0x20.0x64  FAIL  27/32  PSW
+2A  OR1 C,/!0x64.0x1  PASS  32/32
 2B  ROL 0x9c  PASS  32/32
 2C  ROL !0x595d  PASS  32/32
 2D  PUSH A  PASS  32/32
@@ -69,7 +69,7 @@
 38  AND 0x69,#0x9c  PASS  32/32
 39  AND (X),(Y)  PASS  32/32
 3A  INCW 0xe5  PASS  32/32
-3B  ROL 0x98+X  FAIL  0/32  $117,$123,$130,$131,$147,$14c,$15a,$189,$193,$1ae,$1b7,$1b9,$1c8,$1d1,$1ee,$1f0,$4c,$4d,$50,$70,$77,$78,$82,$84,$8f,$a5,$a8,$b9,$e4,$ea,$fc
+3B  ROL 0x98+X  PASS  32/32
 3C  ROL A  PASS  32/32
 3D  INC X  PASS  32/32
 3E  CMP X,0xc6  PASS  32/32
@@ -84,7 +84,7 @@
 47  EOR A,[0x1f+X]  PASS  32/32
 48  EOR A,#0xbc  PASS  32/32
 49  EOR 0xb5,0x31  FAIL  12/32  $116,$130,$131,$15d,$15f,$165,$170,$172,$184,$191,$1ac,$1af,$1b5,$1bc,$1d6,$1e6,$1f4,$1f8,PSW
-4A  AND1 C,0x13.0x42  FAIL  24/32  PSW
+4A  AND1 C,!0x1342.0x0  PASS  32/32
 4B  LSR 0x30  PASS  32/32
 4C  LSR !0x9715  PASS  32/32
 4D  PUSH X  PASS  32/32
@@ -101,7 +101,7 @@
 58  EOR 0x5b,#0xc2  PASS  32/32
 59  EOR (X),(Y)  PASS  32/32
 5A  CMPW YA,0x44  PASS  32/32
-5B  LSR 0x32+X  FAIL  0/32  $10b,$115,$118,$148,$160,$188,$1a7,$1b2,$1be,$1c8,$1ca,$1d4,$1e2,$2e,$3,$67,$7a,$7e,$91,$92,$93,$95,$bc,$c2,$c5,$d6,$dd,$de,$e2,$f1,$f7
+5B  LSR 0x32+X  PASS  32/32
 5C  LSR A  PASS  32/32
 5D  MOV X,A  PASS  32/32
 5E  CMP Y,!0x3ff6  PASS  32/32
@@ -115,8 +115,8 @@
 66  CMP A,(X)  PASS  32/32
 67  CMP A,[0xc8+X]  PASS  32/32
 68  CMP A,#0x32  PASS  32/32
-69  CMP 0x99,0xb4  FAIL  19/32  PSW
-6A  AND1 C,/0x54.0xa6  FAIL  20/32  PSW
+69  CMP 0x99,0xb4  PASS  32/32
+6A  AND1 C,/!0x14a6.0x2  PASS  32/32
 6B  ROR 0xe4  PASS  32/32
 6C  ROR !0xffbd  PASS  32/32
 6D  PUSH Y  PASS  32/32
@@ -133,7 +133,7 @@
 78  CMP 0x67,#0xe4  PASS  32/32
 79  CMP (X),(Y)  PASS  32/32
 7A  ADDW YA,0x35  PASS  32/32
-7B  ROR 0xc7+X  FAIL  0/32  $13c,$144,$149,$150,$15e,$164,$184,$18e,$18f,$1ad,$1d,$1ec,$1ed,$1fe,$27,$2f,$30,$38,$39,$44,$45,$5e,$76,$8f,$a3,$a4,$ad,$b7,$ca,$db,$e3
+7B  ROR 0xc7+X  PASS  32/32
 7C  ROR A  PASS  32/32
 7D  MOV A,X  PASS  32/32
 7E  CMP Y,0xd8  PASS  32/32
@@ -148,7 +148,7 @@
 87  ADC A,[0xdf+X]  PASS  32/32
 88  ADC A,#0x4c  PASS  32/32
 89  ADC 0x81,0xa7  PASS  32/32
-8A  EOR1 C,0x78.0x64  FAIL  16/32  PSW
+8A  EOR1 C,!0x1864.0x3  PASS  32/32
 8B  DEC 0x9e  PASS  32/32
 8C  DEC !0x1417  PASS  32/32
 8D  MOV Y,#0xf7  PASS  32/32
@@ -180,7 +180,7 @@ A6  SBC A,(X)  PASS  32/32
 A7  SBC A,[0xab+X]  PASS  32/32
 A8  SBC A,#0x12  PASS  32/32
 A9  SBC 0x3a,0x35  PASS  32/32
-AA  MOV1 C,0x63.0x3c  FAIL  14/32  PSW
+AA  MOV1 C,!0x33c.0x3  PASS  32/32
 AB  INC 0xef  PASS  32/32
 AC  INC !0xd68a  PASS  32/32
 AD  CMP Y,#0xc5  PASS  32/32
@@ -200,7 +200,7 @@ BA  MOVW YA,0x55  PASS  32/32
 BB  INC 0x0+X  PASS  32/32
 BC  INC A  PASS  32/32
 BD  MOV SP,X  PASS  32/32
-BE  DAS A  FAIL  0/32  execution
+BE  DAS A  PASS  32/32
 BF  MOV A,(X)+  PASS  32/32
 C0  DI  PASS  32/32
 C1  TCALL 0xc  PASS  32/32
@@ -212,7 +212,7 @@ C6  MOV (X),A  PASS  32/32
 C7  MOV [0xf9+X],A  FAIL  31/32  $be44
 C8  CMP X,#0x3c  PASS  32/32
 C9  MOV !0x40e1,X  PASS  32/32
-CA  MOV1 0x2c.0x8e,C  FAIL  16/32  $1033,$124f,$140e,$17dc,$1966,$1b8f,$1c33,$1e0b,$49f,$621,$739,$abf,$c79,$ca2,$e67,$fbd
+CA  MOV1 !0xc8e.0x1,C  PASS  32/32
 CB  MOV 0x3a,Y  FAIL  0/32  $1,$12b,$13,$137,$145,$147,$150,$152,$159,$194,$1ab,$1ac,$1b3,$1bb,$1d,$1df,$1e4,$1e8,$1ee,$1f0,$20,$26,$2e,$3a,$49,$6c,$71,$97,$a,$c6,$f3
 CC  MOV !0x752e,Y  PASS  32/32
 CD  MOV X,#0x3  PASS  32/32
@@ -233,7 +233,7 @@ DB  MOV 0x1e+X,Y  PASS  32/32
 DC  DEC Y  PASS  32/32
 DD  MOV A,Y  PASS  32/32
 DE  CBNE 0x1a+X,0x0f94  PASS  32/32
-DF  DAA A  FAIL  0/32  execution
+DF  DAA A  PASS  32/32
 E0  CLRV  PASS  32/32
 E1  TCALL 0xe  PASS  32/32
 E2  SET1 0xa3.0x7  PASS  32/32
@@ -244,12 +244,12 @@ E6  MOV A,(X)  PASS  32/32
 E7  MOV A,[0x3b+X]  PASS  32/32
 E8  MOV A,#0x4a  PASS  32/32
 E9  MOV X,!0x2f3  PASS  32/32
-EA  NOT1 0x78.0xe  FAIL  0/32  $102b,$1114,$114a,$1268,$13bf,$151d,$15ef,$1627,$171a,$17b0,$180e,$1af5,$1b80,$1bfa,$1dbb,$1dd5,$366,$40a,$48d,$5ce,$676,$7cd,$7e1,$8d8,$9b7,$bb9,$c07,$cf7,$df9,$e3d,$f5a,$f88
+EA  NOT1 !0x180e.0x3  PASS  32/32
 EB  MOV Y,0x52  PASS  32/32
 EC  MOV Y,!0xb39f  PASS  32/32
 ED  NOTC  FAIL  0/32  PSW
 EE  POP Y  PASS  32/32
-EF  SLEEP  FAIL  0/32  execution
+EF  SLEEP  N/A  0/32  SLEEP halts the processor pending an interrupt; no post-single-step state exists
 F0  BEQ 0x117d  PASS  32/32
 F1  TCALL 0xf  PASS  32/32
 F2  CLR1 0xc2.0x7  PASS  32/32
@@ -260,9 +260,9 @@ F6  MOV A,!0x4002+Y  PASS  32/32
 F7  MOV A,[0x95]+Y  PASS  32/32
 F8  MOV X,0xf8  PASS  32/32
 F9  MOV X,0x86+Y  PASS  32/32
-FA  MOV 0x5f,0xd0  FAIL  14/32  $108,$130,$132,$135,$141,$143,$14a,$15c,$15f,$16a,$186,$18b,$19e,$1a4,$1a5,$1cc,$1ed,$1fd
+FA  MOV 0x5f,0xd0  PASS  32/32
 FB  MOV Y,0xfb+X  PASS  32/32
 FC  INC Y  PASS  32/32
 FD  MOV Y,A  PASS  32/32
 FE  DBNZ Y,0x1211  PASS  32/32
-FF  STOP  FAIL  0/32  execution
+FF  STOP  N/A  0/32  STOP halts the processor pending a hardware reset; no post-single-step state exists

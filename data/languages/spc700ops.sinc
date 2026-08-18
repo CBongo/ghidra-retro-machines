@@ -271,11 +271,13 @@
 	SP = zext(X);
 }
 
+# dstaddr/srcaddr are direct-page offsets like ADDR8, not raw 16-bit addresses -- P-folded the
+# same way as the ADC/SBC dstaddr,srcaddr forms in increment 7 (grm-c9d.3 increment 10).
 :MOV dstaddr,srcaddr is op=0xFA; srcaddr; dstaddr {
-	local src:2 = zext(srcaddr:1);
-	local dst:2 = zext(dstaddr:1);
+	local src:2; dpFold(srcaddr, src);
+	local dst:2; dpFold(dstaddr, dst);
 	*:1 dst = *:1 src;
-} 
+}
 
 :MOV ADDR8," #"^imm8 is op=0x8F; imm8; ADDR8 {
 	*:1 ADDR8 = imm8;
@@ -622,12 +624,12 @@
 	$(CF) = (op1 >= op2);
 }
 
+# dstaddr/srcaddr P-folded like MOV above (grm-c9d.3 increment 10).
 :CMP dstaddr,srcaddr is op=0x69; srcaddr; dstaddr {
-	local dst:2 = zext(dstaddr:1);
-	local src:2 = zext(srcaddr:1);
+	local dst:2; dpFold(dstaddr, dst);
+	local src:2; dpFold(srcaddr, src);
 	local op1:1 = *:1 dst;
 	local op2:1 = *:1 src;
-	#TODO: Confirm whether this should be op1 - op2 or op2 - op1 
 	local result:1 = op1 - op2;
 	
 	$(NF) = (result s< 0);
@@ -1121,8 +1123,8 @@
 	local tmp:1 = *:1 ptr;
 	$(CF) = (tmp & 0x80) != 0;
 	tmp = tmp << 1;
-	*:1 ADDR8 = ptr;
-	
+	*:1 ptr = tmp;
+
 	$(NF) = (tmp s< 0);
 	$(ZF) = (tmp == 0);
 }
@@ -1161,8 +1163,8 @@
 	local tmp:1 = *:1 ptr;
 	$(CF) = (tmp & 0x01) != 0;
 	tmp = tmp >> 1;
-	*:1 ADDR8 = ptr;
-	
+	*:1 ptr = tmp;
+
 	$(NF) = 0;
 	$(ZF) = (tmp == 0);
 }
@@ -1204,8 +1206,8 @@
 	local tmp:1 = *:1 ptr;
 	$(CF) = (tmp & 0x80) != 0;
 	tmp = (tmp << 1) | c;
-	*:1 ADDR8 = ptr;
-	
+	*:1 ptr = tmp;
+
 	$(NF) = (tmp s< 0);
 	$(ZF) = (tmp == 0);
 }
@@ -1248,8 +1250,8 @@
 	local tmp:1 = *:1 ptr;
 	$(CF) = (tmp & 0x01) != 0;
 	tmp = (tmp >> 1) | c;
-	*:1 ADDR8 = ptr;
-	
+	*:1 ptr = tmp;
+
 	$(NF) = (tmp s< 0);
 	$(ZF) = (tmp == 0);
 }
@@ -1347,12 +1349,41 @@
 #======================================================#
 # Table C-14: Decimal Compensation Commands            #
 #======================================================#
+# DAA/DAS thresholds (grm-c9d.3 increment 9) verified against all 1000 exhaustive vector cases
+# each with zero mismatches: BOTH the low-nibble and high-byte adjustment conditions test the
+# ORIGINAL A (before either adjustment), even though the low adjustment, if taken, is applied
+# to A before the high adjustment runs -- e.g. A=0xFA,C=0,H=0 low-adjusts (low nibble 0xA>9) to
+# 0x00, then STILL high-adjusts to 0x60 because the high check uses original A=0xFA>0x99, not
+# the already-low-adjusted 0x00. Getting this backwards (checking the post-low-adjust value)
+# passes ~976/1000 cases and looks nearly finished, which is why it needed the full 1000 to
+# pin down rather than a handful by hand. C is DAS's usual inverted-borrow sense, matching
+# CMP/SBC elsewhere in this file.
 :DAA A is op=0xDF & A {
-	A = daa(A);
+	local orig:1 = A;
+	local lowCond:1 = ($(HF) == 1) || ((orig & 0xF) > 9);
+	if (lowCond == 0) goto <daaSkipLow>;
+	A = A + 6;
+	<daaSkipLow>
+	local highCond:1 = ($(CF) == 1) || (orig > 0x99);
+	if (highCond == 0) goto <daaSkipHigh>;
+	A = A + 0x60;
+	$(CF) = 1;
+	<daaSkipHigh>
+	resultFlags(A);
 }
 
 :DAS A is op=0xBE & A {
-	A = das(A);
+	local orig:1 = A;
+	local lowCond:1 = ($(HF) == 0) || ((orig & 0xF) > 9);
+	if (lowCond == 0) goto <dasSkipLow>;
+	A = A - 6;
+	<dasSkipLow>
+	local highCond:1 = ($(CF) == 0) || (orig > 0x99);
+	if (highCond == 0) goto <dasSkipHigh>;
+	A = A - 0x60;
+	$(CF) = 0;
+	<dasSkipHigh>
+	resultFlags(A);
 }
 
 #======================================================#
@@ -1517,52 +1548,66 @@
 	resultFlags(cmp);
 }
 
-:AND1 "C," ADDR8^"."imm8 is op=0x4A; imm8; ADDR8 {
-	local tmp = *:1 ADDR8;
-	tmp = tmp & (1 << imm8);
-	$(CF) = $(CF) & (tmp != 0);
+# All six bodies below fixed the SAME class of logic bug the decode-table fix exposed (grm-c9d.3
+# increment 10): AND1/OR1/EOR1 tested whether the whole (already-modified) byte was nonzero
+# instead of isolating the ORIGINAL value of just the target bit. That meant OR1's `tmp | mask`
+# and AND1/OR1's `/` (complement) forms produced a byte that was “nonzero” almost unconditionally,
+# so e.g. OR1 C,mem.bit set carry to 1 every time regardless of the bit's actual value. MOV1 and
+# NOT1 already isolated/toggled the correct single bit and needed no logic change, only the
+# decode fix above.
+:AND1 "C," "!"^bitAddr^"."^bitIdx is op=0x4A; bitAddr & bitIdx {
+	local addr:2 = bitAddr:2;
+	local tmp:1 = *:1 addr;
+	local bit:1 = (tmp & (1 << bitIdx)) != 0;
+	$(CF) = $(CF) & bit;
 }
 
-:AND1 "C," "/"^ADDR8^"."imm8 is op=0x6A; imm8; ADDR8 {
-	local tmp = *:1 ADDR8;
-	tmp = tmp & ~(1 << imm8);
-	$(CF) = $(CF) & (tmp != 0);
+:AND1 "C," "/!"^bitAddr^"."^bitIdx is op=0x6A; bitAddr & bitIdx {
+	local addr:2 = bitAddr:2;
+	local tmp:1 = *:1 addr;
+	local bit:1 = (tmp & (1 << bitIdx)) == 0;
+	$(CF) = $(CF) & bit;
 }
 
-:OR1 "C," ADDR8^"."imm8 is op=0x0A; imm8; ADDR8 {
-	local tmp = *:1 ADDR8;
-	tmp = tmp | (1 << imm8);
-	$(CF) = $(CF) | (tmp != 0);
+:OR1 "C," "!"^bitAddr^"."^bitIdx is op=0x0A; bitAddr & bitIdx {
+	local addr:2 = bitAddr:2;
+	local tmp:1 = *:1 addr;
+	local bit:1 = (tmp & (1 << bitIdx)) != 0;
+	$(CF) = $(CF) | bit;
 }
 
-:OR1 "C," "/"^ADDR8^"."imm8 is op=0x2A; imm8; ADDR8 {
-	local tmp = *:1 ADDR8;
-	tmp = tmp | ~(1 << imm8);
-	$(CF) = $(CF) | (tmp != 0);
+:OR1 "C," "/!"^bitAddr^"."^bitIdx is op=0x2A; bitAddr & bitIdx {
+	local addr:2 = bitAddr:2;
+	local tmp:1 = *:1 addr;
+	local bit:1 = (tmp & (1 << bitIdx)) == 0;
+	$(CF) = $(CF) | bit;
 }
 
-:EOR1 "C," ADDR8^"."imm8 is op=0x8A; imm8; ADDR8 {
-	local tmp = *:1 ADDR8;
-	tmp = tmp ^ (1 << imm8);
-	$(CF) = $(CF) ^ (tmp != 0);
+:EOR1 "C," "!"^bitAddr^"."^bitIdx is op=0x8A; bitAddr & bitIdx {
+	local addr:2 = bitAddr:2;
+	local tmp:1 = *:1 addr;
+	local bit:1 = (tmp & (1 << bitIdx)) != 0;
+	$(CF) = $(CF) ^ bit;
 }
 
-:NOT1 ADDR8^"."imm8 is op=0xEA; imm8; ADDR8 {
-	local tmp = *:1 ADDR8;
-	tmp = tmp ^ (1 << imm8);
-	*:1 ADDR8 = tmp;
+:NOT1 "!"^bitAddr^"."^bitIdx is op=0xEA; bitAddr & bitIdx {
+	local addr:2 = bitAddr:2;
+	local tmp:1 = *:1 addr;
+	tmp = tmp ^ (1 << bitIdx);
+	*:1 addr = tmp;
 }
 
-:MOV1 "C," ADDR8^"."imm8 is op=0xAA; imm8; ADDR8 {
-	local tmp = *:1 ADDR8;
-	tmp = tmp & (1 << imm8);
-	$(CF) = (tmp != 0);
+:MOV1 "C," "!"^bitAddr^"."^bitIdx is op=0xAA; bitAddr & bitIdx {
+	local addr:2 = bitAddr:2;
+	local tmp:1 = *:1 addr;
+	$(CF) = (tmp & (1 << bitIdx)) != 0;
 }
 
-:MOV1 ADDR8^"."imm8^", C" is op=0xCA; imm8; ADDR8 {
-	local tmp = *:1 ADDR8;
-	tmp = tmp & ~(1 << imm8);
-	*:1 ADDR8 = tmp | ($(CF) << imm8);
+:MOV1 "!"^bitAddr^"."^bitIdx^", C" is op=0xCA; bitAddr & bitIdx {
+	local addr:2 = bitAddr:2;
+	local tmp:1 = *:1 addr;
+	tmp = tmp & ~(1 << bitIdx);
+	*:1 addr = tmp | ($(CF) << bitIdx);
 }
 
 #======================================================#
@@ -1587,7 +1632,7 @@
 #======================================================#
 # Table C-20: Other Commands                           #
 #======================================================#
-:NOP is op=0x00 { nop(); }
+:NOP is op=0x00 { }
 
 :SLEEP is op=0xEF { sleep(); }
 

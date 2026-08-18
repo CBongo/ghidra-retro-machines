@@ -50,10 +50,19 @@ import retromachines.vectors.VectorCase.RamByte;
  * grm-o9k (65x02 ADC/RRA flag verification) reuses this exact class against a different register
  * map and language id.
  *
- * <p><b>One shared emulator, reset per case.</b> Constructing a fresh {@code PcodeEmulator} per
- * vector is what makes an exhaustive 256,000-vector SPC700 run (or a 65x02 equivalent)
- * impractical; see the class's constructor for how reset is implemented and
- * {@code docs/} / the grm-c9d.2 bead history for the measured per-case cost.
+ * <p><b>One shared emulator, reset per case -- but periodically REBUILT (grm-c9d.3 increment
+ * 10).</b> Constructing a fresh {@code PcodeEmulator} per vector is what makes an exhaustive
+ * 256,000-vector SPC700 run (or a 65x02 equivalent) impractical time-wise; see {@link #reset()}
+ * for the per-case thread hazard that a fresh {@code PcodeEmulator} sidesteps for free. But NEVER
+ * rebuilding one for the emulator's whole life means {@code AbstractPcodeMachine}'s thread
+ * registry (see {@link #reset()}) grows by one entry per case for the run's entire duration --
+ * measured to need a 9 GB heap for a full 256,000-case exhaustive SPC700 run, more than half this
+ * project's dev machine's 16 GB, which the project owner ruled unacceptable for what is meant to
+ * be routine local verification (grm-c9d.3 increment 9's report). So the emulator itself is
+ * rebuilt every {@link #rebuildInterval} cases -- bounding the thread registry to at most that
+ * many entries at a time -- while STILL constructing a fresh {@link PcodeThread} every single
+ * case, because that part of the reset is fixing a different hazard (the decoder's stale-cache
+ * bug, {@link #reset()}) that periodic rebuild alone does not touch.
  */
 public final class VectorRunner {
 
@@ -70,14 +79,27 @@ public final class VectorRunner {
 		}
 	}
 
+	/**
+	 * Default emulator-rebuild interval (grm-c9d.3 increment 10), chosen by measuring wall time
+	 * and the minimum passing heap across candidate values (500/2000/10000) against the full
+	 * 256,000-case SPC700 exhaustive suite -- see the increment's report for the measured table.
+	 * Wall time was flat (~12-13s) across all three, i.e. rebuilding an emulator is cheap enough
+	 * that this interval is chosen for memory, not speed: 2000 measured reliably passing at a
+	 * 128m heap (OOMing at 64m) and comfortably under {@code spc700VectorTest}'s committed 512m
+	 * (4x margin); 10000 needed more than 128m for the same run.
+	 */
+	public static final int DEFAULT_REBUILD_INTERVAL = 2000;
+
 	private final Language language;
 	private final Map<String, Register> registerMap;
 	private final String pcField;
 	private final Map<String, FlagLayout> flagLayouts;
+	private final int rebuildInterval;
 
-	private final PcodeEmulator emulator;
-	private final PcodeArithmetic<byte[]> arithmetic;
+	private PcodeEmulator emulator;
+	private PcodeArithmetic<byte[]> arithmetic;
 	private final AddressSpace defaultSpace;
+	private int casesSinceRebuild;
 
 	// Not final: reset() below replaces these every case. See reset()'s doc for why a plain
 	// register/memory clear on a REUSED thread is not sufficient here.
@@ -85,18 +107,20 @@ public final class VectorRunner {
 	private PcodeExecutorState<byte[]> state;
 
 	/**
-	 * @param language    the processor language to emulate
-	 * @param registerMap vector JSON register field name (e.g. {@code "a"}, {@code "psw"}) ->
-	 *                    the {@link Register} holding it. Must contain an entry for
-	 *                    {@code pcField}.
-	 * @param pcField     the register field name that is the program counter (typically
-	 *                    {@code "pc"})
-	 * @param flagLayouts optional register field name -> {@link FlagLayout}, for decomposing a
-	 *                    packed status register into named flags in mismatch reports. A register
-	 *                    with no entry here is reported as a plain scalar diff.
+	 * @param language        the processor language to emulate
+	 * @param registerMap     vector JSON register field name (e.g. {@code "a"}, {@code "psw"}) ->
+	 *                        the {@link Register} holding it. Must contain an entry for
+	 *                        {@code pcField}.
+	 * @param pcField         the register field name that is the program counter (typically
+	 *                        {@code "pc"})
+	 * @param flagLayouts     optional register field name -> {@link FlagLayout}, for decomposing
+	 *                        a packed status register into named flags in mismatch reports. A
+	 *                        register with no entry here is reported as a plain scalar diff.
+	 * @param rebuildInterval construct a fresh {@code PcodeEmulator} every this many cases (see
+	 *                        the class doc); must be positive.
 	 */
 	public VectorRunner(Language language, Map<String, Register> registerMap, String pcField,
-			Map<String, FlagLayout> flagLayouts) {
+			Map<String, FlagLayout> flagLayouts, int rebuildInterval) {
 		this.language = Objects.requireNonNull(language, "language");
 		this.registerMap = Map.copyOf(registerMap);
 		this.pcField = Objects.requireNonNull(pcField, "pcField");
@@ -105,11 +129,21 @@ public final class VectorRunner {
 			throw new IllegalArgumentException(
 				"registerMap has no entry for pcField '" + pcField + "'");
 		}
+		if (rebuildInterval <= 0) {
+			throw new IllegalArgumentException("rebuildInterval must be positive, got " +
+				rebuildInterval);
+		}
+		this.rebuildInterval = rebuildInterval;
 
-		this.emulator = new PcodeEmulator(language);
-		this.arithmetic = emulator.getSharedState().getArithmetic();
 		this.defaultSpace = language.getAddressFactory().getDefaultAddressSpace();
+		rebuildEmulator();
 		reset();
+	}
+
+	/** Convenience constructor: {@link #DEFAULT_REBUILD_INTERVAL}. */
+	public VectorRunner(Language language, Map<String, Register> registerMap, String pcField,
+			Map<String, FlagLayout> flagLayouts) {
+		this(language, registerMap, pcField, flagLayouts, DEFAULT_REBUILD_INTERVAL);
 	}
 
 	/** Convenience constructor with no flag decomposition and {@code pcField = "pc"}. */
@@ -168,9 +202,25 @@ public final class VectorRunner {
 	 * something to hold open indefinitely.
 	 */
 	private void reset() {
+		if (casesSinceRebuild >= rebuildInterval) {
+			rebuildEmulator();
+		}
 		thread = emulator.newThread();
 		state = thread.getState();
 		emulator.getSharedState().clear();
+		casesSinceRebuild++;
+	}
+
+	/**
+	 * Constructs a fresh {@link PcodeEmulator}, discarding the old one (and, with it, its
+	 * accumulated {@code AbstractPcodeMachine} thread registry -- see the class doc). Does NOT by
+	 * itself replace {@code thread}/{@code state}; callers (the constructor and {@link #reset()})
+	 * do that afterward via the normal per-case path.
+	 */
+	private void rebuildEmulator() {
+		emulator = new PcodeEmulator(language);
+		arithmetic = emulator.getSharedState().getArithmetic();
+		casesSinceRebuild = 0;
 	}
 
 	/** Seeds registers and RAM from {@code c.initialRegs()}/{@code c.initialRam()}. */

@@ -81,6 +81,24 @@ define token data16 (16)
    imm16        = (0,15)
 ;
 
+# The AND1/OR1/EOR1/NOT1/MOV1 "C,mem.bit" family (grm-c9d.3 increment 10) packs its operand as
+# ONE 16-bit little-endian word: a 13-bit ABSOLUTE address in the low bits and a 3-bit bit index
+# in the high bits -- NOT two separate bytes (an old decode bug: matching a bare `imm8` token
+# then a direct-page `ADDR8` byte happened to consume the right INSTRUCTION LENGTH, since both
+# are 3 bytes total, but misread the packed fields as two unrelated ones and wrongly applied
+# ADDR8's P-fold to what is actually an unconditional absolute address). Confirmed against the
+# vectors: opcode 4A (AND1) case "$1342" -> address 0x1342 & 0x1FFF = 0x1342 = 4930, matching the
+# case's OTHER touched ram address exactly, with 0x1342 >> 13 = 0 as the bit index; a second case
+# with operand word 0x55C0 gives address 0x15C0 = 5568 (also matching) and bit index 2. This is a
+# DECODE-TABLE change; SET1/CLR1/BBS/BBC are a different, already-correct family (bit index comes
+# from the OPCODE byte itself via `aaa`, address is a separate direct-page ADDR8 byte) and are
+# untouched -- these are the only two SPC700 opcodes Spc700LanguageTest pins, and neither shares a
+# token, field, or constructor with this one.
+define token bitmem (16)
+   bitAddr = (0,12)
+   bitIdx  = (13,15)
+;
+
 # ----------------------------------------------------------------------------------------
 # Direct-page effective-address helpers (grm-c9d.3 increment 4).
 #
@@ -148,9 +166,10 @@ ADDR16: imm16 	is imm16	{ export *:2 imm16; }
 ADDR16V: imm16 	is imm16	{ local absaddr:2 = imm16; export absaddr; }
 RADDR8:	addr 	is simm8	[ addr = inst_next + simm8; ] { export *:1 addr; }
 
-define pcodeop daa;
-define pcodeop das;
-define pcodeop nop;
+# daa/das/nop are genuinely implementable in p-code (grm-c9d.3 increment 9 -- see DAA/DAS/NOP
+# in spc700ops.sinc) and are no longer pcodeops. sleep/stop legitimately halt the processor
+# pending an interrupt or reset; there is no correct p-code for that, so CALLOTHER stays the
+# honest model (the harness marks their vector rows N/A rather than a semantic failure).
 define pcodeop sleep;
 define pcodeop stop;
 

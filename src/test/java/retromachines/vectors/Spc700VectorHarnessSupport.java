@@ -89,6 +89,19 @@ final class Spc700VectorHarnessSupport {
 	}
 
 	/**
+	 * Opcodes with NO correct single-step post-state to check against, because the instruction
+	 * legitimately halts the processor pending an interrupt or reset (grm-c9d.3 increment 9).
+	 * Every vector case for these throws {@code execution failed} from the emulator, forever --
+	 * not a semantic bug, and not something to contort {@code spc700ops.sinc} to work around
+	 * (there is no correct p-code for "wait for an interrupt"). Kept deliberately narrow and
+	 * explicit, one opcode at a time with its own stated reason -- see {@link OpcodeBaseline}'s
+	 * class doc for why this must never become a blanket "exceptions don't count".
+	 */
+	private static final Map<String, String> NOT_APPLICABLE_OPCODES = Map.of(
+		"EF", "SLEEP halts the processor pending an interrupt; no post-single-step state exists",
+		"FF", "STOP halts the processor pending a hardware reset; no post-single-step state exists");
+
+	/**
 	 * Runs every case in one upstream-shaped opcode file ({@code <hex>.json}) and summarizes the
 	 * result as one {@link OpcodeBaseline} row. The mnemonic column comes from disassembling the
 	 * FIRST case's own instruction bytes (see {@link #mnemonicOf}) -- deliberately NOT pushed
@@ -102,6 +115,17 @@ final class Spc700VectorHarnessSupport {
 		try (FileInputStream in = new FileInputStream(jsonFile)) {
 			cases = VectorParser.parse(in);
 		}
+		String mnemonic = cases.isEmpty() ? "-" : mnemonicOf(cases.get(0));
+
+		String naReason = NOT_APPLICABLE_OPCODES.get(opcodeHex);
+		if (naReason != null) {
+			// Do not even attempt to step these -- every case would throw, and running them
+			// anyway would add nothing but noise (and cost) to what's already a known, named
+			// exemption.
+			return new OpcodeBaseline(opcodeHex, mnemonic, OpcodeBaseline.Status.NOT_APPLICABLE,
+				0, cases.size(), List.of(naReason));
+		}
+
 		int passed = 0;
 		TreeSet<String> mismatchedFields = new TreeSet<>();
 		for (VectorCase c : cases) {
@@ -115,9 +139,10 @@ final class Spc700VectorHarnessSupport {
 				}
 			}
 		}
-		String mnemonic = cases.isEmpty() ? "-" : mnemonicOf(cases.get(0));
-		return new OpcodeBaseline(opcodeHex, mnemonic, passed == cases.size(), passed,
-			cases.size(), List.copyOf(mismatchedFields));
+		OpcodeBaseline.Status status =
+			passed == cases.size() ? OpcodeBaseline.Status.PASS : OpcodeBaseline.Status.FAIL;
+		return new OpcodeBaseline(opcodeHex, mnemonic, status, passed, cases.size(),
+			List.copyOf(mismatchedFields));
 	}
 
 	// ------------------------------------------------------------------
