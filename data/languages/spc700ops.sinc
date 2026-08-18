@@ -207,8 +207,7 @@
 }
 
 :MOV ADDR8,X is op=0xD8 & X; ADDR8 {
-	local addr:2; dpIndex(ADDR8, X, addr);
-	*:1 addr = X;
+	*:1 ADDR8 = X;
 }
 
 :MOV ADDR8+Y,X is op=0xD9 & X & Y; ADDR8 {
@@ -221,8 +220,7 @@
 }
 
 :MOV ADDR8,Y is op=0xCB & Y; ADDR8 {
-	local addr:2; dpIndex(ADDR8, Y, addr);
-	*:1 addr = Y;
+	*:1 ADDR8 = Y;
 }
 
 :MOV ADDR8+X,Y is op=0xDB & X & Y; ADDR8 {

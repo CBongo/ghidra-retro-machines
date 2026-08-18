@@ -213,7 +213,7 @@ C7  MOV [0xf9+X],A  PASS  32/32
 C8  CMP X,#0x3c  PASS  32/32
 C9  MOV !0x40e1,X  PASS  32/32
 CA  MOV1 !0xc8e.0x1,C  PASS  32/32
-CB  MOV 0x3a,Y  FAIL  0/32  $1,$12b,$13,$137,$145,$147,$150,$152,$159,$194,$1ab,$1ac,$1b3,$1bb,$1d,$1df,$1e4,$1e8,$1ee,$1f0,$20,$26,$2e,$3a,$49,$6c,$71,$97,$a,$c6,$f3
+CB  MOV 0x3a,Y  PASS  32/32
 CC  MOV !0x752e,Y  PASS  32/32
 CD  MOV X,#0x3  PASS  32/32
 CE  POP X  PASS  32/32
@@ -226,7 +226,7 @@ D4  MOV 0x46+X,A  PASS  32/32
 D5  MOV !0xf07e+X,A  PASS  32/32
 D6  MOV !0xcf28+Y,A  PASS  32/32
 D7  MOV [0x2f]+Y,A  PASS  32/32
-D8  MOV 0xf0,X  FAIL  0/32  $10c,$111,$11b,$123,$143,$153,$15c,$168,$16a,$189,$1a7,$1b0,$1b4,$1cb,$1e2,$1e9,$1f1,$1ff,$63,$64,$8a,$b3,$b5,$b9,$c,$d7,$e7,$eb,$f0,$fe
+D8  MOV 0xf0,X  PASS  32/32
 D9  MOV 0xf4+Y,X  PASS  32/32
 DA  MOVW 0xe6,YA  PASS  32/32
 DB  MOV 0x1e+X,Y  PASS  32/32
