@@ -145,11 +145,16 @@ macro aluADC(op8, result) {
 }
 
 macro aluSBC(op8, result) {
-	local c = $(CF);
+	# C is an inverted borrow: C=1 means no borrow occurred. So the incoming
+	# borrow-in is (C==0), and the outgoing C is set when A >= op8 + borrowIn
+	# (i.e. no borrow at all, computed in one widened comparison rather than
+	# the previous two-step approximation).
+	local c:1 = ($(CF) == 0);
+	local operand:1 = op8;
 	$(HF) = (((A & 0xF) - (op8 & 0xF) - c) & 0x10) != 0;
-	$(CF) = A < op8;
-	result = A - op8;
-	$(CF) = $(CF) || result < c;
-	result = result - c;
+	local wideA:2 = zext(A);
+	local wideSub:2 = zext(operand) + zext(c);
+	$(CF) = wideA >= wideSub;
+	result = A - op8 - c;
 	resultFlags(result);
 }

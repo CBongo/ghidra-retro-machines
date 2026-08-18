@@ -484,7 +484,7 @@
 	
 	$(NF) = (result s< 0);
 	$(ZF) = (A == imm8);
-	$(CF) = (A < imm8);
+	$(CF) = (A >= imm8);
 }
 
 :CMP A,(X) is op=0x66 & A & X {
@@ -494,7 +494,7 @@
 	
 	$(NF) = (result s< 0);
 	$(ZF) = (A == tmp);
-	$(CF) = (A < tmp);
+	$(CF) = (A >= tmp);
 }
 
 :CMP A,ADDR8 is op=0x64 & A; ADDR8 {
@@ -503,7 +503,7 @@
 	
 	$(NF) = (result s< 0);
 	$(ZF) = (A == tmp);
-	$(CF) = (A < tmp);
+	$(CF) = (A >= tmp);
 }
 
 :CMP A,ADDR8+X is op=0x74 & A & X; ADDR8 {
@@ -513,7 +513,7 @@
 	
 	$(NF) = (result s< 0);
 	$(ZF) = (A == tmp);
-	$(CF) = (A < tmp);
+	$(CF) = (A >= tmp);
 }
 
 :CMP A," !"^ADDR16V is op=0x65 & A; ADDR16V {
@@ -522,7 +522,7 @@
 	
 	$(NF) = (result s< 0);
 	$(ZF) = (A == tmp);
-	$(CF) = (A < tmp);
+	$(CF) = (A >= tmp);
 }
 
 :CMP A," !"^ADDR16V+X is op=0x75 & A & X; ADDR16V {
@@ -532,7 +532,7 @@
 	
 	$(NF) = (result s< 0);
 	$(ZF) = (A == tmp);
-	$(CF) = (A < tmp);
+	$(CF) = (A >= tmp);
 }
 
 :CMP A," !"^ADDR16V+Y is op=0x76 & A & Y; ADDR16V {
@@ -542,7 +542,7 @@
 	
 	$(NF) = (result s< 0);
 	$(ZF) = (A == tmp);
-	$(CF) = (A < tmp);
+	$(CF) = (A >= tmp);
 }
 
 :CMP A,[ADDR8+X] is op=0x67 & A & X; ADDR8 {
@@ -553,7 +553,7 @@
 	
 	$(NF) = (result s< 0);
 	$(ZF) = (A == tmp);
-	$(CF) = (A < tmp);
+	$(CF) = (A >= tmp);
 }
 
 :CMP A,[ADDR8]+Y is op=0x77 & A & Y; ADDR8 {
@@ -564,7 +564,7 @@
 	
 	$(NF) = (result s< 0);
 	$(ZF) = (A == tmp);
-	$(CF) = (A < tmp);
+	$(CF) = (A >= tmp);
 }
 
 :CMP (X),(Y) is op=0x79 & X & Y {
@@ -576,7 +576,7 @@
 	
 	$(NF) = (result s< 0);
 	$(ZF) = (op1 == op2);
-	$(CF) = (op1 < op2);
+	$(CF) = (op1 >= op2);
 }
 
 :CMP dstaddr,srcaddr is op=0x69; srcaddr; dstaddr {
@@ -589,7 +589,7 @@
 	
 	$(NF) = (result s< 0);
 	$(ZF) = (op1 == op2);
-	$(CF) = (op1 < op2);
+	$(CF) = (op1 >= op2);
 }
 
 :CMP ADDR8," #"^imm8 is op=0x78; imm8; ADDR8 {
@@ -598,7 +598,7 @@
 	
 	$(NF) = (result s< 0);
 	$(ZF) = (op1 == imm8);
-	$(CF) = (op1 < imm8);
+	$(CF) = (op1 >= imm8);
 }
 
 :CMP X," #"^imm8 is op=0xC8 & X; imm8 {
@@ -606,7 +606,7 @@
 	
 	$(NF) = (result s< 0);
 	$(ZF) = (X == imm8);
-	$(CF) = (X < imm8);
+	$(CF) = (X >= imm8);
 }
 
 :CMP X,ADDR8 is op=0x3E & X; ADDR8 {
@@ -615,7 +615,7 @@
 	
 	$(NF) = (result s< 0);
 	$(ZF) = (X == tmp);
-	$(CF) = (X < tmp);
+	$(CF) = (X >= tmp);
 }
 
 :CMP X," !"^ADDR16V is op=0x1E & X; ADDR16V {
@@ -624,7 +624,7 @@
 	
 	$(NF) = (result s< 0);
 	$(ZF) = (X == tmp);
-	$(CF) = (X < tmp);
+	$(CF) = (X >= tmp);
 }
 
 :CMP Y," #"^imm8 is op=0xAD & Y; imm8 {
@@ -632,7 +632,7 @@
 	
 	$(NF) = (result s< 0);
 	$(ZF) = (Y == imm8);
-	$(CF) = (Y < imm8);
+	$(CF) = (Y >= imm8);
 }
 
 :CMP Y,ADDR8 is op=0x7E & Y; ADDR8 {
@@ -641,7 +641,7 @@
 	
 	$(NF) = (result s< 0);
 	$(ZF) = (Y == tmp);
-	$(CF) = (Y < tmp);
+	$(CF) = (Y >= tmp);
 }
 
 :CMP Y," !"^ADDR16V is op=0x5E & Y; ADDR16V {
@@ -650,7 +650,7 @@
 	
 	$(NF) = (result s< 0);
 	$(ZF) = (Y == tmp);
-	$(CF) = (Y < tmp);
+	$(CF) = (Y >= tmp);
 }
 
 #======================================================#
@@ -1255,7 +1255,7 @@
 	
 	$(NF) = (result s< 0);
 	$(ZF) = (YA == tmp);
-	$(CF) = (YA < tmp);
+	$(CF) = (YA >= tmp);
 }
 
 #======================================================#
