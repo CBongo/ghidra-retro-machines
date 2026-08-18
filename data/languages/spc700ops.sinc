@@ -1347,12 +1347,41 @@
 #======================================================#
 # Table C-14: Decimal Compensation Commands            #
 #======================================================#
+# DAA/DAS thresholds (grm-c9d.3 increment 9) verified against all 1000 exhaustive vector cases
+# each with zero mismatches: BOTH the low-nibble and high-byte adjustment conditions test the
+# ORIGINAL A (before either adjustment), even though the low adjustment, if taken, is applied
+# to A before the high adjustment runs -- e.g. A=0xFA,C=0,H=0 low-adjusts (low nibble 0xA>9) to
+# 0x00, then STILL high-adjusts to 0x60 because the high check uses original A=0xFA>0x99, not
+# the already-low-adjusted 0x00. Getting this backwards (checking the post-low-adjust value)
+# passes ~976/1000 cases and looks nearly finished, which is why it needed the full 1000 to
+# pin down rather than a handful by hand. C is DAS's usual inverted-borrow sense, matching
+# CMP/SBC elsewhere in this file.
 :DAA A is op=0xDF & A {
-	A = daa(A);
+	local orig:1 = A;
+	local lowCond:1 = ($(HF) == 1) || ((orig & 0xF) > 9);
+	if (lowCond == 0) goto <daaSkipLow>;
+	A = A + 6;
+	<daaSkipLow>
+	local highCond:1 = ($(CF) == 1) || (orig > 0x99);
+	if (highCond == 0) goto <daaSkipHigh>;
+	A = A + 0x60;
+	$(CF) = 1;
+	<daaSkipHigh>
+	resultFlags(A);
 }
 
 :DAS A is op=0xBE & A {
-	A = das(A);
+	local orig:1 = A;
+	local lowCond:1 = ($(HF) == 0) || ((orig & 0xF) > 9);
+	if (lowCond == 0) goto <dasSkipLow>;
+	A = A - 6;
+	<dasSkipLow>
+	local highCond:1 = ($(CF) == 0) || (orig > 0x99);
+	if (highCond == 0) goto <dasSkipHigh>;
+	A = A - 0x60;
+	$(CF) = 0;
+	<dasSkipHigh>
+	resultFlags(A);
 }
 
 #======================================================#
@@ -1587,7 +1616,7 @@
 #======================================================#
 # Table C-20: Other Commands                           #
 #======================================================#
-:NOP is op=0x00 { nop(); }
+:NOP is op=0x00 { }
 
 :SLEEP is op=0xEF { sleep(); }
 

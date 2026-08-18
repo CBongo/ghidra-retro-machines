@@ -148,9 +148,10 @@ ADDR16: imm16 	is imm16	{ export *:2 imm16; }
 ADDR16V: imm16 	is imm16	{ local absaddr:2 = imm16; export absaddr; }
 RADDR8:	addr 	is simm8	[ addr = inst_next + simm8; ] { export *:1 addr; }
 
-define pcodeop daa;
-define pcodeop das;
-define pcodeop nop;
+# daa/das/nop are genuinely implementable in p-code (grm-c9d.3 increment 9 -- see DAA/DAS/NOP
+# in spc700ops.sinc) and are no longer pcodeops. sleep/stop legitimately halt the processor
+# pending an interrupt or reset; there is no correct p-code for that, so CALLOTHER stays the
+# honest model (the harness marks their vector rows N/A rather than a semantic failure).
 define pcodeop sleep;
 define pcodeop stop;
 
