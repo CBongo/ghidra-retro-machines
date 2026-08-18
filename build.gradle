@@ -533,11 +533,15 @@ task spc700VectorTest(type: Test) {
 		"(refuses loudly otherwise). Not part of `test`/`unit`/`all` -- see build-and-test.sh's " +
 		"`spc700-vectors` chunk."
 	useJUnit()
-	// 4g, not `test`'s 2g: this task runs ~256,000 emulated cases in one JVM (vs. `unit`'s 8192
-	// SPC700 cases plus everything else), and 2g OOM'd partway through a real run (grm-c9d.3
-	// increment 6) -- VectorRunner's per-case PcodeThread registry growth (documented on its
-	// reset()) is cheap per-case but adds up at this case count.
-	maxHeapSize = '6g'
+	// 512m, not `test`'s 2g: with VectorRunner's periodic emulator rebuild (grm-c9d.3 increment
+	// 10, VectorRunner.DEFAULT_REBUILD_INTERVAL) bounding the per-run growth of
+	// AbstractPcodeMachine's thread registry, a full ~256,000-case exhaustive run needs nowhere
+	// near what it used to -- measured reliably passing at 128m and OOMing at 64m, so 512m keeps
+	// a 4x margin over the measured floor rather than chasing the exact byte. Before the rebuild
+	// fix this task needed 9g (see the increment 9/10 reports): unbounded thread-registry growth
+	// across all 256,000 cases in one JVM, which the project owner ruled unacceptable on this
+	// 16 GB dev machine for what is meant to be routine local verification.
+	maxHeapSize = '512m'
 	environment 'GHIDRA_INSTALL_DIR', ghidraInstallDir
 	dependsOn 'sleighCompile'
 	systemProperty 'grm.moduleDir', projectDir.absolutePath
