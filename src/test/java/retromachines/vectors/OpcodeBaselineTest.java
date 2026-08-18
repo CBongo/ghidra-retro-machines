@@ -32,9 +32,9 @@ public class OpcodeBaselineTest {
 
 	@Test
 	public void formatAndParseRoundTrip() {
-		OpcodeBaseline pass = new OpcodeBaseline("E8", "MOV A,#imm", true, 32, 32, List.of());
+		OpcodeBaseline pass = new OpcodeBaseline("E8", "MOV A,#imm", OpcodeBaseline.Status.PASS, 32, 32, List.of());
 		OpcodeBaseline fail =
-			new OpcodeBaseline("E4", "MOV A,dp", false, 0, 32, List.of("A", "PSW"));
+			new OpcodeBaseline("E4", "MOV A,dp", OpcodeBaseline.Status.FAIL, 0, 32, List.of("A", "PSW"));
 
 		assertEquals("E8  MOV A,#imm  PASS  32/32", pass.format());
 		assertEquals("E4  MOV A,dp  FAIL  0/32  A,PSW", fail.format());
@@ -59,7 +59,7 @@ public class OpcodeBaselineTest {
 	public void mnemonicWithInternalSpaceRoundTrips() {
 		// "MOV A,#imm" has a single internal space; the two-or-more-space field separator must
 		// not be fooled by it.
-		OpcodeBaseline row = new OpcodeBaseline("E8", "MOV A,#imm", true, 32, 32, List.of());
+		OpcodeBaseline row = new OpcodeBaseline("E8", "MOV A,#imm", OpcodeBaseline.Status.PASS, 32, 32, List.of());
 		OpcodeBaseline reparsed = OpcodeBaseline.parseLine(row.format());
 		assertEquals(row, reparsed);
 	}
@@ -67,11 +67,11 @@ public class OpcodeBaselineTest {
 	@Test
 	public void compareIsCleanWhenActualMatchesBaseline() {
 		List<OpcodeBaseline> baseline = List.of(
-			new OpcodeBaseline("E8", "MOV A,#imm", true, 32, 32, List.of()),
-			new OpcodeBaseline("E4", "MOV A,dp", false, 0, 32, List.of("A", "PSW")));
+			new OpcodeBaseline("E8", "MOV A,#imm", OpcodeBaseline.Status.PASS, 32, 32, List.of()),
+			new OpcodeBaseline("E4", "MOV A,dp", OpcodeBaseline.Status.FAIL, 0, 32, List.of("A", "PSW")));
 		List<OpcodeBaseline> actual = List.of(
-			new OpcodeBaseline("E8", "MOV A,#imm", true, 32, 32, List.of()),
-			new OpcodeBaseline("E4", "MOV A,dp", false, 0, 32, List.of("A", "PSW")));
+			new OpcodeBaseline("E8", "MOV A,#imm", OpcodeBaseline.Status.PASS, 32, 32, List.of()),
+			new OpcodeBaseline("E4", "MOV A,dp", OpcodeBaseline.Status.FAIL, 0, 32, List.of("A", "PSW")));
 		assertTrue(OpcodeBaseline.compare(baseline, actual).isEmpty());
 	}
 
@@ -82,20 +82,20 @@ public class OpcodeBaselineTest {
 		// to a single row that goes all-PASS is the "did the baseline just go stale" case (see
 		// compareFlagsZeroFailuresWhenBaselineExpectsMany below), not plain incremental progress.
 		List<OpcodeBaseline> baseline = List.of(
-			new OpcodeBaseline("E4", "MOV A,dp", false, 0, 32, List.of("A", "PSW")),
-			new OpcodeBaseline("E5", "MOV A,dp+X", false, 0, 32, List.of("A")));
+			new OpcodeBaseline("E4", "MOV A,dp", OpcodeBaseline.Status.FAIL, 0, 32, List.of("A", "PSW")),
+			new OpcodeBaseline("E5", "MOV A,dp+X", OpcodeBaseline.Status.FAIL, 0, 32, List.of("A")));
 		List<OpcodeBaseline> actual = List.of(
-			new OpcodeBaseline("E4", "MOV A,dp", true, 32, 32, List.of()),
-			new OpcodeBaseline("E5", "MOV A,dp+X", false, 0, 32, List.of("A")));
+			new OpcodeBaseline("E4", "MOV A,dp", OpcodeBaseline.Status.PASS, 32, 32, List.of()),
+			new OpcodeBaseline("E5", "MOV A,dp+X", OpcodeBaseline.Status.FAIL, 0, 32, List.of("A")));
 		assertTrue(OpcodeBaseline.compare(baseline, actual).isEmpty());
 	}
 
 	@Test
 	public void compareFlagsPassToFailRegression() {
 		List<OpcodeBaseline> baseline =
-			List.of(new OpcodeBaseline("E8", "MOV A,#imm", true, 32, 32, List.of()));
+			List.of(new OpcodeBaseline("E8", "MOV A,#imm", OpcodeBaseline.Status.PASS, 32, 32, List.of()));
 		List<OpcodeBaseline> actual =
-			List.of(new OpcodeBaseline("E8", "MOV A,#imm", false, 10, 32, List.of("PSW")));
+			List.of(new OpcodeBaseline("E8", "MOV A,#imm", OpcodeBaseline.Status.FAIL, 10, 32, List.of("PSW")));
 		List<String> problems = OpcodeBaseline.compare(baseline, actual);
 		assertEquals(1, problems.size());
 		assertTrue(problems.get(0).contains("E8"));
@@ -105,10 +105,10 @@ public class OpcodeBaselineTest {
 	@Test
 	public void compareFlagsFewerOpcodesThanBaseline() {
 		List<OpcodeBaseline> baseline = List.of(
-			new OpcodeBaseline("E8", "MOV A,#imm", true, 32, 32, List.of()),
-			new OpcodeBaseline("E4", "MOV A,dp", false, 0, 32, List.of("A")));
+			new OpcodeBaseline("E8", "MOV A,#imm", OpcodeBaseline.Status.PASS, 32, 32, List.of()),
+			new OpcodeBaseline("E4", "MOV A,dp", OpcodeBaseline.Status.FAIL, 0, 32, List.of("A")));
 		List<OpcodeBaseline> actual =
-			List.of(new OpcodeBaseline("E8", "MOV A,#imm", true, 32, 32, List.of()));
+			List.of(new OpcodeBaseline("E8", "MOV A,#imm", OpcodeBaseline.Status.PASS, 32, 32, List.of()));
 		List<String> problems = OpcodeBaseline.compare(baseline, actual);
 		assertTrue(problems.stream().anyMatch(p -> p.contains("fewer opcodes")));
 		assertTrue(problems.stream().anyMatch(p -> p.contains("E4") && p.contains("missing")));
@@ -125,11 +125,11 @@ public class OpcodeBaselineTest {
 		// the fix is the same: regenerate the baseline (see next test for the resulting clean
 		// compare) -- never to ignore this check.
 		List<OpcodeBaseline> baseline = List.of(
-			new OpcodeBaseline("E8", "MOV A,#imm", true, 32, 32, List.of()),
-			new OpcodeBaseline("E4", "MOV A,dp", false, 0, 32, List.of("A")));
+			new OpcodeBaseline("E8", "MOV A,#imm", OpcodeBaseline.Status.PASS, 32, 32, List.of()),
+			new OpcodeBaseline("E4", "MOV A,dp", OpcodeBaseline.Status.FAIL, 0, 32, List.of("A")));
 		List<OpcodeBaseline> actual = List.of(
-			new OpcodeBaseline("E8", "MOV A,#imm", true, 32, 32, List.of()),
-			new OpcodeBaseline("E4", "MOV A,dp", true, 32, 32, List.of()));
+			new OpcodeBaseline("E8", "MOV A,#imm", OpcodeBaseline.Status.PASS, 32, 32, List.of()),
+			new OpcodeBaseline("E4", "MOV A,dp", OpcodeBaseline.Status.PASS, 32, 32, List.of()));
 		List<String> problems = OpcodeBaseline.compare(baseline, actual);
 		assertTrue(problems.stream().anyMatch(p -> p.contains("zero failures")));
 	}
@@ -139,11 +139,11 @@ public class OpcodeBaselineTest {
 		// The follow-up to the previous test: once the baseline is regenerated (E4 updated to
 		// PASS to match reality), the same actual run compares clean.
 		List<OpcodeBaseline> regeneratedBaseline = List.of(
-			new OpcodeBaseline("E8", "MOV A,#imm", true, 32, 32, List.of()),
-			new OpcodeBaseline("E4", "MOV A,dp", true, 32, 32, List.of()));
+			new OpcodeBaseline("E8", "MOV A,#imm", OpcodeBaseline.Status.PASS, 32, 32, List.of()),
+			new OpcodeBaseline("E4", "MOV A,dp", OpcodeBaseline.Status.PASS, 32, 32, List.of()));
 		List<OpcodeBaseline> actual = List.of(
-			new OpcodeBaseline("E8", "MOV A,#imm", true, 32, 32, List.of()),
-			new OpcodeBaseline("E4", "MOV A,dp", true, 32, 32, List.of()));
+			new OpcodeBaseline("E8", "MOV A,#imm", OpcodeBaseline.Status.PASS, 32, 32, List.of()),
+			new OpcodeBaseline("E4", "MOV A,dp", OpcodeBaseline.Status.PASS, 32, 32, List.of()));
 		assertTrue(OpcodeBaseline.compare(regeneratedBaseline, actual).isEmpty());
 	}
 }

@@ -42,18 +42,57 @@ import java.util.stream.Collectors;
  * <pre>
  * E8  MOV A,#imm    PASS  32/32
  * E4  MOV A,dp      FAIL   0/32  A,PSW
+ * EF  SLEEP         N/A    0/32  legitimately halts the processor pending an interrupt
  * </pre>
  * Blank lines and lines starting with {@code #} (a header/comment block explaining provenance
  * and how to regenerate -- see the per-suite test that owns the real file) are ignored.
+ *
+ * <h2>{@code N/A}, not {@code PASS} or {@code FAIL} (grm-c9d.3 increment 9)</h2>
+ * A small, explicit set of opcodes (currently {@code SLEEP}/{@code STOP} -- see
+ * {@code Spc700VectorHarnessSupport}'s allowlist) legitimately halt the processor; there is no
+ * correct post-single-step state to compare a vector against, so every case for them would
+ * otherwise report a spurious {@code execution failed} mismatch forever, indistinguishable from a
+ * real semantic bug and permanently floored below {@code N/1000}. {@link Status#NOT_APPLICABLE}
+ * makes that distinction visible in the baseline file itself rather than silently swallowing the
+ * exception -- swallowing it would be exactly the kind of silent-no-op failure mode this project
+ * treats as worse than an honest red elsewhere (see {@code CLAUDE.md}). The allowlist producing
+ * {@code N/A} rows must stay narrow and named per opcode with a stated reason, never a blanket
+ * "exceptions don't count".
  */
-public record OpcodeBaseline(String opcodeHex, String mnemonic, boolean pass, int passedCount,
+public record OpcodeBaseline(String opcodeHex, String mnemonic, Status status, int passedCount,
 		int totalCount, List<String> mismatchedFields) {
+
+	/** A row's outcome: fully matched, at least one mismatch, or not applicable (see class doc). */
+	public enum Status {
+		PASS("PASS"), FAIL("FAIL"), NOT_APPLICABLE("N/A");
+
+		private final String label;
+
+		Status(String label) {
+			this.label = label;
+		}
+
+		static Status fromLabel(String label, String line) {
+			for (Status s : values()) {
+				if (s.label.equals(label)) {
+					return s;
+				}
+			}
+			throw new IllegalArgumentException(
+				"baseline row '" + line + "': expected PASS, FAIL, or N/A, got '" + label + "'");
+		}
+	}
+
+	/** True iff this row fully matched the vectors ({@link Status#PASS}). */
+	public boolean pass() {
+		return status == Status.PASS;
+	}
 
 	private static final Pattern SPLIT = Pattern.compile("\\s{2,}");
 
 	/** Renders this row in the committed file's format (see class doc). */
 	public String format() {
-		String base = opcodeHex + "  " + mnemonic + "  " + (pass ? "PASS" : "FAIL") + "  " +
+		String base = opcodeHex + "  " + mnemonic + "  " + status.label + "  " +
 			passedCount + "/" + totalCount;
 		if (mismatchedFields.isEmpty()) {
 			return base;
@@ -91,12 +130,7 @@ public record OpcodeBaseline(String opcodeHex, String mnemonic, boolean pass, in
 		}
 		String opcodeHex = fields[0];
 		String mnemonic = fields[1];
-		boolean pass = switch (fields[2]) {
-			case "PASS" -> true;
-			case "FAIL" -> false;
-			default -> throw new IllegalArgumentException(
-				"baseline row '" + line + "': expected PASS or FAIL, got '" + fields[2] + "'");
-		};
+		Status status = Status.fromLabel(fields[2], line);
 		String[] ratio = fields[3].split("/", 2);
 		if (ratio.length != 2) {
 			throw new IllegalArgumentException(
@@ -107,7 +141,7 @@ public record OpcodeBaseline(String opcodeHex, String mnemonic, boolean pass, in
 		List<String> mismatched = fields.length >= 5
 				? List.of(fields[4].split(","))
 				: List.of();
-		return new OpcodeBaseline(opcodeHex, mnemonic, pass, passedCount, totalCount, mismatched);
+		return new OpcodeBaseline(opcodeHex, mnemonic, status, passedCount, totalCount, mismatched);
 	}
 
 	/**
@@ -143,8 +177,8 @@ public record OpcodeBaseline(String opcodeHex, String mnemonic, boolean pass, in
 			}
 		}
 
-		boolean baselineHasFailures = baseline.stream().anyMatch(r -> !r.pass());
-		boolean actualHasFailures = actual.stream().anyMatch(r -> !r.pass());
+		boolean baselineHasFailures = baseline.stream().anyMatch(r -> r.status() == Status.FAIL);
+		boolean actualHasFailures = actual.stream().anyMatch(r -> r.status() == Status.FAIL);
 		if (baselineHasFailures && !actualHasFailures) {
 			problems.add("baseline expects failing opcodes but this run produced zero failures " +
 				"-- a harness that passes against a spec known to be broken is measuring " +
