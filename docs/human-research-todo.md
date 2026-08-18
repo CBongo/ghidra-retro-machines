@@ -79,13 +79,26 @@ Each is minutes of work and settles something specific. Highest value per unit e
       serve, so the resident case is documented; the open question is only about the *streamed*
       ones.
 
-*Not an item — a note, so it isn't re-raised as one.* `lufia/lufia.idb` in the same corpus is an
-IDA Pro database, and reading it does **not** need IDA: two permissively-licensed pure-Python
-parsers exist (`williballenthin/python-idb`, Apache-2.0, archived May 2025; `nlitsme/idbutil`,
-MIT, active) — archived is acceptable for a one-off read we don't carry as a dependency. So
-"what's in the Lufia database" is **cheap agent work, not a judgment call**, and it may be the
-richest item in the corpus: an `.idb` can hold named functions, typed data and comments in a
-structured form the flat `.dis` text files cannot. Ask for it whenever it's wanted.
+- [ ] **Locate your older Ghidra projects** (`grm-w4w3`). You mentioned previous Ghidra projects
+      exist somewhere. **These would be worth more than every other annotation source in the
+      corpus combined**, and the reason is purely mechanical: a `.gpr` + `.rep` pair opens
+      directly in the Ghidra this project already targets — functions, labels, applied types,
+      comments, bookmarks and memory layout intact, no parser, no conversion, and diffable
+      against a fresh import of the same binary. Every other artifact (nine `.dis` text
+      listings, ten `.idb` databases) needs a tool and a translation step first.
+
+      Only you can find them. Once located, `grm-w4w3` can proceed without any of the `.idb`
+      tooling for whatever titles they cover.
+
+*Not an item — a note.* The `.idb` inventory itself (`grm-w4w3`) is **agent work and is
+deliberately deferred to a future session** at your request; the tooling question is settled
+(`python-idb` Apache-2.0 / `idbutil` MIT, no IDA needed) so nobody re-derives it. Worth knowing
+what turned up while looking: **ten** IDA databases, not one — including `nes/zelda/zelda.idb`
+(a title already hash-pinned in the real-ROM manifest, and named in section 4's community-
+disassembly item — your own database sidesteps that licensing question entirely) and
+`c64/rds/files/f-drive0500.idb`, which reads as **1541 drive code at $0500**, i.e. a worked
+example of the C64→1541 upload case `docs/smc-survey.md:164` names as the sibling of the
+SPC700 problem.
 
 ---
 
