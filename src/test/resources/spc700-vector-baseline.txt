@@ -24,7 +24,7 @@
 0B  ASL 0x55  PASS  32/32
 0C  ASL !0x99cb  PASS  32/32
 0D  PUSH PSW  FAIL  0/32  $100,$101,$109,$10f,$111,$113,$129,$12d,$12e,$130,$135,$13d,$13f,$147,$150,$159,$167,$169,$16b,$16c,$170,$171,$17c,$17d,$185,$18d,$1a5,$1b9,$1cb,$1d9,$1e9,$1eb,SP
-0E  TSET1 !0x449a  FAIL  5/32  PSW
+0E  TSET1 !0x449a  PASS  32/32
 0F  BRK  FAIL  0/32  $10a,$10b,$10c,$113,$114,$115,$116,$117,$118,$119,$11a,$11b,$11c,$11d,$120,$121,$122,$124,$125,$126,$169,$16a,$16b,$175,$176,$177,$17e,$17f,$180,$195,$196,$197,$198,$199,$19a,$1a8,$1a9,$1aa,$1ae,$1af,$1b0,$1b3,$1b4,$1b5,$1b7,$1b8,$1b9,$1ba,$1bb,$1bc,$1c2,$1c3,$1c4,$1c5,$1c6,$1c8,$1c9,$1ca,$1cc,$1cd,$1ce,$1cf,$1d0,$1d4,$1d5,$1d6,$1d8,$1d9,$1da,$1db,$1dc,$1dd,$1f0,$1f1,$1f2,$1f7,$1f8,$1f9,$1fb,$1fc,$1fd,PC
 10  BPL 0x036c  PASS  32/32
 11  TCALL 0x1  FAIL  0/32  $117,$118,$11d,$11e,$12b,$12c,$14e,$14f,$155,$156,$157,$162,$163,$164,$165,$166,$167,$176,$177,$17c,$17d,$17e,$17f,$18c,$18d,$193,$194,$19f,$1a0,$1a2,$1a3,$1a6,$1a7,$1b9,$1ba,$1c4,$1c5,$1c9,$1ca,$1d2,$1d3,$1df,$1e0,$1e7,$1e8,$1e9,$1ea,$1eb,$1ed,$1ee,$1f3,$1f4,$1f6,$1f7,$1f8,SP
@@ -36,10 +36,10 @@
 17  OR A,[0x3c]+Y  PASS  32/32
 18  OR 0xd2,#0x98  PASS  32/32
 19  OR (X),(Y)  PASS  32/32
-1A  DECW 0x70  FAIL  6/32  PSW
+1A  DECW 0x70  PASS  32/32
 1B  ASL 0xb1+X  FAIL  1/32  $10e,$11d,$124,$14a,$14b,$16,$16e,$193,$1ba,$1c5,$1ce,$1df,$23,$28,$2a,$33,$4,$44,$4a,$4d,$57,$69,$92,$a0,$b3,$d,$df,$e6,$e9,$ef
 1C  ASL A  PASS  32/32
-1D  DEC X  FAIL  9/32  PSW
+1D  DEC X  PASS  32/32
 1E  CMP X,!0xb213  PASS  32/32
 1F  JMP [!0xeee0+X]  FAIL  0/32  PC
 20  CLRP  PASS  32/32
@@ -68,10 +68,10 @@
 37  AND A,[0x5a]+Y  PASS  32/32
 38  AND 0x69,#0x9c  PASS  32/32
 39  AND (X),(Y)  PASS  32/32
-3A  INCW 0xe5  FAIL  10/32  PSW
+3A  INCW 0xe5  PASS  32/32
 3B  ROL 0x98+X  FAIL  0/32  $117,$123,$130,$131,$147,$14c,$15a,$189,$193,$1ae,$1b7,$1b9,$1c8,$1d1,$1ee,$1f0,$4c,$4d,$50,$70,$77,$78,$82,$84,$8f,$a5,$a8,$b9,$e4,$ea,$fc
 3C  ROL A  PASS  32/32
-3D  INC X  FAIL  9/32  PSW
+3D  INC X  PASS  32/32
 3E  CMP X,0xc6  PASS  32/32
 3F  CALL 0xa6bb  FAIL  0/32  $101,$102,$103,$104,$108,$109,$10a,$10b,$114,$115,$117,$118,$119,$128,$129,$12b,$12c,$136,$137,$13c,$13d,$145,$146,$14d,$14e,$15c,$15d,$15e,$15f,$160,$16e,$16f,$170,$17e,$17f,$184,$185,$188,$189,$191,$192,$195,$196,$1a9,$1aa,$1ab,$1ba,$1bb,$1cb,$1cc,$1d4,$1d5,$1df,$1e0,SP
 40  SETP  PASS  32/32
@@ -88,7 +88,7 @@
 4B  LSR 0x30  PASS  32/32
 4C  LSR !0x9715  PASS  32/32
 4D  PUSH X  FAIL  0/32  $10e,$10f,$117,$11b,$127,$13c,$140,$14b,$14c,$159,$165,$167,$16a,$16e,$173,$17d,$182,$184,$190,$19c,$1ac,$1b3,$1b6,$1b9,$1ba,$1c1,$1c3,$1ce,$1d9,$1e3,$1f4,$1f5
-4E  TCLR1 !0x2048  FAIL  9/32  PSW
+4E  TCLR1 !0x2048  PASS  32/32
 4F  PCALL 0x92  FAIL  0/32  $100,$104,$105,$106,$112,$113,$115,$116,$117,$118,$119,$137,$138,$141,$142,$148,$149,$152,$153,$166,$167,$168,$16b,$16c,$173,$174,$17a,$17b,$181,$182,$183,$185,$186,$196,$197,$1ad,$1ae,$1b8,$1b9,$1bb,$1bc,$1bd,$1bf,$1c0,$1c5,$1c6,$1c7,$1de,$1df,$1f1,$1f2,$1fb,$1fc,$1ff,SP
 50  BVC 0x0720  PASS  32/32
 51  TCALL 0x5  FAIL  0/32  $10c,$10d,$10e,$11c,$11d,$121,$122,$13c,$13d,$13e,$13f,$140,$141,$157,$158,$15f,$160,$165,$166,$16f,$170,$177,$178,$17b,$17c,$17f,$180,$186,$187,$18b,$18c,$18f,$190,$1a7,$1a8,$1ac,$1ad,$1b8,$1b9,$1c7,$1c8,$1c9,$1cc,$1cd,$1d8,$1d9,$1da,$1db,$1e4,$1e5,$1e7,$1e8,$1f4,$1f5,$1f6,$1f9,$1fa,$1fb,SP
@@ -132,7 +132,7 @@
 77  CMP A,[0xc6]+Y  PASS  32/32
 78  CMP 0x67,#0xe4  PASS  32/32
 79  CMP (X),(Y)  PASS  32/32
-7A  ADDW YA,0x35  FAIL  1/32  PSW
+7A  ADDW YA,0x35  PASS  32/32
 7B  ROR 0xc7+X  FAIL  0/32  $13c,$144,$149,$150,$15e,$164,$184,$18e,$18f,$1ad,$1d,$1ec,$1ed,$1fe,$27,$2f,$30,$38,$39,$44,$45,$5e,$76,$8f,$a3,$a4,$ad,$b7,$ca,$db,$e3
 7C  ROR A  PASS  32/32
 7D  MOV A,X  PASS  32/32
@@ -147,10 +147,10 @@
 86  ADC A,(X)  PASS  32/32
 87  ADC A,[0xdf+X]  PASS  32/32
 88  ADC A,#0x4c  PASS  32/32
-89  ADC 0x81,0xa7  FAIL  1/32  $11d,$124,$144,$16a,$177,$190,$198,$19f,$1ad,$1e0,$1f7,PSW
+89  ADC 0x81,0xa7  PASS  32/32
 8A  EOR1 C,0x78.0x64  FAIL  16/32  PSW
-8B  DEC 0x9e  FAIL  6/32  PSW
-8C  DEC !0x1417  FAIL  6/32  PSW
+8B  DEC 0x9e  PASS  32/32
+8C  DEC !0x1417  PASS  32/32
 8D  MOV Y,#0xf7  PASS  32/32
 8E  POP PSW  FAIL  0/32  PSW
 8F  MOV 0x9c,#0x17  PASS  32/32
@@ -162,11 +162,11 @@
 95  ADC A,!0xf9a+X  PASS  32/32
 96  ADC A,!0x9fe1+Y  PASS  32/32
 97  ADC A,[0x1e]+Y  PASS  32/32
-98  ADC 0xfe,#0x4e  FAIL  0/32  PSW
-99  ADC (X),(Y)  FAIL  0/32  PSW
-9A  SUBW YA,0x7b  FAIL  0/32  PSW
-9B  DEC 0x3+X  FAIL  12/32  PSW
-9C  DEC A  FAIL  7/32  PSW
+98  ADC 0xfe,#0x4e  PASS  32/32
+99  ADC (X),(Y)  PASS  32/32
+9A  SUBW YA,0x7b  PASS  32/32
+9B  DEC 0x3+X  PASS  32/32
+9C  DEC A  PASS  32/32
 9D  MOV X,SP  PASS  32/32
 9E  DIV YA,X  FAIL  1/32  A,PSW,Y
 9F  XCN A  PASS  32/32
@@ -179,10 +179,10 @@ A5  SBC A,!0x3c5b  PASS  32/32
 A6  SBC A,(X)  PASS  32/32
 A7  SBC A,[0xab+X]  PASS  32/32
 A8  SBC A,#0x12  PASS  32/32
-A9  SBC 0x3a,0x35  FAIL  0/32  $100,$119,$12,$127,$12e,$142,$18a,$191,$194,$19d,$1b2,$1d2,$1ee,$3a,$4a,$5a,$5d,$62,$72,$9e,$a,$a7,$b1,$b5,$bc,$c9,$cb,$d2,$dc,$ef,$f2,PSW
+A9  SBC 0x3a,0x35  PASS  32/32
 AA  MOV1 C,0x63.0x3c  FAIL  14/32  PSW
-AB  INC 0xef  FAIL  7/32  PSW
-AC  INC !0xd68a  FAIL  5/32  PSW
+AB  INC 0xef  PASS  32/32
+AC  INC !0xd68a  PASS  32/32
 AD  CMP Y,#0xc5  PASS  32/32
 AE  POP A  FAIL  0/32  A
 AF  MOV (X)+,A  PASS  32/32
@@ -194,11 +194,11 @@ B4  SBC A,0xd8+X  PASS  32/32
 B5  SBC A,!0x3953+X  PASS  32/32
 B6  SBC A,!0xca08+Y  PASS  32/32
 B7  SBC A,[0xb8]+Y  PASS  32/32
-B8  SBC 0xa5,#0x4d  FAIL  0/32  $100,$107,$11,$127,$141,$149,$14c,$154,$159,$174,$177,$17a,$17c,$17e,$184,$18b,$1ce,$1e4,$1f5,$4c,$57,$68,$7a,$86,$a1,$a5,$a7,$a8,$b6,$d5,$fc,PSW
-B9  SBC (X),(Y)  FAIL  0/32  $117,$121,$125,$136,$15e,$16c,$179,$17f,$18,$1c9,$1d2,$1ec,$1ee,$2b,$4,$4d,$68,$6e,$7c,$8,$80,$a9,$b4,$b6,$cf,$ed,$f5,$f9,$fa,$fc,PSW
-BA  MOVW YA,0x55  FAIL  6/32  PSW
-BB  INC 0x0+X  FAIL  6/32  PSW
-BC  INC A  FAIL  7/32  PSW
+B8  SBC 0xa5,#0x4d  PASS  32/32
+B9  SBC (X),(Y)  PASS  32/32
+BA  MOVW YA,0x55  PASS  32/32
+BB  INC 0x0+X  PASS  32/32
+BC  INC A  PASS  32/32
 BD  MOV SP,X  FAIL  0/32  SP
 BE  DAS A  FAIL  0/32  execution
 BF  MOV A,(X)+  PASS  32/32
@@ -217,7 +217,7 @@ CB  MOV 0x3a,Y  FAIL  0/32  $1,$12b,$13,$137,$145,$147,$150,$152,$159,$194,$1ab,
 CC  MOV !0x752e,Y  PASS  32/32
 CD  MOV X,#0x3  PASS  32/32
 CE  POP X  FAIL  0/32  X
-CF  MUL YA  FAIL  7/32  PSW
+CF  MUL YA  PASS  32/32
 D0  BNE 0x0eed  PASS  32/32
 D1  TCALL 0xd  FAIL  0/32  $101,$102,$103,$106,$107,$10a,$10b,$10c,$10d,$10e,$10f,$126,$127,$13f,$140,$141,$153,$154,$157,$158,$164,$165,$16e,$173,$174,$176,$177,$180,$181,$183,$184,$188,$189,$18a,$194,$195,$19d,$19e,$1a9,$1aa,$1b1,$1b2,$1b9,$1ba,$1dd,$1de,$1df,$1e0,$1e2,$1e3,$1e5,$1e6,SP
 D2  CLR1 0x75.0x6  PASS  32/32
@@ -230,7 +230,7 @@ D8  MOV 0xf0,X  FAIL  0/32  $10c,$111,$11b,$123,$143,$153,$15c,$168,$16a,$189,$1
 D9  MOV 0xf4+Y,X  PASS  32/32
 DA  MOVW 0xe6,YA  PASS  32/32
 DB  MOV 0x1e+X,Y  PASS  32/32
-DC  DEC Y  FAIL  13/32  PSW
+DC  DEC Y  PASS  32/32
 DD  MOV A,Y  PASS  32/32
 DE  CBNE 0x1a+X,0x0f94  PASS  32/32
 DF  DAA A  FAIL  0/32  execution
@@ -262,7 +262,7 @@ F8  MOV X,0xf8  PASS  32/32
 F9  MOV X,0x86+Y  PASS  32/32
 FA  MOV 0x5f,0xd0  FAIL  14/32  $108,$130,$132,$135,$141,$143,$14a,$15c,$15f,$16a,$186,$18b,$19e,$1a4,$1a5,$1cc,$1ed,$1fd
 FB  MOV Y,0xfb+X  PASS  32/32
-FC  INC Y  FAIL  9/32  PSW
+FC  INC Y  PASS  32/32
 FD  MOV Y,A  PASS  32/32
 FE  DBNZ Y,0x1211  PASS  32/32
 FF  STOP  FAIL  0/32  execution
