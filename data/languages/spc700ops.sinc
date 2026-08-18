@@ -93,14 +93,14 @@
 
 :MOV A,[ADDR8+X] is op=0xE7 & A & X; ADDR8 {
 	local ptr:2; dpIndex(ADDR8, X, ptr);
-	local addr:2 = *:2 ptr;
+	local addr:2; dpWordRead(ptr, addr);
 	A = *:1 addr;
 	
 	resultFlags(A);
 }
 
 :MOV A,[ADDR8]+Y is op=0xF7 & A & Y; ADDR8 {
-	local ptr:2 = *:2 ADDR8;
+	local ptr:2; dpWordRead(ADDR8, ptr);
 	local addr:2 = ptr + zext(Y);
 	A = *:1 addr;
 	
@@ -196,12 +196,12 @@
 
 :MOV [ADDR8+X],A is op=0xC7 & A & X; ADDR8 {
 	local ptr:2; dpIndex(ADDR8, X, ptr);
-	local addr:2 = *:2 ptr;
+	local addr:2; dpWordRead(ptr, addr);
 	*:1 addr = A;
 }
 
 :MOV [ADDR8]+Y,A is op=0xD7 & A & Y; ADDR8 {
-	local ptr:2 = *:2 ADDR8;
+	local ptr:2; dpWordRead(ADDR8, ptr);
 	local addr:2 = ptr + zext(Y);
 	*:1 addr = A;
 }
@@ -341,7 +341,7 @@
 
 :ADC A,[ADDR8+X] is op=0x87 & A & X; ADDR8 {
 	local ptr:2; dpIndex(ADDR8, X, ptr);
-	local addr:2 = *:2 ptr;
+	local addr:2; dpWordRead(ptr, addr);
 	local tmp:1 = *:1 addr;
 	local result:1;
 	aluADC(tmp,result);
@@ -349,7 +349,7 @@
 }
 
 :ADC A,[ADDR8]+Y is op=0x97 & A & Y; ADDR8 {
-	local ptr:2 = *:2 ADDR8;
+	local ptr:2; dpWordRead(ADDR8, ptr);
 	local addr:2 = ptr + zext(Y);
 	local tmp:1 = *:1 addr;
 	local result:1;
@@ -460,7 +460,7 @@
 
 :SBC A,[ADDR8+X] is op=0xA7 & A & X; ADDR8 {
 	local ptr:2; dpIndex(ADDR8, X, ptr);
-	local addr:2 = *:2 ptr;
+	local addr:2; dpWordRead(ptr, addr);
 	local tmp:1 = *:1 addr;
 	local result:1;
 	aluSBC(tmp,result);
@@ -468,7 +468,7 @@
 }
 
 :SBC A,[ADDR8]+Y is op=0xB7 & A & Y; ADDR8 {
-	local ptr:2 = *:2 ADDR8;
+	local ptr:2; dpWordRead(ADDR8, ptr);
 	local addr:2 = ptr + zext(Y);
 	local tmp:1 = *:1 addr;
 	local result:1;
@@ -592,7 +592,7 @@
 
 :CMP A,[ADDR8+X] is op=0x67 & A & X; ADDR8 {
 	local ptr:2; dpIndex(ADDR8, X, ptr);
-	local addr:2 = *:2 ptr;
+	local addr:2; dpWordRead(ptr, addr);
 	local tmp:1 = *:1 addr;
 	local result:1 = A - tmp;
 	
@@ -602,7 +602,7 @@
 }
 
 :CMP A,[ADDR8]+Y is op=0x77 & A & Y; ADDR8 {
-	local ptr:2 = *:2 ADDR8;
+	local ptr:2; dpWordRead(ADDR8, ptr);
 	local addr:2 = ptr + zext(Y);
 	local tmp:1 = *:1 addr;
 	local result:1 = A - tmp;
@@ -770,7 +770,7 @@
 
 :AND A,[ADDR8+X] is op=0x27 & A & X; ADDR8 {
 	local ptr:2; dpIndex(ADDR8, X, ptr);
-	local addr:2 = *:2 ptr;
+	local addr:2; dpWordRead(ptr, addr);
 	local tmp:1 = *:1 addr;
 	local result:1 = A & tmp;
 	
@@ -780,7 +780,7 @@
 }
 
 :AND A,[ADDR8]+Y is op=0x37 & A & Y; ADDR8 {
-	local ptr:2 = *:2 ADDR8;
+	local ptr:2; dpWordRead(ADDR8, ptr);
 	local addr:2 = ptr + zext(Y);
 	local tmp:1 = *:1 addr;
 	local result:1 = A & tmp;
@@ -892,7 +892,7 @@
 
 :OR A,[ADDR8+X] is op=0x07 & A & X; ADDR8 {
 	local ptr:2; dpIndex(ADDR8, X, ptr);
-	local addr:2 = *:2 ptr;
+	local addr:2; dpWordRead(ptr, addr);
 	local tmp:1 = *:1 addr;
 	local result:1 = A | tmp;
 	
@@ -902,7 +902,7 @@
 }
 
 :OR A,[ADDR8]+Y is op=0x17 & A & Y; ADDR8 {
-	local ptr:2 = *:2 ADDR8;
+	local ptr:2; dpWordRead(ADDR8, ptr);
 	local addr:2 = ptr + zext(Y);
 	local tmp:1 = *:1 addr;
 	local result:1 = A | tmp;
@@ -1014,7 +1014,7 @@
 
 :EOR A,[ADDR8+X] is op=0x47 & A & X; ADDR8 {
 	local ptr:2; dpIndex(ADDR8, X, ptr);
-	local addr:2 = *:2 ptr;
+	local addr:2; dpWordRead(ptr, addr);
 	local tmp:1 = *:1 addr;
 	local result:1 = A ^ tmp;
 	
@@ -1024,7 +1024,7 @@
 }
 
 :EOR A,[ADDR8]+Y is op=0x57 & A & Y; ADDR8 {
-	local ptr:2 = *:2 ADDR8;
+	local ptr:2; dpWordRead(ADDR8, ptr);
 	local addr:2 = ptr + zext(Y);
 	local tmp:1 = *:1 addr;
 	local result:1 = A ^ tmp;
