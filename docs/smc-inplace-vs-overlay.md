@@ -6,9 +6,10 @@ how a materialized ROM→RAM copy is represented in the program, and closes the 
 question the bead was opened on.
 
 **No code is written by this note** — it is the placement decision that grm-1.7.1's materializer
-implements. All Ghidra API facts are validated against the pinned `Ghidra_12.1.2_build` source
-checkout at `D:\git\ghidra`, which matches `gradle.properties`' `ghidraTargetVersion=12.1.2`;
-citations are `file:line`.
+implements. All Ghidra API facts were validated against the `Ghidra_12.1.2_build` source
+checkout at `D:\git\ghidra`, which was this project's `ghidraTargetVersion` when the note was
+written (the project has since retargeted; see `gradle.properties` for the current value, and
+re-check any citation before relying on its line numbers); citations are `file:line`.
 
 **Verdict, up front: no Ghidra core change is needed, there is no upstream ask, and this must
 not be folded into `docs/rfc-banked-memory.md` (Ghidra discussion #9349).** The chosen

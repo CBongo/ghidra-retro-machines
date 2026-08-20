@@ -5,9 +5,10 @@ asking Ghidra upstream to fix the behavior. It closes the "plausibly upstreamabl
 question the bead was opened with.
 
 **No code is written by this note** — it is the decision `MosConstantReferenceAnalyzer`
-implements. All Ghidra facts are validated against the pinned `Ghidra_12.1.2_build` source
-checkout at `D:\git\ghidra`, matching `gradle.properties`' `ghidraTargetVersion=12.1.2`;
-citations are `file:line`.
+implements. All Ghidra facts were validated against the `Ghidra_12.1.2_build` source checkout at
+`D:\git\ghidra`, which was this project's `ghidraTargetVersion` when the note was written (the
+project has since retargeted; see `gradle.properties` for the current value, and re-check any
+citation before relying on its line numbers); citations are `file:line`.
 
 **Verdict, up front: the extension analyzer *is* the sanctioned fix, not a workaround. There is
 no upstream ask for the behavior itself — upstream has already adjudicated it twice and pointed

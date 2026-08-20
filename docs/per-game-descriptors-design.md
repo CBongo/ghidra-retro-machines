@@ -6,8 +6,10 @@ discovery persists, gets shared, and feeds back into the loader and analyzer.
 
 **No code is written by this note.** It is the design the beads sequence; every "must" below
 describes work that does not exist yet. Following the `docs/smc-*-design.md` precedent, all
-API/schema facts are validated against the tree and the pinned `Ghidra_12.1.2_build` checkout at
-`D:\git\ghidra` (matching `gradle.properties`' `ghidraTargetVersion`); citations are `file:line`.
+API/schema facts were validated against the tree and the `Ghidra_12.1.2_build` checkout at
+`D:\git\ghidra`, which was this project's `ghidraTargetVersion` when the note was written (the
+project has since retargeted; see `gradle.properties` for the current value); citations are
+`file:line`.
 
 Companions: [`SCHEMA.md`](SCHEMA.md) (descriptor authoring reference — this tier adds sections to
 it, it does not fork it), [`MAP_FORMAT.md`](MAP_FORMAT.md) (the compiled-artifact contract, which
