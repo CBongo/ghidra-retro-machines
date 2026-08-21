@@ -113,38 +113,41 @@ import ghidra.util.task.TaskMonitor;
 public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 
 	/**
-	 * Fingerprint of the last <em>completed</em> {@link #added} run per program
-	 * (grm-5tl.13.3). Phase 2's overlay retargeting disassembles cross-bank targets, and
-	 * the framework answers each batch of new code by re-invoking {@code added()}, which
-	 * re-seeds the whole-program fixpoint from scratch -- deliberately so, because that
-	 * reseed is how bank state reaches the newly discovered code (its callers are outside
-	 * the delta set, so processing only {@code set} would silently under-annotate). The
-	 * consequence is up to O(rounds x whole-program) work; this cache skips a re-run
-	 * <em>only</em> when it is provably redundant: nothing this analyzer reads has changed
-	 * since the last run completed. All-or-nothing -- phase-1 output is never cached or
-	 * diff-merged across runs (annotateBankSwitch never overwrites an existing bank
-	 * comment, so a stale partial merge would compound).
+	 * Modification stamp of the last <em>completed</em> {@link #added} run per program
+	 * (grm-5tl.13.3, hardened by grm-w3m). Phase 2's overlay retargeting disassembles
+	 * cross-bank targets, and the framework answers each batch of new code by
+	 * re-invoking {@code added()}, which re-seeds the whole-program fixpoint from
+	 * scratch -- deliberately so, because that reseed is how bank state reaches the
+	 * newly discovered code (its callers are outside the delta set, so processing only
+	 * {@code set} would silently under-annotate). The consequence is up to O(rounds x
+	 * whole-program) work; this cache skips a re-run <em>only</em> when it is provably
+	 * redundant: nothing about the program has changed since the last run completed.
+	 * All-or-nothing -- phase-1 output is never cached or diff-merged across runs
+	 * (annotateBankSwitch never overwrites an existing bank comment, so a stale partial
+	 * merge would compound).
 	 * <p>
-	 * Coverage assumptions behind the fingerprint (function count + instruction count,
-	 * both O(1) reads):
+	 * The invariant: the stored value is {@link Program#getModificationNumber()} read at
+	 * run <em>exit</em>, after this run's own writes (comments, bookmarks, overlay
+	 * references, symbols) have already bumped it. A later invocation skips only when
+	 * the program's modification number still equals that exit-time value -- i.e.
+	 * nothing, including our own prior writes, has touched the program since. Reading
+	 * the number at <em>entry</em> instead (as a structural fingerprint legitimately can,
+	 * see {@link #reachedFixpoint}) would be wrong here: this analyzer's own writes bump
+	 * the modification number during the run, so an entry-captured value would never
+	 * match the number observed on the very next invocation and the cache would never
+	 * hit. {@code getModificationNumber()} is incremented synchronously by
+	 * {@code DomainObjectAdapter.fireEvent} on every change record fired -- including
+	 * comment/bookmark/reference/symbol edits made mid-transaction, not only at commit --
+	 * so an exit-time read already reflects this run's own mutations.
 	 * <ul>
-	 * <li>Everything the analysis consumes is a function of the instruction set, the
-	 * function entries (dataflow seeds and helper models), and the descriptor. New or
-	 * removed code/functions -- including this analyzer's own phase-2 side effects --
-	 * always move one of the two counts; the stored value is captured at run
-	 * <em>entry</em>, so a run's own mutations unmatch the very next invocation.</li>
-	 * <li>Operand/flow references (which strategies inspect via
-	 * {@code getReferencesFrom}) are laid down at disassembly time and by the reference
-	 * analyzers this analyzer is prioritized after -- reference changes relevant here do
-	 * not occur without accompanying instruction changes.</li>
-	 * <li>The descriptor is identified by {@code mapPath} (stored alongside the counts);
-	 * a program re-pointed at a different board map re-runs even with identical counts.
-	 * Edits to the map <em>file's content</em> under an unchanged path are not detected
-	 * -- acceptable for compiled resources bundled with the extension.</li>
+	 * <li>The descriptor is identified by {@code mapPath} (stored alongside the
+	 * modification number); a program re-pointed at a different board map re-runs even
+	 * with an unchanged modification number. Edits to the map <em>file's content</em>
+	 * under an unchanged path are not detected -- acceptable for compiled resources
+	 * bundled with the extension.</li>
 	 * <li>A run that throws (e.g. {@link CancelledException}) stores nothing and will
-	 * re-run in full. A future change that makes the analysis consume mutable inputs
-	 * outside these (say, reading a context register other analyzers write) must widen
-	 * the fingerprint or drop the cache.</li>
+	 * re-run in full: the {@code put} below only happens after a structurally stable
+	 * completion, and an exception unwinds past it.</li>
 	 * </ul>
 	 * Keyed weakly by {@link Program} identity so closed programs drop out; synchronized
 	 * because distinct programs may be analyzed on distinct threads.
@@ -152,8 +155,11 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	private static final Map<Program, RunStamp> LAST_COMPLETED =
 		Collections.synchronizedMap(new WeakHashMap<>());
 
-	/** What {@link #LAST_COMPLETED} remembers: entry-time fingerprint + descriptor path. */
-	private record RunStamp(long fingerprint, String mapPath) {}
+	/**
+	 * What {@link #LAST_COMPLETED} remembers: the exit-time
+	 * {@link Program#getModificationNumber()} + descriptor path.
+	 */
+	private record RunStamp(long modificationNumber, String mapPath) {}
 
 	/** Function and instruction counts packed into disjoint bit ranges (not a hash). */
 	private static long fingerprint(Program program) {
@@ -215,15 +221,27 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			return false;
 		}
 
-		// Redundant-re-run gate (grm-5tl.13.3): see LAST_COMPLETED for the invariants.
-		long fingerprint = fingerprint(program);
+		// Redundant-re-run gate (grm-5tl.13.3, grm-w3m): see LAST_COMPLETED for the
+		// invariants. fingerprint(program) below is the SEPARATE structural
+		// entry/exit fixpoint test (unchanged; see reachedFixpoint) that decides
+		// whether THIS round is structurally stable -- not the redundant-rerun gate.
+		long entryFingerprint = fingerprint(program);
 		RunStamp last = LAST_COMPLETED.get(program);
-		if (last != null && last.fingerprint() == fingerprint && last.mapPath().equals(mapPath)) {
+		if (last != null && last.modificationNumber() == program.getModificationNumber() &&
+			last.mapPath().equals(mapPath)) {
 			if (verbose) {
-				log.appendMsg(getName(), tag + ": no function/instruction changes since last " +
+				log.appendMsg(getName(), tag + ": no program changes since last " +
 					"completed run; skipping redundant whole-program re-analysis");
+				// Only flip the "initial run" Options flag the first time -- it is already
+				// true on every later skip. AnalyzerRunLog.markCompleted() writes
+				// unconditionally (Options fires a change event even setting true -> true),
+				// which itself advances program.getModificationNumber(): calling it on
+				// EVERY skip would make the gate above miss on the very next invocation
+				// (the stored exit-time stamp can never catch up to a number this call keeps
+				// bumping), degrading the cache to "hit, miss, hit, miss, ...". Gating on
+				// `verbose` (== isInitialRun) keeps this call to its one real transition.
+				AnalyzerRunLog.markCompleted(program, getClass());
 			}
-			AnalyzerRunLog.markCompleted(program, getClass());
 			return true;
 		}
 		if (verbose) {
@@ -396,7 +414,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// analysis: the framework must invoke us again so the whole-program fixpoint can
 		// reach that newly discovered code. Keep first-run verbosity alive and defer the
 		// definitive summary until an invocation leaves the structural fingerprint stable.
-		boolean stable = reachedFixpoint(fingerprint, fingerprint(program));
+		boolean stable = reachedFixpoint(entryFingerprint, fingerprint(program));
 		if (verbose && stable) {
 			log.appendMsg(getName(), tag + ": " + flow.stateIn().size() + " instructions tracked, " +
 				refsAdded + " overlay references added/confirmed, " + warnings +
@@ -404,12 +422,32 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		}
 
 		// A structurally changing round is deliberately not complete and must not populate
-		// the completed-run cache. The framework follow-on therefore runs in full; only its
-		// stable entry fingerprint can become the redundant-rerun baseline.
+		// the completed-run cache. The framework follow-on therefore runs in full; only a
+		// stable round's EXIT-time modification number can become the redundant-rerun
+		// baseline (see LAST_COMPLETED's javadoc for why entry-time would never hit).
+		// This is also why cancellation can never record a completed stamp: a
+		// CancelledException thrown by monitor.checkCancelled() anywhere above (phase 1/2
+		// dataflow, phase 3 violation scan, context stamping) propagates straight out of
+		// added() and unwinds past this point, so `stable` is never reached and the put()
+		// below never executes on a cancelled run.
 		if (stable) {
 			manageNoMechanismWriteDiagnostic(program, mechanisms, flow, log, verbose);
-			LAST_COMPLETED.put(program, new RunStamp(fingerprint, mapPath));
-			AnalyzerRunLog.markCompleted(program, getClass());
+			// Only flip the "initial run" Options flag on the run that actually needs to
+			// (mirrors the skip branch's own guard, and for the same reason): it is already
+			// true on every completed run after the first, including a full rerun that a
+			// later real edit forced. AnalyzerRunLog.markCompleted() writes unconditionally
+			// -- Options fires a change event even setting true -> true -- and that write
+			// advances program.getModificationNumber() same as any other mutation. Calling
+			// it here on every stable completion, guarded or not, must still happen BEFORE
+			// the modification-number snapshot below (it is one of this run's own writes),
+			// but calling it UNconditionally would keep bumping the number on every later
+			// completed run for no reason beyond this one write, which is unnecessary once
+			// the flag is already set. Gating on `verbose` keeps it to its one real
+			// transition, exactly like the skip branch above.
+			if (verbose) {
+				AnalyzerRunLog.markCompleted(program, getClass());
+			}
+			LAST_COMPLETED.put(program, new RunStamp(program.getModificationNumber(), mapPath));
 		}
 		return true;
 	}
