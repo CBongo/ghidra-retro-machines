@@ -378,6 +378,41 @@ def _bank3_putter(prg):
     return put
 
 
+def _assert_vectors(prg, name, handler, reset):
+    """Self-check a fixture's 6502 vector table: RESET at `reset`, NMI and IRQ both at
+    `handler`, and -- the part that matters -- an actual RTI opcode sitting at `handler`.
+
+    THE LAST CLAUSE IS THE WHOLE POINT (bead grm-o59). The per-fixture checks this replaces
+    asserted only that the vector bytes equalled a hardcoded address, which is tautological:
+    the constant in the assertion was hand-copied from the same source as the constant in the
+    put(), so the two agreed by construction and agreed just as happily when both were wrong.
+    nesuxhelpertest's NMI/IRQ vectors spent months pointing at $C01B -- the RTI's address back
+    when RESET was shorter -- while the RTI itself drifted to $C024 and then $C02A as routines
+    were appended. $C01B had become the third byte of `JSR $8020`, and the self-check passed
+    the entire time.
+
+    Checking that the target decodes as RTI is not tautological, because nothing else in the
+    file writes that byte: it fails the moment a vector and its handler part company. It is a
+    weak decode check on purpose -- one byte, not a full disassembly -- which is all that is
+    needed to catch the drift, and it is what the old check should have been asserting.
+
+    Vectors live in the last six bytes of the image and the handler in the fixed PRG_HI window
+    (the last 16 KiB, mapped at $C000), so this works for the 64 KiB UxROM fixtures and the
+    128 KiB MMC1/MMC3-shaped ones alike without being told the image size.
+    """
+    end = len(prg)
+    read16 = lambda off: prg[end - 16 + off] | (prg[end - 16 + off + 1] << 8)
+    assert read16(12) == reset, f"{name}: RESET vector {read16(12):04X} != {reset:04X}"
+    assert read16(10) == handler, f"{name}: NMI vector {read16(10):04X} != {handler:04X}"
+    assert read16(14) == handler, f"{name}: IRQ vector {read16(14):04X} != {handler:04X}"
+
+    off = end - 0x4000 + (handler - 0xC000)
+    assert 0 <= off < end, f"{name}: handler {handler:04X} is outside the fixed PRG_HI window"
+    assert prg[off] == 0x40, (
+        f"{name}: NMI/IRQ vector points at {handler:04X}, which holds {prg[off]:02X}, not RTI "
+        f"(40) -- the handler has almost certainly moved and the vector did not follow it")
+
+
 def make_prg():
     prg = bytearray([0x00] * PRG_SIZE)
 
@@ -702,10 +737,19 @@ def make_prg_uxhelper():
     # Impossible-bank probe target: 0x09 so the bus-conflict AND does not launder it.
     put(0xFFD9, [0x09])
 
-    # Vector table.
-    put(0xFFFA, [0x1B, 0xC0])  # NMI   -> $C01B (RTI)
+    # Vector table. $C02A is the RTI at the end of RESET above -- NOT a hand-copied constant,
+    # because that is what went wrong here (bead grm-o59): these vectors said $C01B, the RTI's
+    # address back when RESET was shorter, and every later addition to RESET pushed the RTI
+    # further away without moving them. By the time it was caught, $C01B was the third byte of
+    # `JSR $8020` at $C019 and the RTI had drifted twice, to $C024 and then to $C02A.
+    #
+    # It stayed benign only by luck: $80 is not a valid 6502 opcode, so nothing disassembled at
+    # the vector target and the dump stayed clean. A vector pointing into the middle of an
+    # instruction is precisely what this fixture family exists to NOT model by accident, and it
+    # would have gone live the moment an opcode-table change made $80 decode.
+    put(0xFFFA, [0x2A, 0xC0])  # NMI   -> $C02A (RTI)
     put(0xFFFC, [0x00, 0xC0])  # RESET -> $C000
-    put(0xFFFE, [0x1B, 0xC0])  # IRQ   -> $C01B (RTI)
+    put(0xFFFE, [0x2A, 0xC0])  # IRQ   -> $C02A (RTI)
 
     return bytes(prg)
 
@@ -2643,9 +2687,7 @@ def main():
     assert (prg[0xC009] | (prg[0xC00A] << 8)) == 0xC008
     assert prg[0xC00B] == 0x40  # RTI (NMI/IRQ handler)
     assert prg[0xFFF0] == 0x02  # bus-conflict byte at $FFF0
-    assert (prg[0xFFFC] | (prg[0xFFFD] << 8)) == 0xC000  # RESET vector
-    assert (prg[0xFFFA] | (prg[0xFFFB] << 8)) == 0xC00B  # NMI vector
-    assert (prg[0xFFFE] | (prg[0xFFFF] << 8)) == 0xC00B  # IRQ vector
+    _assert_vectors(prg, "nesbanktest", handler=0xC00B, reset=0xC000)
 
     _write_rom(outdir, "nesbanktest.nes", prg)
 
@@ -2691,9 +2733,7 @@ def main():
     assert prg2[0xC030] == 0x60  # RTS (bank-3 routine, dual-mapped w/ PRG_HI $C030)
     assert prg2[0xFFE0] == 0x00 and prg2[0xFFE1] == 0x01
     assert prg2[0xFFE2] == 0x02 and prg2[0xFFE3] == 0x03
-    assert (prg2[0xFFFC] | (prg2[0xFFFD] << 8)) == 0xC000  # RESET vector
-    assert (prg2[0xFFFA] | (prg2[0xFFFB] << 8)) == 0xC00B  # NMI vector
-    assert (prg2[0xFFFE] | (prg2[0xFFFF] << 8)) == 0xC00B  # IRQ vector
+    _assert_vectors(prg2, "nesbanktest2", handler=0xC00B, reset=0xC000)
 
     _write_rom(outdir, "nesbanktest2.nes", prg2)
 
@@ -2787,9 +2827,9 @@ def main():
     assert prgux[0xD81E] == 0x01
     assert 0xD81E not in range(0xFFD0, 0xFFD4)
     # Vectors.
-    assert (prgux[0xFFFC] | (prgux[0xFFFD] << 8)) == 0xC000  # RESET vector
-    assert (prgux[0xFFFA] | (prgux[0xFFFB] << 8)) == 0xC01B  # NMI vector
-    assert (prgux[0xFFFE] | (prgux[0xFFFF] << 8)) == 0xC01B  # IRQ vector
+    # $C02A, not the $C01B this asserted for months: see the vector-table comment in
+    # make_prg_uxhelper() and _assert_vectors()'s docstring (bead grm-o59).
+    _assert_vectors(prgux, "nesuxhelpertest", handler=0xC02A, reset=0xC000)
 
     _write_rom(outdir, "nesuxhelpertest.nes", prgux)
 
@@ -2871,9 +2911,7 @@ def main():
     # Bank table (identity, so the bus-conflict AND is a no-op) and vectors. $FFD2 doubles
     # as the visible entry's own store target, and holds 0x02 for the same reason.
     assert list(prgskip[0xFFD0:0xFFD4]) == [0x00, 0x01, 0x02, 0x03]
-    assert (prgskip[0xFFFC] | (prgskip[0xFFFD] << 8)) == 0xC000  # RESET vector
-    assert (prgskip[0xFFFA] | (prgskip[0xFFFB] << 8)) == 0xC01F  # NMI vector
-    assert (prgskip[0xFFFE] | (prgskip[0xFFFF] << 8)) == 0xC01F  # IRQ vector
+    _assert_vectors(prgskip, "nesskiptest", handler=0xC01F, reset=0xC000)
 
     _write_rom(outdir, "nesskiptest.nes", prgskip)
 
@@ -2943,9 +2981,7 @@ def main():
     assert prgmirror[0xFFDB] == 0xFF
     assert prgmirror[0xFFDC] == 0xFF
     # Vectors.
-    assert (prgmirror[0xFFFC] | (prgmirror[0xFFFD] << 8)) == 0xC000  # RESET vector
-    assert (prgmirror[0xFFFA] | (prgmirror[0xFFFB] << 8)) == 0xC03D  # NMI vector
-    assert (prgmirror[0xFFFE] | (prgmirror[0xFFFF] << 8)) == 0xC03D  # IRQ vector
+    _assert_vectors(prgmirror, "nesmirrortest", handler=0xC03D, reset=0xC000)
 
     _write_rom(outdir, "nesmirrortest.nes", prgmirror)
 
@@ -2978,9 +3014,7 @@ def main():
     assert prgm[0xC048] == 0x4C  # JMP opcode at $8048
     assert (prgm[0xC049] | (prgm[0xC04A] << 8)) == 0x8048  # self idle
     # Vectors.
-    assert (prgm[0xFFFC] | (prgm[0xFFFD] << 8)) == 0xC000  # RESET vector
-    assert (prgm[0xFFFA] | (prgm[0xFFFB] << 8)) == 0xC010  # NMI vector
-    assert (prgm[0xFFFE] | (prgm[0xFFFF] << 8)) == 0xC010  # IRQ vector
+    _assert_vectors(prgm, "nesmodetest", handler=0xC010, reset=0xC000)
 
     _write_rom(outdir, "nesmodetest.nes", prgm, mapper=MAPPER_MODETEST)
 
@@ -3019,9 +3053,7 @@ def main():
     assert prgm3[0xE02F] == 0x4C  # JMP opcode at E02F (self loop)
     assert (prgm3[0xE030] | (prgm3[0xE031] << 8)) == 0xE02F
     assert prgm3[0xE032] == 0x40  # RTI (NMI/IRQ handler)
-    assert (prgm3[0xFFFC] | (prgm3[0xFFFD] << 8)) == 0xE000  # RESET vector
-    assert (prgm3[0xFFFA] | (prgm3[0xFFFB] << 8)) == 0xE032  # NMI vector
-    assert (prgm3[0xFFFE] | (prgm3[0xFFFF] << 8)) == 0xE032  # IRQ vector
+    _assert_vectors(prgm3, "nesmmc3test", handler=0xE032, reset=0xE000)
 
     _write_rom(outdir, "nesmmc3test.nes", prgm3, mapper=MAPPER_MMC3)
 
@@ -3111,9 +3143,7 @@ def main():
     assert prgm3b[0xE28A] == 0x20 and (prgm3b[0xE28B] | (prgm3b[0xE28C] << 8)) == 0xE260
     assert prgm3b[0xE28D] == 0x60  # CallerG RTS
 
-    assert (prgm3b[0xFFFC] | (prgm3b[0xFFFD] << 8)) == 0xE000  # RESET vector
-    assert (prgm3b[0xFFFA] | (prgm3b[0xFFFB] << 8)) == 0xE018  # NMI vector
-    assert (prgm3b[0xFFFE] | (prgm3b[0xFFFF] << 8)) == 0xE018  # IRQ vector
+    _assert_vectors(prgm3b, "nesmmc3test2", handler=0xE018, reset=0xE000)
 
     _write_rom(outdir, "nesmmc3test2.nes", prgm3b, mapper=MAPPER_MMC3)
 
@@ -3292,9 +3322,7 @@ def main():
     assert prgm2[0xE00D] == 0x4C and \
         (prgm2[0xE00E] | (prgm2[0xE00F] << 8)) == 0xE00D          # JMP $E00D
     assert prgm2[0xE010] == 0x40                                   # RTI
-    assert (prgm2[0xFFFC] | (prgm2[0xFFFD] << 8)) == 0xE000       # RESET vector
-    assert (prgm2[0xFFFA] | (prgm2[0xFFFB] << 8)) == 0xE010       # NMI vector
-    assert (prgm2[0xFFFE] | (prgm2[0xFFFF] << 8)) == 0xE010       # IRQ vector
+    _assert_vectors(prgm2, "nesmmc2test", handler=0xE010, reset=0xE000)
     _write_rom(outdir, "nesmmc2test.nes", prgm2, mapper=MAPPER_MMC2)
 
 
