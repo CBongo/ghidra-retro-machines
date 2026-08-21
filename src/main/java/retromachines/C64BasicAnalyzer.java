@@ -43,7 +43,6 @@ import ghidra.program.model.listing.BookmarkType;
 import ghidra.program.model.listing.CommentType;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryAccessException;
-import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.symbol.SourceType;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.task.TaskMonitor;
@@ -112,7 +111,12 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 	/** What {@link #LAST_COMPLETED} remembers. {@code wrapped} is carried for documentation
 	 * parity with the analyzer's real input set even though only {@code false} ever reaches
 	 * the comparison site (a wrapped PRG returns before this stamp is built). */
-	private record RunStamp(String mapPath, long loadAddr, long prgLength, boolean wrapped,
+	/** Fingerprint of the inputs a completed run consumed, for the redundant-re-run gate.
+	 *  Carries the slice list and not the load address / payload length / wrap flag,
+	 *  because those are pure functions of the slices (grm-hap item 4): including them
+	 *  could not change when two stamps compare equal, only give the same fact three more
+	 *  chances to be recorded inconsistently. */
+	private record RunStamp(String mapPath,
 			List<AbstractCbmPrgLoader.LoadedSlice> loadedSlices) {
 	}
 
@@ -249,42 +253,33 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 		}
 
 		AddressSpace baseSpace = program.getAddressFactory().getDefaultAddressSpace();
-		long loadAddr = program.getOptions(Program.PROGRAM_INFO).getLong(
-			AbstractCbmPrgLoader.PRG_LOAD_ADDRESS_PROPERTY,
-			program.getOptions(Program.PROGRAM_INFO)
-				.getLong(C64PrgLoader.PRG_LOAD_ADDRESS_PROPERTY, -1));
-		long prgLength = program.getOptions(Program.PROGRAM_INFO).getLong(
-			AbstractCbmPrgLoader.PRG_LENGTH_PROPERTY,
-			program.getOptions(Program.PROGRAM_INFO)
-				.getLong(C64PrgLoader.PRG_LENGTH_PROPERTY, -1));
-		boolean wrapped = program.getOptions(Program.PROGRAM_INFO).getBoolean(
-			AbstractCbmPrgLoader.PRG_WRAPPED_PROPERTY,
-			program.getOptions(Program.PROGRAM_INFO)
-				.getBoolean(C64PrgLoader.PRG_WRAPPED_PROPERTY, false));
-		if (wrapped) {
+		// One read of the one persisted fact, then derive (grm-hap item 4). This used to be
+		// three Options reads, each with a fallback to a parallel "Retro Machines.C64 PRG *"
+		// key, followed by a fourth fallback that reconstructed the interval from the "PRG"
+		// memory block for Programs imported before grm-dvx -- four ways to answer one
+		// question, three of which could disagree with the slice list read just below.
+		List<AbstractCbmPrgLoader.LoadedSlice> loadedSlices =
+			AbstractCbmPrgLoader.getLoadedSlices(program);
+		AbstractCbmPrgLoader.PrgPlacement placement =
+			AbstractCbmPrgLoader.placementOf(loadedSlices);
+		if (placement.wrapped()) {
 			return true; // a tokenized BASIC line chain is not a wrapping address interval
 		}
-		if (loadAddr < 0 || prgLength < 0) {
-			// Compatibility with Programs imported before grm-dvx placement metadata.
-			MemoryBlock prgBlock = program.getMemory().getBlock("PRG");
-			if (prgBlock == null) {
-				return true;
-			}
-			loadAddr = prgBlock.getStart().getOffset();
-			prgLength = prgBlock.getSize();
+		if (!placement.isPlaced()) {
+			return true; // zero-payload PRG: no bytes were placed, so there is no line chain
 		}
+		long loadAddr = placement.loadAddress();
+		long prgLength = placement.length();
 		long limitAddr = loadAddr + prgLength;
 		final long imageLoadAddr = loadAddr;
 		final long imageLimitAddr = limitAddr;
-		List<AbstractCbmPrgLoader.LoadedSlice> loadedSlices =
-			AbstractCbmPrgLoader.getLoadedSlices(program);
 
 		boolean verbose = AnalyzerRunLog.isInitialRun(program, getClass());
 
 		// Redundant-re-run gate (grm-52z): see LAST_COMPLETED for the invariants. Checked
 		// before any walk/GDT-open/PETSCII-load work, since those are exactly what a
 		// same-inputs repeat round would otherwise redo for nothing.
-		RunStamp stamp = new RunStamp(config.mapPath(), loadAddr, prgLength, wrapped, loadedSlices);
+		RunStamp stamp = new RunStamp(config.mapPath(), loadedSlices);
 		if (stamp.equals(LAST_COMPLETED.get(program))) {
 			if (verbose) {
 				log.appendMsg(getName(), NAME + ": descriptor/placement/slices unchanged since " +
@@ -441,9 +436,10 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 	 * byte of the PRG (grm-52z) with one bulk {@link ghidra.program.model.mem.Memory#getBytes}
 	 * call per {@link AbstractCbmPrgLoader.LoadedSlice} (slices are assumed non-overlapping,
 	 * true of every producer of this metadata today) plus one per gap not covered by any
-	 * slice -- including, as a degenerate single "gap" spanning the whole interval, the
-	 * legacy case where {@code getLoadedSlices} returns an empty list for Programs saved
-	 * before slice metadata existed. Gaps fall back to {@code baseSpace}, matching
+	 * slice. The gap pass is kept general rather than tied to any one cause; the caller no
+	 * longer reaches here with an empty slice list at all, since a Program with no placed
+	 * slices has no load interval and is declined before the cache is built. Gaps fall back
+	 * to {@code baseSpace}, matching
 	 * {@link #placedAddress}'s own fallback policy exactly (this method calls that helper
 	 * for the one Address it still needs per slice/gap, rather than re-implementing
 	 * {@code resolvePrgAddress}'s space-resolution policy here).

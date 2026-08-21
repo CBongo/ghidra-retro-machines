@@ -58,6 +58,7 @@ import ghidra.program.model.symbol.Reference;
 import ghidra.program.model.symbol.SourceType;
 import ghidra.program.model.symbol.Symbol;
 
+import retromachines.AbstractCbmPrgLoader;
 import retromachines.C64BasicAnalyzer;
 import retromachines.C64BankingAnalyzer;
 import retromachines.EmulationRecovery;
@@ -511,14 +512,19 @@ public class VerifyBankTest extends GhidraScript {
 	// grm-gea: dedicated size/wrap-boundary coverage, following up grm-dvx. The
 	// implementation already enforces every one of these limits (AbstractCbmPrgLoader.load());
 	// these fixtures close the acceptance-test coverage gap.
-	private static final String PRG_WRAPPED_PROPERTY = "Retro Machines.CBM PRG Wrapped";
+	// The wrap flag is DERIVED from the persisted slice list, not read from a property of
+	// its own (grm-hap item 4): AbstractCbmPrgLoader used to persist "Retro Machines.CBM
+	// PRG Wrapped" alongside the slices, and this harness read it. Asserting the derived
+	// value instead means these criteria check the number the analyzer actually acts on.
+	private boolean prgWrapped() {
+		return AbstractCbmPrgLoader.getPrgPlacement(currentProgram).wrapped();
+	}
 
 	// Load $FFFE + 2 payload bytes: ends exactly at $FFFF, no wrap.
 	private void checkPrgNoWrap() {
 		MemoryBlock high = blockAt("RAM_E000", 0xfffe);
 		MemoryBlock lowBlock = currentProgram.getMemory().getBlock(addr(0));
-		boolean wrappedProperty = currentProgram.getOptions(Program.PROGRAM_INFO)
-				.getBoolean(PRG_WRAPPED_PROPERTY, true);
+		boolean wrappedProperty = prgWrapped();
 
 		println("=== BANKDUMP BEGIN ===");
 		println("HIGH " + describeBlock(high) + " BYTES " + bytesAt("RAM_E000", 0xfffe, 2));
@@ -537,8 +543,7 @@ public class VerifyBankTest extends GhidraScript {
 	private void checkPrgWrap1() {
 		MemoryBlock high = blockAt("RAM_E000", 0xfffe);
 		MemoryBlock p6510 = currentProgram.getMemory().getBlock(addr(0));
-		boolean wrappedProperty = currentProgram.getOptions(Program.PROGRAM_INFO)
-				.getBoolean(PRG_WRAPPED_PROPERTY, false);
+		boolean wrappedProperty = prgWrapped();
 
 		println("=== BANKDUMP BEGIN ===");
 		println("HIGH " + describeBlock(high) + " BYTES " + bytesAt("RAM_E000", 0xfffe, 2));
@@ -564,8 +569,7 @@ public class VerifyBankTest extends GhidraScript {
 		MemoryBlock a000 = blockAt("RAM_A000", 0xa000);
 		MemoryBlock c000 = currentProgram.getMemory().getBlock(addr(0xc000));
 		MemoryBlock e000 = blockAt("RAM_E000", 0xe000);
-		boolean wrappedProperty = currentProgram.getOptions(Program.PROGRAM_INFO)
-				.getBoolean(PRG_WRAPPED_PROPERTY, true);
+		boolean wrappedProperty = prgWrapped();
 
 		println("=== BANKDUMP BEGIN ===");
 		println("A000 " + describeBlock(a000) + " BYTES " + bytesAt("RAM_A000", 0xa000, 1));
@@ -2392,9 +2396,17 @@ public class VerifyBankTest extends GhidraScript {
 			"Retro Machines: initial run completed: " + C64BasicAnalyzer.class.getName();
 		boolean completedAfterSuccess = analysis.getBoolean(completionKey, false);
 		String mapProperty = "Retro Machine Map";
-		String wrappedProperty = "Retro Machines.CBM PRG Wrapped";
+		// Forcing the analyzer's wrapped-PRG no-op used to mean setting a "Retro Machines.
+		// CBM PRG Wrapped" property. That property is gone (grm-hap item 4) -- wrapped is
+		// derived from the slice list -- so the lever moves to the slice list itself: one
+		// slice of 2 bytes starting at $FFFF runs one byte past the top of the address
+		// space, which is exactly what "wrapped" means. Restored from the original JSON in
+		// the finally block below, same as before.
+		String slicesProperty = "Retro Machines.CBM PRG Slices";
+		String wrappedSlices =
+			"[{\"file_offset\":2,\"length\":2,\"space\":\"RAM\",\"start\":65535}]";
 		String originalMap = info.getString(mapProperty, "");
-		boolean originalWrapped = info.getBoolean(wrappedProperty, false);
+		String originalSlices = info.getString(slicesProperty, "[]");
 		boolean noOpReturn;
 		boolean completedAfterNoOp;
 		boolean failedReturn;
@@ -2406,15 +2418,15 @@ public class VerifyBankTest extends GhidraScript {
 		boolean legacyCompletionWasPresent = analysis.contains(legacyCompletionKey);
 		boolean legacyCompletionValue = analysis.getBoolean(legacyCompletionKey, false);
 		boolean mapWasPresent = info.contains(mapProperty);
-		boolean wrappedWasPresent = info.contains(wrappedProperty);
+		boolean slicesWasPresent = info.contains(slicesProperty);
 		try {
 			analysis.setBoolean(completionKey, false);
-			info.setBoolean(wrappedProperty, true);
+			info.setString(slicesProperty, wrappedSlices);
 			noOpReturn = new C64BasicAnalyzer().added(currentProgram, new AddressSet(), monitor,
 				new MessageLog());
 			completedAfterNoOp = analysis.getBoolean(completionKey, false);
 
-			info.setBoolean(wrappedProperty, originalWrapped);
+			info.setString(slicesProperty, originalSlices);
 			analysis.setBoolean(completionKey, false);
 			// Simulate a saved Program polluted by the pre-fix policy. The v2 lifecycle
 			// must ignore this old true marker and keep the failed run retryable/verbose.
@@ -2441,11 +2453,11 @@ public class VerifyBankTest extends GhidraScript {
 			else {
 				info.removeOption(mapProperty);
 			}
-			if (wrappedWasPresent) {
-				info.setBoolean(wrappedProperty, originalWrapped);
+			if (slicesWasPresent) {
+				info.setString(slicesProperty, originalSlices);
 			}
 			else {
-				info.removeOption(wrappedProperty);
+				info.removeOption(slicesProperty);
 			}
 			if (completionWasPresent) {
 				analysis.setBoolean(completionKey, completedAfterSuccess);

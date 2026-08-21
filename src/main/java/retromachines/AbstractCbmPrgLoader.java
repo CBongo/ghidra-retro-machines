@@ -66,15 +66,23 @@ import retromachines.DescriptorSupport.Perms;
  * compiled descriptor and data-type archive. Machine-specific behavior is confined to
  * small subclass hooks.
  */
-abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader {
+// Public (rather than package-private, as it was until grm-hap item 4) so the banktest
+// harness can reach getPrgPlacement. Its three concrete subclasses -- C64PrgLoader,
+// PetPrgLoader, C128PrgLoader -- are public loaders already; only the derived-placement
+// accessor and PrgPlacement are public members here, everything else keeps its old
+// visibility.
+public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader {
 
 	// Safety fallback only: each descriptor names its preferred language. Stock 6502 is
 	// used solely if that language is unavailable.
 	private static final String FALLBACK_LANGUAGE_ID = "6502:LE:16:default";
 	private static final String COMPILER_SPEC_ID = "default";
-	static final String PRG_LOAD_ADDRESS_PROPERTY = "Retro Machines.CBM PRG Load Address";
-	static final String PRG_LENGTH_PROPERTY = "Retro Machines.CBM PRG Payload Length";
-	static final String PRG_WRAPPED_PROPERTY = "Retro Machines.CBM PRG Wrapped";
+	// The ONE persisted fact about PRG placement. Load address, payload length and the
+	// wrap flag used to be persisted alongside it as three more Program-Info properties
+	// (and C64PrgLoader wrote a duplicate "Retro Machines.C64 PRG *" set on top of that,
+	// eight in all); every one of them is a function of these slices, so they were four
+	// copies of the same truth that could disagree. They are derived on demand now --
+	// see {@link PrgPlacement} (grm-hap item 4).
 	static final String PRG_SLICES_PROPERTY = "Retro Machines.CBM PRG Slices";
 
 	protected abstract String getMapPath();
@@ -829,20 +837,57 @@ abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader {
 				slice.start()));
 		}
 		Options info = program.getOptions(Program.PROGRAM_INFO);
-		info.setLong(PRG_LOAD_ADDRESS_PROPERTY, loadAddr);
-		info.setLong(PRG_LENGTH_PROPERTY, length);
-		info.setBoolean(PRG_WRAPPED_PROPERTY, wrapped);
 		info.setString(PRG_SLICES_PROPERTY, new Gson().toJson(serialized));
 		return List.copyOf(loaded);
 	}
 
+	/**
+	 * PRG placement metadata derived from the persisted slice list rather than stored
+	 * beside it (grm-hap item 4). {@code loadAddress} and {@code length} are {@code -1}
+	 * when no slices were placed -- a zero-payload PRG, which has no load interval to
+	 * describe and nothing for a BASIC walker to read.
+	 * <p>
+	 * {@code wrapped} reproduces exactly what {@code load()} computes locally before
+	 * placement ({@code prgLength > 0x10000 - loadAddr}); the payload runs past $FFFF and
+	 * continues in low memory, so the image is not one ascending address interval.
+	 */
+	public static record PrgPlacement(long loadAddress, long length, boolean wrapped) {
+		static final PrgPlacement NONE = new PrgPlacement(-1, -1, false);
+
+		/** True when a load interval is known, i.e. some PRG bytes were actually placed. */
+		public boolean isPlaced() {
+			return loadAddress >= 0 && length >= 0;
+		}
+	}
+
+	/** Public so the banktest harness can assert these values the same way the analyzer
+	 *  derives them, rather than reading a separately-persisted copy that could disagree. */
+	public static PrgPlacement getPrgPlacement(Program program) {
+		return placementOf(getLoadedSlices(program));
+	}
+
+	static PrgPlacement placementOf(List<LoadedSlice> slices) {
+		if (slices.isEmpty()) {
+			return PrgPlacement.NONE;
+		}
+		// The load address is where the FIRST payload byte landed, and the payload begins
+		// at file offset 2 (past the 2-byte load-address header) -- so it is the start of
+		// the lowest-file-offset slice, not the lowest ADDRESS: a wrapping PRG's later
+		// slices sit below its load address, having run past $FFFF into low memory.
+		LoadedSlice first = slices.get(0);
+		long total = 0;
+		for (LoadedSlice slice : slices) {
+			if (slice.fileOffset() < first.fileOffset()) {
+				first = slice;
+			}
+			total += slice.length();
+		}
+		return new PrgPlacement(first.start(), total, total > 0x10000 - first.start());
+	}
+
 	static List<LoadedSlice> getLoadedSlices(Program program) {
 		Options info = program.getOptions(Program.PROGRAM_INFO);
-		String json = info.getString(PRG_SLICES_PROPERTY, null);
-		if (json == null) {
-			// Compatibility with C64 programs saved before the shared CBM loader extraction.
-			json = info.getString("Retro Machines.C64 PRG Slices", "[]");
-		}
+		String json = info.getString(PRG_SLICES_PROPERTY, "[]");
 		try {
 			List<LoadedSlice> result = new ArrayList<>();
 			for (JsonElement element : JsonParser.parseString(json).getAsJsonArray()) {
