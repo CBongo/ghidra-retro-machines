@@ -96,11 +96,14 @@ otherwise be indistinguishable at runtime from the legitimate "user supplied no 
 since `DescriptorCopyHintAnalyzer` ignores a hint whose source bytes are unreadable
 (`docs/smc-inplace-vs-overlay.md` §6).
 
-`load_target` is a legacy optional boolean for loaders with one fixed image-carve region;
-at most one region may set it. C64 PRGs do not use it: their header-selected image may span
-ordinary RAM regions, RAM-under-ROM/I/O occupants, and the `$FFFF` wrap boundary, so the
-C64 loader derives destinations from direct `kind: ram` regions/window occupants instead.
-NES boards also have none because their PRG banks are ROM windows rather than a RAM image.
+`prg_placeable` is an optional boolean marking a non-`ram` region that a CBM PRG may still
+legitimately land in — the C64's `P6510` on-die port at `$00/$01` is the case it exists for.
+There is no field naming a single fixed image-carve region: a PRG's header-selected image may
+span ordinary RAM regions, RAM-under-ROM/I/O occupants and the `$FFFF` wrap boundary, so the
+CBM loaders derive destinations from every `kind: ram` region, every `prg_placeable` region
+and `kind: ram` window occupants instead. NES boards have neither, because their PRG banks are
+ROM windows rather than a RAM image. (A `load_target` boolean served the fixed-region role
+until grm-hap retired it as unread; see `docs/SCHEMA.md`.)
 
 ### `physical`
 
@@ -323,9 +326,22 @@ uniformly.
 
 When a descriptor has top-level `formats:`, MapCompiler preserves that mapping in the
 compiled map. Numeric YAML scalars are normalized to JSON integers, but the tree is
-otherwise loader-policy data: extension lists, headers, placement rules, and any
-format-specific initial state remain descriptor-defined rather than hard-coded in the
-compiler. The key is omitted when the source descriptor has no formats.
+otherwise loader-policy data, descriptor-defined rather than hard-coded in the compiler.
+The key is omitted when the source descriptor has no formats.
+
+What lives under `formats.prg` today, and who reads it:
+
+| key | consumer |
+| --- | --- |
+| `placement: load_address` | `MapCompiler.usesLoadAddressPlacement` — gates the PRG/RAM placement-coverage check |
+| `basic.token_enum`, `basic.prefix_enums`, `basic.petscii_variant` | `C64BasicAnalyzer` (all three CBM machines) |
+| `comment` | documentation |
+
+`extensions` and `header` keys used to sit here and were never read — `AbstractCbmPrgLoader`
+hardcodes the `.prg` suffix test and the 2-byte little-endian load address, on purpose, since
+that suffix test is a cheap early-out ahead of a descriptor parse that would otherwise run once
+per file Ghidra probes. They were removed in grm-hap; `machines/c64.yaml` records the detail,
+including why the declared `.p00` extension was actively wrong rather than merely inert.
 
 ### `symbols`
 

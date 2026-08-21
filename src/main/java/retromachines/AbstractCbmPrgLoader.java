@@ -439,8 +439,18 @@ abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader {
 				}
 			}
 
-			persistPrgPlacement(program, loadAddr, prgLength, wrapped, prgSlices,
-				placementSpaces);
+			// Keep what was persisted: the entry-point resolution below used to call the
+			// one-arg resolvePrgAddress, which re-reads and re-parses PRG_SLICES out of
+			// Program Info -- JSON this very call had just written from data still live in
+			// these locals (grm-hap item 4). That round trip could only lose information,
+			// and it had a real failure mode: getLoadedSlices swallows a parse error and
+			// returns an empty list, so resolvePrgAddress would return null and the entry
+			// point would degrade into a "Failed to set entry point" log line rather than
+			// being set. Passing the list straight through removes both the parse and the
+			// swallow; getLoadedSlices stays for callers that legitimately come back to a
+			// saved Program later (the analyzers).
+			List<LoadedSlice> loadedSlices = persistPrgPlacement(program, loadAddr, prgLength,
+				wrapped, prgSlices, placementSpaces);
 			program.getOptions(Program.PROGRAM_INFO).setString(
 				DescriptorSupport.MAP_PATH_PROPERTY, getMapPath());
 			afterPrgPlacement(program, prgSlices, log);
@@ -502,7 +512,7 @@ abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader {
 			else {
 				boolean basicStart = !wrapped && looksLikeBasicStart(provider, loadAddr, prgLength);
 				try {
-					Address entryAddr = resolvePrgAddress(program, loadAddr);
+					Address entryAddr = resolvePrgAddress(program, loadAddr, loadedSlices);
 					if (entryAddr == null) {
 						throw new IOException("No placed PRG slice contains load address $" +
 							Long.toHexString(loadAddr));
@@ -791,10 +801,16 @@ abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader {
 		return block;
 	}
 
-	private static void persistPrgPlacement(Program program, long loadAddr, long length,
-			boolean wrapped, List<PrgSlice> slices, Map<String, AddressSpace> placementSpaces)
-			throws IOException {
+	/**
+	 * Writes the PRG placement metadata to Program Info and returns the same slices in the
+	 * in-memory form {@link #resolvePrgAddress} consumes, so {@code load()} can go on using
+	 * them without reading back the JSON it just wrote (grm-hap item 4).
+	 */
+	private static List<LoadedSlice> persistPrgPlacement(Program program, long loadAddr,
+			long length, boolean wrapped, List<PrgSlice> slices,
+			Map<String, AddressSpace> placementSpaces) throws IOException {
 		JsonArray serialized = new JsonArray();
+		List<LoadedSlice> loaded = new ArrayList<>();
 		for (PrgSlice slice : slices) {
 			AddressSpace space = placementSpaces.get(slice.target().name());
 			if (space == null) {
@@ -807,12 +823,17 @@ abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader {
 			item.addProperty("space", space.getName());
 			item.addProperty("start", slice.start());
 			serialized.add(item);
+			// Built from the same four values in the same loop rather than by re-parsing
+			// `serialized`, so the returned list cannot drift from what was persisted.
+			loaded.add(new LoadedSlice(slice.fileOffset(), slice.length(), space.getName(),
+				slice.start()));
 		}
 		Options info = program.getOptions(Program.PROGRAM_INFO);
 		info.setLong(PRG_LOAD_ADDRESS_PROPERTY, loadAddr);
 		info.setLong(PRG_LENGTH_PROPERTY, length);
 		info.setBoolean(PRG_WRAPPED_PROPERTY, wrapped);
 		info.setString(PRG_SLICES_PROPERTY, new Gson().toJson(serialized));
+		return List.copyOf(loaded);
 	}
 
 	static List<LoadedSlice> getLoadedSlices(Program program) {

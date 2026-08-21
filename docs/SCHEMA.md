@@ -379,35 +379,32 @@ coordinated behavior changes (e.g. a different combination of r/w/x *and* a diff
 behavioral cluster and deserves its own `kind`, not a pile of overrides on an existing one.
 Overrides are for one-off exceptions; new kinds are for repeated behavior patterns.
 
-## Load-time image target (`load_target`)
+`MapCompiler` passes these three fields through to the compiled `.map` verbatim, only when
+present in the YAML (no defaults are ever written into the JSON — the loader is the single
+place that knows the kind→default table and applies overrides on top of it).
 
-Optional legacy boolean field on `memory.regions[]` entries, omitted (== `false`) unless a
-loader has exactly one fixed region into which it carves its file image. MapCompiler passes
-it through only when present and rejects more than one such region.
+## Where a PRG's bytes land
 
-It is deliberately **not** how C64 PRG placement is modeled. A PRG's 16-bit load address
-may target any ordinary RAM region, RAM beneath a banked ROM/I/O window, or wrap through
-`$FFFF` into low memory. `C64PrgLoader` derives a complete placement plan from the direct
-`kind: ram` regions and window occupants, splitting the file at map boundaries;
-`formats.prg.placement: load_address` selects this policy.
+There is **no descriptor field naming "the region PRGs load into"**, and that is deliberate.
+A CBM PRG carries a 16-bit load address that may target any ordinary RAM region, RAM beneath
+a banked ROM/I/O window, or wrap through `$FFFF` into low memory — so a single fixed carve
+target cannot express it. `AbstractCbmPrgLoader` (shared by `C64PrgLoader`, `PetPrgLoader`
+and `C128PrgLoader`) instead derives a complete placement plan from *every* candidate region
+— those with `kind: ram`, those flagged `prg_placeable: true`, and `kind: ram` window
+occupants — splitting the file at map boundaries. `formats.prg.placement: load_address`
+selects this policy, and `MapCompiler` validates that the resulting union is gap-free.
+
+A schema-level `load_target: true` boolean did once name one such fixed region, and this
+section used to document it. It was retired in grm-hap: the PRG rework left it with no
+reader in `src/main/java` at all, while `MapCompiler` went on validating and forwarding it,
+which advertised a placement policy nothing honoured. Descriptors, compiler and docs no
+longer mention it; the compiled `.map` files are regenerable build products, so nothing
+needs migrating.
 
 Because direct RAM and RAM-under-ROM/I/O occupy different Ghidra address spaces, an
 instruction or fallthrough that itself straddles one of those boundaries cannot be represented
 as one contiguous instruction. The bytes and their original file offsets are still preserved on
 both sides; analysis at that rare cross-space boundary may require manual treatment.
-
-`load_target` is not required — C64 and NES descriptors correctly have none.
-`machines/pet4032.yaml` and `machines/c128.yaml` each now mark one `kind: ram` region
-`load_target: true` (`BASIC_TEXT` in each case). Whether a loader uses the legacy single-target mechanism
-is a property of that loader, not the schema — though as of this writing `AbstractCbmPrgLoader`
-(shared by `C64PrgLoader`, `PetPrgLoader`, and `C128PrgLoader`) derives PRG placement
-uniformly from `kind: ram` regions and `prg_placeable` regions for all three machines, so
-`load_target` itself is not read by any loader in `src/main/java`; `MapCompiler` only
-validates that at most one region declares it.
-
-`MapCompiler` passes these three fields through to the compiled `.map` verbatim, only when
-present in the YAML (no defaults are ever written into the JSON — the loader is the single
-place that knows the kind→default table and applies overrides on top of it).
 
 ## Read/write asymmetry (`on_write`)
 

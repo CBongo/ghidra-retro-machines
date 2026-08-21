@@ -307,11 +307,18 @@ types:
 
 formats:
   prg:
-    extensions: [".prg", ".p00"]
-    header:
-      - { field: load_address, size: 2, endian: little }
+    # NO extensions/header keys here -- see docs/SCHEMA.md "Where a PRG's bytes land".
+    # They were declared and never read (grm-hap item 1): AbstractCbmPrgLoader hardcodes
+    # both the ".prg" suffix test and the 2-byte little-endian load address in
+    # findSupportedLoadSpecs, deliberately, because that suffix test is the cheap early-out
+    # in front of a full descriptor parse -- Ghidra probes every loader against every file,
+    # and reading the list from here would parse this descriptor once per probed file.
+    # The extension list was also WRONG rather than merely unread: it claimed ".p00", whose
+    # PC64 container puts a 26-byte header ("C64File\0", 16-char name, record size) ahead of
+    # the load address, so anything that honoured the declaration as written would have
+    # mis-parsed every .p00 by 26 bytes. Supporting .p00/.t64 is a container feature, not a
+    # line in an extension list.
     placement: load_address
-    initial_bank_state: default          # banking.initial_state (7)
     basic:
       dialect: "Commodore BASIC 2.0"
       token_enum: BASIC_V2_TOKEN

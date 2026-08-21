@@ -229,7 +229,6 @@ public class MapCompiler {
 			throw new IllegalArgumentException("descriptor 'memory:' is missing 'regions:' list");
 		}
 		List<Map<String, Object>> out = new ArrayList<>();
-		String loadTargetName = null;
 		for (Map<String, Object> region : regions) {
 			Map<String, Object> r = new LinkedHashMap<>();
 			String name = requireString(region, "name", "memory.regions[]");
@@ -249,17 +248,12 @@ public class MapCompiler {
 			copyIfPresent(region, r, "readable");
 			copyIfPresent(region, r, "writable");
 			copyIfPresent(region, r, "executable");
-			copyIfPresent(region, r, "load_target");
+			// No load_target here: the single-fixed-image-carve mechanism it named was
+			// retired by the PRG rework (grm-hap item 2). PRG placement is planned from
+			// kind/prg_placeable across every candidate region (planPrgSlices), so a
+			// descriptor-declared "the one region PRGs land in" has no reader left and
+			// carrying it through the compiler only advertised a policy nothing honoured.
 			copyIfPresent(region, r, "prg_placeable");
-			if (Boolean.TRUE.equals(region.get("load_target"))) {
-				if (loadTargetName != null) {
-					throw new IllegalArgumentException(
-						"descriptor 'memory.regions[]' declares 'load_target: true' on both '" +
-							loadTargetName + "' and '" + name +
-							"'; at most one region may be the load target");
-				}
-				loadTargetName = name;
-			}
 			out.add(r);
 		}
 		return out;

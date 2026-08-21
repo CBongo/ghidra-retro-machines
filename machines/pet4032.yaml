@@ -59,7 +59,6 @@ memory:
       start: 0x0400
       end: 0x7FFF
       kind: ram
-      load_target: true
       comment: "32K model user RAM; $0400 is BASIC's leading zero and tokenized text starts at $0401"
 
     # The 40-column board has 1 KiB of distinct CRT RAM at $8000-$83FF.
@@ -187,9 +186,7 @@ types:
 
 formats:
   prg:
-    extensions: [".prg"]
-    header:
-      - { field: load_address, size: 2, endian: little }
+    # No extensions/header keys: unread by design, see machines/c64.yaml (grm-hap item 1).
     placement: load_address
     basic:
       dialect: "Commodore BASIC 4.0 (PET)"
