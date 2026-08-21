@@ -21,6 +21,7 @@ import static org.junit.Assert.assertTrue;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import org.junit.Rule;
 import org.junit.Test;
@@ -28,6 +29,12 @@ import org.junit.rules.TemporaryFolder;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+
+import retromachines.BankSwitchStrategy;
+import retromachines.MemoryLatchBankSwitchStrategy;
+import retromachines.RegisterWriteBankSwitchStrategy;
+import retromachines.SelectDataBankSwitchStrategy;
+import retromachines.SerialShiftBankSwitchStrategy;
 
 /**
  * JUnit migration of {@code tools/gdtbuilder/src/main/java/gdtbuilder/MapCompilerVerify.java}
@@ -326,6 +333,217 @@ public class MapCompilerTest {
 			        - { name: CHRGET, start: 0x0073, end: 0x008a, source: KERNAL, source_addr: 0xe3a2,
 			            entry: 0x0090 }
 			""", "not inside the copied range");
+	}
+
+	/** grm-p7i: {@code memory.layouts[].when} must name exactly one field, that field must be
+	 *  the same across every layout, no two layouts may declare the same when: value, and the
+	 *  value must be an integer -- the four rules {@code DescriptorSupport.planWindows}
+	 *  enforces at load time by silently discarding {@code memory.layouts[]} rather than
+	 *  failing. */
+	@Test
+	public void layoutWhenErrors() throws Exception {
+		Path temp = tmp.getRoot().toPath();
+		expectCompileError(temp, "layout-multi-field",
+			layoutYaml("{ MODE: 0, OTHER: 1 }", "{ MODE: 1 }"), "exactly one field");
+		expectCompileError(temp, "layout-mixed-fields",
+			layoutYaml("{ MODE: 0 }", "{ OTHER: 1 }"), "mixes mode fields");
+		expectCompileError(temp, "layout-dup-value",
+			layoutYaml("{ MODE: 0 }", "{ MODE: 0 }"), "duplicate when");
+		expectCompileError(temp, "layout-non-integral",
+			layoutYaml("{ MODE: 0.5 }", "{ MODE: 1 }"), "is not an integer");
+	}
+
+	/** A two-layout descriptor whose {@code when:} maps are supplied by the caller, otherwise
+	 *  minimal and schema-valid; used by {@link #layoutWhenErrors}. */
+	private static String layoutYaml(String when1, String when2) {
+		return """
+			schema: 2
+			system: { id: layout, name: Layout, cpu: { language: '6502:LE:16:default' } }
+			memory:
+			  regions:
+			    - { name: RAM, start: 0, end: 0xffff, kind: ram }
+			  windows: []
+			  layouts:
+			    - when: %s
+			      windows:
+			        - { name: W, start: 0x8000, end: 0x9fff, occupants: [{ name: BANK0, kind: ram }] }
+			    - when: %s
+			      windows:
+			        - { name: W, start: 0x8000, end: 0x9fff, occupants: [{ name: BANK1, kind: ram }] }
+			banking:
+			  state: [{ name: MODE, bits: 1 }, { name: OTHER, bits: 1 }]
+			  mechanisms:
+			    - strategy: register-write
+			      params: { address: 0x0001, mask: 0x03 }
+			      sets: [MODE, OTHER]
+			  initial_state: { MODE: 0, OTHER: 0 }
+			""".formatted(when1, when2);
+	}
+
+	/** grm-sf6 2a: an unrecognized {@code banking.mechanisms[].strategy} name must fail the
+	 *  build, naming the mechanism and the accepted vocabulary, rather than silently shipping
+	 *  a mechanism {@code BoardBankAnalyzer} will skip at analysis time. */
+	@Test
+	public void unknownStrategyErrors() throws Exception {
+		Path temp = tmp.getRoot().toPath();
+		expectCompileError(temp, "bad-strategy", """
+			schema: 2
+			system: { id: bad-strategy, name: Bad Strategy, cpu: { language: '6502:LE:16:default' } }
+			memory:
+			  regions:
+			    - { name: RAM, start: 0, end: 0xffff, kind: ram }
+			  windows: []
+			banking:
+			  state: [{ name: MODE, bits: 1 }]
+			  mechanisms:
+			    - strategy: registerwrite
+			      params: { address: 0x0001, mask: 0x01 }
+			      sets: [MODE]
+			  initial_state: { MODE: 0 }
+			""", "not a recognized strategy name");
+	}
+
+	/** grm-sf6 2a: a DEFERRED strategy name (schema-valid, no analyzer support yet) must still
+	 *  compile -- it is a deliberate placeholder, not a typo. */
+	@Test
+	public void deferredStrategyCompiles() throws Exception {
+		Path temp = tmp.getRoot().toPath();
+		Path yaml = temp.resolve("deferred.yaml");
+		Path map = temp.resolve("deferred.map");
+		Files.writeString(yaml, """
+			schema: 2
+			system: { id: deferred, name: Deferred, cpu: { language: '6502:LE:16:default' } }
+			memory:
+			  regions:
+			    - { name: RAM, start: 0, end: 0xffff, kind: ram }
+			  windows: []
+			banking:
+			  state: [{ name: MODE, bits: 1 }]
+			  mechanisms:
+			    - strategy: io-port
+			      params: { address: 0x0001, mask: 0x01 }
+			      sets: [MODE]
+			  initial_state: { MODE: 0 }
+			""");
+		MapCompiler.main(new String[] { yaml.toString(), map.toString() });
+		assertTrue("deferred strategy 'io-port' must still compile", Files.exists(map));
+	}
+
+	/** grm-sf6 2a: notices drift between {@link MapCompiler#IMPLEMENTED_STRATEGIES} (hard-coded,
+	 *  since MapCompiler has no ClassSearcher) and the actual shipped
+	 *  {@code BankSwitchStrategy} implementations -- every implementation's own
+	 *  {@code strategyName()} must appear in the compiler's set. */
+	@Test
+	public void strategyVocabularyMatchesImplementations() {
+		List<BankSwitchStrategy> implementations = List.of(
+			new RegisterWriteBankSwitchStrategy(),
+			new MemoryLatchBankSwitchStrategy(),
+			new SelectDataBankSwitchStrategy(),
+			new SerialShiftBankSwitchStrategy());
+		for (BankSwitchStrategy s : implementations) {
+			assertTrue("BankSwitchStrategy '" + s.strategyName() +
+				"' (" + s.getClass().getSimpleName() +
+				") is not in MapCompiler.IMPLEMENTED_STRATEGIES -- update the compiler's " +
+				"hard-coded vocabulary to match",
+				MapCompiler.IMPLEMENTED_STRATEGIES.contains(s.strategyName()));
+		}
+		assertEquals("MapCompiler.IMPLEMENTED_STRATEGIES has drifted from the shipped " +
+			"BankSwitchStrategy implementations", implementations.size(),
+			MapCompiler.IMPLEMENTED_STRATEGIES.size());
+	}
+
+	/** grm-sf6 2b: {@code end < start} must fail for a plain region, a top-level window, and a
+	 *  subregion; a negative address and an address past the descriptor's declared 16-bit
+	 *  address space must likewise fail; and a subregion must lie inside its parent window. */
+	@Test
+	public void geometryErrors() throws Exception {
+		Path temp = tmp.getRoot().toPath();
+		expectCompileError(temp, "region-reversed", """
+			schema: 2
+			system: { id: region-reversed, name: Region Reversed, cpu: { language: '6502:LE:16:default' } }
+			memory:
+			  regions:
+			    - { name: RAM, start: 0x1000, end: 0x0fff, kind: ram }
+			  windows: []
+			""", "before start");
+		expectCompileError(temp, "region-negative", """
+			schema: 2
+			system: { id: region-negative, name: Region Negative, cpu: { language: '6502:LE:16:default' } }
+			memory:
+			  regions:
+			    - { name: RAM, start: -1, end: 0x0fff, kind: ram }
+			  windows: []
+			""", "negative start");
+		expectCompileError(temp, "region-overflow", """
+			schema: 2
+			system: { id: region-overflow, name: Region Overflow, cpu: { language: '6502:LE:16:default' } }
+			memory:
+			  regions:
+			    - { name: RAM, start: 0, end: 0x10000, kind: ram }
+			  windows: []
+			""", "exceeds the descriptor's address space");
+		expectCompileError(temp, "window-reversed", """
+			schema: 2
+			system: { id: window-reversed, name: Window Reversed, cpu: { language: '6502:LE:16:default' } }
+			memory:
+			  regions:
+			    - { name: RAM, start: 0, end: 0xffff, kind: ram }
+			  windows:
+			    - { name: W, start: 0x9fff, end: 0x8000, maps: 'PRG[0]' }
+			physical:
+			  - { name: PRG, image: prg_rom }
+			""", "before start");
+		expectCompileError(temp, "subregion-outside-window", """
+			schema: 2
+			system: { id: sub-outside, name: Sub Outside, cpu: { language: '6502:LE:16:default' } }
+			memory:
+			  regions:
+			    - { name: RAM, start: 0, end: 0x0fff, kind: ram }
+			  windows:
+			    - name: IOWIN
+			      start: 0xd000
+			      end: 0xdfff
+			      occupants:
+			        - name: IO
+			          kind: io
+			          subregions:
+			            - { name: REG, start: 0xd000, end: 0xe010, kind: io }
+			""", "is not inside its window");
+		expectCompileError(temp, "subregion-no-extent", """
+			schema: 2
+			system: { id: sub-no-extent, name: Sub No Extent, cpu: { language: '6502:LE:16:default' } }
+			memory:
+			  regions:
+			    - { name: RAM, start: 0, end: 0x0fff, kind: ram }
+			  windows:
+			    - name: IOWIN
+			      start: 0xd000
+			      end: 0xdfff
+			      occupants:
+			        - name: IO
+			          kind: io
+			          subregions:
+			            - { name: REG, start: 0xd000, kind: io }
+			""", "needs 'end:', 'size:', or 'repeat_to:'");
+	}
+
+	/** grm-sf6 2b: a 1-byte region ({@code end == start}) is legal. */
+	@Test
+	public void oneByteRegionCompiles() throws Exception {
+		Path temp = tmp.getRoot().toPath();
+		Path yaml = temp.resolve("one-byte.yaml");
+		Path map = temp.resolve("one-byte.map");
+		Files.writeString(yaml, """
+			schema: 2
+			system: { id: one-byte, name: One Byte, cpu: { language: '6502:LE:16:default' } }
+			memory:
+			  regions:
+			    - { name: P, start: 0, end: 0, kind: io }
+			    - { name: RAM, start: 1, end: 0xffff, kind: ram }
+			  windows: []
+			""");
+		MapCompiler.main(new String[] { yaml.toString(), map.toString() });
+		assertTrue("a 1-byte region (end == start) must compile", Files.exists(map));
 	}
 
 	private static void expectCopyHintError(Path temp, String name, String hints, String part)

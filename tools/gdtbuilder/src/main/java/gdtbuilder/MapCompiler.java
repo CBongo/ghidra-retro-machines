@@ -101,6 +101,7 @@ public class MapCompiler {
 			}
 		}
 		LinkedHashMap<String, Integer> stateFields = parseStateFields(descriptor);
+		long maxAddr = addressSpaceMax(descriptor);
 
 		Map<String, Object> mapDoc = new LinkedHashMap<>();
 		mapDoc.put("system", buildSystem(descriptor));
@@ -112,10 +113,10 @@ public class MapCompiler {
 		// source is normally a banked ROM occupant such as the C64's KERNAL, not a region).
 		// mapDoc's key order is unchanged -- the puts below still run regions-then-windows.
 		List<Map<String, Object>> windows =
-			buildWindows(descriptor, physicalNames, stateFields.keySet());
+			buildWindows(descriptor, physicalNames, stateFields.keySet(), maxAddr);
 		List<Map<String, Object>> layouts =
-			buildLayouts(descriptor, physicalNames, stateFields.keySet());
-		List<Map<String, Object>> regions = buildRegions(descriptor);
+			buildLayouts(descriptor, physicalNames, stateFields.keySet(), maxAddr);
+		List<Map<String, Object>> regions = buildRegions(descriptor, maxAddr);
 		validateUniqueNames(regions, "name", "memory.regions[] name");
 		validateCopiedFromSources(regions, windows, layouts);
 		mapDoc.put("regions", regions);
@@ -149,6 +150,75 @@ public class MapCompiler {
 
 		System.err.println(
 			"Wrote map to " + outputMap.getAbsolutePath() + " (" + outputMap.length() + " bytes)");
+	}
+
+	// ---- address geometry (grm-sf6 §2b) ----
+
+	/**
+	 * Upper address bound for the overflow checks in {@link #validateRange}, derived from
+	 * {@code system.cpu.language} rather than assumed 16-bit. Sleigh language IDs follow the
+	 * {@code processor:endian:size:variant} convention (e.g. {@code "6502:LE:16:default"}
+	 * -- see every {@code machines/*.yaml}); the third field is the address space width in
+	 * bits, the same number Ghidra itself uses to size the language's default address space,
+	 * so parsing it here keeps the overflow check honest for any future wider-address board
+	 * (a 24-bit or 32-bit descriptor) without a second place to update it.
+	 * <p>
+	 * When the language string is missing or does not parse (a shape this compiler has never
+	 * seen), this falls back to a conservative 16-bit bound ($FFFF) rather than skipping the
+	 * check: every descriptor shipped today is 16-bit, so the fallback never actually fires in
+	 * this repo, and the alternative -- silently not checking -- would leave the one address
+	 * space this project ships completely unguarded.
+	 * <p>
+	 * The width is range-checked before it is shifted with: Java masks a {@code long} shift
+	 * distance to its low 6 bits, so a nominally 64-bit language ID would compute
+	 * {@code (1L << 64) - 1 == 0} and reject every address in the descriptor. 63 is the widest
+	 * bound this {@code long}-typed check can express, and no Sleigh language this compiler
+	 * targets is anywhere near it.
+	 */
+	@SuppressWarnings("unchecked")
+	private static long addressSpaceMax(Map<String, Object> descriptor) {
+		try {
+			Map<String, Object> system = (Map<String, Object>) descriptor.get("system");
+			Map<String, Object> cpu = (Map<String, Object>) system.get("cpu");
+			String[] parts = ((String) cpu.get("language")).split(":");
+			int bits = Integer.parseInt(parts[2]);
+			if (bits < 1 || bits > 63) {
+				return 0xFFFFL;
+			}
+			return (1L << bits) - 1;
+		}
+		catch (RuntimeException e) {
+			return 0xFFFFL;
+		}
+	}
+
+	/**
+	 * Applies the address-range geometry the runtime relies on but MapCompiler never enforced
+	 * (grm-sf6 §2b) at compile time. A well-formed {@code [start, end]} range is
+	 * inclusive-inclusive, so {@code start == end} is a legal 1-byte range -- only
+	 * {@code end < start} is rejected, not equality. {@code memory.regions[]},
+	 * {@code memory.windows[]} (including layout windows), and occupant
+	 * {@code subregions[]} all share this exact shape, so this one helper covers all of
+	 * them; {@code copied_from[]} hints keep their own bespoke checks in
+	 * {@link #buildCopiedFrom} (a hint additionally must sit inside its destination region).
+	 */
+	private static void validateRange(int start, int end, long maxAddr, String context) {
+		if (start < 0) {
+			throw new IllegalArgumentException(
+				context + " has a negative start (" + start + ")");
+		}
+		if (end < start) {
+			throw new IllegalArgumentException(
+				context + " has end $" + hex(end) + " before start $" + hex(start));
+		}
+		if (Integer.toUnsignedLong(end) > maxAddr) {
+			throw new IllegalArgumentException(context + " end $" + hex(end) +
+				" exceeds the descriptor's address space (max $" + hex((int) maxAddr) + ")");
+		}
+	}
+
+	private static String hex(int v) {
+		return String.format("%04X", v);
 	}
 
 	// ---- system ----
@@ -219,7 +289,8 @@ public class MapCompiler {
 	// ---- regions ----
 
 	@SuppressWarnings("unchecked")
-	private static List<Map<String, Object>> buildRegions(Map<String, Object> descriptor) {
+	private static List<Map<String, Object>> buildRegions(Map<String, Object> descriptor,
+			long maxAddr) {
 		Map<String, Object> memory = (Map<String, Object>) descriptor.get("memory");
 		if (memory == null) {
 			throw new IllegalArgumentException("descriptor is missing top-level 'memory:' section");
@@ -235,6 +306,7 @@ public class MapCompiler {
 			r.put("name", name);
 			int start = requireAddr(region, "start", "memory.regions[]");
 			int end = requireAddr(region, "end", "memory.regions[]");
+			validateRange(start, end, maxAddr, "memory.regions[] '" + name + "'");
 			r.put("start", start);
 			r.put("end", end);
 			r.put("kind", requireString(region, "kind", "memory.regions[]"));
@@ -482,7 +554,7 @@ public class MapCompiler {
 
 	@SuppressWarnings("unchecked")
 	private static List<Map<String, Object>> buildWindows(Map<String, Object> descriptor,
-			Set<String> physicalNames, Set<String> stateFields) {
+			Set<String> physicalNames, Set<String> stateFields, long maxAddr) {
 		Map<String, Object> memory = (Map<String, Object>) descriptor.get("memory");
 		if (memory == null) {
 			throw new IllegalArgumentException("descriptor is missing top-level 'memory:' section");
@@ -491,12 +563,12 @@ public class MapCompiler {
 		if (windows == null) {
 			throw new IllegalArgumentException("descriptor 'memory:' is missing 'windows:' list");
 		}
-		return buildWindowList(windows, physicalNames, stateFields, "memory.windows");
+		return buildWindowList(windows, physicalNames, stateFields, "memory.windows", maxAddr);
 	}
 
 	@SuppressWarnings("unchecked")
 	private static List<Map<String, Object>> buildWindowList(List<Map<String, Object>> windows,
-			Set<String> physicalNames, Set<String> stateFields, String context) {
+			Set<String> physicalNames, Set<String> stateFields, String context, long maxAddr) {
 		List<Map<String, Object>> out = new ArrayList<>();
 		for (Map<String, Object> window : windows) {
 			Map<String, Object> w = new LinkedHashMap<>();
@@ -504,18 +576,21 @@ public class MapCompiler {
 			String windowContext = context + " '" + name + "'";
 			w.put("name", name);
 			int start = requireAddr(window, "start", windowContext);
-			w.put("start", start);
 			// end: explicit, or derived from size (schema v2 allows either)
+			int end;
 			if (window.containsKey("end")) {
-				w.put("end", requireAddr(window, "end", windowContext));
+				end = requireAddr(window, "end", windowContext);
 			}
 			else if (window.containsKey("size")) {
-				w.put("end", start + toInt(window.get("size")) - 1);
+				end = start + toInt(window.get("size")) - 1;
 			}
 			else {
 				throw new IllegalArgumentException(
 					windowContext + " needs either 'end:' or 'size:'");
 			}
+			validateRange(start, end, maxAddr, windowContext);
+			w.put("start", start);
+			w.put("end", end);
 
 			List<Map<String, Object>> occupants =
 				(List<Map<String, Object>>) window.get("occupants");
@@ -527,7 +602,7 @@ public class MapCompiler {
 			if (occupants != null) {
 				List<Map<String, Object>> occupantsOut = new ArrayList<>();
 				for (Map<String, Object> occupant : occupants) {
-					occupantsOut.add(buildOccupant(occupant));
+					occupantsOut.add(buildOccupant(occupant, start, end, maxAddr));
 				}
 				w.put("occupants", occupantsOut);
 			}
@@ -557,9 +632,11 @@ public class MapCompiler {
 	}
 
 	@SuppressWarnings("unchecked")
-	private static Map<String, Object> buildOccupant(Map<String, Object> occupant) {
+	private static Map<String, Object> buildOccupant(Map<String, Object> occupant,
+			int windowStart, int windowEnd, long maxAddr) {
 		Map<String, Object> o = new LinkedHashMap<>();
-		o.put("name", requireString(occupant, "name", "window occupant"));
+		String name = requireString(occupant, "name", "window occupant");
+		o.put("name", name);
 		o.put("kind", requireString(occupant, "kind", "window occupant"));
 		copyIfPresent(occupant, o, "image");
 		copyIfPresent(occupant, o, "on_write");
@@ -570,19 +647,34 @@ public class MapCompiler {
 		List<Map<String, Object>> subregions =
 			(List<Map<String, Object>>) occupant.get("subregions");
 		if (subregions != null) {
+			String occupantContext = "window occupant '" + name + "'";
 			List<Map<String, Object>> subOut = new ArrayList<>();
 			for (Map<String, Object> sub : subregions) {
-				subOut.add(buildSubregion(sub));
+				subOut.add(buildSubregion(sub, windowStart, windowEnd, maxAddr, occupantContext));
 			}
 			o.put("subregions", subOut);
 		}
 		return o;
 	}
 
-	private static Map<String, Object> buildSubregion(Map<String, Object> sub) {
+	/**
+	 * Builds one occupant {@code subregions[]} entry (chip-register carve-up inside an
+	 * {@code io} occupant, e.g. C64's VIC/SID/CIA decode). A subregion has no {@code end:} of
+	 * its own the way a region/window does -- it resolves the same way
+	 * {@code DescriptorSupport.createIoSubregions} does at load time: {@code repeat_to:} wins
+	 * over {@code end:}, which wins over {@code size:}, and declaring none of the three is a
+	 * hard error there too. Moving that check here (grm-sf6 §2b) just moves the failure from
+	 * load time to compile time; the resolution order must keep matching the runtime's or a
+	 * descriptor that validates clean here could still fail to load.
+	 */
+	private static Map<String, Object> buildSubregion(Map<String, Object> sub,
+			int windowStart, int windowEnd, long maxAddr, String occupantContext) {
 		Map<String, Object> s = new LinkedHashMap<>();
-		s.put("name", requireString(sub, "name", "subregion"));
-		s.put("start", requireAddr(sub, "start", "subregion"));
+		String name = requireString(sub, "name", occupantContext + " subregion");
+		String context = occupantContext + " subregion '" + name + "'";
+		s.put("name", name);
+		int start = requireAddr(sub, "start", context);
+		s.put("start", start);
 		copyAddrIfPresent(sub, s, "end");
 		copyAddrIfPresent(sub, s, "size");
 		copyAddrIfPresent(sub, s, "repeat_to");
@@ -592,14 +684,58 @@ public class MapCompiler {
 		copyIfPresent(sub, s, "readable");
 		copyIfPresent(sub, s, "writable");
 		copyIfPresent(sub, s, "executable");
+
+		int end;
+		if (sub.containsKey("repeat_to")) {
+			end = requireAddr(sub, "repeat_to", context);
+		}
+		else if (sub.containsKey("end")) {
+			end = requireAddr(sub, "end", context);
+		}
+		else if (sub.containsKey("size")) {
+			end = start + toInt(sub.get("size")) - 1;
+		}
+		else {
+			throw new IllegalArgumentException(context + " needs 'end:', 'size:', or 'repeat_to:'");
+		}
+		validateRange(start, end, maxAddr, context);
+		if (start < windowStart || end > windowEnd) {
+			throw new IllegalArgumentException(context + " range $" + hex(start) + "-$" +
+				hex(end) + " is not inside its window ($" + hex(windowStart) + "-$" +
+				hex(windowEnd) + ")");
+		}
 		return s;
 	}
 
 	// ---- mode-dependent layouts ----
 
+	/**
+	 * Builds {@code memory.layouts[]} (mode-dependent window sets), enforcing at compile time
+	 * the four rules {@code DescriptorSupport.planWindows} imposes at load time but does not
+	 * fail on -- a violation there silently discards {@code memory.layouts[]} in its entirety
+	 * (logged, not thrown), so a descriptor that violates one still "compiles" and ships doing
+	 * less than it declares. Mirrored here so the failure happens where the descriptor is
+	 * authored, not where it is loaded (grm-p7i):
+	 * <ol>
+	 * <li>every layout's {@code when:} must name exactly one field;
+	 * <li>that field must be the <em>same</em> field across every layout in the descriptor
+	 * (the "mode field") -- {@code planWindows} has no way to guess which of several mixed
+	 * fields was intended;
+	 * <li>no two layouts may declare the same {@code when:} value -- a duplicate is
+	 * unreachable state, since the runtime keys its per-mode window set off that value; and
+	 * <li>the {@code when:} value must be an integral number, since the runtime reads it with
+	 * {@code JsonElement.getAsInt()}, which truncates a fractional value silently rather than
+	 * failing -- so a typo like {@code when: { CR: 0.5 }} would otherwise compile clean and
+	 * misbehave at load time instead.
+	 * </ol>
+	 * The mode field must also already be a declared {@code banking.state} field (checked
+	 * inline below); {@code BoardBankAnalyzer}/{@code DescriptorSupport} resolve {@code when:}
+	 * keys directly against the state tuple, so a field that doesn't exist there can never
+	 * match at runtime either.
+	 */
 	@SuppressWarnings("unchecked")
 	private static List<Map<String, Object>> buildLayouts(Map<String, Object> descriptor,
-			Set<String> physicalNames, Set<String> stateFields) {
+			Set<String> physicalNames, Set<String> stateFields, long maxAddr) {
 		Map<String, Object> memory = (Map<String, Object>) descriptor.get("memory");
 		List<Map<String, Object>> layouts =
 			memory == null ? null : (List<Map<String, Object>>) memory.get("layouts");
@@ -607,31 +743,73 @@ public class MapCompiler {
 			return null;
 		}
 		List<Map<String, Object>> out = new ArrayList<>();
+		String modeField = null;
+		Set<Integer> seenValues = new LinkedHashSet<>();
 		for (Map<String, Object> layout : layouts) {
 			Map<String, Object> l = new LinkedHashMap<>();
 			Map<String, Object> when = (Map<String, Object>) layout.get("when");
 			if (when == null || when.isEmpty()) {
 				throw new IllegalArgumentException("memory.layouts[] entry is missing 'when:'");
 			}
-			Map<String, Object> whenOut = new LinkedHashMap<>();
-			for (Map.Entry<String, Object> cond : when.entrySet()) {
-				if (!stateFields.contains(cond.getKey())) {
-					throw new IllegalArgumentException("memory.layouts[].when references '" +
-						cond.getKey() + "', which is not a banking.state field");
-				}
-				whenOut.put(cond.getKey(), toInt(cond.getValue()));
+			if (when.size() != 1) {
+				throw new IllegalArgumentException("memory.layouts[].when must name exactly " +
+					"one field; this entry names " + when.keySet() +
+					" (the runtime discards memory.layouts[] entirely rather than guess which " +
+					"field is the mode)");
 			}
+			Map.Entry<String, Object> cond = when.entrySet().iterator().next();
+			String field = cond.getKey();
+			if (!stateFields.contains(field)) {
+				throw new IllegalArgumentException("memory.layouts[].when references '" +
+					field + "', which is not a banking.state field");
+			}
+			if (modeField == null) {
+				modeField = field;
+			}
+			else if (!modeField.equals(field)) {
+				throw new IllegalArgumentException("memory.layouts[] mixes mode fields ('" +
+					modeField + "' vs '" + field + "'); every layout must key 'when:' off the " +
+					"same banking.state field (the runtime discards memory.layouts[] entirely " +
+					"when they don't)");
+			}
+			int value = requireIntegralWhenValue(cond.getValue(),
+				"memory.layouts[].when '" + field + "'");
+			if (!seenValues.add(value)) {
+				throw new IllegalArgumentException("memory.layouts[] has a duplicate when: " +
+					field + "=" + value);
+			}
+			Map<String, Object> whenOut = new LinkedHashMap<>();
+			whenOut.put(field, value);
 			l.put("when", whenOut);
 			List<Map<String, Object>> windows =
 				(List<Map<String, Object>>) layout.get("windows");
 			if (windows == null) {
 				throw new IllegalArgumentException("memory.layouts[] entry is missing 'windows:'");
 			}
-			l.put("windows",
-				buildWindowList(windows, physicalNames, stateFields, "memory.layouts[].windows"));
+			l.put("windows", buildWindowList(windows, physicalNames, stateFields,
+				"memory.layouts[].windows", maxAddr));
 			out.add(l);
 		}
 		return out;
+	}
+
+	/**
+	 * Validates and converts a {@code memory.layouts[].when} value to an {@code int}.
+	 * {@code DescriptorSupport.planWindows} reads this with {@code JsonElement.getAsInt()},
+	 * which silently truncates a fractional {@link Double} (e.g. YAML {@code 0.5}) rather than
+	 * failing -- so this compile-time check must reject non-integral values explicitly rather
+	 * than reuse {@link #toInt}, which would truncate the same way.
+	 */
+	private static int requireIntegralWhenValue(Object value, String context) {
+		if (value instanceof Number n) {
+			double d = n.doubleValue();
+			if (Double.isNaN(d) || Double.isInfinite(d) || d != Math.floor(d)) {
+				throw new IllegalArgumentException(
+					context + " value " + value + " is not an integer");
+			}
+			return n.intValue();
+		}
+		return toInt(value);
 	}
 
 	// ---- maps: expression mini-language ----
@@ -778,6 +956,55 @@ public class MapCompiler {
 		}
 	}
 
+	/**
+	 * The {@code banking.mechanisms[].strategy} vocabulary (vision doc §5.2, docs/SCHEMA.md).
+	 * {@link BoardBankAnalyzer} resolves a mechanism's {@code strategy} name by matching it
+	 * against {@code strategyName()} over every {@code BankSwitchStrategy} implementation
+	 * ClassSearcher discovers at analysis time, and simply logs-and-skips an unmatched name --
+	 * so a typo like {@code registerwrite} or {@code serial_shift} compiles clean and ships
+	 * doing nothing. This compiler cannot reuse that resolution: it is a separate, non-Ghidra
+	 * build with no ClassSearcher available (see this class's own javadoc), so the vocabulary
+	 * is hard-coded here instead. Whoever adds, removes, or renames a {@code BankSwitchStrategy}
+	 * must update whichever of these two sets it affects -- there is no automated link between
+	 * them beyond {@code MapCompilerTest.strategyVocabularyMatchesImplementations}, which
+	 * instantiates every implementation below and asserts its {@code strategyName()} is
+	 * accounted for.
+	 * <p>
+	 * {@link #IMPLEMENTED_STRATEGIES} names correspond 1:1, by {@code strategyName()}, to a
+	 * concrete class in {@code src/main/java/retromachines}: {@code register-write} ->
+	 * {@code RegisterWriteBankSwitchStrategy}, {@code memory-latch} ->
+	 * {@code MemoryLatchBankSwitchStrategy}, {@code select-data} ->
+	 * {@code SelectDataBankSwitchStrategy}, {@code serial-shift} ->
+	 * {@code SerialShiftBankSwitchStrategy}. {@link #DEFERRED_STRATEGIES} are deliberate
+	 * schema-valid placeholders (docs/SCHEMA.md, docs/MAP_FORMAT.md) with no analyzer support
+	 * yet -- accepted here (not rejected), but flagged with a build-time note, since a
+	 * descriptor is entitled to declare a mechanism ahead of its implementation without that
+	 * looking like a typo.
+	 */
+	// Package-private (not private): MapCompilerTest (same package, different source set)
+	// asserts every shipped BankSwitchStrategy.strategyName() is accounted for here, to
+	// notice drift between this set and src/main/java/retromachines.
+	static final Set<String> IMPLEMENTED_STRATEGIES =
+		Set.of("register-write", "memory-latch", "select-data", "serial-shift");
+
+	/** See {@link #IMPLEMENTED_STRATEGIES}. */
+	static final Set<String> DEFERRED_STRATEGIES = Set.of("io-port", "mode-register");
+
+	private static void validateStrategyName(String strategy) {
+		if (DEFERRED_STRATEGIES.contains(strategy)) {
+			System.err.println("NOTE: banking.mechanisms[] strategy '" + strategy +
+				"' has no BankSwitchStrategy implementation yet; this mechanism will be " +
+				"skipped at analysis time (see docs/SCHEMA.md's strategy vocabulary).");
+			return;
+		}
+		if (!IMPLEMENTED_STRATEGIES.contains(strategy)) {
+			throw new IllegalArgumentException("banking.mechanisms[] strategy '" + strategy +
+				"' is not a recognized strategy name; expected one of " +
+				IMPLEMENTED_STRATEGIES + " (implemented) or " + DEFERRED_STRATEGIES +
+				" (declared but deferred, see docs/SCHEMA.md)");
+		}
+	}
+
 	@SuppressWarnings("unchecked")
 	private static Map<String, Object> buildBanking(Map<String, Object> descriptor,
 			LinkedHashMap<String, Integer> stateFields, Set<String> enumeratedWindows) {
@@ -824,6 +1051,7 @@ public class MapCompiler {
 		for (Map<String, Object> mechanism : mechanisms) {
 			Map<String, Object> m = new LinkedHashMap<>();
 			String strategy = requireString(mechanism, "strategy", "banking.mechanisms[]");
+			validateStrategyName(strategy);
 			m.put("strategy", strategy);
 			Map<String, Object> params = (Map<String, Object>) mechanism.get("params");
 			if (params == null) {
