@@ -506,6 +506,33 @@ test {
 	// spc700VectorTest went UP-TO-DATE on a repeat run before this was added.
 	inputs.files(fileTree(dir: 'data/languages')).withPropertyName('bundledLanguages')
 
+	// Compiled machine descriptors, by exactly the same argument (bead grm-lr0s).
+	// NesPlacementValidationTest drives the SHIPPED descriptors, reading data/machines/nes-*.map
+	// off disk through the same grm.moduleDir path above -- and those .map files are gitignored
+	// build products of the per-descriptor build<Id>Map tasks, so a fresh worktree or clone has
+	// none. Without this dependsOn, `gradle test` (i.e. build-and-test.sh's `unit` chunk) never
+	// produces them and six tests fail with "missing shipped descriptor ...\nes-nrom.map".
+	//
+	// It passed for months anyway in the PRIMARY working tree only, on the strength of an
+	// artifact left behind by a DIFFERENT chunk: a full `check` builds the extension, which runs
+	// buildMap, and the outputs then persist in data/machines/ indefinitely. So the failure is
+	// invisible exactly where people usually run, and appears exactly in the fast per-chunk loop
+	// CLAUDE.md recommends. Worse, it MISATTRIBUTES: the six failures are in unrelated NES tests
+	// and survive `git stash`, so the standard "is this mine?" move confidently answers "no,
+	// pre-existing" while main is green -- which is what happened during grm-c9d.3.
+	//
+	// buildGdt is included though no current test reads a .gdt: the .gdt files are generated
+	// from the same YAML by the same builder into the same gitignored directory, so it is the
+	// identical trap already armed for whichever test reads one first, and both together cost
+	// ~5 s and are up-to-date-checked against their YAML inputs.
+	//
+	// Note the contrast with data/petscii.map and data/screencode.map, which need nothing here:
+	// those reach PetsciiMapperTest/RetroCharsetProviderTest as CLASSPATH resources via
+	// stageCharsetResources -> processResources -> sourceSets.main.output, a chain Gradle infers
+	// on its own. It is specifically the grm.moduleDir filesystem route that is invisible to it.
+	dependsOn 'buildMap', 'buildGdt'
+	inputs.files(fileTree(dir: 'data/machines')).withPropertyName('machineDescriptors')
+
 	// Spc700VectorSampleTest's baseline-regeneration switch (bead grm-c9d.2) must be forwarded
 	// explicitly: `test` forks a separate worker JVM that does NOT inherit -D properties from
 	// the launching `gradle` invocation, so `gradle test -Dgrm.spc700.regenerateBaseline=true`
