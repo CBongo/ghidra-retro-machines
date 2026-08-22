@@ -876,7 +876,7 @@ final class DescriptorSupport {
 	/**
 	 * One {@code banking.state} field: its name, LSB position, and bit width within the
 	 * packed state int. Fields pack LSB-first in declaration order (mirrors
-	 * {@code MapCompiler.packState} at build time and {@code BoardBankAnalyzer.FieldSpec}
+	 * {@code MapCompiler.packState} at build time and {@code BoardDescriptorModel.FieldSpec}
 	 * at analysis time -- all three must agree on this layout).
 	 */
 	record StateField(String name, int lsb, int width) {

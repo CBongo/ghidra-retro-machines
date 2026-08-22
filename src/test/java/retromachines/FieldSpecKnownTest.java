@@ -20,7 +20,7 @@ import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
-import retromachines.BoardBankAnalyzer.FieldSpec;
+import retromachines.BoardDescriptorModel.FieldSpec;
 
 /**
  * Pure-JUnit coverage of {@link FieldSpec#fullyKnownIn} (bead grm-v6o). Imports nothing from
