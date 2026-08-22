@@ -90,6 +90,27 @@ Each is minutes of work and settles something specific. Highest value per unit e
       Only you can find them. Once located, `grm-w4w3` can proceed without any of the `.idb`
       tooling for whatever titles they cover.
 
+- [ ] **Which wrappers does the analyzer actually admit at nesskiptest's site B?** (`grm-gpi`.)
+      Open `nesskiptest.nes` in the GUI and read **Window > Analysis Messages** for
+      `BoardBankAnalyzer`'s `bank-switch helper function(s): [...]` line. Report whether it names
+      `FUN_c170`, `FUN_c173`, both, or neither.
+
+      **This needs the GUI because that log is unreachable any other way.** The analysis
+      `MessageLog` is written only by `AutoAnalysisPlugin`; `HeadlessAnalyzer` never reads it, so
+      no headless run and no banktest criterion can see it (verified at 12.1.3 — see
+      `grm-gpi`'s comment and the `analyzer-messagelog-gui-only` bd memory). Site B is the
+      two-wrappers-one-helper contest — `LDA #$02` at `$c170`, a carrier hiding `LDA #$01` at
+      `$c173`, shared tail at `$c175` — and its geometry measured stable over six fresh imports,
+      but *stable geometry* is not the same claim as *stable admission* and the second one cannot
+      be checked from here.
+
+      One specific thing to look for: `FUN_c170` should by my reading be structurally **ineligible**
+      as a pass-through wrapper, because the truncated carrier at `$c172` carries a fallthrough
+      override to `$c175` and `isPassThroughInto` rejects any override unconditionally. Yet the
+      fixture emits `bank -> 2 via FUN_c170`. If the log names `FUN_c170`, that reading is wrong
+      and there is a second admission route to find; if it does not, the bank-2 comment comes from
+      plain dataflow and no wrapper is involved. Either answer unblocks `grm-gpi`.
+
 *Not an item — a note.* The `.idb` inventory itself (`grm-w4w3`) is **agent work and is
 deliberately deferred to a future session** at your request; the tooling question is settled
 (`python-idb` Apache-2.0 / `idbutil` MIT, no IDA needed) so nobody re-derives it. Worth knowing
