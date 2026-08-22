@@ -291,6 +291,26 @@ Agents can't file these — they need an account and CLA agreement.
   since opening with a wrong severity claim is how these get closed unread. Low urgency: we have no
   live exposure (see that bead), so this is a courtesy report, not a request for a fix we need.
 
+- [ ] **Two PRs for the ADC/RRA flag fix — different repos, different maintainers.** (`grm-ef46`,
+  `grm-c9hv`; landed locally as `grm-o9k` 2026-08-22.) Stock Ghidra's `6502.slaspec` computes ADC's
+  carry-out *before* folding in the carry-in (so `A=$FF, op=$00, C=1` wrongly clears C, breaking
+  the `CLC / ADC lo / ADC hi` idiom every 16-bit add is built from) and then sets `V = C`, aliasing
+  signed overflow to the unsigned carry. Both verified present at `Ghidra_12.1.2_build` and 12.1.3.
+
+  - **`grm-ef46` → NationalSecurityAgency/ghidra**, the ADC half. Use the fork recipe below.
+  - **`grm-c9hv` → anarkiwi/deity-informant**, the RRA half — `6510_illegal.sinc` is *vendored*
+    from there (Apache-2.0, Josh Bailey), not from Ghidra. RRA is ROR-then-ADC and faithfully
+    mirrors the faulty ADC idiom, so it inherited both defects. Check whether that project wants a
+    CLA.
+
+  **Both beads carry the finished patch and the reasoning**, so the drafting is done. Two things
+  to keep straight when writing them: our four-quadrant p-code vectors are the *entire* evidence
+  base for RRA — every descriptor in this repo selects a non-`:undoc` language variant, so RRA is
+  undecodable across our whole real-ROM tier and "no row moved" says nothing about it. And
+  deity-informant validates its *Python VM* against a sidplayfp oracle; this is the SLEIGH half,
+  which that oracle never covered, which is worth saying plainly since it explains how the defect
+  survived.
+
 *Two things learned that the next upstream item should inherit:*
 
 - *`CBongo/ghidra` now exists as a fork, and `D:/git/ghidra-fork` is a full clone whose `origin`
