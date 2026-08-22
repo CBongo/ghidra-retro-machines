@@ -230,13 +230,23 @@ so it splits on *any* whitespace with no escaping: multiple dirs separated by sp
 **single directory whose own name contains a space cannot be represented** this way (pass it on
 the command line instead, where each argument is a distinct dir regardless of its contents). So:
 **never conclude "this machine doesn't have the ROM" from a `SKIP`** — suspect the dir list first,
-and look at the dirs the driver prints beside the skip count. The curated (no-flag) manifest has
-**no expected failure any more**: `smb3` was blessed 2026-08-16 once a hand pass established that
-its two remaining warnings are honest (`FUN_c542` really is a bank-switch helper — `c5f5` is
-inside its body — so the output was right and the golden was two lines stale). The long-standing
-"golden correct, output wrong; never bless it" rule was written before `grm-67g` closed the
-`ca23`/`ca2e` half of that diff, and no longer applies. `megaman` is not a guaranteed fail: it flaps at roughly a 20% rate from
-unrelated jitter (`grm-g73`) rather than failing every run. See the
+and look at the dirs the driver prints beside the skip count. `smb3` was blessed 2026-08-16 once a
+hand pass established that its two remaining warnings are honest (`FUN_c542` really is a
+bank-switch helper — `c5f5` is inside its body — so the output was right and the golden was two
+lines stale). The long-standing "golden correct, output wrong; never bless it" rule was written
+before `grm-67g` closed the `ca23`/`ca2e` half of that diff, and no longer applies.
+
+**Two rows fail on an unchanged tree because of Ghidra 12.1.3, not because of this repo**
+(`grm-9wl6`, measured 2026-08-22): `megaman` on the curated manifest and `wizwarr` on the GME set.
+Holding the source byte-identical and flipping only `ghidraTargetVersion` puts both back on their
+goldens exactly, so the goldens are right and the 12.1.3 output is degraded. **Neither may be
+blessed** — there is no stable value to pin (wizwarr varies in *which* call sites lose their bank
+argument; megaman's `bankComments` moved 161 vs 160 on consecutive runs). The owner's standing
+decision as of 2026-08-22 is to leave them failing and documented until upstream moves, so treat
+a `megaman`/`wizwarr` failure matching those signatures as attributed, not as yours, before
+bisecting your own commits. Note this supersedes the older "`megaman` flaps at ~20% from `grm-g73`
+jitter" line: that flap is real but it is a *12.1.2* phenomenon, and on 12.1.3 the row fails every
+run. See `realrom-12-1-3-toolchain-fails` and `grm-qp5x`, and the
 `realrom-expected-baseline-fails` bd memory for the current, authoritative row list — it is
 revised as rows get fixed/reclassified and supersedes any older summary, including this one. To
 decide whether some *other* movement is yours, re-run the row against a stashed baseline and diff
