@@ -344,4 +344,31 @@ docs: 12.x broke 11.x-era APIs (e.g. `charset_info.xml`/`CharsetInfo` →
 
 ## Conventions & Patterns
 
-_Add your project-specific conventions here_
+### Loader validation: `load()` is authoritative, `validateOptions()` is GUI-only
+
+`Loader.validateOptions()` is called **only** from the interactive GUI import dialogs
+(`ImporterDialog`, `AddToProgramDialog`, `LoadLibrariesOptionsDialog`). It is not called from
+`analyzeHeadless`, the `ProgramLoader` API, `GhidraScript.importFile`/`importFileAsBinary`, or
+even the GUI's own batch importer (`ImportBatchTask`) — verified at 12.1.3 and traced back
+through the 11.4-era sources, so this is longstanding behaviour, **not** a 12.x regression
+(grm-vsg). Never treat it as a safety gate for anything reachable headlessly, which in this repo
+means everything the banktest harness imports.
+
+Every loader here therefore treats `load()` as the sole authoritative validation point:
+
+- Any check that must hold for correctness — a referenced file exists and is the right size, an
+  option string parses and resolves against the descriptor, a board/mapper id is known — must be
+  enforced, or independently re-verified, inside `load()`. Not only in `validateOptions()`.
+- `validateOptions()` may still implement the same check for early GUI rejection, which is a
+  better experience than importing and then degrading. **Factor the check into a shared helper so
+  the two call sites cannot drift** — `NesRomLoader.placementError()` is the worked example, used
+  by `validateOptions` to reject and by `load` as the headless safety net.
+- On a violation detected in `load()`, prefer a clear `MessageLog` message plus refusing to
+  populate the affected region over either throwing or proceeding with guessed data.
+  `AbstractCbmPrgLoader.createRomBlock()` is the model: a ROM file of the wrong size logs what it
+  found versus what it expected and leaves the block uninitialized.
+
+Note the harness consequence, which has bitten before: `analyzeHeadless` exits 0 even when a
+loader rejects a file, so a "this bad input is refused" test must assert on log content and the
+absence of a committed program, never on exit status (see the `headless-rejection-exit-zero` bd
+memory and `run-banktest.sh`'s `run_reject()`).

@@ -253,8 +253,24 @@ Blocked on judgment, not effort.
 
 Agents can't file these — they need an account and CLA agreement.
 
-*Nothing open here right now — both items were dispatched 2026-08-16/17 (see the **Answered**
-table). Two things learned that the next upstream item should inherit:*
+- [ ] **`Loader.validateOptions()` is never called outside the GUI import dialogs — document it or
+  wire it up?** (`grm-vsg`, investigated 2026-08-21.) At 12.1.3 the only callers are
+  `ImporterDialog:442`, `AddToProgramDialog:82`, `LoadLibrariesOptionsDialog:60`. Not
+  `ProgramLoader`, not `HeadlessAnalyzer`/`analyzeHeadless`, not `GhidraScript.importFile`/
+  `importFileAsBinary`, and **not even the GUI's own `ImportBatchTask`** — so a loader author's
+  option validation runs on GUI single-file import and nowhere else. **This is NOT a 12.x
+  regression**, which is how our own bd memory framed it: the pre-refactor 11.4-era
+  `AutoImporter`/`HeadlessAnalyzer`/`GhidraScript`/`ImportBatchTask` did not call it either, and
+  `git log -S` on `Loader.java` shows the method unchanged in this respect since the original
+  open-source commit. Whether GUI-only was *intended* is unrecorded anywhere — no comment, commit
+  message, or javadoc says. So the ask is modest and has two acceptable outcomes: either document
+  the limitation on `validateOptions()`'s javadoc so loader authors stop relying on it, or wire it
+  into `ProgramLoader` so it runs everywhere. **A drafted issue body is on `grm-vsg`'s close
+  comment** — it leads with the call-site list and explicitly concedes the not-a-regression point,
+  since opening with a wrong severity claim is how these get closed unread. Low urgency: we have no
+  live exposure (see that bead), so this is a courtesy report, not a request for a fix we need.
+
+*Two things learned that the next upstream item should inherit:*
 
 - *`CBongo/ghidra` now exists as a fork, and `D:/git/ghidra-fork` is a full clone whose `origin`
   is the **read-only reference checkout**, not GitHub — name the GitHub remote explicitly, cut the
