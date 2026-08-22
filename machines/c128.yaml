@@ -31,6 +31,7 @@ memory:
       end: 0x0001
       kind: io
       type: MOS8502_PORT
+      prg_placeable: true         # grm-nbd: PRGs legitimately wrap bytes across $00/$01
       comment: "8502 zero-page port: DDR at $00, data at $01; not the native-mode MMU control register"
     - { name: ZEROPAGE, start: 0x0002, end: 0x00FF, kind: ram }
     - { name: STACK, start: 0x0100, end: 0x01FF, kind: ram, comment: "8502 hardware stack" }
