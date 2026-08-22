@@ -12,6 +12,12 @@
 #
 # Nothing 6510-specific belongs here: the on-die I/O port and its operand routing live in
 # 6510port.sinc, and the undocumented opcodes live in the vendored 6510_illegal.sinc.
+#
+# Deliberate divergence from stock 6502.slaspec (grm-o9k): stock's ADC folds the carry-in
+# into a single `A + op1 + tmpC` and loses a carry-out that arises only from the carry-in
+# (e.g. A=$FF, op=$00, C=1 should set C=1), and then aliases V to that (wrong) unsigned
+# carry instead of computing signed overflow. Fixed here with a two-step carry chain and
+# the standard `(A^result)&(op1^result)&0x80` overflow formula; see ADC below.
 
 define endian=little;
 define alignment=1;
@@ -141,13 +147,21 @@ ADDRI:  (imm16)   is imm16    { tmp:2 = imm16; export *:2 tmp; }
 {
 	local op1 = OP1;
 	local tmpC = C;
+	local oldA = A;
 
+	# Two-step carry chain (grm-o9k): carry() only tests one addition, so folding tmpC
+	# into a single A + op1 + tmpC (as stock Ghidra's 6502.slaspec does) drops a carry-out
+	# that arises solely from the carry-in. OR the two partial carries instead.
 	C = carry(A, op1);
-
-	A = A + op1 + tmpC;
+	A = A + op1;
+	C = C || carry(A, tmpC);
+	A = A + tmpC;
 
 	resultFlags(A);
-	V = C;
+	# V is SIGNED overflow, not the unsigned carry computed above -- they are different
+	# flags and stock Ghidra's 6502.slaspec conflates them (grm-o9k). Set when both
+	# operands share a sign that differs from the result's.
+	V = ((oldA ^ A) & (op1 ^ A) & 0x80) != 0;
 }
 
 :AND OP1     is (cc=1 & aaa=1) ... & OP1

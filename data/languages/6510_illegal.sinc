@@ -19,9 +19,12 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 #
-# Modifications: none beyond this header. In particular the upstream body's use of the
-# term "illegal" (including this file's name) is retained verbatim; our own prose,
-# identifiers and file names use "undocumented"/"undoc" instead.
+# Modifications: RRA's carry/overflow computation (grm-o9k) diverges from upstream --
+# it now uses the same two-step carry chain and signed-overflow formula as the fixed
+# 6502core.sinc ADC, instead of mirroring stock Ghidra's incorrect ADC idiom. Everything
+# else is byte-identical. In particular the upstream body's use of the term "illegal"
+# (including this file's name) is retained verbatim; our own prose, identifiers and file
+# names use "undocumented"/"undoc" instead.
 # ----------------------------------------------------------------------------------------
 
 # NMOS 6510 undocumented ("illegal") opcodes -- SLEIGH semantics.
@@ -35,8 +38,10 @@
 # Semantics follow "No More Secrets - NMOS 6510 Unintended Opcodes" (v0.91).
 # This spec targets readable decompilation and consistency with the base 6502
 # spec's idioms; byte/cycle-exact *execution* is owned by the deity_informant Python
-# VM (validated against the sidplayfp oracle). Where the base spec models a flag
-# approximately (e.g. ADC's V), the derived illegals (RRA/ARR/ISC) mirror it.
+# VM (validated against the sidplayfp oracle). RRA is ROR-then-ADC, so its carry/overflow
+# computation mirrors 6502core.sinc's ADC (grm-o9k fixed both together, see the
+# "Modifications" note above); ARR and ISC use their own distinct, already-correct
+# formulas (bit6/bit5 for ARR's C/V, subtraction_flags1 for ISC) and are unaffected.
 #
 # The "magic constant" for the unstable ANE/LXA group is chip-/temperature-
 # dependent (NMS lists $00/$FF/$EE); $EE matches the validated oracle. Override
@@ -100,10 +105,18 @@ OP3: imm16,X   is bbb=7 & X; imm16  { tmp:2 = imm16 + zext(X); export *:1 tmp; }
     v = (v >> 1) | oldC;
     OP3 = v;
     local tmpC = C;
+    local oldA = A;
+
+    # Same two-step carry chain and signed-overflow formula as 6502core.sinc's ADC
+    # (grm-o9k) -- RRA is ROR-then-ADC and inherited the same carry-in/overflow bugs
+    # from mirroring stock Ghidra's incorrect ADC idiom.
     C = carry(A, v);
-    A = A + v + tmpC;
+    A = A + v;
+    C = C || carry(A, tmpC);
+    A = A + tmpC;
+
     resultFlags(A);
-    V = C;
+    V = ((oldA ^ A) & (v ^ A) & 0x80) != 0;
 }
 
 # DCP (DCM) = DEC memory, then CMP
