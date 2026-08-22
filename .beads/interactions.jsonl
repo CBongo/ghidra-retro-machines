@@ -216,3 +216,4 @@
 {"id":"int-966c84f3","kind":"field_change","created_at":"2026-08-22T15:15:58.0961944Z","actor":"Chris Bongaarts","issue_id":"grm-gpi","extra":{"field":"status","new_value":"open","old_value":"in_progress"}}
 {"id":"int-6dc6f6c5","kind":"field_change","created_at":"2026-08-22T15:15:58.0961944Z","actor":"Chris Bongaarts","issue_id":"grm-gpi","extra":{"field":"priority","new_value":"3","old_value":"2"}}
 {"id":"int-1b18f6c9","kind":"field_change","created_at":"2026-08-22T15:47:56.2072252Z","actor":"Chris Bongaarts","issue_id":"grm-o9k","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}
+{"id":"int-71abc2ce","kind":"field_change","created_at":"2026-08-22T18:36:29.7617496Z","actor":"Chris Bongaarts","issue_id":"grm-913","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}
