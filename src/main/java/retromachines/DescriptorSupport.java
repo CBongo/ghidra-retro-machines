@@ -22,6 +22,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -32,6 +33,7 @@ import java.util.TreeSet;
 import java.util.function.BiConsumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -120,6 +122,25 @@ final class DescriptorSupport {
 	 */
 	static final String GAME_DESCRIPTOR_PROPERTY = "Retro Machines.Game Descriptor";
 
+	/**
+	 * Program-info property listing the entry points a loader knows are reached
+	 * <em>asynchronously</em> -- on this hardware family, the 6502 {@code NMI} and {@code IRQ}
+	 * vector targets. Space-separated {@link Address#toString()} tokens (space-qualified, so
+	 * they round-trip through {@code AddressFactory.getAddress}); absent or empty when the
+	 * loader identified none.
+	 * <p>
+	 * <b>Why this is a property rather than a lookup.</b> {@link BoardBankAnalyzer} seeds every
+	 * function entry with {@code banking.initial_state} <em>fully known</em>, which is sound
+	 * only for an entry the machine reaches from reset. An interrupt fires from arbitrary
+	 * mainline context, so the bank live on entry to its handler is whatever the interrupted
+	 * code had -- unknown, not the initial state (bead grm-913). Which entries those are is a
+	 * fact about the machine's vector table, which the loader already reads; the analyzer is
+	 * machine-independent and must not re-derive it. Matching on the {@code NMI}/{@code IRQ}
+	 * label names the loader writes would work today but couples the engine to a symbol string
+	 * a user can rename.
+	 */
+	static final String ASYNC_ENTRY_POINTS_PROPERTY = "Retro Machines.Async Entry Points";
+
 	/** One {@code window:bank} token: capture group 1 = window name, 2 = bank digits. The
 	 *  separator is a colon, not '=': the headless {@code analyzeHeadless.bat} arg parser
 	 *  (cmd.exe) splits values on '=', so an '='-based grammar can't be passed on Windows. */
@@ -169,6 +190,45 @@ final class DescriptorSupport {
 			}
 		}
 		return byWindow;
+	}
+
+	// ------------------------------------------------------------------
+	// Asynchronous entry points (bead grm-913)
+	// ------------------------------------------------------------------
+
+	/**
+	 * Renders {@code addrs} as the {@link #ASYNC_ENTRY_POINTS_PROPERTY} value. Order is the
+	 * caller's; duplicates are the caller's problem (the read side is a set, so they are
+	 * harmless).
+	 */
+	static String formatAsyncEntryPoints(Collection<Address> addrs) {
+		return addrs.stream().map(Address::toString).collect(Collectors.joining(" "));
+	}
+
+	/**
+	 * The addresses {@code program}'s loader recorded as asynchronously reached, or an empty
+	 * set when the property is absent, blank, or naming something this program's address
+	 * factory cannot resolve.
+	 * <p>
+	 * Unresolvable tokens are skipped rather than raised: this property is an optimization of
+	 * soundness, not a correctness precondition, and a program whose blocks moved since import
+	 * must still analyze. Skipping costs the weakened seed for that one entry -- the exact
+	 * behavior of every program written before this property existed.
+	 */
+	static Set<Address> parseAsyncEntryPoints(Program program) {
+		String spec = program.getOptions(Program.PROGRAM_INFO)
+				.getString(ASYNC_ENTRY_POINTS_PROPERTY, null);
+		Set<Address> addrs = new LinkedHashSet<>();
+		if (spec == null || spec.isBlank()) {
+			return addrs;
+		}
+		for (String token : spec.trim().split("\\s+")) {
+			Address addr = program.getAddressFactory().getAddress(token);
+			if (addr != null) {
+				addrs.add(addr);
+			}
+		}
+		return addrs;
 	}
 
 	// ------------------------------------------------------------------

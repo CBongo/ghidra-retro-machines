@@ -378,9 +378,14 @@ def _bank3_putter(prg):
     return put
 
 
-def _assert_vectors(prg, name, handler, reset):
+def _assert_vectors(prg, name, handler, reset, opcode=0x40, opcode_name="RTI"):
     """Self-check a fixture's 6502 vector table: RESET at `reset`, NMI and IRQ both at
-    `handler`, and -- the part that matters -- an actual RTI opcode sitting at `handler`.
+    `handler`, and -- the part that matters -- the expected opcode sitting at `handler`.
+
+    `opcode` defaults to RTI (0x40) because every fixture but one has a do-nothing handler.
+    nesnmitest's handler does real work before its RTI, so it passes the opcode its first
+    instruction actually starts with; the check keeps its whole value either way, since what
+    it detects is a vector and its handler parting company, not the handler's contents.
 
     THE LAST CLAUSE IS THE WHOLE POINT (bead grm-o59). The per-fixture checks this replaces
     asserted only that the vector bytes equalled a hardcoded address, which is tautological:
@@ -408,9 +413,10 @@ def _assert_vectors(prg, name, handler, reset):
 
     off = end - 0x4000 + (handler - 0xC000)
     assert 0 <= off < end, f"{name}: handler {handler:04X} is outside the fixed PRG_HI window"
-    assert prg[off] == 0x40, (
-        f"{name}: NMI/IRQ vector points at {handler:04X}, which holds {prg[off]:02X}, not RTI "
-        f"(40) -- the handler has almost certainly moved and the vector did not follow it")
+    assert prg[off] == opcode, (
+        f"{name}: NMI/IRQ vector points at {handler:04X}, which holds {prg[off]:02X}, not "
+        f"{opcode_name} ({opcode:02X}) -- the handler has almost certainly moved and the "
+        f"vector did not follow it")
 
 
 def make_prg():
@@ -1161,6 +1167,99 @@ def make_prg_mirrortest():
     put(0xFFFA, [0x3D, 0xC0])  # NMI   -> $C03D (RTI)
     put(0xFFFC, [0x00, 0xC0])  # RESET -> $C000
     put(0xFFFE, [0x3D, 0xC0])  # IRQ   -> $C03D (RTI)
+
+    return bytes(prg)
+
+
+def make_prg_nmi():
+    """Interrupt-entry bank-state fixture (bead grm-913). Same 4-bank / 64 KiB UxROM shape
+    as the other UxROM fixtures (machines/nes-uxrom.yaml: memory-latch, shift=0, mask=0x0F,
+    bus_conflict, range $8000-$FFFF, initial_state 0).
+
+    WHY THIS FIXTURE EXISTS. BoardBankAnalyzer seeds every function entry with
+    banking.initial_state FULLY KNOWN. That is sound for RESET, which is where the machine
+    genuinely starts, and unsound for NMI/IRQ: an interrupt fires asynchronously from
+    arbitrary mainline context, so the bank live on entry to its handler is whatever the
+    interrupted code had. Before grm-913, every NES interrupt handler was told "bank 0,
+    certain" on entry, and any claim derived from that entry state inherited the false
+    confidence.
+
+    THE SHAPE IS TAKEN FROM TWO REAL CARTRIDGES, hand-traced by the project owner (see
+    docs/human recon notes.txt under grm-ii6): Mega Man's $D56E (LDA $42; TAX; STA $C000,X)
+    and Wizards & Warriors' $FFA4 (LDA $00; STA $8000). Both are a WRITE-THROUGH SHADOW read
+    back and re-committed immediately before the handler returns -- the interrupt-exit bank
+    RESTORE idiom -- and both received a confident, wrong bank number. The shadow read-back
+    resolves from TRACKED IN-STATE (grm-mej.2), which is exactly the channel the entry seed
+    poisons, so this is the idiom that turns the unsound seed into a user-visible false claim.
+    It is reproduced here in its minimal form.
+
+    THE CONTROL IS HALF THE FIXTURE. $C00E does the SAME read-back-and-re-latch on the RESET
+    path, where the bank is genuinely known (flow-derived from $C00B, not seed-derived), and
+    MUST keep resolving. Without it this fixture would pass just as happily if the fix had
+    weakened every entry, or disabled shadow read-back altogether -- neither of which is the
+    change being pinned.
+
+    RESET ($C000):
+      C000  A9 02        LDA #$02
+      C002  85 42        STA $42       ; WRITE_THROUGH shadow store #1 (bank 2)
+      C004  8D D2 FF     STA $FFD2     ; latch -> bank 2 ($FFD2 = 0x02, bus-conflict-safe)
+      C007  A9 01        LDA #$01
+      C009  85 42        STA $42       ; WRITE_THROUGH shadow store #2 (bank 1) --
+                          corroboration: 2 distinct store sites into $42, which is what
+                          BankMirrors.Discovery needs to type it WRITE_THROUGH
+      C00B  8D D1 FF     STA $FFD1     ; latch -> bank 1 ($FFD1 = 0x01)
+      C00E  A5 42        LDA $42       ; CONTROL: the identical read-back...
+      C010  8D D1 FF     STA $FFD1     ; ...on the RESET path -> MUST still resolve bank 1
+      C013  4C 13 C0     JMP $C013     ; self loop
+
+    NMI/IRQ handler ($C020) -- megaman d56e / wizwarr ffa4:
+      C020  A5 42        LDA $42       ; read the write-through shadow...
+      C022  8D DF FF     STA $FFDF     ; ...and restore it before returning. MUST NOT claim
+                          a bank: the value is whatever the interrupted mainline had.
+                          $FFDF = 0xFF so the bus-conflict AND is a genuine no-op and an
+                          unresolved store cannot be accidentally laundered into a value.
+      C025  40           RTI
+
+    Note the handler does NOT start with RTI, unlike every other fixture here, so
+    _assert_vectors is told the opcode to expect.
+    """
+    prg = bytearray([0x00] * PRG_SIZE)
+
+    # Bank markers at the first byte of each bank. Bank 3's marker is at file offset
+    # 0xC000, which IS CPU $C000 -- RESET's first opcode overwrites it, as in make_prg().
+    for bank in range(PRG_BANKS):
+        prg[bank * PRG_BANK_SIZE] = bank
+
+    put = _bank3_putter(prg)
+
+    # --- RESET ---
+    put(0xC000, [0xA9, 0x02])              # LDA #$02
+    put(0xC002, [0x85, 0x42])              # STA $42     (write-through shadow store #1)
+    put(0xC004, [0x8D, 0xD2, 0xFF])         # STA $FFD2   (latch -> bank 2)
+    put(0xC007, [0xA9, 0x01])              # LDA #$01
+    put(0xC009, [0x85, 0x42])              # STA $42     (write-through shadow store #2)
+    put(0xC00B, [0x8D, 0xD1, 0xFF])         # STA $FFD1   (latch -> bank 1)
+    put(0xC00E, [0xA5, 0x42])              # LDA $42     (CONTROL: read-back on RESET path)
+    put(0xC010, [0x8D, 0xD1, 0xFF])         # STA $FFD1   (must resolve bank 1)
+    put(0xC013, [0x4C, 0x13, 0xC0])         # JMP $C013   (self loop)
+
+    # --- NMI/IRQ handler: the interrupt-exit bank restore ---
+    put(0xC020, [0xA5, 0x42])              # LDA $42     (write-through shadow)
+    put(0xC022, [0x8D, 0xDF, 0xFF])         # STA $FFDF   (must NOT resolve to a bank)
+    put(0xC025, [0x40])                     # RTI
+
+    # Latch targets. $FFD1/$FFD2 hold the bank number they latch (the canonical table
+    # idiom, bus-conflict-safe); $FFDF holds 0xFF so the bus-conflict AND is a no-op and
+    # the handler's genuinely-unresolved store stays genuinely unresolved.
+    put(0xFFD1, [0x01])
+    put(0xFFD2, [0x02])
+    put(0xFFDF, [0xFF])
+
+    # Vector table. NMI/IRQ point at a handler DISTINCT from RESET -- and, unlike every
+    # other fixture here, at one that is not a bare RTI.
+    put(0xFFFA, [0x20, 0xC0])  # NMI   -> $C020
+    put(0xFFFC, [0x00, 0xC0])  # RESET -> $C000
+    put(0xFFFE, [0x20, 0xC0])  # IRQ   -> $C020
 
     return bytes(prg)
 
@@ -2984,6 +3083,42 @@ def main():
     _assert_vectors(prgmirror, "nesmirrortest", handler=0xC03D, reset=0xC000)
 
     _write_rom(outdir, "nesmirrortest.nes", prgmirror)
+
+    prgnmi = make_prg_nmi()
+
+    # Sanity-check the interrupt-entry fixture (bead grm-913) before writing.
+    assert len(prgnmi) == PRG_SIZE
+    for bank in range(PRG_BANKS - 1):  # bank 3's marker is stomped by RESET, as in make_prg()
+        assert prgnmi[bank * PRG_BANK_SIZE] == bank
+    # RESET
+    assert prgnmi[0xC000] == 0xA9 and prgnmi[0xC001] == 0x02          # LDA #$02
+    assert prgnmi[0xC002] == 0x85 and prgnmi[0xC003] == 0x42          # STA $42
+    assert prgnmi[0xC004] == 0x8D
+    assert (prgnmi[0xC005] | (prgnmi[0xC006] << 8)) == 0xFFD2
+    assert prgnmi[0xC007] == 0xA9 and prgnmi[0xC008] == 0x01          # LDA #$01
+    assert prgnmi[0xC009] == 0x85 and prgnmi[0xC00A] == 0x42          # STA $42
+    assert prgnmi[0xC00B] == 0x8D
+    assert (prgnmi[0xC00C] | (prgnmi[0xC00D] << 8)) == 0xFFD1
+    assert prgnmi[0xC00E] == 0xA5 and prgnmi[0xC00F] == 0x42          # LDA $42 (control)
+    assert prgnmi[0xC010] == 0x8D
+    assert (prgnmi[0xC011] | (prgnmi[0xC012] << 8)) == 0xFFD1
+    assert prgnmi[0xC013] == 0x4C                                     # JMP self loop
+    assert (prgnmi[0xC014] | (prgnmi[0xC015] << 8)) == 0xC013
+    # NMI/IRQ handler -- the interrupt-exit bank restore
+    assert prgnmi[0xC020] == 0xA5 and prgnmi[0xC021] == 0x42          # LDA $42
+    assert prgnmi[0xC022] == 0x8D
+    assert (prgnmi[0xC023] | (prgnmi[0xC024] << 8)) == 0xFFDF
+    assert prgnmi[0xC025] == 0x40                                     # RTI
+    # Latch targets: identity bytes for the resolvable sites, 0xFF for the handler's, so
+    # the bus-conflict AND cannot launder an unresolved store into a value.
+    assert prgnmi[0xFFD1] == 0x01 and prgnmi[0xFFD2] == 0x02
+    assert prgnmi[0xFFDF] == 0xFF
+    # The handler is NOT a bare RTI here -- it starts with LDA $42 (A5), which is the whole
+    # point of the fixture, so the vector self-check is told what to expect.
+    _assert_vectors(prgnmi, "nesnmitest", handler=0xC020, reset=0xC000,
+                    opcode=0xA5, opcode_name="LDA zp")
+
+    _write_rom(outdir, "nesnmitest.nes", prgnmi)
 
     prgm = make_prg_mode()
 

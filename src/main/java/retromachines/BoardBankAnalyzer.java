@@ -691,9 +691,17 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			seeds.add(f.getEntryPoint());
 		}
 
+		// Two seed states, not one. banking.initial_state is what the board powers up holding,
+		// so it is sound for an entry the machine reaches from reset -- and unsound for one it
+		// reaches from an interrupt, which fires from arbitrary mainline context and leaves the
+		// interrupted code's bank live on entry. The loader tells us which entries those are
+		// (DescriptorSupport.ASYNC_ENTRY_POINTS_PROPERTY); this stays machine-independent and
+		// merely consumes the list. Bead grm-913.
 		BankState seedState = BankState.fullyKnown(board.mask(), board.initialState());
+		Set<Address> asyncEntries = DescriptorSupport.parseAsyncEntryPoints(program);
 		for (Address seed : seeds) {
-			mergeAndEnqueue(seed, seedState, stateIn, worklist, listing, board, clampCache);
+			BankState entryState = asyncEntries.contains(seed) ? BankState.unknown() : seedState;
+			mergeAndEnqueue(seed, entryState, stateIn, worklist, listing, board, clampCache);
 		}
 
 		while (!worklist.isEmpty()) {

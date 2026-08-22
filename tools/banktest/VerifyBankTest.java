@@ -83,6 +83,11 @@ public class VerifyBankTest extends GhidraScript {
 	// literals at tools/banktest/RealRomDump.java:57-60.
 	private static final String GAME_IDENTITY_PROPERTY = "Retro Machines.Game Identity";
 
+	// Program-info property a loader stamps with the entry points reached asynchronously --
+	// the 6502 NMI/IRQ vector targets (DescriptorSupport.ASYNC_ENTRY_POINTS_PROPERTY, bead
+	// grm-913). Re-declared as a literal for the reason above.
+	private static final String ASYNC_ENTRY_POINTS_PROPERTY = "Retro Machines.Async Entry Points";
+
 	private boolean allPassed = true;
 
 	@Override
@@ -217,6 +222,7 @@ public class VerifyBankTest extends GhidraScript {
 			// are covered, not just the nine that reach dump(). Criterion lines print after
 			// verifyCopy's "=== BANKDUMP END ===", so this moves no golden.
 			checkGameIdentity();
+			checkAsyncEntryPoints();
 			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
 			return;
 		}
@@ -295,6 +301,7 @@ public class VerifyBankTest extends GhidraScript {
 
 		dump();
 		checkGameIdentity();
+		checkAsyncEntryPoints();
 
 		if (name.contains("nesrelaytest")) {
 			checkNesRelayTest();
@@ -334,6 +341,9 @@ public class VerifyBankTest extends GhidraScript {
 		}
 		else if (name.contains("nesmirrortest")) {
 			checkNesMirrortest();
+		}
+		else if (name.contains("nesnmitest")) {
+			checkNesNmitest();
 		}
 		else if (name.contains("nesbanktest2")) {
 			checkNesBanktest2();
@@ -2092,6 +2102,60 @@ public class VerifyBankTest extends GhidraScript {
 			detail + "; identity prg:" + prgHalf);
 	}
 
+	/**
+	 * Checks the asynchronous-entry-point property the NES loader stamps (bead grm-913): the
+	 * channel that tells {@link BoardBankAnalyzer}'s dataflow which entries it must NOT seed
+	 * with {@code banking.initial_state} fully known, because an interrupt fires from arbitrary
+	 * mainline context and leaves the interrupted code's bank live on entry.
+	 * <p>
+	 * This exists because the change it guards is INVISIBLE when it silently does nothing. If
+	 * the loader stopped writing the property, every seed would quietly revert to the unsound
+	 * fully-known state, no fixture would fail, and the resulting golden would look clean --
+	 * the failure direction that reads as "my change moved nothing". AEP1 therefore asserts the
+	 * property is present at all, and AEP2/AEP3 assert it names exactly the vectors it should:
+	 * the NMI and IRQ handler addresses, and NOT RESET, which is the one entry the initial
+	 * state is genuinely true for.
+	 * <p>
+	 * Gated on the NMI label existing rather than on the property, so a loader that stopped
+	 * writing the property FAILS here instead of skipping. Silently a no-op on every CBM
+	 * fixture, none of which has a 6502 vector table. Like {@link #checkGameIdentity}, the
+	 * CRITERION lines print outside the BANKDUMP markers, so they cost no golden churn.
+	 */
+	private void checkAsyncEntryPoints() {
+		Address nmi = uniqueGlobalSymbolAddress("NMI");
+		if (nmi == null) {
+			return;
+		}
+		Address irq = uniqueGlobalSymbolAddress("IRQ");
+		Address reset = uniqueGlobalSymbolAddress("RESET");
+
+		String value = currentProgram.getOptions(Program.PROGRAM_INFO)
+				.getString(ASYNC_ENTRY_POINTS_PROPERTY, null);
+		criterion("AEP1", value != null && !value.isBlank(),
+			"async entry points property value: " + value);
+		if (value == null) {
+			return;
+		}
+
+		List<String> tokens = List.of(value.trim().split("\\s+"));
+		criterion("AEP2", tokens.contains(nmi.toString()) &&
+			(irq == null || tokens.contains(irq.toString())),
+			"NMI=" + nmi + " IRQ=" + irq + " listed in " + tokens);
+		criterion("AEP3", reset == null || !tokens.contains(reset.toString()),
+			"RESET=" + reset + " must NOT be listed (reset is the one entry initial_state " +
+				"is true for); listed: " + tokens);
+	}
+
+	/**
+	 * The address of the single global symbol named {@code name}, or null when there is not
+	 * exactly one. Null on "several" as well as "none" on purpose: an ambiguous vector label is
+	 * not evidence about the property either way, and the caller turns null into a skip.
+	 */
+	private Address uniqueGlobalSymbolAddress(String name) {
+		List<Symbol> syms = currentProgram.getSymbolTable().getGlobalSymbols(name);
+		return syms.size() == 1 ? syms.get(0).getAddress() : null;
+	}
+
 	/** The identity property's raw value, or null when no loader stamped one. */
 	private String gameIdentityValue() {
 		return currentProgram.getOptions(Program.PROGRAM_INFO)
@@ -3070,6 +3134,49 @@ public class VerifyBankTest extends GhidraScript {
 		criterion("M8", !warningBookmarkText(0xC037).contains("requirement violated"),
 			"no spurious bank-state requirement violation at c037 (JSR $C100): warning=\"" +
 				warningBookmarkText(0xC037) + "\"");
+	}
+
+	// ------------------------------------------------------------------
+	// nesnmitest.nes criteria (interrupt-entry bank state, bead grm-913)
+	// ------------------------------------------------------------------
+
+	/**
+	 * See {@code mknesbanktest.py}'s {@code make_prg_nmi()} for the full listing. The claim
+	 * under test: an NMI/IRQ handler entry must NOT be seeded with {@code banking.initial_state}
+	 * fully known, because an interrupt fires from arbitrary mainline context and leaves the
+	 * interrupted code's bank live on entry.
+	 * <p>
+	 * IRQ1 is the control and IRQ2 is the fix, and neither is meaningful without the other. Both
+	 * sites are the same instruction pair -- read the write-through shadow $42 back, re-commit
+	 * it to a latch -- differing only in which entry they are reached from. IRQ1 (RESET path, bank
+	 * genuinely known from flow) must still resolve; IRQ2 (interrupt path) must not. A change that
+	 * weakened every entry, or that broke shadow read-back outright, passes IRQ2 and fails IRQ1.
+	 * <p>
+	 * IRQ3 pins the loader-side half against the shape that made this fixture necessary: every
+	 * OTHER NES fixture here points NMI and IRQ at the same bare-RTI stub as each other, so a
+	 * handler that is a distinct function with real code in it is a thing only this fixture has.
+	 */
+	private void checkNesNmitest() {
+		// IRQ1 (CONTROL): the RESET-path read-back at c010 still resolves. The bank is known
+		// here by FLOW -- c00b latched 1 -- not by the entry seed, so weakening interrupt
+		// entries must leave it untouched.
+		String c = eol(0xC010);
+		criterion("IRQ1", c.contains("bank -> ") && c.contains("1") && !c.contains("?"),
+			"CONTROL: RESET-path shadow read-back still resolves bank 1 at c010: \"" + c + "\"");
+
+		// IRQ2 (THE FIX): the same read-back inside the NMI/IRQ handler must claim no bank.
+		// Pre-grm-913 this read "bank -> 0", inheriting the entry seed's false confidence --
+		// the megaman d571 / wizwarr ffa6 defect, in miniature.
+		c = eol(0xC022);
+		criterion("IRQ2", !c.contains("bank -> "),
+			"interrupt-exit restore at c022 claims NO bank (entry state is unknown): \"" +
+				c + "\"");
+
+		// IRQ3: the handler really is its own function reached only through the vectors -- i.e.
+		// the fixture exercises an interrupt entry rather than ordinary mainline code.
+		criterion("IRQ3", hasFunctionAt(0xC020) && !hasFunctionAt(0xC022),
+			"NMI/IRQ handler is a function entry at c020 (and c022 is inside it, not an " +
+				"entry of its own)");
 	}
 
 	// ------------------------------------------------------------------

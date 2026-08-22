@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableSet;
@@ -557,9 +558,18 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 			InesHeader header, List<PlacedWindow> placedWindows, MessageLog log)
 			throws IOException {
 
-		record Vector(long slot, String handlerName) {}
-		List<Vector> vectors = List.of(new Vector(0xFFFA, "NMI"), new Vector(0xFFFC, "RESET"),
-			new Vector(0xFFFE, "IRQ"));
+		// 'async' marks a vector the CPU takes from arbitrary mainline context, so a handler
+		// reached through it starts with the bank the interrupted code left live -- not
+		// banking.initial_state. RESET is the one entry the initial state is actually true
+		// for. Recorded for the analyzer's dataflow seeding (bead grm-913).
+		record Vector(long slot, String handlerName, boolean async) {}
+		List<Vector> vectors = List.of(new Vector(0xFFFA, "NMI", true),
+			new Vector(0xFFFC, "RESET", false), new Vector(0xFFFE, "IRQ", true));
+		// A set, not a list: a ROM whose NMI and IRQ vectors point at the same stub -- which
+		// every synthetic fixture here does, and real cartridges do too -- would otherwise
+		// list that address twice. Harmless to the read side, which is a set, but the property
+		// is user-visible in Program Info.
+		Set<Address> asyncEntries = new LinkedHashSet<>();
 
 		for (Vector vector : vectors) {
 			Long fileOffset = fileOffsetOf(vector.slot(), header, placedWindows);
@@ -585,11 +595,23 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 					SourceType.IMPORTED);
 				program.getSymbolTable().addExternalEntryPoint(targetAddr);
 				markAsFunction(program, vector.handlerName(), targetAddr);
+				if (vector.async()) {
+					asyncEntries.add(targetAddr);
+				}
 			}
 			catch (Exception e) {
 				log.appendMsg("Failed to label vector " + vector.handlerName() + ": " +
 					e.getMessage());
 			}
+		}
+
+		// Written only when non-empty: an absent property and an empty one mean the same
+		// thing to the read side, and not writing it keeps the Program Info display clean
+		// for a ROM whose vector table fell outside the mapped windows.
+		if (!asyncEntries.isEmpty()) {
+			program.getOptions(Program.PROGRAM_INFO).setString(
+				DescriptorSupport.ASYNC_ENTRY_POINTS_PROPERTY,
+				DescriptorSupport.formatAsyncEntryPoints(asyncEntries));
 		}
 	}
 

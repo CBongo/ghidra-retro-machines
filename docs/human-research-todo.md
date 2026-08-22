@@ -123,6 +123,31 @@ SPC700 problem.
 
 ---
 
+## 1b. Adjudicate the rows grm-913 weakened
+
+- [ ] **Are the bank claims grm-913 weakened honest losses, or is the bank genuinely knowable
+      across an interrupt boundary?** (`grm-2pie`, filed from `grm-913`.) The interrupt-entry seed
+      changed from `fullyKnown(initial_state)` to `unknown` on 2026-08-22, and the full real-ROM
+      A/B moved **11 rows**: ~59 bank comments keep their number but gain `?` plus an "assumed from
+      initial" bit breakdown, two rows lose whole claims (`rcransom` 38→34, `megaman2` 75→71), and
+      12 new "Bank state requirement violated" warnings appear (10 of them `rcransom`'s). **None
+      were blessed**, so those 11 rows fail on an unchanged tree by intent — see `grm-2pie` for the
+      per-row table and do not bisect for them.
+
+      The question is the same at every site: the analyzer used to say "bank = N, certain" and now
+      says "bank = N?, those bits assumed from `initial_state`". **Was the old certainty real, or
+      did it come from the entry seed and nowhere else?** Only the latter is an honest loss; the
+      former means the bank *is* derivable across the boundary and the engine should learn how,
+      which is `grm-mej` scope rather than a row to bless.
+
+      **Start with `rcransom` — it is the epicentre and you have already traced it.** Your notes
+      (`grm-1fv`) record `ff07` running just before the NMI handler returns and `ff29` just before
+      the IRQ handler's, both restoring `r6`/`r7` from shadows `$fc`/`$fd`. The weakened fields
+      there are exactly `r6`/`r7`, which is what the bead's premise predicts — so one row either
+      confirms or refutes the whole change.
+
+---
+
 ## 2. Def-use passes on untraced titles
 
 The method is proven — four titles done. **Use the tables in `grm-8iy.5`'s comments as the

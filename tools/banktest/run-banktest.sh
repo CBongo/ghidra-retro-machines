@@ -665,6 +665,12 @@ if selected nes-banking; then
 	# end-to-end, plus the SS2d requiresOnEntry guard -- see make_prg_mirrortest()'s docstring.
 	run_one nesmirrortest "$WORK/nes/nesmirrortest.nes" NesRomLoader
 
+	# grm-913: interrupt-entry bank state. An NMI/IRQ handler must NOT be seeded with
+	# banking.initial_state fully known -- see make_prg_nmi()'s docstring for the megaman /
+	# wizwarr shape it reproduces, and for the RESET-path control that keeps the fix from
+	# reading as "weaken everything".
+	run_one nesnmitest "$WORK/nes/nesnmitest.nes" NesRomLoader
+
 	run_one nesmodetest "$WORK/nes/nesmodetest.nes" NesRomLoader
 	run_one nesmmc3test "$WORK/nes/nesmmc3test.nes" NesRomLoader
 	run_one nesmmc3test2 "$WORK/nes/nesmmc3test2.nes" NesRomLoader
