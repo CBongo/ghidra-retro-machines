@@ -3466,19 +3466,75 @@ public class VerifyBankTest extends GhidraScript {
 				"vacuously through the alreadyWarned mask: warning=\"" +
 				warningBookmarkText(0xE2CB) + "\"");
 
-		// G13: G12's premise, asserted rather than assumed. G12 is only meaningful if the
-		// helper-argument warning that WOULD have masked the violation genuinely exists and
-		// has merely been routed to a different address -- otherwise "no warning at E2CB"
-		// could just mean this fixture stopped producing that warning anywhere, and G12
-		// would decay into the same tautology it was written to catch. Worker's own JSR to
-		// H4 at $E2D0 is where it lands. (RESET's JSR to CallerH at $E015 carries the same
-		// warning for the same reason -- CallerH is itself a helper whose r6 value is
-		// unrecoverable -- and both are honest.)
-		criterion("G13",
-			warningBookmarkText(0xE2D0).contains("could not be recovered"),
-			"the helper-argument warning that would mask G11 does exist, on Worker's own " +
-				"JSR $E2A0 (E2D0) rather than on CallerH's guarded site: warning=\"" +
+		// G13 (bead grm-qd0u): THE HELPER'S OWN SELECT BEATS THE CALLER'S STALE ONE, and this
+		// fixture discriminates the two by construction. At Worker's JSR $E2A0 (E2D0) the
+		// TRACKED select is 6 -- CallerH wrote $06 to $8000 at E2C2 before calling -- while H4
+		// establishes select=7 for itself (LDA #$07 / STA $8000 at E2AB/E2AD) on the
+		// straight-line path into its own final data write at E2B2. Those route to DIFFERENT
+		// registers, so the answer names which select was used:
+		//   r7=2  -> H4's own select 7 won                     (correct)
+		//   r6=2  -> the caller's stale select 6 was used      (the grm-qd0u defect)
+		// smb3's FUN_ffc2 is the shipped instance of exactly this: its callers leave select at
+		// 0 (CHR R0, UNTRACKED), so before grm-qd0u the deposit returned ownedMask = 0 -- a
+		// "verified no-op" that silently discarded a fully recovered constant bank, with
+		// neither annotation nor warning. Measured 172 such evaluations on that title against
+		// 70 poisons and 12 correct resolutions.
+		//
+		// NOTE THIS REPLACED AN EARLIER G13 and why, because it looks like a weakened guard and
+		// is not. That one asserted the helper-argument warning at E2D0 still EXISTED, as proof
+		// G12 could not pass vacuously through the alreadyWarned mask. grm-qd0u legitimately
+		// removed that warning -- E2D0 now resolves instead of warning -- so the premise is
+		// simply no longer true here. G11's real proof was never G13: it is that G11 was
+		// CONFIRMED to fail on the pre-grm-vgod strategy ("call to FUN_e2d0 requires r6 known
+		// on entry"). G12 remains live as the detector if a warning ever returns to E2CB.
+		String c13 = eol(0xE2D0);
+		criterion("G13", c13.contains("r7=2") && !c13.contains("r6=2"),
+			"H4's own select=7 routes its data write to r7, beating the caller's tracked " +
+				"select=6 at Worker's JSR (E2D0): \"" + c13 + "\" warning=\"" +
 				warningBookmarkText(0xE2D0) + "\"");
+
+		// G14 (bead grm-qd0u): THE SHAPE THAT HAD NO SYNTHETIC COVERAGE AT ALL. H5 ($E300)
+		// establishes its own constant select=6 then writes data $03; CallerJ ($E320) calls it
+		// WITHOUT establishing any select of its own. That is what real smb3 callers of
+		// FUN_ffc2 do, and it is exactly what the CallerE/F/G trio deliberately avoids -- each
+		// of those writes select itself precisely because the pre-grm-qd0u deposit required it.
+		// So this fixture could not previously express the shipped defect. Expect r6=3, fully
+		// known, no warning.
+		//
+		// TOGETHER WITH G13 THIS COVERS BOTH PRE-FIX FAILURE BRANCHES, which is why both exist:
+		// at E2D0 the caller's select was known-but-STALE (6, routing to the wrong register),
+		// while here it is genuinely UNKNOWN, which pre-fix took the poison branch. smb3 shows
+		// both (172 stale-untracked evaluations, 70 poisons).
+		//
+		// THE "?" IS CORRECT HERE, so this deliberately does NOT assert full knownness the way
+		// G4/G7 do. A data-write deposit owns its TARGET FIELD ALONE -- never select/prg_mode,
+		// which a data write cannot touch -- so those stay at the caller's own (here unknown)
+		// value and the comment says so. Asserting no "?" would be asserting that the deposit
+		// fabricates select knowledge it has no right to, which is the grm-snu defect G5 guards
+		// against. r6=3 is the whole claim.
+		String c14 = eol(0xE320);
+		criterion("G14", !hasWarningBookmark(0xE320) && c14.contains("r6=3"),
+			"a helper supplying its OWN select resolves for a caller that establishes none, " +
+				"at CallerJ's JSR (E320): \"" + c14 + "\" warning=\"" +
+				warningBookmarkText(0xE320) + "\"");
+
+		// G15 (bead grm-qd0u): THE DECLINE CONTROL, and the one that matters most. H6 ($E340)
+		// reaches its select write at $E34A by two paths carrying DIFFERENT constants ($06 and
+		// $07), so neither "select is 6 on every path" nor "select is 7 on every path" holds.
+		// selectSuppliedInsideHelper must abandon at that control-flow join and fall back to
+		// the caller's in-state rather than pick whichever constant it meets walking backward.
+		//
+		// WHY THIS IS A CONTROL AND NOT A FORMALITY: select 6 vs 7 is the difference between
+		// two DIFFERENT tracked registers, so an over-eager walk does not lose an annotation,
+		// it ships a confident wrong bank -- the failure mode this analyzer treats as its
+		// worst. H6's data byte $05 is a real bank in this 8-bank image, so a wrong claim
+		// would be ANNOTATED rather than suppressed by the out-of-range value guard. Neither
+		// r6=5 nor r7=5 may appear.
+		String c15 = eol(0xE360);
+		criterion("G15", !c15.contains("r6=5") && !c15.contains("r7=5"),
+			"an ambiguous own-select (two paths, $06 vs $07) makes H6 decline rather than " +
+				"pick, at CallerK's JSR (E360): \"" + c15 + "\" warning=\"" +
+				warningBookmarkText(0xE360) + "\"");
 	}
 
 	// ------------------------------------------------------------------

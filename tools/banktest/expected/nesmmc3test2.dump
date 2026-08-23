@@ -1,4 +1,4 @@
-IDENTITY prg:dfb21c22117d25cfd7274957826d9658a0861d4ee73836f8b4c56b714acd413e file:0488c411f710f68ddf665531c52a9b7d21357d33b1d5eb004b526b9d773315fe
+IDENTITY prg:91162bdeb57327b248211cfd42f152705e1603e65a7a8eac6701906f5bb37f9a file:c5eb021faff343192a99f76f2a99c55399bfa864b8f49f1d8f31c529cd6cf8c7
 BLOCK APU_IO 4000-401f overlay=false
 BLOCK PPU_REGS 2000-2007 overlay=false
 BLOCK PRG_RAM 6000-7fff overlay=false
@@ -57,12 +57,18 @@ COMMENT e2ad bank -> select=7,prg_mode=0,r6=0,r7=1? [known: select.0=1,select.1=
 COMMENT e2b2 bank -> select=7,prg_mode=0,r6=0,r7=2? [known: select.0=1,select.1=1,select.2=1,prg_mode=0,r7.0=0,r7.1=1,r7.2=0,r7.3=0,r7.4=0,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
 COMMENT e2c2 bank -> select=6,prg_mode=0,r6=0,r7=1 [switch-value flow]
 COMMENT e2c8 bank -> select=6,prg_mode=0,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=1,prg_mode=0,r7.0=1,r7.1=0,r7.2=0,r7.3=0,r7.4=0,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+COMMENT e2d0 bank -> select=0,prg_mode=0,r6=0,r7=2? via FUN_e2a0 [known: select.0=0,prg_mode=0,r7.0=0,r7.1=1,r7.2=0,r7.3=0,r7.4=0,r7.5=0; assumed from initial: select.1,select.2,r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+COMMENT e302 bank -> select=6,prg_mode=0,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=1,prg_mode=0,r7.0=1,r7.1=0,r7.2=0,r7.3=0,r7.4=0,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+COMMENT e307 bank -> select=6,prg_mode=0,r6=3,r7=1 [switch-value flow]
+COMMENT e320 bank -> select=0,prg_mode=0,r6=3,r7=1? via FUN_e300 [known: r6.0=1,r6.1=1,r6.2=0,r6.3=0,r6.4=0,r6.5=0,r7.0=1,r7.1=0,r7.2=0,r7.3=0,r7.4=0,r7.5=0; assumed from initial: select.0,select.1,select.2,prg_mode] [switch-value flow]
+COMMENT e34a bank -> select=0,prg_mode=0,r6=0,r7=1? [known: r7.0=1,r7.1=0,r7.2=0,r7.3=0,r7.4=0,r7.5=0; assumed from initial: select.0,select.1,select.2,prg_mode,r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
 BOOKMARK Warning e003
 BOOKMARK Warning e015
 BOOKMARK Warning e128
 BOOKMARK Warning e140
 BOOKMARK Warning e24d
-BOOKMARK Warning e2d0
+BOOKMARK Warning e34f
+BOOKMARK Warning e360
 SYMBOL 0720 bank_shadow_0720 ANALYSIS primary=true
 SYMBOL 2000 PPUCTRL IMPORTED primary=true
 SYMBOL 2001 PPUMASK IMPORTED primary=true
@@ -77,8 +83,8 @@ SYMBOL 4015 SND_CHN IMPORTED primary=true
 SYMBOL 4016 JOY1 IMPORTED primary=true
 SYMBOL 4017 JOY2 IMPORTED primary=true
 SYMBOL e000 RESET IMPORTED primary=true
-SYMBOL e01b IRQ IMPORTED primary=false
-SYMBOL e01b NMI IMPORTED primary=true
+SYMBOL e021 IRQ IMPORTED primary=false
+SYMBOL e021 NMI IMPORTED primary=true
 SYMBOL fffa NMI_VEC IMPORTED primary=true
 SYMBOL fffc RESET_VEC IMPORTED primary=true
 SYMBOL fffe IRQ_VEC IMPORTED primary=true

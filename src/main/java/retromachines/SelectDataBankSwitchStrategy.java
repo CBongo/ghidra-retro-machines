@@ -24,6 +24,7 @@ import com.google.gson.JsonObject;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.listing.Instruction;
+import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.symbol.Reference;
 
@@ -350,7 +351,15 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 			return new HelperDeposit(owned, value);
 		}
 
-		Integer selectValue = fieldValueIfFullyKnown(inState, selectField);
+		// A helper that establishes its OWN select on the straight-line path into this data
+		// write has already answered the routing question, and answered it for every caller at
+		// once; the caller's tracked select is stale by construction there (grm-qd0u). Only
+		// when the helper supplies none -- the amortized shape, one caller select across
+		// several data-write-only calls -- does the caller's in-state get a say.
+		Integer selectValue = selectSuppliedInsideHelper(program, switchSite);
+		if (selectValue == null) {
+			selectValue = fieldValueIfFullyKnown(inState, selectField);
+		}
 		if (selectValue == null) {
 			int owned = 0;
 			for (FieldPos target : targets.values()) {
@@ -368,6 +377,104 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 
 		BankState value = setFieldFromByte(new BankState(0, 0), target, argValue);
 		return new HelperDeposit(target.mask(), value);
+	}
+
+	/**
+	 * How many instructions {@link #selectSuppliedInsideHelper} walks back from a data write
+	 * looking for the helper's own select write. smb3's {@code FUN_ffc2} needs two steps; a
+	 * select write further away than this is not the co-located pair this models.
+	 */
+	private static final int MAX_OWN_SELECT_SCAN = 8;
+
+	/**
+	 * The select value THIS HELPER establishes for itself on the straight-line path into its own
+	 * data write, or {@code null} when it establishes none and the caller's tracked select is
+	 * therefore the only answer available (bead grm-qd0u).
+	 * <p>
+	 * <b>The defect this fixes.</b> {@link #depositHelperArgument} routed a data-write helper's
+	 * argument using the select tracked AT THE CALL SITE, which is right for the amortized shape
+	 * (one caller select across several data-write-only calls -- {@code nesmmc3test2}'s
+	 * {@code H}/CallerA) and wrong for a helper that writes select itself. smb3's {@code FUN_ffc2}
+	 * is the shipped example, and it is not marginal:
+	 * <pre>
+	 *   ffc2: LDA #$47        ; select 7, prg_mode 1 -- the helper's OWN constant
+	 *   ffc4: STA $0721
+	 *   ffc7: STA $8000       ; SELECT write            &lt;- what the hardware actually routes by
+	 *   ffca: LDA $0720       ; the caller's argument cell
+	 *   ffcd: STA $8001       ; DATA write              &lt;- switchSite
+	 * </pre>
+	 * Callers of {@code ffc2} do not write select, so the tracked value at their call sites is
+	 * whatever unrelated earlier code left -- measured as 0 on smb3, which is CHR R0, an
+	 * UNTRACKED target. The deposit therefore took its no-poison branch and returned
+	 * {@code ownedMask = 0}: a "verified no-op" claim, silently discarding a fully recovered
+	 * constant bank ({@code argKnown=ff argBits=1a}) with neither an annotation nor a warning.
+	 * On smb3 that path was taken 172 times against 70 poisons and 12 correct resolutions.
+	 * <b>The failure was silent, not noisy</b> -- which is why it survived so long and why the
+	 * bead it was filed under described the wrong symptom.
+	 * <p>
+	 * <b>Why the helper's own select WINS rather than merely filling in.</b> A select write on the
+	 * straight-line path into the data write is the last one the hardware sees before that write,
+	 * whatever any caller did earlier. So this is consulted FIRST and the caller's in-state is the
+	 * fallback, not the other way round.
+	 * <p>
+	 * <b>Why a straight-line walk, and what it refuses.</b> The claim being made is "select is
+	 * THIS value on every path reaching the data write", and a wrong answer here is not a decline
+	 * -- select 0 versus 7 is the whole difference between "CHR register, ignore" and "PRG R7,
+	 * annotate", so a mis-recovery ships a confident wrong bank. The walk therefore abandons at
+	 * anything that would make the claim conditional: a missing fall-through link, a control-flow
+	 * join (some other path reaches here with a different select), or a call (which may write the
+	 * register file itself). That is the same discipline
+	 * {@code BankMirrors.Discovery.walkFromMechanismWrite} and
+	 * {@code BoardBankAnalyzer.restoresEntryBank} already use, and it makes "on every path" true
+	 * by construction rather than by assumption.
+	 * <p>
+	 * An intervening ODD-address write is refused outright: a helper with two data writes commits
+	 * twice, and which select governs which is exactly the question this walk cannot answer by
+	 * looking backward from one of them.
+	 * <p>
+	 * <b>Why {@link BankState#unknown()} is the right in-state here</b>, unlike in
+	 * {@code effectDependsOnPriorState} where stubbing it would over-report: the question is
+	 * whether the select byte resolves WITHOUT depending on tracked state, since the answer must
+	 * hold for every caller. Resolving under a wholly unknown in-state proves exactly that. A
+	 * select write whose byte is state-dependent simply fails to resolve and the caller's
+	 * in-state takes over -- the conservative direction.
+	 */
+	private Integer selectSuppliedInsideHelper(Program program, Instruction dataWrite) {
+		Listing listing = program.getListing();
+		Instruction cur = dataWrite;
+		for (int i = 0; i < MAX_OWN_SELECT_SCAN; i++) {
+			Instruction prev = listing.getInstructionBefore(cur.getMinAddress());
+			if (prev == null || !fallsInto(prev, cur) ||
+				StoredValueScanner.isControlFlowJoin(program, cur, prev) ||
+				prev.getFlowType().isCall()) {
+				return null;
+			}
+			Long offset = writesInRange(prev);
+			if (offset != null) {
+				if ((offset & 1) != 0) {
+					return null; // an earlier DATA write -- see the two-data-writes note above
+				}
+				Character reg = StoredValueScanner.storeRegister(prev);
+				if (reg == null) {
+					return null;
+				}
+				BankState stored = StoredValueScanner.resolveStoredValue(program, prev, reg,
+					BankState.unknown(), 0xFF, hooks);
+				BankState value = setFieldFromByte(new BankState(0, 0), selectField,
+					extractByteField(stored, selectByteMask, selectByteShift));
+				return fieldValueIfFullyKnown(value, selectField);
+			}
+			cur = prev;
+		}
+		return null;
+	}
+
+	/** Whether the fall-through path from {@code prev} is exactly {@code cur}. Same block-linkage
+	 *  test {@code BankMirrors.Discovery.fallsInto} and both {@code StoredValueScanner} walks use;
+	 *  duplicated rather than shared because that one is private to another class's nested type. */
+	private static boolean fallsInto(Instruction prev, Instruction cur) {
+		Address fallThrough = prev.getFallThrough();
+		return fallThrough != null && fallThrough.equals(cur.getMinAddress());
 	}
 
 	/**

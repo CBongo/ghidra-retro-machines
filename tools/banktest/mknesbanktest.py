@@ -1397,8 +1397,10 @@ def make_prg_mmc3_2():
     put(0xE00F, [0x20, 0x40, 0xE2])        # JSR $E240 (CallerF)
     put(0xE012, [0x20, 0x80, 0xE2])        # JSR $E280 (CallerG -- moved from $E260)
     put(0xE015, [0x20, 0xC0, 0xE2])        # JSR $E2C0 (CallerH -- grm-vgod guard)
-    put(0xE018, [0x4C, 0x18, 0xE0])        # JMP $E018 (idle loop -- moved from $E015)
-    put(0xE01B, [0x40])                     # RTI (NMI/IRQ handler -- moved from $E018)
+    put(0xE018, [0x20, 0x20, 0xE3])        # JSR $E320 (CallerJ -- grm-qd0u positive)
+    put(0xE01B, [0x20, 0x60, 0xE3])        # JSR $E360 (CallerK -- grm-qd0u decline control)
+    put(0xE01E, [0x4C, 0x1E, 0xE0])        # JMP $E01E (idle loop)
+    put(0xE021, [0x40])                     # RTI (NMI/IRQ handler)
 
     # CallerA ($E100): establishes select=6 itself before calling the data-only helper
     # -- requiresOnEntry(H) is satisfied here, so no WARNING at CallerA's JSR. bead
@@ -1637,10 +1639,68 @@ def make_prg_mmc3_2():
     put(0xE2CB, [0x20, 0xD0, 0xE2])        # JSR $E2D0 (Worker) -- THE GUARDED SITE
     put(0xE2CE, [0x60])                     # RTS
 
+    # ------------------------------------------------------------------
+    # grm-qd0u: the helper's own select beats the caller's stale one -- plus the NEGATIVE
+    # CONTROL that keeps the new walk from overreaching.
+    #
+    # H5 ($E300) writes select from its own CONSTANT and then a data byte, exactly like
+    # smb3's FUN_ffc2. CallerJ ($E320) calls it WITHOUT establishing select itself, which
+    # is what real smb3 callers do and what the existing CallerE/F/G trio deliberately
+    # avoids -- so this shape had no synthetic coverage at all before now.
+    #
+    # H6/CallerK are the control. H6's select write is reached by TWO paths carrying
+    # DIFFERENT constants, so no single select governs its data write and the deposit must
+    # DECLINE rather than pick one. This is the hazard direction that matters: select 6 vs
+    # 7 is the difference between "CHR register, ignore" and "PRG R7, annotate", so an
+    # over-eager walk here does not merely lose an annotation, it ships a confident WRONG
+    # bank. Same reasoning as G10's dead-store control.
+    # ------------------------------------------------------------------
+
+    # H5 ($E300): own constant select=6 (R6), then a data write of $03. A caller that
+    # establishes NO select of its own must still get r6=3 out of this.
+    put(0xE300, [0xA9, 0x06])              # LDA #$06 (select R6 -- the helper's own)
+    put(0xE302, [0x8D, 0x00, 0x80])        # STA $8000 (select=6, prg_mode=0)
+    put(0xE305, [0xA9, 0x03])              # LDA #$03 (data byte)
+    put(0xE307, [0x8D, 0x01, 0x80])        # STA $8001 (data write -> r6=3)
+    put(0xE30A, [0x60])                     # RTS
+
+    # CallerJ ($E320): calls H5 with NO select write of its own. MEASURED: tracked select is
+    # UNKNOWN at this call site ("assumed from initial: select.0,select.1,select.2"), so
+    # pre-grm-qd0u this took the poison branch. That makes CallerJ and Worker's JSR at $E2D0
+    # a complementary pair covering BOTH pre-fix failures -- unknown select here, known-but-
+    # STALE select (6, routing to the wrong register) there. smb3 exhibits both.
+    # Expect r6=3 and no warning. select/prg_mode stay unknown in the comment and that is
+    # CORRECT: a data write owns its target field alone and must not fabricate the rest.
+    put(0xE320, [0x20, 0x00, 0xE3])        # JSR $E300 (H5)
+    put(0xE323, [0x60])                     # RTS
+
+    # H6 ($E340): the DECLINE control. Two paths reach the select write at $E34A carrying
+    # DIFFERENT constants ($06 and $07), so "select is 6 on every path" and "select is 7 on
+    # every path" are both false. The straight-line walk must abandon at the control-flow
+    # join and fall back to the caller's in-state rather than pick whichever constant it
+    # happens to meet walking backward.
+    put(0xE340, [0xA5, 0x10])              # LDA $10 (opaque -- decides the branch)
+    put(0xE342, [0xF0, 0x04])              # BEQ +4 -> $E348
+    put(0xE344, [0xA9, 0x06])              # LDA #$06 (select R6)
+    put(0xE346, [0xD0, 0x02])              # BNE +2 -> $E34A  (unconditional in practice)
+    put(0xE348, [0xA9, 0x07])              # LDA #$07 (select R7)
+    put(0xE34A, [0x8D, 0x00, 0x80])        # STA $8000 <- JOIN: select is 6 OR 7, unknowable
+    put(0xE34D, [0xA9, 0x05])              # LDA #$05 (data byte -- itself perfectly known)
+    put(0xE34F, [0x8D, 0x01, 0x80])        # STA $8001 (data write -> target UNKNOWABLE)
+    put(0xE352, [0x60])                     # RTS
+
+    # CallerK ($E360): calls H6 with no select of its own either. Because H6 supplies no
+    # single select, the deposit must fall back to the caller's tracked select -- and must
+    # NOT claim r6=5 or r7=5 off H6's own ambiguous pair. The data byte $05 is a real bank
+    # in this 8-bank image, so a wrong claim here would be ANNOTATED rather than caught by
+    # the out-of-range guard, which is what makes this a control and not a formality.
+    put(0xE360, [0x20, 0x40, 0xE3])        # JSR $E340 (H6)
+    put(0xE363, [0x60])                     # RTS
+
     # Vector table.
-    put(0xFFFA, [0x1B, 0xE0])  # NMI   -> $E01B (RTI)
+    put(0xFFFA, [0x21, 0xE0])  # NMI   -> $E021 (RTI)
     put(0xFFFC, [0x00, 0xE0])  # RESET -> $E000
-    put(0xFFFE, [0x1B, 0xE0])  # IRQ   -> $E01B (RTI)
+    put(0xFFFE, [0x21, 0xE0])  # IRQ   -> $E021 (RTI)
 
     return bytes(prg)
 
@@ -3302,10 +3362,12 @@ def main():
     assert prgm3b[0xE00C] == 0x20 and (prgm3b[0xE00D] | (prgm3b[0xE00E] << 8)) == 0xE220
     assert prgm3b[0xE00F] == 0x20 and (prgm3b[0xE010] | (prgm3b[0xE011] << 8)) == 0xE240
     assert prgm3b[0xE012] == 0x20 and (prgm3b[0xE013] | (prgm3b[0xE014] << 8)) == 0xE280
-    # grm-vgod: CallerH dispatch (moved the idle loop/RTI down another three bytes).
+    # grm-vgod/grm-qd0u: CallerH/CallerJ/CallerK dispatch (idle loop/RTI moved down again).
     assert prgm3b[0xE015] == 0x20 and (prgm3b[0xE016] | (prgm3b[0xE017] << 8)) == 0xE2C0
-    assert prgm3b[0xE018] == 0x4C and (prgm3b[0xE019] | (prgm3b[0xE01A] << 8)) == 0xE018
-    assert prgm3b[0xE01B] == 0x40  # RTI (NMI/IRQ handler)
+    assert prgm3b[0xE018] == 0x20 and (prgm3b[0xE019] | (prgm3b[0xE01A] << 8)) == 0xE320
+    assert prgm3b[0xE01B] == 0x20 and (prgm3b[0xE01C] | (prgm3b[0xE01D] << 8)) == 0xE360
+    assert prgm3b[0xE01E] == 0x4C and (prgm3b[0xE01F] | (prgm3b[0xE020] << 8)) == 0xE01E
+    assert prgm3b[0xE021] == 0x40  # RTI (NMI/IRQ handler)
 
     # H2 ($E210): the smb3 FUN_ffc2 shape -- constant select write, data from $0720.
     assert prgm3b[0xE210] == 0xA9 and prgm3b[0xE211] == 0x47  # LDA #$47
@@ -3387,7 +3449,27 @@ def main():
     assert prgm3b[0xE2CB] == 0x20 and (prgm3b[0xE2CC] | (prgm3b[0xE2CD] << 8)) == 0xE2D0
     assert prgm3b[0xE2CE] == 0x60  # CallerH RTS
 
-    _assert_vectors(prgm3b, "nesmmc3test2", handler=0xE01B, reset=0xE000)
+    # H5/CallerJ ($E300/$E320) -- grm-qd0u positive: helper's own constant select, caller
+    # establishes none. H6/CallerK ($E340/$E360) -- the decline control: two paths carry
+    # DIFFERENT select constants into one select write, so no single select governs.
+    assert prgm3b[0xE300] == 0xA9 and prgm3b[0xE301] == 0x06  # LDA #$06 (H5's own select)
+    assert prgm3b[0xE302] == 0x8D and (prgm3b[0xE303] | (prgm3b[0xE304] << 8)) == 0x8000
+    assert prgm3b[0xE305] == 0xA9 and prgm3b[0xE306] == 0x03  # LDA #$03 (data)
+    assert prgm3b[0xE307] == 0x8D and (prgm3b[0xE308] | (prgm3b[0xE309] << 8)) == 0x8001
+    assert prgm3b[0xE30A] == 0x60  # H5 RTS
+    assert prgm3b[0xE320] == 0x20 and (prgm3b[0xE321] | (prgm3b[0xE322] << 8)) == 0xE300
+    assert prgm3b[0xE323] == 0x60  # CallerJ RTS
+
+    assert prgm3b[0xE344] == 0xA9 and prgm3b[0xE345] == 0x06  # one path: LDA #$06
+    assert prgm3b[0xE348] == 0xA9 and prgm3b[0xE349] == 0x07  # other path: LDA #$07
+    assert prgm3b[0xE34A] == 0x8D and (prgm3b[0xE34B] | (prgm3b[0xE34C] << 8)) == 0x8000
+    assert prgm3b[0xE34D] == 0xA9 and prgm3b[0xE34E] == 0x05  # LDA #$05 (data, in range)
+    assert prgm3b[0xE34F] == 0x8D and (prgm3b[0xE350] | (prgm3b[0xE351] << 8)) == 0x8001
+    assert prgm3b[0xE352] == 0x60  # H6 RTS
+    assert prgm3b[0xE360] == 0x20 and (prgm3b[0xE361] | (prgm3b[0xE362] << 8)) == 0xE340
+    assert prgm3b[0xE363] == 0x60  # CallerK RTS
+
+    _assert_vectors(prgm3b, "nesmmc3test2", handler=0xE021, reset=0xE000)
 
     _write_rom(outdir, "nesmmc3test2.nes", prgm3b, mapper=MAPPER_MMC3)
 
