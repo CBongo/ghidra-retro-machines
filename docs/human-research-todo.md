@@ -90,6 +90,28 @@ Each is minutes of work and settles something specific. Highest value per unit e
       Only you can find them. Once located, `grm-w4w3` can proceed without any of the `.idb`
       tooling for whatever titles they cover.
 
+- [ ] **smb3: which bank survives `FUN_c542` back to its callers at `867b`/`ac6d`?** (`grm-gyi`,
+      answered and closed; this is the one residue.) The routine performs its own mechanism write
+      at `c5fc` — bank `$1a` by your 2026-08-16 reading — and later, at `c6e9`, does
+      `LDA #$0b / STA $0720 / JSR $ffc2`, i.e. a switch to the **constant `$0b`** through the
+      `$0720` argument cell. Two switches, two different constants.
+
+      **The question is just where `c6e9` sits relative to the `RTS`**, and hence which of the two
+      is live when control returns to `867b`/`ac6d`. If `c6e9` runs before returning, the caller
+      sees `$0b`; if it is on a path that does not return there, the caller sees `$1a`.
+
+      Why it needs you: this is a listing read, and for an agent it is a build/measure/interpret
+      cycle per guess. Why it is worth answering: today both call sites emit *"bank argument could
+      not be recovered"*, which is a misframing either way — `c542` takes no argument, it commits
+      constants — so we know the current output is wrong but not yet what the right output is.
+      Note the bead's own two candidate answers (annotate `$1a`; or `ownedMask = 0` verified no-op)
+      are **both refuted** — the `$ffc2` call is not an entry-bank restore, so "no-op" is
+      affirmatively wrong. Do not re-open the `restoresEntryBank`-is-MMC3-blind line either; it was
+      measured false (declines at the board-independent branch guard, `BoardBankAnalyzer:2506`).
+
+      Ghidra has split the routine into `FUN_c542` and `FUN_c54a`, which report the *same*
+      `switchSite=c5fc`; the body you want is `c542`–`c6f1`.
+
 *Not an item — a note.* The `.idb` inventory itself (`grm-w4w3`) is **agent work and is
 deliberately deferred to a future session** at your request; the tooling question is settled
 (`python-idb` Apache-2.0 / `idbutil` MIT, no IDA needed) so nobody re-derives it. Worth knowing
