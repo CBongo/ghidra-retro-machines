@@ -123,31 +123,6 @@ SPC700 problem.
 
 ---
 
-## 1b. Adjudicate the rows grm-913 weakened
-
-- [ ] **Are the bank claims grm-913 weakened honest losses, or is the bank genuinely knowable
-      across an interrupt boundary?** (`grm-2pie`, filed from `grm-913`.) The interrupt-entry seed
-      changed from `fullyKnown(initial_state)` to `unknown` on 2026-08-22, and the full real-ROM
-      A/B moved **11 rows**: ~59 bank comments keep their number but gain `?` plus an "assumed from
-      initial" bit breakdown, two rows lose whole claims (`rcransom` 38→34, `megaman2` 75→71), and
-      12 new "Bank state requirement violated" warnings appear (10 of them `rcransom`'s). **None
-      were blessed**, so those 11 rows fail on an unchanged tree by intent — see `grm-2pie` for the
-      per-row table and do not bisect for them.
-
-      The question is the same at every site: the analyzer used to say "bank = N, certain" and now
-      says "bank = N?, those bits assumed from `initial_state`". **Was the old certainty real, or
-      did it come from the entry seed and nowhere else?** Only the latter is an honest loss; the
-      former means the bank *is* derivable across the boundary and the engine should learn how,
-      which is `grm-mej` scope rather than a row to bless.
-
-      **Start with `rcransom` — it is the epicentre and you have already traced it.** Your notes
-      (`grm-1fv`) record `ff07` running just before the NMI handler returns and `ff29` just before
-      the IRQ handler's, both restoring `r6`/`r7` from shadows `$fc`/`$fd`. The weakened fields
-      there are exactly `r6`/`r7`, which is what the bead's premise predicts — so one row either
-      confirms or refutes the whole change.
-
----
-
 ## 2. Def-use passes on untraced titles
 
 The method is proven — four titles done. **Use the tables in `grm-8iy.5`'s comments as the
@@ -377,3 +352,4 @@ Agents can't file these — they need an account and CLA agreement.
 | `grm-6xh` — file the trivial setter PR | **Submitted 2026-08-17: [#9513](https://github.com/NationalSecurityAgency/ghidra/pull/9513)**, one file, +3/−3, cut from master `d5f144c2`. **It is a two-line fix, not the one line the bead recorded:** the javadoc above the setter was copy-pasted from `setMaxSpeculativeOffset` and wrong in the same direction as the bug, so shipping the assignment alone would have left the method contradicting its own documentation. Bug re-verified on **master** before filing rather than trusted from the 12.1.2-tag investigation. The framing that answers "how did nobody notice this" — and the line worth reusing — is that the **three-argument constructor assigns both fields correctly, so the bug is reachable only through the fluent form, which is the form the analyzer itself uses**. `mergeable_state: blocked` at submission is the normal fresh-PR state pending the CLA check | `grm-6xh` (open, pending merge) |
 | SPC700 language sourcing — bundle SPCdra, depend on it, or write our own? | **Vendor the decode table, rewrite the semantics, write our own loader — and SPC700 is a PRIMARY PLATFORM, ruled 2026-08-16.** Both halves answered: Apache-2.0 vendoring approved ("i'm good with vendoring the spcdra sleigh"), and the product call went further than the bead asked — *"spc700 is an important part of reversing SNES games and should be considered a primary platform, so the work is worthy."* Hence a new epic (`grm-c9d`) rather than a task under the SMC work, and `grm-1.7.3` raised P3→P2. **The bead's own "bundle vs depend vs reimplement" framing was the wrong axis** and none of the three describes the answer. Evidence: the DECODE TABLE is complete and sound (256/256 opcodes — 208 explicit plus three low-nibble families, no collisions; correct operand text, lengths, and TCALL vector arithmetic), but the SEMANTICS are broken in ways **measured from real p-code, not inferred** — `ADDR8`/`ADDR16` double-dereference every data access (`MOV A,$10` emits two LOADs and means `A = **(word**)0x10`; absolute and stores affected too), `CMP`/`SBC` set carry inverted so every `CMP`/`BCS` decompiles backwards, `ADC` hardcodes `N=0`, `ASL`/`ROL` can never set carry (a byte assigned into a 1-bit bitrange), `INC`/`DEC` set no flags, `MOV dp,X` stores to the wrong address. **The tell, worth remembering: the disassembly TEXT is correct in every case** — decode tables get exercised constantly, p-code never does. And the `.spc` loader the bead called "the fastest value" is **5.4 KB, one file** — not the valuable half. **Do not hand-review the semantics rewrite**; `SingleStepTests/spc700` vectors exist and the harness (`grm-c9d.2`) is deliberately sequenced *before* the rewrite. Same vector family as the `grm-o9k` 6502 ADC/RRA fix names, so build the runner reusable | `grm-y7d` **closed**; epic `grm-c9d` + `.1`–`.5` |
 | Do you want to cut a public release, and when? | **No — not any time soon, ruled 2026-08-16.** *"i don't have any plans for cutting a release anytime soon, so the CI and release and user docs beads can all stay on the back burner."* All three stay **blocked** at current priorities (`grm-9ut` P2, `grm-fy0` P3, `grm-e7w` P4) — blocked is the correct state, not a bug to fix, since it keeps speculative work out of `bd ready` sweeps. **Nothing technical is outstanding and none of it should be re-derived**: the trigger mechanism, the Ghidra 12.0 hard floor, the reference workflow, and the together-ships-with rule (`grm-9ut` + `grm-fy0`; a release zip nobody can use is half a deliverable) were all settled earlier. **Revisit trigger is an audience, not a date** — no milestone was given and none was asked for, since "not soon" is complete on its own. Note the two triggers differ by population: `grm-9ut`/`grm-fy0` wait on *users*, `grm-e7w` waits on *outside contributors* per its own 2026-08-15 ruling. **Do not re-ask this in a future "what should we work on" sweep** — ask again only if a trigger actually fires | `grm-9ut` / `grm-fy0` / `grm-e7w`, all still blocked |
+| Are the bank claims `grm-913` weakened honest losses, or is the bank knowable across an interrupt boundary? | **Honest losses — outcome (a), ruled by hand disassembly of `rcransom` 2026-08-22.** The IRQ handler calls `fa54`, which saves the live bank by reading `$BFFF` (a ROM-resident bank ID byte), calls `$8003` in bank 5, and restores it via `fed1` — which clobbers the `$fc`/`$fd` shadows, so the handler stack-saves them and puts them back just before `ff29`. The NMI path does the same around `ff07` (its guard may even be dead code — no intervening PRG switch was found). A cartridge that saves and restores the live bank **at runtime** proves the entering bank is not a compile-time constant, so `r6=0,r7=1` came from the entry seed and nowhere else. **All 11 rows / 128 weakened sites and the 9 lost claims are blessable; do not reopen this as `grm-mej` scope.** The 10 `rcransom` "requirement violated" warnings are NOT covered — `fa54` is bank-*preserving*, so that wording looks like our own derivation conflating two unknowns, which is agent work under `grm-vgod`, not a question for you. The `$BFFF` idiom itself is `grm-sen5`. | `grm-2pie` |
