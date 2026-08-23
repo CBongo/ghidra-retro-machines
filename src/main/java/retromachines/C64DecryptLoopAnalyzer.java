@@ -265,11 +265,11 @@ public class C64DecryptLoopAnalyzer extends AbstractAnalyzer {
 				true, false, true, log, TaskMonitor.DUMMY);
 		}
 		catch (AddressOverflowException e) {
-			log.appendMsg(name + ": could not create overlay: " + e.getMessage());
+			AnalyzerLog.warn(this, log, name + ": could not create overlay: " + e.getMessage());
 			return;
 		}
 		if (block == null) {
-			log.appendMsg(name + ": overlay creation failed");
+			AnalyzerLog.warn(this, log, name + ": overlay creation failed");
 			return;
 		}
 

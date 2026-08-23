@@ -2273,15 +2273,18 @@ public class VerifyBankTest extends GhidraScript {
 		criterion("C6", c.contains("bank -> 5 (") && !c.contains("?"),
 			"fully known bank -> 5 comment at 080d: \"" + c + "\"");
 
-		// C7/C8 (grm-nip): the real autoanalysis reached and persisted a stable
-		// completion. C8 is the narrow unit check for the structural predicate used to
+		// C8 (grm-nip): the narrow unit check for the structural predicate used to
 		// distinguish a changing phase-2 round from its stable follow-on round.
-		String completionKey = "Retro Machines: initial run completed v2: " +
-			C64BankingAnalyzer.class.getName();
-		boolean completed = currentProgram.getOptions(Program.ANALYSIS_PROPERTIES)
-				.getBoolean(completionKey, false);
-		criterion("C7:lifecycle-completed", completed,
-			"stable banking autoanalysis persisted the v2 completion marker");
+		//
+		// C7:lifecycle-completed WAS REMOVED BY grm-6jfp AND MUST NOT BE RESTORED. It
+		// asserted that a stable run persisted the "Retro Machines: initial run completed
+		// v2: <class>" option, which existed only to gate routine logging to the FIRST run
+		// (AnalyzerRunLog, bead grm-olp). grm-6jfp deleted that policy outright -- routine
+		// diagnostics now go to Msg on every run and genuine warnings go to both Msg and
+		// the MessageLog -- so there is no marker left to persist and nothing writes that
+		// option. Saved Programs may still carry an orphaned copy; nothing reads it.
+		// The lifecycle invariant that actually still matters is C8's, plus the
+		// LAST_COMPLETED stamp ordering pinned by BoardBankAnalyzerCacheProgramTest.
 		criterion("C8:lifecycle-fixpoint",
 			!BankLifecycleProbe.stable(17, 18) && BankLifecycleProbe.stable(18, 18),
 			"changing structural fingerprint stays initial; stable follow-on completes");
@@ -2442,23 +2445,17 @@ public class VerifyBankTest extends GhidraScript {
 		criterion("B4:noFuncAtLoad", !hasFunctionAt(0x0801),
 			"no function at the load address 0x0801 (BASIC line data, not code)");
 
-		// B5: a completed normal run and a successful no-op both record completion, but a
-		// subsequent deliberately failed run must not do so; a later retry with the
-		// descriptor property restored to its original value then completes again. This
-		// exercises C64BasicAnalyzer's lifecycle wrapper directly: first force its
-		// wrapped-PRG no-op, then point the descriptor property at a missing map for the
-		// failure path. Because that retry's inputs (map path, load address/length,
+		// B5: the wrapped-PRG no-op reports success, a run whose descriptor cannot be
+		// loaded reports failure, and a later retry with the descriptor property restored
+		// succeeds again. This exercises C64BasicAnalyzer's lifecycle wrapper directly:
+		// first force its wrapped-PRG no-op, then point the descriptor property at a
+		// missing map for the failure path. Because that retry's inputs (map path,
+		// load address/length,
 		// slices) end up identical to the Program's already-completed initial analysis,
 		// it now also exercises the session-local redundant-re-run gate (grm-52z): the
-		// retry completes via a same-inputs SKIP, not by re-walking/re-detokenizing, so it
-		// logs the gate's skip message rather than "running:".
-		Options analysis = currentProgram.getOptions(Program.ANALYSIS_PROPERTIES);
+		// retry completes via a same-inputs SKIP, not by re-walking/re-detokenizing, which
+		// this now observes as "the program was not modified" (see the retry below).
 		Options info = currentProgram.getOptions(Program.PROGRAM_INFO);
-		String completionKey =
-			"Retro Machines: initial run completed v2: " + C64BasicAnalyzer.class.getName();
-		String legacyCompletionKey =
-			"Retro Machines: initial run completed: " + C64BasicAnalyzer.class.getName();
-		boolean completedAfterSuccess = analysis.getBoolean(completionKey, false);
 		String mapProperty = "Retro Machine Map";
 		// Forcing the analyzer's wrapped-PRG no-op used to mean setting a "Retro Machines.
 		// CBM PRG Wrapped" property. That property is gone (grm-hap item 4) -- wrapped is
@@ -2472,43 +2469,38 @@ public class VerifyBankTest extends GhidraScript {
 		String originalMap = info.getString(mapProperty, "");
 		String originalSlices = info.getString(slicesProperty, "[]");
 		boolean noOpReturn;
-		boolean completedAfterNoOp;
 		boolean failedReturn;
-		boolean completedAfterFailure;
 		boolean retryReturn;
-		boolean completedAfterRetry;
 		boolean retrySkippedAsRedundant;
-		boolean completionWasPresent = analysis.contains(completionKey);
-		boolean legacyCompletionWasPresent = analysis.contains(legacyCompletionKey);
-		boolean legacyCompletionValue = analysis.getBoolean(legacyCompletionKey, false);
 		boolean mapWasPresent = info.contains(mapProperty);
 		boolean slicesWasPresent = info.contains(slicesProperty);
 		try {
-			analysis.setBoolean(completionKey, false);
 			info.setString(slicesProperty, wrappedSlices);
 			noOpReturn = new C64BasicAnalyzer().added(currentProgram, new AddressSet(), monitor,
 				new MessageLog());
-			completedAfterNoOp = analysis.getBoolean(completionKey, false);
 
 			info.setString(slicesProperty, originalSlices);
-			analysis.setBoolean(completionKey, false);
-			// Simulate a saved Program polluted by the pre-fix policy. The v2 lifecycle
-			// must ignore this old true marker and keep the failed run retryable/verbose.
-			analysis.setBoolean(legacyCompletionKey, true);
 			info.setString(mapProperty, "machines/missing-lifecycle-test.map");
 			failedReturn = new C64BasicAnalyzer().added(currentProgram, new AddressSet(), monitor,
 				new MessageLog());
-			completedAfterFailure = analysis.getBoolean(completionKey, false);
 
 			info.setString(mapProperty, originalMap);
-			MessageLog retryLog = new MessageLog();
-			retryReturn = new C64BasicAnalyzer().added(currentProgram, new AddressSet(), monitor,
-				retryLog);
-			completedAfterRetry = analysis.getBoolean(completionKey, false);
 			// grm-52z: same map path/load address/length/slices as the Program's original
 			// completed run, so the session-local gate short-circuits before the walk/GDT/
-			// PETSCII work that would otherwise log "running:".
-			retrySkippedAsRedundant = retryLog.toString().contains("skipping redundant re-analysis");
+			// PETSCII work.
+			//
+			// THIS USED TO BE OBSERVED BY MATCHING THE SKIP MESSAGE IN retryLog. grm-6jfp
+			// moved routine analyzer diagnostics off the MessageLog and onto Msg (so they
+			// stop popping AutoAnalysisPlugin's "warnings/errors" dialog), so that text is
+			// no longer in any MessageLog to match. Observe the gate's ACTUAL PROMISE
+			// instead -- that the analysis body did not run -- which is strictly stronger
+			// than a log-text match and does not depend on message wording: the walk writes
+			// comments and data, so a real run moves getModificationNumber() and a skipped
+			// one cannot.
+			long modBeforeRetry = currentProgram.getModificationNumber();
+			retryReturn = new C64BasicAnalyzer().added(currentProgram, new AddressSet(), monitor,
+				new MessageLog());
+			retrySkippedAsRedundant = currentProgram.getModificationNumber() == modBeforeRetry;
 		}
 		finally {
 			if (mapWasPresent) {
@@ -2523,30 +2515,25 @@ public class VerifyBankTest extends GhidraScript {
 			else {
 				info.removeOption(slicesProperty);
 			}
-			if (completionWasPresent) {
-				analysis.setBoolean(completionKey, completedAfterSuccess);
-			}
-			else {
-				analysis.removeOption(completionKey);
-			}
-			if (legacyCompletionWasPresent) {
-				analysis.setBoolean(legacyCompletionKey, legacyCompletionValue);
-			}
-			else {
-				analysis.removeOption(legacyCompletionKey);
-			}
 		}
-		criterion("B5", completedAfterSuccess && noOpReturn && completedAfterNoOp &&
-			!failedReturn && !completedAfterFailure && retryReturn && completedAfterRetry &&
-			retrySkippedAsRedundant,
-			"successful work/no-op record completion; failed run remains incomplete; " +
-				"the retry completes via the same-inputs redundant-re-run gate " +
-				"(success=" + completedAfterSuccess + ", noOpReturn=" + noOpReturn +
-				", completedAfterNoOp=" + completedAfterNoOp + ", failedReturn=" +
-				failedReturn + ", completedAfterFailure=" + completedAfterFailure +
-				", retryReturn=" + retryReturn + ", completedAfterRetry=" +
-				completedAfterRetry + ", retrySkippedAsRedundant=" + retrySkippedAsRedundant +
-				")");
+		// B5 (grm-6jfp): the completion-MARKER half of this criterion is gone with the
+		// policy it tested. It asserted that a successful/no-op run persisted "Retro
+		// Machines: initial run completed v2: <class>" and that a FAILED run did not (plus
+		// that a stale pre-fix "v1" marker was ignored). That option existed only to gate
+		// routine logging to the first run; grm-6jfp deleted it, so nothing writes or reads
+		// it and there is nothing left to assert. DO NOT REINSTATE those checks.
+		//
+		// What survives is the analyzer's LIFECYCLE CONTRACT, which never depended on the
+		// marker and is what this criterion is now about: the wrapped-PRG no-op reports
+		// success, a run whose descriptor cannot be loaded reports failure, and a retry
+		// with the original inputs both succeeds AND short-circuits on the grm-52z
+		// same-inputs gate rather than re-walking.
+		criterion("B5", noOpReturn && !failedReturn && retryReturn && retrySkippedAsRedundant,
+			"wrapped-PRG no-op succeeds; a run with a missing map fails; the retry succeeds " +
+				"via the same-inputs redundant-re-run gate without touching the program " +
+				"(noOpReturn=" + noOpReturn + ", failedReturn=" + failedReturn +
+				", retryReturn=" + retryReturn + ", retrySkippedAsRedundant=" +
+				retrySkippedAsRedundant + ")");
 
 		// B6 (golden byte-identical dump) is enforced by run-banktest.sh's diff against
 		// expected/c64basictest.dump; nothing further to check here.

@@ -320,13 +320,15 @@ public class BoardBankAnalyzerCacheProgramTest extends AbstractBundledLanguageTe
 		String commentAfterFirstRun = eolComment("0x8002");
 		assertNotNull(commentAfterFirstRun);
 
-		// The gate itself reads program.getModificationNumber() AFTER AnalyzerRunLog.
-		// markCompleted()'s own Options write on every call (hit or miss), so the stamp
-		// stored on a completed run must be captured AFTER that same write too, or the two
-		// reads are permanently misaligned by markCompleted()'s own bump and a truly
-		// unchanged next invocation would never hit the gate at all -- exactly the ordering
-		// bug this test caught against an earlier draft of the fix (markCompleted() called
-		// AFTER the LAST_COMPLETED.put() snapshot instead of before it).
+		// The stamp stored on a completed run must be captured AFTER every one of that
+		// run's own writes, or the two reads of program.getModificationNumber() are
+		// permanently misaligned and a truly unchanged next invocation never hits the gate
+		// at all. That was an easy mistake to make while the initial-run policy existed --
+		// AnalyzerRunLog.markCompleted()'s Options write bumped the number and an earlier
+		// draft of the fix called it AFTER the LAST_COMPLETED.put() snapshot, which is
+		// exactly the ordering bug this test caught. grm-6jfp removed that write (routine
+		// logging goes to Msg now, which touches no program state), so the only writes left
+		// to order are the analysis edits themselves; this test still pins the invariant.
 		//
 		// What the gate actually promises, and what matters here: the CACHED stamp does not
 		// move across redundant calls, i.e. the analysis body itself did not run again. If

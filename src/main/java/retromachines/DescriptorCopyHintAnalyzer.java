@@ -139,7 +139,7 @@ public class DescriptorCopyHintAnalyzer extends AbstractAnalyzer {
 			map = loadMap(program);
 		}
 		catch (IOException | RuntimeException e) {
-			log.appendMsg(CATEGORY, "could not read the descriptor: " + e.getMessage());
+			AnalyzerLog.warn(this, log, "could not read the descriptor: " + e.getMessage());
 			return false;
 		}
 		return applyAll(program, map, monitor, log);
@@ -188,7 +188,7 @@ public class DescriptorCopyHintAnalyzer extends AbstractAnalyzer {
 		// should cost only that directive.
 		for (String required : new String[] { "name", "start", "end", "source", "source_addr" }) {
 			if (!hint.has(required)) {
-				log.appendMsg(CATEGORY, regionName + ": copied_from entry is missing '" +
+				AnalyzerLog.warn(this, log, regionName + ": copied_from entry is missing '" +
 					required + "'; ignoring it");
 				return;
 			}
@@ -202,7 +202,7 @@ public class DescriptorCopyHintAnalyzer extends AbstractAnalyzer {
 		long end = hint.get("end").getAsLong();
 		long len = end - start + 1;
 		if (len <= 0 || len > Integer.MAX_VALUE) {
-			log.appendMsg(CATEGORY, what + ": copied range is empty or absurd; ignoring");
+			AnalyzerLog.warn(this, log, what + ": copied range is empty or absurd; ignoring");
 			return;
 		}
 
@@ -217,7 +217,7 @@ public class DescriptorCopyHintAnalyzer extends AbstractAnalyzer {
 				hint.get("source_addr").getAsLong());
 		}
 		catch (AddressOutOfBoundsException | IllegalArgumentException e) {
-			log.appendMsg(CATEGORY, what + ": could not resolve addresses (" + e.getMessage() +
+			AnalyzerLog.warn(this, log, what + ": could not resolve addresses (" + e.getMessage() +
 				"); ignoring");
 			return;
 		}

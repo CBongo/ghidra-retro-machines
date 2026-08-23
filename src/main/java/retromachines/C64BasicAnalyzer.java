@@ -98,12 +98,11 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 	 * line, all of which are no-ops once this analyzer's actual inputs -- the descriptor
 	 * path, the PRG's placement (load address/length), and the persisted slice list (the
 	 * PRG image bytes themselves are immutable after load) -- have not changed since the
-	 * last completed run. Session-local only (never persisted): unlike
-	 * {@link AnalyzerRunLog}'s flag, which must keep meaning "verbose logging on the
-	 * initial run only" and stay eligible to fire again in a fresh session, this cache's
-	 * only job is skipping <em>provably</em> redundant re-runs within one session. Keyed
-	 * weakly by {@link Program} identity so closed programs drop out; synchronized because
-	 * distinct programs may be analyzed on distinct threads.
+	 * last completed run. Session-local only (never persisted): this cache's only job is
+	 * skipping <em>provably</em> redundant re-runs within one session, so a fresh session
+	 * is entitled to (and does) run the analysis again. Keyed weakly by {@link Program}
+	 * identity so closed programs drop out; synchronized because distinct programs may be
+	 * analyzed on distinct threads.
 	 */
 	private static final Map<Program, RunStamp> LAST_COMPLETED =
 		Collections.synchronizedMap(new WeakHashMap<>());
@@ -224,18 +223,15 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 	@Override
 	public boolean added(Program program, AddressSetView set, TaskMonitor monitor, MessageLog log)
 			throws CancelledException {
-		boolean completed = analyze(program, set, monitor, log);
-		if (completed) {
-			AnalyzerRunLog.markCompleted(program, getClass());
-		}
-		return completed;
+		return analyze(program, set, monitor, log);
 	}
 
 	/**
-	 * Performs one analyzer run without changing the persistent run-log state. Keeping
-	 * completion recording in {@link #added} gives every exit the same policy: successful
-	 * work and successful no-ops are complete, while reported failures, cancellation, and
-	 * unexpected exceptions remain eligible for a later initial-run retry.
+	 * Performs one analyzer run. Split out from {@link #added} when that method also had to
+	 * record persistent completion state for the initial-run logging policy; grm-6jfp
+	 * deleted that policy, so this is now a plain body with one caller, kept separate only
+	 * because the return value's meaning (this run completed / it reported a failure and is
+	 * worth retrying) is easier to state on its own.
 	 */
 	private boolean analyze(Program program, AddressSetView set, TaskMonitor monitor,
 			MessageLog log) throws CancelledException {
@@ -244,7 +240,7 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 			config = basicConfig(program);
 		}
 		catch (IOException | RuntimeException e) {
-			log.appendMsg(getName(), "Failed to read CBM BASIC descriptor policy: " +
+			AnalyzerLog.warn(this, log, "Failed to read CBM BASIC descriptor policy: " +
 				e.getMessage());
 			return false;
 		}
@@ -274,17 +270,13 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 		final long imageLoadAddr = loadAddr;
 		final long imageLimitAddr = limitAddr;
 
-		boolean verbose = AnalyzerRunLog.isInitialRun(program, getClass());
-
 		// Redundant-re-run gate (grm-52z): see LAST_COMPLETED for the invariants. Checked
 		// before any walk/GDT-open/PETSCII-load work, since those are exactly what a
 		// same-inputs repeat round would otherwise redo for nothing.
 		RunStamp stamp = new RunStamp(config.mapPath(), loadedSlices);
 		if (stamp.equals(LAST_COMPLETED.get(program))) {
-			if (verbose) {
-				log.appendMsg(getName(), NAME + ": descriptor/placement/slices unchanged since " +
-					"the last completed run; skipping redundant re-analysis");
-			}
+			AnalyzerLog.info(this, NAME + ": descriptor/placement/slices unchanged since " +
+				"the last completed run; skipping redundant re-analysis");
 			return true;
 		}
 
@@ -315,17 +307,16 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 			LAST_COMPLETED.put(program, stamp);
 			return true; // trivially empty BASIC program; nothing to annotate
 		}
-		if (verbose) {
-			log.appendMsg(getName(), NAME + " running: " + result.lines().size() +
-				" BASIC line(s) at 0x" + Long.toHexString(loadAddr));
-		}
+		AnalyzerLog.info(this, NAME + " running: " + result.lines().size() +
+			" BASIC line(s) at 0x" + Long.toHexString(loadAddr));
 
 		FileDataTypeManager gdtMgr;
 		try {
 			gdtMgr = DescriptorSupport.openGdt(config.gdtPath());
 		}
 		catch (IOException e) {
-			log.appendMsg(getName(), "Failed to open " + config.gdtPath() + ": " + e.getMessage());
+			AnalyzerLog.warn(this, log,
+				"Failed to open " + config.gdtPath() + ": " + e.getMessage());
 			return false;
 		}
 		PetsciiMapper petscii;
@@ -333,7 +324,7 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 			petscii = PetsciiMapper.load();
 		}
 		catch (IOException e) {
-			log.appendMsg(getName(), "Failed to load petscii.map: " + e.getMessage());
+			AnalyzerLog.warn(this, log, "Failed to load petscii.map: " + e.getMessage());
 			gdtMgr.close();
 			return false;
 		}
@@ -342,13 +333,13 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 			BasicDescriptorTokenLookup tokenLookup = BasicDescriptorTokenLookup.fromGdt(gdtMgr,
 				config.tokenEnum(), config.prefixEnums());
 			if (tokenLookup == null) {
-				log.appendMsg(getName(),
+				AnalyzerLog.warn(this, log,
 					config.tokenEnum() + " enum not found in " + config.gdtPath() +
 						"; token bytes will " +
 					"render as raw PETSCII escapes only");
 			}
 			else if (!tokenLookup.missingPrefixEnums().isEmpty()) {
-				log.appendMsg(getName(), "Configured BASIC prefix enum(s) missing from " +
+				AnalyzerLog.warn(this, log, "Configured BASIC prefix enum(s) missing from " +
 					config.gdtPath() + ": " + String.join(", ", tokenLookup.missingPrefixEnums()) +
 					"; affected prefix pairs will render as raw PETSCII");
 			}
@@ -380,7 +371,7 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 					textBytes[i] = (byte) cached;
 				}
 				if (!textOk) {
-					log.appendMsg(getName(), "Failed to read line text at 0x" +
+					AnalyzerLog.warn(this, log, "Failed to read line text at 0x" +
 						Long.toHexString(line.textStart()));
 					continue;
 				}
@@ -416,7 +407,7 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 				program.getBookmarkManager().setBookmark(at, BookmarkType.WARNING, CATEGORY,
 					"Malformed BASIC line link at 0x" + Long.toHexString(result.malformedAt()) +
 						": " + detail + "; stopped walking the line chain here");
-				log.appendMsg(getName(), "Malformed BASIC line link: " + detail);
+				AnalyzerLog.warn(this, log, "Malformed BASIC line link: " + detail);
 			}
 		}
 		finally {
@@ -515,7 +506,7 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 			program.getListing().setComment(at, CommentType.EOL, fieldName);
 		}
 		catch (Exception e) {
-			log.appendMsg(getName(),
+			AnalyzerLog.warn(this, log,
 				"Failed to type " + fieldName + " word at 0x" + at + ": " + e.getMessage());
 		}
 	}
@@ -535,7 +526,7 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 				"SYS target from BASIC line " + lineNumber);
 		}
 		catch (Exception e) {
-			log.appendMsg(getName(), "Failed to mark SYS entry at " + sysTarget + ": " +
+			AnalyzerLog.warn(this, log, "Failed to mark SYS entry at " + sysTarget + ": " +
 				e.getMessage());
 		}
 	}

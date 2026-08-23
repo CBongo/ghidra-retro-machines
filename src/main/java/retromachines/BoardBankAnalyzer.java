@@ -223,7 +223,6 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			throws CancelledException {
 
 		String tag = getClass().getSimpleName();
-		boolean verbose = AnalyzerRunLog.isInitialRun(program, getClass());
 		String mapPath = getMapPath(program);
 		if (mapPath == null) {
 			return false;
@@ -237,31 +236,29 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		RunStamp last = LAST_COMPLETED.get(program);
 		if (last != null && last.modificationNumber() == program.getModificationNumber() &&
 			last.mapPath().equals(mapPath)) {
-			if (verbose) {
-				log.appendMsg(getName(), tag + ": no program changes since last " +
-					"completed run; skipping redundant whole-program re-analysis");
-				// Only flip the "initial run" Options flag the first time -- it is already
-				// true on every later skip. AnalyzerRunLog.markCompleted() writes
-				// unconditionally (Options fires a change event even setting true -> true),
-				// which itself advances program.getModificationNumber(): calling it on
-				// EVERY skip would make the gate above miss on the very next invocation
-				// (the stored exit-time stamp can never catch up to a number this call keeps
-				// bumping), degrading the cache to "hit, miss, hit, miss, ...". Gating on
-				// `verbose` (== isInitialRun) keeps this call to its one real transition.
-				AnalyzerRunLog.markCompleted(program, getClass());
-			}
+			// THIS BRANCH MUST NOT WRITE ANYTHING TO THE PROGRAM (grm-6jfp). The gate above
+			// compares the stored exit-time stamp against program.getModificationNumber(),
+			// so any mutation on the skip path -- including an Options write, which fires a
+			// change event and advances the number even when it sets true -> true -- would
+			// make the gate miss on the very next invocation (the stored stamp can never
+			// catch up to a number this branch keeps bumping), degrading the cache to
+			// "hit, miss, hit, miss, ...". That hazard used to be live: this branch called
+			// AnalyzerRunLog.markCompleted() and leaned on the initial-run `verbose` flag to
+			// keep the write to its one real transition. Both are gone; logging now goes to
+			// Msg, which touches no program state, so the skip path is write-free by
+			// construction and needs no guard.
+			AnalyzerLog.info(this, tag + ": no program changes since last " +
+				"completed run; skipping redundant whole-program re-analysis");
 			return true;
 		}
-		if (verbose) {
-			log.appendMsg(getName(), tag + " running (" + mapPath + ")");
-		}
+		AnalyzerLog.info(this, tag + " running (" + mapPath + ")");
 
 		JsonObject map;
 		try {
 			map = DescriptorSupport.loadMap(mapPath);
 		}
 		catch (IOException e) {
-			log.appendMsg(getName(), "Failed to load " + mapPath + ": " + e.getMessage());
+			AnalyzerLog.warn(this, log, "Failed to load " + mapPath + ": " + e.getMessage());
 			return false;
 		}
 
@@ -270,13 +267,13 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			return true;
 		}
 
-		Map<String, Integer> placementOverride = readPlacementOverride(program, log, verbose);
+		Map<String, Integer> placementOverride = readPlacementOverride(program, log);
 
 		JsonObject banking = map.getAsJsonObject("banking");
 		List<ConfiguredMechanism> mechanisms = configureStrategies(program,
 			banking.getAsJsonArray("mechanisms"), board, log);
 		if (mechanisms.isEmpty()) {
-			log.appendMsg(getName(), "no usable bank-switch strategy in " + mapPath +
+			AnalyzerLog.warn(this, log, "no usable bank-switch strategy in " + mapPath +
 				" banking; skipping bank-state analysis");
 			return true;
 		}
@@ -295,8 +292,8 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				composeTailCalls(program, findHelpers(program, flow.switchResults())),
 				flow.switchResults()),
 			flow.switchResults());
-		if (!helpers.isEmpty() && verbose) {
-			log.appendMsg(getName(), helpers.size() + " bank-switch helper function(s): " +
+		if (!helpers.isEmpty()) {
+			AnalyzerLog.info(this, helpers.size() + " bank-switch helper function(s): " +
 				helpers.keySet().stream().map(Function::getName).sorted().toList());
 		}
 
@@ -315,8 +312,8 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		for (ConfiguredMechanism cm : mechanisms) {
 			cm.strategy().observeMirrors(mirrors);
 		}
-		if (verbose && !mirrors.isEmpty()) {
-			log.appendMsg(getName(), "bank mirrors: " + mirrors);
+		if (!mirrors.isEmpty()) {
+			AnalyzerLog.info(this, "bank mirrors: " + mirrors);
 		}
 
 		// --- Save/restore trampolines (grm-mej.3): helpers whose NET effect on the tracked field
@@ -331,8 +328,8 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				restoringTrampolines.add(h.function());
 			}
 		}
-		if (verbose && !restoringTrampolines.isEmpty()) {
-			log.appendMsg(getName(), "save/restore trampolines (calls are verified no-ops): " +
+		if (!restoringTrampolines.isEmpty()) {
+			AnalyzerLog.info(this, "save/restore trampolines (calls are verified no-ops): " +
 				restoringTrampolines.stream().map(Function::getName).sorted().toList());
 		}
 
@@ -412,19 +409,19 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// derived AFTER the Phase-1/2 fixpoint above -- see the method's javadoc for what
 		// is and is not fed back into the dataflow) ---
 		int violations = annotateBankRequirementViolations(program, listing, flow, board,
-			alreadyWarned, log, verbose);
+			alreadyWarned, log);
 
 		// --- Context stamping: only when the language actually declares the register ---
-		stampContextRegister(program, banking, flow.stateIn(), listing, board.mask(), log, verbose);
+		stampContextRegister(program, banking, flow.stateIn(), listing, board.mask(), log);
 
 		// A phase-2 retarget may have disassembled code or created functions. Such a
 		// round returned successfully, but it is deliberately not the completed initial
 		// analysis: the framework must invoke us again so the whole-program fixpoint can
-		// reach that newly discovered code. Keep first-run verbosity alive and defer the
-		// definitive summary until an invocation leaves the structural fingerprint stable.
+		// reach that newly discovered code. Defer the definitive summary until an
+		// invocation leaves the structural fingerprint stable.
 		boolean stable = reachedFixpoint(entryFingerprint, fingerprint(program));
-		if (verbose && stable) {
-			log.appendMsg(getName(), tag + ": " + flow.stateIn().size() + " instructions tracked, " +
+		if (stable) {
+			AnalyzerLog.info(this, tag + ": " + flow.stateIn().size() + " instructions tracked, " +
 				refsAdded + " overlay references added/confirmed, " + warnings +
 				" unknown-state warnings, " + violations + " bank-state requirement violations");
 		}
@@ -439,22 +436,17 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// added() and unwinds past this point, so `stable` is never reached and the put()
 		// below never executes on a cancelled run.
 		if (stable) {
-			manageNoMechanismWriteDiagnostic(program, mechanisms, flow, log, verbose);
-			// Only flip the "initial run" Options flag on the run that actually needs to
-			// (mirrors the skip branch's own guard, and for the same reason): it is already
-			// true on every completed run after the first, including a full rerun that a
-			// later real edit forced. AnalyzerRunLog.markCompleted() writes unconditionally
-			// -- Options fires a change event even setting true -> true -- and that write
-			// advances program.getModificationNumber() same as any other mutation. Calling
-			// it here on every stable completion, guarded or not, must still happen BEFORE
-			// the modification-number snapshot below (it is one of this run's own writes),
-			// but calling it UNconditionally would keep bumping the number on every later
-			// completed run for no reason beyond this one write, which is unnecessary once
-			// the flag is already set. Gating on `verbose` keeps it to its one real
-			// transition, exactly like the skip branch above.
-			if (verbose) {
-				AnalyzerRunLog.markCompleted(program, getClass());
-			}
+			manageNoMechanismWriteDiagnostic(program, mechanisms, flow, log);
+			// The snapshot below has to be the LAST of this run's own writes: anything
+			// written after it leaves the stored stamp instantly stale, so the skip gate at
+			// the top of added() misses on the very next invocation. That used to be a live
+			// hazard here -- this block also called AnalyzerRunLog.markCompleted(), an
+			// Options write that advances program.getModificationNumber() even when it sets
+			// true -> true, so it had to be both ordered before this put() AND gated (on the
+			// initial-run `verbose` flag) to stop it bumping the number on every later
+			// completed run. grm-6jfp deleted the initial-run policy and that write with it,
+			// so the only writes a run performs now are its actual analysis edits and the
+			// ordering requirement is trivially met.
 			LAST_COMPLETED.put(program, new RunStamp(program.getModificationNumber(), mapPath));
 		}
 		return true;
@@ -484,8 +476,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * non-switch-site address) so set and retract target the same one.
 	 */
 	private void manageNoMechanismWriteDiagnostic(Program program,
-			List<ConfiguredMechanism> mechanisms, DataflowResult flow, MessageLog log,
-			boolean verbose) {
+			List<ConfiguredMechanism> mechanisms, DataflowResult flow, MessageLog log) {
 		BookmarkManager bm = program.getBookmarkManager();
 		Address at = program.getImageBase();
 		boolean observedWrite =
@@ -506,9 +497,15 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			"annotations were produced. The switch routine may be unreached (e.g. entered " +
 			"only via an indirect/table jump auto-analysis did not disassemble).";
 		bm.setBookmark(at, BookmarkType.WARNING, NO_WRITE_CATEGORY, msg);
-		if (verbose) {
-			log.appendMsg(getName(), getClass().getSimpleName() + ": " + msg);
-		}
+		// info, NOT warn, even though this is a real finding -- the WARNING BOOKMARK set
+		// immediately above is the durable record, and it carries this same text. Routing the
+		// echo through the MessageLog too would pop the analysis dialog on every settled run
+		// of any program that trips this, which is exactly the annoyance grm-olp was filed
+		// about; grm-olp gated this line for that reason and grm-6jfp keeps the decision.
+		// Not hypothetical: db3 trips it (tools/banktest/realrom/expected/db3.dump:27).
+		// THE RULE: when a site already sets a WARNING bookmark carrying the same message,
+		// the log echo is info. Reserve warn for findings with no other durable record.
+		AnalyzerLog.info(this, getClass().getSimpleName() + ": " + msg);
 	}
 
 	// ------------------------------------------------------------------
@@ -538,7 +535,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				}
 			}
 			if (prototype == null) {
-				log.appendMsg(getName(), "no BankSwitchStrategy implementation for strategy '" +
+				AnalyzerLog.warn(this, log, "no BankSwitchStrategy implementation for strategy '" +
 					strategyName + "'; skipping that mechanism");
 				continue;
 			}
@@ -588,7 +585,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				configured.add(new ConfiguredMechanism(instance, effectMask, lsb));
 			}
 			catch (Exception e) {
-				log.appendMsg(getName(), "failed to configure strategy '" + strategyName + "': " +
+				AnalyzerLog.warn(this, log, "failed to configure strategy '" + strategyName + "': " +
 					e.getMessage());
 			}
 		}
@@ -630,7 +627,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 					.findFirst()
 					.orElse(null);
 			if (field == null) {
-				log.appendMsg(getName(), "mechanism '" + strategyName + "' sets unknown state " +
+				AnalyzerLog.warn(this, log, "mechanism '" + strategyName + "' sets unknown state " +
 					"field '" + fieldName + "'; skipping that mechanism");
 				return null;
 			}
@@ -639,7 +636,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		}
 		int widthMask = effectMask >>> lsb;
 		if (widthMask == 0 || (widthMask & (widthMask + 1)) != 0) {
-			log.appendMsg(getName(), "mechanism '" + strategyName + "' sets fields " + sets +
+			AnalyzerLog.warn(this, log, "mechanism '" + strategyName + "' sets fields " + sets +
 				" that are not a contiguous bit run in banking.state; skipping that mechanism");
 			return null;
 		}
@@ -3444,8 +3441,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * switchable bank unknown. Absent -> empty; a malformed value (should not happen -- the
 	 * loader validated it) is logged and ignored, matching the loader-degradation convention.
 	 */
-	private Map<String, Integer> readPlacementOverride(Program program, MessageLog log,
-			boolean verbose) {
+	private Map<String, Integer> readPlacementOverride(Program program, MessageLog log) {
 		String spec = program.getOptions(Program.PROGRAM_INFO)
 				.getString(DescriptorSupport.PLACEMENT_OVERRIDE_PROPERTY, null);
 		if (spec == null || spec.isBlank()) {
@@ -3453,13 +3449,13 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		}
 		try {
 			Map<String, Integer> override = DescriptorSupport.parsePlacementOverride(spec);
-			if (verbose && !override.isEmpty()) {
-				log.appendMsg(getName(), "placement override active: " + override);
+			if (!override.isEmpty()) {
+				AnalyzerLog.info(this, "placement override active: " + override);
 			}
 			return override;
 		}
 		catch (IllegalArgumentException e) {
-			log.appendMsg(getName(),
+			AnalyzerLog.warn(this, log,
 				"ignoring malformed placement override '" + spec + "': " + e.getMessage());
 			return Map.of();
 		}
@@ -3560,8 +3556,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * @return the number of new violation WARNING bookmarks placed
 	 */
 	private int annotateBankRequirementViolations(Program program, Listing listing,
-			DataflowResult flow, BoardModel board, Set<Address> alreadyWarned, MessageLog log,
-			boolean verbose) {
+			DataflowResult flow, BoardModel board, Set<Address> alreadyWarned, MessageLog log) {
 
 		FunctionManager fm = program.getFunctionManager();
 
@@ -3686,11 +3681,9 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			if (exitState == null) {
 				exitState = BankState.unknown();
 			}
-			if (verbose) {
-				log.appendMsg(getName(), "[bank-summary] " + f.getName() + ": modifies " +
-					describeBits(board, mMask) + "; requires on entry " + describeBits(board, rMask) +
-					"; exit " + exitState);
-			}
+			AnalyzerLog.debug(this, "[bank-summary] " + f.getName() + ": modifies " +
+				describeBits(board, mMask) + "; requires on entry " + describeBits(board, rMask) +
+				"; exit " + exitState);
 		}
 
 		// --- violation scan: a direct call site whose caller in-state is missing bits the
@@ -3925,7 +3918,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			// rather than a log line. This branch stays as the belt-and-braces "retarget
 			// nothing" half of that ruling, and still covers a descriptor/loader mismatch that
 			// no recovered value is to blame for.
-			log.appendMsg(getName(), "No overlay address space named '" + targetSpaceName +
+			AnalyzerLog.warn(this, log, "No overlay address space named '" + targetSpaceName +
 				"'; cannot retarget reference from " + instr.getMinAddress());
 			return 0;
 		}
@@ -3966,7 +3959,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			// produces this, and it must be a deliberate act, not a side effect of retargeting.
 			Instruction occupant = program.getListing().getInstructionContaining(overlayAddr);
 			if (occupant != null) {
-				log.appendMsg(getName(), "Reference from " + instr.getMinAddress() + " targets " +
+				AnalyzerLog.warn(this, log, "Reference from " + instr.getMinAddress() + " targets " +
 					overlayAddr + ", which is interior to the instruction at " +
 					occupant.getMinAddress() + "; not disassembling (run FixSkipInstructions.java " +
 					"if this is a skip-idiom entry point)");
@@ -4030,14 +4023,13 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * becomes worthwhile.
 	 */
 	private void stampContextRegister(Program program, JsonObject banking,
-			Map<Address, BankState> stateIn, Listing listing, int mask, MessageLog log,
-			boolean verbose) {
+			Map<Address, BankState> stateIn, Listing listing, int mask, MessageLog log) {
 		if (!banking.has("context_register")) {
 			return;
 		}
 		Register register = program.getRegister(banking.get("context_register").getAsString());
 		if (register == null) {
-			log.appendMsg(getName(), "context_register '" +
+			AnalyzerLog.warn(this, log, "context_register '" +
 				banking.get("context_register").getAsString() +
 				"' is not a register declared by this language; context stamping skipped");
 			return;
@@ -4058,13 +4050,13 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				stamped++;
 			}
 			catch (Exception e) {
-				log.appendMsg(getName(),
+				AnalyzerLog.warn(this, log,
 					"context stamp failed at " + entry.getKey() + ": " + e.getMessage());
 				return;
 			}
 		}
-		if (verbose && stamped > 0) {
-			log.appendMsg(getName(),
+		if (stamped > 0) {
+			AnalyzerLog.info(this,
 				"stamped " + register.getName() + " over " + stamped + " instructions");
 		}
 	}

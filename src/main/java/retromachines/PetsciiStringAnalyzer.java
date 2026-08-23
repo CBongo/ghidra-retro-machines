@@ -156,11 +156,7 @@ public class PetsciiStringAnalyzer extends AbstractAnalyzer {
 	@Override
 	public boolean added(Program program, AddressSetView set, TaskMonitor monitor, MessageLog log)
 			throws CancelledException {
-		boolean completed = analyze(program, set, monitor, log);
-		if (completed) {
-			AnalyzerRunLog.markCompleted(program, getClass());
-		}
-		return completed;
+		return analyze(program, set, monitor, log);
 	}
 
 	private boolean analyze(Program program, AddressSetView set, TaskMonitor monitor,
@@ -170,15 +166,13 @@ public class PetsciiStringAnalyzer extends AbstractAnalyzer {
 			config = textConfig(program);
 		}
 		catch (IOException | RuntimeException e) {
-			log.appendMsg(getName(), "Failed to read PETSCII text descriptor policy: " +
+			AnalyzerLog.warn(this, log, "Failed to read PETSCII text descriptor policy: " +
 				e.getMessage());
 			return false;
 		}
 		if (config == null) {
 			return true;
 		}
-
-		boolean verbose = AnalyzerRunLog.isInitialRun(program, getClass());
 
 		CharSetRecognizer recognizer = new PetsciiCharSetRecognizer(config.variant());
 		StringSearcher searcher =
@@ -199,10 +193,8 @@ public class PetsciiStringAnalyzer extends AbstractAnalyzer {
 		// memory (I/O, uninitialized ROM windows) is never scanned.
 		searcher.search(set, callback, true, monitor);
 
-		if (verbose) {
-			log.appendMsg(getName(),
-				NAME + " running: applied " + appliedCount[0] + " PETSCII string(s)");
-		}
+		AnalyzerLog.info(this,
+			NAME + " running: applied " + appliedCount[0] + " PETSCII string(s)");
 		return true;
 	}
 
@@ -250,7 +242,7 @@ public class PetsciiStringAnalyzer extends AbstractAnalyzer {
 			return true;
 		}
 		catch (Exception e) {
-			log.appendMsg(getName(),
+			AnalyzerLog.warn(this, log,
 				"Failed to type PETSCII string at 0x" + start + ": " + e.getMessage());
 			return false;
 		}
