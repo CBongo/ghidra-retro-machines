@@ -50,7 +50,7 @@ REALROM count instrs.inOverlay 0
 REALROM count bankComments 12
 REALROM count warnings 28
 REALROM count symbols 18
-REALROM sample.bankcomment c003 bank -> mirroring=0,prg_mode=3,prg_bank=2 via FUN_cea7 [switch-value flow]
+REALROM sample.bankcomment c003 bank -> mirroring=0,prg_mode=3,prg_bank=2? via FUN_cea7 [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment c32b bank -> mirroring=3,prg_mode=3,prg_bank=0? [known: mirroring.0=1,mirroring.1=1,prg_mode.0=1,prg_mode.1=1; assumed from initial: prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
 REALROM sample.bankcomment c330 bank -> mirroring=3,prg_mode=3,prg_bank=0? [known: mirroring.0=1,mirroring.1=1,prg_mode.0=1,prg_mode.1=1; assumed from initial: prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
 REALROM sample.bankcomment c334 bank -> mirroring=3,prg_mode=3,prg_bank=0? [known: mirroring.0=1,mirroring.1=1,prg_mode.0=1,prg_mode.1=1; assumed from initial: prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
@@ -60,7 +60,7 @@ REALROM sample.bankcomment c340 bank -> mirroring=3,prg_mode=3,prg_bank=7 [switc
 REALROM sample.bankcomment c354 bank -> mirroring=3,prg_mode=3,prg_bank=7 via FUN_ce56 [switch-value flow]
 REALROM sample.bankcomment c359 bank -> mirroring=3,prg_mode=3,prg_bank=1 via FUN_cea5 [switch-value flow]
 REALROM sample.bankcomment cec7 bank -> mirroring=0,prg_mode=3,prg_bank=0? via FUN_cea7 [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
-REALROM sample.bankcomment cedb bank -> mirroring=0,prg_mode=3,prg_bank=0 via FUN_cea7 [switch-value flow]
+REALROM sample.bankcomment cedb bank -> mirroring=0,prg_mode=3,prg_bank=0? via FUN_cea7 [known: prg_bank.0=0,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment ffdd bank -> mirroring=0,prg_mode=3,prg_bank=31? via FUN_c310 [known: prg_bank.0=1,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=1; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.warn c31b [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn c31f [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)

@@ -87,8 +87,8 @@ REALROM sample.bankcomment c1db bank -> mirroring=0,prg_mode=3,prg_bank=13? via 
 REALROM sample.bankcomment c1e4 bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_f331 [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment d89c bank -> mirroring=0,prg_mode=3,prg_bank=5? via FUN_f331 [known: prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment d8de bank -> mirroring=0,prg_mode=3,prg_bank=1? via FUN_f331 [known: prg_bank.0=1,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
-REALROM sample.bankcomment de2f bank -> mirroring=0,prg_mode=3,prg_bank=0 via FUN_f313 [switch-value flow]
-REALROM sample.bankcomment f1e9 bank -> mirroring=0,prg_mode=3,prg_bank=14 via FUN_f333 [switch-value flow]
+REALROM sample.bankcomment de2f bank -> mirroring=0,prg_mode=3,prg_bank=0? via FUN_f313 [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
+REALROM sample.bankcomment f1e9 bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_f333 [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment f505 bank -> mirroring=0,prg_mode=3,prg_bank=0? via FUN_f313 [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
 REALROM sample.ref 8009 -> W8000_M3_B14::801d CONDITIONAL_JUMP primary=true
 REALROM sample.ref 800f -> W8000_M3_B14::8036 CONDITIONAL_JUMP primary=true

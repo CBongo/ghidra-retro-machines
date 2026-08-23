@@ -50,10 +50,10 @@ REALROM count instrs.inOverlay 8
 REALROM count bankComments 4
 REALROM count warnings 23
 REALROM count symbols 18
-REALROM sample.bankcomment c081 bank -> mirroring=0,prg_mode=3,prg_bank=0 via FUN_c183 [switch-value flow]
+REALROM sample.bankcomment c081 bank -> mirroring=0,prg_mode=3,prg_bank=0? via FUN_c183 [known: prg_bank.0=0,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment c0ed bank -> mirroring=0,prg_mode=3,prg_bank=0? via FUN_c187 [known: prg_bank.0=0,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
-REALROM sample.bankcomment c10a bank -> mirroring=0,prg_mode=3,prg_bank=0 via FUN_c187 [switch-value flow]
-REALROM sample.bankcomment c4de bank -> mirroring=0,prg_mode=3,prg_bank=4 via FUN_c183 [switch-value flow]
+REALROM sample.bankcomment c10a bank -> mirroring=0,prg_mode=3,prg_bank=0? via FUN_c187 [known: prg_bank.0=0,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
+REALROM sample.bankcomment c4de bank -> mirroring=0,prg_mode=3,prg_bank=4? via FUN_c183 [known: prg_bank.0=0,prg_bank.1=0,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.ref c4e1 -> W8000_M3_B4::8326 UNCONDITIONAL_CALL primary=true
 REALROM sample.warn c0f3 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c185 whose bank argument could not be recovered at this call site
 REALROM sample.warn c110 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c185 whose bank argument could not be recovered at this call site

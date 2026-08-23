@@ -28,12 +28,12 @@ REALROM count warnings 22
 REALROM count symbols 18
 REALROM sample.bankcomment 8011 bank -> mirroring=0,prg_mode=0,prg_bank=0 via caseD_1d [switch-value flow]
 REALROM sample.bankcomment 801b bank -> mirroring=0,prg_mode=0,prg_bank=0 via FUN_ffc5 [switch-value flow]
-REALROM sample.bankcomment 9327 bank -> mirroring=0,prg_mode=0,prg_bank=0 via caseD_1d [switch-value flow]
-REALROM sample.bankcomment 9515 bank -> mirroring=1,prg_mode=0,prg_bank=0 via caseD_1d [switch-value flow]
-REALROM sample.bankcomment 9a4b bank -> mirroring=0,prg_mode=0,prg_bank=0 via caseD_1d [switch-value flow]
-REALROM sample.bankcomment 9e13 bank -> mirroring=0,prg_mode=0,prg_bank=0 via caseD_1d [switch-value flow]
-REALROM sample.bankcomment a128 bank -> mirroring=0,prg_mode=0,prg_bank=0 via caseD_1d [switch-value flow]
-REALROM sample.bankcomment a130 bank -> mirroring=1,prg_mode=0,prg_bank=0 via caseD_1d [switch-value flow]
+REALROM sample.bankcomment 9327 bank -> mirroring=0,prg_mode=0,prg_bank=0? via caseD_1d [known: mirroring.0=0,mirroring.1=0,prg_mode.0=0,prg_mode.1=0; assumed from initial: prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
+REALROM sample.bankcomment 9515 bank -> mirroring=1,prg_mode=0,prg_bank=0? via caseD_1d [known: mirroring.0=1,mirroring.1=0,prg_mode.0=0,prg_mode.1=0; assumed from initial: prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
+REALROM sample.bankcomment 9a4b bank -> mirroring=0,prg_mode=0,prg_bank=0? via caseD_1d [known: mirroring.0=0,mirroring.1=0,prg_mode.0=0,prg_mode.1=0; assumed from initial: prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
+REALROM sample.bankcomment 9e13 bank -> mirroring=0,prg_mode=0,prg_bank=0? via caseD_1d [known: mirroring.0=0,mirroring.1=0,prg_mode.0=0,prg_mode.1=0; assumed from initial: prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
+REALROM sample.bankcomment a128 bank -> mirroring=0,prg_mode=0,prg_bank=0? via caseD_1d [known: mirroring.0=0,mirroring.1=0,prg_mode.0=0,prg_mode.1=0; assumed from initial: prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
+REALROM sample.bankcomment a130 bank -> mirroring=1,prg_mode=0,prg_bank=0? via caseD_1d [known: mirroring.0=1,mirroring.1=0,prg_mode.0=0,prg_mode.1=0; assumed from initial: prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
 REALROM sample.bankcomment ff85 bank -> mirroring=0,prg_mode=3,prg_bank=0 [switch-value flow]
 REALROM sample.bankcomment ffea bank -> mirroring=0,prg_mode=3,prg_bank=0 via FUN_ff83 [switch-value flow]
 REALROM sample.ref 801b -> W8000_M0_B0::ffc5 UNCONDITIONAL_CALL primary=true
