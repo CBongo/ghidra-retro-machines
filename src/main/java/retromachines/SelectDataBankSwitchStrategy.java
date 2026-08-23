@@ -152,6 +152,74 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 		}
 	};
 
+	/**
+	 * <b>No site of this mechanism imposes a bank-known-on-entry requirement that the
+	 * requirement derivation is able to express</b> (grm-vgod). This is the same defect
+	 * grm-mej.2 §2d fixed on {@link MemoryLatchBankSwitchStrategy}, recurring here because
+	 * this strategy inherits {@link #cacheable()}{@code == false} from the interface (the
+	 * class javadoc above explains why it must) and so inherited
+	 * {@code effectDependsOnPriorState() == !cacheable() == true} with it -- unconditionally,
+	 * at every MMC3 switch site.
+	 * <p>
+	 * {@code BoardBankAnalyzer.annotateBankRequirementViolations} derives the required mask
+	 * from the site's own {@code effectMask}. Take the three shapes {@link #computeSwitch}
+	 * dispatches to and ask, of each, whether knowing those {@code effectMask} bits on entry
+	 * would have changed the outcome:
+	 * <ul>
+	 * <li>{@link #computeSelectWrite} deposits the recovered byte into {@code selectField}
+	 *     (and {@code modeField}). Both are a pure function of the byte written; neither
+	 *     consults its own prior value. <b>No.</b></li>
+	 * <li>{@link #computeDataWrite} with a KNOWN select and a tracked target deposits the
+	 *     recovered byte into that target field alone. Also a pure function of the byte.
+	 *     When it comes out unknown it is because {@code resolveStoredValue} could not pin
+	 *     the DATA down -- the unresolved-value case, not a missing state bit. <b>No.</b></li>
+	 * <li>{@link #computeDataWrite} with an UNKNOWN select poisons every target. This one
+	 *     genuinely does depend on prior state -- but on {@code selectField}, which is never
+	 *     in a data write's {@code effectMask}. Knowing {@code r6}/{@code r7} on entry would
+	 *     not help; they get poisoned regardless. <b>No</b> -- and see the caveat below.</li>
+	 * </ul>
+	 * The interface's own stated condition for overriding to {@code false} is that "the
+	 * mechanism's registers are genuinely write-only and never resolved back to tracked
+	 * state". That is this mechanism exactly, and {@link #hooks}' {@code resolveLoad} above
+	 * already says so in as many words: it returns {@code null} at every {@code
+	 * resolvedTarget} because nothing reads an MMC3 select/data register back.
+	 * <p>
+	 * <b>Measured</b> (grm-vgod, 2026-08-23), by a rebuilt A/B over all 31 rows of both
+	 * real-ROM manifests: this removed 29 violation WARNINGs and moved nothing else -- 17 on
+	 * smb3, 10 on rcransom, 2 on smb2, and zero lines of any other kind on any row. That is
+	 * the entire population of the class in the corpus. Not one bankComment, reference,
+	 * instruction or symbol moved anywhere, which is the expected shape: this predicate is
+	 * read at exactly one place ({@code BoardBankAnalyzer.annotateBankRequirementViolations}),
+	 * in phase 3, never inside the dataflow fixpoint.
+	 * <p>
+	 * Twenty-eight of the 29 named {@code r6,r7} -- target registers a data write DEPOSITS
+	 * into rather than reads -- and every site involved had a KNOWN select, making them the
+	 * second bullet above: purely spurious, the unresolved-DATA case. The 29th is smb3's
+	 * {@code 89c2}, "requires select,prg_mode,r6,r7", which comes from an unresolvable SELECT
+	 * write and so falls under the first bullet: {@code computeSelectWrite} deposits the
+	 * written byte into {@code selectField}/{@code modeField} without consulting either's
+	 * prior value, so its failure is likewise about a value it could not recover, not about
+	 * state it needed. Same verdict, different route -- worth stating because it is the one
+	 * line that does mention {@code select}, and it is NOT the third bullet.
+	 * <p>
+	 * <b>The caveat, so the third bullet is not silently lost:</b> an unknown-select data
+	 * write IS a real entry requirement, on {@code selectField}. It cannot be reported through
+	 * this predicate, whose mask comes from {@code effectMask}, so it needs a diagnostic of
+	 * its own rather than a different answer here -- filed as grm-vgod's follow-up. No real
+	 * ROM in either manifest currently exhibits it; nesmmc3test2's CallerB ($E128) does, and
+	 * is already masked by the helper-argument warning there (grm-mlp2).
+	 * <p>
+	 * <b>Guarded by</b> nesmmc3test2's G11/G12/G13 (CallerH/Worker/H4, $E2C0-$E2D6), the MMC3
+	 * analogue of nesmirrortest's M8. G11 was confirmed to FAIL on the pre-fix strategy with
+	 * "call to FUN_e2d0 requires r6 known on entry" -- two earlier drafts of that fixture
+	 * passed on unfixed code for two different reasons, so do not weaken its shape without
+	 * re-running that check; the criteria comments record both traps.
+	 */
+	@Override
+	public boolean effectDependsOnPriorState() {
+		return false;
+	}
+
 	@Override
 	public BankState computeSwitch(Program program, Instruction instr, BankState inState) {
 		Long offset = writesInRange(instr);

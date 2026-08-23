@@ -1396,8 +1396,9 @@ def make_prg_mmc3_2():
     put(0xE00C, [0x20, 0x20, 0xE2])        # JSR $E220 (CallerE)
     put(0xE00F, [0x20, 0x40, 0xE2])        # JSR $E240 (CallerF)
     put(0xE012, [0x20, 0x80, 0xE2])        # JSR $E280 (CallerG -- moved from $E260)
-    put(0xE015, [0x4C, 0x15, 0xE0])        # JMP $E015 (idle loop)
-    put(0xE018, [0x40])                     # RTI (NMI/IRQ handler)
+    put(0xE015, [0x20, 0xC0, 0xE2])        # JSR $E2C0 (CallerH -- grm-vgod guard)
+    put(0xE018, [0x4C, 0x18, 0xE0])        # JMP $E018 (idle loop -- moved from $E015)
+    put(0xE01B, [0x40])                     # RTI (NMI/IRQ handler -- moved from $E018)
 
     # CallerA ($E100): establishes select=6 itself before calling the data-only helper
     # -- requiresOnEntry(H) is satisfied here, so no WARNING at CallerA's JSR. bead
@@ -1560,10 +1561,86 @@ def make_prg_mmc3_2():
     put(0xE28A, [0x20, 0x60, 0xE2])        # JSR $E260 (H3) -> r7=7, never r7=5
     put(0xE28D, [0x60])                     # RTS
 
+    # ------------------------------------------------------------------
+    # grm-vgod: the MMC3 analogue of nesmirrortest's M8 guard.
+    #
+    # SelectDataBankSwitchStrategy inherits cacheable() == false and, before grm-vgod,
+    # inherited effectDependsOnPriorState() == !cacheable() == true with it -- so EVERY
+    # MMC3 switch site that came out unknown for ANY reason declared a bank-known-on-entry
+    # requirement, propagated it up the call graph, and warned at its callers. On rcransom
+    # and smb2 that produced 12 warnings, all of them naming r6,r7 and none naming select,
+    # which is the signature of the required mask being read off the wrong field: a data
+    # write's effectMask holds its TARGET registers, while the only prior state such a
+    # write actually consumes is selectField, which is never in that mask.
+    #
+    # H4/CallerH reproduce the shape in the synthetic tier so the fix cannot silently
+    # regress. Note the deliberate mirroring of M8's recipe: H4's LAST switch is a plain,
+    # always-resolvable immediate, which keeps CallerH's JSR out of the ordinary
+    # "helper argument could not be recovered" warning path. That matters because
+    # BoardBankAnalyzer.annotateBankRequirementViolations skips any call site already
+    # carrying a warning (alreadyWarned, :3703) -- without the resolvable tail the
+    # helper-argument warning would land first and MASK the very violation this guards
+    # against, exactly as it does at CallerB's $E128 (see grm-mlp2).
+    # ------------------------------------------------------------------
+
+    # H4 ($E2A0): two data writes under KNOWN selects, taking no caller argument.
+    #   - the first is fed by the same opaque load CallerB uses, so its stored value is
+    #     genuinely unrecoverable and r6 comes out unknown. Pre-grm-vgod this site set
+    #     ownRequires(H4) = r6 -- not because it needed r6 on entry (knowing r6 would not
+    #     have helped; the write overwrites it regardless) but merely because it failed.
+    #   - the second is a plain immediate, so r7 resolves.
+    put(0xE2A0, [0xA9, 0x06])              # LDA #$06 (select R6)
+    put(0xE2A2, [0x8D, 0x00, 0x80])        # STA $8000 (select=6, prg_mode=0 known)
+    put(0xE2A5, [0xAD, 0x00, 0xE2])        # LDA $E200 (unresolvable -- opaque load)
+    put(0xE2A8, [0x8D, 0x01, 0x80])        # STA $8001 (data write -> r6 UNKNOWN)
+    put(0xE2AB, [0xA9, 0x07])              # LDA #$07 (select R7)
+    put(0xE2AD, [0x8D, 0x00, 0x80])        # STA $8000 (select=7, prg_mode=0 known)
+    put(0xE2B0, [0xA9, 0x02])              # LDA #$02 (data byte -- plain immediate)
+    put(0xE2B2, [0x8D, 0x01, 0x80])        # STA $8001 (data write -> r7=2, fully known)
+    put(0xE2B5, [0x60])                     # RTS
+
+    # Worker ($E2D0): an ORDINARY function that reaches the failing switch through H4
+    # rather than performing it inline. This indirection is the whole point of the shape,
+    # not incidental structure -- it is what rcransom actually looks like, and it is what
+    # keeps CallerH's JSR testable:
+    #   - FAITHFUL. Every one of the 12 real-ROM violations landed on a call to a plain
+    #     function (FUN_fa54, FUN_e30a, FUN_f587, ...) that CONTAINS or transitively
+    #     reaches the failing switch. None landed on a direct call to the helper itself,
+    #     because those sites are already claimed by the helper-argument warning.
+    #   - TESTABLE. requiresOnEntry propagates along the whole direct-call graph
+    #     (BoardBankAnalyzer:3650), so the requirement reaches CallerH through Worker --
+    #     but the helper-argument warning fires only at DIRECT calls to a helper, so it
+    #     lands on Worker's own JSR at $E2D0 and leaves $E2C0 clean. Without the
+    #     indirection the two collide at one address and alreadyWarned (:3703) hides the
+    #     violation, which is what G12 exists to detect and what an earlier draft of this
+    #     fixture actually did.
+    # The trailing JSR to Harmless keeps Worker from being recognized as a call-edge
+    # pass-through wrapper for H4 (bead grm-2dr increment 2, nesrelaytest's shape) -- a
+    # bare "JSR H4 / RTS" would be exactly that, and would re-attribute CallerH's call to
+    # the helper, putting the collision back.
+    put(0xE2D0, [0x20, 0xA0, 0xE2])        # JSR $E2A0 (H4) -- takes the helper-arg warning
+    put(0xE2D3, [0x20, 0x30, 0xE2])        # JSR $E230 (Harmless) -- not a relay wrapper
+    put(0xE2D6, [0x60])                     # RTS
+
+    # CallerH ($E2C0): calls Worker with r6 UNKNOWN at the call site. It has to poison r6
+    # ITSELF, with the same select-then-opaque-load idiom H4 uses -- an earlier draft
+    # relied on CallerB's poison still standing here and the guard came out VACUOUS,
+    # passing on pre-fix code as well as post-fix. It does not stand: r6 reads back as a
+    # known 0 by this point in RESET (see G7/G10's own fully-known "r6=0" comments), and
+    # the violation scan's `missing = required & ~callerIn.knownMask()`
+    # (BoardBankAnalyzer:3710) then clears the whole mask before it can warn. The
+    # requirement must be unsatisfied AT THE CALL SITE, not merely derivable in the callee.
+    put(0xE2C0, [0xA9, 0x06])              # LDA #$06 (select R6)
+    put(0xE2C2, [0x8D, 0x00, 0x80])        # STA $8000 (select=6, prg_mode=0 known)
+    put(0xE2C5, [0xAD, 0x00, 0xE2])        # LDA $E200 (unresolvable -- opaque load)
+    put(0xE2C8, [0x8D, 0x01, 0x80])        # STA $8001 (data write -> r6 UNKNOWN here)
+    put(0xE2CB, [0x20, 0xD0, 0xE2])        # JSR $E2D0 (Worker) -- THE GUARDED SITE
+    put(0xE2CE, [0x60])                     # RTS
+
     # Vector table.
-    put(0xFFFA, [0x18, 0xE0])  # NMI   -> $E018 (RTI)
+    put(0xFFFA, [0x1B, 0xE0])  # NMI   -> $E01B (RTI)
     put(0xFFFC, [0x00, 0xE0])  # RESET -> $E000
-    put(0xFFFE, [0x18, 0xE0])  # IRQ   -> $E018 (RTI)
+    put(0xFFFE, [0x1B, 0xE0])  # IRQ   -> $E01B (RTI)
 
     return bytes(prg)
 
@@ -3225,8 +3302,10 @@ def main():
     assert prgm3b[0xE00C] == 0x20 and (prgm3b[0xE00D] | (prgm3b[0xE00E] << 8)) == 0xE220
     assert prgm3b[0xE00F] == 0x20 and (prgm3b[0xE010] | (prgm3b[0xE011] << 8)) == 0xE240
     assert prgm3b[0xE012] == 0x20 and (prgm3b[0xE013] | (prgm3b[0xE014] << 8)) == 0xE280
-    assert prgm3b[0xE015] == 0x4C and (prgm3b[0xE016] | (prgm3b[0xE017] << 8)) == 0xE015
-    assert prgm3b[0xE018] == 0x40  # RTI (NMI/IRQ handler)
+    # grm-vgod: CallerH dispatch (moved the idle loop/RTI down another three bytes).
+    assert prgm3b[0xE015] == 0x20 and (prgm3b[0xE016] | (prgm3b[0xE017] << 8)) == 0xE2C0
+    assert prgm3b[0xE018] == 0x4C and (prgm3b[0xE019] | (prgm3b[0xE01A] << 8)) == 0xE018
+    assert prgm3b[0xE01B] == 0x40  # RTI (NMI/IRQ handler)
 
     # H2 ($E210): the smb3 FUN_ffc2 shape -- constant select write, data from $0720.
     assert prgm3b[0xE210] == 0xA9 and prgm3b[0xE211] == 0x47  # LDA #$47
@@ -3278,7 +3357,37 @@ def main():
     assert prgm3b[0xE28A] == 0x20 and (prgm3b[0xE28B] | (prgm3b[0xE28C] << 8)) == 0xE260
     assert prgm3b[0xE28D] == 0x60  # CallerG RTS
 
-    _assert_vectors(prgm3b, "nesmmc3test2", handler=0xE018, reset=0xE000)
+    # H4 ($E2A0) -- grm-vgod: r6 from an opaque load (unrecoverable), then r7 from a plain
+    # immediate. The trailing IMMEDIATE is load-bearing, not decoration: it keeps CallerH's
+    # JSR out of the "helper argument could not be recovered" path, without which the
+    # alreadyWarned mask would hide the very violation G11 guards against.
+    assert prgm3b[0xE2A0] == 0xA9 and prgm3b[0xE2A1] == 0x06  # LDA #$06 (select R6)
+    assert prgm3b[0xE2A2] == 0x8D and (prgm3b[0xE2A3] | (prgm3b[0xE2A4] << 8)) == 0x8000
+    assert prgm3b[0xE2A5] == 0xAD and (prgm3b[0xE2A6] | (prgm3b[0xE2A7] << 8)) == 0xE200
+    assert prgm3b[0xE2A8] == 0x8D and (prgm3b[0xE2A9] | (prgm3b[0xE2AA] << 8)) == 0x8001
+    assert prgm3b[0xE2AB] == 0xA9 and prgm3b[0xE2AC] == 0x07  # LDA #$07 (select R7)
+    assert prgm3b[0xE2AD] == 0x8D and (prgm3b[0xE2AE] | (prgm3b[0xE2AF] << 8)) == 0x8000
+    assert prgm3b[0xE2B0] == 0xA9 and prgm3b[0xE2B1] == 0x02  # LDA #$02 (plain immediate)
+    assert prgm3b[0xE2B2] == 0x8D and (prgm3b[0xE2B3] | (prgm3b[0xE2B4] << 8)) == 0x8001
+    assert prgm3b[0xE2B5] == 0x60  # H4 RTS
+
+    # Worker ($E2D0) -- grm-vgod: reaches H4 by a call, plus a second call so it is not a
+    # call-edge pass-through wrapper. Both are load-bearing; see the generator comment.
+    assert prgm3b[0xE2D0] == 0x20 and (prgm3b[0xE2D1] | (prgm3b[0xE2D2] << 8)) == 0xE2A0
+    assert prgm3b[0xE2D3] == 0x20 and (prgm3b[0xE2D4] | (prgm3b[0xE2D5] << 8)) == 0xE230
+    assert prgm3b[0xE2D6] == 0x60  # Worker RTS
+
+    # CallerH ($E2C0) -- grm-vgod: calls Worker with r6 unknown on entry (CallerB poisoned
+    # it and nothing since re-established it), which is what makes the pre-fix violation's
+    # `missing` mask non-empty.
+    assert prgm3b[0xE2C0] == 0xA9 and prgm3b[0xE2C1] == 0x06  # LDA #$06 (select R6)
+    assert prgm3b[0xE2C2] == 0x8D and (prgm3b[0xE2C3] | (prgm3b[0xE2C4] << 8)) == 0x8000
+    assert prgm3b[0xE2C5] == 0xAD and (prgm3b[0xE2C6] | (prgm3b[0xE2C7] << 8)) == 0xE200
+    assert prgm3b[0xE2C8] == 0x8D and (prgm3b[0xE2C9] | (prgm3b[0xE2CA] << 8)) == 0x8001
+    assert prgm3b[0xE2CB] == 0x20 and (prgm3b[0xE2CC] | (prgm3b[0xE2CD] << 8)) == 0xE2D0
+    assert prgm3b[0xE2CE] == 0x60  # CallerH RTS
+
+    _assert_vectors(prgm3b, "nesmmc3test2", handler=0xE01B, reset=0xE000)
 
     _write_rom(outdir, "nesmmc3test2.nes", prgm3b, mapper=MAPPER_MMC3)
 

@@ -1,4 +1,4 @@
-IDENTITY prg:464df438253f6b29a062a23c2c16e40295329a14688fbe82a9db987ebb7f0009 file:534d7d365c700c57dad5691b61bdfbf06504491ec8ade12f2769a8fcedcc9c5d
+IDENTITY prg:dfb21c22117d25cfd7274957826d9658a0861d4ee73836f8b4c56b714acd413e file:0488c411f710f68ddf665531c52a9b7d21357d33b1d5eb004b526b9d773315fe
 BLOCK APU_IO 4000-401f overlay=false
 BLOCK PPU_REGS 2000-2007 overlay=false
 BLOCK PRG_RAM 6000-7fff overlay=false
@@ -51,10 +51,18 @@ COMMENT e265 bank -> select=7,prg_mode=1,r6=0,r7=1 [switch-value flow]
 COMMENT e26b bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0; assumed from initial: r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 COMMENT e282 bank -> select=7,prg_mode=1,r6=0,r7=1 [switch-value flow]
 COMMENT e28a bank -> select=7,prg_mode=1,r6=0,r7=7 via FUN_e260 [switch-value flow]
+COMMENT e2a2 bank -> select=6,prg_mode=0,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=1,prg_mode=0,r7.0=1,r7.1=0,r7.2=0,r7.3=0,r7.4=0,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+COMMENT e2a8 bank -> select=6,prg_mode=0,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=1,prg_mode=0,r7.0=1,r7.1=0,r7.2=0,r7.3=0,r7.4=0,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+COMMENT e2ad bank -> select=7,prg_mode=0,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=0,r7.0=1,r7.1=0,r7.2=0,r7.3=0,r7.4=0,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+COMMENT e2b2 bank -> select=7,prg_mode=0,r6=0,r7=2? [known: select.0=1,select.1=1,select.2=1,prg_mode=0,r7.0=0,r7.1=1,r7.2=0,r7.3=0,r7.4=0,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+COMMENT e2c2 bank -> select=6,prg_mode=0,r6=0,r7=1 [switch-value flow]
+COMMENT e2c8 bank -> select=6,prg_mode=0,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=1,prg_mode=0,r7.0=1,r7.1=0,r7.2=0,r7.3=0,r7.4=0,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
 BOOKMARK Warning e003
+BOOKMARK Warning e015
 BOOKMARK Warning e128
 BOOKMARK Warning e140
 BOOKMARK Warning e24d
+BOOKMARK Warning e2d0
 SYMBOL 0720 bank_shadow_0720 ANALYSIS primary=true
 SYMBOL 2000 PPUCTRL IMPORTED primary=true
 SYMBOL 2001 PPUMASK IMPORTED primary=true
@@ -69,8 +77,8 @@ SYMBOL 4015 SND_CHN IMPORTED primary=true
 SYMBOL 4016 JOY1 IMPORTED primary=true
 SYMBOL 4017 JOY2 IMPORTED primary=true
 SYMBOL e000 RESET IMPORTED primary=true
-SYMBOL e018 IRQ IMPORTED primary=false
-SYMBOL e018 NMI IMPORTED primary=true
+SYMBOL e01b IRQ IMPORTED primary=false
+SYMBOL e01b NMI IMPORTED primary=true
 SYMBOL fffa NMI_VEC IMPORTED primary=true
 SYMBOL fffc RESET_VEC IMPORTED primary=true
 SYMBOL fffe IRQ_VEC IMPORTED primary=true

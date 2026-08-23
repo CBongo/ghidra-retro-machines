@@ -3314,7 +3314,7 @@ public class VerifyBankTest extends GhidraScript {
 		// satisfied there, so a violation WARNING bookmark lands on that call site.
 		criterion("G2", hasWarningBookmark(0xE128),
 			"requirement-violation WARNING at CallerB's JSR $E140 (E128) -- select " +
-				"unknown there");
+				"unknown there: warning=\"" + warningBookmarkText(0xE128) + "\"");
 
 		// G3: the poisoning load/select-write pair itself does not ALSO trip the
 		// pre-existing "genuinely undeterminable switch value" WARNING path (that would
@@ -3426,6 +3426,59 @@ public class VerifyBankTest extends GhidraScript {
 			"a helper that overwrites its own argument cell reports ITS OWN $47 (r7=7), not " +
 				"the caller's dead $05 (r7=5), at CallerG's JSR (E28A): warning=" +
 				hasWarningBookmark(0xE28A) + " comment=\"" + c10 + "\"");
+
+		// ------------------------------------------------------------------
+		// G11/G12 (bead grm-vgod): the MMC3 analogue of nesmirrortest's M8 guard.
+		// ------------------------------------------------------------------
+
+		// G11: THE GUARD. H4 ($E2A0) writes r6 from an opaque load (unrecoverable value)
+		// and then r7 from a plain immediate. Worker ($E2D0) is an ordinary function that
+		// reaches H4 by a call, and CallerH ($E2C0) calls Worker with r6 unknown on entry
+		// -- CallerB poisoned it and nothing since re-established it. That two-step
+		// topology is rcransom's own: all 12 real-ROM violations landed on calls to plain
+		// functions reaching a failing switch, never on direct calls to the helper. Before
+		// grm-vgod, SelectDataBankSwitchStrategy inherited effectDependsOnPriorState() ==
+		// !cacheable() == true, so H4's FAILED r6 write declared a bank-known-on-entry
+		// requirement it never had (knowing r6 on entry would not have helped -- the write
+		// overwrites r6 regardless) and warned here. That is the same conflation grm-mej.2
+		// sec 2d fixed on MemoryLatchBankSwitchStrategy, and it produced all 12 of the
+		// requirement-violation warnings on the rcransom and smb2 real-ROM rows -- every
+		// one of which named r6,r7 and none of which named select, the signature of the
+		// mask being read off a field the write does not consume.
+		criterion("G11", !warningBookmarkText(0xE2CB).contains("requirement violated"),
+			"no spurious bank-state requirement violation at CallerH's JSR $E2D0 (E2CB), " +
+				"whose callee's r6 write fails for want of a VALUE, not of entry state: " +
+				"warning=\"" + warningBookmarkText(0xE2CB) + "\"");
+
+		// G12: and load-bearing -- G11 must not pass merely because the site is masked.
+		// annotateBankRequirementViolations skips any call site that already carries a
+		// warning (alreadyWarned, BoardBankAnalyzer:3703), so a call site in the ordinary
+		// "helper argument could not be recovered" path would satisfy G11 vacuously no
+		// matter what the requirement derivation did -- which is exactly how CallerB's
+		// $E128 stopped testing anything (grm-mlp2). Routing through Worker keeps this
+		// call out of that path (the helper-argument warning lands on Worker's own JSR at
+		// $E2D0 instead), so the site must carry NO warning at all; if a warning ever
+		// appears here, G11 has stopped being a test and this says so. This is not
+		// hypothetical: the first draft of this fixture had CallerH call H4 directly, and
+		// G12 caught G11 passing vacuously on the helper-argument warning.
+		criterion("G12", !hasWarningBookmark(0xE2CB),
+			"CallerH's JSR (E2CB) carries no warning at all, so G11 is not passing " +
+				"vacuously through the alreadyWarned mask: warning=\"" +
+				warningBookmarkText(0xE2CB) + "\"");
+
+		// G13: G12's premise, asserted rather than assumed. G12 is only meaningful if the
+		// helper-argument warning that WOULD have masked the violation genuinely exists and
+		// has merely been routed to a different address -- otherwise "no warning at E2CB"
+		// could just mean this fixture stopped producing that warning anywhere, and G12
+		// would decay into the same tautology it was written to catch. Worker's own JSR to
+		// H4 at $E2D0 is where it lands. (RESET's JSR to CallerH at $E015 carries the same
+		// warning for the same reason -- CallerH is itself a helper whose r6 value is
+		// unrecoverable -- and both are honest.)
+		criterion("G13",
+			warningBookmarkText(0xE2D0).contains("could not be recovered"),
+			"the helper-argument warning that would mask G11 does exist, on Worker's own " +
+				"JSR $E2A0 (E2D0) rather than on CallerH's guarded site: warning=\"" +
+				warningBookmarkText(0xE2D0) + "\"");
 	}
 
 	// ------------------------------------------------------------------

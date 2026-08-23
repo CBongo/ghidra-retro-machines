@@ -113,7 +113,7 @@ REALROM count spaces.overlay 95
 REALROM count refs.intoOverlay 846
 REALROM count instrs.inOverlay 4263
 REALROM count bankComments 103
-REALROM count warnings 52
+REALROM count warnings 35
 REALROM count symbols 18
 REALROM sample.bankcomment c5f7 bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment c5fc bank -> select=7,prg_mode=1,r6=0,r7=26? [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
@@ -167,29 +167,29 @@ REALROM sample.ref 8622 -> WC000_M1_B0::c392 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 862a -> W8000_M1::8634 CONDITIONAL_JUMP primary=true
 REALROM sample.warn 867b [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c542 whose bank argument could not be recovered at this call site
 REALROM sample.warn 8960 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2 whose bank argument could not be recovered at this call site
-REALROM sample.warn 89c2 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_ca46 requires select,prg_mode,r6,r7 known on entry, but it is unknown here
 REALROM sample.warn 89df [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2 whose bank argument could not be recovered at this call site
 REALROM sample.warn 8fa5 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_cb61 whose bank argument could not be recovered at this call site
-REALROM sample.warn 94ca [NesBankingAnalyzer] Bank state requirement violated: call to FUN_ffbf requires r6,r7 known on entry, but it is unknown here
 REALROM sample.warn 94df [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2 whose bank argument could not be recovered at this call site
-REALROM sample.warn 94ee [NesBankingAnalyzer] Bank state requirement violated: call to FUN_W8000_M1__94bb requires r6,r7 known on entry, but it is unknown here
 REALROM sample.warn 9ace [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2 whose bank argument could not be recovered at this call site
-REALROM sample.warn 9ad1 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_W8000_M1__9bd5 requires r6,r7 known on entry, but it is unknown here
 REALROM sample.warn 9ad9 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2 whose bank argument could not be recovered at this call site
-REALROM sample.warn 9b0d [NesBankingAnalyzer] Bank state requirement violated: call to FUN_W8000_M1__94bb requires r6,r7 known on entry, but it is unknown here
 REALROM sample.warn 9b2f [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2 whose bank argument could not be recovered at this call site
-REALROM sample.warn 9b32 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_W8000_M1__9bc0 requires r6,r7 known on entry, but it is unknown here
 REALROM sample.warn 9b3a [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2 whose bank argument could not be recovered at this call site
 REALROM sample.warn 9bc9 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2 whose bank argument could not be recovered at this call site
 REALROM sample.warn 9bde [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2 whose bank argument could not be recovered at this call site
-REALROM sample.warn 9c71 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_W8000_M1__94bb requires r6,r7 known on entry, but it is unknown here
 REALROM sample.warn ac6d [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c542 whose bank argument could not be recovered at this call site
-REALROM sample.warn c5b0 [NesBankingAnalyzer] Bank state requirement violated: call to FUN_d1ac requires r6,r7 known on entry, but it is unknown here
 REALROM sample.warn c5b8 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2 whose bank argument could not be recovered at this call site
-REALROM sample.warn c60d [NesBankingAnalyzer] Bank state requirement violated: call to FUN_W8000_M1__94cd requires r6 known on entry, but it is unknown here
-REALROM sample.warn c62e [NesBankingAnalyzer] Bank state requirement violated: call to FUN_W8000_M1__94cd requires r6 known on entry, but it is unknown here
 REALROM sample.warn c631 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2 whose bank argument could not be recovered at this call site
 REALROM sample.warn c662 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2 whose bank argument could not be recovered at this call site
+REALROM sample.warn c6b5 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2 whose bank argument could not be recovered at this call site
+REALROM sample.warn c6c5 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2 whose bank argument could not be recovered at this call site
+REALROM sample.warn c6d0 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2 whose bank argument could not be recovered at this call site
+REALROM sample.warn c6db [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2 whose bank argument could not be recovered at this call site
+REALROM sample.warn c6e9 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2 whose bank argument could not be recovered at this call site
+REALROM sample.warn c6fe [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2 whose bank argument could not be recovered at this call site
+REALROM sample.warn c709 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2 whose bank argument could not be recovered at this call site
+REALROM sample.warn c71a [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2 whose bank argument could not be recovered at this call site
+REALROM sample.warn c72c [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2 whose bank argument could not be recovered at this call site
+REALROM sample.warn c754 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2 whose bank argument could not be recovered at this call site
 REALROM sample.symbol 2000 PPUCTRL IMPORTED primary=true
 REALROM sample.symbol 2001 PPUMASK IMPORTED primary=true
 REALROM sample.symbol 2002 PPUSTATUS IMPORTED primary=true
