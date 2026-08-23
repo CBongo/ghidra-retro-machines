@@ -23,12 +23,40 @@
 # three. Mapper 153 (Famicom Jump II) is a DISTINCT board (a 256 KiB outer-bank hack
 # co-driven by a CHR register; FCEU's separate Mapper153_write) and is NOT claimed here.
 #
-# Register base: this descriptor models the LZ93D50 generation, whose registers live at
-# $8000-$FFFF (submapper 16.4/16.5, and mappers 157/159). The legacy FCG-1/FCG-2
-# generation (submapper 16.1/16.2) instead exposes the same register file at
-# $6000-$7FFF; iNES 1.0 headers carry no submapper, and the real-ROM exercisers for this
-# bead (the Dragon Ball collection at Z:/nes/db) are all LZ93D50 boards, so the $6000
-# variant is flagged here rather than modeled.
+# Register base: BOTH generations are modeled, in their own ranges (bead grm-46h). The
+# submapper table below is the NESdev one (https://www.nesdev.org/wiki/INES_Mapper_016);
+# an earlier version of this header had 16.4/16.5 backwards and asserted that every
+# Dragon Ball exerciser was an LZ93D50 board, which is false for db3:
+#
+#   16.0  unspecified -- emulate BOTH FCG-1/2 and LZ93D50, each in its own range
+#   16.1  deprecated  -- use mapper 159 instead
+#   16.2  deprecated  -- use mapper 157 instead
+#   16.3  deprecated  -- use mapper 153 instead
+#   16.4  FCG-1/FCG-2 -- responds ONLY in CPU $6000-$7FFF; IRQ counter not latched
+#   16.5  LZ93D50     -- responds ONLY in CPU $8000-$FFFF; IRQ counter latched
+#
+# So the legacy FCG-1/2 generation is submapper 16.4, NOT 16.1/16.2 -- those are aliases
+# for mappers 159/157, which this descriptor already claims by mapper number. Measured
+# headers of the pinned exercisers (h[7] & 0x0C == 0x08, i.e. NES 2.0; submapper in
+# h[8]'s HIGH nibble):
+#
+#   db3          h[7]=18 h[8]=40   mapper 16,  submapper 4  -> $6000-$7FFF
+#   dbz2         h[7]=18 h[8]=50   mapper 16,  submapper 5  -> $8000-$FFFF
+#   dbz_datach   h[7]=98 h[8]=00   mapper 157, submapper 0
+#   dbz_saiyan   h[7]=98 h[8]=00   mapper 159, submapper 0
+#
+# db3 is not a one-off: "Dragon Ball - Daimaou Fukkatsu (Japan)" is a second submapper-4
+# title (h[8]=40), and DBZ III is a third submapper-5 one (h[8]=50).
+#
+# WHY TWO MECHANISMS RATHER THAN A SUBMAPPER SWITCH. Each generation responds in exactly
+# ONE range, so a board declaring both is correct for either and cannot double-count on a
+# real image -- no write can land in both $6000-$7FFF and $8000-$FFFF. That is NESdev's
+# own submapper-0 prescription ("emulate both"), and it is what the FCEU reference does:
+# Mapper16_init registers SetWriteHandler(0x6000, 0xFFFF, Mapper16_write) across the whole
+# span and dispatches on `A &= 0xF` alone (Z:/nes/fceu/mappers/16.c:120). Plumbing the
+# submapper through InesHeader (which today discards h[8]'s high nibble at
+# NesRomLoader.java:137) would let the descriptor tier be exact rather than permissive; it
+# is not needed for correctness here and is deliberately not done.
 
 schema: 2
 
@@ -85,6 +113,21 @@ banking:
         addr_match: 0x0008        # register $8 is the PRG bank
         mask: 0x0F                # data bits 0-3 = 16 KiB bank number
         bus_conflict: false
+      sets: [prg_bank]
+    # The SAME register file at the legacy FCG-1/FCG-2 base (submapper 16.4) -- identical
+    # decode, different range. db3 switches PRG with STA $6008, which the $8000-$FFFF
+    # mechanism above cannot see by construction; before this existed, no PRG-register
+    # write was detectable on that title at all (bead grm-46h, and the real root cause of
+    # grm-azv). See the module header for why declaring both ranges is sound rather than
+    # merely permissive.
+    - strategy: memory-latch
+      params:
+        start: 0x6000
+        end: 0x7FFF
+        addr_mask: 0x000F         # same low-nibble register select as the $8000 base
+        addr_match: 0x0008        # register $8 is the PRG bank
+        mask: 0x0F                # data bits 0-3 = 16 KiB bank number
+        bus_conflict: false       # dedicated latch, and $6000-$7FFF is not ROM anyway
       sets: [prg_bank]
   # Power-on register contents are electrically undefined; 0 is the conventional
   # assumption (reset code runs from the fixed $C000 window regardless of prg_bank).

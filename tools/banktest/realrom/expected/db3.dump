@@ -22,9 +22,11 @@ REALROM count spaces.overlay 7
 REALROM count refs.intoOverlay 0
 REALROM count instrs.inOverlay 0
 REALROM count bankComments 0
-REALROM count warnings 4
+REALROM count warnings 6
 REALROM count symbols 18
-REALROM sample.warn 0000 [no bank-switch write observed] Board declares 1 bank-switch mechanism(s) [memory-latch] but no mechanism write was observed in analyzed code; no bank annotations were produced. The switch routine may be unreached (e.g. entered only via an indirect/table jump auto-analysis did not disassemble).
+REALROM sample.warn db30 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn db73 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_db2e whose bank argument could not be recovered at this call site
+REALROM sample.warn db80 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_db2e whose bank argument could not be recovered at this call site
 REALROM sample.warn e69e [CopyLoopAnalyzer] copy-shaped loop RAM:e7d4 -> RAM:0200 could not be bounded; not applied
 REALROM sample.warn e707 [CopyLoopAnalyzer] copy-shaped loop RAM:e826 -> RAM:0200 could not be bounded; not applied
 REALROM sample.warn e712 [CopyLoopAnalyzer] copy-shaped loop RAM:e7fd -> RAM:0200 could not be bounded; not applied
