@@ -3121,6 +3121,70 @@ public class VerifyBankTest extends GhidraScript {
 		criterion("M8", !warningBookmarkText(0xC037).contains("requirement violated"),
 			"no spurious bank-state requirement violation at c037 (JSR $C100): warning=\"" +
 				warningBookmarkText(0xC037) + "\"");
+
+		// M9 (bead grm-mlp2): THE POSITIVE DIRECTION, and until this landed the whole suite
+		// had none. M8 just above, and nesmmc3test2's G11, are both NEGATIVE ("no spurious
+		// violation here"); nothing asserted that a genuine bank-known-on-entry requirement
+		// is ever actually REPORTED. grm-vgod removed 12 such warnings from the rcransom and
+		// smb2 real-ROM rows on the argument that SelectData can never express one -- that
+		// was verified against real ROMs and stands, but no synthetic criterion would have
+		// caught it had it been wrong, and G2's decay into a tautology is what surfaced the
+		// gap.
+		//
+		// THIS IS THE ONLY BOARD WHERE THE DIAGNOSTIC IS OBSERVABLE. A site contributes to
+		// requiresOnEntry only when its strategy answers true from effectDependsOnPriorState,
+		// and MemoryLatchBankSwitchStrategy:633 is the sole strategy that ever does -- it
+		// re-runs evaluateLatch under a MirrorProbe and reports whether a MIRROR load was
+		// actually reached and answered. SelectDataBankSwitchStrategy:220 returns false
+		// unconditionally, so on an MMC3 board ownRequires is empty board-wide and no call
+		// site can carry a violation at all, however it is reshaped (that IS G11).
+		//
+		// The chain is CallerP -> WorkerM -> MirrorLeaf. MirrorLeaf's site reads $42 -- derived
+		// WRITE_THROUGH, hence a LIVE mirror -- unlike FUN_C100's SAVE_SLOT $59 and shadowless
+		// $31, which is exactly why M8 demands no violation and this demands one. Those two
+		// criteria are the A/B pair for the whole per-site predicate.
+		//
+		// ON THE MIDDLE HOP, because the reason for it changed once measured. It was added to
+		// dodge the alreadyWarned interlock (:392 / :3703) that makes a direct call to a
+		// requiring leaf show the helper-argument warning instead of the violation -- the trap
+		// that left nesmmc3test2's G2 vacuous. On this board that dodge turns out to be
+		// unnecessary: NEITHER c130 nor c145 enters the helper-argument path, and both carry
+		// violations (see M10). The hop is kept for what it now proves instead -- a
+		// requirement observed at c145 can only have arrived by TRANSITIVE propagation through
+		// WorkerM, which is the :3654 rule itself under test. A direct call would show less.
+		//
+		// Assert the TEXT: presence alone over a site that can carry several kinds of warning
+		// is how nesmmc3test2's G2 quietly stopped testing anything.
+		criterion("M9", warningBookmarkText(0xC145).contains("requirement violated"),
+			"a genuine bank-state requirement violation IS reported at CallerP's JSR $C130 " +
+				"(c145), where WorkerM's inherited mirror-derived requirement is unmet: " +
+				"warning=\"" + warningBookmarkText(0xC145) + "\"");
+
+		// M10 (bead grm-mlp2): M9's load-bearing companion. Two things it pins that M9 alone
+		// cannot.
+		//
+		// FIRST, that M9 is not passing on the WRONG violation. The warning at c145 must name
+		// FUN_c130 -- the hop -- because that is what makes it a PROPAGATED requirement rather
+		// than one read directly off a leaf. Naming FUN_c120 there would mean the call graph
+		// collapsed and :3654 was never exercised.
+		//
+		// SECOND, that the leaf really is the origin: c130 carries its own violation naming
+		// FUN_c120. Together the two warnings trace the requirement's whole path up the chain,
+		// leaf -> hop -> caller, which is the property grm-vgod's 12 removed real-ROM warnings
+		// turned on and which nothing in this suite previously asserted in the positive
+		// direction.
+		//
+		// Both assert TEXT, never presence -- a site here can carry either of two diagnostics,
+		// and presence-only over exactly that is how nesmmc3test2's G2 decayed into a
+		// tautology.
+		String w130 = warningBookmarkText(0xC130);
+		criterion("M10",
+			warningBookmarkText(0xC145).contains("call to FUN_c130") &&
+				w130.contains("requirement violated") && w130.contains("call to FUN_c120"),
+			"the violation propagated leaf -> hop -> caller: c145 names the hop FUN_c130 and " +
+				"c130 names the leaf FUN_c120, so M9's requirement genuinely arrived through " +
+				"WorkerM (BoardBankAnalyzer:3654) rather than off a direct leaf call: " +
+				"c130=\"" + w130 + "\"");
 	}
 
 	// ------------------------------------------------------------------
@@ -3310,11 +3374,38 @@ public class VerifyBankTest extends GhidraScript {
 				"known there");
 
 		// G2: CallerB poisons select via an unresolvable load right before its own JSR
-		// $E140 at $E128 -- requiresOnEntry(H) (select, co-emitted prg_mode) is NOT
-		// satisfied there, so a violation WARNING bookmark lands on that call site.
-		criterion("G2", hasWarningBookmark(0xE128),
-			"requirement-violation WARNING at CallerB's JSR $E140 (E128) -- select " +
-				"unknown there: warning=\"" + warningBookmarkText(0xE128) + "\"");
+		// $E140 at $E128, so the call's OWN argument recovery comes up empty and the
+		// HELPER-ARGUMENT warning fires there.
+		//
+		// READ THE NEXT PARAGRAPH BEFORE "FIXING" THIS TO SAY "requirement violated"
+		// (bead grm-mlp2). Both diagnostics are live at this site and only one can ever
+		// appear: the helper-argument loop bookmarks E128 and adds it to `alreadyWarned`
+		// (BoardBankAnalyzer.java:392), and the violation scan then skips any site in that
+		// set (BoardBankAnalyzer.java:3703). The helper-argument warning therefore always
+		// wins here, and has since grm-snu added the routed-deposit helper path. From then
+		// until grm-mlp2 this criterion read `hasWarningBookmark(0xE128)` with a comment
+		// claiming it proved the requirement violation -- a presence-only assertion over a
+		// site that can carry several kinds of warning, which is how it decayed into a
+		// tautology passing on an unrelated diagnostic. Assert TEXT, not presence.
+		//
+		// THERE IS NO POSITIVE TEST FOR THE REQUIREMENT-VIOLATION DIAGNOSTIC IN THIS
+		// FIXTURE, AND THERE CANNOT BE ONE. Measured while fixing grm-mlp2:
+		// SelectDataBankSwitchStrategy.java:220 returns false from
+		// effectDependsOnPriorState() unconditionally, and does not override the per-site
+		// overload, so BoardBankAnalyzer's ownRequires gate (:3566-3591) never fires at any
+		// select-data site. With ownRequires empty board-wide the propagation at :3654 has
+		// nothing to carry, so NO call site on an MMC3 board can ever hold a violation
+		// bookmark, however it is reshaped -- which is exactly what G11 asserts. The
+		// diagnostic is reachable only through MemoryLatchBankSwitchStrategy:633, the sole
+		// overrider of the per-site form, and only at a latch site that genuinely consulted
+		// a bank mirror. A positive test therefore belongs on the nesmirrortest board; see
+		// grm-mlp2 for the three-level caller/worker/leaf chain that gets a call site past
+		// the alreadyWarned interlock.
+		criterion("G2",
+			warningBookmarkText(0xE128).contains("bank argument could not be recovered"),
+			"helper-argument WARNING (not the requirement violation -- see comment) at " +
+				"CallerB's JSR $E140 (E128) -- select unknown there: warning=\"" +
+				warningBookmarkText(0xE128) + "\"");
 
 		// G3: the poisoning load/select-write pair itself does not ALSO trip the
 		// pre-existing "genuinely undeterminable switch value" WARNING path (that would
@@ -3535,6 +3626,7 @@ public class VerifyBankTest extends GhidraScript {
 			"an ambiguous own-select (two paths, $06 vs $07) makes H6 decline rather than " +
 				"pick, at CallerK's JSR (E360): \"" + c15 + "\" warning=\"" +
 				warningBookmarkText(0xE360) + "\"");
+
 	}
 
 	// ------------------------------------------------------------------

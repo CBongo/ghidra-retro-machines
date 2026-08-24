@@ -1,4 +1,4 @@
-IDENTITY prg:eb4f730bdd1b7a1fd419f76b94e646c582dc2ccc3504ea893fc6e7716db9e0a9 file:9c410bcf1c26a68000940cdb51d3962d20d889d22e844e49c87204af7d32a4e6
+IDENTITY prg:5cec3359c641ecabed971189778c0ff096285291f88894bd39220d019249a79a file:8b9e056c76117f135999a5a9642c0c377d23132e64059726264f3ada89a4c0d9
 BLOCK APU_IO 4000-401f overlay=false
 BLOCK PPU_REGS 2000-2007 overlay=false
 BLOCK PRG_HI c000-ffff overlay=false
@@ -16,9 +16,16 @@ COMMENT c027 bank -> 1 (bank=1)
 COMMENT c02f bank -> 1 (bank=1)
 COMMENT c037 bank -> 1 (bank=1) via FUN_c100
 COMMENT c10c bank -> 1 (bank=1)
+COMMENT c135 bank -> 1 (bank=1)
+COMMENT c145 bank -> 1 (bank=1) via FUN_c130
 BOOKMARK Warning c034
+BOOKMARK Warning c03a
 BOOKMARK Warning c102
 BOOKMARK Warning c107
+BOOKMARK Warning c122
+BOOKMARK Warning c130
+BOOKMARK Warning c142
+BOOKMARK Warning c145
 REF c005 -> PRG_LO_B2::8200 READ primary=true
 REF c00b -> PRG_LO_B2::8005 UNCONDITIONAL_CALL primary=true
 REF c02a -> PRG_LO_B1::8200 READ primary=true
@@ -38,8 +45,8 @@ SYMBOL 4016 JOY1 IMPORTED primary=true
 SYMBOL 4017 JOY2 IMPORTED primary=true
 SYMBOL 8200 bank_id_8200 ANALYSIS primary=true
 SYMBOL c000 RESET IMPORTED primary=true
-SYMBOL c03d IRQ IMPORTED primary=false
-SYMBOL c03d NMI IMPORTED primary=true
+SYMBOL c0f0 IRQ IMPORTED primary=false
+SYMBOL c0f0 NMI IMPORTED primary=true
 SYMBOL fffa NMI_VEC IMPORTED primary=true
 SYMBOL fffc RESET_VEC IMPORTED primary=true
 SYMBOL fffe IRQ_VEC IMPORTED primary=true

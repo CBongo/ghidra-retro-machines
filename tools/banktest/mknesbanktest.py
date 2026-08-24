@@ -1141,8 +1141,10 @@ def make_prg_mirrortest():
     put(0xC034, [0x8D, 0xDA, 0xFF])         # STA $FFDA   (mechanism write -> unknown;
                                              #  bank state is now genuinely unknown)
     put(0xC037, [0x20, 0x00, 0xC1])         # JSR $C100   (SS2d guard checkpoint)
-    put(0xC03A, [0x4C, 0x3A, 0xC0])         # JMP $C03A   (self loop)
-    put(0xC03D, [0x40])                     # RTI (NMI/IRQ handler)
+    put(0xC03A, [0x20, 0x40, 0xC1])         # JSR $C140   (CallerP -- grm-mlp2 checkpoint)
+    put(0xC03D, [0x4C, 0x3D, 0xC0])         # JMP $C03D   (self loop)
+    put(0xC0F0, [0x40])                     # RTI (NMI/IRQ handler -- moved from $C03D by
+                                             #  grm-mlp2 to make room for CallerP's dispatch)
 
     # --- FUN_C100: the SS2d (requiresOnEntry) guard fixture ---
     put(0xC100, [0xA5, 0x59])              # LDA $59     (SAVE_SLOT -- must decline)
@@ -1152,6 +1154,89 @@ def make_prg_mirrortest():
     put(0xC10A, [0xA9, 0x01])              # LDA #$01    (last site: always resolvable)
     put(0xC10C, [0x8D, 0xD1, 0xFF])         # STA $FFD1   (-> bank 1, unconditionally)
     put(0xC10F, [0x60])                     # RTS
+
+    # ------------------------------------------------------------------
+    # grm-mlp2: the POSITIVE test for the bank-state requirement-violation diagnostic --
+    # the mirror image of FUN_C100's M8 guard, and the only place in the whole suite where
+    # that diagnostic can actually be observed.
+    #
+    # WHY IT LIVES ON THIS BOARD AND NOT ON MMC3, where it was first attempted. A site
+    # contributes to requiresOnEntry only when its strategy answers true from
+    # effectDependsOnPriorState (BoardBankAnalyzer's ownRequires gate). Exactly one strategy
+    # ever does: MemoryLatchBankSwitchStrategy:633, which re-runs evaluateLatch under a
+    # MirrorProbe and reports whether the evaluation actually reached and answered a MIRROR
+    # load. SelectDataBankSwitchStrategy:220 returns false unconditionally (grm-vgod), so on
+    # an MMC3 board ownRequires is empty everywhere, nothing propagates, and NO call site can
+    # carry a violation however it is reshaped -- which is precisely what nesmmc3test2's G11
+    # asserts. This fixture's board is the one with mirrors, so it is the one that can.
+    #
+    # AND WHY IT TAKES A THREE-LEVEL CHAIN. Only one warning can ever land on a call site:
+    # the helper-argument loop bookmarks it and adds it to `alreadyWarned`
+    # (BoardBankAnalyzer:392), and the violation scan skips every site in that set (:3703).
+    # A caller that reaches a requiring leaf DIRECTLY therefore always gets the
+    # helper-argument warning instead, and never the violation -- the exact trap that left
+    # nesmmc3test2's G2 vacuous for so long. The fix is an intermediate hop: requirements
+    # propagate transitively, narrowed by what the hop already knows --
+    #
+    #     BoardBankAnalyzer.java:3654
+    #     rMask |= requiresOnEntry.getOrDefault(cs.callee(), 0) & ~callerIn.knownMask();
+    #
+    # -- so WorkerM inherits MirrorLeaf's requirement, and CallerP's own site is left free to
+    # carry the violation. This is FUN_C100/M8's indirection run in the opposite direction:
+    # there it keeps a site clean so a SPURIOUS violation would be visible, here so a GENUINE
+    # one can be.
+    #
+    # MEASURED, and worth writing down because it is not what the MMC3 attempt predicted:
+    # neither $C130 nor $C145 lands in the helper-argument path at all -- BOTH carry
+    # violations ($C130 naming FUN_c120, $C145 naming FUN_c130). So the hop is not needed to
+    # dodge `alreadyWarned` on this board. It is kept because it is the thing worth asserting:
+    # a requirement that reached $C145 could ONLY have arrived by transitive propagation
+    # through WorkerM, which is the :3654 rule under test. A direct CallerP -> MirrorLeaf call
+    # would demonstrate strictly less.
+    #
+    # MirrorLeaf ($C120): reads $42 -- derived WRITE_THROUGH (see the two corroborating
+    # stores at $C016/$C023 above) and therefore a LIVE bank mirror, the one kind
+    # isLiveBankMirror answers for alongside ROM_IDENTIFYING. Called with the bank unknown,
+    # the mirror load answers non-null-but-unknown (mirroredByte is documented to do exactly
+    # that, so the probe can count sites that consulted a mirror AND CAME UP EMPTY -- the
+    # ones that genuinely needed a bank they did not have), so consultedMirror is true and
+    # the site declares a requirement it cannot satisfy.
+    #
+    # Contrast FUN_C100's two declining sites deliberately: $59 is SAVE_SLOT and $31 has no
+    # shadow at all, and neither is a live mirror, so neither trips the probe -- which is why
+    # M8 can demand NO violation there while this demands one here. The two are the A/B pair
+    # for the whole per-site predicate.
+    put(0xC120, [0xA5, 0x42])              # LDA $42     (WRITE_THROUGH mirror -- LIVE)
+    put(0xC122, [0x8D, 0xDB, 0xFF])         # STA $FFDB   (latch; $FFDB holds $FF so the
+                                             #  bus-conflict AND is a no-op and an unknown
+                                             #  value stays honestly unknown)
+    put(0xC125, [0x60])                     # RTS
+
+    # WorkerM ($C130): the hop. Calls MirrorLeaf with the bank unknown -- so it inherits the
+    # requirement AND the helper-argument warning sinks onto $C130 rather than CallerP's
+    # site -- then closes with a plain, always-resolvable immediate latch. That trailing
+    # write is FUN_C100's own recipe ($C10A/$C10C): it hands CallerP's call site a fully
+    # known effect, keeping CallerP out of the helper-argument path in its own right.
+    put(0xC130, [0x20, 0x20, 0xC1])         # JSR $C120   (MirrorLeaf)
+    put(0xC133, [0xA9, 0x01])              # LDA #$01    (LAST switch site: plain immediate)
+    put(0xC135, [0x8D, 0xD1, 0xFF])         # STA $FFD1   (-> bank 1, unconditionally)
+    put(0xC138, [0x60])                     # RTS
+
+    # CallerP ($C140): poisons the bank with the same idiom RESET uses at $C032, then calls
+    # WorkerM. requiresOnEntry(WorkerM) is non-empty and unmet here, so the violation WARNING
+    # must land on the JSR at $C145.
+    #
+    # NOTE THE POISON CELL IS $33, NOT RESET's $30, and that is deliberate. Reusing $30 gave
+    # it a second store feeding a mechanism write, which is enough for BankMirrors.Discovery
+    # to type it INPUT and emit a bank_request_0030 symbol -- changing a derived-mirror fact
+    # about the PRE-EXISTING fixture as a side effect of adding this one. Behaviour is
+    # unaffected (INPUT declines just as an untyped cell does), but a fixture addition should
+    # not silently re-type another routine's cells; a fresh address keeps the blast radius on
+    # new addresses only.
+    put(0xC140, [0xA5, 0x33])              # LDA $33     (poison: unresolvable RAM load)
+    put(0xC142, [0x8D, 0xDA, 0xFF])         # STA $FFDA   (bank -> genuinely unknown)
+    put(0xC145, [0x20, 0x30, 0xC1])         # JSR $C130   (WorkerM -- requirement unmet)
+    put(0xC148, [0x60])                     # RTS
 
     # Latch targets: bus-conflict-safe bytes. $FFD1/$FFD2/$FFD3 hold the bank number they
     # latch (the canonical table idiom); $FFDA/$FFDB/$FFDC hold 0xFF so the bus-conflict
@@ -1164,9 +1249,9 @@ def make_prg_mirrortest():
     put(0xFFDC, [0xFF])
 
     # Vector table.
-    put(0xFFFA, [0x3D, 0xC0])  # NMI   -> $C03D (RTI)
+    put(0xFFFA, [0xF0, 0xC0])  # NMI   -> $C0F0 (RTI -- moved from $C03D by grm-mlp2)
     put(0xFFFC, [0x00, 0xC0])  # RESET -> $C000
-    put(0xFFFE, [0x3D, 0xC0])  # IRQ   -> $C03D (RTI)
+    put(0xFFFE, [0xF0, 0xC0])  # IRQ   -> $C0F0 (RTI -- moved from $C03D by grm-mlp2)
 
     return bytes(prg)
 
@@ -3195,9 +3280,11 @@ def main():
     assert (prgmirror[0xC035] | (prgmirror[0xC036] << 8)) == 0xFFDA
     assert prgmirror[0xC037] == 0x20                                      # JSR $C100
     assert (prgmirror[0xC038] | (prgmirror[0xC039] << 8)) == 0xC100
-    assert prgmirror[0xC03A] == 0x4C                                      # JMP $C03A
-    assert (prgmirror[0xC03B] | (prgmirror[0xC03C] << 8)) == 0xC03A
-    assert prgmirror[0xC03D] == 0x40                                      # RTI
+    assert prgmirror[0xC03A] == 0x20                                      # JSR $C140
+    assert (prgmirror[0xC03B] | (prgmirror[0xC03C] << 8)) == 0xC140
+    assert prgmirror[0xC03D] == 0x4C                                      # JMP $C03D
+    assert (prgmirror[0xC03E] | (prgmirror[0xC03F] << 8)) == 0xC03D
+    assert prgmirror[0xC0F0] == 0x40                                      # RTI (moved)
     # FUN_C100 (the SS2d guard fixture)
     assert prgmirror[0xC100] == 0xA5 and prgmirror[0xC101] == 0x59        # LDA $59
     assert prgmirror[0xC102] == 0x8D
@@ -3208,6 +3295,24 @@ def main():
     assert prgmirror[0xC10A] == 0xA9 and prgmirror[0xC10B] == 0x01        # LDA #$01
     assert prgmirror[0xC10C] == 0x8D
     assert (prgmirror[0xC10D] | (prgmirror[0xC10E] << 8)) == 0xFFD1
+    # grm-mlp2: MirrorLeaf/WorkerM/CallerP -- the three-level chain that makes the
+    # requirement-violation diagnostic observable (see make_prg_mirrortest for why).
+    assert prgmirror[0xC120] == 0xA5 and prgmirror[0xC121] == 0x42        # LDA $42 (mirror)
+    assert prgmirror[0xC122] == 0x8D
+    assert (prgmirror[0xC123] | (prgmirror[0xC124] << 8)) == 0xFFDB
+    assert prgmirror[0xC125] == 0x60                                      # MirrorLeaf RTS
+    assert prgmirror[0xC130] == 0x20                                      # JSR $C120
+    assert (prgmirror[0xC131] | (prgmirror[0xC132] << 8)) == 0xC120
+    assert prgmirror[0xC133] == 0xA9 and prgmirror[0xC134] == 0x01        # LDA #$01
+    assert prgmirror[0xC135] == 0x8D
+    assert (prgmirror[0xC136] | (prgmirror[0xC137] << 8)) == 0xFFD1
+    assert prgmirror[0xC138] == 0x60                                      # WorkerM RTS
+    assert prgmirror[0xC140] == 0xA5 and prgmirror[0xC141] == 0x33        # LDA $33 (poison)
+    assert prgmirror[0xC142] == 0x8D
+    assert (prgmirror[0xC143] | (prgmirror[0xC144] << 8)) == 0xFFDA
+    assert prgmirror[0xC145] == 0x20                                      # JSR $C130
+    assert (prgmirror[0xC146] | (prgmirror[0xC147] << 8)) == 0xC130
+    assert prgmirror[0xC148] == 0x60                                      # CallerP RTS
     assert prgmirror[0xC10F] == 0x60                                      # RTS
     # Latch target table.
     assert prgmirror[0xFFD1] == 0x01
@@ -3217,7 +3322,7 @@ def main():
     assert prgmirror[0xFFDB] == 0xFF
     assert prgmirror[0xFFDC] == 0xFF
     # Vectors.
-    _assert_vectors(prgmirror, "nesmirrortest", handler=0xC03D, reset=0xC000)
+    _assert_vectors(prgmirror, "nesmirrortest", handler=0xC0F0, reset=0xC000)
 
     _write_rom(outdir, "nesmirrortest.nes", prgmirror)
 
