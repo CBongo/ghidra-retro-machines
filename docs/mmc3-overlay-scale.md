@@ -109,11 +109,13 @@ After installing the extension into the isolated per-worktree Ghidra home
 (`bash tools/banktest/build-and-test.sh check nes-banking`):
 
 ```bash
+# ROMDIR should point at a directory containing the ROMs below (e.g. one of the
+# space-separated dirs in $GRM_ROM_DIR).
 bash tools/banktest/measure-overlay-scale.sh \
-  "H:/emulators/nes/roms/Contra (U).nes" \
-  "H:/emulators/nes/roms/Super Mario Bros 3 (PRG 1) (U).nes" \
-  "H:/emulators/nes/roms/Crystalis (U) [o1].nes" \
-  "H:/emulators/nes/roms/Mega Man 4 (U).nes"
+  "$ROMDIR/Contra (U).nes" \
+  "$ROMDIR/Super Mario Bros 3 (PRG 1) (U).nes" \
+  "$ROMDIR/Crystalis (U) [o1].nes" \
+  "$ROMDIR/Mega Man 4 (U).nes"
 ```
 
 The runner copies each ROM to a parenthesis-free path (analyzeHeadless rejects

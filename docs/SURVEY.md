@@ -57,7 +57,7 @@ merges external PRs).
 
 **Nobody automates descriptor-driven setup. That is the confirmed gap this extension fills.**
 
-## In-tree findings (fork at `D:/git/ghidra`)
+## In-tree findings (local Ghidra source checkout)
 
 - Languages: `6502:LE:16:default` and `65C02` exist; **no 6510**. ISA is identical; plan:
   bundle a 6510 language in the extension (extensions may ship `data/languages`;

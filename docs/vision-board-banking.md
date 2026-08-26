@@ -400,7 +400,7 @@ Two generations:
 
 ## 7. What first-class requires from Ghidra core
 
-*(Grounding for this section: direct source survey of D:/git/ghidra; the
+*(Grounding for this section: direct source survey of the local Ghidra source checkout; the
 disassembler/reference chokepoints are covered in the RFC and not repeated.)*
 
 - **Context storage & flow** already suffice for carrying bank state: context registers
@@ -425,7 +425,7 @@ disassembler/reference chokepoints are covered in the RFC and not repeated.)*
 
 ### 7.1 Core plug-point details
 
-Direct-source findings (D:/git/ghidra, 12.x tree), one insertion point per subsystem:
+Direct-source findings (the local Ghidra source checkout, 12.x tree), one insertion point per subsystem:
 
 **Decompiler.** The decompiler is out-of-process; during decompilation it calls back
 into `DecompileCallback` with `(spacename, offset)` queries. The load-bearing callbacks

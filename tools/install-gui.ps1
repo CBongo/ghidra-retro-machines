@@ -29,8 +29,9 @@
 
 .PARAMETER GhidraInstall
     Ghidra install dir to build against. Defaults to $env:GRM_GHIDRA_INSTALL, else
-    D:/ghidra_<ver>_PUBLIC where <ver> is gradle.properties' ghidraTargetVersion -- the same
-    convention build-and-test.sh uses.
+    <ghidraInstallRoot>/ghidra_<ver>_PUBLIC -- where ghidraInstallRoot comes from the
+    machine-local ~/.gradle/gradle.properties and <ver> from gradle.properties'
+    ghidraTargetVersion. Same convention as build.gradle and build-and-test.sh.
 
 .EXAMPLE
     .\tools\install-gui.ps1
@@ -64,7 +65,30 @@ $targetVersion = (Select-String -Path $gradleProps -Pattern '^ghidraTargetVersio
 if (-not $targetVersion) { Fail "ghidraTargetVersion not found in $gradleProps" }
 
 if (-not $GhidraInstall) {
-    $GhidraInstall = if ($env:GRM_GHIDRA_INSTALL) { $env:GRM_GHIDRA_INSTALL } else { "D:/ghidra_${targetVersion}_PUBLIC" }
+    if ($env:GRM_GHIDRA_INSTALL) {
+        $GhidraInstall = $env:GRM_GHIDRA_INSTALL
+    }
+    else {
+        # Derive as build.gradle does: <ghidraInstallRoot>/ghidra_<ver>_PUBLIC, where
+        # ghidraInstallRoot is machine-local (~/.gradle/gradle.properties) and <ver> comes from
+        # the repo. This used to hardcode a D: drive letter, which only ever worked on the
+        # author's machine and put that layout in a public repo (grm-sp93). Refuse rather than
+        # guess: a wrong install path fails confusingly downstream, an absent one is diagnosable.
+        $gradleHome = if ($env:GRADLE_USER_HOME) { $env:GRADLE_USER_HOME } else { Join-Path $HOME '.gradle' }
+        $installRoot = $null
+        foreach ($f in @((Join-Path $gradleHome 'gradle.properties'), $gradleProps)) {
+            if (-not (Test-Path $f)) { continue }
+            $m = Select-String -Path $f -Pattern '^\s*ghidraInstallRoot\s*=\s*(.+)$' | Select-Object -Last 1
+            if ($m) { $installRoot = $m.Matches.Groups[1].Value.Trim(); break }
+        }
+        if (-not $installRoot) {
+            Fail ("cannot locate the Ghidra install. Set ghidraInstallRoot=<dir holding " +
+                  "ghidra_${targetVersion}_PUBLIC> in $gradleHome\gradle.properties (see README, " +
+                  "'Building'), or set GRM_GHIDRA_INSTALL, or pass -GhidraInstall.")
+        }
+        # String join rather than Join-Path: Join-Path 'D:' 'x' yields the drive-relative 'D:x'.
+        $GhidraInstall = $installRoot.TrimEnd('/', '\') + '/' + "ghidra_${targetVersion}_PUBLIC"
+    }
 }
 $appProps = Join-Path $GhidraInstall 'Ghidra/application.properties'
 if (-not (Test-Path $appProps)) { Fail "$appProps not found -- bad Ghidra install dir '$GhidraInstall'?" }
@@ -91,9 +115,15 @@ else {
     # machine may be stale, so set it explicitly rather than inherit it -- same reasoning as
     # build-and-test.sh. A version mismatch hard-fails the build (grm-9r7 guard).
     $env:GHIDRA_INSTALL_DIR = $GhidraInstall
+    # No hardcoded fallback path here any more: it named a specific gradle install on the
+    # author's D: drive (grm-sp93), so for anyone else it was a confusing "file not found"
+    # standing in for the real problem, which is that gradle is not on PATH.
     $gradleExe = if ($env:GRM_GRADLE) { $env:GRM_GRADLE }
                  elseif (Get-Command gradle -ErrorAction SilentlyContinue) { 'gradle' }
-                 else { 'D:/gradle-8.13/bin/gradle.bat' }
+                 else { $null }
+    if (-not $gradleExe) {
+        Fail 'gradle not found on PATH -- set GRM_GRADLE to your gradle executable, or add gradle to PATH.'
+    }
     Step "gradle buildExtension (GHIDRA_INSTALL_DIR=$GhidraInstall)"
     & $gradleExe -p $repoRoot buildExtension
     if ($LASTEXITCODE -ne 0) { Fail "gradle buildExtension failed (exit $LASTEXITCODE)" }
@@ -113,7 +143,8 @@ Step "newest dist zip: $($zip.Name) ($($zip.LastWriteTime.ToString('yyyy-MM-dd H
 # versionedName = lowercase(application.name)_<version>_<release.name> read from the install's
 # application.properties (NOT hardcoded), and userdir is plain "ghidra" when <base> is inside
 # the user's home dir. For the GUI, base is %APPDATA%, which always is -- hence no
-# "<username>-ghidra" branch here, unlike build-and-test.sh whose base sits under D:/git.
+# "<username>-ghidra" branch here, unlike build-and-test.sh whose base sits inside the repo
+# (build/ghidra-home) and so is generally outside the user's home dir.
 if (-not $env:APPDATA) { Fail 'APPDATA is not set -- run this from Windows PowerShell/pwsh, not a Linux pwsh.' }
 
 $props = @{}

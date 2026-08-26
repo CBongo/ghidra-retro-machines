@@ -342,8 +342,9 @@ Agents can't file these — they need an account and CLA agreement.
 
 *Two things learned that the next upstream item should inherit:*
 
-- *`CBongo/ghidra` now exists as a fork, and `D:/git/ghidra-fork` is a full clone whose `origin`
-  is the **read-only reference checkout**, not GitHub — name the GitHub remote explicitly, cut the
+- *`CBongo/ghidra` now exists as a fork, and a separate full clone of it (kept apart from the
+  local Ghidra source checkout, `$GRM_GHIDRA_SRC`) has its `origin` set to that
+  **read-only reference checkout**, not GitHub — name the GitHub remote explicitly, cut the
   branch from a freshly fetched `master` (not `HEAD`), and use `git worktree add` so the b3m fork
   build tree stays on its own branch. Full recipe on `grm-6xh`.*
 - *An agent cannot confirm a fork exists by searching for it: GitHub repo search omits forks unless

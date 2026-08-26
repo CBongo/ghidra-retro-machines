@@ -138,7 +138,9 @@ of every committed file):
 # ("D:" means the current directory on D:), which resolves to "D:ghidra_<ver>_PUBLIC".
 # Use a forward slash. A .properties file treats "\" as an escape character, so a
 # trailing backslash is read as a line-continuation and silently leaves you with "D:".
-ghidraInstallRoot=D:/
+ghidraInstallRoot=<directory that holds ghidra_<ver>_PUBLIC>
+# e.g. on Windows: ghidraInstallRoot=D:/
+# e.g. on Linux/macOS: ghidraInstallRoot=/opt/
 ```
 
 The build then composes that root with `ghidraTargetVersion` from `gradle.properties`, so

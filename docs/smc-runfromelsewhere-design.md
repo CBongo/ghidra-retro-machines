@@ -81,8 +81,8 @@ bytes and shows `??` until the user supplies a real KERNAL ROM.** Populating the
 **grm-mbm** (optional user-supplied ROM files → initialized ROM blocks). The dual-home
 CHRGET view only "lights up" once grm-mbm lands.
 
-**ROM files located (2026-07-13):** `H:/emulators/c64/basic.c64` and
-`H:/emulators/c64/kernel.c64` (both 8192 bytes — genuine BASIC/KERNAL dumps; the KERNAL
+**ROM files located (2026-07-13):** `basic.c64` and `kernel.c64` in the local C64 emulator
+ROM directory (both 8192 bytes — genuine BASIC/KERNAL dumps; the KERNAL
 was confirmed by locating the CHRGET signature at the expected offset, see §4). A CHARGEN
 dump likely lives under the sibling VICE dirs. These are the user-supplied inputs grm-mbm
 consumes.
@@ -131,7 +131,7 @@ unreadable source means the directive is ignored outright (log note, no block of
 otherwise an in-place carve at the destination, with the byte-mapped overlay as the fallback.
 There is no best-effort option.
 
-**CHRGET constants VERIFIED (2026-07-13)** against `H:/emulators/c64/kernel.c64`: the
+**CHRGET constants VERIFIED (2026-07-13)** against the local `kernel.c64` dump: the
 CHRGET/CHRGOT routine (`E6 7A D0 02 E6 7B AD …`) sits at file offset `$03A2` → source
 **`$E3A2` in the KERNAL ROM** (`$E000-$FFFF`), *not* the BASIC ROM as the folklore had it.
 Destination `$0073-$008A` = `0x18` (24) bytes, matching the routine length. So the hint is
@@ -200,7 +200,7 @@ landed, and step 2's mechanic changed on the way — see the §2 banner.
 ## 8. Open questions
 
 1. ~~Verify CHRGET constants~~ **DONE (2026-07-13)**: dest `$0073-$008A` (`0x18`), source
-   **KERNAL `$E3A2`** (verified against `H:/emulators/c64/kernel.c64`; folklore's "BASIC"
+   **KERNAL `$E3A2`** (verified against the local `kernel.c64` dump; folklore's "BASIC"
    was wrong — it is KERNAL).
 2. ~~Best-effort vs gated Tier A~~ **ANSWERED (2026-07-25, grm-chu)** — and the earlier
    recommendation (best-effort materialization against an uninitialized source) is

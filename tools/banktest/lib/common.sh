@@ -47,12 +47,54 @@ native() {
 	if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else echo "$1"; fi
 }
 
-# Default the Ghidra install dir from GRM_TARGET_VERSION; the GRM_GHIDRA_INSTALL
-# env var still overrides. (build-and-test.sh needs the install root itself, to
-# export as GHIDRA_INSTALL_DIR for gradle and to read application.properties
-# from; the runners only ever need the analyzeHeadless path below.)
+# Read a gradle property, honouring gradle's own precedence: the machine-local
+# ~/.gradle/gradle.properties (or $GRADLE_USER_HOME) wins over the repo's
+# gradle.properties. Echoes the value; returns nonzero if the key is absent
+# everywhere. (Deliberately not a full .properties parser -- no escape or
+# line-continuation handling -- because the two keys we read are plain paths and
+# a plain version string.)
+grm_gradle_property() {
+	local key="$1" file val
+	for file in "${GRADLE_USER_HOME:-$HOME/.gradle}/gradle.properties" \
+	            "$REPO_ROOT/gradle.properties"; do
+		[ -f "$file" ] || continue
+		val="$(sed -n "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*//p" "$file" | tail -n1)"
+		if [ -n "$val" ]; then printf '%s\n' "$val"; return 0; fi
+	done
+	return 1
+}
+
+# Default the Ghidra install dir by DERIVING it, exactly as build.gradle does:
+# <ghidraInstallRoot>/ghidra_<GRM_TARGET_VERSION>_PUBLIC, where ghidraInstallRoot
+# is machine-local (~/.gradle/gradle.properties) and the version comes from the
+# repo. The GRM_GHIDRA_INSTALL env var still overrides outright.
+#
+# This used to hardcode `D:/ghidra_${GRM_TARGET_VERSION}_PUBLIC`, which worked
+# only on the author's machine and put a developer drive letter in a public repo
+# (grm-sp93). gradle.properties has documented the two-part convention all along
+# -- "so no developer drive letter is committed" -- and build.gradle already
+# implemented it; these scripts simply had not caught up.
+#
+# Refuses rather than guessing when ghidraInstallRoot is unset, matching
+# realrom-test.sh's treatment of an unset GRM_ROM_DIR: a wrong install path
+# produces a confusing downstream failure, while an absent one is diagnosable.
+# (build-and-test.sh needs the install root itself, to export as
+# GHIDRA_INSTALL_DIR for gradle and to read application.properties from; the
+# runners only ever need the analyzeHeadless path below.)
 grm_default_ghidra_install() {
-	GRM_GHIDRA_INSTALL="${GRM_GHIDRA_INSTALL:-D:/ghidra_${GRM_TARGET_VERSION}_PUBLIC}"
+	# ${VAR:-} rather than $VAR: callers run under `set -u`, where a bare dereference of an
+	# unset variable is a fatal error, and "unset" is precisely the case this must handle.
+	[ -n "${GRM_GHIDRA_INSTALL:-}" ] && return 0
+	local root
+	if ! root="$(grm_gradle_property ghidraInstallRoot)"; then
+		echo "FAIL: cannot locate the Ghidra install." >&2
+		echo "  Set ghidraInstallRoot=<dir holding ghidra_${GRM_TARGET_VERSION}_PUBLIC> in" >&2
+		echo "  ${GRADLE_USER_HOME:-$HOME/.gradle}/gradle.properties (see README, 'Building')," >&2
+		echo "  or export GRM_GHIDRA_INSTALL=<install dir> for this run." >&2
+		exit 3
+	fi
+	root="${root%/}"; root="${root%\\}"   # "D:/" -> "D:", so the join adds exactly one slash
+	GRM_GHIDRA_INSTALL="$root/ghidra_${GRM_TARGET_VERSION}_PUBLIC"
 }
 
 # Default the path to analyzeHeadless(.bat). Derives from GRM_GHIDRA_INSTALL
@@ -66,12 +108,18 @@ grm_default_ghidra_install() {
 # resolved before this reads it, regardless of what the caller has already
 # called -- ordering is load-bearing here, not just documentation.
 #
-# Defaults are unchanged when neither var is set: GRM_GHIDRA_INSTALL still
-# defaults to D:/ghidra_${GRM_TARGET_VERSION}_PUBLIC and GHIDRA_HEADLESS to
-# that install's support/analyzeHeadless.bat.
+# When neither var is set, GRM_GHIDRA_INSTALL derives from ghidraInstallRoot +
+# GRM_TARGET_VERSION (see above) and GHIDRA_HEADLESS from that install's
+# support/analyzeHeadless.bat.
+#
+# The early return matters now that grm_default_ghidra_install() refuses on an
+# unresolvable install: a caller who supplies GHIDRA_HEADLESS outright has told
+# us everything this function needs, and must not be failed for an install root
+# that would never have been read.
 grm_default_headless() {
+	[ -n "${GHIDRA_HEADLESS:-}" ] && return 0   # ${VAR:-} for `set -u`; see above
 	grm_default_ghidra_install
-	GHIDRA_HEADLESS="${GHIDRA_HEADLESS:-$GRM_GHIDRA_INSTALL/support/analyzeHeadless.bat}"
+	GHIDRA_HEADLESS="$GRM_GHIDRA_INSTALL/support/analyzeHeadless.bat"
 }
 
 # Fall back to the per-worktree isolated settings base when the caller has not

@@ -5,8 +5,8 @@ asking Ghidra upstream to fix the behavior. It closes the "plausibly upstreamabl
 question the bead was opened with.
 
 **No code is written by this note** — it is the decision `MosConstantReferenceAnalyzer`
-implements. All Ghidra facts were validated against the `Ghidra_12.1.2_build` source checkout at
-`D:\git\ghidra`, which was this project's `ghidraTargetVersion` when the note was written (the
+implements. All Ghidra facts were validated against the `Ghidra_12.1.2_build` source checkout,
+which was this project's `ghidraTargetVersion` when the note was written (the
 project has since retargeted; see `gradle.properties` for the current value, and re-check any
 citation before relying on its line numbers); citations are `file:line`.
 

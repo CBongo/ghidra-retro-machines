@@ -4,7 +4,7 @@ Survey of Ghidra 12.1 machinery for recovering self-modified code — ROM→RAM 
 decrypt-on-the-fly, cross-processor uploads — resolving the grm-1.7 epic's design
 tension: which patterns get **static modeling**, which get **emulation-assisted
 recovery**, and which stay **documented manual workflow**. Source evidence from
-D:/git/ghidra @ `e6ee047c5a` (master, 12.1-era) unless noted.
+the local Ghidra source checkout @ `e6ee047c5a` (master, 12.1-era) unless noted.
 
 ## 1. The three candidate machineries
 

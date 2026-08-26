@@ -14,8 +14,10 @@
 # (bead grm-aqi); --force-criteria overrides that, and names every row it forced.
 #
 # Environment overrides:
-#   GRM_GHIDRA_INSTALL   Ghidra install dir (default D:/ghidra_<ver>_PUBLIC, where <ver>
-#                        is gradle.properties' ghidraTargetVersion).
+#   GRM_GHIDRA_INSTALL   Ghidra install dir. Defaults to <ghidraInstallRoot>/ghidra_<ver>_PUBLIC,
+#                        where ghidraInstallRoot comes from the machine-local
+#                        ~/.gradle/gradle.properties and <ver> from gradle.properties'
+#                        ghidraTargetVersion -- the same composition build.gradle uses.
 #                        Exported as GHIDRA_INSTALL_DIR for the gradle build --
 #                        build.gradle checks the GHIDRA_INSTALL_DIR env var
 #                        FIRST, and the ambient one on this machine may point
