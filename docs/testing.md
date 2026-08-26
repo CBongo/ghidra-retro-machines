@@ -387,9 +387,11 @@ it is never a `run-banktest.sh` chunk (whose `all` would otherwise pull it in).
   in the manifest is a hard **error**, never a silent no-op, because a typo in
   `--except megman` must not bless megaman. Filtered rows are reported as `filtered=N`, not as
   `SKIP` — `SKIP` means the ROM was absent, which is a different fact.
-- **One row is known-flaky: `megaman` (grm-g73).** Two identical imports of the same ROM against
-  the same build produce one of two dumps, differing *only* in these lines and always moving in
-  opposite directions:
+- **`megaman` flaps on 12.1.2 (grm-g73) — but on 12.1.3 it fails every run, for a different
+  reason.** Read both halves; the second supersedes the first on any current tree.
+
+  On **12.1.2**, two identical imports of the same ROM against the same build produce one of two
+  dumps, differing *only* in these lines and always moving in opposite directions:
 
   ```
   REALROM count refs.intoOverlay    1704  <->  1703
@@ -400,9 +402,21 @@ it is never a `run-banktest.sh` chunk (whose `all` would otherwise pull it in).
   diff, it is grm-g73, not a regression — any other line moving is real.** It is *not* held back
   any more (grm-hum blessed it at 1704/7429); it simply flaps. The harness deliberately does not
   retry the row or tolerate the delta: a golden whose diff you can trust is what this tier is
-  *for*, and special-casing a noisy row would weaken that guarantee for every other row. The
-  expected steady state today is **11 PASS / 1 SKIP** (`smb`, that exact dump not present), with
-  megaman intermittently the 12th.
+  *for*, and special-casing a noisy row would weaken that guarantee for every other row.
+
+  On **12.1.3 — which is what `ghidraTargetVersion` pins today — that flap description no longer
+  applies**, and treating it as current will misattribute a failure in both directions. A
+  controlled A/B (grm-9wl6, 2026-08-22) holding source byte-identical and flipping only
+  `ghidraTargetVersion` puts `megaman` back on its golden's classic pole exactly, so the golden is
+  right and the 12.1.3 output is degraded: `refs` moves to ~1744 and `bankComments` to 160/161/162
+  — and `bankComments` is unstable *against itself* across consecutive 12.1.3 runs, so there is no
+  stable value to pin. `wizwarr` (GME set) is the same story. **Neither may be blessed**; the
+  owner's standing decision is to leave both failing and documented until upstream moves.
+
+  Because expected pass/fail counts go stale faster than anything else in this document, they are
+  deliberately **not** stated here. The `realrom-current-fails` bd memory is the single
+  authoritative list of which rows are expected to fail and why; `realrom-12-1-3-toolchain-fails`
+  carries the full experiment, and `realrom-howto` the method. See also `grm-qp5x`.
 
   The cause is **grm-eyn**: Ghidra's switch recovery over-reads several of this ROM's jump
   tables, planting spurious computed-jump targets that act as disassembly seeds. Because 6502

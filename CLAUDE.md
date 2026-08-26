@@ -246,9 +246,14 @@ decision as of 2026-08-22 is to leave them failing and documented until upstream
 a `megaman`/`wizwarr` failure matching those signatures as attributed, not as yours, before
 bisecting your own commits. Note this supersedes the older "`megaman` flaps at ~20% from `grm-g73`
 jitter" line: that flap is real but it is a *12.1.2* phenomenon, and on 12.1.3 the row fails every
-run. See `realrom-12-1-3-toolchain-fails` and `grm-qp5x`, and the
-`realrom-expected-baseline-fails` bd memory for the current, authoritative row list — it is
-revised as rows get fixed/reclassified and supersedes any older summary, including this one. To
+run. See `realrom-12-1-3-toolchain-fails` and `grm-qp5x`, and the **`realrom-current-fails`** bd
+memory for the current, authoritative row list — that memory is the single place a row's status
+lives, is revised as rows get fixed or reclassified, and supersedes any older summary including
+this one. (It replaced `realrom-expected-baseline-fails`, which was only half-authoritative: it
+was never itself updated when a *later* memory superseded its `megaman` paragraph, so it named a
+jitter signature that no longer applies while still calling itself current. Its durable method
+content — invocation, manifest-set semantics, cache and A/B mechanics — now lives in
+`realrom-howto`, which carries no row-status content and so cannot rot the same way.) To
 decide whether some *other* movement is yours, re-run the row against a stashed baseline and diff
 the two `build/banktest-work/realrom.*/<id>.diff` files.
 
