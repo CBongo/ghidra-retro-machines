@@ -169,6 +169,25 @@ CACHE_DIR="$REPO_ROOT/build/banktest-cache"
 # Compute the extension identity once; empty => caching disabled for this run.
 EXT_ID="$(ext_identity)" || EXT_ID=""
 
+# ANNOUNCE IT (bead grm-4t2d). This value was computed here to key the cache long before it
+# was ever printed, which is precisely how it failed to help: the check existed and stayed
+# silent. This script does NOT build or install -- only build-and-test.sh does -- so invoking
+# it directly is the fast path that can analyze a build older than your working tree, and the
+# resulting failures look exactly like a real regression (grm-mlp2 lost a three-point bisect
+# and filed a bogus P1 to it; see grm-7rct and the which-script-builds-the-extension memory).
+# When build-and-test.sh drove this run it just built and installed, so say that instead of
+# warning about staleness that cannot apply.
+if [ "${GRM_EXTENSION_BUILT_THIS_RUN:-}" = 1 ]; then
+	grm_installed_extension_note "$EXT_ID" \
+		"(built and installed by build-and-test.sh for this run, so it matches this tree.)"
+else
+	grm_installed_extension_note "$EXT_ID" \
+		"(this script does NOT build or install -- it analyzes with whatever is already" \
+		" installed. A surprising result may be a stale extension rather than your change." \
+		" Re-run as 'bash tools/banktest/build-and-test.sh check <chunk>' before trusting it,"  \
+		" and treat any baseline or bisect taken through this script alone as unproven.)"
+fi
+
 normalize_opts() {
 	# Echo the loader-opts string with each existing-file argument replaced by
 	# its sha256, so ROM-content changes invalidate the key but the volatile

@@ -462,16 +462,10 @@ EXT_ID="$(ext_identity)" || EXT_ID=""
 # it cost an incorrect zero-movement claim that had already been committed). Printing the
 # identity makes it checkable in one glance: if both sides of an A/B print the SAME line, the
 # comparison is worthless no matter what the dumps say.
-if [ -n "$EXT_ID" ]; then
-	echo "== installed extension: $EXT_ID =="
-	echo "   (this script does NOT build. For an A/B, rebuild between sides with"
-	echo "    'bash tools/banktest/build-and-test.sh check nes-banking' and expect this line"
-	echo "    to CHANGE -- if it does not, you are comparing a build against itself.)"
-else
-	echo "== installed extension: UNKNOWN (not the isolated build/ghidra-home install) =="
-	echo "   Run 'bash tools/banktest/build-and-test.sh check nes-banking' first; results from"
-	echo "   an unidentified install cannot be attributed to a source state at all."
-fi
+grm_installed_extension_note "$EXT_ID" \
+	"(this script does NOT build. For an A/B, rebuild between sides with" \
+	" 'bash tools/banktest/build-and-test.sh check nes-banking' and expect this line" \
+	" to CHANGE -- if it does not, you are comparing a build against itself.)"
 # Resolved Ghidra install root (bead grm-k0h): GHIDRA_HEADLESS -- not GRM_GHIDRA_INSTALL --
 # is what actually launches Ghidra, so a native-side A/B (decompile.exe, sleigh.exe) needs
 # GRM_GHIDRA_INSTALL set AND this to name the install it resolved to, or a stray default

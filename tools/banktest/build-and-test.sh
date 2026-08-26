@@ -348,4 +348,10 @@ export BANKTEST_SETTINGS_BASE="$SETTINGS_BASE"
 # gate that never touched real cartridge idioms (grm_realrom_staleness_note, lib/common.sh).
 grm_realrom_staleness_note
 
+# Tell run-banktest.sh that the extension it is about to use was just built and installed by
+# THIS run (bead grm-4t2d). Without it that script would print its standing "this script does
+# not build, your result may be stale" warning even here, where it cannot apply -- and a
+# warning that fires when it is not true is how people learn to ignore it.
+export GRM_EXTENSION_BUILT_THIS_RUN=1
+
 exec "$SCRIPT_DIR/run-banktest.sh" "$MODE" ${RUNNER_FLAGS[@]+"${RUNNER_FLAGS[@]}"} "${RUNNER_CHUNKS[@]}"

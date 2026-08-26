@@ -277,6 +277,36 @@ grm_realrom_staleness_note() {
 	fi
 }
 
+# Installed-extension identity banner (bead grm-4t2d). Shared for the same reason
+# grm_realrom_staleness_note above is: two call sites, one message, no drift.
+#
+# WHY EVERY RUNNER ANNOUNCES THIS. Only build-and-test.sh builds and installs the extension;
+# run-banktest.sh and realrom-test.sh analyze with whatever already sits in build/ghidra-home.
+# That is the fast inner loop and the real-ROM tier respectively -- the two scripts people
+# reach for most -- so the two easiest things to run are the two that can silently test code
+# which is not in your working tree. Every failure mode is in the flattering direction: an A/B
+# that forgot the rebuild returns byte-identical dumps and reads as "my change moved nothing"
+# (it cost grm-mej.2 a committed, pushed, wrong zero-movement claim), and a stale install
+# imitates a genuine regression convincingly enough to have cost grm-mlp2 a three-point bisect
+# and a P1 filed against main in error (grm-7rct, retracted). Printing the identity turns all
+# of that into a one-glance check. See the which-script-builds-the-extension bd memory.
+#
+# Args: $1 = identity (possibly empty); $2.. = caller-specific advice lines, printed indented.
+grm_installed_extension_note() {
+	local id="${1:-}"; shift || true
+	if [ -z "$id" ]; then
+		echo "== installed extension: UNKNOWN (not the isolated build/ghidra-home install) =="
+		echo "   Results from an unidentified install cannot be attributed to a source state at" \
+			"all. Run 'bash tools/banktest/build-and-test.sh check nes-banking' first."
+		return
+	fi
+	echo "== installed extension: $id =="
+	local line
+	for line in "$@"; do
+		echo "   $line"
+	done
+}
+
 ext_identity() {
 	# Content fingerprint of the installed extension, or non-zero if it cannot be
 	# determined (=> the caller's candidate-dump cache is disabled). NOT a file
