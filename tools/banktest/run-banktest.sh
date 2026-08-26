@@ -38,9 +38,18 @@
 #                            per-worktree isolated Extensions install instead
 #                            of the shared %APPDATA%/ghidra one. Also sets
 #                            -Dapplication.cachedir under the same tree. Set
-#                            by build-and-test.sh; left unset here preserves
-#                            today's behavior (shared %APPDATA% install), so
-#                            the manual GUI-adjacent flow still works.
+#                            by build-and-test.sh. Left unset, this script now
+#                            DEFAULTS to the same isolated tree (grm-4t2d) --
+#                            see the fallback call below for why that changed.
+#   GRM_SHARED_GHIDRA_INSTALL=1
+#                           opt out of that default and read the shared
+#                            %APPDATA%/ghidra install instead -- the manual
+#                            GUI-adjacent flow. Rarely what you want: results
+#                            from it cannot be attributed to this working
+#                            tree's source, because only tools/install-gui.ps1
+#                            ever writes that install. Note BANKTEST_SETTINGS_BASE=
+#                            (explicitly empty) does NOT do this; the fallback
+#                            treats empty as unset, so this flag is the way.
 #
 # Note: analyzeHeadless.bat chokes on parentheses in filenames -- keep every
 # generated path free of them.
@@ -136,9 +145,36 @@ if [ -z "$PYTHON" ]; then
 	if command -v python3 >/dev/null 2>&1; then PYTHON=python3; else PYTHON=python; fi
 fi
 
-# Relocate the user settings dir (and therefore the Extensions dir) when the
-# caller exported BANKTEST_SETTINGS_BASE; see lib/common.sh for the mechanism.
-# No fallback here: left unset, this run uses the shared %APPDATA% install.
+# Relocate the user settings dir (and therefore the Extensions dir) to the per-worktree
+# isolated install; see lib/common.sh for the mechanism.
+#
+# THIS SCRIPT USED TO BE THE ODD ONE OUT, and it was not a decision so much as a leftover
+# (bead grm-4t2d, 2026-08-25). History: grm-r3h (71c043c) introduced the isolated install with
+# this script as the MECHANISM and build-and-test.sh as the POLICY that sets the base, so
+# "unset" here meant "the GUI flow" and was reasonable when build-and-test.sh was the only
+# caller. Then realrom-test.sh (grm-zai) and measure-overlay-scale.sh (grm-6a7.3) arrived as
+# STANDALONE runners, needed the isolated install, and grm-9mw (29ce77f) factored
+# grm_settings_base_fallback out for them -- without revisiting this script, which kept its
+# original behaviour by default rather than by intent.
+#
+# THE COST OF LEAVING IT: a direct `run-banktest.sh check <chunk>` read
+# %APPDATA%/ghidra/<ver>/Extensions, the GUI install, which ONLY tools/install-gui.ps1 ever
+# writes -- a manual step agents are told never to run. So nothing in the normal loop refreshed
+# it and it drifted without bound, while every run still succeeded normally. Measured
+# 2026-08-25: that install was three days stale and predated aea1021, which is what made
+# grm-mlp2's "clean tree baseline" execute genuinely older analysis code, cost a three-point
+# bisect, and produce a P1 filed against main in error (grm-7rct, retracted). Unlike a stale
+# isolated install, nothing an agent may do could ever correct it.
+#
+# All four runners now default to the same isolated tree. The GUI-install flow is still
+# reachable, but you have to ask for it.
+if [ "${GRM_SHARED_GHIDRA_INSTALL:-}" = 1 ]; then
+	echo "NOTE: GRM_SHARED_GHIDRA_INSTALL=1 -- reading the shared %APPDATA%/ghidra install" \
+		"instead of the isolated build/ghidra-home tree. Only tools/install-gui.ps1 writes" \
+		"that install, so this run cannot be attributed to the current source state." >&2
+else
+	grm_settings_base_fallback "${CHUNKS[0]}"
+fi
 grm_apply_settings_base
 
 WORK="$(grm_work_dir banktest)"
