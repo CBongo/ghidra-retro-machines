@@ -106,6 +106,50 @@ a stale build imitates a genuine regression convincingly, and can also produce a
 `build-and-test.sh` first whenever the answer depends on your current source. See the
 `which-script-builds-the-extension` bd memory and `grm-4t2d`.
 
+## Machine-specific paths belong in local settings, never in a committed file
+
+This is a public repository. Future contributors will not have your directory layout, so **no
+committed file may hardcode an absolute path** — not this file, not `CLAUDE.md`, not `docs/`, not
+`tools/`. Refer to "the repo root", or name the environment variable or gradle property that
+resolves the path, and let each machine supply the value.
+
+Per-machine values live in gitignored local settings, alongside the committed portable config:
+
+| Agent | Committed (portable) | Per-machine (gitignored) |
+|---|---|---|
+| Claude Code | `.claude/settings.json` | `.claude/settings.local.json` |
+| Codex | `.codex/hooks.json` | `.codex/*.local.json` |
+
+That is where `GRM_ROM_DIR`, `GRM_SPC700_VECTORS`, `GRM_SPC700_DIS_CORPUS`, and
+`GRM_GHIDRA_INSTALL` are set — and where any new machine-dependent value belongs. Ghidra's own
+install location resolves the same way, from `ghidraInstallRoot` in your machine-local
+`~/.gradle/gradle.properties` composed with `gradle.properties`' `ghidraTargetVersion`; never
+paste a resolved install path into the repo.
+
+If you find an absolute path in a committed file, treat it as a bug and generalize it.
+
+## Persistent memory: the index is not the memory
+
+`bd prime` injects persistent memories at session start, but **the payload is large enough that
+your host may truncate it** — measured 2026-08-26 at 101 KB, of which memories are 95%. When that
+happens you get the first memory and nothing else, silently. Do not assume a memory reached you
+just because `bd prime` ran.
+
+Three commands, and the distinction between them matters:
+
+```bash
+bd memories              # compact index of every memory: key + a TRUNCATED first line
+bd memories <search>     # same index, filtered by keyword
+bd recall <key>          # the FULL body of one memory
+```
+
+The index line is a hard truncation that can stop mid-word. **It is a pointer, not a summary — do
+not act on it as if it were the whole memory.** If a key looks relevant to what you are doing,
+`bd recall` it and read the body. Several memories in this store exist specifically to stop a
+class of expensive mistake, and their first line does not tell you which class.
+
+Write new knowledge with `bd remember` (see the Rules section below); do not create memory files.
+
 ## Non-Interactive Shell Commands
 
 **ALWAYS use non-interactive flags** with file operations to avoid hanging on confirmation prompts.

@@ -56,6 +56,15 @@ Thumbs.db
 # Claude Code agent worktrees (transient, per-agent isolated checkouts)
 .claude/worktrees/
 
+# Per-machine agent settings: absolute paths, ROM/corpus directories, permission allowlists.
+# These MUST stay out of the repo -- they are specific to one machine and leak local layout into
+# a public tree. The committed .claude/settings.json and .codex/hooks.json hold only portable
+# config. (Previously this was ignored on the author's machine via a GLOBAL gitignore, which a
+# fresh clone does not inherit -- so a new contributor's local settings would have shown up as
+# untracked and been easy to commit by accident. Hence the rule lives here now.)
+.claude/settings.local.json
+.codex/*.local.json
+
 # Local real-ROM library surveys (tools/banktest/realrom-test.sh nominate output).
 # The driver only ever reads manifest.tsv and manifest-gme.tsv, both by hardcoded name, so
 # any OTHER manifest-*.tsv is a machine-specific scratch survey of whatever ROM library the

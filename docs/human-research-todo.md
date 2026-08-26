@@ -33,8 +33,8 @@ in it as a recorded finding, and do not sweep it into beads.
 
 ```bash
 bd show <id>                                            # the bead behind any item here
-bash tools/banktest/realrom-test.sh check --gme H:/emulators/nes/roms
-bash tools/banktest/realrom-test.sh nominate H:/emulators/nes/roms   # board-gap survey
+bash tools/banktest/realrom-test.sh check --gme         # romdirs come from GRM_ROM_DIR
+bash tools/banktest/realrom-test.sh nominate <romdir>   # board-gap survey
 ```
 
 ---
@@ -111,6 +111,35 @@ Each is minutes of work and settles something specific. Highest value per unit e
 
       Ghidra has split the routine into `FUN_c542` and `FUN_c54a`, which report the *same*
       `switchSite=c5fc`; the body you want is `c542`–`c6f1`.
+
+- [ ] **Upgrade `bd` 1.0.4 → 1.2.2 — it unblocks a designed fix for the memory truncation.**
+      (`grm-8ctl` P1, researched 2026-08-26.) Minutes of work; run
+      `.\tools\upgrade-bd.ps1` (`-WhatIf` first if you want to see the paths). It checksums the
+      download, refuses to run while `bd` is live, and keeps the outgoing binary as
+      `bd-previous.exe` so rollback is a rename.
+
+      **Why it needs you:** `bd` is a standalone binary in `%LOCALAPPDATA%\Programs\bd` with no
+      self-update, so this writes outside the repo — same category as `tools/install-gui.ps1`.
+
+      **What it buys:** `bd prime --no-memories` (merged upstream 2026-07-14, ships in v1.1.2) lets
+      both hooks emit `bd prime --no-memories` + `bd memories` instead of bare `bd prime`. Measured
+      here: **101,019 bytes → ~10 KB**, using only shipped flags instead of the brittle
+      output-stripping that upstream added the flag specifically to eliminate. Today the hook payload
+      is 95% memory bodies and the host truncates it to a ~2 KB preview, so everything after the
+      first memory alphabetically never reaches the session — that is the mechanism behind the
+      retracted `grm-7rct`.
+
+      **Two things worth knowing before you run it.** v1.2.2 *is* v1.1.2's code under a higher
+      version number (v1.2.0/v1.2.1 were published by accident without release testing), so "latest"
+      and "conservative" are the same binary — and the release notes' alarming "schema version
+      mismatch" section applies only to people who ran v1.2.1, not to you coming from 1.0.4. It does
+      migrate the local Dolt schema forward, one-way; beads data is already pushed to
+      `refs/dolt/data`.
+
+      **When it's done, hand it back.** Rewiring the two hooks and the matching wording in
+      `AGENTS.md` are agent work, deliberately held until the binary is in place rather than written
+      blind. Verification is then free: start one fresh session and see whether the SessionStart hook
+      still says `Output too large ... Preview (first 2KB)`.
 
 *Not an item — a note.* The `.idb` inventory itself (`grm-w4w3`) is **agent work and is
 deliberately deferred to a future session** at your request; the tooling question is settled
@@ -284,6 +313,32 @@ Agents can't file these — they need an account and CLA agreement.
 
   - `grm-ef46` → NationalSecurityAgency/ghidra, `6502.slaspec`, the ADC half. Fork recipe below.
   - `grm-c9hv` → anarkiwi/deity-informant, `6510_illegal.sinc`, the RRA half.
+
+- [ ] **`bd prime`: ask beads for an index emission for memories, instead of all-or-nothing.**
+  (`grm-8ctl`, researched 2026-08-26.) **The full issue body is drafted verbatim on `grm-8ctl`'s
+  comments** — title on the first line — so this is review-and-post, nothing left to write.
+
+  The ask: `bd prime` today emits every memory body in full, or (since `--no-memories`, merged
+  2026-07-14) none at all. Neither is right for a workspace whose memories are load-bearing. We
+  measured 101,019 bytes of prime output, 95% of it memory bodies, truncated by the host to a
+  ~2 KB preview — so the memories are stored, synced, and silently absent from the context they
+  exist to inform. `bd memories` already produces the right artifact (5,297 bytes for 34 entries)
+  and `bd recall <key>` already fetches one body; the only missing piece is `bd prime` being able
+  to emit the former.
+
+  Two things the draft is careful about, worth preserving if you edit it: it concedes that
+  **there is no per-memory summary field** to index on (`bd memories --json` is flat
+  `{key: body}`, `bd remember` has no `--summary`), so a v1 can only truncate — and it explicitly
+  does *not* ask for the schema change. And it distances itself from **#5153**, whose ask #1
+  (list/search) is already satisfied by `bd memories` and which would otherwise be a tempting
+  place to close this as a duplicate.
+
+  Prior art to cite, both verified by direct API read: **#3961** (closed, merged as PR **#4336**)
+  is the same problem from `loom`, whose maintainer measured >150 KB and whose workaround was the
+  brittle stdout-stripping this would replace.
+
+  **Note `gh` on this machine is not authenticated** (`gh auth login` needed) — an agent found
+  that out trying to read the release metadata, so budget for it.
 
 *Two things learned that the next upstream item should inherit:*
 
