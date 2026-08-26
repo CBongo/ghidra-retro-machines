@@ -31,8 +31,6 @@ import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.stream.Collectors;
 
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
 import ghidra.app.cmd.disassemble.DisassembleCommand;
@@ -61,11 +59,11 @@ import ghidra.program.model.symbol.ReferenceManager;
 import ghidra.program.model.symbol.RefType;
 import ghidra.program.model.symbol.SourceType;
 import ghidra.program.model.symbol.Symbol;
-import ghidra.util.classfinder.ClassSearcher;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.exception.InvalidInputException;
 import ghidra.util.task.TaskMonitor;
 
+import retromachines.BankStrategyRegistry.ConfiguredMechanism;
 import retromachines.BoardDescriptorModel.BoardModel;
 import retromachines.BoardDescriptorModel.Bounded;
 import retromachines.BoardDescriptorModel.ComputedWindowModel;
@@ -270,8 +268,8 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		Map<String, Integer> placementOverride = readPlacementOverride(program, log);
 
 		JsonObject banking = map.getAsJsonObject("banking");
-		List<ConfiguredMechanism> mechanisms = configureStrategies(program,
-			banking.getAsJsonArray("mechanisms"), board, log);
+		List<ConfiguredMechanism> mechanisms = BankStrategyRegistry.configureStrategies(this,
+			program, banking.getAsJsonArray("mechanisms"), board, log);
 		if (mechanisms.isEmpty()) {
 			AnalyzerLog.warn(this, log, "no usable bank-switch strategy in " + mapPath +
 				" banking; skipping bank-state analysis");
@@ -506,141 +504,6 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// THE RULE: when a site already sets a WARNING bookmark carrying the same message,
 		// the log echo is info. Reserve warn for findings with no other durable record.
 		AnalyzerLog.info(this, getClass().getSimpleName() + ": " + msg);
-	}
-
-	// ------------------------------------------------------------------
-	// Strategy configuration
-	// ------------------------------------------------------------------
-
-	/**
-	 * Instantiates and configures one {@link BankSwitchStrategy} per descriptor
-	 * mechanism entry, matching {@code mechanisms[].strategy} to implementations found
-	 * by ClassSearcher. Unknown strategy names are logged and skipped (they belong to
-	 * later milestones). Each mechanism is also positioned within the board's absolute
-	 * state bits (see {@link #mechanismPositioning}); a mechanism whose positioning
-	 * cannot be determined is likewise skipped.
-	 */
-	private List<ConfiguredMechanism> configureStrategies(Program program, JsonArray mechanisms,
-			BoardModel board, MessageLog log) {
-		List<BankSwitchStrategy> prototypes = ClassSearcher.getInstances(BankSwitchStrategy.class);
-		List<ConfiguredMechanism> configured = new ArrayList<>();
-		for (JsonElement me : mechanisms) {
-			JsonObject mechanism = me.getAsJsonObject();
-			String strategyName = mechanism.get("strategy").getAsString();
-			BankSwitchStrategy prototype = null;
-			for (BankSwitchStrategy p : prototypes) {
-				if (p.strategyName().equals(strategyName)) {
-					prototype = p;
-					break;
-				}
-			}
-			if (prototype == null) {
-				AnalyzerLog.warn(this, log, "no BankSwitchStrategy implementation for strategy '" +
-					strategyName + "'; skipping that mechanism");
-				continue;
-			}
-
-			int[] positioning = mechanismPositioning(mechanism, board, log, strategyName);
-			if (positioning == null) {
-				continue;
-			}
-			int effectMask = positioning[0];
-			int lsb = positioning[1];
-
-			try {
-				BankSwitchStrategy instance =
-					prototype.getClass().getDeclaredConstructor().newInstance();
-				JsonObject params = mechanism.getAsJsonObject("params");
-				// Field-local sub-offsets (grm-6a7.1): a mechanism with several 'sets' fields
-				// packed into one physical register (e.g. select-data's select/prg_mode/r6/r7)
-				// needs to know where EACH of its own fields sits within its own field-local
-				// [0, width) window, not just the window's own overall width. Rather than have
-				// every such strategy re-derive that from banking.state by hand (or have YAML
-				// authors hand-duplicate offsets that must stay in lockstep with the state
-				// tuple), inject it here from the single source of truth: board.fieldSpecs(),
-				// the same per-field (lsb, width) this method already used to compute
-				// effectMask/lsb above, just re-expressed field-local (subtract this
-				// mechanism's own lsb) and keyed by name under params._field_layout. A
-				// single-field mechanism (every strategy shipped before this one) never reads
-				// this key, so injecting it unconditionally cannot break them.
-				if (mechanism.has("sets")) {
-					JsonObject fieldLayout = new JsonObject();
-					for (JsonElement se : mechanism.getAsJsonArray("sets")) {
-						String fieldName = se.getAsString();
-						board.fieldSpecs().stream()
-								.filter(f -> f.name().equals(fieldName))
-								.findFirst()
-								.ifPresent(f -> {
-									JsonObject fl = new JsonObject();
-									fl.addProperty("lsb", f.lsb() - lsb);
-									fl.addProperty("width", f.width());
-									fieldLayout.add(fieldName, fl);
-								});
-					}
-					params.add("_field_layout", fieldLayout);
-				}
-				// Strategies always compute in field-local [0, width) coordinates; the mask
-				// they configure with is that field-local width, not the whole board mask.
-				instance.configure(program, params, effectMask >>> lsb);
-				configured.add(new ConfiguredMechanism(instance, effectMask, lsb));
-			}
-			catch (Exception e) {
-				AnalyzerLog.warn(this, log, "failed to configure strategy '" + strategyName + "': " +
-					e.getMessage());
-			}
-		}
-		return configured;
-	}
-
-	/**
-	 * Computes one mechanism's {@code (effectMask, lsb)}: where in the board's absolute
-	 * state bits this mechanism's writes land, derived from its {@code sets} field-name
-	 * list (the {@code banking.state} fields it writes) -- {@code effectMask} is the union
-	 * of those fields' {@link FieldSpec#positionedMask()}, {@code lsb} the lowest of their
-	 * lsbs. The engine uses this to translate between a strategy's field-local
-	 * {@code [0, width)} coordinate space (what {@link BankSwitchStrategy#computeSwitch}
-	 * actually computes in) and the board's absolute state bits, so one mechanism's switch
-	 * can fold into the tracked state without disturbing bits another mechanism owns
-	 * (grm-ezl). The union is REQUIRED to be one contiguous bit run starting at
-	 * {@code lsb} -- a mechanism whose {@code sets} fields are split or interleaved with
-	 * another mechanism's is unsupported and is conservatively skipped (logged, not
-	 * analyzed) rather than mispositioned.
-	 * <p>
-	 * A mechanism with no {@code sets} at all (older or minimal descriptors) falls back to
-	 * covering the whole board mask at {@code lsb} 0 -- today's single-mechanism-per-board
-	 * behavior, verbatim.
-	 *
-	 * @return {@code {effectMask, lsb}}, or {@code null} to skip this mechanism
-	 */
-	private int[] mechanismPositioning(JsonObject mechanism, BoardModel board, MessageLog log,
-			String strategyName) {
-		if (!mechanism.has("sets") || mechanism.getAsJsonArray("sets").size() == 0) {
-			return new int[] { board.mask(), 0 };
-		}
-		JsonArray sets = mechanism.getAsJsonArray("sets");
-		int effectMask = 0;
-		int lsb = Integer.MAX_VALUE;
-		for (JsonElement se : sets) {
-			String fieldName = se.getAsString();
-			FieldSpec field = board.fieldSpecs().stream()
-					.filter(f -> f.name().equals(fieldName))
-					.findFirst()
-					.orElse(null);
-			if (field == null) {
-				AnalyzerLog.warn(this, log, "mechanism '" + strategyName + "' sets unknown state " +
-					"field '" + fieldName + "'; skipping that mechanism");
-				return null;
-			}
-			effectMask |= field.positionedMask();
-			lsb = Math.min(lsb, field.lsb());
-		}
-		int widthMask = effectMask >>> lsb;
-		if (widthMask == 0 || (widthMask & (widthMask + 1)) != 0) {
-			AnalyzerLog.warn(this, log, "mechanism '" + strategyName + "' sets fields " + sets +
-				" that are not a contiguous bit run in banking.state; skipping that mechanism");
-			return null;
-		}
-		return new int[] { effectMask, lsb };
 	}
 
 	// ------------------------------------------------------------------
@@ -4060,16 +3923,6 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				"stamped " + register.getName() + " over " + stamped + " instructions");
 		}
 	}
-
-	/**
-	 * One descriptor mechanism entry, instantiated and positioned: {@code strategy} is the
-	 * configured {@link BankSwitchStrategy}, which computes entirely in its own field-local
-	 * {@code [0, width)} coordinate space; {@code effectMask} and {@code lsb} say where that
-	 * space lands in the board's absolute state bits (see {@link #mechanismPositioning}).
-	 * For every shipped (single-mechanism) board {@code effectMask == board.mask()} and
-	 * {@code lsb == 0}, so field-local and absolute coincide.
-	 */
-	private record ConfiguredMechanism(BankSwitchStrategy strategy, int effectMask, int lsb) {}
 
 	/**
 	 * One recognized switch site's positioned effect (grm-ezl): {@code effect} is the pure
