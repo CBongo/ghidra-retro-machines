@@ -47,8 +47,8 @@ import ghidra.program.model.symbol.SourceType;
 import ghidra.util.exception.InvalidInputException;
 import ghidra.util.task.TaskMonitor;
 
+import static retromachines.BankDataflowEngine.toFieldLocal;
 import static retromachines.BoardBankAnalyzer.reachableEntries;
-import static retromachines.BoardBankAnalyzer.toFieldLocal;
 
 import retromachines.BoardBankAnalyzer.DataflowResult;
 import retromachines.BoardBankAnalyzer.HelperModel;
@@ -84,15 +84,16 @@ import retromachines.BoardDescriptorModel.WindowModel;
  * calls the package-private instance method {@code BoardBankAnalyzer.calledHelper} -- neither
  * is expressible through the generic {@code Analyzer} interface, so {@code analyzer} is typed
  * {@link BoardBankAnalyzer} here rather than {@code Analyzer}, and both calls are threaded the
- * same mechanical way. {@code toFieldLocal} and {@code reachableEntries} are static helpers
- * that stay in {@code BoardBankAnalyzer}'s Dataflow/Helper-call-propagation sections (separate
- * beads grm-gqrj/grm-shnf); both were widened from {@code private} to package-private and are
+ * same mechanical way. {@code toFieldLocal} and {@code reachableEntries} are static helpers,
  * referenced here via {@code import static} so the call sites themselves are byte-identical to
- * their originals. {@code findModeWindowInstance} moved here with "Reference retargeting" but
- * is also called from {@code BoardBankAnalyzer.clampToResidence} (Dataflow section) -- the one
- * place this increment's own code is called back INTO from the dataflow side; that call site
- * was qualified {@code BankAnnotationAdapter.findModeWindowInstance(...)} and
- * {@code findModeWindowInstance} widened from {@code private} to package-private to allow it.
+ * their originals; {@code toFieldLocal} moved to {@link BankDataflowEngine} with the Dataflow
+ * section (bead grm-gqrj) and {@code reachableEntries} stays on {@code BoardBankAnalyzer} in the
+ * Helper-call-propagation section (bead grm-shnf, still open). {@code findModeWindowInstance}
+ * moved here with "Reference retargeting" but is also called from
+ * {@code BankDataflowEngine.clampToResidence} -- the one place this increment's own code is
+ * called back INTO from the dataflow side; that call site was qualified
+ * {@code BankAnnotationAdapter.findModeWindowInstance(...)} and {@code findModeWindowInstance}
+ * widened from {@code private} to package-private to allow it.
  */
 final class BankAnnotationAdapter {
 

@@ -1581,9 +1581,10 @@ public class BankConsumerProbe extends GhidraScript {
 	/**
 	 * The set of instruction addresses runDataflow would ever dequeue, with the bank state
 	 * removed: seeds, then {@code instr.getFlows()} + {@code getFallThrough()} to fixpoint
-	 * (:687-694), dropping any address with no instruction exactly as {@code mergeAndEnqueue}
-	 * does (:744-747). Dropping the state is sound for this question -- state affects the
-	 * VALUE a switch produces, never which addresses are visited.
+	 * (BankDataflowEngine.java:266-273), dropping any address with no instruction exactly as
+	 * {@code mergeAndEnqueue} does (BankDataflowEngine.java:323-326). Dropping the state is
+	 * sound for this question -- state affects the VALUE a switch produces, never which
+	 * addresses are visited.
 	 * <p>
 	 * Copied VERBATIM from BankReachProbe.java (its {@code reachable}), including this
 	 * pinning comment: the two probes must answer {@code reach=} identically or a
@@ -1616,7 +1617,7 @@ public class BankConsumerProbe extends GhidraScript {
 		return reached;
 	}
 
-	/** Seeds byte-for-byte the set runDataflow builds (BoardBankAnalyzer.java:568-576). */
+	/** Seeds byte-for-byte the set runDataflow builds (BankDataflowEngine.java:137-145). */
 	private Set<Address> reachableSet() throws Exception {
 		Set<Address> seeds = new LinkedHashSet<>();
 		AddressIterator eps = program.getSymbolTable().getExternalEntryPointIterator();

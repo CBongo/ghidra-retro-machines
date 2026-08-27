@@ -35,13 +35,14 @@
 // wizwarr, the only AxROM title -- so the MMC1 and MMC3 questions could not even be asked.
 //
 // THE THREE ROOT CAUSES IT SEPARATES
-//   (i)   the store IS disassembled but sits in NO function -- BoardBankAnalyzer.runDataflow
-//         (:568-576) seeds ONLY from external entry points + function entry points, so an
-//         orphan store is never dequeued; and with no constant-propagation coverage the
-//         indexed operand never acquires a reference either, so it is doubly invisible.
+//   (i)   the store IS disassembled but sits in NO function -- BankDataflowEngine.runDataflow
+//         (BankDataflowEngine.java:137-145) seeds ONLY from external entry points + function
+//         entry points, so an orphan store is never dequeued; and with no constant-propagation
+//         coverage the indexed operand never acquires a reference either, so it is doubly
+//         invisible.
 //   (ii)  the store was never disassembled -- the bytes are there, but nothing flowed to
 //         them, so there is no Instruction for runDataflow to see at all (mergeAndEnqueue,
-//         :744-747, silently drops any address with no instruction).
+//         BankDataflowEngine.java:323-326, silently drops any address with no instruction).
 //   (iii) the store is reachable AND in a function and STILL produced no annotation, because
 //         the matched strategy's own write predicate never claimed it. For memory-latch that
 //         predicate is TWO TIERS: an authoritative write reference first, then operand decode
@@ -417,7 +418,7 @@ public class BankReachProbe extends GhidraScript {
 			return;
 		}
 
-		// --- 3. seeds: byte-for-byte the set runDataflow builds (:568-576) ---------
+		// --- 3. seeds: byte-for-byte the set runDataflow builds (BankDataflowEngine.java:137-145) ---
 		Set<Address> seeds = new LinkedHashSet<>();
 		int entryPoints = 0;
 		AddressIterator eps = program.getSymbolTable().getExternalEntryPointIterator();
@@ -714,9 +715,10 @@ public class BankReachProbe extends GhidraScript {
 	/**
 	 * The set of instruction addresses runDataflow would ever dequeue, with the bank state
 	 * removed: seeds, then {@code instr.getFlows()} + {@code getFallThrough()} to fixpoint
-	 * (:687-694), dropping any address with no instruction exactly as {@code mergeAndEnqueue}
-	 * does (:744-747). Dropping the state is sound for this question -- state affects the
-	 * VALUE a switch produces, never which addresses are visited.
+	 * (BankDataflowEngine.java:266-273), dropping any address with no instruction exactly as
+	 * {@code mergeAndEnqueue} does (BankDataflowEngine.java:323-326). Dropping the state is
+	 * sound for this question -- state affects the VALUE a switch produces, never which
+	 * addresses are visited.
 	 */
 	private Set<Address> reachable(Listing listing, Set<Address> seeds) throws Exception {
 		Set<Address> reached = new HashSet<>();

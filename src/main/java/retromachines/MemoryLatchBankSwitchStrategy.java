@@ -239,7 +239,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * <p>
 	 * <b>COORDINATE CONVERSION -- the easiest place in this increment to ship a wrong bank.</b>
 	 * {@code inStateAtStore} arrives in this mechanism's FIELD-LOCAL {@code [0, width)} space (the
-	 * engine narrows it at {@code BoardBankAnalyzer}'s {@code toFieldLocal} before calling
+	 * engine narrows it at {@code BankDataflowEngine}'s {@code toFieldLocal} before calling
 	 * {@link #computeSwitch}), while this hook's contract is to answer in the RAW WRITTEN BYTE,
 	 * because {@link #evaluateLatch} applies the byte-to-field extraction
 	 * {@code (stored >> shift) & mask} afterwards. So the conversion runs that extraction

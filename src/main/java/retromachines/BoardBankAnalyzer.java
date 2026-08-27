@@ -55,6 +55,10 @@ import ghidra.program.model.symbol.Symbol;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.task.TaskMonitor;
 
+import static retromachines.BankDataflowEngine.overwrite;
+import static retromachines.BankDataflowEngine.position;
+import static retromachines.BankDataflowEngine.runDataflow;
+
 import retromachines.BankStrategyRegistry.ConfiguredMechanism;
 import retromachines.BoardDescriptorModel.BoardModel;
 import retromachines.BoardDescriptorModel.ComputedWindowModel;
@@ -270,7 +274,8 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 
 		// --- Phase 1: forward dataflow to fixpoint; rerun with helper knowledge if any ---
 		Listing listing = program.getListing();
-		DataflowResult flow = runDataflow(program, monitor, listing, mechanisms, board, null, Set.of());
+		DataflowResult flow =
+			runDataflow(this, program, monitor, listing, mechanisms, board, null, Set.of());
 
 		// Order is load-bearing. findCallEdgeWrappers runs LAST so its relay lookups see
 		// pass-through wrappers as helpers; it is also why exitEffect never encounters a relay
@@ -328,7 +333,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// helper map is deliberately equivalent to pass 1's null (runDataflow's helper branch is
 		// a lookup that misses), so a mirrors-only rerun changes nothing on its own.
 		if (!helpers.isEmpty() || !mirrors.isEmpty()) {
-			flow = runDataflow(program, monitor, listing, mechanisms, board, helpers,
+			flow = runDataflow(this, program, monitor, listing, mechanisms, board, helpers,
 				restoringTrampolines);
 		}
 
@@ -499,308 +504,6 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	}
 
 	// ------------------------------------------------------------------
-	// Dataflow
-	// ------------------------------------------------------------------
-
-	/**
-	 * One forward-dataflow run to fixpoint. When {@code helpers} is non-null, a call to
-	 * a helper function is itself a switch site: the state on the call's fall-through is
-	 * the helper's effect, not the flowed-through in-state (the call target's entry is
-	 * still seeded with the in-state -- the switch happens inside the helper).
-	 */
-	private DataflowResult runDataflow(Program program, TaskMonitor monitor, Listing listing,
-			List<ConfiguredMechanism> mechanisms, BoardModel board,
-			Map<Function, HelperModel> helpers, Set<Function> restoringTrampolines)
-			throws CancelledException {
-
-		Map<Address, BankState> stateIn = new HashMap<>();
-		Map<Address, SwitchResult> switchResults = new HashMap<>();
-		Map<Address, CallSwitch> callSwitches = new HashMap<>();
-		Deque<Address> worklist = new ArrayDeque<>();
-		Map<String, int[]> clampCache = new HashMap<>();
-		// Scoped to this runDataflow call (not a field): phase 1/2 separation guarantees no
-		// instruction appears mid-fixpoint, so per-call scoping sidesteps any staleness
-		// question. See the strategy-probe loop below for the soundness invariant this relies
-		// on (grm-5tl.13.2).
-		Map<Address, MatchInfo> matchCache = new HashMap<>();
-		// Likewise scoped to this runDataflow call: the A/X/Y a helper call site supplies
-		// (grm-hum increment 2). Purely an efficiency memo -- but a necessary one: without it,
-		// three backward scans plus a strategy's mini-inline would rerun on EVERY dequeue of
-		// every helper call address across the whole fixpoint. Mega Man (25 switch sites, a
-		// large fixpoint) is where that bites.
-		//
-		// The memoized value is a function of (program, call address, HELPER MODEL) -- the model
-		// entered the signature with grm-k90's prologue filter and crossable join, where it had
-		// previously been (program, call address) alone. Keying on the address only is still
-		// correct, and the reason is worth stating rather than assuming: one call instruction
-		// dispatches to exactly one callee, and the helper map is FIXED before runDataflow begins
-		// (phase 1/2 separation, same invariant matchCache above relies on), so within one
-		// fixpoint a given call address resolves to one and only one model. The three scans
-		// themselves remain state-independent -- they use NO_HOOKS and never consult tracked
-		// state -- and argumentSurvivesPrologue is a pure function of the listing.
-
-		Map<Address, RegisterEnv> callSiteRegCache = new HashMap<>();
-
-		Set<Address> seeds = new LinkedHashSet<>();
-		AddressIterator eps = program.getSymbolTable().getExternalEntryPointIterator();
-		while (eps.hasNext()) {
-			seeds.add(eps.next());
-		}
-		FunctionIterator funcs = program.getFunctionManager().getFunctions(true);
-		for (Function f : funcs) {
-			seeds.add(f.getEntryPoint());
-		}
-
-		// Two seed states, not one. banking.initial_state is what the board powers up holding,
-		// so it is sound for an entry the machine reaches from reset -- and unsound for one it
-		// reaches from an interrupt, which fires from arbitrary mainline context and leaves the
-		// interrupted code's bank live on entry. The loader tells us which entries those are
-		// (DescriptorSupport.ASYNC_ENTRY_POINTS_PROPERTY); this stays machine-independent and
-		// merely consumes the list. Bead grm-913.
-		BankState seedState = BankState.fullyKnown(board.mask(), board.initialState());
-		Set<Address> asyncEntries = DescriptorSupport.parseAsyncEntryPoints(program);
-		for (Address seed : seeds) {
-			BankState entryState = asyncEntries.contains(seed) ? BankState.unknown() : seedState;
-			mergeAndEnqueue(seed, entryState, stateIn, worklist, listing, board, clampCache);
-		}
-
-		while (!worklist.isEmpty()) {
-			monitor.checkCancelled();
-			Address addr = worklist.poll();
-			Instruction instr = listing.getInstructionAt(addr);
-			if (instr == null) {
-				continue;
-			}
-			BankState inState = stateIn.get(addr);
-			BankState outState = inState;
-
-			// Strategy-probe memoization (grm-5tl.13.2): both shipped strategies gate
-			// computeSwitch on an instruction-only predicate (MemoryLatch's writesInRange,
-			// RegisterWrite's writesMechanism) that fully determines whether the result is
-			// null -- neither ever returns null for an instruction its predicate accepts, so
-			// "which mechanism matches this address" (if any) does not depend on inState, only
-			// the *value* a non-cacheable match produces does. That lets us cache the matched
-			// mechanism's identity per address across dequeues and, on a cache hit, either reuse
-			// a cacheable strategy's state-independent result outright or re-probe only the one
-			// non-cacheable strategy that matched -- never the others, and never re-run the
-			// whole ordered loop. A future strategy whose match/no-match outcome genuinely
-			// depends on inState would violate this; the fallback below (treat an unexpected
-			// null from the cached strategy as no-match for this dequeue, rather than
-			// re-probing every strategy) stays conservative in that case instead of unsound.
-			//
-			// Every strategy computes in its mechanism's field-local [0, width) coordinate
-			// space, never the board's absolute state bits: the in-state handed to
-			// computeSwitch is narrowed to that mechanism's effectMask/lsb, and a non-null
-			// result is positioned back into absolute bits before it touches stateIn.
-			MatchInfo cached = matchCache.get(addr);
-			ConfiguredMechanism matchedMechanism;
-			BankState switchedLocal;
-			if (cached == null) {
-				ConfiguredMechanism matched = null;
-				BankState result = null;
-				for (ConfiguredMechanism cm : mechanisms) {
-					BankState localIn = toFieldLocal(inState, cm.lsb(), cm.effectMask());
-					result = cm.strategy().computeSwitch(program, instr, localIn);
-					if (result != null) {
-						matched = cm;
-						break;
-					}
-				}
-				matchedMechanism = matched;
-				switchedLocal = matched == null ? null : result;
-				matchCache.put(addr, new MatchInfo(matched,
-					matched != null && matched.strategy().cacheable() ? result : null));
-			}
-			else if (cached.mechanism() == null) {
-				// no strategy's instruction-level predicate matches this address
-				matchedMechanism = null;
-				switchedLocal = null;
-			}
-			else if (cached.result() != null) {
-				// cacheable strategy matched before; its result here is state-independent
-				matchedMechanism = cached.mechanism();
-				switchedLocal = cached.result();
-			}
-			else {
-				// non-cacheable strategy matched before; only it can match here, re-probe it
-				// alone with the current in-state
-				matchedMechanism = cached.mechanism();
-				BankState localIn =
-					toFieldLocal(inState, matchedMechanism.lsb(), matchedMechanism.effectMask());
-				switchedLocal = matchedMechanism.strategy().computeSwitch(program, instr, localIn);
-			}
-			if (switchedLocal != null) {
-				// Fold: this mechanism's switch REPLACES only the bits it owns (effectMask),
-				// preserving whatever the rest of the tracked state already knew about other
-				// mechanisms' fields. For a single-mechanism board effectMask covers every
-				// tracked bit, so this reduces exactly to the old whole-state replace.
-				BankState positionedEffect =
-					position(switchedLocal, matchedMechanism.lsb(), matchedMechanism.effectMask());
-				switchResults.put(addr, new SwitchResult(positionedEffect,
-					matchedMechanism.effectMask(), matchedMechanism.lsb(),
-					matchedMechanism.strategy()));
-				outState = overwrite(inState, positionedEffect, matchedMechanism.effectMask());
-			}
-
-			BankState fallState = outState;
-			if (helpers != null && instr.getFlowType().isCall()) {
-				HelperModel helper = calledHelper(program, instr, helpers);
-				if (helper != null) {
-					CallEffect callEffect = helper.constState() != null
-							? new CallEffect(helper.constState(), helper.effectMask())
-							: recoverCallArgument(program, instr, helper, outState,
-								callSiteRegCache, restoringTrampolines);
-					// ownedMask == 0 means this call site is a verified no-op on every tracked
-					// bit -- a serial-shift helper whose switch site targets an unconfigured CHR
-					// register, or (grm-mej.3) a save/restore trampoline proved to put the entry
-					// bank back before returning -- so skip both the fold (a no-op regardless, since
-					// callEffect.state()'s knownMask is always a subset of ownedMask by
-					// construction) and the annotation, so a provably-inert call gets neither a
-					// misleading "bank -> ?" comment nor a spurious WARNING bookmark.
-					if (callEffect.ownedMask() != 0) {
-						fallState = overwrite(outState, callEffect.state(), callEffect.ownedMask());
-						// The annotation state echoes the in-state only within the helper's own
-						// mechanism window -- see CallSwitch's javadoc.
-						BankState mechIn = new BankState(outState.knownMask() & helper.effectMask(),
-							outState.bits() & helper.effectMask());
-						callSwitches.put(addr, new CallSwitch(helperLabel(program, helper),
-							callEffect.state(),
-							overwrite(mechIn, callEffect.state(), callEffect.ownedMask())));
-					}
-				}
-			}
-
-			for (Address flowAddr : instr.getFlows()) {
-				mergeAndEnqueue(flowAddr, outState, stateIn, worklist, listing, board, clampCache);
-			}
-			Address fallThrough = instr.getFallThrough();
-			if (fallThrough != null) {
-				mergeAndEnqueue(fallThrough, fallState, stateIn, worklist, listing, board,
-					clampCache);
-			}
-		}
-		return new DataflowResult(stateIn, switchResults, callSwitches);
-	}
-
-	/**
-	 * Narrows a board-absolute {@link BankState} to one mechanism's field-local
-	 * {@code [0, width)} coordinate space: the bits outside {@code effectMask} are
-	 * discarded and the surviving bits are shifted down by {@code lsb}. This is what a
-	 * {@link BankSwitchStrategy} actually sees as its {@code inState} -- e.g. its own
-	 * mechanism read back ({@code LDA} of a register-write's own address/register)
-	 * resolves against only the field(s) that mechanism owns, not the whole board state.
-	 * The inverse of {@link #position}.
-	 */
-	static BankState toFieldLocal(BankState state, int lsb, int effectMask) {
-		return new BankState((state.knownMask() & effectMask) >>> lsb,
-			(state.bits() & effectMask) >>> lsb);
-	}
-
-	/**
-	 * Positions a mechanism's field-local {@code [0, width)} result back into the board's
-	 * absolute state bits: shifted up by {@code lsb} and masked to {@code effectMask} (a
-	 * defensive mask -- a well-behaved strategy result is already {@code <= width} bits,
-	 * but this keeps a stray high bit from a strategy from ever leaking outside the
-	 * mechanism's own field). The inverse of {@link #toFieldLocal}.
-	 */
-	private static BankState position(BankState fieldLocal, int lsb, int effectMask) {
-		return new BankState((fieldLocal.knownMask() << lsb) & effectMask,
-			(fieldLocal.bits() << lsb) & effectMask);
-	}
-
-	/**
-	 * Folds a mechanism's positioned effect into a base state: bits inside {@code mask}
-	 * take the effect's knowledge (whether known or not), every other bit keeps whatever
-	 * {@code base} already knew. {@code effect}'s known bits are always a subset of
-	 * {@code mask} by construction ({@link #position} masks to it), so this is a clean
-	 * per-bit replace, not a merge -- one mechanism's switch never has to agree with what
-	 * was known before it fired. When {@code mask} covers every tracked bit (every shipped
-	 * board today, since each has exactly one mechanism spanning the whole board mask),
-	 * this reduces to replacing the state outright, matching the engine's original
-	 * single-mechanism behavior exactly.
-	 */
-	private static BankState overwrite(BankState base, BankState effect, int mask) {
-		return new BankState((base.knownMask() & ~mask) | effect.knownMask(),
-			(base.bits() & ~mask) | effect.bits());
-	}
-
-	private void mergeAndEnqueue(Address addr, BankState incoming, Map<Address, BankState> stateIn,
-			Deque<Address> worklist, Listing listing, BoardModel board,
-			Map<String, int[]> clampCache) {
-		if (listing.getInstructionAt(addr) == null) {
-			// not (yet) disassembled / not code -- nothing to track here
-			return;
-		}
-		BankState existing = stateIn.get(addr);
-		BankState merged = existing == null ? incoming : BankState.merge(existing, incoming);
-		merged = clampToResidence(addr, merged, board, clampCache);
-		if (existing == null || !merged.equals(existing)) {
-			stateIn.put(addr, merged);
-			worklist.add(addr);
-		}
-		// else: unchanged, already processed with this exact state -- nothing to do
-	}
-
-	/**
-	 * Execution implies mapping: an instruction physically inside a computed window's
-	 * bank overlay {@code WINDOW_B<n>} can only be running while that window's field
-	 * holds {@code n}, so those bits are forced known regardless of what flowed in.
-	 * (Idempotent and deterministic per address, so the fixpoint still terminates.)
-	 */
-	private BankState clampToResidence(Address addr, BankState state, BoardModel board,
-			Map<String, int[]> clampCache) {
-		AddressSpace space = addr.getAddressSpace();
-		if (!space.isOverlaySpace()) {
-			return state;
-		}
-		int[] clamp = clampCache.computeIfAbsent(space.getName(), name -> {
-			for (ComputedWindowModel w : board.computedWindows().values()) {
-				Integer v = DescriptorSupport.OverlayNaming.parseBankValue(w.name(), name);
-				if (v != null) {
-					FieldSpec f = w.field();
-					return new int[] { f.positionedMask(), (v << f.lsb()) & f.positionedMask() };
-				}
-				// null: not one of ours (e.g. a C64 occupant overlay) -- keep looking
-			}
-			if (board.modeField() != null) {
-				FieldSpec modeField = board.modeField();
-				Set<String> windowNames = new LinkedHashSet<>();
-				for (ModeWindowModel w : board.modeWindows()) {
-					windowNames.add(w.name());
-				}
-				for (String windowName : windowNames) {
-					DescriptorSupport.OverlayNaming.ModeBank mb =
-						DescriptorSupport.OverlayNaming.parseModeBankValue(windowName, name);
-					if (mb != null) {
-						ModeWindowModel instance = BankAnnotationAdapter
-							.findModeWindowInstance(board.modeWindows(), windowName, mb.mode());
-						if (instance != null && instance.bankField() != null) {
-							FieldSpec bankField = instance.bankField();
-							int posMask = modeField.positionedMask() | bankField.positionedMask();
-							int posBits =
-								((mb.mode() << modeField.lsb()) & modeField.positionedMask()) |
-									((mb.bank() << bankField.lsb()) & bankField.positionedMask());
-							return new int[] { posMask, posBits };
-						}
-						continue;
-					}
-					Integer mv = DescriptorSupport.OverlayNaming.parseModeValue(windowName, name);
-					if (mv != null) {
-						return new int[] { modeField.positionedMask(),
-							(mv << modeField.lsb()) & modeField.positionedMask() };
-					}
-				}
-			}
-			return new int[0];
-		});
-		if (clamp.length == 0) {
-			return state;
-		}
-		return new BankState(state.knownMask() | clamp[0],
-			(state.bits() & ~clamp[0]) | clamp[1]);
-	}
-
-	// ------------------------------------------------------------------
 	// Helper-call propagation
 	// ------------------------------------------------------------------
 
@@ -825,7 +528,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * const/register agreement is dropped ({@code constState = argReg = null}, forcing
 	 * per-call-site {@link #recoverCallArgument} which itself returns unknown without an
 	 * argument register) and {@code effectMask} becomes the union of every site's mask, so
-	 * the caller-side unknown-effect fold in {@link #runDataflow} wipes every field this
+	 * the caller-side unknown-effect fold in {@link BankDataflowEngine#runDataflow} wipes every field this
 	 * helper might touch rather than under- or mis-covering it.
 	 * <p>
 	 * <b>Two of the rules below became load-bearing in new ways with grm-hum increment 2</b>,
@@ -971,7 +674,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * live bank after the call is 5. {@code FUN_d846} and {@code FUN_c55d} tail-jump to the same
 	 * routine with the same consequence.
 	 * <p>
-	 * <b>This is a SUMMARY fix, not a dataflow fix.</b> {@link #runDataflow} already treats a
+	 * <b>This is a SUMMARY fix, not a dataflow fix.</b> {@link BankDataflowEngine#runDataflow} already treats a
 	 * {@code CALL_TERMINATOR} jump as a call ({@code getFlowType().isCall()} is true for it --
 	 * Ghidra's shared-return analysis rewrites a jump to another function's entry that way) and
 	 * already folds the callee helper's effect there, so the tracked state at the end of these
@@ -982,12 +685,12 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * every case it was already right about -- a serial-shift chain's commit site, and the
 	 * restore-before-RTS trampolines in {@code nesbanktest2}, whose last write really is the
 	 * last one executed. A tail call to a function this engine does not model as a helper is
-	 * likewise a no-op, which is exactly what {@link #runDataflow} folds for a call to one.
+	 * likewise a no-op, which is exactly what {@link BankDataflowEngine#runDataflow} folds for a call to one.
 	 * <p>
 	 * <b>Where it composes:</b> a tail-callee that is a recognized helper with a
 	 * caller-independent effect (its own {@code constState}, or one it composes to) overwrites
 	 * the bits it owns on top of the caller's own deposit -- callee wins on its own bits, which
-	 * is just {@link #overwrite}. When the callee owns every bit the caller's body could touch,
+	 * is just {@link BankDataflowEngine#overwrite}. When the callee owns every bit the caller's body could touch,
 	 * the composite is caller-independent even if the caller's body alone was not; that is Mega
 	 * Man's {@code FUN_d846}, whose own three sites disagree (6 / loop-carried unknown / 6) yet
 	 * whose exit is unconditionally {@code FUN_c3b3}'s bank 5.
@@ -1159,7 +862,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * <p>
 	 * A helper whose model {@link #composeTailCalls} already composed is NOT skipped here --
 	 * both outcomes of wrapping one are already correct without a special case: a composed
-	 * constant takes {@link #runDataflow}'s {@code constState} branch directly and never
+	 * constant takes {@link BankDataflowEngine#runDataflow}'s {@code constState} branch directly and never
 	 * touches the nulled {@code argReg}/{@code switchSite} fields a wrapper would also leave
 	 * untouched, and a composed decline short-circuits in {@link #recoverCallArgument} on
 	 * the null {@code argReg}, producing a warning plus honest poison exactly as a direct
@@ -1363,7 +1066,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * two relay candidates and be rejected, which would then be the correct conservative answer.
 	 * <p>
 	 * This EXTENDS an existing standard rather than introducing a new unsoundness:
-	 * {@link #runDataflow} already folds a call to a non-helper as a no-op on bank state, and
+	 * {@link BankDataflowEngine#runDataflow} already folds a call to a non-helper as a no-op on bank state, and
 	 * {@link #composeTailCalls} already writes that down for the tail-call case. But the
 	 * extension is real and worth naming -- increment 1 CHECKED inertness per instruction over
 	 * the whole wrapper body, while this checks it over the prefix and ASSUMES it over the tail.
@@ -1454,7 +1157,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * ({@code TERMINATOR}) and a tail call out of the body ({@code CALL_TERMINATOR} -- a jump
 	 * to another function's entry, which Ghidra's shared-return analysis rewrites into a
 	 * call-with-no-fall-through). Both report {@link ghidra.program.model.symbol.FlowType#isTerminal()};
-	 * they are told apart by {@code isCall()}, the same test {@link #runDataflow} already uses
+	 * they are told apart by {@code isCall()}, the same test {@link BankDataflowEngine#runDataflow} already uses
 	 * to route a {@code CALL_TERMINATOR} jump through the helper-call path.
 	 * <p>
 	 * A plain unconditional jump that leaves the body WITHOUT landing on a function entry is
@@ -1492,7 +1195,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * is mid-body. Both are the same idiom and both were invisible: the thunk is a different
 	 * {@code Function} than the helper, and the trampoline is not the helper at all, so the old
 	 * {@code getFunctionAt} + map lookup missed both and returned null -- which
-	 * {@link #runDataflow} folds as a call that does nothing to bank state. A SILENT miss, and
+	 * {@link BankDataflowEngine#runDataflow} folds as a call that does nothing to bank state. A SILENT miss, and
 	 * measurably the whole story on two real cartridges: every one of Bionic Commando's 5 bank
 	 * call sites and all 59 of Final Fantasy's reach their helper only through a hop.
 	 * <p>
@@ -1566,7 +1269,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * when the call actually went to {@code LAB_dcaa} -- an address whose whole significance
 	 * is that it is NOT the function entry.
 	 */
-	private static String helperLabel(Program program, HelperModel helper) {
+	static String helperLabel(Program program, HelperModel helper) {
 		if (helper.entry().equals(helper.function().getEntryPoint())) {
 			return helper.function().getName();
 		}
@@ -1677,7 +1380,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * {@link BankSwitchStrategy.HelperDeposit}'s javadoc for why that is tracked separately
 	 * from the value's own known bits). To support the state-routed case, {@code callSiteIn}
 	 * (the caller's board-absolute state under which this call executes -- the same
-	 * {@code outState} {@link #runDataflow} folds the call's own effect into) is narrowed to
+	 * {@code outState} {@link BankDataflowEngine#runDataflow} folds the call's own effect into) is narrowed to
 	 * this helper's mechanism's field-local space exactly like {@code argValue} before being
 	 * handed to {@link BankSwitchStrategy#depositHelperArgument}; a strategy whose routing is
 	 * address-keyed instead (serial-shift) simply ignores it. Both the value and the
@@ -1725,7 +1428,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * helper is a prologue-clobber case that must keep resolving.
 	 * <p>
 	 * {@code envCache} memoizes that environment per call address for the duration of one
-	 * {@link #runDataflow}; see its declaration there for why it is not optional.
+	 * {@link BankDataflowEngine#runDataflow}; see its declaration there for why it is not optional.
 	 * <p>
 	 * <b>The environment is PROLOGUE-FILTERED, per register</b> (bead grm-k90). What
 	 * {@link #callSiteRegisters} scans is the caller's raw A/X/Y, and for a WRAPPER model the
@@ -1761,7 +1464,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * memory-latch. The real failure was the join refusal killing the walk two instructions
 	 * short of the env's stop.
 	 */
-	private CallEffect recoverCallArgument(Program program, Instruction callInstr,
+	CallEffect recoverCallArgument(Program program, Instruction callInstr,
 			HelperModel helper, BankState callSiteIn, Map<Address, RegisterEnv> envCache,
 			Set<Function> restoringTrampolines) {
 		if (restoringTrampolines.contains(helper.function())) {
@@ -2802,12 +2505,12 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * A helper call site's positioned effect: {@code state} is the recovered value in the
 	 * board's absolute state bits (like {@link SwitchResult#effect}); {@code ownedMask} is
 	 * which of those absolute bits this call site is authoritative over -- the mask
-	 * {@link #runDataflow} folds {@code state} into via {@link #overwrite}, distinct from
+	 * {@link BankDataflowEngine#runDataflow} folds {@code state} into via {@link BankDataflowEngine#overwrite}, distinct from
 	 * {@code state.knownMask()} for exactly the reason {@link BankSwitchStrategy.HelperDeposit}
 	 * documents (a touched-but-unresolved bit is owned and poisoned; an untouched bit is
 	 * neither).
 	 */
-	private record CallEffect(BankState state, int ownedMask) {}
+	record CallEffect(BankState state, int ownedMask) {}
 
 	private static final StoredValueScanner.Hooks NO_HOOKS = new StoredValueScanner.Hooks() {
 		@Override
@@ -3046,18 +2749,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * whole mechanism window) {@code stateAfter == effect}, so the historical path is
 	 * unchanged byte-for-byte.
 	 */
-	private record CallSwitch(String helperName, BankState effect, BankState stateAfter) {}
-
-	/**
-	 * Per-address strategy-probe cache entry for {@link #runDataflow} (grm-5tl.13.2).
-	 * {@code mechanism == null} records that no strategy's instruction-level predicate
-	 * matched this address at all. Otherwise {@code mechanism} is the one mechanism whose
-	 * strategy predicate matched; {@code result} holds its state-independent, field-local
-	 * result when {@link BankSwitchStrategy#cacheable()} is true, or {@code null} when the
-	 * match was found but the value must be recomputed from the current in-state on every
-	 * dequeue.
-	 */
-	private record MatchInfo(ConfiguredMechanism mechanism, BankState result) {}
+	record CallSwitch(String helperName, BankState effect, BankState stateAfter) {}
 
 	record DataflowResult(Map<Address, BankState> stateIn,
 			Map<Address, SwitchResult> switchResults, Map<Address, CallSwitch> callSwitches) {}

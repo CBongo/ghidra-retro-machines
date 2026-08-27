@@ -51,7 +51,7 @@ data, not by convenience.
 - **grm-2yx — site discovery.** Contra (UxROM) and Dragon Ball 3 (Bandai FCG) load with a provably
   correct overlay layout yet produce zero bank comments and zero cross-bank references, while Mega
   Man on the *same board* resolves 1781. The analyzer's dataflow seeds are function entry points
-  and external entry points only (`BoardBankAnalyzer.java:568-576`), so a latch store that is never
+  and external entry points only (`BankDataflowEngine.java:137-145`), so a latch store that is never
   disassembled, or sits in no function, is not merely mis-analyzed — it is not visited at all.
 - **grm-m95 — value recovery.** A latch site whose bank argument arrives through a helper or a
   table defeats the backward value scanner. The site is found; the value is `unknown()`.
@@ -762,7 +762,7 @@ hand-built object, with the file resolution above it. §8 depends entirely on th
 ### 6.2 Site hints are dataflow **seeds**, not injected results — the load-bearing ruling
 
 A site hint is consumed by adding its address to `runDataflow`'s seed set
-(`BoardBankAnalyzer.java:568-576`), which today is exactly the external entry points plus every
+(`BankDataflowEngine.java:137-145`), which today is exactly the external entry points plus every
 function entry:
 
 ```java

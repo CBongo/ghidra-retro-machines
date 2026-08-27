@@ -124,7 +124,7 @@ import ghidra.program.model.symbol.Reference;
  * targets.</li>
  * </ol>
  * <p>
- * <b>Strategy-match cache compatibility.</b> Per {@code BoardBankAnalyzer#runDataflow}'s
+ * <b>Strategy-match cache compatibility.</b> Per {@code BankDataflowEngine#runDataflow}'s
  * memoization invariant, a non-cacheable strategy's MATCH/no-match decision (is this
  * instruction this mechanism's write at all) must be an instruction-only predicate,
  * independent of {@code inState} -- only the resulting VALUE may vary. That holds here:
