@@ -604,7 +604,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	/**
 	 * <b>The guard that makes {@link #cacheable()}{@code == false} landable</b> (grm-mej.2 §2d).
 	 * <p>
-	 * {@code BoardBankAnalyzer.annotateBankRequirementViolations} counts a switch site as imposing
+	 * {@code BankAnnotationAdapter.annotateBankRequirementViolations} counts a switch site as imposing
 	 * a bank-known-on-entry requirement only when its strategy's effect can depend on the state
 	 * that flowed in. The inherited default answers that per STRATEGY, as
 	 * {@code !cacheable()}. Flipping this strategy's {@link #cacheable()} without this override

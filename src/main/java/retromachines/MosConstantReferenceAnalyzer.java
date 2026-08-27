@@ -111,7 +111,7 @@ public abstract class MosConstantReferenceAnalyzer extends ConstantPropagationAn
 	// (AnalysisPriority.REFERENCE_ANALYSIS.before().before().before().before()). It must
 	// stay strictly before BoardBankAnalyzer's priority (REFERENCE_ANALYSIS.after()) so
 	// that base-address references already exist by the time
-	// BoardBankAnalyzer.retargetReferences re-homes references into per-bank overlays --
+	// BankAnnotationAdapter.retargetReferences re-homes references into per-bank overlays --
 	// otherwise there is nothing yet for it to re-home.
 
 	/**

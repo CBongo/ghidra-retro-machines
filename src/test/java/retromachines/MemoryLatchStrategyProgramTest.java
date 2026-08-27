@@ -1117,7 +1117,7 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		assertEquals(0x09, result.bits());
 
 		java.util.Set<Integer> realized =
-			BoardBankAnalyzer.realizedBanks(program, "PRG_LO", 0);
+			BankAnnotationAdapter.realizedBanks(program, "PRG_LO", 0);
 		assertEquals("home bank 0 in base space plus overlays for 1-3", 4, realized.size());
 		assertFalse("bank 9 has no image slice, so it must not pass for an occupant",
 			realized.contains(result.bits()));
@@ -1143,7 +1143,7 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		assertNotNull(result);
 		assertEquals(0x02, result.bits());
 		assertTrue("bank 2 is realized as the PRG_LO_B2 overlay",
-			BoardBankAnalyzer.realizedBanks(program, "PRG_LO", 0).contains(result.bits()));
+			BankAnnotationAdapter.realizedBanks(program, "PRG_LO", 0).contains(result.bits()));
 	}
 
 	/**
@@ -1156,8 +1156,8 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		layFourBankOverlays();
 
 		assertTrue("home bank lives in base space",
-			BoardBankAnalyzer.realizedBanks(program, "PRG_LO", 0).contains(0));
+			BankAnnotationAdapter.realizedBanks(program, "PRG_LO", 0).contains(0));
 		assertFalse("a differently-named window's overlays are not this window's banks",
-			BoardBankAnalyzer.realizedBanks(program, "PRG_HI", 3).contains(1));
+			BankAnnotationAdapter.realizedBanks(program, "PRG_HI", 3).contains(1));
 	}
 }

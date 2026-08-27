@@ -129,7 +129,7 @@ final class LoopIdioms {
 	 *  <p><b>The descriptor alone cannot settle this, and does not have to.</b> Which occupant an
 	 *  access reaches is bank-state-dependent in general: a C64 store to {@code $D000} hits the I/O
 	 *  registers when I/O is banked in and {@code RAM_D000} when it is not. But
-	 *  {@code BoardBankAnalyzer.retargetReferences} has already resolved this instruction against
+	 *  {@code BankAnnotationAdapter.retargetReferences} has already resolved this instruction against
 	 *  the bank state live at this very site and attached a reference to the occupant the access
 	 *  actually reaches -- WRITE references from {@code grm-bqs}, READ references too since the
 	 *  {@code grm-5tl.9} read-modify-write split. Read that answer instead of deriving a weaker one

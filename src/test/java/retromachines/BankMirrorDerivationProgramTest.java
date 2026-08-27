@@ -739,7 +739,7 @@ public class BankMirrorDerivationProgramTest extends AbstractBundledLanguageTest
 		BankMirrors.Discovery discovery = discovery();
 		discovery.scanWriteThroughShadows(program, List.of(addr("0x8024"), addr("0x802b")));
 		discovery.scanArgumentCells(program, sites);
-		// Route (c) LAST and deliberately so, exactly as BoardBankAnalyzer.deriveBankMirrors
+		// Route (c) LAST and deliberately so, exactly as BankAnnotationAdapter.deriveBankMirrors
 		// orders it: "already established as mirroring" is only knowable once (a) and (b) ran.
 		discovery.scanSaveSlotCopies(program);
 		BankMirrors mirrors = discovery.build();

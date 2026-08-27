@@ -276,7 +276,7 @@ public final class BankMirrors {
 	 * cost one bulk read each.
 	 *
 	 * @param realizedBanks the banks this window actually has an image slice for, from
-	 *                      {@code BoardBankAnalyzer.realizedBanks} -- the program's own address
+	 *                      {@code BankAnnotationAdapter.realizedBanks} -- the program's own address
 	 *                      spaces, not the container header
 	 * @return the qualifying offsets in base-space coordinates, empty when the window has fewer
 	 *         than {@link #MIN_IDENTIFYING_BANKS} realized banks, names a bank a byte cannot

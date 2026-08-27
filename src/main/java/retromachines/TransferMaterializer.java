@@ -448,7 +448,7 @@ final class TransferMaterializer {
 	/**
 	 * Retarget the entering {@code JMP}/{@code JSR}'s reference from {@code base:target} into the
 	 * overlay copy, so navigation reaches the materialized code. Needed only for the overlay
-	 * placement; carried over from grm-1.7.1 and mirrors {@code BoardBankAnalyzer.addOverlayRef}.
+	 * placement; carried over from grm-1.7.1 and mirrors {@code BankAnnotationAdapter.addOverlayRef}.
 	 */
 	private static void bridgeJump(Program program, TransferSpec spec, MemoryBlock overlay) {
 		if (spec.jumpSite() == null) {

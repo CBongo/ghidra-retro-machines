@@ -219,7 +219,7 @@ public class AnnotationGuardProgramTest extends AbstractBundledLanguageTest {
 
 	/**
 	 * Invariant: a {@code USER_DEFINED} reference is not displaced. {@link AnnotationGuard#mayDisplace}
-	 * is the guard {@code BoardBankAnalyzer.addOverlayRef} consults before calling
+	 * is the guard {@code BankAnnotationAdapter.addOverlayRef} consults before calling
 	 * {@code ReferenceManager.setPrimary} on an analysis-derived overlay reference, so that an
 	 * analyzer re-run can never bump a reference the user pinned by hand out of primacy.
 	 */

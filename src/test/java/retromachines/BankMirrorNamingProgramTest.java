@@ -37,7 +37,7 @@ import ghidra.program.model.symbol.SourceType;
 import ghidra.program.model.symbol.Symbol;
 
 /**
- * Pins {@code BoardBankAnalyzer.nameBankMirrors} (bead grm-mej.4): turning the {@link
+ * Pins {@code BankAnnotationAdapter.nameBankMirrors} (bead grm-mej.4): turning the {@link
  * BankMirrors} set grm-mej.2 derives into actual symbols and comments -- "the documentary payoff,
  * arguably the point" of the whole mirror-derivation effort, and until this bead nothing did it.
  * <p>
@@ -85,7 +85,7 @@ public class BankMirrorNamingProgramTest extends AbstractBundledLanguageTest {
 	private void name(BankMirrors mirrors) {
 		int tx = program.startTransaction("name bank mirrors");
 		try {
-			BoardBankAnalyzer.nameBankMirrors(program, listing, mirrors, baseSpace);
+			BankAnnotationAdapter.nameBankMirrors(program, listing, mirrors, baseSpace);
 		}
 		finally {
 			program.endTransaction(tx, true);

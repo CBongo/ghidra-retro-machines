@@ -162,7 +162,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	 * {@code effectDependsOnPriorState() == !cacheable() == true} with it -- unconditionally,
 	 * at every MMC3 switch site.
 	 * <p>
-	 * {@code BoardBankAnalyzer.annotateBankRequirementViolations} derives the required mask
+	 * {@code BankAnnotationAdapter.annotateBankRequirementViolations} derives the required mask
 	 * from the site's own {@code effectMask}. Take the three shapes {@link #computeSwitch}
 	 * dispatches to and ask, of each, whether knowing those {@code effectMask} bits on entry
 	 * would have changed the outcome:
@@ -190,7 +190,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	 * smb3, 10 on rcransom, 2 on smb2, and zero lines of any other kind on any row. That is
 	 * the entire population of the class in the corpus. Not one bankComment, reference,
 	 * instruction or symbol moved anywhere, which is the expected shape: this predicate is
-	 * read at exactly one place ({@code BoardBankAnalyzer.annotateBankRequirementViolations}),
+	 * read at exactly one place ({@code BankAnnotationAdapter.annotateBankRequirementViolations}),
 	 * in phase 3, never inside the dataflow fixpoint.
 	 * <p>
 	 * Twenty-eight of the 29 named {@code r6,r7} -- target registers a data write DEPOSITS

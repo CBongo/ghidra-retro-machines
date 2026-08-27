@@ -50,9 +50,9 @@ import ghidra.util.exception.InvalidInputException;
  * comment" therefore cannot be implemented literally; there is nothing on a comment to test.
  * <p>
  * The defensible proxy already existed in this codebase, proven out at
- * {@code BoardBankAnalyzer.annotateBankSwitch} (formerly inlined at what is now
+ * {@code BankAnnotationAdapter.annotateBankSwitch} (formerly inlined at what is now
  * {@code BoardBankAnalyzer.java:3184-3190}) and its sibling
- * {@code BoardBankAnalyzer.annotatePlacementProvenance}: <b>never replace a non-empty comment,
+ * {@code BankAnnotationAdapter.annotatePlacementProvenance}: <b>never replace a non-empty comment,
  * only append to it.</b> An append can never destroy user text -- whatever was there survives,
  * verbatim, as a substring of the result. A replace can, silently, the moment the existing text
  * happens to be something a human typed rather than something an analyzer generated. Append is
