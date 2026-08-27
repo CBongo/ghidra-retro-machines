@@ -122,7 +122,7 @@ public class PetsciiStringAnalyzer extends AbstractAnalyzer {
 		if (mapPath == null || mapPath.isBlank()) {
 			return null;
 		}
-		JsonObject map = DescriptorSupport.loadMap(mapPath);
+		JsonObject map = DescriptorResources.loadMap(mapPath);
 		JsonObject system = map.getAsJsonObject("system");
 		JsonObject text = system == null ? null : system.getAsJsonObject("text");
 		if (text == null || !text.has("string_search")) {

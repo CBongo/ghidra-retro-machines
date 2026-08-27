@@ -1031,7 +1031,7 @@ public class HelperShapeProbe extends GhidraScript {
 	 * Mirrors BankReachProbe.loadMechanisms (~:926-975), trimmed to start/end only (see
 	 * {@link Mech}'s javadoc for why). The descriptor's mechanisms whose strategy is one of
 	 * {@link #ACCEPTED_STRATEGIES}, resolved through the same bundled-data lookup
-	 * DescriptorSupport.loadMap uses. A malformed or partial mechanism is skipped rather than
+	 * DescriptorResources.loadMap uses. A malformed or partial mechanism is skipped rather than
 	 * fatal. Every strategy name encountered, accepted or not, is appended to {@code declared}
 	 * so the caller's unavailable-note can name what the board actually is.
 	 */

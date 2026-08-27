@@ -661,7 +661,7 @@ public class MapCompiler {
 	 * Builds one occupant {@code subregions[]} entry (chip-register carve-up inside an
 	 * {@code io} occupant, e.g. C64's VIC/SID/CIA decode). A subregion has no {@code end:} of
 	 * its own the way a region/window does -- it resolves the same way
-	 * {@code DescriptorSupport.createIoSubregions} does at load time: {@code repeat_to:} wins
+	 * {@code DescriptorMemory.createIoSubregions} does at load time: {@code repeat_to:} wins
 	 * over {@code end:}, which wins over {@code size:}, and declaring none of the three is a
 	 * hard error there too. Moving that check here (grm-sf6 §2b) just moves the failure from
 	 * load time to compile time; the resolution order must keep matching the runtime's or a
@@ -825,7 +825,7 @@ public class MapCompiler {
 	 * (vision doc §5.3): integers, declared state-field names, the keywords
 	 * {@code last}/{@code second_last}, {@code + - * >>}, and parentheses. {@code >>}
 	 * (bead {@code grm-hsv.2}) is a logical right-shift binding at the same precedence
-	 * as {@code *} -- see {@code DescriptorSupport.evalExpr}'s javadoc for the full
+	 * as {@code *} -- see {@code DescriptorExpressions.evalExpr}'s javadoc for the full
 	 * rationale and precedence rule, which this validator must accept the same shapes
 	 * for. The expression is validated here but kept as a string in the .map; runtime
 	 * evaluation is the bank engine's job (M2+).

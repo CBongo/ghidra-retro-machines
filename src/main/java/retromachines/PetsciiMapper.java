@@ -163,7 +163,7 @@ public final class PetsciiMapper {
 			synchronized (PetsciiMapper.class) {
 				result = instance;
 				if (result == null) {
-					result = new PetsciiMapper(DescriptorSupport.loadMap("petscii.map"));
+					result = new PetsciiMapper(DescriptorResources.loadMap("petscii.map"));
 					instance = result;
 				}
 			}

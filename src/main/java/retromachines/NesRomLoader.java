@@ -220,10 +220,10 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 		}
 
 		// Load with the descriptor's declared language; fall back to the stock constant only
-		// if that language is unavailable. See DescriptorSupport.resolveLanguageId.
+		// if that language is unavailable. See DescriptorResources.resolveLanguageId.
 		String languageId = LANGUAGE_ID;
 		try {
-			languageId = DescriptorSupport.resolveLanguageId(DescriptorSupport.loadMap(board.mapPath()),
+			languageId = DescriptorResources.resolveLanguageId(DescriptorResources.loadMap(board.mapPath()),
 				LANGUAGE_ID);
 		}
 		catch (IOException e) {
@@ -236,7 +236,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 		// games lean on these at least as hard as C64 code does. Kept out of the default for
 		// the usual reason -- with all 256 bytes decodable, disassembly runs through the
 		// graphics and music tables that fill a PRG bank instead of stopping.
-		String undocId = DescriptorSupport.undocVariantOf(languageId);
+		String undocId = DescriptorResources.undocVariantOf(languageId);
 		if (undocId != null) {
 			loadSpecs.add(new LoadSpec(this, 0,
 				new LanguageCompilerSpecPair(undocId, COMPILER_SPEC_ID), false));
@@ -329,7 +329,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 	 */
 	private static String placementError(Map<String, Integer> pairs, NesBoardRegistry.Board board,
 			InesHeader header) throws IOException {
-		JsonObject map = DescriptorSupport.loadMap(board.mapPath());
+		JsonObject map = DescriptorResources.loadMap(board.mapPath());
 		Map<String, NavigableSet<Integer>> placeable = DescriptorSupport.placeableBanks(map,
 			header.prgSize(), new MessageLog(), board.mapPath());
 		return placementError(pairs, placeable, board.id(), header.prgSize());
@@ -379,7 +379,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 	protected void createDefaultMemoryBlocks(Program program, ImporterSettings settings) {
 		// The descriptor memory map already covers the 6502 pspec's ZERO_PAGE/STACK
 		// ranges; suppress the stock loader's conflict log noise (bead grm-rua).
-		DescriptorSupport.createDefaultMemoryBlocksQuietly(program, settings.log());
+		DescriptorMemory.createDefaultMemoryBlocksQuietly(program, settings.log());
 	}
 
 	@Override
@@ -469,11 +469,11 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 			log.appendMsg("placement override: " + placement.trim());
 		}
 
-		JsonObject map = DescriptorSupport.loadMap(board.mapPath());
+		JsonObject map = DescriptorResources.loadMap(board.mapPath());
 
 		FileDataTypeManager gdtMgr = null;
 		try {
-			gdtMgr = DescriptorSupport.openGdt(board.gdtPath());
+			gdtMgr = DescriptorResources.openGdt(board.gdtPath());
 		}
 		catch (IOException e) {
 			log.appendMsg("No data-type archive " + board.gdtPath() + ": " + e.getMessage());
@@ -484,7 +484,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 
 			// --- Always-visible regions (MMIO structs applied from their type:) ---
 			for (JsonElement re : map.getAsJsonArray("regions")) {
-				DescriptorSupport.createRegionBlock(program, baseSpace, re.getAsJsonObject(),
+				DescriptorMemory.createRegionBlock(program, baseSpace, re.getAsJsonObject(),
 					board.mapPath(), gdtMgr, log);
 			}
 
@@ -642,7 +642,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 		String expr = pw.expr();
 
 		try {
-			long srcOffset = DescriptorSupport.evalConstantExpr(expr, header.prgSize(), length);
+			long srcOffset = DescriptorExpressions.evalConstantExpr(expr, header.prgSize(), length);
 			if (checkRange(name, expr, srcOffset, length, header, log)) {
 				createWindowBlock(program, baseSpace, false, name,
 					name + " = PRG[" + expr + "] (offset 0x" + Long.toHexString(srcOffset) + ")",
@@ -655,7 +655,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 			// falls through to the bank-state-dependent path below
 		}
 
-		Set<String> exprFields = DescriptorSupport.referencedFields(expr);
+		Set<String> exprFields = DescriptorExpressions.referencedFields(expr);
 		DescriptorSupport.StateField field = exprFields.size() == 1
 				? DescriptorSupport.findField(fields, exprFields.iterator().next())
 				: null;
@@ -676,7 +676,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 		List<DescriptorSupport.NamedCandidate> candidates = new ArrayList<>();
 		for (long v = 0; v < (1L << field.width()); v++) {
 			long srcOffset =
-				DescriptorSupport.evalExpr(expr, header.prgSize(), length, Map.of(field.name(), v));
+				DescriptorExpressions.evalExpr(expr, header.prgSize(), length, Map.of(field.name(), v));
 			if (srcOffset < 0 || srcOffset + length > header.prgSize()) {
 				continue; // bank values beyond the image simply don't exist
 			}
@@ -761,7 +761,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 				}
 
 				try {
-					long srcOffset = DescriptorSupport.evalConstantExpr(expr, header.prgSize(), length);
+					long srcOffset = DescriptorExpressions.evalConstantExpr(expr, header.prgSize(), length);
 					if (!checkRange(name, expr, srcOffset, length, header, log)) {
 						continue;
 					}
@@ -781,7 +781,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 					// falls through: bank-state-dependent within this mode
 				}
 
-				Set<String> exprFields = DescriptorSupport.referencedFields(expr);
+				Set<String> exprFields = DescriptorExpressions.referencedFields(expr);
 				DescriptorSupport.StateField bankField = exprFields.size() == 1
 						? DescriptorSupport.findField(fields, exprFields.iterator().next())
 						: null;
@@ -793,7 +793,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 				}
 				long bankInitial = bankField.valueIn(initialState);
 				for (long v = 0; v < (1L << bankField.width()); v++) {
-					long srcOffset = DescriptorSupport.evalExpr(expr, header.prgSize(), length,
+					long srcOffset = DescriptorExpressions.evalExpr(expr, header.prgSize(), length,
 						Map.of(bankField.name(), v));
 					if (srcOffset < 0 || srcOffset + length > header.prgSize()) {
 						continue;

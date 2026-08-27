@@ -609,7 +609,7 @@ read; measure before optimizing.
 ### 5.1 The largest net-new piece
 
 There is currently **no mechanism anywhere in the extension to find a descriptor outside an
-installed module**. `DescriptorSupport.loadMap` goes through `Application.findDataFileInAnyModule`
+installed module**. `DescriptorResources.loadMap` goes through `Application.findDataFileInAnyModule`
 (`DescriptorSupport.java:142-151`); `NesBoardRegistry.scan` goes through
 `Application.findFilesByExtensionInMyModule` (`NesBoardRegistry.java:81-110`). A grep of
 `src/main/java` for user-settings-directory usage returns nothing at all. §4.2 is therefore not a

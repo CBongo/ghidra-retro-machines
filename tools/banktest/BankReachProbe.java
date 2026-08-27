@@ -918,7 +918,7 @@ public class BankReachProbe extends GhidraScript {
 
 	/**
 	 * The descriptor's mechanisms whose strategy is one of {@link #ACCEPTED_STRATEGIES},
-	 * resolved through the same bundled-data lookup DescriptorSupport.loadMap (:142-151) uses.
+	 * resolved through the same bundled-data lookup DescriptorResources.loadMap (:142-151) uses.
 	 * A malformed or partial mechanism is skipped rather than fatal -- one bad entry should not
 	 * blind the whole probe. Every strategy name encountered, accepted or not, is appended to
 	 * {@code declared} so the caller's bail-out can name what the board actually is.

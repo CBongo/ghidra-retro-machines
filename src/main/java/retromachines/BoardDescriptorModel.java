@@ -196,7 +196,7 @@ final class BoardDescriptorModel {
 				if (pw.expr() == null) {
 					continue; // enumerated occupant window, already handled above
 				}
-				Set<String> fields = DescriptorSupport.referencedFields(pw.expr());
+				Set<String> fields = DescriptorExpressions.referencedFields(pw.expr());
 				if (fields.isEmpty()) {
 					continue; // fixed window -- placed by the loader, never retargeted
 				}
@@ -240,7 +240,7 @@ final class BoardDescriptorModel {
 								"' has enumerated occupants; not supported for mode-varying windows");
 							continue;
 						}
-						Set<String> exprFields = DescriptorSupport.referencedFields(pw.expr());
+						Set<String> exprFields = DescriptorExpressions.referencedFields(pw.expr());
 						FieldSpec bankField = null;
 						if (!exprFields.isEmpty()) {
 							if (exprFields.size() > 1) {

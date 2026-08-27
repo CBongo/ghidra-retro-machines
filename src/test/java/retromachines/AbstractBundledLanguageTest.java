@@ -84,7 +84,7 @@ public abstract class AbstractBundledLanguageTest extends AbstractGenericTest {
 	 * with {@code MemoryBlock.READ} and nothing else ({@code MemoryMapDB:781}), so a raw
 	 * {@code ProgramBuilder} block reports {@code isWrite() == false} -- indistinguishable from a
 	 * ROM occupant. Our loaders set the flags explicitly from the descriptor's {@code kind}
-	 * ({@code DescriptorSupport.perms}/{@code markVolatileIfIo}), and code that keys on that
+	 * ({@code DescriptorMemory.perms}/{@code markVolatileIfIo}), and code that keys on that
 	 * distinction (notably {@code TransferMaterializer.canCarve}, which refuses to carve anything
 	 * that is not plain RAM) needs fixtures that model a real import rather than the bare default.
 	 */

@@ -1838,7 +1838,7 @@ public class BankConsumerProbe extends GhidraScript {
 	}
 
 	/**
-	 * Mirrors DescriptorSupport.referencedFields (:646-659) -- deliberately as a
+	 * Mirrors DescriptorExpressions.referencedFields (:646-659) -- deliberately as a
 	 * word-boundary scan for the DECLARED {@code banking.state[]} field names rather than a
 	 * general identifier scan. Production's version returns every identifier except
 	 * {@code last}/{@code second_last} and then rejects an unknown one downstream
@@ -2047,7 +2047,7 @@ public class BankConsumerProbe extends GhidraScript {
 	// Descriptor
 	// ==================================================================
 
-	/** Resolved through the same bundled-data lookup DescriptorSupport.loadMap (:142-151)
+	/** Resolved through the same bundled-data lookup DescriptorResources.loadMap (:142-151)
 	 *  uses, exactly as BankReachProbe.loadMechanisms does. */
 	private JsonObject loadDescriptor(String mapPath) throws Exception {
 		ResourceFile mapFile = Application.findDataFileInAnyModule(mapPath);

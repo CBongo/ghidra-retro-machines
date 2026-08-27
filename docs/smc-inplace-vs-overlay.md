@@ -235,7 +235,7 @@ unchanged):
 | 2 | `[dst, dst+len)` lies wholly within **one** block | Multi-block carve is out of scope for v1. |
 | 3 | That block is **uninitialized** | Never overwrite loaded file bytes — the pre-copy image stays navigable. |
 | 4 | Block is `MemoryBlockType.DEFAULT`, not mapped, and **not in an overlay space unless Gate 0.5 put it there** | Splittable per `MemoryMapDB.split`; base space is the point (refs resolve there) — except for the one overlay we were *aimed* at rather than *fell back* into. |
-| 5 | Block is **writable and non-volatile** | Only plain RAM is ever carved: a ROM occupant is not writable and an I/O occupant is volatile, both derived from the descriptor's `kind` by `DescriptorSupport.perms`/`markVolatileIfIo`. This is what protects the front-ends Gate 0.5 cannot help. |
+| 5 | Block is **writable and non-volatile** | Only plain RAM is ever carved: a ROM occupant is not writable and an I/O occupant is volatile, both derived from the descriptor's `kind` by `DescriptorMemory.perms`/`markVolatileIfIo`. This is what protects the front-ends Gate 0.5 cannot help. |
 
 A carve that Gate 0.5 redirected is reported as `TransferPlacement.IN_PLACE_BANKED`, not
 `IN_PLACE`: the bytes are where the CPU runs them from *in that bank state*, which is as native as

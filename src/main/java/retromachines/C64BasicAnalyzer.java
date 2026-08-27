@@ -158,7 +158,7 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 			return C64PrgLoader.NAME.equals(format) ? legacyC64Config() : null;
 		}
 
-		JsonObject map = DescriptorSupport.loadMap(mapPath);
+		JsonObject map = DescriptorResources.loadMap(mapPath);
 		JsonObject formats = map.getAsJsonObject("formats");
 		JsonObject prg = formats == null ? null : formats.getAsJsonObject("prg");
 		JsonObject basic = prg == null ? null : prg.getAsJsonObject("basic");
@@ -312,7 +312,7 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 
 		FileDataTypeManager gdtMgr;
 		try {
-			gdtMgr = DescriptorSupport.openGdt(config.gdtPath());
+			gdtMgr = DescriptorResources.openGdt(config.gdtPath());
 		}
 		catch (IOException e) {
 			AnalyzerLog.warn(this, log,

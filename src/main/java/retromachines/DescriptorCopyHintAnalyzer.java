@@ -110,7 +110,7 @@ public class DescriptorCopyHintAnalyzer extends AbstractAnalyzer {
 		if (mapPath == null || mapPath.isBlank()) {
 			return null;
 		}
-		return DescriptorSupport.loadMap(mapPath);
+		return DescriptorResources.loadMap(mapPath);
 	}
 
 	/**

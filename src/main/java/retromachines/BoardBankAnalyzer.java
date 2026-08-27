@@ -242,7 +242,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 
 		JsonObject map;
 		try {
-			map = DescriptorSupport.loadMap(mapPath);
+			map = DescriptorResources.loadMap(mapPath);
 		}
 		catch (IOException e) {
 			AnalyzerLog.warn(this, log, "Failed to load " + mapPath + ": " + e.getMessage());

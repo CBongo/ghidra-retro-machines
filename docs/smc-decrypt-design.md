@@ -213,7 +213,7 @@ EmulationRecovery.recover(
   `stepInstruction` fuel loop — all per `smc-survey.md` §2.
 - **IO policy is descriptor-sourced, not hardcoded.** The harness reads the compiled
   `machines/<id>.map` IO occupant and its `subregions[]` — the same structure
-  `DescriptorSupport.createIoSubregions` (`DescriptorSupport.java:206`) consumes, authored
+  `DescriptorMemory.createIoSubregions` consumes, authored
   in `machines/c64.yaml:68-112` (VIC `$D000`, SID `$D400`, CIA1 `$DC00`, CIA2 `$DD00`,
   IO1/IO2). A read into any typed IO subregion → `PcodeEmulationCallbacks.readUninitialized`
   / `beforeLoad` returns a policy value **and records the site in `ProvenanceLog`**. This

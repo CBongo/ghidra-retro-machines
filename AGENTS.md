@@ -106,6 +106,29 @@ a stale build imitates a genuine regression convincingly, and can also produce a
 `build-and-test.sh` first whenever the answer depends on your current source. See the
 `which-script-builds-the-extension` bd memory and `grm-4t2d`.
 
+### SUBAGENTS: run the gates in the FOREGROUND
+
+**If you are a subagent, never launch `build-and-test.sh` or `realrom-test.sh` as a background
+task.** Run them in the foreground with the timeout set high for the tier (the real-ROM tier needs
+the maximum) and wait. These are slow by nature — a full synthetic gate is minutes,
+`realrom-test.sh check --all` is hours — so backgrounding them looks like the way to stay
+responsive. For a subagent it is not.
+
+The reason is structural, not stylistic: a subagent that backgrounds a gate has nothing left to do
+in that turn, so it **stops**. The orchestrator is then notified that the subagent "finished"
+while its actual work product does not exist yet, and has to notice the report is missing, go
+check for live JVMs, and resume the agent to collect a result the agent already had. Measured
+2026-08-27 on grm-ft8 increments 4 and 5: three spurious completion notifications, and one agent
+that never reported at all until nudged. From the outside, "finished with nothing to say" and
+"parked mid-gate" look identical.
+
+**This does not apply to the primary/orchestrating agent**, which has `Monitor` — the sanctioned
+way to await a background run — and stays in the conversation to act on the result. Backgrounding
+a long gate there is fine and often right.
+
+If a foreground run genuinely exceeds what one tool call allows, say so in your report and hand
+the orchestrator the command to finish it. Never report a gate result you did not observe.
+
 ## Machine-specific paths belong in local settings, never in a committed file
 
 This is a public repository. Future contributors will not have your directory layout, so **no

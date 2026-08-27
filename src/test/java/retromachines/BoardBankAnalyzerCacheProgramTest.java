@@ -59,7 +59,7 @@ import ghidra.util.task.TaskMonitorAdapter;
  * framework's analysis scheduler, exactly as {@code DescriptorCopyHintAnalyzerTest} does for
  * its analyzer) against a throwaway minimal descriptor. The descriptor cannot be handed in as
  * a parsed object -- {@code added()} always resolves {@code getMapPath(program)} through
- * {@code DescriptorSupport.loadMap}, which in turn goes through
+ * {@code DescriptorResources.loadMap}, which in turn goes through
  * {@code Application.findDataFileInAnyModule} -- so it is written to a real file under this
  * module's {@code data/machines/} (found live via {@code grm.moduleDir}, exactly like the
  * shipped {@code machines/c64.map} that {@code NesPlacementValidationTest} reads the same

@@ -44,7 +44,7 @@ import ghidra.util.task.TaskMonitor;
  * the "supply the ROM and re-run" path must then produce the copy. Both halves are asserted here.
  *
  * <p>The analyzer is driven through its {@code applyAll} seam rather than {@code added()}:
- * {@code DescriptorSupport.loadMap} resolves through
+ * {@code DescriptorResources.loadMap} resolves through
  * {@code Application.findDataFileInAnyModule}, which searches installed module data directories
  * only, so no descriptor written into a {@code TemporaryFolder} would ever be found from a plain
  * JUnit JVM. Handing {@code applyAll} a parsed map tests the directive semantics -- address

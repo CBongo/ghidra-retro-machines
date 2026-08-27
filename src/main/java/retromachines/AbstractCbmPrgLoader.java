@@ -55,7 +55,7 @@ import ghidra.program.model.symbol.SourceType;
 import ghidra.util.SystemUtilities;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.task.TaskMonitor;
-import retromachines.DescriptorSupport.Perms;
+import retromachines.DescriptorMemory.Perms;
 
 /**
  * Shared descriptor-driven loader for Commodore-family {@code .prg} files.
@@ -270,10 +270,10 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 		}
 
 		// Load with the descriptor's declared language; fall back to stock 6502 only if that
-		// language is unavailable. See DescriptorSupport.resolveLanguageId.
+		// language is unavailable. See DescriptorResources.resolveLanguageId.
 		String languageId = FALLBACK_LANGUAGE_ID;
 		try {
-			languageId = DescriptorSupport.resolveLanguageId(loadMap(), FALLBACK_LANGUAGE_ID);
+			languageId = DescriptorResources.resolveLanguageId(loadMap(), FALLBACK_LANGUAGE_ID);
 		}
 		catch (IOException e) {
 			// descriptor unreadable here -> keep the safety fallback; load() will report it
@@ -286,7 +286,7 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 		// something the user has to know exists. Not the default: decoding all 256 opcode
 		// bytes means speculative disassembly runs through data tables instead of stopping,
 		// which costs more than it gains on anything that doesn't actually use them.
-		String undocId = DescriptorSupport.undocVariantOf(languageId);
+		String undocId = DescriptorResources.undocVariantOf(languageId);
 		if (undocId != null) {
 			loadSpecs.add(new LoadSpec(this, 0,
 				new LanguageCompilerSpecPair(undocId, COMPILER_SPEC_ID), false));
@@ -298,7 +298,7 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 	protected void createDefaultMemoryBlocks(Program program, ImporterSettings settings) {
 		// The descriptor memory map already covers the 6502 pspec's ZERO_PAGE/STACK
 		// ranges; suppress the stock loader's conflict log noise (bead grm-rua).
-		DescriptorSupport.createDefaultMemoryBlocksQuietly(program, settings.log());
+		DescriptorMemory.createDefaultMemoryBlocksQuietly(program, settings.log());
 	}
 
 	@Override
@@ -613,11 +613,11 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 	}
 
 	private JsonObject loadMap() throws IOException {
-		return DescriptorSupport.loadMap(getMapPath());
+		return DescriptorResources.loadMap(getMapPath());
 	}
 
 	private FileDataTypeManager openGdt() throws IOException {
-		return DescriptorSupport.openGdt(getGdtPath());
+		return DescriptorResources.openGdt(getGdtPath());
 	}
 
 	// ------------------------------------------------------------------
@@ -706,7 +706,7 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 		long length = region.get("end").getAsLong() - start + 1;
 		if (romPath != null && kind.equals("rom")) {
 			MemoryBlock block = createRomBlock(program, name, baseSpace.getAddress(start), length,
-				false, romPath, DescriptorSupport.perms(region, kind), log);
+				false, romPath, DescriptorMemory.perms(region, kind), log);
 			if (block != null) {
 				if (region.has("type") && gdtMgr != null) {
 					DescriptorSupport.applyStructType(program, baseSpace, gdtMgr, region,
@@ -715,7 +715,7 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 				return;
 			}
 		}
-		DescriptorSupport.createRegionBlock(program, baseSpace, region, getMapPath(), gdtMgr, log);
+		DescriptorMemory.createRegionBlock(program, baseSpace, region, getMapPath(), gdtMgr, log);
 	}
 
 	private void createCarvedTarget(Program program, AddressSpace baseSpace, JsonObject region,
@@ -799,13 +799,13 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 		MemoryBlock block = initialized
 				? memory.createInitializedBlock(name, address, fileBytes, fileOffset, length, false)
 				: memory.createUninitializedBlock(name, address, length, false);
-		Perms p = DescriptorSupport.perms(permsSource, kind);
+		Perms p = DescriptorMemory.perms(permsSource, kind);
 		block.setComment(comment);
 		block.setSourceName(initialized ? getMachineId() + "prg" : getMapPath());
 		block.setRead(p.readable());
 		block.setWrite(p.writable());
 		block.setExecute(p.executable());
-		DescriptorSupport.markVolatileIfIo(block, kind);
+		DescriptorMemory.markVolatileIfIo(block, kind);
 		return block;
 	}
 
@@ -941,7 +941,7 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 			// The IO occupant is only meaningful when home (CHARIO/IO for POC); its subregions
 			// are laid out individually, so there's no single representative block to return.
 			if (isHome) {
-				DescriptorSupport.createIoSubregions(program, baseSpace, occupant, getMapPath(),
+				DescriptorMemory.createIoSubregions(program, baseSpace, occupant, getMapPath(),
 					gdtMgr, log);
 			}
 			return null;
@@ -950,7 +950,7 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 		boolean isOverlay = !isHome;
 		Address startAddr = baseSpace.getAddress(start);
 		String comment = occupantName + " (" + kind + ")";
-		Perms p = DescriptorSupport.perms(occupant, kind);
+		Perms p = DescriptorMemory.perms(occupant, kind);
 
 		if (prgSlices != null && !prgSlices.isEmpty()) {
 			try {
