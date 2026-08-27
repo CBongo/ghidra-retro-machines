@@ -189,29 +189,23 @@ fi
 # Default install derives from gradle.properties' ghidraTargetVersion (the single source of
 # truth for the targeted Ghidra version, bead grm-9r7); GRM_GHIDRA_INSTALL still overrides.
 grm_default_ghidra_install
-# Resolve the gradle binary (bead grm-ycv): GRADLE env var wins if set; otherwise prefer
-# the committed wrapper (REPO_ROOT/gradlew), which pins the exact distribution+checksum in
-# gradle/wrapper/gradle-wrapper.properties and needs nothing pre-installed on a fresh
-# checkout; otherwise fall back to `gradle` on PATH; otherwise fail loudly rather than
-# defaulting to some one-off developer install path.
-if [ -n "${GRADLE:-}" ]; then
-	: # explicit override wins
-elif [ -x "$REPO_ROOT/gradlew" ]; then
-	GRADLE="$REPO_ROOT/gradlew"
-elif command -v gradle >/dev/null 2>&1; then
-	GRADLE="$(command -v gradle)"
-else
-	echo "FAIL: no gradle binary found. Tried: \$GRADLE (unset), $REPO_ROOT/gradlew (missing" \
-		"or not executable), 'gradle' on PATH (not found). Set GRADLE=/path/to/gradle or" \
-		"restore the committed gradlew wrapper." >&2
-	exit 1
-fi
+# Resolve the gradle binary (bead grm-ycv; factored into lib/common.sh by grm-4t2d once
+# run-banktest.sh/realrom-test.sh needed the identical resolution for their own gradle calls).
+grm_resolve_gradle
 
-# --- 1. Build and pure Gradle checks ------------------------------------
+# --- 1. Build, stage the isolated install, and run pure Gradle checks -----
+# stageExtensionForTests (build.gradle, bead grm-4t2d option (e)) replaces what used to be a
+# hand-rolled unzip-into-build/ghidra-home keyed on a `.install-stamp` file
+# (basename|size|mtime of the dist zip). That stamp was Gradle's own incremental-build
+# check, reimplemented by hand; the task now does it for real, with declared inputs/outputs,
+# so a repeat run with nothing changed is genuinely UP-TO-DATE and a source change genuinely
+# is not -- see build.gradle's comment on the task for why it does not key on the dist zip
+# itself (the zip's bytes are unstable across rebuilds even when the content is not).
 export GHIDRA_INSTALL_DIR="$GRM_GHIDRA_INSTALL"
 if [ "$RUN_HEADLESS" -eq 1 ]; then
-	GRADLE_TASKS=(buildExtension "${GRADLE_CHECKS[@]}")
-	echo "== building extension and running selected Gradle checks (GHIDRA_INSTALL_DIR=$GRM_GHIDRA_INSTALL) =="
+	GRADLE_TASKS=(buildExtension stageExtensionForTests "${GRADLE_CHECKS[@]}")
+	echo "== building extension, staging the isolated test install, and running selected" \
+		"Gradle checks (GHIDRA_INSTALL_DIR=$GRM_GHIDRA_INSTALL) =="
 else
 	GRADLE_TASKS=("${GRADLE_CHECKS[@]}")
 	echo "== running selected Gradle checks (no extension build/install needed) =="
@@ -227,118 +221,12 @@ if [ "$RUN_HEADLESS" -ne 1 ]; then
 	exit 0
 fi
 
-# --- 2. Pick newest dist zip ----------------------------------------------
-# NOTE: the zip's trailing name component is the gradle project name, which
-# (absent a settings.gradle rootProject.name) defaults to the checkout
-# directory's basename -- e.g. "ghidra-retro-machines" in the main tree, but
-# something else (e.g. "grm-wt-r3h") in a differently-named git worktree.
-# dist/ only ever holds this one extension's build output for a given
-# worktree, so match broadly on "ghidra_*.zip" rather than hardcoding the
-# suffix, so the script works in any worktree regardless of its directory name.
-DIST_DIR="$REPO_ROOT/dist"
-ZIP="$(ls -t "$DIST_DIR"/ghidra_*.zip 2>/dev/null | head -n1)"
-if [ -z "$ZIP" ]; then
-	echo "FAIL: no dist zip found in $DIST_DIR" >&2
-	exit 1
-fi
-echo "== newest dist zip: $ZIP =="
-
-# --- 3. Compute per-tree settings base / Extensions path -----------------
-# ApplicationUtilities.getDefaultUserSettingsDir (Ghidra 12.1.2):
-#   settings dir = <base>/<userdir>/<versionedName>
-# ApplicationUtilities.getUserSpecificDirName:
-#   userdir = "ghidra" if <base> is inside the user's home directory,
-#             else "<username>-ghidra" (username = %USERNAME%)
-# versionedName = lowercase(application.name) + "_" + application.version +
-#                 "_" + application.release.name, read from
-#                 <install>/Ghidra/application.properties (not hardcoded).
+# --- 2. Run selected headless chunks against the isolated settings dir -----
+# Only the BASE matters here -- stageExtensionForTests (and, at runtime, Ghidra's own
+# ApplicationUtilities.getDefaultUserSettingsDir) resolve the exact per-version/per-user
+# subdirectory themselves; this script no longer needs to compute or know that path.
 SETTINGS_BASE="$REPO_ROOT/build/ghidra-home"
 mkdir -p "$SETTINGS_BASE"
-
-APP_PROPS="$GRM_GHIDRA_INSTALL/Ghidra/application.properties"
-if [ ! -f "$APP_PROPS" ]; then
-	echo "FAIL: $APP_PROPS not found -- bad GRM_GHIDRA_INSTALL?" >&2
-	exit 1
-fi
-app_prop() {
-	sed -n "s/^$1=\(.*\)\$/\1/p" "$APP_PROPS" | tr -d '\r' | head -n1
-}
-APP_NAME="$(app_prop application.name)"
-APP_VERSION="$(app_prop application.version)"
-APP_RELEASE="$(app_prop application.release.name)"
-if [ -z "$APP_NAME" ] || [ -z "$APP_VERSION" ] || [ -z "$APP_RELEASE" ]; then
-	echo "FAIL: could not parse application.name/version/release.name from $APP_PROPS" >&2
-	exit 1
-fi
-VERSIONED_NAME="$(echo "$APP_NAME" | tr '[:upper:]' '[:lower:]')_${APP_VERSION}_${APP_RELEASE}"
-
-# Home-containment check: is SETTINGS_BASE inside $USERPROFILE? (case-insensitive,
-# as Windows paths are). Compare native forms, normalized to forward slashes --
-# native() (cygpath -m) always emits forward slashes, but $USERPROFILE is a raw
-# Windows env var with backslashes, so it must be normalized too or the
-# comparison silently falls through to the wrong branch.
-SETTINGS_BASE_NATIVE="$(native "$SETTINGS_BASE")"
-USERPROFILE_NATIVE="${USERPROFILE:-}"
-USERPROFILE_NATIVE="${USERPROFILE_NATIVE//\\//}"
-settings_lc="$(echo "$SETTINGS_BASE_NATIVE" | tr '[:upper:]' '[:lower:]')"
-userprofile_lc="$(echo "$USERPROFILE_NATIVE" | tr '[:upper:]' '[:lower:]')"
-userprofile_lc="${userprofile_lc%/}"
-if [ -n "$userprofile_lc" ] && case "$settings_lc" in "$userprofile_lc"/*|"$userprofile_lc") true;; *) false;; esac; then
-	USERDIR="ghidra"
-else
-	USERDIR="${USERNAME:-$(whoami)}-ghidra"
-fi
-
-SETTINGS_DIR="$SETTINGS_BASE/$USERDIR/$VERSIONED_NAME"
-EXT_DIR="$SETTINGS_DIR/Extensions"
-EXT_TARGET="$EXT_DIR/ghidra-retro-machines"
-echo "== isolated settings dir: $SETTINGS_DIR =="
-
-# --- 4. Install (skip if stamp matches) ----------------------------------
-mkdir -p "$EXT_DIR"
-STAMP_FILE="$SETTINGS_BASE/.install-stamp"
-ZIP_STAMP="$(basename "$ZIP")|$(stat -c '%s %Y' "$ZIP" 2>/dev/null || stat -f '%z %m' "$ZIP")"
-
-if [ -f "$STAMP_FILE" ] && [ "$(cat "$STAMP_FILE")" = "$ZIP_STAMP" ] && [ -d "$EXT_TARGET" ]; then
-	echo "== extension already installed and up to date (stamp match); skipping unzip =="
-else
-	echo "== installing extension into $EXT_TARGET =="
-	rm -rf "$EXT_TARGET"
-	# Repo-local staging (bead grm-419), which matters here beyond consistency:
-	# EXT_TARGET lives under build/, so staging there too makes the mv below a
-	# same-volume rename instead of a full copy+delete of the extension tree.
-	TMP_UNZIP="$(grm_work_dir extinstall)"
-	unzip -q "$ZIP" -d "$TMP_UNZIP" || {
-		echo "FAIL: unzip $ZIP failed" >&2
-		rm -rf "$TMP_UNZIP"
-		exit 1
-	}
-	# The zip contains a single top-level dir named after the extension.
-	SRC_DIR="$(find "$TMP_UNZIP" -mindepth 1 -maxdepth 1 -type d | head -n1)"
-	if [ -z "$SRC_DIR" ]; then
-		echo "FAIL: unexpected dist zip layout (no top-level dir) in $ZIP" >&2
-		rm -rf "$TMP_UNZIP"
-		exit 1
-	fi
-	mv "$SRC_DIR" "$EXT_TARGET"
-	rm -rf "$TMP_UNZIP"
-	# Atomic + checked (bead grm-z34): a torn stamp write is not a correctness risk here
-	# (the up-to-date check below is an exact string match, so a truncated stamp just
-	# reads as "stale" and reinstalls next time), but it must still not be silently
-	# swallowed -- an unreported failure to write the stamp gives no signal that every
-	# future run will pay the reinstall cost it was meant to avoid.
-	if ! grm_atomic_publish_stdin "$STAMP_FILE" <<<"$ZIP_STAMP"; then
-		echo "FAIL: could not write $STAMP_FILE" >&2
-		exit 1
-	fi
-fi
-
-if [ ! -d "$EXT_TARGET" ]; then
-	echo "FAIL: sanity check failed, $EXT_TARGET does not exist after install" >&2
-	exit 1
-fi
-
-# --- 5. Run selected headless chunks against the isolated settings dir -----
 export BANKTEST_SETTINGS_BASE="$SETTINGS_BASE"
 
 # This gate does NOT run the real-ROM tier (bead grm-6kv): it needs user-supplied,

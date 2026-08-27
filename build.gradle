@@ -98,10 +98,13 @@ if (!ghidraAppPropsFile.isFile()) {
 		"Ghidra install (no Ghidra/application.properties). This project targets Ghidra " +
 		"${ghidraTargetVersion} -- ${ghidraInstallHint}.")
 }
-def ghidraInstalledVersion = new Properties().with { props ->
+// Kept as a Properties object (not just the version string) so stageExtensionForTests below
+// can reuse application.name/release.name too, rather than re-reading the file a second time.
+def ghidraAppProps = new Properties().with { props ->
 	ghidraAppPropsFile.withInputStream { props.load(it) }
-	props.getProperty('application.version')
+	props
 }
+def ghidraInstalledVersion = ghidraAppProps.getProperty('application.version')
 if (ghidraInstalledVersion != ghidraTargetVersion) {
 	throw new GradleException("Resolved Ghidra install is ${ghidraInstalledVersion} " +
 		"(${ghidraInstallDir}) but this project targets ${ghidraTargetVersion} " +
@@ -685,4 +688,110 @@ tasks.matching { it.name == 'buildExtension' }.configureEach {
 	// buildScreencodeMap (bead grm-1.4.5) ships data/screencode.map for the same
 	// reason -- RetroCharsetProvider's screen-code charsets need it at runtime.
 	dependsOn 'buildGdt', 'buildMap', 'buildPetsciiMap', 'buildScreencodeMap', 'sleighCompile'
+}
+
+//----------------------------------------------------------------------------------
+// stageExtensionForTests: install the built extension into the isolated
+// build/ghidra-home Ghidra settings dir the tools/banktest headless test harness reads
+// (bead grm-4t2d option (e)).
+//
+// Until this task existed, only build-and-test.sh built+installed the extension --
+// run-banktest.sh and realrom-test.sh (the fast inner loop and the real-ROM tier, the two
+// scripts people reach for most) analyzed with whatever was ALREADY sitting in
+// build/ghidra-home, which repeatedly produced results that looked like real regressions
+// but were actually a stale build (grm-mej.2, grm-mlp2/grm-7rct -- see AGENTS.md's "Only
+// build-and-test.sh builds the extension" history and the
+// which-script-builds-the-extension bd memory). The fix (grm-4t2d, owner's 2026-08-26
+// proposal) is to make the runners build BY DEFAULT: run-banktest.sh and realrom-test.sh
+// now call `gradle stageExtensionForTests` before analyzing (lib/common.sh's
+// grm_ensure_extension_staged), with an explicit --no-build / GRM_SKIP_BUILD opt-out for
+// the cases where skipping is deliberate.
+//
+// NAMED stageExtensionForTests, NOT installExtension -- deliberately. This repo ships a
+// real, user-facing installer, tools/install-gui.ps1, which writes into the user's own
+// %APPDATA% Ghidra Extensions dir and is explicitly NOT part of the agent test loop
+// (agents are told never to run it). A task called installExtension sitting next to it in
+// a public repo would read, to a developer or an end user skimming `gradle tasks`, as doing
+// the same thing. "stage" already means "prepare into a build dir" at stageCharsetResources
+// above; "ForTests" names the purpose. This task writes ONLY under build/ghidra-home
+// (gitignored, per-worktree), never %APPDATA%.
+//
+// WHY THIS DOES NOT SOURCE FROM THE DIST ZIP, even though that is what build-and-test.sh
+// used to unzip (see the grm-4t2d bead comment "SECOND PITFALL", 2026-08-26, and the
+// gradle-dist-zip-mtime-unstable bd memory): buildExtension's Zip task rewrites
+// dist/ghidra_*.zip with fresh timestamps on every run, and Zip entries embed mtimes, so
+// even the BYTES differ across two runs with byte-identical compiled output. Keying this
+// task's up-to-date check on that zip would leave it perpetually out of date -- the exact
+// hand-rolled `.install-stamp` problem this task exists to retire, reintroduced one layer
+// down. Instead this Sync task copies the SAME content buildExtension packages (the
+// SHIPPED_TOP_LEVEL allowlist above, the built jar, and extension.properties filtered the
+// same way support/buildExtension.gradle filters it) directly from their own build
+// outputs. Gradle's Copy/Sync machinery tracks `from()` sources as real task inputs on its
+// own, so nothing here is read through an untracked filesystem path -- contrast
+// sleighCompile's and `test`'s data/languages and data/machines inputs above, which needed
+// an EXPLICIT inputs.files precisely because a JavaExec/Test task does not auto-track a
+// path it merely reads at runtime the way Copy/Sync auto-tracks its own `from()` specs.
+// `dependsOn 'buildExtension'` below still builds the redistributable zip normally for
+// anyone who wants it (e.g. tools/install-gui.ps1); this task just does not read it back.
+// Deliberately skips lib/*-src.zip (the zipSource task): nothing in the headless test
+// harness reads the extension's own bundled source zip.
+//
+// Sync, not Copy: a file left over from a previous install (a renamed or removed class,
+// a retired data file) must not survive into the next one. Sync deletes anything under its
+// destination that the current `from()` specs no longer produce -- the same property the
+// old `rm -rf "$EXT_TARGET"` line in build-and-test.sh used to provide by hand.
+//----------------------------------------------------------------------------------
+
+// Mirrors run-banktest.sh/build-and-test.sh's settings-dir computation (identical inputs:
+// the resolved install's application.properties, and whether the staging base lies inside
+// the user's home directory) so every reader of build/ghidra-home agrees on one path.
+// ApplicationUtilities.getDefaultUserSettingsDir / getUserSpecificDirName (Ghidra 12.1.2-3):
+//   settings dir  = <base>/<userdir>/<versionedName>
+//   userdir       = "ghidra" if <base> is inside the user's home dir, else "<user>-ghidra"
+//   versionedName = lowercase(application.name) + "_" + application.version + "_" +
+//                   application.release.name
+def grmSettingsBase = file('build/ghidra-home')
+def grmVersionedName = "${ghidraAppProps.getProperty('application.name').toLowerCase()}_" +
+	"${ghidraAppProps.getProperty('application.version')}_" +
+	"${ghidraAppProps.getProperty('application.release.name')}"
+
+def grmUserProfileEnv = System.getenv('USERPROFILE')
+def grmAccountName = System.getenv('USERNAME') ?: System.getProperty('user.name')
+def grmUserDir = "${grmAccountName}-ghidra"
+if (grmUserProfileEnv) {
+	def settingsNative = grmSettingsBase.getAbsolutePath().replace('\\', '/').toLowerCase()
+	def profileNative = grmUserProfileEnv.replace('\\', '/').toLowerCase()
+	profileNative = profileNative.endsWith('/') ? profileNative[0..-2] : profileNative
+	if (settingsNative == profileNative || settingsNative.startsWith(profileNative + '/')) {
+		grmUserDir = 'ghidra'
+	}
+}
+
+def grmExtTarget = file(
+	"${grmSettingsBase}/${grmUserDir}/${grmVersionedName}/Extensions/ghidra-retro-machines")
+
+task stageExtensionForTests(type: Sync) {
+	group = "Ghidra Retro Machines"
+	description = "Install the built extension into the isolated build/ghidra-home Ghidra " +
+		"settings dir the tools/banktest headless test harness reads (grm-4t2d option (e)). " +
+		"NOT the user-facing installer -- see tools/install-gui.ps1, which writes into the " +
+		"real %APPDATA% Ghidra install and must never be run by an agent."
+
+	dependsOn 'buildExtension'
+	duplicatesStrategy = 'exclude'
+
+	from(file('extension.properties')) {
+		filter(org.apache.tools.ant.filters.ReplaceTokens,
+			tokens: [extversion: ghidraAppProps.getProperty('application.version')])
+		filter(org.apache.tools.ant.filters.ReplaceTokens, tokens: [extname: project.name])
+	}
+	from(projectDir) {
+		include 'data/**', 'ghidra_scripts/**', 'Module.manifest', 'README.md', 'LICENSE',
+			'NOTICE'
+	}
+	from(tasks.named('jar')) {
+		into 'lib'
+	}
+
+	into grmExtTarget
 }

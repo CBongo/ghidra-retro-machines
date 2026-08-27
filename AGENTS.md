@@ -94,17 +94,37 @@ before editing, and read to the bottom of the file so you see the table's format
 Counter-signal, so this does not become an excuse: implementation, refactoring, test writing,
 running the gates, reading this codebase, and tracing existing code are agent work. Do them.
 
-## Only `build-and-test.sh` builds the extension
+## The runners build by default — `run-banktest.sh`/`realrom-test.sh` included (grm-4t2d)
 
-**`tools/banktest/build-and-test.sh` is the ONLY runner that builds and installs.**
-`run-banktest.sh`, `realrom-test.sh`, and `measure-overlay-scale.sh` analyze with whatever is
-already installed in the isolated per-worktree `build/ghidra-home` — they do not rebuild. Since
-the two you reach for most are both non-building, a result from either can reflect a build older
-than your working tree, and **every** way that fails is in the flattering direction: an A/B whose
-two sides run the same binary comes back byte-identical and reads as "my change moved nothing";
-a stale build imitates a genuine regression convincingly, and can also produce a false pass. Run
-`build-and-test.sh` first whenever the answer depends on your current source. See the
-`which-script-builds-the-extension` bd memory and `grm-4t2d`.
+**As of `grm-4t2d` option (e), `run-banktest.sh` and `realrom-test.sh` build too.** Before this,
+only `build-and-test.sh` built and installed the extension; the other two — the fast inner loop
+and the real-ROM tier, the two scripts people reach for most — analyzed with whatever was
+already installed in the isolated per-worktree `build/ghidra-home`, and a stale result there was
+in the flattering direction every time: an A/B whose two sides ran the same binary came back
+byte-identical and read as "my change moved nothing"; a stale build imitated a genuine regression
+convincingly, and could also produce a false pass. Documenting the hazard was tried first and
+did not hold (see the `which-script-builds-the-extension` bd memory's incident list); the fix
+was structural instead.
+
+**The mechanism:** `build.gradle`'s `stageExtensionForTests` task installs the built extension
+into `build/ghidra-home` with real Gradle inputs/outputs (the compiled classes, `data/`,
+`ghidra_scripts/`, the packaging manifest), so it is genuinely `UP-TO-DATE` when nothing relevant
+changed and genuinely rebuilds when it has — no hand-rolled stamp file. `run-banktest.sh` and
+`realrom-test.sh` now run `gradle stageExtensionForTests` before analyzing, unless:
+
+- `--no-build` / `GRM_SKIP_BUILD=1` opts out for that one invocation, or
+- `GRM_EXTENSION_BUILT_THIS_RUN=1` is already set, meaning `build-and-test.sh` built and staged
+  for this run and the wrapped script must not do it a second time.
+
+`build-and-test.sh` itself is unaffected in shape: it still builds, and now also depends on the
+same `stageExtensionForTests` task rather than hand-unzipping the dist zip. `measure-overlay-scale.sh`
+is **not** wrapped by this change and still does not build — it stays the one exception, so treat
+a result from it the way you used to treat all three.
+
+Every runner still prints the installed extension's identity (`grm_installed_extension_note`),
+now saying which of the above states applied, so a surprising result can still be attributed at a
+glance rather than reconstructed. See `which-script-builds-the-extension` and
+`realrom-ab-needs-rebuild` (both revised for this change) and `grm-4t2d`.
 
 ### SUBAGENTS: run the gates in the FOREGROUND
 

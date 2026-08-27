@@ -2,7 +2,7 @@
 # C64 + C128 + NES banking-analyzer regression suite driver (bead grm-wzl, extended
 # to NES by grm-5tl.17).
 #
-# Usage: run-banktest.sh [check|bless] [--force-criteria] [chunk ...]
+# Usage: run-banktest.sh [check|bless] [--force-criteria] [--no-build] [chunk ...]
 #
 #   check (default)  Generate the test PRGs, import each with analyzeHeadless
 #                    using the C64PrgLoader, run VerifyBankTest.java, and fail
@@ -13,6 +13,7 @@
 #                    refused and left byte-identical (bead grm-aqi).
 #   --force-criteria bless a fixture even though its criteria failed. Only
 #                    meaningful with bless; reports every row it forced.
+#   --no-build       skip the pre-flight build/install (see GRM_SKIP_BUILD below).
 #
 # Chunks (default: all):
 #   c64-banking   banktest through banktest4
@@ -50,6 +51,19 @@
 #                            ever writes that install. Note BANKTEST_SETTINGS_BASE=
 #                            (explicitly empty) does NOT do this; the fallback
 #                            treats empty as unset, so this flag is the way.
+#   GRM_SKIP_BUILD=1        same opt-out as --no-build, for scripted callers that would
+#                            rather set an env var than thread a flag through. Either form
+#                            is a no-op when GRM_EXTENSION_BUILT_THIS_RUN=1 is already set
+#                            (build-and-test.sh just built for this run) -- see below.
+#
+# BUILD-BY-DEFAULT (bead grm-4t2d option (e)). This script used to analyze with whatever
+# extension was already sitting in build/ghidra-home -- the fast inner loop, and therefore
+# the script most likely to silently test a build older than the working tree (grm-mej.2,
+# grm-mlp2/grm-7rct; see AGENTS.md and the which-script-builds-the-extension bd memory). It
+# now runs `gradle stageExtensionForTests` (build.gradle) before analyzing, unless
+# --no-build/GRM_SKIP_BUILD opts out, or GRM_EXTENSION_BUILT_THIS_RUN=1 says build-and-test.sh
+# already did it for this run. The task has real Gradle inputs/outputs, so the common case
+# (nothing relevant changed) costs a few seconds, not a full rebuild.
 #
 # Note: analyzeHeadless.bat chokes on parentheses in filenames -- keep every
 # generated path free of them.
@@ -64,7 +78,7 @@ EXPECTED_DIR="$SCRIPT_DIR/expected"
 grm_default_headless
 
 usage() {
-	echo "usage: $0 [check|bless] [--force-criteria] [chunk ...]" >&2
+	echo "usage: $0 [check|bless] [--force-criteria] [--no-build] [chunk ...]" >&2
 	echo "       $0 --list-chunks" >&2
 }
 
@@ -97,12 +111,14 @@ if [ $# -gt 0 ] && { [ "$1" = check ] || [ "$1" = bless ]; }; then
 	shift
 fi
 
-# --force-criteria is parsed as a leading flag rather than a chunk name so the
+# --force-criteria/--no-build are parsed as leading flags rather than chunk names so the
 # chunk validator below keeps rejecting typos outright.
 FORCE_CRITERIA=0
+NO_BUILD=0
 while [ $# -gt 0 ]; do
 	case "$1" in
 		--force-criteria) FORCE_CRITERIA=1; shift ;;
+		--no-build) NO_BUILD=1; shift ;;
 		--) shift; break ;;
 		*) break ;;
 	esac
@@ -177,6 +193,22 @@ else
 fi
 grm_apply_settings_base
 
+# Build-by-default preflight (bead grm-4t2d option (e); see the header comment). Skipped
+# outright when build-and-test.sh already built+staged for this run (GRM_EXTENSION_BUILT_THIS_RUN),
+# so the two scripts never do the work twice, and skipped on request via --no-build/GRM_SKIP_BUILD.
+# Only meaningful against the isolated install -- GRM_SHARED_GHIDRA_INSTALL=1 reads the
+# %APPDATA% install that only tools/install-gui.ps1 ever writes, which this script must not build.
+EXT_NOTE_SUFFIX=""
+if [ "${GRM_EXTENSION_BUILT_THIS_RUN:-}" = 1 ]; then
+	: # build-and-test.sh already built+staged for this run; do not double-build
+elif [ "${GRM_SHARED_GHIDRA_INSTALL:-}" = 1 ]; then
+	EXT_NOTE_SUFFIX="shared-install"
+elif [ "$NO_BUILD" -eq 1 ] || [ "${GRM_SKIP_BUILD:-}" = 1 ]; then
+	EXT_NOTE_SUFFIX="no-build"
+else
+	grm_ensure_extension_staged
+fi
+
 WORK="$(grm_work_dir banktest)"
 fail=0
 # Rows bless_candidate refused (criteria failed) or forced through anyway, so the
@@ -205,24 +237,36 @@ CACHE_DIR="$REPO_ROOT/build/banktest-cache"
 # Compute the extension identity once; empty => caching disabled for this run.
 EXT_ID="$(ext_identity)" || EXT_ID=""
 
-# ANNOUNCE IT (bead grm-4t2d). This value was computed here to key the cache long before it
-# was ever printed, which is precisely how it failed to help: the check existed and stayed
-# silent. This script does NOT build or install -- only build-and-test.sh does -- so invoking
-# it directly is the fast path that can analyze a build older than your working tree, and the
-# resulting failures look exactly like a real regression (grm-mlp2 lost a three-point bisect
-# and filed a bogus P1 to it; see grm-7rct and the which-script-builds-the-extension memory).
-# When build-and-test.sh drove this run it just built and installed, so say that instead of
-# warning about staleness that cannot apply.
-if [ "${GRM_EXTENSION_BUILT_THIS_RUN:-}" = 1 ]; then
-	grm_installed_extension_note "$EXT_ID" \
-		"(built and installed by build-and-test.sh for this run, so it matches this tree.)"
-else
-	grm_installed_extension_note "$EXT_ID" \
-		"(this script does NOT build or install -- it analyzes with whatever is already" \
-		" installed. A surprising result may be a stale extension rather than your change." \
-		" Re-run as 'bash tools/banktest/build-and-test.sh check <chunk>' before trusting it,"  \
-		" and treat any baseline or bisect taken through this script alone as unproven.)"
-fi
+# ANNOUNCE IT (bead grm-4t2d). This value was originally computed here only to key the cache,
+# which is why the whole reason for the FIRST version of this note existed: the identity was
+# there and stayed silent. Now that this script builds by default (see the header comment and
+# EXT_NOTE_SUFFIX above), the note's job is to say WHICH of the three states applied, so a
+# surprising result can be attributed correctly rather than blamed on a stale build that this
+# run just fixed -- or credited to a rebuild that --no-build/GRM_SKIP_BUILD deliberately skipped.
+case "${GRM_EXTENSION_BUILT_THIS_RUN:-}/$EXT_NOTE_SUFFIX" in
+	1/*)
+		grm_installed_extension_note "$EXT_ID" \
+			"(built and installed by build-and-test.sh for this run, so it matches this tree.)"
+		;;
+	*/shared-install)
+		grm_installed_extension_note "$EXT_ID" \
+			"(GRM_SHARED_GHIDRA_INSTALL=1 -- this run does NOT build; it reads the shared" \
+			" %APPDATA%/ghidra install, which only tools/install-gui.ps1 ever writes, so it" \
+			" cannot be attributed to the current source state.)"
+		;;
+	*/no-build)
+		grm_installed_extension_note "$EXT_ID" \
+			"(--no-build/GRM_SKIP_BUILD skipped the pre-flight build -- this script analyzed" \
+			" with whatever was already installed. A surprising result may be a stale" \
+			" extension rather than your change; re-run without that flag/var to rebuild" \
+			" first, and treat any baseline or bisect taken through this run as unproven.)"
+		;;
+	*)
+		grm_installed_extension_note "$EXT_ID" \
+			"(built and staged by THIS run via 'gradle stageExtensionForTests' before" \
+			" analyzing, so it matches this working tree.)"
+		;;
+esac
 
 normalize_opts() {
 	# Echo the loader-opts string with each existing-file argument replaced by

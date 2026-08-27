@@ -5,8 +5,8 @@
 # user-supplied, so this lives alongside measure-overlay-scale.sh and is invoked by
 # hand:
 #
-#   bash tools/banktest/realrom-test.sh check    [--gme|--all] [--only|--except <ids>] <romdir> ...
-#   bash tools/banktest/realrom-test.sh bless    [--gme|--all] [--only|--except <ids>] <romdir> ...
+#   bash tools/banktest/realrom-test.sh check    [--gme|--all] [--only|--except <ids>] [--no-build] <romdir> ...
+#   bash tools/banktest/realrom-test.sh bless    [--gme|--all] [--only|--except <ids>] [--no-build] <romdir> ...
 #   bash tools/banktest/realrom-test.sh nominate <romdir> ...
 #
 # (romdirs may also be supplied via GRM_ROM_DIR, space-separated.)
@@ -54,20 +54,24 @@
 # SO: DO NOT JUDGE THIS ROW BY A LINE WHITELIST. The old wording here ("if those two lines are
 # the only diff it is grm-g73; any other line moving is real") would have called finding 2 a
 # fresh regression, and a later attempt to widen the whitelist to include bankComments would
-# have hidden a real behaviour change instead. A whitelist cannot tell those apart. Only a
-# rebuilt A/B can:
+# have hidden a real behaviour change instead. A whitelist cannot tell those apart. Only an A/B
+# across a genuine rebuild can:
 #
 #   git stash -u
-#   bash tools/banktest/build-and-test.sh check nes-banking     # <-- NOT OPTIONAL
 #   bash tools/banktest/realrom-test.sh check --only megaman
-#   ... then restore, rebuild again, re-run, and diff the two dumps.
+#   ... then restore and re-run, and diff the two dumps.
 #
-# THE REBUILD IS THE WHOLE TEST. This script does not build; skipping it analyzes both sides
-# with the same installed extension, which returns byte-identical dumps and reads as "my change
-# moved nothing". That is how ac77ee6 shipped a zero-movement claim that was wrong on two rows.
-# Every run now prints the installed extension identity -- if it does not CHANGE between the two
-# sides, throw the comparison away. (`rm -rf build/realrom-cache` first if you are about to
-# bless -- see grm-g73.)
+# THE REBUILD USED TO BE A MANUAL STEP HERE, AND IT WAS THE WHOLE TEST (bead grm-4t2d option
+# (e), 2026-08-26): this script now builds by DEFAULT (`gradle stageExtensionForTests`) before
+# analyzing, so the git-stash dance above rebuilds itself on both sides -- there is no longer a
+# manual "rebuild between sides" step to forget. Skipping it (the old failure mode) analyzed
+# both sides with the same installed extension, returned byte-identical dumps, and read as "my
+# change moved nothing" -- that is how ac77ee6 shipped a zero-movement claim that was wrong on
+# two rows. Every run still prints the installed extension identity as a SAFETY NET, not the
+# primary mechanism anymore: if it does not CHANGE between the two sides of an A/B, something
+# is wrong with the rebuild (or you passed --no-build/GRM_SKIP_BUILD) -- throw the comparison
+# away and find out why before trusting it. (`rm -rf build/realrom-cache` first if you are
+# about to bless -- see grm-g73.)
 #
 # This harness deliberately does NOT retry or tolerate the delta -- a golden whose diff you can
 # trust is the entire point of this tier, and hiding a known-noisy row would cost that for every
@@ -86,9 +90,13 @@
 # realrom/expected/<id>.dump (check) or regenerates it (bless). ROM binaries are never
 # committed; the goldens (our derived, copyright-safe analysis metadata) are.
 #
-# Requires the isolated extension install from a prior
+# BUILD-BY-DEFAULT (bead grm-4t2d option (e)). This script used to require a prior
 #   bash tools/banktest/build-and-test.sh check nes-banking
-# (populates build/ghidra-home). Environment overrides mirror measure-overlay-scale.sh:
+# to populate build/ghidra-home, and analyzed with whatever was already there if you forgot
+# -- the real-ROM tier being one of the two scripts people reach for most (see the header note
+# above and AGENTS.md's "Only build-and-test.sh builds the extension" history). It now runs
+# `gradle stageExtensionForTests` (build.gradle) itself before analyzing, so no prior
+# build-and-test.sh run is required. Environment overrides mirror measure-overlay-scale.sh:
 #   GHIDRA_HEADLESS         path to analyzeHeadless(.bat)
 #   BANKTEST_SETTINGS_BASE  relocate Ghidra user-settings/Extensions dir (defaults to
 #                            <repo>/build/ghidra-home)
@@ -96,6 +104,7 @@
 #   GRM_BANKTEST_WORK       base dir for per-run work dirs (defaults to
 #                            <repo>/build/banktest-work; kept on failure)
 #   REALROM_WORK_DIR        use this exact dir instead of a fresh one
+#   GRM_SKIP_BUILD=1        same opt-out as --no-build (below), for scripted callers
 set -u
 
 USAGE="usage: $0 check|bless|nominate [--gme|--all] [--only <ids>|--except <ids>] <romdir> [<romdir> ...]
@@ -124,6 +133,7 @@ EXCEPT_IDS=""
 # `bless --gme` meaning "also re-bless all twelve curated goldens" is a surprise that costs
 # real work to undo. --all is the explicit way to ask for both.
 MANIFEST_SET=core
+NO_BUILD=0
 while [ $# -gt 0 ]; do
 	case "$1" in
 		--gme)
@@ -132,6 +142,10 @@ while [ $# -gt 0 ]; do
 			;;
 		--all)
 			MANIFEST_SET=all
+			shift
+			;;
+		--no-build)
+			NO_BUILD=1
 			shift
 			;;
 		--only|--except)
@@ -431,9 +445,22 @@ fi
 grm_default_headless
 
 # Same isolation as measure-overlay-scale.sh: point Ghidra's settings/Extensions dir at
-# the per-worktree build/ghidra-home tree that build-and-test.sh populates.
+# the per-worktree build/ghidra-home tree.
 grm_settings_base_fallback nes-banking
 grm_apply_settings_base
+
+# Build-by-default preflight (bead grm-4t2d option (e); see the header comment). Skipped
+# outright when build-and-test.sh already built+staged for this run
+# (GRM_EXTENSION_BUILT_THIS_RUN), so the two scripts never do the work twice, and skipped on
+# request via --no-build/GRM_SKIP_BUILD.
+EXT_NOTE_SUFFIX=""
+if [ "${GRM_EXTENSION_BUILT_THIS_RUN:-}" = 1 ]; then
+	: # build-and-test.sh already built+staged for this run; do not double-build
+elif [ "$NO_BUILD" -eq 1 ] || [ "${GRM_SKIP_BUILD:-}" = 1 ]; then
+	EXT_NOTE_SUFFIX="no-build"
+else
+	grm_ensure_extension_staged
+fi
 
 if ! command -v sha256sum >/dev/null 2>&1; then
 	echo "ERROR: sha256sum not found on PATH (needed to hash-pin ROMs)." >&2
@@ -453,19 +480,35 @@ CACHE_DIR="$REPO_ROOT/build/realrom-cache"
 # Compute the extension identity once; empty => caching disabled for this run.
 EXT_ID="$(ext_identity)" || EXT_ID=""
 
-# ANNOUNCE IT. This script does NOT build -- it analyzes with whatever extension is already
-# installed in build/ghidra-home -- and that turns the single most common use of this tier, an
-# A/B against a stashed baseline, into a silent no-op if you forget to rebuild between the two
-# sides. The failure mode gives no error and no suspicious output: the "baseline" run analyzes
-# with the working tree's extension, the dumps come back byte-identical, and identical is exactly
-# what you were hoping to see, so it reads as "my change moved nothing" (grm-mej.2, 2026-08-10 --
-# it cost an incorrect zero-movement claim that had already been committed). Printing the
-# identity makes it checkable in one glance: if both sides of an A/B print the SAME line, the
-# comparison is worthless no matter what the dumps say.
-grm_installed_extension_note "$EXT_ID" \
-	"(this script does NOT build. For an A/B, rebuild between sides with" \
-	" 'bash tools/banktest/build-and-test.sh check nes-banking' and expect this line" \
-	" to CHANGE -- if it does not, you are comparing a build against itself.)"
+# ANNOUNCE IT. This used to be the PRIMARY defense against the single most common failure in
+# this tier: an A/B against a stashed baseline silently comparing a build against itself
+# because this script did not build and nobody rebuilt between sides (grm-mej.2, 2026-08-10 --
+# it cost an incorrect zero-movement claim that had already been committed). As of grm-4t2d
+# option (e) this script builds by default, so that failure mode should no longer be reachable
+# without deliberately passing --no-build/GRM_SKIP_BUILD -- but the identity is still printed
+# as a SAFETY NET: if both sides of an A/B print the SAME line, something is wrong (a stale
+# cache, an unintended --no-build, a build that silently no-opped) and the comparison is
+# worthless no matter what the dumps say.
+case "${GRM_EXTENSION_BUILT_THIS_RUN:-}/$EXT_NOTE_SUFFIX" in
+	1/*)
+		grm_installed_extension_note "$EXT_ID" \
+			"(built and installed by build-and-test.sh for this run, so it matches this tree.)"
+		;;
+	*/no-build)
+		grm_installed_extension_note "$EXT_ID" \
+			"(--no-build/GRM_SKIP_BUILD skipped the pre-flight build -- this run analyzed" \
+			" with whatever was already installed. For an A/B, that means YOU must rebuild" \
+			" between sides, and this line MUST change between them or you are comparing a" \
+			" build against itself.)"
+		;;
+	*)
+		grm_installed_extension_note "$EXT_ID" \
+			"(built and staged by THIS run via 'gradle stageExtensionForTests' before" \
+			" analyzing. For an A/B this now happens automatically on both sides -- this" \
+			" line should still change between them; if it does not, treat the comparison" \
+			" as unproven and find out why before trusting it.)"
+		;;
+esac
 # Resolved Ghidra install root (bead grm-k0h): GHIDRA_HEADLESS -- not GRM_GHIDRA_INSTALL --
 # is what actually launches Ghidra, so a native-side A/B (decompile.exe, sleigh.exe) needs
 # GRM_GHIDRA_INSTALL set AND this to name the install it resolved to, or a stray default

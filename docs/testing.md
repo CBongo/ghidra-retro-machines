@@ -36,10 +36,13 @@ This is the load-bearing suite. It lives in `tools/banktest/` and works like thi
    `mkpetsciistringtest.py`) synthesize small test PRGs/ROMs with known, hand-designed
    banking/loader behavior.
 2. **`build-and-test.sh check`** builds the extension (`gradle buildExtension`, which also
-   runs the bespoke verifiers), installs the dist zip into a **per-git-worktree isolated**
-   Ghidra user-settings dir under `build/ghidra-home` (gitignored; never touches the shared
-   `%APPDATA%/ghidra` install, so an open GUI or a parallel agent can't clobber it), then
-   runs the fixtures.
+   runs the bespoke verifiers), stages it via `gradle stageExtensionForTests` into a
+   **per-git-worktree isolated** Ghidra user-settings dir under `build/ghidra-home`
+   (gitignored; never touches the shared `%APPDATA%/ghidra` install, so an open GUI or a
+   parallel agent can't clobber it), then runs the fixtures. As of bead `grm-4t2d`,
+   `run-banktest.sh` and `realrom-test.sh` stage the extension themselves too (build by
+   default, with a `--no-build`/`GRM_SKIP_BUILD` opt-out) rather than requiring a prior
+   `build-and-test.sh` run — see AGENTS.md's "The runners build by default" section.
 3. Each fixture imports its ROM headless with the **real loader** (`analyzeHeadless -loader
    NesRomLoader` etc.), runs default auto-analysis, and executes `VerifyBankTest.java` as a
    post-script.
@@ -346,9 +349,11 @@ default gate: ROM binaries are copyrighted and user-supplied, so nothing here ru
 it is never a `run-banktest.sh` chunk (whose `all` would otherwise pull it in).
 
 - **Driver:** `tools/banktest/realrom-test.sh check|bless|nominate [--gme|--all]
-  [--only|--except <ids>] <romdir> [<romdir> …]` (or `GRM_ROM_DIR`). Lives alongside
-  `measure-overlay-scale.sh` and reuses the same `build/ghidra-home` isolation, so run
-  `build-and-test.sh check nes-banking` once first.
+  [--only|--except <ids>] [--no-build] <romdir> [<romdir> …]` (or `GRM_ROM_DIR`). Lives
+  alongside `measure-overlay-scale.sh` and reuses the same `build/ghidra-home` isolation. As
+  of bead `grm-4t2d` it stages the extension itself (build by default) before analyzing, so
+  no prior `build-and-test.sh` run is required; `measure-overlay-scale.sh` is the one script
+  in this family that still needs one, since it was not in scope for that change.
 - **Several romdirs are normal, and a `SKIP` usually means one is missing.** Dirs are indexed at
   **depth 1 only** — a title one directory down is invisible — so a collection split across two
   places needs both named, and the curated set on the primary dev machine does. `GRM_ROM_DIR`

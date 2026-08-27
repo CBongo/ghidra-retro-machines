@@ -139,9 +139,13 @@ Chunk/source-area mapping:
 **The real-ROM tier is separate, opt-in, and takes NO paths — just run it:**
 
 ```bash
-bash tools/banktest/build-and-test.sh check nes-banking   # once, for the isolated install
 bash tools/banktest/realrom-test.sh check --all           # romdirs come from GRM_ROM_DIR
 ```
+
+No prior `build-and-test.sh` run is required (bead grm-4t2d option (e)): `realrom-test.sh`
+stages the isolated extension itself before analyzing, the same way `run-banktest.sh` does — see
+"The runners build by default" below. Pass `--no-build` (or set `GRM_SKIP_BUILD=1`) to skip that
+and analyze with whatever is already installed instead.
 
 **Use `--all`, and note that the manifests do NOT accumulate.** No flag = `manifest.tsv`, the
 curated board-representative set (12 rows). `--gme` = `manifest-gme.tsv` *only* (19 rows).
@@ -242,12 +246,35 @@ There is deliberately no `quick` alias or cache-backed project mode: headless
 projects are created fresh, and a correct cache would need explicit invalidation
 rules. Use targeted chunks for safe iteration instead.
 
-For any headless chunk, this builds the extension (`gradle buildExtension`), installs the
-dist zip into a **per-git-worktree, isolated** Ghidra "user settings dir" under
-`build/ghidra-home` (gitignored), then runs the banktest regression suite against that
-isolated install. It **never touches the shared `%APPDATA%/ghidra/.../Extensions` dir** —
+For any headless chunk, this builds the extension (`gradle buildExtension`), stages it into a
+**per-git-worktree, isolated** Ghidra "user settings dir" under `build/ghidra-home` (gitignored,
+via the `stageExtensionForTests` Gradle task), then runs the banktest regression suite against
+that isolated install. It **never touches the shared `%APPDATA%/ghidra/.../Extensions` dir** —
 so an open Ghidra GUI can't lock it out from under you, and parallel agents can't clobber
 each other's installed extension.
+
+### The runners build by default (`run-banktest.sh`/`realrom-test.sh`, bead grm-4t2d)
+
+`run-banktest.sh` and `realrom-test.sh` used to analyze with whatever was already staged in
+`build/ghidra-home` — a stale-build result was possible and, worse, indistinguishable from a real
+regression (see `AGENTS.md`'s "The runners build by default" section and the
+`which-script-builds-the-extension` bd memory for the incident history). Both scripts now run
+`gradle stageExtensionForTests` before analyzing, honouring an explicit opt-out:
+
+```bash
+bash tools/banktest/run-banktest.sh check --no-build nes-banking
+GRM_SKIP_BUILD=1 bash tools/banktest/realrom-test.sh check --all
+```
+
+`stageExtensionForTests` (`build.gradle`) has real Gradle inputs (compiled classes, `data/`,
+`ghidra_scripts/`, the packaging manifest) and outputs (the staged `Extensions/ghidra-retro-machines`
+dir), so it is genuinely `UP-TO-DATE` when nothing relevant changed — the common case costs a few
+seconds, not a rebuild. It deliberately does **not** key its up-to-date check on the dist zip
+(`buildExtension`'s output): that Zip task's bytes are unstable across rebuilds (embedded
+timestamps) even when the content is not, which is exactly the kind of perpetual-staleness bug
+this task exists to avoid. It is named `stageExtensionForTests`, never `installExtension` — that
+name is reserved, in spirit, for `tools/install-gui.ps1`, the real user-facing installer that
+writes into the shared `%APPDATA%` Ghidra install and that agents must never run.
 
 Parallelization rules:
 - One agent per `git worktree` (`git worktree add <path> <ref>`); never two agents sharing

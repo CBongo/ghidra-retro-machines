@@ -355,6 +355,54 @@ grm_installed_extension_note() {
 	done
 }
 
+# Resolve the gradle binary (bead grm-ycv, generalized by grm-4t2d): GRADLE env var wins if
+# set; otherwise prefer the committed wrapper (REPO_ROOT/gradlew), which pins the exact
+# distribution+checksum in gradle/wrapper/gradle-wrapper.properties and needs nothing
+# pre-installed on a fresh checkout; otherwise fall back to `gradle` on PATH; otherwise fail
+# loudly rather than defaulting to some one-off developer install path. Sets GRADLE.
+#
+# Originally build-and-test.sh's own inline logic; factored out here once run-banktest.sh and
+# realrom-test.sh needed the identical resolution for their own incidental gradle invocations
+# (grm_ensure_extension_staged below) -- three copies of "which gradle" would have been three
+# chances for the fallback order to drift.
+grm_resolve_gradle() {
+	[ -n "${GRADLE:-}" ] && return 0   # ${VAR:-} for `set -u`; explicit override wins outright
+	if [ -x "$REPO_ROOT/gradlew" ]; then
+		GRADLE="$REPO_ROOT/gradlew"
+	elif command -v gradle >/dev/null 2>&1; then
+		GRADLE="$(command -v gradle)"
+	else
+		echo "FAIL: no gradle binary found. Tried: \$GRADLE (unset), $REPO_ROOT/gradlew (missing" \
+			"or not executable), 'gradle' on PATH (not found). Set GRADLE=/path/to/gradle or" \
+			"restore the committed gradlew wrapper." >&2
+		exit 1
+	fi
+}
+
+# Build-by-default preflight (bead grm-4t2d option (e)). run-banktest.sh and realrom-test.sh
+# used to analyze with whatever extension was already sitting in build/ghidra-home -- the fast
+# inner loop and the real-ROM tier, i.e. the two scripts people reach for most, and therefore
+# the two that could silently test code older than the working tree (grm-mej.2,
+# grm-mlp2/grm-7rct; see AGENTS.md and the which-script-builds-the-extension bd memory). Both
+# now call this before reading BANKTEST_SETTINGS_BASE, wrapping `gradle stageExtensionForTests`
+# (build.gradle) -- a real Gradle task with real inputs/outputs, so it is genuinely UP-TO-DATE
+# (a few seconds, not a full rebuild) when nothing relevant has changed, and genuinely rebuilds
+# when it has.
+#
+# Callers must apply their OWN --no-build/GRM_SKIP_BUILD opt-out and GRM_EXTENSION_BUILT_THIS_RUN
+# check before calling this (each script has its own wording for why it is or is not building,
+# matching the existing grm_installed_extension_note pattern) -- this function does exactly one
+# thing: run the task, or exit loudly.
+grm_ensure_extension_staged() {
+	grm_default_ghidra_install
+	grm_resolve_gradle
+	echo "== ensuring the isolated extension install is up to date (gradle stageExtensionForTests) ==" >&2
+	if ! GHIDRA_INSTALL_DIR="$GRM_GHIDRA_INSTALL" "$GRADLE" -p "$REPO_ROOT" stageExtensionForTests; then
+		echo "FAIL: gradle stageExtensionForTests -- see above for the underlying error" >&2
+		exit 1
+	fi
+}
+
 ext_identity() {
 	# Content fingerprint of the installed extension, or non-zero if it cannot be
 	# determined (=> the caller's candidate-dump cache is disabled). NOT a file
