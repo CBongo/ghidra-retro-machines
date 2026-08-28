@@ -43,6 +43,33 @@ bash tools/banktest/realrom-test.sh nominate <romdir>   # board-gap survey
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
+- [ ] **Why does tmnt's real-ROM result depend on whether another row ran first?** (`grm-82u3`,
+      from `grm-shnf`/QR-12 increment 3b, commit `79cde7d`.) The agent-side measurement is
+      finished and is on the bead; what is left needs Ghidra internals, not more build cycles.
+
+      Reproduce in minutes: `bash tools/banktest/realrom-test.sh check --all --only tetris,tmnt`.
+      tmnt **passes run alone** and **fails when any row precedes it**, deterministically — two
+      full `--all` runs gave byte-identical dumps, so this is not the `dodge`/`ff1` jitter family.
+      A/B with genuinely differing extension ids (`045d4dc3` vs `d80f7300`) attributes it to the
+      class split. **The isolated case masks it** — an earlier round ran `--only tmnt` on both
+      sides, got identical dumps, and wrongly concluded "moved nothing".
+
+      The hypothesis is that splitting one class into four changed what Ghidra's `ClassSearcher`
+      indexes and the order it returns, with the first program analyzed in an invocation
+      populating that index. Confirming it means instrumenting `ClassSearcher`/analyzer ordering
+      across the two builds — a few minutes for someone who knows where Ghidra caches that, and
+      a multi-cycle grind for an agent.
+
+      **Why it matters beyond tmnt:** this is the first time in six QR-12 extractions that the
+      "identical modulo visibility" compile-time property failed to imply behavioural
+      equivalence. That property is what let five increments land without a real-ROM A/B. It
+      covers bytecode; it does not cover classpath composition. If confirmed, the method's
+      guarantee needs qualifying wherever it is written down.
+
+      Note the movement is *better* analysis — `instrs.inOverlay` 0 → 103 on one of `grm-8iy`'s
+      zero-overlay titles — so the likely end state is blessing it. **Do not bless on that
+      direction alone:** a result that changes with run order is not a stable thing to pin.
+
 - [ ] **Why do Lemmings and Mario show zero SPC-side port references?** (`grm-ced`.) Counting
       direct-page `$F4`–`$F7` accesses across the `*spc.dis` listings gives sd3 113, ct 87, ff3 78,
       som 60, ff5 49 — then g3 5, fzero 2, **lem 0, mario 0**. A working driver must talk to the
