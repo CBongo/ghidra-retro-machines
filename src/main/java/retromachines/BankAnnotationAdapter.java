@@ -48,12 +48,11 @@ import ghidra.util.exception.InvalidInputException;
 import ghidra.util.task.TaskMonitor;
 
 import static retromachines.BankDataflowEngine.toFieldLocal;
-import static retromachines.BoardBankAnalyzer.calledHelper;
-import static retromachines.BoardBankAnalyzer.reachableEntries;
+import static retromachines.HelperDiscovery.calledHelper;
+import static retromachines.HelperDiscovery.reachableEntries;
 
 import retromachines.BankDataflowEngine.DataflowResult;
 import retromachines.BankDataflowEngine.SwitchResult;
-import retromachines.BoardBankAnalyzer.HelperModel;
 import retromachines.BoardDescriptorModel.BoardModel;
 import retromachines.BoardDescriptorModel.Bounded;
 import retromachines.BoardDescriptorModel.ComputedWindowModel;
@@ -61,6 +60,7 @@ import retromachines.BoardDescriptorModel.FieldSpec;
 import retromachines.BoardDescriptorModel.ModeWindowModel;
 import retromachines.BoardDescriptorModel.OccupantModel;
 import retromachines.BoardDescriptorModel.WindowModel;
+import retromachines.HelperDiscovery.HelperModel;
 
 /**
  * The Ghidra mutation/annotation adapter for {@code BoardBankAnalyzer}'s completed dataflow:
@@ -89,8 +89,9 @@ import retromachines.BoardDescriptorModel.WindowModel;
  * {@code import static} instead. {@code toFieldLocal} and {@code reachableEntries} are static helpers,
  * referenced here via {@code import static} so the call sites themselves are byte-identical to
  * their originals; {@code toFieldLocal} moved to {@link BankDataflowEngine} with the Dataflow
- * section (bead grm-gqrj) and {@code reachableEntries} stays on {@code BoardBankAnalyzer} in the
- * Helper-call-propagation section (bead grm-shnf, still open). {@code findModeWindowInstance}
+ * section (bead grm-gqrj) and {@code reachableEntries} moved to {@link HelperDiscovery} with the
+ * rest of the Helper-call-propagation section's discovery half (bead grm-shnf step 3).
+ * {@code findModeWindowInstance}
  * moved here with "Reference retargeting" but is also called from
  * {@code BankDataflowEngine.clampToResidence} -- the one place this increment's own code is
  * called back INTO from the dataflow side; that call site was qualified

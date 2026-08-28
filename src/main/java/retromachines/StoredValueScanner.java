@@ -441,7 +441,7 @@ final class StoredValueScanner {
 	 * <li>the matching push is a {@code PHP} -- a status byte pushed by {@code PHP} is never a
 	 * value, so a {@code PLA} that pairs with one cannot be resolved as one either;</li>
 	 * <li>the stack pointer moves by anything other than {@code PHA}/{@code PHP}/{@code PLA}/
-	 * {@code PLP} -- compared by BASE register via {@link BoardBankAnalyzer#writesStackPointer},
+	 * {@code PLP} -- compared by BASE register via {@link HelperArgumentRecovery#writesStackPointer},
 	 * reused rather than reimplemented because the 6502 stack-pointer-by-two-names trap it
 	 * guards against ({@code TXS}'s p-code writing the 1-byte {@code S} while
 	 * {@code CompilerSpec.getStackPointer()} answers the 2-byte {@code SP}) applies here
@@ -537,7 +537,7 @@ final class StoredValueScanner {
 				}
 				case "PLA", "PLP" -> depth++;
 				default -> {
-					if (BoardBankAnalyzer.writesStackPointer(prev, stackPointer)) {
+					if (HelperArgumentRecovery.writesStackPointer(prev, stackPointer)) {
 						stepsConsumed[0] = steps;
 						return null; // the stack pointer moved under us -- see javadoc
 					}
@@ -676,7 +676,7 @@ final class StoredValueScanner {
 	 *   ca23  LDA #$1b / STA $0720 / JSR $ffc2     &lt;- useInstr is the JSR, cell is $0720
 	 *   ffc2  ... LDA $0720 / STA $8001            &lt;- the helper consumes it here
 	 * </pre>
-	 * Once {@code BoardBankAnalyzer.inboundArgumentCell} has proved the helper reaches its switch
+	 * Once {@code HelperArgumentRecovery.inboundArgumentCell} has proved the helper reaches its switch
 	 * site holding {@code $0720}'s value unmodified, this answers the other half: what the CALLER
 	 * put there. Every guard that makes the answer trustworthy already exists in
 	 * {@link #forwardedStoreValue} -- block linkage, {@link #isControlFlowJoin}, the
@@ -754,7 +754,7 @@ final class StoredValueScanner {
 	 * stack could plausibly alias {@code $0103} -- doing so would need the stack to run ~253
 	 * bytes deep at the moment of the push, which does not happen in practice; games park scratch
 	 * cells low in the stack page precisely because the stack never reaches them. This is the
-	 * identical aliasing assumption {@code BoardBankAnalyzer.argumentSurvivesPrologue} already
+	 * identical aliasing assumption {@code HelperArgumentRecovery.argumentSurvivesPrologue} already
 	 * makes over this same dodge routine, so refusing here was internally inconsistent rather
 	 * than conservative -- one code path trusted the low stack page and the other did not, over
 	 * the same bytes of the same ROM.
@@ -856,7 +856,7 @@ final class StoredValueScanner {
 	 * recognize. Over-reporting merely forfeits a forward; under-reporting would be unsound.
 	 * <p>
 	 * <b>Package-private for a second consumer</b> (bead grm-67g):
-	 * {@code BoardBankAnalyzer.inboundArgumentCell} asks the identical question -- "may this
+	 * {@code HelperArgumentRecovery.inboundArgumentCell} asks the identical question -- "may this
 	 * instruction have written the cell I am attributing a value to?" -- over a FORWARD walk
 	 * through a helper body rather than this backward one, and the three-detector union is
 	 * load-bearing for both. The reference-only {@link #writesAddress} is the tempting shortcut

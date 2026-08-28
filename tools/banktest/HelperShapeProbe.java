@@ -6,7 +6,7 @@
 // plainAbsoluteTarget, then indexedBase) to an address inside a mechanism range the board
 // descriptor declares (banking.mechanisms[], loaded the same way BankReachProbe.java loads it)
 // is a "mechsite"; the function containing it is a helper. This is what the PRODUCTION rule
-// (BoardBankAnalyzer.findHelpers / StoredValueScanner) actually keys on -- a real mechanism
+// (HelperDiscovery.findHelpers / StoredValueScanner) actually keys on -- a real mechanism
 // write, not a diagnostic side effect.
 //
 // POPULATION 2 -- warning-derived ("warn"), the ORIGINAL population this probe shipped with,
@@ -28,14 +28,14 @@
 // Section 5 (the grm-nju gate) goes further and PROTOTYPES the proposed constant-argument
 // recovery fix, because the value of that fix hinges on an unproven premise: that callers pass
 // a CONSTANT bank. It walks every call instruction in the program through a private copy of
-// the proposed BoardBankAnalyzer.reachableEntries -- following Ghidra thunks and
+// the proposed HelperDiscovery.reachableEntries -- following Ghidra thunks and
 // one-instruction unconditional-JMP trampolines -- and, for each call that would newly reach a
 // helper function, reports whether the instruction immediately before it is an immediate load,
 // and whether that immediate's destination register matches the helper's own store register.
 //
 // Re-implementing the production rule here rather than calling it is deliberate, the same
 // choice BankReachProbe.java makes: a disagreement between the two is itself a finding. This
-// script must NOT call BoardBankAnalyzer/findHelpers/StoredValueScanner -- see "WHY THE
+// script must NOT call HelperDiscovery/findHelpers/StoredValueScanner -- see "WHY THE
 // HELPERS ARE RE-IMPLEMENTED" below.
 //
 // This SCRIPT is committed and documented (tools/banktest/realrom/README.md); its OUTPUT is
@@ -671,7 +671,7 @@ public class HelperShapeProbe extends GhidraScript {
 	 * <p>
 	 * <b>SINGLE-SITE ONLY, and that restriction is load-bearing rather than laziness.</b> With
 	 * more than one mech site, WHICH site consumes the argument is a strategy decision this probe
-	 * does not model -- production spends {@code BoardBankAnalyzer.helperValueSite} and
+	 * does not model -- production spends {@code HelperArgumentRecovery.helperValueSite} and
 	 * {@code BankSwitchStrategy.suppliesHelperValueAtFirstSite} on exactly that question. Super
 	 * Mario Bros. 2's {@code FUN_ff88} is the counterexample that forced this clause, and it is
 	 * measured, not imagined:
@@ -785,7 +785,7 @@ public class HelperShapeProbe extends GhidraScript {
 	}
 
 	/**
-	 * Prototype of the proposed {@code BoardBankAnalyzer.reachableEntries}: the addresses
+	 * Prototype of the proposed {@code HelperDiscovery.reachableEntries}: the addresses
 	 * control can actually arrive at from this call, following Ghidra thunks and
 	 * one-instruction unconditional-JMP trampolines, bounded at {@link #MAX_HOPS} with a
 	 * visited set as the cycle guard.

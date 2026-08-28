@@ -21,7 +21,7 @@ import ghidra.program.model.address.Address;
  * Register values known to hold on entry to a specific address -- the caller-supplied
  * A/X/Y a backward scan may adopt instead of walking past {@code entryAddr}.
  * <p>
- * Exactly one thing populates a non-{@link #NONE} env: {@code BoardBankAnalyzer}'s
+ * Exactly one thing populates a non-{@link #NONE} env: {@code HelperArgumentRecovery}'s
  * {@code callSiteRegisters}, at a bank-switch helper call site, with that helper's entry point
  * as {@code entryAddr}. {@link BankSwitchStrategy#depositHelperArgument} then hands it to a
  * strategy that re-evaluates the helper's own switch site under those registers -- grm-hum
@@ -61,7 +61,7 @@ import ghidra.program.model.address.Address;
  * answers for. What makes it safe rather than merely convenient is that whoever sets this field
  * has PROVED the span between {@code entryAddr} and it is straight-line, fully disassembled,
  * mechanism-inert and reached only by unconditional fallthrough -- that is
- * {@code BoardBankAnalyzer.isPassThroughInto}'s admission test, the same proof that admitted
+ * {@code HelperDiscovery.isPassThroughInto}'s admission test, the same proof that admitted
  * the wrapper model in the first place. And the structural guarantee above is unchanged and
  * still load-bearing: an env-derived result is used for one call site's {@code CallEffect}
  * only, never cached and never attributed to the switch site. That guarantee must not be

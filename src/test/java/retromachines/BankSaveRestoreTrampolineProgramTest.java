@@ -34,7 +34,7 @@ import ghidra.program.model.listing.FlowOverride;
 import ghidra.program.model.listing.Instruction;
 
 /**
- * Pins {@link BoardBankAnalyzer#restoresEntryBank} (bead grm-mej.3, increment 1): whether a
+ * Pins {@link SaveRestoreTrampolines#restoresEntryBank} (bead grm-mej.3, increment 1): whether a
  * helper's net effect on the tracked bank field is NOTHING, because it saves the live bank on
  * entry, switches, calls out, and puts the saved bank back before returning.
  * <p>
@@ -54,7 +54,7 @@ import ghidra.program.model.listing.Instruction;
  * pair around it, the commit write the {@code switchSites} set records, and the final store at
  * {@code switchSite} itself.
  * <p>
- * {@code HelperModel} is a package-private record of {@code BoardBankAnalyzer} (widened from
+ * {@code HelperModel} is a package-private record of {@code HelperDiscovery} (widened from
  * {@code private} for exactly this test, matching this file's own established pattern of
  * widening a helper method/type a same-package Tier 2 test needs to reach -- see
  * {@code HelperPrologueProgramTest} and {@code HelperWrapperProgramTest} for the sibling
@@ -94,8 +94,8 @@ public class BankSaveRestoreTrampolineProgramTest extends AbstractBundledLanguag
 	 * {@code insideHelperEntry} answers it directly) and {@code switchSite} (the restore this
 	 * walk must reach to answer at all). Every other field is inert filler.
 	 */
-	private BoardBankAnalyzer.HelperModel model(Address entry, Address switchSite) {
-		return new BoardBankAnalyzer.HelperModel(null, entry, null, null, 0xFF, 0, null,
+	private HelperDiscovery.HelperModel model(Address entry, Address switchSite) {
+		return new HelperDiscovery.HelperModel(null, entry, null, null, 0xFF, 0, null,
 			switchSite, entry, null);
 	}
 
@@ -105,7 +105,7 @@ public class BankSaveRestoreTrampolineProgramTest extends AbstractBundledLanguag
 
 	private boolean restores(Address entry, Address switchSite, BankMirrors mirrors,
 			Set<Address> switchSites) {
-		return BoardBankAnalyzer.restoresEntryBank(program, model(entry, switchSite), mirrors,
+		return SaveRestoreTrampolines.restoresEntryBank(program, model(entry, switchSite), mirrors,
 			switchSites);
 	}
 
@@ -143,7 +143,7 @@ public class BankSaveRestoreTrampolineProgramTest extends AbstractBundledLanguag
 	/**
 	 * The identical shape, but the saved byte comes from a {@code ROM_IDENTIFYING} offset
 	 * ({@code LDA $9050}, TMNT's {@code LDA $8000} API-read idiom) rather than a
-	 * {@code WRITE_THROUGH} RAM shadow. {@link BoardBankAnalyzer#isLiveBankMirror} answers both
+	 * {@code WRITE_THROUGH} RAM shadow. {@link SaveRestoreTrampolines#isLiveBankMirror} answers both
 	 * kinds identically, and this is the proof: only the mirror's KIND changes between this test
 	 * and the one above, and the verdict does not.
 	 */

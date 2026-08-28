@@ -350,7 +350,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * <p>
 	 * <b>The walk.</b> Bounded, backward from the load, in the same idiom as
 	 * {@code BankMirrors.Discovery.walkFromMechanismWrite} and
-	 * {@code BoardBankAnalyzer.restoresEntryBank}:
+	 * {@code SaveRestoreTrampolines.restoresEntryBank}:
 	 * <ul>
 	 * <li>a store INTO the cell -- the shadow was just refreshed, so it is current: COHERENT;</li>
 	 * <li>a mechanism write NOT among {@link BankMirrors#pairedSwitchSites} for this cell -- a
@@ -425,7 +425,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * that grm-hum increment 2's helper path -- which knows a call site's register values and
 	 * must re-evaluate the helper's switch site under them -- reuses this verbatim instead of
 	 * reimplementing "what does this store latch?" against
-	 * {@code BoardBankAnalyzer.recoverCallArgument}'s weaker "the register holds the field
+	 * {@code HelperArgumentRecovery.recoverCallArgument}'s weaker "the register holds the field
 	 * value verbatim" convention. The direct path and the helper path therefore cannot drift.
 	 * {@link #depositHelperArgument} is that helper path; {@code env} is
 	 * {@link RegisterEnv#NONE} for every direct-path call.
@@ -546,7 +546,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * expresses as {@code ownedMask = 0}. This javadoc used to say claiming it "requires verifying
 	 * the save/restore pair, i.e. pairing the {@code PHA} at {@code $FFC6} with the {@code PLA} at
 	 * {@code $FFD3}", and that verification now exists:
-	 * {@code BoardBankAnalyzer.restoresEntryBank} proves it once per helper and
+	 * {@code SaveRestoreTrampolines.restoresEntryBank} proves it once per helper and
 	 * {@code recoverCallArgument} answers the call site before this method is ever reached. So on
 	 * this exact trampoline the deposit below no longer runs.
 	 * <p>
@@ -576,7 +576,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 
 	/**
 	 * {@code false}: the override above ignores {@code argValue} entirely, so this strategy is
-	 * immune to the stale-argument hazard {@code BoardBankAnalyzer}'s prologue guard exists for
+	 * immune to the stale-argument hazard {@code HelperArgumentRecovery}'s prologue guard exists for
 	 * -- and must be exempted from it, because the guard would otherwise forfeit the answers
 	 * this mini-inline was built to produce (grm-mu7).
 	 * <p>

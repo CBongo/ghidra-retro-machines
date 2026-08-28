@@ -35,12 +35,12 @@ import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.symbol.SourceType;
 
 /**
- * Pins {@link BoardBankAnalyzer#isPassThroughInto} (grm-2dr increment 1): whether a wrapper
+ * Pins {@link HelperDiscovery#isPassThroughInto} (grm-2dr increment 1): whether a wrapper
  * function does nothing but fall straight through into a target address, which is what lets
  * {@code findPassThroughWrappers} re-key a helper's model onto the wrapper's entry.
  * <p>
  * Deliberately shaped like {@link HelperPrologueProgramTest}, since the method under test is
- * itself deliberately shaped like {@link BoardBankAnalyzer#argumentSurvivesPrologue}: one linear
+ * itself deliberately shaped like {@link HelperArgumentRecovery#argumentSurvivesPrologue}: one linear
  * cursor walk from an entry to a boundary, admitting only plain fallthrough. These tests stay at
  * the predicate level -- {@code (program, wrapper, target, switchResults)} alone, no analyzer
  * state, no board descriptor -- which is what lets them run in the fast JUnit tier.
@@ -74,7 +74,7 @@ public class HelperWrapperProgramTest extends AbstractBundledLanguageTest {
 		Function wrapper =
 			program.getFunctionManager().getFunctionAt(builder.addr(wrapperEntry));
 		assertNotNull("no function at wrapper entry " + wrapperEntry, wrapper);
-		return BoardBankAnalyzer.isPassThroughInto(program, wrapper, builder.addr(target),
+		return HelperDiscovery.isPassThroughInto(program, wrapper, builder.addr(target),
 			Map.of());
 	}
 
@@ -205,7 +205,7 @@ public class HelperWrapperProgramTest extends AbstractBundledLanguageTest {
 		assertEquals("fixture must actually be fragmented, or the test proves nothing", 2,
 			wrapper.getBody().getNumAddressRanges());
 
-		assertFalse(BoardBankAnalyzer.isPassThroughInto(program, wrapper, builder.addr("0x9071"),
+		assertFalse(HelperDiscovery.isPassThroughInto(program, wrapper, builder.addr("0x9071"),
 			Map.of()));
 	}
 
@@ -250,13 +250,13 @@ public class HelperWrapperProgramTest extends AbstractBundledLanguageTest {
 	// ------------------------------------------------------------------
 
 	/**
-	 * {@link BoardBankAnalyzer#crossableWrapperJoin} over addresses, which is all it reads.
+	 * {@link HelperArgumentRecovery#crossableWrapperJoin} over addresses, which is all it reads.
 	 * Same predicate-level discipline as {@link #passesThroughInto} above and for the same
-	 * reason: {@code HelperModel} is private to {@code BoardBankAnalyzer}, so the method takes
+	 * reason: {@code HelperModel} is private to {@code HelperDiscovery}, so the method takes
 	 * {@code firstSite} and {@code scanStop} loose rather than a model.
 	 */
 	private Address crossableJoin(String firstSite, String scanStop) {
-		return BoardBankAnalyzer.crossableWrapperJoin(program, builder.addr(firstSite),
+		return HelperArgumentRecovery.crossableWrapperJoin(program, builder.addr(firstSite),
 			builder.addr(scanStop));
 	}
 

@@ -123,7 +123,7 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 	 * resolves beyond forwarding. The exact shape of {@code BoardBankAnalyzer}'s own
 	 * {@code NO_HOOKS}, reproduced here rather than exposed, since
 	 * {@link StoredValueScanner#callerCellValue}'s sole production caller
-	 * ({@code BoardBankAnalyzer.inboundArgumentCell}'s caller-side half) always passes it: the
+	 * ({@code HelperArgumentRecovery.inboundArgumentCell}'s caller-side half) always passes it: the
 	 * scan runs at the CALL SITE, outside any mechanism's interpretation, so a strategy's load
 	 * resolution has nothing to say about a cell the caller is merely setting up ahead of the
 	 * call.
@@ -358,7 +358,7 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 	 * its argument at {@code $0103}, exactly as modelled here, and reloads it past an
 	 * intervening, unrelated {@code PHA}. Refusing the whole page declined that case even though
 	 * nothing pushed onto the stack could reach {@code $0103} without the stack running ~253
-	 * bytes deep -- {@code BoardBankAnalyzer.argumentSurvivesPrologue} already makes the
+	 * bytes deep -- {@code HelperArgumentRecovery.argumentSurvivesPrologue} already makes the
 	 * identical assumption over the same dodge routine. See {@link StackFloor} for the full
 	 * ruling and {@code StoredValueScanner.forwardedStoreValue} for its residual risk.
 	 * <p>
@@ -449,7 +449,7 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 	 * {@link StoredValueScanner#resolveStoredValue}'s register query, asked at the CALL SITE
 	 * rather than inside the helper. This is the other half of smb3's {@code FUN_ffc2} shape
 	 * ({@link HelperInboundCellProgramTest} pins the helper-side half,
-	 * {@code BoardBankAnalyzer.inboundArgumentCell}, which proves {@code $0720} arrives at the
+	 * {@code HelperArgumentRecovery.inboundArgumentCell}, which proves {@code $0720} arrives at the
 	 * helper unmodified): once that is proved, THIS method answers what byte the caller actually
 	 * put there.
 	 * <pre>
@@ -489,7 +489,7 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 
 	/**
 	 * The resolved byte is reduced to a narrow {@code mask}, exactly like
-	 * {@link BoardBankAnalyzer#inboundArgumentCell}'s callers narrow to a mechanism's field width
+	 * {@link HelperArgumentRecovery#inboundArgumentCell}'s callers narrow to a mechanism's field width
 	 * rather than the whole byte -- {@code $B5} masked to the low nibble is {@code $05}, and both
 	 * the known bits and the value itself must come back narrowed together.
 	 */

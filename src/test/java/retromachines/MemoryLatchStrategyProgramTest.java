@@ -427,7 +427,7 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 	 * <p>
 	 * So this test pins two things at once: GAP 1 must not over-reach into a loop-carried index
 	 * ({@code $D861} stays unknown), and the site that decides the helper's post-call state is
-	 * the LAST one ({@code $D88D} -> bank 6), which is what {@code BoardBankAnalyzer.findHelpers}
+	 * the LAST one ({@code $D88D} -> bank 6), which is what {@code HelperDiscovery.findHelpers}
 	 * selects with its max-address {@code switchSite} rule.
 	 */
 	@Test

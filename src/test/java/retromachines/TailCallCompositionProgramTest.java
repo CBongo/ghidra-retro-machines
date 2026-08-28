@@ -21,6 +21,7 @@ import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
+import static retromachines.HelperDiscovery.composeTailCalls;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -34,10 +35,11 @@ import ghidra.program.model.address.Address;
 import ghidra.program.model.listing.FlowOverride;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Instruction;
-import retromachines.BoardBankAnalyzer.HelperModel;
+
+import retromachines.HelperDiscovery.HelperModel;
 
 /**
- * Pins every DECLINE branch of {@code BoardBankAnalyzer.composeTailCalls} / {@code exitEffect}
+ * Pins every DECLINE branch of {@code HelperDiscovery.composeTailCalls} / {@code exitEffect}
  * (bead grm-432). Before this, only the SUCCESS path had coverage -- the {@code nesuxhelpertest}
  * fixture's U9/U10 -- while the four cases the pass exists to be SAFE in (a caller-dependent
  * tail-callee, several exits whose composed effects disagree, a cycle, and the depth cap) were
@@ -90,7 +92,6 @@ public class TailCallCompositionProgramTest extends AbstractBundledLanguageTest 
 
 	private ProgramBuilder builder;
 	private ProgramDB program;
-	private BoardBankAnalyzer analyzer;
 
 	/** Insertion-ordered so {@code composeTailCalls}' iteration order is deterministic. */
 	private Map<Function, HelperModel> helpers;
@@ -100,7 +101,6 @@ public class TailCallCompositionProgramTest extends AbstractBundledLanguageTest 
 		builder = new ProgramBuilder("Test", "6502:LE:16:default");
 		builder.createMemory("PRG", "0x8000", 0x8000);
 		program = builder.getProgram();
-		analyzer = new NesBankingAnalyzer();
 		helpers = new LinkedHashMap<>();
 	}
 
@@ -194,7 +194,7 @@ public class TailCallCompositionProgramTest extends AbstractBundledLanguageTest 
 	}
 
 	private Map<Function, HelperModel> compose() {
-		return analyzer.composeTailCalls(program, helpers);
+		return composeTailCalls(program, helpers);
 	}
 
 	// ------------------------------------------------------------------

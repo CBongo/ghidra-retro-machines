@@ -33,9 +33,9 @@ import ghidra.program.model.listing.Function;
 /**
  * Pins the two gates {@code findCallEdgeWrappers} admits a call-edge wrapper on (bead grm-2dr
  * increment 2): the VALUE gate,
- * {@link BoardBankAnalyzer#argumentSurvivesPrologue(ghidra.program.model.listing.Program, List, char)}
+ * {@link HelperArgumentRecovery#argumentSurvivesPrologue(ghidra.program.model.listing.Program, List, char)}
  * over a two-segment prologue, and the STRUCTURAL gate,
- * {@link BoardBankAnalyzer#isPassThroughInto} applied to the wrapper's PREFIX with the relay call
+ * {@link HelperDiscovery#isPassThroughInto} applied to the wrapper's PREFIX with the relay call
  * site as its target.
  * <p>
  * Both are pinned here because <b>neither subsumes the other</b>, and that is the single least
@@ -45,7 +45,8 @@ import ghidra.program.model.listing.Function;
  * <p>
  * Deliberately shaped like {@link HelperWrapperProgramTest}: predicate level only, no analyzer
  * state and no board descriptor, which is what keeps these in the fast JUnit tier.
- * {@code HelperModel} and {@code SwitchResult} are private records of {@link BoardBankAnalyzer},
+ * {@code HelperModel} is a package-private record of {@link HelperDiscovery} and
+ * {@code SwitchResult} of {@code BankDataflowEngine},
  * so this tier cannot build a helper map; the map-shaped rules (exactly-one-helper-call, the
  * whole-body mechanism scan, the mid-body decline) are pinned by the {@code nesrelaytest}
  * headless fixture instead.
@@ -67,18 +68,18 @@ public class HelperCallEdgeWrapperProgramTest extends AbstractBundledLanguageTes
 	}
 
 	/** One prologue segment, reads as addresses. */
-	private BoardBankAnalyzer.PrologueSegment seg(String from, String to) {
-		return new BoardBankAnalyzer.PrologueSegment(builder.addr(from), builder.addr(to));
+	private HelperArgumentRecovery.PrologueSegment seg(String from, String to) {
+		return new HelperArgumentRecovery.PrologueSegment(builder.addr(from), builder.addr(to));
 	}
 
 	/** The multi-segment value gate over A. */
-	private boolean survives(BoardBankAnalyzer.PrologueSegment... segments) {
-		return BoardBankAnalyzer.argumentSurvivesPrologue(program, List.of(segments), 'A');
+	private boolean survives(HelperArgumentRecovery.PrologueSegment... segments) {
+		return HelperArgumentRecovery.argumentSurvivesPrologue(program, List.of(segments), 'A');
 	}
 
 	/** The single-span form, for delegation and anti-vacuity checks. */
 	private boolean survivesSpan(String from, String to) {
-		return BoardBankAnalyzer.argumentSurvivesPrologue(program, builder.addr(from),
+		return HelperArgumentRecovery.argumentSurvivesPrologue(program, builder.addr(from),
 			builder.addr(to), 'A');
 	}
 
@@ -87,7 +88,7 @@ public class HelperCallEdgeWrapperProgramTest extends AbstractBundledLanguageTes
 		Function wrapper =
 			program.getFunctionManager().getFunctionAt(builder.addr(wrapperEntry));
 		assertNotNull("no function at wrapper entry " + wrapperEntry, wrapper);
-		return BoardBankAnalyzer.isPassThroughInto(program, wrapper, builder.addr(target),
+		return HelperDiscovery.isPassThroughInto(program, wrapper, builder.addr(target),
 			Map.of());
 	}
 
@@ -126,7 +127,7 @@ public class HelperCallEdgeWrapperProgramTest extends AbstractBundledLanguageTes
 	/** An empty list proves nothing, so it must not report survival. */
 	@Test
 	public void anEmptySegmentListIsFalse() throws Exception {
-		assertFalse(BoardBankAnalyzer.argumentSurvivesPrologue(program, List.of(), 'A'));
+		assertFalse(HelperArgumentRecovery.argumentSurvivesPrologue(program, List.of(), 'A'));
 	}
 
 	/** A clobber in the wrapper's own prefix is a decline, exactly as for a plain helper. */

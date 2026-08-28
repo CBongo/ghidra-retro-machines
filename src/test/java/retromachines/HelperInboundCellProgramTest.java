@@ -27,7 +27,7 @@ import ghidra.program.model.address.Address;
 import ghidra.program.model.mem.MemoryBlock;
 
 /**
- * Pins {@link BoardBankAnalyzer#inboundArgumentCell} (grm-67g): the memory cell a bank-switch
+ * Pins {@link HelperArgumentRecovery#inboundArgumentCell} (grm-67g): the memory cell a bank-switch
  * helper takes its argument IN, when the caller passes the bank through RAM rather than a
  * register.
  * <p>
@@ -86,7 +86,7 @@ public class HelperInboundCellProgramTest extends AbstractBundledLanguageTest {
 
 	/** The predicate over a helper entered at {@code entry} whose value site is {@code valueSite}. */
 	private Address inboundCell(String entry, String valueSite, char reg) {
-		return BoardBankAnalyzer.inboundArgumentCell(program, builder.addr(entry),
+		return HelperArgumentRecovery.inboundArgumentCell(program, builder.addr(entry),
 			valueSite == null ? null : builder.addr(valueSite), reg);
 	}
 

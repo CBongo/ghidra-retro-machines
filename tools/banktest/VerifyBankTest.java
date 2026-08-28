@@ -3457,7 +3457,7 @@ public class VerifyBankTest extends GhidraScript {
 		// smb3's FUN_ffc2 transcribed byte for byte as H2 ($E210: LDA #$47 / STA $0721 /
 		// STA $8000 / LDA $0720 / STA $8001). CallerE establishes select=7/prg_mode=1
 		// itself (LDA #$47 / STA $8000, the fixture idiom) before storing $1B (27) to
-		// $0720 immediately before the JSR, so BoardBankAnalyzer#inboundArgumentCell
+		// $0720 immediately before the JSR, so HelperArgumentRecovery#inboundArgumentCell
 		// proves H2 consumes a cell it never writes, and
 		// StoredValueScanner#callerCellValue reads CallerE's own $1B at the call site.
 		// Right before the JSR, CallerE loads A with a DECOY ($3F/63) distinct from the
@@ -3497,7 +3497,7 @@ public class VerifyBankTest extends GhidraScript {
 		//
 		// WHAT MUST NOT HAPPEN IS r7=5, NOT r7=7. H3 really does put $47 into $8001, so
 		// r7 = $47 & $3F = 7 is the TRUTH here and reporting it -- fully known, no warning --
-		// is correct; BoardBankAnalyzer#valueSuppliedInsideHelper recovers it by forwarding
+		// is correct; HelperArgumentRecovery#valueSuppliedInsideHelper recovers it by forwarding
 		// H3's own STA $0720 to its own LDA $0720. CallerG's $1B is a DEAD store, and
 		// attributing it would ship r7=5: a confident wrong bank sourced from a caller whose
 		// byte the helper threw away. That is precisely what inboundArgumentCell's `written`
@@ -3768,7 +3768,7 @@ public class VerifyBankTest extends GhidraScript {
 	// ------------------------------------------------------------------
 	//
 	// DESIGN NOTE (bug found by this fixture, since fixed): helper call-site argument
-	// recovery (BoardBankAnalyzer.recoverCallArgument) originally positioned the
+	// recovery (HelperArgumentRecovery.recoverCallArgument) originally positioned the
 	// recovered register value with the MECHANISM-wide (effectMask, lsb) -- correct only
 	// for single-field mechanisms (register-write, memory-latch), wrong for serial-shift,
 	// whose ONE mechanism spans multiple disjoint targets (mirroring+prg_mode via target

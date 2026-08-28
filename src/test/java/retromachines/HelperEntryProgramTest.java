@@ -32,7 +32,7 @@ import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Instruction;
 
 /**
- * Pins {@link BoardBankAnalyzer#reachableEntries} (grm-nju): where a call actually lands once
+ * Pins {@link HelperDiscovery#reachableEntries} (grm-nju): where a call actually lands once
  * Ghidra thunks and one-instruction jump trampolines are followed.
  * <p>
  * The shapes here are Bionic Commando's, whose bank switches all route through a jump table of
@@ -76,7 +76,7 @@ public class HelperEntryProgramTest extends AbstractBundledLanguageTest {
 	/** Reachable entries as plain hex, so a failure reads as addresses rather than objects. */
 	private List<String> entries() {
 		List<String> out = new ArrayList<>();
-		for (Address a : BoardBankAnalyzer.reachableEntries(program, theCall())) {
+		for (Address a : HelperDiscovery.reachableEntries(program, theCall())) {
 			out.add(a.toString());
 		}
 		return out;

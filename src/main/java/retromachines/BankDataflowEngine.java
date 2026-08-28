@@ -34,17 +34,17 @@ import ghidra.program.model.listing.Program;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.task.TaskMonitor;
 
-import static retromachines.BoardBankAnalyzer.calledHelper;
-import static retromachines.BoardBankAnalyzer.helperLabel;
-import static retromachines.BoardBankAnalyzer.recoverCallArgument;
+import static retromachines.HelperArgumentRecovery.recoverCallArgument;
+import static retromachines.HelperDiscovery.calledHelper;
+import static retromachines.HelperDiscovery.helperLabel;
 
 import retromachines.BankStrategyRegistry.ConfiguredMechanism;
-import retromachines.BoardBankAnalyzer.CallEffect;
-import retromachines.BoardBankAnalyzer.HelperModel;
 import retromachines.BoardDescriptorModel.BoardModel;
 import retromachines.BoardDescriptorModel.ComputedWindowModel;
 import retromachines.BoardDescriptorModel.FieldSpec;
 import retromachines.BoardDescriptorModel.ModeWindowModel;
+import retromachines.HelperArgumentRecovery.CallEffect;
+import retromachines.HelperDiscovery.HelperModel;
 
 /**
  * The forward bank-state dataflow engine: one fixpoint run over a program's instructions,
@@ -55,36 +55,37 @@ import retromachines.BoardDescriptorModel.ModeWindowModel;
  *
  * <p>Extracted verbatim from {@code BoardBankAnalyzer}'s "Dataflow" section without behavior
  * change (bead grm-ft8 increment 3a, from QR-12's "dataflow engine returning facts" step, split
- * from the much larger "Helper-call propagation" section which stays in {@code BoardBankAnalyzer}
- * as bead grm-shnf, a boundary-design task rather than a move). One holder, not several files,
- * following {@link BoardDescriptorModel}, {@link BankStrategyRegistry} and
- * {@link BankAnnotationAdapter}'s precedent in this package.
+ * from the much larger "Helper-call propagation" section that was itself extracted, three ways,
+ * by bead grm-shnf, QR-12 increment 3b). One holder, not several files, following
+ * {@link BoardDescriptorModel}, {@link BankStrategyRegistry} and {@link BankAnnotationAdapter}'s
+ * precedent in this package.
  *
  * <p>{@link #mergeAndEnqueue} and {@link #clampToResidence} needed no receiver at all: an
  * instance-state survey of the section found zero {@code this.} references and zero instance
  * fields on {@code BoardBankAnalyzer}, so both became {@code static} outright, staying
  * {@code private} since nothing outside this class calls them. {@link #runDataflow} calls
- * {@code calledHelper} and {@code recoverCallArgument}, which live in the Helper-call-propagation
- * section and stay there (bead grm-shnf) -- but as of that bead's step 2 both are themselves
- * {@code static}, so {@code runDataflow} needs no threaded receiver to reach them (the leading
- * {@code BoardBankAnalyzer analyzer} parameter it carried under increment 3a is gone), and neither
- * does {@link BankAnnotationAdapter}'s {@code helperArgumentCallSites}, which calls
- * {@code calledHelper} the same way. {@code calledHelper}, {@code recoverCallArgument} and
- * {@code helperLabel} (already {@code static}) are all referenced here via {@code import static}
- * (the same nested-type pattern below), since none of the three needs a receiver any more.
- * {@link #position} and {@link #overwrite} turned out to be needed the OTHER way too: retained
- * Helper-call-propagation code ({@code composeWithCallee}, {@code recoverCallArgument}'s own body)
- * calls them as well, so both were widened from {@code private} to package-private
- * {@code static} here and are referenced back from {@code BoardBankAnalyzer} via
- * {@code import static} so those two call sites stay byte-unchanged -- the mirror image of
- * {@code toFieldLocal}/{@code reachableEntries} below. {@code CallEffect}, a record
- * {@code runDataflow} constructs and holds directly, stays on {@code BoardBankAnalyzer} (retained
- * Helper-call-propagation code also constructs it) and is referenced here via
- * {@code import retromachines.BoardBankAnalyzer.CallEffect}. {@code CallSwitch},
- * {@code DataflowResult} and {@code SwitchResult} moved to this class outright (bead grm-shnf
- * step 1): all three were already package-private as of increment 4, so the move needed no
- * visibility change, and {@code BoardBankAnalyzer}'s own harness method now reaches them via
- * {@code import retromachines.BankDataflowEngine.<Name>} instead. {@code MatchInfo} moved here
+ * {@code calledHelper} and {@code recoverCallArgument}, which grm-shnf moved to
+ * {@link HelperDiscovery} and {@link HelperArgumentRecovery} respectively -- both were already
+ * {@code static} as of that bead's step 2, so {@code runDataflow} needed no threaded receiver to
+ * reach them even before the move (the leading {@code BoardBankAnalyzer analyzer} parameter it
+ * carried under increment 3a was already gone), and neither does {@link BankAnnotationAdapter}'s
+ * {@code helperArgumentCallSites}, which calls {@code calledHelper} the same way.
+ * {@code calledHelper} and {@code helperLabel} are referenced here via {@code import static} from
+ * {@link HelperDiscovery}; {@code recoverCallArgument} the same way from
+ * {@link HelperArgumentRecovery} -- none of the three needs a receiver.
+ * {@link #position} and {@link #overwrite} are needed the OTHER way too: helper-propagation code
+ * in both split-out classes ({@code composeWithCallee} in {@link HelperDiscovery},
+ * {@code recoverCallArgument}'s own body in {@link HelperArgumentRecovery}) calls them, so both
+ * were widened from {@code private} to package-private {@code static} here and are referenced
+ * back from those classes via {@code import static} so those call sites stay byte-unchanged --
+ * the mirror image of {@code toFieldLocal}/{@code reachableEntries} below. {@code CallEffect}, a
+ * record {@code runDataflow} constructs and holds directly, moved to {@link HelperArgumentRecovery}
+ * with the rest of grm-shnf's step 3 (helper-propagation code there also constructs it) and is
+ * referenced here via {@code import retromachines.HelperArgumentRecovery.CallEffect}.
+ * {@code CallSwitch}, {@code DataflowResult} and {@code SwitchResult} moved to this class outright
+ * (bead grm-shnf step 1): all three were already package-private as of increment 4, so the move
+ * needed no visibility change, and {@code BoardBankAnalyzer}'s own harness method now reaches them
+ * via {@code import retromachines.BankDataflowEngine.<Name>} instead. {@code MatchInfo} moved here
  * unchanged (still {@code private}, nested in this
  * class instead) because {@code runDataflow} is its sole consumer. {@code toFieldLocal} is a
  * static helper referenced by {@link BankAnnotationAdapter} via {@code import static}; that

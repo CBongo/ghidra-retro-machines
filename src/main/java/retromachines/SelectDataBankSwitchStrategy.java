@@ -425,7 +425,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	 * join (some other path reaches here with a different select), or a call (which may write the
 	 * register file itself). That is the same discipline
 	 * {@code BankMirrors.Discovery.walkFromMechanismWrite} and
-	 * {@code BoardBankAnalyzer.restoresEntryBank} already use, and it makes "on every path" true
+	 * {@code SaveRestoreTrampolines.restoresEntryBank} already use, and it makes "on every path" true
 	 * by construction rather than by assumption.
 	 * <p>
 	 * An intervening ODD-address write is refused outright: a helper with two data writes commits

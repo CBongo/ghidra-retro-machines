@@ -87,7 +87,7 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	/**
 	 * Converts a helper call site's recovered argument byte into this mechanism's
 	 * field-local state deposit, given the switch site inside the helper that the call
-	 * ultimately reaches ({@link BoardBankAnalyzer}'s {@code HelperModel} carries this --
+	 * ultimately reaches ({@link HelperDiscovery}'s {@code HelperModel} carries this --
 	 * the instruction whose recognized-switch identity classified the containing function
 	 * as a helper in the first place). {@code argValue} is the register value recovered at
 	 * the call site (same convention as a mechanism write's own stored byte -- masked to
@@ -120,7 +120,7 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * the call executes under, i.e. after any direct switch at the call instruction itself),
 	 * already narrowed to this mechanism's FIELD-LOCAL {@code [0, width)} space -- the same
 	 * coordinate space as {@code argValue} and the returned {@code value} -- by
-	 * {@link BoardBankAnalyzer#recoverCallArgument}. It exists for mechanisms whose routing
+	 * {@link HelperArgumentRecovery#recoverCallArgument}. It exists for mechanisms whose routing
 	 * (which sub-field a call's argument ultimately commits to) is decided by tracked STATE
 	 * rather than by the switch site's own address (contrast {@code serial-shift}, whose
 	 * routing is address-keyed and therefore ignores this parameter -- see
@@ -170,7 +170,7 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * -- i.e. whether a helper call site's answer depends on the caller's argument register
 	 * still holding the bank when control reaches the helper's first switch site (grm-mu7).
 	 * <p>
-	 * <b>What this gates.</b> {@code BoardBankAnalyzer.findHelpers} necessarily takes a
+	 * <b>What this gates.</b> {@code HelperDiscovery.findHelpers} necessarily takes a
 	 * helper's argument register from the register its mechanism write STORES -- the
 	 * {@code STA}/{@code STX}/{@code STY} at the switch site is the only evidence available
 	 * there -- and {@code recoverCallArgument} then scans the CALLER for that register. That
@@ -213,7 +213,7 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 
 	/**
 	 * Where inside a multi-site helper the HELPER'S OWN supplied value lives, when the caller's
-	 * argument has been ruled out and {@code BoardBankAnalyzer.valueSuppliedInsideHelper} goes
+	 * argument has been ruled out and {@code HelperArgumentRecovery.valueSuppliedInsideHelper} goes
 	 * looking for what the body itself puts there: {@code true} (the default) reads the argument
 	 * register at the helper's {@code firstSite}, {@code false} reads it at {@code switchSite}.
 	 * <p>

@@ -25,7 +25,7 @@ import ghidra.program.database.ProgramBuilder;
 import ghidra.program.database.ProgramDB;
 
 /**
- * Pins {@link BoardBankAnalyzer#argumentSurvivesPrologue} (grm-mu7): whether a value the caller
+ * Pins {@link HelperArgumentRecovery#argumentSurvivesPrologue} (grm-mu7): whether a value the caller
  * left in the helper's argument register is still that register's content when the helper's
  * first switch site consumes it.
  * <p>
@@ -66,7 +66,7 @@ public class HelperPrologueProgramTest extends AbstractBundledLanguageTest {
 
 	/** The predicate over a helper entered at {@code entry} whose first site is {@code first}. */
 	private boolean survives(String entry, String first, char reg) {
-		return BoardBankAnalyzer.argumentSurvivesPrologue(program, builder.addr(entry),
+		return HelperArgumentRecovery.argumentSurvivesPrologue(program, builder.addr(entry),
 			first == null ? null : builder.addr(first), reg);
 	}
 
