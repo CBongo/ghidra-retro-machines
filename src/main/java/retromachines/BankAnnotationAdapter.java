@@ -48,11 +48,12 @@ import ghidra.util.exception.InvalidInputException;
 import ghidra.util.task.TaskMonitor;
 
 import static retromachines.BankDataflowEngine.toFieldLocal;
+import static retromachines.BoardBankAnalyzer.calledHelper;
 import static retromachines.BoardBankAnalyzer.reachableEntries;
 
-import retromachines.BoardBankAnalyzer.DataflowResult;
+import retromachines.BankDataflowEngine.DataflowResult;
+import retromachines.BankDataflowEngine.SwitchResult;
 import retromachines.BoardBankAnalyzer.HelperModel;
-import retromachines.BoardBankAnalyzer.SwitchResult;
 import retromachines.BoardDescriptorModel.BoardModel;
 import retromachines.BoardDescriptorModel.Bounded;
 import retromachines.BoardDescriptorModel.ComputedWindowModel;
@@ -80,11 +81,12 @@ import retromachines.BoardDescriptorModel.WindowModel;
  * parameter is the {@link ghidra.app.services.Analyzer} doing the logging -- that used to be
  * {@code this}, and is now threaded in as a leading {@code analyzer} parameter. Two methods
  * ({@code annotateOrWarn}, {@code annotateBankRequirementViolations}) also call
- * {@code BoardBankAnalyzer.getBookmarkCategory()}, and one ({@code helperArgumentCallSites})
- * calls the package-private instance method {@code BoardBankAnalyzer.calledHelper} -- neither
- * is expressible through the generic {@code Analyzer} interface, so {@code analyzer} is typed
- * {@link BoardBankAnalyzer} here rather than {@code Analyzer}, and both calls are threaded the
- * same mechanical way. {@code toFieldLocal} and {@code reachableEntries} are static helpers,
+ * {@code BoardBankAnalyzer.getBookmarkCategory()}, a protected, overridable instance method not
+ * expressible through the generic {@code Analyzer} interface, so {@code analyzer} is typed
+ * {@link BoardBankAnalyzer} here rather than {@code Analyzer} at those two call sites.
+ * {@code helperArgumentCallSites} no longer needs a threaded receiver for this reason:
+ * {@code calledHelper} became {@code static} as of grm-shnf step 2 and is referenced here via
+ * {@code import static} instead. {@code toFieldLocal} and {@code reachableEntries} are static helpers,
  * referenced here via {@code import static} so the call sites themselves are byte-identical to
  * their originals; {@code toFieldLocal} moved to {@link BankDataflowEngine} with the Dataflow
  * section (bead grm-gqrj) and {@code reachableEntries} stays on {@code BoardBankAnalyzer} in the
@@ -243,7 +245,7 @@ final class BankAnnotationAdapter {
 	 * cartridge idiom, and mode windows are the home-computer shape), so it is left out rather
 	 * than guessed at.
 	 */
-	static BankMirrors deriveBankMirrors(BoardBankAnalyzer analyzer, Program program,
+	static BankMirrors deriveBankMirrors(Program program,
 			BoardModel board, Map<String, Set<Integer>> bankUniverse, DataflowResult flow,
 			Map<Function, HelperModel> helpers) {
 		BankMirrors.Discovery discovery =
@@ -257,7 +259,7 @@ final class BankAnnotationAdapter {
 		}
 		discovery.scanWriteThroughShadows(program, flow.switchResults().keySet());
 		discovery.scanArgumentCells(program,
-			helperArgumentCallSites(analyzer, program, flow, helpers));
+			helperArgumentCallSites(program, flow, helpers));
 		// Route (c) LAST and deliberately so: "a copy of something that already mirrors the live
 		// bank" can only be judged once (a) and (b) have established what does.
 		discovery.scanSaveSlotCopies(program);
@@ -390,8 +392,8 @@ final class BankAnnotationAdapter {
 	 * dataflow follows them; a discovery pass that resolved calls its own way would nominate
 	 * cells for call sites the engine does not agree are helper calls.
 	 */
-	private static Map<Address, Character> helperArgumentCallSites(BoardBankAnalyzer analyzer,
-			Program program, DataflowResult flow, Map<Function, HelperModel> helpers) {
+	private static Map<Address, Character> helperArgumentCallSites(Program program,
+			DataflowResult flow, Map<Function, HelperModel> helpers) {
 		Map<Address, Character> sites = new LinkedHashMap<>();
 		if (helpers.isEmpty()) {
 			return sites;
@@ -402,7 +404,7 @@ final class BankAnnotationAdapter {
 			if (instr == null || !instr.getFlowType().isCall()) {
 				continue;
 			}
-			HelperModel helper = analyzer.calledHelper(program, instr, helpers);
+			HelperModel helper = calledHelper(program, instr, helpers);
 			if (helper != null && helper.argReg() != null) {
 				sites.put(addr, helper.argReg());
 			}

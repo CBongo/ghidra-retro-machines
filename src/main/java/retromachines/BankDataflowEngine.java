@@ -34,14 +34,13 @@ import ghidra.program.model.listing.Program;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.task.TaskMonitor;
 
+import static retromachines.BoardBankAnalyzer.calledHelper;
 import static retromachines.BoardBankAnalyzer.helperLabel;
+import static retromachines.BoardBankAnalyzer.recoverCallArgument;
 
 import retromachines.BankStrategyRegistry.ConfiguredMechanism;
 import retromachines.BoardBankAnalyzer.CallEffect;
-import retromachines.BoardBankAnalyzer.CallSwitch;
-import retromachines.BoardBankAnalyzer.DataflowResult;
 import retromachines.BoardBankAnalyzer.HelperModel;
-import retromachines.BoardBankAnalyzer.SwitchResult;
 import retromachines.BoardDescriptorModel.BoardModel;
 import retromachines.BoardDescriptorModel.ComputedWindowModel;
 import retromachines.BoardDescriptorModel.FieldSpec;
@@ -64,31 +63,29 @@ import retromachines.BoardDescriptorModel.ModeWindowModel;
  * <p>{@link #mergeAndEnqueue} and {@link #clampToResidence} needed no receiver at all: an
  * instance-state survey of the section found zero {@code this.} references and zero instance
  * fields on {@code BoardBankAnalyzer}, so both became {@code static} outright, staying
- * {@code private} since nothing outside this class calls them. {@link #runDataflow} is the one
- * exception among the section's own methods: it calls {@code calledHelper} and
- * {@code recoverCallArgument}, two package-private/private instance methods that live in the
- * Helper-call-propagation section and stay there, so {@code runDataflow} threads a leading
- * {@code BoardBankAnalyzer analyzer} parameter to reach them -- the same mechanical pattern
- * {@link BankStrategyRegistry} and {@link BankAnnotationAdapter} used for
- * {@code Analyzer}/{@code BoardBankAnalyzer} receivers. {@code recoverCallArgument} was widened
- * from {@code private} to package-private to allow the call, and {@code helperLabel} (already
- * {@code static}) was likewise widened; both are referenced here via {@code import static}
- * (the same nested-type pattern below) rather than an {@code analyzer.}-qualified call, since
- * neither needs the receiver itself. {@link #position} and {@link #overwrite} turned out to be
- * needed the OTHER way too: retained Helper-call-propagation code ({@code composeWithCallee},
- * {@code recoverCallArgument}'s own body) calls them as well, so both were widened from
- * {@code private} to package-private {@code static} here and are referenced back from
- * {@code BoardBankAnalyzer} via {@code import static} so those two call sites stay
- * byte-unchanged -- the mirror image of {@code toFieldLocal}/{@code reachableEntries} below.
- * {@code CallEffect}, a record {@code runDataflow} constructs and holds directly, and
- * {@code CallSwitch}, a record it also constructs, were both widened from {@code private} to
- * package-private for the same reason ({@code DataflowResult} and {@code SwitchResult} were
- * already package-private as of increment 4); all four are referenced here via
- * {@code import retromachines.BoardBankAnalyzer.<Name>}, the same nested-type import
- * {@link BankAnnotationAdapter} uses. All four stay defined on {@code BoardBankAnalyzer} because
- * retained Helper-call-propagation code (or, for {@code SwitchResult}/{@code CallSwitch}/
- * {@code DataflowResult}, {@code BoardBankAnalyzer}'s own harness method) also constructs or
- * consumes them. {@code MatchInfo} moved here unchanged (still {@code private}, nested in this
+ * {@code private} since nothing outside this class calls them. {@link #runDataflow} calls
+ * {@code calledHelper} and {@code recoverCallArgument}, which live in the Helper-call-propagation
+ * section and stay there (bead grm-shnf) -- but as of that bead's step 2 both are themselves
+ * {@code static}, so {@code runDataflow} needs no threaded receiver to reach them (the leading
+ * {@code BoardBankAnalyzer analyzer} parameter it carried under increment 3a is gone), and neither
+ * does {@link BankAnnotationAdapter}'s {@code helperArgumentCallSites}, which calls
+ * {@code calledHelper} the same way. {@code calledHelper}, {@code recoverCallArgument} and
+ * {@code helperLabel} (already {@code static}) are all referenced here via {@code import static}
+ * (the same nested-type pattern below), since none of the three needs a receiver any more.
+ * {@link #position} and {@link #overwrite} turned out to be needed the OTHER way too: retained
+ * Helper-call-propagation code ({@code composeWithCallee}, {@code recoverCallArgument}'s own body)
+ * calls them as well, so both were widened from {@code private} to package-private
+ * {@code static} here and are referenced back from {@code BoardBankAnalyzer} via
+ * {@code import static} so those two call sites stay byte-unchanged -- the mirror image of
+ * {@code toFieldLocal}/{@code reachableEntries} below. {@code CallEffect}, a record
+ * {@code runDataflow} constructs and holds directly, stays on {@code BoardBankAnalyzer} (retained
+ * Helper-call-propagation code also constructs it) and is referenced here via
+ * {@code import retromachines.BoardBankAnalyzer.CallEffect}. {@code CallSwitch},
+ * {@code DataflowResult} and {@code SwitchResult} moved to this class outright (bead grm-shnf
+ * step 1): all three were already package-private as of increment 4, so the move needed no
+ * visibility change, and {@code BoardBankAnalyzer}'s own harness method now reaches them via
+ * {@code import retromachines.BankDataflowEngine.<Name>} instead. {@code MatchInfo} moved here
+ * unchanged (still {@code private}, nested in this
  * class instead) because {@code runDataflow} is its sole consumer. {@code toFieldLocal} is a
  * static helper referenced by {@link BankAnnotationAdapter} via {@code import static}; that
  * import now targets this class instead of {@code BoardBankAnalyzer}. {@code clampToResidence}
@@ -111,10 +108,9 @@ final class BankDataflowEngine {
 	 * the helper's effect, not the flowed-through in-state (the call target's entry is
 	 * still seeded with the in-state -- the switch happens inside the helper).
 	 */
-	static DataflowResult runDataflow(BoardBankAnalyzer analyzer, Program program,
-			TaskMonitor monitor, Listing listing, List<ConfiguredMechanism> mechanisms,
-			BoardModel board, Map<Function, HelperModel> helpers,
-			Set<Function> restoringTrampolines)
+	static DataflowResult runDataflow(Program program, TaskMonitor monitor, Listing listing,
+			List<ConfiguredMechanism> mechanisms, BoardModel board,
+			Map<Function, HelperModel> helpers, Set<Function> restoringTrampolines)
 			throws CancelledException {
 
 		Map<Address, BankState> stateIn = new HashMap<>();
@@ -248,11 +244,11 @@ final class BankDataflowEngine {
 
 			BankState fallState = outState;
 			if (helpers != null && instr.getFlowType().isCall()) {
-				HelperModel helper = analyzer.calledHelper(program, instr, helpers);
+				HelperModel helper = calledHelper(program, instr, helpers);
 				if (helper != null) {
 					CallEffect callEffect = helper.constState() != null
 							? new CallEffect(helper.constState(), helper.effectMask())
-							: analyzer.recoverCallArgument(program, instr, helper, outState,
+							: recoverCallArgument(program, instr, helper, outState,
 								callSiteRegCache, restoringTrampolines);
 					// ownedMask == 0 means this call site is a verified no-op on every tracked
 					// bit -- a serial-shift helper whose switch site targets an unconfigured CHR
@@ -414,4 +410,44 @@ final class BankDataflowEngine {
 	 * dequeue.
 	 */
 	private record MatchInfo(ConfiguredMechanism mechanism, BankState result) {}
+
+	/**
+	 * One recognized switch site's positioned effect (grm-ezl): {@code effect} is the pure
+	 * effect of the mechanism that matched here -- positioned into absolute state bits, but
+	 * <em>not</em> folded against any in-state -- kept separately from the folded
+	 * {@code stateIn} because annotation and helper-classification key off the pure effect,
+	 * not the composite. {@code effectMask}/{@code lsb} identify which mechanism produced it
+	 * (the same pair as the matching {@link ConfiguredMechanism}), so downstream consumers
+	 * (helper classification, call-argument recovery) know which bits it's authoritative
+	 * over without re-deriving it from the descriptor. {@code strategy} is the matched
+	 * mechanism's own strategy instance, carried through so a helper call site can later
+	 * ask it to position a recovered argument via
+	 * {@link BankSwitchStrategy#depositHelperArgument} instead of the engine guessing.
+	 */
+	record SwitchResult(BankState effect, int effectMask, int lsb,
+			BankSwitchStrategy strategy) {}
+
+	/**
+	 * A resolved call-site switch (for annotation, distinct from direct switches).
+	 * {@code effect} is the call's own recovered deposit (positioned, known bits limited to
+	 * what the argument scan resolved of the bits this call site owns) -- the WARN decision
+	 * keys off it, exactly as a direct switch warns off its pure effect. {@code stateAfter}
+	 * is the post-call state of the helper's own MECHANISM WINDOW: the in-state narrowed to
+	 * the helper's {@code effectMask}, overwritten by {@code effect} on the call's owned
+	 * bits. The COMMENT is rendered from it, because a helper deposit, unlike a
+	 * {@code computeSwitch} result, has no in-state echoed into it: without this, every
+	 * sibling field the call doesn't own would render as "assumed from initial" even when
+	 * the dataflow knows it perfectly well. Narrowing the echo to the mechanism window
+	 * (rather than folding over the whole tracked state) keeps the comment's knowledge
+	 * horizon identical to a direct switch's at the same spot -- a {@code computeSwitch}
+	 * result echoes exactly its own mechanism's in-state bits, never another mechanism's,
+	 * so a helper-call comment on a multi-mechanism board keeps showing other mechanisms'
+	 * fields as assumed, exactly as it always did. For a single-field helper (owned == the
+	 * whole mechanism window) {@code stateAfter == effect}, so the historical path is
+	 * unchanged byte-for-byte.
+	 */
+	record CallSwitch(String helperName, BankState effect, BankState stateAfter) {}
+
+	record DataflowResult(Map<Address, BankState> stateIn,
+			Map<Address, SwitchResult> switchResults, Map<Address, CallSwitch> callSwitches) {}
 }

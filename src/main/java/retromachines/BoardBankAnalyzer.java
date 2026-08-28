@@ -59,6 +59,9 @@ import static retromachines.BankDataflowEngine.overwrite;
 import static retromachines.BankDataflowEngine.position;
 import static retromachines.BankDataflowEngine.runDataflow;
 
+import retromachines.BankDataflowEngine.CallSwitch;
+import retromachines.BankDataflowEngine.DataflowResult;
+import retromachines.BankDataflowEngine.SwitchResult;
 import retromachines.BankStrategyRegistry.ConfiguredMechanism;
 import retromachines.BoardDescriptorModel.BoardModel;
 import retromachines.BoardDescriptorModel.ComputedWindowModel;
@@ -275,7 +278,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// --- Phase 1: forward dataflow to fixpoint; rerun with helper knowledge if any ---
 		Listing listing = program.getListing();
 		DataflowResult flow =
-			runDataflow(this, program, monitor, listing, mechanisms, board, null, Set.of());
+			runDataflow(program, monitor, listing, mechanisms, board, null, Set.of());
 
 		// Order is load-bearing. findCallEdgeWrappers runs LAST so its relay lookups see
 		// pass-through wrappers as helpers; it is also why exitEffect never encounters a relay
@@ -302,7 +305,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// configured strategy BEFORE the second pass so a strategy that consumes them sees them
 		// at every site rather than at the ones pass 2 happens to revisit. ---
 		BankMirrors mirrors =
-			BankAnnotationAdapter.deriveBankMirrors(this, program, board, bankUniverse, flow, helpers);
+			BankAnnotationAdapter.deriveBankMirrors(program, board, bankUniverse, flow, helpers);
 		for (ConfiguredMechanism cm : mechanisms) {
 			cm.strategy().observeMirrors(mirrors);
 		}
@@ -333,7 +336,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// helper map is deliberately equivalent to pass 1's null (runDataflow's helper branch is
 		// a lookup that misses), so a mirrors-only rerun changes nothing on its own.
 		if (!helpers.isEmpty() || !mirrors.isEmpty()) {
-			flow = runDataflow(this, program, monitor, listing, mechanisms, board, helpers,
+			flow = runDataflow(program, monitor, listing, mechanisms, board, helpers,
 				restoringTrampolines);
 		}
 
@@ -559,7 +562,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * it, because the body-local answer is not the whole answer: see that method for why a
 	 * helper's effect is the state at its RETURN, not at the last write in its own body.
 	 */
-	private Map<Function, HelperModel> findHelpers(Program program,
+	private static Map<Function, HelperModel> findHelpers(Program program,
 			Map<Address, SwitchResult> switchResults) {
 		Map<Function, HelperModel> helpers = new LinkedHashMap<>();
 		for (Map.Entry<Address, SwitchResult> entry : switchResults.entrySet()) {
@@ -706,7 +709,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	// HelperModel and restoresEntryBank, and the only reachable seam: everything above this in
 	// added() needs a board descriptor and a real import, which is the Tier 3 tier. No behavior
 	// change: every other member keeps its own visibility.
-	Map<Function, HelperModel> composeTailCalls(Program program,
+	static Map<Function, HelperModel> composeTailCalls(Program program,
 			Map<Function, HelperModel> helpers) {
 		Map<Function, HelperModel> composed = new LinkedHashMap<>(helpers);
 		for (Function f : helpers.keySet()) {
@@ -739,7 +742,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * See {@link #composeTailCalls} for the rules; {@code onStack} is the cycle guard and
 	 * {@code depth} the bound.
 	 */
-	private TailEffect exitEffect(Program program, Function f, Map<Function, HelperModel> helpers,
+	private static TailEffect exitEffect(Program program, Function f, Map<Function, HelperModel> helpers,
 			Set<Function> onStack, int depth) {
 		HelperModel model = helpers.get(f);
 		int ownMask = model.effectMask();
@@ -777,7 +780,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	}
 
 	/** {@code model}'s own deposit with its tail-callee's laid over the bits the callee owns. */
-	private TailEffect composeWithCallee(HelperModel model, TailEffect callee) {
+	private static TailEffect composeWithCallee(HelperModel model, TailEffect callee) {
 		int ownMask = model.effectMask();
 		int union = ownMask | callee.effectMask();
 		if (callee.declined() || callee.constState() == null) {
@@ -798,7 +801,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	}
 
 	/** Two exits' composed effects when they agree, a decline owning both masks when they don't. */
-	private TailEffect agreeOrDecline(TailEffect a, TailEffect b, int ownMask) {
+	private static TailEffect agreeOrDecline(TailEffect a, TailEffect b, int ownMask) {
 		int union = a.effectMask() | b.effectMask() | ownMask;
 		if (!a.declined() && !b.declined() && a.effectMask() == b.effectMask() &&
 			Objects.equals(a.constState(), b.constState())) {
@@ -868,7 +871,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * the null {@code argReg}, producing a warning plus honest poison exactly as a direct
 	 * call to it would.
 	 */
-	private Map<Function, HelperModel> findPassThroughWrappers(Program program,
+	private static Map<Function, HelperModel> findPassThroughWrappers(Program program,
 			Map<Function, HelperModel> helpers, Map<Address, SwitchResult> switchResults) {
 		Map<Function, HelperModel> result = new LinkedHashMap<>(helpers);
 		FunctionManager fm = program.getFunctionManager();
@@ -1097,7 +1100,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * decisions are fixed by then. A wrapped model that ALREADY carries a relay is rejected: the
 	 * prologue would need three segments, and {@link #prologueSegments} expresses two.
 	 */
-	private Map<Function, HelperModel> findCallEdgeWrappers(Program program,
+	private static Map<Function, HelperModel> findCallEdgeWrappers(Program program,
 			Map<Function, HelperModel> helpers, Map<Address, SwitchResult> switchResults) {
 		Map<Function, HelperModel> result = new LinkedHashMap<>(helpers);
 		// Address-ordered and materialized before use, matching findPassThroughWrappers'
@@ -1288,7 +1291,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * model onto the wrapper's own entry BEFORE this method ever runs, so the lookup below
 	 * hits it the same way it would hit a direct call.
 	 */
-	HelperModel calledHelper(Program program, Instruction callInstr,
+	static HelperModel calledHelper(Program program, Instruction callInstr,
 			Map<Function, HelperModel> helpers) {
 		FunctionManager fm = program.getFunctionManager();
 		for (Address entry : reachableEntries(program, callInstr)) {
@@ -1339,7 +1342,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * ({@code relay != null}) rather than {@code entry <= relay.callSite()}: nothing measured
 	 * needs the finer rule, and the coarse one cannot be wrong.
 	 */
-	private HelperModel midBodyEntryHelper(Program program, Address entry,
+	private static HelperModel midBodyEntryHelper(Program program, Address entry,
 			Map<Function, HelperModel> helpers) {
 		FunctionManager fm = program.getFunctionManager();
 		if (fm.getFunctionAt(entry) != null) {
@@ -1464,7 +1467,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * memory-latch. The real failure was the join refusal killing the walk two instructions
 	 * short of the env's stop.
 	 */
-	CallEffect recoverCallArgument(Program program, Instruction callInstr,
+	static CallEffect recoverCallArgument(Program program, Instruction callInstr,
 			HelperModel helper, BankState callSiteIn, Map<Address, RegisterEnv> envCache,
 			Set<Function> restoringTrampolines) {
 		if (restoringTrampolines.contains(helper.function())) {
@@ -2392,7 +2395,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * {@code crossableJoin} is passed through untouched; see {@link #crossableWrapperJoin} for
 	 * where it comes from and {@link RegisterEnv} for why crossing it is sound.
 	 */
-	private RegisterEnv callSiteRegisters(Program program, Instruction callInstr,
+	private static RegisterEnv callSiteRegisters(Program program, Instruction callInstr,
 			Address entryAddr, Address crossableJoin, HelperModel helper) {
 		List<PrologueSegment> prologue = prologueSegments(helper);
 		return new RegisterEnv(entryAddr, crossableJoin,
@@ -2524,22 +2527,6 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			return null;
 		}
 	};
-
-	/**
-	 * One recognized switch site's positioned effect (grm-ezl): {@code effect} is the pure
-	 * effect of the mechanism that matched here -- positioned into absolute state bits, but
-	 * <em>not</em> folded against any in-state -- kept separately from the folded
-	 * {@code stateIn} because annotation and helper-classification key off the pure effect,
-	 * not the composite. {@code effectMask}/{@code lsb} identify which mechanism produced it
-	 * (the same pair as the matching {@link ConfiguredMechanism}), so downstream consumers
-	 * (helper classification, call-argument recovery) know which bits it's authoritative
-	 * over without re-deriving it from the descriptor. {@code strategy} is the matched
-	 * mechanism's own strategy instance, carried through so a helper call site can later
-	 * ask it to position a recovered argument via
-	 * {@link BankSwitchStrategy#depositHelperArgument} instead of the engine guessing.
-	 */
-	record SwitchResult(BankState effect, int effectMask, int lsb,
-			BankSwitchStrategy strategy) {}
 
 	/**
 	 * A helper function's modeled effect: a constant state, or null = caller-supplied. For
@@ -2729,28 +2716,4 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * declines outright on a non-null relay.
 	 */
 	private record Relay(Address callSite, Address calleeEntry) {}
-
-	/**
-	 * A resolved call-site switch (for annotation, distinct from direct switches).
-	 * {@code effect} is the call's own recovered deposit (positioned, known bits limited to
-	 * what the argument scan resolved of the bits this call site owns) -- the WARN decision
-	 * keys off it, exactly as a direct switch warns off its pure effect. {@code stateAfter}
-	 * is the post-call state of the helper's own MECHANISM WINDOW: the in-state narrowed to
-	 * the helper's {@code effectMask}, overwritten by {@code effect} on the call's owned
-	 * bits. The COMMENT is rendered from it, because a helper deposit, unlike a
-	 * {@code computeSwitch} result, has no in-state echoed into it: without this, every
-	 * sibling field the call doesn't own would render as "assumed from initial" even when
-	 * the dataflow knows it perfectly well. Narrowing the echo to the mechanism window
-	 * (rather than folding over the whole tracked state) keeps the comment's knowledge
-	 * horizon identical to a direct switch's at the same spot -- a {@code computeSwitch}
-	 * result echoes exactly its own mechanism's in-state bits, never another mechanism's,
-	 * so a helper-call comment on a multi-mechanism board keeps showing other mechanisms'
-	 * fields as assumed, exactly as it always did. For a single-field helper (owned == the
-	 * whole mechanism window) {@code stateAfter == effect}, so the historical path is
-	 * unchanged byte-for-byte.
-	 */
-	record CallSwitch(String helperName, BankState effect, BankState stateAfter) {}
-
-	record DataflowResult(Map<Address, BankState> stateIn,
-			Map<Address, SwitchResult> switchResults, Map<Address, CallSwitch> callSwitches) {}
 }
