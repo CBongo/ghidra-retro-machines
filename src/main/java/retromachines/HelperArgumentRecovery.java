@@ -77,15 +77,15 @@ final class HelperArgumentRecovery {
 	 * Recovers the bank argument at a helper call site by running the shared backward scan
 	 * for an immediate value in the register the helper actually reads ({@code LDA #bank /
 	 * JSR SelectBank}, or the X/Y equivalent). The argument register is taken from the
-	 * helper's own mechanism-write ({@link HelperDiscovery.HelperModel#argReg}) rather than guessed, so a
-	 * caller that also loads an unrelated immediate into another register no longer misleads
+	 * helper's own mechanism-write ({@link HelperDiscovery.HelperModel#argReg}) rather than guessed,
+	 * so a caller that also loads an unrelated immediate into another register no longer misleads
 	 * the scan. By the helper convention the register holds the <em>field value itself</em>,
 	 * so no mechanism transform is applied beyond the field-local width mask -- the scan
 	 * resolves in the helper's own mechanism's field-local {@code [0, width)} space (same
 	 * convention as {@link BankSwitchStrategy#computeSwitch}). The recovered byte is then
 	 * handed to the matched strategy's {@link BankSwitchStrategy#depositHelperArgument},
-	 * which knows -- from the helper's own recognized {@link HelperDiscovery.HelperModel#switchSite} --
-	 * whether this mechanism's field-local space is one field (the recovered byte deposits
+	 * which knows -- from the helper's own recognized {@link HelperDiscovery.HelperModel#switchSite}
+	 * -- whether this mechanism's field-local space is one field (the recovered byte deposits
 	 * verbatim, owning the whole field-local width, the historical behavior) or several
 	 * disjoint sub-fields keyed by which switch site is in play (serial-shift) OR by the
 	 * caller's own TRACKED STATE at the call site (select-data -- a bare data-write helper's
@@ -96,9 +96,9 @@ final class HelperArgumentRecovery {
 	 * {@link BankSwitchStrategy.HelperDeposit}'s javadoc for why that is tracked separately
 	 * from the value's own known bits). To support the state-routed case, {@code callSiteIn}
 	 * (the caller's board-absolute state under which this call executes -- the same
-	 * {@code outState} {@link BankDataflowEngine#runDataflow} folds the call's own effect into) is narrowed to
-	 * this helper's mechanism's field-local space exactly like {@code argValue} before being
-	 * handed to {@link BankSwitchStrategy#depositHelperArgument}; a strategy whose routing is
+	 * {@code outState} {@link BankDataflowEngine#runDataflow} folds the call's own effect into) is
+	 * narrowed to this helper's mechanism's field-local space exactly like {@code argValue} before
+	 * being handed to {@link BankSwitchStrategy#depositHelperArgument}; a strategy whose routing is
 	 * address-keyed instead (serial-shift) simply ignores it. Both the value and the
 	 * owned-bits mask are positioned back into the board's absolute state bits before
 	 * returning, exactly as a direct dataflow switch's result is. Returns an unknown value
@@ -109,8 +109,8 @@ final class HelperArgumentRecovery {
 	 * <b>The "register holds the field value" convention is a fallback, not the whole story</b>
 	 * (grm-hum increment 2). It is blind in three ways: the argument may arrive in a register
 	 * other than the one the helper's mechanism write stores (Contra's helper takes its bank in
-	 * Y and stores A, and {@link HelperDiscovery#findHelpers} can only see the store); the value may need the
-	 * mechanism's own {@code shift}/{@code mask} extraction; and on a bus-conflict board the
+	 * Y and stores A, and {@link HelperDiscovery#findHelpers} can only see the store); the value may
+	 * need the mechanism's own {@code shift}/{@code mask} extraction; and on a bus-conflict board the
 	 * driven value is not the latched one. So this also hands the strategy the CALL SITE'S WHOLE
 	 * REGISTER ENVIRONMENT ({@link #callSiteRegisters}), letting a strategy that can do better --
 	 * {@code memory-latch} does -- re-evaluate its own switch site under those registers instead.
@@ -119,8 +119,8 @@ final class HelperArgumentRecovery {
 	 * <p>
 	 * <b>The convention also assumes the helper does not eat its own argument</b> (grm-mu7).
 	 * {@code argReg} is whatever register the mechanism write STORES, which is the only
-	 * evidence {@link HelperDiscovery#findHelpers} has -- but a helper whose prologue reloads the bank from
-	 * RAM ({@code LDA $65 / STA $E000}) stores A without ever reading the caller's A, so the
+	 * evidence {@link HelperDiscovery#findHelpers} has -- but a helper whose prologue reloads the bank
+	 * from RAM ({@code LDA $65 / STA $E000}) stores A without ever reading the caller's A, so the
 	 * caller's value is not the argument and depositing it would ship a confident wrong bank.
 	 * {@link #argumentSurvivesPrologue} tests that precondition over {@code entry..firstSite},
 	 * and a failure falls through rather than short-circuiting, so the strategy still decides
@@ -149,11 +149,11 @@ final class HelperArgumentRecovery {
 	 * <b>The environment is PROLOGUE-FILTERED, per register</b> (bead grm-k90). What
 	 * {@link #callSiteRegisters} scans is the caller's raw A/X/Y, and for a WRAPPER model the
 	 * wrapper's body executes between the caller and the point the env claims to describe -- it
-	 * may freely write X or Y, and {@link HelperDiscovery#isPassThroughInto} admits an {@code LDX #imm} without
-	 * blinking. For a CALL-EDGE wrapper it is worse than theoretical: the scan stops at
-	 * {@code relay.calleeEntry()} and never walks the wrapper's prefix at all, so an unfiltered
-	 * env would hand a strategy a register value the wrapper had already overwritten. Each of
-	 * A/X/Y is therefore passed through only where
+	 * may freely write X or Y, and {@link HelperDiscovery#isPassThroughInto} admits an
+	 * {@code LDX #imm} without blinking. For a CALL-EDGE wrapper it is worse than theoretical: the
+	 * scan stops at {@code relay.calleeEntry()} and never walks the wrapper's prefix at all, so an
+	 * unfiltered env would hand a strategy a register value the wrapper had already overwritten. Each
+	 * of A/X/Y is therefore passed through only where
 	 * {@link #argumentSurvivesPrologue(Program, List, char)} holds for THAT register over
 	 * {@link #prologueSegments}, and comes back {@link BankState#unknown()} otherwise. The test
 	 * is per-register precisely because the answers differ: on Contra's {@code FUN_c139} wrapper
@@ -281,8 +281,8 @@ final class HelperArgumentRecovery {
 	 * <li><b>A gap in the disassembly</b>, i.e. the walk cannot reach {@code firstSite} through
 	 * contiguous instructions. Undisassembled bytes in the middle of a helper body are bytes
 	 * whose register effects are unknown, which is not the same as harmless.</li>
-	 * <li><b>A missing {@code firstSite}</b> -- {@code HelperDiscovery.findHelpers}' multi-mechanism degrade
-	 * case, where the model no longer describes one coherent mechanism and there is nothing
+	 * <li><b>A missing {@code firstSite}</b> -- {@code HelperDiscovery.findHelpers}' multi-mechanism
+	 * degrade case, where the model no longer describes one coherent mechanism and there is nothing
 	 * meaningful to walk to.</li>
 	 * </ul>
 	 * <b>A CLOBBER IS NOT A LOSS WHEN THE PROLOGUE SAVED THE ARGUMENT FIRST.</b> This is not a
@@ -333,9 +333,9 @@ final class HelperArgumentRecovery {
 	 * <p>
 	 * <b>Soundness of the save/restore half.</b> The clobber half of this walk is linear in
 	 * address order, which is a proxy for execution order in the same way
-	 * {@code HelperDiscovery.HelperModel.switchSite}'s max-address rule is, and it errs SAFE: a prologue that
-	 * branches around a clobber is declined even though the argument survives the taken path.
-	 * The save/restore half does not get that for free -- a branch that skipped a {@code PLA}
+	 * {@code HelperDiscovery.HelperModel.switchSite}'s max-address rule is, and it errs SAFE: a
+	 * prologue that branches around a clobber is declined even though the argument survives the taken
+	 * path. The save/restore half does not get that for free -- a branch that skipped a {@code PLA}
 	 * would make "restored" a claim about a path that never runs, and that error points the
 	 * unsafe way. It is therefore trusted only over genuinely straight-line code: any
 	 * non-fall-through flow in the range abandons the shadow stack, after which a {@code PLA} is
@@ -501,9 +501,9 @@ final class HelperArgumentRecovery {
 	 * </pre>
 	 * It takes no argument at all, and {@code 0x0F} commits {@code mirroring=3, prg_mode=3}. But a
 	 * chain helper never has a {@code constState} -- writes 1-4 of a chain echo the in-state and
-	 * write 5 commits, so {@link HelperDiscovery#findHelpers}' multi-site disagreement rule nulls it, by design
-	 * -- so every one of them is routed through per-call recovery, where the prologue guard sees
-	 * that {@code LDA #$0F} clobber and declines. Scanning here recovers the answer the helper's
+	 * write 5 commits, so {@link HelperDiscovery#findHelpers}' multi-site disagreement rule nulls it,
+	 * by design -- so every one of them is routed through per-call recovery, where the prologue guard
+	 * sees that {@code LDA #$0F} clobber and declines. Scanning here recovers the answer the helper's
 	 * own body already knows: {@code SerialShiftBankSwitchStrategy.computeSwitch} resolves exactly
 	 * this byte, from exactly this instruction, when it evaluates the chain's commit.
 	 * <p>
@@ -658,11 +658,11 @@ final class HelperArgumentRecovery {
 	 * The stretches of code a call into {@code helper} runs before its mechanism reads the
 	 * argument: one span for an ordinary helper, two for a call-edge wrapper.
 	 * <p>
-	 * DERIVED, not stored on {@link HelperDiscovery.HelperModel}. It is a pure function of {@code entry},
-	 * {@code firstSite} and {@code relay}, all already on the record; storing it would duplicate
-	 * state that {@link HelperDiscovery.HelperModel#atMidBodyEntry} and
-	 * {@link HelperDiscovery.HelperModel#atFallThroughWrapper} re-key underneath, and would drag a list into the
-	 * record's equality.
+	 * DERIVED, not stored on {@link HelperDiscovery.HelperModel}. It is a pure function of
+	 * {@code entry}, {@code firstSite} and {@code relay}, all already on the record; storing it would
+	 * duplicate state that {@link HelperDiscovery.HelperModel#atMidBodyEntry} and
+	 * {@link HelperDiscovery.HelperModel#atFallThroughWrapper} re-key underneath, and would drag a
+	 * list into the record's equality.
 	 * <p>
 	 * <b>Why passing the relay's call site as segment 1's END bound does not trip
 	 * {@link #argumentSurvivesPrologue}'s own {@code isCall()} rejection.</b> That loop's bound
@@ -744,10 +744,10 @@ final class HelperArgumentRecovery {
 	 * {@code $DCA8}; entered mid-body at {@code $DCAA} the walk starts past the load, finds no
 	 * reload, and correctly returns null -- one function, two answers, exactly as
 	 * {@link #argumentSurvivesPrologue} documents for its own walk. It also means a FALL-THROUGH
-	 * wrapper's prefix IS walked, which matters more than it looks: {@code HelperDiscovery.isPassThroughInto}
-	 * forbids a wrapper from writing the MECHANISM but not from writing ordinary RAM, so a
-	 * wrapper containing {@code STA $0720} is admissible and only the walk starting at the
-	 * wrapper's entry catches it.
+	 * wrapper's prefix IS walked, which matters more than it looks:
+	 * {@code HelperDiscovery.isPassThroughInto} forbids a wrapper from writing the MECHANISM but not
+	 * from writing ordinary RAM, so a wrapper containing {@code STA $0720} is admissible and only the
+	 * walk starting at the wrapper's entry catches it.
 	 * <p>
 	 * <b>A CALL-EDGE wrapper declines outright.</b> There {@link #insideHelperEntry} is the
 	 * relay's callee entry, so the walk would cover only the second prologue segment and never see
@@ -755,13 +755,14 @@ final class HelperArgumentRecovery {
 	 * {@code STA $22 / LDA $22 / JSR helper} in front of a helper whose body begins {@code LDA $22}
 	 * would look like an inbound cell, and the value would be resolved at the JSR INTO THE WRAPPER
 	 * -- i.e. the byte the wrapper was about to overwrite. Stale, confident, wrong. Today the
-	 * branch that calls this is unreachable for a relay model at all ({@code HelperDiscovery.findCallEdgeWrappers}
-	 * uses {@link #argumentSurvivesPrologue} as its ADMISSION gate, so every relay helper in the
-	 * map already answers true there), so this guard is defensive -- but the invariant is one
-	 * refactor away from moving. A generalization over {@link #prologueSegments} must NOT reset
-	 * {@code written} per segment the way {@link #argumentSurvivesPrologue} resets its shadow
-	 * stack: that reset under-approximates and errs safe, while forgetting the wrapper's
-	 * {@code STA $22} errs the unsafe way. Same segment list, opposite discipline.
+	 * branch that calls this is unreachable for a relay model at all ({@code
+	 * HelperDiscovery.findCallEdgeWrappers} uses {@link #argumentSurvivesPrologue} as its ADMISSION
+	 * gate, so every relay helper in the map already answers true there), so this guard is defensive
+	 * -- but the invariant is one refactor away from moving. A generalization over
+	 * {@link #prologueSegments} must NOT reset {@code written} per segment the way
+	 * {@link #argumentSurvivesPrologue} resets its shadow stack: that reset under-approximates and
+	 * errs safe, while forgetting the wrapper's {@code STA $22} errs the unsafe way. Same segment
+	 * list, opposite discipline.
 	 * <p>
 	 * <b>Every flow declines here</b>, where {@link #argumentSurvivesPrologue} merely stops
 	 * trusting its save/restore model. A branch costs that predicate a fold; here it would let a
@@ -878,8 +879,8 @@ final class HelperArgumentRecovery {
 	 * possible without any input-register discovery: the scan inside the helper is
 	 * demand-driven, so supplying all three registers and letting it pull whichever it actually
 	 * reads is both simpler and strictly more capable than deducing an argument convention
-	 * (grm-hum increment 2 -- Contra's helper takes its bank in Y while {@link HelperDiscovery#findHelpers}
-	 * can only see the {@code STA}'s A).
+	 * (grm-hum increment 2 -- Contra's helper takes its bank in Y while
+	 * {@link HelperDiscovery#findHelpers} can only see the {@code STA}'s A).
 	 * <p>
 	 * <b>Masked to {@code 0xFF}, deliberately not to the mechanism's {@code stateMask}.</b> An
 	 * index register is not the mechanism's field: Contra's UxROM latch has {@code mask: 0x0F},
@@ -897,11 +898,11 @@ final class HelperArgumentRecovery {
 	 * The three scans above run in the caller and answer "what did the caller leave here"; the
 	 * env claims something stronger -- "what holds at {@code entryAddr}" -- and for a WRAPPER
 	 * model those differ, because the wrapper's own body runs in between and nothing forbids it
-	 * writing X or Y ({@link HelperDiscovery#isPassThroughInto} admits an {@code LDX #imm} without blinking).
-	 * {@link #argumentSurvivesPrologue(Program, List, char)} over {@link #prologueSegments} is
-	 * exactly the question, so it is asked ONCE PER REGISTER rather than once for
-	 * {@link HelperDiscovery.HelperModel#argReg}, and a register that does not survive is handed back as
-	 * {@link BankState#unknown()} instead of the caller's stale value. Per-register is the whole
+	 * writing X or Y ({@link HelperDiscovery#isPassThroughInto} admits an {@code LDX #imm} without
+	 * blinking). {@link #argumentSurvivesPrologue(Program, List, char)} over {@link #prologueSegments}
+	 * is exactly the question, so it is asked ONCE PER REGISTER rather than once for
+	 * {@link HelperDiscovery.HelperModel#argReg}, and a register that does not survive is handed back
+	 * as {@link BankState#unknown()} instead of the caller's stale value. Per-register is the whole
 	 * point: on Contra's {@code FUN_c139} A does not survive ({@code LDA $8000}) while Y does,
 	 * and Y is the one the latch consumes -- running the test on {@code argReg} alone would let
 	 * a clobber of a register nobody reads suppress a correct recovery.
@@ -962,12 +963,13 @@ final class HelperArgumentRecovery {
 	 * <b>What is nominated.</b> "The entry of the body that actually contains {@code firstSite}"
 	 * -- which is what {@link #insideHelperEntry}'s javadoc already claims to compute and, for a
 	 * pass-through wrapper, does not. It is taken from the function containing {@code firstSite}
-	 * rather than stored on {@link HelperDiscovery.HelperModel} deliberately: {@link HelperDiscovery.HelperModel#atFallThroughWrapper}
-	 * overwrites {@code entry} with the wrapper's, so recording the wrapped entry would mean a
-	 * new field on a ten-field record, and one that would have to be threaded correctly through a
-	 * CHAIN of wrappers. Deriving it gets the chained case right for free -- every outer wrapper
-	 * is contiguous with the next and contributes no join of its own, so the function containing
-	 * {@code firstSite} is the innermost helper however many wrappers are stacked on it.
+	 * rather than stored on {@link HelperDiscovery.HelperModel} deliberately:
+	 * {@link HelperDiscovery.HelperModel#atFallThroughWrapper} overwrites {@code entry} with the
+	 * wrapper's, so recording the wrapped entry would mean a new field on a ten-field record, and one
+	 * that would have to be threaded correctly through a CHAIN of wrappers. Deriving it gets the
+	 * chained case right for free -- every outer wrapper is contiguous with the next and contributes
+	 * no join of its own, so the function containing {@code firstSite} is the innermost helper however
+	 * many wrappers are stacked on it.
 	 * <p>
 	 * <b>The window test is what keeps it honest</b>, and it is not a formality -- it is the only
 	 * thing standing between this and licensing a join nobody proved anything about. The nominee
@@ -986,13 +988,13 @@ final class HelperArgumentRecovery {
 	 * fix.</li>
 	 * <li>CALL-EDGE WRAPPER: {@code scanStop} is {@code relay.calleeEntry()}. If the wrapped model
 	 * is itself a pass-through wrapper the nominee is after it and crossing is licensed by THAT
-	 * wrapper's own {@link HelperDiscovery#isPassThroughInto} proof; otherwise the nominee is the stop and this
-	 * returns {@code null}.</li>
+	 * wrapper's own {@link HelperDiscovery#isPassThroughInto} proof; otherwise the nominee is the stop
+	 * and this returns {@code null}.</li>
 	 * </ul>
 	 * In every nominated case the span between stop and nominee is a pass-through wrapper's body,
-	 * which {@link HelperDiscovery#isPassThroughInto} has already proved is straight-line, fully disassembled,
-	 * mechanism-inert and reached only by unconditional fallthrough. That proof is the licence;
-	 * see {@link RegisterEnv}'s class javadoc for why it is sufficient.
+	 * which {@link HelperDiscovery#isPassThroughInto} has already proved is straight-line, fully
+	 * disassembled, mechanism-inert and reached only by unconditional fallthrough. That proof is the
+	 * licence; see {@link RegisterEnv}'s class javadoc for why it is sufficient.
 	 * <p>
 	 * <b>Why the join is crossed rather than the stop simply MOVED to the nominee.</b> Moving it
 	 * would have been a smaller change and it is the wrong one. The scan would then stop at the
@@ -1004,12 +1006,12 @@ final class HelperArgumentRecovery {
 	 * loads are read natively by the machinery that already knows how, and the filter is left to
 	 * do its work only at the true outer stop.
 	 * <p>
-	 * Takes {@code firstSite} and {@code scanStop} loose rather than a {@link HelperDiscovery.HelperModel},
-	 * and is package-private static, for one reason: {@code HelperDiscovery.HelperModel} is private, so a test
-	 * that wanted a model could not build one -- the constraint that kept grm-2dr increment 1's
-	 * wrapper tests at the predicate level. Same precedent as {@link #argumentSurvivesPrologue}
-	 * and {@link HelperDiscovery#isPassThroughInto}, and the two parameters are the only two the window test
-	 * reads anyway.
+	 * Takes {@code firstSite} and {@code scanStop} loose rather than a
+	 * {@link HelperDiscovery.HelperModel}, and is package-private static, for one reason:
+	 * {@code HelperDiscovery.HelperModel} is private, so a test that wanted a model could not build
+	 * one -- the constraint that kept grm-2dr increment 1's wrapper tests at the predicate level. Same
+	 * precedent as {@link #argumentSurvivesPrologue} and {@link HelperDiscovery#isPassThroughInto},
+	 * and the two parameters are the only two the window test reads anyway.
 	 */
 	static Address crossableWrapperJoin(Program program, Address firstSite, Address scanStop) {
 		if (firstSite == null || scanStop == null) {
@@ -1030,10 +1032,10 @@ final class HelperArgumentRecovery {
 	 * A helper call site's positioned effect: {@code state} is the recovered value in the
 	 * board's absolute state bits (like {@link SwitchResult#effect}); {@code ownedMask} is
 	 * which of those absolute bits this call site is authoritative over -- the mask
-	 * {@link BankDataflowEngine#runDataflow} folds {@code state} into via {@link BankDataflowEngine#overwrite}, distinct from
-	 * {@code state.knownMask()} for exactly the reason {@link BankSwitchStrategy.HelperDeposit}
-	 * documents (a touched-but-unresolved bit is owned and poisoned; an untouched bit is
-	 * neither).
+	 * {@link BankDataflowEngine#runDataflow} folds {@code state} into via
+	 * {@link BankDataflowEngine#overwrite}, distinct from {@code state.knownMask()} for exactly the
+	 * reason {@link BankSwitchStrategy.HelperDeposit} documents (a touched-but-unresolved bit is owned
+	 * and poisoned; an untouched bit is neither).
 	 */
 	record CallEffect(BankState state, int ownedMask) {}
 

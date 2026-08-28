@@ -97,10 +97,10 @@ final class HelperDiscovery {
 	 * mechanisms (e.g. one function that can be reached with either a bank-mechanism write
 	 * or a mode-mechanism write on different call paths) degrades conservatively: the
 	 * const/register agreement is dropped ({@code constState = argReg = null}, forcing
-	 * per-call-site {@link HelperArgumentRecovery#recoverCallArgument} which itself returns unknown without an
-	 * argument register) and {@code effectMask} becomes the union of every site's mask, so
-	 * the caller-side unknown-effect fold in {@link BankDataflowEngine#runDataflow} wipes every field this
-	 * helper might touch rather than under- or mis-covering it.
+	 * per-call-site {@link HelperArgumentRecovery#recoverCallArgument} which itself returns unknown
+	 * without an argument register) and {@code effectMask} becomes the union of every site's mask, so
+	 * the caller-side unknown-effect fold in {@link BankDataflowEngine#runDataflow} wipes every field
+	 * this helper might touch rather than under- or mis-covering it.
 	 * <p>
 	 * <b>Two of the rules below became load-bearing in new ways with grm-hum increment 2</b>,
 	 * and neither needed a code change for it -- which is worth saying out loud, because both
@@ -247,9 +247,9 @@ final class HelperDiscovery {
 	 * live bank after the call is 5. {@code FUN_d846} and {@code FUN_c55d} tail-jump to the same
 	 * routine with the same consequence.
 	 * <p>
-	 * <b>This is a SUMMARY fix, not a dataflow fix.</b> {@link BankDataflowEngine#runDataflow} already treats a
-	 * {@code CALL_TERMINATOR} jump as a call ({@code getFlowType().isCall()} is true for it --
-	 * Ghidra's shared-return analysis rewrites a jump to another function's entry that way) and
+	 * <b>This is a SUMMARY fix, not a dataflow fix.</b> {@link BankDataflowEngine#runDataflow} already
+	 * treats a {@code CALL_TERMINATOR} jump as a call ({@code getFlowType().isCall()} is true for it
+	 * -- Ghidra's shared-return analysis rewrites a jump to another function's entry that way) and
 	 * already folds the callee helper's effect there, so the tracked state at the end of these
 	 * functions was right all along. Only {@link HelperModel} discarded it.
 	 * <p>
@@ -258,15 +258,16 @@ final class HelperDiscovery {
 	 * every case it was already right about -- a serial-shift chain's commit site, and the
 	 * restore-before-RTS trampolines in {@code nesbanktest2}, whose last write really is the
 	 * last one executed. A tail call to a function this engine does not model as a helper is
-	 * likewise a no-op, which is exactly what {@link BankDataflowEngine#runDataflow} folds for a call to one.
+	 * likewise a no-op, which is exactly what {@link BankDataflowEngine#runDataflow} folds for a call
+	 * to one.
 	 * <p>
 	 * <b>Where it composes:</b> a tail-callee that is a recognized helper with a
 	 * caller-independent effect (its own {@code constState}, or one it composes to) overwrites
 	 * the bits it owns on top of the caller's own deposit -- callee wins on its own bits, which
-	 * is just {@link BankDataflowEngine#overwrite}. When the callee owns every bit the caller's body could touch,
-	 * the composite is caller-independent even if the caller's body alone was not; that is Mega
-	 * Man's {@code FUN_d846}, whose own three sites disagree (6 / loop-carried unknown / 6) yet
-	 * whose exit is unconditionally {@code FUN_c3b3}'s bank 5.
+	 * is just {@link BankDataflowEngine#overwrite}. When the callee owns every bit the caller's body
+	 * could touch, the composite is caller-independent even if the caller's body alone was not; that
+	 * is Mega Man's {@code FUN_d846}, whose own three sites disagree (6 / loop-carried unknown / 6)
+	 * yet whose exit is unconditionally {@code FUN_c3b3}'s bank 5.
 	 * <p>
 	 * <b>Everywhere else it DECLINES</b> -- returns a helper owning the mechanism with no
 	 * recovered value, which yields a WARNING bookmark at each call site instead of an
@@ -399,16 +400,16 @@ final class HelperDiscovery {
 	 * key {@link #findHelpers} ever produces, so {@link #calledHelper} misses and the call
 	 * site's argument is never recovered.
 	 * <p>
-	 * <b>Why re-keying alone is sound.</b> {@link HelperArgumentRecovery#argumentSurvivesPrologue} walks LINEARLY
-	 * BY ADDRESS from {@code entry} to {@code firstSite} with NO REFERENCE TO FUNCTION
+	 * <b>Why re-keying alone is sound.</b> {@link HelperArgumentRecovery#argumentSurvivesPrologue}
+	 * walks LINEARLY BY ADDRESS from {@code entry} to {@code firstSite} with NO REFERENCE TO FUNCTION
 	 * BOUNDARIES. Because a wrapper is address-contiguous with the helper it falls into,
 	 * re-keying the helper's model onto the wrapper's entry makes that ONE EXISTING WALK
 	 * cover the wrapper's body and the helper's own prologue with no change to that method
 	 * at all. On cv2: {@code STA $1C} records {@code $1C} in {@code argumentCells};
-	 * {@code LDA $1C} is recognized as a restore via {@code HelperArgumentRecovery.argumentReloadSource} so
-	 * {@code holdsArgument} stays true; then {@code FUN_c187}'s own {@code PHA} /
-	 * {@code LDA #$01} / {@code STA $0103} / {@code PLA} save-restore pair resolves exactly
-	 * as it already does today.
+	 * {@code LDA $1C} is recognized as a restore via
+	 * {@code HelperArgumentRecovery.argumentReloadSource} so {@code holdsArgument} stays true; then
+	 * {@code FUN_c187}'s own {@code PHA} / {@code LDA #$01} / {@code STA $0103} / {@code PLA}
+	 * save-restore pair resolves exactly as it already does today.
 	 * <p>
 	 * <b>NOT HANDLED HERE, deliberately:</b> blmaster's {@code FUN_e61b} reaches its helper by
 	 * an internal {@code JSR}, so it is not address-contiguous with it. {@link
@@ -435,11 +436,11 @@ final class HelperDiscovery {
 	 * <p>
 	 * A helper whose model {@link #composeTailCalls} already composed is NOT skipped here --
 	 * both outcomes of wrapping one are already correct without a special case: a composed
-	 * constant takes {@link BankDataflowEngine#runDataflow}'s {@code constState} branch directly and never
-	 * touches the nulled {@code argReg}/{@code switchSite} fields a wrapper would also leave
-	 * untouched, and a composed decline short-circuits in {@link HelperArgumentRecovery#recoverCallArgument} on
-	 * the null {@code argReg}, producing a warning plus honest poison exactly as a direct
-	 * call to it would.
+	 * constant takes {@link BankDataflowEngine#runDataflow}'s {@code constState} branch directly and
+	 * never touches the nulled {@code argReg}/{@code switchSite} fields a wrapper would also leave
+	 * untouched, and a composed decline short-circuits in
+	 * {@link HelperArgumentRecovery#recoverCallArgument} on the null {@code argReg}, producing a
+	 * warning plus honest poison exactly as a direct call to it would.
 	 */
 	// Package-private (not private): BoardBankAnalyzer.added() reaches this via
 	// import static (grm-shnf step 3).
@@ -476,9 +477,9 @@ final class HelperDiscovery {
 	 * branch, no jump, no call, no fallthrough override, no gap in disassembly, and no
 	 * recognized mechanism write anywhere in its body. Structured as one linear cursor walk
 	 * from {@code wrapper.getEntryPoint()} to {@code target}, deliberately shaped like
-	 * {@link HelperArgumentRecovery#argumentSurvivesPrologue} so the two read alike -- both exist to answer "does
-	 * this straight-line stretch of code preserve something", the caller's byte there versus
-	 * the fact that nothing has happened yet here.
+	 * {@link HelperArgumentRecovery#argumentSurvivesPrologue} so the two read alike -- both exist to
+	 * answer "does this straight-line stretch of code preserve something", the caller's byte there
+	 * versus the fact that nothing has happened yet here.
 	 * <p>
 	 * EVERY condition below must hold for every instruction on the walk:
 	 * <ul>
@@ -488,10 +489,10 @@ final class HelperDiscovery {
 	 * <li>{@code getInstructionAt(cursor) != null} at every step -- disassembly
 	 * completeness. This is LOAD-BEARING in a way it is not for
 	 * {@code HelperArgumentRecovery.argumentSurvivesPrologue}: the {@code constState}-inherit path in
-	 * {@link HelperModel#atFallThroughWrapper} bypasses {@code HelperArgumentRecovery.argumentSurvivesPrologue}
-	 * entirely (a constant helper never calls it), so nothing else on that path ever checks
-	 * for a disassembly gap in the wrapper's body -- this method is the only place that
-	 * does.</li>
+	 * {@link HelperModel#atFallThroughWrapper} bypasses
+	 * {@code HelperArgumentRecovery.argumentSurvivesPrologue} entirely (a constant helper never calls
+	 * it), so nothing else on that path ever checks for a disassembly gap in the wrapper's body --
+	 * this method is the only place that does.</li>
 	 * <li>{@code instr.getFlows().length == 0} -- no branch, no jump, and no {@code JSR} (a
 	 * call's flows include its target). This is what keeps blmaster's {@code FUN_e61b} out of
 	 * {@link #findPassThroughWrappers} by construction, since it reaches its helper via an
@@ -606,18 +607,19 @@ final class HelperDiscovery {
 	 * its relay call, is precisely a pass-through into that call site</em> -- and it is what
 	 * proves the relay is REACHED UNCONDITIONALLY. Its body-max bound is harmless because the
 	 * call site is inside the body, so the walk lands on it and returns first.</li>
-	 * <li>VALUE: {@link HelperArgumentRecovery#argumentSurvivesPrologue} over {@link HelperArgumentRecovery#prologueSegments}, which proves
-	 * the caller's byte is still in {@code argReg} when the helper's first site reads it. On
-	 * blmaster this is exactly the {@code argumentCells}/{@code HelperArgumentRecovery.argumentReloadSource}
-	 * save-restore model (grm-mu7 increment 2) recognizing the {@code STA $DB} / {@code LDA $DB}
-	 * pair -- the same machinery that made cv2's {@code STA $1C} / {@code LDA $1C} work in
-	 * increment 1.</li>
+	 * <li>VALUE: {@link HelperArgumentRecovery#argumentSurvivesPrologue} over
+	 * {@link HelperArgumentRecovery#prologueSegments}, which proves the caller's byte is still in
+	 * {@code argReg} when the helper's first site reads it. On blmaster this is exactly the
+	 * {@code argumentCells}/{@code HelperArgumentRecovery.argumentReloadSource} save-restore model
+	 * (grm-mu7 increment 2) recognizing the {@code STA $DB} / {@code LDA $DB} pair -- the same
+	 * machinery that made cv2's {@code STA $1C} / {@code LDA $1C} work in increment 1.</li>
 	 * </ul>
 	 * <b>The value gate alone would be unsound, which is not obvious.</b> A branch does NOT make
-	 * {@link HelperArgumentRecovery#argumentSurvivesPrologue} decline: a nonzero {@code getFlows().length} only clears
-	 * {@code straightLine} and {@code argumentCells}, and the walk CONTINUES. A prefix that
-	 * branches around the relay call but never writes {@code argReg} would pass it -- and then
-	 * every claim below about the wrapper's effect would rest on a call that might not run.
+	 * {@link HelperArgumentRecovery#argumentSurvivesPrologue} decline: a nonzero
+	 * {@code getFlows().length} only clears {@code straightLine} and {@code argumentCells}, and the
+	 * walk CONTINUES. A prefix that branches around the relay call but never writes {@code argReg}
+	 * would pass it -- and then every claim below about the wrapper's effect would rest on a call that
+	 * might not run.
 	 * <p>
 	 * A tail {@code JMP} that Ghidra's shared-return analysis retyped {@code CALL_TERMINATOR}
 	 * reports {@code isCall()} and counts as a relay. It is the SOUNDER case: control never
@@ -641,8 +643,8 @@ final class HelperDiscovery {
 	 * two relay candidates and be rejected, which would then be the correct conservative answer.
 	 * <p>
 	 * This EXTENDS an existing standard rather than introducing a new unsoundness:
-	 * {@link BankDataflowEngine#runDataflow} already folds a call to a non-helper as a no-op on bank state, and
-	 * {@link #composeTailCalls} already writes that down for the tail-call case. But the
+	 * {@link BankDataflowEngine#runDataflow} already folds a call to a non-helper as a no-op on bank
+	 * state, and {@link #composeTailCalls} already writes that down for the tail-call case. But the
 	 * extension is real and worth naming -- increment 1 CHECKED inertness per instruction over
 	 * the whole wrapper body, while this checks it over the prefix and ASSUMES it over the tail.
 	 * <p>
@@ -670,7 +672,8 @@ final class HelperDiscovery {
 	 * with no measured instance, cheaply closed later by a second
 	 * {@link #findPassThroughWrappers} call, which would stay deterministic because call-edge
 	 * decisions are fixed by then. A wrapped model that ALREADY carries a relay is rejected: the
-	 * prologue would need three segments, and {@link HelperArgumentRecovery#prologueSegments} expresses two.
+	 * prologue would need three segments, and {@link HelperArgumentRecovery#prologueSegments}
+	 * expresses two.
 	 */
 	// Package-private (not private): BoardBankAnalyzer.added() reaches this via
 	// import static (grm-shnf step 3).
@@ -733,9 +736,10 @@ final class HelperDiscovery {
 	 * Every instruction in {@code f} that ends a path through it: {@code RTS}/{@code RTI}
 	 * ({@code TERMINATOR}) and a tail call out of the body ({@code CALL_TERMINATOR} -- a jump
 	 * to another function's entry, which Ghidra's shared-return analysis rewrites into a
-	 * call-with-no-fall-through). Both report {@link ghidra.program.model.symbol.FlowType#isTerminal()};
-	 * they are told apart by {@code isCall()}, the same test {@link BankDataflowEngine#runDataflow} already uses
-	 * to route a {@code CALL_TERMINATOR} jump through the helper-call path.
+	 * call-with-no-fall-through). Both report
+	 * {@link ghidra.program.model.symbol.FlowType#isTerminal()}; they are told apart by
+	 * {@code isCall()}, the same test {@link BankDataflowEngine#runDataflow} already uses to route a
+	 * {@code CALL_TERMINATOR} jump through the helper-call path.
 	 * <p>
 	 * A plain unconditional jump that leaves the body WITHOUT landing on a function entry is
 	 * not terminal and so is not seen here. Ghidra normally absorbs such a target into this
@@ -772,9 +776,9 @@ final class HelperDiscovery {
 	 * is mid-body. Both are the same idiom and both were invisible: the thunk is a different
 	 * {@code Function} than the helper, and the trampoline is not the helper at all, so the old
 	 * {@code getFunctionAt} + map lookup missed both and returned null -- which
-	 * {@link BankDataflowEngine#runDataflow} folds as a call that does nothing to bank state. A SILENT miss, and
-	 * measurably the whole story on two real cartridges: every one of Bionic Commando's 5 bank
-	 * call sites and all 59 of Final Fantasy's reach their helper only through a hop.
+	 * {@link BankDataflowEngine#runDataflow} folds as a call that does nothing to bank state. A SILENT
+	 * miss, and measurably the whole story on two real cartridges: every one of Bionic Commando's 5
+	 * bank call sites and all 59 of Final Fantasy's reach their helper only through a hop.
 	 * <p>
 	 * Package-private and static so it can be tested against a {@code ProgramBuilder} program
 	 * on its own -- it is a function of {@code (program, callInstr)} and nothing else, with no
@@ -945,8 +949,8 @@ final class HelperDiscovery {
 	 * this helper's effect into only the state bits it actually owns. {@code strategy} is the
 	 * matched mechanism's strategy (null when the sites disagree, per {@code findHelpers}'s
 	 * degrade case -- unused there since {@code argReg} is also forced null and
-	 * {@link HelperArgumentRecovery#recoverCallArgument} short-circuits before ever consulting {@code strategy});
-	 * {@code switchSite} is the recognized switch instruction that
+	 * {@link HelperArgumentRecovery#recoverCallArgument} short-circuits before ever consulting
+	 * {@code strategy}); {@code switchSite} is the recognized switch instruction that
 	 * {@link BankSwitchStrategy#depositHelperArgument} is asked to interpret a call site's
 	 * argument against.
 	 * <p>
@@ -977,16 +981,17 @@ final class HelperDiscovery {
 	 * so {@code getFunctionContaining} answers {@code FUN_dca8} and a model keyed on the
 	 * function alone describes the argument at the WRONG entry. See
 	 * {@link #midBodyEntryHelper} for how such an entry is admitted and what it costs.
-	 * {@code entry} is also the {@link RegisterEnv} stop address {@link HelperArgumentRecovery#recoverCallArgument}
-	 * hands the mini-inline scan, which must stop where control actually entered.
+	 * {@code entry} is also the {@link RegisterEnv} stop address
+	 * {@link HelperArgumentRecovery#recoverCallArgument} hands the mini-inline scan, which must stop
+	 * where control actually entered.
 	 * <p>
 	 * {@code firstSite} is the LOWEST-addressed recognized site in the body, the mirror of
 	 * {@code switchSite}'s max, and is null in the same degraded cases {@code switchSite} is.
 	 * It has two consumers, both of which want "the first thing this body does that matters":
 	 * {@link #midBodyEntryHelper}'s admission test (does entering here still run every site?)
-	 * and {@link HelperArgumentRecovery#argumentSurvivesPrologue}'s walk bound (does the caller's argument survive
-	 * as far as the site that consumes it?). Together with {@code entry} it delimits exactly
-	 * the prologue a given call runs before the mechanism reads its argument -- EXCEPT when
+	 * and {@link HelperArgumentRecovery#argumentSurvivesPrologue}'s walk bound (does the caller's
+	 * argument survive as far as the site that consumes it?). Together with {@code entry} it delimits
+	 * exactly the prologue a given call runs before the mechanism reads its argument -- EXCEPT when
 	 * {@code relay} is non-null, which is precisely the case where that stops being one span;
 	 * see {@link Relay} and {@link HelperArgumentRecovery#prologueSegments}.
 	 * <p>
@@ -1015,8 +1020,8 @@ final class HelperDiscovery {
 		 * about what the whole body does when entered at the top, and a mid-body entry is
 		 * precisely a path that skipped part of that -- shipping it would ship a wrong bank,
 		 * which this engine treats as strictly worse than shipping none. Nulling it routes the
-		 * call through {@link HelperArgumentRecovery#recoverCallArgument}, which re-derives the value from the call
-		 * site's own registers. Everything else survives because
+		 * call through {@link HelperArgumentRecovery#recoverCallArgument}, which re-derives the value
+		 * from the call site's own registers. Everything else survives because
 		 * {@link #midBodyEntryHelper}'s admission test guarantees the entry still runs the
 		 * body's entire recognized site set.
 		 */
@@ -1118,9 +1123,10 @@ final class HelperDiscovery {
 	 * does.
 	 * <p>
 	 * Three consumers, all of which would otherwise silently use the wrapper's entry where the
-	 * WRAPPED HELPER's is meant: {@link HelperArgumentRecovery#prologueSegments}, {@link HelperArgumentRecovery#valueSuppliedInsideHelper}
-	 * and {@link HelperArgumentRecovery#callSiteRegisters}'s stop address. A fourth, {@link #midBodyEntryHelper},
-	 * declines outright on a non-null relay.
+	 * WRAPPED HELPER's is meant: {@link HelperArgumentRecovery#prologueSegments},
+	 * {@link HelperArgumentRecovery#valueSuppliedInsideHelper} and
+	 * {@link HelperArgumentRecovery#callSiteRegisters}'s stop address. A fourth,
+	 * {@link #midBodyEntryHelper}, declines outright on a non-null relay.
 	 */
 	// Package-private (not private): HelperArgumentRecovery's insideHelperEntry and
 	// prologueSegments call Relay's accessors on a helper model built here (grm-shnf step 3).

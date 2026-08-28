@@ -86,12 +86,12 @@ import retromachines.HelperDiscovery.HelperModel;
  * {@link BoardBankAnalyzer} here rather than {@code Analyzer} at those two call sites.
  * {@code helperArgumentCallSites} no longer needs a threaded receiver for this reason:
  * {@code calledHelper} became {@code static} as of grm-shnf step 2 and is referenced here via
- * {@code import static} instead. {@code toFieldLocal} and {@code reachableEntries} are static helpers,
- * referenced here via {@code import static} so the call sites themselves are byte-identical to
- * their originals; {@code toFieldLocal} moved to {@link BankDataflowEngine} with the Dataflow
- * section (bead grm-gqrj) and {@code reachableEntries} moved to {@link HelperDiscovery} with the
- * rest of the Helper-call-propagation section's discovery half (bead grm-shnf step 3).
- * {@code findModeWindowInstance}
+ * {@code import static} instead. {@code toFieldLocal} and {@code reachableEntries} are static
+ * helpers, referenced here via {@code import static} so the call sites themselves are
+ * byte-identical to their originals; {@code toFieldLocal} moved to {@link BankDataflowEngine} with
+ * the Dataflow section (bead grm-gqrj) and {@code reachableEntries} moved to
+ * {@link HelperDiscovery} with the rest of the Helper-call-propagation section's discovery half
+ * (bead grm-shnf step 3). {@code findModeWindowInstance}
  * moved here with "Reference retargeting" but is also called from
  * {@code BankDataflowEngine.clampToResidence} -- the one place this increment's own code is
  * called back INTO from the dataflow side; that call site was qualified
@@ -107,22 +107,6 @@ final class BankAnnotationAdapter {
 	// Annotation
 	// ------------------------------------------------------------------
 
-	/**
-	 * Annotates a resolved bank-switch site with an EOL comment. When {@code newState}
-	 * is fully known, the comment is {@code bank -> 5 (RAM_A000/IO/RAM_E000)} on
-	 * enumerated boards (occupant row) and {@code bank -> 5 (bank=5)} on single-field
-	 * computed boards (the {@code effective} value IS the bank there). On a multi-field
-	 * computed board (MMC1/MMC3/Bandai FCG) the {@code effective} value is a packed state
-	 * tuple, not a bank index, so instead of a cryptic decimal the comment leads with the
-	 * field breakdown itself: {@code bank -> select=0,prg_mode=1,r6=0,r7=1} (grm-y20).
-	 * When only some bits are known, the comment marks the state with a trailing
-	 * {@code ?} and spells out, by {@code banking.state} field name, which bits are
-	 * actually known versus merely assumed from {@code banking.initial_state} -- e.g.
-	 * {@code bank -> 7? (BASIC/IO/KERNAL) [known: LORAM=1; assumed from initial:
-	 * HIRAM,CHAREN]} (enumerated) or {@code bank -> select=7,...,r7=26? [known: ...;
-	 * assumed from initial: ...]} (packed tuple). Call-site switches carry the helper's
-	 * name.
-	 */
 	/**
 	 * Records one recovered switch site: an EOL annotation when at least one tracked bank
 	 * bit is known, or a warning bookmark -- the caller's {@code warning} when value recovery
@@ -491,6 +475,22 @@ final class BankAnnotationAdapter {
 		return banks;
 	}
 
+	/**
+	 * Annotates a resolved bank-switch site with an EOL comment. When {@code newState}
+	 * is fully known, the comment is {@code bank -> 5 (RAM_A000/IO/RAM_E000)} on
+	 * enumerated boards (occupant row) and {@code bank -> 5 (bank=5)} on single-field
+	 * computed boards (the {@code effective} value IS the bank there). On a multi-field
+	 * computed board (MMC1/MMC3/Bandai FCG) the {@code effective} value is a packed state
+	 * tuple, not a bank index, so instead of a cryptic decimal the comment leads with the
+	 * field breakdown itself: {@code bank -> select=0,prg_mode=1,r6=0,r7=1} (grm-y20).
+	 * When only some bits are known, the comment marks the state with a trailing
+	 * {@code ?} and spells out, by {@code banking.state} field name, which bits are
+	 * actually known versus merely assumed from {@code banking.initial_state} -- e.g.
+	 * {@code bank -> 7? (BASIC/IO/KERNAL) [known: LORAM=1; assumed from initial:
+	 * HIRAM,CHAREN]} (enumerated) or {@code bank -> select=7,...,r7=26? [known: ...;
+	 * assumed from initial: ...]} (packed tuple). Call-site switches carry the helper's
+	 * name.
+	 */
 	private static void annotateBankSwitch(Listing listing, Address addr, BankState newState,
 			BoardModel board, String viaHelper) {
 		int mask = board.mask();

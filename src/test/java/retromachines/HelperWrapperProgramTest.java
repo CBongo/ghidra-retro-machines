@@ -45,9 +45,12 @@ import ghidra.program.model.symbol.SourceType;
  * the predicate level -- {@code (program, wrapper, target, switchResults)} alone, no analyzer
  * state, no board descriptor -- which is what lets them run in the fast JUnit tier.
  * <p>
- * {@code switchResults} is passed as {@code Map.of()} throughout: {@code SwitchResult} is a
- * private record of {@code BoardBankAnalyzer}, so a test in this package cannot construct one to
- * populate the map. None of the admit/reject shapes below need a populated map to exercise --
+ * {@code switchResults} is passed as {@code Map.of()} throughout because none of the shapes below
+ * need it populated, not because it cannot be. (It once could not: {@code SwitchResult} was a
+ * {@code private} record of {@code BoardBankAnalyzer} when these tests were written. It is now
+ * package-private on {@link BankDataflowEngine} -- bead grm-shnf -- so a same-package test could
+ * construct one; there is still no reason to.) None of the admit/reject shapes below need a
+ * populated map to exercise --
  * the mechanism-write exclusion is a straight {@code containsKey} check on whatever map is
  * threaded in, so an always-empty map is sufficient to pin every other branch; only the
  * "wrapper itself writes a mechanism" branch goes untested here; it is not part of this

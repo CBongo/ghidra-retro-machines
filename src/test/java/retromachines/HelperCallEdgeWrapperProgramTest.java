@@ -45,11 +45,14 @@ import ghidra.program.model.listing.Function;
  * <p>
  * Deliberately shaped like {@link HelperWrapperProgramTest}: predicate level only, no analyzer
  * state and no board descriptor, which is what keeps these in the fast JUnit tier.
- * {@code HelperModel} is a package-private record of {@link HelperDiscovery} and
- * {@code SwitchResult} of {@code BankDataflowEngine},
- * so this tier cannot build a helper map; the map-shaped rules (exactly-one-helper-call, the
- * whole-body mechanism scan, the mid-body decline) are pinned by the {@code nesrelaytest}
- * headless fixture instead.
+ * The map-shaped rules (exactly-one-helper-call, the whole-body mechanism scan, the mid-body
+ * decline) are pinned by the {@code nesrelaytest} headless fixture rather than here. That split
+ * was originally forced -- {@code HelperModel} and {@code SwitchResult} were {@code private}
+ * records of {@code BoardBankAnalyzer}, so this tier could not build a helper map at all. It is
+ * now a choice: both are package-private ({@link HelperDiscovery} and {@link BankDataflowEngine}
+ * respectively, bead grm-shnf) and a same-package test can construct them, as
+ * {@link TailCallCompositionProgramTest} does. Those rules are still better pinned end-to-end,
+ * because what they assert is which candidates the discovery pass actually feeds in.
  * <p>
  * {@code switchResults} is {@code Map.of()} throughout, for the same reason
  * {@link HelperWrapperProgramTest} documents.
