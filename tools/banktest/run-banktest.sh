@@ -188,16 +188,22 @@ if [ "${GRM_SHARED_GHIDRA_INSTALL:-}" = 1 ]; then
 	echo "NOTE: GRM_SHARED_GHIDRA_INSTALL=1 -- reading the shared %APPDATA%/ghidra install" \
 		"instead of the isolated build/ghidra-home tree. Only tools/install-gui.ps1 writes" \
 		"that install, so this run cannot be attributed to the current source state." >&2
-else
-	grm_settings_base_fallback "${CHUNKS[0]}"
 fi
-grm_apply_settings_base
 
 # Build-by-default preflight (bead grm-4t2d option (e); see the header comment). Skipped
 # outright when build-and-test.sh already built+staged for this run (GRM_EXTENSION_BUILT_THIS_RUN),
 # so the two scripts never do the work twice, and skipped on request via --no-build/GRM_SKIP_BUILD.
 # Only meaningful against the isolated install -- GRM_SHARED_GHIDRA_INSTALL=1 reads the
 # %APPDATA% install that only tools/install-gui.ps1 ever writes, which this script must not build.
+#
+# THIS MUST RUN BEFORE grm_settings_base_fallback, AND THAT ORDER IS LOAD-BEARING (bug found
+# 2026-08-29 while building ab-test.sh). The fallback decides whether to use the isolated install
+# by testing whether build/ghidra-home EXISTS, and staging is what creates it. With the fallback
+# first, a FRESH WORKTREE -- which by definition has no build/ dir yet -- took the shared %APPDATA%
+# branch, and staging then installed into a build/ghidra-home the run was no longer pointed at:
+# the extension under test got built correctly and then not used. That is the grm-4t2d hazard
+# wearing a new hat. Under --no-build the directory may legitimately still be absent, and the
+# fallback's NOTE is then correct rather than misleading.
 EXT_NOTE_SUFFIX=""
 if [ "${GRM_EXTENSION_BUILT_THIS_RUN:-}" = 1 ]; then
 	: # build-and-test.sh already built+staged for this run; do not double-build
@@ -208,6 +214,11 @@ elif [ "$NO_BUILD" -eq 1 ] || [ "${GRM_SKIP_BUILD:-}" = 1 ]; then
 else
 	grm_ensure_extension_staged
 fi
+
+if [ "${GRM_SHARED_GHIDRA_INSTALL:-}" != 1 ]; then
+	grm_settings_base_fallback "${CHUNKS[0]}"
+fi
+grm_apply_settings_base
 
 WORK="$(grm_work_dir banktest)"
 fail=0

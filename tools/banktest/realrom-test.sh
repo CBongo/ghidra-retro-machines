@@ -444,15 +444,21 @@ fi
 # source of truth); GHIDRA_HEADLESS still overrides.
 grm_default_headless
 
-# Same isolation as measure-overlay-scale.sh: point Ghidra's settings/Extensions dir at
-# the per-worktree build/ghidra-home tree.
-grm_settings_base_fallback nes-banking
-grm_apply_settings_base
-
 # Build-by-default preflight (bead grm-4t2d option (e); see the header comment). Skipped
 # outright when build-and-test.sh already built+staged for this run
 # (GRM_EXTENSION_BUILT_THIS_RUN), so the two scripts never do the work twice, and skipped on
 # request via --no-build/GRM_SKIP_BUILD.
+#
+# THIS MUST RUN BEFORE grm_settings_base_fallback, AND THAT ORDER IS LOAD-BEARING (bug found
+# 2026-08-29 while building ab-test.sh). The fallback decides whether to use the isolated
+# install by testing whether build/ghidra-home EXISTS. Staging is what creates it. With the
+# fallback first, a FRESH WORKTREE -- which by definition has no build/ dir yet -- took the
+# shared %APPDATA% branch, and then staging installed into build/ghidra-home that the run
+# was no longer pointed at: the extension under test was built correctly and then not used.
+# That is the grm-4t2d hazard wearing a new hat, and it defeats isolation for exactly the
+# "just run realrom-test.sh directly" flow grm-4t2d added. Staging first means the directory
+# exists by the time the fallback looks. Under --no-build the directory may legitimately
+# still be absent, and the fallback's NOTE is then correct rather than misleading.
 EXT_NOTE_SUFFIX=""
 if [ "${GRM_EXTENSION_BUILT_THIS_RUN:-}" = 1 ]; then
 	: # build-and-test.sh already built+staged for this run; do not double-build
@@ -461,6 +467,11 @@ elif [ "$NO_BUILD" -eq 1 ] || [ "${GRM_SKIP_BUILD:-}" = 1 ]; then
 else
 	grm_ensure_extension_staged
 fi
+
+# Same isolation as measure-overlay-scale.sh: point Ghidra's settings/Extensions dir at
+# the per-worktree build/ghidra-home tree.
+grm_settings_base_fallback nes-banking
+grm_apply_settings_base
 
 if ! command -v sha256sum >/dev/null 2>&1; then
 	echo "ERROR: sha256sum not found on PATH (needed to hash-pin ROMs)." >&2
