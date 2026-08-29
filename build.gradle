@@ -368,6 +368,68 @@ task buildMap {
 	dependsOn machineMapTasks
 }
 
+// A content fingerprint of the DESCRIPTOR SOURCES, shipped into the extension so the test
+// harness can tell one build's descriptor state from another's (bead grm-5jjs).
+//
+// WHY THIS EXISTS. lib/common.sh's ext_identity() fingerprints the INSTALLED extension --
+// jar entry CRCs plus a sha256 of every loose file under Extensions/ -- and the banktest
+// candidate-dump cache and the real-ROM A/B guard both key on it. That worked until the
+// .gdt archives were examined: Ghidra's data-type archive writer is NOT deterministic, and
+// regenerating a .gdt from byte-identical input yields different bytes (measured 2026-08-29
+// on c128.gdt: e8d3ddd0... -> c41e7a5f...). So two builds of the SAME COMMIT in two
+// worktrees could never agree on an identity, which is exactly where ab-test.sh needs them
+// to.
+//
+// THE OBVIOUS FIX -- just exclude *.gdt from ext_identity -- IS WRONG, and it is worth
+// recording why, because it looks safe. The .map files reference types BY NAME; the .gdt
+// holds the DEFINITIONS. Measured: renaming a struct FIELD in machines/c128.yaml
+// (DDR -> DDR_RENAMED) leaves data/machines/c128.map BYTE-IDENTICAL. Such a change moves no
+// jar (no Java changed), moves no .map, and the YAML itself is not shipped -- so excluding
+// the .gdt would leave it invisible to the whole key, while DescriptorSupport.applyStructType
+// really does apply those structs to memory (the C64/PET IO regions). The key would stop
+// covering something that can change a dump, which is the one property
+// gradle-dist-zip-mtime-unstable says it must have.
+//
+// SO: ship the SOURCES' hash instead. This manifest is derived from machines/** -- every
+// descriptor YAML plus the shared fragments/ and generated/ trees the .gdt build reads --
+// and is deterministic by construction (sorted by relative path, '/' separators, LF
+// endings, no timestamps). ext_identity then excludes *.gdt and reads this instead, and
+// gains all three properties at once: stable across worktrees, still sensitive to a
+// struct-field-only edit, and still sensitive to everything it already caught.
+def descriptorSourceManifest = file('data/descriptor-sources.sha256')
+
+task buildDescriptorSourceManifest {
+	group = "Ghidra Retro Machines"
+	description = "Emit data/descriptor-sources.sha256, a deterministic content fingerprint " +
+		"of machines/** for the test harness's extension-identity check (grm-5jjs)"
+
+	inputs.files(fileTree(dir: 'machines')).withPropertyName('descriptorSources')
+	outputs.file(descriptorSourceManifest)
+
+	doLast {
+		def root = file('machines')
+		def lines = []
+		root.eachFileRecurse(groovy.io.FileType.FILES) { f ->
+			// Relative, '/'-separated: the manifest must not encode the absolute build path,
+			// which is the whole defect it exists to avoid.
+			def rel = root.toPath().relativize(f.toPath()).toString().replace('\\', '/')
+			def digest = java.security.MessageDigest.getInstance('SHA-256')
+			f.withInputStream { ins ->
+				byte[] buf = new byte[8192]
+				int n
+				while ((n = ins.read(buf)) > 0) {
+					digest.update(buf, 0, n)
+				}
+			}
+			lines << "${digest.digest().encodeHex()}  ${rel}".toString()
+		}
+		lines.sort()   // byte-order sort on the whole line; stable regardless of walk order
+		descriptorSourceManifest.parentFile.mkdirs()
+		// Explicit LF: a CRLF checkout must not change the fingerprint of identical sources.
+		descriptorSourceManifest.setText(lines.join('\n') + '\n', 'UTF-8')
+	}
+}
+
 // PETSCII byte -> display-string map (bead grm-1.4.1). A small, separate compiler from
 // MapCompiler on purpose: MapCompiler builds descriptor-schema-2 machine descriptors and
 // hard-validates that schema (physical spaces, banking state, windows...), none of which
@@ -687,7 +749,11 @@ tasks.matching { it.name == 'buildExtension' }.configureEach {
 	// smoke test; previously masked by a stale petscii.map in the main tree).
 	// buildScreencodeMap (bead grm-1.4.5) ships data/screencode.map for the same
 	// reason -- RetroCharsetProvider's screen-code charsets need it at runtime.
-	dependsOn 'buildGdt', 'buildMap', 'buildPetsciiMap', 'buildScreencodeMap', 'sleighCompile'
+	// buildDescriptorSourceManifest (grm-5jjs) ships data/descriptor-sources.sha256, which
+	// ext_identity() reads in place of the non-deterministic .gdt archives -- see that
+	// task's comment. It must be packaged like any other data/ file, so it belongs here.
+	dependsOn 'buildGdt', 'buildMap', 'buildPetsciiMap', 'buildScreencodeMap', 'sleighCompile',
+		'buildDescriptorSourceManifest'
 }
 
 //----------------------------------------------------------------------------------

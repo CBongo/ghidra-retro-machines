@@ -434,7 +434,23 @@ ext_identity() {
 	# .map, changes the block/overlay layout the dump records, and left the cache key
 	# identical, so a bless could serve a candidate from before the descriptor change.
 	# sha256sum (not mtime) for the same content-only reason the jar branch uses CRCs.
-	loose="$(find "$base" -type f -path '*/Extensions/*' ! -name '*.jar' 2>/dev/null | LC_ALL=C sort)"
+	# *.gdt IS DELIBERATELY EXCLUDED, and data/descriptor-sources.sha256 covers it instead
+	# (bead grm-5jjs; the generating task is buildDescriptorSourceManifest in build.gradle,
+	# whose comment carries the full reasoning). Ghidra's data-type-archive writer is NOT
+	# deterministic: regenerating a .gdt from byte-identical input yields different bytes
+	# (measured 2026-08-29, c128.gdt e8d3ddd0... -> c41e7a5f...). Hashing them made this
+	# identity unstable across worktrees -- two builds of the SAME COMMIT never agreed --
+	# which silently defeats any A/B that builds each side in its own tree, and needlessly
+	# invalidated the candidate-dump cache.
+	#
+	# Excluding them ALONE would have been unsound, which is the part worth remembering: the
+	# .map files reference types by NAME while the .gdt holds the DEFINITIONS, so renaming a
+	# struct FIELD in machines/*.yaml leaves the .map byte-identical (measured) and moves no
+	# jar either. Without the sources manifest, such an edit would be invisible to this whole
+	# key while DescriptorSupport.applyStructType really does apply those structs to memory.
+	# The manifest is a deterministic sha256-per-source-file listing of machines/**, so it
+	# catches exactly what the .gdt would have, and nothing that varies build to build.
+	loose="$(find "$base" -type f -path '*/Extensions/*' ! -name '*.jar' ! -name '*.gdt' 2>/dev/null | LC_ALL=C sort)"
 	out="$( {
 		if [ -n "$jars" ]; then
 			printf '%s\n' "$jars" | "$py" -c '

@@ -74,3 +74,6 @@ Thumbs.db
 # curated set.
 tools/banktest/realrom/manifest-*.tsv
 !tools/banktest/realrom/manifest-gme.tsv
+
+# Generated descriptor-source fingerprint (bead grm-5jjs) — build output, never committed
+data/descriptor-sources.sha256
