@@ -1,0 +1,325 @@
+# NES MMC5 board descriptor (iNES mapper 5) -- SHIPPING descriptor (bead grm-fxm).
+# USER RULING 2026-08-15: "we should absolutely do MMC5" -- 16 local sample ROMs, the
+# largest single count in the corpus survey (see docs/human-research-todo.md section 3
+# / the bead's own text). Filed separately from grm-tas (MMC2) on purpose: MMC5 is the
+# most capable mapper Nintendo shipped, and folding it into a narrow board's bead would
+# hide a large piece of work behind a small one.
+#
+# *** SCOPE, READ THIS FIRST. *** MMC5 is a small ASIC with a lot on it: switchable PRG
+# banking (this descriptor), banked CHR, an extra sound channel, ExRAM (four modes,
+# including a nametable-attribute extension), a vertical-split mode, a scanline IRQ, and
+# an 8x8 unsigned multiplier. This descriptor models PRG ROM BANKING ONLY -- CPU-side,
+# code/data placement, the same cut every other NES board descriptor here makes (vision
+# doc section 5.4 defers non-CPU spaces). CHR banking, ExRAM, split-screen, the IRQ, and
+# the multiplier are all NOT modeled and are out of scope for this file; see the
+# per-register notes below for exactly which bytes of the register file that leaves
+# untouched.
+#
+# SOURCE OF RECORD: NESdev wiki, https://www.nesdev.org/wiki/MMC5, indexed from
+# https://www.nesdev.org/wiki/Mapper -> "005" -> INES_Mapper_005, which redirects to the
+# same MMC5 page (mapper number confirmed against the mapper index directly).
+#
+# ================================================================================
+# FACT SHEET (docs/human-research-todo.md section 3's checklist, in order)
+# ================================================================================
+#
+# WINDOW LAYOUT AND GRANULARITY -- FOUR PRG modes, selected by register $5100 bits 0-1:
+#   Mode 0 (32 KiB):      CPU $8000-$FFFF   one 32 KiB switchable window (register $5117).
+#   Mode 1 (16K+16K):     CPU $8000-$BFFF   16 KiB switchable (register $5115).
+#                         CPU $C000-$FFFF   16 KiB switchable (register $5117).
+#   Mode 2 (16K+8K+8K):   CPU $8000-$BFFF   16 KiB switchable (register $5115).
+#                         CPU $C000-$DFFF    8 KiB switchable (register $5116).
+#                         CPU $E000-$FFFF    8 KiB switchable (register $5117).
+#   Mode 3 (four 8K):     CPU $8000-$9FFF    8 KiB switchable (register $5114).
+#                         CPU $A000-$BFFF    8 KiB switchable (register $5115).
+#                         CPU $C000-$DFFF    8 KiB switchable (register $5116).
+#                         CPU $E000-$FFFF    8 KiB switchable (register $5117).
+#   Every entry in the table above is a REGISTER, never a hardwired "last bank" window --
+#   unlike every other NES board shipped so far (MMC1/MMC3/MMC2/UxROM/etc. all pin at
+#   least one PRG window to a fixed bank with no register at all), MMC5 has NO
+#   register-less PRG window in ANY mode. $5117 always ends up covering the very top of
+#   the map ($C000-$FFFF or a slice of it), and the wiki calls this out for a reason (see
+#   POWER-ON STATE below) -- it is the one register the reset vector's placement depends
+#   on -- but it is still a real, switchable register, not a `last`-style hardwired bank.
+#   CPU $6000-$7FFF is always 8 KiB of PRG RAM (register $5113), in every mode -- not
+#   modeled as banked; see PRG-RAM section below.
+#
+# REGISTER ADDRESSES / ADDR_MASK-ADDR_MATCH DECODE: no shared/mirrored register range and
+#   no address-decode predicate needed at all -- each register below lives at its OWN
+#   single fixed address, entirely separate from the $8000-$FFFF PRG address space itself
+#   (unlike MMC1/MMC3/MMC2, whose registers alias the ROM addresses they bank). This is a
+#   structural simplification versus every mapper shipped so far: a plain STA into a PRG
+#   window here is just an ordinary (if pointless, since these windows are ROM) memory
+#   reference, never a mechanism write, so none of this descriptor's PRG windows need
+#   `on_write: mechanism` at all.
+#     $5100  PRG mode (bits 0-1; bits 2-7 unused/other-subsystem, not modeled here).
+#     $5113  PRG-RAM bank select, RAM-only (out of scope -- see PRG-RAM section).
+#     $5114  PRG bank register A (mode 3's $8000-$9FFF only).
+#     $5115  PRG bank register B (mode 1/2's $8000-$BFFF, mode 3's $A000-$BFFF).
+#     $5116  PRG bank register C (mode 2/3's $C000-$DFFF).
+#     $5117  PRG bank register D (every mode's top window -- see above).
+#   Registers in $5101-$5112/$5118-$51FF and the wider $5200-$5206 range (split-screen,
+#   IRQ, multiplier) are NOT modeled; see the per-topic notes below for which ones.
+#
+# BANK-NUMBER BIT LAYOUT ($5114-$5117, all four share one diagram per the wiki):
+#     7  bit  0
+#     RAAA AaAA
+#     |||| ||||
+#     |||| |||+- PRG A13
+#     |||| ||+-- PRG A14
+#     |||| |+--- PRG A15 / RAM /CE select
+#     |||| +---- PRG A16
+#     |||+------ PRG A17
+#     ||+------- PRG A18
+#     |+-------- PRG A19
+#     +--------- RAM/ROM toggle (0=RAM, 1=ROM) -- $5114/$5115/$5116 ONLY. $5117 has no
+#                toggle at all (it is hardwired ROM-only); the wiki: "it is not possible
+#                to map the interrupt vectors to RAM in any mode".
+#   So each register's low 7 bits (A13-A19) are an 8 KiB bank number over up to 4 MiB of
+#   PRG; a mode using the register at 16 KiB or 32 KiB granularity ignores its low 1 or 2
+#   bits respectively (ignores A13, or A13+A14) -- exactly MMC1's coarser-granularity
+#   shape (bead grm-hsv.2's `>>` operator), reused verbatim below.
+#
+#   *** THE ROM/RAM TOGGLE BIT IS NOT MODELED. *** This is the "bank number meaning two
+#   different memories" shape the bead flagged as the harder-than-usual part, and it is a
+#   genuine descriptor-schema limit, not an oversight -- see the SCHEMA QUESTION note
+#   below for the full reasoning. Every register's mask here is 0x7F (bits 0-6 only):
+#   this descriptor always interprets a bank register's low 7 bits as a ROM bank number,
+#   never as a RAM bank number, regardless of what the real bit 7 says. That is not a
+#   guess -- a CPU-side static analyzer exists to find EXECUTABLE CODE, and the RAM
+#   option only ever removes ROM (and therefore code) from a window; there is no code to
+#   place when bit 7 is really 0, so treating every window as its ROM interpretation
+#   costs nothing for the only thing this layer is for. What it does cost: if a real
+#   game switches a window to PRG-RAM and back, this descriptor cannot tell the
+#   difference between "still ROM, same bank" and "was RAM for a while" -- it just always
+#   shows the ROM content. That is a real, accepted gap, not a hidden one.
+#
+# POWER-ON/RESET STATE:
+#   $5100 (PRG mode): wiki gives "xxxx xx11 Reset Value" -- mode 3 (four 8K banks).
+#   $5114-$5116: NOT documented at reset by the wiki (checked the MMC5 page directly).
+#     0 is this project's standing convention for undocumented mapper-latch reset
+#     content (same call MMC2/MMC1/MMC3 all made facing the same gap).
+#   $5117: the ONE register the wiki DOES document a reset value for -- "1111 1111
+#     Reset Value ($5117 only)" -- specifically so the reset/IRQ/NMI vectors always land
+#     in ROM (see the bit-layout note: $5117 has no RAM option to begin with). Taken
+#     completely literally that is 0xFF, i.e. bank-number bits 0-6 = 0x7F (127) -- but
+#     what "the top bank" means on real hardware depends on the CARTRIDGE'S OWN SIZE:
+#     a cart with fewer than 128 x 8 KiB banks has PRG address lines that simply do not
+#     exist, so the ASIC's electrical bank 127 aliases down to whatever the real top
+#     bank is for that cart -- an address-line-truncation-to-cart-size behavior with no
+#     equivalent in this schema (no modulo-by-image-size operator; `last` exists only
+#     inside a `maps:` expression, not as an `initial_state` value). Taking 0x7F
+#     literally here would leave $E000-$FFFF -- and therefore the vector table itself --
+#     unmapped at cold boot for every PRG image smaller than 1 MiB (128 x 8 KiB banks),
+#     which is worse than a documented approximation. So this descriptor falls back to
+#     the project's 0 convention for bank_5117 too, explicitly flagged as a DEVIATION
+#     from the literal documented reset byte (unlike $5114-$5116, where 0 is simply the
+#     undocumented-gap convention) rather than a fresh unknown -- real cartridges never
+#     depend on the literal value anyway, since every commercial MMC5 game's own init
+#     code sets all four bank registers before relying on banking.
+#
+# WRITE PROTOCOL: every register above is a single plain byte-wide write, "Write only",
+#   no latch/shift protocol -- the simplest write shape in the strategy vocabulary
+#   (`memory-latch`, one instance per register, exactly analogous to how UxROM/AxROM/
+#   GxROM/CNROM/BNROM each use one memory-latch instance, just at four separate fixed
+#   addresses here instead of one shared range). No bus-conflict hazard either: these
+#   registers are not ROM-aliased at all (see the address-decode note above), so
+#   `bus_conflict: false` throughout.
+#
+# ================================================================================
+# THE SCHEMA QUESTION THE BEAD PREDICTED, SURFACED (not invented around)
+# ================================================================================
+#
+# The bead's own text names two shapes that might not fit the current descriptor
+# vocabulary: (1) four switchable PRG modes, and (2) a bank register whose high bit
+# selects PRG-RAM instead of ROM.
+#
+# (1) IS EXPRESSIBLE, with no schema change. `memory.layouts[]` (MMC1/MMC3's mechanism)
+#     already supports an arbitrary number of `when:`-keyed window sets over one shared
+#     mode field -- four modes is just four layout entries, no different in kind from
+#     MMC1's four `prg_mode` layouts. And "one bank register can independently feed
+#     several distinct windows across different mode layouts" (MMC5's $5114-$5117, each
+#     used by a different subset of modes) is *already* a proven, shipped shape: the
+#     synthetic `machines/nes-modetest.yaml` board (iNES mapper 100, bead grm-aqf) uses
+#     exactly this pattern -- two INDEPENDENT memory-latch mechanisms setting disjoint
+#     state fields (a 1-bit mode field and a 2-bit bank field), with
+#     `BoardBankAnalyzer`'s two-level mode -> window -> bank lookup retargeting
+#     references into mode-qualified overlays (`W8000_M0_B<n>`, `W8000_M1`,
+#     `WC000_M1_B<n>`). This descriptor's shape -- one mode field plus four independent
+#     bank-register fields, each feeding whichever windows use it in whichever modes --
+#     is the same mechanism at larger scale, not a new one. It was also already
+#     confirmed (`MemoryLatchBankSwitchStrategy`'s class javadoc) that a `memory-latch`
+#     mechanism's `sets` field no longer needs to be `banking.state`'s FIRST field (an
+#     older constraint `docs/SCHEMA.md` still describes) -- multiple latches setting
+#     different fields are supported as long as each mechanism's own fields are
+#     contiguous, which every field below is by construction (one mechanism, one field,
+#     declared in order).
+#
+# (2) IS NOT MODELED, and this IS the genuine schema limit -- surfaced here rather than
+#     invented around, per the bead's standing instruction. A `maps:` expression
+#     addresses exactly one `physical:` space (`docs/SCHEMA.md`'s computed-window
+#     section), and `memory.layouts[].when:` may name only ONE field, shared by every
+#     layout in the descriptor (enforced by `MapCompiler`: "every layout must key when:
+#     off the [same] modeField"). So there is no way to make a single window
+#     conditionally resolve to a ROM physical slice OR a RAM region depending on a
+#     second, independent bit -- doing so through layouts would need a SECOND mode
+#     dimension (one `when:` value per combination of PRG mode and each window's own
+#     ROM/RAM bit), which the schema explicitly refuses at the `when.size() != 1` /
+#     single-modeField checks, not merely discourages. Growing the mini-language itself
+#     (a ternary/conditional operating over two named physical spaces) would be the
+#     schema feature the bead anticipated -- NOT invented here. This descriptor instead
+#     takes the documented, argued-above simplification: ignore the toggle bit, always
+#     read ROM. That is a scoping decision this agent made using the same reasoning the
+#     bead itself half-suggested (no code exists in a RAM-selected window), not a silent
+#     guess -- and it is called out here explicitly so the schema feature can be added
+#     later if per-window dual-physical-space banking becomes worth it for some other
+#     board (Game Boy MBC's ROM+RAM pair, named in the same javadoc, might want it too).
+#
+# ================================================================================
+#
+# PRG-RAM ($6000-$7FFF, register $5113): real MMC5 boards ship 8/16/32 KiB of PRG RAM
+#   and $5113 banks it in 8 KiB units (bits 1-0 for the up-to-32 KiB EWROM case, bit 2
+#   selects between two 8 KiB chips on ETROM); the wiki: "$5113 ... always maps RAM and
+#   bits 7, 6, 5, and 4 are always ignored". NOT modeled as banked here -- like every
+#   other board in this project (MMC1/MMC3's PRG-RAM notes make the identical call),
+#   this descriptor declares a single fixed, non-banked 8 KiB `memory.regions[]` PRG_RAM
+#   entry and leaves $5113 unrecognized by any mechanism (an untracked write, same
+#   no-poison contract as MMC3's R0-R5/MMC2's CHR registers).
+#
+# NOT MODELED AT ALL (PPU-side or otherwise out of scope, vision doc section 5.4):
+#   CHR banking ($5120-$5127/$5130), the extra pulse-wave-plus-PCM sound channel
+#   ($5010/$5015), ExRAM and its four modes including the nametable/attribute extension
+#   ($5104, $5C00-$5FFF), the vertical-split mode ($5200-$5202), the scanline IRQ
+#   ($5203-$5204), the 8x8 unsigned multiplier ($5205-$5206), and PRG-RAM
+#   write-protect ($5102-$5103). None of these bytes are claimed by any mechanism below;
+#   writes to them fall through untracked, exactly like MMC3's CHR/IRQ registers and
+#   MMC2's CHR-latch registers.
+
+schema: 2
+
+include: fragments/nes-common.yaml
+
+system:
+  id: nes_mmc5
+  name: NES MMC5 (iNES mapper 5)
+  board:
+    ines_mappers: [5]        # board registry key: iNES mapper numbers this board serves
+  cpu:
+    # Stock 6502 language -- the 2A03 core is a 6502 minus decimal mode, invisible here.
+    language: "6502:LE:16:default"
+
+physical:
+  # PRG ROM laid out once, in file order. No size: — it comes from the iNES header
+  # (PRG-ROM size field) at load time.
+  - { name: PRG, image: prg_rom }
+
+memory:
+  regions:
+    - name: PRG_RAM
+      start: 0x6000
+      end: 0x7FFF
+      kind: ram
+      comment: "8 KiB PRG RAM, present on every real MMC5 board (unlike MMC1, this is
+                not optional); banked PRG-RAM ($5113, up to 32 KiB across the EKROM/
+                ETROM/EWROM variants) is NOT modeled -- see module note above."
+    - name: MMC5_REGS
+      start: 0x5100
+      end: 0x5117
+      kind: io
+      comment: "MMC5's PRG-side register file: $5100 (PRG mode), $5113 (PRG-RAM bank,
+                unmodeled), $5114-$5117 (the four PRG ROM bank registers). Declared as
+                one region purely for a readable memory map -- no mechanism recognizes
+                $5101-$5112/$5118-$5117 gaps or $5113 itself; those writes fall through
+                untracked. The wider $5000-$5206 expansion area (ExRAM, split-screen,
+                IRQ, multiplier, sound) is left as an unmapped gap -- out of scope per
+                the module note above, not modeled even as a plain region."
+
+  windows: []                     # every PRG window is mode-dependent -- see layouts
+
+  layouts:
+    # Mode 0 (32 KiB): register $5117 alone, at 32 KiB granularity -- the `>>` operator
+    # (bead grm-hsv.2) drops bank_5117's low 2 bits (A13/A14 unused at this granularity).
+    - when: { prg_mode: 0 }
+      windows:
+        - { name: W8000, start: 0x8000, size: 0x8000, maps: "PRG[(bank_5117 >> 2) * 0x8000]" }
+    # Mode 1 (16K+16K): $5115 covers $8000-$BFFF, $5117 covers $C000-$FFFF, both at
+    # 16 KiB granularity (low bit dropped).
+    - when: { prg_mode: 1 }
+      windows:
+        - { name: W8000, start: 0x8000, size: 0x4000, maps: "PRG[(bank_5115 >> 1) * 0x4000]" }
+        - { name: WC000, start: 0xC000, size: 0x4000, maps: "PRG[(bank_5117 >> 1) * 0x4000]" }
+    # Mode 2 (16K+8K+8K): $5115 at 16 KiB granularity, $5116/$5117 at 8 KiB (full
+    # register width, no shift).
+    - when: { prg_mode: 2 }
+      windows:
+        - { name: W8000, start: 0x8000, size: 0x4000, maps: "PRG[(bank_5115 >> 1) * 0x4000]" }
+        - { name: WC000, start: 0xC000, size: 0x2000, maps: "PRG[bank_5116 * 0x2000]" }
+        - { name: WE000, start: 0xE000, size: 0x2000, maps: "PRG[bank_5117 * 0x2000]" }
+    # Mode 3 (four 8K, this board's home mode -- matches initial_state below): all four
+    # registers at full 8 KiB granularity, no shift.
+    - when: { prg_mode: 3 }
+      windows:
+        - { name: W8000, start: 0x8000, size: 0x2000, maps: "PRG[bank_5114 * 0x2000]" }
+        - { name: WA000, start: 0xA000, size: 0x2000, maps: "PRG[bank_5115 * 0x2000]" }
+        - { name: WC000, start: 0xC000, size: 0x2000, maps: "PRG[bank_5116 * 0x2000]" }
+        - { name: WE000, start: 0xE000, size: 0x2000, maps: "PRG[bank_5117 * 0x2000]" }
+
+banking:
+  state:
+    # LSB-first packing. Five independent registers, five independent fields -- no two
+    # ever co-emitted from the same write (contrast MMC3's select/mode sharing one
+    # byte). Each memory-latch mechanism below sets exactly one of these, so every
+    # mechanism's own field is trivially "contiguous" (bead grm-fxm; see the
+    # MemoryLatchBankSwitchStrategy note above).
+    - { name: prg_mode,  bits: 2 }   # $5100 bits 0-1
+    - { name: bank_5114, bits: 7 }   # $5114 bits 0-6 (RAM/ROM toggle bit 7 NOT tracked)
+    - { name: bank_5115, bits: 7 }   # $5115 bits 0-6 (ditto)
+    - { name: bank_5116, bits: 7 }   # $5116 bits 0-6 (ditto)
+    - { name: bank_5117, bits: 7 }   # $5117 bits 0-6 (no toggle bit on real hardware)
+  mechanisms:
+    - strategy: memory-latch
+      params: { start: 0x5100, end: 0x5100, mask: 0x03, bus_conflict: false }
+      sets: [prg_mode]
+    - strategy: memory-latch
+      params: { start: 0x5114, end: 0x5114, mask: 0x7F, bus_conflict: false }
+      sets: [bank_5114]
+    - strategy: memory-latch
+      params: { start: 0x5115, end: 0x5115, mask: 0x7F, bus_conflict: false }
+      sets: [bank_5115]
+    - strategy: memory-latch
+      params: { start: 0x5116, end: 0x5116, mask: 0x7F, bus_conflict: false }
+      sets: [bank_5116]
+    - strategy: memory-latch
+      params: { start: 0x5117, end: 0x5117, mask: 0x7F, bus_conflict: false }
+      sets: [bank_5117]
+  # prg_mode=3 is the wiki-documented reset value (mode 3, four 8K banks). The four bank
+  # registers are all seeded 0: $5114-$5116 because their reset content is undocumented
+  # (this project's standing convention), $5117 as a DELIBERATE DEVIATION from its
+  # documented-but-cart-size-relative 0xFF reset -- see the POWER-ON STATE fact-sheet
+  # note above for why 0x7F would strand the vector table on any image below 1 MiB.
+  initial_state: { prg_mode: 3, bank_5114: 0, bank_5115: 0, bank_5116: 0, bank_5117: 0 }
+  # No states: table -- occupants are computed from the layouts' maps: expressions.
+
+# rom_images: omitted -- PRG comes from the .nes container payload, not a user-supplied slot.
+
+validation:
+  oracle: none
+  checks:
+    - "PRG-side window layout (all four modes), register addresses, bank-number bit
+       layout, and write protocol cross-checked against the NESdev wiki
+       (https://www.nesdev.org/wiki/MMC5); no emulator oracle run yet. Verified against
+       the banktest suite's runtime behavior (bead grm-fxm, nesmmc5test.nes): a within-
+       mode-3 bank switch ($5114) with a JSR retarget, followed by a PRG MODE CHANGE
+       (3 -> 0) and a JMP retarget into the resulting 32 KiB arrangement, proving the
+       four-mode layouts and the per-register `>>` granularity both work end to end.
+       Power-on state for $5114-$5116 is UNDOCUMENTED by the wiki (checked the MMC5 page
+       directly) -- 0 is this project's standing convention. $5117's documented reset
+       (0xFF) is DELIBERATELY NOT used verbatim (see the fact-sheet note above); this
+       descriptor seeds it 0 instead, an explicit, argued deviation, not a fresh
+       unknown. The PRG-RAM ROM/RAM select bit ($5114-$5116 bit 7) is NOT modeled --
+       every window is always read as its ROM interpretation (see the SCHEMA QUESTION
+       note above for the full reasoning and the schema limit this exposed). CHR
+       banking, ExRAM (all four modes), the vertical-split mode, the scanline IRQ, the
+       8x8 multiplier, the extra sound channel, and banked/write-protected PRG-RAM are
+       all out of scope (vision doc section 5.4 / this bead) -- see the module notes
+       above for exactly which register bytes that leaves untouched."

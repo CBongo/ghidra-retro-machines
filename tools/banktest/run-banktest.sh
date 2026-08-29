@@ -808,6 +808,14 @@ if selected nes-banking; then
 	# $B000-$BFFF. See make_prg_mmc2()'s docstring.
 	run_one nesmmc2test "$WORK/nes/nesmmc2test.nes" NesRomLoader
 
+	# grm-fxm: MMC5 board (machines/nes-mmc5.yaml, iNES mapper 5) -- the first shipped board
+	# with NO register-less PRG window in ANY mode, and the only one whose registers live
+	# outside the $8000-$FFFF PRG space entirely ($5100/$5114-$5117), so no PRG window needs
+	# on_write: mechanism and there is no bus-conflict hazard. The fixture exercises both
+	# axes: an ordinary within-mode bank switch, then a PRG MODE change (3 -> 0) whose
+	# window set is a different shape, not just a different bank. See make_prg_mmc5().
+	run_one nesmmc5test "$WORK/nes/nesmmc5test.nes" NesRomLoader
+
 	# grm-1.7.6: CopyLoopAnalyzer is gated on the descriptor + a 6502/6510 language, not on
 	# the C64 loader, so it fires on NES ROMs too. This is the only fixture where the copy
 	# loop runs from a bank overlay and stores into base-space PRG RAM -- i.e. the only

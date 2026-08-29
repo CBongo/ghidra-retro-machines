@@ -330,6 +330,9 @@ public class VerifyBankTest extends GhidraScript {
 		else if (name.contains("nesmmc2test")) {
 			checkNesMmc2test();
 		}
+		else if (name.contains("nesmmc5test")) {
+			checkNesMmc5test();
+		}
 		else if (name.contains("nesbandaitest")) {
 			checkNesBandaitest();
 		}
@@ -2744,6 +2747,48 @@ public class VerifyBankTest extends GhidraScript {
 		// disassembly (not just the reference) landed where expected.
 		criterion("M5", hasInstructionAt("W8000_B2", 0x8005),
 			"instruction exists at W8000_B2::8005");
+	}
+
+	// ------------------------------------------------------------------
+	// nesmmc5test.nes criteria (bead grm-fxm, machines/nes-mmc5.yaml)
+	// ------------------------------------------------------------------
+
+	private void checkNesMmc5test() {
+		// M1: RESET's JSR $8000 at $E005, taken with bank_5114=1 in mode 3 (home mode,
+		// matching initial_state), retargets into the mode-3/bank-1 overlay.
+		Reference r = findOverlayRef(0xE005, "W8000_M3_B1", 0x8000);
+		criterion("M1", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $8000 (mode3/bank_5114=1) retargeted to W8000_M3_B1 overlay, primary: " +
+				describe(r));
+
+		// M2: the JMP $8100 at $E00D, taken right after the prg_mode 3 -> 0 switch,
+		// retargets into mode 0's 32 KiB window arrangement -- the PRG MODE CHANGE
+		// criterion. bank_5117 is untouched (still 0, its initial_state), so mode 0's
+		// window is its own home-bank instance under the new arrangement.
+		r = findOverlayRef(0xE00D, "W8000_M0_B0", 0x8100);
+		criterion("M2", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JMP $8100 (mode change 3->0) retargeted to W8000_M0_B0 overlay, primary: " +
+				describe(r));
+
+		// M3: bank-switch comments at the two latch-write sites -- each write is
+		// recognized by a mechanism owning only ONE state field (bank_5114 or prg_mode),
+		// so per the multi-mechanism engine's per-switch-effect annotation these are
+		// partial comments: the acted-on field is "known", the others fall back to
+		// "assumed from initial" (nesmodetest's F4 is the precedent for this assertion
+		// shape).
+		String e002 = eol(0xE002);
+		criterion("M3:e002", e002.contains("bank_5114 -> 1") || e002.contains("bank_5114=1"),
+			"bank_5114 latch -> 1 at e002: \"" + e002 + "\"");
+		String e00a = eol(0xE00A);
+		criterion("M3:e00a", e00a.contains("prg_mode -> 0") || e00a.contains("prg_mode=0"),
+			"prg_mode latch -> 0 at e00a: \"" + e00a + "\"");
+
+		// M4: the phase-2 disassembly cascade actually produced instructions at both
+		// overlay targets reached above.
+		criterion("M4:W8000_M3_B1_8000", hasInstructionAt("W8000_M3_B1", 0x8000),
+			"instruction exists at W8000_M3_B1::8000");
+		criterion("M4:W8000_M0_B0_8100", hasInstructionAt("W8000_M0_B0", 0x8100),
+			"instruction exists at W8000_M0_B0::8100");
 	}
 
 	// ------------------------------------------------------------------
