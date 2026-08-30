@@ -221,9 +221,14 @@ the emulators-as-oracle principle.
   `grm-9ty`). Absent, any in-range write latches (the discrete-mapper default). The latch
   is write-only — reads of the range read ROM —
   so value recovery resolves plain absolute loads of bank-invariant ROM bytes to
-  constants instead of consulting the in-state. Constraint: the field a memory-latch
-  `sets` must currently be the **first** field of `banking.state` (the recovered value
-  lands at state bits `[0, width)`); multi-latch boards will add a placement param.
+  constants instead of consulting the in-state. Constraint: the field(s) a memory-latch
+  mechanism's `sets` must form a **contiguous bit run** within `banking.state` — not
+  necessarily starting at bit 0. `BankStrategyRegistry.mechanismPositioning` computes
+  each mechanism's `(effectMask, lsb)` from its `sets` list and skips, with a log line,
+  any mechanism whose fields are split or interleaved with another mechanism's. Multiple
+  memory-latch mechanisms may coexist, each setting its own field(s): NES MMC5
+  (`nes-mmc5.yaml`) is modeled as five independent memory-latch mechanisms, one per
+  register ($5100/$5114/$5115/$5116/$5117), each `sets`-ing its own field.
 
 ## Banked windows: enumerated or computed
 
@@ -344,6 +349,23 @@ the `>>` operator above).
 Initial state comes from `banking.initial_state` (per-field map or packed integer),
 overridable per-format (e.g. a future `.crt` format entry derives EXROM/GAME from
 header bytes 0x18/0x19).
+
+`initial_state` field values are **literal integers only** (decimal or `0x` hex) — no
+expressions. `MapCompiler.packState` routes every value through `toInt`
+(`MapCompiler.java:1412`), which accepts a `Number` or a decimal/`0x` string and nothing
+else. The restriction is narrower than it looks, and the boundary is the point: the
+expression evaluator (`DescriptorExpressions`) *does* understand `last`/`second_last` for a
+window's `maps:` expression (e.g. `maps: PRG[last]`, `nes-mmc1.yaml`), so a window can pin
+itself to the top of the image regardless of PRG size — but that same `last` cannot appear
+in `initial_state`, only inside `maps:`. A board whose *reset* state needs an
+image-relative bank, rather than a mode selection whose `maps:` expression resolves the
+bank later, has no way to say so. NES MMC5 is the first board that wanted this: no PRG
+window is register-less in any of its four modes, so nothing can pin the top bank via
+`maps:`, and the shipped descriptor uses a documented deviation (seeding 0 instead of the
+wiki's cart-size-relative reset value) rather than expressing the real one. See `grm-y0ml`;
+fixing it is not a one-liner because `packState` runs at compile time in `MapCompiler`
+while image size is a load-time fact, so the value would have to stay symbolic in the
+`.map` and resolve in the loader.
 
 ## Block permissions: kind defaults + sparse overrides
 
