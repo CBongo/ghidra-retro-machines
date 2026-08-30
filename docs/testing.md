@@ -422,6 +422,22 @@ it is never a `run-banktest.sh` chunk (whose `all` would otherwise pull it in).
   deliberately **not** stated here. The `realrom-current-fails` bd memory is the single
   authoritative list of which rows are expected to fail and why; `realrom-12-1-3-toolchain-fails`
   carries the full experiment, and `realrom-howto` the method. See also `grm-qp5x`.
+- **Scripted A/B (`tools/banktest/ab-test.sh`, grm-5jjs):** attributing a real-ROM row's
+  behaviour to a specific commit (or to a Ghidra toolchain change, via `--toolchain`) used to be
+  a hand-run stash/rebuild/diff procedure with an easy-to-forget rebuild step in the middle.
+  `ab-test.sh` scripts it: each side gets its own throwaway `git worktree` and therefore its own
+  isolated `build/ghidra-home`, so a stale-build comparison is structurally impossible rather
+  than a discipline to remember. It asserts the two sides' installed-extension identities differ
+  before trusting the comparison, supports `--repeat N` for sticky/nondeterministic rows
+  (`bistable-golden-sticky-states`), `--raise-sample N` for line-level attribution, and warns
+  against single-row `--only` selections that can mask order-dependent movement (`grm-82u3`,
+  the `tmnt` case above). Run `tools/banktest/ab-test.sh --help` for the full flag reference.
+  One caveat found while verifying it: its identity guard uses `ext_identity()`
+  (`lib/common.sh`), which was observed to differ across two builds of the *same* commit built
+  in two different worktree paths even though the resulting dumps were byte-identical — so an
+  `ext_identity()` mismatch does not by itself prove the sides differ in source. The
+  dump-vs-dump diff the script prints is the trustworthy signal; treat the identity line as a
+  sanity check, not a proof.
 
   The cause is **grm-eyn**: Ghidra's switch recovery over-reads several of this ROM's jump
   tables, planting spurious computed-jump targets that act as disassembly seeds. Because 6502

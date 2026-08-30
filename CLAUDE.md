@@ -206,8 +206,18 @@ was never itself updated when a *later* memory superseded its `megaman` paragrap
 jitter signature that no longer applies while still calling itself current. Its durable method
 content — invocation, manifest-set semantics, cache and A/B mechanics — now lives in
 `realrom-howto`, which carries no row-status content and so cannot rot the same way.) To
-decide whether some *other* movement is yours, re-run the row against a stashed baseline and diff
-the two `build/banktest-work/realrom.*/<id>.diff` files.
+decide whether some *other* movement is yours, use **`tools/banktest/ab-test.sh`** (grm-5jjs)
+rather than the older hand-run stash/rebuild/diff dance: it puts each side in its own throwaway
+`git worktree` (so each side gets its own isolated `build/ghidra-home` and "forgot to rebuild
+between sides" is structurally impossible), enforces that the two sides actually differ before
+trusting anything, and diffs the two sides' dumps directly. See `tools/banktest/ab-test.sh
+--help` and the `realrom-ab-needs-rebuild`/`realrom-howto` memories, revised for it.
+**Known caveat:** the script's own "sides differ" check is based on `ext_identity()`, which was
+measured (2026-08-29) to differ across two builds of the *same* commit built in two different
+worktree paths, even though the resulting dumps were byte-identical — almost certainly build
+output (e.g. a Ghidra GDT archive) embedding something path/build-instance-specific. Treat an
+`ext_identity()` mismatch as informative, not proof of a real source difference; the dump-vs-dump
+diff `ab-test.sh` prints is the reliable signal regardless.
 
 When `GRM_ROM_DIR` is unset and no romdir is passed, `realrom-test.sh` refuses to run (nonzero
 exit, loud stderr message) rather than silently doing nothing — it never reports a clean gate for
