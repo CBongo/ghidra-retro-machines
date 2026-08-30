@@ -587,6 +587,115 @@ public class MapCompilerTest {
 		    - { HIRAM: 0, HIROM: RAM_E000 }
 		""";
 
+	// ------------------------------------------------------------------
+	// banking.initial_state image-relative expressions (bead grm-y0ml)
+	// ------------------------------------------------------------------
+
+	/** A descriptor whose initial_state is literals-only -- every descriptor that shipped
+	 *  before grm-y0ml -- must emit EXACTLY what it emitted before: a packed int and no
+	 *  initial_state_expr key at all. This is the property that keeps every existing .map
+	 *  byte-identical. */
+	@Test
+	public void literalOnlyInitialStateEmitsNoExpressionKey() throws Exception {
+		JsonObject banking = compileBanking("literal-seed", "{ MODE: 1, BANK: 5 }");
+		assertEquals(1 | (5 << 1), banking.get("initial_state").getAsInt());
+		assertTrue("literal-only initial_state must not emit initial_state_expr",
+			!banking.has("initial_state_expr"));
+	}
+
+	/** An image-relative field stays SYMBOLIC in the .map (the image size is a load-time
+	 *  fact), and the packed literal keeps that field at 0 -- the value an older extension,
+	 *  which knows nothing of initial_state_expr, still reads and can use. */
+	@Test
+	public void imageRelativeInitialStateStaysSymbolic() throws Exception {
+		JsonObject banking =
+			compileBanking("image-seed", "{ MODE: 1, BANK: \"(image_size >> 13) - 1\" }");
+		assertEquals("expression field must contribute 0 to the compiled literal",
+			1, banking.get("initial_state").getAsInt());
+		assertEquals("(image_size >> 13) - 1",
+			banking.getAsJsonObject("initial_state_expr").get("BANK").getAsString());
+	}
+
+	/** 'last' is a maps:-only keyword and a BYTE OFFSET; a bank-number field wants neither.
+	 *  It must be a compile ERROR here, not a silent pass. */
+	@Test
+	public void initialStateRejectsLastKeyword() throws Exception {
+		expectCompileError(tmp.getRoot().toPath(), "seed-last",
+			bankingYaml("seed-last", "{ MODE: 0, BANK: \"last\" }"), "image_size");
+	}
+
+	/** A state-field name in initial_state is an error too: the seed is resolved before any
+	 *  state exists. */
+	@Test
+	public void initialStateRejectsStateFieldName() throws Exception {
+		expectCompileError(tmp.getRoot().toPath(), "seed-field",
+			bankingYaml("seed-field", "{ MODE: 0, BANK: \"MODE + 1\" }"), "image_size");
+	}
+
+	/** The range check the compiler CAN make without an image: an expression that overflows
+	 *  the field at every plausible image size is rejected. 'image_size - 0x2000' is the
+	 *  mistake this feature invites -- a byte offset written where a bank number belongs. */
+	@Test
+	public void initialStateRejectsExpressionThatCanNeverFitTheField() throws Exception {
+		expectCompileError(tmp.getRoot().toPath(), "seed-wide",
+			bankingYaml("seed-wide", "{ MODE: 0, BANK: \"image_size - 0x2000\" }"),
+			"cannot fit the field's 7 bits");
+	}
+
+	/** A field named like an expression keyword would be indistinguishable from it inside an
+	 *  expression -- and referencedFields() filters those names out at runtime, so such a
+	 *  field would silently disappear from a maps: expression's dependency set. */
+	@Test
+	public void stateFieldNamedLikeAKeywordIsRejected() throws Exception {
+		expectCompileError(tmp.getRoot().toPath(), "seed-collide", """
+			schema: 2
+			system: { id: collide, name: Collide, cpu: { language: '6502:LE:16:default' } }
+			memory:
+			  regions:
+			    - { name: RAM, start: 0, end: 0xffff, kind: ram }
+			  windows: []
+			banking:
+			  state: [{ name: image_size, bits: 2 }]
+			  mechanisms:
+			    - strategy: memory-latch
+			      params: { start: 0x8000, end: 0xffff, mask: 0x03 }
+			      sets: [image_size]
+			  initial_state: { image_size: 0 }
+			""", "reserved expression keyword");
+	}
+
+	/** Compiles a minimal 2-field board with the given {@code initial_state:} value and hands
+	 *  back its {@code banking} object. */
+	private JsonObject compileBanking(String name, String initialState) throws Exception {
+		Path temp = tmp.getRoot().toPath();
+		Path yaml = temp.resolve(name + ".yaml");
+		Path map = temp.resolve(name + ".map");
+		Files.writeString(yaml, bankingYaml(name, initialState));
+		MapCompiler.main(new String[] { yaml.toString(), map.toString() });
+		return JsonParser.parseString(Files.readString(map)).getAsJsonObject()
+				.getAsJsonObject("banking");
+	}
+
+	/** A minimal compilable descriptor whose banking has a 1-bit MODE and a 7-bit BANK
+	 *  (7 bits so it matches MMC5's bank-register width, the shape this feature exists for). */
+	private static String bankingYaml(String id, String initialState) {
+		return """
+			schema: 2
+			system: { id: %s, name: Seed, cpu: { language: '6502:LE:16:default' } }
+			memory:
+			  regions:
+			    - { name: RAM, start: 0, end: 0xffff, kind: ram }
+			  windows: []
+			banking:
+			  state: [{ name: MODE, bits: 1 }, { name: BANK, bits: 7 }]
+			  mechanisms:
+			    - strategy: memory-latch
+			      params: { start: 0x8000, end: 0xffff, mask: 0x7f }
+			      sets: [BANK]
+			  initial_state: %s
+			""".formatted(id, initialState);
+	}
+
 	private static void expectCompileError(Path temp, String name, String yamlBody, String part)
 			throws Exception {
 		Path yaml = temp.resolve(name + ".yaml");

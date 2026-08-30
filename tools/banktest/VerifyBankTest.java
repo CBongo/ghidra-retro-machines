@@ -2754,6 +2754,28 @@ public class VerifyBankTest extends GhidraScript {
 	// ------------------------------------------------------------------
 
 	private void checkNesMmc5test() {
+		// M0: the IMAGE-RELATIVE initial_state seed (bead grm-y0ml) actually resolved.
+		// machines/nes-mmc5.yaml seeds bank_5117 as "(image_size >> 13) - 1"; against this
+		// fixture's 64 KiB PRG that is bank 7, so the mode-3 $E000 window's HOME instance --
+		// the base-space block, where the vector table is read from -- must be bank 7 at file
+		// offset 0xe000, not bank 0 at offset 0. The block comment is the loader's own record
+		// of which slice it placed there.
+		MemoryBlock we000 = currentProgram.getMemory().getBlock("WE000");
+		String we000Comment = we000 == null ? "<no WE000 block>" : we000.getComment();
+		criterion("M0:home", we000Comment != null && we000Comment.contains("bank_5117=7") &&
+			we000Comment.contains("offset 0xe000"),
+			"WE000 base block holds the image's last 8 KiB bank (resolved initial_state): \"" +
+				we000Comment + "\"");
+
+		// M0:property -- the loader published the resolved packed state for the analyzer,
+		// which has no image size of its own. Field order is prg_mode(2), bank_5114(7),
+		// bank_5115(7), bank_5116(7), bank_5117(7), so bank_5117 sits at bit 23:
+		// (7 << 23) | 3 = 58720259.
+		String resolved = currentProgram.getOptions(Program.PROGRAM_INFO)
+				.getString("Retro Machines.Initial State", null);
+		criterion("M0:property", "58720259".equals(resolved),
+			"loader published resolved initial state (7 << 23 | 3): " + resolved);
+
 		// M1: RESET's JSR $8000 at $E005, taken with bank_5114=1 in mode 3 (home mode,
 		// matching initial_state), retargets into the mode-3/bank-1 overlay.
 		Reference r = findOverlayRef(0xE005, "W8000_M3_B1", 0x8000);
@@ -2763,11 +2785,13 @@ public class VerifyBankTest extends GhidraScript {
 
 		// M2: the JMP $8100 at $E00D, taken right after the prg_mode 3 -> 0 switch,
 		// retargets into mode 0's 32 KiB window arrangement -- the PRG MODE CHANGE
-		// criterion. bank_5117 is untouched (still 0, its initial_state), so mode 0's
-		// window is its own home-bank instance under the new arrangement.
-		r = findOverlayRef(0xE00D, "W8000_M0_B0", 0x8100);
+		// criterion. bank_5117 is untouched by that switch, so it still holds the RESOLVED
+		// image-relative seed (7), and the overlay named must be _B7: a build that dropped
+		// the resolved seed on the way to the analyzer would land in _B0 instead, which
+		// makes this criterion the end-to-end check on grm-y0ml as well as on the mode change.
+		r = findOverlayRef(0xE00D, "W8000_M0_B7", 0x8100);
 		criterion("M2", r != null && r.getReferenceType().isCall() && r.isPrimary(),
-			"JMP $8100 (mode change 3->0) retargeted to W8000_M0_B0 overlay, primary: " +
+			"JMP $8100 (mode change 3->0) retargeted to W8000_M0_B7 overlay, primary: " +
 				describe(r));
 
 		// M3: bank-switch comments at the two latch-write sites -- each write is
@@ -2787,8 +2811,8 @@ public class VerifyBankTest extends GhidraScript {
 		// overlay targets reached above.
 		criterion("M4:W8000_M3_B1_8000", hasInstructionAt("W8000_M3_B1", 0x8000),
 			"instruction exists at W8000_M3_B1::8000");
-		criterion("M4:W8000_M0_B0_8100", hasInstructionAt("W8000_M0_B0", 0x8100),
-			"instruction exists at W8000_M0_B0::8100");
+		criterion("M4:W8000_M0_B7_8100", hasInstructionAt("W8000_M0_B7", 0x8100),
+			"instruction exists at W8000_M0_B7::8100");
 	}
 
 	// ------------------------------------------------------------------

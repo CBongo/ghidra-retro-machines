@@ -1,4 +1,4 @@
-IDENTITY prg:2104302effe378339bddc716190ed0d6690751accdc034a7d0488db2e6c69aef file:791ee9d3f713639b5828a600acb2ac8a80b0caac6bb98a819c57116e2af828aa
+IDENTITY prg:a8d8a0b87c066d5a187e86b05ce4467eab1f3c24a2babdd31f0b55326af5b038 file:83cc6868f6491f5d52c006f8e03e3edf373dc5f2bf90371aed027b2a8e17829d
 BLOCK APU_IO 4000-401f overlay=false
 BLOCK MMC5_REGS 5100-5117 overlay=false
 BLOCK PPU_REGS 2000-2007 overlay=false
@@ -77,24 +77,18 @@ BLOCK WE000_M2_B4 e000-ffff overlay=true
 BLOCK WE000_M2_B5 e000-ffff overlay=true
 BLOCK WE000_M2_B6 e000-ffff overlay=true
 BLOCK WE000_M2_B7 e000-ffff overlay=true
+BLOCK WE000_M3_B0 e000-ffff overlay=true
 BLOCK WE000_M3_B1 e000-ffff overlay=true
 BLOCK WE000_M3_B2 e000-ffff overlay=true
 BLOCK WE000_M3_B3 e000-ffff overlay=true
 BLOCK WE000_M3_B4 e000-ffff overlay=true
 BLOCK WE000_M3_B5 e000-ffff overlay=true
 BLOCK WE000_M3_B6 e000-ffff overlay=true
-BLOCK WE000_M3_B7 e000-ffff overlay=true
-COMMENT 8002 bank -> prg_mode=3,bank_5114=1,bank_5115=0,bank_5116=0,bank_5117=0? [known: bank_5114.0=1,bank_5114.1=0,bank_5114.2=0,bank_5114.3=0,bank_5114.4=0,bank_5114.5=0,bank_5114.6=0; assumed from initial: prg_mode.0,prg_mode.1,bank_5115.0,bank_5115.1,bank_5115.2,bank_5115.3,bank_5115.4,bank_5115.5,bank_5115.6,bank_5116.0,bank_5116.1,bank_5116.2,bank_5116.3,bank_5116.4,bank_5116.5,bank_5116.6,bank_5117.0,bank_5117.1,bank_5117.2,bank_5117.3,bank_5117.4,bank_5117.5,bank_5117.6] [switch-value flow]
-COMMENT 800a bank -> prg_mode=0,bank_5114=0,bank_5115=0,bank_5116=0,bank_5117=0? [known: prg_mode.0=0,prg_mode.1=0; assumed from initial: bank_5114.0,bank_5114.1,bank_5114.2,bank_5114.3,bank_5114.4,bank_5114.5,bank_5114.6,bank_5115.0,bank_5115.1,bank_5115.2,bank_5115.3,bank_5115.4,bank_5115.5,bank_5115.6,bank_5116.0,bank_5116.1,bank_5116.2,bank_5116.3,bank_5116.4,bank_5116.5,bank_5116.6,bank_5117.0,bank_5117.1,bank_5117.2,bank_5117.3,bank_5117.4,bank_5117.5,bank_5117.6] [switch-value flow]
-COMMENT e002 bank -> prg_mode=3,bank_5114=1,bank_5115=0,bank_5116=0,bank_5117=0? [known: bank_5114.0=1,bank_5114.1=0,bank_5114.2=0,bank_5114.3=0,bank_5114.4=0,bank_5114.5=0,bank_5114.6=0; assumed from initial: prg_mode.0,prg_mode.1,bank_5115.0,bank_5115.1,bank_5115.2,bank_5115.3,bank_5115.4,bank_5115.5,bank_5115.6,bank_5116.0,bank_5116.1,bank_5116.2,bank_5116.3,bank_5116.4,bank_5116.5,bank_5116.6,bank_5117.0,bank_5117.1,bank_5117.2,bank_5117.3,bank_5117.4,bank_5117.5,bank_5117.6] [switch-value flow]
-COMMENT e00a bank -> prg_mode=0,bank_5114=0,bank_5115=0,bank_5116=0,bank_5117=0? [known: prg_mode.0=0,prg_mode.1=0; assumed from initial: bank_5114.0,bank_5114.1,bank_5114.2,bank_5114.3,bank_5114.4,bank_5114.5,bank_5114.6,bank_5115.0,bank_5115.1,bank_5115.2,bank_5115.3,bank_5115.4,bank_5115.5,bank_5115.6,bank_5116.0,bank_5116.1,bank_5116.2,bank_5116.3,bank_5116.4,bank_5116.5,bank_5116.6,bank_5117.0,bank_5117.1,bank_5117.2,bank_5117.3,bank_5117.4,bank_5117.5,bank_5117.6] [switch-value flow]
-BOOKMARK Warning 8005
-BOOKMARK Warning e005
-REF 8005 -> W8000_M3_B1::8000 UNCONDITIONAL_CALL primary=true
-REF 800d -> W8000_M0_B0::8100 UNCONDITIONAL_CALL primary=true
-REF 8100 -> W8000_M0_B0::8100 UNCONDITIONAL_JUMP primary=true
+COMMENT e002 bank -> prg_mode=3,bank_5114=1,bank_5115=0,bank_5116=0,bank_5117=7? [known: bank_5114.0=1,bank_5114.1=0,bank_5114.2=0,bank_5114.3=0,bank_5114.4=0,bank_5114.5=0,bank_5114.6=0; assumed from initial: prg_mode.0,prg_mode.1,bank_5115.0,bank_5115.1,bank_5115.2,bank_5115.3,bank_5115.4,bank_5115.5,bank_5115.6,bank_5116.0,bank_5116.1,bank_5116.2,bank_5116.3,bank_5116.4,bank_5116.5,bank_5116.6,bank_5117.0,bank_5117.1,bank_5117.2,bank_5117.3,bank_5117.4,bank_5117.5,bank_5117.6] [switch-value flow]
+COMMENT e00a bank -> prg_mode=0,bank_5114=0,bank_5115=0,bank_5116=0,bank_5117=7? [known: prg_mode.0=0,prg_mode.1=0; assumed from initial: bank_5114.0,bank_5114.1,bank_5114.2,bank_5114.3,bank_5114.4,bank_5114.5,bank_5114.6,bank_5115.0,bank_5115.1,bank_5115.2,bank_5115.3,bank_5115.4,bank_5115.5,bank_5115.6,bank_5116.0,bank_5116.1,bank_5116.2,bank_5116.3,bank_5116.4,bank_5116.5,bank_5116.6,bank_5117.0,bank_5117.1,bank_5117.2,bank_5117.3,bank_5117.4,bank_5117.5,bank_5117.6] [switch-value flow]
+REF 8100 -> W8000_M0_B7::8100 UNCONDITIONAL_JUMP primary=true
 REF e005 -> W8000_M3_B1::8000 UNCONDITIONAL_CALL primary=true
-REF e00d -> W8000_M0_B0::8100 UNCONDITIONAL_CALL primary=true
+REF e00d -> W8000_M0_B7::8100 UNCONDITIONAL_CALL primary=true
 SYMBOL 2000 PPUCTRL IMPORTED primary=true
 SYMBOL 2001 PPUMASK IMPORTED primary=true
 SYMBOL 2002 PPUSTATUS IMPORTED primary=true

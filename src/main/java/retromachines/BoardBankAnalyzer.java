@@ -252,7 +252,8 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			return false;
 		}
 
-		BoardModel board = BoardModel.parse(map, log, getName(), mapPath);
+		BoardModel board = BoardModel.parse(map, log, getName(), mapPath,
+			DescriptorSupport.readResolvedInitialState(program));
 		if (board == null) {
 			return true;
 		}

@@ -352,6 +352,11 @@ MAPPER_MMC5 = 5        # MMC5 board (nesmmc5test); see machines/nes-mmc5.yaml
 MMC5_BANK_SIZE = 0x2000
 MMC5_BANKS = 8
 MMC5_PRG_SIZE = MMC5_BANK_SIZE * MMC5_BANKS
+# The bank machines/nes-mmc5.yaml's image-relative initial_state seed for bank_5117 --
+# "(image_size >> 13) - 1" -- resolves to for THIS image (bead grm-y0ml). Written as that
+# formula rather than a literal 7 so the fixture follows the descriptor if the PRG size
+# above ever changes.
+MMC5_TOP_BANK = (MMC5_PRG_SIZE >> 13) - 1
 
 MMC3_BANK_SIZE = 0x2000
 MMC3_BANKS = 8
@@ -1005,36 +1010,45 @@ def make_prg_mmc5():
 
     8 x 8 KiB PRG banks (64 KiB). Unlike every other NES board fixture in this module,
     MMC5 has NO register-less fixed PRG window in any mode -- $5117 (the register that
-    covers the very top of the map in every mode) starts this descriptor's initial_state
-    at bank 0 (a deliberate deviation from the wiki's literal 0xFF reset value; see
-    machines/nes-mmc5.yaml's POWER-ON STATE note for why), so bank 0 -- not the last
-    bank -- is where RESET/NMI/IRQ and the vector table live, exactly like every other
-    fixture's "home" bank.
+    covers the very top of the map in every mode) is a live register even in the home
+    mode. What pins the top of the map at power-on is instead an IMAGE-RELATIVE
+    initial_state seed (bead grm-y0ml): machines/nes-mmc5.yaml seeds bank_5117 with
+    "(image_size >> 13) - 1", which the LOADER resolves against this fixture's own PRG
+    size -- (0x10000 >> 13) - 1 = 7, the last 8 KiB bank. So RESET/NMI/IRQ and the vector
+    table live in bank 7, and file offset == CPU address across the whole $E000-$FFFF
+    window (bank 7 starts at file offset 0xE000).
+
+    THAT RESOLUTION IS WHAT THIS FIXTURE ASSERTS. The criteria below are reachable only
+    if the loader evaluated the expression AND the analyzer read the resolved seed back:
+    under the pre-grm-y0ml literal-0 seed the vector table would be read out of bank 0
+    and the post-mode-change retarget (M2) would land in the bank-0 instance of mode 0's
+    window rather than the bank-7 one.
 
     RESET runs from mode 3 (four 8K banks, the descriptor's home mode, matching
-    initial_state) at CPU $E000 (bank_5117=0, home). It:
+    initial_state) at CPU $E000 (bank_5117=7, home). It:
       1. Switches bank_5114 (mode 3's $8000-$9FFF register) to bank 1 and JSRs into it
          -- an ordinary within-mode bank-switch-and-call, the same shape as every other
          board's simplest fixture (proves the memory-latch mechanism at a bare fixed
          address, one of five independent instances on this board).
       2. Switches prg_mode from 3 to 0 (four 8K windows -> one 32 KiB window) -- the
          PRG MODE CHANGE the bead asked to exercise if expressible. bank_5117 is
-         untouched by this switch (still 0), so mode 0's single 32 KiB window
-         ((bank_5117 >> 2) * 0x8000 = 0) happens to overlay the SAME bank-0 bytes RESET
-         itself lives in, at a DIFFERENT CPU base ($8000 instead of $E000, since mode 0
-         has no separate $E000 window at all) -- so continuing execution needs an
-         explicit JMP to a CPU address that lands on freshly-placed code under the NEW
-         mapping (nesmodetest.nes's "hop to the fixed window" trick, adapted: here nothing
-         in mode 0 is fixed, so the JMP targets a small self-loop placed at a CPU offset
-         chosen to be clear of RESET's own bytes).
-      3. JMPs to $8100 (mode 0, home bank_5117=0 -> file offset 0x100): a self-loop that
-         exists solely so the retargeted JMP has somewhere to land -- proof the engine
-         built a mode-0 window arrangement and retargeted into it, the mode-dependent-
-         layout counterpart to nesmodetest's F2.
+         untouched by this switch (still 7), so mode 0's single 32 KiB window
+         ((bank_5117 >> 2) * 0x8000 = 0x8000) covers the image's TOP HALF at a DIFFERENT
+         CPU base ($8000 instead of $E000, since mode 0 has no separate $E000 window at
+         all) -- so continuing execution needs an explicit JMP to a CPU address that
+         lands on freshly-placed code under the NEW mapping (nesmodetest.nes's "hop to
+         the fixed window" trick, adapted: here nothing in mode 0 is fixed, so the JMP
+         targets a small self-loop placed at a CPU offset chosen to be clear of RESET's
+         own bytes).
+      3. JMPs to $8100 (mode 0, bank_5117=7 -> file offset 0x8000 + 0x100): a self-loop
+         that exists solely so the retargeted JMP has somewhere to land -- proof the
+         engine built a mode-0 window arrangement and retargeted into it, the
+         mode-dependent-layout counterpart to nesmodetest's F2. The overlay it must land
+         in is W8000_M0_B7, named for the RESOLVED bank_5117 value: a build that ignored
+         the image-relative seed would retarget to W8000_M0_B0 instead.
 
-    RESET ($E000, file offset 0 -- bank_5117=0 means file offset = CPU - $E000 here,
-    NOT CPU - $8000 as in the fixed-last-bank fixtures, since $5117 is a real register
-    seeded to 0, not a `last`-bank window):
+    RESET ($E000, file offset 0xE000 -- bank_5117 resolves to 7, so file offset == CPU
+    address across $E000-$FFFF):
       E000  A9 01        LDA #$01
       E002  8D 14 51     STA $5114       ; bank_5114 = 1 (mode 3 unchanged)
       E005  20 00 80     JSR $8000       ; -> W8000 (mode 3, bank 1) retargeted overlay
@@ -1044,7 +1058,7 @@ def make_prg_mmc5():
       E020  40           RTI             ; NMI/IRQ handler
 
     Bank 1's routine at CPU $8000 (file offset 1 * 0x2000 = 0x2000): RTS.
-    Mode-0 self-loop at CPU $8100 (file offset 0x100, inside bank 0): JMP $8100 (self).
+    Mode-0 self-loop at CPU $8100 (file offset 0x8100, inside bank 4): JMP $8100 (self).
     """
     prg = bytearray([0x00] * MMC5_PRG_SIZE)
 
@@ -1058,9 +1072,10 @@ def make_prg_mmc5():
     prg[1 * MMC5_BANK_SIZE] = 0x60  # RTS
 
     def put(cpu_addr, data):
-        # bank_5117's initial_state is 0 (this board's home bank for every mode's top
-        # window), so file offset == CPU address minus $E000 -- see module doc.
-        off = cpu_addr - 0xE000
+        # bank_5117's initial_state resolves to the image's last 8 KiB bank (7 here), so
+        # the mode-3 $E000-$FFFF window maps file 0xE000-0xFFFF: file offset == CPU
+        # address for everything this helper places. See the docstring.
+        off = cpu_addr - 0xE000 + MMC5_TOP_BANK * MMC5_BANK_SIZE
         prg[off:off + len(data)] = bytes(data)
 
     put(0xE000, [0xA9, 0x01])              # LDA #$01
@@ -1071,12 +1086,13 @@ def make_prg_mmc5():
     put(0xE00D, [0x4C, 0x00, 0x81])        # JMP $8100 (-> mode 0 window, self-loop)
     put(0xE020, [0x40])                     # RTI (NMI/IRQ handler)
 
-    # Mode 0's self-loop marker, placed directly at its file offset (bank_5117=0's 32K
-    # window in mode 0 maps file offset (bank_5117 >> 2) * 0x8000 + (CPU - 0x8000); with
-    # bank_5117=0 that is simply CPU - 0x8000, so CPU $8100 -> file offset 0x100).
-    prg[0x0100:0x0103] = bytes([0x4C, 0x00, 0x81])  # JMP $8100 (self-loop)
+    # Mode 0's self-loop marker, placed directly at its file offset: mode 0's 32K window
+    # maps file offset (bank_5117 >> 2) * 0x8000 + (CPU - 0x8000), and with the resolved
+    # bank_5117 = 7 that is 0x8000 + (CPU - 0x8000) = CPU, so CPU $8100 -> file 0x8100.
+    mode0_loop = ((MMC5_TOP_BANK >> 2) * 0x8000) + 0x0100
+    prg[mode0_loop:mode0_loop + 3] = bytes([0x4C, 0x00, 0x81])  # JMP $8100 (self-loop)
 
-    # Vector table (still bank_5117=0/mode-3 home at load time: file offset = CPU - $E000).
+    # Vector table (mode-3 home window, bank_5117=7: file offset == CPU address).
     put(0xFFFA, [0x20, 0xE0])  # NMI   -> $E020 (RTI)
     put(0xFFFC, [0x00, 0xE0])  # RESET -> $E000
     put(0xFFFE, [0x20, 0xE0])  # IRQ   -> $E020 (RTI)
@@ -3851,26 +3867,33 @@ def main():
     prgm5 = make_prg_mmc5()
     assert len(prgm5) == MMC5_PRG_SIZE
     assert prgm5[1 * MMC5_BANK_SIZE] == 0x60       # RTS: W8000 mode3/bank1 overlay::8000
-    assert prgm5[0xE000 - 0xE000] == 0xA9 and prgm5[0xE001 - 0xE000] == 0x01  # LDA #$01
-    assert prgm5[0xE002 - 0xE000] == 0x8D and \
-        (prgm5[0xE003 - 0xE000] | (prgm5[0xE004 - 0xE000] << 8)) == 0x5114   # STA $5114
-    assert prgm5[0xE005 - 0xE000] == 0x20 and \
-        (prgm5[0xE006 - 0xE000] | (prgm5[0xE007 - 0xE000] << 8)) == 0x8000   # JSR $8000
-    assert prgm5[0xE008 - 0xE000] == 0xA9 and prgm5[0xE009 - 0xE000] == 0x00  # LDA #$00
-    assert prgm5[0xE00A - 0xE000] == 0x8D and \
-        (prgm5[0xE00B - 0xE000] | (prgm5[0xE00C - 0xE000] << 8)) == 0x5100   # STA $5100
-    assert prgm5[0xE00D - 0xE000] == 0x4C and \
-        (prgm5[0xE00E - 0xE000] | (prgm5[0xE00F - 0xE000] << 8)) == 0x8100   # JMP $8100
-    assert prgm5[0xE020 - 0xE000] == 0x40          # RTI
-    assert prgm5[0x0100] == 0x4C and (prgm5[0x0101] | (prgm5[0x0102] << 8)) == 0x8100
-    # Bespoke vector check, NOT _assert_vectors: that helper assumes the handler/vectors
-    # live in the fixed LAST bank of the image (every other NES fixture's home bank is
-    # its last one). This board's home bank is bank 0 (bank_5117's initial_state is 0,
-    # not "last" -- see machines/nes-mmc5.yaml's POWER-ON STATE note), so vectors and the
-    # RTI handler live in the FIRST 8 KiB instead, at file offset CPU - $E000.
-    assert prgm5[0xFFFA - 0xE000] | (prgm5[0xFFFB - 0xE000] << 8) == 0xE020  # NMI
-    assert prgm5[0xFFFC - 0xE000] | (prgm5[0xFFFD - 0xE000] << 8) == 0xE000  # RESET
-    assert prgm5[0xFFFE - 0xE000] | (prgm5[0xFFFF - 0xE000] << 8) == 0xE020  # IRQ
+    # bank_5117's image-relative seed resolves to the last 8 KiB bank (grm-y0ml), so the
+    # mode-3 $E000-$FFFF window maps file 0xE000-0xFFFF: file offset == CPU address here.
+    m5 = lambda cpu: cpu - 0xE000 + MMC5_TOP_BANK * MMC5_BANK_SIZE
+    assert prgm5[m5(0xE000)] == 0xA9 and prgm5[m5(0xE001)] == 0x01  # LDA #$01
+    assert prgm5[m5(0xE002)] == 0x8D and \
+        (prgm5[m5(0xE003)] | (prgm5[m5(0xE004)] << 8)) == 0x5114   # STA $5114
+    assert prgm5[m5(0xE005)] == 0x20 and \
+        (prgm5[m5(0xE006)] | (prgm5[m5(0xE007)] << 8)) == 0x8000   # JSR $8000
+    assert prgm5[m5(0xE008)] == 0xA9 and prgm5[m5(0xE009)] == 0x00  # LDA #$00
+    assert prgm5[m5(0xE00A)] == 0x8D and \
+        (prgm5[m5(0xE00B)] | (prgm5[m5(0xE00C)] << 8)) == 0x5100   # STA $5100
+    assert prgm5[m5(0xE00D)] == 0x4C and \
+        (prgm5[m5(0xE00E)] | (prgm5[m5(0xE00F)] << 8)) == 0x8100   # JMP $8100
+    assert prgm5[m5(0xE020)] == 0x40          # RTI
+    # The mode-0 self-loop, at the file offset mode 0's 32 KiB window puts CPU $8100 with
+    # the resolved bank_5117 in effect ((7 >> 2) * 0x8000 + 0x100 = 0x8100).
+    mode0_loop = ((MMC5_TOP_BANK >> 2) * 0x8000) + 0x0100
+    assert prgm5[mode0_loop] == 0x4C and \
+        (prgm5[mode0_loop + 1] | (prgm5[mode0_loop + 2] << 8)) == 0x8100
+    # Bespoke vector check, NOT _assert_vectors: that helper resolves the handler through
+    # "the last 16 KiB is mapped at $C000", which is not this board's arrangement (mode 3
+    # has separate 8 KiB $C000 and $E000 windows fed by DIFFERENT registers, and only the
+    # $E000 one holds the image's top bank). It happens to compute the same offset for a
+    # handler above $E000, but agreeing by coincidence is not the same as being right.
+    assert prgm5[m5(0xFFFA)] | (prgm5[m5(0xFFFB)] << 8) == 0xE020  # NMI
+    assert prgm5[m5(0xFFFC)] | (prgm5[m5(0xFFFD)] << 8) == 0xE000  # RESET
+    assert prgm5[m5(0xFFFE)] | (prgm5[m5(0xFFFF)] << 8) == 0xE020  # IRQ
     _write_rom(outdir, "nesmmc5test.nes", prgm5, mapper=MAPPER_MMC5)
 
 

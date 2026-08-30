@@ -106,17 +106,21 @@
 #     what "the top bank" means on real hardware depends on the CARTRIDGE'S OWN SIZE:
 #     a cart with fewer than 128 x 8 KiB banks has PRG address lines that simply do not
 #     exist, so the ASIC's electrical bank 127 aliases down to whatever the real top
-#     bank is for that cart -- an address-line-truncation-to-cart-size behavior with no
-#     equivalent in this schema (no modulo-by-image-size operator; `last` exists only
-#     inside a `maps:` expression, not as an `initial_state` value). Taking 0x7F
-#     literally here would leave $E000-$FFFF -- and therefore the vector table itself --
-#     unmapped at cold boot for every PRG image smaller than 1 MiB (128 x 8 KiB banks),
-#     which is worse than a documented approximation. So this descriptor falls back to
-#     the project's 0 convention for bank_5117 too, explicitly flagged as a DEVIATION
-#     from the literal documented reset byte (unlike $5114-$5116, where 0 is simply the
-#     undocumented-gap convention) rather than a fresh unknown -- real cartridges never
-#     depend on the literal value anyway, since every commercial MMC5 game's own init
-#     code sets all four bank registers before relying on banking.
+#     bank is for that cart. Seeding the literal 0x7F would therefore be worse than
+#     useless below 1 MiB: bank 127 does not exist in the image, so no window instance
+#     is placeable at it and $E000-$FFFF -- the vector table itself -- would get no
+#     base-space block at all.
+#     So this descriptor seeds the register with what the hardware ACTUALLY presents
+#     after that truncation: `bank_5117: "(image_size >> 13) - 1"`, the last 8 KiB bank
+#     of whatever cartridge is being loaded (>> 13 = /8192, the register's own
+#     granularity; on a 1 MiB image it evaluates to 127 = 0x7F, the documented value
+#     exactly, and on a 64 KiB image to 7). This is an IMAGE-RELATIVE INITIAL STATE
+#     (bead grm-y0ml, docs/SCHEMA.md's "Initial state"): MapCompiler keeps the
+#     expression symbolic in the .map, the loader evaluates it against the real PRG size
+#     at import and publishes the resolved packed state, and the analyzer reads that.
+#     Note the unit -- `image_size` is a BYTE COUNT and this field is a BANK NUMBER, so
+#     the descriptor does the granularity shift itself; `last`, which is a byte offset,
+#     is a `maps:`-only keyword and would be four orders of magnitude wrong here.
 #
 # WRITE PROTOCOL: every register above is a single plain byte-wide write, "Write only",
 #   no latch/shift protocol -- the simplest write shape in the strategy vocabulary
@@ -292,12 +296,19 @@ banking:
     - strategy: memory-latch
       params: { start: 0x5117, end: 0x5117, mask: 0x7F, bus_conflict: false }
       sets: [bank_5117]
-  # prg_mode=3 is the wiki-documented reset value (mode 3, four 8K banks). The four bank
-  # registers are all seeded 0: $5114-$5116 because their reset content is undocumented
-  # (this project's standing convention), $5117 as a DELIBERATE DEVIATION from its
-  # documented-but-cart-size-relative 0xFF reset -- see the POWER-ON STATE fact-sheet
-  # note above for why 0x7F would strand the vector table on any image below 1 MiB.
-  initial_state: { prg_mode: 3, bank_5114: 0, bank_5115: 0, bank_5116: 0, bank_5117: 0 }
+  # prg_mode=3 is the wiki-documented reset value (mode 3, four 8K banks). $5114-$5116
+  # are seeded 0 because their reset content is undocumented (this project's standing
+  # convention for an undocumented mapper latch). bank_5117 is the exception and the
+  # only image-relative seed in any shipped descriptor: its documented 0xFF reset means
+  # "the top bank" AFTER the cartridge's missing address lines truncate it, which is
+  # exactly (image_size >> 13) - 1 in 8 KiB units -- see the POWER-ON STATE fact-sheet
+  # note above, and docs/SCHEMA.md's "Initial state" for how the expression is resolved.
+  initial_state:
+    prg_mode: 3
+    bank_5114: 0
+    bank_5115: 0
+    bank_5116: 0
+    bank_5117: "(image_size >> 13) - 1"
   # No states: table -- occupants are computed from the layouts' maps: expressions.
 
 # rom_images: omitted -- PRG comes from the .nes container payload, not a user-supplied slot.
@@ -313,10 +324,16 @@ validation:
        (3 -> 0) and a JMP retarget into the resulting 32 KiB arrangement, proving the
        four-mode layouts and the per-register `>>` granularity both work end to end.
        Power-on state for $5114-$5116 is UNDOCUMENTED by the wiki (checked the MMC5 page
-       directly) -- 0 is this project's standing convention. $5117's documented reset
-       (0xFF) is DELIBERATELY NOT used verbatim (see the fact-sheet note above); this
-       descriptor seeds it 0 instead, an explicit, argued deviation, not a fresh
-       unknown. The PRG-RAM ROM/RAM select bit ($5114-$5116 bit 7) is NOT modeled --
+       directly) -- 0 is this project's standing convention. $5117's documented 0xFF
+       reset IS modeled, as the image-relative expression `(image_size >> 13) - 1` (bead
+       grm-y0ml): the hardware's own address-line truncation makes that byte mean 'the
+       cartridge's top 8 KiB bank', which the expression reproduces on every cart size
+       (1 MiB -> 127 = 0x7F, the literal documented value; 64 KiB -> 7). This replaces
+       the earlier deliberate deviation that seeded it 0 because the schema could not
+       say this; nesmmc5test.nes asserts the resolved seed end to end (its post-mode-
+       change JMP retargets into the bank_5117=7 instance of mode 0's window, which is
+       only reachable if the resolved seed reached the analyzer). The PRG-RAM ROM/RAM
+       select bit ($5114-$5116 bit 7) is NOT modeled --
        every window is always read as its ROM interpretation (see the SCHEMA QUESTION
        note above for the full reasoning and the schema limit this exposed). CHR
        banking, ExRAM (all four modes), the vertical-split mode, the scanline IRQ, the

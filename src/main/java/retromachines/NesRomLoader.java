@@ -511,7 +511,19 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 			// the bank analyzer retargets references into.
 			List<PlacedWindow> placed = new ArrayList<>();
 			List<DescriptorSupport.StateField> fields = DescriptorSupport.parseStateFields(map);
-			Long initialState = DescriptorSupport.initialState(map);
+			// Image-relative seeds (banking.initial_state_expr, bead grm-y0ml) resolve HERE:
+			// the PRG size is a load-time fact, so the .map keeps the expression symbolic and
+			// this is the first place it can be evaluated. Published below for the analyzer,
+			// which has no image size of its own.
+			Long initialState =
+				DescriptorSupport.resolveInitialState(map, header.prgSize(), log, board.mapPath());
+			if (initialState != null &&
+				!initialState.equals(DescriptorSupport.initialState(map))) {
+				program.getOptions(Program.PROGRAM_INFO).setString(
+					DescriptorSupport.INITIAL_STATE_PROPERTY, Long.toString(initialState));
+				log.appendMsg("banking.initial_state resolved to " + initialState +
+					" against the " + header.prgSize() + "-byte PRG image");
+			}
 			DescriptorSupport.LayoutPlan plan =
 				DescriptorSupport.planWindows(map, log, board.mapPath());
 

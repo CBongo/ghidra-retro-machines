@@ -127,6 +127,26 @@ final class BoardDescriptorModel {
 		 */
 		static BoardModel parse(JsonObject map, MessageLog log, String source,
 				String mapPath) {
+			return parse(map, log, source, mapPath, null);
+		}
+
+		/**
+		 * {@link #parse(JsonObject, MessageLog, String, String)} with the loader's
+		 * <em>resolved</em> power-on state (bead {@code grm-y0ml}), which wins over the
+		 * descriptor's compiled literal when non-null.
+		 * <p>
+		 * A descriptor may seed a state field with an image-relative expression
+		 * ({@code banking.initial_state_expr}, e.g. MMC5's "the last 8 KiB bank of this
+		 * cartridge"). That cannot be packed at build time and cannot be resolved here either:
+		 * this method sees only the {@code .map}, never an image size. The loader resolves it
+		 * at import and publishes the answer in
+		 * {@link DescriptorSupport#INITIAL_STATE_PROPERTY}; {@code resolved} is that value.
+		 * Null -- the ordinary case, and the only case for every descriptor without an
+		 * expression, plus any program imported before this existed -- keeps the compiled
+		 * literal.
+		 */
+		static BoardModel parse(JsonObject map, MessageLog log, String source, String mapPath,
+				Integer resolved) {
 			JsonObject banking = map.getAsJsonObject("banking");
 			if (banking == null || !banking.has("mechanisms")) {
 				log.appendMsg(source, "banking.mechanisms missing from " + mapPath +
@@ -140,6 +160,12 @@ final class BoardDescriptorModel {
 			}
 
 			int initialState = banking.get("initial_state").getAsInt();
+			if (resolved != null && resolved != initialState) {
+				log.appendMsg(source, "using the loader's image-resolved banking.initial_state " +
+					resolved + " (the compiled literal in " + mapPath + " is " + initialState +
+					"; see banking.initial_state_expr)");
+				initialState = resolved;
+			}
 
 			// The tracked-bit mask, per-bit annotation names, and field layout come from the
 			// banking.state field tuple (LSB first; multi-bit fields expand to name.0, ...).

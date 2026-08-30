@@ -45,7 +45,7 @@ the extension zip alongside the corresponding `.gdt`.
                  "maps": { "space", "expr" }, "on_write"? } ],
   "layouts"?: [ { "when": { "<stateField>": <int>, ... },
                   "windows": [ /* same shape as windows[] */ ] } ],
-  "banking"?: { "initial_state", "context_register"?,
+  "banking"?: { "initial_state", "initial_state_expr"?, "context_register"?,
                 "state":      [ { "name", "bits" } ],
                 "mechanisms": [ { "strategy", "params": { ... }, "sets": [...] } ],
                 "states"?:    [ { "value", "<windowName>": "<occupantName>", ... } ] },
@@ -214,6 +214,18 @@ optional — a bankless board like NES NROM has none). When present:
 - `initial_state` — the packed initial bank-state value. The YAML may express it as a
   per-field map (`{ LORAM: 1, HIRAM: 1, CHAREN: 1 }`); MapCompiler packs it (first
   `state` field = bit 0, each subsequent field the bits above).
+- `initial_state_expr` *(optional)* — `fieldName -> expression` for fields whose seed is
+  **image-relative** and therefore cannot be packed at build time (bead `grm-y0ml`;
+  `nes-mmc5.map`'s `{"bank_5117": "(image_size >> 13) - 1"}` is the only shipped instance).
+  The expression grammar is the `maps:` one restricted to a single identifier,
+  `image_size` (the image's size in bytes); see docs/SCHEMA.md's "Initial state" for why
+  it is not `last`. Absent for every descriptor whose `initial_state` is literals-only,
+  which keeps those `.map` files byte-identical to the pre-`grm-y0ml` output.
+  **`initial_state` remains complete and authoritative on its own**: a field carried here
+  contributes 0 to it, so a consumer that ignores this key still gets a usable state (the
+  approximation that shipped before the key existed). The loader resolves each expression
+  against the real image, width-checks the result, and publishes the resolved packed value
+  in the `Retro Machines.Initial State` program property, which the analyzer prefers.
 - `context_register` *(optional)* — the Ghidra *language* context register name (which
   some processor modules expose for the disassembler/decompiler's own use), as opposed
   to `mechanisms` below, which is analyzer configuration. When omitted, or when the

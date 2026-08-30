@@ -73,6 +73,21 @@ public class MapCompiler {
 	private static final Set<String> EXPR_KEYWORDS =
 		Set.of("last", "second_last");
 
+	/**
+	 * The one identifier a {@code banking.initial_state} field expression may name (bead
+	 * {@code grm-y0ml}): the image size in bytes, so a seed can be written image-relative
+	 * ({@code bank_5117: "(image_size >> 13) - 1"} = "the last 8 KiB bank of this cartridge").
+	 * <p>
+	 * Deliberately disjoint from {@link #EXPR_KEYWORDS}. {@code last} is a BYTE OFFSET
+	 * ({@code imageSize - windowSize}) and a state field holds a BANK NUMBER, so accepting it
+	 * here would compile a value four orders of magnitude too large for a 7-bit field; and a
+	 * bank register can feed several windows at different granularities (MMC5's {@code $5117}
+	 * feeds four windows at three), so there is no "the window size" to divide by anyway. The
+	 * descriptor does the granularity shift itself, in the open. Conversely {@code image_size}
+	 * is not offered inside {@code maps:}, where {@code last} already covers the job.
+	 */
+	private static final Set<String> INITIAL_STATE_KEYWORDS = Set.of("image_size");
+
 	public static void main(String[] args) throws Exception {
 		if (args.length != 2) {
 			System.err.println("Usage: MapCompiler <descriptor.yaml> <output.map>");
@@ -844,13 +859,38 @@ public class MapCompiler {
 				space + "', which is not declared in 'physical:'");
 		}
 
+		Set<String> allowed = new LinkedHashSet<>(stateFields);
+		allowed.addAll(EXPR_KEYWORDS);
+		validateExprTokens(expr, allowed, context + " maps:",
+			"neither a banking.state field nor one of " + EXPR_KEYWORDS);
+
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("space", space);
+		out.put("expr", expr);
+		return out;
+	}
+
+	/**
+	 * Shared syntax + identifier check for the expression mini-language, used by both
+	 * {@code maps:} (state fields and {@link #EXPR_KEYWORDS} allowed) and
+	 * {@code banking.initial_state} ({@link #INITIAL_STATE_KEYWORDS} only, bead
+	 * {@code grm-y0ml}). One validator, so the two sites cannot drift on operator or
+	 * parenthesis handling -- only on which identifiers they admit, which is the whole
+	 * difference between them.
+	 *
+	 * @param allowed    identifiers accepted besides numeric literals
+	 * @param context    message prefix, e.g. {@code "window 'W8000' maps:"}
+	 * @param identBlame what an unaccepted identifier is not, for the error message
+	 */
+	private static void validateExprTokens(String expr, Set<String> allowed, String context,
+			String identBlame) {
 		Matcher tok = EXPR_TOKEN.matcher(expr);
 		int pos = 0;
 		int depth = 0;
 		boolean expectOperand = true;
 		while (pos < expr.length()) {
 			if (!tok.find(pos)) {
-				throw new IllegalArgumentException(context + " maps: unrecognized token at '" +
+				throw new IllegalArgumentException(context + " unrecognized token at '" +
 					expr.substring(pos).trim() + "' in expression '" + expr + "'");
 			}
 			String t = tok.group(1);
@@ -870,25 +910,20 @@ public class MapCompiler {
 			else {
 				expectSyntax(expectOperand, context, expr);
 				boolean isNumber = Character.isDigit(t.charAt(0));
-				if (!isNumber && !stateFields.contains(t) && !EXPR_KEYWORDS.contains(t)) {
-					throw new IllegalArgumentException(context + " maps: identifier '" + t +
-						"' is neither a banking.state field nor one of " + EXPR_KEYWORDS);
+				if (!isNumber && !allowed.contains(t)) {
+					throw new IllegalArgumentException(context + " identifier '" + t + "' is " +
+						identBlame);
 				}
 				expectOperand = false;
 			}
 		}
 		expectSyntax(!expectOperand && depth == 0, context, expr);
-
-		Map<String, Object> out = new LinkedHashMap<>();
-		out.put("space", space);
-		out.put("expr", expr);
-		return out;
 	}
 
 	private static void expectSyntax(boolean ok, String context, String expr) {
 		if (!ok) {
 			throw new IllegalArgumentException(
-				context + " maps: malformed expression '" + expr + "'");
+				context + " malformed expression '" + expr + "'");
 		}
 	}
 
@@ -919,6 +954,15 @@ public class MapCompiler {
 			if (bits < 1 || bits > 31) {
 				throw new IllegalArgumentException(
 					"banking.state '" + name + "' has invalid bits: " + bits);
+			}
+			if (INITIAL_STATE_KEYWORDS.contains(name) || EXPR_KEYWORDS.contains(name)) {
+				// A field so named would be indistinguishable from the keyword inside an
+				// expression -- and the runtime's DescriptorExpressions.referencedFields()
+				// filters these names out, so such a field would silently vanish from the
+				// set of fields a maps: expression is seen to depend on.
+				throw new IllegalArgumentException("banking.state field '" + name +
+					"' collides with a reserved expression keyword (" + EXPR_KEYWORDS + " / " +
+					INITIAL_STATE_KEYWORDS + ")");
 			}
 			if (fields.put(name, bits) != null) {
 				throw new IllegalArgumentException("banking.state field '" + name + "' declared twice");
@@ -1019,8 +1063,7 @@ public class MapCompiler {
 			return null;
 		}
 		Map<String, Object> out = new LinkedHashMap<>();
-		out.put("initial_state",
-			packState(banking.get("initial_state"), stateFields, "banking.initial_state"));
+		putInitialState(out, banking.get("initial_state"), stateFields);
 		if (banking.containsKey("context_register")) {
 			Object contextRegister = banking.get("context_register");
 			if (!(contextRegister instanceof String) ||
@@ -1117,6 +1160,222 @@ public class MapCompiler {
 		}
 		out.put("states", statesOut);
 		return out;
+	}
+
+	/**
+	 * Writes {@code banking.initial_state} -- and, only when the descriptor needs it,
+	 * {@code banking.initial_state_expr} (bead {@code grm-y0ml}).
+	 * <p>
+	 * <b>The representation, and why it is shaped this way.</b> A field value may be an
+	 * IMAGE-RELATIVE EXPRESSION over {@link #INITIAL_STATE_KEYWORDS} rather than a literal
+	 * ({@code bank_5117: "(image_size >> 13) - 1"}), and the image size is a LOAD-time fact
+	 * this build-time compiler does not have. So the expression stays symbolic in the
+	 * {@code .map}: {@code initial_state} keeps its exact existing meaning -- a packed int --
+	 * with each expression field contributing <b>0</b>, and a sibling
+	 * {@code initial_state_expr} object carries {@code fieldName -> expression}. The loader
+	 * evaluates it against the real image and overwrites those fields' bits
+	 * ({@code DescriptorSupport.resolveInitialState}).
+	 * <p>
+	 * Two properties fall out of that choice, both deliberate. A descriptor whose
+	 * {@code initial_state} is literals-only -- every descriptor shipped before this existed --
+	 * emits <b>exactly</b> what it emitted before, with no new key, so its {@code .map} is
+	 * byte-identical. And an old-format {@code .map}, or a new one read by a build that does
+	 * not know the new key, still parses and still yields a usable state: the literal fields
+	 * plus 0 for the expression fields, which is precisely the "seed 0" approximation MMC5
+	 * shipped as a documented deviation before this feature.
+	 * <p>
+	 * Compile time validates what it can: the expression must tokenize, must reference only
+	 * {@code image_size} (a state-field name or {@code last} is an ERROR here, not a silent
+	 * pass), must name a declared field, and must produce an in-width value for at least one
+	 * plausible image size -- see {@link #probeInitialExprRange}.
+	 */
+	@SuppressWarnings("unchecked")
+	private static void putInitialState(Map<String, Object> out, Object value,
+			LinkedHashMap<String, Integer> stateFields) {
+		String context = "banking.initial_state";
+		if (!(value instanceof Map)) {
+			// packed-int form: no per-field values at all, so no expression is possible
+			out.put("initial_state", packState(value, stateFields, context));
+			return;
+		}
+		Map<String, Object> literals = new LinkedHashMap<>();
+		Map<String, Object> exprs = new LinkedHashMap<>();
+		for (Map.Entry<String, Object> entry : ((Map<String, Object>) value).entrySet()) {
+			String field = entry.getKey();
+			Object v = entry.getValue();
+			if (isIntLiteral(v)) {
+				literals.put(field, v);
+				continue;
+			}
+			String expr = v.toString().trim();
+			validateExprTokens(expr, INITIAL_STATE_KEYWORDS, context + " '" + field + "':",
+				"not " + INITIAL_STATE_KEYWORDS + "; an initial-state expression may " +
+					"reference only image_size and integer literals (note 'last' is a BYTE " +
+					"OFFSET, not a bank number, and is a maps:-only keyword)");
+			Integer bits = stateFields.get(field);
+			if (bits != null) { // unknown field names are packState's error to report, below
+				probeInitialExprRange(field, expr, bits);
+			}
+			exprs.put(field, expr);
+			// The literal stand-in every consumer that does not know initial_state_expr sees.
+			literals.put(field, 0);
+		}
+		// packState still enforces "assigns every declared field" and "no unknown field"
+		// across both kinds, since literals[] carries one entry per authored key.
+		out.put("initial_state", packState(literals, stateFields, context));
+		if (!exprs.isEmpty()) {
+			out.put("initial_state_expr", exprs);
+		}
+	}
+
+	/** True when {@code v} is a plain integer value (a Number, or a decimal/0x string). */
+	private static boolean isIntLiteral(Object v) {
+		if (v instanceof Number) {
+			return true;
+		}
+		try {
+			toInt(v);
+			return true;
+		}
+		catch (NumberFormatException e) {
+			return false;
+		}
+	}
+
+	/**
+	 * Rejects an initial-state expression that cannot produce a usable value for ANY plausible
+	 * image size -- the strongest range check available without an image, which is a load-time
+	 * fact (the loader re-checks the resolved value against the field width, and that check is
+	 * the authoritative one). Catches the mistake this feature invites: writing the byte offset
+	 * (e.g. {@code image_size - 0x2000}) where a bank number belongs, which overflows a 7-bit
+	 * field at every cartridge size.
+	 * <p>
+	 * The probe sweeps powers of two from 16 KiB (the smallest NES PRG image, and a
+	 * deliberately conservative floor -- a smaller one would let {@code image_size - 0x2000}
+	 * squeak past by evaluating to 0 at exactly 8 KiB) to 16 MiB, and passes as soon as ONE
+	 * size yields an in-width value. It cannot be stricter than that without knowing the
+	 * image: an expression that is right for a 512 KiB cart and overflows at 16 MiB is not a
+	 * descriptor bug, and that case is the loader's to report against the real image.
+	 */
+	private static void probeInitialExprRange(String field, String expr, int bits) {
+		long max = (1L << bits) - 1;
+		for (int log2 = 14; log2 <= 24; log2++) {
+			long v = evalInitialExpr(expr, 1L << log2);
+			if (v >= 0 && v <= max) {
+				return;
+			}
+		}
+		throw new IllegalArgumentException("banking.initial_state '" + field + ": " + expr +
+			"' cannot fit the field's " + bits + " bits at any image size from 16 KiB to 16 MiB" +
+			" (at 16 KiB it is " + evalInitialExpr(expr, 1L << 14) + ", at 1 MiB " +
+			evalInitialExpr(expr, 1L << 20) + ", and the field holds 0.." + max +
+			"); note a bank NUMBER is wanted here, not a byte offset");
+	}
+
+	/**
+	 * Evaluates an initial-state expression -- {@code image_size}, integer literals,
+	 * {@code + - * >>}, parentheses -- for {@link #probeInitialExprRange}.
+	 * <p>
+	 * This is a second implementation of the grammar {@code DescriptorExpressions} evaluates at
+	 * runtime, because this compiler is a separate, Ghidra-free source set that cannot see the
+	 * extension's classes (see this class's javadoc). The duplication is kept honest by
+	 * {@code MapCompilerTest}, whose test source set has BOTH on its classpath and asserts the
+	 * two agree over a battery of expressions -- rather than by a comment asking the next
+	 * person to remember.
+	 */
+	public static long evalInitialExpr(String expr, long imageSize) {
+		int[] pos = { 0 };
+		long v = evalSum(expr, pos, imageSize);
+		skipSpace(expr, pos);
+		if (pos[0] != expr.length()) {
+			throw new IllegalArgumentException(
+				"trailing garbage in expression '" + expr + "' at offset " + pos[0]);
+		}
+		return v;
+	}
+
+	private static long evalSum(String expr, int[] pos, long imageSize) {
+		long v = evalProduct(expr, pos, imageSize);
+		while (true) {
+			skipSpace(expr, pos);
+			if (eat(expr, pos, "+")) {
+				v += evalProduct(expr, pos, imageSize);
+			}
+			else if (eat(expr, pos, "-")) {
+				v -= evalProduct(expr, pos, imageSize);
+			}
+			else {
+				return v;
+			}
+		}
+	}
+
+	/** {@code *} and {@code >>} chain left-to-right at one precedence -- see
+	 *  {@code DescriptorExpressions.evalConstantExpr}'s javadoc for why. */
+	private static long evalProduct(String expr, int[] pos, long imageSize) {
+		long v = evalFactor(expr, pos, imageSize);
+		while (true) {
+			skipSpace(expr, pos);
+			if (eat(expr, pos, "*")) {
+				v *= evalFactor(expr, pos, imageSize);
+			}
+			else if (eat(expr, pos, ">>")) {
+				v >>>= evalFactor(expr, pos, imageSize);
+			}
+			else {
+				return v;
+			}
+		}
+	}
+
+	private static long evalFactor(String expr, int[] pos, long imageSize) {
+		skipSpace(expr, pos);
+		if (eat(expr, pos, "(")) {
+			long v = evalSum(expr, pos, imageSize);
+			skipSpace(expr, pos);
+			if (!eat(expr, pos, ")")) {
+				throw new IllegalArgumentException("unbalanced parentheses in '" + expr + "'");
+			}
+			return v;
+		}
+		int start = pos[0];
+		if (start < expr.length() && Character.isDigit(expr.charAt(start))) {
+			int radix = 10;
+			if (expr.regionMatches(true, start, "0x", 0, 2)) {
+				radix = 16;
+				pos[0] += 2;
+			}
+			int digits = pos[0];
+			while (pos[0] < expr.length() &&
+				Character.digit(expr.charAt(pos[0]), radix) >= 0) {
+				pos[0]++;
+			}
+			return Long.parseLong(expr.substring(digits, pos[0]), radix);
+		}
+		while (pos[0] < expr.length() && (Character.isLetterOrDigit(expr.charAt(pos[0])) ||
+			expr.charAt(pos[0]) == '_')) {
+			pos[0]++;
+		}
+		String ident = expr.substring(start, pos[0]);
+		if (!INITIAL_STATE_KEYWORDS.contains(ident)) {
+			throw new IllegalArgumentException("expression '" + expr + "' references '" + ident +
+				"'; only " + INITIAL_STATE_KEYWORDS + " and integer literals are allowed");
+		}
+		return imageSize;
+	}
+
+	private static void skipSpace(String expr, int[] pos) {
+		while (pos[0] < expr.length() && Character.isWhitespace(expr.charAt(pos[0]))) {
+			pos[0]++;
+		}
+	}
+
+	private static boolean eat(String expr, int[] pos, String token) {
+		if (expr.startsWith(token, pos[0])) {
+			pos[0] += token.length();
+			return true;
+		}
+		return false;
 	}
 
 	/**

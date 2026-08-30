@@ -39,7 +39,11 @@ final class DescriptorExpressions {
 	 * Evaluates a computed-window {@code maps:} expression whose value does not depend
 	 * on bank state — integer literals (decimal or 0x hex), {@code last} /
 	 * {@code second_last} (byte offsets of the last / second-to-last window-sized bank
-	 * in the image), {@code + - * >>} with normal precedence, and parentheses. This
+	 * in the image), {@link #IMAGE_SIZE} (the image size in bytes; bound here for one
+	 * evaluator, but only the MapCompiler-validated {@code initial_state} form actually
+	 * ships it — {@code maps:} expressions have {@code last} for this job and the compiler
+	 * does not accept the identifier there), {@code + - * >>} with normal precedence, and
+	 * parentheses. This
 	 * covers every fixed window (NROM's whole map, the fixed banks of UxROM/MMC3).
 	 * State-field identifiers throw {@link IllegalArgumentException} — resolving those
 	 * is the bank engine's job (M2+), not the loader's.
@@ -82,20 +86,73 @@ final class DescriptorExpressions {
 	}
 
 	/**
+	 * The identifier bound to the image size in bytes (bead {@code grm-y0ml}). It exists so a
+	 * {@code banking.initial_state} field can name an <em>image-relative bank number</em> --
+	 * MMC5's {@code bank_5117: "(image_size >> 13) - 1"}, "the last 8 KiB bank of whatever
+	 * cartridge this is".
+	 * <p>
+	 * <b>Why not {@code last}.</b> {@code last} is a BYTE OFFSET ({@code imageSize -
+	 * windowSize}), which is the right unit inside a {@code maps:} expression and four orders
+	 * of magnitude wrong for a bank-number field: on a 128 KiB image {@code last} is 122880,
+	 * and {@code bank_5117} is 7 bits wide. There is also no single "the window size" to
+	 * divide by -- {@code bank_5117} feeds four windows at three granularities across MMC5's
+	 * four PRG modes -- so a {@code last}-shaped keyword could not be given a meaning here even
+	 * if the unit were fixed. {@code image_size} is a raw byte count and the descriptor does
+	 * the (board-specific, therefore explicit) granularity shift itself.
+	 */
+	static final String IMAGE_SIZE = "image_size";
+
+	/**
+	 * Evaluates a {@code banking.initial_state} field expression -- the {@link #IMAGE_SIZE}
+	 * identifier, integer literals, and the same {@code + - * >>}/parenthesis grammar as
+	 * {@link #evalConstantExpr}. {@code last}/{@code second_last} and state-field names are
+	 * rejected: a reset-state seed is resolved before any window is placed and before any
+	 * state exists, and {@code last}'s byte-offset unit is wrong here besides (see
+	 * {@link #IMAGE_SIZE}). The MapCompiler rejects both at build time too; this is the
+	 * load-time counterpart, so a hand-edited {@code .map} cannot smuggle one through.
+	 *
+	 * @param expr      the expression text from the map's {@code banking.initial_state_expr}
+	 * @param imageSize size in bytes of the image the seed is relative to
+	 * @return the field's resolved value (range/width checking is the caller's job)
+	 */
+	static long evalInitialStateExpr(String expr, long imageSize) {
+		for (String ident : identifiers(expr)) {
+			if (!ident.equals(IMAGE_SIZE)) {
+				throw new IllegalArgumentException("initial-state expression '" + expr +
+					"' references '" + ident + "'; only '" + IMAGE_SIZE +
+					"' and integer literals are allowed there");
+			}
+		}
+		// windowSize is unreachable: 'last'/'second_last' are the only things that read it,
+		// and the loop above has already refused them.
+		return evalExpr(expr, imageSize, 0, Map.of());
+	}
+
+	/**
 	 * The state-field identifiers a {@code maps:} expression references (everything that
-	 * is not a number or the {@code last}/{@code second_last} keywords). The MapCompiler
-	 * already validated each against the descriptor's {@code banking.state} tuple.
+	 * is not a number, the {@code last}/{@code second_last} keywords, or {@link #IMAGE_SIZE}).
+	 * The MapCompiler already validated each against the descriptor's {@code banking.state}
+	 * tuple.
 	 */
 	static Set<String> referencedFields(String expr) {
 		Set<String> fields = new LinkedHashSet<>();
-		Matcher m = IDENT.matcher(expr);
-		while (m.find()) {
-			String ident = m.group();
-			if (!ident.equals("last") && !ident.equals("second_last")) {
+		for (String ident : identifiers(expr)) {
+			if (!ident.equals("last") && !ident.equals("second_last") &&
+				!ident.equals(IMAGE_SIZE)) {
 				fields.add(ident);
 			}
 		}
 		return fields;
+	}
+
+	/** Every identifier token in {@code expr}, keywords included, in source order. */
+	private static Set<String> identifiers(String expr) {
+		Set<String> idents = new LinkedHashSet<>();
+		Matcher m = IDENT.matcher(expr);
+		while (m.find()) {
+			idents.add(m.group());
+		}
+		return idents;
 	}
 
 	// lookbehind keeps the 'x4000' inside a hex literal from matching as an identifier
@@ -177,6 +234,8 @@ final class DescriptorExpressions {
 					return imageSize - windowSize;
 				case "second_last":
 					return imageSize - 2 * windowSize;
+				case IMAGE_SIZE:
+					return imageSize;
 				default:
 					Long bound = env.get(ident);
 					if (bound != null) {

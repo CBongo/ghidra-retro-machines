@@ -350,22 +350,57 @@ Initial state comes from `banking.initial_state` (per-field map or packed intege
 overridable per-format (e.g. a future `.crt` format entry derives EXROM/GAME from
 header bytes 0x18/0x19).
 
-`initial_state` field values are **literal integers only** (decimal or `0x` hex) — no
-expressions. `MapCompiler.packState` routes every value through `toInt`
-(`MapCompiler.java:1412`), which accepts a `Number` or a decimal/`0x` string and nothing
-else. The restriction is narrower than it looks, and the boundary is the point: the
-expression evaluator (`DescriptorExpressions`) *does* understand `last`/`second_last` for a
-window's `maps:` expression (e.g. `maps: PRG[last]`, `nes-mmc1.yaml`), so a window can pin
-itself to the top of the image regardless of PRG size — but that same `last` cannot appear
-in `initial_state`, only inside `maps:`. A board whose *reset* state needs an
-image-relative bank, rather than a mode selection whose `maps:` expression resolves the
-bank later, has no way to say so. NES MMC5 is the first board that wanted this: no PRG
-window is register-less in any of its four modes, so nothing can pin the top bank via
-`maps:`, and the shipped descriptor uses a documented deviation (seeding 0 instead of the
-wiki's cart-size-relative reset value) rather than expressing the real one. See `grm-y0ml`;
-fixing it is not a one-liner because `packState` runs at compile time in `MapCompiler`
-while image size is a load-time fact, so the value would have to stay symbolic in the
-`.map` and resolve in the loader.
+An `initial_state` field value is normally a **literal integer** (decimal or `0x` hex).
+It may instead be an **image-relative expression** (bead `grm-y0ml`) — a quoted string
+over the same `+ - * >>`/parenthesis grammar as `maps:`, with exactly one identifier
+available:
+
+```yaml
+banking:
+  initial_state:
+    prg_mode: 3
+    bank_5117: "(image_size >> 13) - 1"   # the last 8 KiB bank of THIS cartridge
+```
+
+`image_size` is the image's size **in bytes**. That is the whole vocabulary: a state-field
+name or `last` in `initial_state` is a compile error, not a silent pass.
+
+**Why `image_size` and not `last`.** The units differ. `last` is a *byte offset*
+(`imageSize - windowSize`), which is right inside a window's `maps:` expression and four
+orders of magnitude wrong for a bank-number field — on a 128 KiB image `last` is 122880,
+and MMC5's `bank_5117` is 7 bits wide. There is also no single "the window size" to divide
+by: `bank_5117` feeds four windows at three granularities across MMC5's four PRG modes, so
+inferring one from the referencing window is ambiguous by construction for the very board
+that needed this. `image_size` is a raw byte count and the descriptor does its own
+granularity shift, in the open.
+
+**Where it resolves: loader → PROGRAM_INFO → analyzer.** The image size is a *load-time*
+fact, so `MapCompiler` keeps the expression symbolic. In the `.map`, `initial_state` stays
+exactly what it always was — a packed integer, with each expression field contributing 0 —
+and a sibling `initial_state_expr` object carries `fieldName → expression`
+(docs/MAP_FORMAT.md). A descriptor whose `initial_state` is literals-only emits no such
+key and compiles byte-identically to before. At import the loader evaluates each
+expression against the real image, range-checks the result against the field's declared
+width (refusing that one field with a logged message if it does not fit, per
+[Loader validation](../CLAUDE.md)), places windows using the resolved seed, and publishes
+the resolved packed state in the `Retro Machines.Initial State` program property.
+`BoardModel.parse` — which has no image size of its own — prefers that property and falls
+back to the `.map` literal when it is absent, so a program imported by an older build
+still analyzes, at the "expression field = 0" approximation that used to be all this
+schema could say.
+
+Compile time still validates what it can without an image: the expression must parse, must
+name only `image_size`, must name a declared state field, and must fit the field's width
+for at least one image size between 16 KiB and 16 MiB (which catches writing a byte offset
+where a bank number belongs).
+
+NES MMC5 is the board this exists for, and the only shipped user: it has no register-less
+PRG window in any of its four modes, so nothing can pin the top bank via `maps: PRG[last]`
+the way `nes-mmc1.yaml` does, and `$5117`'s documented `0xFF` reset value means "the top
+bank" only *after* a small cartridge's missing address lines truncate it. `bank_5117:
+"(image_size >> 13) - 1"` reproduces that on every cart size (1 MiB → 127 = `0x7F`, the
+literal documented value). It replaces the earlier deliberate deviation that seeded 0
+because the schema could not express this.
 
 ## Block permissions: kind defaults + sparse overrides
 

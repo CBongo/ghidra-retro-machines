@@ -156,6 +156,75 @@ public class DescriptorExpressionsTest {
 			DescriptorExpressions.referencedFields("bank + bank * 2"));
 	}
 
+	@Test
+	public void referencedFieldsExcludesImageSizeKeyword() {
+		// bead grm-y0ml: image_size is bound by the evaluator, so treating it as a state-field
+		// name would misreport a window as depending on bank state that does not exist.
+		assertEquals(Set.of(),
+			DescriptorExpressions.referencedFields("(image_size >> 13) - 1"));
+		assertEquals(Set.of("prg_bank"),
+			DescriptorExpressions.referencedFields("prg_bank + image_size"));
+	}
+
+	// --- image_size / initial-state expressions (bead grm-y0ml) ---
+
+	@Test
+	public void imageSizeEvaluatesToTheImageSize() {
+		assertEquals(IMAGE_SIZE,
+			DescriptorExpressions.evalConstantExpr("image_size", IMAGE_SIZE, WINDOW_SIZE));
+		assertEquals(IMAGE_SIZE, DescriptorExpressions.evalInitialStateExpr("image_size",
+			IMAGE_SIZE));
+	}
+
+	@Test
+	public void mmc5TopBankSeedResolvesPerImageSize() {
+		// machines/nes-mmc5.yaml's bank_5117 seed: the last 8 KiB bank of the image.
+		String expr = "(image_size >> 13) - 1";
+		assertEquals(7, DescriptorExpressions.evalInitialStateExpr(expr, 0x10000)); // 64 KiB
+		assertEquals(15, DescriptorExpressions.evalInitialStateExpr(expr, 0x20000)); // 128 KiB
+		// 1 MiB is where the wiki's literal $5117 reset value (0xFF -> bank 0x7F) is exact.
+		assertEquals(0x7F, DescriptorExpressions.evalInitialStateExpr(expr, 0x100000));
+	}
+
+	@Test
+	public void initialStateExprRejectsLastAndSecondLast() {
+		// The units differ: 'last' is a BYTE OFFSET, an initial_state field is a BANK NUMBER.
+		for (String expr : new String[] { "last", "second_last", "last - 0x2000" }) {
+			IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+				() -> DescriptorExpressions.evalInitialStateExpr(expr, IMAGE_SIZE));
+			assertTrue(e.getMessage().contains("image_size"));
+		}
+	}
+
+	/**
+	 * {@code MapCompiler} carries its OWN implementation of this grammar for its compile-time
+	 * range probe, because the build-time compiler is a separate, Ghidra-free source set that
+	 * cannot see this class (see {@code MapCompiler}'s javadoc). This test is what keeps that
+	 * duplicate honest -- the test source set has both on its classpath, so the two are
+	 * compared directly rather than by a comment asking the next person to remember.
+	 */
+	@Test
+	public void mapCompilerEvaluatorAgreesWithThisOne() {
+		String[] exprs = { "image_size", "(image_size >> 13) - 1", "image_size >> 14", "0x10",
+			"image_size * 2 + 1", "(image_size - 0x4000) >> 13", "2 + 3 * 4",
+			"image_size >> 2 >> 2", "image_size - 0x2000" };
+		for (long imageSize : new long[] { 0x4000, 0x10000, 0x20000, 0x100000 }) {
+			for (String expr : exprs) {
+				assertEquals("MapCompiler and DescriptorExpressions disagree on '" + expr +
+					"' at image size " + imageSize,
+					DescriptorExpressions.evalInitialStateExpr(expr, imageSize),
+					gdtbuilder.MapCompiler.evalInitialExpr(expr, imageSize));
+			}
+		}
+	}
+
+	@Test
+	public void initialStateExprRejectsStateFieldName() {
+		IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+			() -> DescriptorExpressions.evalInitialStateExpr("prg_bank + 1", IMAGE_SIZE));
+		assertTrue(e.getMessage().contains("prg_bank"));
+	}
+
 	// --- malformed input / error paths ---
 
 	@Test

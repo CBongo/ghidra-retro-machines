@@ -96,6 +96,26 @@ final class DescriptorSupport {
 	static final String PLACEMENT_OVERRIDE_PROPERTY = "Retro Machines.Placement Override";
 
 	/**
+	 * Program-info property where a loader records the <em>resolved</em> packed power-on bank
+	 * state, as a decimal string (bead {@code grm-y0ml}). Written only when the descriptor's
+	 * {@code banking.initial_state} contains at least one image-relative expression
+	 * ({@code banking.initial_state_expr} in the {@code .map}), because only then is the
+	 * literal in the {@code .map} an incomplete answer.
+	 * <p>
+	 * <b>Why a property.</b> An image-relative seed ({@code bank_5117: "(image_size >> 13) -
+	 * 1"}) cannot be packed at build time -- the image size is a load-time fact -- and the
+	 * analyzer side ({@code BoardModel.parse}) has no image size at all. The loader knows it,
+	 * so the loader resolves it once and publishes the answer here, exactly as it publishes
+	 * {@link #PLACEMENT_OVERRIDE_PROPERTY} and {@link #ASYNC_ENTRY_POINTS_PROPERTY}.
+	 * <p>
+	 * The read side degrades: a program imported before this property existed (or by a build
+	 * without it) simply has no key, and the analyzer falls back to the {@code .map}'s literal
+	 * {@code initial_state} -- which is the packed value of the literal fields with every
+	 * expression field contributing 0, i.e. bit-for-bit the behaviour that shipped before.
+	 */
+	static final String INITIAL_STATE_PROPERTY = "Retro Machines.Initial State";
+
+	/**
 	 * Program-info property carrying this program's per-game identity, computed at import from
 	 * the image bytes: {@code prg:<64 hex> file:<64 hex>} -- SHA-256 over the cartridge's
 	 * program-ROM content only (the primary key; header and trainer excluded, so header rot
@@ -483,6 +503,81 @@ final class DescriptorSupport {
 			return null;
 		}
 		return banking.get("initial_state").getAsLong();
+	}
+
+	/**
+	 * {@code banking.initial_state} with every image-relative field expression
+	 * ({@code banking.initial_state_expr}, bead {@code grm-y0ml}) resolved against
+	 * {@code imageSize} and packed into its field's bits. Null exactly when
+	 * {@link #initialState} is null.
+	 * <p>
+	 * Per CLAUDE.md's "loader validation: {@code load()} is authoritative", every failure mode
+	 * here logs what went wrong and <b>refuses that one field</b> -- leaving it at the
+	 * {@code .map}'s literal value -- rather than throwing or guessing: an unparseable
+	 * expression, a name that is not a declared {@code banking.state} field, and a resolved
+	 * value that does not fit the field's declared width (the range/width check
+	 * {@code MapCompiler.packState} performs on literals, applied here to the resolved value,
+	 * since it is the first moment the value exists).
+	 */
+	static Long resolveInitialState(JsonObject map, long imageSize, MessageLog log,
+			String mapPath) {
+		Long literal = initialState(map);
+		JsonObject banking = map.getAsJsonObject("banking");
+		if (literal == null || banking == null || !banking.has("initial_state_expr")) {
+			return literal;
+		}
+		List<StateField> fields = parseStateFields(map);
+		long packed = literal;
+		for (Map.Entry<String, JsonElement> entry : banking.getAsJsonObject("initial_state_expr")
+				.entrySet()) {
+			String fieldName = entry.getKey();
+			String expr = entry.getValue().getAsString();
+			StateField field = findField(fields, fieldName);
+			if (field == null) {
+				log.appendMsg(mapPath + ": banking.initial_state_expr names '" + fieldName +
+					"', which is not a banking.state field; ignoring it");
+				continue;
+			}
+			long value;
+			try {
+				value = DescriptorExpressions.evalInitialStateExpr(expr, imageSize);
+			}
+			catch (IllegalArgumentException e) {
+				log.appendMsg(mapPath + ": banking.initial_state_expr '" + fieldName + ": " +
+					expr + "' could not be evaluated (" + e.getMessage() +
+					"); leaving the field at its compiled value");
+				continue;
+			}
+			if (value < 0 || value > field.mask()) {
+				log.appendMsg(mapPath + ": banking.initial_state_expr '" + fieldName + ": " +
+					expr + "' resolves to " + value + " against a " + imageSize +
+					"-byte image, which does not fit the field's " + field.width() +
+					" bits; leaving the field at its compiled value");
+				continue;
+			}
+			packed = (packed & ~(field.mask() << field.lsb())) | (value << field.lsb());
+		}
+		return packed;
+	}
+
+	/**
+	 * The resolved packed power-on state a loader published in
+	 * {@link #INITIAL_STATE_PROPERTY}, or null when the property is absent, blank, or not a
+	 * number (a hand-edited value is ignored, not raised -- the caller's fallback is the
+	 * descriptor's own literal, which is always available).
+	 */
+	static Integer readResolvedInitialState(Program program) {
+		String value = program.getOptions(Program.PROGRAM_INFO)
+				.getString(INITIAL_STATE_PROPERTY, null);
+		if (value == null || value.isBlank()) {
+			return null;
+		}
+		try {
+			return Integer.valueOf(value.trim());
+		}
+		catch (NumberFormatException e) {
+			return null;
+		}
 	}
 
 	/** Finds a field by name in a {@link #parseStateFields} result, or null. */
