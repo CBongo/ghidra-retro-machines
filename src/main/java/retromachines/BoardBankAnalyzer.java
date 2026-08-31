@@ -150,6 +150,13 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * Keyed weakly by {@link Program} identity so closed programs drop out; synchronized
 	 * because distinct programs may be analyzed on distinct threads.
 	 */
+	/**
+	 * How many retracted addresses the sweep names in its log line before summarising the rest
+	 * (bead grm-3mg0). Enough to identify the movement on any realistic program -- the whole
+	 * 33-row real-ROM corpus produced ONE retraction in total -- without risking a wall of text.
+	 */
+	private static final int RETRACTION_LOG_LIMIT = 10;
+
 	private static final Map<Program, RunStamp> LAST_COMPLETED =
 		Collections.synchronizedMap(new WeakHashMap<>());
 
@@ -345,6 +352,12 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		BankAnnotationAdapter.nameBankMirrors(program, listing, mirrors, baseSpace);
 
 		// --- Phase 2: annotate bank switches + retarget references ---
+		// The provenance record (bead grm-3mg0) spans the whole phase: every bank comment this
+		// round writes is recorded in it, and the sweep after the loop retracts the ones an
+		// EARLIER round wrote at sites this round no longer annotates. Null when the property
+		// map is unavailable, which degrades to the old append-only behaviour -- see
+		// BankCommentProvenance.open.
+		BankCommentProvenance provenance = BankCommentProvenance.open(program);
 		ReferenceManager refMgr = program.getReferenceManager();
 		int refsAdded = 0;
 		int warnings = 0;
@@ -368,7 +381,8 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 					"Bank state becomes unknown here: mechanism write with a genuinely " +
 						"undeterminable value (value recovery could not pin down even one " +
 						"tracked bank bit -- e.g. a load of an unrelated address followed " +
-						"directly by the store, with no AND/ORA immediate to constrain it)");
+						"directly by the store, with no AND/ORA immediate to constrain it)",
+					provenance);
 				warnings += w;
 				if (w > 0) {
 					alreadyWarned.add(addr);
@@ -387,7 +401,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 					board, bankUniverse, callSwitch.helperName(),
 					"Bank state becomes unknown here: call to bank-switch helper " +
 						callSwitch.helperName() + " whose bank argument could not be " +
-						"recovered at this call site");
+						"recovered at this call site", provenance);
 				warnings += w;
 				if (w > 0) {
 					alreadyWarned.add(addr);
@@ -395,7 +409,31 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			}
 
 			refsAdded += BankAnnotationAdapter.retargetReferences(this, program, refMgr, baseSpace,
-				instr, board, bankUniverse, inState, placementOverride, monitor, log);
+				instr, board, bankUniverse, inState, placementOverride, monitor, log, provenance);
+		}
+
+		// Retract bank comments an EARLIER round wrote at sites this round did not annotate
+		// (bead grm-3mg0). Must run AFTER the whole loop: both writers above and
+		// retargetReferences' placement-provenance note can establish a site, so retracting
+		// mid-loop would cut a comment a later iteration is about to re-record. Write-free on a
+		// settled program, which the redundant-re-run gate above depends on.
+		if (provenance != null) {
+			List<Address> retracted = provenance.sweep(listing);
+			if (!retracted.isEmpty()) {
+				// Name the ADDRESSES, not just the count. A retraction is invisible in the
+				// golden dumps whenever the site sorts past RealRomDump's SAMPLE cap (bead
+				// grm-3pnz) -- smb3's single retraction did exactly that on the run this was
+				// added for, leaving `count bankComments 181 -> 180` and no way to tell which
+				// site moved. Bounded so a pathological program cannot flood the log.
+				String where = retracted.stream()
+						.limit(RETRACTION_LOG_LIMIT)
+						.map(Object::toString)
+						.collect(Collectors.joining(", "));
+				String more = retracted.size() > RETRACTION_LOG_LIMIT
+						? ", ... (" + (retracted.size() - RETRACTION_LOG_LIMIT) + " more)" : "";
+				AnalyzerLog.info(this, tag + ": retracted " + retracted.size() +
+					" stale bank comment(s) from an earlier analysis round at " + where + more);
+			}
 		}
 
 		// --- Phase 3: function-level bank-state summaries + call-site requirement

@@ -117,7 +117,8 @@ final class BankAnnotationAdapter {
 	 */
 	static int annotateOrWarn(BoardBankAnalyzer analyzer, Program program, Listing listing,
 			Address addr, BankState state, BoardModel board,
-			Map<String, Set<Integer>> bankUniverse, String viaHelper, String warning) {
+			Map<String, Set<Integer>> bankUniverse, String viaHelper, String warning,
+			BankCommentProvenance provenance) {
 		if (state.knownMask() == 0) {
 			program.getBookmarkManager()
 					.setBookmark(addr, BookmarkType.WARNING, analyzer.getBookmarkCategory(), warning);
@@ -129,7 +130,7 @@ final class BankAnnotationAdapter {
 				analyzer.getBookmarkCategory(), impossible.message());
 			return 1;
 		}
-		annotateBankSwitch(listing, addr, state, board, bankUniverse, viaHelper);
+		annotateBankSwitch(listing, addr, state, board, bankUniverse, viaHelper, provenance);
 		return 0;
 	}
 
@@ -779,7 +780,8 @@ final class BankAnnotationAdapter {
 	 * name.
 	 */
 	private static void annotateBankSwitch(Listing listing, Address addr, BankState newState,
-			BoardModel board, Map<String, Set<Integer>> bankUniverse, String viaHelper) {
+			BoardModel board, Map<String, Set<Integer>> bankUniverse, String viaHelper,
+			BankCommentProvenance provenance) {
 		int mask = board.mask();
 		int effective = newState.effective(board.initialState(), mask);
 		String desc = describeState(board, bankUniverse, effective);
@@ -843,8 +845,35 @@ final class BankAnnotationAdapter {
 			bankComment += " [switch-value flow]";
 		}
 
-		AnnotationGuard.addComment(listing, addr, CommentType.EOL, bankComment, "bank ->");
+		writeBankComment(listing, addr, bankComment, provenance);
 	}
+
+	/**
+	 * Routes a {@code bank ->} EOL comment through {@link BankCommentProvenance} when this
+	 * program has one, so a later round can retract or refresh it (bead grm-3mg0), and falls
+	 * back to the append-only {@link AnnotationGuard#addComment} when it does not.
+	 * <p>
+	 * The fallback is not dead code: {@link BankCommentProvenance#open} returns null if the
+	 * property-map name is already taken by a map of another type. Losing retraction is a much
+	 * smaller harm than refusing to annotate, so that degrades to the pre-grm-3mg0 behaviour
+	 * rather than throwing.
+	 */
+	private static void writeBankComment(Listing listing, Address addr, String comment,
+			BankCommentProvenance provenance) {
+		if (provenance == null) {
+			AnnotationGuard.addComment(listing, addr, CommentType.EOL, comment, BANK_MARKER);
+			return;
+		}
+		provenance.apply(listing, addr, comment, BANK_MARKER);
+	}
+
+	/**
+	 * The idempotence key shared by {@link #annotateBankSwitch} and
+	 * {@link #annotatePlacementProvenance}. Shared deliberately: a placement-provenance note
+	 * DEFERS to an existing bank-switch annotation rather than stacking beside it, and that
+	 * deferral is expressed by both writers using one marker.
+	 */
+	private static final String BANK_MARKER = "bank ->";
 
 	/**
 	 * Records that the reference at {@code addr} was placed into bank {@code bank} because the
@@ -853,9 +882,10 @@ final class BankAnnotationAdapter {
 	 * vocabulary so the provenance shows in the listing and the banktest dump, and defers to an
 	 * existing bank-switch annotation rather than clobbering it.
 	 */
-	private static void annotatePlacementProvenance(Listing listing, Address addr, int bank) {
+	private static void annotatePlacementProvenance(Listing listing, Address addr, int bank,
+			BankCommentProvenance provenance) {
 		String comment = "bank -> " + bank + " [user override]";
-		AnnotationGuard.addComment(listing, addr, CommentType.EOL, comment, "bank ->");
+		writeBankComment(listing, addr, comment, provenance);
 	}
 
 	/**
@@ -1204,7 +1234,8 @@ final class BankAnnotationAdapter {
 	static int retargetReferences(BoardBankAnalyzer analyzer, Program program,
 			ReferenceManager refMgr, AddressSpace baseSpace, Instruction instr, BoardModel board,
 			Map<String, Set<Integer>> bankUniverse, BankState inState,
-			Map<String, Integer> placementOverride, TaskMonitor monitor, MessageLog log) {
+			Map<String, Integer> placementOverride, TaskMonitor monitor, MessageLog log,
+			BankCommentProvenance provenance) {
 
 		int effective = inState.effective(board.initialState(), board.mask());
 		Map<String, String> stateRow = board.occupantByWindowForState().get(effective);
@@ -1335,7 +1366,7 @@ final class BankAnnotationAdapter {
 								bank), refType, true, monitor, log);
 						if (overridden) {
 							annotatePlacementProvenance(program.getListing(), instr.getMinAddress(),
-								bank);
+								bank, provenance);
 						}
 					}
 				}

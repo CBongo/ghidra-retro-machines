@@ -9,7 +9,6 @@ BLOCK PRG_LO_B3 8000-bfff overlay=true
 BLOCK RAM 0000-07ff overlay=false
 COMMENT c000 bank -> 2 (bank=2) via FUN_c150
 COMMENT c006 bank -> 1 (bank=1) via FUN_c158
-COMMENT c00c bank -> 2 (bank=2) via FUN_c170
 COMMENT c014 bank -> 0 (bank=0) via FUN_c15a
 COMMENT c019 bank -> 0 (bank=0) via FUN_c175
 COMMENT c152 bank -> 2 (bank=2)
