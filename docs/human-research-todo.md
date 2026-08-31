@@ -43,6 +43,34 @@ bash tools/banktest/realrom-test.sh nominate <romdir>   # board-gap survey
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
+- [ ] **Is smb3's `W8000_M1::9284` honestly unannotated, or did the final round never reach it?**
+      (`grm-pnxm`, from `grm-3mg0`.) One address read settles it, and the row is red until it is.
+
+      `grm-3mg0` taught the analyzer to retract a bank comment an earlier round wrote at a site a
+      later round does not annotate. Across the whole 33-row real-ROM corpus that fired **once**,
+      on smb3 — `bankComments 181 -> 180`, at `W8000_M1::9284`. Nothing else in smb3 moved, and
+      the row is deliberately **not blessed**. (lwings, the other row that change touched, was a
+      pure refresh with no count change and *is* blessed.)
+
+      The site is inside an **overlay** space, and two readings give identical output with
+      opposite meanings. Either the final round reached 9284, evaluated it, and legitimately
+      produced nothing — retraction correct, bless it — or the round never visited it at all,
+      since overlay code only exists once the retarget bootstrap disassembles it, in which case
+      we destroyed a true annotation. Static analysis cannot tell these apart from outside: both
+      end as "absent from the touched set".
+
+      Look for: is there an instruction at `W8000_M1::9284` in the final program at all? If not,
+      that is the bad reading outright. If there is, is it still a mechanism write or a call to a
+      bank-switch helper? If neither, the retraction was right.
+
+      The fix, if it is the bad reading, is bounded and written up on the bead — intersect the
+      sweep against `flow.stateIn()`'s key set, which is the honest "we looked here" record.
+      **Do not apply it speculatively:** under the good reading it would reintroduce the very bug
+      `grm-3mg0` fixed, at exactly the sites that matter most.
+
+      Reproduce: `bash tools/banktest/realrom-test.sh check --only smb3` (smb3 is on the
+      **curated** manifest — unusual here, where nearly everything discussed lives in the GME set).
+
 - [ ] **Why does tmnt's real-ROM result depend on whether another row ran first?** (`grm-82u3`,
       from `grm-shnf`/QR-12 increment 3b, commit `79cde7d`.) The agent-side measurement is
       finished and is on the bead; what is left needs Ghidra internals, not more build cycles.
