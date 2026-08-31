@@ -29,6 +29,7 @@ import com.google.gson.JsonParser;
 
 import ghidra.app.util.importer.MessageLog;
 
+import retromachines.BoardDescriptorModel.BankWrap;
 import retromachines.BoardDescriptorModel.BoardModel;
 import retromachines.BoardDescriptorModel.ComputedWindowModel;
 import retromachines.BoardDescriptorModel.FieldSpec;
@@ -338,5 +339,48 @@ public class BoardModelParseTest {
 		assertEquals(0, board.homeModeValue());
 		assertTrue(board.modeWindows().isEmpty());
 		assertTrue(log.toString().contains("not found in banking.state"));
+	}
+
+	/**
+	 * {@code banking.bank_wrap} (bead grm-p25h) is optional and off by default -- the property
+	 * that keeps every board but MMC5 bit-for-bit unchanged, since
+	 * {@link BankAnnotationAdapter#canonicalBank} is the identity when it is null.
+	 */
+	@Test
+	public void bankWrapIsAbsentUnlessDeclared() {
+		assertNull(parse(WELL_FORMED, new MessageLog()).bankWrap());
+	}
+
+	@Test
+	public void declaredImageBankWrapIsCarried() {
+		BoardModel board =
+			parse(WELL_FORMED.replace("\"initial_state\": 5,",
+				"\"initial_state\": 5, \"bank_wrap\": \"image\","), new MessageLog());
+		assertEquals(BankWrap.IMAGE, board.bankWrap());
+	}
+
+	/** The second form: a JSON NUMBER is an explicit, unguarded mask, not a policy name. */
+	@Test
+	public void declaredExplicitMaskBankWrapIsCarried() {
+		BoardModel board =
+			parse(WELL_FORMED.replace("\"initial_state\": 5,",
+				"\"initial_state\": 5, \"bank_wrap\": 31,"), new MessageLog());
+		assertEquals(BankWrap.ofMask(31), board.bankWrap());
+	}
+
+	/**
+	 * An unrecognized policy is refused, not half-applied: the rest of the board still parses
+	 * and nothing wraps. MapCompiler rejects it at build time, so this only guards a
+	 * hand-edited {@code .map}.
+	 */
+	@Test
+	public void unknownBankWrapPolicyIsRefusedAndLogged() {
+		MessageLog log = new MessageLog();
+		BoardModel board =
+			parse(WELL_FORMED.replace("\"initial_state\": 5,",
+				"\"initial_state\": 5, \"bank_wrap\": \"mirror\","), log);
+		assertNotNull(board);
+		assertNull(board.bankWrap());
+		assertTrue(log.toString().contains("not a recognized policy"));
 	}
 }

@@ -53,6 +53,7 @@ import static retromachines.HelperDiscovery.reachableEntries;
 
 import retromachines.BankDataflowEngine.DataflowResult;
 import retromachines.BankDataflowEngine.SwitchResult;
+import retromachines.BoardDescriptorModel.BankWrap;
 import retromachines.BoardDescriptorModel.BoardModel;
 import retromachines.BoardDescriptorModel.Bounded;
 import retromachines.BoardDescriptorModel.ComputedWindowModel;
@@ -128,7 +129,7 @@ final class BankAnnotationAdapter {
 				analyzer.getBookmarkCategory(), impossible.message());
 			return 1;
 		}
-		annotateBankSwitch(listing, addr, state, board, viaHelper);
+		annotateBankSwitch(listing, addr, state, board, bankUniverse, viaHelper);
 		return 0;
 	}
 
@@ -176,7 +177,7 @@ final class BankAnnotationAdapter {
 		int effective = state.effective(board.initialState(), board.mask());
 		for (ComputedWindowModel w : board.computedWindows().values()) {
 			ImpossibleBank bad =
-				checkBank(bankUniverse, w.name(), w.name(), w.field(), state, effective);
+				checkBank(board, bankUniverse, w.name(), w.name(), w.field(), state, effective);
 			if (bad != null) {
 				return bad;
 			}
@@ -188,8 +189,8 @@ final class BankAnnotationAdapter {
 				if (w.modeValue() != mode || w.bankField() == null) {
 					continue;
 				}
-				ImpossibleBank bad = checkBank(bankUniverse, modeBankKey(w.name(), mode), w.name(),
-					w.bankField(), state, effective);
+				ImpossibleBank bad = checkBank(board, bankUniverse, modeBankKey(w.name(), mode),
+					w.name(), w.bankField(), state, effective);
 				if (bad != null) {
 					return bad;
 				}
@@ -198,9 +199,19 @@ final class BankAnnotationAdapter {
 		return null;
 	}
 
-	/** One window's bank field against its realized bank set; see {@link #impossibleBank}. */
-	private static ImpossibleBank checkBank(Map<String, Set<Integer>> bankUniverse, String key,
-			String windowName, FieldSpec field, BankState state, int effective) {
+	/**
+	 * One window's bank field against its realized bank set; see {@link #impossibleBank}.
+	 * <p>
+	 * The test is applied to the CANONICALIZED value (bead grm-p25h), so a board that declares
+	 * {@code banking.bank_wrap} does not get warned about a bank its hardware would have
+	 * truncated into range -- but a value that is still not realized after canonicalization,
+	 * which includes every value on a board whose realized set makes {@link #canonicalBank}
+	 * decline, is still impossible and still warns. The message reports the RAW recovered value,
+	 * because that is the number the code actually wrote and the one worth going to look at.
+	 */
+	private static ImpossibleBank checkBank(BoardModel board,
+			Map<String, Set<Integer>> bankUniverse, String key, String windowName, FieldSpec field,
+			BankState state, int effective) {
 		if (!field.fullyKnownIn(state)) {
 			return null;
 		}
@@ -208,9 +219,10 @@ final class BankAnnotationAdapter {
 		if (realized == null || realized.isEmpty()) {
 			return null; // nothing realized for this window at all -- not our diagnostic to make
 		}
-		int bank = field.valueIn(effective);
+		int raw = field.valueIn(effective);
+		int bank = canonicalBank(board.bankWrap(), realized, raw);
 		return realized.contains(bank) ? null
-				: new ImpossibleBank(windowName, bank, realized.size());
+				: new ImpossibleBank(windowName, raw, realized.size());
 	}
 
 	/**
@@ -398,8 +410,116 @@ final class BankAnnotationAdapter {
 	}
 
 	/** Key under which {@link #bankUniverse} files a mode-varying window instance's banks. */
-	private static String modeBankKey(String windowName, int modeValue) {
+	static String modeBankKey(String windowName, int modeValue) {
 		return windowName + "_M" + modeValue;
+	}
+
+	// ------------------------------------------------------------------
+	// Bank-number canonicalization (bead grm-p25h)
+	// ------------------------------------------------------------------
+
+	/**
+	 * The bank a board's hardware would actually select for the recovered value {@code bank},
+	 * given the banks {@code realized} for that window -- {@code bank} itself unless this board
+	 * declares {@code banking.bank_wrap: image} AND the realized set licenses a mask.
+	 * <p>
+	 * <b>Why this exists.</b> A bank register is as wide as the widest cartridge the board can
+	 * address, not as wide as the cartridge in hand: MMC5's are 7 bits (4 MiB) on every cart,
+	 * and a smaller cart simply lacks the top PRG address lines, so the ASIC truncates. Games
+	 * rely on that -- rtk2's init writes 96/97/126 to a 32-bank cartridge, meaning 0/1/30 -- and
+	 * without canonicalization every such write names a bank the image has no slice for, no
+	 * reference retargets, and the title resolves nothing at all (bead grm-p25h).
+	 * <p>
+	 * <b>Which form gets the guard, and why only one of them does.</b> {@link BankWrap} has two
+	 * forms and they are treated differently on purpose:
+	 * <ul>
+	 * <li>{@code bank_wrap: image} DERIVES the mask from {@code realized}, and derivation is
+	 * inference, so it is guarded: the mask is applied only when {@code realized} is exactly the
+	 * contiguous range {@code {0 .. n-1}} with {@code n} a power of two -- only, that is, when
+	 * the realized set is itself provably the image of a {@code & (n-1)} truncation. A
+	 * non-power-of-two PRG size is legal under NES 2.0 and what real hardware does with the
+	 * undecoded lines there is board-specific (mirroring, open bus, a partial decode); a set
+	 * with holes is not a truncation image at all. In both cases the raw value is returned
+	 * unchanged, so it stays visible to {@link #impossibleBank} as the impossible bank it is
+	 * instead of being folded into a plausible neighbour.</li>
+	 * <li>An explicit mask ({@code bank_wrap: 0x1F}) is a STATED HARDWARE FACT about how many
+	 * PRG address lines the cartridge wires, not an inference, so it is applied
+	 * UNCONDITIONALLY -- including on exactly the realized sets the derived form declines. A
+	 * guard there would defeat the only reason the explicit form exists.</li>
+	 * </ul>
+	 * <b>Why the derived form reads the realized set and not the image size.</b> The analyzer
+	 * has no image size; that is a load-time fact, and reaching for it would need a second
+	 * PROGRAM_INFO hop of the kind {@code grm-y0ml} already had to build once. It does not need
+	 * one: {@link #bankUniverse} already reads, off the program's own address spaces, exactly
+	 * which bank values this window HAS a slice for -- which is the same question, answered per
+	 * WINDOW rather than per board. That matters on MMC5, where one register feeds windows of
+	 * three different granularities and therefore three different bank counts.
+	 */
+	static int canonicalBank(BankWrap bankWrap, Set<Integer> realized, int bank) {
+		if (bankWrap == null) {
+			return bank;
+		}
+		if (!bankWrap.fromImage()) {
+			return bank & bankWrap.mask(); // stated fact: no guard, see the javadoc
+		}
+		if (realized == null) {
+			return bank;
+		}
+		int n = realized.size();
+		if (n == 0 || (n & (n - 1)) != 0) {
+			return bank; // not a power of two -- decline rather than guess
+		}
+		for (int i = 0; i < n; i++) {
+			if (!realized.contains(i)) {
+				return bank; // a hole, or a set that does not start at 0 -- not a truncation image
+			}
+		}
+		return bank & (n - 1);
+	}
+
+	/**
+	 * The canonical value {@code field}'s recovered value wraps to, or null when it does not
+	 * wrap -- what {@link #describeState} appends as {@code "(wraps to 30)"} so the annotation
+	 * shows the raw recovered value AND the bank it actually selects, never the wrapped value
+	 * alone (bead grm-p25h: silently printing 30 for a written 126 would destroy the evidence a
+	 * misread is a misread).
+	 * <p>
+	 * A field can drive several windows -- MMC5's {@code bank_5117} feeds four, at three
+	 * granularities -- so the answer is only rendered when every window this field drives that
+	 * wraps at all agrees on the same canonical value. Windows that decline (see
+	 * {@link #canonicalBank}) contribute nothing; a genuine disagreement renders nothing rather
+	 * than picking a winner, since there is no single number to name in that case.
+	 */
+	private static Integer wrappedValue(BoardModel board, Map<String, Set<Integer>> bankUniverse,
+			FieldSpec field, int effective) {
+		int raw = field.valueIn(effective);
+		Integer wrapped = null;
+		for (ComputedWindowModel w : board.computedWindows().values()) {
+			if (!w.field().name().equals(field.name())) {
+				continue;
+			}
+			int c = canonicalBank(board.bankWrap(), bankUniverse.get(w.name()), raw);
+			if (c != raw) {
+				if (wrapped != null && wrapped != c) {
+					return null;
+				}
+				wrapped = c;
+			}
+		}
+		for (ModeWindowModel w : board.modeWindows()) {
+			if (w.bankField() == null || !w.bankField().name().equals(field.name())) {
+				continue;
+			}
+			int c = canonicalBank(board.bankWrap(),
+				bankUniverse.get(modeBankKey(w.name(), w.modeValue())), raw);
+			if (c != raw) {
+				if (wrapped != null && wrapped != c) {
+					return null;
+				}
+				wrapped = c;
+			}
+		}
+		return wrapped;
 	}
 
 	/**
@@ -492,10 +612,10 @@ final class BankAnnotationAdapter {
 	 * name.
 	 */
 	private static void annotateBankSwitch(Listing listing, Address addr, BankState newState,
-			BoardModel board, String viaHelper) {
+			BoardModel board, Map<String, Set<Integer>> bankUniverse, String viaHelper) {
 		int mask = board.mask();
 		int effective = newState.effective(board.initialState(), mask);
-		String desc = describeState(board, effective);
+		String desc = describeState(board, bankUniverse, effective);
 		String via = viaHelper == null ? "" : " via " + viaHelper;
 
 		// Whether describeState resolved this state to an occupant ROW (enumerated board,
@@ -602,8 +722,14 @@ final class BankAnnotationAdapter {
 	/**
 	 * Human description of an effective state: the occupant row on enumerated boards
 	 * ({@code BASIC/IO/KERNAL}), field values on computed boards ({@code bank=3}).
+	 * <p>
+	 * A field whose recovered value the board's hardware would truncate renders BOTH numbers --
+	 * {@code bank_5116=126 (wraps to 30)} -- never the wrapped one alone (bead grm-p25h, see
+	 * {@link #wrappedValue}). Boards that do not declare {@code banking.bank_wrap} never take
+	 * that branch, so their annotations are byte-identical to what they were.
 	 */
-	private static String describeState(BoardModel board, int effective) {
+	private static String describeState(BoardModel board,
+			Map<String, Set<Integer>> bankUniverse, int effective) {
 		Map<String, String> stateRow = board.occupantByWindowForState().get(effective);
 		if (stateRow != null && !board.windows().isEmpty()) {
 			List<String> parts = new ArrayList<>();
@@ -615,7 +741,9 @@ final class BankAnnotationAdapter {
 		if (!board.fieldSpecs().isEmpty()) {
 			List<String> parts = new ArrayList<>();
 			for (FieldSpec f : board.fieldSpecs()) {
-				parts.add(f.name() + "=" + f.valueIn(effective));
+				Integer wrapped = wrappedValue(board, bankUniverse, f, effective);
+				parts.add(f.name() + "=" + f.valueIn(effective) +
+					(wrapped == null ? "" : " (wraps to " + wrapped + ")"));
 			}
 			return String.join(",", parts);
 		}
@@ -908,8 +1036,8 @@ final class BankAnnotationAdapter {
 
 	static int retargetReferences(BoardBankAnalyzer analyzer, Program program,
 			ReferenceManager refMgr, AddressSpace baseSpace, Instruction instr, BoardModel board,
-			BankState inState, Map<String, Integer> placementOverride, TaskMonitor monitor,
-			MessageLog log) {
+			Map<String, Set<Integer>> bankUniverse, BankState inState,
+			Map<String, Integer> placementOverride, TaskMonitor monitor, MessageLog log) {
 
 		int effective = inState.effective(board.initialState(), board.mask());
 		Map<String, String> stateRow = board.occupantByWindowForState().get(effective);
@@ -973,7 +1101,11 @@ final class BankAnnotationAdapter {
 						continue;
 					}
 					FieldSpec field = computed.field();
-					int bankValue = field.valueIn(effective);
+					// The bank the hardware would really select, which on a board declaring
+					// banking.bank_wrap is the recovered value truncated to the banks this image
+					// has (bead grm-p25h); the identity on every other board.
+					int bankValue = canonicalBank(board.bankWrap(), bankUniverse.get(computed.name()),
+						field.valueIn(effective));
 					if (bankValue == field.valueIn(board.initialState())) {
 						// the home bank lives in base space at this offset -- default is right.
 						continue;
@@ -1006,7 +1138,13 @@ final class BankAnnotationAdapter {
 							refType, true, monitor, log);
 					}
 					else {
-						int bank = instance.bankField().valueIn(effective);
+						// Canonicalized first, for the same reason as the computed-window branch
+						// above (bead grm-p25h): a board that truncates bank numbers writes a
+						// value the image has no slice for, and the overlay to find is the one
+						// the hardware would really have selected.
+						int bank = canonicalBank(board.bankWrap(),
+							bankUniverse.get(modeBankKey(instance.name(), modeValue)),
+							instance.bankField().valueIn(effective));
 						// When dataflow did not pin the switchable bank at this site, the value
 						// above is just the initial-state fallback; a user placement override for
 						// this window instance takes over (flow always wins when it knows). See

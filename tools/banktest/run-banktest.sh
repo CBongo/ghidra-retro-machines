@@ -816,6 +816,13 @@ if selected nes-banking; then
 	# window set is a different shape, not just a different bank. See make_prg_mmc5().
 	run_one nesmmc5test "$WORK/nes/nesmmc5test.nes" NesRomLoader
 
+	# grm-p25h: MMC5 BANK-NUMBER WRAPPING (banking.bank_wrap: image). A bank register is
+	# wider than any one cartridge decodes, so the hardware truncates and games rely on it
+	# (rtk2 writes 96/97/126 to a 32-bank cart, meaning 0/1/30). Separate fixture from
+	# nesmmc5test so that golden stays byte-identical and a moved line here cannot be
+	# confused with the mode-change axis. See make_prg_mmc5wrap().
+	run_one nesmmc5wraptest "$WORK/nes/nesmmc5wraptest.nes" NesRomLoader
+
 	# grm-1.7.6: CopyLoopAnalyzer is gated on the descriptor + a 6502/6510 language, not on
 	# the C64 loader, so it fires on NES ROMs too. This is the only fixture where the copy
 	# loop runs from a bank overlay and stores into base-space PRG RAM -- i.e. the only

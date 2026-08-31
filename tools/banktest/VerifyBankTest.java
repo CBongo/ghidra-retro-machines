@@ -330,6 +330,9 @@ public class VerifyBankTest extends GhidraScript {
 		else if (name.contains("nesmmc2test")) {
 			checkNesMmc2test();
 		}
+		else if (name.contains("nesmmc5wraptest")) {
+			checkNesMmc5Wraptest();
+		}
 		else if (name.contains("nesmmc5test")) {
 			checkNesMmc5test();
 		}
@@ -2813,6 +2816,66 @@ public class VerifyBankTest extends GhidraScript {
 			"instruction exists at W8000_M3_B1::8000");
 		criterion("M4:W8000_M0_B7_8100", hasInstructionAt("W8000_M0_B7", 0x8100),
 			"instruction exists at W8000_M0_B7::8100");
+	}
+
+	// ------------------------------------------------------------------
+	// nesmmc5wraptest.nes criteria (bead grm-p25h, banking.bank_wrap: image)
+	// ------------------------------------------------------------------
+
+	/**
+	 * MMC5 bank-number wrapping end to end. An MMC5 bank register is 7 bits wide on every
+	 * cartridge, and a cart with fewer banks lacks the high PRG address lines, so the ASIC
+	 * truncates -- rtk2's init writes 96/97/126 to a 32-bank cart meaning banks 0/1/30, and
+	 * before {@code banking.bank_wrap} those values named banks with no image slice, so the
+	 * title retargeted nothing at all. This image has 8 banks, so the mask is {@code & 7}.
+	 * <p>
+	 * See make_prg_mmc5wrap() in mknesbanktest.py for the byte layout. W1/W2 are the wrap
+	 * itself; W3/W4 are the in-range control that keeps this from reading as "rewrite every
+	 * bank"; W5 is the disassembly cascade both targets depend on.
+	 */
+	private void checkNesMmc5Wraptest() {
+		// W1: LDA #$29 / STA $5114 -- bank_5114 = 41 on an 8-bank image. The following
+		// JSR $8000 must retarget into the CANONICAL overlay (41 & 7 = 1), not into a
+		// nonexistent W8000_M3_B41. This is the criterion that fails on every build
+		// before grm-p25h, with no reference placed at all.
+		Reference r = findOverlayRef(0xE005, "W8000_M3_B1", 0x8000);
+		criterion("W1", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $8000 after an out-of-range bank_5114=41 retargeted to the canonical " +
+				"W8000_M3_B1 overlay (41 & 7 = 1), primary: " + describe(r));
+
+		// W2: and the annotation says it wrapped, showing BOTH numbers. Printing 1 alone
+		// would hide that the code wrote 41, which is exactly how a genuine value-recovery
+		// bug would be laundered into a plausible answer. The site must annotate, not warn:
+		// a bank the hardware truncates into range is not an impossible bank.
+		String e002 = eol(0xE002);
+		criterion("W2:raw", e002.contains("bank_5114=41"),
+			"annotation keeps the RAW recovered bank at e002: \"" + e002 + "\"");
+		criterion("W2:wrapped", e002.contains("wraps to 1"),
+			"annotation names the canonical bank at e002: \"" + e002 + "\"");
+		criterion("W2:nowarn", !hasWarningBookmark(0xE002),
+			"a wrapped bank is not an impossible bank, so no warning at e002");
+
+		// W3: the in-range control. bank_5115 = 3 is a real bank on this image, so
+		// canonicalization is the identity and the comment carries no wrap text at all --
+		// the property that keeps every in-range site (and every board without bank_wrap)
+		// byte-identical.
+		String e00a = eol(0xE00A);
+		criterion("W3:value", e00a.contains("bank_5115=3"),
+			"in-range bank_5115=3 annotated at e00a: \"" + e00a + "\"");
+		criterion("W3:nowrap", !e00a.contains("wraps to"),
+			"an in-range bank says nothing about wrapping at e00a: \"" + e00a + "\"");
+
+		// W4: and it retargets to its own bank's overlay, unchanged.
+		r = findOverlayRef(0xE00D, "WA000_M3_B3", 0xA000);
+		criterion("W4", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $A000 with in-range bank_5115=3 retargeted to WA000_M3_B3, primary: " +
+				describe(r));
+
+		// W5: the phase-2 disassembly cascade reached both overlay targets.
+		criterion("W5:W8000_M3_B1_8000", hasInstructionAt("W8000_M3_B1", 0x8000),
+			"instruction exists at W8000_M3_B1::8000");
+		criterion("W5:WA000_M3_B3_a000", hasInstructionAt("WA000_M3_B3", 0xA000),
+			"instruction exists at WA000_M3_B3::a000");
 	}
 
 	// ------------------------------------------------------------------

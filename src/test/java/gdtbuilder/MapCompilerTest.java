@@ -664,6 +664,74 @@ public class MapCompilerTest {
 			""", "reserved expression keyword");
 	}
 
+	// ------------------------------------------------------------------
+	// banking.bank_wrap (bead grm-p25h)
+	// ------------------------------------------------------------------
+
+	/** Absence emits no key at all -- the property that keeps every pre-grm-p25h .map
+	 *  byte-identical, and that makes "nothing wraps" the default for every board. */
+	@Test
+	public void bankWrapIsAbsentUnlessDeclared() throws Exception {
+		assertTrue("a descriptor without bank_wrap must not emit the key",
+			!compileBanking("wrap-absent", "{ MODE: 0, BANK: 0 }").has("bank_wrap"));
+	}
+
+	@Test
+	public void declaredBankWrapIsEmitted() throws Exception {
+		Path temp = tmp.getRoot().toPath();
+		Path yaml = temp.resolve("wrap-image.yaml");
+		Path map = temp.resolve("wrap-image.map");
+		Files.writeString(yaml, bankingYaml("wrap-image", "{ MODE: 0, BANK: 0 }")
+				.replace("  initial_state:", "  bank_wrap: image\n  initial_state:"));
+		MapCompiler.main(new String[] { yaml.toString(), map.toString() });
+		assertEquals("image", JsonParser.parseString(Files.readString(map)).getAsJsonObject()
+				.getAsJsonObject("banking").get("bank_wrap").getAsString());
+	}
+
+	/** The second form: an integer is an EXPLICIT mask, emitted as a JSON number so the runtime
+	 *  can tell it apart from the derived 'image' keyword. */
+	@Test
+	public void explicitBankWrapMaskIsEmittedAsANumber() throws Exception {
+		Path temp = tmp.getRoot().toPath();
+		Path yaml = temp.resolve("wrap-mask.yaml");
+		Path map = temp.resolve("wrap-mask.map");
+		Files.writeString(yaml, bankingYaml("wrap-mask", "{ MODE: 0, BANK: 0 }")
+				.replace("  initial_state:", "  bank_wrap: 0x1f\n  initial_state:"));
+		MapCompiler.main(new String[] { yaml.toString(), map.toString() });
+		assertEquals(0x1F, JsonParser.parseString(Files.readString(map)).getAsJsonObject()
+				.getAsJsonObject("banking").get("bank_wrap").getAsInt());
+	}
+
+	/** An unrecognized policy is a compile error, not a pass-through: the runtime would have
+	 *  to decide what an unknown wrapping rule means, and there is no safe default. */
+	@Test
+	public void unknownBankWrapPolicyIsRejected() throws Exception {
+		expectCompileError(tmp.getRoot().toPath(), "wrap-bogus",
+			bankingYaml("wrap-bogus", "{ MODE: 0, BANK: 0 }")
+					.replace("  initial_state:", "  bank_wrap: mirror\n  initial_state:"),
+			"bank_wrap");
+	}
+
+	/** A mask is a contiguous run of LOW bits, so mask + 1 must be a power of two. The runtime
+	 *  applies an explicit mask with NO guard, which is exactly why this check lives here. */
+	@Test
+	public void nonContiguousBankWrapMaskIsRejected() throws Exception {
+		expectCompileError(tmp.getRoot().toPath(), "wrap-holey",
+			bankingYaml("wrap-holey", "{ MODE: 0, BANK: 0 }")
+					.replace("  initial_state:", "  bank_wrap: 0x12\n  initial_state:"),
+			"not a contiguous run of low bits");
+	}
+
+	/** A mask wider than every declared state field could never truncate anything. The widest
+	 *  field on this board is BANK at 7 bits, so 0xFF is a no-op and therefore a mistake. */
+	@Test
+	public void bankWrapMaskWiderThanEveryFieldIsRejected() throws Exception {
+		expectCompileError(tmp.getRoot().toPath(), "wrap-wide",
+			bankingYaml("wrap-wide", "{ MODE: 0, BANK: 0 }")
+					.replace("  initial_state:", "  bank_wrap: 0xff\n  initial_state:"),
+			"does not fit any banking.state field");
+	}
+
 	/** Compiles a minimal 2-field board with the given {@code initial_state:} value and hands
 	 *  back its {@code banking} object. */
 	private JsonObject compileBanking(String name, String initialState) throws Exception {

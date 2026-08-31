@@ -296,6 +296,23 @@ banking:
     - strategy: memory-latch
       params: { start: 0x5117, end: 0x5117, mask: 0x7F, bus_conflict: false }
       sets: [bank_5117]
+  # MMC5's bank registers are 7 bits wide (up to 4 MiB of PRG) regardless of how much PRG
+  # the cartridge actually carries, and a cart with fewer banks simply does not have the
+  # high PRG address lines -- so the ASIC truncates. Games rely on this: rtk2's init writes
+  # $E0/$E1/$FE (96/97/126) to $5114/$5115/$5116 on a 256 KiB (32-bank) cart, meaning banks
+  # 0/1/30. This is the same truncation the bank_5117 seed below already reasons about, now
+  # stated as a board property so recovered RUNTIME values get it too (bead grm-p25h): the
+  # analyzer canonicalizes a recovered bank against the window's realized bank set before
+  # resolving it, and says so in the annotation ("bank_5116=126 (wraps to 30)") rather than
+  # printing the wrapped value alone. Absent, nothing wraps.
+  #
+  # The DERIVED form ("image") rather than an explicit mask, deliberately: truncation by ROM
+  # size is a property of the MAPPER here -- MMC5's registers are 7 bits on every cartridge and
+  # the cart's own missing address lines do the masking -- so the honest spelling is "work it
+  # out from what this image has", per window. An explicit `bank_wrap: 0x1f` is also accepted
+  # by the schema and is the right form for cartridge-specific wiring the image size does not
+  # predict; no shipped descriptor needs it yet. See docs/SCHEMA.md's "Bank wrapping".
+  bank_wrap: image
   # prg_mode=3 is the wiki-documented reset value (mode 3, four 8K banks). $5114-$5116
   # are seeded 0 because their reset content is undocumented (this project's standing
   # convention for an undocumented mapper latch). bank_5117 is the exception and the

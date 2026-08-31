@@ -166,6 +166,58 @@ per-field values (`{ LORAM: 1, HIRAM: 1, CHAREN: 1 }`) and `MapCompiler` compute
 packed integer for the runtime (field order defines the bit packing). `initial_state`
 also accepts an already-packed integer.
 
+## Bank wrapping: `banking.bank_wrap`
+
+Optional, per board, and off unless declared (bead `grm-p25h`). It states the hardware fact
+that this board's bank registers are wider than any one cartridge decodes, so the missing PRG
+address lines truncate the high bits. Real games depend on it — Romance of the Three
+Kingdoms 2's MMC5 init writes `$E0`/`$E1`/`$FE` (96/97/126) to `$5114`/`$5115`/`$5116` on a
+32-bank cartridge, meaning banks 0/1/30. Without the declaration those recovered values name
+banks the image has no slice for, nothing retargets, and the title resolves no overlays at all.
+
+It takes **either of two forms**, and which one you write is a claim about where the truth
+comes from:
+
+```yaml
+banking:
+  bank_wrap: image            # DERIVE the mask from the banks this image realizes
+```
+
+```yaml
+banking:
+  bank_wrap: 0x1f             # or STATE it: an explicit, unconditional mask
+```
+
+- **`image` derives, so it is guarded.** The mask is taken from the window's realized bank
+  set, and applied only when that set is exactly `{0 … n-1}` with `n` a power of two — i.e.
+  only when it is provably the image of a `& (n-1)` truncation. A non-power-of-two PRG size is
+  legal under NES 2.0 and what the hardware does there is board-specific; a set with holes is
+  not a truncation image at all. In both cases the raw value survives unchanged. Use this form
+  when truncation-by-ROM-size is a property of the *mapper*, which is why MMC5 uses it.
+- **An integer is a stated fact, so it is NOT guarded.** It says how many address lines the
+  cartridge wires, which is not something the image size predicts, and it applies
+  unconditionally — including on exactly the realized sets the derived form declines. A guard
+  would defeat the only reason the form exists. `MapCompiler` validates it at build time
+  instead: `mask + 1` must be a power of two (a mask is a contiguous run of low bits — `0x1f`
+  yes, `0x12` no), and the mask must fit some declared `banking.state` field.
+
+Two further properties hold for both forms, because each is a thing this could plausibly have
+done and deliberately does not:
+
+- **It is an ANALYSIS-time canonicalization, not extra placement.** No overlay is created for
+  an out-of-range bank value; MMC5's 32 real banks stay 32 spaces rather than becoming 128
+  spaces of aliases. The analyzer maps the recovered value onto the existing slice.
+- **The derived form reads the window's REALIZED bank set, never an image size.** The analyzer
+  has no image size (see "Initial state" for the phase split that fact already forced once),
+  and it does not need one: the bank values the loader actually gave a slice are readable off
+  the program's own address spaces, and they are per *window*, which matters on a board like
+  MMC5 where one register feeds windows at three granularities.
+
+The diagnostic and the annotation are both preserved: a bank still not realized *after*
+canonicalization still raises the impossible-bank warning, and a wrapped value is rendered
+with both numbers (`bank_5116=126 (wraps to 30)`), never as the wrapped value alone — a
+silent rewrite would turn a loud value-recovery bug into a quiet plausible answer.
+
 ## Mechanisms: a list of strategy instances
 
 `banking.mechanisms` is a list — a board can have several (MMC3: a select-data pair

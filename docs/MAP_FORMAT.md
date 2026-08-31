@@ -45,7 +45,7 @@ the extension zip alongside the corresponding `.gdt`.
                  "maps": { "space", "expr" }, "on_write"? } ],
   "layouts"?: [ { "when": { "<stateField>": <int>, ... },
                   "windows": [ /* same shape as windows[] */ ] } ],
-  "banking"?: { "initial_state", "initial_state_expr"?, "context_register"?,
+  "banking"?: { "initial_state", "initial_state_expr"?, "context_register"?, "bank_wrap"?,
                 "state":      [ { "name", "bits" } ],
                 "mechanisms": [ { "strategy", "params": { ... }, "sets": [...] } ],
                 "states"?:    [ { "value", "<windowName>": "<occupantName>", ... } ] },
@@ -226,6 +226,22 @@ optional — a bankless board like NES NROM has none). When present:
   approximation that shipped before the key existed). The loader resolves each expression
   against the real image, width-checks the result, and publishes the resolved packed value
   in the `Retro Machines.Initial State` program property, which the analyzer prefers.
+- `bank_wrap` *(optional, bead `grm-p25h`)* — the board's bank-number truncation policy:
+  "this board's bank registers are wider than the cartridge decodes, and the hardware drops
+  the high bits". Absent on every board but MMC5 today, and absence means nothing is ever
+  wrapped, so those `.map` files stay byte-identical. Two forms, distinguished by JSON type:
+  - the **string** `"image"` — the analyzer *derives* the mask from the window's **realized**
+    bank set (the overlays the loader actually created — never a header field, which the
+    analyzer does not have), applying it only when that set is exactly `{0 … n-1}` with `n` a
+    power of two, and declining otherwise. Derivation is inference, so it is guarded.
+  - a **number** (e.g. `31`) — an explicit mask, applied unconditionally as `v & mask`. It is
+    a *stated hardware fact* about how many address lines the cartridge wires, not an
+    inference, so the guard above deliberately does **not** apply to it. `MapCompiler`
+    validates it at build time instead: `mask + 1` must be a power of two, and the mask must
+    fit some declared `banking.state` field.
+
+  Placement is unaffected either way: no extra overlay is created for an out-of-range bank
+  value, and the annotation always shows both the raw and the canonical bank.
 - `context_register` *(optional)* — the Ghidra *language* context register name (which
   some processor modules expose for the disassembler/decompiler's own use), as opposed
   to `mechanisms` below, which is analyzer configuration. When omitted, or when the

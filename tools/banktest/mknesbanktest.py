@@ -1100,6 +1100,84 @@ def make_prg_mmc5():
     return bytes(prg)
 
 
+def make_prg_mmc5wrap():
+    """MMC5 BANK-NUMBER WRAPPING fixture (bead grm-p25h, machines/nes-mmc5.yaml).
+
+    Same 8 x 8 KiB / 64 KiB shape and same home arrangement as make_prg_mmc5() (mode 3,
+    bank_5117 resolving to the image's last 8 KiB bank = 7, so RESET at CPU $E000 lives at
+    file offset 0xE000). What it adds is the idiom that make_prg_mmc5() does NOT exercise
+    and that real cartridges use constantly.
+
+    THE IDIOM. An MMC5 bank register is 7 bits wide -- enough for 4 MiB of PRG -- on every
+    cartridge, whatever that cartridge's actual size. A smaller cart simply does not have
+    the high PRG address lines, so the ASIC truncates the number. Games write high bank
+    numbers and rely on that: Romance of the Three Kingdoms 2's init writes $E0/$E1/$FE
+    (96/97/126) to $5114/$5115/$5116 on a 32-bank cart, meaning banks 0/1/30. Before
+    grm-p25h those recovered values named banks the image has no slice for, so nothing
+    retargeted and rtk2 resolved ZERO overlays -- a total failure, not a partial one.
+
+    WHAT THIS FIXTURE PINS, on an 8-bank image where the mask is therefore & 7:
+      1. An OUT-OF-RANGE write wraps: bank_5114 = $29 (41) selects 41 & 7 = 1, so the
+         following JSR $8000 must retarget into W8000_M3_B1 -- the CANONICAL overlay, the
+         one the hardware would really have selected. Pre-fix this asked for a
+         nonexistent W8000_M3_B41 and retargeted nothing.
+      2. The annotation shows BOTH numbers ("bank_5114=41 (wraps to 1)"), never the
+         wrapped value alone: silently rewriting 41 as 1 would turn a genuine
+         value-recovery bug into a quiet plausible answer, which is the diagnostic the
+         impossible-bank warning exists to preserve.
+      3. An IN-RANGE write is untouched: bank_5115 = 3 stays 3, annotates with no "wraps
+         to" text at all, and retargets into WA000_M3_B3. That is the control that keeps
+         canonicalization from reading as "rewrite every bank".
+
+    All three sites stay in mode 3 (no PRG mode change -- nesmmc5test already covers that
+    axis, and mixing the two would make a moved golden line ambiguous between them).
+
+    RESET ($E000, file offset 0xE000 -- bank_5117 resolves to 7):
+      E000  A9 29        LDA #$29        ; 41: OUT OF RANGE on an 8-bank image
+      E002  8D 14 51     STA $5114       ; bank_5114 = 41 -> wraps to 1
+      E005  20 00 80     JSR $8000       ; -> W8000_M3_B1 (canonical overlay)
+      E008  A9 03        LDA #$03        ; 3: in range, the control
+      E00A  8D 15 51     STA $5115       ; bank_5115 = 3 -> no wrap
+      E00D  20 00 A0     JSR $A000       ; -> WA000_M3_B3
+      E010  4C 10 E0     JMP $E010       ; self-loop
+      E020  40           RTI             ; NMI/IRQ handler
+
+    Bank 1's routine at CPU $8000 (file offset 1 * 0x2000 = 0x2000): RTS.
+    Bank 3's routine at CPU $A000 (file offset 3 * 0x2000 = 0x6000): RTS.
+    """
+    prg = bytearray([0x00] * MMC5_PRG_SIZE)
+
+    # Bank markers at the first byte of each bank (same harmless trace convention as every
+    # other fixture); banks 1 and 3 are then overwritten with their RTS below.
+    for bank in range(MMC5_BANKS):
+        prg[bank * MMC5_BANK_SIZE] = bank
+
+    prg[1 * MMC5_BANK_SIZE] = 0x60  # RTS -- W8000 mode3/bank_5114=1 (the WRAPPED target)
+    prg[3 * MMC5_BANK_SIZE] = 0x60  # RTS -- WA000 mode3/bank_5115=3 (the in-range control)
+
+    def put(cpu_addr, data):
+        # bank_5117's initial_state resolves to the image's last 8 KiB bank (7 here), so
+        # the mode-3 $E000-$FFFF window maps file 0xE000-0xFFFF one-to-one.
+        off = cpu_addr - 0xE000 + MMC5_TOP_BANK * MMC5_BANK_SIZE
+        prg[off:off + len(data)] = bytes(data)
+
+    put(0xE000, [0xA9, 0x29])              # LDA #$29 (41 -- out of range)
+    put(0xE002, [0x8D, 0x14, 0x51])        # STA $5114 (bank_5114 -> 41, wraps to 1)
+    put(0xE005, [0x20, 0x00, 0x80])        # JSR $8000 (-> W8000_M3_B1)
+    put(0xE008, [0xA9, 0x03])              # LDA #$03 (3 -- in range)
+    put(0xE00A, [0x8D, 0x15, 0x51])        # STA $5115 (bank_5115 -> 3, no wrap)
+    put(0xE00D, [0x20, 0x00, 0xA0])        # JSR $A000 (-> WA000_M3_B3)
+    put(0xE010, [0x4C, 0x10, 0xE0])        # JMP $E010 (self-loop)
+    put(0xE020, [0x40])                    # RTI (NMI/IRQ handler)
+
+    # Vector table (mode-3 home window, bank_5117=7: file offset == CPU address).
+    put(0xFFFA, [0x20, 0xE0])  # NMI   -> $E020 (RTI)
+    put(0xFFFC, [0x00, 0xE0])  # RESET -> $E000
+    put(0xFFFE, [0x20, 0xE0])  # IRQ   -> $E020 (RTI)
+
+    return bytes(prg)
+
+
 def make_prg_mirrortest():
     """Bank-MIRROR derive/observe/consume/annotate/retarget end-to-end fixture (bead
     grm-mej.2 increment 2, Tier 3). Same 4-bank / 64 KiB UxROM shape as the other UxROM
@@ -3895,6 +3973,35 @@ def main():
     assert prgm5[m5(0xFFFC)] | (prgm5[m5(0xFFFD)] << 8) == 0xE000  # RESET
     assert prgm5[m5(0xFFFE)] | (prgm5[m5(0xFFFF)] << 8) == 0xE020  # IRQ
     _write_rom(outdir, "nesmmc5test.nes", prgm5, mapper=MAPPER_MMC5)
+
+    # nesmmc5wraptest.nes (bead grm-p25h): out-of-range bank number that the hardware
+    # truncates, plus an in-range control on the same image. See make_prg_mmc5wrap().
+    prgm5w = make_prg_mmc5wrap()
+    assert len(prgm5w) == MMC5_PRG_SIZE
+    # The mask this fixture asserts against is the REALIZED bank count, and on this image
+    # every MMC5 window realizes exactly banks 0..7 -- so 41 & 7 = 1 and 3 stays 3.
+    assert MMC5_BANKS == 8 and (MMC5_BANKS & (MMC5_BANKS - 1)) == 0
+    assert 41 & (MMC5_BANKS - 1) == 1
+    assert prgm5w[1 * MMC5_BANK_SIZE] == 0x60      # RTS: W8000 mode3/bank1 (wrapped target)
+    assert prgm5w[3 * MMC5_BANK_SIZE] == 0x60      # RTS: WA000 mode3/bank3 (control)
+    assert prgm5w[m5(0xE000)] == 0xA9 and prgm5w[m5(0xE001)] == 0x29  # LDA #$29 (41)
+    assert prgm5w[m5(0xE002)] == 0x8D and \
+        (prgm5w[m5(0xE003)] | (prgm5w[m5(0xE004)] << 8)) == 0x5114    # STA $5114
+    assert prgm5w[m5(0xE005)] == 0x20 and \
+        (prgm5w[m5(0xE006)] | (prgm5w[m5(0xE007)] << 8)) == 0x8000    # JSR $8000
+    assert prgm5w[m5(0xE008)] == 0xA9 and prgm5w[m5(0xE009)] == 0x03  # LDA #$03
+    assert prgm5w[m5(0xE00A)] == 0x8D and \
+        (prgm5w[m5(0xE00B)] | (prgm5w[m5(0xE00C)] << 8)) == 0x5115    # STA $5115
+    assert prgm5w[m5(0xE00D)] == 0x20 and \
+        (prgm5w[m5(0xE00E)] | (prgm5w[m5(0xE00F)] << 8)) == 0xA000    # JSR $A000
+    assert prgm5w[m5(0xE010)] == 0x4C and \
+        (prgm5w[m5(0xE011)] | (prgm5w[m5(0xE012)] << 8)) == 0xE010    # JMP $E010
+    assert prgm5w[m5(0xE020)] == 0x40                                  # RTI
+    # Bespoke vector check for the same reason nesmmc5test's is bespoke (see above).
+    assert prgm5w[m5(0xFFFA)] | (prgm5w[m5(0xFFFB)] << 8) == 0xE020  # NMI
+    assert prgm5w[m5(0xFFFC)] | (prgm5w[m5(0xFFFD)] << 8) == 0xE000  # RESET
+    assert prgm5w[m5(0xFFFE)] | (prgm5w[m5(0xFFFF)] << 8) == 0xE020  # IRQ
+    _write_rom(outdir, "nesmmc5wraptest.nes", prgm5w, mapper=MAPPER_MMC5)
 
 
 if __name__ == "__main__":

@@ -395,7 +395,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			}
 
 			refsAdded += BankAnnotationAdapter.retargetReferences(this, program, refMgr, baseSpace,
-				instr, board, inState, placementOverride, monitor, log);
+				instr, board, bankUniverse, inState, placementOverride, monitor, log);
 		}
 
 		// --- Phase 3: function-level bank-state summaries + call-site requirement

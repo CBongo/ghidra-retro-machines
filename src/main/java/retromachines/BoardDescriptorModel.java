@@ -25,6 +25,7 @@ import java.util.Set;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonPrimitive;
 
 import ghidra.app.util.importer.MessageLog;
 
@@ -79,6 +80,37 @@ final class BoardDescriptorModel {
 		}
 	}
 
+	/**
+	 * A board's {@code banking.bank_wrap} policy (bead {@code grm-p25h}): how a recovered bank
+	 * number wider than the cartridge decodes is truncated to a bank the image really has. Null
+	 * on every board that does not declare the key, which means nothing is ever wrapped.
+	 * <p>
+	 * <b>Two forms, and the difference between them is epistemic, not cosmetic.</b>
+	 * <ul>
+	 * <li>{@link #IMAGE} ({@code bank_wrap: image}) DERIVES the mask from the banks the loader
+	 * actually realized for the window. Derivation is inference, so it carries the self-guard
+	 * described on {@link BankAnnotationAdapter#canonicalBank}: it applies only when the
+	 * realized set is exactly {@code {0 .. n-1}} with {@code n} a power of two, and declines
+	 * otherwise rather than guessing.</li>
+	 * <li>An explicit mask ({@code bank_wrap: 0x1F}) is a STATED HARDWARE FACT -- how many PRG
+	 * address lines the cartridge wires -- not an inference, so it is NOT subject to that guard
+	 * and applies unconditionally. That is the entire point of offering it: it is the escape
+	 * hatch for wiring the image size does not predict, and a guard would defeat it.</li>
+	 * </ul>
+	 * Either way the raw recovered value stays visible in the annotation; a declared mask must
+	 * never silently erase what the cartridge actually wrote.
+	 */
+	record BankWrap(boolean fromImage, int mask) {
+
+		/** {@code bank_wrap: image} -- derive the mask, with the guard. */
+		static final BankWrap IMAGE = new BankWrap(true, 0);
+
+		/** {@code bank_wrap: <int>} -- an explicit, unconditional {@code & mask}. */
+		static BankWrap ofMask(int mask) {
+			return new BankWrap(false, mask);
+		}
+	}
+
 	record OccupantModel(String name, String kind, String onWrite) {}
 
 	/** An address window with an inclusive {@code [start, end]} offset range in base space. */
@@ -116,7 +148,10 @@ final class BoardDescriptorModel {
 			Map<String, ComputedWindowModel> computedWindows,
 			Map<Integer, Map<String, String>> occupantByWindowForState,
 			Map<String, String> homeOccupantByWindow, FieldSpec modeField, int homeModeValue,
-			List<ModeWindowModel> modeWindows) {
+			List<ModeWindowModel> modeWindows, BankWrap bankWrap) {
+
+		/** The {@code banking.bank_wrap} spelling of {@link BankWrap#IMAGE}. */
+		static final String BANK_WRAP_IMAGE = "image";
 
 		/**
 		 * Parses the {@code banking} and {@code windows} sections of a board descriptor into
@@ -316,9 +351,32 @@ final class BoardDescriptorModel {
 				return null;
 			}
 
+			// banking.bank_wrap (bead grm-p25h): an optional, per-board declaration that this
+			// board's hardware truncates a bank number to the banks the image really has.
+			// Absent -> null -> nothing is ever canonicalized, which is every board but MMC5.
+			// An unrecognized policy is refused here rather than half-applied; MapCompiler
+			// already rejects it at build time, so this only guards a hand-edited .map.
+			BankWrap bankWrap = null;
+			if (banking.has("bank_wrap")) {
+				JsonPrimitive declared = banking.get("bank_wrap").getAsJsonPrimitive();
+				if (declared.isNumber()) {
+					// An explicit mask is a stated fact, taken as given -- MapCompiler already
+					// checked it is a contiguous low run that fits the fields (see BankWrap).
+					bankWrap = BankWrap.ofMask(declared.getAsInt());
+				}
+				else if (BANK_WRAP_IMAGE.equals(declared.getAsString())) {
+					bankWrap = BankWrap.IMAGE;
+				}
+				else {
+					log.appendMsg(source, "banking.bank_wrap '" + declared.getAsString() + "' in " +
+						mapPath + " is not a recognized policy (expected '" + BANK_WRAP_IMAGE +
+						"' or an integer mask); bank numbers will not be wrapped");
+				}
+			}
+
 			return new BoardModel(mask, initialState, stateBitNames, fieldSpecs, windowsByName,
 				computedByName, occupantByWindowForState, homeOccupantByWindow, modeField,
-				homeModeValue, modeWindows);
+				homeModeValue, modeWindows, bankWrap);
 		}
 	}
 }

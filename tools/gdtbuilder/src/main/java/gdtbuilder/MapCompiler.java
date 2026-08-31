@@ -88,6 +88,23 @@ public class MapCompiler {
 	 */
 	private static final Set<String> INITIAL_STATE_KEYWORDS = Set.of("image_size");
 
+	/**
+	 * The KEYWORD half of the {@code banking.bank_wrap} vocabulary (bead {@code grm-p25h}); the
+	 * other half is a plain integer mask, which needs no vocabulary. See {@link #parseBankWrap}.
+	 * <p>
+	 * {@code image} means "this board's bank registers are wider than the cartridge decodes, and
+	 * the hardware truncates the high bits" -- the ordinary MMC5 init idiom, where a game writes
+	 * bank 126 to a 32-bank cartridge and the missing PRG address lines silently select bank 30.
+	 * Declaring it lets the analyzer DERIVE the mask from the window's REALIZED bank set before
+	 * looking an overlay up; absent, nothing is canonicalized and the board behaves exactly as
+	 * it did before this key existed.
+	 * <p>
+	 * A {@link Set} rather than a string constant, so a second derivation policy (a board that
+	 * ignores the write entirely, or decodes a non-low subset of bits) can join it without
+	 * reshaping the key -- the same reason the key is not spelled as a boolean.
+	 */
+	private static final Set<String> BANK_WRAP_POLICIES = Set.of("image");
+
 	public static void main(String[] args) throws Exception {
 		if (args.length != 2) {
 			System.err.println("Usage: MapCompiler <descriptor.yaml> <output.map>");
@@ -1073,6 +1090,9 @@ public class MapCompiler {
 			}
 			out.put("context_register", contextRegister);
 		}
+		if (banking.containsKey("bank_wrap")) {
+			out.put("bank_wrap", parseBankWrap(banking.get("bank_wrap"), stateFields));
+		}
 
 		// state tuple (already validated by parseStateFields)
 		List<Map<String, Object>> stateOut = new ArrayList<>();
@@ -1160,6 +1180,64 @@ public class MapCompiler {
 		}
 		out.put("states", statesOut);
 		return out;
+	}
+
+	/**
+	 * Validates and normalizes {@code banking.bank_wrap} (bead {@code grm-p25h}), which takes
+	 * either of two forms.
+	 * <p>
+	 * {@code image} DERIVES the truncation mask at analysis time from the banks the loader
+	 * actually realized, and is guarded there (it declines on a realized set that is not
+	 * {@code {0 .. n-1}} with {@code n} a power of two). Nothing to check here beyond the
+	 * keyword.
+	 * <p>
+	 * An INTEGER is an explicit mask -- a stated hardware fact about how many PRG address lines
+	 * the cartridge wires -- and the runtime applies it unconditionally, with no guard, because
+	 * a guard would defeat the only reason the form exists. That is exactly why the checks below
+	 * belong here instead: a mask the runtime will never second-guess must be well formed at
+	 * build time.
+	 * <ul>
+	 * <li>{@code mask + 1} must be a power of two: a mask is a contiguous run of LOW bits
+	 * ({@code 0x1F} yes, {@code 0x12} no). A non-contiguous value is a typo, not a wiring.</li>
+	 * <li>The mask must fit some declared {@code banking.state} field. A mask wider than every
+	 * field on the board cannot truncate anything and is silently a no-op otherwise.</li>
+	 * </ul>
+	 */
+	private static Object parseBankWrap(Object value, LinkedHashMap<String, Integer> stateFields) {
+		String text = value == null ? null : value.toString().trim();
+		if (text != null && BANK_WRAP_POLICIES.contains(text)) {
+			return text;
+		}
+		long mask;
+		try {
+			mask = toInt(value);
+		}
+		catch (RuntimeException e) {
+			throw new IllegalArgumentException("banking 'bank_wrap:' must be one of " +
+				BANK_WRAP_POLICIES + " or an integer mask; got: " + value);
+		}
+		if (mask < 0 || ((mask + 1) & mask) != 0) {
+			throw new IllegalArgumentException("banking 'bank_wrap:' mask 0x" +
+				Long.toHexString(mask) + " is not a contiguous run of low bits (mask + 1 must be " +
+				"a power of two, e.g. 0x1f); a bank mask selects the address lines the cartridge " +
+				"actually wires, which are always the low ones");
+		}
+		int widest = 0;
+		String widestField = null;
+		for (Map.Entry<String, Integer> field : stateFields.entrySet()) {
+			if (field.getValue() > widest) {
+				widest = field.getValue();
+				widestField = field.getKey();
+			}
+		}
+		long widestMax = widest >= 32 ? 0xFFFFFFFFL : (1L << widest) - 1;
+		if (mask > widestMax) {
+			throw new IllegalArgumentException("banking 'bank_wrap:' mask 0x" +
+				Long.toHexString(mask) + " does not fit any banking.state field (the widest is '" +
+				widestField + "' at " + widest + " bits, holding 0.." + widestMax +
+				"), so it could never truncate a bank number");
+		}
+		return (int) mask;
 	}
 
 	/**
