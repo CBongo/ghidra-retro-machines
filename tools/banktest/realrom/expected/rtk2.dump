@@ -333,14 +333,18 @@ REALROM count blocks.total 325
 REALROM count blocks.overlay 316
 REALROM count spaces.overlay 316
 REALROM count refs.intoOverlay 0
+REALROM count refs.intoOverlay.retargeted 0
+REALROM count refs.intoOverlay.intraOverlay 0
 REALROM count instrs.inOverlay 0
 REALROM count bankComments 3
 REALROM count warnings 1
+REALROM count notes 1
 REALROM count symbols 18
 REALROM sample.bankcomment f569 bank -> prg_mode=3,bank_5114=0,bank_5115=0,bank_5116=126 (wraps to 30),bank_5117=31? [known: bank_5116.0=0,bank_5116.1=1,bank_5116.2=1,bank_5116.3=1,bank_5116.4=1,bank_5116.5=1,bank_5116.6=1; assumed from initial: prg_mode.0,prg_mode.1,bank_5114.0,bank_5114.1,bank_5114.2,bank_5114.3,bank_5114.4,bank_5114.5,bank_5114.6,bank_5115.0,bank_5115.1,bank_5115.2,bank_5115.3,bank_5115.4,bank_5115.5,bank_5115.6,bank_5117.0,bank_5117.1,bank_5117.2,bank_5117.3,bank_5117.4,bank_5117.5,bank_5117.6] [switch-value flow]
 REALROM sample.bankcomment f579 bank -> prg_mode=3,bank_5114=96 (wraps to 0),bank_5115=0,bank_5116=0,bank_5117=31? [known: bank_5114.0=0,bank_5114.1=0,bank_5114.2=0,bank_5114.3=0,bank_5114.4=0,bank_5114.5=1,bank_5114.6=1; assumed from initial: prg_mode.0,prg_mode.1,bank_5115.0,bank_5115.1,bank_5115.2,bank_5115.3,bank_5115.4,bank_5115.5,bank_5115.6,bank_5116.0,bank_5116.1,bank_5116.2,bank_5116.3,bank_5116.4,bank_5116.5,bank_5116.6,bank_5117.0,bank_5117.1,bank_5117.2,bank_5117.3,bank_5117.4,bank_5117.5,bank_5117.6] [switch-value flow]
 REALROM sample.bankcomment f581 bank -> prg_mode=3,bank_5114=0,bank_5115=97 (wraps to 1),bank_5116=0,bank_5117=31? [known: bank_5115.0=1,bank_5115.1=0,bank_5115.2=0,bank_5115.3=0,bank_5115.4=0,bank_5115.5=1,bank_5115.6=1; assumed from initial: prg_mode.0,prg_mode.1,bank_5114.0,bank_5114.1,bank_5114.2,bank_5114.3,bank_5114.4,bank_5114.5,bank_5114.6,bank_5116.0,bank_5116.1,bank_5116.2,bank_5116.3,bank_5116.4,bank_5116.5,bank_5116.6,bank_5117.0,bank_5117.1,bank_5117.2,bank_5117.3,bank_5117.4,bank_5117.5,bank_5117.6] [switch-value flow]
 REALROM sample.warn f525 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_f55f whose bank argument could not be recovered at this call site
+REALROM sample.note e4dd [CopyLoopAnalyzer] copy-shaped loop RAM:0000 -> RAM:000c (8 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.symbol 2000 PPUCTRL IMPORTED primary=true
 REALROM sample.symbol 2001 PPUMASK IMPORTED primary=true
 REALROM sample.symbol 2002 PPUSTATUS IMPORTED primary=true

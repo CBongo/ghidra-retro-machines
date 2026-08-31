@@ -13,9 +13,12 @@ REALROM count blocks.total 5
 REALROM count blocks.overlay 0
 REALROM count spaces.overlay 0
 REALROM count refs.intoOverlay 0
+REALROM count refs.intoOverlay.retargeted 0
+REALROM count refs.intoOverlay.intraOverlay 0
 REALROM count instrs.inOverlay 0
 REALROM count bankComments 0
 REALROM count warnings 0
+REALROM count notes 0
 REALROM count symbols 18
 REALROM sample.symbol 2000 PPUCTRL IMPORTED primary=true
 REALROM sample.symbol 2001 PPUMASK IMPORTED primary=true

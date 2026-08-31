@@ -46,9 +46,12 @@ REALROM count blocks.total 38
 REALROM count blocks.overlay 32
 REALROM count spaces.overlay 32
 REALROM count refs.intoOverlay 50
+REALROM count refs.intoOverlay.retargeted 2
+REALROM count refs.intoOverlay.intraOverlay 48
 REALROM count instrs.inOverlay 215
 REALROM count bankComments 32
 REALROM count warnings 9
+REALROM count notes 1
 REALROM count symbols 18
 REALROM sample.bankcomment c024 bank -> mirroring=3,prg_mode=3,prg_bank=0 via FUN_eb07 [switch-value flow]
 REALROM sample.bankcomment c0d4 bank -> mirroring=0,prg_mode=3,prg_bank=0? via FUN_c17f [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
@@ -75,6 +78,13 @@ REALROM sample.bankcomment ff9c bank -> mirroring=3,prg_mode=3,prg_bank=0 [switc
 REALROM sample.bankcomment ffa1 bank -> mirroring=3,prg_mode=3,prg_bank=0 [switch-value flow]
 REALROM sample.bankcomment ffa5 bank -> mirroring=3,prg_mode=3,prg_bank=0 [switch-value flow]
 REALROM sample.bankcomment ffa9 bank -> mirroring=3,prg_mode=3,prg_bank=0 [switch-value flow]
+REALROM sample.bankcomment ffad bank -> mirroring=3,prg_mode=3,prg_bank=0 [switch-value flow]
+REALROM sample.bankcomment ffb1 bank -> mirroring=3,prg_mode=3,prg_bank=0 [switch-value flow]
+REALROM sample.bankcomment ffb6 bank -> mirroring=3,prg_mode=3,prg_bank=0 [switch-value flow]
+REALROM sample.bankcomment ffba bank -> mirroring=3,prg_mode=3,prg_bank=0 [switch-value flow]
+REALROM sample.bankcomment ffbe bank -> mirroring=3,prg_mode=3,prg_bank=0 [switch-value flow]
+REALROM sample.bankcomment ffc2 bank -> mirroring=3,prg_mode=3,prg_bank=0 [switch-value flow]
+REALROM sample.bankcomment ffc6 bank -> mirroring=3,prg_mode=3,prg_bank=0 [switch-value flow]
 REALROM sample.ref a000 -> W8000_M3_B4::a006 UNCONDITIONAL_JUMP primary=true
 REALROM sample.ref a003 -> W8000_M3_B4::a0fd UNCONDITIONAL_JUMP primary=true
 REALROM sample.ref a02f -> W8000_M3_B4::a02b CONDITIONAL_JUMP primary=true
@@ -100,6 +110,7 @@ REALROM sample.ref a2b3 -> W8000_M3_B4::a2cc CONDITIONAL_JUMP primary=true
 REALROM sample.ref a2b7 -> W8000_M3_B4::a2bd CONDITIONAL_JUMP primary=true
 REALROM sample.ref a2bb -> W8000_M3_B4::a2bf CONDITIONAL_JUMP primary=true
 REALROM sample.ref a2c2 -> W8000_M3_B4::a2c9 CONDITIONAL_JUMP primary=true
+REALROM sample.ref.truncated 25 of 50
 REALROM sample.warn c134 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c17f whose bank argument could not be recovered at this call site
 REALROM sample.warn c18b [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn c18f [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
@@ -109,6 +120,7 @@ REALROM sample.warn c19b [NesBankingAnalyzer] Bank state becomes unknown here: m
 REALROM sample.warn c852 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c17f whose bank argument could not be recovered at this call site
 REALROM sample.warn c862 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c17f whose bank argument could not be recovered at this call site
 REALROM sample.warn c872 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c17f whose bank argument could not be recovered at this call site
+REALROM sample.note c143 [CopyLoopAnalyzer] copy-shaped loop RAM:0000 -> RAM:7f00 (90 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.symbol 2000 PPUCTRL IMPORTED primary=true
 REALROM sample.symbol 2001 PPUMASK IMPORTED primary=true
 REALROM sample.symbol 2002 PPUSTATUS IMPORTED primary=true

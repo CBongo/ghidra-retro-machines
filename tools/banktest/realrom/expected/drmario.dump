@@ -46,9 +46,12 @@ REALROM count blocks.total 38
 REALROM count blocks.overlay 32
 REALROM count spaces.overlay 32
 REALROM count refs.intoOverlay 394
+REALROM count refs.intoOverlay.retargeted 4
+REALROM count refs.intoOverlay.intraOverlay 390
 REALROM count instrs.inOverlay 1650
 REALROM count bankComments 2
 REALROM count warnings 21
+REALROM count notes 0
 REALROM count symbols 18
 REALROM sample.bankcomment ff1b bank -> mirroring=0,prg_mode=0,prg_bank=0? via FUN_b8cc [known: mirroring.0=0,mirroring.1=0,prg_mode.0=0,prg_mode.1=0; assumed from initial: prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
 REALROM sample.bankcomment ff2a bank -> mirroring=0,prg_mode=0,prg_bank=0 via FUN_b908 [switch-value flow]
@@ -77,6 +80,7 @@ REALROM sample.ref 8141 -> W8000_M0_B0::b654 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8148 -> W8000_M0_B0::8157 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 814b -> W8000_M0_B0::978e UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 814e -> W8000_M0_B0::b654 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref.truncated 25 of 394
 REALROM sample.warn b8cc [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn b8d0 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn b8d4 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)

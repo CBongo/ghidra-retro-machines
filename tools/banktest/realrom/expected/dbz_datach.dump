@@ -28,9 +28,12 @@ REALROM count blocks.total 20
 REALROM count blocks.overlay 15
 REALROM count spaces.overlay 15
 REALROM count refs.intoOverlay 0
+REALROM count refs.intoOverlay.retargeted 0
+REALROM count refs.intoOverlay.intraOverlay 0
 REALROM count instrs.inOverlay 0
 REALROM count bankComments 0
 REALROM count warnings 3
+REALROM count notes 0
 REALROM count symbols 18
 REALROM sample.warn c099 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn cc11 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_cc28 whose bank argument could not be recovered at this call site

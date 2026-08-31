@@ -15,9 +15,12 @@ REALROM count blocks.total 7
 REALROM count blocks.overlay 3
 REALROM count spaces.overlay 3
 REALROM count refs.intoOverlay 0
+REALROM count refs.intoOverlay.retargeted 0
+REALROM count refs.intoOverlay.intraOverlay 0
 REALROM count instrs.inOverlay 0
 REALROM count bankComments 0
 REALROM count warnings 6
+REALROM count notes 0
 REALROM count symbols 18
 REALROM sample.warn 8ee4 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_8eeb whose bank argument could not be recovered at this call site
 REALROM sample.warn 9913 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffbe whose bank argument could not be recovered at this call site

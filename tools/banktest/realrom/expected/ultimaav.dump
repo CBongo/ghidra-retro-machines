@@ -78,9 +78,12 @@ REALROM count blocks.total 70
 REALROM count blocks.overlay 64
 REALROM count spaces.overlay 64
 REALROM count refs.intoOverlay 225
+REALROM count refs.intoOverlay.retargeted 11
+REALROM count refs.intoOverlay.intraOverlay 214
 REALROM count instrs.inOverlay 867
 REALROM count bankComments 8
 REALROM count warnings 17
+REALROM count notes 0
 REALROM count symbols 18
 REALROM sample.bankcomment c181 bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_f331 [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment c1db bank -> mirroring=0,prg_mode=3,prg_bank=13? via FUN_f331 [known: prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
@@ -115,6 +118,7 @@ REALROM sample.ref 8091 -> W8000_M3_B14::80f0 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8097 -> W8000_M3_B14::80ef CONDITIONAL_JUMP primary=true
 REALROM sample.ref 80af -> W8000_M3_B14::80b9 CONDITIONAL_JUMP primary=true
 REALROM sample.ref 80b1 -> W8000_M3_B14::81d1 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref.truncated 25 of 225
 REALROM sample.warn e6e3 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_f331 whose bank argument could not be recovered at this call site
 REALROM sample.warn ef13 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_f331 whose bank argument could not be recovered at this call site
 REALROM sample.warn f1f1 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_f333 whose bank argument could not be recovered at this call site

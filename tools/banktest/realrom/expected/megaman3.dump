@@ -111,9 +111,12 @@ REALROM count blocks.total 103
 REALROM count blocks.overlay 95
 REALROM count spaces.overlay 95
 REALROM count refs.intoOverlay 175
+REALROM count refs.intoOverlay.retargeted 2
+REALROM count refs.intoOverlay.intraOverlay 173
 REALROM count instrs.inOverlay 693
 REALROM count bankComments 9
 REALROM count warnings 4
+REALROM count notes 0
 REALROM count symbols 18
 REALROM sample.bankcomment fe66 bank -> select=0,prg_mode=0,r6=0,r7=23 via FUN_ff6b [switch-value flow]
 REALROM sample.bankcomment ff71 bank -> select=6,prg_mode=0,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=1,prg_mode=0,r6.0=0,r6.3=0,r6.5=0,r7.0=1,r7.3=0,r7.5=0; assumed from initial: r6.1,r6.2,r6.4,r7.1,r7.2,r7.4] [switch-value flow]
@@ -149,6 +152,7 @@ REALROM sample.ref 8100 -> W8000_M0_B22::8106 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8108 -> W8000_M0_B22::810d CONDITIONAL_JUMP primary=true
 REALROM sample.ref 810a -> W8000_M0_B22::81ae UNCONDITIONAL_JUMP primary=true
 REALROM sample.ref 810d -> W8000_M0_B22::8a40 READ primary=true
+REALROM sample.ref.truncated 25 of 175
 REALROM sample.warn c0b8 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ff41 whose bank argument could not be recovered at this call site
 REALROM sample.warn c0bd [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn ff49 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)

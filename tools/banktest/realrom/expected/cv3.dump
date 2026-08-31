@@ -333,9 +333,12 @@ REALROM count blocks.total 325
 REALROM count blocks.overlay 316
 REALROM count spaces.overlay 316
 REALROM count refs.intoOverlay 67
+REALROM count refs.intoOverlay.retargeted 27
+REALROM count refs.intoOverlay.intraOverlay 40
 REALROM count instrs.inOverlay 341
 REALROM count bankComments 12
 REALROM count warnings 9
+REALROM count notes 0
 REALROM count symbols 18
 REALROM sample.bankcomment e03a bank -> prg_mode=2,bank_5114=0,bank_5115=0,bank_5116=0,bank_5117=31? via FUN_e0df [known: prg_mode.0=0,prg_mode.1=1; assumed from initial: bank_5114.0,bank_5114.1,bank_5114.2,bank_5114.3,bank_5114.4,bank_5114.5,bank_5114.6,bank_5115.0,bank_5115.1,bank_5115.2,bank_5115.3,bank_5115.4,bank_5115.5,bank_5115.6,bank_5116.0,bank_5116.1,bank_5116.2,bank_5116.3,bank_5116.4,bank_5116.5,bank_5116.6,bank_5117.0,bank_5117.1,bank_5117.2,bank_5117.3,bank_5117.4,bank_5117.5,bank_5117.6] [switch-value flow]
 REALROM sample.bankcomment e03d bank -> prg_mode=3,bank_5114=0,bank_5115=0,bank_5116=30,bank_5117=31? via FUN_e2da [known: bank_5116.0=0,bank_5116.1=1,bank_5116.2=1,bank_5116.3=1,bank_5116.4=1,bank_5116.5=0,bank_5116.6=0; assumed from initial: prg_mode.0,prg_mode.1,bank_5114.0,bank_5114.1,bank_5114.2,bank_5114.3,bank_5114.4,bank_5114.5,bank_5114.6,bank_5115.0,bank_5115.1,bank_5115.2,bank_5115.3,bank_5115.4,bank_5115.5,bank_5115.6,bank_5117.0,bank_5117.1,bank_5117.2,bank_5117.3,bank_5117.4,bank_5117.5,bank_5117.6] [switch-value flow]
@@ -374,6 +377,7 @@ REALROM sample.ref a9cc -> WA000_M3_B2::aa10 CONDITIONAL_JUMP primary=true
 REALROM sample.ref a9d0 -> WA000_M3_B2::a9d8 CONDITIONAL_JUMP primary=true
 REALROM sample.ref a9d4 -> WA000_M3_B2::a9e4 CONDITIONAL_JUMP primary=true
 REALROM sample.ref a9d6 -> WA000_M3_B2::a9e0 CONDITIONAL_JUMP primary=true
+REALROM sample.ref.truncated 25 of 67
 REALROM sample.warn e141 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_e2e6 whose bank argument could not be recovered at this call site
 REALROM sample.warn e24a [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_e2e6 whose bank argument could not be recovered at this call site
 REALROM sample.warn e277 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_WE000_M2_B31__e2e6 whose bank argument could not be recovered at this call site

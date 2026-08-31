@@ -63,9 +63,12 @@ REALROM count blocks.total 55
 REALROM count blocks.overlay 47
 REALROM count spaces.overlay 47
 REALROM count refs.intoOverlay 0
+REALROM count refs.intoOverlay.retargeted 0
+REALROM count refs.intoOverlay.intraOverlay 0
 REALROM count instrs.inOverlay 0
 REALROM count bankComments 35
 REALROM count warnings 5
+REALROM count notes 10
 REALROM count symbols 18
 REALROM sample.bankcomment e237 bank -> select=0,prg_mode=0,r6=0,r7=1? via FUN_ff85 [known: select.0=0,select.1=0,select.2=0,prg_mode=0,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0,r7.0=1; assumed from initial: r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment e27e bank -> select=0,prg_mode=0,r6=0,r7=1? via FUN_ff85 [known: select.0=0,select.1=0,select.2=0,prg_mode=0,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0,r7.0=1; assumed from initial: r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
@@ -92,11 +95,31 @@ REALROM sample.bankcomment e995 bank -> select=0,prg_mode=0,r6=0,r7=1? via FUN_f
 REALROM sample.bankcomment e9fc bank -> select=0,prg_mode=0,r6=0,r7=1? via FUN_ff85 [known: select.0=0,select.1=0,select.2=0,prg_mode=0,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0,r7.0=1; assumed from initial: r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment ec7e bank -> select=0,prg_mode=0,r6=0,r7=1? via FUN_ff88 [known: r7.0=1; assumed from initial: select.0,select.1,select.2,prg_mode,r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment ec87 bank -> select=0,prg_mode=0,r6=0,r7=1? via FUN_ff85 [known: r7.0=1; assumed from initial: select.0,select.1,select.2,prg_mode,r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment f10f bank -> select=0,prg_mode=0,r6=0,r7=1? via FUN_ff85 [known: select.0=0,select.1=0,select.2=0,prg_mode=0,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0,r7.0=1; assumed from initial: r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment f128 bank -> select=0,prg_mode=0,r6=0,r7=1? via FUN_ff85 [known: select.0=0,select.1=0,select.2=0,prg_mode=0,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0,r7.0=1; assumed from initial: r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment f148 bank -> select=0,prg_mode=0,r6=0,r7=1? via FUN_ff85 [known: select.0=0,select.1=0,select.2=0,prg_mode=0,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0,r7.0=1; assumed from initial: r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment f197 bank -> select=0,prg_mode=0,r6=0,r7=1? via FUN_ff85 [known: select.0=0,select.1=0,select.2=0,prg_mode=0,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0,r7.0=1; assumed from initial: r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment f19f bank -> select=0,prg_mode=0,r6=0,r7=1? via FUN_ff85 [known: select.0=0,select.1=0,select.2=0,prg_mode=0,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0,r7.0=1; assumed from initial: r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment f291 bank -> select=0,prg_mode=0,r6=0,r7=1? via FUN_ff85 [known: select.0=0,select.1=0,select.2=0,prg_mode=0,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0,r7.0=1; assumed from initial: r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment ff8c bank -> select=6,prg_mode=0,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=1,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment ff90 bank -> select=6,prg_mode=0,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=1,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment ff98 bank -> select=7,prg_mode=0,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment ff9c bank -> select=7,prg_mode=0,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.warn eb49 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ff73 whose bank argument could not be recovered at this call site
 REALROM sample.warn eb6b [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ff73 whose bank argument could not be recovered at this call site
 REALROM sample.warn eba8 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ff73 whose bank argument could not be recovered at this call site
 REALROM sample.warn ff78 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn ff7e [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.note 9b83 [CopyLoopAnalyzer] copy-shaped loop RAM:98a2 -> RAM:0304 (5 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note aaa8 [CopyLoopAnalyzer] copy-shaped loop RAM:aa35 -> RAM:0200 (4 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note aab9 [CopyLoopAnalyzer] copy-shaped loop RAM:aa39 -> RAM:0210 (64 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note e243 [CopyLoopAnalyzer] copy-shaped loop RAM:e0f1 -> RAM:055f (36 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note e2c8 [CopyLoopAnalyzer] copy-shaped loop RAM:e01a -> RAM:0210 (64 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note e3dd [CopyLoopAnalyzer] copy-shaped loop RAM:e01a -> RAM:0210 (64 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note e6ed [CopyLoopAnalyzer] copy-shaped loop RAM:e9b4 -> RAM:067b (41 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note ea02 [CopyLoopAnalyzer] copy-shaped loop RAM:e0f1 -> RAM:055f (36 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note f1b5 [CopyLoopAnalyzer] copy-shaped loop RAM:0531 -> RAM:04e7 (4 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note f1e1 [CopyLoopAnalyzer] copy-shaped loop RAM:04e7 -> RAM:0531 (4 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.symbol 2000 PPUCTRL IMPORTED primary=true
 REALROM sample.symbol 2001 PPUMASK IMPORTED primary=true
 REALROM sample.symbol 2002 PPUSTATUS IMPORTED primary=true

@@ -24,12 +24,12 @@
 // SHA-256, the SHA-256 of its PRG slice alone (the loader's per-game identity key, bead
 // grm-hb6.1 -- this is the value a curated per-game descriptor's `prg_sha256` field is
 // copied from), memory-block layout (name/range/overlay-ness), counts of overlay spaces /
-// cross-bank references / bank-switch comments / warning bookmarks / banked
+// cross-bank references / bank-switch comments / warning and note bookmarks / banked
 // instructions, and a bounded, sorted SAMPLE of the bank-switch comments, cross-bank
-// overlay references, and warning bookmarks. It never emits ROM bytes or disassembled
-// instruction text, so the resulting golden is safe to commit even though the ROM it
-// was derived from is not. Name-agnostic (unlike VerifyBankTest's name dispatch) so it
-// runs on any real ROM. Driven by realrom-test.sh.
+// overlay references, and warning and note bookmarks. It never emits ROM bytes or
+// disassembled instruction text, so the resulting golden is safe to commit even though the
+// ROM it was derived from is not. Name-agnostic (unlike VerifyBankTest's name dispatch) so
+// it runs on any real ROM. Driven by realrom-test.sh.
 //@category RetroMachines.Test
 
 import java.util.ArrayList;
@@ -52,10 +52,33 @@ import ghidra.program.model.symbol.Symbol;
 
 public class RealRomDump extends GhidraScript {
 
-	// Cap the per-category sample so a large cartridge cannot blow the golden up.
-	// Full counts still catch regressions; the sample catches qualitative drift in
-	// the lowest-addressed annotations.
-	private static final int SAMPLE = 25;
+	// Per-category sample caps (bead grm-3pnz). This was ONE constant, SAMPLE = 25, serving
+	// every category -- and the categories differ ~18x in size, so that single number was
+	// quietly doing two unrelated jobs: keeping refs (13997 lines across the 33-row corpus)
+	// from blowing the goldens up, and, as an unintended side effect, discarding the
+	// bankComments and warnings a bless review actually reads.
+	//
+	// THE TRUNCATION IS BY ADDRESS, WHICH IS THE PART THAT BIT. emitSample prints a prefix of
+	// a SORTED list, so on any row over the cap the highest-addressed annotations can never
+	// appear. On 6502 that hides exactly the region worth watching: the reset/NMI/IRQ vectors
+	// and the fixed high bank at $Fxxx. The old comment here described this as catching
+	// "qualitative drift in the lowest-addressed annotations" -- an honest description of the
+	// limitation, but it read as design intent, and it was not one. Nobody chose to stop
+	// watching $F000-$FFFF.
+	//
+	// refs stays capped: it is 18x the other categories combined and is the least informative
+	// line-kind per byte, so uncapping it would grow the corpus ~17x for little. The
+	// annotation categories go to 250, which clears every row in the current corpus with
+	// headroom (worst rows: bankComments 181 on smb3, warnings 43 on rcransom).
+	private static final int SAMPLE_REFS = 25;
+	private static final int SAMPLE_BANKCOMMENTS = 250;
+	private static final int SAMPLE_WARNINGS = 250;
+	private static final int SAMPLE_NOTES = 250;
+
+	// Symbols are already filtered to IMPORTED/USER_DEFINED (bead grm-mej.4), which holds
+	// every row in the corpus to 18 -- well under the historical cap. Left where it was;
+	// raising it would move nothing.
+	private static final int SAMPLE_SYMBOLS = 25;
 
 	// Program-info property the loader stamps with the board's .map path
 	// (DescriptorSupport.MAP_PATH_PROPERTY / .PLACEMENT_OVERRIDE_PROPERTY -- kept as
@@ -92,12 +115,29 @@ public class RealRomDump extends GhidraScript {
 		List<String> bankComments = new ArrayList<>();
 		List<String> overlayRefs = new ArrayList<>();
 		long refsIntoOverlay = 0;
+		// Split on the SOURCE space (bead grm-jwh). refs.intoOverlay counts every reference
+		// whose TARGET is an overlay regardless of where it came from, which conflates two
+		// different things: an actual RETARGET (a reference we redirected out of the base
+		// space into a bank) and an ordinary INTRA-OVERLAY branch that exists only because
+		// Ghidra disassembled the overlay after the first retarget bootstrapped it. The
+		// second term dominates on a working title, so the combined number is fine as a
+		// coarse did-anything-happen signal (grm-8iy used it that way) but is NOT a
+		// fix-effectiveness metric: a change that doubles the retargets and one that merely
+		// disassembles deeper inside an already-reached overlay move it identically.
+		//
+		// The two sub-counters PARTITION the total by construction (a source space either is
+		// or is not an overlay), so retargeted + intraOverlay == intoOverlay on every row.
+		// The total is kept so that invariant is checkable in the golden itself, and so the
+		// existing coarse signal stays comparable across the format change.
+		long refsRetargeted = 0;
+		long refsIntraOverlay = 0;
 		long instrsInOverlay = 0;
 		InstructionIterator instrs = currentProgram.getListing().getInstructions(true);
 		while (instrs.hasNext()) {
 			Instruction instr = instrs.next();
 			Address at = instr.getMinAddress();
-			if (at.getAddressSpace().isOverlaySpace()) {
+			boolean fromOverlay = at.getAddressSpace().isOverlaySpace();
+			if (fromOverlay) {
 				instrsInOverlay++;
 			}
 
@@ -110,6 +150,12 @@ public class RealRomDump extends GhidraScript {
 				AddressSpace toSpace = r.getToAddress().getAddressSpace();
 				if (toSpace.isOverlaySpace()) {
 					refsIntoOverlay++;
+					if (fromOverlay) {
+						refsIntraOverlay++;
+					}
+					else {
+						refsRetargeted++;
+					}
 					overlayRefs.add(fmt(at) + " -> " + toSpace.getName() + "::" +
 						fmt(r.getToAddress()) + " " + r.getReferenceType().getName() +
 						" primary=" + r.isPrimary());
@@ -117,14 +163,40 @@ public class RealRomDump extends GhidraScript {
 			}
 		}
 
+		// Warning and Note bookmarks are collected by TYPE, not by category -- deliberately,
+		// and note that this means both counts are cross-analyzer. The existing warnings
+		// count has always been this way (the corpus today holds [NesBankingAnalyzer],
+		// [CopyLoopAnalyzer] and Ghidra's own [Bad Instruction] under it), and the sample
+		// lines carry the category so a reader can separate the channels.
+		//
+		// The note channel is new (bead grm-3ou part 1). grm-3ou reclassifies an unrecovered
+		// bank site whose value is genuinely runtime-determined from WARNING down to NOTE --
+		// and this dump sampled only Warning bookmarks, so every downgraded site would have
+		// silently VANISHED from the goldens, turning an honest reclassification into what
+		// looks like a fix. Emitting the count and sample unconditionally NOW, while it still
+		// reads 0 for bank sites, means that behaviour change lands as ordinary reviewable
+		// movement rather than needing a second format re-bless of all 33 goldens.
+		//
+		// It is `notes`, not grm-3ou's proposed `bankNotes`: BookmarkType.NOTE is already
+		// emitted by CopyLoopAnalyzer and TransferMaterializer, so a bank-specific name would
+		// claim a filter this counter does not apply -- which is the exact dishonest-metric
+		// problem grm-jwh is filed about, and not one worth reintroducing in the same commit
+		// that fixes it.
 		List<String> warnings = new ArrayList<>();
+		List<String> notes = new ArrayList<>();
 		long warningCount = 0;
+		long noteCount = 0;
 		Iterator<Bookmark> bms = currentProgram.getBookmarkManager().getBookmarksIterator();
 		while (bms.hasNext()) {
 			Bookmark bm = bms.next();
+			String line = fmt(bm.getAddress()) + " [" + bm.getCategory() + "] " + bm.getComment();
 			if ("Warning".equals(bm.getTypeString())) {
 				warningCount++;
-				warnings.add(fmt(bm.getAddress()) + " [" + bm.getCategory() + "] " + bm.getComment());
+				warnings.add(line);
+			}
+			else if ("Note".equals(bm.getTypeString())) {
+				noteCount++;
+				notes.add(line);
 			}
 		}
 
@@ -162,6 +234,7 @@ public class RealRomDump extends GhidraScript {
 		Collections.sort(bankComments);
 		Collections.sort(overlayRefs);
 		Collections.sort(warnings);
+		Collections.sort(notes);
 
 		String sha = currentProgram.getExecutableSHA256();
 		String mapPath = currentProgram.getOptions(Program.PROGRAM_INFO)
@@ -187,15 +260,19 @@ public class RealRomDump extends GhidraScript {
 		println("REALROM count blocks.overlay " + blocksOverlay);
 		println("REALROM count spaces.overlay " + spacesOverlay);
 		println("REALROM count refs.intoOverlay " + refsIntoOverlay);
+		println("REALROM count refs.intoOverlay.retargeted " + refsRetargeted);
+		println("REALROM count refs.intoOverlay.intraOverlay " + refsIntraOverlay);
 		println("REALROM count instrs.inOverlay " + instrsInOverlay);
 		println("REALROM count bankComments " + bankComments.size());
 		println("REALROM count warnings " + warningCount);
+		println("REALROM count notes " + noteCount);
 		println("REALROM count symbols " + symbolCount);
 
-		emitSample("bankcomment", bankComments);
-		emitSample("ref", overlayRefs);
-		emitSample("warn", warnings);
-		emitSample("symbol", symbols);
+		emitSample("bankcomment", bankComments, SAMPLE_BANKCOMMENTS);
+		emitSample("ref", overlayRefs, SAMPLE_REFS);
+		emitSample("warn", warnings, SAMPLE_WARNINGS);
+		emitSample("note", notes, SAMPLE_NOTES);
+		emitSample("symbol", symbols, SAMPLE_SYMBOLS);
 
 		println("=== REALROM END ===");
 	}
@@ -215,12 +292,22 @@ public class RealRomDump extends GhidraScript {
 		return "NONE";
 	}
 
-	// Print the first SAMPLE (sorted) entries of a category, so the golden stays small
-	// and stable while still pinning concrete annotation text.
-	private void emitSample(String tag, List<String> lines) {
-		int n = Math.min(SAMPLE, lines.size());
+	// Print the first `cap` (sorted) entries of a category, so the golden stays small and
+	// stable while still pinning concrete annotation text.
+	//
+	// When the cap actually bites, say so IN THE GOLDEN. The truncation used to be silent,
+	// which is how it went years without anyone noticing that the sample is a prefix by
+	// address and the high addresses were simply gone (bead grm-3pnz). A marker line costs
+	// one line on the rows that are truncated, makes the remaining refs cap self-documenting,
+	// and means a future reader can never again mistake "absent from the sample" for "absent
+	// from the program".
+	private void emitSample(String tag, List<String> lines, int cap) {
+		int n = Math.min(cap, lines.size());
 		for (int i = 0; i < n; i++) {
 			println("REALROM sample." + tag + " " + lines.get(i));
+		}
+		if (n < lines.size()) {
+			println("REALROM sample." + tag + ".truncated " + n + " of " + lines.size());
 		}
 	}
 

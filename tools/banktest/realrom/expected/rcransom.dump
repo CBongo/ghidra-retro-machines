@@ -63,9 +63,12 @@ REALROM count blocks.total 55
 REALROM count blocks.overlay 47
 REALROM count spaces.overlay 47
 REALROM count refs.intoOverlay 0
+REALROM count refs.intoOverlay.retargeted 0
+REALROM count refs.intoOverlay.intraOverlay 0
 REALROM count instrs.inOverlay 0
 REALROM count bankComments 34
 REALROM count warnings 43
+REALROM count notes 2
 REALROM count symbols 18
 REALROM sample.bankcomment b80b bank -> select=0,prg_mode=0,r6=0,r7=1? [known: select.0=0,select.1=0,select.2=0,prg_mode=0,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0; assumed from initial: r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment fae3 bank -> select=0,prg_mode=0,r6=0,r7=1 via FUN_ba78 [switch-value flow]
@@ -92,6 +95,15 @@ REALROM sample.bankcomment fecd bank -> select=5,prg_mode=0,r6=0,r7=1? [known: s
 REALROM sample.bankcomment fed8 bank -> select=6,prg_mode=0,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=1,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment fee2 bank -> select=6,prg_mode=0,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=1,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment fee9 bank -> select=7,prg_mode=0,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment fef5 bank -> select=7,prg_mode=0,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment ff09 bank -> select=6,prg_mode=0,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=1,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment ff0e bank -> select=6,prg_mode=0,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=1,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment ff13 bank -> select=7,prg_mode=0,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment ff18 bank -> select=7,prg_mode=0,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment ff31 bank -> select=6,prg_mode=0,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=1,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment ff36 bank -> select=6,prg_mode=0,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=1,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment ff3d bank -> select=7,prg_mode=0,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment ff42 bank -> select=7,prg_mode=0,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.warn c08e [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fed1 whose bank argument could not be recovered at this call site
 REALROM sample.warn c0b1 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fed1 whose bank argument could not be recovered at this call site
 REALROM sample.warn c0f4 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fed1 whose bank argument could not be recovered at this call site
@@ -117,6 +129,26 @@ REALROM sample.warn fa61 [NesBankingAnalyzer] Bank state becomes unknown here: c
 REALROM sample.warn faa0 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fed1 whose bank argument could not be recovered at this call site
 REALROM sample.warn fabe [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fed1 whose bank argument could not be recovered at this call site
 REALROM sample.warn fae0 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fed1 whose bank argument could not be recovered at this call site
+REALROM sample.warn faef [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fed1 whose bank argument could not be recovered at this call site
+REALROM sample.warn fb0d [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fed1 whose bank argument could not be recovered at this call site
+REALROM sample.warn fb1c [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fed1 whose bank argument could not be recovered at this call site
+REALROM sample.warn fb2b [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fed1 whose bank argument could not be recovered at this call site
+REALROM sample.warn fb49 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fed1 whose bank argument could not be recovered at this call site
+REALROM sample.warn fb58 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fed1 whose bank argument could not be recovered at this call site
+REALROM sample.warn fb67 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fed1 whose bank argument could not be recovered at this call site
+REALROM sample.warn fb76 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fed1 whose bank argument could not be recovered at this call site
+REALROM sample.warn fb98 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fed1 whose bank argument could not be recovered at this call site
+REALROM sample.warn fba7 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fed1 whose bank argument could not be recovered at this call site
+REALROM sample.warn fbb6 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fed1 whose bank argument could not be recovered at this call site
+REALROM sample.warn fbc5 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fed1 whose bank argument could not be recovered at this call site
+REALROM sample.warn fbe3 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fed1 whose bank argument could not be recovered at this call site
+REALROM sample.warn fbf2 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fed1 whose bank argument could not be recovered at this call site
+REALROM sample.warn fc18 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fed1 whose bank argument could not be recovered at this call site
+REALROM sample.warn ff21 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn ff25 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn ff4b [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.note f807 [CopyLoopAnalyzer] copy-shaped loop RAM:f813 -> RAM:065d (3 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note f82d [CopyLoopAnalyzer] copy-shaped loop RAM:f839 -> RAM:0672 (10 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.symbol 2000 PPUCTRL IMPORTED primary=true
 REALROM sample.symbol 2001 PPUMASK IMPORTED primary=true
 REALROM sample.symbol 2002 PPUSTATUS IMPORTED primary=true

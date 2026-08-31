@@ -46,9 +46,12 @@ REALROM count blocks.total 38
 REALROM count blocks.overlay 32
 REALROM count spaces.overlay 32
 REALROM count refs.intoOverlay 1
+REALROM count refs.intoOverlay.retargeted 1
+REALROM count refs.intoOverlay.intraOverlay 0
 REALROM count instrs.inOverlay 8
 REALROM count bankComments 4
 REALROM count warnings 23
+REALROM count notes 0
 REALROM count symbols 18
 REALROM sample.bankcomment c081 bank -> mirroring=0,prg_mode=3,prg_bank=0? via FUN_c183 [known: prg_bank.0=0,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment c0ed bank -> mirroring=0,prg_mode=3,prg_bank=0? via FUN_c187 [known: prg_bank.0=0,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]

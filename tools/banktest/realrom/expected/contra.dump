@@ -20,9 +20,12 @@ REALROM count blocks.total 12
 REALROM count blocks.overlay 7
 REALROM count spaces.overlay 7
 REALROM count refs.intoOverlay 298
+REALROM count refs.intoOverlay.retargeted 3
+REALROM count refs.intoOverlay.intraOverlay 295
 REALROM count instrs.inOverlay 1044
 REALROM count bankComments 5
 REALROM count warnings 7
+REALROM count notes 0
 REALROM count symbols 18
 REALROM sample.bankcomment c094 bank -> 1 (bank=1) via FUN_c139
 REALROM sample.bankcomment c0a2 bank -> 1 (bank=1) via FUN_c139
@@ -54,6 +57,7 @@ REALROM sample.ref 8106 -> PRG_LO_B1::810f CONDITIONAL_JUMP primary=true
 REALROM sample.ref 810d -> PRG_LO_B1::8102 CONDITIONAL_JUMP primary=true
 REALROM sample.ref 810f -> PRG_LO_B1::861d UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8118 -> PRG_LO_B1::811d CONDITIONAL_JUMP primary=true
+REALROM sample.ref.truncated 25 of 298
 REALROM sample.warn 811a [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_PRG_LO_B1__8259 whose bank argument could not be recovered at this call site
 REALROM sample.warn 8efc [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn c0d3 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c13f whose bank argument could not be recovered at this call site
