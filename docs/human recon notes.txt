@@ -205,7 +205,7 @@ rcproam:
 megaman:
 8d1f-8dbf: all data, no code. overruns at e000 (e0ed, actual length 18), e121 (e2a2, actual 19), e44e (e55a, actual 10) are the sources of the bad refs.
 
-  
+
   Next session's shortest path
 
   1. bd list --label background-ok → farm out immediately (grm-hhd first; it blocks every parallel agent).
