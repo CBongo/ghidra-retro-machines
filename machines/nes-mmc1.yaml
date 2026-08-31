@@ -111,6 +111,36 @@ memory:
         - { name: WC000, start: 0xC000, size: 0x4000, maps: "PRG[last]",              on_write: mechanism }
 
 banking:
+  # prg_bank is 5 bits on EVERY MMC1, because that is the width of the serial shift
+  # register -- but a 128 KiB cart has 8 banks and a 256 KiB cart 16, so the cartridge
+  # simply does not carry the high PRG address lines and the board truncates. Same
+  # hardware story as MMC5's, so the same DERIVED form: truncation here is by ROM size,
+  # a property of the mapper rather than of any one cartridge's wiring, so the honest
+  # spelling is "work it out from what this image has" (bead grm-p25h / grm-yxu8).
+  # Absent, nothing wraps and a recovered out-of-range bank names no slice at all.
+  #
+  # WORKED CASE, and the reason this board was audited first: tmnt (128 KiB, 8 banks)
+  # commits $1F at ffdd with all five prg_bank bits recovered as known-1. Without this
+  # key that is an impossible bank -- there is no bank 31 -- and the site reports the
+  # grm-fick "out of range in every reachable window" warning instead of resolving. With
+  # it, 31 & 7 = 7, the last bank, which is what the hardware does.
+  #
+  # That answer is robust to the one modelling question this board has here, which is why
+  # it is a safe first audit. On most MMC1 boards the PRG register's bit 4 is not a bank
+  # bit at all -- it is PRG-RAM enable -- so the "real" bank in $1F is bits 0-3 = 15. This
+  # descriptor models all five bits as prg_bank (see the 512 KiB note above, where bit 4
+  # genuinely IS an address line). Both readings wrap to the same place on an 8-bank cart:
+  # 31 & 7 = 7 and 15 & 7 = 7. So the annotation is correct whichever way bit 4 is read,
+  # and nothing here depends on settling that question.
+  #
+  # tmnt is the ONLY row in the 33-row pinned corpus with an out-of-range MMC1 bank; every
+  # other MMC1 row writes in range, where canonicalization is the identity and nothing
+  # moves. Measured, not assumed -- see grm-yxu8 for the corpus-wide survey.
+  #
+  # 512 KiB (SUROM/SOROM) is unaffected either way: those carts realize all 32 banks, so
+  # the derived mask is 0x1F and wrapping is the identity. The bit-4-selects-which-256-KiB-
+  # half behaviour noted in the PRG comment above stays exactly as NOT-modeled as it was.
+  bank_wrap: image
   state:
     # LSB-first packing: mirroring bits 0-1, prg_mode bits 2-3, prg_bank bits 4-8 (9 bits
     # total). chr_mode and the two CHR bank fields are deliberately NOT tracked fields --
