@@ -123,7 +123,7 @@ final class BankAnnotationAdapter {
 					.setBookmark(addr, BookmarkType.WARNING, analyzer.getBookmarkCategory(), warning);
 			return 1;
 		}
-		ImpossibleBank impossible = impossibleBank(board, state, bankUniverse);
+		Impossible impossible = impossibleBank(board, state, bankUniverse);
 		if (impossible != null) {
 			program.getBookmarkManager().setBookmark(addr, BookmarkType.WARNING,
 				analyzer.getBookmarkCategory(), impossible.message());
@@ -134,13 +134,27 @@ final class BankAnnotationAdapter {
 	}
 
 	/**
+	 * A recovered bank index the loaded image cannot satisfy, in either of the two strengths
+	 * {@link #impossibleBank} can establish. Both render a WARNING bookmark and both suppress the
+	 * annotation, but they are NOT the same claim and must not read as if they were -- see
+	 * {@link ImpossibleInAllLayouts} for why the weaker one exists (bead grm-fick).
+	 */
+	interface Impossible {
+		String message();
+	}
+
+	/**
 	 * A recovered bank index for which the loaded image holds no slice (bead grm-hum
 	 * increment 3): {@code window} is the switchable window whose field named it,
 	 * {@code bank} the recovered value, {@code realized} how many banks that window actually
 	 * has.
+	 * <p>
+	 * This is the CONFIDENT form: the window named here is known to be the live one at this site,
+	 * either because it is mode-invariant or because the mode field was fully recovered.
 	 */
-	private record ImpossibleBank(String window, int bank, int realized) {
-		String message() {
+	record ImpossibleBank(String window, int bank, int realized) implements Impossible {
+		@Override
+		public String message() {
 			return "Bank state becomes unknown here: recovered bank " + bank + " for window " +
 				window + ", but this image provides only " + realized + " bank(s) for it. " +
 				"A bank index with no corresponding image slice is a value-RECOVERY bug, not a " +
@@ -150,6 +164,38 @@ final class BankAnnotationAdapter {
 				"modeled: that is per-board wiring, and folding it on speculation would turn a " +
 				"loud wrong answer into a quiet plausible one -- see docs/vision-board-banking.md " +
 				"section 10 item 10, bead grm-hum.";
+		}
+	}
+
+	/**
+	 * A recovered bank index that no layout REACHABLE at this site can satisfy, established
+	 * without knowing which layout is live (bead grm-fick): {@code field} is the bank field that
+	 * named it, {@code bank} the recovered value, {@code layouts} how many mode-varying window
+	 * instances that field could feed given what is known about the mode.
+	 * <p>
+	 * <b>Why this is a separate claim from {@link ImpossibleBank}, and worded as one.</b> The
+	 * confident form names the window the bank was wrong FOR. Here the live layout is unknown, so
+	 * there is no such window to name -- the conclusion is universally quantified over every
+	 * layout still possible, and it is exactly as strong as that quantification and no stronger.
+	 * A reader who is told "window PRG_C000 has only 8 banks" and then discovers PRG_C000 is not
+	 * even mapped under the live mode has been misled; a reader told "no reachable layout provides
+	 * a slice" has not. See {@link #impossibleInEveryReachableLayout} for the derivation.
+	 */
+	record ImpossibleInAllLayouts(String field, int bank, int layouts) implements Impossible {
+		@Override
+		public String message() {
+			return "Bank state becomes unknown here: recovered bank " + bank + " for bank field " +
+				field + ", and NO layout reachable at this site provides a slice for it. This " +
+				"board's PRG mode is not fully recovered here, so the bank was checked against " +
+				"all " + layouts + " window instance(s) the field could still feed, and it is out " +
+				"of range in every one of them -- which makes the conclusion sound without " +
+				"knowing the mode, but does NOT identify which window was intended. As with the " +
+				"mode-known form this is a value-RECOVERY bug rather than a game behavior, so the " +
+				"site is left unannotated and nothing is retargeted from it. Hardware aliasing is " +
+				"deliberately not modeled -- see bead grm-hum. This weaker diagnostic exists " +
+				"because on a board with no mode-invariant PRG window (MMC5 is the worked case) " +
+				"the mode-known form can never fire at all, and the gap vanished silently instead " +
+				"of being reported: bead grm-fick.";
 		}
 	}
 
@@ -168,8 +214,18 @@ final class BankAnnotationAdapter {
 	 * {@code NesRomLoader.realizeComputedWindow}), so the realized set IS the image's statement
 	 * of how many banks the board is fitted with, and it is by construction the same set
 	 * {@link #retargetReferences} can find an overlay space for.
+	 * <p>
+	 * <b>When the mode is NOT fully recovered</b> the confident check above cannot run -- with the
+	 * mode unknown you genuinely do not know which window's realized set to measure the bank
+	 * against -- and until bead grm-fick that was the end of it, silently. It now falls through to
+	 * {@link #impossibleInEveryReachableLayout}, which asks the weaker question that needs no
+	 * known mode: is the bank out of range in EVERY layout still reachable here? That matters
+	 * because a board with no mode-invariant computed window at all -- MMC5, whose four PRG modes
+	 * share no register-less window, the same structural fact behind grm-y0ml's image-relative
+	 * seed -- has an EMPTY confident family, so before this the diagnostic could not fire on such
+	 * a board under any circumstances.
 	 */
-	private static ImpossibleBank impossibleBank(BoardModel board, BankState state,
+	static Impossible impossibleBank(BoardModel board, BankState state,
 			Map<String, Set<Integer>> bankUniverse) {
 		if (bankUniverse.isEmpty()) {
 			return null;
@@ -183,7 +239,10 @@ final class BankAnnotationAdapter {
 			}
 		}
 		FieldSpec modeField = board.modeField();
-		if (modeField != null && modeField.fullyKnownIn(state)) {
+		if (modeField == null) {
+			return null;
+		}
+		if (modeField.fullyKnownIn(state)) {
 			int mode = modeField.valueIn(effective);
 			for (ModeWindowModel w : board.modeWindows()) {
 				if (w.modeValue() != mode || w.bankField() == null) {
@@ -195,8 +254,116 @@ final class BankAnnotationAdapter {
 					return bad;
 				}
 			}
+			return null;
+		}
+		return impossibleInEveryReachableLayout(board, state, bankUniverse, effective, modeField);
+	}
+
+	/**
+	 * The weaker, universally-quantified impossible-bank claim (bead grm-fick): a fully recovered
+	 * bank field whose value has no slice in ANY mode-varying window instance it could still feed,
+	 * or null when some reachable layout could accommodate it -- or when we cannot show that it
+	 * could not.
+	 * <p>
+	 * <b>Which layouts count as reachable.</b> Not all of them: the mode field is merely not
+	 * FULLY known, and a partially recovered mode still excludes modes that disagree with the bits
+	 * dataflow did pin. Restricting to the consistent ones is both sound and strictly sharper --
+	 * a smaller candidate set can only make the "impossible in all of them" conclusion easier to
+	 * reach, never wrongly so. With no mode bits known at all the mask is zero and every mode
+	 * qualifies, which is the conservative case.
+	 * <p>
+	 * <b>Three ways this abstains, all of them deliberate.</b>
+	 * <ul>
+	 * <li>A field with NO candidate instances contributes nothing. If the field feeds no window in
+	 * any still-possible mode, an out-of-range write to it is dead configuration under every
+	 * reachable layout, not a recovery failure worth a bookmark.</li>
+	 * <li>A candidate instance with no realized banks at all abstains for the whole field, exactly
+	 * as {@link #checkBank} does per window: "the loader placed nothing here" is not evidence the
+	 * bank is wrong, and a universal claim cannot be built on a branch we know nothing about.</li>
+	 * <li>A field that some mode-INVARIANT computed window CAN satisfy abstains. The caller's
+	 * first loop already ran and did not object, which for such a field means it resolves to a
+	 * real occupant in a window that is live regardless of mode -- so "no reachable layout
+	 * provides a slice" would be false. MMC5 has no such window, so this guard is inert on the
+	 * board that motivated the method; it is here so the method stays true on boards that do.</li>
+	 * </ul>
+	 * The value tested is the CANONICALIZED one, for the same reason {@link #checkBank} tests it:
+	 * a board declaring {@code banking.bank_wrap} must not be warned about a bank its hardware
+	 * would have truncated into range. The message reports the RAW value, because that is the
+	 * number the code actually wrote.
+	 */
+	private static ImpossibleInAllLayouts impossibleInEveryReachableLayout(BoardModel board,
+			BankState state, Map<String, Set<Integer>> bankUniverse, int effective,
+			FieldSpec modeField) {
+		int modeWidthMask = (1 << modeField.width()) - 1;
+		int knownModeBits = (state.knownMask() >>> modeField.lsb()) & modeWidthMask;
+		int knownMode = modeField.valueIn(effective) & knownModeBits;
+
+		for (FieldSpec bankField : distinctBankFields(board)) {
+			if (!bankField.fullyKnownIn(state)) {
+				continue;
+			}
+			int raw = bankField.valueIn(effective);
+			if (satisfiedByModeInvariantWindow(board, bankUniverse, bankField, raw)) {
+				continue;
+			}
+			int candidates = 0;
+			boolean impossibleEverywhere = true;
+			for (ModeWindowModel w : board.modeWindows()) {
+				if (w.bankField() == null || !w.bankField().name().equals(bankField.name()) ||
+					(w.modeValue() & knownModeBits) != knownMode) {
+					continue;
+				}
+				candidates++;
+				Set<Integer> realized = bankUniverse.get(modeBankKey(w.name(), w.modeValue()));
+				if (realized == null || realized.isEmpty() ||
+					realized.contains(canonicalBank(board.bankWrap(), realized, raw))) {
+					impossibleEverywhere = false;
+					break;
+				}
+			}
+			if (candidates > 0 && impossibleEverywhere) {
+				return new ImpossibleInAllLayouts(bankField.name(), raw, candidates);
+			}
 		}
 		return null;
+	}
+
+	/**
+	 * True when some mode-INVARIANT computed window driven by {@code field} has a slice for
+	 * {@code raw} -- the third abstention on {@link #impossibleInEveryReachableLayout}. A window
+	 * with no realized set counts as not satisfying it, matching {@link #checkBank}'s reading of
+	 * an empty universe as "nothing to say" rather than "yes".
+	 */
+	private static boolean satisfiedByModeInvariantWindow(BoardModel board,
+			Map<String, Set<Integer>> bankUniverse, FieldSpec field, int raw) {
+		for (ComputedWindowModel w : board.computedWindows().values()) {
+			if (!w.field().name().equals(field.name())) {
+				continue;
+			}
+			Set<Integer> realized = bankUniverse.get(w.name());
+			if (realized != null && !realized.isEmpty() &&
+				realized.contains(canonicalBank(board.bankWrap(), realized, raw))) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Every distinct bank field named by a mode-varying window instance, in descriptor order and
+	 * deduplicated by NAME -- the same identity {@link #wrappedValue} uses, since one field can be
+	 * reached through several {@link ModeWindowModel}s carrying equal-but-not-identical
+	 * {@link FieldSpec}s. A {@link LinkedHashMap} so the iteration order is the descriptor's,
+	 * which keeps the chosen diagnostic stable across runs.
+	 */
+	private static Iterable<FieldSpec> distinctBankFields(BoardModel board) {
+		Map<String, FieldSpec> fields = new LinkedHashMap<>();
+		for (ModeWindowModel w : board.modeWindows()) {
+			if (w.bankField() != null) {
+				fields.putIfAbsent(w.bankField().name(), w.bankField());
+			}
+		}
+		return fields.values();
 	}
 
 	/**
