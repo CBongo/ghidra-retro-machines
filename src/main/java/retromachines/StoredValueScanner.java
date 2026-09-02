@@ -24,6 +24,7 @@ import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryAccessException;
+import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.scalar.Scalar;
 import ghidra.program.model.symbol.Reference;
 
@@ -260,6 +261,18 @@ final class StoredValueScanner {
 	 */
 	static BankState resolveStoredValue(Program program, Instruction storeInstr, char reg,
 			BankState inStateAtStore, int mask, Hooks hooks, RegisterEnv env) {
+		return resolveStoredValueScan(program, storeInstr, reg, inStateAtStore, mask, hooks, env)
+				.value();
+	}
+
+	/**
+	 * {@link #resolveStoredValue} keeping the {@link Scan#stop()} reason a caller needs to
+	 * tell an HONEST unresolved value from one this scanner simply gave up on (bead
+	 * {@code grm-3ou} part 1). Same walk, same answer -- only the classification survives
+	 * the return, which the {@link BankState}-returning forms discard.
+	 */
+	static Scan resolveStoredValueScan(Program program, Instruction storeInstr, char reg,
+			BankState inStateAtStore, int mask, Hooks hooks, RegisterEnv env) {
 		return resolveStoredValue(program, storeInstr, reg, inStateAtStore, mask, hooks, env,
 			new Budget(MAX_RESOLVE_STEPS), 0);
 	}
@@ -276,7 +289,7 @@ final class StoredValueScanner {
 	 * The forwarding lookups are the only ones that share {@code budget}, which is what bounds
 	 * the recursion this method can now enter.
 	 */
-	private static BankState resolveStoredValue(Program program, Instruction storeInstr, char reg,
+	private static Scan resolveStoredValue(Program program, Instruction storeInstr, char reg,
 			BankState inStateAtStore, int mask, Hooks hooks, RegisterEnv env, Budget budget,
 			int depth) {
 		Listing listing = program.getListing();
@@ -301,16 +314,16 @@ final class StoredValueScanner {
 				// Deliberately BEFORE the linkage/join/mechanism-write checks -- an entry has
 				// no fall-through predecessor to check, and its incoming flows are other call
 				// sites, which is exactly what the env already answers for.
-				return combine(aAcc, oAcc, mask, env.get(reg));
+				return stopped(aAcc, oAcc, mask, env.get(reg), BankSwitchStrategy.ValueStop.HELPER_ARGUMENT);
 			}
 			Instruction prev = listing.getInstructionBefore(cur.getMinAddress());
 			if (prev == null) {
-				return combine(aAcc, oAcc, mask, BankState.unknown());
+				return stopped(aAcc, oAcc, mask, BankState.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 			}
 			Address prevFallThrough = prev.getFallThrough();
 			if (prevFallThrough == null || !prevFallThrough.equals(cur.getMinAddress())) {
 				// not a straight-line predecessor of cur -- left the basic block
-				return combine(aAcc, oAcc, mask, BankState.unknown());
+				return stopped(aAcc, oAcc, mask, BankState.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 			}
 			if (isControlFlowJoin(program, cur, prev) && !env.mayCrossJoinAt(cur.getMinAddress())) {
 				// cur is also a branch target: some other path reaches it and may leave a
@@ -320,13 +333,13 @@ final class StoredValueScanner {
 				// context-sensitive query is asked about, and the span beyond it was proved
 				// straight-line before the env was built. Only the join test is skipped -- the
 				// linkage test above and the mechanism-write abort below still run.
-				return combine(aAcc, oAcc, mask, BankState.unknown());
+				return stopped(aAcc, oAcc, mask, BankState.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 			}
 
 			if (hooks.isMechanismWrite(prev)) {
 				// the mechanism was written mid-chain; a base value read further back
 				// would predate that write, so it's unsound to fall back to the in-state.
-				return combine(aAcc, oAcc, mask, BankState.unknown());
+				return stopped(aAcc, oAcc, mask, BankState.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 			}
 
 			// Every prev reached past this point is examined and stepped over -- exactly the
@@ -341,11 +354,11 @@ final class StoredValueScanner {
 				if (imm == null) {
 					// an operand we couldn't pull a scalar out of, and couldn't forward a store
 					// to either, is an opaque modifier of A.
-					return combine(aAcc, oAcc, mask, BankState.unknown());
+					return stopped(aAcc, oAcc, mask, BankState.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 				}
 				aAcc = imm & aAcc;
 				if (fullyDeterminedByAccumulator(aAcc, oAcc, mask)) {
-					return combine(aAcc, oAcc, mask, BankState.unknown());
+					return stopped(aAcc, oAcc, mask, BankState.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 				}
 				cur = prev;
 				continue;
@@ -354,11 +367,11 @@ final class StoredValueScanner {
 			if (reg == 'A' && mnem.equals("ORA")) {
 				Integer imm = operandByte(program, prev, inStateAtStore, hooks, env, budget, depth);
 				if (imm == null) {
-					return combine(aAcc, oAcc, mask, BankState.unknown());
+					return stopped(aAcc, oAcc, mask, BankState.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 				}
 				oAcc = (imm & aAcc) | oAcc;
 				if (fullyDeterminedByAccumulator(aAcc, oAcc, mask)) {
-					return combine(aAcc, oAcc, mask, BankState.unknown());
+					return stopped(aAcc, oAcc, mask, BankState.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 				}
 				cur = prev;
 				continue;
@@ -368,7 +381,7 @@ final class StoredValueScanner {
 				Integer imm = immediateOperandValue(prev);
 				if (imm != null) {
 					// x is now fully known -- fold it through the accumulated transform.
-					return combine(aAcc, oAcc, mask, BankState.fullyKnown(0xFF, imm));
+					return stopped(aAcc, oAcc, mask, BankState.fullyKnown(0xFF, imm), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 				}
 				// Scalar extraction failed; fall through and treat like any other modifier.
 			}
@@ -380,7 +393,7 @@ final class StoredValueScanner {
 				Address target = effectiveOperandTarget(program, prev, hooks, env);
 				BankState base = hooks.resolveLoad(prev, target, inStateAtStore);
 				if (base != null) {
-					return combine(aAcc, oAcc, mask, base);
+					return stopped(aAcc, oAcc, mask, base, BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 				}
 				// No strategy claims this address; try to forward a store to it from earlier in
 				// this same block (grm-mej.1). A partial answer is fine here -- combine() folds
@@ -389,15 +402,42 @@ final class StoredValueScanner {
 				BankState forwarded = forwardedStoreValue(program, prev, target, inStateAtStore,
 					hooks, env, budget, depth);
 				if (forwarded.knownMask() != 0) {
-					return combine(aAcc, oAcc, mask, forwarded);
+					return stopped(aAcc, oAcc, mask, forwarded, BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 				}
 				// Last resort (grm-mej.2): does this address MIRROR the live bank? Strictly below
 				// forwarding -- see Hooks.resolveMirrorLoad for the cv2 case that ordering exists
 				// for. A non-null answer is authoritative even when wholly unknown.
 				BankState mirrored = hooks.resolveMirrorLoad(prev, target, inStateAtStore);
 				if (mirrored != null) {
-					return combine(aAcc, oAcc, mask, mirrored);
+					return stopped(aAcc, oAcc, mask, mirrored,
+						BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 				}
+				// A load from a VOLATILE block -- memory-mapped I/O -- IS genuinely runtime and can
+				// never be pinned statically: PPU status, controller input, APU state. isVolatile()
+				// is the established test for this (DescriptorMemory sets it for `kind: io` regions;
+				// IoPolicy already keys off it), and it cannot overlap grm-hum, because nothing in
+				// the image stores a determinable value to a hardware register.
+				if (readsVolatileMemory(program, target)) {
+					return stopped(aAcc, oAcc, mask, BankState.unknown(),
+						BankSwitchStrategy.ValueStop.RUNTIME_SOURCE);
+				}
+				// A load from writable memory is DELIBERATELY NOT classified RUNTIME_SOURCE here,
+				// though grm-3ou's description proposes exactly that. Measured 2026-09-02: the rule
+				// is too broad, and it claims territory that is actively being FIXED elsewhere.
+				//
+				// A read of writable memory is honest only if nothing could ever determine what was
+				// stored there. That is true of an untouched RAM cell (nesmirrortest c032/c105 read
+				// $30/$31, which nothing writes) and FALSE of a parameter latch (nesmirrortest c100
+				// reads $59, stored from $8200 twelve bytes earlier; dbz_datach cc2a is a mechanism
+				// write inside helper FUN_cc28 whose argument arrives through memory). This test
+				// cannot tell them apart, and the second kind is precisely grm-hum's population --
+				// "memory-latch sites resolve to unknown", an open P1. Marking it "nothing to fix"
+				// would delete the evidence for the very work in progress, which is the same error
+				// as calling a failed CALL-SITE argument recovery honest.
+				//
+				// RUNTIME_SOURCE is therefore left to the register-clobbering call below, where the
+				// value is gone whatever we do. Widening it needs a real "no static store to this
+				// cell anywhere" test -- filed separately.
 			}
 
 			if (reg == 'A' && mnem.equals("PLA")) {
@@ -411,21 +451,28 @@ final class StoredValueScanner {
 					env, stepsConsumed);
 				i += stepsConsumed[0];
 				if (pha == null) {
-					return combine(aAcc, oAcc, mask, BankState.unknown());
+					return stopped(aAcc, oAcc, mask, BankState.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 				}
 				cur = pha;
 				continue;
 			}
 
 			if (modifiers.contains(mnem)) {
-				return combine(aAcc, oAcc, mask, BankState.unknown());
+				return stopped(aAcc, oAcc, mask, BankState.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 			}
 			if (prev.getFlowType().isCall()) {
-				return combine(aAcc, oAcc, mask, BankState.unknown());
+				// NOT RUNTIME_SOURCE, though grm-3ou's description proposes it. banktest2's C5
+				// fixture is the counter-example: LDA #$35 / JSR sub / STA $01 -- the value WAS
+				// known and we lost it only because this scanner conservatively assumes any call
+				// clobbers the register. If the callee never touches A, $35 survives on real
+				// hardware. That is recoverable in principle by inter-procedural analysis, so it is
+				// our limitation and must stay visible as such. See grm-rr5p.
+				return stopped(aAcc, oAcc, mask, BankState.unknown(),
+					BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 			}
 			cur = prev;
 		}
-		return combine(aAcc, oAcc, mask, BankState.unknown());
+		return stopped(aAcc, oAcc, mask, BankState.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 	}
 
 	/**
@@ -609,6 +656,40 @@ final class StoredValueScanner {
 		int knownMask = mask & (oAcc | ~aAcc | base.knownMask()) & 0xFF;
 		int bits = mask & (oAcc | (aAcc & base.knownMask() & base.bits())) & 0xFF;
 		return new BankState(knownMask, bits);
+	}
+
+	/**
+	 * A scan's answer plus, when it did not resolve, WHY (bead {@code grm-3ou} part 1).
+	 * {@code stop} is only meaningful when {@code value.knownMask() == 0}.
+	 */
+	record Scan(BankState value, BankSwitchStrategy.ValueStop stop) {}
+
+	/**
+	 * Whether {@code target} names MEMORY-MAPPED I/O -- a read whose value is produced by
+	 * hardware at runtime and which no scan of static bytes could ever pin down. A null target
+	 * is NOT runtime-sourced: failing to work out where a load reads from is our limitation.
+	 */
+	private static boolean readsVolatileMemory(Program program, Address target) {
+		if (target == null) {
+			return false;
+		}
+		MemoryBlock block = program.getMemory().getBlock(target);
+		return block != null && block.isVolatile();
+	}
+
+	/**
+	 * {@link #combine} carrying the reason the walk stopped. The reason is DISCARDED when the
+	 * combined value turns out to know something: the mask algebra can pin bits down even
+	 * where the base is unknown (that is what {@link #fullyDeterminedByAccumulator} exploits),
+	 * so a call site's stated reason is a claim about the BASE, not about the result. Deciding
+	 * that here, once, is what keeps every {@code return} in the walk free to name its own
+	 * reason without also having to work out whether it still applies.
+	 */
+	private static Scan stopped(int aAcc, int oAcc, int mask, BankState base,
+			BankSwitchStrategy.ValueStop reason) {
+		BankState value = combine(aAcc, oAcc, mask, base);
+		return new Scan(value, value.knownMask() != 0
+				? BankSwitchStrategy.ValueStop.RESOLVED : reason);
 	}
 
 	// ------------------------------------------------------------------
@@ -831,7 +912,7 @@ final class StoredValueScanner {
 				}
 				if (storeTarget.equals(target)) {
 					return resolveStoredValue(program, prev, storeReg, inStateAtStore, 0xFF, hooks,
-						env, budget, depth + 1);
+						env, budget, depth + 1).value();
 				}
 				// provably a different cell -- harmless, keep walking
 			}

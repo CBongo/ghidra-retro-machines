@@ -97,22 +97,18 @@ public class RegisterWriteBankSwitchStrategy implements BankSwitchStrategy {
 	@Override
 	public SwitchOutcome computeSwitchOutcome(Program program, Instruction instr,
 			BankState inState) {
-		// grm-3ou part 1, increment 1: the recovery body is UNCHANGED and still yields a bare
-		// BankState; SwitchOutcome.of derives the conservative stop reason from it. Increment 2
-		// replaces this with reasons this strategy actually knows.
-		BankState value = computeSwitchValue(program, instr, inState);
-		return value == null ? null : SwitchOutcome.of(value);
-	}
-
-	private BankState computeSwitchValue(Program program, Instruction instr, BankState inState) {
 		if (!writesMechanism(instr)) {
 			return null;
 		}
 
 		Character reg = StoredValueScanner.storeRegister(instr);
 		if (reg == null) {
-			return BankState.unknown();
+			// A mechanism write whose stored register we cannot even identify. Nothing was
+			// scanned, so there is no honest runtime gap to report -- this is our limitation.
+			return SwitchOutcome.of(BankState.unknown(), ValueStop.ANALYZER_LIMIT);
 		}
-		return StoredValueScanner.resolveStoredValue(program, instr, reg, inState, mask, hooks);
+		StoredValueScanner.Scan scan = StoredValueScanner.resolveStoredValueScan(program, instr,
+			reg, inState, mask, hooks, RegisterEnv.NONE);
+		return SwitchOutcome.of(scan.value(), scan.stop());
 	}
 }

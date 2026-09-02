@@ -409,20 +409,14 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	@Override
 	public SwitchOutcome computeSwitchOutcome(Program program, Instruction instr,
 			BankState inState) {
-		// grm-3ou part 1, increment 1: the recovery body is UNCHANGED and still yields a bare
-		// BankState; SwitchOutcome.of derives the conservative stop reason from it. Increment 2
-		// replaces this with reasons this strategy actually knows.
-		BankState value = computeSwitchValue(program, instr, inState);
-		return value == null ? null : SwitchOutcome.of(value);
-	}
-
-	private BankState computeSwitchValue(Program program, Instruction instr, BankState inState) {
 		if (!writesInRange(instr)) {
 			return null;
 		}
 		// RegisterEnv.NONE, always: no caller's registers are in scope on the direct path. The
 		// real inState IS threaded through now (grm-mej.2) -- that is what made cacheable() false.
-		return evaluateLatch(program, instr, RegisterEnv.NONE, inState, hooks);
+		StoredValueScanner.Scan scan =
+			evaluateLatchScan(program, instr, RegisterEnv.NONE, inState, hooks);
+		return SwitchOutcome.of(scan.value(), scan.stop());
 	}
 
 	/**
@@ -452,12 +446,26 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 */
 	private BankState evaluateLatch(Program program, Instruction store, RegisterEnv env,
 			BankState inState, StoredValueScanner.Hooks hooks) {
+		return evaluateLatchScan(program, store, env, inState, hooks).value();
+	}
+
+	/**
+	 * {@link #evaluateLatch} keeping the reason an unrecovered byte did not resolve (bead
+	 * {@code grm-3ou} part 1). Note the reason describes the STORED BYTE's recovery; the
+	 * bus-conflict AND and the field shift below can still pin bits down afterwards, so callers
+	 * route it through {@code SwitchOutcome.of(value, stop)}, which drops the reason whenever the
+	 * final value knows something.
+	 */
+	private StoredValueScanner.Scan evaluateLatchScan(Program program, Instruction store,
+			RegisterEnv env, BankState inState, StoredValueScanner.Hooks hooks) {
 		Character reg = StoredValueScanner.storeRegister(store);
 		if (reg == null) {
-			return BankState.unknown();
+			// The stored register is unidentifiable, so nothing was scanned: our limitation.
+			return new StoredValueScanner.Scan(BankState.unknown(), ValueStop.ANALYZER_LIMIT);
 		}
-		BankState stored = StoredValueScanner.resolveStoredValue(program, store, reg,
-			inState, 0xFF, hooks, env);
+		StoredValueScanner.Scan scan = StoredValueScanner.resolveStoredValueScan(program, store,
+			reg, inState, 0xFF, hooks, env);
+		BankState stored = scan.value();
 
 		if (busConflict) {
 			Address target = StoredValueScanner.effectiveOperandTarget(program, store, hooks, env);
@@ -470,8 +478,8 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 		}
 
 		// deposit the extracted field at state bits [0, width) -- see class javadoc
-		return new BankState((stored.knownMask() >> shift) & mask,
-			(stored.bits() >> shift) & mask);
+		return new StoredValueScanner.Scan(new BankState((stored.knownMask() >> shift) & mask,
+			(stored.bits() >> shift) & mask), scan.stop());
 	}
 
 	/**

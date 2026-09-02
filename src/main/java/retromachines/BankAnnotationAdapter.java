@@ -108,30 +108,82 @@ final class BankAnnotationAdapter {
 	// Annotation
 	// ------------------------------------------------------------------
 
+	/** What {@link #annotateOrWarn} did at one site, for the caller's tallies. */
+	enum Marked {
+		/** An EOL bank annotation was written; no bookmark. */
+		ANNOTATED,
+		/** A WARNING bookmark: a gap that is OUR limitation, and worth fixing. */
+		WARNED,
+		/** A NOTE bookmark: a gap that is HONEST, and not a defect. */
+		NOTED;
+
+		/** Whether a bookmark was placed, i.e. this site is already diagnosed. */
+		boolean bookmarked() {
+			return this != ANNOTATED;
+		}
+	}
+
 	/**
 	 * Records one recovered switch site: an EOL annotation when at least one tracked bank
-	 * bit is known, or a warning bookmark -- the caller's {@code warning} when value recovery
-	 * pinned down no bit at all, or the impossible-bank diagnostic when it pinned down a bank
-	 * the image has no slice for ({@link #impossibleBank}). Returns the number of warnings
-	 * raised (0 or 1) for the caller's tally.
+	 * bit is known, or a bookmark otherwise -- the impossible-bank diagnostic when recovery
+	 * pinned down a bank the image has no slice for ({@link #impossibleBank}), else the
+	 * caller's {@code warning}.
+	 * <p>
+	 * <b>An unrecovered value is not automatically a warning</b> (bead {@code grm-3ou} part 1).
+	 * {@code stop} says WHY nothing resolved, and two of its answers are HONEST: the value is
+	 * genuinely produced at runtime, or it is the argument of the helper this site sits inside.
+	 * Neither is a defect and neither is actionable, so they are recorded as
+	 * {@link BookmarkType#NOTE} -- the same WARNING/NOTE split
+	 * {@code C64DecryptLoopAnalyzer} already makes. What is left under WARNING is the population
+	 * that IS our limitation, which is what makes the warning count usable as a progress metric
+	 * for the first time.
+	 * <p>
+	 * The impossible-bank case stays a WARNING regardless of {@code stop}: a bank number the
+	 * image cannot satisfy was RECOVERED, so it is a value-recovery defect no matter what the
+	 * scan would have said had it failed instead.
 	 */
-	static int annotateOrWarn(BoardBankAnalyzer analyzer, Program program, Listing listing,
+	static Marked annotateOrWarn(BoardBankAnalyzer analyzer, Program program, Listing listing,
 			Address addr, BankState state, BoardModel board,
 			Map<String, Set<Integer>> bankUniverse, String viaHelper, String warning,
-			BankCommentProvenance provenance) {
+			BankSwitchStrategy.ValueStop stop, BankCommentProvenance provenance) {
 		if (state.knownMask() == 0) {
+			String honest = honestGapMessage(stop);
+			if (honest != null) {
+				program.getBookmarkManager().setBookmark(addr, BookmarkType.NOTE,
+					analyzer.getBookmarkCategory(), honest);
+				return Marked.NOTED;
+			}
 			program.getBookmarkManager()
 					.setBookmark(addr, BookmarkType.WARNING, analyzer.getBookmarkCategory(), warning);
-			return 1;
+			return Marked.WARNED;
 		}
 		Impossible impossible = impossibleBank(board, state, bankUniverse);
 		if (impossible != null) {
 			program.getBookmarkManager().setBookmark(addr, BookmarkType.WARNING,
 				analyzer.getBookmarkCategory(), impossible.message());
-			return 1;
+			return Marked.WARNED;
 		}
 		annotateBankSwitch(listing, addr, state, board, bankUniverse, viaHelper, provenance);
-		return 0;
+		return Marked.ANNOTATED;
+	}
+
+	/**
+	 * The NOTE text for a gap that is honest, or {@code null} when the gap is ours and belongs
+	 * under a WARNING. Deliberately says what was established rather than what failed: an
+	 * analyst reading it should learn that there is nothing here to fix.
+	 */
+	private static String honestGapMessage(BankSwitchStrategy.ValueStop stop) {
+		return switch (stop) {
+			case RUNTIME_SOURCE -> "Bank value is determined at RUNTIME here: value recovery " +
+				"terminated on a read of writable memory or on a register-clobbering call, so " +
+				"no static analysis can pin this bank down. This is a property of the game, " +
+				"not a gap in analysis -- nothing to fix.";
+			case HELPER_ARGUMENT -> "Bank value is this helper's ARGUMENT: the backward scan " +
+				"reached the helper's entry, where the register holds whatever the caller " +
+				"supplied, so the bank cannot be known from inside the helper body. Each CALL " +
+				"SITE is resolved separately; see the call sites' own annotations.";
+			case RESOLVED, ANALYZER_LIMIT -> null;
+		};
 	}
 
 	/**

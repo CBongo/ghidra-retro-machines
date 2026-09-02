@@ -376,15 +376,20 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 
 			SwitchResult switchResult = flow.switchResults().get(addr);
 			if (switchResult != null) {
-				int w = BankAnnotationAdapter.annotateOrWarn(this, program, listing, addr,
-					switchResult.effect(), board, bankUniverse, null,
+				BankAnnotationAdapter.Marked marked = BankAnnotationAdapter.annotateOrWarn(this,
+					program, listing, addr, switchResult.effect(), board, bankUniverse, null,
 					"Bank state becomes unknown here: mechanism write with a genuinely " +
 						"undeterminable value (value recovery could not pin down even one " +
 						"tracked bank bit -- e.g. a load of an unrelated address followed " +
 						"directly by the store, with no AND/ORA immediate to constrain it)",
-					provenance);
-				warnings += w;
-				if (w > 0) {
+					switchResult.stop(), provenance);
+				if (marked == BankAnnotationAdapter.Marked.WARNED) {
+					warnings++;
+				}
+				if (marked.bookmarked()) {
+					// Dedupe on ANY bookmark, not only a warning: a site whose gap is honest is
+					// still diagnosed, and Phase 3 stacking a second bookmark on it would undo
+					// exactly the reclassification this is for.
 					alreadyWarned.add(addr);
 				}
 			}
@@ -397,13 +402,22 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				// CallSwitch's javadoc.
 				BankState annotState = callSwitch.effect().knownMask() == 0
 						? callSwitch.effect() : callSwitch.stateAfter();
-				int w = BankAnnotationAdapter.annotateOrWarn(this, program, listing, addr, annotState,
-					board, bankUniverse, callSwitch.helperName(),
+				// ANALYZER_LIMIT, deliberately and unconditionally. This is the CALL SITE, where
+				// the argument plausibly IS statically determinable and we simply did not get it
+				// -- the opposite of the helper-body case, which is honest. Classifying a failed
+				// call-site recovery as honest would hide the single largest known gap (grm-hum,
+				// grm-8iy); rcransom alone has 15 such sites naming one helper.
+				BankAnnotationAdapter.Marked marked = BankAnnotationAdapter.annotateOrWarn(this,
+					program, listing, addr, annotState, board, bankUniverse,
+					callSwitch.helperName(),
 					"Bank state becomes unknown here: call to bank-switch helper " +
 						callSwitch.helperName() + " whose bank argument could not be " +
-						"recovered at this call site", provenance);
-				warnings += w;
-				if (w > 0) {
+						"recovered at this call site",
+					BankSwitchStrategy.ValueStop.ANALYZER_LIMIT, provenance);
+				if (marked == BankAnnotationAdapter.Marked.WARNED) {
+					warnings++;
+				}
+				if (marked.bookmarked()) {
 					alreadyWarned.add(addr);
 				}
 			}
