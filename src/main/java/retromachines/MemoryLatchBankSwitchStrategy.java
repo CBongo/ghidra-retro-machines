@@ -419,6 +419,20 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 		return SwitchOutcome.of(scan.value(), scan.stop());
 	}
 
+	@Override
+	public ValueStop classifyHelperBodyGap(Program program, Instruction switchSite,
+			BankState inState, Address helperEntry) {
+		if (!writesInRange(switchSite)) {
+			return ValueStop.ANALYZER_LIMIT;
+		}
+		// The same latch evaluation again, differing only in the entry stop; the value is
+		// discarded, so this can only reclassify. See BankSwitchStrategy.classifyHelperBodyGap.
+		StoredValueScanner.Scan atEntry = evaluateLatchScan(program, switchSite,
+			RegisterEnv.entryStopOnly(helperEntry), inState, hooks);
+		return atEntry.stop() == ValueStop.HELPER_ARGUMENT ? ValueStop.HELPER_ARGUMENT
+				: ValueStop.ANALYZER_LIMIT;
+	}
+
 	/**
 	 * The latch semantics themselves, given that {@code store} <em>is</em> a mechanism write:
 	 * recover the stored byte, apply the bus-conflict AND, and deposit the field at state bits

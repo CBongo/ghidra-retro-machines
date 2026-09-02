@@ -111,4 +111,21 @@ public class RegisterWriteBankSwitchStrategy implements BankSwitchStrategy {
 			reg, inState, mask, hooks, RegisterEnv.NONE);
 		return SwitchOutcome.of(scan.value(), scan.stop());
 	}
+
+	@Override
+	public ValueStop classifyHelperBodyGap(Program program, Instruction switchSite,
+			BankState inState, Address helperEntry) {
+		Character reg = StoredValueScanner.storeRegister(switchSite);
+		if (reg == null) {
+			return ValueStop.ANALYZER_LIMIT;
+		}
+		// The same scan again, differing only in that it stops at the helper's entry. See
+		// BankSwitchStrategy.classifyHelperBodyGap: the value is discarded, so this can only
+		// reclassify. An all-unknown env is what makes the stop mean "the register is live here"
+		// rather than "here is the caller's value" -- there is no caller in scope on this path.
+		StoredValueScanner.Scan atEntry = StoredValueScanner.resolveStoredValueScan(program,
+			switchSite, reg, inState, mask, hooks, RegisterEnv.entryStopOnly(helperEntry));
+		return atEntry.stop() == ValueStop.HELPER_ARGUMENT ? ValueStop.HELPER_ARGUMENT
+				: ValueStop.ANALYZER_LIMIT;
+	}
 }

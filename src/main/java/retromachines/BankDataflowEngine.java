@@ -245,7 +245,9 @@ final class BankDataflowEngine {
 						matchedMechanism.effectMask());
 				switchResults.put(addr, new SwitchResult(positionedEffect,
 					matchedMechanism.effectMask(), matchedMechanism.lsb(),
-					matchedMechanism.strategy(), switchedLocal.stop()));
+					matchedMechanism.strategy(),
+					classifyGap(program, instr, inState, matchedMechanism, switchedLocal,
+						helpers)));
 				outState = overwrite(inState, positionedEffect, matchedMechanism.effectMask());
 			}
 
@@ -287,6 +289,49 @@ final class BankDataflowEngine {
 			}
 		}
 		return new DataflowResult(stateIn, switchResults, callSwitches);
+	}
+
+	/**
+	 * The stop reason a direct switch site is finally recorded with: the strategy's own answer,
+	 * except that an {@link BankSwitchStrategy.ValueStop#ANALYZER_LIMIT} at a site sitting inside
+	 * a recognized bank-switch HELPER is offered to the strategy once more, to be reclassified
+	 * {@link BankSwitchStrategy.ValueStop#HELPER_ARGUMENT} if the value is that helper's argument
+	 * (bead {@code grm-3ou} part 1).
+	 * <p>
+	 * <b>This belongs to the engine, not to the strategy, because only the engine knows the helper
+	 * set.</b> A strategy sees one instruction and its own mechanism; "is the function I am
+	 * standing in a helper, and where do its callers enter it" is a whole-program fact that
+	 * {@link HelperDiscovery} computes and {@code runDataflow} carries. Hence the two-phase shape:
+	 * the strategy recovers the value with no notion of a helper (phase one, unchanged), and the
+	 * engine, holding the helper set, asks the classification question afterward.
+	 * <p>
+	 * Asked ONLY for a wholly unresolved value that the strategy already called our limitation, so
+	 * it can never overwrite a {@code RESOLVED} or a reason the strategy established positively --
+	 * and the VALUE recorded is phase one's regardless, so nothing here can move a bank number.
+	 * The default {@link BankSwitchStrategy#classifyHelperBodyGap} answers
+	 * {@code ANALYZER_LIMIT}, so a strategy that has not opted in behaves exactly as before.
+	 */
+	private static BankSwitchStrategy.ValueStop classifyGap(Program program, Instruction instr,
+			BankState inState, ConfiguredMechanism mech,
+			BankSwitchStrategy.SwitchOutcome outcome, Map<Function, HelperModel> helpers) {
+		if (helpers == null || outcome.value().knownMask() != 0 ||
+			outcome.stop() != BankSwitchStrategy.ValueStop.ANALYZER_LIMIT) {
+			return outcome.stop();
+		}
+		Function containing =
+			program.getFunctionManager().getFunctionContaining(instr.getMinAddress());
+		if (containing == null) {
+			return outcome.stop();
+		}
+		// Keyed by the CONTAINING function, and its model's own entry() -- not the function's
+		// entry point. For a mid-body or pass-through-wrapper model those differ, and entry() is
+		// the one callers actually arrive at, which is where the argument register is live.
+		HelperModel helper = helpers.get(containing);
+		if (helper == null || helper.entry() == null) {
+			return outcome.stop();
+		}
+		BankState localIn = toFieldLocal(inState, mech.lsb(), mech.effectMask());
+		return mech.strategy().classifyHelperBodyGap(program, instr, localIn, helper.entry());
 	}
 
 	/**

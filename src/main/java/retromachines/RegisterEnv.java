@@ -89,6 +89,24 @@ public record RegisterEnv(Address entryAddr, Address crossableJoin, BankState a,
 		new RegisterEnv(null, BankState.unknown(), BankState.unknown(), BankState.unknown());
 
 	/**
+	 * An env that stops at {@code entryAddr} knowing NOTHING about the caller's registers --
+	 * the classification-only env {@link BankSwitchStrategy#classifyHelperBodyGap} scans under
+	 * (bead grm-3ou part 1).
+	 * <p>
+	 * It is the degenerate case of the entry stop, and the degeneracy is the point: with every
+	 * register unknown the stop cannot supply a value, so reaching it establishes exactly one
+	 * fact -- that the backward walk got all the way to the helper's entry without finding a
+	 * definition of the register, i.e. the register is LIVE at entry and the value is the
+	 * caller's argument. A scan under this env must therefore never have its VALUE used; the
+	 * soundness argument in this record's class javadoc still applies unchanged, and is if
+	 * anything vacuous here, since there is nothing to attribute.
+	 */
+	public static RegisterEnv entryStopOnly(Address entryAddr) {
+		return new RegisterEnv(entryAddr, BankState.unknown(), BankState.unknown(),
+			BankState.unknown());
+	}
+
+	/**
 	 * An env that crosses no join -- every env predating grm-k90, spelled the way it was
 	 * spelled then. Kept as a convenience constructor rather than pushed onto callers because
 	 * "cross nothing" is the correct and overwhelmingly common answer, and because a

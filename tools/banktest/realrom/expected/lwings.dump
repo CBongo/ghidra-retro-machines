@@ -24,8 +24,8 @@ REALROM count refs.intoOverlay.retargeted 47
 REALROM count refs.intoOverlay.intraOverlay 1030
 REALROM count instrs.inOverlay 4649
 REALROM count bankComments 37
-REALROM count warnings 12
-REALROM count notes 3
+REALROM count warnings 11
+REALROM count notes 4
 REALROM count symbols 18
 REALROM sample.bankcomment 8194 bank -> 6 (bank=6) via caseD_f8
 REALROM sample.bankcomment 93a4 bank -> 3 (bank=3) via FUN_c389
@@ -93,7 +93,6 @@ REALROM sample.ref.truncated 25 of 1077
 REALROM sample.warn a5c6 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn c1fd [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper caseD_f8 whose bank argument could not be recovered at this call site
 REALROM sample.warn c27c [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper caseD_f8 whose bank argument could not be recovered at this call site
-REALROM sample.warn c34f [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn c375 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper caseD_f8 whose bank argument could not be recovered at this call site
 REALROM sample.warn c385 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper caseD_f8 whose bank argument could not be recovered at this call site
 REALROM sample.warn c39c [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper caseD_f8 whose bank argument could not be recovered at this call site
@@ -104,6 +103,7 @@ REALROM sample.warn f9ed [NesBankingAnalyzer] Bank state becomes unknown here: c
 REALROM sample.warn ff42 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ec5c whose bank argument could not be recovered at this call site
 REALROM sample.note aec3 [CopyLoopAnalyzer] copy-shaped loop PRG_LO_B3:b09f -> RAM:0640 (9 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note aece [CopyLoopAnalyzer] copy-shaped loop RAM:0620 -> RAM:06e0 (16 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note c34f [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
 REALROM sample.note d91e [CopyLoopAnalyzer] copy-shaped loop RAM:0030 -> RAM:0036 (3 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.symbol 2000 PPUCTRL IMPORTED primary=true
 REALROM sample.symbol 2001 PPUMASK IMPORTED primary=true

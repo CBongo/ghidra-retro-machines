@@ -17,6 +17,7 @@ package retromachines;
 
 import com.google.gson.JsonObject;
 
+import ghidra.program.model.address.Address;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Program;
 import ghidra.util.classfinder.ExtensionPoint;
@@ -138,6 +139,41 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	default BankState computeSwitch(Program program, Instruction instr, BankState inState) {
 		SwitchOutcome outcome = computeSwitchOutcome(program, instr, inState);
 		return outcome == null ? null : outcome.value();
+	}
+
+	/**
+	 * Whether an unresolved value at {@code switchSite} is unresolved because the site sits
+	 * inside a bank-switch HELPER entered at {@code helperEntry} and the value is that helper's
+	 * ARGUMENT -- {@link ValueStop#HELPER_ARGUMENT}, honest -- or whether it is our own limitation
+	 * ({@link ValueStop#ANALYZER_LIMIT}, the conservative default and the only thing this ever
+	 * answers for a strategy that does not override it).
+	 * <p>
+	 * <b>This is asked ONLY after {@link #computeSwitchOutcome} has already returned an unresolved
+	 * value with {@code ANALYZER_LIMIT}, and it may only ever change the CLASSIFICATION -- never
+	 * the value.</b> That two-phase shape is deliberate and is what makes the question safe to ask
+	 * at all. The natural implementation is to re-run the same backward scan under a
+	 * {@link RegisterEnv} whose {@code entryAddr} is {@code helperEntry} and whose registers are
+	 * all {@link BankState#unknown()}; that env's entry stop fires iff the walk actually reached
+	 * the entry with the register still unresolved, which is precisely a proof that the register
+	 * is LIVE at the helper's entry -- nothing between entry and the store defined it, or the scan
+	 * would have stopped on that definition first. An entry stop can only TRUNCATE a walk, so it
+	 * can never manufacture knowledge; and because the caller keeps phase one's value regardless,
+	 * a truncation cannot withdraw knowledge either.
+	 * <p>
+	 * <b>Do not answer {@code HELPER_ARGUMENT} for a failed recovery at a CALL SITE.</b> That is
+	 * the opposite case: there the argument plausibly IS statically determinable and we simply did
+	 * not get it, which is the single largest known gap (grm-hum, grm-8iy) and must stay a
+	 * WARNING. This method is only ever asked about a site inside the helper BODY, where the
+	 * value genuinely cannot be known without a caller -- {@code BankDataflowEngine} enforces
+	 * that by only asking for a switch site whose containing function is a recognized helper.
+	 *
+	 * @param helperEntry the address callers enter this helper at -- {@code HelperModel.entry()},
+	 *                    which for a mid-body or pass-through-wrapper model is NOT the containing
+	 *                    function's own entry point
+	 */
+	default ValueStop classifyHelperBodyGap(Program program, Instruction switchSite,
+			BankState inState, Address helperEntry) {
+		return ValueStop.ANALYZER_LIMIT;
 	}
 
 	/**

@@ -2371,6 +2371,16 @@ public class VerifyBankTest extends GhidraScript {
 			hasWarningBookmark(0x080F) && !eol(0x080F).contains("bank ->"),
 			"join-target store is ambiguous at 080f: warning=" + hasWarningBookmark(0x080F) +
 				" comment=\"" + eol(0x080F) + "\"");
+
+		// B2 (grm-3ou part 1): the helper BODY's own store at 0812 (STX $01) can never resolve
+		// -- the value is the caller's X, which is what B1 above recovers per CALL SITE. That is
+		// an HONEST gap, not an analyzer limit, so it is a NOTE and must not inflate the warning
+		// count. Contrast A1 directly above, where the value plausibly IS static and we simply
+		// could not attribute it across a join: that stays a WARNING.
+		criterion("B2",
+			hasNoteBookmark(0x0812) && !hasWarningBookmark(0x0812),
+			"helper body's caller-supplied X is an honest gap at 0812: note=" +
+				hasNoteBookmark(0x0812) + " warning=" + hasWarningBookmark(0x0812));
 	}
 
 	// ------------------------------------------------------------------
@@ -3171,6 +3181,24 @@ public class VerifyBankTest extends GhidraScript {
 			"WEAK decoy left alone at c181: carrierOverridden=" +
 				(decoy == null ? "<no instruction>" : String.valueOf(decoy.isLengthOverridden())) +
 				" offcutDisassembled=" + (listing.getInstructionAt(addr(0xC182)) != null));
+
+		// S8 (grm-3ou part 1): both latches' shared tails -- TAX / STA $FFD0,X at c15a/c15b and
+		// c175/c176 -- store the A the CALLER supplied. The backward scan walks over the TAX and
+		// lands on the helper's entry with A still undefined, which is a proof that A is live at
+		// entry and so an HONEST gap: a NOTE, not a warning. The two call sites at c014/c019 are
+		// where the value is actually recoverable, and they are annotated (S4's sibling comments
+		// "bank -> 0 (bank=0) via FUN_c15a"/"via FUN_c175" in the dump).
+		//
+		// This is the case grm-3ou's HELPER_ARGUMENT category was written for, and the fixture
+		// already had it by accident: it exists for the skip idiom, and the shared tail it needs
+		// for that happens to be a textbook argument-taking helper body.
+		criterion("S8",
+			hasNoteBookmark(0xC15B) && !hasWarningBookmark(0xC15B) &&
+				hasNoteBookmark(0xC176) && !hasWarningBookmark(0xC176),
+			"both latch bodies' caller-supplied A is an honest gap: c15b note=" +
+				hasNoteBookmark(0xC15B) + "/warning=" + hasWarningBookmark(0xC15B) +
+				", c176 note=" + hasNoteBookmark(0xC176) + "/warning=" +
+				hasWarningBookmark(0xC176));
 	}
 
 	// ------------------------------------------------------------------
@@ -4664,6 +4692,23 @@ public class VerifyBankTest extends GhidraScript {
 			boolean ourCategory = CATEGORY_C64.equals(bm.getCategory()) ||
 				CATEGORY_NES.equals(bm.getCategory());
 			if (ourCategory && "Warning".equals(bm.getTypeString())) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * As {@link #hasWarningBookmark} but for a {@code Note} -- the HONEST half of the gap
+	 * classification (bead {@code grm-3ou} part 1). Same category filter, deliberately: a note
+	 * from {@code CopyLoopAnalyzer} or {@code TransferMaterializer} must not satisfy a criterion
+	 * about a bank gap.
+	 */
+	private boolean hasNoteBookmark(long offset) {
+		for (Bookmark bm : currentProgram.getBookmarkManager().getBookmarks(addr(offset))) {
+			boolean ourCategory = CATEGORY_C64.equals(bm.getCategory()) ||
+				CATEGORY_NES.equals(bm.getCategory());
+			if (ourCategory && "Note".equals(bm.getTypeString())) {
 				return true;
 			}
 		}

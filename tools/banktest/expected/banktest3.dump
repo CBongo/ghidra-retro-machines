@@ -21,8 +21,8 @@ BLOCK STACK 0100-01ff overlay=false
 BLOCK VIC d000-d3ff overlay=false
 BLOCK ZEROPAGE 0002-00ff overlay=false
 COMMENT 0805 bank -> 4 (RAM_A000/RAM_D000/RAM_E000) via FUN_0812
+BOOKMARK Note 0812
 BOOKMARK Warning 080f
-BOOKMARK Warning 0812
 SYMBOL 0801 entry IMPORTED primary=true
 SYMBOL ff81 CINT IMPORTED primary=true
 SYMBOL ff84 IOINIT IMPORTED primary=true

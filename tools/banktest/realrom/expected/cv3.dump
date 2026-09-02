@@ -337,8 +337,8 @@ REALROM count refs.intoOverlay.retargeted 27
 REALROM count refs.intoOverlay.intraOverlay 40
 REALROM count instrs.inOverlay 341
 REALROM count bankComments 12
-REALROM count warnings 9
-REALROM count notes 0
+REALROM count warnings 7
+REALROM count notes 2
 REALROM count symbols 18
 REALROM sample.bankcomment e03a bank -> prg_mode=2,bank_5114=0,bank_5115=0,bank_5116=0,bank_5117=31? via FUN_e0df [known: prg_mode.0=0,prg_mode.1=1; assumed from initial: bank_5114.0,bank_5114.1,bank_5114.2,bank_5114.3,bank_5114.4,bank_5114.5,bank_5114.6,bank_5115.0,bank_5115.1,bank_5115.2,bank_5115.3,bank_5115.4,bank_5115.5,bank_5115.6,bank_5116.0,bank_5116.1,bank_5116.2,bank_5116.3,bank_5116.4,bank_5116.5,bank_5116.6,bank_5117.0,bank_5117.1,bank_5117.2,bank_5117.3,bank_5117.4,bank_5117.5,bank_5117.6] [switch-value flow]
 REALROM sample.bankcomment e03d bank -> prg_mode=3,bank_5114=0,bank_5115=0,bank_5116=30,bank_5117=31? via FUN_e2da [known: bank_5116.0=0,bank_5116.1=1,bank_5116.2=1,bank_5116.3=1,bank_5116.4=1,bank_5116.5=0,bank_5116.6=0; assumed from initial: prg_mode.0,prg_mode.1,bank_5114.0,bank_5114.1,bank_5114.2,bank_5114.3,bank_5114.4,bank_5114.5,bank_5114.6,bank_5115.0,bank_5115.1,bank_5115.2,bank_5115.3,bank_5115.4,bank_5115.5,bank_5115.6,bank_5117.0,bank_5117.1,bank_5117.2,bank_5117.3,bank_5117.4,bank_5117.5,bank_5117.6] [switch-value flow]
@@ -382,11 +382,11 @@ REALROM sample.warn e141 [NesBankingAnalyzer] Bank state becomes unknown here: c
 REALROM sample.warn e24a [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_e2e6 whose bank argument could not be recovered at this call site
 REALROM sample.warn e277 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_WE000_M2_B31__e2e6 whose bank argument could not be recovered at this call site
 REALROM sample.warn e277 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_e2e6 whose bank argument could not be recovered at this call site
-REALROM sample.warn e2e8 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
-REALROM sample.warn e2e8 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn e681 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_e2e6 whose bank argument could not be recovered at this call site
 REALROM sample.warn ecec [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_e2e0 whose bank argument could not be recovered at this call site
 REALROM sample.warn ed05 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_e2e6 whose bank argument could not be recovered at this call site
+REALROM sample.note e2e8 [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
+REALROM sample.note e2e8 [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
 REALROM sample.symbol 2000 PPUCTRL IMPORTED primary=true
 REALROM sample.symbol 2001 PPUMASK IMPORTED primary=true
 REALROM sample.symbol 2002 PPUSTATUS IMPORTED primary=true
