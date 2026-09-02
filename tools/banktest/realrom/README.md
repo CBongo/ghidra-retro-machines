@@ -35,8 +35,10 @@ The flags **select** a set rather than adding to one, and every run announces wh
 picked. `--gme` meaning "the GME set *plus* the curated twelve" is a costly surprise under
 `bless`, where it silently re-blesses goldens you never asked about.
 
-Each row costs a ~1min+ headless import, which is the whole reason the expanded set is
-opt-in. An id must be unique **across both files** — ids name goldens and name the ROM
+Each row costs a headless import — median ~7s, worst ~52s, so a full 33-row `--all` run is
+about 6 minutes (measured 2026-08-31, bead `grm-yfma`; see docs/testing.md "How long the
+gates actually take"). The expanded set is opt-in because it needs user-supplied hash-pinned
+ROMs this repo cannot ship, not because it is slow. An id must be unique **across both files** — ids name goldens and name the ROM
 copy the import sees, so a duplicate would import twice and let the second row silently
 overwrite the first's golden. The driver hard-errors on that rather than letting it look
 like success.

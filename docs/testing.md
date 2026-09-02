@@ -28,6 +28,35 @@ JUnit** `@Test` classes under `src/test/java` (`BitAlgebraEquivalenceTest`, `Map
 `test` task, which gives per-assertion reporting instead of first-mismatch `System.exit`. Add
 new pure checks as Tier-1 JUnit — do not reintroduce a bespoke `main()` verifier.
 
+## How long the gates actually take
+
+Measured 2026-08-31 on the 33-row real-ROM corpus (bead `grm-yfma`). Quote these rather than
+guessing, and **re-measure before quoting them elsewhere** — they are one machine's numbers, and
+while the rows are hash-pinned the hardware is not.
+
+| Gate | Wall clock | Notes |
+|---|---|---|
+| `build-and-test.sh check` (all chunks) | ~5–6½ min | includes the `unit` JUnit suite |
+| `realrom-test.sh check --all` (33 rows) | ~6–6½ min | four consecutive runs: 6m36s, 6m13s, 6m10s, 6m21s |
+| one real-ROM row | median **7s**, mean 10s, max 52s | from dump timestamps across one full run |
+
+**Both gates are minutes, not hours.** This section exists because the opposite was written down
+and believed: `AGENTS.md` said the real-ROM tier "is hours" (~50x high), resting on a `~1min+`
+per-import figure repeated in four places that was approximately the *worst* row stated as typical.
+Neither was ever measured.
+
+That mattered in practice, which is why the correction is recorded rather than quietly applied. A
+wrong cost estimate inside an instruction file changes what agents *do*: faced with an ambiguous
+result whose decisive experiment was one more `--all` run, an agent priced that run at "multi-hour",
+declined it, and substituted four cheap targeted probes — which all landed on the same side of what
+turned out to be a coin flip and nearly caused a row to be misfiled. The run it declined would have
+cost six minutes. **When a full run is the decisive experiment, run it.**
+
+The corollary for the opt-in tiers: the real-ROM tier being ~6 minutes is why
+`realrom-test.sh check --all` is a *required local step* before committing analysis-behaviour
+changes rather than a ceremonial occasional check, and why the SPC700 vector tier (~15s) is
+routine verification rather than a final gate.
+
 ## Tier 3 — the E2E golden-image suite (the acceptance authority)
 
 This is the load-bearing suite. It lives in `tools/banktest/` and works like this:
@@ -101,8 +130,9 @@ understanding the diff defeats the entire suite.
 
 > **Candidate cache (`grm-lne`).** A `check` run stashes each freshly imported dump in a
 > content-addressed cache under `build/` (gitignored), and a following `bless` reuses it
-> instead of re-running the expensive `analyzeHeadless` import — so the normal
-> review-then-bless loop imports once, not twice (biggest win on the ~1min+ real-ROM tier).
+> instead of re-running the `analyzeHeadless` import — so the normal
+> review-then-bless loop imports once, not twice (biggest win on the real-ROM tier, where a
+> full 33-row run is ~6 min; see "How long the gates actually take" below).
 > The cache key folds in the fixture bytes, loader + options, the dump script, and a
 > **content** fingerprint of the installed extension jar (CRC-based, not an mtime, since
 > gradle rewrites the dist zip every build). Any of those changing forces a fresh import, so
@@ -369,7 +399,8 @@ it is never a `run-banktest.sh` chunk (whose `all` would otherwise pull it in).
   project, chosen by `--gme`; `--all` runs both. The flags *select*, because `--gme` also
   re-blessing the curated twelve is a costly surprise. The expanded set is deliberately not a
   gate: a reference point for planning and an occasional thorough check, since each row costs
-  a ~1min+ headless import. Ids must be unique across both files — checked repo-wide
+  a headless import (~7s median, worst ~52s — see "How long the gates actually take"). Ids
+  must be unique across both files — checked repo-wide
   regardless of which set a run selected — because an id names a golden *and* names the ROM
   copy the import sees, so a duplicate would let one row silently overwrite another's golden.
 - **Candidate cache correctness.** `bless` may reuse a candidate a prior `check` imported.

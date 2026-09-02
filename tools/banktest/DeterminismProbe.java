@@ -47,7 +47,8 @@
 // is never committed: realrom-test.sh's awk carve extracts ONLY the REALROM block, so nothing
 // here can reach a golden even when this runs on the same import.
 //
-// USAGE -- rides along on a routine check, costing no second ~1min+ import:
+// USAGE -- rides along on a routine check, costing no second import (~7s median per row,
+// worst ~52s; see docs/testing.md "How long the gates actually take", bead grm-yfma):
 //   REALROM_EXTRA_POSTSCRIPT=DeterminismProbe.java \
 //     bash tools/banktest/realrom-test.sh check --only megaman H:/emulators/nes/roms
 // then diff two runs' carved blocks. Note realrom_cache_key() hashes RealRomDump.java only, so

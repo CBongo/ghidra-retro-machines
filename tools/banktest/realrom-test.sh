@@ -480,8 +480,10 @@ fi
 
 # --- candidate-dump cache (bead grm-lne) --------------------------------
 # Mirror build-and-test.sh's cache: `check` stashes each freshly imported dump
-# so a follow-up `bless` reuses it instead of paying the ~1min+ real-ROM import
-# again. Keyed by the pinned ROM sha, the loader options, the RealRomDump
+# so a follow-up `bless` reuses it instead of paying the real-ROM import again
+# (median ~7s per row, worst ~52s; a full 33-row --all run is ~6 min -- measured
+# 2026-08-31, bead grm-yfma, which corrected a ~1min+ estimate that was roughly
+# the worst row stated as typical). Keyed by the pinned ROM sha, the loader options, the RealRomDump
 # script, and the installed extension identity, so a rebuild or manifest edit
 # forces a fresh import. Disabled (bless re-imports) when the extension identity
 # is unknown (e.g. falling back to the shared %APPDATA% install).
@@ -602,7 +604,8 @@ import_and_dump() {
 	log="$WORK/${safe}.log"
 
 	# REALROM_EXTRA_POSTSCRIPT runs one more script (e.g. BankReachProbe.java) on the same
-	# import, so a diagnostic does not cost a second ~1min+ analysis. Goldens are unaffected:
+	# import, so a diagnostic does not cost a second analysis (~7s median per row, worst ~52s --
+	# grm-yfma). Goldens are unaffected:
 	# the awk carve below extracts only the REALROM block, and every other script fences its
 	# own output. Give it its OWN invocation rather than piggybacking a routine run, though --
 	# realrom_cache_key() above hashes RealRomDump.java only, so a `bless` (or a re-`check`)
