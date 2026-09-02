@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bd prime"
+            "command": "bd prime && bd memories"
           }
         ]
       }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bd prime"
+            "command": "bd prime && bd memories"
           }
         ]
       }

@@ -183,10 +183,19 @@ If you find an absolute path in a committed file, treat it as a bug and generali
 
 ## Persistent memory: the index is not the memory
 
-`bd prime` injects persistent memories at session start, but **the payload is large enough that
-your host may truncate it** — measured 2026-08-26 at 101 KB, of which memories are 95%. When that
-happens you get the first memory and nothing else, silently. Do not assume a memory reached you
-just because `bd prime` ran.
+**The session-start hook injects a memory INDEX, not memory bodies** (bead `grm-8ctl`, changed
+2026-09-02). So a key you can see in your context is a *pointer*: you have its name and a
+truncated first line, and nothing more until you fetch it.
+
+It did inject every body in full until then, and that was the problem: measured 2026-09-02 at
+115,504 bytes, of which 110,823 were memory bodies. Hosts truncate that to a ~2 KB preview and
+spill the rest to a file, so everything after the first memory alphabetically was silently absent
+from every session — for Codex as much as for Claude, since `.codex/hooks.json` and
+`.claude/settings.json` run the same command. The fix is `.beads/PRIME.md`, which overrides
+`bd prime`'s output entirely (see `bd prime --help`) and replaces the memories section with a
+pointer; the hooks then run `bd memories` as a second command to emit the index. The pair costs
+~12 KB. That file carries its own instructions for refreshing it after a `bd` upgrade, and for
+deleting it if a future version grows a real index flag.
 
 Three commands, and the distinction between them matters:
 
@@ -199,7 +208,12 @@ bd recall <key>          # the FULL body of one memory
 The index line is a hard truncation that can stop mid-word. **It is a pointer, not a summary — do
 not act on it as if it were the whole memory.** If a key looks relevant to what you are doing,
 `bd recall` it and read the body. Several memories in this store exist specifically to stop a
-class of expensive mistake, and their first line does not tell you which class.
+class of expensive mistake, and their first line does not tell you which class. This mattered
+before the index change and matters more after it: `bd recall` is now the ONLY way a body reaches
+you, so "I saw it in `bd prime`" is no longer a thing that can happen.
+
+If the index itself is missing from your context — a smaller payload is still not a guaranteed-
+small one — run `bd memories` yourself. It is one cheap command.
 
 Write new knowledge with `bd remember` (see the Rules section below); do not create memory files.
 

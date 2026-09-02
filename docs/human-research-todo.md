@@ -191,10 +191,19 @@ Each is minutes of work and settles something specific. Highest value per unit e
       migrate the local Dolt schema forward, one-way; beads data is already pushed to
       `refs/dolt/data`.
 
-      **When it's done, hand it back.** Rewiring the two hooks and the matching wording in
-      `AGENTS.md` are agent work, deliberately held until the binary is in place rather than written
-      blind. Verification is then free: start one fresh session and see whether the SessionStart hook
-      still says `Output too large ... Preview (first 2KB)`.
+      **UPDATED 2026-09-02 — the truncation is already fixed; this item is now about removing the
+      workaround, not about fixing anything.** An interim fix landed that works on 1.0.4:
+      `.beads/PRIME.md` overrides `bd prime`'s output entirely (a documented mechanism — see
+      `bd prime --help`), replacing the memories section with a pointer, and both hooks now run
+      `bd prime && bd memories`. Measured: **115,504 bytes → 12,372**, all 35 memories indexed.
+      So the payload problem is solved and the P1's symptom is gone.
+
+      What the upgrade still buys is real but narrower: `.beads/PRIME.md` contains a **pinned copy
+      of bd 1.0.4's own workflow text**, which means upstream improvements to that text stop
+      arriving. `--no-memories` has no such cost. When the binary is in place, the agent-side step
+      is one line — delete `.beads/PRIME.md` and set both hooks to
+      `bd prime --no-memories && bd memories`. Verification is free either way: start one fresh
+      session and see whether the SessionStart hook still says `Output too large`.
 
 *Not an item — a note.* The `.idb` inventory itself (`grm-w4w3`) is **agent work and is
 deliberately deferred to a future session** at your request; the tooling question is settled
@@ -394,6 +403,12 @@ Agents can't file these — they need an account and CLA agreement.
 
   **Note `gh` on this machine is not authenticated** (`gh auth login` needed) — an agent found
   that out trying to read the release metadata, so budget for it.
+
+  **DEPRIORITISED 2026-09-02, not withdrawn.** The local symptom is fixed (see the bd-upgrade item
+  above): `.beads/PRIME.md` plus a two-command hook already delivers an index, so nothing here is
+  blocked on upstream any more. What the ask would still buy is having it in ONE command rather
+  than a hook that must remember to run two — worth filing when you are already in that repo, not
+  worth a special trip.
 
 *Two things learned that the next upstream item should inherit:*
 
