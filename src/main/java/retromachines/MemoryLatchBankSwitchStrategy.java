@@ -407,7 +407,16 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	}
 
 	@Override
-	public BankState computeSwitch(Program program, Instruction instr, BankState inState) {
+	public SwitchOutcome computeSwitchOutcome(Program program, Instruction instr,
+			BankState inState) {
+		// grm-3ou part 1, increment 1: the recovery body is UNCHANGED and still yields a bare
+		// BankState; SwitchOutcome.of derives the conservative stop reason from it. Increment 2
+		// replaces this with reasons this strategy actually knows.
+		BankState value = computeSwitchValue(program, instr, inState);
+		return value == null ? null : SwitchOutcome.of(value);
+	}
+
+	private BankState computeSwitchValue(Program program, Instruction instr, BankState inState) {
 		if (!writesInRange(instr)) {
 			return null;
 		}

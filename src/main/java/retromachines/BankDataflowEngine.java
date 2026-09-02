@@ -195,13 +195,17 @@ final class BankDataflowEngine {
 			// result is positioned back into absolute bits before it touches stateIn.
 			MatchInfo cached = matchCache.get(addr);
 			ConfiguredMechanism matchedMechanism;
-			BankState switchedLocal;
+			// The strategy's answer now carries WHY an unrecovered value did not resolve (bead
+			// grm-3ou part 1). It rides the existing match cache unchanged: the stop reason is a
+			// property of the very recovery that produced the value, so anything already safe to
+			// cache as a value is safe to cache with its reason attached.
+			BankSwitchStrategy.SwitchOutcome switchedLocal;
 			if (cached == null) {
 				ConfiguredMechanism matched = null;
-				BankState result = null;
+				BankSwitchStrategy.SwitchOutcome result = null;
 				for (ConfiguredMechanism cm : mechanisms) {
 					BankState localIn = toFieldLocal(inState, cm.lsb(), cm.effectMask());
-					result = cm.strategy().computeSwitch(program, instr, localIn);
+					result = cm.strategy().computeSwitchOutcome(program, instr, localIn);
 					if (result != null) {
 						matched = cm;
 						break;
@@ -228,7 +232,8 @@ final class BankDataflowEngine {
 				matchedMechanism = cached.mechanism();
 				BankState localIn =
 					toFieldLocal(inState, matchedMechanism.lsb(), matchedMechanism.effectMask());
-				switchedLocal = matchedMechanism.strategy().computeSwitch(program, instr, localIn);
+				switchedLocal =
+					matchedMechanism.strategy().computeSwitchOutcome(program, instr, localIn);
 			}
 			if (switchedLocal != null) {
 				// Fold: this mechanism's switch REPLACES only the bits it owns (effectMask),
@@ -236,10 +241,11 @@ final class BankDataflowEngine {
 				// mechanisms' fields. For a single-mechanism board effectMask covers every
 				// tracked bit, so this reduces exactly to the old whole-state replace.
 				BankState positionedEffect =
-					position(switchedLocal, matchedMechanism.lsb(), matchedMechanism.effectMask());
+					position(switchedLocal.value(), matchedMechanism.lsb(),
+						matchedMechanism.effectMask());
 				switchResults.put(addr, new SwitchResult(positionedEffect,
 					matchedMechanism.effectMask(), matchedMechanism.lsb(),
-					matchedMechanism.strategy()));
+					matchedMechanism.strategy(), switchedLocal.stop()));
 				outState = overwrite(inState, positionedEffect, matchedMechanism.effectMask());
 			}
 
@@ -410,7 +416,8 @@ final class BankDataflowEngine {
 	 * match was found but the value must be recomputed from the current in-state on every
 	 * dequeue.
 	 */
-	private record MatchInfo(ConfiguredMechanism mechanism, BankState result) {}
+	private record MatchInfo(ConfiguredMechanism mechanism,
+			BankSwitchStrategy.SwitchOutcome result) {}
 
 	/**
 	 * One recognized switch site's positioned effect (grm-ezl): {@code effect} is the pure
@@ -425,8 +432,15 @@ final class BankDataflowEngine {
 	 * ask it to position a recovered argument via
 	 * {@link BankSwitchStrategy#depositHelperArgument} instead of the engine guessing.
 	 */
+	/**
+	 * A recognized direct switch at one address. {@code stop} says WHY {@code effect} did
+	 * not resolve when it did not (bead {@code grm-3ou} part 1) -- it is
+	 * {@link BankSwitchStrategy.ValueStop#RESOLVED} whenever any bit of {@code effect} is
+	 * known, and is what lets an annotator tell a gap that is HONEST (the value really is
+	 * runtime-determined, or is the caller's argument) from one that is OUR LIMITATION.
+	 */
 	record SwitchResult(BankState effect, int effectMask, int lsb,
-			BankSwitchStrategy strategy) {}
+			BankSwitchStrategy strategy, BankSwitchStrategy.ValueStop stop) {}
 
 	/**
 	 * A resolved call-site switch (for annotation, distinct from direct switches).

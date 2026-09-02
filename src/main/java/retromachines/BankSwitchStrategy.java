@@ -57,14 +57,88 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	void configure(Program program, JsonObject params, int stateMask);
 
 	/**
-	 * Examines one instruction under the tracked in-state.
-	 *
-	 * @return the bank state after this instruction if it is a switch this mechanism
-	 *         recognizes ({@link BankState#unknown()} for a recognized switch whose
-	 *         value could not be recovered), or {@code null} if the instruction is not
-	 *         a mechanism write at all and the state flows through unchanged
+	 * Why a recognized switch's value could not be recovered (bead {@code grm-3ou} part 1).
+	 * <p>
+	 * <b>This is deliberately NOT {@code EmulationRecovery}'s {@code StopReason}</b>, which
+	 * describes why an interpreted RUN halted and belongs to a different subsystem entirely.
+	 * The two must not be merged: this one classifies a static value-recovery gap.
+	 * <p>
+	 * The distinction that matters is HONEST vs OUR LIMITATION. A site whose value is genuinely
+	 * determined at runtime is not a defect and should not read as one; a site the scanner
+	 * simply gave up on is a real gap worth fixing. Before this existed both produced the same
+	 * WARNING, which made the warning count useless as a progress metric -- every measurement
+	 * of banking recovery was read through an instrument that could not tell "impossible" from
+	 * "not done yet".
 	 */
-	BankState computeSwitch(Program program, Instruction instr, BankState inState);
+	enum ValueStop {
+		/** The value WAS recovered (wholly or partly). No gap to classify. */
+		RESOLVED,
+		/**
+		 * The value is genuinely not static: recovery terminated on a load from a WRITABLE
+		 * block, or on a register-clobbering call. Honest -- report as a NOTE, not a warning.
+		 */
+		RUNTIME_SOURCE,
+		/**
+		 * The site is inside a recognized bank-switch helper and the unresolved input is a
+		 * register live at the helper's ENTRY, i.e. the value is the caller's argument and can
+		 * never be resolved from inside the helper body. Honest -- report as a NOTE.
+		 * <p>
+		 * Note this is the site INSIDE the helper. A failure to recover the argument AT A CALL
+		 * SITE is the opposite case: there the value plausibly is static and we simply did not
+		 * get it, so that stays {@link #ANALYZER_LIMIT}.
+		 */
+		HELPER_ARGUMENT,
+		/**
+		 * We gave up: scan budget exhausted, basic-block boundary, control-flow join,
+		 * mid-scan mechanism-write abort, or an unmodeled modifier. A real gap -- stays a
+		 * WARNING, and is the population worth working on.
+		 */
+		ANALYZER_LIMIT
+	}
+
+	/**
+	 * A recognized switch's effect plus, when the value did not fully resolve, WHY.
+	 * <p>
+	 * {@code stop} is only meaningful when {@code value.knownMask() == 0}; a partially or
+	 * wholly recovered value carries {@link ValueStop#RESOLVED}. Use {@link #of} rather than
+	 * the canonical constructor unless a strategy genuinely knows the reason -- it derives the
+	 * conservative answer, which is what every strategy reported before the reasons were
+	 * threaded through.
+	 */
+	record SwitchOutcome(BankState value, ValueStop stop) {
+
+		/** The conservative outcome: resolved if any bit is known, else an analyzer limit. */
+		static SwitchOutcome of(BankState value) {
+			return new SwitchOutcome(value,
+				value.knownMask() != 0 ? ValueStop.RESOLVED : ValueStop.ANALYZER_LIMIT);
+		}
+
+		/** As {@link #of(BankState)} but with a known reason for an unrecovered value. */
+		static SwitchOutcome of(BankState value, ValueStop stop) {
+			return new SwitchOutcome(value, value.knownMask() != 0 ? ValueStop.RESOLVED : stop);
+		}
+	}
+
+	/**
+	 * Examines one instruction under the tracked in-state. <b>This is the method a strategy
+	 * implements</b>; {@link #computeSwitch} is a convenience view of its value.
+	 *
+	 * @return the effect of this instruction if it is a switch this mechanism recognizes
+	 *         (carrying {@link BankState#unknown()} plus a {@link ValueStop} for a recognized
+	 *         switch whose value could not be recovered), or {@code null} if the instruction
+	 *         is not a mechanism write at all and the state flows through unchanged
+	 */
+	SwitchOutcome computeSwitchOutcome(Program program, Instruction instr, BankState inState);
+
+	/**
+	 * The bank state after this instruction, or {@code null} if it is not a mechanism write --
+	 * {@link #computeSwitchOutcome}'s answer with the stop reason dropped. Retained because
+	 * most callers, and nearly every test, care only about the value.
+	 */
+	default BankState computeSwitch(Program program, Instruction instr, BankState inState) {
+		SwitchOutcome outcome = computeSwitchOutcome(program, instr, inState);
+		return outcome == null ? null : outcome.value();
+	}
 
 	/**
 	 * The field-local result of {@link #depositHelperArgument}: {@code ownedMask} marks
