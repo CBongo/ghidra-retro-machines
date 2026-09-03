@@ -92,4 +92,8 @@ Remove-Item $unpack -Recurse -Force
 Remove-Item $zip -Force
 
 Write-Host "`nInstalled: $((& $target version) -join ' ')"
-Write-Host "Next: confirm the new flag exists -- bd prime --no-memories | Measure-Object -Character"
+Write-Host "Next: this script is SPENT -- the upgrade it was written for is done (1.0.4 -> 1.2.2,"
+Write-Host "  2026-09-02). It previously told you to confirm ``bd prime --no-memories``; THAT FLAG DOES"
+Write-Host "  NOT EXIST on 1.2.2, so .beads/PRIME.md is permanent rather than interim. After any future"
+Write-Host "  bd upgrade: re-check ``bd prime --help`` for a prime-without-memories switch, and refresh"
+Write-Host "  .beads/PRIME.md per the procedure in its own header comment."

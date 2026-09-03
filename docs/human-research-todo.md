@@ -167,44 +167,6 @@ Each is minutes of work and settles something specific. Highest value per unit e
       Ghidra has split the routine into `FUN_c542` and `FUN_c54a`, which report the *same*
       `switchSite=c5fc`; the body you want is `c542`–`c6f1`.
 
-- [ ] **Upgrade `bd` 1.0.4 → 1.2.2 — it unblocks a designed fix for the memory truncation.**
-      (`grm-8ctl` P1, researched 2026-08-26.) Minutes of work; run
-      `.\tools\upgrade-bd.ps1` (`-WhatIf` first if you want to see the paths). It checksums the
-      download, refuses to run while `bd` is live, and keeps the outgoing binary as
-      `bd-previous.exe` so rollback is a rename.
-
-      **Why it needs you:** `bd` is a standalone binary in `%LOCALAPPDATA%\Programs\bd` with no
-      self-update, so this writes outside the repo — same category as `tools/install-gui.ps1`.
-
-      **What it buys:** `bd prime --no-memories` (merged upstream 2026-07-14, ships in v1.1.2) lets
-      both hooks emit `bd prime --no-memories` + `bd memories` instead of bare `bd prime`. Measured
-      here: **101,019 bytes → ~10 KB**, using only shipped flags instead of the brittle
-      output-stripping that upstream added the flag specifically to eliminate. Today the hook payload
-      is 95% memory bodies and the host truncates it to a ~2 KB preview, so everything after the
-      first memory alphabetically never reaches the session — that is the mechanism behind the
-      retracted `grm-7rct`.
-
-      **Two things worth knowing before you run it.** v1.2.2 *is* v1.1.2's code under a higher
-      version number (v1.2.0/v1.2.1 were published by accident without release testing), so "latest"
-      and "conservative" are the same binary — and the release notes' alarming "schema version
-      mismatch" section applies only to people who ran v1.2.1, not to you coming from 1.0.4. It does
-      migrate the local Dolt schema forward, one-way; beads data is already pushed to
-      `refs/dolt/data`.
-
-      **UPDATED 2026-09-02 — the truncation is already fixed; this item is now about removing the
-      workaround, not about fixing anything.** An interim fix landed that works on 1.0.4:
-      `.beads/PRIME.md` overrides `bd prime`'s output entirely (a documented mechanism — see
-      `bd prime --help`), replacing the memories section with a pointer, and both hooks now run
-      `bd prime && bd memories`. Measured: **115,504 bytes → 12,372**, all 35 memories indexed.
-      So the payload problem is solved and the P1's symptom is gone.
-
-      What the upgrade still buys is real but narrower: `.beads/PRIME.md` contains a **pinned copy
-      of bd 1.0.4's own workflow text**, which means upstream improvements to that text stop
-      arriving. `--no-memories` has no such cost. When the binary is in place, the agent-side step
-      is one line — delete `.beads/PRIME.md` and set both hooks to
-      `bd prime --no-memories && bd memories`. Verification is free either way: start one fresh
-      session and see whether the SessionStart hook still says `Output too large`.
-
 *Not an item — a note.* The `.idb` inventory itself (`grm-w4w3`) is **agent work and is
 deliberately deferred to a future session** at your request; the tooling question is settled
 (`python-idb` Apache-2.0 / `idbutil` MIT, no IDA needed) so nobody re-derives it. Worth knowing
@@ -382,8 +344,13 @@ Agents can't file these — they need an account and CLA agreement.
   (`grm-8ctl`, researched 2026-08-26.) **The full issue body is drafted verbatim on `grm-8ctl`'s
   comments** — title on the first line — so this is review-and-post, nothing left to write.
 
-  The ask: `bd prime` today emits every memory body in full, or (since `--no-memories`, merged
-  2026-07-14) none at all. Neither is right for a workspace whose memories are load-bearing. We
+  The ask: `bd prime` today emits every memory body in full, and there is **no way to ask for
+  anything else** — corrected 2026-09-02 against a real 1.2.2 binary. This paragraph used to say
+  "or (since `--no-memories`, merged 2026-07-14) none at all"; **that flag does not exist**, on
+  1.2.2 or any shipped version we can see (`bd prime --help` lists `--export`, `--full`,
+  `--hook-json`, `--mcp`, `--memories-only`, `--stealth`). `--memories-only` is the inverse. The
+  all-or-nothing framing therefore **understates** the gap rather than overstating it, and the
+  draft on the bead should be re-read for that claim before posting. Neither extreme is right for a workspace whose memories are load-bearing. We
   measured 101,019 bytes of prime output, 95% of it memory bodies, truncated by the host to a
   ~2 KB preview — so the memories are stored, synced, and silently absent from the context they
   exist to inform. `bd memories` already produces the right artifact (5,297 bytes for 34 entries)
@@ -426,6 +393,7 @@ Agents can't file these — they need an account and CLA agreement.
 
 | question | answer | bead |
 |---|---|---|
+| Does upgrading `bd` let us retire the `.beads/PRIME.md` memory-truncation workaround? | **No — the upgrade is done and the premise was false. `bd prime --no-memories` does not exist.** The owner ran `tools/upgrade-bd.ps1` on 2026-09-02 (1.0.4 → **1.2.2**, `6c124203e`); the store came through intact (35 memories, `bd recall` fine) and `bd doctor` now declines in embedded mode, which is expected, not a fault. But `bd prime --help` on 1.2.2 lists only `--export`, `--full`, `--hook-json`, `--mcp`, `--memories-only`, `--stealth` — **there is no prime-without-memories switch**, so the "delete `.beads/PRIME.md`, set the hooks to `bd prime --no-memories && bd memories`" plan this item carried, and which `tools/upgrade-bd.ps1:95` still printed as its next step, cannot be executed. `--memories-only` is not a substitute: it is the **inverse** flag, and it is moot anyway because **PRIME.md overrides prime output regardless of flags** (verified — `bd prime --memories-only` printed PRIME.md, not the memories). The payload problem also did **not** improve on its own: default `bd prime` went 115,504 → **116,854** bytes, still ~112 KB of memory bodies. So the override is now **permanent, not interim**, and is maintained rather than retired: refreshed to 1.2.2's text, with the byte figures, the dead retirement path, and a refresh procedure written into the file. **One deliberate divergence from upstream, owner's decision:** bd 1.2.2 reversed its session-close policy to "commit, sync, or push only when ... granted authority", which contradicts AGENTS.md's mandatory-push rule, so the pinned checklist keeps this repo's push-mandatory wording and says so. **The upstream ask (`grm-8ctl`, section 5) is unaffected and now better-evidenced** — it asks for index emission, which 1.2.2 still does not have. | `grm-8ctl`; `tools/upgrade-bd.ps1` **spent** |
 | Should `bless` still write a golden when the fixture's criteria failed? | **No — ruled 2026-08-12: fail closed, with a `--force-criteria` override.** The "deliberate design decision" the bead warned about was real but made about a different harness: the unconditional bless dates to the suite's *first* commit (`159ce7e`, 2026-07-08), and the candidate cache arrived two weeks later (`c915ec2`, `grm-lne`) and simply *mirrored* it — nobody ever weighed it against the check-then-bless workflow. Two findings killed the case for leaving it. **The stated rationale was never load-bearing:** `check` already writes the candidate to `$WORK` and prints the full `diff -u`, and since `grm-lne` also persists it to the cache with a `.crit` verdict — nothing about diagnosing a failure ever required overwriting `expected/`. **And the golden carries no record of the verdict:** the dump is only the `BANKDUMP` section, so a blessed-over-a-failure oracle is byte-indistinguishable from a good one, which makes "visible in `git diff`" false as a mitigation — every durable artifact says "fine". Also settled: `bless` was never "bless no matter what" anyway (headless-nonzero and missing-`BANKDUMP` already refused; only `SUITE FAIL` fell through), so this makes the three cases uniform rather than inventing a new rule. **Implemented as one shared `bless_candidate` helper both routes call**, because the cached and fresh paths had already drifted in four ways (only the cached one showed the golden diff; they flagged criteria on opposite sides of the copy; only the cached one printed the `SUITE` line; only the cached one announced a missing golden) — parity by construction, not by review. Refusal is per row, so good rows in the same run still bless. Missing/empty `.crit` counts as failure. `--force-criteria` exits 0 and names what it forced. Atomic temp+rename included, which closes `grm-aqi`'s own acceptance criteria — **`grm-z34` keeps only its remaining non-`run_one` write sites** | `grm-aqi` **closed**; unblocks `grm-z34` |
 | In `ff3spc.dis`, is the raw `NOT1 $E04D` form the tool's output and `NOT1 $004D.7` your hand correction? | **Yes — the disassembler did not handle those correctly** (owner, 2026-08-18). This turned out to be one thread of a larger pattern the corpus differential then confirmed: **the two earliest listings were produced by an earlier, buggier version of the same tool, and the corpus dates the fixes.** ff2 (May 2000) reverses the operand order of every `dp,dp` form — its own `<d>`/`<s>` markers state the wrong claim outright, and the vector suite settles which side is right — and mis-decodes `5A`, `3B`, `BE`, `A7`. ff3 (Feb 2001) has all of that right but still prints the bit instructions' raw 16-bit operand. Both compute a short branch with offset **exactly `0x7F`** one page low (a sign test written `>= 0x7F`), while handling `0x7E` and every negative offset correctly; fzero (Aug 2001) gets `0x7F` right too. **Retires the earlier reading that ff3's `BEQ $0E13` was a one-character typo** — it is the same systematic off-by-`0x100`, 2 for 2 across two files. Consequence: read an ff2/ff3-only oddity as an early-tool artifact first, and do not spend effort reconciling one against a later listing. | `grm-uy9s` |
 | blmaster's 13 constant-arg sites vs 4 comments | Measurement artifact — a warning-derived helper population inflated 5 helpers to 36 and constArg 2 to 13 | `grm-8iy.3` **closed** |

@@ -24,48 +24,70 @@ line does not tell you which class. If a key looks relevant to what you are doin
 
 Write new knowledge with `bd remember`; do not create memory files.
 
+
 <!--
 WHY THIS FILE EXISTS. `.beads/PRIME.md` overrides `bd prime`'s output entirely (see
 `bd prime --help`), which is how the memory bodies are suppressed. Everything below the marker is
-bd 1.0.4's own default content, copied VERBATIM from `bd prime --export`; only the memories
-section above was replaced.
+bd 1.2.2's own default content from `bd prime --export`, with ONE deliberate divergence noted at
+the end of this comment; the memories section above replaced upstream's.
 
-Measured 2026-09-02: `bd prime` emitted 115,504 bytes, of which 110,823 were memory bodies. Hosts
-truncate that to a ~2 KB preview and spill the rest to a file, so every memory after the first
-alphabetically was silently absent from every session -- for Claude AND Codex, since both hooks
-run the same command. With this override the pair emits ~10 KB.
+THE PROBLEM, re-measured 2026-09-02 on bd 1.2.2: `bd prime` emits 116,854 bytes, of which ~112,000
+are memory bodies. (It was 115,504 on 1.0.4 -- the upgrade made it slightly WORSE, not better.)
+Hosts truncate that to a ~2 KB preview and spill the rest to a file, so every memory after the
+first alphabetically is silently absent from every session -- for Claude AND Codex, since
+.claude/settings.json and .codex/hooks.json run the same command. With this override the
+`bd prime && bd memories` pair emits ~13 KB.
 
-THIS FILE IS AN INTERIM FIX AND SHOULD BE DELETED, NOT MAINTAINED. `bd prime --no-memories` was
-merged upstream 2026-07-14 and ships in v1.1.2; this machine is on 1.0.4, where the flag does not
-exist. Once `tools/upgrade-bd.ps1` has been run (it writes outside the repo, so it is the OWNER's
-step -- see docs/human-research-todo.md), the correct configuration is:
+THIS FILE IS NO LONGER "INTERIM" -- THE PREDICTED RETIREMENT PATH DOES NOT EXIST. An earlier
+version of this comment said `bd prime --no-memories` had merged upstream and would ship in
+v1.1.2, and instructed the next agent to delete this file once bd was upgraded. THE UPGRADE
+HAPPENED (1.0.4 -> 1.2.2, 2026-09-02) AND THAT FLAG IS NOT THERE. `bd prime --help` on 1.2.2
+lists --export, --full, --hook-json, --mcp, --memories-only, --stealth. There is no way to ask
+for prime-without-memories.
 
-    delete this file, and set both hooks to:  bd prime --no-memories && bd memories
+Do not reach for `--memories-only` as a substitute; it is the INVERSE flag, and it is also
+irrelevant here because PRIME.md overrides it too (verified 2026-09-02: `bd prime --memories-only`
+printed this file, not the memories). PRIME.md overrides ALL prime output regardless of flags.
 
-That is strictly better than this file, and for one reason: everything below the marker is a
-PINNED COPY of bd 1.0.4's own workflow text, so upstream improvements to it stop arriving. The
-flag has no such cost. Do not invest in keeping this file current -- retire it.
+So: KEEP THIS FILE AND MAINTAIN IT. Retire it only if a future bd grows a real
+prime-without-memories switch -- re-check `bd prime --help` after an upgrade rather than trusting
+this paragraph. The standing cost is that everything below the marker is a PINNED COPY of bd's
+workflow text, so upstream improvements to it arrive only when someone refreshes it.
 
-If you must refresh it anyway (upgrade still pending, bd's text changed): run `bd prime --export`,
-take everything from the SESSION CLOSE PROTOCOL heading onward, and replace the marked section
-below. `--export` still includes the memory bodies (it ignores this file, not the memories), so do
-not paste it in whole.
+TO REFRESH after a bd upgrade: run `bd prime --export`, take everything from the SESSION CLOSE
+PROTOCOL heading onward, replace the marked section below, then RE-APPLY the divergence in the
+next paragraph. `--export` still includes the memory bodies (it ignores this file, not the
+memories), so do not paste it in whole. Update the version in the marker line and the byte
+measurement above.
+
+THE ONE DELIBERATE DIVERGENCE FROM UPSTREAM (decision by the project owner, 2026-09-02). bd 1.2.2
+reversed its session-close policy to "Conservative is the default. Commit, sync, or push only when
+... granted authority". THIS PROJECT'S AGENTS.md AND CLAUDE.md MANDATE THE OPPOSITE -- work is not
+complete until `git push` succeeds, and an agent must never stop before pushing. Pasting upstream's
+text verbatim would ship a live contradiction into every session's context, so the SESSION CLOSE
+PROTOCOL checklist, the "Git workflow" core rule, and the "Completing work" snippet below keep this
+repo's push-mandatory wording. Everything else below is upstream 1.2.2. If you refresh this file,
+re-apply that divergence -- or, if the owner changes the policy, change AGENTS.md and CLAUDE.md in
+the same commit rather than letting the two drift.
 -->
 
-<!-- ===== VERBATIM FROM bd 1.0.4 `bd prime --export` BELOW THIS LINE ===== -->
-
+<!-- ===== FROM bd 1.2.2 `bd prime --export`, WITH THE PUSH-POLICY DIVERGENCE NOTED ABOVE ===== -->
 # 🚨 SESSION CLOSE PROTOCOL 🚨
 
 **CRITICAL**: Before saying "done" or "complete", you MUST run this checklist:
 
 ```
-[ ] 1. git status              (check what changed)
-[ ] 2. git add <files>         (stage code changes)
-[ ] 3. git commit -m "..."     (commit code)
-[ ] 4. git push                (push to remote)
+[ ] 1. bd close <id1> <id2> ...   (close completed issues)
+[ ] 2. run quality gates          (tests, linters, builds when relevant)
+[ ] 3. git status                 (check what changed)
+[ ] 4. git add <files>            (stage code changes)
+[ ] 5. git commit -m "..."        (commit code)
+[ ] 6. git push                   (push to remote)
 ```
 
-**NEVER skip this.** Work is not done until pushed.
+**NEVER skip this.** Work is not done until pushed. (This repo overrides bd 1.2.2's upstream
+"conservative by default" policy; see AGENTS.md's Session Completion section, which is
+authoritative.)
 
 ## Core Rules
 - **Default**: Use beads for ALL task tracking (`bd create`, `bd ready`, `bd close`)
@@ -73,7 +95,8 @@ not paste it in whole.
 - **Workflow**: Create beads issue BEFORE writing code, mark in_progress when starting
 - **Memory**: Use `bd remember "insight"` for persistent knowledge across sessions. Do NOT use MEMORY.md files — they fragment across accounts. Search with `bd memories <keyword>`.
 - Persistence you don't need beats lost context
-- Git workflow: beads auto-commit to Dolt, run `git push` at session end
+- Git workflow: beads auto-commit to Dolt, run `git push` at session end. Pushing is MANDATORY in
+  this repo, not opt-in -- see AGENTS.md.
 - Session management: check `bd ready` for available work
 
 ## Essential Commands
@@ -87,6 +110,7 @@ not paste it in whole.
 ### Creating & Updating
 - `bd create --title="Summary of this issue" --description="Why this issue exists and what needs to be done" --type=task|bug|feature --priority=2` - New issue
   - Priority: 0-4 or P0-P4 (0=critical, 2=medium, 4=backlog). NOT "high"/"medium"/"low"
+- `bd create ... --parent=<id>` - Hierarchical child (task under epic, subtask under task; inherits parent labels)
 - `bd update <id> --claim` - Claim work
 - `bd update <id> --assignee=username` - Assign to someone
 - `bd update <id> --title/--description/--notes/--design` - Update fields inline
@@ -144,6 +168,7 @@ bd update <id> --claim  # Claim it
 **Completing work:**
 ```bash
 bd close <id1> <id2> ...    # Close all completed issues at once
+git status                  # Check changed files
 git add . && git commit -m "..."  # Commit code changes
 git push                    # Push to remote
 ```
@@ -155,3 +180,5 @@ bd create --title="Implement feature X" --description="Why this issue exists and
 bd create --title="Write tests for X" --description="Why this issue exists and what needs to be done" --type=task
 bd dep add beads-yyy beads-xxx  # Tests depend on Feature (Feature blocks tests)
 ```
+
+> **Note**: AGENTS.md and CLAUDE.md are independent files (not symlinked and not sharing an inode). Mirror substantive edits across both, or symlink one to the other.
