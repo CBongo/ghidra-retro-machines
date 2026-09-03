@@ -4193,6 +4193,39 @@ public class VerifyBankTest extends GhidraScript {
 			"unresolvable helper call warns, no false comment, at c06c: warning=" +
 				hasWarningBookmark(0xC06C) + " comment=\"" + eol(0xC06C) + "\"");
 
+		// M11 (grm-3ou part 1, increment 3): this fixture builds THREE helpers with three
+		// different argument conventions, which makes it the sharpest available test that the
+		// honest/ours split actually discriminates rather than just downgrading everything.
+		//
+		//   $C200 SwitchBank   LDA #imm / JSR -- the argument arrives in A. Its two scanned
+		//                      sites are write 1 (c200, the bit-7 gate) and the write-5 commit
+		//                      (c210, which scans the PRE-CHAIN load). Both reach the entry with
+		//                      A undefined => HONEST, a NOTE.
+		//   $C2A0 saver        PHA / LDA #$01 / STA $0103 / PLA then the chain -- Castlevania 2's
+		//                      FUN_c187 byte for byte. The argument still arrives in A, and the
+		//                      scan follows it THROUGH the prologue because grm-mej.3 pairs the
+		//                      PLA to its PHA; it then lands on the entry => NOTE as well. This
+		//                      is the half most likely to regress silently, since a lost PHA
+		//                      pairing would turn it into an ordinary analyzer limit.
+		//   $C250 shadow       LDA $65 then the chain -- the bank comes from a RAM shadow, NOT
+		//                      from the caller. The scan stops on that load, never reaches the
+		//                      entry, and the site stays a WARNING. THIS IS THE CONTROL: it is
+		//                      the assertion that would fail if the classification were merely
+		//                      "any unresolved value inside a helper is honest", which is the
+		//                      exact over-broad rule grm-rr5p exists to prevent.
+		//
+		// The call sites keep their own warnings regardless -- see M9 at c06c.
+		boolean argHelperNoted = hasNoteBookmark(0xC200) && hasNoteBookmark(0xC210) &&
+			!hasWarningBookmark(0xC200) && !hasWarningBookmark(0xC210);
+		boolean saverNoted = hasNoteBookmark(0xC2A7) && hasNoteBookmark(0xC2B7) &&
+			!hasWarningBookmark(0xC2A7) && !hasWarningBookmark(0xC2B7);
+		boolean shadowStillWarns = hasWarningBookmark(0xC252) && hasWarningBookmark(0xC262) &&
+			!hasNoteBookmark(0xC252) && !hasNoteBookmark(0xC262);
+		criterion("M11", argHelperNoted && saverNoted && shadowStillWarns,
+			"argument helpers noted, RAM-shadow helper still warned: SwitchBank(c200/c210)=" +
+				argHelperNoted + " saver(c2a7/c2b7)=" + saverNoted +
+				" shadow-stays-warning(c252/c262)=" + shadowStillWarns);
+
 		// M10: disassembly sanity -- the JSR-target overlay instructions actually exist.
 		criterion("M10:W8000_M3_B2_8000", hasInstructionAt("W8000_M3_B2", 0x8000),
 			"instruction exists at W8000_M3_B2::8000");

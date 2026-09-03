@@ -45,30 +45,30 @@ COMMENT c030 bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_c214 [switch-valu
 COMMENT c035 bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_c228 [switch-value flow]
 COMMENT c03a bank -> mirroring=0,prg_mode=3,prg_bank=4 via FUN_c23c [switch-value flow]
 COMMENT c182 bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_c23c [switch-value flow]
+BOOKMARK Note c200
+BOOKMARK Note c210
+BOOKMARK Note c214
+BOOKMARK Note c224
+BOOKMARK Note c228
+BOOKMARK Note c238
+BOOKMARK Note c23c
+BOOKMARK Note c24c
 BOOKMARK Warning c104
 BOOKMARK Warning c120
 BOOKMARK Warning c123
 BOOKMARK Warning c164
-BOOKMARK Warning c200
 BOOKMARK Warning c204
 BOOKMARK Warning c208
 BOOKMARK Warning c20c
-BOOKMARK Warning c210
-BOOKMARK Warning c214
 BOOKMARK Warning c218
 BOOKMARK Warning c21c
 BOOKMARK Warning c220
-BOOKMARK Warning c224
-BOOKMARK Warning c228
 BOOKMARK Warning c22c
 BOOKMARK Warning c230
 BOOKMARK Warning c234
-BOOKMARK Warning c238
-BOOKMARK Warning c23c
 BOOKMARK Warning c240
 BOOKMARK Warning c244
 BOOKMARK Warning c248
-BOOKMARK Warning c24c
 REF c00a -> W8000_M3_B3::8000 UNCONDITIONAL_CALL primary=true
 REF c012 -> W8000_M3_B6::8000 UNCONDITIONAL_CALL primary=true
 SYMBOL 2000 PPUCTRL IMPORTED primary=true

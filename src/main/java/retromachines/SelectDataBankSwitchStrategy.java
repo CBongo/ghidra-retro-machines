@@ -231,6 +231,63 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 		return value == null ? null : SwitchOutcome.of(value);
 	}
 
+	/**
+	 * Increment 3 (bead {@code grm-3ou} part 1): whether an unresolved value here is this
+	 * helper's ARGUMENT. Mirrors {@link #computeSwitchValue}'s fork, because which register scan
+	 * failed -- and whether a scan is even what failed -- depends on which side of it we are on.
+	 * <p>
+	 * The odd-address branch is the interesting one, and the reason this is not a one-liner. A
+	 * data write's value gap has TWO possible causes and only one of them is the argument:
+	 * <ul>
+	 * <li>the SELECT is unknown, so we cannot tell which target register this write commits to.
+	 * That is a gap in tracked STATE, not in a register scan -- the byte being stored may well
+	 * be a resolved constant. {@code ANALYZER_LIMIT}, and deliberately so;</li>
+	 * <li>the select is known and names a tracked target, but the stored BYTE did not resolve.
+	 * That is the register scan, and the only place a caller's argument can be the answer.</li>
+	 * </ul>
+	 * A select value naming no tracked target (MMC3's CHR registers) is not a gap at all -- that
+	 * branch returns {@code inState} verbatim and never warns -- so it cannot reach here, and
+	 * answering {@code ANALYZER_LIMIT} for it is inert either way.
+	 */
+	@Override
+	public ValueStop classifyHelperBodyGap(Program program, Instruction switchSite,
+			BankState inState, Address helperEntry) {
+		Long offset = writesInRange(switchSite);
+		if (offset == null) {
+			return ValueStop.ANALYZER_LIMIT;
+		}
+		Character reg = StoredValueScanner.storeRegister(switchSite);
+		if (reg == null) {
+			// No identifiable stored register means nothing was scanned, so there is no scan to
+			// re-run and no argument to attribute -- same reasoning as the two converted
+			// strategies' null-register guards.
+			return ValueStop.ANALYZER_LIMIT;
+		}
+
+		int mask;
+		if ((offset & 1) == 0) {
+			mask = 0xFF;
+		}
+		else {
+			Integer selectValue = fieldValueIfFullyKnown(inState, selectField);
+			if (selectValue == null) {
+				return ValueStop.ANALYZER_LIMIT;
+			}
+			FieldPos target = targets.get(selectValue);
+			if (target == null) {
+				return ValueStop.ANALYZER_LIMIT;
+			}
+			mask = (1 << target.width()) - 1;
+		}
+
+		// Same scan, differing only in the entry stop; the value is discarded, so this can only
+		// reclassify. See BankSwitchStrategy.classifyHelperBodyGap for the soundness argument.
+		StoredValueScanner.Scan atEntry = StoredValueScanner.resolveStoredValueScan(program,
+			switchSite, reg, inState, mask, hooks, RegisterEnv.entryStopOnly(helperEntry));
+		return atEntry.stop() == ValueStop.HELPER_ARGUMENT ? ValueStop.HELPER_ARGUMENT
+				: ValueStop.ANALYZER_LIMIT;
+	}
+
 	private BankState computeSwitchValue(Program program, Instruction instr, BankState inState) {
 		Long offset = writesInRange(instr);
 		if (offset == null) {

@@ -349,6 +349,70 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 		return value == null ? null : SwitchOutcome.of(value);
 	}
 
+	/**
+	 * Increment 3 (bead {@code grm-3ou} part 1): whether an unresolved value here is this
+	 * helper's ARGUMENT. This strategy has TWO register scans, at opposite ends of a chain, and
+	 * they fail for different reasons -- so this walks the same forks {@link #computeSwitchValue}
+	 * does rather than re-running one canonical scan.
+	 * <ul>
+	 * <li><b>The bit-7 gate</b>, at a write NOT preceded by {@code LSR A}. A caller-supplied bank
+	 * in A is exactly the shape that lands here: write 1 of a helper's chain scans A, finds the
+	 * argument, cannot know bit 7, and {@code poisonAll}s before the chain is ever walked. So on
+	 * an MMC1 helper this gate, not the commit, is usually where the value is lost.</li>
+	 * <li><b>The write-5 commit</b>, which scans the PRE-CHAIN accumulator load at
+	 * {@code chain.chainStart()} -- a different instruction from the switch site, and the one to
+	 * re-scan when the chain did survive to position 5.</li>
+	 * </ul>
+	 * Every OTHER poison branch answers {@code ANALYZER_LIMIT}, and each for a reason that is not
+	 * a register scan at all: a read-modify-write store never scanned a register; {@code reg != 'A'}
+	 * is a shape this mechanism does not model; a broken or short chain is a failed structural
+	 * match. None of those can be resolved by knowing the caller, so none is honest.
+	 */
+	@Override
+	public ValueStop classifyHelperBodyGap(Program program, Instruction switchSite,
+			BankState inState, Address helperEntry) {
+		Long offset = writesInRange(switchSite);
+		if (offset == null) {
+			// The counted-loop BNE: a structural commit, with no per-site register scan.
+			return ValueStop.ANALYZER_LIMIT;
+		}
+		Character reg = StoredValueScanner.storeRegister(switchSite);
+		if (reg == null || isCountedLoopBody(program, switchSite)) {
+			return ValueStop.ANALYZER_LIMIT;
+		}
+
+		if (!precededByLsrA(program, switchSite)) {
+			return entryGap(program, switchSite, reg, inState,
+				hooksFor(targets.get(targetIndex(offset))), helperEntry);
+		}
+		if (reg != 'A') {
+			return ValueStop.ANALYZER_LIMIT;
+		}
+		ChainInfo chain = analyzeChain(program, switchSite);
+		if (chain == null || chain.total() != 5 || chain.index() < 5) {
+			return ValueStop.ANALYZER_LIMIT;
+		}
+		List<TargetField> fields = targets.get(targetIndex(offset));
+		if (fields == null) {
+			return ValueStop.ANALYZER_LIMIT;
+		}
+		return entryGap(program, chain.chainStart(), 'A', inState, hooksFor(fields), helperEntry);
+	}
+
+	/**
+	 * {@code HELPER_ARGUMENT} iff a backward scan of {@code reg} from {@code from} reaches
+	 * {@code helperEntry} without finding a definition -- the shared tail of the two forks above.
+	 * The scanned VALUE is discarded, so this can only reclassify; see
+	 * {@link BankSwitchStrategy#classifyHelperBodyGap} for why that makes the extra scan safe.
+	 */
+	private ValueStop entryGap(Program program, Instruction from, char reg, BankState inState,
+			StoredValueScanner.Hooks hooks, Address helperEntry) {
+		StoredValueScanner.Scan atEntry = StoredValueScanner.resolveStoredValueScan(program, from,
+			reg, inState, 0xFF, hooks, RegisterEnv.entryStopOnly(helperEntry));
+		return atEntry.stop() == ValueStop.HELPER_ARGUMENT ? ValueStop.HELPER_ARGUMENT
+				: ValueStop.ANALYZER_LIMIT;
+	}
+
 	private BankState computeSwitchValue(Program program, Instruction instr, BankState inState) {
 		Long offset = writesInRange(instr);
 		if (offset == null) {

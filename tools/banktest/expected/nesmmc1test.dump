@@ -54,24 +54,24 @@ COMMENT c055 bank -> mirroring=0,prg_mode=3,prg_bank=7 [switch-value flow]
 COMMENT c059 bank -> mirroring=0,prg_mode=3,prg_bank=7 [switch-value flow]
 COMMENT c05d bank -> mirroring=0,prg_mode=3,prg_bank=7 [switch-value flow]
 COMMENT c061 bank -> mirroring=0,prg_mode=2,prg_bank=7 [switch-value flow]
+BOOKMARK Note c200
+BOOKMARK Note c210
+BOOKMARK Note c2a7
+BOOKMARK Note c2b7
 BOOKMARK Warning c032
 BOOKMARK Warning c047
 BOOKMARK Warning c06c
-BOOKMARK Warning c200
 BOOKMARK Warning c204
 BOOKMARK Warning c208
 BOOKMARK Warning c20c
-BOOKMARK Warning c210
 BOOKMARK Warning c252
 BOOKMARK Warning c256
 BOOKMARK Warning c25a
 BOOKMARK Warning c25e
 BOOKMARK Warning c262
-BOOKMARK Warning c2a7
 BOOKMARK Warning c2ab
 BOOKMARK Warning c2af
 BOOKMARK Warning c2b3
-BOOKMARK Warning c2b7
 REF c00a -> W8000_M3_B2::8000 UNCONDITIONAL_CALL primary=true
 REF c027 -> W8000_M3_B5::8000 UNCONDITIONAL_CALL primary=true
 REF c02f -> W8000_M3_B3::8000 UNCONDITIONAL_CALL primary=true
