@@ -22,5 +22,28 @@
         "matcher": ""
       }
     ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(bd show *)",
+      "Bash(bd recall *)",
+      "Bash(bd memories)",
+      "Bash(bd memories *)",
+      "Bash(bd list *)",
+      "Bash(bd ready)",
+      "Bash(bd ready *)",
+      "Bash(bd prime)",
+      "Bash(bd prime *)",
+      "Bash(bd search *)",
+      "Bash(bd rules audit *)",
+      "Bash(bd comments *)",
+      "Bash(bd stats)",
+      "Bash(bd stats *)",
+      "Bash(bd version)",
+      "Bash(bd version *)",
+      "mcp__github__issue_read",
+      "mcp__github__list_releases",
+      "mcp__github__pull_request_read"
+    ]
   }
 }
