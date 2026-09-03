@@ -43,34 +43,6 @@ bash tools/banktest/realrom-test.sh nominate <romdir>   # board-gap survey
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
-- [ ] **Is smb3's `W8000_M1::9284` honestly unannotated, or did the final round never reach it?**
-      (`grm-pnxm`, from `grm-3mg0`.) One address read settles it, and the row is red until it is.
-
-      `grm-3mg0` taught the analyzer to retract a bank comment an earlier round wrote at a site a
-      later round does not annotate. Across the whole 33-row real-ROM corpus that fired **once**,
-      on smb3 — `bankComments 181 -> 180`, at `W8000_M1::9284`. Nothing else in smb3 moved, and
-      the row is deliberately **not blessed**. (lwings, the other row that change touched, was a
-      pure refresh with no count change and *is* blessed.)
-
-      The site is inside an **overlay** space, and two readings give identical output with
-      opposite meanings. Either the final round reached 9284, evaluated it, and legitimately
-      produced nothing — retraction correct, bless it — or the round never visited it at all,
-      since overlay code only exists once the retarget bootstrap disassembles it, in which case
-      we destroyed a true annotation. Static analysis cannot tell these apart from outside: both
-      end as "absent from the touched set".
-
-      Look for: is there an instruction at `W8000_M1::9284` in the final program at all? If not,
-      that is the bad reading outright. If there is, is it still a mechanism write or a call to a
-      bank-switch helper? If neither, the retraction was right.
-
-      The fix, if it is the bad reading, is bounded and written up on the bead — intersect the
-      sweep against `flow.stateIn()`'s key set, which is the honest "we looked here" record.
-      **Do not apply it speculatively:** under the good reading it would reintroduce the very bug
-      `grm-3mg0` fixed, at exactly the sites that matter most.
-
-      Reproduce: `bash tools/banktest/realrom-test.sh check --only smb3` (smb3 is on the
-      **curated** manifest — unusual here, where nearly everything discussed lives in the GME set).
-
 - [ ] **Why does tmnt's real-ROM result depend on whether another row ran first?** (`grm-82u3`,
       from `grm-shnf`/QR-12 increment 3b, commit `79cde7d`.) The agent-side measurement is
       finished and is on the bead; what is left needs Ghidra internals, not more build cycles.
@@ -393,6 +365,7 @@ Agents can't file these — they need an account and CLA agreement.
 
 | question | answer | bead |
 |---|---|---|
+| Is smb3's `W8000_M1::9284` honestly unannotated, or did the final round never reach it? | **Honestly unannotated — the retraction was right, and smb3 is blessed and green.** There *is* an instruction at 9284: a call to `SUB_WC000_M1_B0__c6f2`, which is not a bank-switch helper. The analyzer's own log agrees independently — `FUN_c6f2` is in the helper set of the round that wrote the comment and absent from the next round's, which then declined the site on the merits. Same shape as nesskiptest `c00c`. **Do not implement the `flow.stateIn()` sweep intersection** the bead sketches: under this reading it would reintroduce the bug `grm-3mg0` fixed, at the sites that matter most. The bless was also insertions-only apart from `bankComments 181 -> 180`, so it discharged smb3's share of `grm-daix` in the same commit. | `grm-pnxm` |
 | Does upgrading `bd` let us retire the `.beads/PRIME.md` memory-truncation workaround? | **No — the upgrade is done and the premise was false. `bd prime --no-memories` does not exist.** The owner ran `tools/upgrade-bd.ps1` on 2026-09-02 (1.0.4 → **1.2.2**, `6c124203e`); the store came through intact (35 memories, `bd recall` fine) and `bd doctor` now declines in embedded mode, which is expected, not a fault. But `bd prime --help` on 1.2.2 lists only `--export`, `--full`, `--hook-json`, `--mcp`, `--memories-only`, `--stealth` — **there is no prime-without-memories switch**, so the "delete `.beads/PRIME.md`, set the hooks to `bd prime --no-memories && bd memories`" plan this item carried, and which `tools/upgrade-bd.ps1:95` still printed as its next step, cannot be executed. `--memories-only` is not a substitute: it is the **inverse** flag, and it is moot anyway because **PRIME.md overrides prime output regardless of flags** (verified — `bd prime --memories-only` printed PRIME.md, not the memories). The payload problem also did **not** improve on its own: default `bd prime` went 115,504 → **116,854** bytes, still ~112 KB of memory bodies. So the override is now **permanent, not interim**, and is maintained rather than retired: refreshed to 1.2.2's text, with the byte figures, the dead retirement path, and a refresh procedure written into the file. **One deliberate divergence from upstream, owner's decision:** bd 1.2.2 reversed its session-close policy to "commit, sync, or push only when ... granted authority", which contradicts AGENTS.md's mandatory-push rule, so the pinned checklist keeps this repo's push-mandatory wording and says so. **The upstream ask (`grm-8ctl`, section 5) is unaffected and now better-evidenced** — it asks for index emission, which 1.2.2 still does not have. | `grm-8ctl`; `tools/upgrade-bd.ps1` **spent** |
 | Should `bless` still write a golden when the fixture's criteria failed? | **No — ruled 2026-08-12: fail closed, with a `--force-criteria` override.** The "deliberate design decision" the bead warned about was real but made about a different harness: the unconditional bless dates to the suite's *first* commit (`159ce7e`, 2026-07-08), and the candidate cache arrived two weeks later (`c915ec2`, `grm-lne`) and simply *mirrored* it — nobody ever weighed it against the check-then-bless workflow. Two findings killed the case for leaving it. **The stated rationale was never load-bearing:** `check` already writes the candidate to `$WORK` and prints the full `diff -u`, and since `grm-lne` also persists it to the cache with a `.crit` verdict — nothing about diagnosing a failure ever required overwriting `expected/`. **And the golden carries no record of the verdict:** the dump is only the `BANKDUMP` section, so a blessed-over-a-failure oracle is byte-indistinguishable from a good one, which makes "visible in `git diff`" false as a mitigation — every durable artifact says "fine". Also settled: `bless` was never "bless no matter what" anyway (headless-nonzero and missing-`BANKDUMP` already refused; only `SUITE FAIL` fell through), so this makes the three cases uniform rather than inventing a new rule. **Implemented as one shared `bless_candidate` helper both routes call**, because the cached and fresh paths had already drifted in four ways (only the cached one showed the golden diff; they flagged criteria on opposite sides of the copy; only the cached one printed the `SUITE` line; only the cached one announced a missing golden) — parity by construction, not by review. Refusal is per row, so good rows in the same run still bless. Missing/empty `.crit` counts as failure. `--force-criteria` exits 0 and names what it forced. Atomic temp+rename included, which closes `grm-aqi`'s own acceptance criteria — **`grm-z34` keeps only its remaining non-`run_one` write sites** | `grm-aqi` **closed**; unblocks `grm-z34` |
 | In `ff3spc.dis`, is the raw `NOT1 $E04D` form the tool's output and `NOT1 $004D.7` your hand correction? | **Yes — the disassembler did not handle those correctly** (owner, 2026-08-18). This turned out to be one thread of a larger pattern the corpus differential then confirmed: **the two earliest listings were produced by an earlier, buggier version of the same tool, and the corpus dates the fixes.** ff2 (May 2000) reverses the operand order of every `dp,dp` form — its own `<d>`/`<s>` markers state the wrong claim outright, and the vector suite settles which side is right — and mis-decodes `5A`, `3B`, `BE`, `A7`. ff3 (Feb 2001) has all of that right but still prints the bit instructions' raw 16-bit operand. Both compute a short branch with offset **exactly `0x7F`** one page low (a sign test written `>= 0x7F`), while handling `0x7E` and every negative offset correctly; fzero (Aug 2001) gets `0x7F` right too. **Retires the earlier reading that ff3's `BEQ $0E13` was a one-character typo** — it is the same systematic off-by-`0x100`, 2 for 2 across two files. Consequence: read an ff2/ff3-only oddity as an early-tool artifact first, and do not spend effort reconciling one against a later listing. | `grm-uy9s` |
