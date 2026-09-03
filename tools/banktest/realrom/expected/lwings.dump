@@ -23,7 +23,7 @@ REALROM count refs.intoOverlay 1077
 REALROM count refs.intoOverlay.retargeted 47
 REALROM count refs.intoOverlay.intraOverlay 1030
 REALROM count instrs.inOverlay 4649
-REALROM count bankComments 37
+REALROM count bankComments 40
 REALROM count warnings 11
 REALROM count notes 4
 REALROM count symbols 18
@@ -59,6 +59,9 @@ REALROM sample.bankcomment dc61 bank -> 0? (bank=0) via FUN_dc9e [known: bank.0=
 REALROM sample.bankcomment dc7a bank -> 0? (bank=0) via FUN_dc9e [known: bank.0=0,bank.1=0,bank.2=0; assumed from initial: bank.3]
 REALROM sample.bankcomment dc93 bank -> 0? (bank=0) via FUN_dc9e [known: bank.0=0,bank.1=0,bank.2=0; assumed from initial: bank.3]
 REALROM sample.bankcomment e35c bank -> 3 (bank=3) via caseD_f8
+REALROM sample.bankcomment ede6 bank -> 3 (bank=3) via caseD_f8
+REALROM sample.bankcomment ee2e bank -> 3 (bank=3) via caseD_f8
+REALROM sample.bankcomment ee8d bank -> 3 (bank=3) via caseD_f8
 REALROM sample.bankcomment f8dc bank -> 6 (bank=6) via caseD_f8
 REALROM sample.bankcomment f9c7 bank -> 3 (bank=3) via caseD_f8
 REALROM sample.bankcomment ff92 bank -> 6 (bank=6) via caseD_f8

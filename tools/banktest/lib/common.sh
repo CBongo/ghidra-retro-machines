@@ -152,10 +152,29 @@ grm_settings_base_fallback() {
 #   dir similarly. analyzeHeadless.bat appends GHIDRA_HEADLESS_JAVA_OPTIONS to
 #   its VM args, so we can inject both properties per-invocation without
 #   touching any install file.
-# No-op when BANKTEST_SETTINGS_BASE is unset/empty, which preserves the manual
-# GUI-adjacent flow that runs against the shared %APPDATA% install.
+# The settings/cache redirection is a no-op when BANKTEST_SETTINGS_BASE is unset/empty,
+# which preserves the manual GUI-adjacent flow that runs against the shared %APPDATA%
+# install. (The thread-pool pin below is NOT conditional -- see the next paragraph.)
+#
+# It also pins Ghidra's analysis thread pool to a single thread, which is about
+# REPRODUCIBILITY rather than isolation and applies unconditionally (bead grm-nems).
+# SystemUtilities.getDefaultThreadPoolSize() sizes the pool from
+# Runtime.availableProcessors() unless the `cpu.core.override` system property is set,
+# and with the default multi-threaded pool the amount of code Ghidra disassembles for a
+# given ROM VARIES BETWEEN RUNS: measured on tmnt, the same binary and same input yields
+# either 2006 or 3426 base-space instructions, which moves counts in the pinned goldens.
+# Pinning the pool removes that variation for most rows -- 29 of 33 were byte-identical
+# across three full runs, and every row that moved moved toward MORE recovered code (tmnt
+# and lwings, both re-blessed) -- at roughly 10% wall clock.
+#
+# This is a MITIGATION, not a fix. The underlying defect is that merely enabling our
+# analyzer flips a race in Ghidra's own disassembly, and the shortfall happens before our
+# analyzer is ever invoked; see grm-nems for the measurements and the open mechanism
+# question. It does NOT address the dodge/ff1/rcproam/dragonpower bistable rows, which are
+# a separate mechanism (grm-4nr) and still flap with the pool pinned.
 grm_apply_settings_base() {
 	local base_native
+	export GHIDRA_HEADLESS_JAVA_OPTIONS="${GHIDRA_HEADLESS_JAVA_OPTIONS:-} -Dcpu.core.override=1"
 	if [ -n "${BANKTEST_SETTINGS_BASE:-}" ]; then
 		base_native="$(native "$BANKTEST_SETTINGS_BASE")"
 		export GHIDRA_HEADLESS_JAVA_OPTIONS="${GHIDRA_HEADLESS_JAVA_OPTIONS:-} -Dapplication.settingsdir=$base_native -Dapplication.cachedir=$base_native/cache"

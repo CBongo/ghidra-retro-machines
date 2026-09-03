@@ -369,6 +369,45 @@ per-entry index labels (`vcmd dispatch table (D2-FF)`, `table for CPU cmds 80-8F
 - **Reworking behavior of an existing fixture** → change the code, run the chunk, review the
   `expected/*.dump` diff, and bless it deliberately.
 
+## Analysis runs single-threaded (`grm-nems`)
+
+Every headless invocation the banktest scripts make — both tiers — carries
+`-Dcpu.core.override=1`, exported unconditionally by `grm_apply_settings_base`
+(`tools/banktest/lib/common.sh`). This pins Ghidra's analysis thread pool to one thread.
+
+**Why:** with the default pool, *the amount of code Ghidra disassembles for a given ROM
+varies between runs.* Measured on `tmnt` (bead `grm-nems`): the same binary and the same
+input yield either 2006 or 3426 base-space instructions, and the smaller outcome loses 44
+overlay references, 103 overlay instructions and 6 bank comments from the dump. That is not
+noise around the edges of a golden — it is a different analysis.
+
+**What it bought, measured over three full `check --all` runs:** `tmnt` and `lwings` became
+stable and were re-blessed (both gained recovered code; `tmnt` also picked up the `grm-daix`
+format lines in the same re-bless). The synthetic gate did not move at all — `build-and-test.sh
+check` was `SUITE OK` before and after — so this is a real-ROM-tier effect in practice. Cost is
+roughly 10% wall clock: 6m42 versus the ~6m10–6m36 baseline.
+
+**What it did NOT fix, and do not expect it to:** `dodge`, `ff1`, `rcproam` and `dragonpower`
+still vary run to run with the pool pinned. That is a *separate* mechanism (`grm-4nr`,
+`grm-g73`) and pinning the pool is not evidence about it either way.
+
+**It is a mitigation, not a fix.** The underlying defect is that merely *enabling* our analyzer
+flips a race in Ghidra's own disassembly — the shortfall happens before our analyzer is ever
+invoked, and our analyzer neither deletes nor suppresses anything. `grm-nems` carries the
+measurements and the open mechanism question.
+
+**If you run `analyzeHeadless` by hand** and compare against a golden, pass the same property or
+your result is not comparable:
+
+```bash
+GHIDRA_HEADLESS_JAVA_OPTIONS="-Dcpu.core.override=1" analyzeHeadless ...
+```
+
+A useful general check when a row moves unexpectedly, and the one that produced the finding: run
+it with `NES Bank State` disabled (a `-preScript` calling
+`setAnalysisOption(currentProgram, "NES Bank State", "false")`) and compare base-space
+instruction and function counts against the enabled run. **Enabled should never be lower.**
+
 ## Optional real-ROM tier (`grm-zai`, hash-pinned)
 
 Tiers 1–3 use synthetic inputs so the whole gate ships in-repo. The **real-ROM tier** is a
