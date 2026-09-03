@@ -43,6 +43,46 @@ bash tools/banktest/realrom-test.sh nominate <romdir>   # board-gap survey
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
+- [ ] **Why does merely *enabling* our analyzer change what Ghidra disassembles before it runs?**
+      (`grm-nems`, P0.) One breakpoint in `AnalysisScheduler.schedule()` probably settles it; three
+      agent-side causal claims have already been made and withdrawn on this bead.
+
+      Measured, and not in dispute:
+
+      | run | base instrs | functions |
+      |---|---|---|
+      | analyzer **off**, cold and warm | 3426 | 117 |
+      | analyzer **on**, warm — at our entry | 3426 | 117 |
+      | analyzer **on**, cold — at our entry | **2006** | **67** |
+
+      With `NES Bank State` disabled the pipeline is deterministic. With it enabled, a cold-cache
+      run is handed a program that *already* has 1420 fewer instructions, and ends there. So we
+      neither delete nor suppress anything — the stall happens **before our first invocation**, and
+      our analyzer runs at priority 601, after Decompiler Switch Analysis at 400. The good outcome
+      is exactly the analyzer-off baseline plus our overlay work (+103 instrs, +4 functions).
+
+      The question is purely: how does *registering* an analyzer change what the pipeline produces
+      before that analyzer is ever called? Most likely queue-composition perturbation flipping a
+      pre-existing parallelism race — `-Dcpu.core.override=1` makes it always land on the good
+      side, and a race needs parallelism to matter. Untested alternatives are on the bead.
+
+      Why it is yours rather than an agent's: distinguishing the candidates means instrumenting
+      Ghidra's scheduler inside a running headless JVM. That is debugger work, and the agent-side
+      measurement is already complete.
+
+      Reproduce, no build needed:
+      ```bash
+      rm -rf build/ghidra-home/cache
+      bash tools/banktest/realrom-test.sh check --all --only tmnt --no-build   # cold: refs 0
+      bash tools/banktest/realrom-test.sh check --all --only tmnt --no-build   # warm: refs 44
+      ```
+
+      **Mitigation already measured**, if you want the tier stable before the mechanism is known:
+      `-Dcpu.core.override=1` in `GHIDRA_HEADLESS_JAVA_OPTIONS` makes 30 of 33 rows byte-identical
+      across two full runs at ~10% wall-clock cost, moving tmnt, lwings and dragonpower to strictly
+      better output. It does not help the `dodge`/`ff1`/`rcproam` bistable trio, which is a
+      different mechanism (`grm-4nr`).
+
 - [ ] **Why do Lemmings and Mario show zero SPC-side port references?** (`grm-ced`.) Counting
       direct-page `$F4`–`$F7` accesses across the `*spc.dis` listings gives sd3 113, ct 87, ff3 78,
       som 60, ff5 49 — then g3 5, fzero 2, **lem 0, mario 0**. A working driver must talk to the
