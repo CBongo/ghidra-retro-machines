@@ -295,8 +295,8 @@ normalize_opts() {
 }
 
 cache_key() {
-	# args: fixture loader extra hargs  ->  sha256 key on stdout, or empty if disabled
-	local fixture="$1" loader="$2" extra="$3" hargs="${4:-}"
+	# args: fixture loader extra hargs pargs  ->  sha256 key on stdout, or empty if disabled
+	local fixture="$1" loader="$2" extra="$3" hargs="${4:-}" pargs="${5:-}"
 	command -v sha256sum >/dev/null 2>&1 || { printf ''; return 0; }
 	[ -n "$EXT_ID" ] || { printf ''; return 0; }
 	{
@@ -306,16 +306,35 @@ cache_key() {
 		printf 'dumpscript:'; sha256sum "$SCRIPT_DIR/VerifyBankTest.java" | cut -d' ' -f1
 		printf 'ext:%s\n' "$EXT_ID"
 		# Only fixtures that pass extra headless args run one of the repo's ghidra_scripts/
-		# scripts (via the installed extension), so fold those inputs in ONLY for them -- an
-		# unconditional term would invalidate every other fixture's cached candidate on any
-		# script edit. The term survives grm-9mw's move to the shared loose-inclusive
-		# ext_identity, which DOES now cover the installed ghidra_scripts/*.java, because it
-		# hashes a different thing: the SOURCE tree copy. Editing a script without rebuilding
-		# leaves EXT_ID untouched, so only this term forces the conservative re-import.
-		if [ -n "$hargs" ]; then
+		# scripts (via the installed extension), or a tools/banktest/-local postScript of their
+		# own (pargs), so fold those inputs in ONLY for them -- an unconditional term would
+		# invalidate every other fixture's cached candidate on any script edit. The term
+		# survives grm-9mw's move to the shared loose-inclusive ext_identity, which DOES now
+		# cover the installed ghidra_scripts/*.java, because it hashes a different thing: the
+		# SOURCE tree copy. Editing a script without rebuilding leaves EXT_ID untouched, so only
+		# this term forces the conservative re-import.
+		if [ -n "$hargs" ] || [ -n "$pargs" ]; then
 			printf 'hargs:%s\n' "$hargs"
+			printf 'pargs:%s\n' "$pargs"
 			printf 'repo_scripts:'
 			cat "$REPO_ROOT"/ghidra_scripts/*.java 2>/dev/null | sha256sum | cut -d' ' -f1
+			# pargs names scripts that live in THIS directory, not ghidra_scripts/, and so are
+			# covered by neither the repo_scripts term above nor dumpscript (which hashes only
+			# VerifyBankTest.java) -- without a term of their own, an edit to one would be
+			# invisible to the cache and a stale candidate would be served. Derived from the
+			# pargs tokens rather than naming a script literally, so a future post-verify script
+			# is covered the day it is added instead of the day someone remembers to edit this.
+			# Silent on a token that names no file here (a script argument, or one not yet
+			# created): a missing file must degrade to "no contribution", never break the key.
+			for tok in $pargs; do
+				case "$tok" in
+				*.java)
+					[ -f "$SCRIPT_DIR/$tok" ] || continue
+					printf 'pargscript:%s:' "$tok"
+					sha256sum "$SCRIPT_DIR/$tok" | cut -d' ' -f1
+					;;
+				esac
+			done
 		fi
 	} | sha256sum | cut -d' ' -f1
 }
@@ -417,17 +436,24 @@ bless_candidate() {
 # Imports $2 (a .prg or .nes fixture) via $3 (the loader name), runs VerifyBankTest.java,
 # extracts the normalized dump, and check|bless's it against expected/$1.dump.
 #
-#   run_one <name> <fixture> <Loader> ["extra loader opts"] ["extra headless args"]
+#   run_one <name> <fixture> <Loader> ["extra loader opts"] ["extra headless args"] ["post-verify args"]
 #
 # $4 carries loader options (-loader-xxx ...); $5 carries analyzeHeadless arguments that are
 # NOT loader options -- today only "-preScript <script> <args...>", which is how the manual
 # run-from-elsewhere front-end (grm-1.7.1.1) gets exercised. They are separate parameters
 # because normalize_opts hashes $4's file arguments for the candidate cache, which is
 # meaningless (and would mangle key:value script args) for $5.
+#
+# $6 carries analyzeHeadless arguments placed AFTER "-postScript VerifyBankTest.java" --
+# today only "-postScript AssertBankOrderIndependence.java" (bead grm-q39f). This slot has to
+# come after the dump, never before it: a postScript running here perturbs the program (it
+# retracts and re-derives bank comments to test order-independence), and VerifyBankTest's dump
+# is the golden-compared artifact -- it must observe the program exactly as every OTHER
+# fixture's postScript chain leaves it, not as this one leaves it mid-perturbation.
 run_one() {
-	local name="$1" fixture="$2" loader="$3" extra="${4:-}" hargs="${5:-}"
+	local name="$1" fixture="$2" loader="$3" extra="${4:-}" hargs="${5:-}" pargs="${6:-}"
 	local key cached
-	key="$(cache_key "$fixture" "$loader" "$extra" "$hargs")"
+	key="$(cache_key "$fixture" "$loader" "$extra" "$hargs" "$pargs")"
 	cached="$CACHE_DIR/$key.dump"
 
 	# bless fast path: a prior check already produced the exact candidate for
@@ -452,7 +478,7 @@ run_one() {
 	mkdir -p "$proj"
 	local log="$WORK/$name.log"
 	echo "== $name: importing $(basename "$fixture") via analyzeHeadless ($loader) =="
-	# $extra and $hargs are intentionally unquoted so multi-token arguments (e.g.
+	# $extra, $hargs and $pargs are intentionally unquoted so multi-token arguments (e.g.
 	# "-loader-kernalRom <path>", "-preScript X.java k:v") word-split into separate arguments.
 	#
 	# -scriptPath names ONLY this harness dir, deliberately. The repo's own ghidra_scripts/ is
@@ -470,6 +496,7 @@ run_one() {
 		$hargs \
 		-scriptPath "$(native "$SCRIPT_DIR")" \
 		-postScript VerifyBankTest.java \
+		$pargs \
 		>"$log" 2>&1
 	local status=$?
 
@@ -756,8 +783,15 @@ if selected nes-banking; then
 	# -postScript VerifyBankTest.java, so the repair happens first and VerifyBankTest observes
 	# the repaired program. function:true is the default, stated explicitly because S6 asserts
 	# on it: a recovered entry that is not a function belongs to no body and is never analyzed.
+	#
+	# $6 is run_one's slot for POST-verify headless arguments -- AssertBankOrderIndependence.java
+	# (bead grm-q39f), which retracts this round's bank comments and re-derives them in one pass
+	# to check that the result does not depend on having gone through the repair-then-reanalyze
+	# sequence above. It runs after VerifyBankTest's dump on purpose (see run_one's docstring),
+	# so it perturbs the program only after the golden-compared artifact has already been taken.
 	run_one nesskiptest "$WORK/nes/nesskiptest.nes" NesRomLoader "" \
-		"-postScript FixSkipInstructions.java function:true"
+		"-postScript FixSkipInstructions.java function:true" \
+		"-postScript AssertBankOrderIndependence.java"
 	# The script's own verdict line, which lives outside the dump markers so VerifyBankTest
 	# cannot assert on it -- and it is the only place the WEAK candidate is visible at all,
 	# since not applying it leaves nothing in the program to observe. The counts pin the whole
@@ -768,6 +802,23 @@ if selected nes-banking; then
 		! grep -q 'SKIPFIX summary candidates=3 referenced=1 strong=1 weak=1 applied=2 failed=0' \
 			"$WORK/nesskiptest.log"; then
 		echo "FAIL: FixSkipInstructions did not report 3 candidates (1/1/1) with 2 applied"
+		fail=1
+	fi
+	# grm-q39f: bank-comment order-independence. A program analyzed once over its final
+	# structure must produce the same bank-comment set as one analyzed, perturbed by
+	# FixSkipInstructions above, and re-analyzed -- which is what every fixture here actually
+	# measures. AssertBankOrderIndependence.java's own verdict line is what proves it; a MATCH
+	# means the two paths agreed, and anything else (including VACUOUS, which means the
+	# comparison never actually exercised retraction) is a genuine finding, not noise. Same
+	# cached-candidate caveat as the SKIPFIX check above: skipped when bless reused a cached
+	# candidate, since that path runs no fresh import.
+	if [ -f "$WORK/nesskiptest.log" ] &&
+		! grep -q 'ORDERINDEP .* verdict=MATCH' "$WORK/nesskiptest.log"; then
+		echo "FAIL: bank-comment order-independence check failed (bead grm-q39f) -- a program" >&2
+		echo "      analyzed once over its final structure produced a DIFFERENT bank-comment" >&2
+		echo "      set than one analyzed, perturbed, and re-analyzed. See the ORDERINDEP" >&2
+		echo "      line(s) below for the verdict and any differing addresses:" >&2
+		grep 'ORDERINDEP' "$WORK/nesskiptest.log" >&2 || true
 		fail=1
 	fi
 

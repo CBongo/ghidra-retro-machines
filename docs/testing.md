@@ -170,9 +170,15 @@ chunk holding it is not the one you would guess from the script's subject:
 |---|---|---|---|
 | `RunFromElsewhereTransfer.java` | `rfemanual` | `c64-recovery` | `-preScript` (before auto-analysis, so the manual carve precedes `CopyLoopAnalyzer`'s) |
 | `FixSkipInstructions.java` | `nesskiptest` | `nes-banking` | `-postScript` (the offcut conflict it repairs does not exist until after disassembly) |
+| `tools/banktest/AssertBankOrderIndependence.java` | `nesskiptest` | `nes-banking` | second `-postScript`, run POST-verify (after `VerifyBankTest.java`'s dump) so it perturbs the program only once the golden-compared artifact is already taken (bead grm-q39f) |
 
 Each also asserts on the script's own verdict line by grepping the headless log, because that line
 falls outside the `BANKDUMP` markers and so is invisible to `VerifyBankTest`.
+`AssertBankOrderIndependence.java` is the one exception to the "shipped `ghidra_scripts/`" framing
+above: it lives in `tools/banktest/` alongside `VerifyBankTest.java`, not in `ghidra_scripts/`,
+because it is a test-only assertion over `BankCommentProvenance`'s order-independence property
+rather than a user-facing front-end — but it is wired into `nesskiptest` the same way, via
+`run_one`'s new post-verify argument slot, and is listed here for the same reason.
 
 ```bash
 bash tools/banktest/build-and-test.sh check nes-banking c64-banking   # dev loop subset
