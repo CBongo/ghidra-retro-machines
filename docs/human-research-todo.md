@@ -284,6 +284,23 @@ Blocked on judgment, not effort.
 
 Agents can't file these — they need an account and CLA agreement.
 
+- [ ] **GP-6936 turns ordinary negative stack offsets into `join` varnodes on 16-bit-address
+  processors — the 12.1.3 decompiler regression, now root-caused.** (`grm-qp5x.1`, settled
+  2026-09-04.) **A complete issue body, title included, is drafted verbatim on `grm-qp5x.1`'s
+  comments** — review and post, nothing left to write.
+
+  The short version: there was never a 185-commit bisect to do. Exactly one commit touches
+  `Ghidra/Features/Decompiler/src/decompile` between the two tags, and instrumenting its two new
+  call sites showed a single trigger shape repeated 2062 times — a 2-byte access at stack offset
+  −1 on a 16-bit stack space, rewritten from a plain `stack:ffff` varnode into a `join`. That is a
+  local at the top of a 6502 stack frame, not a wrapped memory range. Reverting the wrap-range
+  hunks alone restores 12.1.2's output exactly.
+
+  Worth deciding alongside the filing: this reopens `grm-qp5x`'s option list. We can now build a
+  patched `decompile.exe` in ~2 minutes, so "carry a locally patched install" is a real fourth
+  option next to (a) leave failing, (b) root-cause — done — and (c) pin the rows' analysis
+  options. That is your call, not an analysis question.
+
 - [ ] **`Loader.validateOptions()` is never called outside the GUI import dialogs — document it or
   wire it up?** (`grm-vsg`, investigated 2026-08-21.) At 12.1.3 the only callers are
   `ImporterDialog:442`, `AddToProgramDialog:82`, `LoadLibrariesOptionsDialog:60`. Not
