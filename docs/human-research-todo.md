@@ -43,46 +43,6 @@ bash tools/banktest/realrom-test.sh nominate <romdir>   # board-gap survey
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
-- [ ] **Why does merely *enabling* our analyzer change what Ghidra disassembles before it runs?**
-      (`grm-nems`, P0.) One breakpoint in `AnalysisScheduler.schedule()` probably settles it; three
-      agent-side causal claims have already been made and withdrawn on this bead.
-
-      Measured, and not in dispute:
-
-      | run | base instrs | functions |
-      |---|---|---|
-      | analyzer **off**, cold and warm | 3426 | 117 |
-      | analyzer **on**, warm — at our entry | 3426 | 117 |
-      | analyzer **on**, cold — at our entry | **2006** | **67** |
-
-      With `NES Bank State` disabled the pipeline is deterministic. With it enabled, a cold-cache
-      run is handed a program that *already* has 1420 fewer instructions, and ends there. So we
-      neither delete nor suppress anything — the stall happens **before our first invocation**, and
-      our analyzer runs at priority 601, after Decompiler Switch Analysis at 400. The good outcome
-      is exactly the analyzer-off baseline plus our overlay work (+103 instrs, +4 functions).
-
-      The question is purely: how does *registering* an analyzer change what the pipeline produces
-      before that analyzer is ever called? Most likely queue-composition perturbation flipping a
-      pre-existing parallelism race — `-Dcpu.core.override=1` makes it always land on the good
-      side, and a race needs parallelism to matter. Untested alternatives are on the bead.
-
-      Why it is yours rather than an agent's: distinguishing the candidates means instrumenting
-      Ghidra's scheduler inside a running headless JVM. That is debugger work, and the agent-side
-      measurement is already complete.
-
-      Reproduce, no build needed:
-      ```bash
-      rm -rf build/ghidra-home/cache
-      bash tools/banktest/realrom-test.sh check --all --only tmnt --no-build   # cold: refs 0
-      bash tools/banktest/realrom-test.sh check --all --only tmnt --no-build   # warm: refs 44
-      ```
-
-      **Mitigation already measured**, if you want the tier stable before the mechanism is known:
-      `-Dcpu.core.override=1` in `GHIDRA_HEADLESS_JAVA_OPTIONS` makes 30 of 33 rows byte-identical
-      across two full runs at ~10% wall-clock cost, moving tmnt, lwings and dragonpower to strictly
-      better output. It does not help the `dodge`/`ff1`/`rcproam` bistable trio, which is a
-      different mechanism (`grm-4nr`).
-
 - [ ] **Why do Lemmings and Mario show zero SPC-side port references?** (`grm-ced`.) Counting
       direct-page `$F4`–`$F7` accesses across the `*spc.dis` listings gives sd3 113, ct 87, ff3 78,
       som 60, ff5 49 — then g3 5, fzero 2, **lem 0, mario 0**. A working driver must talk to the
@@ -402,6 +362,7 @@ Agents can't file these — they need an account and CLA agreement.
 
 | question | answer | bead |
 |---|---|---|
+| Why does merely *enabling* our analyzer change what Ghidra disassembles before it runs? | **It doesn't — the premise is refuted, so there is nothing here to read a breakpoint for.** Measured 2026-09-04 with the committed census instrument (`SetAnalyzerEnabled.java` + `BaseSpaceCensus.java`, `grm-8uaz`), which disables *only* `NES Bank State` and verifies the flip by read-back. With the thread pin removed and the cache cold, tmnt reaches **2006/67 whether our analyzer runs or not** (4 runs on, 2 runs off; the off arm logs zero `NesBankingAnalyzer running` lines and produces zero bank comments, so it really was off). With the pin, 3426/117 on both arms. The shortfall is multi-threaded cold-cache analysis, not us. **It is also not a race**: 4/4 at 2006 without the pin, 4/4 at 3426 with it, nothing flapping once cache warmth and thread count are both held — the old flakiness was cache warmth as an uncontrolled third variable. Two figures previously recorded here do not reproduce: analyzer-off cold is 2006 (not 3426) without the pin, and analyzer-off warm is 3413 (not 3426) with it. **Do not spend a breakpoint on `AnalysisScheduler`** for this; the pin we already ship fully masks it and the residue is a Ghidra-side question. | `grm-nems`; `grm-8uaz` |
 | Why does tmnt's real-ROM result depend on whether another row ran first — is it `ClassSearcher` ordering? | **Not `ClassSearcher`, and the remaining work is not a human task.** Refuted on three independent counts: each row is its own `analyzeHeadless` JVM (`realrom-test.sh:595,:614-621`), so nothing in-JVM carries between rows at all; `getInstances()` is sorted by (priority, FQCN) (`ClassSearcher.java:504-517`) and constructs fresh instances per call; and 12.1.3 has **no on-disk class index** under the user settings dir. The split also added no indexed class — `HelperDiscovery`/`HelperArgumentRecovery`/`SaveRestoreTrampolines` match none of the 77 extension-point suffixes. **Do not instrument `ClassSearcher`.** The real gap in "identical modulo visibility ⇒ equivalent" is allocation and identity-hash order, not classpath composition. With per-row JVMs only disk state (the shared `packed-db-cache`, invalidated by `.gdt` mtime at `PackedDatabaseCache:441`) and machine timing survive, and both are settled by harness runs — agent work. Full brief and the ordered experiment list are on the bead. | `grm-82u3` |
 | Is smb3's `W8000_M1::9284` honestly unannotated, or did the final round never reach it? | **Honestly unannotated — the retraction was right, and smb3 is blessed and green.** There *is* an instruction at 9284: a call to `SUB_WC000_M1_B0__c6f2`, which is not a bank-switch helper. The analyzer's own log agrees independently — `FUN_c6f2` is in the helper set of the round that wrote the comment and absent from the next round's, which then declined the site on the merits. Same shape as nesskiptest `c00c`. **Do not implement the `flow.stateIn()` sweep intersection** the bead sketches: under this reading it would reintroduce the bug `grm-3mg0` fixed, at the sites that matter most. The bless was also insertions-only apart from `bankComments 181 -> 180`, so it discharged smb3's share of `grm-daix` in the same commit. | `grm-pnxm` |
 | Does upgrading `bd` let us retire the `.beads/PRIME.md` memory-truncation workaround? | **No — the upgrade is done and the premise was false. `bd prime --no-memories` does not exist.** The owner ran `tools/upgrade-bd.ps1` on 2026-09-02 (1.0.4 → **1.2.2**, `6c124203e`); the store came through intact (35 memories, `bd recall` fine) and `bd doctor` now declines in embedded mode, which is expected, not a fault. But `bd prime --help` on 1.2.2 lists only `--export`, `--full`, `--hook-json`, `--mcp`, `--memories-only`, `--stealth` — **there is no prime-without-memories switch**, so the "delete `.beads/PRIME.md`, set the hooks to `bd prime --no-memories && bd memories`" plan this item carried, and which `tools/upgrade-bd.ps1:95` still printed as its next step, cannot be executed. `--memories-only` is not a substitute: it is the **inverse** flag, and it is moot anyway because **PRIME.md overrides prime output regardless of flags** (verified — `bd prime --memories-only` printed PRIME.md, not the memories). The payload problem also did **not** improve on its own: default `bd prime` went 115,504 → **116,854** bytes, still ~112 KB of memory bodies. So the override is now **permanent, not interim**, and is maintained rather than retired: refreshed to 1.2.2's text, with the byte figures, the dead retirement path, and a refresh procedure written into the file. **One deliberate divergence from upstream, owner's decision:** bd 1.2.2 reversed its session-close policy to "commit, sync, or push only when ... granted authority", which contradicts AGENTS.md's mandatory-push rule, so the pinned checklist keeps this repo's push-mandatory wording and says so. **The upstream ask (`grm-8ctl`, section 5) is unaffected and now better-evidenced** — it asks for index emission, which 1.2.2 still does not have. | `grm-8ctl`; `tools/upgrade-bd.ps1` **spent** |
