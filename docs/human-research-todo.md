@@ -296,6 +296,19 @@ Agents can't file these — they need an account and CLA agreement.
   local at the top of a 6502 stack frame, not a wrapped memory range. Reverting the wrap-range
   hunks alone restores 12.1.2's output exactly.
 
+  **Reframed 2026-09-04 by Ghidra issue #4148** (owner-supplied pointer), which is the *other*
+  half of GP-6936 and makes the report much stronger. #4148 is a genuine wrapped `ram` range
+  (ARMv7 read through a `0xFFFFFFFF` pointer), it is assigned to GP-6936's own author, and on
+  2026-09-03 its reporter re-tested on 12.1.3 and found it still fails — now with
+  `Trying to construct memory range beyond end of address space: ram`, which is
+  `constructWrappingAddress`'s new throw. It *cannot* be fixed as shipped:
+  `allows_wrapped_range` is set in exactly two places, both `SpacebaseSpace` constructors, with
+  no decode path, so an ordinary `ram` space can never carry it. So GP-6936 is inverted — the
+  half that was asked for still throws, and the half nobody asked for is the one that regresses
+  us. The ask becomes "the flag is on the wrong space class", not "please drop your feature".
+  **The draft on `grm-qp5x.1` predates this and must be rewritten before filing**; the fuller
+  reasoning is on `grm-qp5x.2`.
+
   Worth deciding alongside the filing: this reopens `grm-qp5x`'s option list. We can now build a
   patched `decompile.exe` in ~2 minutes, so "carry a locally patched install" is a real fourth
   option next to (a) leave failing, (b) root-cause — done — and (c) pin the rows' analysis
