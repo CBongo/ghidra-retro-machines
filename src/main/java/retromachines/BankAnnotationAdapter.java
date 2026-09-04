@@ -525,8 +525,10 @@ final class BankAnnotationAdapter {
 	 * Blaster Master has two write-through shadows, {@code $DB} and {@code $D3} -- and a
 	 * "bare name unless it collides" rule would make the bare-vs-suffixed choice depend on
 	 * discovery order, which is not a property a symbol name should expose. Matches this
-	 * codebase's other derived-name convention ({@code COPY_6c90}, {@code DECRYPTED_%04x}): the
-	 * offset is always in the name.
+	 * codebase's other derived-name convention ({@link RecoveredBlockNames}, which names a
+	 * recovered block {@code COPY_6c90} / {@code DECRYPTED_%04x} and qualifies the offset with
+	 * the address space when that space is not the default one): the offset is always in the
+	 * name.
 	 * <p>
 	 * <b>One name per address</b>, chosen by {@link #MIRROR_NAME_PREFIX}'s precedence, because
 	 * Ghidra gives one primary label per address and a cell can carry several kinds at once

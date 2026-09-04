@@ -891,20 +891,26 @@ public class VerifyBankTest extends GhidraScript {
 	 * because it keyed on that.
 	 *
 	 * <p>The regression guard proper is {@code kernal-intact}: before the fix the no-dump import
-	 * carved the ROM occupant, leaving {@code COPY_e000} at base {@code $E000} with KERNAL shredded
-	 * into {@code KERNAL / COPY_e000 / KERNAL_E008}.
+	 * carved the ROM occupant, leaving the copy at base {@code $E000} with KERNAL shredded into
+	 * {@code KERNAL / COPY_... / KERNAL_E008}.
+	 *
+	 * <p>The block is named {@code COPY_RAM_E000_e000}, not {@code COPY_e000}: this destination
+	 * lives in the {@code RAM_E000} overlay, and grm-0p7 qualifies a recovered block's name with
+	 * its address space whenever that space is not the default one, since the name doubles as the
+	 * idempotence key and an offset alone is not unique across spaces
+	 * ({@code retromachines.RecoveredBlockNames}).
 	 */
 	private void checkCopyBanked() {
 		boolean romSupplied = currentProgram.getName().contains("copybankedrom");
 
-		verifyCopy("copybanked", "COPY_e000", 0xe000, 0x200e,
+		verifyCopy("copybanked", "COPY_RAM_E000_e000", 0xe000, 0x200e,
 			new byte[] {(byte) 0xa1, (byte) 0xa2, (byte) 0xa3, (byte) 0xa4, (byte) 0xa5,
 				(byte) 0xa6, (byte) 0xa7, (byte) 0xa8},
 			true, false, true,
 			new Neighbor[] {new Neighbor("RAM_E000_E008", 0xe008, 0xffff, "RAM_E000")},
 			addr(COPY_ENTRY), null);
 
-		MemoryBlock copy = currentProgram.getMemory().getBlock("COPY_e000");
+		MemoryBlock copy = currentProgram.getMemory().getBlock("COPY_RAM_E000_e000");
 		criterion("copybanked-copyblock-space",
 			copy != null && "RAM_E000".equals(copy.getStart().getAddressSpace().getName()),
 			"space=" + (copy == null ? "<missing>"

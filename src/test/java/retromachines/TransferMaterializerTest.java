@@ -495,13 +495,15 @@ public class TransferMaterializerTest extends AbstractBundledLanguageTest {
 		TransferPlacement placement = materialize(program, spec);
 
 		assertEquals(TransferPlacement.IN_PLACE_BANKED, placement);
-		MemoryBlock copy = program.getMemory().getBlock("COPY_e000");
-		assertBlock(copy, "COPY_e000", dst, dst.add(7), true);
+		// The name carries the overlay space, because the offset alone is not a unique key
+		// across spaces (grm-0p7, RecoveredBlockNames).
+		MemoryBlock copy = program.getMemory().getBlock("COPY_RAM_E000_e000");
+		assertBlock(copy, "COPY_RAM_E000_e000", dst, dst.add(7), true);
 		assertEquals("the copy belongs to the occupant the write reaches", "RAM_E000",
 			copy.getStart().getAddressSpace().getName());
 		assertArrayEquals(new byte[] {(byte) 0xa1, (byte) 0xa2, (byte) 0xa3, (byte) 0xa4,
 			(byte) 0xa5, (byte) 0xa6, (byte) 0xa7, (byte) 0xa8}, readBlock(copy, 8));
-		// The whole point: the ROM block is untouched, not split into KERNAL/COPY_e000/KERNAL_E008.
+		// The whole point: the ROM block is untouched, not split into KERNAL/COPY_.../KERNAL_E008.
 		assertBlock(program.getMemory().getBlock(builder.addr("0xE000")), "KERNAL",
 			builder.addr("0xE000"), builder.addr("0xFFFF"), false);
 		assertNoSplitNames(program);
@@ -523,7 +525,7 @@ public class TransferMaterializerTest extends AbstractBundledLanguageTest {
 		// Where the write lands is a hardware fact, not a fallback for an uninitialized ROM block:
 		// supplying the dump must not change the placement.
 		assertEquals(TransferPlacement.IN_PLACE_BANKED, materialize(program, spec));
-		assertEquals("RAM_E000", program.getMemory().getBlock("COPY_e000").getStart()
+		assertEquals("RAM_E000", program.getMemory().getBlock("COPY_RAM_E000_e000").getStart()
 				.getAddressSpace().getName());
 	}
 
@@ -551,7 +553,7 @@ public class TransferMaterializerTest extends AbstractBundledLanguageTest {
 		// resolution that earns the carve.
 		assertEquals(TransferPlacement.SKIPPED, materialize(program, spec));
 		assertNull("nothing may be materialized for an unresolved overlay destination",
-			program.getMemory().getBlock("COPY_e000"));
+			program.getMemory().getBlock("COPY_RAM_E000_e000"));
 	}
 
 	@Test
@@ -597,5 +599,125 @@ public class TransferMaterializerTest extends AbstractBundledLanguageTest {
 		assertBlock(program.getMemory().getBlock(dst), "VIC", builder.addr("0xD000"),
 			builder.addr("0xD3ff"), false);
 		assertNoSplitNames(program);
+	}
+
+	// ------------------------------------------------------------------
+	// 9. The block name is address-space aware (grm-0p7)
+	// ------------------------------------------------------------------
+	// The name doubles as the idempotence key, and Memory.getBlock(String) searches every space
+	// while an Address is a (space, offset) pair. Two banks of the same window are two overlays
+	// over the SAME base-space offsets, so before RecoveredBlockNames the second recovery at a
+	// shared offset was reported "already recovered on a prior pass" and never materialized.
+
+	/** A two-bank window: a ROM home in the base space plus one RAM overlay per bank, all three
+	 *  covering the identical CPU range. This is what a banked loader produces for a window whose
+	 *  non-home occupants have no image behind them. */
+	private static void twoBankWindow(ProgramBuilder builder) throws Exception {
+		builder.createUninitializedMemory("KERNAL", "0xE000", 0x2000); // rom: no write flag
+		uninitializedRamOverlay(builder, "RAM_E000_B0", "0xE000", 0x2000);
+		uninitializedRamOverlay(builder, "RAM_E000_B1", "0xE000", 0x2000);
+	}
+
+	private static Address inSpace(ProgramDB program, String spaceName, long offset) {
+		return program.getAddressFactory().getAddressSpace(spaceName).getAddress(offset);
+	}
+
+	@Test
+	public void twoOverlaysAtTheSameOffsetBothMaterializeUnderDistinctNames() throws Exception {
+		ProgramBuilder builder = newBuilder();
+		builder.createMemory("SRC", "0x2000", 0x20);
+		builder.setBytes("0x2000", "a1 a2 a3 a4 a5 a6 a7 a8");
+		builder.setBytes("0x2010", "b1 b2 b3 b4 b5 b6 b7 b8");
+		twoBankWindow(builder);
+		ProgramDB program = builder.getProgram();
+
+		Address b0 = inSpace(program, "RAM_E000_B0", 0xE000);
+		Address b1 = inSpace(program, "RAM_E000_B1", 0xE000);
+
+		assertEquals(TransferPlacement.IN_PLACE_BANKED, materialize(program,
+			identitySpec(builder.addr("0x2000"), b0, 8, TransferTarget.RESOLVED_SPACE,
+				builder.addr("0x2000"))));
+		// Same CPU offset, different bank: this is the recovery that used to vanish.
+		assertEquals("a recovery in a second overlay at the same offset must not be mistaken " +
+			"for a re-run of the first", TransferPlacement.IN_PLACE_BANKED,
+			materialize(program, identitySpec(builder.addr("0x2010"), b1, 8,
+				TransferTarget.RESOLVED_SPACE, builder.addr("0x2010"))));
+
+		MemoryBlock first = program.getMemory().getBlock("COPY_RAM_E000_B0_e000");
+		MemoryBlock second = program.getMemory().getBlock("COPY_RAM_E000_B1_e000");
+		assertBlock(first, "COPY_RAM_E000_B0_e000", b0, b0.add(7), true);
+		assertBlock(second, "COPY_RAM_E000_B1_e000", b1, b1.add(7), true);
+		assertEquals("RAM_E000_B0", first.getStart().getAddressSpace().getName());
+		assertEquals("RAM_E000_B1", second.getStart().getAddressSpace().getName());
+		// Each bank got its own bytes -- neither is a stale view of the other.
+		assertArrayEquals(new byte[] {(byte) 0xa1, (byte) 0xa2, (byte) 0xa3, (byte) 0xa4,
+			(byte) 0xa5, (byte) 0xa6, (byte) 0xa7, (byte) 0xa8}, readBlock(first, 8));
+		assertArrayEquals(new byte[] {(byte) 0xb1, (byte) 0xb2, (byte) 0xb3, (byte) 0xb4,
+			(byte) 0xb5, (byte) 0xb6, (byte) 0xb7, (byte) 0xb8}, readBlock(second, 8));
+		// The base-space ROM home is untouched by either.
+		assertBlock(program.getMemory().getBlock(builder.addr("0xE000")), "KERNAL",
+			builder.addr("0xE000"), builder.addr("0xFFFF"), false);
+		assertNoSplitNames(program);
+	}
+
+	@Test
+	public void idempotenceStillHoldsWithinASingleOverlaySpace() throws Exception {
+		ProgramBuilder builder = newBuilder();
+		builder.createMemory("SRC", "0x2000", 0x20);
+		builder.setBytes("0x2000", "a1 a2 a3 a4 a5 a6 a7 a8");
+		twoBankWindow(builder);
+		ProgramDB program = builder.getProgram();
+
+		Address b0 = inSpace(program, "RAM_E000_B0", 0xE000);
+		TransferSpec spec = identitySpec(builder.addr("0x2000"), b0, 8,
+			TransferTarget.RESOLVED_SPACE, builder.addr("0x2000"));
+
+		assertEquals(TransferPlacement.IN_PLACE_BANKED, materialize(program, spec));
+		List<String> before = snapshotBlocks(program);
+
+		// Widening the key must not cost idempotence: the same recovery in the same space is
+		// still recognized as already done.
+		assertEquals(TransferPlacement.SKIPPED, materialize(program, spec));
+		assertEquals("a re-run in the same space must not stack a second block", before,
+			snapshotBlocks(program));
+	}
+
+	@Test
+	public void baseSpaceDestinationKeepsTheUnqualifiedLegacyName() throws Exception {
+		ProgramBuilder builder = newBuilder();
+		builder.createMemory("SRC", "0x2000", 0x10);
+		builder.setBytes("0x2000", "01 02 03 04 05 06 07 08");
+		uninitializedRam(builder, "RAM_C000", "0xC000", 0x1000);
+		ProgramDB program = builder.getProgram();
+
+		Address dst = builder.addr("0xC000");
+		assertEquals(TransferPlacement.IN_PLACE, materialize(program, identitySpec(
+			builder.addr("0x2000"), dst, 8, TransferTarget.SAME_SPACE, builder.addr("0x2000"))));
+
+		// Pinned deliberately: the default space's names are the ones in the golden dumps, and
+		// qualifying them would move every one of those for no gain -- an offset in the default
+		// space is already unambiguous.
+		assertEquals("COPY_c000", RecoveredBlockNames.forCopy(program, dst));
+		assertNotNull(program.getMemory().getBlock("COPY_c000"));
+		for (MemoryBlock b : program.getMemory().getBlocks()) {
+			assertFalse("a default-space name must not gain a space component: " + b.getName(),
+				b.getName().startsWith("COPY_RAM"));
+		}
+	}
+
+	@Test
+	public void decryptedNamesFollowTheSameRule() throws Exception {
+		ProgramBuilder builder = newBuilder();
+		twoBankWindow(builder);
+		ProgramDB program = builder.getProgram();
+
+		// C64DecryptLoopAnalyzer's own materialize() is private and reachable only through a full
+		// analyzer run over a recognized decrypt loop, which the headless decryptloop /
+		// rollingdecrypt / suspectdecrypt fixtures already cover; what grm-0p7 changes there is
+		// exactly this name derivation, so it is pinned here directly.
+		assertEquals("DECRYPTED_2010",
+			RecoveredBlockNames.forDecrypted(program, builder.addr("0x2010")));
+		assertEquals("DECRYPTED_RAM_E000_B0_e000",
+			RecoveredBlockNames.forDecrypted(program, inSpace(program, "RAM_E000_B0", 0xE000)));
 	}
 }

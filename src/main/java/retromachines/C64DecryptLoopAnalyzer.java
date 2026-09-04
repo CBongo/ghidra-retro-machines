@@ -245,15 +245,17 @@ public class C64DecryptLoopAnalyzer extends AbstractAnalyzer {
 			IoPolicy.volatileBlocks(program), monitor);
 	}
 
-	/** Create the {@code DECRYPTED_xxxx} overlay seeded with the recovered bytes, disassemble
-	 *  the payload there so it is navigable as code, and link it back to the decryptor with
-	 *  bookmarks and a comment. A suspect (emulation-derived, hardware-tainted) result gets a
-	 *  WARNING bookmark -- with a pointer to the accurate manual-recovery paths -- instead of
-	 *  an authoritative NOTE. */
+	/** Create the {@code DECRYPTED_xxxx} overlay ({@link RecoveredBlockNames#forDecrypted}, which
+	 *  also qualifies the name with the address space when the plaintext is not in the default
+	 *  space -- the name doubles as the idempotence key, grm-0p7) seeded with the recovered
+	 *  bytes, disassemble the payload there so it is navigable as code, and link it back to the
+	 *  decryptor with bookmarks and a comment. A suspect (emulation-derived, hardware-tainted)
+	 *  result gets a WARNING bookmark -- with a pointer to the accurate manual-recovery paths --
+	 *  instead of an authoritative NOTE. */
 	private void materialize(Program program, RecognizedDecryptor rd, byte[] plain, String detail,
 			boolean suspect, TaskMonitor monitor, MessageLog log) {
 		Address base = rd.target().getMinAddress();
-		String name = "DECRYPTED_" + String.format("%04x", base.getOffset());
+		String name = RecoveredBlockNames.forDecrypted(program, base);
 		if (program.getMemory().getBlock(name) != null) {
 			return; // already recovered on a prior pass -- idempotent
 		}

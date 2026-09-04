@@ -105,11 +105,13 @@ import ghidra.util.task.TaskMonitor;
  * never supplied) the transfer is skipped entirely rather than inventing bytes or falling back to
  * an overlay of {@code ??}. Materialization is idempotent, so once the missing bytes are present
  * a re-run picks the transfer up.
+ *
+ * <p><b>The materialized block's name is both its label and its idempotence key</b>, and is
+ * derived from the destination address by {@link RecoveredBlockNames#forCopy} -- {@code COPY_}
+ * plus the offset in the default space, plus the space name as well anywhere else, so two
+ * recoveries at the same offset in different overlays no longer read as one (grm-0p7).
  */
 final class TransferMaterializer {
-
-	/** Block-name prefix for a materialized copy; the suffix is the destination offset. */
-	private static final String BLOCK_PREFIX = "COPY_";
 
 	private TransferMaterializer() {
 	}
@@ -140,7 +142,7 @@ final class TransferMaterializer {
 			return TransferPlacement.SKIPPED;
 		}
 
-		String name = BLOCK_PREFIX + String.format("%04x", spec.dstStart().getOffset());
+		String name = RecoveredBlockNames.forCopy(program, spec.dstStart());
 		if (program.getMemory().getBlock(name) != null) {
 			return TransferPlacement.SKIPPED; // already recovered on a prior pass -- idempotent
 		}

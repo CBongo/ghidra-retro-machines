@@ -229,7 +229,7 @@ public final class RunFromElsewhere {
 
 		// Probe before and after so an idempotent no-op is distinguishable from a failure: the
 		// materializer reports SKIPPED for both.
-		String blockName = blockNameFor(request.dstStart);
+		String blockName = RecoveredBlockNames.forCopy(program, request.dstStart);
 		boolean present = program.getMemory().getBlock(blockName) != null;
 
 		TransferPlacement placement =
@@ -240,11 +240,6 @@ public final class RunFromElsewhere {
 				? "not materialized; see the analysis log for the reason"
 				: "";
 		return new Result(placement, nowPresent ? blockName : null, present, detail);
-	}
-
-	/** The name {@link TransferMaterializer} gives the block for a copy landing at {@code dst}. */
-	private static String blockNameFor(Address dst) {
-		return "COPY_" + String.format("%04x", dst.getOffset());
 	}
 
 	/**
