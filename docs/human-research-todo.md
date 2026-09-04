@@ -306,8 +306,16 @@ Agents can't file these — they need an account and CLA agreement.
   no decode path, so an ordinary `ram` space can never carry it. So GP-6936 is inverted — the
   half that was asked for still throws, and the half nobody asked for is the one that regresses
   us. The ask becomes "the flag is on the wrong space class", not "please drop your feature".
-  **The draft on `grm-qp5x.1` predates this and must be rewritten before filing**; the fuller
-  reasoning is on `grm-qp5x.2`.
+  **Experiment run 2026-09-04 and the patch fixes both halves.** On the reporter's own
+  `sysmem.elf`: stock 12.1.3 fails with their exact error, the spacebase hunk alone still
+  fails, the `calcScaleMask` hunk alone decompiles cleanly, and the recovered call matches
+  their hand-written expectation argument for argument. Our two rows are unchanged from the
+  full-revert arm, and the full 33-ROM tier shows no row regressing off stock. **A rewritten
+  issue body plus a comment for #4148 are drafted verbatim on `grm-qp5x.2`** — review and
+  post; the draft on `grm-qp5x.1` is superseded and must not be filed. One caveat is carried
+  in the draft: `datatests/wraprange.xml` will fail under the patch, and that is a reading of
+  the test, not an observed failure — `decomp_test_dbg` needs `termios.h`/`dirent.d_type` and
+  will not build on this machine, so it wants a Linux box or `pacman -S gcc` under msys64.
 
   Worth deciding alongside the filing: this reopens `grm-qp5x`'s option list. We can now build a
   patched `decompile.exe` in ~2 minutes, so "carry a locally patched install" is a real fourth
