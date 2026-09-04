@@ -28,8 +28,12 @@ import org.junit.Test;
 import ghidra.program.database.ProgramBuilder;
 import ghidra.program.database.ProgramDB;
 import ghidra.program.model.lang.Register;
+import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.pcode.PcodeOp;
+import ghidra.program.util.SymbolicPropogator;
+import ghidra.program.util.SymbolicPropogator.Value;
+import ghidra.util.task.TaskMonitor;
 
 /**
  * Acceptance for the bundled 65816 language (beads grm-9nxj.1 and grm-9nxj.2):
@@ -134,6 +138,33 @@ public class W65816LanguageTest extends AbstractBundledLanguageTest {
 		assertNotNull("no instruction after REP -- context did not flow", lda);
 		assertEquals("LDA", lda.getMnemonicString());
 		assertEquals("REP #$20 should have widened the accumulator", 3, lda.getLength());
+	}
+
+	/**
+	 * The acceptance criterion this whole exercise exists for (bead grm-9nxj.2): not merely that
+	 * the immediate is a constant in the p-code, but that {@code SymbolicPropogator} -- the
+	 * machinery {@code StoredValueScanner} and the {@code BoardBankAnalyzer} strategies are built
+	 * on -- actually recovers the value across the store. {@code LDA #bank} / {@code STA
+	 * <mechanism>} is the idiom every bank-switch strategy keys on, so this is the shape that
+	 * decides whether the SNES gets bank recovery at all.
+	 *
+	 * <p>Against upstream's spec the accumulator here would hold the result of a LOAD from the
+	 * instruction stream, and the propagator would report no value.
+	 */
+	@Test
+	public void symbolicPropogatorRecoversABankValueFromAnImmediate() throws Exception {
+		builder.setBytes("0x8000", "a9 05", true);    // LDA #$05
+		builder.setBytes("0x8002", "8d 00 21", true); // STA $2100
+
+		SymbolicPropogator propagator = new SymbolicPropogator(program);
+		AddressSet body = new AddressSet(builder.addr("0x8000"), builder.addr("0x8004"));
+		propagator.flowConstants(builder.addr("0x8000"), body, null, true, TaskMonitor.DUMMY);
+
+		Value accumulator = propagator.getRegisterValue(builder.addr("0x8002"),
+			program.getLanguage().getRegister("A"));
+		assertNotNull("the propagator recovered no accumulator value at the store -- the " +
+			"immediate is still opaque to it", accumulator);
+		assertEquals(0x05, accumulator.getValue());
 	}
 
 	/**
