@@ -152,6 +152,30 @@ Each is minutes of work and settles something specific. Highest value per unit e
       Ghidra has split the routine into `FUN_c542` and `FUN_c54a`, which report the *same*
       `switchSite=c5fc`; the body you want is `c542`–`c6f1`.
 
+- [ ] **rcproam: what is actually at `W8000_M0_B0::a915` and `::c912`?** (`grm-4nr`, P2.) The
+      run-to-run flapping is now **localized to exactly two sites**, and both are one-byte
+      alignment forks — measured 2026-09-03 with `DeterminismProbe.java` over three runs, two of
+      which agreed and one of which took the other state. The diff accounts for the entire count
+      delta, so there is nothing else going on:
+
+      | site | one state decodes | the other decodes |
+      |---|---|---|
+      | ~`a915` | `a915` len 2, then a 3-hop conditional-branch chain `a96f` → `a9c9` → `aa23` | `a916` len 1, chain absent |
+      | ~`c912` | `c913` len 3, then ~23 bytes of run-on code with 4 data READs (`cf6f`, `cca7`, `cbe3`, `cc4e`) | `c912` len 3, run-on absent |
+
+      **The question is what those bytes really are** — the start of a genuine routine, a jump or
+      data table Ghidra is walking into, or a code/data boundary. Each implies a different fix, and
+      the two candidate decodings are both self-consistent, so static analysis cannot adjudicate:
+      that is precisely why whichever seed lands first wins permanently.
+
+      Why it needs you: it is a listing read on a ROM you have, and for an agent each guess is a
+      build/measure/interpret cycle. Two things are already **ruled out** and should not be
+      re-spent: `-Djava.util.ImmutableCollections.SALT32L=0` (inert on JDK 21 — the JDK reads no
+      such property; see the bead) and `-XX:hashCode=3` (rcproam still took 4 distinct states in 6
+      runs). Also note the divergence **survives `-Dcpu.core.override=1`**, so the "two
+      constant-propagation threads race" story in `DeterminismProbe.java`'s own header cannot be
+      the whole explanation.
+
 *Not an item — a note.* The `.idb` inventory itself (`grm-w4w3`) is **agent work and is
 deliberately deferred to a future session** at your request; the tooling question is settled
 (`python-idb` Apache-2.0 / `idbutil` MIT, no IDA needed) so nobody re-derives it. Worth knowing
