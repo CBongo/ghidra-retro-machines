@@ -998,7 +998,8 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 				MemoryBlockUtils.createFileBytes(program, romProvider, TaskMonitor.DUMMY);
 			return MemoryBlockUtils.createInitializedBlock(program, isOverlay, name, start,
 				fileBytes, 0, length, name + " (user-supplied ROM: " + file.getName() + ")",
-				"user-rom", p.readable(), p.writable(), p.executable(), log);
+				DescriptorMemory.STOCK_ROM_SOURCE, p.readable(), p.writable(), p.executable(),
+				log);
 		}
 		catch (Exception e) {
 			log.appendMsg(name + ": failed to load ROM " + path + ": " + e.getMessage() +

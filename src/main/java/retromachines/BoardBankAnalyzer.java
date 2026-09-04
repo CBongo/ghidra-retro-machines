@@ -16,6 +16,8 @@
 package retromachines;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -215,6 +217,67 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		return getClass().getSimpleName();
 	}
 
+	/**
+	 * The discovered helpers split by provenance: functions in the imported program, and
+	 * functions that live inside a stock system ROM image the user supplied alongside it.
+	 * Both lists are sorted by name.
+	 */
+	record HelperReport(List<String> gameHelpers, List<String> systemRomHelpers) {}
+
+	/**
+	 * Splits {@code helpers} on {@link DescriptorMemory#inStockSystemRom}.
+	 * <p>
+	 * Package-private and static so it can be pinned without an analyzer run; see
+	 * {@link #reportHelpers} for why the split exists at all.
+	 */
+	static HelperReport partitionHelpers(Program program, Collection<Function> helpers) {
+		List<String> game = new ArrayList<>();
+		List<String> systemRom = new ArrayList<>();
+		for (Function f : helpers) {
+			(DescriptorMemory.inStockSystemRom(program, f.getEntryPoint()) ? systemRom : game)
+					.add(f.getName());
+		}
+		Collections.sort(game);
+		Collections.sort(systemRom);
+		return new HelperReport(List.copyOf(game), List.copyOf(systemRom));
+	}
+
+	/**
+	 * Logs the discovered bank-switch helpers, keeping stock system ROM routines out of the
+	 * line the user reads (grm-5tl.19).
+	 * <p>
+	 * The C64 KERNAL's {@code IOINIT} ({@code $FDA3}) is the case this exists for: it resets
+	 * the 6510 port to its power-on state, so it genuinely <em>is</em> a bank-switch helper in
+	 * mechanism terms and is correctly recognized as one -- but it is stock housekeeping that
+	 * fires on every single program imported with a KERNAL ROM, and reporting it teaches the
+	 * user nothing about the program they are looking at.
+	 * <p>
+	 * <b>This is a reporting filter and nothing more.</b> The suppressed helpers stay in the
+	 * {@code helpers} map, keep their models, and keep participating in dataflow and value
+	 * recovery exactly as before; only the {@link AnalyzerLog#info} line is trimmed. Anything
+	 * that made recognition itself conditional on provenance would change analysis results,
+	 * which is not what this is for. The full list is still emitted at
+	 * {@link AnalyzerLog#debug}, so nothing becomes unobservable.
+	 */
+	private void reportHelpers(Program program, Collection<Function> helpers) {
+		if (helpers.isEmpty()) {
+			return;
+		}
+		HelperReport report = partitionHelpers(program, helpers);
+		if (!report.gameHelpers().isEmpty()) {
+			AnalyzerLog.info(this, report.gameHelpers().size() +
+				" bank-switch helper function(s): " + report.gameHelpers() +
+				(report.systemRomHelpers().isEmpty() ? ""
+						: " (plus " + report.systemRomHelpers().size() +
+							" in system ROM, not listed)"));
+		}
+		if (!report.systemRomHelpers().isEmpty()) {
+			AnalyzerLog.debug(this, report.systemRomHelpers().size() +
+				" bank-switch helper function(s) in system ROM, suppressed from the summary: " +
+				report.systemRomHelpers());
+		}
+	}
+
 	@Override
 	public boolean added(Program program, AddressSetView set, TaskMonitor monitor, MessageLog log)
 			throws CancelledException {
@@ -292,10 +355,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				composeTailCalls(program, findHelpers(program, flow.switchResults())),
 				flow.switchResults()),
 			flow.switchResults());
-		if (!helpers.isEmpty()) {
-			AnalyzerLog.info(this, helpers.size() + " bank-switch helper function(s): " +
-				helpers.keySet().stream().map(Function::getName).sorted().toList());
-		}
+		reportHelpers(program, helpers.keySet());
 
 		// Which banks each switchable window actually has an image slice for (grm-hum
 		// increment 3). Derived once, here, because it is a property of the loaded program and

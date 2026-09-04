@@ -75,6 +75,42 @@ final class DescriptorMemory {
 		return new Perms(r, w, x);
 	}
 
+	// ------------------------------------------------------------------
+	// Stock-system-ROM provenance
+	// ------------------------------------------------------------------
+
+	/**
+	 * {@link MemoryBlock#getSourceName()} stamped on every block filled from a user-supplied
+	 * stock system ROM image (C64 KERNAL/BASIC/CHARGEN, the PET and C128 ROM slots) rather
+	 * than from the imported program's own bytes.
+	 * <p>
+	 * Written by {@code AbstractCbmPrgLoader.createRomBlock}; read by
+	 * {@link #inStockSystemRom}. It is a shared constant and not a literal at either end
+	 * because the two sides are a loader and an analyzer, and a silent drift between them
+	 * would degrade to "nothing is ever recognized as stock ROM" with no failure anywhere.
+	 */
+	static final String STOCK_ROM_SOURCE = "user-rom";
+
+	/**
+	 * Whether {@code address} lives in a stock system ROM image supplied by the user, as
+	 * opposed to the program that was actually imported.
+	 * <p>
+	 * Provenance, deliberately, and not permissions: "not writable" is true of a NES PRG bank
+	 * too, where the code very much <em>is</em> the user's program. The distinction that
+	 * matters is where the bytes came from, and {@link #STOCK_ROM_SOURCE} records exactly that.
+	 * Machines that load no ROM image (every NES board today) have no such block, so this is
+	 * false everywhere on them.
+	 *
+	 * @see <a href="urn:bead:grm-5tl.19">grm-5tl.19</a>
+	 */
+	static boolean inStockSystemRom(Program program, Address address) {
+		if (address == null) {
+			return false;
+		}
+		MemoryBlock block = program.getMemory().getBlock(address);
+		return block != null && STOCK_ROM_SOURCE.equals(block.getSourceName());
+	}
+
 	/** IO-kind blocks have side effects on access; mark them volatile so Ghidra doesn't cache
 	 *  or fold reads/writes to them. Never applied to ram/rom (e.g. C64 COLOR_RAM inside the
 	 *  IO window is kind:ram and stays non-volatile). */
