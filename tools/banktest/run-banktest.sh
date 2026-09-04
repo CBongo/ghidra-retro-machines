@@ -620,6 +620,106 @@ run_reject() {
 	echo "PASS: $name rejected as expected ($expect_msg), no partial layout"
 }
 
+# ANALYZER-OFF CENSUS (bead grm-8uaz). Imports the SAME image TWICE, once with "NES Bank
+# State" left at its default (on) and once with it forced off via SetAnalyzerEnabled.java as a
+# -preScript, both times running BaseSpaceCensus.java as a -postScript, and asserts the property
+# that motivates this fixture: enabling our analyzer must never REDUCE how much base-space code
+# Ghidra's OWN pipeline disassembles. grm-nems is why this exists and is not hypothetical: tmnt
+# measured 3426 base-space instructions / 117 functions with the analyzer off and only 2006 / 67
+# with it on, on a cold cache -- turning the analyzer ON made stock disassembly produce LESS
+# code. Nothing anywhere asserted that until now.
+#
+#   run_census <name> <fixture> <Loader>
+#
+# Deliberately outside run_one's cache/candidate machinery and NOT gated on $MODE: there is no
+# golden here to bless. run_one's cache and bless_candidate both exist to answer "did the
+# recorded BEHAVIOR change since last time", which presupposes a recorded behavior worth
+# preserving byte-for-byte -- exactly what this fixture does NOT have, on purpose. Its property
+# is a pure INEQUALITY (on >= off) that must hold on every run, not a value to pin and diff
+# against; a golden file would just be two numbers someone could "bless" past without ever
+# looking at whether the inequality still holds, which is precisely the false-green failure mode
+# grm-nems fell into (nothing was asserting this at all). So both "check" and "bless" invocations
+# run the same two imports and the same assertion.
+run_census() {
+	local name="$1" fixture="$2" loader="$3"
+
+	local proj_on="$WORK/proj_${name}_census_on"
+	local proj_off="$WORK/proj_${name}_census_off"
+	mkdir -p "$proj_on" "$proj_off"
+	local log_on="$WORK/${name}_census_on.log"
+	local log_off="$WORK/${name}_census_off.log"
+
+	echo "== $name: census import #1/2 (analyzer ON, default) via analyzeHeadless ($loader) =="
+	"$GHIDRA_HEADLESS" "$(native "$proj_on")" headless \
+		-import "$(native "$fixture")" \
+		-loader "$loader" \
+		-scriptPath "$(native "$SCRIPT_DIR")" \
+		-postScript BaseSpaceCensus.java \
+		>"$log_on" 2>&1
+
+	echo "== $name: census import #2/2 (analyzer OFF, via SetAnalyzerEnabled.java) via analyzeHeadless ($loader) =="
+	"$GHIDRA_HEADLESS" "$(native "$proj_off")" headless \
+		-import "$(native "$fixture")" \
+		-loader "$loader" \
+		-preScript SetAnalyzerEnabled.java analyzer:NES_Bank_State enabled:false \
+		-scriptPath "$(native "$SCRIPT_DIR")" \
+		-postScript BaseSpaceCensus.java \
+		>"$log_off" 2>&1
+
+	# Headless wraps script println output as "INFO  <Script.java>> <msg> (GhidraScript)" --
+	# strip that the same way run_one does, so the CENSUS lines below can be grepped plainly.
+	local stripped_on="$WORK/${name}_census_on.out"
+	local stripped_off="$WORK/${name}_census_off.out"
+	sed 's/\r$//; s/^.*\(BaseSpaceCensus\|SetAnalyzerEnabled\)\.java> //; s/ (GhidraScript)[[:space:]]*$//' \
+		"$log_on" >"$stripped_on"
+	sed 's/\r$//; s/^.*\(BaseSpaceCensus\|SetAnalyzerEnabled\)\.java> //; s/ (GhidraScript)[[:space:]]*$//' \
+		"$log_off" >"$stripped_off"
+
+	local analyzer_on analyzer_off instrs_on instrs_off functions_on functions_off
+	analyzer_on="$(grep -m1 '^CENSUS analyzer ' "$stripped_on" | sed 's/^CENSUS analyzer //')"
+	analyzer_off="$(grep -m1 '^CENSUS analyzer ' "$stripped_off" | sed 's/^CENSUS analyzer //')"
+	instrs_on="$(grep -m1 '^CENSUS instrs.baseSpace ' "$stripped_on" | awk '{print $3}')"
+	instrs_off="$(grep -m1 '^CENSUS instrs.baseSpace ' "$stripped_off" | awk '{print $3}')"
+	functions_on="$(grep -m1 '^CENSUS functions.baseSpace ' "$stripped_on" | awk '{print $3}')"
+	functions_off="$(grep -m1 '^CENSUS functions.baseSpace ' "$stripped_off" | awk '{print $3}')"
+
+	# ANTI-VACUITY GUARD, and the reason it is essential rather than a nicety: if the two runs'
+	# CENSUS analyzer lines do not actually differ (on-run "true", off-run "false"), then
+	# SetAnalyzerEnabled.java did not resolve/flip the analyzer that run's census reported on,
+	# and the comparison below is analyzer-on vs analyzer-on -- it PROVES NOTHING about the
+	# property this fixture exists to check. A typo'd analyzer name would otherwise yield a
+	# fixture that reports green forever while asserting nothing, exactly the failure mode this
+	# whole bead is a response to.
+	local verdict="OK"
+	if [ -z "$instrs_on" ] || [ -z "$instrs_off" ] || [ -z "$functions_on" ] || [ -z "$functions_off" ]; then
+		echo "FAIL: $name census produced no CENSUS lines on one or both legs (bead grm-8uaz) --" >&2
+		echo "      on-run log: $log_on" >&2
+		echo "      off-run log: $log_off" >&2
+		fail=1
+		verdict="VACUOUS"
+	elif [ "$analyzer_on" != "NES Bank State=true" ] || [ "$analyzer_off" != "NES Bank State=false" ]; then
+		echo "FAIL: $name census is VACUOUS (bead grm-8uaz) -- the on-run and off-run CENSUS" >&2
+		echo "      analyzer lines do not show the expected true/false split, so this never" >&2
+		echo "      compared analyzer-on against analyzer-off and proves nothing:" >&2
+		echo "      on-run:  CENSUS analyzer $analyzer_on" >&2
+		echo "      off-run: CENSUS analyzer $analyzer_off" >&2
+		fail=1
+		verdict="VACUOUS"
+	elif [ "$instrs_on" -lt "$instrs_off" ] || [ "$functions_on" -lt "$functions_off" ]; then
+		echo "FAIL: $name violates the analyzer-off census property (bead grm-8uaz) --" >&2
+		echo "      enabling \"NES Bank State\" REDUCED how much base-space code Ghidra's own" >&2
+		echo "      pipeline disassembled, which means the analyzer is perturbing Ghidra's" >&2
+		echo "      disassembly pipeline rather than only annotating what it already found." >&2
+		echo "      See bead grm-nems for the real-ROM incident this guards against." >&2
+		fail=1
+		verdict="VIOLATION"
+	fi
+
+	echo "CENSUS $name: instrs on=$instrs_on off=$instrs_off delta=$((instrs_on - instrs_off)); " \
+		"functions on=$functions_on off=$functions_off delta=$((functions_on - functions_off)); " \
+		"verdict=$verdict"
+}
+
 if selected c64-banking; then
 	for name in banktest banktest2 banktest3 banktest4; do
 		run_one "$name" "$WORK/prg/$name.prg" C64PrgLoader
@@ -880,6 +980,13 @@ if selected nes-banking; then
 	# coverage of that widened gate, and the only fixture where a recognized copy's
 	# destination has to cross out of an overlay space to be carved in place.
 	run_one nescopytest "$WORK/nes/nescopytest.nes" NesRomLoader
+
+	run_census nesbanktest "$WORK/nes/nesbanktest.nes" NesRomLoader
+	# A second board, deliberately: on UxROM (nesbanktest) the loader places almost all PRG into
+	# overlay windows, so base space holds only a handful of instructions and the inequality has
+	# very little to bite on. MMC3 keeps a FIXED bank, which lands in base space -- the same shape
+	# tmnt has, and tmnt is the row grm-nems measured the violation on.
+	run_census nesmmc3test "$WORK/nes/nesmmc3test.nes" NesRomLoader
 fi
 
 if selected petscii-strings; then

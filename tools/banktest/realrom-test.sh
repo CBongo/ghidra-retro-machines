@@ -121,6 +121,20 @@ case "$MODE" in
 		;;
 esac
 
+# REALROM_EXTRA_PRESCRIPT changes what ANALYSIS DOES, not merely what is reported afterwards --
+# its reason for existing is SetAnalyzerEnabled.java, which turns an analyzer off (bead grm-8uaz's
+# census, checking the property grm-nems violated). A dump produced that way describes a
+# deliberately crippled analysis, so writing it into a golden would pin the wrong output and every
+# later run would "pass" against it. There is no legitimate bless in that state, so refuse rather
+# than rely on the operator remembering. realrom_cache_key carries the same value, so the two
+# states cannot share a cached candidate either.
+if [ "$MODE" = bless ] && [ -n "${REALROM_EXTRA_PRESCRIPT:-}" ]; then
+	echo "REALROM: refusing to bless with REALROM_EXTRA_PRESCRIPT set." >&2
+	echo "  A -preScript can disable an analyzer, so the dump would describe a crippled" >&2
+	echo "  analysis and the golden would pin it. Re-run without it, or use check." >&2
+	exit 2
+fi
+
 # Row selection (see the header note). Empty ONLY_IDS means "every row"; EXCEPT_IDS is
 # applied on top. Both are kept as comma-delimited strings with sentinel commas so a
 # membership test is a plain substring match -- no associative arrays, matching the
@@ -547,6 +561,14 @@ realrom_cache_key() {
 		printf 'opts:%s\n' "$opts"
 		printf 'dumpscript:'; sha256sum "$SCRIPT_DIR/RealRomDump.java" | cut -d' ' -f1
 		printf 'ext:%s\n' "$EXT_ID"
+		# A -preScript runs BEFORE auto-analysis and can change what analysis DOES at all --
+		# SetAnalyzerEnabled.java (bead grm-8uaz) turns an analyzer off outright. That is the
+		# largest change to the dump there is, so by this function's own rule above ("anything
+		# that can change the dump has to be in here") it must be keyed. Without this term an
+		# analyzer-OFF dump and a normal dump share a key and the cache would serve one for the
+		# other -- into a `bless`, in the worst case. The bless path is refused outright when
+		# this is set (see the guard after mode parsing); this term is the second lock.
+		printf 'prescript:%s\n' "${REALROM_EXTRA_PRESCRIPT:-}"
 	} | sha256sum | cut -d' ' -f1
 }
 
@@ -616,6 +638,7 @@ import_and_dump() {
 		-loader NesRomLoader \
 		$opts \
 		-scriptPath "$(native "$SCRIPT_DIR")" \
+		${REALROM_EXTRA_PRESCRIPT:+-preScript $REALROM_EXTRA_PRESCRIPT} \
 		-postScript RealRomDump.java \
 		${REALROM_EXTRA_POSTSCRIPT:+-postScript "$REALROM_EXTRA_POSTSCRIPT"} \
 		-deleteProject \

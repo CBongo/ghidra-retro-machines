@@ -171,6 +171,8 @@ chunk holding it is not the one you would guess from the script's subject:
 | `RunFromElsewhereTransfer.java` | `rfemanual` | `c64-recovery` | `-preScript` (before auto-analysis, so the manual carve precedes `CopyLoopAnalyzer`'s) |
 | `FixSkipInstructions.java` | `nesskiptest` | `nes-banking` | `-postScript` (the offcut conflict it repairs does not exist until after disassembly) |
 | `tools/banktest/AssertBankOrderIndependence.java` | `nesskiptest` | `nes-banking` | second `-postScript`, run POST-verify (after `VerifyBankTest.java`'s dump) so it perturbs the program only once the golden-compared artifact is already taken (bead grm-q39f) |
+| `tools/banktest/SetAnalyzerEnabled.java` | `nesbanktest` (via `run_census`) | `nes-banking` | `-preScript`, forces "NES Bank State" off before auto-analysis on the census's "off" leg (bead grm-8uaz) |
+| `tools/banktest/BaseSpaceCensus.java` | `nesbanktest` (via `run_census`) | `nes-banking` | `-postScript`, on BOTH of `run_census`'s imports, counting base-space instructions/functions and reporting the analyzer's current on/off state |
 
 Each also asserts on the script's own verdict line by grepping the headless log, because that line
 falls outside the `BANKDUMP` markers and so is invisible to `VerifyBankTest`.
@@ -179,6 +181,34 @@ above: it lives in `tools/banktest/` alongside `VerifyBankTest.java`, not in `gh
 because it is a test-only assertion over `BankCommentProvenance`'s order-independence property
 rather than a user-facing front-end — but it is wired into `nesskiptest` the same way, via
 `run_one`'s new post-verify argument slot, and is listed here for the same reason.
+`SetAnalyzerEnabled.java` and `BaseSpaceCensus.java` are the same kind of test-only pair, living
+in `tools/banktest/` for the same reason.
+
+### The ANALYZER-OFF CENSUS (`run_census`, bead grm-8uaz) — a property, not a golden
+
+`run_census` (in `run-banktest.sh`, wired into `nes-banking` as `run_census nesbanktest ...`)
+imports the SAME image TWICE — once with "NES Bank State" left at its default (on), once with it
+forced off via `SetAnalyzerEnabled.java` as a `-preScript` — running `BaseSpaceCensus.java` as a
+`-postScript` on both, and asserts an inequality: enabling our analyzer must never REDUCE how
+much *base-space* code Ghidra's own pipeline disassembled (instructions and functions counted
+outside any overlay space). This is not hypothetical — `grm-nems` measured `tmnt` reaching 3426
+base-space instructions / 117 functions with the analyzer disabled and only 2006 / 67 with it
+enabled, on a cold cache, and nothing anywhere asserted that regression before this fixture
+existed.
+
+**There is deliberately no golden file and no `bless` for this fixture.** Every other golden in
+this suite pins a recorded BEHAVIOR that should stay byte-identical until someone deliberately
+reviews and accepts a diff. This fixture's property is the opposite shape: a pure inequality
+(`instrs_on >= instrs_off`, `functions_on >= functions_off`) that must hold on every run, not a
+value to capture once and diff against forever. A golden here would invite exactly the failure
+mode `grm-nems` fell into — a stale, blessed pair of numbers nobody is checking the *relationship*
+between — so `run_census` runs its own two imports and its own assertion unconditionally, in both
+`check` and `bless` mode, outside `run_one`'s cache/candidate machinery entirely.
+
+The fixture also guards against its own vacuity: it fails loudly, distinctly from a property
+violation, if the two runs' `CENSUS analyzer` lines do not actually show `true` on the "on" leg
+and `false` on the "off" leg — without that check, a typo'd analyzer name would silently compare
+analyzer-on against analyzer-on and report a permanently green result that proves nothing.
 
 ```bash
 bash tools/banktest/build-and-test.sh check nes-banking c64-banking   # dev loop subset
