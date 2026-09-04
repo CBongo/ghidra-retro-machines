@@ -84,3 +84,59 @@ src/test/resources/spc700-vectors/*.json
   default) with no reordering, so the sample is a byte-for-byte prefix of
   upstream content, regenerable at any N against a fresh clone.
 --------------------------------------------------------------------------------
+data/languages/658xx.sinc
+data/languages/658xx_memaccess.sinc
+data/languages/658xx_memaccess_other.sinc
+data/languages/658xx_memaccess_pc.sinc
+data/languages/w65816.cspec
+
+  SLEIGH decode table, M/X/E context machinery and addressing-mode layer for the
+  WDC 65816 (the SNES main CPU), plus its compiler spec.
+
+  Copyright (c) achan1989, greg-kennedy, and the ghidra-snes authors
+  Licensed under the MIT License:
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the
+    "Software"), to deal in the Software without restriction, including
+    without limitation the rights to use, copy, modify, merge, publish,
+    distribute, sublicense, and/or sell copies of the Software, and to
+    permit persons to whom the Software is furnished to do so, subject to
+    the following conditions:
+
+    The above copyright notice and this permission notice shall be included
+    in all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+    OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+    IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+    CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+    TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+    SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+  Upstream: https://github.com/joshleaves/ghidra-snes
+  Commit:   d33ce5dbfbc3645f00449be1c7ca1c1c65e81756
+  Path:     data/languages/658xx.sinc
+            data/languages/658xx_memaccess.sinc
+            data/languages/658xx_memaccess_other.sinc
+            data/languages/658xx_memaccess_pc.sinc
+            data/languages/65816.cspec (-> w65816.cspec)
+
+  That project carries achan1989/ghidra-65816 near-verbatim (a direct diff of the
+  two 658xx.sinc files shows only whitespace and one comment typo), so the
+  copyright above names both lineages; see its CREDITS.md.
+
+  This is a fork point, not a re-sync target: bead grm-9nxj.2 changes how
+  immediate operands are represented, since upstream models them as references
+  dereferenced out of the instruction stream, which defeats the constant
+  propagation this project's bank-value recovery depends on. Vendored verbatim
+  at the commit above; the only modification is a prepended attribution header.
+
+  Not vendored, and written for this project instead: w65816.slaspec,
+  w65816.ldefs (language id 65816:LE:24:retro, so it cannot collide with
+  upstream's 65816:LE:24:snes) and w65816.pspec, which adds the emulation-mode
+  context defaults upstream omits and deliberately drops upstream's SNES
+  register symbols -- IO naming here comes from the machine descriptor, not the
+  language. Upstream's SNES ROM loader and .opinion file are not vendored.
+--------------------------------------------------------------------------------

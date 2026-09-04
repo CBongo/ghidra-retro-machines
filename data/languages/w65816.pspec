@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- See Relax specification: Ghidra/Framework/SoftwareModeling/data/languages/processor_spec.rxg -->
+
+<!--
+  Processor spec for 65816:LE:24:retro. Written for this project rather than vendored, for
+  two reasons (bead grm-9nxj.1):
+
+  1. RESET MODE. Upstream's pspec carries no <context_data> block at all, so the context
+     register defaults to all-zero (MF=0, XF=0, EF=0), i.e. NATIVE mode with a 16-bit
+     accumulator and 16-bit index registers. A 65816 resets into EMULATION mode with 8-bit
+     registers, so out of the box the reset vector decoded in the wrong mode. The
+     <context_set> below fixes that. Anything that knows better (a loader, or the
+     per-entry-point M/X inference of bead grm-9nxj.5) overrides it per address.
+
+  2. MACHINE vs CPU. Upstream's pspec also declares the SNES's PPU/CPU/DMA register symbols
+     ($2100-$21FF, $4200-$43FF). Those are deliberately NOT carried here: in this extension
+     IO naming and typing come from the machine descriptor and its loader, not from the
+     language, so that the language stays reusable for any 65816 system (Apple IIgs, SA-1)
+     rather than being SNES-only. The vectors below stay, because they are fixed by the CPU.
+
+  Upstream's note on the vectors, which still applies: they cannot be marked
+  entry="true" type="code_ptr", because Ghidra would then expect three-byte pointers to
+  match the three-byte PC, while the vectors are two bytes in ROM (the 65816 assumes a zero
+  high byte). Entry points come from the loader instead.
+-->
+
+<processor_spec>
+  <programcounter register="PC_FULL"/>
+
+  <context_data>
+    <context_set space="bus">
+      <set name="ctx_EF" val="1" description="1 = emulation mode, the state a 65816 resets into"/>
+      <set name="ctx_MF" val="1" description="1 = 8-bit accumulator (forced in emulation mode)"/>
+      <set name="ctx_XF" val="1" description="1 = 8-bit index registers (forced in emulation mode)"/>
+    </context_set>
+  </context_data>
+
+  <default_symbols>
+    <symbol name="VEC_COP_NATIVE"      address="00FFE4"/>
+    <symbol name="VEC_BRK_NATIVE"      address="00FFE6"/>
+    <symbol name="VEC_ABORT_NATIVE"    address="00FFE8"/>
+    <symbol name="VEC_NMI_NATIVE"      address="00FFEA"/>
+    <symbol name="VEC_IRQ_NATIVE"      address="00FFEE"/>
+    <symbol name="VEC_COP_EMULATION"   address="00FFF4"/>
+    <symbol name="VEC_ABORT_EMULATION" address="00FFF8"/>
+    <symbol name="VEC_NMI_EMULATION"   address="00FFFA"/>
+    <symbol name="VEC_RESET_EMULATION" address="00FFFC"/>
+    <symbol name="VEC_IRQ_EMULATION"   address="00FFFE"/>
+  </default_symbols>
+</processor_spec>

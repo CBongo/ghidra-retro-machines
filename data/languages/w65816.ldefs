@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- See Relax specification: Ghidra/Framework/SoftwareModeling/data/languages/language_definitions.rxg -->
+
+<language_definitions>
+
+  <language processor="65816"
+            endian="little"
+            size="24"
+            variant="retro"
+            version="1.0"
+            slafile="w65816.sla"
+            processorspec="w65816.pspec"
+            id="65816:LE:24:retro">
+    <description>WDC 65816 (SNES main CPU); decode table and M/X width context vendored from joshleaves/ghidra-snes -- disassembly is sound, but immediate operands are modelled as memory reads rather than constants and the p-code semantics are unverified (beads grm-9nxj.2, grm-9nxj.4)</description>
+    <compiler name="default" spec="w65816.cspec" id="default"/>
+  </language>
+
+</language_definitions>

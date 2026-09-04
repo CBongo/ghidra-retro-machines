@@ -94,6 +94,14 @@ being re-executed by hand across the community — this extension automates it.
   (mnemonics, operands, instruction length) is sound; the p-code semantics carried over
   from upstream are known-incorrect and are being rewritten (bead grm-c9d.3) — don't trust
   decompiler output for this language yet.
+- **A vendored 65816 language, disassembly-only so far**: `65816:LE:24:retro` bundles the
+  ghidra-snes/ghidra-65816 SLEIGH table for the SNES main CPU, including its M/X width
+  modelling — context fields plus `globalset`, the same pattern ARM uses for Thumb, so
+  8- and 16-bit immediates get the right length. Two caveats: immediate operands are
+  modelled as reads from the instruction stream rather than constants, which defeats value
+  tracking until bead grm-9nxj.2 fixes it; and the p-code has never been checked against an
+  oracle (bead grm-9nxj.4). Stock Ghidra ships no 65816 at all — see
+  [docs/65816-language-survey.md](docs/65816-language-survey.md) for how that was settled.
 
 ## Roadmap
 
@@ -206,15 +214,20 @@ are the machines whose music drivers that project reverses.
 [NOTICE](NOTICE) — currently the undocumented-opcode SLEIGH semantics in
 `data/languages/6510_illegal.sinc`, vendored from
 [anarkiwi/deity-informant](https://github.com/anarkiwi/deity-informant) (also Apache 2.0)
-and kept byte-identical to upstream so re-syncs stay a clean diff; and the SPC700 decode
+and kept byte-identical to upstream so re-syncs stay a clean diff; the SPC700 decode
 table in `data/languages/spc700core.sinc`/`spc700ops.sinc`, vendored from
 [qwertymodo/SPCdra](https://github.com/qwertymodo/SPCdra) (also Apache 2.0) as a fork
 point rather than a sync target, since the p-code semantics built on top of it diverge
-permanently once bead grm-c9d.3 rewrites them.
+permanently once bead grm-c9d.3 rewrites them; and the 65816 decode table and
+addressing-mode layer in `data/languages/658xx*.sinc`, vendored from
+[joshleaves/ghidra-snes](https://github.com/joshleaves/ghidra-snes) (MIT, carrying
+[achan1989/ghidra-65816](https://github.com/achan1989/ghidra-65816)), likewise a fork point
+rather than a sync target.
 
 Note that project, and [grue74/ghidra-c64helpers](https://github.com/grue74/ghidra-c64helpers),
 each also publish a language with the id `6510:LE:16:default`. Ghidra requires language ids
 to be unique, so installing two of them at once will conflict; that is the only situation in
 which it matters. Likewise, SPCdra itself publishes `spc700:LE:16:default`; this extension's
 SPC700 language deliberately uses the id `SPC700:LE:16:retro` instead, so both can be
-installed side by side without conflict.
+installed side by side without conflict. The same applies to the 65816: ghidra-snes
+publishes `65816:LE:24:snes`, and this extension's language is `65816:LE:24:retro`.

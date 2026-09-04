@@ -13,6 +13,31 @@ the local corpus) or **[reported]** (research finding, URL given, not independen
 
 ---
 
+## Status since this was written
+
+The owner ruled on §9 on 2026-09-04: vendor and fix immediates, full vector tier, and treat the
+SNES banking question (§6) as an explicit decision. Steps 1 and 2 of the sequencing have landed —
+the language is bundled as `65816:LE:24:retro` with the emulation-mode context defaults, and
+immediates are constants (`W65816LanguageTest` asserts on p-code, not on operand rendering). The
+fix took a different shape than §9 step 2 proposed: rather than splitting each instruction into
+immediate and memory variants, which would have duplicated 24 bodies including ADC/SBC's decimal
+arithmetic, a value-exporting layer (`PRIMARY_VAL8`/`PRIMARY_VAL16` and siblings) sits above
+upstream's reference tables — the memory alternative dereferences exactly as upstream does, so the
+16-bit bank-boundary wrap survives, and the immediate alternative exports a constant.
+
+That work also turned up a defect this survey did not find by reading: **`CPY`'s two width
+variants had their `ctx_XF` constraints swapped upstream**, so with 8-bit index registers the
+16-bit body ran, comparing a 16-bit `Y` against a two-byte read whose second byte is the following
+opcode. `CPX` was always correct and nothing else in the file has the mismatch (audited across
+every width-split constructor). Fixed locally; `grm-9nxj.7` covers reporting it upstream. It is a
+small vindication of §7's closing note — nobody has ever run this spec against an oracle — and of
+the decision not to adopt as-is.
+
+`grm-wrmf`'s `VectorRunner` context hook has also landed, which was §8's blocker for any 65816
+vector tier.
+
+---
+
 ## 0. Bottom line
 
 The bead asks "Ghidra ships a 65816 processor — is it sound enough to adopt as-is?" **The premise

@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Function;
 
 import ghidra.pcode.emu.PcodeEmulator;
 import ghidra.pcode.emu.PcodeThread;
@@ -31,6 +32,7 @@ import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.lang.Language;
 import ghidra.program.model.lang.Register;
+import ghidra.program.model.lang.RegisterValue;
 
 import retromachines.vectors.VectorCase.RamByte;
 
@@ -49,7 +51,9 @@ import retromachines.vectors.VectorCase.RamByte;
  * {@link Register}s that hold them, which field name is the program counter, and (optionally)
  * per-register {@link FlagLayout}s for decomposing packed status bytes in mismatch reports. Bead
  * grm-o9k (65x02 ADC/RRA flag verification) reuses this exact class against a different register
- * map and language id.
+ * map and language id. A caller may also opt into a per-case decoding CONTEXT via
+ * {@link #withContextProvider}, for a language (e.g. the 65816) whose decode itself depends on
+ * more than the register/RAM state seeded above -- see that method's doc.
  *
  * <p><b>One shared emulator, reset per case -- but periodically REBUILT (grm-c9d.3 increment
  * 10).</b> Constructing a fresh {@code PcodeEmulator} per vector is what makes an exhaustive
@@ -116,6 +120,12 @@ public final class VectorRunner {
 	private final Map<String, FlagLayout> flagLayouts;
 	private final int rebuildInterval;
 	private final int decodeBoundaryWindowBytes;
+
+	// Not final: withContextProvider() below is a builder-style setter rather than a
+	// constructor parameter, precisely so it does not disturb the existing constructor overload
+	// chain (see its own doc). Absent (the default) reproduces today's exact
+	// overrideContextWithDefault() behaviour for every existing caller.
+	private Function<VectorCase, RegisterValue> contextProvider;
 
 	private PcodeEmulator emulator;
 	private PcodeArithmetic<byte[]> arithmetic;
@@ -188,6 +198,36 @@ public final class VectorRunner {
 	/** Convenience constructor with no flag decomposition and {@code pcField = "pc"}. */
 	public VectorRunner(Language language, Map<String, Register> registerMap) {
 		this(language, registerMap, "pc", Map.of());
+	}
+
+	/**
+	 * Supplies a per-case processor CONTEXT (bead grm-wrmf), for a language whose decode depends
+	 * on it -- e.g. the 65816, where {@code p}'s M/X bits and the case's scalar {@code e} select
+	 * an 8- or 16-bit decode of the very same opcode byte. Without this, {@link #seed} falls back
+	 * to {@code overrideContextWithDefault()}, which resolves the language's STATIC default
+	 * context at the counter address -- the same fixed mode for every case regardless of what the
+	 * case actually specifies. That is harmless for SPC700 and stock 6502 (neither has a
+	 * meaningful context register, so the default call is a no-op per
+	 * {@code DefaultPcodeThread.overrideContextWithDefault}'s own doc) but would be quietly wrong
+	 * for a language where it is not: every case would decode in one fixed mode, an
+	 * {@code M=0} case would step the wrong-width instruction, and the run would report plausible
+	 * per-opcode PASS/FAIL ratios that read as language defects rather than as the harness feeding
+	 * every case the wrong context.
+	 *
+	 * <p>Builder-style rather than a constructor parameter so the existing overload chain above
+	 * -- and every caller using it ({@code Spc700VectorSampleTest}, {@code
+	 * Spc700VectorExhaustiveTest}, {@code VectorHarness6502Test}, {@code
+	 * Spc700VectorHarnessSupport}) -- is untouched.
+	 *
+	 * @param contextProvider given a case, returns the {@link RegisterValue} to install as that
+	 *        case's decode context, or {@code null} to fall back to
+	 *        {@code overrideContextWithDefault()} for that one case. Pass {@code null} itself to
+	 *        clear a previously set provider and restore today's default behaviour entirely.
+	 * @return this, for chaining onto the constructor call
+	 */
+	public VectorRunner withContextProvider(Function<VectorCase, RegisterValue> contextProvider) {
+		this.contextProvider = contextProvider;
+		return this;
 	}
 
 	/**
@@ -325,7 +365,13 @@ public final class VectorRunner {
 		}
 		Address pcAddr = defaultSpace.getAddress(Integer.toUnsignedLong(pcValue));
 		thread.overrideCounter(pcAddr);
-		thread.overrideContextWithDefault();
+		RegisterValue context = contextProvider == null ? null : contextProvider.apply(c);
+		if (context != null) {
+			thread.overrideContext(context);
+		}
+		else {
+			thread.overrideContextWithDefault();
+		}
 	}
 
 	/** Compares every {@code final} register and RAM byte against actual post-step state. */

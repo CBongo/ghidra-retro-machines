@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+  VENDORED THIRD-PARTY FILE - see NOTICE.
+
+    Upstream: https://github.com/joshleaves/ghidra-snes (carrying achan1989/ghidra-65816)
+    Commit:   d33ce5dbfbc3645f00449be1c7ca1c1c65e81756
+    Path:     data/languages/65816.cspec
+    License:  MIT
+
+  Vendored verbatim at the commit above; the only modification is this header.
+-->
+
+<compiler_spec>
+  <global>
+    <range space="bus"/>
+  </global>
+  <stackpointer register="SP" space="bus" growth="negative"/>
+  <returnaddress>
+    <varnode space="stack" offset="1" size="2"/>
+  </returnaddress>
+  <default_proto>
+    <prototype name="__unknowncall" extrapop="0" stackshift="0" strategy="register">
+      <input/>
+      <output/>
+    </prototype>
+  </default_proto>
+</compiler_spec>

@@ -1,0 +1,26 @@
+# Sleigh specification for the WDC 65816 (the SNES main CPU), language id
+# 65816:LE:24:retro. The decode table and the M/X/E context machinery below are vendored
+# from joshleaves/ghidra-snes, which in turn carries achan1989/ghidra-65816 near-verbatim
+# (bead grm-9nxj.1); 658xx.sinc pulls in the 658xx_memaccess*.sinc addressing-mode layer.
+# Attribution and the fork-point rationale are in each vendored file's header and in NOTICE.
+#
+# WHAT IS SOUND: the 256-opcode decode table, and the M/X width model -- ctx_MF/ctx_XF/ctx_EF
+# context fields with width chosen by a context-keyed subtable and REP/SEP stamping via
+# globalset, the same pattern ARM uses for Thumb. Instruction lengths under both widths are
+# what this extension currently relies on.
+#
+# WHAT IS NOT: immediate operands are modelled as references dereferenced out of the
+# instruction stream rather than as constants, so `LDA #$12` emits a memory load instead of
+# the value 0x12. Upstream treats that as cosmetic; here it defeats SymbolicPropogator and
+# every bank-value recovery path in this extension. Bead grm-9nxj.2 fixes it, and until it
+# lands do not trust p-code-derived analysis for this language. Semantics beyond that are
+# unverified against an oracle (bead grm-9nxj.4 does that against SingleStepTests/65816).
+#
+# The "retro" variant deliberately avoids colliding with the upstream language id
+# 65816:LE:24:snes, so both extensions can be installed side by side; see README.md.
+
+# Upstream defines this in its own top-level slaspec. Nothing in 658xx.sinc reads it today,
+# but it is kept so the include stays a verbatim match for upstream's entry point.
+@define IS_65816 ""
+
+@include "658xx.sinc"
