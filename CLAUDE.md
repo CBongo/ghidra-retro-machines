@@ -130,6 +130,10 @@ Chunk/source-area mapping:
 - `basic-petscii`: C64 BASIC headless fixture.
 - `basic-dialects`: C64 BASIC 2 regression plus PET BASIC 4 and C128 BASIC 7 token-dialect fixtures.
 - `pet-loader`: PET 4032 descriptor, PRG placement, IO typing, and fixed ROM slots.
+- `snes-loader`: SNES cartridge loader -- header detection, static LoROM layout, byte-mapped
+  mirrors, IO typing, and the reset entry point. Its two fixtures are the SAME cartridge with
+  and without a 512-byte copier header, so a copier-detection regression (which shifts every
+  offset in the image) cannot pass by matching one golden.
 - `c128-loader`: C128 native BASIC PRG placement, fixed ROM slots, and MMU I/O.
 - `nes-banking`: NES banking and MMC fixtures.
 - `petscii-strings`: `PetsciiStringAnalyzer` C64 PRG fixture.

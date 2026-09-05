@@ -22,6 +22,8 @@
 #   basic-petscii c64basictest
 #   basic-dialects PET BASIC 4/C128 BASIC 7 token dialects, plus C64 BASIC 2 regression
 #   pet-loader    PET 4032 descriptor, PRG placement, IO types, and fixed ROM slots
+#   snes-loader   SNES cartridge loader: header detection, static LoROM/HiROM layout,
+#                 byte-mapped mirrors, IO typing, and the reset entry point
 #   c128-loader   C128 native BASIC PRG placement, fixed ROM slots, and MMU IO
 #   nes-banking   all NES banking/MMC fixtures
 #   petscii-strings PetsciiStringAnalyzer C64 PRG fixture
@@ -90,6 +92,7 @@ list_chunks() {
 		basic-petscii \
 		basic-dialects \
 		pet-loader \
+		snes-loader \
 		c128-loader \
 		nes-banking \
 		petscii-strings \
@@ -139,7 +142,7 @@ fi
 # fixtures, so a typo cannot leave partial output behind.
 for chunk in "${CHUNKS[@]}"; do
 	case "$chunk" in
-		c64-banking|c64-loader|c64-recovery|basic-petscii|basic-dialects|pet-loader|c128-loader|nes-banking|petscii-strings|all) ;;
+		c64-banking|c64-loader|c64-recovery|basic-petscii|basic-dialects|pet-loader|snes-loader|c128-loader|nes-banking|petscii-strings|all) ;;
 		*)
 			echo "unknown chunk: $chunk" >&2
 			usage
@@ -371,6 +374,7 @@ if selected basic-dialects; then
 	generate mkdialectbasictest.py "$WORK/prg"
 fi
 if selected pet-loader; then generate mkpettest.py "$WORK/prg"; fi
+if selected snes-loader; then generate mksnestest.py "$WORK/snes"; fi
 if selected c128-loader; then generate mkc128test.py "$WORK/prg"; fi
 if selected nes-banking; then
 	generate mknesbanktest.py "$WORK/nes"
@@ -743,6 +747,13 @@ fi
 if selected pet-loader; then
 	run_one pet4032test "$WORK/prg/pet4032test.prg" PetPrgLoader \
 		"-loader-basicRom $(native "$WORK/prg/pet-basic.bin") -loader-editorRom $(native "$WORK/prg/pet-editor.bin") -loader-kernalRom $(native "$WORK/prg/pet-kernal.bin")"
+fi
+
+if selected snes-loader; then
+	# The pair is deliberate: identical cartridges, one behind a 512-byte copier header, so a
+	# regression in copier detection (which shifts every offset in the image) cannot hide.
+	run_one snestest "$WORK/snes/snestest.smc" SnesRomLoader
+	run_one snestestcopier "$WORK/snes/snestestcopier.smc" SnesRomLoader
 fi
 
 if selected c128-loader; then

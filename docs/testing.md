@@ -153,6 +153,7 @@ final acceptance and commits**. `build-and-test.sh --list-chunks` prints the cur
 | `basic-petscii` | C64 BASIC headless fixture |
 | `basic-dialects` | PET BASIC 4 / C128 BASIC 7 token dialects + C64 BASIC 2 regression |
 | `pet-loader` | PET 4032 descriptor, PRG placement, IO types, fixed ROM slots |
+| `snes-loader` | SNES cartridge loader: header detection (plain and copier-headered twins of the same image), static LoROM layout, byte-mapped mirrors, IO typing, reset entry point |
 | `c128-loader` | C128 native BASIC PRG placement, fixed ROM slots, MMU IO |
 | `nes-banking` | NES banking and MMC fixtures |
 | `petscii-strings` | `PetsciiStringAnalyzer` C64 PRG fixture |

@@ -46,7 +46,7 @@ usage() {
 	cat <<EOF
 usage: $0 [check|bless] [--force-criteria] [chunk ...]
 
-Chunks: c64-banking c64-loader c64-recovery basic-petscii basic-dialects pet-loader c128-loader nes-banking
+Chunks: c64-banking c64-loader c64-recovery basic-petscii basic-dialects pet-loader snes-loader c128-loader nes-banking
         petscii-strings unit spc700-vectors spc700-dis-corpus w65816-vectors all
 
 With no chunks, all is selected. Use --list-chunks to print this list.
@@ -63,6 +63,8 @@ c64-recovery  C64 emulation and decrypt/recovery fixtures
 basic-petscii C64 BASIC headless fixture
 basic-dialects PET BASIC 4/C128 BASIC 7 token dialects plus C64 BASIC 2 regression
 pet-loader    PET 4032 descriptor, PRG placement, IO types, and fixed ROM slots
+snes-loader   SNES cartridge loader: header detection, static LoROM/HiROM layout, byte-mapped
+              mirrors, IO typing, and the reset entry point
 c128-loader   C128 native BASIC PRG placement, fixed ROM slots, and MMU IO
 nes-banking   NES banking and MMC fixtures
 petscii-strings PetsciiStringAnalyzer C64 PRG fixture
@@ -112,7 +114,7 @@ fi
 
 for chunk in "${REQUESTED_CHUNKS[@]}"; do
 	case "$chunk" in
-		c64-banking|c64-loader|c64-recovery|basic-petscii|basic-dialects|pet-loader|c128-loader|nes-banking|petscii-strings|unit|spc700-vectors|spc700-dis-corpus|w65816-vectors|all) ;;
+		c64-banking|c64-loader|c64-recovery|basic-petscii|basic-dialects|pet-loader|snes-loader|c128-loader|nes-banking|petscii-strings|unit|spc700-vectors|spc700-dis-corpus|w65816-vectors|all) ;;
 		*)
 			echo "FAIL: unknown chunk '$chunk'" >&2
 			usage >&2
@@ -164,7 +166,7 @@ if has_chunk all; then
 	RUNNER_CHUNKS=(all)
 	RUN_JUNIT=1
 else
-	for chunk in c64-banking c64-loader c64-recovery basic-petscii basic-dialects pet-loader c128-loader nes-banking petscii-strings; do
+	for chunk in c64-banking c64-loader c64-recovery basic-petscii basic-dialects pet-loader snes-loader c128-loader nes-banking petscii-strings; do
 		if has_chunk "$chunk"; then
 			RUN_HEADLESS=1
 			RUNNER_CHUNKS+=("$chunk")

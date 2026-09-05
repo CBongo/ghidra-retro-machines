@@ -264,6 +264,12 @@ public class VerifyBankTest extends GhidraScript {
 			return;
 		}
 
+		if (name.contains("snestest")) {
+			checkSnes();
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
+
 		if (name.contains("c128nativebasic7test")) {
 			checkC128NativeBasic7();
 			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
@@ -1651,6 +1657,93 @@ public class VerifyBankTest extends GhidraScript {
 		criterion("pet-basic-no-function", noBasicFunction, "no function at BASIC line link $0401");
 	}
 
+	/**
+	 * SNES cartridge loader (bead grm-9nxj.9). What this fixture is actually testing is
+	 * unusual for this suite: NO overlays and NO banked windows -- the 65816's 24-bit space
+	 * holds everything at once, so the loader lays out a static map and represents the
+	 * hardware's address mirrors as byte-mapped views of one canonical block. The criteria
+	 * below check exactly that shape, plus the two things a wrong header read would break
+	 * first (where ROM landed, and where the entry point is).
+	 *
+	 * <p>The copier-headered twin runs the same checks: it is the same cartridge behind 512
+	 * extra bytes, so anything that differs between the two is a copier-detection bug.
+	 */
+	private void checkSnes() {
+		MemoryBlock romHome = currentProgram.getMemory().getBlock(addr(0x008000));
+		MemoryBlock romMirror = currentProgram.getMemory().getBlock(addr(0x808000));
+		MemoryBlock wram = currentProgram.getMemory().getBlock("WRAM");
+		MemoryBlock lowRam = currentProgram.getMemory().getBlock(addr(0x000000));
+		MemoryBlock ppuIo = currentProgram.getMemory().getBlock(addr(0x002100));
+
+		String mapPath = currentProgram.getOptions(currentProgram.PROGRAM_INFO)
+			.getString("Retro Machine Map", "");
+		boolean format = "SNES ROM (LoROM/HiROM)".equals(currentProgram.getExecutableFormat());
+		boolean language = currentProgram.getLanguageID().getIdAsString()
+			.equals("65816:LE:24:retro");
+
+		// LoROM puts the first 32 KiB chunk at $00:8000, initialized from file offset 0.
+		boolean romPlaced = romHome != null && romHome.isInitialized() &&
+			romHome.getStart().getOffset() == 0x008000 && !romHome.isOverlay() &&
+			readByte(romHome, 0) == 0x18 && readByte(romHome, 1) == 0xfb;
+
+		// The high half is the SAME bytes, as a byte-mapped view -- not a second copy, and
+		// not an overlay.
+		// NB: read through the ADDRESS, not readByte(block, ...). A byte-mapped block reports
+		// isInitialized() == false -- it owns no bytes of its own -- so the usual helper's
+		// guard returns -1 for it and would fail this criterion on a perfectly good mirror.
+		// What actually matters is that reading $80:8000 yields the ROM byte at $00:8000.
+		boolean mirrorIsMapped = romMirror != null && !romMirror.isOverlay() &&
+			romMirror.getType() == MemoryBlockType.BYTE_MAPPED &&
+			readByteAt(0x808000) == 0x18 && readByteAt(0x808001) == 0xfb;
+		boolean noOverlays = countOverlayBlocks() == 0;
+
+		boolean wramShape = wram != null && wram.getStart().getOffset() == 0x7e0000 &&
+			wram.getEnd().getOffset() == 0x7fffff && !wram.isInitialized();
+		boolean lowRamMirror = lowRam != null && lowRam.getType() == MemoryBlockType.BYTE_MAPPED;
+		boolean ioVolatile = ppuIo != null && ppuIo.isVolatile();
+		boolean ioNamed = hasSymbol(0x002100, "INIDISP") && hasSymbol(0x004200, "NMITIMEN");
+		boolean entry = currentProgram.getSymbolTable().isExternalEntryPoint(addr(0x008000));
+
+		println("=== BANKDUMP BEGIN ===");
+		println("FORMAT snes=" + format + " language=" + language + " map=" + mapPath);
+		println("ROM_HOME " + describeBlock(romHome) + " fileOffset=" + fileOffset(romHome) +
+			" bytes=" + hx(readByte(romHome, 0)) + " " + hx(readByte(romHome, 1)));
+		println("ROM_MIRROR " + describeBlock(romMirror) +
+			" type=" + (romMirror == null ? "<none>" : romMirror.getType()) +
+			" bytesThroughMirror=" + hx(readByteAt(0x808000)) + " " +
+			hx(readByteAt(0x808001)) + " ok=" + mirrorIsMapped);
+		println("OVERLAYS " + countOverlayBlocks() + " (a static map needs none)");
+		println("WRAM " + describeBlock(wram));
+		println("LOWRAM_MIRROR " + describeBlock(lowRam) + " byteMapped=" + lowRamMirror);
+		println("IO ppu=" + describeBlock(ppuIo) + " volatile=" + ioVolatile +
+			" named=" + ioNamed);
+		println("ENTRY reset=" + entry);
+		println("=== BANKDUMP END ===");
+
+		criterion("snes-format-language", format && language,
+			currentProgram.getExecutableFormat() + " / " +
+				currentProgram.getLanguageID().getIdAsString());
+		criterion("snes-rom-placement", romPlaced, describeBlock(romHome));
+		criterion("snes-mirror-byte-mapped", mirrorIsMapped, describeBlock(romMirror));
+		criterion("snes-no-overlays", noOverlays,
+			"a 24-bit static map needs no overlay blocks; found " + countOverlayBlocks());
+		criterion("snes-wram", wramShape, describeBlock(wram));
+		criterion("snes-lowram-mirror", lowRamMirror, describeBlock(lowRam));
+		criterion("snes-io-volatile", ioVolatile, "PPU/APU IO volatile");
+		criterion("snes-io-named", ioNamed, "INIDISP@2100 and NMITIMEN@4200 from the descriptor");
+		criterion("snes-entry-point", entry, "reset vector target $008000 is an entry point");
+	}
+
+	private int countOverlayBlocks() {
+		int overlays = 0;
+		for (MemoryBlock b : currentProgram.getMemory().getBlocks()) {
+			if (b.isOverlay()) {
+				overlays++;
+			}
+		}
+		return overlays;
+	}
+
 	private boolean dataTypeAt(long offset, String expected) {
 		Data data = currentProgram.getListing().getDefinedDataAt(addr(offset));
 		return data != null && expected.equals(data.getDataType().getName());
@@ -1921,6 +2014,20 @@ public class VerifyBankTest extends GhidraScript {
 
 	private boolean hasAnySymbol(long offset) {
 		return currentProgram.getSymbolTable().getSymbols(addr(offset)).length > 0;
+	}
+
+	/**
+	 * Reads through an ADDRESS rather than a block. Necessary for byte-mapped blocks, which
+	 * report {@code isInitialized() == false} (their bytes belong to the block they map onto)
+	 * and so read as -1 through {@link #readByte}.
+	 */
+	private int readByteAt(long address) {
+		try {
+			return currentProgram.getMemory().getByte(addr(address)) & 0xFF;
+		}
+		catch (Exception e) {
+			return -1;
+		}
 	}
 
 	private int readByte(MemoryBlock block, long offsetInBlock) {
