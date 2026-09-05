@@ -1,0 +1,134 @@
+/* ###
+ * IP: GHIDRA
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package retromachines.vectors;
+
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assume.assumeNoException;
+import static org.junit.Assume.assumeTrue;
+
+import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.List;
+
+import org.junit.Test;
+
+import ghidra.program.model.lang.Language;
+
+import retromachines.AbstractBundledLanguageTest;
+
+/**
+ * Runs the vendored W65816 vector sample ({@code src/test/resources/w65816-vectors/}, see
+ * {@code NOTICE} and that directory's {@code MANIFEST.txt} for provenance) through
+ * {@link VectorRunner} and checks the per-(opcode,mode) result against the committed
+ * {@code w65816-vector-baseline.txt}, per the {@link OpcodeBaseline} bless idiom -- the
+ * W65816 analogue of {@code Spc700VectorSampleTest} (bead grm-9nxj.3). Rides in the {@code unit}
+ * chunk: 1024 emulated single instructions, no extension build/install needed.
+ *
+ * <p><b>PARTIAL OPCODE COVERAGE -- READ BEFORE TRUSTING THIS TEST AS "THE 65816 LANGUAGE IS
+ * VERIFIED".</b> Unlike {@code Spc700VectorSampleTest} (which samples all 256 SPC700 opcodes),
+ * this test's vendored sample covers only 16 of the 65816's 256 opcodes (32 files: 16 opcodes x
+ * native/emulation mode) -- see {@code src/test/resources/w65816-vectors/MANIFEST.txt} for
+ * exactly which, and why. Nobody has a full local clone of
+ * {@code https://github.com/SingleStepTests/65816} (512 files, ~2.87 GB) to sample from
+ * routinely; the full 256-opcode picture is only ever produced by
+ * {@link W65816VectorExhaustiveTest} against {@code GRM_W65816_VECTORS}. An opcode absent from
+ * this test's baseline is UNTESTED here, not passing.
+ *
+ * <p><b>Regenerating the baseline:</b> run with {@code -Dgrm.w65816.regenerateBaseline=true}
+ * (e.g. {@code gradle test -Dgrm.w65816.regenerateBaseline=true --tests
+ * '*W65816VectorSampleTest'}). This overwrites
+ * {@code src/test/resources/w65816-vector-baseline.txt} with the current run's results instead
+ * of comparing against it -- review the diff, then commit deliberately, exactly like
+ * {@code build-and-test.sh bless}.
+ */
+public class W65816VectorSampleTest extends AbstractBundledLanguageTest {
+
+	private static final String REGENERATE_PROPERTY = "grm.w65816.regenerateBaseline";
+
+	@Test
+	public void sampleMatchesCommittedBaseline() throws Exception {
+		Language language;
+		try {
+			language = W65816VectorHarnessSupport.resolveLanguage();
+		}
+		catch (Exception e) {
+			assumeNoException("65816 language (" + W65816VectorHarnessSupport.LANGUAGE_ID +
+				") is not available in this worktree", e);
+			return;
+		}
+
+		File moduleRoot = new File(System.getProperty(MODULE_DIR_PROPERTY));
+		File vectorsDir = new File(moduleRoot, "src/test/resources/w65816-vectors");
+		List<File> opcodeFiles = W65816VectorHarnessSupport.opcodeFilesIn(vectorsDir);
+		assertTrue("no vendored vector files found under " + vectorsDir +
+			" -- run tools/w65816/sample-vectors.py", !opcodeFiles.isEmpty());
+
+		VectorRunner runner = W65816VectorHarnessSupport.newRunner(language);
+		List<OpcodeBaseline> actual = new ArrayList<>();
+		for (File f : opcodeFiles) {
+			actual.add(W65816VectorHarnessSupport.runOpcodeFile(runner, f));
+		}
+		W65816VectorHarnessSupport.assertDecodeBoundaryCapNotExceeded(actual);
+
+		File baselineFile = new File(moduleRoot, "src/test/resources/w65816-vector-baseline.txt");
+		if (Boolean.getBoolean(REGENERATE_PROPERTY)) {
+			writeBaseline(baselineFile, actual);
+			System.out.println("regenerated " + baselineFile + " (" + actual.size() +
+				" rows) -- review the diff and commit deliberately");
+			return;
+		}
+
+		if (!baselineFile.isFile()) {
+			assumeTrue("no committed baseline at " + baselineFile + " yet; regenerate with -D" +
+				REGENERATE_PROPERTY + "=true", false);
+			return;
+		}
+		List<String> lines = Files.readAllLines(baselineFile.toPath(), StandardCharsets.UTF_8);
+		List<OpcodeBaseline> baseline = OpcodeBaseline.parse(lines);
+
+		List<String> problems = OpcodeBaseline.compare(baseline, actual);
+		assertTrue("baseline mismatch:\n" + String.join("\n", problems), problems.isEmpty());
+	}
+
+	private static void writeBaseline(File file, List<OpcodeBaseline> rows) throws IOException {
+		List<String> lines = new ArrayList<>();
+		lines.add("# w65816-vector-baseline.txt -- generated by W65816VectorSampleTest with");
+		lines.add("# -D" + REGENERATE_PROPERTY + "=true. Review the diff, do not hand-edit");
+		lines.add("# casually. See retromachines.vectors.OpcodeBaseline for the file format and");
+		lines.add("# retromachines.vectors.W65816VectorHarnessSupport for the harness that");
+		lines.add("# produced it (vendored PARTIAL sample: src/test/resources/w65816-vectors/,");
+		lines.add("# 16 of 256 opcodes, 32 cases/opcode/mode; see that directory's MANIFEST.txt).");
+		lines.add("#");
+		lines.add("# Row key is <OPCODE-HEX>.<N|E> (native/emulation), NOT one row per opcode --");
+		lines.add("# the corpus partitions native and emulation mode into separate case");
+		lines.add("# populations (grm-wrmf), so e.g. A9.N and A9.E are independent rows.");
+		lines.add("#");
+		lines.add("# Mnemonic column: disassembly of the FIRST case's own instruction bytes,");
+		lines.add("# decoded under that case's own M/X/E context. Operand VALUES are whatever");
+		lines.add("# that first case happened to hold -- expected, not a semantic change.");
+		lines.add("#");
+		lines.add("# EXPECT FAILURES: this language's p-code semantics have never been checked");
+		lines.add("# against an oracle before grm-9nxj.3 (that is grm-9nxj.4's job) -- a FAIL row");
+		lines.add("# here records reality, it is not a test bug. See W65816VectorHarnessSupport's");
+		lines.add("# class doc for the bits of 'p' this harness cannot verify at all (M, and the");
+		lines.add("# native-mode X / emulation-mode B bit).");
+		lines.addAll(OpcodeBaseline.formatAll(rows));
+		Files.write(file.toPath(), lines, StandardCharsets.UTF_8);
+	}
+}

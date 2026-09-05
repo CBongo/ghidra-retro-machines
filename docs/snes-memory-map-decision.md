@@ -170,14 +170,48 @@ Dropping windows does not mean dropping the descriptor. A SNES machine descripto
 So `grm-9nxj`'s loader scope narrows to: parse and validate the header, choose the mapping, lay out
 static blocks, decide the mirror policy (§3), and type the IO.
 
-## 6. What I need from you
+## 6. Ruling (owner, 2026-09-04) — and the measurement that reshapes it
 
-1. **The mirror policy** — §3's (a), (b) or (c). This is the one real decision; everything else
-   follows from the evidence. My recommendation is **(a) byte-mapped mirrors**, on the grounds that
-   it is what the hardware does, it is what the one existing SNES loader does, the duplicate-
-   analysis cost is visible and boring rather than subtle, and the one thing that could have
-   disqualified it — whether code can live in such a block — is now measured and true (§3).
-2. **Whether the overlay ruling should be written into `docs/SCHEMA.md`** as a stated
-   non-application, or left as this document plus the bead. The schema currently reads as though
-   every machine uses windows.
-3. Nothing else is blocked on you: §2 and §4 are settled, and §5 is ordinary descriptor work.
+**Ruled: (c), a per-ROM canonical half with the other half mirrored.** Also ruled: write the
+overlay non-application into `docs/SCHEMA.md` (done — see its "When windows do not apply" note).
+
+Measured *after* the ruling, because (c) needs a rule for *choosing* the canonical half and the
+obvious candidate was the header's FastROM bit: **the header does not predict it.** Counting
+`JSL`/`JML` targets per title and pairing each with its map-mode byte:
+
+| title | map mode | FastROM bit | `JSL`/`JML` into `$80+` |
+|---|---|---|---|
+| `sd3` | `31` | yes | **89.3%** |
+| `som` | `21` | **no** | 59.5% |
+| `ct` | `31` | yes | 48.0% |
+| `ff3` | `31` | yes | 46.0% |
+| `ff5` | `21` | no | 46.7% |
+| `lufia` | `20` | no | 36.6% |
+| `lem` | `20` | no | 11.1% |
+| `mario` | `20` | no | 0.7% |
+| `gradius3` | `20` | no | 0.3% |
+
+Two things fall out, and both matter for how (c) gets built:
+
+1. **The FastROM bit is not the discriminator.** `som` declares no FastROM and calls high 59.5% of
+   the time; `ct` and `ff3` declare FastROM and sit at ~47%. Nothing in the header separates these.
+2. **For half the corpus there is no canonical half to pick.** Four titles are within a few points
+   of 50/50. Only `gradius3`, `mario`, `lem` (low) and `sd3` (high) are decisively one-sided, so on
+   the rest, whichever half is chosen, roughly half the call targets land in the mirror anyway.
+
+**So (c) should be built as hybrid-by-OPTION, not hybrid-by-heuristic.** Concretely: physical bytes
+live once; both halves are materialized, the non-canonical one as byte-mapped mirrors (§3, verified
+disassemblable); and *which* half is canonical is a loader option, defaulting to the half holding
+the reset vector's target. That honours the ruling — the canonical half is chosen per ROM — without
+inventing a discriminator the evidence says does not exist, and it degrades to (a) when the option
+is left alone. A later analyzer pass could propose a better default from measured call targets,
+which is the only thing that actually predicts this; that would be its own bead, not loader work.
+
+## 7. Settled, for the loader's scope
+
+- No `windows[]`/`occupants[]`/`banking.states[]` for plain LoROM/HiROM/ExHiROM.
+- Static block layout from the header; copier-header detection via `size % 0x400 == 0x200`.
+- Both halves materialized, non-canonical half byte-mapped; canonical half a loader option.
+- Descriptor keeps regions, IO typing, symbols, vectors, types and formats (§5).
+- Enhancement carts (SA-1 and friends) reuse the existing mechanism machinery unchanged, later
+  (§4); SuperFX is a separate-`Program` problem, not banking.

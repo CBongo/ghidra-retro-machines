@@ -614,6 +614,14 @@ test {
 			System.getProperty('grm.spc700.regenerateBaseline')
 	}
 
+	// W65816VectorSampleTest's own regeneration switch (bead grm-9nxj.3) -- same forwarding
+	// requirement as the spc700 one immediately above, for the identical reason (a forked worker
+	// JVM does not inherit -D properties from the launching `gradle` invocation).
+	if (System.getProperty('grm.w65816.regenerateBaseline') != null) {
+		systemProperty 'grm.w65816.regenerateBaseline',
+			System.getProperty('grm.w65816.regenerateBaseline')
+	}
+
 	// Spc700VectorExhaustiveTest (bead grm-c9d.2) is its OWN chunk (`spc700-vectors`), not part
 	// of `unit`/`all`: it needs a large, user-supplied vector clone (GRM_SPC700_VECTORS) this
 	// repo cannot ship, mirroring why the real-ROM tier is excluded from the default gate. If it
@@ -621,6 +629,11 @@ test {
 	// every time GRM_SPC700_VECTORS is unset, which is nearly always. spc700VectorTest below
 	// runs it, and only it.
 	exclude '**/vectors/Spc700VectorExhaustiveTest.class'
+
+	// W65816VectorExhaustiveTest (bead grm-9nxj.3) is excluded from `test`/`unit`/`all` for the
+	// identical reason as its SPC700 sibling immediately above -- needs GRM_W65816_VECTORS,
+	// refuses loudly when unset. w65816VectorTest below runs it, and only it.
+	exclude '**/vectors/W65816VectorExhaustiveTest.class'
 
 	// Spc700DisCorpusTest (bead grm-uy9s) is excluded for the same "user-supplied data this repo
 	// cannot ship" reason: it reads the project owner's game-music-extraction .dis listings via
@@ -704,6 +717,35 @@ task spc700VectorTest(type: Test) {
 	if (System.getProperty('grm.spc700.regenerateExhaustiveBaseline') != null) {
 		systemProperty 'grm.spc700.regenerateExhaustiveBaseline',
 			System.getProperty('grm.spc700.regenerateExhaustiveBaseline')
+	}
+}
+
+// The exhaustive W65816 vector regression (bead grm-9nxj.3), the sibling of spc700VectorTest
+// immediately above -- see that task's comments for the reasoning behind every line here, which
+// this task mirrors exactly except for the heap size (see below).
+task w65816VectorTest(type: Test) {
+	group = "Ghidra Retro Machines"
+	description = "Exhaustive W65816 vector regression (grm-9nxj.3); requires " +
+		"GRM_W65816_VECTORS (refuses loudly otherwise). Not part of `test`/`unit`/`all` -- see " +
+		"build-and-test.sh's `w65816-vectors` chunk."
+	// UNMEASURED (bead grm-9nxj.3): no full SingleStepTests/65816 clone was available while
+	// writing this task, so -- unlike spc700VectorTest's 512m, measured directly against a real
+	// 256,000-case run -- this heap size is a placeholder carried over from spc700VectorTest
+	// scaled up for a suite 20x the case count with larger (24-bit) per-case RAM payloads. It
+	// WILL need remeasuring against a real run before being trusted; see docs/testing.md's note
+	// on this tier for whatever has actually been measured (or its absence).
+	maxHeapSize = '2g'
+	environment 'GHIDRA_INSTALL_DIR', ghidraInstallDir
+	dependsOn 'sleighCompile'
+	systemProperty 'grm.moduleDir', projectDir.absolutePath
+	inputs.files(fileTree(dir: 'data/languages')).withPropertyName('bundledLanguages')
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	include '**/vectors/W65816VectorExhaustiveTest.class'
+
+	if (System.getProperty('grm.w65816.regenerateExhaustiveBaseline') != null) {
+		systemProperty 'grm.w65816.regenerateExhaustiveBaseline',
+			System.getProperty('grm.w65816.regenerateExhaustiveBaseline')
 	}
 }
 

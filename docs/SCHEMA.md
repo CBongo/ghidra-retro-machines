@@ -115,6 +115,26 @@ descriptors, so new boards need no Java).
 | `types[]` | `DataTypeManager` structs/enums; applied at declared addresses; `repeat_to` applies at each mirror |
 | `formats` | `Loader` opinion + header parsing + placement rule |
 
+### When windows do not apply
+
+Windows and occupants exist for one reason: a 16-bit address space cannot hold every bank at
+once, so the second occupant of a range has to become an overlay. **A machine whose address
+space is wide enough to hold everything at once does not need them**, and should not be given
+them out of symmetry with the C64/NES descriptors.
+
+The SNES is the worked example (bead `grm-9nxj.6`, `docs/snes-memory-map-decision.md`): the 65816
+addresses 16 MB, the largest cartridge is 8 MB, and LoROM/HiROM is a static map read from the
+cartridge header — so it declares `memory.regions[]`, IO typing, symbols, vectors and formats, and
+no `windows[]`, `occupants[]` or `banking.states[]` at all. What it needs instead is *mirroring*
+(one physical byte at several addresses, the inverse of what overlays solve), which is Ghidra's
+`createByteMappedBlock`, not an overlay.
+
+The banking sections still apply to that machine's MMC-style enhancement cartridges (the SNES's
+SA-1 maps four 1 MB ROM blocks through registers at `$2220-$2223`, an ordinary
+`banking.mechanisms[]` plus a computed window). The distinction is runtime switching, not address
+width: **enumerate or compute windows when the contents of a range change at runtime; use plain
+regions when the map is fixed at load time, however many banks it has.**
+
 ### Fixed ROM regions and ROM slots
 
 An always-visible, bankless ROM is an ordinary `memory.regions[]` entry. Its

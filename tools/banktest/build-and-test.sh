@@ -47,7 +47,7 @@ usage() {
 usage: $0 [check|bless] [--force-criteria] [chunk ...]
 
 Chunks: c64-banking c64-loader c64-recovery basic-petscii basic-dialects pet-loader c128-loader nes-banking
-        petscii-strings unit spc700-vectors spc700-dis-corpus all
+        petscii-strings unit spc700-vectors spc700-dis-corpus w65816-vectors all
 
 With no chunks, all is selected. Use --list-chunks to print this list.
 
@@ -69,7 +69,8 @@ petscii-strings PetsciiStringAnalyzer C64 PRG fixture
 unit          JUnit `gradle test` suite (all src/test/java; no extension build/install)
 spc700-vectors Exhaustive SPC700 vector regression (needs GRM_SPC700_VECTORS; opt-in, not in `all`)
 spc700-dis-corpus SPC700 disassembly vs. the hand .dis listings (needs GRM_SPC700_DIS_CORPUS; opt-in, reports)
-all           Every chunk (the default; does NOT include spc700-vectors/spc700-dis-corpus -- see their rows)
+w65816-vectors Exhaustive W65816 vector regression (needs GRM_W65816_VECTORS; opt-in, not in `all`)
+all           Every chunk (the default; does NOT include spc700-vectors/spc700-dis-corpus/w65816-vectors -- see their rows)
 EOF
 }
 
@@ -111,7 +112,7 @@ fi
 
 for chunk in "${REQUESTED_CHUNKS[@]}"; do
 	case "$chunk" in
-		c64-banking|c64-loader|c64-recovery|basic-petscii|basic-dialects|pet-loader|c128-loader|nes-banking|petscii-strings|unit|spc700-vectors|spc700-dis-corpus|all) ;;
+		c64-banking|c64-loader|c64-recovery|basic-petscii|basic-dialects|pet-loader|c128-loader|nes-banking|petscii-strings|unit|spc700-vectors|spc700-dis-corpus|w65816-vectors|all) ;;
 		*)
 			echo "FAIL: unknown chunk '$chunk'" >&2
 			usage >&2
@@ -149,11 +150,15 @@ has_chunk() {
 # byte sequence the listings call code disassembles at all. Those listings are not an oracle --
 # their 2001-era disassembler is not presumed more accurate than Ghidra's -- so a difference is
 # a question, not a failure, and this chunk must never grow golden-file assertions over them.
+# w65816-vectors (bead grm-9nxj.3) is out of `all` for the identical user-supplied-clone reason
+# as spc700-vectors (GRM_W65816_VECTORS names a full clone of SingleStepTests/65816, ~2.87 GB,
+# this repo cannot ship) and is a hard gate exactly like spc700-vectors, not a reporting tier.
 RUN_HEADLESS=0
 RUNNER_CHUNKS=()
 RUN_JUNIT=0
 RUN_SPC700_VECTORS=0
 RUN_SPC700_DIS_CORPUS=0
+RUN_W65816_VECTORS=0
 if has_chunk all; then
 	RUN_HEADLESS=1
 	RUNNER_CHUNKS=(all)
@@ -175,10 +180,14 @@ fi
 if has_chunk spc700-dis-corpus; then
 	RUN_SPC700_DIS_CORPUS=1
 fi
+if has_chunk w65816-vectors; then
+	RUN_W65816_VECTORS=1
+fi
 GRADLE_CHECKS=()
 [ "$RUN_JUNIT" -eq 1 ] && GRADLE_CHECKS+=(test)
 [ "$RUN_SPC700_VECTORS" -eq 1 ] && GRADLE_CHECKS+=(spc700VectorTest)
 [ "$RUN_SPC700_DIS_CORPUS" -eq 1 ] && GRADLE_CHECKS+=(spc700DisCorpusTest)
+[ "$RUN_W65816_VECTORS" -eq 1 ] && GRADLE_CHECKS+=(w65816VectorTest)
 
 if [ "$MODE" = "bless" ] && [ "$RUN_HEADLESS" -ne 1 ]; then
 	echo "FAIL: bless requires at least one headless chunk with golden output" >&2

@@ -53,7 +53,10 @@ import retromachines.vectors.VectorCase.RamByte;
  * grm-o9k (65x02 ADC/RRA flag verification) reuses this exact class against a different register
  * map and language id. A caller may also opt into a per-case decoding CONTEXT via
  * {@link #withContextProvider}, for a language (e.g. the 65816) whose decode itself depends on
- * more than the register/RAM state seeded above -- see that method's doc.
+ * more than the register/RAM state seeded above -- see that method's doc. A caller whose counter
+ * is not fully captured by one vector field (again the 65816: the real fetch address is
+ * {@code pbr<<16 | pc}, two separate fields) may also opt into {@link #withCounterAddressProvider}
+ * -- see that method's doc.
  *
  * <p><b>One shared emulator, reset per case -- but periodically REBUILT (grm-c9d.3 increment
  * 10).</b> Constructing a fresh {@code PcodeEmulator} per vector is what makes an exhaustive
@@ -126,6 +129,11 @@ public final class VectorRunner {
 	// chain (see its own doc). Absent (the default) reproduces today's exact
 	// overrideContextWithDefault() behaviour for every existing caller.
 	private Function<VectorCase, RegisterValue> contextProvider;
+
+	// Not final: withCounterAddressProvider() below is the sibling of withContextProvider() above
+	// (bead grm-9nxj.3), same builder-style shape and same "absent reproduces today's exact
+	// behaviour" contract. See that method's doc for why a caller ever needs this.
+	private Function<VectorCase, Address> counterAddressProvider;
 
 	private PcodeEmulator emulator;
 	private PcodeArithmetic<byte[]> arithmetic;
@@ -231,6 +239,41 @@ public final class VectorRunner {
 	}
 
 	/**
+	 * Supplies a per-case STARTING COUNTER ADDRESS (bead grm-9nxj.3), for a language whose
+	 * executing address is not fully captured by {@code pcField} alone -- e.g. the 65816, where
+	 * the real fetch address is {@code pbr<<16 | pc} but the vector suite's {@code pc} field
+	 * carries only the 16-bit offset within the bank, and {@code pbr} is a separate field the
+	 * corpus randomizes independently. Without this, {@link #seed} falls back to its long-
+	 * standing behaviour: {@code defaultSpace.getAddress(pcField value)}, i.e. treating
+	 * {@code pcField} as if it were the WHOLE address -- correct for SPC700 and 6502, whose
+	 * program counter fits in one field, but silently wrong for a banked counter: every case
+	 * would decode from bank 0 regardless of what {@code pbr} says, which is wrong whenever
+	 * {@code pbr != 0} (i.e. almost always, since the corpus randomizes it across the full
+	 * range) and would corrupt the executed bytes for essentially every case rather than merely
+	 * misreport a register.
+	 *
+	 * <p>Same shape and the same "absent reproduces today's behaviour" contract as
+	 * {@link #withContextProvider}, and for the identical reason: existing callers
+	 * ({@code Spc700VectorSampleTest}, {@code Spc700VectorExhaustiveTest}, {@code
+	 * VectorHarness6502Test}, {@code Spc700VectorHarnessSupport}) are untouched.
+	 *
+	 * @param counterAddressProvider given a case, returns the starting {@link Address} to install
+	 *        as that case's program counter, or {@code null} to fall back to the {@code pcField}-
+	 *        only computation for that one case. Pass {@code null} itself to clear a previously
+	 *        set provider and restore today's default behaviour entirely.
+	 * @return this, for chaining onto the constructor call
+	 */
+	public VectorRunner withCounterAddressProvider(Function<VectorCase, Address> counterAddressProvider) {
+		this.counterAddressProvider = counterAddressProvider;
+		return this;
+	}
+
+	/** The language this runner decodes with -- callers that build per-case context need it. */
+	Language language() {
+		return language;
+	}
+
+	/**
 	 * Runs one case: resets emulator state, seeds registers and RAM from {@code initial}, steps
 	 * exactly one instruction, then compares every {@code final} register and RAM byte.
 	 */
@@ -282,13 +325,34 @@ public final class VectorRunner {
 		if (decodeBoundaryWindowBytes <= 0) {
 			return false;
 		}
-		Integer pcValue = c.initialRegs().get(pcField);
-		if (pcValue == null) {
+		Address addr = resolveCounterAddress(c);
+		if (addr == null) {
 			return false;
 		}
-		long pc = Integer.toUnsignedLong(pcValue);
+		long pc = addr.getOffset();
 		long maxAddr = defaultSpace.getMaxAddress().getOffset();
 		return pc > maxAddr - decodeBoundaryWindowBytes;
+	}
+
+	/**
+	 * The starting counter {@link Address} for {@code c}: {@link #counterAddressProvider} if one
+	 * is set, else {@code pcField}'s value interpreted directly as an offset into
+	 * {@link #defaultSpace} (today's long-standing behaviour -- see
+	 * {@link #withCounterAddressProvider}'s doc for why that is not always the whole address).
+	 * Shared by {@link #seed} and {@link #isDecodeBoundaryCase} so the two never disagree about
+	 * where a case actually starts. Returns {@code null} only when there is no provider AND
+	 * {@code c} has no {@code pcField} entry -- callers decide how to react (an error in
+	 * {@link #seed}, "not a boundary case" in {@link #isDecodeBoundaryCase}).
+	 */
+	private Address resolveCounterAddress(VectorCase c) {
+		if (counterAddressProvider != null) {
+			return counterAddressProvider.apply(c);
+		}
+		Integer pcValue = c.initialRegs().get(pcField);
+		if (pcValue == null) {
+			return null;
+		}
+		return defaultSpace.getAddress(Integer.toUnsignedLong(pcValue));
 	}
 
 	/**
@@ -358,12 +422,11 @@ public final class VectorRunner {
 			state.setByte(defaultSpace.getAddress(Integer.toUnsignedLong(rb.address())),
 				(byte) rb.value());
 		}
-		Integer pcValue = c.initialRegs().get(pcField);
-		if (pcValue == null) {
+		Address pcAddr = resolveCounterAddress(c);
+		if (pcAddr == null) {
 			throw new IllegalArgumentException(
 				"case '" + c.name() + "' initial state has no '" + pcField + "' field");
 		}
-		Address pcAddr = defaultSpace.getAddress(Integer.toUnsignedLong(pcValue));
 		thread.overrideCounter(pcAddr);
 		RegisterValue context = contextProvider == null ? null : contextProvider.apply(c);
 		if (context != null) {

@@ -159,7 +159,8 @@ final acceptance and commits**. `build-and-test.sh --list-chunks` prints the cur
 | `unit` | the JUnit `gradle test` suite (all `src/test/java`; no extension build/install needed alone) |
 | `spc700-vectors` | exhaustive SPC700 p-code vector regression, 1000 cases/opcode (256,000 total) vs. the `unit` chunk's 32/opcode sample (`gradle spc700VectorTest`); needs `GRM_SPC700_VECTORS`, refuses loudly otherwise; opt-in, **not** included by `all` (see below), but routine (not just ceremonial) whenever the env var is configured — same standing as the real-ROM tier — and worth an explicit run after any SPC700 `.sinc` change, since the sample chunk can and does miss narrow edge cases (page-boundary wraps and the like) that the full suite catches |
 | `spc700-dis-corpus` | SPC700 *disassembly text* differential against nine hand-annotated `.dis` listings of real drivers (`gradle spc700DisCorpusTest`); needs `GRM_SPC700_DIS_CORPUS`, Assume-skips otherwise; opt-in, **not** included by `all`. A reporting tier, not a gate — the listings are leads, not an oracle. See its own section below |
-| `all` | every chunk (the default when no chunk is given) — **except** `spc700-vectors` and `spc700-dis-corpus`, which must be named explicitly |
+| `w65816-vectors` | exhaustive W65816 p-code vector regression, 10,000 cases/opcode/mode (5,120,000 total, both native and emulation mode) vs. the `unit` chunk's PARTIAL 16-opcode/32-case sample (`gradle w65816VectorTest`); needs `GRM_W65816_VECTORS`, refuses loudly otherwise; opt-in, **not** included by `all`. See its own section below — in particular, the known-unverified `p` bits and the sample's partial opcode coverage |
+| `all` | every chunk (the default when no chunk is given) — **except** `spc700-vectors`, `spc700-dis-corpus`, and `w65816-vectors`, which must be named explicitly |
 
 **The shipped `ghidra_scripts/` front-ends are regression-tested inside these chunks, and nowhere
 else.** The GUI plugins are untestable here (see below), so a headless fixture that drives the
@@ -325,6 +326,79 @@ Both SPC700 test classes Assume-skip (green, not red) rather than fail while the
 language itself is unavailable in a given worktree — see their class docs. `VectorHarness6502Test`
 (also `unit`) proves the harness mechanics — including that it actually detects a corrupted
 expectation — against Ghidra's stock `6502:LE:16:default`, with no dependency on SPC700 at all.
+
+### W65816 vector harness (`grm-9nxj.3`)
+
+`W65816VectorHarnessSupport`/`W65816VectorSampleTest`/`W65816VectorExhaustiveTest` are the
+65816 analogue of the SPC700 classes just above, against
+`https://github.com/SingleStepTests/65816` (256 opcodes x native/emulation mode, 10,000
+cases/opcode/mode, 5,120,000 cases total). Reusing the same generic `VectorRunner` for a
+context-sensitive, bank-addressed CPU needed two additions to `VectorRunner` itself (bead
+grm-wrmf's `withContextProvider`, and grm-9nxj.3's sibling `withCounterAddressProvider`) plus
+per-case adaptation in `W65816VectorHarnessSupport` — see that class's Javadoc for the full
+reasoning; the essentials:
+
+- **Context is per-case, not static.** `658xx.sinc` decodes on `ctx_MF`/`ctx_XF`/`ctx_EF`, not
+  program registers, and the corpus carries the case's mode in `p`'s bits 5/4 plus a separate
+  `e` scalar. `W65816VectorHarnessSupport` derives the decode context from those per case. In
+  emulation mode (`e=1`) it FORCES `ctx_MF=ctx_XF=1` rather than trusting `p`'s bits 5/4 — real
+  hardware cannot be in emulation mode with a 16-bit accumulator or index registers, so this
+  only guards against ever asking the decoder for a combination no genuine 65816 state produces.
+- **The program counter is banked.** Confirmed directly against the real corpus: a case's `ram`
+  entries are keyed at the full 24-bit address `(pbr<<16)|pc`, not at `pc` alone. Feeding
+  `pc` alone to the decoder (as `VectorRunner` always did before this bead) would fetch from
+  bank 0 every time regardless of `pbr` — wrong for nearly every case, since the corpus
+  randomizes `pbr`. `withCounterAddressProvider` fixes this.
+- **`p` cannot be compared wholesale.** The language models N/V/D/I/Z/C as separate registers
+  (`NF VF DF IF ZF CF`) with no packed status register at all — unlike SPC700's single `PSW`
+  byte. `W65816VectorHarnessSupport` splits each case's `p` into synthetic
+  `p_n/p_v/p_d/p_i/p_z/p_c` fields that map onto those real registers before handing the case to
+  `VectorRunner`. **Bits 5 (M) and 4 (X in native mode / B in emulation mode) are NEVER
+  compared** — M has no program register in this language at all (only a context field, which
+  the interpreted `PcodeEmulator` has no post-step read-back for), and bit 4's meaning is
+  mode-dependent in a way a single static field mapping cannot switch per case. This is a
+  permanent, documented gap (see the class's Javadoc), not an oversight — an unverified bit that
+  looks verified would be worse than stating the gap.
+- **Register mapping**, verified against `658xx.sinc`'s `define register` lines rather than
+  assumed: `pc->PC`, `s->SP`, `a->C` (the corpus's accumulator field is the full 16-bit
+  register — `A`/`B` are only its 8-bit halves), `x->X`, `y->Y`, `dbr->DBR`, `d->DP`, `pbr->PBR`.
+  All eight names exist in the language.
+- **`OpcodeBaseline` rows are keyed `<OPCODE-HEX>.<N|E>`**, one row per (opcode, mode) rather
+  than one row per opcode — the corpus partitions native and emulation mode into separate case
+  populations (grm-wrmf's point 2), so e.g. `A9.N` and `A9.E` are independent rows with
+  independent pass ratios.
+- `WAI` (`0xCB`) and `STP` (`0xDB`) are `NOT_APPLICABLE_OPCODES`, mirroring SPC700's
+  `SLEEP`/`STOP` — both legitimately halt the processor with no correct post-single-step state.
+
+**PARTIAL OPCODE COVERAGE, unlike the SPC700 sample.** `Spc700VectorSampleTest` samples all 256
+SPC700 opcodes; `W65816VectorSampleTest`'s vendored sample
+(`src/test/resources/w65816-vectors/`, `MANIFEST.txt` has the exact list) covers only **16 of
+the 65816's 256 opcodes** (32 files: 16 opcodes x native/emulation), because nobody had a full
+local clone of `SingleStepTests/65816` (512 files, ~2.87 GB) to sample from routinely when this
+tier was built — the 32 files were fetched individually from
+`raw.githubusercontent.com` and sampled by hand instead. The subset (`A9` LDA#, `A2` LDX#, `C0`
+CPY#, `E0` CPX#, `69` ADC#, `E9` SBC#, `C2` REP, `E2` SEP, `FB` XCE, `AF` LDA long, `54` MVN,
+`44` MVP, `08` PHP, `28` PLP, `40` RTI, `22` JSL) was chosen to exercise the M/X width machinery
+and 65816-only forms, not to be representative of the full ISA. **An opcode absent from
+`w65816-vector-baseline.txt` is untested by the `unit` chunk, not passing** — only
+`W65816VectorExhaustiveTest` against a full `GRM_W65816_VECTORS` clone covers all 256.
+
+**EXPECT FAILURES in both baselines.** Exactly like SPC700 before `grm-c9d.3`, this language's
+p-code semantics have never been checked against an oracle before this bead — fixing them is
+`grm-9nxj.4`'s job, not this one's. A baseline `FAIL` row records reality; only a *regression*
+(a row moving `PASS` → `FAIL`) is a hard failure, per `OpcodeBaseline`'s rules.
+
+**Unmeasured runtime/heap.** `w65816VectorTest`'s `maxHeapSize` (`2g`) is a placeholder scaled up
+from `spc700VectorTest`'s measured `512m`, not a measured value — no full corpus clone was
+available while building this tier. Re-measure (and update this paragraph) the first time
+`w65816-vectors` is actually run to completion against a real clone.
+
+Regenerate the vendored sample with `python3 tools/w65816/sample-vectors.py --source
+<full-clone-dir>` (or, for the loose one-file-at-a-time flow used the first time, `--source
+<scratch-dir> --loose`); regenerate `w65816-vector-baseline.txt` with `gradle test
+-Dgrm.w65816.regenerateBaseline=true --tests '*W65816VectorSampleTest'`; regenerate the
+exhaustive baseline with `gradle w65816VectorTest -Dgrm.w65816.regenerateExhaustiveBaseline=true`
+against `GRM_W65816_VECTORS`.
 
 ### Disassembly-text corpus differential (`grm-uy9s`)
 

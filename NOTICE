@@ -140,3 +140,33 @@ data/languages/w65816.cspec
   register symbols -- IO naming here comes from the machine descriptor, not the
   language. Upstream's SNES ROM loader and .opinion file are not vendored.
 --------------------------------------------------------------------------------
+src/test/resources/w65816-vectors/*.json
+
+  A small, PARTIAL sample (32 of 512 upstream files -- 16 of 256 opcodes, both
+  native and emulation mode, first 32 of each file's 10,000 cases; see that
+  directory's MANIFEST.txt for the exact opcode list and reasoning) of the
+  SingleStepTests 65816 single-step test-vector suite, used by the p-code
+  semantic verification harness (bead grm-9nxj.3) the same way
+  src/test/resources/spc700-vectors/*.json is used for SPC700.
+
+  Upstream: https://github.com/SingleStepTests/65816
+  Commit:   db6b10401729d5f20f2181dde5d3d7b037093a4a
+
+  LICENSE NOT STATED UPSTREAM -- vendored on a same-org inference, by the
+  project owner's explicit decision (2026-09-04). Stating plainly what is and
+  is not established: SingleStepTests/65816 carries no LICENSE file, and
+  GitHub's API reports no detected license for it as of the commit above.
+  The sibling SingleStepTests/spc700 repository, under the same GitHub org
+  and vendored above, IS MIT. The owner ruled that the same intent may be
+  inferred and the sample vendored on that basis. That is an inference, not a
+  grant, and this block should not be read as one. Bead grm-9nxj.8 tracks
+  asking upstream to state a license explicitly; if they decline or state
+  something incompatible, this sample comes out.
+
+  Sampled, not vendored verbatim: the first N cases of each selected file were
+  taken with no reordering (N=32), fetched one file at a time from
+  raw.githubusercontent.com and deleted after sampling rather than from a full
+  clone (none was available locally) -- see tools/w65816/sample-vectors.py,
+  which reproduces the same sampling logic against a real clone or a loose
+  directory of individually-fetched files (--loose).
+--------------------------------------------------------------------------------
