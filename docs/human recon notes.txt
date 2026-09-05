@@ -210,6 +210,7 @@ one more note on 94bb: it does LDY $070a, then sets the R6 shadow from 83d6,Y an
   jumps to the helper at ffbf to set both PRG bank regs from the shadows.  c5d6 sets 70a to 0. almost seems like 70a is
   an additional shadow "register".
 
+rcproam (human task/grm-4nr): W8000_M0_B0::a915 is the middle of a data table. the preceding byte a914 is the target of several apparent switch table overruns at bd2e in the same bank (first label is switchD_W8000_M0_B0::bd2e::caseD_7c).  bd2e switch table is at bd31 and has only 4 entries (first is immediately after the table at bd39).  c912 appears to be the same situation - it's the middle of a table of pointers, not code. c913 is labeled as switchD_a16e::caseD_1c so another overrun; switch table for a16e is at a171 with actual length 11 entries; the third entry immediately follows the table at a187.
 
   Next session's shortest path
 
