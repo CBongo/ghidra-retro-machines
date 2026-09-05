@@ -641,6 +641,43 @@ test {
 	// unset (it asserts almost nothing -- see that class's doc), so leaving it in `test` would be
 	// harmless but pointless noise; spc700DisCorpusTest below runs it, and only it.
 	exclude '**/corpus/Spc700DisCorpusTest.class'
+
+	// SnesRomCorpusTest (bead grm-9nxj.13) is excluded for the same "user-supplied data this repo
+	// cannot ship" reason: it surveys the SNES cartridge collection named by GRM_SNES_ROM_DIR.
+	// Like its .dis sibling above it Assume-skips rather than failing when unset -- it is a
+	// reporting tier whose assertions are weak -- so leaving it in `test` would be harmless but
+	// pointless noise; snesRomCorpusTest below runs it, and only it.
+	exclude '**/corpus/SnesRomCorpusTest.class'
+}
+
+// The SNES ROM header corpus survey (bead grm-9nxj.13). A reporting tier, not a gate: it writes
+// build/snes-rom-corpus/{roms.tsv,summary.txt} for triage and asserts only corpus-INDEPENDENT
+// invariants (parse never throws; a valid checksum pair is always accepted; an accepted header is
+// structurally self-consistent; parse is deterministic). See SnesRomCorpusTest's class doc for why
+// the distribution counts are reported and never asserted.
+task snesRomCorpusTest(type: Test) {
+	group = "Ghidra Retro Machines"
+	description = "Survey SnesRomHeader.parse over the SNES cartridge images named by " +
+		"GRM_SNES_ROM_DIR (grm-9nxj.13); skips when unset."
+	useJUnit()
+	// 1g for headroom over the largest image read whole (6 MB in the reference corpus, 921 files
+	// read and released one at a time).
+	maxHeapSize = '1g'
+	// Deliberately NO sleighCompile/GHIDRA_INSTALL_DIR/grm.moduleDir, unlike every other Test
+	// task here: SnesRomCorpusTest drives SnesRomHeader.parse(byte[]) directly. That is a plain
+	// record with no language, no Program and no Application bootstrap, so none of the bundled-
+	// language machinery is an input to this task and declaring it would only invent staleness.
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	include '**/corpus/SnesRomCorpusTest.class'
+	testLogging { showStandardStreams = true }
+
+	// Never up-to-date: the whole input to this task -- the cartridge images under
+	// GRM_SNES_ROM_DIR -- lives outside the project tree and is not a declared Gradle input, so
+	// Gradle's staleness check cannot see it change. Without this, adding a ROM (or pointing the
+	// env var at a different collection) and re-running prints a green UP-TO-DATE having surveyed
+	// nothing, while build/snes-rom-corpus stays stale and looks freshly produced.
+	outputs.upToDateWhen { false }
 }
 
 // The .dis corpus differential (bead grm-uy9s). A reporting tier, not a gate: it writes

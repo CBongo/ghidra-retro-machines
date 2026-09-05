@@ -161,7 +161,8 @@ final acceptance and commits**. `build-and-test.sh --list-chunks` prints the cur
 | `spc700-vectors` | exhaustive SPC700 p-code vector regression, 1000 cases/opcode (256,000 total) vs. the `unit` chunk's 32/opcode sample (`gradle spc700VectorTest`); needs `GRM_SPC700_VECTORS`, refuses loudly otherwise; opt-in, **not** included by `all` (see below), but routine (not just ceremonial) whenever the env var is configured — same standing as the real-ROM tier — and worth an explicit run after any SPC700 `.sinc` change, since the sample chunk can and does miss narrow edge cases (page-boundary wraps and the like) that the full suite catches |
 | `spc700-dis-corpus` | SPC700 *disassembly text* differential against nine hand-annotated `.dis` listings of real drivers (`gradle spc700DisCorpusTest`); needs `GRM_SPC700_DIS_CORPUS`, Assume-skips otherwise; opt-in, **not** included by `all`. A reporting tier, not a gate — the listings are leads, not an oracle. See its own section below |
 | `w65816-vectors` | exhaustive W65816 p-code vector regression, 10,000 cases/opcode/mode (5,120,000 total, both native and emulation mode) vs. the `unit` chunk's PARTIAL 16-opcode/32-case sample (`gradle w65816VectorTest`); needs `GRM_W65816_VECTORS`, refuses loudly otherwise; opt-in, **not** included by `all`. See its own section below — in particular, the known-unverified `p` bits and the sample's partial opcode coverage |
-| `all` | every chunk (the default when no chunk is given) — **except** `spc700-vectors`, `spc700-dis-corpus`, and `w65816-vectors`, which must be named explicitly |
+| `snes-rom-corpus` | `SnesRomHeader.parse` survey over a large local SNES cartridge collection (`gradle snesRomCorpusTest`); needs `GRM_SNES_ROM_DIR`, Assume-skips otherwise; opt-in, **not** included by `all`. A reporting tier, not a gate — the distribution it measures is per-machine and must never be pinned. See its own section below |
+| `all` | every chunk (the default when no chunk is given) — **except** `spc700-vectors`, `spc700-dis-corpus`, `snes-rom-corpus`, and `w65816-vectors`, which must be named explicitly |
 
 **The shipped `ghidra_scripts/` front-ends are regression-tested inside these chunks, and nowhere
 else.** The GUI plugins are untestable here (see below), so a headless fixture that drives the
@@ -513,6 +514,61 @@ A by-product worth as much as the comparison: `<title>-datamap.tsv` extracts eac
 code/data map — contiguous data regions with the section heading that introduces them and the
 per-entry index labels (`vcmd dispatch table (D2-FF)`, `table for CPU cmds 80-8F and F0-FF`,
 `opcode length table`). A fresh Ghidra import of an SPC image has nothing like it.
+
+### SNES ROM header corpus survey (`grm-9nxj.13`)
+
+`SnesRomCorpusTest` (its own `snes-rom-corpus` chunk, **not** included by `all`) runs
+`SnesRomHeader.parse` over every file in the directories named by `GRM_SNES_ROM_DIR` and writes a
+report:
+
+```bash
+GRM_SNES_ROM_DIR=<rom dir> bash tools/banktest/build-and-test.sh check snes-rom-corpus
+```
+
+`GRM_SNES_ROM_DIR` holds one or more **space-separated** directories indexed at **depth 1 only** —
+the same convention `GRM_ROM_DIR` uses for the real-ROM tier, and with the same caveat: the value
+is split on whitespace with no escaping, so a single directory whose own name contains a space
+cannot be represented this way. It **Assume-skips** when the variable is unset or names nothing
+that exists, following the `.dis` corpus rather than the vector tiers: this class asserts weak
+invariants and exists to produce a report, so there is no green here worth protecting.
+
+**Why it exists.** `SnesRomHeader`'s detection heuristic was validated by hand against eleven ROMs
+(`grm-9nxj.6`) — 6 LoROM / 5 HiROM, ten of the eleven copier-headered. The reference corpus is
+~84x larger and differently shaped in exactly the dimensions the heuristic depends on: 921
+cartridge images, 899 accepted (LoROM 729 / HiROM 163 / ExHiROM 2 / UNKNOWN 5), and only 120
+copier-headered — the copier ratio is *inverted*, and copier detection is by file size alone and
+shifts every later offset.
+
+**What it asserts** — only invariants that hold for *any* corpus, since the corpus is user-supplied
+and differs per machine:
+
+- `parse` is total. Every regular file is fed to it, not just the cartridge extensions
+  (`.sfc .smc .fig .swc`) — save states, IPS patches, screenshots, zero-length files. It must
+  return a header or `null`, never throw. Cheap real fuzz coverage.
+- Every image whose checksum/complement pair validates is **accepted**. This is the load-bearing
+  one: `CHECKSUM_BONUS` (40) over `MIN_SCORE` (12) makes it true by construction, so a reordering
+  of the scoring breaks it. The test locates the pair itself rather than reading back
+  `header.checksumValid()`, which would be circular.
+- Structural self-consistency of an accepted header (offset is one of the three candidates,
+  `dataOffset()` agrees with the size rule, the header fits in the file), and determinism.
+
+**Everything else is reported, never asserted**, to `build/snes-rom-corpus/roms.tsv` (per image,
+with a sha256 — `grm-9nxj.15` picks hash-pinned sample rows out of it) and `summary.txt` (the
+distribution, plus the full refusal and disagreement lists). In particular the 13 checksum-valid
+images whose `mapTypeMatchesLocation()` is false — 5 of them `MapType.UNKNOWN`, and so refused by
+the loader today — are `grm-9nxj.14` material, not build failures. **This tier must never grow
+pinned counts or golden-file assertions over the corpus.**
+
+Two rows land in a report section of their own: images carrying a copier header that the
+`size % 0x400 == 0x200` rule cannot see, because the underlying image is itself not a whole number
+of 1 KB blocks (`NHL94USA.smc`, truncated 41 bytes short of 1 MB) or is trimmed such that the two
+remainders cancel (`oml-megamanx.sfc`). Both are refused today, and are bead `grm-9nxj.16`'s
+subject rather than this tier's. That section exists so a genuine
+copier-detection regression — which would move dozens of rows into it at once — is visible rather
+than silent.
+
+Run it occasionally, after a change to `SnesRomHeader`'s detection or scoring; it is not a
+per-commit step.
 
 ## When to add which
 

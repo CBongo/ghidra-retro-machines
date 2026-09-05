@@ -138,6 +138,8 @@ Chunk/source-area mapping:
 - `nes-banking`: NES banking and MMC fixtures.
 - `petscii-strings`: `PetsciiStringAnalyzer` C64 PRG fixture.
 - `unit`: the JUnit `gradle test` suite (all `src/test/java`; no extension build/install).
+- `snes-rom-corpus`: `SnesRomHeader.parse` surveyed over a local SNES cartridge collection
+  (`GRM_SNES_ROM_DIR`); opt-in, reporting only, not in `all`.
 - `all`: every chunk; the default when no chunk is supplied.
 
 **The real-ROM tier is separate, opt-in, and takes NO paths — just run it:**
@@ -255,6 +257,20 @@ that could move decode text (mnemonic, operand form, length), which the vector t
 cover at all. 31,404 instructions, 254/256 opcodes, 55 residual rows, none of them ours (bead
 `grm-uy9s`) — and the residue is concentrated entirely in the two earliest listings, which an
 earlier version of that disassembler got wrong. See docs/testing.md for the breakdown.
+
+**The SNES ROM header corpus survey (`snes-rom-corpus` chunk) is the fourth opt-in tier and, like
+the `.dis` differential, REPORTS rather than gates.** It needs `GRM_SNES_ROM_DIR` — one or more
+space-separated directories of cartridge images, indexed at depth 1 only, exactly as `GRM_ROM_DIR`
+is read — and Assume-*skips* when unset. It runs `SnesRomHeader.parse` over every file there and
+writes `build/snes-rom-corpus/roms.tsv` (per image, with sha256) and `summary.txt`. It asserts only
+corpus-INDEPENDENT invariants — parse never throws on any file including the non-cartridges, an
+image with a valid checksum/complement pair is always accepted, an accepted header is structurally
+self-consistent, parse is deterministic — because the corpus is user-supplied and its distribution
+differs per machine. **Never pin its counts and never add golden files over it**: on the reference
+corpus 13 checksum-valid commercial cartridges disagree with `mapTypeMatchesLocation()` (5 of them
+`UNKNOWN`, refused by the loader today), and those are bead `grm-9nxj.14`'s subject, not defects.
+Reach for it occasionally after a change to `SnesRomHeader`'s detection or scoring, not per commit.
+See docs/testing.md.
 
 There is deliberately no `quick` alias or cache-backed project mode: headless
 projects are created fresh, and a correct cache would need explicit invalidation
