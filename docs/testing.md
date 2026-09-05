@@ -409,6 +409,29 @@ takes **4m47s** at the task's `2g` heap, on the same machine where the SPC700 ex
 takes ~15s for 256,000 cases. Cloning the corpus costs 50s and 3.2 GB checked out (481 MB
 packed). These are one machine's numbers; re-measure before quoting them.
 
+**What the exhaustive baseline actually says, and how to read it.** 512 rows: 362 PASS, 8 N/A,
+142 FAIL — but the failure COUNT is misleading and the SHAPE is what matters. **138 of those 142
+rows pass 99.9% or more** of their 10,000 cases, and most name `PBR` as their only mismatch.
+That is one documented limitation, not 138 bugs: the vendored spec's own header says
+*"UNSUPPORTED: correct behaviour when an instruction and its operand(s) wrap at the end of the
+program bank"*, and a randomly placed PC lands within an instruction's length of a bank boundary
+roughly once in 10,000 cases. **Rank a failing row by its pass fraction before believing it is a
+bug.** Only two rows fail every case (`PLP.N`, `RTI.N`, sequenced behind `grm-9nxj.5`), and two
+are middling: `FC.E` at 9,956/10,000 (the emulation-mode stack wrapping within page 1 during an
+indexed-indirect call) and `AB.E` (`PLB`) at 9,964/10,000.
+
+**EXPECT FAILURES in both baselines.** Exactly like SPC700 before `grm-c9d.3`, this language's
+p-code semantics had never been checked against an oracle when this tier was built. `grm-9nxj.4`'s
+two passes have since taken the sample baseline from 8 passing rows to 28 PASS / 4 N/A / 2 red;
+the two remaining red rows (`PLP.N`, `RTI.N`) throw on the language's own
+`unknown_native_status_pull` pcodeop and stay sequenced behind `grm-9nxj.5`. A baseline `FAIL` row records reality; only a *regression*
+(a row moving `PASS` → `FAIL`) is a hard failure, per `OpcodeBaseline`'s rules.
+
+**Measured runtime, 2026-09-05.** A full `w65816-vectors` run — all 512 files, 5,120,000 cases —
+takes **4m47s** at the task's `2g` heap, on the same machine where the SPC700 exhaustive tier
+takes ~15s for 256,000 cases. Cloning the corpus costs 50s and 3.2 GB checked out (481 MB
+packed). These are one machine's numbers; re-measure before quoting them.
+
 **What the exhaustive baseline actually says, and how to read it.** 512 rows: 353 PASS, 8 N/A,
 151 FAIL — but the failure COUNT is misleading and the SHAPE is what matters. 136 of those 151
 rows pass **99.9% or more** of their 10,000 cases, and 84 have `PBR` as their only mismatched

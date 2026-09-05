@@ -29,6 +29,19 @@ MemAbsLongJmp: !>$imm24 is imm24
     export *:3 imm24;
 }
 
+# grm-9nxj.4: THE THREE INDIRECT JUMP SUBTABLES BELOW EXPORT A VALUE, NOT `*:3 address`.
+# Upstream exported the computed target as a dynamic memory handle and the instructions said
+# `goto JMP_OP`, which makes SLEIGH dereference it a SECOND time and then branch to the
+# temporary's own address -- generated p-code:
+#     (unique,0xf400,3) LOAD (const,0x1f1,4), (unique,0xf300,3)
+#      ---  BRANCH (unique,0xf400,3)
+# i.e. every indirect jump went to the constant $00F400 regardless of the operand, which is
+# exactly what the oracle showed (6C/7C/DC/FC failed 10000 of 10000 cases on PC and PBR).
+# Exporting the value and branching with `goto [...]` is the idiom Ghidra's own 6502 uses for
+# JMP (abs). The DIRECT forms deliberately keep their `*:3` export so they stay real direct
+# branches, which is what gives analysis a static flow edge -- see the split tables in
+# 658xx.sinc.
+
 # Absolute indexed by X, indirect.
 MemAbsIdxIndJmp: (!$imm16,"X")    is imm16 & IdxX  {
     # Accessing the indirect address must wrap to stay within the bank.
@@ -40,7 +53,7 @@ MemAbsIdxIndJmp: (!$imm16,"X")    is imm16 & IdxX  {
     local addr_lo:1 = *:1 ind_lo_addr;
     local addr_hi:1 = *:1 ind_hi_addr;
     local address:3 = (zext(PBR) << 16) | (zext(addr_hi) << 8) | zext(addr_lo);
-    export *:3 address;
+    export address;
 }
 
 # Absolute indirect.
@@ -53,7 +66,7 @@ MemAbsIndJmp: (!$imm16)    is imm16  {
     local addr_lo:1 = *:1 ind_lo_addr;
     local addr_hi:1 = *:1 ind_hi_addr;
     local address:3 = (zext(PBR) << 16) | (zext(addr_hi) << 8) | zext(addr_lo);
-    export *:3 address;
+    export address;
 }
 
 # Absolute indirect long.
@@ -68,7 +81,7 @@ MemAbsIndLongJmp: [!$imm16]    is imm16  {
     local addr_hi:1 = *:1 ind_hi_addr;
     local addr_bank:1 = *:1 ind_bank_addr;
     local address:3 = (zext(addr_bank) << 16) | (zext(addr_hi) << 8) | zext(addr_lo);
-    export *:3 address;
+    export address;
 }
 
 # PC relative.

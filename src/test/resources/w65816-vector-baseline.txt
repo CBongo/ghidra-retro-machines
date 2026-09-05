@@ -234,8 +234,8 @@
 6A.N  ROR A  PASS  8/8
 6B.E  RTL  PASS  8/8
 6B.N  RTL  PASS  8/8
-6C.E  JMP (!$0x41c3)  FAIL  0/8  PBR,PC
-6C.N  JMP (!$0xa790)  FAIL  0/8  PBR,PC
+6C.E  JMP (!$0x41c3)  PASS  8/8
+6C.N  JMP (!$0xa790)  PASS  8/8
 6D.E  ADC !$0xdac7  PASS  8/8
 6D.N  ADC !$0xb0db  PASS  8/8
 6E.E  ROR !$0x72cb  PASS  8/8
@@ -266,8 +266,8 @@
 7A.N  PLY  PASS  8/8
 7B.E  TDC  PASS  8/8
 7B.N  TDC  PASS  8/8
-7C.E  JMP (!$0xcb08,X)  FAIL  0/8  PBR,PC
-7C.N  JMP (!$0x16bd,X)  FAIL  0/8  PBR,PC
+7C.E  JMP (!$0xcb08,X)  PASS  8/8
+7C.N  JMP (!$0x16bd,X)  PASS  8/8
 7D.E  ADC !$0x630c,X  PASS  8/8
 7D.N  ADC !$0xc1cb,X  PASS  8/8
 7E.E  ROR !$0xfc10,X  PASS  8/8
@@ -295,7 +295,7 @@
 89.E  BIT #$0x40  PASS  8/8
 89.N  BIT #$0x8c41  PASS  8/8
 8A.E  TXA  PASS  8/8
-8A.N  TXA  FAIL  5/8  P_N
+8A.N  TXA  PASS  8/8
 8B.E  PHB  PASS  8/8
 8B.N  PHB  PASS  8/8
 8C.E  STY !$0x544d  PASS  8/8
@@ -323,7 +323,7 @@
 97.E  STA [<$0x7c],Y  PASS  8/8
 97.N  STA [<$0xb1],Y  PASS  8/8
 98.E  TYA  PASS  8/8
-98.N  TYA  FAIL  7/8  P_N
+98.N  TYA  PASS  8/8
 99.E  STA !$0x1485,Y  PASS  8/8
 99.N  STA !$0xa61c,Y  PASS  8/8
 9A.E  TXS  PASS  8/8
@@ -458,8 +458,8 @@ DA.E  PHX  PASS  8/8
 DA.N  PHX  PASS  8/8
 DB.E  STP  N/A  0/8  STP halts the processor pending a hardware reset; no post-single-step state exists
 DB.N  STP  N/A  0/8  STP halts the processor pending a hardware reset; no post-single-step state exists
-DC.E  JML [!$0x4a5]  FAIL  0/8  PBR,PC
-DC.N  JML [!$0xdf08]  FAIL  0/8  PBR,PC
+DC.E  JML [!$0x4a5]  PASS  8/8
+DC.N  JML [!$0xdf08]  PASS  8/8
 DD.E  CMP !$0x9ca9,X  PASS  8/8
 DD.N  CMP !$0xedee,X  PASS  8/8
 DE.E  DEC !$0x35ae,X  PASS  8/8
@@ -488,8 +488,8 @@ E9.E  SBC #$0xdd  PASS  8/8
 E9.N  SBC #$0x5230  PASS  8/8
 EA.E  NOP  PASS  8/8
 EA.N  NOP  PASS  8/8
-EB.E  XBA  FAIL  0/8  A,P_N
-EB.N  XBA  FAIL  0/8  A,P_N
+EB.E  XBA  PASS  8/8
+EB.N  XBA  PASS  8/8
 EC.E  CPX !$0x8dea  PASS  8/8
 EC.N  CPX !$0x93dc  PASS  8/8
 ED.E  SBC !$0x26ee  PASS  8/8
@@ -522,8 +522,8 @@ FA.E  PLX  PASS  8/8
 FA.N  PLX  PASS  8/8
 FB.E  XCE  PASS  8/8
 FB.N  XCE  PASS  8/8
-FC.E  JSR (!$0x172f,X)  FAIL  0/8  PBR,PC
-FC.N  JSR (!$0x30b4,X)  FAIL  0/8  PBR,PC
+FC.E  JSR (!$0x172f,X)  PASS  8/8
+FC.N  JSR (!$0x30b4,X)  PASS  8/8
 FD.E  SBC !$0xaf33,X  PASS  8/8
 FD.N  SBC !$0x2a1a,X  PASS  8/8
 FE.E  INC !$0x4837,X  PASS  8/8

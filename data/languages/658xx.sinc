@@ -830,23 +830,37 @@ macro do_inc16(_out, _data) {
     Y = result;
 }
 
+# grm-9nxj.4: direct and indirect jumps are SEPARATE tables now. The direct form exports a
+# memory handle and branches to its address (a real, static flow edge); the indirect forms
+# export the computed target as a VALUE and branch through it with `goto [...]`. Mixing the two
+# in one table is what produced upstream's double dereference -- see 658xx_memaccess_pc.sinc.
 JMP_OP: MemAbsJmp       is op=0x4c; MemAbsJmp       { export MemAbsJmp; }
-JMP_OP: MemAbsIndJmp    is op=0x6c; MemAbsIndJmp    { export MemAbsIndJmp; }
-JMP_OP: MemAbsIdxIndJmp is op=0x7c; MemAbsIdxIndJmp { export MemAbsIdxIndJmp; }
+JMP_IND_OP: MemAbsIndJmp    is op=0x6c; MemAbsIndJmp    { export MemAbsIndJmp; }
+JMP_IND_OP: MemAbsIdxIndJmp is op=0x7c; MemAbsIdxIndJmp { export MemAbsIdxIndJmp; }
 
 # JMP
-:JMP JMP_OP is (op=0x4c | op=0x6c | op=0x7c) ... & JMP_OP
+:JMP JMP_OP is op=0x4c ... & JMP_OP
 {
     goto JMP_OP;
 }
 
+:JMP JMP_IND_OP is (op=0x6c | op=0x7c) ... & JMP_IND_OP
+{
+    goto [JMP_IND_OP];
+}
+
 JML_OP: MemAbsLongJmp    is op=0x5c; MemAbsLongJmp    { export MemAbsLongJmp; }
-JML_OP: MemAbsIndLongJmp is op=0xdc; MemAbsIndLongJmp { export MemAbsIndLongJmp; }
+JML_IND_OP: MemAbsIndLongJmp is op=0xdc; MemAbsIndLongJmp { export MemAbsIndLongJmp; }
 
 # JML
-:JML JML_OP is (op=0x5c | op=0xdc) ... & JML_OP
+:JML JML_OP is op=0x5c ... & JML_OP
 {
     goto JML_OP;
+}
+
+:JML JML_IND_OP is op=0xdc ... & JML_IND_OP
+{
+    goto [JML_IND_OP];
 }
 
 macro jsl_calculate_push_addr(_out) {
@@ -882,7 +896,7 @@ macro jsl_calculate_push_addr(_out) {
 }
 
 JSR_OP: MemAbsJmp    is op=0x20; MemAbsJmp  { export MemAbsJmp; }
-JSR_OP: MemAbsIdxIndJmp    is op=0xfc; MemAbsIdxIndJmp  { export MemAbsIdxIndJmp; }
+JSR_IND_OP: MemAbsIdxIndJmp    is op=0xfc; MemAbsIdxIndJmp  { export MemAbsIdxIndJmp; }
 
 macro jsr_calculate_push_addr(_out) {
     local this_pc_full:3 = inst_start;
@@ -895,11 +909,21 @@ macro jsr_calculate_push_addr(_out) {
 }
 
 # JSR native, absolute addressing or absolute indexed indirect addressing.
-:JSR JSR_OP    is ctx_EF=0 & (op=0x20 | op=0xfc) ... & JSR_OP
+:JSR JSR_OP    is ctx_EF=0 & op=0x20 ... & JSR_OP
 {
     local push_addr:2; jsr_calculate_push_addr(push_addr);
     push16_native(push_addr);
     call JSR_OP;
+}
+
+# grm-9nxj.4: the indexed-indirect call, split out for the same reason as JMP above -- its
+# target is computed at run time, so it must branch through the VALUE (`call [...]`) rather
+# than dereference a memory handle a second time.
+:JSR JSR_IND_OP    is ctx_EF=0 & op=0xfc ... & JSR_IND_OP
+{
+    local push_addr:2; jsr_calculate_push_addr(push_addr);
+    push16_native(push_addr);
+    call [JSR_IND_OP];
 }
 
 # JSR emulation, absolute addressing.
@@ -912,12 +936,12 @@ macro jsr_calculate_push_addr(_out) {
 
 # JSR emulation, absolute indexed indirect addressing.
 # Does not limit the top byte of the SP to 1 until the end of the instruction execution.
-:JSR JSR_OP    is ctx_EF=1 & op=0xfc ... & JSR_OP
+:JSR JSR_IND_OP    is ctx_EF=1 & op=0xfc ... & JSR_IND_OP
 {
     local push_addr:2; jsr_calculate_push_addr(push_addr);
     push16_native(push_addr);
     SPHigh = 1;
-    call JSR_OP;
+    call [JSR_IND_OP];
 }
 
 # LDA 8 bit.
@@ -2034,10 +2058,16 @@ TEST_OP: RefDP    is dd=1; RefDP  { export RefDP; }
     flag8_NZ(XLow);
 }
 # TXA  8 -> 16
+# grm-9nxj.4: the flags follow the WIDTH OF THE DESTINATION, not of the source. With a 16-bit
+# accumulator, N is bit 15 of the result -- always 0 here, since the 8-bit index is zero-extended
+# -- and Z covers all 16 bits. Upstream used flag8_NZ, so N came from bit 7 and was wrong for
+# every source value >= $80: measured at 8,771 of 10,000 cases failing on P_N alone. A static
+# audit of every ctx_MF=0 constructor using flag8_NZ found exactly this one and TYA below,
+# agreeing with the oracle.
 :TXA    is op=0x8a & ctx_XF=1 & ctx_MF=0
 {
     C = zext(XLow);
-    flag8_NZ(XLow);
+    flag16_NZ(C);
 }
 # TXA  16 -> 16
 :TXA    is op=0x8a & ctx_XF=0 & ctx_MF=0
@@ -2093,7 +2123,9 @@ TEST_OP: RefDP    is dd=1; RefDP  { export RefDP; }
 :TYA    is op=0x98 & ctx_XF=1 & ctx_MF=0
 {
     C = zext(YLow);
-    flag8_NZ(YLow);
+    # grm-9nxj.4: flag16_NZ, not flag8_NZ -- see the TXA 8->16 constructor above for the
+    # reasoning and the measurement (this row failed 8,737 of 10,000 cases on P_N).
+    flag16_NZ(C);
 }
 # TYA  16 -> 16
 :TYA    is op=0x98 & ctx_XF=0 & ctx_MF=0
@@ -2125,12 +2157,17 @@ define pcodeop wai;
 
 :WDM    is op=0x42; unused8  {}
 
+# grm-9nxj.4: upstream's XBA never read B at all -- it named the OLD LOW byte "old_b",
+# assigned B = A, then assigned A back to itself, so the accumulator was unchanged and only
+# half the swap happened. The oracle caught it immediately (EB failed ~9,955 of 10,000 cases
+# in both modes on A and the N flag). XBA exchanges A's low and high halves, and the flags
+# come from the NEW low byte, i.e. the old high byte.
 :XBA    is op=0xeb
 {
-    local old_b:1 = A;
-    B = A;
-    A = old_b;
-    flag8_NZ(old_b);
+    local old_a:1 = A;
+    A = B;
+    B = old_a;
+    flag8_NZ(A);
 }
 
 # XCE native -> ?
