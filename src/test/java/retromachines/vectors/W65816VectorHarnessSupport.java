@@ -145,6 +145,9 @@ final class W65816VectorHarnessSupport {
 		REGISTER_NAMES.put("p_i", "IF");
 		REGISTER_NAMES.put("p_z", "ZF");
 		REGISTER_NAMES.put("p_c", "CF");
+		// Emulation-mode only, and emitted per case by adaptRegs() rather than always: p's bit 4
+		// is the break flag there, and BF is a real register in this language.
+		REGISTER_NAMES.put("p_b", "BF");
 	}
 
 	/**
@@ -310,10 +313,27 @@ final class W65816VectorHarnessSupport {
 	 * "exceptions don't count"). Opcode bytes confirmed by reading {@code 658xx.sinc}: {@code WAI}
 	 * is {@code op=0xcb}, {@code STP} (the 65816's mnemonic for this opcode; upstream's own
 	 * comment spells it "STP", not "STOP") is {@code op=0xdb}.
+	 *
+	 * <p><b>MVN/MVP are here for a different reason, and the tempting reading is that they are
+	 * simply broken.</b> Every other sampled opcode's cases carry their instruction's natural
+	 * cycle count (2 to 8). MVN ({@code 0x54}) and MVP ({@code 0x44}) carry EXACTLY 100 in all
+	 * 128 sampled cases, which is a cap, not a length: a block move of {@code C+1} bytes with a
+	 * randomized {@code C} would vary enormously. Decoding one case confirms it -- 100 cycles at
+	 * 7 cycles per byte moved 14 bytes, with {@code A} down by 14 and {@code X}/{@code Y} up by
+	 * 14, stopping mid-block. This language performs the whole transfer in one p-code step,
+	 * which is the right shape for analysis and cannot by construction match a truncated one.
+	 * Chasing these rows green would mean rewriting correct semantics to imitate a harness
+	 * artifact, so they are declared not-applicable WITH the evidence rather than left on a
+	 * worklist for the next reader to "fix".
 	 */
 	private static final Map<String, String> NOT_APPLICABLE_OPCODES = Map.of(
 		"CB", "WAI halts the processor pending an interrupt; no post-single-step state exists",
-		"DB", "STP halts the processor pending a hardware reset; no post-single-step state exists");
+		"DB", "STP halts the processor pending a hardware reset; no post-single-step state exists",
+		"44", "MVP block move: the corpus caps these cases at 100 cycles, so its 'final' state " +
+			"is a PARTIAL transfer, not a completed instruction (see the class doc)",
+		"54", "MVN block move: the corpus caps these cases at 100 cycles, so its 'final' state " +
+			"is a PARTIAL transfer, not a completed instruction (see the class doc)");
+
 
 	/**
 	 * Runs every case in one upstream-shaped opcode+mode file ({@code <hex>.<n|e>.json}) and
@@ -436,11 +456,15 @@ final class W65816VectorHarnessSupport {
 	 * ({@code pc/s/a/x/y/dbr/d/pbr}) passes through unchanged.
 	 */
 	private static VectorCase adapt(VectorCase c) {
-		return new VectorCase(c.name(), adaptRegs(c.initialRegs()), c.initialRam(),
-			adaptRegs(c.finalRegs()), c.finalRam());
+		return new VectorCase(c.name(), adaptRegs(c.initialRegs(), true), c.initialRam(),
+			adaptRegs(c.finalRegs(), false), c.finalRam());
 	}
 
-	private static Map<String, Integer> adaptRegs(Map<String, Integer> raw) {
+	/**
+	 * @param initialState whether this is the case's INITIAL map. Only the initial map carries
+	 *        the emulation-mode break flag: see the {@code p_b} block below.
+	 */
+	private static Map<String, Integer> adaptRegs(Map<String, Integer> raw, boolean initialState) {
 		Map<String, Integer> out = new LinkedHashMap<>();
 		for (Map.Entry<String, Integer> e : raw.entrySet()) {
 			String key = e.getKey();
@@ -454,8 +478,30 @@ final class W65816VectorHarnessSupport {
 			for (FlagLayout.FlagBit bit : VERIFIED_P_BITS) {
 				out.put("p_" + bit.name().toLowerCase(Locale.ROOT), bit.valueIn(p));
 			}
+			// grm-9nxj.4: in EMULATION mode, p's bit 4 is the break flag, and the language does
+			// back it with a real register (BF) -- unlike bit 5 (M) and native-mode bit 4 (X),
+			// which are context-only and stay unverifiable. Seeding it matters because PHP and
+			// BRK push it into memory, where the corpus DOES compare it: without this, every
+			// emulation-mode status push differed from the oracle in that one bit.
+			//
+			// SEEDED ONLY, NEVER COMPARED, and the asymmetry is deliberate -- comparing it was
+			// tried and produced false failures on exactly the cases that CHANGE mode. XCE in
+			// native mode ends emulated, so a final map carrying p_b would demand a break flag
+			// the initial map never seeded (FB.N fell from 32/32 to 19/32), and PLP pulls a
+			// flag this harness has no independent way to verify (28.E fell to 15/32). Which
+			// bits are verifiable is mode-dependent per STATE, not per case, and one static
+			// field map cannot express that.
+			if (initialState && isEmulation(raw)) {
+				out.put("p_b", (p >> 4) & 1);
+			}
 		}
 		return out;
+	}
+
+	/** Whether this case's raw register map says emulation mode. */
+	private static boolean isEmulation(Map<String, Integer> raw) {
+		Integer e = raw.get("e");
+		return e != null && e != 0;
 	}
 
 	// ------------------------------------------------------------------

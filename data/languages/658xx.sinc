@@ -60,10 +60,30 @@ define context contextreg
 # are a pain to use in a semantic section.
 # These preprocessor macros work around this and allow for simpler manipulation
 # of status flags (bit range access/assignments).
-@define MF "contextreg[0,1]"
-@define XF "contextreg[1,1]"
-# @define DF "contextreg[2,1]"
-@define EF "contextreg[3,1]"
+# grm-9nxj.4: THESE INDICES WERE WRONG UPSTREAM, and getting them right needs two facts that
+# pull in opposite directions -- the first correction attempted here was also wrong.
+#
+# (1) A `define context` field is numbered from the MOST significant bit of the context
+#     register, not the least. Measured on the built language: ctx_MF is bit 31 of the 32-bit
+#     contextreg, ctx_XF bit 30, ctx_EF bit 29. Upstream's [0,1]/[1,1]/[3,1] read three unused
+#     low bits that are always zero.
+# (2) But a p-code slice does NOT see those bit numbers, because Ghidra stores a context
+#     register BIG-ENDIAN regardless of the language's endianness (see
+#     PcodeArithmetic.fromConst's isContextreg flag, used by DefaultPcodeThread.writeContext).
+#     In this little-endian language the stored bytes C0 00 00 00 therefore read back as the
+#     integer 0x000000C0 -- so the field that RegisterValue calls bit 31 is bit 7 to p-code.
+#
+# Hence 7/6/5. Verified by running a hand-built native PHP with p=0x30 (M and X both set)
+# through the vector harness: it pushes 0x30 with these indices and 0x00 with either of the
+# other two candidates.
+#
+# Two real consequences, both found by the oracle: PHP/BRK pushed a status byte whose M and X
+# bits were always 0 (08.N passed only the ~6 of 32 cases where they genuinely were 0), and the
+# emulation-mode direct-page wrap in 658xx_memaccess.sinc, guarded by `$(EF) == 1`, could never
+# fire at all.
+@define MF "contextreg[7,1]"
+@define XF "contextreg[6,1]"
+@define EF "contextreg[5,1]"
 
 
 define token opbyte (8)

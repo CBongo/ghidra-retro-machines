@@ -167,7 +167,10 @@ macro push_status_emulation() {
     local status:1 = 0;
     status[7,1] = NF;
     status[6,1] = VF;
-    # bit 5 unused
+    # grm-9nxj.4: bit 5 is unused in emulation mode and reads as 1 on the hardware, not 0.
+    # Measured, not assumed: every emulation-mode PHP case in the vector corpus pushes a byte
+    # equal to its own initial p, and every one of those has bit 5 set.
+    status[5,1] = 1;
     status[4,1] = BF;
     status[3,1] = DF;
     status[2,1] = IF;

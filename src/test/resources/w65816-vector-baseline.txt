@@ -18,18 +18,18 @@
 # here records reality, it is not a test bug. See W65816VectorHarnessSupport's
 # class doc for the bits of 'p' this harness cannot verify at all (M, and the
 # native-mode X / emulation-mode B bit).
-08.E  PHP  FAIL  0/32  $103,$10a,$10c,$10d,$121,$123,$128,$12a,$12c,$12e,$138,$13b,$13e,$144,$155,$158,$15a,$162,$177,$17b,$17d,$185,$1a5,$1b9,$1bc,$1c5,$1cb,$1d1,$1ee,$1f4,$1f5
-08.N  PHP  FAIL  6/32  $1218,$13a2,$1490,$152f,$2918,$2cfd,$2d40,$2e0f,$428b,$451e,$478e,$4f3e,$4f51,$5678,$5a62,$7059,$9275,$9a2e,$9d80,$9dab,$a029,$af6e,$c368,$dadf,$dbe3,$fca7
+08.E  PHP  PASS  32/32
+08.N  PHP  PASS  32/32
 22.E  JSL !>$0xdb2584  PASS  32/32
 22.N  JSL !>$0x8fcddf  PASS  32/32
 28.E  PLP  PASS  32/32
 28.N  PLP  FAIL  0/32  execution
 40.E  RTI  PASS  32/32
 40.N  RTI  FAIL  0/32  execution
-44.E  MVP 0x69,0x17  FAIL  0/32  A,PC,X,Y
-44.N  MVP 0xb9,0x54  FAIL  0/32  A,PC,X,Y
-54.E  MVN 0xf3,0x5c  FAIL  0/32  $a90000,$a90001,$a90002,$a90003,$a900d3,$a900d4,$a900d5,$a900d6,$a900d7,$a900d8,$a900d9,$a900da,$a900db,$a900dc,$a900dd,$a900de,$a900df,$a900e0,$a900f6,$a900f7,$a900f8,$a900f9,$a900fa,$a900fb,$a900fc,$a900fd,$a900fe,$a900ff,A,PC,X,Y
-54.N  MVN 0x6d,0x3d  FAIL  0/32  A,PC,X,Y
+44.E  MVP 0x69,0x17  N/A  0/32  MVP block move: the corpus caps these cases at 100 cycles, so its 'final' state is a PARTIAL transfer, not a completed instruction (see the class doc)
+44.N  MVP 0xb9,0x54  N/A  0/32  MVP block move: the corpus caps these cases at 100 cycles, so its 'final' state is a PARTIAL transfer, not a completed instruction (see the class doc)
+54.E  MVN 0xf3,0x5c  N/A  0/32  MVN block move: the corpus caps these cases at 100 cycles, so its 'final' state is a PARTIAL transfer, not a completed instruction (see the class doc)
+54.N  MVN 0x6d,0x3d  N/A  0/32  MVN block move: the corpus caps these cases at 100 cycles, so its 'final' state is a PARTIAL transfer, not a completed instruction (see the class doc)
 69.E  ADC #$0xb6  PASS  32/32
 69.N  ADC #$0x80f8  PASS  32/32
 A2.E  LDX #$0xab  PASS  32/32
