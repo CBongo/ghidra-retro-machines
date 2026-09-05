@@ -369,23 +369,39 @@ reasoning; the essentials:
   independent pass ratios.
 - `WAI` (`0xCB`) and `STP` (`0xDB`) are `NOT_APPLICABLE_OPCODES`, mirroring SPC700's
   `SLEEP`/`STOP` — both legitimately halt the processor with no correct post-single-step state.
+- `MVN` (`0x54`) and `MVP` (`0x44`) are `NOT_APPLICABLE` too, for a different and less obvious
+  reason (`grm-9nxj.4`): **the corpus caps those cases at 100 cycles**, so their "final" state is
+  a *partial* block transfer, not a completed instruction. Every other sampled opcode carries its
+  natural cycle count (2–8); these carry exactly 100 in all 128 sampled cases, and decoding one
+  confirms it (100 cycles ÷ 7 per byte = 14 bytes moved, `A` down 14, `X`/`Y` up 14, mid-block).
+  This language moves the whole block in one p-code step, which is right for analysis and cannot
+  match a truncation — **do not "fix" the semantics to chase these rows green.**
+- The **break flag is seeded but never compared.** In emulation mode `p` bit 4 is `B`, which the
+  language does back with a real register (`BF`), and `PHP`/`BRK` push it into memory where the
+  corpus *does* compare it — so it must be seeded. It is deliberately left out of the comparison:
+  `XCE` in native mode *ends* emulated, so a final state carrying `p_b` would demand a flag the
+  initial state never seeded. Which `p` bits are verifiable is mode-dependent per **state**, not
+  per case.
 
 **PARTIAL OPCODE COVERAGE, unlike the SPC700 sample.** `Spc700VectorSampleTest` samples all 256
 SPC700 opcodes; `W65816VectorSampleTest`'s vendored sample
-(`src/test/resources/w65816-vectors/`, `MANIFEST.txt` has the exact list) covers only **16 of
-the 65816's 256 opcodes** (32 files: 16 opcodes x native/emulation), because nobody had a full
+(`src/test/resources/w65816-vectors/`, `MANIFEST.txt` has the exact list) covers only **17 of
+the 65816's 256 opcodes** (34 files: 17 opcodes x native/emulation), because nobody had a full
 local clone of `SingleStepTests/65816` (512 files, ~2.87 GB) to sample from routinely when this
 tier was built — the 32 files were fetched individually from
 `raw.githubusercontent.com` and sampled by hand instead. The subset (`A9` LDA#, `A2` LDX#, `C0`
 CPY#, `E0` CPX#, `69` ADC#, `E9` SBC#, `C2` REP, `E2` SEP, `FB` XCE, `AF` LDA long, `54` MVN,
-`44` MVP, `08` PHP, `28` PLP, `40` RTI, `22` JSL) was chosen to exercise the M/X width machinery
+`44` MVP, `08` PHP, `28` PLP, `40` RTI, `22` JSL, and `C9` CMP — added later by `grm-9nxj.4`
+to settle whether `CMP` shared `CPX`/`CPY`'s carry defect, which it did) was chosen to exercise the M/X width machinery
 and 65816-only forms, not to be representative of the full ISA. **An opcode absent from
 `w65816-vector-baseline.txt` is untested by the `unit` chunk, not passing** — only
 `W65816VectorExhaustiveTest` against a full `GRM_W65816_VECTORS` clone covers all 256.
 
 **EXPECT FAILURES in both baselines.** Exactly like SPC700 before `grm-c9d.3`, this language's
-p-code semantics have never been checked against an oracle before this bead — fixing them is
-`grm-9nxj.4`'s job, not this one's. A baseline `FAIL` row records reality; only a *regression*
+p-code semantics had never been checked against an oracle when this tier was built. `grm-9nxj.4`'s
+two passes have since taken the sample baseline from 8 passing rows to 28 PASS / 4 N/A / 2 red;
+the two remaining red rows (`PLP.N`, `RTI.N`) throw on the language's own
+`unknown_native_status_pull` pcodeop and stay sequenced behind `grm-9nxj.5`. A baseline `FAIL` row records reality; only a *regression*
 (a row moving `PASS` → `FAIL`) is a hard failure, per `OpcodeBaseline`'s rules.
 
 **Unmeasured runtime/heap.** `w65816VectorTest`'s `maxHeapSize` (`2g`) is a placeholder scaled up
