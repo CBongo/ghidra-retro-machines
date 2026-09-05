@@ -205,6 +205,11 @@ rcproam:
 megaman:
 8d1f-8dbf: all data, no code. overruns at e000 (e0ed, actual length 18), e121 (e2a2, actual 19), e44e (e55a, actual 10) are the sources of the bad refs.
 
+more on smb3 c542 (human task/grm-gyi):  this is a mid-entry point of a very long function whose actual full body extends from c41d to ca4d.  it contains multple entry points in that span, and smattering of exits, usually in the form of JMPs (to 869f, 857e, 84d7, 88a5, 884c, 892a, and 8fa1). there are several PRG bank switches, some setting the shadow, others that don't. for the sites in the question, c5fc sets R7 but not the shadow; this would be restored to the shadow bank value by the call to ffc2 at c631, but the preceding call to W8000_M1_94cd clobbers the shadow once with 1a then later JMPs to 94bb which clobbers both R6 AND R7 shadows with a value looked up from a table. i noticed there's a fair number of residual calls referenced to base 94cd (which hits in the middle of an instruction) instead of W8000_M1_94cd which seems to be the intended target of them all.  looks like a fair bit of jumping back and forth between the cXXX and 8XXX code; for example the JMP to c542 at 867b is part of the "tail" of the function that the cXXX routines "return" to via jump (857e in this case).  to sum up, the answer to what bank survives c542 is "anyone's guess".
+one more note on 94bb: it does LDY $070a, then sets the R6 shadow from 83d6,Y and the R7 shadow from 83e9,Y, then
+  jumps to the helper at ffbf to set both PRG bank regs from the shadows.  c5d6 sets 70a to 0. almost seems like 70a is
+  an additional shadow "register".
+
 
   Next session's shortest path
 
