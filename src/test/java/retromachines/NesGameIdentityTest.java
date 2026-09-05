@@ -227,15 +227,40 @@ public class NesGameIdentityTest {
 		assertNotEquals(originalId.prgSha256(), patchedId.prgSha256());
 	}
 
+	/**
+	 * The NES 2.0 exponent PRG-size form (bead grm-dfj), which three local images use: h[9]'s
+	 * low nibble == 0xF makes h[4] {@code EEEEEEMM} rather than a count of 16 KiB units, and
+	 * the size is {@code 2^E * (2M+1)} bytes. h[4] = 0x34 is E = 13, M = 0 -- an 8 KiB PRG,
+	 * HALF of one unit, which is exactly what the linear form cannot express and why real
+	 * cartridges (both Galaxian (J) revisions, Controller Test Program (J)) use this form.
+	 * <p>
+	 * The assertion that matters is the slice: keying over h[4] read as a unit count would run
+	 * 832K past EOF and decline, and keying over one whole unit would swallow the CHR that
+	 * follows. Only the decoded 8 KiB gives the PRG digest below.
+	 */
+	@Test
+	public void exponentPrgSizeFormKeysOverTheDecodedSlice() throws IOException {
+		byte[] prg = filler(0x2000, 5);
+		byte[] chr = filler(0x2000, 6);
+		byte[] image = ines(0x34, false, true, null, concat(prg, chr));
+		image[9] = 0x0F;
+
+		DescriptorSupport.GameIdentity id = identityOf(image);
+		assertNotNull(id);
+		assertEquals(sha256Hex(prg), id.prgSha256());
+		assertEquals(sha256Hex(image), id.fileSha256());
+	}
+
 	// ------------------------------------------------------------------
 	// Images the loader declines to key
 	// ------------------------------------------------------------------
 
 	@Test
-	public void exponentPrgSizeFormYieldsNoIdentity() throws IOException {
-		// NES 2.0's h[9] low nibble == 0xF selects an exponent PRG-size form the loader does
-		// not model; its prgSize() is a guess, and a wrong key is worse than an absent one.
-		byte[] image = ines(1, false, true, null, filler(PRG_BANK_LEN, 0));
+	public void absurdExponentPrgSizeYieldsNoIdentity() throws IOException {
+		// The exponent field is 6 bits, so it can name a size no cartridge could have; those
+		// decode to 0 rather than to an overflowed (possibly negative) length, and a zero PRG
+		// size is declined here for the same reason a zero unit count is. h[4] = 0xFC is E = 63.
+		byte[] image = ines(0xFC, false, true, null, filler(PRG_BANK_LEN, 0));
 		image[9] = 0x0F;
 		assertNull(identityOf(image));
 	}

@@ -102,17 +102,47 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 	 *  offset backs it. Used to route vector-table reads through the same mapping. */
 	private record PlacedWindow(String name, long cpuStart, long cpuEnd, long srcOffset) {}
 
-	/** The iNES header facts this loader consumes. */
-	private record InesHeader(int prgBanks, int chrBanks, int mapper, boolean trainer,
-			boolean exponentPrgSize) {
-
-		long prgSize() {
-			return prgBanks * 0x4000L;
-		}
+	/** The iNES header facts this loader consumes. Sizes are BYTES, not header unit counts:
+	 *  NES 2.0's exponent form (see {@link InesHeader#nes2RomSize}) can express a size that is
+	 *  not a whole number of 16 KiB PRG / 8 KiB CHR units, so a unit count cannot represent every
+	 *  legal header. */
+	private record InesHeader(long prgSize, long chrSize, int mapper, boolean trainer) {
 
 		/** File offset where PRG content starts (header, then optional trainer). */
 		long prgFileOffset() {
 			return INES_HEADER_LEN + (trainer ? TRAINER_LEN : 0);
+		}
+
+		/**
+		 * Decodes one of NES 2.0's two ROM-size pairs to a byte count: {@code low} is the
+		 * unit-count low byte (h[4] for PRG, h[5] for CHR), {@code hi} the matching nibble of
+		 * h[9], and {@code unit} that ROM's unit size.
+		 * <p>
+		 * {@code hi == 0xF} selects the EXPONENT form, where {@code low} is not a count at all but
+		 * {@code EEEEEEMM}, and the size is {@code 2^E * (2M+1)} <em>bytes</em>. It exists to
+		 * express what the linear form cannot, at both ends of the range -- oversized multicarts
+		 * above the 4095-unit ceiling, and images BELOW one unit. The local corpus holds only the
+		 * latter (bead grm-dfj): both Galaxian (J) revisions and Controller Test Program (J) carry
+		 * h[4] = 0x34, i.e. E = 13 and M = 0, for a PRG of 2^13 = 8 KiB -- half of one 16 KiB unit.
+		 * Before this was decoded, those three fell back to h[4] alone, claimed 52 banks = 832K
+		 * against a 16400-byte file, and were rejected by {@code load}'s truncation guard as
+		 * corrupt.
+		 * <p>
+		 * The exponent is 6 bits, so an absurd one would overflow {@code long} and could go
+		 * negative -- which the truncation guard compares as smaller than the file and would wave
+		 * through, the one failure mode worse than refusing the image. Anything at or above 2^48
+		 * (far past any conceivable cartridge) is therefore reported as 0, joining a zero unit
+		 * count on the existing "no usable PRG slice" path.
+		 */
+		private static long nes2RomSize(int low, int hi, int unit) {
+			if (hi != 0x0F) {
+				return (((hi << 8) | low) & 0xFFFL) * (long) unit;
+			}
+			int exponent = low >> 2;
+			if (exponent >= 48) {
+				return 0;
+			}
+			return (1L << exponent) * (((low & 0x03) * 2L) + 1);
 		}
 
 		static InesHeader parse(ByteProvider provider) throws IOException {
@@ -126,19 +156,15 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 			int lowMapper = (h[6] & 0xFF) >> 4;
 			boolean nes2 = (h[7] & 0x0C) == 0x08;
 			int mapper;
-			int prgBanks;
-			boolean exponentPrgSize = false;
+			long prgSize;
+			long chrSize;
 			if (nes2) {
-				// NES 2.0: 12-bit mapper (flags6 hi | flags7 hi | flags8 lo); PRG-ROM unit
-				// count is h[4] plus a high nibble in h[9]. h[9] low nibble == 0xF selects a
-				// rare exponent size form we don't model -- fall back to the low byte there,
-				// and record that we did so: the resulting prgSize() is a guess, which is
-				// tolerable for window placement but not for a content hash, so gameIdentity()
-				// declines these rather than key a descriptor on the wrong slice.
+				// NES 2.0: 12-bit mapper (flags6 hi | flags7 hi | flags8 lo); each ROM size is a
+				// low byte (h[4] / h[5]) plus a nibble of h[9], in either a linear or an exponent
+				// form -- nes2RomSize decodes both.
 				mapper = ((h[8] & 0x0F) << 8) | (h[7] & 0xF0) | lowMapper;
-				int prgHi = h[9] & 0x0F;
-				exponentPrgSize = prgHi == 0x0F;
-				prgBanks = exponentPrgSize ? (h[4] & 0xFF) : ((prgHi << 8) | (h[4] & 0xFF));
+				prgSize = nes2RomSize(h[4] & 0xFF, h[9] & 0x0F, 0x4000);
+				chrSize = nes2RomSize(h[5] & 0xFF, (h[9] & 0xFF) >> 4, 0x2000);
 			}
 			else {
 				// Archaic iNES: "DiskDude!"-style tools scribbled ASCII into bytes 7-15, so a
@@ -146,10 +172,10 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 				// nibble -- trust only the low nibble. A clean iNES 1.0 header has 12-15 zero.
 				boolean archaic = h[12] != 0 || h[13] != 0 || h[14] != 0 || h[15] != 0;
 				mapper = archaic ? lowMapper : ((h[7] & 0xF0) | lowMapper);
-				prgBanks = h[4] & 0xFF;
+				prgSize = (h[4] & 0xFF) * 0x4000L;
+				chrSize = (h[5] & 0xFF) * 0x2000L;
 			}
-			return new InesHeader(prgBanks, h[5] & 0xFF, mapper, (h[6] & 0x04) != 0,
-				exponentPrgSize);
+			return new InesHeader(prgSize, chrSize, mapper, (h[6] & 0x04) != 0);
 		}
 	}
 
@@ -169,15 +195,17 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 	 * and mode-dependent -- and would silently change meaning the first time an analyzer patched
 	 * a byte.
 	 * <p>
-	 * Declines (returns {@code null}) for bad magic, zero declared PRG banks, a PRG slice
-	 * running past EOF, and the NES 2.0 exponent PRG-size form. Each of those would still yield
-	 * a well-formed 64-hex key -- for zero banks, the fixed empty-input digest that every such
-	 * file would share -- and a wrong key is invisible where an absent one is diagnosable.
+	 * Declines (returns {@code null}) for bad magic, a zero declared PRG size, and a PRG slice
+	 * running past EOF. Each of those would still yield a well-formed 64-hex key -- for a zero
+	 * size, the fixed empty-input digest that every such file would share -- and a wrong key is
+	 * invisible where an absent one is diagnosable. The NES 2.0 exponent PRG-size form was on
+	 * that list until grm-dfj decoded it; those images now key over their true slice like any
+	 * other.
 	 * Package-private so a pure-JUnit test can drive it over synthetic images.
 	 */
 	static DescriptorSupport.GameIdentity gameIdentity(ByteProvider provider) throws IOException {
 		InesHeader header = InesHeader.parse(provider);
-		if (header == null || header.prgBanks() == 0 || header.exponentPrgSize()) {
+		if (header == null || header.prgSize() == 0) {
 			return null;
 		}
 		long prgOffset = header.prgFileOffset();
@@ -209,7 +237,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 		List<LoadSpec> loadSpecs = new ArrayList<>();
 
 		InesHeader header = InesHeader.parse(provider);
-		if (header == null || header.prgBanks() == 0) {
+		if (header == null || header.prgSize() == 0) {
 			return loadSpecs;
 		}
 		// Only offer the loader when a board descriptor exists for the mapper; other
@@ -321,8 +349,8 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 	 * {@link DescriptorSupport#placeableBanks} from that window's own expression and length
 	 * against the PRG byte size -- <em>not</em> from the iNES header's 16 KiB bank count,
 	 * which is a container unit unrelated to what a given window's bank field selects
-	 * (bead grm-n5f: a 32 KiB MMC3 image has four placeable 8 KiB banks but
-	 * {@code prgBanks == 2}). This is the same predicate the realization loops in
+	 * (bead grm-n5f: a 32 KiB MMC3 image has four placeable 8 KiB banks but a header bank
+	 * count of 2). This is the same predicate the realization loops in
 	 * {@link #realizeInvariantWindow} / {@link #realizeVaryingWindows} use to decide which
 	 * bank overlays to create, so validation accepts a bank exactly when the load can
 	 * realize a block for it.
@@ -420,10 +448,6 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 						identity.toPropertyValue());
 			log.appendMsg("game identity " + identity.toPropertyValue());
 		}
-		else if (header.exponentPrgSize()) {
-			log.appendMsg("NES 2.0 exponent PRG-size form (header byte 9 low nibble = $F) is " +
-				"not modeled, so the PRG slice bounds are a guess; skipping game identity");
-		}
 		else {
 			log.appendMsg("iNES header declares no usable PRG slice; skipping game identity");
 		}
@@ -438,7 +462,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 		}
 		log.appendMsg("iNES mapper " + header.mapper() + " -> board " + board.id() + " (" +
 			board.name() + "); PRG " + (header.prgSize() / 1024) + "K, CHR " +
-			(header.chrBanks() * 8) + "K" + (header.trainer() ? ", trainer" : ""));
+			(header.chrSize() / 1024) + "K" + (header.trainer() ? ", trainer" : ""));
 
 		// record the chosen board so the bank analyzer interprets with the same descriptor
 		program.getOptions(Program.PROGRAM_INFO)
@@ -536,8 +560,8 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 					fileBytes, board.mapPath(), placed, log);
 			}
 
-			if (header.chrBanks() > 0) {
-				log.appendMsg("CHR ROM (" + (header.chrBanks() * 8) +
+			if (header.chrSize() > 0) {
+				log.appendMsg("CHR ROM (" + (header.chrSize() / 1024) +
 					"K) not loaded: PPU address space modeling is deferred");
 			}
 
