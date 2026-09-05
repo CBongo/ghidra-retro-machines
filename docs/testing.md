@@ -633,8 +633,9 @@ bank numbers through tables/helpers, hit ~191 overlays, etc.). It is **not** par
 default gate: ROM binaries are copyrighted and user-supplied, so nothing here runs in CI and
 it is never a `run-banktest.sh` chunk (whose `all` would otherwise pull it in).
 
-- **Driver:** `tools/banktest/realrom-test.sh check|bless|nominate [--gme|--all]
-  [--only|--except <ids>] [--no-build] <romdir> [<romdir> …]` (or `GRM_ROM_DIR`). Lives
+- **Driver:** `tools/banktest/realrom-test.sh check|bless|nominate [--gme|--all|--snes]
+  [--only|--except <ids>] [--no-build] <romdir> [<romdir> …]` (or `GRM_ROM_DIR`; or
+  `GRM_SNES_ROM_DIR` for `--snes`). Lives
   alongside `measure-overlay-scale.sh` and reuses the same `build/ghidra-home` isolation. As
   of bead `grm-4t2d` it stages the extension itself (build by default) before analyzing, so
   no prior `build-and-test.sh` run is required; `measure-overlay-scale.sh` is the one script
@@ -648,25 +649,64 @@ it is never a `run-banktest.sh` chunk (whose `all` would otherwise pull it in).
   as "this run did not look everywhere" before reading it as "this machine lacks the ROM"** —
   the driver prints the dir list it actually used alongside the skip count for exactly this
   reason, and the `gme-rom-location` bd memory records where each set lives.
-- **Two row sets, selected not accumulated.** `realrom/manifest.tsv` is the curated minimum
-  (one representative title per shipped board) and is the default; `realrom/manifest-gme.tsv`
-  is an expanded reference set of titles of interest to the parent game-music-extraction
-  project, chosen by `--gme`; `--all` runs both. The flags *select*, because `--gme` also
-  re-blessing the curated twelve is a costly surprise. The expanded set is deliberately not a
-  gate: a reference point for planning and an occasional thorough check, since each row costs
-  a headless import (~7s median, worst ~52s — see "How long the gates actually take"). Ids
-  must be unique across both files — checked repo-wide
-  regardless of which set a run selected — because an id names a golden *and* names the ROM
-  copy the import sees, so a duplicate would let one row silently overwrite another's golden.
+- **Four row sets across two platforms, selected not accumulated.** `realrom/manifest.tsv` is
+  the curated NES minimum (one representative title per shipped board) and is the default;
+  `realrom/manifest-gme.tsv` is an expanded NES reference set of titles of interest to the
+  parent game-music-extraction project, chosen by `--gme`; `--all` runs both NES manifests;
+  `realrom/manifest-snes.tsv` (bead `grm-9nxj.15`) is the SNES loader set, chosen by `--snes`.
+  The flags *select*, because `--gme` also re-blessing the curated twelve is a costly surprise.
+  The expanded set is deliberately not a gate: a reference point for planning and an occasional
+  thorough check, since each row costs a headless import (~7s median, worst ~52s — see "How
+  long the gates actually take"). Ids must be unique across *every* manifest — checked
+  repo-wide regardless of which set a run selected — because an id names a golden *and* names
+  the ROM copy the import sees, so a duplicate would let one row silently overwrite another's
+  golden, and `expected/` is one directory shared by both platforms.
+- **`--all` does not include `--snes`, and `--snes` does not refresh the staleness stamp.**
+  Both are deliberate. The SNES rows come from `GRM_SNES_ROM_DIR` rather than `GRM_ROM_DIR`,
+  run `SnesRomLoader` rather than `NesRomLoader`, and emit a different dump — so folding them
+  into `--all` would make "the whole real-ROM tier" silently SKIP thirteen rows on a machine
+  with NES ROMs and no SNES ones, on top of the confusion about set membership this file
+  already warns about twice. And the `REALROM STALENESS:` stamp answers one specific question,
+  "has anyone checked real-ROM *analysis* regressions at this commit"; the SNES rows import
+  with `-noanalysis` and answer none of it, so a `--snes` run leaves the stamp alone and says
+  so in its output rather than marking the analysis tier freshly verified.
+- **The SNES set is a LOADER tier, with its own dump script.** Thirteen hash-pinned cartridges
+  covering the alt-board axis the eleven-ROM GME corpus does not — SA-1, SuperFX 1/2, DSP-1 in
+  both LoROM and HiROM form, S-DD1, CX4, the corpus's one genuine ExHiROM, and a clean/copier
+  **pair** on each of two titles (Pilotwings and Star Fox), which is the real-ROM form of what
+  the synthetic `snestest`/`snestestcopier` fixtures encode: a copier-detection regression
+  shifts every offset in the image, so it cannot pass by matching one golden of a pair.
+  Pilotwings is the cleaner control — its two goldens differ *only* in the program name, the
+  sha256 and `copier=true` — because the Star Fox pair is also a revision pair.
+  `SnesRealRomDump.java` emits the parsed header, the ten CPU vectors, a sorted block inventory
+  with each byte-mapped block's mirror source and a per-mirror boolean saying whether reading
+  through it yields the source's bytes, the counts, and the reset entry point. It is separate
+  from `RealRomDump.java` (whose overlay/cross-bank counters would read zero forever on a
+  loader that creates no overlays) and, more importantly, from `VerifyBankTest.java`, which
+  dispatches on fixture *name* and falls through to the C64 default on an unrecognized one —
+  printing plausible nonsense instead of failing. Two rows pin a *disagreement* rather than a
+  success: `marioearlyyears`, whose declared HiROM map mode contradicts its `$7FC0` header
+  location and which the loader reports-and-proceeds on rather than refusing; and `tofphant`,
+  whose golden pins the known-incomplete ExHiROM handling past 4 MiB (blocks wrap to bank `$00`
+  and swallow the IO windows) so that fixing it shows up as a reviewable diff. `Super Adventure
+  Island` is deliberately *excluded*: it parses as `MapType.UNKNOWN` and the loader refuses it,
+  so it needs a rejection-shaped row — `analyzeHeadless` exits 0 on a loader refusal — which
+  belongs to bead `grm-9nxj.14`.
 - **Candidate cache correctness.** `bless` may reuse a candidate a prior `check` imported.
   Its key must cover *everything that can change the dump*: the row id (it becomes the ROM
-  copy name and lands in the dump as `REALROM program <id>.nes`), the ROM hash, the loader
-  options, `RealRomDump.java`, and the installed extension — where "extension" includes the
+  copy name and lands in the dump as `REALROM program <id>.nes`, or `.sfc` on the SNES set),
+  the ROM hash, the loader options, **whichever dump script the row uses** (`RealRomDump.java`
+  or `SnesRealRomDump.java` — hardcoding the former would let a SNES golden be served from a
+  cache entry predating a change to the latter), and the installed extension — where "extension" includes the
   **loose `data/machines/*.map` descriptors**, not just the jars, since a board descriptor
   edit changes the very layout the dump records. A reused candidate is additionally asserted
   to name this row and this ROM before it is accepted, so the next key omission fails loudly
   instead of blessing a stale dump.
-- **`nominate`** hashes a ROM dir, decodes each iNES mapper (mirroring `NesRomLoader`'s NES 2.0
+- **`nominate` is NES-only** and refuses `--snes` rather than emitting garbage rows, since a
+  SNES cartridge has no iNES header and no `machines/nes-*.yaml` claims it. SNES rows are
+  selected from the `grm-9nxj.13` corpus survey (`build-and-test.sh check snes-rom-corpus` →
+  `build/snes-rom-corpus/roms.tsv`), which already emits name, size, sha256 and every parsed
+  header field per image. `nominate` hashes a ROM dir, decodes each iNES mapper (mirroring `NesRomLoader`'s NES 2.0
   and `DiskDude!`-archaic handling) and resolves the claiming board from the shipped
   descriptors' `ines_mappers`, emitting paste-ready rows. It needs no Ghidra install. A mapper
   no descriptor claims is reported as a **board gap** — the most useful signal the expanded

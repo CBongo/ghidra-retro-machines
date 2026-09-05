@@ -66,14 +66,15 @@ Thumbs.db
 .codex/*.local.json
 
 # Local real-ROM library surveys (tools/banktest/realrom-test.sh nominate output).
-# The driver only ever reads manifest.tsv and manifest-gme.tsv, both by hardcoded name, so
-# any OTHER manifest-*.tsv is a machine-specific scratch survey of whatever ROM library the
-# author happens to have -- useful for finding new test samples or comparing dumps, but not a
-# curated, hash-pinned test input and not reproducible for anyone else. Ignored by default;
-# re-include explicitly (as manifest-gme.tsv is below) if a survey is ever promoted to a
-# curated set.
+# The driver only ever reads manifest.tsv, manifest-gme.tsv and manifest-snes.tsv, all by
+# hardcoded name, so any OTHER manifest-*.tsv is a machine-specific scratch survey of whatever
+# ROM library the author happens to have -- useful for finding new test samples or comparing
+# dumps, but not a curated, hash-pinned test input and not reproducible for anyone else.
+# Ignored by default; re-include explicitly (as the two curated sets are below) if a survey is
+# ever promoted to a curated set.
 tools/banktest/realrom/manifest-*.tsv
 !tools/banktest/realrom/manifest-gme.tsv
+!tools/banktest/realrom/manifest-snes.tsv
 
 # Generated descriptor-source fingerprint (bead grm-5jjs) — build output, never committed
 data/descriptor-sources.sha256

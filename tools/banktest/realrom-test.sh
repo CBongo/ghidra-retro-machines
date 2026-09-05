@@ -1,25 +1,52 @@
 #!/usr/bin/env bash
-# OPTIONAL, hash-pinned real-ROM regression tier for the NES board descriptors.
+# OPTIONAL, hash-pinned real-ROM regression tier for the NES board descriptors and (bead
+# grm-9nxj.15) the SNES cartridge loader.
 # Deliberately NOT a run-banktest.sh chunk and NOT invoked by build-and-test.sh's
 # default gate (whose `all` selects every chunk) -- real ROMs are copyrighted and
 # user-supplied, so this lives alongside measure-overlay-scale.sh and is invoked by
 # hand:
 #
-#   bash tools/banktest/realrom-test.sh check    [--gme|--all] [--only|--except <ids>] [--no-build] <romdir> ...
-#   bash tools/banktest/realrom-test.sh bless    [--gme|--all] [--only|--except <ids>] [--no-build] <romdir> ...
+#   bash tools/banktest/realrom-test.sh check    [--gme|--all|--snes] [--only|--except <ids>] [--no-build] <romdir> ...
+#   bash tools/banktest/realrom-test.sh bless    [--gme|--all|--snes] [--only|--except <ids>] [--no-build] <romdir> ...
 #   bash tools/banktest/realrom-test.sh nominate <romdir> ...
 #
-# (romdirs may also be supplied via GRM_ROM_DIR, space-separated.)
+# (romdirs may also be supplied via GRM_ROM_DIR -- or, for --snes, GRM_SNES_ROM_DIR --
+# space-separated.)
 #
-# There are two row sets and the flags SELECT one rather than adding to it: no flag =
-# realrom/manifest.tsv (the curated board-representative set), --gme = realrom/manifest-gme.tsv
-# (game-music-extraction titles of interest), --all = both. Additive --gme was the first
-# design and it was wrong: `bless --gme` then silently re-blessed all twelve curated goldens
-# alongside the ones asked for. Every run announces the set it picked.
+# There are now FOUR row sets across TWO PLATFORMS, and the flags SELECT one rather than
+# adding to it: no flag = realrom/manifest.tsv (the curated NES board-representative set),
+# --gme = realrom/manifest-gme.tsv (NES game-music-extraction titles of interest), --all =
+# both NES manifests, --snes = realrom/manifest-snes.tsv (the SNES alt-board loader sample)
+# ONLY. Additive --gme was the first design and it was wrong: `bless --gme` then silently
+# re-blessed all twelve curated goldens alongside the ones asked for. Every run announces the
+# set it picked.
+#
+# --all DELIBERATELY DOES NOT INCLUDE --snes, and that is a decision rather than an oversight
+# (bead grm-9nxj.15). The SNES rows come from a DIFFERENT environment variable
+# (GRM_SNES_ROM_DIR, not GRM_ROM_DIR), a different loader, and a different dump script, and
+# they assert loader LAYOUT rather than banking analysis -- so folding them into --all would
+# make "the whole real-ROM tier" mean something that silently SKIPs thirteen rows on any
+# machine that has NES ROMs and no SNES ones. CLAUDE.md already warns at length that people
+# misread which subset each flag covers; adding a fourth meaning to --all would make that
+# worse. Ask for the SNES rows by name.
+#
+# WHAT VARIES PER SET, all of it parameterized below rather than branched inline: the
+# manifest file, the loader (NesRomLoader / SnesRomLoader), the dump postScript
+# (RealRomDump.java / SnesRealRomDump.java), the ROM-dir environment variable, the file
+# extensions the ROM index scans, the extension of the temp copy the import sees (which
+# reaches the golden as `REALROM program <id>.<ext>`), and whether analysis runs at all.
+# The SNES rows import with -noanalysis: they are LOADER rows -- block layout, byte-mapped
+# mirrors, IO typing, entry point -- and nothing SnesRealRomDump.java emits depends on
+# auto-analysis, so skipping it is both much faster on a 4-6 MB cartridge and immune to the
+# analyzer jitter that makes two NES rows unstable.
 #
 # `nominate` emits paste-ready manifest rows for a ROM dir -- hashing each dump, decoding its
 # iNES mapper and resolving the claiming board -- and flags any mapper no shipped descriptor
-# claims as a board gap. It needs no Ghidra install.
+# claims as a board gap. It needs no Ghidra install. It is NES-ONLY: it decodes iNES headers
+# and resolves machines/nes-*.yaml, neither of which means anything for a SNES cartridge, so
+# it refuses --snes rather than emitting garbage rows. Use the grm-9nxj.13 corpus survey
+# (build-and-test.sh check snes-rom-corpus -> build/snes-rom-corpus/roms.tsv) to select and
+# hash SNES candidates instead; that is what the current thirteen rows were drawn from.
 #
 # --only/--except take comma-separated manifest ids and select which rows the run
 # considers at all. --except exists for the recurring case this tier actually hits: ONE title
@@ -100,17 +127,21 @@
 #   GHIDRA_HEADLESS         path to analyzeHeadless(.bat)
 #   BANKTEST_SETTINGS_BASE  relocate Ghidra user-settings/Extensions dir (defaults to
 #                            <repo>/build/ghidra-home)
-#   GRM_ROM_DIR             default rom dir(s) if none given on the command line
+#   GRM_ROM_DIR             default rom dir(s) if none given on the command line (NES sets)
+#   GRM_SNES_ROM_DIR        the same, for --snes. Separate on purpose: GRM_ROM_DIR stays
+#                            NES-only, and both are read with identical semantics --
+#                            space-separated dirs, each indexed at DEPTH 1 ONLY.
 #   GRM_BANKTEST_WORK       base dir for per-run work dirs (defaults to
 #                            <repo>/build/banktest-work; kept on failure)
 #   REALROM_WORK_DIR        use this exact dir instead of a fresh one
 #   GRM_SKIP_BUILD=1        same opt-out as --no-build (below), for scripted callers
 set -u
 
-USAGE="usage: $0 check|bless|nominate [--gme|--all] [--only <ids>|--except <ids>] <romdir> [<romdir> ...]
-  (no set flag) realrom/manifest.tsv      -- the curated board-representative set
-  --gme         realrom/manifest-gme.tsv  -- the game-music-extraction set ONLY
-  --all         both manifests"
+USAGE="usage: $0 check|bless|nominate [--gme|--all|--snes] [--only <ids>|--except <ids>] <romdir> [<romdir> ...]
+  (no set flag) realrom/manifest.tsv       -- the curated NES board-representative set
+  --gme         realrom/manifest-gme.tsv   -- the NES game-music-extraction set ONLY
+  --all         both NES manifests (NOT the SNES set -- see the header comment)
+  --snes        realrom/manifest-snes.tsv  -- the SNES loader set ONLY (GRM_SNES_ROM_DIR)"
 
 MODE="${1:-}"
 case "$MODE" in
@@ -158,6 +189,10 @@ while [ $# -gt 0 ]; do
 			MANIFEST_SET=all
 			shift
 			;;
+		--snes)
+			MANIFEST_SET=snes
+			shift
+			;;
 		--no-build)
 			NO_BUILD=1
 			shift
@@ -201,22 +236,61 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # it's been.
 grm_realrom_staleness_note
 
+# ------------------------------------------------------------------
+# PER-PLATFORM PARAMETERS (bead grm-9nxj.15). Everything that differs between the NES sets
+# and the SNES set is resolved ONCE, here, and read from these variables everywhere below --
+# rather than sprinkling `if [ "$MANIFEST_SET" = snes ]` through the row walk, the cache key,
+# the ROM index and the import. A second copy of this script was the obvious alternative and
+# was rejected: this one already owns hash pinning, SKIP-when-absent, --only/--except, the
+# candidate cache, bless-with-diff-review and the staleness stamp, and a fork would drift on
+# all six.
+#
+# PLATFORM         which family this run is about (informational, and gates `nominate`)
+# ROM_ENV          the environment variable holding default rom dirs
+# ROM_LOADER       the Ghidra loader name passed to -loader
+# ROM_DUMP_SCRIPT  the -postScript that emits the REALROM block (both fence it identically)
+# ROM_EXTS         file extensions the sha256 index scans, depth 1
+# ROM_COPY_EXT     extension of the temp copy the import sees; reaches the golden as
+#                  `REALROM program <id><ext>`, so changing it invalidates every golden
+# ROM_IMPORT_ARGS  extra analyzeHeadless args (the SNES rows import with -noanalysis)
+case "$MANIFEST_SET" in
+	snes)
+		PLATFORM=snes
+		ROM_ENV=GRM_SNES_ROM_DIR
+		ROM_LOADER=SnesRomLoader
+		ROM_DUMP_SCRIPT=SnesRealRomDump.java
+		ROM_EXTS=(sfc smc fig swc)
+		ROM_COPY_EXT=.sfc
+		ROM_IMPORT_ARGS=(-noanalysis)
+		;;
+	*)
+		PLATFORM=nes
+		ROM_ENV=GRM_ROM_DIR
+		ROM_LOADER=NesRomLoader
+		ROM_DUMP_SCRIPT=RealRomDump.java
+		ROM_EXTS=(nes)
+		ROM_COPY_EXT=.nes
+		ROM_IMPORT_ARGS=()
+		;;
+esac
+
 ROM_DIRS=("$@")
-if [ ${#ROM_DIRS[@]} -eq 0 ] && [ -n "${GRM_ROM_DIR:-}" ]; then
+if [ ${#ROM_DIRS[@]} -eq 0 ] && [ -n "${!ROM_ENV:-}" ]; then
 	# shellcheck disable=SC2206
-	ROM_DIRS=($GRM_ROM_DIR)
+	ROM_DIRS=(${!ROM_ENV})
 fi
 if [ ${#ROM_DIRS[@]} -eq 0 ]; then
-	echo "REALROM: SKIPPED -- no ROM dirs supplied and GRM_ROM_DIR is unset. This tier was" \
-		"NOT run; nothing about real-ROM regressions was checked. Set GRM_ROM_DIR (it may" \
+	echo "REALROM: SKIPPED -- no ROM dirs supplied and $ROM_ENV is unset. This tier was" \
+		"NOT run; nothing about real-ROM regressions was checked. Set $ROM_ENV (it may" \
 		"hold several space-separated dirs) or pass romdir arguments." >&2
-	echo "$USAGE   (or set GRM_ROM_DIR)" >&2
+	echo "$USAGE   (or set $ROM_ENV)" >&2
 	exit 2
 fi
 
 REALROM_DIR="$SCRIPT_DIR/realrom"
 MANIFEST="$REALROM_DIR/manifest.tsv"
 GME_MANIFEST="$REALROM_DIR/manifest-gme.tsv"
+SNES_MANIFEST="$REALROM_DIR/manifest-snes.tsv"
 EXPECTED_DIR="$REALROM_DIR/expected"
 
 if [ ! -f "$MANIFEST" ]; then
@@ -228,13 +302,20 @@ case "$MANIFEST_SET" in
 	core) MANIFESTS=("$MANIFEST") ;;
 	gme)  MANIFESTS=("$GME_MANIFEST") ;;
 	all)  MANIFESTS=("$MANIFEST" "$GME_MANIFEST") ;;
+	snes) MANIFESTS=("$SNES_MANIFEST") ;;
 esac
-if [ "$MANIFEST_SET" != core ] && [ ! -f "$GME_MANIFEST" ]; then
-	echo "ERROR: --$MANIFEST_SET needs $GME_MANIFEST, which does not exist." >&2
-	echo "       Populate it with: $0 nominate <romdir> [<romdir> ...]" >&2
+for m in "${MANIFESTS[@]}"; do
+	[ -f "$m" ] && continue
+	echo "ERROR: the '$MANIFEST_SET' set needs $m, which does not exist." >&2
+	[ "$MANIFEST_SET" = snes ] ||
+		echo "       Populate it with: $0 nominate <romdir> [<romdir> ...]" >&2
+	[ "$MANIFEST_SET" != snes ] ||
+		echo "       nominate is NES-only; select SNES rows from the grm-9nxj.13 corpus" \
+			"survey (build/snes-rom-corpus/roms.tsv) instead." >&2
 	exit 2
-fi
-echo "== manifest set: $MANIFEST_SET (${#MANIFESTS[@]} file(s)) =="
+done
+echo "== manifest set: $MANIFEST_SET (${#MANIFESTS[@]} file(s), platform $PLATFORM," \
+	"loader $ROM_LOADER, dump $ROM_DUMP_SCRIPT) =="
 
 # Ragged rows are a RENDERING defect, never a correctness one -- `read` treats a missing
 # trailing field and an empty one identically -- so this warns and continues. It exists
@@ -257,8 +338,14 @@ mkdir -p "$EXPECTED_DIR"
 # Checks EVERY manifest, not just the selected ones: uniqueness is a property of the repo,
 # not of how this invocation was flagged, and a `--gme` run that skipped the check would
 # happily bless a row whose id collides with a curated one.
+#
+# manifest-snes.tsv is in here for exactly that reason (bead grm-9nxj.15): an id is a filename
+# under expected/, and expected/ is ONE directory shared by every platform, so a SNES row
+# named `megaman` would overwrite the NES golden of that name. Uniqueness is a property of the
+# repo, not of the platform.
 all_manifests=("$MANIFEST")
 [ -f "$GME_MANIFEST" ] && all_manifests+=("$GME_MANIFEST")
+[ -f "$SNES_MANIFEST" ] && all_manifests+=("$SNES_MANIFEST")
 dupe_ids="$(cat "${all_manifests[@]}" | tr -d '\r' \
 	| awk -F'\t' '!/^#/ && NF && $1 != "id" { print $1 }' \
 	| LC_ALL=C sort | uniq -d)"
@@ -309,6 +396,19 @@ fi
 # headless, no project.
 # ------------------------------------------------------------------
 if [ "$MODE" = nominate ]; then
+	# NES-ONLY, and it says so rather than emitting garbage (bead grm-9nxj.15). Everything
+	# below decodes an iNES header and resolves machines/nes-*.yaml `ines_mappers:`; run
+	# against SNES cartridges it would report every one of them as "NOT an iNES image" -- a
+	# clean-looking run whose entire output is wrong about what it examined.
+	if [ "$MANIFEST_SET" = snes ]; then
+		echo "ERROR: nominate is NES-only -- it decodes iNES headers and resolves" >&2
+		echo "       machines/nes-*.yaml, neither of which applies to a SNES cartridge." >&2
+		echo "       For SNES rows use the grm-9nxj.13 corpus survey, which emits name, size," >&2
+		echo "       sha256 and the parsed header fields per image:" >&2
+		echo "         bash tools/banktest/build-and-test.sh check snes-rom-corpus" >&2
+		echo "         # -> build/snes-rom-corpus/roms.tsv" >&2
+		exit 2
+	fi
 	if ! command -v od >/dev/null 2>&1; then
 		echo "ERROR: od not found on PATH (needed to decode iNES headers)." >&2
 		exit 2
@@ -364,6 +464,7 @@ if [ "$MODE" = nominate ]; then
 	# answering it from a narrower set would nominate a duplicate of a row that exists.
 	nominate_known=("$MANIFEST")
 	[ -f "$GME_MANIFEST" ] && nominate_known+=("$GME_MANIFEST")
+	[ -f "$SNES_MANIFEST" ] && nominate_known+=("$SNES_MANIFEST")
 	known_shas=" $(cat "${nominate_known[@]}" | tr -d '\r' |
 		awk -F'\t' '!/^#/ && NF && $1 != "id" { printf "%s:%s ", tolower($3), $1 }')"
 
@@ -440,7 +541,7 @@ if [ "$MODE" = check ]; then
 		g_prog="$(awk '/^REALROM program /{print $3; exit}' "$g_path")"
 		g_gsha="$(awk '/^REALROM sha256 /{print tolower($3); exit}' "$g_path")"
 		g_want="$(printf '%s' "$g_sha" | tr 'A-Z' 'a-z' | tr -d '[:space:]')"
-		if [ "$g_prog" != "$g_id.nes" ] || [ "$g_gsha" != "$g_want" ]; then
+		if [ "$g_prog" != "$g_id$ROM_COPY_EXT" ] || [ "$g_gsha" != "$g_want" ]; then
 			mismatched="$mismatched  $g_id: $(basename "$g_path") says program=$g_prog sha=${g_gsha:0:12}...
 "
 		fi
@@ -484,7 +585,9 @@ fi
 
 # Same isolation as measure-overlay-scale.sh: point Ghidra's settings/Extensions dir at
 # the per-worktree build/ghidra-home tree.
-grm_settings_base_fallback nes-banking
+# The chunk name is only used in the "run build-and-test.sh first" hint, so name one that
+# actually covers this run's platform.
+grm_settings_base_fallback "$([ "$PLATFORM" = snes ] && echo snes-loader || echo nes-banking)"
 grm_apply_settings_base
 
 if ! command -v sha256sum >/dev/null 2>&1; then
@@ -559,7 +662,11 @@ realrom_cache_key() {
 		printf 'id:%s\n' "$id"
 		printf 'rom:%s\n' "$rom_sha"
 		printf 'opts:%s\n' "$opts"
-		printf 'dumpscript:'; sha256sum "$SCRIPT_DIR/RealRomDump.java" | cut -d' ' -f1
+		# WHICHEVER dump script this row actually uses. Hardcoding RealRomDump.java here
+		# would let a SNES golden be served from a cache entry that predates a change to
+		# SnesRealRomDump.java -- into a `bless`, in the worst case (bead grm-9nxj.15).
+		printf 'dumpscript:%s:' "$ROM_DUMP_SCRIPT"
+		sha256sum "$SCRIPT_DIR/$ROM_DUMP_SCRIPT" | cut -d' ' -f1
 		printf 'ext:%s\n' "$EXT_ID"
 		# A -preScript runs BEFORE auto-analysis and can change what analysis DOES at all --
 		# SetAnalyzerEnabled.java (bead grm-8uaz) turns an analyzer off outright. That is the
@@ -595,16 +702,22 @@ for dir in "${ROM_DIRS[@]}"; do
 		continue
 	fi
 	count=0
-	for f in "$dir"/*.nes; do
-		[ -f "$f" ] || continue
-		h="$(sha256sum "$f" | cut -d' ' -f1 | tr 'A-Z' 'a-z')"
-		# First occurrence wins; a manifest pins one exact dump anyway.
-		if [ -z "${ROM_BY_SHA[$h]:-}" ]; then
-			ROM_BY_SHA[$h]="$f"
-		fi
-		count=$((count + 1))
+	# ROM_EXTS is per platform (nes; or sfc/smc/fig/swc for --snes -- a SNES collection uses
+	# all four interchangeably, and the copier-headered rows are precisely the .smc ones, so
+	# scanning only one extension would SKIP half of a clean/copier pair and quietly turn the
+	# pair principle off).
+	for ext in "${ROM_EXTS[@]}"; do
+		for f in "$dir"/*."$ext"; do
+			[ -f "$f" ] || continue
+			h="$(sha256sum "$f" | cut -d' ' -f1 | tr 'A-Z' 'a-z')"
+			# First occurrence wins; a manifest pins one exact dump anyway.
+			if [ -z "${ROM_BY_SHA[$h]:-}" ]; then
+				ROM_BY_SHA[$h]="$f"
+			fi
+			count=$((count + 1))
+		done
 	done
-	echo "  $dir: hashed $count .nes file(s)"
+	echo "  $dir: hashed $count file(s) matching ${ROM_EXTS[*]}"
 done
 shopt -u nullglob nocaseglob
 
@@ -619,7 +732,7 @@ import_and_dump() {
 	local id="$1" rom="$2" opts="$3" out="$4"
 	local safe rom_copy proj log
 	safe="$(sanitize "$id")"
-	rom_copy="$WORK/${safe}.nes"
+	rom_copy="$WORK/${safe}$ROM_COPY_EXT"
 	cp -f "$rom" "$rom_copy"
 	proj="$WORK/proj_${safe}"
 	mkdir -p "$proj"
@@ -635,11 +748,12 @@ import_and_dump() {
 	# shellcheck disable=SC2086
 	"$GHIDRA_HEADLESS" "$(native "$proj")" headless \
 		-import "$(native "$rom_copy")" \
-		-loader NesRomLoader \
+		-loader "$ROM_LOADER" \
+		${ROM_IMPORT_ARGS[@]+"${ROM_IMPORT_ARGS[@]}"} \
 		$opts \
 		-scriptPath "$(native "$SCRIPT_DIR")" \
 		${REALROM_EXTRA_PRESCRIPT:+-preScript $REALROM_EXTRA_PRESCRIPT} \
-		-postScript RealRomDump.java \
+		-postScript "$ROM_DUMP_SCRIPT" \
 		${REALROM_EXTRA_POSTSCRIPT:+-postScript "$REALROM_EXTRA_POSTSCRIPT"} \
 		-deleteProject \
 		>"$log" 2>&1
@@ -651,7 +765,10 @@ import_and_dump() {
 
 	# Strip headless's "INFO RealRomDump.java> <msg> (GhidraScript)" wrapping, then carve
 	# the REALROM block.
-	sed 's/\r$//; s/^.*RealRomDump\.java> //; s/ (GhidraScript)[[:space:]]*$//' "$log" \
+	# The postScript's own name appears in headless's line prefix, so the strip has to
+	# name the script this row actually ran (bead grm-9nxj.15).
+	local dump_re="${ROM_DUMP_SCRIPT//./\\.}"
+	sed "s/\r\$//; s/^.*$dump_re> //; s/ (GhidraScript)[[:space:]]*\$//" "$log" \
 		| awk '/^=== REALROM BEGIN ===$/{c=1} c{print} /^=== REALROM END ===$/{c=0}' >"$out"
 
 	if ! grep -q '^=== REALROM END ===$' "$out"; then
@@ -706,8 +823,8 @@ while IFS=$'\t' read -r id title sha mapper board golden opts || [ -n "${id:-}" 
 		# failure mode this tier exists to prevent.
 		cached_prog="$(awk '/^REALROM program /{print $3; exit}' "$cached")"
 		cached_sha="$(awk '/^REALROM sha256 /{print tolower($3); exit}' "$cached")"
-		if [ "$cached_prog" != "$id.nes" ] || [ "$cached_sha" != "$sha" ]; then
-			echo "    stale cache entry ignored (program='$cached_prog' want='$id.nes'," \
+		if [ "$cached_prog" != "$id$ROM_COPY_EXT" ] || [ "$cached_sha" != "$sha" ]; then
+			echo "    stale cache entry ignored (program='$cached_prog' want='$id$ROM_COPY_EXT'," \
 				"sha='$cached_sha' want='$sha') -- re-importing" >&2
 			rm -f "$cached"
 		else
@@ -843,7 +960,18 @@ fi
 # is not swallowed silently either -- atomic via grm_atomic_publish_stdin (lib/common.sh,
 # grm-z34), so an interrupted write is never read back as a valid (and misleadingly fresh)
 # stamp.
-if mkdir -p "$(dirname "$GRM_REALROM_STAMP")" 2>/dev/null; then
+#
+# A --snes RUN DOES NOT STAMP, and that is deliberate (bead grm-9nxj.15). The stamp answers
+# ONE question -- "has anyone checked real-ROM ANALYSIS regressions at this commit" -- and it
+# is what CLAUDE.md points at when it requires this tier before committing a change to
+# BoardBankAnalyzer, a BankSwitchStrategy or StoredValueScanner. The SNES rows import with
+# -noanalysis and exercise none of that; letting them refresh the stamp would let a
+# thirteen-row loader run silently mark the NES analysis tier as freshly verified, which is
+# exactly the "quiet green for a tier that did not execute" this stamp exists to prevent.
+if [ "$MANIFEST_SET" = snes ]; then
+	echo "note: --snes does not refresh the REALROM staleness stamp -- it verifies loader"
+	echo "      layout with -noanalysis and says nothing about NES analysis regressions."
+elif mkdir -p "$(dirname "$GRM_REALROM_STAMP")" 2>/dev/null; then
 	stamp_head="$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
 	stamp_content="$stamp_head
 $(date -u +%Y-%m-%dT%H:%M:%SZ)"

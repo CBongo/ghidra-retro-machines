@@ -145,7 +145,8 @@ Chunk/source-area mapping:
 **The real-ROM tier is separate, opt-in, and takes NO paths — just run it:**
 
 ```bash
-bash tools/banktest/realrom-test.sh check --all           # romdirs come from GRM_ROM_DIR
+bash tools/banktest/realrom-test.sh check --all           # NES: romdirs come from GRM_ROM_DIR
+bash tools/banktest/realrom-test.sh check --snes          # SNES: romdirs come from GRM_SNES_ROM_DIR
 ```
 
 No prior `build-and-test.sh` run is required (bead grm-4t2d option (e)): `realrom-test.sh`
@@ -161,6 +162,32 @@ cv2, tmnt, smb2, rcransom, ff1, dodge, rcproam) lives in the **GME** set, so a b
 touches one of them. Sharpest illustration: all three ROMs the grm-mu7 incident below destroyed —
 kicarus, dodge, cv2 — are GME rows, so a bare `check` would not have caught the very regression
 this requirement exists to prevent.
+
+**`--snes` is a FOURTH set, on a different platform, and `--all` does NOT include it** (bead
+`grm-9nxj.15`). `--snes` = `realrom/manifest-snes.tsv` *only*: thirteen hash-pinned SNES
+cartridges chosen to cover the alt-board axis the eleven-ROM GME corpus does not — SA-1,
+SuperFX 1/2, DSP-1 in both LoROM and HiROM form, S-DD1, CX4, the one genuine ExHiROM, and a
+clean/copier **pair** on each of two titles (a copier-detection regression shifts every offset
+in the image, so it cannot pass by matching one golden of a pair). Its romdirs come from
+**`GRM_SNES_ROM_DIR`**, not `GRM_ROM_DIR`; `GRM_ROM_DIR` stays NES-only. Both are read with
+identical semantics — space-separated dirs, each indexed at depth 1 only.
+
+Keeping it out of `--all` is deliberate rather than an omission: these rows run
+`SnesRomLoader` with `-noanalysis` and assert loader LAYOUT (block inventory, byte-mapped
+mirrors, IO typing, entry point) rather than banking analysis, so folding them in would make
+"the whole real-ROM tier" silently SKIP thirteen rows on any machine holding NES ROMs and no
+SNES ones — a fourth meaning for the flag this section already warns twice about. For the same
+reason a `--snes` run does **not** refresh the `REALROM STALENESS:` stamp described below, and
+says so in its output: that stamp answers "has anyone checked real-ROM *analysis* regressions
+at this commit", which a `-noanalysis` loader pass answers not at all. The requirement in the
+next paragraph is therefore unchanged — `--all` before an analysis-behaviour commit — with
+`--snes` its counterpart before a commit touching `SnesRomLoader`, `SnesAddressMap`,
+`SnesRomHeader` or `machines/snes.*`.
+
+`nominate` is NES-only and refuses `--snes` rather than emitting garbage (it decodes iNES
+headers). Select SNES rows from the `grm-9nxj.13` corpus survey's
+`build/snes-rom-corpus/roms.tsv` instead, which carries name, size, sha256 and every parsed
+header field — that is where the thirteen rows and their hashes came from.
 
 **`tools/banktest/realrom-test.sh check --all` is REQUIRED before committing any change that
 touches analysis behaviour** (`BoardBankAnalyzer`, any `BankSwitchStrategy`, `StoredValueScanner`, or
@@ -225,9 +252,10 @@ output (e.g. a Ghidra GDT archive) embedding something path/build-instance-speci
 `ext_identity()` mismatch as informative, not proof of a real source difference; the dump-vs-dump
 diff `ab-test.sh` prints is the reliable signal regardless.
 
-When `GRM_ROM_DIR` is unset and no romdir is passed, `realrom-test.sh` refuses to run (nonzero
-exit, loud stderr message) rather than silently doing nothing — it never reports a clean gate for
-a tier that did not execute.
+When the run's ROM-dir variable (`GRM_ROM_DIR`, or `GRM_SNES_ROM_DIR` under `--snes`) is unset
+and no romdir is passed, `realrom-test.sh` refuses to run (nonzero exit, loud stderr message
+naming the variable it wanted) rather than silently doing nothing — it never reports a clean
+gate for a tier that did not execute.
 
 **The exhaustive SPC700 vector tier (`spc700-vectors` chunk) has the same standing as the
 real-ROM tier**: opt-in, needs user-supplied data (`GRM_SPC700_VECTORS`, a full clone of

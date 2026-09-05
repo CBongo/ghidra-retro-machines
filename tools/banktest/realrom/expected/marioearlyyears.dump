@@ -1,0 +1,111 @@
+=== REALROM BEGIN ===
+REALROM program marioearlyyears.sfc
+REALROM sha256 57b94f5f576abbe8bd8f5a4eeb6cf927300ec1b5f0596610f3539ba733505c12
+REALROM format SNES ROM (LoROM/HiROM)
+REALROM language 65816:LE:24:retro
+REALROM map machines/snes.map
+REALROM header maptype=HIROM offset=0x007fc0 copier=false matchesLocation=false
+REALROM header mapmode=0x31 chipset=0x00 fastrom=true
+REALROM header romsize=1024K ramsize=0K checksumValid=true
+REALROM header title [SNES Kernel]
+REALROM vector VEC_ABORT_EMULATION 0xffe2
+REALROM vector VEC_ABORT_NATIVE 0xffe2
+REALROM vector VEC_BRK_NATIVE 0xffe1
+REALROM vector VEC_COP_EMULATION 0xffe0
+REALROM vector VEC_COP_NATIVE 0xffe0
+REALROM vector VEC_IRQ_EMULATION 0x800e
+REALROM vector VEC_IRQ_NATIVE 0x800e
+REALROM vector VEC_NMI_EMULATION 0x8035
+REALROM vector VEC_NMI_NATIVE 0x8035
+REALROM vector VEC_RESET_EMULATION 0x8000
+REALROM block CPU_DMA_IO 004200-0043ff type=Default init=false overlay=false perm=rw- vol=true
+REALROM block JOYPAD_IO 004000-0041ff type=Default init=false overlay=false perm=rw- vol=true
+REALROM block LOWRAM_00 000000-001fff type=Byte_Mapped init=false overlay=false perm=rw- vol=false mapped=7e0000-7e1fff mirrorOk=n/a
+REALROM block LOWRAM_80 800000-801fff type=Byte_Mapped init=false overlay=false perm=rw- vol=false mapped=7e0000-7e1fff mirrorOk=n/a
+REALROM block PPU_APU_IO 002100-0021ff type=Default init=false overlay=false perm=rw- vol=true
+REALROM block ROM_00_8000_mirror 008000-017fff type=Byte_Mapped init=false overlay=false perm=r-x vol=false mapped=c00000-c0ffff mirrorOk=true
+REALROM block ROM_01_8000_mirror 018000-027fff type=Byte_Mapped init=false overlay=false perm=r-x vol=false mapped=c10000-c1ffff mirrorOk=true
+REALROM block ROM_02_8000_mirror 028000-037fff type=Byte_Mapped init=false overlay=false perm=r-x vol=false mapped=c20000-c2ffff mirrorOk=true
+REALROM block ROM_03_8000_mirror 038000-047fff type=Byte_Mapped init=false overlay=false perm=r-x vol=false mapped=c30000-c3ffff mirrorOk=true
+REALROM block ROM_04_8000_mirror 048000-057fff type=Byte_Mapped init=false overlay=false perm=r-x vol=false mapped=c40000-c4ffff mirrorOk=true
+REALROM block ROM_05_8000_mirror 058000-067fff type=Byte_Mapped init=false overlay=false perm=r-x vol=false mapped=c50000-c5ffff mirrorOk=true
+REALROM block ROM_06_8000_mirror 068000-077fff type=Byte_Mapped init=false overlay=false perm=r-x vol=false mapped=c60000-c6ffff mirrorOk=true
+REALROM block ROM_07_8000_mirror 078000-087fff type=Byte_Mapped init=false overlay=false perm=r-x vol=false mapped=c70000-c7ffff mirrorOk=true
+REALROM block ROM_08_8000_mirror 088000-097fff type=Byte_Mapped init=false overlay=false perm=r-x vol=false mapped=c80000-c8ffff mirrorOk=true
+REALROM block ROM_09_8000_mirror 098000-0a7fff type=Byte_Mapped init=false overlay=false perm=r-x vol=false mapped=c90000-c9ffff mirrorOk=true
+REALROM block ROM_0A_8000_mirror 0a8000-0b7fff type=Byte_Mapped init=false overlay=false perm=r-x vol=false mapped=ca0000-caffff mirrorOk=true
+REALROM block ROM_0B_8000_mirror 0b8000-0c7fff type=Byte_Mapped init=false overlay=false perm=r-x vol=false mapped=cb0000-cbffff mirrorOk=true
+REALROM block ROM_0C_8000_mirror 0c8000-0d7fff type=Byte_Mapped init=false overlay=false perm=r-x vol=false mapped=cc0000-ccffff mirrorOk=true
+REALROM block ROM_0D_8000_mirror 0d8000-0e7fff type=Byte_Mapped init=false overlay=false perm=r-x vol=false mapped=cd0000-cdffff mirrorOk=true
+REALROM block ROM_0E_8000_mirror 0e8000-0f7fff type=Byte_Mapped init=false overlay=false perm=r-x vol=false mapped=ce0000-ceffff mirrorOk=true
+REALROM block ROM_0F_8000_mirror 0f8000-107fff type=Byte_Mapped init=false overlay=false perm=r-x vol=false mapped=cf0000-cfffff mirrorOk=true
+REALROM block ROM_80_8000_mirror 808000-817fff type=Byte_Mapped init=false overlay=false perm=r-x vol=false mapped=c00000-c0ffff mirrorOk=true
+REALROM block ROM_81_8000_mirror 818000-827fff type=Byte_Mapped init=false overlay=false perm=r-x vol=false mapped=c10000-c1ffff mirrorOk=true
+REALROM block ROM_82_8000_mirror 828000-837fff type=Byte_Mapped init=false overlay=false perm=r-x vol=false mapped=c20000-c2ffff mirrorOk=true
+REALROM block ROM_83_8000_mirror 838000-847fff type=Byte_Mapped init=false overlay=false perm=r-x vol=false mapped=c30000-c3ffff mirrorOk=true
+REALROM block ROM_84_8000_mirror 848000-857fff type=Byte_Mapped init=false overlay=false perm=r-x vol=false mapped=c40000-c4ffff mirrorOk=true
+REALROM block ROM_85_8000_mirror 858000-867fff type=Byte_Mapped init=false overlay=false perm=r-x vol=false mapped=c50000-c5ffff mirrorOk=true
+REALROM block ROM_86_8000_mirror 868000-877fff type=Byte_Mapped init=false overlay=false perm=r-x vol=false mapped=c60000-c6ffff mirrorOk=true
+REALROM block ROM_87_8000_mirror 878000-887fff type=Byte_Mapped init=false overlay=false perm=r-x vol=false mapped=c70000-c7ffff mirrorOk=true
+REALROM block ROM_88_8000_mirror 888000-897fff type=Byte_Mapped init=false overlay=false perm=r-x vol=false mapped=c80000-c8ffff mirrorOk=true
+REALROM block ROM_89_8000_mirror 898000-8a7fff type=Byte_Mapped init=false overlay=false perm=r-x vol=false mapped=c90000-c9ffff mirrorOk=true
+REALROM block ROM_8A_8000_mirror 8a8000-8b7fff type=Byte_Mapped init=false overlay=false perm=r-x vol=false mapped=ca0000-caffff mirrorOk=true
+REALROM block ROM_8B_8000_mirror 8b8000-8c7fff type=Byte_Mapped init=false overlay=false perm=r-x vol=false mapped=cb0000-cbffff mirrorOk=true
+REALROM block ROM_8C_8000_mirror 8c8000-8d7fff type=Byte_Mapped init=false overlay=false perm=r-x vol=false mapped=cc0000-ccffff mirrorOk=true
+REALROM block ROM_8D_8000_mirror 8d8000-8e7fff type=Byte_Mapped init=false overlay=false perm=r-x vol=false mapped=cd0000-cdffff mirrorOk=true
+REALROM block ROM_8E_8000_mirror 8e8000-8f7fff type=Byte_Mapped init=false overlay=false perm=r-x vol=false mapped=ce0000-ceffff mirrorOk=true
+REALROM block ROM_8F_8000_mirror 8f8000-907fff type=Byte_Mapped init=false overlay=false perm=r-x vol=false mapped=cf0000-cfffff mirrorOk=true
+REALROM block ROM_C0_0000 c00000-c0ffff type=Default init=true overlay=false perm=r-x vol=false
+REALROM block ROM_C1_0000 c10000-c1ffff type=Default init=true overlay=false perm=r-x vol=false
+REALROM block ROM_C2_0000 c20000-c2ffff type=Default init=true overlay=false perm=r-x vol=false
+REALROM block ROM_C3_0000 c30000-c3ffff type=Default init=true overlay=false perm=r-x vol=false
+REALROM block ROM_C4_0000 c40000-c4ffff type=Default init=true overlay=false perm=r-x vol=false
+REALROM block ROM_C5_0000 c50000-c5ffff type=Default init=true overlay=false perm=r-x vol=false
+REALROM block ROM_C6_0000 c60000-c6ffff type=Default init=true overlay=false perm=r-x vol=false
+REALROM block ROM_C7_0000 c70000-c7ffff type=Default init=true overlay=false perm=r-x vol=false
+REALROM block ROM_C8_0000 c80000-c8ffff type=Default init=true overlay=false perm=r-x vol=false
+REALROM block ROM_C9_0000 c90000-c9ffff type=Default init=true overlay=false perm=r-x vol=false
+REALROM block ROM_CA_0000 ca0000-caffff type=Default init=true overlay=false perm=r-x vol=false
+REALROM block ROM_CB_0000 cb0000-cbffff type=Default init=true overlay=false perm=r-x vol=false
+REALROM block ROM_CC_0000 cc0000-ccffff type=Default init=true overlay=false perm=r-x vol=false
+REALROM block ROM_CD_0000 cd0000-cdffff type=Default init=true overlay=false perm=r-x vol=false
+REALROM block ROM_CE_0000 ce0000-ceffff type=Default init=true overlay=false perm=r-x vol=false
+REALROM block ROM_CF_0000 cf0000-cfffff type=Default init=true overlay=false perm=r-x vol=false
+REALROM block WRAM 7e0000-7fffff type=Default init=false overlay=false perm=rw- vol=false
+REALROM count blocks.total 54
+REALROM count blocks.overlay 0
+REALROM count blocks.byteMapped 34
+REALROM count blocks.initialized 16
+REALROM count blocks.volatile 3
+REALROM count blocks.mirrorMismatch 0
+REALROM count spaces.overlay 0
+REALROM count symbols 120
+REALROM count entryPoints 1
+REALROM entry 008000
+REALROM sample.symbol 002100 INIDISP IMPORTED
+REALROM sample.symbol 002101 OBSEL IMPORTED
+REALROM sample.symbol 002102 OAMADDL IMPORTED
+REALROM sample.symbol 002103 OAMADDH IMPORTED
+REALROM sample.symbol 002104 OAMDATA IMPORTED
+REALROM sample.symbol 002105 BGMODE IMPORTED
+REALROM sample.symbol 002106 MOSAIC IMPORTED
+REALROM sample.symbol 002107 BG1SC IMPORTED
+REALROM sample.symbol 002108 BG2SC IMPORTED
+REALROM sample.symbol 002109 BG3SC IMPORTED
+REALROM sample.symbol 00210a BG4SC IMPORTED
+REALROM sample.symbol 00210b BG12NBA IMPORTED
+REALROM sample.symbol 00210c BG34NBA IMPORTED
+REALROM sample.symbol 00210d BG1HOFS IMPORTED
+REALROM sample.symbol 00210e BG1VOFS IMPORTED
+REALROM sample.symbol 00210f BG2HOFS IMPORTED
+REALROM sample.symbol 002110 BG2VOFS IMPORTED
+REALROM sample.symbol 002111 BG3HOFS IMPORTED
+REALROM sample.symbol 002112 BG3VOFS IMPORTED
+REALROM sample.symbol 002113 BG4HOFS IMPORTED
+REALROM sample.symbol 002114 BG4VOFS IMPORTED
+REALROM sample.symbol 002115 VMAIN IMPORTED
+REALROM sample.symbol 002116 VMADDL IMPORTED
+REALROM sample.symbol 002117 VMADDH IMPORTED
+REALROM sample.symbol 002118 VMDATAL IMPORTED
+REALROM sample.symbol.truncated 25 of 120
+=== REALROM END ===
