@@ -18,37 +18,515 @@
 # here records reality, it is not a test bug. See W65816VectorHarnessSupport's
 # class doc for the bits of 'p' this harness cannot verify at all (M, and the
 # native-mode X / emulation-mode B bit).
-08.E  PHP  PASS  32/32
-08.N  PHP  PASS  32/32
-22.E  JSL !>$0xdb2584  PASS  32/32
-22.N  JSL !>$0x8fcddf  PASS  32/32
-28.E  PLP  PASS  32/32
-28.N  PLP  FAIL  0/32  execution
-40.E  RTI  PASS  32/32
-40.N  RTI  FAIL  0/32  execution
-44.E  MVP 0x69,0x17  N/A  0/32  MVP block move: the corpus caps these cases at 100 cycles, so its 'final' state is a PARTIAL transfer, not a completed instruction (see the class doc)
-44.N  MVP 0xb9,0x54  N/A  0/32  MVP block move: the corpus caps these cases at 100 cycles, so its 'final' state is a PARTIAL transfer, not a completed instruction (see the class doc)
-54.E  MVN 0xf3,0x5c  N/A  0/32  MVN block move: the corpus caps these cases at 100 cycles, so its 'final' state is a PARTIAL transfer, not a completed instruction (see the class doc)
-54.N  MVN 0x6d,0x3d  N/A  0/32  MVN block move: the corpus caps these cases at 100 cycles, so its 'final' state is a PARTIAL transfer, not a completed instruction (see the class doc)
-69.E  ADC #$0xb6  PASS  32/32
-69.N  ADC #$0x80f8  PASS  32/32
-A2.E  LDX #$0xab  PASS  32/32
-A2.N  LDX #$0xda  PASS  32/32
-A9.E  LDA #$0xc9  PASS  32/32
-A9.N  LDA #$0xfb  PASS  32/32
-AF.E  LDA !>$0x1631e3  PASS  32/32
-AF.N  LDA !>$0x6882b1  PASS  32/32
-C0.E  CPY #$0x2c  PASS  32/32
-C0.N  CPY #$0xab3a  PASS  32/32
-C2.E  REP #$0x35  PASS  32/32
-C2.N  REP #$0x11  PASS  32/32
-C9.E  CMP #$0x53  PASS  32/32
-C9.N  CMP #$0x574e  PASS  32/32
-E0.E  CPX #$0xb6  PASS  32/32
-E0.N  CPX #$0xa5  PASS  32/32
-E2.E  SEP #$0xbf  PASS  32/32
-E2.N  SEP #$0xd6  PASS  32/32
-E9.E  SBC #$0xdd  PASS  32/32
-E9.N  SBC #$0x5230  PASS  32/32
-FB.E  XCE  PASS  32/32
-FB.N  XCE  PASS  32/32
+00.E  BRK $0xf2  PASS  8/8
+00.N  BRK $0xa4  PASS  8/8
+01.E  ORA (<$0xf6,X)  PASS  8/8
+01.N  ORA (<$0x23,X)  PASS  8/8
+02.E  COP $0xfb  PASS  8/8
+02.N  COP $0x38  PASS  8/8
+03.E  ORA $0xff,S  PASS  8/8
+03.N  ORA $0xe3,S  PASS  8/8
+04.E  TSB <$0x3  PASS  8/8
+04.N  TSB <$0x75  PASS  8/8
+05.E  ORA <$0x7  PASS  8/8
+05.N  ORA <$0x74  PASS  8/8
+06.E  ASL <$0xc  PASS  8/8
+06.N  ASL <$0x82  PASS  8/8
+07.E  ORA [<$0x10]  PASS  8/8
+07.N  ORA [<$0x67]  PASS  8/8
+08.E  PHP  PASS  8/8
+08.N  PHP  PASS  8/8
+09.E  ORA #$0x19  PASS  8/8
+09.N  ORA #$0xa940  PASS  8/8
+0A.E  ASL A  PASS  8/8
+0A.N  ASL A  PASS  8/8
+0B.E  PHD  PASS  8/8
+0B.N  PHD  PASS  8/8
+0C.E  TSB !$0x826  PASS  8/8
+0C.N  TSB !$0xe75d  PASS  8/8
+0D.E  ORA !$0xa02a  PASS  8/8
+0D.N  ORA !$0xb8d8  PASS  8/8
+0E.E  ASL !$0x392e  PASS  8/8
+0E.N  ASL !$0x6f4d  PASS  8/8
+0F.E  ORA !>$0x61d233  PASS  8/8
+0F.N  ORA !>$0x53f1d5  PASS  8/8
+10.E  BPL $0x000439  PASS  8/8
+10.N  BPL $0x0003d4  PASS  8/8
+11.E  ORA (<$0x3b),Y  PASS  8/8
+11.N  ORA (<$0x51),Y  PASS  8/8
+12.E  ORA (<$0x3f)  PASS  8/8
+12.N  ORA (<$0x2f)  PASS  8/8
+13.E  ORA ($0x44,S),Y  PASS  8/8
+13.N  ORA ($0xf7,S),Y  PASS  8/8
+14.E  TRB <$0x48  PASS  8/8
+14.N  TRB <$0xaa  PASS  8/8
+15.E  ORA <$0x4c,X  PASS  8/8
+15.N  ORA <$0x1a,X  PASS  8/8
+16.E  ASL <$0x51,X  PASS  8/8
+16.N  ASL <$0xa5,X  PASS  8/8
+17.E  ORA [<$0x55],Y  PASS  8/8
+17.N  ORA [<$0xe2],Y  PASS  8/8
+18.E  CLC  PASS  8/8
+18.N  CLC  PASS  8/8
+19.E  ORA !$0xc85e,Y  PASS  8/8
+19.N  ORA !$0x19c5,Y  PASS  8/8
+1A.E  INC A  PASS  8/8
+1A.N  INC A  PASS  8/8
+1B.E  TCS  PASS  8/8
+1B.N  TCS  PASS  8/8
+1C.E  TRB !$0x916a  PASS  8/8
+1C.N  TRB !$0xb51a  PASS  8/8
+1D.E  ORA !$0x2a6f,X  PASS  8/8
+1D.N  ORA !$0xd239,X  PASS  8/8
+1E.E  ASL !$0xc373,X  PASS  8/8
+1E.N  ASL !$0x7c0b,X  PASS  8/8
+1F.E  ORA !>$0x265b77,X  PASS  8/8
+1F.N  ORA !>$0xf6dc72,X  PASS  8/8
+20.E  JSR !$0x00f47c  PASS  8/8
+20.N  JSR !$0x00e30e  PASS  8/8
+21.E  AND (<$0x80,X)  PASS  8/8
+21.N  AND (<$0x64,X)  PASS  8/8
+22.E  JSL !>$0xdb2584  PASS  8/8
+22.N  JSL !>$0x8fcddf  PASS  8/8
+23.E  AND $0x89,S  PASS  8/8
+23.N  AND $0x3b,S  PASS  8/8
+24.E  BIT <$0x8d  PASS  8/8
+24.N  BIT <$0xfa  PASS  8/8
+25.E  AND <$0x91  PASS  8/8
+25.N  AND <$0xf9  PASS  8/8
+26.E  ROL <$0x96  PASS  8/8
+26.N  ROL <$0x89  PASS  8/8
+27.E  AND [<$0x9a]  PASS  8/8
+27.N  AND [<$0x62]  PASS  8/8
+28.E  PLP  PASS  8/8
+28.N  PLP  FAIL  0/8  execution
+29.E  AND #$0xa2  PASS  8/8
+29.N  AND #$0xc6  PASS  8/8
+2A.E  ROL A  PASS  8/8
+2A.N  ROL A  PASS  8/8
+2B.E  PLD  PASS  8/8
+2B.N  PLD  PASS  8/8
+2C.E  BIT !$0x1baf  PASS  8/8
+2C.N  BIT !$0xb2ff  PASS  8/8
+2D.E  AND !$0xb4b4  PASS  8/8
+2D.N  AND !$0xbe2b  PASS  8/8
+2E.E  ROL !$0x4cb8  PASS  8/8
+2E.N  ROL !$0x8f61  PASS  8/8
+2F.E  AND !>$0xebe5bc  PASS  8/8
+2F.N  AND !>$0xf9e64e  PASS  8/8
+30.E  BMI $0x0007c3  PASS  8/8
+30.N  BMI $0x000859  PASS  8/8
+31.E  AND (<$0xc5),Y  PASS  8/8
+31.N  AND (<$0x25),Y  PASS  8/8
+32.E  AND (<$0xc9)  PASS  8/8
+32.N  AND (<$0xa6)  PASS  8/8
+33.E  AND ($0xcd,S),Y  PASS  8/8
+33.N  AND ($0xf7,S),Y  PASS  8/8
+34.E  BIT <$0xd2,X  PASS  8/8
+34.N  BIT <$0x86,X  PASS  8/8
+35.E  AND <$0xd6,X  PASS  8/8
+35.N  AND <$0x29,X  PASS  8/8
+36.E  ROL <$0xda,X  PASS  8/8
+36.N  ROL <$0x5a,X  PASS  8/8
+37.E  AND [<$0xdf],Y  PASS  8/8
+37.N  AND [<$0xcb],Y  PASS  8/8
+38.E  SEC  PASS  8/8
+38.N  SEC  PASS  8/8
+39.E  AND !$0xdbe7,Y  PASS  8/8
+39.N  AND !$0xc3b5,Y  PASS  8/8
+3A.E  DEC A  PASS  8/8
+3A.N  DEC A  PASS  8/8
+3B.E  TSC  PASS  8/8
+3B.N  TSC  PASS  8/8
+3C.E  BIT !$0xa4f4,X  PASS  8/8
+3C.N  BIT !$0xd656,X  PASS  8/8
+3D.E  AND !$0x3df9,X  PASS  8/8
+3D.N  AND !$0x2001,X  PASS  8/8
+3E.E  ROL !$0xd6fd,X  PASS  8/8
+3E.N  ROL !$0xdc4d,X  PASS  8/8
+3F.E  AND !>$0xb16e01,X  PASS  8/8
+3F.N  AND !>$0x6d8cb5,X  PASS  8/8
+40.E  RTI  PASS  8/8
+40.N  RTI  FAIL  0/8  execution
+41.E  EOR (<$0xa,X)  PASS  8/8
+41.N  EOR (<$0x8f,X)  PASS  8/8
+42.E  WDM  PASS  8/8
+42.N  WDM  PASS  8/8
+43.E  EOR $0x12,S  PASS  8/8
+43.N  EOR $0x9d,S  PASS  8/8
+44.E  MVP 0x69,0x17  N/A  0/8  MVP block move: the corpus caps these cases at 100 cycles, so its 'final' state is a PARTIAL transfer, not a completed instruction (see the class doc)
+44.N  MVP 0xb9,0x54  N/A  0/8  MVP block move: the corpus caps these cases at 100 cycles, so its 'final' state is a PARTIAL transfer, not a completed instruction (see the class doc)
+45.E  EOR <$0x1b  PASS  8/8
+45.N  EOR <$0xc1  PASS  8/8
+46.E  LSR <$0x1f  PASS  8/8
+46.N  LSR <$0xf  PASS  8/8
+47.E  EOR [<$0x24]  PASS  8/8
+47.N  EOR [<$0x7]  PASS  8/8
+48.E  PHA  PASS  8/8
+48.N  PHA  PASS  8/8
+49.E  EOR #$0x2c  PASS  8/8
+49.N  EOR #$0xaa  PASS  8/8
+4A.E  LSR A  PASS  8/8
+4A.N  LSR A  PASS  8/8
+4B.E  PHK  PASS  8/8
+4B.N  PHK  PASS  8/8
+4C.E  JMP !$0x002e39  PASS  8/8
+4C.N  JMP !$0x004603  PASS  8/8
+4D.E  EOR !$0xc73d  PASS  8/8
+4D.N  EOR !$0x8a7e  PASS  8/8
+4E.E  LSR !$0x5f42  PASS  8/8
+4E.N  LSR !$0xe2ff  PASS  8/8
+4F.E  EOR !>$0x76f846  PASS  8/8
+4F.N  EOR !>$0xe7f758  PASS  8/8
+50.E  BVC $0x000c4c  PASS  8/8
+50.N  BVC $0x000bd5  PASS  8/8
+51.E  EOR (<$0x4f),Y  PASS  8/8
+51.N  EOR (<$0xaa),Y  PASS  8/8
+52.E  EOR (<$0x53)  PASS  8/8
+52.N  EOR (<$0x49)  PASS  8/8
+53.E  EOR ($0x57,S),Y  PASS  8/8
+53.N  EOR ($0x74,S),Y  PASS  8/8
+54.E  MVN 0xf3,0x5c  N/A  0/8  MVN block move: the corpus caps these cases at 100 cycles, so its 'final' state is a PARTIAL transfer, not a completed instruction (see the class doc)
+54.N  MVN 0x6d,0x3d  N/A  0/8  MVN block move: the corpus caps these cases at 100 cycles, so its 'final' state is a PARTIAL transfer, not a completed instruction (see the class doc)
+55.E  EOR <$0x60,X  PASS  8/8
+55.N  EOR <$0x8e,X  PASS  8/8
+56.E  LSR <$0x64,X  PASS  8/8
+56.N  LSR <$0xb6,X  PASS  8/8
+57.E  EOR [<$0x68],Y  PASS  8/8
+57.N  EOR [<$0x44],Y  PASS  8/8
+58.E  CLI  PASS  8/8
+58.N  CLI  PASS  8/8
+59.E  EOR !$0xee71,Y  PASS  8/8
+59.N  EOR !$0x9b26,Y  PASS  8/8
+5A.E  PHY  PASS  8/8
+5A.N  PHY  PASS  8/8
+5B.E  TCD  PASS  8/8
+5B.N  TCD  PASS  8/8
+5C.E  JML !>$0x86b77e  PASS  8/8
+5C.N  JML !>$0xdc5eb1  PASS  8/8
+5D.E  EOR !$0x5082,X  PASS  8/8
+5D.N  EOR !$0xdd28,X  PASS  8/8
+5E.E  LSR !$0xe987,X  PASS  8/8
+5E.N  LSR !$0x5f92,X  PASS  8/8
+5F.E  EOR !>$0x3b818b,X  PASS  8/8
+5F.N  EOR !>$0x3ae448,X  PASS  8/8
+60.E  RTS  PASS  8/8
+60.N  RTS  PASS  8/8
+61.E  ADC (<$0x93,X)  PASS  8/8
+61.N  ADC (<$0x4b,X)  PASS  8/8
+62.E  PER 0x4b98  PASS  8/8
+62.N  PER -0x51a2  PASS  8/8
+63.E  ADC $0x9c,S  PASS  8/8
+63.N  ADC $0x8d,S  PASS  8/8
+64.E  STZ <$0xa0  PASS  8/8
+64.N  STZ <$0x0  PASS  8/8
+65.E  ADC <$0xa5  PASS  8/8
+65.N  ADC <$0x76  PASS  8/8
+66.E  ROR <$0xa9  PASS  8/8
+66.N  ROR <$0x8c  PASS  8/8
+67.E  ADC [<$0xad]  PASS  8/8
+67.N  ADC [<$0x4e]  PASS  8/8
+68.E  PLA  PASS  8/8
+68.N  PLA  PASS  8/8
+69.E  ADC #$0xb6  PASS  8/8
+69.N  ADC #$0x80f8  PASS  8/8
+6A.E  ROR A  PASS  8/8
+6A.N  ROR A  PASS  8/8
+6B.E  RTL  PASS  8/8
+6B.N  RTL  PASS  8/8
+6C.E  JMP (!$0x41c3)  FAIL  0/8  PBR,PC
+6C.N  JMP (!$0xa790)  FAIL  0/8  PBR,PC
+6D.E  ADC !$0xdac7  PASS  8/8
+6D.N  ADC !$0xb0db  PASS  8/8
+6E.E  ROR !$0x72cb  PASS  8/8
+6E.N  ROR !$0xd0f3  PASS  8/8
+6F.E  ADC !>$0x10bd0  PASS  8/8
+6F.N  ADC !>$0x28ab6e  PASS  8/8
+70.E  BVS $0x000fd6  PASS  8/8
+70.N  BVS $0x00102a  PASS  8/8
+71.E  ADC (<$0xd8),Y  PASS  8/8
+71.N  ADC (<$0xc8),Y  PASS  8/8
+72.E  ADC (<$0xdd)  PASS  8/8
+72.N  ADC (<$0x6b)  PASS  8/8
+73.E  ADC ($0xe1,S),Y  PASS  8/8
+73.N  ADC ($0xc6,S),Y  PASS  8/8
+74.E  STZ <$0xe5,X  PASS  8/8
+74.N  STZ <$0xc8,X  PASS  8/8
+75.E  ADC <$0xea,X  PASS  8/8
+75.N  ADC <$0xa9,X  PASS  8/8
+76.E  ROR <$0xee,X  PASS  8/8
+76.N  ROR <$0x63,X  PASS  8/8
+77.E  ADC [<$0xf2],Y  PASS  8/8
+77.N  ADC [<$0x5a],Y  PASS  8/8
+78.E  SEI  PASS  8/8
+78.N  SEI  PASS  8/8
+79.E  ADC !$0x1fb,Y  PASS  8/8
+79.N  ADC !$0xde1c,Y  PASS  8/8
+7A.E  PLY  PASS  8/8
+7A.N  PLY  PASS  8/8
+7B.E  TDC  PASS  8/8
+7B.N  TDC  PASS  8/8
+7C.E  JMP (!$0xcb08,X)  FAIL  0/8  PBR,PC
+7C.N  JMP (!$0x16bd,X)  FAIL  0/8  PBR,PC
+7D.E  ADC !$0x630c,X  PASS  8/8
+7D.N  ADC !$0xc1cb,X  PASS  8/8
+7E.E  ROR !$0xfc10,X  PASS  8/8
+7E.N  ROR !$0xa128,X  PASS  8/8
+7F.E  ADC !>$0xc69415,X  PASS  8/8
+7F.N  ADC !>$0xac62ed,X  PASS  8/8
+80.E  BRA $0x00121b  PASS  8/8
+80.N  BRA $0x001255  PASS  8/8
+81.E  STA (<$0x1d,X)  PASS  8/8
+81.N  STA (<$0x97,X)  PASS  8/8
+82.E  BRL $0x007065  PASS  8/8
+82.N  BRL $0x003024  PASS  8/8
+83.E  STA $0x26,S  PASS  8/8
+83.N  STA $0x6b,S  PASS  8/8
+84.E  STY <$0x2a  PASS  8/8
+84.N  STY <$0xf2  PASS  8/8
+85.E  STA <$0x2e  PASS  8/8
+85.N  STA <$0xf1  PASS  8/8
+86.E  STX <$0x33  PASS  8/8
+86.N  STX <$0xa9  PASS  8/8
+87.E  STA [<$0x37]  PASS  8/8
+87.N  STA [<$0xb8]  PASS  8/8
+88.E  DEY  PASS  8/8
+88.N  DEY  PASS  8/8
+89.E  BIT #$0x40  PASS  8/8
+89.N  BIT #$0x8c41  PASS  8/8
+8A.E  TXA  PASS  8/8
+8A.N  TXA  FAIL  5/8  P_N
+8B.E  PHB  PASS  8/8
+8B.N  PHB  PASS  8/8
+8C.E  STY !$0x544d  PASS  8/8
+8C.N  STY !$0x3910  PASS  8/8
+8D.E  STA !$0xed51  PASS  8/8
+8D.N  STA !$0x6c1a  PASS  8/8
+8E.E  STX !$0x8555  PASS  8/8
+8E.N  STX !$0xfbb6  PASS  8/8
+8F.E  STA !>$0x8b1e59  PASS  8/8
+8F.N  STA !>$0xc4dc1  PASS  8/8
+90.E  BCC $0x001460  PASS  8/8
+90.N  BCC $0x00145f  PASS  8/8
+91.E  STA (<$0x62),Y  PASS  8/8
+91.N  STA (<$0x20),Y  PASS  8/8
+92.E  STA (<$0x66)  PASS  8/8
+92.N  STA (<$0x36)  PASS  8/8
+93.E  STA ($0x6b,S),Y  PASS  8/8
+93.N  STA ($0x1c,S),Y  PASS  8/8
+94.E  STY <$0x6f,X  PASS  8/8
+94.N  STY <$0x6d,X  PASS  8/8
+95.E  STA <$0x73,X  PASS  8/8
+95.N  STA <$0xc4,X  PASS  8/8
+96.E  STX <$0x78,Y  PASS  8/8
+96.N  STX <$0xf4,Y  PASS  8/8
+97.E  STA [<$0x7c],Y  PASS  8/8
+97.N  STA [<$0xb1],Y  PASS  8/8
+98.E  TYA  PASS  8/8
+98.N  TYA  FAIL  7/8  P_N
+99.E  STA !$0x1485,Y  PASS  8/8
+99.N  STA !$0xa61c,Y  PASS  8/8
+9A.E  TXS  PASS  8/8
+9A.N  TXS  PASS  8/8
+9B.E  TXY  PASS  8/8
+9B.N  TXY  PASS  8/8
+9C.E  STZ !$0xde91  PASS  8/8
+9C.N  STZ !$0xb06  PASS  8/8
+9D.E  STA !$0x7696,X  PASS  8/8
+9D.N  STA !$0x2868,X  PASS  8/8
+9E.E  STZ !$0xf9a,X  PASS  8/8
+9E.N  STZ !$0x58ef,X  PASS  8/8
+9F.E  STA !>$0x51a79e,X  PASS  8/8
+9F.N  STA !>$0x65c9ed,X  PASS  8/8
+A0.E  LDY #$0xa3  PASS  8/8
+A0.N  LDY #$0xa6d3  PASS  8/8
+A1.E  LDA (<$0xa7,X)  PASS  8/8
+A1.N  LDA (<$0x7e,X)  PASS  8/8
+A2.E  LDX #$0xab  PASS  8/8
+A2.N  LDX #$0xda  PASS  8/8
+A3.E  LDA $0xb0,S  PASS  8/8
+A3.N  LDA $0x73,S  PASS  8/8
+A4.E  LDY <$0xb4  PASS  8/8
+A4.N  LDY <$0x17  PASS  8/8
+A5.E  LDA <$0xb8  PASS  8/8
+A5.N  LDA <$0xc7  PASS  8/8
+A6.E  LDX <$0xbc  PASS  8/8
+A6.N  LDX <$0xfd  PASS  8/8
+A7.E  LDA [<$0xc1]  PASS  8/8
+A7.N  LDA [<$0xa4]  PASS  8/8
+A8.E  TAY  PASS  8/8
+A8.N  TAY  PASS  8/8
+A9.E  LDA #$0xc9  PASS  8/8
+A9.N  LDA #$0xfb  PASS  8/8
+AA.E  TAX  PASS  8/8
+AA.N  TAX  PASS  8/8
+AB.E  PLB  PASS  8/8
+AB.N  PLB  PASS  8/8
+AC.E  LDY !$0x67d6  PASS  8/8
+AC.N  LDY !$0xc82  PASS  8/8
+AD.E  LDA !$0xdb  PASS  8/8
+AD.N  LDA !$0x54b0  PASS  8/8
+AE.E  LDX !$0x98df  PASS  8/8
+AE.N  LDX !$0x4dd6  PASS  8/8
+AF.E  LDA !>$0x1631e3  PASS  8/8
+AF.N  LDA !>$0x6882b1  PASS  8/8
+B0.E  BCS $0x0017ea  PASS  8/8
+B0.N  BCS $0x001847  PASS  8/8
+B1.E  LDA (<$0xec),Y  PASS  8/8
+B1.N  LDA (<$0xea),Y  PASS  8/8
+B2.E  LDA (<$0xf0)  PASS  8/8
+B2.N  LDA (<$0xa2)  PASS  8/8
+B3.E  LDA ($0xf4,S),Y  PASS  8/8
+B3.N  LDA ($0xb3,S),Y  PASS  8/8
+B4.E  LDY <$0xf9,X  PASS  8/8
+B4.N  LDY <$0xe,X  PASS  8/8
+B5.E  LDA <$0xfd,X  PASS  8/8
+B5.N  LDA <$0x3f,X  PASS  8/8
+B6.E  LDX <$0x1,Y  PASS  8/8
+B6.N  LDX <$0x4b,Y  PASS  8/8
+B7.E  LDA [<$0x6],Y  PASS  8/8
+B7.N  LDA [<$0x62],Y  PASS  8/8
+B8.E  CLV  PASS  8/8
+B8.N  CLV  PASS  8/8
+B9.E  LDA !$0x270e,Y  PASS  8/8
+B9.N  LDA !$0x79e7,Y  PASS  8/8
+BA.E  TSX  PASS  8/8
+BA.N  TSX  PASS  8/8
+BB.E  TYX  PASS  8/8
+BB.N  TYX  PASS  8/8
+BC.E  LDY !$0xf11b,X  PASS  8/8
+BC.N  LDY !$0x3d89,X  PASS  8/8
+BD.E  LDA !$0x891f,X  PASS  8/8
+BD.N  LDA !$0xee87,X  PASS  8/8
+BE.E  LDX !$0x2224,Y  PASS  8/8
+BE.N  LDX !$0x8020,Y  PASS  8/8
+BF.E  LDA !>$0xdbba28,X  PASS  8/8
+BF.N  LDA !>$0x9076c8,X  PASS  8/8
+C0.E  CPY #$0x2c  PASS  8/8
+C0.N  CPY #$0xab3a  PASS  8/8
+C1.E  CMP (<$0x31,X)  PASS  8/8
+C1.N  CMP (<$0x43,X)  PASS  8/8
+C2.E  REP #$0x35  PASS  8/8
+C2.N  REP #$0x11  PASS  8/8
+C3.E  CMP $0x39,S  PASS  8/8
+C3.N  CMP $0xe3,S  PASS  8/8
+C4.E  CPY <$0x3e  PASS  8/8
+C4.N  CPY <$0x17  PASS  8/8
+C5.E  CMP <$0x42  PASS  8/8
+C5.N  CMP <$0x4b  PASS  8/8
+C6.E  DEC <$0x46  PASS  8/8
+C6.N  DEC <$0x91  PASS  8/8
+C7.E  CMP [<$0x4b]  PASS  8/8
+C7.N  CMP [<$0xa7]  PASS  8/8
+C8.E  INY  PASS  8/8
+C8.N  INY  PASS  8/8
+C9.E  CMP #$0x53  PASS  8/8
+C9.N  CMP #$0x574e  PASS  8/8
+CA.E  DEX  PASS  8/8
+CA.N  DEX  PASS  8/8
+CB.E  WAI  N/A  0/8  WAI halts the processor pending an interrupt; no post-single-step state exists
+CB.N  WAI  N/A  0/8  WAI halts the processor pending an interrupt; no post-single-step state exists
+CC.E  CPY !$0x7a60  PASS  8/8
+CC.N  CPY !$0x1411  PASS  8/8
+CD.E  CMP !$0x1364  PASS  8/8
+CD.N  CMP !$0x59d3  PASS  8/8
+CE.E  DEC !$0xab69  PASS  8/8
+CE.N  DEC !$0xa8d0  PASS  8/8
+CF.E  CMP !>$0xa1446d  PASS  8/8
+CF.N  CMP !>$0xed3f3c  PASS  8/8
+D0.E  BNE $0x001c73  PASS  8/8
+D0.N  BNE $0x001bcb  PASS  8/8
+D1.E  CMP (<$0x76),Y  PASS  8/8
+D1.N  CMP (<$0xc0),Y  PASS  8/8
+D2.E  CMP (<$0x7a)  PASS  8/8
+D2.N  CMP (<$0x9b)  PASS  8/8
+D3.E  CMP ($0x7e,S),Y  PASS  8/8
+D3.N  CMP ($0x12,S),Y  PASS  8/8
+D4.E  PEI (<$0x82)  PASS  8/8
+D4.N  PEI (<$0x26)  PASS  8/8
+D5.E  CMP <$0x87,X  PASS  8/8
+D5.N  CMP <$0x20,X  PASS  8/8
+D6.E  DEC <$0x8b,X  PASS  8/8
+D6.N  DEC <$0x5b,X  PASS  8/8
+D7.E  CMP [<$0x8f],Y  PASS  8/8
+D7.N  CMP [<$0x5a],Y  PASS  8/8
+D8.E  CLD  PASS  8/8
+D8.N  CLD  PASS  8/8
+D9.E  CMP !$0x3a98,Y  PASS  8/8
+D9.N  CMP !$0x3286,Y  PASS  8/8
+DA.E  PHX  PASS  8/8
+DA.N  PHX  PASS  8/8
+DB.E  STP  N/A  0/8  STP halts the processor pending a hardware reset; no post-single-step state exists
+DB.N  STP  N/A  0/8  STP halts the processor pending a hardware reset; no post-single-step state exists
+DC.E  JML [!$0x4a5]  FAIL  0/8  PBR,PC
+DC.N  JML [!$0xdf08]  FAIL  0/8  PBR,PC
+DD.E  CMP !$0x9ca9,X  PASS  8/8
+DD.N  CMP !$0xedee,X  PASS  8/8
+DE.E  DEC !$0x35ae,X  PASS  8/8
+DE.N  DEC !$0xb127,X  PASS  8/8
+DF.E  CMP !>$0x66cdb2,X  PASS  8/8
+DF.N  CMP !>$0x9910b5,X  PASS  8/8
+E0.E  CPX #$0xb6  PASS  8/8
+E0.N  CPX #$0xa5  PASS  8/8
+E1.E  SBC (<$0xba,X)  PASS  8/8
+E1.N  SBC (<$0x7a,X)  PASS  8/8
+E2.E  SEP #$0xbf  PASS  8/8
+E2.N  SEP #$0xd6  PASS  8/8
+E3.E  SBC $0xc3,S  PASS  8/8
+E3.N  SBC $0xd,S  PASS  8/8
+E4.E  CPX <$0xc7  PASS  8/8
+E4.N  CPX <$0xf4  PASS  8/8
+E5.E  SBC <$0xcc  PASS  8/8
+E5.N  SBC <$0x60  PASS  8/8
+E6.E  INC <$0xd0  PASS  8/8
+E6.N  INC <$0x5c  PASS  8/8
+E7.E  SBC [<$0xd4]  PASS  8/8
+E7.N  SBC [<$0xb2]  PASS  8/8
+E8.E  INX  PASS  8/8
+E8.N  INX  PASS  8/8
+E9.E  SBC #$0xdd  PASS  8/8
+E9.N  SBC #$0x5230  PASS  8/8
+EA.E  NOP  PASS  8/8
+EA.N  NOP  PASS  8/8
+EB.E  XBA  FAIL  0/8  A,P_N
+EB.N  XBA  FAIL  0/8  A,P_N
+EC.E  CPX !$0x8dea  PASS  8/8
+EC.N  CPX !$0x93dc  PASS  8/8
+ED.E  SBC !$0x26ee  PASS  8/8
+ED.N  SBC !$0x7d6a  PASS  8/8
+EE.E  INC !$0xbef2  PASS  8/8
+EE.N  INC !$0xf318  PASS  8/8
+EF.E  SBC !>$0x2b57f7  PASS  8/8
+EF.N  SBC !>$0x2d6c25  PASS  8/8
+F0.E  BEQ $0x001ffd  PASS  8/8
+F0.N  BEQ $0x001f93  PASS  8/8
+F1.E  SBC (<$0xff),Y  PASS  8/8
+F1.N  SBC (<$0x6),Y  PASS  8/8
+F2.E  SBC (<$0x4)  PASS  8/8
+F2.N  SBC (<$0x36)  PASS  8/8
+F3.E  SBC ($0x8,S),Y  PASS  8/8
+F3.N  SBC ($0x29,S),Y  PASS  8/8
+F4.E  PEA !$0x520c  PASS  8/8
+F4.N  PEA !$0x697f  PASS  8/8
+F5.E  SBC <$0x11,X  PASS  8/8
+F5.N  SBC <$0x86,X  PASS  8/8
+F6.E  INC <$0x15,X  PASS  8/8
+F6.N  INC <$0x13,X  PASS  8/8
+F7.E  SBC [<$0x19],Y  PASS  8/8
+F7.N  SBC [<$0xb3],Y  PASS  8/8
+F8.E  SED  PASS  8/8
+F8.N  SED  PASS  8/8
+F9.E  SBC !$0x4d22,Y  PASS  8/8
+F9.N  SBC !$0x21e4,Y  PASS  8/8
+FA.E  PLX  PASS  8/8
+FA.N  PLX  PASS  8/8
+FB.E  XCE  PASS  8/8
+FB.N  XCE  PASS  8/8
+FC.E  JSR (!$0x172f,X)  FAIL  0/8  PBR,PC
+FC.N  JSR (!$0x30b4,X)  FAIL  0/8  PBR,PC
+FD.E  SBC !$0xaf33,X  PASS  8/8
+FD.N  SBC !$0x2a1a,X  PASS  8/8
+FE.E  INC !$0x4837,X  PASS  8/8
+FE.N  INC !$0xd464,X  PASS  8/8
+FF.E  SBC !>$0xf1e13c,X  PASS  8/8
+FF.N  SBC !>$0x3ea955,X  PASS  8/8

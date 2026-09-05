@@ -384,19 +384,18 @@ reasoning; the essentials:
   initial state never seeded. Which `p` bits are verifiable is mode-dependent per **state**, not
   per case.
 
-**PARTIAL OPCODE COVERAGE, unlike the SPC700 sample.** `Spc700VectorSampleTest` samples all 256
-SPC700 opcodes; `W65816VectorSampleTest`'s vendored sample
-(`src/test/resources/w65816-vectors/`, `MANIFEST.txt` has the exact list) covers only **17 of
-the 65816's 256 opcodes** (34 files: 17 opcodes x native/emulation), because nobody had a full
-local clone of `SingleStepTests/65816` (512 files, ~2.87 GB) to sample from routinely when this
-tier was built — the 32 files were fetched individually from
-`raw.githubusercontent.com` and sampled by hand instead. The subset (`A9` LDA#, `A2` LDX#, `C0`
-CPY#, `E0` CPX#, `69` ADC#, `E9` SBC#, `C2` REP, `E2` SEP, `FB` XCE, `AF` LDA long, `54` MVN,
-`44` MVP, `08` PHP, `28` PLP, `40` RTI, `22` JSL, and `C9` CMP — added later by `grm-9nxj.4`
-to settle whether `CMP` shared `CPX`/`CPY`'s carry defect, which it did) was chosen to exercise the M/X width machinery
-and 65816-only forms, not to be representative of the full ISA. **An opcode absent from
-`w65816-vector-baseline.txt` is untested by the `unit` chunk, not passing** — only
-`W65816VectorExhaustiveTest` against a full `GRM_W65816_VECTORS` clone covers all 256.
+**FULL OPCODE COVERAGE, at fewer cases each than SPC700's sample.** `Spc700VectorSampleTest`
+samples all 256 SPC700 opcodes at 32 cases per file; `W65816VectorSampleTest` samples all 256
+65816 opcodes in BOTH modes (512 files) at **8 cases per file** — 4,096 cases, 4.9 MB, close to
+the SPC700 sample's 6.5 MB footprint. The trade is deliberate: 65816 cases are roughly 4x larger
+(more registers, 24-bit addresses), and now that a full clone drives `w65816-vectors`, DEPTH
+comes from the exhaustive tier while the always-on sample buys BREADTH. Regenerate with
+`--opcodes` naming all 256 and `--n 8`; `MANIFEST.txt` records the exact list and count.
+
+(Until `grm-9nxj.4`'s second pass this sample covered only 17 opcodes, and the caveat here read
+"an opcode absent from the baseline is untested, not passing." That caveat is retired: every
+opcode is now in the baseline. The lesson it taught is not — a *missing* row and a *passing* row
+look identical if you only skim the tally.)
 
 **EXPECT FAILURES in both baselines.** Exactly like SPC700 before `grm-c9d.3`, this language's
 p-code semantics had never been checked against an oracle when this tier was built. `grm-9nxj.4`'s
