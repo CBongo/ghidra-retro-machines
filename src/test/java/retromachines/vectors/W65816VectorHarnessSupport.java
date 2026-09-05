@@ -348,7 +348,7 @@ final class W65816VectorHarnessSupport {
 		for (VectorCase raw : rawCases) {
 			installContextFor(runner, runner.language(),
 				raw.initialRegs().getOrDefault("p", 0), raw.initialRegs().getOrDefault("e", 0));
-			VectorCase adapted = adapt(raw);
+			VectorCase adapted = adapt(seedRealizableEmulationStack(raw));
 			CaseResult result = runner.run(adapted);
 			if (result.decodeBoundary()) {
 				decodeBoundary++;
@@ -368,6 +368,64 @@ final class W65816VectorHarnessSupport {
 			passed == total ? OpcodeBaseline.Status.PASS : OpcodeBaseline.Status.FAIL;
 		return new OpcodeBaseline(rowKey, mnemonic, status, passed, total,
 			List.copyOf(mismatchedFields), decodeBoundary);
+	}
+
+	/**
+	 * Bead grm-9nxj.4, item 1: makes an emulation-mode ({@code e=1}) case's INITIAL {@code s}
+	 * physically realizable before it is fed to the emulator, by forcing its high byte to
+	 * {@code 0x01} and leaving the low byte alone. No-op for {@code e=0} (native) cases.
+	 *
+	 * <p><b>Why this is a harness fix, not (only) a language fix.</b> On real hardware, in
+	 * emulation mode the stack pointer's high byte is hardwired to {@code $01} -- continuous
+	 * wiring, not something any instruction does. The corpus's random initial states do not
+	 * honor that wiring (e.g. a hand-traced case starts {@code s=0xA8B9}), so a case where the
+	 * instruction never touches the stack at all (a bare {@code LDA #imm}) still shows {@code s}
+	 * "changing" from {@code 0xA8B9} to {@code 0x01B9} between initial and final: nothing in the
+	 * instruction did that, the initial state was simply never a state a real 65816 could be in,
+	 * and the final state is what the physical clamp forces on readback. Confirmed directly
+	 * against {@code a9.e.json}: every one of the first 8 cases keeps the low byte of {@code s}
+	 * identical between initial and final while the high byte moves to {@code 01} regardless of
+	 * what it started as. Language-side fixes (the SPHigh clamp already present on every real
+	 * SP-modifying construct, plus this bead's TXS-emulation fix) only fire when an instruction
+	 * actually writes S -- they cannot make a non-stack opcode's untouched, unrealizable initial
+	 * S read back correct, because nothing in such an opcode's p-code ever runs SPHigh logic.
+	 *
+	 * <p><b>Why force the seed rather than mask the comparison.</b> The alternative raised
+	 * alongside this one was comparing only S's low byte in emulation mode and leaving the seed
+	 * alone. Rejected: that would permanently hide any REAL bug in how a stack-modifying
+	 * emulation-mode construct handles the high byte -- e.g. if a future edit accidentally
+	 * dropped one of the existing {@code SPHigh = 1} clamps, a low-byte-only comparison would
+	 * never notice, on physically reachable states or not. Forcing the seed instead makes the
+	 * per-case starting state something a real 65816 could actually be in, after which the FULL
+	 * 16-bit S is compared exactly like any other register -- a stack opcode that mishandles
+	 * SPHigh from a realizable start is still caught, and a non-stack opcode's S trivially
+	 * agrees because there is nothing left for the corpus's artifact to disagree about.
+	 *
+	 * <p><b>What this would hide if the reasoning above is wrong.</b> If real emulation-mode
+	 * 65816 hardware can somehow reach a state with {@code S} high byte != {@code $01}
+	 * mid-execution (e.g. the JSL/JSR($fc)/RTL "does not limit the top byte until the end of the
+	 * instruction" errata already modelled in {@code 658xx.sinc} turning out to leak past a
+	 * single instruction boundary, not just within one), forcing the seed would erase every case
+	 * that could have exercised that state, and a genuine defect in the language's page-1
+	 * wrapping would read as a clean PASS. That is a real, stated risk of this choice -- it is
+	 * accepted here because "S high byte survives between instructions in emulation mode" is not
+	 * how the errata is documented (it is explicitly WITHIN one instruction's own push/pull
+	 * sequence, and every such construct already re-clamps to {@code $01} before returning), and
+	 * because the corpus data itself (every sampled case, non-stack and stack alike) is
+	 * consistent with the hard clamp holding at instruction boundaries.
+	 */
+	private static VectorCase seedRealizableEmulationStack(VectorCase c) {
+		Integer e = c.initialRegs().get("e");
+		if (e == null || e == 0) {
+			return c;
+		}
+		Integer s = c.initialRegs().get("s");
+		if (s == null) {
+			return c;
+		}
+		Map<String, Integer> initial = new LinkedHashMap<>(c.initialRegs());
+		initial.put("s", (s & 0xFF) | 0x0100);
+		return new VectorCase(c.name(), initial, c.initialRam(), c.finalRegs(), c.finalRam());
 	}
 
 	/**

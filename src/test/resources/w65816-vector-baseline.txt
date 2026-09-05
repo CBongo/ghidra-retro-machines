@@ -18,35 +18,37 @@
 # here records reality, it is not a test bug. See W65816VectorHarnessSupport's
 # class doc for the bits of 'p' this harness cannot verify at all (M, and the
 # native-mode X / emulation-mode B bit).
-08.E  PHP  FAIL  0/32  $103,$10a,$10c,$10d,$121,$123,$128,$12a,$12c,$12e,$138,$13b,$13e,$144,$155,$158,$15a,$162,$177,$17b,$17d,$185,$1a5,$1b9,$1bc,$1c5,$1cb,$1d1,$1ee,$1f4,$1f5,S
+08.E  PHP  FAIL  0/32  $103,$10a,$10c,$10d,$121,$123,$128,$12a,$12c,$12e,$138,$13b,$13e,$144,$155,$158,$15a,$162,$177,$17b,$17d,$185,$1a5,$1b9,$1bc,$1c5,$1cb,$1d1,$1ee,$1f4,$1f5
 08.N  PHP  FAIL  6/32  $1218,$13a2,$1490,$152f,$2918,$2cfd,$2d40,$2e0f,$428b,$451e,$478e,$4f3e,$4f51,$5678,$5a62,$7059,$9275,$9a2e,$9d80,$9dab,$a029,$af6e,$c368,$dadf,$dbe3,$fca7
-22.E  JSL !>$0xdb2584  FAIL  0/32  $10c,$10d,$10e,$112,$113,$114,$115,$116,$12a,$12b,$12c,$134,$135,$136,$140,$141,$142,$147,$148,$149,$152,$153,$154,$155,$156,$157,$158,$159,$15a,$15b,$15c,$160,$161,$162,$168,$169,$16a,$16e,$16f,$170,$174,$175,$176,$180,$181,$182,$186,$187,$188,$196,$197,$198,$199,$19a,$1a2,$1a3,$1a4,$1ab,$1ac,$1ad,$1ae,$1af,$1b0,$1b3,$1b4,$1b5,$1c4,$1c5,$1c6,$1c7,$1c8,$1c9,$1ca,$1dd,$1de,$1df,$1e0,$1e1,$1ea,$1eb,$1ec,$1fd,$1fe,$1ff
+22.E  JSL !>$0xdb2584  PASS  32/32
 22.N  JSL !>$0x8fcddf  PASS  32/32
-28.E  PLP  FAIL  0/32  P_C,P_D,P_I,P_N,P_V,P_Z,S
+28.E  PLP  PASS  32/32
 28.N  PLP  FAIL  0/32  execution
-40.E  RTI  FAIL  0/32  PC,P_C,P_D,P_I,P_N,P_V,P_Z,S
+40.E  RTI  PASS  32/32
 40.N  RTI  FAIL  0/32  execution
-44.E  MVP 0x69,0x17  FAIL  0/32  A,PC,S,X,Y
+44.E  MVP 0x69,0x17  FAIL  0/32  A,PC,X,Y
 44.N  MVP 0xb9,0x54  FAIL  0/32  A,PC,X,Y
-54.E  MVN 0xf3,0x5c  FAIL  0/32  $a90000,$a90001,$a90002,$a90003,$a900d3,$a900d4,$a900d5,$a900d6,$a900d7,$a900d8,$a900d9,$a900da,$a900db,$a900dc,$a900dd,$a900de,$a900df,$a900e0,$a900f6,$a900f7,$a900f8,$a900f9,$a900fa,$a900fb,$a900fc,$a900fd,$a900fe,$a900ff,A,PC,S,X,Y
+54.E  MVN 0xf3,0x5c  FAIL  0/32  $a90000,$a90001,$a90002,$a90003,$a900d3,$a900d4,$a900d5,$a900d6,$a900d7,$a900d8,$a900d9,$a900da,$a900db,$a900dc,$a900dd,$a900de,$a900df,$a900e0,$a900f6,$a900f7,$a900f8,$a900f9,$a900fa,$a900fb,$a900fc,$a900fd,$a900fe,$a900ff,A,PC,X,Y
 54.N  MVN 0x6d,0x3d  FAIL  0/32  A,PC,X,Y
-69.E  ADC #$0xb6  FAIL  0/32  S
+69.E  ADC #$0xb6  PASS  32/32
 69.N  ADC #$0x80f8  PASS  32/32
-A2.E  LDX #$0xab  FAIL  0/32  S
+A2.E  LDX #$0xab  PASS  32/32
 A2.N  LDX #$0xda  PASS  32/32
-A9.E  LDA #$0xc9  FAIL  0/32  S
+A9.E  LDA #$0xc9  PASS  32/32
 A9.N  LDA #$0xfb  PASS  32/32
-AF.E  LDA !>$0x1631e3  FAIL  0/32  S
+AF.E  LDA !>$0x1631e3  PASS  32/32
 AF.N  LDA !>$0x6882b1  PASS  32/32
-C0.E  CPY #$0x2c  FAIL  0/32  P_C,S
-C0.N  CPY #$0xab3a  FAIL  13/32  P_C
-C2.E  REP #$0x35  FAIL  0/32  S
+C0.E  CPY #$0x2c  PASS  32/32
+C0.N  CPY #$0xab3a  PASS  32/32
+C2.E  REP #$0x35  PASS  32/32
 C2.N  REP #$0x11  PASS  32/32
-E0.E  CPX #$0xb6  FAIL  0/32  P_C,S
-E0.N  CPX #$0xa5  FAIL  12/32  P_C
-E2.E  SEP #$0xbf  FAIL  0/32  S
+C9.E  CMP #$0x53  PASS  32/32
+C9.N  CMP #$0x574e  PASS  32/32
+E0.E  CPX #$0xb6  PASS  32/32
+E0.N  CPX #$0xa5  PASS  32/32
+E2.E  SEP #$0xbf  PASS  32/32
 E2.N  SEP #$0xd6  PASS  32/32
-E9.E  SBC #$0xdd  FAIL  1/32  S
+E9.E  SBC #$0xdd  PASS  32/32
 E9.N  SBC #$0x5230  PASS  32/32
-FB.E  XCE  FAIL  25/32  S
-FB.N  XCE  FAIL  25/32  X,Y
+FB.E  XCE  PASS  32/32
+FB.N  XCE  PASS  32/32

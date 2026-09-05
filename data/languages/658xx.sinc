@@ -511,7 +511,14 @@ BIT_VAL16: Imm16    is op=0x89; Imm16  { export Imm16; }
     local data:1 = PRIMARY_VAL8;
     local result:4;
 
-    result = sext(A) - sext(data);
+    # grm-9nxj.4: zext, not sext -- see the CPX constructor below for the full reasoning. The
+    # same defect lived here: a compare sets carry on an UNSIGNED "register >= operand", and
+    # sign-extending both sides answers a signed question instead, which differs whenever the
+    # two operands' high bits disagree. MEASURED with the oracle after adding opcode C9 to the
+    # vendored sample: 15 of 32 native and 14 of 32 emulation cases had P_C wrong before this
+    # change, 0 after. Worth noting how this was nearly missed -- CMP looked like it "passed"
+    # only because it was not in the sample at all, which is not the same thing.
+    result = zext(A) - zext(data);
     flag8_NZ(result:1);
     CF = result s>= 0;
 }
@@ -525,7 +532,8 @@ BIT_VAL16: Imm16    is op=0x89; Imm16  { export Imm16; }
     local data:2 = PRIMARY_VAL16;
     local result:4;
 
-    result = sext(C) - sext(data);
+    # grm-9nxj.4: zext, not sext -- same fix as the 8-bit CMP above.
+    result = zext(C) - zext(data);
     flag16_NZ(result:2);
     CF = result s>= 0;
 }
@@ -580,9 +588,18 @@ CPXY_VAL16: SEC_OP_COMMON    is SEC_OP_COMMON  { local value:2; deref_read16(val
 CPXY_VAL16: Imm16    is bbb=0; Imm16  { export Imm16; }
 
 # CPX 8 bit.
+# grm-9nxj.4: the compare-carry oracle (SingleStepTests/65816) showed CPX/CPY setting P_C
+# wrong on ~40% of cases -- exactly the fraction where XLow/YLow and the operand disagree on
+# their high (sign) bit. The 65816 compare sets carry on an UNSIGNED "register >= operand";
+# sign-extending both operands before subtracting instead compares their SIGNED values, which
+# agrees with the unsigned answer only when both operands' high bits match (both <0x80 or both
+# >=0x80 here) and disagrees whenever they differ -- e.g. XLow=0x01, data=0xff: unsigned
+# 1>=255 is false, but sext(1)=1 >= sext(0xff)=-1 is true. zext makes the subtraction's sign
+# track the unsigned comparison exactly, since both operands land in [0, 2^n) with plenty of
+# headroom in the 4-byte result to avoid the widening overflowing.
 :CPX CPXY_VAL8    is (ctx_XF=1 & (op=0xe0 | op=0xec | op=0xe4)) ... & CPXY_VAL8 {
     local data:1 = CPXY_VAL8;
-    local result:4 = sext(XLow) - sext(data);
+    local result:4 = zext(XLow) - zext(data);
     flag8_NZ(result:1);
     CF = result s>= 0;
 }
@@ -590,7 +607,7 @@ CPXY_VAL16: Imm16    is bbb=0; Imm16  { export Imm16; }
 # CPX 16 bit.
 :CPX CPXY_VAL16    is (ctx_XF=0 & (op=0xe0 | op=0xec | op=0xe4)) ... & CPXY_VAL16 {
     local data:2 = CPXY_VAL16;
-    local result:4 = sext(X) - sext(data);
+    local result:4 = zext(X) - zext(data);
     flag16_NZ(result:2);
     CF = result s>= 0;
 }
@@ -603,15 +620,16 @@ CPXY_VAL16: Imm16    is bbb=0; Imm16  { export Imm16; }
 # (audited across every ctx_MF/ctx_XF-split constructor). Worth reporting upstream.
 :CPY CPXY_VAL8    is (ctx_XF=1 & (op=0xc0 | op=0xcc | op=0xc4)) ... & CPXY_VAL8 {
     local data:1 = CPXY_VAL8;
-    local result:4 = sext(YLow) - sext(data);
+    local result:4 = zext(YLow) - zext(data);
     flag8_NZ(result:1);
     CF = result s>= 0;
 }
 
 # CPY 16 bit.
+# grm-9nxj.4: same zext fix as CPX above -- see that constructor's comment.
 :CPY CPXY_VAL16    is (ctx_XF=0 & (op=0xc0 | op=0xcc | op=0xc4)) ... & CPXY_VAL16 {
     local data:2 = CPXY_VAL16;
-    local result:4 = sext(Y) - sext(data);
+    local result:4 = zext(Y) - zext(data);
     flag16_NZ(result:2);
     CF = result s>= 0;
 }
@@ -2009,9 +2027,16 @@ TEST_OP: RefDP    is dd=1; RefDP  { export RefDP; }
 }
 
 # TXS emulation.
+# grm-9nxj.4: upstream omitted the SPHigh=1 clamp here, unlike its own TCS-emulation sibling
+# two constructors above (SPLow = A; SPHigh = 1;), which writes S from the exact same class of
+# 8-bit source register. Emulation mode architecturally forces the stack into page 1, so this
+# is a no-op on any state a real 65816 can reach -- but stated explicitly rather than left
+# implicit, matching the defensive style TCS/XCE already use here, rather than depending on
+# every caller to have kept SPHigh at 1 through whatever path led into this instruction.
 :TXS    is op=0x9a & ctx_EF=1
 {
     SPLow = XLow;
+    SPHigh = 1;
 }
 # TXS native  16 -> 8
 :TXS    is op=0x9a & ctx_EF=0 & ctx_XF=1
@@ -2089,7 +2114,14 @@ define pcodeop wai;
 }
 
 # XCE native -> ?
-# UNKNOWN: the correct behaviour of XCE when native -> native
+# grm-9nxj.4: upstream marked this "UNKNOWN: the correct behaviour of XCE when native ->
+# native" and assumed a re-switch into the CURRENT mode behaves like a real mode switch,
+# clearing the index registers' high bytes. THE ORACLE SAYS OTHERWISE: with that assumption
+# this row failed 25 of 32 native cases on X and Y alone, and passes 32/32 once the no-op
+# case is left alone. That is the reading hardware supports too -- XCE exchanges the carry
+# and emulation bits, and when the emulation bit does not actually change, nothing about the
+# register widths changes either, so there is nothing to truncate. The to-emulation path
+# below is unchanged and still clamps, because there the width genuinely does change.
 :XCE    is ctx_EF=0 & op=0xfb
     [ ctx_EF=CF; globalset(inst_next, ctx_EF);
       ctx_MF=1; globalset(inst_next, ctx_MF);
@@ -2105,10 +2137,8 @@ define pcodeop wai;
     goto <end>;
 
     <to_native>
-    # It's not clear what happens when XCE re-switches into the current mode.
-    # I've assumed everything happens just as it would in a "real" mode switch.
-    XHigh = 0;
-    YHigh = 0;
+    # Native -> native: the mode did not change, so no register is truncated. Measured, not
+    # assumed -- see this constructor's header comment.
 
     <end>
     CF = 0;
