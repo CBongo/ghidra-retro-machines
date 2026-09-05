@@ -404,10 +404,21 @@ the two remaining red rows (`PLP.N`, `RTI.N`) throw on the language's own
 `unknown_native_status_pull` pcodeop and stay sequenced behind `grm-9nxj.5`. A baseline `FAIL` row records reality; only a *regression*
 (a row moving `PASS` → `FAIL`) is a hard failure, per `OpcodeBaseline`'s rules.
 
-**Unmeasured runtime/heap.** `w65816VectorTest`'s `maxHeapSize` (`2g`) is a placeholder scaled up
-from `spc700VectorTest`'s measured `512m`, not a measured value — no full corpus clone was
-available while building this tier. Re-measure (and update this paragraph) the first time
-`w65816-vectors` is actually run to completion against a real clone.
+**Measured runtime, 2026-09-05.** A full `w65816-vectors` run — all 512 files, 5,120,000 cases —
+takes **4m47s** at the task's `2g` heap, on the same machine where the SPC700 exhaustive tier
+takes ~15s for 256,000 cases. Cloning the corpus costs 50s and 3.2 GB checked out (481 MB
+packed). These are one machine's numbers; re-measure before quoting them.
+
+**What the exhaustive baseline actually says, and how to read it.** 512 rows: 353 PASS, 8 N/A,
+151 FAIL — but the failure COUNT is misleading and the SHAPE is what matters. 136 of those 151
+rows pass **99.9% or more** of their 10,000 cases, and 84 have `PBR` as their only mismatched
+field. That is one documented limitation, not 136 bugs: the vendored spec's own header says
+*"UNSUPPORTED: correct behaviour when an instruction and its operand(s) wrap at the end of the
+program bank"*, and a randomly placed PC lands within an instruction's length of a bank boundary
+roughly once in 10,000 cases. The real defects are the rows that fail MOST of their cases —
+today the indirect jump/call family (`6C`, `7C`, `DC`, `FC`, both modes, 0/10000), `XBA` (`EB`),
+the width-dependent N flag on `TXA`/`TYA`, and the known `PLP.N`/`RTI.N`. **Rank a failing row by
+its pass fraction before believing it is a bug.**
 
 Regenerate the vendored sample with `python3 tools/w65816/sample-vectors.py --source
 <full-clone-dir>` (or, for the loose one-file-at-a-time flow used the first time, `--source
