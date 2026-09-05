@@ -358,6 +358,25 @@ public class MapCompiler {
 			// descriptor-declared "the one region PRGs land in" has no reader left and
 			// carrying it through the compiler only advertised a policy nothing honoured.
 			copyIfPresent(region, r, "prg_placeable");
+
+			// Typed sub-structure on a PLAIN REGION, not only inside a window occupant
+			// (grm-9nxj.9). Until the SNES there was no machine that needed it: every
+			// descriptor here banks, so every io block with chip registers to carve up hung
+			// off an occupant. A machine whose address space is wide enough to need no
+			// windows at all (docs/SCHEMA.md, "When windows do not apply") has nowhere to put
+			// one, and before this the key was silently DROPPED -- the descriptor compiled
+			// clean and the structure just was not there. Same shape and same builder as the
+			// occupant case; a region's own start/end bound it.
+			List<Map<String, Object>> subregions =
+				(List<Map<String, Object>>) region.get("subregions");
+			if (subregions != null) {
+				List<Map<String, Object>> subOut = new ArrayList<>();
+				for (Map<String, Object> sub : subregions) {
+					subOut.add(buildSubregion(sub, start, end, maxAddr,
+						"memory.regions[] '" + name + "'"));
+				}
+				r.put("subregions", subOut);
+			}
 			out.add(r);
 		}
 		return out;

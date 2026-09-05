@@ -1,0 +1,273 @@
+# Super Nintendo Entertainment System / Super Famicom descriptor.
+#
+# WHAT THIS DESCRIBES: the CPU-visible machine -- work RAM, the IO register windows, the CPU
+# vectors -- for a plain LoROM/HiROM/ExHiROM cartridge. It deliberately declares NO
+# memory.windows[], no occupants[] and no banking.* at all, which is unusual for this project
+# and is a decision, not an omission (bead grm-9nxj.6, docs/snes-memory-map-decision.md):
+#
+#   Windows and occupants exist because a 16-bit address space cannot hold every bank at once.
+#   The 65816 addresses 16 MB and the largest cartridge is 8 MB, so every bank, RAM byte and IO
+#   register already has its own address. Cartridge layout is a STATIC map read from the
+#   header, not a runtime switch, and the loader materializes it directly.
+#
+# The banking machinery still applies to MMC-style enhancement cartridges (SA-1's Super MMC
+# maps four 1 MB blocks through registers at $2220-$2223); those get their own descriptors if
+# and when someone builds them, and would use windows/mechanisms unchanged.
+#
+# ROM regions are NOT declared here either: their placement depends on the cartridge's map mode
+# and size, which the loader reads per file (see SnesRomHeader and SnesAddressMap). Declaring a
+# fixed ROM region would be wrong for at least one of LoROM/HiROM.
+#
+# NOT DECLARED, deliberately: SRAM. The header states a RAM size but not a location, and the
+# placement genuinely varies -- SNESdev's memory map says LoROM SRAM is "often at $F0-FF" with
+# "many variations" and states no HiROM location at all. A guessed region would land on top of
+# a game's real data.
+#
+# Primary references:
+#   - SNESdev wiki, CPU memory map: https://snes.nesdev.org/wiki/Memory_map
+#   - SNESdev wiki, ROM header: https://snes.nesdev.org/wiki/ROM_header
+#   - undisbeliever's SNES register cheat sheet:
+#     https://undisbeliever.net/snesdev/registers/cheatsheet.html
+
+schema: 2
+
+system:
+  id: snes
+  name: "Super Nintendo Entertainment System (LoROM/HiROM cartridge)"
+  cpu:
+    # The vendored 65816 (bead grm-9nxj.1). The "retro" variant id deliberately differs from
+    # the upstream ghidra-snes project's 65816:LE:24:snes so both can be installed together.
+    language: "65816:LE:24:retro"
+
+memory:
+  regions:
+    # Work RAM is a flat 128 KiB pair of banks. The first 8 KiB is also mirrored into
+    # $0000-$1FFF of every system bank ($00-$3F and $80-$BF); that mirror is materialized by
+    # the loader as a byte-mapped view of this region rather than declared as its own region,
+    # so there is exactly one home for the bytes.
+    - name: WRAM
+      start: 0x7E0000
+      end: 0x7FFFFF
+      kind: ram
+      comment: "128 KiB work RAM; $7E:0000-$1FFF is also mirrored into every system bank"
+
+    # The IO windows, in their bank $00 home. They are likewise mirrored across the system
+    # banks by the loader.
+    - name: PPU_APU_IO
+      start: 0x002100
+      end: 0x0021FF
+      kind: io
+      comment: "PPU registers, APU communication ports, and WRAM access registers"
+    - name: JOYPAD_IO
+      start: 0x004000
+      end: 0x0041FF
+      kind: io
+      comment: "Legacy (bit-banged) controller ports"
+    - name: CPU_DMA_IO
+      start: 0x004200
+      end: 0x0043FF
+      kind: io
+      comment: "CPU control, timers, multiply/divide, and the eight DMA/HDMA channel blocks"
+      subregions:
+        # The eight DMA/HDMA channels share one 16-byte layout, repeated from $4300 to $437F.
+        # Typing it once and repeating beats naming 112 registers by hand: the repeat cannot
+        # drift out of step the way a hand-written list can, and it is how c64/c128 already
+        # express their mirrored chip registers.
+        - name: DMA_CHANNELS
+          start: 0x004300
+          size: 0x10
+          repeat_to: 0x00437F
+          type: SNES_DMA_CHANNEL
+          comment: "DMA/HDMA channels 0-7, 16 bytes each"
+
+  # EXPLICITLY EMPTY, and the emptiness is the point (bead grm-9nxj.6). MapCompiler requires the
+  # key, which is right: for every other machine here a missing windows[] would be an authoring
+  # slip. Writing it empty says "this machine genuinely has no banked windows" rather than
+  # leaving a reader to wonder whether someone forgot. See docs/SCHEMA.md's "When windows do not
+  # apply" note and docs/snes-memory-map-decision.md for why the SNES is that machine.
+  windows: []
+
+symbols:
+  - set: cpu-vectors
+    default: on
+    region: null
+    provenance: "65816 vector layout; SNESdev ROM header page. Native vectors at $FFE4-$FFEF, emulation at $FFF4-$FFFF."
+    inline:
+      - { addr: 0x00FFE4, name: VEC_COP_NATIVE, kind: vector, comment: "COP vector, native mode" }
+      - { addr: 0x00FFE6, name: VEC_BRK_NATIVE, kind: vector, comment: "BRK vector, native mode" }
+      - { addr: 0x00FFE8, name: VEC_ABORT_NATIVE, kind: vector, comment: "ABORT vector, native mode (unused on the SNES)" }
+      - { addr: 0x00FFEA, name: VEC_NMI_NATIVE, kind: vector, comment: "NMI vector, native mode (vblank)" }
+      - { addr: 0x00FFEE, name: VEC_IRQ_NATIVE, kind: vector, comment: "IRQ vector, native mode" }
+      - { addr: 0x00FFF4, name: VEC_COP_EMULATION, kind: vector, comment: "COP vector, emulation mode" }
+      - { addr: 0x00FFF8, name: VEC_ABORT_EMULATION, kind: vector, comment: "ABORT vector, emulation mode" }
+      - { addr: 0x00FFFA, name: VEC_NMI_EMULATION, kind: vector, comment: "NMI vector, emulation mode" }
+      - { addr: 0x00FFFC, name: VEC_RESET_EMULATION, kind: vector, comment: "RESET vector; the CPU starts here in EMULATION mode" }
+      - { addr: 0x00FFFE, name: VEC_IRQ_EMULATION, kind: vector, comment: "IRQ/BRK vector, emulation mode" }
+
+  - set: ppu-registers
+    default: on
+    region: PPU_APU_IO
+    provenance: "SNESdev wiki register lists and undisbeliever's cheat sheet; factual address/name extraction"
+    inline:
+      - { addr: 0x002100, name: INIDISP, kind: label, comment: "Screen display: force blank + brightness" }
+      - { addr: 0x002101, name: OBSEL, kind: label, comment: "Object size and character address" }
+      - { addr: 0x002102, name: OAMADDL, kind: label, comment: "OAM address low" }
+      - { addr: 0x002103, name: OAMADDH, kind: label, comment: "OAM address high + priority rotation" }
+      - { addr: 0x002104, name: OAMDATA, kind: label, comment: "OAM data write" }
+      - { addr: 0x002105, name: BGMODE, kind: label, comment: "BG mode and character size" }
+      - { addr: 0x002106, name: MOSAIC, kind: label, comment: "Mosaic size and BG enable" }
+      - { addr: 0x002107, name: BG1SC, kind: label, comment: "BG1 tilemap address and size" }
+      - { addr: 0x002108, name: BG2SC, kind: label, comment: "BG2 tilemap address and size" }
+      - { addr: 0x002109, name: BG3SC, kind: label, comment: "BG3 tilemap address and size" }
+      - { addr: 0x00210A, name: BG4SC, kind: label, comment: "BG4 tilemap address and size" }
+      - { addr: 0x00210B, name: BG12NBA, kind: label, comment: "BG1/BG2 character address" }
+      - { addr: 0x00210C, name: BG34NBA, kind: label, comment: "BG3/BG4 character address" }
+      - { addr: 0x00210D, name: BG1HOFS, kind: label, comment: "BG1 horizontal scroll (also mode-7 M7HOFS)" }
+      - { addr: 0x00210E, name: BG1VOFS, kind: label, comment: "BG1 vertical scroll (also mode-7 M7VOFS)" }
+      - { addr: 0x00210F, name: BG2HOFS, kind: label, comment: "BG2 horizontal scroll" }
+      - { addr: 0x002110, name: BG2VOFS, kind: label, comment: "BG2 vertical scroll" }
+      - { addr: 0x002111, name: BG3HOFS, kind: label, comment: "BG3 horizontal scroll" }
+      - { addr: 0x002112, name: BG3VOFS, kind: label, comment: "BG3 vertical scroll" }
+      - { addr: 0x002113, name: BG4HOFS, kind: label, comment: "BG4 horizontal scroll" }
+      - { addr: 0x002114, name: BG4VOFS, kind: label, comment: "BG4 vertical scroll" }
+      - { addr: 0x002115, name: VMAIN, kind: label, comment: "VRAM address increment mode" }
+      - { addr: 0x002116, name: VMADDL, kind: label, comment: "VRAM address low" }
+      - { addr: 0x002117, name: VMADDH, kind: label, comment: "VRAM address high" }
+      - { addr: 0x002118, name: VMDATAL, kind: label, comment: "VRAM data write low" }
+      - { addr: 0x002119, name: VMDATAH, kind: label, comment: "VRAM data write high" }
+      - { addr: 0x00211A, name: M7SEL, kind: label, comment: "Mode-7 settings" }
+      - { addr: 0x00211B, name: M7A, kind: label, comment: "Mode-7 matrix A (also multiplicand)" }
+      - { addr: 0x00211C, name: M7B, kind: label, comment: "Mode-7 matrix B (also multiplier)" }
+      - { addr: 0x00211D, name: M7C, kind: label, comment: "Mode-7 matrix C" }
+      - { addr: 0x00211E, name: M7D, kind: label, comment: "Mode-7 matrix D" }
+      - { addr: 0x00211F, name: M7X, kind: label, comment: "Mode-7 center X" }
+      - { addr: 0x002120, name: M7Y, kind: label, comment: "Mode-7 center Y" }
+      - { addr: 0x002121, name: CGADD, kind: label, comment: "CGRAM (palette) address" }
+      - { addr: 0x002122, name: CGDATA, kind: label, comment: "CGRAM data write" }
+      - { addr: 0x002123, name: W12SEL, kind: label, comment: "Window mask settings for BG1/BG2" }
+      - { addr: 0x002124, name: W34SEL, kind: label, comment: "Window mask settings for BG3/BG4" }
+      - { addr: 0x002125, name: WOBJSEL, kind: label, comment: "Window mask settings for OBJ and colour" }
+      - { addr: 0x002126, name: WH0, kind: label, comment: "Window 1 left position" }
+      - { addr: 0x002127, name: WH1, kind: label, comment: "Window 1 right position" }
+      - { addr: 0x002128, name: WH2, kind: label, comment: "Window 2 left position" }
+      - { addr: 0x002129, name: WH3, kind: label, comment: "Window 2 right position" }
+      - { addr: 0x00212A, name: WBGLOG, kind: label, comment: "Window mask logic for BGs" }
+      - { addr: 0x00212B, name: WOBJLOG, kind: label, comment: "Window mask logic for OBJ and colour" }
+      - { addr: 0x00212C, name: TM, kind: label, comment: "Main screen layer enable" }
+      - { addr: 0x00212D, name: TS, kind: label, comment: "Sub screen layer enable" }
+      - { addr: 0x00212E, name: TMW, kind: label, comment: "Main screen window mask enable" }
+      - { addr: 0x00212F, name: TSW, kind: label, comment: "Sub screen window mask enable" }
+      - { addr: 0x002130, name: CGWSEL, kind: label, comment: "Colour addition select" }
+      - { addr: 0x002131, name: CGADSUB, kind: label, comment: "Colour math designation" }
+      - { addr: 0x002132, name: COLDATA, kind: label, comment: "Fixed colour data" }
+      - { addr: 0x002133, name: SETINI, kind: label, comment: "Screen mode / video select (interlace, overscan)" }
+      - { addr: 0x002134, name: MPYL, kind: label, comment: "Mode-7 multiplication result low (read)" }
+      - { addr: 0x002135, name: MPYM, kind: label, comment: "Mode-7 multiplication result mid (read)" }
+      - { addr: 0x002136, name: MPYH, kind: label, comment: "Mode-7 multiplication result high (read)" }
+      - { addr: 0x002137, name: SLHV, kind: label, comment: "Software latch for H/V counters (read)" }
+      - { addr: 0x002138, name: OAMDATAREAD, kind: label, comment: "OAM data read" }
+      - { addr: 0x002139, name: VMDATALREAD, kind: label, comment: "VRAM data read low" }
+      - { addr: 0x00213A, name: VMDATAHREAD, kind: label, comment: "VRAM data read high" }
+      - { addr: 0x00213B, name: CGDATAREAD, kind: label, comment: "CGRAM data read" }
+      - { addr: 0x00213C, name: OPHCT, kind: label, comment: "Horizontal scanline location (read)" }
+      - { addr: 0x00213D, name: OPVCT, kind: label, comment: "Vertical scanline location (read)" }
+      - { addr: 0x00213E, name: STAT77, kind: label, comment: "PPU1 status and version (read)" }
+      - { addr: 0x00213F, name: STAT78, kind: label, comment: "PPU2 status and version (read)" }
+      - { addr: 0x002140, name: APUIO0, kind: label, comment: "APU communication port 0" }
+      - { addr: 0x002141, name: APUIO1, kind: label, comment: "APU communication port 1" }
+      - { addr: 0x002142, name: APUIO2, kind: label, comment: "APU communication port 2" }
+      - { addr: 0x002143, name: APUIO3, kind: label, comment: "APU communication port 3" }
+      - { addr: 0x002180, name: WMDATA, kind: label, comment: "WRAM data read/write through $2181-$2183" }
+      - { addr: 0x002181, name: WMADDL, kind: label, comment: "WRAM address low" }
+      - { addr: 0x002182, name: WMADDM, kind: label, comment: "WRAM address mid" }
+      - { addr: 0x002183, name: WMADDH, kind: label, comment: "WRAM address high (bank bit)" }
+
+  - set: cpu-dma-registers
+    default: on
+    region: CPU_DMA_IO
+    provenance: "SNESdev wiki register lists and undisbeliever's cheat sheet; factual address/name extraction"
+    inline:
+      - { addr: 0x004200, name: NMITIMEN, kind: label, comment: "Interrupt enable: NMI, IRQ timers, auto-joypad read" }
+      - { addr: 0x004201, name: WRIO, kind: label, comment: "Programmable IO port (out)" }
+      - { addr: 0x004202, name: WRMPYA, kind: label, comment: "Multiplicand A" }
+      - { addr: 0x004203, name: WRMPYB, kind: label, comment: "Multiplier B; starts the multiply" }
+      - { addr: 0x004204, name: WRDIVL, kind: label, comment: "Dividend low" }
+      - { addr: 0x004205, name: WRDIVH, kind: label, comment: "Dividend high" }
+      - { addr: 0x004206, name: WRDIVB, kind: label, comment: "Divisor; starts the divide" }
+      - { addr: 0x004207, name: HTIMEL, kind: label, comment: "H-count timer low" }
+      - { addr: 0x004208, name: HTIMEH, kind: label, comment: "H-count timer high" }
+      - { addr: 0x004209, name: VTIMEL, kind: label, comment: "V-count timer low" }
+      - { addr: 0x00420A, name: VTIMEH, kind: label, comment: "V-count timer high" }
+      - { addr: 0x00420B, name: MDMAEN, kind: label, comment: "DMA enable; writing starts the transfer" }
+      - { addr: 0x00420C, name: HDMAEN, kind: label, comment: "HDMA enable" }
+      - { addr: 0x00420D, name: MEMSEL, kind: label, comment: "ROM access speed (FastROM select)" }
+      - { addr: 0x004210, name: RDNMI, kind: label, comment: "NMI flag and CPU version (read)" }
+      - { addr: 0x004211, name: TIMEUP, kind: label, comment: "IRQ flag (read, clears on read)" }
+      - { addr: 0x004212, name: HVBJOY, kind: label, comment: "H/V blank flags and auto-joypad status (read)" }
+      - { addr: 0x004213, name: RDIO, kind: label, comment: "Programmable IO port (in)" }
+      - { addr: 0x004214, name: RDDIVL, kind: label, comment: "Quotient low (read)" }
+      - { addr: 0x004215, name: RDDIVH, kind: label, comment: "Quotient high (read)" }
+      - { addr: 0x004216, name: RDMPYL, kind: label, comment: "Product or remainder low (read)" }
+      - { addr: 0x004217, name: RDMPYH, kind: label, comment: "Product or remainder high (read)" }
+      - { addr: 0x004218, name: JOY1L, kind: label, comment: "Auto-joypad 1 low (read)" }
+      - { addr: 0x004219, name: JOY1H, kind: label, comment: "Auto-joypad 1 high (read)" }
+      - { addr: 0x00421A, name: JOY2L, kind: label, comment: "Auto-joypad 2 low (read)" }
+      - { addr: 0x00421B, name: JOY2H, kind: label, comment: "Auto-joypad 2 high (read)" }
+      - { addr: 0x00421C, name: JOY3L, kind: label, comment: "Auto-joypad 3 low (read)" }
+      - { addr: 0x00421D, name: JOY3H, kind: label, comment: "Auto-joypad 3 high (read)" }
+      - { addr: 0x00421E, name: JOY4L, kind: label, comment: "Auto-joypad 4 low (read)" }
+      - { addr: 0x00421F, name: JOY4H, kind: label, comment: "Auto-joypad 4 high (read)" }
+      # DMA channel 0 only. The other seven channels repeat this layout every $10 bytes
+      # ($4310-$437F) and are deliberately not enumerated: naming 112 more registers by hand
+      # invites transcription errors, and a repeat/struct form (docs/SCHEMA.md's types[] with
+      # repeat_to) expresses it once. Left for the increment that adds types to this
+      # descriptor, rather than half-done here.
+      - { addr: 0x004300, name: DMAP0, kind: label, comment: "DMA channel 0: parameters" }
+      - { addr: 0x004301, name: BBAD0, kind: label, comment: "DMA channel 0: B-bus destination" }
+      - { addr: 0x004302, name: A1T0L, kind: label, comment: "DMA channel 0: A-bus address low" }
+      - { addr: 0x004303, name: A1T0H, kind: label, comment: "DMA channel 0: A-bus address high" }
+      - { addr: 0x004304, name: A1B0, kind: label, comment: "DMA channel 0: A-bus bank" }
+      - { addr: 0x004305, name: DAS0L, kind: label, comment: "DMA channel 0: transfer size low" }
+      - { addr: 0x004306, name: DAS0H, kind: label, comment: "DMA channel 0: transfer size high" }
+
+types:
+  # Inline rather than generated: one small block, and it is the piece that makes the other
+  # seven DMA channels legible without enumerating them (see the DMA_CHANNELS subregion).
+  - name: SNES_DMA_CHANNEL
+    kind: struct
+    fields:
+      - { offset: 0x0, name: DMAP, size: 1, type: SNES_DMAP_BITS, comment: "transfer parameters" }
+      - { offset: 0x1, name: BBAD, size: 1, comment: "B-bus destination register ($21xx)" }
+      - { offset: 0x2, name: A1TL, size: 1, comment: "A-bus source address low" }
+      - { offset: 0x3, name: A1TH, size: 1, comment: "A-bus source address high" }
+      - { offset: 0x4, name: A1B, size: 1, comment: "A-bus source bank" }
+      - { offset: 0x5, name: DASL, size: 1, comment: "transfer size low / HDMA indirect address low" }
+      - { offset: 0x6, name: DASH, size: 1, comment: "transfer size high / HDMA indirect address high" }
+      - { offset: 0x7, name: DASB, size: 1, comment: "HDMA indirect address bank" }
+      - { offset: 0x8, name: A2AL, size: 1, comment: "HDMA table address low" }
+      - { offset: 0x9, name: A2AH, size: 1, comment: "HDMA table address high" }
+      - { offset: 0xA, name: NTRL, size: 1, comment: "HDMA line counter" }
+      - { offset: 0xB, name: UNUSED, size: 1, comment: "unused (readable/writable scratch)" }
+  - name: SNES_DMAP_BITS
+    kind: flags
+    bits:
+      - { bit: 0, name: XFER_MODE0, comment: "transfer unit selector, bit 0" }
+      - { bit: 1, name: XFER_MODE1, comment: "transfer unit selector, bit 1" }
+      - { bit: 2, name: XFER_MODE2, comment: "transfer unit selector, bit 2" }
+      - { bit: 3, name: HDMA_INDIRECT, comment: "1 = HDMA reads an indirect table" }
+      - { bit: 4, name: A_BUS_FIXED, comment: "1 = A-bus address does not step" }
+      - { bit: 5, name: A_BUS_DECREMENT, comment: "1 = A-bus address decrements" }
+      - { bit: 7, name: DIRECTION_B_TO_A, comment: "1 = B-bus to A-bus (read from PPU)" }
+
+formats:
+  smc:
+    extensions: [smc, sfc, fig]
+    placement: header_mapped
+    comment: >-
+      Cartridge image, optionally preceded by a 512-byte copier header (detected by
+      size % 0x400 == 0x200). The cartridge header's own location is found by scoring
+      $7FC0/$FFC0/$40FFC0 on title printability plus the checksum/complement pair; the map-mode
+      byte then decides LoROM/HiROM/ExHiROM placement. See SnesRomHeader and SnesAddressMap.
+
+validation:
+  oracle: "bsnes / Mesen-S for runtime behaviour; SingleStepTests/65816 for CPU semantics (see docs/testing.md)"
