@@ -212,6 +212,44 @@ one more note on 94bb: it does LDY $070a, then sets the R6 shadow from 83d6,Y an
 
 rcproam (human task/grm-4nr): W8000_M0_B0::a915 is the middle of a data table. the preceding byte a914 is the target of several apparent switch table overruns at bd2e in the same bank (first label is switchD_W8000_M0_B0::bd2e::caseD_7c).  bd2e switch table is at bd31 and has only 4 entries (first is immediately after the table at bd39).  c912 appears to be the same situation - it's the middle of a table of pointers, not code. c913 is labeled as switchD_a16e::caseD_1c so another overrun; switch table for a16e is at a171 with actual length 11 entries; the third entry immediately follows the table at a187.
 
+rcransom fed1:
+1ff 90
+1fe c0
+1fd (A)
+1fc (X)
+sp = fb
+0:bfff = 5f
+2:bfff = 0
+3:bfff = 1
+5:bfff = 2
+7:bfff = 3
+9:bfff = 4
+a:bfff = 6b
+b:bfff = 5
+c:bfff = 29
+d:bfff = 6
+f:bfff = f1
+c08e: PLA, pushed at c025 from LDA bfff (bank save/restore)
+c0b1: LDA 0
+c0f4: PLA, pushed at c025 from LDA bfff (bank save/restore)
+c2ac: LDA ($2c),Y; AND #3
+c418: LDA $22. $22 set at c2a5 from LDA bfff (bank save/restore)
+c452: same as c418
+c787: LDA ($2c),Y; CMP #4; BCC c787.  c784 is a JMP over the JSR at c787 so this is the only flow that reaches it
+c7db: PLA, pushed at c734 from LDA bfff (bank save/restore)
+ccd9: TYA, Y set to 1 or 3 depending on other logic (branch at ccc8)
+cd57: PLA, pushed at ccb2 from LDA bfff (bank save/restore)
+cd69: LDA 0
+cdbb: LDA 2
+ce24: LDA 0
+ed29: LDA 3
+ef85: PLA, pushed at ed26 from LDA bfff (bank save/restore)
+f22a: LDA 6
+
+
+
+
+
   Next session's shortest path
 
   1. bd list --label background-ok → farm out immediately (grm-hhd first; it blocks every parallel agent).
