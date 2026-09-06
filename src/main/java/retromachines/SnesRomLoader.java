@@ -33,6 +33,7 @@ import ghidra.app.util.opinion.Loader;
 import ghidra.app.util.opinion.LoadSpec;
 import ghidra.app.util.opinion.LoaderTier;
 import ghidra.framework.model.DomainObject;
+import ghidra.program.database.mem.FileBytes;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressOverflowException;
 import ghidra.program.model.address.AddressSpace;
@@ -213,12 +214,21 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 	 * The canonical ROM blocks -- one per mapping unit (32 KiB per bank for LoROM, 64 KiB for
 	 * HiROM), initialized from the file. Returns each block's start address so the mirror pass
 	 * can map onto them.
+	 *
+	 * <p>The blocks are cut from the program's {@link FileBytes} rather than from a per-block
+	 * {@link java.io.InputStream} (grm-9nxj.10), so each one records WHERE in the image its
+	 * bytes came from. Ghidra uses that provenance for re-import, for "restore original bytes"
+	 * after a patch, and for telling a user which part of the file a block is; a stream-built
+	 * block reports {@code fileOffset=-1} and can offer none of it. The offset stored is into
+	 * the FILE, so on a copier-headered image it includes {@code dataOffset} -- the cartridge
+	 * offset is in the block comment.
 	 */
 	private List<Long> createRomBlocks(Program program, AddressSpace space, ByteProvider provider,
 			SnesAddressMap map, long dataOffset, long cartBytes, MessageLog log,
 			TaskMonitor monitor) throws IOException, CancelledException,
 			AddressOverflowException {
 
+		FileBytes fileBytes = MemoryBlockUtils.createFileBytes(program, provider, monitor);
 		long unit = map.mapType() == MapType.LOROM ? 0x8000L : 0x10000L;
 		List<Long> starts = new ArrayList<>();
 		for (long fileOffset = 0; fileOffset < cartBytes; fileOffset += unit) {
@@ -228,9 +238,9 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 			Address start = space.getAddress(address);
 			String name = String.format("ROM_%02X_%04X", (address >> 16) & 0xFF, address & 0xFFFF);
 			MemoryBlock block = MemoryBlockUtils.createInitializedBlock(program, false, name,
-				start, provider.getInputStream(dataOffset + fileOffset), size,
+				start, fileBytes, dataOffset + fileOffset, size,
 				"Cartridge ROM, file offset $" + Long.toHexString(fileOffset), NAME,
-				true, false, true, log, monitor);
+				true, false, true, log);
 			if (block != null) {
 				starts.add(address);
 			}

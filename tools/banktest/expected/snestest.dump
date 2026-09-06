@@ -1,5 +1,5 @@
 FORMAT snes=true language=true map=machines/snes.map
-ROM_HOME ROM_00_8000 8000-ffff overlay=false fileOffset=-1 bytes=18 fb
+ROM_HOME ROM_00_8000 8000-ffff overlay=false fileOffset=0 bytes=18 fb
 ROM_MIRROR ROM_80_8000_mirror 808000-80ffff overlay=false type=Byte Mapped bytesThroughMirror=18 fb ok=true
 OVERLAYS 0 (a static map needs none)
 WRAM WRAM 7e0000-7fffff overlay=false
