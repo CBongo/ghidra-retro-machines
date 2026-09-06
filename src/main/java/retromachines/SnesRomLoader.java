@@ -198,7 +198,7 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 			createRomBlocks(program, space, provider, map, dataOffset, cartBytes, log, monitor);
 		createWorkRam(program, space, log);
 		if (mirrors) {
-			createRomMirrors(program, space, map, canonicalStarts, cartBytes, log);
+			createRomMirrors(program, space, map, canonicalStarts, log);
 			createSystemMirrors(program, space, log);
 		}
 		else {
@@ -256,29 +256,29 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 
 	/** Byte-mapped views of the canonical ROM blocks at every other address they appear. */
 	private void createRomMirrors(Program program, AddressSpace space, SnesAddressMap map,
-			List<Long> canonicalStarts, long cartBytes, MessageLog log) {
+			List<Long> canonicalStarts, MessageLog log) {
 
 		int created = 0;
 		for (long canonical : canonicalStarts) {
-			for (long mirror : mirrorAddressesOf(map, canonical, cartBytes)) {
-				MemoryBlock home = program.getMemory().getBlock(space.getAddress(canonical));
-				if (home == null) {
-					continue;
-				}
+			MemoryBlock home = program.getMemory().getBlock(space.getAddress(canonical));
+			if (home == null) {
+				continue;
+			}
+			for (Mirror mirror : mirrorsOf(map, canonical, home.getSize())) {
 				String name = String.format("ROM_%02X_%04X_mirror",
-					(mirror >> 16) & 0xFF, mirror & 0xFFFF);
+					(mirror.at >> 16) & 0xFF, mirror.at & 0xFFFF);
 				try {
 					MemoryBlock block = program.getMemory().createByteMappedBlock(name,
-						space.getAddress(mirror), space.getAddress(canonical), home.getSize(),
+						space.getAddress(mirror.at), space.getAddress(mirror.from), mirror.size,
 						false);
 					block.setRead(true);
 					block.setExecute(true);
-					block.setComment("Mirror of $" + Long.toHexString(canonical));
+					block.setComment("Mirror of $" + Long.toHexString(mirror.from));
 					created++;
 				}
 				catch (Exception e) {
-					log.appendMsg(NAME + ": could not mirror $" + Long.toHexString(canonical) +
-						" at $" + Long.toHexString(mirror) + ": " + e.getMessage());
+					log.appendMsg(NAME + ": could not mirror $" + Long.toHexString(mirror.from) +
+						" at $" + Long.toHexString(mirror.at) + ": " + e.getMessage());
 				}
 			}
 		}
@@ -286,24 +286,40 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 	}
 
 	/**
-	 * Every OTHER address the bytes at {@code canonical} appear at. LoROM's home is the low
-	 * banks, so its one mirror is {@code +$800000}; HiROM's home is the linear {@code $C0-$FF}
-	 * view, whose bytes also appear in the system banks' upper halves (and, for the first
-	 * 4 MiB, at {@code $40-$7D} -- not materialized here, see the log line in load()).
+	 * One byte-mapped view: {@code size} bytes appearing at {@code at}, sourced from {@code from}
+	 * inside a canonical block. All three fields are needed because a mirror is not always the
+	 * WHOLE home block -- a HiROM system-bank window shows only its upper half (grm-9nxj.18).
 	 */
-	private List<Long> mirrorAddressesOf(SnesAddressMap map, long canonical, long cartBytes) {
-		List<Long> out = new ArrayList<>();
+	private record Mirror(long at, long from, long size) {}
+
+	/**
+	 * Every OTHER place the bytes of the canonical block at {@code canonical} appear. LoROM's
+	 * home is the low banks, so its one mirror is the whole block at {@code +$800000}; HiROM's
+	 * home is the linear {@code $C0-$FF} view, whose UPPER HALF also appears at
+	 * {@code $8000-$FFFF} of the corresponding system bank (and, for the first 4 MiB, in
+	 * {@code $40-$7D} -- not materialized here, see the log line in load()).
+	 *
+	 * <p>The half-bank arithmetic is the point (grm-9nxj.18): sizing a system-bank mirror with
+	 * the home block's full 64 KiB spills 32 KiB into the NEXT bank's low half, which is RAM/IO
+	 * territory where no cartridge ROM is mapped at all, and sourcing it from the bank's low
+	 * half shows the wrong bytes. A trailing home block shorter than 32 KiB has nothing in its
+	 * upper half and so has no system-bank mirror.
+	 */
+	private List<Mirror> mirrorsOf(SnesAddressMap map, long canonical, long homeSize) {
+		List<Mirror> out = new ArrayList<>();
 		if (map.mapType() == MapType.LOROM) {
-			out.add(canonical + 0x800000L);
+			out.add(new Mirror(canonical + 0x800000L, canonical, homeSize));
 			return out;
 		}
 		long fileOffset = canonical - 0xC00000L;
 		long bank = fileOffset / 0x10000L;
-		if (bank <= 0x3F) {
-			// The system banks show only the UPPER half of each HiROM bank.
-			out.add((bank << 16) | 0x8000L);
-			out.add(((bank + 0x80) << 16) | 0x8000L);
+		if (bank > 0x3F || homeSize <= 0x8000L) {
+			return out;
 		}
+		long from = canonical + 0x8000L;
+		long size = homeSize - 0x8000L;
+		out.add(new Mirror((bank << 16) | 0x8000L, from, size));
+		out.add(new Mirror(((bank + 0x80) << 16) | 0x8000L, from, size));
 		return out;
 	}
 
