@@ -43,6 +43,43 @@ bash tools/banktest/realrom-test.sh nominate <romdir>   # board-gap survey
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
+- [ ] **Where does `rcransom`'s `FUN_fed1` get its bank argument — A, or the `$fc`/`$fd` shadows?**
+      (`grm-nqxt`, and it also governs `grm-vt1i`'s rcransom four and the residue `grm-wrm3` was
+      closed into.) **The single highest-leverage question in the store right now: one helper,
+      three beads.** `FUN_fed1` accounts for 38 of the 98 helper-argument warnings across the
+      eleven `grm-913` rows — 39% of the class — and the twelve PRG switch sites it governs
+      (`fed8`–`ff42`) are inside its own body, immediately below it, so this is a small
+      self-contained read rather than a whole-title trace.
+
+      **Your own answered-table row above already names `fed1` as the bank *restore* routine that
+      "clobbers the `$fc`/`$fd` shadows".** That reframes the question and is why it is worth
+      asking rather than assuming: if the bank arrives in A at each call, this is ordinary
+      argument recovery and `grm-nqxt` is scoped right. If `FUN_fed1` instead *reads* `$fc`/`$fd`,
+      then its 38 sites are not an argument-recovery gap at all — they are a bank-shadow
+      read-back gap, which is `grm-mej.2` / `grm-sen5` territory, and the biggest item on
+      `grm-nqxt` should be re-attributed wholesale.
+
+      Classify per `grm-8iy.5`'s vocabulary: `immediate` / `RAM load <addr>` / `ROM table <base>` /
+      `computed <expr>` / `passed-in`. A handful of call sites is enough if they agree; the dense
+      block `fa49`–`fc18` (22 of the 38, at 7–20 byte spacing) looks like a bank of small stubs and
+      is the cheapest place to sample. The other sixteen: `c08e c0b1 c0f4 c2ac c418 c452 c787
+      c7db ccd9 cd57 cd69 cdbb ce24 ed29 ef85 f22a`.
+
+      What the analyzer already gets right at the twelve governed sites, so you can see the shape
+      of the gap: it resolves `select` (6/7 — the PRG registers) and `prg_mode` exactly, and every
+      `r6`/`r7` bit is `assumed from initial`. Mechanism found; deposited value missing.
+
+- [ ] **`smb3` `f8cd`: a lone mechanism write between two fully-resolved MMC3 tables.** (`grm-vt1i`,
+      one of the nine.) Read from the golden 2026-09-06 but not answerable from it. One of only two
+      "undeterminable value" warnings on the whole row. Its neighbours annotate cleanly in two
+      dense select/data runs — `f829`–`f866`, then `f873`–`f8b0`, then `f8cd` alone, then
+      `f912`–… — which is what makes an isolated failure between them worth a minute. Same
+      question and same classification vocabulary as the item above.
+
+      *(Its sibling in that bead, `megaman2`'s `d097 d09b d09f d0a3`, needed no human pass and is
+      answered — they were writes 1–4 of an MMC1 shift chain whose fifth write resolved
+      `prg_bank=12`. Filed as `grm-pdd6`.)*
+
 - [ ] **Does the SPC driver compute the BRR directory, or does the 65816 send it?** (`grm-1.7.3`.)
       You flagged that it's been too long to recall. The answer changes what an analyzer should
       expect: if the 65816 sends it, the directory in SPC RAM has *no writer visible in the SPC
