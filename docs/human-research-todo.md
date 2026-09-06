@@ -43,38 +43,15 @@ bash tools/banktest/realrom-test.sh nominate <romdir>   # board-gap survey
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
-- [ ] **Where does `rcransom`'s `FUN_fed1` get its bank argument — A, or the `$fc`/`$fd` shadows?**
-      (`grm-nqxt`, and it also governs `grm-vt1i`'s rcransom four and the residue `grm-wrm3` was
-      closed into.) **The single highest-leverage question in the store right now: one helper,
-      three beads.** `FUN_fed1` accounts for 38 of the 98 helper-argument warnings across the
-      eleven `grm-913` rows — 39% of the class — and the twelve PRG switch sites it governs
-      (`fed8`–`ff42`) are inside its own body, immediately below it, so this is a small
-      self-contained read rather than a whole-title trace.
-
-      **Your own answered-table row above already names `fed1` as the bank *restore* routine that
-      "clobbers the `$fc`/`$fd` shadows".** That reframes the question and is why it is worth
-      asking rather than assuming: if the bank arrives in A at each call, this is ordinary
-      argument recovery and `grm-nqxt` is scoped right. If `FUN_fed1` instead *reads* `$fc`/`$fd`,
-      then its 38 sites are not an argument-recovery gap at all — they are a bank-shadow
-      read-back gap, which is `grm-mej.2` / `grm-sen5` territory, and the biggest item on
-      `grm-nqxt` should be re-attributed wholesale.
-
-      Classify per `grm-8iy.5`'s vocabulary: `immediate` / `RAM load <addr>` / `ROM table <base>` /
-      `computed <expr>` / `passed-in`. A handful of call sites is enough if they agree; the dense
-      block `fa49`–`fc18` (22 of the 38, at 7–20 byte spacing) looks like a bank of small stubs and
-      is the cheapest place to sample. The other sixteen: `c08e c0b1 c0f4 c2ac c418 c452 c787
-      c7db ccd9 cd57 cd69 cdbb ce24 ed29 ef85 f22a`.
-
-      What the analyzer already gets right at the twelve governed sites, so you can see the shape
-      of the gap: it resolves `select` (6/7 — the PRG registers) and `prg_mode` exactly, and every
-      `r6`/`r7` bit is `assumed from initial`. Mechanism found; deposited value missing.
-
 - [ ] **`smb3` `f8cd`: a lone mechanism write between two fully-resolved MMC3 tables.** (`grm-vt1i`,
       one of the nine.) Read from the golden 2026-09-06 but not answerable from it. One of only two
       "undeterminable value" warnings on the whole row. Its neighbours annotate cleanly in two
       dense select/data runs — `f829`–`f866`, then `f873`–`f8b0`, then `f8cd` alone, then
-      `f912`–… — which is what makes an isolated failure between them worth a minute. Same
-      question and same classification vocabulary as the item above.
+      `f912`–… — which is what makes an isolated failure between them worth a minute. The
+      question is the standing one: *what computes the value in A immediately before the store?*
+      Classify per `grm-8iy.5`'s vocabulary — `immediate` / `RAM load <addr>` / `ROM table <base>` /
+      `computed <expr>` / `passed-in`. (The `FUN_fed1` item that used to sit above this one is
+      answered; see the Answered table for how that classification came out.)
 
       *(Its sibling in that bead, `megaman2`'s `d097 d09b d09f d0a3`, needed no human pass and is
       answered — they were writes 1–4 of an MMC1 shift chain whose fifth write resolved
@@ -334,6 +311,7 @@ Agents can't file these — they need an account and CLA agreement.
 | Why do Lemmings and Mario show zero SPC-side port references? | **The operand form, not the drivers — candidate 2 of the three; 1 and 3 are refuted.** Lemmings reads the ports at `$08B7` via *absolute* addressing (`08B7 E5 F4 00  MOV A,$00F4`, reached by `CALL $08B7 ; read CPU ports`); Mario reads them in a subroutine at `$05A5` that takes the port number in **X** and uses absolute-indexed (`05A9 D5 F4 00  MOV $00F4+X,A`, and `F5`/`75` likewise), called four times with hand comments `read/send APU0/1/3/2`. These are the genuine absolute opcodes (`E5` = `MOV A,!abs`, vs `E4` = dp), so both encoding and printed operand differ and a `$F4`–`$F7` grep cannot see them. **The corrected census counting both forms (dp / abs) is sd3 113/0, ct 87/0, ff3 78/0, som 60/0, ff5 49/0, fzero 2/22, gradius3 5/13, lem 0/23, mario 0/16** — a clean Square/non-Square split, and the old count was wrong on **four** of nine titles, not two: fzero and gradius3 were undercounted by the same mechanism that zeroed lem and mario. **Do not re-open this as a coverage or protocol question.** For `grm-uy9s` and future protocol work, match all three shapes (dp `$F4`–`$F7`, abs `$00F4`–`$00F7`, abs-indexed `$00F4+X`) or work from decoded operand addresses; Mario breaks any purely textual approach regardless, since its port number is a runtime value in X. | `grm-ced`; `grm-uy9s` |
 | Is F-Zero's upload fully resident, or does it stream too? | **Fully resident — all SPC data is uploaded at startup and only control signals are sent afterwards** (owner, 2026-09-05). F-Zero is the documented fully-resident end of the recovery spectrum, opposite AKAO's on-demand loading. **This item's own premise was wrong twice, so do not reuse its figures.** (a) The upload is **seven blocks / 49582 bytes (~48 KB)**, not five / ~24 KB — that count came from the extracted `fzspc-*.bin` files, and `fzerowork.txt`'s transcript shows the two omitted blocks are the decisive ones: the **BRR sourcedir** (`0x90` at `$3C00`) and **24704 bytes of sample data** at `$4000`, which ends at `$A07F` and butts exactly against the `$A080` song block — a contiguous layout with no hole for a later transfer, i.e. structural support beyond the size inference. (`fzerospc.bin` is block #2 alone, not the full image.) (b) **Fully resident ≠ static:** `$1776` fills `$F800`-`$FFFF` with `$B2` and `$1728` rewrites that region continuously from a two-counter state, so ~2 KB of BRR is *generated and modulated at runtime* with no upload backing it. `accumulate-all-transfers` therefore yields a complete image whose `$F800`-`$FFFF` an analyzer will otherwise report as unexplained data. **Method note:** read the per-title `<title>work.txt`/`notes.txt` beside a listing before inferring from block sizes — they hold the owner's upload transcripts, zero-page maps and song tables. | `grm-ced`; `grm-1.7.3` |
 | In `ff3spc.dis`, is the raw `NOT1 $E04D` form the tool's output and `NOT1 $004D.7` your hand correction? | **Yes — the disassembler did not handle those correctly** (owner, 2026-08-18). This turned out to be one thread of a larger pattern the corpus differential then confirmed: **the two earliest listings were produced by an earlier, buggier version of the same tool, and the corpus dates the fixes.** ff2 (May 2000) reverses the operand order of every `dp,dp` form — its own `<d>`/`<s>` markers state the wrong claim outright, and the vector suite settles which side is right — and mis-decodes `5A`, `3B`, `BE`, `A7`. ff3 (Feb 2001) has all of that right but still prints the bit instructions' raw 16-bit operand. Both compute a short branch with offset **exactly `0x7F`** one page low (a sign test written `>= 0x7F`), while handling `0x7E` and every negative offset correctly; fzero (Aug 2001) gets `0x7F` right too. **Retires the earlier reading that ff3's `BEQ $0E13` was a one-character typo** — it is the same systematic off-by-`0x100`, 2 for 2 across two files. Consequence: read an ff2/ff3-only oddity as an early-tool artifact first, and do not spend effort reconciling one against a later listing. | `grm-uy9s` |
+| Where does `rcransom`'s `FUN_fed1` get its bank argument — A, or the `$fc`/`$fd` shadows? | **In A — and the shadow-read hypothesis is refuted: `fed1` WRITES `$fc`/`$fd` (and `$fb` for interrupt safety) and never reads them** (owner, 2026-09-06, all 38 call sites hand-mapped). Three facts change what we model: (1) the argument is a **logical bank index**, not a register value — `fed1` computes `r6 = A*2`, `r7 = A*2+1`, so recovering A is necessary but not sufficient and a transform is needed between argument and deposit; (2) **`$BFFF` holds A, not `r7`** — any bank-identifying read-back that assumes the byte IS the register value is wrong on rcransom (`grm-sen5`, `grm-mej.2`); (3) the dense block `fa49`–`fc18` is **11 far-call thunks**, not 22 sites — each is `LDA $bfff; PHA; LDA #imm; JSR fed1; JSR $8000; PLA; JSR fed1; RTS`, contributing one immediate site and one stack-passed site. Classified: **17 immediate, 16 stack-passed (`PLA` of a pushed `LDA $bfff`), 2 RAM shadow (`$22`), 2 computed-but-constrained (`AND #3`; `CMP #4`/`BCC`), 1 set-valued (`TYA`, Y∈{1,3})**. **Not one of the 38 is an honest decline — all are modelling gaps**, so do not re-adjudicate them site by site. The 17 immediates failing is a plain defect and the next agent step. | `grm-nqxt` |
 | blmaster's 13 constant-arg sites vs 4 comments | Measurement artifact — a warning-derived helper population inflated 5 helpers to 36 and constArg 2 to 13 | `grm-8iy.3` **closed** |
 | Was megaman's `9067` regression real? | No — the *old* annotation was wrong. `d846`'s tail `JMP c3b3` sets bank 5 on exit; old "bank 6" came from the last write in its own body. `bankComments` 156 now exceeds the pre-regression 153 | `grm-hum` |
 | Are megaman's `c39c` warnings lost information? | No — `$31` is a stateful counter with a wrap-adjust; the declines are honest | `grm-hum` |
