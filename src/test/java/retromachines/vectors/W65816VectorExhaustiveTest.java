@@ -97,6 +97,7 @@ public class W65816VectorExhaustiveTest extends AbstractBundledLanguageTest {
 			actual.add(W65816VectorHarnessSupport.runOpcodeFile(runner, f));
 		}
 		W65816VectorHarnessSupport.assertDecodeBoundaryCapNotExceeded(actual);
+		W65816VectorHarnessSupport.assertBankWrapCapNotExceeded(actual);
 
 		File moduleRoot = new File(System.getProperty(MODULE_DIR_PROPERTY));
 		File baselineFile = new File(moduleRoot, "src/test/resources/" + BASELINE_FILENAME);

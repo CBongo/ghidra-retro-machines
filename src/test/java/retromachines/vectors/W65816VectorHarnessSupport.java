@@ -118,6 +118,31 @@ import retromachines.vectors.VectorRunner.CaseResult;
  * across the one instruction being stepped -- a case whose instruction is {@code XCE} genuinely
  * changes {@code e}, but single-instruction stepping has no next-instruction decode to prove that
  * change actually took hold, so verifying it is out of scope for this harness by construction.
+ *
+ * <h2>4. PROGRAM-BANK WRAP IS CLASSIFIED, NOT SCORED (bead grm-9nxj.11)</h2>
+ * The 65816's program counter wraps inside its 64 KiB program bank; {@code 658xx.sinc} models it
+ * as a flat 24-bit {@code PC_FULL} and says so in its own header ("UNSUPPORTED: correct behaviour
+ * when an instruction and its operand(s) wrap at the end of the program bank"). A case whose
+ * instruction runs to the end of a bank therefore cannot be answered correctly by this language,
+ * and before this bead each such case counted as an ordinary failure -- which is why the
+ * exhaustive baseline read 142 FAIL rows while 138 of them passed 99.9%+ of their cases and most
+ * named {@code PBR} as their only mismatch. That is ONE structural limitation seen 138 times, and
+ * counting it 138 times buried the genuine residue.
+ *
+ * <p>{@link #newRunner} therefore opts into {@link VectorRunner#withBankWrapDetection} at
+ * {@link #BANK_SIZE_BYTES}, and {@link #runOpcodeFile} counts those cases into the baseline's own
+ * {@code (N bank-wrap)} column instead of the pass/fail ratio.
+ *
+ * <p><b>THE TEST IS NARROW ON PURPOSE AND MUST STAY THAT WAY.</b> It is
+ * "{@code (start mod bankSize) + instructionLength >= bankSize}" -- the instruction's own bytes
+ * include or run past the bank's last byte -- evaluated from the length of the instruction the
+ * emulator actually decoded, and applied whether the case passed or failed. It is NOT "the case
+ * failed and {@code PBR} was its only mismatch", which is the cheap version and would hide any
+ * genuine {@code PBR} defect in the language forever. Two guards exist so a future widening shows
+ * up rather than being absorbed: {@link VectorRunner#isBankWrapCase}'s doc states the rule and its
+ * boundary cases in full, and {@link #assertBankWrapCapNotExceeded} fails the run if the total
+ * ever exceeds {@link #BANK_WRAP_CAP}. Do not raise that cap to make a run go green; find out what
+ * widened the classification.
  */
 final class W65816VectorHarnessSupport {
 
@@ -219,6 +244,35 @@ final class W65816VectorHarnessSupport {
 	 */
 	static final int DECODE_BOUNDARY_CAP = 200;
 
+	/**
+	 * The 65816's program bank size. Its program counter wraps WITHIN this window while
+	 * {@code 658xx.sinc} models the counter as a flat 24-bit {@code PC_FULL}, which is the
+	 * limitation {@link VectorRunner#isBankWrapCase} classifies -- see that method's doc for the
+	 * exact test, the worked example, and why it is not fixable in the language.
+	 */
+	private static final int BANK_SIZE_BYTES = 0x10000;
+
+	/**
+	 * Hard cap on the TOTAL number of bank-wrap cases across a whole run, enforced by
+	 * {@link #assertBankWrapCapNotExceeded} -- the bank-wrap sibling of
+	 * {@link #DECODE_BOUNDARY_CAP}, and for the identical reason: a classification that silently
+	 * absorbs an unbounded number of cases would eventually absorb a real regression too.
+	 *
+	 * <p>MEASURED, unlike {@code DECODE_BOUNDARY_CAP}: a full 5,120,000-case exhaustive run
+	 * (2026-09-06, the run that produced the committed exhaustive baseline) classified exactly
+	 * <b>171</b> cases across 142 of the 512 rows -- 116 rows with one, 23 with two, 3 with three.
+	 * This cap is 400, a little over twice that, which is enough headroom for the corpus's own
+	 * randomness without being wide enough to swallow a systematic change.
+	 *
+	 * <p>The magnitude also checks out from first principles, which is why 171 is believable
+	 * rather than merely observed: the corpus places each case's {@code pc} uniformly across the
+	 * 16-bit bank, so a case wraps iff the instruction's length reaches the bank's last byte --
+	 * probability {@code len/65536} per case, i.e. 1-4 expected per 10,000-case file for a 1-4
+	 * byte instruction, and only on rows the wrap can actually reach. That is exactly the "138
+	 * rows each failing one or two cases" shape bead grm-9nxj.11 set out to explain.
+	 */
+	static final int BANK_WRAP_CAP = 400;
+
 	static VectorRunner newRunner(Language language) {
 		Register ctxMf = language.getRegister("ctx_MF");
 		Register ctxXf = language.getRegister("ctx_XF");
@@ -231,6 +285,7 @@ final class W65816VectorHarnessSupport {
 
 		VectorRunner runner = new VectorRunner(language, registerMap(language), "pc", Map.of(),
 			VectorRunner.DEFAULT_REBUILD_INTERVAL, DECODE_BOUNDARY_WINDOW_BYTES);
+		runner.withBankWrapDetection(BANK_SIZE_BYTES);
 
 		// The context provider is (re)installed PER CASE by runOpcodeFile(), because the ADAPTED
 		// VectorCase passed to run() has had 'p'/'e' stripped out (they are not registers -- see
@@ -306,6 +361,23 @@ final class W65816VectorHarnessSupport {
 	}
 
 	/**
+	 * Fails loudly (not a quiet skip) if the total bank-wrap case count across every row in
+	 * {@code rows} exceeds {@link #BANK_WRAP_CAP}. This is the guard that keeps grm-9nxj.11's
+	 * classification honest: the test in {@link VectorRunner#isBankWrapCase} is narrow by
+	 * construction, and this makes a future widening of it -- deliberate or accidental -- show up
+	 * as a failure rather than as a quietly shrinking denominator.
+	 */
+	static void assertBankWrapCapNotExceeded(List<OpcodeBaseline> rows) {
+		int total = rows.stream().mapToInt(OpcodeBaseline::bankWrapCount).sum();
+		if (total > BANK_WRAP_CAP) {
+			throw new AssertionError("bank-wrap case count (" + total + ") exceeds the measured " +
+				"cap (" + BANK_WRAP_CAP + ", see that constant's doc) -- the classification in " +
+				"VectorRunner.isBankWrapCase is meant to cover a small, structural set of cases; " +
+				"find out what widened it before raising this cap");
+		}
+	}
+
+	/**
 	 * Opcodes with NO correct single-step post-state to check against, because the instruction
 	 * legitimately halts the processor pending an interrupt or reset -- the 65816 analogue of
 	 * SPC700's {@code SLEEP}/{@code STOP} (see {@code Spc700VectorHarnessSupport}'s identical
@@ -364,6 +436,7 @@ final class W65816VectorHarnessSupport {
 
 		int passed = 0;
 		int decodeBoundary = 0;
+		int bankWrap = 0;
 		TreeSet<String> mismatchedFields = new TreeSet<>();
 		for (VectorCase raw : rawCases) {
 			installContextFor(runner, runner.language(),
@@ -372,6 +445,15 @@ final class W65816VectorHarnessSupport {
 			CaseResult result = runner.run(adapted);
 			if (result.decodeBoundary()) {
 				decodeBoundary++;
+				continue;
+			}
+			// grm-9nxj.11: excluded from the ratio in BOTH directions, whether the case would
+			// have passed or failed, because the classification is structural (the language
+			// cannot represent the case) rather than a verdict about the case's outcome. Scoring
+			// only the failing ones would make the denominator depend on the very thing under
+			// test. See VectorRunner#isBankWrapCase.
+			if (result.bankWrap()) {
+				bankWrap++;
 				continue;
 			}
 			if (result.pass()) {
@@ -383,11 +465,11 @@ final class W65816VectorHarnessSupport {
 				}
 			}
 		}
-		int total = rawCases.size() - decodeBoundary;
+		int total = rawCases.size() - decodeBoundary - bankWrap;
 		OpcodeBaseline.Status status =
 			passed == total ? OpcodeBaseline.Status.PASS : OpcodeBaseline.Status.FAIL;
 		return new OpcodeBaseline(rowKey, mnemonic, status, passed, total,
-			List.copyOf(mismatchedFields), decodeBoundary);
+			List.copyOf(mismatchedFields), decodeBoundary, bankWrap);
 	}
 
 	/**

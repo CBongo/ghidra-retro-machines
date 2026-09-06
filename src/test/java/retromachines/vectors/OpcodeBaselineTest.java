@@ -67,6 +67,34 @@ public class OpcodeBaselineTest {
 	}
 
 	@Test
+	public void formatAndParseRoundTripWithBankWrapAnnotation() {
+		// The (N bank-wrap) token (grm-9nxj.11) is the decode-boundary token's sibling: same
+		// render/parse contract, its own count, and it must not be confused for the other one.
+		OpcodeBaseline wrapOnly = new OpcodeBaseline("01.N", "ORA (dp,X)",
+			OpcodeBaseline.Status.PASS, 9998, 9998, List.of(), 0, 2);
+		assertEquals("01.N  ORA (dp,X)  PASS  9998/9998  (2 bank-wrap)", wrapOnly.format());
+		assertEquals(wrapOnly, OpcodeBaseline.parseLine(wrapOnly.format()));
+		assertEquals(0, wrapOnly.decodeBoundaryCount());
+		assertEquals(2, wrapOnly.bankWrapCount());
+
+		// Both tokens on one row, in the documented order, ahead of the mismatched-field list.
+		// This is the case a fixed-position parser would get wrong.
+		OpcodeBaseline both = new OpcodeBaseline("03.N", "ORA sr,S",
+			OpcodeBaseline.Status.FAIL, 9996, 9997, List.of("A", "P_N"), 1, 2);
+		assertEquals("03.N  ORA sr,S  FAIL  9996/9997  (1 decode-boundary)  (2 bank-wrap)  A,P_N",
+			both.format());
+		assertEquals(both, OpcodeBaseline.parseLine(both.format()));
+
+		// A row carrying ONLY the decode-boundary token still parses with a zero bank-wrap count
+		// -- i.e. every committed SPC700 and 6502 baseline row reads back exactly as before.
+		OpcodeBaseline boundaryOnly =
+			new OpcodeBaseline("9E", "DIV YA,X", OpcodeBaseline.Status.PASS, 999, 999, List.of(), 1);
+		assertEquals(0, boundaryOnly.bankWrapCount());
+		assertEquals(boundaryOnly, OpcodeBaseline.parseLine("9E  DIV YA,X  PASS  999/999  " +
+			"(1 decode-boundary)"));
+	}
+
+	@Test
 	public void parseSkipsBlankAndCommentLines() {
 		List<OpcodeBaseline> parsed = OpcodeBaseline.parse(List.of(
 			"# generated; review the diff, do not hand-edit casually",

@@ -45,6 +45,7 @@ import java.util.stream.Collectors;
  * E4  MOV A,dp      FAIL   0/32  A,PSW
  * EF  SLEEP         N/A    0/32  legitimately halts the processor pending an interrupt
  * 9E  DIV YA,X      PASS  999/999  (1 decode-boundary)
+ * 01.N  ORA (dp,X)  PASS  9998/9998  (2 bank-wrap)
  * </pre>
  * Blank lines and lines starting with {@code #} (a header/comment block explaining provenance
  * and how to regenerate -- see the per-suite test that owns the real file) are ignored.
@@ -55,6 +56,13 @@ import java.util.stream.Collectors;
  * PASS/FAIL and from {@link Status#NOT_APPLICABLE}, and per-<em>case</em> rather than
  * per-<em>opcode</em>. It always renders (when nonzero) even on a row that also has mismatched
  * fields, so the excluded count stays visible rather than folded silently into the denominator.
+ *
+ * <p>The optional {@code (N bank-wrap)} token (see {@link #bankWrapCount}, bead grm-9nxj.11) is a
+ * FOURTH category with the same "excluded from the ratio, still counted in the open" contract: a
+ * case whose instruction runs to the end of a program bank, which a language modelling the counter
+ * as flat cannot represent (see {@code VectorRunner#isBankWrapCase}). Both tokens may appear on
+ * one row; when they do, {@code decode-boundary} comes first. Only the 65816 harness produces
+ * this token today, so every SPC700 and 6502 row renders exactly as before.
  *
  * <h2>{@code N/A}, not {@code PASS} or {@code FAIL} (grm-c9d.3 increment 9)</h2>
  * A small, explicit set of opcodes (currently {@code SLEEP}/{@code STOP} -- see
@@ -69,7 +77,19 @@ import java.util.stream.Collectors;
  * "exceptions don't count".
  */
 public record OpcodeBaseline(String opcodeHex, String mnemonic, Status status, int passedCount,
-		int totalCount, List<String> mismatchedFields, int decodeBoundaryCount) {
+		int totalCount, List<String> mismatchedFields, int decodeBoundaryCount,
+		int bankWrapCount) {
+
+	/**
+	 * Convenience constructor for callers with no bank-wrap cases to report (every suite but the
+	 * 65816's, and every pre-existing call site before grm-9nxj.11): equivalent to the canonical
+	 * constructor with {@code bankWrapCount = 0}.
+	 */
+	public OpcodeBaseline(String opcodeHex, String mnemonic, Status status, int passedCount,
+			int totalCount, List<String> mismatchedFields, int decodeBoundaryCount) {
+		this(opcodeHex, mnemonic, status, passedCount, totalCount, mismatchedFields,
+			decodeBoundaryCount, 0);
+	}
 
 	/**
 	 * Convenience constructor for callers with no decode-boundary cases to report (the common
@@ -78,7 +98,7 @@ public record OpcodeBaseline(String opcodeHex, String mnemonic, Status status, i
 	 */
 	public OpcodeBaseline(String opcodeHex, String mnemonic, Status status, int passedCount,
 			int totalCount, List<String> mismatchedFields) {
-		this(opcodeHex, mnemonic, status, passedCount, totalCount, mismatchedFields, 0);
+		this(opcodeHex, mnemonic, status, passedCount, totalCount, mismatchedFields, 0, 0);
 	}
 
 	/** A row's outcome: fully matched, at least one mismatch, or not applicable (see class doc). */
@@ -109,6 +129,7 @@ public record OpcodeBaseline(String opcodeHex, String mnemonic, Status status, i
 
 	private static final Pattern SPLIT = Pattern.compile("\\s{2,}");
 	private static final Pattern BOUNDARY_TOKEN = Pattern.compile("^\\((\\d+) decode-boundary\\)$");
+	private static final Pattern BANK_WRAP_TOKEN = Pattern.compile("^\\((\\d+) bank-wrap\\)$");
 
 	/** Renders this row in the committed file's format (see class doc). */
 	public String format() {
@@ -117,6 +138,9 @@ public record OpcodeBaseline(String opcodeHex, String mnemonic, Status status, i
 				.append("  ").append(passedCount).append("/").append(totalCount);
 		if (decodeBoundaryCount > 0) {
 			sb.append("  (").append(decodeBoundaryCount).append(" decode-boundary)");
+		}
+		if (bankWrapCount > 0) {
+			sb.append("  (").append(bankWrapCount).append(" bank-wrap)");
 		}
 		if (!mismatchedFields.isEmpty()) {
 			sb.append("  ").append(String.join(",", mismatchedFields));
@@ -163,7 +187,11 @@ public record OpcodeBaseline(String opcodeHex, String mnemonic, Status status, i
 		int passedCount = Integer.parseInt(ratio[0]);
 		int totalCount = Integer.parseInt(ratio[1]);
 
+		// Both exclusion tokens are optional and, when present, appear in this order before the
+		// mismatched-field list. Parsed as a sequence rather than by fixed position, so a row
+		// carrying only the later token still reads correctly.
 		int decodeBoundaryCount = 0;
+		int bankWrapCount = 0;
 		int nextField = 4;
 		if (fields.length > nextField) {
 			Matcher m = BOUNDARY_TOKEN.matcher(fields[nextField]);
@@ -172,11 +200,18 @@ public record OpcodeBaseline(String opcodeHex, String mnemonic, Status status, i
 				nextField++;
 			}
 		}
+		if (fields.length > nextField) {
+			Matcher m = BANK_WRAP_TOKEN.matcher(fields[nextField]);
+			if (m.matches()) {
+				bankWrapCount = Integer.parseInt(m.group(1));
+				nextField++;
+			}
+		}
 		List<String> mismatched = fields.length > nextField
 				? List.of(fields[nextField].split(","))
 				: List.of();
 		return new OpcodeBaseline(opcodeHex, mnemonic, status, passedCount, totalCount, mismatched,
-			decodeBoundaryCount);
+			decodeBoundaryCount, bankWrapCount);
 	}
 
 	/**

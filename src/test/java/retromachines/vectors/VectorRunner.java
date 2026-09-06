@@ -21,6 +21,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
 
+import ghidra.pcode.emu.PcodeEmulationCallbacks;
 import ghidra.pcode.emu.PcodeEmulator;
 import ghidra.pcode.emu.PcodeThread;
 import ghidra.pcode.exec.DecodePcodeExecutionException;
@@ -28,11 +29,13 @@ import ghidra.pcode.exec.PcodeArithmetic;
 import ghidra.pcode.exec.PcodeArithmetic.Purpose;
 import ghidra.pcode.exec.PcodeExecutorState;
 import ghidra.pcode.exec.PcodeExecutorStatePiece.Reason;
+import ghidra.pcode.exec.PcodeProgram;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.lang.Language;
 import ghidra.program.model.lang.Register;
 import ghidra.program.model.lang.RegisterValue;
+import ghidra.program.model.listing.Instruction;
 
 import retromachines.vectors.VectorCase.RamByte;
 
@@ -56,7 +59,9 @@ import retromachines.vectors.VectorCase.RamByte;
  * more than the register/RAM state seeded above -- see that method's doc. A caller whose counter
  * is not fully captured by one vector field (again the 65816: the real fetch address is
  * {@code pbr<<16 | pc}, two separate fields) may also opt into {@link #withCounterAddressProvider}
- * -- see that method's doc.
+ * -- see that method's doc. A caller whose program counter WRAPS inside a bank while its p-code
+ * models it flat (the 65816 again) may opt into {@link #withBankWrapDetection}, which classifies
+ * the unrepresentable cases instead of scoring them.
  *
  * <p><b>One shared emulator, reset per case -- but periodically REBUILT (grm-c9d.3 increment
  * 10).</b> Constructing a fresh {@code PcodeEmulator} per vector is what makes an exhaustive
@@ -81,15 +86,23 @@ public final class VectorRunner {
 	 *        lookahead ran off the end of the address space (see {@link #isDecodeBoundaryCase}) --
 	 *        a harness artifact, not a semantic verdict either way. Callers that tally PASS/FAIL
 	 *        counts must exclude these cases rather than counting {@link #pass} for them.
+	 * @param bankWrap true iff this case's instruction bytes reach the end of a program bank (see
+	 *        {@link #isBankWrapCase}) -- a case the language cannot represent, for the same
+	 *        "exclude, do not score" reason as {@code decodeBoundary}, but arising after a
+	 *        SUCCESSFUL step rather than instead of one. Never both at once: the two are returned
+	 *        from mutually exclusive paths in {@link #run}.
 	 */
 	public record CaseResult(String name, boolean pass, List<String> mismatches,
-			boolean decodeBoundary) {
+			boolean decodeBoundary, boolean bankWrap) {
 
 		/** One-line summary, e.g. {@code "00 0000: PASS"} or the case name plus every mismatch. */
 		@Override
 		public String toString() {
 			if (decodeBoundary) {
 				return name + ": DECODE-BOUNDARY (excluded)";
+			}
+			if (bankWrap) {
+				return name + ": BANK-WRAP (excluded)";
 			}
 			if (pass) {
 				return name + ": PASS";
@@ -117,12 +130,28 @@ public final class VectorRunner {
 	 */
 	public static final int NO_DECODE_BOUNDARY_DETECTION = 0;
 
+	/**
+	 * Disables program-bank-wrap classification (see {@link #isBankWrapCase}): a case whose
+	 * instruction runs to the end of a bank is then scored as an ordinary PASS or FAIL. The
+	 * default, so every caller without a banked program counter (SPC700, 6502) is unaffected.
+	 */
+	public static final int NO_BANK_WRAP_DETECTION = 0;
+
 	private final Language language;
 	private final Map<String, Register> registerMap;
 	private final String pcField;
 	private final Map<String, FlagLayout> flagLayouts;
 	private final int rebuildInterval;
 	private final int decodeBoundaryWindowBytes;
+
+	// Not final: withBankWrapDetection() below is a builder-style setter, same shape and the same
+	// "absent reproduces today's exact behaviour" contract as withContextProvider()/
+	// withCounterAddressProvider(). Zero (the default) disables the classification entirely.
+	private int bankWrapSizeBytes = NO_BANK_WRAP_DETECTION;
+
+	// Records the instruction the emulator is about to execute, because PcodeThread.getInstruction()
+	// is null by the time stepInstruction() returns -- see the capture class's own doc.
+	private final InstructionCapture instructionCapture = new InstructionCapture();
 
 	// Not final: withContextProvider() below is a builder-style setter rather than a
 	// constructor parameter, precisely so it does not disturb the existing constructor overload
@@ -268,6 +297,26 @@ public final class VectorRunner {
 		return this;
 	}
 
+	/**
+	 * Opts into PROGRAM-BANK-WRAP classification (bead grm-9nxj.11), for a language whose program
+	 * counter wraps inside a fixed-size bank while its p-code models the counter as flat -- today
+	 * only the 65816, whose PC wraps within its 64 KiB program bank while {@code 658xx.sinc}
+	 * models {@code PC_FULL} as a flat 24-bit counter. See {@link #isBankWrapCase} for the exact
+	 * test and why the classification exists.
+	 *
+	 * @param bankSizeBytes the program bank's size in bytes (e.g. {@code 0x10000} for the 65816),
+	 *        or {@link #NO_BANK_WRAP_DETECTION} to disable -- the default, which reproduces
+	 *        today's behaviour exactly for every caller that does not opt in.
+	 * @return this, for chaining onto the constructor call
+	 */
+	public VectorRunner withBankWrapDetection(int bankSizeBytes) {
+		if (bankSizeBytes < 0) {
+			throw new IllegalArgumentException("bankSizeBytes must be >= 0, got " + bankSizeBytes);
+		}
+		this.bankWrapSizeBytes = bankSizeBytes;
+		return this;
+	}
+
 	/** The language this runner decodes with -- callers that build per-case context need it. */
 	Language language() {
 		return language;
@@ -285,15 +334,18 @@ public final class VectorRunner {
 		}
 		catch (DecodePcodeExecutionException e) {
 			if (isDecodeBoundaryCase(c)) {
-				return new CaseResult(c.name(), true, List.of(), true);
+				return new CaseResult(c.name(), true, List.of(), true, false);
 			}
-			return new CaseResult(c.name(), false, List.of("execution failed: " + e), false);
+			return new CaseResult(c.name(), false, List.of("execution failed: " + e), false, false);
 		}
 		catch (RuntimeException e) {
-			return new CaseResult(c.name(), false, List.of("execution failed: " + e), false);
+			return new CaseResult(c.name(), false, List.of("execution failed: " + e), false, false);
+		}
+		if (isBankWrapCase(c)) {
+			return new CaseResult(c.name(), true, List.of(), false, true);
 		}
 		List<String> mismatches = compare(c);
-		return new CaseResult(c.name(), mismatches.isEmpty(), mismatches, false);
+		return new CaseResult(c.name(), mismatches.isEmpty(), mismatches, false, false);
 	}
 
 	/**
@@ -332,6 +384,70 @@ public final class VectorRunner {
 		long pc = addr.getOffset();
 		long maxAddr = defaultSpace.getMaxAddress().getOffset();
 		return pc > maxAddr - decodeBoundaryWindowBytes;
+	}
+
+	/**
+	 * True iff the instruction just executed for {@code c} runs to the END of its program bank --
+	 * the narrow, precise condition (bead grm-9nxj.11) under which this harness is asking a
+	 * flat-counter p-code model a question it cannot represent, rather than catching a semantic
+	 * defect.
+	 *
+	 * <p><b>Why this exists at all.</b> The 65816's program counter wraps WITHIN its 64 KiB
+	 * program bank: an instruction that ends at {@code $8F:FFFF} is followed by {@code $8F:0000},
+	 * with {@code PBR} unchanged. {@code 658xx.sinc} models the counter as a flat 24-bit
+	 * {@code PC_FULL}, so the same step lands at {@code $90:0000} and the case reports a
+	 * {@code PBR} mismatch. Upstream documents the limitation in {@code 658xx.sinc}'s own header
+	 * ("UNSUPPORTED: correct behaviour when an instruction and its operand(s) wrap at the end of
+	 * the program bank") and it is not fixable in the language without either an explicit wrapped
+	 * {@code goto} ending all 256 constructors -- making every instruction a branch and destroying
+	 * fall-through flow analysis -- or a 16-bit PC with per-bank overlay spaces, which upstream
+	 * declined and which contradicts this project's flat-24-bit loader (grm-9nxj.6). Left
+	 * unclassified it reads as 138 separate broken opcodes in the exhaustive baseline instead of
+	 * one structural limitation seen 138 times, which buries the genuine residue.
+	 *
+	 * <p><b>The test, exactly.</b> Let {@code low} be the case's starting address reduced modulo
+	 * the bank size and {@code len} the length of the instruction that actually executed. This
+	 * returns true iff {@code low + len >= bankSize}, i.e. the instruction's own bytes include (or
+	 * run past) the bank's final byte. That is precisely the set of cases whose NEXT counter wraps
+	 * the bank, and it is deliberately not a byte looser:
+	 * <ul>
+	 * <li>A one-byte instruction at {@code $xx:FFFF} IS included -- its bytes do not "cross" the
+	 *     boundary but the counter it leaves behind does, which is the whole defect (the bead's
+	 *     own worked example: {@code SEI} at {@code $8F:FFFF} must land at {@code $8F:0000}).</li>
+	 * <li>A one-byte instruction at {@code $xx:FFFE} is NOT included -- nothing wraps.</li>
+	 * <li>The length comes from the instruction the emulator actually decoded and executed (see
+	 *     {@link InstructionCapture}), never from a counter delta, which a taken branch would
+	 *     falsify.</li>
+	 * </ul>
+	 * The opcode byte itself always sits at the starting address, which is inside the bank and so
+	 * always correctly seeded, so the decoded LENGTH is the real instruction's length even when
+	 * the wrapped operand bytes the emulator went on to read were not (it reads flat, past the
+	 * bank end, where the corpus seeded nothing).
+	 *
+	 * <p><b>Deliberately narrow, and NOT conditioned on what mismatched.</b> A tempting looser
+	 * rule is "exclude a failing case whose only mismatched field is {@code PBR}", which needs no
+	 * instruction length at all. It is rejected for the same reason
+	 * {@link #isDecodeBoundaryCase}'s doc gives: it would classify by SYMPTOM, so a genuine
+	 * {@code PBR} defect anywhere in the language would be absorbed silently and permanently.
+	 * This rule instead classifies by the structural property that makes the case unanswerable,
+	 * applies it whether the case passed or failed, and is capped per suite (see
+	 * {@code W65816VectorHarnessSupport#BANK_WRAP_CAP}) so it cannot quietly grow to cover an
+	 * unrelated regression.
+	 */
+	private boolean isBankWrapCase(VectorCase c) {
+		if (bankWrapSizeBytes <= 0) {
+			return false;
+		}
+		Instruction instruction = instructionCapture.instruction;
+		if (instruction == null) {
+			return false;
+		}
+		Address addr = resolveCounterAddress(c);
+		if (addr == null) {
+			return false;
+		}
+		long low = Long.remainderUnsigned(addr.getOffset(), bankWrapSizeBytes);
+		return low + instruction.getLength() >= bankWrapSizeBytes;
 	}
 
 	/**
@@ -394,6 +510,7 @@ public final class VectorRunner {
 		thread = emulator.newThread();
 		state = thread.getState();
 		emulator.getSharedState().clear();
+		instructionCapture.instruction = null;
 		casesSinceRebuild++;
 	}
 
@@ -404,7 +521,7 @@ public final class VectorRunner {
 	 * do that afterward via the normal per-case path.
 	 */
 	private void rebuildEmulator() {
-		emulator = new PcodeEmulator(language);
+		emulator = new PcodeEmulator(language, instructionCapture);
 		arithmetic = emulator.getSharedState().getArithmetic();
 		casesSinceRebuild = 0;
 	}
@@ -482,5 +599,36 @@ public final class VectorRunner {
 
 	private static long mask(int byteSize) {
 		return byteSize >= 8 ? -1L : (1L << (byteSize * 8)) - 1;
+	}
+
+	/**
+	 * Remembers the last instruction the emulator decoded and began executing, because
+	 * {@link PcodeThread#getInstruction()} CANNOT be used for this after the fact: verified
+	 * against {@code DefaultPcodeThread} for this project's targeted Ghidra version,
+	 * {@code advanceAfterFinished()} sets the thread's {@code instruction} field back to
+	 * {@code null} on its way out, so a successful {@link PcodeThread#stepInstruction()} always
+	 * leaves {@code getInstruction()} returning {@code null}. It is non-null only mid-instruction.
+	 *
+	 * <p>{@link PcodeEmulationCallbacks#beforeExecuteInstruction} fires between decode and
+	 * execution, which is both early enough to survive that reset and late enough that what it
+	 * hands over is the instruction that really ran (rather than a second, independent decode this
+	 * class would have to keep in step with the thread's own context). Installed on every
+	 * {@link PcodeEmulator} this runner builds -- including the periodic rebuilds -- and cleared
+	 * per case by {@link #reset()}, so a stale instruction from case N can never be read as case
+	 * N+1's.
+	 *
+	 * <p>Recording is unconditional even when no caller has opted into bank-wrap classification:
+	 * it is one field assignment per instruction, and making it conditional would put a branch on
+	 * the same path for no measurable gain.
+	 */
+	private static final class InstructionCapture implements PcodeEmulationCallbacks<byte[]> {
+
+		private Instruction instruction;
+
+		@Override
+		public void beforeExecuteInstruction(PcodeThread<byte[]> thread, Instruction instruction,
+				PcodeProgram program) {
+			this.instruction = instruction;
+		}
 	}
 }

@@ -410,39 +410,36 @@ takes **4m47s** at the task's `2g` heap, on the same machine where the SPC700 ex
 takes ~15s for 256,000 cases. Cloning the corpus costs 50s and 3.2 GB checked out (481 MB
 packed). These are one machine's numbers; re-measure before quoting them.
 
-**What the exhaustive baseline actually says, and how to read it.** 512 rows: 362 PASS, 8 N/A,
-142 FAIL — but the failure COUNT is misleading and the SHAPE is what matters. **138 of those 142
-rows pass 99.9% or more** of their 10,000 cases, and most name `PBR` as their only mismatch.
-That is one documented limitation, not 138 bugs: the vendored spec's own header says
-*"UNSUPPORTED: correct behaviour when an instruction and its operand(s) wrap at the end of the
-program bank"*, and a randomly placed PC lands within an instruction's length of a bank boundary
-roughly once in 10,000 cases. **Rank a failing row by its pass fraction before believing it is a
-bug.** Only two rows fail every case (`PLP.N`, `RTI.N`, sequenced behind `grm-9nxj.5`), and two
-are middling: `FC.E` at 9,956/10,000 (the emulation-mode stack wrapping within page 1 during an
-indexed-indirect call) and `AB.E` (`PLB`) at 9,964/10,000.
+**What the exhaustive baseline actually says, and how to read it.** 512 rows: **499 PASS, 8 N/A,
+5 FAIL**. It read 362 / 8 / 142 until `grm-9nxj.11`, and the 137 rows that moved were not *fixed* —
+they were *classified*. The 65816's program counter wraps inside its 64 KiB program bank while
+`658xx.sinc` models it as a flat 24-bit `PC_FULL`, so an instruction ending at `$xx:FFFF` steps
+into the next bank instead of back to `$xx:0000`, and the case reports a `PBR` mismatch. The
+vendored spec's own header says as much: *"UNSUPPORTED: correct behaviour when an instruction and
+its operand(s) wrap at the end of the program bank"*. That is one structural limitation seen many
+times, not 137 bugs, and it is not fixable in the language — see `VectorRunner#isBankWrapCase` for
+the two candidate fixes and why both were rejected. Those cases now go in their own
+**`(N bank-wrap)`** baseline column and are excluded from the row's ratio.
 
-**EXPECT FAILURES in both baselines.** Exactly like SPC700 before `grm-c9d.3`, this language's
-p-code semantics had never been checked against an oracle when this tier was built. `grm-9nxj.4`'s
-two passes have since taken the sample baseline from 8 passing rows to 28 PASS / 4 N/A / 2 red;
-the two remaining red rows (`PLP.N`, `RTI.N`) throw on the language's own
-`unknown_native_status_pull` pcodeop and stay sequenced behind `grm-9nxj.5`. A baseline `FAIL` row records reality; only a *regression*
-(a row moving `PASS` → `FAIL`) is a hard failure, per `OpcodeBaseline`'s rules.
+**Measured 2026-09-06: exactly 171 such cases across 142 of the 512 rows** — 116 rows with one, 23
+with two, 3 with three. That matches the rate you would predict from first principles (a uniformly
+placed `pc` puts a 1–4 byte instruction against the bank's last byte on the order of once or twice
+per 10,000-case file), which is why the figure is believable rather than merely observed.
+`W65816VectorHarnessSupport.BANK_WRAP_CAP` fails the run if the total ever exceeds 400, so the
+classification cannot quietly widen to cover an unrelated regression. **The exclusion is
+structural, not a verdict about the case**: it applies whether the case would have passed or
+failed, which is why 4 rows moved from `10000/10000` to `9999/9999` rather than staying put.
+Classifying by symptom instead — "the case failed and `PBR` was its only mismatched field" — is
+cheaper and was rejected, because it would hide a genuine `PBR` defect in the language forever.
 
-**Measured runtime, 2026-09-05.** A full `w65816-vectors` run — all 512 files, 5,120,000 cases —
-takes **4m47s** at the task's `2g` heap, on the same machine where the SPC700 exhaustive tier
-takes ~15s for 256,000 cases. Cloning the corpus costs 50s and 3.2 GB checked out (481 MB
-packed). These are one machine's numbers; re-measure before quoting them.
-
-**What the exhaustive baseline actually says, and how to read it.** 512 rows: 353 PASS, 8 N/A,
-151 FAIL — but the failure COUNT is misleading and the SHAPE is what matters. 136 of those 151
-rows pass **99.9% or more** of their 10,000 cases, and 84 have `PBR` as their only mismatched
-field. That is one documented limitation, not 136 bugs: the vendored spec's own header says
-*"UNSUPPORTED: correct behaviour when an instruction and its operand(s) wrap at the end of the
-program bank"*, and a randomly placed PC lands within an instruction's length of a bank boundary
-roughly once in 10,000 cases. The real defects are the rows that fail MOST of their cases —
-today the indirect jump/call family (`6C`, `7C`, `DC`, `FC`, both modes, 0/10000), `XBA` (`EB`),
-the width-dependent N flag on `TXA`/`TYA`, and the known `PLP.N`/`RTI.N`. **Rank a failing row by
-its pass fraction before believing it is a bug.**
+**The residue is now the whole story, which was the point of the exercise.** The 5 remaining
+`FAIL` rows are `PLP.N` and `RTI.N` (0/10,000, throwing on the language's own
+`unknown_native_status_pull` pcodeop, sequenced behind `grm-9nxj.5`); `AB.E` (`PLB`) at
+9,964/10,000; `FC.E` at 9,956/9,999, the emulation-mode stack wrapping within page 1 during an
+indexed-indirect call; and `E1.E` (`SBC (dp,X)`) at 9,999/10,000 — that last one had been sitting
+invisibly among the 142 and only became legible once the bank-wrap noise was removed. **Rank a
+failing row by its pass fraction before believing it is a bug** still holds, but there is now very
+little to rank.
 
 Regenerate the vendored sample with `python3 tools/w65816/sample-vectors.py --source
 <full-clone-dir>` (or, for the loose one-file-at-a-time flow used the first time, `--source
