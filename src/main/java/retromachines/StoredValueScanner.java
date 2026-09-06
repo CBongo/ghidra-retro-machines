@@ -70,6 +70,13 @@ import ghidra.program.model.symbol.Reference;
  * #imm / STA}) still applies. A {@code PLA} paired to a {@code PHP} (a status byte, never a
  * value), one with no matching push in range, or one separated from its push by ANY control
  * flow all leave {@code x} wholly unknown, exactly like the fallback below.</li>
+ * <li>A STACK-RELATIVE RELOAD -- {@code LD<reg> $01nn,X} following a {@code TSX} -- reads a byte
+ * pushed earlier WITHOUT popping it, the idiom 6502 code uses when a stack-passed value is
+ * needed MORE THAN ONCE (bead grm-4bgh.1; River City Ransom's {@code FUN_fed1}: {@code PHA / TXA
+ * / PHA / ... / TSX / LDA $0102,X} reads the FIRST push again, having already consumed it once
+ * via a pop-free reload rather than a {@code PLA}). See {@link #stackRelativePush} for the
+ * address arithmetic and the soundness window it enforces between the {@code TSX} and the
+ * load.</li>
  * <li>Any other instruction that modifies the register (transfers, ADC/SBC, shifts,
  * INC/DEC, EOR#imm -- deliberately not modeled bit-wise) leaves {@code x} wholly
  * unknown from that point backward.</li>
@@ -438,6 +445,24 @@ final class StoredValueScanner {
 				// RUNTIME_SOURCE is therefore left to the register-clobbering call below, where the
 				// value is gone whatever we do. Widening it needs a real "no static store to this
 				// cell anywhere" test -- filed separately.
+				//
+				// Last resort (grm-4bgh.1): a STACK-RELATIVE RELOAD -- see stackRelativePush's
+				// javadoc for the shape and soundness argument. Restricted to reg == 'A': the push
+				// this finds is always a PHA (the only 6502 mnemonic that saves a value byte), so
+				// resuming THIS SAME walk from it, under the accumulators built so far, is only
+				// sound when the register already being tracked is A -- for X/Y the byte read came
+				// from A, not the tracked register, and resuming the walk under the wrong register
+				// name could attribute an unrelated earlier X/Y definition to this load.
+				if (reg == 'A') {
+					int[] stackSteps = new int[1];
+					Instruction pha = stackRelativePush(program, prev, hooks, env,
+						MAX_BACKWARD_SCAN - i, stackSteps);
+					i += stackSteps[0];
+					if (pha != null) {
+						cur = pha;
+						continue;
+					}
+				}
 			}
 
 			if (reg == 'A' && mnem.equals("PLA")) {
@@ -537,13 +562,29 @@ final class StoredValueScanner {
 	 */
 	private static Instruction findMatchingPush(Program program, Instruction pla, int budgetSteps,
 			Hooks hooks, RegisterEnv env, int[] stepsConsumed) {
+		return findMatchingPush(program, pla, budgetSteps, hooks, env, stepsConsumed, 1);
+	}
+
+	/**
+	 * {@link #findMatchingPush} generalized to an arbitrary starting depth (bead grm-4bgh.1):
+	 * a {@code PLA} always owes exactly one push, but a stack-relative reload's {@code $01nn,X}
+	 * operand names depth {@code n = nn} counted from the top of stack AT THE {@code TSX}
+	 * that set X ({@link #stackRelativePush}), which may be any {@code n >= 1}. {@code initialDepth}
+	 * is that counter's starting value -- 1 for a {@code PLA} (the 4-arg overload above, kept so
+	 * every pre-existing {@code PLA} caller is byte-identical), {@code n} for a stack-relative
+	 * reload. Everything else -- the {@code PHP} abandon, the stack-pointer-write abandon, the
+	 * join/linkage/call/mechanism-write breaks, the budget and {@code stepsConsumed} accounting --
+	 * is unchanged and applies identically regardless of where the counter started.
+	 */
+	private static Instruction findMatchingPush(Program program, Instruction pla, int budgetSteps,
+			Hooks hooks, RegisterEnv env, int[] stepsConsumed, int initialDepth) {
 		Register stackPointer = program.getCompilerSpec().getStackPointer();
 		if (stackPointer == null) {
 			stepsConsumed[0] = 0;
 			return null; // cannot verify the depth model -- do not assume the favorable answer
 		}
 		Listing listing = program.getListing();
-		int depth = 1; // one push is owed
+		int depth = initialDepth;
 		Instruction cur = pla;
 		int steps = 0;
 		while (steps < budgetSteps) {
@@ -594,6 +635,157 @@ final class StoredValueScanner {
 		}
 		stepsConsumed[0] = steps;
 		return null; // budget exhausted before a match was found
+	}
+
+	/**
+	 * Finds the {@code PHA} whose pushed byte a STACK-RELATIVE RELOAD reads: a load shaped
+	 * {@code LD<reg> $01nn,X} following a {@code TSX}, which reads a byte saved earlier on the
+	 * stack <em>without popping it</em> -- the idiom 6502 code uses when a stack-passed value is
+	 * needed more than once (bead grm-4bgh.1). River City Ransom's {@code FUN_fed1} is the
+	 * motivating shape:
+	 * <pre>
+	 *   FED1  PHA            ; save the caller's bank argument
+	 *   FED2  TXA
+	 *   FED3  PHA            ; save X
+	 *   ...
+	 *   FEDB  TSX            ; X = S
+	 *   FEDC  LDA $0102,X    ; &lt;- reads the byte pushed at FED1, without popping it
+	 * </pre>
+	 * <p>
+	 * <b>Address arithmetic.</b> {@code TSX} copies {@code S} into {@code X}, so immediately
+	 * afterward {@code $0100 + X} is the CURRENT top of stack and {@code $0100 + X + n} is the
+	 * byte {@code n} pushes back from there, counting the most recent push as {@code n == 1}: a
+	 * push writes {@code $0100 + S} and then decrements {@code S}, so the byte a {@code PHA}
+	 * <em>just</em> wrote sits at {@code $0100 + (S - 1) + 1}, i.e. one more than the
+	 * post-decrement {@code S} that a following {@code TSX} would load. An operand
+	 * {@code $01nn,X} therefore names {@code n = nn}, and finding the push it reads is
+	 * exactly {@link #findMatchingPush}'s depth-{@code n} generalization, entered at the
+	 * {@code TSX} rather than at a {@code PLA} (which always owes exactly {@code n == 1}).
+	 * <p>
+	 * This method's own job is upstream of that: given {@code load}, confirm its shape (absolute
+	 * indexed by X, base in {@code $0101..$01FF}), walk backward to find the {@code TSX} that set
+	 * X, and confirm nothing in between could have overwritten the slot -- then hand off to
+	 * {@link #findMatchingPush}.
+	 * <p>
+	 * <b>Returns {@code null} (decline) when:</b>
+	 * <ul>
+	 * <li>{@code load} is not absolute-indexed ({@link #isAbsoluteIndexed}, base from
+	 * {@link LoopIdioms#indexedBase}, index register from {@link LoopIdioms#indexReg});</li>
+	 * <li>the index register is not X -- nothing on 6502 copies {@code S} into Y, so a
+	 * {@code $01nn,Y} operand can never be this idiom;</li>
+	 * <li>the base does not lie in {@code $0101..$01FF} -- outside the stack page, or naming
+	 * {@code $0100} itself ({@code n == 0}, which is not "{@code n} pushes back" from anything);</li>
+	 * <li>walking backward from {@code load} to find the {@code TSX}, ANY of the guards
+	 * {@link #findMatchingPush} itself applies is violated first: {@code env.stopsAt}, the
+	 * instruction before {@code cur} not existing, a broken fall-through, an unlicensed
+	 * {@link #isControlFlowJoin}, a flow or a call, or {@link Hooks#isMechanismWrite} -- reused
+	 * verbatim rather than reimplemented, for the identical soundness reasons {@code
+	 * findMatchingPush}'s own javadoc gives for each;</li>
+	 * <li><b>ANY of {@code PHA}/{@code PHP}/{@code PLA}/{@code PLP} occurs between the
+	 * {@code TSX} and {@code load}.</b> The load's effective address is
+	 * {@code $0100 + S(at the TSX) + n} -- a fixed cell -- and a {@code PLA} followed by a
+	 * {@code PHA} in that window can overwrite EXACTLY that cell with an unrelated byte before
+	 * {@code load} reads it. Attributing the read to the push {@link #findMatchingPush} finds
+	 * would then be a confident WRONG value, not a missing one, which is the failure direction
+	 * this scanner exists to avoid;</li>
+	 * <li><b>anything writes X</b> in that same window. Asked of the LANGUAGE
+	 * ({@link #writesRegister}) rather than a mnemonic list -- see
+	 * {@code HelperArgumentRecovery.argumentSurvivesPrologue}'s javadoc for the same call and why
+	 * it is preferred over enumerating mnemonics. {@code TSX} itself writes X and is this walk's
+	 * own terminator, so it is tested FIRST and the generic "writes X" test is applied only to
+	 * every OTHER instruction in the window -- checking the generic test before recognizing
+	 * {@code TSX} would misread the terminator itself as an abandon.</li>
+	 * </ul>
+	 * On finding the {@code TSX}, this hands off to {@link #findMatchingPush} with
+	 * {@code initialDepth = n}, entered AT the {@code TSX} (which is exactly where that method's
+	 * own backward walk starts examining from, by design -- it inspects the instruction BEFORE
+	 * the instruction it is handed).
+	 *
+	 * @param budgetSteps    how many further instructions this search -- INCLUDING the further
+	 *                       search {@link #findMatchingPush} performs once the {@code TSX} is
+	 *                       found -- may step over, spent from the caller's own
+	 *                       {@link #MAX_BACKWARD_SCAN} budget rather than a fresh one
+	 * @param stepsConsumed  single-element out-param: how many instructions this search actually
+	 *                       stepped over in total, valid on every return path
+	 */
+	private static Instruction stackRelativePush(Program program, Instruction load, Hooks hooks,
+			RegisterEnv env, int budgetSteps, int[] stepsConsumed) {
+		if (!isAbsoluteIndexed(load)) {
+			stepsConsumed[0] = 0;
+			return null;
+		}
+		Address base = LoopIdioms.indexedBase(load);
+		Register idx = LoopIdioms.indexReg(load);
+		if (base == null || idx == null || !idx.getName().equalsIgnoreCase("X")) {
+			stepsConsumed[0] = 0;
+			return null;
+		}
+		long baseOffset = base.getOffset();
+		if (baseOffset < 0x101 || baseOffset > 0x1FF) {
+			stepsConsumed[0] = 0;
+			return null;
+		}
+		int n = (int) (baseOffset - 0x100);
+
+		Register xRegister = program.getLanguage().getRegister("X");
+		if (xRegister == null) {
+			stepsConsumed[0] = 0;
+			return null; // cannot ask the question -- do not assume the favorable answer
+		}
+
+		Listing listing = program.getListing();
+		Instruction cur = load;
+		int steps = 0;
+		while (steps < budgetSteps) {
+			if (env.stopsAt(cur.getMinAddress())) {
+				stepsConsumed[0] = steps;
+				return null; // the caller's stack is not modeled -- mirrors findMatchingPush
+			}
+			Instruction prev = listing.getInstructionBefore(cur.getMinAddress());
+			if (prev == null) {
+				stepsConsumed[0] = steps;
+				return null;
+			}
+			Address prevFallThrough = prev.getFallThrough();
+			if (prevFallThrough == null || !prevFallThrough.equals(cur.getMinAddress())) {
+				stepsConsumed[0] = steps;
+				return null; // left the basic block
+			}
+			if (isControlFlowJoin(program, cur, prev) && !env.mayCrossJoinAt(cur.getMinAddress())) {
+				stepsConsumed[0] = steps;
+				return null; // another path could reach here with a different X/stack state
+			}
+			if (prev.getFlows().length > 0 || prev.getFlowType().isCall()) {
+				stepsConsumed[0] = steps;
+				return null; // not straight-line
+			}
+			if (hooks.isMechanismWrite(prev)) {
+				stepsConsumed[0] = steps;
+				return null; // mirrors findMatchingPush's identical mid-scan abort
+			}
+			steps++;
+			String mnem = prev.getMnemonicString().toUpperCase();
+			if (mnem.equals("TSX")) {
+				// The terminator: hand off to findMatchingPush, entered AT the TSX, for the
+				// n-th push back from the top of stack it establishes.
+				int[] pushSteps = new int[1];
+				Instruction pha = findMatchingPush(program, prev, budgetSteps - steps, hooks, env,
+					pushSteps, n);
+				stepsConsumed[0] = steps + pushSteps[0];
+				return pha;
+			}
+			if (mnem.equals("PHA") || mnem.equals("PHP") || mnem.equals("PLA") || mnem.equals("PLP")) {
+				stepsConsumed[0] = steps;
+				return null; // could overwrite the reloaded slot -- see javadoc
+			}
+			if (writesRegister(prev, xRegister)) {
+				stepsConsumed[0] = steps;
+				return null; // X changed before we found the TSX that is supposed to set it
+			}
+			cur = prev;
+		}
+		stepsConsumed[0] = steps;
+		return null; // budget exhausted before a TSX was found
 	}
 
 	/**
@@ -1109,10 +1301,18 @@ final class StoredValueScanner {
 				Address target = effectiveTarget(program, prev, hooks, env, budget, depth + 1);
 				// unknown() in-state, never a caller's -- see this method's javadoc
 				BankState base = hooks.resolveLoad(prev, target, BankState.unknown());
-				if (base == null || (base.knownMask() & 0xFF) != 0xFF) {
-					return null;
+				if (base != null && (base.knownMask() & 0xFF) == 0xFF) {
+					return base.bits() & 0xFF;
 				}
-				return base.bits() & 0xFF;
+				// Last resort (grm-4bgh.1): a stack-relative reload -- see stackRelativePush's
+				// javadoc for the shape and soundness argument. The recursive query below is
+				// always for 'A', never `reg`: the push stackRelativePush finds is always a PHA,
+				// which only ever saves A, regardless of which register this load lands in.
+				int[] stackSteps = new int[1];
+				Instruction pha = stackRelativePush(program, prev, hooks, env,
+					MAX_BACKWARD_SCAN - i, stackSteps);
+				return pha == null ? null
+						: constantRegisterValue(program, pha, 'A', hooks, env, budget, depth + 1);
 			}
 
 			Character source = transferSource(mnem, reg);
