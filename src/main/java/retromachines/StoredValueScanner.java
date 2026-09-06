@@ -198,6 +198,20 @@ final class StoredValueScanner {
 	private static final Set<String> Y_MODIFIERS = Set.of("LDY", "TAY", "INY", "DEY");
 
 	/**
+	 * 6502 mnemonics that leave the carry flag exactly as they found it, for
+	 * {@link #carryValueBefore}'s backward walk (bead grm-4bgh.2). This is deliberately an
+	 * ALLOWLIST rather than a denylist of carry-writers: an unrecognized mnemonic -- an
+	 * undocumented opcode, a mnemonic spelling this table does not know -- must make the walk
+	 * decline, not be assumed inert. Absent on purpose, because they write carry:
+	 * {@code ADC}/{@code SBC}, the comparisons, the shifts and rotates, and {@code PLP}
+	 * ({@code RTI} likewise, and it ends the walk as a flow break anyway). {@code PHP} and
+	 * {@code PLA} ARE here -- they read the flags or write only N/Z.
+	 */
+	private static final Set<String> CARRY_PRESERVING = Set.of("LDA", "LDX", "LDY", "STA", "STX",
+		"STY", "TAX", "TAY", "TXA", "TYA", "TSX", "TXS", "PHA", "PHP", "PLA", "AND", "ORA", "EOR",
+		"BIT", "INC", "DEC", "INX", "INY", "DEX", "DEY", "NOP", "CLD", "SED", "CLI", "SEI", "CLV");
+
+	/**
 	 * 6502 mnemonics that write memory, for {@link #writesMemory}'s third detector. The stores
 	 * are here as well as in {@link #storeRegister} because that method deliberately excludes the
 	 * read-modify-write forms, which write memory just the same. The shift/rotate entries write
@@ -1222,10 +1236,18 @@ final class StoredValueScanner {
 	 * <p>
 	 * Modeled: {@code LD<reg> #imm}; a {@code LD<reg> <mem>} whose target resolves and whose
 	 * {@link Hooks#resolveLoad} answers with all eight bits known; {@code TAX/TAY/TXA/TYA};
-	 * {@code INX/INY/DEX/DEY}; {@code ASL A}/{@code LSR A}; {@code AND/ORA/EOR #imm} on A.
-	 * {@code ROL}/{@code ROR} <b>decline</b> -- the carry flag is not modeled anywhere in this
-	 * scanner, and guessing it would be a wrong answer rather than a missing one. Any other
-	 * instruction in the register's modifier set, and any call, declines.
+	 * {@code INX/INY/DEX/DEY}; {@code ASL A}/{@code LSR A}; {@code AND/ORA/EOR #imm} on A; and
+	 * {@code ADC #imm} on A when {@link #carryValueBefore} can establish the carry it adds in
+	 * (bead grm-4bgh.2 -- rcransom's {@code FUN_fed1} computes {@code r7 = A*2+1} as
+	 * {@code ASL A / CLC / ADC #$01}).
+	 * <p>
+	 * {@code ROL}/{@code ROR} still <b>decline</b>, and {@code SBC} with them. Note the reason
+	 * has narrowed rather than vanished: carry is now modeled in exactly one place, as the
+	 * constant a {@code CLC}/{@code SEC} leaves, and nowhere else -- so an {@code ADC} whose
+	 * carry is not established that way declines exactly as before. Extending the same treatment
+	 * to {@code ROL A} ({@code (before << 1) | carry}) is mechanical and deliberately not part of
+	 * this increment. Any other instruction in the register's modifier set, and any call,
+	 * declines.
 	 * <p>
 	 * Every guard {@link #resolveStoredValue} applies is reused verbatim: fall-through block
 	 * linkage, {@link #isControlFlowJoin}, the {@link Hooks#isMechanismWrite} mid-scan abort,
@@ -1342,6 +1364,25 @@ final class StoredValueScanner {
 				return mnem.equals("ASL") ? (before << 1) & 0xFF : (before >> 1) & 0xFF;
 			}
 
+			if (reg == 'A' && isImmediate(prev) && mnem.equals("ADC")) {
+				// grm-4bgh.2. ADC is exact under these exact-constant semantics once the carry it
+				// adds in is itself known -- which on 6502 means a CLC (or SEC) reaches it with no
+				// carry-writer in between. rcransom's FUN_fed1 computes r7 = A*2+1 as
+				// `ASL A / CLC / ADC #$01`. Note the ASL WRITES carry, so the CLC is not decorative
+				// and carryValueBefore must not walk past it to some earlier CLC.
+				Integer imm = immediateOperandValue(prev);
+				if (imm == null) {
+					return null;
+				}
+				Integer carry = carryValueBefore(program, prev, hooks, env, budget);
+				if (carry == null) {
+					return null; // carry not established -- decline rather than guess a bit
+				}
+				Integer before =
+					constantRegisterValue(program, prev, 'A', hooks, env, budget, depth + 1);
+				return before == null ? null : (before + imm + carry) & 0xFF;
+			}
+
 			if (reg == 'A' && isImmediate(prev) &&
 				(mnem.equals("AND") || mnem.equals("ORA") || mnem.equals("EOR"))) {
 				Integer imm = immediateOperandValue(prev);
@@ -1365,6 +1406,68 @@ final class StoredValueScanner {
 			}
 			if (prev.getFlowType().isCall()) {
 				return null; // a subroutine may clobber any register
+			}
+			cur = prev;
+		}
+		return null;
+	}
+
+	/**
+	 * The carry flag's value ({@code 0} or {@code 1}) immediately before {@code at}, or
+	 * {@code null} when this walk cannot establish it (bead grm-4bgh.2).
+	 * <p>
+	 * The 6502 has no way to read the carry as data, so the only thing that makes {@code ADC}
+	 * exact under {@link #constantRegisterValue}'s exact-constant semantics is finding the
+	 * instruction that last SET the flag and recognizing it as a constant one: {@code CLC} or
+	 * {@code SEC}. The walk therefore steps backward over {@link #CARRY_PRESERVING} mnemonics
+	 * only, and declines the moment it meets anything else -- including any other carry-writer
+	 * ({@code ADC}, {@code SBC}, a comparison, a shift or rotate), whose result would have to be
+	 * evaluated rather than read off.
+	 * <p>
+	 * Every guard {@link #constantRegisterValue} applies is reused verbatim and for the same
+	 * reasons: fall-through block linkage, {@link #isControlFlowJoin} (another path may arrive
+	 * with the other carry), the {@link Hooks#isMechanismWrite} mid-scan abort, {@code budget},
+	 * and {@link #MAX_BACKWARD_SCAN}. A call ends the walk: a subroutine returns whatever carry
+	 * it pleases. {@code env}'s entry stop declines rather than adopting anything -- a
+	 * {@link RegisterEnv} describes the caller's A/X/Y and says nothing about its flags, so a
+	 * helper whose own body does not establish the carry has no carry this walk may claim.
+	 */
+	private static Integer carryValueBefore(Program program, Instruction at, Hooks hooks,
+			RegisterEnv env, Budget budget) {
+		Listing listing = program.getListing();
+
+		Instruction cur = at;
+		for (int i = 0; i < MAX_BACKWARD_SCAN; i++) {
+			if (env.stopsAt(cur.getMinAddress())) {
+				return null; // the env carries registers, not flags -- see this method's javadoc
+			}
+			if (!budget.spend()) {
+				return null;
+			}
+			Instruction prev = listing.getInstructionBefore(cur.getMinAddress());
+			if (prev == null) {
+				return null;
+			}
+			Address prevFallThrough = prev.getFallThrough();
+			if (prevFallThrough == null || !prevFallThrough.equals(cur.getMinAddress())) {
+				return null; // left the basic block
+			}
+			if (isControlFlowJoin(program, cur, prev) && !env.mayCrossJoinAt(cur.getMinAddress())) {
+				return null;
+			}
+			if (hooks.isMechanismWrite(prev)) {
+				return null;
+			}
+
+			String mnem = prev.getMnemonicString().toUpperCase();
+			if (mnem.equals("CLC")) {
+				return 0;
+			}
+			if (mnem.equals("SEC")) {
+				return 1;
+			}
+			if (prev.getFlowType().isCall() || !CARRY_PRESERVING.contains(mnem)) {
+				return null;
 			}
 			cur = prev;
 		}
