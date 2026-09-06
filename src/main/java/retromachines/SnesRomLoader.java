@@ -234,7 +234,7 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 		for (long fileOffset = 0; fileOffset < cartBytes; fileOffset += unit) {
 			monitor.checkCancelled();
 			long size = Math.min(unit, cartBytes - fileOffset);
-			long address = map.canonicalAddressOf(homeProbe(map, fileOffset));
+			long address = map.homeAddressOf(fileOffset);
 			Address start = space.getAddress(address);
 			String name = String.format("ROM_%02X_%04X", (address >> 16) & 0xFF, address & 0xFFFF);
 			MemoryBlock block = MemoryBlockUtils.createInitializedBlock(program, false, name,
@@ -248,13 +248,6 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 		log.appendMsg(NAME + ": " + starts.size() + " canonical ROM block(s), " +
 			(cartBytes / 1024) + " KiB");
 		return starts;
-	}
-
-	/** An address that maps to {@code fileOffset}, for asking the map where its home is. */
-	private static long homeProbe(SnesAddressMap map, long fileOffset) {
-		return map.mapType() == MapType.LOROM
-				? (((fileOffset / 0x8000) << 16) | (0x8000 + (fileOffset % 0x8000)))
-				: 0xC00000L + fileOffset;
 	}
 
 	/** Work RAM: one home block for the full 128 KiB. */
@@ -314,6 +307,14 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 	 * territory where no cartridge ROM is mapped at all, and sourcing it from the bank's low
 	 * half shows the wrong bytes. A trailing home block shorter than 32 KiB has nothing in its
 	 * upper half and so has no system-bank mirror.
+	 *
+	 * <p><b>ExHiROM splits the two system-bank ranges</b> (grm-9nxj.17). Under HiROM both
+	 * {@code $00-$3F} and {@code $80-$BF} show the same bytes, so a canonical block gets two
+	 * mirrors. Under ExHiROM they show different chunks: {@code $80-$BF} mirrors the first
+	 * chunk (home {@code $C0-$FF}) and {@code $00-$3F} mirrors the second (home
+	 * {@code $40-$7D}), so each canonical block gets exactly ONE system-bank mirror. Emitting
+	 * the HiROM pair for an ExHiROM cartridge would claim that the low system banks show the
+	 * first chunk, which is the specific thing ExHiROM does not do.
 	 */
 	private List<Mirror> mirrorsOf(SnesAddressMap map, long canonical, long homeSize) {
 		List<Mirror> out = new ArrayList<>();
@@ -321,15 +322,26 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 			out.add(new Mirror(canonical + 0x800000L, canonical, homeSize));
 			return out;
 		}
-		long fileOffset = canonical - 0xC00000L;
-		long bank = fileOffset / 0x10000L;
-		if (bank > 0x3F || homeSize <= 0x8000L) {
+		long bank = (canonical >> 16) & 0xFF;
+		if (homeSize <= 0x8000L) {
 			return out;
 		}
 		long from = canonical + 0x8000L;
 		long size = homeSize - 0x8000L;
-		out.add(new Mirror((bank << 16) | 0x8000L, from, size));
-		out.add(new Mirror(((bank + 0x80) << 16) | 0x8000L, from, size));
+		if (bank >= 0xC0) {
+			// The first-chunk linear view. Under HiROM its upper halves show in BOTH system
+			// bank ranges; under ExHiROM only in $80-$BF, because $00-$3F is showing the
+			// second chunk instead (grm-9nxj.17).
+			long systemBank = bank - 0xC0;
+			if (map.mapType() != MapType.EXHIROM) {
+				out.add(new Mirror((systemBank << 16) | 0x8000L, from, size));
+			}
+			out.add(new Mirror(((systemBank + 0x80) << 16) | 0x8000L, from, size));
+		}
+		else if (map.mapType() == MapType.EXHIROM && bank >= 0x40 && bank <= 0x7D) {
+			// The second chunk's linear view, whose upper halves show at $00-$3F only.
+			out.add(new Mirror(((bank - 0x40) << 16) | 0x8000L, from, size));
+		}
 		return out;
 	}
 

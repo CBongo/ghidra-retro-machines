@@ -37,11 +37,22 @@ import retromachines.SnesRomHeader.MapType;
  *     {@code addr} shows file offset {@code (b - 0xC0) * 0x10000 + addr}. Banks
  *     {@code $00-$3F} additionally show the UPPER HALF of the corresponding HiROM bank at
  *     {@code $8000-$FFFF} -- the same bytes, not a second copy.</li>
+ * <li><b>ExHiROM</b> is HiROM's wiring with one pin moved, and it is how a cartridge larger
+ *     than 4 MiB is addressed without a mapper. The {@code $80-$FF} half shows the FIRST 4 MiB
+ *     exactly as HiROM does; the {@code $00-$7D} half shows the SECOND chunk instead, at ROM
+ *     offset {@code +$400000}. So {@code $C0-$FF} is the first chunk's linear view,
+ *     {@code $40-$7D} is the second chunk's, and the two system-bank ranges no longer agree:
+ *     {@code $80-$BF:8000-FFFF} mirrors the first chunk's upper halves while
+ *     {@code $00-$3F:8000-FFFF} mirrors the second's.</li>
  * </ul>
- * ExHiROM extends HiROM with a second 4 MiB reachable through banks {@code $40-$7D}; it is
- * modelled here only as far as {@link MapType#EXHIROM} being accepted with HiROM arithmetic for
- * its first 4 MiB, and {@link #isModelled} reports false beyond that rather than returning a
- * confident wrong offset.
+ *
+ * <p>That asymmetry is why an ExHiROM header sits at file offset {@code $40FFC0}: the CPU reads
+ * its vectors at {@code $00:FFC0}, which is a second-chunk address. {@code SnesRomHeader}'s
+ * {@code mapTypeMatchesLocation} encodes the same fact independently, and the two agree.
+ *
+ * <p>Modelled fully as of grm-9nxj.17. Before that ExHiROM was accepted with HiROM arithmetic
+ * throughout, which is right below 4 MiB and, above it, produced {@code $C00000 + fileOffset}
+ * addresses past the end of the 24-bit space that wrapped onto bank $00.
  *
  * <p><b>Mirroring.</b> Banks {@code $80-$FF} mirror {@code $00-$7F} (the FastROM half), and the
  * first 8 KiB of work RAM is mirrored into {@code $0000-$1FFF} of the system banks. Mirrors are
@@ -68,6 +79,9 @@ public final class SnesAddressMap {
 	}
 
 	private static final long BANK = 0x10000L;
+	/** ExHiROM's split point: file offsets below this are the first chunk, at or above the
+	 *  second. Also the file offset of an ExHiROM header, since $00:FFC0 reads the second. */
+	private static final long EXHIROM_CHUNK = 0x400000L;
 	private static final long WRAM_START = 0x7E0000L;
 	private static final long WRAM_SIZE = 0x20000L;
 
@@ -151,11 +165,29 @@ public final class SnesAddressMap {
 		return bank >= 0x80 ? a - 0x800000L : a;
 	}
 
+	/**
+	 * Where a ROM file offset lives in its mapping's canonical (home) view -- the one address a
+	 * loader need materialize, every other address showing those bytes being a mirror of it.
+	 *
+	 * <p>Public because a loader building blocks has a FILE OFFSET in hand and needs the address
+	 * for it. It used to synthesize a probe address instead and hand that to
+	 * {@link #canonicalAddressOf}; for ExHiROM past 4 MiB the probe {@code $C00000 + fileOffset}
+	 * exceeds the 24-bit space and wrapped onto bank $00, burying low RAM and the IO windows
+	 * under a ROM block (grm-9nxj.17). Asking the map directly cannot express that address.
+	 */
+	public long homeAddressOf(long fileOffset) {
+		return romHomeAddress(fileOffset);
+	}
+
 	/** Where a ROM file offset lives in its mapping's canonical (home) view. */
 	private long romHomeAddress(long fileOffset) {
 		return switch (mapType) {
 			case LOROM -> ((fileOffset / 0x8000) << 16) | (0x8000 + (fileOffset % 0x8000));
-			case HIROM, EXHIROM -> 0xC00000L + fileOffset;
+			case HIROM -> 0xC00000L + fileOffset;
+			// The first chunk's home is the $C0-$FF linear view, as HiROM. The second chunk has
+			// NO $C0-$FF address at all -- its home is the $40-$7D view, where the address and
+			// the file offset are numerically equal.
+			case EXHIROM -> fileOffset < EXHIROM_CHUNK ? 0xC00000L + fileOffset : fileOffset;
 			default -> fileOffset;
 		};
 	}
@@ -194,7 +226,7 @@ public final class SnesAddressMap {
 				}
 				fileOffset = romBank * 0x8000L + (offset - 0x8000);
 			}
-			case HIROM, EXHIROM -> {
+			case HIROM -> {
 				if (bank >= 0xC0) {
 					fileOffset = (bank - 0xC0) * BANK + offset;    // the linear home view
 				}
@@ -204,6 +236,29 @@ public final class SnesAddressMap {
 				else if ((bank <= 0x3F || (bank >= 0x80 && bank <= 0xBF)) && offset >= 0x8000) {
 					// The system banks show the UPPER HALF of the corresponding HiROM bank.
 					fileOffset = (bank & 0x3F) * BANK + offset;
+				}
+				else {
+					return null;
+				}
+			}
+			case EXHIROM -> {
+				// HiROM's wiring with one pin moved: the $00-$7D half shows the SECOND chunk
+				// (ROM +$400000) while the $80-$FF half shows the first. That is the whole
+				// reason the format exists -- it is how a cartridge over 4 MiB is addressed
+				// without a mapper. See the class doc.
+				if (bank >= 0xC0) {
+					fileOffset = (bank - 0xC0) * BANK + offset;                  // first chunk
+				}
+				else if (bank >= 0x40 && bank <= 0x7D) {
+					// (bank - 0x40) * BANK + EXHIROM_CHUNK == bank * BANK, so the second
+					// chunk's linear view is the one place address and file offset coincide.
+					fileOffset = bank * BANK + offset;                           // second chunk
+				}
+				else if (bank <= 0x3F && offset >= 0x8000) {
+					fileOffset = EXHIROM_CHUNK + bank * BANK + offset;           // second chunk
+				}
+				else if (bank >= 0x80 && bank <= 0xBF && offset >= 0x8000) {
+					fileOffset = (bank - 0x80) * BANK + offset;                  // first chunk
 				}
 				else {
 					return null;

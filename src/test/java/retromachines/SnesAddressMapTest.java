@@ -84,6 +84,95 @@ public class SnesAddressMapTest {
 		assertNull("the lower half of a HiROM system bank is not ROM", map.fileOffsetOf(0x004000));
 	}
 
+	// ---------------------------------------------------------------- ExHiROM
+
+	/**
+	 * ExHiROM's whole reason for existing: the $00-$7D half shows the SECOND chunk (ROM
+	 * +$400000) while $80-$FF shows the first. Under HiROM arithmetic $40-$7D would show the
+	 * first chunk instead, so this is the case that tells the two mappings apart.
+	 */
+	@Test
+	public void exHiRomLowBanksShowTheSecondChunk() {
+		SnesAddressMap map = new SnesAddressMap(MapType.EXHIROM, 6 * ONE_MB);
+
+		assertEquals("$C0-$FF is the first chunk, exactly as HiROM",
+			Long.valueOf(0x000000), map.fileOffsetOf(0xC00000));
+		assertEquals(Long.valueOf(0x3FFFFF), map.fileOffsetOf(0xFFFFFF));
+		assertEquals("$40-$7D is the SECOND chunk, where address and file offset coincide",
+			Long.valueOf(0x400000), map.fileOffsetOf(0x400000));
+		assertEquals(Long.valueOf(0x5FFFFF), map.fileOffsetOf(0x5FFFFF));
+	}
+
+	/**
+	 * The two system-bank ranges disagree under ExHiROM, which is what makes it more than a
+	 * bigger HiROM: $80-$BF mirrors the first chunk, $00-$3F mirrors the second.
+	 */
+	@Test
+	public void exHiRomSystemBankRangesShowDifferentChunks() {
+		SnesAddressMap map = new SnesAddressMap(MapType.EXHIROM, 6 * ONE_MB);
+
+		assertEquals("$80-$BF upper halves mirror the first chunk",
+			map.fileOffsetOf(0xC08000), map.fileOffsetOf(0x808000));
+		assertEquals("$00-$3F upper halves mirror the SECOND chunk",
+			Long.valueOf(0x408000), map.fileOffsetOf(0x008000));
+		assertTrue("so $00:8000 and $80:8000 are NOT the same bytes, unlike under HiROM",
+			!map.fileOffsetOf(0x008000).equals(map.fileOffsetOf(0x808000)));
+		assertNull("the lower half of an ExHiROM system bank is still not ROM",
+			map.fileOffsetOf(0x004000));
+	}
+
+	/**
+	 * The header location falls out of the mapping rather than being a separate convention: a
+	 * 65816 reads its vectors at $00:FFxx, which under ExHiROM is a second-chunk address, so the
+	 * header lands at file offset $40FFC0 — the value SnesRomHeader.mapTypeMatchesLocation
+	 * independently expects.
+	 */
+	@Test
+	public void exHiRomHeaderOffsetFollowsFromTheMapping() {
+		SnesAddressMap map = new SnesAddressMap(MapType.EXHIROM, 6 * ONE_MB);
+
+		assertEquals(Long.valueOf(0x40FFC0), map.fileOffsetOf(0x00FFC0));
+	}
+
+	/**
+	 * The grm-9nxj.17 defect itself. Every second-chunk file offset used to be handed to a
+	 * $C00000-relative home, which for a 6 MB cartridge runs past the end of the 24-bit space
+	 * and wrapped onto bank $00 — burying low RAM and the IO windows under a ROM block. The
+	 * second chunk has no $C0-$FF address at all; its home is the $40-$7D view.
+	 */
+	@Test
+	public void exHiRomSecondChunkHomeDoesNotWrapPastTheAddressSpace() {
+		SnesAddressMap map = new SnesAddressMap(MapType.EXHIROM, 6 * ONE_MB);
+
+		assertEquals("first chunk homes in the linear $C0-$FF view",
+			0xC00000L, map.homeAddressOf(0x000000));
+		assertEquals(0xFF0000L, map.homeAddressOf(0x3F0000));
+		assertEquals("the second chunk homes at $40-$7D, NOT $C00000 + offset",
+			0x400000L, map.homeAddressOf(0x400000));
+		assertEquals(0x5F0000L, map.homeAddressOf(0x1F0000 + 0x400000));
+		for (long fileOffset = 0; fileOffset < 6 * ONE_MB; fileOffset += 0x10000) {
+			assertTrue("no home address may leave the 24-bit space: offset $" +
+				Long.toHexString(fileOffset),
+				map.homeAddressOf(fileOffset) <= 0xFFFFFFL);
+		}
+		assertEquals("and low RAM is still low RAM, not ROM", Kind.WRAM, map.kindOf(0x000000));
+		assertEquals(Kind.IO, map.kindOf(0x002100));
+	}
+
+	/**
+	 * An ExHiROM-wired cartridge under 4 MiB is not just a HiROM: $00-$3F still reads the second
+	 * chunk, which simply is not there, so it is open bus rather than a mirror of the first.
+	 */
+	@Test
+	public void exHiRomBelowFourMegabytesHasNoLowSystemBankRom() {
+		SnesAddressMap map = new SnesAddressMap(MapType.EXHIROM, ONE_MB / 2);
+
+		assertEquals(Long.valueOf(0x000000), map.fileOffsetOf(0xC00000));
+		assertEquals(Long.valueOf(0x008000), map.fileOffsetOf(0x808000));
+		assertNull("$00:8000 would read ROM $408000, past the end of a 512 KiB image",
+			map.fileOffsetOf(0x008000));
+	}
+
 	// ---------------------------------------------------------------- mirrors
 
 	/** Banks $80-$FF are the same physical bytes as $00-$7F: the FastROM mirror. */
