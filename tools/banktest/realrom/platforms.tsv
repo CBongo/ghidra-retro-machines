@@ -1,0 +1,3 @@
+platform	rom_dir_env	image_exts	copy_ext	loader	dump_script	import_args	nominate	stamps_staleness	fallback_chunk
+nes	GRM_ROM_DIR	nes	.nes	NesRomLoader	RealRomDump.java	-	yes	yes	nes-banking
+snes	GRM_SNES_ROM_DIR	sfc,smc,fig,swc	.sfc	SnesRomLoader	SnesRealRomDump.java	-noanalysis	no	no	snes-loader

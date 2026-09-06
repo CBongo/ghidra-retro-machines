@@ -37,7 +37,8 @@ while the rows are hash-pinned the hardware is not.
 | Gate | Wall clock | Notes |
 |---|---|---|
 | `build-and-test.sh check` (all chunks) | ~5–6½ min | includes the `unit` JUnit suite |
-| `realrom-test.sh check --all` (33 rows) | ~6–6½ min | four consecutive runs: 6m36s, 6m13s, 6m10s, 6m21s |
+| `realrom-test.sh check nes` (33 rows) | ~6–6½ min | four consecutive runs: 6m36s, 6m13s, 6m10s, 6m21s (measured under the pre-grm-ughg `--all` spelling, same 33 rows) |
+| `realrom-test.sh check` / `check core` (5 rows) | ~46s | the always-run floor added by grm-ughg; not a substitute for `check nes` before an analysis-behaviour commit |
 | one real-ROM row | median **7s**, mean 10s, max 52s | from dump timestamps across one full run |
 
 **Both gates are minutes, not hours.** This section exists because the opposite was written down
@@ -53,9 +54,11 @@ turned out to be a coin flip and nearly caused a row to be misfiled. The run it 
 cost six minutes. **When a full run is the decisive experiment, run it.**
 
 The corollary for the opt-in tiers: the real-ROM tier being ~6 minutes is why
-`realrom-test.sh check --all` is a *required local step* before committing analysis-behaviour
-changes rather than a ceremonial occasional check, and why the SPC700 vector tier (~15s) is
-routine verification rather than a final gate.
+`realrom-test.sh check nes` (the current spelling of what used to be `--all`; see "Set selection"
+below) is a *required local step* before committing analysis-behaviour changes rather than a
+ceremonial occasional check, and why the SPC700 vector tier (~15s) is routine verification rather
+than a final gate. The `core` floor a bare `check` now runs (5 rows, ~46s) is cheap enough to
+have no excuse not to run, but it is a floor *beneath* that requirement, not a replacement for it.
 
 ## Tier 3 — the E2E golden-image suite (the acceptance authority)
 
@@ -630,13 +633,29 @@ bank numbers through tables/helpers, hit ~191 overlays, etc.). It is **not** par
 default gate: ROM binaries are copyrighted and user-supplied, so nothing here runs in CI and
 it is never a `run-banktest.sh` chunk (whose `all` would otherwise pull it in).
 
-- **Driver:** `tools/banktest/realrom-test.sh check|bless|nominate [--gme|--all|--snes]
-  [--only|--except <ids>] [--no-build] <romdir> [<romdir> …]` (or `GRM_ROM_DIR`; or
-  `GRM_SNES_ROM_DIR` for `--snes`). Lives
+- **Driver:** `tools/banktest/realrom-test.sh check|bless [SET ...] [--only|--except <ids>]
+  [--no-build] <romdir> [<romdir> …]` and `tools/banktest/realrom-test.sh nominate <romdir> …`
+  (romdirs otherwise come from `GRM_ROM_DIR` and `GRM_SNES_ROM_DIR`, one per platform). Lives
   alongside `measure-overlay-scale.sh` and reuses the same `build/ghidra-home` isolation. As
   of bead `grm-4t2d` it stages the extension itself (build by default) before analyzing, so
   no prior `build-and-test.sh` run is required; `measure-overlay-scale.sh` is the one script
   in this family that still needs one, since it was not in scope for that change.
+- **Set selection is positional (bead `grm-ughg`), not a flag per platform.** `realrom/sets.tsv`
+  names four sets (`core`, `nes-curated`, `nes-gme`, `snes-cart`); `realrom/platforms.tsv` derives
+  two platform groups (`nes`, `snes` — every set on that platform) and the driver adds `all`
+  (every set on every platform). Sets **compose** and are deduplicated by id, so
+  `check core nes-gme` is a valid, if redundant, invocation. `--list-sets` prints the table.
+  This replaced a design where a flag (`--gme`/`--all`/`--snes`) selected a platform-specific
+  subset, and where a bare `check` silently meant "the curated NES set, one-third of the tier" —
+  the old flags still work as deprecated aliases that print a one-line note (`--gme`→`nes-gme`,
+  `--all`→`nes`, `--snes`→`snes`), and `--all` still means exactly what it always meant (both NES
+  manifests, 33 rows). Only the *bare word* `all` changed meaning: before grm-ughg there was no
+  such word, and now it spans every platform (46 rows).
+- **A bare `check` now runs `core`, not the curated NES set.** `core` (`realrom/sets.tsv`) is a
+  new always-run floor — five rows (kicarus, cv2, tmnt, smb, zelda) drawn across both NES
+  manifests, measured at ~46s — added beneath the full-tier requirement below for changes that
+  previously owed the tier nothing at all. It is not a substitute for `check nes` on an
+  analysis-behaviour change; see "How long the gates actually take" for both numbers.
 - **Several romdirs are normal, and a `SKIP` usually means one is missing.** Dirs are indexed at
   **depth 1 only** — a title one directory down is invisible — so a collection split across two
   places needs both named, and the curated set on the primary dev machine does. `GRM_ROM_DIR`
@@ -646,27 +665,30 @@ it is never a `run-banktest.sh` chunk (whose `all` would otherwise pull it in).
   as "this run did not look everywhere" before reading it as "this machine lacks the ROM"** —
   the driver prints the dir list it actually used alongside the skip count for exactly this
   reason, and the `gme-rom-location` bd memory records where each set lives.
-- **Four row sets across two platforms, selected not accumulated.** `realrom/manifest.tsv` is
-  the curated NES minimum (one representative title per shipped board) and is the default;
+- **Four row sets across two platforms, composed not exclusively chosen.** `realrom/manifest.tsv`
+  is the curated NES minimum (one representative title per shipped board, set `nes-curated`);
   `realrom/manifest-gme.tsv` is an expanded NES reference set of titles of interest to the
-  parent game-music-extraction project, chosen by `--gme`; `--all` runs both NES manifests;
-  `realrom/manifest-snes.tsv` (bead `grm-9nxj.15`) is the SNES loader set, chosen by `--snes`.
-  The flags *select*, because `--gme` also re-blessing the curated twelve is a costly surprise.
-  The expanded set is deliberately not a gate: a reference point for planning and an occasional
+  parent game-music-extraction project (set `nes-gme`); `nes` runs both; `realrom/manifest-snes.tsv`
+  (bead `grm-9nxj.15`) is the SNES loader set (set `snes-cart`, platform group `snes`). The
+  expanded NES set is deliberately not a gate: a reference point for planning and an occasional
   thorough check, since each row costs a headless import (~7s median, worst ~52s — see "How
   long the gates actually take"). Ids must be unique across *every* manifest — checked
-  repo-wide regardless of which set a run selected — because an id names a golden *and* names
+  repo-wide regardless of which sets a run selected — because an id names a golden *and* names
   the ROM copy the import sees, so a duplicate would let one row silently overwrite another's
   golden, and `expected/` is one directory shared by both platforms.
-- **`--all` does not include `--snes`, and `--snes` does not refresh the staleness stamp.**
-  Both are deliberate. The SNES rows come from `GRM_SNES_ROM_DIR` rather than `GRM_ROM_DIR`,
-  run `SnesRomLoader` rather than `NesRomLoader`, and emit a different dump — so folding them
-  into `--all` would make "the whole real-ROM tier" silently SKIP thirteen rows on a machine
-  with NES ROMs and no SNES ones, on top of the confusion about set membership this file
-  already warns about twice. And the `REALROM STALENESS:` stamp answers one specific question,
-  "has anyone checked real-ROM *analysis* regressions at this commit"; the SNES rows import
-  with `-noanalysis` and answer none of it, so a `--snes` run leaves the stamp alone and says
-  so in its output rather than marking the analysis tier freshly verified.
+- **`nes` (formerly `--all`) does not include `snes`, and a SNES row does not refresh the
+  staleness stamp.** Both are deliberate. The SNES rows come from `GRM_SNES_ROM_DIR` rather than
+  `GRM_ROM_DIR`, run `SnesRomLoader` rather than `NesRomLoader`, and emit a different dump — so
+  folding them into the NES platform group would make "the NES tier" silently SKIP thirteen rows
+  on a machine with NES ROMs and no SNES ones. Multi-platform composition instead lives in the
+  explicit `all` set, which runs both and SKIPs loudly whichever platform's dirs are absent
+  (refusing outright only if *no* platform has any). And the `REALROM STALENESS:` stamp answers
+  one specific question, "has anyone checked real-ROM *analysis* regressions at this commit";
+  the SNES rows import with `-noanalysis` and answer none of it, so `realrom/platforms.tsv`
+  declares `stamps_staleness=no` for the SNES platform and a SNES-only run leaves the stamp
+  alone and says so in its output rather than marking the analysis tier freshly verified. The
+  stamp also now records, as a third line, which sets a run resolved — a `core`-only run says so
+  plainly, and a pre-grm-ughg stamp reads as "unknown (pre-grm-ughg stamp)" rather than guessing.
 - **The SNES set is a LOADER tier, with its own dump script.** Thirteen hash-pinned cartridges
   covering the alt-board axis the eleven-ROM GME corpus does not — SA-1, SuperFX 1/2, DSP-1 in
   both LoROM and HiROM form, S-DD1, CX4, the corpus's one genuine ExHiROM, and a clean/copier
@@ -699,7 +721,7 @@ it is never a `run-banktest.sh` chunk (whose `all` would otherwise pull it in).
   edit changes the very layout the dump records. A reused candidate is additionally asserted
   to name this row and this ROM before it is accepted, so the next key omission fails loudly
   instead of blessing a stale dump.
-- **`nominate` is NES-only** and refuses `--snes` rather than emitting garbage rows, since a
+- **`nominate` is NES-only** and refuses SNES rows rather than emitting garbage, since a
   SNES cartridge has no iNES header and no `machines/nes-*.yaml` claims it. SNES rows are
   selected from the `grm-9nxj.13` corpus survey (`build-and-test.sh check snes-rom-corpus` →
   `build/snes-rom-corpus/roms.tsv`), which already emits name, size, sha256 and every parsed
@@ -742,9 +764,16 @@ it is never a `run-banktest.sh` chunk (whose `all` would otherwise pull it in).
   owner's standing decision is to leave both failing and documented until upstream moves.
 
   Because expected pass/fail counts go stale faster than anything else in this document, they are
-  deliberately **not** stated here. The `realrom-current-fails` bd memory is the single
-  authoritative list of which rows are expected to fail and why; `realrom-12-1-3-toolchain-fails`
-  carries the full experiment, and `realrom-howto` the method. See also `grm-qp5x`.
+  deliberately **not** stated here as an ongoing expectation. The `realrom-current-fails` bd
+  memory is the single authoritative list of which rows are expected to fail and why;
+  `realrom-12-1-3-toolchain-fails` carries the full experiment, and `realrom-howto` the method.
+  See also `grm-qp5x`. As a one-time data point rather than a baseline to match, the full
+  multi-platform `check all` run that verified the `grm-ughg` set-selection refactor (2026-09-06)
+  measured `pass=39 fail=7`, and the 7 were exactly the documented attributed-or-bistable set:
+  `megaman` and `wizwarr` (attributed to the 12.1.3 toolchain, above) plus `dodge`, `ff1`,
+  `rcproam`, `dragonpower` and `lwings` (bistable/jitter rows tracked elsewhere in this file and
+  in `realrom-current-fails`). Nothing new failed — the point of citing it here is that the
+  refactor changed *how rows are selected*, not *which rows pass*.
 - **Scripted A/B (`tools/banktest/ab-test.sh`, grm-5jjs):** attributing a real-ROM row's
   behaviour to a specific commit (or to a Ghidra toolchain change, via `--toolchain`) used to be
   a hand-run stash/rebuild/diff procedure with an easy-to-forget rebuild step in the middle.

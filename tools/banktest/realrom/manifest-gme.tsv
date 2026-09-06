@@ -1,21 +1,21 @@
-id	title	sha256	mapper	board	golden	loader_opts
-bionic	Bionic Commando	6492e8d8b7526c5dbf2462d8a584073e59daab78d5b99758247caef716bb9ae1	1	nes_mmc1	bionic.dump	
-blmaster	Blaster Master	af1ddc67e01436573fc633b73730e13d1add1d64acb3f2a77d880efe9d67ba68	1	nes_mmc1	blmaster.dump	
-cv2	Castlevania 2: Simon's Quest	f045d72683d3156555eccbb56090888f03a15e5b25e59db49dca7a87330472d3	1	nes_mmc1	cv2.dump	
-cv3	Castlevania 3: Dracula's Curse (U) [o2]	366bfec7490d1db1c05d882b6d21125d2d6828a49d61292da5609abecee24b48	5	nes_mmc5	cv3.dump	
-dodge	Super Dodgeball	48ecc9a3e93a1d92ecfa84f2b651a3542ef02d484ecf484639aedd2574ec63bd	1	nes_mmc1	dodge.dump	
-drmario	Dr. Mario	33bf00489ec593bdf1d5255154735912503754de2f2d679c00b8229e5f024812	1	nes_mmc1	drmario.dump	
-ff1	Final Fantasy	f81377a42fcc13f916714aacd85c3713c01540d5983a029b60244f206437af43	1	nes_mmc1	ff1.dump	
-kicarus	Kid Icarus	caa6e5a173c403618e0fb2a9389ffed9836a1fa4aec7084ea71e548f8288fadc	1	nes_mmc1	kicarus.dump	
-lifeforce	Life Force	803f1c82ae197d73f6522410eaab79424ee8cfbbc24e4127053e8e39cb1ef586	2	nes_uxrom	lifeforce.dump	
-lwings	Legendary Wings	73c05c708e699875178a8944cb3446087939e9b12e17cd867d4150fe8680a857	2	nes_uxrom	lwings.dump	
-smb2	Super Mario Bros 2	89b3ce11c3cc67ab231ec3f15393f3d460a58cc4e7d554190fcb27887ea54f80	4	nes_mmc3	smb2.dump	
-megaman2	Mega Man 2	27b5a635df33ed57ed339dfc7fd62fc603b39c1d1603adb5cdc3562a0b0d555b	1	nes_mmc1	megaman2.dump	
-megaman3	Mega Man 3	3d1669a14c4ea3d1272038f35f20b88dc574847c5cfb0293ddb289f8bb956a6e	4	nes_mmc3	megaman3.dump	
-rcproam	RC Pro-am	4aaaa0f1c125e96f2f76af926bec72f657a0331e80aeb697123be27cd81d870a	1	nes_mmc1	rcproam.dump	
-rcransom	River City Ransom	b95f8def04c0012604b7cc68cf4ed8f49b2dfe4beda6182051de4b2423bea7b1	4	nes_mmc3	rcransom.dump	
-tetris	Tetris	b548117a91d769834cb3a49178247d1b4f84e2f13bdbbf23d4173124ab6661cf	1	nes_mmc1	tetris.dump	
-tmnt	Teenage Mutant Ninja Turtles	9ff2693fdafb0c454d571b34bae6623a806db4a317ce2fcb2fea0f721bc04083	1	nes_mmc1	tmnt.dump	
-ultimaav	Ultima IV: Quest of the Avatar	8acaea14008b73f5564b35b3c09c2ac404cf1a64e87817e491d9540679354e9d	1	nes_mmc1	ultimaav.dump	
-wizwarr	Wizards and Warriors	463018ac63de3b31a006882538fa1e0b500ba113ad7263e09669039e1193d7dc	7	nes_axrom	wizwarr.dump	
-zelda2	Zelda 2: The Adventure of Link	ab528c5df91b2443c3265b6f5204cc6c5f0022175eeabe9e8059d075a5dd3637	1	nes_mmc1	zelda2.dump	
+id	title	sha256	mapper	board	golden	loader_opts	member
+bionic	Bionic Commando	6492e8d8b7526c5dbf2462d8a584073e59daab78d5b99758247caef716bb9ae1	1	nes_mmc1	bionic.dump		
+blmaster	Blaster Master	af1ddc67e01436573fc633b73730e13d1add1d64acb3f2a77d880efe9d67ba68	1	nes_mmc1	blmaster.dump		
+cv2	Castlevania 2: Simon's Quest	f045d72683d3156555eccbb56090888f03a15e5b25e59db49dca7a87330472d3	1	nes_mmc1	cv2.dump		
+cv3	Castlevania 3: Dracula's Curse (U) [o2]	366bfec7490d1db1c05d882b6d21125d2d6828a49d61292da5609abecee24b48	5	nes_mmc5	cv3.dump		
+dodge	Super Dodgeball	48ecc9a3e93a1d92ecfa84f2b651a3542ef02d484ecf484639aedd2574ec63bd	1	nes_mmc1	dodge.dump		
+drmario	Dr. Mario	33bf00489ec593bdf1d5255154735912503754de2f2d679c00b8229e5f024812	1	nes_mmc1	drmario.dump		
+ff1	Final Fantasy	f81377a42fcc13f916714aacd85c3713c01540d5983a029b60244f206437af43	1	nes_mmc1	ff1.dump		
+kicarus	Kid Icarus	caa6e5a173c403618e0fb2a9389ffed9836a1fa4aec7084ea71e548f8288fadc	1	nes_mmc1	kicarus.dump		
+lifeforce	Life Force	803f1c82ae197d73f6522410eaab79424ee8cfbbc24e4127053e8e39cb1ef586	2	nes_uxrom	lifeforce.dump		
+lwings	Legendary Wings	73c05c708e699875178a8944cb3446087939e9b12e17cd867d4150fe8680a857	2	nes_uxrom	lwings.dump		
+smb2	Super Mario Bros 2	89b3ce11c3cc67ab231ec3f15393f3d460a58cc4e7d554190fcb27887ea54f80	4	nes_mmc3	smb2.dump		
+megaman2	Mega Man 2	27b5a635df33ed57ed339dfc7fd62fc603b39c1d1603adb5cdc3562a0b0d555b	1	nes_mmc1	megaman2.dump		
+megaman3	Mega Man 3	3d1669a14c4ea3d1272038f35f20b88dc574847c5cfb0293ddb289f8bb956a6e	4	nes_mmc3	megaman3.dump		
+rcproam	RC Pro-am	4aaaa0f1c125e96f2f76af926bec72f657a0331e80aeb697123be27cd81d870a	1	nes_mmc1	rcproam.dump		
+rcransom	River City Ransom	b95f8def04c0012604b7cc68cf4ed8f49b2dfe4beda6182051de4b2423bea7b1	4	nes_mmc3	rcransom.dump		
+tetris	Tetris	b548117a91d769834cb3a49178247d1b4f84e2f13bdbbf23d4173124ab6661cf	1	nes_mmc1	tetris.dump		
+tmnt	Teenage Mutant Ninja Turtles	9ff2693fdafb0c454d571b34bae6623a806db4a317ce2fcb2fea0f721bc04083	1	nes_mmc1	tmnt.dump		
+ultimaav	Ultima IV: Quest of the Avatar	8acaea14008b73f5564b35b3c09c2ac404cf1a64e87817e491d9540679354e9d	1	nes_mmc1	ultimaav.dump		
+wizwarr	Wizards and Warriors	463018ac63de3b31a006882538fa1e0b500ba113ad7263e09669039e1193d7dc	7	nes_axrom	wizwarr.dump		
+zelda2	Zelda 2: The Adventure of Link	ab528c5df91b2443c3265b6f5204cc6c5f0022175eeabe9e8059d075a5dd3637	1	nes_mmc1	zelda2.dump		

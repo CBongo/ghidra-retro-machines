@@ -331,15 +331,32 @@ grm_realrom_staleness_note() {
 	fi
 	stamp_commit="$(sed -n '1p' "$GRM_REALROM_STAMP")"
 	stamp_when="$(sed -n '2p' "$GRM_REALROM_STAMP")"
+	# Line 3 (bead grm-ughg) is the set list the run resolved. It is an ADDITION to a
+	# previously two-line format, so an older stamp -- one exists in every live worktree --
+	# reads as "unknown" rather than breaking. Reported because a five-row `core` run and a
+	# full 33-row run are otherwise indistinguishable here, and treating them as equivalent
+	# would let the cheap one silence the warning that exists to demand the expensive one.
+	stamp_sets="$(sed -n '3p' "$GRM_REALROM_STAMP")"
+	stamp_sets_note=" sets: ${stamp_sets:-unknown (pre-grm-ughg stamp)}."
+	if [ "$stamp_sets" = core ]; then
+		stamp_sets_note="$stamp_sets_note That was the CORE floor only (5 rows) -- it does NOT"
+		stamp_sets_note="$stamp_sets_note satisfy the full-tier requirement for analysis changes."
+	fi
+	case "$stamp_sets" in
+		*PARTIAL*)
+			stamp_sets_note="$stamp_sets_note Rows were filtered out, so the named set(s) were"
+			stamp_sets_note="$stamp_sets_note NOT covered in full." ;;
+	esac
 	if [ -n "$stamp_commit" ] && [ "$stamp_commit" = "$head" ]; then
-		echo "REALROM STALENESS: last verified run was AT current HEAD ($stamp_commit, $stamp_when)."
+		echo "REALROM STALENESS: last verified run was AT current HEAD ($stamp_commit," \
+			"$stamp_when).$stamp_sets_note"
 	else
 		behind="?"
 		if [ -n "$stamp_commit" ] && [ "$stamp_commit" != unknown ] && [ "$head" != unknown ]; then
 			behind="$(git -C "$REPO_ROOT" rev-list --count "$stamp_commit..$head" 2>/dev/null || echo '?')"
 		fi
 		echo "REALROM STALENESS: last verified run was at commit ${stamp_commit:-unknown}" \
-			"($stamp_when), $behind commit(s) behind current HEAD ($head)." \
+			"($stamp_when), $behind commit(s) behind current HEAD ($head).$stamp_sets_note" \
 			"Changes since then have NOT been checked against real ROMs."
 	fi
 }

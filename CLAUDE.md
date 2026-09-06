@@ -145,8 +145,11 @@ Chunk/source-area mapping:
 **The real-ROM tier is separate, opt-in, and takes NO paths — just run it:**
 
 ```bash
-bash tools/banktest/realrom-test.sh check --all           # NES: romdirs come from GRM_ROM_DIR
-bash tools/banktest/realrom-test.sh check --snes          # SNES: romdirs come from GRM_SNES_ROM_DIR
+bash tools/banktest/realrom-test.sh check            # core floor, 5 rows, ~46s
+bash tools/banktest/realrom-test.sh check nes         # full NES tier, 33 rows -- romdirs from GRM_ROM_DIR
+bash tools/banktest/realrom-test.sh check snes        # full SNES tier, 13 rows -- romdirs from GRM_SNES_ROM_DIR
+bash tools/banktest/realrom-test.sh check all         # everything, every platform, 46 rows
+bash tools/banktest/realrom-test.sh --list-sets       # print the table below
 ```
 
 No prior `build-and-test.sh` run is required (bead grm-4t2d option (e)): `realrom-test.sh`
@@ -154,42 +157,59 @@ stages the isolated extension itself before analyzing, the same way `run-banktes
 "The runners build by default" below. Pass `--no-build` (or set `GRM_SKIP_BUILD=1`) to skip that
 and analyze with whatever is already installed instead.
 
-**Use `--all`, and note that the manifests do NOT accumulate.** No flag = `manifest.tsv`, the
-curated board-representative set (12 rows). `--gme` = `manifest-gme.tsv` *only* (19 rows).
-`--all` = both. This trips people because a bare `check` looks like "the real-ROM tier" and is
-actually a third of it — and *every* title this project discusses constantly (wizwarr, blmaster,
-cv2, tmnt, smb2, rcransom, ff1, dodge, rcproam) lives in the **GME** set, so a bare `check` never
-touches one of them. Sharpest illustration: all three ROMs the grm-mu7 incident below destroyed —
-kicarus, dodge, cv2 — are GME rows, so a bare `check` would not have caught the very regression
-this requirement exists to prevent.
+**Selection is by positional SET NAME, not a flag per platform (bead grm-ughg).** This mirrors
+`build-and-test.sh`'s chunk vocabulary — the in-repo precedent for exactly this problem — and
+replaced a design where a flag selected a platform-specific subset and this file spent three
+paragraphs warning which third of the tier each flag actually covered (a bare `check` meant the
+curated NES set alone, `--all` didn't mean "all", `--snes` was a fourth undocumented meaning of
+the same word). Sets **compose** and are deduplicated by id, so naming several is safe:
 
-**`--snes` is a FOURTH set, on a different platform, and `--all` does NOT include it** (bead
-`grm-9nxj.15`). `--snes` = `realrom/manifest-snes.tsv` *only*: thirteen hash-pinned SNES
-cartridges chosen to cover the alt-board axis the eleven-ROM GME corpus does not — SA-1,
-SuperFX 1/2, DSP-1 in both LoROM and HiROM form, S-DD1, CX4, the one genuine ExHiROM, and a
-clean/copier **pair** on each of two titles (a copier-detection regression shifts every offset
-in the image, so it cannot pass by matching one golden of a pair). Its romdirs come from
-**`GRM_SNES_ROM_DIR`**, not `GRM_ROM_DIR`; `GRM_ROM_DIR` stays NES-only. Both are read with
-identical semantics — space-separated dirs, each indexed at depth 1 only.
+| name | rows | what |
+|---|---|---|
+| `core` | 5 | Always-run floor: the two stable grm-mu7 victims, the thread-pin canary, and two controls. **The default for a bare `check`.** |
+| `nes-curated` | 13 | Curated NES board-representative set (one title per shipped board) |
+| `nes-gme` | 20 | NES game-music-extraction titles of interest |
+| `snes-cart` | 13 | SNES alt-board cartridge loader sample (loader layout only, `-noanalysis`) |
+| `nes` | 33 | platform group: every NES set (`nes-curated` + `nes-gme`) |
+| `snes` | 13 | platform group: every SNES set (`snes-cart`) |
+| `all` | 46 | every set on every platform |
 
-Keeping it out of `--all` is deliberate rather than an omission: these rows run
-`SnesRomLoader` with `-noanalysis` and assert loader LAYOUT (block inventory, byte-mapped
-mirrors, IO typing, entry point) rather than banking analysis, so folding them in would make
-"the whole real-ROM tier" silently SKIP thirteen rows on any machine holding NES ROMs and no
-SNES ones — a fourth meaning for the flag this section already warns twice about. For the same
-reason a `--snes` run does **not** refresh the `REALROM STALENESS:` stamp described below, and
-says so in its output: that stamp answers "has anyone checked real-ROM *analysis* regressions
-at this commit", which a `-noanalysis` loader pass answers not at all. The requirement in the
-next paragraph is therefore unchanged — `--all` before an analysis-behaviour commit — with
-`--snes` its counterpart before a commit touching `SnesRomLoader`, `SnesAddressMap`,
-`SnesRomHeader` or `machines/snes.*`.
+**A bare `check` now runs `core`, not the curated NES set** — the owner's ruling on grm-ughg.
+`core` is a *new* always-run floor, not a renamed manifest: it is a cross-manifest subset of
+existing rows (kicarus, cv2, tmnt, smb, zelda), assembled to be cheap (measured 46s) so there is
+no longer an excuse to run nothing. It does **not** satisfy the full-tier requirement below —
+see that paragraph.
 
-`nominate` is NES-only and refuses `--snes` rather than emitting garbage (it decodes iNES
+**The old flags still work, as deprecated aliases that print a one-line note:** `(no flag)` used
+to mean `nes-curated`, and is now spelled `nes-curated`; `--gme` → `nes-gme`; `--all` → `nes`;
+`--snes` → `snes`. Note `--all` still maps to exactly what it always meant — both NES manifests,
+33 rows — that part of the old contract is honored, not broken. The word that changed meaning is
+the *bare, unflagged* `all`: it now spans every platform (46 rows), because a word that didn't
+mean what it said is what grm-ughg was filed to fix.
+
+**Multi-platform runs now work in one invocation.** `all` runs NES and SNES rows together;
+every per-row parameter (ROM-dir env var, image extensions indexed, loader, dump script,
+import args, whether the row refreshes the staleness stamp) is resolved per row from
+`tools/banktest/realrom/platforms.tsv` rather than fixed once per invocation, so adding a
+platform is a table row, not a code change. A platform whose ROM-dir variable is unset SKIPs its
+rows loudly rather than killing the run — `all` is usable by someone holding only one platform's
+images — but if *no* platform has any dirs the run still refuses outright with a nonzero exit;
+this tier never reports a clean gate for something that did not execute.
+
+The SNES rows still import with `-noanalysis`: they are LOADER rows (block inventory,
+byte-mapped mirrors, IO typing, entry point), nothing `SnesRealRomDump.java` emits depends on
+auto-analysis, and skipping it is both much faster on a 4–6 MB cartridge and immune to the
+analyzer jitter that makes some NES rows unstable. For the same reason a SNES row never
+refreshes the `REALROM STALENESS:` stamp described below (`platforms.tsv` declares
+`stamps_staleness=no` for it) — that stamp answers "has anyone checked real-ROM *analysis*
+regressions at this commit", which a `-noanalysis` loader pass answers not at all.
+
+`nominate` is NES-only and refuses SNES rows rather than emitting garbage (it decodes iNES
 headers). Select SNES rows from the `grm-9nxj.13` corpus survey's
 `build/snes-rom-corpus/roms.tsv` instead, which carries name, size, sha256 and every parsed
 header field — that is where the thirteen rows and their hashes came from.
 
-**`tools/banktest/realrom-test.sh check --all` is REQUIRED before committing any change that
+**`tools/banktest/realrom-test.sh check nes` is REQUIRED before committing any change that
 touches analysis behaviour** (`BoardBankAnalyzer`, any `BankSwitchStrategy`, `StoredValueScanner`, or
 similar), alongside `build-and-test.sh check` — not a substitute for it, an addition to it. This
 is not optional-nice-to-have: `build-and-test.sh check`'s synthetic goldens, by construction, only
@@ -198,15 +218,20 @@ passed the full synthetic gate cleanly while destroying three pinned real ROMs (
 cv2) — caught only because an unrelated task happened to run the real-ROM tier a day later. See
 bead `grm-6kv` for the incident and the ruling that keeps this a required *local* step rather than
 a redesigned gate (the tier cannot be a hard CI gate: it needs user-supplied, hash-pinned ROMs the
-repo cannot ship).
+repo cannot ship). `core` is a floor added *beneath* that requirement for changes that previously
+owed the tier nothing at all; it is not a substitute for `nes` on an analysis-behaviour change.
 
 Both `realrom-test.sh` and `build-and-test.sh check` print a `REALROM STALENESS:` line naming the
-commit (or "absent") of the last real-ROM run *that actually verified rows* — including a run that
-ended `FAIL` on the two known-baseline rows above, since the point is "did anyone run this
-lately", not "did it pass"; only a run that matched no ROMs at all leaves the stamp untouched. A
-gate that never ran that tier says so out loud instead of reporting a quiet green. Do not treat a
-stale/absent stamp as informational only — if it names a commit behind changes you are about to
-commit that touch analysis behaviour, run the tier before committing, per the paragraph above.
+commit (or "absent") of the last real-ROM run *that actually verified rows*, and, as of grm-ughg,
+a third line naming which sets that run resolved — including a run that ended `FAIL` on the
+known-baseline rows below, since the point is "did anyone run this lately", not "did it pass";
+only a run that matched no ROMs at all leaves the stamp untouched. A `core`-only run reports
+that plainly ("sets: core... does NOT satisfy the full-tier requirement for analysis changes"),
+and a stamp written before grm-ughg reads as "unknown (pre-grm-ughg stamp)" rather than guessing
+its scope. A gate that never ran that tier, or ran only its floor, says so out loud instead of
+reporting a quiet green. Do not treat a stale/absent/floor-only stamp as informational only — if
+it names a commit behind changes you are about to commit that touch analysis behaviour, run
+`check nes` before committing, per the paragraph above.
 
 `GRM_ROM_DIR` is set per machine (`.claude/settings.local.json`, gitignored) and holds **several
 space-separated dirs**, because the curated manifest is split across more than one and the driver
@@ -252,10 +277,11 @@ output (e.g. a Ghidra GDT archive) embedding something path/build-instance-speci
 `ext_identity()` mismatch as informative, not proof of a real source difference; the dump-vs-dump
 diff `ab-test.sh` prints is the reliable signal regardless.
 
-When the run's ROM-dir variable (`GRM_ROM_DIR`, or `GRM_SNES_ROM_DIR` under `--snes`) is unset
-and no romdir is passed, `realrom-test.sh` refuses to run (nonzero exit, loud stderr message
-naming the variable it wanted) rather than silently doing nothing — it never reports a clean
-gate for a tier that did not execute.
+When none of the selected sets' platforms have a ROM-dir variable set (`GRM_ROM_DIR` for NES,
+`GRM_SNES_ROM_DIR` for SNES) and no romdir is passed, `realrom-test.sh` refuses to run (nonzero
+exit, loud stderr message naming the variable(s) it wanted) rather than silently doing nothing —
+it never reports a clean gate for a tier that did not execute. A multi-platform run with only
+*some* dirs set still executes; it SKIPs the platform it can't see rather than refusing.
 
 **The exhaustive SPC700 vector tier (`spc700-vectors` chunk) has the same standing as the
 real-ROM tier**: opt-in, needs user-supplied data (`GRM_SPC700_VECTORS`, a full clone of
@@ -321,7 +347,7 @@ regression (see `AGENTS.md`'s "The runners build by default" section and the
 
 ```bash
 bash tools/banktest/run-banktest.sh check --no-build nes-banking
-GRM_SKIP_BUILD=1 bash tools/banktest/realrom-test.sh check --all
+GRM_SKIP_BUILD=1 bash tools/banktest/realrom-test.sh check nes
 ```
 
 `stageExtensionForTests` (`build.gradle`) has real Gradle inputs (compiled classes, `data/`,

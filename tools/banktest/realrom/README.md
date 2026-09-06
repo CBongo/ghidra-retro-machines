@@ -12,43 +12,85 @@ and `../realrom-test.sh` for the driver.
 driver at directories you already have:
 
 ```bash
-bash tools/banktest/realrom-test.sh check [--only|--except <ids>] <romdir> [<romdir> ...]
-bash tools/banktest/realrom-test.sh bless [--only|--except <ids>] <romdir> [<romdir> ...]
+bash tools/banktest/realrom-test.sh check [SET ...] [--only|--except <ids>] <romdir> [<romdir> ...]
+bash tools/banktest/realrom-test.sh bless [SET ...] [--only|--except <ids>] <romdir> [<romdir> ...]
 ```
 
-(or set `GRM_ROM_DIR`). The goldens under `expected/` — our derived, copyright-safe
-analysis metadata, never ROM bytes or disassembly — *are* committed.
+(or set `GRM_ROM_DIR`/`GRM_SNES_ROM_DIR`). The goldens under `expected/` — our derived,
+copyright-safe analysis metadata, never ROM bytes or disassembly — *are* committed.
 
 ## The sets
 
-| file | what it is | selected by | ROM dir from |
-| --- | --- | --- | --- |
-| `manifest.tsv` | The **curated NES minimum**: one representative title per shipped board, plus fuller coverage of the boards where a single title proves least — Bandai FCG (mappers 16/157/159) and GxROM (66), the newest additions when the set was assembled. | *(default)* | `GRM_ROM_DIR` |
-| `manifest-gme.tsv` | The **expanded NES reference set**: titles of interest to the parent game-music-extraction project. Deliberately *not* a gate — it is a reference point for planning and an occasional thorough check. | `--gme` | `GRM_ROM_DIR` |
-| both NES manifests | The thorough NES pass. | `--all` | `GRM_ROM_DIR` |
-| `manifest-snes.tsv` | The **SNES loader set**: thirteen cartridges covering the alt-board axis the eleven-ROM GME corpus does not — SA-1, SuperFX 1/2, DSP-1 in both LoROM and HiROM form, S-DD1, CX4, the one genuine ExHiROM, a clean/copier pair on each of two titles, and one cartridge whose declared map mode contradicts its header location. | `--snes` | `GRM_SNES_ROM_DIR` |
+Row selection is by **positional set name** (bead `grm-ughg`), not a flag per platform. Sets
+are declared in [`sets.tsv`](sets.tsv), and platform groups (every set on one platform, plus
+the driver's own `all`, every set on every platform) are derived from
+[`platforms.tsv`](platforms.tsv) — see "`sets.tsv` and `platforms.tsv`" below. `--list-sets`
+prints the resolved table. Sets **compose** and are deduplicated by id, so naming several is
+safe.
+
+| set | platform | manifest(s) | rows | what |
+| --- | --- | --- | --- | --- |
+| `core` | nes | both | kicarus, cv2, tmnt, smb, zelda | Always-run floor (~46s measured): the two stable grm-mu7 victims, the thread-pin canary, and two controls. **The default for a bare `check`.** |
+| `nes-curated` | nes | `manifest.tsv` | every row | The curated NES minimum: one representative title per shipped board, plus fuller coverage of the boards where a single title proves least — Bandai FCG (mappers 16/157/159) and GxROM (66), the newest additions when the set was assembled. |
+| `nes-gme` | nes | `manifest-gme.tsv` | every row | The expanded NES reference set: titles of interest to the parent game-music-extraction project. Deliberately *not* a gate — a reference point for planning and an occasional thorough check. |
+| `snes-cart` | snes | `manifest-snes.tsv` | every row | The SNES loader set: thirteen cartridges covering the alt-board axis the eleven-ROM GME corpus does not — SA-1, SuperFX 1/2, DSP-1 in both LoROM and HiROM form, S-DD1, CX4, the one genuine ExHiROM, a clean/copier pair on each of two titles, and one cartridge whose declared map mode contradicts its header location. |
+
+Platform groups, derived from `platforms.tsv`: **`nes`** (`nes-curated` + `nes-gme`, 33 rows —
+what `--all` used to mean, and still does under that spelling) and **`snes`** (`snes-cart`, 13
+rows — what `--snes` used to mean). **`all`** is the driver's own union of every set on every
+platform (46 rows) — the word that changed meaning in `grm-ughg`, since before it there was no
+bare `all` at all, only the `--all` flag meaning "both NES manifests."
 
 ```bash
-bash tools/banktest/realrom-test.sh check <romdir>          # curated NES set
-bash tools/banktest/realrom-test.sh check --gme <romdir>    # NES GME set only
-bash tools/banktest/realrom-test.sh check --all <romdir>    # both NES manifests
-bash tools/banktest/realrom-test.sh check --snes <romdir>   # SNES set only
+bash tools/banktest/realrom-test.sh check <romdir>              # core floor (default), 5 rows
+bash tools/banktest/realrom-test.sh check nes-curated <romdir>  # curated NES set only
+bash tools/banktest/realrom-test.sh check nes-gme <romdir>      # NES GME set only
+bash tools/banktest/realrom-test.sh check nes <romdir>          # both NES manifests (formerly --all)
+bash tools/banktest/realrom-test.sh check snes <romdir>         # SNES set only (formerly --snes)
+bash tools/banktest/realrom-test.sh check all <romdir>          # every set, every platform
 ```
 
-The flags **select** a set rather than adding to one, and every run announces which set it
-picked. `--gme` meaning "the GME set *plus* the curated twelve" is a costly surprise under
-`bless`, where it silently re-blesses goldens you never asked about.
+**The old flags still work, as deprecated aliases that print a one-line note:** `(no flag)` →
+`nes-curated`, `--gme` → `nes-gme`, `--all` → `nes`, `--snes` → `snes`. The flags/sets *select*
+rather than adding to a running total, and every run announces which sets it resolved and the
+rows they expanded to — `--gme` silently meaning "the GME set *plus* the curated thirteen" would
+be a costly surprise under `bless`, re-blessing goldens you never asked about.
 
-**`--all` means the two NES manifests, and deliberately does *not* include `--snes`.** The
-SNES rows come from a different environment variable, a different loader (`SnesRomLoader`),
-and a different dump script, and they assert loader *layout* rather than banking analysis —
-so folding them into `--all` would make "the whole real-ROM tier" silently SKIP thirteen rows
-on any machine that has NES ROMs and no SNES ones. Ask for them by name.
+**`nes` means the two NES manifests, and deliberately does *not* include `snes`.** The SNES rows
+come from a different environment variable, a different loader (`SnesRomLoader`), and a
+different dump script, and they assert loader *layout* rather than banking analysis — so folding
+them into the NES platform group would make "the NES tier" silently SKIP thirteen rows on any
+machine that has NES ROMs and no SNES ones. Reach for `all` to run both platforms in one
+invocation: a platform whose ROM-dir variable is unset SKIPs its rows loudly rather than killing
+the run, and only refuses outright if *no* platform has any dirs at all.
 
-For the same reason, a `--snes` run **does not refresh the `REALROM STALENESS:` stamp**. That
-stamp answers one question — "has anyone checked real-ROM *analysis* regressions at this
-commit" — and the SNES rows import with `-noanalysis`. The run says so out loud rather than
-letting a loader pass mark the analysis tier freshly verified.
+For the same reason, a `snes`-only run **does not refresh the `REALROM STALENESS:` stamp** —
+`platforms.tsv` declares `stamps_staleness=no` for the SNES platform, not a check on the set's
+name. That stamp answers one question — "has anyone checked real-ROM *analysis* regressions at
+this commit" — and the SNES rows import with `-noanalysis`. The run says so out loud rather than
+letting a loader pass mark the analysis tier freshly verified. As of `grm-ughg` the stamp also
+records, as a third line, which sets a run resolved, so a `core`-only run is visibly *not* the
+full-tier requirement below, and a stamp written before this change reads as "unknown
+(pre-grm-ughg stamp)" rather than guessing its scope.
+
+## `sets.tsv` and `platforms.tsv`
+
+Two small tables carry everything that used to be a `case` block or a scattered flag check:
+
+- **`sets.tsv`** (`set`, `platform`, `manifests`, `rows`, `description`) names each set, which
+  platform it belongs to, which manifest file(s) it draws from, and which row ids it selects
+  (`*` for "every row in those manifests," or a comma list for a cross-manifest subset like
+  `core`). Adding a set — a new curated slice of an existing manifest, say — is a row here.
+- **`platforms.tsv`** (`platform`, `rom_dir_env`, `image_exts`, `copy_ext`, `loader`,
+  `dump_script`, `import_args`, `nominate`, `stamps_staleness`, `fallback_chunk`) names
+  everything that differs *per platform*: the ROM-dir environment variable, the file extensions
+  the sha256 index scans, the extension of the temp copy the import sees, the Ghidra loader,
+  the dump post-script, extra `analyzeHeadless` arguments (`-noanalysis` for SNES), whether
+  `nominate` supports the platform, whether a row on this platform refreshes the
+  `REALROM STALENESS:` stamp, and which `build-and-test.sh` chunk to name in an isolation hint.
+  **Adding a platform — a future PSX ISO tier, say — is a row in each table, not a code
+  change**: `realrom-test.sh` resolves every per-row parameter from `platforms.tsv` rather than
+  branching on platform name.
 
 ### What differs per platform
 
@@ -117,8 +159,8 @@ assert on log content and on the absence of a committed program, which this driv
 shape for. It belongs to bead `grm-9nxj.14` and becomes an ordinary positive row once the
 map-type override option exists there.
 
-Each row costs a headless import — median ~7s, worst ~52s, so a full 33-row `--all` run is
-about 6 minutes (measured 2026-08-31, bead `grm-yfma`; see docs/testing.md "How long the
+Each row costs a headless import — median ~7s, worst ~52s, so a full 33-row `check nes` run
+(formerly `--all`) is about 6 minutes (measured 2026-08-31, bead `grm-yfma`; see docs/testing.md "How long the
 gates actually take"). The expanded set is opt-in because it needs user-supplied hash-pinned
 ROMs this repo cannot ship, not because it is slow. An id must be unique **across every manifest** — ids name goldens and name the ROM
 copy the import sees, so a duplicate would import twice and let the second row silently
@@ -127,7 +169,7 @@ like success.
 
 ### Populating the expanded set (NES only)
 
-`nominate` is **NES-only** and refuses `--snes` rather than emitting garbage: it decodes iNES
+`nominate` is **NES-only** and refuses SNES rows rather than emitting garbage: it decodes iNES
 headers and resolves `machines/nes-*.yaml`, neither of which means anything for a SNES
 cartridge. SNES rows are selected instead from the `grm-9nxj.13` corpus survey
 (`bash tools/banktest/build-and-test.sh check snes-rom-corpus` produces
@@ -183,12 +225,18 @@ headers and every other line becomes a row. Notes belong here, not in the data f
 | `board` | NES: board descriptor the mapper selects. SNES: a descriptive board id (`snes_sa1`, `snes_superfx`, `snes_dsp`, `snes_sdd1`, `snes_cx4`, `snes_lorom`, `snes_hirom`, `snes_exhirom`). **Documentation only**, same as `mapper`. |
 | `golden` | Golden file under `expected/`. Defaults to `<id>.dump` when empty. |
 | `loader_opts` | Optional; extra `analyzeHeadless` arguments for this title. Empty on most rows. |
+| `member` | **Reserved, empty on every row today.** Row identity is currently the whole-file
+  SHA-256 in `sha256` alone. When it is non-empty, identity becomes the pair (container
+  SHA-256 in `sha256`, member path in `member`) — e.g. one file inside a PSX ISO or a C64
+  `.d64` image — rather than a change in meaning of `sha256` itself. Container support is
+  **not implemented**; the column exists so that a future container-based platform is a code
+  change in the row-resolution path, not a schema migration across every existing manifest. |
 
-**Every row carries all seven fields**, so rows without `loader_opts` end in an explicit
-empty final field — a trailing tab. GitHub's tabular viewer wants a uniform column count
-and renders ragged rows badly. The parser treats a trailing empty field and a missing one
-identically, so an editor that strips trailing whitespace costs you the rendering, never
-the test.
+**Every row carries all eight fields**, so a row whose trailing columns are empty (`loader_opts`,
+`member`, or both) still ends in the right number of tabs. GitHub's tabular viewer wants a
+uniform column count and renders ragged rows badly. The parser treats a trailing empty field and
+a missing one identically, so an editor that strips trailing whitespace costs you the rendering,
+never the test.
 
 `loader_opts` is expanded **unquoted** onto the headless command line, and it is folded
 into the candidate-dump cache key — so editing it forces a fresh import rather than

@@ -130,17 +130,20 @@ glance rather than reconstructed. See `which-script-builds-the-extension` and
 
 **If you are a subagent, never launch `build-and-test.sh` or `realrom-test.sh` as a background
 task.** Run them in the foreground with a generous timeout and wait. Both gates run in **minutes,
-not hours** — measured 2026-08-31 on the 33-row corpus, four consecutive `realrom-test.sh check
---all` runs took 6m10s–6m36s (median 7s per row), and a full `build-and-test.sh check` 5–6½
-minutes. They are slow enough that backgrounding them looks like the way to stay responsive. For a
-subagent it is not.
+not hours** — measured 2026-08-31 on the 33-row NES corpus, four consecutive `realrom-test.sh
+check nes` (then spelled `--all`) runs took 6m10s–6m36s (median 7s per row), and a full
+`build-and-test.sh check` 5–6½ minutes. The `core` floor `realrom-test.sh` now runs by default
+on a bare `check` (bead grm-ughg) is far cheaper still — 5 rows, measured 46s — so there is even
+less excuse to background it. They are slow enough that backgrounding them looks like the way to
+stay responsive. For a subagent it is not.
 
 **Do not inflate that figure.** This sentence previously said the real-ROM tier "is hours", which
 was never measured and was ~50x high; it rested in turn on a `~1min+` per-import estimate that was
 roughly the *worst* row stated as typical. A wrong cost estimate in an instruction file changes
 agent *decisions*, not just agent prose — the measured case is written up in `grm-yfma`, where an
 agent declined the one 6-minute run that would have settled a question and substituted four cheap
-probes that pointed the wrong way. When a full `--all` run is the decisive experiment, just run it.
+probes that pointed the wrong way. When a full `check nes` (formerly `--all`) run is the decisive
+experiment, just run it.
 Re-measure before quoting a number: these are one machine's timings, and the rows are hash-pinned
 but the hardware is not.
 

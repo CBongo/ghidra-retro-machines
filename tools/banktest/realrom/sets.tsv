@@ -1,0 +1,5 @@
+set	platform	manifests	rows	description
+core	nes	manifest.tsv,manifest-gme.tsv	kicarus,cv2,tmnt,smb,zelda	Always-run floor (~40s): the two STABLE grm-mu7 victims, the thread-pin canary, and two controls
+nes-curated	nes	manifest.tsv	*	Curated NES board-representative set
+nes-gme	nes	manifest-gme.tsv	*	NES game-music-extraction titles of interest
+snes-cart	snes	manifest-snes.tsv	*	SNES alt-board cartridge loader sample (LOADER LAYOUT only, -noanalysis)

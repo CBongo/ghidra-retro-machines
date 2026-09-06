@@ -6,39 +6,54 @@
 # user-supplied, so this lives alongside measure-overlay-scale.sh and is invoked by
 # hand:
 #
-#   bash tools/banktest/realrom-test.sh check    [--gme|--all|--snes] [--only|--except <ids>] [--no-build] <romdir> ...
-#   bash tools/banktest/realrom-test.sh bless    [--gme|--all|--snes] [--only|--except <ids>] [--no-build] <romdir> ...
+#   bash tools/banktest/realrom-test.sh check    [SET ...] [--only|--except <ids>] [--no-build] <romdir> ...
+#   bash tools/banktest/realrom-test.sh bless    [SET ...] [--only|--except <ids>] [--no-build] <romdir> ...
 #   bash tools/banktest/realrom-test.sh nominate <romdir> ...
+#   bash tools/banktest/realrom-test.sh --list-sets
 #
-# (romdirs may also be supplied via GRM_ROM_DIR -- or, for --snes, GRM_SNES_ROM_DIR --
-# space-separated.)
+# SETS ARE NAMED POSITIONALLY, NOT SELECTED BY A FLAG PER PLATFORM (bead grm-ughg). This
+# mirrors build-and-test.sh's chunk vocabulary, which is the in-repo precedent for exactly
+# this problem, and it is the whole point of the refactor: adding a platform must add a ROW
+# to realrom/sets.tsv, not a flag here, a `case` arm below and a paragraph in CLAUDE.md
+# warning people which third of the tier the new flag covers.
 #
-# There are now FOUR row sets across TWO PLATFORMS, and the flags SELECT one rather than
-# adding to it: no flag = realrom/manifest.tsv (the curated NES board-representative set),
-# --gme = realrom/manifest-gme.tsv (NES game-music-extraction titles of interest), --all =
-# both NES manifests, --snes = realrom/manifest-snes.tsv (the SNES alt-board loader sample)
-# ONLY. Additive --gme was the first design and it was wrong: `bless --gme` then silently
-# re-blessed all twelve curated goldens alongside the ones asked for. Every run announces the
-# set it picked.
+#   core          the always-run floor -- five stable rows, ~40s (see sets.tsv)
+#   nes-curated   the curated NES board-representative set
+#   nes-gme       the NES game-music-extraction titles of interest
+#   snes-cart     the SNES alt-board cartridge loader sample
+#   nes | snes    PLATFORM GROUPS: every set declared for that platform
+#   all           every set on every platform
 #
-# --all DELIBERATELY DOES NOT INCLUDE --snes, and that is a decision rather than an oversight
-# (bead grm-9nxj.15). The SNES rows come from a DIFFERENT environment variable
-# (GRM_SNES_ROM_DIR, not GRM_ROM_DIR), a different loader, and a different dump script, and
-# they assert loader LAYOUT rather than banking analysis -- so folding them into --all would
-# make "the whole real-ROM tier" mean something that silently SKIPs thirteen rows on any
-# machine that has NES ROMs and no SNES ones. CLAUDE.md already warns at length that people
-# misread which subset each flag covers; adding a fourth meaning to --all would make that
-# worse. Ask for the SNES rows by name.
+# A bare `check` runs `core` (owner's ruling, 2026-09-06). It used to mean the curated NES
+# set -- a third of the tier -- which is the specific misreading CLAUDE.md spent three
+# paragraphs warning about. Naming something SMALLER and clearly labelled is the fix; every
+# run still announces the sets it resolved and the rows they expanded to.
 #
-# WHAT VARIES PER SET, all of it parameterized below rather than branched inline: the
-# manifest file, the loader (NesRomLoader / SnesRomLoader), the dump postScript
-# (RealRomDump.java / SnesRealRomDump.java), the ROM-dir environment variable, the file
-# extensions the ROM index scans, the extension of the temp copy the import sees (which
-# reaches the golden as `REALROM program <id>.<ext>`), and whether analysis runs at all.
-# The SNES rows import with -noanalysis: they are LOADER rows -- block layout, byte-mapped
-# mirrors, IO typing, entry point -- and nothing SnesRealRomDump.java emits depends on
-# auto-analysis, so skipping it is both much faster on a 4-6 MB cartridge and immune to the
-# analyzer jitter that makes two NES rows unstable.
+# THE OLD FLAGS STILL WORK, as deprecated aliases that print a one-line note:
+#   (no flag) -> nes-curated   --gme -> nes-gme   --all -> nes   --snes -> snes
+# Note --all now maps to the `nes` PLATFORM GROUP, preserving exactly what it always meant
+# (both NES manifests). The bare word `all` is the thing that changed meaning: it now spans
+# every platform, because a word that does not mean what it says is what this bead was filed
+# about. Sets compose and are deduplicated by id, so naming several is safe.
+#
+# MULTI-PLATFORM RUNS ARE NOW POSSIBLE, and every per-platform parameter is resolved PER ROW
+# from realrom/platforms.tsv rather than once per invocation: the ROM-dir environment
+# variable, the file extensions the index scans, the extension of the temp copy the import
+# sees (which reaches the golden as `REALROM program <id><ext>`), the Ghidra loader, the dump
+# postScript, whether analysis runs at all, whether `nominate` is meaningful, whether the run
+# refreshes the staleness stamp, and which build-and-test.sh chunk to name in an isolation
+# hint. Adding a platform is a row in that table.
+#
+# A PLATFORM WHOSE ROM DIRS ARE UNAVAILABLE SKIPS LOUDLY RATHER THAN KILLING THE RUN, so
+# `all` is usable by someone holding one platform's images. But if NO platform has any dirs
+# the run still refuses outright with a nonzero exit -- this tier never reports a clean gate
+# for something that did not execute (CLAUDE.md), and that guarantee is unchanged.
+#
+# The SNES rows still import with -noanalysis: they are LOADER rows -- block layout,
+# byte-mapped mirrors, IO typing, entry point -- and nothing SnesRealRomDump.java emits
+# depends on auto-analysis, so skipping it is both much faster on a 4-6 MB cartridge and
+# immune to the analyzer jitter that makes two NES rows unstable. That is now the declared
+# `import_args` field rather than an `if` in the middle of this script.
 #
 # `nominate` emits paste-ready manifest rows for a ROM dir -- hashing each dump, decoding its
 # iNES mapper and resolving the claiming board -- and flags any mapper no shipped descriptor
@@ -137,11 +152,81 @@
 #   GRM_SKIP_BUILD=1        same opt-out as --no-build (below), for scripted callers
 set -u
 
-USAGE="usage: $0 check|bless|nominate [--gme|--all|--snes] [--only <ids>|--except <ids>] <romdir> [<romdir> ...]
-  (no set flag) realrom/manifest.tsv       -- the curated NES board-representative set
-  --gme         realrom/manifest-gme.tsv   -- the NES game-music-extraction set ONLY
-  --all         both NES manifests (NOT the SNES set -- see the header comment)
-  --snes        realrom/manifest-snes.tsv  -- the SNES loader set ONLY (GRM_SNES_ROM_DIR)"
+# realrom/ holds the two driver tables (bead grm-ughg) as well as the manifests and goldens.
+# Resolved here, ABOVE the common.sh sourcing that establishes SCRIPT_DIR for everything else,
+# because --list-sets must work with no Ghidra install, no ROM dirs and no git repo -- it is
+# the thing you run when you do not know what to type yet.
+REALROM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/realrom"
+SETS_TSV="$REALROM_DIR/sets.tsv"
+PLATFORMS_TSV="$REALROM_DIR/platforms.tsv"
+
+USAGE="usage: $0 check|bless|nominate [SET ...] [--only <ids>|--except <ids>] [--no-build] <romdir> ...
+       $0 --list-sets
+
+SETs are named positionally and compose (rows are deduplicated by id). With no SET,
+'core' is used -- the always-run floor, NOT the whole tier. Run --list-sets for the
+table, which is realrom/sets.tsv plus the platform groups derived from it."
+
+# Reads one field of one row from a header-first TSV. Used for BOTH sets.tsv and
+# platforms.tsv so the two cannot drift on quoting or on how a missing row is reported, and
+# so a new column is readable by name rather than by position -- the manifests' own
+# mapper/board columns are the cautionary tale here: positional reads are why nobody noticed
+# for months that the driver parses them and never uses them.
+# Prints nothing and returns 1 when the key is absent; callers decide whether that is fatal
+# (an unknown set name) or normal (an optional column).
+tsv_field() {
+	local file="$1" key="$2" column="$3"
+	awk -F'\t' -v key="$key" -v col="$column" '
+		NR == 1 { for (i = 1; i <= NF; i++) if ($i == col) c = i; next }
+		!/^#/ && NF && $1 == key { if (c) { print $c; found = 1 } exit }
+		END { exit(found ? 0 : 1) }
+	' "$file"
+}
+
+# Every value in one column, in file order, blank/comment/header rows skipped.
+tsv_column() {
+	local file="$1" column="$2"
+	awk -F'\t' -v col="$column" '
+		NR == 1 { for (i = 1; i <= NF; i++) if ($i == col) c = i; next }
+		!/^#/ && NF && c { print $c }
+	' "$file"
+}
+
+for f in "$SETS_TSV" "$PLATFORMS_TSV"; do
+	[ -f "$f" ] || {
+		echo "ERROR: missing $f -- this script is table-driven (bead grm-ughg)." >&2
+		exit 2
+	}
+done
+
+# --list-sets mirrors build-and-test.sh's --list-chunks, deliberately including the DERIVED
+# platform groups: they are real names a caller may type, and a list that omitted them would
+# send people back to reading this script, which is exactly what the vocabulary replaces.
+if [ "${1:-}" = "--list-sets" ]; then
+	[ "$#" -eq 1 ] || {
+		echo "ERROR: --list-sets cannot be combined with other arguments" >&2
+		exit 2
+	}
+	printf '%-14s %-6s %-6s %s\n' SET PLATFORM ROWS DESCRIPTION
+	while IFS=$'\t' read -r set_name set_plat set_manifests set_rows set_desc; do
+		case "$set_name" in ""|set|"#"*) continue ;; esac
+		if [ "$set_rows" = '*' ]; then
+			row_count=all
+		else
+			row_count="$(printf '%s' "$set_rows" | tr ',' '\n' | grep -c .)"
+		fi
+		printf '%-14s %-6s %-6s %s\n' "$set_name" "$set_plat" "$row_count" "$set_desc"
+	done < <(tr -d '\r' < "$SETS_TSV")
+	echo
+	echo "platform groups -- every set declared for that platform:"
+	while IFS= read -r p; do
+		[ -n "$p" ] || continue
+		printf '%-14s %-6s %-6s %s\n' "$p" "$p" "" \
+			"all $p sets; ROM dirs from $(tsv_field "$PLATFORMS_TSV" "$p" rom_dir_env)"
+	done < <(tsv_column "$PLATFORMS_TSV" platform)
+	printf '%-14s %-6s %-6s %s\n' all "" "" "every set on every platform"
+	exit 0
+fi
 
 MODE="${1:-}"
 case "$MODE" in
@@ -172,27 +257,24 @@ fi
 # portability level of the rest of this script.
 ONLY_IDS=""
 EXCEPT_IDS=""
-# Which manifest(s) this run considers. Default is the curated board-representative set.
-# --gme SELECTS the game-music-extraction set instead of it, rather than adding to it: that
-# set is a reference point for planning and an occasional thorough check, not a gate, and
-# `bless --gme` meaning "also re-bless all twelve curated goldens" is a surprise that costs
-# real work to undo. --all is the explicit way to ask for both.
-MANIFEST_SET=core
+# Which SETS this run considers, in the order named. Empty here means "the caller named
+# none", which resolves to `core` below -- kept distinct from an explicit `core` so the
+# deprecation notes can tell the two apart.
+REQUESTED_SETS=()
 NO_BUILD=0
+DEPRECATED_FLAG=""
 while [ $# -gt 0 ]; do
 	case "$1" in
+		# The pre-grm-ughg flags, kept working as aliases so nothing in anyone's habits or
+		# scrollback breaks on the day this lands. Each prints a one-line note naming its
+		# replacement. Note --all maps to the `nes` PLATFORM GROUP: it always meant "both NES
+		# manifests" and still does, which is why it is NOT mapped to the new `all`.
 		--gme)
-			MANIFEST_SET=gme
-			shift
-			;;
+			REQUESTED_SETS+=(nes-gme); DEPRECATED_FLAG="$DEPRECATED_FLAG --gme=>nes-gme"; shift ;;
 		--all)
-			MANIFEST_SET=all
-			shift
-			;;
+			REQUESTED_SETS+=(nes); DEPRECATED_FLAG="$DEPRECATED_FLAG --all=>nes"; shift ;;
 		--snes)
-			MANIFEST_SET=snes
-			shift
-			;;
+			REQUESTED_SETS+=(snes); DEPRECATED_FLAG="$DEPRECATED_FLAG --snes=>snes"; shift ;;
 		--no-build)
 			NO_BUILD=1
 			shift
@@ -214,10 +296,30 @@ while [ $# -gt 0 ]; do
 			exit 2
 			;;
 		*)
-			break
+			# A positional word is a SET NAME if the tables know it, an existing DIRECTORY if it is
+			# one, and otherwise a hard ERROR. The third case is the point: without it a typo'd set
+			# name ('nes-gem') silently becomes a romdir, the run indexes nothing from it, and every
+			# row SKIPs -- a clean-looking run that checked nothing, which is precisely the failure
+			# mode this script refuses everywhere else (see the --only/--except unknown-id error).
+			if tsv_field "$SETS_TSV" "$1" set >/dev/null 2>&1 ||
+				tsv_field "$PLATFORMS_TSV" "$1" platform >/dev/null 2>&1 ||
+				[ "$1" = all ]; then
+				REQUESTED_SETS+=("$1")
+				shift
+			elif [ -d "$1" ]; then
+				break
+			else
+				echo "ERROR: '$1' is neither a known set nor an existing directory." >&2
+				echo "hint: $0 --list-sets" >&2
+				exit 2
+			fi
 			;;
 	esac
 done
+if [ -n "$DEPRECATED_FLAG" ]; then
+	echo "note: deprecated flag(s):$DEPRECATED_FLAG -- name the set positionally instead" \
+		"($0 --list-sets)." >&2
+fi
 
 # Sourced BEFORE the GRM_ROM_DIR/ROM_DIRS check (bead grm-6kv), unlike every other block
 # below that only needs it once ROM dirs are known: the staleness note below must still
@@ -237,94 +339,248 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 grm_realrom_staleness_note
 
 # ------------------------------------------------------------------
-# PER-PLATFORM PARAMETERS (bead grm-9nxj.15). Everything that differs between the NES sets
-# and the SNES set is resolved ONCE, here, and read from these variables everywhere below --
-# rather than sprinkling `if [ "$MANIFEST_SET" = snes ]` through the row walk, the cache key,
-# the ROM index and the import. A second copy of this script was the obvious alternative and
-# was rejected: this one already owns hash pinning, SKIP-when-absent, --only/--except, the
-# candidate cache, bless-with-diff-review and the staleness stamp, and a fork would drift on
-# all six.
+# SET AND PLATFORM RESOLUTION (bead grm-ughg). Everything that used to be a `case` on
+# MANIFEST_SET is now read from realrom/sets.tsv and realrom/platforms.tsv.
 #
-# PLATFORM         which family this run is about (informational, and gates `nominate`)
-# ROM_ENV          the environment variable holding default rom dirs
-# ROM_LOADER       the Ghidra loader name passed to -loader
-# ROM_DUMP_SCRIPT  the -postScript that emits the REALROM block (both fence it identically)
-# ROM_EXTS         file extensions the sha256 index scans, depth 1
-# ROM_COPY_EXT     extension of the temp copy the import sees; reaches the golden as
-#                  `REALROM program <id><ext>`, so changing it invalidates every golden
-# ROM_IMPORT_ARGS  extra analyzeHeadless args (the SNES rows import with -noanalysis)
-case "$MANIFEST_SET" in
-	snes)
-		PLATFORM=snes
-		ROM_ENV=GRM_SNES_ROM_DIR
-		ROM_LOADER=SnesRomLoader
-		ROM_DUMP_SCRIPT=SnesRealRomDump.java
-		ROM_EXTS=(sfc smc fig swc)
-		ROM_COPY_EXT=.sfc
-		ROM_IMPORT_ARGS=(-noanalysis)
-		;;
-	*)
-		PLATFORM=nes
-		ROM_ENV=GRM_ROM_DIR
-		ROM_LOADER=NesRomLoader
-		ROM_DUMP_SCRIPT=RealRomDump.java
-		ROM_EXTS=(nes)
-		ROM_COPY_EXT=.nes
-		ROM_IMPORT_ARGS=()
-		;;
-esac
+# WHY THIS SHAPE. The pre-grm-ughg script carried TWO axes in ONE variable: MANIFEST_SET had
+# four values (core/gme/all/snes) while the platform block distinguished only two cases (snes
+# vs everything else). That is why adding --snes was cheap AND made the shape worse -- it
+# could ride the existing variable without anyone separating the axes first. Here the axes are
+# separate by construction: a SET names rows and declares its platform; a PLATFORM declares
+# how to import a row. Adding a platform is a row in platforms.tsv plus a row in sets.tsv.
+#
+# Resolution of a requested name, in order:
+#   all           -> every set in sets.tsv
+#   <platform>    -> every set whose platform column is that platform
+#   <set>         -> that set
+# Sets compose and rows are deduplicated by id, so naming several (or a set and the group
+# containing it) is safe and idempotent.
+# ------------------------------------------------------------------
+[ ${#REQUESTED_SETS[@]} -gt 0 ] || REQUESTED_SETS=(core)
 
-ROM_DIRS=("$@")
-if [ ${#ROM_DIRS[@]} -eq 0 ] && [ -n "${!ROM_ENV:-}" ]; then
-	# shellcheck disable=SC2206
-	ROM_DIRS=(${!ROM_ENV})
-fi
-if [ ${#ROM_DIRS[@]} -eq 0 ]; then
-	echo "REALROM: SKIPPED -- no ROM dirs supplied and $ROM_ENV is unset. This tier was" \
-		"NOT run; nothing about real-ROM regressions was checked. Set $ROM_ENV (it may" \
-		"hold several space-separated dirs) or pass romdir arguments." >&2
-	echo "$USAGE   (or set $ROM_ENV)" >&2
+# manifest path -> platform, and platform -> its ROM dirs. Both are filled during resolution
+# below and read by the row walk, which is what makes a multi-platform run possible at all:
+# the loader, dump script and copy extension are decided PER ROW from its manifest's platform
+# rather than once per invocation.
+declare -A MANIFEST_PLATFORM_OF
+declare -A PLATFORM_DIRS_OF
+
+ALL_SETS=()
+while IFS= read -r s; do
+	[ -n "$s" ] || continue
+	ALL_SETS+=("$s")
+done < <(tsv_column "$SETS_TSV" set)
+
+RESOLVED_SETS=()
+resolved_has() {
+	local want="$1" have
+	for have in ${RESOLVED_SETS[@]+"${RESOLVED_SETS[@]}"}; do
+		[ "$have" = "$want" ] && return 0
+	done
+	return 1
+}
+add_set() {
+	resolved_has "$1" || RESOLVED_SETS+=("$1")
+}
+for want in "${REQUESTED_SETS[@]}"; do
+	case "$want" in
+		all)
+			for s in "${ALL_SETS[@]}"; do add_set "$s"; done
+			;;
+		*)
+			if tsv_field "$PLATFORMS_TSV" "$want" platform >/dev/null 2>&1; then
+				# A platform group: every set declared for it. Empty is an ERROR rather than a
+				# quiet no-op -- "run every snes set" finding none means the tables disagree.
+				found=0
+				for s in "${ALL_SETS[@]}"; do
+					[ "$(tsv_field "$SETS_TSV" "$s" platform)" = "$want" ] || continue
+					add_set "$s"; found=1
+				done
+				[ "$found" = 1 ] || {
+					echo "ERROR: platform group '$want' matches no set in $(basename "$SETS_TSV")" >&2
+					exit 2
+				}
+			elif tsv_field "$SETS_TSV" "$want" set >/dev/null 2>&1; then
+				add_set "$want"
+			else
+				echo "ERROR: unknown set '$want'" >&2
+				echo "hint: $0 --list-sets" >&2
+				exit 2
+			fi
+			;;
+	esac
+done
+
+# Expand the resolved sets into (a) the manifests to read, (b) the ids those sets allow, and
+# (c) the platforms involved. A set's `rows` column is either '*' (every id in its manifests)
+# or an explicit comma-separated id list -- which is how `core` is a cross-manifest SUBSET
+# without being a sixth manifest file, i.e. without re-creating the problem this bead is
+# about. The allowed-id list composes with --only/--except rather than replacing it.
+MANIFESTS=()
+PLATFORMS_USED=()
+SET_IDS=","
+for s in "${RESOLVED_SETS[@]}"; do
+	s_plat="$(tsv_field "$SETS_TSV" "$s" platform)"
+	s_rows="$(tsv_field "$SETS_TSV" "$s" rows)"
+	resolved_has_plat=0
+	for p in ${PLATFORMS_USED[@]+"${PLATFORMS_USED[@]}"}; do
+		[ "$p" = "$s_plat" ] && resolved_has_plat=1
+	done
+	[ "$resolved_has_plat" = 1 ] || PLATFORMS_USED+=("$s_plat")
+	tsv_field "$PLATFORMS_TSV" "$s_plat" platform >/dev/null 2>&1 || {
+		echo "ERROR: set '$s' declares platform '$s_plat', which is not in $(basename "$PLATFORMS_TSV")" >&2
+		exit 2
+	}
+
+	old_ifs="$IFS"; IFS=','
+	for mf in $(tsv_field "$SETS_TSV" "$s" manifests); do
+		IFS="$old_ifs"
+		mpath="$REALROM_DIR/$mf"
+		if [ ! -f "$mpath" ]; then
+			echo "ERROR: set '$s' needs $mpath, which does not exist." >&2
+			if [ "$(tsv_field "$PLATFORMS_TSV" "$s_plat" nominate)" = yes ]; then
+				echo "       Populate it with: $0 nominate <romdir> [<romdir> ...]" >&2
+			else
+				echo "       nominate does not apply to platform '$s_plat'; select rows from the" >&2
+				echo "       grm-9nxj.13 corpus survey (build/snes-rom-corpus/roms.tsv) instead." >&2
+			fi
+			exit 2
+		fi
+		already=0
+		for existing in ${MANIFESTS[@]+"${MANIFESTS[@]}"}; do
+			[ "$existing" = "$mpath" ] && already=1
+		done
+		[ "$already" = 1 ] || MANIFESTS+=("$mpath")
+		# MANIFEST_PLATFORM_OF maps a manifest path to its platform, which is what lets the row
+		# walk resolve loader/dump/extension PER ROW in a multi-platform run.
+		MANIFEST_PLATFORM_OF["$mpath"]="$s_plat"
+		if [ "$s_rows" = '*' ]; then
+			while IFS= read -r rid; do
+				[ -n "$rid" ] || continue
+				case "$SET_IDS" in *",$rid,"*) ;; *) SET_IDS="$SET_IDS$rid," ;; esac
+			done < <(awk -F'\t' '!/^#/ && NF && $1 != "id" { sub(/\r$/, "", $1); print $1 }' "$mpath")
+		fi
+		IFS=','
+	done
+	IFS="$old_ifs"
+
+	if [ "$s_rows" != '*' ]; then
+		old_ifs="$IFS"; IFS=','
+		for rid in $s_rows; do
+			IFS="$old_ifs"
+			[ -n "$rid" ] || continue
+			case "$SET_IDS" in *",$rid,"*) ;; *) SET_IDS="$SET_IDS$rid," ;; esac
+			IFS=','
+		done
+		IFS="$old_ifs"
+	fi
+done
+
+echo "== sets: ${RESOLVED_SETS[*]} (platform(s): ${PLATFORMS_USED[*]};" \
+	"${#MANIFESTS[@]} manifest file(s)) =="
+
+# ------------------------------------------------------------------
+# PER-PLATFORM ROM DIRS.
+#
+# Positional romdirs apply to EVERY platform in the run: they carry no platform of their own,
+# and indexing a directory with a platform's extensions simply finds whatever is there. Each
+# platform otherwise reads its own declared environment variable.
+#
+# A platform with no dirs SKIPS its rows loudly rather than killing the run, so a
+# multi-platform set is usable by someone holding one platform's images. But if NO platform
+# has any dirs the run still refuses outright with a nonzero exit: this tier must never report
+# a clean gate for something that did not execute (CLAUDE.md), and that guarantee predates and
+# survives this refactor.
+# ------------------------------------------------------------------
+POSITIONAL_DIRS=("$@")
+ANY_DIRS=0
+for p in "${PLATFORMS_USED[@]}"; do
+	p_env="$(tsv_field "$PLATFORMS_TSV" "$p" rom_dir_env)"
+	if [ ${#POSITIONAL_DIRS[@]} -gt 0 ]; then
+		PLATFORM_DIRS_OF["$p"]="${POSITIONAL_DIRS[*]}"
+	else
+		PLATFORM_DIRS_OF["$p"]="${!p_env:-}"
+	fi
+	if [ -n "${PLATFORM_DIRS_OF[$p]}" ]; then
+		ANY_DIRS=1
+	else
+		echo "REALROM: platform '$p' has no ROM dirs -- $p_env is unset and no romdir was" \
+			"passed. Its rows will SKIP; nothing about them is being checked." >&2
+	fi
+done
+if [ "$ANY_DIRS" -eq 0 ]; then
+	envs=""
+	for p in "${PLATFORMS_USED[@]}"; do
+		envs="$envs $(tsv_field "$PLATFORMS_TSV" "$p" rom_dir_env)"
+	done
+	echo "REALROM: SKIPPED -- no ROM dirs supplied and none of$envs is set. This tier was" \
+		"NOT run; nothing about real-ROM regressions was checked. Set one (each may hold" \
+		"several space-separated dirs) or pass romdir arguments." >&2
+	echo "$USAGE" >&2
 	exit 2
 fi
 
-REALROM_DIR="$SCRIPT_DIR/realrom"
-MANIFEST="$REALROM_DIR/manifest.tsv"
-GME_MANIFEST="$REALROM_DIR/manifest-gme.tsv"
-SNES_MANIFEST="$REALROM_DIR/manifest-snes.tsv"
 EXPECTED_DIR="$REALROM_DIR/expected"
 
-if [ ! -f "$MANIFEST" ]; then
-	echo "ERROR: manifest not found: $MANIFEST" >&2
-	exit 2
-fi
-MANIFESTS=()
-case "$MANIFEST_SET" in
-	core) MANIFESTS=("$MANIFEST") ;;
-	gme)  MANIFESTS=("$GME_MANIFEST") ;;
-	all)  MANIFESTS=("$MANIFEST" "$GME_MANIFEST") ;;
-	snes) MANIFESTS=("$SNES_MANIFEST") ;;
-esac
-for m in "${MANIFESTS[@]}"; do
-	[ -f "$m" ] && continue
-	echo "ERROR: the '$MANIFEST_SET' set needs $m, which does not exist." >&2
-	[ "$MANIFEST_SET" = snes ] ||
-		echo "       Populate it with: $0 nominate <romdir> [<romdir> ...]" >&2
-	[ "$MANIFEST_SET" != snes ] ||
-		echo "       nominate is NES-only; select SNES rows from the grm-9nxj.13 corpus" \
-			"survey (build/snes-rom-corpus/roms.tsv) instead." >&2
-	exit 2
-done
-echo "== manifest set: $MANIFEST_SET (${#MANIFESTS[@]} file(s), platform $PLATFORM," \
-	"loader $ROM_LOADER, dump $ROM_DUMP_SCRIPT) =="
+# Installs one platform's parameters into the ROM_* variables the rest of this script already
+# reads. Called per row (and per ROM-dir index pass), which is how the pre-existing cache-key,
+# import and golden-check code below works unchanged in a multi-platform run: it still reads
+# ROM_LOADER/ROM_DUMP_SCRIPT/ROM_COPY_EXT/ROM_IMPORT_ARGS/ROM_EXTS, they are simply set from
+# the table now instead of from a `case` on the manifest set.
+use_platform() {
+	local p="$1" ia ex
+	PLATFORM="$p"
+	ROM_ENV="$(tsv_field "$PLATFORMS_TSV" "$p" rom_dir_env)"
+	ROM_LOADER="$(tsv_field "$PLATFORMS_TSV" "$p" loader)"
+	ROM_DUMP_SCRIPT="$(tsv_field "$PLATFORMS_TSV" "$p" dump_script)"
+	ROM_COPY_EXT="$(tsv_field "$PLATFORMS_TSV" "$p" copy_ext)"
+	# '-' rather than an empty cell, so the column is never ambiguous in a TSV where a
+	# trailing empty field and a missing one look identical.
+	ia="$(tsv_field "$PLATFORMS_TSV" "$p" import_args)"
+	if [ "$ia" = "-" ] || [ -z "$ia" ]; then
+		ROM_IMPORT_ARGS=()
+	else
+		read -r -a ROM_IMPORT_ARGS <<< "$ia"
+	fi
+	ex="$(tsv_field "$PLATFORMS_TSV" "$p" image_exts)"
+	IFS=',' read -r -a ROM_EXTS <<< "$ex"
+}
+
+# Emits every row of the SELECTED manifests, each prefixed with its platform, so a consumer
+# can resolve per-row parameters without knowing which file a row came from.
+manifest_rows() {
+	local m
+	for m in "${MANIFESTS[@]}"; do
+		awk -F'\t' -v plat="${MANIFEST_PLATFORM_OF[$m]}" \
+			'{ sub(/\r$/, ""); print plat "\t" $0 }' "$m"
+	done
+}
+
+# Every manifest named by ANY set, selected or not -- for the questions that are about the
+# repo rather than about this invocation (id uniqueness, "is this ROM already pinned?").
+all_declared_manifests() {
+	local s mf seen=""
+	for s in "${ALL_SETS[@]}"; do
+		local old_ifs="$IFS"; IFS=','
+		for mf in $(tsv_field "$SETS_TSV" "$s" manifests); do
+			IFS="$old_ifs"
+			case "$seen" in *" $mf "*) IFS=','; continue ;; esac
+			seen="$seen $mf "
+			[ -f "$REALROM_DIR/$mf" ] && printf '%s\n' "$REALROM_DIR/$mf"
+			IFS=','
+		done
+		IFS="$old_ifs"
+	done
+}
 
 # Ragged rows are a RENDERING defect, never a correctness one -- `read` treats a missing
 # trailing field and an empty one identically -- so this warns and continues. It exists
 # because the fix (a trailing tab on rows with no loader_opts) is invisible whitespace that
 # editors and paste buffers strip, so without a reminder the GitHub table quietly degrades.
 for m in "${MANIFESTS[@]}"; do
-	ragged="$(tr -d '\r' < "$m" | awk -F'\t' '!/^#/ && NF && NF != 7 { printf "%s ", $1 }')"
+	ragged="$(tr -d '\r' < "$m" | awk -F'\t' '!/^#/ && NF && NF != 8 { printf "%s ", $1 }')"
 	[ -z "$ragged" ] || {
-		echo "NOTE: $(basename "$m") has rows that are not 7 fields wide: $ragged" >&2
+		echo "NOTE: $(basename "$m") has rows that are not 8 fields wide: $ragged" >&2
 		echo "      GitHub's table view wants a uniform column count; pad with a trailing tab." >&2
 	}
 done
@@ -343,9 +599,7 @@ mkdir -p "$EXPECTED_DIR"
 # under expected/, and expected/ is ONE directory shared by every platform, so a SNES row
 # named `megaman` would overwrite the NES golden of that name. Uniqueness is a property of the
 # repo, not of the platform.
-all_manifests=("$MANIFEST")
-[ -f "$GME_MANIFEST" ] && all_manifests+=("$GME_MANIFEST")
-[ -f "$SNES_MANIFEST" ] && all_manifests+=("$SNES_MANIFEST")
+mapfile -t all_manifests < <(all_declared_manifests)
 dupe_ids="$(cat "${all_manifests[@]}" | tr -d '\r' \
 	| awk -F'\t' '!/^#/ && NF && $1 != "id" { print $1 }' \
 	| LC_ALL=C sort | uniq -d)"
@@ -374,9 +628,8 @@ if [ -n "$ONLY_IDS$EXCEPT_IDS" ]; then
 				*",$w,"*) ;;
 				*)
 					echo "ERROR: '$w' is not an id in ${MANIFESTS[*]}" >&2
-					[ "$MANIFEST_SET" = all ] ||
-						echo "hint: this run covers the '$MANIFEST_SET' set only; --gme selects the" \
-							"game-music-extraction titles, --all covers both" >&2
+					echo "hint: this run covers set(s) '${RESOLVED_SETS[*]}' only." \
+						"Name another set, a platform group, or 'all' -- see $0 --list-sets" >&2
 					known="${manifest_ids#,}"
 					echo "known ids: ${known%,}" >&2
 					exit 2
@@ -400,15 +653,18 @@ if [ "$MODE" = nominate ]; then
 	# below decodes an iNES header and resolves machines/nes-*.yaml `ines_mappers:`; run
 	# against SNES cartridges it would report every one of them as "NOT an iNES image" -- a
 	# clean-looking run whose entire output is wrong about what it examined.
-	if [ "$MANIFEST_SET" = snes ]; then
-		echo "ERROR: nominate is NES-only -- it decodes iNES headers and resolves" >&2
-		echo "       machines/nes-*.yaml, neither of which applies to a SNES cartridge." >&2
+	# Whether nominate means anything is now a DECLARED platform capability
+	# (platforms.tsv `nominate`) rather than a hardcoded refusal of one platform's name.
+	for p in "${PLATFORMS_USED[@]}"; do
+		[ "$(tsv_field "$PLATFORMS_TSV" "$p" nominate)" = yes ] && continue
+		echo "ERROR: nominate does not apply to platform '$p' -- it decodes iNES headers and" >&2
+		echo "       resolves machines/nes-*.yaml, neither of which applies there." >&2
 		echo "       For SNES rows use the grm-9nxj.13 corpus survey, which emits name, size," >&2
 		echo "       sha256 and the parsed header fields per image:" >&2
 		echo "         bash tools/banktest/build-and-test.sh check snes-rom-corpus" >&2
 		echo "         # -> build/snes-rom-corpus/roms.tsv" >&2
 		exit 2
-	fi
+	done
 	if ! command -v od >/dev/null 2>&1; then
 		echo "ERROR: od not found on PATH (needed to decode iNES headers)." >&2
 		exit 2
@@ -462,9 +718,7 @@ if [ "$MODE" = nominate ]; then
 	# Deliberately scans EVERY manifest, not just the selected ones: "is this already
 	# pinned?" is a question about the repo, not about how this invocation was flagged, and
 	# answering it from a narrower set would nominate a duplicate of a row that exists.
-	nominate_known=("$MANIFEST")
-	[ -f "$GME_MANIFEST" ] && nominate_known+=("$GME_MANIFEST")
-	[ -f "$SNES_MANIFEST" ] && nominate_known+=("$SNES_MANIFEST")
+	mapfile -t nominate_known < <(all_declared_manifests)
 	known_shas=" $(cat "${nominate_known[@]}" | tr -d '\r' |
 		awk -F'\t' '!/^#/ && NF && $1 != "id" { printf "%s:%s ", tolower($3), $1 }')"
 
@@ -473,7 +727,9 @@ if [ "$MODE" = nominate ]; then
 	echo "# (your game-music-extraction shorthand), else the file's base name."
 	n_new=0; n_known=0; n_unsupported=0; n_notines=0
 	shopt -s nullglob nocaseglob
-	for dir in "${ROM_DIRS[@]}"; do
+	# shellcheck disable=SC2206
+	nominate_dirs=(${PLATFORM_DIRS_OF[${PLATFORMS_USED[0]}]})
+	for dir in "${nominate_dirs[@]}"; do
 		# Normalize away trailing slashes so the "is it in a per-title subdir?" test below
 		# is an exact path comparison rather than a basename guess.
 		while [ "${dir%/}" != "$dir" ]; do dir="${dir%/}"; done
@@ -534,18 +790,19 @@ fi
 # workflow, and the row walk already reports that as a FAIL with a clearer message.
 if [ "$MODE" = check ]; then
 	mismatched=""
-	while IFS=$'\t' read -r g_id g_title g_sha _ _ g_golden _; do
+	while IFS=$'\t' read -r g_plat g_id g_title g_sha _ _ g_golden _ _; do
 		case "${g_id:-}" in ""|id|\#*) continue ;; esac
 		g_path="$EXPECTED_DIR/${g_golden:-$g_id.dump}"
 		[ -f "$g_path" ] || continue
+		g_ext="$(tsv_field "$PLATFORMS_TSV" "$g_plat" copy_ext)"
 		g_prog="$(awk '/^REALROM program /{print $3; exit}' "$g_path")"
 		g_gsha="$(awk '/^REALROM sha256 /{print tolower($3); exit}' "$g_path")"
 		g_want="$(printf '%s' "$g_sha" | tr 'A-Z' 'a-z' | tr -d '[:space:]')"
-		if [ "$g_prog" != "$g_id$ROM_COPY_EXT" ] || [ "$g_gsha" != "$g_want" ]; then
+		if [ "$g_prog" != "$g_id$g_ext" ] || [ "$g_gsha" != "$g_want" ]; then
 			mismatched="$mismatched  $g_id: $(basename "$g_path") says program=$g_prog sha=${g_gsha:0:12}...
 "
 		fi
-	done < <(cat "${MANIFESTS[@]}" | tr -d '\r')
+	done < <(manifest_rows)
 	if [ -n "$mismatched" ]; then
 		echo "ERROR: golden(s) do not describe the manifest row pointing at them:" >&2
 		printf '%s' "$mismatched" >&2
@@ -587,7 +844,7 @@ fi
 # the per-worktree build/ghidra-home tree.
 # The chunk name is only used in the "run build-and-test.sh first" hint, so name one that
 # actually covers this run's platform.
-grm_settings_base_fallback "$([ "$PLATFORM" = snes ] && echo snes-loader || echo nes-banking)"
+grm_settings_base_fallback "$(tsv_field "$PLATFORMS_TSV" "${PLATFORMS_USED[0]}" fallback_chunk)"
 grm_apply_settings_base
 
 if ! command -v sha256sum >/dev/null 2>&1; then
@@ -694,30 +951,38 @@ sanitize() {
 # subdirs are intentionally not descended.
 # ------------------------------------------------------------------
 declare -A ROM_BY_SHA
+ALL_INDEXED_DIRS=()
 echo "== indexing ROM dirs by sha256 =="
 shopt -s nullglob nocaseglob
-for dir in "${ROM_DIRS[@]}"; do
-	if [ ! -d "$dir" ]; then
-		echo "  WARN: not a directory, skipping: $dir" >&2
-		continue
-	fi
-	count=0
-	# ROM_EXTS is per platform (nes; or sfc/smc/fig/swc for --snes -- a SNES collection uses
-	# all four interchangeably, and the copier-headered rows are precisely the .smc ones, so
-	# scanning only one extension would SKIP half of a clean/copier pair and quietly turn the
-	# pair principle off).
-	for ext in "${ROM_EXTS[@]}"; do
-		for f in "$dir"/*."$ext"; do
-			[ -f "$f" ] || continue
-			h="$(sha256sum "$f" | cut -d' ' -f1 | tr 'A-Z' 'a-z')"
-			# First occurrence wins; a manifest pins one exact dump anyway.
-			if [ -z "${ROM_BY_SHA[$h]:-}" ]; then
-				ROM_BY_SHA[$h]="$f"
-			fi
-			count=$((count + 1))
+for idx_plat in "${PLATFORMS_USED[@]}"; do
+	use_platform "$idx_plat"
+	# shellcheck disable=SC2206
+	idx_dirs=(${PLATFORM_DIRS_OF[$idx_plat]})
+	[ ${#idx_dirs[@]} -gt 0 ] || continue
+	for dir in "${idx_dirs[@]}"; do
+		if [ ! -d "$dir" ]; then
+			echo "  WARN: not a directory, skipping: $dir" >&2
+			continue
+		fi
+		count=0
+		# ROM_EXTS is per platform (nes; or sfc/smc/fig/swc for SNES -- a SNES collection uses
+		# all four interchangeably, and the copier-headered rows are precisely the .smc ones,
+		# so scanning only one extension would SKIP half of a clean/copier pair and quietly
+		# turn the pair principle off).
+		for ext in "${ROM_EXTS[@]}"; do
+			for f in "$dir"/*."$ext"; do
+				[ -f "$f" ] || continue
+				h="$(sha256sum "$f" | cut -d' ' -f1 | tr 'A-Z' 'a-z')"
+				# First occurrence wins; a manifest pins one exact dump anyway.
+				if [ -z "${ROM_BY_SHA[$h]:-}" ]; then
+					ROM_BY_SHA[$h]="$f"
+				fi
+				count=$((count + 1))
+			done
 		done
+		echo "  [$idx_plat] $dir: hashed $count file(s) matching ${ROM_EXTS[*]}"
+		ALL_INDEXED_DIRS+=("$dir")
 	done
-	echo "  $dir: hashed $count file(s) matching ${ROM_EXTS[*]}"
 done
 shopt -u nullglob nocaseglob
 
@@ -778,11 +1043,24 @@ import_and_dump() {
 	return 0
 }
 
-while IFS=$'\t' read -r id title sha mapper board golden opts || [ -n "${id:-}" ]; do
+while IFS=$'\t' read -r row_plat id title sha mapper board golden opts member ||
+	[ -n "${id:-}" ]; do
 	# Skip blank lines, the bare header row, and comments. The manifest deliberately carries
 	# no `#` preamble (GitHub's tabular viewer has no comment syntax and would render it as
 	# rows) -- see realrom/README.md -- but a one-off comment stays legal.
 	case "${id:-}" in ""|id|\#*) continue ;; esac
+
+	# The row's PLATFORM decides its loader, dump script, copy extension and import args.
+	# Installed per row rather than per run, which is what lets one invocation span platforms.
+	use_platform "$row_plat"
+
+	# SET membership. A set whose `rows` column is an explicit id list (today: core) admits
+	# only those ids; a set with '*' admitted every id in its manifests during resolution. This
+	# is applied BEFORE --only/--except so the two compose: --only narrows within the set.
+	case "$SET_IDS" in
+		*",$id,"*) ;;
+		*) continue ;;
+	esac
 
 	# Row selection (--only/--except). Applied before any import work, so a filtered row
 	# costs nothing. Filtered rows are counted but produce no ROW_* entry: they are not results.
@@ -915,7 +1193,7 @@ while IFS=$'\t' read -r id title sha mapper board golden opts || [ -n "${id:-}" 
 # result at `done` -- while still exiting 0. The `tr` is a second layer behind
 # .gitattributes' `*.tsv text eol=lf`, covering a working-tree copy an editor rewrote with
 # CRLF after checkout; a stray \r on the row's last field otherwise rides into a path.
-done < <(cat "${MANIFESTS[@]}" | tr -d '\r')
+done < <(manifest_rows)
 
 echo
 printf '%-16s %-6s %s\n' "ID" "STATUS" "DETAIL"
@@ -937,7 +1215,7 @@ if [ "$n_skip" -gt 0 ]; then
 	echo "note: $n_skip row(s) SKIPPED for want of a ROM. If that is unexpected, suspect the DIR"
 	echo "      LIST before concluding the ROMs are absent: dirs are indexed at depth 1 only, and"
 	echo "      several may be given (GRM_ROM_DIR holds them space-separated). Supplied here:"
-	for dir in "${ROM_DIRS[@]}"; do
+	for dir in ${ALL_INDEXED_DIRS[@]+"${ALL_INDEXED_DIRS[@]}"}; do
 		echo "        $dir"
 	done
 fi
@@ -961,20 +1239,51 @@ fi
 # grm-z34), so an interrupted write is never read back as a valid (and misleadingly fresh)
 # stamp.
 #
-# A --snes RUN DOES NOT STAMP, and that is deliberate (bead grm-9nxj.15). The stamp answers
-# ONE question -- "has anyone checked real-ROM ANALYSIS regressions at this commit" -- and it
-# is what CLAUDE.md points at when it requires this tier before committing a change to
+# WHETHER A RUN STAMPS AT ALL IS A DECLARED PLATFORM PROPERTY (platforms.tsv
+# `stamps_staleness`), not a hardcoded check for one platform's name. The stamp answers ONE
+# question -- "has anyone checked real-ROM ANALYSIS regressions at this commit" -- and it is
+# what CLAUDE.md points at when it requires this tier before committing a change to
 # BoardBankAnalyzer, a BankSwitchStrategy or StoredValueScanner. The SNES rows import with
-# -noanalysis and exercise none of that; letting them refresh the stamp would let a
-# thirteen-row loader run silently mark the NES analysis tier as freshly verified, which is
-# exactly the "quiet green for a tier that did not execute" this stamp exists to prevent.
-if [ "$MANIFEST_SET" = snes ]; then
-	echo "note: --snes does not refresh the REALROM staleness stamp -- it verifies loader"
-	echo "      layout with -noanalysis and says nothing about NES analysis regressions."
+# -noanalysis and exercise none of that, so letting them refresh the stamp would let a
+# thirteen-row loader run silently mark the NES analysis tier as freshly verified -- exactly
+# the "quiet green for a tier that did not execute" this stamp exists to prevent. Declaring it
+# means the next -noanalysis platform inherits the right behaviour instead of the wrong one.
+stamp_ok=0
+stamp_skipped=""
+for p in "${PLATFORMS_USED[@]}"; do
+	if [ "$(tsv_field "$PLATFORMS_TSV" "$p" stamps_staleness)" = yes ]; then
+		stamp_ok=1
+	else
+		stamp_skipped="$stamp_skipped $p"
+	fi
+done
+[ -z "$stamp_skipped" ] ||
+	echo "note: platform(s)$stamp_skipped do not refresh the REALROM staleness stamp -- they" \
+		"verify loader layout with -noanalysis and say nothing about analysis regressions."
+
+# THE STAMP RECORDS WHICH SETS RAN, not merely that something did (bead grm-ughg). Once `core`
+# exists -- a five-row, ~40s floor -- a stamp that said only "someone ran the tier at this
+# commit" would let the cheap run silence the warning whose entire job is to demand the
+# expensive one. That would be a regression in honesty introduced by the tiering itself, so
+# the set list is part of the stamp and grm_realrom_staleness_note() reports it. Line 3 is an
+# ADDITION: a pre-existing two-line stamp still reads correctly, as "sets: unknown".
+if [ "$stamp_ok" -eq 0 ]; then
+	: # nothing in this run is entitled to stamp
 elif mkdir -p "$(dirname "$GRM_REALROM_STAMP")" 2>/dev/null; then
 	stamp_head="$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+	# A --only/--except run covers the named SETS only in name: it may have run two rows of
+	# thirty-three. Recording the set list alone would therefore be a MORE specific claim than
+	# the pre-grm-ughg stamp made and a wronger one, so a filtered run says so and carries the
+	# row counts. Same principle as the CORE note itself -- the stamp may under-claim, never
+	# over-claim.
+	stamp_sets_line="${RESOLVED_SETS[*]}"
+	if [ "$n_filtered" -gt 0 ]; then
+		stamp_sets_line="$stamp_sets_line (PARTIAL: $((n_pass + n_fail + n_bless)) row(s) ran,"
+		stamp_sets_line="$stamp_sets_line $n_filtered filtered out by --only/--except)"
+	fi
 	stamp_content="$stamp_head
-$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+$(date -u +%Y-%m-%dT%H:%M:%SZ)
+$stamp_sets_line"
 	if ! printf '%s\n' "$stamp_content" | grm_atomic_publish_stdin "$GRM_REALROM_STAMP"; then
 		echo "NOTE: could not update $GRM_REALROM_STAMP (staleness signal will be stale itself)" >&2
 	fi
