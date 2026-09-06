@@ -30,7 +30,12 @@
 #                         Mutually exclusive with supplying REF_A.
 #
 # Row selection (forwarded verbatim to realrom-test.sh; same semantics there):
-#   --only IDS | --except IDS | --gme | --all
+#   --gme | --all             select the SET (default, with neither given: core, 5 rows)
+#   --only IDS | --except IDS filter WITHIN whichever set --gme/--all (or the core default)
+#                             selected -- they narrow it, they do NOT widen it. An --only
+#                             naming rows outside core (e.g. dodge, lwings) needs --all or
+#                             --gme too, or every named row is filtered out and NOTHING is
+#                             compared (see grm-29a9: this used to print a false movement=NO).
 #
 #   *** A SINGLE-ROW A/B CAN MASK ORDER-DEPENDENT MOVEMENT. *** tmnt (grm-82u3, 2026-08-28)
 #   passed on both sides of `--only tmnt` alone and FAILED on the second side of
@@ -137,6 +142,90 @@ if [ -n "$ONLY_IDS" ]; then
 		echo "  order-dependent movement -- tmnt passed alone and failed with a preceding row" >&2
 		echo "  in the same invocation (grm-82u3, 2026-08-28). Consider --only <other>,$ONLY_IDS" >&2
 		echo "  or --gme/--all instead. Proceeding anyway." >&2
+	fi
+fi
+
+# --- grm-29a9 point 4: catch a --only that names ids outside the selected set(s), BEFORE ----
+# either side runs. This is the actual user error grm-29a9 was filed over: --only/--except
+# filter WITHIN whatever --gme/--all (or the core default) selected, they do not widen it, so
+# an id that exists in some manifest but not in the selected set is silently "filtered out"
+# by realrom-test.sh on every side -- comparing nothing while still printing a verdict.
+#
+# This duplicates a (much smaller) slice of realrom-test.sh's own set/platform resolution
+# (realrom/sets.tsv, realrom/platforms.tsv) rather than reusing it directly, because
+# realrom-test.sh has no "just resolve ids, don't run anything" mode to call into. Kept
+# deliberately minimal: this script only ever forwards ROWFLAG as "" / --gme / --all.
+REALROM_DIR="$SCRIPT_DIR/realrom"
+SETS_TSV="$REALROM_DIR/sets.tsv"
+
+ab_tsv_field() {
+	local file="$1" key="$2" column="$3"
+	awk -F'\t' -v key="$key" -v col="$column" '
+		NR == 1 { for (i = 1; i <= NF; i++) if ($i == col) c = i; next }
+		!/^#/ && NF && $1 == key { if (c) { print $c; found = 1 } exit }
+		END { exit(found ? 0 : 1) }
+	' "$file"
+}
+ab_tsv_column() {
+	local file="$1" column="$2"
+	awk -F'\t' -v col="$column" '
+		NR == 1 { for (i = 1; i <= NF; i++) if ($i == col) c = i; next }
+		!/^#/ && NF && c { print $c }
+	' "$file"
+}
+
+# Prints every id the current ROWFLAG's selected set(s) admit, one per line.
+resolve_rowflag_ids() {
+	local set_names=() s s_rows mf mpath old_ifs
+	case "$ROWFLAG" in
+		"") set_names=(core) ;;
+		--gme) set_names=(nes-gme) ;;
+		--all)
+			while IFS= read -r s; do
+				[ "$(ab_tsv_field "$SETS_TSV" "$s" platform 2>/dev/null)" = nes ] || continue
+				set_names+=("$s")
+			done < <(ab_tsv_column "$SETS_TSV" set)
+			;;
+	esac
+	for s in "${set_names[@]}"; do
+		s_rows="$(ab_tsv_field "$SETS_TSV" "$s" rows 2>/dev/null || true)"
+		if [ "$s_rows" = '*' ]; then
+			old_ifs="$IFS"; IFS=','
+			for mf in $(ab_tsv_field "$SETS_TSV" "$s" manifests); do
+				IFS="$old_ifs"
+				mpath="$REALROM_DIR/$mf"
+				[ -f "$mpath" ] || continue
+				awk -F'\t' '!/^#/ && NF && $1 != "id" { sub(/\r$/, "", $1); print $1 }' "$mpath"
+				IFS=','
+			done
+			IFS="$old_ifs"
+		else
+			printf '%s\n' "$s_rows" | tr ',' '\n'
+		fi
+	done
+}
+
+if [ -n "$ONLY_IDS" ] && [ -f "$SETS_TSV" ]; then
+	mapfile -t _rowflag_ids < <(resolve_rowflag_ids | LC_ALL=C sort -u)
+	_unknown=()
+	old_ifs="$IFS"; IFS=','
+	for _id in $ONLY_IDS; do
+		IFS="$old_ifs"
+		_found=0
+		for _sid in ${_rowflag_ids[@]+"${_rowflag_ids[@]}"}; do
+			[ "$_sid" = "$_id" ] && { _found=1; break; }
+		done
+		[ "$_found" -eq 1 ] || _unknown+=("$_id")
+		IFS=','
+	done
+	IFS="$old_ifs"
+	if [ "${#_unknown[@]}" -gt 0 ]; then
+		echo "WARNING: --only names id(s) NOT in the selected set (${ROWFLAG:-core, the default}):" >&2
+		echo "  ${_unknown[*]}" >&2
+		echo "  --only/--except filter WITHIN the selected set(s); they do not widen it. The" >&2
+		echo "  default is core (5 rows) -- an --only naming rows outside core needs --gme or" >&2
+		echo "  --all too. As given, these id(s) will be filtered out by realrom-test.sh on" >&2
+		echo "  EVERY side, comparing nothing for them (grm-29a9). Proceeding anyway." >&2
 	fi
 fi
 
@@ -475,6 +564,69 @@ if [ -n "$RAISE_SAMPLE" ]; then
 		"golden and is meaningless. Only the dump-vs-dump comparison above is trustworthy. =="
 fi
 
-echo "AB-TEST: identity guard OK; movement=$([ "$ANY_DIFF" -eq 1 ] && echo YES || echo NO)." \
-	"Full logs and dumps kept at $AB_BASE until cleanup."
+# --- grm-29a9 points 1-3: never let movement=NO do double duty for "compared zero rows" ---
+# COMPARED is read out of the sides' OWN realrom-test.sh logs (repeat 1), not re-derived from
+# ROWFLAG/--only/--except -- that is the actual row list each side attempted, filtered rows
+# excluded, so it can't drift from what really ran even if row selection changes underneath
+# this script later. SELECTED is the union of ids any side attempted at all (not filtered
+# out); COMPARED is the subset of those with a dump on EVERY side, i.e. what the per-id table
+# above actually diffed.
+declare -A SELECTED_ID_SET
+for i in $(seq 0 $((N_SIDES - 1))); do
+	label="${SIDE_LABEL[$i]}"
+	log1="$AB_BASE/log-$label-1.txt"
+	[ -f "$log1" ] || continue
+	while IFS= read -r id; do
+		[ -n "$id" ] && SELECTED_ID_SET["$id"]=1
+	done < <(grep -E '^-- [^ ]+ \(.*\): ' "$log1" | grep -v ': filtered out$' \
+		| sed -E 's/^-- ([^ ]+) \(.*$/\1/')
+done
+SELECTED_IDS=()
+if [ "${#SELECTED_ID_SET[@]}" -gt 0 ]; then
+	# Guarded: printf over an EMPTY associative array's keys emits one blank line, which
+	# mapfile would turn into a phantom selected id and make the counts below over-claim by
+	# one -- in exactly the nothing-was-compared case these counts exist to report honestly.
+	mapfile -t SELECTED_IDS < <(printf '%s\n' "${!SELECTED_ID_SET[@]}" | LC_ALL=C sort)
+fi
+N_SELECTED="${#SELECTED_IDS[@]}"
+
+COMPARED_IDS=()
+for id in "${SORTED_IDS[@]:-}"; do
+	[ -n "$id" ] || continue
+	all_present=1
+	for i in $(seq 0 $((N_SIDES - 1))); do
+		label="${SIDE_LABEL[$i]}"
+		[ -n "${DUMP_HASHES[$label:$id]:-}" ] || { all_present=0; break; }
+	done
+	[ "$all_present" -eq 1 ] && COMPARED_IDS+=("$id")
+done
+N_COMPARED="${#COMPARED_IDS[@]}"
+
+MISSING_IDS=()
+for id in "${SELECTED_IDS[@]:-}"; do
+	[ -n "$id" ] || continue
+	miss=1
+	for c in "${COMPARED_IDS[@]:-}"; do [ "$c" = "$id" ] && { miss=0; break; }; done
+	[ "$miss" -eq 1 ] && MISSING_IDS+=("$id")
+done
+side_word="every side"; [ "$N_SIDES" -eq 2 ] && side_word="either side"
+
+if [ "$N_COMPARED" -eq 0 ]; then
+	echo
+	echo "AB-TEST: movement=UNKNOWN (nothing compared -- $N_SELECTED id(s) selected, 0 produced" \
+		"a dump on $side_word; see the per-id table above and the logs in $AB_BASE). This tier" \
+		"was NOT meaningfully run; nothing about real-ROM movement was checked." >&2
+	echo "Full logs and dumps kept at $AB_BASE until cleanup." >&2
+	exit 2
+fi
+
+VERDICT="$([ "$ANY_DIFF" -eq 1 ] && echo YES || echo NO)"
+if [ "$N_COMPARED" -lt "$N_SELECTED" ]; then
+	echo "AB-TEST: identity guard OK; movement=$VERDICT (compared $N_COMPARED of $N_SELECTED" \
+		"id(s); ${MISSING_IDS[*]} had no dump on $side_word)." \
+		"Full logs and dumps kept at $AB_BASE until cleanup."
+else
+	echo "AB-TEST: identity guard OK; movement=$VERDICT." \
+		"Full logs and dumps kept at $AB_BASE until cleanup."
+fi
 exit 0
