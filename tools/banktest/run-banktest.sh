@@ -943,6 +943,11 @@ if selected nes-banking; then
 	# reading as "weaken everything".
 	run_one nesnmitest "$WORK/nes/nesnmitest.nes" NesRomLoader
 
+	# grm-7e5o: an 8 KiB NROM PRG -- SMALLER than either 16 KiB window, so the image
+	# mirrors four times across $8000-$FFFF. Synthetic stand-in for Galaxian (J) and
+	# Controller Test Program (J), which cannot be shipped. See make_prg_nromsub().
+	run_one nesnromsubtest "$WORK/nes/nesnromsubtest.nes" NesRomLoader
+
 	run_one nesmodetest "$WORK/nes/nesmodetest.nes" NesRomLoader
 	run_one nesmmc3test "$WORK/nes/nesmmc3test.nes" NesRomLoader
 	run_one nesmmc3test2 "$WORK/nes/nesmmc3test2.nes" NesRomLoader

@@ -51,6 +51,7 @@ import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.InstructionIterator;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
+import ghidra.program.model.mem.Memory;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.mem.MemoryBlockSourceInfo;
 import ghidra.program.model.mem.MemoryBlockType;
@@ -329,6 +330,9 @@ public class VerifyBankTest extends GhidraScript {
 		}
 		else if (name.contains("nesmmc3test")) {
 			checkNesMmc3test();
+		}
+		else if (name.contains("nesnromsubtest")) {
+			checkNesNromSubtest();
 		}
 		else if (name.contains("nesmodetest")) {
 			checkNesModetest();
@@ -2303,20 +2307,30 @@ public class VerifyBankTest extends GhidraScript {
 			image[3] != 0x1A) {
 			throw new IOException("not an iNES image (bad magic or short header)");
 		}
-		int prgBanks = image[4] & 0xFF;
-		// The banktest fixtures are all plain iNES 1.0, where h[4] alone is the 16K PRG unit
-		// count; keep the NES 2.0 case to the one line it needs. An NES 2.0 header ((h[7] & 0x0C)
-		// == 0x08) carries a PRG high nibble in h[9]; 0xF there selects the exponent size form,
-		// which the loader declines to key an identity on at all, so it is not folded in.
-		if ((image[7] & 0x0C) == 0x08) {
-			int prgHi = image[9] & 0x0F;
-			if (prgHi != 0 && prgHi != 0x0F) {
-				prgBanks |= prgHi << 8;
-			}
+		int prgLow = image[4] & 0xFF;
+		// Most banktest fixtures are plain iNES 1.0, where h[4] alone is the 16 KiB PRG unit
+		// count. An NES 2.0 header ((h[7] & 0x0C) == 0x08) carries a PRG high nibble in h[9],
+		// and 0xF there selects the EXPONENT form, where h[4] is not a count at all but
+		// EEEEEEMM for a size of 2^E * (2M+1) BYTES. nesnromsubtest is the fixture that uses
+		// it, because an 8 KiB PRG is HALF a unit and the linear form cannot express it (beads
+		// grm-dfj, grm-7e5o).
+		//
+		// Re-derived here from the format rather than shared with InesHeader.nes2RomSize on
+		// purpose: GID3's entire value is being an INDEPENDENT parse of the same documented
+		// header, so calling into the loader would only prove it agrees with itself.
+		int prgHi = (image[7] & 0x0C) == 0x08 ? image[9] & 0x0F : 0;
+		long length;
+		if (prgHi == 0x0F) {
+			int exponent = prgLow >> 2;
+			// An absurd exponent would overflow long and could go negative, which the fit check
+			// below would wave through -- report 0 and let it fail as "no usable slice" instead.
+			length = exponent >= 48 ? 0 : (1L << exponent) * (((prgLow & 0x03) * 2L) + 1);
+		}
+		else {
+			length = 16384L * (prgLow | (prgHi << 8));
 		}
 		int start = 16 + (((image[6] & 0x04) != 0) ? 512 : 0);
-		long length = 16384L * prgBanks;
-		if (prgBanks == 0 || start + length > image.length) {
+		if (length == 0 || start + length > image.length) {
 			throw new IOException("PRG slice [" + start + ", +" + length + ") does not fit in " +
 				image.length + " bytes");
 		}
@@ -3506,6 +3520,84 @@ public class VerifyBankTest extends GhidraScript {
 	// ------------------------------------------------------------------
 	// nesmodetest.nes criteria (memory.layouts[] mode-varying windows, bead grm-qvi)
 	// ------------------------------------------------------------------
+
+	// ------------------------------------------------------------------
+	// nesnromsubtest.nes criteria (sub-window PRG image mirrors to fill its window,
+	// bead grm-7e5o)
+	// ------------------------------------------------------------------
+
+	/**
+	 * An 8 KiB NROM PRG is smaller than either of the board's 16 KiB windows, so the chip's
+	 * unconnected high address lines make it appear FOUR times across $8000-$FFFF. Before
+	 * grm-7e5o both windows were skipped and the import produced no memory blocks at all.
+	 * <p>
+	 * The criteria are ordered from cheapest to strongest: the blocks exist (X1/X2), they
+	 * carry the right BYTES rather than merely the right extents (X3 -- the thing the
+	 * real-ROM dump format cannot see, cf. grm-9nxj.19), and the mirror is live enough to
+	 * disassemble and to read the vector table through (X4/X5). Every executable address in
+	 * this fixture deliberately lives in a mirror, so X4/X5 cannot pass by accident.
+	 */
+	private void checkNesNromSubtest() {
+		Memory mem = currentProgram.getMemory();
+
+		// X1: each window's FIRST copy is the real, FileBytes-backed block, named for the
+		// window and 8 KiB long -- the image size, not the 16 KiB window size.
+		MemoryBlock prgLo = mem.getBlock("PRG_LO");
+		MemoryBlock prgHi = mem.getBlock("PRG_HI");
+		criterion("X1a", prgLo != null && !prgLo.isOverlay() && prgLo.isInitialized() &&
+			prgLo.getSize() == 0x2000 && prgLo.getStart().getOffset() == 0x8000,
+			"PRG_LO is an 8 KiB initialized base-space block at $8000: " + describeBlock(prgLo));
+		criterion("X1b", prgHi != null && !prgHi.isOverlay() && prgHi.isInitialized() &&
+			prgHi.getSize() == 0x2000 && prgHi.getStart().getOffset() == 0xC000,
+			"PRG_HI is an 8 KiB initialized base-space block at $C000: " + describeBlock(prgHi));
+
+		// X2: the second copy of each window is a byte-mapped view of the first. Byte-mapped
+		// blocks report isInitialized() == false -- their bytes belong to the block they map
+		// onto -- which is exactly what distinguishes them from a duplicated slice here.
+		MemoryBlock loMirror = mem.getBlock("PRG_LO_mirror_a000");
+		MemoryBlock hiMirror = mem.getBlock("PRG_HI_mirror_e000");
+		criterion("X2a", loMirror != null && !loMirror.isInitialized() &&
+			loMirror.getSize() == 0x2000 && loMirror.getStart().getOffset() == 0xA000,
+			"PRG_LO_mirror_a000 is an 8 KiB byte-mapped block at $A000: " +
+				describeBlock(loMirror));
+		criterion("X2b", hiMirror != null && !hiMirror.isInitialized() &&
+			hiMirror.getSize() == 0x2000 && hiMirror.getStart().getOffset() == 0xE000,
+			"PRG_HI_mirror_e000 is an 8 KiB byte-mapped block at $E000: " +
+				describeBlock(hiMirror));
+
+		// X3: the BYTES, at both markers, at all four addresses each. Extents alone would pass
+		// with the mirrors backed by the wrong file offsets, which is the failure mode this
+		// whole fixture exists to exclude. Read through addresses, not blocks: a byte-mapped
+		// block cannot be read via readByte().
+		boolean lda = true;
+		boolean marker = true;
+		StringBuilder seen = new StringBuilder();
+		for (long base = 0x8000; base < 0x10000; base += 0x2000) {
+			int a = readByteAt(base);
+			int m = readByteAt(base + 0x1000);
+			lda &= a == 0xA9;
+			marker &= m == 0xC3;
+			seen.append(" $").append(Long.toHexString(base)).append("=").append(hx(a))
+					.append("/$").append(Long.toHexString(base + 0x1000)).append("=")
+					.append(hx(m));
+		}
+		criterion("X3", lda && marker,
+			"the 8 KiB image reads back at all four copies (expect a9/c3 each):" + seen);
+
+		// X4: RESET's target $E000 is inside PRG_HI_mirror_e000, so a labelled, disassembled
+		// entry point there proves the loader read the vector table through the mirror (its
+		// slots at $FFFA-$FFFF are themselves only reachable modulo the image) AND that a
+		// byte-mapped mirror is disassemblable, the property SnesRomLoader relies on too.
+		Instruction reset = currentProgram.getListing().getInstructionAt(addr(0xE000));
+		criterion("X4", reset != null && reset.getMnemonicString().equals("LDA"),
+			"instruction disassembled at $e000 inside the mirror: " +
+				(reset == null ? "<none>" : reset.toString()));
+
+		// X5: the vector label itself, which only exists if fileOffsetOf() reduced $FFFC
+		// modulo the image rather than running off the end of it.
+		criterion("X5", hasSymbol(0xE000, "RESET"),
+			"RESET label at $e000, read from the vector slot at $fffc through the mirror");
+	}
 
 	private void checkNesModetest() {
 		// F1: RESET's JSR $8000 at $C005, taken with bank=1 in effect (mode still 0/home),

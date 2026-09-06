@@ -679,11 +679,14 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 
 		try {
 			long srcOffset = DescriptorExpressions.evalConstantExpr(expr, header.prgSize(), length);
-			if (checkRange(name, expr, srcOffset, length, header, log)) {
-				createWindowBlock(program, baseSpace, false, name,
-					name + " = PRG[" + expr + "] (offset 0x" + Long.toHexString(srcOffset) + ")",
-					start, length, fileBytes, header.prgFileOffset() + srcOffset, mapPath, log);
-				placed.add(new PlacedWindow(name, start, end, srcOffset));
+			WindowBacking backing = resolveBacking(name, expr, srcOffset, length, header, log);
+			if (backing != null) {
+				createWindowBlocks(program, baseSpace, false, name,
+					name + " = PRG[" + expr + "] (offset 0x" +
+						Long.toHexString(backing.srcOffset()) + ")",
+					start, length, fileBytes, header.prgFileOffset() + backing.srcOffset(),
+					backing.repeats(), mapPath, log);
+				placed.add(new PlacedWindow(name, start, end, backing.srcOffset()));
 			}
 			return;
 		}
@@ -856,6 +859,115 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 		}
 	}
 
+	/**
+	 * How a fixed window is backed by the PRG image: the image offset its first byte comes
+	 * from, and how many times the image repeats across the window. {@code repeats} is 1 for
+	 * every normal image; see {@link #resolveBacking} for the sub-window case.
+	 */
+	private record WindowBacking(long srcOffset, int repeats) {}
+
+	/**
+	 * Resolves a fixed window's backing, or {@code null} (with a logged reason) if the window
+	 * cannot be placed.
+	 * <p>
+	 * <b>The sub-window case (bead grm-7e5o).</b> A PRG image SMALLER than the window it has to
+	 * fill is not a truncated image -- it is a smaller ROM chip, whose high address lines the
+	 * board simply does not connect. The window therefore shows the whole image repeated:
+	 * NROM-128's single 16 KiB bank appears twice across $8000-$FFFF (which is the only reason
+	 * {@code PRG[last]} means anything on it), and the three known 8 KiB mapper-0 images --
+	 * both Galaxian (J) revisions and Controller Test Program (J), all using NES 2.0's exponent
+	 * size form precisely to express half of one 16 KiB unit -- appear four times.
+	 * <p>
+	 * Because the decode is by unconnected address lines, the byte a CPU address sees is
+	 * {@code image[addr mod imageSize]} whatever the {@code maps:} expression intended, and the
+	 * expression's own offset is not representable on the hardware. So the offset is reduced
+	 * modulo the image size (which is what makes {@code PRG[last]}'s negative
+	 * {@code imageSize - windowSize} resolve correctly rather than being skipped), and a
+	 * reduction that does NOT land on zero is refused rather than placed: that would be a
+	 * rotated view, which no board decodes and which this loader has no way to build.
+	 * <p>
+	 * This is deliberately a LOADER concern rather than a descriptor one, per the bead's ruling:
+	 * it is uniform across boards, needs no addition to the {@code maps:} mini-language, and no
+	 * board is known where an undersized image does something other than mirror. A board that
+	 * left the gap OPEN BUS instead would need the descriptor route, and would be the reason to
+	 * revisit this.
+	 */
+	private static WindowBacking resolveBacking(String name, String expr, long srcOffset,
+			long length, InesHeader header, MessageLog log) {
+
+		long imageSize = header.prgSize();
+		if (imageSize > 0 && imageSize < length) {
+			if (length % imageSize != 0) {
+				log.appendMsg("Window '" + name + "' skipped: the " + imageSize +
+					"-byte PRG image is smaller than the " + length +
+					"-byte window but does not divide it, so it cannot mirror to fill it");
+				return null;
+			}
+			// Math.floorMod, spelled out: srcOffset is negative for 'last' on a sub-window image.
+			long reduced = ((srcOffset % imageSize) + imageSize) % imageSize;
+			if (reduced != 0) {
+				log.appendMsg("Window '" + name + "' skipped: '" + expr + "' resolves to " +
+					srcOffset + ", which reduces to offset " + reduced + " within the " +
+					imageSize + "-byte PRG image -- a rotated view, which no board decodes");
+				return null;
+			}
+			int repeats = (int) (length / imageSize);
+			log.appendMsg("Window '" + name + "': the " + imageSize +
+				"-byte PRG image mirrors " + repeats + "x to fill the " + length +
+				"-byte window (undecoded high address lines)");
+			return new WindowBacking(0, repeats);
+		}
+		return checkRange(name, expr, srcOffset, length, header, log)
+				? new WindowBacking(srcOffset, 1)
+				: null;
+	}
+
+	/**
+	 * Creates a fixed window's block(s): normally one initialized block spanning the whole
+	 * window, but {@code repeats} copies when the image is smaller than the window. The first
+	 * copy is the real, FileBytes-backed block and carries the window's name; the rest are
+	 * {@code createByteMappedBlock} views of it, matching {@code SnesRomLoader}'s ROM mirrors
+	 * rather than duplicating the bytes -- the mirrors ARE the same chip, and a byte-mapped
+	 * view says so.
+	 */
+	private static MemoryBlock createWindowBlocks(Program program, AddressSpace baseSpace,
+			boolean isOverlay, String blockName, String comment, long start, long length,
+			FileBytes fileBytes, long fileOffset, int repeats, String source, MessageLog log) {
+
+		long unit = length / repeats;
+		MemoryBlock home = createWindowBlock(program, baseSpace, isOverlay, blockName,
+			comment + (repeats > 1 ? ", mirrored " + repeats + "x" : ""),
+			start, unit, fileBytes, fileOffset, source, log);
+		if (home == null) {
+			return null;
+		}
+		for (int i = 1; i < repeats; i++) {
+			long at = start + i * unit;
+			String mirrorName = blockName + "_mirror_" + Long.toHexString(at);
+			try {
+				MemoryBlock block = program.getMemory().createByteMappedBlock(mirrorName,
+					baseSpace.getAddress(at), baseSpace.getAddress(start), unit, false);
+				block.setRead(true);
+				block.setExecute(true);
+				block.setComment("Mirror of " + blockName + " at $" + Long.toHexString(start) +
+					" (PRG image smaller than the window)");
+			}
+			catch (Exception e) {
+				log.appendMsg("Failed to mirror '" + blockName + "' at $" +
+					Long.toHexString(at) + ": " + e.getMessage());
+			}
+		}
+		return home;
+	}
+
+	/**
+	 * Range gate for the BANK-DEPENDENT window paths, which place one block per candidate bank
+	 * value. Unlike {@link #resolveBacking} it never mirrors a sub-window image: mirroring is a
+	 * property of an image smaller than a single window, and a board with {@code banking.state}
+	 * has at least one bank per window by construction, so the case cannot arise there without
+	 * the descriptor already being wrong. Extending mirroring here would also mean byte-mapped
+	 * views into overlay spaces, which is a different problem than the one grm-7e5o describes.
+	 */
 	private static boolean checkRange(String name, String expr, long srcOffset, long length,
 			InesHeader header, MessageLog log) {
 		if (srcOffset < 0 || srcOffset + length > header.prgSize()) {
@@ -887,7 +999,16 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 			List<PlacedWindow> placedWindows) {
 		for (PlacedWindow window : placedWindows) {
 			if (cpuAddr >= window.cpuStart() && cpuAddr <= window.cpuEnd()) {
-				return header.prgFileOffset() + window.srcOffset() + (cpuAddr - window.cpuStart());
+				// Reduced modulo the image so a sub-window image's mirrors read through to the
+				// bytes they mirror (bead grm-7e5o) -- this is how the vector table at
+				// $FFFA-$FFFF is found on an 8 KiB NROM, where it lives in the window's fourth
+				// copy. A no-op for every image at least as large as its window, since the
+				// in-window offset then cannot reach the image size.
+				long offset = window.srcOffset() + (cpuAddr - window.cpuStart());
+				if (header.prgSize() > 0) {
+					offset %= header.prgSize();
+				}
+				return header.prgFileOffset() + offset;
 			}
 		}
 		return null;

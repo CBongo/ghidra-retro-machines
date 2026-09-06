@@ -343,6 +343,10 @@ MAPPER_MMC3 = 4        # MMC3 (nesmmc3test)
 MAPPER_SERIALTEST = 222  # synthetic nes-serialtest board; see machines/nes-serialtest.yaml's
                           # module doc for why 222 (not 100/101/102/248) was chosen
 MAPPER_MMC1 = 1        # real MMC1 board (nesmmc1test); see machines/nes-mmc1.yaml
+MAPPER_NROM = 0        # NROM, the shipped machines/nes-nrom.yaml board (nesnromsubtest)
+NROMSUB_SIZE = 0x2000  # 8 KiB -- HALF one 16 KiB iNES unit; see make_prg_nromsub()
+NROMSUB_A = 0x5A       # LDA operand at image offset 0, visible at four CPU addresses
+NROMSUB_MARKER = 0xC3  # a second, distinct marker at image offset 0x1000
 MAPPER_BANDAI = 16     # Bandai FCG/LZ93D50 board (nesbandaitest); see machines/nes-bandai-fcg.yaml
 MAPPER_MMC2 = 9        # MMC2 board (nesmmc2test); see machines/nes-mmc2.yaml
 MAPPER_MMC5 = 5        # MMC5 board (nesmmc5test); see machines/nes-mmc5.yaml
@@ -3137,7 +3141,60 @@ def make_prg_relay():
     return bytes(prg), labels
 
 
-def make_ines_header(prg_banks, chr_banks, mapper):
+def make_prg_nromsub():
+    """SUB-WINDOW PRG image (bead grm-7e5o): an 8 KiB NROM PRG, which is SMALLER than
+    either of the board's two 16 KiB windows and therefore mirrors to fill them.
+
+    This is the synthetic stand-in for the three real images that motivated the bead --
+    both Galaxian (J) revisions and Controller Test Program (J) -- none of which can be
+    shipped. Like them it declares its size through NES 2.0's EXPONENT form (h[4] = 0x34,
+    h[9] low nibble = 0x0F: E = 13, M = 0, so 2^13 = 8192 bytes), because the linear form
+    counts 16 KiB units and simply cannot express half of one. See InesHeader.nes2RomSize.
+
+    WHAT THE HARDWARE DOES, and what this fixture pins: the missing high address lines are
+    not connected, so the 8 KiB chip appears FOUR times across $8000-$FFFF -- twice in
+    PRG_LO ($8000-$BFFF) and twice in PRG_HI ($C000-$FFFF). The loader places the first
+    copy of each window as the real FileBytes-backed block and the second as a byte-mapped
+    view of it.
+
+    Image layout (offsets; each appears at four CPU addresses 0x2000 apart):
+      0x0000  A9 5A       LDA #$5A     -- at $8000, $A000, $C000 and $E000
+      0x0002  4C 02 E0    JMP $E002    -- idle loop, targeting ITSELF in the top mirror
+      0x0005  40          RTI          -- NMI/IRQ handler, at $E005
+      0x1000  C3                       -- a second marker, at $9000/$B000/$D000/$F000
+      0x1FFA  05 E0                    -- NMI  -> $E005
+      0x1FFC  00 E0                    -- RESET-> $E000
+      0x1FFE  05 E0                    -- IRQ  -> $E005
+
+    EVERY EXECUTABLE ADDRESS HERE IS IN A MIRROR ON PURPOSE. RESET points at $E000, which
+    lives in PRG_HI_mirror_e000 (byte-mapped), and the vector table at $FFFA-$FFFF does
+    too. So the fixture fails if the mirrors are missing, if they are not disassemblable,
+    or if the loader's vector read does not reduce the CPU address modulo the image -- the
+    three ways this feature can be half-built.
+    """
+    prg = bytearray([0x00] * NROMSUB_SIZE)
+    prg[0x0000] = 0xA9              # LDA #$5A
+    prg[0x0001] = NROMSUB_A
+    prg[0x0002] = 0x4C              # JMP $E002 (itself)
+    prg[0x0003] = 0x02
+    prg[0x0004] = 0xE0
+    prg[0x0005] = 0x40              # RTI
+    prg[0x1000] = NROMSUB_MARKER
+    prg[0x1FFA] = 0x05              # NMI -> $E005
+    prg[0x1FFB] = 0xE0
+    prg[0x1FFC] = 0x00              # RESET -> $E000
+    prg[0x1FFD] = 0xE0
+    prg[0x1FFE] = 0x05              # IRQ -> $E005
+    prg[0x1FFF] = 0xE0
+    return bytes(prg)
+
+
+def make_ines_header(prg_banks, chr_banks, mapper, nes2_prg_exponent=False):
+    # nes2_prg_exponent switches the PRG size field to NES 2.0's EXPONENT form, where h[9]'s
+    # low nibble is 0xF and `prg_banks` is not a unit count at all but EEEEEEMM, for a size of
+    # 2^E * (2M+1) BYTES. It is the only way to declare a PRG smaller than one 16 KiB unit --
+    # see make_prg_nromsub() and InesHeader.nes2RomSize. The CHR field stays linear (h[9]'s
+    # high nibble 0), so chr_banks keeps its ordinary meaning.
     h = bytearray(16)
     h[0:4] = b"NES\x1a"
     h[4] = prg_banks
@@ -3145,10 +3202,14 @@ def make_ines_header(prg_banks, chr_banks, mapper):
     h[6] = (mapper & 0x0F) << 4  # low mapper nibble, no trainer/mirroring flags
     h[7] = mapper & 0xF0         # high mapper nibble; NES 2.0 bits (h[7] & 0x0C) left 0
     # bytes 8-15 stay zero: plain iNES 1.0, no DiskDude tail
+    if nes2_prg_exponent:
+        h[7] |= 0x08             # flags7 bits 2-3 == 0b10: this is a NES 2.0 header
+        h[9] = 0x0F              # PRG size nibble 0xF -> h[4] is an exponent, not a count
     return bytes(h)
 
 
-def _write_rom(outdir, filename, prg, mapper=MAPPER, prg_banks=None):
+def _write_rom(outdir, filename, prg, mapper=MAPPER, prg_banks=None,
+               nes2_prg_exponent=False):
     # prg_banks is the iNES header's PRG-size field, defined by the format in 16 KiB
     # units -- NOT this module's per-board bank size (8 KiB for MMC3/MMC2, 16 KiB for
     # everyone else). Leave it None (the normal case) and it's derived from the payload,
@@ -3159,7 +3220,7 @@ def _write_rom(outdir, filename, prg, mapper=MAPPER, prg_banks=None):
         assert len(prg) % 0x4000 == 0, \
             "PRG payload %d is not a whole number of 16 KiB iNES units" % len(prg)
         prg_banks = len(prg) // 0x4000
-    header = make_ines_header(prg_banks, 0, mapper)
+    header = make_ines_header(prg_banks, 0, mapper, nes2_prg_exponent)
     rom = header + prg
     path = os.path.join(outdir, filename)
     with open(path, "wb") as f:
@@ -4002,6 +4063,34 @@ def main():
     assert prgm5w[m5(0xFFFC)] | (prgm5w[m5(0xFFFD)] << 8) == 0xE000  # RESET
     assert prgm5w[m5(0xFFFE)] | (prgm5w[m5(0xFFFF)] << 8) == 0xE020  # IRQ
     _write_rom(outdir, "nesmmc5wraptest.nes", prgm5w, mapper=MAPPER_MMC5)
+
+    # nesnromsubtest.nes (bead grm-7e5o): an 8 KiB NROM PRG -- SMALLER than either 16 KiB
+    # window, so the image mirrors four times across $8000-$FFFF.
+    prgsub = make_prg_nromsub()
+
+    assert len(prgsub) == NROMSUB_SIZE
+    assert prgsub[0x0000] == 0xA9 and prgsub[0x0001] == NROMSUB_A   # LDA #$5A
+    assert prgsub[0x0002] == 0x4C and \
+        (prgsub[0x0003] | (prgsub[0x0004] << 8)) == 0xE002          # JMP $E002 (itself)
+    assert prgsub[0x0005] == 0x40                                    # RTI
+    assert prgsub[0x1000] == NROMSUB_MARKER
+    # Bespoke vector check rather than _assert_vectors(): that helper locates the handler as
+    # `len(prg) - 0x4000 + (handler - 0xC000)`, i.e. it assumes the fixed window is the image's
+    # last 16 KiB. On an image SMALLER than one window that offset is negative and the premise
+    # is simply wrong -- which is the whole point of this fixture. Here every CPU address
+    # reduces modulo the 8 KiB image instead.
+    sub = lambda cpu: cpu % NROMSUB_SIZE
+    assert prgsub[sub(0xFFFA)] | (prgsub[sub(0xFFFA) + 1] << 8) == 0xE005  # NMI
+    assert prgsub[sub(0xFFFC)] | (prgsub[sub(0xFFFC) + 1] << 8) == 0xE000  # RESET
+    assert prgsub[sub(0xFFFE)] | (prgsub[sub(0xFFFE) + 1] << 8) == 0xE005  # IRQ
+    assert prgsub[sub(0xE005)] == 0x40, "NMI/IRQ vector no longer points at the RTI"
+    assert prgsub[sub(0xE000)] == 0xA9, "RESET vector no longer points at the LDA"
+
+    # prg_banks is the EXPONENT byte here, not a unit count: 0x34 is E=13, M=0 -> 2^13 = 8192.
+    # This is the one call site in this file that needs the explicit argument its docstring
+    # warns about, and the reason that escape hatch exists.
+    _write_rom(outdir, "nesnromsubtest.nes", prgsub, mapper=MAPPER_NROM,
+               prg_banks=0x34, nes2_prg_exponent=True)
 
 
 if __name__ == "__main__":

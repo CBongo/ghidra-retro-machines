@@ -38,6 +38,11 @@ memory:
       end: 0xFFFF
       # `last` = image size minus window size: NROM-256 gets its upper 16 KiB; NROM-128
       # mirrors its single bank (hardware truth: A14 is not decoded on NROM-128).
+      # An image SMALLER than one window (the 8 KiB mapper-0 dumps -- both Galaxian (J)
+      # revisions, Controller Test Program (J)) needs no expression of its own: `last` goes
+      # negative there, and the loader reduces it modulo the image and repeats the slice to
+      # fill the window, which is the same undecoded-address-line story one step further.
+      # See NesRomLoader.resolveBacking and bead grm-7e5o.
       maps: PRG[last]
 
 # No banking: section — NROM is unbanked; schema v2 makes banking optional.
