@@ -30,6 +30,7 @@ import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
 
+import static retromachines.BankDataflowEngine.overwrite;
 import static retromachines.BankDataflowEngine.position;
 
 import retromachines.HelperDiscovery.HelperModel;
@@ -245,11 +246,193 @@ final class HelperArgumentRecovery {
 		RegisterEnv callerRegs = envCache.computeIfAbsent(callInstr.getMinAddress(),
 			a -> callSiteRegisters(program, callInstr, scanStop,
 				crossableWrapperJoin(program, helper.firstSite(), scanStop), helper));
-		BankSwitchStrategy.HelperDeposit deposit = helper.strategy()
+		// The argument-bearing deposit, computed exactly as it was before grm-4bgh.5 -- this
+		// is both the answer for a single-site helper and, for a folded one, the deposit whose
+		// emptiness decides whether this CALL SITE gets a warning. See foldDeposits.
+		BankSwitchStrategy.HelperDeposit primary = helper.strategy()
 				.depositHelperArgument(program, switchSite, local, localIn, stateMask, callerRegs);
+		BankSwitchStrategy.HelperDeposit deposit = foldDeposits(program, helper, primary, localIn,
+			stateMask, callerRegs);
 		BankState positionedValue = position(deposit.value(), helper.lsb(), helper.effectMask());
 		int positionedOwnedMask = (deposit.ownedMask() << helper.lsb()) & helper.effectMask();
-		return new CallEffect(positionedValue, positionedOwnedMask);
+		return new CallEffect(positionedValue, positionedOwnedMask,
+			primary.value().knownMask() != 0);
+	}
+
+	/**
+	 * The helper's deposit: one per RECOGNIZED SITE for a strategy that says its sites are
+	 * independent, folded in address order; otherwise the single {@code switchSite} deposit this
+	 * method has always produced (bead grm-4bgh.5).
+	 * <p>
+	 * <b>Why one site is not always enough.</b> {@code HelperModel.switchSite} is the
+	 * max-address site, a PROXY for "the last recognized write on the path to the return", and
+	 * that is exactly right for a serial-shift chain whose five writes commit one value. It has
+	 * no correct answer for a helper that deposits into SEVERAL fields from one argument:
+	 * rcransom's {@code FUN_fed1} sets R6 = A*2 at {@code $FEE2} and R7 = A*2+1 at {@code $FEF5},
+	 * and the proxy picks {@code $FEF5}, so the R6 deposit -- the one that actually resolves --
+	 * is never consulted. There is no single site that could be picked instead: both deposits
+	 * are real and neither summarizes the other. Which shape a mechanism has is
+	 * {@link BankSwitchStrategy#depositsPerSite}'s question, not something this method guesses
+	 * from the site count.
+	 * <p>
+	 * <b>The fold's semantics are execution semantics.</b> Sites are visited in ascending
+	 * address order and a later site OVERWRITES an earlier one on the bits it owns
+	 * ({@link BankDataflowEngine#overwrite}, the same per-bit replace the engine already uses to
+	 * fold a mechanism's effect into a state), while {@code ownedMask} accumulates as a union.
+	 * fed1 relies on both halves of that: its two select writes deposit the same field with
+	 * different values ({@code $06} then {@code $07}) and the later one must win, while its two
+	 * data writes own disjoint fields and must both survive.
+	 * <p>
+	 * <b>EVERY FOLDED SITE OWNS WHAT IT WRITES, RESOLVED OR NOT -- unresolved ownership is
+	 * HONEST POISON and is kept.</b> This was measured both ways, and the losing variant is
+	 * instructive. Restricting a folded-in site to the bits it actually RESOLVED
+	 * ({@code ownedMask & value.knownMask()}) preserves more prior knowledge and reads as the
+	 * conservative choice, but it makes the annotation LIE: at rcransom's {@code $C08E} the
+	 * comment then renders {@code r6=0} as known, echoing the dataflow's prior belief, at a
+	 * call to {@code FUN_fed1} -- a helper that demonstrably WRITES r6 (as {@code A*2}) with a
+	 * value this site could not recover. A bit a helper writes is not a bit the caller still
+	 * knows. The apparent cost of poisoning -- rcransom's {@code $B80B} losing {@code select}
+	 * and {@code r6}, both previously "known" -- is on inspection not a cost at all: an
+	 * intervening {@code fed1} call really does clobber those fields with an unrecoverable
+	 * value, so the knowledge being lost was already wrong. Precision that survives only
+	 * because a write went unmodeled is not precision.
+	 * <p>
+	 * <b>{@code primary} decides the WARNING, not the folded result.</b> A call whose helper
+	 * writes a select register from its own constant now KNOWS something even when the caller's
+	 * argument was not recovered at all -- and {@code BankAnnotationAdapter.annotateOrWarn}
+	 * warns on "nothing is known", which that would silently satisfy. Measured on rcransom, the
+	 * first version of this bead dropped its warning count from 43 to 5 while every one of those
+	 * sites' actual bank fields stayed unresolved, quietly shrinking the very census grm-nqxt is
+	 * adjudicating. So {@link CallEffect#argumentResolved} reports whether {@code primary} --
+	 * the deposit at the site that consumes the caller's argument -- resolved anything, and
+	 * {@code BoardBankAnalyzer} warns off that. The comment still renders from the richer folded
+	 * state, so such a site now carries BOTH a warning and a partial annotation: the warning
+	 * says the argument was not recovered, and the comment says what the helper's own body
+	 * established regardless.
+	 * <p>
+	 * <b>The fold requires the sites to RUN UNCONDITIONALLY, and that is a soundness condition
+	 * rather than a tidiness one</b> -- see {@link #sitesRunUnconditionally}. Folding asserts
+	 * that every site executed on this call; two mechanism writes on opposite arms of a branch
+	 * would have exactly one of them execute, and depositing both would ship a value from a path
+	 * that did not run. When the guard declines, this falls back to the single-site deposit,
+	 * which is no worse than the behaviour before this bead.
+	 * <p>
+	 * <b>THE FACE-VALUE ARGUMENT IS OFFERED TO AT MOST ONE SITE, and this is a soundness rule,
+	 * not a refinement.</b> {@code argValue} is a claim about ONE deposit: a
+	 * {@code HelperModel} carries one {@code argReg} and the convention that the register holds
+	 * the field value itself. Handing the same byte to several independent deposits asserts
+	 * that every field this helper writes receives that same value, which is exactly the
+	 * assumption bead grm-4bgh was filed to say is wrong. The amplification is real and was
+	 * measured while writing this bead's tests: {@link #valueSuppliedInsideHelper} scans back
+	 * from the helper's value site with {@link #NO_HOOKS}, which steps straight over an earlier
+	 * mechanism write (a plain {@code STA} does not touch the register being resolved), so it
+	 * can return a constant that belongs to a DIFFERENT site -- an earlier select write's own
+	 * {@code LDA #imm}, say. Under an unrestricted fold that stray constant would be deposited
+	 * verbatim into every field at once.
+	 * <p>
+	 * So only {@code switchSite} -- the site this model already summarized before grm-4bgh.5,
+	 * and the only one with any prior claim to the recovered byte -- is offered {@code local},
+	 * as {@code primary}, computed by {@link #recoverCallArgument} before this method is even
+	 * called. Every other site is passed {@link BankState#unknown()} and must earn its value
+	 * from its own body under the caller's registers, which is precisely what
+	 * {@code SelectDataBankSwitchStrategy}'s {@code callerRegs} mini-inline (grm-4bgh.4) does
+	 * and what makes rcransom's {@code $FEE2} resolve to {@code A*2} rather than to {@code A}.
+	 * The rule also makes the fold a strict superset of the old behaviour at {@code switchSite}
+	 * itself: that site's deposit is byte-identical to what it was.
+	 * <p>
+	 * {@code inState} ({@code localIn}) IS the same for every site: it is the state flowing into
+	 * the CALL, which no site changes. Threading each site's accumulated result into the next as
+	 * its {@code inState} was considered and not done -- the one thing it would buy for
+	 * select-data (a data write routed by a select the same helper set) is already answered per
+	 * site, and better, by {@code selectSuppliedInsideHelper} reading the helper's own body.
+	 */
+	private static BankSwitchStrategy.HelperDeposit foldDeposits(Program program,
+			HelperModel helper, BankSwitchStrategy.HelperDeposit primary, BankState localIn,
+			int stateMask, RegisterEnv callerRegs) {
+		BankSwitchStrategy strategy = helper.strategy();
+		List<Address> sites = helper.sites();
+		if (!strategy.depositsPerSite() || sites.size() < 2
+				|| !sitesRunUnconditionally(program, sites)) {
+			return primary;
+		}
+		Listing listing = program.getListing();
+		BankState value = primary.value();
+		int owned = primary.ownedMask();
+		for (Address siteAddr : sites) {
+			if (siteAddr.equals(helper.switchSite())) {
+				continue; // already folded in as primary, and the only site offered argValue
+			}
+			Instruction site = listing.getInstructionAt(siteAddr);
+			if (site == null) {
+				// No instruction to interpret. Cannot happen for a site findHelpers recorded,
+				// but claiming a field on the strength of an address alone is exactly the kind
+				// of guess this engine refuses: skip it, owning nothing.
+				continue;
+			}
+			BankSwitchStrategy.HelperDeposit deposit = strategy.depositHelperArgument(program,
+				site, BankState.unknown(), localIn, stateMask, callerRegs);
+			int siteOwned = deposit.ownedMask();
+			BankState scoped = new BankState(deposit.value().knownMask() & siteOwned,
+				deposit.value().bits() & siteOwned);
+			value = overwrite(value, scoped, siteOwned);
+			owned |= siteOwned;
+		}
+		return new BankSwitchStrategy.HelperDeposit(owned, value);
+	}
+
+	/**
+	 * Whether every one of {@code sites} runs on every call that reaches the first of them --
+	 * the precondition {@link #foldDeposits} needs before it may attribute all their deposits to
+	 * one call.
+	 * <p>
+	 * The test is deliberately blunt: walk the instructions from the lowest site to the highest
+	 * and require a contiguous FALL-THROUGH chain containing no jump of any kind. A conditional
+	 * branch in the span could skip a later site; an unconditional one could skip it or leave
+	 * the body entirely; a gap in the disassembly is bytes whose control flow is unknown, which
+	 * is not the same as harmless. A CALL is permitted -- it returns to the next instruction, so
+	 * the later sites still run, and whatever it does to the registers is the per-site scan's
+	 * problem, which that scan already declines on.
+	 * <p>
+	 * An incoming branch INTO the span (a control-flow join) is deliberately NOT disqualifying.
+	 * It means some other path reaches the middle of this body, but it does not remove any site
+	 * from the path THIS call takes, which is the only claim the fold makes. A call that enters
+	 * mid-body is a different model entirely -- see {@code HelperDiscovery.midBodyEntryHelper},
+	 * whose own admission test asks the corresponding question for that case.
+	 * <p>
+	 * Any missing instruction, any address-space mismatch, or any site outside the walked span
+	 * declines, in keeping with this file's standing rule that a false decline costs one
+	 * annotation while a false accept ships a wrong bank.
+	 */
+	private static boolean sitesRunUnconditionally(Program program, List<Address> sites) {
+		Address first = sites.get(0);
+		Address last = sites.get(sites.size() - 1);
+		if (first == null || last == null
+				|| !first.getAddressSpace().equals(last.getAddressSpace())) {
+			return false;
+		}
+		Listing listing = program.getListing();
+		Instruction instr = listing.getInstructionAt(first);
+		if (instr == null) {
+			return false;
+		}
+		Set<Address> wanted = new LinkedHashSet<>(sites);
+		wanted.remove(first);
+		while (!instr.getMinAddress().equals(last)) {
+			if (instr.getFlowType().isJump()) {
+				return false; // a branch could route around a later site
+			}
+			Address fallThrough = instr.getFallThrough();
+			if (fallThrough == null) {
+				return false; // no straight-line successor: the walk cannot continue
+			}
+			Instruction next = listing.getInstructionAt(fallThrough);
+			if (next == null) {
+				return false; // undisassembled bytes: unknown control flow, not harmless
+			}
+			wanted.remove(next.getMinAddress());
+			instr = next;
+		}
+		return wanted.isEmpty();
 	}
 
 	/**
@@ -1123,7 +1306,19 @@ final class HelperArgumentRecovery {
 	 * reason {@link BankSwitchStrategy.HelperDeposit} documents (a touched-but-unresolved bit is owned
 	 * and poisoned; an untouched bit is neither).
 	 */
-	record CallEffect(BankState state, int ownedMask) {}
+	record CallEffect(BankState state, int ownedMask, boolean argumentResolved) {
+
+		/**
+		 * A call effect whose {@code argumentResolved} follows from {@code state} alone -- the
+		 * pre-grm-4bgh.5 equivalence, for every path that produces a single undifferentiated
+		 * deposit. Only {@link #foldDeposits}' multi-site path needs to say something different,
+		 * because only there can a call know something (a helper-body constant) while still
+		 * having failed to recover the caller's argument.
+		 */
+		CallEffect(BankState state, int ownedMask) {
+			this(state, ownedMask, state.knownMask() != 0);
+		}
+	}
 
 	private static final StoredValueScanner.Hooks NO_HOOKS = new StoredValueScanner.Hooks() {
 		@Override

@@ -146,6 +146,46 @@ final class BankAnnotationAdapter {
 			Address addr, BankState state, BoardModel board,
 			Map<String, Set<Integer>> bankUniverse, String viaHelper, String warning,
 			BankSwitchStrategy.ValueStop stop, BankCommentProvenance provenance) {
+		return annotateOrWarn(analyzer, program, listing, addr, state, board, bankUniverse,
+			viaHelper, warning, stop, provenance, false);
+	}
+
+	/**
+	 * {@link #annotateOrWarn} with {@code warnDespiteKnowledge}: bookmark the WARNING even when
+	 * {@code state} does know something, and still write the comment (bead grm-4bgh.5).
+	 * <p>
+	 * The 11-argument form's rule -- warn iff NOTHING is known -- reads "is there anything to
+	 * say here", which was the same question as "did recovery succeed" while a call site
+	 * produced one undifferentiated deposit. A multi-deposit helper separates them: it can
+	 * establish a select register from its own constant, so something IS known, while the
+	 * caller's argument -- the thing the warning is about, and the thing the grm-nqxt census
+	 * counts -- was not recovered at all. The two facts are not alternatives, so this path
+	 * emits both: the WARNING says the argument was not recovered, and the comment says what
+	 * the helper's body established regardless.
+	 * <p>
+	 * {@code Marked.WARNED} is returned in that case even though a comment was also written,
+	 * because both of that value's consumers want exactly that: the warning COUNT should
+	 * include this site, and {@code alreadyWarned} should dedupe it. The impossible-bank check
+	 * still runs first and still wins -- an impossible recovered bank is a different and
+	 * stronger diagnosis than an unrecovered argument.
+	 */
+	static Marked annotateOrWarn(BoardBankAnalyzer analyzer, Program program, Listing listing,
+			Address addr, BankState state, BoardModel board,
+			Map<String, Set<Integer>> bankUniverse, String viaHelper, String warning,
+			BankSwitchStrategy.ValueStop stop, BankCommentProvenance provenance,
+			boolean warnDespiteKnowledge) {
+		if (state.knownMask() != 0 && warnDespiteKnowledge) {
+			Impossible impossible = impossibleBank(board, state, bankUniverse);
+			if (impossible != null) {
+				program.getBookmarkManager().setBookmark(addr, BookmarkType.WARNING,
+					analyzer.getBookmarkCategory(), impossible.message());
+				return Marked.WARNED;
+			}
+			program.getBookmarkManager()
+					.setBookmark(addr, BookmarkType.WARNING, analyzer.getBookmarkCategory(), warning);
+			annotateBankSwitch(listing, addr, state, board, bankUniverse, viaHelper, provenance);
+			return Marked.WARNED;
+		}
 		if (state.knownMask() == 0) {
 			String honest = honestGapMessage(stop);
 			if (honest != null) {

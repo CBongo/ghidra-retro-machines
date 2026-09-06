@@ -391,6 +391,23 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	 * </li>
 	 * </ul>
 	 */
+	/**
+	 * {@code true}: this mechanism's writes are independent deposits, not instalments of one
+	 * (bead grm-4bgh.5). Each recognized site of a select-data helper routes ITSELF -- an even
+	 * address deposits the select (and mode) field, an odd one deposits whichever target
+	 * register {@link #selectSuppliedInsideHelper} or the caller's tracked select says it
+	 * commits through -- so a helper that writes several of them writes several fields, and
+	 * summarizing it by one site loses the rest. rcransom's {@code FUN_fed1} is the shape:
+	 * select R6, data R6 = A*2, select R7, data R7 = A*2+1, from one argument byte.
+	 * <p>
+	 * Contrast {@link SerialShiftBankSwitchStrategy}, which keeps the default {@code false}
+	 * because its five writes ARE one value -- see {@link BankSwitchStrategy#depositsPerSite}.
+	 */
+	@Override
+	public boolean depositsPerSite() {
+		return true;
+	}
+
 	@Override
 	public HelperDeposit depositHelperArgument(Program program, Instruction switchSite,
 			BankState argValue, BankState inState, int stateMask) {

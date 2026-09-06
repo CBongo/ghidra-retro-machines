@@ -274,7 +274,8 @@ final class BankDataflowEngine {
 							outState.bits() & helper.effectMask());
 						callSwitches.put(addr, new CallSwitch(helperLabel(program, helper),
 							callEffect.state(),
-							overwrite(mechIn, callEffect.state(), callEffect.ownedMask())));
+							overwrite(mechIn, callEffect.state(), callEffect.ownedMask()),
+							callEffect.argumentResolved()));
 					}
 				}
 			}
@@ -490,8 +491,13 @@ final class BankDataflowEngine {
 	/**
 	 * A resolved call-site switch (for annotation, distinct from direct switches).
 	 * {@code effect} is the call's own recovered deposit (positioned, known bits limited to
-	 * what the argument scan resolved of the bits this call site owns) -- the WARN decision
-	 * keys off it, exactly as a direct switch warns off its pure effect. {@code stateAfter}
+	 * what the argument scan resolved of the bits this call site owns). {@code argumentResolved}
+	 * -- not {@code effect} -- is what the WARN decision keys off since bead grm-4bgh.5: a
+	 * multi-deposit helper can establish a field from its OWN body constant while the caller's
+	 * argument stays unrecovered, and warning off "is anything known" would let the first fact
+	 * hide the second. For every single-deposit helper the two questions are identical by
+	 * construction ({@code CallEffect}'s 2-argument constructor), so this changed no existing
+	 * answer. {@code stateAfter}
 	 * is the post-call state of the helper's own MECHANISM WINDOW: the in-state narrowed to
 	 * the helper's {@code effectMask}, overwritten by {@code effect} on the call's owned
 	 * bits. The COMMENT is rendered from it, because a helper deposit, unlike a
@@ -506,7 +512,8 @@ final class BankDataflowEngine {
 	 * whole mechanism window) {@code stateAfter == effect}, so the historical path is
 	 * unchanged byte-for-byte.
 	 */
-	record CallSwitch(String helperName, BankState effect, BankState stateAfter) {}
+	record CallSwitch(String helperName, BankState effect, BankState stateAfter,
+			boolean argumentResolved) {}
 
 	record DataflowResult(Map<Address, BankState> stateIn,
 			Map<Address, SwitchResult> switchResults, Map<Address, CallSwitch> callSwitches) {}

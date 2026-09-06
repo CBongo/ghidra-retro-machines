@@ -177,9 +177,17 @@ final class HelperDiscovery {
 				// somewhere other than the top still runs every site this model summarizes.
 				Address firstSite = entry.getKey().compareTo(existing.firstSite()) < 0
 						? entry.getKey() : existing.firstSite();
+				// The full recognized-site set, not just its min and max (bead grm-4bgh.5). A
+				// strategy whose sites are independent deposits (select-data) needs every one
+				// of them; one whose sites are instalments of a single value (serial-shift)
+				// ignores this and keeps using switchSite. Accumulating costs an address per
+				// site and decides nothing on its own -- BankSwitchStrategy.depositsPerSite
+				// does.
+				List<Address> sites = new ArrayList<>(existing.sites());
+				sites.add(entry.getKey());
 				helpers.put(f, new HelperModel(f, f.getEntryPoint(), constState, argReg,
 					site.effectMask(), site.lsb(), site.strategy(), switchSite, firstSite,
-					null));
+					null, sites));
 			}
 			else {
 				// Sites in this helper belong to different mechanisms -- degrade to the
@@ -1003,6 +1011,25 @@ final class HelperDiscovery {
 	 * then inherited from the wrapped helper and describes ITS body, while {@code entry}
 	 * describes the wrapper's; {@code relay} is what stitches the two together.
 	 */
+	/**
+	 * {@link HelperModel#sites} normalized: distinct, ascending, immutable, and defaulted to
+	 * {@code switchSite} alone when the caller supplied none (bead grm-4bgh.5).
+	 * <p>
+	 * Ascending order is not cosmetic -- it is the order
+	 * {@code HelperArgumentRecovery.recoverCallArgument} folds deposits in, where a later site
+	 * overwrites an earlier one on the bits it owns. Sorting here rather than trusting insertion
+	 * order means that fold cannot be corrupted by the map iteration order
+	 * {@link #findHelpers} happens to walk switch results in.
+	 */
+	private static List<Address> normalizeSites(List<Address> sites, Address switchSite) {
+		if (sites == null || sites.isEmpty()) {
+			return switchSite == null ? List.of() : List.of(switchSite);
+		}
+		List<Address> sorted = new ArrayList<>(new LinkedHashSet<>(sites));
+		sorted.sort(null);
+		return List.copyOf(sorted);
+	}
+
 	// Package-private (not private) so BankSaveRestoreTrampolineProgramTest (grm-mej.3
 	// increment 1) can construct a HelperModel directly to drive
 	// SaveRestoreTrampolines.restoresEntryBank -- the
@@ -1011,7 +1038,31 @@ final class HelperDiscovery {
 	// change: every other member keeps its own visibility.
 	record HelperModel(Function function, Address entry, BankState constState,
 			Character argReg, int effectMask, int lsb, BankSwitchStrategy strategy,
-			Address switchSite, Address firstSite, Relay relay) {
+			Address switchSite, Address firstSite, Relay relay, List<Address> sites) {
+
+		/**
+		 * Normalizes {@code sites} to an immutable ascending list, defaulting a null or empty
+		 * one to {@code switchSite} alone (or to nothing when there is no switch site at all).
+		 * The default is what makes the 10-argument constructor below exactly equivalent to
+		 * this record before {@code sites} existed.
+		 */
+		HelperModel {
+			sites = normalizeSites(sites, switchSite);
+		}
+
+		/**
+		 * This record as it was before bead grm-4bgh.5 added {@code sites}: a model whose
+		 * recognized-site set is just its {@code switchSite}. Every construction site that
+		 * genuinely summarizes one site -- the first site seen for a function, the
+		 * multi-mechanism degrade, a tail-call composition -- keeps using this form and is
+		 * unaffected by the new component.
+		 */
+		HelperModel(Function function, Address entry, BankState constState, Character argReg,
+				int effectMask, int lsb, BankSwitchStrategy strategy, Address switchSite,
+				Address firstSite, Relay relay) {
+			this(function, entry, constState, argReg, effectMask, lsb, strategy, switchSite,
+				firstSite, relay, null);
+		}
 
 		/**
 		 * This helper re-keyed to a mid-body {@code entry}, with {@code constState} dropped.
@@ -1027,7 +1078,7 @@ final class HelperDiscovery {
 		 */
 		HelperModel atMidBodyEntry(Address midBody) {
 			return new HelperModel(function, midBody, null, argReg, effectMask, lsb, strategy,
-				switchSite, firstSite, relay);
+				switchSite, firstSite, relay, sites);
 		}
 
 		/**
@@ -1065,7 +1116,7 @@ final class HelperDiscovery {
 		 */
 		HelperModel atFallThroughWrapper(Function wrapper) {
 			return new HelperModel(wrapper, wrapper.getEntryPoint(), constState, argReg,
-				effectMask, lsb, strategy, switchSite, firstSite, relay);
+				effectMask, lsb, strategy, switchSite, firstSite, relay, sites);
 		}
 
 		/**
@@ -1104,7 +1155,8 @@ final class HelperDiscovery {
 		 */
 		HelperModel atCallEdgeWrapper(Function wrapper, Address callSite) {
 			return new HelperModel(wrapper, wrapper.getEntryPoint(), constState, argReg,
-				effectMask, lsb, strategy, switchSite, firstSite, new Relay(callSite, entry));
+				effectMask, lsb, strategy, switchSite, firstSite, new Relay(callSite, entry),
+				sites);
 		}
 	}
 

@@ -36,6 +36,7 @@ COMMENT e009 bank -> select=7,prg_mode=0,r6=0,r7=1 via FUN_e180 [switch-value fl
 COMMENT e00c bank -> select=7,prg_mode=1,r6=0,r7=1 via FUN_e220 [switch-value flow]
 COMMENT e00f bank -> select=7,prg_mode=1,r6=0,r7=1 via FUN_e240 [switch-value flow]
 COMMENT e012 bank -> select=7,prg_mode=1,r6=0,r7=1 via FUN_e280 [switch-value flow]
+COMMENT e015 bank -> select=6,prg_mode=0,r6=0,r7=1? via FUN_e2c0 [known: select.0=0,select.1=1,select.2=1,prg_mode=0,r7.0=1,r7.1=0,r7.2=0,r7.3=0,r7.4=0,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
 COMMENT e102 bank -> select=6,prg_mode=0,r6=0,r7=1 [switch-value flow]
 COMMENT e107 bank -> select=6,prg_mode=0,r6=2,r7=1 via FUN_e140 [switch-value flow]
 COMMENT e123 bank -> select=0,prg_mode=0,r6=0,r7=1? [known: r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0,r7.0=1,r7.1=0,r7.2=0,r7.3=0,r7.4=0,r7.5=0; assumed from initial: select.0,select.1,select.2,prg_mode] [switch-value flow]
@@ -47,6 +48,7 @@ COMMENT e21b bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=
 COMMENT e222 bank -> select=7,prg_mode=1,r6=0,r7=1 [switch-value flow]
 COMMENT e22c bank -> select=7,prg_mode=1,r6=0,r7=5 via FUN_e210 [switch-value flow]
 COMMENT e242 bank -> select=7,prg_mode=1,r6=0,r7=1 [switch-value flow]
+COMMENT e24d bank -> select=7,prg_mode=1,r6=0,r7=1? via FUN_e210 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0; assumed from initial: r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 COMMENT e265 bank -> select=7,prg_mode=1,r6=0,r7=1 [switch-value flow]
 COMMENT e26b bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0; assumed from initial: r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 COMMENT e282 bank -> select=7,prg_mode=1,r6=0,r7=1 [switch-value flow]
@@ -57,10 +59,10 @@ COMMENT e2ad bank -> select=7,prg_mode=0,r6=0,r7=1? [known: select.0=1,select.1=
 COMMENT e2b2 bank -> select=7,prg_mode=0,r6=0,r7=2? [known: select.0=1,select.1=1,select.2=1,prg_mode=0,r7.0=0,r7.1=1,r7.2=0,r7.3=0,r7.4=0,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
 COMMENT e2c2 bank -> select=6,prg_mode=0,r6=0,r7=1 [switch-value flow]
 COMMENT e2c8 bank -> select=6,prg_mode=0,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=1,prg_mode=0,r7.0=1,r7.1=0,r7.2=0,r7.3=0,r7.4=0,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
-COMMENT e2d0 bank -> select=0,prg_mode=0,r6=0,r7=2? via FUN_e2a0 [known: select.0=0,prg_mode=0,r7.0=0,r7.1=1,r7.2=0,r7.3=0,r7.4=0,r7.5=0; assumed from initial: select.1,select.2,r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+COMMENT e2d0 bank -> select=7,prg_mode=0,r6=0,r7=2? via FUN_e2a0 [known: select.0=1,select.1=1,select.2=1,prg_mode=0,r7.0=0,r7.1=1,r7.2=0,r7.3=0,r7.4=0,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
 COMMENT e302 bank -> select=6,prg_mode=0,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=1,prg_mode=0,r7.0=1,r7.1=0,r7.2=0,r7.3=0,r7.4=0,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
 COMMENT e307 bank -> select=6,prg_mode=0,r6=3,r7=1 [switch-value flow]
-COMMENT e320 bank -> select=0,prg_mode=0,r6=3,r7=1? via FUN_e300 [known: r6.0=1,r6.1=1,r6.2=0,r6.3=0,r6.4=0,r6.5=0,r7.0=1,r7.1=0,r7.2=0,r7.3=0,r7.4=0,r7.5=0; assumed from initial: select.0,select.1,select.2,prg_mode] [switch-value flow]
+COMMENT e320 bank -> select=6,prg_mode=0,r6=3,r7=1 via FUN_e300 [switch-value flow]
 COMMENT e34a bank -> select=0,prg_mode=0,r6=0,r7=1? [known: r7.0=1,r7.1=0,r7.2=0,r7.3=0,r7.4=0,r7.5=0; assumed from initial: select.0,select.1,select.2,prg_mode,r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
 BOOKMARK Warning e003
 BOOKMARK Warning e015

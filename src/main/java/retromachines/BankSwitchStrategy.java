@@ -322,6 +322,35 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	}
 
 	/**
+	 * Whether a helper containing SEVERAL recognized sites of this mechanism performs several
+	 * INDEPENDENT deposits -- one per site -- rather than one deposit that the sites jointly
+	 * build up (bead grm-4bgh.5).
+	 * <p>
+	 * <b>This is the difference between a serial-shift chain and an MMC3 select/data pair, and
+	 * it cannot be read off the site count.</b> {@link SerialShiftBankSwitchStrategy}'s five
+	 * {@code STA}s are five instalments of ONE value: only the last commits, which is exactly
+	 * what {@code HelperDiscovery.HelperModel}'s max-address {@code switchSite} proxy selects,
+	 * and folding a deposit per site there would deposit four partial chains that never
+	 * happened. {@link SelectDataBankSwitchStrategy}'s writes are the opposite: rcransom's
+	 * {@code FUN_fed1} sets R6 = A*2 at {@code $FEE2} and R7 = A*2+1 at {@code $FEF5} from one
+	 * argument, two real deposits into two distinct fields, neither of which summarizes the
+	 * other. A model naming one commit site can express the first shape and not the second.
+	 * <p>
+	 * Returning {@code true} asks {@code HelperArgumentRecovery.recoverCallArgument} to fold a
+	 * deposit per recognized site in ADDRESS ORDER, unioning {@code ownedMask} and letting a
+	 * later site overwrite an earlier one on the bits it owns (program order is execution
+	 * order for the straight-line runs this is allowed on -- see that method). It changes
+	 * nothing for a helper with a single recognized site, which is every register-write and
+	 * memory-latch helper by construction.
+	 * <p>
+	 * <b>The default is {@code false}, and that is the safe answer</b>: a strategy that has not
+	 * thought about the question keeps today's single-deposit behaviour exactly.
+	 */
+	default boolean depositsPerSite() {
+		return false;
+	}
+
+	/**
 	 * Where inside a multi-site helper the HELPER'S OWN supplied value lives, when the caller's
 	 * argument has been ruled out and {@code HelperArgumentRecovery.valueSuppliedInsideHelper} goes
 	 * looking for what the body itself puts there: {@code true} (the default) reads the argument

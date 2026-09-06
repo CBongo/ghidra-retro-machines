@@ -456,10 +456,12 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 
 			CallSwitch callSwitch = flow.callSwitches().get(addr);
 			if (callSwitch != null) {
-				// Warn iff the call's OWN recovery came up empty (same rule a direct switch's
-				// pure effect gets); when it resolved, render the comment from the folded
-				// post-call state so unowned fields show their real dataflow knowledge -- see
-				// CallSwitch's javadoc.
+				// Warn iff the call's ARGUMENT recovery came up empty; when it resolved, render
+				// the comment from the folded post-call state so unowned fields show their real
+				// dataflow knowledge -- see CallSwitch's javadoc. Before grm-4bgh.5 the argument
+				// question and "is anything known" were the same question; for a multi-deposit
+				// helper they are not, and a helper-body constant must not suppress the warning
+				// that says the CALLER's argument was never recovered.
 				BankState annotState = callSwitch.effect().knownMask() == 0
 						? callSwitch.effect() : callSwitch.stateAfter();
 				// ANALYZER_LIMIT, deliberately and unconditionally. This is the CALL SITE, where
@@ -473,7 +475,8 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 					"Bank state becomes unknown here: call to bank-switch helper " +
 						callSwitch.helperName() + " whose bank argument could not be " +
 						"recovered at this call site",
-					BankSwitchStrategy.ValueStop.ANALYZER_LIMIT, provenance);
+					BankSwitchStrategy.ValueStop.ANALYZER_LIMIT, provenance,
+					!callSwitch.argumentResolved());
 				if (marked == BankAnnotationAdapter.Marked.WARNED) {
 					warnings++;
 				}
