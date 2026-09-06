@@ -16,6 +16,7 @@
 package retromachines;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -894,51 +895,136 @@ final class HelperArgumentRecovery {
 	 * scan cannot pin down comes back {@link BankState#unknown()}, which is what keeps a
 	 * RAM-sourced argument honestly unresolved instead of guessed.
 	 * <p>
-	 * <b>Each register is then filtered by whether it SURVIVES the prologue</b> (bead grm-k90).
-	 * The three scans above run in the caller and answer "what did the caller leave here"; the
-	 * env claims something stronger -- "what holds at {@code entryAddr}" -- and for a WRAPPER
-	 * model those differ, because the wrapper's own body runs in between and nothing forbids it
-	 * writing X or Y ({@link HelperDiscovery#isPassThroughInto} admits an {@code LDX #imm} without
-	 * blinking). {@link #argumentSurvivesPrologue(Program, List, char)} over {@link #prologueSegments}
-	 * is exactly the question, so it is asked ONCE PER REGISTER rather than once for
-	 * {@link HelperDiscovery.HelperModel#argReg}, and a register that does not survive is handed back
-	 * as {@link BankState#unknown()} instead of the caller's stale value. Per-register is the whole
-	 * point: on Contra's {@code FUN_c139} A does not survive ({@code LDA $8000}) while Y does,
-	 * and Y is the one the latch consumes -- running the test on {@code argReg} alone would let
-	 * a clobber of a register nobody reads suppress a correct recovery.
+	 * <b>Each register is then filtered by whether it SURVIVES the UNWALKED part of the
+	 * prologue</b> (bead grm-k90, narrowed by grm-4bgh increment 3). The three scans above run in
+	 * the caller and answer "what did the caller leave here"; the env claims something stronger
+	 * -- "what holds at {@code entryAddr}" -- and for a WRAPPER model those differ, because the
+	 * wrapper's own body runs in between and nothing forbids it writing X or Y
+	 * ({@link HelperDiscovery#isPassThroughInto} admits an {@code LDX #imm} without blinking).
+	 * {@link #unwalkedPrologueSegments} answers exactly that question restricted to the segments
+	 * {@link #recoverCallArgument}'s own mini-inline scan does not itself traverse (see its
+	 * javadoc for why the traversed segments need no second check), and
+	 * {@link #argumentSurvivesPrologue(Program, List, char)} is asked over that narrowed list
+	 * ONCE PER REGISTER rather than once for {@link HelperDiscovery.HelperModel#argReg}, with a
+	 * register that does not survive handed back as {@link BankState#unknown()} instead of the
+	 * caller's stale value. Per-register is the whole point: on Contra's {@code FUN_c139} A does
+	 * not survive ({@code LDA $8000}) while Y does, and Y is the one the latch consumes -- running
+	 * the test on {@code argReg} alone would let a clobber of a register nobody reads suppress a
+	 * correct recovery.
 	 * <p>
-	 * For an ordinary helper this cannot change an answer that was already right: the scan
-	 * inside the helper walks that same prologue itself and meets any clobber before it reaches
-	 * the stop. It is LOAD-BEARING for a CALL-EDGE wrapper, where the scan stops at
-	 * {@code relay.calleeEntry()} and the wrapper's prefix is never walked at all -- that is the
-	 * soundness hole this bead was originally filed on, and it is closed here rather than by
-	 * forcing X/Y to unknown for wrapper models wholesale (considered and rejected in grm-2dr
-	 * increment 2 as strictly less precise).
+	 * For an ordinary helper this filter is now a no-op by construction, not merely
+	 * "redundant-but-harmless": its one prologue segment is entirely WALKED by the mini-inline
+	 * scan, so {@link #unwalkedPrologueSegments} hands back an empty list and {@link #surviving}
+	 * adopts the caller-side scan unfiltered. The scan meets any clobber of {@code reg} itself
+	 * before it reaches {@code entryAddr}, so the env value is trusted only when the scan
+	 * traversed the ENTIRE unwalked span without finding a definition of the register -- which is
+	 * also the soundness argument for the wrapper case below. It remains LOAD-BEARING for a
+	 * CALL-EDGE wrapper's PREFIX segment ({@code [entry, relay.callSite()]}), which lies strictly
+	 * before the scan's stop ({@code relay.calleeEntry()}, per {@link #insideHelperEntry}) and so
+	 * is never walked at all -- that is the soundness hole this bead was originally filed on, and
+	 * it is closed here rather than by forcing X/Y to unknown for wrapper models wholesale
+	 * (considered and rejected in grm-2dr increment 2 as strictly less precise).
 	 * <p>
 	 * {@code crossableJoin} is passed through untouched; see {@link #crossableWrapperJoin} for
 	 * where it comes from and {@link RegisterEnv} for why crossing it is sound.
 	 */
 	private static RegisterEnv callSiteRegisters(Program program, Instruction callInstr,
 			Address entryAddr, Address crossableJoin, HelperModel helper) {
-		List<PrologueSegment> prologue = prologueSegments(helper);
+		List<PrologueSegment> unwalked = unwalkedPrologueSegments(entryAddr, helper);
 		return new RegisterEnv(entryAddr, crossableJoin,
-			surviving(program, callInstr, 'A', prologue),
-			surviving(program, callInstr, 'X', prologue),
-			surviving(program, callInstr, 'Y', prologue));
+			surviving(program, callInstr, 'A', unwalked),
+			surviving(program, callInstr, 'X', unwalked),
+			surviving(program, callInstr, 'Y', unwalked));
 	}
 
 	/**
-	 * What the caller left in {@code reg}, or {@link BankState#unknown()} when the helper's
-	 * prologue does not preserve it as far as the site that reads it -- one register's worth of
-	 * {@link #callSiteRegisters}' filter (bead grm-k90).
+	 * The subset of {@link #prologueSegments} the mini-inline scan at
+	 * {@link #recoverCallArgument} does NOT itself walk, i.e. the only segments over which
+	 * {@link #callSiteRegisters}' grm-k90 filter is still doing real work (bead grm-4bgh
+	 * increment 3).
+	 * <p>
+	 * <b>Why this narrowing is sound, not just an optimization.</b> The mini-inline scan runs
+	 * backward from {@code helper.switchSite()} and stops at {@code entryAddr} (the same
+	 * {@code scanStop} the caller of {@link #callSiteRegisters} already computed as
+	 * {@link #insideHelperEntry}), so it walks exactly {@code [entryAddr, switchSite]}. Any
+	 * clobber of a register inside that span is a clobber the scan meets and reports on its own;
+	 * the env's answer for that register is adopted by a strategy ONLY when the scan traverses
+	 * the whole span without finding a definition of the register, at which point the two
+	 * questions -- "what does the scan see" and "what does the env claim" -- agree by
+	 * construction. Filtering a WALKED segment through {@link #argumentSurvivesPrologue} a
+	 * second time is therefore redundant-but-harmless, exactly as grm-k90's own javadoc concedes
+	 * for the ordinary-helper case.
+	 * <p>
+	 * The filter stays LOAD-BEARING only for the call-edge wrapper's PREFIX segment
+	 * ({@code [entry, relay.callSite()]}): that span lies strictly before {@code scanStop} (which
+	 * is {@code relay.calleeEntry()} for a wrapper, per {@link #insideHelperEntry}), so the
+	 * mini-inline scan never walks it at all, and a clobber inside it would otherwise slip
+	 * through unseen.
+	 * <p>
+	 * An ORDINARY helper has one segment, {@code [entry, firstSite]}, which is entirely
+	 * contained in {@code [entryAddr, switchSite]} because {@code entryAddr == entry} and
+	 * {@code firstSite} precedes or equals {@code switchSite} (both are addresses within the
+	 * same recognized body). It is therefore always WALKED and never appears in the result.
+	 * <p>
+	 * <b>Containment is tested conservatively.</b> A segment is WALKED iff {@code entryAddr},
+	 * {@code helper.switchSite()}, and the segment's own bounds are all non-null, all share one
+	 * address space, and the segment lies within {@code [entryAddr, switchSite]}. Any null, or
+	 * any address-space mismatch, is treated as NOT walked -- kept in the filtered list -- rather
+	 * than assumed favorable, matching this engine's standing rule that a false decline (one
+	 * missing annotation) is acceptable where a false accept (a wrong bank) is not.
+	 */
+	private static List<PrologueSegment> unwalkedPrologueSegments(Address entryAddr,
+			HelperModel helper) {
+		Address switchSite = helper.switchSite();
+		List<PrologueSegment> segments = prologueSegments(helper);
+		List<PrologueSegment> unwalked = new ArrayList<>(segments.size());
+		for (PrologueSegment segment : segments) {
+			if (!isWalkedByMiniInlineScan(entryAddr, switchSite, segment)) {
+				unwalked.add(segment);
+			}
+		}
+		return unwalked;
+	}
+
+	/**
+	 * Whether the mini-inline scan's span {@code [entryAddr, switchSite]} already covers
+	 * {@code segment}, per {@link #unwalkedPrologueSegments}. Never assumes the favorable answer
+	 * on missing or mismatched data -- see that method's javadoc.
+	 */
+	private static boolean isWalkedByMiniInlineScan(Address entryAddr, Address switchSite,
+			PrologueSegment segment) {
+		Address from = segment.from();
+		Address to = segment.to();
+		if (entryAddr == null || switchSite == null || from == null || to == null) {
+			return false;
+		}
+		if (!entryAddr.getAddressSpace().equals(switchSite.getAddressSpace())
+				|| !entryAddr.getAddressSpace().equals(from.getAddressSpace())
+				|| !entryAddr.getAddressSpace().equals(to.getAddressSpace())) {
+			return false;
+		}
+		return from.compareTo(entryAddr) >= 0 && to.compareTo(switchSite) <= 0;
+	}
+
+	/**
+	 * What the caller left in {@code reg}, or {@link BankState#unknown()} when an UNWALKED
+	 * segment of the helper's prologue (see {@link #unwalkedPrologueSegments}) does not preserve
+	 * it as far as the site that reads it -- one register's worth of {@link #callSiteRegisters}'
+	 * filter (bead grm-k90, narrowed by grm-4bgh increment 3).
 	 * <p>
 	 * The survival test is evaluated FIRST and the scan skipped when it fails, which is a small
 	 * efficiency win but mostly a statement of intent: a value that cannot be attributed is not
 	 * merely discarded afterwards, it is never derived.
+	 * <p>
+	 * <b>An empty {@code unwalked} list means there is nothing left to filter on</b> -- every
+	 * segment of the prologue is already covered by the mini-inline scan -- so this returns the
+	 * caller-side scan unfiltered rather than calling {@link #argumentSurvivesPrologue(Program,
+	 * List, char)}, which treats an empty list as an unproven decline (see its own javadoc) and
+	 * would wrongly force every ordinary helper's env to {@link BankState#unknown()}.
 	 */
 	private static BankState surviving(Program program, Instruction callInstr, char reg,
-			List<PrologueSegment> prologue) {
-		if (!argumentSurvivesPrologue(program, prologue, reg)) {
+			List<PrologueSegment> unwalked) {
+		if (!unwalked.isEmpty() && !argumentSurvivesPrologue(program, unwalked, reg)) {
 			return BankState.unknown();
 		}
 		return StoredValueScanner.resolveStoredValue(program, callInstr, reg, BankState.unknown(),

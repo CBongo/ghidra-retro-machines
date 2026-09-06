@@ -446,6 +446,51 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	}
 
 	/**
+	 * {@link #depositHelperArgument(Program, Instruction, BankState, BankState, int)} above, with
+	 * one additive FALLBACK: when {@code argValue} came back with nothing pinned down at all
+	 * ({@code knownMask() == 0}) -- the shape {@code HelperArgumentRecovery} produces for a
+	 * helper whose prologue transforms or clobbers its argument register rather than merely
+	 * relaying it -- re-evaluate the switch site's own store under the CALLER's registers
+	 * ({@code callerRegs}) via {@link StoredValueScanner#resolveStoredValue(Program, Instruction,
+	 * char, BankState, int, StoredValueScanner.Hooks, RegisterEnv)} before falling through to the
+	 * 5-arg method (bead grm-4bgh increment 4).
+	 * <p>
+	 * <b>This is a fallback, never a substitution.</b> Unlike
+	 * {@code MemoryLatchBankSwitchStrategy}'s override, which ignores {@code argValue} entirely
+	 * and always re-derives its answer from {@code callerRegs}, this body still tries
+	 * {@code argValue} FIRST and only reaches for {@code callerRegs} when that attempt produced
+	 * nothing -- so every call site that already resolves via {@code argValue} today is
+	 * byte-identical, and the new path only ever turns an existing decline into an answer.
+	 * <p>
+	 * {@code 0xFF} matches the 5-arg method's own treatment of {@code argValue} as a raw byte
+	 * (masked to {@code 0xFF} before any field extraction happens there): the evaluated
+	 * replacement must be the same coordinate space the fallthrough call expects.
+	 * <p>
+	 * <b>{@link #consumesHelperArgument()} stays {@code true} here</b>, and deliberately so --
+	 * see its own override (there is none: this strategy keeps the default) and its javadoc's
+	 * instruction to re-check the two together on any change to this body. This override still
+	 * reads {@code argValue} as its PRIMARY answer, falling back to evaluation only when that
+	 * answer is empty, so the grm-mu7 stale-argument guard is exactly the protection this
+	 * strategy still needs on the path that does not fall back.
+	 */
+	@Override
+	public HelperDeposit depositHelperArgument(Program program, Instruction switchSite,
+			BankState argValue, BankState inState, int stateMask, RegisterEnv callerRegs) {
+		BankState effective = argValue;
+		if (argValue.knownMask() == 0) {
+			Character reg = StoredValueScanner.storeRegister(switchSite);
+			if (reg != null) {
+				BankState evaluated = StoredValueScanner.resolveStoredValue(program, switchSite,
+					reg, inState, 0xFF, hooks, callerRegs);
+				if (evaluated.knownMask() != 0) {
+					effective = evaluated;
+				}
+			}
+		}
+		return depositHelperArgument(program, switchSite, effective, inState, stateMask);
+	}
+
+	/**
 	 * How many instructions {@link #selectSuppliedInsideHelper} walks back from a data write
 	 * looking for the helper's own select write. smb3's {@code FUN_ffc2} needs two steps; a
 	 * select write further away than this is not the co-located pair this models.
