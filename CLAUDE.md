@@ -233,6 +233,17 @@ reporting a quiet green. Do not treat a stale/absent/floor-only stamp as informa
 it names a commit behind changes you are about to commit that touch analysis behaviour, run
 `check nes` before committing, per the paragraph above.
 
+**A run that did not cover its sets in full is stamped `PARTIAL`, with counts** — because naming
+the sets is a *more specific* claim than the pre-grm-ughg stamp made, and would be a wronger one
+if the run only touched some of their rows. Both causes count, and the second is the dangerous
+one: `--only`/`--except` filtering is partial on purpose and the caller knows it, whereas a
+**SKIPPED** row means the ROM was not found, which is usually a wrong dir list rather than a
+missing image (see the `GRM_ROM_DIR` paragraph below). Counting only the deliberate cause would
+have left a run where 6 of 33 rows ran and 27 ROMs went unfound stamping identically to a clean
+full-tier pass. The stamp may under-claim; it must never over-claim. It stays a *whole-run*
+signal, though — it cannot say WHICH rows are stale; `grm-eawl` proposes deriving that per row
+from the candidate cache, whose key already includes the extension identity.
+
 `GRM_ROM_DIR` is set per machine (`.claude/settings.local.json`, gitignored) and holds **several
 space-separated dirs**, because the curated manifest is split across more than one and the driver
 indexes each at **depth 1 only**. The driver reads it as `ROM_DIRS=($GRM_ROM_DIR)` — unquoted,

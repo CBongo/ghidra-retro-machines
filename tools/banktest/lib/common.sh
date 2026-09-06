@@ -344,8 +344,9 @@ grm_realrom_staleness_note() {
 	fi
 	case "$stamp_sets" in
 		*PARTIAL*)
-			stamp_sets_note="$stamp_sets_note Rows were filtered out, so the named set(s) were"
-			stamp_sets_note="$stamp_sets_note NOT covered in full." ;;
+			stamp_sets_note="$stamp_sets_note Rows were filtered or SKIPPED, so the named"
+			stamp_sets_note="$stamp_sets_note set(s) were NOT covered in full -- if rows were"
+			stamp_sets_note="$stamp_sets_note skipped, suspect the ROM dir list." ;;
 	esac
 	if [ -n "$stamp_commit" ] && [ "$stamp_commit" = "$head" ]; then
 		echo "REALROM STALENESS: last verified run was AT current HEAD ($stamp_commit," \

@@ -1271,15 +1271,29 @@ if [ "$stamp_ok" -eq 0 ]; then
 	: # nothing in this run is entitled to stamp
 elif mkdir -p "$(dirname "$GRM_REALROM_STAMP")" 2>/dev/null; then
 	stamp_head="$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
-	# A --only/--except run covers the named SETS only in name: it may have run two rows of
-	# thirty-three. Recording the set list alone would therefore be a MORE specific claim than
-	# the pre-grm-ughg stamp made and a wronger one, so a filtered run says so and carries the
-	# row counts. Same principle as the CORE note itself -- the stamp may under-claim, never
-	# over-claim.
+	# A run covers the named SETS only in NAME: it may have run two rows of thirty-three.
+	# Recording the set list alone would therefore be a MORE specific claim than the
+	# pre-grm-ughg stamp made and a wronger one, so a partial run says so and carries the row
+	# counts. The stamp may under-claim, never over-claim -- same principle as the CORE note.
+	#
+	# BOTH causes count, and the SKIP one is the dangerous half. A --only/--except run is
+	# partial ON PURPOSE and the caller knows it. A SKIPPED row means the ROM was not found,
+	# which is usually a WRONG DIR LIST rather than a missing image -- the misreading CLAUDE.md
+	# warns about at length, and the one time you least want this stamp claiming full coverage.
+	# Counting only the deliberate cause would have left "1 row ran, 32 ROMs missing" stamping
+	# exactly like a clean full-tier run.
+	stamp_ran=$((n_pass + n_fail + n_bless))
+	stamp_total=$((stamp_ran + n_skip + n_filtered))
 	stamp_sets_line="${RESOLVED_SETS[*]}"
-	if [ "$n_filtered" -gt 0 ]; then
-		stamp_sets_line="$stamp_sets_line (PARTIAL: $((n_pass + n_fail + n_bless)) row(s) ran,"
-		stamp_sets_line="$stamp_sets_line $n_filtered filtered out by --only/--except)"
+	if [ "$n_filtered" -gt 0 ] || [ "$n_skip" -gt 0 ]; then
+		stamp_why=""
+		[ "$n_filtered" -gt 0 ] && stamp_why="$n_filtered filtered by --only/--except"
+		if [ "$n_skip" -gt 0 ]; then
+			[ -n "$stamp_why" ] && stamp_why="$stamp_why, "
+			stamp_why="$stamp_why$n_skip skipped for want of a ROM"
+		fi
+		stamp_sets_line="$stamp_sets_line (PARTIAL: $stamp_ran of $stamp_total row(s) ran;"
+		stamp_sets_line="$stamp_sets_line $stamp_why)"
 	fi
 	stamp_content="$stamp_head
 $(date -u +%Y-%m-%dT%H:%M:%SZ)
