@@ -44,6 +44,19 @@ import ghidra.app.util.bin.ByteProvider;
  * {@code size % 0x400 == 0x200} has 512 extra bytes on the front. Every offset in this class is
  * relative to the CARTRIDGE image; {@link #dataOffset()} says where that starts in the file.
  *
+ * <p><b>Two known images defeat the size rule, and that is an ACCEPTED limitation</b> (grm-9nxj.16,
+ * closed 2026-09-06 by the project owner -- do not re-open it as a bug). The 921-image corpus
+ * survey found {@code NHL94USA.smc}, whose cartridge body is truncated 41 bytes short so the
+ * remainder is neither 0 nor 0x200, and {@code oml-megamanx.sfc}, whose body is itself 0x200
+ * short of a block boundary so the two irregularities cancel exactly. Both carry a real copier
+ * header with a validating checksum pair, and both are therefore parsed at base 0, match nothing,
+ * and are REFUSED. The ruling: 2 refusals in 921 (0.2%), both irregular dumps, and a refusal is
+ * honest rather than silently wrong -- not worth giving the copier rule a second, search-based
+ * path that only ever runs on malformed input. Keeping it a pure function of file length means it
+ * has no way to pick wrong on a well-formed image. The corpus tier reports these two under
+ * "checksum pair found only at the base the size rule did NOT pick"; that section is the tripwire
+ * for a genuine detection regression, which would move dozens of rows into it at once.
+ *
  * <p>Field layout, relative to the header's own base: title at {@code +0x00} (21 bytes), map mode
  * {@code +0x15}, chipset {@code +0x16}, ROM size {@code +0x17}, RAM size {@code +0x18}, checksum
  * complement {@code +0x1C}, checksum {@code +0x1E}. The CPU vector table follows at {@code +0x20}
