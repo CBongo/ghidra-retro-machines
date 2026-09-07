@@ -136,9 +136,16 @@ understanding the diff defeats the entire suite.
 > instead of re-running the `analyzeHeadless` import — so the normal
 > review-then-bless loop imports once, not twice (biggest win on the real-ROM tier, where a
 > full 33-row run is ~6 min; see "How long the gates actually take" below).
-> The cache key folds in the fixture bytes, loader + options, the dump script, and a
+> The cache key folds in the fixture bytes, loader + options, the dump script, a
 > **content** fingerprint of the installed extension jar (CRC-based, not an mtime, since
-> gradle rewrites the dist zip every build). Any of those changing forces a fresh import, so
+> gradle rewrites the dist zip every build), and -- since `grm-kt44` -- a fingerprint of the
+> **Ghidra toolchain** that runs the analysis (sha256 of the install's `decompile`/`sleigh`
+> binaries plus its release identity, resolved from `GHIDRA_HEADLESS`). That last term closes
+> the case where every repo-side input is identical and only the install differs, which is
+> exactly a native A/B: before it, five arms differing only in `decompile.exe` shared one key,
+> and the cache served one arm's dump for another. Both runners now print
+> `== ghidra toolchain: <id> ==`; on such an A/B that line must differ between the two sides
+> while the extension identity must not. Any keyed input changing forces a fresh import, so
 > a stale candidate is never blessed; `bless` still prints the `expected/*.dump` diff before
 > accepting. It is a pure speedup with no workflow change — clear it any time with
 > `rm -rf build/banktest-cache build/realrom-cache`.

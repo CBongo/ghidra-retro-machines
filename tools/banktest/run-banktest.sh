@@ -241,8 +241,9 @@ FORCED=()
 # The key folds in everything that can change a dump: the fixture bytes, the
 # loader name, the loader options (each existing-file argument replaced by its
 # own hash so a volatile per-run mktemp path does not perturb the key), the
-# VerifyBankTest dump script, and the installed extension's identity. If that
-# identity cannot be established (run standalone against the shared %APPDATA%
+# VerifyBankTest dump script, the installed extension's identity, and the
+# identity of the Ghidra install that will run the analysis (bead grm-kt44). If
+# either identity cannot be established (run standalone against the shared %APPDATA%
 # install with no isolated Extensions tree) or sha256sum/unzip are unavailable,
 # caching is disabled and bless re-imports as before -- correctness over speed.
 CACHE_DIR="$REPO_ROOT/build/banktest-cache"
@@ -250,6 +251,18 @@ CACHE_DIR="$REPO_ROOT/build/banktest-cache"
 # ext_identity() lives in lib/common.sh (shared with realrom-test.sh).
 # Compute the extension identity once; empty => caching disabled for this run.
 EXT_ID="$(ext_identity)" || EXT_ID=""
+
+# toolchain_identity() lives in lib/common.sh (shared with realrom-test.sh). The extension is
+# only half of what produces a dump; the Ghidra install that runs it is the other half, and
+# until bead grm-kt44 neither cache keyed it at all. Empty => caching disabled for this run,
+# the same degrade an unknown EXT_ID already triggers.
+TOOLCHAIN_ID="$(toolchain_identity)" || TOOLCHAIN_ID=""
+if [ -n "$TOOLCHAIN_ID" ]; then
+	echo "== ghidra toolchain: $TOOLCHAIN_ID =="
+else
+	echo "== ghidra toolchain: UNKNOWN (could not fingerprint the install behind $GHIDRA_HEADLESS) =="
+	echo "   Candidate-dump caching is DISABLED for this run; every fixture re-imports."
+fi
 
 # ANNOUNCE IT (bead grm-4t2d). This value was originally computed here only to key the cache,
 # which is why the whole reason for the FIRST version of this note existed: the identity was
@@ -302,12 +315,17 @@ cache_key() {
 	local fixture="$1" loader="$2" extra="$3" hargs="${4:-}" pargs="${5:-}"
 	command -v sha256sum >/dev/null 2>&1 || { printf ''; return 0; }
 	[ -n "$EXT_ID" ] || { printf ''; return 0; }
+	[ -n "$TOOLCHAIN_ID" ] || { printf ''; return 0; }
 	{
 		printf 'fixture:'; sha256sum "$fixture" | cut -d' ' -f1
 		printf 'loader:%s\n' "$loader"
 		printf 'opts:%s\n' "$(normalize_opts "$extra")"
 		printf 'dumpscript:'; sha256sum "$SCRIPT_DIR/VerifyBankTest.java" | cut -d' ' -f1
 		printf 'ext:%s\n' "$EXT_ID"
+		# The TOOLCHAIN, not just the extension (bead grm-kt44): swapping decompile.exe, or
+		# pointing GHIDRA_HEADLESS at another install, changes every dump this key claims to
+		# describe while leaving every other term identical. See toolchain_identity().
+		printf 'toolchain:%s\n' "$TOOLCHAIN_ID"
 		# Only fixtures that pass extra headless args run one of the repo's ghidra_scripts/
 		# scripts (via the installed extension), or a tools/banktest/-local postScript of their
 		# own (pargs), so fold those inputs in ONLY for them -- an unconditional term would

@@ -507,3 +507,60 @@ for path in sys.stdin.read().splitlines():
 	[ -n "$out" ] || return 1
 	printf '%s' "$out"
 }
+
+toolchain_identity() {
+	# Content fingerprint of the GHIDRA INSTALL that will actually run the analysis, or
+	# non-zero if it cannot be determined (=> the caller's candidate-dump cache is disabled).
+	#
+	# WHY (bead grm-kt44, the FOURTH omission in the family realrom-cache-key-invariant
+	# documents): both candidate caches keyed on the ROM/fixture, the loader options, the dump
+	# script and ext_identity() -- everything about THIS REPO -- and nothing about the
+	# toolchain. Swapping decompile.exe, or pointing GHIDRA_HEADLESS at a different install
+	# entirely, changes the dump completely and left the key untouched, so the cache served one
+	# arm's dump for another. Found during grm-qp5x.1's native A/B, where five arms differed
+	# ONLY in decompile.exe; the workaround was `rm -rf build/realrom-cache` between arms, which
+	# works right up until someone forgets -- and it fails in the FLATTERING direction, as a
+	# no-op diff that reads "my change is safe".
+	#
+	# Derived from GHIDRA_HEADLESS, not GRM_GHIDRA_INSTALL: GHIDRA_HEADLESS is the knob that
+	# actually selects the install (grm-k0h, realrom-ab-wrong-install-trap), and an explicit
+	# GHIDRA_HEADLESS wins over GRM_GHIDRA_INSTALL, so keying the latter could fingerprint an
+	# install this run never launches. `<root>/support/analyzeHeadless(.bat)` is the layout
+	# grm_default_headless builds and the one every documented override follows.
+	#
+	# HASH THE BINARIES, not the version string alone: a locally patched install has the same
+	# application.version and is the exact case that motivated this bead. The version terms are
+	# folded in as well so a same-named-binaries-different-release install (should one ever
+	# exist) still separates. Paths are recorded RELATIVE to the install root for the same
+	# reason ext_identity() records them relative to the settings base -- copying an install to
+	# a new directory must not invalidate every cached candidate, only changing its contents
+	# should.
+	#
+	# KNOWN LIMIT, stated rather than silently assumed: this covers the decompiler/sleigh
+	# NATIVE binaries and the release identity, not the install's Java jars or its stock
+	# .sla/.slaspec language files. A hand-patched Ghidra language in the install would still
+	# be invisible here. That is a much rarer edit than swapping decompile.exe, and hashing the
+	# whole install is far too slow to run per script invocation; if it ever bites, extend this
+	# function rather than adding a fifth ad-hoc term at a call site.
+	local headless root bins out
+	headless="${GHIDRA_HEADLESS:-}"
+	[ -n "$headless" ] || return 1
+	root="$(dirname "$(dirname "$headless")")"
+	[ -d "$root" ] || return 1
+	bins="$(find "$root/Ghidra/Features/Decompiler/os" -type f \
+		\( -name 'decompile' -o -name 'decompile.exe' \
+		-o -name 'sleigh' -o -name 'sleigh.exe' \) 2>/dev/null | LC_ALL=C sort)"
+	[ -n "$bins" ] || return 1
+	out="$( {
+		printf '%s\n' "$bins" | while IFS= read -r p; do
+			printf '%s %s\n' "$(sha256sum "$p" | cut -d' ' -f1)" "${p#"$root"}"
+		done
+		# application.build.date is deliberately NOT included: it moves for reasons that have
+		# nothing to do with what the toolchain computes, and the binaries above already carry
+		# any real change.
+		grep -E '^application\.(name|version|release\.name)=' \
+			"$root/Ghidra/application.properties" 2>/dev/null | LC_ALL=C sort
+	} | LC_ALL=C sort | sha256sum | cut -d' ' -f1)"
+	[ -n "$out" ] || return 1
+	printf '%s' "$out"
+}

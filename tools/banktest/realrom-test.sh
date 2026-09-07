@@ -858,8 +858,9 @@ fi
 # (median ~7s per row, worst ~52s; a full 33-row --all run is ~6 min -- measured
 # 2026-08-31, bead grm-yfma, which corrected a ~1min+ estimate that was roughly
 # the worst row stated as typical). Keyed by the pinned ROM sha, the loader options, the RealRomDump
-# script, and the installed extension identity, so a rebuild or manifest edit
-# forces a fresh import. Disabled (bless re-imports) when the extension identity
+# script, the installed extension identity, and the identity of the Ghidra
+# install that runs the analysis (bead grm-kt44), so a rebuild, a manifest edit,
+# or a swapped decompile.exe forces a fresh import. Disabled (bless re-imports) when the extension identity
 # is unknown (e.g. falling back to the shared %APPDATA% install).
 CACHE_DIR="$REPO_ROOT/build/realrom-cache"
 
@@ -905,6 +906,20 @@ esac
 # installs -- print both rather than assume they agree.
 echo "== ghidra install: $GRM_GHIDRA_INSTALL (headless: $GHIDRA_HEADLESS) =="
 
+# toolchain_identity() lives in lib/common.sh (shared with run-banktest.sh). Computed once;
+# empty => caching disabled for this run, exactly as an unknown EXT_ID disables it -- an
+# unidentifiable toolchain must degrade to "re-import", never to "reuse and hope" (bead
+# grm-kt44). Printed for the same safety-net reason the extension identity is: on a native A/B
+# (decompile.exe, sleigh.exe) THIS is the line that must differ between the two sides, while the
+# extension identity is expected NOT to.
+TOOLCHAIN_ID="$(toolchain_identity)" || TOOLCHAIN_ID=""
+if [ -n "$TOOLCHAIN_ID" ]; then
+	echo "== ghidra toolchain: $TOOLCHAIN_ID =="
+else
+	echo "== ghidra toolchain: UNKNOWN (could not fingerprint the install behind $GHIDRA_HEADLESS) =="
+	echo "   Candidate-dump caching is DISABLED for this run; every row re-imports."
+fi
+
 realrom_cache_key() {
 	# args: id rom_sha opts  ->  sha256 key on stdout, or empty if disabled
 	#
@@ -915,6 +930,7 @@ realrom_cache_key() {
 	# that can change the dump has to be in here.
 	local id="$1" rom_sha="$2" opts="$3"
 	[ -n "$EXT_ID" ] || { printf ''; return 0; }
+	[ -n "$TOOLCHAIN_ID" ] || { printf ''; return 0; }
 	{
 		printf 'id:%s\n' "$id"
 		printf 'rom:%s\n' "$rom_sha"
@@ -925,6 +941,12 @@ realrom_cache_key() {
 		printf 'dumpscript:%s:' "$ROM_DUMP_SCRIPT"
 		sha256sum "$SCRIPT_DIR/$ROM_DUMP_SCRIPT" | cut -d' ' -f1
 		printf 'ext:%s\n' "$EXT_ID"
+		# The TOOLCHAIN that produces the dump, not just the extension that steers it (bead
+		# grm-kt44). Every other term here describes this repo; without this one a run against a
+		# patched decompile.exe -- or against a different install via GHIDRA_HEADLESS -- keys
+		# identically to a run against the stock one, and the cache serves the wrong arm's dump,
+		# into a `bless` in the worst case. See toolchain_identity() in lib/common.sh.
+		printf 'toolchain:%s\n' "$TOOLCHAIN_ID"
 		# A -preScript runs BEFORE auto-analysis and can change what analysis DOES at all --
 		# SetAnalyzerEnabled.java (bead grm-8uaz) turns an analyzer off outright. That is the
 		# largest change to the dump there is, so by this function's own rule above ("anything
