@@ -1099,15 +1099,23 @@ final class StoredValueScanner {
 	 * entry to stop at and nothing to adopt -- the mirror of the reason
 	 * {@code valueSuppliedInsideHelper} needs an env and this does not.
 	 * <p>
-	 * <b>{@code inStateAtStore} is {@link BankState#unknown()} deliberately.</b> It is consulted
-	 * only through {@code hooks.resolveLoad}, and the sole production caller passes
-	 * {@code NO_HOOKS}; the only state it could otherwise supply describes the CALL, not the store
-	 * this scans back to, and feeding a strategy a state that is off by the intervening
-	 * instructions would be a fresh unsoundness for no measured gain.
+	 * <b>{@code inStateAtStore} is the CALLER's tracked in-state at {@code useInstr}, not
+	 * {@link BankState#unknown()}</b> (bead grm-mej.3 item 4 -- this was {@code unknown()}
+	 * hardcoded before, back when the sole production caller passed {@code NO_HOOKS} and no hook
+	 * ever consulted it). It is consulted only through {@code hooks.resolveMirrorLoad} /
+	 * {@code hooks.resolveLoad}, and {@link #forwardedStoreValue} WITHDRAWS it to
+	 * {@link BankState#unknown()} the moment it crosses a {@link Hooks#isMechanismWrite} on the
+	 * walk from {@code useInstr} back to the store that fills {@code cell} -- the identical
+	 * grm-4bgh.7 machinery {@link #resolveStoredValue} itself relies on. That withdrawal is what
+	 * makes passing the CALL's state here sound rather than "a state that is off by the
+	 * intervening instructions": the state offered to a hook is never further from the truth than
+	 * the nearest mechanism write between it and {@code useInstr}, and past that write it is
+	 * honestly unknown instead of stale. A caller that still wants the pre-mirror behaviour (no
+	 * hook ever sees a non-{@code unknown()} state) passes {@link BankState#unknown()} explicitly.
 	 */
-	static BankState callerCellValue(Program program, Instruction useInstr, Address cell, int mask,
-			Hooks hooks) {
-		BankState value = forwardedStoreValue(program, useInstr, cell, BankState.unknown(), hooks,
+	static BankState callerCellValue(Program program, Instruction useInstr, Address cell,
+			BankState inStateAtStore, int mask, Hooks hooks) {
+		BankState value = forwardedStoreValue(program, useInstr, cell, inStateAtStore, hooks,
 			RegisterEnv.NONE, new Budget(MAX_RESOLVE_STEPS), 0);
 		// Equivalent to combine(0xFF, 0x00, mask, value), spelled out because there is no
 		// accumulated AND/ORA transform to fold here -- the cell's byte arrives verbatim.

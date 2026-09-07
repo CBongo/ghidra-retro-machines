@@ -32,6 +32,7 @@ import ghidra.program.model.listing.Program;
 
 import static retromachines.BankDataflowEngine.overwrite;
 import static retromachines.BankDataflowEngine.position;
+import static retromachines.BankDataflowEngine.toFieldLocal;
 
 import retromachines.HelperDiscovery.HelperModel;
 
@@ -183,7 +184,7 @@ final class HelperArgumentRecovery {
 	 * short of the env's stop.
 	 */
 	static CallEffect recoverCallArgument(Program program, Instruction callInstr,
-			HelperModel helper, BankState callSiteIn, Map<Address, RegisterEnv> envCache,
+			HelperModel helper, BankState callSiteIn, Map<CallSiteRegKey, RegisterEnv> envCache,
 			Set<Function> restoringTrampolines) {
 		if (restoringTrampolines.contains(helper.function())) {
 			// A VERIFIED no-op (grm-mej.3): this helper puts the entry bank back before returning,
@@ -198,8 +199,24 @@ final class HelperArgumentRecovery {
 			return new CallEffect(BankState.unknown(), helper.effectMask());
 		}
 		int stateMask = helper.effectMask() >>> helper.lsb();
+		// The call's tracked in-state, narrowed to THIS helper's mechanism's field-local
+		// [0, width) space -- computed once, up front, rather than where the pre-grm-mej.3 code
+		// first needed it (just before the depositHelperArgument call below). Every caller-side
+		// scan in this method now needs it too (grm-mej.3 item 4): a mirror-aware Hooks answers
+		// hooks.resolveMirrorLoad from exactly this state, in exactly this coordinate space -- see
+		// MemoryLatchBankSwitchStrategy.mirroredByte's "COORDINATE CONVERSION" javadoc for why
+		// getting that space wrong is the easiest way to ship a wrong bank here.
+		BankState localIn = toFieldLocal(callSiteIn, helper.lsb(), helper.effectMask());
+		// The Hooks a scan running at THIS call site (i.e. outside helper's own instructions) may
+		// use (bead grm-mej.3 item 4). NOT NO_HOOKS any more for a strategy that overrides
+		// BankSwitchStrategy.callerSideHooks() (MemoryLatchBankSwitchStrategy does, for contra's
+		// c0d3 LDA $8000 at a call site) -- but NO_HOOKS remains exactly right for
+		// valueSuppliedInsideHelper and inboundArgumentCell's effectiveOperandTarget call below,
+		// which run INSIDE the helper / do address computation rather than caller-side value
+		// recovery, and are deliberately NOT converted.
+		StoredValueScanner.Hooks callerHooks = callerHooksFor(helper);
 		BankState local = StoredValueScanner.resolveStoredValue(program, callInstr, reg,
-			BankState.unknown(), stateMask, NO_HOOKS);
+			localIn, stateMask, callerHooks);
 		// grm-mu7: what the caller left in argReg is this helper's argument only if the helper
 		// still has it when the first switch site reads it. Withholding the value (rather than
 		// short-circuiting the whole call) is deliberate -- it routes the call down the exact
@@ -216,14 +233,16 @@ final class HelperArgumentRecovery {
 			!argumentSurvivesPrologue(program, prologueSegments(helper), reg)) {
 			Address inbound = inboundArgumentCell(program, helper, reg);
 			BankState viaCell = inbound == null ? BankState.unknown()
-					: StoredValueScanner.callerCellValue(program, callInstr, inbound, stateMask,
-						NO_HOOKS);
+					: StoredValueScanner.callerCellValue(program, callInstr, inbound, localIn,
+						stateMask, callerHooks);
 			// Partial knowledge counts, matching how combine() and setFieldFromByte already treat
-			// a per-bit answer. NO_HOOKS for the same reason the caller-side register scan above
-			// uses it: that scan runs in the CALLER, outside any mechanism's interpretation -- see
-			// callSiteRegisters. With no resolveLoad there is also nothing whose validity a
-			// mid-scan mechanism write could invalidate; a store to $8000 is stepped over on the
-			// strength of being a provably different cell, which is the honest reason.
+			// a per-bit answer. Mirror-aware as of grm-mej.3 item 4 for the same reason the
+			// caller-side register scan above is: this scan runs in the CALLER, outside any
+			// mechanism's interpretation, and callerHooks' isMechanismWrite (when the strategy
+			// overrides it) is what keeps that sound -- see BankSwitchStrategy.callerSideHooks()'s
+			// javadoc. A store to the mechanism is still stepped over on the strength of being a
+			// provably different cell than `inbound`; what changed is only that a LOAD of a mirror
+			// encountered on the way there can now resolve instead of declining outright.
 			local = viaCell.knownMask() != 0 ? viaCell
 					: valueSuppliedInsideHelper(program, helper, reg, stateMask);
 		}
@@ -233,9 +252,6 @@ final class HelperArgumentRecovery {
 			return new CallEffect(position(local, helper.lsb(), helper.effectMask()),
 				helper.effectMask());
 		}
-		BankState localIn = new BankState(
-			(callSiteIn.knownMask() & helper.effectMask()) >>> helper.lsb(),
-			(callSiteIn.bits() & helper.effectMask()) >>> helper.lsb());
 		// helper.entry(), not function().getEntryPoint(): the mini-inline scan must stop where
 		// control actually arrived. For a mid-body entry those differ, and stopping at the
 		// function entry would walk the scan back through the very prologue this call skipped.
@@ -243,9 +259,14 @@ final class HelperArgumentRecovery {
 		// the WRAPPED helper, so stopping at the wrapper's entry would let it run off the
 		// helper's own entry and back into the wrapper's tail (grm-2dr increment 2).
 		Address scanStop = insideHelperEntry(helper);
-		RegisterEnv callerRegs = envCache.computeIfAbsent(callInstr.getMinAddress(),
-			a -> callSiteRegisters(program, callInstr, scanStop,
-				crossableWrapperJoin(program, helper.firstSite(), scanStop), helper));
+		// Keyed on (call address, localIn), not address alone (bead grm-mej.3 item 4, tripwire 2)
+		// -- see the memo's declaration at BankDataflowEngine.runDataflow for why the address-only
+		// key this replaced is no longer sound. BankState is a record, so CallSiteRegKey gets
+		// value equality on localIn for free.
+		RegisterEnv callerRegs = envCache.computeIfAbsent(
+			new CallSiteRegKey(callInstr.getMinAddress(), localIn),
+			key -> callSiteRegisters(program, callInstr, scanStop,
+				crossableWrapperJoin(program, helper.firstSite(), scanStop), helper, localIn));
 		// The argument-bearing deposit, computed exactly as it was before grm-4bgh.5 -- this
 		// is both the answer for a single-site helper and, for a folded one, the deposit whose
 		// emptiness decides whether this CALL SITE gets a warning. See foldDeposits.
@@ -1110,14 +1131,22 @@ final class HelperArgumentRecovery {
 	 * <p>
 	 * {@code crossableJoin} is passed through untouched; see {@link #crossableWrapperJoin} for
 	 * where it comes from and {@link RegisterEnv} for why crossing it is sound.
+	 * <p>
+	 * {@code localIn} (bead grm-mej.3 item 4) is {@code recoverCallArgument}'s own
+	 * {@code localIn} -- the call's tracked in-state, already narrowed to {@code helper}'s
+	 * mechanism's field-local space -- threaded down to {@link #surviving} so a mirror-aware
+	 * {@link BankSwitchStrategy#callerSideHooks} can answer from real state instead of the
+	 * historical {@link BankState#unknown()}. It is what makes {@link #CallSiteRegKey} need the
+	 * in-state in its key: this method's result can now differ across two calls at the same
+	 * address under different {@code localIn}.
 	 */
 	private static RegisterEnv callSiteRegisters(Program program, Instruction callInstr,
-			Address entryAddr, Address crossableJoin, HelperModel helper) {
+			Address entryAddr, Address crossableJoin, HelperModel helper, BankState localIn) {
 		List<PrologueSegment> unwalked = unwalkedPrologueSegments(entryAddr, helper);
 		return new RegisterEnv(entryAddr, crossableJoin,
-			surviving(program, callInstr, 'A', unwalked),
-			surviving(program, callInstr, 'X', unwalked),
-			surviving(program, callInstr, 'Y', unwalked));
+			surviving(program, callInstr, 'A', unwalked, helper, localIn),
+			surviving(program, callInstr, 'X', unwalked, helper, localIn),
+			surviving(program, callInstr, 'Y', unwalked, helper, localIn));
 	}
 
 	/**
@@ -1204,14 +1233,25 @@ final class HelperArgumentRecovery {
 	 * caller-side scan unfiltered rather than calling {@link #argumentSurvivesPrologue(Program,
 	 * List, char)}, which treats an empty list as an unproven decline (see its own javadoc) and
 	 * would wrongly force every ordinary helper's env to {@link BankState#unknown()}.
+	 * <p>
+	 * <b>Mirror-aware as of bead grm-mej.3 item 4.</b> {@code localIn} -- {@code helper}'s
+	 * mechanism's field-local tracked state at the call, threaded down from
+	 * {@link #callSiteRegisters} -- replaces the historical hardcoded
+	 * {@link BankState#unknown()}, and {@link #callerHooksFor} replaces the historical
+	 * {@code NO_HOOKS}. This is masked to {@code 0xFF} rather than the mechanism's own
+	 * {@code stateMask} exactly as before (an index register is not the mechanism's field, see
+	 * this method's original javadoc on {@link #callSiteRegisters}); the mask narrowing and the
+	 * in-state's coordinate space are independent questions, and only the mask stayed {@code 0xFF}
+	 * here. A strategy that does not override {@link BankSwitchStrategy#callerSideHooks} answers
+	 * identically to before, since its hooks never consult {@code localIn} at all.
 	 */
 	private static BankState surviving(Program program, Instruction callInstr, char reg,
-			List<PrologueSegment> unwalked) {
+			List<PrologueSegment> unwalked, HelperModel helper, BankState localIn) {
 		if (!unwalked.isEmpty() && !argumentSurvivesPrologue(program, unwalked, reg)) {
 			return BankState.unknown();
 		}
-		return StoredValueScanner.resolveStoredValue(program, callInstr, reg, BankState.unknown(),
-			0xFF, NO_HOOKS);
+		return StoredValueScanner.resolveStoredValue(program, callInstr, reg, localIn, 0xFF,
+			callerHooksFor(helper));
 	}
 
 	/**
@@ -1318,6 +1358,38 @@ final class HelperArgumentRecovery {
 		CallEffect(BankState state, int ownedMask) {
 			this(state, ownedMask, state.knownMask() != 0);
 		}
+	}
+
+	/**
+	 * The {@link StoredValueScanner.Hooks} a caller-side scan for {@code helper} should use
+	 * (bead grm-mej.3 item 4): the helper's own strategy's {@link BankSwitchStrategy#callerSideHooks},
+	 * or plain {@link #NO_HOOKS} when the helper has no strategy at all (the same
+	 * multi-mechanism-disagreement degrade {@link #recoverCallArgument} and
+	 * {@link #foldDeposits} already handle by testing {@code helper.strategy() == null}
+	 * elsewhere). One place for this so {@code recoverCallArgument} and
+	 * {@link #callSiteRegisters} cannot answer the question differently for the same helper.
+	 */
+	private static StoredValueScanner.Hooks callerHooksFor(HelperModel helper) {
+		return helper.strategy() == null ? NO_HOOKS : helper.strategy().callerSideHooks();
+	}
+
+	/**
+	 * Memo key for {@code envCache} (a.k.a. {@code BankDataflowEngine.runDataflow}'s
+	 * {@code callSiteRegCache}): a call address PLUS the tracked in-state flowing into it, in
+	 * this helper's mechanism's field-local coordinates (bead grm-mej.3 item 4, tripwire 2).
+	 * <p>
+	 * Before this bead the memo was keyed on {@code address} alone, and
+	 * {@code BankDataflowEngine.runDataflow}'s declaration comment argued that was sound because
+	 * {@link #callSiteRegisters}' three backward scans "use NO_HOOKS and never consult tracked
+	 * state". This bead makes that argument false for a strategy that overrides
+	 * {@link BankSwitchStrategy#callerSideHooks()}: {@link #surviving} now threads a real
+	 * {@code localIn} into those scans, so two dequeues of the same call address under different
+	 * in-states can answer differently and a memo keyed on the address alone would silently
+	 * serve one call site's answer to another. {@link BankState} is a {@code record}, so this
+	 * gets value equality on {@code localIn} for free -- two keys with the same address and the
+	 * same known/bits pair collide exactly when they should.
+	 */
+	record CallSiteRegKey(Address address, BankState localIn) {
 	}
 
 	private static final StoredValueScanner.Hooks NO_HOOKS = new StoredValueScanner.Hooks() {

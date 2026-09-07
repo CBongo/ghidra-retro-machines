@@ -467,7 +467,7 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 		builder.setBytes("0xffc2", "60", true); // RTS (callee, not otherwise touched)
 
 		assertCellValue(0xFF, 0x1B, StoredValueScanner.callerCellValue(program,
-			instructionAt("0x8005"), builder.addr("0x0720"), 0xFF, NO_HOOKS));
+			instructionAt("0x8005"), builder.addr("0x0720"), BankState.unknown(), 0xFF, NO_HOOKS));
 	}
 
 	/**
@@ -484,7 +484,7 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 		builder.setBytes("0xffc2", "60", true); // RTS
 
 		assertUnresolved(StoredValueScanner.callerCellValue(program, instructionAt("0x8006"),
-			builder.addr("0x0720"), 0xFF, NO_HOOKS));
+			builder.addr("0x0720"), BankState.unknown(), 0xFF, NO_HOOKS));
 	}
 
 	/**
@@ -501,6 +501,6 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 		builder.setBytes("0xffc2", "60", true); // RTS
 
 		assertCellValue(0x0F, 0x05, StoredValueScanner.callerCellValue(program,
-			instructionAt("0x8005"), builder.addr("0x0720"), 0x0F, NO_HOOKS));
+			instructionAt("0x8005"), builder.addr("0x0720"), BankState.unknown(), 0x0F, NO_HOOKS));
 	}
 }

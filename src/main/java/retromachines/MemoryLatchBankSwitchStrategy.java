@@ -224,6 +224,46 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	};
 
 	/**
+	 * {@link #callerSideHooks()}'s override (bead grm-mej.3 item 4): the same mirror answer as
+	 * the direct-path {@link #hooks} field above, {@code resolveLoad} withheld on purpose (see
+	 * {@link BankSwitchStrategy#callerSideHooks()}'s scope-discipline note -- answering a
+	 * bank-invariant ROM byte at a caller-side site is a separate widening, not this one), and
+	 * {@code isMechanismWrite} delegating to the SAME {@link #writesInRange} the direct-path
+	 * hooks use. That delegation is the mandatory half of this override, not the mirror-answer
+	 * half: a caller-side scan using this object is handed the REAL tracked in-state at the
+	 * call (unlike the retired {@code NO_HOOKS}, which hardcoded {@code BankState.unknown()}
+	 * and so never needed {@code isMechanismWrite} to mean anything), so an
+	 * {@code isMechanismWrite} that answered {@code false} here would let a mirror load
+	 * BEFORE an intervening mechanism write resolve against the state AFTER it -- a confidently
+	 * wrong bank. {@link StoredValueScanner}'s withdraw-on-mechanism-write machinery
+	 * (grm-4bgh.7) is what actually prevents that, once this hook tells it where the mechanism
+	 * writes are.
+	 */
+	private final StoredValueScanner.Hooks callerSideHooks = new StoredValueScanner.Hooks() {
+		@Override
+		public boolean isMechanismWrite(Instruction instr) {
+			return writesInRange(instr);
+		}
+
+		@Override
+		public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+				BankState inStateAtStore) {
+			return null; // scope discipline -- see BankSwitchStrategy.callerSideHooks()
+		}
+
+		@Override
+		public BankState resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
+				BankState inStateAtStore) {
+			return mirroredByte(loadInstr, resolvedTarget, inStateAtStore);
+		}
+	};
+
+	@Override
+	public StoredValueScanner.Hooks callerSideHooks() {
+		return callerSideHooks;
+	}
+
+	/**
 	 * The RAW BYTE a load of {@code target} yields when {@code target} mirrors the live bank, or
 	 * {@code null} when it mirrors nothing this strategy may answer from tracked state.
 	 * <p>

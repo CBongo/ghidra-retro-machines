@@ -44,6 +44,7 @@ import retromachines.BoardDescriptorModel.ComputedWindowModel;
 import retromachines.BoardDescriptorModel.FieldSpec;
 import retromachines.BoardDescriptorModel.ModeWindowModel;
 import retromachines.HelperArgumentRecovery.CallEffect;
+import retromachines.HelperArgumentRecovery.CallSiteRegKey;
 import retromachines.HelperDiscovery.HelperModel;
 
 /**
@@ -130,17 +131,29 @@ final class BankDataflowEngine {
 		// every helper call address across the whole fixpoint. Mega Man (25 switch sites, a
 		// large fixpoint) is where that bites.
 		//
-		// The memoized value is a function of (program, call address, HELPER MODEL) -- the model
-		// entered the signature with grm-k90's prologue filter and crossable join, where it had
-		// previously been (program, call address) alone. Keying on the address only is still
-		// correct, and the reason is worth stating rather than assuming: one call instruction
-		// dispatches to exactly one callee, and the helper map is FIXED before runDataflow begins
-		// (phase 1/2 separation, same invariant matchCache above relies on), so within one
-		// fixpoint a given call address resolves to one and only one model. The three scans
-		// themselves remain state-independent -- they use NO_HOOKS and never consult tracked
-		// state -- and argumentSurvivesPrologue is a pure function of the listing.
+		// UPDATED INVARIANT (bead grm-mej.3 item 4, tripwire 2) -- the paragraph this replaces
+		// argued the memoized value was a function of (program, call address, HELPER MODEL)
+		// alone, because "the three scans themselves remain state-independent -- they use
+		// NO_HOOKS and never consult tracked state". That is no longer true: a helper whose
+		// strategy overrides BankSwitchStrategy.callerSideHooks() (MemoryLatchBankSwitchStrategy,
+		// for contra's c0d3 LDA $8000 at a call site) now has its caller-side scans threaded with
+		// the REAL tracked in-state at the call, narrowed to that helper's mechanism's
+		// field-local space, so hooks.resolveMirrorLoad can resolve a bank-mirror load there. Two
+		// dequeues of the same call address under different in-states can therefore produce
+		// different RegisterEnv results, and memoizing by address alone would silently serve one
+		// call site's answer to another's.
+		//
+		// The fix is to key on (call address, in-state) rather than address alone or to drop the
+		// memo -- CallSiteRegKey (HelperArgumentRecovery), constructed by recoverCallArgument
+		// from the SAME localIn it narrows callSiteIn to. Re-keying was preferred over dropping
+		// the cache outright: the cache exists for a real, measured performance reason (Mega Man,
+		// 25 switch sites, a large fixpoint) and the helper map is still FIXED before runDataflow
+		// begins (phase 1/2 separation, same invariant matchCache above relies on), so one call
+		// address still dispatches to exactly one HELPER MODEL -- only the in-state half of the
+		// key can vary across dequeues of the same address now. argumentSurvivesPrologue remains
+		// a pure function of the listing and needs no key at all.
 
-		Map<Address, RegisterEnv> callSiteRegCache = new HashMap<>();
+		Map<CallSiteRegKey, RegisterEnv> callSiteRegCache = new HashMap<>();
 
 		Set<Address> seeds = new LinkedHashSet<>();
 		AddressIterator eps = program.getSymbolTable().getExternalEntryPointIterator();

@@ -512,4 +512,67 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 			BankState siteInState) {
 		return effectDependsOnPriorState();
 	}
+
+	/**
+	 * A {@link StoredValueScanner.Hooks} for a scan that runs at a bank-switch helper's CALL
+	 * SITE -- outside this mechanism's own instructions entirely -- resolving what the caller
+	 * left in a register or memory cell (bead grm-mej.3 item 4). This is what
+	 * {@code HelperArgumentRecovery} threads into its three caller-side
+	 * {@code StoredValueScanner} entry points ({@code recoverCallArgument}'s register scan,
+	 * {@code callerCellValue}'s memory-cell scan, and {@code callSiteRegisters}' A/X/Y env
+	 * scan via {@code surviving}), replacing the historical {@code NO_HOOKS} constant that
+	 * declined every mirror there because no strategy had a way to answer state-dependent
+	 * questions at a site it does not itself recognize.
+	 * <p>
+	 * <b>Scope discipline: mirrors and mechanism-write detection only, never
+	 * {@link StoredValueScanner.Hooks#resolveLoad}.</b> Answering {@code resolveLoad} at a
+	 * caller-side site -- letting a bank-invariant ROM byte resolve there too -- would be safe
+	 * in principle, but it is a SEPARATE, separately-measurable widening from mirror
+	 * resolution and stays out of scope for this increment. The default below, and every
+	 * override, must keep returning {@code null} from {@code resolveLoad}.
+	 * <p>
+	 * <b>{@code isMechanismWrite} is NOT optional to get right here, even though the default
+	 * below answers {@code false} unconditionally.</b> A caller-side scan given this method's
+	 * result is handed the REAL tracked in-state at the call, unlike the historical
+	 * {@code NO_HOOKS} sites, which hardcoded {@link BankState#unknown()} and so never
+	 * consulted it regardless of what {@code isMechanismWrite} said. The moment
+	 * {@link StoredValueScanner.Hooks#resolveMirrorLoad} can answer from that real state, an
+	 * {@code isMechanismWrite} that always answers {@code false} becomes a live soundness bug:
+	 * a mirror load that executes BEFORE an intervening mechanism write would be answered with
+	 * the state AFTER it -- a confidently wrong bank, which this engine treats as strictly
+	 * worse than no bank at all. Any override that also answers
+	 * {@link StoredValueScanner.Hooks#resolveMirrorLoad} from real state MUST make its
+	 * {@code isMechanismWrite} here delegate to the same mechanism-write detector its direct-path
+	 * hooks use ({@link MemoryLatchBankSwitchStrategy}'s {@code writesInRange}, via its own
+	 * {@code hooks} field, is the worked example). {@link StoredValueScanner}'s existing
+	 * withdraw-on-mechanism-write machinery (grm-4bgh.7) then does the rest with no further
+	 * change: a mechanism write mid-scan withdraws the in-state from that point back, so a
+	 * mirror load before it never sees the post-write state.
+	 * <p>
+	 * The default is behaviourally identical to the retired {@code NO_HOOKS} -- no mirror
+	 * resolution, no ROM-byte resolution, {@code isMechanismWrite} always {@code false} -- so a
+	 * strategy that does not override this method sees no change at all from a caller-side scan
+	 * being converted to use it, regardless of what real in-state that scan is now handed.
+	 */
+	default StoredValueScanner.Hooks callerSideHooks() {
+		return NO_CALLER_SIDE_HOOKS;
+	}
+
+	/**
+	 * The default {@link #callerSideHooks()}: safe under a real in-state ONLY because it never
+	 * looks at one -- no mirror resolution, no ROM-byte resolution, {@code isMechanismWrite}
+	 * always {@code false}. Shared as one instance rather than allocated per call.
+	 */
+	StoredValueScanner.Hooks NO_CALLER_SIDE_HOOKS = new StoredValueScanner.Hooks() {
+		@Override
+		public boolean isMechanismWrite(Instruction instr) {
+			return false;
+		}
+
+		@Override
+		public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+				BankState inStateAtStore) {
+			return null;
+		}
+	};
 }
