@@ -390,6 +390,71 @@ address named inline is never overwritten by the generated source, and an inline
 used as an authoritative override on top of a bulk-generated set. Both `inline:` and
 `source:` may be used together on the same set, or either alone.
 
+## Per-game descriptors (`.gmap`)
+
+A **separate, much smaller** compiled artifact for the per-game descriptor tier
+(`docs/per-game-descriptors-design.md`; first increment, bead `grm-hb6.12`):
+`machines/games/<id>.yaml` compiles to `data/games/<id>.gmap`, JSON, by
+`tools/gdtbuilder/src/main/java/gdtbuilder/GameCompiler.java` (Gradle tasks
+`build<Id>Game` / `buildGames`), the sibling of `MapCompiler` for this tier -- see that
+class's javadoc for why it is a sibling rather than a mode of `MapCompiler`. Everything
+above this section describes a **board** `.map`; nothing here changes that format.
+
+**The extension is `.gmap`, never `.map`.** `NesBoardRegistry.scan` enumerates `*.map`
+files by plain filename suffix looking for a board descriptor (a `system.board.ines_mappers`
+key); a compiled game descriptor under `data/games/*.map` would land in that scan by
+accident. `.gitignore`'s `data/games/*` entry names the directory, not the extension, but
+every compiled game descriptor inside it is `.gmap`.
+
+### Schema
+
+```
+{
+  "schema": 2,
+  "game": { "id", "title", "board",
+            "identity": { "prg_sha256", "file_sha256" },
+            "provenance" },
+  "banking"?: { "initial_state"?: { "<field>": <int>, ... } }
+}
+```
+
+- **`schema`** is propagated from the YAML (required to be `2`) rather than consumed and
+  dropped, unlike a board `.map`'s duck-typed compatibility idiom -- see
+  `docs/per-game-descriptors-design.md` section 3.3 for why a game descriptor's version is
+  compared explicitly: it is the first artifact in this repo that can be read by a
+  different extension version than the one that compiled it.
+- **`game.identity.prg_sha256` / `game.identity.file_sha256`** are always 64 lowercase hex
+  characters (the compiler lowercases them); see `docs/per-game-descriptors-design.md`
+  section 2 for what each digest covers and why PRG is primary.
+- **`banking.initial_state`**, when present, is a **field-NAME map** (`{ "prg_mode": 1 }`),
+  never a packed integer -- unlike a board `.map`'s `banking.initial_state`, which is
+  always the packed literal. The game tier deliberately does not know the board's bit
+  layout at compile time; packing happens at load time, against the matched board
+  descriptor's own parsed `banking.state` field tuple
+  (`DescriptorSupport.applyGameInitialStateHint`). This is the tier's first hint kind
+  (bead `grm-hb6.12`); more will follow the same file but are not yet designed.
+
+### Distribution and lookup
+
+Curated only in this increment: bundled under `data/games/`, resolved at NES import time
+by `GameDescriptorRegistry` against the program's per-game identity (`prg_sha256` primary,
+`file_sha256` alias; a `game.board` mismatch against the loader's actually-resolved board
+ignores the whole file). No user-writable overlay directory yet (`docs/per-game-descriptors-
+design.md` section 4.2; bead `grm-hb6.2`) and no runtime YAML parsing (bead `grm-hb6.3`);
+this artifact stays JSON-only at runtime exactly like a board `.map`.
+
+**A hint whose subject must be chosen at import time cannot wait for a later analysis
+pass.** `banking.initial_state` picks the home-in-base layout while the program is being
+created, so applying a corrected descriptor requires re-importing the ROM, not re-running
+an analyzer. See `docs/per-game-descriptors-design.md` section 6.1's "prefer the analyzer
+route" ruling and its stated exception.
+
+Malformed or unreadable input costs only that one file: an unparseable `.gmap`, a schema
+mismatch, or a structurally incomplete `game:` section is logged and skipped, never thrown
+(`GameDescriptorRegistry.parse`). A hint naming a field the matched board does not declare,
+or a value too wide for that field, is refused per-field the same way
+(`DescriptorSupport.applyGameInitialStateHint`) -- see that method's javadoc.
+
 ## Conventions
 
 - **Addresses are decimal JSON numbers.** The YAML source writes them in hex

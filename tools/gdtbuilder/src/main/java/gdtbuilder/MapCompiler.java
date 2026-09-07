@@ -1748,7 +1748,12 @@ public class MapCompiler {
 		}
 	}
 
-	private static String requireString(Map<String, Object> map, String key, String context) {
+	// Package-private (not private): GameCompiler, MapCompiler's sibling for the per-game
+	// descriptor tier (docs/per-game-descriptors-design.md; bead grm-hb6.12), reuses this
+	// handful of small parsing helpers rather than duplicating them -- a game descriptor's
+	// schema is small enough, and different enough from a board's (no 'system:', no windows,
+	// no banking.mechanisms), that it is its own compiler class, not a mode of this one.
+	static String requireString(Map<String, Object> map, String key, String context) {
 		Object v = map.get(key);
 		if (v == null) {
 			throw new IllegalArgumentException(context + " is missing required '" + key + ":'");
@@ -1756,7 +1761,7 @@ public class MapCompiler {
 		return v.toString();
 	}
 
-	private static int requireAddr(Map<String, Object> map, String key, String context) {
+	static int requireAddr(Map<String, Object> map, String key, String context) {
 		Object v = map.get(key);
 		if (v == null) {
 			throw new IllegalArgumentException(context + " is missing required '" + key + ":'");
@@ -1765,7 +1770,7 @@ public class MapCompiler {
 	}
 
 	/** snakeyaml parses "0xA000"-style scalars as Integer/Long already; this just normalizes. */
-	private static int toInt(Object o) {
+	static int toInt(Object o) {
 		if (o instanceof Number) {
 			return ((Number) o).intValue();
 		}

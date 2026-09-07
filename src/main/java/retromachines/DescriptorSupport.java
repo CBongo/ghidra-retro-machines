@@ -130,15 +130,15 @@ final class DescriptorSupport {
 	static final String GAME_IDENTITY_PROPERTY = "Retro Machines.Game Identity";
 
 	/**
-	 * Program-info property where a game-descriptor resolver records the resolved descriptor's
-	 * path, absent when nothing matched -- the title-tier counterpart of
+	 * Program-info property where {@link GameDescriptorRegistry#resolve} records the resolved
+	 * game descriptor's path, absent when nothing matched -- the title-tier counterpart of
 	 * {@link #MAP_PATH_PROPERTY}.
 	 * <p>
-	 * <b>Declared, never written (bead grm-hb6.1).</b> Nothing in this extension resolves a game
-	 * descriptor yet; the resolver and its writer are beads grm-hb6.2/grm-hb6.3. The constant
-	 * exists now so the property NAME is fixed alongside the {@link #GAME_IDENTITY_PROPERTY} it
-	 * keys off of, and so the harness scripts that re-declare these names as literals
-	 * (tools/banktest/RealRomDump.java) have one place to agree with.
+	 * Written by {@link NesRomLoader#load} (bead {@code grm-hb6.12}, first increment: curated
+	 * only, resolved from {@link #GAME_IDENTITY_PROPERTY} over the bundled
+	 * {@code machines/games/*.gmap} set). A user-writable overlay directory (bead
+	 * {@code grm-hb6.2}) and runtime YAML (bead {@code grm-hb6.3}) remain future work; this
+	 * property's value is unaffected by which source eventually resolved it.
 	 */
 	static final String GAME_DESCRIPTOR_PROPERTY = "Retro Machines.Game Descriptor";
 
@@ -554,6 +554,89 @@ final class DescriptorSupport {
 					"-byte image, which does not fit the field's " + field.width() +
 					" bits; leaving the field at its compiled value");
 				continue;
+			}
+			packed = (packed & ~(field.mask() << field.lsb())) | (value << field.lsb());
+		}
+		return packed;
+	}
+
+	/**
+	 * Folds a resolved game descriptor's {@code banking.initial_state} hint (bead
+	 * {@code grm-hb6.12}) into {@code resolvedInitialState} -- itself already the output of
+	 * {@link #resolveInitialState}, i.e. this runs strictly AFTER
+	 * {@code banking.initial_state_expr} (bead {@code grm-y0ml}), per
+	 * docs/per-game-descriptors-design.md's ruling that an import-time hint is folded in last.
+	 * <p>
+	 * The hint is a field-NAME map ({@code { prg_mode: 1 }}), never a packed integer -- the game
+	 * tier must not know the board's bit layout -- so it is packed here, against {@code
+	 * boardMap}'s own {@link #parseStateFields} tuple, the only place both the field name and
+	 * its width are known together.
+	 * <p>
+	 * Same failure discipline as {@link #resolveInitialState}, extended one notch further
+	 * because a game descriptor is the least trusted input in the system
+	 * (docs/per-game-descriptors-design.md section 3.1): a hint naming a field this board does
+	 * not declare, or a value too wide for that field, LOGS and refuses that one field, leaving
+	 * it at whatever {@code resolvedInitialState} already held -- never throws, never guesses
+	 * (CLAUDE.md: {@code load()} is authoritative). A hint present when the board has no
+	 * resolved initial state at all (no {@code banking} section, or no {@code initial_state})
+	 * refuses the WHOLE hint the same way, since there is nothing to fold a field value into.
+	 * Also logs when a hint overrides a value {@code banking.initial_state_expr} had already
+	 * set for that field, so a silent override is never invisible to the log.
+	 *
+	 * @param boardMap the compiled BOARD descriptor (not the game descriptor)
+	 * @param resolvedInitialState {@link #resolveInitialState}'s result against {@code boardMap}
+	 * @param gameDescriptor the compiled game descriptor ({@code .gmap} JSON)
+	 * @param gameDescriptorPath the game descriptor's path, for log messages
+	 * @return {@code resolvedInitialState} with the hint's fields applied, or unchanged when the
+	 *         game descriptor declares no {@code banking.initial_state} hint
+	 */
+	static Long applyGameInitialStateHint(JsonObject boardMap, Long resolvedInitialState,
+			JsonObject gameDescriptor, String gameDescriptorPath, MessageLog log) {
+		JsonObject gameBanking = gameDescriptor.getAsJsonObject("banking");
+		if (gameBanking == null || !gameBanking.has("initial_state")) {
+			return resolvedInitialState;
+		}
+		if (resolvedInitialState == null) {
+			log.appendMsg(gameDescriptorPath + ": banking.initial_state hint present, but the " +
+				"board descriptor has no banking.initial_state of its own to apply it to; " +
+				"ignoring the hint");
+			return null;
+		}
+		JsonObject hint = gameBanking.getAsJsonObject("initial_state");
+		List<StateField> fields = parseStateFields(boardMap);
+		Set<String> exprFields = new LinkedHashSet<>();
+		JsonObject boardBanking = boardMap.getAsJsonObject("banking");
+		if (boardBanking != null && boardBanking.has("initial_state_expr")) {
+			exprFields.addAll(boardBanking.getAsJsonObject("initial_state_expr").keySet());
+		}
+		long packed = resolvedInitialState;
+		for (Map.Entry<String, JsonElement> entry : hint.entrySet()) {
+			String fieldName = entry.getKey();
+			StateField field = findField(fields, fieldName);
+			if (field == null) {
+				log.appendMsg(gameDescriptorPath + ": banking.initial_state names '" +
+					fieldName + "', which is not a banking.state field of this board; " +
+					"ignoring it");
+				continue;
+			}
+			long value;
+			try {
+				value = entry.getValue().getAsLong();
+			}
+			catch (RuntimeException e) {
+				log.appendMsg(gameDescriptorPath + ": banking.initial_state '" + fieldName +
+					"' is not an integer; ignoring it");
+				continue;
+			}
+			if (value < 0 || value > field.mask()) {
+				log.appendMsg(gameDescriptorPath + ": banking.initial_state '" + fieldName +
+					": " + value + "' does not fit the field's " + field.width() +
+					" bits; leaving the field at its previously resolved value");
+				continue;
+			}
+			if (exprFields.contains(fieldName)) {
+				log.appendMsg(gameDescriptorPath + ": banking.initial_state '" + fieldName +
+					"' overrides the value banking.initial_state_expr had set for it");
 			}
 			packed = (packed & ~(field.mask() << field.lsb())) | (value << field.lsb());
 		}

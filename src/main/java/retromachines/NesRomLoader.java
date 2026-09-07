@@ -468,6 +468,26 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 		program.getOptions(Program.PROGRAM_INFO)
 				.setString(DescriptorSupport.MAP_PATH_PROPERTY, board.mapPath());
 
+		// Curated per-game descriptor resolution (bead grm-hb6.12, first increment): resolve
+		// against the identity computed above -- prg_sha256 primary, file_sha256 alias -- and
+		// cross-check the resolved board (docs/per-game-descriptors-design.md section 3.2).
+		// No static memoization: GameDescriptorRegistry.scan() re-scans every import (see its
+		// class javadoc). Absent when nothing matched; that is the common case today, since
+		// the curated set starts with one title.
+		GameDescriptorRegistry.GameDescriptor gameDescriptor = null;
+		if (identity != null) {
+			List<GameDescriptorRegistry.GameDescriptor> candidates =
+				GameDescriptorRegistry.scan(log);
+			gameDescriptor = GameDescriptorRegistry.resolve(candidates, identity, board.id(), log);
+			if (gameDescriptor != null) {
+				program.getOptions(Program.PROGRAM_INFO).setString(
+					DescriptorSupport.GAME_DESCRIPTOR_PROPERTY, gameDescriptor.gmapPath());
+				log.appendMsg(
+					"game descriptor resolved: " + gameDescriptor.gmapPath() + " ('" +
+						gameDescriptor.id() + "')");
+			}
+		}
+
 		// record a user placement override for the analyzer to apply to unresolved bank
 		// placements. validateOptions already vetted this in the GUI, but the headless
 		// ProgramLoader path never calls validateOptions (Ghidra 12.x), so re-check here and
@@ -541,6 +561,13 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 			// which has no image size of its own.
 			Long initialState =
 				DescriptorSupport.resolveInitialState(map, header.prgSize(), log, board.mapPath());
+			// Curated game-descriptor initial_state hint (bead grm-hb6.12), folded in AFTER
+			// initial_state_expr per docs/per-game-descriptors-design.md's ruling -- see
+			// DescriptorSupport.applyGameInitialStateHint's javadoc for the failure discipline.
+			if (gameDescriptor != null) {
+				initialState = DescriptorSupport.applyGameInitialStateHint(map, initialState,
+					gameDescriptor.doc(), gameDescriptor.gmapPath(), log);
+			}
 			if (initialState != null &&
 				!initialState.equals(DescriptorSupport.initialState(map))) {
 				program.getOptions(Program.PROGRAM_INFO).setString(

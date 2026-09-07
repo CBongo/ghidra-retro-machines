@@ -305,7 +305,16 @@ def machineMapTasks = []
 // ('*.yaml' is an Ant-style pattern anchored at the tree root and a single '*' does not cross
 // '/', so this drops machines/c64.yaml but keeps machines/generated/*.yaml and
 // machines/fragments/*.yaml -- exactly the "shared, not sibling" split described above.)
-def descriptorSharedInputs = fileTree(dir: 'machines', excludes: ['*.yaml'])
+//
+// 'games/*.yaml' is excluded too, and for a DIFFERENT reason than the top-level '*.yaml'
+// exclusion above: those are per-game descriptors (docs/per-game-descriptors-design.md;
+// bead grm-hb6.12), compiled by their own buildXxxGame tasks below, not by buildXxxMap/
+// buildXxxGdt. '*.yaml' alone does not reach them (it is anchored at the tree root and
+// 'games/' is one level down), so without this second exclusion every machines/games/*.yaml
+// would become a SHARED input of all thirteen board tasks -- adding one game file would
+// invalidate and rebuild every board's .map/.gdt for no reason, since no board task reads
+// machines/games/ at all.
+def descriptorSharedInputs = fileTree(dir: 'machines', excludes: ['*.yaml', 'games/*.yaml'])
 
 fileTree(dir: 'machines', include: '*.yaml').each { yamlFile ->
 	def baseName = yamlFile.name.replace('.yaml', '')
@@ -366,6 +375,50 @@ task buildMap {
 	group = "Ghidra Retro Machines"
 	description = "Generate all machine .map runtime files from their YAML descriptors"
 	dependsOn machineMapTasks
+}
+
+// Per-game descriptor compilation (docs/per-game-descriptors-design.md; first increment
+// bead grm-hb6.12): one buildXxxGame task per machines/games/*.yaml, mirroring the
+// buildXxxMap pattern above but through GameCompiler, not MapCompiler -- see that class's
+// javadoc for why it is a sibling rather than a mode. Compiled to data/games/<name>.gmap,
+// NOT .map, so NesBoardRegistry.scan (which enumerates *.map files by plain filename
+// suffix looking for board descriptors) can never sweep a game file into the board
+// registry by accident (bead grm-hb6.10). Gitignored like every other compiled
+// descriptor -- see .gitignore's data/games/* entry.
+def gameMapTasks = []
+
+fileTree(dir: 'machines/games', include: '*.yaml').each { yamlFile ->
+	def baseName = yamlFile.name.replace('.yaml', '')
+	def taskId = baseName.split('-').collect { it.capitalize() }.join('')
+
+	def gameTask = tasks.create("build${taskId}Game", JavaExec) {
+		group = "Ghidra Retro Machines"
+		description = "Generate data/games/${baseName}.gmap from machines/games/${yamlFile.name} (build artifact; never committed)"
+		dependsOn 'compileGdtBuilderJava'
+		classpath = sourceSets.gdtBuilder.runtimeClasspath
+		mainClass = 'gdtbuilder.GameCompiler'
+		doFirst {
+			file('data/games').mkdirs()
+		}
+		args = [
+			yamlFile.absolutePath,
+			file("data/games/${baseName}.gmap").absolutePath
+		]
+
+		// A game descriptor is self-contained (no include:, no shared machines/generated/
+		// or machines/fragments/ dependency in this increment), so unlike the board tasks
+		// above, its only input besides the compiler itself is its own YAML file.
+		inputs.file(yamlFile)
+		inputs.files(sourceSets.gdtBuilder.output)
+		outputs.file(file("data/games/${baseName}.gmap"))
+	}
+	gameMapTasks << gameTask
+}
+
+task buildGames {
+	group = "Ghidra Retro Machines"
+	description = "Generate all per-game .gmap descriptors from machines/games/*.yaml"
+	dependsOn gameMapTasks
 }
 
 // A content fingerprint of the DESCRIPTOR SOURCES, shipped into the extension so the test
@@ -831,8 +884,11 @@ tasks.matching { it.name == 'buildExtension' }.configureEach {
 	// buildDescriptorSourceManifest (grm-5jjs) ships data/descriptor-sources.sha256, which
 	// ext_identity() reads in place of the non-deterministic .gdt archives -- see that
 	// task's comment. It must be packaged like any other data/ file, so it belongs here.
-	dependsOn 'buildGdt', 'buildMap', 'buildPetsciiMap', 'buildScreencodeMap', 'sleighCompile',
-		'buildDescriptorSourceManifest'
+	// buildGames (bead grm-hb6.12) ships data/games/*.gmap, the curated per-game descriptor
+	// tier's compiled artifacts -- packaged the same way as buildMap's data/machines/*.map,
+	// since data/ is one SHIPPED_TOP_LEVEL entry with no finer-grained exclusion.
+	dependsOn 'buildGdt', 'buildMap', 'buildGames', 'buildPetsciiMap', 'buildScreencodeMap',
+		'sleighCompile', 'buildDescriptorSourceManifest'
 }
 
 //----------------------------------------------------------------------------------

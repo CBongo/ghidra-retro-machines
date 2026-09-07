@@ -717,10 +717,42 @@ prevent.
 
 ## 6. Consumption: analyzer-side, and seeds rather than injections
 
-### 6.1 An analyzer, not a loader — inherited wholesale
+### 6.1 Prefer the analyzer route — a stated boundary, not a blanket rule
 
-`DescriptorCopyHintAnalyzer.java:55-61` explains the choice for `copied_from`, and every word
-transfers:
+**Owner's ruling, 2026-09-07 (bead `grm-hb6.12`), superseding this section's earlier absolute
+framing ("An analyzer, not a loader — inherited wholesale").** The section below is written as a
+general PREFERENCE with a stated boundary, not a one-off carve-out for any single hint kind:
+
+> **Prefer the analyzer route whenever it is possible.** The exception is a hint whose subject
+> must be CHOSEN AT IMPORT TIME — block materialization being the type case: which windows become
+> base blocks, which become overlays, and what each holds are decided once while the program is
+> being created, and no later pass can revisit them without a re-import.
+
+Why this framing is better than the exception it replaces: it gives the next hint kind a rule to
+apply instead of a precedent to argue from. The argument below — that a game descriptor normally
+arrives *after* the import, so a loader-only consumer would make the tier's primary use case
+unreachable — is untouched and still governs every hint kind that has a choice of when it is
+consumed. What the original wording missed is that the argument presupposes the choice exists; for
+a fact consumed during program creation (bead `grm-hb6.12`'s load-time `banking.initial_state`
+hint is the first instance) it does not, and no amount of preferring the analyzer route makes one
+appear. **The exception is "must", not "may": a hint kind that could be consumed either way belongs
+on the analyzer side.**
+
+Consequences that follow from taking the loader-side exception, stated here because they are the
+cost of it and should not surprise anyone:
+
+- **Changing an import-time hint requires a RE-IMPORT of the ROM, not a re-analysis.** There is no
+  "re-run the analyzer and pick up the correction" path for a fact that shaped which bytes became
+  which block. `docs/SCHEMA.md`'s per-game-descriptor section states this plainly for a user
+  reading the schema reference, not only here.
+- **Such a consumer cannot have one-shot re-run support or idempotent application, by
+  construction** — the two of the three properties below that are analyzer-side mechanics. It DOES
+  keep the third, provenance: `Retro Machines.Game Descriptor` records which file resolved, and
+  the loader logs what each hint actually changed. Say this explicitly rather than leaving a
+  reader to notice the omission by trying to find a re-run button that isn't there.
+
+`DescriptorCopyHintAnalyzer.java:55-61` explains the choice for `copied_from`, and — for every hint
+kind that is NOT forced to the loader side by the boundary above — every word transfers:
 
 > **Why an analyzer and not loader-time work.** Because of that gate, consuming the directive only
 > at import would make the common path unreachable: a user who imports first and supplies a KERNAL
@@ -728,11 +760,15 @@ transfers:
 > below is therefore load-bearing rather than decoration […] Materialization is idempotent […] so
 > re-running costs nothing.
 
-For the game tier this is not a corner case, it is **the normal path**: the descriptor arrives after
-the import in nearly every workflow — you import, you discover the site, you write the hint, you
-re-run. A loader-only consumer would make the tier's primary use case unreachable.
+For the site-hint and value-hint kinds this is not a corner case, it is **the normal path**: the
+descriptor arrives after the import in nearly every workflow — you import, you discover the site,
+you write the hint, you re-run. A loader-only consumer would make the tier's primary use case
+unreachable for those kinds. (The load-time `banking.initial_state` hint is the one kind ruled
+loader-side above; it is consumed by `NesRomLoader.load` / `DescriptorSupport
+.applyGameInitialStateHint`, not by an analyzer, and needs none of the three properties below
+except provenance.)
 
-Three properties to inherit exactly:
+Three properties for every ANALYZER-consumed hint kind to inherit exactly:
 
 - **One-shot re-run support** (`:93`) — the user-facing recovery path.
 - **Idempotent application** (`:60-61`) — a second pass is a no-op, not a duplicate annotation.

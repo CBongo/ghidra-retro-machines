@@ -1,0 +1,35 @@
+# Curated per-game descriptor (title tier). Compiled to data/games/smb3.gmap.
+# docs/per-game-descriptors-design.md; first increment, bead grm-hb6.12.
+#
+# WHY THIS HINT EXISTS (grm-3fvj). machines/nes-mmc3.yaml's banking.initial_state assumes
+# prg_mode: 0 at power-on -- a conventional, honest guess, since MMC3's register contents are
+# genuinely undefined at reset. But this cartridge's own init code sets bank-select bit 6
+# (PRG mode) unconditionally, so at runtime $8000 holds the FIXED bank and $C000 holds the
+# switchable R6 bank -- the reverse of the board descriptor's mode-0 assumption. Recording that
+# fact here makes the loader's home-in-base layout (which windows become base blocks) match
+# what the ROM actually runs, instead of the board's power-on default.
+schema: 2
+
+game:
+  id: smb3
+  title: "Super Mario Bros 3 (PRG 1) (U)"
+  board: nes_mmc3
+  identity:
+    # PRG-slice SHA-256 (16-byte iNES header and any trainer excluded; this ROM has none) --
+    # see docs/per-game-descriptors-design.md section 2.2. Verified two ways: recomputed by
+    # hand from the pinned image the same way NesRomLoader.gameIdentity does (skip the 16-byte
+    # header, no trainer, take prgBanks*16384 = 262144 bytes), and cross-checked against this
+    # program's "Retro Machines.Game Identity" property after import.
+    prg_sha256: "f4130ba655229d9999fa3b2c59984165810c9b9b125c43b1ff899872e7fedff4"
+    # Whole-file SHA-256, copied from the smb3 row of tools/banktest/realrom/manifest.tsv
+    # (docs/per-game-descriptors-design.md section 2.3's copy-from-the-manifest workflow).
+    file_sha256: "4377a7f5e6eb50bdd2ac6f249bf1a7085500aca8eb41f38545c3a2731c51a579"
+  provenance: "owner's hand pass over the pinned smb3 real-ROM row, 2026-09-07 (grm-3fvj): the
+    $8000 bank-select write sets bit 6 (PRG mode) at every observed occurrence, i.e. this ROM
+    runs MMC3 PRG mode 1 from init, not the board descriptor's mode-0 power-on convention."
+
+banking:
+  # A field-name map, never a packed integer -- the game tier must not know the board's bit
+  # layout (docs/per-game-descriptors-design.md, bead grm-hb6.12). Packed at load time against
+  # nes_mmc3's own banking.state field tuple.
+  initial_state: { prg_mode: 1 }

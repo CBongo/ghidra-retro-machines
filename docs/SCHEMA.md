@@ -676,6 +676,62 @@ decisions" below. Every entry has `name:` and `kind:`; `kind:` selects one of:
   keyword/mnemonic regardless of what the member name ended up being, so a listing or
   decompiler hover is unambiguous.
 
+## Per-game descriptors: a third, title-scoped tier
+
+`machines/games/<id>.yaml` (compiled to `data/games/<id>.gmap` -- see
+[`MAP_FORMAT.md`](MAP_FORMAT.md)'s "Per-game descriptors" section for the compiled
+artifact) is a **separate descriptor kind**, one level below the machine descriptors this
+document otherwise describes: it records what a reverse engineer discovered about one
+specific PRG image, not a fact true of every program the board runs. Full design and
+rationale: [`per-game-descriptors-design.md`](per-game-descriptors-design.md). First
+increment, bead `grm-hb6.12`: curated only, one hint kind.
+
+```yaml
+schema: 2
+game:
+  id: smb3                       # short, stable identifier
+  title: "Super Mario Bros 3 (PRG 1) (U)"
+  board: nes_mmc3                # cross-check only -- see below, NOT a board selector
+  identity:
+    prg_sha256: "<64 hex>"       # SHA-256 over the PRG slice (header/trainer excluded)
+    file_sha256: "<64 hex>"      # SHA-256 over the whole file (the manifest.tsv key)
+  provenance: "who found this and how, and when"
+
+banking:
+  initial_state: { prg_mode: 1 } # field-NAME map, never a packed integer
+```
+
+- **`game.identity`** is how a descriptor is matched to a program: `prg_sha256` primary,
+  `file_sha256` as a whole-file alias tried only when no PRG match was found. Computed by
+  the loader at import (`NesRomLoader.gameIdentity`) the same way for every image, so a
+  descriptor's hashes can be copied straight from `tools/banktest/realrom/manifest.tsv`
+  (which already pins the whole-file hash) or read back from a program's
+  `Retro Machines.Game Identity` property after an import with no descriptor.
+- **`game.board`** is a cross-check, never a selector: the board is still chosen the
+  normal way (iNES mapper number, or a user override). A descriptor whose `game.board`
+  disagrees with the board actually resolved is logged and ignored whole -- its addresses
+  and hints were reasoned about on a different memory layout.
+- **`banking.initial_state`** (this tier's first hint kind) names board `banking.state`
+  fields by NAME and value, e.g. `{ prg_mode: 1 }` -- **not** a packed integer the way a
+  machine descriptor's `banking.initial_state` is. The game tier must not know the
+  board's bit layout; packing happens at load time, against the matched board
+  descriptor's own parsed field tuple. It overrides the board's power-on default for that
+  one title, applied after any `banking.initial_state_expr` resolution
+  (bead `grm-y0ml`) the board descriptor performs. An unknown field name or an
+  out-of-range value is logged and that one field is left at its previously resolved
+  value -- never thrown, never guessed.
+
+**This hint kind is consumed by the LOADER, at import, not by an analyzer** -- a
+deliberate, narrow exception to this tier's general preference (see
+`per-game-descriptors-design.md` section 6.1): which windows become base blocks and which
+become overlays is decided once, while the program is being created, and no later
+analysis pass can revisit that choice. **Consequence a user must know: changing this
+hint requires a RE-IMPORT of the ROM, not a re-analysis.** A curated file's `banking.
+initial_state` is therefore worth getting right the first time; it does not carry
+one-shot re-run support the way an analyzer-consumed hint would. It does keep
+provenance -- the resolved descriptor's path is recorded on the program
+(`Retro Machines.Game Descriptor`), and every field the hint actually changes is logged.
+
 ## Scaling preview (what will force schema revisions)
 
 - **NES**: the PRG side landed in schema 2 (computed windows, physical spaces,
