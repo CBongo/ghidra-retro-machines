@@ -78,8 +78,16 @@ import ghidra.program.model.symbol.Reference;
  * address arithmetic and the soundness window it enforces between the {@code TSX} and the
  * load.</li>
  * <li>Any other instruction that modifies the register (transfers, ADC/SBC, shifts,
- * INC/DEC, EOR#imm -- deliberately not modeled bit-wise) leaves {@code x} wholly
- * unknown from that point backward.</li>
+ * INC/DEC, EOR#imm -- deliberately not modeled bit-wise) is opaque to the mask algebra. Before
+ * giving up on it, the scan asks {@link #constantRegisterValue} -- the separate ALL-OR-NOTHING
+ * evaluator, which does model those forms exactly -- whether the register is nevertheless a
+ * known constant at that point, and adopts a non-null answer as a fully known base (bead
+ * grm-4bgh.6). The two evaluators stay apart: this is a fallback consulted only on the path
+ * that was already returning wholly unknown, so it can turn a decline into an answer and
+ * nothing else. Only when it too declines does {@code x} stay wholly unknown from that point
+ * backward. This is the bridge that makes grm-4bgh.1's stack-relative reload and grm-4bgh.2's
+ * {@code ADC #imm} reachable from a helper-argument deposit, which they were not when they
+ * landed.</li>
  * <li>A mechanism write encountered mid-scan ({@link Hooks#isMechanismWrite}) means the
  * mechanism changed mid-chain: a base value read further back would predate that write,
  * so falling back to the in-state (which reflects state <em>after</em> it) would be
@@ -497,6 +505,37 @@ final class StoredValueScanner {
 			}
 
 			if (modifiers.contains(mnem)) {
+				// The mask algebra has met something it cannot decompose per bit -- an
+				// ASL/LSR/ROL/ROR, an ADC/SBC, a transfer, or a load whose base nothing above
+				// could resolve. Before declining, ask the OTHER evaluator whether the register
+				// is nevertheless an exact constant here (bead grm-4bgh.6).
+				//
+				// WHY THIS IS ADDITIVE, NOT A MERGER OF THE TWO EVALUATORS. Reaching this line
+				// already means the walk is returning `unknown` for the base; a non-null answer
+				// can therefore only turn a decline into an answer, never change one answer into
+				// a different one. The two evaluators stay apart -- the mask algebra is not
+				// taught arithmetic (see constantRegisterValue's javadoc for why an effective
+				// address wants all-or-nothing and a deposit wants per-bit), and
+				// BitAlgebraEquivalenceTest keeps proving exactly what it proved before. An
+				// all-or-nothing answer converts cleanly into a base here because it is fully
+				// known: it enters combine() the same way the `LD<reg> #imm` branch's
+				// fullyKnown(0xFF, imm) does, and the accumulators keep composing over it.
+				//
+				// A FRESH BUDGET, matching the LD<reg> branch's effectiveOperandTarget call
+				// rather than the forwarding chain's shared one: this query is a leaf of the
+				// walk (constantRegisterValue never re-enters resolveStoredValue, so the
+				// recursion terminates), and spending a forwarding chain's remaining budget on
+				// it would silently shorten the outer scan that is still running.
+				//
+				// Note this inherits constantRegisterValue's conservative in-state rule -- it
+				// asks resolveLoad with BankState.unknown(), never inStateAtStore -- so nothing
+				// resolved through here can make a cacheable strategy state-dependent.
+				Integer exact = constantRegisterValue(program, cur, reg, hooks, env,
+					new Budget(MAX_RESOLVE_STEPS));
+				if (exact != null) {
+					return stopped(aAcc, oAcc, mask, BankState.fullyKnown(0xFF, exact),
+						BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
+				}
 				return stopped(aAcc, oAcc, mask, BankState.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 			}
 			if (prev.getFlowType().isCall()) {
@@ -1233,6 +1272,11 @@ final class StoredValueScanner {
 	 * partially known register is simply a decline. Keeping the two apart is also what lets
 	 * {@code BitAlgebraEquivalenceTest} stand as the untouched proof that grm-hum did not
 	 * disturb the proven algebra.
+	 * <p>
+	 * {@link #resolveStoredValue} nevertheless CONSULTS this evaluator, as a last resort at the
+	 * point its own walk meets an opaque register modifier and would otherwise return wholly
+	 * unknown (bead grm-4bgh.6). That is a fallback, not a merger: an answer from here enters
+	 * the mask algebra only as a fully known base, on a path that had no other answer to give.
 	 * <p>
 	 * Modeled: {@code LD<reg> #imm}; a {@code LD<reg> <mem>} whose target resolves and whose
 	 * {@link Hooks#resolveLoad} answers with all eight bits known; {@code TAX/TAY/TXA/TYA};
