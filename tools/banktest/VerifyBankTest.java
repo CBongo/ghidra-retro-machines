@@ -4017,13 +4017,23 @@ public class VerifyBankTest extends GhidraScript {
 			"JSR $8000 (prg_bank=5) retargeted to W8000_M3_B5 overlay, primary: " +
 				describe(r));
 
-		// Writes 1-4 of the unrolled chain (c007-c013) are no-change echoes: inState flows
-		// through UNCHANGED (still the seeded prg_bank=0), never the eventual prg_bank=5 --
-		// the commit is deferred entirely to write 5 (c017, checked above).
+		// Writes 1-4 of the unrolled chain (c007-c013) deposit NOTHING: the state flows
+		// through unchanged and the commit is deferred entirely to write 5 (c017, checked
+		// above). So the listing must say nothing at all about them -- no bank comment and no
+		// warning (bead grm-pdd6, ValueStop.NO_DEPOSIT).
+		//
+		// This criterion used to assert the OPPOSITE half of that: that c007 carried a comment
+		// echoing the unchanged prg_bank=0. That was the pre-grm-pdd6 contract, and it was
+		// wrong in both directions -- a "bank ->" comment at a site that sets no bank credits
+		// this write with the PREVIOUS site's knowledge, and the same site with nothing known
+		// (the state grm-913 leaves it in on a real ROM) raised a "genuinely undeterminable
+		// value" WARNING about a recovery that never ran. Both are now suppressed, which is
+		// what the two clauses below pin.
 		c = eol(0xC007);
-		criterion("F-unrolled:echo-not-early-commit", c.contains("prg_bank=0"),
-			"write 1 of the chain (c007) echoes the still-unchanged prg_bank=0, not an " +
-				"early commit: \"" + c + "\"");
+		criterion("F-unrolled:echo-deposits-nothing",
+			c.isEmpty() && !hasWarningBookmark(0xC007),
+			"write 1 of the chain (c007) deposits nothing, so it is neither commented nor " +
+				"warned: comment=\"" + c + "\" warning=" + hasWarningBookmark(0xC007));
 
 		// F-noncanonical: the 5th write of the $FFF9 chain (same 8K window as $E000,
 		// bits 14:13 both decode to target 3/PRG) at $C02F commits prg_bank=6 via a

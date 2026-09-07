@@ -66,7 +66,7 @@ REALROM count refs.intoOverlay 1417
 REALROM count refs.intoOverlay.retargeted 27
 REALROM count refs.intoOverlay.intraOverlay 1390
 REALROM count instrs.inOverlay 6434
-REALROM count bankComments 84
+REALROM count bankComments 74
 REALROM count warnings 28
 REALROM count notes 2
 REALROM count symbols 18
@@ -123,25 +123,15 @@ REALROM sample.bankcomment fbe3 bank -> select=7,prg_mode=0,r6=4,r7=5 via FUN_fe
 REALROM sample.bankcomment fbf2 bank -> select=7,prg_mode=0,r6=10,r7=11 via FUN_fed1 [switch-value flow]
 REALROM sample.bankcomment fc18 bank -> select=7,prg_mode=0,r6=10,r7=11 via FUN_fed1 [switch-value flow]
 REALROM sample.bankcomment fe5b bank -> select=0,prg_mode=0,r6=0,r7=1? [known: select.0=0,select.1=0,select.2=0,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
-REALROM sample.bankcomment fe62 bank -> select=0,prg_mode=0,r6=0,r7=1? [known: select.0=0,select.1=0,select.2=0,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment fe67 bank -> select=1,prg_mode=0,r6=0,r7=1? [known: select.0=1,select.1=0,select.2=0,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
-REALROM sample.bankcomment fe6d bank -> select=1,prg_mode=0,r6=0,r7=1? [known: select.0=1,select.1=0,select.2=0,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment fe76 bank -> select=2,prg_mode=0,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=0,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
-REALROM sample.bankcomment fe7c bank -> select=2,prg_mode=0,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=0,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment fe81 bank -> select=3,prg_mode=0,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=0,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
-REALROM sample.bankcomment fe87 bank -> select=3,prg_mode=0,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=0,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment fe8c bank -> select=4,prg_mode=0,r6=0,r7=1? [known: select.0=0,select.1=0,select.2=1,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
-REALROM sample.bankcomment fe92 bank -> select=4,prg_mode=0,r6=0,r7=1? [known: select.0=0,select.1=0,select.2=1,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment fe97 bank -> select=5,prg_mode=0,r6=0,r7=1? [known: select.0=1,select.1=0,select.2=1,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
-REALROM sample.bankcomment fe9d bank -> select=5,prg_mode=0,r6=0,r7=1? [known: select.0=1,select.1=0,select.2=1,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment fea3 bank -> select=2,prg_mode=0,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=0,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
-REALROM sample.bankcomment fea9 bank -> select=2,prg_mode=0,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=0,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment feaf bank -> select=3,prg_mode=0,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=0,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
-REALROM sample.bankcomment feb5 bank -> select=3,prg_mode=0,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=0,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment febb bank -> select=4,prg_mode=0,r6=0,r7=1? [known: select.0=0,select.1=0,select.2=1,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
-REALROM sample.bankcomment fec1 bank -> select=4,prg_mode=0,r6=0,r7=1? [known: select.0=0,select.1=0,select.2=1,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment fec7 bank -> select=5,prg_mode=0,r6=0,r7=1? [known: select.0=1,select.1=0,select.2=1,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
-REALROM sample.bankcomment fecd bank -> select=5,prg_mode=0,r6=0,r7=1? [known: select.0=1,select.1=0,select.2=1,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment fed8 bank -> select=6,prg_mode=0,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=1,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment fee2 bank -> select=6,prg_mode=0,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=1,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment fee9 bank -> select=7,prg_mode=0,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]

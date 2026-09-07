@@ -342,17 +342,17 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	@Override
 	public SwitchOutcome computeSwitchOutcome(Program program, Instruction instr,
 			BankState inState) {
-		// grm-3ou part 1, increment 1: the recovery body is UNCHANGED and still yields a bare
-		// BankState; SwitchOutcome.of derives the conservative stop reason from it. Increment 2
-		// replaces this with reasons this strategy actually knows.
-		BankState value = computeSwitchValue(program, instr, inState);
-		return value == null ? null : SwitchOutcome.of(value);
+		// The recovery body classifies its own outcome: SwitchOutcome.of derives the
+		// conservative stop reason from the recovered value, except at the three sites that
+		// deposit nothing by design, which say so (NO_DEPOSIT, bead grm-pdd6).
+		return computeSwitchOutcomeValue(program, instr, inState);
 	}
 
 	/**
 	 * Increment 3 (bead {@code grm-3ou} part 1): whether an unresolved value here is this
 	 * helper's ARGUMENT. This strategy has TWO register scans, at opposite ends of a chain, and
-	 * they fail for different reasons -- so this walks the same forks {@link #computeSwitchValue}
+	 * they fail for different reasons -- so this walks the same forks
+	 * {@link #computeSwitchOutcomeValue}
 	 * does rather than re-running one canonical scan.
 	 * <ul>
 	 * <li><b>The bit-7 gate</b>, at a write NOT preceded by {@code LSR A}. A caller-supplied bank
@@ -413,7 +413,8 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 				: ValueStop.ANALYZER_LIMIT;
 	}
 
-	private BankState computeSwitchValue(Program program, Instruction instr, BankState inState) {
+	private SwitchOutcome computeSwitchOutcomeValue(Program program, Instruction instr,
+			BankState inState) {
 		Long offset = writesInRange(instr);
 		if (offset == null) {
 			// Not a mechanism write. The ONLY non-write instruction this strategy claims is
@@ -426,7 +427,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 			if (loop == null) {
 				return null;
 			}
-			return commitCountedLoop(program, loop, inState);
+			return SwitchOutcome.of(commitCountedLoop(program, loop, inState));
 		}
 
 		Character reg = StoredValueScanner.storeRegister(instr);
@@ -435,9 +436,9 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 			// this scanner can attribute a value to; it DID hit the register. It poisons --
 			// UNLESS it is the self-modifying reset idiom, which is exactly determinable.
 			if (selfModifyingRmwResetsShifter(instr, offset)) {
-				return applyReset(inState);
+				return SwitchOutcome.of(applyReset(inState));
 			}
-			return poisonAll(inState);
+			return SwitchOutcome.of(poisonAll(inState));
 		}
 
 		// Counted-loop body suppression: the STA inside a recognized counted loop is
@@ -450,7 +451,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 		// resolution: the loop-head STA is a branch target (the BNE's back edge), so the
 		// backward value scan aborts at the join and would misreport bit 7 unknown.
 		if (isCountedLoopBody(program, instr)) {
-			return inState;
+			return SwitchOutcome.noDeposit(inState);
 		}
 
 		// Structural shortcut, NOT a StoredValueScanner call: LSR unconditionally shifts a
@@ -480,39 +481,40 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 			bit7Set = bit7Known && (storedByte.bits() & 0x80) != 0;
 		}
 		if (!bit7Known) {
-			return poisonAll(inState);
+			return SwitchOutcome.of(poisonAll(inState));
 		}
 		if (bit7Set) {
-			return applyReset(inState);
+			return SwitchOutcome.of(applyReset(inState));
 		}
 
 		if (reg != 'A') {
 			// LSR only shifts the accumulator (or memory, never modeled as the chain
 			// register); every surveyed game's commit chain shifts A.
-			return poisonAll(inState);
+			return SwitchOutcome.of(poisonAll(inState));
 		}
 
 		ChainInfo chain = analyzeChain(program, instr);
 		if (chain == null || chain.total() != 5) {
-			return poisonAll(inState);
+			return SwitchOutcome.of(poisonAll(inState));
 		}
 		if (chain.index() < 5) {
 			// Writes 1-4 of a valid 5-chain: no-change echo: the actual commit happens
-			// once the 5th write is examined.
-			return inState;
+			// once the 5th write is examined. NO_DEPOSIT, not a failed recovery: no value
+			// scan ran here at all (bead grm-pdd6).
+			return SwitchOutcome.noDeposit(inState);
 		}
 
 		int targetIdx = targetIndex(offset);
 		List<TargetField> fields = targets.get(targetIdx);
 		if (fields == null) {
 			// CHR0/CHR1 (or any un-configured target): recognized, deliberately discarded
-			// -- see class javadoc's no-poison contract.
-			return inState;
+			// -- see class javadoc's no-poison contract. Discarded is not un-recovered.
+			return SwitchOutcome.noDeposit(inState);
 		}
 
 		BankState preChainByte = StoredValueScanner.resolveStoredValue(program, chain.chainStart(),
 			reg, inState, 0xFF, hooksFor(fields));
-		return depositFields(inState, fields, preChainByte);
+		return SwitchOutcome.of(depositFields(inState, fields, preChainByte));
 	}
 
 	/**

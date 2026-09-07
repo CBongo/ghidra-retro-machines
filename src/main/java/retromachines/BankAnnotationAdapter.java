@@ -115,11 +115,17 @@ final class BankAnnotationAdapter {
 		/** A WARNING bookmark: a gap that is OUR limitation, and worth fixing. */
 		WARNED,
 		/** A NOTE bookmark: a gap that is HONEST, and not a defect. */
-		NOTED;
+		NOTED,
+		/**
+		 * Nothing was written: the site deposits nothing by design
+		 * ({@link BankSwitchStrategy.ValueStop#NO_DEPOSIT}), so there is neither a bank to
+		 * comment nor a gap to bookmark (bead grm-pdd6).
+		 */
+		SKIPPED;
 
 		/** Whether a bookmark was placed, i.e. this site is already diagnosed. */
 		boolean bookmarked() {
-			return this != ANNOTATED;
+			return this == WARNED || this == NOTED;
 		}
 	}
 
@@ -137,6 +143,13 @@ final class BankAnnotationAdapter {
 	 * {@code C64DecryptLoopAnalyzer} already makes. What is left under WARNING is the population
 	 * that IS our limitation, which is what makes the warning count usable as a progress metric
 	 * for the first time.
+	 * <p>
+	 * <b>A fourth answer is not a gap at all</b> (bead grm-pdd6):
+	 * {@link BankSwitchStrategy.ValueStop#NO_DEPOSIT} says the site deposits nothing by design and
+	 * echoes the in-state, so no recovery was attempted here and neither a comment nor a bookmark
+	 * belongs on it. It is tested FIRST, ahead of the knownMask questions, because the state at
+	 * such a site describes the previous site rather than this one -- see the comment at the top
+	 * of the body.
 	 * <p>
 	 * The impossible-bank case stays a WARNING regardless of {@code stop}: a bank number the
 	 * image cannot satisfy was RECOVERED, so it is a value-recovery defect no matter what the
@@ -174,6 +187,15 @@ final class BankAnnotationAdapter {
 			Map<String, Set<Integer>> bankUniverse, String viaHelper, String warning,
 			BankSwitchStrategy.ValueStop stop, BankCommentProvenance provenance,
 			boolean warnDespiteKnowledge) {
+		// Before every other test, including the knownMask ones: a site that deposits nothing
+		// by design is not describable by this method's vocabulary at all. Its state is the
+		// state that flowed IN, so "is anything known" answers a question about the PREVIOUS
+		// site, and both answers are wrong here -- known bits would render a bank comment
+		// crediting this write with them, and no known bits raises the "genuinely
+		// undeterminable value" warning about a recovery that never ran (bead grm-pdd6).
+		if (stop == BankSwitchStrategy.ValueStop.NO_DEPOSIT) {
+			return Marked.SKIPPED;
+		}
 		if (state.knownMask() != 0 && warnDespiteKnowledge) {
 			Impossible impossible = impossibleBank(board, state, bankUniverse);
 			if (impossible != null) {
@@ -222,7 +244,9 @@ final class BankAnnotationAdapter {
 				"reached the helper's entry, where the register holds whatever the caller " +
 				"supplied, so the bank cannot be known from inside the helper body. Each CALL " +
 				"SITE is resolved separately; see the call sites' own annotations.";
-			case RESOLVED, ANALYZER_LIMIT -> null;
+			// NO_DEPOSIT never reaches here -- annotateOrWarn returns before the gap
+			// classification, because it is not a gap. Listed so the switch stays exhaustive.
+			case RESOLVED, ANALYZER_LIMIT, NO_DEPOSIT -> null;
 		};
 	}
 

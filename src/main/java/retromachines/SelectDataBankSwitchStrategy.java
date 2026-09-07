@@ -224,16 +224,16 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	@Override
 	public SwitchOutcome computeSwitchOutcome(Program program, Instruction instr,
 			BankState inState) {
-		// grm-3ou part 1, increment 1: the recovery body is UNCHANGED and still yields a bare
-		// BankState; SwitchOutcome.of derives the conservative stop reason from it. Increment 2
-		// replaces this with reasons this strategy actually knows.
-		BankState value = computeSwitchValue(program, instr, inState);
-		return value == null ? null : SwitchOutcome.of(value);
+		// The recovery body classifies its own outcome: SwitchOutcome.of derives the
+		// conservative stop reason from the recovered value, except at the untracked-target
+		// data write, which deposits nothing by design and says so (bead grm-pdd6).
+		return computeSwitchOutcomeValue(program, instr, inState);
 	}
 
 	/**
 	 * Increment 3 (bead {@code grm-3ou} part 1): whether an unresolved value here is this
-	 * helper's ARGUMENT. Mirrors {@link #computeSwitchValue}'s fork, because which register scan
+	 * helper's ARGUMENT. Mirrors {@link #computeSwitchOutcomeValue}'s fork, because which
+	 * register scan
 	 * failed -- and whether a scan is even what failed -- depends on which side of it we are on.
 	 * <p>
 	 * The odd-address branch is the interesting one, and the reason this is not a one-liner. A
@@ -288,14 +288,15 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 				: ValueStop.ANALYZER_LIMIT;
 	}
 
-	private BankState computeSwitchValue(Program program, Instruction instr, BankState inState) {
+	private SwitchOutcome computeSwitchOutcomeValue(Program program, Instruction instr,
+			BankState inState) {
 		Long offset = writesInRange(instr);
 		if (offset == null) {
 			return null;
 		}
 		Character reg = StoredValueScanner.storeRegister(instr);
 		boolean even = (offset & 1) == 0;
-		return even ? computeSelectWrite(program, instr, reg, inState)
+		return even ? SwitchOutcome.of(computeSelectWrite(program, instr, reg, inState))
 				: computeDataWrite(program, instr, reg, inState);
 	}
 
@@ -325,10 +326,12 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	 * {@code selectField} value (in-state at this instruction, not the byte being written
 	 * here). Unknown select poisons every configured target (any of them could have been
 	 * the one last selected); a select value with no {@code targets} entry (MMC3 CHR) is
-	 * the no-poison case -- {@code inState} returned verbatim; a select value that IS a
-	 * tracked target recovers the written byte and overwrites only that target field.
+	 * the no-poison case -- {@code inState} returned verbatim, and reported as
+	 * {@link ValueStop#NO_DEPOSIT} rather than as a failed value recovery (bead grm-pdd6);
+	 * a select value that IS a tracked target recovers the written byte and overwrites only
+	 * that target field.
 	 */
-	private BankState computeDataWrite(Program program, Instruction instr, Character reg,
+	private SwitchOutcome computeDataWrite(Program program, Instruction instr, Character reg,
 			BankState inState) {
 		Integer selectValue = fieldValueIfFullyKnown(inState, selectField);
 		if (selectValue == null) {
@@ -336,19 +339,21 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 			for (FieldPos target : targets.values()) {
 				result = setUnknownField(result, target);
 			}
-			return result;
+			return SwitchOutcome.of(result);
 		}
 
 		FieldPos target = targets.get(selectValue);
 		if (target == null) {
 			// Untracked register (e.g. MMC3 CHR banks R0-R5): no poison -- see class javadoc.
-			return inState;
+			// Nothing is deposited here and nothing was attempted, so this is NOT the
+			// "undeterminable value" population (bead grm-pdd6).
+			return SwitchOutcome.noDeposit(inState);
 		}
 
 		int byteMask = (1 << target.width()) - 1;
 		BankState stored = reg == null ? BankState.unknown()
 				: StoredValueScanner.resolveStoredValue(program, instr, reg, inState, byteMask, hooks);
-		return setFieldFromByte(inState, target, stored);
+		return SwitchOutcome.of(setFieldFromByte(inState, target, stored));
 	}
 
 	/**

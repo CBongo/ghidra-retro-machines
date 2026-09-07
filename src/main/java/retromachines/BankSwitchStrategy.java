@@ -94,7 +94,30 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 		 * mid-scan mechanism-write abort, or an unmodeled modifier. A real gap -- stays a
 		 * WARNING, and is the population worth working on.
 		 */
-		ANALYZER_LIMIT
+		ANALYZER_LIMIT,
+		/**
+		 * <b>No deposit was attempted here at all.</b> The instruction IS a recognized mechanism
+		 * write, but this mechanism's own contract says the write changes nothing: a serial-shift
+		 * chain's positions 1-4 (the commit happens at position 5), a counted-loop body write
+		 * (the loop's own commit is attached to its closing branch), or a write to a target this
+		 * board deliberately does not track (MMC1 CHR0/CHR1, MMC3's untracked CHR registers).
+		 * Those sites echo the in-state verbatim -- the "no-poison contract" both
+		 * {@code SerialShiftBankSwitchStrategy} and {@code SelectDataBankSwitchStrategy} document.
+		 * <p>
+		 * It is NOT a gap of any kind, honest or otherwise, and that is what distinguishes it
+		 * from the three members above: they all describe an attempted recovery, and the WARNING
+		 * text the analyzer pairs with them ("value recovery could not pin down even one tracked
+		 * bank bit") is simply false here. Bead grm-pdd6: megaman2's warnings at c024/c028/c02c/
+		 * c030 are the first four links of the chain that RESOLVES {@code prg_bank=12} at c034.
+		 * <p>
+		 * <b>This member is not subject to {@link SwitchOutcome#of(BankState, ValueStop)}'s
+		 * knownMask promotion</b> -- see {@link SwitchOutcome#noDeposit}. An echo of a partly
+		 * known in-state is still not a deposit, and rendering a bank comment from it would
+		 * attribute the previous site's knowledge to this one (which is what happened before
+		 * grm-913 removed the descriptor's initial_state seed: the same sites rendered
+		 * confident-looking comments, wrong in the flattering direction).
+		 */
+		NO_DEPOSIT
 	}
 
 	/**
@@ -117,6 +140,18 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 		/** As {@link #of(BankState)} but with a known reason for an unrecovered value. */
 		static SwitchOutcome of(BankState value, ValueStop stop) {
 			return new SwitchOutcome(value, value.knownMask() != 0 ? ValueStop.RESOLVED : stop);
+		}
+
+		/**
+		 * A site that deposits nothing by design, echoing {@code inState} unchanged (bead
+		 * grm-pdd6). Deliberately NOT routed through {@link #of(BankState, ValueStop)}: that
+		 * method promotes any state with a known bit to {@link ValueStop#RESOLVED}, which is
+		 * exactly wrong here -- the known bits belong to the state flowing IN, not to a recovery
+		 * performed at this site, and calling them RESOLVED would render a bank comment claiming
+		 * this write set them.
+		 */
+		static SwitchOutcome noDeposit(BankState echoed) {
+			return new SwitchOutcome(echoed, ValueStop.NO_DEPOSIT);
 		}
 	}
 

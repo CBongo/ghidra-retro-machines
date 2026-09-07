@@ -33,7 +33,6 @@ BLOCK WE000 e000-ffff overlay=false
 COMMENT e002 bank -> select=6,prg_mode=0,r6=0,r7=1 [switch-value flow]
 COMMENT e007 bank -> select=6,prg_mode=0,r6=2,r7=1 [switch-value flow]
 COMMENT e00f bank -> select=0,prg_mode=0,r6=2,r7=1 [switch-value flow]
-COMMENT e014 bank -> select=0,prg_mode=0,r6=2,r7=1 [switch-value flow]
 COMMENT e01c bank -> select=7,prg_mode=0,r6=2,r7=1 [switch-value flow]
 COMMENT e021 bank -> select=7,prg_mode=0,r6=2,r7=3 [switch-value flow]
 COMMENT e029 bank -> select=6,prg_mode=1,r6=2,r7=3 [switch-value flow]
