@@ -89,9 +89,21 @@ import ghidra.program.model.symbol.Reference;
  * {@code ADC #imm} reachable from a helper-argument deposit, which they were not when they
  * landed.</li>
  * <li>A mechanism write encountered mid-scan ({@link Hooks#isMechanismWrite}) means the
- * mechanism changed mid-chain: a base value read further back would predate that write,
- * so falling back to the in-state (which reflects state <em>after</em> it) would be
- * unsound. The scan aborts to a wholly-unknown base.</li>
+ * mechanism changed mid-chain: a base value read further back would predate that write, so
+ * falling back to the in-state (which reflects state <em>after</em> it) would be unsound.
+ * The scan therefore WITHDRAWS the in-state -- everything beyond that point is evaluated as
+ * though the strategy's tracked state were unknown -- and keeps walking (bead grm-4bgh.7).
+ * It used to abort outright. The distinction matters because most of what this scan can find
+ * does not come from the in-state at all: an immediate is a constant in the image, a byte on
+ * the stack is untouched by a store to the mechanism, an {@code env}'s caller-supplied
+ * register describes the helper's entry, and a bank-invariant ROM byte is invariant by
+ * construction. Only two sources actually consult it -- register-write's port read-back,
+ * which returns the in-state verbatim, and every {@code resolveMirrorLoad} -- and both see
+ * {@code unknown()} past the crossing and decline exactly as the old abort made them. The
+ * same withdrawal is applied by the forwarding walk, and reported outward by the two stack
+ * walks ({@link Span}) so that the walk which resumes from a push applies it too;
+ * {@link #constantRegisterValue} and {@link #carryValueBefore} carry no such rule at all,
+ * having no in-state to withdraw.</li>
  * <li>A subroutine call may clobber any register; its fall-through satisfies the
  * block-linkage check, so it is treated as a clobber explicitly.</li>
  * <li>A caller-supplied {@link RegisterEnv}'s entry address ends the walk and adopts that
@@ -120,7 +132,11 @@ final class StoredValueScanner {
 	/** Strategy-specific behavior injected into the shared scan. */
 	interface Hooks {
 
-		/** Whether this instruction writes the strategy's mechanism (mid-scan abort). */
+		/**
+		 * Whether this instruction writes the strategy's mechanism. A backward walk that meets
+		 * one WITHDRAWS its in-state from that point back rather than ending (bead grm-4bgh.7);
+		 * see {@link #resolveStoredValue}'s handling for the argument.
+		 */
 		boolean isMechanismWrite(Instruction instr);
 
 		/**
@@ -255,6 +271,27 @@ final class StoredValueScanner {
 	}
 
 	/**
+	 * A backward SUB-walk's report to the walk that called it (bead grm-4bgh.7): how many
+	 * instructions it stepped over, and whether it CROSSED A MECHANISM WRITE doing so.
+	 * <p>
+	 * The step count was previously passed back through a single-element {@code int[]}, for the
+	 * reason its callers document: a sub-walk spends from the caller's own
+	 * {@link #MAX_BACKWARD_SCAN} budget, so the caller has to know how much was spent on every
+	 * return path including a failed one. The crossing flag has exactly the same shape of
+	 * requirement -- {@link #findMatchingPush} and {@link #stackRelativePush} may now step OVER a
+	 * mechanism write instead of stopping at one, and the walk that resumes from the instruction
+	 * they found is the CALLER's, so only the caller can apply the consequence
+	 * ({@link #resolveStoredValue} withdrawing its in-state). Two parallel out-params would have
+	 * been two chances to update one and forget the other.
+	 */
+	private static final class Span {
+
+		int steps;
+
+		boolean crossedMechanismWrite;
+	}
+
+	/**
 	 * Scans backward from {@code storeInstr} to determine the {@link BankState} it
 	 * stores, reduced to {@code mask} (full algorithm in the class javadoc). After every
 	 * composition step the base can be folded in via {@link #combine}; as an
@@ -325,6 +362,12 @@ final class StoredValueScanner {
 		Set<String> modifiers = registerModifiers(reg);
 		String loadMnemonic = "LD" + reg;
 
+		// The in-state is a LOCAL from here on, because crossing a mechanism write WITHDRAWS it
+		// (bead grm-4bgh.7): everything reached beyond that point is evaluated as though the
+		// strategy's tracked state were unknown, which it effectively is. The parameter itself
+		// stays untouched so the withdrawal cannot leak back to a caller.
+		BankState inState = inStateAtStore;
+
 		int aAcc = 0xFF;
 		int oAcc = 0x00;
 
@@ -366,9 +409,23 @@ final class StoredValueScanner {
 			}
 
 			if (hooks.isMechanismWrite(prev)) {
-				// the mechanism was written mid-chain; a base value read further back
-				// would predate that write, so it's unsound to fall back to the in-state.
-				return stopped(aAcc, oAcc, mask, BankState.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
+				// The mechanism was written mid-chain. A base value read further back predates
+				// that write, so the in-state -- which describes the state AT THE STORE, i.e.
+				// AFTER it -- may not be consulted beyond this point. That is the WHOLE of the
+				// hazard, and until grm-4bgh.7 this returned rather than saying so: withdrawing
+				// the in-state and walking on leaves every in-state-INDEPENDENT source (an
+				// immediate in the image, a byte on the stack, the env's caller-supplied
+				// registers, a bank-invariant ROM byte) free to answer, while the two hooks that
+				// DO consult it (register-write's port read-back, which returns the in-state
+				// verbatim, and every resolveMirrorLoad) now see unknown() and decline exactly as
+				// this early return used to make them.
+				//
+				// STRICTLY ADDITIVE, by the same argument as grm-4bgh.6's: this path returned a
+				// wholly unknown base, and combine() is monotone in the base's knownMask -- the
+				// bits the accumulators already pinned are unchanged, and a later base can only
+				// add more. See findMatchingPush's javadoc, which asked for exactly this
+				// distinction and named the ASL modeling it was waiting on.
+				inState = BankState.unknown();
 			}
 
 			// Every prev reached past this point is examined and stepped over -- exactly the
@@ -379,7 +436,7 @@ final class StoredValueScanner {
 			String mnem = prev.getMnemonicString().toUpperCase();
 
 			if (reg == 'A' && mnem.equals("AND")) {
-				Integer imm = operandByte(program, prev, inStateAtStore, hooks, env, budget, depth);
+				Integer imm = operandByte(program, prev, inState, hooks, env, budget, depth);
 				if (imm == null) {
 					// an operand we couldn't pull a scalar out of, and couldn't forward a store
 					// to either, is an opaque modifier of A.
@@ -394,7 +451,7 @@ final class StoredValueScanner {
 			}
 
 			if (reg == 'A' && mnem.equals("ORA")) {
-				Integer imm = operandByte(program, prev, inStateAtStore, hooks, env, budget, depth);
+				Integer imm = operandByte(program, prev, inState, hooks, env, budget, depth);
 				if (imm == null) {
 					return stopped(aAcc, oAcc, mask, BankState.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 				}
@@ -420,7 +477,7 @@ final class StoredValueScanner {
 				// target needs the whole constant-index evaluator, and doing it once keeps
 				// every strategy's hook a pure "do I understand this address" question.
 				Address target = effectiveOperandTarget(program, prev, hooks, env);
-				BankState base = hooks.resolveLoad(prev, target, inStateAtStore);
+				BankState base = hooks.resolveLoad(prev, target, inState);
 				if (base != null) {
 					return stopped(aAcc, oAcc, mask, base, BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 				}
@@ -428,7 +485,7 @@ final class StoredValueScanner {
 				// this same block (grm-mej.1). A partial answer is fine here -- combine() folds
 				// a partially known base per bit -- unlike the AND/ORA operand case, which needs
 				// all eight bits to compose into the accumulator.
-				BankState forwarded = forwardedStoreValue(program, prev, target, inStateAtStore,
+				BankState forwarded = forwardedStoreValue(program, prev, target, inState,
 					hooks, env, budget, depth);
 				if (forwarded.knownMask() != 0) {
 					return stopped(aAcc, oAcc, mask, forwarded, BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
@@ -436,7 +493,7 @@ final class StoredValueScanner {
 				// Last resort (grm-mej.2): does this address MIRROR the live bank? Strictly below
 				// forwarding -- see Hooks.resolveMirrorLoad for the cv2 case that ordering exists
 				// for. A non-null answer is authoritative even when wholly unknown.
-				BankState mirrored = hooks.resolveMirrorLoad(prev, target, inStateAtStore);
+				BankState mirrored = hooks.resolveMirrorLoad(prev, target, inState);
 				if (mirrored != null) {
 					return stopped(aAcc, oAcc, mask, mirrored,
 						BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
@@ -476,10 +533,17 @@ final class StoredValueScanner {
 				// from A, not the tracked register, and resuming the walk under the wrong register
 				// name could attribute an unrelated earlier X/Y definition to this load.
 				if (reg == 'A') {
-					int[] stackSteps = new int[1];
+					Span reload = new Span();
 					Instruction pha = stackRelativePush(program, prev, hooks, env,
-						MAX_BACKWARD_SCAN - i, stackSteps);
-					i += stackSteps[0];
+						MAX_BACKWARD_SCAN - i, reload);
+					i += reload.steps;
+					if (reload.crossedMechanismWrite) {
+						// The reload's search stepped over a mechanism write to reach its push
+						// (rcransom's FUN_fed1 does exactly this -- see grm-4bgh.7). Same rule
+						// as the mid-scan case above, applied HERE because the walk that resumes
+						// from the push is this one.
+						inState = BankState.unknown();
+					}
 					if (pha != null) {
 						cur = pha;
 						continue;
@@ -493,10 +557,13 @@ final class StoredValueScanner {
 				// findMatchingPush) and keep resolving from the value A held right before it. The
 				// accumulators are intact and keep composing across the pop, which is what makes
 				// "PLA / AND #imm / STA" resolve correctly and not just a bare "PLA / STA".
-				int[] stepsConsumed = new int[1];
+				Span pairing = new Span();
 				Instruction pha = findMatchingPush(program, prev, MAX_BACKWARD_SCAN - i, hooks,
-					env, stepsConsumed);
-				i += stepsConsumed[0];
+					env, pairing);
+				i += pairing.steps;
+				if (pairing.crossedMechanismWrite) {
+					inState = BankState.unknown(); // as above -- this walk resumes from the push
+				}
 				if (pha == null) {
 					return stopped(aAcc, oAcc, mask, BankState.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 				}
@@ -561,6 +628,24 @@ final class StoredValueScanner {
 	 * push/pull pair fully balances before an outer pairing is considered. The match is the
 	 * push instruction seen when the counter reaches 0.
 	 * <p>
+	 * <b>A MECHANISM WRITE IN THE SPAN IS NO LONGER AN ABANDON</b> (bead grm-4bgh.7). It was one
+	 * for a real reason: once a matching {@code PHA} is found, the ENCLOSING walk resumes
+	 * resolving from before it, and a value that walk eventually reads from {@code inStateAtStore}
+	 * (a write-through mirror load, say) would be attributed the state AFTER the final store --
+	 * i.e. after a mechanism write this span skipped over, a confidently WRONG value. But the
+	 * hazard is entirely about the in-state and says nothing about the pairing itself: a store to
+	 * the mechanism does not move {@code S}, so the depth counter stays exact across it. The span
+	 * is therefore stepped over and the crossing REPORTED to the caller through {@link Span},
+	 * which withdraws its in-state and keeps walking -- so a value derived from an immediate,
+	 * from the stack, or from the {@code env}'s caller-supplied registers survives the crossing,
+	 * while an in-state-derived one still cannot be formed at all.
+	 * <p>
+	 * The previous version of this javadoc predicted this fix and named its blocker: telling the
+	 * two kinds of value apart "also needs bit-wise {@code ASL} modeling to be of any use" on
+	 * smb2's {@code ff88} shape ({@code ASL A / PHA / LDA #imm / STA <mechanism> / PLA / STA
+	 * <chain>}), because {@code ASL A} was an opaque A-modifier everywhere. grm-4bgh.6 supplied
+	 * that modeling, which is what made this relaxation worth making.
+	 * <p>
 	 * <b>Returns {@code null} (abandon) when:</b>
 	 * <ul>
 	 * <li>the matching push is a {@code PHP} -- a status byte pushed by {@code PHP} is never a
@@ -582,21 +667,6 @@ final class StoredValueScanner {
 	 * class: a join means some other path reaches this point in the span with a potentially
 	 * different stack depth, which is exactly the hazard the bullet above describes for an
 	 * outgoing branch, mirrored for an incoming one;</li>
-	 * <li>a mechanism write ({@link Hooks#isMechanismWrite}) is seen anywhere in the span --
-	 * mirroring {@link #resolveStoredValue}'s identical mid-scan abort, and load-bearing for the
-	 * SAME reason there: once a matching {@code PHA} is found, the enclosing walk resumes
-	 * resolving from BEFORE it, and any value it eventually reads from {@code inStateAtStore}
-	 * (a write-through mirror load, say) would be attributed the state AFTER the final store --
-	 * i.e. after a mechanism write this span skipped over. That is a confident WRONG value, not
-	 * a missing one, which is the failure direction this scanner exists to avoid.
-	 * <b>Deliberately not relaxed</b>, even though it is exactly what blocks smb2's
-	 * {@code ff88} shape ({@code ASL A / PHA / LDA #imm / STA <mechanism> / PLA / STA <chain>}):
-	 * a value resolved from in-state must never cross a mechanism write, but a value resolved
-	 * from pure immediates could safely do so, and telling the two apart is bead grm-mej.3 item
-	 * 5's job (which also needs bit-wise {@code ASL} modeling to be of any use on that shape --
-	 * {@code ASL A} is today an opaque A-modifier regardless). Relaxing this abort here, before
-	 * that distinction exists, would reintroduce the exact wrong-value hazard this bullet
-	 * prevents;</li>
 	 * <li>{@code env} claims this address as its entry -- the caller's stack contents are not
 	 * modeled, mirroring {@link #forwardedStoreValue}'s identical refusal for memory;</li>
 	 * <li>the instruction before {@code cur} does not exist ({@code null}) -- the block's start
@@ -608,14 +678,14 @@ final class StoredValueScanner {
 	 *                       FROM the caller's {@link #MAX_BACKWARD_SCAN} budget, not a fresh one,
 	 *                       so a save/restore spanning more than the budget degrades to unknown
 	 *                       rather than silently scanning further
-	 * @param stepsConsumed  single-element out-param: how many instructions this search actually
-	 *                       stepped over, valid on every return path (including a null one) so
-	 *                       the caller's own counter stays accurate whether or not a match was
-	 *                       found
+	 * @param span           out-param, valid on every return path including a null one: how many
+	 *                       instructions this search stepped over (so the caller's own counter
+	 *                       stays accurate whether or not a match was found), and whether it
+	 *                       crossed a mechanism write doing so
 	 */
 	private static Instruction findMatchingPush(Program program, Instruction pla, int budgetSteps,
-			Hooks hooks, RegisterEnv env, int[] stepsConsumed) {
-		return findMatchingPush(program, pla, budgetSteps, hooks, env, stepsConsumed, 1);
+			Hooks hooks, RegisterEnv env, Span span) {
+		return findMatchingPush(program, pla, budgetSteps, hooks, env, span, 1);
 	}
 
 	/**
@@ -626,14 +696,15 @@ final class StoredValueScanner {
 	 * is that counter's starting value -- 1 for a {@code PLA} (the 4-arg overload above, kept so
 	 * every pre-existing {@code PLA} caller is byte-identical), {@code n} for a stack-relative
 	 * reload. Everything else -- the {@code PHP} abandon, the stack-pointer-write abandon, the
-	 * join/linkage/call/mechanism-write breaks, the budget and {@code stepsConsumed} accounting --
+	 * join/linkage/call breaks, the mechanism-write step-over, the budget and {@link Span}
+	 * accounting --
 	 * is unchanged and applies identically regardless of where the counter started.
 	 */
 	private static Instruction findMatchingPush(Program program, Instruction pla, int budgetSteps,
-			Hooks hooks, RegisterEnv env, int[] stepsConsumed, int initialDepth) {
+			Hooks hooks, RegisterEnv env, Span span, int initialDepth) {
 		Register stackPointer = program.getCompilerSpec().getStackPointer();
 		if (stackPointer == null) {
-			stepsConsumed[0] = 0;
+			span.steps = 0;
 			return null; // cannot verify the depth model -- do not assume the favorable answer
 		}
 		Listing listing = program.getListing();
@@ -659,34 +730,39 @@ final class StoredValueScanner {
 				break; // not straight-line -- see this method's javadoc
 			}
 			if (hooks.isMechanismWrite(prev)) {
-				break; // a value later resolved from in-state must not cross this -- see javadoc
+				// NO LONGER A BREAK (bead grm-4bgh.7). Stepping over a mechanism write cannot
+				// disturb the stack DEPTH this walk tracks -- a store writes memory, not S -- so
+				// the pairing itself stays exact. What it does disturb is any value the RESUMED
+				// walk might read from the caller's in-state, and that consequence is applied
+				// there, by the caller, on this flag. See this method's javadoc.
+				span.crossedMechanismWrite = true;
 			}
 			steps++;
 			String mnem = prev.getMnemonicString().toUpperCase();
 			switch (mnem) {
 				case "PHA" -> {
 					if (--depth == 0) {
-						stepsConsumed[0] = steps;
+						span.steps = steps;
 						return prev;
 					}
 				}
 				case "PHP" -> {
 					if (--depth == 0) {
-						stepsConsumed[0] = steps;
+						span.steps = steps;
 						return null; // the matching push is a status byte, not a value
 					}
 				}
 				case "PLA", "PLP" -> depth++;
 				default -> {
 					if (HelperArgumentRecovery.writesStackPointer(prev, stackPointer)) {
-						stepsConsumed[0] = steps;
+						span.steps = steps;
 						return null; // the stack pointer moved under us -- see javadoc
 					}
 				}
 			}
 			cur = prev;
 		}
-		stepsConsumed[0] = steps;
+		span.steps = steps;
 		return null; // budget exhausted before a match was found
 	}
 
@@ -758,31 +834,33 @@ final class StoredValueScanner {
 	 *                       search {@link #findMatchingPush} performs once the {@code TSX} is
 	 *                       found -- may step over, spent from the caller's own
 	 *                       {@link #MAX_BACKWARD_SCAN} budget rather than a fresh one
-	 * @param stepsConsumed  single-element out-param: how many instructions this search actually
-	 *                       stepped over in total, valid on every return path
+	 * @param span           out-param, valid on every return path: how many instructions this
+	 *                       search stepped over IN TOTAL (its own plus
+	 *                       {@link #findMatchingPush}'s), and whether either of them crossed a
+	 *                       mechanism write
 	 */
 	private static Instruction stackRelativePush(Program program, Instruction load, Hooks hooks,
-			RegisterEnv env, int budgetSteps, int[] stepsConsumed) {
+			RegisterEnv env, int budgetSteps, Span span) {
 		if (!isAbsoluteIndexed(load)) {
-			stepsConsumed[0] = 0;
+			span.steps = 0;
 			return null;
 		}
 		Address base = LoopIdioms.indexedBase(load);
 		Register idx = LoopIdioms.indexReg(load);
 		if (base == null || idx == null || !idx.getName().equalsIgnoreCase("X")) {
-			stepsConsumed[0] = 0;
+			span.steps = 0;
 			return null;
 		}
 		long baseOffset = base.getOffset();
 		if (baseOffset < 0x101 || baseOffset > 0x1FF) {
-			stepsConsumed[0] = 0;
+			span.steps = 0;
 			return null;
 		}
 		int n = (int) (baseOffset - 0x100);
 
 		Register xRegister = program.getLanguage().getRegister("X");
 		if (xRegister == null) {
-			stepsConsumed[0] = 0;
+			span.steps = 0;
 			return null; // cannot ask the question -- do not assume the favorable answer
 		}
 
@@ -791,53 +869,57 @@ final class StoredValueScanner {
 		int steps = 0;
 		while (steps < budgetSteps) {
 			if (env.stopsAt(cur.getMinAddress())) {
-				stepsConsumed[0] = steps;
+				span.steps = steps;
 				return null; // the caller's stack is not modeled -- mirrors findMatchingPush
 			}
 			Instruction prev = listing.getInstructionBefore(cur.getMinAddress());
 			if (prev == null) {
-				stepsConsumed[0] = steps;
+				span.steps = steps;
 				return null;
 			}
 			Address prevFallThrough = prev.getFallThrough();
 			if (prevFallThrough == null || !prevFallThrough.equals(cur.getMinAddress())) {
-				stepsConsumed[0] = steps;
+				span.steps = steps;
 				return null; // left the basic block
 			}
 			if (isControlFlowJoin(program, cur, prev) && !env.mayCrossJoinAt(cur.getMinAddress())) {
-				stepsConsumed[0] = steps;
+				span.steps = steps;
 				return null; // another path could reach here with a different X/stack state
 			}
 			if (prev.getFlows().length > 0 || prev.getFlowType().isCall()) {
-				stepsConsumed[0] = steps;
+				span.steps = steps;
 				return null; // not straight-line
 			}
 			if (hooks.isMechanismWrite(prev)) {
-				stepsConsumed[0] = steps;
-				return null; // mirrors findMatchingPush's identical mid-scan abort
+				// Stepped over, not aborted on (bead grm-4bgh.7), mirroring findMatchingPush's
+				// identical relaxation. Nothing this walk establishes -- that X came from a TSX,
+				// and that no push, pop or X-write intervened -- is affected by a store to the
+				// mechanism. The consequence for the VALUE is the caller's to apply.
+				span.crossedMechanismWrite = true;
 			}
 			steps++;
 			String mnem = prev.getMnemonicString().toUpperCase();
 			if (mnem.equals("TSX")) {
 				// The terminator: hand off to findMatchingPush, entered AT the TSX, for the
 				// n-th push back from the top of stack it establishes.
-				int[] pushSteps = new int[1];
+				Span pushSpan = new Span();
 				Instruction pha = findMatchingPush(program, prev, budgetSteps - steps, hooks, env,
-					pushSteps, n);
-				stepsConsumed[0] = steps + pushSteps[0];
+					pushSpan, n);
+				span.steps = steps + pushSpan.steps;
+				span.crossedMechanismWrite |= pushSpan.crossedMechanismWrite;
 				return pha;
 			}
 			if (mnem.equals("PHA") || mnem.equals("PHP") || mnem.equals("PLA") || mnem.equals("PLP")) {
-				stepsConsumed[0] = steps;
+				span.steps = steps;
 				return null; // could overwrite the reloaded slot -- see javadoc
 			}
 			if (writesRegister(prev, xRegister)) {
-				stepsConsumed[0] = steps;
+				span.steps = steps;
 				return null; // X changed before we found the TSX that is supposed to set it
 			}
 			cur = prev;
 		}
-		stepsConsumed[0] = steps;
+		span.steps = steps;
 		return null; // budget exhausted before a TSX was found
 	}
 
@@ -1051,7 +1133,8 @@ final class StoredValueScanner {
 	 * <p>
 	 * <b>Soundness.</b> Every guard {@link #resolveStoredValue} applies is reused verbatim rather
 	 * than reimplemented -- block linkage, {@link #isControlFlowJoin}, the
-	 * {@link Hooks#isMechanismWrite} mid-scan abort, {@link #MAX_BACKWARD_SCAN} -- and on top of
+	 * {@link Hooks#isMechanismWrite} in-state withdrawal, {@link #MAX_BACKWARD_SCAN} -- and on
+	 * top of
 	 * them this walk declines on <em>any</em> intervening instruction that might write
 	 * {@code target} without being a store this scanner can place: an indexed or indirect store,
 	 * a read-modify-write, or a call. A store the walk can prove targets a <em>different</em>
@@ -1113,6 +1196,8 @@ final class StoredValueScanner {
 			return BankState.unknown();
 		}
 		Listing listing = program.getListing();
+		// Withdrawn rather than aborted on, exactly as in resolveStoredValue -- see grm-4bgh.7.
+		BankState inState = inStateAtStore;
 		Instruction cur = useInstr;
 		for (int i = 0; i < MAX_BACKWARD_SCAN; i++) {
 			if (env.stopsAt(cur.getMinAddress())) {
@@ -1140,9 +1225,13 @@ final class StoredValueScanner {
 				return BankState.unknown();
 			}
 			if (hooks.isMechanismWrite(prev)) {
-				// Same rule as the register scan's: a value read further back would predate the
-				// mechanism change, so nothing beyond this point may be attributed forward.
-				return BankState.unknown();
+				// Same rule as the register scan's, and now the same REMEDY (grm-4bgh.7): the
+				// in-state is withdrawn for everything read past this point, and the walk goes
+				// on. Note the ordering matters and is favorable -- the writesMemory test below
+				// still runs on this very instruction, so a mechanism write that IS a store to
+				// the cell being forwarded is forwarded from rather than skipped, which is the
+				// right answer and was previously unreachable.
+				inState = BankState.unknown();
 			}
 
 			if (writesMemory(prev)) {
@@ -1156,7 +1245,7 @@ final class StoredValueScanner {
 					return BankState.unknown(); // a memory write this scanner cannot place
 				}
 				if (storeTarget.equals(target)) {
-					return resolveStoredValue(program, prev, storeReg, inStateAtStore, 0xFF, hooks,
+					return resolveStoredValue(program, prev, storeReg, inState, 0xFF, hooks,
 						env, budget, depth + 1).value();
 				}
 				// provably a different cell -- harmless, keep walking
@@ -1294,9 +1383,10 @@ final class StoredValueScanner {
 	 * declines.
 	 * <p>
 	 * Every guard {@link #resolveStoredValue} applies is reused verbatim: fall-through block
-	 * linkage, {@link #isControlFlowJoin}, the {@link Hooks#isMechanismWrite} mid-scan abort,
-	 * and {@link #MAX_BACKWARD_SCAN}. The mechanism-write abort in particular is <em>not</em>
-	 * relaxed here: a base value read further back would predate that write. {@code env}'s
+	 * linkage, {@link #isControlFlowJoin}, and {@link #MAX_BACKWARD_SCAN}. The one guard NOT
+	 * reused is the mechanism-write abort, and as of bead grm-4bgh.7 it is not merely relaxed
+	 * here but ABSENT: that guard exists to stop an in-state-derived value being read across the
+	 * write, and this evaluator never consults a caller's in-state at all. {@code env}'s
 	 * entry stop is honored the same way it is there, and is likewise all-or-nothing: a
 	 * partially known caller register declines, because an effective address needs all eight
 	 * index bits. So is {@code env}'s licensed join ({@link RegisterEnv#mayCrossJoinAt}) --
@@ -1352,10 +1442,13 @@ final class StoredValueScanner {
 				// resolving the index of its `LDA $ffd0,Y` walks straight back into it.
 				return null;
 			}
-			if (hooks.isMechanismWrite(prev)) {
-				// NOT relaxed for this evaluator: see the class javadoc's mid-scan rule.
-				return null;
-			}
+			// NO MECHANISM-WRITE ABORT HERE AT ALL (bead grm-4bgh.7), and note this is a
+			// stronger statement than resolveStoredValue's withdrawal above. That abort exists
+			// solely to stop an in-state-derived value being read across the write; THIS
+			// evaluator never consults a caller's in-state in the first place -- it passes
+			// BankState.unknown() to resolveLoad by construction, for the cacheability reason in
+			// its javadoc -- so it has nothing to withdraw and never had a hazard to guard. The
+			// abort it used to carry was copied from the walk that does.
 
 			String mnem = prev.getMnemonicString().toUpperCase();
 
@@ -1374,9 +1467,12 @@ final class StoredValueScanner {
 				// javadoc for the shape and soundness argument. The recursive query below is
 				// always for 'A', never `reg`: the push stackRelativePush finds is always a PHA,
 				// which only ever saves A, regardless of which register this load lands in.
-				int[] stackSteps = new int[1];
+				// The Span's crossing flag is deliberately IGNORED here: this evaluator holds no
+				// in-state to withdraw (see the comment where the abort used to be), so a
+				// mechanism write between the reload and its push changes nothing it computes.
+				Span reload = new Span();
 				Instruction pha = stackRelativePush(program, prev, hooks, env,
-					MAX_BACKWARD_SCAN - i, stackSteps);
+					MAX_BACKWARD_SCAN - i, reload);
 				return pha == null ? null
 						: constantRegisterValue(program, pha, 'A', hooks, env, budget, depth + 1);
 			}
@@ -1470,8 +1566,9 @@ final class StoredValueScanner {
 	 * <p>
 	 * Every guard {@link #constantRegisterValue} applies is reused verbatim and for the same
 	 * reasons: fall-through block linkage, {@link #isControlFlowJoin} (another path may arrive
-	 * with the other carry), the {@link Hooks#isMechanismWrite} mid-scan abort, {@code budget},
-	 * and {@link #MAX_BACKWARD_SCAN}. A call ends the walk: a subroutine returns whatever carry
+	 * with the other carry), {@code budget}, and {@link #MAX_BACKWARD_SCAN}. Like
+	 * {@link #constantRegisterValue} it carries no mechanism-write abort (grm-4bgh.7); what
+	 * decides whether an instruction may be stepped over here is {@link #CARRY_PRESERVING}. A call ends the walk: a subroutine returns whatever carry
 	 * it pleases. {@code env}'s entry stop declines rather than adopting anything -- a
 	 * {@link RegisterEnv} describes the caller's A/X/Y and says nothing about its flags, so a
 	 * helper whose own body does not establish the carry has no carry this walk may claim.
@@ -1499,9 +1596,11 @@ final class StoredValueScanner {
 			if (isControlFlowJoin(program, cur, prev) && !env.mayCrossJoinAt(cur.getMinAddress())) {
 				return null;
 			}
-			if (hooks.isMechanismWrite(prev)) {
-				return null;
-			}
+			// No mechanism-write abort (grm-4bgh.7), for constantRegisterValue's reason plus one
+			// of its own: this walk reads FLAGS, and the CARRY_PRESERVING allowlist below is what
+			// decides whether an instruction may be stepped over. A mechanism write is a store,
+			// which that allowlist already admits as carry-preserving; anything it does not
+			// recognize declines regardless of what this test would have said.
 
 			String mnem = prev.getMnemonicString().toUpperCase();
 			if (mnem.equals("CLC")) {

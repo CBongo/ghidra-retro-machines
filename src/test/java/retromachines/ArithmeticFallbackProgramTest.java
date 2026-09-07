@@ -253,12 +253,22 @@ public class ArithmeticFallbackProgramTest extends AbstractBundledLanguageTest {
 	 *   FEE0  STA $FC
 	 *   FEE2  STA $8001    ; the deposit
 	 * </pre>
-	 * So {@code r6} is blocked by TWO independent walls stacked in series, and grm-4bgh.6
-	 * removed only the outer one. Pinning it here records which wall is now load-bearing, so the
-	 * next attempt starts from the measured layout rather than the reconstructed one.
+	 * So {@code r6} was blocked by TWO independent walls stacked in series, and grm-4bgh.6
+	 * removed only the outer one.
+	 * <p>
+	 * <b>UPDATED BY grm-4bgh.7, WHICH REMOVED THE INNER WALL TOO.</b> This test asserted
+	 * {@code assertUnresolved} when it was written, one increment ago; it now asserts the value.
+	 * Crossing a mechanism write no longer ends a walk -- it WITHDRAWS the in-state, because that
+	 * is the whole of what the crossing invalidates, and a byte sitting on the stack is not the
+	 * in-state. The pushed {@code $05} is therefore still reachable, and {@code 5 * 2 == 10}
+	 * exactly as in the sibling fixture without the {@code STA}.
+	 * <p>
+	 * The fixture is deliberately left in place rather than deleted: it is the ONE-INSTRUCTION
+	 * DIFFERENCE that distinguishes the two increments, and a regression that reinstated either
+	 * abort would show up here first.
 	 */
 	@Test
-	public void anInterveningMechanismWriteStillBlocksTheStackReload() throws Exception {
+	public void aStackReloadNowSurvivesAnInterveningMechanismWrite() throws Exception {
 		builder.setBytes("0x8000", "a9 05", true); // LDA #$05    -- the bank argument
 		builder.setBytes("0x8002", "48", true); // PHA         -- push 1: the argument
 		builder.setBytes("0x8003", "8a", true); // TXA
@@ -269,7 +279,7 @@ public class ArithmeticFallbackProgramTest extends AbstractBundledLanguageTest {
 		builder.setBytes("0x800c", "0a", true); // ASL A
 		builder.setBytes("0x800d", "8d 00 80", true); // STA $8000
 
-		assertUnresolved(switchAt("0x800d"));
+		assertBank(10, switchAt("0x800d"));
 	}
 
 	/**

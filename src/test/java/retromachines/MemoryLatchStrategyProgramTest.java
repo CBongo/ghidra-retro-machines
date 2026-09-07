@@ -632,17 +632,35 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 	}
 
 	/**
-	 * <b>INVARIANT: the mid-scan mechanism-write abort is not relaxed for index resolution.</b>
-	 * The intervening {@code STA $8000} latches the bank, so anything read further back
-	 * predates it and cannot be attributed to the state at the second store. The index chain
-	 * must abort on it exactly as the value chain does.
+	 * <b>THE INVARIANT THIS TEST PINNED WAS OVER-BROAD, AND BEAD grm-4bgh.7 NARROWED IT.</b>
+	 * It used to assert the opposite of what it asserts now -- that index resolution ABORTS at
+	 * an intervening mechanism write -- and told the next reader not to "fix" a failure here by
+	 * relaxing that. The relaxation happened anyway, deliberately; here is the argument, so that
+	 * a future reader can weigh it rather than only find a reversed assertion.
 	 * <p>
-	 * Do not "fix" a future failure here by letting the index walk past a mechanism write --
-	 * that is the one relaxation grm-hum explicitly forbids. The fixture makes the cost of
-	 * getting it wrong visible: {@code $9001} holds a perfectly resolvable {@code 0x06}.
+	 * The old reasoning was: "the intervening {@code STA $8000} latches the bank, so anything
+	 * read further back predates it". That is true of the BANK, and this walk is not reading the
+	 * bank -- it is resolving the INDEX REGISTER {@code X}. A store does not write {@code X}, so
+	 * {@code LDX #$01} at {@code $8000} still describes {@code X} exactly at {@code $8005},
+	 * mechanism write in between or not. The two questions were conflated.
+	 * <p>
+	 * <b>What actually protects the byte is a different guard, and it is untouched.</b> Whether
+	 * the byte AT the resolved address may be read statically is decided by
+	 * {@code bankInvariantRomByte}, which refuses any address that is writable, uninitialized, or
+	 * covered by an overlay -- i.e. anything a bank switch could change out from under the read.
+	 * The abort was a second, blunter guard in front of a precise one, and it cost every
+	 * legitimate index chain that happened to sit behind a bank switch.
+	 * {@link #mechanismWriteDoesNotLetANonInvariantByteThroughTheNarrowedGuard} is the companion
+	 * that pins the precise guard still firing, and is the test to look at first if this
+	 * relaxation is ever suspected of shipping a wrong bank.
+	 * <p>
+	 * Note {@code constantRegisterValue} -- the evaluator that resolves the index -- consults no
+	 * caller in-state at all (it passes {@code BankState.unknown()} to {@code resolveLoad} by
+	 * construction), which is why grm-4bgh.7 removed its mechanism-write abort outright rather
+	 * than merely withdrawing the in-state as the value walk does.
 	 */
 	@Test
-	public void mechanismWriteMidScanAbortsIndexResolution() throws Exception {
+	public void mechanismWriteNoLongerAbortsIndexResolution() throws Exception {
 		builder.setBytes("0x9000", "00 06 02 03 04 05 06 07"); // $9001 = 0x06
 		builder.setBytes("0x8000", "a2 01", true); // LDX #$01
 		builder.setBytes("0x8002", "8d 00 80", true); // STA $8000 -- a latch write
@@ -654,8 +672,37 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 			discreteLatch().computeSwitch(program, instructionAt("0x8008"), BankState.unknown());
 
 		assertNotNull(result);
-		assertEquals("index resolution must abort at an intervening mechanism write", 0x00,
-			result.knownMask());
+		assertEquals("X is unaffected by a store, so the index still resolves across it", 0x07,
+			result.knownMask() & 0x07);
+		assertEquals("$9001 is a bank-invariant ROM byte", 0x06, result.bits() & 0x07);
+	}
+
+	/**
+	 * The companion to {@link #mechanismWriteNoLongerAbortsIndexResolution}: the same shape, with
+	 * the load reading WRITABLE memory (zero page) instead of a ROM byte. The index chain crosses
+	 * the mechanism write and resolves {@code X} exactly as it does there -- and the result is
+	 * still unresolved, because {@code bankInvariantRomByte} refuses a writable cell.
+	 * <p>
+	 * This is the invariant the old {@code mechanismWriteMidScanAbortsIndexResolution} was really
+	 * protecting, expressed at the guard that actually decides it. A regression that let a
+	 * bank-VARIANT byte through would fail here while the sibling test kept passing.
+	 */
+	@Test
+	public void mechanismWriteDoesNotLetANonInvariantByteThroughTheNarrowedGuard()
+			throws Exception {
+		builder.setBytes("0x0080", "00 06 02 03"); // $0081 = 0x06, but zero page is RAM
+		builder.setBytes("0x8000", "a2 01", true); // LDX #$01
+		builder.setBytes("0x8002", "8d 00 80", true); // STA $8000 -- a latch write
+		builder.setBytes("0x8005", "bd 80 00", true); // LDA $0080,X -- reads WRITABLE memory
+		builder.setBytes("0x8008", "8d 00 80", true); // STA $8000 -- the store under test
+		romifyPrg();
+
+		BankState result =
+			discreteLatch().computeSwitch(program, instructionAt("0x8008"), BankState.unknown());
+
+		assertNotNull(result);
+		assertEquals("a writable cell is not a bank-invariant ROM byte, whatever the index says",
+			0x00, result.knownMask());
 	}
 
 	/** A join between the load and the store forfeits the fold, as it always has. */
