@@ -253,8 +253,15 @@ c559, c561, c567, c56f: far call thunks (set bank D, JSR, restore bank E)
 c5af, c5b7: far call thunk (set bank B, JSR, restore bank E)
 c628, c640: actually a helper function FUN_c628; takes bank from caller in A, sends data to PPU, restores to bank D on exit
 c66a: loaded from table at c697
-[many others omitted]
+c70c: helper function FUN_c70c; takes bank from caller in A, copies data to 3b8 in RAM, restores bank D on exit
+c78d: TXA, X set from caller of enclosing function c760; bank restored to D before function end
+ca12: FUN_ca0b: LDA $29; PHA; JSR c96b; PLA; JSR c000
+cb4a, cb60: FUN_cb0c: cb4a loads from table at b461; cb60 restores from PLA pushed at cb15 from LDA $29. there's a second PHA/PLA pair in between the cb15 PHA and cb5f PLA.
+d0c3: LDA $29, this call is followed shortly by an RTI.  note that the first instruction of FUN_c000 is STA $29 so this is effectively a "bank restore".
 f2d1: this is called by RESET at game start and sets bank E, strong indicator this should be the default bank for $8000. might be a good item for the hb6 epic if it's not already detected by the analyzer.
+
+contra c146:
+c146 is NOT inside c13f. c13f sets the bank reg from Y then returns at c145.  c139 is an additional helper that saves the current bank (by reading the bank marker byte at $8000) in 7ec then setting the current bank from Y by falling through to c13f.
 
   Next session's shortest path
 
