@@ -43,6 +43,42 @@ bash tools/banktest/realrom-test.sh nominate <romdir>   # board-gap survey
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
+- [ ] **What computes the value in the accumulator immediately before smb3's mechanism write at
+      `cb61`?** (`grm-vt1i`.) This is the ONE loose thread in an otherwise-closed adjudication —
+      that bead's final comment says "no site in this bead now needs a further human pass" and
+      then exempts this one: smb3 has exactly two undeterminable-value warnings, `f8cd` and
+      `cb61`, and `cb61` "is untouched by any of the above and remains unread."
+
+      Classify it the usual way: `immediate` / `RAM load <addr>` / `ROM table <base>` /
+      `computed <expr>` / `passed-in`. **Check first whether the site deposits anything at all** —
+      `grm-pdd6` established that an unknown fraction of the 127 undeterminable-value warnings are
+      not value-recovery failures at all, so "this site never deposits a bank" is a legitimate and
+      cheap answer here.
+
+- [ ] **Is megaman2's `RESET` a bank-switch helper at all, or is this a helper-IDENTIFICATION bug?**
+      (`grm-nqxt`, 8 sites.) The bead flags this itself and says to do it before the `FUN_` ones:
+      *"a bank-switch 'helper' named RESET suggests the helper identification, not the argument
+      recovery, is what went wrong."* If so it is a different and probably cheaper fix, and 8 of
+      the 98 sites leave the argument-recovery bucket entirely.
+
+      **Confirm it is code before investing anything.** `grm-8iy`'s standing caution: `FUN_8eeb`
+      was carried in this file and in that epic for two weeks as a co-equal second bank-switch
+      helper and turned out to be a seed from the `$8F00` over-read (`grm-eyn`). A reset vector
+      reached as a "helper" is exactly that shape.
+
+- [ ] **What feeds the accumulator at megaman2 `FUN_c000`'s 10 call sites?** (`grm-nqxt`.) With
+      rcransom's `FUN_fed1` (38 sites) answered 2026-09-06 and smb3's `FUN_ffc2` (9) closed as
+      `grm-qd0u`, this is now the **largest untouched helper in the 19-pair table**. megaman2 has
+      no dedicated bead and has never been hand-traced.
+
+      Same classification as above, and the same "confirm it is code" caveat — `$c000` is a
+      plausible over-read seed as well as a plausible helper. The answer decides whether this needs
+      `grm-mej.3`-style machinery (shadow/stack) or is an honest decline.
+
+- [ ] **What feeds the accumulator at zelda2 `FUN_ffc9`'s 4 call sites?** (`grm-nqxt`.) Same shape,
+      smaller payoff — take it only if the megaman2 pair goes quickly. zelda2 is likewise untraced
+      and has no dedicated bead.
+
 *Not an item — a note.* The `.idb` inventory itself (`grm-w4w3`) is **agent work and is
 deliberately deferred to a future session** at your request; the tooling question is settled
 (`python-idb` Apache-2.0 / `idbutil` MIT, no IDA needed) so nobody re-derives it. Worth knowing
@@ -75,9 +111,34 @@ change what the numbers mean:
 3. **Is there a bank shadow?** 4 of 4 titles, 7 shadows. Note whether it holds a bank *number* or a
    whole composite register (wizwarr's `$00`).
 
-*No titles are queued right now — dragonpower and shenlong closed out 2026-08-15 (see the Answered
-table), and contra, cv2, tmnt, wizwarr, blmaster, smb2, rcransom and smb3 are done before them. The
-method above is kept because the next untraced title will want it. Pick candidates from `grm-8iy`.*
+- [ ] **rtk2 (Romance of the Three Kingdoms 2, MMC5, curated manifest) — where does `FUN_f55f` get
+      its bank argument, and is the RAM shadow ever read back?** (`grm-8iy`, added 2026-08-30.)
+      A tenth instance of this epic's exact signature: **zero** instructions and **zero** refs into
+      overlay space.
+
+      **What it is NOT, because it looked like it for a while.** rtk2's init writes bank numbers
+      96/97/126 on a 32-bank cart and `placeableBanks` filtered them out entirely, so the obvious
+      diagnosis was "no overlay exists to retarget into". That was a real defect, it is fixed
+      (`grm-p25h`: MMC5 truncates out-of-range banks, 96→0, 97→1, 126→30) — **and it did not move
+      the counts.** `refs.intoOverlay` is still 0. Do not re-derive that.
+
+      The remaining blocker is narrower than the general case: rtk2 has no reference site
+      downstream of those writes with the bank still known. Two contributing facts, both already
+      established — one canonical bank is the home bank anyway (96→0), so retargeting it is a
+      no-op; and the flow loses bank state at **`f525`, a call to helper `FUN_f55f` whose argument
+      is not recovered** — the single warning in rtk2's dump.
+
+      **Possibly the way in:** rtk2 shadows every bank value to RAM immediately before the register
+      write — `STA $070F` / `STA $5116`, `STA $070D` / `STA $5114`, `STA $070E` / `STA $5115`. A
+      textbook bank shadow, on a cartridge that is now a pinned test row rather than an anecdote.
+      The question is whether that shadow is read back anywhere, which would make this
+      `grm-mej.2`'s route rather than new machinery.
+
+      Small title — 3 bank comments, 1 warning — so the trace should be cheap.
+
+*One title queued, above. dragonpower and shenlong closed out 2026-08-15 (see the Answered table),
+and contra, cv2, tmnt, wizwarr, blmaster, smb2, rcransom and smb3 are done before them. Pick further
+candidates from `grm-8iy`.*
 
 ---
 
@@ -147,6 +208,44 @@ Blocked on judgment, not effort.
 - [ ] **c64ref sourcing** (`grm-p5w`, typed as a `decision`) — generator + committed
       `generated/*.yaml`, or git submodule + build-time generation. Binds `grm-hb6.6` and `grm-54p`
       too. Decide once.
+- [ ] **Open-source homebrew ROMs as *committable* real-ROM test vectors — pursue, and if so with
+      what sourcing shape?** (`grm-5ioo` P3.) The real-ROM tier hash-pins commercial cartridges the
+      repo can never ship, which is exactly why it cannot be a CI gate and why `CLAUDE.md` has to
+      carry a "you must remember to run this locally" requirement instead.
+
+      This matters more than it sounds: the default gate's synthetic fixtures are, by construction,
+      made only of idioms someone already thought of — the precise weakness `grm-mu7` exploited when
+      a broken guard passed the full synthetic gate while destroying three pinned real ROMs.
+      Homebrew is written against a real assembler and a real mapper library, so it carries banking
+      idioms nobody here invented, and it is **the only source of that property that can live in the
+      repo**.
+
+      Two decisions, and the second is the one that needs you: (1) pursue at all? (2) sourcing shape
+      — committed binaries, git submodule, or build-from-source at gate time (which needs a
+      toolchain the gate cannot assume). The bead leans toward pursuing but deliberately does not
+      choose a shape.
+
+- [ ] **Set-valued bank state — which of the three shapes?** (`grm-wul` P2.) blmaster `FUN_c9a4`
+      selects between two constants on a two-armed branch and merges *before* the switch, so `X` is
+      `{$40,$60}` at the merge and the bank is `{4,6}` at the switch. Every consumer sits after the
+      merge, on the single merged path: there is no per-path constant to recover, and single-valued
+      dataflow must fold it to unknown, and does.
+
+      It matters because this is a **banked-dispatch** site — it selects a bank, reads a pointer
+      table from `$8000`, and jumps indirectly, so one recovered bank yields as many entry points as
+      the table has entries. The bead calls it the only site in blmaster with the shape to move
+      `instrs.inOverlay` meaningfully. It is also not blmaster-specific: a two-armed branch selecting
+      between two constants is an ordinary code shape.
+
+      Options, in increasing cost: **(a)** set-valued bank state (small bounded set, cap 2–4,
+      realize the union) — honest, but every downstream consumer assuming one bank needs auditing
+      and reference retargeting has no single target; **(b)** path forking — exact, but cost
+      multiplies per merge and needs a fork budget; **(c)** decline explicitly, classifying it as a
+      recognized "multi-valued at merge" stop reason rather than a generic undeterminable value
+      (fits `grm-3ou`). **The bead recommends starting at (c)**, which is cheap and strictly better
+      than today even if (a) or (b) follows later. Note `c9a4` needs three other unimplemented
+      things too, so this alone does not recover it.
+
 
 ---
 
@@ -253,6 +352,36 @@ Agents can't file these — they need an account and CLA agreement.
   blocked on upstream any more. What the ask would still buy is having it in ONE command rather
   than a hook that must remember to run two — worth filing when you are already in that repo, not
   worth a special trip.
+
+- [ ] **File the seven 65816 semantic defects against `joshleaves/ghidra-snes`.** (`grm-9nxj.7`,
+  scope widened 2026-09-05.) **The full write-up is already drafted on the bead** — each defect
+  stated the way a maintainer needs it (what is wrong / evidence / fix) — so this is review-and-
+  post, nothing left to research.
+
+  All seven were found against the SingleStepTests vector oracle, not by reading: CPY constraint
+  swap, compare-carry sext-vs-zext, indirect jump/call double-dereference, XBA never reading B,
+  TXA/TYA flag computation, context-field bit-numbering (big-endian register vs SLEIGH's
+  MSB-numbered fields), and XCE native→native register truncation. The patches are already
+  committed locally, so the report can point at working fixes.
+
+  **Target the right repo:** `joshleaves/ghidra-snes` is the live fork; `achan1989/ghidra-65816`
+  is archived. The draft deliberately separates out one item that is **not** reportable — PBR
+  wrap, which upstream already documents — so do not add it back.
+
+- [ ] **Ask `SingleStepTests/65816` upstream to state a license explicitly.** (`grm-9nxj.8` P3.)
+  An issue on the repo is enough; the sibling `SingleStepTests/spc700` repo, same GitHub org, is
+  MIT and is already vendored here under that grant, so its MIT text is the obvious candidate to
+  point at. Needs a short draft — unlike the item above, no body is written yet.
+
+  Context for the ask: `SingleStepTests/65816` carries no LICENSE file, GitHub's API reports no
+  detected license, and its README says nothing about licensing, copyright, attribution or
+  redistribution (checked directly, not inferred from the API). You ruled 2026-09-04 to vendor the
+  sample anyway on a same-org inference, with `NOTICE` stating plainly that it is an inference and
+  not a grant. **This closes that gap properly rather than leaving it standing.**
+
+  Low urgency — the interim state works. If upstream declines or states something incompatible
+  with redistribution, `src/test/resources/w65816-vectors/` comes out and the sample tier becomes
+  clone-gated; the exhaustive tier is unaffected either way, since it never vendors anything.
 
 *Two things learned that the next upstream item should inherit:*
 
