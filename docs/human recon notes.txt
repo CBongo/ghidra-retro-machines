@@ -263,6 +263,12 @@ f2d1: this is called by RESET at game start and sets bank E, strong indicator th
 contra c146:
 c146 is NOT inside c13f. c13f sets the bank reg from Y then returns at c145.  c139 is an additional helper that saves the current bank (by reading the bank marker byte at $8000) in 7ec then setting the current bank from Y by falling through to c13f.
 
+blmaster d3/db:
+NMI handler restores bank reg from DB just prior to returning. the only place it is written is in helper FUN_eb16 which sets the bank in an interrupt-safe way. looks like helper at e9b8 (contains call to e61b at e9cb) is a far call interface to bank 3; d3 is used to restore the original bank in db prior to return. e9cf (contains call to e61b at e9ff) is a similar helper that does the same method of saving db in d3 and restoring it prior to return.
+c251 stores a 0 in d3, best i can tell it's just initializing it there?  it seems both d3 and db are used as bank shadows for different levels (maybe db is specifically for interrupt restoration while d3 is "app controlled").
+
+zelda2: https://datacrystal.tcrf.net/wiki/Zelda_II:_The_Adventure_of_Link/RAM_map says 0769 is "Bank to switch back to after changing banks in NMI handler" which is consistent with what i found. also disassembly at https://github.com/FiendsOfTheElements/z2disassembly .
+
   Next session's shortest path
 
   1. bd list --label background-ok → farm out immediately (grm-hhd first; it blocks every parallel agent).
