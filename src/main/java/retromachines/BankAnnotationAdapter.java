@@ -538,7 +538,12 @@ final class BankAnnotationAdapter {
 					w.start(), w.end(), banks));
 			}
 		}
-		discovery.scanWriteThroughShadows(program, flow.switchResults().keySet());
+		// Hand over WHICH bit-field each site commits, not just the addresses: build()'s third
+		// corroboration route (grm-3n4f) asks whether a cell is stored by every switch to a field.
+		Map<Address, BankMirrors.MechanismField> switchFields = new LinkedHashMap<>();
+		flow.switchResults().forEach((site, result) -> switchFields.put(site,
+			new BankMirrors.MechanismField(result.lsb(), result.effectMask())));
+		discovery.scanWriteThroughShadows(program, switchFields);
 		discovery.scanArgumentCells(program,
 			helperArgumentCallSites(program, flow, helpers));
 		// Route (c) LAST and deliberately so: "a copy of something that already mirrors the live

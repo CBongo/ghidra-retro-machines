@@ -384,6 +384,20 @@ public final class BankMirrors {
 	}
 
 	/**
+	 * Which bit-field of the tracked bank state a mechanism write commits -- the granularity at
+	 * which {@link Discovery#build} asks "is this cell maintained by EVERY switch?". Two sites
+	 * share a field exactly when a shadow store paired with both maintains the same bits, which
+	 * is what {@code SwitchResult}'s {@code lsb}/{@code effectMask} pair already expresses.
+	 */
+	record MechanismField(int lsb, int effectMask) {}
+
+	/** The field the {@code Collection} form of {@link Discovery#scanWriteThroughShadows} assumes
+	 *  when the caller does not distinguish mechanisms: every site commits the same field, so
+	 *  coverage means "paired with all of them". Correct for a single-mechanism fixture, and
+	 *  strictly conservative otherwise, since merging fields can only enlarge the denominator. */
+	private static final MechanismField SOLE_FIELD = new MechanismField(0, -1);
+
+	/**
 	 * The mutable side of {@link BankMirrors}: one derivation pass's accumulated evidence,
 	 * classified into kinds by {@link #build}. Scoped to a single {@code BoardBankAnalyzer}
 	 * run and never published.
@@ -393,6 +407,9 @@ public final class BankMirrors {
 		private final AddressSpace baseSpace;
 		private final Set<Long> romIdentifying = new LinkedHashSet<>();
 		private final Map<Long, Cell> cells = new LinkedHashMap<>();
+		/** Every mechanism write {@link #scanWriteThroughShadows} was handed, grouped by the
+		 *  bit-field it commits -- the denominator of {@link #coversAMechanismField}. */
+		private final Map<MechanismField, Set<Address>> sitesByField = new LinkedHashMap<>();
 
 		Discovery(AddressSpace baseSpace) {
 			this.baseSpace = baseSpace;
@@ -436,9 +453,23 @@ public final class BankMirrors {
 		 *                    switch there and cannot be attributed forward
 		 */
 		void scanWriteThroughShadows(Program program, Collection<Address> switchSites) {
+			Map<Address, MechanismField> single = new LinkedHashMap<>();
+			for (Address site : switchSites) {
+				single.put(site, SOLE_FIELD);
+			}
+			scanWriteThroughShadows(program, single);
+		}
+
+		/**
+		 * The production form, which additionally says WHICH bit-field of the tracked state each
+		 * site commits, so {@link #build} can ask whether a cell is maintained by every switch to
+		 * a field rather than only how many times it was seen. See {@link #coversAMechanismField}.
+		 */
+		void scanWriteThroughShadows(Program program, Map<Address, MechanismField> switchSites) {
 			Listing listing = program.getListing();
-			Set<Address> sites = switchSites instanceof Set<Address> s ? s
-					: new LinkedHashSet<>(switchSites);
+			Set<Address> sites = switchSites.keySet();
+			switchSites.forEach((site, field) -> sitesByField
+					.computeIfAbsent(field, k -> new LinkedHashSet<>()).add(site));
 			for (Address site : sites) {
 				Instruction store = listing.getInstructionAt(site);
 				if (store == null) {
@@ -688,8 +719,7 @@ public final class BankMirrors {
 			Set<Long> live = new LinkedHashSet<>(romIdentifying);
 			for (Map.Entry<Long, Cell> entry : cells.entrySet()) {
 				Cell cell = entry.getValue();
-				if (!cell.savedFromReadBack && (cell.writeThroughStores.size() >= 2 ||
-					(cell.writeThroughStores.size() == 1 && !cell.writeThroughLoads.isEmpty()))) {
+				if (!cell.savedFromReadBack && corroborated(cell)) {
 					live.add(entry.getKey());
 				}
 			}
@@ -697,15 +727,58 @@ public final class BankMirrors {
 		}
 
 		/**
+		 * The three ways a cell's evidence adds up to "this mirrors the live bank" -- two distinct
+		 * store sites, one store corroborated by a load feeding the mechanism write, or coverage
+		 * of a whole mechanism field. Shared by {@link #build} and {@link #liveMirrorOffsets},
+		 * which must agree: a cell {@code build} declines is not a legitimate copy source either.
+		 */
+		private boolean corroborated(Cell cell) {
+			return cell.writeThroughStores.size() >= 2 ||
+				(cell.writeThroughStores.size() == 1 && !cell.writeThroughLoads.isEmpty()) ||
+				(!cell.writeThroughStores.isEmpty() && coversAMechanismField(cell));
+		}
+
+		/**
+		 * Whether this cell is stored by EVERY recognized switch to at least one mechanism field
+		 * -- the third corroboration route, and the one that admits a program whose banking is
+		 * CENTRALISED in a single helper (bead grm-3n4f; db3's two-instruction
+		 * {@code STA $6A / STA $6008} is the measured case).
+		 * <p>
+		 * The other two routes count evidence, on the reasoning that one store site is a
+		 * coincidence. That reasoning is really a proxy for the property {@code WRITE_THROUGH}
+		 * consumption actually needs: the cell must equal the live bank at the load, which holds
+		 * only if every switch updates it. Coverage tests that property DIRECTLY, so a single
+		 * store site satisfies it completely when it is the only switch site there is -- not
+		 * weakly, the way a bare count would suggest.
+		 * <p>
+		 * Sites the walk could not start from still count against coverage: a switch committed by
+		 * an RMW idiom ({@code INC} of the latch, bead grm-4kc) genuinely does not maintain the
+		 * shadow, so leaving it in the denominator is the conservative and correct reading.
+		 */
+		private boolean coversAMechanismField(Cell cell) {
+			for (Set<Address> field : sitesByField.values()) {
+				if (!field.isEmpty() && cell.pairedSwitchSites.containsAll(field)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		/**
 		 * Classifies the accumulated evidence into the immutable set.
 		 * <p>
-		 * <b>The corroboration rule.</b> One store site is a coincidence, so a write-through
-		 * shadow needs either TWO distinct store sites or one store corroborated by a load of
-		 * the same cell feeding a mechanism write. The corroboration half is not a softening:
+		 * <b>The corroboration rule</b> ({@link #corroborated}, three routes). One store site
+		 * seen in isolation is a coincidence, so a write-through shadow needs either TWO distinct
+		 * store sites, or one store corroborated by a load of the same cell feeding a mechanism
+		 * write, or -- since grm-3n4f -- coverage of a whole mechanism field. Neither of the
+		 * latter two is a softening:
 		 * Castlevania 2 has exactly one PRG mechanism chain (its other fifteen mechanism writes
 		 * are CHR and CTRL), so the literal "two distinct sites" rule rejects its {@code $1C} --
 		 * an easy case the pass is supposed to find. Both of its evidences come out of one
-		 * backward walk, which is exactly what corroboration means here.
+		 * backward walk, which is exactly what corroboration means here. And coverage
+		 * ({@link #coversAMechanismField}) is a STRONGER claim than any count, not a weaker one:
+		 * it establishes directly that every switch to the field maintains the cell, which is the
+		 * property the counting rules were only ever a proxy for.
 		 * <p>
 		 * A load-only cell is NOT admitted: without a store there is nothing tying the cell's
 		 * content to the bank rather than to some unrelated byte that happened to be written to
@@ -720,9 +793,7 @@ public final class BankMirrors {
 			for (Map.Entry<Long, Cell> entry : cells.entrySet()) {
 				Cell cell = entry.getValue();
 				Set<Kind> kinds = EnumSet.noneOf(Kind.class);
-				boolean corroborated = cell.writeThroughStores.size() >= 2 ||
-					(cell.writeThroughStores.size() == 1 && !cell.writeThroughLoads.isEmpty());
-				if (corroborated) {
+				if (corroborated(cell)) {
 					kinds.add(cell.savedFromReadBack ? Kind.SAVE_SLOT : Kind.WRITE_THROUGH);
 				}
 				if (cell.argumentLoads.size() >= 2) {

@@ -275,14 +275,48 @@ public class BankMirrorDerivationProgramTest extends AbstractBundledLanguageTest
 		assertEquals(Set.of(BankMirrors.Kind.WRITE_THROUGH), kindsAt(mirrors, "0x1c"));
 	}
 
-	/** One store, no corroboration, one site: not enough to believe. */
+	/**
+	 * <b>A store that maintains the cell on only SOME of a field's switch paths.</b> One store
+	 * site, no corroborating load, and a second switch site that leaves {@code $42} untouched --
+	 * so after the switch at {@code 0x800a} the cell holds a stale bank, and answering a later
+	 * load of it from tracked in-state would be confidently wrong.
+	 * <p>
+	 * This is the anti-coincidence guard, restated as the property it was always a proxy for
+	 * (bead grm-3n4f). It used to be a single-site fixture, on the reasoning that "one store site
+	 * is a coincidence" -- but a single site paired with the ONLY switch there is satisfies
+	 * "every switch maintains this cell" completely, which is why db3's centralised two-instruction
+	 * helper was being rejected. Coverage now decides that case, so the negative has to be a cell
+	 * that genuinely is not maintained everywhere, not merely one seen once.
+	 */
 	@Test
-	public void aSingleUncorroboratedStoreIsNotAShadow() throws Exception {
+	public void aStoreCoveringOnlySomeOfAFieldsSwitchSitesIsNotAShadow() throws Exception {
 		builder.setBytes("0x8000", "a9 05", true); // LDA #$05
 		builder.setBytes("0x8002", "85 42", true); // STA $42
-		builder.setBytes("0x8004", "8d 00 c0", true); // STA $C000   <- switch site
+		builder.setBytes("0x8004", "8d 00 c0", true); // STA $C000   <- switch site (maintains $42)
+		builder.setBytes("0x8007", "a9 06", true); // LDA #$06
+		builder.setBytes("0x8009", "8d 00 c0", true); // STA $C000   <- switch site (does NOT)
 
-		assertEquals(Set.of(), kindsAt(shadowsFrom("0x8004"), "0x42"));
+		assertEquals(Set.of(), kindsAt(shadowsFrom("0x8004", "0x8009"), "0x42"));
+	}
+
+	/**
+	 * <b>db3's centralised helper</b> (bead grm-3n4f), the case the count-based rule rejected and
+	 * coverage admits: the whole program switches banks through one two-instruction routine, so
+	 * there is exactly one store site and there never will be another. Route (a)'s other
+	 * corroboration -- a load of the cell feeding the write, Castlevania 2's {@code $1C} -- cannot
+	 * help either, because db3's load of {@code $6A} is in the CALLER, across a {@code JSR}.
+	 * <p>
+	 * The bytes are db3's, at db3's addresses. Nothing falls into {@code 0xdb2e}, so the backward
+	 * walk runs off the top of the block exactly as it does on the ROM.
+	 */
+	@Test
+	public void aStoreCoveringTheOnlySwitchSiteIsAShadow() throws Exception {
+		builder.setBytes("0xdb2e", "85 6a", true); // STA $6A     <- the shadow
+		builder.setBytes("0xdb30", "8d 08 60", true); // STA $6008   <- the only mechanism write
+		builder.setBytes("0xdb33", "60", true); // RTS
+
+		assertEquals(Set.of(BankMirrors.Kind.WRITE_THROUGH),
+			kindsAt(shadowsFrom("0xdb30"), "0x6a"));
 	}
 
 	/**
@@ -567,24 +601,28 @@ public class BankMirrorDerivationProgramTest extends AbstractBundledLanguageTest
 	}
 
 	/**
-	 * <b>The anti-coincidence guard.</b> {@code $42} has exactly one store site and no
-	 * corroborating load feeding a mechanism write, so it does not qualify as a mirror on its own
-	 * evidence (the same corroboration rule route (a) itself enforces). A copy out of it must
-	 * therefore NOT make its destination a save slot -- {@code liveMirrorOffsets} recomputes from
-	 * raw evidence for exactly this reason, rather than trusting that "some cell got stored twice
-	 * somewhere" is enough.
+	 * <b>The anti-coincidence guard.</b> {@code $42} is stored on only one of the field's two
+	 * switch paths and has no corroborating load feeding a mechanism write, so it does not qualify
+	 * as a mirror on its own evidence (the same corroboration rule route (a) itself enforces --
+	 * see {@code aStoreCoveringOnlySomeOfAFieldsSwitchSitesIsNotAShadow} for why the fixture is
+	 * shaped this way rather than as a single site). A copy out of it must therefore NOT make its
+	 * destination a save slot -- {@code liveMirrorOffsets} recomputes from raw evidence for exactly
+	 * this reason, rather than trusting that "some cell got stored twice somewhere" is enough.
 	 */
 	@Test
 	public void aCopyFromAnUncorroboratedCellIsNotASaveSlot() throws Exception {
 		builder.setBytes("0x8000", "a9 05", true); // LDA #$05
-		builder.setBytes("0x8002", "85 42", true); // STA $42   <- one store, no corroboration
+		builder.setBytes("0x8002", "85 42", true); // STA $42   <- one store, one of two paths
 		builder.setBytes("0x8004", "8d 00 c0", true); // STA $C000  <- switch site
+		builder.setBytes("0x8007", "a9 06", true); // LDA #$06
+		builder.setBytes("0x8009", "8d 00 c0", true); // STA $C000  <- switch site, no store
 
 		builder.setBytes("0x9000", "a5 42", true); // LDA $42
 		builder.setBytes("0x9002", "85 99", true); // STA $99
 
 		BankMirrors.Discovery discovery = discovery();
-		discovery.scanWriteThroughShadows(program, List.of(addr("0x8004")));
+		discovery.scanWriteThroughShadows(program,
+			List.of(addr("0x8004"), addr("0x8009")));
 		discovery.scanSaveSlotCopies(program);
 		BankMirrors mirrors = discovery.build();
 
