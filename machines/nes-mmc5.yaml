@@ -191,13 +191,15 @@
 #   no-poison contract as MMC3's R0-R5/MMC2's CHR registers).
 #
 # NOT MODELED AT ALL (PPU-side or otherwise out of scope, vision doc section 5.4):
-#   CHR banking ($5120-$5127/$5130), the extra pulse-wave-plus-PCM sound channel
+#   CHR banking ($5120-$512B/$5130), the extra pulse-wave-plus-PCM sound channel
 #   ($5010/$5015), ExRAM and its four modes including the nametable/attribute extension
 #   ($5104, $5C00-$5FFF), the vertical-split mode ($5200-$5202), the scanline IRQ
-#   ($5203-$5204), the 8x8 unsigned multiplier ($5205-$5206), and PRG-RAM
-#   write-protect ($5102-$5103). None of these bytes are claimed by any mechanism below;
-#   writes to them fall through untracked, exactly like MMC3's CHR/IRQ registers and
-#   MMC2's CHR-latch registers.
+#   ($5203-$5204), the 8x8 unsigned multiplier ($5205-$5206), the MMC5A-only registers
+#   ($5207-$520A), and PRG-RAM write-protect ($5102-$5103). None of these bytes are
+#   claimed by any mechanism below; writes to them fall through untracked, exactly like
+#   MMC3's CHR/IRQ registers and MMC2's CHR-latch registers. Several of them ARE declared
+#   as plain `memory.regions[]` entries so the memory map reads correctly -- a region
+#   declaration is not a mechanism, and claims nothing about bank state.
 
 schema: 2
 
@@ -233,10 +235,38 @@ memory:
       comment: "MMC5's PRG-side register file: $5100 (PRG mode), $5113 (PRG-RAM bank,
                 unmodeled), $5114-$5117 (the four PRG ROM bank registers). Declared as
                 one region purely for a readable memory map -- no mechanism recognizes
-                $5101-$5112/$5118-$5117 gaps or $5113 itself; those writes fall through
-                untracked. The wider $5000-$5206 expansion area (ExRAM, split-screen,
-                IRQ, multiplier, sound) is left as an unmapped gap -- out of scope per
-                the module note above, not modeled even as a plain region."
+                the $5101-$5112 gap or $5113 itself; those writes fall through
+                untracked. The rest of the expansion area is declared below as plain
+                regions for the same map-readability reason; none of it is modeled."
+    - name: MMC5_CHR_REGS
+      start: 0x5120
+      end: 0x512B
+      kind: io
+      comment: "CHR bank registers: $5120-$5127 (the sprite/'A' set) and $5128-$512B
+                (the background/'B' set). PPU-side, not modeled -- declared for map
+                readability only; writes fall through untracked."
+    - name: MMC5_CHR_HI
+      start: 0x5130
+      end: 0x5130
+      kind: io
+      comment: "Upper CHR bank bits (bits 8-9 of the CHR bank number, latched for the
+                next $5120-$512B write). PPU-side, not modeled."
+    - name: MMC5_MISC_REGS
+      start: 0x5200
+      end: 0x520A
+      kind: io
+      comment: "Vertical split mode ($5200-$5202), scanline IRQ compare/status
+                ($5203-$5204), the 8x8 unsigned multiplier ($5205-$5206), and the
+                MMC5A-only registers ($5207-$520A). None modeled -- declared for map
+                readability only; writes fall through untracked."
+    - name: MMC5_EXRAM
+      start: 0x5C00
+      end: 0x5FFF
+      kind: ram
+      comment: "1 KiB ExRAM. Its mode ($5104) decides whether the CPU may read it back
+                and whether the PPU uses it for extended nametable/attribute data;
+                none of that is modeled, and it is declared here as plain RAM so the
+                1 KiB is visible in the memory map rather than an unmapped gap."
 
   windows: []                     # every PRG window is mode-dependent -- see layouts
 
