@@ -43,14 +43,21 @@ bash tools/banktest/realrom-test.sh nominate <romdir>   # board-gap survey
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
-- [ ] **What feeds the accumulator at megaman2 `FUN_c000`'s 10 call sites?** (`grm-nqxt`.) With
-      rcransom's `FUN_fed1` (38 sites) answered 2026-09-06 and smb3's `FUN_ffc2` (9) closed as
-      `grm-qd0u`, this is now the **largest untouched helper in the 19-pair table**. megaman2 has
-      no dedicated bead and has never been hand-traced.
+- [ ] **What feeds the accumulator at megaman2 `FUN_c000`'s six remaining call sites — `c70c`,
+      `c78d`, `ca12`, `cb4a`, `cb60`, `d0c3`?** (`grm-nqxt`.) **Four of the original ten are done;
+      do not re-trace them.** The owner's 2026-09-07 pass is recorded in full on `grm-nqxt` — read
+      that comment before spending anything here.
 
-      Same classification as above, and the same "confirm it is code" caveat — `$c000` is a
-      plausible over-read seed as well as a plausible helper. The answer decides whether this needs
-      `grm-mej.3`-style machinery (shadow/stack) or is an honest decline.
+      What it settled: the **"confirm it is code" caveat is discharged** (`FUN_c000` is real code
+      in MMC1 prg_mode 3's *fixed* `$C000` window, so it is immune to the base-window layout
+      question that made smb3's `cb61` a phantom); the house idiom is "set bank `$D` (or `$2a & 7`),
+      do stuff, restore bank `$E`"; every constant-fed site the pass checked is **already annotated
+      correctly**; and of the four traced warnings, `c498`/`c537`/`c66a` are **honest declines** on a
+      table-sourced, multi-valued argument while `c628` is a modelling gap, now `grm-ylm6`.
+
+      So the residue is likely more of the same, and that is exactly what makes these six cheap:
+      each needs only the instruction that loads `A` before the call, and the classification is
+      already written — constant, `$2a & 7`, table-sourced, or forwarded from an outer frame.
 
 - [ ] **Is contra's `c146` (`LDY $07EC` / `JMP $C13F`) inside `FUN_c139`'s body, or a separate
       restore routine with its own callers?** (`grm-mej.3` item 3.) **This decides whether that

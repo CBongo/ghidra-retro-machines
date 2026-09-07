@@ -213,22 +213,12 @@ one more note on 94bb: it does LDY $070a, then sets the R6 shadow from 83d6,Y an
 rcproam (human task/grm-4nr): W8000_M0_B0::a915 is the middle of a data table. the preceding byte a914 is the target of several apparent switch table overruns at bd2e in the same bank (first label is switchD_W8000_M0_B0::bd2e::caseD_7c).  bd2e switch table is at bd31 and has only 4 entries (first is immediately after the table at bd39).  c912 appears to be the same situation - it's the middle of a table of pointers, not code. c913 is labeled as switchD_a16e::caseD_1c so another overrun; switch table for a16e is at a171 with actual length 11 entries; the third entry immediately follows the table at a187.
 
 rcransom fed1:
-1ff 90
-1fe c0
-1fd (A)
-1fc (X)
-sp = fb
-0:bfff = 5f
-2:bfff = 0
 3:bfff = 1
 5:bfff = 2
 7:bfff = 3
 9:bfff = 4
-a:bfff = 6b
 b:bfff = 5
-c:bfff = 29
 d:bfff = 6
-f:bfff = f1
 c08e: PLA, pushed at c025 from LDA bfff (bank save/restore)
 c0b1: LDA 0
 c0f4: PLA, pushed at c025 from LDA bfff (bank save/restore)
@@ -246,9 +236,25 @@ ed29: LDA 3
 ef85: PLA, pushed at ed26 from LDA bfff (bank save/restore)
 f22a: LDA 6
 
+smb3 f8cd:
+f829-f866,  f873-f8b0, f912-f94f and f959-f994 are setting the CHR regs from ROM constants; literally just runs of LDA #$40; STA $8000; LDA $f789; STA $8001.  f8ca is just LDA $0721; STA $8000 - restoring the select register just prior to returning from interrupt at f8da.
 
+smb3 cb61: smb3 uses MMC mode 1 so the c000 bank is switchable, refs are backwards between 8xxx/cxxx.
 
-
+megaman2 c000:
+frequent idiom: set bank D (or $2a & 7), do stuff, restore bank E.
+c04e: LDA $69 (shadow), JMP $C000 (restore after temp change to bank $C when $67 is nonzero); this is actually the tail end of FUN_C000
+c073, c0d3, c1c0, c249, c26b, c595: LDA #$D
+c07b, c0a7, c0fc, c1b3, c1c8, c230, c251, c354, c4c7, c54a, c5a5: LDA #$E
+c19a, c461, c4af, c4d1: LDA $2a; AND #7
+c498: loaded from table at bc00 or bd00 (sending data to PPU, not code related)
+c537: PLA, pushed from c51e value from table at b460
+c559, c561, c567, c56f: far call thunks (set bank D, JSR, restore bank E)
+c5af, c5b7: far call thunk (set bank B, JSR, restore bank E)
+c628, c640: actually a helper function FUN_c628; takes bank from caller in A, sends data to PPU, restores to bank D on exit
+c66a: loaded from table at c697
+[many others omitted]
+f2d1: this is called by RESET at game start and sets bank E, strong indicator this should be the default bank for $8000. might be a good item for the hb6 epic if it's not already detected by the analyzer.
 
   Next session's shortest path
 
