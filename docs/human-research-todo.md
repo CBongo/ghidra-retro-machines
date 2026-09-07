@@ -75,6 +75,46 @@ Each is minutes of work and settles something specific. Highest value per unit e
       plausible over-read seed as well as a plausible helper. The answer decides whether this needs
       `grm-mej.3`-style machinery (shadow/stack) or is an honest decline.
 
+- [ ] **Is contra's `c146` (`LDY $07EC` / `JMP $C13F`) inside `FUN_c139`'s body, or a separate
+      restore routine with its own callers?** (`grm-mej.3` item 3.) **This decides whether that
+      item is even the right shape**, so it is worth answering before any code is written.
+
+      The item is scoped as *cross-block* memory forwarding and names contra as customer #1:
+      `C139 LDA $8000 / STA $07EC .. C146 LDY $07EC / JMP $C13F`, described as crossing blocks
+      within one function. The committed golden suggests otherwise — `contra.dump` shows **two**
+      helper functions with separate call sites (`c094`/`c0a2`/`c21b` resolve *via `FUN_c139`*,
+      `c0cb`/`c157` *via `FUN_c13f`*), and the byte arithmetic agrees: `LDA $8000` (3) +
+      `STA $07EC` (3) lands exactly on `c13f`, making `FUN_c139` a two-instruction prefix that
+      **falls through** into `FUN_c13f`.
+
+      If that reading is right, the store and the load are in **different functions**, connected
+      by the call graph and not by any control-flow path — no backward walk reaches from one to
+      the other however many block boundaries it may cross. And what `c146` restores is "whatever
+      bank was live the last time `c139` ran" (read via `LDA $8000`, the bank-identifying offset),
+      i.e. a runtime value, so naming one bank for it would be confidently wrong on every path but
+      one. The likely correct frame is then **cross-call save/restore pairing** — contra being
+      `SaveRestoreTrampolines.restoresEntryBank`'s idiom split across two functions rather than
+      bracketed inside one body — not a wider forwarding walk.
+
+      Full reasoning is on `grm-mej.3`'s 2026-09-07 comment. It is an inference from the golden
+      plus byte counts, **not** a listing read, which is exactly why it wants your eyes.
+
+- [ ] **blmaster: are `$D3`'s five writers really cross-function, and is `$DB` → `$D3` a save or a
+      request?** (`grm-mej.2` route (c), `grm-mej.3` item 3.) The same question as the contra one
+      above, on the other title item 3 names.
+
+      What is already established: `$D3` is written at `c251`, `e692`, `c9ba`, `e9bb` and `e9d5` —
+      five sites in five functions, **none containing a mechanism write** — and it feeds six of the
+      twelve call sites into `e61b`. `grm-mej.2`'s route (c) already types it as carrying **two
+      roles at one address**: as INPUT (a requested bank written before the switch: `c251`, `e692`,
+      `c9ba`) and as SAVE_SLOT (a copy of `$DB` stashed and written back later: `e9bb`, `e9d5`,
+      both `LDA $DB` / `STA $D3`).
+
+      What is not established is whether any of those writers reaches `e61b`'s read along an
+      intra-procedural path. If they are all cross-function like contra's, then blmaster does not
+      justify item 3 either, and both of item 3's named customers want pairing rather than
+      forwarding.
+
 - [ ] **What feeds the accumulator at zelda2 `FUN_ffc9`'s 4 call sites?** (`grm-nqxt`.) Same shape,
       smaller payoff — take it only if the megaman2 pair goes quickly. zelda2 is likewise untraced
       and has no dedicated bead.
