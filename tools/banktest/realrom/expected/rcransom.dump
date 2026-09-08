@@ -24,7 +24,6 @@ REALROM block W8000_M0_B6 8000-9fff overlay=true
 REALROM block W8000_M0_B7 8000-9fff overlay=true
 REALROM block W8000_M0_B8 8000-9fff overlay=true
 REALROM block W8000_M0_B9 8000-9fff overlay=true
-REALROM block W8000_M1 8000-9fff overlay=true
 REALROM block WA000 a000-bfff overlay=false
 REALROM block WA000_B0 a000-bfff overlay=true
 REALROM block WA000_B10 a000-bfff overlay=true
@@ -42,26 +41,10 @@ REALROM block WA000_B7 a000-bfff overlay=true
 REALROM block WA000_B8 a000-bfff overlay=true
 REALROM block WA000_B9 a000-bfff overlay=true
 REALROM block WC000 c000-dfff overlay=false
-REALROM block WC000_M1_B0 c000-dfff overlay=true
-REALROM block WC000_M1_B1 c000-dfff overlay=true
-REALROM block WC000_M1_B10 c000-dfff overlay=true
-REALROM block WC000_M1_B11 c000-dfff overlay=true
-REALROM block WC000_M1_B12 c000-dfff overlay=true
-REALROM block WC000_M1_B13 c000-dfff overlay=true
-REALROM block WC000_M1_B14 c000-dfff overlay=true
-REALROM block WC000_M1_B15 c000-dfff overlay=true
-REALROM block WC000_M1_B2 c000-dfff overlay=true
-REALROM block WC000_M1_B3 c000-dfff overlay=true
-REALROM block WC000_M1_B4 c000-dfff overlay=true
-REALROM block WC000_M1_B5 c000-dfff overlay=true
-REALROM block WC000_M1_B6 c000-dfff overlay=true
-REALROM block WC000_M1_B7 c000-dfff overlay=true
-REALROM block WC000_M1_B8 c000-dfff overlay=true
-REALROM block WC000_M1_B9 c000-dfff overlay=true
 REALROM block WE000 e000-ffff overlay=false
-REALROM count blocks.total 55
-REALROM count blocks.overlay 47
-REALROM count spaces.overlay 47
+REALROM count blocks.total 38
+REALROM count blocks.overlay 30
+REALROM count spaces.overlay 30
 REALROM count refs.intoOverlay 1417
 REALROM count refs.intoOverlay.retargeted 27
 REALROM count refs.intoOverlay.intraOverlay 1390

@@ -726,6 +726,38 @@ final class DescriptorSupport {
 	 * {@link LayoutPlan#varying()}.
 	 */
 	static LayoutPlan planWindows(JsonObject map, MessageLog log, String source) {
+		return planWindows(map, log, source, null);
+	}
+
+	/**
+	 * {@link #planWindows(JsonObject, MessageLog, String)} with the image's KNOWN mode, which
+	 * suppresses every other mode's window instances (bead {@code grm-ic5}, increment 1).
+	 * <p>
+	 * <b>What {@code liveMode} means, and it is stronger than "the mode field's value".</b> It is
+	 * non-null only when the mode was DETERMINED for this image -- resolved from the image by
+	 * {@code NesRomLoader.scanImageMode}, or stated by a curated per-game descriptor -- never when
+	 * it was merely assumed from {@code banking.initial_state}'s power-on constant. That
+	 * distinction is the whole ruling on grm-ic5: a determined mode licenses deleting the other
+	 * modes' blocks, a defaulted one does not, because the default describes t=0 and says nothing
+	 * about the rest of the program. MMC1 is the worked counterexample -- its mode-3 default is
+	 * hardware-correct at reset, yet drmario and tetris run mode 0 and reference the mode-0
+	 * overlays EXCLUSIVELY, so suppressing on that default would delete the very blocks their
+	 * references point into.
+	 * <p>
+	 * <b>Invariance is still decided against ALL layouts, deliberately.</b> A window identical
+	 * across every mode is hoisted to {@code invariant} (unqualified name) exactly as before, and
+	 * only the surviving mode's VARYING instances are emitted. So this increment moves block
+	 * COUNTS while leaving every block NAME alone -- MMC3's {@code WA000_B<n>} stays unqualified
+	 * and {@code W8000_M1_B<n>} keeps its qualifier. Collapsing a single surviving instance to an
+	 * unqualified name is the natural next step and is deliberately NOT done here, so that the
+	 * count change and the name change land as separate, separately reviewable diffs.
+	 * <p>
+	 * A {@code liveMode} matching no layout's {@code when:} suppresses nothing: the mode is
+	 * outside what the descriptor models, which is a descriptor/image mismatch rather than a
+	 * licence to delete every window.
+	 */
+	static LayoutPlan planWindows(JsonObject map, MessageLog log, String source,
+			Integer liveMode) {
 		List<PlannedWindow> invariant = new ArrayList<>();
 		List<PlannedWindow> varying = new ArrayList<>();
 
@@ -781,6 +813,12 @@ final class DescriptorSupport {
 			}
 			for (JsonObject layout : layoutObjs) {
 				int modeValue = layout.getAsJsonObject("when").get(modeField).getAsInt();
+				// grm-ic5: a KNOWN mode suppresses the others' instances. Note this filters the
+				// EMIT and not the invariance test above, which is what keeps hoisted windows
+				// unqualified -- see this method's javadoc.
+				if (liveMode != null && modeValue != liveMode && seenValues.contains(liveMode)) {
+					continue;
+				}
 				for (JsonElement lwe : layout.getAsJsonArray("windows")) {
 					JsonObject w = lwe.getAsJsonObject();
 					if (w.get("name").getAsString().equals(entry.getKey())) {

@@ -172,14 +172,14 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 	 * @return the initial state with the mode field replaced, or {@code resolvedInitialState}
 	 *         unchanged whenever the image does not clearly say otherwise
 	 */
-	private static Long imageResolvedMode(JsonObject map, Long resolvedInitialState, byte[] image,
-			MessageLog log, String mapPath) {
-		if (resolvedInitialState == null || image == null) {
-			return resolvedInitialState;
+	private static Integer scanImageMode(JsonObject map, byte[] image, MessageLog log,
+			String mapPath) {
+		if (image == null) {
+			return null;
 		}
 		JsonObject banking = map.getAsJsonObject("banking");
 		if (banking == null || !banking.has("mechanisms")) {
-			return resolvedInitialState;
+			return null;
 		}
 		JsonObject params = null;
 		for (JsonElement me : banking.getAsJsonArray("mechanisms")) {
@@ -190,7 +190,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 			}
 		}
 		if (params == null) {
-			return resolvedInitialState; // no mode field on this board -- nothing to resolve
+			return null; // no mode field on this board -- nothing to resolve
 		}
 		String modeName = params.get("mode_field").getAsString();
 		DescriptorSupport.StateField field =
@@ -198,7 +198,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 		if (field == null) {
 			log.appendMsg(mapPath + ": a mechanism names mode_field '" + modeName +
 				"', which is not a banking.state field; keeping the compiled initial_state");
-			return resolvedInitialState;
+			return null;
 		}
 		long start = params.get("start").getAsLong();
 		long end = params.get("end").getAsLong();
@@ -218,24 +218,48 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 			sites++;
 			votes.add(((image[i + 1] & 0xffL) & modeMask) >>> modeShift);
 		}
-		long mask = (1L << field.width()) - 1;
-		long current = (resolvedInitialState >>> field.lsb()) & mask;
 		if (sites < MIN_MODE_EVIDENCE_SITES || votes.size() != 1) {
 			if (sites > 0 && votes.size() > 1) {
-				log.appendMsg("banking.initial_state '" + modeName + "' left at " + current +
-					": the image's " + sites + " select writes disagree about it " + votes +
+				log.appendMsg("banking.initial_state '" + modeName + "' not resolved from the " +
+					"image: its " + sites + " select writes disagree about it " + votes +
 					", so the descriptor's compiled value stands");
 			}
-			return resolvedInitialState;
+			return null;
 		}
-		long vote = votes.iterator().next();
-		if (vote == current) {
-			return resolvedInitialState;
+		log.appendMsg("banking.initial_state '" + modeName + "' resolved to " +
+			votes.iterator().next() + " from the image (" + sites +
+			" select writes, all agreeing)");
+		return votes.iterator().next().intValue();
+	}
+
+	/**
+	 * Packs {@code mode} into {@code initialState}'s mode field. Separated from
+	 * {@link #scanImageMode} because the VERDICT and the PACKING have different consumers: the
+	 * packed state sets the home layout, while the verdict itself also answers "is this board's
+	 * mode KNOWN for this image", which {@code DescriptorSupport.planWindows} needs to decide
+	 * whether the other modes' overlay blocks may be suppressed (bead grm-ic5). Those are
+	 * genuinely different questions -- rcransom and megaman3 resolve mode 0, which EQUALS the
+	 * descriptor's compiled default, so the packed state does not change while the mode is
+	 * nonetheless known.
+	 */
+	private static Long applyMode(JsonObject map, Long initialState, int mode, MessageLog log,
+			String mapPath) {
+		if (initialState == null) {
+			return null;
 		}
-		log.appendMsg("banking.initial_state '" + modeName + "' resolved to " + vote +
-			" from the image (" + sites + " select writes, all agreeing; the compiled value is " +
-			current + ")");
-		return (resolvedInitialState & ~(mask << field.lsb())) | (vote << field.lsb());
+		JsonObject banking = map.getAsJsonObject("banking");
+		JsonObject params = null;
+		for (JsonElement me : banking.getAsJsonArray("mechanisms")) {
+			JsonObject candidate = me.getAsJsonObject().getAsJsonObject("params");
+			if (candidate != null && candidate.has("mode_field")) {
+				params = candidate;
+				break;
+			}
+		}
+		DescriptorSupport.StateField field = DescriptorSupport.findField(
+			DescriptorSupport.parseStateFields(map), params.get("mode_field").getAsString());
+		long mask = (1L << field.width()) - 1;
+		return (initialState & ~(mask << field.lsb())) | ((long) mode << field.lsb());
 	}
 
 	private static final int INES_HEADER_LEN = 16;
@@ -710,9 +734,21 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 			// DescriptorSupport.applyGameInitialStateHint's javadoc for the failure discipline.
 			// Image-resolved MODE field (bead grm-3fvj), folded in BEFORE the curated hint so a
 			// hand-checked per-game value always wins over this inference -- see
-			// imageResolvedMode's javadoc for why that ordering is the safe one.
-			initialState = imageResolvedMode(map, initialState,
-				readPrgImage(provider, header, log), log, board.mapPath());
+			// scanImageMode's javadoc for why that ordering is the safe one.
+			//
+			// liveMode is kept separately from initialState and means something STRONGER than
+			// "the mode field's value": it means the mode is KNOWN for this image rather than
+			// assumed from the descriptor's power-on constant. Only a known mode licenses
+			// suppressing the other modes' overlay blocks (bead grm-ic5's ruling), and the two
+			// are not the same test -- rcransom and megaman3 resolve mode 0, which equals the
+			// compiled default, so initialState does not move while the mode IS known. It stays
+			// null when the scan declines (too few sites, or a split vote), which is exactly that
+			// ruling's "indeterminate" branch and keeps every mode's blocks.
+			Integer liveMode =
+				scanImageMode(map, readPrgImage(provider, header, log), log, board.mapPath());
+			if (liveMode != null) {
+				initialState = applyMode(map, initialState, liveMode, log, board.mapPath());
+			}
 			if (gameDescriptor != null) {
 				initialState = DescriptorSupport.applyGameInitialStateHint(map, initialState,
 					gameDescriptor.doc(), gameDescriptor.gmapPath(), log);
@@ -725,7 +761,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 					" against the " + header.prgSize() + "-byte PRG image");
 			}
 			DescriptorSupport.LayoutPlan plan =
-				DescriptorSupport.planWindows(map, log, board.mapPath());
+				DescriptorSupport.planWindows(map, log, board.mapPath(), liveMode);
 
 			for (DescriptorSupport.PlannedWindow pw : plan.invariant()) {
 				realizeInvariantWindow(program, baseSpace, pw, fields, initialState, header,
