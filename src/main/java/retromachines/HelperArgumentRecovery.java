@@ -229,6 +229,36 @@ final class HelperArgumentRecovery {
 		// that reloads A from $0720. So this branch makes two attempts before giving up, in the
 		// order caller's-cell then helper's-own-constant, and both are strictly additive: it only
 		// ever runs where the register answer was already discarded.
+		// grm-jqt0: computed alongside the existing survival test, on the same register, rather
+		// than as a separate pass -- see PrologueOutcome's javadoc for why "does not survive" and
+		// "provably clobbered" are different questions with the same evidence. Zero cost when the
+		// argument DOES survive (short-circuits before the second call), and answers a question
+		// BoardBankAnalyzer needs regardless of which of the three fallback attempts below (if
+		// any) goes on to recover a value anyway -- this describes the REGISTER at the call site,
+		// not whether some other channel happened to compensate.
+		//
+		// NOTE THE DIFFERENT SPANS, which is load-bearing and was a bug in this bead's second
+		// increment (rcransom FUN_fed1/FUN_fe56 asserted "no inbound argument" about helpers that
+		// demonstrably take one). The survival test keeps prologueSegments, ending at firstSite,
+		// because that is the span its own callers' value recovery is defined over and widening it
+		// would change RECOVERED VALUES. The clobber PROOF uses clobberSegments, ending at
+		// helperValueSite -- the site where the value is actually CONSUMED, which for a
+		// select-data helper is switchSite and not firstSite (grm-67g). rcransom's FUN_fed1 is
+		// why: its firstSite is the MMC3 SELECT write STA $8000 at $fed8, while the caller's
+		// argument is read back stack-relative at $fedc (TSX / LDA $0102,X) and committed at
+		// $fee2. A span ending at firstSite stops BEFORE the reload and concludes, wrongly, that
+		// the register was clobbered for good.
+		//
+		// Widening only the PROOF's span is sound in one direction and that is the direction that
+		// matters: more walked instructions can only reveal a restore, clear straightLine, or trip
+		// the stack-page tripwire -- every one of which turns DEFINITELY_CLOBBERED into
+		// INDETERMINATE. It cannot manufacture a clobber proof that the shorter span did not
+		// already support, because this expression is guarded by the survival test above and so is
+		// only ever evaluated where the argument was already known not to survive to firstSite.
+		boolean definitelyNoInboundArgument =
+			(helper.strategy() == null || helper.strategy().consumesHelperArgument()) &&
+				!argumentSurvivesPrologue(program, prologueSegments(helper), reg) &&
+				argumentDefinitelyClobbered(program, clobberSegments(helper), reg);
 		if ((helper.strategy() == null || helper.strategy().consumesHelperArgument()) &&
 			!argumentSurvivesPrologue(program, prologueSegments(helper), reg)) {
 			Address inbound = inboundArgumentCell(program, helper, reg);
@@ -250,7 +280,7 @@ final class HelperArgumentRecovery {
 				: program.getListing().getInstructionAt(helper.switchSite());
 		if (helper.strategy() == null || switchSite == null) {
 			return new CallEffect(position(local, helper.lsb(), helper.effectMask()),
-				helper.effectMask());
+				helper.effectMask(), local.knownMask() != 0, definitelyNoInboundArgument);
 		}
 		// helper.entry(), not function().getEntryPoint(): the mini-inline scan must stop where
 		// control actually arrived. For a mid-body entry those differ, and stopping at the
@@ -277,7 +307,7 @@ final class HelperArgumentRecovery {
 		BankState positionedValue = position(deposit.value(), helper.lsb(), helper.effectMask());
 		int positionedOwnedMask = (deposit.ownedMask() << helper.lsb()) & helper.effectMask();
 		return new CallEffect(positionedValue, positionedOwnedMask,
-			primary.value().knownMask() != 0);
+			primary.value().knownMask() != 0, definitelyNoInboundArgument);
 	}
 
 	/**
@@ -566,14 +596,86 @@ final class HelperArgumentRecovery {
 		argumentCells.removeIf(cell -> StackFloor.mayAliasStack(program, cell));
 	}
 
+	/**
+	 * The three-way outcome of the prologue walk {@link #argumentSurvivesPrologue} performs,
+	 * exposing WHY a "does not survive" answer was reached (bead grm-jqt0). The plain boolean
+	 * collapses {@code DEFINITELY_CLOBBERED} and {@code INDETERMINATE} into the same "false",
+	 * which is exactly right for {@link #recoverCallArgument}'s own gating (either way, do not
+	 * trust the caller's register) but wrong for {@code BoardBankAnalyzer}'s warning text: a
+	 * call site whose helper genuinely never receives an argument in that register is not a gap
+	 * in this analyzer, and must not be reported as one.
+	 * <ul>
+	 * <li>{@code SURVIVES} -- unchanged meaning, the caller's byte reaches {@code firstSite}.</li>
+	 * <li>{@code DEFINITELY_CLOBBERED} -- the walk ran the WHOLE way to {@code firstSite} with
+	 * {@code straightLine} true throughout (no branch, no unmodelled stack-pointer write, no
+	 * unpaired {@code PLA}/{@code PLP} -- see below for why that flag is exactly the needed
+	 * witness) and still ended with {@code holdsArgument} false. Every write to {@code reg} this
+	 * walk saw was therefore evaluated under fully trustworthy save/restore accounting, so a
+	 * "does not survive" here is a PROOF, not a guess: {@code reg} is provably redefined from
+	 * something other than the caller's value on every path this prologue can take.</li>
+	 * <li>{@code INDETERMINATE} -- everything else: a disassembly gap, a call, running off the
+	 * end of the space, an unaskable register, a malformed span, OR a completed walk whose
+	 * {@code straightLine} went false somewhere along the way. That last case matters: once
+	 * {@code straightLine} is false, {@code holdsArgument}'s own formula
+	 * ({@code straightLine && from != null && argumentCells.contains(from)}) forces every
+	 * SUBSEQUENT write to read as a loss regardless of what it actually reloads, which is the
+	 * correct SAFE answer for "does it survive" but would be a FALSE claim of "provably
+	 * clobbered" -- the truth after a desync is "unknown", not "definitely something else".</li>
+	 * </ul>
+	 * <b>Why {@code straightLine}'s final value is exactly the needed witness, with no separate
+	 * tracking added.</b> The field is monotonic in this method -- every assignment in the walk
+	 * sets it to {@code false}; nothing ever sets it back to {@code true}. So "true at the end"
+	 * already means "never went false", which is precisely "every write-detection this walk made
+	 * ran under conditions the save/restore model fully trusted". Reusing it rather than adding a
+	 * parallel {@code sawBranch}-style flag is deliberate: two variables tracking the same
+	 * question could drift, and this bead's own instruction was to reuse the EXISTING
+	 * distinction rather than invent a parallel one.
+	 * <p>
+	 * <b>Verified against this bead's three named cases.</b> zelda2's {@code FUN_ffc9}
+	 * ({@code LDA $0769} as the very first instruction, reg {@code 'A'}): the load is a plain,
+	 * unconditional write with an {@code argumentReloadSource} of {@code $0769}, a cell nothing
+	 * upstream of this walk ever stored to, so {@code holdsArgument} goes false right there,
+	 * {@code straightLine} never moves, and the walk (a short, branch-free LDA/STA chain) reaches
+	 * {@code firstSite} cleanly -- {@code DEFINITELY_CLOBBERED}. Contra's {@code FUN_c139}
+	 * (falls into {@code FUN_c13f}, which takes its argument in {@code Y}) touches only {@code A};
+	 * asked with {@code reg == 'Y'}, {@code writesRegister(instr, Y)} is never true, so
+	 * {@code holdsArgument} for Y stays true the entire way -- {@code SURVIVES}, unaffected by
+	 * this refinement. Castlevania 2's {@code FUN_c183}/{@code c185}/{@code c187} chain
+	 * ({@code STA $1C} then {@code LDA $1C}, evaluated together over the FULL composed prologue,
+	 * exactly as {@link #recoverCallArgument} already does via {@link #prologueSegments}): the
+	 * store records {@code $1C} in {@code argumentCells} and the later load recognizes it as a
+	 * restore, so {@code holdsArgument} stays true and the outcome is {@code SURVIVES} -- never
+	 * {@code DEFINITELY_CLOBBERED}, which is exactly why this predicate must be evaluated on the
+	 * helper's OWN fully-resolved model (as {@link #recoverCallArgument} does) and never on one
+	 * wrapper layer's isolated body in isolation from the layers around it.
+	 */
+	enum PrologueOutcome {
+		SURVIVES, DEFINITELY_CLOBBERED, INDETERMINATE
+	}
+
 	static boolean argumentSurvivesPrologue(Program program, Address entry, Address firstSite,
 			char reg) {
+		return prologueOutcome(program, entry, firstSite, reg) == PrologueOutcome.SURVIVES;
+	}
+
+	/**
+	 * Whether {@code reg}'s value at {@code firstSite} is PROVABLY not the caller's, over the
+	 * single span {@code [entry, firstSite)} -- see {@link PrologueOutcome#DEFINITELY_CLOBBERED}
+	 * for exactly what that proof requires.
+	 */
+	static boolean argumentDefinitelyClobbered(Program program, Address entry, Address firstSite,
+			char reg) {
+		return prologueOutcome(program, entry, firstSite, reg) == PrologueOutcome.DEFINITELY_CLOBBERED;
+	}
+
+	private static PrologueOutcome prologueOutcome(Program program, Address entry,
+			Address firstSite, char reg) {
 		if (entry == null || firstSite == null || entry.compareTo(firstSite) > 0) {
-			return false;
+			return PrologueOutcome.INDETERMINATE;
 		}
 		Register register = program.getLanguage().getRegister(String.valueOf(reg));
 		if (register == null) {
-			return false; // cannot ask the question -> do not assume the favorable answer
+			return PrologueOutcome.INDETERMINATE; // cannot ask the question -> not a proof either way
 		}
 		Register stackPointer = program.getCompilerSpec().getStackPointer();
 		Listing listing = program.getListing();
@@ -594,11 +696,35 @@ final class HelperArgumentRecovery {
 		// the stack pointer in a way this does not model, and by any non-fall-through flow --
 		// see the javadoc's soundness note.
 		boolean straightLine = true;
+		// Whether this walk saw an absolute-indexed access whose base lies in the stack page
+		// (bead grm-jqt0, third increment -- the M15/grm-mu7 hazard in a THIRD form, found on
+		// rcransom's FUN_fed1/FUN_fe56). TSX + LDA $0100+n,X is a stack-relative reload: it reads
+		// the caller's argument back off the stack WITHOUT a PLA, which is exactly the shape this
+		// walk's save/restore model (PHA/PLA/PHP/PLP only) does not recognize. Left unguarded,
+		// {@code holdsArgument} goes false at the {@code LDA} (a plain write to {@code reg} whose
+		// {@code argumentReloadSource} is not a cell this walk tracked) with {@code straightLine}
+		// still true -- exactly {@link PrologueOutcome#DEFINITELY_CLOBBERED}'s signature, and
+		// WRONG: {@code FUN_fed1} demonstrably does take the argument, at {@code $fee2}
+		// ({@code r6 = A*2}) and {@code $fef5} ({@code r7 = A*2+1}), both already documented at
+		// {@link BankSwitchStrategy}'s {@code foldDeposits} javadoc.
+		// <p>
+		// Deliberately NOT an attempt to identify the matching {@code TSX} and recover the actual
+		// value the way {@code StoredValueScanner.stackRelativePush} does for value recovery --
+		// that is grm-mej.3/grm-4bgh's job. This is a much blunter, purely syntactic tripwire:
+		// ANY absolute-indexed access (load or store, either register the walk is asked about or
+		// not) whose base falls in {@code $0100-$01FF} anywhere in the walked span downgrades a
+		// would-be {@code DEFINITELY_CLOBBERED} to {@code INDETERMINATE} -- costing only the OLD
+		// wording ("could not be recovered"), never a wrong claim. Blunt is correct here: a false
+		// trigger is free, a missed one ships a false "no argument" statement.
+		boolean sawStackRelativeAccess = false;
 		Address cursor = entry;
 		while (cursor.compareTo(firstSite) < 0) {
 			Instruction instr = listing.getInstructionAt(cursor);
 			if (instr == null || instr.getFlowType().isCall()) {
-				return false;
+				return PrologueOutcome.INDETERMINATE;
+			}
+			if (isStackPageIndexedAccess(instr)) {
+				sawStackRelativeAccess = true;
 			}
 			boolean modelled = false;
 			if (reg == 'A') {
@@ -685,10 +811,49 @@ final class HelperArgumentRecovery {
 			}
 			cursor = instr.getMaxAddress().next();
 			if (cursor == null) {
-				return false; // ran off the end of the space before reaching firstSite
+				return PrologueOutcome.INDETERMINATE; // ran off the end before reaching firstSite
 			}
 		}
-		return cursor.equals(firstSite) && holdsArgument;
+		if (!cursor.equals(firstSite)) {
+			return PrologueOutcome.INDETERMINATE; // defensive; the loop bound should prevent this
+		}
+		if (holdsArgument) {
+			return PrologueOutcome.SURVIVES;
+		}
+		// holdsArgument is false. That is a PROOF of clobber only if straightLine held for the
+		// WHOLE walk AND no stack-relative reload was seen anywhere in it -- see
+		// PrologueOutcome's javadoc for the straightLine argument and sawStackRelativeAccess's
+		// declaration above for the third hazard (rcransom's FUN_fed1/FUN_fe56).
+		return straightLine && !sawStackRelativeAccess ? PrologueOutcome.DEFINITELY_CLOBBERED
+				: PrologueOutcome.INDETERMINATE;
+	}
+
+	/**
+	 * Whether {@code instr} is an absolute-indexed access (load or store, any register) whose
+	 * base address lies in the stack page {@code $0100-$01FF} -- the syntactic shape of a
+	 * {@code TSX} / {@code LDA $0100+n,X} stack-relative reload, without attempting to confirm
+	 * the {@code TSX} or recover the value (that is {@code StoredValueScanner.stackRelativePush}
+	 * and {@code findMatchingPush}'s job, deliberately not reused here -- see
+	 * {@code sawStackRelativeAccess}'s declaration in {@link #prologueOutcome} for why blunt is
+	 * the correct choice for THIS caller).
+	 * <p>
+	 * Reuses {@link LoopIdioms#indexedBase}, which already returns {@code null} for anything not
+	 * indexed (a plain absolute operand, an accumulator-form instruction, immediate, etc.) --
+	 * this method adds only the page-range test, the same {@code $0100-$01FF} bound
+	 * {@code StoredValueScanner.stackRelativePush} and {@link StackFloor} use elsewhere in this
+	 * area, so the "what counts as the stack page" answer is asked of one place, not three.
+	 * Deliberately not narrowed to loads, or to X-indexing, or to {@code reg}: any indexed touch
+	 * of that page is reason enough to distrust a clobber conclusion for this call, since the
+	 * value question this exists to protect is "could the argument be reachable via the stack
+	 * at all", not "is THIS particular instruction the reload".
+	 */
+	private static boolean isStackPageIndexedAccess(Instruction instr) {
+		Address base = LoopIdioms.indexedBase(instr);
+		if (base == null) {
+			return false;
+		}
+		long offset = base.getOffset();
+		return offset >= StackFloor.STACK_PAGE && offset <= StackFloor.STACK_PAGE + 0xFF;
 	}
 
 	/**
@@ -860,6 +1025,28 @@ final class HelperArgumentRecovery {
 	}
 
 	/**
+	 * Whether {@code reg}'s value is PROVABLY not the caller's by the end of ANY segment of
+	 * {@code helper}'s prologue (bead grm-jqt0). Unlike {@link #argumentSurvivesPrologue(Program,
+	 * List, char)}'s AND-of-segments, one segment reporting
+	 * {@link PrologueOutcome#DEFINITELY_CLOBBERED} settles the WHOLE list on its own: each
+	 * segment's walk starts by ASSUMING {@code holdsArgument} true at its own {@code from} (see
+	 * {@link #prologueOutcome}), which is exactly "if the caller's value were still present
+	 * entering this segment, does this segment's own code preserve it" -- an unconditional
+	 * overwrite proven within one segment erases whatever was there before REGARDLESS of what an
+	 * earlier or later segment's own answer is, so it needs no help from its neighbours to be a
+	 * sound proof. An empty list, like the boolean form, proves nothing either way.
+	 */
+	static boolean argumentDefinitelyClobbered(Program program, List<PrologueSegment> segments,
+			char reg) {
+		for (PrologueSegment segment : segments) {
+			if (argumentDefinitelyClobbered(program, segment.from(), segment.to(), reg)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
 	 * The stretches of code a call into {@code helper} runs before its mechanism reads the
 	 * argument: one span for an ordinary helper, two for a call-edge wrapper.
 	 * <p>
@@ -884,6 +1071,51 @@ final class HelperArgumentRecovery {
 		}
 		return List.of(new PrologueSegment(helper.entry(), helper.relay().callSite()),
 			new PrologueSegment(helper.relay().calleeEntry(), helper.firstSite()));
+	}
+
+	/**
+	 * {@link #prologueSegments}, but bounded by {@link #helperValueSite} instead of
+	 * {@code firstSite} -- the span a CLOBBER PROOF must cover, as opposed to the span value
+	 * recovery is defined over (bead grm-jqt0, third increment).
+	 * <p>
+	 * <b>Why the two spans differ.</b> {@code firstSite} is where this helper's mechanism first
+	 * WRITES; {@link #helperValueSite} is where it READS the value it commits, and for a
+	 * select-data helper those are different instructions -- MMC3's {@code $8000} register-select
+	 * write and its {@code $8001} bank write, the same distinction
+	 * {@link BankSwitchStrategy#suppliesHelperValueAtFirstSite} exists to express (grm-67g). To
+	 * prove the caller's byte never reaches the mechanism, the walk has to cover everything that
+	 * runs before the mechanism READS -- otherwise a reload sitting between the two writes is
+	 * invisible to it.
+	 * <p>
+	 * <b>The case that forced this.</b> rcransom's {@code FUN_fed1} pushes the caller's A, reuses
+	 * the register as scratch for the select write at {@code $fed8} (its {@code firstSite}), then
+	 * reads the argument back off the stack at {@code $fedc} ({@code TSX} / {@code LDA $0102,X})
+	 * and commits it at {@code $fee2}. Bounded by {@code firstSite} the walk stops at {@code $fed8}
+	 * and reports a clobber; bounded by {@code helperValueSite} it reaches {@code $fedc}, trips the
+	 * stack-page tripwire, and correctly declines to claim there is no argument. {@code FUN_fe56}
+	 * is the same shape for two stack-passed arguments. {@code BankSwitchStrategy}'s
+	 * {@code foldDeposits} javadoc already documented that {@code FUN_fed1} takes an argument.
+	 * <p>
+	 * <b>Deliberately NOT used by {@link #argumentSurvivesPrologue}.</b> That predicate's span is
+	 * part of the contract its callers' value recovery is built on, and
+	 * {@link HelperDiscovery#findCallEdgeWrappers} admits wrappers with it; widening it would
+	 * change recovered VALUES and counts, which this bead must not do. This span feeds only the
+	 * clobber proof, whose sole consumer is the WORDING {@code BoardBankAnalyzer} selects.
+	 * <p>
+	 * Falls back to {@code firstSite} when {@link #helperValueSite} has nothing better to offer,
+	 * so a helper whose model carries no {@code switchSite} behaves exactly as before.
+	 */
+	private static List<PrologueSegment> clobberSegments(HelperModel helper) {
+		Address valueSite = helperValueSite(helper);
+		if (valueSite == null || helper.firstSite() == null ||
+			valueSite.compareTo(helper.firstSite()) < 0) {
+			return prologueSegments(helper);
+		}
+		if (helper.relay() == null) {
+			return List.of(new PrologueSegment(helper.entry(), valueSite));
+		}
+		return List.of(new PrologueSegment(helper.entry(), helper.relay().callSite()),
+			new PrologueSegment(helper.relay().calleeEntry(), valueSite));
 	}
 
 	/**
@@ -1345,18 +1577,34 @@ final class HelperArgumentRecovery {
 	 * {@link BankDataflowEngine#overwrite}, distinct from {@code state.knownMask()} for exactly the
 	 * reason {@link BankSwitchStrategy.HelperDeposit} documents (a touched-but-unresolved bit is owned
 	 * and poisoned; an untouched bit is neither).
+	 * <p>
+	 * {@code noInboundArgument} (bead grm-jqt0) is true when {@link #recoverCallArgument} proved
+	 * -- via {@link #argumentDefinitelyClobbered}, not merely a failed
+	 * {@link #argumentSurvivesPrologue} -- that the register this helper reads is REDEFINED by
+	 * the helper's own prologue on every path, independent of whatever the caller passed. It says
+	 * nothing about whether {@code argumentResolved} ended up true anyway through one of the
+	 * other two recovery channels (a caller-side memory cell, or a constant the helper's own body
+	 * supplies): those are orthogonal questions, and a consumer of this field cares about it only
+	 * when {@code argumentResolved} is false, which is exactly {@code BoardBankAnalyzer}'s use.
 	 */
-	record CallEffect(BankState state, int ownedMask, boolean argumentResolved) {
+	record CallEffect(BankState state, int ownedMask, boolean argumentResolved,
+			boolean noInboundArgument) {
 
 		/**
 		 * A call effect whose {@code argumentResolved} follows from {@code state} alone -- the
 		 * pre-grm-4bgh.5 equivalence, for every path that produces a single undifferentiated
 		 * deposit. Only {@link #foldDeposits}' multi-site path needs to say something different,
 		 * because only there can a call know something (a helper-body constant) while still
-		 * having failed to recover the caller's argument.
+		 * having failed to recover the caller's argument. {@code noInboundArgument} defaults
+		 * false here: every caller of this short form is either a verified no-op
+		 * ({@link #recoverCallArgument}'s {@code restoringTrampolines} branch), the
+		 * multi-mechanism-disagreement degrade ({@code helper.argReg() == null}, which has no
+		 * register to have proved a clobber of), or a direct dataflow switch that never runs the
+		 * helper-argument machinery at all ({@code BankDataflowEngine}'s {@code constState}
+		 * branch) -- none of which this bead's proof applies to.
 		 */
 		CallEffect(BankState state, int ownedMask) {
-			this(state, ownedMask, state.knownMask() != 0);
+			this(state, ownedMask, state.knownMask() != 0, false);
 		}
 	}
 

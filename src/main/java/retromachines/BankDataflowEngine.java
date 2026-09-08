@@ -288,7 +288,7 @@ final class BankDataflowEngine {
 						callSwitches.put(addr, new CallSwitch(helperLabel(program, helper),
 							callEffect.state(),
 							overwrite(mechIn, callEffect.state(), callEffect.ownedMask()),
-							callEffect.argumentResolved()));
+							callEffect.argumentResolved(), callEffect.noInboundArgument()));
 					}
 				}
 			}
@@ -524,9 +524,17 @@ final class BankDataflowEngine {
 	 * fields as assumed, exactly as it always did. For a single-field helper (owned == the
 	 * whole mechanism window) {@code stateAfter == effect}, so the historical path is
 	 * unchanged byte-for-byte.
+	 * <p>
+	 * {@code noInboundArgument} is carried straight through from
+	 * {@link HelperArgumentRecovery.CallEffect#noInboundArgument} (bead grm-jqt0): a helper whose
+	 * OWN prologue provably redefines the argument register before the caller's value could ever
+	 * reach the mechanism, e.g. zelda2's {@code FUN_ffc9} ({@code LDA $0769}, falling into the
+	 * real setter {@code FUN_ffcc}). {@code BoardBankAnalyzer} reads it only when
+	 * {@code argumentResolved} is false, to tell that HONEST case apart from a call site whose
+	 * argument plausibly was statically determinable and simply was not recovered.
 	 */
 	record CallSwitch(String helperName, BankState effect, BankState stateAfter,
-			boolean argumentResolved) {}
+			boolean argumentResolved, boolean noInboundArgument) {}
 
 	record DataflowResult(Map<Address, BankState> stateIn,
 			Map<Address, SwitchResult> switchResults, Map<Address, CallSwitch> callSwitches) {}

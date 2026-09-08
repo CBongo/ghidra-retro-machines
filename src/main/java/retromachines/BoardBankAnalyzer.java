@@ -464,17 +464,57 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				// that says the CALLER's argument was never recovered.
 				BankState annotState = callSwitch.effect().knownMask() == 0
 						? callSwitch.effect() : callSwitch.stateAfter();
-				// ANALYZER_LIMIT, deliberately and unconditionally. This is the CALL SITE, where
-				// the argument plausibly IS statically determinable and we simply did not get it
-				// -- the opposite of the helper-body case, which is honest. Classifying a failed
-				// call-site recovery as honest would hide the single largest known gap (grm-hum,
-				// grm-8iy); rcransom alone has 15 such sites naming one helper.
+				// ANALYZER_LIMIT, unconditionally, still (bead grm-jqt0's final ruling --
+				// superseding this method's own first cut at the bead, which is why this
+				// paragraph is worth reading rather than skimming past). This IS the call site
+				// where the bank remains genuinely unknown after the call returns, and that
+				// unknown-ness is a real, plausibly-fixable gap -- so it STAYS a WARNING. What
+				// changes is only the WORDING for one sub-case, because the stock wording is
+				// FALSE for it.
+				//
+				// The sub-case: {@code callSwitch.noInboundArgument()},
+				// {@link HelperArgumentRecovery#argumentDefinitelyClobbered}'s syntactic proof
+				// that the callee's own prologue redefines the mechanism's register from
+				// something other than whatever the caller left there, on every path. zelda2's
+				// four {@code FUN_ffc9} call sites are the motivating case: "whose bank argument
+				// could not be recovered at this call site" is a lie there, because there IS no
+				// argument in play, provably -- A is dead on every path. But that does NOT make
+				// the site's outcome any less unknown. After the call, the bank is whatever
+				// {@code $0769} (zelda2) or the analogous shadow cell holds, and this analyzer
+				// has no idea what that is. That is exactly the class of gap grm-mej's shadow
+				// read-back epic exists to close, so it stays counted as one.
+				//
+				// zelda2's FUN_ffc9 and Bionic Commando's FUN_dca8 (LDA $65, the M13/M14
+				// fixture's real-world twin) are the SAME CASE, and this bead deliberately does
+				// NOT distinguish them, despite zelda2's $0769 having an external citation
+				// (Data Crystal) that $65 lacks. That citation answers "is this a real,
+				// understood hardware idiom" -- interesting, and grm-yflf's business -- but it
+				// answers nothing about whether THIS analyzer can resolve the byte, which is the
+				// only question this ValueStop machinery is allowed to ask. grm-mu7's and
+				// M13/M14's framing of bionic's shadow read as "our limitation, not the
+				// analyzer's" is UPHELD, not superseded, by this change: the fix here is a
+				// wording correction, not a reclassification, so the warning both cases already
+				// carried is unchanged.
+				//
+				// Consequence, load-bearing: the WARNING CENSUS grm-hum and grm-8iy depend on is
+				// unchanged by construction. No site's warning/note status moves; rcransom's 15
+				// argument-recovery sites naming one helper are exactly as warned as before.
+				// zelda2's four sites are expected to stop warning LATER, under fix (B)/grm-yflf,
+				// when the relational restore annotation (e.g. "restores the bank from $0769")
+				// gives them a real, resolved answer -- not here, and not by softening the stop
+				// reason.
+				String warningText = callSwitch.noInboundArgument()
+						? "Bank state becomes unknown here: call to bank-switch helper " +
+							callSwitch.helperName() + ", which takes NO INBOUND ARGUMENT -- its " +
+							"own prologue redefines the register its mechanism reads, so there " +
+							"is no caller value to recover. The bank is supplied inside the " +
+							"helper (typically from a RAM shadow) and is not resolved here."
+						: "Bank state becomes unknown here: call to bank-switch helper " +
+							callSwitch.helperName() + " whose bank argument could not be " +
+							"recovered at this call site";
 				BankAnnotationAdapter.Marked marked = BankAnnotationAdapter.annotateOrWarn(this,
 					program, listing, addr, annotState, board, bankUniverse,
-					callSwitch.helperName(),
-					"Bank state becomes unknown here: call to bank-switch helper " +
-						callSwitch.helperName() + " whose bank argument could not be " +
-						"recovered at this call site",
+					callSwitch.helperName(), warningText,
 					BankSwitchStrategy.ValueStop.ANALYZER_LIMIT, provenance,
 					!callSwitch.argumentResolved());
 				if (marked == BankAnnotationAdapter.Marked.WARNED) {
