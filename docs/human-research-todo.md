@@ -53,6 +53,37 @@ disassembly item — your own database sidesteps that licensing question entirel
 example of the C64→1541 upload case `docs/smc-survey.md:164` names as the sibling of the
 SPC700 problem.
 
+- [ ] **rcproam: is its mixed PRG mode a real runtime switch, or just the MMC1 reset followed by a
+      one-way move to mode 0?** (`grm-ic5` / `grm-tsii`; see also `grm-5l14`, the MMC1 reset-idiom
+      bead, and `grm-q1bi` for its separate re-bless.) Raised 2026-09-08 while ruling on `grm-ic5`:
+      rcproam is the ONLY title in the pinned set that resolves more than one PRG mode, which makes
+      it the sole occupant of that ruling's "known to change" branch — and how much special handling
+      that branch needs is currently unknown because nobody has looked at what it actually does.
+
+      **The evidence, and it already points somewhere.** rcproam resolves `prg_mode=0` at 8 sites
+      and `prg_mode=3` at 2. The two mode-3 sites are `ff85` and `ffea` (the latter `via FUN_ff83`),
+      and BOTH read `mirroring=0, prg_mode=3, prg_bank=0` — which is exactly MMC1's hardware reset
+      state, since the control register really does reset with bits 2-3 set. Meanwhile every one of
+      its 25 sampled overlay references targets `W8000_M0` and nothing else — identical to drmario
+      and tetris, which run mode 0 outright.
+
+      **So the hypothesis to confirm or kill is narrow:** `ff85`/`ffea` are reset/init code, the
+      game resets to mode 3 as all MMC1 games do and then moves to mode 0 for good. If that holds,
+      rcproam is NOT a runtime mode-switcher at all — it is a mode-0 title like the other two, its
+      "mixed" reading is an artifact of counting the reset, and it can take an ordinary per-game
+      yaml naming mode 0. If instead the game genuinely returns to mode 3 during play, it needs
+      excluding from suppression by name and `grm-ic5`'s keep-everything branch stays populated.
+
+      **Why a human:** it is a few minutes with a disassembler on two known addresses (are `ff85`
+      and `ffea` reached only from RESET, and does anything switch back to mode 3 later?), versus a
+      build/measure cycle per question for an agent. **Caution:** rcproam is one of the five
+      documented BISTABLE rows (see the `realrom-current-fails` bd memory), so its counts move run
+      to run — do not read that jitter as mode evidence.
+
+      **The answer decides `grm-ic5` sequencing**, which is why it is worth settling before the
+      MMC1 half of that bead: it is the difference between "three mode-0 titles need yamls" and
+      "two need yamls and one needs a genuine exception mechanism".
+
 ---
 
 ## 2. Def-use passes on untraced titles
