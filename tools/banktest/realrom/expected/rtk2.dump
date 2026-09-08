@@ -5,6 +5,10 @@ REALROM prgsha256 acd5616e511edca702307de4b020293d89d36a1b095feb03b1c64bb0cce995
 REALROM map machines/nes-mmc5.map
 REALROM placement NONE
 REALROM block APU_IO 4000-401f overlay=false
+REALROM block MMC5_CHR_HI 5130-5130 overlay=false
+REALROM block MMC5_CHR_REGS 5120-512b overlay=false
+REALROM block MMC5_EXRAM 5c00-5fff overlay=false
+REALROM block MMC5_MISC_REGS 5200-520a overlay=false
 REALROM block MMC5_REGS 5100-5117 overlay=false
 REALROM block PPU_REGS 2000-2007 overlay=false
 REALROM block PRG_RAM 6000-7fff overlay=false
@@ -329,7 +333,7 @@ REALROM block WE000_M3_B6 e000-ffff overlay=true
 REALROM block WE000_M3_B7 e000-ffff overlay=true
 REALROM block WE000_M3_B8 e000-ffff overlay=true
 REALROM block WE000_M3_B9 e000-ffff overlay=true
-REALROM count blocks.total 325
+REALROM count blocks.total 329
 REALROM count blocks.overlay 316
 REALROM count spaces.overlay 316
 REALROM count refs.intoOverlay 0
