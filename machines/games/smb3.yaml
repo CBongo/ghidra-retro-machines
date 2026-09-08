@@ -1,13 +1,25 @@
 # Curated per-game descriptor (title tier). Compiled to data/games/smb3.gmap.
 # docs/per-game-descriptors-design.md; first increment, bead grm-hb6.12.
 #
-# WHY THIS HINT EXISTS (grm-3fvj). machines/nes-mmc3.yaml's banking.initial_state assumes
-# prg_mode: 0 at power-on -- a conventional, honest guess, since MMC3's register contents are
-# genuinely undefined at reset. But this cartridge's own init code sets bank-select bit 6
-# (PRG mode) unconditionally, so at runtime $8000 holds the FIXED bank and $C000 holds the
-# switchable R6 bank -- the reverse of the board descriptor's mode-0 assumption. Recording that
-# fact here makes the loader's home-in-base layout (which windows become base blocks) match
-# what the ROM actually runs, instead of the board's power-on default.
+# WHY THIS FILE HAS NO banking: SECTION ANY MORE (grm-3fvj, 2026-09-08). It used to carry
+# `banking: initial_state: { prg_mode: 1 }`, because machines/nes-mmc3.yaml assumes prg_mode 0
+# at power-on -- a conventional, honest guess, since MMC3 register contents are genuinely
+# undefined at reset -- while this cartridge's init sets bank-select bit 6 unconditionally and
+# so runs PRG mode 1. That hint is now REDUNDANT: NesRomLoader.imageResolvedMode derives the
+# same fact from the image itself, and smb3 is the strongest witness in the corpus for it (69 of
+# its 74 $8000 writes are LDA #imm, every one with bit 6 set). Verified by deleting the hint and
+# re-running the row: smb3's real-ROM golden still matches byte for byte.
+#
+# THE FILE IS KEPT DELIBERATELY, as the per-game tier's worked exemplar -- identity (both hash
+# forms) and provenance, which is what docs/per-game-descriptors-design.md documents and what
+# grm-hb6.12 shipped. Deleting it would leave that tier with no live example. A descriptor with
+# no banking: section is valid; GameCompiler.buildBanking simply emits none. Do NOT "fix" this
+# by adding an empty banking.initial_state -- that is an error ("present but names no fields").
+#
+# If a future change makes the image scan decline on this ROM (it requires at least 4 agreeing
+# LDA #imm/STA sites and unanimity), the hint can come straight back: it is one line, and the
+# provenance below still records the hand pass that established the fact.
+
 schema: 2
 
 game:
@@ -27,9 +39,3 @@ game:
   provenance: "owner's hand pass over the pinned smb3 real-ROM row, 2026-09-07 (grm-3fvj): the
     $8000 bank-select write sets bit 6 (PRG mode) at every observed occurrence, i.e. this ROM
     runs MMC3 PRG mode 1 from init, not the board descriptor's mode-0 power-on convention."
-
-banking:
-  # A field-name map, never a packed integer -- the game tier must not know the board's bit
-  # layout (docs/per-game-descriptors-design.md, bead grm-hb6.12). Packed at load time against
-  # nes_mmc3's own banking.state field tuple.
-  initial_state: { prg_mode: 1 }

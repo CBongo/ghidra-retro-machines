@@ -9,6 +9,7 @@ REALROM block PPU_REGS 2000-2007 overlay=false
 REALROM block PRG_RAM 6000-7fff overlay=false
 REALROM block RAM 0000-07ff overlay=false
 REALROM block W8000 8000-9fff overlay=false
+REALROM block W8000_M0_B0 8000-9fff overlay=true
 REALROM block W8000_M0_B1 8000-9fff overlay=true
 REALROM block W8000_M0_B10 8000-9fff overlay=true
 REALROM block W8000_M0_B11 8000-9fff overlay=true
@@ -40,7 +41,6 @@ REALROM block W8000_M0_B6 8000-9fff overlay=true
 REALROM block W8000_M0_B7 8000-9fff overlay=true
 REALROM block W8000_M0_B8 8000-9fff overlay=true
 REALROM block W8000_M0_B9 8000-9fff overlay=true
-REALROM block W8000_M1 8000-9fff overlay=true
 REALROM block WA000 a000-bfff overlay=false
 REALROM block WA000_B0 a000-bfff overlay=true
 REALROM block WA000_B10 a000-bfff overlay=true
@@ -74,7 +74,7 @@ REALROM block WA000_B7 a000-bfff overlay=true
 REALROM block WA000_B8 a000-bfff overlay=true
 REALROM block WA000_B9 a000-bfff overlay=true
 REALROM block WC000 c000-dfff overlay=false
-REALROM block WC000_M1_B0 c000-dfff overlay=true
+REALROM block WC000_M0 c000-dfff overlay=true
 REALROM block WC000_M1_B1 c000-dfff overlay=true
 REALROM block WC000_M1_B10 c000-dfff overlay=true
 REALROM block WC000_M1_B11 c000-dfff overlay=true
@@ -114,10 +114,27 @@ REALROM count refs.intoOverlay 0
 REALROM count refs.intoOverlay.retargeted 0
 REALROM count refs.intoOverlay.intraOverlay 0
 REALROM count instrs.inOverlay 0
-REALROM count bankComments 14
-REALROM count warnings 3
+REALROM count bankComments 31
+REALROM count warnings 29
 REALROM count notes 0
 REALROM count symbols 17
+REALROM sample.bankcomment 8709 bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 870c bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 8715 bank -> select=6,prg_mode=1,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 8718 bank -> select=6,prg_mode=1,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 8727 bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 872a bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 8733 bank -> select=6,prg_mode=1,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 8736 bank -> select=6,prg_mode=1,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 874a bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 874d bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 915b bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 917b bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 918d bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 9194 bank -> select=6,prg_mode=1,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 9197 bank -> select=6,prg_mode=1,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 91b4 bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 91c7 bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment f5a8 bank -> select=0,prg_mode=1,r6=0,r7=1? [known: select.0=0,select.1=0,select.2=0,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment f5b2 bank -> select=1,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=0,select.2=0,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment f5bc bank -> select=2,prg_mode=1,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=0,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
@@ -132,9 +149,35 @@ REALROM sample.bankcomment f610 bank -> select=4,prg_mode=1,r6=0,r7=1? [known: s
 REALROM sample.bankcomment f619 bank -> select=5,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=0,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment f624 bank -> select=0,prg_mode=1,r6=0,r7=1 [switch-value flow]
 REALROM sample.bankcomment f7e7 bank -> select=0,prg_mode=1,r6=0,r7=1 via FUN_f622 [switch-value flow]
+REALROM sample.warn 839e [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_871c whose bank argument could not be recovered at this call site
+REALROM sample.warn 83bd [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_871c whose bank argument could not be recovered at this call site
+REALROM sample.warn 8550 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_871c whose bank argument could not be recovered at this call site
+REALROM sample.warn 85a9 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_871c whose bank argument could not be recovered at this call site
+REALROM sample.warn 85e4 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_871c whose bank argument could not be recovered at this call site
+REALROM sample.warn 8608 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_871c whose bank argument could not be recovered at this call site
+REALROM sample.warn 862c [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_871c whose bank argument could not be recovered at this call site
+REALROM sample.warn 8bdb [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_8705 whose bank argument could not be recovered at this call site
+REALROM sample.warn 915e [NesBankingAnalyzer] Bank state becomes unknown here: recovered bank 58 for window WA000, but this image provides only 32 bank(s) for it. A bank index with no corresponding image slice is a value-RECOVERY bug, not a game behavior, so this site is left unannotated and nothing is retargeted from it. Hardware aliasing (a board that decodes fewer latch bits than the field is wide selects some in-range bank instead of faulting) is deliberately NOT modeled: that is per-board wiring, and folding it on speculation would turn a loud wrong answer into a quiet plausible one -- see docs/vision-board-banking.md section 10 item 10, bead grm-hum.
+REALROM sample.warn 917e [NesBankingAnalyzer] Bank state becomes unknown here: recovered bank 58 for window WA000, but this image provides only 32 bank(s) for it. A bank index with no corresponding image slice is a value-RECOVERY bug, not a game behavior, so this site is left unannotated and nothing is retargeted from it. Hardware aliasing (a board that decodes fewer latch bits than the field is wide selects some in-range bank instead of faulting) is deliberately NOT modeled: that is per-board wiring, and folding it on speculation would turn a loud wrong answer into a quiet plausible one -- see docs/vision-board-banking.md section 10 item 10, bead grm-hum.
+REALROM sample.warn 918a [NesBankingAnalyzer] Bank state becomes unknown here: recovered bank 58 for window WA000, but this image provides only 32 bank(s) for it. A bank index with no corresponding image slice is a value-RECOVERY bug, not a game behavior, so this site is left unannotated and nothing is retargeted from it. Hardware aliasing (a board that decodes fewer latch bits than the field is wide selects some in-range bank instead of faulting) is deliberately NOT modeled: that is per-board wiring, and folding it on speculation would turn a loud wrong answer into a quiet plausible one -- see docs/vision-board-banking.md section 10 item 10, bead grm-hum.
+REALROM sample.warn 91b7 [NesBankingAnalyzer] Bank state becomes unknown here: recovered bank 58 for window WA000, but this image provides only 32 bank(s) for it. A bank index with no corresponding image slice is a value-RECOVERY bug, not a game behavior, so this site is left unannotated and nothing is retargeted from it. Hardware aliasing (a board that decodes fewer latch bits than the field is wide selects some in-range bank instead of faulting) is deliberately NOT modeled: that is per-board wiring, and folding it on speculation would turn a loud wrong answer into a quiet plausible one -- see docs/vision-board-banking.md section 10 item 10, bead grm-hum.
+REALROM sample.warn 91c2 [NesBankingAnalyzer] Bank state becomes unknown here: recovered bank 58 for window WA000, but this image provides only 32 bank(s) for it. A bank index with no corresponding image slice is a value-RECOVERY bug, not a game behavior, so this site is left unannotated and nothing is retargeted from it. Hardware aliasing (a board that decodes fewer latch bits than the field is wide selects some in-range bank instead of faulting) is deliberately NOT modeled: that is per-board wiring, and folding it on speculation would turn a loud wrong answer into a quiet plausible one -- see docs/vision-board-banking.md section 10 item 10, bead grm-hum.
+REALROM sample.warn 92fa [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_8746 whose bank argument could not be recovered at this call site
+REALROM sample.warn 94b7 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_8705 whose bank argument could not be recovered at this call site
+REALROM sample.warn 95d4 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_8705 whose bank argument could not be recovered at this call site
+REALROM sample.warn 95f6 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_8746 whose bank argument could not be recovered at this call site
+REALROM sample.warn 95fd [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_8705 whose bank argument could not be recovered at this call site
+REALROM sample.warn 961f [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_8705 whose bank argument could not be recovered at this call site
+REALROM sample.warn 9641 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_8705 whose bank argument could not be recovered at this call site
+REALROM sample.warn d92e [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_919e whose bank argument could not be recovered at this call site
 REALROM sample.warn f84a [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_f5a6 whose bank argument could not be recovered at this call site
+REALROM sample.warn f850 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_9155 whose bank argument could not be recovered at this call site
 REALROM sample.warn f878 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_f5e8 whose bank argument could not be recovered at this call site
+REALROM sample.warn f87b [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_9169 whose bank argument could not be recovered at this call site
 REALROM sample.warn f880 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn fada [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_8705 whose bank argument could not be recovered at this call site
+REALROM sample.warn fe1a [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_919e whose bank argument could not be recovered at this call site
+REALROM sample.warn fe94 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_8705 whose bank argument could not be recovered at this call site
 REALROM sample.symbol 2000 PPUCTRL IMPORTED primary=true
 REALROM sample.symbol 2001 PPUMASK IMPORTED primary=true
 REALROM sample.symbol 2002 PPUSTATUS IMPORTED primary=true

@@ -94,6 +94,150 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 	private static final String LANGUAGE_ID = "6502:LE:16:default";
 	private static final String COMPILER_SPEC_ID = "default";
 
+	/** {@code LDA #imm} -- the only select-write value form {@link #imageResolvedMode} reads. */
+	private static final int OP_LDA_IMMEDIATE = 0xA9;
+
+	/** {@code STA abs}. */
+	private static final int OP_STA_ABSOLUTE = 0x8D;
+
+	/**
+	 * How many {@code LDA #imm / STA <mechanism>} sites the image must show before
+	 * {@link #imageResolvedMode} will believe their verdict. Conservative on purpose: this is a
+	 * RAW BYTE scan, so a handful of matches could in principle be data that happens to look like
+	 * the pattern. Measured site counts on the pinned mapper-4 rows are smb3 69, rcransom 14,
+	 * tmnt3 8, megaman3 4, smb2 2 -- so this floor admits every row whose answer differs from the
+	 * descriptor default and excludes only smb2, whose verdict (mode 0) is the default anyway.
+	 */
+	private static final int MIN_MODE_EVIDENCE_SITES = 4;
+
+	/**
+	 * The PRG image's raw bytes, or {@code null} if they cannot be read.
+	 * <p>
+	 * {@link #imageResolvedMode} needs bytes rather than the {@link FileBytes} the blocks are
+	 * built from, because it runs BEFORE any block exists and there is no listing to walk yet.
+	 * A failure here is not an import error: the caller simply keeps the descriptor's compiled
+	 * {@code initial_state}, which is exactly the behaviour every board had before grm-3fvj.
+	 */
+	private static byte[] readPrgImage(ByteProvider provider, InesHeader header, MessageLog log) {
+		try {
+			return provider.readBytes(header.prgFileOffset(), header.prgSize());
+		}
+		catch (IOException e) {
+			log.appendMsg("Could not read the PRG image to resolve the initial bank mode (" +
+				e.getMessage() + "); keeping the descriptor's compiled banking.initial_state");
+			return null;
+		}
+	}
+
+	/**
+	 * Resolves a board's MODE state field from the image itself, rather than trusting the
+	 * descriptor's compiled {@code banking.initial_state} constant (bead {@code grm-3fvj}).
+	 * <p>
+	 * <b>The bug this exists to fix.</b> A mode-switching board's HOME layout -- the one whose
+	 * windows become the base (non-overlay) blocks, per {@code DescriptorSupport.planWindows} --
+	 * is chosen from that constant. On MMC3 the constant is {@code prg_mode: 0}, which is the
+	 * conventional power-on guess and is NOT wrong as a guess: real MMC3 power-on register
+	 * contents are undefined. But a cartridge that runs mode 1 then gets every base block at
+	 * {@code $8000} and {@code $C000} filled from the wrong window, and each has an overlay
+	 * somewhere holding what should have been in base. The ROM is strong evidence for the answer
+	 * and was simply never consulted.
+	 * <p>
+	 * <b>What it reads.</b> Every {@code LDA #imm} immediately followed by {@code STA abs} whose
+	 * absolute target is an EVEN address inside the mode-carrying mechanism's declared
+	 * {@code [start, end]} -- i.e. a literal write to the bank-select register -- and takes
+	 * {@code mode_mask}/{@code mode_shift} out of the immediate. Deliberately a raw byte scan and
+	 * not a disassembly: this runs in the LOADER, before a single instruction exists.
+	 * <p>
+	 * <b>Why unanimity, and why it is not a weak rule.</b> The verdict is adopted only when every
+	 * site agrees AND there are at least {@link #MIN_MODE_EVIDENCE_SITES} of them. A survey of
+	 * every mapper-4 image in the project owner's library (recorded on grm-3fvj) found that EVERY
+	 * clean cartridge is unanimous -- not one mixes mode-0 and mode-1 select writes. The only
+	 * mixed image found was {@code Gradius 2 (J) [hM04][a1]}, which was hacked to mapper 4 and so
+	 * says nothing about real MMC3 software. So requiring unanimity costs nothing on real
+	 * cartridges and makes the DECLINE path meaningful rather than theoretical: a split vote is
+	 * evidence the scan has misread something, and the honest response is to keep the descriptor
+	 * literal rather than pick a winner.
+	 * <p>
+	 * <b>Ordering.</b> The caller applies this BEFORE
+	 * {@code DescriptorSupport.applyGameInitialStateHint}, so a curated per-game value (bead
+	 * grm-hb6.12) always overrides this inference. That is deliberate and is the safe direction:
+	 * a hint was checked by a human against the actual cartridge, whereas this is a heuristic over
+	 * bytes. smb3 currently carries such a hint AND would resolve the same way here, so the two
+	 * agree and the override is not exercised by any pinned row -- a synthetic fixture is the
+	 * place to pin the conflict if one is ever wanted.
+	 * <p>
+	 * Boards with no {@code mode_field} -- every board in this repo except MMC3 -- return
+	 * unchanged without reading a byte.
+	 *
+	 * @return the initial state with the mode field replaced, or {@code resolvedInitialState}
+	 *         unchanged whenever the image does not clearly say otherwise
+	 */
+	private static Long imageResolvedMode(JsonObject map, Long resolvedInitialState, byte[] image,
+			MessageLog log, String mapPath) {
+		if (resolvedInitialState == null || image == null) {
+			return resolvedInitialState;
+		}
+		JsonObject banking = map.getAsJsonObject("banking");
+		if (banking == null || !banking.has("mechanisms")) {
+			return resolvedInitialState;
+		}
+		JsonObject params = null;
+		for (JsonElement me : banking.getAsJsonArray("mechanisms")) {
+			JsonObject candidate = me.getAsJsonObject().getAsJsonObject("params");
+			if (candidate != null && candidate.has("mode_field")) {
+				params = candidate;
+				break;
+			}
+		}
+		if (params == null) {
+			return resolvedInitialState; // no mode field on this board -- nothing to resolve
+		}
+		String modeName = params.get("mode_field").getAsString();
+		DescriptorSupport.StateField field =
+			DescriptorSupport.findField(DescriptorSupport.parseStateFields(map), modeName);
+		if (field == null) {
+			log.appendMsg(mapPath + ": a mechanism names mode_field '" + modeName +
+				"', which is not a banking.state field; keeping the compiled initial_state");
+			return resolvedInitialState;
+		}
+		long start = params.get("start").getAsLong();
+		long end = params.get("end").getAsLong();
+		long modeMask = params.get("mode_mask").getAsLong();
+		int modeShift = params.get("mode_shift").getAsInt();
+
+		Set<Long> votes = new LinkedHashSet<>();
+		int sites = 0;
+		for (int i = 0; i + 4 < image.length; i++) {
+			if ((image[i] & 0xff) != OP_LDA_IMMEDIATE || (image[i + 2] & 0xff) != OP_STA_ABSOLUTE) {
+				continue;
+			}
+			long addr = (image[i + 3] & 0xffL) | ((image[i + 4] & 0xffL) << 8);
+			if (addr < start || addr > end || (addr & 1) != 0) {
+				continue;
+			}
+			sites++;
+			votes.add(((image[i + 1] & 0xffL) & modeMask) >>> modeShift);
+		}
+		long mask = (1L << field.width()) - 1;
+		long current = (resolvedInitialState >>> field.lsb()) & mask;
+		if (sites < MIN_MODE_EVIDENCE_SITES || votes.size() != 1) {
+			if (sites > 0 && votes.size() > 1) {
+				log.appendMsg("banking.initial_state '" + modeName + "' left at " + current +
+					": the image's " + sites + " select writes disagree about it " + votes +
+					", so the descriptor's compiled value stands");
+			}
+			return resolvedInitialState;
+		}
+		long vote = votes.iterator().next();
+		if (vote == current) {
+			return resolvedInitialState;
+		}
+		log.appendMsg("banking.initial_state '" + modeName + "' resolved to " + vote +
+			" from the image (" + sites + " select writes, all agreeing; the compiled value is " +
+			current + ")");
+		return (resolvedInitialState & ~(mask << field.lsb())) | (vote << field.lsb());
+	}
+
 	private static final int INES_HEADER_LEN = 16;
 	private static final int TRAINER_LEN = 512;
 	private static final long TRAINER_ADDR = 0x7000;
@@ -564,6 +708,11 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 			// Curated game-descriptor initial_state hint (bead grm-hb6.12), folded in AFTER
 			// initial_state_expr per docs/per-game-descriptors-design.md's ruling -- see
 			// DescriptorSupport.applyGameInitialStateHint's javadoc for the failure discipline.
+			// Image-resolved MODE field (bead grm-3fvj), folded in BEFORE the curated hint so a
+			// hand-checked per-game value always wins over this inference -- see
+			// imageResolvedMode's javadoc for why that ordering is the safe one.
+			initialState = imageResolvedMode(map, initialState,
+				readPrgImage(provider, header, log), log, board.mapPath());
 			if (gameDescriptor != null) {
 				initialState = DescriptorSupport.applyGameInitialStateHint(map, initialState,
 					gameDescriptor.doc(), gameDescriptor.gmapPath(), log);
