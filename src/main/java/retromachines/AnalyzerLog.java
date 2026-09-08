@@ -82,7 +82,16 @@ final class AnalyzerLog {
 	 * modal dialog.
 	 */
 	static void info(Analyzer analyzer, String message) {
-		Msg.info(analyzer, analyzer.getName() + ": " + message);
+		info(analyzer, analyzer.getName(), message);
+	}
+
+	/**
+	 * {@link #info} for a caller that is not itself an {@link Analyzer} -- descriptor
+	 * parsing and other shared helpers that are handed the analyzer's name as a string.
+	 * {@link Msg} only, for the same reason.
+	 */
+	static void info(Object originator, String source, String message) {
+		Msg.info(originator, source + ": " + message);
 	}
 
 	/**

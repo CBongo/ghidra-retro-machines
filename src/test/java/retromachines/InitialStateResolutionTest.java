@@ -137,7 +137,9 @@ public class InitialStateResolutionTest {
 		BoardModel board = BoardModel.parse(json(MMC5_SHAPE), log, "test", "test.map",
 			Integer.valueOf((7 << 2) | 3));
 		assertEquals((7 << 2) | 3, board.initialState());
-		assertTrue(log.toString(), log.toString().contains("image-resolved"));
+		// The note is routine, so it goes to Msg and NOT to the MessageLog, whose only
+		// consumer treats any content as a warning worth a modal dialog (grm-a2i1).
+		assertEquals("", log.toString().trim());
 	}
 
 	@Test

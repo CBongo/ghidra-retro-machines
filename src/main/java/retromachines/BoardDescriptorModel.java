@@ -196,9 +196,15 @@ final class BoardDescriptorModel {
 
 			int initialState = banking.get("initial_state").getAsInt();
 			if (resolved != null && resolved != initialState) {
-				log.appendMsg(source, "using the loader's image-resolved banking.initial_state " +
-					resolved + " (the compiled literal in " + mapPath + " is " + initialState +
-					"; see banking.initial_state_expr)");
+				// Routine NOTE, not a warning: it reports that the resolution machinery worked.
+				// Msg only (grm-a2i1) -- see AnalyzerLog on why anything in the MessageLog is a
+				// warning by construction. Not deduplicated: parse runs once per BoardModel
+				// build, and a per-program suppression cache would be stale state for a line
+				// that now costs nothing but a log row.
+				AnalyzerLog.info(BoardDescriptorModel.class, source,
+					"using the loader's image-resolved banking.initial_state " +
+						resolved + " (the compiled literal in " + mapPath + " is " +
+						initialState + "; see banking.initial_state_expr)");
 				initialState = resolved;
 			}
 
