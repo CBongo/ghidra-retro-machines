@@ -265,6 +265,17 @@ final class BankDataflowEngine {
 			}
 
 			BankState fallState = outState;
+			// isCall() is also what keeps a BRK-derived IRQ/vector reference out of this whole
+			// mechanism (bead grm-htgl): BRK's p-code is "goto [*:2 target]", an indirect JUMP,
+			// never a call, in both this repo's own 6510 sinc and Ghidra's own stock 6502.slaspec
+			// (the language every NES board actually loads with) -- verified in
+			// BrkIsNotACallSiteProgramTest. So a routine an IRQ/BRK vector reaches (megaman2's
+			// RESET happens to be one, since its IRQ vector aliases its RESET vector) can never
+			// pick up a spurious "call site" here no matter how much of the image is
+			// misdisassembled data decoding as $00 (= BRK): FlowType is fixed at disassembly from
+			// the instruction's own p-code template, and no later analysis pass promotes a
+			// COMPUTED_JUMP to a CALL. No additional filtering (e.g. cross-referencing
+			// DescriptorSupport.ASYNC_ENTRY_POINTS_PROPERTY) is needed on top of this gate.
 			if (helpers != null && instr.getFlowType().isCall()) {
 				HelperModel helper = calledHelper(program, instr, helpers);
 				if (helper != null) {
