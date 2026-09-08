@@ -196,6 +196,27 @@ final class HelperArgumentRecovery {
 		}
 		Character reg = helper.argReg();
 		if (reg == null) {
+			// grm-5l14: a null argReg means HelperDiscovery.findHelpers found no plain
+			// STA/STX/STY to attribute the argument to -- historically read as "no derivable
+			// effect" and poisoned outright. That is right for an ordinary caller-dependent
+			// write this analyzer simply cannot resolve, but wrong for a switch site whose
+			// effect does not depend on any caller argument at all (MMC1's self-modifying
+			// RMW reset idiom is exactly this: an INC/DEC read-modify-write, which
+			// StoredValueScanner.storeRegister never recognizes as a store register, yet the
+			// reset it performs is the same regardless of what any caller passed in). Ask the
+			// strategy before giving up -- see BankSwitchStrategy.callerIndependentDeposit's
+			// javadoc for why this is a genuinely different case from "unknown".
+			Instruction site = helper.switchSite() == null ? null
+					: program.getListing().getInstructionAt(helper.switchSite());
+			if (helper.strategy() != null && site != null) {
+				BankSwitchStrategy.HelperDeposit indep =
+					helper.strategy().callerIndependentDeposit(program, site);
+				if (indep != null) {
+					return new CallEffect(position(indep.value(), helper.lsb(), helper.effectMask()),
+						(indep.ownedMask() << helper.lsb()) & helper.effectMask(),
+						indep.value().knownMask() != 0, true);
+				}
+			}
 			return new CallEffect(BankState.unknown(), helper.effectMask());
 		}
 		int stateMask = helper.effectMask() >>> helper.lsb();

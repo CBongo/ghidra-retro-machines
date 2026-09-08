@@ -311,6 +311,47 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	}
 
 	/**
+	 * A helper call site's deposit for a switch site whose effect does not depend on any
+	 * caller-supplied argument at all -- so {@link HelperArgumentRecovery#recoverCallArgument}
+	 * may use it even when {@code HelperModel.argReg()} is {@code null} (bead {@code grm-5l14}).
+	 * <p>
+	 * {@code argReg} comes from {@link StoredValueScanner#storeRegister}, which only recognizes
+	 * a plain {@code STA}/{@code STX}/{@code STY}; a read-modify-write switch site ({@code INC},
+	 * {@code ASL}, ...) always reports {@code null}, and the pre-{@code grm-5l14} code took that
+	 * as "no argument register, therefore no derivable effect" and poisoned the whole call.
+	 * That conflates two different reasons a store might have no argument register: an ordinary
+	 * RMW whose committed value genuinely depends on a byte this analyzer cannot pin down, and
+	 * MMC1's self-modifying reset idiom ({@code SerialShiftBankSwitchStrategy
+	 * .selfModifyingRmwResetsShifter}), whose effect is determinable from the instruction's own
+	 * bytes and is the SAME regardless of what any caller ever passed in A/X/Y -- there is no
+	 * argument to recover because the mechanism does not read one. Recognizing that second case
+	 * is what retires the "call to bank-switch helper RESET whose bank argument could not be
+	 * recovered" warning at megaman/megaman2's RESET vectors (8 of bead {@code grm-nqxt}'s 98
+	 * argument-recovery sites) -- they were never value-recovery failures, just a helper model
+	 * that only had a slot for "argument register" and nothing for "no argument needed".
+	 * <p>
+	 * Returns {@code null} (the default, for every mechanism) when {@code switchSite} is not
+	 * this shape -- including when it IS this strategy's mechanism but the specific write is an
+	 * ordinary caller-dependent one, or an RMW this strategy cannot resolve at all -- so the
+	 * caller falls through to the historical "argument register unknown" degrade. Never called
+	 * for a switch site whose direct-dataflow {@link #computeSwitchOutcome} already resolves
+	 * cleanly (that path needs no help); only reached from the call-site argument-recovery gap
+	 * this method exists to close.
+	 * <p>
+	 * The returned {@link HelperDeposit} follows the same field-local convention as
+	 * {@link #depositHelperArgument}: {@code value} and {@code ownedMask} are in this
+	 * mechanism's field-local {@code [0, width)} space, positioned into the board's absolute
+	 * state by the caller. Unlike {@code depositHelperArgument}'s default (which owns the WHOLE
+	 * {@code stateMask}), a caller-independent deposit typically owns only the bits its
+	 * mechanism actually touches -- MMC1's reset commits {@code prg_mode} and leaves
+	 * {@code mirroring}/{@code prg_bank} alone, exactly as the direct-dataflow reset does -- so
+	 * sibling fields a caller never wrote are left exactly as they were, not wiped to unknown.
+	 */
+	default HelperDeposit callerIndependentDeposit(Program program, Instruction switchSite) {
+		return null;
+	}
+
+	/**
 	 * Whether this strategy's {@link #depositHelperArgument} actually READS {@code argValue}
 	 * -- i.e. whether a helper call site's answer depends on the caller's argument register
 	 * still holding the bank when control reaches the helper's first switch site (grm-mu7).

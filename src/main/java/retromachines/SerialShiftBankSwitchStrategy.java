@@ -787,6 +787,55 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 		return (modified & 0x80) != 0; // tier B: the second write sets bit 7
 	}
 
+	/**
+	 * The caller-independent half of {@code grm-5l14}: a self-modifying RMW reset write has no
+	 * argument register ({@link StoredValueScanner#storeRegister} never recognizes an
+	 * {@code INC}/{@code DEC} as a store), which -- before this override existed -- sent every
+	 * call reaching such a site through {@link HelperArgumentRecovery#recoverCallArgument}'s
+	 * {@code argReg == null} degrade and poisoned the whole mechanism at the call site, exactly
+	 * as if the value were genuinely unrecoverable. It is not: {@link #selfModifyingRmwResetsShifter}
+	 * already proves the reset is determinable from the instruction's own bytes alone, with no
+	 * dependence on any caller-supplied value, at the DIRECT-dataflow site
+	 * ({@link #computeSwitchOutcomeValue}) -- this method gives call-site recovery the same
+	 * answer instead of asking it to re-derive determinism it cannot see (a call site only ever
+	 * gets a switch-site {@link Instruction} and this mechanism's descriptor, and
+	 * {@code selfModifyingRmwResetsShifter} needs exactly those, so no extra plumbing is needed).
+	 * <p>
+	 * Megaman's and megaman2's {@code RESET} vectors ({@code SEI / INC $FFE1 / JMP ...}) are the
+	 * motivating case (grm-5l14, grm-78b): {@code RESET} is discovered as a one-site helper whose
+	 * only site is this self-modifying {@code INC}, other code reaches it as a call target
+	 * (belt-and-suspenders re-resets from elsewhere in each ROM), and every one of those calls
+	 * used to warn "bank argument could not be recovered" -- 8 of bead {@code grm-nqxt}'s 98
+	 * argument-recovery sites, none of them a real gap.
+	 * <p>
+	 * Deposits ONLY {@code resetFields} (MMC1: {@code prg_mode}), exactly like
+	 * {@link #applyReset} -- {@code mirroring}/{@code prg_bank} are untouched by a hardware
+	 * reset and this call site must not claim ownership of them (own-nothing, not
+	 * echo-inState, since there is no caller in-state to echo at a helper call site -- see
+	 * {@link BankSwitchStrategy.HelperDeposit}'s javadoc). Returns {@code null} -- not this
+	 * shape, or an RMW this strategy cannot resolve -- for every other write, which leaves the
+	 * caller on the historical degrade path unchanged.
+	 */
+	@Override
+	public BankSwitchStrategy.HelperDeposit callerIndependentDeposit(Program program,
+			Instruction switchSite) {
+		Long offset = writesInRange(switchSite);
+		if (offset == null || StoredValueScanner.storeRegister(switchSite) != null) {
+			return null; // not a mechanism write, or an ordinary STA/STX/STY -- has a real argument
+		}
+		if (!selfModifyingRmwResetsShifter(switchSite, offset)) {
+			return null; // an unresolved RMW -- stays a poison, not a guess
+		}
+		int owned = 0;
+		BankState value = new BankState(0, 0);
+		for (ResetField rf : resetFields) {
+			owned |= rf.pos().mask();
+			int widthMask = (1 << rf.pos().width()) - 1;
+			value = setFieldFromByte(value, rf.pos(), BankState.fullyKnown(widthMask, rf.value()));
+		}
+		return new BankSwitchStrategy.HelperDeposit(owned, value);
+	}
+
 	private BankState applyReset(BankState inState) {
 		BankState result = inState;
 		for (ResetField rf : resetFields) {

@@ -18,6 +18,7 @@ package retromachines;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -304,5 +305,85 @@ public class SerialShiftStrategyProgramTest extends AbstractBundledLanguageTest 
 			"serial-shift's registers are write-only, so an unknown outcome is never " +
 				"evidence of a missing state bit",
 			strategy.effectDependsOnPriorState());
+	}
+
+	// ------------------------------------------------------------------
+	// callerIndependentDeposit() -- grm-5l14: a helper call reaching a self-modifying RMW
+	// reset (megaman/megaman2's RESET vector, called as a "helper" from belt-and-suspenders
+	// re-resets elsewhere in each ROM) must not poison for want of an argument register the
+	// mechanism never reads. See BankSwitchStrategy.callerIndependentDeposit's javadoc and
+	// HelperArgumentRecovery.recoverCallArgument's argReg==null branch for how this plugs in.
+	// ------------------------------------------------------------------
+
+	/**
+	 * Megaman2's actual RESET, byte for byte in shape: an {@code INC} on its own opcode. Same
+	 * fixture as {@link #incOnItsOwnOpcodeIsAReset}, but asking the call-site deposit method
+	 * directly rather than the direct-dataflow {@link BankSwitchStrategy#computeSwitch}.
+	 */
+	@Test
+	public void callerIndependentDepositResetsFromSelfModifyingOpcode() throws Exception {
+		builder.setBytes("0x8010", "ee 10 80", true); // INC $8010 -- reads its own $EE
+
+		BankSwitchStrategy.HelperDeposit deposit =
+			mmc1().callerIndependentDeposit(program, instructionAt("0x8010"));
+
+		assertNotNull("the self-modifying reset idiom is caller-independent -- see grm-5l14",
+			deposit);
+		assertEquals("only prg_mode is owned -- mirroring/prg_bank are untouched by a reset",
+			PRG_MODE_MASK, deposit.ownedMask());
+		assertEquals("prg_mode should be fully known: " + deposit.value(), PRG_MODE_MASK,
+			deposit.value().knownMask() & PRG_MODE_MASK);
+		assertEquals("a reset deposits prg_mode=3: " + deposit.value(), PRG_MODE_3,
+			deposit.value().bits() & PRG_MODE_MASK);
+	}
+
+	/** Tier B (the carry-into-bit-7 case) must resolve here exactly as it does directly. */
+	@Test
+	public void callerIndependentDepositResetsFromCarryIntoBit7() throws Exception {
+		builder.setBytes("0x807e", "ee 7f 80", true); // INC $807F -- reads its own operand $7F
+
+		BankSwitchStrategy.HelperDeposit deposit =
+			mmc1().callerIndependentDeposit(program, instructionAt("0x807e"));
+
+		assertNotNull(deposit);
+		assertEquals(PRG_MODE_MASK, deposit.ownedMask());
+		assertEquals(PRG_MODE_3, deposit.value().bits() & PRG_MODE_MASK);
+	}
+
+	/**
+	 * An ordinary {@code STA} has a real argument register -- {@code recoverCallArgument} never
+	 * even reaches {@code argReg == null} for it, but this method must decline anyway rather
+	 * than silently discard the caller's value if it were ever asked.
+	 */
+	@Test
+	public void callerIndependentDepositDeclinesAnOrdinaryStore() throws Exception {
+		builder.setBytes("0x8000", "a9 80", true); // LDA #$80
+		builder.setBytes("0x8002", "8d 00 80", true); // STA $8000
+
+		assertNull(mmc1().callerIndependentDeposit(program, instructionAt("0x8002")));
+	}
+
+	/** An RMW this strategy cannot resolve (bit 7 clear in both writes) stays a poison, not a guess. */
+	@Test
+	public void callerIndependentDepositDeclinesAnUnresolvedRmw() throws Exception {
+		builder.setBytes("0x807d", "ee 7e 80", true); // INC $807E -- reads its own operand $7E
+
+		assertNull(mmc1().callerIndependentDeposit(program, instructionAt("0x807d")));
+	}
+
+	/** An RMW into the range that is not self-referential is still declined -- grm-4kc's deferred tier. */
+	@Test
+	public void callerIndependentDepositDeclinesANonSelfReferentialRmw() throws Exception {
+		builder.setBytes("0x8010", "ee 00 90", true); // INC $9000 -- not self-referential
+
+		assertNull(mmc1().callerIndependentDeposit(program, instructionAt("0x8010")));
+	}
+
+	/** An instruction that never writes the mechanism range at all is not this shape either. */
+	@Test
+	public void callerIndependentDepositDeclinesAnUnrelatedInstruction() throws Exception {
+		builder.setBytes("0x8000", "a9 80", true); // LDA #$80 -- not a write at all
+
+		assertNull(mmc1().callerIndependentDeposit(program, instructionAt("0x8000")));
 	}
 }
