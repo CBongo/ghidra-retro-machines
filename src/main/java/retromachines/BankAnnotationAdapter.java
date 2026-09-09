@@ -244,6 +244,15 @@ final class BankAnnotationAdapter {
 				"reached the helper's entry, where the register holds whatever the caller " +
 				"supplied, so the bank cannot be known from inside the helper body. Each CALL " +
 				"SITE is resolved separately; see the call sites' own annotations.";
+			case SECOND_TIER_ARGUMENT -> "Bank value is a SECOND-TIER HELPER's inbound " +
+				"argument: this call forwards a register value that this wrapper function never " +
+				"defines itself -- it is supplied by the wrapper's OWN caller, one frame further " +
+				"out than this call site, and is live only transiently, inside the wrapper. " +
+				"That is not this analyzer's limitation, but it is also not resolved anywhere: " +
+				"no call site ever observes this exact relayed value. What IS resolved is the " +
+				"wrapper's own NET EFFECT -- the bank its own further call restores before " +
+				"returning, which is what is actually live once the wrapper's caller resumes; " +
+				"see the wrapper's own call sites for that.";
 			// NO_DEPOSIT never reaches here -- annotateOrWarn returns before the gap
 			// classification, because it is not a gap. Listed so the switch stays exhaustive.
 			case RESOLVED, ANALYZER_LIMIT, NO_DEPOSIT -> null;

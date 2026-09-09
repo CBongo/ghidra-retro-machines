@@ -81,12 +81,15 @@ REALROM count refs.intoOverlay 1455
 REALROM count refs.intoOverlay.retargeted 29
 REALROM count refs.intoOverlay.intraOverlay 1426
 REALROM count instrs.inOverlay 6683
-REALROM count bankComments 74
-REALROM count warnings 10
-REALROM count notes 32
+REALROM count bankComments 77
+REALROM count warnings 8
+REALROM count notes 34
 REALROM count symbols 18
 REALROM sample.bankcomment 802a bank -> mirroring=2,prg_mode=3,prg_bank=14 via FUN_c05d [switch-value flow]
+REALROM sample.bankcomment 814c bank -> mirroring=0,prg_mode=3,prg_bank=13? via FUN_c70c [known: prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
+REALROM sample.bankcomment 8451 bank -> mirroring=0,prg_mode=3,prg_bank=13? via FUN_c628 [known: prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment 9688 bank -> mirroring=3,prg_mode=3,prg_bank=13 via FUN_c05d [switch-value flow]
+REALROM sample.bankcomment 96bd bank -> mirroring=0,prg_mode=3,prg_bank=13? via FUN_c628 [known: prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment 99c2 bank -> mirroring=2,prg_mode=3,prg_bank=13 via FUN_c05d [switch-value flow]
 REALROM sample.bankcomment 9ef7 bank -> mirroring=3,prg_mode=3,prg_bank=13 via FUN_c05d [switch-value flow]
 REALROM sample.bankcomment a2b9 bank -> mirroring=2,prg_mode=3,prg_bank=13 via FUN_c05d [switch-value flow]
@@ -125,9 +128,9 @@ REALROM sample.bankcomment c5b2 bank -> mirroring=0,prg_mode=3,prg_bank=11? via 
 REALROM sample.bankcomment c5b7 bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_c000 [known: mirroring.0=0,prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.1] [switch-value flow]
 REALROM sample.bankcomment c640 bank -> mirroring=0,prg_mode=3,prg_bank=13? via FUN_c000 [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
 REALROM sample.bankcomment c685 bank -> mirroring=0,prg_mode=3,prg_bank=13? via FUN_c000 [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
-REALROM sample.bankcomment c71f bank -> mirroring=0,prg_mode=3,prg_bank=13? via FUN_c000 [known: mirroring.0=0,prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.1] [switch-value flow]
-REALROM sample.bankcomment c725 bank -> mirroring=0,prg_mode=3,prg_bank=1? via FUN_c000 [known: mirroring.0=0,prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.1] [switch-value flow]
-REALROM sample.bankcomment c743 bank -> mirroring=0,prg_mode=3,prg_bank=13? via FUN_c000 [known: mirroring.0=0,prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.1] [switch-value flow]
+REALROM sample.bankcomment c71f bank -> mirroring=0,prg_mode=3,prg_bank=13? via FUN_c000 [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
+REALROM sample.bankcomment c725 bank -> mirroring=0,prg_mode=3,prg_bank=1? via FUN_c000 [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
+REALROM sample.bankcomment c743 bank -> mirroring=0,prg_mode=3,prg_bank=13? via FUN_c000 [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
 REALROM sample.bankcomment c749 bank -> mirroring=0,prg_mode=3,prg_bank=9? via FUN_c000 [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=0,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
 REALROM sample.bankcomment c75c bank -> mirroring=0,prg_mode=3,prg_bank=13? via FUN_c000 [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
 REALROM sample.bankcomment c7a0 bank -> mirroring=0,prg_mode=3,prg_bank=13? via FUN_c000 [known: mirroring.0=0,prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.1] [switch-value flow]
@@ -187,9 +190,7 @@ REALROM sample.ref 801e -> W8000_M3_B11::8047 DATA primary=true
 REALROM sample.ref.truncated 25 of 1455
 REALROM sample.warn c498 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c000 whose bank argument could not be recovered at this call site
 REALROM sample.warn c537 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c000 whose bank argument could not be recovered at this call site
-REALROM sample.warn c628 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c000 whose bank argument could not be recovered at this call site
 REALROM sample.warn c66a [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c000 whose bank argument could not be recovered at this call site
-REALROM sample.warn c70c [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c000 whose bank argument could not be recovered at this call site
 REALROM sample.warn c78d [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c000 whose bank argument could not be recovered at this call site
 REALROM sample.warn ca12 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c000 whose bank argument could not be recovered at this call site
 REALROM sample.warn cb4a [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c000 whose bank argument could not be recovered at this call site
@@ -222,6 +223,8 @@ REALROM sample.note c016 [NesBankingAnalyzer] Bank value is this helper's ARGUME
 REALROM sample.note c05d [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
 REALROM sample.note c06d [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
 REALROM sample.note c4ba [CopyLoopAnalyzer] copy-shaped loop RAM:000a -> RAM:0354 (98 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note c628 [NesBankingAnalyzer] Bank value is a SECOND-TIER HELPER's inbound argument: this call forwards a register value that this wrapper function never defines itself -- it is supplied by the wrapper's OWN caller, one frame further out than this call site, and is live only transiently, inside the wrapper. That is not this analyzer's limitation, but it is also not resolved anywhere: no call site ever observes this exact relayed value. What IS resolved is the wrapper's own NET EFFECT -- the bank its own further call restores before returning, which is what is actually live once the wrapper's caller resumes; see the wrapper's own call sites for that.
+REALROM sample.note c70c [NesBankingAnalyzer] Bank value is a SECOND-TIER HELPER's inbound argument: this call forwards a register value that this wrapper function never defines itself -- it is supplied by the wrapper's OWN caller, one frame further out than this call site, and is live only transiently, inside the wrapper. That is not this analyzer's limitation, but it is also not resolved anywhere: no call site ever observes this exact relayed value. What IS resolved is the wrapper's own NET EFFECT -- the bank its own further call restores before returning, which is what is actually live once the wrapper's caller resumes; see the wrapper's own call sites for that.
 REALROM sample.note c70f [CopyLoopAnalyzer] copy-shaped loop RAM:0008 -> RAM:03b8 (32 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note c728 [CopyLoopAnalyzer] copy-shaped loop RAM:9cd0 -> RAM:03b8 (32 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note c74c [CopyLoopAnalyzer] copy-shaped loop RAM:00fe -> RAM:03b8 (32 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.

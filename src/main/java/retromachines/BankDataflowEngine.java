@@ -114,6 +114,28 @@ final class BankDataflowEngine {
 			List<ConfiguredMechanism> mechanisms, BoardModel board,
 			Map<Function, HelperModel> helpers, Set<Function> restoringTrampolines)
 			throws CancelledException {
+		return runDataflow(program, monitor, listing, mechanisms, board, helpers,
+			restoringTrampolines, Set.of());
+	}
+
+	/**
+	 * As the 7-argument form, with {@code secondTierRelaySites} (bead grm-ylm6): the call-site
+	 * addresses {@link HelperDiscovery#findSecondTierHelpers} proved are a second-tier helper's
+	 * own relay call -- the register it reads is genuinely a live argument, but one supplied by
+	 * THIS FUNCTION's caller, not resolvable at this address no matter how good value recovery
+	 * gets. An unresolved call at one of these addresses is reclassified via
+	 * {@link HelperArgumentRecovery.CallEffect#asSecondTierRelay} so
+	 * {@code BoardBankAnalyzer} can report it as an honest gap
+	 * ({@link BankSwitchStrategy.ValueStop#SECOND_TIER_ARGUMENT}) instead of our limitation --
+	 * see that method's javadoc. Empty for every caller but {@code BoardBankAnalyzer}'s phase-2
+	 * pass, which is the only one with a helper map (and therefore relay sites) to supply; the
+	 * 7-argument form above is pass 1's and every existing caller's unchanged entry point.
+	 */
+	static DataflowResult runDataflow(Program program, TaskMonitor monitor, Listing listing,
+			List<ConfiguredMechanism> mechanisms, BoardModel board,
+			Map<Function, HelperModel> helpers, Set<Function> restoringTrampolines,
+			Set<Address> secondTierRelaySites)
+			throws CancelledException {
 
 		Map<Address, BankState> stateIn = new HashMap<>();
 		Map<Address, SwitchResult> switchResults = new HashMap<>();
@@ -283,6 +305,16 @@ final class BankDataflowEngine {
 							? new CallEffect(helper.constState(), helper.effectMask())
 							: recoverCallArgument(program, instr, helper, outState,
 								callSiteRegCache, restoringTrampolines);
+					// bead grm-ylm6: an unresolved call at a known second-tier relay site is an
+					// HONEST gap, not our limitation -- reclassified here, after recoverCallArgument
+					// returns, rather than inside it: the relay-site set is a whole-program fact
+					// HelperDiscovery derives once, and threading it into recoverCallArgument's own
+					// several return points would duplicate what one check at this single call site
+					// already covers. See CallEffect#asSecondTierRelay and ValueStop
+					// #SECOND_TIER_ARGUMENT.
+					if (!callEffect.argumentResolved() && secondTierRelaySites.contains(addr)) {
+						callEffect = callEffect.asSecondTierRelay();
+					}
 					// ownedMask == 0 means this call site is a verified no-op on every tracked
 					// bit -- a serial-shift helper whose switch site targets an unconfigured CHR
 					// register, or (grm-mej.3) a save/restore trampoline proved to put the entry
@@ -299,7 +331,8 @@ final class BankDataflowEngine {
 						callSwitches.put(addr, new CallSwitch(helperLabel(program, helper),
 							callEffect.state(),
 							overwrite(mechIn, callEffect.state(), callEffect.ownedMask()),
-							callEffect.argumentResolved(), callEffect.noInboundArgument()));
+							callEffect.argumentResolved(), callEffect.noInboundArgument(),
+							callEffect.secondTierRelay()));
 					}
 				}
 			}
@@ -543,9 +576,15 @@ final class BankDataflowEngine {
 	 * real setter {@code FUN_ffcc}). {@code BoardBankAnalyzer} reads it only when
 	 * {@code argumentResolved} is false, to tell that HONEST case apart from a call site whose
 	 * argument plausibly was statically determinable and simply was not recovered.
+	 * <p>
+	 * {@code secondTierRelay} (bead grm-ylm6) is carried straight through from
+	 * {@link HelperArgumentRecovery.CallEffect#secondTierRelay}: this call site is itself a
+	 * second-tier helper's relay call, so an unresolved argument here is recoverable one frame
+	 * out (at the WRAPPER's own call sites) rather than a gap in this analyzer. Read only when
+	 * {@code argumentResolved} is false, exactly like {@code noInboundArgument}.
 	 */
 	record CallSwitch(String helperName, BankState effect, BankState stateAfter,
-			boolean argumentResolved, boolean noInboundArgument) {}
+			boolean argumentResolved, boolean noInboundArgument, boolean secondTierRelay) {}
 
 	record DataflowResult(Map<Address, BankState> stateIn,
 			Map<Address, SwitchResult> switchResults, Map<Address, CallSwitch> callSwitches) {}

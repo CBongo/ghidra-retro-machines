@@ -90,6 +90,36 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 		 */
 		HELPER_ARGUMENT,
 		/**
+		 * The site is a CALL SITE that is itself a SECOND-TIER helper's own RELAY call (bead
+		 * grm-ylm6): a function that writes no mechanism of its own, forwards a register argument
+		 * -- taken from ITS OWN caller, one frame further out -- into a real bank-switch helper,
+		 * and then makes a FURTHER call to that same helper before returning to restore a fixed
+		 * bank. The relayed value genuinely is not our limitation: the register this call reads is
+		 * live at the wrapper function's own ENTRY, so the code that could supply it is the
+		 * wrapper's OWN caller, not anything standing here.
+		 * <p>
+		 * <b>This does NOT mean the relayed value is resolved anywhere else, and the wording must
+		 * not imply that it is.</b> A caller of the wrapper never observes the relayed bank at
+		 * all -- it is live only transiently, INSIDE the wrapper, between this relay and the
+		 * wrapper's own restore -- so there is no call site whose annotation shows THIS value.
+		 * What the wrapper's own call sites resolve instead is the wrapper's NET EFFECT: the
+		 * constant the restore call re-establishes before returning, which is what is actually
+		 * live once the wrapper's caller resumes. That is a genuinely useful, genuinely honest
+		 * fact, and it is why this call site is reclassified rather than left {@code
+		 * ANALYZER_LIMIT} -- but it answers "what does calling this wrapper leave live", not
+		 * "what was relayed here". See {@link HelperDiscovery#findSecondTierHelpers} for exactly
+		 * what is and is not carried to the wrapper's own call sites, and why an earlier version
+		 * of this mechanism shipped the WRONG bank there by conflating the two.
+		 * <p>
+		 * Distinct from {@link #HELPER_ARGUMENT}: that one is the direct MECHANISM WRITE site
+		 * inside a helper's own body, unresolvable from any call site because the value is a
+		 * genuinely live register at that helper's entry with no further caller to chase. This
+		 * one is itself a CALL, and it is reclassified only when {@link HelperDiscovery#findSecondTierHelpers}
+		 * has ALSO independently established the wrapper's net effect -- an honest NOTE needs a
+		 * concrete fact to point the reader at, not merely the absence of a warning-worthy defect.
+		 */
+		SECOND_TIER_ARGUMENT,
+		/**
 		 * We gave up: scan budget exhausted, basic-block boundary, control-flow join,
 		 * mid-scan mechanism-write abort, or an unmodeled modifier. A real gap -- stays a
 		 * WARNING, and is the population worth working on.

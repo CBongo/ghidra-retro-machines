@@ -16,6 +16,7 @@
 package retromachines;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -25,6 +26,7 @@ import java.util.Set;
 
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSetView;
+import ghidra.program.model.lang.Register;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.FunctionManager;
 import ghidra.program.model.listing.Instruction;
@@ -35,6 +37,7 @@ import ghidra.program.model.symbol.Symbol;
 import static retromachines.BankDataflowEngine.overwrite;
 import static retromachines.HelperArgumentRecovery.argumentSurvivesPrologue;
 import static retromachines.HelperArgumentRecovery.prologueSegments;
+import static retromachines.HelperArgumentRecovery.recoverCallArgument;
 
 import retromachines.BankDataflowEngine.SwitchResult;
 
@@ -738,6 +741,294 @@ final class HelperDiscovery {
 			result.put(wrapper, model);
 		}
 		return result;
+	}
+
+	/**
+	 * Depth cap for {@link #traceInboundRegisterOrigin}'s backward walk. The span it walks is
+	 * already bounded to a straight-line, branch-free, call-free run by {@link #isPassThroughInto}
+	 * (its one caller checks that first), so nothing here can loop; this exists only so a
+	 * pathologically long straight-line prologue cannot make discovery slow.
+	 */
+	private static final int MAX_ORIGIN_TRACE = 64;
+
+	/**
+	 * {@code helpers}, plus every SECOND-TIER helper found among the functions {@code helpers}
+	 * does not already cover: a function that writes no mechanism of its own, relays a register
+	 * argument -- supplied by ITS OWN caller, one frame further out than any recovery this
+	 * analyzer otherwise performs -- into a real bank-switch helper, and then makes exactly one
+	 * FURTHER call to that SAME helper before returning to RESTORE a fixed bank (bead grm-ylm6).
+	 * <p>
+	 * <b>The shape, and why {@link #findCallEdgeWrappers} misses it.</b> Mega Man 2's
+	 * {@code FUN_c628} IS the shape: its own first instruction is {@code JSR $C000} (the real
+	 * MMC1 helper), taking its bank argument from A -- supplied by {@code FUN_c628}'s OWN
+	 * caller, not by anything inside {@code FUN_c628} itself, since the relay is the function's
+	 * very first instruction. It then copies data to the PPU, and before returning does
+	 * {@code LDA #$D / JSR $C000} again, restoring a FIXED bank. {@code FUN_c70c} is byte-for-byte
+	 * the same shape with a different body between the two calls (a RAM copy instead of a PPU
+	 * write). Both contain TWO calls to the same known helper, and
+	 * {@link #findCallEdgeWrappers}'s admission test rejects a wrapper body on exactly that: "a
+	 * second known-helper call" ends its scan with {@code rejected = true}, by design, because
+	 * that pass's whole contract assumes anything AFTER the one relay call is bank-neutral --
+	 * true for an unmodeled callee, false here since the second call plainly does switch the
+	 * bank again.
+	 * <p>
+	 * <b>TWO DIFFERENT BANKS ARE LIVE AT TWO DIFFERENT TIMES, and conflating them is a
+	 * correctness bug, not a style question -- this pass exists to keep them apart.</b> The
+	 * relayed argument is live INSIDE the wrapper, between the relay and the restore; the
+	 * restore's own constant is what is live AFTER the wrapper RETURNS. A caller of
+	 * {@code FUN_c628} (megaman2's {@code 8451: LDA #$0B / JSR FUN_c628}) never observes the
+	 * relayed {@code $0B} at all -- by the time control comes back to {@code 8454}, {@code c640}
+	 * has already restored bank {@code $0D}. An earlier version of this pass modeled the wrapper
+	 * exactly like an ordinary call-edge wrapper -- {@code constState} inherited from the WRAPPED
+	 * helper (null, since it is caller-dependent) and {@code argReg} set to the traced origin
+	 * register -- which made {@link BankDataflowEngine#runDataflow} deposit the RELAYED ARGUMENT
+	 * as the state after {@code JSR FUN_c628} returns: {@code 8451} read as leaving
+	 * {@code prg_bank=11} live, {@code 96bd} as leaving {@code prg_bank=3} live, when the ROM
+	 * actually leaves {@code prg_bank=13} live after both. That is exactly the failure mode this
+	 * file's own standing rule warns against elsewhere: a false decline costs one annotation, a
+	 * false accept ships a wrong bank. This pass never deposits the relayed argument at a wrapper's
+	 * own call sites -- see the composition step below.
+	 * <p>
+	 * <b>So the model this pass builds is CONSTANT-ONLY, composed from the RESTORE call, never
+	 * from the relay.</b> The further call's own argument is recovered exactly as any ordinary
+	 * call to {@code wrapped} would be -- {@link HelperArgumentRecovery#recoverCallArgument},
+	 * called directly here at DISCOVERY time with an unknown in-state, which is sound because
+	 * megaman2's restores are a plain {@code LDA #imm} immediately before the call and need no
+	 * caller context to resolve. If that fails to resolve ANY bit, the wrapper is declined
+	 * OUTRIGHT: no model is admitted, and the relay's own warning is left exactly as it was
+	 * ({@code ANALYZER_LIMIT}, unreclassified) -- there is nothing honest to say about a wrapper
+	 * whose exit state this pass cannot establish. When it resolves (wholly or partly, mirroring
+	 * how {@code c640}'s OWN direct annotation already partially resolves -- {@code prg_bank}
+	 * known, {@code mirroring} left "assumed from initial"), the resulting {@link BankState}
+	 * becomes the wrapper's {@code constState}, with {@code argReg}, {@code strategy},
+	 * {@code switchSite}, {@code firstSite} and {@code relay} all null -- the exact shape
+	 * {@link #composeTailCalls} already uses for a composed constant, and for the identical
+	 * reason: {@link BankDataflowEngine#runDataflow}'s {@code helper.constState() != null} branch
+	 * short-circuits straight to that state and never calls {@code recoverCallArgument} for this
+	 * model at all, so nothing about {@code argReg} or a per-caller value can leak back out.
+	 * <p>
+	 * <b>The relayed argument and the register it arrives in still matter, but only as PROOF, not
+	 * as a value this pass ships anywhere.</b> {@link #traceInboundRegisterOrigin} establishes
+	 * that the relay's register is genuinely undefined by the wrapper's own straight-line prefix
+	 * (following {@code TAX}/{@code TAY}/{@code TXA}/{@code TYA} transfers, so the register is not
+	 * assumed to be A -- megaman2's {@code FUN_c760} relays through X) -- which is what justifies
+	 * reclassifying the relay's OWN warning as {@link BankSwitchStrategy.ValueStop#SECOND_TIER_ARGUMENT}
+	 * rather than leaving it {@code ANALYZER_LIMIT}: the value is not unrecoverable, it is simply
+	 * not defined at THIS address. That reclassification is applied ({@code relayCallSites} gets
+	 * the relay's address) if AND ONLY IF the constant composition above also succeeds -- an
+	 * honest NOTE requires something concrete to point readers at, namely the wrapper's own
+	 * resolved exit state, which is exactly what {@code constState} now carries.
+	 * <p>
+	 * <b>Why a SEPARATE pass rather than relaxing {@link #findCallEdgeWrappers}'s own rule in
+	 * place.</b> That method's "exactly one call" count is deliberately taken against the
+	 * IMMUTABLE INPUT map for order-independence (see its own javadoc), and its
+	 * {@code atCallEdgeWrapper} re-keying ASSUMES the tail after the relay is bank-neutral -- an
+	 * assumption a second call to a KNOWN helper affirmatively contradicts, not merely leaves
+	 * unproven, which is exactly the assumption the wrong-bank defect above came from reusing.
+	 * Keeping this as an ADDITIVE pass over the functions {@code findCallEdgeWrappers} left
+	 * uncovered means nothing here can change an already-admitted model (blmaster's
+	 * {@code FUN_e61b} included) -- it only ever looks at functions {@code helpers} does not
+	 * already contain.
+	 * <p>
+	 * <b>{@code FUN_c760}'s OWN {@code c78d} call site is NOT admitted by this pass, on this ROM,
+	 * and that is correctly conservative rather than a bug to chase.</b> The straight-line prefix
+	 * {@link #isPassThroughInto} demands does not hold for it: {@code FUN_c760}'s body contains a
+	 * conditional branch ({@code BCC}) and an intervening {@code JMP} to a different function
+	 * between its entry and the {@code TXA}/relay pair, i.e. there is a real control-flow join on
+	 * the way to the call this pass would need to walk past. {@code SecondTierHelperProgramTest}
+	 * pins the register-transfer MECHANISM against a synthetic fixture shaped like
+	 * {@code FUN_c760} but WITHOUT the branch, to prove the transfer-following code path works;
+	 * {@code c78d} itself stays unresolved on the real ROM until a future increment teaches this
+	 * family to cross a proven-safe branch (compare {@link #findPassThroughWrappers}, which never
+	 * needed to).
+	 * <p>
+	 * <b>What is checked, in order</b>: the candidate is not already a helper of any kind; its
+	 * body is one contiguous range; walking its instructions finds no mechanism write of its own,
+	 * exactly one FIRST known-helper call (the relay) and EXACTLY ONE further call to that SAME
+	 * wrapped function (a call to a DIFFERENT known helper, or a SECOND further call, still
+	 * declines -- staying conservative rather than guessing how to fold several restores); the
+	 * prefix {@code [wrapper entry, relay call)} is a proven straight-line pass-through
+	 * ({@link #isPassThroughInto}, reused exactly as {@link #findCallEdgeWrappers} reuses it, plus
+	 * a documented zero-length special case for a relay that IS the wrapper's own entry);
+	 * {@link #traceInboundRegisterOrigin} finds a register genuinely undefined over that prefix;
+	 * the wrapped helper's OWN prologue ({@code [wrapped entry, wrapped firstSite)}) still
+	 * preserves ITS argument register; and the FURTHER call's own argument resolves via
+	 * {@link HelperArgumentRecovery#recoverCallArgument}. Any failure declines the WHOLE wrapper,
+	 * never partially.
+	 */
+	static SecondTierResult findSecondTierHelpers(Program program,
+			Map<Function, HelperModel> helpers, Map<Address, SwitchResult> switchResults) {
+		Map<Function, HelperModel> result = new LinkedHashMap<>(helpers);
+		Set<Address> relaySites = new LinkedHashSet<>();
+		List<Function> candidates = new ArrayList<>();
+		program.getFunctionManager().getFunctions(true).forEach(candidates::add);
+		Listing listing = program.getListing();
+		for (Function wrapper : candidates) {
+			if (helpers.containsKey(wrapper)) {
+				continue; // already recognized some other way
+			}
+			if (wrapper.getBody().getNumAddressRanges() != 1) {
+				continue;
+			}
+			Address relayCall = null;
+			Address furtherCall = null;
+			HelperModel wrapped = null;
+			boolean rejected = false;
+			for (Instruction instr : listing.getInstructions(wrapper.getBody(), true)) {
+				if (switchResults.containsKey(instr.getMinAddress())) {
+					rejected = true; // writes a mechanism itself -- a helper, not a wrapper
+					break;
+				}
+				if (!instr.getFlowType().isCall()) {
+					continue;
+				}
+				HelperModel target = calledHelper(program, instr, helpers);
+				if (target == null) {
+					continue; // a call to something this engine does not model -- assumed inert,
+							  // exactly as findCallEdgeWrappers already assumes for its own tail
+				}
+				if (relayCall == null) {
+					relayCall = instr.getMinAddress();
+					wrapped = target;
+				}
+				else if (furtherCall == null && target.function().equals(wrapped.function())) {
+					// The ONE further call to the SAME wrapped helper -- the shape
+					// findCallEdgeWrappers rejects outright and this pass exists for. ITS OWN
+					// argument, not the relay's, is what this pass composes as the wrapper's
+					// exit state -- see javadoc.
+					furtherCall = instr.getMinAddress();
+				}
+				else {
+					// A call to a DIFFERENT known helper, or a SECOND further call to the same
+					// one: stay conservative rather than guess how to fold several restores.
+					rejected = true;
+					break;
+				}
+			}
+			if (rejected || relayCall == null || furtherCall == null || wrapped.relay() != null ||
+				wrapped.argReg() == null || wrapped.firstSite() == null) {
+				continue; // no exactly-one further call: that shape is not this pass's to admit
+			}
+			// The zero-length prefix (megaman2's FUN_c628/FUN_c70c: the relay call IS the
+			// wrapper's own first instruction) is trivially a pass-through, exactly as an empty
+			// prologueSegment is trivially SURVIVES in HelperArgumentRecovery -- there is nothing
+			// between entry and the relay to disqualify. isPassThroughInto itself cannot say so:
+			// its walk always examines the instruction AT the wrapper's entry before ever
+			// comparing against target, so a call instruction sitting there (which necessarily
+			// has flows) fails its very first check. That is correct behavior for the question
+			// isPassThroughInto answers elsewhere (a fallthrough chain of at least one
+			// instruction) and simply does not cover this degenerate case, so it is handled here
+			// instead of papering over it inside that shared, heavily-relied-on predicate.
+			if (!relayCall.equals(wrapper.getEntryPoint()) &&
+				!isPassThroughInto(program, wrapper, relayCall, switchResults)) {
+				continue; // the prefix reaching the relay is not a proven straight line
+			}
+			if (traceInboundRegisterOrigin(program, wrapper.getEntryPoint(), relayCall,
+				wrapped.argReg()) == null) {
+				continue; // the register is defined locally after all -- not a second-tier argument
+			}
+			if (!argumentSurvivesPrologue(program, wrapped.entry(), wrapped.firstSite(),
+				wrapped.argReg())) {
+				continue; // the wrapped helper's OWN prologue does not preserve its argument
+			}
+			// The wrapper's EXIT state, composed from the RESTORE call's own local evidence --
+			// NEVER from the relay's forwarded argument, which is only live INSIDE the wrapper.
+			// callSiteIn is unknown() rather than any tracked state: this runs at discovery time,
+			// before any dataflow that knows this wrapper exists, and the restore's own argument
+			// (a plain LDA #imm for both megaman2 instances) needs no caller context to resolve
+			// anyway -- exactly like recoverCallArgument's normal caller-side register scan.
+			Instruction furtherInstr = listing.getInstructionAt(furtherCall);
+			if (furtherInstr == null) {
+				continue;
+			}
+			HelperArgumentRecovery.CallEffect restoreEffect = recoverCallArgument(program,
+				furtherInstr, wrapped, BankState.unknown(), new HashMap<>(), Set.of());
+			if (!restoreEffect.argumentResolved()) {
+				continue; // cannot establish the exit state -- decline rather than guess
+			}
+			HelperModel model = new HelperModel(wrapper, wrapper.getEntryPoint(),
+				restoreEffect.state(), null, wrapped.effectMask(), 0, null, null, null, null);
+			result.put(wrapper, model);
+			relaySites.add(relayCall);
+		}
+		return new SecondTierResult(Map.copyOf(result), Set.copyOf(relaySites));
+	}
+
+	/**
+	 * {@link #findSecondTierHelpers}'s result: {@code helpers} is its input map plus every
+	 * admitted second-tier model; {@code relayCallSites} is the address of each admitted
+	 * wrapper's OWN relay call -- the site {@link BankDataflowEngine#runDataflow} reclassifies via
+	 * {@link HelperArgumentRecovery.CallEffect#asSecondTierRelay} when its argument does not
+	 * resolve some other way, so {@code BoardBankAnalyzer} can report it as an honest gap
+	 * ({@link BankSwitchStrategy.ValueStop#SECOND_TIER_ARGUMENT}) rather than a warning.
+	 */
+	record SecondTierResult(Map<Function, HelperModel> helpers, Set<Address> relayCallSites) {}
+
+	/**
+	 * The register whose value at {@code entry} still reaches {@code reg} at {@code before},
+	 * unclobbered, allowing the value to be RELABELED by a straight chain of register-to-register
+	 * transfers ({@code TAX}/{@code TAY}/{@code TXA}/{@code TYA}) along the way -- what
+	 * {@link #findSecondTierHelpers} needs to determine a wrapper's own argument-passing
+	 * convention when it is not simply {@code reg} itself (bead grm-ylm6). Returns {@code reg}
+	 * unchanged when nothing between {@code entry} and {@code before} touches it at all (the
+	 * zero-transfer case -- megaman2's {@code FUN_c628}, whose relay call IS its own entry); a
+	 * DIFFERENT register when one or more transfers intervened and nothing else ever redefines
+	 * the register currently being traced (megaman2's {@code FUN_c760}: a {@code TXA} immediately
+	 * before the relay returns {@code 'X'} for a query about {@code 'A'}); or {@code null} when
+	 * the traced register IS defined locally by something other than a transfer, meaning the
+	 * value is not a second-tier argument at all.
+	 * <p>
+	 * <b>Callers MUST establish {@code [entry, before)} is straight-line first.</b> This method
+	 * does not check it and does not need to: {@link #findSecondTierHelpers} only calls it after
+	 * {@link #isPassThroughInto} has already proved the span contains no branch, no jump, no call
+	 * and no gap, which is exactly what makes walking it BACKWARD BY ADDRESS equivalent to
+	 * walking it forward in execution order. Calling this over a branchy span would silently
+	 * trust an address-order walk that is not an execution-order one.
+	 */
+	private static Character traceInboundRegisterOrigin(Program program, Address entry,
+			Address before, char reg) {
+		Listing listing = program.getListing();
+		Character current = reg;
+		Address cursor = before;
+		for (int steps = 0; steps < MAX_ORIGIN_TRACE; steps++) {
+			Instruction instr = listing.getInstructionBefore(cursor);
+			if (instr == null || instr.getMinAddress().compareTo(entry) < 0) {
+				return current; // ran off the start of the straight-line span: current is inbound
+			}
+			Character source = transferSourceInto(instr.getMnemonicString(), current);
+			if (source != null) {
+				current = source;
+			}
+			else {
+				Register register = program.getLanguage().getRegister(String.valueOf(current));
+				if (register != null && StoredValueScanner.writesRegister(instr, register)) {
+					return null; // defined locally by something other than a plain transfer
+				}
+			}
+			cursor = instr.getMinAddress();
+			if (cursor.equals(entry)) {
+				return current; // reached entry cleanly, current untouched by anything but transfers
+			}
+		}
+		return null; // pathologically long straight-line span -- decline rather than guess
+	}
+
+	/**
+	 * The source register of a transfer that writes {@code dest} ({@code TXA}/{@code TYA} write
+	 * {@code A} from {@code X}/{@code Y}; {@code TAX}/{@code TAY} write {@code X}/{@code Y} from
+	 * {@code A}), or {@code null} when {@code mnem} is not such a transfer or does not write
+	 * {@code dest}. A small local duplicate of {@code StoredValueScanner}'s private
+	 * {@code transferSource} rather than a widened import: four lines, kept free to drift from
+	 * that one if either ever needs a transfer the other does not.
+	 */
+	private static Character transferSourceInto(String mnem, char dest) {
+		return switch (mnem) {
+			case "TAX" -> dest == 'X' ? 'A' : null;
+			case "TAY" -> dest == 'Y' ? 'A' : null;
+			case "TXA" -> dest == 'A' ? 'X' : null;
+			case "TYA" -> dest == 'A' ? 'Y' : null;
+			default -> null;
+		};
 	}
 
 	/**

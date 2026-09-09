@@ -1607,9 +1607,19 @@ final class HelperArgumentRecovery {
 	 * other two recovery channels (a caller-side memory cell, or a constant the helper's own body
 	 * supplies): those are orthogonal questions, and a consumer of this field cares about it only
 	 * when {@code argumentResolved} is false, which is exactly {@code BoardBankAnalyzer}'s use.
+	 * <p>
+	 * {@code secondTierRelay} (bead grm-ylm6) is set -- always by the CALLER of
+	 * {@link #recoverCallArgument}, never by this method itself -- when this call site's own
+	 * address is a known SECOND-TIER HELPER's relay call: a wrapper function that forwards a
+	 * register argument, taken from ITS OWN caller, into this real helper. It is meaningful only
+	 * when {@code argumentResolved} is false; a consumer that finds it true there should classify
+	 * the gap as {@link BankSwitchStrategy.ValueStop#SECOND_TIER_ARGUMENT} rather than
+	 * {@link BankSwitchStrategy.ValueStop#ANALYZER_LIMIT} -- an honest gap recoverable one frame
+	 * out, at the wrapper's own call sites, not our limitation at this one. See
+	 * {@link HelperDiscovery#findSecondTierHelpers} for how a relay call site earns this flag.
 	 */
 	record CallEffect(BankState state, int ownedMask, boolean argumentResolved,
-			boolean noInboundArgument) {
+			boolean noInboundArgument, boolean secondTierRelay) {
 
 		/**
 		 * A call effect whose {@code argumentResolved} follows from {@code state} alone -- the
@@ -1624,8 +1634,25 @@ final class HelperArgumentRecovery {
 		 * helper-argument machinery at all ({@code BankDataflowEngine}'s {@code constState}
 		 * branch) -- none of which this bead's proof applies to.
 		 */
+		CallEffect(BankState state, int ownedMask, boolean argumentResolved,
+				boolean noInboundArgument) {
+			this(state, ownedMask, argumentResolved, noInboundArgument, false);
+		}
+
+		/** As the 2-argument form, with {@code secondTierRelay} likewise defaulted false. */
 		CallEffect(BankState state, int ownedMask) {
-			this(state, ownedMask, state.knownMask() != 0, false);
+			this(state, ownedMask, state.knownMask() != 0, false, false);
+		}
+
+		/**
+		 * This effect, reclassified as a second-tier helper's relay call (bead grm-ylm6) --
+		 * applied by {@link BankDataflowEngine#runDataflow} to the result of
+		 * {@link #recoverCallArgument}, never computed inside it, since the relay-site set is a
+		 * whole-program fact {@link HelperDiscovery} derives and {@code recoverCallArgument} has
+		 * no reason to depend on.
+		 */
+		CallEffect asSecondTierRelay() {
+			return new CallEffect(state, ownedMask, argumentResolved, noInboundArgument, true);
 		}
 	}
 

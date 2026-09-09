@@ -54,7 +54,10 @@ import static retromachines.HelperDiscovery.composeTailCalls;
 import static retromachines.HelperDiscovery.findCallEdgeWrappers;
 import static retromachines.HelperDiscovery.findHelpers;
 import static retromachines.HelperDiscovery.findPassThroughWrappers;
+import static retromachines.HelperDiscovery.findSecondTierHelpers;
 import static retromachines.SaveRestoreTrampolines.restoresEntryBank;
+
+import retromachines.HelperDiscovery.SecondTierResult;
 
 import retromachines.BankDataflowEngine.CallSwitch;
 import retromachines.BankDataflowEngine.DataflowResult;
@@ -350,11 +353,24 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// Order is load-bearing. findCallEdgeWrappers runs LAST so its relay lookups see
 		// pass-through wrappers as helpers; it is also why exitEffect never encounters a relay
 		// model. See findCallEdgeWrappers' javadoc for the one gap this order leaves open.
-		Map<Function, HelperModel> helpers = findCallEdgeWrappers(program,
+		Map<Function, HelperModel> callEdgeHelpers = findCallEdgeWrappers(program,
 			findPassThroughWrappers(program,
 				composeTailCalls(program, findHelpers(program, flow.switchResults())),
 				flow.switchResults()),
 			flow.switchResults());
+		// bead grm-ylm6: SECOND-TIER helpers -- a function that writes no mechanism itself and
+		// relays a register argument (taken from ITS OWN caller) into a real helper, then makes
+		// at least one FURTHER call to that same helper before returning (a restore, typically).
+		// That second call is exactly what findCallEdgeWrappers' "exactly one known-helper call"
+		// rule rejects, so this runs as a separate, narrower pass afterward rather than relaxing
+		// that rule in place -- see findSecondTierHelpers' javadoc for why the two are kept
+		// apart. secondTierRelaySites is the set of call addresses whose own argument recovery
+		// is expected to fail locally by construction (the register is live at the WRAPPER's
+		// entry, not here) -- BoardBankAnalyzer reports those as an honest gap rather than a
+		// warning once dataflow (below) confirms they did not resolve some other way.
+		SecondTierResult secondTier =
+			findSecondTierHelpers(program, callEdgeHelpers, flow.switchResults());
+		Map<Function, HelperModel> helpers = secondTier.helpers();
 		reportHelpers(program, helpers.keySet());
 
 		// Which banks each switchable window actually has an image slice for (grm-hum
@@ -401,7 +417,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// a lookup that misses), so a mirrors-only rerun changes nothing on its own.
 		if (!helpers.isEmpty() || !mirrors.isEmpty()) {
 			flow = runDataflow(program, monitor, listing, mechanisms, board, helpers,
-				restoringTrampolines);
+				restoringTrampolines, secondTier.relayCallSites());
 		}
 
 		// --- Bank mirror naming (grm-mej.4): turn the derived mirror set into symbols and
@@ -512,10 +528,22 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 						: "Bank state becomes unknown here: call to bank-switch helper " +
 							callSwitch.helperName() + " whose bank argument could not be " +
 							"recovered at this call site";
+				// bead grm-ylm6: a call site that IS a second-tier helper's own relay -- the
+				// register it reads is a live argument, but one this call's own function never
+				// defines; it is supplied by THAT function's caller, one frame further out. Not
+				// our limitation, so it is classified SECOND_TIER_ARGUMENT (an honest NOTE, via
+				// annotateOrWarn's honestGapMessage) rather than ANALYZER_LIMIT (a WARNING) --
+				// see ValueStop#SECOND_TIER_ARGUMENT and CallSwitch#secondTierRelay. warningText
+				// above is unused on this path (honestGapMessage answers before it would be
+				// read), computed unconditionally only because the noInboundArgument case needs
+				// it and the two conditions are independent.
+				BankSwitchStrategy.ValueStop callStop =
+					callSwitch.secondTierRelay() && !callSwitch.argumentResolved()
+						? BankSwitchStrategy.ValueStop.SECOND_TIER_ARGUMENT
+						: BankSwitchStrategy.ValueStop.ANALYZER_LIMIT;
 				BankAnnotationAdapter.Marked marked = BankAnnotationAdapter.annotateOrWarn(this,
 					program, listing, addr, annotState, board, bankUniverse,
-					callSwitch.helperName(), warningText,
-					BankSwitchStrategy.ValueStop.ANALYZER_LIMIT, provenance,
+					callSwitch.helperName(), warningText, callStop, provenance,
 					!callSwitch.argumentResolved());
 				if (marked == BankAnnotationAdapter.Marked.WARNED) {
 					warnings++;
