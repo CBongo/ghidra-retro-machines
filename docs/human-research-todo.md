@@ -84,6 +84,30 @@ SPC700 problem.
       MMC1 half of that bead: it is the difference between "three mode-0 titles need yamls" and
       "two need yamls and one needs a genuine exception mechanism".
 
+- [ ] **megaman2: with bank $E in base, why do eight `via RESET` bank comments in the fixed $C000
+      bank disappear?** (`grm-hb6.13`; introduced by `grm-5l14`.) Raised 2026-09-12 while
+      shipping the `prg_bank: 14` per-game hint. The bead predicted two effects and both landed
+      exactly: base `W8000` holds bank 14, and the `LDA $2a / AND #7` sites move `0?` -> `6?`.
+      A THIRD, unpredicted effect is that `c037`, `c041`, `d0aa`, `d0ba` (`prg_bank=12?`),
+      `c56a`, `c598` (`13?`), `c5b2`, `c811` (`11?`) — all `via RESET`, all with prg_bank fully
+      known and only mirroring assumed — lose their comment entirely, while eight new
+      `via RESET ... prg_bank=14?` comments appear in bank 14's code (`9060`, `a000`, `a522`,
+      `a9bd`, `ad0d`, `ad24`, `da2e`) and `802a` goes from fully-known 14 to `14?`. Net
+      `bankComments` 77 -> 76; the sample list is uncapped, so these are real, and the analyzer
+      log says nothing about them.
+
+      **The fixed-bank code did not move**, so only the inbound state can have changed — it now
+      flows out of bank 14's code instead of bank 0's. The agent's guess is that the path into
+      those `JSR $FFE0` sites is now fully unknown (no comment emitted) rather than partially
+      known: a real loss of 8 fixed-bank sites traded for 8 gained in base. Unconfirmed.
+
+      **Why a human:** what are `c037`/`c56a`/`d0aa` (inside `FUN_c000`? separate helpers?),
+      and what state reaches them with bank 14 resident? A few minutes in the GUI on the
+      candidate program (`build/banktest-work/realrom.KSoCTBcl/proj_megaman2`) or a fresh import
+      with `machines/games/megaman2.yaml` in place. **The golden is deliberately NOT blessed
+      until this is read**; the yaml sits uncommitted in the working tree (its full text is also
+      in the bead comment) so it cannot make the row fail every run in the meantime.
+
 ---
 
 ## 2. Def-use passes on untraced titles
