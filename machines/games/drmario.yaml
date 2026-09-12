@@ -1,0 +1,45 @@
+# Curated per-game descriptor (title tier). Compiled to data/games/drmario.gmap.
+# docs/per-game-descriptors-design.md; bead grm-tsii (2026-09-12).
+#
+# WHY THIS FILE EXISTS. machines/nes-mmc1.yaml's home layout is PRG mode 3 (fix-last), and that
+# default is HARDWARE-GROUNDED: the MMC1 control register really does reset with bits 2-3 set,
+# and the descriptor models it ("reset": {"prg_mode": 3}). But it describes t=0 only. This
+# cartridge reprograms the control register to mode 0 (one 32 KiB window at $8000-$FFFF) during
+# init and stays there: every bank comment the analyzer recovers resolves prg_mode=0, and 25 of
+# 25 sampled overlay references target W8000_M0_* exclusively (measured 2026-09-08, grm-tsii).
+# Without this hint the base blocks carry the mode-3 layout (W8000 8000-bfff + WC000 c000-ffff)
+# that the game never executes in, so W8000_M0 has all 8 banks as overlays and nothing in base.
+#
+# Unlike MMC3 (grm-3fvj), the mode cannot be recovered from the image at load time: MMC1's
+# control register is written bit-serially (five one-bit writes, LSB first), so there is no
+# LDA #imm / STA abs pair carrying the mode for NesRomLoader.imageResolvedMode to match on.
+# This hint is the per-game tier's designed answer for exactly that -- a fact a human (or a
+# prior analysis run) can establish in minutes but no byte scan can.
+#
+# prg_bank is deliberately NOT hinted: the analyzer's own recovery leaves it at the descriptor's
+# initial 0, and in mode 0 the hardware ignores its LSB, so bank 0 (PRG[0x0000..0x8000)) is
+# the resident 32 KiB image in base -- which is where every sampled reference already points.
+
+schema: 2
+
+game:
+  id: drmario
+  title: "Dr. Mario (JU) [o4]"
+  board: nes_mmc1
+  identity:
+    # PRG-slice SHA-256 (16-byte iNES header excluded, no trainer), copied from the
+    # "REALROM prgsha256" line of tools/banktest/realrom/expected/drmario.dump -- the same
+    # value NesRomLoader.gameIdentity computes at import.
+    prg_sha256: "ace0456db2526659619a53d1fcdf3c023f6c15385396c26b98ac30a5f31556bc"
+    # Whole-file SHA-256, copied from the drmario row of tools/banktest/realrom/manifest-gme.tsv.
+    file_sha256: "33bf00489ec593bdf1d5255154735912503754de2f2d679c00b8229e5f024812"
+  provenance: "grm-tsii survey of the pinned drmario real-ROM golden, 2026-09-08: both recovered
+    bank comments (ff1b, ff2a) resolve prg_mode=0, and every sampled overlay reference targets
+    W8000_M0_B0; the cartridge runs MMC1 32 KiB mode from init, not the control register's
+    mode-3 reset value."
+
+banking:
+  # Field-NAME map, never a packed integer (the game tier does not know the board's bit
+  # layout); folded in last, after banking.initial_state_expr, by
+  # DescriptorSupport.applyGameInitialStateHint.
+  initial_state: { prg_mode: 0 }

@@ -8,8 +8,7 @@ REALROM block APU_IO 4000-401f overlay=false
 REALROM block PPU_REGS 2000-2007 overlay=false
 REALROM block PRG_RAM 6000-7fff overlay=false
 REALROM block RAM 0000-07ff overlay=false
-REALROM block W8000 8000-bfff overlay=false
-REALROM block W8000_M0_B0 8000-ffff overlay=true
+REALROM block W8000 8000-ffff overlay=false
 REALROM block W8000_M0_B1 8000-ffff overlay=true
 REALROM block W8000_M0_B2 8000-ffff overlay=true
 REALROM block W8000_M0_B3 8000-ffff overlay=true
@@ -26,6 +25,7 @@ REALROM block W8000_M1_B5 8000-ffff overlay=true
 REALROM block W8000_M1_B6 8000-ffff overlay=true
 REALROM block W8000_M1_B7 8000-ffff overlay=true
 REALROM block W8000_M2 8000-bfff overlay=true
+REALROM block W8000_M3_B0 8000-bfff overlay=true
 REALROM block W8000_M3_B1 8000-bfff overlay=true
 REALROM block W8000_M3_B2 8000-bfff overlay=true
 REALROM block W8000_M3_B3 8000-bfff overlay=true
@@ -33,7 +33,6 @@ REALROM block W8000_M3_B4 8000-bfff overlay=true
 REALROM block W8000_M3_B5 8000-bfff overlay=true
 REALROM block W8000_M3_B6 8000-bfff overlay=true
 REALROM block W8000_M3_B7 8000-bfff overlay=true
-REALROM block WC000 c000-ffff overlay=false
 REALROM block WC000_M2_B0 c000-ffff overlay=true
 REALROM block WC000_M2_B1 c000-ffff overlay=true
 REALROM block WC000_M2_B2 c000-ffff overlay=true
@@ -42,45 +41,20 @@ REALROM block WC000_M2_B4 c000-ffff overlay=true
 REALROM block WC000_M2_B5 c000-ffff overlay=true
 REALROM block WC000_M2_B6 c000-ffff overlay=true
 REALROM block WC000_M2_B7 c000-ffff overlay=true
+REALROM block WC000_M3 c000-ffff overlay=true
 REALROM count blocks.total 38
-REALROM count blocks.overlay 32
-REALROM count spaces.overlay 32
-REALROM count refs.intoOverlay 241
-REALROM count refs.intoOverlay.retargeted 4
-REALROM count refs.intoOverlay.intraOverlay 237
-REALROM count instrs.inOverlay 944
+REALROM count blocks.overlay 33
+REALROM count spaces.overlay 33
+REALROM count refs.intoOverlay 0
+REALROM count refs.intoOverlay.retargeted 0
+REALROM count refs.intoOverlay.intraOverlay 0
+REALROM count instrs.inOverlay 0
 REALROM count bankComments 2
 REALROM count warnings 1
 REALROM count notes 6
 REALROM count symbols 18
 REALROM sample.bankcomment ff1b bank -> mirroring=0,prg_mode=0,prg_bank=0? via FUN_aca3 [known: mirroring.0=0,mirroring.1=0,prg_mode.0=0,prg_mode.1=0; assumed from initial: prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
 REALROM sample.bankcomment ff2a bank -> mirroring=0,prg_mode=0,prg_bank=0 via FUN_acdf [switch-value flow]
-REALROM sample.ref 8002 -> W8000_M0_B0::805a UNCONDITIONAL_JUMP primary=true
-REALROM sample.ref 8067 -> W8000_M0_B0::8064 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 806b -> W8000_M0_B0::8064 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8072 -> W8000_M0_B0::8095 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8079 -> W8000_M0_B0::8095 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8080 -> W8000_M0_B0::8095 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8087 -> W8000_M0_B0::8095 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 808e -> W8000_M0_B0::8095 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8090 -> W8000_M0_B0::80bc UNCONDITIONAL_JUMP primary=true
-REALROM sample.ref 8095 -> W8000_M0_B0::ad67 READ primary=true
-REALROM sample.ref 809a -> W8000_M0_B0::80a3 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 80a0 -> W8000_M0_B0::8095 UNCONDITIONAL_JUMP primary=true
-REALROM sample.ref 80dd -> W8000_M0_B0::e006 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 80e0 -> W8000_M0_B0::e003 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 80f7 -> W8000_M0_B0::aa52 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 80fa -> W8000_M0_B0::aa78 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 80ff -> W8000_M0_B0::aa82 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 8104 -> W8000_M0_B0::aa82 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 8109 -> W8000_M0_B0::aa82 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 810e -> W8000_M0_B0::aa82 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 8117 -> W8000_M0_B0::ac6a UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 811a -> W8000_M0_B0::aa6b UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 811d -> W8000_M0_B0::aa2f UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 8120 -> W8000_M0_B0::aa5f UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 8123 -> W8000_M0_B0::aa2f UNCONDITIONAL_CALL primary=true
-REALROM sample.ref.truncated 25 of 241
 REALROM sample.warn ff16 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.note aca3 [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
 REALROM sample.note acb3 [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.

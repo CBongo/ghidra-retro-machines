@@ -36,6 +36,19 @@
 #     3: fix-last (the reset-dance convention, and this descriptor's home mode) --
 #        $8000-$BFFF switches on prg_bank, $C000-$FFFF fixed to the last bank.
 #
+#   HOME MODE IS A t=0 FACT, AND SOME TITLES LEAVE IT (bead grm-tsii, 2026-09-12). Mode 3 is
+#   hardware-grounded -- Control resets with bits 2-3 set, modeled by the mechanism's
+#   `reset:` below -- but a game that reprograms Control to 32K mode during init and stays
+#   there executes in a layout the base blocks never show. Unlike MMC3 (grm-3fvj), the mode
+#   cannot be read off the image at load time: Control is written bit-serially, so there is
+#   no LDA #imm / STA pair for NesRomLoader.imageResolvedMode to match. The designed answer is
+#   a curated per-game hint, `banking: initial_state: { prg_mode: 0 }` in
+#   machines/games/<title>.yaml (drmario and tetris are the shipped examples). A title that
+#   genuinely runs in more than one mode -- rcproam resolves mode 0 at eight sites and mode 3
+#   at two -- is deliberately NOT hinted: "which layout is home" would be a dominance choice
+#   there, not a recoverable fact, and the t=0 default is the honest layout for it. Never
+#   change the descriptor's initial_state itself for this; it is correct at reset.
+#
 #   CHR banking (targets 1/2, 4 KiB or 8 KiB PPU-side windows) is entirely out of scope
 #   here (vision doc §5.4 defers non-CPU spaces) -- both targets are recognized by the
 #   serial-shift mechanism (address bits 14:13 == 1 or 2) but have no `targets` entry, so
