@@ -294,6 +294,7 @@ case "${GRM_EXTENSION_BUILT_THIS_RUN:-}/$EXT_NOTE_SUFFIX" in
 			" analyzing, so it matches this working tree.)"
 		;;
 esac
+grm_packed_db_cache_note
 
 normalize_opts() {
 	# Echo the loader-opts string with each existing-file argument replaced by

@@ -897,6 +897,7 @@ case "${GRM_EXTENSION_BUILT_THIS_RUN:-}/$EXT_NOTE_SUFFIX" in
 			" as unproven and find out why before trusting it.)"
 		;;
 esac
+grm_packed_db_cache_note
 # Resolved Ghidra install root (bead grm-k0h): GHIDRA_HEADLESS -- not GRM_GHIDRA_INSTALL --
 # is what actually launches Ghidra, so a native-side A/B (decompile.exe, sleigh.exe) needs
 # GRM_GHIDRA_INSTALL set AND this to name the install it resolved to, or a stray default

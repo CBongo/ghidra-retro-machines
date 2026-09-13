@@ -179,6 +179,35 @@ grm_apply_settings_base() {
 		base_native="$(native "$BANKTEST_SETTINGS_BASE")"
 		export GHIDRA_HEADLESS_JAVA_OPTIONS="${GHIDRA_HEADLESS_JAVA_OPTIONS:-} -Dapplication.settingsdir=$base_native -Dapplication.cachedir=$base_native/cache"
 	fi
+	grm_capture_packed_db_cache_state
+}
+
+# Packed-db cache state at the START of this run (bead grm-oa00): "empty" if the isolated
+# -Dapplication.cachedir held nothing yet, "populated" if it did, "shared" when no isolated
+# settings base is in use. Captured here, before any row runs, because the first row
+# warms it. Before the analysis thread pool was pinned (-Dcpu.core.override=1, grm-nems), this
+# was a silent input to real-ROM output: tmnt landed on refs.intoOverlay 0 cold and 44 warm,
+# byte-identical within each side, and nothing recorded which side a run was on. Measured
+# 2026-09-13 with the pin live: cold and warm produce byte-identical tmnt dumps, so the state
+# no longer decides anything -- it is printed (grm_packed_db_cache_note) purely so that if it
+# ever does again, the run says so instead of the reader reconstructing it.
+GRM_PACKED_DB_CACHE_STATE=""
+grm_capture_packed_db_cache_state() {
+	if [ -z "${BANKTEST_SETTINGS_BASE:-}" ]; then
+		GRM_PACKED_DB_CACHE_STATE="shared (no isolated settings base; not attributable)"
+	elif [ -d "$BANKTEST_SETTINGS_BASE/cache" ] && [ -n "$(ls -A "$BANKTEST_SETTINGS_BASE/cache" 2>/dev/null)" ]; then
+		# "populated", deliberately not "warm": Ghidra invalidates entries by archive mtime, and
+		# a build this run (stageExtensionForTests re-copies data/*.gdt) makes a populated
+		# cache cold again for exactly the board archives that matter. Only the empty case is
+		# an unambiguous claim.
+		GRM_PACKED_DB_CACHE_STATE="populated at run start (cold anyway for any archive a build re-stamped this run)"
+	else
+		GRM_PACKED_DB_CACHE_STATE="empty at run start (cold; the first row unpacked it)"
+	fi
+}
+
+grm_packed_db_cache_note() {
+	echo "== packed-db cache at run start: ${GRM_PACKED_DB_CACHE_STATE:-unknown} =="
 }
 
 # True if PATH contains a '/'-separated segment starting with '.' (other than
