@@ -1436,6 +1436,19 @@ final class BankAnnotationAdapter {
 					// has (bead grm-p25h); the identity on every other board.
 					int bankValue = canonicalBank(board.bankWrap(), bankUniverse.get(computed.name()),
 						field.valueIn(effective));
+					// Same override rule as the mode-varying branch below (grm-hsv.3 / grm-v6o):
+					// when dataflow did not FULLY pin this window's bank, a user placement
+					// override for it takes over; flow always wins when it knows. Until grm-iqq
+					// this branch never consulted the override at all, so `-loader-placement
+					// WA000:5` on MMC3 -- whose r7 window is mode-invariant and therefore
+					// hoisted here rather than into memory.layouts[] -- was accepted by the
+					// loader, logged as active by the analyzer, and silently did nothing.
+					boolean bankKnown = field.fullyKnownIn(inState);
+					Integer overrideBank = placementOverride.get(computed.name());
+					boolean overridden = !bankKnown && overrideBank != null;
+					if (overridden) {
+						bankValue = overrideBank;
+					}
 					if (bankValue == field.valueIn(board.initialState())) {
 						// the home bank lives in base space at this offset -- default is right.
 						continue;
@@ -1443,6 +1456,10 @@ final class BankAnnotationAdapter {
 					added += addOverlayRef(analyzer, program, refMgr, instr, offset, opIndex,
 						DescriptorSupport.OverlayNaming.bankBlockName(computed.name(), bankValue),
 						refType, true, monitor, log);
+					if (overridden) {
+						annotatePlacementProvenance(program.getListing(), instr.getMinAddress(),
+							bankValue, provenance);
+					}
 				}
 				else if (board.modeField() != null) {
 					// memory.layouts[] mode-varying window: two-level lookup -- which layout

@@ -319,6 +319,9 @@ public class VerifyBankTest extends GhidraScript {
 		else if (name.contains("nesmmc1overridetest")) {
 			checkNesMmc1Override();
 		}
+		else if (name.contains("nesmmc3overridetest")) {
+			checkNesMmc3Override();
+		}
 		else if (name.contains("nesmmc1test")) {
 			checkNesMmc1test();
 		}
@@ -4827,6 +4830,83 @@ public class VerifyBankTest extends GhidraScript {
 			"instruction exists at W8000_M3_B5::8000");
 		criterion("O7:W8000_M3_B3_8000", hasInstructionAt("W8000_M3_B3", 0x8000),
 			"instruction exists at W8000_M3_B3::8000");
+	}
+
+	private void checkNesMmc3Override() {
+		// Addresses per tools/banktest/mknesbanktest.py's make_prg_mmc3_override() label dump:
+		// reset=$E000, select7=$E002, known_commit=$E007, flow_jsr=$E00A, opaque_load=$E00F,
+		// partial_ora=$E012, partial_commit=$E014, partial_jsr=$E017, opaque_load2=$E01A,
+		// unknown_commit=$E01D, unknown_jsr=$E020, idle=$E023, rti=$E026.
+		// Loaded with -loader-placement WA000:5 (bead grm-iqq). The point of this fixture is
+		// Q3/Q4: the INTERIOR of the knowledge lattice, which nesmmc1overridetest cannot reach
+		// (its serial-shift strategy collapses a clobbered chain to fully unknown). Under the
+		// pre-grm-v6o "intersects" predicate a partial r7 counted as known and Q4's JSR stayed
+		// in base (effective r7 backfilled to the home bank 1); the "contains" predicate lets
+		// the override fire.
+
+		// Q1: the known data write at $E007 recovers r7=3 from dataflow through a known
+		// select=7, no '?', flow-tagged -- the same shape as nesmmc3test's e021.
+		String c = eol(0xE007);
+		criterion("Q1", c.contains("select=7") && c.contains("r7=3") && !c.contains("?") &&
+			c.contains("[switch-value flow]"),
+			"known data write -> r7=3 flow-recovered at e007: \"" + c + "\"");
+
+		// Q2 (FLOW WINS, known endpoint): the JSR $A000 at $E00A retargets into WA000_B3 --
+		// dataflow beats the override (which pins WA000 to bank 5); no ref into B5, no tag.
+		Reference r = findOverlayRef(0xE00A, "WA000_B3", 0xA000);
+		criterion("Q2", r != null && r.getReferenceType().isCall() && r.isPrimary() &&
+			findOverlayRef(0xE00A, "WA000_B5", 0xA000) == null &&
+			!eol(0xE00A).contains("[user override]"),
+			"JSR $A000 with known r7=3 retargeted to WA000_B3 (flow wins over override), " +
+				"primary: " + describe(r));
+
+		// Q3 (THE INTERIOR): the data write at $E014 deposits a PARTIAL r7 -- ORA #$01 over
+		// an opaque indexed load pins bit 0 = 1 and nothing else -- so the comment carries a
+		// '?', names r7.0 as known, and names at least one other r7 bit as assumed. This is the
+		// state no other fixture constructs; if it ever collapses to fully unknown (no comment,
+		// warning instead) or to fully known, Q4 stops testing what it claims to.
+		c = eol(0xE014);
+		criterion("Q3", c.contains("?") && c.contains("r7.0=1") &&
+			c.contains("assumed from initial:") && c.contains("r7.1") &&
+			!c.contains("[user override]"),
+			"partial data write -> r7 partially known (r7.0=1, rest assumed) at e014: \"" +
+				c + "\"");
+
+		// Q4 (OVERRIDE FIRES ON PARTIAL KNOWLEDGE -- grm-v6o's E2E regression test): the JSR
+		// $A000 at $E017 retargets into WA000_B5, the override's bank, tagged [user override].
+		// The old predicate would have left this JSR in base with no overlay reference.
+		r = findOverlayRef(0xE017, "WA000_B5", 0xA000);
+		criterion("Q4", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $A000 with PARTIALLY-known r7 retargeted to the override's WA000_B5, " +
+				"primary: " + describe(r));
+		c = eol(0xE017);
+		criterion("Q4:tag", c.contains("bank -> 5") && c.contains("[user override]"),
+			"partial-knowledge override site tagged [user override] at e017: \"" + c + "\"");
+
+		// Q5: the bare opaque data write at $E01D leaves r7 FULLY unknown. Unlike MMC1's
+		// unresolvable chain (nesmmc1overridetest's O2, a warning and no comment), MMC3's packed
+		// tuple still has known select/r6 bits, so the honest annotation is a '?' comment that
+		// lists every r7 bit as assumed and names none of them as known.
+		c = eol(0xE01D);
+		criterion("Q5", c.contains("?") && c.contains("assumed from initial: r7.0,r7.1,r7.2,r7.3,r7.4,r7.5") &&
+			!c.matches(".*known:[^;]*r7\\.[0-5]=.*"),
+			"opaque data write -> r7 fully unknown (all six bits assumed) at e01d: \"" + c + "\"");
+
+		// Q6 (OVERRIDE FIRES, unknown endpoint): the JSR $A000 at $E020 with r7 fully unknown
+		// retargets into WA000_B5, tagged -- the endpoint nesmmc1overridetest's O3/O4 already
+		// cover, kept here as the control that Q4's partial case is not merely this case.
+		r = findOverlayRef(0xE020, "WA000_B5", 0xA000);
+		c = eol(0xE020);
+		criterion("Q6", r != null && r.getReferenceType().isCall() && r.isPrimary() &&
+			c.contains("bank -> 5") && c.contains("[user override]"),
+			"JSR $A000 with unknown r7 retargeted to WA000_B5, tagged, at e020: " +
+				describe(r) + " \"" + c + "\"");
+
+		// Q7: disassembly sanity -- both retargeted overlay targets exist.
+		criterion("Q7:WA000_B5_A000", hasInstructionAt("WA000_B5", 0xA000),
+			"instruction exists at WA000_B5::A000");
+		criterion("Q7:WA000_B3_A000", hasInstructionAt("WA000_B3", 0xA000),
+			"instruction exists at WA000_B3::A000");
 	}
 
 	private static String describeBlock(MemoryBlock b) {

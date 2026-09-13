@@ -2031,6 +2031,12 @@ class _Asm:
     def lsr_a(self):
         self._emit([0x4A])
 
+    def and_imm(self, v):
+        self._emit([0x29, v & 0xFF])
+
+    def ora_imm(self, v):
+        self._emit([0x09, v & 0xFF])
+
     def inc_abs(self, addr):
         self._emit([0xEE, addr & 0xFF, (addr >> 8) & 0xFF])
 
@@ -2664,6 +2670,120 @@ def make_prg_mmc1_override():
 
     # Unrelated data table backing the unresolvable indexed load above.
     put7(0xC400, [0x33, 0x44])
+
+    # Vector table.
+    put7(0xFFFA, [labels['rti'] & 0xFF, (labels['rti'] >> 8) & 0xFF])
+    put7(0xFFFC, [labels['reset'] & 0xFF, (labels['reset'] >> 8) & 0xFF])
+    put7(0xFFFE, [labels['rti'] & 0xFF, (labels['rti'] >> 8) & 0xFF])
+
+    return bytes(prg), labels
+
+
+def make_prg_mmc3_override():
+    """Placement-override fixture for machines/nes-mmc3.yaml reaching the INTERIOR of the
+    bank-knowledge lattice (bead grm-iqq): a PARTIALLY-known multi-bit bank field at a
+    retarget site, the state grm-v6o's predicate fix is about.
+
+    nesmmc1overridetest exercises only the lattice's two ENDPOINTS -- prg_bank fully unknown
+    (override fires) and fully known (flow wins) -- and grm-iqq measured that MMC1's
+    serial-shift strategy CANNOT produce a partial field: an accumulator clobber mid-chain
+    abandons the commit, collapsing to fully unknown. So the pre-grm-v6o predicate
+    ((knownMask & positionedMask) != 0, "intersects") and the fixed one (== positionedMask,
+    "contains") were indistinguishable on every fixture, and the bug survived a board that
+    had a dedicated override fixture. MMC3's select/data strategy DOES carry partial
+    per-bit knowledge into a field (SelectDataBankSwitchStrategy.setFieldFromByte keeps
+    StoredValueScanner's mask-algebra bits), which is what makes this board the right one.
+
+    The partial state is built the way real drivers build it: an opaque indexed load
+    (LDA $E400,X -- StoredValueScanner does not model indexed addressing, so A is
+    unresolvable) followed by ORA #$01, which the mask algebra turns into "bit 0 = 1, bits
+    1-7 unknown" -- the same shape as megaman2's real `LDA $2a / AND #7` sites. Deposited
+    through a KNOWN select=7, that write lands in r7 as a partial field.
+
+    Loaded with `-loader-placement WA000:5`. WA000 (r7's window) is mode-invariant, so the
+    override's overlay is the hoisted `WA000_B5`, no _M suffix. The discriminating site is
+    partial_jsr: under the OLD predicate a partial r7 counted as known, the unknown bits
+    backfilled from initial_state (r7=1), giving effective r7 = 1 | 1 = 1 = the HOME bank --
+    i.e. the JSR would stay in base with no overlay reference at all; under the FIXED
+    predicate the override fires and it retargets into WA000_B5. The partial's known bit
+    (bit 0 = 1) is deliberately CONSISTENT with bank 5 (0b101): whether partial knowledge
+    that contradicts an override should veto it is a policy nobody has ruled on, and this
+    fixture does not pin one.
+
+    Main runs entirely in the fixed WE000 window (bank 7 == PRG[last], file offset $E000 ==
+    CPU address, as in make_prg_mmc3); banks 3 and 5 hold a lone RTS at offset 0 so the
+    retargeted JSR targets disassemble. Bank 1 (r7's home) keeps its marker byte.
+
+    RESET ($E000, seed select=0/prg_mode=0/r6=0/r7=1 from initial_state):
+      E000 LDA #$07 / E002 STA $8000   -- select=7 (R7), prg_mode=0.
+      E005 LDA #$03 / E007 STA $8001   -- r7=3 KNOWN (data write through known select).
+      E00A JSR $A000                   -- r7=3 known -> FLOW WINS -> WA000_B3::A000.
+      E00D LDX #$00
+      E00F LDA $E400,X                 -- opaque indexed load: A unresolvable.
+      E012 ORA #$01                    -- mask algebra: bit 0 = 1 known, bits 1-7 unknown.
+      E014 STA $8001                   -- r7 PARTIAL: r7.0=1 known, r7.1-5 unknown.
+      E017 JSR $A000                   -- r7 partial -> OVERRIDE -> WA000_B5::A000.
+      E01A LDA $E400,X                 -- opaque again.
+      E01D STA $8001                   -- r7 fully UNKNOWN (endpoint control).
+      E020 JSR $A000                   -- r7 unknown -> OVERRIDE -> WA000_B5::A000.
+      E023 JMP $E023                   -- idle loop.
+      E026 RTI                         -- NMI/IRQ handler.
+    """
+    prg = bytearray([0x00] * MMC3_PRG_SIZE)
+
+    for bank in range(MMC3_BANKS):
+        prg[bank * MMC3_BANK_SIZE] = bank  # bank marker, matching the other fixtures
+
+    # Banks 3 and 5's JSR targets (WA000_B3::A000 / WA000_B5::A000): lone RTS, replacing
+    # the marker byte, as in nesmmc3test's bank 3 target.
+    prg[3 * MMC3_BANK_SIZE] = 0x60
+    prg[5 * MMC3_BANK_SIZE] = 0x60
+
+    bank7_base = 7 * MMC3_BANK_SIZE
+    assert bank7_base == 0xE000
+
+    def put7(cpu_addr, data):
+        off = bank7_base + (cpu_addr - 0xE000)
+        prg[off:off + len(data)] = bytes(data)
+
+    main = _Asm(prg, 0xE000, bank7_base)
+    labels = {}
+
+    labels['reset'] = main.label()
+    main.lda_imm(0x07)
+    labels['select7'] = main.label()
+    main.sta_abs(0x8000)                     # select=7 (R7), prg_mode=0
+
+    main.lda_imm(0x03)
+    labels['known_commit'] = main.label()
+    main.sta_abs(0x8001)                     # r7=3 KNOWN
+    labels['flow_jsr'] = main.label()
+    main.jsr(0xA000)                         # flow wins -> WA000_B3
+
+    main.ldx_imm(0x00)
+    labels['opaque_load'] = main.label()
+    main.lda_absx(0xE400)                    # opaque indexed load -> A unresolvable
+    labels['partial_ora'] = main.label()
+    main.ora_imm(0x01)                       # bit 0 = 1 known, rest unknown
+    labels['partial_commit'] = main.label()
+    main.sta_abs(0x8001)                     # r7 PARTIAL
+    labels['partial_jsr'] = main.label()
+    main.jsr(0xA000)                         # partial -> override -> WA000_B5
+
+    labels['opaque_load2'] = main.label()
+    main.lda_absx(0xE400)                    # opaque again
+    labels['unknown_commit'] = main.label()
+    main.sta_abs(0x8001)                     # r7 fully UNKNOWN
+    labels['unknown_jsr'] = main.label()
+    main.jsr(0xA000)                         # unknown -> override -> WA000_B5
+
+    labels['idle'] = main.label()
+    main.jmp(labels['idle'])                 # idle loop
+    labels['rti'] = main.label()
+    main.rti()                               # NMI/IRQ handler
+
+    # Unrelated data table backing the unresolvable indexed loads above.
+    put7(0xE400, [0x33, 0x44])
 
     # Vector table.
     put7(0xFFFA, [labels['rti'] & 0xFF, (labels['rti'] >> 8) & 0xFF])
@@ -3904,6 +4024,26 @@ def main():
           ", ".join("%s=$%04X" % (k, v) for k, v in m1olabels.items()))
 
     _write_rom(outdir, "nesmmc1overridetest.nes", prgm1o, mapper=MAPPER_MMC1)
+
+    # nesmmc3overridetest.nes (bead grm-iqq): override fires on a PARTIALLY-known r7.
+    prgm3o, m3olabels = make_prg_mmc3_override()
+    m3obank7_base = 7 * MMC3_BANK_SIZE
+    assert prgm3o[3 * MMC3_BANK_SIZE] == 0x60  # RTS at WA000_B3::A000 target
+    assert prgm3o[5 * MMC3_BANK_SIZE] == 0x60  # RTS at WA000_B5::A000 target
+    assert prgm3o[1 * MMC3_BANK_SIZE] == 0x01  # r7's home bank keeps its marker
+    assert prgm3o[m3obank7_base + 0x002:m3obank7_base + 0x005] == b'\x8d\x00\x80'  # STA $8000
+    assert prgm3o[m3obank7_base + 0x007:m3obank7_base + 0x00A] == b'\x8d\x01\x80'  # STA $8001
+    assert prgm3o[m3obank7_base + 0x00F] == 0xBD  # LDA abs,X opcode (opaque load) at $E00F
+    assert prgm3o[m3obank7_base + 0x012:m3obank7_base + 0x014] == b'\x09\x01'  # ORA #$01
+    assert prgm3o[m3obank7_base + 0x014:m3obank7_base + 0x017] == b'\x8d\x01\x80'  # partial STA
+    assert prgm3o[m3obank7_base + 0x017:m3obank7_base + 0x01A] == b'\x20\x00\xa0'  # JSR $A000
+    assert m3olabels['partial_jsr'] == 0xE017 and m3olabels['unknown_jsr'] == 0xE020
+    _assert_vectors(prgm3o, "nesmmc3overridetest", handler=m3olabels['rti'],
+                    reset=m3olabels['reset'])
+    print("nesmmc3overridetest labels: " +
+          ", ".join("%s=$%04X" % (k, v) for k, v in m3olabels.items()))
+
+    _write_rom(outdir, "nesmmc3overridetest.nes", prgm3o, mapper=MAPPER_MMC3)
 
     # neswrappertest.nes (bead grm-2dr, increment 1): pass-through-wrapper fixture.
     prgw, wlabels = make_prg_wrapper()

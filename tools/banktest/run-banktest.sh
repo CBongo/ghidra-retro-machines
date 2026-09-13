@@ -974,6 +974,13 @@ if selected nes-banking; then
 	run_one nesmmc1overridetest "$WORK/nes/nesmmc1overridetest.nes" NesRomLoader \
 		"-loader-placement W8000:5"
 
+	# grm-iqq: the override must fire on a PARTIALLY-known bank field, not only a fully
+	# unknown one (grm-v6o's predicate). MMC1's serial shift cannot build a partial field;
+	# MMC3's select/data can. WA000 is r7's window, mode-invariant, so the pinned overlay is
+	# the hoisted WA000_B5. See make_prg_mmc3_override().
+	run_one nesmmc3overridetest "$WORK/nes/nesmmc3overridetest.nes" NesRomLoader \
+		"-loader-placement WA000:5"
+
 	# grm-2dr increment 1: pass-through-wrapper recognition (a fallthrough-only function
 	# whose last instruction lands exactly on a real bank-switch helper's entry). Separate
 	# fixture from nesmmc1test so that one stays byte-identical -- see make_prg_wrapper()'s

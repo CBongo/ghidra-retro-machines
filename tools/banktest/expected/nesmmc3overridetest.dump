@@ -1,0 +1,59 @@
+IDENTITY prg:9464550932d9622a5ec8c8797cfa3559d21c2736e15c81e218825528f1e85467 file:6ee7f1f86d95137724ab76218b60944b096a1185a1f09eda806b9315652455ca
+BLOCK APU_IO 4000-401f overlay=false
+BLOCK PPU_REGS 2000-2007 overlay=false
+BLOCK PRG_RAM 6000-7fff overlay=false
+BLOCK RAM 0000-07ff overlay=false
+BLOCK W8000 8000-9fff overlay=false
+BLOCK W8000_M0_B1 8000-9fff overlay=true
+BLOCK W8000_M0_B2 8000-9fff overlay=true
+BLOCK W8000_M0_B3 8000-9fff overlay=true
+BLOCK W8000_M0_B4 8000-9fff overlay=true
+BLOCK W8000_M0_B5 8000-9fff overlay=true
+BLOCK W8000_M0_B6 8000-9fff overlay=true
+BLOCK W8000_M0_B7 8000-9fff overlay=true
+BLOCK W8000_M1 8000-9fff overlay=true
+BLOCK WA000 a000-bfff overlay=false
+BLOCK WA000_B0 a000-bfff overlay=true
+BLOCK WA000_B2 a000-bfff overlay=true
+BLOCK WA000_B3 a000-bfff overlay=true
+BLOCK WA000_B4 a000-bfff overlay=true
+BLOCK WA000_B5 a000-bfff overlay=true
+BLOCK WA000_B6 a000-bfff overlay=true
+BLOCK WA000_B7 a000-bfff overlay=true
+BLOCK WC000 c000-dfff overlay=false
+BLOCK WC000_M1_B0 c000-dfff overlay=true
+BLOCK WC000_M1_B1 c000-dfff overlay=true
+BLOCK WC000_M1_B2 c000-dfff overlay=true
+BLOCK WC000_M1_B3 c000-dfff overlay=true
+BLOCK WC000_M1_B4 c000-dfff overlay=true
+BLOCK WC000_M1_B5 c000-dfff overlay=true
+BLOCK WC000_M1_B6 c000-dfff overlay=true
+BLOCK WC000_M1_B7 c000-dfff overlay=true
+BLOCK WE000 e000-ffff overlay=false
+COMMENT e002 bank -> select=7,prg_mode=0,r6=0,r7=1 [switch-value flow]
+COMMENT e007 bank -> select=7,prg_mode=0,r6=0,r7=3 [switch-value flow]
+COMMENT e014 bank -> select=7,prg_mode=0,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=0,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0,r7.0=1; assumed from initial: r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+COMMENT e017 bank -> 5 [user override]
+COMMENT e01d bank -> select=7,prg_mode=0,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=0,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0; assumed from initial: r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+COMMENT e020 bank -> 5 [user override]
+REF e00a -> WA000_B3::a000 UNCONDITIONAL_CALL primary=true
+REF e017 -> WA000_B5::a000 UNCONDITIONAL_CALL primary=true
+REF e020 -> WA000_B5::a000 UNCONDITIONAL_CALL primary=true
+SYMBOL 2000 PPUCTRL IMPORTED primary=true
+SYMBOL 2001 PPUMASK IMPORTED primary=true
+SYMBOL 2002 PPUSTATUS IMPORTED primary=true
+SYMBOL 2003 OAMADDR IMPORTED primary=true
+SYMBOL 2004 OAMDATA IMPORTED primary=true
+SYMBOL 2005 PPUSCROLL IMPORTED primary=true
+SYMBOL 2006 PPUADDR IMPORTED primary=true
+SYMBOL 2007 PPUDATA IMPORTED primary=true
+SYMBOL 4014 OAMDMA IMPORTED primary=true
+SYMBOL 4015 SND_CHN IMPORTED primary=true
+SYMBOL 4016 JOY1 IMPORTED primary=true
+SYMBOL 4017 JOY2 IMPORTED primary=true
+SYMBOL e000 RESET IMPORTED primary=true
+SYMBOL e026 IRQ IMPORTED primary=false
+SYMBOL e026 NMI IMPORTED primary=true
+SYMBOL fffa NMI_VEC IMPORTED primary=true
+SYMBOL fffc RESET_VEC IMPORTED primary=true
+SYMBOL fffe IRQ_VEC IMPORTED primary=true
