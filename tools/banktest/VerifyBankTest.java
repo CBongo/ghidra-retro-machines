@@ -203,6 +203,12 @@ public class VerifyBankTest extends GhidraScript {
 			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
 			return;
 		}
+		// Same ordering hazard: "copybankedinplace"/"copybankedinplacerom" contain "copybanked".
+		if (name.contains("copybankedinplace")) {
+			checkCopyBankedInPlace();
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
 
 		// One branch serves both the no-ROM and ROM-supplied runs -- "copybankedrom" contains
 		// "copybanked", and checkCopyBanked keys off the full name for the single criterion that
@@ -1094,6 +1100,113 @@ public class VerifyBankTest extends GhidraScript {
 			"bm=" + (mark == null ? "<none>" : mark.getTypeString() + " " + note));
 		criterion("copybankedsrc-norom-source-resolved", "CHARGEN:d000".equals(declinedSource),
 			"declinedSource=" + declinedSource + " expected=CHARGEN:d000");
+	}
+
+	/**
+	 * grm-cpj: the SAME-BASE cross-occupant copy. The fixture (mkcopytest.py
+	 * {@code copybankedinplace.prg}) is {@code LDA $A000,X / STA $A000,X} -- load and store share
+	 * a base address, which {@code CopyLoopAnalyzer.tryRecognize} used to reject outright as an
+	 * in-place transform. It is a copy because the two sides reach DIFFERENT occupants: the read
+	 * is the BASIC ROM (the LOROM window's home occupant, base space), the write lands in the
+	 * RAM_A000 overlay underneath it. Loop top {@code $2002}, counter init and provenance anchor
+	 * the {@code LDX} at {@code $2000}, entering {@code JMP} at {@code $200B}.
+	 *
+	 * <p>Run against both {@code copybankedinplace} (no dump) and {@code copybankedinplacerom}
+	 * ({@code -loader-basicRom}); like copybankedsrc the two MUST DIFFER -- gate 0 refuses an
+	 * uninitialized BASIC, the dump materializes BASIC's own bytes inside RAM_A000. Before the
+	 * fix neither run recognized the loop at all, so the no-dump run's refusal bookmark is itself
+	 * regression evidence: it only exists because the same-base loop was admitted.
+	 */
+	private void checkCopyBankedInPlace() {
+		boolean romSupplied = currentProgram.getName().contains("copybankedinplacerom");
+		final long ldaSite = 0x2002;
+		final long staSite = 0x2005;
+
+		if (romSupplied) {
+			// mkromtest.py's basic.bin is byte[i] = (i & 0xFF) ^ 0x55, so $A000..$A007 reads
+			// 55 54 57 56 51 50 53 52 -- bytes that exist nowhere in the PRG image.
+			verifyCopy("copybankedinplace", "COPY_RAM_A000_a000", 0xa000, 0xa000,
+				new byte[] {0x55, 0x54, 0x57, 0x56, 0x51, 0x50, 0x53, 0x52},
+				true, false, true,
+				new Neighbor[] {new Neighbor("RAM_A000_A008", 0xa008, 0xbfff, "RAM_A000")},
+				addr(COPY_ENTRY), null);
+			MemoryBlock copy = currentProgram.getMemory().getBlock("COPY_RAM_A000_a000");
+			criterion("copybankedinplace-copyblock-space",
+				copy != null && "RAM_A000".equals(copy.getStart().getAddressSpace().getName()),
+				"space=" + (copy == null ? "<missing>"
+						: copy.getStart().getAddressSpace().getName()) + " expected=RAM_A000");
+			// The entering JMP $A000 at $200B must reach the copy inside RAM_A000 (same
+			// deliberately-loose "a reference, not the primary one" as copybanked's check).
+			Reference bridged = findOverlayRef(0x200b, "RAM_A000", 0xa000);
+			criterion("copybankedinplace-callref-reaches-copy",
+				bridged != null &&
+					currentProgram.getListing().getInstructionAt(bridged.getToAddress()) != null,
+				"ref=" + (bridged == null ? "<none>"
+						: bridged.getToAddress().getAddressSpace().getName() + ":" +
+							fmt(bridged.getToAddress())));
+		}
+		else {
+			MemoryBlock copy = currentProgram.getMemory().getBlock("COPY_RAM_A000_a000");
+			MemoryBlock ram = currentProgram.getMemory().getBlock("RAM_A000");
+			String ramLine = ram == null ? "<none>"
+					: ram.getName() + " " + fmt(ram.getStart()) + "-" + fmt(ram.getEnd()) +
+						" init=" + ram.isInitialized();
+			boolean intact = ram != null && ram.getStart().getOffset() == 0xa000 &&
+				ram.getEnd().getOffset() == 0xbfff;
+			Bookmark mark = null;
+			for (Bookmark bm : currentProgram.getBookmarkManager().getBookmarks(addr(COPY_ENTRY))) {
+				if (COPY_CATEGORY.equals(bm.getCategory())) {
+					mark = bm;
+					break;
+				}
+			}
+			String note = mark == null ? "<none>" : mark.getComment();
+			println("=== BANKDUMP BEGIN ===");
+			println("COPYBLOCK " + (copy == null ? "<none>" : copy.getName()));
+			println("NEIGHBORS " + ramLine);
+			println("BOOKMARK " + (mark == null ? "<none>" : mark.getTypeString()));
+			println("DECLINED " + (note.contains("source bytes are uninitialized") ? "yes" : "no"));
+			println("=== BANKDUMP END ===");
+			criterion("copybankedinplace-norom-not-materialized", copy == null,
+				"block=" + (copy == null ? "<none>" : copy.getName()));
+			criterion("copybankedinplace-norom-destination-unsplit", intact, "ram=" + ramLine);
+			// The loop WAS recognized (the pre-fix code rejected it before reaching the
+			// materializer), and refused only because BASIC holds no bytes without a dump.
+			criterion("copybankedinplace-norom-recognized-then-refused",
+				mark != null && "Warning".equals(mark.getTypeString()) &&
+					note.contains("source bytes are uninitialized"),
+				"bm=" + (mark == null ? "<none>" : mark.getTypeString() + " " + note));
+		}
+
+		// The occupancy split that makes this a copy, asserted in both runs: the STA's write
+		// reference was re-homed into RAM_A000 while the LDA's read reference stayed on the
+		// base-space BASIC block. This is exactly the pair tryRecognize compares.
+		Reference writeRef = findOverlayRef(staSite, "RAM_A000", 0xa000);
+		criterion("copybankedinplace-write-rehomed",
+			writeRef != null && writeRef.getReferenceType().isWrite(),
+			"ref=" + (writeRef == null ? "<none>"
+					: writeRef.getToAddress().getAddressSpace().getName() + ":" +
+						fmt(writeRef.getToAddress()) + " " + writeRef.getReferenceType()));
+		boolean readInBase = false;
+		String readLine = "<none>";
+		for (Reference r : currentProgram.getReferenceManager().getReferencesFrom(addr(ldaSite))) {
+			if (r.getReferenceType().isRead()) {
+				readInBase = !r.getToAddress().getAddressSpace().isOverlaySpace();
+				readLine = r.getToAddress().getAddressSpace().getName() + ":" + fmt(r.getToAddress());
+				break;
+			}
+		}
+		criterion("copybankedinplace-read-in-base", readInBase,
+			"read ref=" + readLine + " expected base space (BASIC, the home occupant)");
+
+		// The ROM occupant must be whole, still named BASIC, initialized iff a dump was given.
+		MemoryBlock basic = currentProgram.getMemory().getBlock("BASIC");
+		boolean basicOk = basic != null && basic.getStart().getOffset() == 0xa000 &&
+			basic.getEnd().getOffset() == 0xbfff && basic.isInitialized() == romSupplied;
+		criterion("copybankedinplace-basic-intact", basicOk,
+			"basic=" + (basic == null ? "<missing>"
+					: fmt(basic.getStart()) + "-" + fmt(basic.getEnd()) + " init=" +
+						basic.isInitialized()) + " expectedInit=" + romSupplied);
 	}
 
 	private void checkCopyLoop() {

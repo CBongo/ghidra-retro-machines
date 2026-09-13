@@ -1,0 +1,4 @@
+COPYBLOCK <none>
+NEIGHBORS RAM_A000 a000-bfff init=false
+BOOKMARK Warning
+DECLINED yes

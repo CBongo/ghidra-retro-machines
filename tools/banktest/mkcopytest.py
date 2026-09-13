@@ -129,6 +129,31 @@ dump supplied the copy materializes carrying the character ROM's own bytes, whic
 mkromtest.py generates as byte[i] = (i & 0xFF) ^ 0xAA, i.e. AA AB A8 A9 AE AF AC AD at $C000.
 Before grm-9a0 the recognizer named the base-space $D000 -- the IO home occupant -- in BOTH
 runs, so supplying the character ROM changed nothing at all and its bytes were never reached.
+
+copybankedinplace.prg is the SAME-BASE cross-occupant copy (grm-cpj): the canonical C64 boot
+idiom LDA $A000,X / STA $A000,X, which READS the BASIC ROM (the LOROM window's home occupant
+in the default bank state, LORAM=1) and WRITES the RAM underneath it (RAM_A000 -- a write can
+never land in ROM, so the window's on_write routes it there). Before grm-cpj
+CopyLoopAnalyzer.tryRecognize rejected any loop whose load and store shared a base address
+as an in-place transform, so this copy was silently discarded; now the same-base case is
+admitted iff the two sides resolve to DIFFERENT occupants, which BoardBankAnalyzer's re-homed
+references decide. The source and destination are DELIBERATELY the same base address, so the
+only thing that distinguishes this from an in-place decrypt is occupancy:
+
+  $2000  A2 07        LDX #$07
+  $2002  BD 00 A0     LDA $A000,X       ; SOURCE: BASIC ROM, the home occupant (loop top)
+  $2005  9D 00 A0     STA $A000,X       ; DESTINATION: RAM_A000, under the ROM (same base!)
+  $2008  CA           DEX
+  $2009  10 F7        BPL $2002
+  $200B  4C 00 A0     JMP $A000         ; JUMP INTO the copy -> AUTO (code)
+
+Run TWICE by the harness, as copybankedinplace (no ROM) and copybankedinplacerom
+(-loader-basicRom), and like copybankedsrc the two runs must DIFFER: with no dump the BASIC
+occupant is uninitialized and TransferMaterializer's gate 0 refuses; with the dump the copy is
+carved inside the RAM_A000 overlay carrying the BASIC ROM's own bytes, which mkromtest.py
+generates as byte[i] = (i & 0xFF) ^ 0x55, i.e. 55 54 57 56 51 50 53 52 at RAM_A000::a000.
+Before grm-cpj neither run recognized the loop at all. The in-place decrypt fixtures
+(mkdecrypttest.py) are the counter-witness: they must NOT start being claimed as copies.
 """
 
 import sys
@@ -215,6 +240,21 @@ def build_copybankedsrc():
     return code
 
 
+def build_copybankedinplace():
+    code = bytes([
+        0xA2, 0x07,             # LDX #$07
+        0xBD, 0x00, 0xA0,       # LDA $A000,X   (SOURCE -- the BASIC ROM, home occupant)
+        0x9D, 0x00, 0xA0,       # STA $A000,X   (DESTINATION -- RAM_A000 under it, SAME base)
+        0xCA,                   # DEX
+        0x10, 0xF7,             # BPL $2002
+        0x4C, 0x00, 0xA0,       # JMP $A000     (into the copy -> AUTO)
+    ])
+    assert code[3:5] == code[6:8] == bytes([0x00, 0xA0]), "load and store must share a base"
+    assert (0x2002 - (LOAD_ADDR + 11)) & 0xFF == 0xF7, "BPL displacement must reach the LDA"
+    assert LOAD_ADDR + len(code) == 0x200E, "code must end at $200E (no payload follows)"
+    return code
+
+
 def write_prg(outdir, name, body):
     header = bytes([LOAD_ADDR & 0xFF, LOAD_ADDR >> 8])
     path = os.path.join(outdir, name)
@@ -233,6 +273,7 @@ def main():
     write_prg(outdir, "copyoverlay.prg", build_copyoverlay())
     write_prg(outdir, "copybanked.prg", build_copybanked())
     write_prg(outdir, "copybankedsrc.prg", build_copybankedsrc())
+    write_prg(outdir, "copybankedinplace.prg", build_copybankedinplace())
 
 
 if __name__ == "__main__":

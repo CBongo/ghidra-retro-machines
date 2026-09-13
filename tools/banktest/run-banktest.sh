@@ -816,6 +816,16 @@ if selected c64-recovery; then
 	run_one copybankedsrcrom "$WORK/prg/copybankedsrcrom.prg" C64PrgLoader \
 		"-loader-chargenRom $(native "$WORK/prg/chargen.bin")"
 
+	# grm-cpj: the SAME-BASE cross-occupant copy -- LDA $A000,X / STA $A000,X, reading the BASIC
+	# ROM and writing the RAM underneath it. Load and store share a base address, which the
+	# recognizer used to reject outright as an in-place transform; it is a copy because the two
+	# sides resolve to different occupants. Run both ways like copybankedsrc: no dump refuses at
+	# gate 0 (BASIC uninitialized), the dump materializes the BASIC bytes inside RAM_A000.
+	run_one copybankedinplace "$WORK/prg/copybankedinplace.prg" C64PrgLoader
+	cp -f "$WORK/prg/copybankedinplace.prg" "$WORK/prg/copybankedinplacerom.prg"
+	run_one copybankedinplacerom "$WORK/prg/copybankedinplacerom.prg" C64PrgLoader \
+		"-loader-basicRom $(native "$WORK/prg/basic.bin")"
+
 	# The MANUAL run-from-elsewhere front-end (grm-1.7.1.1): the shipped
 	# ghidra_scripts/RunFromElsewhereTransfer.java driven as a -preScript, which is the only
 	# regression path the manual front-ends have (the GUI plugin is untestable here -- see

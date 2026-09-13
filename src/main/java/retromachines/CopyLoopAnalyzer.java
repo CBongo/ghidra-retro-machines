@@ -20,6 +20,7 @@ import ghidra.app.services.AnalysisPriority;
 import ghidra.app.services.AnalyzerType;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.program.model.address.Address;
+import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.address.AddressSetView;
 import ghidra.program.model.lang.Processor;
 import ghidra.program.model.lang.Register;
@@ -157,8 +158,13 @@ public class CopyLoopAnalyzer extends AbstractAnalyzer {
 			return null;
 		}
 
-		// Indexed load and store to DIFFERENT bases with the same index register: a relocation
-		// (src != dst), which is exactly what distinguishes a copy from an in-place decrypt.
+		// Indexed load and store with the same index register. DIFFERENT bases are a relocation
+		// (src != dst), which is what distinguishes a copy from an in-place decrypt. The SAME base
+		// is not rejected here any more (grm-cpj): on a banked machine LDA $A000,Y / STA $A000,Y
+		// reads the BASIC ROM and writes RAM_A000 underneath it -- a genuine ROM->RAM copy, and one
+		// of the most common boot idioms on the C64 -- so a same-base loop is admitted below iff the
+		// two sides RESOLVE to different occupants. That test needs the loop's length, so it sits
+		// after the bounding step; the shape tests in between exit silently either way.
 		Address src = LoopIdioms.indexedBase(lda);
 		Register idx = LoopIdioms.indexReg(lda);
 		Address dst = LoopIdioms.indexedBase(sta);
@@ -166,9 +172,10 @@ public class CopyLoopAnalyzer extends AbstractAnalyzer {
 		if (src == null || dst == null || idx == null || staIdx == null) {
 			return null;
 		}
-		if (src.equals(dst) || !idx.equals(staIdx)) {
+		if (!idx.equals(staIdx)) {
 			return null;
 		}
+		boolean sameBase = src.equals(dst);
 
 		// Index step + conditional back-branch to the loop head (the LDA).
 		Instruction step = listing.getInstructionAfter(sta.getAddress());
@@ -185,12 +192,36 @@ public class CopyLoopAnalyzer extends AbstractAnalyzer {
 			return null; // not a copy loop -- an ordinary adjacent indexed load/store, ignore
 		}
 		if (n == null) {
+			if (sameBase) {
+				// Unbounded AND same-base: without a length the occupants cannot be resolved, so
+				// this cannot be told from an in-place transform. Stay silent, as before grm-cpj --
+				// a "could not be bounded" warning on every in-place loop would be noise.
+				return null;
+			}
 			program.getBookmarkManager().setBookmark(lda.getAddress(), BookmarkType.WARNING,
 				CATEGORY, "copy-shaped loop " + TransferMaterializer.fmt(src) + " -> " +
 					TransferMaterializer.fmt(dst) + " could not be bounded; not applied");
 			return null;
 		}
 		int len = n + 1;
+
+		// grm-cpj: the same-base case is a copy only when the read and the write reach DIFFERENT
+		// occupants of that window -- LDA $A000,Y from the BASIC ROM, STA $A000,Y into RAM_A000
+		// (a write cannot land in ROM, so on_write routes it under). BoardBankAnalyzer has already
+		// re-homed each side's reference into the occupant it really reaches; a side left in base
+		// space is the window's home occupant. Same occupant on both sides (both base, or the same
+		// overlay) is an in-place transform, which is C64DecryptLoopAnalyzer's shape, not ours.
+		// Resolved on BASE addresses and only for this decision -- the jump-into-range test below
+		// still wants dst in base space, exactly as the ordering note further down explains.
+		if (sameBase) {
+			Address readSide = LoopIdioms.overlayAccessTarget(lda, src, len, RefType::isRead);
+			Address writeSide = LoopIdioms.overlayAccessTarget(sta, dst, len, RefType::isWrite);
+			AddressSpace readSpace = readSide == null ? src.getAddressSpace() : readSide.getAddressSpace();
+			AddressSpace writeSpace = writeSide == null ? dst.getAddressSpace() : writeSide.getAddressSpace();
+			if (readSpace.equals(writeSpace)) {
+				return null; // in place: the decrypt analyzer's territory
+			}
+		}
 
 		// A JMP/JSR into the destination is the only evidence this loop moves CODE, and without
 		// it we do not materialize at all -- see the "evidence gate" note in the class javadoc.
@@ -212,11 +243,10 @@ public class CopyLoopAnalyzer extends AbstractAnalyzer {
 		// the I/O registers rather than the character ROM the loop is really reading.
 		// BoardBankAnalyzer has already resolved both of these instructions against the bank state
 		// live here and re-homed their references into the occupants actually reached, so take that
-		// answer on both sides. Deliberately after the src/dst and jump-into-range tests above, all
-		// of which need the base-space addresses: re-homing first would make "src != dst" trivially
-		// true (an in-place-looking LDA $A000,Y / STA $A000,Y that reads BASIC and writes RAM_A000
-		// is a real C64 idiom, but admitting it is a separate behavior change), and a base-space JMP
-		// would no longer land inside the destination range.
+		// answer on both sides. Deliberately after the jump-into-range test above, which needs the
+		// base-space destination: a base-space JMP would no longer land inside a re-homed range.
+		// (The same-base decision above resolves both sides too, but only to compare their spaces;
+		// it never replaces src/dst -- see the grm-cpj note there.)
 		//
 		// Only the DESTINATION drives TransferTarget: RESOLVED_SPACE tells the materializer where
 		// to place bytes, and a re-homed source changes only where they are read from.
