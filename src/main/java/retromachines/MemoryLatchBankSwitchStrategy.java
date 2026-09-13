@@ -15,6 +15,11 @@
  */
 package retromachines;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import com.google.gson.JsonObject;
@@ -26,6 +31,7 @@ import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
+import ghidra.program.model.mem.Memory;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.symbol.Reference;
 
@@ -118,6 +124,23 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	private AddressSet overlayCoveredRanges;
 
 	/**
+	 * Every overlay block over this program's code space, snapshotted alongside
+	 * {@link #overlayCoveredRanges} (same lifetime argument), so {@link #bankInvariantRomByte}
+	 * can compare an overlay-covered offset's content across every bank image that could be
+	 * mapped there (bead grm-e7v) without walking the block list per query.
+	 */
+	private List<MemoryBlock> overlayBlocks;
+
+	/**
+	 * Per-offset memo for the content-verified half of {@link #bankInvariantRomByte}: base-space
+	 * offset -> the invariant byte, or {@code null} when the copies disagree (or any copy is
+	 * unreadable). Sound to memoize for the same reason the two snapshots above are: no block
+	 * or byte of loader-placed ROM changes after analyzers start. Bounded by the window size,
+	 * and only offsets actually asked about are ever entered.
+	 */
+	private final Map<Long, Optional<Integer>> invariantByteMemo = new HashMap<>();
+
+	/**
 	 * The addresses that MIRROR THE LIVE BANK on this program (bead grm-mej.2), delivered by
 	 * {@link #observeMirrors} between {@code BoardBankAnalyzer}'s two dataflow passes. Empty for
 	 * pass 1 and for every board with no derivable mirror, in which case this strategy behaves
@@ -190,10 +213,15 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 		addrMatch = params.has("addr_match") ? params.get("addr_match").getAsLong() : 0;
 
 		overlayCoveredRanges = new AddressSet();
+		overlayBlocks = new ArrayList<>();
+		invariantByteMemo.clear();
 		for (MemoryBlock b : program.getMemory().getBlocks()) {
 			if (b.getStart().getAddressSpace().isOverlaySpace()) {
 				overlayCoveredRanges.addRange(space.getAddress(b.getStart().getOffset()),
 					space.getAddress(b.getEnd().getOffset()));
+				if (b.getStart().getAddressSpace().getPhysicalSpace().equals(space)) {
+					overlayBlocks.add(b);
+				}
 			}
 		}
 	}
@@ -845,10 +873,23 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	}
 
 	/**
-	 * The byte at {@code addr} when it is guaranteed load-time constant: inside a
-	 * non-writable initialized base-space block with no overlay block shadowing the same
-	 * offset (an overlay there means the base content is merely the home bank of a
-	 * switchable window). Returns {@code null} when any of that fails.
+	 * The byte at {@code addr} when it is guaranteed load-time constant. Two ways to earn that:
+	 * <ul>
+	 * <li>inside a non-writable initialized base-space block with no overlay block shadowing
+	 * the same offset -- a fixed window, where the base content is the only content;</li>
+	 * <li>or, on an overlay-covered offset, when the base copy AND every overlay copy of that
+	 * offset hold the same byte (bead grm-e7v). The base content there is merely the home bank
+	 * of a switchable window, but if every bank that could ever be mapped at this offset
+	 * carries the same byte, no bank switch can change what a load reads, and the byte is
+	 * invariant by CONTENT rather than by layout. This is what unlocks fully-overlaid boards
+	 * (AxROM/GxROM declare one $8000-$FFFF window and no fixed bank, so the first rule refuses
+	 * every address those programs can name) -- dragonpower's and shenlong's whole switch
+	 * engine, bus-conflict table included, lives in a per-bank-identical tail.</li>
+	 * </ul>
+	 * Computed PER OFFSET, never as a common suffix: on those two boards {@code $FFFA-$FFFF}
+	 * genuinely differ per bank (each bank carries its own NMI/IRQ handler) while the bytes just
+	 * below them do not, so a longest-common-suffix test would report zero invariant bytes.
+	 * Returns {@code null} when neither rule holds.
 	 */
 	private Integer bankInvariantRomByte(Program program, Address addr) {
 		MemoryBlock block = program.getMemory().getBlock(addr);
@@ -857,9 +898,12 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 		}
 		// Normalize to a base-space address first: the interval set holds base-space
 		// shadows, but the pre-index code compared raw offsets, so an overlay-space addr
-		// covered by any overlay block (its own included) must still be refused here.
-		if (overlayCoveredRanges.contains(space.getAddress(addr.getOffset()))) {
-			return null;
+		// covered by any overlay block (its own included) must still take the content-verified
+		// route here.
+		Address base = space.getAddress(addr.getOffset());
+		if (overlayCoveredRanges.contains(base)) {
+			return invariantByteMemo.computeIfAbsent(base.getOffset(),
+				offset -> Optional.ofNullable(contentInvariantByte(program, base))).orElse(null);
 		}
 		try {
 			return program.getMemory().getByte(addr) & 0xFF;
@@ -867,5 +911,46 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 		catch (Exception e) {
 			return null;
 		}
+	}
+
+	/**
+	 * The content-verified half of {@link #bankInvariantRomByte}: the byte at base-space
+	 * {@code base} if the base block and every overlay block covering that offset are
+	 * initialized, non-writable, and hold the identical byte; {@code null} otherwise. Refuses
+	 * rather than guesses on any unreadable copy -- an uninitialized overlay (a bank slot the
+	 * image does not fill) means the byte there is unknown, not equal.
+	 */
+	private Integer contentInvariantByte(Program program, Address base) {
+		Memory memory = program.getMemory();
+		MemoryBlock baseBlock = memory.getBlock(base);
+		if (baseBlock == null || baseBlock.isWrite() || !baseBlock.isInitialized()) {
+			return null;
+		}
+		int value;
+		try {
+			value = memory.getByte(base) & 0xFF;
+		}
+		catch (Exception e) {
+			return null;
+		}
+		long offset = base.getOffset();
+		for (MemoryBlock b : overlayBlocks) {
+			if (offset < b.getStart().getOffset() || offset > b.getEnd().getOffset()) {
+				continue;
+			}
+			if (b.isWrite() || !b.isInitialized()) {
+				return null;
+			}
+			try {
+				int copy = memory.getByte(b.getStart().getAddressSpace().getAddress(offset)) & 0xFF;
+				if (copy != value) {
+					return null;
+				}
+			}
+			catch (Exception e) {
+				return null;
+			}
+		}
+		return value;
 	}
 }

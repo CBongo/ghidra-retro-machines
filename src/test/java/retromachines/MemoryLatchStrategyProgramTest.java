@@ -1207,4 +1207,111 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		assertFalse("a differently-named window's overlays are not this window's banks",
 			BankAnnotationAdapter.realizedBanks(program, "PRG_HI", 3).contains(1));
 	}
+
+	// ------------------------------------------------------------------
+	// Content-verified bank invariance on overlay-covered offsets (bead grm-e7v)
+	// ------------------------------------------------------------------
+
+	/**
+	 * Lays a fully-overlaid window the way AxROM/GxROM's single {@code PRG_ALL $8000-$FFFF}
+	 * window is realized: base holds the home bank, and every other bank is an overlay over the
+	 * SAME whole range, so there is no fixed window anywhere for {@code bankInvariantRomByte}'s
+	 * layout rule to accept. Returns the overlays so a test can plant per-bank content.
+	 */
+	private MemoryBlock[] layFullyOverlaidWindow(int banks) throws Exception {
+		MemoryBlock[] overlays = new MemoryBlock[banks - 1];
+		for (int bank = 1; bank < banks; bank++) {
+			overlays[bank - 1] = builder.createOverlayMemory("PRG_ALL_B" + bank, "0x8000", 0x8000);
+			setWritable(overlays[bank - 1], false);
+		}
+		return overlays;
+	}
+
+	/** Plants {@code hex} at {@code offset} in {@code block}'s own address space. */
+	private void setOverlayBytes(MemoryBlock block, long offset, String hex) throws Exception {
+		builder.setBytes(block.getStart().getAddressSpace().getAddress(offset).toString(), hex);
+	}
+
+	/**
+	 * The dragonpower/shenlong shape (grm-hum, grm-e7v): a bus-conflict table at {@code $FFCC}
+	 * that every bank carries byte-for-byte, read with a constant index, feeding the latch.
+	 * Before grm-e7v the layout rule refused it outright -- the offset is overlay-covered, so
+	 * the base copy is "merely the home bank" -- and both titles stayed byte-identical through
+	 * the whole of grm-hum. Now the base copy AND every overlay copy agree, so the byte is
+	 * invariant by content and the latch value resolves.
+	 */
+	@Test
+	public void identicalByteInEveryBankIsInvariantOnAFullyOverlaidWindow() throws Exception {
+		MemoryBlock[] overlays = layFullyOverlaidWindow(4);
+		builder.setBytes("0xFFCC", "00 01 02 03"); // the table, home bank
+		for (MemoryBlock overlay : overlays) {
+			setOverlayBytes(overlay, 0xFFCC, "00 01 02 03"); // ... and identical in every bank
+		}
+		builder.setBytes("0x8000", "a2 02", true); // LDX #$02
+		builder.setBytes("0x8002", "bd cc ff", true); // LDA $FFCC,X  -> $FFCE = 0x02
+		builder.setBytes("0x8005", "8d 00 80", true); // STA $8000
+		romifyPrg();
+
+		BankState result =
+			discreteLatch().computeSwitch(program, instructionAt("0x8005"), BankState.unknown());
+
+		assertNotNull("latch store not recognized", result);
+		assertEquals("$FFCE is byte-identical in base and every overlay: invariant by content",
+			0x0F, result.knownMask());
+		assertEquals(0x02, result.bits());
+	}
+
+	/**
+	 * The guard that makes the relaxation safe: one bank disagreeing at the read offset means a
+	 * bank switch CAN change what the load sees, so the byte is refused -- the same unknown the
+	 * layout rule always produced here, now for a content reason rather than a structural one.
+	 */
+	@Test
+	public void oneDifferingBankRefusesTheByte() throws Exception {
+		MemoryBlock[] overlays = layFullyOverlaidWindow(4);
+		builder.setBytes("0xFFCC", "00 01 02 03");
+		setOverlayBytes(overlays[0], 0xFFCC, "00 01 02 03");
+		setOverlayBytes(overlays[1], 0xFFCC, "00 01 07 03"); // bank 2 differs at $FFCE
+		setOverlayBytes(overlays[2], 0xFFCC, "00 01 02 03");
+		builder.setBytes("0x8000", "a2 02", true); // LDX #$02
+		builder.setBytes("0x8002", "bd cc ff", true); // LDA $FFCC,X  -> $FFCE
+		builder.setBytes("0x8005", "8d 00 80", true); // STA $8000
+		romifyPrg();
+
+		BankState result =
+			discreteLatch().computeSwitch(program, instructionAt("0x8005"), BankState.unknown());
+
+		assertNotNull(result);
+		assertEquals("a bank-variant byte must not resolve", 0, result.knownMask());
+	}
+
+	/**
+	 * The implementation trap the bead names: invariance is PER OFFSET, never a common suffix.
+	 * {@code $FFFA-$FFFF} differ per bank on the real titles (each bank's own NMI/IRQ vectors)
+	 * while the table just below them does not; a longest-common-suffix test reports zero
+	 * invariant bytes and the whole idea looks dead. So: a differing byte at {@code $FFFA} must
+	 * not poison an identical byte at {@code $FFCE}.
+	 */
+	@Test
+	public void aDifferingNeighbourDoesNotPoisonAnInvariantOffset() throws Exception {
+		MemoryBlock[] overlays = layFullyOverlaidWindow(4);
+		builder.setBytes("0xFFCC", "00 01 02 03");
+		builder.setBytes("0xFFFA", "10 80"); // home bank's NMI vector
+		for (int i = 0; i < overlays.length; i++) {
+			setOverlayBytes(overlays[i], 0xFFCC, "00 01 02 03");
+			setOverlayBytes(overlays[i], 0xFFFA, String.format("%02x 80", 0x20 + i)); // differs
+		}
+		builder.setBytes("0x8000", "a2 02", true); // LDX #$02
+		builder.setBytes("0x8002", "bd cc ff", true); // LDA $FFCC,X  -> $FFCE
+		builder.setBytes("0x8005", "8d 00 80", true); // STA $8000
+		romifyPrg();
+
+		BankState result =
+			discreteLatch().computeSwitch(program, instructionAt("0x8005"), BankState.unknown());
+
+		assertNotNull(result);
+		assertEquals("per-offset: $FFCE is invariant even though $FFFA is not", 0x0F,
+			result.knownMask());
+		assertEquals(0x02, result.bits());
+	}
 }
