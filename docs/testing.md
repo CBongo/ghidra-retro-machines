@@ -172,7 +172,8 @@ final acceptance and commits**. `build-and-test.sh --list-chunks` prints the cur
 | `spc700-dis-corpus` | SPC700 *disassembly text* differential against nine hand-annotated `.dis` listings of real drivers (`gradle spc700DisCorpusTest`); needs `GRM_SPC700_DIS_CORPUS`, Assume-skips otherwise; opt-in, **not** included by `all`. A reporting tier, not a gate — the listings are leads, not an oracle. See its own section below |
 | `w65816-vectors` | exhaustive W65816 p-code vector regression, 10,000 cases/opcode/mode (5,120,000 total, both native and emulation mode) vs. the `unit` chunk's PARTIAL 16-opcode/32-case sample (`gradle w65816VectorTest`); needs `GRM_W65816_VECTORS`, refuses loudly otherwise; opt-in, **not** included by `all`. See its own section below — in particular, the known-unverified `p` bits and the sample's partial opcode coverage |
 | `snes-rom-corpus` | `SnesRomHeader.parse` survey over a large local SNES cartridge collection (`gradle snesRomCorpusTest`); needs `GRM_SNES_ROM_DIR`, Assume-skips otherwise; opt-in, **not** included by `all`. A reporting tier, not a gate — the distribution it measures is per-machine and must never be pinned. See its own section below |
-| `all` | every chunk (the default when no chunk is given) — **except** `spc700-vectors`, `spc700-dis-corpus`, `snes-rom-corpus`, and `w65816-vectors`, which must be named explicitly |
+| `6502-vectors` | exhaustive NMOS 6502 p-code vector regression, 10,000 cases/opcode (2,560,000 total) vs. the `unit` chunk's 32/opcode sample (`gradle mos6502VectorTest`); needs `GRM_6502_VECTORS`, refuses loudly otherwise; opt-in, **not** included by `all`. See its own section below |
+| `all` | every chunk (the default when no chunk is given) — **except** `spc700-vectors`, `spc700-dis-corpus`, `snes-rom-corpus`, `w65816-vectors`, and `6502-vectors`, which must be named explicitly |
 
 **The shipped `ghidra_scripts/` front-ends are regression-tested inside these chunks, and nowhere
 else.** The GUI plugins are untestable here (see below), so a headless fixture that drives the
@@ -457,6 +458,95 @@ Regenerate the vendored sample with `python3 tools/w65816/sample-vectors.py --so
 -Dgrm.w65816.regenerateBaseline=true --tests '*W65816VectorSampleTest'`; regenerate the
 exhaustive baseline with `gradle w65816VectorTest -Dgrm.w65816.regenerateExhaustiveBaseline=true`
 against `GRM_W65816_VECTORS`.
+
+### NMOS 6502 vector harness (`grm-hzv8`)
+
+`Mos6502VectorHarnessSupport`/`Mos6502VectorSampleTest`/`Mos6502VectorExhaustiveTest` are the
+NMOS 6502 analogue of the SPC700/W65816 classes above, against the NMOS-6502-with-decimal-mode
+corpus in `https://github.com/SingleStepTests/65x02`'s `6502/v1/` directory (256 opcodes, 10,000
+cases/opcode, 2,560,000 cases total). Targets this module's bundled `6502:LE:16:undoc` language
+(`data/languages/6502undoc.slaspec` = `6502core.sinc` + `6510_illegal.sinc`) — NMOS 6502 with
+decimal mode and the documented illegal/undocumented opcodes. The sibling `nes6502/` directory
+(no decimal mode — the NES's 2A03) and the 65c02 variants are out of scope: the NES corpus in
+this repo already uses stock Ghidra's `6502:LE:16:default`, which this bead does not touch.
+
+Unlike SPC700/W65816, `6502:LE:16:undoc` is bundled and has shipped since before this bead, so
+neither test class Assume-skips on a missing language — a resolution failure is a real problem.
+
+- **The packed `p` field has no backing register**, exactly like W65816's own `p`:
+  `6502core.sinc` defines `N V B D I Z C` as separate one-byte registers (offset 0x30, listed
+  MSB→LSB, so `N`=bit 7 down to `C`=bit 0; bit 5 is unused and skipped entirely).
+  `Mos6502VectorHarnessSupport` splits each case's `p` into synthetic `p_n/p_v/p_d/p_i/p_z/p_c`
+  fields that map onto those real registers before handing the case to `VectorRunner`.
+- **The break flag (`B`, bit 4) is seeded into the initial state only, never compared** — the
+  same asymmetry `W65816VectorHarnessSupport` documents for its own break flag, for the same
+  reason: `PHP`/`BRK` push it into the stack byte the corpus's RAM comparison DOES check, but
+  nothing in this instruction set restores it from a pulled status byte into a tracked register
+  to verify against a final value.
+- **The stack pointer's hardwired high byte (`SH`) is forced, and IS compared in both
+  directions.** `6502core.sinc` defines `S` (the corpus's `s` field) as the low byte of a 2-byte
+  `SP` register, with `SH` the high byte — confirmed directly against the `define register`
+  lines (`offset=0x20 size=1 [ PCL PCH S SH ]`). Real NMOS 6502 hardware hardwires the stack to
+  page 1; the corpus's vectors say nothing about a high byte at all. The harness adds a synthetic
+  `sh` field, forced to `1`, to BOTH the initial and final register maps of every case — unlike
+  the break flag, comparing it in the final state is meaningful and useful: on real hardware `SH`
+  never changes across any single instruction, so a language that ever left it at something else
+  after a step would be a genuine, catchable bug.
+- **The twelve JAM/KIL opcodes (`02 12 22 32 42 52 62 72 92 B2 D2 F2`) are
+  `NOT_APPLICABLE_OPCODES`**, mirroring SPC700's `SLEEP`/`STOP` and W65816's `WAI`/`STP`: real
+  NMOS 6502 hardware genuinely locks up on these, and `6510_illegal.sinc` implements every one as
+  an unconditional `goto inst_start;` — a jump back to the instruction's own start, forever.
+  Verified directly (grm-hzv8) rather than assumed: stepping opcode `0x02` through a standalone
+  probe does **not** hang the interpreter — it throws `DecodePcodeExecutionException` ("Unknown
+  disassembly error") immediately, the same exception type SPC700's `SLEEP`/`STOP` entries
+  document, from a different underlying cause (a decode-time rejection of the infinite-loop
+  construct itself, rather than a callout with no registered behavior). All twelve share one
+  Sleigh constructor differing only in which `op` value selects it, so the representative
+  verification stands for all twelve.
+
+**Regenerate the vendored sample** with `python3 tools/mos6502/sample-vectors.py --source
+<full-clone-dir>` (writes `src/test/resources/mos6502-vectors/`, 32 cases/opcode, 256 files,
+8192 cases; see that directory's `MANIFEST.txt` for upstream provenance). **Regenerate
+`mos6502-vector-baseline.txt`** with `gradle test -Dgrm.mos6502.regenerateBaseline=true --tests
+'*Mos6502VectorSampleTest'`. **Regenerate the exhaustive baseline** with `gradle
+mos6502VectorTest -Dgrm.mos6502.regenerateExhaustiveBaseline=true` against `GRM_6502_VECTORS` (a
+full clone of `https://github.com/SingleStepTests/65x02`, ~5.8 GB).
+
+**Measured runtime and heap (2026-09-12).** A full `6502-vectors` run — all 256 files, 2,560,000
+cases — completed cleanly against `mos6502VectorTest`'s `1g` heap in **1m11s** wall clock on this
+project's dev machine. `1g` was the first value tried and passed outright, so (unlike
+`spc700VectorTest`'s measured 128m/64m pass/OOM pair) no lower boundary was probed. Re-measure
+before quoting these numbers elsewhere — one machine's, and the corpus is hash-pinned but the
+hardware is not.
+
+**What the baselines actually say (2026-09-12, after grm-hzv8 landed).** 256 rows: **230 PASS,
+14 FAIL, 12 N/A** (the JAM/KIL opcodes). Every ADC, SBC (both encodings), RRA, ISC and ARR row is
+**10000/10000 in every addressing mode**, and since the corpus randomizes `D`, that is the
+decimal-mode paths in `6502core.sinc`'s `adcNmos`/`sbcNmos` and `6510_illegal.sinc`'s ARR being
+validated against silicon-derived truth, not hand reasoning.
+
+The harness earned its keep on its first run, before those rows were clean: it found two bugs
+inherited from stock Ghidra's `6502.slaspec` (which `6502core.sinc` copies), both fixed in the
+same change because they blocked the ADC/SBC verdicts:
+
+1. **`subtraction_flags1` assigned BORROW to `C`.** The 6502's carry after a subtraction is
+   NOT-borrow, so every `SBC`/`ISC` case failed on `P_C` alone with an exact polarity flip, in
+   binary and decimal mode alike (decimal SBC recomputes only `A`). Stock Ghidra has the same
+   bug; the NES boards run on stock `6502:LE:16:default` and still have it.
+2. **Zero-page indirect pointers did not wrap within page zero.** `(zp,X)`/`(zp),Y` fetched the
+   pointer with one `*:2` read, so a pointer at `$FF` took its high byte from `$0100` instead of
+   `$00` -- ~1/256 of cases for every opcode using either mode. Now `readZpPointer` in
+   `6502core.sinc`, used by `OP1`, `OP3`, `SAX`, `LAX` and `SHA`.
+
+The 14 remaining FAIL rows are one coherent family and two known groups, all filed as
+**`grm-m9nu`** with the per-row analysis: the stack-fidelity family (`BRK`/`PHP`/`JSR`/`RTS` fail
+every case, `PLP`/`RTI`/`PHA`/`PLA` ~1/256 -- `S` not wrapping within page 1, the decompiler-
+friendly `JSR` pushes `inst_next`/`RTS` returns it convention versus hardware's `PC+2`/`+1`,
+`PHP`/`BRK` pushing the `B` register rather than forcing it); `JMP ($xxFF)`'s page-wrap quirk
+(deliberately left, because `ADDRI` exports a memory reference Ghidra's reference analysis
+depends on); and the unstable `SHA`/`SHX`/`SHY`/`TAS` rows the vendored `6510_illegal.sinc`
+declines to model by design. Treat any NEW FAIL row, or a change in an existing row's ratio, as
+a regression to explain -- that is what the baseline is for.
 
 ### Disassembly-text corpus differential (`grm-uy9s`)
 

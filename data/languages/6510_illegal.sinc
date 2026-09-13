@@ -19,12 +19,17 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 #
-# Modifications: RRA's carry/overflow computation (grm-o9k) diverges from upstream --
-# it now uses the same two-step carry chain and signed-overflow formula as the fixed
-# 6502core.sinc ADC, instead of mirroring stock Ghidra's incorrect ADC idiom. Everything
-# else is byte-identical. In particular the upstream body's use of the term "illegal"
-# (including this file's name) is retained verbatim; our own prose, identifiers and file
-# names use "undocumented"/"undoc" instead.
+# Modifications (everything else is byte-identical; in particular the upstream body's use
+# of the term "illegal", including this file's name, is retained verbatim, while our own
+# prose, identifiers and file names use "undocumented"/"undoc" instead):
+#   - grm-o9k: RRA's carry/overflow computation diverges from upstream -- the same two-step
+#     carry chain and signed-overflow formula as the fixed 6502core.sinc ADC, instead of
+#     mirroring stock Ghidra's incorrect ADC idiom.
+#   - grm-hzv8: RRA, ISC and the $EB SBC alias route through 6502core.sinc's D-aware
+#     adcNmos/sbcNmos macros (decimal mode, NMOS flag semantics, and the SBC carry-polarity
+#     fix in subtraction_flags1); ARR gains its own decimal-mode path; every (zp,X)/(zp),Y
+#     pointer fetch (OP3, SAX, LAX, SHA) goes through readZpPointer so the pointer's high
+#     byte wraps within the zero page. All validated against SingleStepTests/65x02.
 # ----------------------------------------------------------------------------------------
 
 # NMOS 6510 undocumented ("illegal") opcodes -- SLEIGH semantics.
@@ -38,10 +43,9 @@
 # Semantics follow "No More Secrets - NMOS 6510 Unintended Opcodes" (v0.91).
 # This spec targets readable decompilation and consistency with the base 6502
 # spec's idioms; byte/cycle-exact *execution* is owned by the deity_informant Python
-# VM (validated against the sidplayfp oracle). RRA is ROR-then-ADC, so its carry/overflow
-# computation mirrors 6502core.sinc's ADC (grm-o9k fixed both together, see the
-# "Modifications" note above); ARR and ISC use their own distinct, already-correct
-# formulas (bit6/bit5 for ARR's C/V, subtraction_flags1 for ISC) and are unaffected.
+# VM (validated against the sidplayfp oracle). RRA is ROR-then-ADC and ISC is INC-then-SBC,
+# so both share 6502core.sinc's ADC/SBC macros (see the "Modifications" note above); ARR's
+# binary path keeps its own bit6/bit5 C/V formula and gains a decimal path.
 #
 # The "magic constant" for the unstable ANE/LXA group is chip-/temperature-
 # dependent (NMS lists $00/$FF/$EE); $EE matches the validated oracle. Override
@@ -54,10 +58,10 @@
 # ---- RMW illegals: read-modify-write, LDA-family bbb indexing (cc=3) ----------
 # OP3 mirrors the base OP1 memory modes (no immediate / bbb=2 slot), exporting a
 # writable 1-byte location so `local v = OP3; ...; OP3 = v;` is a true RMW.
-OP3: (imm8,X)  is bbb=0 & X; imm8   { addr:2 = zext(imm8 + X); tmp:2 = *:2 addr; export *:1 tmp; }
+OP3: (imm8,X)  is bbb=0 & X; imm8   { local zp:1 = imm8 + X; tmp:2 = 0; readZpPointer(tmp, zp); export *:1 tmp; }
 OP3: imm8      is bbb=1; imm8       { export *:1 imm8; }
 OP3: imm16     is bbb=3; imm16      { export *:1 imm16; }
-OP3: (imm8),Y  is bbb=4 & Y; imm8   { addr:2 = imm8; tmp:2 = *:2 addr; tmp = tmp + zext(Y); export *:1 tmp; }
+OP3: (imm8),Y  is bbb=4 & Y; imm8   { local zp:1 = imm8; tmp:2 = 0; readZpPointer(tmp, zp); tmp = tmp + zext(Y); export *:1 tmp; }
 OP3: imm8,X    is bbb=5 & X; imm8   { tmp:2 = zext(imm8 + X); export *:1 tmp; }
 OP3: imm16,Y   is bbb=6 & Y; imm16  { tmp:2 = imm16 + zext(Y); export *:1 tmp; }
 OP3: imm16,X   is bbb=7 & X; imm16  { tmp:2 = imm16 + zext(X); export *:1 tmp; }
@@ -96,7 +100,8 @@ OP3: imm16,X   is bbb=7 & X; imm16  { tmp:2 = imm16 + zext(X); export *:1 tmp; }
     resultFlags(A);
 }
 
-# RRA (RRD) = ROR memory, then ADC
+# RRA (RRD) = ROR memory, then ADC -- the same D-aware NMOS add as ADC itself (grm-hzv8;
+# the carry-in/overflow half is grm-o9k), since it is the same ALU path on silicon.
 :RRA OP3    is (cc=3 & aaa=3) ... & OP3
 {
     local oldC = C << 7;
@@ -104,19 +109,7 @@ OP3: imm16,X   is bbb=7 & X; imm16  { tmp:2 = imm16 + zext(X); export *:1 tmp; }
     C = v & 1;
     v = (v >> 1) | oldC;
     OP3 = v;
-    local tmpC = C;
-    local oldA = A;
-
-    # Same two-step carry chain and signed-overflow formula as 6502core.sinc's ADC
-    # (grm-o9k) -- RRA is ROR-then-ADC and inherited the same carry-in/overflow bugs
-    # from mirroring stock Ghidra's incorrect ADC idiom.
-    C = carry(A, v);
-    A = A + v;
-    C = C || carry(A, tmpC);
-    A = A + tmpC;
-
-    resultFlags(A);
-    V = ((oldA ^ A) & (v ^ A) & 0x80) != 0;
+    adcNmos(v);
 }
 
 # DCP (DCM) = DEC memory, then CMP
@@ -129,27 +122,25 @@ OP3: imm16,X   is bbb=7 & X; imm16  { tmp:2 = imm16 + zext(X); export *:1 tmp; }
     C = (A >= v);
 }
 
-# ISC (ISB, INS) = INC memory, then SBC
+# ISC (ISB, INS) = INC memory, then SBC -- D-aware, as SBC itself (grm-hzv8)
 :ISC OP3    is (cc=3 & aaa=7) ... & OP3
 {
     local v = OP3 + 1;
     OP3 = v;
-    local result = A - v - !C;
-    subtraction_flags1(A, v, result);
-    A = result;
+    sbcNmos(v);
 }
 
 # ---- SAX (AXS, AAX): store A & X (no flags), LDX-family Y indexing ------------
-:SAX (imm8,X)  is op=0x83 & X; imm8   { local p:2 = zext(imm8 + X); local ea:2 = *:2 p; *:1 ea = A & X; }
+:SAX (imm8,X)  is op=0x83 & X; imm8   { local zp:1 = imm8 + X; local ea:2 = 0; readZpPointer(ea, zp); *:1 ea = A & X; }
 :SAX imm8      is op=0x87; imm8   { local ea:2 = imm8; *:1 ea = A & X; }
 :SAX imm16     is op=0x8F; imm16  { local ea:2 = imm16; *:1 ea = A & X; }
 :SAX imm8,Y    is op=0x97 & Y; imm8   { local ea:2 = zext(imm8 + Y); *:1 ea = A & X; }
 
 # ---- LAX (LXA family for #imm handled separately): A = X = memory ------------
-:LAX (imm8,X)  is op=0xA3 & X; imm8   { local p:2 = zext(imm8 + X); local ea:2 = *:2 p; A = *:1 ea; X = A; resultFlags(A); }
+:LAX (imm8,X)  is op=0xA3 & X; imm8   { local zp:1 = imm8 + X; local ea:2 = 0; readZpPointer(ea, zp); A = *:1 ea; X = A; resultFlags(A); }
 :LAX imm8      is op=0xA7; imm8   { local ea:2 = imm8; A = *:1 ea; X = A; resultFlags(A); }
 :LAX imm16     is op=0xAF; imm16  { local ea:2 = imm16; A = *:1 ea; X = A; resultFlags(A); }
-:LAX (imm8),Y  is op=0xB3 & Y; imm8   { local p:2 = imm8; local ea:2 = *:2 p; ea = ea + zext(Y); A = *:1 ea; X = A; resultFlags(A); }
+:LAX (imm8),Y  is op=0xB3 & Y; imm8   { local zp:1 = imm8; local ea:2 = 0; readZpPointer(ea, zp); ea = ea + zext(Y); A = *:1 ea; X = A; resultFlags(A); }
 :LAX imm8,Y    is op=0xB7 & Y; imm8   { local ea:2 = zext(imm8 + Y); A = *:1 ea; X = A; resultFlags(A); }
 :LAX imm16,Y   is op=0xBF & Y; imm16  { local ea:2 = imm16 + zext(Y); A = *:1 ea; X = A; resultFlags(A); }
 
@@ -171,15 +162,43 @@ OP3: imm16,X   is bbb=7 & X; imm16  { tmp:2 = imm16 + zext(X); export *:1 tmp; }
     resultFlags(A);
 }
 
-# ARR: AND #imm, then ROR A; C = bit6, V = bit6 ^ bit5 (NMS p.29; non-decimal)
+# ARR: AND #imm, then ROR A; C = bit6, V = bit6 ^ bit5 (NMS p.29). In decimal mode ARR is NOT
+# simply AND-then-ROR: the ROR result is passed through the ADC decimal fix-up circuitry with
+# the AND result as the "operand" (NMS p.29-30, "in decimal mode"; grm-hzv8), so:
+#   N = the OLD carry (rotated into bit 7), Z from the rotated result,
+#   V = bit 6 of (A & imm) XOR bit 6 of the rotated result,
+#   units fix-up (+6, masked) when (t & $0F) + (t & 1) > 5, where t = A & imm,
+#   tens fix-up (+$60, masked) and C=1 when (t & $F0) + (t & $10) > $50, else C=0.
+# Validated against SingleStepTests/65x02's 6502 suite (`6502-vectors` chunk).
 :ARR "#"imm8   is op=0x6B; imm8
 {
-    A = A & imm8;
-    local c = C;
-    A = (A >> 1) | (c << 7);
+    local t:1 = A & imm8;
+    local oldC:1 = C;
+    local r:1 = (t >> 1) | (oldC << 7);
+
+    if (D) goto <decimal>;
+    A = r;
     resultFlags(A);
     C = (A >> 6) & 1;
     V = ((A >> 6) & 1) ^ ((A >> 5) & 1);
+    goto <done>;
+
+    <decimal>
+    N = oldC;
+    Z = (r == 0);
+    V = (((t ^ r) >> 6) & 1);
+    local units:2 = (zext(t) & 0x0F) + (zext(t) & 0x01);
+    if (units <= 0x05) goto <units_ok>;
+    r = (r & 0xF0) | ((r + 0x06) & 0x0F);
+    <units_ok>
+    local tens:2 = (zext(t) & 0xF0) + (zext(t) & 0x10);
+    C = 0;
+    if (tens <= 0x50) goto <tens_ok>;
+    r = (r & 0x0F) | ((r + 0x60) & 0xF0);
+    C = 1;
+    <tens_ok>
+    A = r;
+    <done>
 }
 
 # SBX (AXS, SAX imm): X = (A & X) - #imm, C from the compare (NMS p.32)
@@ -191,12 +210,10 @@ OP3: imm16,X   is bbb=7 & X; imm16  { tmp:2 = imm16 + zext(X); export *:1 tmp; }
     resultFlags(X);
 }
 
-# SBC #imm illegal alias ($EB), identical to legal SBC (NMS p.36)
+# SBC #imm illegal alias ($EB), identical to legal SBC (NMS p.36), decimal mode included
 :SBC "#"imm8   is op=0xEB; imm8
 {
-    local result = A - imm8 - !C;
-    subtraction_flags1(A, imm8, result);
-    A = result;
+    sbcNmos(imm8);
 }
 
 # ANE (XAA): A = (A | CONST) & X & #imm -- unstable magic constant (NMS p.51)
@@ -228,8 +245,9 @@ OP3: imm16,X   is bbb=7 & X; imm16  { tmp:2 = imm16 + zext(X); export *:1 tmp; }
 # non-deterministic and intentionally not modelled.
 :SHA (imm8),Y  is op=0x93 & Y; imm8
 {
-    local p:2 = imm8;
-    local ptr:2 = *:2 p;
+    local zp:1 = imm8;
+    local ptr:2 = 0;
+    readZpPointer(ptr, zp);
     local h:1 = ptr(1) + 1;
     local tgt:2 = ptr + zext(Y);
     *:1 tgt = A & X & h;

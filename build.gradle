@@ -675,6 +675,14 @@ test {
 			System.getProperty('grm.w65816.regenerateBaseline')
 	}
 
+	// Mos6502VectorSampleTest's own regeneration switch (bead grm-hzv8) -- same forwarding
+	// requirement as the spc700/w65816 ones immediately above, for the identical reason (a forked
+	// worker JVM does not inherit -D properties from the launching `gradle` invocation).
+	if (System.getProperty('grm.mos6502.regenerateBaseline') != null) {
+		systemProperty 'grm.mos6502.regenerateBaseline',
+			System.getProperty('grm.mos6502.regenerateBaseline')
+	}
+
 	// Spc700VectorExhaustiveTest (bead grm-c9d.2) is its OWN chunk (`spc700-vectors`), not part
 	// of `unit`/`all`: it needs a large, user-supplied vector clone (GRM_SPC700_VECTORS) this
 	// repo cannot ship, mirroring why the real-ROM tier is excluded from the default gate. If it
@@ -687,6 +695,11 @@ test {
 	// identical reason as its SPC700 sibling immediately above -- needs GRM_W65816_VECTORS,
 	// refuses loudly when unset. w65816VectorTest below runs it, and only it.
 	exclude '**/vectors/W65816VectorExhaustiveTest.class'
+
+	// Mos6502VectorExhaustiveTest (bead grm-hzv8) is excluded from `test`/`unit`/`all` for the
+	// identical reason as its SPC700/W65816 siblings immediately above -- needs
+	// GRM_6502_VECTORS, refuses loudly when unset. mos6502VectorTest below runs it, and only it.
+	exclude '**/vectors/Mos6502VectorExhaustiveTest.class'
 
 	// Spc700DisCorpusTest (bead grm-uy9s) is excluded for the same "user-supplied data this repo
 	// cannot ship" reason: it reads the project owner's game-music-extraction .dis listings via
@@ -836,6 +849,45 @@ task w65816VectorTest(type: Test) {
 	if (System.getProperty('grm.w65816.regenerateExhaustiveBaseline') != null) {
 		systemProperty 'grm.w65816.regenerateExhaustiveBaseline',
 			System.getProperty('grm.w65816.regenerateExhaustiveBaseline')
+	}
+}
+
+// The exhaustive NMOS 6502 vector regression (bead grm-hzv8), the sibling of spc700VectorTest/
+// w65816VectorTest above -- see spc700VectorTest's comments for the reasoning behind every line
+// here, which this task mirrors exactly except for the heap size (see below).
+task mos6502VectorTest(type: Test) {
+	group = "Ghidra Retro Machines"
+	description = "Exhaustive NMOS 6502 vector regression (grm-hzv8); requires " +
+		"GRM_6502_VECTORS (refuses loudly otherwise). Not part of `test`/`unit`/`all` -- see " +
+		"build-and-test.sh's `6502-vectors` chunk."
+	// 1g, MEASURED (grm-hzv8, 2026-09-12): a full 2,560,000-case exhaustive run against this task
+	// completed cleanly at this heap size in 1m11s wall clock on this project's dev machine (not
+	// tuned further down -- 1g was the first value tried and it passed, so no OOM boundary was
+	// probed the way spc700VectorTest's 128m/64m pair was). VectorRunner's periodic emulator
+	// rebuild (VectorRunner.DEFAULT_REBUILD_INTERVAL) bounds the per-run growth of
+	// AbstractPcodeMachine's thread registry the same way it does for the SPC700/W65816 tiers, so
+	// this did not need spc700VectorTest's 9g-before-the-fix history repeated to arrive at a
+	// reasonable number.
+	maxHeapSize = '1g'
+	environment 'GHIDRA_INSTALL_DIR', ghidraInstallDir
+	dependsOn 'sleighCompile'
+	systemProperty 'grm.moduleDir', projectDir.absolutePath
+	// The bundled languages are a real input to any test that decodes an instruction, but they
+	// reach the test through grm.moduleDir -- a filesystem path, not the classpath -- so Gradle
+	// cannot infer it. See `test`'s identical declaration above for the full reasoning.
+	inputs.files(fileTree(dir: 'data/languages')).withPropertyName('bundledLanguages')
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	include '**/vectors/Mos6502VectorExhaustiveTest.class'
+
+	// Mos6502VectorExhaustiveTest's OWN baseline-regeneration switch, deliberately a different -D
+	// property from `test`'s grm.mos6502.regenerateBaseline above -- forwarded here for the
+	// identical reason as spc700VectorTest's/w65816VectorTest's own forwarding blocks: this is a
+	// separate Test task with its own forked worker JVM, which does not inherit -D properties from
+	// the launching `gradle` invocation.
+	if (System.getProperty('grm.mos6502.regenerateExhaustiveBaseline') != null) {
+		systemProperty 'grm.mos6502.regenerateExhaustiveBaseline',
+			System.getProperty('grm.mos6502.regenerateExhaustiveBaseline')
 	}
 }
 

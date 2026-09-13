@@ -308,6 +308,19 @@ spc700-vectors` after any change touching `data/languages/spc700*.sinc`, not onl
 out work on it. See `docs/testing.md`'s p-code semantic vector harness section for the two test
 classes' baseline-regeneration switches.
 
+**The NMOS 6502 vector tier (`6502-vectors` chunk) is the same shape, for the bundled
+`6502:LE:16:undoc` language** (`6502core.sinc` + `6510_illegal.sinc`, i.e. the core every
+C64/C128 language here shares): needs `GRM_6502_VECTORS`, a clone of
+`https://github.com/SingleStepTests/65x02` (~5.8 GB; only its `6502/v1/` directory is read),
+refuses loudly when unset, excluded from `all`, 2,560,000 cases in ~1m10s measured. **Run it after
+any change to `data/languages/6502core.sinc`, `6510_illegal.sinc` or `6510port.sinc`** — it is
+what validated decimal mode (grm-hzv8) and what found the inherited SBC-carry and zero-page
+pointer-wrap bugs on its first run. Its baseline pins 14 known FAIL rows (stack fidelity,
+`JMP ($xxFF)`, the unstable `SH*`/`TAS` opcodes — bead `grm-m9nu`); a new FAIL row or a changed
+ratio is a regression to explain. The NES boards run on stock Ghidra's `6502:LE:16:default`, so
+nothing this tier checks reaches the NES corpus, and nothing that moves the NES corpus can be
+attributed to these languages.
+
 **The SPC700 disassembly-text corpus differential (`spc700-dis-corpus` chunk) is a REPORTING
 tier, not a gate** — the third opt-in tier, and the one with the weakest claim on you. It needs
 `GRM_SPC700_DIS_CORPUS` (the project owner's game-music-extraction `snes/` directory) and

@@ -13,11 +13,17 @@
 # Nothing 6510-specific belongs here: the on-die I/O port and its operand routing live in
 # 6510port.sinc, and the undocumented opcodes live in the vendored 6510_illegal.sinc.
 #
-# Deliberate divergence from stock 6502.slaspec (grm-o9k): stock's ADC folds the carry-in
-# into a single `A + op1 + tmpC` and loses a carry-out that arises only from the carry-in
-# (e.g. A=$FF, op=$00, C=1 should set C=1), and then aliases V to that (wrong) unsigned
-# carry instead of computing signed overflow. Fixed here with a two-step carry chain and
-# the standard `(A^result)&(op1^result)&0x80` overflow formula; see ADC below.
+# Deliberate divergences from stock 6502.slaspec:
+#   - grm-o9k: stock's ADC folds the carry-in into a single `A + op1 + tmpC` and loses a
+#     carry-out that arises only from the carry-in (e.g. A=$FF, op=$00, C=1 should set C=1),
+#     and then aliases V to that (wrong) unsigned carry instead of computing signed overflow.
+#     Fixed with a two-step carry chain and the standard `(A^result)&(op1^result)&0x80`
+#     overflow formula.
+#   - grm-hzv8: stock decodes D (SED/CLD/PLP) and never reads it, so decimal-mode ADC/SBC
+#     decompile as binary arithmetic. The adcNmos/sbcNmos macros below branch on D with the
+#     NMOS (not 65C02/65816) decimal semantics; ADC, SBC, and 6510_illegal.sinc's RRA/ISC/$EB
+#     all go through them. The NES's 2A03 has no decimal mode, but the NES boards use stock
+#     Ghidra's 6502, not this file, so nothing here reaches the NES corpus.
 
 define endian=little;
 define alignment=1;
@@ -85,7 +91,111 @@ macro subtraction_flags1(register, operand, result) {
 	V = ( ((register & ~operand & ~result) | (complement_register & operand & result)) & 0b10000000 ) != 0;
 	N = (result s< 0);
 	Z = (result == 0);
-	C = ( ((complement_register & operand) | (operand & result) | (result & complement_register)) & 0b10000000 ) != 0;
+	# The bit-trick above is BORROW-out; the 6502 carry after a subtraction is NOT-borrow
+	# (C=1 means no borrow). Stock 6502.slaspec assigns the borrow to C directly, inverting
+	# every SBC/ISC carry -- measured against SingleStepTests/65x02 (grm-hzv8): every SBC
+	# case failed on C alone with the exact polarity flip. Fixed here with the == 0.
+	C = ( ((complement_register & operand) | (operand & result) | (result & complement_register)) & 0b10000000 ) == 0;
+}
+
+# The 16-bit pointer fetch for the two zero-page indirect modes, (zp,X) and (zp),Y. The
+# 6502 reads BOTH pointer bytes from the zero page: a pointer at $FF takes its high byte
+# from $00, never from $0100. Stock 6502.slaspec's `*:2 addr` crosses into page 1 there,
+# which is wrong ~1 case in 256 for every opcode using either mode (measured, grm-hzv8).
+macro readZpPointer(ptr, zp) {
+	local lo:2 = zext(zp);
+	local zp1:1 = zp + 1;
+	local hi:2 = zext(zp1);
+	ptr = zext(*:1 lo) | (zext(*:1 hi) << 8);
+}
+
+# NMOS 6502 add-with-carry, D-aware (bead grm-hzv8). Shared by ADC and 6510_illegal.sinc's
+# RRA (ROR-then-ADC), which go through the same ALU path on silicon and so share the decimal
+# behaviour too. The binary path is grm-o9k's two-step carry chain, unchanged.
+#
+# The decimal path is Bruce Clark's "Decimal Mode in the NMOS 6502" (6502.org), Appendix A,
+# followed step for step -- NOT 658xx.sinc's CMOS path, which differs exactly where NMOS is
+# quirky:
+#   - N and V come from the INTERMEDIATE sum (after the units-nibble fix-up, before the tens
+#     fix-up), so N can disagree with the decimal answer in A;
+#   - Z comes from the BINARY sum A + op + C, and can disagree with both;
+#   - C comes from the final, fully adjusted sum;
+#   - invalid BCD operands ($A-$F nibbles) are not special-cased: the units fix-up is
+#     ((AL + 6) & $0F) + $10, which is what makes e.g. $0F + $0F produce what the silicon does.
+# Validated against SingleStepTests/65x02's 6502 suite (the `6502-vectors` chunk), not hand
+# reasoning; see docs/testing.md.
+macro adcNmos(op1) {
+	local operand:1 = op1;
+	local tmpC:1 = C;
+	local oldA:1 = A;
+	local sum:2;
+
+	if (D) goto <decimal>;
+
+	# <binary> -- two-step carry chain (grm-o9k): carry() only tests one addition, so folding
+	# tmpC into a single A + op1 + tmpC (as stock Ghidra's 6502.slaspec does) drops a carry-out
+	# that arises solely from the carry-in. OR the two partial carries instead.
+	C = carry(A, operand);
+	A = A + operand;
+	C = C || carry(A, tmpC);
+	A = A + tmpC;
+	resultFlags(A);
+	# V is SIGNED overflow, not the unsigned carry computed above -- they are different flags
+	# and stock Ghidra's 6502.slaspec conflates them (grm-o9k). Set when both operands share a
+	# sign that differs from the result's.
+	V = ((oldA ^ A) & (operand ^ A) & 0x80) != 0;
+	goto <done>;
+
+	<decimal>
+	# Z is the ONLY flag the binary sum decides in decimal mode.
+	local binsum:1 = oldA + operand + tmpC;
+	Z = (binsum == 0);
+	# Units nibble, with the NMOS fix-up.
+	local al:2 = (zext(oldA) & 0x0F) + (zext(operand) & 0x0F) + zext(tmpC);
+	if (al < 0x0A) goto <units_ok>;
+	al = ((al + 0x06) & 0x0F) + 0x10;
+	<units_ok>
+	# Intermediate sum: N and V are decided HERE, before the tens fix-up.
+	sum = (zext(oldA) & 0xF0) + (zext(operand) & 0xF0) + al;
+	local mid:1 = sum:1;
+	N = (mid s< 0);
+	V = ((oldA ^ mid) & (operand ^ mid) & 0x80) != 0;
+	# Tens fix-up; C from the final sum.
+	if (sum < 0xA0) goto <tens_ok>;
+	sum = sum + 0x60;
+	<tens_ok>
+	C = (sum >= 0x100);
+	A = sum:1;
+	<done>
+}
+
+# NMOS 6502 subtract-with-borrow, D-aware (bead grm-hzv8). Shared by SBC (both encodings) and
+# 6510_illegal.sinc's ISC (INC-then-SBC). Clark's Appendix A again: in decimal mode the NMOS
+# part computes N, V, Z AND C exactly as binary SBC does -- only A differs -- which is why the
+# flags are settled first, from the binary difference, on both paths.
+macro sbcNmos(op1) {
+	local operand:1 = op1;
+	local borrow:1 = !C;
+	local oldA:1 = A;
+	local result:1 = oldA - operand - borrow;
+	subtraction_flags1(oldA, operand, result);
+
+	if (D) goto <decimal>;
+	A = result;
+	goto <done>;
+
+	<decimal>
+	# Signed 2-byte arithmetic so the "< 0" tests below are the spec's, not wrapped bytes.
+	local al:2 = (zext(oldA) & 0x0F) - (zext(operand) & 0x0F) - zext(borrow);
+	if (al s>= 0) goto <units_ok>;
+	al = ((al - 0x06) & 0x0F) - 0x10;
+	<units_ok>
+	local diff:2 = (zext(oldA) & 0xF0) - (zext(operand) & 0xF0) + al;
+	if (diff s>= 0) goto <tens_ok>;
+	diff = diff - 0x60;
+	<tens_ok>
+	A = diff:1;
+	<done>
 }
 
 
@@ -111,9 +221,9 @@ OP1: imm16,X    is bbb=7 & X; imm16		{ tmp:2 = imm16 + zext(X); export *:1 tmp; 
 # Absolute Indexed Y
 OP1: imm16,Y    is bbb=6 & Y; imm16		{ tmp:2 = imm16 + zext(Y); export *:1 tmp; }
 # Indirect X
-OP1: (imm8,X)   is bbb=0 & X; imm8		{ addr:2 = zext(imm8 + X); tmp:2 = *:2 addr; export *:1 tmp; }
+OP1: (imm8,X)   is bbb=0 & X; imm8		{ local zp:1 = imm8 + X; tmp:2 = 0; readZpPointer(tmp, zp); export *:1 tmp; }
 # Indirect Y
-OP1: (imm8),Y   is bbb=4 & Y; imm8		{ addr:2 = imm8; tmp:2 = *:2 addr; tmp = tmp + zext(Y); export *:1 tmp; }
+OP1: (imm8),Y   is bbb=4 & Y; imm8		{ local zp:1 = imm8; tmp:2 = 0; readZpPointer(tmp, zp); tmp = tmp + zext(Y); export *:1 tmp; }
 
 # Immediate
 OP2: "#"imm8    is bbb=0; imm8			{ tmp:1 = imm8; export tmp; }
@@ -145,23 +255,7 @@ ADDRI:  (imm16)   is imm16    { tmp:2 = imm16; export *:2 tmp; }
 
 :ADC OP1     is (cc=1 & aaa=3) ... & OP1
 {
-	local op1 = OP1;
-	local tmpC = C;
-	local oldA = A;
-
-	# Two-step carry chain (grm-o9k): carry() only tests one addition, so folding tmpC
-	# into a single A + op1 + tmpC (as stock Ghidra's 6502.slaspec does) drops a carry-out
-	# that arises solely from the carry-in. OR the two partial carries instead.
-	C = carry(A, op1);
-	A = A + op1;
-	C = C || carry(A, tmpC);
-	A = A + tmpC;
-
-	resultFlags(A);
-	# V is SIGNED overflow, not the unsigned carry computed above -- they are different
-	# flags and stock Ghidra's 6502.slaspec conflates them (grm-o9k). Set when both
-	# operands share a sign that differs from the result's.
-	V = ((oldA ^ A) & (op1 ^ A) & 0x80) != 0;
+	adcNmos(OP1);
 }
 
 :AND OP1     is (cc=1 & aaa=1) ... & OP1
@@ -450,15 +544,7 @@ ADDRI:  (imm16)   is imm16    { tmp:2 = imm16; export *:2 tmp; }
 
 :SBC OP1     is (cc=1 & aaa=7) ... & OP1
 {
-	local op1 = OP1;
-	local result = A - op1 - !C;
-
-	subtraction_flags1(A, op1, result);
-	A = result;
-
-	# resultFlags(tmp);
-	# C = ((A <= op1) * C) | (A < op1);
-	# A = tmp;
+	sbcNmos(OP1);
 }
 
 :SEC     is op=0x38

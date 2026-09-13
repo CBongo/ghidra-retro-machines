@@ -170,3 +170,46 @@ src/test/resources/w65816-vectors/*.json
   which reproduces the same sampling logic against a real clone or a loose
   directory of individually-fetched files (--loose).
 --------------------------------------------------------------------------------
+src/test/resources/mos6502-vectors/*.json
+
+  A deterministic sample (first 32 of each file's cases; see MANIFEST.txt in
+  that directory) of the SingleStepTests 65x02 single-step test-vector
+  suite's NMOS 6502 corpus (6502/v1/<opcode-hex>.json -- 256 opcode files,
+  10,000 cases each), used by the p-code semantic verification harness
+  (bead grm-hzv8) the same way src/test/resources/spc700-vectors/*.json is
+  used for SPC700.
+
+  Copyright (c) 2024 Thomas Harte et al
+  Licensed under the MIT License:
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the
+    "Software"), to deal in the Software without restriction, including
+    without limitation the rights to use, copy, modify, merge, publish,
+    distribute, sublicense, and/or sell copies of the Software, and to
+    permit persons to whom the Software is furnished to do so, subject to
+    the following conditions:
+
+    The above copyright notice and this permission notice shall be included
+    in all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+    OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+    IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+    CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+    TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+    SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+  Upstream: https://github.com/SingleStepTests/65x02
+  Commit:   2f6980a2d95757486c7bee24355c360e40e2a224
+  Path:     6502/v1/<opcode-hex>.json
+
+  Sampled, not vendored verbatim: tools/mos6502/sample-vectors.py takes the
+  first N cases of each of the 256 upstream per-opcode files (N=32 by
+  default) with no reordering, so the sample is a byte-for-byte prefix of
+  upstream content, regenerable at any N against a fresh clone. Only the
+  6502/v1/ directory is sampled -- the sibling nes6502/ (no decimal mode)
+  and 65c02 variant directories in the same repo are out of scope for this
+  bead and are not vendored.
+--------------------------------------------------------------------------------
