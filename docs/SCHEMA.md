@@ -72,8 +72,13 @@ memory:
 ```
 
 Includes are a build-time source convenience only. `MapCompiler` and `GdtBuilder`
-recursively expand them before validating schema 2; neither the directive nor SnakeYAML
-is shipped in the extension. Include paths are relative to the file containing the
+recursively expand them before validating schema 2. `include:` itself is rejected outside
+curated files (see `docs/per-game-descriptors-design.md` §5.5) — a shared/overlay
+descriptor must be one self-contained file. As of bead `grm-hb6.3`, SnakeYAML and
+`MapCompiler` do ship in the extension (see build.gradle's YAML-pipeline comment), but that
+is only to let a runtime caller compile a user-supplied descriptor through the same
+validator the build uses; the curated set named above is still fully compiled at build
+time, `include:` included. Include paths are relative to the file containing the
 directive, must remain relative (absolute paths are rejected), and cycles or missing
 files fail the build with the include chain/path. Included fragments are partial and do
 not need to be valid descriptors by themselves; the root descriptor owns `schema: 2`.

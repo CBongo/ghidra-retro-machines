@@ -27,6 +27,7 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
+import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
@@ -773,5 +774,68 @@ public class MapCompilerTest {
 			() -> MapCompiler.main(new String[] { yaml.toString(), map.toString() }));
 		assertTrue("expected error containing '" + part + "', got: " + e.getMessage(),
 			e.getMessage().contains(part));
+	}
+
+	// ---- compileCollecting (bead grm-hb6.3 error-collecting mode) ----
+
+	/**
+	 * A malformed descriptor must be collected, not thrown -- the whole point of
+	 * {@link MapCompiler#compileCollecting}, per docs/per-game-descriptors-design.md
+	 * section 5.4: a runtime caller (the eventual user-directory overlay scan) must be able
+	 * to skip one bad file without an exception aborting the rest of the scan.
+	 */
+	@Test
+	public void compileCollectingReportsErrorsInsteadOfThrowing() throws Exception {
+		Path temp = tmp.getRoot().toPath();
+		Path yaml = temp.resolve("malformed.yaml");
+		Files.writeString(yaml, """
+			schema: 1
+			system: { id: bad, name: Bad, cpu: { language: '6502:LE:16:default' } }
+			memory:
+			  regions: []
+			  windows: []
+			""");
+
+		MapCompiler.CompileResult result = MapCompiler.compileCollecting(yaml.toFile());
+
+		assertTrue("malformed descriptor should not report ok()", !result.ok());
+		assertEquals("mapDoc must be null on failure", null, result.mapDoc());
+		assertEquals("expected exactly one collected error", 1, result.errors().size());
+		String message = result.errors().get(0);
+		assertTrue("collected error should name the offending file, got: " + message,
+			message.contains(yaml.toString()));
+		assertTrue("collected error should carry the underlying cause, got: " + message,
+			message.contains("unsupported 'schema: 1'"));
+	}
+
+	/**
+	 * A well-formed descriptor must compile identically whether through {@code main}'s
+	 * file-writing path or through {@link MapCompiler#compileCollecting} -- same validator,
+	 * two dispositions, never two answers.
+	 */
+	@Test
+	public void compileCollectingMatchesMainOnAGoodDescriptor() throws Exception {
+		Path temp = tmp.getRoot().toPath();
+		Path yaml = temp.resolve("good.yaml");
+		Path map = temp.resolve("good.map");
+		String descriptor = """
+			schema: 2
+			system: { id: good, name: Good, cpu: { language: '6502:LE:16:default' } }
+			memory:
+			  regions:
+			    - { name: RAM, start: 0, end: 0xffff, kind: ram }
+			  windows: []
+			""";
+		Files.writeString(yaml, descriptor);
+
+		MapCompiler.main(new String[] { yaml.toString(), map.toString() });
+		JsonObject fromMain = JsonParser.parseString(Files.readString(map)).getAsJsonObject();
+
+		MapCompiler.CompileResult result = MapCompiler.compileCollecting(yaml.toFile());
+		assertTrue("well-formed descriptor should report ok(): " + result.errors(), result.ok());
+		JsonObject fromCollecting =
+			JsonParser.parseString(new Gson().toJson(result.mapDoc())).getAsJsonObject();
+
+		assertEquals(fromMain, fromCollecting);
 	}
 }

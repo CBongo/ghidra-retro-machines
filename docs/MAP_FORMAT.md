@@ -3,17 +3,24 @@
 ## Purpose
 
 The `.map` file is a **build-time-compiled** JSON rendering of a machine descriptor YAML
-(e.g. `machines/c64.yaml`). It exists so the runtime extension's loader can read the
-memory-map / banking / symbol facts it needs **without a YAML parser bundled in the
-shipped extension**.
+(e.g. `machines/c64.yaml`). It exists so the curated (bundled) descriptor set can be
+consumed by the loader as plain gson JSON, with no per-import YAML parse on the common path.
 
-JSON was chosen — rather than shipping the YAML directly — because Ghidra already bundles
-[gson](https://github.com/google/gson) (`Ghidra/Framework/Generic/lib/gson-2.13.2.jar`),
-which is on the classpath of every Ghidra extension for free. The build-time compiler
-(`tools/gdtbuilder/src/main/java/gdtbuilder/MapCompiler.java`, Gradle tasks `buildC64Map` /
-`buildMap`) parses the YAML with snakeyaml (a build-only dependency, see build.gradle) and
-re-emits it as JSON with gson. The runtime loader (a later task, grm-974) parses that JSON
-with the same Ghidra-bundled gson — no new dependency either at build time or at load time.
+JSON was chosen — rather than shipping the YAML directly for the curated set — because
+Ghidra already bundles [gson](https://github.com/google/gson)
+(`Ghidra/Framework/Generic/lib/gson-2.13.2.jar`), which is on the classpath of every Ghidra
+extension for free. The compiler (`src/main/java/gdtbuilder/MapCompiler.java`, Gradle tasks
+`buildC64Map` / `buildMap`) parses the YAML with snakeyaml and re-emits it as JSON with
+gson. The runtime loader parses that JSON with the same Ghidra-bundled gson.
+
+As of bead `grm-hb6.3`, `MapCompiler` (and its YAML front-end, `YamlSupport`) ships with the
+extension and snakeyaml is a shipped runtime dependency (see build.gradle's YAML-pipeline
+comment for the full rationale) — this is *narrower* than "no YAML parser at runtime" might
+suggest, not a reversal of the curated path above: the curated set is still compiled
+entirely at build time into the `.map` above, and shipping the compiler exists only to let
+a runtime caller (the user-directory overlay, `docs/per-game-descriptors-design.md` §4.2)
+compile a user-supplied descriptor through the exact same validator, so build and runtime
+can never drift on schema semantics.
 
 `MapCompiler` is a plain YAML-in/JSON-out translator: unlike `GdtBuilder` (which
 constructs Ghidra `DataType` objects and therefore must bootstrap

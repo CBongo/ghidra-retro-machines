@@ -129,14 +129,26 @@ repositories {
 	// See https://docs.gradle.org/current/userguide/declaring_repositories.html for more info.
 	// Ex: mavenCentral()
 
-	// Only used to resolve the build-time gdtBuilder dependencies below (snakeyaml). Nothing
-	// resolved through this repository is added to the shipped extension's runtime lib/.
+	// Resolves both the build-only gdtBuilder dependencies below (snakeyaml, for GdtBuilder's
+	// own JavaExec runtime classpath) AND, as of bead grm-hb6.3, the extension's own shipped
+	// snakeyaml dependency declared above -- see that block's comment and the YAML-pipeline
+	// comment further down for why snakeyaml now ships.
 	mavenCentral()
 }
 
 dependencies {
 	// Any external dependencies added here will automatically be copied to the lib/ directory when
-	// this extension is built.
+	// this extension is built (buildExtension.gradle's copyDependencies task copies
+	// configurations.runtimeClasspath into the project's own lib/, which SHIPPED_TOP_LEVEL below
+	// allowlists into the zip).
+
+	// snakeyaml, SHIPPED (bead grm-hb6.3, reversing the "build-only, never copied" decision
+	// recorded lower in this file -- see the YAML-pipeline comment there for the full
+	// rationale). This is what lets MapCompiler's YAML front-end (YamlSupport, also now in
+	// this source set) run at runtime, not just at build time. Same version as the gdtBuilder
+	// source set below uses for the other build-only compilers, so build and runtime cannot
+	// diverge on parser behavior.
+	implementation 'org.yaml:snakeyaml:2.2'
 }
 
 //----------------------------------------------------------------------------------
@@ -218,19 +230,47 @@ projectDir.listFiles().each { f ->
 // docs/SCHEMA.md "Resolved decisions" #1: struct/enum definitions live canonically in
 // the machine descriptor YAML (`types:` section); the .gdt archive is a generated build
 // artifact (never committed — see .gitignore) produced here and consumed by the runtime
-// extension ONLY via the standard Ghidra archive API. There is deliberately no YAML
-// parser in the shipped extension: the builder below (source set `gdtBuilder`) and its
-// snakeyaml dependency are build-only and are never copied into the extension's lib/,
-// because they live in a separate source set / configuration from `main` and
-// `dependencies {}` above (which is what buildExtension.gradle copies).
+// extension ONLY via the standard Ghidra archive API.
+//
+// GdtBuilder itself is build-only and NEVER ships: it must bootstrap
+// Application.initializeApplication to construct DataType objects standalone, which is not
+// something the shipped extension (already running inside a live Ghidra) should ever do
+// again, and its output (the .gdt archive) is consumed through the ordinary Ghidra archive
+// API, not by re-running the builder at runtime. It stays in the build-only `gdtBuilder`
+// source set below, on its own `gdtBuilderImplementation` configuration, independent of the
+// extension's runtime `dependencies {}` above.
+//
+// MapCompiler + its YAML front-end (YamlSupport) are the deliberate EXCEPTION (bead
+// grm-hb6.3, docs/per-game-descriptors-design.md section 4.3), reversing what used to be a
+// blanket "no YAML parser in the shipped extension" rule for the whole pipeline. Two things
+// make this narrow rather than a retreat from that rule:
+//   1. MapCompiler never touches a Ghidra runtime class (no
+//      Application.initializeApplication) -- its only dependencies are snakeyaml (read) and
+//      gson (write), both fine to run inside a live Ghidra process. GdtBuilder cannot make
+//      the same claim, which is why it stays build-only.
+//   2. The curated set (machines/*.yaml, machines/games/*.yaml) is STILL compiled entirely
+//      at BUILD time, by the buildXxxMap/buildXxxGame tasks below, into data/*.map and
+//      data/games/*.gmap -- shipping the compiler changes nothing about that path. What it
+//      newly enables is a RUNTIME caller: the user-directory overlay scan (bead grm-hb6.2,
+//      not yet built) compiling a user-supplied descriptor on read, through the exact same
+//      validator the build uses, so the build and the runtime can never drift apart on
+//      schema semantics. This is why MapCompiler + YamlSupport moved out of the gdtBuilder
+//      source set into src/main/java (below), and why snakeyaml is now also declared in the
+//      extension's own runtime `dependencies {}` above, SHIPPED into lib/ (bead grm-6gl's
+//      allowlist already carries `lib`) -- costing roughly 330 KB in the zip and a second
+//      parser on the Ghidra classpath (Ghidra bundles none, so there is no version conflict
+//      to manage), in exchange for one authoring format and one validator across both paths.
 //----------------------------------------------------------------------------------
 
-// The gdtBuilder source set holds the build-time descriptor toolchain (MapCompiler,
-// GdtBuilder, YamlSupport, PetsciiCompiler, ScreencodeCompiler) driven by the buildXxxGdt/
-// buildXxxMap/buildPetsciiMap/buildScreencodeMap JavaExec tasks below. The former
-// bitAlgebraCheck/petsciiCheck/charsetCheck source sets and their verify* JavaExec tasks
-// were retired in bead grm-32f.4: those hand-rolled main()+System.exit verifiers are now
-// standard JUnit @Test classes under src/test/java, run by the `test` task (see below).
+// The gdtBuilder source set holds what remains build-only (GdtBuilder, PetsciiCompiler,
+// ScreencodeCompiler, GameCompiler), driven by the buildXxxGdt/buildXxxMap/buildPetsciiMap/
+// buildScreencodeMap/buildXxxGame JavaExec tasks below. It depends on sourceSets.main.output
+// -- not the other way around -- so it can still reach MapCompiler and YamlSupport (now in
+// `main`; GameCompiler in particular calls several of MapCompiler's package-private parsing
+// helpers, widened to package-private specifically for this). The former bitAlgebraCheck/
+// petsciiCheck/charsetCheck source sets and their verify* JavaExec tasks were retired in bead
+// grm-32f.4: those hand-rolled main()+System.exit verifiers are now standard JUnit @Test
+// classes under src/test/java, run by the `test` task (see below).
 sourceSets {
 	gdtBuilder {
 		java {
@@ -249,7 +289,28 @@ dependencies {
 		'Ghidra/Features/*/lib/*.jar'
 	])
 
-	// YAML parsing for the builder only; never shipped (see note above).
+	// MapCompiler + YamlSupport, compiled into `main` now (see the comment above). The
+	// remaining gdtBuilder classes (GdtBuilder, GameCompiler, PetsciiCompiler,
+	// ScreencodeCompiler) call into them directly (same `gdtbuilder` package, different
+	// source set), so gdtBuilder needs `main`'s compiled classes on its own classpath.
+	// Deliberately `classesDirs`, NOT the full `sourceSets.main.output`: the latter also
+	// carries `main`'s resources dir, which Gradle wires through the `classes` task ->
+	// `processResources` -> `stageCharsetResources` -> `buildPetsciiMap`/`buildScreencodeMap`
+	// -> `compileGdtBuilderJava` -- a real cycle back to this very dependency, caught by
+	// `gradle test` failing with "Circular dependency between the following tasks". Only the
+	// compiled .class files are actually needed here, and `classesDirs` depends on
+	// `compileJava` alone, which has no such path back.
+	gdtBuilderImplementation files(sourceSets.main.output.classesDirs)
+
+	// YAML parsing, needed at RUNTIME by the JavaExec tasks below (classpath =
+	// sourceSets.gdtBuilder.runtimeClasspath) whenever they execute YamlSupport's
+	// snakeyaml calls -- GdtBuilder/PetsciiCompiler/ScreencodeCompiler/GameCompiler all
+	// reach it. This is the same 'org.yaml:snakeyaml:2.2' now declared above as the
+	// extension's own shipped runtime dependency; kept as a second, separate declaration
+	// (rather than relying on gdtBuilder inheriting it transitively through
+	// sourceSets.main.output, which carries only compiled classes, not main's own
+	// dependencies) because the gdtBuilder configuration is deliberately independent of
+	// the extension's runtime `dependencies {}` block.
 	gdtBuilderImplementation 'org.yaml:snakeyaml:2.2'
 
 	// JUnit layer (bead grm-32f.1 spike; verifiers migrated in grm-32f.4): the `test` source
@@ -264,15 +325,17 @@ dependencies {
 	// ServiceLoader discovery and PetsciiMapperTest's map load both depend on. JUnit4 (not 5)
 	// + hamcrest come from Maven since Ghidra's shipped test scaffolding needs them at runtime;
 	// the `test` task below uses useJUnit() (vintage), not useJUnitPlatform().
+	//
+	// MapCompiler/YamlSupport moved into sourceSets.main.output (bead grm-hb6.3), so the test
+	// wiring is simpler than it was: no separate snakeyaml declaration is needed here --
+	// testImplementation extends the extension's own `implementation` configuration by
+	// default (the standard java-library-plugin wiring), and that configuration now carries
+	// snakeyaml (see above). sourceSets.gdtBuilder.output is still needed: DescriptorCompositionTest
+	// and GameCompilerTest exercise GdtBuilder/GameCompiler, which remain build-only.
 	testImplementation fileTree(dir: ghidraInstallDir, includes: [
 		'Ghidra/Framework/*/lib/*.jar', 'Ghidra/Features/*/lib/*.jar'])
 	testImplementation sourceSets.main.output
 	testImplementation sourceSets.gdtBuilder.output
-	// MapCompiler reads its descriptor via snakeyaml (YamlSupport); sourceSets.gdtBuilder.output
-	// carries only its compiled classes, not that build-only dep, and Ghidra ships no
-	// snakeyaml on the fileTree above -- so the test runtime needs it explicitly, same
-	// version the gdtBuilder set uses.
-	testImplementation 'org.yaml:snakeyaml:2.2'
 	testImplementation 'junit:junit:4.13.2'
 	testImplementation 'org.hamcrest:hamcrest:2.2'
 }
@@ -1043,6 +1106,16 @@ task stageExtensionForTests(type: Sync) {
 			'NOTICE'
 	}
 	from(tasks.named('jar')) {
+		into 'lib'
+	}
+	// External runtime dependency jars (bead grm-hb6.3: snakeyaml, the extension's first one)
+	// -- copyDependencies (buildExtension.gradle, wired as a compileJava dependsOn, which
+	// 'buildExtension' above transitively triggers) copies configurations.runtimeClasspath
+	// into the project's own lib/ dir; buildExtension's own zip picks that dir up via the
+	// SHIPPED_TOP_LEVEL allowlist, and this Sync must mirror it or the headless test harness
+	// runs against a lib/ that is missing exactly what buildExtension ships. 'lib' rather
+	// than a narrower include: the same directory buildExtension packages whole.
+	from('lib') {
 		into 'lib'
 	}
 

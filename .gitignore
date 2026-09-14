@@ -78,3 +78,8 @@ tools/banktest/realrom/manifest-*.tsv
 
 # Generated descriptor-source fingerprint (bead grm-5jjs) — build output, never committed
 data/descriptor-sources.sha256
+
+# Runtime dependency jars copied into the project's own lib/ by buildExtension.gradle's
+# copyDependencies task (bead grm-hb6.3, once snakeyaml became a shipped `implementation`
+# dependency). Build output, never committed -- buildExtension synthesizes it fresh.
+/lib/

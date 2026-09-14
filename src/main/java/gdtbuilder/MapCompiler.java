@@ -34,11 +34,10 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 
 /**
- * Standalone build-time tool: reads a machine descriptor YAML (see docs/SCHEMA.md and
- * machines/c64.yaml) and emits a runtime "map" file — a JSON document describing memory
- * regions, banked windows, banking state machine, ROM image slots, and inline symbol
- * sets — for the shipped extension's loader to consume directly, with no YAML parser in
- * the runtime.
+ * Reads a machine descriptor YAML (see docs/SCHEMA.md and machines/c64.yaml) and emits a
+ * runtime "map" file — a JSON document describing memory regions, banked windows, banking
+ * state machine, ROM image slots, and inline symbol sets — for the shipped extension's
+ * loader to consume directly.
  * <p>
  * Builds descriptor <b>schema 2</b> (docs/SCHEMA.md): the bank state is a named tuple of
  * fields ({@code banking.state}), bank-switch mechanisms are a list of strategy instances
@@ -50,15 +49,27 @@ import com.google.gson.GsonBuilder;
  * <p>
  * JSON is used (rather than re-shipping the YAML) because Ghidra already bundles gson
  * ({@code Ghidra/Framework/Generic/lib/gson-2.13.2.jar}), so the runtime loader can parse
- * this file with zero new dependencies. This class itself never touches Ghidra runtime
- * classes (no {@code Application.initializeApplication}) — unlike {@link GdtBuilder},
- * which must bootstrap Ghidra to construct {@code DataType}s, MapCompiler only needs
- * snakeyaml (to read the descriptor) and gson (to write the map), both already on the
- * build-only {@code gdtBuilder} source set's classpath.
+ * a compiled {@code .map}/{@code .gmap} with zero new dependencies. This class itself never
+ * touches Ghidra runtime classes (no {@code Application.initializeApplication}) — unlike
+ * {@link GdtBuilder}, which must bootstrap Ghidra to construct {@code DataType}s,
+ * MapCompiler only needs snakeyaml (to read the descriptor, via {@link YamlSupport}) and
+ * gson (to write the map).
  * <p>
- * This class is NEVER shipped with the extension — it runs only as part of the Gradle
- * build (see the {@code buildC64Map} / {@code buildMap} tasks in build.gradle). See
- * docs/MAP_FORMAT.md for the frozen JSON schema this tool produces.
+ * <b>This class ships with the extension (bead {@code grm-hb6.3}, reversing an earlier
+ * "build-only, never shipped" decision — see build.gradle's YAML-pipeline comment for the
+ * full rationale).</b> It lives in {@code src/main/java} rather than the build-only
+ * {@code gdtBuilder} source set specifically so it does: the curated {@code machines/*.yaml}
+ * and {@code machines/games/*.yaml} descriptors are still compiled at BUILD time into
+ * {@code data/*.map}/{@code data/games/*.gmap} exactly as before (see the
+ * {@code buildXxxMap}/{@code buildXxxGame} tasks in build.gradle, which now run this class
+ * from {@code sourceSets.main.output} instead of the retired {@code gdtBuilder} copy) —
+ * shipping the compiler does not change that. What it newly enables is a RUNTIME caller
+ * (the user-directory overlay path, bead {@code grm-hb6.2}) compiling a user-supplied
+ * descriptor on read, through the exact same validator the build uses, so the build and
+ * the runtime can never drift apart on what a valid descriptor means. See
+ * {@link #compileCollecting} for the error-collecting entry point that path needs.
+ * <p>
+ * See docs/MAP_FORMAT.md for the frozen JSON schema this tool produces.
  * <p>
  * Usage: {@code MapCompiler <descriptor.yaml> <output.map>}
  */
@@ -113,6 +124,27 @@ public class MapCompiler {
 		File descriptorFile = new File(args[0]).getCanonicalFile();
 		File outputMap = new File(args[1]).getCanonicalFile();
 
+		Map<String, Object> mapDoc = compile(descriptorFile);
+
+		outputMap.getParentFile().mkdirs();
+		Gson gson = new GsonBuilder().setPrettyPrinting().create();
+		try (Writer w = new FileWriter(outputMap)) {
+			gson.toJson(mapDoc, w);
+		}
+
+		System.err.println(
+			"Wrote map to " + outputMap.getAbsolutePath() + " (" + outputMap.length() + " bytes)");
+	}
+
+	/**
+	 * Compiles one descriptor YAML to its in-memory map document. This is the sole build
+	 * logic — {@link #main} calls it and writes the result to a file; {@link #compileCollecting}
+	 * wraps it for a caller that must not abort on a malformed file. Every throw site below
+	 * (schema-version check, {@code requireXxx}/{@code validateXxx} helpers reached
+	 * transitively, {@link YamlSupport#loadComposed}) is UNCHANGED by that wrapping — this
+	 * method is exactly as strict as {@code main} always was.
+	 */
+	static Map<String, Object> compile(File descriptorFile) throws IOException {
 		Map<String, Object> descriptor = YamlSupport.loadComposed(descriptorFile);
 
 		int schemaVersion = requireAddr(descriptor, "schema", "descriptor");
@@ -174,14 +206,57 @@ public class MapCompiler {
 			mapDoc.put("formats", formats);
 		}
 
-		outputMap.getParentFile().mkdirs();
-		Gson gson = new GsonBuilder().setPrettyPrinting().create();
-		try (Writer w = new FileWriter(outputMap)) {
-			gson.toJson(mapDoc, w);
-		}
+		return mapDoc;
+	}
 
-		System.err.println(
-			"Wrote map to " + outputMap.getAbsolutePath() + " (" + outputMap.length() + " bytes)");
+	/**
+	 * The result of {@link #compileCollecting}: either the compiled map document (in which
+	 * case {@code errors} is empty), or a non-empty list of error messages attributing the
+	 * failure to {@code descriptorFile} (in which case {@code mapDoc} is {@code null}).
+	 * <p>
+	 * Granularity is per FILE, not per hint (docs/per-game-descriptors-design.md section
+	 * 5.4): a YAML parse failure has no per-hint granularity to offer, and a file that fails
+	 * structural validation cannot be trusted to have parsed the hints it did produce
+	 * correctly. There is never more than one error in the list today -- {@link #compile}
+	 * throws on its first violation, exactly as {@code main} always has -- but the shape is
+	 * a list so a future caller that wants to report more than "the first thing that broke"
+	 * is not blocked by this record's shape.
+	 */
+	record CompileResult(Map<String, Object> mapDoc, List<String> errors) {
+
+		boolean ok() {
+			return mapDoc != null;
+		}
+	}
+
+	/**
+	 * Error-collecting entry point for a runtime caller that must not let one malformed
+	 * descriptor abort a larger pass (docs/per-game-descriptors-design.md section 5.4, the
+	 * same failure discipline {@code DescriptorCopyHintAnalyzer.java} states: "an NPE out of
+	 * {@code added()} aborts the entire analysis pass for the program, where a malformed
+	 * directive should cost only that directive"). The intended caller is the user-directory
+	 * overlay scan (bead {@code grm-hb6.2}, not yet built): one bad file in that directory
+	 * must not cost every other file in it.
+	 * <p>
+	 * This WRAPS {@link #compile} rather than rewriting its throw sites -- build-time
+	 * strictness ({@link #main}, which still calls {@link #compile} directly and lets any
+	 * exception propagate and fail the build) is completely unaffected; only a caller that
+	 * opts into this method gets collection instead of a thrown exception. "One validator,
+	 * two dispositions."
+	 * <p>
+	 * Compiles on every call -- no caching (docs/per-game-descriptors-design.md section 4.4;
+	 * "this repo has already rejected a cache-backed mode ... a correct cache would need
+	 * explicit invalidation rules").
+	 */
+	static CompileResult compileCollecting(File descriptorFile) {
+		try {
+			return new CompileResult(compile(descriptorFile), List.of());
+		}
+		catch (IOException | RuntimeException e) {
+			String message = e.getMessage() != null ? e.getMessage() : e.toString();
+			return new CompileResult(null,
+				List.of(descriptorFile + ": " + message));
+		}
 	}
 
 	// ---- address geometry (grm-sf6 §2b) ----
