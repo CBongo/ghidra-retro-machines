@@ -134,22 +134,6 @@ Blocked on judgment, not effort.
 - [ ] **c64ref sourcing** (`grm-p5w`, typed as a `decision`) — generator + committed
       `generated/*.yaml`, or git submodule + build-time generation. Binds `grm-hb6.6` and `grm-54p`
       too. Decide once.
-- [ ] **Open-source homebrew ROMs as *committable* real-ROM test vectors — pursue, and if so with
-      what sourcing shape?** (`grm-5ioo` P3.) The real-ROM tier hash-pins commercial cartridges the
-      repo can never ship, which is exactly why it cannot be a CI gate and why `CLAUDE.md` has to
-      carry a "you must remember to run this locally" requirement instead.
-
-      This matters more than it sounds: the default gate's synthetic fixtures are, by construction,
-      made only of idioms someone already thought of — the precise weakness `grm-mu7` exploited when
-      a broken guard passed the full synthetic gate while destroying three pinned real ROMs.
-      Homebrew is written against a real assembler and a real mapper library, so it carries banking
-      idioms nobody here invented, and it is **the only source of that property that can live in the
-      repo**.
-
-      Two decisions, and the second is the one that needs you: (1) pursue at all? (2) sourcing shape
-      — committed binaries, git submodule, or build-from-source at gate time (which needs a
-      toolchain the gate cannot assume). The bead leans toward pursuing but deliberately does not
-      choose a shape.
 
 ---
 
@@ -372,3 +356,4 @@ Agents can't file these — they need an account and CLA agreement.
 | megaman2: with bank $E in base, why do eight `via RESET` bank comments in the fixed `$C000` bank disappear? | **An annotation-EMISSION gap, not a mis-resolution — bless it and file the gap.** (Owner, 2026-09-19.) All eight are constant-fed: `c037`/`c041` sit in `FUN_c000` after `c022 LDA #$C` + the STA/LSR write; `c56a`/`c598` are `FUN_c565`, a far-call wrapper (`LDA #$D; JSR c000; JSR 8015; LDA #$E; JSR c000`); `c5b2`/`c811` the same shape for `$B`; `d0aa`/`d0ba` are the NMI handler's `LDA #$C` far call to `C:8235` and its loop over `C:8003`. The overlay REFS at `c037`/`c041`/`d0aa`/`c56a` still target the right bank, and the old comments' `known:` masks show `prg_bank` fully pinned — the `?` was only ever mirroring. So the value is still resolved; the comment stopped being emitted once the RESET-seeded inbound state came from bank 14's code. `d0ba` keeping a base ref is a `grm-eyn` instance: a table over-read at `9470` in bank E is newly reachable in base and its seeds interrupt the walk. `d0c3` confirmed as the `$29` restore before the NMI epilogue. Golden blessed with the eight losses; do not read them as a regression on later runs. | `grm-hb6.13` (closed); emission gap `grm-bayc`; `9470` over-read on `grm-eyn`; `d0c3` on `grm-yflf` |
 | rcproam: is its mixed PRG mode a real runtime switch, or just the MMC1 reset followed by a one-way move to mode 0? | **Mode 0, one-way. Every site that writes the control register sets the PRG-mode bits to 0, and `ff85`/`ffea` are reached from RESET alone.** (Owner, 2026-09-19.) The "mixed" reading was the reset idiom counted as a mode. So `grm-ic5`'s "known to change" branch is EMPTY across the pinned set: all three mode-0 MMC1 titles take an ordinary per-game yaml, and no by-name exception mechanism is needed — do not build one. rcproam's yaml is filed; sequence it with `grm-q1bi`'s pending re-bless since the row is bistable. | `grm-hvc1` (yaml); ruling recorded on `grm-ic5` |
 | Set-valued bank state — which of the three shapes? | **(b) path forking, instrumented with a small fork budget and warnings, so the real-ROM tier measures whether the multiplicative cost ever occurs in practice.** (Owner, 2026-09-19.) This subsumes the other two: (c) is what a budget-exhausted merge gets (an explicit `MULTI_VALUED_AT_MERGE` stop reason naming the count), and (a) done correctly — each set element correlated with the values derived from it, which `c9a4`'s per-bank table base demands — is a bounded set of whole states at a block, i.e. (b)'s data structure. Do not build (c) first; do not build a per-field set. Budget starts at 4 live forks per block / 16 per function; every collapse is logged and a per-program summary is the incidence measurement the bead's first step asked for. | `grm-wul` (ruling comment carries the design) |
+| Open-source homebrew ROMs as committable real-ROM test vectors — pursue, and if so how? | **Punted to P4, semi-open, not release-blocking. If pursued: do NOT commit the images. A separate opt-in manifest (`manifest-homebrew.tsv`, set name `homebrew`) for titles the user has built/installed locally, identified by source git commit/tag (or other build info) rather than — or as well as — a binary SHA, since a rebuild need not be byte-identical. Goldens may be recorded and committed the same way as any other row. SKIPs loudly when absent; never gates the default check.** (Owner, 2026-09-19.) The description's "runs in the default gate for everyone" framing is retired. | `grm-5ioo` |
