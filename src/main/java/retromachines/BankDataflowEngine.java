@@ -332,7 +332,7 @@ final class BankDataflowEngine {
 							callEffect.state(),
 							overwrite(mechIn, callEffect.state(), callEffect.ownedMask()),
 							callEffect.argumentResolved(), callEffect.noInboundArgument(),
-							callEffect.secondTierRelay()));
+							callEffect.secondTierRelay(), callEffect.restoreCell()));
 					}
 				}
 			}
@@ -582,9 +582,18 @@ final class BankDataflowEngine {
 	 * second-tier helper's relay call, so an unresolved argument here is recoverable one frame
 	 * out (at the WRAPPER's own call sites) rather than a gap in this analyzer. Read only when
 	 * {@code argumentResolved} is false, exactly like {@code noInboundArgument}.
+	 * <p>
+	 * {@code restoreCell} (bead grm-yflf) is carried straight through from
+	 * {@link HelperArgumentRecovery.CallEffect#restoreCell}: non-null only when this call's
+	 * helper is a proven no-argument RESTORE entry, naming the cell the bank is restored from --
+	 * zelda2's {@code FUN_ffc9} restores from {@code $0769}. Read only when
+	 * {@code argumentResolved} is false, exactly like the two booleans above; classify such a
+	 * site {@link BankSwitchStrategy.ValueStop#RESTORED_BANK} rather than
+	 * {@code ANALYZER_LIMIT}.
 	 */
 	record CallSwitch(String helperName, BankState effect, BankState stateAfter,
-			boolean argumentResolved, boolean noInboundArgument, boolean secondTierRelay) {}
+			boolean argumentResolved, boolean noInboundArgument, boolean secondTierRelay,
+			Address restoreCell) {}
 
 	record DataflowResult(Map<Address, BankState> stateIn,
 			Map<Address, SwitchResult> switchResults, Map<Address, CallSwitch> callSwitches) {}

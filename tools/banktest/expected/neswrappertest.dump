@@ -45,6 +45,7 @@ COMMENT c02c bank -> mirroring=0,prg_mode=3,prg_bank=2 via FUN_c102 [switch-valu
 COMMENT c031 bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_c144 [switch-value flow]
 COMMENT c036 bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_c183 [switch-value flow]
 COMMENT c03b bank -> mirroring=0,prg_mode=3,prg_bank=7 via FUN_c203 [switch-value flow]
+BOOKMARK Note c01d
 BOOKMARK Note c102
 BOOKMARK Note c112
 BOOKMARK Note c144
@@ -53,7 +54,6 @@ BOOKMARK Note c183
 BOOKMARK Note c193
 BOOKMARK Note c203
 BOOKMARK Note c213
-BOOKMARK Warning c01d
 REF c00a -> W8000_M3_B3::8000 UNCONDITIONAL_CALL primary=true
 REF c012 -> W8000_M3_B6::8000 UNCONDITIONAL_CALL primary=true
 REF c01a -> W8000_M3_B4::8000 UNCONDITIONAL_CALL primary=true

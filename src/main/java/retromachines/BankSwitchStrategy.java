@@ -120,6 +120,68 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 		 */
 		SECOND_TIER_ARGUMENT,
 		/**
+		 * The site is a CALL SITE whose helper is a proven NO-ARGUMENT RESTORE ENTRY (bead
+		 * grm-yflf, the classification half of grm-jqt0's fix (B)): the helper's own prologue
+		 * provably redefines its mechanism's register on every path
+		 * ({@link HelperArgumentRecovery#argumentDefinitelyClobbered}), AND the single instruction
+		 * that does so is a plain, non-indexed load from a WRITABLE memory cell that reaches the
+		 * mechanism unmodified -- see {@link HelperArgumentRecovery#restoreSourceCell} for the
+		 * exact, true-by-construction shape. zelda2's {@code FUN_ffc9} ({@code LDA $0769}, falling
+		 * straight through into the real setter) is the worked case: the call site never had an
+		 * argument to recover, and what the helper actually does is put back whatever the game
+		 * itself saved at {@code $0769} earlier -- a RELATIONAL fact ("unchanged from what was
+		 * saved there"), not a value this analyzer failed to pin down.
+		 * <p>
+		 * <b>This is deliberately its own member, not a reuse of {@link #RUNTIME_SOURCE}.</b> Both
+		 * are honest NOTEs and both terminate on a load from writable memory, but they say
+		 * different things: {@code RUNTIME_SOURCE} declines with no further claim ("determined at
+		 * runtime, nothing more to say"), while this member is affirmative -- it names the save
+		 * cell and asserts the bank is UNCHANGED from what was last written there, which is exactly
+		 * the information {@code grm-mej.4}'s labelling work (and any future shadow-value work) can
+		 * consume. Collapsing the two would throw that relation away.
+		 * <p>
+		 * <b>Why the recognizer must NOT fire on every {@code noInboundArgument} call site.</b>
+		 * {@code grm-jqt0}'s fix (A) already proved "no inbound argument" at ~31 sites across six
+		 * titles (zelda2, bionic, cv2, smb2, smb3, rcransom), and it is tempting to read all of them
+		 * as restores. Two ARE -- zelda2 and bionic, below -- and the other four are not, for
+		 * distinct syntactic reasons, none of them a title name:
+		 * <ul>
+		 * <li>smb3's and smb2's helpers redefine the register from an IMMEDIATE
+		 * ({@code LDA #imm} / {@code LDY #imm}) -- a CONSTANT the helper supplies, not a value read
+		 * back from anywhere the game wrote, so there is no cell to name.
+		 * {@link HelperArgumentRecovery#argumentReloadSource} already returns null for these.</li>
+		 * <li>rcransom's helpers reload the argument STACK-RELATIVELY ({@code TSX} /
+		 * {@code LDA $0102,X}), which fix (A)'s own stack-page-indexed-access guard inside
+		 * {@link HelperArgumentRecovery#argumentDefinitelyClobbered} already downgrades to
+		 * INDETERMINATE -- {@code noInboundArgument} is false for these sites, so this
+		 * classification is never even consulted.</li>
+		 * <li>cv2's helper ({@code FUN_c185}, {@code STA $1C} then later {@code LDA $1C}) is a
+		 * SAVE/RESTORE inside its own prologue, not a clobber -- {@code argumentSurvivesPrologue}
+		 * is TRUE there, so {@code noInboundArgument} is false and this classification is never
+		 * consulted either.</li>
+		 * </ul>
+		 * <b>bionic's {@code FUN_dca8} ({@code LDA $65 / STA $E000}) DOES qualify, and is the
+		 * second real customer of this classification, not an exclusion.</b> Its shape is
+		 * syntactically identical to zelda2's {@code FUN_ffc9} in every way that matters -- a bare,
+		 * single-instruction, unconditional, non-indexed reload from writable memory, immediately
+		 * feeding the mechanism -- and that identity is correct, not a near-miss to be patched
+		 * around: {@code $65} is exactly as valid a save slot as {@code $0769}, the same way
+		 * megaman2's own motivating {@code $29} write-through shadow (grm-yflf's description) is
+		 * zero page too. An earlier increment of this feature read the design brief's "ABSOLUTE" as
+		 * excluding zero-page addresses and shipped that exclusion; it was reviewed and reverted
+		 * (caught by {@code nesmmc1test}'s M13/M14 and {@code neswrappertest}'s W5, which had to be
+		 * updated in the other direction -- to accept this NOTE as the new honest form -- rather
+		 * than treated as a boundary to avoid crossing). See
+		 * {@link HelperArgumentRecovery#restoreSourceCell} for the corrected implementation and the
+		 * full reasoning for why "ABSOLUTE" means a fixed, statically-certain address (the contrast
+		 * with "non-indexed" restated), not a claim about instruction encoding length.
+		 * <p>
+		 * zelda2 and bionic are, for now, the two titles in the corpus whose no-argument restore is
+		 * an entire one-instruction-prologue named function reloading from a fixed RAM cell; the
+		 * other four titles above are excluded by distinct syntactic facts, not by a title list.
+		 */
+		RESTORED_BANK,
+		/**
 		 * We gave up: scan budget exhausted, basic-block boundary, control-flow join,
 		 * mid-scan mechanism-write abort, or an unmodeled modifier. A real gap -- stays a
 		 * WARNING, and is the population worth working on.

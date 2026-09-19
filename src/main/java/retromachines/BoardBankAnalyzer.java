@@ -537,14 +537,39 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				// above is unused on this path (honestGapMessage answers before it would be
 				// read), computed unconditionally only because the noInboundArgument case needs
 				// it and the two conditions are independent.
-				BankSwitchStrategy.ValueStop callStop =
-					callSwitch.secondTierRelay() && !callSwitch.argumentResolved()
-						? BankSwitchStrategy.ValueStop.SECOND_TIER_ARGUMENT
-						: BankSwitchStrategy.ValueStop.ANALYZER_LIMIT;
+				//
+				// bead grm-yflf (the classification half of grm-jqt0's fix (B)): a call site
+				// whose helper is a PROVEN no-argument RESTORE entry -- CallSwitch#restoreCell
+				// non-null -- names a real, honest fact this analyzer CAN state: the bank after
+				// this call is unchanged from whatever the game itself saved at that cell.
+				// zelda2's four FUN_ffc9 sites are the motivating case (restores from $0769).
+				// Checked after the second-tier test, and the two are not expected to coincide in
+				// practice (a relay call forwards a LIVE caller register; a restore call reads a
+				// helper-owned save cell) but second tier wins on the off chance they do, since it
+				// is the more specific, whole-program-derived fact.
+				BankSwitchStrategy.ValueStop callStop;
+				String honestDetail = null;
+				if (callSwitch.secondTierRelay() && !callSwitch.argumentResolved()) {
+					callStop = BankSwitchStrategy.ValueStop.SECOND_TIER_ARGUMENT;
+				}
+				else if (callSwitch.restoreCell() != null && !callSwitch.argumentResolved()) {
+					callStop = BankSwitchStrategy.ValueStop.RESTORED_BANK;
+					honestDetail = "Bank value is RESTORED here, not resolved: this call's helper " +
+						callSwitch.helperName() + " is a proven no-argument restore entry -- its " +
+						"own prologue reloads the bank directly from " + callSwitch.restoreCell() +
+						", a writable RAM cell nothing between that load and the switch touches, " +
+						"and commits it unchanged. The bank after this call is therefore whatever " +
+						"was last saved at " + callSwitch.restoreCell() + ", not a fresh value this " +
+						"analyzer failed to pin down -- a property of the game, not a gap in " +
+						"analysis.";
+				}
+				else {
+					callStop = BankSwitchStrategy.ValueStop.ANALYZER_LIMIT;
+				}
 				BankAnnotationAdapter.Marked marked = BankAnnotationAdapter.annotateOrWarn(this,
 					program, listing, addr, annotState, board, bankUniverse,
 					callSwitch.helperName(), warningText, callStop, provenance,
-					!callSwitch.argumentResolved());
+					!callSwitch.argumentResolved(), honestDetail);
 				if (marked == BankAnnotationAdapter.Marked.WARNED) {
 					warnings++;
 				}

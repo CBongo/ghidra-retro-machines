@@ -4541,13 +4541,26 @@ public class VerifyBankTest extends GhidraScript {
 		// helper's OWN entry, where the bank is loaded from $65 and A is stale. The
 		// mid-body work must NOT make this one resolve: reaching a helper is not the same
 		// as knowing its argument, and attributing a stale register here would ship a
-		// wrong bank. Honest WARNING, no "bank ->" claim. Recovering it needs
+		// wrong bank. No "bank ->" claim. Recovering the CALLER'S argument still needs
 		// cross-function store-to-load forwarding through the RAM shadow -- grm-mej.3.
 		// This one declines because A is UNKNOWN; M14 below is its twin that declines
 		// with A known, which is what actually pins the prologue check (grm-mu7).
-		criterion("M13", hasWarningBookmark(0xC032) && !eol(0xC032).contains("bank ->"),
-			"shadow-entry call declines honestly at c032: warning=" +
-				hasWarningBookmark(0xC032) + " comment=\"" + eol(0xC032) + "\"");
+		//
+		// UPDATED, bead grm-yflf: this call's helper ($C250, LDA $65 / <chain>) is now a
+		// recognized no-argument RESTORE ENTRY -- the same shape as zelda2's FUN_ffc9 --
+		// so the honest form at this site is a RESTORED_BANK note naming $65, not a
+		// WARNING. What this criterion has ALWAYS actually pinned is "declines honestly,
+		// no fabricated bank claim"; a WARNING was simply the only honest vocabulary that
+		// existed when this criterion was written. Accept either bookmark kind, and
+		// require the note (when present) to actually name the cell rather than just
+		// happening to contain the word.
+		String m13Note = noteBookmarkText(0xC032);
+		criterion("M13",
+			(hasWarningBookmark(0xC032) || (m13Note.contains("RESTORED") && m13Note.contains("0065"))) &&
+				!eol(0xC032).contains("bank ->"),
+			"shadow-entry call declines honestly (warning or restored-bank note naming $65) " +
+				"at c032: warning=" + hasWarningBookmark(0xC032) + " note=\"" + m13Note +
+				"\" comment=\"" + eol(0xC032) + "\"");
 
 		// M14 (bead grm-mu7): call site 8's JSR $C283 at $C03F -- the shadow helper's own
 		// entry AGAIN, but reached with a KNOWN bank in A (LDA #$06 at $C03D). This is
@@ -4591,11 +4604,22 @@ public class VerifyBankTest extends GhidraScript {
 			"JSR $8000 (prg_bank=1, via save/restore helper) retargeted to W8000_M3_B1 " +
 				"overlay, primary: " + describe(r));
 
+		// UPDATED, bead grm-yflf: as with M13 above, $C250's shadow-entry helper is now a
+		// recognized no-argument RESTORE ENTRY, so the honest form at this call site is a
+		// RESTORED_BANK note naming $65, not a WARNING. What this criterion has always
+		// actually pinned is "declines honestly despite a KNOWN caller argument -- no
+		// fabricated bank, and specifically not the wrong prg_bank=6 the un-guarded bug
+		// shipped" (see the big comment above M15). Accept either bookmark kind for the
+		// "declines honestly" half; the !bank-> and !prg_bank=6 halves are unconditional
+		// either way, since those are the actual regression guard.
 		c = eol(0xC047);
-		criterion("M14", hasWarningBookmark(0xC047) && !c.contains("bank ->") &&
-			!c.contains("prg_bank=6"),
-			"prologue-clobbered helper call declines despite a known argument, at c047: " +
-				"warning=" + hasWarningBookmark(0xC047) + " comment=\"" + c + "\"");
+		String m14Note = noteBookmarkText(0xC047);
+		criterion("M14",
+			(hasWarningBookmark(0xC047) || (m14Note.contains("RESTORED") && m14Note.contains("0065"))) &&
+				!c.contains("bank ->") && !c.contains("prg_bank=6"),
+			"prologue-clobbered helper call declines despite a known argument (warning or " +
+				"restored-bank note naming $65), at c047: warning=" + hasWarningBookmark(0xC047) +
+				" note=\"" + m14Note + "\" comment=\"" + c + "\"");
 
 		// M14b: INVERTED BY grm-izu -- this criterion used to REQUIRE a warning bookmark at
 		// $C04C, and now requires its absence. Read it as the regression guard against the
@@ -4947,12 +4971,21 @@ public class VerifyBankTest extends GhidraScript {
 		// `LDA $21` with no immediate beforehand (and no visibility into outer_wrapper's
 		// `STA $21` -- that instruction is not part of this entry's own function). From
 		// this entry point the body is just an opaque read of an untracked zero-page
-		// shadow, the same category as nesmmc1test's `LDA $65` shadow helper (M13). Must
-		// decline honestly: WARNING, no "bank ->" claim.
-		criterion("W5", hasWarningBookmark(0xC01D) && !eol(0xC01D).contains("bank ->"),
-			"stacked-wrapper INNER call declines honestly (untracked shadow) at c01d: " +
-				"warning=" + hasWarningBookmark(0xC01D) + " comment=\"" + eol(0xC01D) +
-				"\"");
+		// shadow, the same category as nesmmc1test's `LDA $65` shadow helper (M13/M14).
+		// Must decline honestly: no fabricated "bank ->" claim.
+		//
+		// UPDATED, bead grm-yflf: exactly like M13/M14, this entry point (a bare,
+		// single-instruction reload of $21 immediately feeding the mechanism) is now a
+		// recognized no-argument RESTORE ENTRY, so the honest form is a RESTORED_BANK note
+		// naming $21, not a WARNING. Accept either bookmark kind; the note, when present,
+		// must actually name the cell.
+		String w5Note = noteBookmarkText(0xC01D);
+		criterion("W5",
+			(hasWarningBookmark(0xC01D) || (w5Note.contains("RESTORED") && w5Note.contains("0021"))) &&
+				!eol(0xC01D).contains("bank ->"),
+			"stacked-wrapper INNER call declines honestly (untracked shadow; warning or " +
+				"restored-bank note naming $21) at c01d: warning=" + hasWarningBookmark(0xC01D) +
+				" note=\"" + w5Note + "\" comment=\"" + eol(0xC01D) + "\"");
 
 		// W6 (negative control 1): call site W4's JSR $C180 at $C022 lands on jsr_pred,
 		// whose body is `JSR harmless_target` before it falls through into helper3's
@@ -5317,6 +5350,24 @@ public class VerifyBankTest extends GhidraScript {
 			boolean ourCategory = CATEGORY_C64.equals(bm.getCategory()) ||
 				CATEGORY_NES.equals(bm.getCategory());
 			if (ourCategory && "Warning".equals(bm.getTypeString())) {
+				return bm.getComment() == null ? "" : bm.getComment();
+			}
+		}
+		return "";
+	}
+
+	/**
+	 * {@link #warningBookmarkText}'s companion for a {@code Note} bookmark (bead grm-yflf): the
+	 * text of our own Note bookmark at {@code offset}, or "" when there is none. Needed wherever a
+	 * criterion must accept EITHER an honest warning OR an honest {@code RESTORED_BANK} note as the
+	 * same underlying claim ("declines honestly, no fabricated bank"), and must still be able to
+	 * check WHICH note it got (e.g. that it names the expected save cell).
+	 */
+	private String noteBookmarkText(long offset) {
+		for (Bookmark bm : currentProgram.getBookmarkManager().getBookmarks(addr(offset))) {
+			boolean ourCategory = CATEGORY_C64.equals(bm.getCategory()) ||
+				CATEGORY_NES.equals(bm.getCategory());
+			if (ourCategory && "Note".equals(bm.getTypeString())) {
 				return bm.getComment() == null ? "" : bm.getComment();
 			}
 		}

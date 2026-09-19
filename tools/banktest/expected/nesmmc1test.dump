@@ -46,12 +46,12 @@ COMMENT c037 bank -> mirroring=0,prg_mode=3,prg_bank=4 via LAB_c252 (mid-body en
 COMMENT c03f bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_c2a0 [switch-value flow]
 COMMENT c04c bank -> mirroring=0,prg_mode=3,prg_bank=7 via FUN_c200 [switch-value flow]
 COMMENT c061 bank -> mirroring=0,prg_mode=2,prg_bank=7 [switch-value flow]
+BOOKMARK Note c032
+BOOKMARK Note c047
 BOOKMARK Note c200
 BOOKMARK Note c210
 BOOKMARK Note c2a7
 BOOKMARK Note c2b7
-BOOKMARK Warning c032
-BOOKMARK Warning c047
 BOOKMARK Warning c06c
 BOOKMARK Warning c252
 BOOKMARK Warning c262

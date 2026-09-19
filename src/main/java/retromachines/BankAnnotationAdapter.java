@@ -160,7 +160,7 @@ final class BankAnnotationAdapter {
 			Map<String, Set<Integer>> bankUniverse, String viaHelper, String warning,
 			BankSwitchStrategy.ValueStop stop, BankCommentProvenance provenance) {
 		return annotateOrWarn(analyzer, program, listing, addr, state, board, bankUniverse,
-			viaHelper, warning, stop, provenance, false);
+			viaHelper, warning, stop, provenance, false, null);
 	}
 
 	/**
@@ -187,6 +187,30 @@ final class BankAnnotationAdapter {
 			Map<String, Set<Integer>> bankUniverse, String viaHelper, String warning,
 			BankSwitchStrategy.ValueStop stop, BankCommentProvenance provenance,
 			boolean warnDespiteKnowledge) {
+		return annotateOrWarn(analyzer, program, listing, addr, state, board, bankUniverse,
+			viaHelper, warning, stop, provenance, warnDespiteKnowledge, null);
+	}
+
+	/**
+	 * {@link #annotateOrWarn} with an explicit {@code honestDetail} override (bead grm-yflf): the
+	 * text an honest NOTE gets when {@code stop} classifies to one, IN PLACE OF
+	 * {@link #honestGapMessage}'s generic, stop-keyed text. {@code null} preserves the old
+	 * behaviour exactly (every other overload delegates here with {@code null}).
+	 * <p>
+	 * This exists because {@link BankSwitchStrategy.ValueStop#RESTORED_BANK}'s honest claim is
+	 * inherently PER-SITE -- it names the specific memory cell the helper restores the bank
+	 * from, which {@link #honestGapMessage} cannot know (it is keyed on the enum constant alone,
+	 * the same shape every other {@code ValueStop} case already uses and correctly needs no
+	 * per-site data for). The caller ({@code BoardBankAnalyzer}) already has the cell address in
+	 * hand -- it is what proved {@code RESTORED_BANK} in the first place -- so it builds the full
+	 * message and passes it straight through, the same way it already builds {@code warning} for
+	 * the WARNING path.
+	 */
+	static Marked annotateOrWarn(BoardBankAnalyzer analyzer, Program program, Listing listing,
+			Address addr, BankState state, BoardModel board,
+			Map<String, Set<Integer>> bankUniverse, String viaHelper, String warning,
+			BankSwitchStrategy.ValueStop stop, BankCommentProvenance provenance,
+			boolean warnDespiteKnowledge, String honestDetail) {
 		// Before every other test, including the knownMask ones: a site that deposits nothing
 		// by design is not describable by this method's vocabulary at all. Its state is the
 		// state that flowed IN, so "is anything known" answers a question about the PREVIOUS
@@ -209,7 +233,7 @@ final class BankAnnotationAdapter {
 			return Marked.WARNED;
 		}
 		if (state.knownMask() == 0) {
-			String honest = honestGapMessage(stop);
+			String honest = honestDetail != null ? honestDetail : honestGapMessage(stop);
 			if (honest != null) {
 				program.getBookmarkManager().setBookmark(addr, BookmarkType.NOTE,
 					analyzer.getBookmarkCategory(), honest);
@@ -253,6 +277,16 @@ final class BankAnnotationAdapter {
 				"wrapper's own NET EFFECT -- the bank its own further call restores before " +
 				"returning, which is what is actually live once the wrapper's caller resumes; " +
 				"see the wrapper's own call sites for that.";
+			// Generic fallback only -- every real call site of this stop is expected to supply
+			// annotateOrWarn's honestDetail parameter naming the specific save cell (see that
+			// parameter's javadoc); seeing this exact sentence in a real dump means that detail
+			// was dropped somewhere upstream.
+			case RESTORED_BANK -> "Bank value is RESTORED here, not resolved: this call's helper " +
+				"is a proven no-argument restore entry -- its own prologue reloads the mechanism's " +
+				"register from a writable RAM cell the game itself populated earlier, with nothing " +
+				"between that load and the switch, so the bank after this call is unchanged from " +
+				"whatever was last saved there. That is a property of the game, not a gap in " +
+				"analysis -- nothing to fix.";
 			// NO_DEPOSIT never reaches here -- annotateOrWarn returns before the gap
 			// classification, because it is not a gap. Listed so the switch stays exhaustive.
 			case RESOLVED, ANALYZER_LIMIT, NO_DEPOSIT -> null;

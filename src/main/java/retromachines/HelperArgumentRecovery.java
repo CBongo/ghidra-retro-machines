@@ -29,6 +29,7 @@ import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
+import ghidra.program.model.mem.MemoryBlock;
 
 import static retromachines.BankDataflowEngine.overwrite;
 import static retromachines.BankDataflowEngine.position;
@@ -280,6 +281,10 @@ final class HelperArgumentRecovery {
 			(helper.strategy() == null || helper.strategy().consumesHelperArgument()) &&
 				!argumentSurvivesPrologue(program, prologueSegments(helper), reg) &&
 				argumentDefinitelyClobbered(program, clobberSegments(helper), reg);
+		// bead grm-yflf: only meaningful once definitelyNoInboundArgument already holds -- see
+		// restoreSourceCell's javadoc for why it re-derives nothing and only narrows further.
+		Address restoreCell =
+			definitelyNoInboundArgument ? restoreSourceCell(program, helper, reg) : null;
 		if ((helper.strategy() == null || helper.strategy().consumesHelperArgument()) &&
 			!argumentSurvivesPrologue(program, prologueSegments(helper), reg)) {
 			Address inbound = inboundArgumentCell(program, helper, reg);
@@ -301,7 +306,8 @@ final class HelperArgumentRecovery {
 				: program.getListing().getInstructionAt(helper.switchSite());
 		if (helper.strategy() == null || switchSite == null) {
 			return new CallEffect(position(local, helper.lsb(), helper.effectMask()),
-				helper.effectMask(), local.knownMask() != 0, definitelyNoInboundArgument);
+				helper.effectMask(), local.knownMask() != 0, definitelyNoInboundArgument,
+				restoreCell);
 		}
 		// helper.entry(), not function().getEntryPoint(): the mini-inline scan must stop where
 		// control actually arrived. For a mid-body entry those differ, and stopping at the
@@ -328,7 +334,7 @@ final class HelperArgumentRecovery {
 		BankState positionedValue = position(deposit.value(), helper.lsb(), helper.effectMask());
 		int positionedOwnedMask = (deposit.ownedMask() << helper.lsb()) & helper.effectMask();
 		return new CallEffect(positionedValue, positionedOwnedMask,
-			primary.value().knownMask() != 0, definitelyNoInboundArgument);
+			primary.value().knownMask() != 0, definitelyNoInboundArgument, restoreCell);
 	}
 
 	/**
@@ -1140,6 +1146,105 @@ final class HelperArgumentRecovery {
 	}
 
 	/**
+	 * The memory cell this call's helper RESTORES the bank from, when the caller's argument
+	 * definitely does not survive the prologue AND the reason is specifically a bare reload from
+	 * a writable RAM cell with nothing else in play -- or {@code null} otherwise (bead grm-yflf,
+	 * the classification half of grm-jqt0's fix (B)).
+	 * <p>
+	 * <b>The claim, stated precisely, and why it must be this narrow.</b> This is deliberately a
+	 * MUCH stricter test than {@link #argumentDefinitelyClobbered}: that predicate only needs to
+	 * prove the caller's byte is gone by {@code helperValueSite}, over however many instructions
+	 * the clobbering span happens to contain, and CANNOT distinguish "redefined from a constant"
+	 * (smb3's {@code LDA #imm}, no cell to name) from "redefined by reading something the game
+	 * saved" (zelda2's {@code LDA $0769}, a genuine restore). Answering that question honestly --
+	 * "true by construction", per the bead -- requires the ENTIRE clobbering span to be exactly
+	 * one instruction, and that instruction to be a plain, non-indexed load from a statically
+	 * certain, WRITABLE address: no immediate (that is a constant, not a cell), no indexed access
+	 * (its target is runtime-dependent, so there is no fixed cell to name), and nothing else
+	 * between the load and the point the mechanism consumes the register (a second instruction in
+	 * the span would mean this load is not what directly reaches the switch, and the relational
+	 * claim "unchanged from what was saved there" would no longer be provably true).
+	 * <p>
+	 * <b>"ABSOLUTE" means a fixed, statically-certain address -- not indexed, not indirect -- not
+	 * a claim about the 3-byte-vs-2-byte 6502 ENCODING.</b> An earlier increment of this method
+	 * read the bead's design brief ("a load from writable memory address, ABSOLUTE, non-indexed")
+	 * as requiring the address to be OUTSIDE the zero page, on the theory that a 3-byte
+	 * {@code LDA $0769} is a stronger statement of save-slot intent than a 2-byte {@code LDA $65}.
+	 * That reading was WRONG and was corrected after review: a zero-page cell is a perfectly good
+	 * save slot -- megaman2's {@code $29} write-through shadow (this bead's own motivating case,
+	 * grm-yflf's description) is zero page, and Bionic Commando's {@code FUN_dca8}
+	 * ({@code LDA $65 / STA $E000}) genuinely IS a no-argument restore-from-shadow entry, exactly
+	 * like zelda2's {@code FUN_ffc9}. "ABSOLUTE" in the brief was contrasting a FIXED address
+	 * against an INDEXED/INDIRECT one (the very next clause, "non-indexed", is the same contrast
+	 * restated), not contrasting encoding lengths. There is therefore no zero-page exclusion here:
+	 * {@link #argumentReloadSource} (itself keyed on {@link StoredValueScanner#plainAbsoluteTarget},
+	 * which already refuses anything indexed) is the whole addressing-mode test.
+	 * <p>
+	 * <b>Re-verified against all six grm-jqt0 titles with the corrected criterion.</b> zelda2's
+	 * {@code FUN_ffc9} ({@code LDA $0769}) and bionic's {@code FUN_dca8} ({@code LDA $65}) both
+	 * pass -- bionic is the second real customer of this classification, not an exclusion. cv2's
+	 * {@code FUN_c185} ({@code LDA $1C}) does not reach this method at all: its load SURVIVES to
+	 * {@code firstSite} ({@code argumentSurvivesPrologue} is true there, a restore-then-use pattern
+	 * inside the SAME prologue, not a clobber), so {@code definitelyNoInboundArgument} is false.
+	 * smb2 and smb3's helpers redefine the register from an IMMEDIATE ({@code argumentReloadSource}
+	 * returns null -- a constant, not a cell). rcransom's helpers are excluded upstream by
+	 * grm-jqt0's own stack-page-indexed-access guard inside {@link #argumentDefinitelyClobbered}
+	 * (their reload is stack-relative, {@code TSX / LDA $0102,X}), so
+	 * {@code definitelyNoInboundArgument} is false for them too and this method is never reached.
+	 * Every exclusion is a distinct, pre-existing syntactic fact about each title's own bytes --
+	 * nothing here is gated on a title name.
+	 * <p>
+	 * <b>M13/M14/{@code nesmmc1test} and W5/{@code neswrappertest} were updated, not left as a
+	 * boundary this method must avoid crossing</b> (see {@code VerifyBankTest.java}): those
+	 * criteria always pinned "declines honestly -- no fabricated bank claim", and a WARNING was
+	 * simply the only honest form available when they were written, before this {@code ValueStop}
+	 * existed. They now accept either the old warning or a {@code RESTORED_BANK} note naming the
+	 * cell, and still forbid a fabricated {@code bank ->}/{@code prg_bank} claim either way.
+	 * <p>
+	 * <b>A call-edge wrapper (two clobber segments) is refused outright</b>, not merely by the
+	 * single-instruction test: a load in segment 1 does not directly reach the switch at all,
+	 * since segment 2 runs across an intervening {@code JSR} first, so "nothing between it and
+	 * the switch" is false on its face for any two-segment span.
+	 * <p>
+	 * <b>The stack page ($0100-$01FF) is refused</b> ({@link StackFloor#mayAliasStack}), for the
+	 * same reason {@link #inboundArgumentCell} refuses it: a cell there is not a stable, named
+	 * save slot the way a fixed RAM address is, and the caller's own {@code JSR} return address
+	 * sits on exactly that page. This is the ONLY address-range exclusion this method makes --
+	 * every other RAM address, zero page included, is eligible.
+	 * <p>
+	 * Only ever meaningful when {@link #argumentDefinitelyClobbered} already holds for this
+	 * helper/register -- {@link #recoverCallArgument} is the sole caller and gates it exactly
+	 * that way, so this method does not re-derive that proof itself.
+	 */
+	static Address restoreSourceCell(Program program, HelperModel helper, char reg) {
+		List<PrologueSegment> segments = clobberSegments(helper);
+		if (segments.size() != 1) {
+			return null; // a call-edge wrapper crosses a JSR -- the load cannot directly reach the
+							// switch, so there is nothing to name
+		}
+		PrologueSegment segment = segments.get(0);
+		Instruction instr = program.getListing().getInstructionAt(segment.from());
+		if (instr == null) {
+			return null;
+		}
+		Address reload = argumentReloadSource(instr, reg);
+		if (reload == null) {
+			return null; // not a plain absolute load: an immediate (a constant, not a cell) or an
+							// indexed access (no fixed cell to name)
+		}
+		Address afterInstr = instr.getMaxAddress().next();
+		if (afterInstr == null || !afterInstr.equals(segment.to())) {
+			return null; // something else runs between the load and the switch -- this load is not
+							// what directly reaches the mechanism, so the restore claim is not sound
+		}
+		if (StackFloor.mayAliasStack(program, reload)) {
+			return null; // not a stable, named save slot
+		}
+		MemoryBlock block = program.getMemory().getBlock(reload);
+		return block != null && block.isWrite() ? reload : null;
+	}
+
+	/**
 	 * The address {@code instr} reloads {@code reg} from, when it is a plain load whose target is
 	 * statically certain -- the memory half of {@link #argumentSurvivesPrologue}'s save/restore
 	 * model, and the load-side predicate of {@link #inboundArgumentCell}. Null for anything else,
@@ -1617,9 +1722,30 @@ final class HelperArgumentRecovery {
 	 * {@link BankSwitchStrategy.ValueStop#ANALYZER_LIMIT} -- an honest gap recoverable one frame
 	 * out, at the wrapper's own call sites, not our limitation at this one. See
 	 * {@link HelperDiscovery#findSecondTierHelpers} for how a relay call site earns this flag.
+	 * <p>
+	 * {@code restoreCell} (bead grm-yflf) is non-null only when {@link #restoreSourceCell} proved
+	 * this call's helper is a no-argument RESTORE entry, naming the memory cell it restores the
+	 * bank from. Always {@code null} when {@code noInboundArgument} is false -- it is computed
+	 * only after that proof already holds, never independently -- and, like
+	 * {@code secondTierRelay}, meaningful only when {@code argumentResolved} is false. A consumer
+	 * that finds it non-null there should classify the gap as
+	 * {@link BankSwitchStrategy.ValueStop#RESTORED_BANK} rather than
+	 * {@link BankSwitchStrategy.ValueStop#ANALYZER_LIMIT} -- an honest, RELATIONAL fact ("bank
+	 * unchanged from what was saved at this cell"), not our limitation.
 	 */
 	record CallEffect(BankState state, int ownedMask, boolean argumentResolved,
-			boolean noInboundArgument, boolean secondTierRelay) {
+			boolean noInboundArgument, boolean secondTierRelay, Address restoreCell) {
+
+		/**
+		 * As the 5-argument form below, with {@code secondTierRelay} defaulted false -- every
+		 * caller of THIS form already knows {@code restoreCell} (it is computed alongside
+		 * {@code noInboundArgument} in {@link #recoverCallArgument}, never guessed), so unlike the
+		 * 4-argument form there is nothing this constructor needs to default on its behalf.
+		 */
+		CallEffect(BankState state, int ownedMask, boolean argumentResolved,
+				boolean noInboundArgument, Address restoreCell) {
+			this(state, ownedMask, argumentResolved, noInboundArgument, false, restoreCell);
+		}
 
 		/**
 		 * A call effect whose {@code argumentResolved} follows from {@code state} alone -- the
@@ -1632,16 +1758,17 @@ final class HelperArgumentRecovery {
 		 * multi-mechanism-disagreement degrade ({@code helper.argReg() == null}, which has no
 		 * register to have proved a clobber of), or a direct dataflow switch that never runs the
 		 * helper-argument machinery at all ({@code BankDataflowEngine}'s {@code constState}
-		 * branch) -- none of which this bead's proof applies to.
+		 * branch) -- none of which this bead's proof applies to. {@code restoreCell} defaults null
+		 * for the identical reason: none of those callers ran {@link #restoreSourceCell} either.
 		 */
 		CallEffect(BankState state, int ownedMask, boolean argumentResolved,
 				boolean noInboundArgument) {
-			this(state, ownedMask, argumentResolved, noInboundArgument, false);
+			this(state, ownedMask, argumentResolved, noInboundArgument, false, null);
 		}
 
-		/** As the 2-argument form, with {@code secondTierRelay} likewise defaulted false. */
+		/** As the 2-argument form, with {@code secondTierRelay} and {@code restoreCell} likewise defaulted. */
 		CallEffect(BankState state, int ownedMask) {
-			this(state, ownedMask, state.knownMask() != 0, false, false);
+			this(state, ownedMask, state.knownMask() != 0, false, false, null);
 		}
 
 		/**
@@ -1652,7 +1779,8 @@ final class HelperArgumentRecovery {
 		 * no reason to depend on.
 		 */
 		CallEffect asSecondTierRelay() {
-			return new CallEffect(state, ownedMask, argumentResolved, noInboundArgument, true);
+			return new CallEffect(state, ownedMask, argumentResolved, noInboundArgument, true,
+				restoreCell);
 		}
 	}
 
