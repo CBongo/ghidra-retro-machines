@@ -259,6 +259,11 @@ ca12: FUN_ca0b: LDA $29; PHA; JSR c96b; PLA; JSR c000
 cb4a, cb60: FUN_cb0c: cb4a loads from table at b461; cb60 restores from PLA pushed at cb15 from LDA $29. there's a second PHA/PLA pair in between the cb15 PHA and cb5f PLA.
 d0c3: LDA $29, this call is followed shortly by an RTI.  note that the first instruction of FUN_c000 is STA $29 so this is effectively a "bank restore".
 f2d1: this is called by RESET at game start and sets bank E, strong indicator this should be the default bank for $8000. might be a good item for the hb6 epic if it's not already detected by the analyzer.
+c000: is a helper that sets PRG bank from A, but conditionally (if $67 nonzero) does a far call to bank C:8235 (c022-c037, standard sta/lsr, c022 is LDA #$C) then calls C:8003 repeatedly (count in $66), then clears $67 and restarts $c000 with A from $69 to set the PRG bank and return.  the far call targets don't do anything interesting bank-wise. c034 comment says bank=12? though i would think it completely known there.  the refs at c037 and c041 both correctly point to the M3_M12_8xxx overlay targets.
+c56a (FUNC_c565) is just a far call wrapper that does LDA #$D; JSR $c000; JSR $(D:)8015); LDA #$E; JSR $c000;RTS.  the JSR to 8015 ref correctly points to overlay bank D (W8000_M3_B13).
+d0aa (part of interrupt service): d095-d0a7 is LDA #$C then setting MMC1 PRG bank using the standard STA/LSR, then doing a far call to $(C:)8235 like c000 does. ref is correctly targetted to W8000_M3_B12.  at d0ba there is a far call to 8003 in a loop, again like at c000, but this ref still targets base (there are some extra refs here from a table overrun at 9470 which is new since bank E is in the W8000 slot, which may be interrupting a walk).
+bank is restored from $29 at d0c3 via JSR $c000, followed shortly by the NMI epilogue.  
+
 
 contra c146:
 c146 is NOT inside c13f. c13f sets the bank reg from Y then returns at c145.  c139 is an additional helper that saves the current bank (by reading the bank marker byte at $8000) in 7ec then setting the current bank from Y by falling through to c13f.
@@ -268,6 +273,9 @@ NMI handler restores bank reg from DB just prior to returning. the only place it
 c251 stores a 0 in d3, best i can tell it's just initializing it there?  it seems both d3 and db are used as bank shadows for different levels (maybe db is specifically for interrupt restoration while d3 is "app controlled").
 
 zelda2: https://datacrystal.tcrf.net/wiki/Zelda_II:_The_Adventure_of_Link/RAM_map says 0769 is "Bank to switch back to after changing banks in NMI handler" which is consistent with what i found. also disassembly at https://github.com/FiendsOfTheElements/z2disassembly .
+
+rtk2: fe9c reads the 70d and 70e shadows, saves them on the stack, then changes banks with the f99e helper to call $8000, then pops the shadow values and calls f99e again to set them back as they were. more refs are hiding in yet-to-be-disassembled code.
+
 
   Next session's shortest path
 
