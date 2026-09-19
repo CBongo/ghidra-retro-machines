@@ -45,6 +45,8 @@ public final class TableCharset extends Charset {
 	private final Map<Integer, Integer> fromUnicode;
 
 	/**
+	 * Creates a single-byte charset from explicit decode and encode tables.
+	 *
 	 * @param canonicalName this charset's canonical name (e.g. {@code "x-petscii-unshifted"})
 	 * @param aliases additional names this charset is also known by (may be empty)
 	 * @param codepointTable 256-entry byte value -&gt; Unicode codepoint decode table; NOT
@@ -63,16 +65,32 @@ public final class TableCharset extends Charset {
 		this.fromUnicode = Map.copyOf(encodeMap);
 	}
 
+	/**
+	 * Tests whether this charset contains the supplied charset.
+	 *
+	 * @param cs the charset to compare
+	 * @return {@code true} only when {@code cs} is this charset
+	 */
 	@Override
 	public boolean contains(Charset cs) {
 		return cs.equals(this);
 	}
 
+	/**
+	 * Creates a decoder for this charset's byte-to-Unicode table.
+	 *
+	 * @return a new decoder
+	 */
 	@Override
 	public CharsetDecoder newDecoder() {
 		return new Decoder(this);
 	}
 
+	/**
+	 * Creates an encoder for this charset's canonical Unicode-to-byte map.
+	 *
+	 * @return a new encoder
+	 */
 	@Override
 	public CharsetEncoder newEncoder() {
 		return new Encoder(this);

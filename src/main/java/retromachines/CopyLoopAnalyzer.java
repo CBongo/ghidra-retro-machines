@@ -102,6 +102,7 @@ public class CopyLoopAnalyzer extends AbstractAnalyzer {
 	/** The processors whose mnemonics {@link LoopIdioms} knows. */
 	private static final Set<String> SUPPORTED_PROCESSORS = Set.of("6502", "6510");
 
+	/** Creates the processor-neutral 6502-family copy-loop analyzer. */
 	public CopyLoopAnalyzer() {
 		super(NAME, DESCRIPTION, AnalyzerType.INSTRUCTION_ANALYZER);
 		// After reference analysis so branch flows exist (back-edge + jump-into-range), and one
@@ -117,6 +118,7 @@ public class CopyLoopAnalyzer extends AbstractAnalyzer {
 		setSupportsOneTimeAnalysis();
 	}
 
+	/** Returns whether the descriptor and processor support this analyzer. */
 	@Override
 	public boolean canAnalyze(Program program) {
 		// Gate on the descriptor plus the ISA rather than on a specific loader: LoopIdioms is
@@ -130,6 +132,7 @@ public class CopyLoopAnalyzer extends AbstractAnalyzer {
 		return processor != null && SUPPORTED_PROCESSORS.contains(processor.toString());
 	}
 
+	/** Scans changed instructions for recognized copy loops. */
 	@Override
 	public boolean added(Program program, AddressSetView set, TaskMonitor monitor, MessageLog log) {
 		Listing listing = program.getListing();

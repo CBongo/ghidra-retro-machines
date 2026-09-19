@@ -28,25 +28,41 @@ import ghidra.app.util.bin.ByteProvider;
  * this loader's scope.
  */
 public class C128PrgLoader extends AbstractCbmPrgLoader {
+	/** Creates a loader for native C128 BASIC PRG files. */
+	public C128PrgLoader() {
+	}
+
+	/** The loader name shown by Ghidra for native C128 BASIC programs. */
 	public static final String NAME = "Commodore 128 Native BASIC PRG";
 	private static final long BASIC_START = 0x1c01;
 	private static final long NATIVE_PRG_END_EXCLUSIVE = 0xff00;
 
+	/** Returns the display name registered for this loader. */
 	@Override
 	public String getName() {
 		return NAME;
 	}
 
+	/** Returns the compiled C128 memory-map descriptor. */
 	@Override
 	protected String getMapPath() {
 		return "machines/c128.map";
 	}
 
+	/** Returns the descriptor machine identifier for C128-specific policies. */
 	@Override
 	protected String getMachineId() {
 		return "c128";
 	}
 
+	/**
+	 * Accepts only a structurally valid native C128 BASIC image in the BASIC area.
+	 *
+	 * @param provider the candidate PRG byte provider, including its two-byte header
+	 * @param loadAddress address encoded by the PRG header
+	 * @param payloadLength number of payload bytes after the two-byte header
+	 * @return whether this loader recognizes the candidate as a C128 BASIC PRG
+	 */
 	@Override
 	protected boolean recognizesPrg(ByteProvider provider, long loadAddress, long payloadLength) {
 		// Do not claim arbitrary machine-code PRGs or a BASIC image which would overlap the

@@ -47,6 +47,8 @@ import ghidra.app.util.Option;
 public class RomFileOption extends Option {
 
 	/**
+	 * Creates a file-path option with an editable text field and browse button.
+	 *
 	 * @param name  the option name shown in the import dialog
 	 * @param value the initial path (empty string = not supplied)
 	 * @param arg   the command-line argument for headless imports
@@ -55,6 +57,7 @@ public class RomFileOption extends Option {
 		super(name, value, String.class, arg);
 	}
 
+	/** Returns the editable path field and local-file browse button. */
 	@Override
 	public Component getCustomEditorComponent() {
 		String initial = getValue() == null ? "" : getValue().toString();
@@ -104,11 +107,13 @@ public class RomFileOption extends Option {
 		return panel;
 	}
 
+	/** Returns {@link String} because this option stores a filesystem path. */
 	@Override
 	public Class<?> getValueClass() {
 		return String.class;
 	}
 
+	/** Returns an independent copy preserving this option's name, value, and argument. */
 	@Override
 	public Option copy() {
 		String value = getValue() == null ? "" : getValue().toString();

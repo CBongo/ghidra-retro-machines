@@ -69,6 +69,7 @@ public final class SnesAddressMap {
 
 	/** What lives at an address. */
 	public enum Kind {
+		/** Cartridge ROM. */
 		ROM,
 		/** Work RAM: the full 128 KiB at {@code $7E-$7F}, or its low mirror in a system bank. */
 		WRAM,
@@ -88,26 +89,54 @@ public final class SnesAddressMap {
 	private final MapType mapType;
 	private final long romSize;
 
+	/**
+	 * Creates an address map for one cartridge image.
+	 *
+	 * @param mapType the cartridge's mapping type
+	 * @param romSize the number of ROM data bytes in the image
+	 */
 	public SnesAddressMap(MapType mapType, long romSize) {
 		this.mapType = mapType;
 		this.romSize = romSize;
 	}
 
-	/** Convenience: the map a parsed header describes, sized by the FILE rather than by the
-	 *  header's declared size, since a declared size can disagree with the image on disk. */
+	/**
+	 * Convenience: the map a parsed header describes, sized by the FILE rather than by the
+	 * header's declared size, since a declared size can disagree with the image on disk.
+	 *
+	 * @param header the parsed cartridge header
+	 * @param romBytesInFile the number of ROM data bytes actually present
+	 * @return the corresponding address map
+	 */
 	public static SnesAddressMap of(SnesRomHeader header, long romBytesInFile) {
 		return new SnesAddressMap(header.mapType(), romBytesInFile);
 	}
 
+	/**
+	 * Returns this cartridge's mapping type.
+	 *
+	 * @return the mapping type
+	 */
 	public MapType mapType() {
 		return mapType;
 	}
 
-	/** Whether this class claims to model {@code address} at all. */
+	/**
+	 * Tests whether this class claims to model an address at all.
+	 *
+	 * @param address the raw 24-bit address
+	 * @return whether the address is modelled
+	 */
 	public boolean isModelled(long address) {
 		return kindOf(address) != Kind.UNMODELLED;
 	}
 
+	/**
+	 * Classifies the object visible at an address.
+	 *
+	 * @param address the raw 24-bit address
+	 * @return the address's modelled kind
+	 */
 	public Kind kindOf(long address) {
 		long a = address & 0xFFFFFF;
 		int bank = (int) ((a >> 16) & 0xFF);
@@ -132,6 +161,9 @@ public final class SnesAddressMap {
 	 * address is not cartridge ROM (or lies past the end of this image). The offset is into the
 	 * CARTRIDGE image, so a caller reading a file with a copier header must add
 	 * {@link SnesRomHeader#dataOffset()}.
+	 *
+	 * @param address the raw 24-bit address
+	 * @return the cartridge-image offset, or {@code null} when the address is not mapped ROM
 	 */
 	public Long fileOffsetOf(long address) {
 		return romFileOffset(address);
@@ -154,6 +186,9 @@ public final class SnesAddressMap {
 	 * <p>Note this says nothing about WHICH copy a loader should PREFER to materialize --
 	 * grm-9nxj.6 measured that the header's FastROM bit does not predict which half a title
 	 * executes in, and ruled that a loader option. This reports the hardware relationship only.
+	 *
+	 * @param address the raw 24-bit address
+	 * @return the canonical address at which the underlying bytes should be materialized
 	 */
 	public long canonicalAddressOf(long address) {
 		long a = address & 0xFFFFFF;
@@ -174,6 +209,9 @@ public final class SnesAddressMap {
 	 * {@link #canonicalAddressOf}; for ExHiROM past 4 MiB the probe {@code $C00000 + fileOffset}
 	 * exceeds the 24-bit space and wrapped onto bank $00, burying low RAM and the IO windows
 	 * under a ROM block (grm-9nxj.17). Asking the map directly cannot express that address.
+	 *
+	 * @param fileOffset an offset into the cartridge ROM data
+	 * @return that byte's canonical 24-bit address
 	 */
 	public long homeAddressOf(long fileOffset) {
 		return romHomeAddress(fileOffset);
@@ -192,7 +230,12 @@ public final class SnesAddressMap {
 		};
 	}
 
-	/** Whether {@code address} is in the high (FastROM) mirror rather than its canonical home. */
+	/**
+	 * Tests whether an address is in the high (FastROM) mirror rather than its canonical home.
+	 *
+	 * @param address the raw 24-bit address
+	 * @return whether the address lies in banks {@code $80-$FF}
+	 */
 	public boolean isHighMirror(long address) {
 		return ((address >> 16) & 0xFF) >= 0x80;
 	}

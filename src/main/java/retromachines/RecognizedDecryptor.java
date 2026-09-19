@@ -53,28 +53,47 @@ public class RecognizedDecryptor {
 			this.rollingBase = rollingBase;
 		}
 
+		/** Creates a constant-byte key model.
+		 * @param keyByte the key byte; only its low eight bits are used
+		 * @return the key model
+		 */
 		public static KeyModel constant(int keyByte) {
 			return new KeyModel(Kind.CONSTANT, keyByte & 0xFF, null);
 		}
 
+		/** Creates a rolling-table key model.
+		 * @param base address of the rolling key table
+		 * @return the key model
+		 */
 		public static KeyModel rolling(Address base) {
 			return new KeyModel(Kind.ROLLING, 0, base);
 		}
 
+		/** Creates a key model with no additional key data.
+		 * @param kind the key kind
+		 * @return the key model
+		 */
 		public static KeyModel of(Kind kind) {
 			return new KeyModel(kind, 0, null);
 		}
 
+		/** Returns the form of key used by the decrypt loop.
+		 * @return the key kind
+		 */
 		public Kind kind() {
 			return kind;
 		}
 
-		/** The constant key byte (only meaningful when {@link #kind()} is CONSTANT). */
+		/** Returns the constant key byte.
+		 * @return the constant key byte
+		 */
 		public int constant() {
 			return constant;
 		}
 
-		/** The rolling key table base (only meaningful when {@link #kind()} is ROLLING). */
+		/** Returns the rolling key table base when the key kind is ROLLING.
+		 * @return the rolling key table base
+		 */
 		public Address rollingBase() {
 			return rollingBase;
 		}
@@ -107,6 +126,8 @@ public class RecognizedDecryptor {
 	private final Address jumpInto;
 
 	/**
+	 * Describes one statically recognized in-place decryption loop.
+	 *
 	 * @param entry      where recovery starts -- the loop's counter-init instruction (so an
 	 *                   emulated run seeds the index register), falling back to the loop head
 	 * @param target     the in-place range the loop rewrites, {@code [base, base+len)}
@@ -123,22 +144,37 @@ public class RecognizedDecryptor {
 		this.jumpInto = jumpInto;
 	}
 
+	/** Returns the recovery entry address.
+	 * @return the recovery entry address
+	 */
 	public Address entry() {
 		return entry;
 	}
 
+	/** Returns the range rewritten by the loop.
+	 * @return the rewritten range
+	 */
 	public AddressRange target() {
 		return target;
 	}
 
+	/** Returns the loop's key model.
+	 * @return the key model
+	 */
 	public KeyModel key() {
 		return key;
 	}
 
+	/** Returns the confidence assigned to the recognition.
+	 * @return the recognition confidence
+	 */
 	public Confidence confidence() {
 		return confidence;
 	}
 
+	/** Returns the branch instruction entering the target, or null when none was identified.
+	 * @return the entering branch address, or null
+	 */
 	public Address jumpInto() {
 		return jumpInto;
 	}

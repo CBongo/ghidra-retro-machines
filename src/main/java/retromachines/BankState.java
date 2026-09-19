@@ -31,15 +31,30 @@ package retromachines;
  * C64 board wiring, not CPU architecture. So that channel awaits a per-system pspec alias
  * or the RFC #9349 resolution hook; until then the engine stamps a context register only
  * when the program's language actually declares one (today: none).
+	 *
+	 * @param knownMask bits whose values are known
+	 * @param bits the known bit values; bits outside {@code knownMask} are insignificant
  */
 public record BankState(int knownMask, int bits) {
 
 	private static final BankState BOTTOM = new BankState(0, 0);
 
+	/**
+	 * Returns the bottom element of the bank-state lattice.
+	 *
+	 * @return the state in which no bank bit is known
+	 */
 	public static BankState unknown() {
 		return BOTTOM;
 	}
 
+	/**
+	 * Constructs a state whose tracked bits are all known.
+	 *
+	 * @param mask the bits tracked by the result
+	 * @param value the values of those bits
+	 * @return a state in which every bit in {@code mask} is known
+	 */
 	public static BankState fullyKnown(int mask, int value) {
 		return new BankState(mask, value & mask);
 	}
@@ -48,6 +63,10 @@ public record BankState(int knownMask, int bits) {
 	 * Joins two states at a control-flow merge point: a bit is known in the result only
 	 * if it is known -- and agrees -- in both inputs. Monotone ({@code knownMask} only
 	 * ever shrinks as more predecessors are merged in).
+	 *
+	 * @param a one incoming state
+	 * @param b the other incoming state
+	 * @return the greatest state whose known bits agree in both inputs
 	 */
 	public static BankState merge(BankState a, BankState b) {
 		int agree = ~(a.bits() ^ b.bits());
@@ -61,6 +80,10 @@ public record BankState(int knownMask, int bits) {
 	 * known here keep their tracked value; any bit left unknown is assumed to hold its
 	 * {@code banking.initial_state} value. Degrades gracefully -- a fully known state is
 	 * unaffected, and a wholly unknown state falls back entirely to the initial state.
+	 *
+	 * @param initialState the descriptor's fallback state for unknown bits
+	 * @param mask the board-state bits to include
+	 * @return the effective state restricted to {@code mask}
 	 */
 	public int effective(int initialState, int mask) {
 		return (bits & knownMask) | (initialState & ~knownMask & mask);

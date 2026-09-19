@@ -69,6 +69,9 @@ import retromachines.SnesRomHeader.MapType;
  * {@code analyzeHeadless} actually go through.
  */
 public class SnesRomLoader extends AbstractProgramWrapperLoader {
+	/** Creates a loader for supported SNES cartridge images. */
+	public SnesRomLoader() {
+	}
 
 	/** The executable-format name stamped on imports. */
 	public static final String NAME = "SNES ROM (LoROM/HiROM)";
@@ -91,21 +94,30 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 	 */
 	private static final int[] SYSTEM_MIRROR_BANKS = { 0x00, 0x80 };
 
+	/** Returns the executable-format name stamped on imported programs. */
 	@Override
 	public String getName() {
 		return NAME;
 	}
 
+	/** Returns this loader's specialized-target priority tier. */
 	@Override
 	public LoaderTier getTier() {
 		return LoaderTier.SPECIALIZED_TARGET_LOADER;
 	}
 
+	/** Returns the ordering priority within the specialized-target tier. */
 	@Override
 	public int getTierPriority() {
 		return 50;
 	}
 
+	/** Finds a load specification when a plausible SNES map mode is present.
+	 *
+	 * @param provider candidate cartridge image
+	 * @return supported load specifications, or an empty collection
+	 * @throws IOException if the provider cannot be read
+	 */
 	@Override
 	public Collection<LoadSpec> findSupportedLoadSpecs(ByteProvider provider) throws IOException {
 		List<LoadSpec> loadSpecs = new ArrayList<>();
@@ -126,6 +138,7 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 		return loadSpecs;
 	}
 
+	/** Returns default import options, including mirror materialization policy. */
 	@Override
 	public List<Option> getDefaultOptions(ByteProvider provider, LoadSpec loadSpec,
 			DomainObject domainObject, boolean loadIntoProgram, boolean mirrorFsLayout) {
@@ -138,6 +151,7 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 	/** Whether to materialize the address-space mirrors as byte-mapped views. */
 	public static final String OPTION_MIRRORS = "Create mirror blocks";
 
+	/** Loads and validates the SNES cartridge memory map. */
 	@Override
 	protected void load(Program program, Loader.ImporterSettings settings)
 			throws CancelledException, IOException {
@@ -212,8 +226,8 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 
 	/**
 	 * The canonical ROM blocks -- one per mapping unit (32 KiB per bank for LoROM, 64 KiB for
-	 * HiROM), initialized from the file. Returns each block's start address so the mirror pass
-	 * can map onto them.
+	 * HiROM-family mappings), initialized from the file. Returns each block's start address so
+	 * the mirror pass can map onto them.
 	 *
 	 * <p>The blocks are cut from the program's {@link FileBytes} rather than from a per-block
 	 * {@link java.io.InputStream} (grm-9nxj.10), so each one records WHERE in the image its

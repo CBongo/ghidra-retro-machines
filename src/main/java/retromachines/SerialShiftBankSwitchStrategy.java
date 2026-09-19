@@ -83,7 +83,7 @@ import ghidra.program.model.symbol.Reference;
  * </ul>
  * Field-local sub-offsets for every field name referenced above come from
  * {@code params._field_layout}, the same {@code sets:}-derived injection
- * {@link BoardBankAnalyzer#configureStrategies} performs for every multi-field mechanism
+ * {@link BankStrategyRegistry#configureStrategies} performs for every multi-field mechanism
  * (see {@link SelectDataBankSwitchStrategy}'s class javadoc).
  * <p>
  * <b>Chain-walk algorithm.</b> For a write {@code W} in range with a recognized store
@@ -133,7 +133,8 @@ import ghidra.program.model.symbol.Reference;
  * all non-null results), and (b) the closing BNE of a counted loop the shape matcher
  * accepts; only which branch fires -- never whether a result exists --
  * depends on state-independent, purely-instruction-shape analysis (bit 7's resolution
- * itself never consults {@code inState} either, since this mechanism's {@link Hooks}
+ * itself never consults {@code inState} either, since this mechanism's
+ * {@link StoredValueScanner.Hooks}
  * implementation below never resolves a load back to the tracked state -- MMC1's shift
  * register is write-only). {@link #cacheable()} nonetheless stays {@code false} (the
  * default): the RESULT for positions 1-4 and for poison both echo/modify {@code inState}
@@ -146,6 +147,9 @@ import ghidra.program.model.symbol.Reference;
  * {@link #cacheable()}-derived default.
  */
 public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
+	/** Creates an unconfigured serial-shift strategy. */
+	public SerialShiftBankSwitchStrategy() {
+	}
 
 	/** One tracked sub-field's field-local {@code [lsb, lsb+width)} bit position. */
 	private record FieldPos(int lsb, int width) {
@@ -180,16 +184,19 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	 *  derivable mirror, where this strategy behaves exactly as it did before they existed. */
 	private BankMirrors mirrors = BankMirrors.none();
 
+	/** Returns the descriptor strategy identifier. */
 	@Override
 	public String strategyName() {
 		return "serial-shift";
 	}
 
+	/** Records bank-mirror locations discovered by the analyzer. */
 	@Override
 	public void observeMirrors(BankMirrors observed) {
 		mirrors = observed == null ? BankMirrors.none() : observed;
 	}
 
+	/** Configures serial-shift range, targets, and reset deposits. */
 	@Override
 	public void configure(Program program, JsonObject params, int stateMask) {
 		space = program.getAddressFactory().getDefaultAddressSpace();
@@ -339,6 +346,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 		return new BankState(known | (~byteMask & 0xFF), bits);
 	}
 
+	/** Computes the state effect of a serial-shift write or commit branch. */
 	@Override
 	public SwitchOutcome computeSwitchOutcome(Program program, Instruction instr,
 			BankState inState) {
@@ -368,6 +376,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	 * is a shape this mechanism does not model; a broken or short chain is a failed structural
 	 * match. None of those can be resolved by knowing the caller, so none is honest.
 	 */
+	/** Classifies an unresolved serial-shift operation in a helper body. */
 	@Override
 	public ValueStop classifyHelperBodyGap(Program program, Instruction switchSite,
 			BankState inState, Address helperEntry) {
@@ -537,6 +546,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	 * every site that does not read a mirror, which on a real cartridge is nearly all of them --
 	 * and the per-site overload below answers the sites where it is not.
 	 */
+	/** Returns whether the strategy's effect depends on prior state in general. */
 	@Override
 	public boolean effectDependsOnPriorState() {
 		return false;
@@ -558,6 +568,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	 * probe short-circuits there. Called once per site in the analyzer's phase 3, never inside the
 	 * fixpoint.
 	 */
+	/** Returns whether this site actually consulted prior bank state. */
 	@Override
 	public boolean effectDependsOnPriorState(Program program, Instruction site,
 			BankState siteInState) {
@@ -643,6 +654,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	 * {@link SelectDataBankSwitchStrategy}, which has no address-based routing signal and
 	 * must consult {@code inState}'s tracked select value instead.
 	 */
+	/** Recovers a helper argument for a serial-shift operation. */
 	@Override
 	public HelperDeposit depositHelperArgument(Program program, Instruction switchSite,
 			BankState argValue, BankState inState, int stateMask) {
@@ -816,6 +828,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	 * shape, or an RMW this strategy cannot resolve -- for every other write, which leaves the
 	 * caller on the historical degrade path unchanged.
 	 */
+	/** Computes a caller-independent helper deposit when the chain permits one. */
 	@Override
 	public BankSwitchStrategy.HelperDeposit callerIndependentDeposit(Program program,
 			Instruction switchSite) {

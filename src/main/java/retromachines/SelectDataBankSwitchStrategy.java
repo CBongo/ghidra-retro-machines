@@ -52,7 +52,7 @@ import ghidra.program.model.symbol.Reference;
  * </ul>
  * Field-local sub-offsets for every name in {@code select_field}/{@code mode_field}/
  * {@code targets} are read out of {@code params._field_layout}, an entry
- * {@link BoardBankAnalyzer#configureStrategies} injects for every mechanism from the
+ * {@link BankStrategyRegistry#configureStrategies} injects for every mechanism from the
  * descriptor's {@code banking.state} packing (see that method's javadoc) -- so field
  * positions are derived from the single source of truth (the state tuple) rather than
  * hand-duplicated as YAML offsets.
@@ -75,6 +75,9 @@ import ghidra.program.model.symbol.Reference;
  * non-{@link #cacheable()} strategy.
  */
 public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
+	/** Creates an unconfigured select-data strategy. */
+	public SelectDataBankSwitchStrategy() {
+	}
 
 	/** One tracked sub-field's field-local {@code [lsb, lsb+width)} bit position. */
 	private record FieldPos(int lsb, int width) {
@@ -110,16 +113,19 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	 */
 	private BankMirrors mirrors = BankMirrors.none();
 
+	/** Returns the descriptor strategy identifier. */
 	@Override
 	public String strategyName() {
 		return "select-data";
 	}
 
+	/** Records bank-mirror locations discovered by the analyzer. */
 	@Override
 	public void observeMirrors(BankMirrors observed) {
 		mirrors = observed == null ? BankMirrors.none() : observed;
 	}
 
+	/** Configures select/data address decoding and field mappings. */
 	@Override
 	public void configure(Program program, JsonObject params, int stateMask) {
 		space = program.getAddressFactory().getDefaultAddressSpace();
@@ -223,6 +229,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 		}
 	};
 
+	/** Returns hooks for resolving loads while scanning selector writes. */
 	@Override
 	public StoredValueScanner.Hooks callerSideHooks() {
 		return callerSideHooks;
@@ -378,6 +385,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	 * probe reporting a real mirror-derived requirement) and MM14 (the probe staying silent for
 	 * an unrelated failure with the mirror set non-empty) guard the overload below.
 	 */
+	/** Returns whether the strategy's effect depends on prior state in general. */
 	@Override
 	public boolean effectDependsOnPriorState() {
 		return false;
@@ -408,6 +416,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	 * construction -- the mirror set is empty on every board without one and the whole probe
 	 * short-circuits. Called once per site in phase 3, never inside the fixpoint.
 	 */
+	/** Returns whether this switch site consulted prior bank state. */
 	@Override
 	public boolean effectDependsOnPriorState(Program program, Instruction site,
 			BankState siteInState) {
@@ -459,6 +468,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 		return consulted[0];
 	}
 
+	/** Computes the state effect of a select or data write. */
 	@Override
 	public SwitchOutcome computeSwitchOutcome(Program program, Instruction instr,
 			BankState inState) {
@@ -487,6 +497,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	 * branch returns {@code inState} verbatim and never warns -- so it cannot reach here, and
 	 * answering {@code ANALYZER_LIMIT} for it is inert either way.
 	 */
+	/** Classifies an unresolved select/data write in a helper body. */
 	@Override
 	public ValueStop classifyHelperBodyGap(Program program, Instruction switchSite,
 			BankState inState, Address helperEntry) {
@@ -646,11 +657,13 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	 * Contrast {@link SerialShiftBankSwitchStrategy}, which keeps the default {@code false}
 	 * because its five writes ARE one value -- see {@link BankSwitchStrategy#depositsPerSite}.
 	 */
+	/** Returns whether deposits are evaluated independently for each site. */
 	@Override
 	public boolean depositsPerSite() {
 		return true;
 	}
 
+	/** Recovers a helper argument using the selector/data state model. */
 	@Override
 	public HelperDeposit depositHelperArgument(Program program, Instruction switchSite,
 			BankState argValue, BankState inState, int stateMask) {
@@ -856,6 +869,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	 * javadoc for smb3's {@code FUN_ffc2}, the case where reading {@code firstSite} deposited the
 	 * select byte into a bank field.
 	 */
+	/** Supplies a helper value at its first recognized site when applicable. */
 	@Override
 	public boolean suppliesHelperValueAtFirstSite() {
 		return false;

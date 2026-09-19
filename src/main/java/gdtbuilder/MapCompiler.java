@@ -51,7 +51,7 @@ import com.google.gson.GsonBuilder;
  * ({@code Ghidra/Framework/Generic/lib/gson-2.13.2.jar}), so the runtime loader can parse
  * a compiled {@code .map}/{@code .gmap} with zero new dependencies. This class itself never
  * touches Ghidra runtime classes (no {@code Application.initializeApplication}) — unlike
- * {@link GdtBuilder}, which must bootstrap Ghidra to construct {@code DataType}s,
+ * {@code GdtBuilder}, which must bootstrap Ghidra to construct {@code DataType}s,
  * MapCompiler only needs snakeyaml (to read the descriptor, via {@link YamlSupport}) and
  * gson (to write the map).
  * <p>
@@ -74,6 +74,9 @@ import com.google.gson.GsonBuilder;
  * Usage: {@code MapCompiler <descriptor.yaml> <output.map>}
  */
 public class MapCompiler {
+	/** Creates a descriptor compiler. */
+	public MapCompiler() {
+	}
 
 	/**
 	 * Expression keywords usable in {@code maps:} alongside state-field names. Kept in lockstep
@@ -116,6 +119,12 @@ public class MapCompiler {
 	 */
 	private static final Set<String> BANK_WRAP_POLICIES = Set.of("image");
 
+	/**
+	 * Compiles a descriptor file and writes the resulting JSON map file.
+	 *
+	 * @param args the descriptor YAML path followed by the output map path
+	 * @throws Exception if the descriptor cannot be read or the map cannot be written
+	 */
 	public static void main(String[] args) throws Exception {
 		if (args.length != 2) {
 			System.err.println("Usage: MapCompiler <descriptor.yaml> <output.map>");
@@ -1454,6 +1463,11 @@ public class MapCompiler {
 	 * {@code MapCompilerTest}, whose test source set has BOTH on its classpath and asserts the
 	 * two agree over a battery of expressions -- rather than by a comment asking the next
 	 * person to remember.
+	 *
+	 * @param expr the arithmetic expression to evaluate
+	 * @param imageSize the image size in bytes used by {@code image_size}
+	 * @return the evaluated expression value
+	 * @throws IllegalArgumentException if the expression is malformed
 	 */
 	public static long evalInitialExpr(String expr, long imageSize) {
 		int[] pos = { 0 };

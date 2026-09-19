@@ -126,6 +126,7 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 			PetsciiMapper.Variant petsciiVariant) {
 	}
 
+	/** Creates the CBM BASIC detokenizer analyzer. */
 	public C64BasicAnalyzer() {
 		super(NAME, DESCRIPTION, AnalyzerType.BYTE_ANALYZER);
 		// Run early -- right after format analysis, before Ghidra's own block/disassembly
@@ -138,6 +139,7 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 		setSupportsOneTimeAnalysis();
 	}
 
+	/** Returns whether the program has a supported CBM BASIC descriptor. */
 	@Override
 	public boolean canAnalyze(Program program) {
 		try {
@@ -220,6 +222,16 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 		};
 	}
 
+	/**
+	 * Detokenizes BASIC lines and marks a machine-language SYS target when present.
+	 *
+	 * @param program program being analyzed
+	 * @param set address range reported as changed by the analysis framework
+	 * @param monitor cancellation monitor
+	 * @param log analysis message log
+	 * @return {@code true} after the analysis pass completes or is cancelled
+	 * @throws CancelledException if the analysis is cancelled by the monitor
+	 */
 	@Override
 	public boolean added(Program program, AddressSetView set, TaskMonitor monitor, MessageLog log)
 			throws CancelledException {

@@ -77,6 +77,10 @@ import ghidra.util.exception.CancelledException;
  */
 public class NesRomLoader extends AbstractProgramWrapperLoader {
 
+	/** Constructs the NES cartridge loader. */
+	public NesRomLoader() {
+	}
+
 	static final String BOARD_OPTION_NAME = "NES Board";
 
 	/**
@@ -413,11 +417,19 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 	/** The executable-format name stamped on imports; gated on by {@link NesBankingAnalyzer}. */
 	public static final String NAME = "NES ROM (iNES)";
 
+	/** Returns the executable-format name stamped on imported NES programs. */
 	@Override
 	public String getName() {
 		return NAME;
 	}
 
+	/**
+	 * Finds preferred and optional undocumented-opcode NES load specifications.
+	 *
+	 * @param provider candidate iNES file
+	 * @return supported load specifications, empty when the mapper is not registered
+	 * @throws IOException if the provider cannot be read
+	 */
 	@Override
 	public Collection<LoadSpec> findSupportedLoadSpecs(ByteProvider provider) throws IOException {
 		List<LoadSpec> loadSpecs = new ArrayList<>();
@@ -458,6 +470,16 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 		return loadSpecs;
 	}
 
+	/**
+	 * Returns import options, including board selection and placement overrides.
+	 *
+	 * @param provider candidate iNES file
+	 * @param loadSpec selected language/compiler specification
+	 * @param domainObject existing destination object, when applicable
+	 * @param loadIntoProgram whether the import will load into a program
+	 * @param mirrorFsLayout whether filesystem layout should be mirrored
+	 * @return default options for the import dialog
+	 */
 	@Override
 	public List<Option> getDefaultOptions(ByteProvider provider, LoadSpec loadSpec,
 			DomainObject domainObject, boolean loadIntoProgram, boolean mirrorFsLayout) {
@@ -481,6 +503,15 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 		return options;
 	}
 
+	/**
+	 * Validates board and per-window placement options before loading.
+	 *
+	 * @param provider candidate iNES file
+	 * @param loadSpec selected language/compiler specification
+	 * @param options options to validate
+	 * @param program destination program, when available
+	 * @return an error message, or {@code null} when options are valid
+	 */
 	@Override
 	public String validateOptions(ByteProvider provider, LoadSpec loadSpec, List<Option> options,
 			Program program) {
@@ -589,6 +620,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 		return banks.toString();
 	}
 
+	/** Creates descriptor-defined default memory blocks without stock conflict noise. */
 	@Override
 	protected void createDefaultMemoryBlocks(Program program, ImporterSettings settings) {
 		// The descriptor memory map already covers the 6502 pspec's ZERO_PAGE/STACK
@@ -596,6 +628,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 		DescriptorMemory.createDefaultMemoryBlocksQuietly(program, settings.log());
 	}
 
+	/** Loads the iNES image, realizes descriptor windows, and labels reset vectors. */
 	@Override
 	protected void load(Program program, ImporterSettings settings)
 			throws CancelledException, IOException {

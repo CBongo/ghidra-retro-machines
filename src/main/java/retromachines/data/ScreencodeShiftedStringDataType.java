@@ -28,13 +28,20 @@ import ghidra.program.model.data.StringLayoutEnum;
  */
 public class ScreencodeShiftedStringDataType extends AbstractStringDataType {
 
+	/** Shared built-in instance used by Ghidra's data-type registration. */
 	public static final ScreencodeShiftedStringDataType dataType =
 		new ScreencodeShiftedStringDataType();
 
+	/** Creates the built-in data type without a data-type manager. */
 	public ScreencodeShiftedStringDataType() {
 		this(null);
 	}
 
+	/**
+	 * Creates this data type associated with the supplied manager.
+	 *
+	 * @param dtm the data-type manager, or {@code null} for an unmanaged instance
+	 */
 	public ScreencodeShiftedStringDataType(DataTypeManager dtm) {
 		super("ScreencodeShiftedString", // data type name
 			"screencode-shifted", // mnemonic
@@ -49,6 +56,12 @@ public class ScreencodeShiftedStringDataType extends AbstractStringDataType {
 		);
 	}
 
+	/**
+	 * Returns this instance when it already belongs to {@code dtm}, otherwise creates a clone.
+	 *
+	 * @param dtm the target data-type manager
+	 * @return this data type or an equivalent instance owned by {@code dtm}
+	 */
 	@Override
 	public DataType clone(DataTypeManager dtm) {
 		if (dtm == getDataTypeManager()) {

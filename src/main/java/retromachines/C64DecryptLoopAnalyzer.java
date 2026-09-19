@@ -76,6 +76,7 @@ public class C64DecryptLoopAnalyzer extends AbstractAnalyzer {
 			"exposes it as a DECRYPTED_xxxx overlay block.";
 	private static final String CATEGORY = "C64DecryptLoopAnalyzer";
 
+	/** Creates the C64 decrypt-loop recovery analyzer. */
 	public C64DecryptLoopAnalyzer() {
 		super(NAME, DESCRIPTION, AnalyzerType.INSTRUCTION_ANALYZER);
 		// After reference analysis so branch flows exist (back-edge + jump-into-range).
@@ -84,12 +85,14 @@ public class C64DecryptLoopAnalyzer extends AbstractAnalyzer {
 		setSupportsOneTimeAnalysis();
 	}
 
+	/** Returns whether the program uses the C64 PRG loader. */
 	@Override
 	public boolean canAnalyze(Program program) {
 		String format = program.getExecutableFormat();
 		return format != null && format.equals(C64PrgLoader.NAME);
 	}
 
+	/** Scans changed instructions for recognized in-place decrypt loops. */
 	@Override
 	public boolean added(Program program, AddressSetView set, TaskMonitor monitor, MessageLog log) {
 		Listing listing = program.getListing();

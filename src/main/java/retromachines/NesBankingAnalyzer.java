@@ -37,15 +37,18 @@ public class NesBankingAnalyzer extends BoardBankAnalyzer {
 			"into switchable PRG windows so they point at the bank actually mapped in -- " +
 			"not just whatever the loader put in the base address space.";
 
+	/** Creates the descriptor-selected NES board banking analyzer. */
 	public NesBankingAnalyzer() {
 		super(NAME, DESCRIPTION);
 	}
 
+	/** Returns the loader name accepted by this analyzer. */
 	@Override
 	protected String getLoaderName() {
 		return NesRomLoader.NAME;
 	}
 
+	/** Returns the board descriptor recorded by the NES loader, or {@code null}. */
 	@Override
 	protected String getMapPath(Program program) {
 		// The loader records which board descriptor it imported with; a missing property

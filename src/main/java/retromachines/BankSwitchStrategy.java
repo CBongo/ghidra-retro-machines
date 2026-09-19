@@ -39,7 +39,11 @@ import ghidra.util.classfinder.ExtensionPoint;
  */
 public interface BankSwitchStrategy extends ExtensionPoint {
 
-	/** The {@code banking.mechanisms[].strategy} value this class implements. */
+	/**
+	 * Identifies the descriptor strategy implemented by this class.
+	 *
+	 * @return the {@code banking.mechanisms[].strategy} value this class implements
+	 */
 	String strategyName();
 
 	/**
@@ -220,6 +224,9 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * the canonical constructor unless a strategy genuinely knows the reason -- it derives the
 	 * conservative answer, which is what every strategy reported before the reasons were
 	 * threaded through.
+	 *
+	 * @param value the switch's field-local bank-state effect
+	 * @param stop why an entirely unknown value could not be recovered
 	 */
 	record SwitchOutcome(BankState value, ValueStop stop) {
 
@@ -251,6 +258,9 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * Examines one instruction under the tracked in-state. <b>This is the method a strategy
 	 * implements</b>; {@link #computeSwitch} is a convenience view of its value.
 	 *
+	 * @param program the program containing the instruction
+	 * @param instr the instruction to examine
+	 * @param inState the field-local state flowing into the instruction
 	 * @return the effect of this instruction if it is a switch this mechanism recognizes
 	 *         (carrying {@link BankState#unknown()} plus a {@link ValueStop} for a recognized
 	 *         switch whose value could not be recovered), or {@code null} if the instruction
@@ -262,6 +272,11 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * The bank state after this instruction, or {@code null} if it is not a mechanism write --
 	 * {@link #computeSwitchOutcome}'s answer with the stop reason dropped. Retained because
 	 * most callers, and nearly every test, care only about the value.
+	 *
+	 * @param program the program containing the instruction
+	 * @param instr the instruction to examine
+	 * @param inState the field-local state flowing into the instruction
+	 * @return the recognized switch's state effect, or {@code null} for a non-switch
 	 */
 	default BankState computeSwitch(Program program, Instruction instr, BankState inState) {
 		SwitchOutcome outcome = computeSwitchOutcome(program, instr, inState);
@@ -294,9 +309,13 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * value genuinely cannot be known without a caller -- {@code BankDataflowEngine} enforces
 	 * that by only asking for a switch site whose containing function is a recognized helper.
 	 *
+	 * @param program the program containing the helper
+	 * @param switchSite the recognized mechanism write inside the helper
+	 * @param inState the field-local state flowing into {@code switchSite}
 	 * @param helperEntry the address callers enter this helper at -- {@code HelperModel.entry()},
 	 *                    which for a mid-body or pass-through-wrapper model is NOT the containing
 	 *                    function's own entry point
+	 * @return the more specific stop reason for the unresolved helper-body value
 	 */
 	default ValueStop classifyHelperBodyGap(Program program, Instruction switchSite,
 			BankState inState, Address helperEntry) {
@@ -318,6 +337,9 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * touched-but-unresolved / untouched distinction, which is why this is a two-part
 	 * result rather than a bare {@code BankState}. {@code value.knownMask()} is always a
 	 * subset of {@code ownedMask} by construction.
+	 *
+	 * @param ownedMask bits this call site authoritatively replaces
+	 * @param value the field-local values deposited into the owned bits
 	 */
 	record HelperDeposit(int ownedMask, BankState value) {}
 
@@ -363,6 +385,13 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * routing is address-keyed and therefore ignores this parameter -- see
 	 * {@code SerialShiftBankSwitchStrategy}'s override). The default ignores it, since the
 	 * default's single-field-spans-the-whole-mask behavior needs no routing decision at all.
+	 *
+	 * @param program the program containing the helper
+	 * @param switchSite the recognized mechanism write inside the helper
+	 * @param argValue the caller-supplied argument value
+	 * @param inState the caller's field-local state at the call site
+	 * @param stateMask this mechanism's field-local width mask
+	 * @return the field-local deposit made by this call
 	 */
 	default HelperDeposit depositHelperArgument(Program program, Instruction switchSite,
 			BankState argValue, BankState inState, int stateMask) {
@@ -396,6 +425,14 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * <b>Soundness.</b> A result derived from {@code callerRegs} is valid for THIS call site
 	 * only and must never be cached per switch-site address or attributed to the switch site --
 	 * see {@link RegisterEnv}'s class javadoc.
+	 *
+	 * @param program the program containing the helper
+	 * @param switchSite the recognized mechanism write inside the helper
+	 * @param argValue the caller-supplied argument value
+	 * @param inState the caller's field-local state at the call site
+	 * @param stateMask this mechanism's field-local width mask
+	 * @param callerRegs register values recovered at the helper entry for this call site
+	 * @return the field-local deposit made by this call
 	 */
 	default HelperDeposit depositHelperArgument(Program program, Instruction switchSite,
 			BankState argValue, BankState inState, int stateMask, RegisterEnv callerRegs) {
@@ -438,6 +475,10 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * mechanism actually touches -- MMC1's reset commits {@code prg_mode} and leaves
 	 * {@code mirroring}/{@code prg_bank} alone, exactly as the direct-dataflow reset does -- so
 	 * sibling fields a caller never wrote are left exactly as they were, not wiped to unknown.
+	 *
+	 * @param program the program containing the helper
+	 * @param switchSite the recognized mechanism write inside the helper
+	 * @return a caller-independent deposit, or {@code null} when argument recovery is required
 	 */
 	default HelperDeposit callerIndependentDeposit(Program program, Instruction switchSite) {
 		return null;
@@ -484,6 +525,8 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * question in a different storage class, so it belongs behind the same answer: a strategy that
 	 * never reads {@code argValue} has no use for the cell either, and keeping memory-latch
 	 * outside makes its blast radius from that rule provably zero.
+	 *
+	 * @return whether helper deposits consume the caller's recovered argument
 	 */
 	default boolean consumesHelperArgument() {
 		return true;
@@ -513,6 +556,8 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * <p>
 	 * <b>The default is {@code false}, and that is the safe answer</b>: a strategy that has not
 	 * thought about the question keeps today's single-deposit behaviour exactly.
+	 *
+	 * @return whether each recognized helper site produces an independent deposit
 	 */
 	default boolean depositsPerSite() {
 		return false;
@@ -549,6 +594,8 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * {@code firstSite} is the same one {@code switchSite} commits -- which is true of a
 	 * re-derived chain and false in general. It stays the default only because it is what every
 	 * shipped strategy but this one needs.
+	 *
+	 * @return whether helper-local value recovery should start at the first recognized site
 	 */
 	default boolean suppliesHelperValueAtFirstSite() {
 		return true;
@@ -570,6 +617,8 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * The default ignores them, which is what every strategy did before the set existed.
 	 * A strategy that overrides this and lets a mirror change {@link #computeSwitch}'s answer
 	 * becomes state-dependent and must revisit {@link #cacheable()}.
+	 *
+	 * @param mirrors the bank mirrors discovered after the first dataflow pass
 	 */
 	default void observeMirrors(BankMirrors mirrors) {
 		// no-op: this strategy recovers nothing from a bank mirror
@@ -582,6 +631,8 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * (grm-5tl.13.2). {@code false} (the default) is always safe; only override to
 	 * {@code true} when {@code computeSwitch} genuinely never consults {@code inState} (or
 	 * anything derived from it) to decide its return value.
+	 *
+	 * @return whether switch results may be memoized per instruction
 	 */
 	default boolean cacheable() {
 		return false;
@@ -608,6 +659,8 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * when the mechanism's registers are genuinely write-only and never resolved back to tracked
 	 * state, so an unknown outcome there reflects something else (an unresolved DATA value, for
 	 * instance) rather than a missing state bit.
+	 *
+	 * @return whether this mechanism can consume the state flowing into a switch
 	 */
 	default boolean effectDependsOnPriorState() {
 		return !cacheable();
@@ -640,6 +693,7 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * @param site        the recognized switch site; may be {@code null} if the listing no longer
 	 *                    has an instruction there, in which case implementations must fall back
 	 * @param siteInState the field-local tracked state flowing into {@code site}
+	 * @return whether this site can consume the state flowing into it
 	 */
 	default boolean effectDependsOnPriorState(Program program, Instruction site,
 			BankState siteInState) {
@@ -686,6 +740,8 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * resolution, no ROM-byte resolution, {@code isMechanismWrite} always {@code false} -- so a
 	 * strategy that does not override this method sees no change at all from a caller-side scan
 	 * being converted to use it, regardless of what real in-state that scan is now handed.
+	 *
+	 * @return hooks for value scans that run at helper call sites
 	 */
 	default StoredValueScanner.Hooks callerSideHooks() {
 		return NO_CALLER_SIDE_HOOKS;

@@ -61,6 +61,20 @@ import ghidra.app.util.bin.ByteProvider;
  * {@code +0x15}, chipset {@code +0x16}, ROM size {@code +0x17}, RAM size {@code +0x18}, checksum
  * complement {@code +0x1C}, checksum {@code +0x1E}. The CPU vector table follows at {@code +0x20}
  * (i.e. {@code $FFE0}), which is where {@link #vectors()} reads from.
+	 *
+	 * @param headerOffset file offset of the selected internal header
+	 * @param copierHeader whether the image has a 512-byte copier header
+	 * @param title decoded cartridge title
+	 * @param mapMode raw map-mode byte
+	 * @param chipset raw chipset byte
+	 * @param romSizeBytes ROM capacity declared by the header
+	 * @param ramSizeBytes RAM capacity declared by the header
+	 * @param checksum raw checksum word
+	 * @param checksumComplement raw checksum-complement word
+	 * @param checksumValid whether the checksum pair is internally consistent
+	 * @param mapType decoded cartridge mapping type
+	 * @param fastRom whether the map-mode byte requests fast ROM timing
+	 * @param vectors decoded CPU-vector names and addresses
  */
 public record SnesRomHeader(int headerOffset, boolean copierHeader, String title, int mapMode,
 		int chipset, long romSizeBytes, long ramSizeBytes, int checksum, int checksumComplement,
@@ -68,7 +82,12 @@ public record SnesRomHeader(int headerOffset, boolean copierHeader, String title
 
 	/** Cartridge mapping declared by the map-mode byte's low nibble. */
 	public enum MapType {
-		LOROM, HIROM, EXHIROM,
+		/** LoROM's 32-KiB-per-bank wiring. */
+		LOROM,
+		/** HiROM's 64-KiB-per-bank wiring. */
+		HIROM,
+		/** Extended HiROM wiring for images larger than 4 MiB. */
+		EXHIROM,
 		/** A map-mode byte this class does not model; the loader must refuse rather than guess. */
 		UNKNOWN
 	}
@@ -99,7 +118,11 @@ public record SnesRomHeader(int headerOffset, boolean copierHeader, String title
 		"VEC_ABORT_EMULATION", 0x18, "VEC_NMI_EMULATION", 0x1A, "VEC_RESET_EMULATION", 0x1C,
 		"VEC_IRQ_EMULATION", 0x1E);
 
-	/** Where the cartridge image starts in the file: past the copier header, if any. */
+	/**
+	 * Returns where the cartridge image starts in the file: past the copier header, if any.
+	 *
+	 * @return the cartridge-data offset
+	 */
 	public long dataOffset() {
 		return copierHeader ? COPIER_HEADER_LEN : 0;
 	}
@@ -109,6 +132,8 @@ public record SnesRomHeader(int headerOffset, boolean copierHeader, String title
 	 * header belongs at {@code $7FC0} and a HiROM one at {@code $FFC0}; a mismatch means either
 	 * an unusual cartridge or a mis-detection, and the loader should say so rather than proceed
 	 * on one of the two contradictory facts.
+	 *
+	 * @return whether the declared map type agrees with the selected header location
 	 */
 	public boolean mapTypeMatchesLocation() {
 		return switch (mapType) {
@@ -119,11 +144,22 @@ public record SnesRomHeader(int headerOffset, boolean copierHeader, String title
 		};
 	}
 
-	/** The reset vector -- always an emulation-mode vector, since a 65816 resets into it. */
+	/**
+	 * Returns the reset vector, always an emulation-mode vector since a 65816 resets into it.
+	 *
+	 * @return the reset-vector address, or zero when absent
+	 */
 	public int resetVector() {
 		return vectors.getOrDefault("VEC_RESET_EMULATION", 0);
 	}
 
+	/**
+	 * Reads and parses a candidate cartridge image.
+	 *
+	 * @param provider the candidate image bytes
+	 * @return the parsed header, or {@code null} when the input is not a plausible cartridge
+	 * @throws IOException if the provider cannot supply its bytes
+	 */
 	public static SnesRomHeader parse(ByteProvider provider) throws IOException {
 		long length = provider.length();
 		if (length <= 0 || length > Integer.MAX_VALUE) {
@@ -137,6 +173,9 @@ public record SnesRomHeader(int headerOffset, boolean copierHeader, String title
 	 * a SNES cartridge. Returning null rather than throwing matches this project's other loaders
 	 * ({@code NesRomLoader}'s {@code InesHeader.parse}), whose callers treat "not my format" as
 	 * ordinary.
+	 *
+	 * @param file the complete candidate cartridge image
+	 * @return the parsed header, or {@code null} when no candidate is plausible
 	 */
 	public static SnesRomHeader parse(byte[] file) {
 		boolean copier = (file.length % 0x400) == COPIER_HEADER_LEN;

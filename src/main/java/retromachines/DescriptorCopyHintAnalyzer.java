@@ -84,6 +84,7 @@ public class DescriptorCopyHintAnalyzer extends AbstractAnalyzer {
 	/** What {@link RunFromElsewhere} should call this front-end in provenance text. */
 	private static final String ORIGIN = "descriptor copied_from hint";
 
+	/** Creates the descriptor-declared copy materialization analyzer. */
 	public DescriptorCopyHintAnalyzer() {
 		super(NAME, DESCRIPTION, AnalyzerType.BYTE_ANALYZER);
 		setPriority(AnalysisPriority.BLOCK_ANALYSIS);
@@ -93,6 +94,7 @@ public class DescriptorCopyHintAnalyzer extends AbstractAnalyzer {
 		setSupportsOneTimeAnalysis();
 	}
 
+	/** Returns whether the program descriptor declares any boot-copy hints. */
 	@Override
 	public boolean canAnalyze(Program program) {
 		try {
@@ -131,6 +133,7 @@ public class DescriptorCopyHintAnalyzer extends AbstractAnalyzer {
 		return false;
 	}
 
+	/** Applies descriptor-declared boot copies whose source bytes are available. */
 	@Override
 	public boolean added(Program program, AddressSetView set, TaskMonitor monitor,
 			MessageLog log) {
