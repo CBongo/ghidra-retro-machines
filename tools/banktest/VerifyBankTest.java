@@ -328,6 +328,9 @@ public class VerifyBankTest extends GhidraScript {
 		else if (name.contains("nesmmc3overridetest")) {
 			checkNesMmc3Override();
 		}
+		else if (name.contains("nesmmc3mirrortest")) {
+			checkNesMmc3Mirrortest();
+		}
 		else if (name.contains("nesmmc1test")) {
 			checkNesMmc1test();
 		}
@@ -3534,13 +3537,15 @@ public class VerifyBankTest extends GhidraScript {
 		// caught it had it been wrong, and G2's decay into a tautology is what surfaced the
 		// gap.
 		//
-		// THIS IS THE ONLY BOARD WHERE THE DIAGNOSTIC IS OBSERVABLE. A site contributes to
+		// THIS WAS THE ONLY BOARD WHERE THE DIAGNOSTIC WAS OBSERVABLE. A site contributes to
 		// requiresOnEntry only when its strategy answers true from effectDependsOnPriorState,
-		// and MemoryLatchBankSwitchStrategy:633 is the sole strategy that ever does -- it
+		// and MemoryLatchBankSwitchStrategy:633 was the sole strategy that ever did -- it
 		// re-runs evaluateLatch under a MirrorProbe and reports whether a MIRROR load was
-		// actually reached and answered. SelectDataBankSwitchStrategy:220 returns false
-		// unconditionally, so on an MMC3 board ownRequires is empty board-wide and no call
-		// site can carry a violation at all, however it is reshaped (that IS G11).
+		// actually reached and answered. SelectDataBankSwitchStrategy returned false
+		// unconditionally, so on an MMC3 board ownRequires was empty board-wide and no call
+		// site could carry a violation at all, however it was reshaped (that IS G11). Since
+		// grm-sen5 select-data has the same per-site probe; nesmmc3mirrortest's MM12/MM13 are
+		// this criterion's MMC3 counterpart.
 		//
 		// The chain is CallerP -> WorkerM -> MirrorLeaf. MirrorLeaf's site reads $42 -- derived
 		// WRITE_THROUGH, hence a LIVE mirror -- unlike FUN_C100's SAVE_SLOT $59 and shadowless
@@ -3588,6 +3593,151 @@ public class VerifyBankTest extends GhidraScript {
 				"c130 names the leaf FUN_c120, so M9's requirement genuinely arrived through " +
 				"WorkerM (BoardBankAnalyzer:3654) rather than off a direct leaf call: " +
 				"c130=\"" + w130 + "\"");
+	}
+
+	// ------------------------------------------------------------------
+	// nesmmc3mirrortest.nes criteria (bank-mirror read-back on a select-data board, PER
+	// WINDOW, bead grm-sen5)
+	// ------------------------------------------------------------------
+
+	/**
+	 * See {@code mknesbanktest.py}'s {@code make_prg_mmc3_mirror()} for the full listing.
+	 * {@code SelectDataMirrorConsumptionProgramTest} (Tier 2) pins the per-window resolve and
+	 * every refusal against a hand-built {@code BankMirrors}; this is the pipeline: a real
+	 * derive pass attributing {@code $A100} to R7's window ({@code WA000}, the one
+	 * mode-invariant switchable window on MMC3), {@code observeMirrors} reaching
+	 * {@code SelectDataBankSwitchStrategy} at all (it never did before this bead), consumption
+	 * at a data write and at a helper call site, retargets that only happen because of it,
+	 * H2's save-slot decline on this board, a refusal for the mode-varying window, and the
+	 * per-site {@code effectDependsOnPriorState} guard in BOTH directions with a non-empty
+	 * mirror set (nesmmc3test2's G11 has no mirrors, so it never reaches the probe).
+	 */
+	/**
+	 * Whether {@code field} is FULLY known in a bank comment: it is named, and no bit of it
+	 * appears in the comment's "assumed from initial:" list (a comment with no '?' has no such
+	 * list and every named field is known). Lets a criterion pin one field's knowledge while
+	 * an unrelated field arrives partially known from elsewhere in the flow.
+	 */
+	private static boolean fieldKnownIn(String eol, String field) {
+		if (!eol.contains(field + "=")) {
+			return false;
+		}
+		int i = eol.indexOf("assumed from initial:");
+		if (i < 0) {
+			return true;
+		}
+		String assumed = eol.substring(i);
+		int end = assumed.indexOf(']');
+		if (end >= 0) {
+			assumed = assumed.substring(0, end);
+		}
+		return !assumed.contains(field + ".");
+	}
+
+	private void checkNesMmc3Mirrortest() {
+		// MM1: ROM_IDENTIFYING derived at $A100 (byte $100 of every realized WA000 bank == that
+		// bank's number) AND consumed on a select-data board -- the re-commit at e20d reads
+		// $A100 with r7 = 3 tracked and must deposit r7 = 3, fully known.
+		String c = eol(0xE20D);
+		criterion("MM1", c.contains("r7=3") && !c.contains("?"),
+			"identifying-byte re-commit resolves r7=3 at e20d: \"" + c + "\"");
+
+		// MM2: and load-bearing -- JSR $A000 right after retargets into WA000_B3::A000 only
+		// because e20d resolved (an unresolved r7 would have poisoned the window).
+		Reference r = findOverlayRef(0xE210, "WA000_B3", 0xA000);
+		criterion("MM2", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $A000 retargeted to WA000_B3, primary: " + describe(r));
+		criterion("MM2:disasm", hasInstructionAt("WA000_B3", 0xA000),
+			"instruction exists at WA000_B3::A000");
+
+		// MM3: the same read at a HELPER CALL SITE -- LDA $A100 / JSR H -- resolves r7=3 via H
+		// through SelectDataBankSwitchStrategy.callerSideHooks, the caller-side half this bead
+		// adds alongside the direct-path hooks. No warning, no '?'.
+		c = eol(0xE216);
+		criterion("MM3", !hasWarningBookmark(0xE216) && c.contains("r7=3") && !c.contains("?"),
+			"identifying byte feeds the helper argument at e216: \"" + c + "\" warning=\"" +
+				warningBookmarkText(0xE216) + "\"");
+
+		// MM4: THE PER-WINDOW PROOF. r6 = 2 and r7 = 4 are both tracked; R7's identifying byte
+		// is committed through select 6. The answer must be the WINDOW's field (R7 -> 4), not
+		// the TARGET's (R6 -> 2): "r6=4", and specifically never "r6=2".
+		c = eol(0xE25C);
+		criterion("MM4", c.contains("r6=4") && !c.contains("r6=2") && !c.contains("?"),
+			"R7's byte lands in r6 as 4 (never r6's own stale 2) at e25c: \"" + c + "\"");
+
+		// MM5: and load-bearing in the mode-varying window -- JSR $8000 retargets into
+		// W8000_M0_B4 (bank 4, the copied value), not W8000_M0_B2.
+		r = findOverlayRef(0xE25F, "W8000_M0_B4", 0x8000);
+		criterion("MM5", r != null && r.getReferenceType().isCall() && r.isPrimary() &&
+			findOverlayRef(0xE25F, "W8000_M0_B2", 0x8000) == null,
+			"JSR $8000 retargeted to W8000_M0_B4 (not B2), primary: " + describe(r));
+
+		// MM6: WA000 is R7 under prg_mode 1 too (the descriptor hoists it as mode-invariant),
+		// so the identifying read still answers with r7 there: r7=5 with every r7 bit KNOWN,
+		// prg_mode=1. Asserted per FIELD rather than as "no '?'": r6 arrives at this function
+		// partially known through RESET's helper-summary fold of the earlier dispatch calls
+		// (each callee here contains mechanism writes), which is pre-existing engine behaviour
+		// and not what this criterion is about.
+		c = eol(0xE28D);
+		criterion("MM6", c.contains("r7=5") && c.contains("prg_mode=1") && fieldKnownIn(c, "r7"),
+			"identifying read resolves r7=5 under prg_mode=1 at e28d: \"" + c + "\"");
+
+		// MM7: retarget into the hoisted WA000_B5 (no _M suffix).
+		r = findOverlayRef(0xE290, "WA000_B5", 0xA000);
+		criterion("MM7", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+			"JSR $A000 retargeted to WA000_B5, primary: " + describe(r));
+
+		// MM8: the read-back-then-re-commit that establishes $59 as a SAVE_SLOT (TMNT's cec0
+		// shape) itself resolves through the mirror: r7=3 at e2cf.
+		c = eol(0xE2CF);
+		criterion("MM8", c.contains("r7=3") && fieldKnownIn(c, "r7"),
+			"re-commit after the save resolves r7=3 at e2cf (per field, as MM6): \"" + c + "\"");
+
+		// MM9: H2's ruling on this board -- the restore THROUGH THE HELPER from the save slot
+		// (LDA $59 / JSR H) must NOT be answered from in-state, which says r7=2 while the slot
+		// holds 3. A warning and no r7=2 claim; carrying the 3 forward is grm-mej.3.
+		c = eol(0xE2DC);
+		criterion("MM9", hasWarningBookmark(0xE2DC) && !c.contains("r7=2"),
+			"restore from the save slot via H claims no in-state bank at e2dc: warning=" +
+				hasWarningBookmark(0xE2DC) + " eol=\"" + c + "\"");
+
+		// MM10: the DIRECT restore from the slot (LDA $59 / STA $8001), same ruling: r7 wholly
+		// unknown (every r7 bit "assumed from initial"), never a confident 2 or 3.
+		c = eol(0xE2E1);
+		criterion("MM10", c.contains("?") && c.contains("r7.0,r7.1,r7.2,r7.3,r7.4,r7.5"),
+			"direct restore from the save slot leaves r7 unknown at e2e1: \"" + c + "\"");
+
+		// MM11: REFUSE WHERE THE PROOF IS MISSING. Every W8000 bank also holds its number at
+		// $100, but W8000 is mode-varying (R6 in prg_mode 0, fixed in 1) and is never
+		// content-scanned, so LDA $8100 / STA $8001 must leave r7 wholly unknown -- not r6's
+		// value, not anything.
+		c = eol(0xE30D);
+		criterion("MM11", c.contains("?") && c.contains("r7.0,r7.1,r7.2,r7.3,r7.4,r7.5"),
+			"a mode-varying window's identifying-looking byte is refused at e30d: \"" + c + "\"");
+
+		// MM12: THE SS2d GUARD, POSITIVE DIRECTION. Leaf reads the mirror with r7 unknown on
+		// entry; the per-site effectDependsOnPriorState override (new on this strategy) must
+		// report that as a genuine requirement, which propagates through Worker to CallerH's
+		// JSR at e34b as "requirement violated" naming r7. Before this bead the strategy-wide
+		// false was the only answer and this could never be reported (nesmmc3test2's G2 note).
+		String w = warningBookmarkText(0xE34B);
+		criterion("MM12", w.contains("requirement violated") && w.contains("r7"),
+			"a mirror-derived bank-known-on-entry requirement IS reported at CallerH's JSR " +
+				"Worker (e34b): warning=\"" + w + "\"");
+
+		// MM13: and it arrived by propagation -- the warning names the hop FUN_e360, not the
+		// leaf, so the :3654 rule carried it (nesmirrortest's M10 shape).
+		criterion("MM13", w.contains("call to FUN_e360"),
+			"the violation at e34b names the hop FUN_e360: \"" + w + "\"");
+
+		// MM14: THE NEGATIVE CONTROL, with the mirror set NON-EMPTY. LeafQ fails for an
+		// unrelated reason (an opaque load, not a mirror), so the per-site probe must answer
+		// false and CallerQ's JSR at e3ab must carry NO requirement violation. This is the
+		// over-reporting hazard grm-vgod removed 29 warnings for, re-guarded on the path
+		// nesmmc3test2's G11 cannot reach.
+		criterion("MM14", !warningBookmarkText(0xE3AB).contains("requirement violated"),
+			"no spurious violation at CallerQ's JSR WorkerQ (e3ab): warning=\"" +
+				warningBookmarkText(0xE3AB) + "\"");
 	}
 
 	// ------------------------------------------------------------------
@@ -3870,16 +4020,15 @@ public class VerifyBankTest extends GhidraScript {
 		// tautology passing on an unrelated diagnostic. Assert TEXT, not presence.
 		//
 		// THERE IS NO POSITIVE TEST FOR THE REQUIREMENT-VIOLATION DIAGNOSTIC IN THIS
-		// FIXTURE, AND THERE CANNOT BE ONE. Measured while fixing grm-mlp2:
-		// SelectDataBankSwitchStrategy.java:220 returns false from
-		// effectDependsOnPriorState() unconditionally, and does not override the per-site
-		// overload, so BoardBankAnalyzer's ownRequires gate (:3566-3591) never fires at any
-		// select-data site. With ownRequires empty board-wide the propagation at :3654 has
-		// nothing to carry, so NO call site on an MMC3 board can ever hold a violation
-		// bookmark, however it is reshaped -- which is exactly what G11 asserts. The
-		// diagnostic is reachable only through MemoryLatchBankSwitchStrategy:633, the sole
-		// overrider of the per-site form, and only at a latch site that genuinely consulted
-		// a bank mirror. A positive test therefore belongs on the nesmirrortest board; see
+		// FIXTURE. Measured while fixing grm-mlp2: SelectDataBankSwitchStrategy returned false
+		// from effectDependsOnPriorState() unconditionally and did not override the per-site
+		// overload, so BoardBankAnalyzer's ownRequires gate never fired at any select-data
+		// site; with ownRequires empty board-wide the propagation had nothing to carry, so NO
+		// call site on an MMC3 board could hold a violation bookmark -- which is exactly what
+		// G11 asserts. Since grm-sen5 the strategy DOES override the per-site form (a site
+		// that consulted a bank mirror and came up empty), but this fixture has no mirrors, so
+		// the probe short-circuits and G11's claim stands here unchanged. The positive MMC3
+		// test lives on nesmmc3mirrortest (MM12/MM13), alongside nesmirrortest's M9/M10; see
 		// grm-mlp2 for the three-level caller/worker/leaf chain that gets a call site past
 		// the alreadyWarned interlock.
 		criterion("G2",

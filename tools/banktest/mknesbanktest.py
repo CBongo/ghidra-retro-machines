@@ -1351,13 +1351,15 @@ def make_prg_mirrortest():
     #
     # WHY IT LIVES ON THIS BOARD AND NOT ON MMC3, where it was first attempted. A site
     # contributes to requiresOnEntry only when its strategy answers true from
-    # effectDependsOnPriorState (BoardBankAnalyzer's ownRequires gate). Exactly one strategy
-    # ever does: MemoryLatchBankSwitchStrategy:633, which re-runs evaluateLatch under a
-    # MirrorProbe and reports whether the evaluation actually reached and answered a MIRROR
-    # load. SelectDataBankSwitchStrategy:220 returns false unconditionally (grm-vgod), so on
-    # an MMC3 board ownRequires is empty everywhere, nothing propagates, and NO call site can
-    # carry a violation however it is reshaped -- which is precisely what nesmmc3test2's G11
-    # asserts. This fixture's board is the one with mirrors, so it is the one that can.
+    # effectDependsOnPriorState (BoardBankAnalyzer's ownRequires gate). At the time exactly
+    # one strategy ever did: MemoryLatchBankSwitchStrategy:633, which re-runs evaluateLatch
+    # under a MirrorProbe and reports whether the evaluation actually reached and answered a
+    # MIRROR load. SelectDataBankSwitchStrategy then returned false unconditionally
+    # (grm-vgod), so on an MMC3 board ownRequires was empty everywhere, nothing propagated,
+    # and NO call site could carry a violation however it was reshaped -- which is precisely
+    # what nesmmc3test2's G11 asserts. (Since grm-sen5 select-data consumes mirrors too and
+    # has the same per-site probe; nesmmc3mirrortest's MM12-MM14 are its counterpart of this
+    # chain. nesmmc3test2 itself still has no mirrors, so G11 is unchanged.)
     #
     # AND WHY IT TAKES A THREE-LEVEL CHAIN. Only one warning can ever land on a call site:
     # the helper-argument loop bookmarks it and adds it to `alreadyWarned`
@@ -2048,6 +2050,9 @@ class _Asm:
 
     def lda_absx(self, addr):
         self._emit([0xBD, addr & 0xFF, (addr >> 8) & 0xFF])
+
+    def lda_abs(self, addr):
+        self._emit([0xAD, addr & 0xFF, (addr >> 8) & 0xFF])
 
     def pha(self):
         self._emit([0x48])
@@ -2784,6 +2789,291 @@ def make_prg_mmc3_override():
 
     # Unrelated data table backing the unresolvable indexed loads above.
     put7(0xE400, [0x33, 0x44])
+
+    # Vector table.
+    put7(0xFFFA, [labels['rti'] & 0xFF, (labels['rti'] >> 8) & 0xFF])
+    put7(0xFFFC, [labels['reset'] & 0xFF, (labels['reset'] >> 8) & 0xFF])
+    put7(0xFFFE, [labels['rti'] & 0xFF, (labels['rti'] >> 8) & 0xFF])
+
+    return bytes(prg), labels
+
+
+def make_prg_mmc3_mirror():
+    """Bank-MIRROR read-back on a SELECT-DATA board (bead grm-sen5) -- the MMC3 sibling of
+    nesmirrortest, for machines/nes-mmc3.yaml. Until grm-sen5, SelectDataBankSwitchStrategy
+    never overrode observeMirrors, so the BankMirrors set BoardBankAnalyzer derives was
+    dropped on the floor for every MMC3 title; this fixture is the Tier-3 proof that it is
+    consumed now, and -- the design content that is NEW here rather than a transcription of
+    nesmirrortest -- that it is consumed PER WINDOW.
+
+    THE PER-WINDOW PROBLEM. MMC3 has two switchable PRG windows behind separate registers:
+    $A000-$BFFF is R7 in both prg_modes (WA000, mode-invariant, hoisted); $8000-$9FFF is R6
+    in prg_mode 0 and fixed in prg_mode 1 (W8000, mode-varying). So the byte at an
+    identifying offset is a function of WHICH window it was read from, and of prg_mode for
+    the varying one. BankMirrors.romIdentifyingOffsets scans mode-invariant windows only, and
+    records the window's bank field beside each offset (BankMirrors.identifyingField); the
+    strategy answers from THAT field, never from the register the byte is about to be stored
+    to, and refuses whenever the proof is missing.
+
+    IDENTIFYING OFFSET IS $100 OF EVERY BANK (WA000 -> $A100), not offset 0: offset 0 is
+    where this family's fixtures put their JSR-target RTS, which deliberately BREAKS the
+    byte==bank pattern there (as it does on nesmmc3test) so $A000 does not also qualify.
+    $E100 (bank 7's copy) must stay clear of code, so RESET keeps to $E000-$E0FF and every
+    function lives at $E200+.
+
+    Home: r6=0, r7=1, prg_mode=0, so base WA000 is bank 1 and every bank below is reached
+    through a hoisted WA000_B<n> or a mode-qualified W8000_M0_B<n> overlay. Banks 2..5 hold
+    an RTS at offset 0 for the retargeted JSRs.
+
+    RESET ($E000): six dispatch calls, then idle.
+
+    Relatch ($E200) -- nesmirrortest's C005/C008 on MMC3:
+      LDA #$07 / STA $8000            ; select 7, prg_mode 0
+      LDA #$03 / STA $8001            ; r7 = 3
+      LDA $A100                       ; ROM_IDENTIFYING (WA000 = R7's window): reads 3
+      STA $8001                       ; MM1: r7 := 3 FROM THE MIRROR, fully known, no '?'
+      JSR $A000                       ; MM2: retargets into WA000_B3::A000, load-bearing
+      LDA $A100                       ; the same read at a HELPER CALL SITE --
+      JSR H                           ; MM3: r7=3 via H, resolved caller-side through
+                                      ; SelectDataBankSwitchStrategy.callerSideHooks
+      RTS
+
+    CrossCopy ($E240) -- THE PER-WINDOW PROOF. R6 and R7 are set to DIFFERENT known values,
+    then R7's identifying byte is committed through select 6:
+      LDA #$06 / STA $8000 / LDA #$02 / STA $8001     ; r6 = 2
+      LDA #$07 / STA $8000 / LDA #$04 / STA $8001     ; r7 = 4
+      LDA #$06 / STA $8000                            ; select 6 again
+      LDA $A100                       ; R7's byte (4) -- NOT R6's, NOT the target's
+      STA $8001                       ; MM4: r6 := 4 (a wrong per-window attribution
+                                      ; would say 2, the target's own stale value)
+      JSR $8000                       ; MM5: -> W8000_M0_B4::8000, not B2
+      RTS
+
+    ModeOne ($E280) -- WA000 is R7 under prg_mode 1 as well:
+      LDA #$47 / STA $8000            ; select 7, prg_mode 1
+      LDA #$05 / STA $8001            ; r7 = 5
+      LDA $A100 / STA $8001           ; MM6: r7 := 5, prg_mode=1, fully known
+      JSR $A000                       ; MM7: -> WA000_B5::A000 (hoisted, no _M)
+      LDA #$07 / STA $8000            ; back to prg_mode 0 for what follows
+      RTS
+
+    SaveRestore ($E2C0) -- TMNT's cec0/cf0b on MMC3, and H2's ruling (grm-mej.2):
+      LDA #$07 / STA $8000 / LDA #$03 / STA $8001     ; r7 = 3
+      LDA $A100                       ; read the live bank back (3)...
+      STA $59                         ; ...stash it -- the walk from the next write types
+      STA $8001                       ; $59 SAVE_SLOT (read-back, then re-commit; MM8:
+                                      ; this re-commit itself resolves r7=3 via the mirror)
+      LDA #$02 / JSR H                ; switch to bank 2 through the helper (r7=2)
+      JSR $A000                       ; -> WA000_B2::A000
+      LDA $59 / JSR H                 ; MM9: the restore through the helper from the slot
+                                      ; must NOT claim r7=2 (in-state) -- the slot holds 3;
+                                      ; carrying that forward is grm-mej.3, not this bead
+      LDA $59 / STA $8001             ; MM10: the direct restore, same ruling: r7 UNKNOWN
+      RTS
+
+    VaryingWindow ($E300) -- refuse where the proof is missing:
+      LDA #$07 / STA $8000 / LDA #$03 / STA $8001     ; r7 = 3
+      LDA $8100                       ; W8000's $100 holds its bank number too, but W8000
+                                      ; is mode-varying and never content-scanned...
+      STA $8001                       ; MM11: ...so r7 comes out UNKNOWN, not r6's value
+      RTS
+
+    CallerH ($E340) -> Worker ($E360) -> Leaf ($E380) -- grm-mej.2 SS2d, POSITIVE direction
+    (nesmirrortest's M9/M10 shape, nesmmc3test2's CallerH/Worker/H4 addresses):
+      Leaf:    LDA #$07 / STA $8000 / LDA $A100 / STA $8001 / RTS
+               ; reads the mirror; with r7 UNKNOWN on entry the mirror answers
+               ; non-null-but-unknown, so the per-site effectDependsOnPriorState reports
+               ; a genuine bank-known-on-entry requirement on r7
+      Worker:  JSR Leaf / JSR Harmless / RTS   ; the hop (see nesmmc3test2 for why)
+      CallerH: LDA #$07 / STA $8000 / LDA $E400 (opaque) / STA $8001   ; r7 UNKNOWN here
+               JSR Worker              ; MM12: "requirement violated" naming r7, and MM13:
+                                       ; naming FUN_e360 (arrived by propagation)
+               RTS
+    CallerQ ($E3A0) -> WorkerQ ($E3C0) -> LeafQ ($E3E0) -- the NEGATIVE control, on a
+    board whose mirror set is NON-EMPTY (nesmmc3test2's G11 runs with no mirrors at all,
+    so it cannot see the probe path):
+      LeafQ:   LDA #$07 / STA $8000 / LDA $E400 / STA $8001 / RTS   ; fails for an
+               ; UNRELATED reason (opaque load, not a mirror)
+      CallerQ: same poison as CallerH, JSR WorkerQ   ; MM14: NO "requirement violated"
+    Harmless ($E3F8): RTS.   H ($E3FC): STA $8001 / RTS (nesmmc3test2's bare data helper).
+    """
+    prg = bytearray([0x00] * MMC3_PRG_SIZE)
+
+    IDENT_OFFSET = 0x0100
+
+    for bank in range(MMC3_BANKS):
+        prg[bank * MMC3_BANK_SIZE] = bank                  # marker (broken below)
+        prg[bank * MMC3_BANK_SIZE + IDENT_OFFSET] = bank   # the identifying byte
+
+    # JSR targets: lone RTS at offset 0 of banks 2..5 (WA000_B<n>::A000 / W8000_M0_B<n>::8000).
+    # Replacing the marker byte also breaks byte==bank at offset 0, so only $100 qualifies.
+    for bank in (2, 3, 4, 5):
+        prg[bank * MMC3_BANK_SIZE] = 0x60
+
+    bank7_base = 7 * MMC3_BANK_SIZE
+    assert bank7_base == 0xE000
+
+    def put7(cpu_addr, data):
+        off = bank7_base + (cpu_addr - 0xE000)
+        prg[off:off + len(data)] = bytes(data)
+
+    labels = {}
+    H = 0xE3FC
+    HARMLESS = 0xE3F8
+
+    # --- RESET ($E000) ---
+    main = _Asm(prg, 0xE000, bank7_base)
+    labels['reset'] = main.label()
+    main.jsr(0xE200)                         # Relatch
+    main.jsr(0xE240)                         # CrossCopy
+    main.jsr(0xE280)                         # ModeOne
+    main.jsr(0xE2C0)                         # SaveRestore
+    main.jsr(0xE300)                         # VaryingWindow
+    main.jsr(0xE340)                         # CallerH (positive guard)
+    main.jsr(0xE3A0)                         # CallerQ (negative control)
+    labels['idle'] = main.label()
+    main.jmp(labels['idle'])
+    labels['rti'] = main.label()
+    main.rti()
+    assert main.label() < 0xE100, "RESET must not reach bank 7's identifying byte at $E100"
+
+    # --- Relatch ($E200) ---
+    a = _Asm(prg, 0xE200, bank7_base + 0x200)
+    labels['relatch'] = a.label()
+    a.lda_imm(0x07); a.sta_abs(0x8000)       # select 7, prg_mode 0
+    a.lda_imm(0x03); a.sta_abs(0x8001)       # r7 = 3
+    a.lda_abs(0xA100)                        # ROM_IDENTIFYING (R7's window)
+    labels['relatch_commit'] = a.label()
+    a.sta_abs(0x8001)                        # MM1: r7 := 3 from the mirror
+    labels['relatch_jsr'] = a.label()
+    a.jsr(0xA000)                            # MM2: -> WA000_B3::A000
+    a.lda_abs(0xA100)                        # the same read, at a helper call site
+    labels['relatch_helper_jsr'] = a.label()
+    a.jsr(H)                                 # MM3: r7=3 via H (caller-side mirror)
+    a.rts()
+
+    # --- CrossCopy ($E240) ---
+    a = _Asm(prg, 0xE240, bank7_base + 0x240)
+    labels['crosscopy'] = a.label()
+    a.lda_imm(0x06); a.sta_abs(0x8000)
+    a.lda_imm(0x02); a.sta_abs(0x8001)       # r6 = 2
+    a.lda_imm(0x07); a.sta_abs(0x8000)
+    a.lda_imm(0x04); a.sta_abs(0x8001)       # r7 = 4
+    a.lda_imm(0x06); a.sta_abs(0x8000)       # select 6
+    a.lda_abs(0xA100)                        # R7's byte (4)
+    labels['crosscopy_commit'] = a.label()
+    a.sta_abs(0x8001)                        # MM4: r6 := 4 (not 2)
+    labels['crosscopy_jsr'] = a.label()
+    a.jsr(0x8000)                            # MM5: -> W8000_M0_B4::8000
+    a.rts()
+
+    # --- ModeOne ($E280) ---
+    a = _Asm(prg, 0xE280, bank7_base + 0x280)
+    labels['modeone'] = a.label()
+    a.lda_imm(0x47); a.sta_abs(0x8000)       # select 7, prg_mode 1
+    a.lda_imm(0x05); a.sta_abs(0x8001)       # r7 = 5
+    a.lda_abs(0xA100)
+    labels['modeone_commit'] = a.label()
+    a.sta_abs(0x8001)                        # MM6: r7 := 5, prg_mode=1
+    labels['modeone_jsr'] = a.label()
+    a.jsr(0xA000)                            # MM7: -> WA000_B5::A000
+    a.lda_imm(0x07); a.sta_abs(0x8000)       # prg_mode back to 0
+    a.rts()
+
+    # --- SaveRestore ($E2C0) ---
+    a = _Asm(prg, 0xE2C0, bank7_base + 0x2C0)
+    labels['saverestore'] = a.label()
+    a.lda_imm(0x07); a.sta_abs(0x8000)
+    a.lda_imm(0x03); a.sta_abs(0x8001)       # r7 = 3
+    a.lda_abs(0xA100)                        # read the live bank back
+    labels['save_store'] = a.label()
+    a.sta_zp(0x59)                           # stash -> $59 (SAVE_SLOT)
+    labels['save_recommit'] = a.label()
+    a.sta_abs(0x8001)                        # MM8: re-commit r7 := 3 via the mirror
+    a.lda_imm(0x02)
+    labels['save_switch_jsr'] = a.label()
+    a.jsr(H)                                 # r7 = 2 via H
+    labels['save_bank2_jsr'] = a.label()
+    a.jsr(0xA000)                            # -> WA000_B2::A000
+    a.lda_zp(0x59)
+    labels['restore_helper_jsr'] = a.label()
+    a.jsr(H)                                 # MM9: must NOT claim r7=2
+    a.lda_zp(0x59)
+    labels['restore_direct'] = a.label()
+    a.sta_abs(0x8001)                        # MM10: r7 UNKNOWN
+    a.rts()
+
+    # --- VaryingWindow ($E300) ---
+    a = _Asm(prg, 0xE300, bank7_base + 0x300)
+    labels['varying'] = a.label()
+    a.lda_imm(0x07); a.sta_abs(0x8000)
+    a.lda_imm(0x03); a.sta_abs(0x8001)       # r7 = 3
+    a.lda_abs(0x8100)                        # W8000's byte -- mode-varying, never derived
+    labels['varying_commit'] = a.label()
+    a.sta_abs(0x8001)                        # MM11: r7 UNKNOWN
+    a.rts()
+
+    # --- CallerH ($E340) / Worker ($E360) / Leaf ($E380): the positive guard ---
+    a = _Asm(prg, 0xE340, bank7_base + 0x340)
+    labels['callerh'] = a.label()
+    a.lda_imm(0x07); a.sta_abs(0x8000)
+    a.lda_abs(0xE400)                        # opaque
+    a.sta_abs(0x8001)                        # r7 UNKNOWN here
+    labels['callerh_jsr'] = a.label()
+    a.jsr(0xE360)                            # MM12/MM13: THE GUARDED SITE
+    a.rts()
+
+    a = _Asm(prg, 0xE360, bank7_base + 0x360)
+    labels['worker'] = a.label()
+    labels['worker_jsr'] = a.label()
+    a.jsr(0xE380)                            # Leaf
+    a.jsr(HARMLESS)                          # not a relay wrapper
+    a.rts()
+
+    a = _Asm(prg, 0xE380, bank7_base + 0x380)
+    labels['leaf'] = a.label()
+    a.lda_imm(0x07); a.sta_abs(0x8000)
+    a.lda_abs(0xA100)                        # the mirror, with r7 unknown on entry
+    labels['leaf_commit'] = a.label()
+    a.sta_abs(0x8001)
+    a.rts()
+
+    # --- CallerQ ($E3A0) / WorkerQ ($E3C0) / LeafQ ($E3E0): the negative control ---
+    a = _Asm(prg, 0xE3A0, bank7_base + 0x3A0)
+    labels['callerq'] = a.label()
+    a.lda_imm(0x07); a.sta_abs(0x8000)
+    a.lda_abs(0xE400)
+    a.sta_abs(0x8001)                        # r7 UNKNOWN here too
+    labels['callerq_jsr'] = a.label()
+    a.jsr(0xE3C0)                            # MM14: no violation
+    a.rts()
+
+    a = _Asm(prg, 0xE3C0, bank7_base + 0x3C0)
+    labels['workerq'] = a.label()
+    a.jsr(0xE3E0)                            # LeafQ
+    a.jsr(HARMLESS)
+    a.rts()
+
+    a = _Asm(prg, 0xE3E0, bank7_base + 0x3E0)
+    labels['leafq'] = a.label()
+    a.lda_imm(0x07); a.sta_abs(0x8000)
+    a.lda_abs(0xE400)                        # opaque -- NOT a mirror
+    labels['leafq_commit'] = a.label()
+    a.sta_abs(0x8001)
+    a.rts()
+    assert a.label() <= HARMLESS
+
+    # --- Harmless ($E3F8), H ($E3FC) ---
+    a = _Asm(prg, HARMLESS, bank7_base + (HARMLESS - 0xE000))
+    labels['harmless'] = a.label()
+    a.rts()
+    a = _Asm(prg, H, bank7_base + (H - 0xE000))
+    labels['h'] = a.label()
+    a.sta_abs(0x8001)
+    a.rts()
+
+    # Unrelated byte behind the opaque loads.
+    put7(0xE400, [0x33])
 
     # Vector table.
     put7(0xFFFA, [labels['rti'] & 0xFF, (labels['rti'] >> 8) & 0xFF])
@@ -4044,6 +4334,68 @@ def main():
           ", ".join("%s=$%04X" % (k, v) for k, v in m3olabels.items()))
 
     _write_rom(outdir, "nesmmc3overridetest.nes", prgm3o, mapper=MAPPER_MMC3)
+
+    # nesmmc3mirrortest.nes (bead grm-sen5): bank-mirror read-back on a select-data board,
+    # per window. See make_prg_mmc3_mirror()'s docstring.
+    prgm3m, m3mlabels = make_prg_mmc3_mirror()
+    m3mbank7_base = 7 * MMC3_BANK_SIZE
+    assert len(prgm3m) == MMC3_PRG_SIZE
+    for bank in range(MMC3_BANKS):
+        assert prgm3m[bank * MMC3_BANK_SIZE + 0x100] == bank     # byte $100 == bank, every bank
+    for bank in (2, 3, 4, 5):
+        assert prgm3m[bank * MMC3_BANK_SIZE] == 0x60             # RTS targets break offset 0
+    assert prgm3m[0] == 0 and prgm3m[1 * MMC3_BANK_SIZE] == 1    # markers elsewhere intact
+    assert prgm3m[m3mbank7_base + 0x100] == 7                    # $E100 is bank 7's copy
+    assert m3mlabels['reset'] == 0xE000 and m3mlabels['relatch'] == 0xE200
+    assert m3mlabels['crosscopy'] == 0xE240 and m3mlabels['modeone'] == 0xE280
+    assert m3mlabels['saverestore'] == 0xE2C0 and m3mlabels['varying'] == 0xE300
+    assert m3mlabels['callerh'] == 0xE340 and m3mlabels['worker'] == 0xE360
+    assert m3mlabels['leaf'] == 0xE380 and m3mlabels['callerq'] == 0xE3A0
+    assert m3mlabels['workerq'] == 0xE3C0 and m3mlabels['leafq'] == 0xE3E0
+    assert m3mlabels['harmless'] == 0xE3F8 and m3mlabels['h'] == 0xE3FC
+    # Relatch: LDA $A100 / STA $8001 / JSR $A000 / LDA $A100 / JSR H
+    assert prgm3m[m3mbank7_base + 0x20A:m3mbank7_base + 0x213] == \
+        b'\xad\x00\xa1\x8d\x01\x80\x20\x00\xa0'
+    assert prgm3m[m3mbank7_base + 0x213:m3mbank7_base + 0x219] == b'\xad\x00\xa1\x20\xfc\xe3'
+    assert m3mlabels['relatch_commit'] == 0xE20D and m3mlabels['relatch_jsr'] == 0xE210
+    assert m3mlabels['relatch_helper_jsr'] == 0xE216
+    # CrossCopy: ... LDA #$06 / STA $8000 / LDA $A100 / STA $8001 / JSR $8000
+    assert prgm3m[m3mbank7_base + 0x254:m3mbank7_base + 0x260] == \
+        b'\xa9\x06\x8d\x00\x80\xad\x00\xa1\x8d\x01\x80\x20'
+    assert m3mlabels['crosscopy_commit'] == 0xE25C and m3mlabels['crosscopy_jsr'] == 0xE25F
+    # ModeOne: LDA #$47 / STA $8000 / LDA #$05 / STA $8001 / LDA $A100 / STA $8001 / JSR $A000
+    assert prgm3m[m3mbank7_base + 0x280:m3mbank7_base + 0x291] == \
+        b'\xa9\x47\x8d\x00\x80\xa9\x05\x8d\x01\x80\xad\x00\xa1\x8d\x01\x80\x20'
+    assert m3mlabels['modeone_commit'] == 0xE28D and m3mlabels['modeone_jsr'] == 0xE290
+    # SaveRestore: LDA $A100 / STA $59 / STA $8001 / LDA #$02 / JSR H / JSR $A000 /
+    #              LDA $59 / JSR H / LDA $59 / STA $8001
+    assert prgm3m[m3mbank7_base + 0x2CA:m3mbank7_base + 0x2E2] == \
+        b'\xad\x00\xa1\x85\x59\x8d\x01\x80\xa9\x02\x20\xfc\xe3\x20\x00\xa0' \
+        b'\xa5\x59\x20\xfc\xe3\xa5\x59\x8d'
+    assert m3mlabels['save_store'] == 0xE2CD and m3mlabels['save_recommit'] == 0xE2CF
+    assert m3mlabels['save_switch_jsr'] == 0xE2D4 and m3mlabels['save_bank2_jsr'] == 0xE2D7
+    assert m3mlabels['restore_helper_jsr'] == 0xE2DC and m3mlabels['restore_direct'] == 0xE2E1
+    # VaryingWindow: LDA $8100 / STA $8001
+    assert prgm3m[m3mbank7_base + 0x30A:m3mbank7_base + 0x310] == b'\xad\x00\x81\x8d\x01\x80'
+    assert m3mlabels['varying_commit'] == 0xE30D
+    # CallerH: LDA $E400 / STA $8001 / JSR $E360;  Leaf: LDA $A100 / STA $8001
+    assert prgm3m[m3mbank7_base + 0x345:m3mbank7_base + 0x34E] == \
+        b'\xad\x00\xe4\x8d\x01\x80\x20\x60\xe3'
+    assert m3mlabels['callerh_jsr'] == 0xE34B and m3mlabels['worker_jsr'] == 0xE360
+    assert prgm3m[m3mbank7_base + 0x385:m3mbank7_base + 0x38B] == b'\xad\x00\xa1\x8d\x01\x80'
+    # CallerQ: LDA $E400 / STA $8001 / JSR $E3C0;  LeafQ: LDA $E400 / STA $8001
+    assert prgm3m[m3mbank7_base + 0x3A5:m3mbank7_base + 0x3AE] == \
+        b'\xad\x00\xe4\x8d\x01\x80\x20\xc0\xe3'
+    assert m3mlabels['callerq_jsr'] == 0xE3AB
+    assert prgm3m[m3mbank7_base + 0x3E5:m3mbank7_base + 0x3EB] == b'\xad\x00\xe4\x8d\x01\x80'
+    assert prgm3m[m3mbank7_base + 0x3F8] == 0x60                                  # Harmless
+    assert prgm3m[m3mbank7_base + 0x3FC:m3mbank7_base + 0x400] == b'\x8d\x01\x80\x60'  # H
+    _assert_vectors(prgm3m, "nesmmc3mirrortest", handler=m3mlabels['rti'],
+                    reset=m3mlabels['reset'])
+    print("nesmmc3mirrortest labels: " +
+          ", ".join("%s=$%04X" % (k, v) for k, v in m3mlabels.items()))
+
+    _write_rom(outdir, "nesmmc3mirrortest.nes", prgm3m, mapper=MAPPER_MMC3)
 
     # neswrappertest.nes (bead grm-2dr, increment 1): pass-through-wrapper fixture.
     prgw, wlabels = make_prg_wrapper()

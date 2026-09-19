@@ -992,6 +992,11 @@ if selected nes-banking; then
 	run_one nesmmc3overridetest "$WORK/nes/nesmmc3overridetest.nes" NesRomLoader \
 		"-loader-placement WA000:5"
 
+	# grm-sen5: bank-mirror read-back on a SELECT-DATA board, resolved PER WINDOW (MMC3's
+	# R6/R7 own different windows), plus the per-site effectDependsOnPriorState guard in
+	# both directions. The MMC3 sibling of nesmirrortest -- see make_prg_mmc3_mirror().
+	run_one nesmmc3mirrortest "$WORK/nes/nesmmc3mirrortest.nes" NesRomLoader
+
 	# grm-2dr increment 1: pass-through-wrapper recognition (a fallthrough-only function
 	# whose last instruction lands exactly on a real bank-switch helper's entry). Separate
 	# fixture from nesmmc1test so that one stays byte-identical -- see make_prg_wrapper()'s

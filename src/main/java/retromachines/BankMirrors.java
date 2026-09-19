@@ -130,7 +130,8 @@ public final class BankMirrors {
 	private static final long STACK_PAGE_START = 0x0100;
 	private static final long STACK_PAGE_END = 0x01FF;
 
-	private static final BankMirrors EMPTY = new BankMirrors(null, Map.of(), Map.of(), Map.of());
+	private static final BankMirrors EMPTY =
+		new BankMirrors(null, Map.of(), Map.of(), Map.of(), Map.of());
 
 	/** Null exactly when this set is empty, in which case no query can match anyway. */
 	private final AddressSpace baseSpace;
@@ -141,13 +142,18 @@ public final class BankMirrors {
 	/** Per cell, the instructions that established it as a mirror -- see {@link #evidenceSites}
 	 *  and bead grm-mej.4, which needs this to write a "how do you know" comment. */
 	private final Map<Long, Set<Address>> evidenceByOffset;
+	/** Per {@link Kind#ROM_IDENTIFYING} offset, the state field that selects the bank of the
+	 *  window it lives in -- see {@link #identifyingField} and bead grm-sen5. */
+	private final Map<Long, BoardDescriptorModel.FieldSpec> identifyingFieldByOffset;
 
 	private BankMirrors(AddressSpace baseSpace, Map<Long, Set<Kind>> byOffset,
-			Map<Long, Set<Address>> pairedByOffset, Map<Long, Set<Address>> evidenceByOffset) {
+			Map<Long, Set<Address>> pairedByOffset, Map<Long, Set<Address>> evidenceByOffset,
+			Map<Long, BoardDescriptorModel.FieldSpec> identifyingFieldByOffset) {
 		this.baseSpace = baseSpace;
 		this.byOffset = byOffset;
 		this.pairedByOffset = pairedByOffset;
 		this.evidenceByOffset = evidenceByOffset;
+		this.identifyingFieldByOffset = identifyingFieldByOffset;
 	}
 
 	/** The empty set -- what every board with no derivable mirror gets. */
@@ -167,12 +173,25 @@ public final class BankMirrors {
 	 * {@link Discovery#build()}.
 	 */
 	static BankMirrors of(AddressSpace baseSpace, Map<Long, Set<Kind>> byOffset) {
+		return of(baseSpace, byOffset, Map.of());
+	}
+
+	/**
+	 * {@link #of(AddressSpace, Map)} plus the per-offset window field an identifying offset
+	 * carries (see {@link #identifyingField}) -- for consumption tests of a strategy that
+	 * refuses an identifying offset whose owning field it cannot name (select-data, bead
+	 * grm-sen5). An offset absent from {@code identifyingFields} answers {@code null} there,
+	 * which is the shape a derivation that did not attribute the window produces.
+	 */
+	static BankMirrors of(AddressSpace baseSpace, Map<Long, Set<Kind>> byOffset,
+			Map<Long, BoardDescriptorModel.FieldSpec> identifyingFields) {
 		if (byOffset.isEmpty()) {
 			return EMPTY;
 		}
 		Map<Long, Set<Kind>> frozen = new LinkedHashMap<>();
 		byOffset.forEach((k, v) -> frozen.put(k, Set.copyOf(v)));
-		return new BankMirrors(baseSpace, Collections.unmodifiableMap(frozen), Map.of(), Map.of());
+		return new BankMirrors(baseSpace, Collections.unmodifiableMap(frozen), Map.of(), Map.of(),
+			Map.copyOf(identifyingFields));
 	}
 
 	public boolean isEmpty() {
@@ -226,6 +245,38 @@ public final class BankMirrors {
 	public Set<Address> evidenceSites(Address addr) {
 		Long offset = normalizedQueryOffset(addr);
 		return offset == null ? Set.of() : evidenceByOffset.getOrDefault(offset, Set.of());
+	}
+
+	/**
+	 * For a {@link Kind#ROM_IDENTIFYING} offset, the {@code banking.state} field whose value
+	 * selects the bank of the switchable window the offset lives in -- i.e. WHICH tracked bank
+	 * a load of {@code addr} reads back (bead grm-sen5). {@code null} when {@code addr} is not
+	 * an identifying offset, or when the derivation did not attribute its window to a field.
+	 * <p>
+	 * <b>Why a consumer needs this.</b> A single-field mechanism can assume "the bank" means
+	 * its one field, and {@code MemoryLatchBankSwitchStrategy}/{@code SerialShiftBankSwitchStrategy}
+	 * do. A mechanism that tracks SEVERAL switchable windows through separate registers cannot:
+	 * on MMC3, {@code $A000-$BFFF} is R7 and {@code $8000-$9FFF} is R6 (in prg_mode 0), so the
+	 * byte read at an identifying offset is a function of the register that owns THAT window,
+	 * and answering it from the wrong field ships a confidently wrong bank. The field is
+	 * recorded here, at derivation time, from the window the offset was found in -- it is the
+	 * proof a multi-window consumer narrows its answer with, and a consumer that cannot match
+	 * it to a field it tracks must refuse rather than guess.
+	 * <p>
+	 * <b>Valid in every mode, and only because of how it is derived.</b>
+	 * {@code BankAnnotationAdapter.deriveBankMirrors} content-scans mode-INVARIANT computed
+	 * windows only, so the field recorded here selects the window's bank under every mode the
+	 * board has (MMC3's {@code WA000} is R7 in both prg_modes; its mode-varying {@code W8000}/
+	 * {@code WC000} are never scanned). A future derivation over mode-varying windows must
+	 * record the mode alongside the field, and every consumer must then refuse when the tracked
+	 * mode is unknown or differs -- do not widen the derivation without widening this.
+	 */
+	BoardDescriptorModel.FieldSpec identifyingField(Address addr) {
+		Long offset = normalizedQueryOffset(addr);
+		if (offset == null || !byOffset.getOrDefault(offset, Set.of()).contains(Kind.ROM_IDENTIFYING)) {
+			return null;
+		}
+		return identifyingFieldByOffset.get(offset);
 	}
 
 	/** {@code addr}'s offset on the physical bus, or null when it is not on this program's. */
@@ -406,6 +457,11 @@ public final class BankMirrors {
 
 		private final AddressSpace baseSpace;
 		private final Set<Long> romIdentifying = new LinkedHashSet<>();
+		/** The window field each identifying offset was found under -- see
+		 *  {@link BankMirrors#identifyingField}. Offsets recorded through the field-less
+		 *  {@link #addRomIdentifying(Collection)} have no entry. */
+		private final Map<Long, BoardDescriptorModel.FieldSpec> romIdentifyingField =
+			new LinkedHashMap<>();
 		private final Map<Long, Cell> cells = new LinkedHashMap<>();
 		/** Every mechanism write {@link #scanWriteThroughShadows} was handed, grouped by the
 		 *  bit-field it commits -- the denominator of {@link #coversAMechanismField}. */
@@ -415,9 +471,28 @@ public final class BankMirrors {
 			this.baseSpace = baseSpace;
 		}
 
-		/** Records a content-derived identifying offset (see {@link #romIdentifyingOffsets}). */
+		/** Records content-derived identifying offsets (see {@link #romIdentifyingOffsets})
+		 *  without naming the window field they were found under -- the form the derivation
+		 *  tests use; a consumer that needs the field ({@link BankMirrors#identifyingField})
+		 *  sees {@code null} for these and refuses. */
 		void addRomIdentifying(Collection<Long> offsets) {
 			romIdentifying.addAll(offsets);
+		}
+
+		/**
+		 * The production form: the offsets AND the {@code banking.state} field that selects the
+		 * bank of the window they were found in (bead grm-sen5), so a multi-window mechanism can
+		 * answer a load of one from the right tracked field. {@code null} for {@code windowField}
+		 * degrades to the field-less form.
+		 */
+		void addRomIdentifying(Collection<Long> offsets,
+				BoardDescriptorModel.FieldSpec windowField) {
+			romIdentifying.addAll(offsets);
+			if (windowField != null) {
+				for (Long offset : offsets) {
+					romIdentifyingField.put(offset, windowField);
+				}
+			}
 		}
 
 		/**
@@ -826,7 +901,8 @@ public final class BankMirrors {
 				}
 			});
 			return new BankMirrors(baseSpace, Collections.unmodifiableMap(frozen),
-				Collections.unmodifiableMap(paired), Collections.unmodifiableMap(evidence));
+				Collections.unmodifiableMap(paired), Collections.unmodifiableMap(evidence),
+				Collections.unmodifiableMap(new LinkedHashMap<>(romIdentifyingField)));
 		}
 
 		/** Whether the fall-through path from {@code prev} is exactly {@code cur} -- the block

@@ -95,10 +95,29 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	private FieldPos selectField;
 	private FieldPos modeField; // null when this board has no co-emitted mode bit
 	private Map<Integer, FieldPos> targets;
+	/** {@link #targets} keyed by the descriptor's FIELD NAME rather than select value -- the
+	 *  key {@link BankMirrors#identifyingField} answers in, so {@link #mirroredByte} can tell
+	 *  whether the window an identifying byte was read from is banked by a register this
+	 *  mechanism tracks at all. */
+	private Map<String, FieldPos> targetsByName;
+
+	/**
+	 * The addresses that MIRROR THE LIVE BANK on this program (bead grm-mej.2), delivered by
+	 * {@link #observeMirrors} between {@code BoardBankAnalyzer}'s two dataflow passes. Empty for
+	 * pass 1 and for every board with no derivable mirror, in which case this strategy behaves
+	 * exactly as it did before it observed them (bead grm-sen5 -- until then it did not override
+	 * {@code observeMirrors} at all, so no select-data board ever got bank-mirror read-back).
+	 */
+	private BankMirrors mirrors = BankMirrors.none();
 
 	@Override
 	public String strategyName() {
 		return "select-data";
+	}
+
+	@Override
+	public void observeMirrors(BankMirrors observed) {
+		mirrors = observed == null ? BankMirrors.none() : observed;
 	}
 
 	@Override
@@ -121,9 +140,13 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 				: null;
 
 		targets = new HashMap<>();
+		targetsByName = new HashMap<>();
 		if (params.has("targets")) {
 			for (Map.Entry<String, JsonElement> e : params.getAsJsonObject("targets").entrySet()) {
-				targets.put(Integer.valueOf(e.getKey()), fieldPos(fieldLayout, e.getValue().getAsString()));
+				String fieldName = e.getValue().getAsString();
+				FieldPos pos = fieldPos(fieldLayout, fieldName);
+				targets.put(Integer.valueOf(e.getKey()), pos);
+				targetsByName.put(fieldName, pos);
 			}
 		}
 	}
@@ -147,11 +170,139 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 		@Override
 		public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
 				BankState inStateAtStore) {
-			// MMC3-style select/data registers are write-only -- nothing reads them back,
-			// at any resolvedTarget.
+			// This strategy resolves no load as a bank-INVARIANT constant. The select/data
+			// registers themselves are write-only -- a read at $8000-$9FFF hits the ROM
+			// window behind them, never the register -- but that only settles the question
+			// for the register pair. It says NOTHING about a ROM byte inside a banked window
+			// or a RAM shadow, and this hook used to claim it did ("nothing reads them back,
+			// at any resolvedTarget"), which is why no MMC3 board got bank-mirror read-back
+			// until bead grm-sen5. Reading the bank BACK is resolveMirrorLoad's job below;
+			// what stays out of scope here is the bank-invariant ROM byte
+			// (MemoryLatchBankSwitchStrategy.bankInvariantRomByte), a separate widening.
 			return null;
 		}
+
+		@Override
+		public BankState resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
+				BankState inStateAtStore) {
+			return mirroredByte(resolvedTarget, inStateAtStore);
+		}
 	};
+
+	/**
+	 * {@link #callerSideHooks()}'s override (bead grm-sen5, same shape as
+	 * {@code MemoryLatchBankSwitchStrategy}'s): the same mirror answer as the direct-path
+	 * {@link #hooks} above, {@code resolveLoad} withheld per the interface's scope discipline,
+	 * and {@code isMechanismWrite} delegating to the SAME {@link #writesInRange} the direct-path
+	 * hooks use. That delegation is the mandatory half: a caller-side scan using this object is
+	 * handed the REAL tracked in-state at the call, so an {@code isMechanismWrite} answering
+	 * {@code false} would let a mirror load BEFORE an intervening select/data write resolve
+	 * against the state AFTER it. {@code StoredValueScanner}'s withdraw-on-mechanism-write
+	 * (grm-4bgh.7) prevents that once this hook says where the writes are.
+	 * <p>
+	 * This is what makes {@code LDA <identifying byte> / JSR <bank helper>} -- TMNT's
+	 * {@code cec0} shape, read at a helper call site rather than at a mechanism write --
+	 * resolvable on a select-data board at all.
+	 */
+	private final StoredValueScanner.Hooks callerSideHooks = new StoredValueScanner.Hooks() {
+		@Override
+		public boolean isMechanismWrite(Instruction instr) {
+			return writesInRange(instr) != null;
+		}
+
+		@Override
+		public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+				BankState inStateAtStore) {
+			return null; // scope discipline -- see BankSwitchStrategy.callerSideHooks()
+		}
+
+		@Override
+		public BankState resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
+				BankState inStateAtStore) {
+			return mirroredByte(resolvedTarget, inStateAtStore);
+		}
+	};
+
+	@Override
+	public StoredValueScanner.Hooks callerSideHooks() {
+		return callerSideHooks;
+	}
+
+	/**
+	 * The RAW BYTE a load of {@code target} yields when {@code target} mirrors a live bank
+	 * this mechanism tracks, or {@code null} when it mirrors nothing this strategy may answer
+	 * from tracked state (bead grm-sen5).
+	 * <p>
+	 * <b>ONLY {@link BankMirrors.Kind#ROM_IDENTIFYING} ANSWERS, AND ONLY PER WINDOW.</b> This
+	 * mechanism is the one shipped strategy that tracks SEVERAL switchable windows through
+	 * separate registers -- on MMC3, {@code $A000-$BFFF} is R7 while {@code $8000-$9FFF} is R6
+	 * (prg_mode 0) or fixed (prg_mode 1). "The bank" is therefore ambiguous until you know
+	 * WHICH window the identifying byte was read from, and the single-field reasoning
+	 * {@code MemoryLatchBankSwitchStrategy.mirroredByte} and
+	 * {@code SerialShiftBankSwitchStrategy.mirroredByte} get away with does not transfer. The
+	 * derivation records the window's bank field beside each offset
+	 * ({@link BankMirrors#identifyingField}), and the answer here is that field's tracked value
+	 * -- not the field the byte is about to be STORED to, which is a different question the
+	 * program is free to answer any way it likes (copying R7's bank into R6 is a legal program).
+	 * Every refusal below is a case where that proof is missing:
+	 * <ul>
+	 * <li>the offset carries no field (a derivation that did not attribute its window);</li>
+	 * <li>the field is not one of this mechanism's {@code targets} by name (a window banked by a
+	 * register another mechanism owns);</li>
+	 * <li>the field's width disagrees with the target's (a descriptor inconsistency).</li>
+	 * </ul>
+	 * Mode needs no check, and that is a property of the DERIVATION rather than an assumption
+	 * made here: only mode-invariant computed windows are content-scanned, so a recorded field
+	 * selects its window's bank under every mode -- MMC3's {@code WA000} is R7 in both prg_modes,
+	 * and its mode-varying {@code W8000}/{@code WC000} never produce an offset. A load of
+	 * {@code $8100} on a cartridge whose every bank holds its number at offset {@code $100} still
+	 * declines, correctly: which register (or none) that window reads through depends on
+	 * prg_mode, and nothing recorded says.
+	 * <p>
+	 * <b>Coordinates.</b> {@code inState} is this mechanism's field-local state; the answer is
+	 * the raw byte the {@code LDA} yields, which {@link #computeDataWrite}'s
+	 * {@code byteMask} extraction then narrows -- so the target's field is lifted back down to
+	 * bit 0. {@code byte == bank} was verified against every realized bank's image before the
+	 * offset was admitted, and a realized bank fits the field, so every bit above the field is
+	 * a PROVED zero -- the same derivation the other two strategies state, restated here because
+	 * it is what makes the answer a whole byte rather than a field.
+	 * <p>
+	 * <b>{@link BankMirrors.Kind#WRITE_THROUGH} DECLINES on this strategy, deliberately, and it is
+	 * a decision rather than an omission.</b> On a single-register mechanism a write-through
+	 * cell holds a copy of THE bank byte. Here a mechanism write is one of two very different
+	 * bytes -- the select/mode byte ({@code $8000}) or a bank byte ({@code $8001}) whose register
+	 * is whatever select was live at that site -- and {@link BankMirrors} carries no per-cell
+	 * record of which, so "resolve from in-state" would first have to classify the cell's
+	 * paired sites by parity and, for a data byte, recover the select at each. That is a new
+	 * inference, not a derivation. The one shipped instance (smb3's {@code f8ca LDA $0721 /
+	 * f8cd STA $8000}, the select-latch shadow restored in an interrupt epilogue) is also the
+	 * shape the answer would be WRONG for: the IRQ body switches CHR banks through direct
+	 * {@code $8000} writes that never touch {@code $0721}, so the tracked select at the load is
+	 * the IRQ's last CHR select, not the interrupted mainline's value the cell actually holds
+	 * -- exactly the grm-p9y stale-shadow defect. A coherence walk would decline it, and the
+	 * bead's own caveat is that the site would gain a classification and no annotation. That
+	 * site is retired by recognising a restore-shaped write instead (grm-sen5's second comment),
+	 * which needs no value at all and is filed separately. {@code SAVE_SLOT} and {@code INPUT}
+	 * decline as they do everywhere (H2).
+	 */
+	private BankState mirroredByte(Address target, BankState inState) {
+		if (target == null || mirrors.isEmpty()) {
+			return null;
+		}
+		BoardDescriptorModel.FieldSpec windowField = mirrors.identifyingField(target);
+		if (windowField == null) {
+			return null; // not ROM_IDENTIFYING, or its window was not attributed -- refuse
+		}
+		FieldPos pos = targetsByName.get(windowField.name());
+		if (pos == null || pos.width() != windowField.width()) {
+			return null; // banked by a register this mechanism does not track -- refuse
+		}
+		int byteMask = (1 << pos.width()) - 1;
+		int known = (inState.knownMask() >>> pos.lsb()) & byteMask;
+		int bits = (inState.bits() >>> pos.lsb()) & byteMask;
+		// byte == bank, so everything above the bank's own bits is a PROVED zero.
+		return new BankState(known | (~byteMask & 0xFF), bits);
+	}
 
 	/**
 	 * <b>No site of this mechanism imposes a bank-known-on-entry requirement that the
@@ -181,9 +332,17 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	 * </ul>
 	 * The interface's own stated condition for overriding to {@code false} is that "the
 	 * mechanism's registers are genuinely write-only and never resolved back to tracked
-	 * state". That is this mechanism exactly, and {@link #hooks}' {@code resolveLoad} above
-	 * already says so in as many words: it returns {@code null} at every {@code
-	 * resolvedTarget} because nothing reads an MMC3 select/data register back.
+	 * state". The registers are; but since bead grm-sen5 a load of a bank-identifying ROM
+	 * offset IS resolved back to tracked state ({@link #mirroredByte}), so the clause "never
+	 * resolved back" stopped being true at exactly the sites that read one. The strategy-wide
+	 * answer therefore stays {@code false} -- still right for every site that does not read a
+	 * mirror, which on a real cartridge is nearly all of them -- and the per-site overload
+	 * {@link #effectDependsOnPriorState(Program, Instruction, BankState)} below answers the
+	 * sites where it is not. That is grm-mej.2 §2d's precedent followed exactly, from the same
+	 * direction {@code SerialShiftBankSwitchStrategy} arrived at it: a hardcoded {@code false}
+	 * that would now UNDER-report, with the override stopping a real requirement from being
+	 * silently dropped (memory-latch's override runs the other way, stopping a {@code true}
+	 * default from over-reporting).
 	 * <p>
 	 * <b>Measured</b> (grm-vgod, 2026-08-23), by a rebuilt A/B over all 31 rows of both
 	 * real-ROM manifests: this removed 29 violation WARNINGs and moved nothing else -- 17 on
@@ -214,11 +373,90 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	 * analogue of nesmirrortest's M8. G11 was confirmed to FAIL on the pre-fix strategy with
 	 * "call to FUN_e2d0 requires r6 known on entry" -- two earlier drafts of that fixture
 	 * passed on unfixed code for two different reasons, so do not weaken its shape without
-	 * re-running that check; the criteria comments record both traps.
+	 * re-running that check; the criteria comments record both traps. nesmmc3test2 has no
+	 * mirrors, so it never reaches the per-site probe; nesmmc3mirrortest's MM12/MM13 (the
+	 * probe reporting a real mirror-derived requirement) and MM14 (the probe staying silent for
+	 * an unrelated failure with the mirror set non-empty) guard the overload below.
 	 */
 	@Override
 	public boolean effectDependsOnPriorState() {
 		return false;
+	}
+
+	/**
+	 * The per-site question (grm-mej.2 §2d), answered by re-running this site's own value scan
+	 * under an instrumented hook and reporting whether a MIRROR load was actually resolved
+	 * (bead grm-sen5). Same shape as {@code SerialShiftBankSwitchStrategy}'s override and for
+	 * the same reason: the strategy-wide {@code false} above would now under-report a site
+	 * whose byte came from an identifying read-back with the bank unknown -- that site
+	 * genuinely needed the bank on entry, and dropping it is how a real bank-requirement
+	 * violation goes unreported.
+	 * <p>
+	 * Mirrors the two scans {@link #computeSwitchOutcomeValue} runs, because which scan (if
+	 * any) a site performs is what decides whether a mirror could have been consulted:
+	 * <ul>
+	 * <li>an even (select) write scans its stored register under {@code 0xFF};</li>
+	 * <li>an odd (data) write scans only when the tracked select is fully known and names a
+	 * tracked target -- an unknown select poisons without scanning, and an untracked (CHR)
+	 * select deposits nothing. Neither consults a mirror, so neither can answer {@code true};
+	 * the unknown-select case's genuine requirement on {@code selectField} remains the
+	 * unexpressible third bullet above, unchanged by this.</li>
+	 * </ul>
+	 * {@code siteInState} is the real field-local in-state, never {@link BankState#unknown()}:
+	 * the sites this exists to find are those that consulted a mirror AND came up unknown, and
+	 * {@link #mirroredByte} answers non-null even when wholly unknown for that reason. Cheap by
+	 * construction -- the mirror set is empty on every board without one and the whole probe
+	 * short-circuits. Called once per site in phase 3, never inside the fixpoint.
+	 */
+	@Override
+	public boolean effectDependsOnPriorState(Program program, Instruction site,
+			BankState siteInState) {
+		if (mirrors.isEmpty() || site == null || siteInState == null) {
+			return false;
+		}
+		Long offset = writesInRange(site);
+		Character reg = offset == null ? null : StoredValueScanner.storeRegister(site);
+		if (reg == null) {
+			return false;
+		}
+		int mask;
+		if ((offset & 1) == 0) {
+			mask = 0xFF;
+		}
+		else {
+			Integer selectValue = fieldValueIfFullyKnown(siteInState, selectField);
+			FieldPos target = selectValue == null ? null : targets.get(selectValue);
+			if (target == null) {
+				return false; // poisons or deposits nothing -- no scan, no mirror
+			}
+			mask = (1 << target.width()) - 1;
+		}
+		boolean[] consulted = new boolean[1];
+		StoredValueScanner.Hooks probe = new StoredValueScanner.Hooks() {
+			@Override
+			public boolean isMechanismWrite(Instruction instr) {
+				return hooks.isMechanismWrite(instr);
+			}
+
+			@Override
+			public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+					BankState inStateAtStore) {
+				return hooks.resolveLoad(loadInstr, resolvedTarget, inStateAtStore);
+			}
+
+			@Override
+			public BankState resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
+					BankState inStateAtStore) {
+				BankState mirrored = hooks.resolveMirrorLoad(loadInstr, resolvedTarget,
+					inStateAtStore);
+				if (mirrored != null) {
+					consulted[0] = true;
+				}
+				return mirrored;
+			}
+		};
+		StoredValueScanner.resolveStoredValue(program, site, reg, siteInState, mask, probe);
+		return consulted[0];
 	}
 
 	@Override

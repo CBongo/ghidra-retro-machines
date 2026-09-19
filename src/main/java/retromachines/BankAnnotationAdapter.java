@@ -543,8 +543,14 @@ final class BankAnnotationAdapter {
 		for (ComputedWindowModel w : board.computedWindows().values()) {
 			Set<Integer> banks = bankUniverse.get(w.name());
 			if (banks != null) {
+				// The window's own bank field travels with the offsets (bead grm-sen5): on a
+				// board with several switchable windows behind separate registers (MMC3's
+				// R6/R7) it is what tells a consumer WHICH tracked field the byte reads back.
+				// Computed windows are mode-invariant by construction, which is what makes
+				// recording the field without a mode qualifier sound -- see
+				// BankMirrors.identifyingField before scanning a mode-varying window here.
 				discovery.addRomIdentifying(BankMirrors.romIdentifyingOffsets(program, w.name(),
-					w.start(), w.end(), banks));
+					w.start(), w.end(), banks), w.field());
 			}
 		}
 		// Hand over WHICH bit-field each site commits, not just the addresses: build()'s third
