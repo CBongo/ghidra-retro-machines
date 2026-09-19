@@ -1,0 +1,42 @@
+# Curated per-game descriptor (title tier). Compiled to data/games/megaman2.gmap.
+# docs/per-game-descriptors-design.md; bead grm-hb6.13 (2026-09-12).
+#
+# WHY THIS FILE EXISTS. machines/nes-mmc1.yaml's initial_state is prg_bank 0 -- the board's
+# power-on convention, not this cartridge's runtime home. The owner's hand pass (docs/human
+# recon notes.txt, "megaman2 c000"; grm-nqxt) found that RESET calls f2d1, which sets bank $E
+# and the fixed $C000 bank's house pattern throughout is "set bank $D (or $2a & 7), do stuff,
+# RESTORE BANK $E". $E is the resident home bank, reached at reset and returned to after every
+# excursion. Without this hint the non-overlay W8000 8000-bfff block holds bank 0's bytes while
+# the code that actually runs there is bank $E's -- smb3's shape from grm-3fvj, one field over.
+#
+# prg_mode is NOT hinted: mode 3 (fix-last) is both the hardware reset value and what this
+# cartridge runs -- its golden shows W8000 switchable / WC000 = PRG[last] throughout.
+#
+# KNOWN SIDE EFFECT, NOT AN IMPROVEMENT: sites that compute the bank as LDA $2a / AND #7 (c19a,
+# c461, c4af, c4d1, ...) have bits 0-2 "assumed from initial". This hint moves that assumption
+# from 0 to 14, so those sites report prg_bank 6 instead of 0 -- wrong either way, since the
+# value is a runtime cell. Do not tune this hint to make them look better; the real fix is for
+# a masked-then-unknown field to refuse rather than assume (filed separately).
+
+schema: 2
+
+game:
+  id: megaman2
+  title: "Mega Man 2 (U)"
+  board: nes_mmc1
+  identity:
+    # PRG-slice SHA-256 (16-byte iNES header excluded, no trainer), copied from the
+    # "REALROM prgsha256" line of tools/banktest/realrom/expected/megaman2.dump -- the same
+    # value NesRomLoader.gameIdentity computes at import.
+    prg_sha256: "1e588d435e75d80c5c0b578b4fa8d196f2cf4346c11c9a7b7e435d768828ad01"
+    # Whole-file SHA-256, copied from the megaman2 row of tools/banktest/realrom/manifest-gme.tsv.
+    file_sha256: "27b5a635df33ed57ed339dfc7fd62fc603b39c1d1603adb5cdc3562a0b0d555b"
+  provenance: "owner's hand pass over the pinned megaman2 real-ROM row, 2026-09-07 (grm-nqxt):
+    f2d1, called by RESET at game start, sets PRG bank $E, and every excursion from the fixed
+    $C000 bank restores bank $E afterwards -- bank 14 is this cartridge's resident $8000 home."
+
+banking:
+  # Field-NAME map, never a packed integer (the game tier does not know the board's bit
+  # layout); folded in last, after banking.initial_state_expr, by
+  # DescriptorSupport.applyGameInitialStateHint.
+  initial_state: { prg_bank: 14 }
