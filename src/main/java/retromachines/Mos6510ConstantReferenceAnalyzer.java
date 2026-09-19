@@ -36,6 +36,7 @@ package retromachines;
  */
 public class Mos6510ConstantReferenceAnalyzer extends MosConstantReferenceAnalyzer {
 
+	/** Creates the analyzer registered for 6510 processor programs. */
 	public Mos6510ConstantReferenceAnalyzer() {
 		super("6510");
 	}

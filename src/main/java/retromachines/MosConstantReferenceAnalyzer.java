@@ -77,7 +77,9 @@ import ghidra.util.task.TaskMonitor;
  */
 public abstract class MosConstantReferenceAnalyzer extends ConstantPropagationAnalyzer {
 
+	/** Name of the option controlling indexed-base reference creation. */
 	protected static final String OPTION_NAME_INDEXED_BASE = "Reference indexed operand base";
+	/** Description shown for the indexed-base reference option. */
 	protected static final String OPTION_DESCRIPTION_INDEXED_BASE =
 		"For 6502-family indexed loads/stores (zp,X / zp,Y / abs,X / abs,Y / (zp),Y) whose "
 			+ "index register value is known, place the operand-0 reference on the "
@@ -88,11 +90,18 @@ public abstract class MosConstantReferenceAnalyzer extends ConstantPropagationAn
 			+ "index selects which zero-page POINTER is read, not an offset into a fixed "
 			+ "table, so there is no single base address to name.";
 
-	/** Package-visible so {@code MosConstantReferenceAnalyzerTest} can flip it directly to
-	 *  exercise the "option off" path without going through the full {@code Options} plumbing
-	 *  when convenient, and read it back to assert the default. */
+	/**
+	 * Whether known-index references are also anchored at their operand base. Package-visible so
+	 * {@code MosConstantReferenceAnalyzerTest} can exercise the "option off" path without the
+	 * full {@code Options} plumbing and read the value back to assert the default.
+	 */
 	protected boolean referenceIndexedBase = true;
 
+	/**
+	 * Creates an analyzer that claims the specified MOS processor.
+	 *
+	 * @param processorName processor identifier used by Ghidra's language definition
+	 */
 	protected MosConstantReferenceAnalyzer(String processorName) {
 		super(processorName);
 	}
@@ -399,6 +408,7 @@ public abstract class MosConstantReferenceAnalyzer extends ConstantPropagationAn
 		return symEval.flowConstants(flowStart, flowSet, eval, true, monitor);
 	}
 
+	/** Registers the indexed-base reference option. */
 	@Override
 	public void registerOptions(Options options, Program program) {
 		super.registerOptions(options, program);
@@ -406,6 +416,7 @@ public abstract class MosConstantReferenceAnalyzer extends ConstantPropagationAn
 			OPTION_DESCRIPTION_INDEXED_BASE);
 	}
 
+	/** Applies changes to the indexed-base reference option. */
 	@Override
 	public void optionsChanged(Options options, Program program) {
 		super.optionsChanged(options, program);

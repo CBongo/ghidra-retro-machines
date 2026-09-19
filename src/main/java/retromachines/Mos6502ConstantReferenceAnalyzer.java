@@ -27,6 +27,7 @@ package retromachines;
  */
 public class Mos6502ConstantReferenceAnalyzer extends MosConstantReferenceAnalyzer {
 
+	/** Creates the analyzer registered for plain 6502 processor programs. */
 	public Mos6502ConstantReferenceAnalyzer() {
 		super("6502");
 	}

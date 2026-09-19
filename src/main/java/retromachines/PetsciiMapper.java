@@ -64,7 +64,9 @@ public final class PetsciiMapper {
 	 * uppercase letters at $61-$7A, also hex-escaped in v1).
 	 */
 	public enum Variant {
+		/** The unshifted PETSCII graphics character set. */
 		UNSHIFTED_GRAPHICS,
+		/** The shifted PETSCII character set with lowercase letters. */
 		SHIFTED_LOWERCASE
 	}
 
@@ -150,12 +152,15 @@ public final class PetsciiMapper {
 
 	/**
 	 * Loads (and caches) the bundled {@code petscii.map} through Ghidra's data-file
-	 * resolution ({@link DescriptorSupport#loadMap}, the same helper every machine
+	 * resolution ({@link DescriptorResources#loadMap(String)}, the same helper every machine
 	 * descriptor loader uses -- already generic over any bundled JSON path, so no new
 	 * shared helper was needed for this bead). Requires a running Ghidra application
 	 * ({@code Application.findDataFileInAnyModule}); tools that run outside a Ghidra
 	 * runtime (e.g. {@code tools/petscii/PetsciiMapperVerify.java}) use
 	 * {@link #loadFromMapFile(File)} instead.
+	 *
+	 * @return the cached PETSCII mapper
+	 * @throws IOException if the bundled map cannot be read
 	 */
 	public static PetsciiMapper load() throws IOException {
 		PetsciiMapper result = instance;
@@ -178,6 +183,10 @@ public final class PetsciiMapper {
 	 * without a Ghidra runtime available: that verifier lives in its own Gradle source set
 	 * (mirroring {@code tools/bitalgebra/BitAlgebraEquivalence.java}) and calls this method
 	 * on the freshly-built {@code data/petscii.map}, never {@link #load()}.
+	 *
+	 * @param mapFile the map file to read
+	 * @return a mapper loaded from the file
+	 * @throws IOException if the file cannot be read
 	 */
 	public static PetsciiMapper loadFromMapFile(File mapFile) throws IOException {
 		try (InputStream in = new FileInputStream(mapFile)) {
@@ -189,7 +198,12 @@ public final class PetsciiMapper {
 	 *  seam {@link #loadFromMapFile(File)} delegates to; also usable directly by callers that
 	 *  already have the map as a classpath resource or other {@link InputStream} rather than
 	 *  a {@link File} (e.g. a future charset SPI provider -- see grm-1.4 Phase C). Closes
-	 *  {@code in} (via the wrapping reader) before returning. */
+	 *  {@code in} (via the wrapping reader) before returning.
+	 *
+	 * @param in the UTF-8 map stream; it is closed before this method returns
+	 * @return a mapper loaded from the stream
+	 * @throws IOException if the stream cannot be read
+	 */
 	public static PetsciiMapper loadFromStream(InputStream in) throws IOException {
 		try (Reader reader = new InputStreamReader(in, StandardCharsets.UTF_8)) {
 			return new PetsciiMapper(JsonParser.parseReader(reader).getAsJsonObject());
@@ -197,13 +211,23 @@ public final class PetsciiMapper {
 	}
 
 	/** The display string for one PETSCII byte in the given variant (e.g. {@code "{clr}"},
-	 *  {@code "{$a3}"}, {@code "A"}). {@code byteValue} is masked to 8 bits. */
+	 *  {@code "{$a3}"}, {@code "A"}). {@code byteValue} is masked to 8 bits.
+	 *
+	 * @param byteValue the PETSCII byte value
+	 * @param variant the character-set variant to use
+	 * @return the escaped display string
+	 */
 	public String toDisplayEscaped(int byteValue, Variant variant) {
 		String[] table = variant == Variant.SHIFTED_LOWERCASE ? shiftedLowercase : unshiftedGraphics;
 		return table[byteValue & 0xFF];
 	}
 
-	/** The concatenated display string for a run of PETSCII bytes in the given variant. */
+	/** The concatenated display string for a run of PETSCII bytes in the given variant.
+	 *
+	 * @param bytes the PETSCII bytes
+	 * @param variant the character-set variant to use
+	 * @return the concatenated escaped display string
+	 */
 	public String toDisplayEscaped(byte[] bytes, Variant variant) {
 		StringBuilder sb = new StringBuilder(bytes.length);
 		for (byte b : bytes) {
@@ -217,6 +241,9 @@ public final class PetsciiMapper {
 	 *  Plane, via {@link Character#toChars(int)}; see class javadoc for the full policy).
 	 *  {@code byteValue} is masked to 8 bits.
 	 *
+	 * @param byteValue the PETSCII byte value
+	 * @param variant the character-set variant to use
+	 * @return the Unicode display string
 	 * @throws IllegalStateException if the loaded {@code petscii.map} predates the unicode
 	 *     layer (schema 1, no {@code unicode_variants}/{@code encode} keys)
 	 */
@@ -231,7 +258,13 @@ public final class PetsciiMapper {
 	}
 
 	/** The concatenated Unicode display string for a run of PETSCII bytes in the given
-	 *  variant. */
+	 *  variant.
+	 *
+	 * @param bytes the PETSCII bytes
+	 * @param variant the character-set variant to use
+	 * @return the concatenated Unicode display string
+	 * @throws IllegalStateException if the loaded map has no Unicode layer
+	 */
 	public String toDisplayUnicode(byte[] bytes, Variant variant) {
 		StringBuilder sb = new StringBuilder(bytes.length);
 		for (byte b : bytes) {
@@ -245,7 +278,13 @@ public final class PetsciiMapper {
 	 *  "Canonical" means the LOWEST byte value that decodes to that codepoint (see
 	 *  {@code gdtbuilder.PetsciiCompiler#buildEncodeMap}). Primarily for
 	 *  {@code tools/petscii/PetsciiMapperVerify.java}'s round-trip checks and the future
-	 *  charset SPI encoder (grm-1.4 Phase C), not commonly needed by ordinary callers. */
+	 *  charset SPI encoder (grm-1.4 Phase C), not commonly needed by ordinary callers.
+	 *
+	 * @param codepoint the Unicode codepoint to look up
+	 * @param variant the character-set variant to use
+	 * @return the canonical PETSCII byte, or {@code null} if it is not encoded
+	 * @throws IllegalStateException if the loaded map has no Unicode encode layer
+	 */
 	public Integer encodeUnicode(int codepoint, Variant variant) {
 		Map<Integer, Integer> encode =
 			variant == Variant.SHIFTED_LOWERCASE ? shiftedLowercaseEncode : unshiftedGraphicsEncode;

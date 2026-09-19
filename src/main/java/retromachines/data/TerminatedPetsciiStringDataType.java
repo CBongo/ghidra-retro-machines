@@ -28,13 +28,20 @@ import ghidra.program.model.data.StringLayoutEnum;
  */
 public class TerminatedPetsciiStringDataType extends AbstractStringDataType {
 
+	/** Shared built-in instance used by Ghidra's data-type registration. */
 	public static final TerminatedPetsciiStringDataType dataType =
 		new TerminatedPetsciiStringDataType();
 
+	/** Creates the built-in data type without a data-type manager. */
 	public TerminatedPetsciiStringDataType() {
 		this(null);
 	}
 
+	/**
+	 * Creates this data type associated with the supplied manager.
+	 *
+	 * @param dtm the data-type manager, or {@code null} for an unmanaged instance
+	 */
 	public TerminatedPetsciiStringDataType(DataTypeManager dtm) {
 		super("TerminatedPetsciiString", // data type name
 			"petscii", // mnemonic
@@ -49,6 +56,12 @@ public class TerminatedPetsciiStringDataType extends AbstractStringDataType {
 		);
 	}
 
+	/**
+	 * Returns this instance when it already belongs to {@code dtm}, otherwise creates a clone.
+	 *
+	 * @param dtm the target data-type manager
+	 * @return this data type or an equivalent instance owned by {@code dtm}
+	 */
 	@Override
 	public DataType clone(DataTypeManager dtm) {
 		if (dtm == getDataTypeManager()) {

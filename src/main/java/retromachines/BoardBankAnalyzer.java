@@ -177,12 +177,24 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			program.getListing().getNumInstructions();
 	}
 
-	/** Structural completion predicate, protected so the banktest lifecycle probe can
-	 * verify that changing rounds stay initial while stable rounds complete. */
+	/**
+	 * Structural completion predicate, protected so the banktest lifecycle probe can
+	 * verify that changing rounds stay initial while stable rounds complete.
+	 *
+	 * @param entryFingerprint the program fingerprint before an analysis round
+	 * @param exitFingerprint the program fingerprint after that round
+	 * @return whether the round left the measured program structure unchanged
+	 */
 	protected static boolean reachedFixpoint(long entryFingerprint, long exitFingerprint) {
 		return entryFingerprint == exitFingerprint;
 	}
 
+	/**
+	 * Creates a board-independent banking analyzer with the supplied Ghidra metadata.
+	 *
+	 * @param name analyzer name displayed by Ghidra
+	 * @param description analyzer description displayed by Ghidra
+	 */
 	protected BoardBankAnalyzer(String name, String description) {
 		super(name, description, AnalyzerType.INSTRUCTION_ANALYZER);
 		// Run after Ghidra's own reference analysis has laid down the default (base-space)
@@ -196,9 +208,12 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * The executable-format name of the loader whose "home-in-base" per-bank overlay
 	 * layout the engine's reference retargeting assumes (e.g. {@link C64PrgLoader#NAME}).
 	 * Only programs imported by that loader are analyzed.
+	 *
+	 * @return the supported loader's executable-format name
 	 */
 	protected abstract String getLoaderName();
 
+	/** Returns whether the program was imported by this analyzer's loader. */
 	@Override
 	public boolean canAnalyze(Program program) {
 		// Gate on the loader that produced this program: only its imports lay out memory
@@ -212,10 +227,17 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * Resource path of this program's compiled descriptor, e.g. {@code machines/c64.map}
 	 * (a per-board constant on single-board systems; read from the program on systems
 	 * where the loader chose among boards). {@code null} skips analysis.
+	 *
+	 * @param program the program being considered for analysis
+	 * @return its compiled-descriptor resource path, or {@code null} to skip analysis
 	 */
 	protected abstract String getMapPath(Program program);
 
-	/** Category used for this analyzer's bookmarks; defaults to the concrete class name. */
+	/**
+	 * Returns the bookmark category used for diagnostics emitted by this analyzer.
+	 *
+	 * @return bookmark category, defaulting to the concrete analyzer class name
+	 */
 	protected String getBookmarkCategory() {
 		return getClass().getSimpleName();
 	}
@@ -281,6 +303,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		}
 	}
 
+	/** Runs descriptor-driven bank-state recovery and overlay reference retargeting. */
 	@Override
 	public boolean added(Program program, AddressSetView set, TaskMonitor monitor, MessageLog log)
 			throws CancelledException {

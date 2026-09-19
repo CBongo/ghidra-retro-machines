@@ -47,30 +47,40 @@ public final class StopConditions {
 		this.dirtyWatch = b.dirtyWatch;
 	}
 
-	/** Maximum instructions to step before stopping with {@link StopReason#FUEL}. */
+	/** Maximum instructions to step before stopping with {@link StopReason#FUEL}.
+	 * @return the instruction budget
+	 */
 	public long instructionFuel() {
 		return instructionFuel;
 	}
 
-	/** Maximum wall-clock milliseconds before stopping with {@link StopReason#WALLCLOCK}. */
+	/** Maximum wall-clock milliseconds before stopping with {@link StopReason#WALLCLOCK}.
+	 * @return the wall-clock budget in milliseconds
+	 */
 	public long wallClockMillis() {
 		return wallClockMillis;
 	}
 
 	/** Addresses that, when reached as the program counter, stop the run with
-	 *  {@link StopReason#EXIT_RANGE}. Never null; empty means "no exit address". */
+	 *  {@link StopReason#EXIT_RANGE}. Never null; empty means "no exit address".
+	 * @return the exit address set
+	 */
 	public AddressSetView exitAddresses() {
 		return exitAddresses;
 	}
 
 	/** Target range whose full coverage by writes stops the run with
-	 *  {@link StopReason#DIRTY_WATCH}. Null means "do not watch". */
+	 *  {@link StopReason#DIRTY_WATCH}. Null means "do not watch".
+	 * @return the watched target range, or null
+	 */
 	public AddressSetView dirtyWatch() {
 		return dirtyWatch;
 	}
 
 	/** A new builder seeded with the default fuel and wall-clock budgets and no
-	 *  exit/dirty-watch conditions. */
+	 *  exit/dirty-watch conditions.
+	 * @return a new builder
+	 */
 	public static Builder builder() {
 		return new Builder();
 	}
@@ -84,31 +94,45 @@ public final class StopConditions {
 
 		private Builder() {}
 
-		/** Set the instruction budget (values &lt;= 0 fall back to {@link #DEFAULT_FUEL}). */
+	/** Set the instruction budget (values &lt;= 0 fall back to {@link #DEFAULT_FUEL}).
+		 * @param fuel requested instruction budget
+		 * @return this builder
+		 */
 		public Builder instructionFuel(long fuel) {
 			this.instructionFuel = fuel > 0 ? fuel : DEFAULT_FUEL;
 			return this;
 		}
 
-		/** Set the wall-clock budget in ms (values &lt;= 0 fall back to the default). */
+		/** Set the wall-clock budget in ms (values &lt;= 0 fall back to the default).
+		 * @param millis requested wall-clock budget
+		 * @return this builder
+		 */
 		public Builder wallClockMillis(long millis) {
 			this.wallClockMillis = millis > 0 ? millis : DEFAULT_WALLCLOCK_MILLIS;
 			return this;
 		}
 
-		/** Stop when the program counter reaches any address in {@code exits}. */
+		/** Stop when the program counter reaches any address in {@code exits}.
+		 * @param exits addresses that stop the run
+		 * @return this builder
+		 */
 		public Builder exitAddresses(AddressSetView exits) {
 			this.exitAddresses = exits != null ? exits : new AddressSet();
 			return this;
 		}
 
-		/** Stop once every address in {@code target} has been written. */
+		/** Stop once every address in {@code target} has been written.
+		 * @param target range to watch, or null to disable the watch
+		 * @return this builder
+		 */
 		public Builder dirtyWatch(AddressSetView target) {
 			this.dirtyWatch = target;
 			return this;
 		}
 
-		/** Build the immutable {@link StopConditions}. */
+		/** Build the immutable {@link StopConditions}.
+		 * @return the configured stop conditions
+		 */
 		public StopConditions build() {
 			return new StopConditions(this);
 		}

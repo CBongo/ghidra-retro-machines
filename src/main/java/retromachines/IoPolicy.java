@@ -34,7 +34,12 @@ import ghidra.program.model.mem.MemoryBlock;
 @FunctionalInterface
 public interface IoPolicy {
 
-	/** True if reads of {@code address} hit hardware I/O rather than plain memory. */
+	/**
+	 * Tests whether an address represents hardware I/O.
+	 *
+	 * @param address the address being read
+	 * @return whether reads of {@code address} hit hardware I/O rather than plain memory
+	 */
 	boolean isIo(Address address);
 
 	/**
@@ -52,7 +57,11 @@ public interface IoPolicy {
 		};
 	}
 
-	/** Policy that treats nothing as I/O (every uninitialized read is plain RAM). */
+	/**
+	 * Returns a policy that treats every uninitialized read as plain RAM.
+	 *
+	 * @return a policy that treats nothing as I/O
+	 */
 	static IoPolicy none() {
 		return address -> false;
 	}

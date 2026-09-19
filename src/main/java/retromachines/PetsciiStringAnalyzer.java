@@ -93,6 +93,7 @@ public class PetsciiStringAnalyzer extends AbstractAnalyzer {
 			DataType terminatedType) {
 	}
 
+	/** Creates the descriptor-gated PETSCII string analyzer. */
 	public PetsciiStringAnalyzer() {
 		super(NAME, DESCRIPTION, AnalyzerType.BYTE_ANALYZER);
 		// Speculative, like ASCII's own StringsAnalyzer: run late so real code/data
@@ -103,6 +104,12 @@ public class PetsciiStringAnalyzer extends AbstractAnalyzer {
 		setSupportsOneTimeAnalysis();
 	}
 
+	/**
+	 * Tests whether the program has opted into PETSCII string analysis in its descriptor.
+	 *
+	 * @param program the program to inspect
+	 * @return {@code true} when PETSCII string analysis is configured
+	 */
 	@Override
 	public boolean canAnalyze(Program program) {
 		try {
@@ -153,6 +160,16 @@ public class PetsciiStringAnalyzer extends AbstractAnalyzer {
 		return new TextConfig(minLength, variant, fixedType, terminatedType);
 	}
 
+	/**
+	 * Searches the selected address set and creates PETSCII string data types for matches.
+	 *
+	 * @param program the program being analyzed
+	 * @param set the addresses to inspect
+	 * @param monitor the task cancellation monitor
+	 * @param log the analysis message log
+	 * @return {@code true} when analysis completed or was not applicable
+	 * @throws CancelledException if the task was cancelled
+	 */
 	@Override
 	public boolean added(Program program, AddressSetView set, TaskMonitor monitor, MessageLog log)
 			throws CancelledException {
@@ -254,10 +271,17 @@ public class PetsciiStringAnalyzer extends AbstractAnalyzer {
 	private static final class PetsciiCharSetRecognizer implements CharSetRecognizer {
 		private final boolean shifted;
 
+		/** Creates a recognizer for the selected PETSCII variant. */
 		PetsciiCharSetRecognizer(String variant) {
 			this.shifted = "shifted_lowercase".equals(variant);
 		}
 
+		/**
+		 * Tests whether a byte belongs to this recognizer's printable PETSCII ranges.
+		 *
+		 * @param c the byte value to test
+		 * @return {@code true} when the value is recognized
+		 */
 		@Override
 		public boolean contains(int c) {
 			if (c >= 0x20 && c <= 0x5F) {

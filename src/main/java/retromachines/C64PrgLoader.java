@@ -22,23 +22,32 @@ import ghidra.app.util.importer.MessageLog;
 
 /** Commodore 64 instantiation of the shared descriptor-driven CBM PRG loader. */
 public class C64PrgLoader extends AbstractCbmPrgLoader {
+	/** Creates a loader for C64 PRG files. */
+	public C64PrgLoader() {
+	}
+
+	/** The loader name shown by Ghidra for C64 PRG files. */
 	public static final String NAME = "Commodore 64 PRG";
 
+	/** Returns the display name registered for this loader. */
 	@Override
 	public String getName() {
 		return NAME;
 	}
 
+	/** Returns the compiled C64 memory-map descriptor. */
 	@Override
 	protected String getMapPath() {
 		return "machines/c64.map";
 	}
 
+	/** Returns the descriptor machine identifier for C64-specific policies. */
 	@Override
 	protected String getMachineId() {
 		return "c64";
 	}
 
+	/** Reports placement-specific diagnostics for images touching the 6510 port. */
 	@Override
 	protected void afterPrgPlacement(Program program, List<PrgSlice> slices, MessageLog log) {
 		// This used to also copy the four "Retro Machines.CBM PRG *" Program-Info

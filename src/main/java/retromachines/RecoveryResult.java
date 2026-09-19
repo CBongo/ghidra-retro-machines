@@ -47,28 +47,38 @@ public class RecoveryResult {
 		this.stepsExecuted = stepsExecuted;
 	}
 
-	/** The set of addresses the emulated code wrote (memory space only; registers excluded). */
+	/** The set of addresses the emulated code wrote (memory space only; registers excluded).
+	 * @return the dirty address set
+	 */
 	public AddressSetView dirty() {
 		return dirty;
 	}
 
-	/** Why the run stopped. */
+	/** Why the run stopped.
+	 * @return the stop reason
+	 */
 	public StopReason stopReason() {
 		return stopReason;
 	}
 
-	/** The provenance log (I/O reads, uninitialized-RAM reads, warnings). */
+	/** The provenance log (I/O reads, uninitialized-RAM reads, warnings).
+	 * @return the provenance log
+	 */
 	public ProvenanceLog provenance() {
 		return provenance;
 	}
 
-	/** Number of instructions actually stepped. */
+	/** Number of instructions actually stepped.
+	 * @return the number of instructions
+	 */
 	public long stepsExecuted() {
 		return stepsExecuted;
 	}
 
 	/** The recovered dirty ranges keyed by start address (unmodifiable). Each value holds the
-	 *  post-run bytes for one coalesced range beginning at its key. */
+	 *  post-run bytes for one coalesced range beginning at its key.
+	 * @return the recovered ranges
+	 */
 	public NavigableMap<Address, byte[]> recoveredRanges() {
 		return Collections.unmodifiableNavigableMap(recovered);
 	}

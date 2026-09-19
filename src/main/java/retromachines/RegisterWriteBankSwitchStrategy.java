@@ -48,16 +48,21 @@ import ghidra.program.model.listing.Program;
  * loaded language lacks that register (the 6502 fallback), only the address path fires.
  */
 public class RegisterWriteBankSwitchStrategy implements BankSwitchStrategy {
+	/** Creates an unconfigured register-write strategy. */
+	public RegisterWriteBankSwitchStrategy() {
+	}
 
 	private Address mechAddr;
 	private Register mechReg;
 	private int mask;
 
+	/** Returns the descriptor strategy identifier. */
 	@Override
 	public String strategyName() {
 		return "register-write";
 	}
 
+	/** Configures the mapped address/register and tracked state mask. */
 	@Override
 	public void configure(Program program, JsonObject params, int stateMask) {
 		long address = params.get("address").getAsLong();
@@ -94,6 +99,7 @@ public class RegisterWriteBankSwitchStrategy implements BankSwitchStrategy {
 		}
 	};
 
+	/** Computes the state effect of a register write, or {@code null} when unmatched. */
 	@Override
 	public SwitchOutcome computeSwitchOutcome(Program program, Instruction instr,
 			BankState inState) {
@@ -112,6 +118,7 @@ public class RegisterWriteBankSwitchStrategy implements BankSwitchStrategy {
 		return SwitchOutcome.of(scan.value(), scan.stop());
 	}
 
+	/** Classifies an unresolved write while scanning a helper body. */
 	@Override
 	public ValueStop classifyHelperBodyGap(Program program, Instruction switchSite,
 			BankState inState, Address helperEntry) {

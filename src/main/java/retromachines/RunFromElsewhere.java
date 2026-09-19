@@ -70,12 +70,16 @@ public final class RunFromElsewhere {
 	public record Result(TransferPlacement placement, String blockName, boolean alreadyPresent,
 			String detail) {
 
-		/** Whether bytes were placed by <em>this</em> call. */
+		/** Whether bytes were placed by <em>this</em> call.
+		 * @return true if this call materialized bytes
+		 */
 		public boolean materialized() {
 			return placement != TransferPlacement.SKIPPED;
 		}
 
-		/** Whether the destination now holds the copy, whether or not this call put it there. */
+		/** Whether the destination now holds the copy, whether or not this call put it there.
+		 * @return true if the destination is satisfied
+		 */
 		public boolean satisfied() {
 			return materialized() || alreadyPresent;
 		}
@@ -107,13 +111,19 @@ public final class RunFromElsewhere {
 			this.len = len;
 		}
 
-		/** How source bytes map to destination bytes. Default {@link TransferTransform#IDENTITY}. */
+		/** How source bytes map to destination bytes. Default {@link TransferTransform#IDENTITY}.
+		 * @param value the transform to apply
+		 * @return this request
+		 */
 		public Request transform(TransferTransform value) {
 			this.transform = value;
 			return this;
 		}
 
-		/** Placement override. Default {@link TransferTarget#SAME_SPACE} (materializer chooses). */
+		/** Placement override. Default {@link TransferTarget#SAME_SPACE} (materializer chooses).
+		 * @param value the placement target
+		 * @return this request
+		 */
 		public Request target(TransferTarget value) {
 			this.target = value;
 			return this;
@@ -123,25 +133,37 @@ public final class RunFromElsewhere {
 		 * The instruction to anchor the provenance bookmark and EOL comment to -- the copy site.
 		 * Default null: no site annotation, only the bookmark at the destination. A descriptor
 		 * directive has no instruction to point at, so null is a real case, not just an omission.
+		 *
+		 * @param value the copy-site address, or null
+		 * @return this request
 		 */
 		public Request provenanceSite(Address value) {
 			this.provenanceSite = value;
 			return this;
 		}
 
-		/** Whether to disassemble the destination after materializing it. Default false. */
+		/** Whether to disassemble the destination after materializing it. Default false.
+		 * @param value true to disassemble the destination
+		 * @return this request
+		 */
 		public Request disassemble(boolean value) {
 			this.disassemble = value;
 			return this;
 		}
 
-		/** Whether to create a function at the entry point. Default false; implies disassembly. */
+		/** Whether to create a function at the entry point. Default false; implies disassembly.
+		 * @param value true to create a function
+		 * @return this request
+		 */
 		public Request makeFunction(boolean value) {
 			this.makeFunction = value;
 			return this;
 		}
 
-		/** Address to disassemble from; may sit mid-range. Default: the destination start. */
+		/** Address to disassemble from; may sit mid-range. Default: the destination start.
+		 * @param value the disassembly entry point
+		 * @return this request
+		 */
 		public Request entryPoint(Address value) {
 			this.entryPoint = value;
 			return this;
@@ -151,6 +173,9 @@ public final class RunFromElsewhere {
 		 * The call/jump that enters the destination, used to bridge a reference into an overlay
 		 * copy. Default null. Only consulted for the overlay placement -- an in-place copy's
 		 * references resolve natively.
+		 *
+		 * @param value the call or jump address
+		 * @return this request
 		 */
 		public Request jumpSite(Address value) {
 			this.jumpSite = value;
@@ -160,6 +185,9 @@ public final class RunFromElsewhere {
 		/**
 		 * What produced this transfer, as it should read in provenance text: "copy loop",
 		 * "descriptor copied_from hint", "manual transfer". Default "transfer".
+		 *
+		 * @param value the provenance label
+		 * @return this request
 		 */
 		public Request originLabel(String value) {
 			this.originLabel = value;
@@ -170,6 +198,10 @@ public final class RunFromElsewhere {
 	/**
 	 * Start building a transfer.
 	 *
+	 * @param srcStart first source address
+	 * @param dstStart first destination address
+	 * @param len number of bytes to transfer
+	 * @return a mutable transfer request
 	 * @throws IllegalArgumentException if either address is null or {@code len} is not positive
 	 */
 	public static Request request(Address srcStart, Address dstStart, int len) {

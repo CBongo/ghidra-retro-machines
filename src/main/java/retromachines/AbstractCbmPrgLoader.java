@@ -73,6 +73,10 @@ import retromachines.DescriptorMemory.Perms;
 // visibility.
 public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader {
 
+	/** Constructs a descriptor-driven Commodore PRG loader. */
+	public AbstractCbmPrgLoader() {
+	}
+
 	// Safety fallback only: each descriptor names its preferred language. Stock 6502 is
 	// used solely if that language is unavailable.
 	private static final String FALLBACK_LANGUAGE_ID = "6502:LE:16:default";
@@ -85,25 +89,60 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 	// see {@link PrgPlacement} (grm-hap item 4).
 	static final String PRG_SLICES_PROPERTY = "Retro Machines.CBM PRG Slices";
 
+	/**
+	 * Returns this machine's compiled descriptor.
+	 *
+	 * @return the bundled compiled-descriptor resource path for this machine
+	 */
 	protected abstract String getMapPath();
 
+	/**
+	 * Derives the companion data-type archive path from the descriptor path.
+	 *
+	 * @return the bundled data-type archive path corresponding to {@link #getMapPath()}
+	 */
 	protected String getGdtPath() {
 		String mapPath = getMapPath();
 		return mapPath.endsWith(".map") ? mapPath.substring(0, mapPath.length() - 4) + ".gdt"
 				: mapPath + ".gdt";
 	}
 
+	/**
+	 * Returns the machine identifier used for persisted loader preferences.
+	 *
+	 * @return the stable descriptor machine identifier
+	 */
 	protected abstract String getMachineId();
 
+	/**
+	 * Tests whether a descriptor node accepts additional PRG slices.
+	 *
+	 * @param node a descriptor node that may describe an additional PRG placement target
+	 * @return whether the node accepts PRG placement
+	 */
 	protected boolean isAdditionalPrgTarget(JsonObject node) {
 		return node.has("prg_placeable") && node.get("prg_placeable").getAsBoolean();
 	}
 
-	/** Extra recognition after the generic .prg/header/length checks. */
+	/**
+	 * Extra recognition after the generic .prg/header/length checks.
+	 *
+	 * @param provider the candidate PRG byte provider
+	 * @param loadAddress the little-endian load address from the PRG header
+	 * @param payloadLength the number of bytes after the PRG header
+	 * @return whether this machine-specific loader recognizes the candidate
+	 */
 	protected boolean recognizesPrg(ByteProvider provider, long loadAddress, long payloadLength) {
 		return true;
 	}
 
+	/**
+	 * Performs machine-specific work after every PRG slice has been placed.
+	 *
+	 * @param program the program receiving the PRG
+	 * @param slices the placed PRG slices
+	 * @param log the import log
+	 */
 	protected void afterPrgPlacement(Program program, List<PrgSlice> slices, MessageLog log) {
 	}
 
@@ -576,8 +615,15 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 	// Descriptor / archive loading
 	// ------------------------------------------------------------------
 
-	/** {@link CbmBasicWalker#isBasicStart} over this PRG's raw bytes (2-byte load-address
-	 *  header already consumed by the caller). */
+	/**
+	 * {@link CbmBasicWalker#isBasicStart} over this PRG's raw bytes (2-byte load-address
+	 * header already consumed by the caller).
+	 *
+	 * @param provider the PRG byte provider, including its two-byte header
+	 * @param loadAddr the PRG load address
+	 * @param prgLength the payload length, excluding the header
+	 * @return whether the payload starts with a structurally valid BASIC line
+	 */
 	protected static boolean looksLikeBasicStart(ByteProvider provider, long loadAddr,
 			long prgLength) {
 		long limitAddr = loadAddr + prgLength;
@@ -850,18 +896,31 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 	 * {@code wrapped} reproduces exactly what {@code load()} computes locally before
 	 * placement ({@code prgLength > 0x10000 - loadAddr}); the payload runs past $FFFF and
 	 * continues in low memory, so the image is not one ascending address interval.
+	 *
+	 * @param loadAddress the address of the first payload byte, or {@code -1} when unplaced
+	 * @param length the total placed payload length, or {@code -1} when unplaced
+	 * @param wrapped whether placement continued through address zero after {@code $FFFF}
 	 */
 	public static record PrgPlacement(long loadAddress, long length, boolean wrapped) {
 		static final PrgPlacement NONE = new PrgPlacement(-1, -1, false);
 
-		/** True when a load interval is known, i.e. some PRG bytes were actually placed. */
+		/**
+		 * Tests whether any PRG payload bytes were placed.
+		 *
+		 * @return whether a load interval is known, i.e. some PRG bytes were actually placed
+		 */
 		public boolean isPlaced() {
 			return loadAddress >= 0 && length >= 0;
 		}
 	}
 
-	/** Public so the banktest harness can assert these values the same way the analyzer
-	 *  derives them, rather than reading a separately-persisted copy that could disagree. */
+	/**
+	 * Public so the banktest harness can assert these values the same way the analyzer
+	 * derives them, rather than reading a separately-persisted copy that could disagree.
+	 *
+	 * @param program the imported program containing persisted PRG-slice metadata
+	 * @return the placement derived from the persisted slices
+	 */
 	public static PrgPlacement getPrgPlacement(Program program) {
 		return placementOf(getLoadedSlices(program));
 	}

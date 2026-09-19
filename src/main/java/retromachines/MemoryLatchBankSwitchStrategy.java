@@ -94,6 +94,9 @@ import ghidra.program.model.symbol.Reference;
  * mechanism's own fields are contiguous.
  */
 public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
+	/** Creates an unconfigured memory-latch strategy. */
+	public MemoryLatchBankSwitchStrategy() {
+	}
 
 	private AddressSpace space;
 	private long rangeStart;
@@ -155,11 +158,13 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 *  assert more. */
 	private static final int MAX_COHERENCE_SCAN = 64;
 
+	/** Returns the descriptor strategy identifier. */
 	@Override
 	public String strategyName() {
 		return "memory-latch";
 	}
 
+	/** Records mirror locations that may provide bank values during recovery. */
 	@Override
 	public void observeMirrors(BankMirrors observed) {
 		mirrors = observed == null ? BankMirrors.none() : observed;
@@ -201,6 +206,13 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 		return false;
 	}
 
+	/**
+	 * Configures latch range, field extraction, bus-conflict behavior, and overlay snapshots.
+	 *
+	 * @param program program whose address space and memory blocks are analyzed
+	 * @param params descriptor parameters for this memory latch
+	 * @param stateMask mask for the mechanism's field-local state bits
+	 */
 	@Override
 	public void configure(Program program, JsonObject params, int stateMask) {
 		space = program.getAddressFactory().getDefaultAddressSpace();
@@ -286,6 +298,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 		}
 	};
 
+	/** Returns hooks used when scanning direct and caller-side stored values. */
 	@Override
 	public StoredValueScanner.Hooks callerSideHooks() {
 		return callerSideHooks;
@@ -474,6 +487,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 		return false; // budget exhausted: fail closed
 	}
 
+	/** Computes the bank effect of a direct write to the configured latch range. */
 	@Override
 	public SwitchOutcome computeSwitchOutcome(Program program, Instruction instr,
 			BankState inState) {
@@ -487,6 +501,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 		return SwitchOutcome.of(scan.value(), scan.stop());
 	}
 
+	/** Classifies an unresolved latch write encountered inside a helper body. */
 	@Override
 	public ValueStop classifyHelperBodyGap(Program program, Instruction switchSite,
 			BankState inState, Address helperEntry) {
@@ -660,6 +675,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * env-bearing evaluation exists at all. The result is used for this one call site's
 	 * {@code CallEffect} and is never attributed to {@code switchSite}.
 	 */
+	/** Recovers a helper's latch write using the caller's register environment. */
 	@Override
 	public HelperDeposit depositHelperArgument(Program program, Instruction switchSite,
 			BankState argValue, BankState inState, int stateMask, RegisterEnv callerRegs) {
@@ -695,6 +711,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * Keep this in sync with {@link #depositHelperArgument} above: if that override ever grows
 	 * a path that reads {@code argValue}, this must go back to the default {@code true}.
 	 */
+	/** Returns whether helper argument recovery is consumed by this strategy. */
 	@Override
 	public boolean consumesHelperArgument() {
 		return false;
@@ -728,6 +745,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * Called once per site in the analyzer's phase 3, never inside the fixpoint, so re-running the
 	 * evaluation here is not on any hot path.
 	 */
+	/** Reports whether this site actually depends on the incoming bank state. */
 	@Override
 	public boolean effectDependsOnPriorState(Program program, Instruction site,
 			BankState siteInState) {

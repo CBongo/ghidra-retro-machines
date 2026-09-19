@@ -156,7 +156,11 @@ public final class BankMirrors {
 		this.identifyingFieldByOffset = identifyingFieldByOffset;
 	}
 
-	/** The empty set -- what every board with no derivable mirror gets. */
+	/**
+	 * Returns the shared empty mirror set.
+	 *
+	 * @return the empty set used by every board with no derivable mirror
+	 */
 	public static BankMirrors none() {
 		return EMPTY;
 	}
@@ -194,6 +198,11 @@ public final class BankMirrors {
 			Map.copyOf(identifyingFields));
 	}
 
+	/**
+	 * Tests whether any mirrors were discovered.
+	 *
+	 * @return whether this set contains no bank mirrors
+	 */
 	public boolean isEmpty() {
 		return byOffset.isEmpty();
 	}
@@ -202,6 +211,9 @@ public final class BankMirrors {
 	 * What {@code addr} mirrors, or an empty set when it mirrors nothing. Normalizes
 	 * {@code addr} to the physical bus first, so an overlay-space query for an offset recorded
 	 * in base space matches -- see the class javadoc for why that is not optional.
+	 *
+	 * @param addr the address to query
+	 * @return the mirror kinds associated with {@code addr}, or an empty set
 	 */
 	public Set<Kind> kindsAt(Address addr) {
 		if (addr == null || baseSpace == null ||
@@ -211,7 +223,13 @@ public final class BankMirrors {
 		return byOffset.getOrDefault(addr.getOffset(), Set.of());
 	}
 
-	/** Whether {@code addr} is a mirror of exactly this kind. */
+	/**
+	 * Tests one address for one mirror kind.
+	 *
+	 * @param addr the address to query
+	 * @param kind the mirror kind to test
+	 * @return whether {@code addr} is a mirror of {@code kind}
+	 */
 	public boolean is(Address addr, Kind kind) {
 		return kindsAt(addr).contains(kind);
 	}
@@ -226,6 +244,9 @@ public final class BankMirrors {
 	 * mechanism write OUTSIDE this set wrote the latch and left the shadow holding the previous
 	 * bank. That is not an oddity but the standard interrupt-handler idiom, and it is why
 	 * increment 2's write-through read-back shipped two confidently wrong banks.
+	 *
+	 * @param addr the mirror address to query
+	 * @return the mechanism-write sites paired with {@code addr}, or an empty set
 	 */
 	public Set<Address> pairedSwitchSites(Address addr) {
 		Long offset = normalizedQueryOffset(addr);
@@ -241,6 +262,9 @@ public final class BankMirrors {
 	 * this is a mirror," not every instruction the backward walk happened to pass through. Empty
 	 * when {@code addr} is not a mirror at all, including for a set stated outright via
 	 * {@link #of}.
+	 *
+	 * @param addr the mirror address to query
+	 * @return the instructions that established {@code addr} as a mirror, or an empty set
 	 */
 	public Set<Address> evidenceSites(Address addr) {
 		Long offset = normalizedQueryOffset(addr);

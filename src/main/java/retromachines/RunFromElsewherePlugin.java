@@ -96,6 +96,11 @@ public class RunFromElsewherePlugin extends ProgramPlugin {
 	private static final String ACTION_NAME = "Run From Elsewhere Transfer";
 	private static final String MENU_ITEM = ACTION_NAME + "...";
 
+	/**
+	 * Creates the manual run-from-elsewhere transfer plugin for the given tool.
+	 *
+	 * @param tool the Ghidra tool hosting this plugin
+	 */
 	public RunFromElsewherePlugin(PluginTool tool) {
 		super(tool);
 		createActions();

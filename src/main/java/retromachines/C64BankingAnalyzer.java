@@ -36,15 +36,18 @@ public class C64BankingAnalyzer extends BoardBankAnalyzer {
 			"so they point at the occupant actually being read, written (including write-under-" +
 			"ROM), or executed -- not just whatever the loader put in the base address space.";
 
+	/** Creates the C64-specific board banking analyzer. */
 	public C64BankingAnalyzer() {
 		super(NAME, DESCRIPTION);
 	}
 
+	/** Returns the loader name accepted by this analyzer. */
 	@Override
 	protected String getLoaderName() {
 		return C64PrgLoader.NAME;
 	}
 
+	/** Returns the C64 descriptor used to model bank state and memory windows. */
 	@Override
 	protected String getMapPath(Program program) {
 		return "machines/c64.map";

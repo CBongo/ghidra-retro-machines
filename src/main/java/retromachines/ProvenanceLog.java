@@ -30,6 +30,10 @@ import ghidra.program.model.address.Address;
  */
 public class ProvenanceLog {
 
+	/** Creates an empty provenance log. */
+	public ProvenanceLog() {
+	}
+
 	/** Classification of a logged event. */
 	public enum Kind {
 		/** A read of an address the {@link IoPolicy} considers hardware I/O. On real hardware
@@ -57,22 +61,33 @@ public class ProvenanceLog {
 
 	private final List<Entry> entries = new ArrayList<>();
 
-	/** Append an event. */
+	/** Append an event.
+	 * @param kind event classification
+	 * @param address address involved, or null when not applicable
+	 * @param size byte length involved, or zero when not applicable
+	 * @param detail free-text explanation
+	 */
 	public void add(Kind kind, Address address, int size, String detail) {
 		entries.add(new Entry(kind, address, size, detail));
 	}
 
-	/** All logged events, in order, unmodifiable. */
+	/** All logged events, in order, unmodifiable.
+	 * @return the logged events
+	 */
 	public List<Entry> entries() {
 		return Collections.unmodifiableList(entries);
 	}
 
-	/** True if any I/O read was observed during the run. */
+	/** True if any I/O read was observed during the run.
+	 * @return true when an I/O read was logged
+	 */
 	public boolean hasIoReads() {
 		return entries.stream().anyMatch(e -> e.kind() == Kind.IO_READ);
 	}
 
-	/** True if any read of uninitialized RAM was observed during the run. */
+	/** True if any read of uninitialized RAM was observed during the run.
+	 * @return true when an uninitialized-RAM read was logged
+	 */
 	public boolean hasUninitReads() {
 		return entries.stream().anyMatch(e -> e.kind() == Kind.UNINIT_RAM_READ);
 	}
@@ -82,6 +97,8 @@ public class ProvenanceLog {
 	 * meaning the recovered bytes should be treated as suspect. This is the signal callers
 	 * (e.g. the decrypt tier) use to downgrade a result from "apply automatically" to
 	 * "recovered, but verify" or to recommend a hardware-accurate snapshot instead.
+	 *
+	 * @return true when the result depends on an unknown read
 	 */
 	public boolean suspect() {
 		return hasIoReads() || hasUninitReads();

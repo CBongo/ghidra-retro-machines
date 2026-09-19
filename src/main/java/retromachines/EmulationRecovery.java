@@ -68,6 +68,8 @@ public class EmulationRecovery {
 	private final Program program;
 
 	/**
+	 * Creates a recovery runner over one loaded program.
+	 *
 	 * @param program the loaded program to emulate over; its language selects the processor
 	 *                and its memory blocks are the emulator's initial image
 	 */

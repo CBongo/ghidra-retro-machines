@@ -100,6 +100,9 @@ public record RegisterEnv(Address entryAddr, Address crossableJoin, BankState a,
 	 * caller's argument. A scan under this env must therefore never have its VALUE used; the
 	 * soundness argument in this record's class javadoc still applies unchanged, and is if
 	 * anything vacuous here, since there is nothing to attribute.
+	 *
+	 * @param entryAddr address at which the scan stops
+	 * @return an environment with unknown register values
 	 */
 	public static RegisterEnv entryStopOnly(Address entryAddr) {
 		return new RegisterEnv(entryAddr, BankState.unknown(), BankState.unknown(),
@@ -112,12 +115,20 @@ public record RegisterEnv(Address entryAddr, Address crossableJoin, BankState a,
 	 * "cross nothing" is the correct and overwhelmingly common answer, and because a
 	 * four-argument call site that reads {@code new RegisterEnv(entry, a, x, y)} cannot
 	 * accidentally acquire a crossable join by a later edit to some other file.
+	 *
+	 * @param entryAddr address at which the scan stops
+	 * @param a value held by A on entry
+	 * @param x value held by X on entry
+	 * @param y value held by Y on entry
 	 */
 	public RegisterEnv(Address entryAddr, BankState a, BankState x, BankState y) {
 		this(entryAddr, null, a, x, y);
 	}
 
-	/** What {@code reg} ({@code 'A'}/{@code 'X'}/{@code 'Y'}) holds on entry; unknown otherwise. */
+	/** What {@code reg} ({@code 'A'}/{@code 'X'}/{@code 'Y'}) holds on entry; unknown otherwise.
+	 * @param reg register to query
+	 * @return the register's known state, or unknown
+	 */
 	public BankState get(char reg) {
 		return switch (reg) {
 			case 'A' -> a;
@@ -127,7 +138,10 @@ public record RegisterEnv(Address entryAddr, Address crossableJoin, BankState a,
 		};
 	}
 
-	/** Whether a backward scan reaching {@code addr} should stop and adopt this environment. */
+	/** Whether a backward scan reaching {@code addr} should stop and adopt this environment.
+	 * @param addr address being considered
+	 * @return true if this environment applies at the address
+	 */
 	public boolean stopsAt(Address addr) {
 		return entryAddr != null && entryAddr.equals(addr);
 	}
@@ -142,6 +156,9 @@ public record RegisterEnv(Address entryAddr, Address crossableJoin, BankState a,
 	 * so anything looser would be crossing joins nobody proved anything about. Every other
 	 * guard the scan applies at that instruction -- fall-through linkage, the mechanism-write
 	 * abort, the step bound -- is untouched and still runs.
+	 *
+	 * @param addr address being considered
+	 * @return true if the scan may cross the join at the address
 	 */
 	public boolean mayCrossJoinAt(Address addr) {
 		return crossableJoin != null && crossableJoin.equals(addr);
