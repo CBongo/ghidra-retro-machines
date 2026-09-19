@@ -161,6 +161,34 @@ final class DescriptorSupport {
 	 */
 	static final String ASYNC_ENTRY_POINTS_PROPERTY = "Retro Machines.Async Entry Points";
 
+	/**
+	 * Program-info property carrying the iNES mapper number parsed from the cartridge header
+	 * (bead {@code grm-3ppn}): a plain decimal string for an iNES 1.0/archaic header (e.g.
+	 * {@code "4"}), or {@code "<mapper> (submapper <n>)"} when the header is NES 2.0, since NES
+	 * 2.0 headers carry a submapper number that can select a materially different board variant
+	 * under the same mapper number.
+	 * <p>
+	 * Written by {@link NesRomLoader#load} unconditionally -- a fact about the file, parsed
+	 * before board resolution and independent of whether a board descriptor was found for it --
+	 * so a rejected or unmapped mapper number is still visible on the (otherwise near-empty)
+	 * program for troubleshooting. Recorded because board names are not memorable the way mapper
+	 * numbers are; see {@link #BOARD_NAME_PROPERTY} for the human-readable counterpart.
+	 */
+	static final String INES_MAPPER_PROPERTY = "Retro Machines.iNES Mapper";
+
+	/**
+	 * Program-info property carrying the resolved board descriptor's human name (bead
+	 * {@code grm-3ppn}), e.g. {@code "NES MMC3 (iNES mapper 4)"} -- board descriptor {@code .map}
+	 * {@code name} fields are conventionally written to already include the mapper number in
+	 * parentheses (see any {@code data/machines/nes-*.map}), so this property does not need to
+	 * concatenate {@link #INES_MAPPER_PROPERTY} itself to satisfy that half of the request; it
+	 * simply publishes the name the board resolved to.
+	 * <p>
+	 * Written by {@link NesRomLoader#load} only when a board was resolved (unlike
+	 * {@link #INES_MAPPER_PROPERTY}, there is no board name to publish when none matched).
+	 */
+	static final String BOARD_NAME_PROPERTY = "Retro Machines.Board Name";
+
 	/** One {@code window:bank} token: capture group 1 = window name, 2 = bank digits. The
 	 *  separator is a colon, not '=': the headless {@code analyzeHeadless.bat} arg parser
 	 *  (cmd.exe) splits values on '=', so an '='-based grammar can't be passed on Windows. */

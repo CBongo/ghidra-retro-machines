@@ -273,8 +273,12 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 	/** The iNES header facts this loader consumes. Sizes are BYTES, not header unit counts:
 	 *  NES 2.0's exponent form (see {@link InesHeader#nes2RomSize}) can express a size that is
 	 *  not a whole number of 16 KiB PRG / 8 KiB CHR units, so a unit count cannot represent every
-	 *  legal header. */
-	private record InesHeader(long prgSize, long chrSize, int mapper, boolean trainer) {
+	 *  legal header. {@code submapper} is meaningful only when {@code nes2} is true (0 otherwise,
+	 *  since iNES 1.0/archaic headers have no submapper field at all -- 0 there would be
+	 *  indistinguishable from a real "submapper 0"). Package-private (not {@code private}) so
+	 *  {@link #mapperPropertyValue} can be exercised directly from JUnit (bead grm-3ppn). */
+	record InesHeader(long prgSize, long chrSize, int mapper, int submapper, boolean nes2,
+			boolean trainer) {
 
 		/** File offset where PRG content starts (header, then optional trainer). */
 		long prgFileOffset() {
@@ -324,13 +328,16 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 			int lowMapper = (h[6] & 0xFF) >> 4;
 			boolean nes2 = (h[7] & 0x0C) == 0x08;
 			int mapper;
+			int submapper = 0;
 			long prgSize;
 			long chrSize;
 			if (nes2) {
 				// NES 2.0: 12-bit mapper (flags6 hi | flags7 hi | flags8 lo); each ROM size is a
 				// low byte (h[4] / h[5]) plus a nibble of h[9], in either a linear or an exponent
-				// form -- nes2RomSize decodes both.
+				// form -- nes2RomSize decodes both. Byte 8's high nibble is the submapper number
+				// (its low nibble is the mapper's bits 8-11, folded into `mapper` above).
 				mapper = ((h[8] & 0x0F) << 8) | (h[7] & 0xF0) | lowMapper;
+				submapper = (h[8] & 0xFF) >> 4;
 				prgSize = nes2RomSize(h[4] & 0xFF, h[9] & 0x0F, 0x4000);
 				chrSize = nes2RomSize(h[5] & 0xFF, (h[9] & 0xFF) >> 4, 0x2000);
 			}
@@ -343,8 +350,19 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 				prgSize = (h[4] & 0xFF) * 0x4000L;
 				chrSize = (h[5] & 0xFF) * 0x2000L;
 			}
-			return new InesHeader(prgSize, chrSize, mapper, (h[6] & 0x04) != 0);
+			return new InesHeader(prgSize, chrSize, mapper, submapper, nes2, (h[6] & 0x04) != 0);
 		}
+	}
+
+	/**
+	 * Formats the {@code Retro Machines.iNES Mapper} property value (bead {@code grm-3ppn}): a
+	 * plain decimal mapper number, with the NES 2.0 submapper appended in parentheses when the
+	 * header carries one. Pure formatting, split out of {@link #load} so it is directly
+	 * JUnit-testable without a {@code ByteProvider} or a full import.
+	 */
+	static String mapperPropertyValue(InesHeader header) {
+		return header.nes2() ? header.mapper() + " (submapper " + header.submapper() + ")"
+				: Integer.toString(header.mapper());
 	}
 
 	/**
@@ -620,6 +638,13 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 			log.appendMsg("iNES header declares no usable PRG slice; skipping game identity");
 		}
 
+		// iNES mapper number (bead grm-3ppn): a fact about the file, so recorded unconditionally
+		// -- before board resolution, and even when no board matches below -- the same discipline
+		// GAME_IDENTITY_PROPERTY above follows. Owner's motivation: board names are not memorable
+		// the way mapper numbers are.
+		program.getOptions(Program.PROGRAM_INFO)
+				.setString(DescriptorSupport.INES_MAPPER_PROPERTY, mapperPropertyValue(header));
+
 		String boardId = OptionUtils.getOption(BOARD_OPTION_NAME, settings.options(), "");
 		NesBoardRegistry.Board board = boardId.isEmpty() ? NesBoardRegistry.forMapper(header.mapper())
 				: NesBoardRegistry.forId(boardId);
@@ -635,6 +660,11 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 		// record the chosen board so the bank analyzer interprets with the same descriptor
 		program.getOptions(Program.PROGRAM_INFO)
 				.setString(DescriptorSupport.MAP_PATH_PROPERTY, board.mapPath());
+		// Human board name (bead grm-3ppn), the "which board, in words" counterpart to
+		// INES_MAPPER_PROPERTY above -- board .map `name` fields already read "NES MMC3 (iNES
+		// mapper 4)"-style, so this is just publishing what the board resolved to.
+		program.getOptions(Program.PROGRAM_INFO)
+				.setString(DescriptorSupport.BOARD_NAME_PROPERTY, board.name());
 
 		// Curated per-game descriptor resolution (bead grm-hb6.12, first increment): resolve
 		// against the identity computed above -- prg_sha256 primary, file_sha256 alias -- and
