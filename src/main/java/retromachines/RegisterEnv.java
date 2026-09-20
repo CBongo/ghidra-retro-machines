@@ -15,6 +15,9 @@
  */
 package retromachines;
 
+import java.util.Map;
+import java.util.TreeMap;
+
 import ghidra.program.model.address.Address;
 
 /**
@@ -72,6 +75,23 @@ import ghidra.program.model.address.Address;
  * proved. Chained pass-through wrappers still need only one, because the address that must be
  * crossed is the innermost helper's function entry -- every outer wrapper is contiguous with
  * the next and contributes no join of its own.
+ * <p>
+ * <b>{@code armPredecessors} is the PATH-FORKING generalization of that one licensed edge</b>
+ * (bead grm-wul). Where {@code crossableJoin} licenses a walk to cross one join along its
+ * PHYSICAL fall-through predecessor, an arm map names, per join, WHICH incoming edge the walk
+ * takes: {@code join -> predecessor}, where the predecessor is the instruction (a branch, a jump,
+ * or the fall-through) that flows into the join on the path this query is asked about. The walk
+ * steps from the join straight to that predecessor, skipping the fall-through linkage test as
+ * well as the join refusal -- a branch's target is not its fall-through -- and continues under
+ * every other rule unchanged. It is the mechanism by which {@code BankDataflowEngine} evaluates
+ * a switch site ONCE PER INCOMING ARM of the join heading its block, so that
+ * {@code LDX #4 / BEQ m / LDX #6 / m: STX mechanism} resolves to {4, 6} rather than to unknown.
+ * <p>
+ * The same soundness discipline applies, in a slightly different form: an arm-derived value is
+ * only ever a claim about THAT ARM, and the engine either uses every arm's value (a fork, one
+ * element per arm) or none of them (a collapse). No single arm's value is ever attributed to the
+ * site as if it held on every path. The map is empty for every env except the ones the engine's
+ * arm enumeration builds.
  *
  * @param entryAddr     the address the scan stops at, or {@code null} for "never stop"
  * @param crossableJoin the one control-flow join a scan under this env may walk through, or
@@ -80,13 +100,50 @@ import ghidra.program.model.address.Address;
  * @param a             what A holds on entry
  * @param x             what X holds on entry
  * @param y             what Y holds on entry
+ * @param armPredecessors per control-flow join, the predecessor instruction a walk under this env
+ *                      steps to when it reaches that join (bead grm-wul); empty for "cross
+ *                      nothing beyond {@code crossableJoin}"
  */
 public record RegisterEnv(Address entryAddr, Address crossableJoin, BankState a, BankState x,
-		BankState y) {
+		BankState y, Map<Address, Address> armPredecessors) {
 
 	/** The empty environment: no entry stop, no crossable join, nothing known. */
 	public static final RegisterEnv NONE =
 		new RegisterEnv(null, BankState.unknown(), BankState.unknown(), BankState.unknown());
+
+	public RegisterEnv {
+		armPredecessors = armPredecessors == null ? Map.of() : Map.copyOf(armPredecessors);
+	}
+
+	/** An env that crosses no join and knows nothing, but follows {@code arms} at each join it names. */
+	public static RegisterEnv onArms(Map<Address, Address> arms) {
+		return new RegisterEnv(null, null, BankState.unknown(), BankState.unknown(),
+			BankState.unknown(), arms);
+	}
+
+	/** This env with {@code arms} as its arm map (replacing any it had). */
+	public RegisterEnv withArms(Map<Address, Address> arms) {
+		return new RegisterEnv(entryAddr, crossableJoin, a, x, y, arms);
+	}
+
+	/** Whether this env names any arm at all -- i.e. is a path-forking query. */
+	public boolean hasArms() {
+		return !armPredecessors.isEmpty();
+	}
+
+	/**
+	 * The predecessor a walk reaching {@code join} steps to on this env's path, or {@code null}
+	 * when this env says nothing about {@code join} (the walk then applies the ordinary linkage and
+	 * join tests).
+	 */
+	public Address armPredecessorAt(Address join) {
+		return armPredecessors.get(join);
+	}
+
+	/** {@code arms} as a deterministic (address-ordered) map, for rendering and for use as a key. */
+	public static Map<Address, Address> sortedArms(Map<Address, Address> arms) {
+		return new TreeMap<>(arms);
+	}
 
 	/**
 	 * An env that stops at {@code entryAddr} knowing NOTHING about the caller's registers --
@@ -115,6 +172,12 @@ public record RegisterEnv(Address entryAddr, Address crossableJoin, BankState a,
 	 */
 	public RegisterEnv(Address entryAddr, BankState a, BankState x, BankState y) {
 		this(entryAddr, null, a, x, y);
+	}
+
+	/** The pre-grm-wul five-argument form: no arm map. */
+	public RegisterEnv(Address entryAddr, Address crossableJoin, BankState a, BankState x,
+			BankState y) {
+		this(entryAddr, crossableJoin, a, x, y, Map.of());
 	}
 
 	/** What {@code reg} ({@code 'A'}/{@code 'X'}/{@code 'Y'}) holds on entry; unknown otherwise. */

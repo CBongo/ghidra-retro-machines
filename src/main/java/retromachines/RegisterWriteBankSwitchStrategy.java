@@ -97,6 +97,16 @@ public class RegisterWriteBankSwitchStrategy implements BankSwitchStrategy {
 	@Override
 	public SwitchOutcome computeSwitchOutcome(Program program, Instruction instr,
 			BankState inState) {
+		return computeSwitchOutcome(program, instr, inState, RegisterEnv.NONE);
+	}
+
+	/**
+	 * The direct-path evaluation, along {@code path}'s arms when it names any (bead grm-wul);
+	 * {@code RegisterEnv.NONE} for the plain question, which crosses nothing.
+	 */
+	@Override
+	public SwitchOutcome computeSwitchOutcome(Program program, Instruction instr,
+			BankState inState, RegisterEnv path) {
 		if (!writesMechanism(instr)) {
 			return null;
 		}
@@ -108,7 +118,7 @@ public class RegisterWriteBankSwitchStrategy implements BankSwitchStrategy {
 			return SwitchOutcome.of(BankState.unknown(), ValueStop.ANALYZER_LIMIT);
 		}
 		StoredValueScanner.Scan scan = StoredValueScanner.resolveStoredValueScan(program, instr,
-			reg, inState, mask, hooks, RegisterEnv.NONE);
+			reg, inState, mask, hooks, path);
 		return SwitchOutcome.of(scan.value(), scan.stop());
 	}
 

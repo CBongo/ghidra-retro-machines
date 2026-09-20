@@ -1540,6 +1540,156 @@ def make_prg_nmi():
     return bytes(prg)
 
 
+def make_prg_fork():
+    """Path-forking fixture (bead grm-wul): TWO CONSTANTS MERGING BEFORE THE SWITCH. Same
+    4-bank / 64 KiB UxROM shape as the other UxROM fixtures (machines/nes-uxrom.yaml:
+    memory-latch, shift=0, mask=0x0F, bus_conflict, range $8000-$FFFF, initial_state 0).
+
+    THE SHAPE, from blmaster's FUN_c9a4 (grm-8iy.5 section 5) in its minimal form: a two-armed
+    branch selects between two constants in X, both arms converge, and the mechanism write sits
+    ON THE MERGED PATH. Single-valued dataflow must fold the merge to unknown, and did: the
+    backward value scan refuses at the control-flow join heading the site's block. Path forking
+    evaluates the site once per incoming arm, finds {1, 2}, and carries the state forward as
+    two whole elements, so everything downstream of the switch is retargeted to BOTH banks.
+
+    RESET ($C000):
+      C000  A5 10        LDA $10       ; RAM flag -- genuinely runtime, selects the arm
+      C002  A2 01        LDX #$01      ; arm A: X = 1
+      C004  F0 02        BEQ $C008     ; ...taken straight to the merge
+      C006  A2 02        LDX #$02      ; arm B: X = 2, falls into the merge
+      C008  8E DF FF     STX $FFDF     ; THE MERGE SITE: latch <- {1, 2}. Must annotate
+                                       ;   "bank -> 1 (bank=1) | 2 (bank=2) [path fork: 2 arms]"
+      C00B  20 10 80     JSR $8010     ; -> PRG_LO_B1::8010 (primary) AND PRG_LO_B2::8010
+      C00E  AD 20 80     LDA $8020     ; -> PRG_LO_B1::8020 (primary) AND PRG_LO_B2::8020
+      C011  4C 11 C0     JMP $C011     ; self loop
+
+    NMI/IRQ handler ($C020): RTI.
+
+    $FFDF holds $FF so the bus-conflict AND is a no-op for every arm value -- the same trick
+    make_prg_nmi() uses at its handler -- since a latch target byte can equal only one of the
+    two driven values. Banks 1 and 2 each carry an RTS at $8010 (the JSR's target must be code
+    in both overlays for the retargeted call to disassemble there) and a marker at $8020.
+
+    THE CONTROL IS IN THE SIBLING FIXTURE: make_prg_forkbudget() is the same shape with FIVE
+    arms, one over the per-block fork cap, and must land the MULTI_VALUED_AT_MERGE warning
+    rather than fork. Together they pin both halves of grm-wul's ruling -- resolve within
+    budget, decline honestly outside it.
+    """
+    prg = bytearray([0x00] * PRG_SIZE)
+
+    # Bank markers at the first byte of each bank. Bank 3's marker is at file offset
+    # 0xC000, which IS CPU $C000 -- RESET's first opcode overwrites it, as in make_prg().
+    for bank in range(PRG_BANKS):
+        prg[bank * PRG_BANK_SIZE] = bank
+
+    # Banks 1 and 2: an RTS at $8010 (the forked JSR's target in BOTH overlays) and a
+    # distinct marker at $8020 (the forked data read's target).
+    for bank in (1, 2):
+        prg[bank * PRG_BANK_SIZE + 0x0010] = 0x60          # RTS
+        prg[bank * PRG_BANK_SIZE + 0x0020] = 0xA0 | bank   # marker byte
+
+    put = _bank3_putter(prg)
+
+    # --- RESET ---
+    put(0xC000, [0xA5, 0x10])              # LDA $10     (runtime flag)
+    put(0xC002, [0xA2, 0x01])              # LDX #$01    (arm A)
+    put(0xC004, [0xF0, 0x02])              # BEQ $C008
+    put(0xC006, [0xA2, 0x02])              # LDX #$02    (arm B)
+    put(0xC008, [0x8E, 0xDF, 0xFF])         # STX $FFDF   (THE MERGE SITE)
+    put(0xC00B, [0x20, 0x10, 0x80])         # JSR $8010
+    put(0xC00E, [0xAD, 0x20, 0x80])         # LDA $8020
+    put(0xC011, [0x4C, 0x11, 0xC0])         # JMP $C011   (self loop)
+
+    # --- NMI/IRQ handler ---
+    put(0xC020, [0x40])                     # RTI
+
+    # Latch target: $FF so the bus-conflict AND passes every arm value through.
+    put(0xFFDF, [0xFF])
+
+    put(0xFFFA, [0x20, 0xC0])  # NMI   -> $C020
+    put(0xFFFC, [0x00, 0xC0])  # RESET -> $C000
+    put(0xFFFE, [0x20, 0xC0])  # IRQ   -> $C020
+
+    return bytes(prg)
+
+
+def make_prg_forkbudget():
+    """The BUDGET-EXHAUSTED sibling of make_prg_fork() (bead grm-wul): FIVE constants merging
+    before the switch, one more than BankDataflowEngine.MAX_LIVE_FORKS_PER_BLOCK (4). Every
+    arm resolves -- the enumeration is not the problem -- but the fork is DENIED, the site is
+    reported unknown with ValueStop.MULTI_VALUED_AT_MERGE naming the count and the constants,
+    and nothing downstream is retargeted (the bank falls back to initial_state 0, the home
+    bank, which lives in base space and needs no reference).
+
+    RESET ($C000) -- a compare ladder dispatching on $10, each arm loading its constant:
+      C000  A5 10        LDA $10
+      C002  F0 11        BEQ $C015     ; arm 1
+      C004  C9 01        CMP #$01
+      C006  F0 12        BEQ $C01A     ; arm 2
+      C008  C9 02        CMP #$02
+      C00A  F0 13        BEQ $C01F     ; arm 3
+      C00C  C9 03        CMP #$03
+      C00E  F0 14        BEQ $C024     ; arm 4
+      C010  A2 05        LDX #$05      ; arm 5 (the ladder's default)
+      C012  4C 26 C0     JMP $C026
+      C015  A2 01        LDX #$01      ; arm 1
+      C017  4C 26 C0     JMP $C026
+      C01A  A2 02        LDX #$02      ; arm 2
+      C01C  4C 26 C0     JMP $C026
+      C01F  A2 03        LDX #$03      ; arm 3
+      C021  4C 26 C0     JMP $C026
+      C024  A2 04        LDX #$04      ; arm 4, falls into the merge
+      C026  8E DF FF     STX $FFDF     ; THE MERGE SITE: 5 arms -> DENIED, WARNING
+      C029  20 10 80     JSR $8010     ; must NOT be retargeted (bank unknown -> home)
+      C02C  4C 2C C0     JMP $C02C
+
+    NMI/IRQ handler ($C030): RTI.
+
+    Five arms rather than seventeen sites: the per-block cap is the cheaper of the two caps
+    to exceed in one function, and one fixture per cap would pin the constants' VALUES rather
+    than the mechanism. The warning text names both caps either way.
+    """
+    prg = bytearray([0x00] * PRG_SIZE)
+
+    for bank in range(PRG_BANKS):
+        prg[bank * PRG_BANK_SIZE] = bank
+    for bank in range(1, 3):
+        prg[bank * PRG_BANK_SIZE + 0x0010] = 0x60          # RTS, as in make_prg_fork()
+
+    put = _bank3_putter(prg)
+
+    put(0xC000, [0xA5, 0x10])              # LDA $10
+    put(0xC002, [0xF0, 0x11])              # BEQ $C015   (arm 1)
+    put(0xC004, [0xC9, 0x01])              # CMP #$01
+    put(0xC006, [0xF0, 0x12])              # BEQ $C01A   (arm 2)
+    put(0xC008, [0xC9, 0x02])              # CMP #$02
+    put(0xC00A, [0xF0, 0x13])              # BEQ $C01F   (arm 3)
+    put(0xC00C, [0xC9, 0x03])              # CMP #$03
+    put(0xC00E, [0xF0, 0x14])              # BEQ $C024   (arm 4)
+    put(0xC010, [0xA2, 0x05])              # LDX #$05    (arm 5)
+    put(0xC012, [0x4C, 0x26, 0xC0])         # JMP $C026
+    put(0xC015, [0xA2, 0x01])              # LDX #$01    (arm 1)
+    put(0xC017, [0x4C, 0x26, 0xC0])         # JMP $C026
+    put(0xC01A, [0xA2, 0x02])              # LDX #$02    (arm 2)
+    put(0xC01C, [0x4C, 0x26, 0xC0])         # JMP $C026
+    put(0xC01F, [0xA2, 0x03])              # LDX #$03    (arm 3)
+    put(0xC021, [0x4C, 0x26, 0xC0])         # JMP $C026
+    put(0xC024, [0xA2, 0x04])              # LDX #$04    (arm 4, falls through)
+    put(0xC026, [0x8E, 0xDF, 0xFF])         # STX $FFDF   (THE MERGE SITE)
+    put(0xC029, [0x20, 0x10, 0x80])         # JSR $8010
+    put(0xC02C, [0x4C, 0x2C, 0xC0])         # JMP $C02C
+
+    put(0xC030, [0x40])                     # RTI
+
+    put(0xFFDF, [0xFF])
+
+    put(0xFFFA, [0x30, 0xC0])  # NMI   -> $C030
+    put(0xFFFC, [0x00, 0xC0])  # RESET -> $C000
+    put(0xFFFE, [0x30, 0xC0])  # IRQ   -> $C030
+
+    return bytes(prg)
+
+
 def make_prg_mode():
     """The mode-dependent-layout fixture for nes-modetest (bead grm-aqf); see module doc."""
     prg = bytearray([0x00] * PRG_SIZE)
@@ -4017,6 +4167,63 @@ def main():
                     opcode=0xA5, opcode_name="LDA zp")
 
     _write_rom(outdir, "nesnmitest.nes", prgnmi)
+
+    prgfork = make_prg_fork()
+
+    # Sanity-check the path-forking fixture (bead grm-wul) before writing.
+    assert len(prgfork) == PRG_SIZE
+    for bank in range(PRG_BANKS - 1):  # bank 3's marker is stomped by RESET, as in make_prg()
+        assert prgfork[bank * PRG_BANK_SIZE] == bank
+    for bank in (1, 2):
+        assert prgfork[bank * PRG_BANK_SIZE + 0x0010] == 0x60          # RTS at $8010
+        assert prgfork[bank * PRG_BANK_SIZE + 0x0020] == (0xA0 | bank)  # marker at $8020
+    assert prgfork[0xC000] == 0xA5 and prgfork[0xC001] == 0x10        # LDA $10
+    assert prgfork[0xC002] == 0xA2 and prgfork[0xC003] == 0x01        # LDX #$01
+    assert prgfork[0xC004] == 0xF0 and prgfork[0xC005] == 0x02        # BEQ +2 -> $C008
+    assert 0xC006 + prgfork[0xC005] == 0xC008
+    assert prgfork[0xC006] == 0xA2 and prgfork[0xC007] == 0x02        # LDX #$02
+    assert prgfork[0xC008] == 0x8E                                    # STX abs
+    assert (prgfork[0xC009] | (prgfork[0xC00A] << 8)) == 0xFFDF
+    assert prgfork[0xC00B] == 0x20                                    # JSR
+    assert (prgfork[0xC00C] | (prgfork[0xC00D] << 8)) == 0x8010
+    assert prgfork[0xC00E] == 0xAD                                    # LDA abs
+    assert (prgfork[0xC00F] | (prgfork[0xC010] << 8)) == 0x8020
+    assert prgfork[0xC011] == 0x4C                                    # JMP self loop
+    assert (prgfork[0xC012] | (prgfork[0xC013] << 8)) == 0xC011
+    assert prgfork[0xFFDF] == 0xFF
+    _assert_vectors(prgfork, "nesforktest", handler=0xC020, reset=0xC000)
+
+    _write_rom(outdir, "nesforktest.nes", prgfork)
+
+    prgfb = make_prg_forkbudget()
+
+    # Sanity-check the budget-exhausted sibling (bead grm-wul) before writing: every branch
+    # lands on its arm's LDX, every arm reaches the merge, and the merge is the STX.
+    assert len(prgfb) == PRG_SIZE
+    for bank in range(PRG_BANKS - 1):
+        assert prgfb[bank * PRG_BANK_SIZE] == bank
+    assert prgfb[0xC000] == 0xA5 and prgfb[0xC001] == 0x10            # LDA $10
+    for beq_at, arm_at, value in ((0xC002, 0xC015, 1), (0xC006, 0xC01A, 2),
+                                  (0xC00A, 0xC01F, 3), (0xC00E, 0xC024, 4)):
+        assert prgfb[beq_at] == 0xF0, hex(beq_at)                     # BEQ
+        assert beq_at + 2 + prgfb[beq_at + 1] == arm_at, hex(beq_at)  # ...to its arm
+        assert prgfb[arm_at] == 0xA2 and prgfb[arm_at + 1] == value   # LDX #value
+    for cmp_at, value in ((0xC004, 1), (0xC008, 2), (0xC00C, 3)):
+        assert prgfb[cmp_at] == 0xC9 and prgfb[cmp_at + 1] == value   # CMP #value
+    assert prgfb[0xC010] == 0xA2 and prgfb[0xC011] == 0x05            # LDX #$05 (arm 5)
+    for jmp_at in (0xC012, 0xC017, 0xC01C, 0xC021):
+        assert prgfb[jmp_at] == 0x4C, hex(jmp_at)                     # JMP
+        assert (prgfb[jmp_at + 1] | (prgfb[jmp_at + 2] << 8)) == 0xC026, hex(jmp_at)
+    assert prgfb[0xC026] == 0x8E                                      # STX abs (the merge)
+    assert (prgfb[0xC027] | (prgfb[0xC028] << 8)) == 0xFFDF
+    assert prgfb[0xC029] == 0x20                                      # JSR
+    assert (prgfb[0xC02A] | (prgfb[0xC02B] << 8)) == 0x8010
+    assert prgfb[0xC02C] == 0x4C                                      # JMP self loop
+    assert (prgfb[0xC02D] | (prgfb[0xC02E] << 8)) == 0xC02C
+    assert prgfb[0xFFDF] == 0xFF
+    _assert_vectors(prgfb, "nesforkbudgettest", handler=0xC030, reset=0xC000)
+
+    _write_rom(outdir, "nesforkbudgettest.nes", prgfb)
 
     prgm = make_prg_mode()
 

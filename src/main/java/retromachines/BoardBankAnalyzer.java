@@ -452,13 +452,23 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 
 			SwitchResult switchResult = flow.switchResults().get(addr);
 			if (switchResult != null) {
-				BankAnnotationAdapter.Marked marked = BankAnnotationAdapter.annotateOrWarn(this,
-					program, listing, addr, switchResult.effect(), board, bankUniverse, null,
-					"Bank state becomes unknown here: mechanism write with a genuinely " +
-						"undeterminable value (value recovery could not pin down even one " +
-						"tracked bank bit -- e.g. a load of an unrelated address followed " +
-						"directly by the store, with no AND/ORA immediate to constrain it)",
-					switchResult.stop(), provenance);
+				// grm-wul: a site path forking carried forward as several states is RESOLVED, to
+				// several values -- render every arm; its merged effect is unknown and must not
+				// be read as a failed recovery. A site whose arms resolved but were DENIED by the
+				// fork budget gets the warning that names them, not the generic one.
+				BankAnnotationAdapter.Marked marked = switchResult.forked()
+						? BankAnnotationAdapter.annotateForked(this, program, listing, addr,
+							switchResult.arms(), board, bankUniverse, null, provenance)
+						: BankAnnotationAdapter.annotateOrWarn(this, program, listing, addr,
+							switchResult.effect(), board, bankUniverse, null,
+							switchResult.stop() == BankSwitchStrategy.ValueStop.MULTI_VALUED_AT_MERGE
+									? multiValuedWarning(board, switchResult.arms())
+									: "Bank state becomes unknown here: mechanism write with a " +
+										"genuinely undeterminable value (value recovery could not " +
+										"pin down even one tracked bank bit -- e.g. a load of an " +
+										"unrelated address followed directly by the store, with no " +
+										"AND/ORA immediate to constrain it)",
+							switchResult.stop(), provenance);
 				if (marked == BankAnnotationAdapter.Marked.WARNED) {
 					warnings++;
 				}
@@ -549,8 +559,30 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				// is the more specific, whole-program-derived fact.
 				BankSwitchStrategy.ValueStop callStop;
 				String honestDetail = null;
+				if (callSwitch.forked()) {
+					// grm-wul: the argument resolved along every arm of the join above this
+					// call, to several values, and the state was carried forward per arm.
+					BankAnnotationAdapter.Marked marked = BankAnnotationAdapter.annotateForked(this,
+						program, listing, addr, callSwitch.arms(), board, bankUniverse,
+						callSwitch.helperName(), provenance);
+					if (marked == BankAnnotationAdapter.Marked.WARNED) {
+						warnings++;
+					}
+					if (marked.bookmarked()) {
+						alreadyWarned.add(addr);
+					}
+					refsAdded += retargetAll(program, refMgr, baseSpace, instr, board, bankUniverse,
+						flow, addr, placementOverride, monitor, log, provenance);
+					continue;
+				}
 				if (callSwitch.secondTierRelay() && !callSwitch.argumentResolved()) {
 					callStop = BankSwitchStrategy.ValueStop.SECOND_TIER_ARGUMENT;
+				}
+				else if (callSwitch.armsDenied() && !callSwitch.argumentResolved()) {
+					// grm-wul: the arms resolved but the fork budget refused them -- ours, and
+					// named as such rather than folded into the generic argument warning.
+					callStop = BankSwitchStrategy.ValueStop.MULTI_VALUED_AT_MERGE;
+					warningText = multiValuedWarning(board, callSwitch.arms());
 				}
 				else if (callSwitch.restoreCell() != null && !callSwitch.argumentResolved()) {
 					callStop = BankSwitchStrategy.ValueStop.RESTORED_BANK;
@@ -578,8 +610,8 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				}
 			}
 
-			refsAdded += BankAnnotationAdapter.retargetReferences(this, program, refMgr, baseSpace,
-				instr, board, bankUniverse, inState, placementOverride, monitor, log, provenance);
+			refsAdded += retargetAll(program, refMgr, baseSpace, instr, board, bankUniverse, flow,
+				addr, placementOverride, monitor, log, provenance);
 		}
 
 		// Retract bank comments an EARLIER round wrote at sites this round did not annotate
@@ -627,6 +659,13 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			AnalyzerLog.info(this, tag + ": " + flow.stateIn().size() + " instructions tracked, " +
 				refsAdded + " overlay references added/confirmed, " + warnings +
 				" unknown-state warnings, " + violations + " bank-state requirement violations");
+			// grm-wul: every fork decision (grant, denial, address collapse), then the one-line
+			// per-program summary the owner's ruling makes THE measurement -- tabulated across
+			// the real-ROM tier to decide whether the caps move.
+			for (String line : flow.forkStats().log()) {
+				AnalyzerLog.info(this, tag + ": " + line);
+			}
+			AnalyzerLog.info(this, tag + ": " + flow.forkStats().summary());
 		}
 
 		// A structurally changing round is deliberately not complete and must not populate
@@ -653,6 +692,53 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			LAST_COMPLETED.put(program, new RunStamp(program.getModificationNumber(), mapPath));
 		}
 		return true;
+	}
+
+	/**
+	 * The WARNING text for a {@link BankSwitchStrategy.ValueStop#MULTI_VALUED_AT_MERGE} site
+	 * (bead grm-wul): the value here really is one of several constants selected by a branch
+	 * above, every arm resolved, and it is reported unknown only because the path-fork budget
+	 * refused to carry the arms forward. Names the count, the values and both caps, so the
+	 * population is countable in a dump and an analyst knows exactly what was declined.
+	 */
+	private static String multiValuedWarning(BoardModel board, List<BankState> arms) {
+		List<Integer> effective = new ArrayList<>();
+		for (BankState arm : arms) {
+			effective.add(arm.effective(board.initialState(), board.mask()));
+		}
+		Collections.sort(effective); // the arms come in edge order; the reader wants numeric
+		List<String> values = new ArrayList<>();
+		for (Integer v : effective) {
+			values.add(Integer.toString(v));
+		}
+		return "Bank state becomes unknown here: the value is one of " + arms.size() +
+			" constants selected by a branch above {" + String.join(", ", values) + "} -- " +
+			"every arm of the merge resolved, but the path-fork budget (" +
+			BankDataflowEngine.MAX_LIVE_FORKS_PER_BLOCK + " live forks per block, " +
+			BankDataflowEngine.MAX_FORKS_PER_FUNCTION + " per function) is exhausted, so the " +
+			"arms were not carried forward separately and the merge is reported unknown " +
+			"(grm-wul MULTI_VALUED_AT_MERGE)";
+	}
+
+	/**
+	 * Retargets {@code instr}'s references once per whole state live at {@code addr} (bead
+	 * grm-wul): a single state everywhere path forking did not reach, or one per arm downstream
+	 * of a fork, the first arm's reference primary and the rest secondary -- see the
+	 * {@code makePrimary} overload of {@link BankAnnotationAdapter#retargetReferences}.
+	 */
+	private int retargetAll(Program program, ReferenceManager refMgr, AddressSpace baseSpace,
+			Instruction instr, BoardModel board, Map<String, Set<Integer>> bankUniverse,
+			DataflowResult flow, Address addr, Map<String, Integer> placementOverride,
+			TaskMonitor monitor, MessageLog log, BankCommentProvenance provenance) {
+		int added = 0;
+		boolean primary = true;
+		for (BankState state : flow.statesAt(addr)) {
+			added += BankAnnotationAdapter.retargetReferences(this, program, refMgr, baseSpace,
+				instr, board, bankUniverse, state, placementOverride, monitor, log, provenance,
+				primary);
+			primary = false;
+		}
+		return added;
 	}
 
 	/**
