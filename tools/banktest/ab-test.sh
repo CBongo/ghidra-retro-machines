@@ -288,8 +288,36 @@ fi
 # own REPO_ROOT, so it is simplest to just never put one under a dotted path in the first
 # place, matching the existing sibling-worktree convention already in use in this checkout
 # (e.g. "ghidra-retro-machines-bisect2").
+#
+# grm-ad9s: REPO_ROOT alone is not good enough for THIS script -- REPO_ROOT is the INVOKING
+# worktree, and when this script is itself run from an agent worktree under
+# .claude/worktrees/<name>, "${REPO_ROOT}-${AB_TAG}" lands right back under .claude/, still
+# dotted, and every headless import in both throwaway worktrees fails
+# ('Path element starting with '.' is not permitted' from ProjectLocator -- reproduced
+# 2026-09-19 via `ab-test.sh HEAD~1 HEAD --only smb` from a dotted worktree). The sibling
+# convention needs to be a sibling of the MAIN checkout, not of whichever worktree happened to
+# invoke the script. `git rev-parse --path-format=absolute --git-common-dir` resolves to
+# <main-root>/.git regardless of which worktree runs it (worktrees share one common .git dir),
+# so its parent IS the main worktree root; that is stable and correct where REPO_ROOT is not.
 AB_TAG="ab-$$"
-AB_BASE="${REPO_ROOT}-${AB_TAG}"
+MAIN_GIT_DIR="$(git -C "$REPO_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || {
+	echo "ERROR: could not resolve the main worktree's common .git dir via" \
+		"'git -C \"$REPO_ROOT\" rev-parse --path-format=absolute --git-common-dir'" >&2
+	exit 1
+}
+MAIN_ROOT="$(dirname "$MAIN_GIT_DIR")"
+AB_BASE="${MAIN_ROOT}-${AB_TAG}"
+# Defensive check, not merely aspirational: if the derivation above is ever wrong for some
+# other worktree layout, fail loudly here rather than reproducing grm-ad9s's silent-import-
+# failure symptom two layers downstream, inside Ghidra's ProjectLocator.
+# _grm_path_has_dot_segment (lib/common.sh) is the same helper grm_work_dir() already uses for
+# this exact check.
+if _grm_path_has_dot_segment "$AB_BASE"; then
+	echo "ERROR: resolved AB_BASE '$AB_BASE' has a dot-leading path component -- Ghidra's" \
+		"ProjectLocator rejects this (bead grm-hhd / grm-ad9s). MAIN_GIT_DIR was" \
+		"'$MAIN_GIT_DIR'; refusing to proceed rather than fail every import downstream." >&2
+	exit 1
+fi
 mkdir -p "$AB_BASE" || { echo "ERROR: could not create $AB_BASE" >&2; exit 1; }
 echo "== ab-test work area: $AB_BASE =="
 
@@ -429,8 +457,10 @@ for i in $(seq 0 $((N_SIDES - 1))); do
 
 		# Collect a dump hash per id this repeat actually produced (PASS or FAIL rows --
 		# anything with a dump file present; SKIP/filtered rows have none).
+		rep_dump_count=0
 		for dumpfile in "$rep_work"/*.dump; do
 			[ -f "$dumpfile" ] || continue
+			rep_dump_count=$((rep_dump_count + 1))
 			id="$(basename "$dumpfile" .dump)"
 			h="$(sha256sum "$dumpfile" | cut -d' ' -f1)"
 			key="$label:$id"
@@ -445,6 +475,23 @@ for i in $(seq 0 $((N_SIDES - 1))); do
 			fi
 			cp -f "$dumpfile" "$AB_BASE/${label}__${id}__r${r}.dump"
 		done
+
+		# grm-ad9s: a side that silently failed to import EVERY row (e.g. the dotted-path
+		# ProjectLocator rejection this bead fixed, or any other blanket import failure) must
+		# never be diffed as "no change" -- catch it here, immediately, with the log path in
+		# hand, rather than waiting for the report section's much later, vaguer
+		# movement=UNKNOWN. Zero dumps with a nonzero exit (realrom-test.sh's own "REALROM
+		# check: FAIL"/usage-error convention) means every row that should have produced one
+		# didn't -- as opposed to a CLEAN rc=0 with zero dumps, which is the legitimate
+		# "every row filtered/skipped" case the existing SELECTED/COMPARED accounting below
+		# already reports honestly, and which this check must not treat as a bug.
+		if [ "$rep_dump_count" -eq 0 ] && [ "$rc" -ne 0 ]; then
+			echo "ERROR: side $label repeat $r/$REPEAT produced ZERO dump files (work dir:" \
+				"$rep_work) -- realrom-test.sh exited $rc with nothing importable. This side" \
+				"silently failed rather than actually running the rows; it must not be" \
+				"compared as if it had. See the log: $log" >&2
+			exit 1
+		fi
 	done
 
 	SIDE_EXTID[$i]="$side_extid"
