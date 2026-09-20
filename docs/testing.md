@@ -261,7 +261,7 @@ section, the install dir resolves from `ghidraTargetVersion` — no env var or `
   `ToyProgramBuilder`** — its `Toy:*:builder` language is source-only and absent from the
   binary install (`LanguageNotFoundException`).
 - **JUnit 4** (not 5): `import org.junit.*`; the Gradle task uses `useJUnit()`, not
-  `useJUnitPlatform()` (Gradle 8.5 / Java 21).
+  `useJUnitPlatform()` (wrapper: Gradle 9.7.1, since grm-arkj; Java 21 or 25).
 - The `test` source set gets its own classpath in `build.gradle` (mirrors the `gdtBuilder`
   pattern): `testImplementation` = Ghidra `fileTree` (carries `AbstractGenericTest`,
   `ProgramBuilder`, and gson) + `sourceSets.main.output` + `sourceSets.gdtBuilder.output` +

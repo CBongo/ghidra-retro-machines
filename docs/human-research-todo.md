@@ -116,13 +116,6 @@ Answered table. The per-mapper fact-sheet checklist above stands for whenever th
 
 Blocked on judgment, not effort.
 
-- [ ] **Is Gradle dependency locking + verification metadata worth it here?** (`grm-e7w`, now P4 and
-      `blocked-on-human`.) Version strings are already pinned in `build.gradle`. Full verification
-      metadata is real supply-chain hardening with real maintenance friction for a project this
-      size. A "no" is a perfectly good answer — record it and close that half.
-
-      *(The CI half of this question was answered 2026-08-15 — see the Answered table.)*
-
 - [ ] **Community disassembly licensing survey** (`grm-hb6.6` P3). The bead names licensing as "the
       gating constraint and a per-source judgment, not a policy set once". Deliverable: a table of
       *project · URL · license · redistributable? · symbol format · maintenance state* for Zelda
@@ -344,3 +337,4 @@ Agents can't file these — they need an account and CLA agreement.
 | rcproam: is its mixed PRG mode a real runtime switch, or just the MMC1 reset followed by a one-way move to mode 0? | **Mode 0, one-way. Every site that writes the control register sets the PRG-mode bits to 0, and `ff85`/`ffea` are reached from RESET alone.** (Owner, 2026-09-19.) The "mixed" reading was the reset idiom counted as a mode. So `grm-ic5`'s "known to change" branch is EMPTY across the pinned set: all three mode-0 MMC1 titles take an ordinary per-game yaml, and no by-name exception mechanism is needed — do not build one. rcproam's yaml is filed; sequence it with `grm-q1bi`'s pending re-bless since the row is bistable. | `grm-hvc1` (yaml); ruling recorded on `grm-ic5` |
 | Set-valued bank state — which of the three shapes? | **(b) path forking, instrumented with a small fork budget and warnings, so the real-ROM tier measures whether the multiplicative cost ever occurs in practice.** (Owner, 2026-09-19.) This subsumes the other two: (c) is what a budget-exhausted merge gets (an explicit `MULTI_VALUED_AT_MERGE` stop reason naming the count), and (a) done correctly — each set element correlated with the values derived from it, which `c9a4`'s per-bank table base demands — is a bounded set of whole states at a block, i.e. (b)'s data structure. Do not build (c) first; do not build a per-field set. Budget starts at 4 live forks per block / 16 per function; every collapse is logged and a per-program summary is the incidence measurement the bead's first step asked for. | `grm-wul` (ruling comment carries the design) |
 | Open-source homebrew ROMs as committable real-ROM test vectors — pursue, and if so how? | **Punted to P4, semi-open, not release-blocking. If pursued: do NOT commit the images. A separate opt-in manifest (`manifest-homebrew.tsv`, set name `homebrew`) for titles the user has built/installed locally, identified by source git commit/tag (or other build info) rather than — or as well as — a binary SHA, since a rebuild need not be byte-identical. Goldens may be recorded and committed the same way as any other row. SKIPs loudly when absent; never gates the default check.** (Owner, 2026-09-19.) The description's "runs in the default gate for everyone" framing is retired. | `grm-5ioo` |
+| Is Gradle dependency locking + verification metadata worth it here? | **Not yet — ruled 2026-09-20.** Version strings are already pinned in `build.gradle`, and the maintenance friction of verification metadata is not worth it for a single-contributor project. It becomes important if/when outside contributors are solicited; revisit then, not before. The CI half was answered 2026-08-15. | `grm-e7w` **closed** (deferred by ruling, not by neglect) |

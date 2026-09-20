@@ -71,6 +71,12 @@ bd close <id>         # Complete work
 > tiers (pure JUnit / `ProgramBuilder` JUnit / E2E golden image), when to use each, the
 > bless-review discipline, and the chunk map. The essentials are below.
 
+**Gradle comes from the committed wrapper (`./gradlew`, 9.7.1 since grm-arkj); the test scripts
+prefer it over any `gradle` on PATH.** Gradle 9.x is both floor and ceiling for now: 8.13 cannot
+create the `:test` task on JDK 25 (which the machine `JAVA_HOME` may point at for Ghidra-master
+work), and Ghidra 12.1.3's own `support/buildExtension.gradle:54` calls `Task.project` at
+execution time, which Gradle 10 removes. Do not bump past 9 until upstream fixes that.
+
 **Do not prefix gradle invocations with `GHIDRA_INSTALL_DIR=…`.** Plain `gradle <task>` is
 correct: the install dir resolves from `ghidraInstallRoot` (machine-local
 `~/.gradle/gradle.properties`, "where Ghidra installs live") composed with

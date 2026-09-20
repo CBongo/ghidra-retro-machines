@@ -115,14 +115,18 @@ else {
     # machine may be stale, so set it explicitly rather than inherit it -- same reasoning as
     # build-and-test.sh. A version mismatch hard-fails the build (grm-9r7 guard).
     $env:GHIDRA_INSTALL_DIR = $GhidraInstall
-    # No hardcoded fallback path here any more: it named a specific gradle install on the
-    # author's D: drive (grm-sp93), so for anyone else it was a confusing "file not found"
-    # standing in for the real problem, which is that gradle is not on PATH.
+    # Same resolution order as tools/banktest/lib/common.sh: an explicit override, then the
+    # committed wrapper (which pins the Gradle version -- 9.7.1 since grm-arkj -- so the GUI
+    # install and the test gate cannot drift apart), then whatever gradle is on PATH. No
+    # hardcoded fallback path: it named a specific install on the author's D: drive
+    # (grm-sp93), a confusing "file not found" for anyone else.
+    $wrapper = Join-Path $repoRoot 'gradlew.bat'
     $gradleExe = if ($env:GRM_GRADLE) { $env:GRM_GRADLE }
+                 elseif (Test-Path $wrapper) { $wrapper }
                  elseif (Get-Command gradle -ErrorAction SilentlyContinue) { 'gradle' }
                  else { $null }
     if (-not $gradleExe) {
-        Fail 'gradle not found on PATH -- set GRM_GRADLE to your gradle executable, or add gradle to PATH.'
+        Fail 'no gradle found -- the committed gradlew.bat is missing and gradle is not on PATH; set GRM_GRADLE to a gradle executable.'
     }
     Step "gradle buildExtension (GHIDRA_INSTALL_DIR=$GhidraInstall)"
     & $gradleExe -p $repoRoot buildExtension
