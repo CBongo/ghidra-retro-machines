@@ -144,10 +144,12 @@ Blocked on judgment, not effort.
 
 Agents can't file these — they need an account and CLA agreement.
 
-- [ ] **GP-6936: the upstream issue is filed — the PR, the `#4148` cross-reference, and the
-  "carry a patched install?" call remain.** (`grm-qp5x.2`.) You filed
+- [ ] **GP-6936: the upstream issue is filed and `#4148` is cross-referenced — the PR remains.**
+  (`grm-qp5x.2`.) You filed
   [NationalSecurityAgency/ghidra#9655](https://github.com/NationalSecurityAgency/ghidra/issues/9655)
-  on 2026-09-19; the root cause is condensed in the Answered table. Still yours:
+  on 2026-09-19 and posted the `#4148` cross-reference on 2026-09-20; the root cause is condensed
+  in the Answered table, and the "carry a patched install?" call is made (see the Answered table:
+  yes, locally, for now — `grm-qp5x.3`). Still yours:
 
   1. **The PR.** #9655 ends "I plan to submit a PR with this fix unless advised otherwise", so it
      is promised. The fix is the three-hunk patch on `grm-qp5x.2` — `calcScaleMask` flag placement,
@@ -162,19 +164,6 @@ Agents can't file these — they need an account and CLA agreement.
      `datatests/wraprange.xml` is expected to fail under the patch, and that is a *reading* of the
      test, not an observed failure — `decomp_test_dbg` needs `termios.h`/`dirent.d_type` and will
      not build on this machine (a Linux box, or `pacman -S gcc` under msys64).
-  2. **The `#4148` cross-reference.** #9655's body does not cite #4148, and the comment drafted
-     for #4148 on `grm-qp5x.2` is unposted (checked 2026-09-20: nothing there from you). #4148 is
-     the *other* half of GP-6936 — assigned to its own author, and its reporter re-tested on
-     12.1.3 on 2026-09-03 and still fails, now with `constructWrappingAddress`'s new throw, because
-     `allows_wrapped_range` is set only in the two `SpacebaseSpace` constructors and an ordinary
-     `ram` space can never carry it. Posting it is what turns "please drop your feature" into "the
-     flag is on the wrong space class" for the maintainer. Optional, but it makes the PR land.
-
-  And the decision this reopens on `grm-qp5x`: a patched `decompile.exe` builds in ~2 minutes, so
-  "carry a locally patched install" is a real fourth option next to (a) leave `megaman`/`wizwarr`
-  failing, (b) root-cause — done — and (c) pin the rows' analysis options. Your call, not an
-  analysis question; it decides how long those two rows stay red.
-
 - [ ] **`Loader.validateOptions()` is never called outside the GUI import dialogs — document it or
   wire it up?** (`grm-vsg`, investigated 2026-08-21.) At 12.1.3 the only callers are
   `ImporterDialog:442`, `AddToProgramDialog:82`, `LoadLibrariesOptionsDialog:60`. Not
@@ -338,3 +327,4 @@ Agents can't file these — they need an account and CLA agreement.
 | Set-valued bank state — which of the three shapes? | **(b) path forking, instrumented with a small fork budget and warnings, so the real-ROM tier measures whether the multiplicative cost ever occurs in practice.** (Owner, 2026-09-19.) This subsumes the other two: (c) is what a budget-exhausted merge gets (an explicit `MULTI_VALUED_AT_MERGE` stop reason naming the count), and (a) done correctly — each set element correlated with the values derived from it, which `c9a4`'s per-bank table base demands — is a bounded set of whole states at a block, i.e. (b)'s data structure. Do not build (c) first; do not build a per-field set. Budget starts at 4 live forks per block / 16 per function; every collapse is logged and a per-program summary is the incidence measurement the bead's first step asked for. | `grm-wul` (ruling comment carries the design) |
 | Open-source homebrew ROMs as committable real-ROM test vectors — pursue, and if so how? | **Punted to P4, semi-open, not release-blocking. If pursued: do NOT commit the images. A separate opt-in manifest (`manifest-homebrew.tsv`, set name `homebrew`) for titles the user has built/installed locally, identified by source git commit/tag (or other build info) rather than — or as well as — a binary SHA, since a rebuild need not be byte-identical. Goldens may be recorded and committed the same way as any other row. SKIPs loudly when absent; never gates the default check.** (Owner, 2026-09-19.) The description's "runs in the default gate for everyone" framing is retired. | `grm-5ioo` |
 | Is Gradle dependency locking + verification metadata worth it here? | **Not yet — ruled 2026-09-20.** Version strings are already pinned in `build.gradle`, and the maintenance friction of verification metadata is not worth it for a single-contributor project. It becomes important if/when outside contributors are solicited; revisit then, not before. The CI half was answered 2026-08-15. | `grm-e7w` **closed** (deferred by ruling, not by neglect) |
+| GP-6936: leave `megaman`/`wizwarr` red until upstream moves, or carry a locally patched `decompile.exe`? | **Carry a locally patched install, for now — ruled 2026-09-20.** Option (d) over (a)/(c): the three-hunk patch on `grm-qp5x.2` is measured to fix both halves of GP-6936 with no row regressing across 33 cartridges, and a patched `decompile.exe` builds in ~2 minutes. Note the `#4148` cross-reference was posted the same day (item retired); only the PR itself is still open upstream. Implementation and the golden-honesty question (goldens blessed on a non-shipping toolchain must say so) are agent work on `grm-qp5x.3`. | `grm-qp5x.3` (new); `grm-qp5x.2` keeps the PR |
