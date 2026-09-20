@@ -7,6 +7,7 @@ BLOCK PRG_LO_B1 8000-bfff overlay=true
 BLOCK PRG_LO_B2 8000-bfff overlay=true
 BLOCK PRG_LO_B3 8000-bfff overlay=true
 BLOCK RAM 0000-07ff overlay=false
+COMMENT c026 bank ? [WARNING: fork budget]
 BOOKMARK Warning c026
 SYMBOL 2000 PPUCTRL IMPORTED primary=true
 SYMBOL 2001 PPUMASK IMPORTED primary=true

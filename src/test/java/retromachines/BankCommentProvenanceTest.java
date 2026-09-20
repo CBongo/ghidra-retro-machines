@@ -230,4 +230,53 @@ public class BankCommentProvenanceTest {
 	public void onlyOneOccurrenceIsRemoved() {
 		assertEquals(OURS, BankCommentProvenance.removeSegment(OURS + "; " + OURS, OURS));
 	}
+
+	// ------------------------------------------------------------------
+	// The marker FAMILY (bead grm-3ou part 2): "bank ->" and "bank ?" share one slot
+	// ------------------------------------------------------------------
+
+	private static final String GAP_MARKER = "bank ?";
+	private static final String GAP = "bank ? via FUN_c170 [WARNING: analyzer limit]";
+
+	/**
+	 * A site that was a gap in an earlier round and RESOLVES in this one must have its gap
+	 * comment replaced by the bank comment, not the bank comment appended beside it. This is
+	 * the case that would break if the family were checked against the RAW existing comment:
+	 * our own recorded gap carries a family marker, and would wrongly read as "another writer
+	 * got here first". The recorded-segment removal must run before the family test.
+	 */
+	@Test
+	public void aResolvedSiteRefreshesItsOwnEarlierGapComment() {
+		Plan plan = BankCommentProvenance.plan(GAP, GAP, OURS, MARKER, GAP_MARKER);
+		assertTrue(plan.write());
+		assertEquals(OURS, plan.comment());
+		assertEquals(OURS, plan.record());
+	}
+
+	/** And the reverse: a site that regresses to a gap replaces its earlier bank comment. */
+	@Test
+	public void aRegressedSiteRefreshesItsOwnEarlierBankComment() {
+		Plan plan = BankCommentProvenance.plan(OURS, USER + "; " + OURS, GAP, MARKER, GAP_MARKER);
+		assertTrue(plan.write());
+		assertEquals(USER + "; " + GAP, plan.comment());
+	}
+
+	/**
+	 * A gap comment ANOTHER writer placed this round (nothing recorded for us) makes a bank
+	 * comment defer, exactly as an existing bank comment would -- one annotation slot per
+	 * address, so the record can never hold one segment while the listing carries two of ours.
+	 */
+	@Test
+	public void aBankCommentDefersToAnotherWritersGapComment() {
+		assertFalse(BankCommentProvenance.plan(null, GAP, OURS, MARKER, GAP_MARKER).write());
+		assertFalse(BankCommentProvenance.plan(null, OURS, GAP, MARKER, GAP_MARKER).write());
+	}
+
+	/** With only the one marker named, the other family member is just text: appended. */
+	@Test
+	public void aSingleMarkerDoesNotDeferToTheOtherFamilyMember() {
+		Plan plan = BankCommentProvenance.plan(null, GAP, OURS, MARKER);
+		assertTrue(plan.write());
+		assertEquals(GAP + "; " + OURS, plan.comment());
+	}
 }

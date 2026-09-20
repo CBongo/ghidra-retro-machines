@@ -146,12 +146,18 @@ final class BankCommentProvenance {
 	 * @param recorded what this analyzer last recorded writing here, or null if nothing
 	 * @param existing the current comment, or null
 	 * @param text the annotation this round wants to place
-	 * @param marker the caller's idempotence key (see {@link AnnotationGuard#addComment}); when
-	 *            the remaining text already carries it, another writer in THIS round got there
-	 *            first and we defer, preserving the deferral
-	 *            {@code annotatePlacementProvenance} documents
+	 * @param markers the caller's idempotence keys (see {@link AnnotationGuard#addComment}); when
+	 *            the remaining text already carries ANY of them, another writer in THIS round got
+	 *            there first and we defer, preserving the deferral
+	 *            {@code annotatePlacementProvenance} documents. Several, not one, because the
+	 *            analyzer's bank annotations form a FAMILY -- a resolved {@code bank ->} and an
+	 *            unresolved {@code bank ?} (bead grm-3ou part 2) -- and this record holds ONE
+	 *            segment per address: two family members stacking at one site would orphan the
+	 *            first from retraction, so each defers to the other exactly as it defers to
+	 *            itself. Only the deferral test widens; the recorded-segment refresh above still
+	 *            replaces our own earlier text whichever member it was.
 	 */
-	static Plan plan(String recorded, String existing, String text, String marker) {
+	static Plan plan(String recorded, String existing, String text, String... markers) {
 		String base = existing;
 		if (recorded != null) {
 			if (recorded.equals(text) && containsSegment(existing, recorded)) {
@@ -163,7 +169,7 @@ final class BankCommentProvenance {
 				return new Plan(null, null, false);
 			}
 		}
-		if (base != null && !base.isBlank() && base.contains(marker)) {
+		if (base != null && !base.isBlank() && containsAny(base, markers)) {
 			return new Plan(null, null, false); // defer to this round's earlier writer
 		}
 		String combined = base == null || base.isBlank() ? text : base + JOIN + text;
@@ -174,11 +180,11 @@ final class BankCommentProvenance {
 	 * Applies {@link #plan}'s decision at {@code addr} and marks the address accounted for, so
 	 * {@link #sweep} will not retract it. Returns whether the listing was written.
 	 */
-	boolean apply(Listing listing, Address addr, String text, String marker) {
+	boolean apply(Listing listing, Address addr, String text, String... markers) {
 		touched.add(addr);
 		String existing = listing.getComment(TYPE, addr);
 		String recorded = map.getString(addr);
-		Plan plan = plan(recorded, existing, text, marker);
+		Plan plan = plan(recorded, existing, text, markers);
 		if (!plan.write()) {
 			// The fail-safe case: we recorded writing here but can no longer find that text, so
 			// a human has edited it. Forget the record -- keeping it would let a later round
@@ -225,6 +231,16 @@ final class BankCommentProvenance {
 			map.remove(addr);
 		}
 		return retracted;
+	}
+
+	/** Whether {@code comment} carries any of {@code markers} as a substring. */
+	static boolean containsAny(String comment, String... markers) {
+		for (String marker : markers) {
+			if (comment.contains(marker)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** Whether {@code comment} contains {@code segment} as a whole {@link #JOIN}-separated part. */

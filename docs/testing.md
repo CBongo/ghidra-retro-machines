@@ -908,7 +908,11 @@ it is never a `run-banktest.sh` chunk (whose `all` would otherwise pull it in).
   SHA-256, the SHA-256 of the **PRG slice** alone (the per-game identity key a curated
   descriptor is written against), and a bounded, sorted **sample** of `bank -> …` comments,
   cross-bank overlay refs, and warning bookmarks. **No ROM bytes and no disassembled
-  instructions**, so `expected/*.dump` is committable though the ROMs are not.
+  instructions**, so `expected/*.dump` is committable though the ROMs are not. The `bank ? …`
+  **gap comments** an unresolved switch site carries beside its bookmark (grm-3ou part 2) are
+  deliberately *not* sampled here — `count bankComments` means resolved sites and stays that
+  way — so they are pinned only by the synthetic `COMMENT` lines and by the 1:1 pairing with a
+  bookmark that `BankGapCommentProgramTest` asserts.
 - **Bless discipline:** same as Tier 3 — regenerate with `bless`, review the `expected/*.dump`
   diff, commit deliberately. Because ROMs aren't in the repo, only someone with the pinned dump
   can re-bless.

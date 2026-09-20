@@ -27,6 +27,9 @@ COMMENT c017 bank -> mirroring=0,prg_mode=3,prg_bank=5 [switch-value flow]
 COMMENT c02f bank -> mirroring=0,prg_mode=3,prg_bank=6 [switch-value flow]
 COMMENT c037 bank -> mirroring=0,prg_mode=3,prg_bank=6 [switch-value flow]
 COMMENT c056 bank -> mirroring=0,prg_mode=3,prg_bank=3 [switch-value flow]
+COMMENT c060 bank ? [WARNING: analyzer limit]
+COMMENT c070 bank ? [WARNING: analyzer limit]
+COMMENT c078 bank ? [WARNING: analyzer limit]
 COMMENT c07b bank -> mirroring=0,prg_mode=3,prg_bank=0? [known: prg_mode.0=1,prg_mode.1=1; assumed from initial: mirroring.0,mirroring.1,prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
 BOOKMARK Warning c060
 BOOKMARK Warning c070

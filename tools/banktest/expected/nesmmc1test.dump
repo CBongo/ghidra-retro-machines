@@ -42,10 +42,19 @@ COMMENT c007 bank -> mirroring=0,prg_mode=3,prg_bank=2 via FUN_c200 [switch-valu
 COMMENT c00f bank -> mirroring=0,prg_mode=3,prg_bank=2 [switch-value flow]
 COMMENT c024 bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_c200 [switch-value flow]
 COMMENT c02c bank -> mirroring=0,prg_mode=3,prg_bank=3 via FUN_c200 [switch-value flow]
+COMMENT c032 bank ? via FUN_c250 [NOTE: restored bank]
 COMMENT c037 bank -> mirroring=0,prg_mode=3,prg_bank=4 via LAB_c252 (mid-body entry in FUN_c250) [switch-value flow]
 COMMENT c03f bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_c2a0 [switch-value flow]
+COMMENT c047 bank ? via FUN_c250 [NOTE: restored bank]
 COMMENT c04c bank -> mirroring=0,prg_mode=3,prg_bank=7 via FUN_c200 [switch-value flow]
 COMMENT c061 bank -> mirroring=0,prg_mode=2,prg_bank=7 [switch-value flow]
+COMMENT c06c bank ? via FUN_c200 [WARNING: analyzer limit]
+COMMENT c200 bank ? [NOTE: helper argument]
+COMMENT c210 bank ? [NOTE: helper argument]
+COMMENT c252 bank ? [WARNING: analyzer limit]
+COMMENT c262 bank ? [WARNING: analyzer limit]
+COMMENT c2a7 bank ? [NOTE: helper argument]
+COMMENT c2b7 bank ? [NOTE: helper argument]
 BOOKMARK Note c032
 BOOKMARK Note c047
 BOOKMARK Note c200

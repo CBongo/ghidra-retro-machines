@@ -8,16 +8,23 @@ BLOCK PRG_LO_B2 8000-bfff overlay=true
 BLOCK PRG_LO_B3 8000-bfff overlay=true
 BLOCK RAM 0000-07ff overlay=false
 COMMENT c002 bank -> 2 (bank=2) via FUN_c140
+COMMENT c00a bank ? via FUN_c140 [WARNING: analyzer limit]
 COMMENT c00d bank -> 1 (bank=1) via FUN_c120
 COMMENT c013 bank -> 2 (bank=2) via FUN_c170
 COMMENT c016 bank -> 2 (bank=2) via FUN_c160
+COMMENT c01e bank ? [WARNING: impossible bank]
+COMMENT c021 bank ? via FUN_c180 [WARNING: analyzer limit]
+COMMENT c024 bank ? via FUN_c190 [WARNING: analyzer limit]
 COMMENT c122 bank -> 3 (bank=3)
 COMMENT c12d bank -> 1 (bank=1)
+COMMENT c143 bank ? [WARNING: analyzer limit]
 COMMENT c162 bank -> 3 (bank=3)
 COMMENT c165 bank -> 2 (bank=2) via FUN_c170
 COMMENT c172 bank -> 2 (bank=2)
 COMMENT c182 bank -> 1 (bank=1)
+COMMENT c185 bank ? via FUN_c190 [WARNING: analyzer limit]
 COMMENT c192 bank -> 2 (bank=2)
+COMMENT c195 bank ? via FUN_c180 [WARNING: analyzer limit]
 BOOKMARK Warning c00a
 BOOKMARK Warning c01e
 BOOKMARK Warning c021

@@ -55,6 +55,7 @@ COMMENT e2c2 bank -> select=7,prg_mode=0,r6=0,r7=1? [known: select.0=1,select.1=
 COMMENT e2c7 bank -> select=7,prg_mode=0,r6=0,r7=3? [known: select.0=1,select.1=1,select.2=1,prg_mode=0,r6.0=0,r6.1=0,r6.3=0,r6.4=0,r6.5=0,r7.0=1,r7.1=1,r7.2=0,r7.3=0,r7.4=0,r7.5=0; assumed from initial: r6.2] [switch-value flow]
 COMMENT e2cf bank -> select=7,prg_mode=0,r6=0,r7=3? [known: select.0=1,select.1=1,select.2=1,prg_mode=0,r6.0=0,r6.1=0,r6.3=0,r6.4=0,r6.5=0,r7.0=1,r7.1=1,r7.2=0,r7.3=0,r7.4=0,r7.5=0; assumed from initial: r6.2] [switch-value flow]
 COMMENT e2d4 bank -> select=7,prg_mode=0,r6=0,r7=2? via FUN_e3fc [known: select.0=1,select.1=1,select.2=1,prg_mode=0,r6.0=0,r6.1=0,r6.3=0,r6.4=0,r6.5=0,r7.0=0,r7.1=1,r7.2=0,r7.3=0,r7.4=0,r7.5=0; assumed from initial: r6.2] [switch-value flow]
+COMMENT e2dc bank ? via FUN_e3fc [WARNING: analyzer limit]
 COMMENT e2e1 bank -> select=7,prg_mode=0,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=0,r6.0=0,r6.1=0,r6.3=0,r6.4=0,r6.5=0; assumed from initial: r6.2,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 COMMENT e302 bank -> select=7,prg_mode=0,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=0,r6.0=0,r6.1=0,r6.3=0,r6.4=0,r6.5=0,r7.0=1,r7.1=0,r7.3=0,r7.4=0,r7.5=0; assumed from initial: r6.2,r7.2] [switch-value flow]
 COMMENT e307 bank -> select=7,prg_mode=0,r6=0,r7=3? [known: select.0=1,select.1=1,select.2=1,prg_mode=0,r6.0=0,r6.1=0,r6.3=0,r6.4=0,r6.5=0,r7.0=1,r7.1=1,r7.2=0,r7.3=0,r7.4=0,r7.5=0; assumed from initial: r6.2] [switch-value flow]

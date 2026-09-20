@@ -2215,8 +2215,12 @@ public class VerifyBankTest extends GhidraScript {
 			Instruction instr = instrs.next();
 			Address at = instr.getMinAddress();
 
+			// Both members of the analyzer's bank-annotation family: a resolved "bank ->" and an
+			// unresolved "bank ?" gap comment (grm-3ou part 2). A gap comment is written at
+			// exactly the sites that carry a BOOKMARK line below, so the two channels of one
+			// golden can be checked against each other by eye.
 			String eol = currentProgram.getListing().getComment(CommentType.EOL, at);
-			if (eol != null && eol.contains("bank ->")) {
+			if (eol != null && (eol.contains("bank ->") || eol.contains("bank ?"))) {
 				comments.add("COMMENT " + fmt(at) + " " + eol);
 			}
 

@@ -132,14 +132,17 @@ final class AnnotationGuard {
 	 * <li>A non-empty existing comment that already contains {@code marker}: no-op, so repeated
 	 * calls (e.g. re-running an analyzer) do not stack duplicate annotations.</li>
 	 * </ul>
+	 * Several markers may be given when the caller's annotations form a family whose members
+	 * must not stack beside one another either (the bank analyzer's {@code bank ->} and
+	 * {@code bank ?}, see {@code BankCommentProvenance#plan}); any one of them present is a no-op.
 	 */
 	static void addComment(Listing listing, Address addr, CommentType type, String text,
-			String marker) {
+			String... markers) {
 		String existing = listing.getComment(type, addr);
 		if (existing == null || existing.isBlank()) {
 			listing.setComment(addr, type, text);
 		}
-		else if (!existing.contains(marker)) {
+		else if (!BankCommentProvenance.containsAny(existing, markers)) {
 			listing.setComment(addr, type, existing + "; " + text);
 		}
 	}

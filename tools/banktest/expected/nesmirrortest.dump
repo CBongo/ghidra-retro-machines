@@ -14,9 +14,15 @@ COMMENT c019 bank -> 3 (bank=3)
 COMMENT c01e bank -> 3 (bank=3)
 COMMENT c027 bank -> 1 (bank=1)
 COMMENT c02f bank -> 1 (bank=1)
+COMMENT c034 bank ? [WARNING: analyzer limit]
 COMMENT c037 bank -> 1 (bank=1) via FUN_c100
+COMMENT c03a bank ? via FUN_c140 [WARNING: analyzer limit]
+COMMENT c102 bank ? [WARNING: analyzer limit]
+COMMENT c107 bank ? [WARNING: analyzer limit]
 COMMENT c10c bank -> 1 (bank=1)
+COMMENT c122 bank ? [WARNING: analyzer limit]
 COMMENT c135 bank -> 1 (bank=1)
+COMMENT c142 bank ? [WARNING: analyzer limit]
 COMMENT c145 bank -> 1 (bank=1) via FUN_c130
 BOOKMARK Warning c034
 BOOKMARK Warning c03a

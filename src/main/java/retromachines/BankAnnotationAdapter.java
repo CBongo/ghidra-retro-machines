@@ -113,9 +113,13 @@ final class BankAnnotationAdapter {
 	enum Marked {
 		/** An EOL bank annotation was written; no bookmark. */
 		ANNOTATED,
-		/** A WARNING bookmark: a gap that is OUR limitation, and worth fixing. */
+		/**
+		 * A WARNING bookmark: a gap that is OUR limitation, and worth fixing. Also carries an
+		 * EOL gap comment ({@link #GAP_MARKER}) unless the state knew something and a bank
+		 * comment was written instead ({@code warnDespiteKnowledge}).
+		 */
 		WARNED,
-		/** A NOTE bookmark: a gap that is HONEST, and not a defect. */
+		/** A NOTE bookmark plus an EOL gap comment: a gap that is HONEST, and not a defect. */
 		NOTED,
 		/**
 		 * Nothing was written: the site deposits nothing by design
@@ -226,10 +230,14 @@ final class BankAnnotationAdapter {
 			if (impossible != null) {
 				program.getBookmarkManager().setBookmark(addr, BookmarkType.WARNING,
 					analyzer.getBookmarkCategory(), impossible.message());
+				annotateGap(listing, addr, IMPOSSIBLE_GAP, viaHelper, provenance);
 				return Marked.WARNED;
 			}
 			program.getBookmarkManager()
 					.setBookmark(addr, BookmarkType.WARNING, analyzer.getBookmarkCategory(), warning);
+			// The one bookmarked exit that writes a bank comment, not a gap comment: the state
+			// DOES know something, and that comment is where the reader learns it. The WARNING
+			// carries the unrecovered-argument half on its own (see the javadoc).
 			annotateBankSwitch(listing, addr, state, board, bankUniverse, viaHelper, provenance);
 			return Marked.WARNED;
 		}
@@ -238,16 +246,19 @@ final class BankAnnotationAdapter {
 			if (honest != null) {
 				program.getBookmarkManager().setBookmark(addr, BookmarkType.NOTE,
 					analyzer.getBookmarkCategory(), honest);
+				annotateGap(listing, addr, "NOTE: " + gapKind(stop), viaHelper, provenance);
 				return Marked.NOTED;
 			}
 			program.getBookmarkManager()
 					.setBookmark(addr, BookmarkType.WARNING, analyzer.getBookmarkCategory(), warning);
+			annotateGap(listing, addr, "WARNING: " + gapKind(stop), viaHelper, provenance);
 			return Marked.WARNED;
 		}
 		Impossible impossible = impossibleBank(board, state, bankUniverse);
 		if (impossible != null) {
 			program.getBookmarkManager().setBookmark(addr, BookmarkType.WARNING,
 				analyzer.getBookmarkCategory(), impossible.message());
+			annotateGap(listing, addr, IMPOSSIBLE_GAP, viaHelper, provenance);
 			return Marked.WARNED;
 		}
 		annotateBankSwitch(listing, addr, state, board, bankUniverse, viaHelper, provenance);
@@ -273,6 +284,7 @@ final class BankAnnotationAdapter {
 			if (impossible != null) {
 				program.getBookmarkManager().setBookmark(addr, BookmarkType.WARNING,
 					analyzer.getBookmarkCategory(), impossible.message());
+				annotateGap(listing, addr, IMPOSSIBLE_GAP, viaHelper, provenance);
 				return Marked.WARNED;
 			}
 			heads.add(bankCommentBody(arm, board, bankUniverse, ""));
@@ -285,6 +297,61 @@ final class BankAnnotationAdapter {
 		}
 		writeBankComment(listing, addr, comment, provenance);
 		return Marked.ANNOTATED;
+	}
+
+	/**
+	 * The idempotence key of a GAP comment -- the EOL annotation every bookmarked switch site
+	 * carries alongside its bookmark (bead grm-3ou part 2), so an unresolved site is visible in
+	 * the listing itself rather than only in the bookmark table. Reads as the unresolved
+	 * counterpart of {@link #BANK_MARKER}'s vocabulary: {@code bank ? via FUN_c000 [WARNING:
+	 * analyzer limit]} beside {@code bank -> 5 (bank=5) via FUN_c000}.
+	 * <p>
+	 * <b>Deliberately NOT a {@code bank ->} comment, and must never contain that substring.</b>
+	 * Every dump, probe and fixture criterion in this repo reads a {@code bank ->} EOL comment as
+	 * "a switch was RESOLVED here" -- {@code RealRomDump}'s {@code count bankComments},
+	 * {@code VerifyBankTest}'s many {@code !eol(x).contains("bank ->")} criteria at warned sites,
+	 * {@code BankConsumerProbe}, {@code AssertBankOrderIndependence}. A gap comment sharing that
+	 * marker would inflate the resolved-site metric by exactly the population it is supposed to
+	 * be distinct from. The two markers are a FAMILY for the purpose of stacking, though: see
+	 * {@link BankCommentProvenance#plan} and {@link #writeBankComment}.
+	 */
+	static final String GAP_MARKER = "bank ?";
+
+	/** The gap kind for a RECOVERED bank the image has no slice for ({@link #impossibleBank}). */
+	private static final String IMPOSSIBLE_GAP = "WARNING: impossible bank";
+
+	/**
+	 * The short kind label a gap comment carries for {@code stop}: the bookmark's classification
+	 * in two or three words, so the listing says WHICH KIND of gap this is (the sequencing
+	 * argument in grm-3ou part 2) without repeating the bookmark's full sentence. The
+	 * {@code WARNING:}/{@code NOTE:} prefix is added by the caller from the bookmark type it
+	 * actually placed, so comment and bookmark cannot disagree about ours-vs-honest.
+	 */
+	private static String gapKind(BankSwitchStrategy.ValueStop stop) {
+		return switch (stop) {
+			case RUNTIME_SOURCE -> "runtime source";
+			case HELPER_ARGUMENT -> "helper argument";
+			case SECOND_TIER_ARGUMENT -> "second-tier argument";
+			case RESTORED_BANK -> "restored bank";
+			case MULTI_VALUED_AT_MERGE -> "fork budget";
+			// RESOLVED with nothing known cannot name a better reason than the scan's own
+			// limit; NO_DEPOSIT never reaches here (annotateOrWarn returns first).
+			case ANALYZER_LIMIT, RESOLVED, NO_DEPOSIT -> "analyzer limit";
+		};
+	}
+
+	/**
+	 * Writes the gap comment for a site that got a bookmark and no bank comment:
+	 * {@code bank ? [kind]}, with {@code via FUN_x} in the same place {@link #annotateBankSwitch}
+	 * puts it. Routed through the same provenance record as a bank comment, so a site that later
+	 * RESOLVES (more code disassembled, a descriptor hint) has its gap comment refreshed into the
+	 * {@code bank ->} it earned rather than left standing beside it, and a site that stops being a
+	 * switch site at all has it retracted by the sweep (bead grm-3mg0).
+	 */
+	private static void annotateGap(Listing listing, Address addr, String kind, String viaHelper,
+			BankCommentProvenance provenance) {
+		String via = viaHelper == null ? "" : " via " + viaHelper;
+		writeBankComment(listing, addr, GAP_MARKER + via + " [" + kind + "]", provenance);
 	}
 
 	/**
@@ -1080,11 +1147,16 @@ final class BankAnnotationAdapter {
 	 */
 	private static void writeBankComment(Listing listing, Address addr, String comment,
 			BankCommentProvenance provenance) {
+		// Both markers, whichever kind this comment is: a bank comment and a gap comment are two
+		// renderings of ONE annotation slot per address (a site is resolved or it is not), and
+		// the provenance record holds one segment per address, so they must defer to each other
+		// exactly as each defers to itself. See BankCommentProvenance.plan.
 		if (provenance == null) {
-			AnnotationGuard.addComment(listing, addr, CommentType.EOL, comment, BANK_MARKER);
+			AnnotationGuard.addComment(listing, addr, CommentType.EOL, comment, BANK_MARKER,
+				GAP_MARKER);
 			return;
 		}
-		provenance.apply(listing, addr, comment, BANK_MARKER);
+		provenance.apply(listing, addr, comment, BANK_MARKER, GAP_MARKER);
 	}
 
 	/**

@@ -12,6 +12,8 @@ COMMENT c006 bank -> 1 (bank=1) via FUN_c158
 COMMENT c014 bank -> 0 (bank=0) via FUN_c15a
 COMMENT c019 bank -> 0 (bank=0) via FUN_c175
 COMMENT c152 bank -> 2 (bank=2)
+COMMENT c15b bank ? [NOTE: helper argument]
+COMMENT c176 bank ? [NOTE: helper argument]
 BOOKMARK Note c15b
 BOOKMARK Note c176
 REF c003 -> PRG_LO_B2::8005 UNCONDITIONAL_CALL primary=true
