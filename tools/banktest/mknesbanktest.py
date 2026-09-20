@@ -1613,6 +1613,81 @@ def make_prg_fork():
     return bytes(prg)
 
 
+def make_prg_forkhome():
+    """The SURVIVAL sibling of make_prg_fork() (bead grm-bfb): same two-armed merge shape, but
+    arm A selects the HOME bank (X=0, UxROM's initial_state) instead of a non-home constant.
+    Arm B still selects bank 2.
+
+    grm-bfb retires a stale base-space reference at a retargeted site only when EVERY live
+    bank-state arm at that site resolved AWAY from the home occupant. make_prg_fork()'s two
+    arms (1, 2) are both non-home, so it only exercises the RETIRE path -- the base ref is
+    dead weight there and correctly disappears. This fixture makes one arm resolve TO home
+    (X=0), so the base-space reference genuinely describes that arm's reality and MUST
+    SURVIVE (as a secondary reference; the overlay ref that path forking places for arm B is
+    added with makePrimary=false, so the base ref that was already there for the un-forked
+    home case keeps primacy).
+
+    RESET ($C000):
+      C000  A5 10        LDA $10       ; RAM flag -- genuinely runtime, selects the arm
+      C002  A2 00        LDX #$00      ; arm A: X = 0 (HOME bank)
+      C004  F0 02        BEQ $C008     ; ...taken straight to the merge
+      C006  A2 02        LDX #$02      ; arm B: X = 2, falls into the merge
+      C008  8E DF FF     STX $FFDF     ; THE MERGE SITE: latch <- {0, 2}. Must annotate
+                                       ;   "bank -> 0 (bank=0) | 2 (bank=2) [path fork: 2 arms]"
+      C00B  20 10 80     JSR $8010     ; base:8010 (survives, primary) AND -> PRG_LO_B2::8010
+                                       ;   (overlay, secondary)
+      C00E  AD 20 80     LDA $8020     ; base:8020 (survives, primary) AND -> PRG_LO_B2::8020
+                                       ;   (overlay, secondary)
+      C011  4C 11 C0     JMP $C011     ; self loop
+
+    NMI/IRQ handler ($C020): RTI.
+
+    $FFDF holds $FF so the bus-conflict AND is a no-op for every arm value, exactly as in
+    make_prg_fork(). Bank 0 (the home bank, resident in BASE space) carries an RTS at $8010
+    and a marker at $8020 so the stock base-space call target is real code; bank 2 carries
+    the same at its own $8010/$8020 for the overlay side.
+
+    THE CONTROL IS make_prg_fork(): together the two fixtures pin both halves of grm-bfb's
+    survival rule -- retire when no arm is home, keep (as secondary) when some arm is.
+    """
+    prg = bytearray([0x00] * PRG_SIZE)
+
+    # Bank markers at the first byte of each bank. Bank 3's marker is at file offset
+    # 0xC000, which IS CPU $C000 -- RESET's first opcode overwrites it, as in make_prg().
+    for bank in range(PRG_BANKS):
+        prg[bank * PRG_BANK_SIZE] = bank
+
+    # Banks 0 (home) and 2: an RTS at $8010 (the forked JSR's target in both) and a
+    # distinct marker at $8020 (the forked data read's target).
+    for bank in (0, 2):
+        prg[bank * PRG_BANK_SIZE + 0x0010] = 0x60          # RTS
+        prg[bank * PRG_BANK_SIZE + 0x0020] = 0xA0 | bank   # marker byte
+
+    put = _bank3_putter(prg)
+
+    # --- RESET ---
+    put(0xC000, [0xA5, 0x10])              # LDA $10     (runtime flag)
+    put(0xC002, [0xA2, 0x00])              # LDX #$00    (arm A: HOME)
+    put(0xC004, [0xF0, 0x02])              # BEQ $C008
+    put(0xC006, [0xA2, 0x02])              # LDX #$02    (arm B)
+    put(0xC008, [0x8E, 0xDF, 0xFF])         # STX $FFDF   (THE MERGE SITE)
+    put(0xC00B, [0x20, 0x10, 0x80])         # JSR $8010
+    put(0xC00E, [0xAD, 0x20, 0x80])         # LDA $8020
+    put(0xC011, [0x4C, 0x11, 0xC0])         # JMP $C011   (self loop)
+
+    # --- NMI/IRQ handler ---
+    put(0xC020, [0x40])                     # RTI
+
+    # Latch target: $FF so the bus-conflict AND passes every arm value through.
+    put(0xFFDF, [0xFF])
+
+    put(0xFFFA, [0x20, 0xC0])  # NMI   -> $C020
+    put(0xFFFC, [0x00, 0xC0])  # RESET -> $C000
+    put(0xFFFE, [0x20, 0xC0])  # IRQ   -> $C020
+
+    return bytes(prg)
+
+
 def make_prg_forkbudget():
     """The BUDGET-EXHAUSTED sibling of make_prg_fork() (bead grm-wul): FIVE constants merging
     before the switch, one more than BankDataflowEngine.MAX_LIVE_FORKS_PER_BLOCK (4). Every
@@ -4194,6 +4269,33 @@ def main():
     _assert_vectors(prgfork, "nesforktest", handler=0xC020, reset=0xC000)
 
     _write_rom(outdir, "nesforktest.nes", prgfork)
+
+    prgforkhome = make_prg_forkhome()
+
+    # Sanity-check the survival-rule fixture (bead grm-bfb) before writing.
+    assert len(prgforkhome) == PRG_SIZE
+    for bank in range(PRG_BANKS - 1):  # bank 3's marker is stomped by RESET, as in make_prg()
+        assert prgforkhome[bank * PRG_BANK_SIZE] == bank
+    for bank in (0, 2):
+        assert prgforkhome[bank * PRG_BANK_SIZE + 0x0010] == 0x60          # RTS at $8010
+        assert prgforkhome[bank * PRG_BANK_SIZE + 0x0020] == (0xA0 | bank)  # marker at $8020
+    assert prgforkhome[0xC000] == 0xA5 and prgforkhome[0xC001] == 0x10    # LDA $10
+    assert prgforkhome[0xC002] == 0xA2 and prgforkhome[0xC003] == 0x00    # LDX #$00 (arm A: HOME)
+    assert prgforkhome[0xC004] == 0xF0 and prgforkhome[0xC005] == 0x02    # BEQ +2 -> $C008
+    assert 0xC006 + prgforkhome[0xC005] == 0xC008
+    assert prgforkhome[0xC006] == 0xA2 and prgforkhome[0xC007] == 0x02    # LDX #$02
+    assert prgforkhome[0xC008] == 0x8E                                    # STX abs
+    assert (prgforkhome[0xC009] | (prgforkhome[0xC00A] << 8)) == 0xFFDF
+    assert prgforkhome[0xC00B] == 0x20                                    # JSR
+    assert (prgforkhome[0xC00C] | (prgforkhome[0xC00D] << 8)) == 0x8010
+    assert prgforkhome[0xC00E] == 0xAD                                    # LDA abs
+    assert (prgforkhome[0xC00F] | (prgforkhome[0xC010] << 8)) == 0x8020
+    assert prgforkhome[0xC011] == 0x4C                                    # JMP self loop
+    assert (prgforkhome[0xC012] | (prgforkhome[0xC013] << 8)) == 0xC011
+    assert prgforkhome[0xFFDF] == 0xFF
+    _assert_vectors(prgforkhome, "nesforkhometest", handler=0xC020, reset=0xC000)
+
+    _write_rom(outdir, "nesforkhometest.nes", prgforkhome)
 
     prgfb = make_prg_forkbudget()
 

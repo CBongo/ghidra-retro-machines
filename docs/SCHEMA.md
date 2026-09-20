@@ -359,7 +359,10 @@ state field) follows the same home-in-base principle as enumerated windows: the
 other in-range field value `v` becomes an overlay block `<window>_B<v>`. The bank
 engine then (a) retargets references whose tracked effective state selects a non-home
 bank into that bank's overlay, kicking disassembly/function creation at cross-bank
-flow targets; (b) clamps the state of instructions physically inside `<window>_B<v>`
+flow targets, and *retires* the stock base-space reference the overlay one replaced —
+unless some live state at that site (a path-fork arm, or one side of a read-modify-write)
+resolves it to the home occupant, in which case it is correct for that path and stays
+as a secondary (`grm-bfb`); (b) clamps the state of instructions physically inside `<window>_B<v>`
 to `field = v` (execution implies mapping); (c) leaves *writes* into
 `on_write: mechanism` windows alone — those are latch pokes, already modeled by the
 strategy. Bank values whose slice falls outside the image simply get no block. A

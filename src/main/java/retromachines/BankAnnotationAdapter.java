@@ -18,6 +18,7 @@ package retromachines;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -1450,41 +1451,221 @@ final class BankAnnotationAdapter {
 	// Reference retargeting
 	// ------------------------------------------------------------------
 
-	static int retargetReferences(BoardBankAnalyzer analyzer, Program program,
+	/**
+	 * What {@link #retargetReferences} did at one instruction: {@code added} overlay references
+	 * placed or confirmed, and {@code retired} stale base-space references deleted because an
+	 * overlay reference replaced them (bead grm-bfb).
+	 */
+	record Retargeted(int added, int retired) {
+		static final Retargeted NONE = new Retargeted(0, 0);
+
+		Retargeted plus(Retargeted o) {
+			return new Retargeted(added + o.added, retired + o.retired);
+		}
+	}
+
+	/**
+	 * Identity of one base-space reference out of an instruction -- operand index and target
+	 * offset -- for the per-arm bookkeeping below. {@link Reference#equals} also compares the
+	 * reference type, which the read-modify-write split re-types, so it is not the key.
+	 */
+	private record BaseRefKey(int opIndex, long offset) {
+		static BaseRefKey of(Reference ref) {
+			return new BaseRefKey(ref.getOperandIndex(), ref.getToAddress().getOffset());
+		}
+	}
+
+	/**
+	 * One access to resolve: an operand's target OFFSET in the banked address range plus the
+	 * reference type it was made with. Seeds are what {@link #retargetForState} iterates rather
+	 * than the instruction's base-space references directly, because once a base-space reference
+	 * has been retired (bead grm-bfb) the overlay reference that replaced it is the only record
+	 * left that this operand reaches the banked range at all -- and the analyzer re-runs to a
+	 * whole-program fixpoint, so a LATER round can arrive at the same site with a different
+	 * state (nesskiptest: a post-script recovers a hidden entry, and the JSR after it moves
+	 * from bank 2 to bank 1 between rounds). Seeding only from base-space references would
+	 * make the first round's retirement erase the second round's work.
+	 */
+	private record Seed(int opIndex, long offset, RefType refType) {
+		BaseRefKey key() {
+			return new BaseRefKey(opIndex, offset);
+		}
+	}
+
+	/**
+	 * The accesses out of {@code instr} to resolve: every base-space reference, then every
+	 * reference into an overlay of {@code baseSpace} folded back to its physical offset, without
+	 * duplicates. Overlay-derived seeds come after base-space ones and WRITE-typed before the
+	 * rest, so a re-run over an already-split read-modify-write (grm-5tl.9) meets the write
+	 * side first and leaves its reference primary, as the first placement did.
+	 * <p>
+	 * A reference from an overlay-resident instruction into ITS OWN overlay is not a seed. Those
+	 * are Ghidra's, not this pass's -- the switch-table analysis writes a {@code COMPUTED_JUMP}
+	 * per case into the space the table lives in (rcproam {@code W8000_M0_B0::8068}) -- and
+	 * re-placing them here only churned which case was primary, which the A/B for grm-bfb
+	 * caught as the one consistent movement on that row.
+	 */
+	private static List<Seed> seeds(Instruction instr, AddressSpace baseSpace) {
+		Set<Seed> out = new LinkedHashSet<>();
+		List<Seed> fromOverlays = new ArrayList<>();
+		for (Reference ref : instr.getReferencesFrom()) {
+			Address to = ref.getToAddress();
+			AddressSpace space = to.getAddressSpace();
+			Seed seed = new Seed(ref.getOperandIndex(), to.getOffset(), ref.getReferenceType());
+			if (space.equals(baseSpace)) {
+				out.add(seed);
+			}
+			else if (space.isOverlaySpace() && baseSpace.equals(space.getPhysicalSpace()) &&
+				!space.equals(instr.getMinAddress().getAddressSpace())) {
+				fromOverlays.add(seed);
+			}
+		}
+		fromOverlays.sort((a, b) -> Boolean.compare(!a.refType().isWrite(), !b.refType().isWrite()));
+		out.addAll(fromOverlays);
+		return new ArrayList<>(out);
+	}
+
+	/**
+	 * {@link #addOverlayRef} with primacy tracked per operand target across the seeds of ONE
+	 * state: the first placement at a key that was allowed to be primary takes it, and every
+	 * later placement at the same key (the read side of a split read-modify-write, or an
+	 * overlay-derived seed re-covering a base-space one) is a secondary.
+	 */
+	private static int placeOverlayRef(BoardBankAnalyzer analyzer, Program program,
+			ReferenceManager refMgr, Instruction instr, BaseRefKey key, String targetSpaceName,
+			RefType refType, boolean makePrimary, Set<BaseRefKey> primaryGiven, TaskMonitor monitor,
+			MessageLog log) {
+		boolean primary = makePrimary && !primaryGiven.contains(key);
+		int n = addOverlayRef(analyzer, program, refMgr, instr, key.offset(), key.opIndex(),
+			targetSpaceName, refType, primary, monitor, log);
+		if (n > 0 && primary) {
+			primaryGiven.add(key);
+		}
+		return n;
+	}
+
+	/**
+	 * Resolves every base-space reference out of {@code instr} against each whole bank state
+	 * live there, attaching an overlay reference to the occupant the access actually reaches,
+	 * and then RETIRES the base-space reference an overlay reference replaced (bead grm-bfb).
+	 * <p>
+	 * One state everywhere path forking did not reach; one per arm downstream of a fork (bead
+	 * grm-wul), each retargeted in turn -- one overlay reference per distinct bank -- with only
+	 * the FIRST arm allowed to make its reference primary. Every later arm's reference is added
+	 * as a secondary, so the listing shows all arms' targets and the primary is the first arm's,
+	 * deterministically. A state that resolves to the home bank places nothing.
+	 * <p>
+	 * <b>Why the base reference is deleted rather than left as a secondary</b> (owner's ruling
+	 * on grm-bfb, 2026-09-20): the base-space block at a resolved target is only the HOME
+	 * occupant of the containing window, so once the live state says the access reaches a
+	 * different occupant, the stock reference is a known-wrong answer at that site -- and on a
+	 * real ROM it need not even be a plausible one. Two smb3 witnesses (base:94cd, base:cb61)
+	 * land in an instruction interior, and the second disassembles into a phantom mapper-register
+	 * write that fed false bank-switch evidence back into this very analysis. Demoting to
+	 * non-primary leaves all of that in the call graph and the references-to view; deleting
+	 * removes it. The decompiler was never the problem: it follows the primary CALL reference
+	 * ({@code InstructionPcodeOverride.getPrimaryCallReference}, verified at 12.1.3).
+	 * <p>
+	 * <b>When the base reference survives.</b> It is retired only if EVERY live state resolved
+	 * that reference away from the home occupant with the selecting field FULLY known, and an
+	 * overlay reference was actually placed for each of them. Any arm that resolves to home,
+	 * or either side of a read-modify-write that resolves to home ({@code INC $A000} in C64
+	 * state 7 reads BASIC and writes {@code RAM_A000}), means the base reference is genuinely
+	 * right for that path and it stays -- as a secondary, since the first arm's overlay
+	 * reference took primacy. A partially known state keeps it too: the overlay reference
+	 * placed under partial knowledge is the initial-state fallback filling the unknown bits,
+	 * a guess this pass has always made, and a guess may add a reference but must not delete
+	 * the stock one (a user placement override counts as known -- it is the user's assertion).
+	 * A reference {@link #addOverlayRef} could not place (no overlay space of that name)
+	 * leaves the base reference alone: nothing better exists. A {@code USER_DEFINED} base
+	 * reference is never deleted ({@link AnnotationGuard#mayDisplace}).
+	 * <p>
+	 * <b>And it always survives an INTRA-WINDOW access from base space</b> -- base-space code
+	 * calling, branching to, or reading its own window (nesmmc1test's {@code JSR $C200} from
+	 * {@code $C06C}, both in {@code WC000}). Such a reference is the physical block's own
+	 * control-flow and data graph, and this project's passes read that graph through
+	 * references: {@code HelperDiscovery.calledHelper} resolves a callee over
+	 * {@code getFlows()}, {@code StoredValueScanner.isControlFlowJoin} and the fork engine's
+	 * predecessor walk over {@code getReferencesTo}. Retiring it silently unrecognizes the
+	 * helper (the call folds to "no bank effect") and cuts joins out of base-space functions --
+	 * and on a real cartridge it would hit every routine duplicated into every bank, whose
+	 * base copy legitimately runs under a non-home bank state. Both smb3 witnesses are
+	 * CROSS-window ({@code $8000}-window caller into the {@code $C000} window and the
+	 * reverse), which is the case the ruling was made on; the overlay reference is still added
+	 * for the intra-window case exactly as before, only the deletion is withheld.
+	 */
+	static Retargeted retargetReferences(BoardBankAnalyzer analyzer, Program program,
+			ReferenceManager refMgr, AddressSpace baseSpace, Instruction instr, BoardModel board,
+			Map<String, Set<Integer>> bankUniverse, List<BankState> states,
+			Map<String, Integer> placementOverride, TaskMonitor monitor, MessageLog log,
+			BankCommentProvenance provenance) {
+		Set<BaseRefKey> replaced = new HashSet<>();
+		Set<BaseRefKey> keepBase = new HashSet<>();
+		int added = 0;
+		boolean makePrimary = true;
+		for (BankState state : states) {
+			added += retargetForState(analyzer, program, refMgr, baseSpace, instr, board,
+				bankUniverse, state, placementOverride, monitor, log, provenance, makePrimary,
+				replaced, keepBase);
+			makePrimary = false;
+		}
+		int retired = 0;
+		for (Reference ref : instr.getReferencesFrom()) {
+			if (!ref.getToAddress().getAddressSpace().equals(baseSpace)) {
+				continue;
+			}
+			BaseRefKey key = BaseRefKey.of(ref);
+			if (replaced.contains(key) && !keepBase.contains(key) &&
+				AnnotationGuard.mayDisplace(ref)) {
+				refMgr.delete(ref);
+				retired++;
+			}
+		}
+		return new Retargeted(added, retired);
+	}
+
+	/** Single-state {@link #retargetReferences(BoardBankAnalyzer, Program, ReferenceManager,
+	 *  AddressSpace, Instruction, BoardModel, Map, List, Map, TaskMonitor, MessageLog,
+	 *  BankCommentProvenance)}. */
+	static Retargeted retargetReferences(BoardBankAnalyzer analyzer, Program program,
 			ReferenceManager refMgr, AddressSpace baseSpace, Instruction instr, BoardModel board,
 			Map<String, Set<Integer>> bankUniverse, BankState inState,
 			Map<String, Integer> placementOverride, TaskMonitor monitor, MessageLog log,
 			BankCommentProvenance provenance) {
 		return retargetReferences(analyzer, program, refMgr, baseSpace, instr, board, bankUniverse,
-			inState, placementOverride, monitor, log, provenance, true);
+			List.of(inState), placementOverride, monitor, log, provenance);
 	}
 
 	/**
-	 * {@link #retargetReferences} for ONE of several whole states live at {@code instr} (bead
-	 * grm-wul): an address downstream of a path fork holds one state per arm, and each is
-	 * retargeted in turn -- one overlay reference per distinct bank -- with only the FIRST call
-	 * allowed to make its reference primary ({@code makePrimary}). Every later state's reference
-	 * is added as a secondary, so the listing shows all arms' targets and the primary is the first
-	 * arm's, deterministically. A state that resolves to the home bank places nothing, as before.
+	 * One arm of {@link #retargetReferences}: places overlay references for {@code inState} and
+	 * records, per base-space reference, whether a fully-known state {@code replaced} it with an
+	 * overlay reference and whether this state says to {@code keepBase} (it resolves to home, or
+	 * was not fully known) -- the two facts the caller's retirement rule needs across all arms.
+	 * Returns the number of overlay references placed or confirmed.
 	 */
-	static int retargetReferences(BoardBankAnalyzer analyzer, Program program,
+	private static int retargetForState(BoardBankAnalyzer analyzer, Program program,
 			ReferenceManager refMgr, AddressSpace baseSpace, Instruction instr, BoardModel board,
 			Map<String, Set<Integer>> bankUniverse, BankState inState,
 			Map<String, Integer> placementOverride, TaskMonitor monitor, MessageLog log,
-			BankCommentProvenance provenance, boolean makePrimary) {
+			BankCommentProvenance provenance, boolean makePrimary, Set<BaseRefKey> replaced,
+			Set<BaseRefKey> keepBase) {
 
 		int effective = inState.effective(board.initialState(), board.mask());
 		Map<String, String> stateRow = board.occupantByWindowForState().get(effective);
+		// An enumerated window's occupant row is keyed by the WHOLE effective state, so the
+		// resolution is only as certain as every bit of it.
+		boolean wholeStateKnown = (inState.knownMask() & board.mask()) == board.mask();
+		// Where the instruction itself sits, for the intra-window rule (see the javadoc): a
+		// base-space instruction's reference into its OWN window is never retired.
+		boolean fromBase = instr.getMinAddress().getAddressSpace().equals(baseSpace);
+		long fromOffset = instr.getMinAddress().getOffset();
 
 		int added = 0;
-		for (Reference ref : instr.getReferencesFrom()) {
-			Address to = ref.getToAddress();
-			if (!to.getAddressSpace().equals(baseSpace)) {
-				continue;
-			}
-			long offset = to.getOffset();
-			RefType refType = ref.getReferenceType();
-			int opIndex = ref.getOperandIndex();
+		Set<BaseRefKey> primaryGiven = new HashSet<>();
+		for (Seed seed : seeds(instr, baseSpace)) {
+			long offset = seed.offset();
+			RefType refType = seed.refType();
+			BaseRefKey key = seed.key();
 
 			WindowModel window = findWindow(board.windows(), offset);
 			if (window != null && stateRow != null) {
@@ -1497,6 +1678,7 @@ final class BankAnnotationAdapter {
 				// The home occupant already lives in base space at this offset, so any target
 				// that resolves to it needs no overlay reference.
 				String homeOccupant = board.homeOccupantByWindow().get(window.name());
+				boolean selfWindow = fromBase && findWindow(board.windows(), fromOffset) == window;
 				String readTarget = occupantName;
 				String writeTarget =
 					occupant.onWrite() != null ? occupant.onWrite() : occupantName;
@@ -1506,23 +1688,36 @@ final class BankAnnotationAdapter {
 					// reads one occupant and writes another; emit both sides rather than
 					// dropping the read. Keep the write primary (the pre-fix behavior) and add
 					// the read as a secondary reference.
-					boolean primaryTaken = false;
-					if (!writeTarget.equals(homeOccupant)) {
-						int n = addOverlayRef(analyzer, program, refMgr, instr, offset, opIndex,
-							writeTarget, RefType.WRITE, makePrimary, monitor, log);
-						added += n;
-						primaryTaken = n > 0;
+					boolean writeHome = writeTarget.equals(homeOccupant);
+					boolean readHome = readTarget.equals(homeOccupant);
+					int placedWrite = 0;
+					int placedRead = 0;
+					if (!writeHome) {
+						placedWrite = placeOverlayRef(analyzer, program, refMgr, instr, key,
+							writeTarget, RefType.WRITE, makePrimary, primaryGiven, monitor, log);
+						added += placedWrite;
 					}
-					if (!readTarget.equals(homeOccupant)) {
-						added += addOverlayRef(analyzer, program, refMgr, instr, offset, opIndex,
-							readTarget, RefType.READ, makePrimary && !primaryTaken, monitor, log);
+					if (!readHome) {
+						placedRead = placeOverlayRef(analyzer, program, refMgr, instr, key,
+							readTarget, RefType.READ, makePrimary, primaryGiven, monitor, log);
+						added += placedRead;
+					}
+					if (writeHome || readHome || !wholeStateKnown || selfWindow) {
+						keepBase.add(key);
+					}
+					else if (placedWrite > 0 && placedRead > 0) {
+						replaced.add(key);
 					}
 				}
 				else {
 					String target = refType.isWrite() ? writeTarget : readTarget;
-					if (!target.equals(homeOccupant)) {
-						added += addOverlayRef(analyzer, program, refMgr, instr, offset, opIndex,
-							target, refType, makePrimary, monitor, log);
+					if (target.equals(homeOccupant)) {
+						keepBase.add(key);
+					}
+					else if (placeOverlayRef(analyzer, program, refMgr, instr, key, target, refType,
+						makePrimary, primaryGiven, monitor, log) > 0) {
+						added++;
+						(wholeStateKnown && !selfWindow ? replaced : keepBase).add(key);
 					}
 				}
 			}
@@ -1555,11 +1750,17 @@ final class BankAnnotationAdapter {
 					}
 					if (bankValue == field.valueIn(board.initialState())) {
 						// the home bank lives in base space at this offset -- default is right.
+						keepBase.add(key);
 						continue;
 					}
-					added += addOverlayRef(analyzer, program, refMgr, instr, offset, opIndex,
+					boolean selfWindow =
+						fromBase && findWindow(board.computedWindows(), fromOffset) == computed;
+					if (placeOverlayRef(analyzer, program, refMgr, instr, key,
 						DescriptorSupport.OverlayNaming.bankBlockName(computed.name(), bankValue),
-						refType, makePrimary, monitor, log);
+						refType, makePrimary, primaryGiven, monitor, log) > 0) {
+						added++;
+						((bankKnown || overridden) && !selfWindow ? replaced : keepBase).add(key);
+					}
 					if (overridden) {
 						annotatePlacementProvenance(program.getListing(), instr.getMinAddress(),
 							bankValue, provenance);
@@ -1570,6 +1771,7 @@ final class BankAnnotationAdapter {
 					// (mode) is active, then which instance of this window that layout defines
 					// covers the offset.
 					int modeValue = board.modeField().valueIn(effective);
+					boolean modeKnown = board.modeField().fullyKnownIn(inState);
 					ModeWindowModel instance = findModeWindowAt(board.modeWindows(), modeValue, offset);
 					if (instance == null) {
 						// offset not covered by any instance of this window under the active mode
@@ -1578,15 +1780,22 @@ final class BankAnnotationAdapter {
 					if (refType.isWrite() && "mechanism".equals(instance.onWrite())) {
 						continue;
 					}
+					ModeWindowModel own = fromBase
+							? findModeWindowAt(board.modeWindows(), modeValue, fromOffset) : null;
+					boolean selfWindow = own != null && own.name().equals(instance.name());
 					if (instance.bankField() == null) {
 						// fixed instance for this mode
 						if (modeValue == board.homeModeValue()) {
 							// home mode's fixed instance lives in base space -- default is right.
+							keepBase.add(key);
 							continue;
 						}
-						added += addOverlayRef(analyzer, program, refMgr, instr, offset, opIndex,
+						if (placeOverlayRef(analyzer, program, refMgr, instr, key,
 							DescriptorSupport.OverlayNaming.modeBlockName(instance.name(), modeValue),
-							refType, makePrimary, monitor, log);
+							refType, makePrimary, primaryGiven, monitor, log) > 0) {
+							added++;
+							(modeKnown && !selfWindow ? replaced : keepBase).add(key);
+						}
 					}
 					else {
 						// Canonicalized first, for the same reason as the computed-window branch
@@ -1612,11 +1821,16 @@ final class BankAnnotationAdapter {
 						if (modeValue == board.homeModeValue() &&
 							bank == instance.bankField().valueIn(board.initialState())) {
 							// home mode's home bank lives in base space -- default is right.
+							keepBase.add(key);
 							continue;
 						}
-						added += addOverlayRef(analyzer, program, refMgr, instr, offset, opIndex,
+						if (placeOverlayRef(analyzer, program, refMgr, instr, key,
 							DescriptorSupport.OverlayNaming.modeBankBlockName(instance.name(), modeValue,
-								bank), refType, makePrimary, monitor, log);
+								bank), refType, makePrimary, primaryGiven, monitor, log) > 0) {
+							added++;
+							(modeKnown && (bankKnown || overridden) && !selfWindow ? replaced : keepBase)
+									.add(key);
+						}
 						if (overridden) {
 							annotatePlacementProvenance(program.getListing(), instr.getMinAddress(),
 								bank, provenance);

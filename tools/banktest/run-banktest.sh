@@ -977,6 +977,10 @@ if selected nes-banking; then
 	# fork cap -- must decline with the MULTI_VALUED_AT_MERGE warning instead (nesforkbudgettest).
 	# See make_prg_fork()/make_prg_forkbudget()'s docstrings for the blmaster c9a4 shape.
 	run_one nesforktest "$WORK/nes/nesforktest.nes" NesRomLoader
+	# grm-bfb: the SURVIVAL sibling -- one arm resolves to the HOME bank, so the stale
+	# base-space reference at the retargeted site must survive (as a secondary) rather than
+	# be retired. See make_prg_forkhome()'s docstring.
+	run_one nesforkhometest "$WORK/nes/nesforkhometest.nes" NesRomLoader
 	run_one nesforkbudgettest "$WORK/nes/nesforkbudgettest.nes" NesRomLoader
 	# The analyzer's per-program fork summary line is the MEASUREMENT the owner's ruling asks for
 	# (it is what the real-ROM tally tabulates), and it lives in the headless log, outside the
@@ -987,6 +991,13 @@ if selected nes-banking; then
 			"$WORK/nesforktest.log"; then
 		echo "FAIL: nesforktest's fork summary did not report 2 forks at 1 site with 2 live (grm-wul)"
 		grep 'path fork' "$WORK/nesforktest.log" >&2 || true
+		fail=1
+	fi
+	if [ -f "$WORK/nesforkhometest.log" ] &&
+		! grep -q 'path forking: forks created=2 (sites 1) collapsed=0 (sites 0, address collapses 0) max live at one block=2' \
+			"$WORK/nesforkhometest.log"; then
+		echo "FAIL: nesforkhometest's fork summary did not report 2 forks at 1 site with 2 live (grm-bfb)"
+		grep 'path fork' "$WORK/nesforkhometest.log" >&2 || true
 		fail=1
 	fi
 	if [ -f "$WORK/nesforkbudgettest.log" ] &&

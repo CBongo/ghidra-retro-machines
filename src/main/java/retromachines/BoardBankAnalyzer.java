@@ -458,7 +458,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// BankCommentProvenance.open.
 		BankCommentProvenance provenance = BankCommentProvenance.open(program);
 		ReferenceManager refMgr = program.getReferenceManager();
-		int refsAdded = 0;
+		BankAnnotationAdapter.Retargeted refs = BankAnnotationAdapter.Retargeted.NONE;
 		int warnings = 0;
 		// Addresses that already carry a WARNING bookmark from this loop -- Phase 3's
 		// violation scan below dedupes against this set rather than stacking a second
@@ -594,8 +594,8 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 					if (marked.bookmarked()) {
 						alreadyWarned.add(addr);
 					}
-					refsAdded += retargetAll(program, refMgr, baseSpace, instr, board, bankUniverse,
-						flow, addr, placementOverride, monitor, log, provenance);
+					refs = refs.plus(retargetAll(program, refMgr, baseSpace, instr, board,
+						bankUniverse, flow, addr, placementOverride, monitor, log, provenance));
 					continue;
 				}
 				if (callSwitch.secondTierRelay() && !callSwitch.argumentResolved()) {
@@ -633,8 +633,8 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				}
 			}
 
-			refsAdded += retargetAll(program, refMgr, baseSpace, instr, board, bankUniverse, flow,
-				addr, placementOverride, monitor, log, provenance);
+			refs = refs.plus(retargetAll(program, refMgr, baseSpace, instr, board, bankUniverse,
+				flow, addr, placementOverride, monitor, log, provenance));
 		}
 
 		// Retract bank comments an EARLIER round wrote at sites this round did not annotate
@@ -680,7 +680,8 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		boolean stable = reachedFixpoint(entryFingerprint, fingerprint(program));
 		if (stable) {
 			AnalyzerLog.info(this, tag + ": " + flow.stateIn().size() + " instructions tracked, " +
-				refsAdded + " overlay references added/confirmed, " + warnings +
+				refs.added() + " overlay references added/confirmed, " + refs.retired() +
+				" stale base-space references retired, " + warnings +
 				" unknown-state warnings, " + violations + " bank-state requirement violations");
 			// grm-wul: every fork decision (grant, denial, address collapse), then the one-line
 			// per-program summary the owner's ruling makes THE measurement -- tabulated across
@@ -744,24 +745,19 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	}
 
 	/**
-	 * Retargets {@code instr}'s references once per whole state live at {@code addr} (bead
+	 * Retargets {@code instr}'s references against every whole state live at {@code addr} (bead
 	 * grm-wul): a single state everywhere path forking did not reach, or one per arm downstream
-	 * of a fork, the first arm's reference primary and the rest secondary -- see the
-	 * {@code makePrimary} overload of {@link BankAnnotationAdapter#retargetReferences}.
+	 * of a fork -- and retires the base-space references the overlay ones replaced (bead
+	 * grm-bfb). The arm ordering, primacy and retirement rules are
+	 * {@link BankAnnotationAdapter#retargetReferences}'s.
 	 */
-	private int retargetAll(Program program, ReferenceManager refMgr, AddressSpace baseSpace,
-			Instruction instr, BoardModel board, Map<String, Set<Integer>> bankUniverse,
-			DataflowResult flow, Address addr, Map<String, Integer> placementOverride,
-			TaskMonitor monitor, MessageLog log, BankCommentProvenance provenance) {
-		int added = 0;
-		boolean primary = true;
-		for (BankState state : flow.statesAt(addr)) {
-			added += BankAnnotationAdapter.retargetReferences(this, program, refMgr, baseSpace,
-				instr, board, bankUniverse, state, placementOverride, monitor, log, provenance,
-				primary);
-			primary = false;
-		}
-		return added;
+	private BankAnnotationAdapter.Retargeted retargetAll(Program program, ReferenceManager refMgr,
+			AddressSpace baseSpace, Instruction instr, BoardModel board,
+			Map<String, Set<Integer>> bankUniverse, DataflowResult flow, Address addr,
+			Map<String, Integer> placementOverride, TaskMonitor monitor, MessageLog log,
+			BankCommentProvenance provenance) {
+		return BankAnnotationAdapter.retargetReferences(this, program, refMgr, baseSpace, instr,
+			board, bankUniverse, flow.statesAt(addr), placementOverride, monitor, log, provenance);
 	}
 
 	/**

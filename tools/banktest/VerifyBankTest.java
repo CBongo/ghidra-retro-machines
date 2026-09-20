@@ -376,6 +376,9 @@ public class VerifyBankTest extends GhidraScript {
 		else if (name.contains("nesforkbudgettest")) {
 			checkNesForkBudgettest();
 		}
+		else if (name.contains("nesforkhometest")) {
+			checkNesForkHometest();
+		}
 		else if (name.contains("nesforktest")) {
 			checkNesForktest();
 		}
@@ -2546,6 +2549,22 @@ public class VerifyBankTest extends GhidraScript {
 		criterion("C8:lifecycle-fixpoint",
 			!BankLifecycleProbe.stable(17, 18) && BankLifecycleProbe.stable(18, 18),
 			"changing structural fingerprint stays initial; stable follow-on completes");
+
+		// C9 (grm-bfb): once an overlay reference replaces the stock base-space one, the
+		// base-space reference is RETIRED, not left as a secondary -- at a resolved site the
+		// base block is only the window's home occupant, so the stock reference is a known-
+		// wrong answer there (and on smb3 lands in an instruction interior). C1's read and
+		// C3's write-under-ROM store both resolved away from home, so their base refs go;
+		// C4's JSR $FFD2 resolved TO home, so its base ref is the right one and stays.
+		criterion("C9a", baseRefCount(0x080F, 0xA000) == 0,
+			"LDA $A000 in bank 5 keeps no base-space ref to $A000 (" +
+				baseRefCount(0x080F, 0xA000) + " found)");
+		criterion("C9b", baseRefCount(0x0805, 0xA000) == 0,
+			"STA $A000 under BASIC ROM keeps no base-space ref to $A000 (" +
+				baseRefCount(0x0805, 0xA000) + " found)");
+		criterion("C9c", baseRefCount(0x0808, 0xFFD2) == 1,
+			"JSR $FFD2 in bank 7 keeps its base-space ref to home KERNAL (" +
+				baseRefCount(0x0808, 0xFFD2) + " found)");
 	}
 
 	private static final class BankLifecycleProbe extends C64BankingAnalyzer {
@@ -2672,6 +2691,14 @@ public class VerifyBankTest extends GhidraScript {
 		criterion("D3", overlayRefCount(0x0805) == 1,
 			"exactly one overlay ref (the WRITE) at 0805 (" + overlayRefCount(0x0805) +
 				" found)");
+
+		// D4 (grm-bfb): the base-space ref must SURVIVE here. Retirement requires every side
+		// of the access to resolve away from home, and D2 just established the read side
+		// resolves to home BASIC through exactly this reference -- deleting it would leave
+		// the read with no target at all. It stays, as a secondary to D1's primary WRITE.
+		criterion("D4", baseRefCount(0x0805, 0xA000) == 1,
+			"INC $A000 keeps its base-space ref for the home-BASIC read side (" +
+				baseRefCount(0x0805, 0xA000) + " found)");
 	}
 
 	// ------------------------------------------------------------------
@@ -2913,6 +2940,14 @@ public class VerifyBankTest extends GhidraScript {
 		Reference r = findOverlayRef(0xC005, "PRG_LO_B2", 0x8005);
 		criterion("N5", r != null && r.getReferenceType().isCall() && r.isPrimary(),
 			"JSR $8005 in bank 2 retargeted to PRG_LO_B2 overlay, primary: " + describe(r));
+
+		// N6 (grm-bfb): the synthetic twin of the smb3 witnesses -- a cross-bank JSR whose
+		// stock base-space CALL ref pointed at the HOME bank's bytes at $8005. With the
+		// overlay ref in place that base ref is retired, so the call graph and references-to
+		// at base:8005 no longer carry a call that never reaches it.
+		criterion("N6", baseRefCount(0xC005, 0x8005) == 0,
+			"JSR $8005 in bank 2 keeps no base-space ref to $8005 (" +
+				baseRefCount(0xC005, 0x8005) + " found)");
 	}
 
 	// ------------------------------------------------------------------
@@ -3790,7 +3825,8 @@ public class VerifyBankTest extends GhidraScript {
 	}
 
 	// ------------------------------------------------------------------
-	// nesforktest.nes / nesforkbudgettest.nes criteria (path forking, bead grm-wul)
+	// nesforktest.nes / nesforkhometest.nes / nesforkbudgettest.nes criteria (path forking,
+	// bead grm-wul; nesforkhometest's survival-rule criteria are bead grm-bfb)
 	// ------------------------------------------------------------------
 
 	/**
@@ -3836,6 +3872,83 @@ public class VerifyBankTest extends GhidraScript {
 		criterion("F8", overlayRefCount(0xC00B) == 2 && overlayRefCount(0xC00E) == 2,
 			"exactly two overlay references at c00b and c00e (got " + overlayRefCount(0xC00B) +
 				"/" + overlayRefCount(0xC00E) + ")");
+
+		// F9 (grm-bfb): BOTH arms resolved away from home (bank 0), so the stock base-space
+		// refs at both sites are retired -- retirement is per site across all arms, not per
+		// arm. The complementary case, one arm resolving TO home so the base ref must stay,
+		// is nesforkhometest's H-criteria.
+		criterion("F9", baseRefCount(0xC00B, 0x8010) == 0 && baseRefCount(0xC00E, 0x8020) == 0,
+			"no base-space refs remain at c00b/c00e once both arms retargeted (got " +
+				baseRefCount(0xC00B, 0x8010) + "/" + baseRefCount(0xC00E, 0x8020) + ")");
+	}
+
+	/**
+	 * See {@code mknesbanktest.py}'s {@code make_prg_forkhome()}. Same two-armed merge shape
+	 * as {@code nesforktest}, but arm A selects the HOME bank (X = 0) instead of a second
+	 * non-home constant. This pins grm-bfb's SURVIVAL rule: the stale base-space reference at
+	 * a retargeted site is retired only when EVERY live arm resolved away from home. Here arm
+	 * A resolves TO home, so the base ref at each site genuinely describes that arm's reality
+	 * and must survive -- as the PRIMARY reference, since it was already there (and primary)
+	 * for the un-forked home case, and the overlay ref path forking places for arm B is added
+	 * with makePrimary=false.
+	 */
+	private void checkNesForkHometest() {
+		// H1: the merge site annotates both arms (home first, in arm order), with the fork
+		// vocabulary.
+		String c = eol(0xC008);
+		criterion("H1", c.contains("bank -> 0 (bank=0) | 2 (bank=2)") &&
+			c.contains("[path fork: 2 arms]"),
+			"merge site c008 annotates both arms: \"" + c + "\"");
+
+		// H2: no warning at the merge site -- it RESOLVED, to two values.
+		criterion("H2", warningBookmarkText(0xC008).isEmpty(),
+			"no WARNING at the forked merge site c008 (got: \"" + warningBookmarkText(0xC008) + "\")");
+
+		// H3: the JSR after the switch reaches the non-home overlay, as a NON-primary call --
+		// arm A (home) placed nothing, so it never had primacy to give up, and arm B's overlay
+		// ref is added secondary per grm-wul's established convention.
+		Reference j2 = findOverlayRef(0xC00B, "PRG_LO_B2", 0x8010);
+		criterion("H3", j2 != null && !j2.isPrimary() && j2.getReferenceType().isCall(),
+			"JSR at c00b retargeted to PRG_LO_B2::8010 as a secondary call: " + describe(j2));
+
+		// H4 (grm-bfb): the base-space ref at c00b SURVIVES -- arm A resolves to home, so the
+		// stock base-space reference is genuinely correct for that arm and must not be
+		// retired. This is the criterion the fixture exists to pin.
+		criterion("H4", baseRefCount(0xC00B, 0x8010) == 1,
+			"base-space ref at c00b::8010 survives because arm A resolves to home (got " +
+				baseRefCount(0xC00B, 0x8010) + ")");
+
+		// H5: the surviving base ref is PRIMARY -- it was already there (and primary) for the
+		// home case, and nothing about the fork should have displaced it.
+		Reference baseJ = null;
+		{
+			Instruction instr = currentProgram.getListing().getInstructionAt(addr(0xC00B));
+			AddressSpace base = currentProgram.getAddressFactory().getDefaultAddressSpace();
+			if (instr != null) {
+				for (Reference r : instr.getReferencesFrom()) {
+					if (r.getToAddress().getAddressSpace().equals(base) &&
+						r.getToAddress().getOffset() == 0x8010) {
+						baseJ = r;
+						break;
+					}
+				}
+			}
+		}
+		criterion("H5", baseJ != null && baseJ.isPrimary(),
+			"surviving base ref at c00b is primary: " + describe(baseJ));
+
+		// H6: exactly one overlay reference per site -- only arm B (non-home) placed one.
+		criterion("H6", overlayRefCount(0xC00B) == 1 && overlayRefCount(0xC00E) == 1,
+			"exactly one overlay reference at c00b and c00e (got " + overlayRefCount(0xC00B) +
+				"/" + overlayRefCount(0xC00E) + ")");
+
+		// H7: the data read's base ref survives too, and its overlay ref to bank 2 is
+		// secondary, mirroring H3/H4 for the second site.
+		criterion("H7a", baseRefCount(0xC00E, 0x8020) == 1,
+			"base-space ref at c00e::8020 survives (got " + baseRefCount(0xC00E, 0x8020) + ")");
+		Reference d2 = findOverlayRef(0xC00E, "PRG_LO_B2", 0x8020);
+		criterion("H7b", d2 != null && !d2.isPrimary(),
+			"LDA at c00e retargeted to PRG_LO_B2::8020 (secondary): " + describe(d2));
 	}
 
 	/**
@@ -5495,6 +5608,25 @@ public class VerifyBankTest extends GhidraScript {
 			return false;
 		}
 		return currentProgram.getListing().getInstructionAt(space.getAddress(offset)) != null;
+	}
+
+	/** Number of references out of the instruction at {@code from} into BASE space at
+	 *  {@code toOffset} -- the stock reference the disassembler placed, which grm-bfb retires
+	 *  once an overlay reference has replaced it. */
+	private int baseRefCount(long from, long toOffset) {
+		Instruction instr = currentProgram.getListing().getInstructionAt(addr(from));
+		if (instr == null) {
+			return 0;
+		}
+		AddressSpace base = currentProgram.getAddressFactory().getDefaultAddressSpace();
+		int count = 0;
+		for (Reference r : instr.getReferencesFrom()) {
+			if (r.getToAddress().getAddressSpace().equals(base) &&
+				r.getToAddress().getOffset() == toOffset) {
+				count++;
+			}
+		}
+		return count;
 	}
 
 	private int overlayRefCount(long from) {
