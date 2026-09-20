@@ -260,14 +260,19 @@ public final class RunFromElsewhere {
 			request.jumpSite, request.originLabel);
 
 		// Probe before and after so an idempotent no-op is distinguishable from a failure: the
-		// materializer reports SKIPPED for both.
+		// materializer reports SKIPPED for both. "Present" means a block with this name already
+		// lives in the DESTINATION space specifically -- sanitizeSpaceName is not injective
+		// (grm-ppmr), so a same-named block in a different space is a collision the materializer
+		// refuses, not something this call should report as already satisfied.
 		String blockName = RecoveredBlockNames.forCopy(program, request.dstStart);
-		boolean present = program.getMemory().getBlock(blockName) != null;
+		boolean present = RecoveredBlockNames.probeExistingBlock(program, blockName)
+				.sameSpaceAs(request.dstStart.getAddressSpace());
 
 		TransferPlacement placement =
 			TransferMaterializer.materialize(program, spec, category, monitor, log);
 
-		boolean nowPresent = program.getMemory().getBlock(blockName) != null;
+		boolean nowPresent = RecoveredBlockNames.probeExistingBlock(program, blockName)
+				.sameSpaceAs(request.dstStart.getAddressSpace());
 		String detail = placement == TransferPlacement.SKIPPED && !present
 				? "not materialized; see the analysis log for the reason"
 				: "";

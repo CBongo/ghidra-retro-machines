@@ -63,12 +63,17 @@ public class TransferMaterializerTest extends AbstractBundledLanguageTest {
 	/** Runs {@link TransferMaterializer#materialize} inside its own transaction, as production
 	 *  callers (the analyzer, the loader) always do. */
 	private TransferPlacement materialize(ProgramDB program, TransferSpec spec) {
+		return materialize(program, spec, new MessageLog());
+	}
+
+	/** Same as {@link #materialize(ProgramDB, TransferSpec)}, but with a caller-supplied
+	 *  {@link MessageLog} so a test can inspect what got logged (e.g. a grm-ppmr collision). */
+	private TransferPlacement materialize(ProgramDB program, TransferSpec spec, MessageLog log) {
 		int tx = program.startTransaction("materialize");
 		boolean commit = false;
 		try {
 			TransferPlacement placement =
-				TransferMaterializer.materialize(program, spec, CATEGORY, TaskMonitor.DUMMY,
-					new MessageLog());
+				TransferMaterializer.materialize(program, spec, CATEGORY, TaskMonitor.DUMMY, log);
 			commit = true;
 			return placement;
 		}
@@ -719,5 +724,94 @@ public class TransferMaterializerTest extends AbstractBundledLanguageTest {
 			RecoveredBlockNames.forDecrypted(program, builder.addr("0x2010")));
 		assertEquals("DECRYPTED_RAM_E000_B0_e000",
 			RecoveredBlockNames.forDecrypted(program, inSpace(program, "RAM_E000_B0", 0xE000)));
+	}
+
+	// ------------------------------------------------------------------
+	// 9b. sanitizeSpaceName is not injective -- a folded-name collision is refused, never
+	// silently treated as an idempotent no-op (grm-ppmr)
+	// ------------------------------------------------------------------
+	// "RAM-A" and "RAM_A" both sanitize to "RAM_A": distinct overlay spaces, one recovered name.
+	// MemoryMapDB.fixupOverlaySpaceName only maps ':' and control characters, so a hyphenated
+	// space name survives as-is into the overlay Ghidra creates for it (grm-ppmr's class-javadoc
+	// point about fixupOverlaySpaceName being the looser rule).
+
+	/** Two RAM overlays whose space names differ only in a character the sanitizer folds --
+	 *  {@code "RAM-A"} and {@code "RAM_A"} -- both covering the identical CPU range. */
+	private static void foldCollidingWindow(ProgramBuilder builder) throws Exception {
+		uninitializedRamOverlay(builder, "RAM-A", "0xE000", 0x2000);
+		uninitializedRamOverlay(builder, "RAM_A", "0xE000", 0x2000);
+	}
+
+	@Test
+	public void repeatRecoveryInTheSameFoldedSpaceStaysIdempotent() throws Exception {
+		ProgramBuilder builder = newBuilder();
+		builder.createMemory("SRC", "0x2000", 0x10);
+		builder.setBytes("0x2000", "01 02 03 04 05 06 07 08");
+		foldCollidingWindow(builder);
+		ProgramDB program = builder.getProgram();
+
+		Address dst = inSpace(program, "RAM-A", 0xE000);
+		TransferSpec spec = identitySpec(builder.addr("0x2000"), dst, 8,
+			TransferTarget.RESOLVED_SPACE, builder.addr("0x2000"));
+
+		assertEquals(TransferPlacement.IN_PLACE_BANKED, materialize(program, spec));
+		List<String> before = snapshotBlocks(program);
+
+		// Same space, same recovered name ("COPY_RAM_A_e000" for both "RAM-A" and "RAM_A" after
+		// folding): a re-run at the SAME space is still a genuine idempotent hit.
+		MessageLog log = new MessageLog();
+		assertEquals(TransferPlacement.SKIPPED, materialize(program, spec, log));
+		assertEquals("a re-run in the same (folded) space must not stack a second block", before,
+			snapshotBlocks(program));
+		assertFalse("a same-space idempotent hit must not be logged as a collision",
+			log.toString().contains("collision"));
+	}
+
+	@Test
+	public void foldedNameCollisionAcrossDistinctSpacesIsRefusedNotSilentlyIdempotent()
+			throws Exception {
+		ProgramBuilder builder = newBuilder();
+		builder.createMemory("SRC", "0x2000", 0x20);
+		builder.setBytes("0x2000", "a1 a2 a3 a4 a5 a6 a7 a8");
+		builder.setBytes("0x2010", "b1 b2 b3 b4 b5 b6 b7 b8");
+		foldCollidingWindow(builder);
+		ProgramDB program = builder.getProgram();
+
+		Address dstA = inSpace(program, "RAM-A", 0xE000);
+		Address dstB = inSpace(program, "RAM_A", 0xE000);
+
+		assertEquals(TransferPlacement.IN_PLACE_BANKED, materialize(program,
+			identitySpec(builder.addr("0x2000"), dstA, 8, TransferTarget.RESOLVED_SPACE,
+				builder.addr("0x2000"))));
+
+		// "RAM-A" sanitizes to the same "RAM_A" as the literal space "RAM_A" -- the second
+		// recovery's name collides with the first's, even though the spaces are distinct. This
+		// must be refused (logged, SKIPPED), never reported as "already recovered".
+		MessageLog log = new MessageLog();
+		assertEquals("a folded-name collision across distinct spaces must be refused, not "
+			+ "materialized as if the destination space differed", TransferPlacement.SKIPPED,
+			materialize(program,
+				identitySpec(builder.addr("0x2010"), dstB, 8, TransferTarget.RESOLVED_SPACE,
+					builder.addr("0x2010")),
+				log));
+
+		String logged = log.toString();
+		assertTrue("collision log must name the recovered block name",
+			logged.contains("COPY_RAM_A_e000"));
+		assertTrue("collision log must name the space the existing block lives in",
+			logged.contains("RAM-A"));
+		assertTrue("collision log must name the space this recovery targeted",
+			logged.contains("RAM_A"));
+
+		// Only the first recovery's block exists; the second space was left untouched (still the
+		// original uncarved placeholder, not a COPY_ block).
+		assertNotNull("the first recovery's block must be untouched",
+			program.getMemory().getBlock("COPY_RAM_A_e000"));
+		assertEquals("RAM-A", program.getMemory().getBlock("COPY_RAM_A_e000").getStart()
+				.getAddressSpace().getName());
+		MemoryBlock untouched = program.getMemory().getBlock(dstB);
+		assertNotNull(untouched);
+		assertEquals("the refused space must not have been carved", "RAM_A", untouched.getName());
+		assertFalse("the refused space must remain uninitialized", untouched.isInitialized());
 	}
 }

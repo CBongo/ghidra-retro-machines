@@ -137,6 +137,17 @@ on a bare `check` (bead grm-ughg) is far cheaper still — 5 rows, measured 46s 
 less excuse to background it. They are slow enough that backgrounding them looks like the way to
 stay responsive. For a subagent it is not.
 
+**"Foreground" means passing an explicit `timeout` on the Bash call — it is not the default.**
+The Bash tool's default timeout is 120 seconds, and when a command runs past it the harness
+does not fail the call: it silently **moves the command to the background** and returns, which
+is indistinguishable from having backgrounded it yourself. Every gate here exceeds 120s, so a
+gate launched without a timeout is ALWAYS auto-backgrounded, no matter what you intended.
+Measured 2026-09-20: two consecutive subagents in one session each ran a gate "in the
+foreground", were auto-backgrounded, stopped, and had to be resumed to collect a result they
+never observed. Pass `timeout: 600000` (the 10-minute maximum) on every `build-and-test.sh` or
+`realrom-test.sh` call. If a run genuinely needs longer than that, say so in your report and hand
+the orchestrator the command.
+
 **Do not inflate that figure.** This sentence previously said the real-ROM tier "is hours", which
 was never measured and was ~50x high; it rested in turn on a `~1min+` per-import estimate that was
 roughly the *worst* row stated as typical. A wrong cost estimate in an instruction file changes

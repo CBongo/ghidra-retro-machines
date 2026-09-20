@@ -22,6 +22,7 @@ import ghidra.framework.store.LockException;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressOutOfBoundsException;
 import ghidra.program.model.address.AddressOverflowException;
+import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.listing.BookmarkManager;
 import ghidra.program.model.listing.BookmarkType;
 import ghidra.program.model.listing.CommentType;
@@ -143,8 +144,17 @@ final class TransferMaterializer {
 		}
 
 		String name = RecoveredBlockNames.forCopy(program, spec.dstStart());
-		if (program.getMemory().getBlock(name) != null) {
+		AddressSpace targetSpace = spec.dstStart().getAddressSpace();
+		RecoveredBlockNames.ExistingBlock existing = RecoveredBlockNames.probeExistingBlock(program, name);
+		if (existing.sameSpaceAs(targetSpace)) {
 			return TransferPlacement.SKIPPED; // already recovered on a prior pass -- idempotent
+		}
+		if (existing.collidesWith(targetSpace)) {
+			// sanitizeSpaceName folded two distinct address spaces to the same recovered name
+			// (grm-ppmr) -- refuse rather than silently treat this as an idempotent no-op.
+			log.appendMsg(category,
+				RecoveredBlockNames.collisionMessage(name, existing.existingSpace(), targetSpace));
+			return TransferPlacement.SKIPPED;
 		}
 
 		// Gate 0: a snapshot needs readable source bytes. Produce nothing rather than invent them.

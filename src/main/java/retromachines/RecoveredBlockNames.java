@@ -18,6 +18,7 @@ package retromachines;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.listing.Program;
+import ghidra.program.model.mem.MemoryBlock;
 
 /**
  * The single place that derives a memory-block name from a recovered address -- {@code COPY_} for
@@ -25,7 +26,8 @@ import ghidra.program.model.listing.Program;
  * {@code DECRYPTED_} for a recovered decrypt ({@link C64DecryptLoopAnalyzer}). The name is also
  * the <em>idempotence key</em>: each of those sites decides "was this already recovered on a
  * prior pass?" by asking {@code Memory.getBlock(name)}, so two recoveries that produce the same
- * name are indistinguishable to it.
+ * name are indistinguishable to it -- {@link #probeExistingBlock} is the shared, space-aware
+ * form of that check (grm-ppmr).
  *
  * <p><b>Why this class exists (grm-0p7).</b> The name used to be the offset alone
  * ({@code COPY_%04x}), but {@code Memory.getBlock(String)} searches by name across <em>every</em>
@@ -57,6 +59,18 @@ import ghidra.program.model.listing.Program;
  * is legal both as a block name and as the overlay space name Ghidra derives from one
  * ({@code MemoryMapDB.fixupOverlaySpaceName}, which rejects only {@code ':'} and characters
  * {@code <= 0x20}; ours is the stricter rule).
+ *
+ * <p><b>THE RESIDUAL (grm-ppmr).</b> {@link #sanitizeSpaceName} is not injective: two distinct
+ * space names that fold to the same {@code [A-Za-z0-9_]} string -- {@code "RAM-A"} and
+ * {@code "RAM_A"}, say -- produce one recovered name, which reopens the grm-0p7 collision one
+ * level narrower. Rather than widen the mapping (which would rename every space that already
+ * contains a folded character, including ordinary underscore-bearing overlay names in golden
+ * dumps today), the three idempotence call sites refuse the collision instead of guessing:
+ * {@link #probeExistingBlock} tells a caller whether a block with the recovered name already
+ * exists, and if so whether it lives in the <em>same</em> address space as the recovery target
+ * (a genuine idempotent hit) or a <em>different</em> one (a name collision from the fold). A
+ * same-space hit is still silently idempotent, exactly as before; a cross-space hit is logged --
+ * naming both spaces -- and skipped, but never reported as "already recovered on a prior pass".
  */
 final class RecoveredBlockNames {
 
@@ -118,5 +132,59 @@ final class RecoveredBlockNames {
 			return "s" + buf;
 		}
 		return buf.toString();
+	}
+
+	/**
+	 * Whether a block named {@code name} already exists in {@code program}, and if so, which
+	 * address space its start address lives in. The three idempotence call sites use this
+	 * (instead of a bare {@code Memory.getBlock(name) != null}) so a name collision produced by
+	 * {@link #sanitizeSpaceName}'s non-injectivity (grm-ppmr) is distinguishable from a genuine
+	 * repeat recovery -- see {@link ExistingBlock#sameSpaceAs} and {@link ExistingBlock#collidesWith}.
+	 */
+	static ExistingBlock probeExistingBlock(Program program, String name) {
+		MemoryBlock block = program.getMemory().getBlock(name);
+		return new ExistingBlock(block == null ? null : block.getStart().getAddressSpace());
+	}
+
+	/**
+	 * The result of {@link #probeExistingBlock}: {@code existingSpace} is {@code null} when no
+	 * block with the probed name exists, and otherwise is the address space of the block that
+	 * already claims that name.
+	 */
+	record ExistingBlock(AddressSpace existingSpace) {
+
+		/** No block with this name exists yet. */
+		boolean none() {
+			return existingSpace == null;
+		}
+
+		/**
+		 * A block with this name exists and lives in {@code target} -- a genuine idempotent hit
+		 * from a prior recovery pass.
+		 */
+		boolean sameSpaceAs(AddressSpace target) {
+			return existingSpace != null && existingSpace.equals(target);
+		}
+
+		/**
+		 * A block with this name exists but lives in a space other than {@code target} -- the
+		 * sanitizer folded two distinct space names together (grm-ppmr); this is a collision, not
+		 * an idempotent hit.
+		 */
+		boolean collidesWith(AddressSpace target) {
+			return existingSpace != null && !existingSpace.equals(target);
+		}
+	}
+
+	/**
+	 * The log line every cross-space collision site emits: names the recovered block name and
+	 * both address spaces involved, so the message is diagnosable without re-deriving the
+	 * sanitized name by hand.
+	 */
+	static String collisionMessage(String name, AddressSpace existingSpace, AddressSpace targetSpace) {
+		return name + ": recovered block name already used by a block in address space '" +
+			existingSpace.getName() + "', but this recovery targets space '" +
+			targetSpace.getName() + "' -- sanitizeSpaceName folds distinct space names together " +
+			"(grm-ppmr); refusing rather than treating this as an idempotent repeat";
 	}
 }

@@ -31,6 +31,7 @@ import ghidra.program.model.address.AddressRange;
 import ghidra.program.model.address.AddressRangeImpl;
 import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.address.AddressSetView;
+import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.lang.Register;
 import ghidra.program.model.listing.BookmarkType;
 import ghidra.program.model.listing.CommentType;
@@ -259,8 +260,17 @@ public class C64DecryptLoopAnalyzer extends AbstractAnalyzer {
 			boolean suspect, TaskMonitor monitor, MessageLog log) {
 		Address base = rd.target().getMinAddress();
 		String name = RecoveredBlockNames.forDecrypted(program, base);
-		if (program.getMemory().getBlock(name) != null) {
+		AddressSpace targetSpace = base.getAddressSpace();
+		RecoveredBlockNames.ExistingBlock existing = RecoveredBlockNames.probeExistingBlock(program, name);
+		if (existing.sameSpaceAs(targetSpace)) {
 			return; // already recovered on a prior pass -- idempotent
+		}
+		if (existing.collidesWith(targetSpace)) {
+			// sanitizeSpaceName folded two distinct address spaces to the same recovered name
+			// (grm-ppmr) -- refuse rather than silently treat this as an idempotent no-op.
+			AnalyzerLog.warn(this, log,
+				RecoveredBlockNames.collisionMessage(name, existing.existingSpace(), targetSpace));
+			return;
 		}
 		MemoryBlock block;
 		try {
