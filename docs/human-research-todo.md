@@ -131,6 +131,16 @@ Blocked on judgment, not effort.
       generator precedent. Only one new concept is needed: a `block: bank` qualifier, since a label
       at `$8000` is ambiguous across 16 UxROM banks.
 
+      *Two additions from you, 2026-09-07 (`grm-hb6.6` comment) — neither ingested, and neither to
+      be ingested without a ruling here.* **zelda2** now has a candidate,
+      <https://github.com/FiendsOfTheElements/z2disassembly>, for a title already hash-pinned in
+      the curated manifest — a fifth row for the table, and it would settle `grm-jqt0`'s open
+      "`$0769` has no discovered writer" point directly. And Data Crystal's per-title RAM maps
+      (e.g. <https://datacrystal.tcrf.net/wiki/Zelda_II:_The_Adventure_of_Link/RAM_map>) are a
+      **second source kind** the bead does not currently consider: a curated RAM-cell dictionary,
+      not a disassembly, which fits `grm-hb6.11`'s `bank_shadow`/save-slot vocabulary better than a
+      full listing does and carries no code-licensing question. Rule on the two kinds separately.
+
 - [ ] **c64ref sourcing** (`grm-p5w`, typed as a `decision`) — generator + committed
       `generated/*.yaml`, or git submodule + build-time generation. Binds `grm-hb6.6` and `grm-54p`
       too. Decide once.
@@ -141,43 +151,36 @@ Blocked on judgment, not effort.
 
 Agents can't file these — they need an account and CLA agreement.
 
-- [ ] **GP-6936 turns ordinary negative stack offsets into `join` varnodes on 16-bit-address
-  processors — the 12.1.3 decompiler regression, now root-caused.** (`grm-qp5x.1`, settled
-  2026-09-04.) **A complete issue body, title included, is drafted verbatim on `grm-qp5x.1`'s
-  comments** — review and post, nothing left to write.
+- [ ] **GP-6936: the upstream issue is filed — the PR, the `#4148` cross-reference, and the
+  "carry a patched install?" call remain.** (`grm-qp5x.2`.) You filed
+  [NationalSecurityAgency/ghidra#9655](https://github.com/NationalSecurityAgency/ghidra/issues/9655)
+  on 2026-09-19; the root cause is condensed in the Answered table. Still yours:
 
-  The short version: there was never a 185-commit bisect to do. Exactly one commit touches
-  `Ghidra/Features/Decompiler/src/decompile` between the two tags, and instrumenting its two new
-  call sites showed a single trigger shape repeated 2062 times — a 2-byte access at stack offset
-  −1 on a 16-bit stack space, rewritten from a plain `stack:ffff` varnode into a `join`. That is a
-  local at the top of a 6502 stack frame, not a wrapped memory range. Reverting the wrap-range
-  hunks alone restores 12.1.2's output exactly.
+  1. **The PR.** #9655 ends "I plan to submit a PR with this fix unless advised otherwise", so it
+     is promised. The fix is the three-hunk patch on `grm-qp5x.2` — `calcScaleMask` flag placement,
+     a spacebase early-return in `constructWrappingAddress`, and dropping the `SpacebaseSpace`
+     constructor's `setFlags` — measured 2026-09-04 to fix **both** halves of GP-6936: our two rows
+     return to the full-revert result, and on #4148's reporter's own `sysmem.elf` (a genuine
+     wrapped `ram` range, ARMv7 read through a `0xFFFFFFFF` pointer) stock 12.1.3 fails with their
+     exact error while the patched build decompiles it and recovers the call argument for argument.
+     The full 33-ROM tier shows no row regressing off stock. Preparing the branch is agent work —
+     use the `grm-6xh` recipe below (explicit GitHub remote, cut from a freshly fetched `master`,
+     its own worktree); the push and the PR are yours. One caveat the PR body must carry:
+     `datatests/wraprange.xml` is expected to fail under the patch, and that is a *reading* of the
+     test, not an observed failure — `decomp_test_dbg` needs `termios.h`/`dirent.d_type` and will
+     not build on this machine (a Linux box, or `pacman -S gcc` under msys64).
+  2. **The `#4148` cross-reference.** #9655's body does not cite #4148, and the comment drafted
+     for #4148 on `grm-qp5x.2` is unposted (checked 2026-09-20: nothing there from you). #4148 is
+     the *other* half of GP-6936 — assigned to its own author, and its reporter re-tested on
+     12.1.3 on 2026-09-03 and still fails, now with `constructWrappingAddress`'s new throw, because
+     `allows_wrapped_range` is set only in the two `SpacebaseSpace` constructors and an ordinary
+     `ram` space can never carry it. Posting it is what turns "please drop your feature" into "the
+     flag is on the wrong space class" for the maintainer. Optional, but it makes the PR land.
 
-  **Reframed 2026-09-04 by Ghidra issue #4148** (owner-supplied pointer), which is the *other*
-  half of GP-6936 and makes the report much stronger. #4148 is a genuine wrapped `ram` range
-  (ARMv7 read through a `0xFFFFFFFF` pointer), it is assigned to GP-6936's own author, and on
-  2026-09-03 its reporter re-tested on 12.1.3 and found it still fails — now with
-  `Trying to construct memory range beyond end of address space: ram`, which is
-  `constructWrappingAddress`'s new throw. It *cannot* be fixed as shipped:
-  `allows_wrapped_range` is set in exactly two places, both `SpacebaseSpace` constructors, with
-  no decode path, so an ordinary `ram` space can never carry it. So GP-6936 is inverted — the
-  half that was asked for still throws, and the half nobody asked for is the one that regresses
-  us. The ask becomes "the flag is on the wrong space class", not "please drop your feature".
-  **Experiment run 2026-09-04 and the patch fixes both halves.** On the reporter's own
-  `sysmem.elf`: stock 12.1.3 fails with their exact error, the spacebase hunk alone still
-  fails, the `calcScaleMask` hunk alone decompiles cleanly, and the recovered call matches
-  their hand-written expectation argument for argument. Our two rows are unchanged from the
-  full-revert arm, and the full 33-ROM tier shows no row regressing off stock. **A rewritten
-  issue body plus a comment for #4148 are drafted verbatim on `grm-qp5x.2`** — review and
-  post; the draft on `grm-qp5x.1` is superseded and must not be filed. One caveat is carried
-  in the draft: `datatests/wraprange.xml` will fail under the patch, and that is a reading of
-  the test, not an observed failure — `decomp_test_dbg` needs `termios.h`/`dirent.d_type` and
-  will not build on this machine, so it wants a Linux box or `pacman -S gcc` under msys64.
-
-  Worth deciding alongside the filing: this reopens `grm-qp5x`'s option list. We can now build a
-  patched `decompile.exe` in ~2 minutes, so "carry a locally patched install" is a real fourth
-  option next to (a) leave failing, (b) root-cause — done — and (c) pin the rows' analysis
-  options. That is your call, not an analysis question.
+  And the decision this reopens on `grm-qp5x`: a patched `decompile.exe` builds in ~2 minutes, so
+  "carry a locally patched install" is a real fourth option next to (a) leave `megaman`/`wizwarr`
+  failing, (b) root-cause — done — and (c) pin the rows' analysis options. Your call, not an
+  analysis question; it decides how long those two rows stay red.
 
 - [ ] **`Loader.validateOptions()` is never called outside the GUI import dialogs — document it or
   wire it up?** (`grm-vsg`, investigated 2026-08-21.) At 12.1.3 the only callers are
@@ -233,35 +236,23 @@ Agents can't file these — they need an account and CLA agreement.
   than a hook that must remember to run two — worth filing when you are already in that repo, not
   worth a special trip.
 
-- [ ] **File the seven 65816 semantic defects against `joshleaves/ghidra-snes`.** (`grm-9nxj.7`,
-  scope widened 2026-09-05.) **The full write-up is already drafted on the bead** — each defect
-  stated the way a maintainer needs it (what is wrong / evidence / fix) — so this is review-and-
-  post, nothing left to research.
+- [ ] **Push and open the `joshleaves/ghidra-snes` PR for the seven 65816 semantic defects.**
+  (`grm-9nxj.7`.) **The PR is prepared** (2026-09-19, agent, orchestrator-reviewed): branch
+  `fix/65816-semantics` in your local clone of the fork, one commit (`917c735`) on top of
+  upstream `master` `d33ce5d`, touching only `data/languages/658xx.sinc` (+106/−31) — all seven
+  fixes as tight commented hunks, PBR wrap deliberately excluded because upstream already
+  documents it. Compiles clean with `sleigh` on both 12.0.4 (the fork's target) and 12.1.3, with
+  the same two pre-existing NOP-constructor warnings. A maintainer-facing PR body sits beside the
+  clone; `grm-9nxj.7`'s latest comment names both paths. Checked 2026-09-20: the branch is not on
+  `origin` and the repo has no PRs, so this is still open. Remaining, owner-only: push the
+  branch, open the PR against `joshleaves/ghidra-snes` `master` with that body, close the bead
+  with the PR URL, and retire this item.
 
   All seven were found against the SingleStepTests vector oracle, not by reading: CPY constraint
   swap, compare-carry sext-vs-zext, indirect jump/call double-dereference, XBA never reading B,
   TXA/TYA flag computation, context-field bit-numbering (big-endian register vs SLEIGH's
-  MSB-numbered fields), and XCE native→native register truncation. The patches are already
-  committed locally, so the report can point at working fixes.
-
-  **Target the right repo:** `joshleaves/ghidra-snes` is the live fork; `achan1989/ghidra-65816`
-  is archived. The draft deliberately separates out one item that is **not** reportable — PBR
-  wrap, which upstream already documents — so do not add it back.
-
-- [ ] **Ask `SingleStepTests/65816` upstream to state a license explicitly.** (`grm-9nxj.8` P3.)
-  An issue on the repo is enough; the sibling `SingleStepTests/spc700` repo, same GitHub org, is
-  MIT and is already vendored here under that grant, so its MIT text is the obvious candidate to
-  point at. Needs a short draft — unlike the item above, no body is written yet.
-
-  Context for the ask: `SingleStepTests/65816` carries no LICENSE file, GitHub's API reports no
-  detected license, and its README says nothing about licensing, copyright, attribution or
-  redistribution (checked directly, not inferred from the API). You ruled 2026-09-04 to vendor the
-  sample anyway on a same-org inference, with `NOTICE` stating plainly that it is an inference and
-  not a grant. **This closes that gap properly rather than leaving it standing.**
-
-  Low urgency — the interim state works. If upstream declines or states something incompatible
-  with redistribution, `src/test/resources/w65816-vectors/` comes out and the sample tier becomes
-  clone-gated; the exhaustive tier is unaffected either way, since it never vendors anything.
+  MSB-numbered fields), and XCE native→native register truncation. **Target the right repo:**
+  `joshleaves/ghidra-snes` is the live fork; `achan1989/ghidra-65816` is archived.
 
 *Two things learned that the next upstream item should inherit:*
 
@@ -279,6 +270,8 @@ Agents can't file these — they need an account and CLA agreement.
 
 | question | answer | bead |
 |---|---|---|
+| Ask `SingleStepTests/65816` upstream to state a license explicitly | **Already asked by someone else — [SingleStepTests/65816#9](https://github.com/SingleStepTests/65816/issues/9) (opened 2026-08-28) requests MIT and a LICENSE file; you added a supporting comment there on 2026-09-19 rather than opening a duplicate.** The human half is done; `grm-9nxj.8` stays open only to wait on upstream. When a LICENSE lands, update `src/test/resources/w65816-vectors/NOTICE` to cite it and close; if upstream declines, remove the vendored sample and clone-gate `W65816VectorSampleTest`. Do not file a second issue. | `grm-9nxj.8` (open, waiting on upstream) |
+| Where does the 12.1.3 native decompiler regression come from, and was it reported upstream? | **GP-6936 (`6dd07f90ff`), and yes — filed 2026-09-19 as [NationalSecurityAgency/ghidra#9655](https://github.com/NationalSecurityAgency/ghidra/issues/9655).** There was never a 185-commit bisect to do: exactly one commit touches `Ghidra/Features/Decompiler/src/decompile` between the 12.1.2 and 12.1.3 tags, and instrumenting its two new call sites showed a single trigger shape repeated 2062 times — a 2-byte access at stack offset −1 on a 16-bit stack space, rewritten from a plain `stack:ffff` varnode into a `join`. That is the `JSR` return slot at the top of a 6502 stack frame, not a wrapped range, so it fires at every call site. Reverting the wrap-range hunks alone restores 12.1.2's output exactly; the `type.cc`/`type.hh` half is inert. The PR, the #4148 cross-reference and the patched-install decision remain — see section 5. | `grm-qp5x.1` **closed**; `grm-qp5x.2` |
 | Was the Ghidra upstream 6502 semantics fix submitted? | **Yes — submitted 2026-09-19 as [NationalSecurityAgency/ghidra PR #9656](https://github.com/NationalSecurityAgency/ghidra/pull/9656).** The PR covers ADC carry-in/overflow (including the separate 65C02 ZIOP constructor), SBC carry polarity, and zero-page-wrapped `(zp,X)`/`(zp),Y` pointer fetches. Follow review on the upstream PR. | `grm-ef46` **closed** |
 | Was the deity-informant upstream 6510 SLEIGH fix submitted? | **Yes — submitted 2026-09-19 as [anarkiwi/deity-informant PR #359](https://github.com/anarkiwi/deity-informant/pull/359).** The PR carries the widened oracle-backed scope: RRA, ISC/`$EB` SBC, ARR decimal behavior, zero-page-wrapped indirect fetches, and generated SMC twins. Follow review on the upstream PR. | `grm-c9hv` **closed** |
 | Why does merely *enabling* our analyzer change what Ghidra disassembles before it runs? | **It doesn't — the premise is refuted, so there is nothing here to read a breakpoint for.** Measured 2026-09-04 with the committed census instrument (`SetAnalyzerEnabled.java` + `BaseSpaceCensus.java`, `grm-8uaz`), which disables *only* `NES Bank State` and verifies the flip by read-back. With the thread pin removed and the cache cold, tmnt reaches **2006/67 whether our analyzer runs or not** (4 runs on, 2 runs off; the off arm logs zero `NesBankingAnalyzer running` lines and produces zero bank comments, so it really was off). With the pin, 3426/117 on both arms. The shortfall is multi-threaded cold-cache analysis, not us. **It is also not a race**: 4/4 at 2006 without the pin, 4/4 at 3426 with it, nothing flapping once cache warmth and thread count are both held — the old flakiness was cache warmth as an uncontrolled third variable. Two figures previously recorded here do not reproduce: analyzer-off cold is 2006 (not 3426) without the pin, and analyzer-off warm is 3413 (not 3426) with it. **Do not spend a breakpoint on `AnalysisScheduler`** for this; the pin we already ship fully masks it and the residue is a Ghidra-side question. | `grm-nems`; `grm-8uaz` |
