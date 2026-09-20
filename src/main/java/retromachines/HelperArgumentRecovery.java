@@ -187,6 +187,22 @@ final class HelperArgumentRecovery {
 	static CallEffect recoverCallArgument(Program program, Instruction callInstr,
 			HelperModel helper, BankState callSiteIn, Map<CallSiteRegKey, RegisterEnv> envCache,
 			Set<Function> restoringTrampolines) {
+		return recoverCallArgument(program, callInstr, helper, callSiteIn, envCache,
+			restoringTrampolines, RegisterEnv.NONE);
+	}
+
+	/**
+	 * {@link #recoverCallArgument} with every CALLER-SIDE scan evaluated along {@code path}'s
+	 * arms (bead grm-wul): the argument-register scan, the argument-cell forwarding and the
+	 * A/X/Y the mini-inline env is built from all walk the arm {@code path} names at each join
+	 * instead of refusing there. The scans that run INSIDE the helper (the mini-inline itself,
+	 * {@link #valueSuppliedInsideHelper}) are unaffected -- the arms are joins in the caller, and
+	 * those scans stop at the helper's entry before any caller join is reachable. With
+	 * {@link RegisterEnv#NONE} this is the seven-argument form exactly.
+	 */
+	static CallEffect recoverCallArgument(Program program, Instruction callInstr,
+			HelperModel helper, BankState callSiteIn, Map<CallSiteRegKey, RegisterEnv> envCache,
+			Set<Function> restoringTrampolines, RegisterEnv path) {
 		if (restoringTrampolines.contains(helper.function())) {
 			// A VERIFIED no-op (grm-mej.3): this helper puts the entry bank back before returning,
 			// so the call owns nothing. Answered before argReg is even consulted, because the
@@ -238,7 +254,7 @@ final class HelperArgumentRecovery {
 		// recovery, and are deliberately NOT converted.
 		StoredValueScanner.Hooks callerHooks = callerHooksFor(helper);
 		BankState local = StoredValueScanner.resolveStoredValue(program, callInstr, reg,
-			localIn, stateMask, callerHooks);
+			localIn, stateMask, callerHooks, path);
 		// grm-mu7: what the caller left in argReg is this helper's argument only if the helper
 		// still has it when the first switch site reads it. Withholding the value (rather than
 		// short-circuiting the whole call) is deliberate -- it routes the call down the exact
@@ -290,7 +306,7 @@ final class HelperArgumentRecovery {
 			Address inbound = inboundArgumentCell(program, helper, reg);
 			BankState viaCell = inbound == null ? BankState.unknown()
 					: StoredValueScanner.callerCellValue(program, callInstr, inbound, localIn,
-						stateMask, callerHooks);
+						stateMask, callerHooks, path);
 			// Partial knowledge counts, matching how combine() and setFieldFromByte already treat
 			// a per-bit answer. Mirror-aware as of grm-mej.3 item 4 for the same reason the
 			// caller-side register scan above is: this scan runs in the CALLER, outside any
@@ -321,9 +337,10 @@ final class HelperArgumentRecovery {
 		// key this replaced is no longer sound. BankState is a record, so CallSiteRegKey gets
 		// value equality on localIn for free.
 		RegisterEnv callerRegs = envCache.computeIfAbsent(
-			new CallSiteRegKey(callInstr.getMinAddress(), localIn),
+			new CallSiteRegKey(callInstr.getMinAddress(), localIn, path.armPredecessors()),
 			key -> callSiteRegisters(program, callInstr, scanStop,
-				crossableWrapperJoin(program, helper.firstSite(), scanStop), helper, localIn));
+				crossableWrapperJoin(program, helper.firstSite(), scanStop), helper, localIn,
+				path));
 		// The argument-bearing deposit, computed exactly as it was before grm-4bgh.5 -- this
 		// is both the answer for a single-site helper and, for a folded one, the deposit whose
 		// emptiness decides whether this CALL SITE gets a warning. See foldDeposits.
@@ -1499,12 +1516,16 @@ final class HelperArgumentRecovery {
 	 * address under different {@code localIn}.
 	 */
 	private static RegisterEnv callSiteRegisters(Program program, Instruction callInstr,
-			Address entryAddr, Address crossableJoin, HelperModel helper, BankState localIn) {
+			Address entryAddr, Address crossableJoin, HelperModel helper, BankState localIn,
+			RegisterEnv path) {
 		List<PrologueSegment> unwalked = unwalkedPrologueSegments(entryAddr, helper);
+		// The env this builds describes the helper's ENTRY and is consumed by scans inside the
+		// helper; it deliberately carries no arms of its own (see the eight-argument
+		// recoverCallArgument). The caller-side scans that populate it do walk the arms.
 		return new RegisterEnv(entryAddr, crossableJoin,
-			surviving(program, callInstr, 'A', unwalked, helper, localIn),
-			surviving(program, callInstr, 'X', unwalked, helper, localIn),
-			surviving(program, callInstr, 'Y', unwalked, helper, localIn));
+			surviving(program, callInstr, 'A', unwalked, helper, localIn, path),
+			surviving(program, callInstr, 'X', unwalked, helper, localIn, path),
+			surviving(program, callInstr, 'Y', unwalked, helper, localIn, path));
 	}
 
 	/**
@@ -1604,12 +1625,13 @@ final class HelperArgumentRecovery {
 	 * identically to before, since its hooks never consult {@code localIn} at all.
 	 */
 	private static BankState surviving(Program program, Instruction callInstr, char reg,
-			List<PrologueSegment> unwalked, HelperModel helper, BankState localIn) {
+			List<PrologueSegment> unwalked, HelperModel helper, BankState localIn,
+			RegisterEnv path) {
 		if (!unwalked.isEmpty() && !argumentSurvivesPrologue(program, unwalked, reg)) {
 			return BankState.unknown();
 		}
 		return StoredValueScanner.resolveStoredValue(program, callInstr, reg, localIn, 0xFF,
-			callerHooksFor(helper));
+			callerHooksFor(helper), path);
 	}
 
 	/**
@@ -1813,7 +1835,7 @@ final class HelperArgumentRecovery {
 	 * gets value equality on {@code localIn} for free -- two keys with the same address and the
 	 * same known/bits pair collide exactly when they should.
 	 */
-	record CallSiteRegKey(Address address, BankState localIn) {
+	record CallSiteRegKey(Address address, BankState localIn, Map<Address, Address> arms) {
 	}
 
 	private static final StoredValueScanner.Hooks NO_HOOKS = new StoredValueScanner.Hooks() {

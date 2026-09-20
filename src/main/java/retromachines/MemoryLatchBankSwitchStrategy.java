@@ -491,13 +491,22 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	@Override
 	public SwitchOutcome computeSwitchOutcome(Program program, Instruction instr,
 			BankState inState) {
+		return computeSwitchOutcome(program, instr, inState, RegisterEnv.NONE);
+	}
+
+	/**
+	 * The direct-path evaluation, along {@code path}'s arms when it names any (bead grm-wul).
+	 * {@code RegisterEnv.NONE} for the plain question: no caller's registers are in scope on the
+	 * direct path, and an arm-less env crosses nothing. The real inState IS threaded through
+	 * (grm-mej.2) -- that is what made cacheable() false.
+	 */
+	@Override
+	public SwitchOutcome computeSwitchOutcome(Program program, Instruction instr,
+			BankState inState, RegisterEnv path) {
 		if (!writesInRange(instr)) {
 			return null;
 		}
-		// RegisterEnv.NONE, always: no caller's registers are in scope on the direct path. The
-		// real inState IS threaded through now (grm-mej.2) -- that is what made cacheable() false.
-		StoredValueScanner.Scan scan =
-			evaluateLatchScan(program, instr, RegisterEnv.NONE, inState, hooks);
+		StoredValueScanner.Scan scan = evaluateLatchScan(program, instr, path, inState, hooks);
 		return SwitchOutcome.of(scan.value(), scan.stop());
 	}
 

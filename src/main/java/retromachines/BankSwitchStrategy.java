@@ -192,6 +192,21 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 		 */
 		ANALYZER_LIMIT,
 		/**
+		 * The value at this site is one of N constants selected by a branch above -- every arm
+		 * of the control-flow join heading this site's block resolved, to at least two distinct
+		 * values -- but the PATH-FORK BUDGET was exhausted, so the arms could not be carried
+		 * forward separately and the merge is reported unknown (bead grm-wul, option (c) at the
+		 * budget boundary). The shape is honest (a two-armed select is ordinary code); giving up
+		 * on it is OURS, so this stays a WARNING -- one that names the count and the constants,
+		 * so it is countable and diagnosable rather than lost inside {@link #ANALYZER_LIMIT}.
+		 * <p>
+		 * Two caps produce it, both constants on {@code BankDataflowEngine}: the number of live
+		 * forks one address may hold, and the number of forks one function may create in total.
+		 * The engine records which. A site that forks WITHIN budget never carries this stop --
+		 * it is {@link #RESOLVED}, with one effect per arm.
+		 */
+		MULTI_VALUED_AT_MERGE,
+		/**
 		 * <b>No deposit was attempted here at all.</b> The instruction IS a recognized mechanism
 		 * write, but this mechanism's own contract says the write changes nothing: a serial-shift
 		 * chain's positions 1-4 (the commit happens at position 5), a counted-loop body write
@@ -267,6 +282,25 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 *         is not a mechanism write at all and the state flows through unchanged
 	 */
 	SwitchOutcome computeSwitchOutcome(Program program, Instruction instr, BankState inState);
+
+	/**
+	 * {@link #computeSwitchOutcome(Program, Instruction, BankState)} evaluated along ONE ARM of a
+	 * control-flow join (bead grm-wul): {@code path} names, per join, the predecessor the value
+	 * recovery walks to instead of refusing -- see {@link RegisterEnv#armPredecessorAt}. The
+	 * engine asks this once per incoming arm of the join heading an unresolved site's block, and
+	 * either forks the state on every arm's answer or uses none of them; a single arm's answer is
+	 * never attributed to the site on its own.
+	 * <p>
+	 * The default IGNORES {@code path} and answers the plain question, which is exactly right for
+	 * a strategy whose value recovery does not thread a {@link RegisterEnv} through its walks:
+	 * every arm then answers what the site already answered (unresolved), the engine sees no arm
+	 * resolve, and no fork is created -- conservative by construction. A strategy that does
+	 * thread an env overrides this to pass {@code path} through; that is the whole opt-in.
+	 */
+	default SwitchOutcome computeSwitchOutcome(Program program, Instruction instr,
+			BankState inState, RegisterEnv path) {
+		return computeSwitchOutcome(program, instr, inState);
+	}
 
 	/**
 	 * The bank state after this instruction, or {@code null} if it is not a mechanism write --

@@ -388,23 +388,15 @@ final class StoredValueScanner {
 				// sites, which is exactly what the env already answers for.
 				return stopped(aAcc, oAcc, mask, env.get(reg), BankSwitchStrategy.ValueStop.HELPER_ARGUMENT);
 			}
-			Instruction prev = listing.getInstructionBefore(cur.getMinAddress());
+			// The block start, a predecessor that does not fall through into cur, or a
+			// control-flow join: some other path reaches cur and may leave a different register
+			// value, so prev's fall-through value can't be attributed to the store with
+			// confidence. The exceptions are the join an env explicitly licenses (grm-k90) and
+			// the arm an env names (grm-wul): there prev IS cur's predecessor on the path this
+			// context-sensitive query is asked about. Only the linkage/join tests are skipped --
+			// the mechanism-write abort below still runs. See pathPredecessor.
+			Instruction prev = pathPredecessor(program, listing, cur, env);
 			if (prev == null) {
-				return stopped(aAcc, oAcc, mask, BankState.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
-			}
-			Address prevFallThrough = prev.getFallThrough();
-			if (prevFallThrough == null || !prevFallThrough.equals(cur.getMinAddress())) {
-				// not a straight-line predecessor of cur -- left the basic block
-				return stopped(aAcc, oAcc, mask, BankState.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
-			}
-			if (isControlFlowJoin(program, cur, prev) && !env.mayCrossJoinAt(cur.getMinAddress())) {
-				// cur is also a branch target: some other path reaches it and may leave a
-				// different register value, so prev's fall-through value can't be attributed
-				// to the store with confidence. The one exception is the join an env explicitly
-				// licenses (grm-k90): there prev IS cur's predecessor on the path this
-				// context-sensitive query is asked about, and the span beyond it was proved
-				// straight-line before the env was built. Only the join test is skipped -- the
-				// linkage test above and the mechanism-write abort below still run.
 				return stopped(aAcc, oAcc, mask, BankState.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 			}
 
@@ -715,16 +707,11 @@ final class StoredValueScanner {
 			if (env.stopsAt(cur.getMinAddress())) {
 				break; // the caller's stack is not modeled -- mirrors forwardedStoreValue
 			}
-			Instruction prev = listing.getInstructionBefore(cur.getMinAddress());
+			Instruction prev = pathPredecessor(program, listing, cur, env);
 			if (prev == null) {
-				break; // block start reached with the counter still nonzero -- unbalanced
-			}
-			Address prevFallThrough = prev.getFallThrough();
-			if (prevFallThrough == null || !prevFallThrough.equals(cur.getMinAddress())) {
-				break; // left the basic block
-			}
-			if (isControlFlowJoin(program, cur, prev) && !env.mayCrossJoinAt(cur.getMinAddress())) {
-				break; // another path could reach here with a different stack depth
+				// block start reached with the counter still nonzero (unbalanced), left the
+				// basic block, or another path could reach here with a different stack depth
+				break;
 			}
 			if (prev.getFlows().length > 0 || prev.getFlowType().isCall()) {
 				break; // not straight-line -- see this method's javadoc
@@ -872,19 +859,12 @@ final class StoredValueScanner {
 				span.steps = steps;
 				return null; // the caller's stack is not modeled -- mirrors findMatchingPush
 			}
-			Instruction prev = listing.getInstructionBefore(cur.getMinAddress());
+			Instruction prev = pathPredecessor(program, listing, cur, env);
 			if (prev == null) {
 				span.steps = steps;
+				// block start, left the basic block, or another path could reach here with a
+				// different X/stack state
 				return null;
-			}
-			Address prevFallThrough = prev.getFallThrough();
-			if (prevFallThrough == null || !prevFallThrough.equals(cur.getMinAddress())) {
-				span.steps = steps;
-				return null; // left the basic block
-			}
-			if (isControlFlowJoin(program, cur, prev) && !env.mayCrossJoinAt(cur.getMinAddress())) {
-				span.steps = steps;
-				return null; // another path could reach here with a different X/stack state
 			}
 			if (prev.getFlows().length > 0 || prev.getFlowType().isCall()) {
 				span.steps = steps;
@@ -921,6 +901,52 @@ final class StoredValueScanner {
 		}
 		span.steps = steps;
 		return null; // budget exhausted before a TSX was found
+	}
+
+	/**
+	 * The instruction a backward walk steps to from {@code cur} on the path {@code env}
+	 * describes, or {@code null} when the walk must stop at {@code cur}: there is no instruction
+	 * before it, the one before it does not fall through into it (a basic-block start), or
+	 * {@code cur} is a {@link #isControlFlowJoin control-flow join} the env neither licenses
+	 * ({@link RegisterEnv#mayCrossJoinAt}, grm-k90) nor names an arm for
+	 * ({@link RegisterEnv#armPredecessorAt}, grm-wul).
+	 * <p>
+	 * <b>Every backward walk in this class takes its predecessor step through here</b>, so the
+	 * three questions -- block linkage, the join refusal, and the env's two exceptions to it --
+	 * are answered identically whether the walk is resolving a register, forwarding a store,
+	 * pairing a push, or evaluating the carry. That uniformity is what grm-k90 already required of
+	 * the licensed join ("the licence describes the EDGE, not the kind of value being carried
+	 * across it") and grm-wul's arm map inherits it: a path-forking query that resolved its
+	 * register across an arm but refused to forward a store across the same arm would describe
+	 * two different executions of one instruction stream.
+	 * <p>
+	 * An arm named by the env is taken WITHOUT the linkage test -- the predecessor on a branch
+	 * arm is the branch, whose fall-through is not {@code cur} -- and without the join test, which
+	 * is the point. The engine that built the map proved the edge exists (it enumerated the
+	 * join's incoming flows), so nothing here re-derives it. Everything else the walk checks at
+	 * that instruction (the mechanism-write withdrawal, the step bound, a walk's own
+	 * straight-line-only rule) still runs; a stack walk that meets a branch as its arm's
+	 * predecessor stops there exactly as it stops at any other flow instruction.
+	 */
+	static Instruction pathPredecessor(Program program, Listing listing, Instruction cur,
+			RegisterEnv env) {
+		Address curAddr = cur.getMinAddress();
+		Address arm = env.armPredecessorAt(curAddr);
+		if (arm != null) {
+			return listing.getInstructionAt(arm);
+		}
+		Instruction prev = listing.getInstructionBefore(curAddr);
+		if (prev == null) {
+			return null;
+		}
+		Address prevFallThrough = prev.getFallThrough();
+		if (prevFallThrough == null || !prevFallThrough.equals(curAddr)) {
+			return null; // not a straight-line predecessor of cur -- left the basic block
+		}
+		if (isControlFlowJoin(program, cur, prev) && !env.mayCrossJoinAt(curAddr)) {
+			return null;
+		}
+		return prev;
 	}
 
 	/**
@@ -1115,8 +1141,15 @@ final class StoredValueScanner {
 	 */
 	static BankState callerCellValue(Program program, Instruction useInstr, Address cell,
 			BankState inStateAtStore, int mask, Hooks hooks) {
+		return callerCellValue(program, useInstr, cell, inStateAtStore, mask, hooks,
+			RegisterEnv.NONE);
+	}
+
+	/** {@link #callerCellValue} along {@code env}'s arms (bead grm-wul); {@code NONE} crosses nothing. */
+	static BankState callerCellValue(Program program, Instruction useInstr, Address cell,
+			BankState inStateAtStore, int mask, Hooks hooks, RegisterEnv env) {
 		BankState value = forwardedStoreValue(program, useInstr, cell, inStateAtStore, hooks,
-			RegisterEnv.NONE, new Budget(MAX_RESOLVE_STEPS), 0);
+			env, new Budget(MAX_RESOLVE_STEPS), 0);
 		// Equivalent to combine(0xFF, 0x00, mask, value), spelled out because there is no
 		// accumulated AND/ORA transform to fold here -- the cell's byte arrives verbatim.
 		return new BankState(value.knownMask() & mask, value.bits() & mask);
@@ -1214,22 +1247,15 @@ final class StoredValueScanner {
 			if (!budget.spend()) {
 				return BankState.unknown();
 			}
-			Instruction prev = listing.getInstructionBefore(cur.getMinAddress());
+			// Block start, left the basic block, or another path reaches cur with a different
+			// cell value -- unless the env licenses this exact join (grm-k90) or names the arm
+			// (grm-wul), in which case prev is the real predecessor on the path asked about and
+			// a store in that prefix genuinely did execute. Honored here as well as in the
+			// register walks deliberately: the licence describes the EDGE, not the kind of value
+			// being carried across it, and a forwarding walk that refused where a register walk
+			// crossed would make the two disagree about what the same instruction stream did.
+			Instruction prev = pathPredecessor(program, listing, cur, env);
 			if (prev == null) {
-				return BankState.unknown();
-			}
-			Address prevFallThrough = prev.getFallThrough();
-			if (prevFallThrough == null || !prevFallThrough.equals(cur.getMinAddress())) {
-				return BankState.unknown(); // left the basic block
-			}
-			if (isControlFlowJoin(program, cur, prev) && !env.mayCrossJoinAt(cur.getMinAddress())) {
-				// another path reaches cur with a different cell value -- unless the env licenses
-				// this exact join (grm-k90), in which case prev is the real predecessor on the
-				// path asked about and a store in the wrapper's prefix genuinely did execute.
-				// Honored here as well as in the register walks deliberately: the licence
-				// describes the EDGE, not the kind of value being carried across it, and a
-				// forwarding walk that refused where a register walk crossed would make the two
-				// disagree about what the same instruction stream did.
 				return BankState.unknown();
 			}
 			if (hooks.isMechanismWrite(prev)) {
@@ -1435,19 +1461,14 @@ final class StoredValueScanner {
 			if (!budget.spend()) {
 				return null;
 			}
-			Instruction prev = listing.getInstructionBefore(cur.getMinAddress());
+			// Block start, left the basic block, or another path reaches cur and may leave a
+			// different value -- except at the one join the env licenses (grm-k90) or the arm it
+			// names (grm-wul). This evaluator is the one that actually carries Contra: the switch
+			// site's own scan never sees the wrapper split, but resolving the index of its
+			// `LDA $ffd0,Y` walks straight back into it. It is also the one that carries a
+			// `TXA / STA mechanism` merge: the A walk asks it for X, and X is what the arms set.
+			Instruction prev = pathPredecessor(program, listing, cur, env);
 			if (prev == null) {
-				return null;
-			}
-			Address prevFallThrough = prev.getFallThrough();
-			if (prevFallThrough == null || !prevFallThrough.equals(cur.getMinAddress())) {
-				return null; // left the basic block
-			}
-			if (isControlFlowJoin(program, cur, prev) && !env.mayCrossJoinAt(cur.getMinAddress())) {
-				// another path reaches cur and may leave a different value -- except at the one
-				// join the env licenses (grm-k90). This evaluator is the one that actually
-				// carries Contra: the switch site's own scan never sees the wrapper split, but
-				// resolving the index of its `LDA $ffd0,Y` walks straight back into it.
 				return null;
 			}
 			// NO MECHANISM-WRITE ABORT HERE AT ALL (bead grm-4bgh.7), and note this is a
@@ -1593,16 +1614,9 @@ final class StoredValueScanner {
 			if (!budget.spend()) {
 				return null;
 			}
-			Instruction prev = listing.getInstructionBefore(cur.getMinAddress());
+			Instruction prev = pathPredecessor(program, listing, cur, env);
 			if (prev == null) {
-				return null;
-			}
-			Address prevFallThrough = prev.getFallThrough();
-			if (prevFallThrough == null || !prevFallThrough.equals(cur.getMinAddress())) {
-				return null; // left the basic block
-			}
-			if (isControlFlowJoin(program, cur, prev) && !env.mayCrossJoinAt(cur.getMinAddress())) {
-				return null;
+				return null; // block start, left the basic block, or an unlicensed join
 			}
 			// No mechanism-write abort (grm-4bgh.7), for constantRegisterValue's reason plus one
 			// of its own: this walk reads FLAGS, and the CARRY_PRESERVING allowlist below is what

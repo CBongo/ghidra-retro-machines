@@ -373,6 +373,12 @@ public class VerifyBankTest extends GhidraScript {
 		else if (name.contains("nesnmitest")) {
 			checkNesNmitest();
 		}
+		else if (name.contains("nesforkbudgettest")) {
+			checkNesForkBudgettest();
+		}
+		else if (name.contains("nesforktest")) {
+			checkNesForktest();
+		}
 		else if (name.contains("nesbanktest2")) {
 			checkNesBanktest2();
 		}
@@ -3781,6 +3787,77 @@ public class VerifyBankTest extends GhidraScript {
 		criterion("IRQ3", hasFunctionAt(0xC020) && !hasFunctionAt(0xC022),
 			"NMI/IRQ handler is a function entry at c020 (and c022 is inside it, not an " +
 				"entry of its own)");
+	}
+
+	// ------------------------------------------------------------------
+	// nesforktest.nes / nesforkbudgettest.nes criteria (path forking, bead grm-wul)
+	// ------------------------------------------------------------------
+
+	/**
+	 * See {@code mknesbanktest.py}'s {@code make_prg_fork()}. Two constants (X = 1 / X = 2)
+	 * merge at c008 BEFORE the latch write there. Single-valued dataflow folds that merge to
+	 * unknown; path forking must resolve BOTH arms, annotate both, and retarget every reference
+	 * downstream of the switch to both banks -- the first arm's reference primary, the second's
+	 * secondary.
+	 */
+	private void checkNesForktest() {
+		// F1: the merge site annotates both arms, in arm order, with the fork vocabulary.
+		String c = eol(0xC008);
+		criterion("F1", c.contains("bank -> 1 (bank=1) | 2 (bank=2)") &&
+			c.contains("[path fork: 2 arms]"),
+			"merge site c008 annotates both arms: \"" + c + "\"");
+
+		// F2: no warning at the merge site -- it RESOLVED, to two values.
+		criterion("F2", warningBookmarkText(0xC008).isEmpty(),
+			"no WARNING at the forked merge site c008 (got: \"" + warningBookmarkText(0xC008) + "\")");
+
+		// F3/F4: the JSR after the switch reaches BOTH overlays, bank 1 primary.
+		Reference j1 = findOverlayRef(0xC00B, "PRG_LO_B1", 0x8010);
+		Reference j2 = findOverlayRef(0xC00B, "PRG_LO_B2", 0x8010);
+		criterion("F3", j1 != null && j1.isPrimary() && j1.getReferenceType().isCall(),
+			"JSR at c00b retargeted to PRG_LO_B1::8010 as the primary call: " + describe(j1));
+		criterion("F4", j2 != null && !j2.isPrimary() && j2.getReferenceType().isCall(),
+			"JSR at c00b ALSO retargeted to PRG_LO_B2::8010 (secondary): " + describe(j2));
+
+		// F5: both call targets were disassembled and made functions -- the retarget kicked
+		// analysis in each overlay, not only the primary one.
+		criterion("F5", hasInstructionAt("PRG_LO_B1", 0x8010) && hasInstructionAt("PRG_LO_B2", 0x8010),
+			"the forked JSR's target is code in BOTH overlays");
+
+		// F6/F7: the data read after the switch likewise reaches both banks.
+		Reference d1 = findOverlayRef(0xC00E, "PRG_LO_B1", 0x8020);
+		Reference d2 = findOverlayRef(0xC00E, "PRG_LO_B2", 0x8020);
+		criterion("F6", d1 != null && d1.isPrimary(),
+			"LDA at c00e retargeted to PRG_LO_B1::8020 (primary): " + describe(d1));
+		criterion("F7", d2 != null && !d2.isPrimary(),
+			"LDA at c00e ALSO retargeted to PRG_LO_B2::8020 (secondary): " + describe(d2));
+
+		// F8: exactly two overlay references per site -- the fork carried two states, not more.
+		criterion("F8", overlayRefCount(0xC00B) == 2 && overlayRefCount(0xC00E) == 2,
+			"exactly two overlay references at c00b and c00e (got " + overlayRefCount(0xC00B) +
+				"/" + overlayRefCount(0xC00E) + ")");
+	}
+
+	/**
+	 * See {@code make_prg_forkbudget()}: the same merge with FIVE arms, one over
+	 * {@code BankDataflowEngine.MAX_LIVE_FORKS_PER_BLOCK}. Every arm resolves, the fork is
+	 * denied, and the site must say so in the {@code MULTI_VALUED_AT_MERGE} vocabulary -- a
+	 * WARNING (ours), naming the count and the constants -- while retargeting nothing.
+	 */
+	private void checkNesForkBudgettest() {
+		String w = warningBookmarkText(0xC026);
+		criterion("B1", w != null && w.contains("one of 5 constants") &&
+			w.contains("{1, 2, 3, 4, 5}") && w.contains("MULTI_VALUED_AT_MERGE"),
+			"merge site c026 carries the budget-exhausted WARNING naming 5 arms and their " +
+				"values: \"" + w + "\"");
+		criterion("B2", w != null && w.contains("4 live forks per block") &&
+			w.contains("16 per function"),
+			"the warning names both fork caps: \"" + w + "\"");
+		criterion("B3", !eol(0xC026).contains("bank -> "),
+			"no bank comment at the denied merge site c026: \"" + eol(0xC026) + "\"");
+		criterion("B4", overlayRefCount(0xC029) == 0,
+			"the JSR after the denied merge is NOT retargeted (bank unknown -> home): " +
+				overlayRefCount(0xC029) + " overlay ref(s)");
 	}
 
 	// ------------------------------------------------------------------

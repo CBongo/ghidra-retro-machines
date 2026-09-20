@@ -972,6 +972,31 @@ if selected nes-banking; then
 	# reading as "weaken everything".
 	run_one nesnmitest "$WORK/nes/nesnmitest.nes" NesRomLoader
 
+	# grm-wul: PATH FORKING. Two constants merging before the switch must resolve BOTH arms and
+	# retarget both refs (nesforktest); the same shape with five arms -- one over the per-block
+	# fork cap -- must decline with the MULTI_VALUED_AT_MERGE warning instead (nesforkbudgettest).
+	# See make_prg_fork()/make_prg_forkbudget()'s docstrings for the blmaster c9a4 shape.
+	run_one nesforktest "$WORK/nes/nesforktest.nes" NesRomLoader
+	run_one nesforkbudgettest "$WORK/nes/nesforkbudgettest.nes" NesRomLoader
+	# The analyzer's per-program fork summary line is the MEASUREMENT the owner's ruling asks for
+	# (it is what the real-ROM tally tabulates), and it lives in the headless log, outside the
+	# dump markers -- so pin it here, the way nesskiptest pins its SKIPFIX line. Skipped when
+	# bless reused a cached candidate: that path runs no import, so there is no fresh log.
+	if [ -f "$WORK/nesforktest.log" ] &&
+		! grep -q 'path forking: forks created=2 (sites 1) collapsed=0 (sites 0, address collapses 0) max live at one block=2' \
+			"$WORK/nesforktest.log"; then
+		echo "FAIL: nesforktest's fork summary did not report 2 forks at 1 site with 2 live (grm-wul)"
+		grep 'path fork' "$WORK/nesforktest.log" >&2 || true
+		fail=1
+	fi
+	if [ -f "$WORK/nesforkbudgettest.log" ] &&
+		! grep -q 'path forking: forks created=0 (sites 0) collapsed=5 (sites 1, address collapses 0) max live at one block=1' \
+			"$WORK/nesforkbudgettest.log"; then
+		echo "FAIL: nesforkbudgettest's fork summary did not report 5 arms denied at 1 site (grm-wul)"
+		grep 'path fork' "$WORK/nesforkbudgettest.log" >&2 || true
+		fail=1
+	fi
+
 	# grm-7e5o: an 8 KiB NROM PRG -- SMALLER than either 16 KiB window, so the image
 	# mirrors four times across $8000-$FFFF. Synthetic stand-in for Galaxian (J) and
 	# Controller Test Program (J), which cannot be shipped. See make_prg_nromsub().

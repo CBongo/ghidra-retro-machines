@@ -254,6 +254,39 @@ final class BankAnnotationAdapter {
 	}
 
 	/**
+	 * Records one switch site that PATH FORKING carried forward as several states (bead grm-wul):
+	 * one EOL comment naming every arm's state, in arm order, joined by {@code " | "} --
+	 * {@code bank -> 1 (bank=1) | 2 (bank=2) [path fork: 2 arms]}. Each arm is rendered exactly as
+	 * {@link #annotateBankSwitch} would render it alone, so a single-arm comment and a forked one
+	 * read the same vocabulary. The impossible-bank check runs per arm and wins, as it does for a
+	 * single value: a fork that recovered a bank the image has no slice for is a value-recovery
+	 * defect on that arm, not a fact about the merge.
+	 */
+	static Marked annotateForked(BoardBankAnalyzer analyzer, Program program, Listing listing,
+			Address addr, List<BankState> arms, BoardModel board,
+			Map<String, Set<Integer>> bankUniverse, String viaHelper,
+			BankCommentProvenance provenance) {
+		List<String> heads = new ArrayList<>();
+		for (BankState arm : arms) {
+			Impossible impossible = impossibleBank(board, arm, bankUniverse);
+			if (impossible != null) {
+				program.getBookmarkManager().setBookmark(addr, BookmarkType.WARNING,
+					analyzer.getBookmarkCategory(), impossible.message());
+				return Marked.WARNED;
+			}
+			heads.add(bankCommentBody(arm, board, bankUniverse, ""));
+		}
+		String via = viaHelper == null ? "" : " via " + viaHelper;
+		String comment = "bank -> " + String.join(" | ", heads) + via + " [path fork: " +
+			arms.size() + " arms]";
+		if (board.modeField() != null) {
+			comment += " [switch-value flow]";
+		}
+		writeBankComment(listing, addr, comment, provenance);
+		return Marked.ANNOTATED;
+	}
+
+	/**
 	 * The NOTE text for a gap that is honest, or {@code null} when the gap is ours and belongs
 	 * under a WARNING. Deliberately says what was established rather than what failed: an
 	 * analyst reading it should learn that there is nothing here to fix.
@@ -289,7 +322,10 @@ final class BankAnnotationAdapter {
 				"analysis -- nothing to fix.";
 			// NO_DEPOSIT never reaches here -- annotateOrWarn returns before the gap
 			// classification, because it is not a gap. Listed so the switch stays exhaustive.
-			case RESOLVED, ANALYZER_LIMIT, NO_DEPOSIT -> null;
+			// MULTI_VALUED_AT_MERGE (grm-wul) is OURS -- the shape is honest, exhausting our own
+			// fork budget is not -- so it stays a WARNING, with the caller supplying the text that
+			// names the arms (BoardBankAnalyzer.multiValuedWarning).
+			case RESOLVED, ANALYZER_LIMIT, NO_DEPOSIT, MULTI_VALUED_AT_MERGE -> null;
 		};
 	}
 
@@ -954,10 +990,33 @@ final class BankAnnotationAdapter {
 	private static void annotateBankSwitch(Listing listing, Address addr, BankState newState,
 			BoardModel board, Map<String, Set<Integer>> bankUniverse, String viaHelper,
 			BankCommentProvenance provenance) {
+		String via = viaHelper == null ? "" : " via " + viaHelper;
+		String bankComment = "bank -> " + bankCommentBody(newState, board, bankUniverse, via);
+
+		// Placement-provenance vocabulary (grm-hsv.3): tag dataflow-recovered switch values so
+		// they read distinctly from override placements ("[user override]", see
+		// annotatePlacementProvenance) and future self-ref inference. Gated to mode-varying
+		// boards -- the only ones where placement can be ambiguous -- so other boards' goldens
+		// stay byte-identical.
+		if (board.modeField() != null) {
+			bankComment += " [switch-value flow]";
+		}
+
+		writeBankComment(listing, addr, bankComment, provenance);
+	}
+
+	/**
+	 * The body of a {@code bank ->} comment for one state -- everything after the arrow and
+	 * before the provenance suffix, with {@code via} (empty, or {@code " via FUN_x"}) placed
+	 * where it always sat: after the state head, before any known/assumed breakdown. Split out
+	 * of {@link #annotateBankSwitch} by grm-wul so a forked site ({@link #annotateForked})
+	 * renders each arm with the same words (and puts its one {@code via} after all the arms).
+	 */
+	private static String bankCommentBody(BankState newState, BoardModel board,
+			Map<String, Set<Integer>> bankUniverse, String via) {
 		int mask = board.mask();
 		int effective = newState.effective(board.initialState(), mask);
 		String desc = describeState(board, bankUniverse, effective);
-		String via = viaHelper == null ? "" : " via " + viaHelper;
 
 		// Whether describeState resolved this state to an occupant ROW (enumerated board,
 		// e.g. C64 BASIC/IO/KERNAL) rather than a field tuple. Mirrors describeState's
@@ -978,9 +1037,8 @@ final class BankAnnotationAdapter {
 		String head = packedTuple ? desc : effective + " (" + desc + ")";
 		String headQ = packedTuple ? desc + "?" : effective + "? (" + desc + ")";
 
-		String bankComment;
 		if (newState.knownMask() == mask) {
-			bankComment = "bank -> " + head + via;
+			return head + via;
 		}
 		else {
 			List<String> known = new ArrayList<>();
@@ -1003,21 +1061,10 @@ final class BankAnnotationAdapter {
 					assumed.add(name);
 				}
 			}
-			bankComment = "bank -> " + headQ + via + " [known: " +
-				String.join(",", known) + "; assumed from initial: " + String.join(",", assumed) +
-				"]";
+			// `via` sits between the head and the known/assumed breakdown, as it always has.
+			return headQ + via + " [known: " + String.join(",", known) +
+				"; assumed from initial: " + String.join(",", assumed) + "]";
 		}
-
-		// Placement-provenance vocabulary (grm-hsv.3): tag dataflow-recovered switch values so
-		// they read distinctly from override placements ("[user override]", see
-		// annotatePlacementProvenance) and future self-ref inference. Gated to mode-varying
-		// boards -- the only ones where placement can be ambiguous -- so other boards' goldens
-		// stay byte-identical.
-		if (board.modeField() != null) {
-			bankComment += " [switch-value flow]";
-		}
-
-		writeBankComment(listing, addr, bankComment, provenance);
 	}
 
 	/**
@@ -1408,6 +1455,23 @@ final class BankAnnotationAdapter {
 			Map<String, Set<Integer>> bankUniverse, BankState inState,
 			Map<String, Integer> placementOverride, TaskMonitor monitor, MessageLog log,
 			BankCommentProvenance provenance) {
+		return retargetReferences(analyzer, program, refMgr, baseSpace, instr, board, bankUniverse,
+			inState, placementOverride, monitor, log, provenance, true);
+	}
+
+	/**
+	 * {@link #retargetReferences} for ONE of several whole states live at {@code instr} (bead
+	 * grm-wul): an address downstream of a path fork holds one state per arm, and each is
+	 * retargeted in turn -- one overlay reference per distinct bank -- with only the FIRST call
+	 * allowed to make its reference primary ({@code makePrimary}). Every later state's reference
+	 * is added as a secondary, so the listing shows all arms' targets and the primary is the first
+	 * arm's, deterministically. A state that resolves to the home bank places nothing, as before.
+	 */
+	static int retargetReferences(BoardBankAnalyzer analyzer, Program program,
+			ReferenceManager refMgr, AddressSpace baseSpace, Instruction instr, BoardModel board,
+			Map<String, Set<Integer>> bankUniverse, BankState inState,
+			Map<String, Integer> placementOverride, TaskMonitor monitor, MessageLog log,
+			BankCommentProvenance provenance, boolean makePrimary) {
 
 		int effective = inState.effective(board.initialState(), board.mask());
 		Map<String, String> stateRow = board.occupantByWindowForState().get(effective);
@@ -1445,20 +1509,20 @@ final class BankAnnotationAdapter {
 					boolean primaryTaken = false;
 					if (!writeTarget.equals(homeOccupant)) {
 						int n = addOverlayRef(analyzer, program, refMgr, instr, offset, opIndex,
-							writeTarget, RefType.WRITE, true, monitor, log);
+							writeTarget, RefType.WRITE, makePrimary, monitor, log);
 						added += n;
 						primaryTaken = n > 0;
 					}
 					if (!readTarget.equals(homeOccupant)) {
 						added += addOverlayRef(analyzer, program, refMgr, instr, offset, opIndex,
-							readTarget, RefType.READ, !primaryTaken, monitor, log);
+							readTarget, RefType.READ, makePrimary && !primaryTaken, monitor, log);
 					}
 				}
 				else {
 					String target = refType.isWrite() ? writeTarget : readTarget;
 					if (!target.equals(homeOccupant)) {
 						added += addOverlayRef(analyzer, program, refMgr, instr, offset, opIndex,
-							target, refType, true, monitor, log);
+							target, refType, makePrimary, monitor, log);
 					}
 				}
 			}
@@ -1495,7 +1559,7 @@ final class BankAnnotationAdapter {
 					}
 					added += addOverlayRef(analyzer, program, refMgr, instr, offset, opIndex,
 						DescriptorSupport.OverlayNaming.bankBlockName(computed.name(), bankValue),
-						refType, true, monitor, log);
+						refType, makePrimary, monitor, log);
 					if (overridden) {
 						annotatePlacementProvenance(program.getListing(), instr.getMinAddress(),
 							bankValue, provenance);
@@ -1522,7 +1586,7 @@ final class BankAnnotationAdapter {
 						}
 						added += addOverlayRef(analyzer, program, refMgr, instr, offset, opIndex,
 							DescriptorSupport.OverlayNaming.modeBlockName(instance.name(), modeValue),
-							refType, true, monitor, log);
+							refType, makePrimary, monitor, log);
 					}
 					else {
 						// Canonicalized first, for the same reason as the computed-window branch
@@ -1552,7 +1616,7 @@ final class BankAnnotationAdapter {
 						}
 						added += addOverlayRef(analyzer, program, refMgr, instr, offset, opIndex,
 							DescriptorSupport.OverlayNaming.modeBankBlockName(instance.name(), modeValue,
-								bank), refType, true, monitor, log);
+								bank), refType, makePrimary, monitor, log);
 						if (overridden) {
 							annotatePlacementProvenance(program.getListing(), instr.getMinAddress(),
 								bank, provenance);
