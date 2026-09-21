@@ -43,6 +43,23 @@ bash tools/banktest/realrom-test.sh nominate <romdir>   # board-gap survey
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
+- [ ] **Three table extents for the lowest-target bound (`grm-eyn`, measured 2026-09-21 on a
+  12.1.3 build carrying the fork's `475cf359` bound).** The bound is exact on every table you have
+  already read (megaman `a737` → 8, rcproam `806b` → 6 and `a171` → 11). Three it produced have
+  no ground truth yet:
+  1. **dragonpower/shenlong `$8F00`: 30 or 31 entries?** You recorded `$1E`. The bytes are 30 sane
+     entries, then `92 91` at `$8F3C` (= `$9192`, a duplicate of entry 2; `$92` is an illegal
+     opcode, so it is not code), then code at `$8F3E`. The bound says 31. Is `$9192` a 31st entry
+     or two bytes of padding?
+  2. **rcransom `9343`: the table at `9352` now recovers 25 entries** (the blessed build recovered
+     none because the decompiler crashed on `FUN_9314`, `grm-gz42`), and the row moves +208 refs /
+     +883 instrs. Is 25 right, and is the new code real?
+  3. **ff1 bank 14 `b174`: 104 → 24 entries**, and ff1 still flaps run to run afterwards
+     (1865/7494 ↔ 1896/7520). What is the real extent, and which table feeds the flap?
+  Also worth one look: **rcproam `bd2e`** (your 4-entry table at `bd31`) was only ever reached
+  through an over-read entry of `a16e`; after the bound nothing reaches it. How is it entered at
+  runtime?
+
 *Not an item — a note.* The `.idb` inventory itself (`grm-w4w3`) is **agent work and is
 deliberately deferred to a future session** at your request; the tooling question is settled
 (`python-idb` Apache-2.0 / `idbutil` MIT, no IDA needed) so nobody re-derives it. Worth knowing
@@ -116,6 +133,21 @@ Answered table. The per-mapper fact-sheet checklist above stands for whenever th
 
 Blocked on judgment, not effort.
 
+- [ ] **Which `decompile.exe` the reference install carries, now that the jump-table bound is
+  measured (`grm-eyn`, 2026-09-21).** Two candidates were built from the 12.1.3 tree and run over
+  the full NES tier through a *corrected* junction shadow (the 2026-09-20 shadow recipe never
+  swapped the binary — see `grm-qp5x.4`'s 2026-09-21 comment): **(A)** GP-6936 local patch +
+  bound, **(B)** stock 12.1.3 + bound. (B) dominates: (A) crashes three functions with
+  `Overlapping input varnodes` right after truncation (megaman `a71e`, dodge `8199`, ultimaav
+  `97c4` — the verified 8-entry `a737` table is LOST on it), while (B) recovers them and, on top
+  of that, **wizwarr passes its golden and megaman keeps warnings 31 on stock** — the GP-6936
+  regression signatures the patch was carried for do not appear once the over-read is bounded.
+  That reads as a ruling on `grm-qp5x`'s whole line (and on what #9655 should say), so it is
+  yours: carry (B), carry (A), or keep the current binary until upstream moves. (B) is archived
+  as `D:/git/ghidra-fork/build-variants/decompile-12.1.3-stock-plus-lowest-target.exe`; two
+  consecutive full-tier runs on it were byte-identical on 32 of 34 rows, megaman/dodge/rcproam/
+  dragonpower included. Blessing the ten moving goldens waits on this.
+
 - [ ] **Community disassembly licensing survey** (`grm-hb6.6` P3). The bead names licensing as "the
       gating constraint and a per-source judgment, not a policy set once". Deliverable: a table of
       *project · URL · license · redistributable? · symbol format · maintenance state* for Zelda
@@ -144,6 +176,16 @@ Blocked on judgment, not effort.
 
 Agents can't file these — they need an account and CLA agreement.
 
+- [ ] **#9447 (jump-table over-read, `grm-eyn`/`grm-b3m`): the lowest-target bound is now
+  PR-grade evidence, if you want to send it unprompted.** The proposal has sat on the issue since
+  2026-08-16 with no reply. What 2026-09-21 adds: rebased onto 12.1.3, exact on four hand-verified
+  tables, 72 tables bounded across eight cartridges, real code recovered rather than lost, and
+  32/34 rows deterministic across two full runs. Known limits to state: it declines on the
+  table-after-code idiom (megaman `e000`/`e121`/`e44e`, true lengths 18/19/10, still 128), and the
+  `$8F00` +1 above. The fork commit `475cf359` applies to the 12.1.3 tree unchanged; the
+  `grm-6xh` recipe below prepares the branch. Your call, per `grm-b3m`'s standing rule that silence
+  is not a reason to send one.
+
 *Filed and awaiting a maintainer, nothing to do:* [#9655](https://github.com/NationalSecurityAgency/ghidra/issues/9655)
 (GP-6936, `grm-qp5x.2` — PR still owed, below), [#9658](https://github.com/NationalSecurityAgency/ghidra/issues/9658)
 (`validateOptions`, `grm-vsg`), [ghidra-snes#6](https://github.com/joshleaves/ghidra-snes/pull/6)
@@ -168,7 +210,11 @@ Agents can't file these — they need an account and CLA agreement.
      specifically cleared hunk 1** (a hunk-2-only build reproduces the movement, and so does stock
      in a shadow install; the cause is a decompiler crash, `grm-gz42`, present on every build). So
      the PR body may still say "no collateral across 33 cartridges", and the `calcScaleMask` hunk
-     needs no caveat. Preparing the branch is agent work —
+     needs no caveat. **CORRECTION 2026-09-21: the bisect's shadow arms all ran the REAL install's
+     binary (junction canonicalisation — `grm-qp5x.4`), so "hunk 1 is cleared" and "stock in a shadow
+     gives 5722" are unmeasured. Re-run on a corrected shadow before the PR body cites them; and
+     read section 4's binary decision first — with the jump-table bound in place the two rows this
+     patch exists for pass on STOCK 12.1.3.** Preparing the branch is agent work —
      use the `grm-6xh` recipe below (explicit GitHub remote, cut from a freshly fetched `master`,
      its own worktree); the push and the PR are yours. One caveat the PR body must carry:
      `datatests/wraprange.xml` is expected to fail under the patch, and that is a *reading* of the
