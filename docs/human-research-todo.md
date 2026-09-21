@@ -144,6 +144,11 @@ Blocked on judgment, not effort.
 
 Agents can't file these — they need an account and CLA agreement.
 
+*Filed and awaiting a maintainer, nothing to do:* [#9655](https://github.com/NationalSecurityAgency/ghidra/issues/9655)
+(GP-6936, `grm-qp5x.2` — PR still owed, below), [#9658](https://github.com/NationalSecurityAgency/ghidra/issues/9658)
+(`validateOptions`, `grm-vsg`), [ghidra-snes#6](https://github.com/joshleaves/ghidra-snes/pull/6)
+(65816 semantics, `grm-9nxj.7`). Check them before re-deriving anything they cover.
+
 - [ ] **GP-6936: the upstream issue is filed and `#4148` is cross-referenced — the PR remains.**
   (`grm-qp5x.2`.) You filed
   [NationalSecurityAgency/ghidra#9655](https://github.com/NationalSecurityAgency/ghidra/issues/9655)
@@ -158,12 +163,25 @@ Agents can't file these — they need an account and CLA agreement.
      return to the full-revert result, and on #4148's reporter's own `sysmem.elf` (a genuine
      wrapped `ram` range, ARMv7 read through a `0xFFFFFFFF` pointer) stock 12.1.3 fails with their
      exact error while the patched build decompiles it and recovers the call argument for argument.
-     The full 33-ROM tier shows no row regressing off stock. Preparing the branch is agent work —
+     The full 33-ROM tier shows no row regressing off stock — **re-verified 2026-09-20 after
+     `rcransom` moved on the patched install: the bisect (`grm-qp5x.4`) cleared the patch, and
+     specifically cleared hunk 1** (a hunk-2-only build reproduces the movement, and so does stock
+     in a shadow install; the cause is a decompiler crash, `grm-gz42`, present on every build). So
+     the PR body may still say "no collateral across 33 cartridges", and the `calcScaleMask` hunk
+     needs no caveat. Preparing the branch is agent work —
      use the `grm-6xh` recipe below (explicit GitHub remote, cut from a freshly fetched `master`,
      its own worktree); the push and the PR are yours. One caveat the PR body must carry:
      `datatests/wraprange.xml` is expected to fail under the patch, and that is a *reading* of the
      test, not an observed failure — `decomp_test_dbg` needs `termios.h`/`dirent.d_type` and will
      not build on this machine (a Linux box, or `pacman -S gcc` under msys64).
+- [ ] **Decompiler crash on rcransom `FUN_W8000_M0_B12__9314` — report upstream once minimised.**
+  (`grm-gz42`, P3, found 2026-09-20.) `DecompInterface` on that function returns "Decompiler
+  process died" — a crash, not a `LowlevelError` — on stock 12.1.3 and every GP-6936 variant, on
+  the real install and shadows; `FUN_81f9` throws "Overlapping input varnodes". Both hold a
+  `JMP (zp)` dispatch whose table therefore never resolves. **Not ready to file:** the agent-side
+  work comes first — capture the decompiler's stderr/crash, then minimise to something shareable
+  without ROM bytes (the ROM is hash-pinned but not redistributable). Your part is the filing when
+  that lands; nothing to do until then. Independent of #9655.
 - [ ] **`bd prime`: ask beads for an index emission for memories, instead of all-or-nothing.**
   (`grm-8ctl`, researched 2026-08-26.) **The full issue body is drafted verbatim on `grm-8ctl`'s
   comments** — title on the first line — so this is review-and-post, nothing left to write.
