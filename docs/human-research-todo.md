@@ -65,10 +65,12 @@ SPC700 problem.
   `W8000_M0_B12 9469-977a` (517 instrs, LDA/STA/JSR/RTS profile), `WC000 d46c-d5d6`,
   `W8000_M0_B10 831b-845d`, `WE000 e538-e586`; only `WA000`'s 58 scattered BRK/BPL/ROL
   singletons are phantom. `retargeted 27→25` says two base→overlay seeds vanished and took their
-  reachable code with them. **Your question: what references the run heads `9469`, `831b`,
-  `d46c`/`d4b3`, `e538`?** A decompiler-recovered switch table or computed call is the likely
-  seed; whether it only existed because of the join artifact decides who was right. Not blessed
-  on either build until answered.
+  reachable code with them. **Answered and bisected 2026-09-20 (`grm-qp5x.4`, `grm-gz42`): the
+  seeds are the `JMP ($2a)`/`JMP ($02)` tables at `9343`/`82b3`; the patch is innocent** — stock
+  in a shadow install gives the same 5722, a hunk-2-only build too, and the decompiler *crashes*
+  on `FUN_9314` on every build. The 6434 state is a 128-entry over-read (grm-b3m shape) that only
+  one configuration ever produced. **Your call: bless rcransom at 1221/5722 on the patched
+  build (recommended), or leave it red.**
 
 ## 2. Def-use passes on untraced titles
 

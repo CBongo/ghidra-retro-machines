@@ -453,7 +453,9 @@ grm_decompiler_hash() {
 	local bin
 	bin="$(grm_decompiler_binary)"
 	[ -n "$bin" ] || return 0
-	sha256sum "$bin" 2>/dev/null | cut -d' ' -f1
+	# sha256sum prefixes the line with a backslash when the PATH needed escaping (a Windows
+	# path with backslashes); the hash itself is unaffected, so strip it or the table misses.
+	sha256sum "$bin" 2>/dev/null | cut -d' ' -f1 | tr -d '\\'
 }
 
 # One line naming the decompiler build: "== decompiler: 12.1.3 stock (5ae40d01...) ==".
