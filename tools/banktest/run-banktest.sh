@@ -788,6 +788,11 @@ if selected c64-recovery; then
 	run_one copyloop "$WORK/prg/copyloop.prg" C64PrgLoader
 	run_one copydata "$WORK/prg/copydata.prg" C64PrgLoader
 	run_one copyoverlay "$WORK/prg/copyoverlay.prg" C64PrgLoader
+	# grm-k5m: the evidence gate's program-wide half. copyfar's caller sits before the loop
+	# (the reference exists on first sight); copychain's caller is inside ANOTHER copy that is
+	# only materialized later, so the declined loop has to be re-admitted on a later round.
+	run_one copyfar "$WORK/prg/copyfar.prg" C64PrgLoader
+	run_one copychain "$WORK/prg/copychain.prg" C64PrgLoader
 
 	# grm-bqs: a copy loop landing UNDER the KERNAL window. The base-space block at $E000 is
 	# the window's home occupant (KERNAL), but the write reaches RAM_E000, so the copy must be

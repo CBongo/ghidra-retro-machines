@@ -4,7 +4,7 @@ grm-bqs and grm-9a0).
 
 Usage: mkcopytest.py <output-dir>
 
-Writes five PRGs that exercise the run-from-elsewhere recognizer's EVIDENCE GATE (does a
+Writes eight PRGs that exercise the run-from-elsewhere recognizer's EVIDENCE GATE (does a
 jump into the destination prove the payload is code?) AND the grm-chu placement policy
 (carve the destination in place vs. fall back to a byte-mapped overlay):
 
@@ -154,6 +154,55 @@ carved inside the RAM_A000 overlay carrying the BASIC ROM's own bytes, which mkr
 generates as byte[i] = (i & 0xFF) ^ 0x55, i.e. 55 54 57 56 51 50 53 52 at RAM_A000::a000.
 Before grm-cpj neither run recognized the loop at all. The in-place decrypt fixtures
 (mkdecrypttest.py) are the counter-witness: they must NOT start being claimed as copies.
+
+copyfar.prg and copychain.prg pin the PROGRAM-WIDE half of the evidence gate (grm-k5m). The
+original gate looked only a few instructions past the loop for the JMP into the destination,
+which is the CHRGET shape; the shape real cartridges actually use is a boot routine that
+copies several stubs into RAM and RETURNS, after which the game calls them at their RAM
+addresses from arbitrarily far away (Wizards & Warriors copies three AxROM bank-switch
+routines to $0300/$032d/$033d and calls them from four different banks). Those calls are the
+same evidence, found through the reference manager instead of by lookahead.
+
+copyfar.prg -- the caller precedes the loop and is disassembled BEFORE the loop is judged, so
+the reference already exists when the recognizer first looks (the simple case):
+
+  $2000  20 07 20     JSR $2007         ; run the copy routine
+  $2003  20 00 C0     JSR $C000         ; then CALL the copy -- far from the loop, before it
+  $2006  60           RTS
+  $2007  A2 07        LDX #$07
+  $2009  BD 15 20     LDA $2015,X       ; source                (loop top)
+  $200C  9D 00 C0     STA $C000,X       ; destination (DIFFERENT base)
+  $200F  CA           DEX
+  $2010  10 F7        BPL $2009
+  $2012  60           RTS               ; no jump NEAR the loop; the lookahead finds nothing
+  $2013  EA EA        NOP NOP           ; padding so the payload is not within the lookahead
+                                        ; either way (it is data; the walk stops at the RTS)
+  $2015  A9 42 60 EA EA EA EA EA        ; payload: LDA #$42 / RTS / NOPs -- real code at $C000
+
+copychain.prg -- the evidence arrives LATER, in a later analysis round: loop B (into $C100) is
+declined on first sight because nothing yet flows into $C100; loop A (into $C000) is proven by
+the usual adjacent JMP and materialized; A's copied code is a JSR $C102, which is only
+disassembled once A is materialized -- and THAT reference is what re-admits B on the
+analyzer's next round. Address order puts B first so it is judged (and declined) before A.
+B's payload deliberately starts with two zero bytes (a two-byte table ahead of the routine),
+so the third evidence leg -- "the payload decodes as a subroutine from its first byte" -- FAILS
+on it and only the late call can admit it; the call lands mid-range, at $C102, which is also
+where the materializer must then disassemble from (entryPoint), leaving $C100-$C101 as data:
+
+  $2000  A2 07        LDX #$07
+  $2002  BD 21 20     LDA $2021,X       ; srcB                  (loop B top)
+  $2005  9D 00 C1     STA $C100,X       ; -> $C100, nothing flows there YET
+  $2008  CA           DEX
+  $2009  10 F7        BPL $2002
+  $200B  A2 07        LDX #$07          ; falls straight into loop A (no RTS between)
+  $200D  BD 19 20     LDA $2019,X       ; srcA                  (loop A top)
+  $2010  9D 00 C0     STA $C000,X       ; -> $C000
+  $2013  CA           DEX
+  $2014  10 F7        BPL $200D
+  $2016  4C 00 C0     JMP $C000         ; adjacent jump proves A; NOT in B's range, so B's own
+                                        ; lookahead (LDX/LDA/STA/DEX/BPL/JMP) finds nothing
+  $2019  20 02 C1 60 EA EA EA EA        ; srcA: JSR $C102 / RTS / NOPs -- the late evidence
+  $2021  00 00 A9 42 60 EA EA EA        ; srcB: two table bytes, then LDA #$42 / RTS / NOPs
 """
 
 import sys
@@ -255,6 +304,49 @@ def build_copybankedinplace():
     return code
 
 
+def build_copyfar():
+    code = bytes([
+        0x20, 0x07, 0x20,       # JSR $2007     (the copy routine)
+        0x20, 0x00, 0xC0,       # JSR $C000     (CALL the copy -- far from the loop, before it)
+        0x60,                   # RTS
+        0xA2, 0x07,             # LDX #$07                                      ($2007)
+        0xBD, 0x15, 0x20,       # LDA $2015,X   (source)                        ($2009)
+        0x9D, 0x00, 0xC0,       # STA $C000,X   (destination)
+        0xCA,                   # DEX
+        0x10, 0xF7,             # BPL $2009
+        0x60,                   # RTS           (no jump near the loop)
+        0xEA, 0xEA,             # NOP NOP       (padding)
+    ])
+    payload = bytes([0xA9, 0x42, 0x60, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA])  # LDA #$42 / RTS / NOPs
+    assert LOAD_ADDR + 7 == 0x2007, "loop routine must sit at $2007"
+    assert (0x2009 - (LOAD_ADDR + 0x12)) & 0xFF == 0xF7, "BPL displacement must reach the LDA"
+    assert LOAD_ADDR + len(code) == 0x2015, "payload must sit exactly at $2015"
+    return code + payload
+
+
+def build_copychain():
+    code = bytes([
+        0xA2, 0x07,             # LDX #$07                                      ($2000)
+        0xBD, 0x21, 0x20,       # LDA $2021,X   (srcB)                          ($2002)
+        0x9D, 0x00, 0xC1,       # STA $C100,X   (-> $C100; nothing flows there yet)
+        0xCA,                   # DEX
+        0x10, 0xF7,             # BPL $2002
+        0xA2, 0x07,             # LDX #$07                                      ($200B)
+        0xBD, 0x19, 0x20,       # LDA $2019,X   (srcA)                          ($200D)
+        0x9D, 0x00, 0xC0,       # STA $C000,X   (-> $C000)
+        0xCA,                   # DEX
+        0x10, 0xF7,             # BPL $200D
+        0x4C, 0x00, 0xC0,       # JMP $C000     (adjacent jump proves A)        ($2016)
+    ])
+    src_a = bytes([0x20, 0x02, 0xC1, 0x60, 0xEA, 0xEA, 0xEA, 0xEA])  # JSR $C102 / RTS / NOPs
+    src_b = bytes([0x00, 0x00, 0xA9, 0x42, 0x60, 0xEA, 0xEA, 0xEA])  # 2 table bytes, LDA #$42 / RTS
+    assert (0x2002 - (LOAD_ADDR + 0x0B)) & 0xFF == 0xF7, "loop B's BPL must reach its LDA"
+    assert (0x200D - (LOAD_ADDR + 0x16)) & 0xFF == 0xF7, "loop A's BPL must reach its LDA"
+    assert LOAD_ADDR + len(code) == 0x2019, "srcA must sit exactly at $2019"
+    assert LOAD_ADDR + len(code) + len(src_a) == 0x2021, "srcB must sit exactly at $2021"
+    return code + src_a + src_b
+
+
 def write_prg(outdir, name, body):
     header = bytes([LOAD_ADDR & 0xFF, LOAD_ADDR >> 8])
     path = os.path.join(outdir, name)
@@ -274,6 +366,8 @@ def main():
     write_prg(outdir, "copybanked.prg", build_copybanked())
     write_prg(outdir, "copybankedsrc.prg", build_copybankedsrc())
     write_prg(outdir, "copybankedinplace.prg", build_copybankedinplace())
+    write_prg(outdir, "copyfar.prg", build_copyfar())
+    write_prg(outdir, "copychain.prg", build_copychain())
 
 
 if __name__ == "__main__":

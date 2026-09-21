@@ -160,9 +160,18 @@ final class TransferMaterializer {
 		// Gate 0: a snapshot needs readable source bytes. Produce nothing rather than invent them.
 		byte[] bytes = readSource(program, spec);
 		if (bytes == null) {
+			// Say which kind of unreadable it is: a ROM window with no dump supplied can be fixed
+			// by the analyst; a RAM source (kicarus copies $0000 into PRG RAM, blmaster $007a to
+			// $0000 -- both with real callers into the destination, grm-k5m) holds bytes that only
+			// exist at runtime, and "supply the ROM image" would send them looking for nothing.
+			MemoryBlock srcBlock = program.getMemory().getBlock(spec.srcStart());
+			boolean ramSource = srcBlock != null && srcBlock.isWrite() && !srcBlock.isInitialized();
 			String why = "copy " + fmt(spec.srcStart()) + " -> " + fmt(spec.dstStart()) +
-				" not materialized: source bytes are uninitialized (supply the ROM image, " +
-				"then re-run)";
+				(ramSource
+						? " not materialized: the source is RAM, whose contents exist only at " +
+							"runtime, so there is nothing static to place"
+						: " not materialized: source bytes are uninitialized (supply the ROM " +
+							"image, then re-run)");
 			// A front-end with no instruction to annotate (a descriptor directive) gets a log note
 			// only -- which is exactly the "directive is ignored, log note only" rule of
 			// docs/smc-inplace-vs-overlay.md section 6.
@@ -449,6 +458,13 @@ final class TransferMaterializer {
 		}
 		Listing listing = program.getListing();
 		if (listing.getInstructionAt(entry) == null) {
+			// The destination was uninitialized until a moment ago, but not necessarily EMPTY:
+			// Ghidra's data-reference analysis will already have planted an undefined1 at an
+			// address the program stores to (wizwarr's boot routine clears $0300 before it copies
+			// a stub there, grm-k5m), and the disassembler refuses to overwrite defined data, so
+			// the block came out initialized and undisassembled with no error anywhere. Whatever
+			// placeholder sits in the range describes bytes that did not exist yet; clear it.
+			listing.clearCodeUnits(block.getStart(), block.getEnd(), false);
 			new DisassembleCommand(entry, null, true).applyTo(program, monitor);
 		}
 		if (spec.makeFunction() && listing.getInstructionAt(entry) != null &&

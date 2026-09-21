@@ -47,6 +47,7 @@ import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.listing.Bookmark;
 import ghidra.program.model.listing.CommentType;
 import ghidra.program.model.listing.Data;
+import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.InstructionIterator;
 import ghidra.program.model.listing.Listing;
@@ -191,6 +192,18 @@ public class VerifyBankTest extends GhidraScript {
 
 		if (name.contains("copyoverlay")) {
 			checkCopyOverlay();
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
+
+		if (name.contains("copyfar")) {
+			checkCopyFar();
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
+
+		if (name.contains("copychain")) {
+			checkCopyChain();
 			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
 			return;
 		}
@@ -1277,6 +1290,98 @@ public class VerifyBankTest extends GhidraScript {
 			new byte[] {(byte) 0x91, (byte) 0x92, (byte) 0x93, (byte) 0x94, (byte) 0x95,
 				(byte) 0x96, (byte) 0x97, (byte) 0x98},
 			true, false, false, new Neighbor[0], addr(COPY_ENTRY), addr(0x200b));
+	}
+
+	/**
+	 * The evidence gate's program-wide half (grm-k5m): the only flow into $C000 is a JSR at
+	 * $2003, BEFORE the loop and far outside its lookahead. Same assertions as copyloop, with
+	 * the loop's counter init at $2007 and the call site as the jump site -- the copy must be
+	 * carved, disassembled and reachable exactly as if the jump had been adjacent.
+	 */
+	private void checkCopyFar() {
+		verifyCopy("copyfar", "COPY_c000", 0xc000, 0x2015,
+			new byte[] {(byte) 0xA9, 0x42, 0x60, (byte) 0xEA, (byte) 0xEA, (byte) 0xEA,
+				(byte) 0xEA, (byte) 0xEA},
+			true, true, true, new Neighbor[] {new Neighbor("RAM_C000_C008", 0xc008, 0xcfff)},
+			addr(0x2007), addr(0x2003));
+	}
+
+	/**
+	 * The late-evidence case (grm-k5m): loop B ($2000 -> $C100) is declined on first sight -- its
+	 * payload starts with two zero bytes, so the decode leg fails too -- loop A ($200B -> $C000)
+	 * is proven by its adjacent JMP, and A's copied code is the JSR $C102 that re-admits B on the
+	 * analyzer's next round, entering it MID-RANGE. Both copies must end up carved; A is
+	 * disassembled from its start, B from $C102 (the call target, which the recognizer hands the
+	 * materializer as the entry point) with $C100-$C101 left as data. RAM_C000's leftovers are
+	 * the gap between the two carves and the tail after the second.
+	 */
+	private void checkCopyChain() {
+		verifyCopy("copychain-a", "COPY_c000", 0xc000, 0x2019,
+			new byte[] {0x20, 0x02, (byte) 0xC1, 0x60, (byte) 0xEA, (byte) 0xEA, (byte) 0xEA,
+				(byte) 0xEA},
+			true, true, true, new Neighbor[] {new Neighbor("RAM_C000_C008", 0xc008, 0xc0ff)},
+			addr(0x200b), addr(0x2016));
+
+		MemoryBlock b = currentProgram.getMemory().getBlock("COPY_c100");
+		MemoryBlock tail = currentProgram.getMemory().getBlock(addr(0xc108));
+		Listing listing = currentProgram.getListing();
+		Instruction entry = listing.getInstructionAt(addr(0xc102));
+		boolean headIsData = listing.getInstructionAt(addr(0xc100)) == null &&
+			listing.getInstructionAt(addr(0xc101)) == null;
+		Function fn = currentProgram.getFunctionManager().getFunctionAt(addr(0xc102));
+		Reference callref = primaryReferenceFrom(addr(0xc000));
+		String c = listing.getComment(CommentType.EOL, addr(COPY_ENTRY));
+		String comment = c == null ? "" : c;
+		Bookmark declined = null;
+		for (Bookmark bm : currentProgram.getBookmarkManager().getBookmarks(addr(COPY_ENTRY))) {
+			if (COPY_CATEGORY.equals(bm.getCategory()) &&
+				bm.getComment().startsWith("copy-shaped loop")) {
+				declined = bm;
+			}
+		}
+		String bytes;
+		try {
+			byte[] buf = new byte[8];
+			b.getBytes(b.getStart(), buf);
+			bytes = hex(buf);
+		}
+		catch (Exception e) {
+			bytes = "<unreadable>";
+		}
+
+		println("=== BANKDUMP BEGIN ===");
+		println("COPYBLOCK " + (b == null ? "<missing>"
+				: b.getName() + " " + fmt(b.getStart()) + "-" + fmt(b.getEnd()) + " init=" +
+					b.isInitialized()));
+		println("NEIGHBORS " + (tail == null ? "<none>"
+				: tail.getName() + " " + fmt(tail.getStart()) + "-" + fmt(tail.getEnd()) +
+					" init=" + tail.isInitialized()));
+		println("COPIED " + bytes);
+		println("ENTRY " + (entry == null ? "<none>" : fmt(entry.getAddress()) + " " + entry));
+		println("HEADDATA " + headIsData);
+		println("FUNCTION " + (fn == null ? "<none>" : fn.getName()));
+		println("CALLREF " + (callref == null ? "<none>" : fmt(callref.getToAddress())));
+		println("DECLINEDNOTE " + (declined == null ? "gone" : "still present"));
+		println("COMMENT " + comment);
+		println("=== BANKDUMP END ===");
+
+		criterion("copychain-b-copyblock-exists", b != null && b.getStart().getOffset() == 0xc100,
+			"block=" + (b == null ? "<missing>" : fmt(b.getStart())));
+		criterion("copychain-b-copied-bytes", "00 00 a9 42 60 ea ea ea".equals(bytes),
+			"bytes=" + bytes);
+		criterion("copychain-b-entered-mid-range", entry != null && fn != null,
+			"entry=" + entry + " fn=" + fn);
+		criterion("copychain-b-head-left-as-data", headIsData, "headIsData=" + headIsData);
+		criterion("copychain-b-callref-hits-entry",
+			callref != null && callref.getToAddress().equals(addr(0xc102)),
+			"callref=" + (callref == null ? "<none>" : fmt(callref.getToAddress())));
+		criterion("copychain-b-declined-note-retracted", declined == null,
+			"declined=" + (declined == null ? "gone" : declined.getComment()));
+		criterion("copychain-b-comment-links-block", comment.contains("COPY_c100"),
+			"eol=" + comment);
+		criterion("copychain-b-neighbors", tail != null &&
+			"RAM_C000_C008_C108".equals(tail.getName()) && tail.getEnd().getOffset() == 0xcfff &&
+			!tail.isInitialized(), "tail=" + (tail == null ? "<none>" : tail.getName()));
 	}
 
 	// ------------------------------------------------------------------

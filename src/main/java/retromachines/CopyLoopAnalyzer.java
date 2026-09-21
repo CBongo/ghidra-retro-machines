@@ -24,6 +24,8 @@ import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.address.AddressSetView;
 import ghidra.program.model.lang.Processor;
 import ghidra.program.model.lang.Register;
+import ghidra.program.model.listing.Bookmark;
+import ghidra.program.model.listing.BookmarkManager;
 import ghidra.program.model.listing.BookmarkType;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
@@ -31,6 +33,9 @@ import ghidra.program.model.listing.Program;
 import ghidra.program.model.symbol.RefType;
 import ghidra.util.task.TaskMonitor;
 
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -54,7 +59,14 @@ import java.util.Set;
  *
  * <p><b>The evidence gate: no jump into the range, no materialization.</b> A recognized loop is
  * materialized only when a {@code JMP}/{@code JSR} into the destination proves the payload is
- * code. Otherwise the loop gets a NOTE bookmark saying what was seen and nothing is placed.
+ * code. Otherwise the loop gets a NOTE bookmark saying what was seen and nothing is placed. The
+ * jump need not sit next to the loop: any call or jump into the destination from anywhere in
+ * the program counts (grm-k5m), and a loop declined in one analysis round is re-examined in every
+ * later one, so evidence that only appears once more code is disassembled -- a call from a bank
+ * overlay the banking analyzer opens up later -- still materializes the copy. Failing any jump,
+ * a payload whose bytes decode as a self-contained subroutine is admitted too
+ * ({@link PayloadDecodeEvidence}), the one form of evidence that needs no caller; the EOL
+ * comment says which kind of evidence carried the decision.
  *
  * <p>This is deliberately stricter than the first increment, which placed every recognized copy's
  * bytes and merely withheld <em>disassembly</em> without such proof. Real ROMs settled it: this
@@ -96,8 +108,12 @@ public class CopyLoopAnalyzer extends AbstractAnalyzer {
 		"Recovers run-from-elsewhere SMC: recognizes verbatim ROM/image->RAM copy loops and " +
 			"materializes the copied bytes at the destination -- carved into its own memory " +
 			"block where possible, otherwise a dual-home byte-mapped COPY_xxxx overlay -- " +
-			"disassembling them only when a jump into the range proves they are code.";
+			"disassembling them only when a jump into the range, or the payload's own decode, " +
+			"proves they are code.";
 	private static final String CATEGORY = "CopyLoopAnalyzer";
+
+	/** How every declined-loop NOTE begins; {@link #retryDeclined} keys on it. */
+	private static final String DECLINED_PREFIX = "copy-shaped loop ";
 
 	/** The processors whose mnemonics {@link LoopIdioms} knows. */
 	private static final Set<String> SUPPORTED_PROCESSORS = Set.of("6502", "6510");
@@ -132,7 +148,8 @@ public class CopyLoopAnalyzer extends AbstractAnalyzer {
 		return processor != null && SUPPORTED_PROCESSORS.contains(processor.toString());
 	}
 
-	/** Scans changed instructions for recognized copy loops. */
+	/** Scans changed instructions for recognized copy loops, then gives every loop declined
+	 *  earlier another look in case the new instructions flow into its destination. */
 	@Override
 	public boolean added(Program program, AddressSetView set, TaskMonitor monitor, MessageLog log) {
 		Listing listing = program.getListing();
@@ -148,7 +165,66 @@ public class CopyLoopAnalyzer extends AbstractAnalyzer {
 				RunFromElsewhere.apply(program, request, CATEGORY, monitor, log);
 			}
 		}
+		retryDeclined(program, listing, monitor, log);
 		return true;
+	}
+
+	/**
+	 * Re-examine every loop this analyzer declined for want of a jump into its destination
+	 * (grm-k5m). The evidence can arrive AFTER the loop was judged: the copied routines are
+	 * called from code that is itself only disassembled later -- another materialized copy, or a
+	 * bank overlay that BoardBankAnalyzer opens up once a bank value is recovered (the copychain
+	 * fixture pins the first shape). Each new batch of instructions is a new chance, and each
+	 * declined loop is one bookmark, so the sweep is a handful of reference lookups per round. The declined NOTE bookmark is the record: it sits on the loop's counter init, whose
+	 * {@code LDA/STA} pair follows within the counter lookback, so the loop is re-recognized from
+	 * the listing rather than from any state kept here -- which also makes the retry survive a
+	 * program being closed and re-analyzed. A loop that succeeds has its NOTE replaced by the
+	 * materializer's own provenance; one that fails again rewrites the same NOTE in place.
+	 */
+	private void retryDeclined(Program program, Listing listing, TaskMonitor monitor,
+			MessageLog log) {
+		BookmarkManager bm = program.getBookmarkManager();
+		List<Bookmark> declined = new ArrayList<>();
+		Iterator<Bookmark> it = bm.getBookmarksIterator(BookmarkType.NOTE);
+		while (it.hasNext()) {
+			Bookmark mark = it.next();
+			if (CATEGORY.equals(mark.getCategory()) &&
+				mark.getComment().startsWith(DECLINED_PREFIX)) {
+				declined.add(mark);
+			}
+		}
+		for (Bookmark mark : declined) {
+			if (monitor.isCancelled()) {
+				return;
+			}
+			Instruction sta = storeAfterInit(listing, mark.getAddress());
+			if (sta == null) {
+				continue;
+			}
+			RunFromElsewhere.Request request = tryRecognize(program, listing, sta);
+			if (request != null) {
+				bm.removeBookmark(mark);
+				RunFromElsewhere.apply(program, request, CATEGORY, monitor, log);
+			}
+		}
+	}
+
+	/** The {@code STA} anchoring the copy loop whose counter init sits at {@code init}: the
+	 *  first {@code LDA}-then-{@code STA} pair within the counter lookback, or null. */
+	private static Instruction storeAfterInit(Listing listing, Address init) {
+		Instruction prev = listing.getInstructionAt(init);
+		if (prev == null) {
+			return null;
+		}
+		Instruction cur = listing.getInstructionAfter(init);
+		for (int i = 0; i < LoopIdioms.COUNTER_LOOKBACK && cur != null; i++) {
+			if (LoopIdioms.mnem(cur).equals("STA") && LoopIdioms.mnem(prev).equals("LDA")) {
+				return cur;
+			}
+			prev = cur;
+			cur = listing.getInstructionAfter(cur.getAddress());
+		}
+		return null;
 	}
 
 	/** Recognize a verbatim copy loop whose store step is {@code sta}, or return null. Anchors
@@ -228,14 +304,41 @@ public class CopyLoopAnalyzer extends AbstractAnalyzer {
 
 		// A JMP/JSR into the destination is the only evidence this loop moves CODE, and without
 		// it we do not materialize at all -- see the "evidence gate" note in the class javadoc.
+		// The jump may sit right after the loop (the CHRGET shape) or anywhere else in the
+		// program (grm-k5m: a boot routine copies stubs into RAM and RETURNS, and the game calls
+		// them at their RAM addresses from other banks entirely). The local lookahead is kept as
+		// the first test because it is what the existing fixtures pin, and because it needs no
+		// reference to exist yet; the program-wide search is the fallback.
 		Address jumpInto = LoopIdioms.findJumpIntoRange(listing, branch, dst, len);
+		Address entry = null;
 		if (jumpInto == null) {
+			LoopIdioms.FlowInto flow = LoopIdioms.findFlowIntoRange(program, dst, len,
+				init.getAddress(), branch.getAddress());
+			if (flow != null) {
+				jumpInto = flow.site();
+				entry = flow.target();
+			}
+		}
+		// Last resort, and the weakest evidence: no jump anywhere, but the payload's own bytes
+		// decode as a self-contained subroutine (PayloadDecodeEvidence, grm-k5m). This is what
+		// breaks the wizwarr circle -- the callers of the copied bank-switch stubs sit in banks
+		// only those stubs select. The source is resolved to the occupant really read (grm-9a0)
+		// because that is where the bytes are; the same resolution is repeated below for the
+		// request, after the destination-dependent test that must see the base-space dst.
+		boolean decodes = false;
+		if (jumpInto == null) {
+			Address readFrom = LoopIdioms.overlayAccessTarget(lda, src, len, RefType::isRead);
+			decodes = PayloadDecodeEvidence.decodesAsSubroutine(program,
+				readFrom != null ? readFrom : src, len);
+		}
+		if (jumpInto == null && !decodes) {
 			program.getBookmarkManager().setBookmark(init.getAddress(), BookmarkType.NOTE,
-				CATEGORY, "copy-shaped loop " + TransferMaterializer.fmt(src) + " -> " +
+				CATEGORY, DECLINED_PREFIX + TransferMaterializer.fmt(src) + " -> " +
 					TransferMaterializer.fmt(dst) + " (" + len + " bytes) recognized but NOT " +
-					"materialized: nothing jumps into the destination, so there is no evidence " +
-					"it holds code. If it does, materialize it with the Run From Elsewhere " +
-					"Transfer script or a descriptor copied_from hint.");
+					"materialized: nothing jumps into the destination and the payload does not " +
+					"decode as a subroutine, so there is no evidence it holds code. If it does, " +
+					"materialize it with the Run From Elsewhere Transfer script or a descriptor " +
+					"copied_from hint.");
 			return null;
 		}
 
@@ -262,7 +365,9 @@ public class CopyLoopAnalyzer extends AbstractAnalyzer {
 				.provenanceSite(init.getAddress())
 				.disassemble(true)
 				.makeFunction(true)
+				.entryPoint(entry)
 				.jumpSite(jumpInto)
-				.originLabel("copy loop");
+				.originLabel(jumpInto != null ? "copy loop"
+						: "copy loop (no jump into the copy; its bytes decode as a subroutine)");
 	}
 }

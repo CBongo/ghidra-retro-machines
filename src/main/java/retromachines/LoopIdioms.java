@@ -17,13 +17,17 @@ package retromachines;
 
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressOutOfBoundsException;
+import ghidra.program.model.address.AddressSet;
+import ghidra.program.model.address.AddressIterator;
 import ghidra.program.model.lang.Register;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
+import ghidra.program.model.listing.Program;
 import ghidra.program.model.scalar.Scalar;
 import ghidra.program.model.symbol.FlowType;
 import ghidra.program.model.symbol.RefType;
 import ghidra.program.model.symbol.Reference;
+import ghidra.program.model.symbol.ReferenceManager;
 
 import java.util.function.Predicate;
 
@@ -41,7 +45,7 @@ final class LoopIdioms {
 
 	// How far back to look for the loop-counter init, and how far past the loop for the
 	// jump-into-range; both small because these stubs are tight, local constructs.
-	private static final int COUNTER_LOOKBACK = 8;
+	static final int COUNTER_LOOKBACK = 8;
 	private static final int JUMP_LOOKAHEAD = 6;
 
 	private LoopIdioms() {
@@ -268,6 +272,77 @@ final class LoopIdioms {
 				}
 			}
 			cur = listing.getInstructionAfter(cur.getAddress());
+		}
+		return null;
+	}
+
+	/** A call or jump into a copy's destination range found through the reference manager:
+	 *  the instruction that flows in and the address inside the range it lands on. */
+	record FlowInto(Address site, Address target) {
+	}
+
+	/**
+	 * Any call or jump landing in {@code [base, base+len)} from ANYWHERE in the program, or null
+	 * -- the program-wide complement of {@link #findJumpIntoRange}'s local lookahead (grm-k5m).
+	 *
+	 * <p>The lookahead answers the CHRGET-style shape, where the loop is immediately followed by
+	 * a {@code JMP} into what it just copied. The far more common shape on real cartridges is a
+	 * boot routine that copies several stubs into RAM and returns, after which the game calls
+	 * them at their RAM addresses from arbitrarily far away -- Wizards &amp; Warriors copies three
+	 * AxROM bank-switch routines to {@code $0300/$032d/$033d} and calls them from four different
+	 * banks. Those calls are exactly the evidence the gate wants ("something jumps into the
+	 * destination, so it holds code"); they are just not adjacent to the loop. Ghidra records a
+	 * flow reference to the RAM target the moment the calling instruction is disassembled, whether
+	 * or not anything is defined at the target, so the reference manager already holds the answer.
+	 *
+	 * <p>Only DIRECT flow references count: a {@code JMP}/{@code JSR} whose absolute operand IS
+	 * the target, the same test the local lookahead applies. The loop's own {@code STA base,X}
+	 * carries a write reference into the range and any data access into it is just that --
+	 * data -- so neither is evidence of code. Neither is a computed flow: the decompiler's switch
+	 * recovery plants {@code COMPUTED_JUMP} references wherever its jump-table read lands, and on
+	 * megaman (grm-eyn, the a737 over-read) two of those landed inside copies of work-RAM data,
+	 * which the first cut of this test then materialized -- a 3-byte {@code BRK} "function" and a
+	 * 20-byte block nothing could disassemble, exactly the harm grm-1.7.6 exists to prevent. A
+	 * real caller of a RAM stub is a plain {@code JSR $033d}. Sources inside
+	 * {@code [excludeLo, excludeHi]} (the loop itself) are ignored. When several flows land in the
+	 * range the LOWEST target is returned, so the materializer's entry point is the earliest
+	 * entered byte; the returned site is the instruction that reaches that target.
+	 */
+	static FlowInto findFlowIntoRange(Program program, Address base, int len, Address excludeLo,
+			Address excludeHi) {
+		Address end;
+		try {
+			end = base.add(len - 1);
+		}
+		catch (AddressOutOfBoundsException e) {
+			return null;
+		}
+		ReferenceManager refMgr = program.getReferenceManager();
+		Listing listing = program.getListing();
+		AddressIterator targets =
+			refMgr.getReferenceDestinationIterator(new AddressSet(base, end), true);
+		while (targets.hasNext()) {
+			Address target = targets.next();
+			for (Reference ref : refMgr.getReferencesTo(target)) {
+				RefType type = ref.getReferenceType();
+				if (!(type.isCall() || type.isJump()) || type.isComputed()) {
+					continue;
+				}
+				Address from = ref.getFromAddress();
+				if (from.compareTo(excludeLo) >= 0 && from.compareTo(excludeHi) <= 0) {
+					continue;
+				}
+				Instruction site = listing.getInstructionAt(from);
+				if (site == null) {
+					continue;
+				}
+				String m = mnem(site);
+				if (!(m.equals("JMP") || m.equals("JSR")) ||
+					!target.equals(StoredValueScanner.plainAbsoluteTarget(site))) {
+					continue;
+				}
+				return new FlowInto(from, target);
+			}
 		}
 		return null;
 	}

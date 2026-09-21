@@ -181,6 +181,40 @@ else candidate/WARN. This tier is **testable now with a self-contained PRG fixtu
 > that the payload is code, and a human who spots a missed copy has the manual transfer script
 > (grm-1.7.1.1). Evidence-free materialization was the auto recognizer covering for front-ends
 > that did not exist yet.
+>
+> **What "a jump into the range" means was widened, not weakened, by grm-k5m (2026-09-21).** The
+> first gate looked only a few instructions past the loop, which is the CHRGET shape; the shape
+> real cartridges use is a boot routine that copies several stubs into RAM and *returns*, after
+> which the game calls them at their RAM addresses from anywhere. So the gate now has three legs,
+> tried in order, and the EOL comment on the loop names which one carried the decision:
+>
+> 1. the original lookahead — a `JMP`/`JSR` into the destination right after the loop;
+> 2. **any DIRECT call or jump into the destination from anywhere in the program**, found through
+>    the reference manager (`LoopIdioms.findFlowIntoRange`) -- a `JMP`/`JSR` whose absolute
+>    operand is the target, never a `COMPUTED_JUMP`: the decompiler's switch recovery plants those
+>    wherever a jump-table over-read lands (grm-eyn), and on megaman two of them fell inside
+>    copies of work-RAM data, which the first cut of this leg then materialized (a 3-byte `BRK`
+>    "function", a 20-byte block nothing could disassemble). Because that evidence can appear *after*
+>    the loop was judged — the callers may sit in code that is only disassembled later — every
+>    loop declined for want of it is re-examined on each later analysis round
+>    (`CopyLoopAnalyzer.retryDeclined`, keyed on the declined NOTE bookmark);
+> 3. **the payload's own bytes decode as a self-contained subroutine**
+>    (`PayloadDecodeEvidence`): every instruction decodes and lies inside the payload, no computed
+>    flow (a `BRK` or `JMP (ind)` in a copied stub is data), and the walk reaches an `RTS`/`RTI`
+>    or an unconditional jump out. This is the weakest leg and the one that needed justifying.
+>    It exists because on Wizards & Warriors leg 2 can never fire: the three AxROM bank-switch
+>    stubs copied to `$0300/$032d/$033d` are called only from the banks those stubs select, so the
+>    first bank value the analysis could recover sits in code it will not look at for want of a
+>    caller it cannot reach without that value. Leg 3 is what breaks the circle. It does not
+>    reopen the door above: the data copies that rule was written for fail it on their first
+>    bytes (zero runs, `BRK`s, undefined opcodes — wizwarr's own six data copies all fail while
+>    its three stubs pass), and `PayloadDecodeEvidenceTest` pins both sides.
+>
+> One materializer consequence surfaced with it: the destination is uninitialized until the copy
+> lands, but not necessarily *empty* — Ghidra's data-reference analysis plants an `undefined1` at
+> an address the program stores to, and the disassembler will not overwrite defined data, so the
+> block came out initialized and silently undisassembled. `TransferMaterializer.disassemble` now
+> clears the range's code units first.
 
 ## 7. Recommended sequencing
 
