@@ -41,10 +41,18 @@ public class DecompileSiteProbe extends GhidraScript {
 			return;
 		}
 		DecompInterface ifc = new DecompInterface();
+		// Collect LOAD records the way SwitchAnalysisDecompileConfigurer does: the decompiler's
+		// per-entry loadcounts path (and any bound that lives on it) only runs with jumpload on.
+		ifc.toggleJumpLoads(true);
 		ifc.openProgram(currentProgram);
 		try {
 			for (String s : spec.split(",")) {
 				Address a = currentProgram.getAddressFactory().getAddress(s.trim());
+				if (a == null && s.contains("::")) {
+					// "RAM::e000" (the default space, as JumpTableProbe prints it) does not parse
+					// through the factory; a bare offset resolves in the default space.
+					a = toAddr(s.substring(s.indexOf("::") + 2).trim());
+				}
 				Function f = a == null ? null : currentProgram.getFunctionManager().getFunctionContaining(a);
 				if (f == null) {
 					println("DECOMP " + s + " no function contains it");
@@ -69,6 +77,10 @@ public class DecompileSiteProbe extends GhidraScript {
 				for (JumpTable jt : hf.getJumpTables()) {
 					tables.append(' ').append(jt.getSwitchAddress()).append(":")
 							.append(jt.getCases().length);
+					for (JumpTable.LoadTable lt : jt.getLoadTables()) {
+						tables.append("{load ").append(lt.getAddress()).append(" size=").append(lt.getSize())
+								.append(" num=").append(lt.getNum()).append('}');
+					}
 				}
 				String err = res.getErrorMessage() == null ? "" : res.getErrorMessage().trim();
 				println(head + " ok branchind=" + branchind + " jumptables=[" + tables.toString().trim() +

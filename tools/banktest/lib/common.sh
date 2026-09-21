@@ -418,6 +418,10 @@ grm_decompiler_build_name() {
 			echo "12.1.3 stock" ;;
 		1afff91d3130115546cf7904fb8c95047345155049c8b76661b307761e3820a1)
 			echo "12.1.3 + GP-6936 local patch (grm-qp5x.3)" ;;
+		bd0d7c43f04fca8413ae8ddf2ebe6edd661e6ccbf5228b23460e232568b96d9a)
+			echo "12.1.3 + GP-6936 + lowest-target jump-table bound (grm-eyn candidate)" ;;
+		27befd1a8ff1efb1e24e1dd33c24ce38c606a468b4f4569e92e0a94f972fa917)
+			echo "12.1.3 stock + lowest-target jump-table bound (grm-eyn candidate, no GP-6936 patch)" ;;
 		'')
 			echo "unknown (no decompile binary found)" ;;
 		*)
