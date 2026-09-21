@@ -196,6 +196,13 @@ Agents can't file these — they need an account and CLA agreement.
   silently). Posting it is yours. What the answer decides: "deliberate" → close `grm-p3dy` on
   option (1), the reference model stays; "open to it" → reopen as option (3) with the upstream
   PR as the vehicle, then settle Q2–Q4. Do not start a local `flow.cc` patch before the answer.
+  **Two things to do around the filing:** (i) the draft cites
+  [discussion #9349](https://github.com/NationalSecurityAgency/ghidra/discussions/9349) as
+  its context — this is the decompiler half of that RFC's Phase 1, which the RFC wrongly said
+  needed "no further change" downstream; (ii) **update #9349 too**: post the new issue's link
+  there with the addendum now in `docs/rfc-banked-memory.md` ("the decompiler has a second
+  wall, independent of resolution"), so the discussion stops over-claiming and gains a small,
+  reviewable lead-in.
 - [ ] **`bd prime`: ask beads to expose its compact memory index in CLI mode.** (`grm-8ctl`,
   researched 2026-08-26, **re-checked against upstream 2026-09-20** — the draft on the bead is
   now stale and should be SHRUNK, not posted as-is.)

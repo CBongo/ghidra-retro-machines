@@ -293,6 +293,29 @@ raised 12 unresolved-state warnings) — the `3N − 1` spaces are paid for rega
 the banked code they hold stays disconnected from the call graph. That gap is exactly what
 Phase 1's bank-aware *default* resolution closes.
 
+## Addendum (2026-09-21): the decompiler has a second wall, independent of resolution
+
+Phase 1 above claims that once resolution is bank-aware, "flow following [and] the decompiler
+inherit correct targets with no further change". That is true of the *listing* and false of
+the *decompiler*, and the gap was measured directly rather than inferred (`grm-p3dy`,
+`FallThroughIntoOverlayProgramTest` in this repo, Ghidra 12.1.3): give an instruction a
+correctly resolved continuation in an overlay of its own base space — the cleanest possible
+"bank-aware flow", a fall-through override to the overlay copy — and the listing side accepts
+it (`setFallThrough` lands; `CreateFunctionCmd`'s single-space `FollowFlow` ends the function
+there), but the function **fails to decompile outright**. `FlowInfo` bounds a function's flow
+to the *entry's address space* (`flow.cc`: `baddr(space,0)`, `eaddr(space,~0)`), so the
+`BRANCH` that `PcodeEmit.resolveFinalFallthrough` emits for the override is out of bounds and
+`FlowInfo::target` throws `Could not find op at target address`. The only cross-space flow the
+decompiler follows today is a CALL.
+
+So the resolution hook in §3 is necessary but not sufficient: a Phase 1 implementation would
+produce correct cross-space flow targets and then hit this error at every self-window switch
+whose continuation the decompiler tries to follow. The second change is small and separable
+from the bank map — let `FlowInfo`'s bounds admit overlays of the same base space (or make
+`setFallThrough` refuse cross-space targets, so the two halves at least fail loudly together).
+It is filed as its own issue with a five-instruction repro, precisely so it can be reviewed
+without any of the machinery above; see the `grm-p3dy` bead for the draft and the filing.
+
 ## Questions for maintainers
 
 1. Is there internal effort in this direction? (~~PIC18 banking issue #9052 was closed
