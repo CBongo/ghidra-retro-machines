@@ -179,25 +179,6 @@ Agents can't file these — they need an account and CLA agreement.
      `datatests/wraprange.xml` is expected to fail under the patch, and that is a *reading* of the
      test, not an observed failure — `decomp_test_dbg` needs `termios.h`/`dirent.d_type` and will
      not build on this machine (a Linux box, or `pacman -S gcc` under msys64).
-- [ ] **`Loader.validateOptions()` is never called outside the GUI import dialogs — document it or
-  wire it up?** (`grm-vsg`, investigated 2026-08-21.) At 12.1.3 the only callers are
-  `ImporterDialog:442`, `AddToProgramDialog:82`, `LoadLibrariesOptionsDialog:60`. Not
-  `ProgramLoader`, not `HeadlessAnalyzer`/`analyzeHeadless`, not `GhidraScript.importFile`/
-  `importFileAsBinary`, and **not even the GUI's own `ImportBatchTask`** — so a loader author's
-  option validation runs on GUI single-file import and nowhere else. **This is NOT a 12.x
-  regression**, which is how our own bd memory framed it: the pre-refactor 11.4-era
-  `AutoImporter`/`HeadlessAnalyzer`/`GhidraScript`/`ImportBatchTask` did not call it either, and
-  `git log -S` on `Loader.java` shows the method unchanged in this respect since the original
-  open-source commit. Whether GUI-only was *intended* is unrecorded anywhere — no comment, commit
-  message, or javadoc says. So the ask is modest and has two acceptable outcomes: either document
-  the limitation on `validateOptions()`'s javadoc so loader authors stop relying on it, or wire it
-  into `ProgramLoader` so it runs everywhere. **The drafted issue body (title + body) is the
-  2026-09-20 comment on `grm-vsg`** — `bd show grm-vsg`, last comment; the 2026-08-21 close
-  comment only described it. It leads with the call-site list and explicitly concedes the
-  not-a-regression point, since opening with a wrong severity claim is how these get closed
-  unread. Low urgency: we have no
-  live exposure (see that bead), so this is a courtesy report, not a request for a fix we need.
-
 - [ ] **`bd prime`: ask beads for an index emission for memories, instead of all-or-nothing.**
   (`grm-8ctl`, researched 2026-08-26.) **The full issue body is drafted verbatim on `grm-8ctl`'s
   comments** — title on the first line — so this is review-and-post, nothing left to write.
@@ -328,3 +309,4 @@ Agents can't file these — they need an account and CLA agreement.
 | Is Gradle dependency locking + verification metadata worth it here? | **Not yet — ruled 2026-09-20.** Version strings are already pinned in `build.gradle`, and the maintenance friction of verification metadata is not worth it for a single-contributor project. It becomes important if/when outside contributors are solicited; revisit then, not before. The CI half was answered 2026-08-15. | `grm-e7w` **closed** (deferred by ruling, not by neglect) |
 | GP-6936: leave `megaman`/`wizwarr` red until upstream moves, or carry a locally patched `decompile.exe`? | **Carry a locally patched install, for now — ruled 2026-09-20.** Option (d) over (a)/(c): the three-hunk patch on `grm-qp5x.2` is measured to fix both halves of GP-6936 with no row regressing across 33 cartridges, and a patched `decompile.exe` builds in ~2 minutes. Note the `#4148` cross-reference was posted the same day (item retired); only the PR itself is still open upstream. Implementation and the golden-honesty question (goldens blessed on a non-shipping toolchain must say so) are agent work on `grm-qp5x.3`. | `grm-qp5x.3` (new); `grm-qp5x.2` keeps the PR |
 | Push and open the `joshleaves/ghidra-snes` PR for the seven 65816 semantic defects | **Opened 2026-09-20 as [joshleaves/ghidra-snes#6](https://github.com/joshleaves/ghidra-snes/pull/6)** — branch `fix/65816-semantics`, one commit on upstream `master`, `658xx.sinc` only; all seven vector-oracle findings (CPY swap, compare carry, indirect jump/call, XBA, TXA/TYA flags, context bits, XCE). Awaiting the maintainer. | `grm-9nxj.7` stays open until merged/answered |
+| `Loader.validateOptions()` is never called outside the GUI import dialogs — document it or wire it up? | **Reported upstream 2026-09-20 as [NationalSecurityAgency/ghidra#9658](https://github.com/NationalSecurityAgency/ghidra/issues/9658)**, asking for either a javadoc note or a `ProgramLoader` call. Facts as verified at 12.1.3: the only callers are `ImporterDialog:442`, `AddToProgramDialog:82`, `LoadLibrariesOptionsDialog:60`; not a 12.x regression. Courtesy report — no live exposure here, since every loader enforces in `load()` (CLAUDE.md "Loader validation"). | `grm-vsg` **closed**; `ghidra-issue-9658-validateoptions` memory |
