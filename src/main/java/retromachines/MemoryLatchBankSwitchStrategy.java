@@ -352,16 +352,18 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * {@code shift}. Everything OUTSIDE the field comes back unknown, and honestly so: tracked
 	 * state says nothing about the rest of that byte, and on a multi-latch board those bits belong
 	 * to another mechanism entirely.</li>
-	 * <li>{@link BankMirrors.Kind#ROM_IDENTIFYING} -- the offset holds THE BANK NUMBER ITSELF,
-	 * right-justified by cartridge convention (Contra's {@code $8000} reads {@code 00 01 02 ...}
-	 * across banks 0..7, not {@code 00 10 20 ...}). So it converts with no shift -- and, unlike a
-	 * shadow, the WHOLE BYTE is determined, not just the field. {@code byte == bank} is exactly
-	 * what {@code BankMirrors.romIdentifyingOffsets} verified against every realized bank's image
-	 * before admitting the offset, and the bank is by construction a value this mechanism's
-	 * {@code mask} can hold. Therefore every bit ABOVE the field is a KNOWN ZERO, whether or not
-	 * the bank itself is known. That is a derivation, not an assumption, and it is the difference
-	 * between the two kinds: a shadow's upper bits are unknowable, an identifying byte's are
-	 * proved.</li>
+	 * <li>{@link BankMirrors.Kind#ROM_IDENTIFYING} -- the offset holds THE BANK NUMBER, by
+	 * whatever formula {@link BankMirrors.IdentifyingEncoding} proved for it (bead grm-km4f):
+	 * ordinarily right-justified by cartridge convention (Contra's {@code $8000} reads
+	 * {@code 00 01 02 ...} across banks 0..7, not {@code 00 10 20 ...}), but River City Ransom's
+	 * MMC3 {@code WA000} proved {@code byte == bank >> 1} on odd banks instead. Either way it
+	 * converts with no {@code shift} of THIS strategy's own -- and, unlike a shadow, the WHOLE
+	 * BYTE the encoding covers is determined, not just the field. {@link
+	 * BankMirrors.IdentifyingEncoding#byteFor} is what applies the proved formula and refuses a
+	 * bank it was never proved against; every bit above the field it does answer is a KNOWN ZERO,
+	 * whether or not the bank itself is known. That is a derivation, not an assumption, and it is
+	 * the difference between the two kinds: a shadow's upper bits are unknowable, an identifying
+	 * byte's are proved.</li>
 	 * </ul>
 	 * <b>Why the known-zero upper bits are worth deriving</b> (grm-mej.2 increment 3): they are
 	 * what a mechanism that reads the WHOLE byte needs. Memory-latch discards them at the
@@ -391,9 +393,12 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 			if (shift != 0) {
 				return null; // would deposit a confident bank 0 -- see above
 			}
-			// byte == bank exactly, so bits above the field are PROVED zero.
-			return new BankState((inStateAtStore.knownMask() & mask) | (~mask & 0xFF),
-				inStateAtStore.bits() & mask);
+			BankMirrors.IdentifyingEncoding encoding = mirrors.identifyingEncoding(target);
+			if (encoding == null) {
+				return null; // defensive: a ROM_IDENTIFYING offset always carries one once derived
+			}
+			return encoding.byteFor(inStateAtStore.knownMask() & mask, inStateAtStore.bits() & mask,
+				mask);
 		}
 		if (kinds.contains(BankMirrors.Kind.WRITE_THROUGH)) {
 			if (!shadowCoherentAt(loadInstr, target)) {

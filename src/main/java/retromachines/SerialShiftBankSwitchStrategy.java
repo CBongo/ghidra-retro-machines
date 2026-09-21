@@ -310,9 +310,12 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	 * symptoms, one cause; supplying bit 7 dissolves both.
 	 * <p>
 	 * {@code ROM_IDENTIFYING} supplies it and a shadow cannot. {@code BankMirrors
-	 * .romIdentifyingOffsets} admitted the offset only after verifying {@code byte == bank} in
-	 * EVERY realized bank's image, so the whole byte is determined by the bank number: every bit
-	 * above the reconstructed field range is a PROVED zero, bit 7 among them. That is why
+	 * .romIdentifyingOffsets} admitted the offset only after PROVING some {@link
+	 * BankMirrors.IdentifyingEncoding} against the realized banks it covers (bead grm-km4f;
+	 * ordinarily {@code byte == bank}, but not always -- see that type's javadoc), so the whole
+	 * byte the encoding answers is determined by the bank number: every bit above the
+	 * reconstructed field range is a PROVED zero, bit 7 among them, for any bank the encoding
+	 * actually verified. That is why
 	 * grm-mej.2's "serial-shift consumption is nearly free, its resolveLoad is orthogonal to a RAM
 	 * shadow" premise holds only for the identifying half. Admitting {@code WRITE_THROUGH} would
 	 * need a further ruling -- that a value currently live in these fields must have been
@@ -333,6 +336,10 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 		if (fields.size() != 1 || fields.get(0).shift() != 0) {
 			return null; // not a "takes a bank number" register -- see above
 		}
+		BankMirrors.IdentifyingEncoding encoding = mirrors.identifyingEncoding(target);
+		if (encoding == null) {
+			return null; // defensive: a ROM_IDENTIFYING offset always carries one once derived
+		}
 		TargetField tf = fields.get(0);
 		// Undo setFieldFromByte: lift the tracked field back down to bit 0 of the byte. Both
 		// widths are applied -- the board field's and the byte field's -- because a descriptor may
@@ -341,9 +348,9 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 		int byteMask = ((1 << tf.bits()) - 1) & (((1 << tf.pos().width()) - 1));
 		int known = (inState.knownMask() >>> tf.pos().lsb()) & byteMask;
 		int bits = (inState.bits() >>> tf.pos().lsb()) & byteMask;
-		// byte == bank, so everything above the bank's own bits is a PROVED zero -- which is what
-		// makes bit 7 resolvable and the whole consumption path reachable at all.
-		return new BankState(known | (~byteMask & 0xFF), bits);
+		// The encoding's proved formula, not necessarily byte == bank -- see the class javadoc
+		// above and BankMirrors.IdentifyingEncoding#byteFor for what "proved" refuses.
+		return encoding.byteFor(known, bits, byteMask);
 	}
 
 	/** Computes the state effect of a serial-shift write or commit branch. */

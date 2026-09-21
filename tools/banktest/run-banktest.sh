@@ -1038,6 +1038,12 @@ if selected nes-banking; then
 	# both directions. The MMC3 sibling of nesmirrortest -- see make_prg_mmc3_mirror().
 	run_one nesmmc3mirrortest "$WORK/nes/nesmmc3mirrortest.nes" NesRomLoader
 
+	# grm-km4f: the (bank-1)/2 identifying byte -- rcransom's non-identity ROM_IDENTIFYING
+	# shape (shift=1/low=1, a 3-bank verified floor, the two-highest-bank EXEMPT tolerance).
+	# Separate fixture from nesmmc3mirrortest so THAT golden stays byte-identical -- see
+	# make_prg_mmc3_id()'s docstring.
+	run_one nesmmc3idtest "$WORK/nes/nesmmc3idtest.nes" NesRomLoader
+
 	# grm-2dr increment 1: pass-through-wrapper recognition (a fallthrough-only function
 	# whose last instruction lands exactly on a real bank-switch helper's entry). Separate
 	# fixture from nesmmc1test so that one stays byte-identical -- see make_prg_wrapper()'s

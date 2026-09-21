@@ -269,10 +269,12 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	 * <b>Coordinates.</b> {@code inState} is this mechanism's field-local state; the answer is
 	 * the raw byte the {@code LDA} yields, which {@link #computeDataWrite}'s
 	 * {@code byteMask} extraction then narrows -- so the target's field is lifted back down to
-	 * bit 0. {@code byte == bank} was verified against every realized bank's image before the
-	 * offset was admitted, and a realized bank fits the field, so every bit above the field is
-	 * a PROVED zero -- the same derivation the other two strategies state, restated here because
-	 * it is what makes the answer a whole byte rather than a field.
+	 * bit 0 and handed to {@link BankMirrors.IdentifyingEncoding#byteFor}, which applies whatever
+	 * formula (bead grm-km4f) {@link BankMirrors#romIdentifyingOffsets} actually proved for this
+	 * offset -- {@code byte == bank} on an ordinary board, {@code byte == bank >> 1} on odd banks
+	 * for River City Ransom's MMC3 {@code WA000} -- and refuses outright for a bank that formula
+	 * was never proved against. Every bit above the field the formula covers is a PROVED zero,
+	 * which is what makes the answer a whole byte rather than a field.
 	 * <p>
 	 * <b>{@link BankMirrors.Kind#WRITE_THROUGH} DECLINES on this strategy, deliberately, and it is
 	 * a decision rather than an omission.</b> On a single-register mechanism a write-through
@@ -304,11 +306,14 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 		if (pos == null || pos.width() != windowField.width()) {
 			return null; // banked by a register this mechanism does not track -- refuse
 		}
+		BankMirrors.IdentifyingEncoding encoding = mirrors.identifyingEncoding(target);
+		if (encoding == null) {
+			return null; // defensive: a ROM_IDENTIFYING offset always carries one once derived
+		}
 		int byteMask = (1 << pos.width()) - 1;
 		int known = (inState.knownMask() >>> pos.lsb()) & byteMask;
 		int bits = (inState.bits() >>> pos.lsb()) & byteMask;
-		// byte == bank, so everything above the bank's own bits is a PROVED zero.
-		return new BankState(known | (~byteMask & 0xFF), bits);
+		return encoding.byteFor(known, bits, byteMask);
 	}
 
 	/**

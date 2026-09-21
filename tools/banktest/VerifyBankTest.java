@@ -344,6 +344,9 @@ public class VerifyBankTest extends GhidraScript {
 		else if (name.contains("nesmmc3mirrortest")) {
 			checkNesMmc3Mirrortest();
 		}
+		else if (name.contains("nesmmc3idtest")) {
+			checkNesMmc3Idtest();
+		}
 		else if (name.contains("nesmmc1test")) {
 			checkNesMmc1test();
 		}
@@ -3888,6 +3891,109 @@ public class VerifyBankTest extends GhidraScript {
 		criterion("MM14", !warningBookmarkText(0xE3AB).contains("requirement violated"),
 			"no spurious violation at CallerQ's JSR WorkerQ (e3ab): warning=\"" +
 				warningBookmarkText(0xE3AB) + "\"");
+	}
+
+	// ------------------------------------------------------------------
+	// nesmmc3idtest.nes criteria (the (bank-1)/2 identifying byte, bead grm-km4f)
+	// ------------------------------------------------------------------
+
+	/**
+	 * See {@code mknesbanktest.py}'s {@code make_prg_mmc3_id()} for the full listing. Where
+	 * {@code nesmmc3mirrortest} proves the IDENTITY ROM_IDENTIFYING encoding (byte == bank) is
+	 * derived and consumed, this fixture proves the NON-identity SHIFT encoding grm-km4f adds:
+	 * {@code BankMirrors.romIdentifyingOffsets} admitting (shift=1, low=1) at $BFF0 off rcransom's
+	 * real-ROM shape (byte == (bank-1)/2 on the odd banks of a 16-bank image), with the
+	 * {@code MIN_SHIFTED_IDENTIFYING_BANKS} floor cleared by seven matches and the
+	 * two-highest-bank EXEMPT tolerance that keeps bank 15 (the fixed {@code PRG[last]} bank,
+	 * holding junk at this offset) from vetoing the whole offset.
+	 * <p>
+	 * ID3 and ID7 are the positive proof (the derivation admits $BFF0 with the shift encoding,
+	 * and a direct {@code LDA $BFF0 / JSR H16} recovers the pair). ID4-ID6 and ID8 pin the
+	 * refusals. ID1/ID2 pin the one shape this bead does NOT reach -- the stack-carried restore
+	 * across calls -- as honestly unknown, with the grm-mej.3 dependency spelled out at the
+	 * criterion.
+	 */
+	private void checkNesMmc3Idtest() {
+		// ID1: the RESTORE, rcransom's fa43 trampoline shape -- read the mirror while r7=3, PHA,
+		// switch away through H16, call into the bank, PLA, feed the byte back into H16. This
+		// does NOT resolve today, and the criterion pins that honestly rather than the wish:
+		// StoredValueScanner.findMatchingPush pairs a PLA to its PHA only across a straight-line
+		// span and abandons on any call in between (grm-mej.3 increment 2's soundness rule), and
+		// there are two JSRs here. rcransom's own c08e/c0f4/c7db/cd57/ef85 restores are unresolved
+		// for exactly this reason. What grm-km4f proves is that the MIRROR side is ready (ID3
+		// resolves the same byte fed straight in); carrying it through a call-crossing PHA/PLA
+		// is grm-mej.3's, and when that lands this criterion should flip to r6=2,r7=3 known.
+		// Until then: r7 not known, the honest warning present, never a junk-derived pair.
+		String c = eol(0xE212);
+		criterion("ID1", !fieldKnownIn(c, "r7") && hasWarningBookmark(0xE212),
+			"H16 restore at e212 (PLA across two calls) stays honestly unknown pending " +
+				"grm-mej.3: \"" + c + "\" warning=\"" + warningBookmarkText(0xE212) + "\"");
+
+		// ID2: consequently the JSR $A000 after the restore is NOT retargeted into WA000_B3 --
+		// and must not be retargeted anywhere else either (no confident wrong bank). Flip
+		// together with ID1.
+		Reference r = findOverlayRef(0xE215, "WA000_B3", 0xA000);
+		criterion("ID2", r == null,
+			"JSR $A000 after the unresolved restore carries no WA000_B3 retarget (pending " +
+				"grm-mej.3): " + describe(r));
+
+		// ID3: the same read/restore with no intervening switch -- the mirror byte feeds H16
+		// straight from the accumulator, no stack round-trip needed to prove the shape resolves.
+		c = eol(0xE248);
+		criterion("ID3", c.contains("r6=2") && c.contains("r7=3") && !c.contains("?"),
+			"Direct's H16 call at e248 resolves r6=2,r7=3 fully known: \"" + c + "\"");
+
+		// ID4: an INCONGRUENT bank (r7=4, even, committed by direct writes). r7's low bit is
+		// known and 0, which does not match this offset's low=1, so the mirror byte cannot be
+		// answered at all -- and, critically, that refusal must not degrade into a confident
+		// junk-derived pair when the (still-unknown) byte reaches H16: never r6=0xd6/r7=0xd7,
+		// the pair H16(0xeb) would compute if the junk byte were ever treated as a real index.
+		c = eol(0xE28D);
+		criterion("ID4", !fieldKnownIn(c, "r7") && !c.contains("r6=0xd6") && !c.contains("r7=0xd7"),
+			"Even's H16 call at e28d leaves r7 (and the H16-derived pair) unknown, no " +
+				"junk-derived r6=0xd6/r7=0xd7: \"" + c + "\"");
+
+		// ID5: a CONGRUENT bank (r7=15, odd) that is nonetheless UNVERIFIED -- bank 15 is one
+		// of the two EXEMPT top banks, so its junk byte ($F1, rcransom's own) did not veto the
+		// offset, but an exempt bank enters `verified` only when its byte happens to agree, and
+		// this one's does not. The coverage check must refuse even though low-bit congruence
+		// alone would pass; never a confident pair computed by H16 from the junk byte.
+		c = eol(0xE2CD);
+		criterion("ID5", !fieldKnownIn(c, "r7"),
+			"Exempt's H16 call at e2cd (r7=15, exempt and unverified) leaves r7 unknown: \"" +
+				c + "\"");
+
+		// ID6: r7 genuinely OPAQUE (an indexed load from an unresolvable address) before the
+		// mirror is even read -- the original, engine-wide reason to refuse, with a warning
+		// live at the H16 call site (the unresolvable-argument warning; the opaque commit at
+		// e30a itself carries no warning of its own -- r7 there is merely unknown, not a call
+		// whose argument could not be recovered).
+		c = eol(0xE310);
+		criterion("ID6", !fieldKnownIn(c, "r7") && hasWarningBookmark(0xE310),
+			"Unknown's H16 call at e310 leaves r7 unknown, warning live at the call site: \"" +
+				c + "\"");
+
+		// ID7: the derivation itself. A label bank_id_bff0 at $BFF0 (WA000's base) with an EOL
+		// comment naming ROM_IDENTIFYING and the non-identity encoding (matched loosely against
+		// "bank-1", since the exact wording is IdentifyingEncoding.describe()'s to choose).
+		boolean hasLabel = hasSymbol(0xBFF0, "bank_id_bff0");
+		String bffComment = eol(0xBFF0);
+		criterion("ID7", hasLabel && bffComment.contains("bank mirror:") &&
+			bffComment.contains("ROM_IDENTIFYING") && bffComment.contains("bank-1"),
+			"bank_id_bff0 label=" + hasLabel + " eol=\"" + bffComment + "\"");
+
+		// ID8: no bank_id_ label exists at any OTHER address -- in particular not at offset 0
+		// (broken by the RTS targets) and not at any of the junk-byte offsets.
+		boolean extraLabel = false;
+		String extraLabelDetail = "";
+		for (Symbol sym : currentProgram.getSymbolTable().getAllSymbols(false)) {
+			if (sym.getName().startsWith("bank_id_") && !"bank_id_bff0".equals(sym.getName())) {
+				extraLabel = true;
+				extraLabelDetail = sym.getName() + "@" + sym.getAddress();
+				break;
+			}
+		}
+		criterion("ID8", !extraLabel, "no bank_id_ label anywhere else: " + extraLabelDetail);
 	}
 
 	// ------------------------------------------------------------------

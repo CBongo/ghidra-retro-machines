@@ -2291,6 +2291,24 @@ class _Asm:
     def rts(self):
         self._emit([0x60])
 
+    def txa(self):
+        self._emit([0x8A])
+
+    def tax(self):
+        self._emit([0xAA])
+
+    def tsx(self):
+        self._emit([0xBA])
+
+    def asl_a(self):
+        self._emit([0x0A])
+
+    def clc(self):
+        self._emit([0x18])
+
+    def adc_imm(self, v):
+        self._emit([0x69, v & 0xFF])
+
     def chain5(self, addr):
         """Emits the fully-unrolled STA/LSR commit chain (5 stores, 4 shifts --
         see machines/nes-serialtest.yaml / SerialShiftBankSwitchStrategy) to
@@ -3298,6 +3316,282 @@ def make_prg_mmc3_mirror():
     a.rts()
 
     # Unrelated byte behind the opaque loads.
+    put7(0xE400, [0x33])
+
+    # Vector table.
+    put7(0xFFFA, [labels['rti'] & 0xFF, (labels['rti'] >> 8) & 0xFF])
+    put7(0xFFFC, [labels['reset'] & 0xFF, (labels['reset'] >> 8) & 0xFF])
+    put7(0xFFFE, [labels['rti'] & 0xFF, (labels['rti'] >> 8) & 0xFF])
+
+    return bytes(prg), labels
+
+
+ID_BANKS = 16   # nesmmc3idtest: 16 x 8K, rcransom's own PRG size (see make_prg_mmc3_id)
+
+
+def mmc3_id_byte(bank):
+    """nesmmc3idtest's byte at IDENT_OFFSET for `bank`: (bank-1)/2 on the odd banks, $F1 on
+    the exempt fixed bank 15 (rcransom's own value there), $EB junk on the even banks."""
+    if bank == ID_BANKS - 1:
+        return 0xF1
+    return bank >> 1 if bank & 1 else 0xEB
+
+
+def make_prg_mmc3_id():
+    """The (bank-1)/2 identifying byte (bead grm-km4f) -- the shape of River City
+    Ransom's real ROM-identifying mirror, for machines/nes-mmc3.yaml. nesmmc3mirrortest
+    (make_prg_mmc3_mirror, above) proves the byte==bank IDENTITY encoding is derived and
+    consumed; this fixture proves the NON-identity SHIFT encoding grm-km4f adds --
+    BankMirrors.romIdentifyingOffsets admitting (shift=1, low=1) with a 3-bank floor of
+    VERIFIED banks, and the EXEMPT-top-two-banks tolerance that keeps a real ROM's fixed
+    last bank from vetoing the whole offset.
+
+    THE FACT, from rcransom's pinned image (see km4f-design.md): byte $1FFF of every 8K
+    PRG bank, read back through R7's window, equals (bank-1)/2 on every ODD bank (fed1
+    always sets r7 = 2*index+1, so R7 is odd whenever it is set through the helper);
+    even banks hold junk (never selected into R7 at runtime), and the highest-numbered
+    bank (15, exactly as on rcransom) is the `PRG[last]` fixed bank and holds junk too, NOT
+    the honest encoding -- it is EXEMPT, never selected into a switchable window on a
+    real cartridge, so a mismatch there must not veto the offset.
+
+    THIS FIXTURE'S BANK MAP (16 x 8K banks, 128K total -- ID_BANKS, twice the family's
+    MMC3_BANKS, because the shift form's floor is MIN_SHIFTED_IDENTIFYING_BANKS = 4 and an
+    8-bank cartridge has only three non-exempt odd banks; this is rcransom's real size):
+        bank:  0   1   2   3   4   5   6   7   8   9   a   b   c   d   e   f
+        byte: EB  00* EB  01  EB  02  EB  03  EB  04  EB  05  EB  06  EB  F1
+                                                          (* bank 1 is home; never re-read)
+    Odd non-exempt banks 1..13 satisfy byte == (bank-1)/2 (0..6): seven matches, the
+    same seven rcransom has. Bank 15 is odd (congruent) but EXEMPT (the two
+    highest-numbered realized banks of the window, 14 and 15) and deliberately holds
+    $F1, NOT 7 -- rcransom's own bank 15 byte -- proving an exempt-bank mismatch is
+    TOLERATED rather than vetoing the offset. Even banks hold $EB junk and are simply
+    never congruent to (shift=1, low=1), so they never enter the admission check for
+    this offset at all.
+
+    IDENTIFYING OFFSET IS $1FF0 OF EVERY BANK (WA000 -> $BFF0), NOT the literal $1FFF
+    rcransom uses: bank 15 is the fixed WE000 bank (PRG[last]) here as there,
+    so its copy of offset $1FFF would be $FFFF -- the IRQ vector's high byte, and
+    $1FFA-$1FFF generally collides with the NMI/RESET/IRQ vector table. $1FF0 keeps the
+    same "near the end of the bank" flavour rcransom's shape has while bank 15's copy
+    ($FFF0) stays clear of both code and the vector table ($FFFA-$FFFF).
+
+    Home: r6=0, r7=1, prg_mode=0 (same as nesmmc3mirrortest). Banks 2..5 hold a lone
+    RTS at offset 0 (WA000_B<n>::A000 JSR targets), exactly as the sibling's fixtures
+    do -- offset 0 deliberately breaks any byte==bank identity pattern there, so this
+    fixture's self-check can assert NO offset K satisfies identity over every bank
+    (the only admissible reading anywhere in this image is the shift=1/low=1 one).
+
+    H16 ($E3C0): rcransom's own FUN_fed1, VERBATIM (already recovered on the real ROM,
+    so its shape is proven) minus its trailing `CMP $BFFF` sanity check. Takes a 16K
+    bank index `i` in A -- read back off the stack via TSX/LDA $0102,X rather than off
+    the accumulator directly, since A is clobbered for the register-select writes in
+    between -- and sets r6 = 2*i (select 6, data = i<<1), r7 = 2*i+1 (select 7, data =
+    (i<<1)+1):
+        PHA / TXA / PHA / LDA #$06 / STA $FB / STA $8000 / TSX / LDA $0102,X / ASL A /
+        STA $FC / STA $8001 / LDA #$07 / STA $FB / STA $8000 / LDA $0102,X / ASL A /
+        CLC / ADC #$01 / STA $FD / STA $8001 / PLA / TAX / PLA / RTS
+
+    RESET ($E000): five dispatch calls, then idle; RTI handler right after.
+
+    Trampoline ($E200) -- rcransom's fa43 in spirit: establish a KNOWN pair through
+    H16, read the mirror back (capturing the byte that identifies the CURRENT bank),
+    switch away, then use the STASHED byte as H16's own argument to restore the
+    original pair -- the mirror byte and H16's index argument are the same 4-bit
+    value, so this is rcransom's own idiom for saving/restoring a PRG pair via its
+    ROM-identifying signature rather than via a plain latch:
+        LDA #$01 / JSR H16                ; r6=2, r7=3 (known)
+        LDA $BFF0                         ; mirror read: r7=3 (odd, verified) -> byte 1
+        PHA
+        LDA #$02 / JSR H16                ; r6=4, r7=5
+        JSR $A000                         ; -> WA000_B5::A000
+        PLA
+        JSR H16                           ; ID1: stays UNKNOWN today -- the PLA pairs to a PHA
+                                          ; across two calls, which findMatchingPush refuses
+                                          ; (grm-mej.3); flips to r6=2,r7=3 when that lands
+        JSR $A000                         ; ID2: consequently NOT retargeted (pending grm-mej.3)
+        RTS
+
+    Direct ($E240) -- the same read/restore with no intervening switch, so the mirror
+    byte feeds H16 straight from the accumulator (no stack round-trip needed to prove
+    the shape works with the byte immediately live):
+        LDA #$01 / JSR H16 / LDA $BFF0 / JSR H16     ; ID3: r6=2, r7=3 fully known
+        RTS
+
+    Even ($E280) -- an INCONGRUENT bank (r7 = 4, even) committed by direct register
+    writes rather than through H16, so the identifying read must refuse: r7's low bit
+    is known and 0, which does not match this offset's low=1, so byte $BFF0 (junk,
+    $EB here) cannot be answered from the mirror at all -- and, just as importantly,
+    that unresolved byte must not go on to produce a confident junk-derived r6/r7 pair
+    when it feeds H16:
+        LDA #$07 / STA $8000 / LDA #$04 / STA $8001  ; r7 = 4 (even), by direct write
+        LDA $BFF0 / JSR H16                          ; ID4: r7 NOT fully known
+        RTS
+
+    Exempt ($E2C0) -- a CONGRUENT bank (r7 = 15, odd) that is nonetheless UNVERIFIED:
+    bank 15 is one of the two exempt top banks, so its junk byte did not veto the
+    offset -- but an exempt bank enters `verified` only when its byte agrees, and this
+    one's does not. The coverage check must refuse here even though the low-bit
+    congruence check alone would pass:
+        LDA #$07 / STA $8000 / LDA #$0F / STA $8001  ; r7 = 15, realized but UNVERIFIED
+        LDA $BFF0 / JSR H16                          ; ID5: r7 NOT fully known
+        RTS
+
+    Unknown ($E300) -- r7 genuinely opaque (an indexed load from an unresolvable
+    address), so the identifying read must refuse for the ORIGINAL reason engine-wide
+    unresolvability always refuses for, with a warning already live from the opaque
+    commit itself:
+        LDA #$07 / STA $8000                         ; select 7
+        LDX #$00 / LDA $E400,X / STA $8001            ; r7 OPAQUE (warning)
+        LDA $BFF0 / JSR H16                           ; ID6: unknown, warning present
+        RTS
+
+    Derivation criteria (checked directly against the annotation, independent of any
+    particular scenario above): ID7 -- a label `bank_id_bff0` exists at $BFF0 (WA000's
+    base) with an EOL comment containing "bank mirror:", "ROM_IDENTIFYING", and text
+    naming the non-identity encoding (matched loosely against "bank-1", since the exact
+    wording is BankMirrors.IdentifyingEncoding.describe()'s to choose). ID8 -- no
+    `bank_id_` label exists at any OTHER address (in particular not at offset 0, which
+    is broken by the RTS targets, and not at any of the junk-byte offsets).
+    """
+    prg = bytearray([0x00] * (ID_BANKS * MMC3_BANK_SIZE))
+
+    IDENT_OFFSET = 0x1FF0
+
+    for bank in range(ID_BANKS):
+        prg[bank * MMC3_BANK_SIZE + IDENT_OFFSET] = mmc3_id_byte(bank)
+
+    # JSR $A000 targets: lone RTS at offset 0 of banks 2..5 (WA000_B<n>::A000), exactly
+    # as nesmmc3mirrortest's banks are -- and this breaks any byte==bank identity
+    # pattern at offset 0, so the self-check below can assert identity is nowhere
+    # admissible in this image.
+    for bank in (2, 3, 4, 5):
+        prg[bank * MMC3_BANK_SIZE] = 0x60
+
+    bank7_base = (ID_BANKS - 1) * MMC3_BANK_SIZE   # bank 15, the fixed WE000 bank
+    assert bank7_base == 0x1E000
+
+    def put7(cpu_addr, data):
+        off = bank7_base + (cpu_addr - 0xE000)
+        prg[off:off + len(data)] = bytes(data)
+
+    labels = {}
+    H16 = 0xE3C0
+
+    # --- RESET ($E000) ---
+    main = _Asm(prg, 0xE000, bank7_base)
+    labels['reset'] = main.label()
+    main.jsr(0xE200)                         # Trampoline
+    main.jsr(0xE240)                         # Direct
+    main.jsr(0xE280)                         # Even
+    main.jsr(0xE2C0)                         # Exempt
+    main.jsr(0xE300)                         # Unknown
+    labels['idle'] = main.label()
+    main.jmp(labels['idle'])
+    labels['rti'] = main.label()
+    main.rti()
+
+    # --- Trampoline ($E200) ---
+    a = _Asm(prg, 0xE200, bank7_base + 0x200)
+    labels['trampoline'] = a.label()
+    a.lda_imm(0x01)
+    a.jsr(H16)                               # r6=2, r7=3
+    labels['tramp_read1'] = a.label()
+    a.lda_abs(0xBFF0)                        # mirror: r7=3 (odd) -> byte 1
+    a.pha()
+    a.lda_imm(0x02)
+    a.jsr(H16)                               # r6=4, r7=5
+    labels['tramp_jsr1'] = a.label()
+    a.jsr(0xA000)                            # -> WA000_B5::A000
+    a.pla()
+    labels['id1_jsr'] = a.label()
+    a.jsr(H16)                               # ID1: unknown today (PLA across calls; grm-mej.3)
+    labels['id2_jsr'] = a.label()
+    a.jsr(0xA000)                            # ID2: not retargeted (pending grm-mej.3)
+    a.rts()
+
+    # --- Direct ($E240) ---
+    a = _Asm(prg, 0xE240, bank7_base + 0x240)
+    labels['direct'] = a.label()
+    a.lda_imm(0x01)
+    a.jsr(H16)                               # r6=2, r7=3
+    labels['direct_read'] = a.label()
+    a.lda_abs(0xBFF0)                        # mirror: byte 1, r7=3 live
+    labels['id3_jsr'] = a.label()
+    a.jsr(H16)                               # ID3: r6=2, r7=3 fully known
+    a.rts()
+
+    # --- Even ($E280) ---
+    a = _Asm(prg, 0xE280, bank7_base + 0x280)
+    labels['even'] = a.label()
+    a.lda_imm(0x07); a.sta_abs(0x8000)
+    a.lda_imm(0x04)
+    labels['even_commit'] = a.label()
+    a.sta_abs(0x8001)                        # r7 = 4 (even), direct write
+    labels['even_read'] = a.label()
+    a.lda_abs(0xBFF0)                        # incongruent: cannot answer from the mirror
+    labels['id4_jsr'] = a.label()
+    a.jsr(H16)                               # ID4: r7 NOT fully known
+    a.rts()
+
+    # --- Exempt ($E2C0) ---
+    a = _Asm(prg, 0xE2C0, bank7_base + 0x2C0)
+    labels['exempt'] = a.label()
+    a.lda_imm(0x07); a.sta_abs(0x8000)
+    a.lda_imm(0x0F)
+    labels['exempt_commit'] = a.label()
+    a.sta_abs(0x8001)                        # r7 = 15, realized but UNVERIFIED (exempt)
+    labels['exempt_read'] = a.label()
+    a.lda_abs(0xBFF0)                        # congruent but unverified
+    labels['id5_jsr'] = a.label()
+    a.jsr(H16)                               # ID5: r7 NOT fully known
+    a.rts()
+
+    # --- Unknown ($E300) ---
+    a = _Asm(prg, 0xE300, bank7_base + 0x300)
+    labels['unknown'] = a.label()
+    a.lda_imm(0x07); a.sta_abs(0x8000)       # select 7
+    a.ldx_imm(0x00)
+    labels['unknown_load'] = a.label()
+    a.lda_absx(0xE400)                       # opaque
+    labels['unknown_commit'] = a.label()
+    a.sta_abs(0x8001)                        # r7 OPAQUE -> warning
+    labels['unknown_read'] = a.label()
+    a.lda_abs(0xBFF0)
+    labels['id6_jsr'] = a.label()
+    a.jsr(H16)                               # ID6: unknown, warning present
+    a.rts()
+
+    # --- H16 ($E3C0): rcransom's FUN_fed1, verbatim minus its CMP $BFFF tail ---
+    a = _Asm(prg, H16, bank7_base + (H16 - 0xE000))
+    labels['h16'] = a.label()
+    a.pha()
+    a.txa()
+    a.pha()
+    a.lda_imm(0x06)
+    a.sta_zp(0xFB)
+    a.sta_abs(0x8000)
+    a.tsx()
+    a.lda_absx(0x0102)
+    a.asl_a()
+    a.sta_zp(0xFC)
+    a.sta_abs(0x8001)
+    a.lda_imm(0x07)
+    a.sta_zp(0xFB)
+    a.sta_abs(0x8000)
+    a.lda_absx(0x0102)
+    a.asl_a()
+    a.clc()
+    a.adc_imm(0x01)
+    a.sta_zp(0xFD)
+    a.sta_abs(0x8001)
+    a.pla()
+    a.tax()
+    a.pla()
+    a.rts()
+    labels['h16_end'] = a.label()
+    assert labels['h16_end'] <= 0xE400, "H16 must not reach the opaque byte at $E400"
+
+    # Unrelated byte behind the opaque load.
     put7(0xE400, [0x33])
 
     # Vector table.
@@ -4705,6 +4999,71 @@ def main():
           ", ".join("%s=$%04X" % (k, v) for k, v in m3mlabels.items()))
 
     _write_rom(outdir, "nesmmc3mirrortest.nes", prgm3m, mapper=MAPPER_MMC3)
+
+    # nesmmc3idtest.nes (bead grm-km4f): the (bank-1)/2 identifying byte -- rcransom's
+    # non-identity ROM_IDENTIFYING encoding, on the same select-data board. See
+    # make_prg_mmc3_id()'s docstring.
+    prgid, idlabels = make_prg_mmc3_id()
+    idbank7_base = (ID_BANKS - 1) * MMC3_BANK_SIZE
+    assert len(prgid) == ID_BANKS * MMC3_BANK_SIZE == 0x20000
+    assert idbank7_base == 0x1E000
+    IDENT_OFFSET = 0x1FF0
+    assert [mmc3_id_byte(b) for b in range(ID_BANKS)] ==         [0xEB, 0, 0xEB, 1, 0xEB, 2, 0xEB, 3, 0xEB, 4, 0xEB, 5, 0xEB, 6, 0xEB, 0xF1]
+    for bank in range(ID_BANKS):
+        assert prgid[bank * MMC3_BANK_SIZE + IDENT_OFFSET] == mmc3_id_byte(bank)
+    for bank in (2, 3, 4, 5):
+        assert prgid[bank * MMC3_BANK_SIZE] == 0x60             # RTS at WA000_B<n>::A000
+    # No identity (byte == bank) offset exists anywhere in this image -- the ONLY
+    # admissible encoding here is the non-identity shift=1/low=1 one.
+    assert not any(
+        all(prgid[bank * MMC3_BANK_SIZE + k] == bank for bank in range(ID_BANKS))
+        for k in range(MMC3_BANK_SIZE)
+    ), "an identity offset exists in nesmmc3idtest's image -- that defeats the fixture"
+    assert idlabels['reset'] == 0xE000 and idlabels['idle'] == 0xE00F
+    assert idlabels['rti'] == 0xE012
+    assert idlabels['trampoline'] == 0xE200 and idlabels['direct'] == 0xE240
+    assert idlabels['even'] == 0xE280 and idlabels['exempt'] == 0xE2C0
+    assert idlabels['unknown'] == 0xE300 and idlabels['h16'] == 0xE3C0
+    # RESET: five JSRs (Trampoline/Direct/Even/Exempt/Unknown), then JMP idle.
+    assert prgid[idbank7_base:idbank7_base + 0x12] == \
+        b'\x20\x00\xe2\x20\x40\xe2\x20\x80\xe2\x20\xc0\xe2\x20\x00\xe3\x4c\x0f\xe0'
+    # Trampoline: LDA #$01 / JSR H16 / LDA $BFF0 / PHA / LDA #$02 / JSR H16 / JSR $A000 /
+    #             PLA / JSR H16 / JSR $A000 / RTS
+    assert prgid[idbank7_base + 0x200:idbank7_base + 0x218] == \
+        b'\xa9\x01\x20\xc0\xe3\xad\xf0\xbf\x48\xa9\x02\x20\xc0\xe3\x20\x00\xa0' \
+        b'\x68\x20\xc0\xe3\x20\x00\xa0'
+    assert idlabels['tramp_read1'] == 0xE205 and idlabels['id1_jsr'] == 0xE212
+    assert idlabels['id2_jsr'] == 0xE215
+    # Direct: LDA #$01 / JSR H16 / LDA $BFF0 / JSR H16 / RTS
+    assert prgid[idbank7_base + 0x240:idbank7_base + 0x24B] == \
+        b'\xa9\x01\x20\xc0\xe3\xad\xf0\xbf\x20\xc0\xe3'
+    assert idlabels['direct_read'] == 0xE245 and idlabels['id3_jsr'] == 0xE248
+    # Even: LDA #$07 / STA $8000 / LDA #$04 / STA $8001 / LDA $BFF0 / JSR H16 / RTS
+    assert prgid[idbank7_base + 0x280:idbank7_base + 0x291] == \
+        b'\xa9\x07\x8d\x00\x80\xa9\x04\x8d\x01\x80\xad\xf0\xbf\x20\xc0\xe3\x60'
+    assert idlabels['even_commit'] == 0xE287 and idlabels['id4_jsr'] == 0xE28D
+    # Exempt: LDA #$07 / STA $8000 / LDA #$0F / STA $8001 / LDA $BFF0 / JSR H16 / RTS
+    assert prgid[idbank7_base + 0x2C0:idbank7_base + 0x2D1] == \
+        b'\xa9\x07\x8d\x00\x80\xa9\x0f\x8d\x01\x80\xad\xf0\xbf\x20\xc0\xe3\x60'
+    assert idlabels['exempt_commit'] == 0xE2C7 and idlabels['id5_jsr'] == 0xE2CD
+    # Unknown: LDA #$07 / STA $8000 / LDX #$00 / LDA $E400,X / STA $8001 / LDA $BFF0 /
+    #          JSR H16 / RTS
+    assert prgid[idbank7_base + 0x300:idbank7_base + 0x314] == \
+        b'\xa9\x07\x8d\x00\x80\xa2\x00\xbd\x00\xe4\x8d\x01\x80\xad\xf0\xbf\x20\xc0\xe3\x60'
+    assert idlabels['unknown_commit'] == 0xE30A and idlabels['id6_jsr'] == 0xE310
+    # H16 == rcransom's FUN_fed1, verbatim minus its CMP $BFFF tail.
+    assert prgid[idbank7_base + 0x3C0:idbank7_base + 0x3EB] == (
+        b'\x48\x8a\x48\xa9\x06\x85\xfb\x8d\x00\x80\xba\xbd\x02\x01\x0a\x85\xfc\x8d\x01\x80'
+        b'\xa9\x07\x85\xfb\x8d\x00\x80\xbd\x02\x01\x0a\x18\x69\x01\x85\xfd\x8d\x01\x80'
+        b'\x68\xaa\x68\x60'
+    )
+    assert idlabels['h16_end'] == 0xE3EB
+    assert prgid[idbank7_base + 0x400] == 0x33                  # unrelated byte, $E400
+    _assert_vectors(prgid, "nesmmc3idtest", handler=idlabels['rti'], reset=idlabels['reset'])
+    print("nesmmc3idtest labels: " +
+          ", ".join("%s=$%04X" % (k, v) for k, v in idlabels.items()))
+
+    _write_rom(outdir, "nesmmc3idtest.nes", prgid, mapper=MAPPER_MMC3)
 
     # neswrappertest.nes (bead grm-2dr, increment 1): pass-through-wrapper fixture.
     prgw, wlabels = make_prg_wrapper()

@@ -127,6 +127,27 @@ public class SelectDataMirrorConsumptionProgramTest extends AbstractBundledLangu
 		return BankMirrors.of(baseSpace, Map.of(IDENT, Set.of(kind)), Map.of(IDENT, R7));
 	}
 
+	/** {@code $A100} as an identifying offset of R7's window, carrying an EXPLICIT (bead
+	 *  grm-km4f) encoding rather than the implicit identity {@link #identifyingIn} defaults to. */
+	private BankMirrors identifyingWithEncoding(FieldSpec field, BankMirrors.IdentifyingEncoding encoding) {
+		return BankMirrors.of(baseSpace, Map.of(IDENT, Set.of(BankMirrors.Kind.ROM_IDENTIFYING)),
+			Map.of(IDENT, field), Map.of(IDENT, encoding));
+	}
+
+	/** {@code byte == bank >> 1} on odd banks (River City Ransom's MMC3 {@code WA000} shape),
+	 *  verified against odd banks 1, 3, 5, 7 of an eight-bank window. */
+	private static BankMirrors.IdentifyingEncoding oddHalfEncoding() {
+		return new BankMirrors.IdentifyingEncoding(1, 1, Set.of(1, 3, 5, 7),
+			Set.of(0, 1, 2, 3, 4, 5, 6, 7));
+	}
+
+	/** The same shape, but bank 7 was never verified -- the exempt-bank-mismatch case (RCR's own
+	 *  bank 15, which does not agree with the formula). */
+	private static BankMirrors.IdentifyingEncoding oddHalfEncodingMissingBankSeven() {
+		return new BankMirrors.IdentifyingEncoding(1, 1, Set.of(1, 3, 5),
+			Set.of(0, 1, 2, 3, 4, 5, 6, 7));
+	}
+
 	/** select, prg_mode, r6 and r7 all fully known: select 6 / mode 0 / r6=2 / r7=4. */
 	private static BankState allKnown(int select, int mode, int r6, int r7) {
 		return BankState.fullyKnown(STATE_MASK,
@@ -223,6 +244,73 @@ public class SelectDataMirrorConsumptionProgramTest extends AbstractBundledLangu
 
 		assertEquals("select := R7's byte & 7 = 4, prg_mode := bit 6 = 0 (proved), r6/r7 kept",
 			allKnown(4, 0, 2, 4), result);
+	}
+
+	// ------------------------------------------------------------------
+	// 1b. A non-identity encoding (bead grm-km4f): River City Ransom's shift-form WA000
+	// ------------------------------------------------------------------
+
+	/**
+	 * <b>The shift-form headline case.</b> R7 = 3 (odd, verified) is read at the identifying
+	 * offset and committed through select 6: the derived byte is {@code (3-1)/2 = 1}, fully
+	 * known, exactly as {@link BankMirrors.IdentifyingEncoding#byteFor} promises for a bank the
+	 * encoding actually covers.
+	 */
+	@Test
+	public void shiftedEncodingDepositsTheDerivedByteWhenTheBankIsVerified() throws Exception {
+		SelectDataBankSwitchStrategy strategy = mmc3();
+		strategy.observeMirrors(identifyingWithEncoding(R7, oddHalfEncoding()));
+		Instruction site = identifyingReadThenDataWrite();
+
+		BankState result = switchAt(strategy, site, allKnown(6, 0, 2, 3));
+
+		assertTrue("r6 must be fully known: " + result, r6Known(result));
+		assertEquals("r6 takes the derived byte (3-1)/2 = 1", 1, r6Of(result));
+	}
+
+	/** R7 = 4 (even) does not satisfy {@code low == 1}: refuse rather than answer the wrong
+	 *  congruence class's formula. */
+	@Test
+	public void shiftedEncodingDeclinesOnABankOutsideItsCongruenceClass() throws Exception {
+		SelectDataBankSwitchStrategy strategy = mmc3();
+		strategy.observeMirrors(identifyingWithEncoding(R7, oddHalfEncoding()));
+		Instruction site = identifyingReadThenDataWrite();
+
+		BankState result = switchAt(strategy, site, allKnown(6, 0, 2, 4));
+
+		assertFalse("an even bank must not satisfy a low=1 encoding: " + result, r6Known(result));
+	}
+
+	/** R7's bit 0 unknown: the encoding cannot tell whether the bank is even or odd, so it must
+	 *  refuse rather than assume the congruence class holds. */
+	@Test
+	public void shiftedEncodingDeclinesWhenTheCongruenceBitIsUnknown() throws Exception {
+		SelectDataBankSwitchStrategy strategy = mmc3();
+		strategy.observeMirrors(identifyingWithEncoding(R7, oddHalfEncoding()));
+		Instruction site = identifyingReadThenDataWrite();
+		BankState r7Bit0Unknown =
+			new BankState(allKnown(6, 0, 2, 7).knownMask() & ~(1 << 10), allKnown(6, 0, 2, 7).bits());
+
+		BankState result = switchAt(strategy, site, r7Bit0Unknown);
+
+		assertFalse("bit 0 of r7 unknown must refuse: " + result, r6Known(result));
+	}
+
+	/**
+	 * R7 = 7, fully known and odd (so it clears the congruence check), but bank 7 was never
+	 * VERIFIED by this encoding -- River City Ransom's own {@code PRG[last]} bank 15 is the shape
+	 * this pins: a bank realized in the window but exempted from, and disagreeing with, the
+	 * formula. Answering it anyway would ship a number the image never proved.
+	 */
+	@Test
+	public void shiftedEncodingDeclinesOnAnUnverifiedRealizedBank() throws Exception {
+		SelectDataBankSwitchStrategy strategy = mmc3();
+		strategy.observeMirrors(identifyingWithEncoding(R7, oddHalfEncodingMissingBankSeven()));
+		Instruction site = identifyingReadThenDataWrite();
+
+		BankState result = switchAt(strategy, site, allKnown(6, 0, 2, 7));
+
+		assertFalse("an unverified realized bank must refuse: " + result, r6Known(result));
 	}
 
 	// ------------------------------------------------------------------

@@ -819,6 +819,18 @@ final class BankAnnotationAdapter {
 					? "bank mirror: " + kindNames
 					: "bank mirror: " + kindNames + " established at " +
 						String.join(", ", evidenceHex) + more;
+			// A non-identity ROM_IDENTIFYING encoding (bead grm-km4f, e.g. River City Ransom's
+			// "byte = (bank-1)/2 on odd banks") gets its formula spelled out; the ordinary
+			// byte == bank case leaves the comment exactly as it read before grm-km4f, so no
+			// golden with only identity-form boards churns. Never "bank ->": both golden dumps
+			// count that literal substring as bankComments, and this is not switch-value
+			// provenance.
+			if (kinds.contains(BankMirrors.Kind.ROM_IDENTIFYING)) {
+				BankMirrors.IdentifyingEncoding encoding = mirrors.identifyingEncoding(addr);
+				if (encoding != null && !encoding.isIdentity()) {
+					comment += " encoding " + encoding.describe();
+				}
+			}
 			AnnotationGuard.addComment(listing, addr, CommentType.EOL, comment, "bank mirror:");
 		}
 	}

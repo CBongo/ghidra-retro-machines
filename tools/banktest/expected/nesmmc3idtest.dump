@@ -1,0 +1,107 @@
+IDENTITY prg:c15d8283e186fae05610dc279d9cfd86972eb54419f91ea876a53b838a896309 file:5b0eb86d7a34db19f1140eec37502aba89df57e0c0ffda16b2cf753f20d35bf6
+BLOCK APU_IO 4000-401f overlay=false
+BLOCK PPU_REGS 2000-2007 overlay=false
+BLOCK PRG_RAM 6000-7fff overlay=false
+BLOCK RAM 0000-07ff overlay=false
+BLOCK W8000 8000-9fff overlay=false
+BLOCK W8000_M0_B1 8000-9fff overlay=true
+BLOCK W8000_M0_B10 8000-9fff overlay=true
+BLOCK W8000_M0_B11 8000-9fff overlay=true
+BLOCK W8000_M0_B12 8000-9fff overlay=true
+BLOCK W8000_M0_B13 8000-9fff overlay=true
+BLOCK W8000_M0_B14 8000-9fff overlay=true
+BLOCK W8000_M0_B15 8000-9fff overlay=true
+BLOCK W8000_M0_B2 8000-9fff overlay=true
+BLOCK W8000_M0_B3 8000-9fff overlay=true
+BLOCK W8000_M0_B4 8000-9fff overlay=true
+BLOCK W8000_M0_B5 8000-9fff overlay=true
+BLOCK W8000_M0_B6 8000-9fff overlay=true
+BLOCK W8000_M0_B7 8000-9fff overlay=true
+BLOCK W8000_M0_B8 8000-9fff overlay=true
+BLOCK W8000_M0_B9 8000-9fff overlay=true
+BLOCK W8000_M1 8000-9fff overlay=true
+BLOCK WA000 a000-bfff overlay=false
+BLOCK WA000_B0 a000-bfff overlay=true
+BLOCK WA000_B10 a000-bfff overlay=true
+BLOCK WA000_B11 a000-bfff overlay=true
+BLOCK WA000_B12 a000-bfff overlay=true
+BLOCK WA000_B13 a000-bfff overlay=true
+BLOCK WA000_B14 a000-bfff overlay=true
+BLOCK WA000_B15 a000-bfff overlay=true
+BLOCK WA000_B2 a000-bfff overlay=true
+BLOCK WA000_B3 a000-bfff overlay=true
+BLOCK WA000_B4 a000-bfff overlay=true
+BLOCK WA000_B5 a000-bfff overlay=true
+BLOCK WA000_B6 a000-bfff overlay=true
+BLOCK WA000_B7 a000-bfff overlay=true
+BLOCK WA000_B8 a000-bfff overlay=true
+BLOCK WA000_B9 a000-bfff overlay=true
+BLOCK WC000 c000-dfff overlay=false
+BLOCK WC000_M1_B0 c000-dfff overlay=true
+BLOCK WC000_M1_B1 c000-dfff overlay=true
+BLOCK WC000_M1_B10 c000-dfff overlay=true
+BLOCK WC000_M1_B11 c000-dfff overlay=true
+BLOCK WC000_M1_B12 c000-dfff overlay=true
+BLOCK WC000_M1_B13 c000-dfff overlay=true
+BLOCK WC000_M1_B14 c000-dfff overlay=true
+BLOCK WC000_M1_B15 c000-dfff overlay=true
+BLOCK WC000_M1_B2 c000-dfff overlay=true
+BLOCK WC000_M1_B3 c000-dfff overlay=true
+BLOCK WC000_M1_B4 c000-dfff overlay=true
+BLOCK WC000_M1_B5 c000-dfff overlay=true
+BLOCK WC000_M1_B6 c000-dfff overlay=true
+BLOCK WC000_M1_B7 c000-dfff overlay=true
+BLOCK WC000_M1_B8 c000-dfff overlay=true
+BLOCK WC000_M1_B9 c000-dfff overlay=true
+BLOCK WE000 e000-ffff overlay=false
+COMMENT e006 bank -> select=7,prg_mode=0,r6=0,r7=4 via FUN_e280 [switch-value flow]
+COMMENT e009 bank -> select=7,prg_mode=0,r6=0,r7=15 via FUN_e2c0 [switch-value flow]
+COMMENT e00c bank -> select=7,prg_mode=0,r6=0,r7=1? via FUN_e300 [known: select.0=1,select.1=1,select.2=1,prg_mode=0,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0; assumed from initial: r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+COMMENT e202 bank -> select=7,prg_mode=0,r6=2,r7=3 via FUN_e3c0 [switch-value flow]
+COMMENT e20b bank -> select=7,prg_mode=0,r6=4,r7=5 via FUN_e3c0 [switch-value flow]
+COMMENT e212 bank -> select=7,prg_mode=0,r6=0,r7=1? via FUN_e3c0 [known: select.0=1,select.1=1,select.2=1,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+COMMENT e242 bank -> select=7,prg_mode=0,r6=2,r7=3 via FUN_e3c0 [switch-value flow]
+COMMENT e248 bank -> select=7,prg_mode=0,r6=2,r7=3 via FUN_e3c0 [switch-value flow]
+COMMENT e282 bank -> select=7,prg_mode=0,r6=0,r7=1 [switch-value flow]
+COMMENT e287 bank -> select=7,prg_mode=0,r6=0,r7=4 [switch-value flow]
+COMMENT e28d bank -> select=7,prg_mode=0,r6=0,r7=1? via FUN_e3c0 [known: select.0=1,select.1=1,select.2=1,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+COMMENT e2c2 bank -> select=7,prg_mode=0,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=0,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0,r7.1=0,r7.3=0,r7.4=0,r7.5=0; assumed from initial: r7.0,r7.2] [switch-value flow]
+COMMENT e2c7 bank -> select=7,prg_mode=0,r6=0,r7=15 [switch-value flow]
+COMMENT e2cd bank -> select=7,prg_mode=0,r6=0,r7=1? via FUN_e3c0 [known: select.0=1,select.1=1,select.2=1,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+COMMENT e302 bank -> select=7,prg_mode=0,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=0,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0,r7.0=1,r7.4=0,r7.5=0; assumed from initial: r7.1,r7.2,r7.3] [switch-value flow]
+COMMENT e30a bank -> select=7,prg_mode=0,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=0,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0; assumed from initial: r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+COMMENT e310 bank -> select=7,prg_mode=0,r6=0,r7=1? via FUN_e3c0 [known: select.0=1,select.1=1,select.2=1,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+COMMENT e3c7 bank -> select=6,prg_mode=0,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=1,prg_mode=0,r6.0=0,r6.3=0,r6.4=0,r6.5=0; assumed from initial: r6.1,r6.2,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+COMMENT e3d1 bank -> select=6,prg_mode=0,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=1,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+COMMENT e3d8 bank -> select=7,prg_mode=0,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+COMMENT e3e4 bank -> select=7,prg_mode=0,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+BOOKMARK Warning e00c
+BOOKMARK Warning e212
+BOOKMARK Warning e28d
+BOOKMARK Warning e2cd
+BOOKMARK Warning e310
+REF e205 -> WA000_B3::bff0 READ primary=true
+REF e20e -> WA000_B5::a000 UNCONDITIONAL_CALL primary=true
+REF e245 -> WA000_B3::bff0 READ primary=true
+REF e28a -> WA000_B4::bff0 READ primary=true
+REF e2ca -> WA000_B15::bff0 READ primary=true
+SYMBOL 00fb bank_shadow_00fb ANALYSIS primary=true
+SYMBOL 2000 PPUCTRL IMPORTED primary=true
+SYMBOL 2001 PPUMASK IMPORTED primary=true
+SYMBOL 2002 PPUSTATUS IMPORTED primary=true
+SYMBOL 2003 OAMADDR IMPORTED primary=true
+SYMBOL 2004 OAMDATA IMPORTED primary=true
+SYMBOL 2005 PPUSCROLL IMPORTED primary=true
+SYMBOL 2006 PPUADDR IMPORTED primary=true
+SYMBOL 2007 PPUDATA IMPORTED primary=true
+SYMBOL 4014 OAMDMA IMPORTED primary=true
+SYMBOL 4015 SND_CHN IMPORTED primary=true
+SYMBOL 4016 JOY1 IMPORTED primary=true
+SYMBOL 4017 JOY2 IMPORTED primary=true
+SYMBOL bff0 bank_id_bff0 ANALYSIS primary=true
+SYMBOL e000 RESET IMPORTED primary=true
+SYMBOL e012 IRQ IMPORTED primary=false
+SYMBOL e012 NMI IMPORTED primary=true
+SYMBOL fffa NMI_VEC IMPORTED primary=true
+SYMBOL fffc RESET_VEC IMPORTED primary=true
+SYMBOL fffe IRQ_VEC IMPORTED primary=true

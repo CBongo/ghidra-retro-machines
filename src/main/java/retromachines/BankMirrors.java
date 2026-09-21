@@ -41,10 +41,15 @@ import ghidra.program.model.mem.MemoryBlock;
  * Two independent facts share one type because they answer one question ("what does a load
  * of this address tell me about the bank?") in two storage classes:
  * <ul>
- * <li>a <b>ROM offset whose byte is its own bank's number</b> in every realized bank -- a
- * cartridge convention, derived from image content by {@link #romIdentifyingOffsets}. Contra
- * and TMNT both have one at the base of their switchable window; TMNT's {@code cec0} reads it
- * as an API ({@code LDA $8000} = "which bank am I in?").</li>
+ * <li>a <b>ROM offset whose byte encodes its own bank's number</b> in every realized bank -- a
+ * cartridge convention, derived from image content by {@link #romIdentifyingOffsets}. The
+ * common case is the byte holding the bank number outright ({@code byte == bank}, Contra and
+ * TMNT both have one at the base of their switchable window; TMNT's {@code cec0} reads it as an
+ * API, {@code LDA $8000} = "which bank am I in?"). River City Ransom (MMC3) proved a second,
+ * narrower shape necessary: its {@code WA000} window holds {@code byte == bank >> 1} on the ODD
+ * banks only, because {@code fed1}'s 16K-index convention always leaves R7 odd (bead grm-km4f).
+ * {@link IdentifyingEncoding} is what carries which shape an offset actually proved, so a
+ * consumer answers exactly the case the image supports and refuses everything else.</li>
  * <li>a <b>RAM cell the game writes through</b> on its way to the mechanism, or hands the
  * wrapper its argument in -- derived from code by {@link Discovery#scanWriteThroughShadows}
  * and {@link Discovery#scanArgumentCells}. Five of five hand-traced titles have at least one
@@ -77,8 +82,12 @@ public final class BankMirrors {
 	 */
 	public enum Kind {
 		/**
-		 * A ROM offset holding its own bank's number in every realized bank of a switchable
-		 * window. Reads the LIVE bank by construction, so it resolves from tracked in-state.
+		 * A ROM offset that content-derivation proved encodes its own bank's number, by SOME
+		 * {@link IdentifyingEncoding}, over a congruent, significant subset of the realized banks
+		 * of a switchable window. Reads the LIVE bank by construction, so it resolves from
+		 * tracked in-state -- but only for a bank the recorded encoding actually verified; see
+		 * {@link IdentifyingEncoding#byteFor} for the refusal that keeps an unverified bank from
+		 * answering anyway (bead grm-km4f).
 		 */
 		ROM_IDENTIFYING,
 		/**
@@ -101,13 +110,74 @@ public final class BankMirrors {
 	}
 
 	/**
-	 * How many realized banks a switchable window must have before its content is allowed to
-	 * establish an identifying offset. At two banks "byte K equals the bank number" is a
-	 * one-in-256 coincidence per offset over a whole window's worth of offsets, i.e. not
-	 * evidence at all; at three it is one in 65536 and the eight-bank boards this actually
-	 * fires on (Contra, TMNT) clear it comfortably.
+	 * How many realized banks must AGREE with a candidate {@link IdentifyingEncoding} before its
+	 * offset is admitted. At two banks "byte K equals f(bank)" is a one-in-256 coincidence per
+	 * offset over a whole window's worth of offsets, i.e. not evidence at all; at three it is one
+	 * in 65536.
+	 * <p>
+	 * <b>Since grm-km4f the count is over CONGRUENT, NON-EXEMPT matching banks, not over every
+	 * realized bank of the window.</b> Before, "significant" and "every realized bank agrees"
+	 * were the same test because the only candidate was {@code shift == 0}. They came apart once
+	 * a shift-form candidate is tried: River City Ransom's {@code WA000} byte agrees with
+	 * {@code bank >> 1} on the ODD banks ONLY (MMC3's {@code fed1} always leaves R7 odd), so the
+	 * denominator this floor counts against is the odd-bank subset that shares the candidate's
+	 * congruence class, exempt banks aside -- three or more of THOSE, not three or more realized
+	 * banks overall, is what keeps the floor's original one-in-65536 argument true for a
+	 * shift-form encoding instead of silently weakening it to "any three banks in the window,
+	 * whichever congruence class they happen to fall in."
 	 */
 	static final int MIN_IDENTIFYING_BANKS = 3;
+
+	/**
+	 * The floor for a SHIFT-FORM candidate ({@code shift != 0}), one bank stricter than
+	 * {@link #MIN_IDENTIFYING_BANKS} -- the "raise the floor for the weaker signature" the owner
+	 * asked for on grm-km4f, and it was needed. The random-byte argument above says three exact
+	 * matches are one in 65536, but real cartridges are not random: banks that share a data
+	 * layout hold the same small integers at the same offsets, and a shift-form candidate only
+	 * asks a few of them to agree. Measured 2026-09-21 over the pinned NES corpus with the floor
+	 * at three: kicarus admitted 23 spurious shift-form offsets, wizwarr and bionic 3 each, Mega
+	 * Man 4, Mega Man 2 and River City Ransom 2 each, Legendary Wings 1 -- and River City
+	 * Ransom's genuine {@code $BFFF} was the ONLY offset in the corpus with more than three
+	 * matches (seven, every odd bank but the exempt fifteenth). At four every spurious admission
+	 * disappears and the genuine one stays. A wrong admission here is not a wrong VALUE (the
+	 * byte was read from the image) but a wrong CLASSIFICATION -- a {@code bank_id_} label and a
+	 * save/restore reading of every load of that offset -- which is still guessing, and the
+	 * ruling is to refuse.
+	 */
+	static final int MIN_SHIFTED_IDENTIFYING_BANKS = 4;
+
+	/**
+	 * How many of a switchable window's highest-numbered realized banks are EXEMPT from having to
+	 * agree with a SHIFT-FORM ({@code shift != 0}) candidate {@link IdentifyingEncoding} (bead
+	 * grm-km4f). River City Ransom's bank 15 is the case this exists for: it is
+	 * {@code PRG[last]}, MMC3's fixed {@code WE000} bank, and never enters the switchable
+	 * {@code WA000} window at runtime, yet it is still "realized" there because the loader gives
+	 * every bank an overlay. Its {@code WA000} image byte is {@code f1} -- neither its own number
+	 * nor half of it -- which would otherwise fail the {@code bank >> 1} candidate that every bank
+	 * that DOES enter the window satisfies.
+	 * <p>
+	 * <b>This is a PROXY, not the real test, and it is deliberately NEVER applied to {@code shift
+	 * == 0}.</b> The real fact is "this bank is {@code PRG[last]} (or {@code PRG[second_last]})
+	 * and this board pins it to a fixed window", which lives in the descriptor's fixed-bank
+	 * declarations, not in anything {@code romIdentifyingOffsets} can see from image content and
+	 * a realized-bank set alone. Exempting the top two NUMBERED banks is the safe approximation
+	 * available without that descriptor plumbing for a board shaped like MMC3, where the
+	 * numerically highest realized banks genuinely are the ones pinned outside the switchable
+	 * window -- but the proxy is simply WRONG on a board where the register can select every
+	 * realized bank into the window, MMC2's {@code W8000} among them (a 4-bit field, all sixteen
+	 * banks genuinely reachable there). Applying the exemption at {@code shift == 0} broke exactly
+	 * that board's existing golden: MMC2's home bank (which happens to be numerically highest, and
+	 * holds live RESET code rather than a bank-number marker at the offset under test) got
+	 * exempted, and its disagreement was tolerated into a spurious identity admission from
+	 * coincidental agreement among the other banks -- a real board's identifying offset invented
+	 * from a shape the image never proved. Restricting the exemption to {@code shift != 0} keeps
+	 * identity EXACTLY as strict as it was before this bead (unconditionally, every realized bank
+	 * must agree) while still admitting RCR's {@code shift == 1} case. A future increment that
+	 * threads the descriptor's actual {@code last}/{@code second_last} bank set through to this
+	 * derivation should replace this constant with that set outright, at which point the
+	 * shift-independence restriction can be revisited on real proof rather than a numeric guess.
+	 */
+	private static final int FIXED_BANK_EXEMPTION_COUNT = 2;
 
 	/**
 	 * Instruction budget for the discovery walks below. Same value and same reason as
@@ -131,7 +201,7 @@ public final class BankMirrors {
 	private static final long STACK_PAGE_END = 0x01FF;
 
 	private static final BankMirrors EMPTY =
-		new BankMirrors(null, Map.of(), Map.of(), Map.of(), Map.of());
+		new BankMirrors(null, Map.of(), Map.of(), Map.of(), Map.of(), Map.of());
 
 	/** Null exactly when this set is empty, in which case no query can match anyway. */
 	private final AddressSpace baseSpace;
@@ -145,15 +215,120 @@ public final class BankMirrors {
 	/** Per {@link Kind#ROM_IDENTIFYING} offset, the state field that selects the bank of the
 	 *  window it lives in -- see {@link #identifyingField} and bead grm-sen5. */
 	private final Map<Long, BoardDescriptorModel.FieldSpec> identifyingFieldByOffset;
+	/** Per {@link Kind#ROM_IDENTIFYING} offset, the encoding {@code romIdentifyingOffsets} proved
+	 *  for it -- see {@link #identifyingEncoding} and bead grm-km4f. */
+	private final Map<Long, IdentifyingEncoding> identifyingEncodingByOffset;
 
 	private BankMirrors(AddressSpace baseSpace, Map<Long, Set<Kind>> byOffset,
 			Map<Long, Set<Address>> pairedByOffset, Map<Long, Set<Address>> evidenceByOffset,
-			Map<Long, BoardDescriptorModel.FieldSpec> identifyingFieldByOffset) {
+			Map<Long, BoardDescriptorModel.FieldSpec> identifyingFieldByOffset,
+			Map<Long, IdentifyingEncoding> identifyingEncodingByOffset) {
 		this.baseSpace = baseSpace;
 		this.byOffset = byOffset;
 		this.pairedByOffset = pairedByOffset;
 		this.evidenceByOffset = evidenceByOffset;
 		this.identifyingFieldByOffset = identifyingFieldByOffset;
+		this.identifyingEncodingByOffset = identifyingEncodingByOffset;
+	}
+
+	/**
+	 * How one {@link Kind#ROM_IDENTIFYING} offset's byte relates to the bank number, proved by
+	 * {@link #romIdentifyingOffsets} against the realized banks of the window it lives in (bead
+	 * grm-km4f).
+	 * <p>
+	 * <b>The shape is {@code byte == bank >> shift}, valid only on banks congruent to {@code low}
+	 * in the low {@code shift} bits</b> -- {@code shift == 0} is the ordinary {@code byte == bank}
+	 * convention (Contra, TMNT); River City Ransom's MMC3 {@code WA000} window is
+	 * {@code shift == 1, low == 1}: {@code fed1}'s 16K-index convention (r6=2i, r7=2i+1) means R7
+	 * is always odd when the window is live, and its {@code byte == bank >> 1} holds on exactly
+	 * those banks. {@code low} ranges over {@code [0, 2^shift)}, so it identifies which residue
+	 * class of banks the encoding was proved for.
+	 * <p>
+	 * <b>{@code verified} and {@code realized} answer two different questions.</b> {@code realized}
+	 * is every bank the window has an image for at all (the derivation's own input); {@code
+	 * verified} is the subset {@code romIdentifyingOffsets} actually confirmed the formula against
+	 * -- ordinarily every congruent bank, but a bank exempted as {@code PRG[last]}/
+	 * {@code PRG[second_last]} (see {@link #FIXED_BANK_EXEMPTION_COUNT}) is verified only if its
+	 * image happened to agree anyway. A consumer must refuse a bank that is {@code realized} but
+	 * not {@code verified}: that bank's byte was never proved to obey this formula, and answering
+	 * it anyway would ship a confidently wrong number for a bank that only ever fails safe here
+	 * because nothing tried to read it as one.
+	 */
+	record IdentifyingEncoding(int shift, int low, Set<Integer> verified, Set<Integer> realized) {
+
+		/** The trivial encoding: {@code byte == bank}, unconditionally. */
+		static IdentifyingEncoding identity() {
+			return new IdentifyingEncoding(0, 0, Set.of(), Set.of());
+		}
+
+		/** Whether this is the ordinary {@code byte == bank} convention, with no congruence
+		 *  restriction at all. */
+		boolean isIdentity() {
+			return shift == 0;
+		}
+
+		/**
+		 * A short human-readable statement of the formula, for {@code BankAnnotationAdapter
+		 * .nameBankMirrors}' comment. Identity keeps the pre-grm-km4f text exactly
+		 * ({@code "byte = bank"}) so a golden with no shift-form encoding never churns; a
+		 * shift-form encoding names its divisor and residue class, e.g.
+		 * {@code "byte = (bank-1)/2 on odd banks"} for River City Ransom's {@code WA000}.
+		 */
+		String describe() {
+			if (isIdentity()) {
+				return "byte = bank";
+			}
+			int divisor = 1 << shift;
+			String numerator = low == 0 ? "bank" : "(bank-" + low + ")";
+			String suffix = divisor == 2
+					? " on " + (low == 0 ? "even" : "odd") + " banks"
+					: " on banks == " + low + " (mod " + divisor + ")";
+			return "byte = " + numerator + "/" + divisor + suffix;
+		}
+
+		/**
+		 * The raw byte a load of an offset carrying this encoding yields, given the tracked
+		 * bank-selecting field lifted to bit 0, or {@link BankState#unknown()} when the proof does
+		 * not cover the tracked value -- never a guess (bead grm-km4f, owner ruling: prefer
+		 * refusing to guessing).
+		 * <p>
+		 * Three refusals, in order:
+		 * <ol>
+		 * <li>the tracked field's low {@code shift} bits are not fully known, or are known but
+		 * disagree with {@code low} -- the bank is not provably in this encoding's congruence
+		 * class at all;</li>
+		 * <li>the tracked field, together with what is unknown about it, is still consistent with
+		 * some {@code realized} bank that is NOT in {@code verified} -- the formula was never
+		 * proved for that bank, so answering would risk shipping its (possibly wrong) value under
+		 * cover of a proof that does not actually reach it;</li>
+		 * <li>(none -- the answer below is proved).</li>
+		 * </ol>
+		 * Otherwise the field is shifted right by {@code shift} and the bits above the resulting
+		 * byte-mask are PROVED zero, exactly as the {@code shift == 0} case always was: every
+		 * realized-but-unverified value has already been excluded by refusal 2, so nothing above
+		 * the shifted field can be anything the image did not prove.
+		 *
+		 * @param fieldKnown the tracked field's known-bits mask, lifted to bit 0
+		 * @param fieldBits  the tracked field's bits, lifted to bit 0
+		 * @param fieldMask  the tracked field's own width mask, e.g. {@code (1 << width) - 1}
+		 * @return the resolved byte, or {@link BankState#unknown()} when the proof does not reach it
+		 */
+		BankState byteFor(int fieldKnown, int fieldBits, int fieldMask) {
+			int lowMask = (1 << shift) - 1;
+			if ((fieldKnown & lowMask) != lowMask || (fieldBits & lowMask) != low) {
+				return BankState.unknown();
+			}
+			for (int bank : realized) {
+				if ((bank & fieldKnown & fieldMask) == (fieldBits & fieldKnown & fieldMask) &&
+					!verified.contains(bank)) {
+					return BankState.unknown();
+				}
+			}
+			int byteMaskOut = fieldMask >> shift;
+			int known = ((fieldKnown >> shift) & byteMaskOut) | (~byteMaskOut & 0xFF);
+			int bits = (fieldBits >> shift) & byteMaskOut;
+			return new BankState(known, bits);
+		}
 	}
 
 	/**
@@ -186,16 +361,41 @@ public final class BankMirrors {
 	 * refuses an identifying offset whose owning field it cannot name (select-data, bead
 	 * grm-sen5). An offset absent from {@code identifyingFields} answers {@code null} there,
 	 * which is the shape a derivation that did not attribute the window produces.
+	 * <p>
+	 * Every offset carrying {@link Kind#ROM_IDENTIFYING} defaults to {@link
+	 * IdentifyingEncoding#identity} unless {@link #of(AddressSpace, Map, Map, Map)} states
+	 * otherwise -- so every consumption test written before grm-km4f, which never mentions an
+	 * encoding at all, keeps stating {@code byte == bank} exactly as it always implicitly did.
 	 */
 	static BankMirrors of(AddressSpace baseSpace, Map<Long, Set<Kind>> byOffset,
 			Map<Long, BoardDescriptorModel.FieldSpec> identifyingFields) {
+		return of(baseSpace, byOffset, identifyingFields, Map.of());
+	}
+
+	/**
+	 * {@link #of(AddressSpace, Map, Map)} plus an explicit per-offset {@link IdentifyingEncoding}
+	 * -- for consumption tests that need to state a NON-identity encoding (bead grm-km4f), such as
+	 * River City Ransom's shift-form {@code WA000} byte. An offset present in {@code byOffset}
+	 * with {@link Kind#ROM_IDENTIFYING} but absent from {@code identifyingEncodings} still
+	 * defaults to identity, exactly as the shorter overloads do -- only a test that actually cares
+	 * about a shift-form answer needs to reach for this one.
+	 */
+	static BankMirrors of(AddressSpace baseSpace, Map<Long, Set<Kind>> byOffset,
+			Map<Long, BoardDescriptorModel.FieldSpec> identifyingFields,
+			Map<Long, IdentifyingEncoding> identifyingEncodings) {
 		if (byOffset.isEmpty()) {
 			return EMPTY;
 		}
 		Map<Long, Set<Kind>> frozen = new LinkedHashMap<>();
 		byOffset.forEach((k, v) -> frozen.put(k, Set.copyOf(v)));
+		Map<Long, IdentifyingEncoding> encodings = new LinkedHashMap<>(identifyingEncodings);
+		frozen.forEach((offset, kinds) -> {
+			if (kinds.contains(Kind.ROM_IDENTIFYING)) {
+				encodings.putIfAbsent(offset, IdentifyingEncoding.identity());
+			}
+		});
 		return new BankMirrors(baseSpace, Collections.unmodifiableMap(frozen), Map.of(), Map.of(),
-			Map.copyOf(identifyingFields));
+			Map.copyOf(identifyingFields), Map.copyOf(encodings));
 	}
 
 	/**
@@ -303,6 +503,27 @@ public final class BankMirrors {
 		return identifyingFieldByOffset.get(offset);
 	}
 
+	/**
+	 * For a {@link Kind#ROM_IDENTIFYING} offset, the {@link IdentifyingEncoding} that proved it --
+	 * i.e. exactly how its byte relates to the bank number and which banks that proof actually
+	 * covers (bead grm-km4f). {@code null} when {@code addr} is not an identifying offset.
+	 * <p>
+	 * Every production {@link Kind#ROM_IDENTIFYING} offset carries one: {@link
+	 * #romIdentifyingOffsets} never admits an offset without recording the encoding that admitted
+	 * it, and both {@link Discovery#addRomIdentifying(java.util.Collection)} overloads and every
+	 * {@link #of} overload default an unstated one to {@link IdentifyingEncoding#identity}. A
+	 * {@code null} return at an offset {@code kindsAt} reports as {@code ROM_IDENTIFYING} would
+	 * therefore mean a caller built a {@code BankMirrors} some other way -- treat it as a defensive
+	 * refusal, not an expected case.
+	 */
+	IdentifyingEncoding identifyingEncoding(Address addr) {
+		Long offset = normalizedQueryOffset(addr);
+		if (offset == null || !byOffset.getOrDefault(offset, Set.of()).contains(Kind.ROM_IDENTIFYING)) {
+			return null;
+		}
+		return identifyingEncodingByOffset.get(offset);
+	}
+
 	/** {@code addr}'s offset on the physical bus, or null when it is not on this program's. */
 	private Long normalizedQueryOffset(Address addr) {
 		if (addr == null || baseSpace == null ||
@@ -334,10 +555,24 @@ public final class BankMirrors {
 	// ------------------------------------------------------------------
 
 	/**
-	 * The offsets in one switchable window whose byte is, in EVERY realized bank of that
-	 * window, that bank's own number. Contra passes at {@code $8000} (banks 0..7 hold
-	 * {@code 00 01 02 ... 07} at byte 0); Mega Man correctly fails there
-	 * ({@code 00 00 00 00 00 00 06 00}).
+	 * The offsets in one switchable window whose byte {@link IdentifyingEncoding proves} it
+	 * encodes its own bank's number, tried as {@code byte == bank >> shift} for
+	 * {@code shift in {0, 1, 2}} and every congruence class {@code low in [0, 2^shift)}, in that
+	 * order, with the FIRST admitted encoding recorded per offset (bead grm-km4f -- an offset
+	 * cannot honestly satisfy two encodings at once, so the more general one, tried first, wins).
+	 * Contra passes {@code shift == 0} at {@code $8000} (banks 0..7 hold {@code 00 01 02 ... 07}
+	 * at byte 0); Mega Man correctly fails every shift there
+	 * ({@code 00 00 00 00 00 00 06 00}); River City Ransom's MMC3 {@code WA000} passes only
+	 * {@code shift == 1, low == 1} (odd banks), because {@code fed1}'s 16K-index convention
+	 * (r6=2i, r7=2i+1) never leaves an even bank live in that window.
+	 * <p>
+	 * <b>An offset is admitted for {@code (shift, low)} iff</b> every CONGRUENT realized bank that
+	 * is not one of the window's {@link #FIXED_BANK_EXEMPTION_COUNT} highest-numbered ("fixed")
+	 * banks agrees with the formula, AND the set of banks that agree (fixed ones included, when
+	 * they happen to) numbers at least {@link #MIN_IDENTIFYING_BANKS} for identity or
+	 * {@link #MIN_SHIFTED_IDENTIFYING_BANKS} for a shift form. A single non-exempt
+	 * disagreement refuses the WHOLE {@code (shift, low)} candidate at that offset -- prefer
+	 * refusing to guessing (owner ruling on grm-km4f) -- rather than only the offending bank.
 	 * <p>
 	 * Content-derived rather than descriptor-declared, per the ruling on grm-mej.2: the
 	 * per-game hint tier (grm-hb6.11's {@code bank_identifying_offset:}) does not exist yet, and
@@ -347,24 +582,25 @@ public final class BankMirrors {
 	 * <p>
 	 * Reads each bank's window image ONCE rather than probing byte by byte: the nominal cost is
 	 * {@code |window| * |banks|} single-byte reads, but the offsets die on their second bank
-	 * comparison, so the loop below is a couple of array compares per offset over images that
+	 * comparison, so the loop below is a handful of array compares per offset over images that
 	 * cost one bulk read each.
 	 *
 	 * @param realizedBanks the banks this window actually has an image slice for, from
 	 *                      {@code BankAnnotationAdapter.realizedBanks} -- the program's own address
 	 *                      spaces, not the container header
-	 * @return the qualifying offsets in base-space coordinates, empty when the window has fewer
-	 *         than {@link #MIN_IDENTIFYING_BANKS} realized banks, names a bank a byte cannot
-	 *         hold, or has any bank whose image cannot be read in full
+	 * @return the qualifying offsets in base-space coordinates, each with the encoding that
+	 *         admitted it; empty when the window has fewer than {@link #MIN_IDENTIFYING_BANKS}
+	 *         realized banks, names a bank a byte cannot hold, or has any bank whose image cannot
+	 *         be read in full
 	 */
-	static Set<Long> romIdentifyingOffsets(Program program, String windowName, long start,
-			long end, Set<Integer> realizedBanks) {
+	static Map<Long, IdentifyingEncoding> romIdentifyingOffsets(Program program, String windowName,
+			long start, long end, Set<Integer> realizedBanks) {
 		if (realizedBanks.size() < MIN_IDENTIFYING_BANKS || end < start) {
-			return Set.of();
+			return Map.of();
 		}
 		long span = end - start + 1;
 		if (span > Integer.MAX_VALUE) {
-			return Set.of();
+			return Map.of();
 		}
 		int length = (int) span;
 		List<Integer> banks = new ArrayList<>(realizedBanks);
@@ -373,22 +609,67 @@ public final class BankMirrors {
 		for (int i = 0; i < banks.size(); i++) {
 			int bank = banks.get(i);
 			if (bank < 0 || bank > 0xFF) {
-				return Set.of(); // a byte cannot name this bank, so no offset can identify it
+				return Map.of(); // a byte cannot name this bank, so no offset can identify it
 			}
 			images[i] = readWindowImage(program, windowName, bank, start, length);
 			if (images[i] == null) {
-				return Set.of();
+				return Map.of();
 			}
 		}
 
-		Set<Long> offsets = new LinkedHashSet<>();
+		// The window's own fixed-bank proxy (see FIXED_BANK_EXEMPTION_COUNT): the highest-numbered
+		// realized banks, exempted from having to agree with a SHIFT-FORM candidate. NOT applied
+		// at shift == 0 -- see the loop below for why identity draws no exemption at all.
+		Set<Integer> exempt = new LinkedHashSet<>();
+		for (int i = banks.size() - 1; i >= 0 && exempt.size() < FIXED_BANK_EXEMPTION_COUNT; i--) {
+			exempt.add(banks.get(i));
+		}
+		Set<Integer> realized = Set.copyOf(realizedBanks);
+
+		Map<Long, IdentifyingEncoding> offsets = new LinkedHashMap<>();
 		nextOffset: for (int k = 0; k < length; k++) {
-			for (int i = 0; i < banks.size(); i++) {
-				if ((images[i][k] & 0xFF) != banks.get(i)) {
-					continue nextOffset;
+			for (int shift = 0; shift <= 2; shift++) {
+				// Identity draws NO exemption, ever (bead grm-km4f). The exemption exists to admit
+				// a bank that CANNOT reach this window at runtime even though the loader realized
+				// an overlay for it (RCR's PRG[last] never enters WA000) -- but "highest-numbered
+				// realized bank" is only a proxy for that fact, and on a board where the register
+				// really can select ANY realized bank into this window (MMC2's W8000 takes all 16),
+				// the proxy is simply wrong. Measured regression: exempting MMC2's own highest W8000
+				// bank (which holds live RESET code, not a bank-number marker, at the offset under
+				// test) admitted $8000 as identity from three coincidental agreements plus one
+				// tolerated disagreement -- a real board's offset invented from a shape the image
+				// never actually proved. Restricting the exemption to shift != 0 keeps identity
+				// exactly as strict as it was before this bead (never admits on anything short of
+				// EVERY realized bank agreeing) while still letting RCR's shift == 1 case through.
+				Set<Integer> exemptForThisShift = shift == 0 ? Set.of() : exempt;
+				int congruenceClasses = 1 << shift;
+				for (int low = 0; low < congruenceClasses; low++) {
+					Set<Integer> matched = new LinkedHashSet<>();
+					boolean nonExemptDisagreed = false;
+					for (int i = 0; i < banks.size(); i++) {
+						int bank = banks.get(i);
+						if ((bank & (congruenceClasses - 1)) != low) {
+							continue; // not in this candidate's congruence class at all
+						}
+						if ((images[i][k] & 0xFF) == (bank >> shift)) {
+							matched.add(bank);
+						}
+						else if (!exemptForThisShift.contains(bank)) {
+							nonExemptDisagreed = true;
+							break;
+						}
+					}
+					if (nonExemptDisagreed) {
+						continue; // this (shift, low) is refused at this offset -- try the next
+					}
+					int floor = shift == 0 ? MIN_IDENTIFYING_BANKS : MIN_SHIFTED_IDENTIFYING_BANKS;
+					if (matched.size() >= floor) {
+						offsets.put(start + k,
+							new IdentifyingEncoding(shift, low, Set.copyOf(matched), realized));
+						continue nextOffset; // first admitted encoding wins -- see class javadoc
+					}
 				}
 			}
-			offsets.add(start + k);
 		}
 		return offsets;
 	}
@@ -486,6 +767,12 @@ public final class BankMirrors {
 		 *  {@link #addRomIdentifying(Collection)} have no entry. */
 		private final Map<Long, BoardDescriptorModel.FieldSpec> romIdentifyingField =
 			new LinkedHashMap<>();
+		/** The {@link IdentifyingEncoding} each identifying offset was admitted under -- see
+		 *  {@link BankMirrors#identifyingEncoding} and bead grm-km4f. Every offset in
+		 *  {@link #romIdentifying} has an entry here: the {@code Collection<Long>} overloads
+		 *  below default the unstated ones to {@link IdentifyingEncoding#identity}. */
+		private final Map<Long, IdentifyingEncoding> romIdentifyingEncoding =
+			new LinkedHashMap<>();
 		private final Map<Long, Cell> cells = new LinkedHashMap<>();
 		/** Every mechanism write {@link #scanWriteThroughShadows} was handed, grouped by the
 		 *  bit-field it commits -- the denominator of {@link #coversAMechanismField}. */
@@ -495,25 +782,53 @@ public final class BankMirrors {
 			this.baseSpace = baseSpace;
 		}
 
-		/** Records content-derived identifying offsets (see {@link #romIdentifyingOffsets})
-		 *  without naming the window field they were found under -- the form the derivation
-		 *  tests use; a consumer that needs the field ({@link BankMirrors#identifyingField})
-		 *  sees {@code null} for these and refuses. */
+		/**
+		 * Records content-derived identifying offsets by raw offset alone, without naming the
+		 * window field OR the {@link IdentifyingEncoding} that admitted each -- the form the
+		 * derivation tests use when only the KIND matters. Every recorded offset defaults to
+		 * {@link IdentifyingEncoding#identity} (bead grm-km4f): a consumer that needs the window
+		 * field ({@link BankMirrors#identifyingField}) still sees {@code null} for these and
+		 * refuses, but a consumer that only needs the encoding (every shipped strategy) gets the
+		 * ordinary {@code byte == bank} answer, matching what this overload always implicitly meant
+		 * before shift-form encodings existed.
+		 */
 		void addRomIdentifying(Collection<Long> offsets) {
-			romIdentifying.addAll(offsets);
+			addRomIdentifying(offsets, null);
 		}
 
 		/**
-		 * The production form: the offsets AND the {@code banking.state} field that selects the
-		 * bank of the window they were found in (bead grm-sen5), so a multi-window mechanism can
-		 * answer a load of one from the right tracked field. {@code null} for {@code windowField}
-		 * degrades to the field-less form.
+		 * {@link #addRomIdentifying(Collection)} plus the {@code banking.state} field that selects
+		 * the bank of the window the offsets were found in (bead grm-sen5), so a multi-window
+		 * mechanism can answer a load of one from the right tracked field. {@code null} for
+		 * {@code windowField} degrades to the field-less form. Encodings still default to
+		 * {@link IdentifyingEncoding#identity}, same reasoning as the single-argument overload.
 		 */
 		void addRomIdentifying(Collection<Long> offsets,
 				BoardDescriptorModel.FieldSpec windowField) {
 			romIdentifying.addAll(offsets);
+			for (Long offset : offsets) {
+				romIdentifyingEncoding.putIfAbsent(offset, IdentifyingEncoding.identity());
+			}
 			if (windowField != null) {
 				for (Long offset : offsets) {
+					romIdentifyingField.put(offset, windowField);
+				}
+			}
+		}
+
+		/**
+		 * The production form (bead grm-km4f): the offsets AND ENCODINGS {@link
+		 * #romIdentifyingOffsets} proved, plus the {@code banking.state} field that selects the
+		 * bank of the window they were found in (bead grm-sen5) so a multi-window mechanism can
+		 * answer a load of one from the right tracked field. {@code null} for {@code windowField}
+		 * degrades to the field-unattributed form, same as the {@code Collection<Long>} overload.
+		 */
+		void addRomIdentifying(Map<Long, IdentifyingEncoding> encodings,
+				BoardDescriptorModel.FieldSpec windowField) {
+			romIdentifying.addAll(encodings.keySet());
+			romIdentifyingEncoding.putAll(encodings);
+			if (windowField != null) {
+				for (Long offset : encodings.keySet()) {
 					romIdentifyingField.put(offset, windowField);
 				}
 			}
@@ -926,7 +1241,8 @@ public final class BankMirrors {
 			});
 			return new BankMirrors(baseSpace, Collections.unmodifiableMap(frozen),
 				Collections.unmodifiableMap(paired), Collections.unmodifiableMap(evidence),
-				Collections.unmodifiableMap(new LinkedHashMap<>(romIdentifyingField)));
+				Collections.unmodifiableMap(new LinkedHashMap<>(romIdentifyingField)),
+				Collections.unmodifiableMap(new LinkedHashMap<>(romIdentifyingEncoding)));
 		}
 
 		/** Whether the fall-through path from {@code prev} is exactly {@code cur} -- the block

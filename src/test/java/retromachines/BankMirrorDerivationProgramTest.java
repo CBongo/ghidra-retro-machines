@@ -129,7 +129,7 @@ public class BankMirrorDerivationProgramTest extends AbstractBundledLanguageTest
 		}
 	}
 
-	private Set<Long> identifyingOffsets(int banks) {
+	private Map<Long, BankMirrors.IdentifyingEncoding> identifyingOffsets(int banks) {
 		Set<Integer> realized = new java.util.LinkedHashSet<>();
 		for (int bank = 0; bank < banks; bank++) {
 			realized.add(bank);
@@ -148,7 +148,7 @@ public class BankMirrorDerivationProgramTest extends AbstractBundledLanguageTest
 			setBankByte(bank, 0x8000, bank);
 		}
 
-		assertEquals(Set.of(0x8000L), identifyingOffsets(4));
+		assertEquals(Set.of(0x8000L), identifyingOffsets(4).keySet());
 	}
 
 	/**
@@ -165,7 +165,7 @@ public class BankMirrorDerivationProgramTest extends AbstractBundledLanguageTest
 			setBankByte(bank, 0x8000, measured[bank]);
 		}
 
-		assertEquals(Set.of(), identifyingOffsets(8));
+		assertEquals(Set.of(), identifyingOffsets(8).keySet());
 	}
 
 	/**
@@ -179,22 +179,31 @@ public class BankMirrorDerivationProgramTest extends AbstractBundledLanguageTest
 		setBankByte(0, 0x8000, 0);
 		setBankByte(1, 0x8000, 1);
 
-		assertEquals(Set.of(), identifyingOffsets(2));
+		assertEquals(Set.of(), identifyingOffsets(2).keySet());
 	}
 
 	/**
 	 * A window whose banks agree at byte 0 but disagree one byte later yields the one offset and
 	 * not the other -- the test is per offset, not per window.
+	 * <p>
+	 * Six banks, not four (bead grm-km4f): the disagreeing bank must be NON-exempt for this to
+	 * pin what it says it pins. {@link BankMirrors#romIdentifyingOffsets} now exempts the window's
+	 * two highest-numbered realized banks from having to agree at all ({@code
+	 * FIXED_BANK_EXEMPTION_COUNT}, the {@code PRG[last]}/{@code PRG[second_last]} proxy), and with
+	 * only four banks the disagreeing one WAS one of those two -- which would flip this from a
+	 * refusal into a lucky admission for the wrong reason. Six banks puts the disagreement
+	 * squarely among the three non-exempt ones, where it refuses every {@code (shift, low)}
+	 * candidate the way the test always meant to show.
 	 */
 	@Test
 	public void onlyTheAgreeingOffsetIsAdmitted() throws Exception {
-		layBankOverlays(4);
-		for (int bank = 0; bank < 4; bank++) {
+		layBankOverlays(6);
+		for (int bank = 0; bank < 6; bank++) {
 			setBankByte(bank, 0x8000, bank);
 			setBankByte(bank, 0x8001, bank == 2 ? 0x99 : bank);
 		}
 
-		assertEquals(Set.of(0x8000L), identifyingOffsets(4));
+		assertEquals(Set.of(0x8000L), identifyingOffsets(6).keySet());
 	}
 
 	/**
@@ -211,7 +220,7 @@ public class BankMirrorDerivationProgramTest extends AbstractBundledLanguageTest
 			setBankByte(bank, 0x8000, bank);
 		}
 		BankMirrors.Discovery discovery = discovery();
-		discovery.addRomIdentifying(identifyingOffsets(4));
+		discovery.addRomIdentifying(identifyingOffsets(4).keySet());
 		BankMirrors mirrors = discovery.build();
 
 		Address inOverlay =
@@ -221,6 +230,153 @@ public class BankMirrorDerivationProgramTest extends AbstractBundledLanguageTest
 			mirrors.is(inOverlay, BankMirrors.Kind.ROM_IDENTIFYING));
 		assertTrue("and so must the base-space one",
 			mirrors.is(addr("0x8000"), BankMirrors.Kind.ROM_IDENTIFYING));
+	}
+
+	// ------------------------------------------------------------------
+	// The shift-form encoding (bead grm-km4f): River City Ransom's WA000, byte == bank >> 1
+	// on odd banks only, and the boundary cases around it.
+	// ------------------------------------------------------------------
+
+	/**
+	 * <b>The fact grm-km4f exists for, at derivation-test scale -- River City Ransom's own bank
+	 * map.</b> Sixteen banks, byte 0 holding {@code bank >> 1} on the ODD banks 1..13 and
+	 * unrelated junk on the even ones. Bank 15, an exempt top bank, disagrees outright (its real
+	 * {@code WA000} image byte is {@code f1}, neither its own number nor half of it) -- tolerated
+	 * rather than refusing the whole candidate, because
+	 * {@link BankMirrors#FIXED_BANK_EXEMPTION_COUNT} applies to a shift-form candidate. No
+	 * {@code shift == 0} candidate can be admitted here (bank 1's byte is 0, not 1), so
+	 * {@code shift == 1, low == 1} must be the one recorded, with {@code verified} the seven odd
+	 * banks that agreed -- comfortably above {@link BankMirrors#MIN_SHIFTED_IDENTIFYING_BANKS}.
+	 */
+	@Test
+	public void oddBanksHalfTheirNumberIsIdentifyingWithShiftOne() throws Exception {
+		layBankOverlays(16);
+		for (int bank = 0; bank < 16; bank++) {
+			int value = (bank & 1) == 0 ? 0xEB : bank >> 1; // odd: bank >> 1; even: junk
+			setBankByte(bank, 0x8000, bank == 15 ? 0xF1 : value); // bank 15 disagrees
+		}
+
+		Map<Long, BankMirrors.IdentifyingEncoding> offsets = identifyingOffsets(16);
+		BankMirrors.IdentifyingEncoding encoding = offsets.get(0x8000L);
+
+		assertEquals(Set.of(0x8000L), offsets.keySet());
+		assertEquals(1, encoding.shift());
+		assertEquals(1, encoding.low());
+		assertEquals(Set.of(1, 3, 5, 7, 9, 11, 13), encoding.verified());
+		assertEquals(16, encoding.realized().size());
+		assertFalse(encoding.isIdentity());
+	}
+
+	/**
+	 * <b>A shift-form candidate needs {@link BankMirrors#MIN_SHIFTED_IDENTIFYING_BANKS} matching
+	 * banks, one more than identity does</b> (bead grm-km4f). The same odd-bank shape as above on
+	 * an EIGHT-bank cartridge: banks 1, 3, 5 agree and bank 7 is exempt junk, so the candidate
+	 * would have cleared identity's floor of three -- and did, on the first cut, which is how the
+	 * pinned corpus grew 23 spurious admissions on Kid Icarus alone from banks that merely share
+	 * a data layout. Three matches are not evidence for the weaker signature; refuse.
+	 */
+	@Test
+	public void aShiftFormCandidateNeedsOneMoreMatchThanIdentity() throws Exception {
+		layBankOverlays(8);
+		int[] byteAt8000 = { 0xFF, 0, 0xFF, 1, 0xFF, 2, 0xFF, 0x99 }; // odd 1,3,5 agree; 7 exempt junk
+		for (int bank = 0; bank < 8; bank++) {
+			setBankByte(bank, 0x8000, byteAt8000[bank]);
+		}
+
+		assertEquals(Set.of(), identifyingOffsets(8).keySet());
+	}
+
+	/**
+	 * <b>Identity draws NO exemption, ever</b> (bead grm-km4f) -- the fix for a real regression,
+	 * not a hypothetical. Five banks, byte == bank on banks 0-2 and JUNK on the two numerically
+	 * highest (3, 4); at {@code shift == 0} this must REFUSE outright despite three non-exempt
+	 * agreements clearing {@link BankMirrors#MIN_IDENTIFYING_BANKS} on their own, because "highest
+	 * -numbered realized bank" is only a valid proxy for "cannot reach this window at runtime" on
+	 * a board shaped like MMC3 -- on MMC2's {@code W8000}, EVERY realized bank genuinely can be
+	 * selected into the switchable window (a 4-bit field, all sixteen reachable), so exempting the
+	 * numerically highest one at {@code shift == 0} spuriously admitted an identity offset from
+	 * pure coincidence on the real {@code nesmmc2test} fixture until this was caught by the
+	 * {@code nes-banking} golden.
+	 */
+	@Test
+	public void identityDrawsNoExemptionAtAllUnlikeAShiftFormCandidate() throws Exception {
+		layBankOverlays(5);
+		int[] byteAt8000 = { 0, 1, 2, 0x99, 0xAA }; // 3, 4 are numerically highest and disagree
+		for (int bank = 0; bank < 5; bank++) {
+			setBankByte(bank, 0x8000, byteAt8000[bank]);
+		}
+
+		assertEquals(Set.of(), identifyingOffsets(5).keySet());
+	}
+
+	/**
+	 * <b>A NON-exempt congruent mismatch refuses the whole candidate</b>, not merely that bank --
+	 * pinned at a shift-form candidate rather than identity, so it stays meaningful now that
+	 * identity itself draws no exemption at all. Sixteen banks, {@code bank >> 1} on every odd
+	 * bank except bank 3 (non-exempt), which disagrees: six banks still agree, above the shifted
+	 * floor, yet {@code shift == 1, low == 1} must be refused entirely at this offset, and no
+	 * other shift form rescues it either.
+	 */
+	@Test
+	public void aNonExemptMismatchRefusesTheOffset() throws Exception {
+		layBankOverlays(16);
+		for (int bank = 0; bank < 16; bank++) {
+			int value = (bank & 1) == 0 ? 0xEB : bank >> 1;
+			setBankByte(bank, 0x8000, bank == 3 ? 0x99 : value); // bank 3, non-exempt, disagrees
+		}
+
+		assertEquals(Set.of(), identifyingOffsets(16).keySet());
+	}
+
+	/**
+	 * <b>Fewer than {@link BankMirrors#MIN_IDENTIFYING_BANKS} matching congruent banks refuses,
+	 * even when every non-exempt bank agrees.</b> Eight banks, byte == {@code bank >> 2}
+	 * throughout: {@code shift == 0} and {@code shift == 1} both fail on their first non-exempt
+	 * congruent bank, and {@code shift == 2}'s four congruence classes have only two members each
+	 * (one non-exempt, one either non-exempt or exempt-and-agreeing) -- never enough to clear the
+	 * floor, so the offset is refused outright rather than admitted on a two-bank "majority".
+	 */
+	@Test
+	public void fewerThanTheFloorOfMatchingBanksRefuses() throws Exception {
+		layBankOverlays(8);
+		for (int bank = 0; bank < 8; bank++) {
+			setBankByte(bank, 0x8000, bank >> 2);
+		}
+
+		assertEquals(Set.of(), identifyingOffsets(8).keySet());
+	}
+
+	/**
+	 * <b>Identity is tried first and recorded with {@code verified == realized}</b> when every
+	 * realized bank agrees outright -- the ordinary Contra/TMNT case, restated here as an
+	 * encoding-field assertion rather than only a membership one.
+	 */
+	@Test
+	public void identityIsPreferredAndVerifiedCoversEveryRealizedBank() throws Exception {
+		layBankOverlays(4);
+		for (int bank = 0; bank < 4; bank++) {
+			setBankByte(bank, 0x8000, bank);
+		}
+
+		BankMirrors.IdentifyingEncoding encoding = identifyingOffsets(4).get(0x8000L);
+
+		assertTrue(encoding.isIdentity());
+		assertEquals(0, encoding.shift());
+		assertEquals(0, encoding.low());
+		assertEquals(Set.of(0, 1, 2, 3), encoding.verified());
+		assertEquals(encoding.realized(), encoding.verified());
+	}
+
+	/** An all-zero window admits nothing: bank 0 agrees by construction at every shift, but every
+	 *  other non-exempt bank disagrees, so every candidate is refused. */
+	@Test
+	public void anAllZeroWindowAdmitsNothing() throws Exception {
+		layBankOverlays(4);
+		for (int bank = 0; bank < 4; bank++) {
+			setBankByte(bank, 0x8000, 0);
+		}
+
+		assertEquals(Set.of(), identifyingOffsets(4).keySet());
 	}
 
 	// ------------------------------------------------------------------
@@ -414,7 +570,7 @@ public class BankMirrorDerivationProgramTest extends AbstractBundledLanguageTest
 		builder.setBytes("0x900d", "8d 00 c0", true); // STA $C000   <- switch site
 
 		BankMirrors.Discovery discovery = discovery();
-		discovery.addRomIdentifying(identifyingOffsets(4));
+		discovery.addRomIdentifying(identifyingOffsets(4).keySet());
 		discovery.scanWriteThroughShadows(program, List.of(addr("0x9005"), addr("0x900d")));
 		BankMirrors mirrors = discovery.build();
 
@@ -593,7 +749,7 @@ public class BankMirrorDerivationProgramTest extends AbstractBundledLanguageTest
 		builder.setBytes("0x9013", "85 59", true); // STA $59      <- copy site 2, no switch nearby
 
 		BankMirrors.Discovery discovery = discovery();
-		discovery.addRomIdentifying(identifyingOffsets(4));
+		discovery.addRomIdentifying(identifyingOffsets(4).keySet());
 		discovery.scanSaveSlotCopies(program);
 		BankMirrors mirrors = discovery.build();
 
@@ -657,7 +813,7 @@ public class BankMirrorDerivationProgramTest extends AbstractBundledLanguageTest
 		builder.setBytes("0x9012", "85 77", true); // STA $77
 
 		BankMirrors.Discovery discovery = discovery();
-		discovery.addRomIdentifying(identifyingOffsets(4));
+		discovery.addRomIdentifying(identifyingOffsets(4).keySet());
 		discovery.scanWriteThroughShadows(program, List.of(addr("0x9005"), addr("0x900d")));
 		discovery.scanSaveSlotCopies(program);
 		BankMirrors mirrors = discovery.build();
