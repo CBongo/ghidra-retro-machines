@@ -182,42 +182,35 @@ Agents can't file these — they need an account and CLA agreement.
   work comes first — capture the decompiler's stderr/crash, then minimise to something shareable
   without ROM bytes (the ROM is hash-pinned but not redistributable). Your part is the filing when
   that lands; nothing to do until then. Independent of #9655.
-- [ ] **`bd prime`: ask beads for an index emission for memories, instead of all-or-nothing.**
-  (`grm-8ctl`, researched 2026-08-26.) **The full issue body is drafted verbatim on `grm-8ctl`'s
-  comments** — title on the first line — so this is review-and-post, nothing left to write.
+- [ ] **`bd prime`: ask beads to expose its compact memory index in CLI mode.** (`grm-8ctl`,
+  researched 2026-08-26, **re-checked against upstream 2026-09-20** — the draft on the bead is
+  now stale and should be SHRUNK, not posted as-is.)
 
-  The ask: `bd prime` today emits every memory body in full, and there is **no way to ask for
-  anything else** — corrected 2026-09-02 against a real 1.2.2 binary. This paragraph used to say
-  "or (since `--no-memories`, merged 2026-07-14) none at all"; **that flag does not exist**, on
-  1.2.2 or any shipped version we can see (`bd prime --help` lists `--export`, `--full`,
-  `--hook-json`, `--mcp`, `--memories-only`, `--stealth`). `--memories-only` is the inverse. The
-  all-or-nothing framing therefore **understates** the gap rather than overstating it, and the
-  draft on the bead should be re-read for that claim before posting. Neither extreme is right for a workspace whose memories are load-bearing. We
-  measured 101,019 bytes of prime output, 95% of it memory bodies, truncated by the host to a
-  ~2 KB preview — so the memories are stored, synced, and silently absent from the context they
-  exist to inform. `bd memories` already produces the right artifact (5,297 bytes for 34 entries)
-  and `bd recall <key>` already fetches one body; the only missing piece is `bd prime` being able
-  to emit the former.
+  **What changed upstream.** `v1.3.0` shipped 2026-09-15 (verified from the tag's
+  `cmd/bd/prime.go`, not from PR merge dates — that is how the 2026-09-03 prediction went wrong:
+  PR `#4336` was on `main` in July but missed the 1.2.2 cut). 1.3.0 has `--no-memories`, and
+  `--max-memories N` / `--max-memory-chars N` (PR `#4569`, also settable as
+  `prime.max-memories` / `prime.max-memory-chars` config keys), which cap injection at
+  whole-memory boundaries, alphabetically, with an elision banner pointing at `bd memories`.
+  So the draft's "only two settings — full or none" framing, and its "stretch" ask for an
+  automatic byte threshold, are both overtaken. Also: **under 1.3.x a custom `PRIME.md` no
+  longer suppresses memories** — they are appended after it — which is why the upgrade is
+  tracked as its own bead (see `grm-8ctl`'s comment of 2026-09-20; do not upgrade without
+  adding `--no-memories` to both hooks in the same step).
 
-  Two things the draft is careful about, worth preserving if you edit it: it concedes that
-  **there is no per-memory summary field** to index on (`bd memories --json` is flat
-  `{key: body}`, `bd remember` has no `--summary`), so a v1 can only truncate — and it explicitly
-  does *not* ask for the schema change. And it distances itself from **#5153**, whose ask #1
-  (list/search) is already satisfied by `bd memories` and which would otherwise be a tempting
-  place to close this as a duplicate.
+  **What is still genuinely missing, and is the whole ask now.** The caps *elide* the
+  alphabetically-last memories entirely; an index shows every key. And the index renderer
+  already exists in `prime.go` — `renderPrimeMemories(compact=true)` emits
+  `- **key**: <first 150 chars>` per memory — but is reachable only in MCP mode. The ask is
+  therefore one paragraph: expose the compact renderer in CLI mode (a flag or a `prime.*`
+  config key), with a one-line trailer naming `bd recall <key>`; and make the truncation
+  word-safe, since it still cuts mid-word. Cite `#3961`/`#4336`/`#4569` as the prior art and
+  distance it from `#5153` as before. Nothing filed since duplicates it (`#6626`, 2026-09-19,
+  is about `bd recall` docs; `#6115` is the config-table read size).
 
-  Prior art to cite, both verified by direct API read: **#3961** (closed, merged as PR **#4336**)
-  is the same problem from `loom`, whose maintainer measured >150 KB and whose workaround was the
-  brittle stdout-stripping this would replace.
-
-  **Note `gh` on this machine is not authenticated** (`gh auth login` needed) — an agent found
-  that out trying to read the release metadata, so budget for it.
-
-  **DEPRIORITISED 2026-09-02, not withdrawn.** The local symptom is fixed (see the bd-upgrade item
-  above): `.beads/PRIME.md` plus a two-command hook already delivers an index, so nothing here is
-  blocked on upstream any more. What the ask would still buy is having it in ONE command rather
-  than a hook that must remember to run two — worth filing when you are already in that repo, not
-  worth a special trip.
+  **Still DEPRIORITISED.** The local two-command hook already delivers the index; this buys one
+  command instead of two. File it when you are already in that repo. `gh` on this machine is
+  not authenticated.
 
 *Two things learned that the next upstream item should inherit:*
 

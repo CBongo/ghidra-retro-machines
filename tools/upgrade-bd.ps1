@@ -97,3 +97,6 @@ Write-Host "  2026-09-02). It previously told you to confirm ``bd prime --no-mem
 Write-Host "  NOT EXIST on 1.2.2, so .beads/PRIME.md is permanent rather than interim. After any future"
 Write-Host "  bd upgrade: re-check ``bd prime --help`` for a prime-without-memories switch, and refresh"
 Write-Host "  .beads/PRIME.md per the procedure in its own header comment."
+Write-Host "  UPGRADING TO 1.3.x? READ bead grm-9t2g FIRST: 1.3.0 has --no-memories, but a custom"
+Write-Host "  PRIME.md no longer suppresses memory bodies, so both hooks must gain --no-memories in"
+Write-Host "  the same step or the ~112 KB truncation comes back silently."

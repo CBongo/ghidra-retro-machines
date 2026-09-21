@@ -51,7 +51,12 @@ printed this file, not the memories). PRIME.md overrides ALL prime output regard
 
 So: KEEP THIS FILE AND MAINTAIN IT. Retire it only if a future bd grows a real
 prime-without-memories switch -- re-check `bd prime --help` after an upgrade rather than trusting
-this paragraph. The standing cost is that everything below the marker is a PINNED COPY of bd's
+this paragraph. UPDATE 2026-09-20: upstream v1.3.0 HAS that switch (`--no-memories`), plus
+`--max-memories`/`--max-memory-chars` caps and an `agent.profile` config key -- BUT under 1.3.x a
+custom PRIME.md no longer suppresses the memory bodies; they are appended after it. So the
+upgrade and the hook change (`bd prime --no-memories && bd memories`) must land in ONE step, and
+whether this file can then be deleted depends on `agent.profile team-maintainer` covering the
+push-policy divergence below. All of that is bead grm-9t2g; do it from there. The standing cost is that everything below the marker is a PINNED COPY of bd's
 workflow text, so upstream improvements to it arrive only when someone refreshes it.
 
 TO REFRESH after a bd upgrade: run `bd prime --export`, take everything from the SESSION CLOSE
