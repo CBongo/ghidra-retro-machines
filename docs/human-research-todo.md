@@ -55,23 +55,6 @@ SPC700 problem.
 
 ---
 
-- [ ] **rcransom on the patched decompiler: are the 712 missing overlay instructions code or data?**
-  (`grm-qp5x.4`, P2.) After the GP-6936-patched `decompile.exe` went in (2026-09-20), `rcransom`
-  is the one row that moved besides the two it was meant to fix: `instrs.inOverlay` 6434→5722,
-  `refs.intoOverlay` 1417→1221, stable over three imports, with every bank comment and warning
-  byte-identical. Loss of real code or removal of phantom code (megaman's `grm-eyn` precedent)
-  look the same in the counts. **Control run done 2026-09-20 (`InstructionCensus.java`, both
-  exes): patched is a strict subset, 1,030 lost / 0 gained, and it is mostly REAL code** —
-  `W8000_M0_B12 9469-977a` (517 instrs, LDA/STA/JSR/RTS profile), `WC000 d46c-d5d6`,
-  `W8000_M0_B10 831b-845d`, `WE000 e538-e586`; only `WA000`'s 58 scattered BRK/BPL/ROL
-  singletons are phantom. `retargeted 27→25` says two base→overlay seeds vanished and took their
-  reachable code with them. **Answered and bisected 2026-09-20 (`grm-qp5x.4`, `grm-gz42`): the
-  seeds are the `JMP ($2a)`/`JMP ($02)` tables at `9343`/`82b3`; the patch is innocent** — stock
-  in a shadow install gives the same 5722, a hunk-2-only build too, and the decompiler *crashes*
-  on `FUN_9314` on every build. The 6434 state is a 128-entry over-read (grm-b3m shape) that only
-  one configuration ever produced. **Your call: bless rcransom at 1221/5722 on the patched
-  build (recommended), or leave it red.**
-
 ## 2. Def-use passes on untraced titles
 
 The method is proven — four titles done. **Use the tables in `grm-8iy.5`'s comments as the
@@ -312,3 +295,4 @@ Agents can't file these — they need an account and CLA agreement.
 | GP-6936: leave `megaman`/`wizwarr` red until upstream moves, or carry a locally patched `decompile.exe`? | **Carry a locally patched install, for now — ruled 2026-09-20.** Option (d) over (a)/(c): the three-hunk patch on `grm-qp5x.2` is measured to fix both halves of GP-6936 with no row regressing across 33 cartridges, and a patched `decompile.exe` builds in ~2 minutes. Note the `#4148` cross-reference was posted the same day (item retired); only the PR itself is still open upstream. Implementation and the golden-honesty question (goldens blessed on a non-shipping toolchain must say so) are agent work on `grm-qp5x.3`. | `grm-qp5x.3` (new); `grm-qp5x.2` keeps the PR |
 | Push and open the `joshleaves/ghidra-snes` PR for the seven 65816 semantic defects | **Opened 2026-09-20 as [joshleaves/ghidra-snes#6](https://github.com/joshleaves/ghidra-snes/pull/6)** — branch `fix/65816-semantics`, one commit on upstream `master`, `658xx.sinc` only; all seven vector-oracle findings (CPY swap, compare carry, indirect jump/call, XBA, TXA/TYA flags, context bits, XCE). Awaiting the maintainer. | `grm-9nxj.7` stays open until merged/answered |
 | `Loader.validateOptions()` is never called outside the GUI import dialogs — document it or wire it up? | **Reported upstream 2026-09-20 as [NationalSecurityAgency/ghidra#9658](https://github.com/NationalSecurityAgency/ghidra/issues/9658)**, asking for either a javadoc note or a `ProgramLoader` call. Facts as verified at 12.1.3: the only callers are `ImporterDialog:442`, `AddToProgramDialog:82`, `LoadLibrariesOptionsDialog:60`; not a 12.x regression. Courtesy report — no live exposure here, since every loader enforces in `load()` (CLAUDE.md "Loader validation"). | `grm-vsg` **closed**; `ghidra-issue-9658-validateoptions` memory |
+| rcransom on the patched decompiler: are the 712 missing overlay instructions code or data? | **Both — and the patch was innocent; blessed at 1221/5722 (owner, 2026-09-20).** Owner read: the seeds are two `JMP (zp)` dispatch tables (`9343`/table `9352`, `82b3`/tables `82b6`+`82d1`); `d46c` is a callee of the lost `9469` code; `e538` an over-read target. Bisect with junction-shadow installs: stock gives the same 5722 off the real install path, hunk-2-only too; the old 6434 was stock walking `9352` for 128 entries (grm-b3m shape, ~20 real) on one configuration only. The decompiler crashes on `FUN_9314` on every build — that is what blocks both tables → `grm-gz42`. | `grm-qp5x.4` **closed**; `grm-gz42` filed |

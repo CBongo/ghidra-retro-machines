@@ -273,9 +273,11 @@ binary sits beside it as `decompile.exe.stock-12.1.3`. Every runner prints `== d
 naming the build by sha256 (`grm_decompiler_build_name` in `tools/banktest/lib/common.sh`), and the
 `REALROM STALENESS` stamp records it, so **a `megaman`/`wizwarr` failure whose banner says `12.1.3
 stock` is the missing patch, not a regression**. The candidate cache keys on the same hash, so a
-swap can never serve the other build's dump. Known open question: `rcransom` moves on the patched
-build (`instrs.inOverlay` 6434→5722, bankComments/warnings unchanged) — `grm-qp5x.4`; do not bless
-it either way until that is adjudicated. See `grm-qp5x`, and the **`realrom-current-fails`** bd
+swap can never serve the other build's dump. `rcransom` was re-blessed at
+1221/5722 on it (owner, 2026-09-20, `grm-qp5x.4`): the patch turned out to be innocent — stock in
+a shadow install gives the same numbers — and the old 6434 was a 128-entry jump-table over-read
+that only one configuration ever produced; the real blocker is a decompiler crash on `FUN_9314`
+(`grm-gz42`). See `grm-qp5x`, and the **`realrom-current-fails`** bd
 memory for the current, authoritative row list — that memory is the single place a row's status
 lives, is revised as rows get fixed or reclassified, and supersedes any older summary including
 this one. (It replaced `realrom-expected-baseline-fails`, which was only half-authoritative: it
