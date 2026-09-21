@@ -53,6 +53,7 @@ import retromachines.BoardDescriptorModel.FieldSpec;
 import retromachines.BoardDescriptorModel.ModeWindowModel;
 import retromachines.HelperArgumentRecovery.CallEffect;
 import retromachines.HelperArgumentRecovery.CallSiteRegKey;
+import retromachines.HelperArgumentRecovery.StateOracle;
 import retromachines.HelperDiscovery.HelperModel;
 
 /**
@@ -282,6 +283,20 @@ final class BankDataflowEngine {
 		// a pure function of the listing and needs no key at all. grm-wul added the arm map to
 		// the key for the same reason: a caller-side scan along one arm answers for that arm.
 		Map<CallSiteRegKey, RegisterEnv> callSiteRegCache = new HashMap<>();
+		// STATE DEPENDENCIES (bead grm-mej.3 increment 3): P -> the helper call sites whose
+		// argument recovery consulted the tracked state AT P through a StateOracle. A
+		// call-crossing PHA/PLA pairing resumes its walk from the push and resolves against the
+		// state at the push, not at the call -- and the fixpoint's own propagation cannot be
+		// relied on to re-evaluate the call when that state changes: in the customer shape
+		// (LDA <mirror> / PHA / LDA #n / JSR helper / ... / PLA / JSR helper) both calls deposit
+		// the same fields, so a change at the push is MASKED before it reaches the second call's
+		// in-state. mergeAndEnqueue therefore re-enqueues P's dependents whenever P's state
+		// changes. Recording happens in the oracle itself (see applyHelperCall), so an address is
+		// a dependency exactly when it was asked about -- including an ask that answered null
+		// because P had no state yet, which is precisely the case that must be re-asked later.
+		// Termination is unaffected: a dependent is enqueued only on a change at P, and changes
+		// are bounded by the same lattice that bounds every other enqueue here.
+		Map<Address, Set<Address>> stateDependents = new HashMap<>();
 		// The arms heading each site's block are structural -- a function of the listing and its
 		// flow references, both fixed for the duration of this run -- so they are enumerated once
 		// per address. An empty Optional records "not forkable here" so the walk is not repeated.
@@ -309,7 +324,7 @@ final class BankDataflowEngine {
 		for (Address seed : seeds) {
 			BankState entryState = asyncEntries.contains(seed) ? BankState.unknown() : seedState;
 			mergeAndEnqueue(seed, PathId.ROOT, entryState, stateIn, collapsedAddrs, worklist,
-				listing, board, clampCache, budget);
+				listing, board, clampCache, budget, stateDependents);
 		}
 
 		while (!worklist.isEmpty()) {
@@ -437,7 +452,7 @@ final class BankDataflowEngine {
 						// its out-state is the in-state.
 						mine = applyHelperCall(program, instr, helper, pathId, mine.get(0).out(),
 							callSiteRegCache, restoringTrampolines, secondTierRelaySites, listing,
-							armCache, budget, call);
+							armCache, budget, call, stateIn, stateDependents);
 					}
 				}
 				outs.addAll(mine);
@@ -459,13 +474,13 @@ final class BankDataflowEngine {
 					PathId to = isCall || budget.isFunctionEntry(flowAddr) ? PathId.ROOT
 							: out.pathId();
 					mergeAndEnqueue(flowAddr, to, out.out(), stateIn, collapsedAddrs, worklist,
-						listing, board, clampCache, budget);
+						listing, board, clampCache, budget, stateDependents);
 				}
 				Address fallThrough = instr.getFallThrough();
 				if (fallThrough != null) {
 					PathId to = budget.isFunctionEntry(fallThrough) ? PathId.ROOT : out.pathId();
 					mergeAndEnqueue(fallThrough, to, out.fall(), stateIn, collapsedAddrs,
-						worklist, listing, board, clampCache, budget);
+						worklist, listing, board, clampCache, budget, stateDependents);
 				}
 			}
 		}
@@ -503,12 +518,32 @@ final class BankDataflowEngine {
 			HelperModel helper, PathId pathId, BankState outState,
 			Map<CallSiteRegKey, RegisterEnv> callSiteRegCache, Set<Function> restoringTrampolines,
 			Set<Address> secondTierRelaySites, Listing listing,
-			Map<Address, Optional<List<Arm>>> armCache, ForkBudget budget, CallTally call) {
+			Map<Address, Optional<List<Arm>>> armCache, ForkBudget budget, CallTally call,
+			Map<Address, LinkedHashMap<PathId, BankState>> stateIn,
+			Map<Address, Set<Address>> stateDependents) {
 		Address addr = instr.getMinAddress();
+		// The recording StateOracle for THIS call (grm-mej.3 increment 3): answers the merged
+		// state at any instruction and records the ask as a dependency edge P -> addr, so a later
+		// change at P re-enqueues this call (see stateDependents' declaration). The MERGE over
+		// P's path elements is deliberate -- the query is asked on behalf of one element at addr,
+		// but attributing a single element at P to it would need the path identity to survive
+		// the pairing walk, and a merge can only lose knowledge, never invent it.
+		StateOracle oracle = p -> {
+			stateDependents.computeIfAbsent(p, k -> new LinkedHashSet<>()).add(addr);
+			LinkedHashMap<PathId, BankState> elements = stateIn.get(p);
+			if (elements == null || elements.isEmpty()) {
+				return null;
+			}
+			BankState acc = null;
+			for (BankState st : elements.values()) {
+				acc = acc == null ? st : BankState.merge(acc, st);
+			}
+			return acc;
+		};
 		CallEffect callEffect = helper.constState() != null
 				? new CallEffect(helper.constState(), helper.effectMask())
 				: recoverCallArgument(program, instr, helper, outState, callSiteRegCache,
-					restoringTrampolines);
+					restoringTrampolines, RegisterEnv.NONE, oracle);
 		List<CallEffect> forkEffects = null;
 		boolean denied = false;
 		// grm-wul, the call-site twin of the direct case: the caller's argument did not resolve
@@ -525,7 +560,7 @@ final class BankDataflowEngine {
 				List<CallEffect> perArm = new ArrayList<>();
 				List<BankState> perArmValue = evaluateArms(program, listing, arms, env -> {
 					CallEffect along = recoverCallArgument(program, instr, helper, outState,
-						callSiteRegCache, restoringTrampolines, env);
+						callSiteRegCache, restoringTrampolines, env, oracle);
 					if (!along.argumentResolved()) {
 						return null;
 					}
@@ -1200,7 +1235,8 @@ final class BankDataflowEngine {
 	private static void mergeAndEnqueue(Address addr, PathId pathId, BankState incoming,
 			Map<Address, LinkedHashMap<PathId, BankState>> stateIn, Set<Address> collapsedAddrs,
 			Deque<Address> worklist, Listing listing, BoardModel board,
-			Map<String, int[]> clampCache, ForkBudget budget) {
+			Map<String, int[]> clampCache, ForkBudget budget,
+			Map<Address, Set<Address>> stateDependents) {
 		if (listing.getInstructionAt(addr) == null) {
 			// not (yet) disassembled / not code -- nothing to track here
 			return;
@@ -1230,6 +1266,13 @@ final class BankDataflowEngine {
 		}
 		budget.observeLive(addr, elements.size());
 		worklist.add(addr);
+		// The state at addr changed, so every helper call whose recovery consulted it through a
+		// StateOracle must be re-evaluated (grm-mej.3 increment 3) -- see stateDependents'
+		// declaration for why the fixpoint's own propagation does not cover this.
+		Set<Address> dependents = stateDependents.get(addr);
+		if (dependents != null) {
+			worklist.addAll(dependents);
+		}
 	}
 
 

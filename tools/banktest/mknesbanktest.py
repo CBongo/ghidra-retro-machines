@@ -3405,10 +3405,13 @@ def make_prg_mmc3_id():
         LDA #$02 / JSR H16                ; r6=4, r7=5
         JSR $A000                         ; -> WA000_B5::A000
         PLA
-        JSR H16                           ; ID1: stays UNKNOWN today -- the PLA pairs to a PHA
-                                          ; across two calls, which findMatchingPush refuses
-                                          ; (grm-mej.3); flips to r6=2,r7=3 when that lands
-        JSR $A000                         ; ID2: consequently NOT retargeted (pending grm-mej.3)
+        JSR H16                           ; ID1: resolves to r6=2,r7=3 (grm-mej.3 increment 3) --
+                                          ; the PLA pairs to its PHA across the two intervening
+                                          ; JSRs (findMatchingPush steps over a call), and the
+                                          ; resumed walk resolves the mirror read against the
+                                          ; tracked state AT THE PHA (r7=3), not at this call
+                                          ; site (r7=5, the confidently wrong post-switch bank)
+        JSR $A000                         ; ID2: consequently retargeted into WA000_B3
         RTS
 
     Direct ($E240) -- the same read/restore with no intervening switch, so the mirror

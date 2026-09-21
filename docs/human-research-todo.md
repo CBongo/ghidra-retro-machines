@@ -60,6 +60,20 @@ Each is minutes of work and settles something specific. Highest value per unit e
   through an over-read entry of `a16e`; after the bound nothing reaches it. How is it entered at
   runtime?
 
+- [ ] **rcransom's five mainline `fed1` restores did not move under call-crossing PHA/PLA pairing
+  (`grm-mej.3` increment 3, 2026-09-21).** The synthetic twin of the `fa43` trampoline
+  (`nesmmc3idtest` ID1) now resolves its `PLA / JSR H16` restore across two `JSR`s, but `c08e`,
+  `c0f4`, `c7db`, `cd57` and `ef85` still say "bank argument could not be recovered". Two
+  possible reasons, and which one it is decides what to build next: (a) the pairing DOES complete
+  and the mirror read (`LDA $BFFF`) resolves against the enclosing function's ENTRY state, which is
+  unknown because the function is reached from several banks — then the honest answer is
+  `grm-yflf`'s relational "restored to the entry bank" and its one-frame-out propagation, and no
+  further scanner work is owed; or (b) the local shape is not the straight-line
+  `LDA $BFFF / PHA / ... / PLA / JSR fed1` idiom at all (a branch in the span, a `TSX`/stack-
+  relative reload, the PLA in a different block from its PHA) — then it is a new stack shape for
+  `grm-mej.3`. One listing read per site: what are the ~8 instructions before each `JSR fed1`, and
+  is the bank known on entry to the function containing it? Record on `grm-mej.3`.
+
 *Not an item — a note.* The `.idb` inventory itself (`grm-w4w3`) is **agent work and is
 deliberately deferred to a future session** at your request; the tooling question is settled
 (`python-idb` Apache-2.0 / `idbutil` MIT, no IDA needed) so nobody re-derives it. Worth knowing

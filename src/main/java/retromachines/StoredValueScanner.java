@@ -197,6 +197,39 @@ final class StoredValueScanner {
 				BankState inStateAtStore) {
 			return null;
 		}
+
+		/**
+		 * The strategy's tracked in-state at an ARBITRARY instruction -- in the same field-local
+		 * coordinates as {@code inStateAtStore} -- or {@code null} (the default) when this query
+		 * has no way to know it (bead grm-mej.3 increment 3, call-crossing PHA/PLA pairing).
+		 * <p>
+		 * <b>Why this exists.</b> Every other hook takes {@code inStateAtStore}, and the walk's
+		 * founding invariant is that the value it recovers depends on the state at the store
+		 * ALONE: within a straight-line span with no mechanism write, every instruction shares
+		 * that state, and a mechanism write in the span WITHDRAWS it (grm-4bgh.7). Pairing a
+		 * {@code PLA} to a {@code PHA} across a CALL breaks the invariant in a way withdrawal
+		 * cannot repair usefully: in {@code LDA <mirror> / PHA / LDA #n / JSR helper / ... / PLA
+		 * / JSR helper} the pushed byte was read BEFORE the intervening switch, so the state at
+		 * the store would attribute it the bank the first call installed -- a confident WRONG
+		 * value -- and withdrawing to unknown forfeits every customer, since all of them save
+		 * via a mirror read. The right state is the one AT THE {@code PHA}, which only the
+		 * dataflow engine knows.
+		 * <p>
+		 * The scanner consults this ONLY at a call-crossing resume (see the {@code PLA} branch of
+		 * {@link #resolveStoredValue}); a {@code null} answer there ABANDONS the pairing, which is
+		 * what every walk did at a call before this increment (see
+		 * {@link #resumeStateAfterPairing} for why it must not withdraw and walk on instead). A
+		 * hook that answers non-null has two obligations the engine discharges on the call-site
+		 * path ({@code BankDataflowEngine.runDataflow}): the answer for {@code addr} must be
+		 * re-asked when {@code addr}'s state changes (a dependency edge in the fixpoint, since
+		 * the store's own in-state may not see the change -- both calls typically deposit the
+		 * same fields), and nothing computed through it may be memoized on the store's in-state
+		 * alone. Direct-site strategies keep the default and so keep {@code matchCache}'s
+		 * state-independence claim intact.
+		 */
+		default BankState stateAt(Address addr) {
+			return null;
+		}
 	}
 
 	private static final int MAX_BACKWARD_SCAN = 16;
@@ -289,6 +322,51 @@ final class StoredValueScanner {
 		int steps;
 
 		boolean crossedMechanismWrite;
+
+		/**
+		 * Whether the search stepped over a CALL (grm-mej.3 increment 3). The consequence for the
+		 * resumed walk is applied by the caller through {@link #resumeStateAfterPairing}: the
+		 * in-state at the store no longer describes the instructions before the push, because
+		 * the callee (or a helper among the crossed calls) may have switched banks in between.
+		 */
+		boolean crossedCall;
+	}
+
+	/**
+	 * The in-state the enclosing walk resumes with after a pairing search found {@code push}
+	 * (grm-mej.3 increment 3), or {@code null} to ABANDON the pairing. Three cases, in order:
+	 * <ul>
+	 * <li>the span crossed a call: the store's state is not the push's. Ask
+	 * {@link Hooks#stateAt} for the state AT the push. A {@code null} answer ABANDONS -- the
+	 * caller treats the pairing as not found, exactly as every pre-increment-3 walk did at a
+	 * call. It does NOT withdraw to unknown and walk on, and the distinction was measured, not
+	 * guessed: withdrawing lets the resumed walk reach a mirror load under a state that is
+	 * unknown because WE cannot see it, and
+	 * {@code MemoryLatchBankSwitchStrategy.effectDependsOnPriorState}'s probe then records
+	 * "consulted a mirror, came up unknown" -- the same signal a genuinely unknown bank leaves.
+	 * That declared a bank-known-on-entry requirement for ironsword's {@code FUN_ffc0} (whose
+	 * inner {@code JSR $FFDA} the pairing now crosses to reach {@code LDA $C5}) and pushed six
+	 * violation warnings onto the very call sites {@code restoresEntryBank} had proved no-ops,
+	 * and moved dodge, ff1 and lwings in the losing direction for the same reason. A withdrawn
+	 * state after a mechanism write in the same span IS an honest "bank unknown here"; after a
+	 * blind call crossing it is a statement about our own blindness, and must not be reported
+	 * as the game's property. Direct-site strategies have no oracle, so on that path a
+	 * call-crossing pairing is byte-identical to increment 2. When the answer is non-null it
+	 * subsumes a mechanism write in the same span -- the state at the push already predates it,
+	 * whichever order the two crossings happened in program order;</li>
+	 * <li>the span crossed only a mechanism write: withdraw (grm-4bgh.7), unchanged;</li>
+	 * <li>neither: the store's state still describes the push -- unchanged.</li>
+	 * </ul>
+	 */
+	private static BankState resumeStateAfterPairing(Span span, Instruction push, Hooks hooks,
+			BankState current) {
+		if (span.crossedCall) {
+			return push == null ? null : hooks.stateAt(push.getMinAddress());
+		}
+		if (span.crossedMechanismWrite) {
+			return BankState.unknown();
+		}
+		return current;
 	}
 
 	/**
@@ -529,17 +607,19 @@ final class StoredValueScanner {
 					Instruction pha = stackRelativePush(program, prev, hooks, env,
 						MAX_BACKWARD_SCAN - i, reload);
 					i += reload.steps;
-					if (reload.crossedMechanismWrite) {
-						// The reload's search stepped over a mechanism write to reach its push
-						// (rcransom's FUN_fed1 does exactly this -- see grm-4bgh.7). Same rule
-						// as the mid-scan case above, applied HERE because the walk that resumes
-						// from the push is this one.
-						inState = BankState.unknown();
-					}
-					if (pha != null) {
+					// The reload's search may have stepped over a mechanism write to reach its
+					// push (rcransom's FUN_fed1 does exactly this -- see grm-4bgh.7), or a call
+					// (grm-mej.3 increment 3). Same rules as the PLA case below, applied HERE
+					// because the walk that resumes from the push is this one.
+					BankState resumed = resumeStateAfterPairing(reload, pha, hooks, inState);
+					if (pha != null && resumed != null) {
+						inState = resumed;
 						cur = pha;
 						continue;
 					}
+					// pha == null, or the pairing crossed a call with no state available at the
+					// push (abandon -- see resumeStateAfterPairing): fall through to the generic
+					// modifier handling below exactly as an unpaired reload always has.
 				}
 			}
 
@@ -553,12 +633,14 @@ final class StoredValueScanner {
 				Instruction pha = findMatchingPush(program, prev, MAX_BACKWARD_SCAN - i, hooks,
 					env, pairing);
 				i += pairing.steps;
-				if (pairing.crossedMechanismWrite) {
-					inState = BankState.unknown(); // as above -- this walk resumes from the push
-				}
-				if (pha == null) {
+				// This walk resumes from the push, so the consequence of what the search crossed
+				// (a mechanism write, a call) lands on THIS walk's in-state -- see
+				// resumeStateAfterPairing.
+				BankState resumed = resumeStateAfterPairing(pairing, pha, hooks, inState);
+				if (pha == null || resumed == null) {
 					return stopped(aAcc, oAcc, mask, BankState.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 				}
+				inState = resumed;
 				cur = pha;
 				continue;
 			}
@@ -648,12 +730,15 @@ final class StoredValueScanner {
 	 * guards against ({@code TXS}'s p-code writing the 1-byte {@code S} while
 	 * {@code CompilerSpec.getStackPointer()} answers the 2-byte {@code SP}) applies here
 	 * identically;</li>
-	 * <li>any instruction in the span has {@code getFlows().length > 0}, a null fall-through, or
-	 * is a call -- this walk is intra-block and straight-line only, matching the increment's own
-	 * name, and is what makes the pairing sound: if any control flow could enter between the
-	 * {@code PHA} and the {@code PLA}, a different path could have pushed a different byte, and
-	 * attributing the pop to THIS push would be a confident wrong value rather than a missing
-	 * one (see the class javadoc's PLA bullet for the full soundness argument);</li>
+	 * <li>any instruction in the span has {@code getFlows().length > 0} or a null fall-through,
+	 * OTHER THAN A CALL -- this walk is intra-block and straight-line only, matching the
+	 * increment's own name, and is what makes the pairing sound: if any control flow could enter
+	 * between the {@code PHA} and the {@code PLA}, a different path could have pushed a different
+	 * byte, and attributing the pop to THIS push would be a confident wrong value rather than a
+	 * missing one (see the class javadoc's PLA bullet for the full soundness argument). A call
+	 * IS stepped over as of grm-mej.3 increment 3, reported through {@link Span#crossedCall}; the
+	 * inline comment at the crossing carries the fall-through-witness argument for why the depth
+	 * counter stays exact across it;</li>
 	 * <li>{@code cur} is a control-flow join not licensed by {@code env}
 	 * ({@link #isControlFlowJoin}) -- the same reasoning as every other backward walk in this
 	 * class: a join means some other path reaches this point in the span with a potentially
@@ -713,7 +798,25 @@ final class StoredValueScanner {
 				// basic block, or another path could reach here with a different stack depth
 				break;
 			}
-			if (prev.getFlows().length > 0 || prev.getFlowType().isCall()) {
+			boolean stepOverCall = prev.getFlowType().isCall();
+			if (stepOverCall) {
+				// A CALL IS STEPPED OVER (grm-mej.3 increment 3), and the depth counter stays
+				// exact across it. pathPredecessor only handed us prev because its fall-through
+				// is cur, so if the pop we are pairing executes at all, the callee returned to
+				// that fall-through -- and JSR/RTS are balanced by construction: the pushed byte
+				// sits BELOW the return address, RTS pops exactly the two bytes above it, and a
+				// callee with a non-zero net stack delta at its RTS returns somewhere other than
+				// the fall-through, so the pop never runs. REACHING THE FALL-THROUGH IS THE
+				// WITNESS -- the same argument SaveRestoreTrampolines.restoresEntryBank crosses
+				// its inner JSR on (increment 1), and it needs no look inside the callee, which
+				// is what makes ironsword's JSR $FFDA -> JMP ($00C1) crossable at all. The
+				// accepted residual is identical too: a callee that BOTH returns normally AND
+				// rewrote the slot beneath its own return address -- constructed, not
+				// incidental. What a crossed call does disturb is the in-state the resumed walk
+				// may consult, and that consequence is the caller's (resumeStateAfterPairing).
+				span.crossedCall = true;
+			}
+			else if (prev.getFlows().length > 0) {
 				break; // not straight-line -- see this method's javadoc
 			}
 			if (hooks.isMechanismWrite(prev)) {
@@ -741,7 +844,17 @@ final class StoredValueScanner {
 				}
 				case "PLA", "PLP" -> depth++;
 				default -> {
-					if (HelperArgumentRecovery.writesStackPointer(prev, stackPointer)) {
+					// BUG FIX (grm-mej.3 increment 3, found by CallCrossingPushPullProgramTest):
+					// writesStackPointer must NOT fire on the call instruction itself. A JSR's
+					// own p-code writes S (it pushes a two-byte return address), so this check --
+					// meant to catch a TXS-style base-register move that desyncs the depth
+					// counter -- fired on every crossed call and defeated the crossing entirely,
+					// even though a call's own SP write is exactly the balanced push/pop this
+					// method's own javadoc argues nets to zero (JSR pushes, RTS pops, before the
+					// pairing's resumed walk ever sees the net effect). Excluded here rather than
+					// weakening the check itself, so a genuine mid-span TXS/TSX still aborts.
+					if (!stepOverCall
+						&& HelperArgumentRecovery.writesStackPointer(prev, stackPointer)) {
 						span.steps = steps;
 						return null; // the stack pointer moved under us -- see javadoc
 					}

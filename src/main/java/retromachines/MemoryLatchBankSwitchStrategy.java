@@ -314,8 +314,8 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * {@code LDA $8000 / STA $59} precisely BECAUSE it is about to change the bank, so at the
 	 * restore, in-state says bank 0 while {@code $59} holds the bank being restored. Answering
 	 * either from in-state ships a confidently wrong bank, which this engine rates strictly worse
-	 * than no bank. Both kinds are nonetheless delivered here with full provenance, for grm-mej.3's
-	 * cross-block forwarding and grm-mej.4's labelling; declining is this method's whole
+	 * than no bank. Both kinds are nonetheless delivered here with full provenance, for grm-zsxz's
+	 * cross-block forwarding (split out of grm-mej.3) and grm-mej.4's labelling; declining is this method's whole
 	 * contribution to them.
 	 * <p>
 	 * <b>COORDINATE CONVERSION -- the easiest place in this increment to ship a wrong bank.</b>

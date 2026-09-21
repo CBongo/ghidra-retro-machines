@@ -203,6 +203,89 @@ final class HelperArgumentRecovery {
 	static CallEffect recoverCallArgument(Program program, Instruction callInstr,
 			HelperModel helper, BankState callSiteIn, Map<CallSiteRegKey, RegisterEnv> envCache,
 			Set<Function> restoringTrampolines, RegisterEnv path) {
+		return recoverCallArgument(program, callInstr, helper, callSiteIn, envCache,
+			restoringTrampolines, path, null);
+	}
+
+	/**
+	 * The tracked in-state at an arbitrary instruction, in WHOLE-STATE coordinates (the
+	 * dataflow engine's own), or {@code null} when the address has no state yet (bead grm-mej.3
+	 * increment 3). {@link #recoverCallArgument} narrows the answer to the helper's field-local
+	 * space before handing it to the scanner as {@link StoredValueScanner.Hooks#stateAt}.
+	 * <p>
+	 * The engine's implementation RECORDS every address asked, because an answer from here
+	 * creates two obligations the engine must discharge (see {@code Hooks.stateAt}'s javadoc):
+	 * a fixpoint dependency edge from the asked address to the call being recovered, and a
+	 * refusal to memoize anything computed through it on the call's in-state alone.
+	 */
+	interface StateOracle {
+		BankState stateAt(Address addr);
+	}
+
+	/**
+	 * {@link StoredValueScanner.Hooks} that answer {@code stateAt} from a {@link StateOracle}
+	 * and delegate everything else to the strategy's own caller-side hooks. Counts its
+	 * consultations so {@link #recoverCallArgument} can tell whether a sub-computation used the
+	 * oracle and must therefore not be memoized.
+	 */
+	private static final class OracleHooks implements StoredValueScanner.Hooks {
+
+		private final StoredValueScanner.Hooks base;
+		private final StateOracle oracle;
+		private final int lsb;
+		private final int effectMask;
+		private int consultations;
+
+		OracleHooks(StoredValueScanner.Hooks base, StateOracle oracle, int lsb, int effectMask) {
+			this.base = base;
+			this.oracle = oracle;
+			this.lsb = lsb;
+			this.effectMask = effectMask;
+		}
+
+		@Override
+		public boolean isMechanismWrite(Instruction instr) {
+			return base.isMechanismWrite(instr);
+		}
+
+		@Override
+		public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+				BankState inStateAtStore) {
+			return base.resolveLoad(loadInstr, resolvedTarget, inStateAtStore);
+		}
+
+		@Override
+		public BankState resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
+				BankState inStateAtStore) {
+			return base.resolveMirrorLoad(loadInstr, resolvedTarget, inStateAtStore);
+		}
+
+		@Override
+		public BankState stateAt(Address addr) {
+			consultations++;
+			BankState whole = oracle.stateAt(addr);
+			return whole == null ? null : toFieldLocal(whole, lsb, effectMask);
+		}
+	}
+
+	/**
+	 * {@link #recoverCallArgument} with a {@link StateOracle} (bead grm-mej.3 increment 3): every
+	 * caller-side scan may, when a PHA/PLA pairing crossed a call, resolve from the tracked state
+	 * AT THE PUSH rather than at the call. {@code null} means no oracle -- the scanner's default
+	 * {@code stateAt} answers {@code null} and a call-crossing pairing withdraws its in-state --
+	 * which is what every pre-existing caller gets, byte-identical.
+	 * <p>
+	 * <b>The memo is bypassed for an oracle-dependent env.</b> {@code envCache} is keyed on
+	 * (call address, {@code localIn}, arms) -- tripwire 2's re-keying from item 4 -- and that key
+	 * is complete only while the scans it memoizes depend on the call's in-state alone. A scan
+	 * that consulted the oracle depends on the state at another address too, so its result is
+	 * computed and used but never stored: the narrowest sound rule, chosen over widening the key
+	 * (which would have to name every consulted address and its state) until a measured customer
+	 * needs the memo there.
+	 */
+	static CallEffect recoverCallArgument(Program program, Instruction callInstr,
+			HelperModel helper, BankState callSiteIn, Map<CallSiteRegKey, RegisterEnv> envCache,
+			Set<Function> restoringTrampolines, RegisterEnv path, StateOracle oracle) {
 		if (restoringTrampolines.contains(helper.function())) {
 			// A VERIFIED no-op (grm-mej.3): this helper puts the entry bank back before returning,
 			// so the call owns nothing. Answered before argReg is even consulted, because the
@@ -252,7 +335,13 @@ final class HelperArgumentRecovery {
 		// valueSuppliedInsideHelper and inboundArgumentCell's effectiveOperandTarget call below,
 		// which run INSIDE the helper / do address computation rather than caller-side value
 		// recovery, and are deliberately NOT converted.
-		StoredValueScanner.Hooks callerHooks = callerHooksFor(helper);
+		// Wrapped with the engine's StateOracle when one is supplied (grm-mej.3 increment 3) --
+		// see the eight-argument overload's javadoc. OracleHooks is used directly (not through
+		// the interface) below, where the memo needs its consultation count.
+		OracleHooks oracleHooks = oracle == null ? null
+				: new OracleHooks(callerHooksFor(helper), oracle, helper.lsb(), helper.effectMask());
+		StoredValueScanner.Hooks callerHooks =
+			oracleHooks == null ? callerHooksFor(helper) : oracleHooks;
 		BankState local = StoredValueScanner.resolveStoredValue(program, callInstr, reg,
 			localIn, stateMask, callerHooks, path);
 		// grm-mu7: what the caller left in argReg is this helper's argument only if the helper
@@ -336,11 +425,21 @@ final class HelperArgumentRecovery {
 		// -- see the memo's declaration at BankDataflowEngine.runDataflow for why the address-only
 		// key this replaced is no longer sound. BankState is a record, so CallSiteRegKey gets
 		// value equality on localIn for free.
-		RegisterEnv callerRegs = envCache.computeIfAbsent(
-			new CallSiteRegKey(callInstr.getMinAddress(), localIn, path.armPredecessors()),
-			key -> callSiteRegisters(program, callInstr, scanStop,
+		// ... and NOT memoized at all when the scans consulted the StateOracle (grm-mej.3
+		// increment 3): then the answer depends on the state at another address too, which the
+		// key does not name. See the eight-argument overload's javadoc.
+		CallSiteRegKey key =
+			new CallSiteRegKey(callInstr.getMinAddress(), localIn, path.armPredecessors());
+		RegisterEnv callerRegs = envCache.get(key);
+		if (callerRegs == null) {
+			int before = oracleHooks == null ? 0 : oracleHooks.consultations;
+			callerRegs = callSiteRegisters(program, callInstr, scanStop,
 				crossableWrapperJoin(program, helper.firstSite(), scanStop), helper, localIn,
-				path));
+				path, callerHooks);
+			if (oracleHooks == null || oracleHooks.consultations == before) {
+				envCache.put(key, callerRegs);
+			}
+		}
 		// The argument-bearing deposit, computed exactly as it was before grm-4bgh.5 -- this
 		// is both the answer for a single-site helper and, for a folded one, the deposit whose
 		// emptiness decides whether this CALL SITE gets a warning. See foldDeposits.
@@ -1517,15 +1616,15 @@ final class HelperArgumentRecovery {
 	 */
 	private static RegisterEnv callSiteRegisters(Program program, Instruction callInstr,
 			Address entryAddr, Address crossableJoin, HelperModel helper, BankState localIn,
-			RegisterEnv path) {
+			RegisterEnv path, StoredValueScanner.Hooks callerHooks) {
 		List<PrologueSegment> unwalked = unwalkedPrologueSegments(entryAddr, helper);
 		// The env this builds describes the helper's ENTRY and is consumed by scans inside the
 		// helper; it deliberately carries no arms of its own (see the eight-argument
 		// recoverCallArgument). The caller-side scans that populate it do walk the arms.
 		return new RegisterEnv(entryAddr, crossableJoin,
-			surviving(program, callInstr, 'A', unwalked, helper, localIn, path),
-			surviving(program, callInstr, 'X', unwalked, helper, localIn, path),
-			surviving(program, callInstr, 'Y', unwalked, helper, localIn, path));
+			surviving(program, callInstr, 'A', unwalked, localIn, path, callerHooks),
+			surviving(program, callInstr, 'X', unwalked, localIn, path, callerHooks),
+			surviving(program, callInstr, 'Y', unwalked, localIn, path, callerHooks));
 	}
 
 	/**
@@ -1623,15 +1722,20 @@ final class HelperArgumentRecovery {
 	 * in-state's coordinate space are independent questions, and only the mask stayed {@code 0xFF}
 	 * here. A strategy that does not override {@link BankSwitchStrategy#callerSideHooks} answers
 	 * identically to before, since its hooks never consult {@code localIn} at all.
+	 * <p>
+	 * {@code callerHooks} is {@code recoverCallArgument}'s own -- {@link #callerHooksFor}'s
+	 * answer, wrapped with the engine's {@link StateOracle} when one was supplied (grm-mej.3
+	 * increment 3) -- passed down rather than re-derived so that the oracle's consultation count
+	 * sees these three scans too; the memo decision depends on it.
 	 */
 	private static BankState surviving(Program program, Instruction callInstr, char reg,
-			List<PrologueSegment> unwalked, HelperModel helper, BankState localIn,
-			RegisterEnv path) {
+			List<PrologueSegment> unwalked, BankState localIn, RegisterEnv path,
+			StoredValueScanner.Hooks callerHooks) {
 		if (!unwalked.isEmpty() && !argumentSurvivesPrologue(program, unwalked, reg)) {
 			return BankState.unknown();
 		}
 		return StoredValueScanner.resolveStoredValue(program, callInstr, reg, localIn, 0xFF,
-			callerHooksFor(helper), path);
+			callerHooks, path);
 	}
 
 	/**

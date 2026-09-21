@@ -3916,26 +3916,31 @@ public class VerifyBankTest extends GhidraScript {
 	private void checkNesMmc3Idtest() {
 		// ID1: the RESTORE, rcransom's fa43 trampoline shape -- read the mirror while r7=3, PHA,
 		// switch away through H16, call into the bank, PLA, feed the byte back into H16. This
-		// does NOT resolve today, and the criterion pins that honestly rather than the wish:
-		// StoredValueScanner.findMatchingPush pairs a PLA to its PHA only across a straight-line
-		// span and abandons on any call in between (grm-mej.3 increment 2's soundness rule), and
-		// there are two JSRs here. rcransom's own c08e/c0f4/c7db/cd57/ef85 restores are unresolved
-		// for exactly this reason. What grm-km4f proves is that the MIRROR side is ready (ID3
-		// resolves the same byte fed straight in); carrying it through a call-crossing PHA/PLA
-		// is grm-mej.3's, and when that lands this criterion should flip to r6=2,r7=3 known.
-		// Until then: r7 not known, the honest warning present, never a junk-derived pair.
+		// now RESOLVES (grm-mej.3 increment 3, "call-crossing PHA/PLA pairing"):
+		// StoredValueScanner.findMatchingPush steps OVER a call while pairing the PLA to its PHA
+		// (the depth counter stays exact across JSR/RTS, which are balanced by construction --
+		// see findMatchingPush's javadoc), and the walk that resumes from the located PHA
+		// resolves the mirror read against the tracked state AT THAT PUSH (r7=3), via
+		// BankDataflowEngine's StateOracle, rather than against the state at the call site
+		// itself (r7=5, the confidently WRONG bank the switch through H16 already moved to).
+		// rcransom's own c08e/c0f4/c7db/cd57/ef85 restores were named as this shape but did NOT
+		// move when this landed (real-ROM tier, 2026-09-21) -- either their entry bank is
+		// unknown (then the answer is grm-yflf's relational one) or the local shape differs; a
+		// listing read is filed in docs/human-research-todo.md section 1. Never a junk-derived
+		// pair: this must land on the true r6=2,r7=3, not on some other value an unsound
+		// implementation could have manufactured.
 		String c = eol(0xE212);
-		criterion("ID1", !fieldKnownIn(c, "r7") && hasWarningBookmark(0xE212),
-			"H16 restore at e212 (PLA across two calls) stays honestly unknown pending " +
-				"grm-mej.3: \"" + c + "\" warning=\"" + warningBookmarkText(0xE212) + "\"");
+		criterion("ID1", c.contains("r6=2") && c.contains("r7=3") && !c.contains("?") &&
+			!hasWarningBookmark(0xE212),
+			"H16 restore at e212 (PLA across two calls) resolves r6=2,r7=3 fully known " +
+				"(grm-mej.3 increment 3): \"" + c + "\"");
 
-		// ID2: consequently the JSR $A000 after the restore is NOT retargeted into WA000_B3 --
-		// and must not be retargeted anywhere else either (no confident wrong bank). Flip
-		// together with ID1.
+		// ID2: consequently the JSR $A000 after the restore IS retargeted into WA000_B3 -- the
+		// direct payoff of ID1 now resolving. Flip together with ID1.
 		Reference r = findOverlayRef(0xE215, "WA000_B3", 0xA000);
-		criterion("ID2", r == null,
-			"JSR $A000 after the unresolved restore carries no WA000_B3 retarget (pending " +
-				"grm-mej.3): " + describe(r));
+		criterion("ID2", r != null,
+			"JSR $A000 after the now-resolved restore carries a WA000_B3 retarget " +
+				"(grm-mej.3 increment 3): " + describe(r));
 
 		// ID3: the same read/restore with no intervening switch -- the mirror byte feeds H16
 		// straight from the accumulator, no stack round-trip needed to prove the shape resolves.
