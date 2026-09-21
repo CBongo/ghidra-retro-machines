@@ -60,9 +60,15 @@ SPC700 problem.
   is the one row that moved besides the two it was meant to fix: `instrs.inOverlay` 6434→5722,
   `refs.intoOverlay` 1417→1221, stable over three imports, with every bank comment and warning
   byte-identical. Loss of real code or removal of phantom code (megaman's `grm-eyn` precedent)
-  look the same in the counts. Cheap control: rename `decompile.exe.stock-12.1.3` back over
-  `decompile.exe` for one `check nes --only rcransom`, then compare per-overlay-block instruction
-  counts and read the delta in the disassembler. Not blessed on either build until answered.
+  look the same in the counts. **Control run done 2026-09-20 (`InstructionCensus.java`, both
+  exes): patched is a strict subset, 1,030 lost / 0 gained, and it is mostly REAL code** —
+  `W8000_M0_B12 9469-977a` (517 instrs, LDA/STA/JSR/RTS profile), `WC000 d46c-d5d6`,
+  `W8000_M0_B10 831b-845d`, `WE000 e538-e586`; only `WA000`'s 58 scattered BRK/BPL/ROL
+  singletons are phantom. `retargeted 27→25` says two base→overlay seeds vanished and took their
+  reachable code with them. **Your question: what references the run heads `9469`, `831b`,
+  `d46c`/`d4b3`, `e538`?** A decompiler-recovered switch table or computed call is the likely
+  seed; whether it only existed because of the join artifact decides who was right. Not blessed
+  on either build until answered.
 
 ## 2. Def-use passes on untraced titles
 
@@ -229,24 +235,6 @@ Agents can't file these — they need an account and CLA agreement.
   than a hook that must remember to run two — worth filing when you are already in that repo, not
   worth a special trip.
 
-- [ ] **Push and open the `joshleaves/ghidra-snes` PR for the seven 65816 semantic defects.**
-  (`grm-9nxj.7`.) **The PR is prepared** (2026-09-19, agent, orchestrator-reviewed): branch
-  `fix/65816-semantics` in your local clone of the fork, one commit (`917c735`) on top of
-  upstream `master` `d33ce5d`, touching only `data/languages/658xx.sinc` (+106/−31) — all seven
-  fixes as tight commented hunks, PBR wrap deliberately excluded because upstream already
-  documents it. Compiles clean with `sleigh` on both 12.0.4 (the fork's target) and 12.1.3, with
-  the same two pre-existing NOP-constructor warnings. A maintainer-facing PR body sits beside the
-  clone; `grm-9nxj.7`'s latest comment names both paths. Checked 2026-09-20: the branch is not on
-  `origin` and the repo has no PRs, so this is still open. Remaining, owner-only: push the
-  branch, open the PR against `joshleaves/ghidra-snes` `master` with that body, close the bead
-  with the PR URL, and retire this item.
-
-  All seven were found against the SingleStepTests vector oracle, not by reading: CPY constraint
-  swap, compare-carry sext-vs-zext, indirect jump/call double-dereference, XBA never reading B,
-  TXA/TYA flag computation, context-field bit-numbering (big-endian register vs SLEIGH's
-  MSB-numbered fields), and XCE native→native register truncation. **Target the right repo:**
-  `joshleaves/ghidra-snes` is the live fork; `achan1989/ghidra-65816` is archived.
-
 *Two things learned that the next upstream item should inherit:*
 
 - *`CBongo/ghidra` now exists as a fork, and a separate full clone of it (kept apart from the
@@ -339,3 +327,4 @@ Agents can't file these — they need an account and CLA agreement.
 | Open-source homebrew ROMs as committable real-ROM test vectors — pursue, and if so how? | **Punted to P4, semi-open, not release-blocking. If pursued: do NOT commit the images. A separate opt-in manifest (`manifest-homebrew.tsv`, set name `homebrew`) for titles the user has built/installed locally, identified by source git commit/tag (or other build info) rather than — or as well as — a binary SHA, since a rebuild need not be byte-identical. Goldens may be recorded and committed the same way as any other row. SKIPs loudly when absent; never gates the default check.** (Owner, 2026-09-19.) The description's "runs in the default gate for everyone" framing is retired. | `grm-5ioo` |
 | Is Gradle dependency locking + verification metadata worth it here? | **Not yet — ruled 2026-09-20.** Version strings are already pinned in `build.gradle`, and the maintenance friction of verification metadata is not worth it for a single-contributor project. It becomes important if/when outside contributors are solicited; revisit then, not before. The CI half was answered 2026-08-15. | `grm-e7w` **closed** (deferred by ruling, not by neglect) |
 | GP-6936: leave `megaman`/`wizwarr` red until upstream moves, or carry a locally patched `decompile.exe`? | **Carry a locally patched install, for now — ruled 2026-09-20.** Option (d) over (a)/(c): the three-hunk patch on `grm-qp5x.2` is measured to fix both halves of GP-6936 with no row regressing across 33 cartridges, and a patched `decompile.exe` builds in ~2 minutes. Note the `#4148` cross-reference was posted the same day (item retired); only the PR itself is still open upstream. Implementation and the golden-honesty question (goldens blessed on a non-shipping toolchain must say so) are agent work on `grm-qp5x.3`. | `grm-qp5x.3` (new); `grm-qp5x.2` keeps the PR |
+| Push and open the `joshleaves/ghidra-snes` PR for the seven 65816 semantic defects | **Opened 2026-09-20 as [joshleaves/ghidra-snes#6](https://github.com/joshleaves/ghidra-snes/pull/6)** — branch `fix/65816-semantics`, one commit on upstream `master`, `658xx.sinc` only; all seven vector-oracle findings (CPY swap, compare carry, indirect jump/call, XBA, TXA/TYA flags, context bits, XCE). Awaiting the maintainer. | `grm-9nxj.7` stays open until merged/answered |
