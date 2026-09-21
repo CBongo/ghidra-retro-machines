@@ -15,9 +15,12 @@ REALROM count blocks.total 7
 REALROM count blocks.overlay 3
 REALROM count spaces.overlay 3
 REALROM count refs.intoOverlay 0
+REALROM count refs.intoOverlay.retargeted 0
+REALROM count refs.intoOverlay.intraOverlay 0
 REALROM count instrs.inOverlay 0
 REALROM count bankComments 17
-REALROM count warnings 4
+REALROM count warnings 3
+REALROM count notes 10
 REALROM count symbols 18
 REALROM sample.bankcomment 8062 bank -> 0 (bank=0)
 REALROM sample.bankcomment 8163 bank -> 0 (bank=0)
@@ -36,10 +39,19 @@ REALROM sample.bankcomment ff8d bank -> 0 (bank=0)
 REALROM sample.bankcomment ff9e bank -> 0 (bank=0)
 REALROM sample.bankcomment ffb9 bank -> 0 (bank=0)
 REALROM sample.bankcomment ffbc bank -> 0 (bank=0) via FUN_804d
-REALROM sample.warn ce8b [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn ff76 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn ff7f [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn ffa6 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.note 8932 [CopyLoopAnalyzer] copy-shaped loop RAM:8981 -> RAM:0100 (36 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note bb84 [CopyLoopAnalyzer] copy-shaped loop RAM:bba2 -> RAM:0200 (4 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note be58 [CopyLoopAnalyzer] copy-shaped loop RAM:ac75 -> RAM:0200 (64 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note cde3 [CopyLoopAnalyzer] copy-shaped loop RAM:ce5b -> RAM:0300 (41 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note cdee [CopyLoopAnalyzer] copy-shaped loop RAM:ce4b -> RAM:032d (16 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note cdf9 [CopyLoopAnalyzer] copy-shaped loop RAM:ce38 -> RAM:033d (19 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note ce04 [CopyLoopAnalyzer] copy-shaped loop RAM:ce30 -> RAM:0361 (8 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note ce0f [CopyLoopAnalyzer] copy-shaped loop RAM:ce1b -> RAM:0369 (21 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note ce8b [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
+REALROM sample.note e99e [CopyLoopAnalyzer] copy-shaped loop RAM:e8e1 -> RAM:0204 (16 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.symbol 2000 PPUCTRL IMPORTED primary=true
 REALROM sample.symbol 2001 PPUMASK IMPORTED primary=true
 REALROM sample.symbol 2002 PPUSTATUS IMPORTED primary=true

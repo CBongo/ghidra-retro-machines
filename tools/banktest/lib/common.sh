@@ -377,6 +377,11 @@ grm_realrom_staleness_note() {
 			stamp_sets_note="$stamp_sets_note set(s) were NOT covered in full -- if rows were"
 			stamp_sets_note="$stamp_sets_note skipped, suspect the ROM dir list." ;;
 	esac
+	# Line 4 (bead grm-qp5x.3) names the decompiler build the run used, because the install
+	# carries a locally patched decompile.exe and the megaman/wizwarr goldens are blessed on
+	# it. Another ADDITION: an older three-line stamp reads as "unknown".
+	stamp_decomp="$(sed -n '4p' "$GRM_REALROM_STAMP")"
+	stamp_sets_note="$stamp_sets_note decompiler: ${stamp_decomp:-unknown (pre-grm-qp5x.3 stamp)}."
 	if [ -n "$stamp_commit" ] && [ "$stamp_commit" = "$head" ]; then
 		echo "REALROM STALENESS: last verified run was AT current HEAD ($stamp_commit," \
 			"$stamp_when).$stamp_sets_note"
@@ -389,6 +394,75 @@ grm_realrom_staleness_note() {
 			"($stamp_when), $behind commit(s) behind current HEAD ($head).$stamp_sets_note" \
 			"Changes since then have NOT been checked against real ROMs."
 	fi
+}
+
+# Which DECOMPILER BINARY a run is about to use, by content (bead grm-qp5x.3). The install
+# carries a locally patched decompile.exe (the GP-6936 three-hunk fix from grm-qp5x.2 --
+# upstream issue #9655, PR pending) because stock 12.1.3 rewrites every 6502 JSR's return
+# address into a join varnode and destroys bank-argument recovery on megaman/wizwarr. That
+# patch ships in no Ghidra release, so a golden blessed on it is one a stock install CANNOT
+# reproduce. This table plus the banner below exist so that a run always SAYS which build it
+# ran on -- a stock-install failure on those rows then reads as "wrong decompiler", not as a
+# regression to bisect. The candidate cache already keys on the same hash (toolchain_identity,
+# grm-kt44), so swapping the binary can never serve the other build's cached dump.
+#
+# Hashes are of the whole file. The stock one is the MSVC binary Ghidra 12.1.3 ships; the
+# patched one is the MinGW static build the ghidra-12-1-3-native-regression-gp6936 memory's
+# recipe produces from the Ghidra_12.1.3_build tag plus the three hunks -- rebuild it and the
+# hash will differ (MinGW builds are not reproducible), so add the new hash here rather than
+# treating an UNKNOWN as suspect for that reason alone. Keep the stock exe beside the patched
+# one in the install as decompile.exe.stock-12.1.3 so an A/B is one rename away.
+grm_decompiler_build_name() {
+	case "${1:-}" in
+		5ae40d01bf03e09ee89b65d1ca465537a1b5d2626cdcfae6e6a9f98ee2d8f536)
+			echo "12.1.3 stock" ;;
+		1afff91d3130115546cf7904fb8c95047345155049c8b76661b307761e3820a1)
+			echo "12.1.3 + GP-6936 local patch (grm-qp5x.3)" ;;
+		'')
+			echo "unknown (no decompile binary found)" ;;
+		*)
+			echo "UNKNOWN build" ;;
+	esac
+}
+
+# The decompile binary the install under GHIDRA_HEADLESS will launch, or empty. Same
+# root-derivation as toolchain_identity(): GHIDRA_HEADLESS is the knob that selects the
+# install, so this can never fingerprint an install the run does not use. Unlike that
+# function this picks ONE platform directory -- the install ships every platform's binary
+# (linux_x86_64, mac_*, win_x86_64), and only the one Ghidra launches here is the toolchain.
+grm_decompiler_binary() {
+	local headless root plat cand
+	headless="${GHIDRA_HEADLESS:-}"
+	[ -n "$headless" ] || return 0
+	root="$(dirname "$(dirname "$headless")")"
+	case "$(uname -s 2>/dev/null)" in
+		MINGW*|MSYS*|CYGWIN*|Windows*) plat=win_x86_64 ;;
+		Darwin) if [ "$(uname -m)" = arm64 ]; then plat=mac_arm_64; else plat=mac_x86_64; fi ;;
+		*) if [ "$(uname -m)" = aarch64 ]; then plat=linux_arm_64; else plat=linux_x86_64; fi ;;
+	esac
+	for cand in "$root/Ghidra/Features/Decompiler/os/$plat/decompile.exe" \
+	            "$root/Ghidra/Features/Decompiler/os/$plat/decompile"; do
+		if [ -f "$cand" ]; then
+			printf '%s' "$cand"
+			return 0
+		fi
+	done
+}
+
+grm_decompiler_hash() {
+	local bin
+	bin="$(grm_decompiler_binary)"
+	[ -n "$bin" ] || return 0
+	sha256sum "$bin" 2>/dev/null | cut -d' ' -f1
+}
+
+# One line naming the decompiler build: "== decompiler: 12.1.3 stock (5ae40d01...) ==".
+# Printed by every runner beside the installed-extension banner, so a surprising real-ROM
+# result can be attributed to the toolchain at a glance.
+grm_decompiler_note() {
+	local hash
+	hash="$(grm_decompiler_hash)"
+	echo "== decompiler: $(grm_decompiler_build_name "$hash") (${hash:-no hash}) =="
 }
 
 # Installed-extension identity banner (bead grm-4t2d). Shared for the same reason

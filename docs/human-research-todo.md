@@ -55,6 +55,15 @@ SPC700 problem.
 
 ---
 
+- [ ] **rcransom on the patched decompiler: are the 712 missing overlay instructions code or data?**
+  (`grm-qp5x.4`, P2.) After the GP-6936-patched `decompile.exe` went in (2026-09-20), `rcransom`
+  is the one row that moved besides the two it was meant to fix: `instrs.inOverlay` 6434→5722,
+  `refs.intoOverlay` 1417→1221, stable over three imports, with every bank comment and warning
+  byte-identical. Loss of real code or removal of phantom code (megaman's `grm-eyn` precedent)
+  look the same in the counts. Cheap control: rename `decompile.exe.stock-12.1.3` back over
+  `decompile.exe` for one `check nes --only rcransom`, then compare per-overlay-block instruction
+  counts and read the delta in the disassembler. Not blessed on either build until answered.
+
 ## 2. Def-use passes on untraced titles
 
 The method is proven — four titles done. **Use the tables in `grm-8iy.5`'s comments as the
@@ -176,9 +185,11 @@ Agents can't file these — they need an account and CLA agreement.
   open-source commit. Whether GUI-only was *intended* is unrecorded anywhere — no comment, commit
   message, or javadoc says. So the ask is modest and has two acceptable outcomes: either document
   the limitation on `validateOptions()`'s javadoc so loader authors stop relying on it, or wire it
-  into `ProgramLoader` so it runs everywhere. **A drafted issue body is on `grm-vsg`'s close
-  comment** — it leads with the call-site list and explicitly concedes the not-a-regression point,
-  since opening with a wrong severity claim is how these get closed unread. Low urgency: we have no
+  into `ProgramLoader` so it runs everywhere. **The drafted issue body (title + body) is the
+  2026-09-20 comment on `grm-vsg`** — `bd show grm-vsg`, last comment; the 2026-08-21 close
+  comment only described it. It leads with the call-site list and explicitly concedes the
+  not-a-regression point, since opening with a wrong severity claim is how these get closed
+  unread. Low urgency: we have no
   live exposure (see that bead), so this is a courtesy report, not a request for a fix we need.
 
 - [ ] **`bd prime`: ask beads for an index emission for memories, instead of all-or-nothing.**

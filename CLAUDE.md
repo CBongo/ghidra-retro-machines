@@ -263,17 +263,19 @@ bank-switch helper — `c5f5` is inside its body — so the output was right and
 lines stale). The long-standing "golden correct, output wrong; never bless it" rule was written
 before `grm-67g` closed the `ca23`/`ca2e` half of that diff, and no longer applies.
 
-**Two rows fail on an unchanged tree because of Ghidra 12.1.3, not because of this repo**
-(`grm-9wl6`, measured 2026-08-22): `megaman` on the curated manifest and `wizwarr` on the GME set.
-Holding the source byte-identical and flipping only `ghidraTargetVersion` puts both back on their
-goldens exactly, so the goldens are right and the 12.1.3 output is degraded. **Neither may be
-blessed** — there is no stable value to pin (wizwarr varies in *which* call sites lose their bank
-argument; megaman's `bankComments` moved 161 vs 160 on consecutive runs). The owner's standing
-decision as of 2026-08-22 is to leave them failing and documented until upstream moves, so treat
-a `megaman`/`wizwarr` failure matching those signatures as attributed, not as yours, before
-bisecting your own commits. Note this supersedes the older "`megaman` flaps at ~20% from `grm-g73`
-jitter" line: that flap is real but it is a *12.1.2* phenomenon, and on 12.1.3 the row fails every
-run. See `realrom-12-1-3-toolchain-fails` and `grm-qp5x`, and the **`realrom-current-fails`** bd
+**The install carries a LOCALLY PATCHED `decompile.exe`, and the real-ROM tier says which build
+it ran on** (`grm-qp5x.3`, owner ruling 2026-09-20). Stock Ghidra 12.1.3 (GP-6936, upstream issue
+#9655) rewrites every 6502 `JSR`'s return-address store into a join varnode and destroys
+bank-argument recovery on `megaman` and `wizwarr` (`grm-9wl6`); the three-hunk fix from
+`grm-qp5x.2` ships in no release, so the reference machine's install runs a MinGW build of the
+`Ghidra_12.1.3_build` tag with that patch, and `megaman`/`wizwarr` are blessed on it. The stock
+binary sits beside it as `decompile.exe.stock-12.1.3`. Every runner prints `== decompiler: … ==`
+naming the build by sha256 (`grm_decompiler_build_name` in `tools/banktest/lib/common.sh`), and the
+`REALROM STALENESS` stamp records it, so **a `megaman`/`wizwarr` failure whose banner says `12.1.3
+stock` is the missing patch, not a regression**. The candidate cache keys on the same hash, so a
+swap can never serve the other build's dump. Known open question: `rcransom` moves on the patched
+build (`instrs.inOverlay` 6434→5722, bankComments/warnings unchanged) — `grm-qp5x.4`; do not bless
+it either way until that is adjudicated. See `grm-qp5x`, and the **`realrom-current-fails`** bd
 memory for the current, authoritative row list — that memory is the single place a row's status
 lives, is revised as rows get fixed or reclassified, and supersedes any older summary including
 this one. (It replaced `realrom-expected-baseline-fails`, which was only half-authoritative: it

@@ -857,8 +857,18 @@ it is never a `run-banktest.sh` chunk (whose `all` would otherwise pull it in).
   `ghidraTargetVersion` puts `megaman` back on its golden's classic pole exactly, so the golden is
   right and the 12.1.3 output is degraded: `refs` moves to ~1744 and `bankComments` to 160/161/162
   — and `bankComments` is unstable *against itself* across consecutive 12.1.3 runs, so there is no
-  stable value to pin. `wizwarr` (GME set) is the same story. **Neither may be blessed**; the
-  owner's standing decision is to leave both failing and documented until upstream moves.
+  stable value to pin. `wizwarr` (GME set) is the same story.
+
+  **Since 2026-09-20 (grm-qp5x.3) the reference install runs a locally patched `decompile.exe`**
+  carrying the GP-6936 fix (upstream #9655), and both rows are blessed on it: megaman
+  1705/7428/156, wizwarr warnings 3. Every runner prints `== decompiler: <build> (<sha256>) ==`
+  and the staleness stamp's fourth line records the same, so on a *stock* install the two rows
+  fail with the 12.1.3 signature above and the banner says why. Goldens blessed on the patched
+  build are therefore reproducible only on it — which is the accepted cost of the ruling, stated
+  here so nobody bisects the repo for it. The stock binary is kept beside the patched one as
+  `decompile.exe.stock-12.1.3`; the build recipe is in the
+  `ghidra-12-1-3-native-regression-gp6936` bd memory, and the known hashes live in
+  `grm_decompiler_build_name` (`tools/banktest/lib/common.sh`).
 
   Because expected pass/fail counts go stale faster than anything else in this document, they are
   deliberately **not** stated here as an ongoing expectation. The `realrom-current-fails` bd

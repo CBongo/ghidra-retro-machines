@@ -897,6 +897,7 @@ case "${GRM_EXTENSION_BUILT_THIS_RUN:-}/$EXT_NOTE_SUFFIX" in
 			" as unproven and find out why before trusting it.)"
 		;;
 esac
+grm_decompiler_note
 grm_packed_db_cache_note
 # Resolved Ghidra install root (bead grm-k0h): GHIDRA_HEADLESS -- not GRM_GHIDRA_INSTALL --
 # is what actually launches Ghidra, so a native-side A/B (decompile.exe, sleigh.exe) needs
@@ -1318,9 +1319,13 @@ elif mkdir -p "$(dirname "$GRM_REALROM_STAMP")" 2>/dev/null; then
 		stamp_sets_line="$stamp_sets_line (PARTIAL: $stamp_ran of $stamp_total row(s) ran;"
 		stamp_sets_line="$stamp_sets_line $stamp_why)"
 	fi
+	# Line 4 (bead grm-qp5x.3): which decompiler build produced these results -- the install
+	# carries a locally patched decompile.exe, see grm_decompiler_build_name in lib/common.sh.
+	stamp_decomp_hash="$(grm_decompiler_hash)"
 	stamp_content="$stamp_head
 $(date -u +%Y-%m-%dT%H:%M:%SZ)
-$stamp_sets_line"
+$stamp_sets_line
+$(grm_decompiler_build_name "$stamp_decomp_hash") (${stamp_decomp_hash:-no hash})"
 	if ! printf '%s\n' "$stamp_content" | grm_atomic_publish_stdin "$GRM_REALROM_STAMP"; then
 		echo "NOTE: could not update $GRM_REALROM_STAMP (staleness signal will be stale itself)" >&2
 	fi

@@ -19,10 +19,13 @@ REALROM block RAM 0000-07ff overlay=false
 REALROM count blocks.total 12
 REALROM count blocks.overlay 7
 REALROM count spaces.overlay 7
-REALROM count refs.intoOverlay 1704
-REALROM count instrs.inOverlay 7429
+REALROM count refs.intoOverlay 1705
+REALROM count refs.intoOverlay.retargeted 20
+REALROM count refs.intoOverlay.intraOverlay 1685
+REALROM count instrs.inOverlay 7428
 REALROM count bankComments 156
-REALROM count warnings 32
+REALROM count warnings 31
+REALROM count notes 11
 REALROM count symbols 18
 REALROM sample.bankcomment 8001 bank -> 5 (bank=5) via RESET
 REALROM sample.bankcomment 8d17 bank -> 5 (bank=5) via RESET
@@ -49,6 +52,137 @@ REALROM sample.bankcomment 9d05 bank -> 5 (bank=5) via FUN_c55d
 REALROM sample.bankcomment 9d08 bank -> 5 (bank=5) via RESET
 REALROM sample.bankcomment a044 bank -> 5 (bank=5) via FUN_d131
 REALROM sample.bankcomment a082 bank -> 5 (bank=5) via FUN_d131
+REALROM sample.bankcomment a0c8 bank -> 5 (bank=5) via FUN_d131
+REALROM sample.bankcomment a0e6 bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment a1ad bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment a24e bank -> 5 (bank=5) via FUN_c219
+REALROM sample.bankcomment a2cf bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment a506 bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment a520 bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment a529 bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment a5b1 bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment a620 bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment a8d0 bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment a948 bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment a9a7 bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment a9a8 bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment a9ac bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment a9c4 bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment a9c7 bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment a9f6 bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment aa01 bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment aa11 bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment aa14 bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment aa23 bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment ab3c bank -> 6 (bank=6) via FUN_c442
+REALROM sample.bankcomment ab65 bank -> 6 (bank=6) via FUN_c442
+REALROM sample.bankcomment ab87 bank -> 6 (bank=6) via FUN_c442
+REALROM sample.bankcomment ab91 bank -> 6 (bank=6) via FUN_c442
+REALROM sample.bankcomment abbb bank -> 6 (bank=6) via FUN_c442
+REALROM sample.bankcomment abdb bank -> 6 (bank=6) via FUN_c442
+REALROM sample.bankcomment ac0a bank -> 6 (bank=6) via FUN_c442
+REALROM sample.bankcomment ad0c bank -> 6 (bank=6) via FUN_c442
+REALROM sample.bankcomment ad3a bank -> 6 (bank=6) via FUN_c442
+REALROM sample.bankcomment ad50 bank -> 6 (bank=6) via FUN_c442
+REALROM sample.bankcomment b001 bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment b0c5 bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment b316 bank -> 6 (bank=6) via FUN_c41b
+REALROM sample.bankcomment b326 bank -> 6 (bank=6) via FUN_c400
+REALROM sample.bankcomment b36f bank -> 6 (bank=6) via FUN_c400
+REALROM sample.bankcomment b3f8 bank -> 6 (bank=6) via FUN_c400
+REALROM sample.bankcomment bd15 bank -> 6 (bank=6) via FUN_c400
+REALROM sample.bankcomment be46 bank -> 5 (bank=5) via FUN_c05a
+REALROM sample.bankcomment c015 bank -> 5 (bank=5)
+REALROM sample.bankcomment c083 bank -> 5 (bank=5) via FUN_f0be
+REALROM sample.bankcomment c0f9 bank -> 5 (bank=5) via FUN_d131
+REALROM sample.bankcomment c116 bank -> 5 (bank=5)
+REALROM sample.bankcomment c19d bank -> 5 (bank=5) via FUN_d131
+REALROM sample.bankcomment c2b2 bank -> 5 (bank=5)
+REALROM sample.bankcomment c321 bank -> 5 (bank=5) via FUN_d131
+REALROM sample.bankcomment c3b9 bank -> 5 (bank=5)
+REALROM sample.bankcomment c3c3 bank -> 6 (bank=6)
+REALROM sample.bankcomment c3fd bank -> 5 (bank=5) via FUN_c3b3
+REALROM sample.bankcomment c417 bank -> 6 (bank=6)
+REALROM sample.bankcomment c422 bank -> 6 (bank=6)
+REALROM sample.bankcomment c42a bank -> 6 (bank=6)
+REALROM sample.bankcomment c439 bank -> 5 (bank=5) via FUN_c3b3
+REALROM sample.bankcomment c442 bank -> 5 (bank=5) via FUN_d131
+REALROM sample.bankcomment c45a bank -> 6 (bank=6)
+REALROM sample.bankcomment c4dd bank -> 5 (bank=5) via FUN_c3b3
+REALROM sample.bankcomment c503 bank -> 5 (bank=5) via FUN_d131
+REALROM sample.bankcomment c517 bank -> 5 (bank=5) via FUN_c3b3
+REALROM sample.bankcomment c541 bank -> 6 (bank=6)
+REALROM sample.bankcomment c561 bank -> 6 (bank=6)
+REALROM sample.bankcomment c573 bank -> 5 (bank=5) via FUN_c3b3
+REALROM sample.bankcomment c61d bank -> 5 (bank=5) via FUN_c3b3
+REALROM sample.bankcomment c622 bank -> 5 (bank=5) via FUN_c3b3
+REALROM sample.bankcomment c63c bank -> 5 (bank=5) via FUN_c3b3
+REALROM sample.bankcomment c647 bank -> 5 (bank=5) via FUN_c3b3
+REALROM sample.bankcomment c655 bank -> 5 (bank=5) via FUN_c3b3
+REALROM sample.bankcomment c663 bank -> 5 (bank=5) via FUN_c3b3
+REALROM sample.bankcomment c688 bank -> 0? (bank=0) via FUN_c7ae [known: bank.2=0,bank.3=0; assumed from initial: bank.0,bank.1]
+REALROM sample.bankcomment c6f1 bank -> 0? (bank=0) via FUN_c7ae [known: bank.2=0,bank.3=0; assumed from initial: bank.0,bank.1]
+REALROM sample.bankcomment c70c bank -> 5 (bank=5) via FUN_c3b3
+REALROM sample.bankcomment c727 bank -> 5 (bank=5) via FUN_c3b3
+REALROM sample.bankcomment c791 bank -> 0? (bank=0) via FUN_c7ae [known: bank.2=0,bank.3=0; assumed from initial: bank.0,bank.1]
+REALROM sample.bankcomment c7ab bank -> 5 (bank=5) via FUN_c3b3
+REALROM sample.bankcomment c7c1 bank -> 0? (bank=0) [known: bank.2=0,bank.3=0; assumed from initial: bank.0,bank.1]
+REALROM sample.bankcomment c890 bank -> 5 (bank=5) via FUN_c05a
+REALROM sample.bankcomment cafd bank -> 5 (bank=5) via FUN_c05a
+REALROM sample.bankcomment cb2f bank -> 5 (bank=5) via FUN_d131
+REALROM sample.bankcomment cb3c bank -> 5 (bank=5) via FUN_f0be
+REALROM sample.bankcomment cb45 bank -> 5 (bank=5) via FUN_f0be
+REALROM sample.bankcomment cb93 bank -> 5 (bank=5) via FUN_c3b3
+REALROM sample.bankcomment cbd3 bank -> 5 (bank=5) via FUN_c3b3
+REALROM sample.bankcomment cbdb bank -> 5 (bank=5) via FUN_c3b3
+REALROM sample.bankcomment cc2a bank -> 5 (bank=5) via FUN_c3b3
+REALROM sample.bankcomment cc59 bank -> 5 (bank=5) via FUN_c3b3
+REALROM sample.bankcomment ccad bank -> 5 (bank=5) via FUN_c3b3
+REALROM sample.bankcomment ccb4 bank -> 5 (bank=5) via FUN_c3b3
+REALROM sample.bankcomment cd87 bank -> 5 (bank=5) via FUN_c3b3
+REALROM sample.bankcomment ce97 bank -> 5 (bank=5) via FUN_c3b3
+REALROM sample.bankcomment d063 bank -> 5 (bank=5) via FUN_c3b3
+REALROM sample.bankcomment d106 bank -> 5 (bank=5) via FUN_c3b3
+REALROM sample.bankcomment d10b bank -> 5 (bank=5) via FUN_d131
+REALROM sample.bankcomment d11e bank -> 5 (bank=5) via FUN_d131
+REALROM sample.bankcomment d135 bank -> 6 (bank=6)
+REALROM sample.bankcomment d159 bank -> 5 (bank=5) via FUN_c3b3
+REALROM sample.bankcomment d16b bank -> 5 (bank=5) via FUN_c3b3
+REALROM sample.bankcomment d2a8 bank -> 5 (bank=5) via FUN_c3b3
+REALROM sample.bankcomment d54e bank -> 4 (bank=4)
+REALROM sample.bankcomment d7de bank -> 5 (bank=5) via FUN_c219
+REALROM sample.bankcomment d81b bank -> 5 (bank=5) via FUN_c219
+REALROM sample.bankcomment d820 bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment d84a bank -> 6 (bank=6)
+REALROM sample.bankcomment d88d bank -> 6 (bank=6)
+REALROM sample.bankcomment d893 bank -> 5 (bank=5) via FUN_c3b3
+REALROM sample.bankcomment d89d bank -> 6 (bank=6)
+REALROM sample.bankcomment d91e bank -> 5 (bank=5) via FUN_c3b3
+REALROM sample.bankcomment d986 bank -> 5 (bank=5) via FUN_c3b3
+REALROM sample.bankcomment dbbb bank -> 5 (bank=5) via FUN_f105
+REALROM sample.bankcomment dbfd bank -> 6 (bank=6) via caseD_a4
+REALROM sample.bankcomment ec6d bank -> 5 (bank=5) via FUN_c05a
+REALROM sample.bankcomment ee87 bank -> 6 (bank=6) via caseD_a4
+REALROM sample.bankcomment ef79 bank -> 5 (bank=5) via FUN_d131
+REALROM sample.bankcomment efc8 bank -> 5 (bank=5) via FUN_d131
+REALROM sample.bankcomment f032 bank -> 5 (bank=5) via FUN_d131
+REALROM sample.bankcomment f075 bank -> 5 (bank=5) via FUN_d131
+REALROM sample.bankcomment f08a bank -> 5 (bank=5) via FUN_d131
+REALROM sample.bankcomment f0a8 bank -> 5 (bank=5) via FUN_f0be
+REALROM sample.bankcomment f0e4 bank -> 5 (bank=5)
+REALROM sample.bankcomment f109 bank -> 5 (bank=5) via FUN_d131
+REALROM sample.bankcomment f132 bank -> 5 (bank=5) via FUN_f0be
+REALROM sample.bankcomment f13d bank -> 5 (bank=5) via FUN_f0be
+REALROM sample.bankcomment f142 bank -> 5 (bank=5)
+REALROM sample.bankcomment f174 bank -> 5 (bank=5) via FUN_d131
+REALROM sample.bankcomment f1b2 bank -> 5 (bank=5) via FUN_d131
+REALROM sample.bankcomment f24c bank -> 5 (bank=5) via FUN_d131
+REALROM sample.bankcomment f2e9 bank -> 5 (bank=5) via FUN_d131
+REALROM sample.bankcomment f6fa bank -> 5 (bank=5) via FUN_c3b3
+REALROM sample.bankcomment fa61 bank -> 5 (bank=5) via FUN_c3b3
+REALROM sample.bankcomment fd06 bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment fe30 bank -> 5 (bank=5) via RESET
+REALROM sample.bankcomment ffc0 bank -> 5 (bank=5) via RESET
 REALROM sample.ref 80b2 -> PRG_LO_B5::80c4 CONDITIONAL_JUMP primary=true
 REALROM sample.ref 9000 -> PRG_LO_B4::923f UNCONDITIONAL_JUMP primary=true
 REALROM sample.ref 9005 -> PRG_LO_B4::900a CONDITIONAL_JUMP primary=true
@@ -74,12 +208,12 @@ REALROM sample.ref 9061 -> PRG_LO_B5::905e CONDITIONAL_JUMP primary=true
 REALROM sample.ref 9065 -> PRG_LO_B5::906a CONDITIONAL_JUMP primary=true
 REALROM sample.ref 906e -> PRG_LO_B5::9075 CONDITIONAL_JUMP primary=true
 REALROM sample.ref 9070 -> PRG_LO_B5::9424 DATA primary=true
+REALROM sample.ref.truncated 25 of 1705
 REALROM sample.warn 91bc [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_d896 whose bank argument could not be recovered at this call site
 REALROM sample.warn a604 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn a908 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn ac9f [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c666 whose bank argument could not be recovered at this call site
 REALROM sample.warn c3ab [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
-REALROM sample.warn c403 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn c483 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c39c whose bank argument could not be recovered at this call site
 REALROM sample.warn c613 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c39c whose bank argument could not be recovered at this call site
 REALROM sample.warn c625 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c39c whose bank argument could not be recovered at this call site
@@ -99,6 +233,24 @@ REALROM sample.warn cf23 [NesBankingAnalyzer] Bank state becomes unknown here: c
 REALROM sample.warn d09e [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c39c whose bank argument could not be recovered at this call site
 REALROM sample.warn d0b1 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c39c whose bank argument could not be recovered at this call site
 REALROM sample.warn d571 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn d861 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn d8ad [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c666 whose bank argument could not be recovered at this call site
+REALROM sample.warn d9b5 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c666 whose bank argument could not be recovered at this call site
+REALROM sample.warn db98 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_dc21 whose bank argument could not be recovered at this call site
+REALROM sample.warn f0d1 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn f6f3 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c39c whose bank argument could not be recovered at this call site
+REALROM sample.warn f956 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c39c whose bank argument could not be recovered at this call site
+REALROM sample.note 9130 [CopyLoopAnalyzer] copy-shaped loop PRG_LO_B5:93e6 -> RAM:0204 (20 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note bad6 [CopyLoopAnalyzer] copy-shaped loop PRG_LO_B5:baf6 -> RAM:03d5 (3 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note c403 [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
+REALROM sample.note c4a4 [CopyLoopAnalyzer] copy-shaped loop RAM:0035 -> RAM:03d0 (48 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note c696 [CopyLoopAnalyzer] copy-shaped loop RAM:0004 -> RAM:0382 (16 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note c6fe [CopyLoopAnalyzer] copy-shaped loop RAM:0004 -> RAM:0382 (32 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note cae1 [CopyLoopAnalyzer] copy-shaped loop RAM:cb00 -> RAM:03d5 (3 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note f04b [CopyLoopAnalyzer] copy-shaped loop RAM:f069 -> RAM:03ed (3 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note f0d4 [CopyLoopAnalyzer] copy-shaped loop RAM:0059 -> RAM:0382 (33 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note f2f5 [CopyLoopAnalyzer] copy-shaped loop RAM:f398 -> RAM:03d5 (3 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note fa64 [CopyLoopAnalyzer] copy-shaped loop RAM:fa8e -> RAM:0204 (4 bytes) recognized but NOT materialized: nothing jumps into the destination, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.symbol 2000 PPUCTRL IMPORTED primary=true
 REALROM sample.symbol 2001 PPUMASK IMPORTED primary=true
 REALROM sample.symbol 2002 PPUSTATUS IMPORTED primary=true
