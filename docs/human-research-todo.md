@@ -182,6 +182,20 @@ Agents can't file these — they need an account and CLA agreement.
   work comes first — capture the decompiler's stderr/crash, then minimise to something shareable
   without ROM bytes (the ROM is hash-pinned but not redistributable). Your part is the filing when
   that lands; nothing to do until then. Independent of #9655.
+- [ ] **Fall-through override into an overlay space is accepted by the listing and fatal to the
+  decompiler — ask upstream whether that is deliberate.** (`grm-p3dy`, ruled 2026-09-21: ask
+  first, build nothing.) The mechanics spike (`FallThroughIntoOverlayProgramTest`, 11 rows)
+  established that `Instruction.setFallThrough(overlayAddr)` lands, `CreateFunctionCmd` ends the
+  base function at the overridden instruction as hoped, but the base function then **fails to
+  decompile outright** — `FlowInfo` bounds flow to the entry's address space (`flow.cc:29`), the
+  override's `BRANCH` into the overlay is out of bounds, and `FlowInfo::target` throws
+  `Could not find op at target address`. `FlowOverride.CALL_RETURN` does not rescue it. Only a
+  CALL crosses spaces. **The issue body is drafted on the bead** (title, 5-instruction repro, the
+  source references, and the ask: admit overlays of the same base space in `FlowInfo`, or
+  reject/warn on cross-space targets in `setFallThrough` so the two halves stop disagreeing
+  silently). Posting it is yours. What the answer decides: "deliberate" → close `grm-p3dy` on
+  option (1), the reference model stays; "open to it" → reopen as option (3) with the upstream
+  PR as the vehicle, then settle Q2–Q4. Do not start a local `flow.cc` patch before the answer.
 - [ ] **`bd prime`: ask beads to expose its compact memory index in CLI mode.** (`grm-8ctl`,
   researched 2026-08-26, **re-checked against upstream 2026-09-20** — the draft on the bead is
   now stale and should be SHRUNK, not posted as-is.)
