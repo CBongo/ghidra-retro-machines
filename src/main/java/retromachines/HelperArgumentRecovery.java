@@ -234,13 +234,18 @@ final class HelperArgumentRecovery {
 		private final StateOracle oracle;
 		private final int lsb;
 		private final int effectMask;
+		/** The helper's strategy's mirror set, for the KIND query {@link #isLiveBankMirror}
+		 *  (bead grm-yflf) -- see {@link BankSwitchStrategy#observedMirrors}. */
+		private final BankMirrors mirrors;
 		private int consultations;
 
-		OracleHooks(StoredValueScanner.Hooks base, StateOracle oracle, int lsb, int effectMask) {
+		OracleHooks(StoredValueScanner.Hooks base, StateOracle oracle, int lsb, int effectMask,
+				BankMirrors mirrors) {
 			this.base = base;
 			this.oracle = oracle;
 			this.lsb = lsb;
 			this.effectMask = effectMask;
+			this.mirrors = mirrors == null ? BankMirrors.none() : mirrors;
 		}
 
 		@Override
@@ -265,6 +270,19 @@ final class HelperArgumentRecovery {
 			consultations++;
 			BankState whole = oracle.stateAt(addr);
 			return whole == null ? null : toFieldLocal(whole, lsb, effectMask);
+		}
+
+		/**
+		 * A kind query over the strategy's own mirror set, answered here -- on the engine's
+		 * call-site path only -- rather than by the strategy's hooks, so that direct-site scans
+		 * (and every probe built on them) are classified exactly as before. Does not count as a
+		 * consultation: the mirror set is fixed for the whole run, so an answer that depended on
+		 * it is still a function of the call and its in-state alone and stays memoizable.
+		 */
+		@Override
+		public boolean isLiveBankMirror(Address target) {
+			return target != null && (mirrors.is(target, BankMirrors.Kind.WRITE_THROUGH) ||
+				mirrors.is(target, BankMirrors.Kind.ROM_IDENTIFYING));
 		}
 	}
 
@@ -339,11 +357,21 @@ final class HelperArgumentRecovery {
 		// see the eight-argument overload's javadoc. OracleHooks is used directly (not through
 		// the interface) below, where the memo needs its consultation count.
 		OracleHooks oracleHooks = oracle == null ? null
-				: new OracleHooks(callerHooksFor(helper), oracle, helper.lsb(), helper.effectMask());
+				: new OracleHooks(callerHooksFor(helper), oracle, helper.lsb(), helper.effectMask(),
+					helper.strategy() == null ? null : helper.strategy().observedMirrors());
 		StoredValueScanner.Hooks callerHooks =
 			oracleHooks == null ? callerHooksFor(helper) : oracleHooks;
-		BankState local = StoredValueScanner.resolveStoredValue(program, callInstr, reg,
-			localIn, stateMask, callerHooks, path);
+		StoredValueScanner.Scan registerScan = StoredValueScanner.resolveStoredValueScan(program,
+			callInstr, reg, localIn, stateMask, callerHooks, path);
+		BankState local = registerScan.value();
+		// bead grm-yflf: the register scan ended on a plain read-back of a live-bank mirror --
+		// the caller-side restore shape (megaman2 ca12/cb60/d0c3). Kept only while the register
+		// answer is the one that counts: the memory-argument fallbacks below replace the value
+		// wholesale when the argument does not survive the prologue, and then the read-back
+		// described nothing the helper consumed.
+		StoredValueScanner.ReadBack readBack =
+			registerScan.stop() == BankSwitchStrategy.ValueStop.RESTORED_BANK
+					? registerScan.readBack() : null;
 		// grm-mu7: what the caller left in argReg is this helper's argument only if the helper
 		// still has it when the first switch site reads it. Withholding the value (rather than
 		// short-circuiting the whole call) is deliberate -- it routes the call down the exact
@@ -406,13 +434,14 @@ final class HelperArgumentRecovery {
 			// encountered on the way there can now resolve instead of declining outright.
 			local = viaCell.knownMask() != 0 ? viaCell
 					: valueSuppliedInsideHelper(program, helper, reg, stateMask);
+			readBack = null; // the register's read-back is not what the helper consumed
 		}
 		Instruction switchSite = helper.switchSite() == null ? null
 				: program.getListing().getInstructionAt(helper.switchSite());
 		if (helper.strategy() == null || switchSite == null) {
 			return new CallEffect(position(local, helper.lsb(), helper.effectMask()),
-				helper.effectMask(), local.knownMask() != 0, definitelyNoInboundArgument,
-				restoreCell);
+				helper.effectMask(), local.knownMask() != 0, definitelyNoInboundArgument, false,
+				restoreCell, readBack);
 		}
 		// helper.entry(), not function().getEntryPoint(): the mini-inline scan must stop where
 		// control actually arrived. For a mid-body entry those differ, and stopping at the
@@ -450,7 +479,8 @@ final class HelperArgumentRecovery {
 		BankState positionedValue = position(deposit.value(), helper.lsb(), helper.effectMask());
 		int positionedOwnedMask = (deposit.ownedMask() << helper.lsb()) & helper.effectMask();
 		return new CallEffect(positionedValue, positionedOwnedMask,
-			primary.value().knownMask() != 0, definitelyNoInboundArgument, restoreCell);
+			primary.value().knownMask() != 0, definitelyNoInboundArgument, false, restoreCell,
+			readBack);
 	}
 
 	/**
@@ -1858,19 +1888,49 @@ final class HelperArgumentRecovery {
 	 * {@link BankSwitchStrategy.ValueStop#RESTORED_BANK} rather than
 	 * {@link BankSwitchStrategy.ValueStop#ANALYZER_LIMIT} -- an honest, RELATIONAL fact ("bank
 	 * unchanged from what was saved at this cell"), not our limitation.
+	 * <p>
+	 * {@code readBack} (bead grm-yflf, the caller-side half) is the OTHER way a call is a
+	 * restore: the CALLER's own register scan ended on a plain, unmodified read of a live-bank
+	 * mirror -- {@code LDA $29 / PHA / JSR work / PLA / JSR switch} (megaman2 ca12/cb60), or a
+	 * bare {@code LDA $29 / JSR switch} in an interrupt tail (d0c3) -- so what the helper commits
+	 * is whatever the bank WAS at that read. Independent of {@code noInboundArgument} (the
+	 * argument register survives the helper's prologue in this shape; that is what makes the
+	 * caller's value the one committed) and of {@code restoreCell}, which names a cell the
+	 * HELPER reloads from. Meaningful only when {@code argumentResolved} is false: a read-back
+	 * whose value the strategy could pin down is just a resolved argument. Classify as
+	 * {@code RESTORED_BANK} exactly as for {@code restoreCell}; {@link #restoredFrom} answers
+	 * "which cell" for either kind.
 	 */
 	record CallEffect(BankState state, int ownedMask, boolean argumentResolved,
-			boolean noInboundArgument, boolean secondTierRelay, Address restoreCell) {
+			boolean noInboundArgument, boolean secondTierRelay, Address restoreCell,
+			StoredValueScanner.ReadBack readBack) {
+
+		/** The pre-{@code readBack} 6-argument form. */
+		CallEffect(BankState state, int ownedMask, boolean argumentResolved,
+				boolean noInboundArgument, boolean secondTierRelay, Address restoreCell) {
+			this(state, ownedMask, argumentResolved, noInboundArgument, secondTierRelay,
+				restoreCell, null);
+		}
 
 		/**
-		 * As the 5-argument form below, with {@code secondTierRelay} defaulted false -- every
+		 * As the 6-argument form above, with {@code secondTierRelay} defaulted false -- every
 		 * caller of THIS form already knows {@code restoreCell} (it is computed alongside
 		 * {@code noInboundArgument} in {@link #recoverCallArgument}, never guessed), so unlike the
 		 * 4-argument form there is nothing this constructor needs to default on its behalf.
 		 */
 		CallEffect(BankState state, int ownedMask, boolean argumentResolved,
 				boolean noInboundArgument, Address restoreCell) {
-			this(state, ownedMask, argumentResolved, noInboundArgument, false, restoreCell);
+			this(state, ownedMask, argumentResolved, noInboundArgument, false, restoreCell, null);
+		}
+
+		/**
+		 * The cell this call restores the bank from, whichever kind of restore it is (bead
+		 * grm-yflf): the mirror named by {@link #readBack} for a caller-side read-back, or
+		 * {@link #restoreCell} for a helper-prologue reload; {@code null} when it is neither.
+		 * The one accessor a consumer that only asks "is this a restore" needs.
+		 */
+		Address restoredFrom() {
+			return readBack != null ? readBack.cell() : restoreCell;
 		}
 
 		/**
@@ -1906,7 +1966,7 @@ final class HelperArgumentRecovery {
 		 */
 		CallEffect asSecondTierRelay() {
 			return new CallEffect(state, ownedMask, argumentResolved, noInboundArgument, true,
-				restoreCell);
+				restoreCell, readBack);
 		}
 	}
 

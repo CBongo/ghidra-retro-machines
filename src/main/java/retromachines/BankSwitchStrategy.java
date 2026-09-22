@@ -183,6 +183,27 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 		 * zelda2 and bionic are, for now, the two titles in the corpus whose no-argument restore is
 		 * an entire one-instruction-prologue named function reloading from a fixed RAM cell; the
 		 * other four titles above are excluded by distinct syntactic facts, not by a title list.
+		 * <p>
+		 * <b>The SECOND kind of restore this member covers is the CALLER-SIDE read-back</b> (the
+		 * propagation half of grm-yflf, 2026-09-21): the helper takes a real argument, and the
+		 * caller's own value scan for it ends on a plain, unmodified load of a LIVE-BANK MIRROR
+		 * -- a {@link BankMirrors.Kind#WRITE_THROUGH} shadow or a
+		 * {@link BankMirrors.Kind#ROM_IDENTIFYING} byte -- whose value the strategy could not
+		 * pin down. Mega Man 2's {@code FUN_ca0b} is the textbook shape ({@code LDA $29 / PHA /
+		 * JSR c96b / PLA / JSR c000}: save the shadow, work, put it back) and its NMI tail the
+		 * bare one ({@code LDA $29 / JSR c000}). Recognized by {@code StoredValueScanner}'s
+		 * {@code LD<reg>} branch on the read's SHAPE alone (fixed address, identity accumulators,
+		 * {@link StoredValueScanner.Hooks#isLiveBankMirror}), reported through
+		 * {@link StoredValueScanner.ReadBack} onto {@code CallEffect.readBack}, and rendered by
+		 * {@code BoardBankAnalyzer.callerRestoreDetail}. The relational claim is the same as the
+		 * first kind's -- "the bank after this call is whatever that cell held at that read" --
+		 * with the cell's kind saying what that is (a shadow: the last bank committed through its
+		 * maintainer; an identifying byte: the bank live at the read), and the listing adding
+		 * "which is the bank on entry to the enclosing function" when the read is straight-line
+		 * from that entry with no switch between. It says nothing about the VALUE: a strategy
+		 * that refuses to resolve the kind (serial-shift, for every write-through shadow) or
+		 * finds the shadow stale (memory-latch's coherence walk, in an interrupt tail) still
+		 * leaves the deposit unknown, exactly as before -- only the reason changes.
 		 */
 		RESTORED_BANK,
 		/**
@@ -656,6 +677,26 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 */
 	default void observeMirrors(BankMirrors mirrors) {
 		// no-op: this strategy recovers nothing from a bank mirror
+	}
+
+	/**
+	 * The mirror set {@link #observeMirrors} last delivered, or {@link BankMirrors#none()} for a
+	 * strategy that keeps none (bead grm-yflf, the caller-side restore classification).
+	 * <p>
+	 * <b>This is a KIND query, not a value channel.</b> Value recovery from a mirror stays
+	 * entirely inside {@link StoredValueScanner.Hooks#resolveMirrorLoad}, which each strategy
+	 * gates on its own rules ({@code MemoryLatchBankSwitchStrategy}'s coherence walk,
+	 * {@code SerialShiftBankSwitchStrategy}'s refusal of {@code WRITE_THROUGH} outright). What
+	 * this exposes is only whether an address IS a live-bank mirror, so that
+	 * {@code HelperArgumentRecovery} can tell a caller-side scan that terminated on a plain
+	 * read-back of one -- {@code LDA $29 / PHA / JSR work / PLA / JSR switch} -- that it is
+	 * looking at a RESTORE of the bank live at that read, an honest relational fact, rather than
+	 * at an argument it merely failed to pin down. A strategy that refuses to resolve a kind
+	 * still answers the kind question truthfully here: the classification claims nothing about
+	 * the value.
+	 */
+	default BankMirrors observedMirrors() {
+		return BankMirrors.none();
 	}
 
 	/**

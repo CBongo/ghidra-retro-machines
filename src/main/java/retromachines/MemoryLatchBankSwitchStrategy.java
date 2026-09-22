@@ -170,6 +170,11 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 		mirrors = observed == null ? BankMirrors.none() : observed;
 	}
 
+	@Override
+	public BankMirrors observedMirrors() {
+		return mirrors;
+	}
+
 	/**
 	 * <b>{@code false} since grm-mej.2</b> -- the tripwire this javadoc used to describe has
 	 * fired, exactly as predicted and for the predicted reason.

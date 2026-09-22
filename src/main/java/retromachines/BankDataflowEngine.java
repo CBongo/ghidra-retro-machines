@@ -554,7 +554,7 @@ final class BankDataflowEngine {
 		// engine invented.
 		if (helper.constState() == null && !callEffect.argumentResolved() &&
 			callEffect.ownedMask() != 0 && !secondTierRelaySites.contains(addr) &&
-			!callEffect.noInboundArgument() && callEffect.restoreCell() == null) {
+			!callEffect.noInboundArgument() && callEffect.restoredFrom() == null) {
 			List<Arm> arms = armsFor(program, listing, instr, armCache);
 			if (arms != null) {
 				List<CallEffect> perArm = new ArrayList<>();
@@ -627,7 +627,7 @@ final class BankDataflowEngine {
 				BankState after = overwrite(mechIn, arm.state(), arm.ownedMask());
 				afters.add(after);
 				outs.add(new OutElement(pathId.with(addr, arm.state()), outState, fall));
-				call.add(label, arm.state(), after, true, false, false, null);
+				call.add(label, arm.state(), after, true, false, false, null, null);
 			}
 			call.arms(afters, false);
 			return outs;
@@ -637,7 +637,7 @@ final class BankDataflowEngine {
 		call.add(label, callEffect.state(),
 			overwrite(mechIn, callEffect.state(), callEffect.ownedMask()),
 			callEffect.argumentResolved(), callEffect.noInboundArgument(),
-			callEffect.secondTierRelay(), callEffect.restoreCell());
+			callEffect.secondTierRelay(), callEffect.restoreCell(), callEffect.readBack());
 		return outs;
 	}
 
@@ -1102,6 +1102,7 @@ final class BankDataflowEngine {
 		private boolean noInboundArgument;
 		private boolean secondTierRelay;
 		private Address restoreCell;
+		private StoredValueScanner.ReadBack readBack;
 		private List<BankState> arms = List.of();
 		private boolean armsDenied;
 
@@ -1110,7 +1111,7 @@ final class BankDataflowEngine {
 		}
 
 		void add(String name, BankState e, BankState after, boolean resolved, boolean noInbound,
-				boolean secondTier, Address restore) {
+				boolean secondTier, Address restore, StoredValueScanner.ReadBack read) {
 			helperName = name;
 			effect = effect == null ? e : BankState.merge(effect, e);
 			stateAfter = stateAfter == null ? after : BankState.merge(stateAfter, after);
@@ -1119,6 +1120,9 @@ final class BankDataflowEngine {
 			secondTierRelay |= secondTier;
 			if (restoreCell == null) {
 				restoreCell = restore;
+			}
+			if (readBack == null) {
+				readBack = read;
 			}
 		}
 
@@ -1129,7 +1133,7 @@ final class BankDataflowEngine {
 
 		CallSwitch result() {
 			return new CallSwitch(helperName, effect, stateAfter, argumentResolved,
-				noInboundArgument, secondTierRelay, restoreCell, arms, armsDenied);
+				noInboundArgument, secondTierRelay, restoreCell, readBack, arms, armsDenied);
 		}
 	}
 
@@ -1428,6 +1432,13 @@ final class BankDataflowEngine {
 	 * site {@link BankSwitchStrategy.ValueStop#RESTORED_BANK} rather than
 	 * {@code ANALYZER_LIMIT}.
 	 * <p>
+	 * {@code readBack} (bead grm-yflf, the caller-side half) is carried straight through from
+	 * {@link HelperArgumentRecovery.CallEffect#readBack}: non-null when the CALLER's register
+	 * scan ended on a plain read-back of a live-bank mirror (megaman2's {@code LDA $29 / PHA /
+	 * JSR c96b / PLA / JSR c000}), naming the cell, the read and the call it was carried across.
+	 * Read only when {@code argumentResolved} is false, and classified {@code RESTORED_BANK}
+	 * exactly as {@code restoreCell} is.
+	 * <p>
 	 * {@code arms}/{@code armsDenied} (bead grm-wul) mirror {@link SwitchResult}'s: FORKED
 	 * carries one post-call mechanism-window state per arm (render those, not
 	 * {@code stateAfter}, which is their merge); DENIED carries the arm deposits the budget
@@ -1435,14 +1446,15 @@ final class BankDataflowEngine {
 	 */
 	record CallSwitch(String helperName, BankState effect, BankState stateAfter,
 			boolean argumentResolved, boolean noInboundArgument, boolean secondTierRelay,
-			Address restoreCell, List<BankState> arms, boolean armsDenied) {
+			Address restoreCell, StoredValueScanner.ReadBack readBack, List<BankState> arms,
+			boolean armsDenied) {
 
-		/** The pre-grm-wul form: no arms. */
+		/** The pre-grm-wul form: no arms, no read-back. */
 		CallSwitch(String helperName, BankState effect, BankState stateAfter,
 				boolean argumentResolved, boolean noInboundArgument, boolean secondTierRelay,
 				Address restoreCell) {
 			this(helperName, effect, stateAfter, argumentResolved, noInboundArgument,
-				secondTierRelay, restoreCell, List.of(), false);
+				secondTierRelay, restoreCell, null, List.of(), false);
 		}
 
 		/** Whether this call was carried forward as several elements, one per arm. */

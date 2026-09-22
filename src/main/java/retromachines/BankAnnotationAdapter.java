@@ -31,6 +31,7 @@ import ghidra.app.cmd.disassemble.DisassembleCommand;
 import ghidra.app.cmd.function.CreateFunctionCmd;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.program.model.address.Address;
+import ghidra.program.model.address.AddressSetView;
 import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.lang.Register;
 import ghidra.program.model.listing.BookmarkType;
@@ -697,8 +698,16 @@ final class BankAnnotationAdapter {
 		flow.switchResults().forEach((site, result) -> switchFields.put(site,
 			new BankMirrors.MechanismField(result.lsb(), result.effectMask())));
 		discovery.scanWriteThroughShadows(program, switchFields);
-		discovery.scanArgumentCells(program,
-			helperArgumentCallSites(program, flow, helpers));
+		// Route (b) also gets each call's helper BODY (bead grm-yflf), so a load feeding a helper
+		// that stores its argument through into the same cell corroborates that store.
+		Map<Address, HelperModel> argumentCalls = helperArgumentCallSites(program, flow, helpers);
+		Map<Address, Character> argumentRegs = new LinkedHashMap<>();
+		Map<Address, AddressSetView> helperBodies = new LinkedHashMap<>();
+		argumentCalls.forEach((site, helper) -> {
+			argumentRegs.put(site, helper.argReg());
+			helperBodies.put(site, helper.function().getBody());
+		});
+		discovery.scanArgumentCells(program, argumentRegs, helperBodies);
 		// Route (c) LAST and deliberately so: "a copy of something that already mirrors the live
 		// bank" can only be judged once (a) and (b) have established what does.
 		discovery.scanSaveSlotCopies(program);
@@ -845,9 +854,9 @@ final class BankAnnotationAdapter {
 	 * dataflow follows them; a discovery pass that resolved calls its own way would nominate
 	 * cells for call sites the engine does not agree are helper calls.
 	 */
-	private static Map<Address, Character> helperArgumentCallSites(Program program,
+	private static Map<Address, HelperModel> helperArgumentCallSites(Program program,
 			DataflowResult flow, Map<Function, HelperModel> helpers) {
-		Map<Address, Character> sites = new LinkedHashMap<>();
+		Map<Address, HelperModel> sites = new LinkedHashMap<>();
 		if (helpers.isEmpty()) {
 			return sites;
 		}
@@ -859,7 +868,7 @@ final class BankAnnotationAdapter {
 			}
 			HelperModel helper = calledHelper(program, instr, helpers);
 			if (helper != null && helper.argReg() != null) {
-				sites.put(addr, helper.argReg());
+				sites.put(addr, helper);
 			}
 		}
 		return sites;

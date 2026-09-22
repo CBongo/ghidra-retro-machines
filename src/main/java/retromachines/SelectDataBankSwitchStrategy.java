@@ -125,6 +125,11 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 		mirrors = observed == null ? BankMirrors.none() : observed;
 	}
 
+	@Override
+	public BankMirrors observedMirrors() {
+		return mirrors;
+	}
+
 	/** Configures select/data address decoding and field mappings. */
 	@Override
 	public void configure(Program program, JsonObject params, int stateMask) {

@@ -82,8 +82,8 @@ REALROM count refs.intoOverlay.retargeted 52
 REALROM count refs.intoOverlay.intraOverlay 1117
 REALROM count instrs.inOverlay 5310
 REALROM count bankComments 76
-REALROM count warnings 8
-REALROM count notes 34
+REALROM count warnings 6
+REALROM count notes 36
 REALROM count symbols 18
 REALROM sample.bankcomment 802a bank -> mirroring=2,prg_mode=3,prg_bank=14? via FUN_c05d [known: mirroring.0=0,mirroring.1=1,prg_mode.0=1,prg_mode.1=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: prg_bank.0,prg_bank.1,prg_bank.2] [switch-value flow]
 REALROM sample.bankcomment 814c bank -> mirroring=0,prg_mode=3,prg_bank=13? via FUN_c70c [known: prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
@@ -191,10 +191,8 @@ REALROM sample.warn c498 [NesBankingAnalyzer] Bank state becomes unknown here: c
 REALROM sample.warn c537 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c000 whose bank argument could not be recovered at this call site
 REALROM sample.warn c66a [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c000 whose bank argument could not be recovered at this call site
 REALROM sample.warn c78d [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c000 whose bank argument could not be recovered at this call site
-REALROM sample.warn ca12 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c000 whose bank argument could not be recovered at this call site
 REALROM sample.warn cb4a [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c000 whose bank argument could not be recovered at this call site
 REALROM sample.warn cb60 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c000 whose bank argument could not be recovered at this call site
-REALROM sample.warn d0c3 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c000 whose bank argument could not be recovered at this call site
 REALROM sample.note 812b [CopyLoopAnalyzer] copy-shaped loop RAM:81bc -> RAM:0200 (20 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note 817f [CopyLoopAnalyzer] copy-shaped loop W8000_M3_B13:84d9 -> RAM:0366 (8 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note 9109 [CopyLoopAnalyzer] copy-shaped loop RAM:0354 -> RAM:0700 (18 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
@@ -228,7 +226,9 @@ REALROM sample.note c70f [CopyLoopAnalyzer] copy-shaped loop RAM:0008 -> RAM:03b
 REALROM sample.note c728 [CopyLoopAnalyzer] copy-shaped loop RAM:9cd0 -> RAM:03b8 (32 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note c74c [CopyLoopAnalyzer] copy-shaped loop RAM:00fe -> RAM:03b8 (32 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note c790 [CopyLoopAnalyzer] copy-shaped loop RAM:0008 -> RAM:03b8 (32 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note ca12 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call re-commits the bank READ BACK at ca0b from write-through bank shadow 0029 -- a RAM cell the switch code keeps in step with every bank it commits, so the byte read is the last bank committed through it, carried on the stack across the call at ca0e -- the save/restore idiom. The bank after this call is whatever 0029 held at that read, not a fresh value this analyzer failed to pin down. That read sits at the ENTRY of FUN_ca0b (nothing switches between its entry and the read), so it is the shadow as the caller left it: each of its call sites' own bank, which those sites already track -- the call passes it through unchanged. A property of the game, not a gap in analysis.
 REALROM sample.note cb4d [CopyLoopAnalyzer] copy-shaped loop RAM:0008 -> RAM:03b8 (32 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note d0c3 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call re-commits the bank READ BACK at d0c1 from write-through bank shadow 0029 -- a RAM cell the switch code keeps in step with every bank it commits, so the byte read is the last bank committed through it -- the save/restore idiom. The bank after this call is whatever 0029 held at that read, not a fresh value this analyzer failed to pin down. A property of the game, not a gap in analysis.
 REALROM sample.symbol 2000 PPUCTRL IMPORTED primary=true
 REALROM sample.symbol 2001 PPUMASK IMPORTED primary=true
 REALROM sample.symbol 2002 PPUSTATUS IMPORTED primary=true

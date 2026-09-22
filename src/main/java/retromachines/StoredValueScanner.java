@@ -230,7 +230,41 @@ final class StoredValueScanner {
 		default BankState stateAt(Address addr) {
 			return null;
 		}
+
+		/**
+		 * Whether {@code target} MIRRORS THE LIVE BANK -- a {@link BankMirrors.Kind#WRITE_THROUGH}
+		 * shadow or a {@link BankMirrors.Kind#ROM_IDENTIFYING} offset -- as a matter of KIND alone
+		 * (bead grm-yflf). {@code false} (the default) means the hook cannot say.
+		 * <p>
+		 * <b>Deliberately separate from {@link #resolveMirrorLoad}, which is a VALUE channel.</b>
+		 * That hook answers {@code null} for two different reasons the scanner cannot tell apart
+		 * -- "not a mirror" and "a mirror this strategy will not resolve" (a stale write-through
+		 * shadow under {@code MemoryLatchBankSwitchStrategy}'s coherence walk; every
+		 * {@code WRITE_THROUGH} cell under {@code SerialShiftBankSwitchStrategy}'s bit-7 rule) --
+		 * and the second reason is precisely the population this exists for. A walk that ends on
+		 * an UNMODIFIED read-back of a live-bank mirror ({@code LDA $29 / ... / JSR switch}) is
+		 * looking at a RESTORE of the bank live at that read, whatever the strategy could or
+		 * could not say about its value; {@link #resolveStoredValue} reports that as
+		 * {@link BankSwitchStrategy.ValueStop#RESTORED_BANK} with a {@link ReadBack} naming the
+		 * read, instead of the generic {@code ANALYZER_LIMIT} that reads as our failure. Only the
+		 * engine's call-site path answers this today ({@code HelperArgumentRecovery}'s
+		 * {@code OracleHooks}); a strategy's own direct-site hooks keep the default, so direct
+		 * sites -- including grm-p9y's NMI-tail restores -- are classified exactly as before.
+		 */
+		default boolean isLiveBankMirror(Address target) {
+			return false;
+		}
 	}
+
+	/**
+	 * Where a {@link BankSwitchStrategy.ValueStop#RESTORED_BANK} scan read the bank back from
+	 * (bead grm-yflf): the mirror {@code cell}, the load instruction {@code readAt}, and -- when a
+	 * PHA/PLA pairing or stack-relative reload carried the byte over a call between the read and
+	 * the store -- the LAST such call, {@code carriedAcross} ({@code null} for a read that fed the
+	 * store directly). Descriptive: the classification is decided by the read's shape alone, and
+	 * this only lets the annotation say where the bank came from and what it was carried over.
+	 */
+	record ReadBack(Address cell, Address readAt, Address carriedAcross) {}
 
 	private static final int MAX_BACKWARD_SCAN = 16;
 
@@ -330,6 +364,13 @@ final class StoredValueScanner {
 		 * the callee (or a helper among the crossed calls) may have switched banks in between.
 		 */
 		boolean crossedCall;
+
+		/**
+		 * The LAST call the search stepped over, when {@link #crossedCall} -- for the
+		 * {@link ReadBack} a {@code RESTORED_BANK} scan reports, so the annotation can name the
+		 * call the saved byte was carried across. Descriptive only; nothing decides on it.
+		 */
+		Address crossedCallAt;
 	}
 
 	/**
@@ -445,6 +486,10 @@ final class StoredValueScanner {
 		// strategy's tracked state were unknown, which it effectively is. The parameter itself
 		// stays untouched so the withdrawal cannot leak back to a caller.
 		BankState inState = inStateAtStore;
+		// The last call a PHA/PLA pairing or stack-relative reload carried the tracked byte
+		// across (bead grm-yflf) -- reported in a RESTORED_BANK stop's ReadBack, decided on by
+		// nothing. Null until a resume crosses one.
+		Address carriedAcross = null;
 
 		int aAcc = 0xFF;
 		int oAcc = 0x00;
@@ -564,9 +609,23 @@ final class StoredValueScanner {
 				// forwarding -- see Hooks.resolveMirrorLoad for the cv2 case that ordering exists
 				// for. A non-null answer is authoritative even when wholly unknown.
 				BankState mirrored = hooks.resolveMirrorLoad(prev, target, inState);
-				if (mirrored != null) {
-					return stopped(aAcc, oAcc, mask, mirrored,
-						BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
+				// A plain, UNMODIFIED read-back of a live-bank mirror is a RESTORE of the bank
+				// live at that read, not an argument we failed to pin down (bead grm-yflf):
+				// megaman2's `LDA $29 / PHA / JSR c96b / PLA / JSR c000` re-commits whatever the
+				// write-through shadow held before the inner call. Classified on the read's
+				// SHAPE -- fixed non-indexed address, identity accumulators (the stored byte IS
+				// the read byte) -- independently of whether the strategy would resolve its
+				// value: a mirror the hook answers null for (stale, or a kind it refuses) is
+				// still a mirror, and Hooks.isLiveBankMirror is the kind query that says so.
+				// The value stays whatever the hook said (unknown when it declined), so the
+				// deposit is unchanged; only the reason and the ReadBack differ.
+				boolean readBack = aAcc == 0xFF && oAcc == 0x00 &&
+					plainAbsoluteTarget(prev) != null && hooks.isLiveBankMirror(target);
+				if (mirrored != null || readBack) {
+					return stopped(aAcc, oAcc, mask, mirrored != null ? mirrored : BankState.unknown(),
+						readBack ? BankSwitchStrategy.ValueStop.RESTORED_BANK
+								: BankSwitchStrategy.ValueStop.ANALYZER_LIMIT,
+						readBack ? new ReadBack(target, prev.getMinAddress(), carriedAcross) : null);
 				}
 				// A load from a VOLATILE block -- memory-mapped I/O -- IS genuinely runtime and can
 				// never be pinned statically: PPU status, controller input, APU state. isVolatile()
@@ -614,6 +673,9 @@ final class StoredValueScanner {
 					BankState resumed = resumeStateAfterPairing(reload, pha, hooks, inState);
 					if (pha != null && resumed != null) {
 						inState = resumed;
+						if (reload.crossedCall) {
+							carriedAcross = reload.crossedCallAt;
+						}
 						cur = pha;
 						continue;
 					}
@@ -641,6 +703,9 @@ final class StoredValueScanner {
 					return stopped(aAcc, oAcc, mask, BankState.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 				}
 				inState = resumed;
+				if (pairing.crossedCall) {
+					carriedAcross = pairing.crossedCallAt;
+				}
 				cur = pha;
 				continue;
 			}
@@ -815,6 +880,7 @@ final class StoredValueScanner {
 				// incidental. What a crossed call does disturb is the in-state the resumed walk
 				// may consult, and that consequence is the caller's (resumeStateAfterPairing).
 				span.crossedCall = true;
+				span.crossedCallAt = prev.getMinAddress();
 			}
 			else if (prev.getFlows().length > 0) {
 				break; // not straight-line -- see this method's javadoc
@@ -1128,7 +1194,13 @@ final class StoredValueScanner {
 	 * A scan's answer plus, when it did not resolve, WHY (bead {@code grm-3ou} part 1).
 	 * {@code stop} is only meaningful when {@code value.knownMask() == 0}.
 	 */
-	record Scan(BankState value, BankSwitchStrategy.ValueStop stop) {}
+	record Scan(BankState value, BankSwitchStrategy.ValueStop stop, ReadBack readBack) {
+
+		/** The pre-grm-yflf form: no read-back. */
+		Scan(BankState value, BankSwitchStrategy.ValueStop stop) {
+			this(value, stop, null);
+		}
+	}
 
 	/**
 	 * Whether {@code target} names MEMORY-MAPPED I/O -- a read whose value is produced by
@@ -1153,9 +1225,19 @@ final class StoredValueScanner {
 	 */
 	private static Scan stopped(int aAcc, int oAcc, int mask, BankState base,
 			BankSwitchStrategy.ValueStop reason) {
+		return stopped(aAcc, oAcc, mask, base, reason, null);
+	}
+
+	/**
+	 * {@link #stopped(int, int, int, BankState, BankSwitchStrategy.ValueStop)} with the
+	 * {@link ReadBack} a {@code RESTORED_BANK} stop names. Discarded with the reason when the
+	 * combined value knows something: a read-back that resolved is just a resolved value.
+	 */
+	private static Scan stopped(int aAcc, int oAcc, int mask, BankState base,
+			BankSwitchStrategy.ValueStop reason, ReadBack readBack) {
 		BankState value = combine(aAcc, oAcc, mask, base);
-		return new Scan(value, value.knownMask() != 0
-				? BankSwitchStrategy.ValueStop.RESOLVED : reason);
+		return value.knownMask() != 0 ? new Scan(value, BankSwitchStrategy.ValueStop.RESOLVED)
+				: new Scan(value, reason, readBack);
 	}
 
 	// ------------------------------------------------------------------

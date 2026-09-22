@@ -464,6 +464,9 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// violation scan below dedupes against this set rather than stacking a second
 		// bookmark on a site the existing switch/call-switch warning already covers.
 		Set<Address> alreadyWarned = new LinkedHashSet<>();
+		// The loader's interrupt entries (bead grm-913), for the caller-side restore note's
+		// "unchanged from handler entry" clause -- the same list the engine seeds unknown.
+		Set<Address> asyncEntries = DescriptorSupport.parseAsyncEntryPoints(program);
 		for (Map.Entry<Address, BankState> entry : flow.stateIn().entrySet()) {
 			monitor.checkCancelled();
 			Address addr = entry.getKey();
@@ -618,6 +621,18 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 						"analyzer failed to pin down -- a property of the game, not a gap in " +
 						"analysis.";
 				}
+				else if (callSwitch.readBack() != null && !callSwitch.argumentResolved()) {
+					// bead grm-yflf, the caller-side half: the CALLER read the bank back from a
+					// live-bank mirror and handed it, unmodified, to the switch helper --
+					// megaman2's `LDA $29 / PHA / JSR c96b / PLA / JSR c000` and the bare
+					// `LDA $29 / JSR c000` in its NMI tail. What is committed is the bank live AT
+					// THAT READ, a relational fact the annotation states; the two clauses below
+					// say what more the listing proves about it (an entry-bank read, an interrupt
+					// entry), and nothing is claimed beyond what those checks establish.
+					callStop = BankSwitchStrategy.ValueStop.RESTORED_BANK;
+					honestDetail = callerRestoreDetail(program, listing, flow, addr, callSwitch,
+						mirrors, asyncEntries);
+				}
 				else {
 					callStop = BankSwitchStrategy.ValueStop.ANALYZER_LIMIT;
 				}
@@ -717,6 +732,105 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		}
 		return true;
 	}
+
+	/**
+	 * The honest-NOTE text for a CALLER-SIDE restore (bead grm-yflf): the call's argument scan
+	 * ended on a plain read-back of a live-bank mirror, so the helper commits the bank that was
+	 * live at that read. Every clause beyond the read itself is conditional on a check made
+	 * here, on the listing and the dataflow result -- never on the shape alone:
+	 * <ul>
+	 * <li>{@code carriedAcross}: the pairing walk stepped over a call between the read and the
+	 * switch, so this is the save/restore idiom around that call;</li>
+	 * <li>the read is the ENTRY bank of its function -- straight-line from the function's entry
+	 * with no recognized switch site, helper call, or other call on the way ({@link
+	 * #readsEntryBank}) -- so each call site of that function already tracks the value (a call to
+	 * a non-helper passes the state through unchanged), which is where the number lives;</li>
+	 * <li>that function is an INTERRUPT entry, so its entry bank is the interrupted code's
+	 * (arbitrary mainline context, bead grm-913) and no number exists on any path.</li>
+	 * </ul>
+	 * The cell's mirror kind is named from {@code mirrors} so the reader can see WHY the read is
+	 * a bank: a write-through shadow the switch helper itself maintains, or a bank-identifying
+	 * ROM byte.
+	 */
+	private static String callerRestoreDetail(Program program, Listing listing,
+			DataflowResult flow, Address callAddr, CallSwitch callSwitch, BankMirrors mirrors,
+			Set<Address> asyncEntries) {
+		StoredValueScanner.ReadBack readBack = callSwitch.readBack();
+		Address cell = readBack.cell();
+		// What the read-back byte IS depends on the mirror's kind, and the wording must not
+		// promote a shadow to the live bank: a write-through shadow holds the last bank
+		// committed THROUGH the code that maintains it, which is the live bank only while no
+		// switch has bypassed it since (grm-p9y's NMI-tail restores are exactly the case where
+		// one has -- and the restore is correct BECAUSE the shadow is stale). A bank-identifying
+		// ROM byte cannot go stale: its value is the bank it is read from.
+		boolean shadow = mirrors.is(cell, BankMirrors.Kind.WRITE_THROUGH);
+		String source = shadow
+				? "write-through bank shadow " + cell + " -- a RAM cell the switch code keeps " +
+					"in step with every bank it commits, so the byte read is the last bank " +
+					"committed through it"
+				: "bank-identifying ROM byte " + cell + " -- a byte whose value is the bank it " +
+					"is read from, so the byte read is the bank live at the read";
+		StringBuilder text = new StringBuilder();
+		text.append("Bank value is RESTORED here, not resolved: this call re-commits the bank " +
+			"READ BACK at ").append(readBack.readAt()).append(" from ").append(source);
+		if (readBack.carriedAcross() != null) {
+			text.append(", carried on the stack across the call at ")
+					.append(readBack.carriedAcross());
+		}
+		text.append(" -- the save/restore idiom. The bank after this call is whatever ")
+				.append(cell).append(" held at that read, not a fresh value this analyzer " +
+					"failed to pin down.");
+		Function function = program.getFunctionManager().getFunctionContaining(callAddr);
+		if (function != null && readsEntryBank(program, listing, flow, function, readBack.readAt())) {
+			text.append(" That read sits at the ENTRY of ").append(function.getName())
+					.append(" (nothing switches between its entry and the read), so it is the ")
+					.append(shadow ? "shadow as the caller left it" : "bank live on entry");
+			if (asyncEntries.contains(function.getEntryPoint())) {
+				text.append(" -- and that entry is an INTERRUPT entry, whose bank is the " +
+					"interrupted code's: arbitrary mainline context, no number on any path. " +
+					"The bank is unchanged from handler entry.");
+			}
+			else {
+				text.append(": each of its call sites' own bank, which those sites already " +
+					"track -- the call passes it through unchanged.");
+			}
+		}
+		text.append(" A property of the game, not a gap in analysis.");
+		return text.toString();
+	}
+
+	/**
+	 * Whether {@code readAt} reads the bank live on ENTRY to {@code function}: it is reached from
+	 * the function's entry by a straight fall-through line with no recognized switch site, no
+	 * helper call, and no other call on the way. Any branch, join, jump or call on the line
+	 * declines -- the claim points the unsafe way if some path could switch before the read --
+	 * so this is the same discipline {@code SaveRestoreTrampolines.restoresEntryBank} walks
+	 * under, forward from the entry instead of backward from the switch.
+	 */
+	private static boolean readsEntryBank(Program program, Listing listing, DataflowResult flow,
+			Function function, Address readAt) {
+		Address cursor = function.getEntryPoint();
+		for (int i = 0; i < ENTRY_BANK_READ_SCAN; i++) {
+			if (cursor.equals(readAt)) {
+				return true;
+			}
+			Instruction instr = listing.getInstructionAt(cursor);
+			if (instr == null || instr.getFlowType().isCall() || instr.getFlows().length > 0 ||
+				flow.switchResults().containsKey(cursor) || flow.callSwitches().containsKey(cursor)) {
+				return false;
+			}
+			Address next = instr.getFallThrough();
+			Instruction nextInstr = next == null ? null : listing.getInstructionAt(next);
+			if (nextInstr == null || StoredValueScanner.isControlFlowJoin(program, nextInstr, instr)) {
+				return false;
+			}
+			cursor = next;
+		}
+		return false;
+	}
+
+	/** How far {@link #readsEntryBank} walks from a function's entry before declining. */
+	private static final int ENTRY_BANK_READ_SCAN = 16;
 
 	/**
 	 * The WARNING text for a {@link BankSwitchStrategy.ValueStop#MULTI_VALUED_AT_MERGE} site

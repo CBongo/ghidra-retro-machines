@@ -26,6 +26,7 @@ import java.util.Map;
 import java.util.Set;
 
 import ghidra.program.model.address.Address;
+import ghidra.program.model.address.AddressSetView;
 import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
@@ -971,11 +972,42 @@ public final class BankMirrors {
 		 * These are typed {@link Kind#INPUT}: the cell holds the bank the caller is ASKING for,
 		 * which becomes the live bank only once the wrapper runs. That is why the kind is
 		 * carried rather than merged into {@link Kind#WRITE_THROUGH}.
+		 * <p>
+		 * <b>The same load is also route (a)'s missing corroboration when the called helper
+		 * itself stores its argument into that cell</b> (bead grm-yflf, the {@code helperBodies}
+		 * form). Route (a)'s second rule -- one {@code ST<r> S} on the path into a mechanism
+		 * write, corroborated by a {@code LD<r> S} feeding one -- is two-sided evidence that S
+		 * carries the committed bank: written from the value going in, read back as the value
+		 * going in. Mega Man 2 has exactly that pair with one call boundary in the middle:
+		 * {@code FUN_c000}'s first instruction is {@code STA $29} (route (a) records the store,
+		 * paired with the chain's first write) and its NMI tail is {@code LDA $29 / JSR $C000}
+		 * (this route records the load) -- the read-back feeds the mechanism THROUGH the helper
+		 * rather than directly. So an argument load of a cell that one of the called helper's own
+		 * write-through stores lives in is recorded as a {@code writeThroughLoad} too, and
+		 * {@link #build}'s ordinary rule 2 then types {@code $29} {@link Kind#WRITE_THROUGH}.
+		 * Nothing else about the rule changes: the {@code savedFromReadBack} guard still
+		 * demotes a cell filled from a bank READ-BACK to {@link Kind#SAVE_SLOT}, and the store
+		 * itself was found by route (a)'s walk from a real mechanism write, never inferred here.
+		 * Without {@code helperBodies} (the two-argument form, kept for the derivation tests)
+		 * this route records argument loads alone, exactly as before.
 		 *
 		 * @param helperCallSites call address to the argument register that call's helper takes
 		 *                        its bank in, from {@code BoardBankAnalyzer}'s helper models
 		 */
 		void scanArgumentCells(Program program, Map<Address, Character> helperCallSites) {
+			scanArgumentCells(program, helperCallSites, Map.of());
+		}
+
+		/**
+		 * {@link #scanArgumentCells(Program, Map)} with, per call site, the BODY of the helper it
+		 * calls -- the production form (bead grm-yflf). See the two-argument form's javadoc for
+		 * what the body enables.
+		 *
+		 * @param helperBodies call address to the called helper function's body; a call absent
+		 *                     here contributes an argument load only
+		 */
+		void scanArgumentCells(Program program, Map<Address, Character> helperCallSites,
+				Map<Address, AddressSetView> helperBodies) {
 			Listing listing = program.getListing();
 			for (Map.Entry<Address, Character> entry : helperCallSites.entrySet()) {
 				Instruction call = listing.getInstructionAt(entry.getKey());
@@ -983,6 +1015,7 @@ public final class BankMirrors {
 					continue;
 				}
 				char reg = entry.getValue();
+				AddressSetView helperBody = helperBodies.get(entry.getKey());
 				String loadMnem = "LD" + reg;
 
 				Instruction cur = call;
@@ -998,8 +1031,15 @@ public final class BankMirrors {
 						if (!StoredValueScanner.isImmediate(prev)) {
 							Long offset = writableCellOffset(program, prev);
 							if (offset != null) {
-								cells.computeIfAbsent(offset, k -> new Cell())
-										.argumentLoads.add(prev.getMinAddress());
+								Cell cell = cells.computeIfAbsent(offset, k -> new Cell());
+								cell.argumentLoads.add(prev.getMinAddress());
+								if (helperBody != null && cell.writeThroughStores.stream()
+										.anyMatch(helperBody::contains)) {
+									// The called helper writes this very cell through from its
+									// argument, and this load feeds that argument: the two-sided
+									// evidence of route (a)'s rule 2, across the call.
+									cell.writeThroughLoads.add(prev.getMinAddress());
+								}
 							}
 						}
 						break; // the argument's source, whatever it was

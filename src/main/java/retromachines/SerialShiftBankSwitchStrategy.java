@@ -196,6 +196,11 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 		mirrors = observed == null ? BankMirrors.none() : observed;
 	}
 
+	@Override
+	public BankMirrors observedMirrors() {
+		return mirrors;
+	}
+
 	/** Configures serial-shift range, targets, and reset deposits. */
 	@Override
 	public void configure(Program program, JsonObject params, int stateMask) {
