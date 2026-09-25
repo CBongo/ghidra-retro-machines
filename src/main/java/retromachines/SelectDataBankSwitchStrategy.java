@@ -198,6 +198,18 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 				BankState inStateAtStore) {
 			return mirroredByte(resolvedTarget, inStateAtStore);
 		}
+
+		/**
+		 * Answered from {@link #mirrors} by the same kind test
+		 * {@code HelperArgumentRecovery.OracleHooks} uses (bead grm-rd6h): a DIRECT-site
+		 * read-back of a write-through shadow or ROM-identifying offset is a live-bank mirror
+		 * whether or not {@link #mirroredByte} would resolve its VALUE -- see
+		 * {@code StoredValueScanner.Hooks#isLiveBankMirror}'s javadoc.
+		 */
+		@Override
+		public boolean isLiveBankMirror(Address target) {
+			return mirrors.isLiveBankMirror(target);
+		}
 	};
 
 	/**

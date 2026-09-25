@@ -281,8 +281,7 @@ final class HelperArgumentRecovery {
 		 */
 		@Override
 		public boolean isLiveBankMirror(Address target) {
-			return target != null && (mirrors.is(target, BankMirrors.Kind.WRITE_THROUGH) ||
-				mirrors.is(target, BankMirrors.Kind.ROM_IDENTIFYING));
+			return mirrors.isLiveBankMirror(target);
 		}
 	}
 

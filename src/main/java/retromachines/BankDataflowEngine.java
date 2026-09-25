@@ -419,7 +419,12 @@ final class BankDataflowEngine {
 								? BankSwitchStrategy.ValueStop.MULTI_VALUED_AT_MERGE
 								: classifyGap(program, instr, inState, matchedMechanism,
 									switchedLocal, helpers);
-						site.add(positionedEffect, stop);
+						// grm-rd6h: classifyGap only ever reclassifies an ANALYZER_LIMIT (see its
+						// javadoc), so a RESTORED_BANK stop and its ReadBack always survive intact
+						// -- the guard below is defensive, not load-bearing.
+						site.add(positionedEffect, stop,
+							stop == BankSwitchStrategy.ValueStop.RESTORED_BANK
+									? switchedLocal.readBack() : null);
 						if (deniedValues != null) {
 							site.arms(deniedValues.stream()
 									.map(v -> position(v, lsb, effectMask))
@@ -1060,6 +1065,10 @@ final class BankDataflowEngine {
 		private ConfiguredMechanism mechanism;
 		private BankState effect;
 		private BankSwitchStrategy.ValueStop stop;
+		// The RESTORED_BANK detail (bead grm-rd6h), carried alongside stop by the same rule --
+		// set only when the winning element's stop is RESTORED_BANK, cleared whenever a later
+		// element overwrites stop with something else (RESOLVED, MULTI_VALUED_AT_MERGE, ...).
+		private StoredValueScanner.ReadBack readBack;
 		private List<BankState> arms = List.of();
 		private boolean armsDenied;
 
@@ -1072,12 +1081,18 @@ final class BankDataflowEngine {
 		}
 
 		void add(BankState positioned, BankSwitchStrategy.ValueStop s) {
+			add(positioned, s, null);
+		}
+
+		void add(BankState positioned, BankSwitchStrategy.ValueStop s,
+				StoredValueScanner.ReadBack read) {
 			effect = effect == null ? positioned : BankState.merge(effect, positioned);
 			// RESOLVED (any element knowing anything) beats a denial beats the first reason.
 			if (stop == null || s == BankSwitchStrategy.ValueStop.RESOLVED ||
 				(s == BankSwitchStrategy.ValueStop.MULTI_VALUED_AT_MERGE &&
 					stop != BankSwitchStrategy.ValueStop.RESOLVED)) {
 				stop = s;
+				readBack = s == BankSwitchStrategy.ValueStop.RESTORED_BANK ? read : null;
 			}
 		}
 
@@ -1088,7 +1103,7 @@ final class BankDataflowEngine {
 
 		SwitchResult result() {
 			return new SwitchResult(effect, mechanism.effectMask(), mechanism.lsb(),
-				mechanism.strategy(), stop, arms, armsDenied);
+				mechanism.strategy(), stop, readBack, arms, armsDenied);
 		}
 	}
 
@@ -1371,8 +1386,14 @@ final class BankDataflowEngine {
 	 * warning names.
 	 */
 	record SwitchResult(BankState effect, int effectMask, int lsb,
-			BankSwitchStrategy strategy, BankSwitchStrategy.ValueStop stop, List<BankState> arms,
-			boolean armsDenied) {
+			BankSwitchStrategy strategy, BankSwitchStrategy.ValueStop stop,
+			StoredValueScanner.ReadBack readBack, List<BankState> arms, boolean armsDenied) {
+
+		/** The pre-grm-rd6h form: no read-back. */
+		SwitchResult(BankState effect, int effectMask, int lsb, BankSwitchStrategy strategy,
+				BankSwitchStrategy.ValueStop stop, List<BankState> arms, boolean armsDenied) {
+			this(effect, effectMask, lsb, strategy, stop, null, arms, armsDenied);
+		}
 
 		/** The pre-grm-wul form: no arms. */
 		SwitchResult(BankState effect, int effectMask, int lsb, BankSwitchStrategy strategy,

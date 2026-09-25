@@ -19,6 +19,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.util.Map;
@@ -829,6 +830,74 @@ public class BankMirrorConsumptionProgramTest extends AbstractBundledLanguageTes
 		assertEquals("an unpaired switch between the shadow write and the load must decline the "
 			+ "whole answer -- this is the megaman defect grm-p9y exists to fix", 0x00,
 			result.knownMask());
+	}
+
+	/**
+	 * {@code grm-rd6h}: the SAME megaman-shaped STALE fixture above, but read through
+	 * {@code computeSwitchOutcome} rather than {@code computeSwitch}, to pin the CLASSIFICATION a
+	 * stale shadow read-back gets at a DIRECT site -- not just the (already-correct, grm-p9y)
+	 * withdrawn value. Before grm-rd6h, {@code MemoryLatchBankSwitchStrategy.hooks} kept
+	 * {@code StoredValueScanner.Hooks#isLiveBankMirror}'s interface default {@code false}, so this
+	 * site's stop reason was the generic {@code ANALYZER_LIMIT} -- a WARNING reading "argument
+	 * could not be recovered", false for a site that plainly read a mirror back and found it
+	 * stale. {@code hooks.isLiveBankMirror} now answers from {@link BankMirrors#isLiveBankMirror}
+	 * the same way the call-site path's {@code OracleHooks} always has, so the stop reclassifies to
+	 * {@link BankSwitchStrategy.ValueStop#RESTORED_BANK} with a {@link StoredValueScanner.ReadBack}
+	 * naming the cell ({@code $42}) and the read ({@code $8003}) -- exactly megaman's real {@code
+	 * d571} shape, reduced to its Discovery-irrelevant bytes.
+	 */
+	@Test
+	public void staleShadowReadBackAtADirectSiteIsClassifiedRestoredBankNotAnalyzerLimit()
+			throws Exception {
+		MemoryLatchBankSwitchStrategy latch = discreteLatch();
+		latch.observeMirrors(mirrorsOf(0x42, BankMirrors.Kind.WRITE_THROUGH));
+
+		builder.setBytes("0x8000", "8d 04 c0", true); // STA $C004 -- switch to bank 4, does NOT
+														// touch $42 (megaman's NMI shape)
+		builder.setBytes("0x8003", "a5 42", true); // LDA $42 -- still holds the interrupted bank
+		builder.setBytes("0x8005", "8d 00 c0", true); // STA $C000 -- the restore under test
+
+		BankSwitchStrategy.SwitchOutcome outcome = latch.computeSwitchOutcome(program,
+			instructionAt("0x8005"), BankState.fullyKnown(0x0F, 4));
+
+		assertNotNull(outcome);
+		assertEquals("the value stays withdrawn -- grm-p9y is unaffected by this bead", 0x00,
+			outcome.value().knownMask());
+		assertEquals("a stale mirror read-back is an honest restore, not our limitation",
+			BankSwitchStrategy.ValueStop.RESTORED_BANK, outcome.stop());
+		StoredValueScanner.ReadBack readBack = outcome.readBack();
+		assertNotNull("the per-site detail depends on this being populated", readBack);
+		assertEquals(builder.addr("0x42"), readBack.cell());
+		assertEquals(builder.addr("0x8003"), readBack.readAt());
+		assertNull("nothing was crossed to reach this load", readBack.carriedAcross());
+	}
+
+	/**
+	 * {@code grm-rd6h}'s inertness requirement: the SAME stale-shadow site above must NOT start
+	 * reporting {@code effectDependsOnPriorState() == true} now that it classifies
+	 * {@code RESTORED_BANK}. {@code MemoryLatchBankSwitchStrategy.MirrorProbe} only ever sets
+	 * {@code consultedMirror} from {@code resolveMirrorLoad}'s answer (a VALUE channel), never
+	 * from {@code isLiveBankMirror} (the KIND channel this bead adds to the direct-site {@code
+	 * hooks}), and the probe does not override {@code isLiveBankMirror} at all -- so it keeps the
+	 * interface's {@code false} default regardless of what the real {@code hooks} answers. A
+	 * stale shadow's {@code mirroredByte} still declines with {@code null} here, so the probe must
+	 * still see no consultation: the classification is a stop REASON, not a bank-known-on-entry
+	 * requirement, exactly as grm-rd6h's description demands.
+	 */
+	@Test
+	public void staleShadowReadBackDoesNotMakeTheProbeReportPriorStateDependence()
+			throws Exception {
+		MemoryLatchBankSwitchStrategy latch = discreteLatch();
+		latch.observeMirrors(mirrorsOf(0x42, BankMirrors.Kind.WRITE_THROUGH));
+
+		builder.setBytes("0x8000", "8d 04 c0", true); // STA $C004 -- unpaired switch
+		builder.setBytes("0x8003", "a5 42", true); // LDA $42
+		builder.setBytes("0x8005", "8d 00 c0", true); // STA $C000 -- the restore under test
+
+		assertFalse("a DECLINED (stale) mirror was never consulted, whatever the kind query now "
+			+ "says about the same cell",
+			latch.effectDependsOnPriorState(program, instructionAt("0x8005"),
+				BankState.fullyKnown(0x0F, 4)));
 	}
 
 	/**

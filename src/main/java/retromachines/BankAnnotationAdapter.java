@@ -34,6 +34,8 @@ import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSetView;
 import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.lang.Register;
+import ghidra.program.model.listing.Bookmark;
+import ghidra.program.model.listing.BookmarkManager;
 import ghidra.program.model.listing.BookmarkType;
 import ghidra.program.model.listing.CommentType;
 import ghidra.program.model.listing.Function;
@@ -229,13 +231,12 @@ final class BankAnnotationAdapter {
 		if (state.knownMask() != 0 && warnDespiteKnowledge) {
 			Impossible impossible = impossibleBank(board, state, bankUniverse);
 			if (impossible != null) {
-				program.getBookmarkManager().setBookmark(addr, BookmarkType.WARNING,
-					analyzer.getBookmarkCategory(), impossible.message());
+				setBookmarkClearingOther(analyzer, program, addr, BookmarkType.WARNING,
+					impossible.message());
 				annotateGap(listing, addr, IMPOSSIBLE_GAP, viaHelper, provenance);
 				return Marked.WARNED;
 			}
-			program.getBookmarkManager()
-					.setBookmark(addr, BookmarkType.WARNING, analyzer.getBookmarkCategory(), warning);
+			setBookmarkClearingOther(analyzer, program, addr, BookmarkType.WARNING, warning);
 			// The one bookmarked exit that writes a bank comment, not a gap comment: the state
 			// DOES know something, and that comment is where the reader learns it. The WARNING
 			// carries the unrecovered-argument half on its own (see the javadoc).
@@ -245,25 +246,56 @@ final class BankAnnotationAdapter {
 		if (state.knownMask() == 0) {
 			String honest = honestDetail != null ? honestDetail : honestGapMessage(stop);
 			if (honest != null) {
-				program.getBookmarkManager().setBookmark(addr, BookmarkType.NOTE,
-					analyzer.getBookmarkCategory(), honest);
+				setBookmarkClearingOther(analyzer, program, addr, BookmarkType.NOTE, honest);
 				annotateGap(listing, addr, "NOTE: " + gapKind(stop), viaHelper, provenance);
 				return Marked.NOTED;
 			}
-			program.getBookmarkManager()
-					.setBookmark(addr, BookmarkType.WARNING, analyzer.getBookmarkCategory(), warning);
+			setBookmarkClearingOther(analyzer, program, addr, BookmarkType.WARNING, warning);
 			annotateGap(listing, addr, "WARNING: " + gapKind(stop), viaHelper, provenance);
 			return Marked.WARNED;
 		}
 		Impossible impossible = impossibleBank(board, state, bankUniverse);
 		if (impossible != null) {
-			program.getBookmarkManager().setBookmark(addr, BookmarkType.WARNING,
-				analyzer.getBookmarkCategory(), impossible.message());
+			setBookmarkClearingOther(analyzer, program, addr, BookmarkType.WARNING,
+				impossible.message());
 			annotateGap(listing, addr, IMPOSSIBLE_GAP, viaHelper, provenance);
 			return Marked.WARNED;
 		}
 		annotateBankSwitch(listing, addr, state, board, bankUniverse, viaHelper, provenance);
 		return Marked.ANNOTATED;
+	}
+
+	/**
+	 * Sets this analyzer's bookmark at {@code addr}, first removing a bookmark of the OTHER type
+	 * (WARNING vs. NOTE) this method's own category may have left there on an EARLIER, less
+	 * informed round (bead grm-rd6h).
+	 * <p>
+	 * <b>Why this is needed now, though {@code setBookmark} has always been called this way.</b>
+	 * A site's classification can flip between two settled rounds of the SAME headless run: bank
+	 * mirrors (grm-mej.2) are derived from pass 1's switch sites and only handed to strategies
+	 * before pass 2, so a round that reaches a mirror-dependent site (a call-site restore,
+	 * grm-yflf; or, as of grm-rd6h, a DIRECT-site one) before the mirror it depends on is itself
+	 * disassembled and recognized answers ANALYZER_LIMIT and bookmarks a WARNING; a LATER round,
+	 * once the mirror is known, answers RESTORED_BANK and bookmarks a NOTE. {@code setBookmark}
+	 * only ever replaces a bookmark of the SAME type at the SAME address+category -- Ghidra keeps
+	 * both when the type differs -- so without this, the stale WARNING survives forever alongside
+	 * the new NOTE: {@code tools/banktest/RealRomDump.java} counts live bookmarks by type, so this
+	 * showed up as a warnings count that would not go down and a notes count inflated by exactly
+	 * the sites that flipped (measured on megaman's {@code d571} and ironsword's {@code 040a}
+	 * real-ROM rows). {@link BankCommentProvenance}'s sweep already retracts a stale EOL COMMENT
+	 * the same way across rounds; this is the bookmark-side counterpart, scoped to this one
+	 * analyzer's own category so it cannot touch another analyzer's (or
+	 * {@code manageNoMechanismWriteDiagnostic}'s differently-categorized) bookmarks.
+	 */
+	private static void setBookmarkClearingOther(BoardBankAnalyzer analyzer, Program program,
+			Address addr, String type, String message) {
+		BookmarkManager bm = program.getBookmarkManager();
+		String other = type.equals(BookmarkType.WARNING) ? BookmarkType.NOTE : BookmarkType.WARNING;
+		Bookmark stale = bm.getBookmark(addr, other, analyzer.getBookmarkCategory());
+		if (stale != null) {
+			bm.removeBookmark(stale);
+		}
+		bm.setBookmark(addr, type, analyzer.getBookmarkCategory(), message);
 	}
 
 	/**

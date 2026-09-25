@@ -20,15 +20,15 @@ COMMENT c03a bank ? via FUN_c140 [WARNING: analyzer limit]
 COMMENT c102 bank ? [WARNING: analyzer limit]
 COMMENT c107 bank ? [WARNING: analyzer limit]
 COMMENT c10c bank -> 1 (bank=1)
-COMMENT c122 bank ? [WARNING: analyzer limit]
+COMMENT c122 bank ? [NOTE: restored bank]
 COMMENT c135 bank -> 1 (bank=1)
 COMMENT c142 bank ? [WARNING: analyzer limit]
 COMMENT c145 bank -> 1 (bank=1) via FUN_c130
+BOOKMARK Note c122
 BOOKMARK Warning c034
 BOOKMARK Warning c03a
 BOOKMARK Warning c102
 BOOKMARK Warning c107
-BOOKMARK Warning c122
 BOOKMARK Warning c130
 BOOKMARK Warning c142
 BOOKMARK Warning c145

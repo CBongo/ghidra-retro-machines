@@ -25,20 +25,20 @@ REALROM count refs.intoOverlay.retargeted 0
 REALROM count refs.intoOverlay.intraOverlay 0
 REALROM count instrs.inOverlay 0
 REALROM count bankComments 4
-REALROM count warnings 6
-REALROM count notes 4
+REALROM count warnings 5
+REALROM count notes 5
 REALROM count symbols 18
 REALROM sample.bankcomment d567 bank -> 0 (bank=0) via FUN_d677
 REALROM sample.bankcomment d684 bank -> 0 (bank=0)
 REALROM sample.bankcomment ff94 bank -> 0 (bank=0)
 REALROM sample.bankcomment ffe0 bank -> 0 (bank=0)
 REALROM sample.warn 0402 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
-REALROM sample.warn 040a [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn 80cd [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_8b8b whose bank argument could not be recovered at this call site
 REALROM sample.warn 8bea [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn ffcd [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn ffd6 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.note 03fc [CopyLoopAnalyzer] run-from-elsewhere copy of RAM:c6e5; initialized in place as COPY_03fc
+REALROM sample.note 040a [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this write re-commits the bank READ BACK at 0408 from write-through bank shadow 00c5 -- a RAM cell the switch code keeps in step with every bank it commits, so the byte read is the last bank committed through it -- the save/restore idiom. The bank after this write is whatever 00c5 held at that read, not a fresh value this analyzer failed to pin down. A property of the game, not a gap in analysis.
 REALROM sample.note 808b [CopyLoopAnalyzer] copy-shaped loop RAM:8049 -> RAM:06fa (6 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note 8096 [CopyLoopAnalyzer] copy-shaped loop RAM:f247 -> RAM:0100 (35 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note c6d9 [CopyLoopAnalyzer] copy loop (no jump into the copy; its bytes decode as a subroutine) -> COPY_03fc: 19 bytes RAM:c6e5 -> RAM:03fc; disassembled as code

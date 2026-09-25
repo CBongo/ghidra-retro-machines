@@ -478,6 +478,17 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 
 			SwitchResult switchResult = flow.switchResults().get(addr);
 			if (switchResult != null) {
+				// bead grm-rd6h: a DIRECT-site read-back of a live-bank mirror -- megaman's d571,
+				// wizwarr's ffa6 -- is now classified RESTORED_BANK by the strategies' own
+				// direct-site hooks (grm-yflf's classification, widened past the call-site path
+				// it originally shipped on). The per-site detail names the mirror cell and the
+				// read address, exactly as callerRestoreDetail already does for the call-site
+				// twin of this same shape; honestGapMessage's generic RESTORED_BANK text (written
+				// for a call-site restore) would otherwise render here instead.
+				String honestDetail = switchResult.readBack() != null
+						? directRestoreDetail(program, listing, flow, addr, switchResult.readBack(),
+							mirrors, asyncEntries)
+						: null;
 				// grm-wul: a site path forking carried forward as several states is RESOLVED, to
 				// several values -- render every arm; its merged effect is unknown and must not
 				// be read as a failed recovery. A site whose arms resolved but were DENIED by the
@@ -494,7 +505,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 										"pin down even one tracked bank bit -- e.g. a load of an " +
 										"unrelated address followed directly by the store, with no " +
 										"AND/ORA immediate to constrain it)",
-							switchResult.stop(), provenance);
+							switchResult.stop(), provenance, false, honestDetail);
 				if (marked == BankAnnotationAdapter.Marked.WARNED) {
 					warnings++;
 				}
@@ -755,7 +766,52 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	private static String callerRestoreDetail(Program program, Listing listing,
 			DataflowResult flow, Address callAddr, CallSwitch callSwitch, BankMirrors mirrors,
 			Set<Address> asyncEntries) {
-		StoredValueScanner.ReadBack readBack = callSwitch.readBack();
+		return restoreDetail(program, listing, flow, callAddr, callSwitch.readBack(), mirrors,
+			asyncEntries, "call");
+	}
+
+	/**
+	 * The honest-NOTE text for a DIRECT-SITE restore (bead grm-rd6h): a mechanism write whose own
+	 * argument scan ended on a plain read-back of a live-bank mirror -- megaman's {@code d571 LDA
+	 * $42 / TAX / STA $C000,X} and wizwarr's {@code ffa6 LDA $00 / STA $8000}, the byte-identical
+	 * shape {@link #callerRestoreDetail} already renders at a helper CALL site (grm-yflf), now
+	 * reaching the mechanism write itself because the strategies' own direct-site hooks answer
+	 * {@code StoredValueScanner.Hooks#isLiveBankMirror} too (see
+	 * {@code MemoryLatchBankSwitchStrategy.hooks}). Delegates to the same {@link #restoreDetail}
+	 * core with {@code "write"} in place of {@code "call"} -- the wording {@link #callerRestoreDetail}
+	 * already uses, reused rather than reinvented, per bead grm-rd6h's instruction.
+	 */
+	private static String directRestoreDetail(Program program, Listing listing,
+			DataflowResult flow, Address siteAddr, StoredValueScanner.ReadBack readBack,
+			BankMirrors mirrors, Set<Address> asyncEntries) {
+		return restoreDetail(program, listing, flow, siteAddr, readBack, mirrors, asyncEntries,
+			"write");
+	}
+
+	/**
+	 * The shared core of {@link #callerRestoreDetail} and {@link #directRestoreDetail} (bead
+	 * grm-rd6h): the wording is identical whether the site that re-commits the read-back bank is a
+	 * helper CALL or a DIRECT mechanism write -- only the noun naming the site itself differs
+	 * ({@code committerNoun}, {@code "call"} or {@code "write"}), so the two callers share every
+	 * other clause rather than risking the vocabulary drifting apart. See
+	 * {@link #callerRestoreDetail}'s original javadoc (now here) for the per-clause reasoning:
+	 * <ul>
+	 * <li>{@code carriedAcross}: the pairing walk stepped over a call between the read and the
+	 * site, so this is the save/restore idiom around that call;</li>
+	 * <li>the read is the ENTRY bank of its function -- straight-line from the function's entry
+	 * with no recognized switch site, helper call, or other call on the way ({@link
+	 * #readsEntryBank}) -- so each call site of that function already tracks the value (a call to
+	 * a non-helper passes the state through unchanged), which is where the number lives;</li>
+	 * <li>that function is an INTERRUPT entry, so its entry bank is the interrupted code's
+	 * (arbitrary mainline context, bead grm-913) and no number exists on any path.</li>
+	 * </ul>
+	 * The cell's mirror kind is named from {@code mirrors} so the reader can see WHY the read is
+	 * a bank: a write-through shadow the switch helper itself maintains, or a bank-identifying
+	 * ROM byte.
+	 */
+	private static String restoreDetail(Program program, Listing listing, DataflowResult flow,
+			Address siteAddr, StoredValueScanner.ReadBack readBack, BankMirrors mirrors,
+			Set<Address> asyncEntries, String committerNoun) {
 		Address cell = readBack.cell();
 		// What the read-back byte IS depends on the mirror's kind, and the wording must not
 		// promote a shadow to the live bank: a write-through shadow holds the last bank
@@ -771,16 +827,17 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				: "bank-identifying ROM byte " + cell + " -- a byte whose value is the bank it " +
 					"is read from, so the byte read is the bank live at the read";
 		StringBuilder text = new StringBuilder();
-		text.append("Bank value is RESTORED here, not resolved: this call re-commits the bank " +
-			"READ BACK at ").append(readBack.readAt()).append(" from ").append(source);
+		text.append("Bank value is RESTORED here, not resolved: this ").append(committerNoun)
+				.append(" re-commits the bank READ BACK at ").append(readBack.readAt())
+				.append(" from ").append(source);
 		if (readBack.carriedAcross() != null) {
 			text.append(", carried on the stack across the call at ")
 					.append(readBack.carriedAcross());
 		}
-		text.append(" -- the save/restore idiom. The bank after this call is whatever ")
-				.append(cell).append(" held at that read, not a fresh value this analyzer " +
-					"failed to pin down.");
-		Function function = program.getFunctionManager().getFunctionContaining(callAddr);
+		text.append(" -- the save/restore idiom. The bank after this ").append(committerNoun)
+				.append(" is whatever ").append(cell).append(" held at that read, not a fresh " +
+					"value this analyzer failed to pin down.");
+		Function function = program.getFunctionManager().getFunctionContaining(siteAddr);
 		if (function != null && readsEntryBank(program, listing, flow, function, readBack.readAt())) {
 			text.append(" That read sits at the ENTRY of ").append(function.getName())
 					.append(" (nothing switches between its entry and the read), so it is the ")

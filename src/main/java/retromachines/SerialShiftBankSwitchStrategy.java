@@ -261,6 +261,19 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 			// resolvedTarget.
 			return null;
 		}
+
+		/**
+		 * Answered from {@link #mirrors} by the same kind test
+		 * {@code HelperArgumentRecovery.OracleHooks} uses (bead grm-rd6h): a DIRECT-site
+		 * read-back of a write-through shadow or ROM-identifying offset is a live-bank mirror
+		 * whether or not {@link #mirroredByte} would resolve its VALUE -- see
+		 * {@code StoredValueScanner.Hooks#isLiveBankMirror}'s javadoc for why the kind query is
+		 * deliberately answered independently of the value channel.
+		 */
+		@Override
+		public boolean isLiveBankMirror(Address target) {
+			return mirrors.isLiveBankMirror(target);
+		}
 	};
 
 	/**
@@ -293,6 +306,11 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 			public BankState resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
 					BankState inStateAtStore) {
 				return mirroredByte(resolvedTarget, inStateAtStore, fields);
+			}
+
+			@Override
+			public boolean isLiveBankMirror(Address target) {
+				return hooks.isLiveBankMirror(target);
 			}
 		};
 	}

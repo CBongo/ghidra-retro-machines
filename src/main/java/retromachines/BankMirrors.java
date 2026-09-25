@@ -436,6 +436,25 @@ public final class BankMirrors {
 	}
 
 	/**
+	 * Whether {@code addr} MIRRORS THE LIVE BANK as a matter of KIND alone -- a
+	 * {@link Kind#WRITE_THROUGH} shadow or a {@link Kind#ROM_IDENTIFYING} offset (bead grm-yflf,
+	 * widened to direct sites by grm-rd6h). This is the one test
+	 * {@code HelperArgumentRecovery.OracleHooks#isLiveBankMirror} and every strategy's direct-site
+	 * {@code StoredValueScanner.Hooks#isLiveBankMirror} must share, so the call-site and
+	 * direct-site classifications cannot drift apart on what counts as a live-bank mirror.
+	 * {@link Kind#INPUT} (a caller's requested bank, live only after the wrapper runs) and
+	 * {@link Kind#SAVE_SLOT} (the OLD bank, saved because a switch is about to happen) are
+	 * deliberately excluded -- see {@code MemoryLatchBankSwitchStrategy.mirroredByte}'s javadoc
+	 * for why those two kinds never answer a live-bank query.
+	 *
+	 * @param addr the address to query, or {@code null} (answers {@code false})
+	 * @return whether {@code addr} is a write-through or ROM-identifying mirror of the live bank
+	 */
+	public boolean isLiveBankMirror(Address addr) {
+		return addr != null && (is(addr, Kind.WRITE_THROUGH) || is(addr, Kind.ROM_IDENTIFYING));
+	}
+
+	/**
 	 * The mechanism-write sites this cell is known to be kept in step with -- the switches whose
 	 * own backward walk found it (bead grm-p9y). Empty when nothing is known, including for a set
 	 * stated outright via {@link #of}.

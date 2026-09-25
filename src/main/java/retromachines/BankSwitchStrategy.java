@@ -253,18 +253,29 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	}
 
 	/**
-	 * A recognized switch's effect plus, when the value did not fully resolve, WHY.
+	 * A recognized switch's effect plus, when the value did not fully resolve, WHY -- and, for a
+	 * {@link ValueStop#RESTORED_BANK} DIRECT site (bead grm-rd6h), WHERE the bank was read back
+	 * from ({@link StoredValueScanner.ReadBack}), so {@code BankAnnotationAdapter} can render the
+	 * same per-site detail a call-site restore gets ({@code BoardBankAnalyzer.callerRestoreDetail})
+	 * instead of the generic, cell-free {@code honestGapMessage} text.
 	 * <p>
 	 * {@code stop} is only meaningful when {@code value.knownMask() == 0}; a partially or
-	 * wholly recovered value carries {@link ValueStop#RESOLVED}. Use {@link #of} rather than
-	 * the canonical constructor unless a strategy genuinely knows the reason -- it derives the
-	 * conservative answer, which is what every strategy reported before the reasons were
-	 * threaded through.
+	 * wholly recovered value carries {@link ValueStop#RESOLVED}, and {@code readBack} is dropped
+	 * along with the reason in that case -- same rationale as {@link StoredValueScanner#stopped}.
+	 * Use {@link #of} rather than the canonical constructor unless a strategy genuinely knows the
+	 * reason -- it derives the conservative answer, which is what every strategy reported before
+	 * the reasons were threaded through.
 	 *
 	 * @param value the switch's field-local bank-state effect
 	 * @param stop why an entirely unknown value could not be recovered
+	 * @param readBack where a {@code RESTORED_BANK} stop read the bank back from, or {@code null}
 	 */
-	record SwitchOutcome(BankState value, ValueStop stop) {
+	record SwitchOutcome(BankState value, ValueStop stop, StoredValueScanner.ReadBack readBack) {
+
+		/** The pre-grm-rd6h form: no read-back. */
+		SwitchOutcome(BankState value, ValueStop stop) {
+			this(value, stop, null);
+		}
 
 		/** The conservative outcome: resolved if any bit is known, else an analyzer limit. */
 		static SwitchOutcome of(BankState value) {
@@ -275,6 +286,17 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 		/** As {@link #of(BankState)} but with a known reason for an unrecovered value. */
 		static SwitchOutcome of(BankState value, ValueStop stop) {
 			return new SwitchOutcome(value, value.knownMask() != 0 ? ValueStop.RESOLVED : stop);
+		}
+
+		/**
+		 * As {@link #of(BankState, ValueStop)}, threading a {@link StoredValueScanner.Scan}'s
+		 * {@code readBack} through when the value stayed unresolved (bead grm-rd6h) -- dropped
+		 * the same way the reason itself is when {@code value} turns out to know something.
+		 */
+		static SwitchOutcome of(BankState value, ValueStop stop,
+				StoredValueScanner.ReadBack readBack) {
+			return value.knownMask() != 0 ? new SwitchOutcome(value, ValueStop.RESOLVED)
+					: new SwitchOutcome(value, stop, readBack);
 		}
 
 		/**

@@ -266,6 +266,20 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 				BankState inStateAtStore) {
 			return mirroredByte(loadInstr, resolvedTarget, inStateAtStore);
 		}
+
+		/**
+		 * Answered from {@link #mirrors} by the same kind test
+		 * {@code HelperArgumentRecovery.OracleHooks} uses (bead grm-rd6h): a DIRECT-site read-back
+		 * of a write-through shadow or ROM-identifying offset is a RESTORE of the live bank just
+		 * as much as a call-site one is -- megaman's {@code d571 LDA $42 / TAX / STA $C000,X} is
+		 * exactly grm-p9y's shape read back through this same {@code mirrors} field. Before this,
+		 * only the engine's call-site path (via {@code OracleHooks}) answered this query; this
+		 * strategy's own direct-site hooks kept the interface default {@code false}.
+		 */
+		@Override
+		public boolean isLiveBankMirror(Address target) {
+			return mirrors.isLiveBankMirror(target);
+		}
 	};
 
 	/**
@@ -517,7 +531,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 			return null;
 		}
 		StoredValueScanner.Scan scan = evaluateLatchScan(program, instr, path, inState, hooks);
-		return SwitchOutcome.of(scan.value(), scan.stop());
+		return SwitchOutcome.of(scan.value(), scan.stop(), scan.readBack());
 	}
 
 	/** Classifies an unresolved latch write encountered inside a helper body. */
@@ -593,9 +607,11 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 			}
 		}
 
-		// deposit the extracted field at state bits [0, width) -- see class javadoc
+		// deposit the extracted field at state bits [0, width) -- see class javadoc. readBack
+		// (bead grm-rd6h) rides along unchanged: it names the CELL and the READ, neither of
+		// which this shift/mask extraction touches.
 		return new StoredValueScanner.Scan(new BankState((stored.knownMask() >> shift) & mask,
-			(stored.bits() >> shift) & mask), scan.stop());
+			(stored.bits() >> shift) & mask), scan.stop(), scan.readBack());
 	}
 
 	/**

@@ -10,8 +10,8 @@ BLOCK RAM 0000-07ff overlay=false
 COMMENT c004 bank -> 2 (bank=2)
 COMMENT c00b bank -> 1 (bank=1)
 COMMENT c010 bank -> 1 (bank=1)
-COMMENT c022 bank ? [WARNING: analyzer limit]
-BOOKMARK Warning c022
+COMMENT c022 bank ? [NOTE: restored bank]
+BOOKMARK Note c022
 SYMBOL 0042 bank_shadow_0042 ANALYSIS primary=true
 SYMBOL 2000 PPUCTRL IMPORTED primary=true
 SYMBOL 2001 PPUMASK IMPORTED primary=true
