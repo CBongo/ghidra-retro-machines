@@ -672,6 +672,54 @@ final class DescriptorSupport {
 	}
 
 	/**
+	 * The value a game descriptor's {@code banking.initial_state} hint states for the board's
+	 * LAYOUT mode field (the single field every {@code memory.layouts[].when} names), or null
+	 * when there is none to state -- the board has no layouts, the hint does not name that field,
+	 * or {@link #applyGameInitialStateHint} would refuse the value (no resolved initial state to
+	 * fold it into, not an integer, too wide for the field). Bead {@code grm-ic5.1}.
+	 * <p>
+	 * This is what makes a hinted mode a {@code liveMode} for {@link #planWindows(JsonObject,
+	 * MessageLog, String, Integer)}: a human recorded it against the cartridge, which is the
+	 * positive evidence grm-ic5's ruling requires before other modes' blocks may be suppressed.
+	 * It never logs -- {@link #applyGameInitialStateHint} has already reported every refusal for
+	 * the same inputs -- and it refuses in exactly the cases that method refuses, so a hint that
+	 * did not move the home layout can never license suppression either.
+	 */
+	static Integer gameHintedLayoutMode(JsonObject boardMap, Long resolvedInitialState,
+			JsonObject gameDescriptor) {
+		JsonObject gameBanking = gameDescriptor.getAsJsonObject("banking");
+		if (resolvedInitialState == null || gameBanking == null ||
+			!gameBanking.has("initial_state") || !boardMap.has("layouts")) {
+			return null;
+		}
+		JsonArray layouts = boardMap.getAsJsonArray("layouts");
+		if (layouts.isEmpty()) {
+			return null;
+		}
+		JsonObject when = layouts.get(0).getAsJsonObject().getAsJsonObject("when");
+		if (when == null || when.entrySet().size() != 1) {
+			return null; // planWindows ignores such layouts entirely; nothing to suppress
+		}
+		String modeField = when.keySet().iterator().next();
+		JsonObject hint = gameBanking.getAsJsonObject("initial_state");
+		StateField field = findField(parseStateFields(boardMap), modeField);
+		if (!hint.has(modeField) || field == null) {
+			return null;
+		}
+		long value;
+		try {
+			value = hint.get(modeField).getAsLong();
+		}
+		catch (RuntimeException e) {
+			return null;
+		}
+		if (value < 0 || value > field.mask()) {
+			return null;
+		}
+		return (int) value;
+	}
+
+	/**
 	 * The resolved packed power-on state a loader published in
 	 * {@link #INITIAL_STATE_PROPERTY}, or null when the property is absent, blank, or not a
 	 * number (a hand-edited value is ignored, not raised -- the caller's fallback is the

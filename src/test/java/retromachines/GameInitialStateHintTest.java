@@ -153,4 +153,79 @@ public class GameInitialStateHintTest {
 		assertEquals(Long.valueOf(9), result);
 		assertTrue(log.toString(), log.toString().contains("prg_mode"));
 	}
+
+	// ------------------------------------------------------------------
+	// grm-ic5.1: a hint naming the LAYOUT mode field is a known mode (liveMode)
+	// ------------------------------------------------------------------
+
+	/** nes_mmc1's shape, reduced: prg_mode(2) at bit 2 selects one of four layouts, each with a
+	 *  one-window set. Literal 12 = prg_mode 3, the control register's reset value. */
+	private static final String MMC1_SHAPE = """
+			{
+			  "banking": {
+			    "initial_state": 12,
+			    "state": [
+			      { "name": "mirroring", "bits": 2 },
+			      { "name": "prg_mode",  "bits": 2 },
+			      { "name": "prg_bank",  "bits": 4 }
+			    ]
+			  },
+			  "windows": [],
+			  "layouts": [
+			    { "when": { "prg_mode": 0 }, "windows": [ { "name": "W8000", "start": 32768,
+			      "end": 65535, "maps": { "expr": "0" } } ] },
+			    { "when": { "prg_mode": 1 }, "windows": [ { "name": "W8000", "start": 32768,
+			      "end": 65535, "maps": { "expr": "1" } } ] },
+			    { "when": { "prg_mode": 2 }, "windows": [ { "name": "W8000", "start": 32768,
+			      "end": 49151, "maps": { "expr": "2" } } ] },
+			    { "when": { "prg_mode": 3 }, "windows": [ { "name": "W8000", "start": 32768,
+			      "end": 49151, "maps": { "expr": "3" } } ] }
+			  ]
+			}
+			""";
+
+	@Test
+	public void hintedLayoutModeIsReturned() {
+		assertEquals(Integer.valueOf(0), DescriptorSupport.gameHintedLayoutMode(json(MMC1_SHAPE),
+			12L, gameDoc("{ \"prg_mode\": 0 }")));
+	}
+
+	@Test
+	public void hintNotNamingTheLayoutFieldStatesNoMode() {
+		// megaman2's shape: a prg_bank hint moves the home bank but says nothing about the mode.
+		assertNull(DescriptorSupport.gameHintedLayoutMode(json(MMC1_SHAPE), 12L,
+			gameDoc("{ \"prg_bank\": 14 }")));
+	}
+
+	@Test
+	public void refusedHintValuesStateNoMode() {
+		// Every case applyGameInitialStateHint refuses must also be refused here, or a hint that
+		// did not move the home layout could still license suppression.
+		assertNull(DescriptorSupport.gameHintedLayoutMode(json(MMC1_SHAPE), 12L,
+			gameDoc("{ \"prg_mode\": 4 }")));
+		assertNull(DescriptorSupport.gameHintedLayoutMode(json(MMC1_SHAPE), 12L,
+			gameDoc("{ \"prg_mode\": \"zero\" }")));
+		assertNull(DescriptorSupport.gameHintedLayoutMode(json(MMC1_SHAPE), null,
+			gameDoc("{ \"prg_mode\": 0 }")));
+	}
+
+	@Test
+	public void boardWithoutLayoutsStatesNoMode() {
+		// MMC3_SHAPE has a prg_mode state field but no layouts: nothing to suppress.
+		assertNull(DescriptorSupport.gameHintedLayoutMode(json(MMC3_SHAPE), 9L,
+			gameDoc("{ \"prg_mode\": 0 }")));
+	}
+
+	@Test
+	public void hintedModeSuppressesTheOtherLayoutsInstances() {
+		JsonObject map = json(MMC1_SHAPE);
+		Integer mode = DescriptorSupport.gameHintedLayoutMode(map, 12L,
+			gameDoc("{ \"prg_mode\": 0 }"));
+		DescriptorSupport.LayoutPlan plan =
+			DescriptorSupport.planWindows(map, new MessageLog(), "test.map", mode);
+		assertEquals(1, plan.varying().size());
+		assertEquals(Integer.valueOf(0), plan.varying().get(0).modeValue());
+		assertEquals(4, DescriptorSupport.planWindows(map, new MessageLog(), "test.map", null)
+				.varying().size());
+	}
 }

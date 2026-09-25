@@ -805,16 +805,32 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 			// suppressing the other modes' overlay blocks (bead grm-ic5's ruling), and the two
 			// are not the same test -- rcransom and megaman3 resolve mode 0, which equals the
 			// compiled default, so initialState does not move while the mode IS known. It stays
-			// null when the scan declines (too few sites, or a split vote), which is exactly that
-			// ruling's "indeterminate" branch and keeps every mode's blocks.
+			// null when the scan declines (too few sites, or a split vote) and no curated hint
+			// states the mode (grm-ic5.1, below), which is exactly that ruling's "indeterminate"
+			// branch and keeps every mode's blocks.
 			Integer liveMode =
 				scanImageMode(map, readPrgImage(provider, header, log), log, board.mapPath());
 			if (liveMode != null) {
 				initialState = applyMode(map, initialState, liveMode, log, board.mapPath());
 			}
+			// A curated hint naming the layout mode field is a KNOWN mode too (bead grm-ic5.1):
+			// a human recorded it against the cartridge. It wins over the scan, the same
+			// ordering as for initialState just above.
 			if (gameDescriptor != null) {
+				Integer hintedMode = DescriptorSupport.gameHintedLayoutMode(map, initialState,
+					gameDescriptor.doc());
 				initialState = DescriptorSupport.applyGameInitialStateHint(map, initialState,
 					gameDescriptor.doc(), gameDescriptor.gmapPath(), log);
+				if (hintedMode != null) {
+					if (liveMode != null && !liveMode.equals(hintedMode)) {
+						log.appendMsg(gameDescriptor.gmapPath() + ": layout mode " + hintedMode +
+							" overrides the image-resolved mode " + liveMode);
+					}
+					liveMode = hintedMode;
+					log.appendMsg("layout mode " + liveMode + " stated by " +
+						gameDescriptor.gmapPath() +
+						"; it licenses suppressing the other modes' overlay blocks");
+				}
 			}
 			if (initialState != null &&
 				!initialState.equals(DescriptorSupport.initialState(map))) {
