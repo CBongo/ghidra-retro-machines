@@ -1004,6 +1004,12 @@ tasks.matching { it.name == 'buildExtension' }.configureEach {
 	// since data/ is one SHIPPED_TOP_LEVEL entry with no finer-grained exclusion.
 	dependsOn 'buildGdt', 'buildMap', 'buildGames', 'buildPetsciiMap', 'buildScreencodeMap',
 		'sleighCompile', 'buildDescriptorSourceManifest'
+	// Gradle 9 made archive tasks reproducible by default (preserveFileTimestamps = false),
+	// which stamps every zip entry with the DOS epoch 1980-02-01 -- so after the grm-arkj
+	// wrapper migration, tools/install-gui.ps1 installed every file dated 1980. Keep real
+	// timestamps: nothing keys on this zip's bytes (stageExtensionForTests deliberately does
+	// not -- see its comment), so reproducibility buys nothing here.
+	preserveFileTimestamps = true
 }
 
 //----------------------------------------------------------------------------------
