@@ -1721,9 +1721,37 @@ final class StoredValueScanner {
 	/**
 	 * {@link ConstantSemantics.Inputs} for one writer {@link #constantValue} found: each input is
 	 * another walk from that writer, one level deeper, spending from the same {@link Budget}.
+	 * <p>
+	 * The effective target is computed at most ONCE per instance (bead grm-om3i). Both
+	 * {@link #effectiveTarget} and {@link #memoryOperand} need it, and an implementation may ask
+	 * for both -- {@link PcodeConstantSemantics} checks its own address against the target and
+	 * then reads the operand -- so without the memo every such read walked for the index
+	 * register twice, spending budget {@link Mos6502ConstantSemantics} never spent. Caching is
+	 * sound because nothing the computation depends on (instruction, env, depth) varies within
+	 * one instance; only the shared {@link Budget} does, and a repeat would merely spend more
+	 * of it for the same answer or a budget-exhausted {@code null}.
 	 */
-	private record WalkInputs(Program program, Instruction instr, Hooks hooks, RegisterEnv env,
-			Budget budget, int depth, int remainingScan) implements ConstantSemantics.Inputs {
+	private static final class WalkInputs implements ConstantSemantics.Inputs {
+		private final Program program;
+		private final Instruction instr;
+		private final Hooks hooks;
+		private final RegisterEnv env;
+		private final Budget budget;
+		private final int depth;
+		private final int remainingScan;
+		private boolean targetComputed;
+		private Address cachedTarget;
+
+		WalkInputs(Program program, Instruction instr, Hooks hooks, RegisterEnv env,
+				Budget budget, int depth, int remainingScan) {
+			this.program = program;
+			this.instr = instr;
+			this.hooks = hooks;
+			this.env = env;
+			this.budget = budget;
+			this.depth = depth;
+			this.remainingScan = remainingScan;
+		}
 
 		@Override
 		public Integer before(ConstantSemantics.Loc loc) {
@@ -1732,8 +1760,12 @@ final class StoredValueScanner {
 
 		@Override
 		public Address effectiveTarget() {
-			return StoredValueScanner.effectiveTarget(program, instr, hooks, env, budget,
-				depth + 1);
+			if (!targetComputed) {
+				cachedTarget = StoredValueScanner.effectiveTarget(program, instr, hooks, env, budget,
+					depth + 1);
+				targetComputed = true;
+			}
+			return cachedTarget;
 		}
 
 		@Override

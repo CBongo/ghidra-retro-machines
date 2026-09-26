@@ -122,8 +122,10 @@ import ghidra.program.model.pcode.Varnode;
  * <li>The SAME stock language's {@code SBC} computes the carry (not-borrow) flag via a bit-7
  * trick in {@code subtraction_flags1} that comes out wrong on at least one measured input
  * ({@code A=$01, SBC #$02} with carry-in 1: real/TABLE answer carry {@code =0}, stock p-code
- * says {@code 1}) -- a second, independent stock-language bug PCODE inherits, discovered
- * writing this class's differential test rather than predicted.</li>
+ * says {@code 1}) -- the flag POLARITY is inverted: the trick is the textbook borrow-out, and
+ * the 6502's C is not-borrow. Already known (grm-ef46 defect (2), found by the 6502-vectors tier)
+ * and already fixed in both the bundled {@code 6502core.sinc} and upstream PR
+ * NationalSecurityAgency/ghidra#9656; PCODE inherits it on stock until that PR lands.</li>
  * <li>An undocumented opcode whose addressing bypasses the shared {@code OP1}/{@code OP2}
  * subtables -- {@code LAX} is the example -- never resolves a memory operand, under EITHER
  * evaluator, even though this class's own interpreter handles {@code LAX}'s p-code fine in
@@ -552,10 +554,17 @@ final class PcodeConstantSemantics implements ConstantSemantics {
 				return null;
 			}
 			Address target = in.effectiveTarget();
-			Integer addrVal = addressThunk.get();
-			if (addrVal != null && target != null &&
-				target.getUnsignedOffset() != Integer.toUnsignedLong(addrVal)) {
-				return null; // known disagreement
+			// Our own address is forced ONLY when there is a target to disagree with (bead
+			// grm-om3i): with no target, a disagreement is impossible and memoryOperand() is the
+			// answer either way, so forcing it would only spend budget on the index register's
+			// walk that TABLE never spends. The target itself is memoized by the Inputs, so the
+			// memoryOperand() below does not recompute it.
+			if (target != null) {
+				Integer addrVal = addressThunk.get();
+				if (addrVal != null &&
+					target.getUnsignedOffset() != Integer.toUnsignedLong(addrVal)) {
+					return null; // known disagreement
+				}
 			}
 			return in.memoryOperand();
 		}

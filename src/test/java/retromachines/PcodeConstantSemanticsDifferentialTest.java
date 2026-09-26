@@ -524,7 +524,9 @@ public class PcodeConstantSemanticsDifferentialTest extends AbstractBundledLangu
 	}
 
 	/**
-	 * grm-4wqd (discovered writing this suite, not previously known): stock
+	 * grm-4wqd (rediscovered writing this suite; ALREADY KNOWN as grm-ef46 defect (2), fixed
+	 * in the bundled {@code 6502core.sinc} and in upstream PR NationalSecurityAgency/ghidra#9656,
+	 * see grm-2g7g): stock
 	 * {@code 6502:LE:16:default}'s {@code SBC}'s {@code subtraction_flags1} computes the carry
 	 * (NOT-borrow) flag via a bit-7 trick over the ALREADY-TRUNCATED byte {@code result}, and
 	 * that trick comes out wrong on at least this input. {@code A=$01, SBC #$02} with carry-in
@@ -532,10 +534,9 @@ public class PcodeConstantSemanticsDifferentialTest extends AbstractBundledLangu
 	 * since {@code 1 < 2}; PCODE, interpreting the stock language's p-code literally, computes
 	 * carry {@code = 1} (WRONG -- verified by hand against the trick's own bit formula). The
 	 * next {@code ADC #$05} then adds that wrong carry-in, so the final {@code A} differs:
-	 * TABLE {@code $FF+5+0=$04}, PCODE {@code $FF+5+1=$05}. This is a SEPARATE stock-language
-	 * bug from grm-o9k's {@code ADC} carry-in drop (different macro, different mechanism -- a
-	 * wrong bit-trick rather than a dropped term), recorded here as a second instance of the
-	 * same class of blocker: PCODE inherits whatever the target language's own p-code gets
+	 * TABLE {@code $FF+5+0=$04}, PCODE {@code $FF+5+1=$05}. The trick is the textbook
+	 * borrow-out, so the polarity is simply inverted (C is not-borrow on the 6502). It is a
+	 * different defect from grm-o9k's {@code ADC} carry-in drop, and the same class of blocker: PCODE inherits whatever the target language's own p-code gets
 	 * wrong, which is the tradeoff design (b) makes explicit.
 	 */
 	@Test

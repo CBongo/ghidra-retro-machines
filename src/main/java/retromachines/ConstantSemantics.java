@@ -102,7 +102,9 @@ interface ConstantSemantics {
 		 * {@code null} when that is not statically certain -- the same resolution
 		 * {@link #memoryOperand} uses to find the address it reads. Exposed (bead grm-4wqd) so a
 		 * p-code interpreter can check a {@code LOAD}'s own computed address against it before
-		 * trusting {@link #memoryOperand} for that {@code LOAD}'s byte.
+		 * trusting {@link #memoryOperand} for that {@code LOAD}'s byte. Computed at most once per
+		 * {@code Inputs} (bead grm-om3i): asking for it and then for {@link #memoryOperand} costs
+		 * one resolution, not two.
 		 */
 		Address effectiveTarget();
 	}
