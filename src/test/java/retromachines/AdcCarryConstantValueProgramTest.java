@@ -30,13 +30,15 @@ import ghidra.program.model.mem.MemoryBlock;
 
 /**
  * Pins {@link StoredValueScanner}'s {@code ADC #imm} model (bead grm-4bgh.2): exact once the
- * carry it adds in is itself known, which on 6502 means a {@code CLC} or {@code SEC} reaches
- * the {@code ADC} with no carry-writer in between.
+ * carry it adds in is itself known -- originally only a {@code CLC} or {@code SEC} reaching
+ * the {@code ADC} with no carry-writer in between, and since grm-as0m whatever last wrote the
+ * carry, when that instruction's own inputs are known.
  * <p>
  * River City Ransom's {@code FUN_fed1} is the motivating shape -- it computes the odd half of
  * an MMC3 8 KB register pair as {@code ASL A / CLC / ADC #$01}. The {@code ASL} is itself a
  * carry-writer, so the {@code CLC} in that sequence is load-bearing rather than decorative,
- * which is what {@link #carryWriterBetweenClcAndAdcDeclines} pins.
+ * which is what {@link #shiftedOutCarryIsAddedIn} pins: as of grm-as0m the carry is evaluated
+ * like any register, so a stale {@code CLC} is superseded rather than trusted.
  * <p>
  * These call the evaluator directly rather than going through a strategy: it is a
  * package-private all-or-nothing evaluator with its own semantics, separate from
@@ -159,35 +161,75 @@ public class AdcCarryConstantValueProgramTest extends AbstractBundledLanguageTes
 	}
 
 	// ------------------------------------------------------------------
-	// 5. Decline: a carry-writer between the CLC and the ADC
+	// 5. A carry-writer between the CLC and the ADC decides the carry (grm-as0m)
 	// ------------------------------------------------------------------
 
 	/** {@code CLC / LDA #$05 / ASL A / ADC #$01} -- the {@code ASL} writes carry AFTER the
 	 *  {@code CLC}, so that {@code CLC} says nothing about the carry the {@code ADC} adds in.
-	 *  This is fed1's own sequence with its {@code CLC} misplaced. */
+	 *  Before grm-as0m this declined; now the carry is a location like any register, and the
+	 *  {@code ASL} of {@code $05} shifts out a 0: {@code $0A + 1 + 0 = $0B}. */
 	@Test
-	public void carryWriterBetweenClcAndAdcDeclines() throws Exception {
-		builder.setBytes("0x8000", "18", true); // CLC
+	public void carryWriterBetweenClcAndAdcDecidesTheCarry() throws Exception {
+		builder.setBytes("0x8000", "18", true); // CLC       -- superseded by the ASL
 		builder.setBytes("0x8001", "a9 05", true); // LDA #$05
-		builder.setBytes("0x8003", "0a", true); // ASL A     -- writes carry
+		builder.setBytes("0x8003", "0a", true); // ASL A     -- A = $0A, C = 0
 		builder.setBytes("0x8004", "69 01", true); // ADC #$01
 		builder.setBytes("0x8006", "8d 01 80", true); // STA $8001
 
-		assertNull(accumulatorBefore("0x8006"));
+		assertEquals(Integer.valueOf(0x0B), accumulatorBefore("0x8006"));
+	}
+
+	/** Same shape with bit 7 set: {@code ASL} of {@code $85} shifts out a 1, so the stale
+	 *  {@code CLC} would have given the wrong answer: {@code $0A + 1 + 1 = $0C}. */
+	@Test
+	public void shiftedOutCarryIsAddedIn() throws Exception {
+		builder.setBytes("0x8000", "18", true); // CLC       -- superseded by the ASL
+		builder.setBytes("0x8001", "a9 85", true); // LDA #$85
+		builder.setBytes("0x8003", "0a", true); // ASL A     -- A = $0A, C = 1
+		builder.setBytes("0x8004", "69 01", true); // ADC #$01
+		builder.setBytes("0x8006", "8d 01 80", true); // STA $8001
+
+		assertEquals(Integer.valueOf(0x0C), accumulatorBefore("0x8006"));
 	}
 
 	// ------------------------------------------------------------------
-	// 6. Decline: a comparison between the CLC and the ADC
+	// 6. A comparison between the CLC and the ADC decides the carry (grm-as0m)
 	// ------------------------------------------------------------------
 
-	/** {@code CMP} does not touch A, so the accumulator walk steps straight over it -- but it
-	 *  DOES write carry, so the separate carry walk must not. Isolates the carry walk from the
-	 *  value walk, which the {@code ASL} case above cannot. */
+	/** {@code CMP} does not touch A, so the accumulator query steps straight over it -- but it
+	 *  DOES write carry, so the carry query must stop there and evaluate it: {@code $05 >= $03}
+	 *  sets carry, so {@code $05 + 1 + 1 = $07}. Isolates the carry query from the value query,
+	 *  which the {@code ASL} case above cannot. */
 	@Test
-	public void comparisonBetweenClcAndAdcDeclines() throws Exception {
+	public void comparisonBetweenClcAndAdcDecidesTheCarry() throws Exception {
+		builder.setBytes("0x8000", "a9 05", true); // LDA #$05
+		builder.setBytes("0x8002", "18", true); // CLC       -- superseded by the CMP
+		builder.setBytes("0x8003", "c9 03", true); // CMP #$03  -- C = 1, A untouched
+		builder.setBytes("0x8005", "69 01", true); // ADC #$01
+		builder.setBytes("0x8007", "8d 01 80", true); // STA $8001
+
+		assertEquals(Integer.valueOf(0x07), accumulatorBefore("0x8007"));
+	}
+
+	/** {@code $02 < $03} clears carry: {@code $02 + 1 + 0 = $03}. */
+	@Test
+	public void failedComparisonClearsTheCarry() throws Exception {
+		builder.setBytes("0x8000", "a9 02", true); // LDA #$02
+		builder.setBytes("0x8002", "38", true); // SEC       -- superseded by the CMP
+		builder.setBytes("0x8003", "c9 03", true); // CMP #$03  -- C = 0
+		builder.setBytes("0x8005", "69 01", true); // ADC #$01
+		builder.setBytes("0x8007", "8d 01 80", true); // STA $8001
+
+		assertEquals(Integer.valueOf(0x03), accumulatorBefore("0x8007"));
+	}
+
+	/** A comparison whose register is unknown leaves an unknown carry, and the {@code ADC}
+	 *  declines -- the {@code CLC} before it must not be reached around the {@code CPX}. */
+	@Test
+	public void comparisonOfUnknownRegisterDeclines() throws Exception {
 		builder.setBytes("0x8000", "a9 05", true); // LDA #$05
 		builder.setBytes("0x8002", "18", true); // CLC
-		builder.setBytes("0x8003", "c9 03", true); // CMP #$03  -- writes carry, leaves A alone
+		builder.setBytes("0x8003", "e0 03", true); // CPX #$03  -- X unknown, so C unknown
 		builder.setBytes("0x8005", "69 01", true); // ADC #$01
 		builder.setBytes("0x8007", "8d 01 80", true); // STA $8001
 
@@ -198,10 +240,10 @@ public class AdcCarryConstantValueProgramTest extends AbstractBundledLanguageTes
 	// 7. Decline: a non-immediate ADC
 	// ------------------------------------------------------------------
 
-	/** Only the immediate form is modeled: {@code ADC $10} adds a memory byte this evaluator
-	 *  makes no attempt to resolve. */
+	/** {@code ADC $10} adds a RAM byte nothing pins (these hooks resolve no load), so it
+	 *  declines -- the memory form is modeled, but only as exactly as its operand is known. */
 	@Test
-	public void nonImmediateAdcDeclines() throws Exception {
+	public void nonImmediateAdcOverUnknownMemoryDeclines() throws Exception {
 		builder.setBytes("0x8000", "a9 05", true); // LDA #$05
 		builder.setBytes("0x8002", "18", true); // CLC
 		builder.setBytes("0x8003", "65 10", true); // ADC $10

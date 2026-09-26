@@ -102,7 +102,7 @@ import ghidra.program.model.symbol.Reference;
  * {@code unknown()} past the crossing and decline exactly as the old abort made them. The
  * same withdrawal is applied by the forwarding walk, and reported outward by the two stack
  * walks ({@link Span}) so that the walk which resumes from a push applies it too;
- * {@link #constantRegisterValue} and {@link #carryValueBefore} carry no such rule at all,
+ * {@link #constantRegisterValue} (whose carry queries are the same walk) carries no such rule,
  * having no in-state to withdraw.</li>
  * <li>A subroutine call may clobber any register; its fall-through satisfies the
  * block-linkage check, so it is treated as a clobber explicitly.</li>
@@ -287,20 +287,6 @@ final class StoredValueScanner {
 		"AND", "ORA", "EOR", "ASL", "LSR", "ROL", "ROR");
 	private static final Set<String> X_MODIFIERS = Set.of("LDX", "TAX", "TSX", "INX", "DEX");
 	private static final Set<String> Y_MODIFIERS = Set.of("LDY", "TAY", "INY", "DEY");
-
-	/**
-	 * 6502 mnemonics that leave the carry flag exactly as they found it, for
-	 * {@link #carryValueBefore}'s backward walk (bead grm-4bgh.2). This is deliberately an
-	 * ALLOWLIST rather than a denylist of carry-writers: an unrecognized mnemonic -- an
-	 * undocumented opcode, a mnemonic spelling this table does not know -- must make the walk
-	 * decline, not be assumed inert. Absent on purpose, because they write carry:
-	 * {@code ADC}/{@code SBC}, the comparisons, the shifts and rotates, and {@code PLP}
-	 * ({@code RTI} likewise, and it ends the walk as a flow break anyway). {@code PHP} and
-	 * {@code PLA} ARE here -- they read the flags or write only N/Z.
-	 */
-	private static final Set<String> CARRY_PRESERVING = Set.of("LDA", "LDX", "LDY", "STA", "STX",
-		"STY", "TAX", "TAY", "TXA", "TYA", "TSX", "TXS", "PHA", "PHP", "PLA", "AND", "ORA", "EOR",
-		"BIT", "INC", "DEC", "INX", "INY", "DEX", "DEY", "NOP", "CLD", "SED", "CLI", "SEI", "CLV");
 
 	/**
 	 * 6502 mnemonics that write memory, for {@link #writesMemory}'s third detector. The stores
@@ -1596,31 +1582,26 @@ final class StoredValueScanner {
 	 * unknown (bead grm-4bgh.6). That is a fallback, not a merger: an answer from here enters
 	 * the mask algebra only as a fully known base, on a path that had no other answer to give.
 	 * <p>
-	 * Modeled: {@code LD<reg> #imm}; a {@code LD<reg> <mem>} whose target resolves and whose
-	 * {@link Hooks#resolveLoad} answers with all eight bits known; {@code TAX/TAY/TXA/TYA};
-	 * {@code INX/INY/DEX/DEY}; {@code ASL A}/{@code LSR A}; {@code AND/ORA/EOR #imm} on A; and
-	 * {@code ADC #imm} on A when {@link #carryValueBefore} can establish the carry it adds in
-	 * (bead grm-4bgh.2 -- rcransom's {@code FUN_fed1} computes {@code r7 = A*2+1} as
-	 * {@code ASL A / CLC / ADC #$01}).
-	 * <p>
-	 * {@code ROL}/{@code ROR} still <b>decline</b>, and {@code SBC} with them. Note the reason
-	 * has narrowed rather than vanished: carry is now modeled in exactly one place, as the
-	 * constant a {@code CLC}/{@code SEC} leaves, and nowhere else -- so an {@code ADC} whose
-	 * carry is not established that way declines exactly as before. Extending the same treatment
-	 * to {@code ROL A} ({@code (before << 1) | carry}) is mechanical and deliberately not part of
-	 * this increment. Any other instruction in the register's modifier set, and any call,
-	 * declines.
+	 * <b>What is modeled lives in {@link ConstantSemantics}, not here</b> (bead grm-as0m). This
+	 * method is the backward walk only: it queries a {@link ConstantSemantics.Loc location} --
+	 * A, X, Y, or the carry -- finds the last instruction that writes it, and asks the
+	 * semantics what that instruction leaves there, answering each input the instruction reads
+	 * with another walk of this same method. So the carry an {@code ADC} adds in is an ordinary
+	 * query (it used to be a second, guard-for-guard duplicate walk), and every operation folds
+	 * exactly when all of its inputs do. See {@link Mos6502ConstantSemantics} for the table.
 	 * <p>
 	 * Every guard {@link #resolveStoredValue} applies is reused verbatim: fall-through block
-	 * linkage, {@link #isControlFlowJoin}, and {@link #MAX_BACKWARD_SCAN}. The one guard NOT
-	 * reused is the mechanism-write abort, and as of bead grm-4bgh.7 it is not merely relaxed
-	 * here but ABSENT: that guard exists to stop an in-state-derived value being read across the
-	 * write, and this evaluator never consults a caller's in-state at all. {@code env}'s
-	 * entry stop is honored the same way it is there, and is likewise all-or-nothing: a
-	 * partially known caller register declines, because an effective address needs all eight
-	 * index bits. So is {@code env}'s licensed join ({@link RegisterEnv#mayCrossJoinAt}) --
-	 * and this walk is the one that actually needs it, since Contra's caller-supplied Y is
-	 * consumed as the INDEX of the switch site's operand rather than as its stored value.
+	 * linkage, {@link #isControlFlowJoin}, and {@link #MAX_BACKWARD_SCAN}; a call ends the walk.
+	 * The one guard NOT reused is the mechanism-write abort, and as of bead grm-4bgh.7 it is not
+	 * merely relaxed here but ABSENT: that guard exists to stop an in-state-derived value being
+	 * read across the write, and this evaluator never consults a caller's in-state at all.
+	 * {@code env}'s entry stop is honored the same way it is there, and is likewise
+	 * all-or-nothing: a partially known caller register declines, because an effective address
+	 * needs all eight index bits. For the carry the entry stop always declines -- a
+	 * {@link RegisterEnv} describes the caller's A/X/Y and says nothing about its flags. So is
+	 * {@code env}'s licensed join ({@link RegisterEnv#mayCrossJoinAt}) honored -- and this walk
+	 * is the one that actually needs it, since Contra's caller-supplied Y is consumed as the
+	 * INDEX of the switch site's operand rather than as its stored value.
 	 * <p>
 	 * <b>{@link BankState#unknown()} is passed to {@link Hooks#resolveLoad}, never a caller's
 	 * in-state.</b> That is load-bearing for {@link BankSwitchStrategy#cacheable()}: an
@@ -1637,20 +1618,34 @@ final class StoredValueScanner {
 
 	private static Integer constantRegisterValue(Program program, Instruction at, char reg,
 			Hooks hooks, RegisterEnv env, Budget budget, int depth) {
+		return constantValue(program, at, ConstantSemantics.Loc.ofRegister(reg), hooks, env,
+			budget, depth);
+	}
+
+	/** The semantics {@link #constantValue} evaluates with, for {@code program}. */
+	private static ConstantSemantics semanticsFor(Program program) {
+		return Mos6502ConstantSemantics.INSTANCE;
+	}
+
+	/** {@link #constantRegisterValue}'s walk, over any {@link ConstantSemantics.Loc}. */
+	private static Integer constantValue(Program program, Instruction at,
+			ConstantSemantics.Loc loc, Hooks hooks, RegisterEnv env, Budget budget, int depth) {
 		if (depth > MAX_RESOLVE_DEPTH) {
 			return null;
 		}
+		ConstantSemantics semantics = semanticsFor(program);
 		Listing listing = program.getListing();
-		Set<String> modifiers = registerModifiers(reg);
-		String loadMnemonic = "LD" + reg;
 
 		Instruction cur = at;
 		for (int i = 0; i < MAX_BACKWARD_SCAN; i++) {
 			if (env.stopsAt(cur.getMinAddress())) {
 				// The entry stop, same rule as resolveStoredValue's: adopt the caller's value
 				// rather than walking past the entry. All-or-nothing here too -- a partially
-				// known caller register is not an index.
-				BankState entryValue = env.get(reg);
+				// known caller register is not an index -- and the env carries no flags.
+				if (loc == ConstantSemantics.Loc.C) {
+					return null;
+				}
+				BankState entryValue = env.get(loc.register());
 				return (entryValue.knownMask() & 0xFF) == 0xFF ? entryValue.bits() & 0xFF : null;
 			}
 			if (!budget.spend()) {
@@ -1674,102 +1669,12 @@ final class StoredValueScanner {
 			// its javadoc -- so it has nothing to withdraw and never had a hazard to guard. The
 			// abort it used to carry was copied from the walk that does.
 
-			String mnem = prev.getMnemonicString().toUpperCase();
-
-			if (mnem.equals(loadMnemonic)) {
-				if (isImmediate(prev)) {
-					Integer imm = immediateOperandValue(prev);
-					return imm == null ? null : imm & 0xFF;
-				}
-				Address target = effectiveTarget(program, prev, hooks, env, budget, depth + 1);
-				// unknown() in-state, never a caller's -- see this method's javadoc
-				BankState base = hooks.resolveLoad(prev, target, BankState.unknown());
-				if (base != null && (base.knownMask() & 0xFF) == 0xFF) {
-					return base.bits() & 0xFF;
-				}
-				// Last resort (grm-4bgh.1): a stack-relative reload -- see stackRelativePush's
-				// javadoc for the shape and soundness argument. The recursive query below is
-				// always for 'A', never `reg`: the push stackRelativePush finds is always a PHA,
-				// which only ever saves A, regardless of which register this load lands in.
-				// The Span's crossing flag is deliberately IGNORED here: this evaluator holds no
-				// in-state to withdraw (see the comment where the abort used to be), so a
-				// mechanism write between the reload and its push changes nothing it computes.
-				Span reload = new Span();
-				Instruction pha = stackRelativePush(program, prev, hooks, env,
-					MAX_BACKWARD_SCAN - i, reload);
-				return pha == null ? null
-						: constantRegisterValue(program, pha, 'A', hooks, env, budget, depth + 1);
-			}
-
-			Character source = transferSource(mnem, reg);
-			if (source != null) {
-				return constantRegisterValue(program, prev, source, hooks, env, budget, depth + 1);
-			}
-
-			Integer delta = incDecDelta(mnem, reg);
-			if (delta != null) {
-				Integer before =
-					constantRegisterValue(program, prev, reg, hooks, env, budget, depth + 1);
-				return before == null ? null : (before + delta) & 0xFF;
-			}
-
-			if (reg == 'A' && (mnem.equals("ROL") || mnem.equals("ROR")) &&
-				isAccumulatorForm(prev)) {
-				return null; // carry is not modeled -- decline rather than guess a bit
-			}
-
-			if (reg == 'A' && (mnem.equals("ASL") || mnem.equals("LSR")) &&
-				isAccumulatorForm(prev)) {
-				Integer before =
-					constantRegisterValue(program, prev, 'A', hooks, env, budget, depth + 1);
-				if (before == null) {
-					return null;
-				}
-				return mnem.equals("ASL") ? (before << 1) & 0xFF : (before >> 1) & 0xFF;
-			}
-
-			if (reg == 'A' && isImmediate(prev) && mnem.equals("ADC")) {
-				// grm-4bgh.2. ADC is exact under these exact-constant semantics once the carry it
-				// adds in is itself known -- which on 6502 means a CLC (or SEC) reaches it with no
-				// carry-writer in between. rcransom's FUN_fed1 computes r7 = A*2+1 as
-				// `ASL A / CLC / ADC #$01`. Note the ASL WRITES carry, so the CLC is not decorative
-				// and carryValueBefore must not walk past it to some earlier CLC.
-				Integer imm = immediateOperandValue(prev);
-				if (imm == null) {
-					return null;
-				}
-				Integer carry = carryValueBefore(program, prev, hooks, env, budget);
-				if (carry == null) {
-					return null; // carry not established -- decline rather than guess a bit
-				}
-				Integer before =
-					constantRegisterValue(program, prev, 'A', hooks, env, budget, depth + 1);
-				return before == null ? null : (before + imm + carry) & 0xFF;
-			}
-
-			if (reg == 'A' && isImmediate(prev) &&
-				(mnem.equals("AND") || mnem.equals("ORA") || mnem.equals("EOR"))) {
-				Integer imm = immediateOperandValue(prev);
-				if (imm == null) {
-					return null;
-				}
-				Integer before =
-					constantRegisterValue(program, prev, 'A', hooks, env, budget, depth + 1);
-				if (before == null) {
-					return null;
-				}
-				return switch (mnem) {
-					case "AND" -> before & imm & 0xFF;
-					case "ORA" -> (before | imm) & 0xFF;
-					default -> (before ^ imm) & 0xFF;
-				};
-			}
-
-			if (modifiers.contains(mnem)) {
-				return null;
+			if (semantics.writes(prev, loc)) {
+				return semantics.after(prev, loc,
+					new WalkInputs(program, prev, hooks, env, budget, depth, MAX_BACKWARD_SCAN - i));
 			}
 			if (prev.getFlowType().isCall()) {
-				return null; // a subroutine may clobber any register
+				return null; // a subroutine may clobber any register, and returns any carry
 			}
 			cur = prev;
 		}
@@ -1777,61 +1682,39 @@ final class StoredValueScanner {
 	}
 
 	/**
-	 * The carry flag's value ({@code 0} or {@code 1}) immediately before {@code at}, or
-	 * {@code null} when this walk cannot establish it (bead grm-4bgh.2).
-	 * <p>
-	 * The 6502 has no way to read the carry as data, so the only thing that makes {@code ADC}
-	 * exact under {@link #constantRegisterValue}'s exact-constant semantics is finding the
-	 * instruction that last SET the flag and recognizing it as a constant one: {@code CLC} or
-	 * {@code SEC}. The walk therefore steps backward over {@link #CARRY_PRESERVING} mnemonics
-	 * only, and declines the moment it meets anything else -- including any other carry-writer
-	 * ({@code ADC}, {@code SBC}, a comparison, a shift or rotate), whose result would have to be
-	 * evaluated rather than read off.
-	 * <p>
-	 * Every guard {@link #constantRegisterValue} applies is reused verbatim and for the same
-	 * reasons: fall-through block linkage, {@link #isControlFlowJoin} (another path may arrive
-	 * with the other carry), {@code budget}, and {@link #MAX_BACKWARD_SCAN}. Like
-	 * {@link #constantRegisterValue} it carries no mechanism-write abort (grm-4bgh.7); what
-	 * decides whether an instruction may be stepped over here is {@link #CARRY_PRESERVING}. A call ends the walk: a subroutine returns whatever carry
-	 * it pleases. {@code env}'s entry stop declines rather than adopting anything -- a
-	 * {@link RegisterEnv} describes the caller's A/X/Y and says nothing about its flags, so a
-	 * helper whose own body does not establish the carry has no carry this walk may claim.
+	 * {@link ConstantSemantics.Inputs} for one writer {@link #constantValue} found: each input is
+	 * another walk from that writer, one level deeper, spending from the same {@link Budget}.
 	 */
-	private static Integer carryValueBefore(Program program, Instruction at, Hooks hooks,
-			RegisterEnv env, Budget budget) {
-		Listing listing = program.getListing();
+	private record WalkInputs(Program program, Instruction instr, Hooks hooks, RegisterEnv env,
+			Budget budget, int depth, int remainingScan) implements ConstantSemantics.Inputs {
 
-		Instruction cur = at;
-		for (int i = 0; i < MAX_BACKWARD_SCAN; i++) {
-			if (env.stopsAt(cur.getMinAddress())) {
-				return null; // the env carries registers, not flags -- see this method's javadoc
-			}
-			if (!budget.spend()) {
-				return null;
-			}
-			Instruction prev = pathPredecessor(program, listing, cur, env);
-			if (prev == null) {
-				return null; // block start, left the basic block, or an unlicensed join
-			}
-			// No mechanism-write abort (grm-4bgh.7), for constantRegisterValue's reason plus one
-			// of its own: this walk reads FLAGS, and the CARRY_PRESERVING allowlist below is what
-			// decides whether an instruction may be stepped over. A mechanism write is a store,
-			// which that allowlist already admits as carry-preserving; anything it does not
-			// recognize declines regardless of what this test would have said.
-
-			String mnem = prev.getMnemonicString().toUpperCase();
-			if (mnem.equals("CLC")) {
-				return 0;
-			}
-			if (mnem.equals("SEC")) {
-				return 1;
-			}
-			if (prev.getFlowType().isCall() || !CARRY_PRESERVING.contains(mnem)) {
-				return null;
-			}
-			cur = prev;
+		@Override
+		public Integer before(ConstantSemantics.Loc loc) {
+			return constantValue(program, instr, loc, hooks, env, budget, depth + 1);
 		}
-		return null;
+
+		@Override
+		public Integer memoryOperand() {
+			Address target = effectiveTarget(program, instr, hooks, env, budget, depth + 1);
+			// unknown() in-state, never a caller's -- see constantRegisterValue's javadoc
+			BankState base = hooks.resolveLoad(instr, target, BankState.unknown());
+			if (base != null && (base.knownMask() & 0xFF) == 0xFF) {
+				return base.bits() & 0xFF;
+			}
+			// Last resort (grm-4bgh.1): a stack-relative reload -- see stackRelativePush's
+			// javadoc for the shape and soundness argument, which is about the ADDRESS read and
+			// so holds whatever the instruction does with the byte. The recursive query is
+			// always for 'A': the push stackRelativePush finds is always a PHA, which only ever
+			// saves A. The Span's crossing flag is deliberately IGNORED here: this evaluator
+			// holds no in-state to withdraw (see constantValue's comment where the abort used to
+			// be), so a mechanism write between the reload and its push changes nothing it
+			// computes.
+			Instruction pha =
+				stackRelativePush(program, instr, hooks, env, remainingScan, new Span());
+			return pha == null ? null
+					: constantValue(program, pha, ConstantSemantics.Loc.A, hooks, env, budget,
+						depth + 1);
+		}
 	}
 
 	/**
@@ -1895,7 +1778,7 @@ final class StoredValueScanner {
 	 * {@code (op & 0x1f) == 0x0A}. Callers gate on the mnemonic first, so the other
 	 * instructions in that column (e.g. {@code TAX}, {@code NOP}) never reach here.
 	 */
-	private static boolean isAccumulatorForm(Instruction instr) {
+	static boolean isAccumulatorForm(Instruction instr) {
 		try {
 			return (instr.getByte(0) & 0x1F) == 0x0A;
 		}
