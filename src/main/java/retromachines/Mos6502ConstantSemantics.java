@@ -17,7 +17,6 @@ package retromachines;
 
 import java.util.Set;
 
-import ghidra.program.model.lang.Register;
 import ghidra.program.model.listing.Instruction;
 
 /**
@@ -74,13 +73,24 @@ final class Mos6502ConstantSemantics implements ConstantSemantics {
 	private Mos6502ConstantSemantics() {
 	}
 
+	/** Mnemonics that write {@code D} by table (bead grm-4wqd): the two that set it directly,
+	 * plus the two flag-restoring mnemonics already unioned with p-code for {@code C}. No
+	 * mnemonic is listed as D-PRESERVING the way {@link #CARRY_PRESERVING} lists carry-preserving
+	 * ones -- D is written by so few mnemonics that an allowlist of writers, not preservers, is
+	 * the natural (and equally conservative-by-construction, via the p-code union) shape. */
+	private static final Set<String> D_WRITERS = Set.of("SED", "CLD", "PLP", "RTI");
+
 	@Override
 	public boolean writes(Instruction instr, Loc loc) {
 		if (loc == Loc.C) {
-			return !CARRY_PRESERVING.contains(mnemonic(instr)) || pcodeWrites(instr, "C");
+			return !CARRY_PRESERVING.contains(mnemonic(instr)) ||
+				ConstantSemantics.pcodeWrites(instr, "C");
+		}
+		if (loc == Loc.D) {
+			return D_WRITERS.contains(mnemonic(instr)) || ConstantSemantics.pcodeWrites(instr, "D");
 		}
 		return StoredValueScanner.modifiesRegister(instr, loc.register()) ||
-			pcodeWrites(instr, loc.name());
+			ConstantSemantics.pcodeWrites(instr, loc.name());
 	}
 
 	@Override
@@ -91,6 +101,10 @@ final class Mos6502ConstantSemantics implements ConstantSemantics {
 				return loc == Loc.C ? 0 : null;
 			case "SEC":
 				return loc == Loc.C ? 1 : null;
+			case "CLD":
+				return loc == Loc.D ? 0 : null;
+			case "SED":
+				return loc == Loc.D ? 1 : null;
 			case "LDA":
 			case "LDX":
 			case "LDY":
@@ -227,23 +241,5 @@ final class Mos6502ConstantSemantics implements ConstantSemantics {
 
 	private static String mnemonic(Instruction instr) {
 		return instr.getMnemonicString().toUpperCase();
-	}
-
-	/**
-	 * Whether the instruction's p-code writes any part of the register named {@code name} (or a
-	 * register containing it). The 6502 languages define each flag as its own byte register, so
-	 * {@code C} is not a slice of {@code P} there, but containment either way is the safe test.
-	 */
-	private static boolean pcodeWrites(Instruction instr, String name) {
-		Register target = instr.getProgram().getRegister(name);
-		if (target == null) {
-			return false;
-		}
-		for (Object result : instr.getResultObjects()) {
-			if (result instanceof Register r && (r.contains(target) || target.contains(r))) {
-				return true;
-			}
-		}
-		return false;
 	}
 }

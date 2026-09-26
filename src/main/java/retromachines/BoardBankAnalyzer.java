@@ -33,6 +33,7 @@ import ghidra.app.services.AbstractAnalyzer;
 import ghidra.app.services.AnalysisPriority;
 import ghidra.app.services.AnalyzerType;
 import ghidra.app.util.importer.MessageLog;
+import ghidra.framework.options.Options;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressIterator;
 import ghidra.program.model.address.AddressSetView;
@@ -187,6 +188,78 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 */
 	protected static boolean reachedFixpoint(long entryFingerprint, long exitFingerprint) {
 		return entryFingerprint == exitFingerprint;
+	}
+
+	/**
+	 * Which {@link ConstantSemantics} implementation {@link StoredValueScanner}'s backward
+	 * constant-register walk evaluates with -- design (a) or design (b) of bead grm-as0m.
+	 * {@link #TABLE} ({@link Mos6502ConstantSemantics}) is the default. {@link #PCODE}
+	 * ({@link PcodeConstantSemantics}) is the long-term preferred direction (owner ruling,
+	 * grm-4wqd) but is not the default yet: see {@link PcodeConstantSemantics}'s javadoc for
+	 * the known NES carry-derivation gap (grm-o9k) that blocks it there.
+	 */
+	// public: Ghidra's Options/GProperties enum serialization (GProperties.putEnum) requires
+	// the enum type itself to be a public class, or storing/reading the option throws
+	// IllegalArgumentException("enum '...' must be public") -- measured, bead grm-4wqd.
+	public enum ConstantSemanticsMode {
+		TABLE, PCODE
+	}
+
+	/**
+	 * The option name both {@link NesBankingAnalyzer} and {@link C64BankingAnalyzer} register
+	 * {@link ConstantSemanticsMode} under (bead grm-4wqd).
+	 */
+	/** Package-visible so tests can set the option directly without an {@code AutoAnalysisManager}. */
+	static final String CONSTANT_SEMANTICS_OPTION = "Constant Evaluator";
+
+	/**
+	 * The two analyzer names {@link #constantSemanticsMode} checks. Package-visible in each
+	 * subclass for exactly this -- see their {@code NAME} fields' javadoc.
+	 */
+	private static final String[] ANALYZER_NAMES = { NesBankingAnalyzer.NAME, C64BankingAnalyzer.NAME };
+
+	/**
+	 * The {@link ConstantSemanticsMode} {@code program} selects, read directly from its stored
+	 * {@link Program#ANALYSIS_PROPERTIES} -- per program, and with NO static mutable state of
+	 * any kind, because analyses over distinct programs can run concurrently (bead grm-4wqd).
+	 * <p>
+	 * <b>Why two lookups instead of one.</b> The option is registered once per concrete
+	 * subclass, under THAT subclass's own analyzer name (Ghidra namespaces every analyzer's
+	 * options under {@code getName()}), and this method has no analyzer instance to ask --
+	 * {@link StoredValueScanner#constantValue} is a static utility with only a {@link Program}
+	 * in hand. A given program is imported by exactly one of the two loaders, so exactly one of
+	 * the two sub-{@link Options} actually carries a user-set value; the other reads back
+	 * whatever {@link Options#getEnum} returns for an option it never registered ({@code TABLE},
+	 * the same default), which is harmless to ask and cheaper than threading the analyzer name
+	 * through {@code Hooks} or another plumbing seam only to answer this one question.
+	 * <p>
+	 * <b>Cost.</b> Two {@link Options#getOptions(String)}/{@link Options#getEnum} lookups --
+	 * map gets, not I/O -- called once per {@link StoredValueScanner#constantValue} invocation.
+	 * Cheap enough not to need caching, and caching it would reintroduce exactly the per-program
+	 * mutable state this method exists to avoid.
+	 */
+	static ConstantSemanticsMode constantSemanticsMode(Program program) {
+		Options analysisOptions =
+			program.getOptions(Program.ANALYSIS_PROPERTIES);
+		for (String analyzerName : ANALYZER_NAMES) {
+			ConstantSemanticsMode mode = analysisOptions.getOptions(analyzerName)
+					.getEnum(CONSTANT_SEMANTICS_OPTION, ConstantSemanticsMode.TABLE);
+			if (mode == ConstantSemanticsMode.PCODE) {
+				return ConstantSemanticsMode.PCODE;
+			}
+		}
+		return ConstantSemanticsMode.TABLE;
+	}
+
+	/** Registers {@link #CONSTANT_SEMANTICS_OPTION}, defaulting to {@link ConstantSemanticsMode#TABLE}. */
+	@Override
+	public void registerOptions(Options options, Program program) {
+		super.registerOptions(options, program);
+		options.registerOption(CONSTANT_SEMANTICS_OPTION, ConstantSemanticsMode.TABLE, null,
+			"Which evaluator StoredValueScanner's backward constant-register walk uses: TABLE " +
+				"(a per-mnemonic table, the default) or PCODE (interprets the instruction's own " +
+				"p-code -- bead grm-4wqd; see known gaps in PcodeConstantSemantics's javadoc " +
+				"before enabling it on NES or on decimal-mode-sensitive C64 code).");
 	}
 
 	/**

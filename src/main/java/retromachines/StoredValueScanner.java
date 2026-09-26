@@ -313,6 +313,15 @@ final class StoredValueScanner {
 
 		private int steps;
 
+		/** Cached by {@link #constantValue} the first time it is asked, within THIS one query
+		 * tree -- {@link BoardBankAnalyzer#constantSemanticsMode} reads a program option via
+		 * two {@link ghidra.framework.options.Options} lookups, and a single walk can call
+		 * into {@link #constantValue} recursively many times over the SAME program, so caching
+		 * it once per {@link Budget} instance (freshly created per top-level entry, see every
+		 * {@code new Budget(...)} call site) avoids repeating that lookup without introducing
+		 * any state that outlives one query or is shared across programs. */
+		private ConstantSemantics semantics;
+
 		Budget(int steps) {
 			this.steps = steps;
 		}
@@ -320,6 +329,14 @@ final class StoredValueScanner {
 		/** Spends one step; false once the budget is exhausted. */
 		boolean spend() {
 			return steps-- > 0;
+		}
+
+		/** {@link #semanticsFor}, cached for the lifetime of this {@link Budget}. */
+		private ConstantSemantics semanticsFor(Program program) {
+			if (semantics == null) {
+				semantics = StoredValueScanner.semanticsFor(program);
+			}
+			return semantics;
 		}
 	}
 
@@ -1622,9 +1639,29 @@ final class StoredValueScanner {
 			budget, depth);
 	}
 
-	/** The semantics {@link #constantValue} evaluates with, for {@code program}. */
+	/**
+	 * {@link #constantRegisterValue}'s walk over any {@link ConstantSemantics.Loc}, including
+	 * the flags {@link ConstantSemantics.Loc#C} and {@link ConstantSemantics.Loc#D} that
+	 * {@link #constantRegisterValue}'s {@code char} parameter cannot name. Exposed (bead
+	 * grm-4wqd) for tests that need to query a flag directly rather than through a register
+	 * that happens to depend on it -- production callers all go through
+	 * {@link #constantRegisterValue} or {@link WalkInputs#before}.
+	 */
+	static Integer constantLocValue(Program program, Instruction at, ConstantSemantics.Loc loc,
+			Hooks hooks, RegisterEnv env, Budget budget) {
+		return constantValue(program, at, loc, hooks, env, budget, 0);
+	}
+
+	/**
+	 * The semantics {@link #constantValue} evaluates with, for {@code program} -- selected per
+	 * program by the {@code Constant Evaluator} analyzer option
+	 * ({@link BoardBankAnalyzer#constantSemanticsMode}, bead grm-4wqd), defaulting to
+	 * {@link Mos6502ConstantSemantics}.
+	 */
 	private static ConstantSemantics semanticsFor(Program program) {
-		return Mos6502ConstantSemantics.INSTANCE;
+		return BoardBankAnalyzer.constantSemanticsMode(program) ==
+			BoardBankAnalyzer.ConstantSemanticsMode.PCODE ? PcodeConstantSemantics.INSTANCE
+					: Mos6502ConstantSemantics.INSTANCE;
 	}
 
 	/** {@link #constantRegisterValue}'s walk, over any {@link ConstantSemantics.Loc}. */
@@ -1633,7 +1670,7 @@ final class StoredValueScanner {
 		if (depth > MAX_RESOLVE_DEPTH) {
 			return null;
 		}
-		ConstantSemantics semantics = semanticsFor(program);
+		ConstantSemantics semantics = budget.semanticsFor(program);
 		Listing listing = program.getListing();
 
 		Instruction cur = at;
@@ -1642,7 +1679,7 @@ final class StoredValueScanner {
 				// The entry stop, same rule as resolveStoredValue's: adopt the caller's value
 				// rather than walking past the entry. All-or-nothing here too -- a partially
 				// known caller register is not an index -- and the env carries no flags.
-				if (loc == ConstantSemantics.Loc.C) {
+				if (!loc.isRegister()) {
 					return null;
 				}
 				BankState entryValue = env.get(loc.register());
@@ -1694,8 +1731,14 @@ final class StoredValueScanner {
 		}
 
 		@Override
+		public Address effectiveTarget() {
+			return StoredValueScanner.effectiveTarget(program, instr, hooks, env, budget,
+				depth + 1);
+		}
+
+		@Override
 		public Integer memoryOperand() {
-			Address target = effectiveTarget(program, instr, hooks, env, budget, depth + 1);
+			Address target = effectiveTarget();
 			// unknown() in-state, never a caller's -- see constantRegisterValue's javadoc
 			BankState base = hooks.resolveLoad(instr, target, BankState.unknown());
 			if (base != null && (base.knownMask() & 0xFF) == 0xFF) {
