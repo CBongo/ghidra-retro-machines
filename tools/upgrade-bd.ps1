@@ -92,11 +92,8 @@ Remove-Item $unpack -Recurse -Force
 Remove-Item $zip -Force
 
 Write-Host "`nInstalled: $((& $target version) -join ' ')"
-Write-Host "Next: this script is SPENT -- the upgrade it was written for is done (1.0.4 -> 1.2.2,"
-Write-Host "  2026-09-02). It previously told you to confirm ``bd prime --no-memories``; THAT FLAG DOES"
-Write-Host "  NOT EXIST on 1.2.2, so .beads/PRIME.md is permanent rather than interim. After any future"
-Write-Host "  bd upgrade: re-check ``bd prime --help`` for a prime-without-memories switch, and refresh"
-Write-Host "  .beads/PRIME.md per the procedure in its own header comment."
-Write-Host "  UPGRADING TO 1.3.x? READ bead grm-9t2g FIRST: 1.3.0 has --no-memories, but a custom"
-Write-Host "  PRIME.md no longer suppresses memory bodies, so both hooks must gain --no-memories in"
-Write-Host "  the same step or the ~112 KB truncation comes back silently."
+Write-Host "Next: after ANY bd upgrade, confirm both hooks still run"
+Write-Host "  ``bd prime --no-memories && bd memories`` (.claude/settings.json, .codex/hooks.json) and that"
+Write-Host "  the pair stays small (15,233 bytes at 1.3.0; bodies alone are ~165 KB). Check that"
+Write-Host "  ``bd prime --no-memories`` still shows the team-maintainer close protocol (agent.profile in"
+Write-Host "  .beads/config.yaml). History: 1.0.4 -> 1.2.2 (2026-09-02), 1.2.2 -> 1.3.0 (2026-09-26, grm-9t2g)."

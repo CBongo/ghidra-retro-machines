@@ -4,7 +4,7 @@
       {
         "hooks": [
           {
-            "command": "bd prime && bd memories",
+            "command": "bd prime --no-memories && bd memories",
             "type": "command"
           }
         ],
@@ -15,7 +15,7 @@
       {
         "hooks": [
           {
-            "command": "bd prime && bd memories",
+            "command": "bd prime --no-memories && bd memories",
             "type": "command"
           }
         ],

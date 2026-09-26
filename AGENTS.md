@@ -205,11 +205,17 @@ It did inject every body in full until then, and that was the problem: measured 
 115,504 bytes, of which 110,823 were memory bodies. Hosts truncate that to a ~2 KB preview and
 spill the rest to a file, so everything after the first memory alphabetically was silently absent
 from every session — for Codex as much as for Claude, since `.codex/hooks.json` and
-`.claude/settings.json` run the same command. The fix is `.beads/PRIME.md`, which overrides
-`bd prime`'s output entirely (see `bd prime --help`) and replaces the memories section with a
-pointer; the hooks then run `bd memories` as a second command to emit the index. The pair costs
-~12 KB. That file carries its own instructions for refreshing it after a `bd` upgrade, and for
-deleting it if a future version grows a real index flag.
+`.claude/settings.json` run the same command. The fix, since bd 1.3.0 (bead `grm-9t2g`,
+2026-09-26), is the hook command `bd prime --no-memories && bd memories`: prime omits the bodies
+and `bd memories` emits the index. The pair measured 15,233 bytes. **Keep `--no-memories` on both
+hooks** — without it, 1.3.x appends every body again (~165 KB) and the truncation returns silently.
+
+(From 2026-09-02 to 2026-09-26 this was done by a custom `.beads/PRIME.md`, which on 1.2.x
+overrode prime output entirely. It was deleted in `grm-9t2g`: 1.3.x appends memories after a
+custom template anyway, and its other job — carrying this repo's push-mandatory close protocol
+against upstream's conservative default — is now `agent.profile: team-maintainer` in
+`.beads/config.yaml`. Do not recreate it; if upstream's generated text ever contradicts the
+Session Completion rules below, fix the profile or those rules, not a pinned copy.)
 
 Three commands, and the distinction between them matters:
 

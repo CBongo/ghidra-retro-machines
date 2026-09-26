@@ -55,3 +55,5 @@
 # - github.token    → use GITHUB_TOKEN env var instead
 
 sync.remote: "git+ssh://git@github.com/CBongo/ghidra-retro-machines.git"
+agent:
+    profile: team-maintainer
