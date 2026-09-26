@@ -173,8 +173,16 @@ final class DescriptorSupport {
 	 * so a rejected or unmapped mapper number is still visible on the (otherwise near-empty)
 	 * program for troubleshooting. Recorded because board names are not memorable the way mapper
 	 * numbers are; see {@link #BOARD_NAME_PROPERTY} for the human-readable counterpart.
+	 * <p>
+	 * <b>Deliberately NOT under the {@code "Retro Machines."} prefix</b> the machine-read
+	 * properties above use (bead {@code grm-x5g2}). This one and
+	 * {@link #BOARD_NAME_PROPERTY} exist to be <em>read by a person</em>, and
+	 * {@code ProgramDB.getMetadata()} -- what the About/Info program dialogs display -- skips
+	 * every Program Information option whose name contains {@link
+	 * ghidra.framework.options.Options#DELIMITER} ("ignore second tier options"). Under the
+	 * prefix they were written correctly and never shown.
 	 */
-	static final String INES_MAPPER_PROPERTY = "Retro Machines.iNES Mapper";
+	static final String INES_MAPPER_PROPERTY = "iNES Mapper";
 
 	/**
 	 * Program-info property carrying the resolved board descriptor's human name (bead
@@ -187,7 +195,7 @@ final class DescriptorSupport {
 	 * Written by {@link NesRomLoader#load} only when a board was resolved (unlike
 	 * {@link #INES_MAPPER_PROPERTY}, there is no board name to publish when none matched).
 	 */
-	static final String BOARD_NAME_PROPERTY = "Retro Machines.Board Name";
+	static final String BOARD_NAME_PROPERTY = "NES Board";
 
 	/** One {@code window:bank} token: capture group 1 = window name, 2 = bank digits. The
 	 *  separator is a colon, not '=': the headless {@code analyzeHeadless.bat} arg parser

@@ -16,6 +16,7 @@
 package retromachines;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 
 import java.io.IOException;
@@ -23,6 +24,7 @@ import java.io.IOException;
 import org.junit.Test;
 
 import ghidra.app.util.bin.ByteArrayProvider;
+import ghidra.framework.options.Options;
 
 /**
  * Pure-JUnit coverage of {@link NesRomLoader#mapperPropertyValue} and the mapper/submapper
@@ -134,5 +136,17 @@ public class NesMapperPropertyTest {
 		NesRomLoader.InesHeader header = parse(ines(4, 0, 0, false, 1));
 		assertEquals(0, header.submapper());
 		assertEquals(false, header.nes2());
+	}
+
+	/**
+	 * These two properties are for a person to read, and {@code ProgramDB.getMetadata()} -- the
+	 * About/Info program dialogs -- drops every Program Information option whose name contains
+	 * {@link Options#DELIMITER}. Under a {@code "Retro Machines."} prefix they were written and
+	 * never shown (grm-x5g2).
+	 */
+	@Test
+	public void humanFacingPropertyNamesAreTopLevel() {
+		assertFalse(DescriptorSupport.INES_MAPPER_PROPERTY.contains(Options.DELIMITER_STRING));
+		assertFalse(DescriptorSupport.BOARD_NAME_PROPERTY.contains(Options.DELIMITER_STRING));
 	}
 }

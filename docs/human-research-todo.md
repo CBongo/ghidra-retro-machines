@@ -43,19 +43,13 @@ bash tools/banktest/realrom-test.sh nominate <romdir>   # board-gap survey
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
-- [ ] **Three table extents for the lowest-target bound (`grm-eyn`, measured 2026-09-21 on a
+- [ ] **One table extent left for the lowest-target bound (`grm-eyn`, measured 2026-09-21 on a
   12.1.3 build carrying the fork's `475cf359` bound).** The bound is exact on every table you have
-  already read (megaman `a737` → 8, rcproam `806b` → 6 and `a171` → 11). Three it produced have
-  no ground truth yet:
-  1. **dragonpower/shenlong `$8F00`: 30 or 31 entries?** You recorded `$1E`. The bytes are 30 sane
-     entries, then `92 91` at `$8F3C` (= `$9192`, a duplicate of entry 2; `$92` is an illegal
-     opcode, so it is not code), then code at `$8F3E`. The bound says 31. Is `$9192` a 31st entry
-     or two bytes of padding?
-  2. **rcransom `9343`: the table at `9352` now recovers 25 entries** (the blessed build recovered
-     none because the decompiler crashed on `FUN_9314`, `grm-gz42`), and the row moves +208 refs /
-     +883 instrs. Is 25 right, and is the new code real?
-  3. **ff1 bank 14 `b174`: 104 → 24 entries**, and ff1 still flaps run to run afterwards
-     (1865/7494 ↔ 1896/7520). What is the real extent, and which table feeds the flap?
+  read, now six of them: megaman `a737` → 8, rcproam `806b` → 6 and `a171` → 11, dragonpower/shenlong
+  `$8F00` → 31, rcransom `9352` → 25 (the last two answered 2026-09-25, see the Answered table).
+  One it produced still has no ground truth:
+  - **ff1 bank 14 `b174`: 104 → 24 entries**, and ff1 still flaps run to run afterwards
+    (1865/7494 ↔ 1896/7520). What is the real extent, and which table feeds the flap?
   Also worth one look: **rcproam `bd2e`** (your 4-entry table at `bd31`) was only ever reached
   through an over-read entry of `a16e`; after the bound nothing reaches it. How is it entered at
   runtime?
@@ -192,11 +186,12 @@ Agents can't file these — they need an account and CLA agreement.
 
 - [ ] **#9447 (jump-table over-read, `grm-eyn`/`grm-b3m`): the lowest-target bound is now
   PR-grade evidence, if you want to send it unprompted.** The proposal has sat on the issue since
-  2026-08-16 with no reply. What 2026-09-21 adds: rebased onto 12.1.3, exact on four hand-verified
-  tables, 72 tables bounded across eight cartridges, real code recovered rather than lost, and
-  32/34 rows deterministic across two full runs. Known limits to state: it declines on the
-  table-after-code idiom (megaman `e000`/`e121`/`e44e`, true lengths 18/19/10, still 128), and the
-  `$8F00` +1 above. The fork commit `475cf359` applies to the 12.1.3 tree unchanged; the
+  2026-08-16 with no reply. What 2026-09-21 adds: rebased onto 12.1.3, exact on **six**
+  hand-verified tables (2026-09-25: the suspected `$8F00` +1 is really 31 entries, so it was exact
+  there too, and rcransom `9352` → 25 is right), 72 tables bounded across eight cartridges, real
+  code recovered rather than lost, and 32/34 rows deterministic across two full runs. Known limit
+  to state: it declines on the table-after-code idiom (megaman `e000`/`e121`/`e44e`, true lengths
+  18/19/10, still 128). The fork commit `475cf359` applies to the 12.1.3 tree unchanged; the
   `grm-6xh` recipe below prepares the branch. Your call, per `grm-b3m`'s standing rule that silence
   is not a reason to send one.
 
@@ -241,7 +236,9 @@ Agents can't file these — they need an account and CLA agreement.
   `JMP (zp)` dispatch whose table therefore never resolves. **Not ready to file:** the agent-side
   work comes first — capture the decompiler's stderr/crash, then minimise to something shareable
   without ROM bytes (the ROM is hash-pinned but not redistributable). Your part is the filing when
-  that lands; nothing to do until then. Independent of #9655.
+  that lands; nothing to do until then. Independent of #9655. *(2026-09-25: the lowest-target
+  bound builds recover `9352`'s 25 entries, so the crash may be downstream of the over-read. If
+  so, this becomes part of #9447 rather than a separate report. Agent work to settle first.)*
 - [ ] **Fall-through override into an overlay space is accepted by the listing and fatal to the
   decompiler — ask upstream whether that is deliberate.** (`grm-p3dy`, ruled 2026-09-21: ask
   first, build nothing.) The mechanics spike (`FallThroughIntoOverlayProgramTest`, 11 rows)
@@ -388,3 +385,5 @@ Agents can't file these — they need an account and CLA agreement.
 | Push and open the `joshleaves/ghidra-snes` PR for the seven 65816 semantic defects | **Opened 2026-09-20 as [joshleaves/ghidra-snes#6](https://github.com/joshleaves/ghidra-snes/pull/6)** — branch `fix/65816-semantics`, one commit on upstream `master`, `658xx.sinc` only; all seven vector-oracle findings (CPY swap, compare carry, indirect jump/call, XBA, TXA/TYA flags, context bits, XCE). Awaiting the maintainer. | `grm-9nxj.7` stays open until merged/answered |
 | `Loader.validateOptions()` is never called outside the GUI import dialogs — document it or wire it up? | **Reported upstream 2026-09-20 as [NationalSecurityAgency/ghidra#9658](https://github.com/NationalSecurityAgency/ghidra/issues/9658)**, asking for either a javadoc note or a `ProgramLoader` call. Facts as verified at 12.1.3: the only callers are `ImporterDialog:442`, `AddToProgramDialog:82`, `LoadLibrariesOptionsDialog:60`; not a 12.x regression. Courtesy report — no live exposure here, since every loader enforces in `load()` (CLAUDE.md "Loader validation"). | `grm-vsg` **closed**; `ghidra-issue-9658-validateoptions` memory |
 | rcransom on the patched decompiler: are the 712 missing overlay instructions code or data? | **Both — and the patch was innocent; blessed at 1221/5722 (owner, 2026-09-20).** Owner read: the seeds are two `JMP (zp)` dispatch tables (`9343`/table `9352`, `82b3`/tables `82b6`+`82d1`); `d46c` is a callee of the lost `9469` code; `e538` an over-read target. Bisect with junction-shadow installs: stock gives the same 5722 off the real install path, hunk-2-only too; the old 6434 was stock walking `9352` for 128 entries (grm-b3m shape, ~20 real) on one configuration only. The decompiler crashes on `FUN_9314` on every build — that is what blocks both tables → `grm-gz42`. | `grm-qp5x.4` **closed**; `grm-gz42` filed |
+| dragonpower/shenlong `$8F00`: is the lowest-target bound's 31st entry (`$9192` at `$8F3C`) real, or two bytes of padding? | **Real — 31 entries (owner, 2026-09-25).** The `$1E` you recorded was the max index, not the count. So the bound is **exact** at `$8F00`, not +1: the "one known overshoot" it carried is retired, and it is now exact on six of six hand-read tables. **Do not list `$8F00` as a limitation of the bound anywhere, including the #9447 PR body.** | `grm-eyn` |
+| rcransom `9343`: the bound recovers 25 entries at `9352` and moves the row +208 refs / +883 instrs — right? | **Right — 25 entries, and it is a legitimate switch table (owner, 2026-09-25).** But on the **currently installed** build the table is not recovered at all, because the decompiler still dies on `FUN_9314` (`grm-gz42`). The 25 only appeared on the bound builds, so the bound is the likely reason the crash does not happen there: without it the decompiler reads 128 entries into garbage. That makes the missing binary decision in section 4 the thing blocking this row, not new analysis. Whether the crash really is downstream of the over-read is agent work on `grm-gz42`, and it changes whether that bead still needs filing upstream. | `grm-eyn`; `grm-gz42` |

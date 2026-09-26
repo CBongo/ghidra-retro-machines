@@ -276,6 +276,13 @@ zelda2: https://datacrystal.tcrf.net/wiki/Zelda_II:_The_Adventure_of_Link/RAM_ma
 
 rtk2: fe9c reads the 70d and 70e shadows, saves them on the stack, then changes banks with the f99e helper to call $8000, then pops the shadow values and calls f99e again to set them back as they were. more refs are hiding in yet-to-be-disassembled code.
 
+W8000_M0_B12::93ee(c), FUN_W8000_M0_B12__9314:9495(c), FUN_W8000_M0_B12__9314:94dc(c), FUN_W8000_M0_B12__9314:9534(c)
+
+the mapper numbers are missing from the program properties; I thought that already shipped.
+dragonpower/shenlong 8f00: 31 entries.
+rcransom W8000_M0_B12_9343: 9352 table is 25 entries long and is a legitimate switch table. analyze with current build does not recover the table at all though due to the decompiler dying.
+
+
 
   Next session's shortest path
 

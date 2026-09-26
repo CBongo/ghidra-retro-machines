@@ -165,8 +165,8 @@ Two Program Info string properties, alongside the two that already exist in
 | `Retro Machines.Placement Override` | `PLACEMENT_OVERRIDE_PROPERTY` (`:89`) | existing — user bank placement |
 | `Retro Machines.Game Identity` | *new* | `prg:<64 hex> file:<64 hex>` |
 | `Retro Machines.Game Descriptor` | *new* | resolved descriptor path, or absent |
-| `Retro Machines.iNES Mapper` | `INES_MAPPER_PROPERTY` (bead `grm-3ppn`) | decimal mapper number, e.g. `4`, or `4 (submapper 1)` on an NES 2.0 header |
-| `Retro Machines.Board Name` | `BOARD_NAME_PROPERTY` (bead `grm-3ppn`) | resolved board's human name, e.g. `NES MMC3 (iNES mapper 4)`; absent when no board matched |
+| `iNES Mapper` | `INES_MAPPER_PROPERTY` (bead `grm-3ppn`) | decimal mapper number, e.g. `4`, or `4 (submapper 1)` on an NES 2.0 header |
+| `NES Board` | `BOARD_NAME_PROPERTY` (bead `grm-3ppn`) | resolved board's human name, e.g. `NES MMC3 (iNES mapper 4)`; absent when no board matched |
 
 Why two and not one: the **identity** is a fact about the file and is computed even when no
 descriptor matches — so a user who later drops an overlay file in can be told what hash to key it

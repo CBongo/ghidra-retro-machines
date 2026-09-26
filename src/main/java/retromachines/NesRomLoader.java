@@ -359,7 +359,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 	}
 
 	/**
-	 * Formats the {@code Retro Machines.iNES Mapper} property value (bead {@code grm-3ppn}): a
+	 * Formats the {@code iNES Mapper} property value (bead {@code grm-3ppn}): a
 	 * plain decimal mapper number, with the NES 2.0 submapper appended in parentheses when the
 	 * header carries one. Pure formatting, split out of {@link #load} so it is directly
 	 * JUnit-testable without a {@code ByteProvider} or a full import.

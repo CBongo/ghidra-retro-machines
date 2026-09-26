@@ -77,12 +77,12 @@ loader's "NES Board" import option.
 
 `NesRomLoader.load` also records the header's raw iNES mapper number (and NES 2.0
 submapper, when present) and the resolved board's human `name` as two Program-info
-properties, `Retro Machines.iNES Mapper` and `Retro Machines.Board Name` (bead
+properties, `iNES Mapper` and `NES Board` (bead
 `grm-3ppn`) — so a mapper number, which is memorable, and a board name, which usually
 isn't, both show up in the properties dialog and are greppable by scripts without
 decoding the header by hand. Every shipped board's `name` is conventionally written
 `"<system> <board> (iNES mapper <n>)"` (e.g. `NES MMC3 (iNES mapper 4)`), so
-`Retro Machines.Board Name` already reads as the two facts combined.
+`NES Board` already reads as the two facts combined.
 
 ### `regions`
 
