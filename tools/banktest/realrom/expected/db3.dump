@@ -25,13 +25,12 @@ REALROM count refs.intoOverlay.intraOverlay 0
 REALROM count instrs.inOverlay 0
 REALROM count bankComments 0
 REALROM count warnings 4
-REALROM count notes 9
-REALROM count symbols 18
+REALROM count notes 8
+REALROM count symbols 135
 REALROM sample.warn db73 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_db2e whose bank argument could not be recovered at this call site
 REALROM sample.warn e69e [CopyLoopAnalyzer] copy-shaped loop RAM:e7d4 -> RAM:0200 could not be bounded; not applied
 REALROM sample.warn e707 [CopyLoopAnalyzer] copy-shaped loop RAM:e826 -> RAM:0200 could not be bounded; not applied
 REALROM sample.warn e712 [CopyLoopAnalyzer] copy-shaped loop RAM:e7fd -> RAM:0200 could not be bounded; not applied
-REALROM sample.note a018 [CopyLoopAnalyzer] copy-shaped loop RAM:0264 -> RAM:0204 (32 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note c4d2 [CopyLoopAnalyzer] copy-shaped loop RAM:c4f5 -> RAM:0200 (16 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note c585 [CopyLoopAnalyzer] copy-shaped loop RAM:c5af -> RAM:0200 (33 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note c712 [CopyLoopAnalyzer] copy-shaped loop RAM:c9af -> RAM:0200 (77 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
@@ -53,9 +52,17 @@ REALROM sample.symbol 4015 SND_CHN IMPORTED primary=true
 REALROM sample.symbol 4016 JOY1 IMPORTED primary=true
 REALROM sample.symbol 4017 JOY2 IMPORTED primary=true
 REALROM sample.symbol c0d8 RESET IMPORTED primary=true
+REALROM sample.symbol c1ab switch USER_DEFINED primary=true
 REALROM sample.symbol c1ae NMI IMPORTED primary=true
+REALROM sample.symbol c1ed switch USER_DEFINED primary=true
 REALROM sample.symbol c233 IRQ IMPORTED primary=true
-REALROM sample.symbol fffa NMI_VEC IMPORTED primary=true
-REALROM sample.symbol fffc RESET_VEC IMPORTED primary=true
-REALROM sample.symbol fffe IRQ_VEC IMPORTED primary=true
+REALROM sample.symbol c269 switch USER_DEFINED primary=true
+REALROM sample.symbol c2ea case_0 USER_DEFINED primary=true
+REALROM sample.symbol c2ea case_7 USER_DEFINED primary=false
+REALROM sample.symbol c441 case_1 USER_DEFINED primary=true
+REALROM sample.symbol c48a case_2 USER_DEFINED primary=true
+REALROM sample.symbol c4ca case_3 USER_DEFINED primary=true
+REALROM sample.symbol c504 case_4 USER_DEFINED primary=true
+REALROM sample.symbol c565 case_5 USER_DEFINED primary=true
+REALROM sample.symbol.truncated 25 of 135
 === REALROM END ===
