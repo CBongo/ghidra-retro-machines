@@ -268,10 +268,12 @@ it ran on** (`grm-qp5x.3`, owner ruling 2026-09-20). Stock Ghidra 12.1.3 (GP-693
 #9655) rewrites every 6502 `JSR`'s return-address store into a join varnode and destroys
 bank-argument recovery on `megaman` and `wizwarr` (`grm-9wl6`); the three-hunk fix from
 `grm-qp5x.2` ships in no release, so the reference machine's install runs a MinGW build of the
-`Ghidra_12.1.3_build` tag with that patch, and `megaman`/`wizwarr` are blessed on it. The stock
-binary sits beside it as `decompile.exe.stock-12.1.3`. Every runner prints `== decompiler: … ==`
+`Ghidra_12.1.3_build` tag with that patch, and `megaman`/`wizwarr` are blessed on it. 12.1.4
+changed no decompiler source (Java or C++) and still has the bug, so the same patched binary was
+carried over unchanged on the 12.1.4 retarget (`grm-rap8`). The stock binary sits beside it as
+`decompile.exe.stock-12.1.4`. Every runner prints `== decompiler: … ==`
 naming the build by sha256 (`grm_decompiler_build_name` in `tools/banktest/lib/common.sh`), and the
-`REALROM STALENESS` stamp records it, so **a `megaman`/`wizwarr` failure whose banner says `12.1.3
+`REALROM STALENESS` stamp records it, so **a `megaman`/`wizwarr` failure whose banner says `12.1.x
 stock` is the missing patch, not a regression**. The candidate cache keys on the same hash, so a
 swap can never serve the other build's dump. `rcransom` was re-blessed at
 1221/5722 on it (owner, 2026-09-20, `grm-qp5x.4`): the patch turned out to be innocent — stock in

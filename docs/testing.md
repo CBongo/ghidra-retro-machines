@@ -865,8 +865,9 @@ it is never a `run-banktest.sh` chunk (whose `all` would otherwise pull it in).
   and the staleness stamp's fourth line records the same, so on a *stock* install the two rows
   fail with the 12.1.3 signature above and the banner says why. Goldens blessed on the patched
   build are therefore reproducible only on it — which is the accepted cost of the ruling, stated
-  here so nobody bisects the repo for it. The stock binary is kept beside the patched one as
-  `decompile.exe.stock-12.1.3`; the build recipe is in the
+  here so nobody bisects the repo for it. 12.1.4 changed no decompiler source, so the 12.1.3
+  patched binary carries over to the 12.1.4 install unchanged (grm-rap8). The stock binary is kept
+  beside the patched one as `decompile.exe.stock-12.1.4`; the build recipe is in the
   `ghidra-12-1-3-native-regression-gp6936` bd memory, and the known hashes live in
   `grm_decompiler_build_name` (`tools/banktest/lib/common.sh`).
 

@@ -411,13 +411,20 @@ grm_realrom_staleness_note() {
 # recipe produces from the Ghidra_12.1.3_build tag plus the three hunks -- rebuild it and the
 # hash will differ (MinGW builds are not reproducible), so add the new hash here rather than
 # treating an UNKNOWN as suspect for that reason alone. Keep the stock exe beside the patched
-# one in the install as decompile.exe.stock-12.1.3 so an A/B is one rename away.
+# one in the install as decompile.exe.stock-<ver> so an A/B is one rename away.
+#
+# 12.1.4 (grm-rap8) changed no decompiler source -- Java or C++ -- between the two tags, so the
+# 12.1.3 patched binary was carried into the 12.1.4 install as-is: same file, same hash. Its label
+# names both versions for that reason. The 12.1.4 stock MSVC binary differs in bytes from 12.1.3's
+# (build timestamps) but not in source, and still has the GP-6936 bug.
 grm_decompiler_build_name() {
 	case "${1:-}" in
 		5ae40d01bf03e09ee89b65d1ca465537a1b5d2626cdcfae6e6a9f98ee2d8f536)
 			echo "12.1.3 stock" ;;
+		ea42e06df2a64f95188a12422a35a36cd48fd4a6f621e62b001e82f1bbbe923b)
+			echo "12.1.4 stock" ;;
 		1afff91d3130115546cf7904fb8c95047345155049c8b76661b307761e3820a1)
-			echo "12.1.3 + GP-6936 local patch (grm-qp5x.3)" ;;
+			echo "12.1.3/12.1.4 + GP-6936 local patch (grm-qp5x.3)" ;;
 		bd0d7c43f04fca8413ae8ddf2ebe6edd661e6ccbf5228b23460e232568b96d9a)
 			echo "12.1.3 + GP-6936 + lowest-target jump-table bound (grm-eyn candidate)" ;;
 		27befd1a8ff1efb1e24e1dd33c24ce38c606a468b4f4569e92e0a94f972fa917)
@@ -462,7 +469,7 @@ grm_decompiler_hash() {
 	sha256sum "$bin" 2>/dev/null | cut -d' ' -f1 | tr -d '\\'
 }
 
-# One line naming the decompiler build: "== decompiler: 12.1.3 stock (5ae40d01...) ==".
+# One line naming the decompiler build: "== decompiler: 12.1.4 stock (ea42e06d...) ==".
 # Printed by every runner beside the installed-extension banner, so a surprising real-ROM
 # result can be attributed to the toolchain at a glance.
 grm_decompiler_note() {
