@@ -57,20 +57,6 @@ Each is minutes of work and settles something specific. Highest value per unit e
   only static route was probably an over-read table entry. Which table or call reaches the
   function containing `9913`? Record on `grm-wayn` (it is one of that bead's two sites).
 
-- [ ] **The beads Claude Code plugin still injects a second, uncapped `bd prime`.** Found
-  2026-09-26 checking the `grm-9t2g` upgrade: besides the repo's own hooks, the globally installed
-  `beads` plugin (v1.1.0, `~/.claude/plugins/cache/beads-marketplace/beads/1.1.0/.claude-plugin/plugin.json`)
-  registers its own SessionStart/PreCompact hook running plain `bd prime` — 158.8 KB this session,
-  every memory body, truncated by the host. Mitigated repo-side by `prime.max-memories: 1` in
-  `.beads/config.yaml` (now ~10 KB), but the plugin still duplicates the workflow text. Your
-  global config, so yours: update the plugin to a release whose hook passes `--no-memories`, or
-  disable it (its skills are conveniences; the repo hooks carry everything that matters).
-  **Updating does not fix it yet (checked 2026-09-27):** plugin **1.3.0** (commit `f6637545`)
-  still registers plain `bd prime` for both SessionStart and PreCompact (`.claude-plugin/plugin.json`),
-  and a fresh session still received two prime payloads, the plugin's held down only by the
-  `max-memories: 1` cap. Remaining options: disable the plugin, or wait for (or ask upstream for) a
-  release whose hook passes `--no-memories`.
-
 ---
 
 ## 2. Def-use passes on untraced titles
@@ -254,6 +240,7 @@ re-measurement and branch prep land), [#9658](https://github.com/NationalSecurit
 
 | question | answer | bead |
 |---|---|---|
+| The globally installed beads Claude Code plugin runs its own plain `bd prime` hook at SessionStart/PreCompact, duplicating the repo hooks' payload. Update it or disable it? | **Disabled (owner, 2026-09-27)**: `"beads@beads-marketplace": false` in the global `~/.claude/settings.json`. Updating was not an option: plugin 1.3.0 (`f6637545`) still registers plain `bd prime`. Verified the next session: the SessionStart hook produced **one** prime payload, 15,398 bytes, with one copy of the workflow text and the close protocol (before, there were two, the plugin's held down only by the cap). The repo hooks carry everything the plugin did; its skills were conveniences. Keep `prime.max-memories: 1` in `.beads/config.yaml` anyway: the repo hooks don't need it (they pass `--no-memories`), but it still keeps a hand-run or post-compaction plain `bd prime` from dumping every memory body. If the plugin is ever re-enabled, check its `plugin.json` hook for `--no-memories` first. | `grm-9t2g` (closed) |
 | bd 1.3.0 is installed — can `.beads/PRIME.md` finally be retired, and is `agent.profile team-maintainer` right for this repo? | **Yes to both (owner, 2026-09-26).** Upstream's docs define `team-maintainer` as the profile for "repositories that explicitly delegate session close to agents" — close beads, run gates, commit, `bd dolt push`, `git push` as routine work — which is what AGENTS.md's Session Completion section mandates, so the hand-maintained push-policy divergence in PRIME.md is no longer needed. The profile is set in `.beads/config.yaml` (that is where `bd config set` writes it, not the Dolt DB). Both hooks now run `bd prime --no-memories && bd memories`: 15,233 bytes, against 179,339 for plain `bd prime && bd memories` on 1.3.0. This supersedes the 2026-09-02 row below's "permanent, not interim" conclusion; that row stays as history. The upstream index-emission ask in section 5 is unaffected. | `grm-9t2g` **closed** |
 | Ask `SingleStepTests/65816` upstream to state a license explicitly | **Already asked by someone else — [SingleStepTests/65816#9](https://github.com/SingleStepTests/65816/issues/9) (opened 2026-08-28) requests MIT and a LICENSE file; you added a supporting comment there on 2026-09-19 rather than opening a duplicate.** The human half is done; `grm-9nxj.8` stays open only to wait on upstream. When a LICENSE lands, update `src/test/resources/w65816-vectors/NOTICE` to cite it and close; if upstream declines, remove the vendored sample and clone-gate `W65816VectorSampleTest`. Do not file a second issue. | `grm-9nxj.8` (open, waiting on upstream) |
 | Where does the 12.1.3 native decompiler regression come from, and was it reported upstream? | **GP-6936 (`6dd07f90ff`), and yes — filed 2026-09-19 as [NationalSecurityAgency/ghidra#9655](https://github.com/NationalSecurityAgency/ghidra/issues/9655).** There was never a 185-commit bisect to do: exactly one commit touches `Ghidra/Features/Decompiler/src/decompile` between the 12.1.2 and 12.1.3 tags, and instrumenting its two new call sites showed a single trigger shape repeated 2062 times — a 2-byte access at stack offset −1 on a 16-bit stack space, rewritten from a plain `stack:ffff` varnode into a `join`. That is the `JSR` return slot at the top of a 6502 stack frame, not a wrapped range, so it fires at every call site. Reverting the wrap-range hunks alone restores 12.1.2's output exactly; the `type.cc`/`type.hh` half is inert. The PR, the #4148 cross-reference and the patched-install decision remain — see section 5. | `grm-qp5x.1` **closed**; `grm-qp5x.2` |
