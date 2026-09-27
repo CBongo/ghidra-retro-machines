@@ -19,13 +19,9 @@ REALROM count refs.intoOverlay.retargeted 0
 REALROM count refs.intoOverlay.intraOverlay 0
 REALROM count instrs.inOverlay 0
 REALROM count bankComments 0
-REALROM count warnings 6
+REALROM count warnings 2
 REALROM count notes 0
-REALROM count symbols 18
-REALROM sample.warn 8ee4 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_8eeb whose bank argument could not be recovered at this call site
-REALROM sample.warn 9913 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffbe whose bank argument could not be recovered at this call site
-REALROM sample.warn e3bb [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
-REALROM sample.warn e906 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM count symbols 77
 REALROM sample.warn ffc8 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn ffea [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffbe whose bank argument could not be recovered at this call site
 REALROM sample.symbol 2000 PPUCTRL IMPORTED primary=true
@@ -42,8 +38,16 @@ REALROM sample.symbol 4016 JOY1 IMPORTED primary=true
 REALROM sample.symbol 4017 JOY2 IMPORTED primary=true
 REALROM sample.symbol 800b NMI IMPORTED primary=true
 REALROM sample.symbol 8096 IRQ IMPORTED primary=true
-REALROM sample.symbol ff88 RESET IMPORTED primary=true
-REALROM sample.symbol fffa NMI_VEC IMPORTED primary=true
-REALROM sample.symbol fffc RESET_VEC IMPORTED primary=true
-REALROM sample.symbol fffe IRQ_VEC IMPORTED primary=true
+REALROM sample.symbol 8efd switch USER_DEFINED primary=true
+REALROM sample.symbol 8f3e case_28 USER_DEFINED primary=true
+REALROM sample.symbol 8f51 case_26 USER_DEFINED primary=true
+REALROM sample.symbol 8f51 case_27 USER_DEFINED primary=false
+REALROM sample.symbol 8f97 case_25 USER_DEFINED primary=true
+REALROM sample.symbol 8fa7 case_24 USER_DEFINED primary=true
+REALROM sample.symbol 8fe2 case_23 USER_DEFINED primary=true
+REALROM sample.symbol 9047 case_22 USER_DEFINED primary=true
+REALROM sample.symbol 904a case_21 USER_DEFINED primary=true
+REALROM sample.symbol 9067 case_19 USER_DEFINED primary=false
+REALROM sample.symbol 9067 case_20 USER_DEFINED primary=false
+REALROM sample.symbol.truncated 25 of 77
 === REALROM END ===

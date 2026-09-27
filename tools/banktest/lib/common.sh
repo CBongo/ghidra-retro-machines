@@ -172,9 +172,24 @@ grm_settings_base_fallback() {
 # analyzer is ever invoked; see grm-nems for the measurements and the open mechanism
 # question. It does NOT address the dodge/ff1/rcproam/dragonpower bistable rows, which are
 # a separate mechanism (grm-4nr) and still flap with the pool pinned.
+#
+# RE-MEASURED 2026-09-27 after grm-eyn's jump-table bound (which removed most phantom seeds):
+# UNPINNED is now run-to-run reproducible too (33/34 rows byte-identical across two unpinned
+# runs; only ff1 moves, as it does pinned) and tmnt no longer splits. But pinned vs unpinned
+# still differ DETERMINISTICALLY on dodge (refs 2470 vs 2473) and lwings (bankComments 40 vs
+# 37), so without the pin a golden would depend on the machine's CORE COUNT. The pin's job is
+# now machine-independence of shared goldens, and that is why it stays.
+#
+# GRM_THREAD_PIN=0 drops the pin for one invocation. It exists to MEASURE whether the pin is
+# still needed (grm-nems, re-opened after grm-eyn's jump-table bound removed the grm-4nr race);
+# it is not a supported way to run the gates.
 grm_apply_settings_base() {
 	local base_native
-	export GHIDRA_HEADLESS_JAVA_OPTIONS="${GHIDRA_HEADLESS_JAVA_OPTIONS:-} -Dcpu.core.override=1"
+	if [ "${GRM_THREAD_PIN:-1}" != 0 ]; then
+		export GHIDRA_HEADLESS_JAVA_OPTIONS="${GHIDRA_HEADLESS_JAVA_OPTIONS:-} -Dcpu.core.override=1"
+	else
+		echo "== analysis thread pool NOT pinned (GRM_THREAD_PIN=0; measurement only, grm-nems) ==" >&2
+	fi
 	if [ -n "${BANKTEST_SETTINGS_BASE:-}" ]; then
 		base_native="$(native "$BANKTEST_SETTINGS_BASE")"
 		export GHIDRA_HEADLESS_JAVA_OPTIONS="${GHIDRA_HEADLESS_JAVA_OPTIONS:-} -Dapplication.settingsdir=$base_native -Dapplication.cachedir=$base_native/cache"

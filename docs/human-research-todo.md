@@ -57,6 +57,20 @@ Each is minutes of work and settles something specific. Highest value per unit e
   `grm-mej.3`. One listing read per site: what are the ~8 instructions before each `JSR fed1`, and
   is the bank known on entry to the function containing it? Record on `grm-mej.3`.
 
+- [ ] **rcransom: are the two tables the extension-side jump-table bound shrank right?** (`grm-eyn`,
+  2026-09-27.) The bound cut `RAM::bab3` from 76 to 4 targets and `W8000_M0_B12::85c9` from 86 to
+  10, and the row moved refs 1221 -> 1151 / instrs 5722 -> 5450, losing the bank comment at `b80b`
+  and the warning at `fae3` (call to `FUN_ba78`). One listing read per table: how many entries, and
+  is the first target the byte right after the table? If both are right the row is blessable; if
+  `b80b`/`fae3` are live code, say how they are reached (the rcproam `bd2e` precedent). Record on
+  `grm-eyn`. (db3 notes 9 -> 8 and ultimaav refs 225 -> 228 moved in the same run, also unread.)
+
+- [ ] **dragonpower/shenlong `9913`: how is it reached now?** (`grm-eyn`/`grm-wayn`, 2026-09-27.)
+  You recorded `$FFBE` as called from `$9913` as the first instruction of a function. Under the
+  jump-table bound the site vanished from both titles (blessed 2026-09-27, warnings 6 -> 2), so its
+  only static route was probably an over-read table entry. Which table or call reaches the
+  function containing `9913`? Record on `grm-wayn` (it is one of that bead's two sites).
+
 - [ ] **The beads Claude Code plugin still injects a second, uncapped `bd prime`.** Found
   2026-09-26 checking the `grm-9t2g` upgrade: besides the repo's own hooks, the globally installed
   `beads` plugin (v1.1.0, `~/.claude/plugins/cache/beads-marketplace/beads/1.1.0/.claude-plugin/plugin.json`)
@@ -128,23 +142,6 @@ Answered table. The per-mapper fact-sheet checklist above stands for whenever th
 ## 4. Decisions only you can make
 
 Blocked on judgment, not effort.
-
-- [ ] **Which `decompile.exe` the reference install carries, now that the jump-table bound is
-  measured (`grm-eyn`, 2026-09-21).** Two candidates were built from the 12.1.3 tree and run over
-  the full NES tier through a *corrected* junction shadow (the 2026-09-20 shadow recipe never
-  swapped the binary — see `grm-qp5x.4`'s 2026-09-21 comment): **(A)** GP-6936 local patch +
-  bound, **(B)** stock 12.1.3 + bound. (B) dominates: (A) crashes three functions with
-  `Overlapping input varnodes` right after truncation (megaman `a71e`, dodge `8199`, ultimaav
-  `97c4` — the verified 8-entry `a737` table is LOST on it), while (B) recovers them and, on top
-  of that, **wizwarr passes its golden and megaman keeps warnings 31 on stock** — the GP-6936
-  regression signatures the patch was carried for do not appear once the over-read is bounded.
-  That reads as a ruling on `grm-qp5x`'s whole line (and on what #9655 should say), so it is
-  yours: carry (B), carry (A), or keep the current binary until upstream moves. (B) is archived
-  as `D:/git/ghidra-fork/build-variants/decompile-12.1.3-stock-plus-lowest-target.exe`; two
-  consecutive full-tier runs on it were byte-identical on 32 of 34 rows, megaman/dodge/rcproam/
-  dragonpower included. Blessing the ten moving goldens waits on this. *(2026-09-26, `grm-rap8`:
-  the project now targets 12.1.4, which changed no decompiler source, so both candidates apply to
-  it unchanged; the retarget carried the current GP-6936 binary over as the interim default.)*
 
 - [ ] **Adopt `.claude/rules/`, or keep the always-on core in `CLAUDE.md` + `AGENTS.md`?**
   (`grm-yaat`, P2.) The memory-truncation trigger the bead was filed for is resolved (`grm-8ctl`'s
@@ -350,3 +347,4 @@ re-measurement and branch prep land), [#9658](https://github.com/NationalSecurit
 | rcransom `9343`: the bound recovers 25 entries at `9352` and moves the row +208 refs / +883 instrs — right? | **Right — 25 entries, and it is a legitimate switch table (owner, 2026-09-25).** But on the **currently installed** build the table is not recovered at all, because the decompiler still dies on `FUN_9314` (`grm-gz42`). The 25 only appeared on the bound builds, so the bound is the likely reason the crash does not happen there: without it the decompiler reads 128 entries into garbage. That makes the missing binary decision in section 4 the thing blocking this row, not new analysis. Whether the crash really is downstream of the over-read is agent work on `grm-gz42`, and it changes whether that bead still needs filing upstream. | `grm-eyn`; `grm-gz42` |
 | rcproam `bd2e` (the 4-entry switch table at `bd31`): after the lowest-target bound nothing reaches it — how is it entered at runtime? | **Through a dispatch table at `bba3`, read in `FUN_bbb3`, which is called from `9bef`, part of the NMI handler (owner, 2026-09-26).** So `bd2e` is live code. The bound took away its only static route, an over-read entry of `a16e`'s table, and the real route never existed statically, because nothing recovers the `bba3` table. Losing the `bd2e` region after the bound is therefore a reachability gap at `bba3`, not the bound over-trimming: **do not loosen the bound for it.** The follow-up is agent work: find why the `bba3` table in `FUN_bbb3` is not recovered. | `grm-eyn`; follow-up `grm-3er5` |
 | ff1 bank 14 `b174`: the lowest-target bound cut the table from 104 to 24 entries — what is the real extent? | **30 entries, in a jump table at `b177` referenced from `b174` (owner, 2026-09-26) — and the bound gets exactly 30; it was never an under-count (`grm-bogk`, agent-checked the same day).** The "24" was `JumpTableProbe`'s `targets=` field, which counts the `JMP`'s flow *references*, and Ghidra keeps one reference per target: `b1b3` fills 7 of the 30 slots (entries 0, 18–21, 28, 29), so 30 − 7 + 1 = 24 distinct targets. The probe's 24 addresses are identical, as a set, to the table's distinct entries decoded from the ROM, and `b1b3` — the first byte after the table and entry 0's own target — gives `(b1b3 − b177)/2 = 30`. **The bound is exact on seven of seven hand-read tables; describe it as exact, and never read `targets=` as a table length.** The ff1 flap question is not answered by this; it stays with `grm-4nr`. | `grm-eyn`; `grm-bogk` |
+| Which `decompile.exe` should the reference install carry now that the jump-table bound is measured? | **Neither bound build — the bound ships EXTENSION-SIDE instead (owner, 2026-09-27).** A patched binary only fixes the reference machine; `JumpTableBoundAnalyzer` runs before stock switch analysis and pins the bounded table (override for real functions, computed refs for undefined ones), so every user gets it. The install keeps the current GP-6936 binary. Do not revive the stock-vs-GP-6936 bound-build comparison for this purpose; the upstream PR (#9447) stays a parallel track. | `grm-eyn` |

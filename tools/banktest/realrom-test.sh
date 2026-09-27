@@ -957,6 +957,10 @@ realrom_cache_key() {
 		# other -- into a `bless`, in the worst case. The bless path is refused outright when
 		# this is set (see the guard after mode parsing); this term is the second lock.
 		printf 'prescript:%s\n' "${REALROM_EXTRA_PRESCRIPT:-}"
+		# The analysis thread pin (lib/common.sh, grm-nems). Measured 2026-09-27: pinned and
+		# unpinned runs differ DETERMINISTICALLY on dodge and lwings, so a GRM_THREAD_PIN=0
+		# measurement run must never serve its dump to a normal `bless`.
+		printf 'threadpin:%s\n' "${GRM_THREAD_PIN:-1}"
 	} | sha256sum | cut -d' ' -f1
 }
 
