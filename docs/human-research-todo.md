@@ -48,8 +48,13 @@ Each is minutes of work and settles something specific. Highest value per unit e
   `CopyLoopAnalyzer` note at `a018` (`RAM:0264 -> RAM:0204`, 32 bytes), plus new switch/case labels
   (`c1ab`, `c1ed`, `c269`, `c2ea` ...; symbols 18 -> 135). ultimaav: refs 225 -> 228 (retargeted
   11 -> 14) and the bank comment at `de2f` (via `FUN_f313`) gone. For each bounded table, the same
-  read as rcransom's: how many entries, and is the first target the byte right after the table? Is
-  db3's `a018` loop reached from live code? Record on `grm-eyn`; both rows are blessable once read.
+  read as rcransom's: how many entries, and is the first target the byte right after the table?
+  Record on `grm-eyn`; both rows are blessable once read.
+  db3's tables, all in the fixed bank, LO/HI interleaved (agent decode 2026-09-27, on `grm-eyn`):
+  `c1ab` `JMP ($36)` table `c2ac`, 31 entries; `c1ed` `JMP ($38)` table `ca2f`, 43 entries;
+  `c269` `JMP ($3a)` table `d041`, 40 entries. Each ends where its entry 0 begins. Confirm if you
+  like; otherwise only ultimaav is left. (`a018` is reached only through the `JSR $803a`
+  inline-table dispatcher at `9d07`, which Ghidra cannot follow: `grm-j2kl`.)
 
 - [ ] **dragonpower/shenlong `9913`: how is it reached now?** (`grm-eyn`/`grm-wayn`, 2026-09-27.)
   You recorded `$FFBE` as called from `$9913` as the first instruction of a function. Under the
