@@ -83,3 +83,6 @@ data/descriptor-sources.sha256
 # copyDependencies task (bead grm-hb6.3, once snakeyaml became a shipped `implementation`
 # dependency). Build output, never committed -- buildExtension synthesizes it fresh.
 /lib/
+
+# Per-user editor settings
+.vscode/settings.json
