@@ -65,6 +65,11 @@ Each is minutes of work and settles something specific. Highest value per unit e
   `.beads/config.yaml` (now ~10 KB), but the plugin still duplicates the workflow text. Your
   global config, so yours: update the plugin to a release whose hook passes `--no-memories`, or
   disable it (its skills are conveniences; the repo hooks carry everything that matters).
+  **Updating does not fix it yet (checked 2026-09-27):** plugin **1.3.0** (commit `f6637545`)
+  still registers plain `bd prime` for both SessionStart and PreCompact (`.claude-plugin/plugin.json`),
+  and a fresh session still received two prime payloads, the plugin's held down only by the
+  `max-memories: 1` cap. Remaining options: disable the plugin, or wait for (or ask upstream for) a
+  release whose hook passes `--no-memories`.
 
 ---
 
