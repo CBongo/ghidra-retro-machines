@@ -43,38 +43,15 @@ bash tools/banktest/realrom-test.sh nominate <romdir>   # board-gap survey
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
-- [ ] **db3 and ultimaav: are the jump-table bound's movements right?** (`grm-eyn`, 2026-09-27.)
-  Same run as rcransom's (whose two tables you confirmed). db3: notes 9 -> 8, losing the
-  `CopyLoopAnalyzer` note at `a018` (`RAM:0264 -> RAM:0204`, 32 bytes), plus new switch/case labels
-  (`c1ab`, `c1ed`, `c269`, `c2ea` ...; symbols 18 -> 135). ultimaav: refs 225 -> 228 (retargeted
-  11 -> 14) and the bank comment at `de2f` (via `FUN_f313`) gone. For each bounded table, the same
-  read as rcransom's: how many entries, and is the first target the byte right after the table?
-  Record on `grm-eyn`; both rows are blessable once read.
-  db3's tables, all in the fixed bank, LO/HI interleaved (agent decode 2026-09-27, on `grm-eyn`):
-  `c1ab` `JMP ($36)` table `c2ac`, 31 entries; `c1ed` `JMP ($38)` table `ca2f`, 43 entries;
-  `c269` `JMP ($3a)` table `d041`, 40 entries. Each ends where its entry 0 begins. Confirm if you
-  like; otherwise only ultimaav is left. (`a018` is reached only through the `JSR $803a`
-  inline-table dispatcher at `9d07`, which Ghidra cannot follow: `grm-j2kl`.)
-  ultimaav's table, the one `grm-eyn`'s measurements name (agent decode 2026-09-27; 16 x 16K PRG,
-  MMC1, fixed bank 15 at `c000`): **bank 0 `97c4`**: `LDA $08; ASL; TAY; LDA $97d7,Y / $97d8,Y`
-  into `$3a/$3b`, `JMP ($3a)` at `97d4`. Table `97d7`, LO/HI interleaved, **4 entries**: `97df`,
-  `97e7`, `97f1`, `986d`. It ends at `97df`, which is entry 0. Is `$08` really 0..3? (Entries 0
-  and 1 both `INC $08`, so it looks like a small state machine.)
-  The other `JMP ($3a)` sites in the ROM, in case the bound touched them too. They are not named in
-  the measurements:
-  - bank 15 `fd07`: `$5f & $0f`, table `fd1a`, 4 entries (`fd34 fd2c fd22 fd27`). It ends at
-    `fd22`, which is entry 2.
-  - bank 0 `81fe`: table `820b`, 8 entries (`8235 822b 8245 823b 8255 824b 8265 825b`). It ends at
-    `821b`, where a 16-byte `10 0f .. 01` data table begins. Its lowest target is `822b`, so the
-    bound alone would allow 16 entries.
-  - bank 9 `b30d`: `$6815,X`, table `b67e`, 9 entries. Entry 0 is `$6006`, a RAM address: dead,
-    or is index 0 never used? Entries 1–8 go to `b31f`/`b338`/`b35b`. The table comes *after*
-    its code (`b690` is `LDX #$03`), which is the table-after-code layout the bound declines.
-  - bank 15 `f504`: `PHA; JSR $f313` (maps bank 0), then split tables LO `f527` / HI `f550`,
-    41 entries, `JMP ($3a)` at `f513`. It is not bounded by a lowest target. Entry 25 is `9d65`,
-    and `9d68` there is `JSR $de2f`. **That is the lost `de2f` bank comment's call site.** Is
-    `de2f`'s `JSR $f313` still reached some other way (`dde0 JMP $de2f`, bank 0 `9e3a JMP
-    $de2f`), or did the comment only ever come through this dispatcher?
+- [ ] **ultimaav: is the table at `97d7` 4 entries long?** (`grm-eyn`, 2026-09-27.)
+  *Why:* `grm-eyn` caps each jump table at the byte where its lowest target starts, so a table no
+  longer runs on into the code after it. That changed the ultimaav real-ROM row, and the row can't
+  be re-blessed until someone confirms the new table size. It's the same check you did for rcransom.
+  *Where:* bank 0. The dispatch at `97c4` is `LDA $08; ASL; TAY`, then it loads the address from the
+  table into `$3a/$3b` and does `JMP ($3a)` at `97d4`. The table is at `97d7` (low byte, then high
+  byte, per entry).
+  *What Ghidra now reads:* 4 entries, `97df 97e7 97f1 986d`. The table stops at `97df`, which is
+  entry 0's code. Is 4 right? Record the answer on `grm-eyn`.
 
 - [ ] **dragonpower/shenlong `9913`: how is it reached now?** (`grm-eyn`/`grm-wayn`, 2026-09-27.)
   You recorded `$FFBE` as called from `$9913` as the first instruction of a function. Under the
@@ -265,6 +242,7 @@ re-measurement and branch prep land), [#9658](https://github.com/NationalSecurit
 
 | question | answer | bead |
 |---|---|---|
+| db3: are the jump-table bound's three new tables the right size? | **Yes, by agent decode of the ROM bytes (2026-09-27); no owner read needed.** The dispatches `c1ab`/`c1ed`/`c269` jump through tables at `c2ac` (31 entries), `ca2f` (43) and `d041` (40), and each table ends where its entry 0 starts. The lost `a018` note sits behind the `JSR $803a` inline-table dispatcher, which Ghidra can't follow either way (`grm-j2kl`). db3 is blessable. | `grm-eyn` |
 | The globally installed beads Claude Code plugin runs its own plain `bd prime` hook at SessionStart/PreCompact, duplicating the repo hooks' payload. Update it or disable it? | **Disabled (owner, 2026-09-27)**: `"beads@beads-marketplace": false` in the global `~/.claude/settings.json`. Updating was not an option: plugin 1.3.0 (`f6637545`) still registers plain `bd prime`. Verified the next session: the SessionStart hook produced **one** prime payload, 15,398 bytes, with one copy of the workflow text and the close protocol (before, there were two, the plugin's held down only by the cap). The repo hooks carry everything the plugin did; its skills were conveniences. Keep `prime.max-memories: 1` in `.beads/config.yaml` anyway: the repo hooks don't need it (they pass `--no-memories`), but it still keeps a hand-run or post-compaction plain `bd prime` from dumping every memory body. If the plugin is ever re-enabled, check its `plugin.json` hook for `--no-memories` first. | `grm-9t2g` (closed) |
 | bd 1.3.0 is installed — can `.beads/PRIME.md` finally be retired, and is `agent.profile team-maintainer` right for this repo? | **Yes to both (owner, 2026-09-26).** Upstream's docs define `team-maintainer` as the profile for "repositories that explicitly delegate session close to agents" — close beads, run gates, commit, `bd dolt push`, `git push` as routine work — which is what AGENTS.md's Session Completion section mandates, so the hand-maintained push-policy divergence in PRIME.md is no longer needed. The profile is set in `.beads/config.yaml` (that is where `bd config set` writes it, not the Dolt DB). Both hooks now run `bd prime --no-memories && bd memories`: 15,233 bytes, against 179,339 for plain `bd prime && bd memories` on 1.3.0. This supersedes the 2026-09-02 row below's "permanent, not interim" conclusion; that row stays as history. The upstream index-emission ask in section 5 is unaffected. | `grm-9t2g` **closed** |
 | Ask `SingleStepTests/65816` upstream to state a license explicitly | **Already asked by someone else — [SingleStepTests/65816#9](https://github.com/SingleStepTests/65816/issues/9) (opened 2026-08-28) requests MIT and a LICENSE file; you added a supporting comment there on 2026-09-19 rather than opening a duplicate.** The human half is done; `grm-9nxj.8` stays open only to wait on upstream. When a LICENSE lands, update `src/test/resources/w65816-vectors/NOTICE` to cite it and close; if upstream declines, remove the vendored sample and clone-gate `W65816VectorSampleTest`. Do not file a second issue. | `grm-9nxj.8` (open, waiting on upstream) |
