@@ -17,6 +17,7 @@ package retromachines;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.util.HashMap;
@@ -493,6 +494,55 @@ public class CallCrossingPushPullProgramTest extends AbstractBundledLanguageTest
 			"an oracle-dependent env must never be memoized -- envCache must stay empty for "
 				+ "this call site",
 			envCache.isEmpty());
+	}
+
+	/**
+	 * 10. grm-oj20: a {@code RESTORED_BANK} read-back is attributed only to a register the helper
+	 * actually consumes. {@code LDA $10 (mirror) / PHA / JSR sub / PLA / LDY $30 / JSR helper},
+	 * helper = {@code LDA $E000,Y / STA $E000,Y} over a real {@link MemoryLatchBankSwitchStrategy}.
+	 * The caller's A ends on a read-back of the mirror, but A is clobbered in the helper's
+	 * prologue and the latch commits the table byte at Y ({@code $30}, unrelated RAM). The
+	 * memory-latch strategy answers {@code consumesHelperArgument() == false}, which used to skip
+	 * the only gate that discards such a read-back, so the call carried a confident "re-commits
+	 * the bank READ BACK" note built from A. It must carry none.
+	 */
+	@Test
+	public void readBackInAClobberedRegisterIsNotAttributedToAMemoryLatchHelper()
+			throws Exception {
+		put("0x8000", "a5 10"); // LDA $10      -- mirror read
+		put("0x8002", "48"); // PHA
+		put("0x8003", "20 00 90"); // JSR sub      ($9000)
+		put("0x8006", "68"); // PLA
+		put("0x8007", "a4 30"); // LDY $30      -- unrelated RAM
+		put("0x8009", "20 00 91"); // JSR helper   ($9100)  <- callInstr
+		put("0x9000", "60"); // RTS (sub)
+		put("0x9100", "b9 00 e0"); // LDA $E000,Y  -- clobbers A
+		put("0x9103", "99 00 e0"); // STA $E000,Y  -- commits the table byte at Y
+		put("0x9106", "60"); // RTS
+
+		JsonObject params = new JsonObject();
+		params.addProperty("start", 0xE000);
+		params.addProperty("end", 0xFFFF);
+		params.addProperty("mask", 0x07);
+		MemoryLatchBankSwitchStrategy latch = new MemoryLatchBankSwitchStrategy();
+		latch.configure(program, params, 0x07);
+		AddressSpace baseSpace = program.getAddressFactory().getDefaultAddressSpace();
+		latch.observeMirrors(
+			BankMirrors.of(baseSpace, Map.of(0x10L, Set.of(BankMirrors.Kind.ROM_IDENTIFYING))));
+		HelperModel helper = new HelperModel(null, builder.addr("0x9100"), null, 'A', 0x07, 0,
+			latch, builder.addr("0x9103"), builder.addr("0x9103"), null);
+
+		// A state is available at the push, but wholly unknown: the read-back stays a
+		// RESTORED_BANK stop rather than resolving to a number.
+		StateOracle oracle = addr -> BankState.unknown();
+		CallEffect effect = HelperArgumentRecovery.recoverCallArgument(program,
+			instructionAt("0x8009"), helper, BankState.unknown(), new HashMap<>(), new HashSet<>(),
+			RegisterEnv.NONE, oracle);
+
+		assertTrue("Y is unrelated RAM: the argument must not resolve",
+			!effect.argumentResolved());
+		assertNull("A does not survive the helper's prologue, so its read-back describes nothing "
+				+ "the helper consumed", effect.readBack());
 	}
 
 	// ==================================================================

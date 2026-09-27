@@ -445,16 +445,28 @@ final class HelperArgumentRecovery {
 		// INDETERMINATE. It cannot manufacture a clobber proof that the shorter span did not
 		// already support, because this expression is guarded by the survival test above and so is
 		// only ever evaluated where the argument was already known not to survive to firstSite.
+		boolean argumentSurvives =
+			argumentSurvivesPrologue(program, prologueSegments(helper), reg);
+		// grm-oj20: a read-back left in a register the helper clobbers before its first switch site
+		// describes nothing the mechanism commits, whether or not the strategy consumes the
+		// recovered argument. The discard below sits under consumesHelperArgument(), which
+		// MemoryLatchBankSwitchStrategy answers false (it re-derives the value inside the helper),
+		// so on a memory-latch helper the A read-back used to survive while the latch committed Y
+		// -- contra c0d3's LDA $FFD0,Y / STA $FFD0,Y. Right there only because the caller did TAY;
+		// carrying the read-back through the index register is grm-ld68's.
+		if (!argumentSurvives) {
+			readBack = null;
+		}
 		boolean definitelyNoInboundArgument =
 			(helper.strategy() == null || helper.strategy().consumesHelperArgument()) &&
-				!argumentSurvivesPrologue(program, prologueSegments(helper), reg) &&
+				!argumentSurvives &&
 				argumentDefinitelyClobbered(program, clobberSegments(helper), reg);
 		// bead grm-yflf: only meaningful once definitelyNoInboundArgument already holds -- see
 		// restoreSourceCell's javadoc for why it re-derives nothing and only narrows further.
 		Address restoreCell =
 			definitelyNoInboundArgument ? restoreSourceCell(program, helper, reg) : null;
 		if ((helper.strategy() == null || helper.strategy().consumesHelperArgument()) &&
-			!argumentSurvivesPrologue(program, prologueSegments(helper), reg)) {
+			!argumentSurvives) {
 			Address inbound = inboundArgumentCell(program, helper, reg);
 			BankState viaCell = inbound == null ? BankState.unknown()
 					: StoredValueScanner.callerCellValue(program, callInstr, inbound, localIn,
@@ -469,7 +481,6 @@ final class HelperArgumentRecovery {
 			// encountered on the way there can now resolve instead of declining outright.
 			local = viaCell.knownMask() != 0 ? viaCell
 					: valueSuppliedInsideHelper(program, helper, reg, stateMask);
-			readBack = null; // the register's read-back is not what the helper consumed
 		}
 		Instruction switchSite = helper.switchSite() == null ? null
 				: program.getListing().getInstructionAt(helper.switchSite());

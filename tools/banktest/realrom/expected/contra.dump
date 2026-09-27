@@ -24,8 +24,8 @@ REALROM count refs.intoOverlay.retargeted 3
 REALROM count refs.intoOverlay.intraOverlay 295
 REALROM count instrs.inOverlay 1044
 REALROM count bankComments 5
-REALROM count warnings 6
-REALROM count notes 1
+REALROM count warnings 7
+REALROM count notes 0
 REALROM count symbols 18
 REALROM sample.bankcomment c094 bank -> 1 (bank=1) via FUN_c139
 REALROM sample.bankcomment c0a2 bank -> 1 (bank=1) via FUN_c139
@@ -60,11 +60,11 @@ REALROM sample.ref 8118 -> PRG_LO_B1::811d CONDITIONAL_JUMP primary=true
 REALROM sample.ref.truncated 25 of 298
 REALROM sample.warn 811a [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_PRG_LO_B1__8259 whose bank argument could not be recovered at this call site
 REALROM sample.warn 8efc [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn c0d3 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c13f whose bank argument could not be recovered at this call site
 REALROM sample.warn c142 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn c149 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c13f whose bank argument could not be recovered at this call site
 REALROM sample.warn c164 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c13f whose bank argument could not be recovered at this call site
 REALROM sample.warn c9c0 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c139 whose bank argument could not be recovered at this call site
-REALROM sample.note c0d3 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call re-commits the bank READ BACK at c0c1 from bank-identifying ROM byte 8000 -- a byte whose value is the bank it is read from, so the byte read is the bank live at the read, carried on the stack across control flow c0c4..c0d1 -- the save/restore idiom. The bank after this call is whatever 8000 held at that read, not a fresh value this analyzer failed to pin down. A property of the game, not a gap in analysis.
 REALROM sample.symbol 2000 PPUCTRL IMPORTED primary=true
 REALROM sample.symbol 2001 PPUMASK IMPORTED primary=true
 REALROM sample.symbol 2002 PPUSTATUS IMPORTED primary=true
