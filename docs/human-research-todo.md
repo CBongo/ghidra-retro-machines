@@ -55,6 +55,26 @@ Each is minutes of work and settles something specific. Highest value per unit e
   `c269` `JMP ($3a)` table `d041`, 40 entries. Each ends where its entry 0 begins. Confirm if you
   like; otherwise only ultimaav is left. (`a018` is reached only through the `JSR $803a`
   inline-table dispatcher at `9d07`, which Ghidra cannot follow: `grm-j2kl`.)
+  ultimaav's table, the one `grm-eyn`'s measurements name (agent decode 2026-09-27; 16 x 16K PRG,
+  MMC1, fixed bank 15 at `c000`): **bank 0 `97c4`**: `LDA $08; ASL; TAY; LDA $97d7,Y / $97d8,Y`
+  into `$3a/$3b`, `JMP ($3a)` at `97d4`. Table `97d7`, LO/HI interleaved, **4 entries**: `97df`,
+  `97e7`, `97f1`, `986d`. It ends at `97df`, which is entry 0. Is `$08` really 0..3? (Entries 0
+  and 1 both `INC $08`, so it looks like a small state machine.)
+  The other `JMP ($3a)` sites in the ROM, in case the bound touched them too. They are not named in
+  the measurements:
+  - bank 15 `fd07`: `$5f & $0f`, table `fd1a`, 4 entries (`fd34 fd2c fd22 fd27`). It ends at
+    `fd22`, which is entry 2.
+  - bank 0 `81fe`: table `820b`, 8 entries (`8235 822b 8245 823b 8255 824b 8265 825b`). It ends at
+    `821b`, where a 16-byte `10 0f .. 01` data table begins. Its lowest target is `822b`, so the
+    bound alone would allow 16 entries.
+  - bank 9 `b30d`: `$6815,X`, table `b67e`, 9 entries. Entry 0 is `$6006`, a RAM address: dead,
+    or is index 0 never used? Entries 1–8 go to `b31f`/`b338`/`b35b`. The table comes *after*
+    its code (`b690` is `LDX #$03`), which is the table-after-code layout the bound declines.
+  - bank 15 `f504`: `PHA; JSR $f313` (maps bank 0), then split tables LO `f527` / HI `f550`,
+    41 entries, `JMP ($3a)` at `f513`. It is not bounded by a lowest target. Entry 25 is `9d65`,
+    and `9d68` there is `JSR $de2f`. **That is the lost `de2f` bank comment's call site.** Is
+    `de2f`'s `JSR $f313` still reached some other way (`dde0 JMP $de2f`, bank 0 `9e3a JMP
+    $de2f`), or did the comment only ever come through this dispatcher?
 
 - [ ] **dragonpower/shenlong `9913`: how is it reached now?** (`grm-eyn`/`grm-wayn`, 2026-09-27.)
   You recorded `$FFBE` as called from `$9913` as the first instruction of a function. Under the
