@@ -43,27 +43,13 @@ bash tools/banktest/realrom-test.sh nominate <romdir>   # board-gap survey
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
-- [ ] **rcransom's five mainline `fed1` restores did not move under call-crossing PHA/PLA pairing
-  (`grm-mej.3` increment 3, 2026-09-21).** The synthetic twin of the `fa43` trampoline
-  (`nesmmc3idtest` ID1) now resolves its `PLA / JSR H16` restore across two `JSR`s, but `c08e`,
-  `c0f4`, `c7db`, `cd57` and `ef85` still say "bank argument could not be recovered". Two
-  possible reasons, and which one it is decides what to build next: (a) the pairing DOES complete
-  and the mirror read (`LDA $BFFF`) resolves against the enclosing function's ENTRY state, which is
-  unknown because the function is reached from several banks — then the honest answer is
-  `grm-yflf`'s relational "restored to the entry bank" and its one-frame-out propagation, and no
-  further scanner work is owed; or (b) the local shape is not the straight-line
-  `LDA $BFFF / PHA / ... / PLA / JSR fed1` idiom at all (a branch in the span, a `TSX`/stack-
-  relative reload, the PLA in a different block from its PHA) — then it is a new stack shape for
-  `grm-mej.3`. One listing read per site: what are the ~8 instructions before each `JSR fed1`, and
-  is the bank known on entry to the function containing it? Record on `grm-mej.3`.
-
-- [ ] **rcransom: are the two tables the extension-side jump-table bound shrank right?** (`grm-eyn`,
-  2026-09-27.) The bound cut `RAM::bab3` from 76 to 4 targets and `W8000_M0_B12::85c9` from 86 to
-  10, and the row moved refs 1221 -> 1151 / instrs 5722 -> 5450, losing the bank comment at `b80b`
-  and the warning at `fae3` (call to `FUN_ba78`). One listing read per table: how many entries, and
-  is the first target the byte right after the table? If both are right the row is blessable; if
-  `b80b`/`fae3` are live code, say how they are reached (the rcproam `bd2e` precedent). Record on
-  `grm-eyn`. (db3 notes 9 -> 8 and ultimaav refs 225 -> 228 moved in the same run, also unread.)
+- [ ] **db3 and ultimaav: are the jump-table bound's movements right?** (`grm-eyn`, 2026-09-27.)
+  Same run as rcransom's (whose two tables you confirmed). db3: notes 9 -> 8, losing the
+  `CopyLoopAnalyzer` note at `a018` (`RAM:0264 -> RAM:0204`, 32 bytes), plus new switch/case labels
+  (`c1ab`, `c1ed`, `c269`, `c2ea` ...; symbols 18 -> 135). ultimaav: refs 225 -> 228 (retargeted
+  11 -> 14) and the bank comment at `de2f` (via `FUN_f313`) gone. For each bounded table, the same
+  read as rcransom's: how many entries, and is the first target the byte right after the table? Is
+  db3's `a018` loop reached from live code? Record on `grm-eyn`; both rows are blessable once read.
 
 - [ ] **dragonpower/shenlong `9913`: how is it reached now?** (`grm-eyn`/`grm-wayn`, 2026-09-27.)
   You recorded `$FFBE` as called from `$9913` as the first instruction of a function. Under the
@@ -348,3 +334,5 @@ re-measurement and branch prep land), [#9658](https://github.com/NationalSecurit
 | rcproam `bd2e` (the 4-entry switch table at `bd31`): after the lowest-target bound nothing reaches it — how is it entered at runtime? | **Through a dispatch table at `bba3`, read in `FUN_bbb3`, which is called from `9bef`, part of the NMI handler (owner, 2026-09-26).** So `bd2e` is live code. The bound took away its only static route, an over-read entry of `a16e`'s table, and the real route never existed statically, because nothing recovers the `bba3` table. Losing the `bd2e` region after the bound is therefore a reachability gap at `bba3`, not the bound over-trimming: **do not loosen the bound for it.** The follow-up is agent work: find why the `bba3` table in `FUN_bbb3` is not recovered. | `grm-eyn`; follow-up `grm-3er5` |
 | ff1 bank 14 `b174`: the lowest-target bound cut the table from 104 to 24 entries — what is the real extent? | **30 entries, in a jump table at `b177` referenced from `b174` (owner, 2026-09-26) — and the bound gets exactly 30; it was never an under-count (`grm-bogk`, agent-checked the same day).** The "24" was `JumpTableProbe`'s `targets=` field, which counts the `JMP`'s flow *references*, and Ghidra keeps one reference per target: `b1b3` fills 7 of the 30 slots (entries 0, 18–21, 28, 29), so 30 − 7 + 1 = 24 distinct targets. The probe's 24 addresses are identical, as a set, to the table's distinct entries decoded from the ROM, and `b1b3` — the first byte after the table and entry 0's own target — gives `(b1b3 − b177)/2 = 30`. **The bound is exact on seven of seven hand-read tables; describe it as exact, and never read `targets=` as a table length.** The ff1 flap question is not answered by this; it stays with `grm-4nr`. | `grm-eyn`; `grm-bogk` |
 | Which `decompile.exe` should the reference install carry now that the jump-table bound is measured? | **Neither bound build — the bound ships EXTENSION-SIDE instead (owner, 2026-09-27).** A patched binary only fixes the reference machine; `JumpTableBoundAnalyzer` runs before stock switch analysis and pins the bounded table (override for real functions, computed refs for undefined ones), so every user gets it. The install keeps the current GP-6936 binary. Do not revive the stock-vs-GP-6936 bound-build comparison for this purpose; the upstream PR (#9447) stays a parallel track. | `grm-eyn` |
+| rcransom's five mainline `fed1` restores (`c08e`, `c0f4`, `c7db`, `cd57`, `ef85`) did not move under call-crossing pairing — entry-bank unknown (a), or not straight-line (b)? | **(b), all five — every one is a cross-block pairing (owner, 2026-09-27).** Each saves via `LDA $bfff / PHA` far from its `PLA`: `c08e`/`c0f4` share the push at `c022` in `FUN_c000` across loops and nested `PHA`/`PLA` pairs around `JSR`s; `c7db` (`FUN_c705`, push `c731`) crosses branches, a `JMP` and a loop; `cd57` (`FUN_cca9`, push `ccaf`) is reached by `JMP cd56` from every case of a switch dispatch at `cd53`; `ef85` (`FUN_ed0e`, push `ed23`) is that function's sole exit after heavy branching. The question predates `grm-mej.3` X1 (cross-block pairing), yet all five still warn after it, so why X1 declines on each is **agent work, not a further listing read**. Entry-bank knowledge is not needed for a RESTORED note. | `grm-mej.3`; follow-up `grm-3jzn` |
+| rcransom: are the two tables the extension-side jump-table bound shrank right? | **Yes, both (owner, 2026-09-27).** `bab3`: table at `bab6`, 6 entries (4 distinct targets); the first address after it, `bac2`, is index 1's target. `85c9`: table at `85cc`, 10 entries; `85e0`, right after it, is index 0's. So the lost `b80b` bank comment and `fae3` warning were over-read cruft — **do not trace them.** The row diff was checked to contain exactly that movement (refs 1221 → 1151, instrs 5722 → 5450), so rcransom is blessable. db3 and ultimaav, which moved in the same run, remain open in section 1. | `grm-eyn` |
