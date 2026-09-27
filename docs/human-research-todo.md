@@ -43,16 +43,6 @@ bash tools/banktest/realrom-test.sh nominate <romdir>   # board-gap survey
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
-- [ ] **ultimaav: is the table at `97d7` 4 entries long?** (`grm-eyn`, 2026-09-27.)
-  *Why:* `grm-eyn` caps each jump table at the byte where its lowest target starts, so a table no
-  longer runs on into the code after it. That changed the ultimaav real-ROM row, and the row can't
-  be re-blessed until someone confirms the new table size. It's the same check you did for rcransom.
-  *Where:* bank 0. The dispatch at `97c4` is `LDA $08; ASL; TAY`, then it loads the address from the
-  table into `$3a/$3b` and does `JMP ($3a)` at `97d4`. The table is at `97d7` (low byte, then high
-  byte, per entry).
-  *What Ghidra now reads:* 4 entries, `97df 97e7 97f1 986d`. The table stops at `97df`, which is
-  entry 0's code. Is 4 right? Record the answer on `grm-eyn`.
-
 - [ ] **dragonpower/shenlong `9913`: how is it reached now?** (`grm-eyn`/`grm-wayn`, 2026-09-27.)
   You recorded `$FFBE` as called from `$9913` as the first instruction of a function. Under the
   jump-table bound the site vanished from both titles (blessed 2026-09-27, warnings 6 -> 2), so its
@@ -242,6 +232,7 @@ re-measurement and branch prep land), [#9658](https://github.com/NationalSecurit
 
 | question | answer | bead |
 |---|---|---|
+| ultimaav: is the table at `97d7` 4 entries long? | **Yes (owner, 2026-09-27).** Bank 0, dispatch `97c4`, `JMP ($3a)` at `97d4`; the entries are `97df 97e7 97f1 986d`, and the table ends at entry 0's code. The table size is settled. The row still waits on `grm-eyn.1` (why the `de2f` bank comment vanished), which is agent work. | `grm-eyn` |
 | db3: are the jump-table bound's three new tables the right size? | **Yes, by agent decode of the ROM bytes (2026-09-27); no owner read needed.** The dispatches `c1ab`/`c1ed`/`c269` jump through tables at `c2ac` (31 entries), `ca2f` (43) and `d041` (40), and each table ends where its entry 0 starts. The lost `a018` note sits behind the `JSR $803a` inline-table dispatcher, which Ghidra can't follow either way (`grm-j2kl`). db3 is blessable. | `grm-eyn` |
 | The globally installed beads Claude Code plugin runs its own plain `bd prime` hook at SessionStart/PreCompact, duplicating the repo hooks' payload. Update it or disable it? | **Disabled (owner, 2026-09-27)**: `"beads@beads-marketplace": false` in the global `~/.claude/settings.json`. Updating was not an option: plugin 1.3.0 (`f6637545`) still registers plain `bd prime`. Verified the next session: the SessionStart hook produced **one** prime payload, 15,398 bytes, with one copy of the workflow text and the close protocol (before, there were two, the plugin's held down only by the cap). The repo hooks carry everything the plugin did; its skills were conveniences. Keep `prime.max-memories: 1` in `.beads/config.yaml` anyway: the repo hooks don't need it (they pass `--no-memories`), but it still keeps a hand-run or post-compaction plain `bd prime` from dumping every memory body. If the plugin is ever re-enabled, check its `plugin.json` hook for `--no-memories` first. | `grm-9t2g` (closed) |
 | bd 1.3.0 is installed — can `.beads/PRIME.md` finally be retired, and is `agent.profile team-maintainer` right for this repo? | **Yes to both (owner, 2026-09-26).** Upstream's docs define `team-maintainer` as the profile for "repositories that explicitly delegate session close to agents" — close beads, run gates, commit, `bd dolt push`, `git push` as routine work — which is what AGENTS.md's Session Completion section mandates, so the hand-maintained push-policy divergence in PRIME.md is no longer needed. The profile is set in `.beads/config.yaml` (that is where `bd config set` writes it, not the Dolt DB). Both hooks now run `bd prime --no-memories && bd memories`: 15,233 bytes, against 179,339 for plain `bd prime && bd memories` on 1.3.0. This supersedes the 2026-09-02 row below's "permanent, not interim" conclusion; that row stays as history. The upstream index-emission ask in section 5 is unaffected. | `grm-9t2g` **closed** |
