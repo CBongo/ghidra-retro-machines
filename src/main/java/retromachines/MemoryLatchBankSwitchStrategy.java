@@ -21,10 +21,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import com.google.gson.JsonObject;
 
 import ghidra.program.model.address.Address;
+import ghidra.program.model.address.AddressOutOfBoundsException;
 import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.listing.Function;
@@ -279,6 +282,21 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 		@Override
 		public boolean isLiveBankMirror(Address target) {
 			return mirrors.isLiveBankMirror(target);
+		}
+
+		/**
+		 * Answers {@code StoredValueScanner}'s identity-table rule (bead grm-ld68) from this
+		 * strategy's own {@link #mirrors} and {@code shift}/{@code mask}/{@code busConflict} --
+		 * see {@link #isIdentityTable} for the check itself. Only this direct-path {@code hooks}
+		 * field overrides it: {@link #evaluateLatch}/{@link #evaluateLatchScan} always run under
+		 * THIS field (the helper mini-inline path included -- {@link #depositHelperArgument}
+		 * passes {@code hooks}, never {@link #callerSideHooks}), so this is the only hook
+		 * instance the rule can ever be asked through.
+		 */
+		@Override
+		public boolean isIdentityTableLoad(Instruction loadInstr, Address base,
+				StoredValueScanner.ReadBack idxReadBack) {
+			return isIdentityTable(loadInstr, base, idxReadBack);
 		}
 	};
 
@@ -719,9 +737,17 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 		// inState IS used: it is the caller's own field-local state at the call, which is the
 		// right answer for a mirror read INSIDE the helper, since the helper has not switched yet
 		// at the point the scan reaches back to.
-		BankState evaluated = evaluateLatch(program, switchSite, callerRegs, inState, hooks);
+		// evaluateLatchScan, not evaluateLatch (bead grm-ld68): the identity-table rule's answer
+		// rides in the Scan's ReadBack, which evaluateLatch's value-only return discards.
+		StoredValueScanner.Scan scan =
+			evaluateLatchScan(program, switchSite, callerRegs, inState, hooks);
+		BankState evaluated = scan.value();
+		StoredValueScanner.ReadBack readBack =
+			scan.stop() == ValueStop.RESTORED_BANK && evaluated.knownMask() == 0
+					? scan.readBack() : null;
 		return new HelperDeposit(stateMask,
-			new BankState(evaluated.knownMask() & stateMask, evaluated.bits() & stateMask));
+			new BankState(evaluated.knownMask() & stateMask, evaluated.bits() & stateMask),
+			readBack);
 	}
 
 	/**
@@ -964,6 +990,97 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 		catch (Exception e) {
 			return null;
 		}
+	}
+
+	/**
+	 * The check behind {@link #hooks}' {@code isIdentityTableLoad} override (bead grm-ld68):
+	 * whether the table based at {@code base} is an IDENTITY TABLE over this mechanism's field --
+	 * {@code table[v] == v} for every bank {@code v} the mirror can name (see (d)), after the mechanism's own
+	 * {@code shift}/{@code mask} extraction -- given that {@code idxReadBack}'s cell is provably
+	 * the bank number.
+	 * <p>
+	 * <b>(c) -- {@code idxReadBack}'s cell must itself be a {@code ROM_IDENTIFYING} mirror in
+	 * PLAIN IDENTITY encoding.</b> {@link StoredValueScanner} proved {@code idxReadBack} came from
+	 * an unmodified read (its own rule (a)/(b)); this method still checks the ENCODING itself,
+	 * because a non-identity {@code ROM_IDENTIFYING} offset (bead grm-km4f, e.g. a shifted or
+	 * offset bank encoding) names the bank only after decoding, and the raw byte an index register
+	 * inherits from such a cell is not provably {@code [0, fieldMask]} the way a plain identity
+	 * read is.
+	 * <p>
+	 * <b>(d) -- the table itself.</b> {@code v} ranges over the mirror's REALIZED banks, each also
+	 * VERIFIED ({@code [0, mask]} only when no derivation ran; a descriptor mask is a family bound),
+	 * and each entry is read with {@link #bankInvariantRomByte}, i.e. the byte the CPU sees at that
+	 * address independent of the live bank -- exactly right here, since {@code base} is an address
+	 * this strategy already classifies as a mechanism WRITE target (a memory-latch board's write
+	 * goes to the mapper, never to the underlying ROM -- see the class javadoc -- so the address is
+	 * ordinarily backed by ordinary, non-switched ROM content for READS).
+	 * <p>
+	 * <b>The bus-conflict AND, when {@code busConflict} is set, is applied against the byte at the
+	 * SAME address {@code entry}</b> rather than re-deriving the actual store's target: sound only
+	 * because this rule fires on the {@code LDA base,idx / STA base,idx} shape (this scanner's
+	 * caller already required {@code base} to be the LOAD's own indexed base, and a memory-latch
+	 * mechanism's single switch site commits the whole field from ONE store, so the paired store
+	 * that follows a resolved identity-table load targets that identical cell). The AND then
+	 * degrades to {@code romByte & romByte}, i.e. a no-op -- true for contra (this rule's only
+	 * customer today, {@code busConflict = false} in any case) and true in general for this exact
+	 * shape, but NOT assumed for a table whose base the caller could not tie to the store: nothing
+	 * calls this method with a {@code base} this strategy did not itself receive as the LOAD's own
+	 * indexed base, so the identity holds by construction rather than by guessing the store's
+	 * target.
+	 */
+	private boolean isIdentityTable(Instruction loadInstr, Address base,
+			StoredValueScanner.ReadBack idxReadBack) {
+		if (base == null || idxReadBack == null || mirrors.isEmpty()) {
+			return false;
+		}
+		Set<BankMirrors.Kind> kinds = mirrors.kindsAt(idxReadBack.cell());
+		if (!kinds.contains(BankMirrors.Kind.ROM_IDENTIFYING)) {
+			return false;
+		}
+		BankMirrors.IdentifyingEncoding encoding = mirrors.identifyingEncoding(idxReadBack.cell());
+		if (encoding == null || !encoding.isIdentity()) {
+			return false;
+		}
+		// Bounded by the mirror's own REALIZED bank set when derivation supplied one, not by
+		// this mechanism's declared field mask (bead grm-ld68, found on real contra). The
+		// descriptor's mask is a FAMILY-WIDE upper bound (UxROM's own comment: "UNROM has 8
+		// banks (3 bits), UOROM 16 (4 bits); 4 bits covers the whole family"), but a specific
+		// ROM may realize fewer banks than that -- contra has exactly 8, so its own identity
+		// table at $FFD0-$FFD7 spans only [0,7], and $FFD8-$FFDF hold ordinary code/data, not
+		// table entries. Checking those bytes against v=8..15 would reject a genuine identity
+		// table just because the descriptor's mask is a conservative family upper bound. An
+		// EMPTY realized set means no derivation ran (only {@link BankMirrors#of(AddressSpace,
+		// Map)}'s test-only two-argument overload produces one) -- falls back to [0, mask],
+		// unchanged from before this fix and matching every existing Tier-2 fixture.
+		// Every realized bank must also be VERIFIED: an exempted bank's byte was never proved to
+		// equal its number, so the index it hands the table is unknown -- the same refusal
+		// IdentifyingEncoding.byteFor applies to a realized-but-unverified bank.
+		if (!encoding.verified().containsAll(encoding.realized())) {
+			return false;
+		}
+		Set<Integer> banks = encoding.realized().isEmpty()
+				? IntStream.rangeClosed(0, mask).boxed().collect(Collectors.toSet())
+				: encoding.realized();
+		Program program = loadInstr.getProgram();
+		for (int v : banks) {
+			Address entry;
+			try {
+				entry = base.add(v);
+			}
+			catch (AddressOutOfBoundsException e) {
+				return false;
+			}
+			Integer romByte = bankInvariantRomByte(program, entry);
+			if (romByte == null) {
+				return false;
+			}
+			// busConflict's AND degrades to a no-op here -- see this method's javadoc.
+			int extracted = (romByte >> shift) & mask;
+			if (extracted != v) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/**

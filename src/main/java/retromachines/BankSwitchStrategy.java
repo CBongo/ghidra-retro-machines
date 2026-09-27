@@ -417,8 +417,22 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 *
 	 * @param ownedMask bits this call site authoritatively replaces
 	 * @param value the field-local values deposited into the owned bits
+	 * @param readBack where the caller's index-register argument was read back from, when
+	 *                 {@code value} stayed unknown ONLY because the mechanism re-commits a bank
+	 *                 the caller provably already read (bead grm-ld68's identity-table rule) --
+	 *                 {@code null} (the default, via the two-argument constructor below, which
+	 *                 keeps every pre-grm-ld68 call site unchanged) for every deposit that is
+	 *                 not this specific case. See {@link HelperArgumentRecovery#recoverCallArgument}'s
+	 *                 use, which promotes this to {@code CallEffect.readBack} only when the
+	 *                 caller-side scan itself found none and the argument did not resolve.
 	 */
-	record HelperDeposit(int ownedMask, BankState value) {}
+	record HelperDeposit(int ownedMask, BankState value, StoredValueScanner.ReadBack readBack) {
+
+		/** The pre-grm-ld68 form: no read-back. */
+		HelperDeposit(int ownedMask, BankState value) {
+			this(ownedMask, value, null);
+		}
+	}
 
 	/**
 	 * Converts a helper call site's recovered argument byte into this mechanism's

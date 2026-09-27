@@ -18,6 +18,7 @@ package retromachines;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -50,7 +51,7 @@ import retromachines.HelperDiscovery.HelperModel;
  * as of grm-shnf step 2, so the cut is compile-time verbatim rather than a behavior change).
  *
  * <p>This class holds {@link #recoverCallArgument}, {@link #valueSuppliedInsideHelper}, both
- * {@link #inboundArgumentCell} overloads, {@link #callSiteRegisters}, {@link #surviving} and
+ * {@link #inboundArgumentCell} overloads, {@link #callSiteRegisters}, {@link #survivingScan} and
  * {@link #crossableWrapperJoin}; the prologue-preservation cluster (both
  * {@link #argumentSurvivesPrologue} overloads -- the {@link List}-of-{@link PrologueSegment} form
  * delegates to the three-address form, and the two were not split apart --
@@ -524,8 +525,20 @@ final class HelperArgumentRecovery {
 			stateMask, callerRegs);
 		BankState positionedValue = position(deposit.value(), helper.lsb(), helper.effectMask());
 		int positionedOwnedMask = (deposit.ownedMask() << helper.lsb()) & helper.effectMask();
+		boolean argumentResolved = primary.value().knownMask() != 0;
+		// bead grm-ld68: the caller-side register scan above (readBack) found no read-back of
+		// its own -- it is tracking argReg, and Contra-shaped helpers clobber argReg in their
+		// prologue, so grm-oj20 already discarded it -- but the STRATEGY re-evaluating its own
+		// switch semantics under callerRegs (the mini-inline, depositHelperArgument's whole
+		// point) may have found one on the register its mechanism ACTUALLY consumes (the index
+		// register, via RegisterEnv.readBack -- see MemoryLatchBankSwitchStrategy's identity-
+		// table rule). Promoted only when the argument still did not resolve: a deposit that DID
+		// resolve needs no read-back explanation at all.
+		if (readBack == null && primary.readBack() != null && !argumentResolved) {
+			readBack = primary.readBack();
+		}
 		return new CallEffect(positionedValue, positionedOwnedMask,
-			primary.value().knownMask() != 0, definitelyNoInboundArgument, false, restoreCell,
+			argumentResolved, definitelyNoInboundArgument, false, restoreCell,
 			readBack);
 	}
 
@@ -1668,7 +1681,7 @@ final class HelperArgumentRecovery {
 	 * <p>
 	 * For an ordinary helper this filter is now a no-op by construction, not merely
 	 * "redundant-but-harmless": its one prologue segment is entirely WALKED by the mini-inline
-	 * scan, so {@link #unwalkedPrologueSegments} hands back an empty list and {@link #surviving}
+	 * scan, so {@link #unwalkedPrologueSegments} hands back an empty list and {@link #survivingScan}
 	 * adopts the caller-side scan unfiltered. The scan meets any clobber of {@code reg} itself
 	 * before it reaches {@code entryAddr}, so the env value is trusted only when the scan
 	 * traversed the ENTIRE unwalked span without finding a definition of the register -- which is
@@ -1684,7 +1697,7 @@ final class HelperArgumentRecovery {
 	 * <p>
 	 * {@code localIn} (bead grm-mej.3 item 4) is {@code recoverCallArgument}'s own
 	 * {@code localIn} -- the call's tracked in-state, already narrowed to {@code helper}'s
-	 * mechanism's field-local space -- threaded down to {@link #surviving} so a mirror-aware
+	 * mechanism's field-local space -- threaded down to {@link #survivingScan} so a mirror-aware
 	 * {@link BankSwitchStrategy#callerSideHooks} can answer from real state instead of the
 	 * historical {@link BankState#unknown()}. It is what makes {@link #CallSiteRegKey} need the
 	 * in-state in its key: this method's result can now differ across two calls at the same
@@ -1697,10 +1710,69 @@ final class HelperArgumentRecovery {
 		// The env this builds describes the helper's ENTRY and is consumed by scans inside the
 		// helper; it deliberately carries no arms of its own (see the eight-argument
 		// recoverCallArgument). The caller-side scans that populate it do walk the arms.
-		return new RegisterEnv(entryAddr, crossableJoin,
-			surviving(program, callInstr, 'A', unwalked, localIn, path, callerHooks),
-			surviving(program, callInstr, 'X', unwalked, localIn, path, callerHooks),
-			surviving(program, callInstr, 'Y', unwalked, localIn, path, callerHooks));
+		StoredValueScanner.Scan aScan = survivingScan(program, callInstr, 'A', unwalked, localIn,
+			path, callerHooks, 0xFF);
+		StoredValueScanner.Scan xScan = survivingScan(program, callInstr, 'X', unwalked, localIn,
+			path, callerHooks, 0xFF);
+		StoredValueScanner.Scan yScan = survivingScan(program, callInstr, 'Y', unwalked, localIn,
+			path, callerHooks, 0xFF);
+		Map<Character, StoredValueScanner.ReadBack> readBacks = new HashMap<>();
+		// bead grm-ld68: classification at the MECHANISM's own field mask, separately from the
+		// 0xFF-masked scans above -- see readBackFor's javadoc for why the wider scan alone
+		// cannot be trusted here.
+		int stateMask = helper.effectMask() >>> helper.lsb();
+		readBackFor(readBacks, 'A', aScan, program, callInstr, unwalked, localIn, path,
+			callerHooks, stateMask);
+		readBackFor(readBacks, 'X', xScan, program, callInstr, unwalked, localIn, path,
+			callerHooks, stateMask);
+		readBackFor(readBacks, 'Y', yScan, program, callInstr, unwalked, localIn, path,
+			callerHooks, stateMask);
+		return new RegisterEnv(entryAddr, crossableJoin, aScan.value(), xScan.value(),
+			yScan.value()).withReadBacks(readBacks);
+	}
+
+	/**
+	 * Records a {@link StoredValueScanner.ReadBack} into {@code readBacks} under {@code reg},
+	 * when one applies (bead grm-ld68).
+	 * <p>
+	 * <b>Why {@code wideScan} (masked to 0xFF) alone is not enough.</b> {@code stopped()}'s
+	 * demotion rule -- "a read-back that resolved is just a resolved value", i.e. any KNOWN bit
+	 * in the combined value discards the {@code RESTORED_BANK} classification and the
+	 * {@link StoredValueScanner.ReadBack} with it -- is right when the scan's own mask matches
+	 * the mechanism's field width, but not here: {@code BankMirrors.IdentifyingEncoding#byteFor}
+	 * marks every bit OUTSIDE the mechanism's {@code mask} known-zero on a
+	 * {@code ROM_IDENTIFYING} mirror (a true, proven fact about the byte -- see that method's
+	 * javadoc), and at {@code wideScan}'s 0xFF mask those bits are NOT masked away, so
+	 * {@code combine()} reports {@code knownMask != 0} and demotes even though the FIELD itself
+	 * -- the only part the identity-table rule needs -- never resolved. The register's real
+	 * caller-side scan (the {@code argReg} scan in {@link #recoverCallArgument}, masked to
+	 * {@code stateMask}) never hits this: its own mask already excludes exactly those bits, so
+	 * {@code knownMask} comes back zero there and the classification survives -- which is why
+	 * contra's A-channel restore worked before this bead touched anything. A second scan,
+	 * {@code narrowScan}, run at {@code stateMask} purely to recover the classification the wide
+	 * scan lost, reproduces that same alignment for X/Y. Its OWN value is never used -- only its
+	 * {@code stop()}/{@code readBack()} -- so the register's tracked {@code BankState} keeps
+	 * coming from {@code wideScan} exactly as {@link #surviving}'s original 0xFF convention
+	 * requires (narrowing the VALUE would truncate an index genuinely wider than the field).
+	 * {@code wideScan}'s own {@code readBack()} is consulted too, as a fallback, for a kind
+	 * (e.g. {@code WRITE_THROUGH}) whose {@code mirroredByte} answer carries no such artifact and
+	 * so never needed the narrow rescan to begin with.
+	 */
+	private static void readBackFor(Map<Character, StoredValueScanner.ReadBack> readBacks,
+			char reg, StoredValueScanner.Scan wideScan, Program program, Instruction callInstr,
+			List<PrologueSegment> unwalked, BankState localIn, RegisterEnv path,
+			StoredValueScanner.Hooks callerHooks, int stateMask) {
+		if (wideScan.stop() == BankSwitchStrategy.ValueStop.RESTORED_BANK
+				&& wideScan.readBack() != null) {
+			readBacks.put(reg, wideScan.readBack());
+			return;
+		}
+		StoredValueScanner.Scan narrowScan = survivingScan(program, callInstr, reg, unwalked,
+			localIn, path, callerHooks, stateMask);
+		if (narrowScan.stop() == BankSwitchStrategy.ValueStop.RESTORED_BANK
+				&& narrowScan.readBack() != null) {
+			readBacks.put(reg, narrowScan.readBack());
+		}
 	}
 
 	/**
@@ -1804,13 +1876,20 @@ final class HelperArgumentRecovery {
 	 * increment 3) -- passed down rather than re-derived so that the oracle's consultation count
 	 * sees these three scans too; the memo decision depends on it.
 	 */
-	private static BankState surviving(Program program, Instruction callInstr, char reg,
-			List<PrologueSegment> unwalked, BankState localIn, RegisterEnv path,
-			StoredValueScanner.Hooks callerHooks) {
+	private static StoredValueScanner.Scan survivingScan(Program program, Instruction callInstr,
+			char reg, List<PrologueSegment> unwalked, BankState localIn, RegisterEnv path,
+			StoredValueScanner.Hooks callerHooks, int mask) {
 		if (!unwalked.isEmpty() && !argumentSurvivesPrologue(program, unwalked, reg)) {
-			return BankState.unknown();
+			return new StoredValueScanner.Scan(BankState.unknown(),
+				BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 		}
-		return StoredValueScanner.resolveStoredValue(program, callInstr, reg, localIn, 0xFF,
+		// bead grm-ld68: keep the Scan (not just its value) so a RESTORED_BANK stop's ReadBack
+		// survives into callSiteRegisters' env -- see readBackFor. mask is a parameter as of
+		// grm-ld68 (was hardcoded 0xFF): callSiteRegisters calls this once per register at 0xFF
+		// for the tracked VALUE (unchanged convention) and again at the mechanism's own
+		// stateMask, value discarded, purely to recover a classification the wider mask's
+		// mirror-derived known-zero bits would otherwise demote away.
+		return StoredValueScanner.resolveStoredValueScan(program, callInstr, reg, localIn, mask,
 			callerHooks, path);
 	}
 
@@ -2038,7 +2117,7 @@ final class HelperArgumentRecovery {
 	 * {@code BankDataflowEngine.runDataflow}'s declaration comment argued that was sound because
 	 * {@link #callSiteRegisters}' three backward scans "use NO_HOOKS and never consult tracked
 	 * state". This bead makes that argument false for a strategy that overrides
-	 * {@link BankSwitchStrategy#callerSideHooks()}: {@link #surviving} now threads a real
+	 * {@link BankSwitchStrategy#callerSideHooks()}: {@link #survivingScan} now threads a real
 	 * {@code localIn} into those scans, so two dequeues of the same call address under different
 	 * in-states can answer differently and a memo keyed on the address alone would silently
 	 * serve one call site's answer to another. {@link BankState} is a {@code record}, so this

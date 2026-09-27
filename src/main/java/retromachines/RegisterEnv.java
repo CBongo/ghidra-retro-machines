@@ -103,9 +103,23 @@ import ghidra.program.model.address.Address;
  * @param armPredecessors per control-flow join, the predecessor instruction a walk under this env
  *                      steps to when it reaches that join (bead grm-wul); empty for "cross
  *                      nothing beyond {@code crossableJoin}"
+ * @param readBacks     per register ({@code 'A'}/{@code 'X'}/{@code 'Y'}), the
+ *                      {@link StoredValueScanner.ReadBack} the caller-side scan that produced
+ *                      {@code a}/{@code x}/{@code y} stopped on, when it stopped
+ *                      {@link BankSwitchStrategy.ValueStop#RESTORED_BANK} (bead grm-ld68); empty
+ *                      for every env but one {@link HelperArgumentRecovery#callSiteRegisters}
+ *                      built from a scan that stopped that way. Carried so a strategy re-
+ *                      evaluating its own switch semantics under this env (grm-hum increment 2's
+ *                      mini-inlining) can still name WHERE an unresolved index register's value
+ *                      was read back from, even though the register's own {@code BankState} here
+ *                      is unknown -- see {@code MemoryLatchBankSwitchStrategy}'s identity-table
+ *                      rule, the first consumer. Not part of the record's identity for caching
+ *                      purposes any more than {@code a}/{@code x}/{@code y} are -- see this
+ *                      class's own javadoc: {@code RegisterEnv} is memoized VALUE, never key.
  */
 public record RegisterEnv(Address entryAddr, Address crossableJoin, BankState a, BankState x,
-		BankState y, Map<Address, Address> armPredecessors) {
+		BankState y, Map<Address, Address> armPredecessors,
+		Map<Character, StoredValueScanner.ReadBack> readBacks) {
 
 	/** The empty environment: no entry stop, no crossable join, nothing known. */
 	public static final RegisterEnv NONE =
@@ -113,17 +127,35 @@ public record RegisterEnv(Address entryAddr, Address crossableJoin, BankState a,
 
 	public RegisterEnv {
 		armPredecessors = armPredecessors == null ? Map.of() : Map.copyOf(armPredecessors);
+		readBacks = readBacks == null ? Map.of() : Map.copyOf(readBacks);
 	}
 
 	/** An env that crosses no join and knows nothing, but follows {@code arms} at each join it names. */
 	public static RegisterEnv onArms(Map<Address, Address> arms) {
 		return new RegisterEnv(null, null, BankState.unknown(), BankState.unknown(),
-			BankState.unknown(), arms);
+			BankState.unknown(), arms, Map.of());
 	}
 
-	/** This env with {@code arms} as its arm map (replacing any it had). */
+	/** This env with {@code arms} as its arm map (replacing any it had); {@code readBacks} carries
+	 * over unchanged. */
 	public RegisterEnv withArms(Map<Address, Address> arms) {
-		return new RegisterEnv(entryAddr, crossableJoin, a, x, y, arms);
+		return new RegisterEnv(entryAddr, crossableJoin, a, x, y, arms, readBacks);
+	}
+
+	/** This env with {@code readBacks} as its per-register read-back map (replacing any it had);
+	 * every other field carries over unchanged. See the class javadoc's {@code readBacks} param
+	 * for what populates this (bead grm-ld68). */
+	public RegisterEnv withReadBacks(Map<Character, StoredValueScanner.ReadBack> newReadBacks) {
+		return new RegisterEnv(entryAddr, crossableJoin, a, x, y, armPredecessors, newReadBacks);
+	}
+
+	/** The {@link StoredValueScanner.ReadBack} named for {@code reg} ({@code 'A'}/{@code 'X'}/
+	 * {@code 'Y'}), or {@code null} when this env carries none for it.
+	 * @param reg register to query
+	 * @return the register's read-back, or {@code null}
+	 */
+	public StoredValueScanner.ReadBack readBack(char reg) {
+		return readBacks.get(reg);
 	}
 
 	/** Whether this env names any arm at all -- i.e. is a path-forking query. */
@@ -182,10 +214,16 @@ public record RegisterEnv(Address entryAddr, Address crossableJoin, BankState a,
 		this(entryAddr, null, a, x, y);
 	}
 
-	/** The pre-grm-wul five-argument form: no arm map. */
+	/** The pre-grm-wul five-argument form: no arm map, no read-backs. */
 	public RegisterEnv(Address entryAddr, Address crossableJoin, BankState a, BankState x,
 			BankState y) {
-		this(entryAddr, crossableJoin, a, x, y, Map.of());
+		this(entryAddr, crossableJoin, a, x, y, Map.of(), Map.of());
+	}
+
+	/** The pre-grm-ld68 six-argument form: no read-backs. */
+	public RegisterEnv(Address entryAddr, Address crossableJoin, BankState a, BankState x,
+			BankState y, Map<Address, Address> armPredecessors) {
+		this(entryAddr, crossableJoin, a, x, y, armPredecessors, Map.of());
 	}
 
 	/** What {@code reg} ({@code 'A'}/{@code 'X'}/{@code 'Y'}) holds on entry; unknown otherwise.

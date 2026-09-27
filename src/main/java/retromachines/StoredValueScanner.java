@@ -290,6 +290,48 @@ final class StoredValueScanner {
 		default Map<Address, CrossBlockProof> crossBlockProofMemo() {
 			return null;
 		}
+
+		/**
+		 * Whether the ABSOLUTE-INDEXED table {@code loadInstr} reads, based at {@code base}, is an
+		 * IDENTITY TABLE over this strategy's tracked field -- {@code table[v] == v} for every
+		 * {@code v} in {@code [0, fieldMask]}, after this mechanism's own shift/mask extraction and
+		 * bus-conflict AND, where {@code idxReadBack} is where the caller-side scan proved the
+		 * load's index register was itself read back from (bead grm-ld68).
+		 * <p>
+		 * {@code false} (the default) means this strategy makes no such claim -- every strategy but
+		 * {@code MemoryLatchBankSwitchStrategy} keeps the default, and direct-site scanning (which
+		 * never has an {@code idxReadBack} to offer, since {@link RegisterEnv#NONE} carries none)
+		 * never reaches this hook at all -- see {@link #resolveStoredValue}'s caller.
+		 * <p>
+		 * <b>What this licenses.</b> When {@code idxReadBack}'s cell is itself provably the bank
+		 * number (a {@code ROM_IDENTIFYING} mirror in plain identity encoding -- verified by the
+		 * caller BEFORE this hook is asked, not by the strategy), an identity table read with that
+		 * same index is a NO-OP: the byte {@code LDA base,idx} reads back is exactly the bank the
+		 * caller already read, whatever bank that was. A store that re-commits it is therefore a
+		 * RESTORE, not an unresolved argument -- contra's {@code FUN_c13f} (its two-instruction body
+		 * {@code LDA $FFD0,Y / STA $FFD0,Y}, table {@code $FFD0..$FFD7 == 00..07}) is the worked
+		 * case: Y arrives as a caller-side read-back of the {@code $8000} ROM_IDENTIFYING mirror
+		 * (identity-encoded, verified), so this answers {@code true} and the scanner reports
+		 * {@link BankSwitchStrategy.ValueStop#RESTORED_BANK} carrying {@code idxReadBack} itself --
+		 * NOT a new {@link ReadBack} about this load, because the bank this site re-commits is the
+		 * one the CALLER read, not one this site reads independently.
+		 * <p>
+		 * <b>Whether {@code idxReadBack}'s value is provably the bank number is NOT this hook's
+		 * question</b> -- the scanner never calls it without having already confirmed that (bead
+		 * grm-ld68 rule (c)); an implementation is free to re-check it (as
+		 * {@code MemoryLatchBankSwitchStrategy} does, from its own {@code BankMirrors}) but must not
+		 * assume the caller skipped it.
+		 *
+		 * @param loadInstr   the absolute-indexed load (e.g. {@code LDA base,Y})
+		 * @param base        the table's base address -- the load's operand with the index
+		 *                    subtracted out ({@link LoopIdioms#indexedBase})
+		 * @param idxReadBack where the caller-side scan says the load's index register was itself
+		 *                    read back from
+		 */
+		default boolean isIdentityTableLoad(Instruction loadInstr, Address base,
+				ReadBack idxReadBack) {
+			return false;
+		}
 	}
 
 	/**
@@ -705,6 +747,66 @@ final class StoredValueScanner {
 						readBack ? new ReadBack(target, prev.getMinAddress(), carriedAcross,
 								crossBlockPush, crossBlockPull) : null);
 				}
+				// IDENTITY-TABLE INDEX HELPER (bead grm-ld68): an ABSOLUTE-INDEXED load whose
+				// index register is provably the SAME caller-supplied value `env` describes --
+				// not just "some caller register", but the one env has a ReadBack for -- and
+				// whose table is an identity over the field re-commits the bank that read-back
+				// already named, whatever it was. Contra's FUN_c13f is the worked case: `LDA
+				// $FFD0,Y / STA $FFD0,Y`, table $FFD0..$FFD7 == 00..07, Y arriving as a caller-
+				// side read-back of the $8000 ROM_IDENTIFYING mirror. Guarded exactly like the
+				// plain-mirror readBack above (aAcc/oAcc unmodified -- rule (a)) plus three more
+				// conditions the hook and this scanner split between them:
+				//  (b) idx is not redefined between env's entry and this load -- verified by
+				//      scanning idx FROM THIS INSTRUCTION under the same env and requiring the
+				//      independent walk to reach the SAME entry stop (HELPER_ARGUMENT), which is
+				//      exactly what "not redefined in between" means;
+				//  (c) the read-back cell idx came from is provably the bank number; and
+				//  (d) the table itself is an identity over [0, fieldMask].
+				// (c) and (d) are strategy/mirror knowledge this scanner has no business
+				// evaluating, so they are asked of Hooks.isIdentityTableLoad, which defaults to
+				// "no" -- nothing changes for a strategy that does not override it.
+				if (mirrored == null && !readBack && aAcc == 0xFF && oAcc == 0x00
+						&& isAbsoluteIndexed(prev)) {
+					Address idxBase = LoopIdioms.indexedBase(prev);
+					Register idxRegister = LoopIdioms.indexReg(prev);
+					String idxName = idxRegister == null ? null : idxRegister.getName().toUpperCase();
+					if (idxBase != null && ("X".equals(idxName) || "Y".equals(idxName))
+							&& depth < MAX_RESOLVE_DEPTH) {
+						char idxChar = idxName.charAt(0);
+						ReadBack idxReadBack = env.readBack(idxChar);
+						if (idxReadBack != null) {
+							// rule (b): the independent scan of idx starting AT this very
+							// instruction (i.e. idx's value on entry to it) must reach env's own
+							// entry stop with nothing in between having redefined idx. Shares
+							// this walk's budget, exactly like effectiveOperandTarget's own
+							// constantRegisterValue consultation just above does.
+							//
+							// Run at mask 0: a CLASSIFICATION-ONLY scan. env's own value for idx
+							// can be partially known (a ROM_IDENTIFYING mirror's upper bits are
+							// proven zero -- IdentifyingEncoding#byteFor), and at any wider mask
+							// stopped()'s "a value that knows something is a resolved value"
+							// demotion would turn the entry stop's HELPER_ARGUMENT into RESOLVED.
+							// At mask 0 combine() can know nothing, so the stop reason survives and
+							// HELPER_ARGUMENT means exactly "reached env's entry stop with nothing
+							// redefining idx". Value equality against env.get(idx) was rejected: a
+							// helper that reloads idx from the same mirror yields an equal partial
+							// value while committing the bank live at the CALL, not the read-back.
+							Scan idxScan = resolveStoredValue(program, prev, idxChar,
+								BankState.unknown(), 0, hooks, env, budget, depth + 1);
+							boolean idxUnmodifiedFromEntry =
+								idxScan.stop() == BankSwitchStrategy.ValueStop.HELPER_ARGUMENT;
+							if (idxUnmodifiedFromEntry
+									&& hooks.isIdentityTableLoad(prev, idxBase, idxReadBack)) {
+								// The value stays unknown -- only WHERE the bank was last read
+								// back is known, not what it was. See Hooks.isIdentityTableLoad's
+								// javadoc for why idxReadBack itself (not a new ReadBack about
+								// this load) is the right thing to report.
+								return stopped(aAcc, oAcc, mask, BankState.unknown(),
+									BankSwitchStrategy.ValueStop.RESTORED_BANK, idxReadBack);
+							}
+						}
+					}
+				}
 				// A load from a VOLATILE block -- memory-mapped I/O -- IS genuinely runtime and can
 				// never be pinned statically: PPU status, controller input, APU state. isVolatile()
 				// is the established test for this (DescriptorMemory sets it for `kind: io` regions;
@@ -808,6 +910,24 @@ final class StoredValueScanner {
 					crossBlockPull = prev.getMinAddress();
 				}
 				cur = pha;
+				continue;
+			}
+
+			// TAX/TAY renaming (bead grm-ld68): when tracking Y and prev is TAY (or tracking X
+			// and prev is TAX), the value carried past this point is A's, not an opaque Y/X
+			// modifier -- switch what this walk tracks to A and keep resolving under the SAME
+			// accumulators (contra's `PLA / TAY / JSR helper`, where the helper consumes Y but
+			// the value was A's all along). transferSource(mnem, reg) also answers TXA/TYA
+			// (source X/Y, writing A) when reg == 'A', but that direction never returns 'A' as
+			// the source -- only TAX (reg == 'X') and TAY (reg == 'Y') do -- so the `== 'A'` test
+			// below excludes TXA/TYA automatically without a second mnemonic check; renaming on
+			// TXA/TYA would move a direct A-site scan onto X/Y, which is out of scope here.
+			Character transferredFrom = transferSource(mnem, reg);
+			if (transferredFrom != null && transferredFrom == 'A') {
+				reg = transferredFrom;
+				modifiers = registerModifiers(reg);
+				loadMnemonic = "LD" + reg;
+				cur = prev;
 				continue;
 			}
 
