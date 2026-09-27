@@ -57,3 +57,5 @@
 sync.remote: "git+ssh://git@github.com/CBongo/ghidra-retro-machines.git"
 agent:
     profile: team-maintainer
+prime:
+    max-memories: 1

@@ -33,7 +33,7 @@ in it as a recorded finding, and do not sweep it into beads.
 
 ```bash
 bd show <id>                                            # the bead behind any item here
-bash tools/banktest/realrom-test.sh check --gme         # romdirs come from GRM_ROM_DIR
+bash tools/banktest/realrom-test.sh check nes-gme       # romdirs come from GRM_ROM_DIR
 bash tools/banktest/realrom-test.sh nominate <romdir>   # board-gap survey
 ```
 
@@ -57,15 +57,14 @@ Each is minutes of work and settles something specific. Highest value per unit e
   `grm-mej.3`. One listing read per site: what are the ~8 instructions before each `JSR fed1`, and
   is the bank known on entry to the function containing it? Record on `grm-mej.3`.
 
-*Not an item — a note.* The `.idb` inventory itself (`grm-w4w3`) is **agent work and is
-deliberately deferred to a future session** at your request; the tooling question is settled
-(`python-idb` Apache-2.0 / `idbutil` MIT, no IDA needed) so nobody re-derives it. Worth knowing
-what turned up while looking: **ten** IDA databases, not one — including `nes/zelda/zelda.idb`
-(a title already hash-pinned in the real-ROM manifest, and named in section 4's community-
-disassembly item — your own database sidesteps that licensing question entirely) and
-`c64/rds/files/f-drive0500.idb`, which reads as **1541 drive code at $0500**, i.e. a worked
-example of the C64→1541 upload case `docs/smc-survey.md:164` names as the sibling of the
-SPC700 problem.
+- [ ] **The beads Claude Code plugin still injects a second, uncapped `bd prime`.** Found
+  2026-09-26 checking the `grm-9t2g` upgrade: besides the repo's own hooks, the globally installed
+  `beads` plugin (v1.1.0, `~/.claude/plugins/cache/beads-marketplace/beads/1.1.0/.claude-plugin/plugin.json`)
+  registers its own SessionStart/PreCompact hook running plain `bd prime` — 158.8 KB this session,
+  every memory body, truncated by the host. Mitigated repo-side by `prime.max-memories: 1` in
+  `.beads/config.yaml` (now ~10 KB), but the plugin still duplicates the workflow text. Your
+  global config, so yours: update the plugin to a release whose hook passes `--no-memories`, or
+  disable it (its skills are conveniences; the repo hooks carry everything that matters).
 
 ---
 
@@ -143,7 +142,17 @@ Blocked on judgment, not effort.
   yours: carry (B), carry (A), or keep the current binary until upstream moves. (B) is archived
   as `D:/git/ghidra-fork/build-variants/decompile-12.1.3-stock-plus-lowest-target.exe`; two
   consecutive full-tier runs on it were byte-identical on 32 of 34 rows, megaman/dodge/rcproam/
-  dragonpower included. Blessing the ten moving goldens waits on this.
+  dragonpower included. Blessing the ten moving goldens waits on this. *(2026-09-26, `grm-rap8`:
+  the project now targets 12.1.4, which changed no decompiler source, so both candidates apply to
+  it unchanged; the retarget carried the current GP-6936 binary over as the interim default.)*
+
+- [ ] **Adopt `.claude/rules/`, or keep the always-on core in `CLAUDE.md` + `AGENTS.md`?**
+  (`grm-yaat`, P2.) The memory-truncation trigger the bead was filed for is resolved (`grm-8ctl`'s
+  index, `grm-9t2g`), and the `@AGENTS.md` import is confirmed to load on a cold start (bead
+  comment 2026-09-25). What remains is size and adherence only: 822 always-on lines
+  (`CLAUDE.md` 487 + `AGENTS.md` 335) against the <200-line guidance the bead cites. Decide
+  whether to split path-scoped detail (Ghidra source reading, loader conventions, the opt-in tier
+  paragraphs) into rules files; the migration itself is agent work once you rule.
 
 - [ ] **Community disassembly licensing survey** (`grm-hb6.6` P3). The bead names licensing as "the
       gating constraint and a per-source judgment, not a policy set once". Deliverable: a table of
@@ -185,49 +194,11 @@ Agents can't file these — they need an account and CLA agreement.
   is not a reason to send one.
 
 *Filed and awaiting a maintainer, nothing to do:* [#9655](https://github.com/NationalSecurityAgency/ghidra/issues/9655)
-(GP-6936, `grm-qp5x.2` — PR still owed, below), [#9658](https://github.com/NationalSecurityAgency/ghidra/issues/9658)
+(GP-6936, `grm-qp5x.2` — the promised PR returns to this list once its agent-side
+re-measurement and branch prep land), [#9658](https://github.com/NationalSecurityAgency/ghidra/issues/9658)
 (`validateOptions`, `grm-vsg`), [ghidra-snes#6](https://github.com/joshleaves/ghidra-snes/pull/6)
 (65816 semantics, `grm-9nxj.7`). Check them before re-deriving anything they cover.
 
-- [ ] **GP-6936: the upstream issue is filed and `#4148` is cross-referenced — the PR remains.**
-  (`grm-qp5x.2`.) You filed
-  [NationalSecurityAgency/ghidra#9655](https://github.com/NationalSecurityAgency/ghidra/issues/9655)
-  on 2026-09-19 and posted the `#4148` cross-reference on 2026-09-20; the root cause is condensed
-  in the Answered table, and the "carry a patched install?" call is made (see the Answered table:
-  yes, locally, for now — `grm-qp5x.3`). Still yours:
-
-  1. **The PR.** #9655 ends "I plan to submit a PR with this fix unless advised otherwise", so it
-     is promised. The fix is the three-hunk patch on `grm-qp5x.2` — `calcScaleMask` flag placement,
-     a spacebase early-return in `constructWrappingAddress`, and dropping the `SpacebaseSpace`
-     constructor's `setFlags` — measured 2026-09-04 to fix **both** halves of GP-6936: our two rows
-     return to the full-revert result, and on #4148's reporter's own `sysmem.elf` (a genuine
-     wrapped `ram` range, ARMv7 read through a `0xFFFFFFFF` pointer) stock 12.1.3 fails with their
-     exact error while the patched build decompiles it and recovers the call argument for argument.
-     The full 33-ROM tier shows no row regressing off stock — **re-verified 2026-09-20 after
-     `rcransom` moved on the patched install: the bisect (`grm-qp5x.4`) cleared the patch, and
-     specifically cleared hunk 1** (a hunk-2-only build reproduces the movement, and so does stock
-     in a shadow install; the cause is a decompiler crash, `grm-gz42`, present on every build). So
-     the PR body may still say "no collateral across 33 cartridges", and the `calcScaleMask` hunk
-     needs no caveat. **CORRECTION 2026-09-21: the bisect's shadow arms all ran the REAL install's
-     binary (junction canonicalisation — `grm-qp5x.4`), so "hunk 1 is cleared" and "stock in a shadow
-     gives 5722" are unmeasured. Re-run on a corrected shadow before the PR body cites them; and
-     read section 4's binary decision first — with the jump-table bound in place the two rows this
-     patch exists for pass on STOCK 12.1.3.** Preparing the branch is agent work —
-     use the `grm-6xh` recipe below (explicit GitHub remote, cut from a freshly fetched `master`,
-     its own worktree); the push and the PR are yours. One caveat the PR body must carry:
-     `datatests/wraprange.xml` is expected to fail under the patch, and that is a *reading* of the
-     test, not an observed failure — `decomp_test_dbg` needs `termios.h`/`dirent.d_type` and will
-     not build on this machine (a Linux box, or `pacman -S gcc` under msys64).
-- [ ] **Decompiler crash on rcransom `FUN_W8000_M0_B12__9314` — report upstream once minimised.**
-  (`grm-gz42`, P3, found 2026-09-20.) `DecompInterface` on that function returns "Decompiler
-  process died" — a crash, not a `LowlevelError` — on stock 12.1.3 and every GP-6936 variant, on
-  the real install and shadows; `FUN_81f9` throws "Overlapping input varnodes". Both hold a
-  `JMP (zp)` dispatch whose table therefore never resolves. **Not ready to file:** the agent-side
-  work comes first — capture the decompiler's stderr/crash, then minimise to something shareable
-  without ROM bytes (the ROM is hash-pinned but not redistributable). Your part is the filing when
-  that lands; nothing to do until then. Independent of #9655. *(2026-09-25: the lowest-target
-  bound builds recover `9352`'s 25 entries, so the crash may be downstream of the over-read. If
-  so, this becomes part of #9447 rather than a separate report. Agent work to settle first.)*
 - [ ] **Fall-through override into an overlay space is accepted by the listing and fatal to the
   decompiler — ask upstream whether that is deliberate.** (`grm-p3dy`, ruled 2026-09-21: ask
   first, build nothing.) The mechanics spike (`FallThroughIntoOverlayProgramTest`, 11 rows)
