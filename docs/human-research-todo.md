@@ -43,11 +43,7 @@ bash tools/banktest/realrom-test.sh nominate <romdir>   # board-gap survey
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
-- [ ] **dragonpower/shenlong `9913`: how is it reached now?** (`grm-eyn`/`grm-wayn`, 2026-09-27.)
-  You recorded `$FFBE` as called from `$9913` as the first instruction of a function. Under the
-  jump-table bound the site vanished from both titles (blessed 2026-09-27, warnings 6 -> 2), so its
-  only static route was probably an over-read table entry. Which table or call reaches the
-  function containing `9913`? Record on `grm-wayn` (it is one of that bead's two sites).
+_None open._
 
 ---
 
@@ -232,6 +228,7 @@ re-measurement and branch prep land), [#9658](https://github.com/NationalSecurit
 
 | question | answer | bead |
 |---|---|---|
+| dragonpower/shenlong `9913`: how is it reached now? | **By `JSR`, from the game's main program (owner, 2026-09-27).** Analysis doesn't get there: hand disassembly from `82ac` (the target of `8008 JMP $82ac`) reaches several `JSR $9913` in `8300`–`8600` (`836b 839f 8553 85a1 85c8 861d`). The only route to `8008` is RESET: `ffad` stores `$8008` in `$17/$18` and enters the far-call trampoline at `ffe8`, which ends `JMP ($0017)`, a jump Ghidra can't resolve. So this is a far-call reachability gap (`grm-v60`), not a fault in the jump-table bound. **Do not loosen the bound to get `9913` back.** | `grm-wayn` |
 | ultimaav: is the table at `97d7` 4 entries long? | **Yes (owner, 2026-09-27).** Bank 0, dispatch `97c4`, `JMP ($3a)` at `97d4`; the entries are `97df 97e7 97f1 986d`, and the table ends at entry 0's code. The table size is settled. The row still waits on `grm-eyn.1` (why the `de2f` bank comment vanished), which is agent work. | `grm-eyn` |
 | db3: are the jump-table bound's three new tables the right size? | **Yes, by agent decode of the ROM bytes (2026-09-27); no owner read needed.** The dispatches `c1ab`/`c1ed`/`c269` jump through tables at `c2ac` (31 entries), `ca2f` (43) and `d041` (40), and each table ends where its entry 0 starts. The lost `a018` note sits behind the `JSR $803a` inline-table dispatcher, which Ghidra can't follow either way (`grm-j2kl`). db3 is blessable. | `grm-eyn` |
 | The globally installed beads Claude Code plugin runs its own plain `bd prime` hook at SessionStart/PreCompact, duplicating the repo hooks' payload. Update it or disable it? | **Disabled (owner, 2026-09-27)**: `"beads@beads-marketplace": false` in the global `~/.claude/settings.json`. Updating was not an option: plugin 1.3.0 (`f6637545`) still registers plain `bd prime`. Verified the next session: the SessionStart hook produced **one** prime payload, 15,398 bytes, with one copy of the workflow text and the close protocol (before, there were two, the plugin's held down only by the cap). The repo hooks carry everything the plugin did; its skills were conveniences. Keep `prime.max-memories: 1` in `.beads/config.yaml` anyway: the repo hooks don't need it (they pass `--no-memories`), but it still keeps a hand-run or post-compaction plain `bd prime` from dumping every memory body. If the plugin is ever re-enabled, check its `plugin.json` hook for `--no-memories` first. | `grm-9t2g` (closed) |
