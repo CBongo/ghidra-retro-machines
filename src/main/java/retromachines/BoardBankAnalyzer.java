@@ -903,7 +903,14 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		text.append("Bank value is RESTORED here, not resolved: this ").append(committerNoun)
 				.append(" re-commits the bank READ BACK at ").append(readBack.readAt())
 				.append(" from ").append(source);
-		if (readBack.carriedAcross() != null) {
+		if (readBack.crossBlockPush() != null) {
+			// bead grm-mej.3 increment X1: the pairing crossed a control-flow join (a loop, a
+			// diamond), not only -- or not agreeably enough among its paths -- a call, so the
+			// wording names the SPAN the byte was carried across rather than a single call.
+			text.append(", carried on the stack across control flow ")
+					.append(readBack.crossBlockPush()).append("..").append(readBack.crossBlockPull());
+		}
+		else if (readBack.carriedAcross() != null) {
 			text.append(", carried on the stack across the call at ")
 					.append(readBack.carriedAcross());
 		}

@@ -237,15 +237,21 @@ final class HelperArgumentRecovery {
 		/** The helper's strategy's mirror set, for the KIND query {@link #isLiveBankMirror}
 		 *  (bead grm-yflf) -- see {@link BankSwitchStrategy#observedMirrors}. */
 		private final BankMirrors mirrors;
+		/** The per-run cross-block proof memo (bead grm-mej.3 increment X1), or {@code null} when
+		 *  the caller has none to offer -- {@link #crossBlockProofMemo} then answers {@code null}
+		 *  too, and {@code StoredValueScanner.crossBlockMatchingPush} computes fresh every time. */
+		private final Map<Address, StoredValueScanner.CrossBlockProof> crossBlockMemo;
 		private int consultations;
 
 		OracleHooks(StoredValueScanner.Hooks base, StateOracle oracle, int lsb, int effectMask,
-				BankMirrors mirrors) {
+				BankMirrors mirrors,
+				Map<Address, StoredValueScanner.CrossBlockProof> crossBlockMemo) {
 			this.base = base;
 			this.oracle = oracle;
 			this.lsb = lsb;
 			this.effectMask = effectMask;
 			this.mirrors = mirrors == null ? BankMirrors.none() : mirrors;
+			this.crossBlockMemo = crossBlockMemo;
 		}
 
 		@Override
@@ -283,6 +289,19 @@ final class HelperArgumentRecovery {
 		public boolean isLiveBankMirror(Address target) {
 			return mirrors.isLiveBankMirror(target);
 		}
+
+		/** {@code true}: this is the ONLY {@code Hooks} implementation with a real
+		 * {@link StateOracle} behind it (bead grm-mej.3 increment X1) -- see the interface
+		 * javadoc for why every other hook must keep the default. */
+		@Override
+		public boolean hasStateOracle() {
+			return true;
+		}
+
+		@Override
+		public Map<Address, StoredValueScanner.CrossBlockProof> crossBlockProofMemo() {
+			return crossBlockMemo;
+		}
 	}
 
 	/**
@@ -303,6 +322,22 @@ final class HelperArgumentRecovery {
 	static CallEffect recoverCallArgument(Program program, Instruction callInstr,
 			HelperModel helper, BankState callSiteIn, Map<CallSiteRegKey, RegisterEnv> envCache,
 			Set<Function> restoringTrampolines, RegisterEnv path, StateOracle oracle) {
+		return recoverCallArgument(program, callInstr, helper, callSiteIn, envCache,
+			restoringTrampolines, path, oracle, null);
+	}
+
+	/**
+	 * {@link #recoverCallArgument} with the engine's per-run cross-block proof memo (bead
+	 * grm-mej.3 increment X1), handed to {@code OracleHooks} so
+	 * {@code StoredValueScanner.crossBlockMatchingPush}'s state-free proof is computed once per
+	 * {@code PLA} for the whole run rather than once per call site that happens to walk through
+	 * it. {@code null} -- every caller but {@code BankDataflowEngine} -- computes fresh each time,
+	 * which is the 8-argument form above exactly.
+	 */
+	static CallEffect recoverCallArgument(Program program, Instruction callInstr,
+			HelperModel helper, BankState callSiteIn, Map<CallSiteRegKey, RegisterEnv> envCache,
+			Set<Function> restoringTrampolines, RegisterEnv path, StateOracle oracle,
+			Map<Address, StoredValueScanner.CrossBlockProof> crossBlockMemo) {
 		if (restoringTrampolines.contains(helper.function())) {
 			// A VERIFIED no-op (grm-mej.3): this helper puts the entry bank back before returning,
 			// so the call owns nothing. Answered before argReg is even consulted, because the
@@ -357,7 +392,8 @@ final class HelperArgumentRecovery {
 		// the interface) below, where the memo needs its consultation count.
 		OracleHooks oracleHooks = oracle == null ? null
 				: new OracleHooks(callerHooksFor(helper), oracle, helper.lsb(), helper.effectMask(),
-					helper.strategy() == null ? null : helper.strategy().observedMirrors());
+					helper.strategy() == null ? null : helper.strategy().observedMirrors(),
+					crossBlockMemo);
 		StoredValueScanner.Hooks callerHooks =
 			oracleHooks == null ? callerHooksFor(helper) : oracleHooks;
 		StoredValueScanner.Scan registerScan = StoredValueScanner.resolveStoredValueScan(program,

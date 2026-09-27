@@ -37,8 +37,6 @@ import ghidra.program.model.listing.FunctionManager;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
-import ghidra.program.model.symbol.RefType;
-import ghidra.program.model.symbol.Reference;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.task.TaskMonitor;
 
@@ -301,6 +299,11 @@ final class BankDataflowEngine {
 		// flow references, both fixed for the duration of this run -- so they are enumerated once
 		// per address. An empty Optional records "not forkable here" so the walk is not repeated.
 		Map<Address, Optional<List<Arm>>> armCache = new HashMap<>();
+		// The cross-block PHA/PLA pairing proof (bead grm-mej.3 increment X1) is STATE-FREE -- a
+		// function of the listing and control flow alone, like armCache above -- so it too is
+		// computed once per PLA address for the whole run and handed to every OracleHooks that
+		// might walk through it.
+		Map<Address, StoredValueScanner.CrossBlockProof> crossBlockProofMemo = new HashMap<>();
 		ForkBudget budget = new ForkBudget(program);
 
 		Set<Address> seeds = new LinkedHashSet<>();
@@ -457,7 +460,7 @@ final class BankDataflowEngine {
 						// its out-state is the in-state.
 						mine = applyHelperCall(program, instr, helper, pathId, mine.get(0).out(),
 							callSiteRegCache, restoringTrampolines, secondTierRelaySites, listing,
-							armCache, budget, call, stateIn, stateDependents);
+							armCache, budget, call, stateIn, stateDependents, crossBlockProofMemo);
 					}
 				}
 				outs.addAll(mine);
@@ -525,7 +528,8 @@ final class BankDataflowEngine {
 			Set<Address> secondTierRelaySites, Listing listing,
 			Map<Address, Optional<List<Arm>>> armCache, ForkBudget budget, CallTally call,
 			Map<Address, LinkedHashMap<PathId, BankState>> stateIn,
-			Map<Address, Set<Address>> stateDependents) {
+			Map<Address, Set<Address>> stateDependents,
+			Map<Address, StoredValueScanner.CrossBlockProof> crossBlockProofMemo) {
 		Address addr = instr.getMinAddress();
 		// The recording StateOracle for THIS call (grm-mej.3 increment 3): answers the merged
 		// state at any instruction and records the ask as a dependency edge P -> addr, so a later
@@ -548,7 +552,7 @@ final class BankDataflowEngine {
 		CallEffect callEffect = helper.constState() != null
 				? new CallEffect(helper.constState(), helper.effectMask())
 				: recoverCallArgument(program, instr, helper, outState, callSiteRegCache,
-					restoringTrampolines, RegisterEnv.NONE, oracle);
+					restoringTrampolines, RegisterEnv.NONE, oracle, crossBlockProofMemo);
 		List<CallEffect> forkEffects = null;
 		boolean denied = false;
 		// grm-wul, the call-site twin of the direct case: the caller's argument did not resolve
@@ -565,7 +569,7 @@ final class BankDataflowEngine {
 				List<CallEffect> perArm = new ArrayList<>();
 				List<BankState> perArmValue = evaluateArms(program, listing, arms, env -> {
 					CallEffect along = recoverCallArgument(program, instr, helper, outState,
-						callSiteRegCache, restoringTrampolines, env, oracle);
+						callSiteRegCache, restoringTrampolines, env, oracle, crossBlockProofMemo);
 					if (!along.argumentResolved()) {
 						return null;
 					}
@@ -794,35 +798,15 @@ final class BankDataflowEngine {
 			return null; // no block head within reach, or a join this path already chose at
 		}
 		Address headAddr = head.getMinAddress();
-		FunctionManager fm = program.getFunctionManager();
-		if (fm.getFunctionAt(headAddr) != null) {
-			return null; // entered by callers, not arms
-		}
-		Function scope = fm.getFunctionContaining(headAddr);
-		List<Address> preds = new ArrayList<>();
-		Instruction physical = listing.getInstructionBefore(headAddr);
-		if (physical != null && headAddr.equals(physical.getFallThrough())) {
-			preds.add(physical.getMinAddress());
-		}
-		for (Reference ref : program.getReferenceManager().getReferencesTo(headAddr)) {
-			RefType type = ref.getReferenceType();
-			if (!type.isFlow()) {
-				continue;
-			}
-			if (type.isCall()) {
-				return null;
-			}
-			Address fromAddr = ref.getFromAddress();
-			if (preds.contains(fromAddr)) {
-				continue; // a branch whose target is also its own fall-through
-			}
-			if (listing.getInstructionAt(fromAddr) == null ||
-				fm.getFunctionContaining(fromAddr) != scope) {
-				return null;
-			}
-			preds.add(fromAddr);
-		}
-		if (preds.size() < 2) {
+		// Predecessor enumeration under the closed-world rules is shared with
+		// StoredValueScanner.crossBlockMatchingPush (bead grm-mej.3 increment X1), which needs
+		// the identical rule -- flow refs + fall-through only, no call references into the span,
+		// every predecessor disassembled and in the same function, never crossing a function
+		// entry -- for its own ALL-PATHS backward search. This method's own extra requirement (at
+		// least two predecessors -- a fork needs two arms; a single-predecessor boundary is the
+		// value scan's separate linkage refusal) is checked here, after the shared call.
+		List<Address> preds = StoredValueScanner.closedWorldPredecessors(program, listing, headAddr);
+		if (preds == null || preds.size() < 2) {
 			return null;
 		}
 		List<Arm> arms = new ArrayList<>();
