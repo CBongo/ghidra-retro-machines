@@ -19,6 +19,9 @@
 // Two toolchains that disagree on how many entries a jump table has -- the grm-eyn family of
 // size-recovery differences -- show up as a differing targets= count at the same site, which is
 // far more specific than a whole-program instruction count. Run as REALROM_EXTRA_POSTSCRIPT.
+// targets= counts DISTINCT targets, not table entries: Ghidra keeps one reference per target, so
+// a table that repeats an entry reports fewer targets than it has slots (ff1 b177: 30 entries,
+// targets=24 -- grm-bogk). Decode the table bytes before calling a bound wrong.
 // Read-only; no ROM bytes.
 import ghidra.app.script.GhidraScript;
 import ghidra.program.model.address.Address;
