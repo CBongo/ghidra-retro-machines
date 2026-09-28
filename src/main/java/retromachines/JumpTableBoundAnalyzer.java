@@ -26,6 +26,7 @@ import ghidra.app.decompiler.DecompileResults;
 import ghidra.app.plugin.core.analysis.SwitchAnalysisDecompileConfigurer;
 import ghidra.app.services.AbstractAnalyzer;
 import ghidra.app.services.AnalysisPriority;
+import ghidra.app.services.Analyzer;
 import ghidra.app.services.AnalyzerType;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.program.model.address.Address;
@@ -50,6 +51,7 @@ import ghidra.program.model.symbol.Namespace;
 import ghidra.program.model.symbol.RefType;
 import ghidra.program.model.symbol.Reference;
 import ghidra.program.model.symbol.SourceType;
+import ghidra.program.model.symbol.Symbol;
 import ghidra.program.model.symbol.SymbolTable;
 import ghidra.util.UndefinedFunction;
 import ghidra.util.exception.CancelledException;
@@ -314,6 +316,9 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 			if (owner != null && !owner.equals(function)) {
 				return false; // switch belongs to a different (already-processed-elsewhere) function
 			}
+			if (relocateStaleOverride(this, program, function, switchAddr, log)) {
+				return false;
+			}
 			if (alreadyOverridden(program, function, switchAddr)) {
 				return false;
 			}
@@ -488,6 +493,70 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 			return;
 		}
 		program.getProgramContext().setRegisterValue(targetStart, targetStart, switchContext);
+	}
+
+	/**
+	 * Moves an override for {@code switchAddr} written under a DIFFERENT function onto
+	 * {@code function}, and deletes the stale one. Returns true iff it moved one.
+	 * <p>
+	 * The override lives in {@code override/jmp_<addr>} under whichever function contained the
+	 * switch when it was written, and the decompiler only reads it from the function that
+	 * contains the switch now. Newly reachable code changes that: a switch written under a
+	 * caller's body becomes part of its own function once the {@code JSR} target is made a
+	 * function (dragonpower 8655: first under the body reached from 85a7, then FUN_8645). Before
+	 * this, {@link #alreadyOverridden} looked only under the current function, so the switch was
+	 * bounded a second time and the first label set was left behind as a dead, non-primary copy
+	 * -- present or not depending on which ran first, which made the row flip between 207 and
+	 * 259 symbols (grm-v60.1). Moving (rather than skipping, or re-deriving) keeps the result
+	 * independent of that order, and carries a human's GUI override along instead of dropping it.
+	 * Ghidra function bodies cannot overlap, so the stale function no longer contains the switch;
+	 * an override under a function that still does is left alone (not ours to move).
+	 * <p>
+	 * Called from two places. Here, when this analyzer revisits the switch, but a revisit is not
+	 * guaranteed. And from {@link JumpTableOverrideRelocatorAnalyzer} whenever a function is created,
+	 * which is the event that strands an override, so the result does not depend on order.
+	 */
+	static boolean relocateStaleOverride(Analyzer analyzer, Program program, Function function,
+			Address switchAddr, MessageLog log) {
+		SymbolTable symtab = program.getSymbolTable();
+		String jmpName = "jmp_" + switchAddr.toString();
+		for (Symbol sym : symtab.getSymbols(switchAddr)) {
+			if (!"switch".equals(sym.getName())) {
+				continue;
+			}
+			Namespace jmpSpace = sym.getParentNamespace();
+			Namespace overrideSpace = jmpSpace == null ? null : jmpSpace.getParentNamespace();
+			if (overrideSpace == null || !jmpName.equals(jmpSpace.getName()) ||
+				!"override".equals(overrideSpace.getName()) ||
+				!(overrideSpace.getParentNamespace() instanceof Function other) ||
+				other.equals(function) || other.getBody().contains(switchAddr)) {
+				continue;
+			}
+			// The destinations are the namespace's case* labels. (JumpTable.readOverride keeps
+			// them in a private override field -- its getCases() is null for a read-back table.)
+			ArrayList<Address> dests = new ArrayList<>();
+			for (Symbol s : symtab.getSymbols(jmpSpace)) {
+				if (s.getName().startsWith("case")) {
+					dests.add(s.getAddress());
+				}
+			}
+			if (dests.isEmpty()) {
+				continue;
+			}
+			try {
+				new JumpTable(switchAddr, dests, true, EquateSymbol.FORMAT_DEFAULT)
+						.writeOverride(function);
+				HighFunction.clearNamespace(symtab, jmpSpace);
+				symtab.getNamespaceSymbol(jmpName, overrideSpace).delete();
+			}
+			catch (InvalidInputException | RuntimeException e) {
+				AnalyzerLog.warn(analyzer, log, "could not move jump table override at " + switchAddr +
+					" from " + other.getName() + ": " + e.getMessage());
+				return false;
+			}
+			return true;
+		}
+		return false;
 	}
 
 	/** Whether {@code switchAddr}'s jump table already carries an override -- ours from an

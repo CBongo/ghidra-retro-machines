@@ -19,11 +19,13 @@ REALROM count refs.intoOverlay.retargeted 0
 REALROM count refs.intoOverlay.intraOverlay 0
 REALROM count instrs.inOverlay 0
 REALROM count bankComments 0
-REALROM count warnings 2
-REALROM count notes 0
-REALROM count symbols 77
+REALROM count warnings 3
+REALROM count notes 1
+REALROM count symbols 168
+REALROM sample.warn 9913 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffbe whose bank argument could not be recovered at this call site
 REALROM sample.warn ffc8 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn ffea [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffbe whose bank argument could not be recovered at this call site
+REALROM sample.note 82ba [CopyLoopAnalyzer] copy-shaped loop RAM:ffcc -> RAM:014b (4 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.symbol 2000 PPUCTRL IMPORTED primary=true
 REALROM sample.symbol 2001 PPUMASK IMPORTED primary=true
 REALROM sample.symbol 2002 PPUSTATUS IMPORTED primary=true
@@ -38,16 +40,16 @@ REALROM sample.symbol 4016 JOY1 IMPORTED primary=true
 REALROM sample.symbol 4017 JOY2 IMPORTED primary=true
 REALROM sample.symbol 800b NMI IMPORTED primary=true
 REALROM sample.symbol 8096 IRQ IMPORTED primary=true
-REALROM sample.symbol 8efd switch USER_DEFINED primary=true
-REALROM sample.symbol 8f3e case_28 USER_DEFINED primary=true
-REALROM sample.symbol 8f51 case_26 USER_DEFINED primary=true
-REALROM sample.symbol 8f51 case_27 USER_DEFINED primary=false
-REALROM sample.symbol 8f97 case_25 USER_DEFINED primary=true
-REALROM sample.symbol 8fa7 case_24 USER_DEFINED primary=true
-REALROM sample.symbol 8fe2 case_23 USER_DEFINED primary=true
-REALROM sample.symbol 9047 case_22 USER_DEFINED primary=true
-REALROM sample.symbol 904a case_21 USER_DEFINED primary=true
-REALROM sample.symbol 9067 case_19 USER_DEFINED primary=false
-REALROM sample.symbol 9067 case_20 USER_DEFINED primary=false
-REALROM sample.symbol.truncated 25 of 77
+REALROM sample.symbol 8655 switch USER_DEFINED primary=true
+REALROM sample.symbol 869e case_0 USER_DEFINED primary=true
+REALROM sample.symbol 86a2 case_1 USER_DEFINED primary=true
+REALROM sample.symbol 86a6 case_2 USER_DEFINED primary=true
+REALROM sample.symbol 86aa case_7 USER_DEFINED primary=true
+REALROM sample.symbol 86ae case_8 USER_DEFINED primary=true
+REALROM sample.symbol 86b2 case_20 USER_DEFINED primary=true
+REALROM sample.symbol 86b6 case_21 USER_DEFINED primary=true
+REALROM sample.symbol 86ba case_26 USER_DEFINED primary=true
+REALROM sample.symbol 86cd case_10 USER_DEFINED primary=true
+REALROM sample.symbol 86d1 case_15 USER_DEFINED primary=true
+REALROM sample.symbol.truncated 25 of 168
 === REALROM END ===
