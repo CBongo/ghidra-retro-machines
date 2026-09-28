@@ -63,6 +63,20 @@ a read before bless:
 - **ff1 bank 11 `a449`** (table `a7aa`): now 3 entries — `a44c a4e4 a590`, then `c8c8` ×4.
   refs 1898 → 1849, instrs 7538 → 7487. ff1 is bistable, so this one also needs a second run.
 
+### - [ ] grm-fxtp: two more rows a jump-table cut moved, held unblessed
+
+The lowest-target bound now cuts a table that sits before its code at the first entry pointing
+below the table, instead of giving up on it. lwings, dbz2 and rcproam are blessed on it. These two
+need a read:
+
+- **wizwarr `bcb3`** (table `bcbc`): now 4 entries — `bd70 bcc8 be3e be7e`, then `001e 2d28 …`,
+  so 4 looks right. But five "bank 0" comments vanished downstream (`882b`, and `88f4`, `c4b4`,
+  `e9f2` via `FUN_cf81`, `c4ba` via `FUN_ce89`) plus two copy-loop notes (`bb84`, `e99e`). **Is
+  that code reached some other way?** (lwings' equivalent losses were: see the Answered row.)
+- **ff1 bank 14 `9069`** (table `91d3`): 128 → 80 entries (lots of repeated `9492`), then `1084`;
+  and **`a354`** (table `a320`): 128 → 8. With grm-akiv's `a449`, ff1 now reads refs 1798,
+  instrs 7350 (golden 1898 / 7538). **Are 80 and 8 right?**
+
 ---
 
 ## 2. Def-use passes on untraced titles
@@ -338,3 +352,4 @@ re-measurement and branch prep land), [#9658](https://github.com/NationalSecurit
 | rcransom's five mainline `fed1` restores (`c08e`, `c0f4`, `c7db`, `cd57`, `ef85`) did not move under call-crossing pairing — entry-bank unknown (a), or not straight-line (b)? | **(b), all five — every one is a cross-block pairing (owner, 2026-09-27).** Each saves via `LDA $bfff / PHA` far from its `PLA`: `c08e`/`c0f4` share the push at `c022` in `FUN_c000` across loops and nested `PHA`/`PLA` pairs around `JSR`s; `c7db` (`FUN_c705`, push `c731`) crosses branches, a `JMP` and a loop; `cd57` (`FUN_cca9`, push `ccaf`) is reached by `JMP cd56` from every case of a switch dispatch at `cd53`; `ef85` (`FUN_ed0e`, push `ed23`) is that function's sole exit after heavy branching. The question predates `grm-mej.3` X1 (cross-block pairing), yet all five still warn after it, so why X1 declines on each is **agent work, not a further listing read**. Entry-bank knowledge is not needed for a RESTORED note. | `grm-mej.3`; follow-up `grm-3jzn` |
 | rcransom: are the two tables the extension-side jump-table bound shrank right? | **Yes, both (owner, 2026-09-27).** `bab3`: table at `bab6`, 6 entries (4 distinct targets); the first address after it, `bac2`, is index 1's target. `85c9`: table at `85cc`, 10 entries; `85e0`, right after it, is index 0's. So the lost `b80b` bank comment and `fae3` warning were over-read cruft — **do not trace them.** The row diff was checked to contain exactly that movement (refs 1221 → 1151, instrs 5722 → 5450), so rcransom is blessable. db3 and ultimaav, which moved in the same run, remain open in section 1. | `grm-eyn` |
 | Should the thread pin get a new canary row now that tmnt's `44 / 103` came from phantom entries of `8f34` (grm-akiv takes it to 0 / 0)? | **No, not for now (owner, 2026-09-28).** Once tmnt is blessed at 0, no row signals that the pin is live; `GRM_THREAD_PIN` in the candidate-cache key is the remaining guard. Do not pick or add a canary row unprompted. | `grm-nems` |
+| lwings: are the bank comments at `dc61`/`dc7a`/`dc93` (lost under grm-fxtp) reached by real flow? | **Real code, but not reachable by anything Ghidra follows (agent decode, 2026-09-28).** They sit in three object-slot loops (`dc53`, `dc6c`, `dc85`) that call the `dc9e` dispatcher, and their only callers are the 6-byte `JSR x / JMP $ffa5` stubs at `ff1e`–`ff51`, entered by a computed dispatch Ghidra cannot resolve (`ff42 JSR $ec5c`, lost under grm-akiv, is another stub). Before, over-read `dcaf` entries reached them by accident. Same class as db3 `a018`: **not a regression of the bound; do not loosen it.** The stub dispatch is `grm-h0oa`. | `grm-fxtp` |

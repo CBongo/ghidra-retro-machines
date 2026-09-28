@@ -248,6 +248,77 @@ public class JumpTableBoundTest {
 		assertFalse(r.isBounded());
 	}
 
+	/** lwings dcaf/dcb3 (grm-fxtp): a collapsed size-1/num-256 table (128 cases) whose first 64
+	 *  entries are plausible code above the table, and entry 64 is a garbage over-read address
+	 *  BELOW the table -- which, before grm-fxtp, dragged minTarget under tableStart and declined
+	 *  the whole table. With the table's own block supplied, the walk now cuts at 64 instead. */
+	@Test
+	public void belowTableEntryCutsInsteadOfDeclining() {
+		long tableStart = 0xdcb3;
+		int realCount = 64;
+		long[] real = new long[realCount];
+		for (int k = 0; k < realCount; k++) {
+			real[k] = 0xdd37 + k * 0x80; // arbitrary, always above tableStart and within the block
+		}
+		List<Long> targets = new ArrayList<>(targets(real));
+		targets.add(0x8c84L); // entry 64: garbage, below the table
+		targets.add(0x9c94L); // confirm entries: also below the table
+		targets.add(0xd0deL);
+		targets.add(0xd003L);
+		List<LoadTableEntry> tables = List.of(new LoadTableEntry(tableStart, 1, 2 * targets.size()));
+		JumpTableBound.Block block = new JumpTableBound.Block(0xc000, 0xffff);
+
+		Result r = JumpTableBound.bound(targets, tables, block);
+		assertTrue(r.isBounded());
+		assertEquals(64, r.count());
+		assertEquals(JumpTableBound.Rule.BELOW_TABLE_CUT, r.rule());
+
+		// Without a block, the refinement is disabled and the table declines exactly as before.
+		assertFalse(JumpTableBound.bound(targets, tables).isBounded());
+	}
+
+	/** cv3 e137 (grm-fxtp): the table sits in a switchable-window block but the "real" targets are
+	 *  in the fixed bank block, with a garbage entry that dips below the table's own start
+	 *  triggering the cut -- "below the table" means nothing across blocks, so the same-block guard
+	 *  must decline rather than cut, even though a below-table entry was found. */
+	@Test
+	public void belowTableCutDeclinesWhenTargetsAreInADifferentBlock() {
+		long tableStart = 0x9f31;
+		List<Long> targets = targets(0xd030, 0xee50, 0x8123, 0xd040, 0xd050);
+		List<LoadTableEntry> tables = List.of(new LoadTableEntry(tableStart, 1, 2 * targets.size()));
+		JumpTableBound.Block block = new JumpTableBound.Block(0x8000, 0x9fff); // the table's block
+
+		Result r = JumpTableBound.bound(targets, tables, block);
+		assertFalse(r.isBounded());
+	}
+
+	/** A below-table entry immediately followed by an in-block, above-table entry may be a real
+	 *  case reaching shared code -- the confirm guard must decline rather than cut. */
+	@Test
+	public void belowTableCutDeclinesWhenConfirmEntryComesBackAboveTheTable() {
+		long tableStart = 0xc000;
+		List<Long> targets = targets(0xc100, 0xc110, 0xc120, 0xb000, 0xc130, 0xc140);
+		List<LoadTableEntry> tables = List.of(new LoadTableEntry(tableStart, 1, 2 * targets.size()));
+		JumpTableBound.Block block = new JumpTableBound.Block(0xa000, 0xffff);
+
+		Result r = JumpTableBound.bound(targets, tables, block);
+		assertFalse(r.isBounded());
+	}
+
+	/** Block unknown ({@code null}) disables the refinement entirely: a below-table entry still
+	 *  drags minTarget down and declines, exactly as the pre-grm-fxtp 2-arg overload always did. */
+	@Test
+	public void belowTableCutDisabledWhenBlockUnknown() {
+		long tableStart = 0xdcb3;
+		long[] real = { 0xdd37, 0xde37, 0xdf37 };
+		List<Long> targets = new ArrayList<>(targets(real));
+		targets.add(0x8c84L);
+		List<LoadTableEntry> tables = List.of(new LoadTableEntry(tableStart, 1, 2 * targets.size()));
+
+		assertFalse(JumpTableBound.bound(targets, tables, null).isBounded());
+		assertFalse(JumpTableBound.bound(targets, tables).isBounded());
+	}
+
 	/** Two moving tables with different entry sizes (1 and 3 bytes) composing correctly: the
 	 *  wider table dominates the per-entry extent, and cutoff follows its progression exactly
 	 *  as the single-table case does. A positive control showing multiple moving tables compose

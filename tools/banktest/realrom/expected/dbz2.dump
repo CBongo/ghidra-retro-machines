@@ -34,7 +34,7 @@ REALROM count instrs.inOverlay 0
 REALROM count bankComments 0
 REALROM count warnings 2
 REALROM count notes 6
-REALROM count symbols 18
+REALROM count symbols 35
 REALROM sample.warn cbcb [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_d12f whose bank argument could not be recovered at this call site
 REALROM sample.warn d156 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_d12f whose bank argument could not be recovered at this call site
 REALROM sample.note cd79 [CopyLoopAnalyzer] copy-shaped loop RAM:0133 -> RAM:8000 (8 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
@@ -58,7 +58,15 @@ REALROM sample.symbol 4017 JOY2 IMPORTED primary=true
 REALROM sample.symbol ca9a RESET IMPORTED primary=true
 REALROM sample.symbol cb3b NMI IMPORTED primary=true
 REALROM sample.symbol cbe5 IRQ IMPORTED primary=true
-REALROM sample.symbol fffa NMI_VEC IMPORTED primary=true
-REALROM sample.symbol fffc RESET_VEC IMPORTED primary=true
-REALROM sample.symbol fffe IRQ_VEC IMPORTED primary=true
+REALROM sample.symbol cbfd switch USER_DEFINED primary=true
+REALROM sample.symbol ddcd case_1 USER_DEFINED primary=true
+REALROM sample.symbol ddd5 case_10 USER_DEFINED primary=false
+REALROM sample.symbol ddd5 case_13 USER_DEFINED primary=false
+REALROM sample.symbol ddd5 case_6 USER_DEFINED primary=true
+REALROM sample.symbol ddd8 case_0 USER_DEFINED primary=true
+REALROM sample.symbol dddb case_2 USER_DEFINED primary=true
+REALROM sample.symbol ddfd case_14 USER_DEFINED primary=true
+REALROM sample.symbol de2e case_5 USER_DEFINED primary=true
+REALROM sample.symbol de4a case_3 USER_DEFINED primary=true
+REALROM sample.symbol.truncated 25 of 35
 === REALROM END ===

@@ -43,6 +43,7 @@ import ghidra.program.model.listing.InstructionIterator;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.listing.ProgramContext;
+import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.pcode.EquateSymbol;
 import ghidra.program.model.pcode.HighFunction;
 import ghidra.program.model.pcode.JumpTable;
@@ -364,6 +365,7 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		}
 
 		List<JumpTableBound.LoadTableEntry> loadTables = new ArrayList<>();
+		Address lowestMovingTableAddr = null;
 		for (JumpTable.LoadTable lt : table.getLoadTables()) {
 			if (!sameMemory(lt.getAddress().getAddressSpace(), targetSpace)) {
 				continue; // only consider load tables describing the same memory as the targets
@@ -371,9 +373,26 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 			loadTables.add(
 				new JumpTableBound.LoadTableEntry(lt.getAddress().getOffset(), lt.getSize(),
 					lt.getNum()));
+			if (lt.getNum() > 1 && (lowestMovingTableAddr == null ||
+				lt.getAddress().getOffset() < lowestMovingTableAddr.getOffset())) {
+				lowestMovingTableAddr = lt.getAddress();
+			}
 		}
 
-		JumpTableBound.Result result = JumpTableBound.bound(targets, loadTables);
+		// grm-fxtp: the table's own memory block, for the below-table-cut refinement's same-block
+		// guard (JumpTableBound is pure logic over flat offsets and can't look this up itself).
+		// Unresolvable (no moving table, or no block containing it) -- pass none, which disables
+		// that refinement and falls back to the plain lowest-target walk.
+		JumpTableBound.Block tableBlock = null;
+		if (lowestMovingTableAddr != null) {
+			MemoryBlock block = program.getMemory().getBlock(lowestMovingTableAddr);
+			if (block != null) {
+				tableBlock =
+					new JumpTableBound.Block(block.getStart().getOffset(), block.getEnd().getOffset());
+			}
+		}
+
+		JumpTableBound.Result result = JumpTableBound.bound(targets, loadTables, tableBlock);
 		if (!result.isBounded() && sameMemory(switchAddr.getAddressSpace(), targetSpace)) {
 			// Table after its code (grm-akiv): the lowest-target rule declines by design.
 			result = JumpTableBound.boundBySwitchWindow(switchAddr.getOffset(), targets,
@@ -414,9 +433,16 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 				haveStart = true;
 			}
 		}
-		String why = result.rule() == JumpTableBound.Rule.SWITCH_WINDOW
-				? "targets between switch and table"
-				: "lowest target " + Long.toHexString(result.lowestTarget());
+		String why;
+		if (result.rule() == JumpTableBound.Rule.SWITCH_WINDOW) {
+			why = "targets between switch and table";
+		}
+		else if (result.rule() == JumpTableBound.Rule.BELOW_TABLE_CUT) {
+			why = "first target below table"; // grm-fxtp
+		}
+		else {
+			why = "lowest target " + Long.toHexString(result.lowestTarget());
+		}
 		String text = "[JumpTableBound] table at " + Long.toHexString(tableStart) + " bounded " +
 			realCases.size() + " -> " + result.count() + " entries (" + why + ")";
 		String existing = listing.getComment(CommentType.EOL, switchAddr);

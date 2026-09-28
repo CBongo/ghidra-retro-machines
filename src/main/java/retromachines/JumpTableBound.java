@@ -51,6 +51,27 @@ import java.util.List;
  * jumps to; a table stored above or far from its targets is left untouched.</li>
  * </ul>
  *
+ * <p><b>grm-fxtp: an over-read entry below the table.</b> The condition above used to decline the
+ * whole table whenever an over-read entry happened to point BELOW {@code tableStart}: that entry
+ * drags {@code minTarget} down with it, so by the time the walk ends {@code minTarget <=
+ * tableStart} and the idiom looks like it doesn't apply, even though the table genuinely precedes
+ * its real targets (lwings dcaf: entries 0..63 are plausible code above the table, entry 64 is
+ * garbage below it). Now, once entry 0 establishes the table-before-code idiom (its target is
+ * above {@code tableStart}), the first entry at index &gt;= 2 whose target falls below {@code
+ * tableStart} cuts the walk there instead of dragging {@code minTarget} down -- but only when a
+ * {@link Block} for the table's own memory block is supplied (the 2-arg {@link #bound(List, List)}
+ * overload always passes none, disabling this refinement and matching pre-grm-fxtp behaviour
+ * exactly), and only subject to two guards, both of which decline rather than cut when they fail:
+ * <ul>
+ * <li><b>same-block:</b> every kept entry (0 through the cut) must resolve inside that block --
+ * "below the table" means nothing when the table and its targets sit in different blocks
+ * (cv3 e137: table at 9f31 in a switchable window, targets in the fixed bank);</li>
+ * <li><b>confirm:</b> the {@link #WINDOW_CONFIRM} entries after the cut (as many as exist) must
+ * each be either below {@code tableStart} or outside the block -- one coming back above the table
+ * inside the block means a real case reaches shared code past the garbage, exactly as {@link
+ * #boundBySwitchWindow}'s own confirm check guards.</li>
+ * </ul>
+ *
  * <p><b>Java-only difference from the C++ reference.</b> The C++ patch runs inside
  * {@code JumpBasic::sanityCheck}, before {@code LoadTable::collapseTable}, so it sees one LOAD
  * per entry in execution order. The Java side only has {@link
@@ -152,33 +173,78 @@ public final class JumpTableBound {
 	}
 
 	/**
+	 * A memory block's [start, end] flat-offset range, inclusive on both ends (as
+	 * {@code MemoryBlock#getStart()}/{@code getEnd()} report). Carries the table's own block into
+	 * {@link #bound(List, List, Block)} so the grm-fxtp below-table-cut refinement can confirm the
+	 * table and its kept targets share it (see the class javadoc's same-block guard).
+	 */
+	public static final class Block {
+		private final long start;
+		private final long end;
+
+		public Block(long start, long end) {
+			this.start = start;
+			this.end = end;
+		}
+
+		boolean contains(long offset) {
+			return offset >= start && offset <= end;
+		}
+	}
+
+	/**
+	 * Apply the lowest-target bound, with the grm-fxtp below-table-cut refinement disabled (as if
+	 * the table's block were unknown). Equivalent to {@code bound(targets, loadTables, null)}; see
+	 * {@link #bound(List, List, Block)}.
+	 */
+	public static Result bound(List<Long> targets, List<LoadTableEntry> loadTables) {
+		return bound(targets, loadTables, null);
+	}
+
+	/**
 	 * Apply the lowest-target bound.
 	 *
 	 * @param targets ordered target addresses (as flat offsets in the targets' address space),
 	 *                one per case, in table order, with the DEFAULT case already excluded
 	 * @param loadTables the jump table's collapsed load tables, in any order
+	 * @param tableBlock the memory block containing the table, for the grm-fxtp below-table-cut
+	 *                    refinement (see the class javadoc), or {@code null} ("block unknown") to
+	 *                    disable that refinement entirely and fall back to the plain lowest-target
+	 *                    walk -- the same as the 2-arg {@link #bound(List, List)} overload
 	 * @return a bounded result, or {@link Result#isBounded()} false ("decline") if the shape
 	 *         isn't understood, there are fewer than 2 entries, or the table doesn't sit below
 	 *         its targets
 	 */
-	public static Result bound(List<Long> targets, List<LoadTableEntry> loadTables) {
+	public static Result bound(List<Long> targets, List<LoadTableEntry> loadTables,
+			Block tableBlock) {
 		Shape shape = Shape.of(targets.size(), loadTables);
 		if (shape == null) {
 			return Result.decline();
 		}
 		int caseCount = targets.size();
+		// Established once entry 0's own target sits above the table: the table-before-code idiom
+		// that makes a later below-table entry meaningful as a cut point rather than noise.
+		boolean tableBeforeCode = tableBlock != null && targets.get(0) > shape.tableStart;
 		long minTarget = 0;
 		boolean haveTarget = false;
 		int i;
+		int belowTableCut = -1;
 		for (i = 0; i < caseCount; i++) {
 			if (haveTarget && shape.entryEnd(i) > minTarget) {
 				break; // this entry's own bytes would collide with the lowest target so far
 			}
 			long target = targets.get(i);
+			if (tableBeforeCode && i >= 2 && target < shape.tableStart) {
+				belowTableCut = i; // grm-fxtp: cut here instead of dragging minTarget below tableStart
+				break;
+			}
 			if (!haveTarget || target < minTarget) {
 				minTarget = target;
 				haveTarget = true;
 			}
+		}
+		if (belowTableCut >= 0) {
+			return boundBelowTableCut(targets, tableBlock, shape.tableStart, belowTableCut, minTarget);
 		}
 		if (i == 0 || !haveTarget) {
 			return Result.decline();
@@ -187,6 +253,29 @@ public final class JumpTableBound {
 			return Result.decline(); // table does not precede its targets; idiom doesn't apply
 		}
 		return Result.bounded(i, minTarget, Rule.LOWEST_TARGET);
+	}
+
+	/**
+	 * Guards grm-fxtp's below-table cut: declines (never cuts) unless every kept entry (indices
+	 * {@code 0..cut-1}) resolves inside {@code tableBlock}, and the {@link #WINDOW_CONFIRM} entries
+	 * after the cut (as many as exist) are each either below the table or outside the block -- see
+	 * the class javadoc's same-block and confirm guards.
+	 */
+	private static Result boundBelowTableCut(List<Long> targets, Block tableBlock, long tableStart,
+			int cut, long minTarget) {
+		for (int k = 0; k < cut; k++) {
+			if (!tableBlock.contains(targets.get(k))) {
+				return Result.decline(); // table and its targets don't share a block; not the idiom
+			}
+		}
+		int confirmEnd = Math.min(targets.size(), cut + 1 + WINDOW_CONFIRM);
+		for (int k = cut + 1; k < confirmEnd; k++) {
+			long t = targets.get(k);
+			if (t >= tableStart && tableBlock.contains(t)) {
+				return Result.decline(); // a later entry comes back above the table in-block: ambiguous
+			}
+		}
+		return Result.bounded(cut, minTarget, Rule.BELOW_TABLE_CUT);
 	}
 
 	/**
@@ -255,7 +344,11 @@ public final class JumpTableBound {
 		LOWEST_TARGET,
 		/** {@link #boundBySwitchWindow}: the table follows its targets, which lie between the
 		 *  switch and the table. */
-		SWITCH_WINDOW
+		SWITCH_WINDOW,
+		/** {@link #bound}: grm-fxtp -- the table precedes its targets, but the walk was cut at the
+		 *  first over-read entry falling below the table's own start rather than dragging
+		 *  {@code minTarget} below it and declining. */
+		BELOW_TABLE_CUT
 	}
 
 	/** The reconstructed table shape both rules share: each moving load table's start and
