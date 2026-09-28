@@ -69,7 +69,9 @@ import ghidra.util.task.TaskMonitor;
  * scaled byte can hold -- 128 or 256 entries -- reading straight through the real table into
  * whatever bytes happen to follow it and inventing jump targets from them. See
  * {@link JumpTableBound} for the rule ("a table cannot extend past its own lowest target") and
- * why it is sound.
+ * why it is sound. Where the table sits AFTER the code it dispatches to, that rule declines and
+ * {@link JumpTableBound#boundBySwitchWindow} is tried instead (grm-akiv): the real entries point
+ * between the switch and the table, and the first entry that does not ends it.
  *
  * <p><b>Mechanism.</b> This analyzer resolves each computed-jump location to a function EXACTLY
  * as stock {@code DecompilerSwitchAnalyzer.findFunctions}/{@code FindFunctionCallback} do --
@@ -237,7 +239,7 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 				}
 			}
 			if (bounded > 0) {
-				AnalyzerLog.info(this, "bounded " + bounded + " jump table(s) by lowest target");
+				AnalyzerLog.info(this, "bounded " + bounded + " jump table(s)");
 			}
 		}
 		finally {
@@ -372,6 +374,11 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		}
 
 		JumpTableBound.Result result = JumpTableBound.bound(targets, loadTables);
+		if (!result.isBounded() && sameMemory(switchAddr.getAddressSpace(), targetSpace)) {
+			// Table after its code (grm-akiv): the lowest-target rule declines by design.
+			result = JumpTableBound.boundBySwitchWindow(switchAddr.getOffset(), targets,
+				loadTables);
+		}
 		if (!result.isBounded() || result.count() >= realCases.size()) {
 			return false; // decline, or would not shrink the table -- must be a no-op
 		}
@@ -407,9 +414,11 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 				haveStart = true;
 			}
 		}
+		String why = result.rule() == JumpTableBound.Rule.SWITCH_WINDOW
+				? "targets between switch and table"
+				: "lowest target " + Long.toHexString(result.lowestTarget());
 		String text = "[JumpTableBound] table at " + Long.toHexString(tableStart) + " bounded " +
-			realCases.size() + " -> " + result.count() + " entries (lowest target " +
-			Long.toHexString(result.lowestTarget()) + ")";
+			realCases.size() + " -> " + result.count() + " entries (" + why + ")";
 		String existing = listing.getComment(CommentType.EOL, switchAddr);
 		listing.setComment(switchAddr, CommentType.EOL,
 			existing == null || existing.isBlank() ? text : existing + "; " + text);

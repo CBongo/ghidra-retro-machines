@@ -15,6 +15,7 @@
  */
 package retromachines;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -34,7 +35,8 @@ import java.util.List;
  * table into whatever bytes follow it.
  *
  * <p>This only ever <b>shrinks</b> a table, and only applies at all when every one of these
- * holds; failing any of them, the caller must change nothing ("decline"):
+ * holds; failing any of them, the caller must change nothing ("decline") -- or, for the
+ * table-after-code layout the last condition excludes, try {@link #boundBySwitchWindow}:
  * <ul>
  * <li>at least 2 entries (a single entry can't be told from a fixed lookup);</li>
  * <li>every "moving" load table (one whose collapsed {@code num > 1}) divides evenly into the
@@ -107,19 +109,21 @@ public final class JumpTableBound {
 		private final boolean bounded;
 		private final int count;
 		private final long lowestTarget;
+		private final Rule rule;
 
-		private Result(boolean bounded, int count, long lowestTarget) {
+		private Result(boolean bounded, int count, long lowestTarget, Rule rule) {
 			this.bounded = bounded;
 			this.count = count;
 			this.lowestTarget = lowestTarget;
+			this.rule = rule;
 		}
 
 		private static Result decline() {
-			return new Result(false, -1, -1);
+			return new Result(false, -1, -1, null);
 		}
 
-		private static Result bounded(int count, long lowestTarget) {
-			return new Result(true, count, lowestTarget);
+		private static Result bounded(int count, long lowestTarget, Rule rule) {
+			return new Result(true, count, lowestTarget, rule);
 		}
 
 		/** Whether the rule applied at all (the shape was understood and the table precedes
@@ -140,6 +144,11 @@ public final class JumpTableBound {
 		public long lowestTarget() {
 			return lowestTarget;
 		}
+
+		/** Which rule applied. Only meaningful when {@link #isBounded()}. */
+		public Rule rule() {
+			return rule;
+		}
 	}
 
 	/**
@@ -153,56 +162,16 @@ public final class JumpTableBound {
 	 *         its targets
 	 */
 	public static Result bound(List<Long> targets, List<LoadTableEntry> loadTables) {
+		Shape shape = Shape.of(targets.size(), loadTables);
+		if (shape == null) {
+			return Result.decline();
+		}
 		int caseCount = targets.size();
-		if (caseCount < 2) {
-			return Result.decline(); // need two entries to tell a table from a fixed load
-		}
-
-		// Only "moving" tables (num > 1) are part of the table shape; num == 1 is a fixed
-		// lookup and is ignored entirely, like the C++ reference ignoring a non-moving LOAD.
-		int movingCount = 0;
-		long tableStart = 0;
-		boolean haveStart = false;
-		long[] chunk = new long[loadTables.size()];
-		long[] start = new long[loadTables.size()];
-		boolean[] moving = new boolean[loadTables.size()];
-		for (int k = 0; k < loadTables.size(); k++) {
-			LoadTableEntry t = loadTables.get(k);
-			if (t.num() <= 1) {
-				continue;
-			}
-			long extent = (long) t.entrySize() * (long) t.num();
-			if (extent % caseCount != 0) {
-				return Result.decline(); // non-uniform shape; not understood
-			}
-			moving[k] = true;
-			chunk[k] = extent / caseCount;
-			start[k] = t.start();
-			movingCount++;
-			if (!haveStart || t.start() < tableStart) {
-				tableStart = t.start();
-				haveStart = true;
-			}
-		}
-		if (movingCount == 0 || !haveStart) {
-			return Result.decline(); // no table shape to bound at all
-		}
-
 		long minTarget = 0;
 		boolean haveTarget = false;
 		int i;
 		for (i = 0; i < caseCount; i++) {
-			long entryEnd = 0;
-			for (int k = 0; k < loadTables.size(); k++) {
-				if (!moving[k]) {
-					continue;
-				}
-				long end = start[k] + (long) (i + 1) * chunk[k];
-				if (end > entryEnd) {
-					entryEnd = end;
-				}
-			}
-			if (haveTarget && entryEnd > minTarget) {
+			if (haveTarget && shape.entryEnd(i) > minTarget) {
 				break; // this entry's own bytes would collide with the lowest target so far
 			}
 			long target = targets.get(i);
@@ -214,9 +183,134 @@ public final class JumpTableBound {
 		if (i == 0 || !haveTarget) {
 			return Result.decline();
 		}
-		if (minTarget <= tableStart) {
+		if (minTarget <= shape.tableStart) {
 			return Result.decline(); // table does not precede its targets; idiom doesn't apply
 		}
-		return Result.bounded(i, minTarget);
+		return Result.bounded(i, minTarget, Rule.LOWEST_TARGET);
+	}
+
+	/**
+	 * How many entries after the cut must also lie outside the window for
+	 * {@link #boundBySwitchWindow} to trust it. One real case that jumps back to shared code
+	 * before the switch would otherwise truncate the table there; requiring the next entries to
+	 * stay out as well turns that into a decline. On the grm-akiv survey (34 NES rows) the
+	 * nearest re-entry after any cut was 5 entries on.
+	 */
+	static final int WINDOW_CONFIRM = 2;
+
+	/**
+	 * Apply the switch-window bound (grm-akiv), for the TABLE-AFTER-CODE layout that
+	 * {@link #bound} declines by design: {@code JMP ($0004)} at {@code switchAddr}, the case
+	 * bodies right after it, and the table after those (megaman e000: switch e000, cases
+	 * e003..e0ca, table e0ed). There, "cannot overlap its own lowest target" says nothing -- every
+	 * real target is already below the table -- so the signal is where the code is instead: the
+	 * table's real entries all point into {@code [switchAddr, tableStart)}, and the first entry
+	 * that points anywhere else is past the table's end. That entry is often plainly bogus (RAM,
+	 * another bank's window), but not always: tables are laid end to end, so the over-read can
+	 * run into the NEXT table and yield valid code addresses (megaman eb82 into ea93's table,
+	 * tmnt 8f34 into 894e's). Only the window catches those.
+	 *
+	 * <p>Declines unless: the table shape is understood (as for {@link #bound}); the table
+	 * starts after the switch; entry 0 lies in the window; at least 2 entries are kept; and the
+	 * {@link #WINDOW_CONFIRM} entries after the cut (as many as exist) also lie outside it.
+	 * Only ever shrinks a table. This is a heuristic, not a layout proof: a table whose real
+	 * cases jump outside the window would be cut short, which is what the confirm check guards.
+	 *
+	 * @param switchAddr flat offset of the switch instruction, in the targets' address space
+	 * @param targets as for {@link #bound}
+	 * @param loadTables as for {@link #bound}
+	 * @return a bounded result whose {@link Result#lowestTarget()} is the lowest kept target, or
+	 *         a decline
+	 */
+	public static Result boundBySwitchWindow(long switchAddr, List<Long> targets,
+			List<LoadTableEntry> loadTables) {
+		Shape shape = Shape.of(targets.size(), loadTables);
+		if (shape == null || shape.tableStart <= switchAddr) {
+			return Result.decline();
+		}
+		long lo = switchAddr;
+		long hi = shape.tableStart;
+		int caseCount = targets.size();
+		int cut = 0;
+		long minTarget = Long.MAX_VALUE;
+		while (cut < caseCount && targets.get(cut) >= lo && targets.get(cut) < hi) {
+			minTarget = Math.min(minTarget, targets.get(cut));
+			cut++;
+		}
+		if (cut < 2) {
+			return Result.decline();
+		}
+		for (int j = cut + 1; j < Math.min(caseCount, cut + 1 + WINDOW_CONFIRM); j++) {
+			long t = targets.get(j);
+			if (t >= lo && t < hi) {
+				return Result.decline(); // the table comes back into the window; ambiguous
+			}
+		}
+		return Result.bounded(cut, minTarget, Rule.SWITCH_WINDOW);
+	}
+
+	/** Which rule produced a bounded {@link Result}. */
+	public enum Rule {
+		/** {@link #bound}: the table precedes its targets and cannot overlap the lowest one. */
+		LOWEST_TARGET,
+		/** {@link #boundBySwitchWindow}: the table follows its targets, which lie between the
+		 *  switch and the table. */
+		SWITCH_WINDOW
+	}
+
+	/** The reconstructed table shape both rules share: each moving load table's start and
+	 *  per-entry byte extent, and the table's lowest address. */
+	private static final class Shape {
+		private final long[] start;
+		private final long[] chunk;
+		private final long tableStart;
+
+		private Shape(long[] start, long[] chunk, long tableStart) {
+			this.start = start;
+			this.chunk = chunk;
+			this.tableStart = tableStart;
+		}
+
+		/** Null if there are fewer than 2 cases, no moving table, or a moving table that does
+		 *  not divide evenly into the case count (see the class javadoc). */
+		static Shape of(int caseCount, List<LoadTableEntry> loadTables) {
+			if (caseCount < 2) {
+				return null; // need two entries to tell a table from a fixed load
+			}
+			// Only "moving" tables (num > 1) are part of the table shape; num == 1 is a fixed
+			// lookup and is ignored entirely, like the C++ reference ignoring a non-moving LOAD.
+			List<LoadTableEntry> moving = new ArrayList<>();
+			for (LoadTableEntry t : loadTables) {
+				if (t.num() <= 1) {
+					continue;
+				}
+				if ((long) t.entrySize() * t.num() % caseCount != 0) {
+					return null; // non-uniform shape; not understood
+				}
+				moving.add(t);
+			}
+			if (moving.isEmpty()) {
+				return null; // no table shape to bound at all
+			}
+			long[] start = new long[moving.size()];
+			long[] chunk = new long[moving.size()];
+			long tableStart = Long.MAX_VALUE;
+			for (int k = 0; k < moving.size(); k++) {
+				LoadTableEntry t = moving.get(k);
+				start[k] = t.start();
+				chunk[k] = (long) t.entrySize() * t.num() / caseCount;
+				tableStart = Math.min(tableStart, t.start());
+			}
+			return new Shape(start, chunk, tableStart);
+		}
+
+		/** One past the last byte entry {@code i} occupies, across every moving table. */
+		long entryEnd(int i) {
+			long end = 0;
+			for (int k = 0; k < start.length; k++) {
+				end = Math.max(end, start[k] + (long) (i + 1) * chunk[k]);
+			}
+			return end;
+		}
 	}
 }

@@ -53,6 +53,58 @@ public class JumpTableBoundTest {
 		return list;
 	}
 
+	/** megaman e000, table-after-code (grm-akiv): switch e000, table e0ed, the owner's true length
+	 *  18. The lowest-target rule declines; the switch window cuts at the 19th entry (a1ad, the
+	 *  switchable window), with the entries after it also outside. Real bytes from the survey. */
+	@Test
+	public void tableAfterCodeBoundsByWindowToEighteen() {
+		List<Long> targets = targets(0xe003, 0xe06f, 0xe076, 0xe065, 0xe076, 0xe065, 0xe076,
+			0xe0a2, 0xe0ca, 0xe04d, 0xe06f, 0xe076, 0xe065, 0xe076, 0xe065, 0xe076, 0xe0a2, 0xe0ca,
+			0xa1ad, 0xf006, 0x6001, 0xa2b9, 0x85e2, 0xb904);
+		List<LoadTableEntry> tables = List.of(new LoadTableEntry(0xe0ed, 1, 48));
+
+		assertFalse(JumpTableBound.bound(targets, tables).isBounded());
+		Result r = JumpTableBound.boundBySwitchWindow(0xe000, targets, tables);
+		assertTrue(r.isBounded());
+		assertEquals(18, r.count());
+		assertEquals(JumpTableBound.Rule.SWITCH_WINDOW, r.rule());
+		assertEquals(0xe003, r.lowestTarget());
+	}
+
+	/** Back-to-back tables (tmnt 8f34): the over-read runs into the next table's entries, which
+	 *  are VALID code addresses (8cfb..8e66) -- but below the switch, so the window still cuts. */
+	@Test
+	public void windowCutsWhereOverReadEntersTheNextTable() {
+		List<Long> targets =
+			targets(0x8f37, 0x8f37, 0x8f45, 0x8f71, 0x8f55, 0x8f37, 0x8cfb, 0x8d22, 0x8d70, 0x8e66);
+		Result r = JumpTableBound.boundBySwitchWindow(0x8f34, targets,
+			List.of(new LoadTableEntry(0x8fb8, 1, 20)));
+		assertTrue(r.isBounded());
+		assertEquals(6, r.count());
+	}
+
+	/** An out-of-window entry followed straight away by in-window ones may be a real case that
+	 *  jumps to shared code: decline rather than cut there. */
+	@Test
+	public void windowDeclinesWhenTheTableComesBackIntoTheWindow() {
+		List<Long> targets = targets(0x8010, 0x8020, 0x9000, 0x8030, 0x8040, 0x8050);
+		assertFalse(JumpTableBound.boundBySwitchWindow(0x8000, targets,
+			List.of(new LoadTableEntry(0x8100, 1, 12))).isBounded());
+	}
+
+	/** Entry 0 outside the window, or a table before the switch: not this layout. */
+	@Test
+	public void windowDeclinesOtherLayouts() {
+		List<LoadTableEntry> after = List.of(new LoadTableEntry(0x8100, 1, 8));
+		assertFalse(JumpTableBound.boundBySwitchWindow(0x8000,
+			targets(0x9000, 0x8010, 0x8020, 0x8030), after).isBounded());
+		assertFalse(JumpTableBound.boundBySwitchWindow(0x8200,
+			targets(0x8210, 0x8220, 0x9000, 0x9000), after).isBounded());
+		// Only one entry in the window: too few to call it a table.
+		assertFalse(JumpTableBound.boundBySwitchWindow(0x8000,
+			targets(0x8010, 0x9000, 0x9000, 0x9000), after).isBounded());
+	}
+
 	/** The megaman bank-5 shape: one COLLAPSED interleaved lo/hi table, size 1, num 256 (128
 	 *  cases), table at 0xa737, first real target the byte right after the table (0xa747, i.e.
 	 *  table + 16 = 0x10 bytes = 8 entries * 2 bytes/entry), 8 real entries, then garbage. */

@@ -43,7 +43,25 @@ bash tools/banktest/realrom-test.sh nominate <romdir>   # board-gap survey
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
-_None open._
+### - [ ] grm-akiv: three rows the switch-window bound moved, held unblessed
+
+The new rule bounds a jump table that sits AFTER its code: the real entries point between the
+`JMP (ind)` and the table, and the first entry that doesn't is past the end. megaman (e000 = 18,
+e121 = 19, e44e = 10, your numbers) and lwings are blessed on it. These three moved too and need
+a read before bless:
+
+- **tmnt `8f34`** (table `8fb8`): now 6 entries — `8f37 8f37 8f45 8f71 8f55 8f37`. After them the
+  old over-read ran into `894e`'s table (`8cfb 8d22 8d70 8e66`), then a descending word run
+  `0d5c 0c9c 0be8 … 01c5` (a note-period table?), then fixed-bank seeds like `c901 d083 e286`.
+  With those gone, tmnt loses ALL its bank-6 overlay code (refs 44 → 0, instrs 103 → 0) and six
+  `JSR FUN_cea5` bank comments (`cfcf`/`d01f` = 6, `d8e9` = 3, `d8f7` = 1, `dbc4` = 4, `dbe1` = 1).
+  **Is 6 right, and how is the code around `cfcf`–`dbe1` really reached?**
+- **contra bank 1 `849f`** (table `86bf`): now 11 entries — `8651 8651 8673 86a6 8683 86a6 8651`
+  then `8500 8522 855c 84a2`, which are exactly the 4 entries of `8285`'s table at `86cd`. **Is
+  `849f`'s table 7 entries (and `86cd` a separate table after it), or 11?** Either way no phantom
+  target survives; refs 298 → 277, warnings 6 → 4 (`811a`, `8efc` gone).
+- **ff1 bank 11 `a449`** (table `a7aa`): now 3 entries — `a44c a4e4 a590`, then `c8c8` ×4.
+  refs 1898 → 1849, instrs 7538 → 7487. ff1 is bistable, so this one also needs a second run.
 
 ---
 
@@ -107,6 +125,12 @@ Answered table. The per-mapper fact-sheet checklist above stands for whenever th
 ## 4. Decisions only you can make
 
 Blocked on judgment, not effort.
+
+- [ ] **A new canary for the thread pin, if tmnt is re-blessed** (`grm-akiv`, `grm-nems`). tmnt's
+  `refs.intoOverlay 44 / instrs 103` is the value a live pin is recognised by, and all of it came
+  through phantom entries of the `8f34` table — the switch-window bound takes it to 0 / 0 (see
+  section 1). Once blessed at 0, tmnt no longer shows whether the pin is live. Pick another
+  row, or accept that `GRM_THREAD_PIN` appearing in the cache key is enough.
 
 - [ ] **Adopt `.claude/rules/`, or keep the always-on core in `CLAUDE.md` + `AGENTS.md`?**
   (`grm-yaat`, P2.) The memory-truncation trigger the bead was filed for is resolved (`grm-8ctl`'s

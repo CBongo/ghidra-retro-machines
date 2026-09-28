@@ -87,6 +87,12 @@ public class JumpTableBoundProgramTest extends AbstractBundledLanguageTest {
 	 *  bound (the negative "explicit bound" case). {@code tableAddr} lets the table-above-code
 	 *  negative case relocate the table without touching anything else. */
 	private ProgramDB buildProgram(long tableAddr, boolean maskIndex) throws Exception {
+		return buildProgram(tableAddr, maskIndex, TABLE);
+	}
+
+	/** As above, with every fake entry after the 8 real ones pointing at {@code junk}. */
+	private ProgramDB buildProgram(long tableAddr, boolean maskIndex, long junk)
+			throws Exception {
 		builder = new ProgramBuilder("Test", LANG);
 		uninitializedRam(builder, ".zp", "0x0", 0x100);
 		builder.createMemory(".text", "0x8000", 0x1000);
@@ -113,7 +119,7 @@ public class JumpTableBoundProgramTest extends AbstractBundledLanguageTest {
 		// every fake entry repeats the address of the table itself ($8200) -- valid mapped
 		// memory, so the raw decompiler recovery keeps going instead of bailing out early.
 		for (int i = 8; i < 128; i++) {
-			table.append(String.format("%02x %02x ", TABLE & 0xff, (TABLE >> 8) & 0xff));
+			table.append(String.format("%02x %02x ", junk & 0xff, (junk >> 8) & 0xff));
 		}
 		builder.setBytes(String.format("0x%x", tableAddr), table.toString().trim(), false);
 
@@ -412,8 +418,40 @@ public class JumpTableBoundProgramTest extends AbstractBundledLanguageTest {
 		assertNoOverrideWritten(program, function, true);
 	}
 
-	/** Negative: a table stored ABOVE its targets never qualifies for the rule -- decline,
-	 *  no override. */
+	/** Table AFTER its code (grm-akiv, the megaman e000 layout): the lowest-target rule declines,
+	 *  and the switch window bounds it to the 8 real targets, which all lie between the switch
+	 *  ($800c) and the table ($8500). The fake entries point past the table ($8600). */
+	@Test
+	public void tableAfterCodeIsBoundedBySwitchWindow() throws Exception {
+		ProgramDB program = buildProgram(0x8500, false, 0x8600);
+		Function function = createFunction(program, addr(0x8000));
+
+		JumpTableBoundAnalyzer analyzer = new JumpTableBoundAnalyzer();
+		int tx = program.startTransaction("analyze");
+		try {
+			analyzer.added(program, new AddressSet(function.getBody()), TaskMonitor.DUMMY,
+				new MessageLog());
+		}
+		finally {
+			program.endTransaction(tx, true);
+		}
+
+		DecompileResults results = decompileWithJumpLoads(program, function);
+		assertTrue(results.decompileCompleted());
+		Address[] cases = results.getHighFunction().getJumpTables()[0].getCases();
+		assertEquals(8, cases.length);
+		for (int i = 0; i < REAL_TARGETS.length; i++) {
+			assertEquals(addr(REAL_TARGETS[i]), cases[i]);
+		}
+		String comment = program.getListing()
+				.getComment(CommentType.EOL, addr(switchOffset(false)));
+		assertNotNull(comment);
+		assertTrue(comment, comment.contains("-> 8 entries (targets between switch and table)"));
+	}
+
+	/** Negative: a table stored ABOVE its targets whose over-read stays INSIDE the switch window
+	 *  (every fake entry is $8200, between the switch and the table) -- the lowest-target rule
+	 *  does not apply and the window rule finds no end, so decline, no override. */
 	@Test
 	public void tableAboveItsTargetsIsLeftUntouched() throws Exception {
 		long aboveTable = 0x8500; // above every REAL_TARGETS entry
