@@ -117,7 +117,7 @@ REALROM sample.ref 80cb -> W8000_M0_B22::80d5 CONDITIONAL_JUMP primary=true
 REALROM sample.ref 80e4 -> W8000_M0_B22::80e8 CONDITIONAL_JUMP primary=true
 REALROM sample.ref 8100 -> W8000_M0_B22::8106 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8108 -> W8000_M0_B22::810d CONDITIONAL_JUMP primary=true
-REALROM sample.ref 810a -> W8000_M0_B22::81ae UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 810a -> W8000_M0_B22::81ae UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 810d -> W8000_M0_B22::8a40 READ primary=true
 REALROM sample.ref.truncated 25 of 175
 REALROM sample.warn c0b8 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ff41 whose bank argument could not be recovered at this call site
