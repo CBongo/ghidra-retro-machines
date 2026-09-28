@@ -126,12 +126,6 @@ Answered table. The per-mapper fact-sheet checklist above stands for whenever th
 
 Blocked on judgment, not effort.
 
-- [ ] **A new canary for the thread pin, if tmnt is re-blessed** (`grm-akiv`, `grm-nems`). tmnt's
-  `refs.intoOverlay 44 / instrs 103` is the value a live pin is recognised by, and all of it came
-  through phantom entries of the `8f34` table — the switch-window bound takes it to 0 / 0 (see
-  section 1). Once blessed at 0, tmnt no longer shows whether the pin is live. Pick another
-  row, or accept that `GRM_THREAD_PIN` appearing in the cache key is enough.
-
 - [ ] **Adopt `.claude/rules/`, or keep the always-on core in `CLAUDE.md` + `AGENTS.md`?**
   (`grm-yaat`, P2.) The memory-truncation trigger the bead was filed for is resolved (`grm-8ctl`'s
   index, `grm-9t2g`), and the `@AGENTS.md` import is confirmed to load on a cold start (bead
@@ -343,3 +337,4 @@ re-measurement and branch prep land), [#9658](https://github.com/NationalSecurit
 | Which `decompile.exe` should the reference install carry now that the jump-table bound is measured? | **Neither bound build — the bound ships EXTENSION-SIDE instead (owner, 2026-09-27).** A patched binary only fixes the reference machine; `JumpTableBoundAnalyzer` runs before stock switch analysis and pins the bounded table (override for real functions, computed refs for undefined ones), so every user gets it. The install keeps the current GP-6936 binary. Do not revive the stock-vs-GP-6936 bound-build comparison for this purpose; the upstream PR (#9447) stays a parallel track. | `grm-eyn` |
 | rcransom's five mainline `fed1` restores (`c08e`, `c0f4`, `c7db`, `cd57`, `ef85`) did not move under call-crossing pairing — entry-bank unknown (a), or not straight-line (b)? | **(b), all five — every one is a cross-block pairing (owner, 2026-09-27).** Each saves via `LDA $bfff / PHA` far from its `PLA`: `c08e`/`c0f4` share the push at `c022` in `FUN_c000` across loops and nested `PHA`/`PLA` pairs around `JSR`s; `c7db` (`FUN_c705`, push `c731`) crosses branches, a `JMP` and a loop; `cd57` (`FUN_cca9`, push `ccaf`) is reached by `JMP cd56` from every case of a switch dispatch at `cd53`; `ef85` (`FUN_ed0e`, push `ed23`) is that function's sole exit after heavy branching. The question predates `grm-mej.3` X1 (cross-block pairing), yet all five still warn after it, so why X1 declines on each is **agent work, not a further listing read**. Entry-bank knowledge is not needed for a RESTORED note. | `grm-mej.3`; follow-up `grm-3jzn` |
 | rcransom: are the two tables the extension-side jump-table bound shrank right? | **Yes, both (owner, 2026-09-27).** `bab3`: table at `bab6`, 6 entries (4 distinct targets); the first address after it, `bac2`, is index 1's target. `85c9`: table at `85cc`, 10 entries; `85e0`, right after it, is index 0's. So the lost `b80b` bank comment and `fae3` warning were over-read cruft — **do not trace them.** The row diff was checked to contain exactly that movement (refs 1221 → 1151, instrs 5722 → 5450), so rcransom is blessable. db3 and ultimaav, which moved in the same run, remain open in section 1. | `grm-eyn` |
+| Should the thread pin get a new canary row now that tmnt's `44 / 103` came from phantom entries of `8f34` (grm-akiv takes it to 0 / 0)? | **No, not for now (owner, 2026-09-28).** Once tmnt is blessed at 0, no row signals that the pin is live; `GRM_THREAD_PIN` in the candidate-cache key is the remaining guard. Do not pick or add a canary row unprompted. | `grm-nems` |
