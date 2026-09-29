@@ -338,4 +338,206 @@ public class JumpTableBoundTest {
 		assertTrue(r.isBounded());
 		assertEquals(3, r.count());
 	}
+
+	/** Case targets exactly as the decompiler derives them from an UN-doubled index over 2-byte
+	 *  entries (grm-yjiq): case {@code i} reads {@code image[i]} and {@code image[i+1]}, so
+	 *  consecutive cases overlap by a byte and every odd case straddles two entries. */
+	private static List<Long> overlappingCases(int[] image, int caseCount) {
+		List<Long> list = new ArrayList<>();
+		for (int i = 0; i < caseCount; i++) {
+			list.add((long) (image[i] | (image[i + 1] << 8)));
+		}
+		return list;
+	}
+
+	/** A table image: {@code entries} 2-byte little-endian pointers, then {@code tail} filler
+	 *  bytes standing in for the code after the table. */
+	private static int[] tableImage(long[] entries, int[] tail) {
+		int[] image = new int[entries.length * 2 + tail.length];
+		for (int k = 0; k < entries.length; k++) {
+			image[2 * k] = (int) (entries[k] & 0xff);
+			image[2 * k + 1] = (int) (entries[k] >> 8);
+		}
+		System.arraycopy(tail, 0, image, entries.length * 2, tail.length);
+		return image;
+	}
+
+	/** The overlapping shape rcproam 9ad4 has ({@code LDX $0d / LDA tbl,X / LDA tbl+1,X / JMP
+	 *  ($001e)}, the index kept pre-doubled in RAM, bounded only to 0..7f by a sign test): 128
+	 *  cases over ONE size-1 load table of 129 bytes. Here with a table-before-code layout (13
+	 *  entries, the lowest target the byte right after them), so the lowest-target rule itself
+	 *  applies to the even cases; rcproam's real layout needs the valid-target rule instead (see
+	 *  {@link #rcproam9ad4CutsAtFirstEntryOutsideCode}). */
+	@Test
+	public void undoubledIndexOverOverlappingTableKeepsEvenCases() {
+		long tableStart = 0x9aeb;
+		long[] real = { 0x9b05, 0x9b40, 0x9b77, 0x9bb0, 0x9c02, 0x9c31, 0x9c80, 0x9cc5, 0x9d10,
+			0x9d44, 0x9d90, 0x9dd1, 0x9e20 };
+		// Code after the table: JSR ff89 at 9b06 among it, as in the ROM (the over-read case 0x1d
+		// lands on that JSR's operand and yields the bogus target ff89).
+		int[] tail = new int[116];
+		for (int k = 0; k < tail.length; k++) {
+			tail[k] = (k * 37 + 0x11) & 0xff;
+		}
+		tail[1] = 0x20; // 9b06: JSR
+		tail[2] = 0x89; // 9b07
+		tail[3] = 0xff; // 9b08
+		int[] image = tableImage(real, tail);
+		List<Long> targets = overlappingCases(image, 128);
+		List<LoadTableEntry> tables = List.of(new LoadTableEntry(tableStart, 1, 129));
+
+		Result r = JumpTableBound.bound(targets, tables,
+			new JumpTableBound.Block(0x8000, 0xbfff));
+		assertTrue(r.isBounded());
+		assertEquals(2, r.stride());
+		assertEquals(13, r.count());
+		assertEquals(0x9b05, r.lowestTarget());
+		List<Long> kept = r.keep(targets);
+		assertEquals(13, kept.size());
+		for (int k = 0; k < real.length; k++) {
+			assertEquals(real[k], (long) kept.get(k));
+		}
+	}
+
+	/** The same table walked the pre-grm-yjiq way would be wrong, which is why the even cases are
+	 *  selected rather than the extent merely widened: case 1 straddles entries 0 and 1 (hi byte
+	 *  of 9b05, lo byte of 9b40 = 0x409b), which sits below the table and would have dragged the
+	 *  lowest target under it. Kept here as the reason, pinned. */
+	@Test
+	public void oddCaseOfOverlappingTableIsGarbage() {
+		int[] image = tableImage(new long[] { 0x9b05, 0x9b40 }, new int[] { 0, 0, 0 });
+		List<Long> targets = overlappingCases(image, 4);
+		assertEquals(0x409bL, (long) targets.get(1));
+	}
+
+	/** The overlapping shape needs exactly one moving table, one byte wide, of caseCount + 1
+	 *  bytes; anything else still declines as a non-divisible extent. */
+	@Test
+	public void overlappingShapeIsRecognisedNarrowly() {
+		List<Long> targets = targetsWithJunk(new long[] { 0xa100, 0xa110 }, 0xb000, 6); // 8 cases
+		assertFalse(JumpTableBound.bound(targets,
+			List.of(new LoadTableEntry(0xa000, 1, 10))).isBounded()); // +2, not +1
+		assertFalse(JumpTableBound.bound(targets,
+			List.of(new LoadTableEntry(0xa000, 3, 3))).isBounded()); // 9 bytes, but 3 wide
+		assertFalse(JumpTableBound.bound(targets, List.of(new LoadTableEntry(0xa000, 1, 9),
+			new LoadTableEntry(0xa200, 1, 16))).isBounded()); // a second moving table
+		assertTrue(JumpTableBound.bound(targets,
+			List.of(new LoadTableEntry(0xa000, 1, 9), new LoadTableEntry(0xf000, 1, 1)))
+				.isBounded()); // a fixed load beside it is ignored, as everywhere else
+	}
+
+	/** Fewer than 4 cases leaves fewer than 2 even ones: decline. */
+	@Test
+	public void overlappingShapeNeedsFourCases() {
+		List<Long> targets = targets(0xa100, 0x00a1, 0xa110);
+		assertFalse(
+			JumpTableBound.bound(targets, List.of(new LoadTableEntry(0xa000, 1, 4))).isBounded());
+	}
+
+	/** The switch-window rule (table after code) takes the same even-case view. Switch e000,
+	 *  cases e003..e0ca, table e0ed; three real entries, then the over-read leaves the window. */
+	@Test
+	public void switchWindowAlsoKeepsEvenCasesOfOverlappingTable() {
+		long[] real = { 0xe003, 0xe040, 0xe0ca };
+		int[] image = tableImage(real, new int[] { 0x00, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+			0x09, 0x0a });
+		List<Long> targets = overlappingCases(image, 14);
+		List<LoadTableEntry> tables = List.of(new LoadTableEntry(0xe0ed, 1, 15));
+
+		assertFalse(JumpTableBound.bound(targets, tables).isBounded());
+		Result r = JumpTableBound.boundBySwitchWindow(0xe000, targets, tables);
+		assertTrue(r.isBounded());
+		assertEquals(2, r.stride());
+		assertEquals(3, r.count());
+		assertEquals(List.of(0xe003L, 0xe040L, 0xe0caL), r.keep(targets));
+	}
+
+	/** An ordinary bound keeps stride 1 and keep() is the plain prefix. */
+	@Test
+	public void ordinaryBoundKeepsPrefix() {
+		long[] real = { 0xa747, 0xa76d, 0xa784, 0xa7a1, 0xa7cd, 0xa7fa, 0xa827, 0xa893 };
+		List<Long> targets = targetsWithJunk(real, 0xb000, 120);
+		Result r = JumpTableBound.bound(targets, List.of(new LoadTableEntry(0xa737, 1, 256)));
+		assertEquals(1, r.stride());
+		assertEquals(targets.subList(0, 8), r.keep(targets));
+	}
+
+	/** rcproam 9ad4, from the ROM (sha 4aaaa0f1...): the 26 bytes at 9aeb, then the code at 9b05.
+	 *  Its eleven handlers (index 0..$14, the largest value the game stores to $0d) sit on both
+	 *  sides of the table, so the lowest-target and switch-window rules both decline; entries 11
+	 *  and 12 read as 2120 and 2725 (unmapped PPU mirror), entry 13 as 11a9 (unmapped), and that
+	 *  is where the table ends. The in-code test mirrors rcproam's blocks: RAM 0000-07ff and the
+	 *  PPU/APU registers are not code; only PRG (8000-ffff) and PRG_RAM are initialized. */
+	@Test
+	public void rcproam9ad4CutsAtFirstEntryOutsideCode() {
+		int[] table = { 0x60, 0x81, 0x05, 0x9b, 0x9d, 0x91, 0x61, 0x8d, 0xa5, 0x87, 0x85, 0x8d,
+			0x9a, 0x83, 0x39, 0x82, 0xc8, 0xd0, 0x65, 0x9d, 0x8e, 0x9d, 0x20, 0x21, 0x25, 0x27 };
+		int[] code = { 0xa9, 0x11, 0x20, 0x89, 0xff, 0x20, 0xea, 0x8e, 0xa9, 0x10, 0x20, 0x89,
+			0xff, 0xa9, 0x3f, 0x8d, 0x06, 0x20, 0xa9, 0x0d, 0x8d, 0x06, 0x20, 0xa5, 0x09, 0x4a,
+			0x4a };
+		int[] image = new int[table.length + code.length];
+		System.arraycopy(table, 0, image, 0, table.length);
+		System.arraycopy(code, 0, image, table.length, code.length);
+		int caseCount = image.length - 1;
+		List<Long> targets = overlappingCases(image, caseCount);
+		List<LoadTableEntry> tables = List.of(new LoadTableEntry(0x9aeb, 1, caseCount + 1));
+		List<Boolean> inCode = new ArrayList<>();
+		for (long t : targets) {
+			inCode.add(t >= 0x6000);
+		}
+
+		JumpTableBound.Block prg = new JumpTableBound.Block(0x8000, 0xffff);
+		assertFalse(JumpTableBound.bound(targets, tables, prg).isBounded());
+		assertFalse(JumpTableBound.boundBySwitchWindow(0x9ad4, targets, tables).isBounded());
+		Result r = JumpTableBound.boundByValidTargets(targets, tables, inCode);
+		assertTrue(r.isBounded());
+		assertEquals(JumpTableBound.Rule.VALID_TARGET_CUT, r.rule());
+		assertEquals(2, r.stride());
+		assertEquals(11, r.count());
+		assertEquals(List.of(0x8160L, 0x9b05L, 0x919dL, 0x8d61L, 0x87a5L, 0x8d85L, 0x839aL,
+			0x8239L, 0xd0c8L, 0x9d65L, 0x9d8eL), r.keep(targets));
+		assertEquals(0x8160, r.lowestTarget());
+	}
+
+	/** The valid-target rule declines when a confirm entry is plausible again, when every even
+	 *  entry is plausible, and for any shape other than the overlapping byte table. */
+	@Test
+	public void validTargetRuleDeclines() {
+		List<Long> targets = new ArrayList<>();
+		for (int i = 0; i < 12; i++) {
+			targets.add(0x8000L + i);
+		}
+		List<LoadTableEntry> overlapping = List.of(new LoadTableEntry(0x9000, 1, 13));
+		// even entries: in, in, in, OUT, in -> the confirm entry after the cut comes back
+		List<Boolean> comesBack = List.of(true, false, true, false, true, false, false, false,
+			true, false, false, false);
+		assertFalse(JumpTableBound.boundByValidTargets(targets, overlapping, comesBack).isBounded());
+		List<Boolean> allIn = new ArrayList<>();
+		for (int i = 0; i < 12; i++) {
+			allIn.add(i % 2 == 0);
+		}
+		assertFalse(JumpTableBound.boundByValidTargets(targets, overlapping, allIn).isBounded());
+		List<Boolean> cutAt3 = List.of(true, false, true, false, true, false, false, false,
+			false, false, false, false);
+		assertTrue(JumpTableBound.boundByValidTargets(targets, overlapping, cutAt3).isBounded());
+		assertFalse(JumpTableBound.boundByValidTargets(targets,
+			List.of(new LoadTableEntry(0x9000, 1, 24)), cutAt3).isBounded()); // ordinary shape
+	}
+
+	/** dodge W8000_M3_B3::8445, from the ROM: {@code LDA $d0 / AND #$c0 / LSR x5 / TAY / LDA
+	 *  $8449,Y / LDA $844a,Y / JMP ($004d)} -- the index is scaled by shifting, so Y is 0/2/4/6 and
+	 *  the decompiler sees 8 stride-1 cases over 9 bytes. Real table: 4 entries (8451 848a 84c5
+	 *  8451), ending at 8451, its own lowest target, where the code resumes. */
+	@Test
+	public void dodge8445ShiftScaledIndexBoundsToFour() {
+		int[] image = { 0x51, 0x84, 0x8a, 0x84, 0xc5, 0x84, 0x51, 0x84, 0xa5, 0xd0 };
+		List<Long> targets = overlappingCases(image, 8);
+		List<LoadTableEntry> tables = List.of(new LoadTableEntry(0x8449, 1, 9));
+
+		Result r = JumpTableBound.bound(targets, tables, new JumpTableBound.Block(0x8000, 0xbfff));
+		assertTrue(r.isBounded());
+		assertEquals(JumpTableBound.Rule.LOWEST_TARGET, r.rule());
+		assertEquals(2, r.stride());
+		assertEquals(List.of(0x8451L, 0x848aL, 0x84c5L, 0x8451L), r.keep(targets));
+	}
 }

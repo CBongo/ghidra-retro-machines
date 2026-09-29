@@ -72,7 +72,10 @@ import ghidra.util.task.TaskMonitor;
  * {@link JumpTableBound} for the rule ("a table cannot extend past its own lowest target") and
  * why it is sound. Where the table sits AFTER the code it dispatches to, that rule declines and
  * {@link JumpTableBound#boundBySwitchWindow} is tried instead (grm-akiv): the real entries point
- * between the switch and the table, and the first entry that does not ends it.
+ * between the switch and the table, and the first entry that does not ends it. When both decline
+ * on an un-doubled index over 2-byte entries (grm-yjiq, rcproam 9ad4: handlers on both sides of
+ * the table), {@link JumpTableBound#boundByValidTargets} cuts at the first even entry whose target
+ * is not in initialized, non-volatile memory.
  *
  * <p><b>Mechanism.</b> This analyzer resolves each computed-jump location to a function EXACTLY
  * as stock {@code DecompilerSwitchAnalyzer.findFunctions}/{@code FindFunctionCallback} do --
@@ -398,11 +401,21 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 			result = JumpTableBound.boundBySwitchWindow(switchAddr.getOffset(), targets,
 				loadTables);
 		}
+		if (!result.isBounded()) {
+			// grm-yjiq: an overlapping byte table whose handlers straddle it; see the javadoc.
+			List<Boolean> inCode = new ArrayList<>(realCases.size());
+			for (Address a : realCases) {
+				MemoryBlock block = program.getMemory().getBlock(a);
+				inCode.add(block != null && block.isInitialized() && !block.isVolatile());
+			}
+			result = JumpTableBound.boundByValidTargets(targets, loadTables, inCode);
+		}
 		if (!result.isBounded() || result.count() >= realCases.size()) {
 			return false; // decline, or would not shrink the table -- must be a no-op
 		}
 
-		ArrayList<Address> firstN = new ArrayList<>(realCases.subList(0, result.count()));
+		// Normally the first count() cases; every other one for a grm-yjiq overlapping byte table.
+		ArrayList<Address> firstN = new ArrayList<>(result.keep(realCases));
 		if (isUndefined) {
 			if (!pinByReferences(program, listing, switchAddr, firstN, monitor)) {
 				AnalyzerLog.warn(this, log,
@@ -440,8 +453,14 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		else if (result.rule() == JumpTableBound.Rule.BELOW_TABLE_CUT) {
 			why = "first target below table"; // grm-fxtp
 		}
+		else if (result.rule() == JumpTableBound.Rule.VALID_TARGET_CUT) {
+			why = "first target outside code memory"; // grm-yjiq
+		}
 		else {
 			why = "lowest target " + Long.toHexString(result.lowestTarget());
+		}
+		if (result.stride() > 1) {
+			why += ", even cases only"; // grm-yjiq: odd cases straddle two entries
 		}
 		String text = "[JumpTableBound] table at " + Long.toHexString(tableStart) + " bounded " +
 			realCases.size() + " -> " + result.count() + " entries (" + why + ")";

@@ -17,6 +17,7 @@ package retromachines;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.BiFunction;
 
 /**
  * Pure logic for grm-eyn: bound a decompiler-recovered jump table by its own lowest target.
@@ -71,6 +72,20 @@ import java.util.List;
  * inside the block means a real case reaches shared code past the garbage, exactly as {@link
  * #boundBySwitchWindow}'s own confirm check guards.</li>
  * </ul>
+ *
+ * <p><b>grm-yjiq: an un-doubled index over 2-byte entries.</b> When the game keeps its switch
+ * variable pre-doubled in RAM ({@code LDX $0d / LDA tbl,X / STA $1e / LDA tbl+1,X / STA $1f /
+ * JMP ($001e)}, rcproam 9ad4), the code itself never scales the index, so the decompiler walks it
+ * at stride 1: every case reads two bytes and consecutive cases OVERLAP by one, which collapses
+ * to a single size-1 load table of {@code caseCount + 1} bytes. That extent does not divide by
+ * the case count, so {@link Shape#of} declines it -- and it must not simply be walked at stride 1
+ * anyway, because every odd case straddles two real entries (the high byte of one, the low byte
+ * of the next) and yields a garbage target that would drag {@code minTarget} down. Both rules
+ * therefore recognise this one shape explicitly (see {@link #overlappingByteTable}) and re-run
+ * on the EVEN cases alone, re-described as the non-overlapping 2-byte table they really are; the
+ * result carries {@link Result#stride()} 2, and {@link Result#keep} selects those cases. rcproam
+ * itself needs a third rule on top, {@link #boundByValidTargets}, because its handlers sit on both
+ * sides of the table and both of these decline on it.
  *
  * <p><b>Java-only difference from the C++ reference.</b> The C++ patch runs inside
  * {@code JumpBasic::sanityCheck}, before {@code LoadTable::collapseTable}, so it sees one LOAD
@@ -131,20 +146,26 @@ public final class JumpTableBound {
 		private final int count;
 		private final long lowestTarget;
 		private final Rule rule;
+		private final int stride;
 
-		private Result(boolean bounded, int count, long lowestTarget, Rule rule) {
+		private Result(boolean bounded, int count, long lowestTarget, Rule rule, int stride) {
 			this.bounded = bounded;
 			this.count = count;
 			this.lowestTarget = lowestTarget;
 			this.rule = rule;
+			this.stride = stride;
 		}
 
 		private static Result decline() {
-			return new Result(false, -1, -1, null);
+			return new Result(false, -1, -1, null, 1);
 		}
 
 		private static Result bounded(int count, long lowestTarget, Rule rule) {
-			return new Result(true, count, lowestTarget, rule);
+			return new Result(true, count, lowestTarget, rule, 1);
+		}
+
+		private Result withStride(int newStride) {
+			return new Result(bounded, count, lowestTarget, rule, newStride);
 		}
 
 		/** Whether the rule applied at all (the shape was understood and the table precedes
@@ -154,8 +175,9 @@ public final class JumpTableBound {
 			return bounded;
 		}
 
-		/** The recovered entry count. Only meaningful when {@link #isBounded()}; never exceeds
-		 *  the input case count. */
+		/** The recovered entry count -- how many cases {@link #keep} returns, not the index of
+		 *  the last one. Only meaningful when {@link #isBounded()}; never exceeds the input case
+		 *  count. */
 		public int count() {
 			return count;
 		}
@@ -169,6 +191,22 @@ public final class JumpTableBound {
 		/** Which rule applied. Only meaningful when {@link #isBounded()}. */
 		public Rule rule() {
 			return rule;
+		}
+
+		/** The step between kept cases: 1 normally, 2 for the grm-yjiq overlapping byte table,
+		 *  whose odd cases are never real entries. */
+		public int stride() {
+			return stride;
+		}
+
+		/** The cases this result keeps, in order: {@link #count()} of them, taken every
+		 *  {@link #stride()} from case 0. Only meaningful when {@link #isBounded()}. */
+		public <T> List<T> keep(List<T> cases) {
+			List<T> kept = new ArrayList<>(count);
+			for (int k = 0; k < count; k++) {
+				kept.add(cases.get(k * stride));
+			}
+			return kept;
 		}
 	}
 
@@ -219,7 +257,7 @@ public final class JumpTableBound {
 			Block tableBlock) {
 		Shape shape = Shape.of(targets.size(), loadTables);
 		if (shape == null) {
-			return Result.decline();
+			return onEvenCases(targets, loadTables, (t, l) -> bound(t, l, tableBlock));
 		}
 		int caseCount = targets.size();
 		// Established once entry 0's own target sits above the table: the table-before-code idiom
@@ -314,7 +352,11 @@ public final class JumpTableBound {
 	public static Result boundBySwitchWindow(long switchAddr, List<Long> targets,
 			List<LoadTableEntry> loadTables) {
 		Shape shape = Shape.of(targets.size(), loadTables);
-		if (shape == null || shape.tableStart <= switchAddr) {
+		if (shape == null) {
+			return onEvenCases(targets, loadTables,
+				(t, l) -> boundBySwitchWindow(switchAddr, t, l));
+		}
+		if (shape.tableStart <= switchAddr) {
 			return Result.decline();
 		}
 		long lo = switchAddr;
@@ -338,6 +380,94 @@ public final class JumpTableBound {
 		return Result.bounded(cut, minTarget, Rule.SWITCH_WINDOW);
 	}
 
+	/**
+	 * The grm-yjiq overlapping byte table (see the class javadoc), or null: exactly one moving
+	 * load table, one byte wide, spanning {@code caseCount + 1} bytes -- 2-byte entries read at
+	 * {@code tbl+i} and {@code tbl+1+i} for case {@code i}. Fixed ({@code num == 1}) loads are
+	 * ignored, as in {@link Shape#of}. Needs at least 4 cases, so the even half has the 2 entries
+	 * every rule requires.
+	 */
+	static LoadTableEntry overlappingByteTable(int caseCount, List<LoadTableEntry> loadTables) {
+		if (caseCount < 4) {
+			return null;
+		}
+		LoadTableEntry found = null;
+		for (LoadTableEntry t : loadTables) {
+			if (t.num() <= 1) {
+				continue;
+			}
+			if (found != null) {
+				return null; // more than one moving table; not this shape
+			}
+			found = t;
+		}
+		if (found == null || found.entrySize() != 1 || found.num() != caseCount + 1) {
+			return null;
+		}
+		return found;
+	}
+
+	/** Re-runs {@code rule} over the even cases of a grm-yjiq overlapping byte table, described
+	 *  as the non-overlapping 2-byte table they really are, and marks a bounded result stride 2.
+	 *  Declines when the tables are not that shape. */
+	private static Result onEvenCases(List<Long> targets, List<LoadTableEntry> loadTables,
+			BiFunction<List<Long>, List<LoadTableEntry>, Result> rule) {
+		LoadTableEntry table = overlappingByteTable(targets.size(), loadTables);
+		if (table == null) {
+			return Result.decline();
+		}
+		List<Long> even = new ArrayList<>();
+		for (int i = 0; i < targets.size(); i += 2) {
+			even.add(targets.get(i));
+		}
+		Result r = rule.apply(even, List.of(new LoadTableEntry(table.start(), 2, even.size())));
+		return r.isBounded() ? r.withStride(2) : r;
+	}
+
+	/**
+	 * Apply the valid-target bound (grm-yjiq), for the one table shape where both rules above can
+	 * decline yet the decompiler's count is still provably wrong: the overlapping byte table (see
+	 * the class javadoc), whose odd cases are never real. rcproam 9ad4 is the case: its eleven
+	 * handlers sit on BOTH sides of the table (8160..9d8e, d0c8), so there is no lowest target to
+	 * stop at and no window to stay in. What ends it is that the next even entries point at
+	 * memory no code lives in (2120 and 2725, the unmapped PPU mirror; then 11a9). So, over the
+	 * even cases: keep entries while {@code inCode} holds, cut at the first that fails, and trust
+	 * the cut only if the {@link #WINDOW_CONFIRM} entries after it (as many as exist) fail too.
+	 *
+	 * <p>Declines for any other shape -- there, keeping the decompiler's count when the extent
+	 * rules decline stays the conservative default -- and when fewer than 2 entries are kept, when
+	 * every even entry passes (nothing to cut at), or when the confirm check fails.
+	 *
+	 * @param targets as for {@link #bound}
+	 * @param loadTables as for {@link #bound}
+	 * @param inCode per case, in the same order as {@code targets}: whether that target lies in
+	 *               memory that can hold code (the caller decides; initialized memory, in practice)
+	 * @return a stride-2 bounded result, or a decline
+	 */
+	public static Result boundByValidTargets(List<Long> targets, List<LoadTableEntry> loadTables,
+			List<Boolean> inCode) {
+		if (overlappingByteTable(targets.size(), loadTables) == null ||
+			inCode.size() != targets.size()) {
+			return Result.decline();
+		}
+		int m = (targets.size() + 1) / 2; // even cases
+		int cut = 0;
+		long minTarget = Long.MAX_VALUE;
+		while (cut < m && inCode.get(2 * cut)) {
+			minTarget = Math.min(minTarget, targets.get(2 * cut));
+			cut++;
+		}
+		if (cut < 2 || cut == m) {
+			return Result.decline();
+		}
+		for (int k = cut + 1; k < Math.min(m, cut + 1 + WINDOW_CONFIRM); k++) {
+			if (inCode.get(2 * k)) {
+				return Result.decline(); // a later entry is plausible again; ambiguous
+			}
+		}
+		return Result.bounded(cut, minTarget, Rule.VALID_TARGET_CUT).withStride(2);
+	}
+
 	/** Which rule produced a bounded {@link Result}. */
 	public enum Rule {
 		/** {@link #bound}: the table precedes its targets and cannot overlap the lowest one. */
@@ -348,7 +478,10 @@ public final class JumpTableBound {
 		/** {@link #bound}: grm-fxtp -- the table precedes its targets, but the walk was cut at the
 		 *  first over-read entry falling below the table's own start rather than dragging
 		 *  {@code minTarget} below it and declining. */
-		BELOW_TABLE_CUT
+		BELOW_TABLE_CUT,
+		/** {@link #boundByValidTargets}: grm-yjiq -- an overlapping byte table, cut at the first
+		 *  even entry whose target cannot hold code. */
+		VALID_TARGET_CUT
 	}
 
 	/** The reconstructed table shape both rules share: each moving load table's start and
