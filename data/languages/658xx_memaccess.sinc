@@ -492,6 +492,16 @@ RefDPIdxY: <$imm8,"Y"    is imm8 & IdxY  {
 
 # Direct page indexed by X, indirect.
 # DP access may wrap in emulation mode.
+#
+# grm-9nxj.20: in emulation mode with DL=0 BOTH pointer fetches wrap within the direct page,
+# including the high byte: LL+X=$FF reads the pointer from DH:$FF then DH:$00. That matches
+# Bruce Clark's 65C816 opcodes tutorial (section 5.11: pointer hi is DH:(LL+X+1), within the page),
+# higan/bsnes, and this file's own (dp) and (dp),Y. The SingleStepTests/65816 corpus disagrees in
+# exactly one case (e1 e 8669: D=$F400, LL+X=$FF, reads hi from $F500) because its generator,
+# TomHarte/CLK, wraps the LL+X add for (d,x) but sets an unrestricted increment mask for the
+# second fetch -- unlike its own (d) path. A corpus artifact, excluded by name in the vector
+# harness (W65816VectorHarnessSupport.CORPUS_DEFECT_CASES), which FAILS the run if that case ever
+# starts passing. Do NOT change this to match it.
 RefDPIdxInd: (<$imm8,"X")    is imm8 & IdxX  {
     local offset8:1 = imm8;
     local offset:4 = zext(offset8) + zext(IdxX);

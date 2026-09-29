@@ -46,6 +46,7 @@ import java.util.stream.Collectors;
  * EF  SLEEP         N/A    0/32  legitimately halts the processor pending an interrupt
  * 9E  DIV YA,X      PASS  999/999  (1 decode-boundary)
  * 01.N  ORA (dp,X)  PASS  9998/9998  (2 bank-wrap)
+ * E1.E  SBC (dp,X)  PASS  9999/9999  (1 corpus-defect)
  * </pre>
  * Blank lines and lines starting with {@code #} (a header/comment block explaining provenance
  * and how to regenerate -- see the per-suite test that owns the real file) are ignored.
@@ -64,6 +65,13 @@ import java.util.stream.Collectors;
  * one row; when they do, {@code decode-boundary} comes first. Only the 65816 harness produces
  * this token today, so every SPC700 and 6502 row renders exactly as before.
  *
+ * <p>The optional {@code (N corpus-defect)} token (see {@link #corpusDefectCount}, bead
+ * grm-9nxj.20) is a FIFTH category, and the narrowest: individual cases, named one by one with
+ * the evidence, where the oracle itself is shown to be wrong. Same contract as the two above --
+ * excluded from the ratio, counted in the open -- and it comes last of the three when several
+ * appear. Only the 65816 harness produces it (see
+ * {@code W65816VectorHarnessSupport#CORPUS_DEFECT_CASES}).
+ *
  * <h2>{@code N/A}, not {@code PASS} or {@code FAIL} (grm-c9d.3 increment 9)</h2>
  * A small, explicit set of opcodes (currently {@code SLEEP}/{@code STOP} -- see
  * {@code Spc700VectorHarnessSupport}'s allowlist) legitimately halt the processor; there is no
@@ -78,7 +86,19 @@ import java.util.stream.Collectors;
  */
 public record OpcodeBaseline(String opcodeHex, String mnemonic, Status status, int passedCount,
 		int totalCount, List<String> mismatchedFields, int decodeBoundaryCount,
-		int bankWrapCount) {
+		int bankWrapCount, int corpusDefectCount) {
+
+	/**
+	 * Convenience constructor for callers with no corpus-defect cases to report (every call site
+	 * before grm-9nxj.20): equivalent to the canonical constructor with
+	 * {@code corpusDefectCount = 0}.
+	 */
+	public OpcodeBaseline(String opcodeHex, String mnemonic, Status status, int passedCount,
+			int totalCount, List<String> mismatchedFields, int decodeBoundaryCount,
+			int bankWrapCount) {
+		this(opcodeHex, mnemonic, status, passedCount, totalCount, mismatchedFields,
+			decodeBoundaryCount, bankWrapCount, 0);
+	}
 
 	/**
 	 * Convenience constructor for callers with no bank-wrap cases to report (every suite but the
@@ -88,7 +108,7 @@ public record OpcodeBaseline(String opcodeHex, String mnemonic, Status status, i
 	public OpcodeBaseline(String opcodeHex, String mnemonic, Status status, int passedCount,
 			int totalCount, List<String> mismatchedFields, int decodeBoundaryCount) {
 		this(opcodeHex, mnemonic, status, passedCount, totalCount, mismatchedFields,
-			decodeBoundaryCount, 0);
+			decodeBoundaryCount, 0, 0);
 	}
 
 	/**
@@ -98,7 +118,7 @@ public record OpcodeBaseline(String opcodeHex, String mnemonic, Status status, i
 	 */
 	public OpcodeBaseline(String opcodeHex, String mnemonic, Status status, int passedCount,
 			int totalCount, List<String> mismatchedFields) {
-		this(opcodeHex, mnemonic, status, passedCount, totalCount, mismatchedFields, 0, 0);
+		this(opcodeHex, mnemonic, status, passedCount, totalCount, mismatchedFields, 0, 0, 0);
 	}
 
 	/** A row's outcome: fully matched, at least one mismatch, or not applicable (see class doc). */
@@ -130,6 +150,8 @@ public record OpcodeBaseline(String opcodeHex, String mnemonic, Status status, i
 	private static final Pattern SPLIT = Pattern.compile("\\s{2,}");
 	private static final Pattern BOUNDARY_TOKEN = Pattern.compile("^\\((\\d+) decode-boundary\\)$");
 	private static final Pattern BANK_WRAP_TOKEN = Pattern.compile("^\\((\\d+) bank-wrap\\)$");
+	private static final Pattern CORPUS_DEFECT_TOKEN =
+		Pattern.compile("^\\((\\d+) corpus-defect\\)$");
 
 	/** Renders this row in the committed file's format (see class doc). */
 	public String format() {
@@ -141,6 +163,9 @@ public record OpcodeBaseline(String opcodeHex, String mnemonic, Status status, i
 		}
 		if (bankWrapCount > 0) {
 			sb.append("  (").append(bankWrapCount).append(" bank-wrap)");
+		}
+		if (corpusDefectCount > 0) {
+			sb.append("  (").append(corpusDefectCount).append(" corpus-defect)");
 		}
 		if (!mismatchedFields.isEmpty()) {
 			sb.append("  ").append(String.join(",", mismatchedFields));
@@ -187,7 +212,7 @@ public record OpcodeBaseline(String opcodeHex, String mnemonic, Status status, i
 		int passedCount = Integer.parseInt(ratio[0]);
 		int totalCount = Integer.parseInt(ratio[1]);
 
-		// Both exclusion tokens are optional and, when present, appear in this order before the
+		// All exclusion tokens are optional and, when present, appear in this order before the
 		// mismatched-field list. Parsed as a sequence rather than by fixed position, so a row
 		// carrying only the later token still reads correctly.
 		int decodeBoundaryCount = 0;
@@ -207,11 +232,19 @@ public record OpcodeBaseline(String opcodeHex, String mnemonic, Status status, i
 				nextField++;
 			}
 		}
+		int corpusDefectCount = 0;
+		if (fields.length > nextField) {
+			Matcher m = CORPUS_DEFECT_TOKEN.matcher(fields[nextField]);
+			if (m.matches()) {
+				corpusDefectCount = Integer.parseInt(m.group(1));
+				nextField++;
+			}
+		}
 		List<String> mismatched = fields.length > nextField
 				? List.of(fields[nextField].split(","))
 				: List.of();
 		return new OpcodeBaseline(opcodeHex, mnemonic, status, passedCount, totalCount, mismatched,
-			decodeBoundaryCount, bankWrapCount);
+			decodeBoundaryCount, bankWrapCount, corpusDefectCount);
 	}
 
 	/**

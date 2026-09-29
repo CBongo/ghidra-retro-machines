@@ -273,6 +273,43 @@ final class W65816VectorHarnessSupport {
 	 */
 	static final int BANK_WRAP_CAP = 400;
 
+	/**
+	 * Bead grm-9nxj.20: individual corpus cases shown to be WRONG, case name -&gt; the evidence.
+	 * Excluded from their row's ratio and counted in the baseline's {@code (N corpus-defect)}
+	 * token. Keep this narrow: one entry per case, each with the reason the oracle (not the
+	 * language) is at fault, never a pattern.
+	 *
+	 * <p>Two tripwires keep an entry honest. {@link #runOpcodeFile} fails if a listed case ever
+	 * PASSES -- either upstream fixed the corpus, or someone changed the language to match the
+	 * defect. {@link #assertCorpusDefectsAccountedFor} fails the exhaustive run if a listed case
+	 * was not found at all, i.e. the corpus was regenerated or renamed under it.
+	 *
+	 * <p>Why exclude rather than leave the row {@code FAIL}: {@link OpcodeBaseline#compare} only
+	 * catches {@code PASS -> FAIL}. A row pinned at {@code FAIL 9999/10000} could drop to 0
+	 * without the gate noticing, so one bad oracle case would leave all 9,999 good ones unguarded.
+	 */
+	static final Map<String, String> CORPUS_DEFECT_CASES = Map.of(
+		"e1 e 8669",
+		"SBC (dp,X), emulation mode, D=$F400 (DL=0), LL+X=$FF: the corpus reads the pointer high " +
+			"byte from $F500, the language from $F400. Real hardware wraps the second fetch " +
+			"within the direct page too (Bruce Clark's 65C816 opcodes tutorial section 5.11, " +
+			"higan/bsnes, and this corpus's own (d) mode). The generator, TomHarte/CLK, wraps " +
+			"the LL+X add for (d,x) but leaves the second fetch's increment mask at 0x00FFFF. " +
+			"See the comment on RefDPIdxInd in 658xx_memaccess.sinc.");
+
+	/**
+	 * Fails if the exhaustive run did not meet every {@link #CORPUS_DEFECT_CASES} entry exactly
+	 * once. Exhaustive tier only: the vendored 8-case sample need not contain any of them.
+	 */
+	static void assertCorpusDefectsAccountedFor(List<OpcodeBaseline> rows) {
+		int seen = rows.stream().mapToInt(OpcodeBaseline::corpusDefectCount).sum();
+		if (seen != CORPUS_DEFECT_CASES.size()) {
+			throw new AssertionError("expected to meet each of the " + CORPUS_DEFECT_CASES.size() +
+				" CORPUS_DEFECT_CASES exactly once, met " + seen + " -- the corpus changed under " +
+				"the list; re-verify each entry against it: " + CORPUS_DEFECT_CASES.keySet());
+		}
+	}
+
 	static VectorRunner newRunner(Language language) {
 		Register ctxMf = language.getRegister("ctx_MF");
 		Register ctxXf = language.getRegister("ctx_XF");
@@ -437,12 +474,23 @@ final class W65816VectorHarnessSupport {
 		int passed = 0;
 		int decodeBoundary = 0;
 		int bankWrap = 0;
+		int corpusDefect = 0;
 		TreeSet<String> mismatchedFields = new TreeSet<>();
 		for (VectorCase raw : rawCases) {
 			installContextFor(runner, runner.language(),
 				raw.initialRegs().getOrDefault("p", 0), raw.initialRegs().getOrDefault("e", 0));
 			VectorCase adapted = adapt(seedRealizableEmulationStack(raw));
 			CaseResult result = runner.run(adapted);
+			if (CORPUS_DEFECT_CASES.containsKey(raw.name())) {
+				if (result.pass()) {
+					throw new AssertionError("CORPUS_DEFECT_CASES entry '" + raw.name() +
+						"' now PASSES. Either the corpus was fixed (drop the entry) or the " +
+						"language was changed to match a known-wrong oracle (revert that). " +
+						"Recorded reason: " + CORPUS_DEFECT_CASES.get(raw.name()));
+				}
+				corpusDefect++;
+				continue;
+			}
 			if (result.decodeBoundary()) {
 				decodeBoundary++;
 				continue;
@@ -465,11 +513,11 @@ final class W65816VectorHarnessSupport {
 				}
 			}
 		}
-		int total = rawCases.size() - decodeBoundary - bankWrap;
+		int total = rawCases.size() - decodeBoundary - bankWrap - corpusDefect;
 		OpcodeBaseline.Status status =
 			passed == total ? OpcodeBaseline.Status.PASS : OpcodeBaseline.Status.FAIL;
 		return new OpcodeBaseline(rowKey, mnemonic, status, passed, total,
-			List.copyOf(mismatchedFields), decodeBoundary, bankWrap);
+			List.copyOf(mismatchedFields), decodeBoundary, bankWrap, corpusDefect);
 	}
 
 	/**

@@ -95,6 +95,27 @@ public class OpcodeBaselineTest {
 	}
 
 	@Test
+	public void formatAndParseRoundTripWithCorpusDefectAnnotation() {
+		// The (N corpus-defect) token (grm-9nxj.20): same contract again, rendered last.
+		OpcodeBaseline defectOnly = new OpcodeBaseline("E1.E", "SBC (dp,X)",
+			OpcodeBaseline.Status.PASS, 9999, 9999, List.of(), 0, 0, 1);
+		assertEquals("E1.E  SBC (dp,X)  PASS  9999/9999  (1 corpus-defect)", defectOnly.format());
+		assertEquals(defectOnly, OpcodeBaseline.parseLine(defectOnly.format()));
+		assertEquals(0, defectOnly.bankWrapCount());
+		assertEquals(1, defectOnly.corpusDefectCount());
+
+		OpcodeBaseline all = new OpcodeBaseline("03.N", "ORA sr,S",
+			OpcodeBaseline.Status.FAIL, 9995, 9996, List.of("A"), 1, 2, 1);
+		assertEquals("03.N  ORA sr,S  FAIL  9995/9996  (1 decode-boundary)  (2 bank-wrap)  " +
+			"(1 corpus-defect)  A", all.format());
+		assertEquals(all, OpcodeBaseline.parseLine(all.format()));
+
+		// A pre-grm-9nxj.20 row reads back with a zero corpus-defect count.
+		assertEquals(0, OpcodeBaseline.parseLine("01.N  ORA (dp,X)  PASS  9998/9998  " +
+			"(2 bank-wrap)").corpusDefectCount());
+	}
+
+	@Test
 	public void parseSkipsBlankAndCommentLines() {
 		List<OpcodeBaseline> parsed = OpcodeBaseline.parse(List.of(
 			"# generated; review the diff, do not hand-edit casually",

@@ -464,7 +464,7 @@ DF.E  CMP !>$0x66cdb2,X  PASS  10000/10000
 DF.N  CMP !>$0x9910b5,X  PASS  9999/9999  (1 bank-wrap)
 E0.E  CPX #$0xb6  PASS  9998/9998  (2 bank-wrap)
 E0.N  CPX #$0xa5  PASS  9999/9999  (1 bank-wrap)
-E1.E  SBC (<$0xba,X)  FAIL  9999/10000  A,P_C
+E1.E  SBC (<$0xba,X)  PASS  9999/9999  (1 corpus-defect)
 E1.N  SBC (<$0x7a,X)  PASS  10000/10000
 E2.E  SEP #$0xbf  PASS  9999/9999  (1 bank-wrap)
 E2.N  SEP #$0xd6  PASS  9998/9998  (2 bank-wrap)
