@@ -244,6 +244,16 @@ re-measurement and branch prep land), [#9658](https://github.com/NationalSecurit
   command instead of two. File it when you are already in that repo. `gh` on this machine is
   not authenticated.
 
+- [ ] **SingleStepTests/65816: report the one wrong `(d,x)` case (`grm-9nxj.20`).** Case
+  `e1 e 8669` reads the `(d,x)` pointer's high byte from `$F500`. With e=1, D=`$F400` and
+  LL+X=`$FF`, it should come from `$F400`, inside the direct page (Clark §5.11, higan/bsnes).
+  The generator, TomHarte/CLK, keeps that fetch inside the page for `(d)` but not for `(d,x)`.
+  **The issue body is drafted on the bead**, with the CLK source lines and an optional hardware
+  check. Posting it is yours. There is nothing to do locally in the meantime: the case is excluded
+  by name in `W65816VectorHarnessSupport.CORPUS_DEFECT_CASES`. Once upstream fixes it, the
+  `w65816-vectors` tier fails on purpose, saying the case "now PASSES". At that point, drop the
+  entry and regenerate the exhaustive baseline. Low priority: it is one case in 5,120,000.
+
 *Two things learned that the next upstream item should inherit:*
 
 - *`CBongo/ghidra` now exists as a fork, and a separate full clone of it (kept apart from the
