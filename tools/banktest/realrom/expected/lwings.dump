@@ -19,20 +19,32 @@ REALROM block RAM 0000-07ff overlay=false
 REALROM count blocks.total 12
 REALROM count blocks.overlay 7
 REALROM count spaces.overlay 7
-REALROM count refs.intoOverlay 1077
-REALROM count refs.intoOverlay.retargeted 47
-REALROM count refs.intoOverlay.intraOverlay 1030
-REALROM count instrs.inOverlay 4649
-REALROM count bankComments 36
-REALROM count warnings 9
+REALROM count refs.intoOverlay 1674
+REALROM count refs.intoOverlay.retargeted 48
+REALROM count refs.intoOverlay.intraOverlay 1626
+REALROM count instrs.inOverlay 7471
+REALROM count bankComments 48
+REALROM count warnings 10
 REALROM count notes 4
 REALROM count symbols 18
 REALROM sample.bankcomment 8194 bank -> 6 (bank=6) via FUN_c34c
+REALROM sample.bankcomment 8c3b bank -> 3 (bank=3) via FUN_c389
+REALROM sample.bankcomment 912d bank -> 3 (bank=3) via FUN_c389
 REALROM sample.bankcomment 93a4 bank -> 3 (bank=3) via FUN_c389
+REALROM sample.bankcomment 9526 bank -> 3 (bank=3) via FUN_c389
+REALROM sample.bankcomment 954d bank -> 3 (bank=3) via FUN_c389
+REALROM sample.bankcomment 956b bank -> 3 (bank=3) via FUN_c389
+REALROM sample.bankcomment 958b bank -> 3 (bank=3) via FUN_c389
+REALROM sample.bankcomment 959f bank -> 3 (bank=3) via FUN_c389
+REALROM sample.bankcomment 96ea bank -> 3 (bank=3) via FUN_c389
+REALROM sample.bankcomment aa49 bank -> 3 (bank=3) via FUN_c389
+REALROM sample.bankcomment abd0 bank -> 3 (bank=3) via FUN_c389
+REALROM sample.bankcomment af58 bank -> 3 (bank=3) via FUN_c389
 REALROM sample.bankcomment c199 bank -> 6 (bank=6) via FUN_c34c
 REALROM sample.bankcomment c22f bank -> 6 (bank=6) via FUN_c34c
 REALROM sample.bankcomment c25f bank -> 5 (bank=5) via FUN_c34c
 REALROM sample.bankcomment c2d1 bank -> 6 (bank=6) via FUN_c34c
+REALROM sample.bankcomment c358 bank -> 3 (bank=3) via FUN_c34c
 REALROM sample.bankcomment c36c bank -> 3 (bank=3) via FUN_c34c
 REALROM sample.bankcomment c37e bank -> 3 (bank=3) via FUN_c34c
 REALROM sample.bankcomment c393 bank -> 3 (bank=3)
@@ -65,6 +77,7 @@ REALROM sample.bankcomment ff9e bank -> 6 (bank=6) via FUN_c34c
 REALROM sample.bankcomment ffaa bank -> 3 (bank=3) via FUN_c34c
 REALROM sample.ref 8000 -> PRG_LO_B3::805c UNCONDITIONAL_JUMP primary=true
 REALROM sample.ref 8003 -> PRG_LO_B3::862c UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8006 -> PRG_LO_B3::82ef UNCONDITIONAL_JUMP primary=true
 REALROM sample.ref 8009 -> PRG_LO_B3::aa8f DATA primary=true
 REALROM sample.ref 800e -> PRG_LO_B3::8951 DATA primary=true
 REALROM sample.ref 802b -> PRG_LO_B3::803d CONDITIONAL_JUMP primary=true
@@ -87,10 +100,10 @@ REALROM sample.ref 8088 -> PRG_LO_B3::8092 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8089 -> PRG_LO_B6::81ad UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 808f -> PRG_LO_B3::8083 CONDITIONAL_JUMP primary=true
 REALROM sample.ref 8091 -> PRG_LO_B6::81ad UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 8097 -> PRG_LO_B3::80bf CONDITIONAL_JUMP primary=true
-REALROM sample.ref.truncated 25 of 1077
+REALROM sample.ref.truncated 25 of 1674
 REALROM sample.warn c1fd [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c34c whose bank argument could not be recovered at this call site
 REALROM sample.warn c27c [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c34c whose bank argument could not be recovered at this call site
+REALROM sample.warn c361 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c34c whose bank argument could not be recovered at this call site
 REALROM sample.warn c375 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c34c whose bank argument could not be recovered at this call site
 REALROM sample.warn c385 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c34c whose bank argument could not be recovered at this call site
 REALROM sample.warn c39c [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c34c whose bank argument could not be recovered at this call site

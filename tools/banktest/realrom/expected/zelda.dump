@@ -47,56 +47,156 @@ REALROM block WC000_M2_B7 c000-ffff overlay=true
 REALROM count blocks.total 40
 REALROM count blocks.overlay 32
 REALROM count spaces.overlay 32
-REALROM count refs.intoOverlay 39
-REALROM count refs.intoOverlay.retargeted 7
-REALROM count refs.intoOverlay.intraOverlay 32
-REALROM count instrs.inOverlay 264
-REALROM count bankComments 14
-REALROM count warnings 0
-REALROM count notes 6
+REALROM count refs.intoOverlay 1364
+REALROM count refs.intoOverlay.retargeted 76
+REALROM count refs.intoOverlay.intraOverlay 1288
+REALROM count instrs.inOverlay 5966
+REALROM count bankComments 89
+REALROM count warnings 1
+REALROM count notes 30
 REALROM count symbols 18
+REALROM sample.bankcomment 7245 bank -> mirroring=0,prg_mode=3,prg_bank=2 via FUN_bfac [switch-value flow]
+REALROM sample.bankcomment 7258 bank -> mirroring=0,prg_mode=3,prg_bank=5? via FUN_bfac [known: mirroring.0=0,prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.1] [switch-value flow]
+REALROM sample.bankcomment 747e bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_bfac [switch-value flow]
 REALROM sample.bankcomment e446 bank -> mirroring=0,prg_mode=3,prg_bank=5? via FUN_ffac [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
 REALROM sample.bankcomment e4be bank -> mirroring=0,prg_mode=3,prg_bank=6? via FUN_ffac [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment e4e4 bank -> mirroring=0,prg_mode=3,prg_bank=5? via FUN_ffac [known: prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment e55e bank -> mirroring=0,prg_mode=3,prg_bank=0? via FUN_ffac [known: prg_bank.0=0,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
+REALROM sample.bankcomment e67f bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment e699 bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment e7ac bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment e7cf bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment e7e8 bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment e8c4 bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment e8d0 bank -> mirroring=0,prg_mode=3,prg_bank=4 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment e8da bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
 REALROM sample.bankcomment e8fe bank -> mirroring=0,prg_mode=3,prg_bank=1? via FUN_ffac [known: prg_bank.0=1,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment e906 bank -> mirroring=0,prg_mode=3,prg_bank=6? via FUN_ffac [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment e91b bank -> mirroring=0,prg_mode=3,prg_bank=5? via FUN_ffac [known: prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
+REALROM sample.bankcomment e953 bank -> mirroring=0,prg_mode=3,prg_bank=2 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment e961 bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment e969 bank -> mirroring=0,prg_mode=3,prg_bank=2 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment e971 bank -> mirroring=0,prg_mode=3,prg_bank=2 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment e98b bank -> mirroring=0,prg_mode=3,prg_bank=3 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment e993 bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment e99b bank -> mirroring=0,prg_mode=3,prg_bank=6 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment e9a3 bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment e9bf bank -> mirroring=2,prg_mode=3,prg_bank=5 | mirroring=3,prg_mode=3,prg_bank=5 via FUN_ff98 [path fork: 2 arms] [switch-value flow]
+REALROM sample.bankcomment e9c5 bank -> mirroring=0,prg_mode=3,prg_bank=2 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment e9cd bank -> mirroring=3,prg_mode=3,prg_bank=0 via FUN_ff98 [switch-value flow]
+REALROM sample.bankcomment e9d2 bank -> mirroring=3,prg_mode=3,prg_bank=2 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment e9da bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment ea48 bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment eacd bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment eadf bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment eb19 bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment eb24 bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_ffac [switch-value flow]
 REALROM sample.bankcomment eb32 bank -> mirroring=0,prg_mode=3,prg_bank=2? via FUN_ffac [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
+REALROM sample.bankcomment eb64 bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment eb72 bank -> mirroring=3,prg_mode=3,prg_bank=5 via FUN_ff98 [switch-value flow]
+REALROM sample.bankcomment eb78 bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment eb80 bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment eb88 bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment eb90 bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment eb9b bank -> mirroring=0,prg_mode=3,prg_bank=6 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment ebb3 bank -> mirroring=3,prg_mode=3,prg_bank=0 via FUN_ff98 [switch-value flow]
+REALROM sample.bankcomment ec05 bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment ec26 bank -> mirroring=0,prg_mode=3,prg_bank=4 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment ec4f bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment ec68 bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment ed2d bank -> mirroring=0,prg_mode=3,prg_bank=4 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment ed38 bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment ed46 bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment ed64 bank -> mirroring=0,prg_mode=3,prg_bank=4 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment ed8b bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment edbc bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment efbc bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment efc4 bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment f023 bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment f04f bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment f076 bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment f087 bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment f139 bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment f220 bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment f2f1 bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment f8bd bank -> mirroring=0,prg_mode=3,prg_bank=4 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment f99c bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment fb77 bank -> mirroring=0,prg_mode=3,prg_bank=4 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment fbab bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment fd0c bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment fd2f bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment fd3e bank -> mirroring=0,prg_mode=3,prg_bank=4 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment fd72 bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment fe42 bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment fe4a bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment fe52 bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment fe5a bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment fe62 bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment fe6a bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment fe72 bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment fe7a bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment fe82 bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment fe8a bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment fe92 bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_ffac [switch-value flow]
 REALROM sample.bankcomment ff6a bank -> mirroring=0,prg_mode=3,prg_bank=0 [switch-value flow]
 REALROM sample.bankcomment ff6d bank -> mirroring=0,prg_mode=3,prg_bank=0 [switch-value flow]
 REALROM sample.bankcomment ff70 bank -> mirroring=0,prg_mode=3,prg_bank=0 [switch-value flow]
 REALROM sample.bankcomment ff73 bank -> mirroring=0,prg_mode=3,prg_bank=0 [switch-value flow]
 REALROM sample.bankcomment ff78 bank -> mirroring=3,prg_mode=3,prg_bank=0 via FUN_ff98 [switch-value flow]
 REALROM sample.bankcomment ff92 bank -> mirroring=3,prg_mode=3,prg_bank=7 via FUN_ffac [switch-value flow]
-REALROM sample.ref 808e -> W8000_M3_B6::8028 READ primary=true
-REALROM sample.ref 8094 -> W8000_M3_B6::8028 READ primary=true
-REALROM sample.ref 8099 -> W8000_M3_B6::80c6 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 809c -> W8000_M3_B6::80d7 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 80e1 -> W8000_M3_B6::80ec CONDITIONAL_JUMP primary=true
-REALROM sample.ref 80e7 -> W8000_M3_B6::80ec CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8106 -> W8000_M3_B6::80d9 UNCONDITIONAL_JUMP primary=true
-REALROM sample.ref 8526 -> W8000_M3_B5::8521 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8530 -> W8000_M3_B5::852f CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8533 -> W8000_M3_B5::852d CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8542 -> W8000_M3_B5::858c CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8546 -> W8000_M3_B5::858b CONDITIONAL_JUMP primary=true
-REALROM sample.ref 854c -> W8000_M3_B5::856d CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8552 -> W8000_M3_B5::8550 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8571 -> W8000_M3_B5::856f CONDITIONAL_JUMP primary=true
-REALROM sample.ref 858e -> W8000_M3_B5::8593 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8d32 -> W8000_M3_B1::8d12 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8d38 -> W8000_M3_B1::8d12 CONDITIONAL_JUMP primary=true
-REALROM sample.ref a082 -> W8000_M3_B6::a000 DATA primary=true
-REALROM sample.ref a087 -> W8000_M3_B6::a001 DATA primary=true
-REALROM sample.ref a08c -> W8000_M3_B6::a0f6 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref a0b5 -> W8000_M3_B6::a0b9 CONDITIONAL_JUMP primary=true
-REALROM sample.ref a0c1 -> W8000_M3_B6::a0c6 CONDITIONAL_JUMP primary=true
-REALROM sample.ref a0c8 -> W8000_M3_B6::a0cb CONDITIONAL_JUMP primary=true
-REALROM sample.ref a0ce -> W8000_M3_B6::a0d1 CONDITIONAL_JUMP primary=true
-REALROM sample.ref.truncated 25 of 39
-REALROM sample.note 6c90 [RunFromElsewhere] run-from-elsewhere copy of W8000_M3_B1:a500; initialized in place as COPY_6c90
+REALROM sample.ref 725d -> W8000_M3_B5::bf98 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 7260 -> W8000_M3_B5::a8de UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 7481 -> W8000_M3_B1::a1b1 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8000 -> W8000_M3_B5::8006 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 800a -> W8000_M3_B5::8021 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 801d -> W8000_M3_B2::8000 DATA primary=true
+REALROM sample.ref 8022 -> W8000_M3_B2::8006 DATA primary=true
+REALROM sample.ref 8027 -> W8000_M3_B2::800c DATA primary=true
+REALROM sample.ref 802e -> W8000_M3_B2::8000 DATA primary=true
+REALROM sample.ref 8033 -> W8000_M3_B2::8006 DATA primary=true
+REALROM sample.ref 8038 -> W8000_M3_B2::800c DATA primary=true
+REALROM sample.ref 803b -> W8000_M3_B2::804f UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8043 -> W8000_M3_B2::8018 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8049 -> W8000_M3_B5::8130 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 804a -> W8000_M3_B3::805e UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 804f -> W8000_M3_B3::8064 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8050 -> W8000_M3_B6::805e CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8051 -> W8000_M3_B3::8091 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8052 -> W8000_M3_B6::8000 DATA primary=true
+REALROM sample.ref 8054 -> W8000_M3_B3::80dc UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8058 -> W8000_M3_B6::8000 DATA primary=true
+REALROM sample.ref 805b -> W8000_M3_B6::8067 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 805c -> W8000_M3_B3::8051 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 805e -> W8000_M3_B6::802a DATA primary=true
+REALROM sample.ref 8060 -> W8000_M3_B5::8059 CONDITIONAL_JUMP primary=true
+REALROM sample.ref.truncated 25 of 1364
+REALROM sample.warn 8124 [CopyLoopAnalyzer] copy-shaped loop RAM:0000 -> RAM:6ba7 could not be bounded; not applied
+REALROM sample.note 6d00 [CopyLoopAnalyzer] copy-shaped loop RAM:6c97 -> RAM:0302 (41 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note 83b6 [CopyLoopAnalyzer] copy-shaped loop W8000_M3_B5:83ae -> RAM:0200 (4 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note 8801 [CopyLoopAnalyzer] copy-shaped loop W8000_M3_B1:86ca -> RAM:0302 (17 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note 8820 [CopyLoopAnalyzer] copy-shaped loop W8000_M3_B1:880d -> RAM:0302 (5 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note 899e [CopyLoopAnalyzer] copy-shaped loop RAM:0448 -> RAM:0430 (3 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note 8b16 [CopyLoopAnalyzer] copy-shaped loop W8000_M3_B5:8ae3 -> RAM:0201 (3 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note 8b39 [CopyLoopAnalyzer] copy-shaped loop W8000_M3_B5:8aec -> RAM:0302 (5 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note 8d00 [RunFromElsewhere] manual transfer -> COPY_6c90: 4720 bytes W8000_M3_B1:a500 -> RAM:6c90; disassembled as code
+REALROM sample.note 9512 [CopyLoopAnalyzer] copy-shaped loop W8000_M3_B2:94ee -> RAM:0302 (36 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note 9573 [CopyLoopAnalyzer] copy-shaped loop W8000_M3_B2:954f -> RAM:0302 (36 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note 9e34 [CopyLoopAnalyzer] copy-shaped loop W8000_M3_B2:9d41 -> RAM:0302 (29 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note 9e5e [CopyLoopAnalyzer] copy-shaped loop W8000_M3_B2:9d7b -> RAM:0302 (52 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note a18e [CopyLoopAnalyzer] copy-shaped loop W8000_M3_B2:9df7 -> RAM:0201 (11 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note a4c4 [CopyLoopAnalyzer] copy-shaped loop W8000_M3_B2:a254 -> RAM:0302 (32 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note a51e [CopyLoopAnalyzer] copy-shaped loop W8000_M3_B2:a274 -> RAM:0302 (19 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note a780 [CopyLoopAnalyzer] copy-shaped loop RAM:00c0 -> RAM:0000 (40 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note a7b2 [CopyLoopAnalyzer] copy-shaped loop RAM:00c4 -> RAM:0004 (8 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note a93f [CopyLoopAnalyzer] copy-shaped loop W8000_M3_B2:a93a -> RAM:0302 (5 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note a9a0 [CopyLoopAnalyzer] copy-shaped loop W8000_M3_B2:a98d -> RAM:0302 (5 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note b5be [CopyLoopAnalyzer] copy-shaped loop RAM:0305 -> RAM:0306 (15 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note bf98 [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
+REALROM sample.note bfa8 [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
+REALROM sample.note bfac [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
+REALROM sample.note bfbc [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
+REALROM sample.note eabc [CopyLoopAnalyzer] copy-shaped loop RAM:6b9d -> RAM:6817 (4 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note ff0c [CopyLoopAnalyzer] copy-shaped loop RAM:fee0 -> RAM:0302 (8 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note ff98 [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
 REALROM sample.note ffa8 [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
 REALROM sample.note ffac [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.

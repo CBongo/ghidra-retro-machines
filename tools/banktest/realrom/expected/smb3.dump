@@ -77,13 +77,13 @@ REALROM block WE000 e000-ffff overlay=false
 REALROM count blocks.total 70
 REALROM count blocks.overlay 62
 REALROM count spaces.overlay 62
-REALROM count refs.intoOverlay 1055
-REALROM count refs.intoOverlay.retargeted 76
-REALROM count refs.intoOverlay.intraOverlay 979
-REALROM count instrs.inOverlay 4954
-REALROM count bankComments 157
-REALROM count warnings 23
-REALROM count notes 6
+REALROM count refs.intoOverlay 2567
+REALROM count refs.intoOverlay.retargeted 77
+REALROM count refs.intoOverlay.intraOverlay 2490
+REALROM count instrs.inOverlay 11694
+REALROM count bankComments 160
+REALROM count warnings 24
+REALROM count notes 7
 REALROM count symbols 18
 REALROM sample.bankcomment 85b8 bank -> select=7,prg_mode=1,r6=0,r7=12 via FUN_ffc2 [switch-value flow]
 REALROM sample.bankcomment 85f7 bank -> select=7,prg_mode=1,r6=0,r7=12 [switch-value flow]
@@ -132,6 +132,7 @@ REALROM sample.bankcomment 9265 bank -> select=7,prg_mode=1,r6=0,r7=27 via FUN_f
 REALROM sample.bankcomment 9270 bank -> select=7,prg_mode=1,r6=0,r7=26 via FUN_ffc2 [switch-value flow]
 REALROM sample.bankcomment 927b bank -> select=7,prg_mode=1,r6=0,r7=11 via FUN_ffc2 [switch-value flow]
 REALROM sample.bankcomment 92a6 bank -> select=7,prg_mode=1,r6=0,r7=26 via FUN_ffc2 [switch-value flow]
+REALROM sample.bankcomment 933b bank -> select=7,prg_mode=1,r6=0,r7=26 via FUN_841d [switch-value flow]
 REALROM sample.bankcomment 937c bank -> select=7,prg_mode=1,r6=0,r7=27 via FUN_ffc2 [switch-value flow]
 REALROM sample.bankcomment 938c bank -> select=7,prg_mode=1,r6=0,r7=26 via FUN_ffc2 [switch-value flow]
 REALROM sample.bankcomment 9397 bank -> select=7,prg_mode=1,r6=0,r7=9 via FUN_ffc2 [switch-value flow]
@@ -150,6 +151,8 @@ REALROM sample.bankcomment a770 bank -> select=6,prg_mode=1,r6=0,r7=27 via FUN_f
 REALROM sample.bankcomment c960 bank -> select=7,prg_mode=1,r6=0,r7=5 via FUN_ffc2 [switch-value flow]
 REALROM sample.bankcomment c9df bank -> select=7,prg_mode=1,r6=0,r7=24 via FUN_ffc2 [switch-value flow]
 REALROM sample.bankcomment ca68 bank -> select=7,prg_mode=1,r6=0,r7=1? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0; assumed from initial: r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment ccbc bank -> select=7,prg_mode=1,r6=0,r7=8 via FUN_ffc2 [switch-value flow]
+REALROM sample.bankcomment ccdf bank -> select=7,prg_mode=1,r6=0,r7=1? via FUN_ffc2 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0; assumed from initial: r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment f4ca bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment f4cf bank -> select=7,prg_mode=1,r6=0,r7=26? [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
 REALROM sample.bankcomment f4f0 bank -> select=0,prg_mode=1,r6=0,r7=1? via FUN_ffad [known: prg_mode=1; assumed from initial: select.0,select.1,select.2,r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
@@ -267,7 +270,7 @@ REALROM sample.ref 8abd -> WA000_B26::ac69 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8ac6 -> WA000_B26::b44a UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8ada -> WA000_B26::acaa UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8b14 -> WA000_B26::b44a UNCONDITIONAL_CALL primary=true
-REALROM sample.ref.truncated 25 of 1055
+REALROM sample.ref.truncated 25 of 2567
 REALROM sample.warn 8631 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
 REALROM sample.warn 8bae [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
 REALROM sample.warn 8cc1 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
@@ -277,6 +280,7 @@ REALROM sample.warn 9bc9 [NesBankingAnalyzer] Bank state becomes unknown here: c
 REALROM sample.warn 9bde [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
 REALROM sample.warn 9fa7 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_f9e3, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
 REALROM sample.warn ca68 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
+REALROM sample.warn ccdf [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
 REALROM sample.warn f4f0 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffad, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
 REALROM sample.warn f50a [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fc6f, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
 REALROM sample.warn f57e [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fc6f, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
@@ -292,6 +296,7 @@ REALROM sample.warn f8cd [NesBankingAnalyzer] Bank state becomes unknown here: m
 REALROM sample.warn f9be [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fa3f whose bank argument could not be recovered at this call site
 REALROM sample.warn ffbf [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffd1, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
 REALROM sample.note 952a [CopyLoopAnalyzer] copy-shaped loop RAM:0000 -> RAM:7e94 (8 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note a0b0 [CopyLoopAnalyzer] copy-shaped loop WA000_B27:a07d -> RAM:7dde (32 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note a1bf [CopyLoopAnalyzer] copy-shaped loop RAM:698d -> RAM:68cd (15 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note a1d1 [CopyLoopAnalyzer] copy-shaped loop RAM:68cd -> RAM:698d (15 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note a3a2 [CopyLoopAnalyzer] copy-shaped loop WA000_B24:a370 -> RAM:0240 (24 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
