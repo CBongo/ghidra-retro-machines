@@ -540,4 +540,70 @@ public class JumpTableBoundTest {
 		assertEquals(2, r.stride());
 		assertEquals(List.of(0x8451L, 0x848aL, 0x84c5L, 0x8451L), r.keep(targets));
 	}
+
+	/** dbz2 cb97, from the ROM: {@code LDA $2f / ASL A / BCS / TAY / LDA $dd47,Y / ... / JMP
+	 *  ($0021)}, and the IRQ handler's {@code cbfd JMP ($0026)} reads its own table at dd65 -- so
+	 *  cb97 has exactly (dd65 - dd47) / 2 = 15 entries. These are the 44 the decompiler walks.
+	 *  Every extent rule declines (the handlers sit below both the switch and the table), and
+	 *  grm-os9b measured the valid-target cut keeping 32 by running through cbfd's handlers. */
+	@Test
+	public void dbz2Cb97CutsAtTheNeighbourTable() {
+		List<Long> targets = targets(0xc9da, 0xca40, 0xca22, 0xc944, 0xc950, 0xc95c, 0xc89c,
+			0xc884, 0xc8ba, 0xc8a8, 0xca34, 0xc9fe, 0xc968, 0xca0a, 0xc9f2, 0xddd8, 0xddcd,
+			0xdddb, 0xde4a, 0xded2, 0xde2e, 0xddd5, 0xdf24, 0xdf52, 0xdf82, 0xddd5, 0xe020,
+			0xe06b, 0xddd5, 0xddfd, 0xe03c, 0x80c9, 0x0290, 0x00a9, 0x328d, 0xa800, 0x9fbe,
+			0xbddd, 0xff80, 0x358d, 0xbd00, 0xff81, 0x368d, 0x6000);
+		// the interleaved lo/hi bytes arrive as one collapsed size-1 table over both halves
+		List<LoadTableEntry> tables = List.of(new LoadTableEntry(0xdd47, 1, 88));
+
+		assertFalse(JumpTableBound.bound(targets, tables,
+			new JumpTableBound.Block(0xc000, 0xffff)).isBounded());
+		assertFalse(JumpTableBound.boundBySwitchWindow(0xcb97, targets, tables).isBounded());
+
+		// as the analyzer builds it: initialized, non-volatile memory (RAM and PPU are neither)
+		List<Boolean> inCode = new ArrayList<>();
+		for (long t : targets) {
+			inCode.add(t >= 0x6000);
+		}
+		// its own start is ignored; a start past the extent (dd9f) is not a neighbour
+		Result r = JumpTableBound.boundByNeighbourTable(targets, tables,
+			List.of(0xdd47L, 0xdd65L, 0xdd9fL + 0x40), inCode);
+		assertTrue(r.isBounded());
+		assertEquals(JumpTableBound.Rule.NEIGHBOUR_TABLE, r.rule());
+		assertEquals(15, r.count());
+		assertEquals(1, r.stride());
+		assertEquals(0xc884, r.lowestTarget());
+		// a "neighbour" past the RAM entry at case 32 (0290) would keep it: decline
+		assertFalse(JumpTableBound.boundByNeighbourTable(targets, tables,
+			List.of(0xdd47L + 2 * 34), inCode).isBounded());
+	}
+
+	/** The neighbour-table rule declines with no neighbour inside the extent, with a neighbour
+	 *  start off this table's entry boundary, when fewer than 2 entries would be kept, and when a
+	 *  kept entry cannot be code. */
+	@Test
+	public void neighbourTableRuleDeclines() {
+		List<Long> targets = new ArrayList<>();
+		List<Boolean> inCode = new ArrayList<>();
+		for (int i = 0; i < 10; i++) {
+			targets.add(0x8000L + 3 * i);
+			inCode.add(true);
+		}
+		List<LoadTableEntry> tables = List.of(new LoadTableEntry(0x9000, 2, 10));
+		assertFalse(JumpTableBound.boundByNeighbourTable(targets, tables, List.of(), inCode)
+				.isBounded());
+		assertFalse(JumpTableBound.boundByNeighbourTable(targets, tables,
+			List.of(0x9000L, 0x9014L, 0x8ffeL), inCode).isBounded()); // own start, end, before
+		assertFalse(JumpTableBound.boundByNeighbourTable(targets, tables,
+			List.of(0x9007L), inCode).isBounded()); // mid-entry
+		assertFalse(JumpTableBound.boundByNeighbourTable(targets, tables,
+			List.of(0x9002L), inCode).isBounded()); // would keep 1
+		Result r = JumpTableBound.boundByNeighbourTable(targets, tables,
+			List.of(0x900cL, 0x9008L), inCode);
+		assertTrue(r.isBounded());
+		assertEquals(4, r.count()); // the LOWEST neighbour wins
+		inCode.set(2, false);
+		assertFalse(JumpTableBound.boundByNeighbourTable(targets, tables,
+			List.of(0x9008L), inCode).isBounded()); // a kept entry is not code
+	}
 }

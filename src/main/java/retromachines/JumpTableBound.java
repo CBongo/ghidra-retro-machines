@@ -16,6 +16,7 @@
 package retromachines;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.function.BiFunction;
 
@@ -468,6 +469,83 @@ public final class JumpTableBound {
 		return Result.bounded(cut, minTarget, Rule.VALID_TARGET_CUT).withStride(2);
 	}
 
+	/**
+	 * Apply the neighbour-table bound (grm-2m07): cut this table where ANOTHER jump table's load
+	 * table begins. Dispatch tables are routinely laid end to end, and a neighbour's entries are
+	 * valid code addresses by construction, so the extent rules above (and grm-os9b's measured
+	 * attempt to run {@link #boundByValidTargets} on ordinary shapes) cannot see where one table
+	 * stops and the next starts. dbz2 is the case: {@code cb97 JMP ($0021)} reads its table at
+	 * dd47, {@code cbfd JMP ($0026)} (inside the IRQ handler) reads its own at dd65, so cb97 has
+	 * exactly 15 entries; its targets sit below both the switch and the table, so neither
+	 * {@link #bound} nor {@link #boundBySwitchWindow} applies.
+	 *
+	 * <p>The neighbour start must be independently established by the caller -- another switch's
+	 * own decompiled load table, never something inferred from this table's entries -- and must
+	 * fall on one of this table's entry boundaries (an off-by-one start is likelier a split
+	 * lo/hi layout than a neighbour, so it declines). Declines when no start lies strictly inside
+	 * the extent, when fewer than 2 entries would be kept, and when ANY kept entry fails
+	 * {@code inCode}: a real neighbour sits right after this table's last real entry, so a cut
+	 * that keeps a RAM or I/O target has found a start far past the over-read, not the idiom.
+	 *
+	 * <p><b>The shape this cannot tell apart</b>: a second switch indexing into a SUFFIX of this
+	 * same table (two entry points into one table). Its start looks exactly like a neighbour's,
+	 * and the table bytes cannot distinguish the two; the cut would then drop real cases. That is
+	 * why this runs only as the last fallback, after every extent rule has declined, where the
+	 * alternative is the decompiler's own over-read.
+	 *
+	 * @param targets as for {@link #bound}
+	 * @param loadTables as for {@link #bound}
+	 * @param otherStarts flat offsets of OTHER jump tables' moving load-table starts, in this
+	 *                    table's memory; this table's own starts are ignored if present
+	 * @param inCode as for {@link #boundByValidTargets}
+	 * @return a bounded result, or a decline
+	 */
+	public static Result boundByNeighbourTable(List<Long> targets, List<LoadTableEntry> loadTables,
+			Collection<Long> otherStarts, List<Boolean> inCode) {
+		if (inCode.size() != targets.size()) {
+			return Result.decline();
+		}
+		Shape shape = Shape.of(targets.size(), loadTables);
+		if (shape == null) {
+			if (overlappingByteTable(targets.size(), loadTables) == null) {
+				return Result.decline();
+			}
+			List<Boolean> evenInCode = new ArrayList<>();
+			for (int i = 0; i < inCode.size(); i += 2) {
+				evenInCode.add(inCode.get(i));
+			}
+			return onEvenCases(targets, loadTables,
+				(t, l) -> boundByNeighbourTable(t, l, otherStarts, evenInCode));
+		}
+		int caseCount = targets.size();
+		long extentEnd = shape.entryEnd(caseCount - 1);
+		long neighbour = Long.MAX_VALUE;
+		for (long n : otherStarts) {
+			if (n > shape.tableStart && n < extentEnd && !shape.isOwnStart(n)) {
+				neighbour = Math.min(neighbour, n);
+			}
+		}
+		if (neighbour == Long.MAX_VALUE || !shape.isEntryBoundary(neighbour)) {
+			return Result.decline();
+		}
+		int cut = 0;
+		long minTarget = Long.MAX_VALUE;
+		while (cut < caseCount && shape.entryEnd(cut) <= neighbour) {
+			if (!inCode.get(cut)) {
+				// A kept entry that cannot be code means the neighbour lies past garbage this
+				// table already over-read (measured: dbz2/dbz_saiyan tables whose cut would have
+				// labelled zero-page and PPU targets as cases) -- not the idiom, decline.
+				return Result.decline();
+			}
+			minTarget = Math.min(minTarget, targets.get(cut));
+			cut++;
+		}
+		if (cut < 2) {
+			return Result.decline();
+		}
+		return Result.bounded(cut, minTarget, Rule.NEIGHBOUR_TABLE);
+	}
+
 	/** Which rule produced a bounded {@link Result}. */
 	public enum Rule {
 		/** {@link #bound}: the table precedes its targets and cannot overlap the lowest one. */
@@ -481,7 +559,10 @@ public final class JumpTableBound {
 		BELOW_TABLE_CUT,
 		/** {@link #boundByValidTargets}: grm-yjiq -- an overlapping byte table, cut at the first
 		 *  even entry whose target cannot hold code. */
-		VALID_TARGET_CUT
+		VALID_TARGET_CUT,
+		/** {@link #boundByNeighbourTable}: grm-2m07 -- cut where another jump table's load table
+		 *  begins. */
+		NEIGHBOUR_TABLE
 	}
 
 	/** The reconstructed table shape both rules share: each moving load table's start and
@@ -537,6 +618,26 @@ public final class JumpTableBound {
 				end = Math.max(end, start[k] + (long) (i + 1) * chunk[k]);
 			}
 			return end;
+		}
+
+		/** Whether {@code n} is one of this table's own moving load-table starts. */
+		boolean isOwnStart(long n) {
+			for (long s : start) {
+				if (s == n) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		/** Whether {@code n} is where some entry of the lowest moving table begins. */
+		boolean isEntryBoundary(long n) {
+			for (int k = 0; k < start.length; k++) {
+				if (start[k] == tableStart) {
+					return (n - tableStart) % chunk[k] == 0;
+				}
+			}
+			return false;
 		}
 	}
 }

@@ -16,8 +16,10 @@
 package retromachines;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import ghidra.app.cmd.disassemble.DisassembleCommand;
@@ -75,7 +77,10 @@ import ghidra.util.task.TaskMonitor;
  * between the switch and the table, and the first entry that does not ends it. When both decline
  * on an un-doubled index over 2-byte entries (grm-yjiq, rcproam 9ad4: handlers on both sides of
  * the table), {@link JumpTableBound#boundByValidTargets} cuts at the first even entry whose target
- * is not in initialized, non-volatile memory.
+ * is not in initialized, non-volatile memory. Last, when every rule above declines,
+ * {@link JumpTableBound#boundByNeighbourTable} cuts where ANOTHER switch's load table begins
+ * (grm-2m07, dbz2 cb97 running into cbfd's table) -- which is why {@link #added} decompiles every
+ * function first and bounds second: the neighbour is often in a different function.
  *
  * <p><b>Mechanism.</b> This analyzer resolves each computed-jump location to a function EXACTLY
  * as stock {@code DecompilerSwitchAnalyzer.findFunctions}/{@code FindFunctionCallback} do --
@@ -224,7 +229,13 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 					ifc.getLastMessage());
 				return true;
 			}
-			int bounded = 0;
+			// Two passes (grm-2m07): every table's load-table starts must be known before ANY
+			// table is bounded, because boundByNeighbourTable cuts one table where another
+			// begins -- and the neighbour is often in a different function (dbz2's cb97 table
+			// runs into the one cbfd reads, inside the IRQ handler). A load table's start does
+			// not depend on the count the decompiler guessed, so the first pass's answer is final.
+			Map<Function, JumpTable[]> decompiled = new LinkedHashMap<>();
+			List<Address> loadTableStarts = new ArrayList<>();
 			for (Function function : functions) {
 				monitor.checkCancelled();
 				DecompileResults results =
@@ -236,8 +247,22 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 				if (hfunction == null) {
 					continue;
 				}
-				for (JumpTable table : hfunction.getJumpTables()) {
-					if (processTable(program, listing, function, table, monitor, log)) {
+				JumpTable[] tables = hfunction.getJumpTables();
+				decompiled.put(function, tables);
+				for (JumpTable table : tables) {
+					for (JumpTable.LoadTable lt : table.getLoadTables()) {
+						if (lt.getNum() > 1) {
+							loadTableStarts.add(lt.getAddress());
+						}
+					}
+				}
+			}
+			int bounded = 0;
+			for (Map.Entry<Function, JumpTable[]> e : decompiled.entrySet()) {
+				for (JumpTable table : e.getValue()) {
+					monitor.checkCancelled();
+					if (processTable(program, listing, e.getKey(), table, loadTableStarts,
+						monitor, log)) {
 						bounded++;
 					}
 				}
@@ -311,7 +336,8 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 	 *  round, or a human's); the shape isn't understood; the table doesn't sit below its
 	 *  targets; or the bound doesn't actually shrink the entry count. */
 	private boolean processTable(Program program, Listing listing, Function function,
-			JumpTable table, TaskMonitor monitor, MessageLog log) throws CancelledException {
+			JumpTable table, List<Address> loadTableStarts, TaskMonitor monitor, MessageLog log)
+			throws CancelledException {
 		Address switchAddr = table.getSwitchAddress();
 		if (switchAddr == null) {
 			return false;
@@ -401,14 +427,28 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 			result = JumpTableBound.boundBySwitchWindow(switchAddr.getOffset(), targets,
 				loadTables);
 		}
+		// Per case, whether its target lies in memory that can hold code: the grm-yjiq and
+		// grm-2m07 fallbacks below both consult it.
+		List<Boolean> inCode = new ArrayList<>(realCases.size());
+		for (Address a : realCases) {
+			MemoryBlock block = program.getMemory().getBlock(a);
+			inCode.add(block != null && block.isInitialized() && !block.isVolatile());
+		}
 		if (!result.isBounded()) {
 			// grm-yjiq: an overlapping byte table whose handlers straddle it; see the javadoc.
-			List<Boolean> inCode = new ArrayList<>(realCases.size());
-			for (Address a : realCases) {
-				MemoryBlock block = program.getMemory().getBlock(a);
-				inCode.add(block != null && block.isInitialized() && !block.isVolatile());
-			}
 			result = JumpTableBound.boundByValidTargets(targets, loadTables, inCode);
+		}
+		if (!result.isBounded()) {
+			// grm-2m07: the table runs into another switch's table; see the javadoc. Only starts
+			// in this table's own memory count (same rule as the load tables above), and the
+			// rule itself ignores this table's own starts.
+			List<Long> others = new ArrayList<>();
+			for (Address a : loadTableStarts) {
+				if (sameMemory(a.getAddressSpace(), targetSpace)) {
+					others.add(a.getOffset());
+				}
+			}
+			result = JumpTableBound.boundByNeighbourTable(targets, loadTables, others, inCode);
 		}
 		if (!result.isBounded() || result.count() >= realCases.size()) {
 			return false; // decline, or would not shrink the table -- must be a no-op
