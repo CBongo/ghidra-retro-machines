@@ -5,32 +5,27 @@ REALROM prgsha256 5374abb64cfb9b5d961856c60166cedc55859164cf2b8867730e144fa2bdd5
 REALROM map machines/nes-nrom.map
 REALROM placement NONE
 REALROM block APU_IO 4000-401f overlay=false
-REALROM block COPY_0001 0001-0003 overlay=false
-REALROM block COPY_0002 0002-0007 overlay=true
 REALROM block PPU_REGS 2000-2007 overlay=false
 REALROM block PRG_HI c000-ffff overlay=false
 REALROM block PRG_LO 8000-bfff overlay=false
-REALROM block RAM 0000-0000 overlay=false
-REALROM block RAM_0004 0004-07ff overlay=false
-REALROM count blocks.total 8
-REALROM count blocks.overlay 1
-REALROM count spaces.overlay 1
+REALROM block RAM 0000-07ff overlay=false
+REALROM count blocks.total 5
+REALROM count blocks.overlay 0
+REALROM count spaces.overlay 0
 REALROM count refs.intoOverlay 0
 REALROM count refs.intoOverlay.retargeted 0
 REALROM count refs.intoOverlay.intraOverlay 0
-REALROM count instrs.inOverlay 3
+REALROM count instrs.inOverlay 0
 REALROM count bankComments 0
 REALROM count warnings 0
-REALROM count notes 8
+REALROM count notes 6
 REALROM count symbols 18
-REALROM sample.note 0001 [CopyLoopAnalyzer] run-from-elsewhere copy of RAM:cf25; initialized in place as COPY_0001
-REALROM sample.note 0002 [CopyLoopAnalyzer] run-from-elsewhere copy of RAM:ef9e; byte-mapped overlay COPY_0002
 REALROM sample.note 8325 [CopyLoopAnalyzer] copy-shaped loop RAM:831d -> RAM:0300 (8 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note 8876 [CopyLoopAnalyzer] copy-shaped loop RAM:87ed -> RAM:0304 (5 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note 90a9 [CopyLoopAnalyzer] copy-shaped loop RAM:8fbc -> RAM:06e4 (15 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note 90b4 [CopyLoopAnalyzer] copy-shaped loop RAM:8fcb -> RAM:0200 (4 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
-REALROM sample.note cf45 [CopyLoopAnalyzer] copy loop (no jump into the copy; its bytes decode as a subroutine) -> COPY_0001: 3 bytes RAM:cf25 -> RAM:0001; disassembled as code
-REALROM sample.note efa4 [CopyLoopAnalyzer] copy loop (no jump into the copy; its bytes decode as a subroutine) -> COPY_0002: 6 bytes RAM:ef9e -> RAM:0002; disassembled as code
+REALROM sample.note cf45 [CopyLoopAnalyzer] copy-shaped loop RAM:cf25 -> RAM:0001 (3 bytes) recognized but NOT materialized: nothing jumps into the destination and it is a zero-page copy under 8 bytes, too short for decoding as a subroutine to be evidence, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note efa4 [CopyLoopAnalyzer] copy-shaped loop RAM:ef9e -> RAM:0002 (6 bytes) recognized but NOT materialized: nothing jumps into the destination and it is a zero-page copy under 8 bytes, too short for decoding as a subroutine to be evidence, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.symbol 2000 PPUCTRL IMPORTED primary=true
 REALROM sample.symbol 2001 PPUMASK IMPORTED primary=true
 REALROM sample.symbol 2002 PPUSTATUS IMPORTED primary=true

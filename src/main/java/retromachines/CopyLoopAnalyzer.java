@@ -115,6 +115,12 @@ public class CopyLoopAnalyzer extends AbstractAnalyzer {
 	/** How every declined-loop NOTE begins; {@link #retryDeclined} keys on it. */
 	private static final String DECLINED_PREFIX = "copy-shaped loop ";
 
+	/**
+	 * A zero-page copy shorter than this is never admitted on decode evidence alone (grm-1od4):
+	 * at that size a stray RTS/RTI data byte passes the test by chance.
+	 */
+	private static final int MIN_ZERO_PAGE_DECODE_LEN = 8;
+
 	/** The processors whose mnemonics {@link LoopIdioms} knows. */
 	private static final Set<String> SUPPORTED_PROCESSORS = Set.of("6502", "6510");
 
@@ -325,18 +331,35 @@ public class CopyLoopAnalyzer extends AbstractAnalyzer {
 		// only those stubs select. The source is resolved to the occupant really read (grm-9a0)
 		// because that is where the bytes are; the same resolution is repeated below for the
 		// request, after the destination-dependent test that must see the base-space dst.
+		//
+		// Not for a tiny zero-page copy, though (grm-1od4). A 2-6 byte payload meets the decode
+		// test by chance whenever a $40/$60 data byte lands at its end -- smb's pointer
+		// initialisers at cf45 (3 bytes -> $0001) and efa4 (6 bytes -> $0002) both did -- and zero
+		// page is exactly where such short parameter copies go. Real zero-page code exists (the
+		// C64's CHRGET at $0073, 24 bytes, is the textbook case), so the guard is a size floor,
+		// not a ban; CHRGET is also CALLED all over BASIC and passes on the jump evidence above
+		// without ever reaching this route. Across the whole pinned real-ROM corpus smb's two were
+		// the only zero-page copies this route admitted.
 		boolean decodes = false;
+		boolean zeroPageRefused = false;
 		if (jumpInto == null) {
 			Address readFrom = LoopIdioms.overlayAccessTarget(lda, src, len, RefType::isRead);
 			decodes = PayloadDecodeEvidence.decodesAsSubroutine(program,
 				readFrom != null ? readFrom : src, len);
+			if (decodes && dst.getOffset() < 0x100 && len < MIN_ZERO_PAGE_DECODE_LEN) {
+				decodes = false;
+				zeroPageRefused = true;
+			}
 		}
 		if (jumpInto == null && !decodes) {
 			program.getBookmarkManager().setBookmark(init.getAddress(), BookmarkType.NOTE,
 				CATEGORY, DECLINED_PREFIX + TransferMaterializer.fmt(src) + " -> " +
 					TransferMaterializer.fmt(dst) + " (" + len + " bytes) recognized but NOT " +
-					"materialized: nothing jumps into the destination and the payload does not " +
-					"decode as a subroutine, so there is no evidence it holds code. If it does, " +
+					"materialized: nothing jumps into the destination and " +
+					(zeroPageRefused ? "it is a zero-page copy under " + MIN_ZERO_PAGE_DECODE_LEN +
+							" bytes, too short for decoding as a subroutine to be evidence" :
+							"the payload does not decode as a subroutine") +
+					", so there is no evidence it holds code. If it does, " +
 					"materialize it with the Run From Elsewhere Transfer script or a descriptor " +
 					"copied_from hint.");
 			return null;
