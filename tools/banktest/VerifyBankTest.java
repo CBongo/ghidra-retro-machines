@@ -326,8 +326,23 @@ public class VerifyBankTest extends GhidraScript {
 			return;
 		}
 
+		if (name.contains("snestbltest")) {
+			// grm-s3wo: same string layout as nestbltest, in a LoROM cartridge; the byte-mapped
+			// mirror of bank 00 sits at $80:8000 (grm-a6n0: it must stay unannotated).
+			checkTblTest("snes", 0x800000L, "snestbltest.tbl");
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
+
+		if (name.contains("nestbltest16")) {
+			// grm-a6n0: 16 KiB PRG, mirrored byte-mapped at $C000.
+			checkTblTest("nes16", 0x4000L, "nestbltest.tbl");
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
+
 		if (name.contains("nestbltest")) {
-			checkNesTblTest();
+			checkTblTest("nes", 0L, "nestbltest.tbl");
 			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
 			return;
 		}
@@ -3066,7 +3081,13 @@ public class VerifyBankTest extends GhidraScript {
 	private static final long[] TBL_ALL = { 0x9000, 0x9020, 0x9040, 0x9060, 0x9080, 0x90A0,
 		0x90C0, 0x90E0 };
 
-	private void checkNesTblTest() {
+	/**
+	 * @param label dump tag (nes, nes16, snes)
+	 * @param mirrorDelta offset from each canonical string address to its byte-mapped mirror, or
+	 *            0 when the image has no mirror of the string region
+	 * @param tblName expected stored source file name
+	 */
+	private void checkTblTest(String label, long mirrorDelta, String tblName) {
 		Options node = currentProgram.getOptions(TBL_NODE);
 		String source = node.getString("Source File", "");
 		String text = node.getString("Table Text", "");
@@ -3091,9 +3112,31 @@ public class VerifyBankTest extends GhidraScript {
 			}
 		}
 		println("TBLBOOKMARKS " + bookmarks);
+		boolean mirrorClean = true;
+		if (mirrorDelta != 0) {
+			MemoryBlock mirrorBlock =
+				currentProgram.getMemory().getBlock(addr(TBL_ALL[0] + mirrorDelta));
+			println("TBLMIRROR block=" + (mirrorBlock == null ? "<none>" : mirrorBlock.getName()) +
+				" mapped=" + (mirrorBlock != null && mirrorBlock.isMapped()));
+			for (long a : TBL_ALL) {
+				Address at = addr(a + mirrorDelta);
+				String pre = currentProgram.getListing().getComment(CommentType.PRE, at);
+				Bookmark bm = currentProgram.getBookmarkManager().getBookmark(at,
+					BookmarkType.NOTE, TBL_CATEGORY);
+				println(fmt(at) + " MIRROR PRE " + (pre == null ? "<none>" : pre) +
+					" | BOOKMARK " + (bm == null ? "<none>" : bm.getComment()));
+				mirrorClean &= pre == null && bm == null;
+			}
+			MemoryBlock home = currentProgram.getMemory().getBlock(addr(TBL_ALL[0]));
+			criterion("T5:mirror-exists", mirrorBlock != null && home != null &&
+				mirrorBlock != home, "mirror of " + fmt(addr(TBL_ALL[0])) +
+				" is a distinct block (home=" + (home == null ? "<none>" : home.getName()) + ")");
+			criterion("T6:mirror-unannotated", mirrorClean,
+				"mirrored strings must not get a duplicate comment/bookmark");
+		}
 		println("=== BANKDUMP END ===");
 
-		criterion("T1:table-stored", "nestbltest.tbl".equals(source) &&
+		criterion("T1:table-stored", tblName.equals(source) &&
 			text.contains("/FF=<end>") && text.contains("F001=QU"),
 			"source=" + source + " textLen=" + text.length());
 

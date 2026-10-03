@@ -66,8 +66,8 @@ def make_tbl():
     return "\r\n".join(lines) + "\r\n"   # CRLF on purpose: real .tbl files often are
 
 
-def make_prg():
-    prg = bytearray(PRG_SIZE)
+def make_prg(size=PRG_SIZE):
+    prg = bytearray(size)
 
     def put(cpu, data):
         off = cpu - BASE
@@ -83,7 +83,7 @@ def make_prg():
     put(0x90A0, enc("A") + b"\xFD" + enc("BCD") + b"\xFF")
     put(0x90C0, enc("NOW") + b"\xFF")
     put(0x90E0, enc("ABCD") + b"\xFF")
-    put(0xFFFA, bytes([0x03, 0x80, 0x00, 0x80, 0x03, 0x80]))
+    put(BASE + size - 6, bytes([0x03, 0x80, 0x00, 0x80, 0x03, 0x80]))
     return bytes(prg)
 
 
@@ -113,16 +113,23 @@ def main():
     assert prg[0x7FFC] | (prg[0x7FFD] << 8) == 0x8000    # RESET
     assert prg[0x7FFE] | (prg[0x7FFF] << 8) == 0x8003    # IRQ
 
-    header = bytearray(16)
-    header[0:4] = b"NES\x1a"
-    header[4] = PRG_SIZE // 0x4000   # 2 x 16 KiB, mapper 0 (NROM-256)
-    header[5] = 0
-    rom = bytes(header) + prg
-    with open(os.path.join(outdir, "nestbltest.nes"), "wb") as f:
-        f.write(rom)
+    write_rom(outdir, "nestbltest", prg)
+    # grm-a6n0: the same strings in a 16 KiB NROM-128 image. The loader mirrors PRG at
+    # $C000 as a byte-mapped block, and the analyzer must annotate $9000.. only, not $D000..
+    write_rom(outdir, "nestbltest16", make_prg(0x4000))
     with open(os.path.join(outdir, "nestbltest.tbl"), "w", newline="") as f:
         f.write(make_tbl())
-    print("wrote %s (%d bytes) and nestbltest.tbl" % (os.path.join(outdir, "nestbltest.nes"), len(rom)))
+
+
+def write_rom(outdir, stem, prg):
+    header = bytearray(16)
+    header[0:4] = b"NES\x1a"
+    header[4] = len(prg) // 0x4000   # 1 or 2 x 16 KiB, mapper 0 (NROM-128/256)
+    header[5] = 0
+    rom = bytes(header) + prg
+    with open(os.path.join(outdir, stem + ".nes"), "wb") as f:
+        f.write(rom)
+    print("wrote %s (%d bytes)" % (os.path.join(outdir, stem + ".nes"), len(rom)))
 
 
 if __name__ == "__main__":

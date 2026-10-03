@@ -68,7 +68,7 @@ snes-loader   SNES cartridge loader: header detection, static LoROM/HiROM layout
 c128-loader   C128 native BASIC PRG placement, fixed ROM slots, and MMU IO
 nes-banking   NES banking and MMC fixtures
 petscii-strings PetsciiStringAnalyzer C64 PRG fixture
-nes-text      NES .tbl text-table loader option + TblStringAnalyzer fixture
+nes-text      NES + SNES .tbl text-table loader option + TblStringAnalyzer fixtures
 unit          JUnit `gradle test` suite (all src/test/java; no extension build/install)
 spc700-vectors Exhaustive SPC700 vector regression (needs GRM_SPC700_VECTORS; opt-in, not in `all`)
 spc700-dis-corpus SPC700 disassembly vs. the hand .dis listings (needs GRM_SPC700_DIS_CORPUS; opt-in, reports)
