@@ -1134,8 +1134,11 @@ if selected descriptors; then
 		fail=1
 	else
 		# Ghidra appends <user>/<version> under -Dapplication.settingsdir; the effective settings
-		# dir is the one holding the staged Extensions/ (the overlay must go beside it).
-		overlay_settings="$(find "$BANKTEST_SETTINGS_BASE" -maxdepth 4 -type d -name Extensions -printf '%h\n' 2>/dev/null)"
+		# dir is the one holding the staged Extensions/ (the overlay must go beside it). Scope to
+		# the targeted version: a worktree that predates a retarget keeps the old version's dir
+		# (and its Extensions/) beside the new one, and only the targeted one is live.
+		overlay_settings="$(find "$BANKTEST_SETTINGS_BASE" -maxdepth 4 -type d -name Extensions \
+			-path "*/ghidra_${GRM_TARGET_VERSION}_*" -printf '%h\n' 2>/dev/null)"
 		if [ "$(printf '%s\n' "$overlay_settings" | grep -c .)" -ne 1 ]; then
 			echo "FAIL: cannot locate the single effective settings dir under $BANKTEST_SETTINGS_BASE" \
 				"(found: ${overlay_settings:-none}); overlay not planted" >&2
