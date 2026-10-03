@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.WeakHashMap;
@@ -38,7 +39,17 @@ import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.data.DataUtilities;
 import ghidra.program.model.data.DataUtilities.ClearDataMode;
 import ghidra.program.model.data.FileDataTypeManager;
+import ghidra.program.model.data.ByteDataType;
+import ghidra.program.model.data.DataType;
+import ghidra.program.model.data.DataTypeConflictHandler;
+import ghidra.program.model.data.Pointer16DataType;
 import ghidra.program.model.data.WordDataType;
+import ghidra.docking.settings.FormatSettingsDefinition;
+import ghidra.program.model.listing.Data;
+import retromachines.data.PetsciiShiftedStringDataType;
+import retromachines.data.PetsciiStringDataType;
+import retromachines.data.TerminatedPetsciiShiftedStringDataType;
+import retromachines.data.TerminatedPetsciiStringDataType;
 import ghidra.program.model.listing.BookmarkType;
 import ghidra.program.model.listing.CommentType;
 import ghidra.program.model.listing.Program;
@@ -68,14 +79,18 @@ import ghidra.util.task.TaskMonitor;
  * quoted string, or raw comment/DATA text) goes through {@link PetsciiMapper} using the
  * descriptor-selected power-up variant. Dynamic charset changes remain out of scope.
  * <p>
- * <b>Data typing:</b> only the 2-byte link and 2-byte line-number fields are typed
- * ({@link WordDataType}, with an EOL comment naming the field); the tokenized text bytes
- * between the line number and the {@code $00} terminator are left undefined. The
- * detokenized rendering already carries the full meaning of those bytes in a PRE comment
- * at the line's start address (petcat-style: {@code "<line number> <rendered text>"});
- * typing them as a byte array would duplicate that information less readably (a raw hex
- * dump next to a comment that already says what it means) and would block any more
- * specific future typing (e.g. per-opcode structuring) of the same bytes.
+ * <b>Data typing (grm-td4):</b> every byte of the program, including the terminating $0000
+ * link, is typed so the region reads as analyzed. Line links are {@code Pointer16} (so each
+ * links to the next line), line numbers are unsigned words with decimal display, text runs
+ * (string literals, REM/DATA text, other non-token bytes) are PETSCII string data for the
+ * descriptor's variant, and a text run that ends the line absorbs the {@code $00} terminator
+ * as a terminated string (otherwise the terminator is a byte). <b>Tokens are typed as one-byte
+ * enum data</b> (the descriptor's BASIC_V*_TOKEN enum, resolved into the program) -- the
+ * listing then shows {@code PRINT}, {@code SYS} etc. as the data value, which reads well; a
+ * {@code $CE}/{@code $FE} prefix byte stays a plain byte followed by the page-enum selector
+ * byte, and an unnamed prefix pair stays two plain bytes. The PRE comment keeps the
+ * whole-line petcat rendering. All typing is create-only-over-undefined, so user data and
+ * earlier typing are never replaced, and comments are append-only via {@link AnnotationGuard}.
  */
 public class C64BasicAnalyzer extends AbstractAnalyzer {
 
@@ -356,6 +371,7 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 					"; affected prefix pairs will render as raw PETSCII");
 			}
 
+			Map<ghidra.program.model.data.Enum, DataType> enumCache = new HashMap<>();
 			boolean sysHandled = false;
 			for (CbmBasicWalker.BasicLine line : result.lines()) {
 				monitor.checkCancelled();
@@ -363,8 +379,9 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 				Address lineAddr = placedAddress(program, baseSpace, loadedSlices, line.lineAddr());
 				Address lineNumAddr =
 					placedAddress(program, baseSpace, loadedSlices, line.lineAddr() + 2);
-				typeWord(program, lineAddr, "line link", log);
-				typeWord(program, lineNumAddr, "line number", log);
+				typeField(program, lineAddr, Pointer16DataType.dataType, null, "line link", log);
+				typeField(program, lineNumAddr, WordDataType.dataType,
+					FormatSettingsDefinition.DECIMAL, "line number", log);
 
 				int textLen = (int) (line.terminatorAddr() - line.textStart());
 				byte[] textBytes = new byte[textLen];
@@ -391,7 +408,10 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 				LineRender rendered = renderLine(textBytes, tokenLookup, petscii,
 					config.petsciiVariant());
 				String listing = line.lineNumber() + " " + rendered.text();
-				program.getListing().setComment(lineAddr, CommentType.PRE, listing);
+				AnnotationGuard.addComment(program.getListing(), lineAddr, CommentType.PRE,
+					listing, listing);
+				typeText(program, baseSpace, loadedSlices, line, rendered, config.petsciiVariant(),
+					enumCache, log);
 
 				if (!sysHandled && (rendered.sysTarget() != null || rendered.sysNonLiteral())) {
 					sysHandled = true;
@@ -404,6 +424,16 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 							CATEGORY, "SYS argument on line " + line.lineNumber() +
 								" is not a simple decimal literal; not marking a function");
 					}
+				}
+			}
+
+			// The chain's terminating $0000 link is not a line, so the loop above never
+			// typed it; type it too so the region has no undefined tail (grm-td4).
+			if (!result.isMalformed()) {
+				long endLink = result.lines().get(result.lines().size() - 1).terminatorAddr() + 1;
+				if (src.byteAt(endLink) == 0 && src.byteAt(endLink + 1) == 0) {
+					typeField(program, placedAddress(program, baseSpace, loadedSlices, endLink),
+						Pointer16DataType.dataType, null, "end of program", log);
 				}
 			}
 
@@ -511,16 +541,100 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 		return placed != null ? placed : baseSpace.getAddress(offset);
 	}
 
-	private void typeWord(Program program, Address at, String fieldName, MessageLog log) {
+	/**
+	 * Types {@code length} bytes at {@code at} as {@code type}, but only over wholly
+	 * undefined bytes (grm-td4): anything already defined -- user data, an instruction, a
+	 * previous run's identical typing -- is left alone. Returns whether the bytes now carry
+	 * {@code type}'s data (newly created, or already so).
+	 */
+	private Data typeIfUndefined(Program program, Address at, DataType type, int length,
+			MessageLog log, String what) {
 		try {
-			DataUtilities.createData(program, at, WordDataType.dataType, -1,
+			Address end = at.add(length - 1);
+			if (!DataUtilities.isUndefinedRange(program, at, end)) {
+				Data existing = program.getListing().getDataAt(at);
+				return existing != null && existing.getDataType().isEquivalent(type)
+						&& existing.getLength() == length ? existing : null;
+			}
+			return DataUtilities.createData(program, at, type, length,
 				ClearDataMode.CLEAR_ALL_UNDEFINED_CONFLICT_DATA);
-			program.getListing().setComment(at, CommentType.EOL, fieldName);
 		}
 		catch (Exception e) {
 			AnalyzerLog.warn(this, log,
-				"Failed to type " + fieldName + " word at 0x" + at + ": " + e.getMessage());
+				"Failed to type " + what + " at 0x" + at + ": " + e.getMessage());
+			return null;
 		}
+	}
+
+	/** Types a 2-byte link/line-number field and adds its (append-only) EOL comment. */
+	private void typeField(Program program, Address at, DataType type, Integer format,
+			String fieldName, MessageLog log) {
+		Data data = typeIfUndefined(program, at, type, 2, log, fieldName + " word");
+		if (data == null) {
+			return;
+		}
+		if (format != null) {
+			FormatSettingsDefinition.DEF.setChoice(data, format);
+		}
+		AnnotationGuard.addComment(program.getListing(), at, CommentType.EOL, fieldName,
+			fieldName);
+	}
+
+	/** Types a line's text bytes and its $00 terminator from the renderer's segments
+	 *  (grm-td4): text runs as PETSCII strings, tokens as 1-byte enum data, the rest as
+	 *  bytes. A trailing text run absorbs the terminator as a terminated string. */
+	private void typeText(Program program, AddressSpace baseSpace,
+			List<AbstractCbmPrgLoader.LoadedSlice> loadedSlices, CbmBasicWalker.BasicLine line,
+			LineRender rendered, PetsciiMapper.Variant variant,
+			Map<ghidra.program.model.data.Enum, DataType> enumCache, MessageLog log) {
+		boolean shifted = variant == PetsciiMapper.Variant.SHIFTED_LOWERCASE;
+		List<Segment> segs = rendered.segments();
+		for (int k = 0; k < segs.size(); k++) {
+			Segment seg = segs.get(k);
+			Address at = placedAddress(program, baseSpace, loadedSlices,
+				line.textStart() + seg.offset());
+			boolean last = k == segs.size() - 1;
+			switch (seg.kind()) {
+				case TEXT -> {
+					if (last) {
+						typeIfUndefined(program, at, shifted
+								? TerminatedPetsciiShiftedStringDataType.dataType
+								: TerminatedPetsciiStringDataType.dataType,
+							seg.length() + 1, log, "BASIC text");
+					}
+					else {
+						typeIfUndefined(program, at, shifted
+								? PetsciiShiftedStringDataType.dataType
+								: PetsciiStringDataType.dataType,
+							seg.length(), log, "BASIC text");
+					}
+				}
+				case TOKEN -> typeIfUndefined(program, at,
+					enumCache.computeIfAbsent(seg.enumType(), e -> tokenType(program, e)),
+					1, log, "BASIC token");
+				case BYTE -> {
+					// One byte data unit per byte: a 2-byte unnamed prefix pair is two units
+					// (createData with a length > 1 on a 1-byte type would type one byte only).
+					for (int j = 0; j < seg.length(); j++) {
+						typeIfUndefined(program, at.add(j), ByteDataType.dataType, 1, log,
+							"BASIC byte");
+					}
+				}
+			}
+		}
+		if (segs.isEmpty() || segs.get(segs.size() - 1).kind() != SegmentKind.TEXT) {
+			Address term = placedAddress(program, baseSpace, loadedSlices, line.terminatorAddr());
+			typeIfUndefined(program, term, ByteDataType.dataType, 1, log, "BASIC line terminator");
+		}
+	}
+
+	/** Resolves a GDT token enum into the program's data type manager, or falls back to a
+	 *  plain byte if the enum is not one byte wide. */
+	private static DataType tokenType(Program program, ghidra.program.model.data.Enum e) {
+		if (e.getLength() != 1) {
+			return ByteDataType.dataType;
+		}
+		return program.getDataTypeManager().resolve(e, DataTypeConflictHandler.KEEP_HANDLER);
 	}
 
 	private void markSysEntry(Program program, TaskMonitor monitor, AddressSpace baseSpace,
@@ -549,7 +663,38 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 
 	/** One line's rendering: the petcat-style text (line number not included), plus SYS
 	 *  detection state (see grm-odt.1's SYS-detection scope: simple decimal literal only). */
-	private record LineRender(String text, Integer sysTarget, boolean sysNonLiteral) {
+	record LineRender(String text, Integer sysTarget, boolean sysNonLiteral,
+			List<Segment> segments) {
+	}
+
+	/** What a run of a line's text bytes is, for data typing (grm-td4). */
+	enum SegmentKind {
+		/** String literal / REM text / DATA text / any other non-token run. */
+		TEXT,
+		/** One token byte whose {@code enumType} names it. */
+		TOKEN,
+		/** Bytes that stay plain bytes: a prefix byte, or a prefix pair the enum cannot name. */
+		BYTE
+	}
+
+	/** A contiguous run of the line's text bytes ({@code offset} is relative to the first
+	 *  text byte). {@code enumType} is non-null only for {@link SegmentKind#TOKEN}. */
+	record Segment(int offset, int length, SegmentKind kind,
+			ghidra.program.model.data.Enum enumType) {
+	}
+
+	/** Appends a segment, merging adjacent TEXT runs. */
+	private static void addSegment(List<Segment> segs, int offset, int length, SegmentKind kind,
+			ghidra.program.model.data.Enum enumType) {
+		if (kind == SegmentKind.TEXT && !segs.isEmpty()) {
+			Segment last = segs.get(segs.size() - 1);
+			if (last.kind() == SegmentKind.TEXT && last.offset() + last.length() == offset) {
+				segs.set(segs.size() - 1,
+					new Segment(last.offset(), last.length() + length, kind, null));
+				return;
+			}
+		}
+		segs.add(new Segment(offset, length, kind, enumType));
 	}
 
 	/**
@@ -564,9 +709,10 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 	 * colon, after which normal token scanning resumes; quote bytes remain significant in
 	 * DATA mode solely to distinguish a literal colon from a statement separator.
 	 */
-	private LineRender renderLine(byte[] data, BasicTokenLookup tokenLookup, PetsciiMapper petscii,
+	static LineRender renderLine(byte[] data, BasicTokenLookup tokenLookup, PetsciiMapper petscii,
 			PetsciiMapper.Variant petsciiVariant) {
 		StringBuilder sb = new StringBuilder();
+		List<Segment> segs = new ArrayList<>();
 		boolean inQuotes = false;
 		boolean afterRem = false;
 		boolean afterData = false;
@@ -580,6 +726,7 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 
 			if (afterRem) {
 				sb.append(petscii.toDisplayEscaped(b, petsciiVariant));
+				addSegment(segs, i, 1, SegmentKind.TEXT, null);
 				i++;
 				continue;
 			}
@@ -592,6 +739,7 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 					inQuotes = !inQuotes;
 				}
 				sb.append(petscii.toDisplayEscaped(b, petsciiVariant));
+				addSegment(segs, i, 1, SegmentKind.TEXT, null);
 				i++;
 				if (dataColon) {
 					afterData = false;
@@ -609,10 +757,21 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 						for (int j = 0; j < m.bytesConsumed(); j++) {
 							sb.append(petscii.toDisplayEscaped(data[i + j] & 0xff, petsciiVariant));
 						}
+						addSegment(segs, i, m.bytesConsumed(), SegmentKind.BYTE, null);
 						i += m.bytesConsumed();
 						continue;
 					}
 					sb.append(m.name());
+					if (m.pageEnum() != null) {
+						// Prefix byte stays a plain byte; the selector byte is the page enum.
+						addSegment(segs, i, 1, SegmentKind.BYTE, null);
+						addSegment(segs, i + 1, 1, SegmentKind.TOKEN, m.pageEnum());
+					}
+					else {
+						addSegment(segs, i, m.bytesConsumed(),
+							m.tokenEnum() != null ? SegmentKind.TOKEN : SegmentKind.BYTE,
+							m.tokenEnum());
+					}
 					if ("REM".equals(m.name())) {
 						afterRem = true;
 					}
@@ -663,9 +822,10 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 				inQuotes = !inQuotes;
 			}
 			sb.append(petscii.toDisplayEscaped(b, petsciiVariant));
+			addSegment(segs, i, 1, SegmentKind.TEXT, null);
 			i++;
 		}
 
-		return new LineRender(sb.toString(), sysTarget, sysNonLiteral);
+		return new LineRender(sb.toString(), sysTarget, sysNonLiteral, List.copyOf(segs));
 	}
 }

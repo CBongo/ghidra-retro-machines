@@ -3,3 +3,11 @@ PRE 0801=10 {$cc} {$d5} {$ce}{CTRL-B} {$fe}{CTRL-B}
 PRE 080f=20 SYS 2064+1
 TYPED=true loadFunction=false
 INVALID_SYS expressionNote=true functionAt0810=false
+DATA 0801 pointer16 len=2 080f
+DATA 0803 word len=2 10
+DATA 0805 TerminatedPetsciiString len=10 "� ╭ ╱",02h," ▘",02h
+DATA 080f pointer16 len=2 081c
+DATA 0811 word len=2 20
+DATA 0813 BASIC_V2_TOKEN len=1 SYS
+DATA 0814 TerminatedPetsciiString len=8 " 2064+1"
+DATA 081c pointer16 len=2 0000
