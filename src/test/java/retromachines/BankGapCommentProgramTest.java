@@ -229,6 +229,32 @@ public class BankGapCommentProgramTest extends AbstractBundledLanguageTest {
 	}
 
 	/**
+	 * grm-mej.7: the same {@code warnDespiteKnowledge} exit, but the unrecovered argument is an
+	 * HONEST restore -- the caller passes a {@code honestDetail} (a call-site read-back, rcransom's
+	 * {@code FUN_fed1} sites, whose helper body still pins its select constant). It gets the NOTE
+	 * carrying that detail instead of the WARNING, and keeps the bank comment exactly as the
+	 * warned exit does. Without a detail the warned exit above is unchanged.
+	 */
+	@Test
+	public void aKnowledgeSiteWithAnHonestRestoreDetailIsANoteWithItsBankComment() {
+		Address at = addr(0xc01b);
+		int tx = program.startTransaction("annotate");
+		Marked marked;
+		try {
+			marked = BankAnnotationAdapter.annotateOrWarn(analyzer, program, program.getListing(),
+				at, BankState.fullyKnown(board.mask(), 0), board, universe, "FUN_c170",
+				"the caller's warning", ValueStop.RESTORED_BANK, null, true,
+				"Bank value is RESTORED here");
+		}
+		finally {
+			program.endTransaction(tx, true);
+		}
+		assertEquals(Marked.NOTED, marked);
+		assertEquals(BookmarkType.NOTE, bookmarkType(at));
+		assertTrue(eol(at), eol(at).startsWith("bank -> 0 (bank=0) via FUN_c170"));
+	}
+
+	/**
 	 * The two channels are the same slot: a second round at a site that RESOLVED replaces the
 	 * gap comment with the bank comment rather than stacking beside it -- through the
 	 * append-only fallback path exercised here (no provenance), the family marker is what makes

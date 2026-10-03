@@ -427,7 +427,7 @@ public class CrossBlockPushPullProgramTest extends AbstractBundledLanguageTest {
 	}
 
 	// ==================================================================
-	// 7. Budget: over 16 instructions resolves; the search's own 64-node cap is pinned exactly
+	// 7. Budget: over 16 instructions resolves; the search's own 384-node cap is pinned exactly
 	// ==================================================================
 
 	/**
@@ -460,43 +460,43 @@ public class CrossBlockPushPullProgramTest extends AbstractBundledLanguageTest {
 	 * {@code NOP}), and once more, directly, for the terminal {@code PHA} (never itself recursed
 	 * into, so it has no other entry point to charge it). For {@code nopCount} padding
 	 * instructions that is {@code 1 (seed) + 1 (BEQ) + nopCount + 1 (terminal PHA)} spends, i.e.
-	 * {@code nopCount + 3}. {@link StoredValueScanner#CROSS_BLOCK_NODE_CAP} is 64, and
-	 * {@code spend()} throws on the spend that would take the budget negative -- so exactly 64
-	 * spends succeed and the 65th fails: {@code nopCount = 61} (64 spends) resolves,
-	 * {@code nopCount = 62} (65 spends) declines. This is the SAME shape as
+	 * {@code nopCount + 3}. {@link StoredValueScanner#CROSS_BLOCK_NODE_CAP} is 384 (64 until the
+	 * owner's 2026-10-03 approval, grm-mej.7), and {@code spend()} throws on the spend that would
+	 * take the budget negative -- so exactly 384 spends succeed and the 385th fails:
+	 * {@code nopCount = 381} (384 spends) resolves, {@code nopCount = 382} (385 spends) declines. This is the SAME shape as
 	 * {@code spanOverSixteenInstructionsStillResolves} below, just at the exact boundary instead
 	 * of comfortably under it.
 	 */
 	@Test
-	public void nodeBudgetBoundaryIsSixtyFourSpendsNotThirtyTwo() throws Exception {
-		String resolves = buildNopChain(61);
+	public void nodeBudgetBoundaryIsExactlyTheCapNotHalfIt() throws Exception {
+		String resolves = buildNopChain(381);
 		assertBank(5, scan(resolves, ORACLE_HOOKS).value());
 	}
 
-	/** One spend past {@link #nodeBudgetBoundaryIsSixtyFourSpendsNotThirtyTwo}'s boundary: 65
+	/** One spend past {@link #nodeBudgetBoundaryIsExactlyTheCapNotHalfIt}'s boundary: 385
 	 *  spends, declines. Regression guard for the double-charge bug this fixes, which made a
-	 *  genuine 64-node span fail at ~32. */
+	 *  genuine 64-node span fail at ~32 under the original cap. */
 	@Test
 	public void nodeBudgetBoundaryPlusOneDeclines() throws Exception {
-		String declines = buildNopChain(62);
+		String declines = buildNopChain(382);
 		assertUnresolved(scan(declines, ORACLE_HOOKS).value());
 	}
 
 	/** A span of ~19 instructions (well past {@code MAX_BACKWARD_SCAN}=16) still resolves,
-	 *  because the cross-block search has its OWN 64-node budget and the enclosing walk is
+	 *  because the cross-block search has its OWN 384-node budget and the enclosing walk is
 	 *  charged only ONE step for the whole fallback attempt (OWNER RULING Q1). Comfortably under
-	 *  the exact boundary {@link #nodeBudgetBoundaryIsSixtyFourSpendsNotThirtyTwo} pins. */
+	 *  the exact boundary {@link #nodeBudgetBoundaryIsExactlyTheCapNotHalfIt} pins. */
 	@Test
 	public void spanOverSixteenInstructionsStillResolves() throws Exception {
 		String site = buildNopChain(18);
 		assertBank(5, scan(site, ORACLE_HOOKS).value());
 	}
 
-	/** The same shape, padded well past the search's own 64-node cap: declines rather than
+	/** The same shape, padded well past the search's own 384-node cap: declines rather than
 	 *  resolving. */
 	@Test
 	public void spanOverTheSearchsOwnCapDeclines() throws Exception {
-		String site = buildNopChain(70);
+		String site = buildNopChain(420);
 		assertUnresolved(scan(site, ORACLE_HOOKS).value());
 	}
 

@@ -880,7 +880,8 @@ final class StoredValueScanner {
 					// a flow break, an unbalanced pop, a budget exhaustion. Try the bounded
 					// cross-block ALL-PATHS proof, which can only turn this decline into an
 					// answer (residual failures are the SAME ones findMatchingPush already
-					// reports). Its own 64-node/8-join cap is independent of MAX_BACKWARD_SCAN, so
+					// reports). Its own node/join cap (CROSS_BLOCK_NODE_CAP/CROSS_BLOCK_JOIN_CAP,
+					// raised 2026-10-03, grm-mej.7) is independent of MAX_BACKWARD_SCAN, so
 					// it is charged exactly ONE step against this walk's budget regardless of what
 					// it spent internally (OWNER RULING Q1, 2026-09-27) -- and env.hasArms() is
 					// excluded outright rather than searched (grm-wul arm queries, out of scope
@@ -1205,12 +1206,19 @@ final class StoredValueScanner {
 		return preds;
 	}
 
-	/** Sentinel cap for {@link #crossBlockMatchingPush}'s own bounded search (OWNER RULING Q1,
-	 * 2026-09-27): 64 nodes total, independent of {@link #MAX_BACKWARD_SCAN}. */
-	private static final int CROSS_BLOCK_NODE_CAP = 64;
+	/** Sentinel cap for {@link #crossBlockMatchingPush}'s own bounded search, independent of
+	 * {@link #MAX_BACKWARD_SCAN}. OWNER RULING Q1 set it at 64 on 2026-09-27; the owner approved
+	 * raising it on 2026-10-03 (grm-mej.7) to cover River City Ransom's measured mainline
+	 * {@code FUN_fed1} restores, whose proofs need (grm-3jzn's 2026-10-03 trace, caps lifted)
+	 * c08e 45, c0f4 79, c7db 81, cd57 177 and ef85 317 nodes. 384 is that worst case plus ~20%
+	 * headroom -- a sentinel against a pathological search, not a value tuned to one title. */
+	private static final int CROSS_BLOCK_NODE_CAP = 384;
 
-	/** {@link #crossBlockMatchingPush}'s own join cap (OWNER RULING Q1, 2026-09-27): 8 forks. */
-	private static final int CROSS_BLOCK_JOIN_CAP = 8;
+	/** {@link #crossBlockMatchingPush}'s own join cap. OWNER RULING Q1 set it at 8 forks on
+	 * 2026-09-27; raised with the node cap on the owner's 2026-10-03 approval (grm-mej.7) to cover
+	 * the same rcransom sites' measured needs (grm-3jzn: c08e 1, c0f4 3, c7db 3, cd57 11, ef85 24
+	 * joins) with ~33% headroom. */
+	private static final int CROSS_BLOCK_JOIN_CAP = 32;
 
 	/** Thrown internally by {@link #crossBlockMatchingPush}'s search to abandon the WHOLE proof
 	 * from arbitrary recursion depth; caught only at the top level. Stateless and carries no
@@ -1575,6 +1583,31 @@ final class StoredValueScanner {
 	 *                       {@link #findMatchingPush}'s), and whether either of them crossed a
 	 *                       mechanism write
 	 */
+	/**
+	 * {@link #stackRelativePush} exposed for a walk INSIDE a helper (bead grm-mej.7):
+	 * {@code HelperArgumentRecovery}'s read-back retention asks which {@code PHA} a
+	 * {@code TSX} / {@code LDA $01nn,X} reload in the helper's own body reads, so it can
+	 * check that push saved the caller's argument. Reused rather than re-implemented, so
+	 * "which push does this reload read" has one answer across value recovery and the
+	 * read-back proof.
+	 * <p>
+	 * The backward walk stops at {@code helperEntry} (the caller's stack is not modelled
+	 * there, just as for every other env-bounded walk in this class). A pairing that stepped
+	 * over a call returns {@code null}: the caller's walk already refuses any call in the
+	 * span, so this only makes that refusal independent of the caller.
+	 *
+	 * @return the {@code PHA} whose byte {@code load} reads, or {@code null} when it is not a
+	 *         provable stack-relative reload of a push inside {@code [helperEntry, load)}
+	 */
+	static Instruction stackRelativeReloadPush(Program program, Instruction load, Hooks hooks,
+			Address helperEntry, int budgetSteps) {
+		RegisterEnv env = new RegisterEnv(helperEntry, BankState.unknown(), BankState.unknown(),
+			BankState.unknown());
+		Span span = new Span();
+		Instruction pha = stackRelativePush(program, load, hooks, env, budgetSteps, span);
+		return pha == null || span.crossedCall ? null : pha;
+	}
+
 	private static Instruction stackRelativePush(Program program, Instruction load, Hooks hooks,
 			RegisterEnv env, int budgetSteps, Span span) {
 		if (!isAbsoluteIndexed(load)) {

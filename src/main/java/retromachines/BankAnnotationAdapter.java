@@ -241,6 +241,18 @@ final class BankAnnotationAdapter {
 				annotateGap(listing, addr, IMPOSSIBLE_GAP, viaHelper, provenance);
 				return Marked.WARNED;
 			}
+			if (honestDetail != null) {
+				// grm-mej.7: the unrecovered argument is an HONEST restore (the caller read the
+				// bank back and the helper re-commits it -- rcransom's FUN_fed1 sites), so the
+				// bookmark is the NOTE the same site gets on a single-deposit helper, not the
+				// WARNING. The comment still renders what the helper's own body established
+				// (fed1's select constant), exactly as on the warning path below. Only the
+				// call-site restore branches pass honestDetail with warnDespiteKnowledge, so no
+				// other classification moves.
+				setBookmarkClearingOther(analyzer, program, addr, BookmarkType.NOTE, honestDetail);
+				annotateBankSwitch(listing, addr, state, board, bankUniverse, viaHelper, provenance);
+				return Marked.NOTED;
+			}
 			setBookmarkClearingOther(analyzer, program, addr, BookmarkType.WARNING, warning);
 			// The one bookmarked exit that writes a bank comment, not a gap comment: the state
 			// DOES know something, and that comment is where the reader learns it. The WARNING

@@ -31,6 +31,8 @@ import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryBlock;
+import ghidra.program.model.pcode.PcodeOp;
+import ghidra.program.model.pcode.Varnode;
 
 import static retromachines.BankDataflowEngine.overwrite;
 import static retromachines.BankDataflowEngine.position;
@@ -455,7 +457,23 @@ final class HelperArgumentRecovery {
 		// so on a memory-latch helper the A read-back used to survive while the latch committed Y
 		// -- contra c0d3's LDA $FFD0,Y / STA $FFD0,Y. Right there only because the caller did TAY;
 		// carrying the read-back through the index register is grm-ld68's.
-		if (!argumentSurvives) {
+		//
+		// grm-mej.7: ONE exception, decided in two halves. A helper that saves the caller's
+		// argument with an entry PHA, reuses the register as scratch, and reads the argument back
+		// stack-relative (TSX / LDA $01nn,X) DOES commit the caller's byte -- rcransom's FUN_fed1,
+		// whose every call site used to lose a correctly proven read-back here. Survival to
+		// firstSite is genuinely false there (A holds the select constant at the select write),
+		// and stays false: argumentSurvives feeds value recovery below, and making it true would
+		// offer the caller's raw byte to the strategy as the face-value deposit. So the exception
+		// lives only on the read-back: argumentReloadTransform proves the value the mechanism
+		// consumes is a fixed affine function of the reloaded argument, and
+		// readBackMatchesReload (after the deposit is known) proves that function is exactly the
+		// read-back cell's own bank encoding, on exactly the field that cell identifies.
+		ReloadTransform reloadTransform = null;
+		if (!argumentSurvives && readBack != null && helper.strategy() != null) {
+			reloadTransform = argumentReloadTransform(program, helper, reg);
+		}
+		if (!argumentSurvives && reloadTransform == null) {
 			readBack = null;
 		}
 		boolean definitelyNoInboundArgument =
@@ -486,9 +504,10 @@ final class HelperArgumentRecovery {
 		Instruction switchSite = helper.switchSite() == null ? null
 				: program.getListing().getInstructionAt(helper.switchSite());
 		if (helper.strategy() == null || switchSite == null) {
+			// grm-mej.7: no deposit here to check a reload-kept read-back against -- drop it.
 			return new CallEffect(position(local, helper.lsb(), helper.effectMask()),
 				helper.effectMask(), local.knownMask() != 0, definitelyNoInboundArgument, false,
-				restoreCell, readBack);
+				restoreCell, reloadTransform != null ? null : readBack);
 		}
 		// helper.entry(), not function().getEntryPoint(): the mini-inline scan must stop where
 		// control actually arrived. For a mid-body entry those differ, and stopping at the
@@ -526,6 +545,13 @@ final class HelperArgumentRecovery {
 		BankState positionedValue = position(deposit.value(), helper.lsb(), helper.effectMask());
 		int positionedOwnedMask = (deposit.ownedMask() << helper.lsb()) & helper.effectMask();
 		boolean argumentResolved = primary.value().knownMask() != 0;
+		// grm-mej.7, the second half: a read-back kept only on the strength of a stack-relative
+		// reload survives only if the reload's transform IS the cell's encoding on the field the
+		// consuming deposit owns. See readBackMatchesReload.
+		if (reloadTransform != null && readBack != null &&
+			!readBackMatchesReload(readBack, reloadTransform, helper, primary)) {
+			readBack = null;
+		}
 		// bead grm-ld68: the caller-side register scan above (readBack) found no read-back of
 		// its own -- it is tracking argReg, and Contra-shaped helpers clobber argReg in their
 		// prologue, so grm-oj20 already discarded it -- but the STRATEGY re-evaluating its own
@@ -1348,6 +1374,283 @@ final class HelperArgumentRecovery {
 		}
 		return List.of(new PrologueSegment(helper.entry(), helper.relay().callSite()),
 			new PrologueSegment(helper.relay().calleeEntry(), valueSite));
+	}
+
+	/**
+	 * The value a helper's mechanism consumes, as a function of the caller's argument that the
+	 * helper saved with a {@code PHA} and read back stack-relative: {@code ((arg << shift) + add)
+	 * & 0xFF} (bead grm-mej.7). Identity is {@code shift == 0, add == 0}.
+	 */
+	record ReloadTransform(int shift, int add) {
+		static final ReloadTransform IDENTITY = new ReloadTransform(0, 0);
+
+		boolean isIdentity() {
+			return shift == 0 && add == 0;
+		}
+	}
+
+	/** {@link #argumentReloadTransform}'s instruction budget: a pathological-body sentinel, far
+	 *  above the 24 instructions {@code FUN_fed1}'s entry-to-value-site span measures. */
+	private static final int MAX_RELOAD_WALK = 64;
+
+	/**
+	 * {@link #argumentReloadTransform(Program, Address, Address, char)} over this helper's own
+	 * body, from its entry to the site whose value it commits ({@link #helperValueSite}). A
+	 * CALL-EDGE wrapper (a {@code relay}) declines: its prologue is two separate spans, and the
+	 * stack depth across the relay {@code JSR} is not something this walk models.
+	 */
+	static ReloadTransform argumentReloadTransform(Program program, HelperModel helper, char reg) {
+		if (helper.relay() != null) {
+			return null;
+		}
+		return argumentReloadTransform(program, helper.entry(), helperValueSite(helper), reg);
+	}
+
+	/**
+	 * Whether the value {@code reg} holds when the mechanism consumes it at {@code valueSite} is
+	 * the CALLER's argument -- saved by a {@code PHA} inside this helper and read back by a
+	 * {@code TSX} / {@code LDA $01nn,X} of THAT SAME slot -- passed through a fixed affine
+	 * transform, and if so which one (bead grm-mej.7). {@code null} for every other shape.
+	 * <p>
+	 * <b>The shape</b>, rcransom's {@code FUN_fed1}:
+	 * <pre>
+	 *   FED1  PHA            ; saves the caller's A
+	 *   FED2  TXA / PHA      ; A is scratch from here
+	 *   FED4  LDA #$06 / STA $FB / STA $8000   ; select R6 (firstSite)
+	 *   FEDB  TSX
+	 *   FEDC  LDA $0102,X    ; the FED1 byte, read back without popping
+	 *   ...
+	 *   FEEC  LDA $0102,X / ASL A / CLC / ADC #$01 / STA $FD
+	 *   FEF5  STA $8001      ; R7 = 2*arg + 1  -- the value site
+	 * </pre>
+	 * {@link #argumentSurvivesPrologue} is FALSE here and stays false -- A is not the argument
+	 * at {@code firstSite}, and that predicate's answer feeds value recovery. This predicate is
+	 * consulted only for the read-back {@link #recoverCallArgument} would otherwise discard.
+	 * <p>
+	 * <b>Which push the reload reads</b> is {@code StoredValueScanner.stackRelativePush}'s
+	 * answer, reused via {@link StoredValueScanner#stackRelativeReloadPush} -- not re-derived --
+	 * so value recovery and this proof agree by construction. That walk already refuses any
+	 * {@code PHA}/{@code PHP}/{@code PLA}/{@code PLP} or X write between the {@code TSX} and the
+	 * load, and pairs the push by stack DEPTH, so an interleaved pop/push pair lands on a
+	 * different {@code PHA} than the entry one and fails the check below. This walk then
+	 * requires the push it found to be one made while {@code reg} still held the caller's value
+	 * (no write to it between the helper's entry and the push).
+	 * <p>
+	 * <b>Strict refusals</b>, over the WHOLE span {@code [entry, valueSite)}, each returning
+	 * {@code null}:
+	 * <ul>
+	 * <li>{@code reg} is not {@code A} -- only a {@code PHA} saves a value byte;</li>
+	 * <li>any branch, jump or call, or a disassembly gap -- straight-line only, so the depth
+	 * accounting is about the path that actually runs;</li>
+	 * <li>any write to the stack pointer other than the modelled push/pull mnemonics
+	 * ({@code TXS});</li>
+	 * <li>any instruction other than {@code PHA}/{@code PHP} that may write the stack page: a
+	 * plain store into {@code $0100-$01FF}, or ANY indexed or indirect write (its target is
+	 * runtime-dependent, so it may land on the saved slot) -- this is stricter than
+	 * {@code stackRelativePush} itself, which does not ask;</li>
+	 * <li>the value site does not store {@code reg} itself.</li>
+	 * </ul>
+	 * <b>The transform</b> is tracked from the most recent qualifying reload: {@code ASL A}
+	 * doubles it, {@code ADC #imm} adds {@code imm + C} only while the carry is KNOWN (set by a
+	 * {@code CLC}/{@code SEC} with nothing that writes C since), and {@code ORA #imm} adds
+	 * {@code imm} only when it provably lands in the zero low bits a shift left. Any other write
+	 * to {@code reg} -- a load, a transfer, a pop, an unmodelled ALU op -- ends the derivation, so
+	 * the value site's {@code reg} must come from a reload by an unbroken chain of those.
+	 */
+	static ReloadTransform argumentReloadTransform(Program program, Address entry,
+			Address valueSite, char reg) {
+		if (reg != 'A' || entry == null || valueSite == null || entry.compareTo(valueSite) >= 0) {
+			return null;
+		}
+		Register a = program.getLanguage().getRegister("A");
+		Register carryFlag = program.getLanguage().getRegister("C");
+		Register stackPointer = program.getCompilerSpec().getStackPointer();
+		if (a == null || stackPointer == null) {
+			return null;
+		}
+		Listing listing = program.getListing();
+		boolean aIsArgument = true;
+		Set<Address> argumentPushes = new LinkedHashSet<>();
+		ReloadTransform current = null;
+		Integer carry = null; // null: not known
+		Address cursor = entry;
+		int steps = 0;
+		while (cursor.compareTo(valueSite) < 0) {
+			if (++steps > MAX_RELOAD_WALK) {
+				return null;
+			}
+			Instruction instr = listing.getInstructionAt(cursor);
+			if (instr == null || instr.getFlowType().isCall() || instr.getFlows().length > 0) {
+				return null;
+			}
+			String mnem = instr.getMnemonicString().toUpperCase();
+			boolean push = mnem.equals("PHA") || mnem.equals("PHP");
+			boolean pull = mnem.equals("PLA") || mnem.equals("PLP");
+			if (!push && mayWriteStackPage(instr)) {
+				return null;
+			}
+			if (!push && !pull && writesStackPointer(instr, stackPointer)) {
+				return null;
+			}
+			if (mnem.equals("PHA") && aIsArgument) {
+				argumentPushes.add(instr.getMinAddress());
+			}
+			if (StoredValueScanner.writesRegister(instr, a)) {
+				aIsArgument = false;
+				Instruction pha = mnem.equals("LDA") && isStackPageIndexedAccess(instr)
+						? StoredValueScanner.stackRelativeReloadPush(program, instr, NO_HOOKS,
+							entry, MAX_RELOAD_WALK)
+						: null;
+				if (pha != null && argumentPushes.contains(pha.getMinAddress())) {
+					current = ReloadTransform.IDENTITY;
+				}
+				else {
+					current = current == null ? null : applyToReloaded(current, instr, mnem, carry);
+				}
+			}
+			if (mnem.equals("CLC")) {
+				carry = 0;
+			}
+			else if (mnem.equals("SEC")) {
+				carry = 1;
+			}
+			else if (carryFlag == null || StoredValueScanner.writesRegister(instr, carryFlag)) {
+				carry = null;
+			}
+			cursor = instr.getMaxAddress().next();
+			if (cursor == null) {
+				return null;
+			}
+		}
+		if (!cursor.equals(valueSite)) {
+			return null;
+		}
+		Instruction site = listing.getInstructionAt(valueSite);
+		Character stored = site == null ? null : StoredValueScanner.storeRegister(site);
+		if (stored == null || stored.charValue() != reg) {
+			return null;
+		}
+		return current;
+	}
+
+	/** One step of {@link #argumentReloadTransform}'s affine tracking, or {@code null} when
+	 *  {@code instr} is not one of the modelled accumulator transforms. */
+	private static ReloadTransform applyToReloaded(ReloadTransform t, Instruction instr,
+			String mnem, Integer carry) {
+		switch (mnem) {
+			case "ASL" -> {
+				if (StoredValueScanner.isAccumulatorForm(instr) && t.shift() < 7) {
+					return new ReloadTransform(t.shift() + 1, (t.add() << 1) & 0xFF);
+				}
+				return null;
+			}
+			case "ADC" -> {
+				Integer imm = StoredValueScanner.isImmediate(instr)
+						? StoredValueScanner.immediateOperandValue(instr) : null;
+				if (imm == null || carry == null) {
+					return null;
+				}
+				return new ReloadTransform(t.shift(), (t.add() + imm + carry) & 0xFF);
+			}
+			case "ORA" -> {
+				Integer imm = StoredValueScanner.isImmediate(instr)
+						? StoredValueScanner.immediateOperandValue(instr) : null;
+				int lowBits = (1 << t.shift()) - 1;
+				if (imm == null || (imm & ~lowBits) != 0 || t.add() > lowBits ||
+					(t.add() & imm) != 0) {
+					return null;
+				}
+				return new ReloadTransform(t.shift(), t.add() | imm);
+			}
+			default -> {
+				return null;
+			}
+		}
+	}
+
+	/**
+	 * Whether {@code instr} may write the 6502 stack page {@code $0100-$01FF}, for
+	 * {@link #argumentReloadTransform}'s slot-integrity refusal: a memory write whose target is
+	 * a constant in that page, or any memory write whose target is NOT a constant (indexed or
+	 * indirect -- it may land anywhere, the saved slot included). Asked of the p-code rather than
+	 * a mnemonic list, so read-modify-write instructions ({@code INC}, {@code ASL abs,X}) count
+	 * exactly like stores.
+	 */
+	private static boolean mayWriteStackPage(Instruction instr) {
+		for (PcodeOp op : instr.getPcode()) {
+			if (op.getOpcode() == PcodeOp.STORE) {
+				Varnode target = op.getInput(1);
+				if (!target.isConstant()) {
+					return true;
+				}
+				long offset = target.getOffset();
+				if (offset >= StackFloor.STACK_PAGE && offset <= StackFloor.STACK_PAGE + 0xFF) {
+					return true;
+				}
+			}
+			Varnode out = op.getOutput();
+			if (out != null && out.getAddress().isMemoryAddress()) {
+				long offset = out.getOffset();
+				if (offset >= StackFloor.STACK_PAGE && offset <= StackFloor.STACK_PAGE + 0xFF) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * The second half of grm-mej.7's read-back exception: a read-back {@link #recoverCallArgument}
+	 * kept only because the helper reloads its argument stack-relative ({@code t}) describes what
+	 * the mechanism commits only when the helper's transform of the byte IS the read-back cell's
+	 * own byte-to-bank encoding, on the field that cell identifies. Otherwise "re-commits the
+	 * bank READ BACK" would be false: a helper that commits {@code 2*A+1} from a write-through
+	 * shadow holding the raw register value commits a different bank than the one read.
+	 * <ul>
+	 * <li>{@link BankMirrors.Kind#ROM_IDENTIFYING}: the recorded {@link
+	 * BankMirrors.IdentifyingEncoding} ({@code bank == (byte << shift) + low}) must equal
+	 * {@code t} exactly, the cell must name its window's field, and the consuming deposit must
+	 * own EXACTLY that field -- and, for now, the encoding must be the identity (see below):
+	 * rcransom's {@code $BFFF} is {@code shift 1, low 1} on R7 and {@code FUN_fed1}'s value
+	 * site commits exactly {@code 2*A+1} into R7 (grm-km4f), a match this method computes but
+	 * does not yet accept;</li>
+	 * <li>{@link BankMirrors.Kind#WRITE_THROUGH}: only the identity transform -- the cell holds
+	 * the raw committed value, so anything else commits a different number;</li>
+	 * <li>anything else: refused.</li>
+	 * </ul>
+	 * <b>A NON-IDENTITY encoding is refused outright, pending an owner ruling</b> (measured
+	 * 2026-10-03, grm-mej.7). Matching the transform is necessary but not sufficient there: a
+	 * shift-form encoding is proved only on the CONGRUENT, VERIFIED banks ({@link
+	 * BankMirrors.IdentifyingEncoding#byteFor}'s two refusals), so the byte read is a bank
+	 * identifier only if the live bank at the read is one of those -- which nothing here
+	 * proves, and which the read-back's own existence suggests the state could not show (had it
+	 * shown it, the mirror would have RESOLVED to a number instead of stopping
+	 * {@code RESTORED_BANK}). nesmmc3idtest pins the counter-examples: at {@code e28d} the live
+	 * R7 is 4 (even, KNOWN) and at {@code e2cd} it is 15 (exempt, unverified), and both bytes
+	 * are junk -- accepting the matching transform turned both into "re-commits the bank READ
+	 * BACK" notes, which are false. rcransom's {@code $BFFF} restores rest on the same unproven
+	 * premise (that R7 is odd and not 15 at every read), which the game itself asserts at
+	 * {@code $FEFB} but this analyzer does not prove.
+	 */
+	private static boolean readBackMatchesReload(StoredValueScanner.ReadBack readBack,
+			ReloadTransform t, HelperModel helper, BankSwitchStrategy.HelperDeposit primary) {
+		BankMirrors mirrors = helper.strategy() == null ? BankMirrors.none()
+				: helper.strategy().observedMirrors();
+		Address cell = readBack.cell();
+		if (mirrors == null || cell == null) {
+			return false;
+		}
+		if (mirrors.is(cell, BankMirrors.Kind.ROM_IDENTIFYING)) {
+			BankMirrors.IdentifyingEncoding encoding = mirrors.identifyingEncoding(cell);
+			BoardDescriptorModel.FieldSpec field = mirrors.identifyingField(cell);
+			if (encoding == null || field == null || !encoding.isIdentity() ||
+				encoding.shift() != t.shift() || encoding.low() != t.add()) {
+				return false;
+			}
+			int owned = (primary.ownedMask() << helper.lsb()) & helper.effectMask();
+			return owned != 0 && owned == field.positionedMask();
+		}
+		return mirrors.is(cell, BankMirrors.Kind.WRITE_THROUGH) && t.isIdentity();
 	}
 
 	/**
