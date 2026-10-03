@@ -20,6 +20,7 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.Writer;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import com.google.gson.Gson;
@@ -58,8 +59,9 @@ import com.google.gson.GsonBuilder;
  * matched board descriptor's own parsed {@code banking.state} field tuple -- the only place
  * both the field name and its width are known together.
  * <p>
- * This class is NEVER shipped with the extension -- it runs only as part of the Gradle
- * build (see the per-file {@code buildXxxGame} tasks in build.gradle). Usage:
+ * This class now ships with the extension (bead {@code grm-hb6.2}) so the runtime overlay scan
+ * validates through the same code; {@link #main} still runs as part of the Gradle build (see
+ * the per-file {@code buildXxxGame} tasks in build.gradle). Usage:
  * {@code GameCompiler <descriptor.yaml> <output.gmap>}
  */
 public class GameCompiler {
@@ -72,8 +74,67 @@ public class GameCompiler {
 		File descriptorFile = new File(args[0]).getCanonicalFile();
 		File outputGmap = new File(args[1]).getCanonicalFile();
 
-		Map<String, Object> descriptor = YamlSupport.loadComposed(descriptorFile);
+		Map<String, Object> gameDoc = compile(descriptorFile);
 
+		outputGmap.getParentFile().mkdirs();
+		Gson gson = new GsonBuilder().setPrettyPrinting().create();
+		try (Writer w = new FileWriter(outputGmap)) {
+			gson.toJson(gameDoc, w);
+		}
+
+		System.err.println("Wrote game descriptor to " + outputGmap.getAbsolutePath() + " (" +
+			outputGmap.length() + " bytes)");
+	}
+
+	/**
+	 * Compiles one curated descriptor YAML (build-time {@code include:} composition expanded)
+	 * to its in-memory game document. The sole build logic -- {@link #main} writes the result,
+	 * and {@link #compileOverlay} reuses {@link #compileDocument} for the runtime overlay.
+	 */
+	static Map<String, Object> compile(File descriptorFile) throws IOException {
+		return compileDocument(YamlSupport.loadComposed(descriptorFile));
+	}
+
+	/**
+	 * The result of {@link #compileOverlay}: the compiled game document, or a non-empty
+	 * error list attributing the failure to the file (then {@code gameDoc} is {@code null}).
+	 */
+	public record CompileResult(Map<String, Object> gameDoc, List<String> errors) {
+
+		public boolean ok() {
+			return gameDoc != null;
+		}
+	}
+
+	/**
+	 * Error-collecting entry point for the user-directory overlay scan (bead {@code grm-hb6.2},
+	 * docs/per-game-descriptors-design.md sections 5.4 and 5.5): one malformed overlay file
+	 * costs only itself. It runs the SAME {@link #compileDocument} validator the build does
+	 * ("one validator, two dispositions"); only the disposition differs (collect, not throw).
+	 * <p>
+	 * {@code include:} is REJECTED here, loudly (section 5.5): composition is a build-time
+	 * convenience that only curated files keep, and an overlay file must be self-contained to
+	 * be shareable (and to not reach outside its directory). The file is read raw
+	 * ({@link YamlSupport#load}), never through {@link YamlSupport#loadComposed}, so no
+	 * include is ever followed. Compiles on every call -- no caching (section 4.4).
+	 */
+	public static CompileResult compileOverlay(File descriptorFile) {
+		try {
+			Map<String, Object> descriptor = YamlSupport.load(descriptorFile);
+			if (descriptor.containsKey("include")) {
+				throw new IllegalArgumentException("'include:' is not allowed in an overlay " +
+					"descriptor -- it is a build-time-only key; an overlay file must be " +
+					"self-contained (composition is for curated files under machines/games/)");
+			}
+			return new CompileResult(compileDocument(descriptor), List.of());
+		}
+		catch (IOException | RuntimeException e) {
+			String message = e.getMessage() != null ? e.getMessage() : e.toString();
+			return new CompileResult(null, List.of(descriptorFile + ": " + message));
+		}
+	}
+
+	private static Map<String, Object> compileDocument(Map<String, Object> descriptor) {
 		int schemaVersion = MapCompiler.requireAddr(descriptor, "schema", "descriptor");
 		if (schemaVersion != 2) {
 			throw new IllegalArgumentException("unsupported 'schema: " + schemaVersion +
@@ -87,15 +148,7 @@ public class GameCompiler {
 		if (banking != null) {
 			gameDoc.put("banking", banking);
 		}
-
-		outputGmap.getParentFile().mkdirs();
-		Gson gson = new GsonBuilder().setPrettyPrinting().create();
-		try (Writer w = new FileWriter(outputGmap)) {
-			gson.toJson(gameDoc, w);
-		}
-
-		System.err.println("Wrote game descriptor to " + outputGmap.getAbsolutePath() + " (" +
-			outputGmap.length() + " bytes)");
+		return gameDoc;
 	}
 
 	// ---- game: identity block ----

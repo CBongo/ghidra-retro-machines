@@ -19,9 +19,13 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import java.io.File;
+import java.nio.file.Files;
 import java.util.List;
 
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -40,6 +44,9 @@ import retromachines.GameDescriptorRegistry.GameDescriptor;
  * {@code Application}/file-I/O path entirely.
  */
 public class GameDescriptorRegistryTest {
+
+	@Rule
+	public TemporaryFolder tmp = new TemporaryFolder();
 
 	private static final String PRG_A =
 		"f4130ba655229d9999fa3b2c59984165810c9b9b125c43b1ff899872e7fedff4";
@@ -176,5 +183,126 @@ public class GameDescriptorRegistryTest {
 		assertNotNullFixture(gd, "games/smb3.gmap");
 		assertEquals(PRG_A, gd.prgSha256());
 		assertEquals("", log.toString().trim());
+	}
+
+	// ---- overlay (bead grm-hb6.2): YAML scan, search order, logged shadowing ----
+
+	private File overlayYaml(String name, String body) throws Exception {
+		File f = tmp.newFile(name);
+		Files.writeString(f.toPath(), body);
+		return f;
+	}
+
+	private static String overlayBody(String id, String board, String prg, String file) {
+		return ("""
+				schema: 2
+				game:
+				  id: %s
+				  title: "t"
+				  board: %s
+				  identity:
+				    prg_sha256: "%s"
+				    file_sha256: "%s"
+				  provenance: "overlay test"
+				""").formatted(id, board, prg, file);
+	}
+
+	@Test
+	public void overlayYamlIsCompiledAndParsedAsOverlay() throws Exception {
+		File f = overlayYaml("mine.yaml", overlayBody("mine", "nes_mmc3", PRG_A, FILE_A));
+		MessageLog log = new MessageLog();
+		List<GameDescriptor> found = GameDescriptorRegistry.scanOverlay(List.of(f), log);
+		assertEquals(log.toString(), 1, found.size());
+		assertEquals("mine", found.get(0).id());
+		assertTrue(found.get(0).overlay());
+		assertEquals(f.getPath(), found.get(0).gmapPath());
+		assertEquals("", log.toString().trim());
+	}
+
+	@Test
+	public void badOverlayFileCostsOnlyItself() throws Exception {
+		File bad = overlayYaml("a-bad.yaml", "schema: 2\ngame: { id: x }\n");
+		File junk = overlayYaml("b-junk.yaml", "just: [unterminated\n");
+		File good = overlayYaml("c-good.yaml", overlayBody("good", "nes_mmc3", PRG_A, FILE_A));
+		MessageLog log = new MessageLog();
+		List<GameDescriptor> found =
+			GameDescriptorRegistry.scanOverlay(List.of(good, junk, bad), log);
+		assertEquals(log.toString(), 1, found.size());
+		assertEquals("good", found.get(0).id());
+		assertTrue(log.toString(), log.toString().contains("a-bad.yaml"));
+		assertTrue(log.toString(), log.toString().contains("b-junk.yaml"));
+	}
+
+	@Test
+	public void includeInOverlayFileIsRejectedLoudly() throws Exception {
+		overlayYaml("frag.yaml", "banking: { initial_state: { prg_mode: 1 } }\n");
+		File f = overlayYaml("inc.yaml", "include: frag.yaml\n" +
+			overlayBody("inc", "nes_mmc3", PRG_A, FILE_A));
+		MessageLog log = new MessageLog();
+		assertTrue(GameDescriptorRegistry.scanOverlay(List.of(f), log).isEmpty());
+		assertTrue(log.toString(), log.toString().contains("inc.yaml"));
+		assertTrue(log.toString(), log.toString().contains("include"));
+		assertTrue(log.toString(), log.toString().contains("machines/games"));
+	}
+
+	@Test
+	public void overlayWinsOverCuratedAndShadowingIsLoggedEveryTime() throws Exception {
+		File f = overlayYaml("mine.yaml", overlayBody("mine", "nes_mmc3", PRG_A, FILE_A));
+		GameDescriptor overlay =
+			GameDescriptorRegistry.scanOverlay(List.of(f), new MessageLog()).get(0);
+		GameDescriptor curated =
+			descriptor("smb3", "nes_mmc3", PRG_A, FILE_A, "games/smb3.gmap");
+		DescriptorSupport.GameIdentity identity = new DescriptorSupport.GameIdentity(PRG_A, FILE_A);
+		for (int i = 0; i < 2; i++) {
+			MessageLog log = new MessageLog();
+			GameDescriptor match = GameDescriptorRegistry.resolve(List.of(curated, overlay),
+				identity, "nes_mmc3", log);
+			assertEquals(overlay, match);
+			String text = log.toString();
+			assertTrue(text, text.contains("shadows"));
+			assertTrue(text, text.contains(f.getPath()) && text.contains("games/smb3.gmap"));
+			assertTrue(text, text.contains("'mine'") && text.contains("'smb3'"));
+		}
+	}
+
+	@Test
+	public void overlayFileAliasLosesToCuratedPrgMatchOnlyWithinTheSameKey() throws Exception {
+		// Different keys: the overlay matches only on file_sha256, curated on prg_sha256. PRG
+		// is the primary key (section 2.3) and is decided first, so curated wins -- the search
+		// order is applied per identity key, never across them.
+		File f = overlayYaml("mine.yaml", overlayBody("mine", "nes_mmc3", PRG_B, FILE_A));
+		GameDescriptor overlay =
+			GameDescriptorRegistry.scanOverlay(List.of(f), new MessageLog()).get(0);
+		GameDescriptor curated =
+			descriptor("smb3", "nes_mmc3", PRG_A, FILE_B, "games/smb3.gmap");
+		DescriptorSupport.GameIdentity identity = new DescriptorSupport.GameIdentity(PRG_A, FILE_A);
+		assertEquals(curated, GameDescriptorRegistry.resolve(List.of(curated, overlay), identity,
+			"nes_mmc3", new MessageLog()));
+	}
+
+	@Test
+	public void ambiguousOverlayRefusesRatherThanFallingThroughToCurated() throws Exception {
+		File one = overlayYaml("one.yaml", overlayBody("one", "nes_mmc3", PRG_A, FILE_A));
+		File two = overlayYaml("two.yaml", overlayBody("two", "nes_mmc3", PRG_A, FILE_B));
+		List<GameDescriptor> overlays =
+			GameDescriptorRegistry.scanOverlay(List.of(one, two), new MessageLog());
+		GameDescriptor curated =
+			descriptor("smb3", "nes_mmc3", PRG_A, "e".repeat(64), "games/smb3.gmap");
+		DescriptorSupport.GameIdentity identity = new DescriptorSupport.GameIdentity(PRG_A, "f".repeat(64));
+		MessageLog log = new MessageLog();
+		List<GameDescriptor> all = new java.util.ArrayList<>(overlays);
+		all.add(curated);
+		assertNull(GameDescriptorRegistry.resolve(all, identity, "nes_mmc3", log));
+		assertTrue(log.toString(), log.toString().contains("ambiguous"));
+	}
+
+	@Test
+	public void overlayIsRescannedOnEveryCall() throws Exception {
+		// No memoization: a file dropped in between two scans is seen by the second.
+		MessageLog log = new MessageLog();
+		java.util.List<File> dir = new java.util.ArrayList<>();
+		assertTrue(GameDescriptorRegistry.scanOverlay(dir, log).isEmpty());
+		dir.add(overlayYaml("late.yaml", overlayBody("late", "nes_mmc3", PRG_A, FILE_A)));
+		assertEquals(1, GameDescriptorRegistry.scanOverlay(dir, log).size());
 	}
 }

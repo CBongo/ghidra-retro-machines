@@ -263,11 +263,12 @@ projectDir.listFiles().each { f ->
 //----------------------------------------------------------------------------------
 
 // The gdtBuilder source set holds what remains build-only (GdtBuilder, PetsciiCompiler,
-// ScreencodeCompiler, GameCompiler), driven by the buildXxxGdt/buildXxxMap/buildPetsciiMap/
+// ScreencodeCompiler), driven by the buildXxxGdt/buildXxxMap/buildPetsciiMap/
 // buildScreencodeMap/buildXxxGame JavaExec tasks below. It depends on sourceSets.main.output
 // -- not the other way around -- so it can still reach MapCompiler and YamlSupport (now in
-// `main`; GameCompiler in particular calls several of MapCompiler's package-private parsing
-// helpers, widened to package-private specifically for this). The former bitAlgebraCheck/
+// `main`). GameCompiler moved to `main` too (bead grm-hb6.2): the runtime overlay scan
+// compiles user YAML through it, exactly as MapCompiler's compileCollecting is meant to be
+// used; the buildXxxGame tasks below still run it, off `main`'s classes via this classpath. The former bitAlgebraCheck/
 // petsciiCheck/charsetCheck source sets and their verify* JavaExec tasks were retired in bead
 // grm-32f.4: those hand-rolled main()+System.exit verifiers are now standard JUnit @Test
 // classes under src/test/java, run by the `test` task (see below).
@@ -331,7 +332,7 @@ dependencies {
 	// testImplementation extends the extension's own `implementation` configuration by
 	// default (the standard java-library-plugin wiring), and that configuration now carries
 	// snakeyaml (see above). sourceSets.gdtBuilder.output is still needed: DescriptorCompositionTest
-	// and GameCompilerTest exercise GdtBuilder/GameCompiler, which remain build-only.
+	// and GameCompilerTest exercise GdtBuilder (build-only) and GameCompiler.
 	testImplementation fileTree(dir: ghidraInstallDir, includes: [
 		'Ghidra/Framework/*/lib/*.jar', 'Ghidra/Features/*/lib/*.jar'])
 	testImplementation sourceSets.main.output

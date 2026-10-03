@@ -1047,10 +1047,10 @@ descriptor yet, which is beads grm-hb6.2/grm-hb6.3. Nothing else below is implem
 - [ ] `game:` schema section, `switch_sites[]`, and the schema-version ruling — §3, §3.3
 - [ ] Symbol reuse plus the `block:` bank qualifier — §3b.2, §3b.3
 - [ ] Curated set `machines/games/*.yaml` → `data/games/*.gmap` (+ `.gitignore`) — §4.1
-- [ ] Overlay scan on `Application.getUserSettingsFiles` — §4.2
-- [ ] Ship `MapCompiler` + snakeyaml; move the source set; update `build.gradle:212-223` — §4.3
-- [ ] Error-collecting `MapCompiler` mode (build stays strict) — §5.4
-- [ ] Overlay-before-curated search order with logged shadowing; no static memoization — §5.2, §5.3
+- [x] Overlay scan on `Application.getUserSettingsFiles` — §4.2 (grm-hb6.2)
+- [x] Ship `MapCompiler` + snakeyaml; move the source set; update `build.gradle:212-223` — §4.3 (grm-hb6.3; `GameCompiler` moved too, grm-hb6.2)
+- [x] Error-collecting compile mode (build stays strict) — §5.4 (`MapCompiler.compileCollecting`, `GameCompiler.compileOverlay`)
+- [x] Overlay-before-curated search order with logged shadowing; no static memoization; `include:` rejected in overlay — §5.2, §5.3, §5.5 (grm-hb6.2)
 - [ ] Analyzer-side consumption: seeds not injections, value-hint precedence, provenance — §6
 - [ ] `RunStamp` widened with a descriptor-content digest — §3c.2
 - [ ] `ghidra_scripts/ExportGameDescriptor.java` + the round-trip test — §7

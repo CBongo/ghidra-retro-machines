@@ -15,15 +15,19 @@
  */
 package retromachines;
 
+import java.io.File;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.function.Predicate;
 
+import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
+import gdtbuilder.GameCompiler;
 import generic.jar.ResourceFile;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.framework.Application;
@@ -35,14 +39,19 @@ import ghidra.framework.Application;
  * files (compiled by {@code gdtbuilder.GameCompiler}) and resolving one against a program's
  * per-game identity ({@link DescriptorSupport.GameIdentity}, bead {@code grm-hb6.1}).
  * <p>
- * <b>Deliberately holds no static cache, unlike {@link NesBoardRegistry#boards}.</b> This
- * increment is curated-only (no user-writable overlay directory yet -- that is bead
- * {@code grm-hb6.2}), so nothing here can change mid-session today. But the eventual overlay
- * half WILL be user-writable, and {@code docs/per-game-descriptors-design.md} section 5.3
- * rules that the registry must never memoize because a mid-session drop-in would then never
- * be re-scanned. Scanning fresh per import costs one directory listing plus a handful of
- * small JSON parses (bundled game descriptors are tiny), which is cheap next to a full
- * program import -- not worth a cache that would need to be un-added later.
+ * <b>Two sources, overlay first (bead {@code grm-hb6.2}, section 5.2).</b> The curated
+ * {@code .gmap} files bundled in the extension, and a user-directory overlay of
+ * <i>YAML</i> files at {@code <Ghidra user settings>/retro-machines/games/*.yaml}, compiled on
+ * read through {@link GameCompiler#compileOverlay} (the build's own validator, in its
+ * error-collecting disposition; {@code include:} is rejected). {@link #resolve} prefers an
+ * overlay match over a curated one and LOGS the shadowing every time.
+ * <p>
+ * <b>Deliberately holds no static cache, unlike {@link NesBoardRegistry#boards}.</b> The
+ * overlay half is a user-writable directory, and {@code docs/per-game-descriptors-design.md}
+ * section 5.3 rules that the registry must never memoize because a mid-session drop-in would
+ * then never be re-scanned. Scanning fresh per import costs one directory listing plus a
+ * handful of small parses (descriptors are tiny), which is cheap next to a full program
+ * import -- not worth a cache that would need an invalidation story.
  */
 final class GameDescriptorRegistry {
 
@@ -52,9 +61,74 @@ final class GameDescriptorRegistry {
 	 * reading {@code banking.initial_state}).
 	 */
 	record GameDescriptor(String id, String board, String prgSha256, String fileSha256,
-			String gmapPath, JsonObject doc) {}
+			String gmapPath, JsonObject doc, boolean overlay) {}
+
+	/** Subdirectory of the Ghidra user settings dir holding the overlay (design section 4.2). */
+	static final String OVERLAY_DIR = "retro-machines/games";
+	static final String OVERLAY_EXTENSION = ".yaml";
 
 	private GameDescriptorRegistry() {
+	}
+
+	/**
+	 * Every available descriptor: the overlay's, then the curated set's (the order {@link
+	 * #resolve} relies on only through {@link GameDescriptor#overlay()}, not list position).
+	 * Re-scans on every call (section 5.3).
+	 */
+	static List<GameDescriptor> scan(MessageLog log) {
+		List<GameDescriptor> found = new ArrayList<>(scanOverlay(overlayFiles(), log));
+		found.addAll(scanCurated(log));
+		return found;
+	}
+
+	/**
+	 * The overlay's {@code *.yaml} files, via {@link Application#getUserSettingsFiles} -- NOT a
+	 * hand-rolled directory listing, because that API migrates a user's overlay from the
+	 * previous Ghidra version's settings dir when this version's does not exist yet (section
+	 * 4.2). Its {@code mkdir()} is non-recursive, so the {@code retro-machines} parent is
+	 * created first (the {@code games} dir is left for the API to create, so the migration
+	 * branch still fires). Never throws: an unavailable settings dir means "no overlay".
+	 */
+	static List<File> overlayFiles() {
+		try {
+			File settings = Application.getUserSettingsDirectory();
+			if (settings != null) {
+				new File(settings, "retro-machines").mkdirs();
+			}
+			return Application.getUserSettingsFiles(OVERLAY_DIR, OVERLAY_EXTENSION);
+		}
+		catch (RuntimeException e) {
+			return List.of();
+		}
+	}
+
+	/**
+	 * Compiles each overlay YAML file through {@link GameCompiler#compileOverlay} and parses
+	 * the result. A file that fails costs ONLY itself (section 5.4): the per-file error is
+	 * logged naming the path and the scan continues. Files are visited in name order so the
+	 * log and any ambiguity report are deterministic. Split from {@link #overlayFiles} as the
+	 * testable seam (a JUnit test hands it files from a temp dir, no Ghidra {@code
+	 * Application} needed).
+	 */
+	static List<GameDescriptor> scanOverlay(List<File> files, MessageLog log) {
+		List<GameDescriptor> found = new ArrayList<>();
+		List<File> sorted = new ArrayList<>(files);
+		sorted.sort(Comparator.comparing(File::getPath));
+		for (File file : sorted) {
+			GameCompiler.CompileResult result = GameCompiler.compileOverlay(file);
+			if (!result.ok()) {
+				for (String error : result.errors()) {
+					log.appendMsg("Skipping overlay game descriptor: " + error);
+				}
+				continue;
+			}
+			JsonObject doc = new Gson().toJsonTree(result.gameDoc()).getAsJsonObject();
+			GameDescriptor gd = parse(doc, file.getPath(), true, log);
+			if (gd != null) {
+				found.add(gd);
+			}
+		}
+		return found;
 	}
 
 	/**
@@ -65,7 +139,7 @@ final class GameDescriptorRegistry {
 	 * (a malformed or unreadable {@code .gmap} costs only that file, docs/per-game-descriptors-
 	 * design.md section 5.4).
 	 */
-	static List<GameDescriptor> scan(MessageLog log) {
+	static List<GameDescriptor> scanCurated(MessageLog log) {
 		List<GameDescriptor> found = new ArrayList<>();
 		for (ResourceFile gmapFile : Application.findFilesByExtensionInMyModule(".gmap")) {
 			// Scope to games/, the same way NesBoardRegistry.scan scopes to machines/ -- belt
@@ -78,7 +152,7 @@ final class GameDescriptorRegistry {
 			try (InputStreamReader reader =
 					new InputStreamReader(gmapFile.getInputStream(), StandardCharsets.UTF_8)) {
 				JsonObject doc = JsonParser.parseReader(reader).getAsJsonObject();
-				GameDescriptor gd = parse(doc, path, log);
+				GameDescriptor gd = parse(doc, path, false, log);
 				if (gd != null) {
 					found.add(gd);
 				}
@@ -104,6 +178,11 @@ final class GameDescriptorRegistry {
 	 * rather than silently mis-parsed.
 	 */
 	static GameDescriptor parse(JsonObject doc, String path, MessageLog log) {
+		return parse(doc, path, false, log);
+	}
+
+	/** As {@link #parse(JsonObject, String, MessageLog)}, recording which source it came from. */
+	static GameDescriptor parse(JsonObject doc, String path, boolean overlay, MessageLog log) {
 		if (!doc.has("schema") || doc.get("schema").getAsInt() != 2) {
 			log.appendMsg(path + ": declares schema " +
 				(doc.has("schema") ? doc.get("schema") : "<missing>") +
@@ -133,7 +212,7 @@ final class GameDescriptorRegistry {
 			return null;
 		}
 		return new GameDescriptor(game.get("id").getAsString(), game.get("board").getAsString(),
-			prg, file, path, doc);
+			prg, file, path, doc, overlay);
 	}
 
 	/**
@@ -154,11 +233,11 @@ final class GameDescriptorRegistry {
 	 */
 	static GameDescriptor resolve(List<GameDescriptor> candidates,
 			DescriptorSupport.GameIdentity identity, String boardId, MessageLog log) {
-		GameDescriptor match = pickOne(
+		GameDescriptor match = pickTiered(
 			matching(candidates, gd -> gd.prgSha256().equals(identity.prgSha256())),
 			"prg_sha256 " + identity.prgSha256(), log);
 		if (match == null) {
-			match = pickOne(
+			match = pickTiered(
 				matching(candidates, gd -> gd.fileSha256().equals(identity.fileSha256())),
 				"file_sha256 " + identity.fileSha256(), log);
 		}
@@ -173,6 +252,32 @@ final class GameDescriptorRegistry {
 			return null;
 		}
 		return match;
+	}
+
+	/**
+	 * Applies the search order (section 5.2) to the candidates matching one key: if any
+	 * overlay descriptor matches, the overlay tier decides and the curated tier is never
+	 * consulted -- an overlay that is itself ambiguous refuses outright rather than falling
+	 * through to a curated file the user was trying to override. Every curated descriptor an
+	 * overlay winner shadows is LOGGED, naming both paths and both {@code game.id}s, on every
+	 * call (never first-occurrence-only, never debug level).
+	 */
+	private static GameDescriptor pickTiered(List<GameDescriptor> matches, String key,
+			MessageLog log) {
+		List<GameDescriptor> overlay = matching(matches, GameDescriptor::overlay);
+		if (overlay.isEmpty()) {
+			return pickOne(matches, key, log);
+		}
+		GameDescriptor winner = pickOne(overlay, key, log);
+		if (winner != null) {
+			for (GameDescriptor shadowed : matching(matches, gd -> !gd.overlay())) {
+				log.appendMsg("overlay game descriptor " + winner.gmapPath() + " ('" +
+					winner.id() + "') shadows curated " + shadowed.gmapPath() + " ('" +
+					shadowed.id() + "') for " + key + "; the overlay wins " +
+					"(docs/per-game-descriptors-design.md section 5.2)");
+			}
+		}
+		return winner;
 	}
 
 	private static List<GameDescriptor> matching(List<GameDescriptor> candidates,

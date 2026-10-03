@@ -741,6 +741,24 @@ one-shot re-run support the way an analyzer-consumed hint would. It does keep
 provenance -- the resolved descriptor's path is recorded on the program
 (`Retro Machines.Game Descriptor`), and every field the hint actually changes is logged.
 
+### Overlay: your own game descriptors (bead `grm-hb6.2`)
+
+The same YAML, dropped into `<Ghidra user settings>/retro-machines/games/*.yaml`, is read at
+import with no rebuild (the directory is created on first import; Ghidra migrates it from the
+previous version's settings dir on an upgrade). Rules:
+
+- **Overlay wins over curated** for the same identity key, and the shadowing is **logged on
+  every import** (both paths, both `game.id`s) -- a stale overlay file silently shadowing a
+  corrected curated one would be indistinguishable from "the fix did not ship".
+- **Scanned fresh on every import**, never cached: a file dropped in mid-session is seen by
+  the next import. Hint changes still need a re-import (see above).
+- **Same validator as the build** (`GameCompiler`); a malformed file is logged by path and
+  skipped, costing only itself. An overlay file that is itself ambiguous (two overlay files
+  claiming one `prg_sha256`) refuses both rather than falling through to a curated file.
+- **`include:` is rejected** in overlay files, with a per-file error: composition is a
+  build-time convenience for `machines/games/`, and an overlay file must be self-contained to
+  be shareable.
+
 ## Scaling preview (what will force schema revisions)
 
 - **NES**: the PRG side landed in schema 2 (computed windows, physical spaces,
