@@ -47,11 +47,11 @@ REALROM block WC000_M2_B7 c000-ffff overlay=true
 REALROM count blocks.total 40
 REALROM count blocks.overlay 32
 REALROM count spaces.overlay 32
-REALROM count refs.intoOverlay 1364
+REALROM count refs.intoOverlay 2561
 REALROM count refs.intoOverlay.retargeted 76
-REALROM count refs.intoOverlay.intraOverlay 1288
-REALROM count instrs.inOverlay 5966
-REALROM count bankComments 89
+REALROM count refs.intoOverlay.intraOverlay 2485
+REALROM count instrs.inOverlay 11395
+REALROM count bankComments 91
 REALROM count warnings 1
 REALROM count notes 30
 REALROM count symbols 18
@@ -117,7 +117,9 @@ REALROM sample.bankcomment f04f bank -> mirroring=0,prg_mode=3,prg_bank=5 via FU
 REALROM sample.bankcomment f076 bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
 REALROM sample.bankcomment f087 bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
 REALROM sample.bankcomment f139 bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment f218 bank -> mirroring=0,prg_mode=3,prg_bank=4 via FUN_ffac [switch-value flow]
 REALROM sample.bankcomment f220 bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_ffac [switch-value flow]
+REALROM sample.bankcomment f22e bank -> mirroring=0,prg_mode=3,prg_bank=4 via FUN_ffac [switch-value flow]
 REALROM sample.bankcomment f2f1 bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
 REALROM sample.bankcomment f8bd bank -> mirroring=0,prg_mode=3,prg_bank=4 via FUN_ffac [switch-value flow]
 REALROM sample.bankcomment f99c bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
@@ -148,28 +150,28 @@ REALROM sample.ref 725d -> W8000_M3_B5::bf98 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 7260 -> W8000_M3_B5::a8de UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 7481 -> W8000_M3_B1::a1b1 UNCONDITIONAL_JUMP primary=true
 REALROM sample.ref 8000 -> W8000_M3_B5::8006 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8005 -> W8000_M3_B4::800c CONDITIONAL_JUMP primary=true
 REALROM sample.ref 800a -> W8000_M3_B5::8021 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8010 -> W8000_M3_B4::800c CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8012 -> W8000_M3_B4::b010 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8017 -> W8000_M3_B4::801b CONDITIONAL_JUMP primary=true
 REALROM sample.ref 801d -> W8000_M3_B2::8000 DATA primary=true
 REALROM sample.ref 8022 -> W8000_M3_B2::8006 DATA primary=true
 REALROM sample.ref 8027 -> W8000_M3_B2::800c DATA primary=true
+REALROM sample.ref 8027 -> W8000_M3_B4::804e CONDITIONAL_JUMP primary=true
 REALROM sample.ref 802e -> W8000_M3_B2::8000 DATA primary=true
+REALROM sample.ref 8030 -> W8000_M3_B4::8033 CONDITIONAL_JUMP primary=true
 REALROM sample.ref 8033 -> W8000_M3_B2::8006 DATA primary=true
 REALROM sample.ref 8038 -> W8000_M3_B2::800c DATA primary=true
 REALROM sample.ref 803b -> W8000_M3_B2::804f UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8040 -> W8000_M3_B4::8044 CONDITIONAL_JUMP primary=true
 REALROM sample.ref 8043 -> W8000_M3_B2::8018 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8048 -> W8000_M3_B4::804e CONDITIONAL_JUMP primary=true
 REALROM sample.ref 8049 -> W8000_M3_B5::8130 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 804a -> W8000_M3_B3::805e UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 804f -> W8000_M3_B3::8064 CONDITIONAL_JUMP primary=true
 REALROM sample.ref 8050 -> W8000_M3_B6::805e CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8051 -> W8000_M3_B3::8091 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 8052 -> W8000_M3_B6::8000 DATA primary=true
-REALROM sample.ref 8054 -> W8000_M3_B3::80dc UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 8058 -> W8000_M3_B6::8000 DATA primary=true
-REALROM sample.ref 805b -> W8000_M3_B6::8067 UNCONDITIONAL_JUMP primary=true
-REALROM sample.ref 805c -> W8000_M3_B3::8051 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 805e -> W8000_M3_B6::802a DATA primary=true
-REALROM sample.ref 8060 -> W8000_M3_B5::8059 CONDITIONAL_JUMP primary=true
-REALROM sample.ref.truncated 25 of 1364
+REALROM sample.ref.truncated 25 of 2561
 REALROM sample.warn 8124 [CopyLoopAnalyzer] copy-shaped loop RAM:0000 -> RAM:6ba7 could not be bounded; not applied
 REALROM sample.note 6d00 [CopyLoopAnalyzer] copy-shaped loop RAM:6c97 -> RAM:0302 (41 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note 83b6 [CopyLoopAnalyzer] copy-shaped loop W8000_M3_B5:83ae -> RAM:0200 (4 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.

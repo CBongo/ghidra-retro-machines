@@ -169,11 +169,11 @@ REALROM sample.warn 80f7 [NesBankingAnalyzer] Bank state becomes unknown here: c
 REALROM sample.warn 8106 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_8746 whose bank argument could not be recovered at this call site
 REALROM sample.warn 839e [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_871c whose bank argument could not be recovered at this call site
 REALROM sample.warn 83bd [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_871c whose bank argument could not be recovered at this call site
-REALROM sample.warn 8443 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_871c whose bank argument could not be recovered at this call site
 REALROM sample.warn 853b [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_871c whose bank argument could not be recovered at this call site
 REALROM sample.warn 8544 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_871c whose bank argument could not be recovered at this call site
 REALROM sample.warn 8550 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_871c whose bank argument could not be recovered at this call site
 REALROM sample.warn 85a9 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_871c whose bank argument could not be recovered at this call site
+REALROM sample.warn 85e4 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_871c whose bank argument could not be recovered at this call site
 REALROM sample.warn 8608 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_871c whose bank argument could not be recovered at this call site
 REALROM sample.warn 862c [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_871c whose bank argument could not be recovered at this call site
 REALROM sample.warn 863e [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_871c whose bank argument could not be recovered at this call site

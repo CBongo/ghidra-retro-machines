@@ -31,19 +31,24 @@ import ghidra.app.cmd.disassemble.DisassembleCommand;
 import ghidra.app.cmd.function.CreateFunctionCmd;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.program.model.address.Address;
+import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.address.AddressSetView;
 import ghidra.program.model.address.AddressSpace;
+import ghidra.program.model.data.Pointer;
 import ghidra.program.model.lang.Register;
 import ghidra.program.model.listing.Bookmark;
 import ghidra.program.model.listing.BookmarkManager;
 import ghidra.program.model.listing.BookmarkType;
 import ghidra.program.model.listing.CommentType;
+import ghidra.program.model.listing.Data;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.FunctionIterator;
 import ghidra.program.model.listing.FunctionManager;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
+import ghidra.program.model.mem.Memory;
+import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.symbol.Reference;
 import ghidra.program.model.symbol.ReferenceManager;
 import ghidra.program.model.symbol.RefType;
@@ -1768,6 +1773,89 @@ final class BankAnnotationAdapter {
 	 * was not fully known) -- the two facts the caller's retirement rule needs across all arms.
 	 * Returns the number of overlay references placed or confirmed.
 	 */
+	// ------------------------------------------------------------------
+	// Shared offset/state resolution (bead grm-rnf0): the pure "what occupant does this
+	// base-space offset resolve to under this bank state" computation, factored out of
+	// {@link #retargetForState} so {@link #retargetInlineJumpTablePointers} (an inline jump
+	// table's cross-window pointer entries, resolved against the state live at the dispatching
+	// JSR rather than at an instruction's own operand) uses the SAME resolution rather than a
+	// copy that could drift. Each method below is a pure readout with no side effects --
+	// {@code retargetForState} still owns every placement, bookkeeping and provenance decision,
+	// exactly as before this refactor.
+	// ------------------------------------------------------------------
+
+	/**
+	 * One enumerated WINDOW's occupant under an already-looked-up state row: the overlay target
+	 * name for a read and for a write (the same unless the occupant declares {@code on_write}),
+	 * and the window's home occupant name (so the caller can tell whether either target is
+	 * already what base space holds). Null ({@link #resolveWindowOccupant}) when the row names
+	 * no occupant, or an unknown one, for this window.
+	 */
+	private record WindowResolution(String readTarget, String writeTarget, String homeOccupant) {}
+
+	private static WindowResolution resolveWindowOccupant(BoardModel board,
+			Map<String, String> stateRow, WindowModel window) {
+		String occupantName = stateRow.get(window.name());
+		OccupantModel occupant = occupantName == null ? null : window.occupants().get(occupantName);
+		if (occupant == null) {
+			return null;
+		}
+		String homeOccupant = board.homeOccupantByWindow().get(window.name());
+		String writeTarget = occupant.onWrite() != null ? occupant.onWrite() : occupantName;
+		return new WindowResolution(occupantName, writeTarget, homeOccupant);
+	}
+
+	/**
+	 * One COMPUTED window's bank under one state: the bank the hardware would actually select
+	 * (canonicalized per {@code banking.bank_wrap}, with a placement override applied when
+	 * dataflow left the field unknown), whether that is the field's HOME value (base space is
+	 * already correct), whether the selecting field was fully known, and whether an override was
+	 * applied (the caller needs this last one only to decide placement-override provenance).
+	 */
+	private record ComputedResolution(int bank, boolean home, boolean fullyKnown, boolean overridden) {}
+
+	private static ComputedResolution resolveComputedBank(BoardModel board,
+			Map<String, Set<Integer>> bankUniverse, BankState state, int effective,
+			Map<String, Integer> placementOverride, ComputedWindowModel computed) {
+		FieldSpec field = computed.field();
+		int bankValue = canonicalBank(board.bankWrap(), bankUniverse.get(computed.name()),
+			field.valueIn(effective));
+		boolean bankKnown = field.fullyKnownIn(state);
+		Integer overrideBank = placementOverride.get(computed.name());
+		boolean overridden = !bankKnown && overrideBank != null;
+		if (overridden) {
+			bankValue = overrideBank;
+		}
+		boolean home = bankValue == field.valueIn(board.initialState());
+		return new ComputedResolution(bankValue, home, bankKnown, overridden);
+	}
+
+	/**
+	 * One memory.layouts[] mode-varying window INSTANCE's bank under one state, for an instance
+	 * that itself declares a {@code bankField} (a fixed instance has nothing to resolve here --
+	 * its only question, home mode or not, is answered by the caller directly). {@code home} is
+	 * true only when the instance's MODE is also the board's home mode: a non-home mode's "same
+	 * bank number as home" is not actually home, since a different mode is live.
+	 */
+	private record ModeBankResolution(int bank, boolean home, boolean fullyKnown, boolean overridden) {}
+
+	private static ModeBankResolution resolveModeBank(BoardModel board,
+			Map<String, Set<Integer>> bankUniverse, BankState state, int effective, int modeValue,
+			Map<String, Integer> placementOverride, ModeWindowModel instance) {
+		int bank = canonicalBank(board.bankWrap(),
+			bankUniverse.get(modeBankKey(instance.name(), modeValue)),
+			instance.bankField().valueIn(effective));
+		boolean bankKnown = instance.bankField().fullyKnownIn(state);
+		Integer overrideBank = placementOverride.get(instance.name());
+		boolean overridden = !bankKnown && overrideBank != null;
+		if (overridden) {
+			bank = overrideBank;
+		}
+		boolean home = modeValue == board.homeModeValue() &&
+			bank == instance.bankField().valueIn(board.initialState());
+		return new ModeBankResolution(bank, home, bankKnown, overridden);
+	}
+
 	private static int retargetForState(BoardBankAnalyzer analyzer, Program program,
 			ReferenceManager refMgr, AddressSpace baseSpace, Instruction instr, BoardModel board,
 			Map<String, Set<Integer>> bankUniverse, BankState inState,
@@ -1794,19 +1882,16 @@ final class BankAnnotationAdapter {
 
 			WindowModel window = findWindow(board.windows(), offset);
 			if (window != null && stateRow != null) {
-				String occupantName = stateRow.get(window.name());
-				OccupantModel occupant =
-					occupantName == null ? null : window.occupants().get(occupantName);
-				if (occupant == null) {
+				WindowResolution wr = resolveWindowOccupant(board, stateRow, window);
+				if (wr == null) {
 					continue;
 				}
 				// The home occupant already lives in base space at this offset, so any target
 				// that resolves to it needs no overlay reference.
-				String homeOccupant = board.homeOccupantByWindow().get(window.name());
+				String homeOccupant = wr.homeOccupant();
 				boolean selfWindow = fromBase && findWindow(board.windows(), fromOffset) == window;
-				String readTarget = occupantName;
-				String writeTarget =
-					occupant.onWrite() != null ? occupant.onWrite() : occupantName;
+				String readTarget = wr.readTarget();
+				String writeTarget = wr.writeTarget();
 
 				if (refType.isRead() && refType.isWrite() && !readTarget.equals(writeTarget)) {
 					// A read-modify-write (e.g. INC $D000) across a write-under-ROM boundary
@@ -1854,12 +1939,6 @@ final class BankAnnotationAdapter {
 						// strategy already models it -- nothing to retarget.
 						continue;
 					}
-					FieldSpec field = computed.field();
-					// The bank the hardware would really select, which on a board declaring
-					// banking.bank_wrap is the recovered value truncated to the banks this image
-					// has (bead grm-p25h); the identity on every other board.
-					int bankValue = canonicalBank(board.bankWrap(), bankUniverse.get(computed.name()),
-						field.valueIn(effective));
 					// Same override rule as the mode-varying branch below (grm-hsv.3 / grm-v6o):
 					// when dataflow did not FULLY pin this window's bank, a user placement
 					// override for it takes over; flow always wins when it knows. Until grm-iqq
@@ -1867,13 +1946,9 @@ final class BankAnnotationAdapter {
 					// WA000:5` on MMC3 -- whose r7 window is mode-invariant and therefore
 					// hoisted here rather than into memory.layouts[] -- was accepted by the
 					// loader, logged as active by the analyzer, and silently did nothing.
-					boolean bankKnown = field.fullyKnownIn(inState);
-					Integer overrideBank = placementOverride.get(computed.name());
-					boolean overridden = !bankKnown && overrideBank != null;
-					if (overridden) {
-						bankValue = overrideBank;
-					}
-					if (bankValue == field.valueIn(board.initialState())) {
+					ComputedResolution cr = resolveComputedBank(board, bankUniverse, inState,
+						effective, placementOverride, computed);
+					if (cr.home()) {
 						// the home bank lives in base space at this offset -- default is right.
 						keepBase.add(key);
 						continue;
@@ -1881,14 +1956,15 @@ final class BankAnnotationAdapter {
 					boolean selfWindow =
 						fromBase && findWindow(board.computedWindows(), fromOffset) == computed;
 					if (placeOverlayRef(analyzer, program, refMgr, instr, key,
-						DescriptorSupport.OverlayNaming.bankBlockName(computed.name(), bankValue),
+						DescriptorSupport.OverlayNaming.bankBlockName(computed.name(), cr.bank()),
 						refType, makePrimary, primaryGiven, monitor, log) > 0) {
 						added++;
-						((bankKnown || overridden) && !selfWindow ? replaced : keepBase).add(key);
+						((cr.fullyKnown() || cr.overridden()) && !selfWindow ? replaced : keepBase)
+								.add(key);
 					}
-					if (overridden) {
+					if (cr.overridden()) {
 						annotatePlacementProvenance(program.getListing(), instr.getMinAddress(),
-							bankValue, provenance);
+							cr.bank(), provenance);
 					}
 				}
 				else if (board.modeField() != null) {
@@ -1926,45 +2002,297 @@ final class BankAnnotationAdapter {
 						// Canonicalized first, for the same reason as the computed-window branch
 						// above (bead grm-p25h): a board that truncates bank numbers writes a
 						// value the image has no slice for, and the overlay to find is the one
-						// the hardware would really have selected.
-						int bank = canonicalBank(board.bankWrap(),
-							bankUniverse.get(modeBankKey(instance.name(), modeValue)),
-							instance.bankField().valueIn(effective));
-						// When dataflow did not pin the switchable bank at this site, the value
-						// above is just the initial-state fallback; a user placement override for
-						// this window instance takes over (flow always wins when it knows). See
-						// grm-hsv.3 -- the override is the residual escape hatch, never a guess.
-						// Knowledge is all-or-nothing per field -- see FieldSpec.fullyKnownIn; a
-						// partially known multi-bit bank select must NOT suppress the override
-						// (grm-v6o).
-						boolean bankKnown = instance.bankField().fullyKnownIn(inState);
-						Integer overrideBank = placementOverride.get(instance.name());
-						boolean overridden = !bankKnown && overrideBank != null;
-						if (overridden) {
-							bank = overrideBank;
-						}
-						if (modeValue == board.homeModeValue() &&
-							bank == instance.bankField().valueIn(board.initialState())) {
+						// the hardware would really have selected. When dataflow did not pin the
+						// switchable bank at this site, a user placement override for this window
+						// instance takes over (flow always wins when it knows) -- see grm-hsv.3,
+						// and grm-v6o for why knowledge is all-or-nothing per field.
+						ModeBankResolution mr = resolveModeBank(board, bankUniverse, inState,
+							effective, modeValue, placementOverride, instance);
+						if (mr.home()) {
 							// home mode's home bank lives in base space -- default is right.
 							keepBase.add(key);
 							continue;
 						}
 						if (placeOverlayRef(analyzer, program, refMgr, instr, key,
 							DescriptorSupport.OverlayNaming.modeBankBlockName(instance.name(), modeValue,
-								bank), refType, makePrimary, primaryGiven, monitor, log) > 0) {
+								mr.bank()), refType, makePrimary, primaryGiven, monitor, log) > 0) {
 							added++;
-							(modeKnown && (bankKnown || overridden) && !selfWindow ? replaced : keepBase)
-									.add(key);
+							(modeKnown && (mr.fullyKnown() || mr.overridden()) && !selfWindow
+									? replaced : keepBase).add(key);
 						}
-						if (overridden) {
+						if (mr.overridden()) {
 							annotatePlacementProvenance(program.getListing(), instr.getMinAddress(),
-								bank, provenance);
+								mr.bank(), provenance);
 						}
 					}
 				}
 			}
 		}
 		return added;
+	}
+
+	/**
+	 * Resolves the CROSS-WINDOW pointer entries of one inline-jump-table (bead grm-rnf0;
+	 * {@link InlineJumpTableDispatch}/{@link InlineJumpTableDispatchAnalyzer}, grm-j2kl) against
+	 * the bank state(s) live at the dispatching {@code JSR} -- the same window/occupant/
+	 * computed-window/mode-layout resolution {@link #retargetForState} uses for an instruction's
+	 * own operand references, via {@link #resolveWindowOccupant}, {@link #resolveComputedBank}
+	 * and {@link #resolveModeBank}.
+	 * <p>
+	 * {@link InlineJumpTableDispatchAnalyzer} lays every table entry as pointer data with a
+	 * DATA reference to the target it read through the table's OWN (base/physical) space; for a
+	 * CROSS-WINDOW entry (a target in a different banked window than the table's own block) that
+	 * base-space address is only the HOME occupant's address, not necessarily the bank actually
+	 * live when the dispatcher runs -- exactly the gap this method closes, walking entries this
+	 * analyzer itself never disassembles or creates a function at.
+	 * <p>
+	 * Per pointer, per live state: a resolution to the HOME occupant needs no overlay reference
+	 * (base space is already correct); a resolution whose selecting field was not fully known is
+	 * left exactly as {@link InlineJumpTableDispatchAnalyzer} planted it -- a guess must not
+	 * plant code or retire the base reference; a fully-known non-home resolution is checked with
+	 * {@link InlineJumpTableDispatch#plausibleTarget} IN THE OVERLAY before anything is planted,
+	 * since the table's own (wrong-bank) bytes already judged it meaningless -- only the right
+	 * bank's bytes can. A plausible, fully-known resolution gets an overlay DATA reference (first
+	 * state primary, later arms secondary, as {@link #retargetForState}'s grm-wul arms are),
+	 * disassembly and a function. The base-space reference is retired only when EVERY live state
+	 * resolved the pointer this way (grm-bfb's rule, applied per pointer).
+	 * <p>
+	 * <b>Idempotency across re-runs</b> (the engine re-seeds the whole-program fixpoint from
+	 * scratch every round, so this method runs again from zero every time): once a pointer's
+	 * base-space reference is retired, re-discovering which base-space offset it named is done by
+	 * folding the overlay reference(s) already placed back to their physical offset -- the same
+	 * move {@link #seeds} makes for instruction operands, and for the same reason: the overlay
+	 * reference is the only record left that this pointer ever reached the banked range at all.
+	 */
+	static Retargeted retargetInlineJumpTablePointers(BoardBankAnalyzer analyzer, Program program,
+			ReferenceManager refMgr, AddressSpace baseSpace, Address tableStart, BoardModel board,
+			Map<String, Set<Integer>> bankUniverse, List<BankState> states,
+			Map<String, Integer> placementOverride, TaskMonitor monitor, MessageLog log) {
+		Listing listing = program.getListing();
+		Memory memory = program.getMemory();
+		int added = 0;
+		int retired = 0;
+		AddressSpace tableSpace = tableStart.getAddressSpace();
+		// Per-table outcome tally for the summary line below: pointers placed in an overlay,
+		// resolved to the HOME occupant (base space disassembled), left alone because some live
+		// state did not fully know the bank, or declined as implausible in the resolved bank.
+		int nPlaced = 0;
+		int nHome = 0;
+		int nUnknown = 0;
+		int nImplausible = 0;
+
+		for (int i = 0; i < InlineJumpTableDispatch.MAX_TABLE_ENTRIES; i++) {
+			Address entryAddr;
+			try {
+				entryAddr = tableStart.add(2L * i);
+			}
+			catch (RuntimeException e) {
+				break;
+			}
+			Data data = listing.getDefinedDataAt(entryAddr);
+			if (data == null || !(data.getDataType() instanceof Pointer)) {
+				break; // the table ends where the pointer data InlineJumpTableDispatchAnalyzer
+						// laid down ends
+			}
+
+			// The offset this pointer names in the banked range: from its surviving base-space
+			// reference, or -- once a prior round retired that reference -- folded back from an
+			// overlay reference already placed for it (see the javadoc's Idempotency section).
+			Reference baseRef = null;
+			Long offsetBox = null;
+			for (Reference ref : refMgr.getReferencesFrom(entryAddr, 0)) {
+				AddressSpace refSpace = ref.getToAddress().getAddressSpace();
+				if (refSpace.equals(baseSpace)) {
+					baseRef = ref;
+					offsetBox = ref.getToAddress().getOffset();
+				}
+				else if (offsetBox == null && refSpace.isOverlaySpace() &&
+					baseSpace.equals(refSpace.getPhysicalSpace()) && !refSpace.equals(tableSpace)) {
+					// An overlay reference into the TABLE'S OWN overlay is an in-bank target
+					// the table analyzer resolved itself, not one this pass placed -- the same
+					// exclusion seeds() makes for an instruction's own-overlay references.
+					offsetBox = ref.getToAddress().getOffset();
+				}
+			}
+			if (offsetBox == null) {
+				continue; // not a cross-window entry this method has ever touched
+			}
+			long offset = offsetBox;
+			Address target = baseSpace.getAddress(offset);
+			MemoryBlock targetBlock = memory.getBlock(target);
+			if (targetBlock == null || !SplitDispatchTableAnalyzer.isBanked(program, targetBlock)) {
+				continue; // fixed-bank target -- base space is already correct, nothing to do
+			}
+
+			boolean everyStateResolved = true;
+			boolean anyPlaced = false;
+			boolean homeKnown = false;
+			boolean anyUnknown = false;
+			boolean anyImplausible = false;
+			// Primacy is per pointer: the first arm to place THIS pointer's overlay reference
+			// takes it, later arms are secondary (grm-wul), and the next pointer starts afresh.
+			boolean makePrimary = true;
+			for (BankState state : states) {
+				int effective = state.effective(board.initialState(), board.mask());
+				boolean wholeStateKnown = (state.knownMask() & board.mask()) == board.mask();
+
+				String targetSpace;
+				boolean fullyKnown;
+				boolean home;
+
+				WindowModel window = findWindow(board.windows(), offset);
+				if (window != null) {
+					Map<String, String> stateRow = board.occupantByWindowForState().get(effective);
+					WindowResolution wr =
+						stateRow == null ? null : resolveWindowOccupant(board, stateRow, window);
+					if (wr == null) {
+						everyStateResolved = false;
+						continue;
+					}
+					fullyKnown = wholeStateKnown;
+					home = wr.readTarget().equals(wr.homeOccupant());
+					targetSpace = wr.readTarget();
+				}
+				else {
+					ComputedWindowModel computed = findWindow(board.computedWindows(), offset);
+					if (computed != null) {
+						ComputedResolution cr = resolveComputedBank(board, bankUniverse, state,
+							effective, placementOverride, computed);
+						fullyKnown = cr.fullyKnown() || cr.overridden();
+						home = cr.home();
+						targetSpace = DescriptorSupport.OverlayNaming.bankBlockName(computed.name(),
+							cr.bank());
+					}
+					else if (board.modeField() != null) {
+						int modeValue = board.modeField().valueIn(effective);
+						boolean modeKnown = board.modeField().fullyKnownIn(state);
+						ModeWindowModel instance =
+							findModeWindowAt(board.modeWindows(), modeValue, offset);
+						if (instance == null) {
+							everyStateResolved = false;
+							continue;
+						}
+						if (instance.bankField() == null) {
+							fullyKnown = modeKnown;
+							home = modeValue == board.homeModeValue();
+							targetSpace =
+								DescriptorSupport.OverlayNaming.modeBlockName(instance.name(), modeValue);
+						}
+						else {
+							ModeBankResolution mr = resolveModeBank(board, bankUniverse, state,
+								effective, modeValue, placementOverride, instance);
+							fullyKnown = modeKnown && (mr.fullyKnown() || mr.overridden());
+							home = mr.home();
+							targetSpace = DescriptorSupport.OverlayNaming.modeBankBlockName(
+								instance.name(), modeValue, mr.bank());
+						}
+					}
+					else {
+						everyStateResolved = false;
+						continue; // offset not inside any tracked window under this state
+					}
+				}
+
+				if (!fullyKnown) {
+					everyStateResolved = false; // a guess must not plant code or retire the base ref
+					anyUnknown = true;
+					continue;
+				}
+				if (home) {
+					// Base space is genuinely right for this state. InlineJumpTableDispatchAnalyzer
+					// deliberately did not disassemble there (it could not know the bank), so
+					// this pass must, or a home-bank handler would never be reached at all.
+					everyStateResolved = false;
+					homeKnown = true;
+					continue;
+				}
+				AddressSpace overlaySpace = program.getAddressFactory().getAddressSpace(targetSpace);
+				if (overlaySpace == null) {
+					AnalyzerLog.warn(analyzer, log, "No overlay address space named '" + targetSpace +
+						"'; cannot retarget inline-jump-table pointer at " + entryAddr);
+					everyStateResolved = false;
+					continue;
+				}
+				Address overlayTarget = overlaySpace.getAddress(offset);
+				if (!InlineJumpTableDispatch.plausibleTarget(program, overlayTarget)) {
+					// The table's own (wrong-bank) bytes already couldn't judge this entry; now
+					// that the right bank is known, its bytes say this isn't a real handler either
+					// -- leave the base reference alone rather than plant garbage.
+					everyStateResolved = false;
+					anyImplausible = true;
+					continue;
+				}
+
+				Reference existing = null;
+				for (Reference ref : refMgr.getReferencesFrom(entryAddr, 0)) {
+					if (ref.getToAddress().equals(overlayTarget)) {
+						existing = ref;
+						break;
+					}
+				}
+				Reference overlayRef = existing != null ? existing
+						: refMgr.addMemoryReference(entryAddr, overlayTarget, RefType.DATA,
+							SourceType.ANALYSIS, 0);
+				if (makePrimary && AnnotationGuard.mayDisplace(refMgr.getPrimaryReferenceFrom(entryAddr, 0))) {
+					refMgr.setPrimary(overlayRef, true);
+				}
+				added++;
+				anyPlaced = true;
+				makePrimary = false;
+
+				if (listing.getInstructionAt(overlayTarget) == null &&
+					listing.getInstructionContaining(overlayTarget) == null) {
+					new DisassembleCommand(new AddressSet(overlayTarget), null, true).applyTo(program,
+						monitor);
+				}
+				if (listing.getInstructionAt(overlayTarget) != null &&
+					program.getFunctionManager().getFunctionAt(overlayTarget) == null) {
+					new CreateFunctionCmd(overlayTarget).applyTo(program, monitor);
+				}
+			}
+
+			if (homeKnown) {
+				if (InlineJumpTableDispatch.plausibleTarget(program, target)) {
+					if (listing.getInstructionAt(target) == null &&
+						listing.getInstructionContaining(target) == null) {
+						new DisassembleCommand(new AddressSet(target), null, true).applyTo(program,
+							monitor);
+					}
+					if (listing.getInstructionAt(target) != null &&
+						program.getFunctionManager().getFunctionAt(target) == null) {
+						new CreateFunctionCmd(target).applyTo(program, monitor);
+					}
+				}
+				else {
+					anyImplausible = true;
+				}
+			}
+
+			if (anyPlaced) {
+				nPlaced++;
+			}
+			if (homeKnown) {
+				nHome++;
+			}
+			if (anyUnknown) {
+				nUnknown++;
+			}
+			if (anyImplausible) {
+				nImplausible++;
+			}
+
+			if (everyStateResolved && anyPlaced && baseRef != null && AnnotationGuard.mayDisplace(baseRef)) {
+				refMgr.delete(baseRef);
+				retired++;
+			}
+		}
+		if (nPlaced + nHome + nUnknown + nImplausible > 0) {
+			AnalyzerLog.info(analyzer, "inline jump table " + tableStart + ": cross-window pointers " +
+				nPlaced + " placed in an overlay, " + nHome + " resolved to the home bank, " + nUnknown +
+				" left unresolved (bank not fully known), " + nImplausible + " implausible in the " +
+				"resolved bank (grm-rnf0)");
+		}
+		return new Retargeted(added, retired);
 	}
 
 	/**

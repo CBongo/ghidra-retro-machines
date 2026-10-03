@@ -33,6 +33,9 @@ import ghidra.program.model.data.Pointer;
 import ghidra.program.model.listing.Data;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Instruction;
+import ghidra.program.model.symbol.RefType;
+import ghidra.program.model.symbol.Reference;
+import ghidra.program.model.symbol.SourceType;
 import ghidra.util.task.TaskMonitor;
 
 /**
@@ -311,6 +314,149 @@ public class InlineJumpTableDispatchAnalyzerTest extends AbstractBundledLanguage
 		assertEquals(target0, scan.kept.get(0).getOffset());
 		assertEquals(physicalSpace, scan.kept.get(1).getAddressSpace());
 		assertEquals(target1, scan.kept.get(1).getOffset());
+	}
+
+	/**
+	 * grm-rnf0's new positive bound: a real FLOW reference (zelda's {@code e691 BEQ $e6b8}) lands
+	 * at the position the 10th table word would otherwise occupy, from a source BEFORE the table
+	 * starts. The table must end there, keeping only the 9 real entries before it -- mirroring
+	 * zelda's {@code e6a6} table exactly (9 entries, cut at {@code e6b8}).
+	 */
+	@Test
+	public void cutsTableAtRanIntoCodeBoundLikeZelda() throws Exception {
+		ProgramDB program = freshProgram();
+		long tableStart = 0x9500;
+		long branchSource = 0x9490; // before the table -- real code
+		long realCodeAddr = tableStart + 2L * 9; // where entry 9 would start
+		int tx = program.startTransaction("build table");
+		try {
+			for (int i = 0; i < 9; i++) {
+				long target = 0x8500 + 0x10L * i; // below the table -- never bounds it
+				builder.setBytes(String.format("0x%x", tableStart + 2L * i),
+					String.format("%02x %02x", target & 0xff, (target >> 8) & 0xff), false);
+			}
+			builder.setBytes(String.format("0x%x", realCodeAddr), "a4 98", false); // LDY $98
+			program.getReferenceManager().addMemoryReference(addr(branchSource), addr(realCodeAddr),
+				RefType.CONDITIONAL_JUMP, SourceType.ANALYSIS, 0);
+		}
+		finally {
+			program.endTransaction(tx, true);
+		}
+
+		InlineJumpTableDispatch.CallSiteScan scan =
+			InlineJumpTableDispatch.scanTable(program, addr(tableStart));
+		assertEquals(InlineJumpTableDispatch.Cut.RAN_INTO_CODE, scan.cut);
+		assertEquals(9, scan.kept.size());
+		assertTrue("a positive bound must not trim anything", scan.trimmed.isEmpty());
+	}
+
+	/**
+	 * grm-rnf0: a table entry pointing into a DIFFERENT banked window than the table's own block
+	 * (the table lives in the fixed bank; the target is in the switchable {@code $8000} window,
+	 * whose HOME occupant's bytes here are a lone {@code BRK} -- implausible if judged, like
+	 * zelda's handlers would be if read through the wrong bank). Cross-window entries at the tail
+	 * must survive the implausible-tail trim: only the state-side pass (BoardBankAnalyzer, once it
+	 * knows the live bank) can judge them.
+	 */
+	@Test
+	public void doesNotTrimCrossWindowTailEntry() throws Exception {
+		builder = new ProgramBuilder("Test", LANG);
+		uninitializedRam(builder, ".zp", "0x0", 0x100);
+		builder.createMemory("PRG_HI", "0xc000", 0x4000); // fixed bank -- the table lives here
+		builder.createMemory("W8000_HOME", "0x8000", 0x4000); // $8000 window's home occupant
+		builder.createOverlayMemory("W8000_B1", "0x8000", 0x4000); // another bank of that window
+		ProgramDB program = builder.getProgram();
+
+		long tableStart = 0xc100;
+		long crossWindowTarget = 0xb517; // inside the $8000 window
+		int tx = program.startTransaction("build table");
+		try {
+			builder.setBytes(String.format("0x%x", crossWindowTarget), "00 00", false); // BRK BRK
+			builder.setBytes(String.format("0x%x", tableStart),
+				String.format("%02x %02x 50 00", crossWindowTarget & 0xff,
+					(crossWindowTarget >> 8) & 0xff), // then 0x0050 -- RAM, INVALID_WORD
+				false);
+		}
+		finally {
+			program.endTransaction(tx, true);
+		}
+
+		InlineJumpTableDispatch.CallSiteScan scan =
+			InlineJumpTableDispatch.scanTable(program, addr(tableStart));
+		assertEquals(InlineJumpTableDispatch.Cut.INVALID_WORD, scan.cut);
+		assertEquals(1, scan.kept.size());
+		assertEquals(crossWindowTarget, scan.kept.get(0).getOffset());
+		assertTrue("a cross-window tail entry must not be trimmed", scan.trimmed.isEmpty());
+	}
+
+	/**
+	 * grm-rnf0, end to end: {@link InlineJumpTableDispatchAnalyzer} must lay a cross-window entry
+	 * as pointer data with a base-space DATA reference (what {@code BoardBankAnalyzer}'s state-side
+	 * pass needs to find and resolve), but must NOT disassemble or create a function at that
+	 * base-space address -- those bytes belong to whichever bank the state-side pass finds live,
+	 * not necessarily the HOME bank these base-space bytes hold.
+	 */
+	@Test
+	public void crossWindowEntryIsNotDisassembledInBaseSpace() throws Exception {
+		builder = new ProgramBuilder("Test", LANG);
+		uninitializedRam(builder, ".zp", "0x0", 0x100);
+		builder.createMemory("PRG_HI", "0xc000", 0x4000); // fixed bank
+		builder.createMemory("W8000_HOME", "0x8000", 0x4000); // $8000 window's home occupant
+		builder.createOverlayMemory("W8000_B1", "0x8000", 0x4000); // another bank of that window
+		ProgramDB program = builder.getProgram();
+
+		long dispatch = 0xc000;
+		long caller = 0xc100;
+		long crossWindowTarget = 0xb517; // inside the $8000 window -- NOT this table's own block
+		long sameSpaceTarget = 0xc200; // in the fixed bank, same as the table -- disassembled as usual
+
+		builder.setBytes(String.format("0x%x", dispatch),
+			"0a a8 68 85 04 68 85 05 c8 b1 04 85 06 c8 b1 04 85 07 6c 06 00", false);
+		builder.setBytes(String.format("0x%x", caller),
+			String.format("20 %02x %02x %02x %02x %02x %02x", dispatch & 0xff, (dispatch >> 8) & 0xff,
+				crossWindowTarget & 0xff, (crossWindowTarget >> 8) & 0xff, sameSpaceTarget & 0xff,
+				(sameSpaceTarget >> 8) & 0xff),
+			false);
+		builder.setBytes(String.format("0x%x", crossWindowTarget), "ea ea ea ea ea 60", false); // plausible
+		builder.setBytes(String.format("0x%x", sameSpaceTarget), "ea 60", false);
+		// end-of-table marker: an invalid (RAM) word right after the two entries above.
+		builder.setBytes(String.format("0x%x", caller + 7), "50 00", false);
+
+		builder.disassemble(String.format("0x%x", dispatch), 20, true);
+		builder.disassemble(String.format("0x%x", caller), 3, true);
+
+		InlineJumpTableDispatchAnalyzer analyzer = new InlineJumpTableDispatchAnalyzer();
+		assertTrue(analyzer.canAnalyze(program));
+		int tx = program.startTransaction("analyze");
+		try {
+			analyzer.added(program, new AddressSet(addr(caller), addr(caller + 2)), TaskMonitor.DUMMY,
+				new MessageLog());
+		}
+		finally {
+			program.endTransaction(tx, true);
+		}
+
+		Address entry0 = addr(caller + 3);
+		Data data0 = program.getListing().getDataAt(entry0);
+		assertNotNull("cross-window entry must still be laid as pointer data", data0);
+		assertTrue("cross-window entry must still be a pointer", data0.isPointer());
+		boolean sawBaseRef = false;
+		for (Reference ref : data0.getReferencesFrom()) {
+			if (ref.getToAddress().getOffset() == crossWindowTarget) {
+				sawBaseRef = true;
+			}
+		}
+		assertTrue("cross-window entry must keep its base-space DATA reference", sawBaseRef);
+		assertNull("cross-window target must NOT be disassembled in base space",
+			program.getListing().getInstructionAt(addr(crossWindowTarget)));
+		assertNull("cross-window target must get no function in base space",
+			program.getFunctionManager().getFunctionAt(addr(crossWindowTarget)));
+
+		Address entry1 = addr(caller + 5);
+		Data data1 = program.getListing().getDataAt(entry1);
+		assertNotNull("same-space entry must still be laid as pointer data", data1);
+		assertNotNull("same-space target must be disassembled as usual",
+			program.getListing().getInstructionAt(addr(sameSpaceTarget)));
 	}
 
 	// ---------------------------------------------------------------------

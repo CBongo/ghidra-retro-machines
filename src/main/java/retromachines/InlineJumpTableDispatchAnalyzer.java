@@ -270,6 +270,16 @@ public class InlineJumpTableDispatchAnalyzer extends AbstractAnalyzer {
 			program.getReferenceManager()
 					.addMemoryReference(entryAddr, target, RefType.DATA, SourceType.ANALYSIS, 0);
 
+			if (InlineJumpTableDispatch.isCrossWindow(program, tableStart, target)) {
+				// grm-rnf0: this entry's bytes belong to whichever bank is actually live in that
+				// OTHER window when the dispatcher runs, not to the HOME bank these base-space
+				// bytes hold. Leave the pointer and its base-space DATA reference (just placed
+				// above) for BoardBankAnalyzer's state-side resolution to find and redirect once
+				// it knows the call site's live bank state; do not disassemble or create a
+				// function against the wrong bank's bytes here.
+				continue;
+			}
+
 			if (listing.getInstructionAt(target) == null) {
 				try {
 					setTargetContext(program, programContext, target, siteContext);

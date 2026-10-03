@@ -1007,8 +1007,43 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			Map<String, Set<Integer>> bankUniverse, DataflowResult flow, Address addr,
 			Map<String, Integer> placementOverride, TaskMonitor monitor, MessageLog log,
 			BankCommentProvenance provenance) {
-		return BankAnnotationAdapter.retargetReferences(this, program, refMgr, baseSpace, instr,
-			board, bankUniverse, flow.statesAt(addr), placementOverride, monitor, log, provenance);
+		BankAnnotationAdapter.Retargeted refs = BankAnnotationAdapter.retargetReferences(this, program,
+			refMgr, baseSpace, instr, board, bankUniverse, flow.statesAt(addr), placementOverride,
+			monitor, log, provenance);
+		return refs.plus(
+			retargetInlineJumpTableTable(program, refMgr, baseSpace, instr, board, bankUniverse, flow,
+				addr, placementOverride, monitor, log));
+	}
+
+	/**
+	 * Bead grm-rnf0: when {@code instr} is a {@code JSR} to a recognized inline-jump-table
+	 * dispatcher ({@link InlineJumpTableDispatch#recognizeDispatcher}), resolves that call site's
+	 * table's CROSS-WINDOW pointer entries -- those {@link InlineJumpTableDispatchAnalyzer} laid
+	 * as pointer data but deliberately left undisassembled, because their base-space reference
+	 * names only the HOME occupant of a window the live bank state may not actually have mapped
+	 * in -- against the bank state(s) live at this very {@code JSR}
+	 * ({@link BankAnnotationAdapter#retargetInlineJumpTablePointers}). Not every instruction
+	 * reaches this: a plain {@code JSR} to an ordinary callee, or one whose target is not (yet, or
+	 * ever) a recognized dispatcher, costs one cheap shape check and returns immediately.
+	 */
+	private BankAnnotationAdapter.Retargeted retargetInlineJumpTableTable(Program program,
+			ReferenceManager refMgr, AddressSpace baseSpace, Instruction instr, BoardModel board,
+			Map<String, Set<Integer>> bankUniverse, DataflowResult flow, Address addr,
+			Map<String, Integer> placementOverride, TaskMonitor monitor, MessageLog log) {
+		if (!"JSR".equals(instr.getMnemonicString())) {
+			return BankAnnotationAdapter.Retargeted.NONE;
+		}
+		Address[] flows = instr.getFlows();
+		if (flows.length != 1) {
+			return BankAnnotationAdapter.Retargeted.NONE;
+		}
+		Boolean isDispatcher = InlineJumpTableDispatch.recognizeDispatcher(program, flows[0]);
+		if (!Boolean.TRUE.equals(isDispatcher)) {
+			return BankAnnotationAdapter.Retargeted.NONE;
+		}
+		Address tableStart = addr.add(instr.getLength());
+		return BankAnnotationAdapter.retargetInlineJumpTablePointers(this, program, refMgr, baseSpace,
+			tableStart, board, bankUniverse, flow.statesAt(addr), placementOverride, monitor, log);
 	}
 
 	/**

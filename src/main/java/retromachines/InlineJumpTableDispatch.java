@@ -29,6 +29,8 @@ import ghidra.program.model.mem.Memory;
 import ghidra.program.model.mem.MemoryAccessException;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.symbol.FlowType;
+import ghidra.program.model.symbol.Reference;
+import ghidra.program.model.symbol.ReferenceManager;
 
 /**
  * Pure(ish) logic for grm-j2kl: the "JSR inline jump table" / SMB "JumpEngine" idiom. A
@@ -273,6 +275,14 @@ final class InlineJumpTableDispatch {
 	enum Cut {
 		/** The table ran into the lowest target seen so far that lies after the table start. */
 		ABOVE_TABLE_TARGET,
+		/**
+		 * The next entry position is the destination of an existing FLOW reference whose source
+		 * lies outside the table (before {@code tableStart}, or in a different address space) --
+		 * real code, not a table entry (grm-rnf0; zelda's {@code e691 BEQ $e6b8} into what would
+		 * otherwise look like this table's 10th word). A positive bound like
+		 * {@link #ABOVE_TABLE_TARGET}: no tail trim, since nothing here is implausible.
+		 */
+		RAN_INTO_CODE,
 		/** The next word is not a usable target (unmapped, RAM/IO, or into the table itself). */
 		INVALID_WORD,
 		/** Neither happened within {@link #MAX_TABLE_ENTRIES}; the site is declined. */
@@ -328,6 +338,7 @@ final class InlineJumpTableDispatch {
 	static CallSiteScan scanTable(Program program, Address tableStart) {
 		AddressSpace space = tableStart.getAddressSpace();
 		Memory memory = program.getMemory();
+		ReferenceManager refMgr = program.getReferenceManager();
 
 		List<Address> kept = new ArrayList<>();
 		List<Address> trimmed = new ArrayList<>();
@@ -337,6 +348,11 @@ final class InlineJumpTableDispatch {
 			long entryOffset = tableStart.getOffset() + 2L * i;
 			if (entryOffset >= lowestAbove) {
 				cut = Cut.ABOVE_TABLE_TARGET;
+				break;
+			}
+			Address entryAddr = tableStart.add(2L * i);
+			if (ranIntoCode(refMgr, tableStart, entryAddr)) {
+				cut = Cut.RAN_INTO_CODE;
 				break;
 			}
 			Address targetAddr = readTarget(memory, space, tableStart, i);
@@ -356,12 +372,57 @@ final class InlineJumpTableDispatch {
 			// Nothing positive ended this table, so its tail may be the following routine's bytes
 			// read as words. Over-read entries can only ever be at the tail: trim them from the
 			// end. An entry with a plausible target stops the trim, so no entry before it is
-			// ever judged.
-			while (!kept.isEmpty() && !plausibleTarget(program, kept.get(kept.size() - 1))) {
+			// ever judged. A CROSS-WINDOW entry is also never judged here (grm-rnf0): its bytes
+			// are read through the table's own (wrong) bank, so plausibleTarget's verdict on them
+			// is meaningless -- only the state-side resolution (BoardBankAnalyzer) can tell
+			// whether it is real, once it knows which bank is actually live there.
+			while (!kept.isEmpty() && !isCrossWindow(program, tableStart, kept.get(kept.size() - 1)) &&
+				!plausibleTarget(program, kept.get(kept.size() - 1))) {
 				trimmed.add(0, kept.remove(kept.size() - 1));
 			}
 		}
 		return new CallSiteScan(tableStart, cut, List.copyOf(kept), List.copyOf(trimmed));
+	}
+
+	/**
+	 * Whether an existing FLOW reference lands at {@code entryAddr} from outside the table --
+	 * source strictly before {@code tableStart}, or in a different address space -- meaning this
+	 * position is real code the table's own mis-decoded bytes ran into, not a table entry
+	 * (grm-rnf0, {@link Cut#RAN_INTO_CODE}). A reference FROM inside the table itself (the
+	 * table's own fallthrough garbage, not yet repaired) does not count.
+	 */
+	private static boolean ranIntoCode(ReferenceManager refMgr, Address tableStart, Address entryAddr) {
+		for (Reference ref : refMgr.getReferencesTo(entryAddr)) {
+			if (!ref.getReferenceType().isFlow()) {
+				continue;
+			}
+			Address from = ref.getFromAddress();
+			if (!from.getAddressSpace().equals(tableStart.getAddressSpace()) ||
+				from.getOffset() < tableStart.getOffset()) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Whether {@code target} -- a table entry resolved by {@link #resolveTarget} -- lands in a
+	 * BANKED window (bead grm-rnf0; same notion as {@link SplitDispatchTableAnalyzer#isBanked})
+	 * other than the block the table itself lives in. Such a target's bytes, read through the
+	 * table's own (base/physical) space, belong to whichever bank the table's HOME block there
+	 * holds -- usually not the bank actually live when the dispatcher runs -- so this class must
+	 * neither disassemble there nor judge it with {@link #plausibleTarget}; only the state-side
+	 * resolution in {@code BoardBankAnalyzer}, which knows the live bank state at the call site,
+	 * can tell whether it is real.
+	 */
+	static boolean isCrossWindow(Program program, Address tableStart, Address target) {
+		Memory memory = program.getMemory();
+		MemoryBlock tableBlock = memory.getBlock(tableStart);
+		MemoryBlock targetBlock = memory.getBlock(target);
+		if (tableBlock == null || targetBlock == null || tableBlock.equals(targetBlock)) {
+			return false;
+		}
+		return SplitDispatchTableAnalyzer.isBanked(program, targetBlock);
 	}
 
 	/** How many instructions {@link #plausibleTarget} decodes before accepting a target. */
