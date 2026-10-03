@@ -430,7 +430,10 @@ every compiled game descriptor inside it is `.gmap`.
   "game": { "id", "title", "board",
             "identity": { "prg_sha256", "file_sha256" },
             "provenance" },
-  "banking"?: { "initial_state"?: { "<field>": <int>, ... } }
+  "banking"?: { "initial_state"?: { "<field>": <int>, ... } },
+  "symbols"?: [ { "set", "default": bool, "provenance", "block"?,
+                  "entries": [ { "addr": <int>, "name", "kind": "label"|"entry",
+                                 "block"?, "comment"? } ] } ]     // grm-hb6.5
 }
 ```
 

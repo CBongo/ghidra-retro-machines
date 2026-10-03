@@ -1053,5 +1053,5 @@ descriptor yet, which is beads grm-hb6.2/grm-hb6.3. Nothing else below is implem
 - [x] Overlay-before-curated search order with logged shadowing; no static memoization; `include:` rejected in overlay — §5.2, §5.3, §5.5 (grm-hb6.2)
 - [ ] Analyzer-side consumption: seeds not injections, value-hint precedence, provenance — §6
 - [ ] `RunStamp` widened with a descriptor-content digest — §3c.2
-- [ ] `ghidra_scripts/ExportGameDescriptor.java` + the round-trip test — §7
+- [x] `ghidra_scripts/ExportGameDescriptor.java` + the round-trip test — §7 (grm-hb6.5; labels + EOL comments only, `symbols:` compiled by `GameCompiler`, applied by `DescriptorAnnotationAnalyzer`)
 - [ ] Tier 1/2/3 coverage — §8

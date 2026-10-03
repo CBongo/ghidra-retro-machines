@@ -119,6 +119,9 @@ public class DescriptorAnnotationAnalyzer extends AbstractAnalyzer {
 	@Override
 	public boolean canAnalyze(Program program) {
 		try {
+			if (identityOf(program) != null) {
+				return true;   // a per-game descriptor (curated or overlay) may carry symbols
+			}
 			JsonObject map = loadMap(program);
 			return map != null && (map.has("symbols") || map.has("regions"));
 		}
@@ -128,8 +131,7 @@ public class DescriptorAnnotationAnalyzer extends AbstractAnalyzer {
 	}
 
 	private static String mapPath(Program program) {
-		String p = program.getOptions(Program.PROGRAM_INFO)
-				.getString(DescriptorSupport.MAP_PATH_PROPERTY, "");
+		String p = DescriptorSupport.programInfoString(program, DescriptorSupport.MAP_PATH_PROPERTY);
 		return p == null || p.isBlank() ? null : p;
 	}
 
@@ -148,6 +150,9 @@ public class DescriptorAnnotationAnalyzer extends AbstractAnalyzer {
 		catch (IOException | RuntimeException e) {
 			AnalyzerLog.warn(this, log, "could not read the descriptor: " + e.getMessage());
 			return false;
+		}
+		if (applySymbols) {
+			applyGameSymbols(program, log);
 		}
 		if (map == null) {
 			return true;
@@ -204,8 +209,8 @@ public class DescriptorAnnotationAnalyzer extends AbstractAnalyzer {
 
 	/** Whether {@code set} is enabled for this program: the recorded choice, else the default. */
 	static boolean symbolSetEnabled(Program program, JsonObject set) {
-		JsonObject choices = parseChoices(program.getOptions(Program.PROGRAM_INFO)
-				.getString(SYMBOL_SETS_PROPERTY, ""));
+		JsonObject choices =
+			parseChoices(DescriptorSupport.programInfoString(program, SYMBOL_SETS_PROPERTY));
 		String name = set.get("set").getAsString();
 		if (choices.has(name)) {
 			return choices.get(name).getAsBoolean();
@@ -248,6 +253,86 @@ public class DescriptorAnnotationAnalyzer extends AbstractAnalyzer {
 			}
 		}
 		return !monitor.isCancelled();
+	}
+
+	// ------------------------------------------------------------------
+	// Per-game symbol sets (bead grm-hb6.5)
+	// ------------------------------------------------------------------
+
+	/**
+	 * Re-resolves the program's per-game descriptor against its recorded identity (a fresh scan,
+	 * so an overlay file dropped in after import is picked up, design section 3c.2) and applies
+	 * its {@code symbols:} sets. Never throws: a failure costs only the game layer.
+	 */
+	private void applyGameSymbols(Program program, MessageLog log) {
+		try {
+			GameDescriptorRegistry.GameDescriptor game = resolveGame(program, log);
+			if (game != null) {
+				applyGameSymbols(program, game.doc(), TaskMonitor.DUMMY, log);
+			}
+		}
+		catch (RuntimeException e) {
+			AnalyzerLog.warn(this, log, "game descriptor symbols skipped: " + e.getMessage());
+		}
+	}
+
+	/** The program's recorded game identity, or null when absent or malformed. */
+	private static DescriptorSupport.GameIdentity identityOf(Program program) {
+		String spec = DescriptorSupport.programInfoString(program,
+			DescriptorSupport.GAME_IDENTITY_PROPERTY);
+		if (spec == null) {
+			return null;
+		}
+		try {
+			return DescriptorSupport.parseGameIdentity(spec);
+		}
+		catch (IllegalArgumentException e) {
+			return null;
+		}
+	}
+
+	private static GameDescriptorRegistry.GameDescriptor resolveGame(Program program,
+			MessageLog log) {
+		DescriptorSupport.GameIdentity identity = identityOf(program);
+		String path = mapPath(program);
+		if (identity == null || path == null) {
+			return null;
+		}
+		String boardId = null;
+		for (NesBoardRegistry.Board board : NesBoardRegistry.boards()) {
+			if (board.mapPath().equals(path)) {
+				boardId = board.id();
+			}
+		}
+		if (boardId == null) {
+			return null;
+		}
+		return GameDescriptorRegistry.resolve(GameDescriptorRegistry.scan(log), identity,
+			boardId, log);
+	}
+
+	/**
+	 * Applies the {@code symbols:} sets of a compiled game descriptor document -- the testable
+	 * seam. Same guards and idempotence as the machine sets ({@link DescriptorSupport#
+	 * applySymbolSet}); entries land as {@code IMPORTED}, never {@code USER_DEFINED}
+	 * (design section 3c.3), so an exported user label returns as an imported one.
+	 */
+	void applyGameSymbols(Program program, JsonObject gameDoc, TaskMonitor monitor,
+			MessageLog log) {
+		if (!gameDoc.has("symbols")) {
+			return;
+		}
+		AddressSpace base = program.getAddressFactory().getDefaultAddressSpace();
+		for (JsonElement se : gameDoc.getAsJsonArray("symbols")) {
+			if (monitor.isCancelled()) {
+				return;
+			}
+			JsonObject set = se.getAsJsonObject();
+			if (symbolSetEnabled(program, set)) {
+				DescriptorSupport.applySymbolSet(program, base, set, (name, addr) -> {
+				}, log);
+			}
+		}
 	}
 
 	private void applyStructsInWindows(Program program, JsonArray windows,

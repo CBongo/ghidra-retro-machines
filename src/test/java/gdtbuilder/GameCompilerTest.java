@@ -173,6 +173,41 @@ public class GameCompilerTest {
 		expectError("emptyhint", yaml, "names no fields");
 	}
 
+	private static final String SYMBOLS = """
+		symbols:
+		  - set: mine
+		    default: true
+		    provenance: "me"
+		    inline:
+		      - { addr: 0x1000, name: a, kind: label, comment: "hi" }
+		      - { addr: 0x1000, name: dup, kind: label }
+		      - { addr: 0x1000, name: b, kind: entry, block: W8000_M3_B1 }
+		""";
+
+	@Test
+	public void compilesSymbolSetsWithBlockQualifierAndDedup() throws Exception {
+		JsonObject doc = compile("syms", validYaml() + SYMBOLS);
+		JsonObject set = doc.getAsJsonArray("symbols").get(0).getAsJsonObject();
+		assertEquals("mine", set.get("set").getAsString());
+		assertEquals("me", set.get("provenance").getAsString());
+		assertEquals(2, set.getAsJsonArray("entries").size());   // same addr in another block is kept
+		JsonObject first = set.getAsJsonArray("entries").get(0).getAsJsonObject();
+		assertEquals("a", first.get("name").getAsString());
+		assertEquals("hi", first.get("comment").getAsString());
+		assertEquals("W8000_M3_B1",
+			set.getAsJsonArray("entries").get(1).getAsJsonObject().get("block").getAsString());
+	}
+
+	@Test
+	public void symbolSetNeedsProvenanceAndRejectsSource() throws Exception {
+		expectError("noprov", validYaml() + SYMBOLS.replace("    provenance: \"me\"\n", ""),
+			"provenance");
+		expectError("src", validYaml() + SYMBOLS.replace("    inline:", "    source: x.yaml\n    inline:"),
+			"source:");
+		expectError("kind", validYaml() + SYMBOLS.replace("kind: entry", "kind: vector"),
+			"unsupported kind");
+	}
+
 	private void expectError(String name, String yaml, String messagePart) throws Exception {
 		Path dir = tmp.getRoot().toPath();
 		Path yamlPath = dir.resolve(name + ".yaml");
