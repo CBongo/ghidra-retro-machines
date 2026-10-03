@@ -20,12 +20,12 @@ the same word). Sets **compose** and are deduplicated by id, so naming several i
 | name | rows | what |
 |---|---|---|
 | `core` | 5 | Always-run floor: the two stable grm-mu7 victims, the thread-pin canary, and two controls. **The default for a bare `check`.** |
-| `nes-curated` | 13 | Curated NES board-representative set (one title per shipped board) |
+| `nes-curated` | 14 | Curated NES board-representative set (one title per shipped board) |
 | `nes-gme` | 20 | NES game-music-extraction titles of interest |
 | `snes-cart` | 13 | SNES alt-board cartridge loader sample (loader layout only, `-noanalysis`) |
-| `nes` | 33 | platform group: every NES set (`nes-curated` + `nes-gme`) |
+| `nes` | 34 | platform group: every NES set (`nes-curated` + `nes-gme`) |
 | `snes` | 13 | platform group: every SNES set (`snes-cart`) |
-| `all` | 46 | every set on every platform |
+| `all` | 47 | every set on every platform |
 
 **A bare `check` now runs `core`, not the curated NES set** — the owner's ruling on grm-ughg.
 `core` is a *new* always-run floor, not a renamed manifest: it is a cross-manifest subset of
