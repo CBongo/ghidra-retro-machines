@@ -336,7 +336,19 @@ public class VerifyBankTest extends GhidraScript {
 		checkGameIdentity();
 		checkAsyncEntryPoints();
 
-		if (name.contains("nesrelaytest")) {
+		if (name.contains("descoverlaytest")) {
+			checkDescOverlay(true);
+		}
+		else if (name.contains("descoverlayctltest")) {
+			checkDescOverlay(false);
+		}
+		else if (name.contains("descannotationtest")) {
+			// The generic dump + identity criteria above are the whole post-import story; the
+			// substance (re-running DescriptorAnnotationAnalyzer one-shot) is the post-verify
+			// AssertDescriptorReanalysis.java script's (bead grm-hb6.16). This branch exists only
+			// so the fixture does not fall through to the C64 banking default below.
+		}
+		else if (name.contains("nesrelaytest")) {
 			checkNesRelayTest();
 		}
 		else if (name.contains("neswrappertest")) {
@@ -3118,6 +3130,49 @@ public class VerifyBankTest extends GhidraScript {
 				"decoy at " + fmt(at) + " must stay unannotated");
 		}
 		criterion("T4:exactly-five", bookmarks == 5, "bookmarks=" + bookmarks);
+	}
+
+	// ------------------------------------------------------------------
+	// descoverlaytest / descoverlayctltest criteria (user-directory overlay, bead grm-hb6.15)
+	// ------------------------------------------------------------------
+
+	private static final String GAME_DESCRIPTOR_PROPERTY = "Retro Machines.Game Descriptor";
+
+	/**
+	 * The same MMC1 image imported with ({@code overlay}) and without a planted overlay
+	 * descriptor hinting {@code prg_mode: 0}. The hint is visible in the home layout: mode 0
+	 * is one 32 KiB base window W8000 at $8000-$FFFF, the t=0 default (mode 3) is W8000 at
+	 * $8000-$BFFF plus WC000. The recorded descriptor path must name the overlay (not a
+	 * curated .gmap) and, on the control, the property must be absent.
+	 */
+	private void checkDescOverlay(boolean overlay) {
+		String tag = overlay ? "OV" : "OVC";
+		String path = currentProgram.getOptions(Program.PROGRAM_INFO)
+				.getString(GAME_DESCRIPTOR_PROPERTY, null);
+		String norm = path == null ? null : path.replace('\\', '/');
+		MemoryBlock w8000 = currentProgram.getMemory().getBlock("W8000");
+		MemoryBlock wc000 = currentProgram.getMemory().getBlock("WC000");
+		String layout = "W8000=" + (w8000 == null ? "<none>" : w8000.getStart() + "-" +
+			w8000.getEnd()) + " WC000=" + (wc000 == null ? "<none>" : "present");
+		if (overlay) {
+			criterion(tag + "1:overlay-resolved",
+				norm != null && norm.endsWith("/retro-machines/games/descoverlaytest.yaml"),
+				"Game Descriptor property = " + path);
+			criterion(tag + "2:not-curated", norm != null && !norm.endsWith(".gmap"),
+				"Game Descriptor property = " + path);
+			criterion(tag + "3:hint-applied-mode0",
+				w8000 != null && w8000.getStart().getOffset() == 0x8000 &&
+					w8000.getEnd().getOffset() == 0xFFFF && !w8000.isOverlay() && wc000 == null,
+				layout);
+		}
+		else {
+			criterion(tag + "1:no-descriptor", path == null,
+				"Game Descriptor property = " + path + " (overlay must not outlive its fixture)");
+			criterion(tag + "2:default-mode3",
+				w8000 != null && w8000.getStart().getOffset() == 0x8000 &&
+					w8000.getEnd().getOffset() == 0xBFFF && wc000 != null,
+				layout);
+		}
 	}
 
 	private static String describeData(Data d) {

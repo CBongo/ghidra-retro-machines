@@ -47,7 +47,7 @@ usage() {
 usage: $0 [check|bless] [--force-criteria] [chunk ...]
 
 Chunks: c64-banking c64-loader c64-recovery basic-petscii basic-dialects pet-loader snes-loader c128-loader nes-banking
-        petscii-strings nes-text unit spc700-vectors spc700-dis-corpus snes-rom-corpus w65816-vectors 6502-vectors all
+        petscii-strings nes-text descriptors unit spc700-vectors spc700-dis-corpus snes-rom-corpus w65816-vectors 6502-vectors all
 
 With no chunks, all is selected. Use --list-chunks to print this list.
 
@@ -69,6 +69,7 @@ c128-loader   C128 native BASIC PRG placement, fixed ROM slots, and MMU IO
 nes-banking   NES banking and MMC fixtures
 petscii-strings PetsciiStringAnalyzer C64 PRG fixture
 nes-text      NES .tbl text-table loader option + TblStringAnalyzer fixture
+descriptors   per-game overlay descriptor in the user settings dir + DescriptorAnnotationAnalyzer one-shot re-run
 unit          JUnit `gradle test` suite (all src/test/java; no extension build/install)
 spc700-vectors Exhaustive SPC700 vector regression (needs GRM_SPC700_VECTORS; opt-in, not in `all`)
 spc700-dis-corpus SPC700 disassembly vs. the hand .dis listings (needs GRM_SPC700_DIS_CORPUS; opt-in, reports)
@@ -117,7 +118,7 @@ fi
 
 for chunk in "${REQUESTED_CHUNKS[@]}"; do
 	case "$chunk" in
-		c64-banking|c64-loader|c64-recovery|basic-petscii|basic-dialects|pet-loader|snes-loader|c128-loader|nes-banking|petscii-strings|nes-text|unit|spc700-vectors|spc700-dis-corpus|snes-rom-corpus|w65816-vectors|6502-vectors|all) ;;
+		c64-banking|c64-loader|c64-recovery|basic-petscii|basic-dialects|pet-loader|snes-loader|c128-loader|nes-banking|petscii-strings|nes-text|descriptors|unit|spc700-vectors|spc700-dis-corpus|snes-rom-corpus|w65816-vectors|6502-vectors|all) ;;
 		*)
 			echo "FAIL: unknown chunk '$chunk'" >&2
 			usage >&2
@@ -182,7 +183,7 @@ if has_chunk all; then
 	RUNNER_CHUNKS=(all)
 	RUN_JUNIT=1
 else
-	for chunk in c64-banking c64-loader c64-recovery basic-petscii basic-dialects pet-loader snes-loader c128-loader nes-banking petscii-strings nes-text; do
+	for chunk in c64-banking c64-loader c64-recovery basic-petscii basic-dialects pet-loader snes-loader c128-loader nes-banking petscii-strings nes-text descriptors; do
 		if has_chunk "$chunk"; then
 			RUN_HEADLESS=1
 			RUNNER_CHUNKS+=("$chunk")

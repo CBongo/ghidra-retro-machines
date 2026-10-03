@@ -28,6 +28,7 @@
 #   nes-banking   all NES banking/MMC fixtures
 #   petscii-strings PetsciiStringAnalyzer C64 PRG fixture
 #   nes-text      NES .tbl text-table loader option + TblStringAnalyzer fixture
+#   descriptors   per-game overlay descriptor (user settings dir) + DescriptorAnnotationAnalyzer one-shot
 #   all           every chunk above
 #
 #   --list-chunks  print the available chunk names and exit
@@ -98,6 +99,7 @@ list_chunks() {
 		nes-banking \
 		petscii-strings \
 		nes-text \
+		descriptors \
 		all
 }
 
@@ -144,7 +146,7 @@ fi
 # fixtures, so a typo cannot leave partial output behind.
 for chunk in "${CHUNKS[@]}"; do
 	case "$chunk" in
-		c64-banking|c64-loader|c64-recovery|basic-petscii|basic-dialects|pet-loader|snes-loader|c128-loader|nes-banking|petscii-strings|nes-text|all) ;;
+		c64-banking|c64-loader|c64-recovery|basic-petscii|basic-dialects|pet-loader|snes-loader|c128-loader|nes-banking|petscii-strings|nes-text|descriptors|all) ;;
 		*)
 			echo "unknown chunk: $chunk" >&2
 			usage
@@ -325,6 +327,12 @@ cache_key() {
 		printf 'opts:%s\n' "$(normalize_opts "$extra")"
 		printf 'dumpscript:'; sha256sum "$SCRIPT_DIR/VerifyBankTest.java" | cut -d' ' -f1
 		printf 'ext:%s\n' "$EXT_ID"
+		# Files that shape the run without being the fixture or a loader option -- today the
+		# overlay descriptor YAML planted into the settings dir (grm-hb6.15). Set by the caller
+		# for one run_one and unset after, so it costs every other fixture nothing.
+		for tok in ${GRM_KEY_INPUTS:-}; do
+			printf 'keyinput:'; sha256sum "$tok" | cut -d' ' -f1
+		done
 		# The TOOLCHAIN, not just the extension (bead grm-kt44): swapping decompile.exe, or
 		# pointing GHIDRA_HEADLESS at another install, changes every dump this key claims to
 		# describe while leaving every other term identical. See toolchain_identity().
@@ -403,6 +411,7 @@ if selected nes-banking; then
 fi
 if selected petscii-strings; then generate mkpetsciistringtest.py "$WORK/prg"; fi
 if selected nes-text; then generate mknestbltest.py "$WORK/nes"; fi
+if selected descriptors; then generate mkdescoverlaytest.py "$WORK/nes"; fi
 
 # The ENTIRE tail of a bless, shared by the cached fast path and the fresh-import
 # path below (bead grm-aqi). Both used to carry their own copy of this, and the two
@@ -1104,6 +1113,80 @@ if selected nes-text; then
 	# grm-pqk: the .tbl text-table loader option (-loader-tblFile) + TblStringAnalyzer. The
 	# table is passed as a loader option, so normalize_opts folds its sha256 into the cache key.
 	run_one nestbltest "$WORK/nes/nestbltest.nes" NesRomLoader "-loader-tblFile $WORK/nes/nestbltest.tbl"
+fi
+
+if selected descriptors; then
+	# grm-hb6.15: the user-directory overlay (grm-hb6.2), end to end through
+	# Application.getUserSettingsFiles and NesRomLoader. The overlay is planted under the
+	# RELOCATED settings dir (-Dapplication.settingsdir = $BANKTEST_SETTINGS_BASE) at
+	# retro-machines/games/, imported once WITH it, then removed and the SAME bytes imported
+	# again as a negative control (so a leaked overlay fails loudly, not silently).
+	if [ -z "${BANKTEST_SETTINGS_BASE:-}" ]; then
+		echo "FAIL: descriptors chunk needs the isolated settings dir (BANKTEST_SETTINGS_BASE);" \
+			"refusing to write an overlay into the shared %APPDATA%/ghidra install" >&2
+		fail=1
+	else
+		# Ghidra appends <user>/<version> under -Dapplication.settingsdir; the effective settings
+		# dir is the one holding the staged Extensions/ (the overlay must go beside it).
+		overlay_settings="$(find "$BANKTEST_SETTINGS_BASE" -maxdepth 4 -type d -name Extensions -printf '%h\n' 2>/dev/null)"
+		if [ "$(printf '%s\n' "$overlay_settings" | grep -c .)" -ne 1 ]; then
+			echo "FAIL: cannot locate the single effective settings dir under $BANKTEST_SETTINGS_BASE" \
+				"(found: ${overlay_settings:-none}); overlay not planted" >&2
+			fail=1
+			overlay_settings=
+		fi
+	fi
+	if [ -n "${BANKTEST_SETTINGS_BASE:-}" ] && [ -n "${overlay_settings:-}" ]; then
+		overlay_dir="$overlay_settings/retro-machines/games"
+		overlay_files=(descoverlaytest.yaml descoverlaybad.yaml)
+		plant_overlay() {
+			mkdir -p "$overlay_dir"
+			for f in "${overlay_files[@]}"; do cp -f "$WORK/nes/$f" "$overlay_dir/$f"; done
+		}
+		unplant_overlay() {
+			for f in "${overlay_files[@]}"; do rm -f "$overlay_dir/$f"; done
+		}
+		# A previous interrupted run could have left files behind; start clean either way.
+		unplant_overlay
+		plant_overlay
+		GRM_KEY_INPUTS="$WORK/nes/descoverlaytest.yaml $WORK/nes/descoverlaybad.yaml"
+		run_one descoverlaytest "$WORK/nes/descoverlaytest.nes" NesRomLoader
+		unset GRM_KEY_INPUTS
+		unplant_overlay
+		# The log lines fall outside the dump, so grep them (check only: a bless that reused a
+		# cached candidate ran no import and has no fresh log).
+		if [ -f "$WORK/descoverlaytest.log" ]; then
+			if ! grep -q "game descriptor resolved: .*descoverlaytest\.yaml ('descoverlaytest')" \
+				"$WORK/descoverlaytest.log"; then
+				echo "FAIL: loader did not log resolving the overlay descriptor (grm-hb6.15)"
+				fail=1
+			fi
+			if ! grep -q "Skipping overlay game descriptor: .*descoverlaybad\.yaml" \
+				"$WORK/descoverlaytest.log"; then
+				echo "FAIL: the malformed overlay was not skipped with a logged error (grm-hb6.15)"
+				fail=1
+			fi
+		fi
+		run_one descoverlayctltest "$WORK/nes/descoverlayctltest.nes" NesRomLoader
+		if [ -f "$WORK/descoverlayctltest.log" ] &&
+			grep -q "game descriptor resolved" "$WORK/descoverlayctltest.log"; then
+			echo "FAIL: control import resolved a game descriptor -- overlay leaked (grm-hb6.15)"
+			fail=1
+		fi
+	fi
+
+	# grm-hb6.16: DescriptorAnnotationAnalyzer re-run one-shot on an already-imported program.
+	# AssertDescriptorReanalysis.java (post-verify, so the golden is the pre-mutation import)
+	# deletes/replaces descriptor labels and asserts the analyzer restores / leaves them.
+	run_one descannotationtest "$WORK/nes/descannotationtest.nes" NesRomLoader "" "" \
+		"-postScript AssertDescriptorReanalysis.java"
+	if [ -f "$WORK/descannotationtest.log" ]; then
+		if ! grep -q 'DESCREANALYSIS verdict=PASS' "$WORK/descannotationtest.log"; then
+			echo "FAIL: DescriptorAnnotationAnalyzer one-shot check failed (grm-hb6.16):"
+			grep 'DESCREANALYSIS' "$WORK/descannotationtest.log" || echo "  (no DESCREANALYSIS line at all)"
+			fail=1
+		fi
+	fi
 fi
 
 # Name the rows bless_candidate acted unusually on. A bless over a whole chunk
