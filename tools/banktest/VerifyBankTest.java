@@ -369,6 +369,18 @@ public class VerifyBankTest extends GhidraScript {
 			// AssertDescriptorReanalysis.java script's (bead grm-hb6.16). This branch exists only
 			// so the fixture does not fall through to the C64 banking default below.
 		}
+		else if (name.contains("descexporttest")) {
+			// Phase A of the export round trip (grm-hb6.17): the dump is the plain import; the
+			// seeding and export are post-verify scripts.
+		}
+		else if (name.contains("descreimporttest")) {
+			String path = currentProgram.getOptions(Program.PROGRAM_INFO)
+					.getString(GAME_DESCRIPTOR_PROPERTY, null);
+			String norm = path == null ? null : path.replace('\\', '/');
+			criterion("REIMP1:exported-overlay-resolved",
+				norm != null && norm.endsWith("/retro-machines/games/descexportedtest.yaml"),
+				"Game Descriptor property = " + path);
+		}
 		else if (name.contains("nesrelaytest")) {
 			checkNesRelayTest();
 		}

@@ -10,6 +10,14 @@ fixture is its own headless import:
   descannotationtest.nes   byte-identical, imported normally; AssertDescriptorReanalysis.java
                            then mutates labels and re-runs DescriptorAnnotationAnalyzer one-shot
 
+Two more byte-identical-to-each-other images, DISTINCT from the three above (one marker byte in
+bank 0 differs, so no planted overlay can ever match them), for the export round trip (grm-hb6.17):
+
+  descexporttest.nes       phase A: imported normally, SeedExportAnnotations.java adds user
+                           annotations, ExportGameDescriptor.java writes them out as YAML
+  descreimporttest.nes     phase B: the same bytes re-imported with that exported YAML planted
+                           as an overlay; AssertExportedAnnotations.java checks they came back
+
 Also writes, for run-banktest.sh to plant under <settings dir>/retro-machines/games/:
 
   descoverlaytest.yaml     a valid overlay keyed on this image's identity, hinting
@@ -31,8 +39,9 @@ PRG_SIZE = 0x8000
 HEADER = 16
 
 
-def make_rom():
+def make_rom(marker=0):
     prg = bytearray(PRG_SIZE)
+    prg[0x0100] = marker      # data byte in bank 0; changes both hashes, nothing else
     prg[0x4000:0x4003] = bytes([0x4C, 0x00, 0xC0])
     prg[0x4003] = 0x40
     for vec, target in ((0x7FFA, 0xC003), (0x7FFC, 0xC000), (0x7FFE, 0xC003)):
@@ -87,6 +96,11 @@ def main():
     for name in ("descoverlaytest", "descoverlayctltest", "descannotationtest"):
         with open(os.path.join(outdir, name + ".nes"), "wb") as f:
             f.write(rom)
+    xrom, _ = make_rom(marker=0xA5)
+    assert xrom != rom
+    for name in ("descexporttest", "descreimporttest"):
+        with open(os.path.join(outdir, name + ".nes"), "wb") as f:
+            f.write(xrom)
     prg_sha = hashlib.sha256(prg).hexdigest()
     file_sha = hashlib.sha256(rom).hexdigest()
     with open(os.path.join(outdir, "descoverlaytest.yaml"), "w", newline="\n") as f:

@@ -492,6 +492,11 @@ run_one() {
 	local name="$1" fixture="$2" loader="$3" extra="${4:-}" hargs="${5:-}" pargs="${6:-}"
 	local key cached
 	key="$(cache_key "$fixture" "$loader" "$extra" "$hargs" "$pargs")"
+	# GRM_NO_CACHE=1 (set by the caller around one run_one): this run PRODUCES a file a later row
+	# consumes (descexporttest's exported YAML, grm-hb6.17), so a cached candidate -- which skips
+	# the import and therefore the file -- must never stand in for it, in check or in bless. An
+	# empty key already means "no caching" everywhere below.
+	[ -n "${GRM_NO_CACHE:-}" ] && key=""
 	cached="$CACHE_DIR/$key.dump"
 
 	# bless fast path: a prior check already produced the exact candidate for
@@ -1152,12 +1157,16 @@ if selected descriptors; then
 	if [ -n "${BANKTEST_SETTINGS_BASE:-}" ] && [ -n "${overlay_settings:-}" ]; then
 		overlay_dir="$overlay_settings/retro-machines/games"
 		overlay_files=(descoverlaytest.yaml descoverlaybad.yaml)
+		# plant_overlay/unplant_overlay take an optional file list (basenames under $WORK/nes);
+		# with none they use $overlay_files, the grm-hb6.15 pair.
 		plant_overlay() {
+			local f; local -a fs=("$@"); [ ${#fs[@]} -gt 0 ] || fs=("${overlay_files[@]}")
 			mkdir -p "$overlay_dir"
-			for f in "${overlay_files[@]}"; do cp -f "$WORK/nes/$f" "$overlay_dir/$f"; done
+			for f in "${fs[@]}"; do cp -f "$WORK/nes/$f" "$overlay_dir/$f"; done
 		}
 		unplant_overlay() {
-			for f in "${overlay_files[@]}"; do rm -f "$overlay_dir/$f"; done
+			local f; local -a fs=("$@"); [ ${#fs[@]} -gt 0 ] || fs=("${overlay_files[@]}")
+			for f in "${fs[@]}"; do rm -f "$overlay_dir/$f"; done
 		}
 		# A previous interrupted run could have left files behind; start clean either way.
 		unplant_overlay
@@ -1185,6 +1194,62 @@ if selected descriptors; then
 			grep -q "game descriptor resolved" "$WORK/descoverlayctltest.log"; then
 			echo "FAIL: control import resolved a game descriptor -- overlay leaked (grm-hb6.15)"
 			fail=1
+		fi
+
+		# grm-hb6.17: export -> overlay -> re-import round trip through the SHIPPED script.
+		# Phase A imports descexporttest, SeedExportAnnotations.java adds user labels/comments
+		# (plus an analyzer-source label that must not travel), then ExportGameDescriptor.java
+		# (headless key:value path + GameDescriptorExporter.defaultRequest) writes the YAML.
+		# Phase B plants that YAML and imports the same bytes as descreimporttest.
+		# Phase A runs with GRM_NO_CACHE: it produces the YAML, so a cached candidate (which
+		# skips the import, hence the export) must never be served in check or bless. Phase B's
+		# cache key covers the exported YAML (GRM_KEY_INPUTS), so it is cacheable but cannot be
+		# stale. The out: path uses forward slashes and no whitespace (script-arg rules).
+		export_yaml="$WORK/nes/descexportedtest.yaml"
+		rm -f "$export_yaml"
+		unplant_overlay descexportedtest.yaml
+		GRM_NO_CACHE=1 run_one descexporttest "$WORK/nes/descexporttest.nes" NesRomLoader "" "" \
+			"-postScript SeedExportAnnotations.java -postScript ExportGameDescriptor.java out:$(native "$export_yaml") id:descexportedtest note:exported_by_descexporttest overwrite:true"
+		if [ -f "$WORK/descexporttest.log" ]; then
+			if ! grep -q "SEEDEXPORT ok=true" "$WORK/descexporttest.log"; then
+				echo "FAIL: SeedExportAnnotations did not complete (grm-hb6.17)"
+				fail=1
+			fi
+			if ! grep -q "Wrote .*descexportedtest\.yaml: 3 label(s), 2 comment(s)" \
+				"$WORK/descexporttest.log"; then
+				echo "FAIL: ExportGameDescriptor did not report 3 labels + 2 comments (grm-hb6.17):"
+				grep -i "ExportGameDescriptor\|not carried" "$WORK/descexporttest.log" || true
+				fail=1
+			fi
+		fi
+		if [ ! -s "$export_yaml" ]; then
+			echo "FAIL: ExportGameDescriptor wrote no YAML at $export_yaml; cannot run phase B (grm-hb6.17)"
+			fail=1
+		else
+			for expect in "user_main" "user_data" "banked_routine"; do
+				grep -q "$expect" "$export_yaml" || { echo "FAIL: exported YAML lacks $expect (grm-hb6.17)"; fail=1; }
+			done
+			for absent in "analyzer_guess" "analyzer prose" "bank ->"; do
+				grep -q "$absent" "$export_yaml" && { echo "FAIL: exported YAML carries analyzer content '$absent' (grm-hb6.17)"; fail=1; }
+			done
+			plant_overlay descexportedtest.yaml
+			GRM_KEY_INPUTS="$export_yaml"
+			run_one descreimporttest "$WORK/nes/descreimporttest.nes" NesRomLoader "" "" \
+				"-postScript AssertExportedAnnotations.java"
+			unset GRM_KEY_INPUTS
+			unplant_overlay descexportedtest.yaml
+			if [ -f "$WORK/descreimporttest.log" ]; then
+				if ! grep -q "game descriptor resolved: .*descexportedtest\.yaml ('descexportedtest')" \
+					"$WORK/descreimporttest.log"; then
+					echo "FAIL: loader did not log resolving the exported descriptor (grm-hb6.17)"
+					fail=1
+				fi
+				if ! grep -q 'DESCEXPORT verdict=PASS' "$WORK/descreimporttest.log"; then
+					echo "FAIL: exported annotations did not round-trip (grm-hb6.17):"
+					grep 'DESCEXPORT' "$WORK/descreimporttest.log" || echo "  (no DESCEXPORT line at all)"
+					fail=1
+				fi
+			fi
 		fi
 	fi
 
