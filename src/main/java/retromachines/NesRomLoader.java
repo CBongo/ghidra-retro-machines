@@ -95,6 +95,9 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 
 	private static final String PLACEMENT_CMD_ARG = Loader.COMMAND_LINE_ARG_PREFIX + "-placement";
 
+	/** Preferences key remembering the last text-table path chosen in the GUI (grm-pqk). */
+	private static final String TBL_PREF_KEY = "retromachines.nes.tblFile";
+
 	private static final String LANGUAGE_ID = "6502:LE:16:default";
 	private static final String COMPILER_SPEC_ID = "default";
 
@@ -500,6 +503,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 		}
 		options.add(new Option(BOARD_OPTION_NAME, defaultBoard));
 		options.add(new Option(PLACEMENT_OPTION_NAME, "", String.class, PLACEMENT_CMD_ARG));
+		options.add(TblTableSupport.newOption(TBL_PREF_KEY));
 		return options;
 	}
 
@@ -520,6 +524,11 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 			List<String> known =
 				NesBoardRegistry.boards().stream().map(NesBoardRegistry.Board::id).toList();
 			return "Unknown NES board '" + boardId + "'; known boards: " + known;
+		}
+
+		String tblError = TblTableSupport.validate(options);
+		if (tblError != null) {
+			return tblError;
 		}
 
 		String placement = OptionUtils.getOption(PLACEMENT_OPTION_NAME, options, "");
@@ -698,6 +707,11 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 		// mapper 4)"-style, so this is just publishing what the board resolved to.
 		program.getOptions(Program.PROGRAM_INFO)
 				.setString(DescriptorSupport.BOARD_NAME_PROPERTY, board.name());
+
+		// Optional per-game .tbl text table (bead grm-pqk): store the raw text so the
+		// TblStringAnalyzer can decode strings and re-analysis never needs the file. Like
+		// validateOptions above, a bad table is only logged -- it never blocks the import.
+		TblTableSupport.apply(program, settings.options(), TBL_PREF_KEY, log);
 
 		// Curated per-game descriptor resolution (bead grm-hb6.12, first increment): resolve
 		// against the identity computed above -- prg_sha256 primary, file_sha256 alias -- and
