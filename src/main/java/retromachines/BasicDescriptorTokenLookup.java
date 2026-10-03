@@ -103,11 +103,11 @@ final class BasicDescriptorTokenLookup implements BasicTokenLookup {
 			}
 			ghidra.program.model.data.Enum page = prefixEnums.get(first);
 			String name = page == null ? null : enumMember(page, data[offset + 1] & 0xff);
-			return new Match(2, name);
+			return new Match(2, name, null, name == null ? null : page);
 		}
 
 		String name = enumMember(tokenEnum, first);
-		return name == null ? null : new Match(1, name);
+		return name == null ? null : new Match(1, name, tokenEnum, null);
 	}
 
 	private static String enumMember(ghidra.program.model.data.Enum tokenEnum, int value) {

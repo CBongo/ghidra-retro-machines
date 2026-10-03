@@ -2,3 +2,8 @@ FORMAT c64basicoverflow=true
 PRE 0801=10 SYS 65536
 TYPED=true loadFunction=false
 INVALID_SYS note=true functionAt0000=false
+DATA 0801 pointer16 len=2 080d
+DATA 0803 word len=2 10
+DATA 0805 BASIC_V2_TOKEN len=1 SYS
+DATA 0806 TerminatedPetsciiString len=7 " 65536"
+DATA 080d pointer16 len=2 0000

@@ -2000,7 +2000,7 @@ public class VerifyBankTest extends GhidraScript {
 	// BASIC 2/4/7 dialect-detokenizer fixtures (grm-1.6.1)
 	// ------------------------------------------------------------------
 
-	private void checkC64Basic2Dialect() {
+	private void checkC64Basic2Dialect() throws Exception {
 		String line = preComment(0x0801);
 		String expressionSys = preComment(0x080f);
 		boolean format = "Commodore 64 PRG".equals(currentProgram.getExecutableFormat());
@@ -2016,7 +2016,9 @@ public class VerifyBankTest extends GhidraScript {
 		println("TYPED=" + typed + " loadFunction=" + !noLoadFunction);
 		println("INVALID_SYS expressionNote=" + expressionSysNote + " functionAt0810=" +
 			!noPrefixSysFunction);
+		boolean covered = dumpBasicRegion(0x0801, true);
 		println("=== BANKDUMP END ===");
+		criterion("basic2-region-defined", covered, "no undefined bytes in the BASIC region");
 
 		criterion("basic2-format", format, currentProgram.getExecutableFormat());
 		criterion("basic2-cc-plus-raw",
@@ -2029,7 +2031,7 @@ public class VerifyBankTest extends GhidraScript {
 		criterion("basic2-no-load-function", noLoadFunction, "BASIC link data at $0801");
 	}
 
-	private void checkC64BasicOverflowDialect() {
+	private void checkC64BasicOverflowDialect() throws Exception {
 		String line = preComment(0x0801);
 		boolean format = "Commodore 64 PRG".equals(currentProgram.getExecutableFormat());
 		boolean typed = basicLineWordsTyped(0x0801);
@@ -2043,7 +2045,10 @@ public class VerifyBankTest extends GhidraScript {
 		println("TYPED=" + typed + " loadFunction=" + !noLoadFunction);
 		println("INVALID_SYS note=" + invalidSysNote + " functionAt0000=" +
 			!noWrappedSysFunction);
+		boolean covered = dumpBasicRegion(0x0801, true);
 		println("=== BANKDUMP END ===");
+		criterion("basic2-overflow-region-defined", covered,
+			"no undefined bytes in the BASIC region");
 
 		criterion("basic2-overflow-format", format, currentProgram.getExecutableFormat());
 		criterion("basic2-overflow-line", "10 SYS 65536".equals(line), line);
@@ -2053,7 +2058,7 @@ public class VerifyBankTest extends GhidraScript {
 		criterion("basic2-overflow-no-load-function", noLoadFunction, "BASIC link data at $0801");
 	}
 
-	private void checkPetBasic4Dialect() {
+	private void checkPetBasic4Dialect() throws Exception {
 		String line10 = preComment(0x0401);
 		String line20 = preComment(0x040b);
 		String line30 = preComment(0x0416);
@@ -2072,8 +2077,10 @@ public class VerifyBankTest extends GhidraScript {
 		println("PRE 041f=" + line40);
 		println("TYPED=" + typed + " sysFunction=" + sysFunction +
 			" loadFunction=" + !noLoadFunction);
+		boolean covered = dumpBasicRegion(0x0401, true);
 		println("=== BANKDUMP END ===");
 
+		criterion("basic4-region-defined", covered, "no undefined bytes in the BASIC region");
 		criterion("basic4-format", format, currentProgram.getExecutableFormat());
 		criterion("basic4-disk-tokens", "10 CONCAT DOPEN DIRECTORY".equals(line10), line10);
 		criterion("basic4-quoted-raw", "20 PRINT\"{$cc}{$cd}{$da}\"".equals(line20), line20);
@@ -2084,7 +2091,7 @@ public class VerifyBankTest extends GhidraScript {
 		criterion("basic4-no-load-function", noLoadFunction, "BASIC link data at $0401");
 	}
 
-	private void checkC128Basic7Dialect() {
+	private void checkC128Basic7Dialect() throws Exception {
 		String line10 = preComment(0x1c01);
 		String line20 = preComment(0x1c0b);
 		String line30 = preComment(0x1c12);
@@ -2114,8 +2121,10 @@ public class VerifyBankTest extends GhidraScript {
 		println("PRE 1c42=" + line80);
 		println("TYPED=" + typed + " sysFunction=" + sysFunction +
 			" loadFunction=" + !noLoadFunction);
+		boolean covered = dumpBasicRegion(0x1c01, true);
 		println("=== BANKDUMP END ===");
 
+		criterion("basic7-region-defined", covered, "no undefined bytes in the BASIC region");
 		criterion("basic7-format", format, currentProgram.getExecutableFormat());
 		criterion("basic7-base-tokens", "10 RGR ELSE DSAVE".equals(line10), line10);
 		criterion("basic7-ce-prefix", "20 POT".equals(line20), line20);
@@ -2134,8 +2143,50 @@ public class VerifyBankTest extends GhidraScript {
 	}
 
 	private boolean basicLineWordsTyped(long lineAddr) {
-		return dataTypeAt(lineAddr, "word") && dataTypeAt(lineAddr + 2, "word") &&
+		Data number = currentProgram.getListing().getDefinedDataAt(addr(lineAddr + 2));
+		return dataTypeAt(lineAddr, "pointer16") && dataTypeAt(lineAddr + 2, "word") &&
+			number != null && number.getDefaultValueRepresentation().matches("\\d+") &&
 			"line link".equals(eol(lineAddr)) && "line number".equals(eol(lineAddr + 2));
+	}
+
+	/** Address just past a BASIC program's terminating $0000 link, following the line
+	 *  links from {@code start} (grm-td4). */
+	private long basicRegionEnd(long start) throws Exception {
+		long at = start;
+		while (true) {
+			int link = (currentProgram.getMemory().getByte(addr(at)) & 0xff) |
+				((currentProgram.getMemory().getByte(addr(at + 1)) & 0xff) << 8);
+			if (link == 0) {
+				return at + 2;
+			}
+			at = link;
+		}
+	}
+
+	/** Emits one DATA line per code unit of the BASIC region and returns whether every
+	 *  byte is covered by defined data (no undefined bytes), grm-td4. */
+	private boolean dumpBasicRegion(long start, boolean print) throws Exception {
+		long end = basicRegionEnd(start);
+		boolean allDefined = true;
+		long at = start;
+		while (at < end) {
+			Data d = currentProgram.getListing().getDataContaining(addr(at));
+			if (d == null || !d.isDefined()) {
+				if (print) {
+					println("DATA " + String.format("%04x", at) + " UNDEFINED");
+				}
+				allDefined = false;
+				at++;
+				continue;
+			}
+			if (print) {
+				println("DATA " + String.format("%04x", d.getAddress().getOffset()) + " " +
+					d.getDataType().getName() + " len=" + d.getLength() + " " +
+					d.getDefaultValueRepresentation());
+			}
+			at = d.getAddress().getOffset() + d.getLength();
+		}
+		return allDefined;
 	}
 
 	// ------------------------------------------------------------------
@@ -2851,6 +2902,10 @@ public class VerifyBankTest extends GhidraScript {
 		String pr = preComment(0x0810);
 		criterion("B3", pr.contains("{clr}"),
 			"quoted control byte renders as {clr}: \"" + pr + "\"");
+
+		// B7 (grm-td4): every byte of the BASIC region carries defined data.
+		criterion("B7:regionDefined", dumpBasicRegion(0x0801, false),
+			"no undefined bytes in the BASIC region at 0x0801");
 
 		// B4: the SYS target (2115, from line 50) is a real function, and the loader's
 		// usual load-address function mark did NOT happen for this BASIC-start PRG.
