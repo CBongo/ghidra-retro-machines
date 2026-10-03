@@ -1,0 +1,11 @@
+TBLSOURCE nestbltest.tbl
+TBLTEXT length=434 crlf=true
+9000 PRE TBL: HELLO WORLD!<end> | BOOKMARK text: HELLO WORLD!
+9020 PRE TBL: QUITE<end> | BOOKMARK text: QUITE
+9040 PRE TBL: GAME<end2> | BOOKMARK text: GAME
+9060 PRE <none> | BOOKMARK <none>
+9080 PRE <none> | BOOKMARK <none>
+90a0 PRE TBL: A<br>BCD<end> | BOOKMARK text: A<br>BCD
+90c0 PRE <none> | BOOKMARK <none>
+90e0 PRE TBL: ABCD<end> | BOOKMARK text: ABCD
+TBLBOOKMARKS 5

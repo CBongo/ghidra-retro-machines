@@ -167,6 +167,7 @@ final acceptance and commits**. `build-and-test.sh --list-chunks` prints the cur
 | `c128-loader` | C128 native BASIC PRG placement, fixed ROM slots, MMU IO |
 | `nes-banking` | NES banking and MMC fixtures |
 | `petscii-strings` | `PetsciiStringAnalyzer` C64 PRG fixture |
+| `nes-text` | NES `.tbl` text-table loader option (`-loader-tblFile`) + `TblStringAnalyzer` (`nestbltest`; PRE comments + bookmarks; the parser itself is JUnit `TblTableTest`) |
 | `unit` | the JUnit `gradle test` suite (all `src/test/java`; no extension build/install needed alone) |
 | `spc700-vectors` | exhaustive SPC700 p-code vector regression, 1000 cases/opcode (256,000 total) vs. the `unit` chunk's 32/opcode sample (`gradle spc700VectorTest`); needs `GRM_SPC700_VECTORS`, refuses loudly otherwise; opt-in, **not** included by `all` (see below), but routine (not just ceremonial) whenever the env var is configured — same standing as the real-ROM tier — and worth an explicit run after any SPC700 `.sinc` change, since the sample chunk can and does miss narrow edge cases (page-boundary wraps and the like) that the full suite catches |
 | `spc700-dis-corpus` | SPC700 *disassembly text* differential against nine hand-annotated `.dis` listings of real drivers (`gradle spc700DisCorpusTest`); needs `GRM_SPC700_DIS_CORPUS`, Assume-skips otherwise; opt-in, **not** included by `all`. A reporting tier, not a gate — the listings are leads, not an oracle. See its own section below |

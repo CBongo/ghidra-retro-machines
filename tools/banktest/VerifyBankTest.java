@@ -45,6 +45,7 @@ import ghidra.program.model.address.AddressRange;
 import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.listing.Bookmark;
+import ghidra.program.model.listing.BookmarkType;
 import ghidra.program.model.listing.CommentType;
 import ghidra.program.model.listing.Data;
 import ghidra.program.model.listing.Function;
@@ -321,6 +322,12 @@ public class VerifyBankTest extends GhidraScript {
 
 		if (name.contains("petsciistringtest")) {
 			checkPetsciiStringTest();
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
+
+		if (name.contains("nestbltest")) {
+			checkNesTblTest();
 			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
 			return;
 		}
@@ -2992,6 +2999,70 @@ public class VerifyBankTest extends GhidraScript {
 		criterion("P5:ascii-punct-typed", e != null &&
 			"PetsciiString".equals(e.getDataType().getName()) && e.getLength() == 5,
 			describeData(e));
+	}
+
+	// ------------------------------------------------------------------
+	// nestbltest.nes criteria (NesRomLoader -loader-tblFile + TblStringAnalyzer, bead grm-pqk)
+	// ------------------------------------------------------------------
+
+	// Addresses mirror mknestbltest.py's make_prg() layout exactly.
+	private static final String TBL_NODE = "Retro Text Table";
+	private static final String TBL_CATEGORY = "TblStringAnalyzer";
+	private static final long[] TBL_ALL = { 0x9000, 0x9020, 0x9040, 0x9060, 0x9080, 0x90A0,
+		0x90C0, 0x90E0 };
+
+	private void checkNesTblTest() {
+		Options node = currentProgram.getOptions(TBL_NODE);
+		String source = node.getString("Source File", "");
+		String text = node.getString("Table Text", "");
+
+		println("=== BANKDUMP BEGIN ===");
+		println("TBLSOURCE " + source);
+		println("TBLTEXT length=" + text.length() + " crlf=" + text.contains("\r\n"));
+		for (long a : TBL_ALL) {
+			Address at = addr(a);
+			String pre = currentProgram.getListing().getComment(CommentType.PRE, at);
+			Bookmark bm = currentProgram.getBookmarkManager().getBookmark(at,
+				BookmarkType.NOTE, TBL_CATEGORY);
+			println(fmt(at) + " PRE " + (pre == null ? "<none>" : pre) + " | BOOKMARK " +
+				(bm == null ? "<none>" : bm.getComment()));
+		}
+		int bookmarks = 0;
+		Iterator<Bookmark> it =
+			currentProgram.getBookmarkManager().getBookmarksIterator(BookmarkType.NOTE);
+		while (it.hasNext()) {
+			if (TBL_CATEGORY.equals(it.next().getCategory())) {
+				bookmarks++;
+			}
+		}
+		println("TBLBOOKMARKS " + bookmarks);
+		println("=== BANKDUMP END ===");
+
+		criterion("T1:table-stored", "nestbltest.tbl".equals(source) &&
+			text.contains("/FF=<end>") && text.contains("F001=QU"),
+			"source=" + source + " textLen=" + text.length());
+
+		String[][] expected = { { "9000", "TBL: HELLO WORLD!<end>" },
+			{ "9020", "TBL: QUITE<end>" }, { "9040", "TBL: GAME<end2>" },
+			{ "90A0", "TBL: A<br>BCD<end>" }, { "90E0", "TBL: ABCD<end>" } };
+		for (String[] e : expected) {
+			Address at = addr(Long.parseLong(e[0], 16));
+			String pre = currentProgram.getListing().getComment(CommentType.PRE, at);
+			Bookmark bm = currentProgram.getBookmarkManager().getBookmark(at,
+				BookmarkType.NOTE, TBL_CATEGORY);
+			criterion("T2:decoded-" + e[0], e[1].equals(pre) && bm != null, "pre=" + pre);
+		}
+
+		// Decoys: below minimum length (9060 "AB", 90C0 "NOW") and unterminated (9080).
+		for (long a : new long[] { 0x9060, 0x9080, 0x90C0 }) {
+			Address at = addr(a);
+			criterion("T3:decoy-" + Long.toHexString(a),
+				currentProgram.getListing().getComment(CommentType.PRE, at) == null &&
+					currentProgram.getBookmarkManager().getBookmark(at, BookmarkType.NOTE,
+						TBL_CATEGORY) == null,
+				"decoy at " + fmt(at) + " must stay unannotated");
+		}
+		criterion("T4:exactly-five", bookmarks == 5, "bookmarks=" + bookmarks);
 	}
 
 	private static String describeData(Data d) {

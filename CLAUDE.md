@@ -143,6 +143,7 @@ Chunk/source-area mapping:
 - `c128-loader`: C128 native BASIC PRG placement, fixed ROM slots, and MMU I/O.
 - `nes-banking`: NES banking and MMC fixtures.
 - `petscii-strings`: `PetsciiStringAnalyzer` C64 PRG fixture.
+- `nes-text`: NES `.tbl` text-table loader option + `TblStringAnalyzer` fixture (`nestbltest`).
 - `unit`: the JUnit `gradle test` suite (all `src/test/java`; no extension build/install).
 - `snes-rom-corpus`: `SnesRomHeader.parse` surveyed over a local SNES cartridge collection
   (`GRM_SNES_ROM_DIR`); opt-in, reporting only, not in `all`.
