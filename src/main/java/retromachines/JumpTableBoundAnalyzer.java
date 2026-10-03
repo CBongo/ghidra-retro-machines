@@ -348,6 +348,18 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 			if (owner != null && !owner.equals(function)) {
 				return false; // switch belongs to a different (already-processed-elsewhere) function
 			}
+			if (owner == null) {
+				// grm-aemp: the decompiler follows flow past the listing body, so a real function
+				// can yield a table for a switch no function contains -- often one the listing
+				// has not even disassembled yet (dragonpower NMI reaching a546). An override
+				// there always throws "Switch is not in function body", and stock switch analysis
+				// then over-read the table to 91 cases. No function to anchor an override to is
+				// exactly the undefined case, so pin by references instead (pinByReferences
+				// disassembles the switch first when it has to).
+				isUndefined = true;
+			}
+		}
+		if (!isUndefined) {
 			if (relocateStaleOverride(this, program, function, switchAddr, log)) {
 				return false;
 			}
@@ -520,14 +532,21 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 	 *  there is no real {@link Function} to anchor a {@link JumpTable} override's namespace to
 	 *  (see the class javadoc); stock's own {@code FindFunctionCallback} bails out of any
 	 *  location that already carries a computed reference, so adding these here is what stops it
-	 *  from ever revisiting the site and over-reading it. Returns false only if the switch
-	 *  instruction itself cannot be found (should not happen; the caller just decompiled a
-	 *  function containing it). */
+	 *  from ever revisiting the site and over-reading it. If the switch instruction is not in
+	 *  the listing yet (the decompiler followed flow there first, grm-aemp), disassembles it;
+	 *  returns false only if that still leaves no instruction. */
 	private boolean pinByReferences(Program program, Listing listing, Address switchAddr,
 			List<Address> keptTargets, TaskMonitor monitor) throws CancelledException {
 		Instruction instr = listing.getInstructionAt(switchAddr);
 		if (instr == null) {
-			return false;
+			// grm-aemp: the decompiler reached the switch by following flow the listing has not
+			// disassembled yet. Lay the switch down now -- it is real flow from a real function --
+			// so the pin lands before stock switch analysis can over-read the table.
+			new DisassembleCommand(switchAddr, null, true).applyTo(program);
+			instr = listing.getInstructionAt(switchAddr);
+			if (instr == null) {
+				return false;
+			}
 		}
 		FlowType flowType = instr.getFlowType();
 		if (flowType.isCall()) {

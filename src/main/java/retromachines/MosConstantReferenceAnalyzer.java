@@ -22,10 +22,13 @@ import ghidra.app.plugin.core.analysis.ConstantPropagationContextEvaluator;
 import ghidra.framework.options.Options;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressOutOfBoundsException;
+import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.address.AddressSetView;
 import ghidra.program.model.data.DataType;
 import ghidra.program.model.lang.Register;
+import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Instruction;
+import ghidra.program.model.listing.InstructionIterator;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryAccessException;
 import ghidra.program.model.pcode.PcodeOp;
@@ -406,6 +409,56 @@ public abstract class MosConstantReferenceAnalyzer extends ConstantPropagationAn
 			.setCreateComplexDataFromPointers(createComplexDataFromPointers);
 
 		return symEval.flowConstants(flowStart, flowSet, eval, true, monitor);
+	}
+
+	/**
+	 * Stock flow, then a second walk from each part of the function body the first one never
+	 * reached (grm-aemp).
+	 *
+	 * <p>Stock {@code analyzeLocation} walks a function from its entry point, restricted to its
+	 * body, so a body range reached only by FALL-THROUGH from code outside the function is never
+	 * evaluated. Whether such a range exists depends on analysis order: dodge's
+	 * {@code W8000_M3_B3::9000} island is entered only from {@code 8ffc}, a jump-table case.
+	 * When no function owns {@code 8ffc} yet, the not-in-a-function sweep walks straight through
+	 * into {@code 9000} and lays down its table references; once {@code FUN_8030}'s body has
+	 * absorbed {@code 8ffc}, that walk stops at {@code 8fff} and {@code FUN_8287}'s walk never
+	 * enters {@code 9000}. Walking the unreached islands too makes both orders end the same way.
+	 * An island is walked with no incoming register values -- the conservative choice, and the
+	 * same thing the not-in-a-function sweep does.
+	 */
+	@Override
+	public AddressSetView analyzeLocation(Program program, Address start, AddressSetView set,
+			TaskMonitor monitor) throws CancelledException {
+		AddressSetView reached = super.analyzeLocation(program, start, set, monitor);
+		Function func = program.getFunctionManager().getFunctionContaining(start);
+		if (reached == null || func == null) {
+			return reached;
+		}
+		AddressSetView body = func.getBody();
+		if (body.getNumAddresses() <= 1) {
+			return reached; // stock does not restrict to a one-address body either
+		}
+		AddressSet all = new AddressSet(reached);
+		InstructionIterator it = program.getListing().getInstructions(body, true);
+		while (it.hasNext()) {
+			monitor.checkCancelled();
+			Instruction instr = it.next();
+			if (all.contains(instr.getMinAddress())) {
+				continue;
+			}
+			SymbolicPropogator symEval = new SymbolicPropogator(program, false);
+			symEval.setParamRefCheck(checkParamRefsOption);
+			symEval.setParamPointerRefCheck(checkPointerParamRefsOption);
+			symEval.setReturnRefCheck(checkParamRefsOption);
+			symEval.setStoredRefCheck(checkStoredRefsOption);
+			AddressSetView island =
+				flowConstants(program, instr.getMinAddress(), body, symEval, monitor);
+			if (island != null) {
+				all.add(island);
+			}
+			all.add(instr.getMinAddress(), instr.getMaxAddress()); // always make progress
+		}
+		return all;
 	}
 
 	/** Registers the indexed-base reference option. */

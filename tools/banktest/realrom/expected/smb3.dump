@@ -77,9 +77,9 @@ REALROM block WE000 e000-ffff overlay=false
 REALROM count blocks.total 70
 REALROM count blocks.overlay 62
 REALROM count spaces.overlay 62
-REALROM count refs.intoOverlay 2567
+REALROM count refs.intoOverlay 2568
 REALROM count refs.intoOverlay.retargeted 77
-REALROM count refs.intoOverlay.intraOverlay 2490
+REALROM count refs.intoOverlay.intraOverlay 2491
 REALROM count instrs.inOverlay 11694
 REALROM count bankComments 160
 REALROM count warnings 24
@@ -270,7 +270,7 @@ REALROM sample.ref 8abd -> WA000_B26::ac69 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8ac6 -> WA000_B26::b44a UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8ada -> WA000_B26::acaa UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8b14 -> WA000_B26::b44a UNCONDITIONAL_CALL primary=true
-REALROM sample.ref.truncated 25 of 2567
+REALROM sample.ref.truncated 25 of 2568
 REALROM sample.warn 8631 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
 REALROM sample.warn 8bae [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
 REALROM sample.warn 8cc1 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
