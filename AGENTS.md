@@ -83,7 +83,12 @@ that is deliberately *not* agent work.
 share with others. **Agents must NEVER modify it** — read it, quote it into beads, ask questions
 about it, but leave the file alone. Read its preamble before using anything in it: the notes were
 collected over time, may not match current code, and are a basis for questions to the user rather
-than ground truth. It may be committed and pushed at any time.
+than ground truth.
+
+**Never edit it, but always commit it when it has changed.** If `git status` shows it modified,
+stage it with whatever you are committing anyway — it rides along in your commit, it does not need
+a commit of its own, and it is never a reason to hold back or work around a commit (or a
+`git pull --rebase`). Commit it exactly as the user left it.
 
 **When one of those items comes back answered, retire it — do not check it off.** Delete the item
 from its section and add a row to the `## Answered` table at the bottom of that file. Never mark it

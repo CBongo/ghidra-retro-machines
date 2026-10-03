@@ -1,4 +1,4 @@
-Note to agents: this file consists of human generated notes that are used to provide input to agents after human review and collation.  Notes were collected over time and may not reflect current code.  Do not treat information in this file as truth; only use it as a basis for questions to the user.  It is OK to commit this file to git and push at any time, but it should NEVER be modified by an agent.
+Note to agents: this file consists of human generated notes that are used to provide input to agents after human review and collation.  Notes were collected over time and may not reflect current code.  Do not treat information in this file as truth; only use it as a basis for questions to the user.  It is OK for an agent to commit this file to git and push at any time, but it should NEVER be modified by an agent.
 ----
 
 one line per address: <addr> — <classification> — <detail>, so it can be read as a table.
@@ -282,6 +282,18 @@ the mapper numbers are missing from the program properties; I thought that alrea
 dragonpower/shenlong 8f00: 31 entries.
 rcransom W8000_M0_B12_9343: 9352 table is 25 entries long and is a legitimate switch table. analyze with current build does not recover the table at all though due to the decompiler dying.
 
+rcproam bd2e: called from table at bba3 in FUN_bbb3 (called from 9bef which is part of the NMI handler)
+
+rcransom fed1 callers:
+c08e: LDA bfff; PHA at c022; lots of intervening loads and stores, a loop (c069->c046), nested PHA/PLA around a JSR at c07a-c07e.
+c0f4: also part of FUN_c000 like c08e, this is the other exit route for the branch at c075, so it shares the PHA at c022. another nested PHA/PLA at c0a0 and a couple of loops in here.
+c7db: FUN_c705 does LDA bfff; PHA at c731. doesn't look like a straight line back; there is a branch at c772 to c787 and a JMP to c78a at c784, and a loop at c7d1->c7cd that might be interfering.
+cd57: FUN_cca9 does LDA bfff; PHA at ccaf. there are several branches and a switch dispatch at cd53; the switch cases all end with a JMP to cd56 (the PLA) and cd5a is the RTS for FUN_cca9 as a whole.
+ef85: FUN_ed0e does LDA bfff; PHA at ed23. ef84 (the PLA) is the sole exit of FUN_ed0e; there are a lot of branches and jumps within the function starting at ed87 as sort of the main processing path (the decompiler basically gives up and renders as a bunch of gotos).
+rcransom bab3 and C:85c9 tables:
+bab3: table at bab6 length 6; first addr after is bac2 which is index 1.
+C:85c9: table at 85cc length 10; first addr after is 85e0 which is index 0.
+both tables were recovered correctly thanks to JumpTableBound.
 
 
   Next session's shortest path

@@ -24,8 +24,8 @@ which is the one thing this file exists to prevent. *(This mistake has been made
 the `- [ ]` syntax invites it, and the archive table is far enough down the file that a targeted
 read of a single item never sees that it exists. Scroll to the bottom before editing.)*
 
-**`docs/human recon notes.txt` is NOT an answer source.** It is untracked scratch holding the
-raw observations that *prompted* the questions below — not their answers. Anything useful in it
+**`docs/human recon notes.txt` is NOT an answer source.** It is the owner's raw scratch (tracked,
+committed whenever it changes, never edited by agents -- see `AGENTS.md`) holding the raw observations that *prompted* the questions below — not their answers. Anything useful in it
 has already been carried into beads. Mine it for new questions if you like; do not treat a line
 in it as a recorded finding, and do not sweep it into beads.
 
@@ -61,7 +61,8 @@ a read before bless:
   `849f`'s table 7 entries (and `86cd` a separate table after it), or 11?** Either way no phantom
   target survives; refs 298 → 277, warnings 6 → 4 (`811a`, `8efc` gone).
 - **ff1 bank 11 `a449`** (table `a7aa`): now 3 entries — `a44c a4e4 a590`, then `c8c8` ×4.
-  refs 1898 → 1849, instrs 7538 → 7487. ff1 is bistable, so this one also needs a second run.
+  refs 1898 → 1849, instrs 7538 → 7487. (ff1 is no longer bistable -- deterministic since grm-aemp,
+  2026-10-03 -- so one run of the current build is enough to judge it.)
 
 ### - [ ] grm-fxtp: two more rows a jump-table cut moved, held unblessed
 
@@ -76,6 +77,16 @@ need a read:
 - **ff1 bank 14 `9069`** (table `91d3`): 128 → 80 entries (lots of repeated `9492`), then `1084`;
   and **`a354`** (table `a320`): 128 → 8. With grm-akiv's `a449`, ff1 now reads refs 1798,
   instrs 7350 (golden 1898 / 7538). **Are 80 and 8 right?**
+
+### - [ ] grm-q1bi: dodge's new state, held unblessed
+
+dodge stopped jittering (grm-aemp, 2026-10-03) and now reads refs.intoOverlay 2556 / instrs.inOverlay
+11447 / symbols 135 on every run. The +295 instructions are new disassembly in bank 3
+(`W8000_M3_B3`): case 0 of the `8445` table at `8451` (`LDA $d0 ...`; the `8445 -> 8451` reference
+existed before, the code was never disassembled), and a block `a00a`..`a236` after the `RTS` at
+`a009`. Against the golden it also reads warnings 40 -> 24 and bankComments 29 -> 25 (notes 27),
+which are largely grm-pdd6's `NO_DEPOSIT` removals and are what held this golden before. **Is `a00a`..`a236` real code, and is the row
+blessable as it stands?**
 
 ---
 
@@ -140,14 +151,6 @@ Answered table. The per-mapper fact-sheet checklist above stands for whenever th
 
 Blocked on judgment, not effort.
 
-- [ ] **Adopt `.claude/rules/`, or keep the always-on core in `CLAUDE.md` + `AGENTS.md`?**
-  (`grm-yaat`, P2.) The memory-truncation trigger the bead was filed for is resolved (`grm-8ctl`'s
-  index, `grm-9t2g`), and the `@AGENTS.md` import is confirmed to load on a cold start (bead
-  comment 2026-09-25). What remains is size and adherence only: 822 always-on lines
-  (`CLAUDE.md` 487 + `AGENTS.md` 335) against the <200-line guidance the bead cites. Decide
-  whether to split path-scoped detail (Ghidra source reading, loader conventions, the opt-in tier
-  paragraphs) into rules files; the migration itself is agent work once you rule.
-
 - [ ] **Community disassembly licensing survey** (`grm-hb6.6` P3). The bead names licensing as "the
       gating constraint and a per-source judgment, not a policy set once". Deliverable: a table of
       *project · URL · license · redistributable? · symbol format · maintenance state* for Zelda
@@ -181,9 +184,13 @@ Agents can't file these — they need an account and CLA agreement.
   2026-08-16 with no reply. What 2026-09-21 adds: rebased onto 12.1.3, exact on **seven**
   hand-verified tables (2026-09-25: the suspected `$8F00` +1 is really 31 entries, so it was exact
   there too, rcransom `9352` → 25 is right, and 2026-09-26: ff1 `b177` → 30, exact — `grm-bogk`), 72 tables bounded across eight cartridges, real
-  code recovered rather than lost, and 32/34 rows deterministic across two full runs. Known limit
+  code recovered rather than lost, and 32/34 rows deterministic across two full runs (34/34, pinned
+  and unpinned, since 2026-10-03 -- but that last step came from extension-side fixes in grm-aemp, not
+  from this patch). Known limit
   to state: it declines on the table-after-code idiom (megaman `e000`/`e121`/`e44e`, true lengths
-  18/19/10, still 128). The fork commit `475cf359` applies to the 12.1.3 tree unchanged; the
+  18/19/10, still 128 under the patch alone; the extension now bounds them with grm-akiv's
+  switch-window rule, a candidate follow-up PR). The fork commit `475cf359` applies to the 12.1.3 tree
+  unchanged, and 12.1.4 changed no decompiler source; the
   `grm-6xh` recipe below prepares the branch. Your call, per `grm-b3m`'s standing rule that silence
   is not a reason to send one.
 
@@ -363,3 +370,4 @@ re-measurement and branch prep land), [#9658](https://github.com/NationalSecurit
 | rcransom: are the two tables the extension-side jump-table bound shrank right? | **Yes, both (owner, 2026-09-27).** `bab3`: table at `bab6`, 6 entries (4 distinct targets); the first address after it, `bac2`, is index 1's target. `85c9`: table at `85cc`, 10 entries; `85e0`, right after it, is index 0's. So the lost `b80b` bank comment and `fae3` warning were over-read cruft — **do not trace them.** The row diff was checked to contain exactly that movement (refs 1221 → 1151, instrs 5722 → 5450), so rcransom is blessable. db3 and ultimaav, which moved in the same run, remain open in section 1. | `grm-eyn` |
 | Should the thread pin get a new canary row now that tmnt's `44 / 103` came from phantom entries of `8f34` (grm-akiv takes it to 0 / 0)? | **No, not for now (owner, 2026-09-28).** Once tmnt is blessed at 0, no row signals that the pin is live; `GRM_THREAD_PIN` in the candidate-cache key is the remaining guard. Do not pick or add a canary row unprompted. | `grm-nems` |
 | lwings: are the bank comments at `dc61`/`dc7a`/`dc93` (lost under grm-fxtp) reached by real flow? | **Real code, but not reachable by anything Ghidra follows (agent decode, 2026-09-28).** They sit in three object-slot loops (`dc53`, `dc6c`, `dc85`) that call the `dc9e` dispatcher, and their only callers are the 6-byte `JSR x / JMP $ffa5` stubs at `ff1e`–`ff51`, entered by a computed dispatch Ghidra cannot resolve (`ff42 JSR $ec5c`, lost under grm-akiv, is another stub). Before, over-read `dcaf` entries reached them by accident. Same class as db3 `a018`: **not a regression of the bound; do not loosen it.** The stub dispatch is `grm-h0oa`. | `grm-fxtp` |
+| Adopt `.claude/rules/`, or keep the always-on core in `CLAUDE.md` + `AGENTS.md`? | **Adopted (2026-10-02).** CLAUDE.md's conditional sections moved, unreworded, into `.claude/rules/` (realrom tier, opt-in language tiers, SNES corpus, Ghidra source + loaders): always-on CLAUDE.md went 489 → 250 lines. bd memories stay in bd (owner, 2026-08-26) -- rules files are fed from CLAUDE.md, never from the memory store. Watch for adherence changes on the moved topics. | `grm-yaat` |
