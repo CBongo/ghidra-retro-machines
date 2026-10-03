@@ -37,7 +37,7 @@ see that paragraph.
 to mean `nes-curated`, and is now spelled `nes-curated`; `--gme` → `nes-gme`; `--all` → `nes`;
 `--snes` → `snes`. Note `--all` still maps to exactly what it always meant — both NES manifests,
 33 rows — that part of the old contract is honored, not broken. The word that changed meaning is
-the *bare, unflagged* `all`: it now spans every platform (46 rows), because a word that didn't
+the *bare, unflagged* `all`: it now spans every platform (47 rows), because a word that didn't
 mean what it said is what grm-ughg was filed to fix.
 
 **Multi-platform runs now work in one invocation.** `all` runs NES and SNES rows together;
@@ -83,8 +83,25 @@ one: `--only`/`--except` filtering is partial on purpose and the caller knows it
 missing image (see the `GRM_ROM_DIR` paragraph below). Counting only the deliberate cause would
 have left a run where 6 of 33 rows ran and 27 ROMs went unfound stamping identically to a clean
 full-tier pass. The stamp may under-claim; it must never over-claim. It stays a *whole-run*
-signal, though — it cannot say WHICH rows are stale; `grm-eawl` proposes deriving that per row
-from the candidate cache, whose key already includes the extension identity.
+signal, though — it cannot say WHICH rows are stale. For that, use the per-row mode (`grm-eawl`):
+
+```bash
+bash tools/banktest/realrom-test.sh coverage [SET ...] [--only|--except <ids>] [--no-build]
+```
+
+It is **read-only**: no imports, no ROM dirs needed, no state file, never fails a run (seconds, plus
+the usual `stageExtensionForTests` preflight). For each selected row it computes `realrom_cache_key()`
+and reports `ran` if `build/realrom-cache/<key>.dump` exists, else `--`. Decisions worth knowing:
+(1) **it stages the build first, like `check`** (honouring `--no-build`/`GRM_SKIP_BUILD`), because
+`EXT_ID` is in the key and must be the build a `check` would use right now — under `--no-build` it
+reports against whatever is installed, and the banner names that identity; (2) **it uses the
+manifest's pinned ROM sha256**, not a hash of the file: a cache entry only exists if the dump's own
+sha matched that pin, so the two are equivalent and no ROM is found or hashed; a row whose ROM is
+absent just reads `--`. **`ran` means imported and cached, NOT matched-its-golden** — a failing row
+(`megaman`, `wizwarr`, or any drifting golden) also reads `ran`, deliberately, per grm-6kv. The key
+also includes `REALROM_EXTRA_PRESCRIPT`, `GRM_THREAD_PIN` and the toolchain id, so run it with the
+same environment as the `check` you are asking about. The cache is per worktree, so a fresh
+worktree reads `--` everywhere.
 
 `GRM_ROM_DIR` is set per machine (`.claude/settings.local.json`, gitignored) and holds **several
 space-separated dirs**, because the curated manifest is split across more than one and the driver

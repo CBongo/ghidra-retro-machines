@@ -9,6 +9,7 @@
 #   bash tools/banktest/realrom-test.sh check    [SET ...] [--only|--except <ids>] [--no-build] <romdir> ...
 #   bash tools/banktest/realrom-test.sh bless    [SET ...] [--only|--except <ids>] [--no-build] <romdir> ...
 #   bash tools/banktest/realrom-test.sh nominate <romdir> ...
+#   bash tools/banktest/realrom-test.sh coverage [SET ...] [--only|--except <ids>] [--no-build]
 #   bash tools/banktest/realrom-test.sh --list-sets
 #
 # SETS ARE NAMED POSITIONALLY, NOT SELECTED BY A FLAG PER PLATFORM (bead grm-ughg). This
@@ -161,7 +162,14 @@ SETS_TSV="$REALROM_DIR/sets.tsv"
 PLATFORMS_TSV="$REALROM_DIR/platforms.tsv"
 
 USAGE="usage: $0 check|bless|nominate [SET ...] [--only <ids>|--except <ids>] [--no-build] <romdir> ...
+       $0 coverage [SET ...] [--only <ids>|--except <ids>] [--no-build]
        $0 --list-sets
+
+coverage (bead grm-eawl) is read-only: it imports nothing, needs no ROM dirs, and reports per
+row whether build/realrom-cache holds an entry for the CURRENT extension build -- i.e. whether
+the row has RAN at this build. It says nothing about whether the row passed. Like check it
+stages the build first (so the build identity matches what a check would use) unless
+--no-build/GRM_SKIP_BUILD is given. It never fails a run.
 
 SETs are named positionally and compose (rows are deduplicated by id). With no SET,
 'core' is used -- the always-run floor, NOT the whole tier. Run --list-sets for the
@@ -225,12 +233,15 @@ if [ "${1:-}" = "--list-sets" ]; then
 			"all $p sets; ROM dirs from $(tsv_field "$PLATFORMS_TSV" "$p" rom_dir_env)"
 	done < <(tsv_column "$PLATFORMS_TSV" platform)
 	printf '%-14s %-6s %-6s %s\n' all "" "" "every set on every platform"
+	echo
+	echo "mode 'coverage [SET ...]': read-only; which of a set's rows have RAN at the current build"
+	echo "(derived from build/realrom-cache; imports nothing, needs no ROM dirs; 'ran' != passed)."
 	exit 0
 fi
 
 MODE="${1:-}"
 case "$MODE" in
-	check|bless|nominate) shift ;;
+	check|bless|nominate|coverage) shift ;;
 	*)
 		echo "$USAGE" >&2
 		exit 2
@@ -503,12 +514,14 @@ for p in "${PLATFORMS_USED[@]}"; do
 	fi
 	if [ -n "${PLATFORM_DIRS_OF[$p]}" ]; then
 		ANY_DIRS=1
+	elif [ "$MODE" = coverage ]; then
+		: # coverage never reads ROM dirs
 	else
 		echo "REALROM: platform '$p' has no ROM dirs -- $p_env is unset and no romdir was" \
 			"passed. Its rows will SKIP; nothing about them is being checked." >&2
 	fi
 done
-if [ "$ANY_DIRS" -eq 0 ]; then
+if [ "$ANY_DIRS" -eq 0 ] && [ "$MODE" != coverage ]; then
 	envs=""
 	for p in "${PLATFORMS_USED[@]}"; do
 		envs="$envs $(tsv_field "$PLATFORMS_TSV" "$p" rom_dir_env)"
@@ -963,6 +976,59 @@ realrom_cache_key() {
 		printf 'threadpin:%s\n' "${GRM_THREAD_PIN:-1}"
 	} | sha256sum | cut -d' ' -f1
 }
+
+# ------------------------------------------------------------------
+# coverage (bead grm-eawl): which rows have RAN at THIS build? Derived from the candidate cache,
+# not from a new ledger -- build/realrom-cache/<key>.dump is written for every row whose sha
+# recheck passed (pass OR fail on the golden), keyed on id + ROM sha + opts + dump script +
+# EXT_ID + toolchain + prescript + thread pin. So the column says "ran", never anything
+# implying the row passed: the data cannot support that claim.
+#
+# ROM sha256: the key uses the MANIFEST'S PINNED hash, and an entry only exists if the dump's
+# own sha matched that pin (the second-layer recheck in the row walk), so using the pin is
+# exactly equivalent to hashing the ROM -- no ROM dirs are read or hashed. A row whose ROM is
+# not on this machine simply has no entry, which reads as "no entry", the same signal as SKIP.
+# EXT_ID/TOOLCHAIN_ID come from the same preflight a `check` runs above (stage unless
+# --no-build), so the key is the one a check would compute right now.
+# Read-only: writes nothing (no work dir, no state file) and always exits 0.
+# ------------------------------------------------------------------
+if [ "$MODE" = coverage ]; then
+	if [ -z "$EXT_ID" ] || [ -z "$TOOLCHAIN_ID" ]; then
+		echo "COVERAGE: cannot compute cache keys -- extension identity (${EXT_ID:-unknown}) or" \
+			"toolchain identity (${TOOLCHAIN_ID:-unknown}) is unavailable, so a check would" \
+			"not cache either. No row can be reported."
+		exit 0
+	fi
+	[ -z "${REALROM_EXTRA_PRESCRIPT:-}" ] ||
+		echo "COVERAGE: REALROM_EXTRA_PRESCRIPT is set -- reporting entries for THAT configuration only."
+	printf '\n%-14s %-6s %s\n' ID CACHE NOTE
+	n_cov=0; n_cov_total=0
+	while IFS=$'\t' read -r row_plat id title sha mapper board golden opts member ||
+		[ -n "${id:-}" ]; do
+		case "${id:-}" in ""|id|\#*) continue ;; esac
+		case "$SET_IDS" in *",$id,"*) ;; *) continue ;; esac
+		if { [ -n "$ONLY_IDS" ] && [ "${ONLY_IDS#*,$id,}" = "$ONLY_IDS" ]; } ||
+			{ [ -n "$EXCEPT_IDS" ] && [ "${EXCEPT_IDS#*,$id,}" != "$EXCEPT_IDS" ]; }; then
+			continue
+		fi
+		use_platform "$row_plat"
+		sha="$(printf '%s' "$sha" | tr 'A-Z' 'a-z' | tr -d '[:space:]')"
+		key="$(realrom_cache_key "$id" "$sha" "${opts:-}")"
+		n_cov_total=$((n_cov_total + 1))
+		if [ -n "$key" ] && [ -f "$CACHE_DIR/$key.dump" ]; then
+			n_cov=$((n_cov + 1))
+			printf '%-14s %-6s %s\n' "$id" ran "at this build"
+		else
+			printf '%-14s %-6s %s\n' "$id" -- \
+				"no entry for this build (never run here, ROM not found when run, or built since)"
+		fi
+	done < <(manifest_rows)
+	echo
+	echo "$n_cov of $n_cov_total rows have run at the current extension build (EXT_ID ${EXT_ID:0:12}...)."
+	echo "'ran' means the row was imported and its dump cached -- NOT that it matched its golden."
+	echo "(failing rows such as megaman/wizwarr also read 'ran'; this is not a pass/fail report.)"
+	exit 0
+fi
 
 WORK="${REALROM_WORK_DIR:-$(grm_work_dir realrom)}"
 mkdir -p "$WORK"

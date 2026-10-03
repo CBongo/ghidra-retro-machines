@@ -153,10 +153,11 @@ Chunk/source-area mapping:
 
 ```bash
 bash tools/banktest/realrom-test.sh check            # core floor, 5 rows, ~46s
-bash tools/banktest/realrom-test.sh check nes         # full NES tier, 33 rows -- romdirs from GRM_ROM_DIR
+bash tools/banktest/realrom-test.sh check nes         # full NES tier, 34 rows -- romdirs from GRM_ROM_DIR
 bash tools/banktest/realrom-test.sh check snes        # full SNES tier, 13 rows -- romdirs from GRM_SNES_ROM_DIR
-bash tools/banktest/realrom-test.sh check all         # everything, every platform, 46 rows
+bash tools/banktest/realrom-test.sh check all         # everything, every platform, 47 rows
 bash tools/banktest/realrom-test.sh --list-sets       # print the table below
+bash tools/banktest/realrom-test.sh coverage [SET]    # read-only: which rows have RAN at this build (not "passed")
 ```
 
 No prior `build-and-test.sh` run is required (bead grm-4t2d option (e)): `realrom-test.sh`
