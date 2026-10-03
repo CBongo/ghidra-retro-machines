@@ -1801,7 +1801,7 @@ public class MapCompiler {
 		return e;
 	}
 
-	private static boolean parseDefault(Map<String, Object> set) {
+	static boolean parseDefault(Map<String, Object> set) {
 		Object def = set.get("default");
 		if (def == null) {
 			throw new IllegalArgumentException(

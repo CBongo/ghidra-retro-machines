@@ -130,6 +130,18 @@ final class DescriptorSupport {
 	static final String GAME_IDENTITY_PROPERTY = "Retro Machines.Game Identity";
 
 	/**
+	 * A Program Info string property, or null when the program does not carry it. Use this, not
+	 * {@code getString(name, "")}: Ghidra's {@code Options.getString(name, default)} REGISTERS the
+	 * option with that default, so a bare read would stamp an empty property onto every program
+	 * that never had one (grm-hb6.5 tripped exactly this: an empty Game Identity on CBM imports).
+	 */
+	static String programInfoString(Program program, String name) {
+		ghidra.framework.options.Options info =
+			program.getOptions(Program.PROGRAM_INFO);
+		return info.contains(name) ? info.getString(name, null) : null;
+	}
+
+	/**
 	 * Program-info property where {@link GameDescriptorRegistry#resolve} records the resolved
 	 * game descriptor's path, absent when nothing matched -- the title-tier counterpart of
 	 * {@link #MAP_PATH_PROPERTY}.
@@ -461,7 +473,19 @@ final class DescriptorSupport {
 			String kind = entry.has("kind") ? entry.get("kind").getAsString() : "entry";
 			String comment = entry.has("comment") ? entry.get("comment").getAsString() : null;
 
-			Address symAddr = baseSpace.getAddress(addr);
+			// Optional bank qualifier (per-game tier, design section 3b.3): an entry-level
+			// `block:` overrides the set-level one; neither means the base space. An
+			// unresolvable block ignores that one entry and logs (section 3.1).
+			String block = entry.has("block") ? entry.get("block").getAsString()
+					: set.has("block") ? set.get("block").getAsString() : null;
+			Address symAddr = block == null ? baseSpace.getAddress(addr)
+					: blockAddress(program, block, addr);
+			if (symAddr == null) {
+				log.appendMsg("Symbol '" + name + "' at 0x" + Long.toHexString(addr) +
+					" names block '" + block + "', which has no such address in this program; " +
+					"ignored");
+				continue;
+			}
 			try {
 				AnnotationGuard.applyLabel(program, symAddr, name, SourceType.IMPORTED);
 				if (kind.equals("entry")) {
@@ -483,6 +507,21 @@ final class DescriptorSupport {
 				log.appendMsg("Failed to create symbol '" + name + "' at 0x" +
 					Long.toHexString(addr) + ": " + e.getMessage());
 			}
+		}
+	}
+
+	/** {@code offset} in the address space of memory block {@code blockName}, or null. */
+	static Address blockAddress(Program program, String blockName, long offset) {
+		MemoryBlock block = program.getMemory().getBlock(blockName);
+		if (block == null) {
+			return null;
+		}
+		try {
+			Address a = block.getStart().getAddressSpace().getAddress(offset);
+			return block.contains(a) ? a : null;
+		}
+		catch (RuntimeException e) {
+			return null;
 		}
 	}
 

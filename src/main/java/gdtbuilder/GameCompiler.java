@@ -19,9 +19,12 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.Writer;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -148,6 +151,10 @@ public class GameCompiler {
 		if (banking != null) {
 			gameDoc.put("banking", banking);
 		}
+		List<Map<String, Object>> symbols = buildSymbols(descriptor);
+		if (symbols != null) {
+			gameDoc.put("symbols", symbols);
+		}
 		return gameDoc;
 	}
 
@@ -191,6 +198,99 @@ public class GameCompiler {
 				"game.identity." + key + " must be 64 hex digits, got: " + value);
 		}
 		return value.toLowerCase();
+	}
+
+	// ---- symbols: the annotation layer (bead grm-hb6.5) ----
+
+	/**
+	 * Compiles the optional {@code symbols:} list: named, user-toggleable sets of
+	 * {@code inline:} entries ({@code addr}/{@code name}/{@code kind}/optional {@code comment}),
+	 * the same entry shape as a machine descriptor's symbol set (docs/SCHEMA.md), plus the
+	 * per-game bank qualifier {@code block:} (design section 3b.3) at set level (a default)
+	 * and entry level (an override), naming a memory block of the imported program.
+	 * <p>
+	 * A game set must carry {@code provenance:} (the design's licensing answer). Entries dedup
+	 * per (block, address) -- first wins. {@code source:} files are NOT supported yet (that is
+	 * the harvester's carrier, bead grm-hb6.6) and are rejected loudly rather than silently
+	 * dropped, as is a {@code kind} other than {@code label}/{@code entry}.
+	 */
+	@SuppressWarnings("unchecked")
+	private static List<Map<String, Object>> buildSymbols(Map<String, Object> descriptor) {
+		Object symbolsObj = descriptor.get("symbols");
+		if (symbolsObj == null) {
+			return null;
+		}
+		if (!(symbolsObj instanceof List)) {
+			throw new IllegalArgumentException("descriptor 'symbols:' must be a list of sets");
+		}
+		List<Map<String, Object>> out = new ArrayList<>();
+		Set<String> setNames = new LinkedHashSet<>();
+		for (Object setObj : (List<Object>) symbolsObj) {
+			if (!(setObj instanceof Map)) {
+				throw new IllegalArgumentException("each 'symbols:' item must be a mapping");
+			}
+			Map<String, Object> set = (Map<String, Object>) setObj;
+			String setName = MapCompiler.requireString(set, "set", "symbols[]");
+			if (!setNames.add(setName)) {
+				throw new IllegalArgumentException("duplicate symbols set name: " + setName);
+			}
+			if (set.containsKey("source")) {
+				throw new IllegalArgumentException("symbols set '" + setName + "' uses " +
+					"'source:', which game descriptors do not support yet; use 'inline:'");
+			}
+			Map<String, Object> s = new LinkedHashMap<>();
+			s.put("set", setName);
+			s.put("default", MapCompiler.parseDefault(set));
+			s.put("provenance",
+				MapCompiler.requireString(set, "provenance", "symbols set '" + setName + "'"));
+			String setBlock = set.get("block") == null ? null : set.get("block").toString();
+			if (setBlock != null) {
+				s.put("block", setBlock);
+			}
+			Object inlineObj = set.get("inline");
+			if (inlineObj != null && !(inlineObj instanceof List)) {
+				throw new IllegalArgumentException(
+					"symbols set '" + setName + "' 'inline:' must be a list");
+			}
+			List<Map<String, Object>> entries = new ArrayList<>();
+			Set<String> seen = new LinkedHashSet<>();
+			if (inlineObj != null) {
+				for (Object eo : (List<Object>) inlineObj) {
+					if (!(eo instanceof Map)) {
+						throw new IllegalArgumentException(
+							"symbols set '" + setName + "' has a non-mapping entry");
+					}
+					Map<String, Object> entry = (Map<String, Object>) eo;
+					String ctx = "symbols set '" + setName + "' entry";
+					int addr = MapCompiler.requireAddr(entry, "addr", ctx);
+					String block =
+						entry.get("block") == null ? null : entry.get("block").toString();
+					if (!seen.add((block != null ? block : setBlock) + "@" + addr)) {
+						continue;
+					}
+					Map<String, Object> e = new LinkedHashMap<>();
+					e.put("addr", addr);
+					e.put("name", MapCompiler.requireString(entry, "name", ctx));
+					String kind =
+						entry.get("kind") == null ? "label" : entry.get("kind").toString();
+					if (!kind.equals("label") && !kind.equals("entry")) {
+						throw new IllegalArgumentException(
+							ctx + " has unsupported kind '" + kind + "' (label|entry)");
+					}
+					e.put("kind", kind);
+					if (block != null) {
+						e.put("block", block);
+					}
+					if (entry.get("comment") != null) {
+						e.put("comment", entry.get("comment").toString());
+					}
+					entries.add(e);
+				}
+			}
+			s.put("entries", entries);
+			out.add(s);
+		}
+		return out;
 	}
 
 	// ---- banking.initial_state hint (bead grm-hb6.12) ----

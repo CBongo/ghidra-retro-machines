@@ -770,6 +770,29 @@ one-shot re-run support the way an analyzer-consumed hint would. It does keep
 provenance -- the resolved descriptor's path is recorded on the program
 (`Retro Machines.Game Descriptor`), and every field the hint actually changes is logged.
 
+### Annotation layer and export (bead `grm-hb6.5`)
+
+A game descriptor may carry `symbols:` -- the machine-descriptor set shape (`set`, `default`,
+`inline:` entries of `addr`/`name`/`kind`/`comment`) with two game-tier differences: each set
+**requires `provenance:`**, and `block:` (set default, entry override) names the memory block
+of the imported program whose address space the entry lives in (`PRG_LO_B1`, `W8000_M3_B1`;
+omitted = the base space). `kind` is `label` or `entry`; `source:` is rejected (reserved for
+the harvester, `grm-hb6.6`). An unresolvable block ignores that entry and logs. The sets are
+applied by `DescriptorAnnotationAnalyzer` (so also on re-analysis) as `IMPORTED` symbols plus
+an EOL comment, never overwriting a `USER_DEFINED` label.
+
+`ghidra_scripts/ExportGameDescriptor.java` writes exactly this shape from the open program:
+identity (from the `Retro Machines.Game Identity` property), `banking.initial_state` copied
+from the descriptor in force, and one `user-annotations` set holding the program's
+`USER_DEFINED` global-namespace labels and the EOL comments at those addresses. The file is
+valid unedited as an overlay and as a `machines/games/*.yaml` PR. Not carried, and reported by
+the script: plate/pre/post comments, comments at unlabelled addresses, namespaced labels.
+Bank-switch sites are not exported (nothing reads `banking.switch_sites` yet, `grm-hb6.4`).
+
+```bash
+-postScript ExportGameDescriptor.java out:/path/game.yaml [id:x] [title:A_Title] [note:text] [overwrite:true]
+```
+
 ### Overlay: your own game descriptors (bead `grm-hb6.2`)
 
 The same YAML, dropped into `<Ghidra user settings>/retro-machines/games/*.yaml`, is read at
