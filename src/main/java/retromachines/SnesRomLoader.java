@@ -145,7 +145,21 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 		List<Option> options = super.getDefaultOptions(provider, loadSpec, domainObject,
 			loadIntoProgram, mirrorFsLayout);
 		options.add(new Option(OPTION_MIRRORS, Boolean.TRUE, Boolean.class, null));
+		options.add(TblTableSupport.newOption(TBL_PREF_KEY));
 		return options;
+	}
+
+	/** Preferences key remembering the last text-table path chosen in the GUI (grm-s3wo). */
+	private static final String TBL_PREF_KEY = "retromachines.snes.tblFile";
+
+	/**
+	 * GUI-only early rejection of an unusable {@code .tbl}; headless imports never reach this.
+	 * The table is an optional annotation, so {@link #load} only logs a bad one and proceeds.
+	 */
+	@Override
+	public String validateOptions(ByteProvider provider, LoadSpec loadSpec, List<Option> options,
+			Program program) {
+		return TblTableSupport.validate(options);
 	}
 
 	/** Whether to materialize the address-space mirrors as byte-mapped views. */
@@ -222,6 +236,12 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 		}
 		applyDescriptor(program, space, log);
 		createVectors(program, space, header, map, log);
+
+		// Optional per-game .tbl text table (bead grm-s3wo, shared with NES via
+		// TblTableSupport): store the raw text for TblStringAnalyzer. A bad table is logged only.
+		if (settings.options() != null) {
+			TblTableSupport.apply(program, settings.options(), TBL_PREF_KEY, log);
+		}
 	}
 
 	/**

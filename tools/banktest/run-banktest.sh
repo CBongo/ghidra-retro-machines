@@ -27,7 +27,7 @@
 #   c128-loader   C128 native BASIC PRG placement, fixed ROM slots, and MMU IO
 #   nes-banking   all NES banking/MMC fixtures
 #   petscii-strings PetsciiStringAnalyzer C64 PRG fixture
-#   nes-text      NES .tbl text-table loader option + TblStringAnalyzer fixture
+#   nes-text      NES + SNES .tbl text-table loader option + TblStringAnalyzer fixtures
 #   all           every chunk above
 #
 #   --list-chunks  print the available chunk names and exit
@@ -402,7 +402,10 @@ if selected nes-banking; then
 	generate mknescopytest.py "$WORK/nes"
 fi
 if selected petscii-strings; then generate mkpetsciistringtest.py "$WORK/prg"; fi
-if selected nes-text; then generate mknestbltest.py "$WORK/nes"; fi
+if selected nes-text; then
+	generate mknestbltest.py "$WORK/nes"
+	generate mksnestbltest.py "$WORK/snes"
+fi
 
 # The ENTIRE tail of a bless, shared by the cached fast path and the fresh-import
 # path below (bead grm-aqi). Both used to carry their own copy of this, and the two
@@ -1104,6 +1107,10 @@ if selected nes-text; then
 	# grm-pqk: the .tbl text-table loader option (-loader-tblFile) + TblStringAnalyzer. The
 	# table is passed as a loader option, so normalize_opts folds its sha256 into the cache key.
 	run_one nestbltest "$WORK/nes/nestbltest.nes" NesRomLoader "-loader-tblFile $WORK/nes/nestbltest.tbl"
+	# grm-a6n0: 16 KiB PRG, PRG_HI at $C000 re-exposes the same file bytes; no duplicate annotations.
+	run_one nestbltest16 "$WORK/nes/nestbltest16.nes" NesRomLoader "-loader-tblFile $WORK/nes/nestbltest.tbl"
+	# grm-s3wo: the same option on the SNES loader (LoROM, mirror at $80:8000).
+	run_one snestbltest "$WORK/snes/snestbltest.smc" SnesRomLoader "-loader-tblFile $WORK/snes/snestbltest.tbl"
 fi
 
 # Name the rows bless_candidate acted unusually on. A bless over a whole chunk

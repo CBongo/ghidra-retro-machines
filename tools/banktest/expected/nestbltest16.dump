@@ -1,0 +1,22 @@
+TBLSOURCE nestbltest.tbl
+TBLTEXT length=434 crlf=true
+9000 PRE TBL: HELLO WORLD!<end> | BOOKMARK text: HELLO WORLD!
+9020 PRE TBL: QUITE<end> | BOOKMARK text: QUITE
+9040 PRE TBL: GAME<end2> | BOOKMARK text: GAME
+9060 PRE <none> | BOOKMARK <none>
+9080 PRE <none> | BOOKMARK <none>
+90a0 PRE TBL: A<br>BCD<end> | BOOKMARK text: A<br>BCD
+90c0 PRE <none> | BOOKMARK <none>
+90e0 PRE TBL: ABCD<end> | BOOKMARK text: ABCD
+TBLBOOKMARKS 5
+TBLMIRROR block=PRG_HI mapped=false
+d000 MIRROR PRE <none> | BOOKMARK <none>
+d020 MIRROR PRE <none> | BOOKMARK <none>
+d040 MIRROR PRE <none> | BOOKMARK <none>
+d060 MIRROR PRE <none> | BOOKMARK <none>
+d080 MIRROR PRE <none> | BOOKMARK <none>
+d0a0 MIRROR PRE <none> | BOOKMARK <none>
+d0c0 MIRROR PRE <none> | BOOKMARK <none>
+d0e0 MIRROR PRE <none> | BOOKMARK <none>
+CRITERION T5:mirror-exists PASS mirror of 9000 is a distinct block (home=PRG_LO)
+CRITERION T6:mirror-unannotated PASS mirrored strings must not get a duplicate comment/bookmark

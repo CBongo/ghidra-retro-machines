@@ -20,6 +20,7 @@ import ghidra.app.services.AnalysisPriority;
 import ghidra.app.services.AnalyzerType;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.framework.options.Options;
+import ghidra.program.database.mem.FileBytes;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressRange;
 import ghidra.program.model.address.AddressSet;
@@ -29,9 +30,15 @@ import ghidra.program.model.listing.BookmarkType;
 import ghidra.program.model.listing.CommentType;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
+import ghidra.program.model.mem.MemoryBlock;
+import ghidra.program.model.mem.MemoryBlockSourceInfo;
 import ghidra.program.model.mem.MemoryAccessException;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.task.TaskMonitor;
+
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 import retromachines.text.TblTable;
 
@@ -55,6 +62,14 @@ import retromachines.text.TblTable;
  * instructions are skipped, so running at low priority leaves code alone. A PRE comment the
  * user (or anything else) already wrote is never overwritten; this analyzer's own comment is
  * refreshed on re-analysis.
+ *
+ * <p><b>Mirrors:</b> byte-mapped blocks ({@code MemoryBlock.isMapped()}) are excluded from the
+ * search, so a string is annotated once at its canonical address, not once per mirror
+ * (grm-a6n0), as are separate blocks over the same file bytes (see {@link #excludeMirrors}).
+ * <b>Known limitation:</b> the leftmost-greedy start is kept as is -- no rule
+ * (trim to an incoming reference, etc.) is clean without reference data this analyzer runs too
+ * early to rely on, and a wrong trim would drop real text; supply a table whose coverage does
+ * not map the padding byte to keep starts tight.
  */
 public class TblStringAnalyzer extends AbstractAnalyzer {
 
@@ -138,6 +153,7 @@ public class TblStringAnalyzer extends AbstractAnalyzer {
 
 		AddressSet searchable = new AddressSet(set);
 		searchable = searchable.intersect(program.getMemory().getLoadedAndInitializedAddressSet());
+		excludeMirrors(program, searchable);
 		int found = 0;
 		int skipped = 0;
 		for (AddressRange range : searchable.getAddressRanges()) {
@@ -178,6 +194,35 @@ public class TblStringAnalyzer extends AbstractAnalyzer {
 		AnalyzerLog.info(this, NAME + " running: annotated " + found + " string(s)" +
 			(skipped > 0 ? ", left " + skipped + " alone (existing PRE comment)" : ""));
 		return true;
+	}
+
+	/**
+	 * Removes every mirror block from the search set so a string is annotated once, at its
+	 * canonical (lowest-addressed) copy (grm-a6n0). Two shapes occur: a byte-mapped block
+	 * ({@code isMapped()}, a view of another block), and an independent block backed by the very
+	 * same bytes of the image -- same FileBytes and offset -- such as the NROM-128 loader's
+	 * separate {@code PRG_LO}/{@code PRG_HI} windows. Blocks are visited in address order, so the
+	 * first one claiming a given file range is the canonical one.
+	 */
+	private static void excludeMirrors(Program program, AddressSet searchable) {
+		Set<String> claimed = new HashSet<>();
+		for (MemoryBlock block : program.getMemory().getBlocks()) {
+			if (block.isMapped()) {
+				searchable.delete(block.getStart(), block.getEnd());
+				continue;
+			}
+			List<MemoryBlockSourceInfo> infos = block.getSourceInfos();
+			if (infos.size() != 1 || infos.get(0).getFileBytes().isEmpty()) {
+				continue;
+			}
+			MemoryBlockSourceInfo info = infos.get(0);
+			FileBytes fb = info.getFileBytes().get();
+			String key = fb.getFilename() + ":" + fb.getFileOffset() + ":" + fb.getSize() + ":" +
+				info.getFileBytesOffset() + ":" + info.getLength();
+			if (!claimed.add(key)) {
+				searchable.delete(block.getStart(), block.getEnd());
+			}
+		}
 	}
 
 	private static boolean annotate(Program program, Address start, TblTable.Run run,
