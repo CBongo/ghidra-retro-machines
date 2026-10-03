@@ -658,7 +658,9 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 		return result;
 	}
 
-	private JsonObject loadMap() throws IOException {
+	/** Descriptor load seam: package-private so a test-only subclass can supply a crafted map
+	 *  (bead grm-abg); production resolves the bundled {@link #getMapPath()}. */
+	JsonObject loadMap() throws IOException {
 		return DescriptorResources.loadMap(getMapPath());
 	}
 
