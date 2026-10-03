@@ -78,16 +78,6 @@ need a read:
   and **`a354`** (table `a320`): 128 → 8. With grm-akiv's `a449`, ff1 now reads refs 1798,
   instrs 7350 (golden 1898 / 7538). **Are 80 and 8 right?**
 
-### - [ ] grm-q1bi: dodge's new state, held unblessed
-
-dodge stopped jittering (grm-aemp, 2026-10-03) and now reads refs.intoOverlay 2556 / instrs.inOverlay
-11447 / symbols 135 on every run. The +295 instructions are new disassembly in bank 3
-(`W8000_M3_B3`): case 0 of the `8445` table at `8451` (`LDA $d0 ...`; the `8445 -> 8451` reference
-existed before, the code was never disassembled), and a block `a00a`..`a236` after the `RTS` at
-`a009`. Against the golden it also reads warnings 40 -> 24 and bankComments 29 -> 25 (notes 27),
-which are largely grm-pdd6's `NO_DEPOSIT` removals and are what held this golden before. **Is `a00a`..`a236` real code, and is the row
-blessable as it stands?**
-
 ---
 
 ## 2. Def-use passes on untraced titles
@@ -371,3 +361,4 @@ re-measurement and branch prep land), [#9658](https://github.com/NationalSecurit
 | Should the thread pin get a new canary row now that tmnt's `44 / 103` came from phantom entries of `8f34` (grm-akiv takes it to 0 / 0)? | **No, not for now (owner, 2026-09-28).** Once tmnt is blessed at 0, no row signals that the pin is live; `GRM_THREAD_PIN` in the candidate-cache key is the remaining guard. Do not pick or add a canary row unprompted. | `grm-nems` |
 | lwings: are the bank comments at `dc61`/`dc7a`/`dc93` (lost under grm-fxtp) reached by real flow? | **Real code, but not reachable by anything Ghidra follows (agent decode, 2026-09-28).** They sit in three object-slot loops (`dc53`, `dc6c`, `dc85`) that call the `dc9e` dispatcher, and their only callers are the 6-byte `JSR x / JMP $ffa5` stubs at `ff1e`–`ff51`, entered by a computed dispatch Ghidra cannot resolve (`ff42 JSR $ec5c`, lost under grm-akiv, is another stub). Before, over-read `dcaf` entries reached them by accident. Same class as db3 `a018`: **not a regression of the bound; do not loosen it.** The stub dispatch is `grm-h0oa`. | `grm-fxtp` |
 | Adopt `.claude/rules/`, or keep the always-on core in `CLAUDE.md` + `AGENTS.md`? | **Adopted (2026-10-02).** CLAUDE.md's conditional sections moved, unreworded, into `.claude/rules/` (realrom tier, opt-in language tiers, SNES corpus, Ghidra source + loaders): always-on CLAUDE.md went 489 → 250 lines. bd memories stay in bd (owner, 2026-08-26) -- rules files are fed from CLAUDE.md, never from the memory store. Watch for adherence changes on the moved topics. | `grm-yaat` |
+| dodge (grm-aemp's deterministic state): is `a00a`..`a236` in bank 3 real code, and is the row blessable? | **Real code, and blessed (owner, 2026-10-03).** The only diff line not otherwise explained, the lost `8009 -> W8000_M3_B3::a600 UNCONDITIONAL_CALL`, was cruft: B3's `8009` is `JMP $a600` (entry 3 of the bank's JMP vector table), and its callers are not disassembled today, so it is simply unreached. Everything else is deliberate: grm-pdd6's warning removals (40 → 24), grm-yjiq's `switch`/`case_N` labels (symbols 18 → 135), and the new `8451`/`a00a` code. **Do not trace the `8009` ref as a regression.** ff1 stays open on the bead. | `grm-q1bi` |
