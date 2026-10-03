@@ -77,14 +77,14 @@ REALROM block WC000_M2_B9 c000-ffff overlay=true
 REALROM count blocks.total 70
 REALROM count blocks.overlay 64
 REALROM count spaces.overlay 64
-REALROM count refs.intoOverlay 1898
-REALROM count refs.intoOverlay.retargeted 41
-REALROM count refs.intoOverlay.intraOverlay 1857
-REALROM count instrs.inOverlay 7538
+REALROM count refs.intoOverlay 1798
+REALROM count refs.intoOverlay.retargeted 40
+REALROM count refs.intoOverlay.intraOverlay 1758
+REALROM count instrs.inOverlay 7350
 REALROM count bankComments 79
 REALROM count warnings 20
 REALROM count notes 18
-REALROM count symbols 18
+REALROM count symbols 108
 REALROM sample.bankcomment c02c bank -> mirroring=0,prg_mode=3,prg_bank=0? via FUN_fe1a [known: prg_bank.0=0,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment c069 bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_fe1a [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment c071 bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_fe1a [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
@@ -189,7 +189,7 @@ REALROM sample.ref 8db0 -> W8000_M3_B14::8dc5 CONDITIONAL_JUMP primary=true
 REALROM sample.ref 8dc2 -> W8000_M3_B14::8e70 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8dd5 -> W8000_M3_B14::8e84 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8dda -> W8000_M3_B14::8e21 CONDITIONAL_JUMP primary=true
-REALROM sample.ref.truncated 25 of 1898
+REALROM sample.ref.truncated 25 of 1798
 REALROM sample.warn c693 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fe1a whose bank argument could not be recovered at this call site
 REALROM sample.warn d1e0 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fe1a whose bank argument could not be recovered at this call site
 REALROM sample.warn de33 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fe1a whose bank argument could not be recovered at this call site
@@ -240,10 +240,18 @@ REALROM sample.symbol 4014 OAMDMA IMPORTED primary=true
 REALROM sample.symbol 4015 SND_CHN IMPORTED primary=true
 REALROM sample.symbol 4016 JOY1 IMPORTED primary=true
 REALROM sample.symbol 4017 JOY2 IMPORTED primary=true
-REALROM sample.symbol fe2e RESET IMPORTED primary=true
-REALROM sample.symbol fe9c NMI IMPORTED primary=true
-REALROM sample.symbol febb IRQ IMPORTED primary=true
-REALROM sample.symbol fffa NMI_VEC IMPORTED primary=true
-REALROM sample.symbol fffc RESET_VEC IMPORTED primary=true
-REALROM sample.symbol fffe IRQ_VEC IMPORTED primary=true
+REALROM sample.symbol 9069 switch USER_DEFINED primary=true
+REALROM sample.symbol 9492 case_10 USER_DEFINED primary=false
+REALROM sample.symbol 9492 case_11 USER_DEFINED primary=false
+REALROM sample.symbol 9492 case_12 USER_DEFINED primary=false
+REALROM sample.symbol 9492 case_13 USER_DEFINED primary=false
+REALROM sample.symbol 9492 case_14 USER_DEFINED primary=false
+REALROM sample.symbol 9492 case_15 USER_DEFINED primary=false
+REALROM sample.symbol 9492 case_16 USER_DEFINED primary=false
+REALROM sample.symbol 9492 case_17 USER_DEFINED primary=false
+REALROM sample.symbol 9492 case_18 USER_DEFINED primary=false
+REALROM sample.symbol 9492 case_19 USER_DEFINED primary=false
+REALROM sample.symbol 9492 case_2 USER_DEFINED primary=true
+REALROM sample.symbol 9492 case_21 USER_DEFINED primary=false
+REALROM sample.symbol.truncated 25 of 108
 === REALROM END ===

@@ -43,11 +43,11 @@ bash tools/banktest/realrom-test.sh nominate <romdir>   # board-gap survey
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
-### - [ ] grm-akiv: three rows the switch-window bound moved, held unblessed
+### - [ ] grm-akiv: two rows the switch-window bound moved, held unblessed
 
 The new rule bounds a jump table that sits AFTER its code: the real entries point between the
 `JMP (ind)` and the table, and the first entry that doesn't is past the end. megaman (e000 = 18,
-e121 = 19, e44e = 10, your numbers) and lwings are blessed on it. These three moved too and need
+e121 = 19, e44e = 10, your numbers) and lwings are blessed on it, and ff1 since. These two moved too and need
 a read before bless:
 
 - **tmnt `8f34`** (table `8fb8`): now 6 entries — `8f37 8f37 8f45 8f71 8f55 8f37`. After them the
@@ -60,9 +60,6 @@ a read before bless:
   then `8500 8522 855c 84a2`, which are exactly the 4 entries of `8285`'s table at `86cd`. **Is
   `849f`'s table 7 entries (and `86cd` a separate table after it), or 11?** Either way no phantom
   target survives; refs 298 → 277, warnings 6 → 4 (`811a`, `8efc` gone).
-- **ff1 bank 11 `a449`** (table `a7aa`): now 3 entries — `a44c a4e4 a590`, then `c8c8` ×4.
-  refs 1898 → 1849, instrs 7538 → 7487. (ff1 is no longer bistable -- deterministic since grm-aemp,
-  2026-10-03 -- so one run of the current build is enough to judge it.)
 
 ### - [ ] grm-fxtp: two more rows a jump-table cut moved, held unblessed
 
@@ -360,3 +357,4 @@ re-measurement and branch prep land), [#9658](https://github.com/NationalSecurit
 | Adopt `.claude/rules/`, or keep the always-on core in `CLAUDE.md` + `AGENTS.md`? | **Adopted (2026-10-02).** CLAUDE.md's conditional sections moved, unreworded, into `.claude/rules/` (realrom tier, opt-in language tiers, SNES corpus, Ghidra source + loaders): always-on CLAUDE.md went 489 → 250 lines. bd memories stay in bd (owner, 2026-08-26) -- rules files are fed from CLAUDE.md, never from the memory store. Watch for adherence changes on the moved topics. | `grm-yaat` |
 | dodge (grm-aemp's deterministic state): is `a00a`..`a236` in bank 3 real code, and is the row blessable? | **Real code, and blessed (owner, 2026-10-03).** The only diff line not otherwise explained, the lost `8009 -> W8000_M3_B3::a600 UNCONDITIONAL_CALL`, was cruft: B3's `8009` is `JMP $a600` (entry 3 of the bank's JMP vector table), and its callers are not disassembled today, so it is simply unreached. Everything else is deliberate: grm-pdd6's warning removals (40 → 24), grm-yjiq's `switch`/`case_N` labels (symbols 18 → 135), and the new `8451`/`a00a` code. **Do not trace the `8009` ref as a regression.** ff1 stays open on the bead. | `grm-q1bi` |
 | ff1 bank 14 (E): are grm-fxtp's bounds of 80 entries at `9069` (table `91d3`) and 8 at `a354` (table `a320`) right? | **Yes, both (owner, 2026-10-03).** `9069` is the second half of the TalkToObject table, indexed by object number. The `ASL` at `905b` and `BCC` at `905d` pick between halves: objects `00`–`7f` go through `906c` (table `90d3`), and `80`–`ff` go through `905f` (table `91d3`). Disch's disassembly (Entroper/FF1Disassembly, `bank_0E.asm`) gives the whole table as `$D0` entries, so the second half is `$50` = 80. `E:a358` is the shop jump table, 8 entries long. **Do not re-read these bounds.** ff1 is still held unblessed on grm-akiv's `a449` question. | `grm-fxtp`, `grm-q1bi` |
+| ff1 bank 11 (B): is grm-akiv's 3-entry bound at `a449` (table `a7aa`) right? | **Yes (owner, 2026-10-03).** The table is 3 entries (`a44c a4e4 a590`), and what follows is an `INY` slide, not more entries. The `c8c8` words are `INY INY`, and the slide's first `INY` is never used. **Do not extend the bound into the slide.** This was ff1's last open read, so the row can be blessed under grm-q1bi. | `grm-akiv`, `grm-q1bi` |
