@@ -77,12 +77,12 @@ REALROM block WE000 e000-ffff overlay=false
 REALROM count blocks.total 70
 REALROM count blocks.overlay 62
 REALROM count spaces.overlay 62
-REALROM count refs.intoOverlay 0
-REALROM count refs.intoOverlay.retargeted 0
-REALROM count refs.intoOverlay.intraOverlay 0
-REALROM count instrs.inOverlay 0
-REALROM count bankComments 37
-REALROM count warnings 43
+REALROM count refs.intoOverlay 410
+REALROM count refs.intoOverlay.retargeted 4
+REALROM count refs.intoOverlay.intraOverlay 406
+REALROM count instrs.inOverlay 1405
+REALROM count bankComments 49
+REALROM count warnings 37
 REALROM count notes 0
 REALROM count symbols 17
 REALROM sample.bankcomment 8709 bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
@@ -98,15 +98,27 @@ REALROM sample.bankcomment 874d bank -> select=7,prg_mode=1,r6=0,r7=1? [known: s
 REALROM sample.bankcomment 8767 bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment 876a bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment 8773 bank -> select=6,prg_mode=1,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 8776 bank -> select=6,prg_mode=1,r6=47 (wraps to 15),r7=1? [known: select.0=0,select.1=1,select.2=1,prg_mode=1,r6.0=1,r6.1=1,r6.2=1,r6.3=1,r6.4=0,r6.5=1; assumed from initial: r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment 915b bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 915e bank -> select=7,prg_mode=1,r6=0,r7=58 (wraps to 26)? [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 9163 bank -> select=6,prg_mode=1,r6=0,r7=58 (wraps to 26)? via FUN_WA000_B26__a1a1 [known: select.0=0,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
 REALROM sample.bankcomment 917b bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 917e bank -> select=7,prg_mode=1,r6=0,r7=58 (wraps to 26)? [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 9181 bank -> select=6,prg_mode=1,r6=0,r7=58 (wraps to 26)? via FUN_WA000_B26__a1a1 [known: select.0=0,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 918a bank -> select=7,prg_mode=1,r6=0,r7=58 (wraps to 26)? [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
 REALROM sample.bankcomment 918d bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment 9194 bank -> select=6,prg_mode=1,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment 9197 bank -> select=6,prg_mode=1,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment 91b4 bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 91b7 bank -> select=7,prg_mode=1,r6=0,r7=58 (wraps to 26)? [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 91c2 bank -> select=7,prg_mode=1,r6=0,r7=58 (wraps to 26)? [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
 REALROM sample.bankcomment 91c7 bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment 91e2 bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 91e5 bank -> select=7,prg_mode=1,r6=0,r7=58 (wraps to 26)? [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment 91f1 bank -> select=7,prg_mode=1,r6=0,r7=58 (wraps to 26)? [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
 REALROM sample.bankcomment 91f4 bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment a1ed bank -> select=6,prg_mode=1,r6=0,r7=26? [known: select.0=0,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
+REALROM sample.bankcomment a1f3 bank -> select=6,prg_mode=1,r6=0,r7=26? [known: select.0=0,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
 REALROM sample.bankcomment ef20 bank -> select=0,prg_mode=1,r6=0,r7=1? [known: r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0,r7.0=1,r7.1=0,r7.2=0,r7.3=0,r7.4=0,r7.5=0; assumed from initial: select.0,select.1,select.2,prg_mode] [switch-value flow]
 REALROM sample.bankcomment f5a8 bank -> select=0,prg_mode=1,r6=0,r7=1? [known: select.0=0,select.1=0,select.2=0,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment f5b2 bank -> select=1,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=0,select.2=0,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
@@ -122,6 +134,32 @@ REALROM sample.bankcomment f610 bank -> select=4,prg_mode=1,r6=0,r7=1? [known: s
 REALROM sample.bankcomment f619 bank -> select=5,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=0,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment f624 bank -> select=0,prg_mode=1,r6=0,r7=1 [switch-value flow]
 REALROM sample.bankcomment f7e7 bank -> select=0,prg_mode=1,r6=0,r7=1 via FUN_f622 [switch-value flow]
+REALROM sample.ref 9163 -> WA000_B26::a1a1 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 9181 -> WA000_B26::a1a1 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 91bb -> WA000_B26::a001 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 91e8 -> WA000_B26::a15d UNCONDITIONAL_CALL primary=true
+REALROM sample.ref a00a -> WA000_B26::a01c CONDITIONAL_JUMP primary=true
+REALROM sample.ref a00e -> WA000_B26::a016 CONDITIONAL_JUMP primary=true
+REALROM sample.ref a010 -> WA000_B26::a97c UNCONDITIONAL_CALL primary=true
+REALROM sample.ref a013 -> WA000_B26::a0ef UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref a016 -> WA000_B26::a152 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref a019 -> WA000_B26::a0ef UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref a023 -> WA000_B26::a028 CONDITIONAL_JUMP primary=true
+REALROM sample.ref a025 -> WA000_B26::a0f4 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref a02c -> WA000_B26::a03c CONDITIONAL_JUMP primary=true
+REALROM sample.ref a02f -> WA000_B26::b0b0 DATA primary=true
+REALROM sample.ref a034 -> WA000_B26::b0b1 DATA primary=true
+REALROM sample.ref a039 -> WA000_B26::a047 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref a03d -> WA000_B26::afb0 DATA primary=true
+REALROM sample.ref a042 -> WA000_B26::afb1 DATA primary=true
+REALROM sample.ref a05a -> WA000_B26::a063 CONDITIONAL_JUMP primary=true
+REALROM sample.ref a061 -> WA000_B26::a070 CONDITIONAL_JUMP primary=true
+REALROM sample.ref a069 -> WA000_B26::a070 CONDITIONAL_JUMP primary=true
+REALROM sample.ref a06d -> WA000_B26::a0db UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref a088 -> WA000_B26::a093 CONDITIONAL_JUMP primary=true
+REALROM sample.ref a091 -> WA000_B26::a0c9 CONDITIONAL_JUMP primary=true
+REALROM sample.ref a095 -> WA000_B26::a0c9 CONDITIONAL_JUMP primary=true
+REALROM sample.ref.truncated 25 of 410
 REALROM sample.warn 8066 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_8746 whose bank argument could not be recovered at this call site
 REALROM sample.warn 808a [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_919e whose bank argument could not be recovered at this call site
 REALROM sample.warn 80c6 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_91d1 whose bank argument could not be recovered at this call site
@@ -139,15 +177,9 @@ REALROM sample.warn 85a9 [NesBankingAnalyzer] Bank state becomes unknown here: c
 REALROM sample.warn 8608 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_871c whose bank argument could not be recovered at this call site
 REALROM sample.warn 862c [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_871c whose bank argument could not be recovered at this call site
 REALROM sample.warn 863e [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_871c whose bank argument could not be recovered at this call site
-REALROM sample.warn 8776 [NesBankingAnalyzer] Bank state becomes unknown here: recovered bank 47 for window WC000, but this image provides only 32 bank(s) for it. A bank index with no corresponding image slice is a value-RECOVERY bug, not a game behavior, so this site is left unannotated and nothing is retargeted from it. Hardware aliasing (a board that decodes fewer latch bits than the field is wide selects some in-range bank instead of faulting) is deliberately NOT modeled: that is per-board wiring, and folding it on speculation would turn a loud wrong answer into a quiet plausible one -- see docs/vision-board-banking.md section 10 item 10, bead grm-hum.
 REALROM sample.warn 8bdb [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_8705 whose bank argument could not be recovered at this call site
-REALROM sample.warn 915e [NesBankingAnalyzer] Bank state becomes unknown here: recovered bank 58 for window WA000, but this image provides only 32 bank(s) for it. A bank index with no corresponding image slice is a value-RECOVERY bug, not a game behavior, so this site is left unannotated and nothing is retargeted from it. Hardware aliasing (a board that decodes fewer latch bits than the field is wide selects some in-range bank instead of faulting) is deliberately NOT modeled: that is per-board wiring, and folding it on speculation would turn a loud wrong answer into a quiet plausible one -- see docs/vision-board-banking.md section 10 item 10, bead grm-hum.
-REALROM sample.warn 917e [NesBankingAnalyzer] Bank state becomes unknown here: recovered bank 58 for window WA000, but this image provides only 32 bank(s) for it. A bank index with no corresponding image slice is a value-RECOVERY bug, not a game behavior, so this site is left unannotated and nothing is retargeted from it. Hardware aliasing (a board that decodes fewer latch bits than the field is wide selects some in-range bank instead of faulting) is deliberately NOT modeled: that is per-board wiring, and folding it on speculation would turn a loud wrong answer into a quiet plausible one -- see docs/vision-board-banking.md section 10 item 10, bead grm-hum.
-REALROM sample.warn 918a [NesBankingAnalyzer] Bank state becomes unknown here: recovered bank 58 for window WA000, but this image provides only 32 bank(s) for it. A bank index with no corresponding image slice is a value-RECOVERY bug, not a game behavior, so this site is left unannotated and nothing is retargeted from it. Hardware aliasing (a board that decodes fewer latch bits than the field is wide selects some in-range bank instead of faulting) is deliberately NOT modeled: that is per-board wiring, and folding it on speculation would turn a loud wrong answer into a quiet plausible one -- see docs/vision-board-banking.md section 10 item 10, bead grm-hum.
-REALROM sample.warn 91b7 [NesBankingAnalyzer] Bank state becomes unknown here: recovered bank 58 for window WA000, but this image provides only 32 bank(s) for it. A bank index with no corresponding image slice is a value-RECOVERY bug, not a game behavior, so this site is left unannotated and nothing is retargeted from it. Hardware aliasing (a board that decodes fewer latch bits than the field is wide selects some in-range bank instead of faulting) is deliberately NOT modeled: that is per-board wiring, and folding it on speculation would turn a loud wrong answer into a quiet plausible one -- see docs/vision-board-banking.md section 10 item 10, bead grm-hum.
-REALROM sample.warn 91c2 [NesBankingAnalyzer] Bank state becomes unknown here: recovered bank 58 for window WA000, but this image provides only 32 bank(s) for it. A bank index with no corresponding image slice is a value-RECOVERY bug, not a game behavior, so this site is left unannotated and nothing is retargeted from it. Hardware aliasing (a board that decodes fewer latch bits than the field is wide selects some in-range bank instead of faulting) is deliberately NOT modeled: that is per-board wiring, and folding it on speculation would turn a loud wrong answer into a quiet plausible one -- see docs/vision-board-banking.md section 10 item 10, bead grm-hum.
-REALROM sample.warn 91e5 [NesBankingAnalyzer] Bank state becomes unknown here: recovered bank 58 for window WA000, but this image provides only 32 bank(s) for it. A bank index with no corresponding image slice is a value-RECOVERY bug, not a game behavior, so this site is left unannotated and nothing is retargeted from it. Hardware aliasing (a board that decodes fewer latch bits than the field is wide selects some in-range bank instead of faulting) is deliberately NOT modeled: that is per-board wiring, and folding it on speculation would turn a loud wrong answer into a quiet plausible one -- see docs/vision-board-banking.md section 10 item 10, bead grm-hum.
-REALROM sample.warn 91f1 [NesBankingAnalyzer] Bank state becomes unknown here: recovered bank 58 for window WA000, but this image provides only 32 bank(s) for it. A bank index with no corresponding image slice is a value-RECOVERY bug, not a game behavior, so this site is left unannotated and nothing is retargeted from it. Hardware aliasing (a board that decodes fewer latch bits than the field is wide selects some in-range bank instead of faulting) is deliberately NOT modeled: that is per-board wiring, and folding it on speculation would turn a loud wrong answer into a quiet plausible one -- see docs/vision-board-banking.md section 10 item 10, bead grm-hum.
+REALROM sample.warn 9163 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_WA000_B26__a1a1 whose bank argument could not be recovered at this call site
+REALROM sample.warn 9181 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_WA000_B26__a1a1 whose bank argument could not be recovered at this call site
 REALROM sample.warn 92fa [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_8746 whose bank argument could not be recovered at this call site
 REALROM sample.warn 94b7 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_8705 whose bank argument could not be recovered at this call site
 REALROM sample.warn 95d4 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_8705 whose bank argument could not be recovered at this call site

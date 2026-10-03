@@ -218,7 +218,8 @@ banking:
   only when it is provably the image of a `& (n-1)` truncation. A non-power-of-two PRG size is
   legal under NES 2.0 and what the hardware does there is board-specific; a set with holes is
   not a truncation image at all. In both cases the raw value survives unchanged. Use this form
-  when truncation-by-ROM-size is a property of the *mapper*, which is why MMC5 uses it.
+  when truncation-by-ROM-size is a property of the *mapper*, which is why MMC5 uses it — and
+  MMC1 (tmnt, grm-yxu8) and MMC3 (tmnt3, grm-ujj5: R7 = 58 on a 32-bank cart, bank 26) too.
 - **An integer is a stated fact, so it is NOT guarded.** It says how many address lines the
   cartridge wires, which is not something the image size predicts, and it applies
   unconditionally — including on exactly the realized sets the derived form declines. A guard

@@ -86,6 +86,16 @@ memory:
         - { name: WE000, start: 0xE000, size: 0x2000, maps: "PRG[last]",        on_write: mechanism }
 
 banking:
+  # R6/R7 are 6-bit registers (up to 512 KiB of PRG), and a cartridge with less PRG simply
+  # does not connect the high address lines, so the bank number truncates to what the image
+  # has. Games rely on it (bead grm-ujj5): tmnt3 (256 KiB, 32 banks) writes R7 = $3A = 58 at
+  # 915e/917e/918a/91b7/91c2/91e5/91f1 (`LDX #$3a / LDY #$47 / STY $8000 / STX $8001`, then
+  # JSR $a1a1), meaning bank 26 -- and bank 26's own first byte is $3A, the game's bank-ID
+  # convention of bank+32 (bank 0 is $20, bank 2 is $22, ... bank 28 is $3C). Without this,
+  # each of those sites was a loud "recovered bank 58, image provides only 32" decline.
+  # Same derived form and reasoning as nes-mmc1.yaml / nes-mmc5.yaml; see docs/SCHEMA.md's
+  # "Bank wrapping". Non-power-of-two images decline rather than guess a modulo.
+  bank_wrap: image
   state:
     # LSB-first packing. `select` (bank-select's low 3 bits, the R0-R7 target index) and
     # `prg_mode` (bank-select bit 6) are co-emitted from the SAME even-address write;
