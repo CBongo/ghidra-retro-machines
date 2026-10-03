@@ -788,6 +788,9 @@ if selected snes-loader; then
 	# regression in copier detection (which shifts every offset in the image) cannot hide.
 	run_one snestest "$WORK/snes/snestest.smc" SnesRomLoader
 	run_one snestestcopier "$WORK/snes/snestestcopier.smc" SnesRomLoader
+	# grm-9nxj.19: an interleaved HiROM image; Auto must de-interleave it (header at logical
+	# $FFC0, stored at $7FC0) -- the reset code is at FILE offset 0, shown as fileOffset=0 at C0:8000.
+	run_one snestestinterleaved "$WORK/snes/snestestinterleaved.smc" SnesRomLoader
 fi
 
 if selected c128-loader; then

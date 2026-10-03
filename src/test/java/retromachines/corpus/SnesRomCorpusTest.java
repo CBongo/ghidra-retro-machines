@@ -34,6 +34,7 @@ import java.util.stream.Stream;
 
 import org.junit.Test;
 
+import retromachines.SnesImageLayout.Mode;
 import retromachines.SnesRomHeader;
 
 /**
@@ -156,6 +157,9 @@ public class SnesRomCorpusTest {
 		List<String> mismatched = new ArrayList<>();
 		List<String> oversized = new ArrayList<>();
 		List<String> hiddenCopier = new ArrayList<>();
+		// grm-9nxj.19: images the Auto layout policy would de-interleave and/or chunk-swap.
+		List<String> layoutChanged = new ArrayList<>();
+		int autoRefusedButOffAccepted = 0;
 
 		Map<String, Integer> byMapType = new TreeMap<>();
 		Map<String, Integer> byChipset = new TreeMap<>();
@@ -192,6 +196,20 @@ public class SnesRomCorpusTest {
 				continue;
 			}
 			images++;
+
+			// grm-9nxj.19: what would Auto do? Never refuse what Off accepts; list any transform.
+			SnesRomHeader auto = SnesRomHeader.parse(bytes, Mode.AUTO);
+			if (header != null && auto == null) {
+				autoRefusedButOffAccepted++;
+				problems.add(name + ": Auto refused an image Off accepts");
+			}
+			if (auto != null && !auto.layout().isCanonical()) {
+				layoutChanged.add(name + "\t" + size + "\t" + auto.layout().describe() +
+					"\toff=" + (header == null ? "refused" : header.mapType() + "@0x" +
+						Integer.toHexString(header.headerOffset())) +
+					"\tauto=" + auto.mapType() + "@0x" + Integer.toHexString(auto.headerOffset()) +
+					"\tmatches=" + auto.mapTypeMatchesLocation());
+			}
 
 			// (d) determinism -- same bytes in, equal record out.
 			SnesRomHeader again = SnesRomHeader.parse(bytes);
@@ -300,6 +318,10 @@ public class SnesRomCorpusTest {
 		summary.add("");
 		summary.add("mapTypeMatchesLocation == false (grm-9nxj.14 material, NOT failures):");
 		mismatched.forEach(m -> summary.add("  " + m));
+		summary.add("");
+		summary.add("Auto layout (grm-9nxj.19) would de-interleave and/or chunk-swap: " +
+			layoutChanged.size() + " of " + images + " images (report, not failures):");
+		layoutChanged.forEach(l -> summary.add("  " + l));
 		if (!oversized.isEmpty()) {
 			summary.add("");
 			summary.add("skipped, larger than " + MAX_READ_BYTES + " bytes:");

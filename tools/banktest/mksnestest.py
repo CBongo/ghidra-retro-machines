@@ -63,6 +63,34 @@ def cartridge(title):
     return bytes(image)
 
 
+def interleaved_hirom(title):
+    """A 128 KiB HiROM image (logical layout), then stored with each 64 KiB unit's halves swapped."""
+    size = 0x20000
+    logical = bytearray(b"\xEE" * size)
+    logical[RESET:RESET + len(code())] = code()      # logical $8000 = mirror of $C0:8000
+
+    at = 0xFFC0
+    logical[at:at + 21] = title.ljust(21).encode("ascii")
+    logical[at + 0x15] = 0x31        # map mode: HiROM, FastROM
+    logical[at + 0x16] = 0x00
+    logical[at + 0x17] = 0x07        # 128 KiB
+    logical[at + 0x18] = 0x00
+    checksum = 0x1234
+    logical[at + 0x1C] = (checksum ^ 0xFFFF) & 0xFF
+    logical[at + 0x1D] = ((checksum ^ 0xFFFF) >> 8) & 0xFF
+    logical[at + 0x1E] = checksum & 0xFF
+    logical[at + 0x1F] = (checksum >> 8) & 0xFF
+    vectors = at + 0x20
+    logical[vectors + 0x1C] = RESET & 0xFF
+    logical[vectors + 0x1D] = (RESET >> 8) & 0xFF
+
+    stored = bytearray(size)
+    for unit in range(0, size, 0x10000):
+        stored[unit:unit + 0x8000] = logical[unit + 0x8000:unit + 0x10000]
+        stored[unit + 0x8000:unit + 0x10000] = logical[unit:unit + 0x8000]
+    return bytes(stored)
+
+
 def main():
     if len(sys.argv) != 2:
         sys.exit("usage: mksnestest.py <output-dir>")
@@ -78,7 +106,14 @@ def main():
     with open(os.path.join(outdir, "snestestcopier.smc"), "wb") as f:
         f.write(b"\x00" * 0x200 + cartridge("SNESTEST COPIER"))
 
-    print("wrote SNES LoROM fixtures (plain and copier-headered) to " + outdir)
+    # grm-9nxj.19: an INTERLEAVED HiROM cartridge (the 32 KiB halves of each 64 KiB unit
+    # swapped, as a copier may have dumped it). The loader's Auto layout must find the header
+    # at logical $FFC0 (stored at $7FC0, the LoROM position) and de-interleave, so the program
+    # is a HiROM one whose reset code is at $C0:8000 -- stored at FILE offset 0.
+    with open(os.path.join(outdir, "snestestinterleaved.smc"), "wb") as f:
+        f.write(interleaved_hirom("SNESTEST INTERLEAVED"))
+
+    print("wrote SNES LoROM fixtures (plain and copier-headered) and an interleaved HiROM one to " + outdir)
 
 
 if __name__ == "__main__":

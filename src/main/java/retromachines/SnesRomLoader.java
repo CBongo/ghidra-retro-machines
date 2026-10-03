@@ -45,6 +45,7 @@ import ghidra.util.exception.CancelledException;
 import ghidra.util.task.TaskMonitor;
 
 import retromachines.SnesAddressMap.Kind;
+import retromachines.SnesImageLayout.Mode;
 import retromachines.SnesRomHeader.MapType;
 
 /**
@@ -121,7 +122,7 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 	@Override
 	public Collection<LoadSpec> findSupportedLoadSpecs(ByteProvider provider) throws IOException {
 		List<LoadSpec> loadSpecs = new ArrayList<>();
-		SnesRomHeader header = SnesRomHeader.parse(provider);
+		SnesRomHeader header = SnesRomHeader.parse(provider, Mode.AUTO);
 		if (header == null || header.mapType() == MapType.UNKNOWN) {
 			return loadSpecs;
 		}
@@ -145,6 +146,7 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 		List<Option> options = super.getDefaultOptions(provider, loadSpec, domainObject,
 			loadIntoProgram, mirrorFsLayout);
 		options.add(new Option(OPTION_MIRRORS, Boolean.TRUE, Boolean.class, null));
+		options.add(new Option(OPTION_LAYOUT, Mode.AUTO.label(), String.class, LAYOUT_CMD_ARG));
 		options.add(TblTableSupport.newOption(TBL_PREF_KEY));
 		return options;
 	}
@@ -164,6 +166,16 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 
 	/** Whether to materialize the address-space mirrors as byte-mapped views. */
 	public static final String OPTION_MIRRORS = "Create mirror blocks";
+
+	/**
+	 * How the image is arranged in the file (grm-9nxj.19): {@code Auto} (default), {@code Off}
+	 * (canonical layout only) or {@code Force} (de-interleave unconditionally). See
+	 * {@link SnesRomHeader#parse(byte[], Mode)} for exactly what Auto decides.
+	 */
+	public static final String OPTION_LAYOUT = "ROM layout";
+
+	/** Headless spelling of {@link #OPTION_LAYOUT}: {@code -loader-romLayout Off}. */
+	private static final String LAYOUT_CMD_ARG = "romLayout";
 
 	/** Loads and validates the SNES cartridge memory map. */
 	@Override
@@ -192,12 +204,26 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 		// AUTHORITATIVE VALIDATION. findSupportedLoadSpecs already parsed the header, but a
 		// headless caller can reach load() without it, and validateOptions() never runs
 		// headlessly at all -- so the refusal has to be here (CLAUDE.md's loader rule).
-		SnesRomHeader header = SnesRomHeader.parse(provider);
+		Mode layoutMode = Mode.AUTO;
+		if (settings.options() != null) {
+			layoutMode = Mode.parse(OptionUtils.getOption(OPTION_LAYOUT, settings.options(),
+				Mode.AUTO.label()));
+		}
+		SnesRomHeader header = SnesRomHeader.parse(provider, layoutMode);
 		if (header == null) {
 			log.appendMsg(NAME + ": no plausible SNES cartridge header " +
 				"(searched $7FC0/$FFC0/$40FFC0); refusing to guess a memory map");
 			return;
 		}
+		SnesImageLayout layout = header.layout();
+		log.appendMsg(NAME + ": ROM layout " + layoutMode.label() + " -> " + layout.describe() +
+			switch (layoutMode) {
+				case OFF -> " (transforms disabled by option)";
+				case FORCE -> " (forced by option)";
+				case AUTO -> layout.isCanonical() ? " (no verified interleave or chunk-order signal)"
+						: " (verified: a checksum-valid header with a matching map type at " +
+							"logical $" + Integer.toHexString(header.headerOffset()) + ")";
+			});
 		if (header.mapType() == MapType.UNKNOWN) {
 			log.appendMsg(NAME + ": unmodelled map mode $" +
 				Integer.toHexString(header.mapMode()) + "; refusing to guess a memory map");
@@ -215,7 +241,7 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 			(header.fastRom() ? " (FastROM)" : "") + ", " + (header.romSizeBytes() / 1024) +
 			" KiB declared" + (header.copierHeader() ? ", copier header present" : ""));
 
-		long dataOffset = header.dataOffset();
+		long dataOffset = layout.dataOffset();
 		long cartBytes = provider.length() - dataOffset;
 		SnesAddressMap map = SnesAddressMap.of(header, cartBytes);
 
@@ -223,8 +249,8 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 		boolean mirrors = settings.options() == null ||
 			OptionUtils.getBooleanOptionValue(OPTION_MIRRORS, settings.options(), true);
 
-		List<Long> canonicalStarts =
-			createRomBlocks(program, space, provider, map, dataOffset, cartBytes, log, monitor);
+		List<RomUnit> canonicalStarts =
+			createRomBlocks(program, space, provider, map, layout, log, monitor);
 		createWorkRam(program, space, log);
 		if (mirrors) {
 			createRomMirrors(program, space, map, canonicalStarts, log);
@@ -245,41 +271,67 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 	}
 
 	/**
+	 * One mapping unit of canonical ROM: its home address and size. The mirror pass works in
+	 * units, not blocks, because a de-interleaved HiROM unit is two 32 KiB blocks.
+	 */
+	private record RomUnit(long address, long size) {}
+
+	/**
 	 * The canonical ROM blocks -- one per mapping unit (32 KiB per bank for LoROM, 64 KiB for
-	 * HiROM-family mappings), initialized from the file. Returns each block's start address so
-	 * the mirror pass can map onto them.
+	 * HiROM-family mappings), initialized from the file. Returns each unit so the mirror pass
+	 * can map onto it.
 	 *
 	 * <p>The blocks are cut from the program's {@link FileBytes} rather than from a per-block
 	 * {@link java.io.InputStream} (grm-9nxj.10), so each one records WHERE in the image its
 	 * bytes came from. Ghidra uses that provenance for re-import, for "restore original bytes"
 	 * after a patch, and for telling a user which part of the file a block is; a stream-built
 	 * block reports {@code fileOffset=-1} and can offer none of it. The offset stored is into
-	 * the FILE, so on a copier-headered image it includes {@code dataOffset} -- the cartridge
+	 * the FILE, so on a copier-headered image it includes the copier header -- the cartridge
 	 * offset is in the block comment.
+	 *
+	 * <p><b>Transformed layouts (grm-9nxj.19).</b> Every file offset comes from
+	 * {@link SnesImageLayout#fileOffsetOf}, the same mapping the header search used. A unit is
+	 * cut into pieces at each physical discontinuity ({@link SnesImageLayout#contiguousRun}):
+	 * a de-interleaved 64 KiB unit is two 32 KiB blocks, each with its own true file offset,
+	 * and the bytes are never copied. A canonical image has no discontinuities and produces the
+	 * same one-block-per-unit result as before.
 	 */
-	private List<Long> createRomBlocks(Program program, AddressSpace space, ByteProvider provider,
-			SnesAddressMap map, long dataOffset, long cartBytes, MessageLog log,
+	private List<RomUnit> createRomBlocks(Program program, AddressSpace space,
+			ByteProvider provider, SnesAddressMap map, SnesImageLayout layout, MessageLog log,
 			TaskMonitor monitor) throws IOException, CancelledException,
 			AddressOverflowException {
 
 		FileBytes fileBytes = MemoryBlockUtils.createFileBytes(program, provider, monitor);
+		long cartBytes = layout.cartBytes();
 		long unit = map.mapType() == MapType.LOROM ? 0x8000L : 0x10000L;
-		List<Long> starts = new ArrayList<>();
-		for (long fileOffset = 0; fileOffset < cartBytes; fileOffset += unit) {
+		List<RomUnit> starts = new ArrayList<>();
+		int blocks = 0;
+		for (long logical = 0; logical < cartBytes; logical += unit) {
 			monitor.checkCancelled();
-			long size = Math.min(unit, cartBytes - fileOffset);
-			long address = map.homeAddressOf(fileOffset);
-			Address start = space.getAddress(address);
-			String name = String.format("ROM_%02X_%04X", (address >> 16) & 0xFF, address & 0xFFFF);
-			MemoryBlock block = MemoryBlockUtils.createInitializedBlock(program, false, name,
-				start, fileBytes, dataOffset + fileOffset, size,
-				"Cartridge ROM, file offset $" + Long.toHexString(fileOffset), NAME,
-				true, false, true, log);
-			if (block != null) {
-				starts.add(address);
+			long size = Math.min(unit, cartBytes - logical);
+			long unitAddress = map.homeAddressOf(logical);
+			boolean any = false;
+			for (long done = 0; done < size;) {
+				long run = Math.min(size - done, layout.contiguousRun(logical + done));
+				long address = unitAddress + done;
+				String name =
+					String.format("ROM_%02X_%04X", (address >> 16) & 0xFF, address & 0xFFFF);
+				MemoryBlock block = MemoryBlockUtils.createInitializedBlock(program, false, name,
+					space.getAddress(address), fileBytes, layout.fileOffsetOf(logical + done),
+					run, "Cartridge ROM, file offset $" +
+						Long.toHexString(layout.physicalOf(logical + done)),
+					NAME, true, false, true, log);
+				if (block != null) {
+					any = true;
+					blocks++;
+				}
+				done += run;
+			}
+			if (any) {
+				starts.add(new RomUnit(unitAddress, size));
 			}
 		}
-		log.appendMsg(NAME + ": " + starts.size() + " canonical ROM block(s), " +
+		log.appendMsg(NAME + ": " + blocks + " canonical ROM block(s), " +
 			(cartBytes / 1024) + " KiB");
 		return starts;
 	}
@@ -293,15 +345,16 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 
 	/** Byte-mapped views of the canonical ROM blocks at every other address they appear. */
 	private void createRomMirrors(Program program, AddressSpace space, SnesAddressMap map,
-			List<Long> canonicalStarts, MessageLog log) {
+			List<RomUnit> canonicalStarts, MessageLog log) {
 
 		int created = 0;
-		for (long canonical : canonicalStarts) {
+		for (RomUnit unit : canonicalStarts) {
+			long canonical = unit.address();
 			MemoryBlock home = program.getMemory().getBlock(space.getAddress(canonical));
 			if (home == null) {
 				continue;
 			}
-			for (Mirror mirror : mirrorsOf(map, canonical, home.getSize())) {
+			for (Mirror mirror : mirrorsOf(map, canonical, unit.size())) {
 				String name = String.format("ROM_%02X_%04X_mirror",
 					(mirror.at >> 16) & 0xFF, mirror.at & 0xFFFF);
 				try {

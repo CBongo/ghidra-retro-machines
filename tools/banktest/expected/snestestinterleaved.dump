@@ -1,0 +1,8 @@
+FORMAT snes=true language=true
+ROM_C0_0000 ROM_C0_0000 c00000-c07fff overlay=false fileOffset=32768
+ROM_C0_8000 ROM_C0_8000 c08000-c0ffff overlay=false fileOffset=0 bytes=18 fb
+ROM_C1_0000 ROM_C1_0000 c10000-c17fff overlay=false fileOffset=98304
+ROM_C1_8000 ROM_C1_8000 c18000-c1ffff overlay=false fileOffset=65536
+MIRRORS bytesAt008000=18 fb bytesAt808000=18 fb
+OVERLAYS 0
+ENTRY reset=true

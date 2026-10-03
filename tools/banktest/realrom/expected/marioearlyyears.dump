@@ -4,19 +4,19 @@ REALROM sha256 57b94f5f576abbe8bd8f5a4eeb6cf927300ec1b5f0596610f3539ba733505c12
 REALROM format SNES ROM (LoROM/HiROM)
 REALROM language 65816:LE:24:retro
 REALROM map machines/snes.map
-REALROM header maptype=HIROM offset=0x007fc0 copier=false matchesLocation=false
+REALROM header maptype=HIROM offset=0x00ffc0 copier=false matchesLocation=true
 REALROM header mapmode=0x31 chipset=0x00 fastrom=true
 REALROM header romsize=1024K ramsize=0K checksumValid=true
-REALROM header title [SNES Kernel]
+REALROM header title [MEY Fun with Numbers]
 REALROM vector VEC_ABORT_EMULATION 0xffe2
 REALROM vector VEC_ABORT_NATIVE 0xffe2
 REALROM vector VEC_BRK_NATIVE 0xffe1
 REALROM vector VEC_COP_EMULATION 0xffe0
 REALROM vector VEC_COP_NATIVE 0xffe0
-REALROM vector VEC_IRQ_EMULATION 0x800e
-REALROM vector VEC_IRQ_NATIVE 0x800e
-REALROM vector VEC_NMI_EMULATION 0x8035
-REALROM vector VEC_NMI_NATIVE 0x8035
+REALROM vector VEC_IRQ_EMULATION 0x8131
+REALROM vector VEC_IRQ_NATIVE 0x8131
+REALROM vector VEC_NMI_EMULATION 0x8144
+REALROM vector VEC_NMI_NATIVE 0x8144
 REALROM vector VEC_RESET_EMULATION 0x8000
 REALROM block CPU_DMA_IO 004200-0043ff type=Default init=false overlay=false perm=rw- vol=true
 REALROM block JOYPAD_IO 004000-0041ff type=Default init=false overlay=false perm=rw- vol=true

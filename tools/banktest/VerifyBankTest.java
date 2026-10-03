@@ -285,6 +285,12 @@ public class VerifyBankTest extends GhidraScript {
 			return;
 		}
 
+		if (name.contains("snestestinterleaved")) {
+			checkSnesInterleaved();
+			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
+			return;
+		}
+
 		if (name.contains("snestest")) {
 			checkSnes();
 			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
@@ -2006,6 +2012,66 @@ public class VerifyBankTest extends GhidraScript {
 		criterion("snes-io-volatile", ioVolatile, "PPU/APU IO volatile");
 		criterion("snes-io-named", ioNamed, "INIDISP@2100 and NMITIMEN@4200 from the descriptor");
 		criterion("snes-entry-point", entry, "reset vector target $008000 is an entry point");
+	}
+
+	/**
+	 * Interleaved HiROM (bead grm-9nxj.19): the file stores each 64 KiB unit's 32 KiB halves
+	 * swapped, so the loader must (a) find the header at logical $FFC0 although it is stored at
+	 * $7FC0, and (b) cut each unit into TWO 32 KiB blocks whose file offsets are the real,
+	 * swapped ones -- provenance, not copied bytes. The reset code is stored at FILE offset 0
+	 * and lives at logical $8000, i.e. block ROM_C0_8000.
+	 */
+	private void checkSnesInterleaved() {
+		MemoryBlock c00000 = currentProgram.getMemory().getBlock(addr(0xC00000));
+		MemoryBlock c08000 = currentProgram.getMemory().getBlock(addr(0xC08000));
+		MemoryBlock c10000 = currentProgram.getMemory().getBlock(addr(0xC10000));
+		MemoryBlock c18000 = currentProgram.getMemory().getBlock(addr(0xC18000));
+		MemoryBlock wram = currentProgram.getMemory().getBlock("WRAM");
+
+		boolean format = "SNES ROM (LoROM/HiROM)".equals(currentProgram.getExecutableFormat());
+		boolean language = currentProgram.getLanguageID().getIdAsString()
+			.equals("65816:LE:24:retro");
+		boolean twoPerUnit = c00000 != null && c08000 != null && c10000 != null &&
+			c18000 != null && c00000.getSize() == 0x8000 && c08000.getSize() == 0x8000 &&
+			c10000.getSize() == 0x8000 && c18000.getSize() == 0x8000;
+		boolean provenance = twoPerUnit && fileOffset(c00000) == 0x8000 &&
+			fileOffset(c08000) == 0 && fileOffset(c10000) == 0x18000 &&
+			fileOffset(c18000) == 0x10000;
+		boolean resetCode = c08000 != null && readByte(c08000, 0) == 0x18 &&
+			readByte(c08000, 1) == 0xfb;
+		// HiROM system banks show the upper half of the linear view; $80 as well.
+		boolean mirrors = readByteAt(0x008000) == 0x18 && readByteAt(0x008001) == 0xfb &&
+			readByteAt(0x808000) == 0x18 && readByteAt(0x808001) == 0xfb;
+		boolean noOverlays = countOverlayBlocks() == 0;
+		boolean wramShape = wram != null && wram.getStart().getOffset() == 0x7e0000;
+		boolean entry = currentProgram.getSymbolTable().isExternalEntryPoint(addr(0x008000));
+
+		println("=== BANKDUMP BEGIN ===");
+		println("FORMAT snes=" + format + " language=" + language);
+		println("ROM_C0_0000 " + describeBlock(c00000) + " fileOffset=" + fileOffset(c00000));
+		println("ROM_C0_8000 " + describeBlock(c08000) + " fileOffset=" + fileOffset(c08000) +
+			" bytes=" + hx(readByte(c08000, 0)) + " " + hx(readByte(c08000, 1)));
+		println("ROM_C1_0000 " + describeBlock(c10000) + " fileOffset=" + fileOffset(c10000));
+		println("ROM_C1_8000 " + describeBlock(c18000) + " fileOffset=" + fileOffset(c18000));
+		println("MIRRORS bytesAt008000=" + hx(readByteAt(0x008000)) + " " +
+			hx(readByteAt(0x008001)) + " bytesAt808000=" + hx(readByteAt(0x808000)) + " " +
+			hx(readByteAt(0x808001)));
+		println("OVERLAYS " + countOverlayBlocks());
+		println("ENTRY reset=" + entry);
+		println("=== BANKDUMP END ===");
+
+		criterion("snes-il-format-language", format && language,
+			currentProgram.getExecutableFormat());
+		criterion("snes-il-two-blocks-per-unit", twoPerUnit,
+			"each 64 KiB HiROM unit is two 32 KiB blocks");
+		criterion("snes-il-provenance", provenance,
+			"block file offsets are the true (swapped) ones: C0:0000<-$8000, C0:8000<-$0, " +
+				"C1:0000<-$18000, C1:8000<-$10000");
+		criterion("snes-il-reset-code", resetCode, "18 fb (CLC XCE) at C0:8000, from file offset 0");
+		criterion("snes-il-mirrors", mirrors, "$00:8000 and $80:8000 show C0:8000");
+		criterion("snes-il-no-overlays", noOverlays, "static map");
+		criterion("snes-il-wram", wramShape, describeBlock(wram));
+		criterion("snes-il-entry-point", entry, "reset vector target $008000 is an entry point");
 	}
 
 	private int countOverlayBlocks() {

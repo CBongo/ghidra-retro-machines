@@ -128,7 +128,8 @@ public class SnesRealRomDump extends GhidraScript {
 	private void emitHeader() {
 		SnesRomHeader header;
 		try {
-			header = SnesRomHeader.parse(Files.readAllBytes(imagePath()));
+			header = SnesRomHeader.parse(Files.readAllBytes(imagePath()),
+				retromachines.SnesImageLayout.Mode.AUTO);   // what the loader (default Auto) used
 		}
 		catch (IOException e) {
 			// Never expected: the file realrom-test.sh just imported is a copy it made in the
