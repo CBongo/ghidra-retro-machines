@@ -633,6 +633,35 @@ critical sets (KERNAL jump table) may be inline in the descriptor.
 when the KERNAL ROM slot is empty — calls from game code then resolve to named stubs
 instead of dangling into the void.
 
+### Re-applying on re-analysis: `DescriptorAnnotationAnalyzer` (bead `grm-hb6.14`)
+
+Symbol sets and struct types are applied by the loader at import, so on their own an
+already-imported program would never see a label that a newer extension version ships.
+`DescriptorAnnotationAnalyzer` ("Descriptor Annotations", a byte analyzer at
+`BLOCK_ANALYSIS`, one-shot capable) re-applies them from the descriptor the program recorded
+(`Retro Machine Map`), so Analysis &rarr; Reanalyze, or Analysis &rarr; One Shot, picks
+up newly shipped labels. It has two options, *Apply symbol sets* and *Apply struct types*.
+
+- **Never clobbers.** Labels go through the annotation guard: a `USER_DEFINED` symbol at the
+  address wins and an identical name is a no-op; comments are append-only. Struct types are
+  skipped wherever any defined data already exists. A second run changes nothing. Two honest
+  limits: a label a user *deleted* comes back, and a descriptor that *renames* a label adds the
+  new name beside the old one.
+- **Which sets: the `Retro Machines.Symbol Sets` program property.** The per-set toggles are
+  loader import options, which are not program state, so each loader records what it decided
+  (applied or not, for every set) in this program-info property as a JSON object
+  `{"<set name>": true|false}`. The analyzer honours it, so a set the user declined at import
+  stays declined. A set with **no recorded choice** -- a program imported before the property
+  existed, or a set only a newer descriptor declares -- falls back to the descriptor's own
+  `default:`, which is what an unattended import applies.
+- **Not handled here:** per-game `banking.initial_state` hints (resolved at import; see the
+  per-game section below) and the `kind: entry` function marking the loaders do.
+
+Regression coverage is the headless `descannotationtest` fixture (`descriptors` chunk): it
+deletes a descriptor label, replaces another with a `USER_DEFINED` one, and re-runs the
+analyzer one-shot with the recorded choice both declining and then absent
+(`tools/banktest/AssertDescriptorReanalysis.java`).
+
 ## Types: struct, flags, and enum kinds
 
 `types[]` entries become `DataTypeManager` data types, built at Gradle time by
