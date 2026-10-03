@@ -517,6 +517,9 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 				boolean isDefault = set.has("default") && set.get("default").getAsBoolean();
 				boolean enabled = OptionUtils.getOption(symbolOptionName(setName),
 					settings.options(), Boolean.valueOf(isDefault));
+				// Record the decision (applied or not) so DescriptorAnnotationAnalyzer honours it
+				// on re-analysis: import options are not program state (grm-hb6.14).
+				DescriptorAnnotationAnalyzer.recordSymbolSetChoice(program, setName, enabled);
 				if (!enabled) {
 					continue;
 				}

@@ -859,7 +859,10 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 			// --- Default-on symbol sets (MMIO labels, vector slot labels) ---
 			for (JsonElement se : map.getAsJsonArray("symbols")) {
 				JsonObject set = se.getAsJsonObject();
-				if (set.has("default") && set.get("default").getAsBoolean()) {
+				boolean enabled = set.has("default") && set.get("default").getAsBoolean();
+				DescriptorAnnotationAnalyzer.recordSymbolSetChoice(program,
+					set.get("set").getAsString(), enabled);
+				if (enabled) {
 					DescriptorSupport.applySymbolSet(program, baseSpace, set,
 						(name, addr) -> markAsFunction(program, name, addr), log);
 				}

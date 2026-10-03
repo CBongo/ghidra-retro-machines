@@ -417,7 +417,10 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 		// store reads as a bare address, which is most of what a descriptor is FOR.
 		for (JsonElement e : map.getAsJsonArray("symbols")) {
 			JsonObject set = e.getAsJsonObject();
-			if (set.has("default") && set.get("default").getAsBoolean()) {
+			boolean enabled = set.has("default") && set.get("default").getAsBoolean();
+			DescriptorAnnotationAnalyzer.recordSymbolSetChoice(program,
+				set.get("set").getAsString(), enabled);
+			if (enabled) {
 				DescriptorSupport.applySymbolSet(program, space, set, null, log);
 			}
 		}
