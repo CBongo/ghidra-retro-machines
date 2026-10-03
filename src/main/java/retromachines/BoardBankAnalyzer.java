@@ -148,7 +148,9 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 * modification number); a program re-pointed at a different board map re-runs even
 	 * with an unchanged modification number. Edits to the map <em>file's content</em>
 	 * under an unchanged path are not detected -- acceptable for compiled resources
-	 * bundled with the extension.</li>
+	 * bundled with the extension. In particular an extension UPGRADE cannot leave a stale
+	 * stamp behind (grm-hb6.8): this map is static and in-JVM, and installing a new
+	 * extension version requires a Ghidra restart, which empties it.</li>
 	 * <li>A run that throws (e.g. {@link CancelledException}) stores nothing and will
 	 * re-run in full: the {@code put} below only happens after a structurally stable
 	 * completion, and an exception unwinds past it.</li>

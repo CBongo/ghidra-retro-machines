@@ -29,7 +29,11 @@ import com.google.gson.JsonParser;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.program.database.ProgramBuilder;
 import ghidra.program.database.ProgramDB;
+import ghidra.program.model.address.Address;
+import ghidra.program.model.listing.CommentType;
 import ghidra.program.model.mem.MemoryBlock;
+import ghidra.program.model.symbol.SourceType;
+import ghidra.program.model.symbol.Symbol;
 import ghidra.util.task.TaskMonitor;
 
 /**
@@ -93,10 +97,14 @@ public class DescriptorCopyHintAnalyzerTest extends AbstractBundledLanguageTest 
 
 	/** Runs the analyzer's directive pass inside its own transaction, as auto-analysis does. */
 	private boolean apply(ProgramDB program) {
+		return apply(program, map());
+	}
+
+	private boolean apply(ProgramDB program, JsonObject descriptor) {
 		int tx = program.startTransaction("copy hints");
 		boolean commit = false;
 		try {
-			boolean done = new DescriptorCopyHintAnalyzer().applyAll(program, map(),
+			boolean done = new DescriptorCopyHintAnalyzer().applyAll(program, descriptor,
 				TaskMonitor.DUMMY, new MessageLog());
 			commit = true;
 			return done;
@@ -260,5 +268,84 @@ public class DescriptorCopyHintAnalyzerTest extends AbstractBundledLanguageTest 
 	 *  is {@code $A2} -- the same synthetic pattern the headless {@code kernal.bin} carries. */
 	private static void setKernalPattern(ProgramBuilder builder) throws Exception {
 		builder.setBytes("0xE3A2", expectedChrget());
+	}
+
+	// ------------------------------------------------------------------
+	// 4. Re-analysis after an extension upgrade (grm-hb6.8)
+	// ------------------------------------------------------------------
+
+	/**
+	 * grm-hb6.8: an extension upgrade ships revised descriptor data. The in-JVM
+	 * {@code BoardBankAnalyzer} LAST_COMPLETED cache cannot survive an upgrade (installing one
+	 * requires a Ghidra restart), so the property worth pinning is that re-applying a <em>revised</em>
+	 * descriptor to an already-analyzed program picks up the newly shipped directive and never
+	 * overwrites what the user did in the meantime.
+	 */
+	@Test
+	public void revisedDescriptorAddsNewCopyOnReanalysisAndKeepsUserWork() throws Exception {
+		ProgramBuilder builder = newBuilder();
+		addZeroPage(builder);
+		builder.createMemory("KERNAL", "0xE000", 0x2000);
+		setKernalPattern(builder);
+		byte[] newSource = new byte[8];
+		for (int i = 0; i < newSource.length; i++) {
+			newSource[i] = (byte) (0xA0 + i);
+		}
+		builder.setBytes("0xE0A0", newSource);
+		ProgramDB program = builder.getProgram();
+
+		// v1 ships CHRGET only.
+		assertTrue(apply(program));
+		assertNotNull(program.getMemory().getBlock("COPY_0073"));
+
+		// User work inside the copied range.
+		Address userAddr = builder.addr("0x0080");
+		int tx = program.startTransaction("user work");
+		try {
+			program.getSymbolTable().createLabel(userAddr, "my_label", SourceType.USER_DEFINED);
+			program.getListing().setComment(userAddr, CommentType.EOL, "user note");
+		}
+		finally {
+			program.endTransaction(tx, true);
+		}
+
+		// v2 = v1 plus a second, non-overlapping hint in the same region.
+		JsonObject v2 = map();
+		JsonObject extra = new JsonObject();
+		extra.addProperty("name", "EXTRA");
+		extra.addProperty("start", 0x90);
+		extra.addProperty("end", 0x97);
+		extra.addProperty("source", "KERNAL");
+		extra.addProperty("source_addr", 0xE0A0);
+		v2.getAsJsonArray("regions").get(0).getAsJsonObject().getAsJsonArray("copied_from")
+				.add(extra);
+		assertTrue(apply(program, v2));
+
+		MemoryBlock added = program.getMemory().getBlock("COPY_0090");
+		assertNotNull("the newly shipped directive must materialize on re-analysis", added);
+		assertEquals(builder.addr("0x0090"), added.getStart());
+		assertEquals(builder.addr("0x0097"), added.getEnd());
+		byte[] got = new byte[newSource.length];
+		added.getBytes(added.getStart(), got);
+		assertArrayEquals(newSource, got);
+
+		int copies = 0;
+		for (MemoryBlock b : program.getMemory().getBlocks()) {
+			if (b.getName().equals("COPY_0073")) {
+				copies++;
+			}
+		}
+		assertEquals("COPY_0073 must exist exactly once", 1, copies);
+		MemoryBlock old = program.getMemory().getBlock("COPY_0073");
+		byte[] oldBytes = new byte[CHRGET_LEN];
+		old.getBytes(old.getStart(), oldBytes);
+		assertArrayEquals(expectedChrget(), oldBytes);
+
+		Symbol sym = program.getSymbolTable().getPrimarySymbol(userAddr);
+		assertNotNull("user label was lost", sym);
+		assertEquals("my_label", sym.getName());
+		assertEquals(SourceType.USER_DEFINED, sym.getSource());
+		assertEquals("user note",
+			program.getListing().getComment(CommentType.EOL, userAddr));
 	}
 }
