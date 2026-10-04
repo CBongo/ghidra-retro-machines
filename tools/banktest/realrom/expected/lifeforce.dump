@@ -58,8 +58,8 @@ REALROM sample.ref 8089 -> PRG_LO_B3::80b1 CONDITIONAL_JUMP primary=true
 REALROM sample.ref 8093 -> PRG_LO_B3::80b1 CONDITIONAL_JUMP primary=true
 REALROM sample.ref.truncated 25 of 232
 REALROM sample.warn e621 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
-REALROM sample.warn e63b [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_e61e whose bank argument could not be recovered at this call site
-REALROM sample.warn e6d0 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_e618 whose bank argument could not be recovered at this call site
+REALROM sample.warn e63b [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_e61e, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
+REALROM sample.warn e6d0 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_e618, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
 REALROM sample.note e7fa [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call re-commits the bank READ BACK at e7e8 from bank-identifying ROM byte 8000 -- a byte whose value is the bank it is read from, so the byte read is the bank live at the read, carried on the stack across control flow e7eb..e7f8 -- the save/restore idiom. The bank after this call is whatever 8000 held at that read, not a fresh value this analyzer failed to pin down. A property of the game, not a gap in analysis.
 REALROM sample.symbol 2000 PPUCTRL IMPORTED primary=true
 REALROM sample.symbol 2001 PPUMASK IMPORTED primary=true

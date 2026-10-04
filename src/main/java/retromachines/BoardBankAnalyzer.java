@@ -60,6 +60,7 @@ import static retromachines.SaveRestoreTrampolines.restoresEntryBank;
 
 import retromachines.HelperDiscovery.SecondTierResult;
 
+import retromachines.BankDataflowEngine.ArgumentSought;
 import retromachines.BankDataflowEngine.CallSwitch;
 import retromachines.BankDataflowEngine.DataflowResult;
 import retromachines.BankDataflowEngine.SwitchResult;
@@ -664,6 +665,18 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 							"own prologue redefines the register its mechanism reads, so there " +
 							"is no caller value to recover. The bank is supplied inside the " +
 							"helper (typically from a RAM shadow) and is not resolved here."
+						// grm-9z9t: "could not be recovered" claims a recovery attempt; these two
+						// never made one -- see BankDataflowEngine.ArgumentSought.
+						: callSwitch.argumentSought() == ArgumentSought.NO_ARGUMENT_REGISTER
+						? "Bank state becomes unknown here: call to bank-switch helper " +
+							callSwitch.helperName() + ", which this analyzer models with no " +
+							"argument register, so no caller argument was sought at this call " +
+							"site; its effect is not resolved here"
+						: callSwitch.argumentSought() == ArgumentSought.RE_DERIVED_IN_HELPER
+						? "Bank state becomes unknown here: call to bank-switch helper " +
+							callSwitch.helperName() + ", whose latched value is re-derived " +
+							"inside the helper under this call site's registers (no caller " +
+							"argument is consulted), and that derivation did not resolve here"
 						: "Bank state becomes unknown here: call to bank-switch helper " +
 							callSwitch.helperName() + " whose bank argument could not be " +
 							"recovered at this call site";

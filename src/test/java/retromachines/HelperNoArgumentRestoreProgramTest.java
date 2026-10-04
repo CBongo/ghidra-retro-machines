@@ -398,6 +398,17 @@ public class HelperNoArgumentRestoreProgramTest extends AbstractBundledLanguageT
 		assertFalse(clobbered(0x9300, 0x930b));
 	}
 
+	/**
+	 * grm-txzf: the same TAX copy on a branch-free path. The TXA brings the caller's byte back,
+	 * so the helper DOES take an argument; before grm-txzf the straight-line proof ignored the
+	 * copy and called it clobbered.
+	 */
+	@Test
+	public void aTransferredArgumentOnAStraightLineIsNotClobbered() throws Exception {
+		code(0x9380, "aa a9 06 8d 00 80 8a 8d 01 80 60");
+		assertFalse(clobbered(0x9380, 0x9387));
+	}
+
 	/** A branch out of the scanned span after the latch reaches code the tripwire never saw. */
 	@Test
 	public void aBranchOutOfTheSpanDefeatsTheLatch() throws Exception {

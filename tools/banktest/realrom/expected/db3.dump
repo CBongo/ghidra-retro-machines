@@ -27,7 +27,7 @@ REALROM count bankComments 0
 REALROM count warnings 8
 REALROM count notes 9
 REALROM count symbols 135
-REALROM sample.warn db73 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_db2e whose bank argument could not be recovered at this call site
+REALROM sample.warn db73 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_db2e, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
 REALROM sample.warn e553 [CopyLoopAnalyzer] copy-shaped loop RAM:e7d4 -> RAM:0200 could not be bounded; not applied
 REALROM sample.warn e5bc [CopyLoopAnalyzer] copy-shaped loop RAM:e826 -> RAM:0200 could not be bounded; not applied
 REALROM sample.warn e5c7 [CopyLoopAnalyzer] copy-shaped loop RAM:e7fd -> RAM:0200 could not be bounded; not applied

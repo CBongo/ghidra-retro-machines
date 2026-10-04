@@ -382,13 +382,13 @@ REALROM sample.ref a9d0 -> WA000_M3_B2::a9d8 CONDITIONAL_JUMP primary=true
 REALROM sample.ref a9d4 -> WA000_M3_B2::a9e4 CONDITIONAL_JUMP primary=true
 REALROM sample.ref a9d6 -> WA000_M3_B2::a9e0 CONDITIONAL_JUMP primary=true
 REALROM sample.ref.truncated 25 of 67
-REALROM sample.warn e141 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_e2e6 whose bank argument could not be recovered at this call site
-REALROM sample.warn e24a [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_e2e6 whose bank argument could not be recovered at this call site
-REALROM sample.warn e277 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_WE000_M2_B31__e2e6 whose bank argument could not be recovered at this call site
-REALROM sample.warn e277 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_e2e6 whose bank argument could not be recovered at this call site
-REALROM sample.warn e681 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_e2e6 whose bank argument could not be recovered at this call site
-REALROM sample.warn ecec [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_e2e0 whose bank argument could not be recovered at this call site
-REALROM sample.warn ed05 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_e2e6 whose bank argument could not be recovered at this call site
+REALROM sample.warn e141 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_e2e6, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
+REALROM sample.warn e24a [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_e2e6, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
+REALROM sample.warn e277 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_WE000_M2_B31__e2e6, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
+REALROM sample.warn e277 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_e2e6, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
+REALROM sample.warn e681 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_e2e6, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
+REALROM sample.warn ecec [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_e2e0, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
+REALROM sample.warn ed05 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_e2e6, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
 REALROM sample.note e2e8 [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
 REALROM sample.note e2e8 [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
 REALROM sample.symbol 2000 PPUCTRL IMPORTED primary=true

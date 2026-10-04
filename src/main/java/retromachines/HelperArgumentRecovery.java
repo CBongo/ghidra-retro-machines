@@ -1137,8 +1137,10 @@ final class HelperArgumentRecovery {
 		// declaration above for the third hazard (rcransom's FUN_fed1/FUN_fe56). OR if the byte
 		// was lost for good before any flow broke the line and no flow after that left the
 		// scanned span (grm-lb54: rcransom FUN_ff07's LDA #$06 entry, then a BNE-split tail of
-		// two $8000 select restores before its switchSite).
-		boolean proven = straightLine || (lostForGood && !leftSpan);
+		// two $8000 select restores before its switchSite). Either way, never once a copy of the
+		// byte escaped somewhere this walk does not track (grm-txzf: TAX / LDA #$06 / STA $8000 /
+		// TXA / STA $8001 hands the argument back through X, so it was never lost).
+		boolean proven = (straightLine && !argumentCopied) || (lostForGood && !leftSpan);
 		return proven && !sawStackRelativeAccess ? PrologueOutcome.DEFINITELY_CLOBBERED
 				: PrologueOutcome.INDETERMINATE;
 	}

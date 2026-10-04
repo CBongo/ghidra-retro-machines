@@ -643,6 +643,9 @@ final class BankDataflowEngine {
 		}
 		BankState fallState = overwrite(outState, callEffect.state(), callEffect.ownedMask());
 		outs.add(new OutElement(pathId, outState, fallState));
+		// grm-9z9t: an unresolved call must not be worded as a failed argument recovery when
+		// no recovery was attempted -- see ArgumentSought.
+		call.argumentSought(ArgumentSought.of(helper));
 		call.add(label, callEffect.state(),
 			overwrite(mechIn, callEffect.state(), callEffect.ownedMask()),
 			callEffect.argumentResolved(), callEffect.noInboundArgument(),
@@ -1091,6 +1094,41 @@ final class BankDataflowEngine {
 		}
 	}
 
+	/**
+	 * Whether a helper call looked for a caller argument at all (bead grm-9z9t), so the analyzer
+	 * can word an unresolved call honestly. Only {@link #SOUGHT} makes "the bank argument could
+	 * not be recovered at this call site" true; the other two never attempted a recovery.
+	 */
+	enum ArgumentSought {
+		/** Argument recovery ran (whatever it found). */
+		SOUGHT,
+		/**
+		 * The helper model has no argument register: its switch sites do not agree on one
+		 * mechanism and stored register (rtk2's {@code FUN_f55f} writes three different MMC5
+		 * PRG registers), its site is not a plain register store (an INC/DEC read-modify-write),
+		 * or it was composed through a tail call. {@code recoverCallArgument} short-circuits on
+		 * that before consulting any caller state. The analyzer's wording names only the null
+		 * register, never which of these caused it.
+		 */
+		NO_ARGUMENT_REGISTER,
+		/**
+		 * The strategy does not consume a helper argument (memory-latch re-derives the value
+		 * inside the helper under the caller's registers instead) -- see
+		 * {@link BankSwitchStrategy#consumesHelperArgument()}.
+		 */
+		RE_DERIVED_IN_HELPER;
+
+		static ArgumentSought of(HelperModel helper) {
+			if (helper.argReg() == null) {
+				return NO_ARGUMENT_REGISTER;
+			}
+			if (helper.strategy() != null && !helper.strategy().consumesHelperArgument()) {
+				return RE_DERIVED_IN_HELPER;
+			}
+			return SOUGHT;
+		}
+	}
+
 	/** Accumulates one address's helper-call outcomes across its elements into one {@link CallSwitch}. */
 	private static final class CallTally {
 
@@ -1101,6 +1139,7 @@ final class BankDataflowEngine {
 		private boolean noInboundArgument;
 		private boolean secondTierRelay;
 		private Address restoreCell;
+		private ArgumentSought argumentSought = ArgumentSought.SOUGHT;
 		private StoredValueScanner.ReadBack readBack;
 		private List<BankState> arms = List.of();
 		private boolean armsDenied;
@@ -1130,9 +1169,15 @@ final class BankDataflowEngine {
 			armsDenied = deniedArms;
 		}
 
+		/** grm-9z9t: why, if at all, this call never looked for a caller argument. */
+		void argumentSought(ArgumentSought sought) {
+			argumentSought = sought;
+		}
+
 		CallSwitch result() {
 			return new CallSwitch(helperName, effect, stateAfter, argumentResolved,
-				noInboundArgument, secondTierRelay, restoreCell, readBack, arms, armsDenied);
+				noInboundArgument, secondTierRelay, restoreCell, readBack, arms, armsDenied,
+				argumentSought);
 		}
 	}
 
@@ -1452,14 +1497,14 @@ final class BankDataflowEngine {
 	record CallSwitch(String helperName, BankState effect, BankState stateAfter,
 			boolean argumentResolved, boolean noInboundArgument, boolean secondTierRelay,
 			Address restoreCell, StoredValueScanner.ReadBack readBack, List<BankState> arms,
-			boolean armsDenied) {
+			boolean armsDenied, ArgumentSought argumentSought) {
 
 		/** The pre-grm-wul form: no arms, no read-back. */
 		CallSwitch(String helperName, BankState effect, BankState stateAfter,
 				boolean argumentResolved, boolean noInboundArgument, boolean secondTierRelay,
 				Address restoreCell) {
 			this(helperName, effect, stateAfter, argumentResolved, noInboundArgument,
-				secondTierRelay, restoreCell, null, List.of(), false);
+				secondTierRelay, restoreCell, null, List.of(), false, ArgumentSought.SOUGHT);
 		}
 
 		/** Whether this call was carried forward as several elements, one per arm. */

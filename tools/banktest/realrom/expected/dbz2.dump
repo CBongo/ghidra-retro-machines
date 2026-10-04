@@ -35,8 +35,8 @@ REALROM count bankComments 0
 REALROM count warnings 2
 REALROM count notes 6
 REALROM count symbols 51
-REALROM sample.warn cbcb [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_d12f whose bank argument could not be recovered at this call site
-REALROM sample.warn d156 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_d12f whose bank argument could not be recovered at this call site
+REALROM sample.warn cbcb [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_d12f, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
+REALROM sample.warn d156 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_d12f, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
 REALROM sample.note cd79 [CopyLoopAnalyzer] copy-shaped loop RAM:0133 -> RAM:8000 (8 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note cd85 [CopyLoopAnalyzer] copy-shaped loop RAM:013c -> RAM:8000 (8 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note cd97 [CopyLoopAnalyzer] copy-shaped loop RAM:0145 -> RAM:8000 (8 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
