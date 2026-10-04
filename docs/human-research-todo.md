@@ -139,7 +139,7 @@ acting on it; the "yours?" column is the only part that asks anything of you.
 
 | item | state | last activity | yours? |
 |---|---|---|---|
-| [ghidra#9447](https://github.com/NationalSecurityAgency/ghidra/issues/9447) jump-table over-read (`grm-b3m`) | open, `Status: Triage`, assigned `caheckman`; **no maintainer reply** | your lowest-target-bound proposal, 2026-08-16 | **Optional PR**, first item below |
+| [ghidra#9447](https://github.com/NationalSecurityAgency/ghidra/issues/9447) jump-table over-read (`grm-b3m`) | open, `Status: Triage`, assigned `caheckman`; **no maintainer reply** | your lowest-target-bound proposal, 2026-08-16 | **Optional PR. Branch is pushed and the body is drafted**: first item below |
 | [ghidra#9655](https://github.com/NationalSecurityAgency/ghidra/issues/9655) GP-6936 join varnodes (`grm-qp5x.2`) | open, no labels, no assignee, no replies | filed 2026-09-19 | Not yet. The issue promises a PR; agent work comes first (re-run the bisect on a corrected shadow install, prep the branch). The item comes back here when that's done |
 | [ghidra#9656](https://github.com/NationalSecurityAgency/ghidra/pull/9656) 6502 ADC/SBC flags + zp pointer wrap (`grm-ef46`) | open PR, `Status: Triage`, assigned `GhidorahRex`, no reviews (`blocked` = awaiting review) | your regression tests added 2026-09-20; the only other comments are from a third party (who also opened a separate 65C02 `BIT #imm` PR, [#9670](https://github.com/NationalSecurityAgency/ghidra/pull/9670)) | No, waiting on a maintainer |
 | [ghidra#9658](https://github.com/NationalSecurityAgency/ghidra/issues/9658) `validateOptions` (`grm-vsg`) | **closed, fixed for 12.3** | maintainer: "an oversight", 2026-09-21 | No. Retired, see Answered |
@@ -149,20 +149,18 @@ acting on it; the "yours?" column is the only part that asks anything of you.
 | [ghidra discussion #9349](https://github.com/NationalSecurityAgency/ghidra/discussions/9349) banked-memory RFC | open, **zero replies** | opened 2026-07-05 | Addendum post rides with the fall-through issue below (deferred) |
 | Fall-through-into-overlay issue (`grm-p3dy`) | **not posted**; draft on the bead | deferred 2026-10-04 | Not until a Ghidra release carries GP-7010, second item below |
 
-- [ ] **#9447 (jump-table over-read, `grm-eyn`/`grm-b3m`): the lowest-target bound is now
-  PR-grade evidence, if you want to send it unprompted.** The proposal has sat on the issue since
-  2026-08-16 with no reply. What 2026-09-21 adds: rebased onto 12.1.3, exact on **seven**
-  hand-verified tables (2026-09-25: the suspected `$8F00` +1 is really 31 entries, so it was exact
-  there too, rcransom `9352` → 25 is right, and 2026-09-26: ff1 `b177` → 30, exact — `grm-bogk`), 72 tables bounded across eight cartridges, real
-  code recovered rather than lost, and 32/34 rows deterministic across two full runs (34/34, pinned
-  and unpinned, since 2026-10-03 -- but that last step came from extension-side fixes in grm-aemp, not
-  from this patch). Known limit
-  to state: it declines on the table-after-code idiom (megaman `e000`/`e121`/`e44e`, true lengths
-  18/19/10, still 128 under the patch alone; the extension now bounds them with grm-akiv's
-  switch-window rule, a candidate follow-up PR). The fork commit `475cf359` applies to the 12.1.3 tree
-  unchanged, and 12.1.4 changed no decompiler source; the
-  `grm-6xh` recipe below prepares the branch. Your call, per `grm-b3m`'s standing rule that silence
-  is not a reason to send one.
+- [ ] **#9447 (jump-table over-read, `grm-eyn`/`grm-b3m`): the PR is ready to open, if you want to
+  send it unprompted.** Branch `fix/jumptable-lowest-target` is pushed to `CBongo/ghidra`, cut from
+  upstream `master` `a462673d` (2026-09-30). It cherry-picked cleanly over master's GP-7003 jump-table
+  rework, the decompiler builds clean from it, and the commit message is rewritten for upstream.
+  Open it at <https://github.com/CBongo/ghidra/pull/new/fix/jumptable-lowest-target> (base: NSA
+  `master`), and paste the **draft PR body from `grm-b3m`'s 2026-10-04 comment**. Three things to
+  know before you send it: (i) master still has the hole (the guard is `maxsize == 256`,
+  post-stride); (ii) every number in the body was measured on 12.1.2/12.1.3, not master, and the
+  body says so; (iii) there is no datatest, because `decomp_test_dbg` does not build under MinGW
+  here, and the body offers one. Known limit, also stated: it declines on the table-after-code idiom
+  (megaman `e000`/`e121`/`e44e`). Still your call, per `grm-b3m`'s standing rule that silence is not
+  a reason to send one. The commit carries no Claude trailers; add them if you want them.
 
 *Filed and awaiting a maintainer, nothing to do:* [#9655](https://github.com/NationalSecurityAgency/ghidra/issues/9655)
 (GP-6936, `grm-qp5x.2` — the promised PR returns to this list once its agent-side
