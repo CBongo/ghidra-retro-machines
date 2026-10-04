@@ -120,9 +120,13 @@ Blocked on judgment, not effort.
       descriptors carry `symbols:` sets with required `provenance:` and a `block:` qualifier for
       banked labels (`grm-hb6.5`, `docs/SCHEMA.md` "Annotation layer and export"). A `source:` key
       is reserved for the harvester. `tools/gensymbols/gen_c64ref_symbols.py` is the generator
-      precedent. *An agent survey of candidate projects is in progress (2026-10-04). It records
-      stated licenses as facts and leaves the redistributability calls blank for you. The results
-      will be posted on the bead.*
+      precedent. **The candidate survey is done: [`docs/disassembly-survey.md`](disassembly-survey.md)** (NES and
+      SNES, 2026-10-04). Fill in its **redistributable?** column. The decisions it surfaces are at
+      the end of each half under "Open questions for the owner". The biggest cross-cutting one: most
+      sources have **no license at all**. Is a table of label names and addresses, with no code and
+      no bytes, OK to ship for those? Also: Yoshifanatic1 repos (SMRPG, SMK, YI) carry GPL-3.0
+      files but call themselves public domain; are AI-labelled sources acceptable (plasticsmoke MM1
+      and MM2, Chrono Trigger)?; and are C reimplementations (snesrev) in scope?
 
       *Two additions from you, 2026-09-07 (`grm-hb6.6` comment) — neither ingested, and neither to
       be ingested without a ruling here.* **zelda2** now has a candidate,
