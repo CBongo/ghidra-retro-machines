@@ -27,6 +27,10 @@ import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.nodes.Tag;
 import org.yaml.snakeyaml.representer.Representer;
 
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.listing.CommentType;
@@ -72,6 +76,10 @@ import ghidra.program.model.symbol.SymbolType;
  * <li><b>{@code banking.initial_state}:</b> copied from the descriptor that was in force
  * ({@link Request#initialState}), because an overlay file shadows a curated one wholesale -- an
  * export that dropped the hint would silently regress the import.</li>
+ * <li><b>{@code banking.bank_identifying_offsets}:</b> copied, provenance and all, from the
+ * {@code Retro Machines.Bank Identifying Hints} property the loader recorded from the
+ * descriptor in force (bead grm-hb6.19), for the same shadowing reason. Never derived from
+ * the ROM bytes: the key states a human-established membership premise.</li>
  * </ul>
  * Bank-switch sites are NOT exported: nothing reads {@code banking.switch_sites} yet (grm-hb6.4),
  * and recovered sites are analysis output, not a human fact.
@@ -275,9 +283,15 @@ public final class GameDescriptorExporter {
 		Map<String, Object> doc = new LinkedHashMap<>();
 		doc.put("schema", 2);
 		doc.put("game", game);
+		Map<String, Object> banking = new LinkedHashMap<>();
 		if (req.initialState() != null && !req.initialState().isEmpty()) {
-			Map<String, Object> banking = new LinkedHashMap<>();
 			banking.put("initial_state", new LinkedHashMap<String, Object>(req.initialState()));
+		}
+		List<Map<String, Object>> identifying = identifyingOffsets(program, skipped);
+		if (!identifying.isEmpty()) {
+			banking.put("bank_identifying_offsets", identifying);
+		}
+		if (!banking.isEmpty()) {
 			doc.put("banking", banking);
 		}
 		if (!entries.isEmpty()) {
@@ -301,6 +315,41 @@ public final class GameDescriptorExporter {
 			"# comments) are carried; see docs/per-game-descriptors-design.md section 7.\n";
 		return new Result(header + new Yaml(hex, opts).dump(doc), entries.size(), comments,
 			skipped);
+	}
+
+	/**
+	 * The {@code banking.bank_identifying_offsets} entries, copied verbatim (provenance
+	 * included) from the {@link DescriptorSupport#BANK_IDENTIFYING_HINTS_PROPERTY} the loader
+	 * recorded, or an empty list when it recorded none (bead grm-hb6.19). Never derived: the key
+	 * records a human-established fact, and exporting a ROM-byte derivation would launder one
+	 * into it. A malformed property is reported in {@code skipped} and carries nothing.
+	 */
+	private static List<Map<String, Object>> identifyingOffsets(Program program,
+			List<String> skipped) {
+		List<Map<String, Object>> out = new ArrayList<>();
+		String spec = DescriptorSupport.programInfoString(program,
+			DescriptorSupport.BANK_IDENTIFYING_HINTS_PROPERTY);
+		if (spec == null || spec.isBlank()) {
+			return out;
+		}
+		try {
+			JsonObject root = JsonParser.parseString(spec).getAsJsonObject();
+			for (JsonElement el : root.getAsJsonArray("offsets")) {
+				JsonObject o = el.getAsJsonObject();
+				Map<String, Object> e = new LinkedHashMap<>();
+				e.put("address", new HexInt(o.get("address").getAsLong()));
+				e.put("shift", o.get("shift").getAsInt());
+				e.put("low", o.get("low").getAsInt());
+				e.put("provenance", o.get("provenance").getAsString());
+				out.add(e);
+			}
+		}
+		catch (RuntimeException e) {
+			skipped.add(DescriptorSupport.BANK_IDENTIFYING_HINTS_PROPERTY + " is malformed (" +
+				e.getMessage() + "); banking.bank_identifying_offsets not carried");
+			return new ArrayList<>();
+		}
+		return out;
 	}
 
 	/** "" for the default space, the block name for an overlay space, null if unresolvable. */

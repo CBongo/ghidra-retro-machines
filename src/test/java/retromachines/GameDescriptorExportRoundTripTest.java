@@ -187,6 +187,70 @@ public class GameDescriptorExportRoundTripTest extends AbstractBundledLanguageTe
 		assertNotNull(log);
 	}
 
+	/**
+	 * grm-hb6.19: the {@code banking.bank_identifying_offsets} hint the loader recorded survives
+	 * export -> compile (both dispositions) -> the loader's own re-publication, provenance and
+	 * all. An overlay shadows the curated file wholesale, so dropping it would silently withdraw
+	 * the membership premise from the next import.
+	 */
+	@Test
+	public void bankIdentifyingOffsetsSurviveTheRoundTrip() throws Exception {
+		String provenance = "owner ruling: the live bank at reads of $BFFF is an odd one";
+		JsonObject descriptor = JsonParser.parseString("""
+				{ "schema": 2, "banking": { "bank_identifying_offsets": [
+				  { "address": 49151, "shift": 1, "low": 1, "provenance": "%s" } ] } }
+				""".formatted(provenance)).getAsJsonObject();
+		String published = DescriptorSupport.formatMembershipHints(descriptor, "curated.gmap");
+		ProgramBuilder b = newBuilder();
+		ProgramDB src = b.getProgram();
+		edit(src, () -> src.getOptions(ghidra.program.model.listing.Program.PROGRAM_INFO)
+				.setString(DescriptorSupport.BANK_IDENTIFYING_HINTS_PROPERTY, published));
+
+		GameDescriptorExporter.Result result =
+			GameDescriptorExporter.export(src, request(Map.of("prg_mode", 0)));
+		assertTrue(result.yaml(), result.yaml().contains("address: 0xBFFF"));
+		assertTrue(result.skipped().toString(), result.skipped().isEmpty());
+
+		File overlay = new File(tmp.getRoot(), "hinted.yaml");
+		Files.writeString(overlay.toPath(), result.yaml());
+		GameCompiler.CompileResult overlayResult = GameCompiler.compileOverlay(overlay);
+		assertTrue(overlayResult.errors().toString(), overlayResult.ok());
+		File gmap = new File(tmp.getRoot(), "hinted.gmap");
+		GameCompiler.main(new String[] { overlay.getPath(), gmap.getPath() });
+		JsonObject curated = JsonParser.parseString(Files.readString(gmap.toPath()))
+				.getAsJsonObject();
+		assertEquals(curated, new Gson().toJsonTree(overlayResult.gameDoc()).getAsJsonObject());
+
+		// The fresh import publishes exactly what the original one did, initial_state kept too.
+		assertEquals(published, DescriptorSupport.formatMembershipHints(curated, "curated.gmap"));
+		assertEquals(0, curated.getAsJsonObject("banking").getAsJsonObject("initial_state")
+				.get("prg_mode").getAsInt());
+	}
+
+	/** No recorded hint, no exported key -- the exporter never derives one. */
+	@Test
+	public void noRecordedHintExportsNoIdentifyingOffsets() throws Exception {
+		String yaml = GameDescriptorExporter.export(annotated().getProgram(), request(null))
+				.yaml();
+		assertFalse(yaml, yaml.contains("bank_identifying_offsets"));
+		assertFalse(yaml, yaml.contains("banking"));
+	}
+
+	/** A malformed property is reported as skipped and carries nothing, never a partial list. */
+	@Test
+	public void malformedHintPropertyIsSkippedNotGuessed() throws Exception {
+		ProgramBuilder b = newBuilder();
+		ProgramDB src = b.getProgram();
+		edit(src, () -> src.getOptions(ghidra.program.model.listing.Program.PROGRAM_INFO)
+				.setString(DescriptorSupport.BANK_IDENTIFYING_HINTS_PROPERTY,
+					"{\"source\":\"x\",\"offsets\":[{\"address\":49151}]}"));
+		GameDescriptorExporter.Result result = GameDescriptorExporter.export(src, request(null));
+		assertFalse(result.yaml(), result.yaml().contains("bank_identifying_offsets"));
+		assertEquals(1, result.skipped().size());
+		assertTrue(result.skipped().get(0),
+			result.skipped().get(0).contains(DescriptorSupport.BANK_IDENTIFYING_HINTS_PROPERTY));
+	}
+
 	@Test
 	public void unresolvableBlockIsIgnoredAndLogged() throws Exception {
 		ProgramBuilder src = annotated();

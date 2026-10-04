@@ -800,8 +800,9 @@ to hold at each site: the read-back must reach the helper's commit, and the help
 that same encoding. A note relying on the hint says so: "HINTED, not derived: stated by the
 game descriptor <path>". Where the state at the read proves membership, the note says PROVEN
 instead and the hint is not used. Shape validation (16-bit `address`, `shift` 0-2,
-`low` in `[0, 2^shift)`, `provenance` present, no other keys) is `GameCompiler`'s. Not yet
-carried by `ExportGameDescriptor.java`.
+`low` in `[0, 2^shift)`, `provenance` present, no other keys) is `GameCompiler`'s.
+`ExportGameDescriptor.java` carries it verbatim, provenance included, from the recorded
+property (`grm-hb6.19`); it never exports a derived offset.
 
 ### Annotation layer and export (bead `grm-hb6.5`)
 
