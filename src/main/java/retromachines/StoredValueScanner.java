@@ -936,7 +936,7 @@ final class StoredValueScanner {
 				continue;
 			}
 
-			if (modifiers.contains(mnem)) {
+			if (modifiesRegister(modifiers, mnem, prev)) {
 				// The mask algebra has met something it cannot decompose per bit -- an
 				// ASL/LSR/ROL/ROR, an ADC/SBC, a transfer, or a load whose base nothing above
 				// could resolve. Before declining, ask the OTHER evaluator whether the register
@@ -2663,8 +2663,25 @@ final class StoredValueScanner {
 	 * modifier set, so every walk tests {@code getFlowType().isCall()} separately.
 	 */
 	static boolean modifiesRegister(Instruction instr, char reg) {
-		return registerModifiers(reg).contains(instr.getMnemonicString().toUpperCase());
+		return modifiesRegister(registerModifiers(reg), instr.getMnemonicString().toUpperCase(),
+			instr);
 	}
+
+	/**
+	 * Whether {@code mnem} (already upper-cased, from {@code instr}) is in {@code modifiers}
+	 * AND actually writes the register. ASL/LSR/ROL/ROR are in {@link #A_MODIFIERS} by
+	 * mnemonic but only write A in accumulator form; {@code ROR $F0} rotates memory and leaves A
+	 * alone (grm-jmsm: tmnt's {@code STA $21 / SEC / ROR $F0 / STA $FFFF} helper bodies).
+	 */
+	private static boolean modifiesRegister(Set<String> modifiers, String mnem,
+			Instruction instr) {
+		if (!modifiers.contains(mnem)) {
+			return false;
+		}
+		return !SHIFT_MNEMONICS.contains(mnem) || isAccumulatorForm(instr);
+	}
+
+	private static final Set<String> SHIFT_MNEMONICS = Set.of("ASL", "LSR", "ROL", "ROR");
 
 	private static Set<String> registerModifiers(char reg) {
 		return switch (reg) {

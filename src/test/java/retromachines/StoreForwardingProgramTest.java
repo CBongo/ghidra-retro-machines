@@ -16,6 +16,8 @@
 package retromachines;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.assertNotNull;
 
 import org.junit.Before;
@@ -146,6 +148,43 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 		assertEquals("tracked bits not fully known: " + actual, expectedKnownMask,
 			actual.knownMask());
 		assertEquals(expectedBits, actual.bits());
+	}
+
+	// ------------------------------------------------------------------
+	// Memory-mode shifts do not clobber A (grm-jmsm)
+	// ------------------------------------------------------------------
+
+	/**
+	 * tmnt's bank helpers read STA $21 / SEC / ROR $F0 / STA $FFFF: ROR $F0 rotates memory, so
+	 * A still holds the stored byte. The mnemonic-only modifier set used to treat it as an A
+	 * clobber.
+	 */
+	@Test
+	public void memoryModeShiftDoesNotClobberAccumulator() throws Exception {
+		builder.setBytes("0x8000", "a9 05", true); // LDA #$05
+		builder.setBytes("0x8002", "85 21", true); // STA $21
+		builder.setBytes("0x8004", "38", true); // SEC
+		builder.setBytes("0x8005", "66 f0", true); // ROR $F0 (memory)
+		builder.setBytes("0x8007", "8d 00 80", true); // STA $8000
+		builder.setBytes("0x800a", "0a", true); // ASL A
+		builder.setBytes("0x800b", "4a", true); // LSR A
+		builder.setBytes("0x800c", "2a", true); // ROL A
+		builder.setBytes("0x800d", "6a", true); // ROR A
+		builder.setBytes("0x800e", "06 f0", true); // ASL $F0
+		builder.setBytes("0x8010", "46 f0", true); // LSR $F0
+		builder.setBytes("0x8012", "26 f0", true); // ROL $F0
+
+		assertFalse(StoredValueScanner.modifiesRegister(instructionAt("0x8005"), 'A'));
+		assertFalse(StoredValueScanner.modifiesRegister(instructionAt("0x800e"), 'A'));
+		assertFalse(StoredValueScanner.modifiesRegister(instructionAt("0x8010"), 'A'));
+		assertFalse(StoredValueScanner.modifiesRegister(instructionAt("0x8012"), 'A'));
+		assertTrue(StoredValueScanner.modifiesRegister(instructionAt("0x800a"), 'A'));
+		assertTrue(StoredValueScanner.modifiesRegister(instructionAt("0x800b"), 'A'));
+		assertTrue(StoredValueScanner.modifiesRegister(instructionAt("0x800c"), 'A'));
+		assertTrue(StoredValueScanner.modifiesRegister(instructionAt("0x800d"), 'A'));
+
+		assertBank(5, axromLatch().computeSwitch(program, instructionAt("0x8007"),
+			BankState.unknown()));
 	}
 
 	// ------------------------------------------------------------------

@@ -45,14 +45,14 @@ REALROM block WC000_M2_B7 c000-ffff overlay=true
 REALROM count blocks.total 38
 REALROM count blocks.overlay 32
 REALROM count spaces.overlay 32
-REALROM count refs.intoOverlay 2556
+REALROM count refs.intoOverlay 2557
 REALROM count refs.intoOverlay.retargeted 25
-REALROM count refs.intoOverlay.intraOverlay 2531
+REALROM count refs.intoOverlay.intraOverlay 2532
 REALROM count instrs.inOverlay 11447
 REALROM count bankComments 25
 REALROM count warnings 24
 REALROM count notes 27
-REALROM count symbols 135
+REALROM count symbols 136
 REALROM sample.bankcomment c023 bank -> mirroring=0,prg_mode=3,prg_bank=4? via FUN_ff08 [known: prg_bank.0=0,prg_bank.1=0,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment c041 bank -> mirroring=0,prg_mode=3,prg_bank=6? via FUN_ff08 [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment f03b bank -> mirroring=0,prg_mode=3,prg_bank=6? via FUN_ff08 [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
@@ -103,7 +103,7 @@ REALROM sample.ref 8027 -> W8000_M3_B4::91e4 UNCONDITIONAL_JUMP primary=true
 REALROM sample.ref 802a -> W8000_M3_B4::930f UNCONDITIONAL_JUMP primary=true
 REALROM sample.ref 802d -> W8000_M3_B4::96ab UNCONDITIONAL_JUMP primary=true
 REALROM sample.ref 8030 -> W8000_M3_B4::8a60 UNCONDITIONAL_JUMP primary=true
-REALROM sample.ref.truncated 25 of 2556
+REALROM sample.ref.truncated 25 of 2557
 REALROM sample.warn a913 [Bad Instruction] Disassembly not permitted within uninitialized memory block (flow from W8000_M3_B3::a913)
 REALROM sample.warn fa11 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ff08 whose bank argument could not be recovered at this call site
 REALROM sample.warn fa25 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ff08 whose bank argument could not be recovered at this call site
@@ -169,6 +169,7 @@ REALROM sample.symbol 4016 JOY1 IMPORTED primary=true
 REALROM sample.symbol 4017 JOY2 IMPORTED primary=true
 REALROM sample.symbol 8098 switch USER_DEFINED primary=true
 REALROM sample.symbol 80ed switch USER_DEFINED primary=true
+REALROM sample.symbol 80f2 case_6 USER_DEFINED primary=true
 REALROM sample.symbol 811b case_0 USER_DEFINED primary=true
 REALROM sample.symbol 8174 case_1 USER_DEFINED primary=true
 REALROM sample.symbol 81b7 case_2 USER_DEFINED primary=true
@@ -179,6 +180,5 @@ REALROM sample.symbol 820b case_31 USER_DEFINED primary=false
 REALROM sample.symbol 820b case_33 USER_DEFINED primary=false
 REALROM sample.symbol 822b case_30 USER_DEFINED primary=true
 REALROM sample.symbol 822b case_32 USER_DEFINED primary=false
-REALROM sample.symbol 822b case_34 USER_DEFINED primary=false
-REALROM sample.symbol.truncated 25 of 135
+REALROM sample.symbol.truncated 25 of 136
 === REALROM END ===
