@@ -273,6 +273,17 @@ public final class JumpTableBound {
 				break; // this entry's own bytes would collide with the lowest target so far
 			}
 			long target = targets.get(i);
+			if (tableBeforeCode && target < shape.tableStart && tableBlock.contains(target) &&
+				tableBlock.contains(targets.get(0))) {
+				// grm-rsxe: when the table dispatches into its OWN block (entry 0 is there), a
+				// below-table target in that block is a real handler on the other side of the table
+				// (tmnt B5 940a: handlers 864b..9464 and 9464..a59f), not an over-read -- skip it
+				// rather than cut, and keep bounding by the lowest target ABOVE the table. Over-read
+				// garbage lands outside the block (lwings dcb3's 8c84 is the switchable window, the
+				// table the fixed bank). When entry 0 is outside the block the table's real targets
+				// live elsewhere and an in-block one is the garbage (cv3 e137): no skip.
+				continue;
+			}
 			if (tableBeforeCode && i >= 2 && target < shape.tableStart) {
 				belowTableCut = i; // grm-fxtp: cut here instead of dragging minTarget below tableStart
 				break;
@@ -546,6 +557,60 @@ public final class JumpTableBound {
 		return Result.bounded(cut, minTarget, Rule.NEIGHBOUR_TABLE);
 	}
 
+	/**
+	 * Apply the known-code bound (grm-rsxe): cut this table at the first entry whose own bytes
+	 * contain a target ANOTHER table was already bounded to. Dispatch tables are routinely laid
+	 * right before a handler, and when that handler belongs to a different switch, nothing in this
+	 * table's own entries marks where it ends. tmnt is the case: bank 5's {@code 9474 JMP ($0000)}
+	 * reads its table at 9477; its entry 0 is 9464, BELOW the table, so {@link #bound} declines,
+	 * and the switch window does not apply -- but {@code 9407}'s table (940a, bounded by
+	 * {@link #bound}) dispatches to 94a5, which is exactly where 9477's 23 entries end.
+	 *
+	 * <p>{@code codeStarts} must be the kept targets of tables bounded in the SAME pass, never the
+	 * decompiler's raw (possibly over-read) cases and never something read off the listing: the
+	 * former would cut at phantom targets, the latter would make the result depend on what
+	 * analysis order happened to disassemble first. Declines for a shape {@link Shape#of} does not
+	 * understand, when no code start lies inside the extent above the table, when fewer than 2
+	 * entries would be kept, and when any kept entry fails {@code inCode}.
+	 *
+	 * @param targets as for {@link #bound}
+	 * @param loadTables as for {@link #bound}
+	 * @param codeStarts flat offsets of other bounded tables' kept targets, in this table's memory
+	 * @param inCode as for {@link #boundByValidTargets}
+	 * @return a bounded result, or a decline
+	 */
+	public static Result boundByKnownCode(List<Long> targets, List<LoadTableEntry> loadTables,
+			Collection<Long> codeStarts, List<Boolean> inCode) {
+		if (inCode.size() != targets.size()) {
+			return Result.decline();
+		}
+		Shape shape = Shape.of(targets.size(), loadTables);
+		if (shape == null) {
+			return Result.decline();
+		}
+		int caseCount = targets.size();
+		int cut = -1;
+		for (int i = 0; i < caseCount && cut < 0; i++) {
+			for (long c : codeStarts) {
+				if (shape.entryContains(i, c)) {
+					cut = i;
+					break;
+				}
+			}
+		}
+		if (cut < 2) {
+			return Result.decline();
+		}
+		long minTarget = Long.MAX_VALUE;
+		for (int k = 0; k < cut; k++) {
+			if (!inCode.get(k)) {
+				return Result.decline(); // the code start lies past garbage already over-read
+			}
+			minTarget = Math.min(minTarget, targets.get(k));
+		}
+		return Result.bounded(cut, minTarget, Rule.KNOWN_CODE);
+	}
+
 	/** Which rule produced a bounded {@link Result}. */
 	public enum Rule {
 		/** {@link #bound}: the table precedes its targets and cannot overlap the lowest one. */
@@ -562,7 +627,10 @@ public final class JumpTableBound {
 		VALID_TARGET_CUT,
 		/** {@link #boundByNeighbourTable}: grm-2m07 -- cut where another jump table's load table
 		 *  begins. */
-		NEIGHBOUR_TABLE
+		NEIGHBOUR_TABLE,
+		/** {@link #boundByKnownCode}: grm-rsxe -- cut where another bounded table's target
+		 *  begins. */
+		KNOWN_CODE
 	}
 
 	/** The reconstructed table shape both rules share: each moving load table's start and
@@ -618,6 +686,17 @@ public final class JumpTableBound {
 				end = Math.max(end, start[k] + (long) (i + 1) * chunk[k]);
 			}
 			return end;
+		}
+
+		/** Whether {@code addr} lies in the bytes entry {@code i} occupies in any moving table. */
+		boolean entryContains(int i, long addr) {
+			for (int k = 0; k < start.length; k++) {
+				long lo = start[k] + (long) i * chunk[k];
+				if (addr >= lo && addr < lo + chunk[k]) {
+					return true;
+				}
+			}
+			return false;
 		}
 
 		/** Whether {@code n} is one of this table's own moving load-table starts. */

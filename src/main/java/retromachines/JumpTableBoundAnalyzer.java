@@ -257,12 +257,29 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 					}
 				}
 			}
+			// grm-rsxe: a second pass offers every table still declined the kept targets of the
+			// tables the first pass bounded (boundByKnownCode). Only this pass's own results feed
+			// it, so which tables it cuts does not depend on analysis order.
 			int bounded = 0;
+			List<Address> keptTargets = new ArrayList<>();
+			Map<JumpTable, Function> declined = new LinkedHashMap<>();
 			for (Map.Entry<Function, JumpTable[]> e : decompiled.entrySet()) {
 				for (JumpTable table : e.getValue()) {
 					monitor.checkCancelled();
 					if (processTable(program, listing, e.getKey(), table, loadTableStarts,
-						monitor, log)) {
+						List.of(), keptTargets, monitor, log)) {
+						bounded++;
+					}
+					else {
+						declined.put(table, e.getKey());
+					}
+				}
+			}
+			if (!keptTargets.isEmpty()) {
+				for (Map.Entry<JumpTable, Function> e : declined.entrySet()) {
+					monitor.checkCancelled();
+					if (processTable(program, listing, e.getValue(), e.getKey(), loadTableStarts,
+						keptTargets, new ArrayList<>(), monitor, log)) {
 						bounded++;
 					}
 				}
@@ -336,7 +353,8 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 	 *  round, or a human's); the shape isn't understood; the table doesn't sit below its
 	 *  targets; or the bound doesn't actually shrink the entry count. */
 	private boolean processTable(Program program, Listing listing, Function function,
-			JumpTable table, List<Address> loadTableStarts, TaskMonitor monitor, MessageLog log)
+			JumpTable table, List<Address> loadTableStarts, List<Address> knownCode,
+			List<Address> keptOut, TaskMonitor monitor, MessageLog log)
 			throws CancelledException {
 		Address switchAddr = table.getSwitchAddress();
 		if (switchAddr == null) {
@@ -462,13 +480,31 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 			}
 			result = JumpTableBound.boundByNeighbourTable(targets, loadTables, others, inCode);
 		}
+		if (!result.isBounded() && !knownCode.isEmpty()) {
+			// grm-rsxe: the table runs into a handler another table in this pass was bounded to.
+			List<Long> codeStarts = new ArrayList<>();
+			for (Address a : knownCode) {
+				if (sameMemory(a.getAddressSpace(), targetSpace)) {
+					codeStarts.add(a.getOffset());
+				}
+			}
+			result = JumpTableBound.boundByKnownCode(targets, loadTables, codeStarts, inCode);
+		}
 		if (!result.isBounded() || result.count() >= realCases.size()) {
 			return false; // decline, or would not shrink the table -- must be a no-op
 		}
 
 		// Normally the first count() cases; every other one for a grm-yjiq overlapping byte table.
 		ArrayList<Address> firstN = new ArrayList<>(result.keep(realCases));
-		if (isUndefined) {
+		keptOut.addAll(firstN);
+		// grm-rsxe: a KNOWN_CODE cut is pinned by references even in a real function. The one
+		// table it exists for (tmnt B5 9474) makes the decompiler reject the override outright
+		// ("Overlapping input varnodes" with 23 cases, clean with its own 128), and a rejected
+		// override is never applied -- the switch got NO targets at all, worse than the over-read.
+		// Checking each override by re-decompiling was tried and dropped: on megaman's FUN_dc21
+		// the check itself killed the decompiler process, so a failure there proves nothing, and
+		// undoing the override took its switch/case labels with it.
+		if (isUndefined || result.rule() == JumpTableBound.Rule.KNOWN_CODE) {
 			if (!pinByReferences(program, listing, switchAddr, firstN, monitor)) {
 				AnalyzerLog.warn(this, log,
 					"could not pin jump table by references at " + switchAddr +
@@ -507,6 +543,9 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		}
 		else if (result.rule() == JumpTableBound.Rule.VALID_TARGET_CUT) {
 			why = "first target outside code memory"; // grm-yjiq
+		}
+		else if (result.rule() == JumpTableBound.Rule.KNOWN_CODE) {
+			why = "ran into another table's target"; // grm-rsxe
 		}
 		else {
 			why = "lowest target " + Long.toHexString(result.lowestTarget());

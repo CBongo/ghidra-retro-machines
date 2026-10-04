@@ -301,8 +301,10 @@ public class JumpTableBoundTest {
 		List<LoadTableEntry> tables = List.of(new LoadTableEntry(tableStart, 1, 2 * targets.size()));
 		JumpTableBound.Block block = new JumpTableBound.Block(0xa000, 0xffff);
 
+		// grm-rsxe: the in-block below-table entry (b000) is now skipped rather than cut at, so the
+		// walk keeps all six -- either way the table must not shrink at the below-table entry.
 		Result r = JumpTableBound.bound(targets, tables, block);
-		assertFalse(r.isBounded());
+		assertTrue(!r.isBounded() || r.count() == targets.size());
 	}
 
 	/** Block unknown ({@code null}) disables the refinement entirely: a below-table entry still
@@ -605,5 +607,57 @@ public class JumpTableBoundTest {
 		inCode.set(2, false);
 		assertFalse(JumpTableBound.boundByNeighbourTable(targets, tables,
 			List.of(0x9008L), inCode).isBounded()); // a kept entry is not code
+	}
+
+	/** tmnt bank 5 940a (grm-rsxe): 45 real entries with handlers on BOTH sides of the table, all
+	 *  in the table's own bank. Entry 17 (91c6) is the first below the table; it used to trigger
+	 *  the grm-fxtp cut (17 entries). An in-block below-table target is a real handler, so the
+	 *  walk now runs on to the lowest target ABOVE the table, 9464 = entry 0 = 940a + 2*45. */
+	@Test
+	public void inBlockBelowTableTargetsAreSkippedNotCut() {
+		List<Long> targets = targets(0x9464, 0x97d7, 0x94af, 0x979b, 0x9977, 0x94a5, 0x982b,
+			0x9464, 0x94be, 0x9539, 0x9464, 0x9464, 0x9464, 0x978e, 0x97d7, 0x97d7, 0x9464, 0x91c6,
+			0x9288, 0x92f3, 0x9983, 0x99d9, 0x99e5, 0x9a0e, 0x864b, 0x8708, 0x877e, 0x87c0, 0x87f8,
+			0x8a94, 0x8b05, 0x8b8d, 0x8b99, 0x8c06, 0x9464, 0x9c5c, 0x9d88, 0x9b93, 0x9dab, 0xa0bf,
+			0xa0ba, 0xa34c, 0xa34f, 0xa3c3, 0xa59f, 0xbd60, 0x0520, 0xa80a);
+		List<LoadTableEntry> tables = List.of(new LoadTableEntry(0x940a, 1, 2 * targets.size()));
+		JumpTableBound.Block block = new JumpTableBound.Block(0x8000, 0xbfff);
+
+		Result r = JumpTableBound.bound(targets, tables, block);
+		assertTrue(r.isBounded());
+		assertEquals(45, r.count());
+		assertEquals(JumpTableBound.Rule.LOWEST_TARGET, r.rule());
+		assertEquals(0x9464, r.lowestTarget());
+	}
+
+	/** tmnt bank 5 9477 (grm-rsxe): entry 0 (9464) is below the table, so every extent rule
+	 *  declines; the table really ends at 94a5, which is 940a's entry 5. Cut there: 23 entries. */
+	@Test
+	public void knownCodeFromAnotherTableCutsTheTable() {
+		List<Long> targets = targets(0x9464, 0x9833, 0x969f, 0x983f, 0x832f, 0x9726, 0x9464,
+			0x9464, 0x9464, 0x9464, 0x9464, 0x9464, 0x9464, 0x9851, 0x9870, 0x9833, 0x987c, 0x98d7,
+			0x9908, 0x9464, 0x9464, 0x9464, 0x96eb, 0xfe20, 0xbd97, 0x0440);
+		List<LoadTableEntry> tables = List.of(new LoadTableEntry(0x9477, 1, 2 * targets.size()));
+		List<Boolean> inCode = new ArrayList<>();
+		for (long t : targets) {
+			inCode.add(t >= 0x8000);
+		}
+		assertFalse(JumpTableBound.bound(targets, tables,
+			new JumpTableBound.Block(0x8000, 0xbfff)).isBounded());
+
+		Result r = JumpTableBound.boundByKnownCode(targets, tables, List.of(0x94a5L, 0x97d7L),
+			inCode);
+		assertTrue(r.isBounded());
+		assertEquals(23, r.count());
+		assertEquals(JumpTableBound.Rule.KNOWN_CODE, r.rule());
+
+		// No code start inside the table's extent: nothing to cut at.
+		assertFalse(JumpTableBound.boundByKnownCode(targets, tables, List.of(0x97d7L), inCode)
+			.isBounded());
+		// A kept entry that cannot be code means the code start lies past garbage: decline.
+		List<Boolean> garbage = new ArrayList<>(inCode);
+		garbage.set(3, false);
+		assertFalse(JumpTableBound.boundByKnownCode(targets, tables, List.of(0x94a5L), garbage)
+			.isBounded());
 	}
 }
