@@ -83,6 +83,42 @@ public class JumpTableBoundTest {
 		assertEquals(6, r.count());
 	}
 
+	/** contra 849f (grm-t223, owner's read): table 86bf is 7 entries, then 8285's table at 86cd,
+	 *  whose 4 targets all fall inside 849f's window -- the window alone keeps 11. 86cd being
+	 *  another switch's table start stops the walk at 7. */
+	@Test
+	public void windowStopsAtTheNextTablePackedAfterIt() {
+		List<Long> targets = targets(0x8651, 0x8651, 0x8673, 0x86a6, 0x8683, 0x86a6, 0x8651,
+			0x8500, 0x8522, 0x855c, 0x84a2, 0xc000, 0xd000, 0xe000);
+		List<LoadTableEntry> tables = List.of(new LoadTableEntry(0x86bf, 1, 28));
+
+		Result windowOnly = JumpTableBound.boundBySwitchWindow(0x849f, targets, tables);
+		assertEquals(11, windowOnly.count());
+		Result r = JumpTableBound.boundBySwitchWindow(0x849f, targets, tables, List.of(0x86cdL));
+		assertTrue(r.isBounded());
+		assertEquals(7, r.count());
+		assertEquals(JumpTableBound.Rule.WINDOW_AT_NEIGHBOUR, r.rule());
+		assertEquals(0x8651, r.lowestTarget());
+	}
+
+	/** When the window would stop at the neighbour anyway (tmnt 8fb8 running into 8fc4), the plain
+	 *  window rule applies unchanged; an off-boundary or own start is ignored, not a decline. */
+	@Test
+	public void windowNeighbourOnlyTightensTheWindow() {
+		List<Long> targets =
+			targets(0x8f37, 0x8f37, 0x8f45, 0x8f71, 0x8f55, 0x8f37, 0x8cfb, 0x8d22, 0x8d70, 0x8e66);
+		List<LoadTableEntry> tables = List.of(new LoadTableEntry(0x8fb8, 1, 20));
+		Result r = JumpTableBound.boundBySwitchWindow(0x8f34, targets, tables, List.of(0x8fc4L));
+		assertEquals(6, r.count());
+		assertEquals(JumpTableBound.Rule.SWITCH_WINDOW, r.rule());
+
+		List<Long> contra = targets(0x8651, 0x8651, 0x8673, 0x86a6, 0x8683, 0x86a6, 0x8651,
+			0x8500, 0x8522, 0x855c, 0x84a2, 0xc000, 0xd000, 0xe000);
+		List<LoadTableEntry> contraTables = List.of(new LoadTableEntry(0x86bf, 1, 28));
+		assertEquals(11, JumpTableBound.boundBySwitchWindow(0x849f, contra, contraTables,
+			List.of(0x86ceL, 0x86bfL, 0x9000L)).count());
+	}
+
 	/** An out-of-window entry followed straight away by in-window ones may be a real case that
 	 *  jumps to shared code: decline rather than cut there. */
 	@Test

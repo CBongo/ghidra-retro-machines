@@ -451,11 +451,22 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 			}
 		}
 
+		// Other switches' load-table starts, for grm-t223 and grm-2m07 below. Only starts in this
+		// table's own memory count (same rule as the load tables above); the rules themselves
+		// ignore this table's own starts.
+		List<Long> others = new ArrayList<>();
+		for (Address a : loadTableStarts) {
+			if (sameMemory(a.getAddressSpace(), targetSpace)) {
+				others.add(a.getOffset());
+			}
+		}
+
 		JumpTableBound.Result result = JumpTableBound.bound(targets, loadTables, tableBlock);
 		if (!result.isBounded() && sameMemory(switchAddr.getAddressSpace(), targetSpace)) {
-			// Table after its code (grm-akiv): the lowest-target rule declines by design.
+			// Table after its code (grm-akiv): the lowest-target rule declines by design. The walk
+			// also stops at the next table (grm-t223: contra 849f runs into 8285's table at 86cd).
 			result = JumpTableBound.boundBySwitchWindow(switchAddr.getOffset(), targets,
-				loadTables);
+				loadTables, others);
 		}
 		// Per case, whether its target lies in memory that can hold code: the grm-yjiq and
 		// grm-2m07 fallbacks below both consult it.
@@ -469,15 +480,7 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 			result = JumpTableBound.boundByValidTargets(targets, loadTables, inCode);
 		}
 		if (!result.isBounded()) {
-			// grm-2m07: the table runs into another switch's table; see the javadoc. Only starts
-			// in this table's own memory count (same rule as the load tables above), and the
-			// rule itself ignores this table's own starts.
-			List<Long> others = new ArrayList<>();
-			for (Address a : loadTableStarts) {
-				if (sameMemory(a.getAddressSpace(), targetSpace)) {
-					others.add(a.getOffset());
-				}
-			}
+			// grm-2m07: the table runs into another switch's table; see the javadoc.
 			result = JumpTableBound.boundByNeighbourTable(targets, loadTables, others, inCode);
 		}
 		if (!result.isBounded() && !knownCode.isEmpty()) {
@@ -537,6 +540,9 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		String why;
 		if (result.rule() == JumpTableBound.Rule.SWITCH_WINDOW) {
 			why = "targets between switch and table";
+		}
+		else if (result.rule() == JumpTableBound.Rule.WINDOW_AT_NEIGHBOUR) {
+			why = "targets between switch and table, stopped at next table"; // grm-t223
 		}
 		else if (result.rule() == JumpTableBound.Rule.BELOW_TABLE_CUT) {
 			why = "first target below table"; // grm-fxtp

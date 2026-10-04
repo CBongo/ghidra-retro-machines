@@ -363,10 +363,34 @@ public final class JumpTableBound {
 	 */
 	public static Result boundBySwitchWindow(long switchAddr, List<Long> targets,
 			List<LoadTableEntry> loadTables) {
+		return boundBySwitchWindow(switchAddr, targets, loadTables, List.of());
+	}
+
+	/**
+	 * {@link #boundBySwitchWindow(long, List, List)}, also stopped at the next table (grm-t223).
+	 * Tables after their code are routinely packed back to back, each owned by a different
+	 * dispatcher, and when the next table's targets happen to fall inside THIS switch's window the
+	 * window walk reads straight through it: contra 849f's table 86bf is 7 entries, but the four
+	 * after them are 8285's table at 86cd, whose targets (8500 8522 855c 84a2) all lie in
+	 * {@code [849f, 86bf)}, so the window alone keeps 11. So the walk also stops where the nearest
+	 * of {@code otherStarts} begins, admitted as for {@link #boundByNeighbourTable} (strictly
+	 * inside the extent, not one of this table's own starts, on one of its entry boundaries) --
+	 * except that a start failing those is skipped, never a reason to decline. A cut there skips
+	 * the confirm check: the entries after it are the neighbour's, in the window by construction
+	 * (the very case this exists for), and the neighbour's start is independent evidence the
+	 * confirm check only stands in for.
+	 *
+	 * @param otherStarts flat offsets of OTHER jump tables' moving load-table starts, as for
+	 *                    {@link #boundByNeighbourTable}
+	 * @return as for {@link #boundBySwitchWindow(long, List, List)}, with rule
+	 *         {@link Rule#WINDOW_AT_NEIGHBOUR} when the neighbour, not the window, ended the walk
+	 */
+	public static Result boundBySwitchWindow(long switchAddr, List<Long> targets,
+			List<LoadTableEntry> loadTables, Collection<Long> otherStarts) {
 		Shape shape = Shape.of(targets.size(), loadTables);
 		if (shape == null) {
 			return onEvenCases(targets, loadTables,
-				(t, l) -> boundBySwitchWindow(switchAddr, t, l));
+				(t, l) -> boundBySwitchWindow(switchAddr, t, l, otherStarts));
 		}
 		if (shape.tableStart <= switchAddr) {
 			return Result.decline();
@@ -374,14 +398,21 @@ public final class JumpTableBound {
 		long lo = switchAddr;
 		long hi = shape.tableStart;
 		int caseCount = targets.size();
+		long neighbour = shape.nearestNeighbour(otherStarts, shape.entryEnd(caseCount - 1));
 		int cut = 0;
 		long minTarget = Long.MAX_VALUE;
-		while (cut < caseCount && targets.get(cut) >= lo && targets.get(cut) < hi) {
+		while (cut < caseCount && targets.get(cut) >= lo && targets.get(cut) < hi &&
+			shape.entryEnd(cut) <= neighbour) {
 			minTarget = Math.min(minTarget, targets.get(cut));
 			cut++;
 		}
 		if (cut < 2) {
 			return Result.decline();
+		}
+		if (cut < caseCount && targets.get(cut) >= lo && targets.get(cut) < hi) {
+			// Only the neighbour ended the walk (when the window would have too, as at tmnt 8fb8
+			// running into 8fc4, the plain window rule and its confirm check apply unchanged).
+			return Result.bounded(cut, minTarget, Rule.WINDOW_AT_NEIGHBOUR);
 		}
 		for (int j = cut + 1; j < Math.min(caseCount, cut + 1 + WINDOW_CONFIRM); j++) {
 			long t = targets.get(j);
@@ -618,6 +649,9 @@ public final class JumpTableBound {
 		/** {@link #boundBySwitchWindow}: the table follows its targets, which lie between the
 		 *  switch and the table. */
 		SWITCH_WINDOW,
+		/** {@link #boundBySwitchWindow}: grm-t223 -- as {@link #SWITCH_WINDOW}, but the walk was
+		 *  ended by the start of another switch's table packed right after this one. */
+		WINDOW_AT_NEIGHBOUR,
 		/** {@link #bound}: grm-fxtp -- the table precedes its targets, but the walk was cut at the
 		 *  first over-read entry falling below the table's own start rather than dragging
 		 *  {@code minTarget} below it and declining. */
@@ -697,6 +731,19 @@ public final class JumpTableBound {
 				}
 			}
 			return false;
+		}
+
+		/** The lowest of {@code otherStarts} strictly inside {@code (tableStart, extentEnd)} that is
+		 *  not one of this table's own starts and lies on one of its entry boundaries, or
+		 *  {@link Long#MAX_VALUE} when there is none. */
+		long nearestNeighbour(Collection<Long> otherStarts, long extentEnd) {
+			long best = Long.MAX_VALUE;
+			for (long n : otherStarts) {
+				if (n > tableStart && n < extentEnd && !isOwnStart(n) && isEntryBoundary(n)) {
+					best = Math.min(best, n);
+				}
+			}
+			return best;
 		}
 
 		/** Whether {@code n} is one of this table's own moving load-table starts. */

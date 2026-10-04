@@ -19,19 +19,36 @@ REALROM block RAM 0000-07ff overlay=false
 REALROM count blocks.total 12
 REALROM count blocks.overlay 7
 REALROM count spaces.overlay 7
-REALROM count refs.intoOverlay 298
-REALROM count refs.intoOverlay.retargeted 3
-REALROM count refs.intoOverlay.intraOverlay 295
-REALROM count instrs.inOverlay 1044
-REALROM count bankComments 5
-REALROM count warnings 6
+REALROM count refs.intoOverlay 716
+REALROM count refs.intoOverlay.retargeted 13
+REALROM count refs.intoOverlay.intraOverlay 703
+REALROM count instrs.inOverlay 2798
+REALROM count bankComments 22
+REALROM count warnings 4
 REALROM count notes 1
-REALROM count symbols 18
+REALROM count symbols 26
 REALROM sample.bankcomment c094 bank -> 1 (bank=1) via FUN_c139
 REALROM sample.bankcomment c0a2 bank -> 1 (bank=1) via FUN_c139
 REALROM sample.bankcomment c0cb bank -> 1 (bank=1) via FUN_c13f
 REALROM sample.bankcomment c157 bank -> 1 (bank=1) via FUN_c13f
+REALROM sample.bankcomment c199 bank -> 3 (bank=3) via FUN_c139
+REALROM sample.bankcomment c1bb bank -> 6 (bank=6) via FUN_c139
+REALROM sample.bankcomment c1c3 bank -> 6 (bank=6) via FUN_c139
+REALROM sample.bankcomment c1cb bank -> 0 (bank=0) via FUN_c139
+REALROM sample.bankcomment c1d3 bank -> 2 (bank=2) via FUN_c139
+REALROM sample.bankcomment c1db bank -> 0 (bank=0) via FUN_c139
+REALROM sample.bankcomment c1e3 bank -> 2 (bank=2) via FUN_c139
+REALROM sample.bankcomment c1eb bank -> 3 (bank=3) via FUN_c139
+REALROM sample.bankcomment c1f3 bank -> 3 (bank=3) via FUN_c139
+REALROM sample.bankcomment c1fb bank -> 2 (bank=2) via FUN_c139
+REALROM sample.bankcomment c209 bank -> 2 (bank=2) via FUN_c139
+REALROM sample.bankcomment c211 bank -> 2 (bank=2) via FUN_c139
 REALROM sample.bankcomment c21b bank -> 6 (bank=6) via FUN_c139
+REALROM sample.bankcomment c225 bank -> 4 (bank=4) via FUN_c139
+REALROM sample.bankcomment c22d bank -> 5 (bank=5) via FUN_c139
+REALROM sample.bankcomment c235 bank -> 3 (bank=3) via FUN_c139
+REALROM sample.bankcomment ce58 bank -> 2 (bank=2) via FUN_c139
+REALROM sample.bankcomment e16f bank -> 2 (bank=2) via FUN_c139
 REALROM sample.ref 8072 -> PRG_LO_B1::8705 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8075 -> PRG_LO_B1::808d CONDITIONAL_JUMP primary=true
 REALROM sample.ref 807f -> PRG_LO_B1::806d CONDITIONAL_JUMP primary=true
@@ -57,9 +74,7 @@ REALROM sample.ref 8106 -> PRG_LO_B1::810f CONDITIONAL_JUMP primary=true
 REALROM sample.ref 810d -> PRG_LO_B1::8102 CONDITIONAL_JUMP primary=true
 REALROM sample.ref 810f -> PRG_LO_B1::861d UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8118 -> PRG_LO_B1::811d CONDITIONAL_JUMP primary=true
-REALROM sample.ref.truncated 25 of 298
-REALROM sample.warn 811a [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_PRG_LO_B1__8259 whose bank argument could not be recovered at this call site
-REALROM sample.warn 8efc [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.ref.truncated 25 of 716
 REALROM sample.warn c142 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn c149 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c13f, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
 REALROM sample.warn c164 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c13f, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
@@ -77,10 +92,18 @@ REALROM sample.symbol 4014 OAMDMA IMPORTED primary=true
 REALROM sample.symbol 4015 SND_CHN IMPORTED primary=true
 REALROM sample.symbol 4016 JOY1 IMPORTED primary=true
 REALROM sample.symbol 4017 JOY2 IMPORTED primary=true
+REALROM sample.symbol 849f switch USER_DEFINED primary=false
+REALROM sample.symbol 8651 case_0 USER_DEFINED primary=false
+REALROM sample.symbol 8651 case_1 USER_DEFINED primary=false
+REALROM sample.symbol 8651 case_6 USER_DEFINED primary=false
+REALROM sample.symbol 8673 case_2 USER_DEFINED primary=false
+REALROM sample.symbol 8683 case_4 USER_DEFINED primary=false
+REALROM sample.symbol 86a6 case_3 USER_DEFINED primary=false
+REALROM sample.symbol 86a6 case_5 USER_DEFINED primary=false
 REALROM sample.symbol c001 RESET IMPORTED primary=true
 REALROM sample.symbol c060 NMI IMPORTED primary=true
 REALROM sample.symbol c0b5 IRQ IMPORTED primary=true
 REALROM sample.symbol fffa NMI_VEC IMPORTED primary=true
 REALROM sample.symbol fffc RESET_VEC IMPORTED primary=true
-REALROM sample.symbol fffe IRQ_VEC IMPORTED primary=true
+REALROM sample.symbol.truncated 25 of 26
 === REALROM END ===
