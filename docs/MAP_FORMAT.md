@@ -430,7 +430,9 @@ every compiled game descriptor inside it is `.gmap`.
   "game": { "id", "title", "board",
             "identity": { "prg_sha256", "file_sha256" },
             "provenance" },
-  "banking"?: { "initial_state"?: { "<field>": <int>, ... } },
+  "banking"?: { "initial_state"?: { "<field>": <int>, ... },
+                "bank_identifying_offsets"?: [ { "address": <int>, "shift": <int>,
+                                                 "low": <int>, "provenance" } ] },  // grm-mej.7
   "symbols"?: [ { "set", "default": bool, "provenance", "block"?,
                   "entries": [ { "addr": <int>, "name", "kind": "label"|"entry",
                                  "block"?, "comment"? } ] } ]     // grm-hb6.5
@@ -452,6 +454,11 @@ every compiled game descriptor inside it is `.gmap`.
   descriptor's own parsed `banking.state` field tuple
   (`DescriptorSupport.applyGameInitialStateHint`). This is the tier's first hint kind
   (bead `grm-hb6.12`); more will follow the same file but are not yet designed.
+- **`banking.bank_identifying_offsets`**, when present, is the membership-premise hint for a
+  shift-encoded identifying ROM byte (bead `grm-mej.7`; semantics in `docs/SCHEMA.md`). The
+  loader republishes it unchanged as the `Retro Machines.Bank Identifying Hints` program
+  property, and `BoardBankAnalyzer` verifies each entry against the ROM-byte derivation before
+  it can have any effect.
 
 ### Distribution and lookup
 

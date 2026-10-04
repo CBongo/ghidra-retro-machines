@@ -507,7 +507,9 @@ final class HelperArgumentRecovery {
 			// grm-mej.7: no deposit here to check a reload-kept read-back against -- drop it.
 			return new CallEffect(position(local, helper.lsb(), helper.effectMask()),
 				helper.effectMask(), local.knownMask() != 0, definitelyNoInboundArgument, false,
-				restoreCell, reloadTransform != null ? null : readBack);
+				restoreCell, reloadTransform != null ||
+					(readBack != null && encodedIdentifyingCell(helper, readBack.cell()))
+						? null : readBack);
 		}
 		// helper.entry(), not function().getEntryPoint(): the mini-inline scan must stop where
 		// control actually arrived. For a mid-body entry those differ, and stopping at the
@@ -549,9 +551,11 @@ final class HelperArgumentRecovery {
 		// reload survives only if the reload's transform IS the cell's encoding on the field the
 		// consuming deposit owns. See readBackMatchesReload.
 		if (reloadTransform != null && readBack != null &&
-			!readBackMatchesReload(readBack, reloadTransform, helper, primary)) {
+			!readBackMatchesReload(readBack, reloadTransform, helper, primary,
+				statesAt(oracle, readBack.readAt()))) {
 			readBack = null;
 		}
+		StoredValueScanner.ReadBack reloadVerified = reloadTransform == null ? null : readBack;
 		// bead grm-ld68: the caller-side register scan above (readBack) found no read-back of
 		// its own -- it is tracking argReg, and Contra-shaped helpers clobber argReg in their
 		// prologue, so grm-oj20 already discarded it -- but the STRATEGY re-evaluating its own
@@ -563,9 +567,30 @@ final class HelperArgumentRecovery {
 		if (readBack == null && primary.readBack() != null && !argumentResolved) {
 			readBack = primary.readBack();
 		}
+		// grm-mej.7: a read-back of a NON-identity encoded cell describes what the helper commits
+		// only when the helper was proved to apply that same encoding -- the reload path above,
+		// whose readBackMatchesReload checked it. Every other path (argument surviving to the
+		// site unchanged, the grm-ld68 index-register promotion) commits the byte some other
+		// way, so "re-commits the bank READ BACK" would not be literally true there.
+		if (readBack != null && readBack != reloadVerified &&
+			encodedIdentifyingCell(helper, readBack.cell())) {
+			readBack = null;
+		}
 		return new CallEffect(positionedValue, positionedOwnedMask,
 			argumentResolved, definitelyNoInboundArgument, false, restoreCell,
 			readBack);
+	}
+
+	/** Whether {@code cell} is a ROM-identifying byte with a NON-identity encoding in
+	 *  {@code helper}'s strategy's observed mirrors (grm-km4f's shift form). */
+	private static boolean encodedIdentifyingCell(HelperModel helper, Address cell) {
+		if (helper.strategy() == null || cell == null) {
+			return false;
+		}
+		BankMirrors mirrors = helper.strategy().observedMirrors();
+		BankMirrors.IdentifyingEncoding encoding =
+			mirrors == null ? null : mirrors.identifyingEncoding(cell);
+		return encoding != null && !encoding.isIdentity();
 	}
 
 	/**
@@ -1568,6 +1593,13 @@ final class HelperArgumentRecovery {
 		}
 	}
 
+	/** The oracle's state at {@code addr} as a list (empty when there is no oracle or no state)
+	 *  -- the shape {@link BankMirrors#restoreMembership} takes. */
+	private static List<BankState> statesAt(StateOracle oracle, Address addr) {
+		BankState st = oracle == null || addr == null ? null : oracle.stateAt(addr);
+		return st == null ? List.of() : List.of(st);
+	}
+
 	/**
 	 * Whether {@code instr} may write the 6502 stack page {@code $0100-$01FF}, for
 	 * {@link #argumentReloadTransform}'s slot-integrity refusal: a memory write whose target is
@@ -1618,22 +1650,20 @@ final class HelperArgumentRecovery {
 	 * the raw committed value, so anything else commits a different number;</li>
 	 * <li>anything else: refused.</li>
 	 * </ul>
-	 * <b>A NON-IDENTITY encoding is refused outright, pending an owner ruling</b> (measured
-	 * 2026-10-03, grm-mej.7). Matching the transform is necessary but not sufficient there: a
-	 * shift-form encoding is proved only on the CONGRUENT, VERIFIED banks ({@link
-	 * BankMirrors.IdentifyingEncoding#byteFor}'s two refusals), so the byte read is a bank
-	 * identifier only if the live bank at the read is one of those -- which nothing here
-	 * proves, and which the read-back's own existence suggests the state could not show (had it
-	 * shown it, the mirror would have RESOLVED to a number instead of stopping
-	 * {@code RESTORED_BANK}). nesmmc3idtest pins the counter-examples: at {@code e28d} the live
-	 * R7 is 4 (even, KNOWN) and at {@code e2cd} it is 15 (exempt, unverified), and both bytes
-	 * are junk -- accepting the matching transform turned both into "re-commits the bank READ
-	 * BACK" notes, which are false. rcransom's {@code $BFFF} restores rest on the same unproven
-	 * premise (that R7 is odd and not 15 at every read), which the game itself asserts at
-	 * {@code $FEFB} but this analyzer does not prove.
+	 * <b>A NON-IDENTITY encoding additionally needs the live bank's MEMBERSHIP established</b>
+	 * (owner ruling 2026-10-03, grm-mej.7). A shift-form encoding is proved only on the
+	 * CONGRUENT, VERIFIED banks, so the byte read identifies a bank only if the live bank at the
+	 * read is one of those: {@link BankMirrors#restoreMembership} must answer PROVEN (the
+	 * tracked state at the read pins the field into the verified set) or HINTED (a verified
+	 * game-descriptor fact states it). "Not contradicted" is not enough. nesmmc3idtest pins the
+	 * counter-examples this refuses: {@code e28d} (R7 = 4, even), {@code e2cd} (R7 = 15, exempt
+	 * and unverified), {@code e310} (R7 unknown).
+	 *
+	 * @param statesAtRead the tracked state at the read (empty when no oracle is available)
 	 */
 	private static boolean readBackMatchesReload(StoredValueScanner.ReadBack readBack,
-			ReloadTransform t, HelperModel helper, BankSwitchStrategy.HelperDeposit primary) {
+			ReloadTransform t, HelperModel helper, BankSwitchStrategy.HelperDeposit primary,
+			List<BankState> statesAtRead) {
 		BankMirrors mirrors = helper.strategy() == null ? BankMirrors.none()
 				: helper.strategy().observedMirrors();
 		Address cell = readBack.cell();
@@ -1643,8 +1673,12 @@ final class HelperArgumentRecovery {
 		if (mirrors.is(cell, BankMirrors.Kind.ROM_IDENTIFYING)) {
 			BankMirrors.IdentifyingEncoding encoding = mirrors.identifyingEncoding(cell);
 			BoardDescriptorModel.FieldSpec field = mirrors.identifyingField(cell);
-			if (encoding == null || field == null || !encoding.isIdentity() ||
-				encoding.shift() != t.shift() || encoding.low() != t.add()) {
+			if (encoding == null || field == null || encoding.shift() != t.shift() ||
+				encoding.low() != t.add()) {
+				return false;
+			}
+			if (mirrors.restoreMembership(cell, statesAtRead) ==
+				BankMirrors.Membership.UNPROVEN) {
 				return false;
 			}
 			int owned = (primary.ownedMask() << helper.lsb()) & helper.effectMask();

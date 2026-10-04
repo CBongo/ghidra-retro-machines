@@ -19,7 +19,9 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -30,6 +32,7 @@ import org.junit.Before;
 import org.junit.Test;
 
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 
 import ghidra.program.database.ProgramBuilder;
 import ghidra.program.database.ProgramDB;
@@ -49,10 +52,11 @@ import retromachines.HelperDiscovery.HelperModel;
  * stack-relative ({@code TSX} / {@code LDA $01nn,X}), and commits a fixed transform of it that
  * is exactly the read-back cell's own bank encoding. River City Ransom's {@code FUN_fed1} is the
  * shape, reproduced here byte for byte from the pinned ROM ({@code $FED1-$FEFA}, its
- * {@code CMP $BFFF} sanity tail replaced by {@code RTS}). The transform proof holds on fed1, but
- * only an IDENTITY encoding is accepted for now -- fed1's shift-encoded {@code $BFFF} read-back
- * is still dropped pending an owner ruling (see
- * {@link #fed1WithAShiftEncodedCellStillDropsTheReadBack}).
+ * {@code CMP $BFFF} sanity tail replaced by {@code RTS}). For fed1's SHIFT-encoded {@code $BFFF}
+ * the transform match is not enough: per the owner's 2026-10-03 ruling the live bank's membership
+ * in the encoding's verified set must be PROVEN by the tracked state at the read, or stated by a
+ * verified game-descriptor hint ({@code banking.bank_identifying_offsets}); both, and every
+ * refusal, are pinned below.
  * <p>
  * Two layers: {@link HelperArgumentRecovery#argumentReloadTransform} directly (the proof and
  * every strict refusal), and {@link HelperArgumentRecovery#recoverCallArgument} end to end (the
@@ -195,11 +199,10 @@ public class StackReloadReadBackProgramTest extends AbstractBundledLanguageTest 
 	}
 
 	/**
-	 * PENDING OWNER RULING (grm-mej.7): fed1's transform matches $BFFF's shift encoding exactly,
-	 * but the byte identifies a bank only on the encoding's congruent, verified banks, and
-	 * nothing proves the live R7 is one of them at the read -- nesmmc3idtest's e28d/e2cd are the
-	 * counter-examples. So a NON-identity encoding is refused and the read-back is still
-	 * dropped. Flip this test if the owner rules the unproven premise acceptable.
+	 * Owner ruling 2026-10-03 (grm-mej.7): fed1's transform matches $BFFF's shift encoding
+	 * exactly, but the byte identifies a bank only on the encoding's verified banks, and with no
+	 * hint and an unknown state nothing establishes the live R7 is one of them -- so the
+	 * read-back is dropped ("not contradicted" is not enough).
 	 */
 	@Test
 	public void fed1WithAShiftEncodedCellStillDropsTheReadBack() throws Exception {
@@ -210,6 +213,160 @@ public class StackReloadReadBackProgramTest extends AbstractBundledLanguageTest 
 		CallEffect effect = recover(fed1Model(strategy));
 		assertFalse(effect.argumentResolved());
 		assertNull(effect.readBack());
+	}
+
+	/** The same call with a VERIFIED membership hint for $BFFF: the read-back is kept. */
+	@Test
+	public void fed1WithAVerifiedMembershipHintKeepsTheReadBack() throws Exception {
+		caller();
+		put("0xfed1", FED1);
+		SelectDataBankSwitchStrategy strategy = mmc3();
+		List<String> refusals = new ArrayList<>();
+		strategy.observeMirrors(bfffMirror(BankMirrors.Kind.ROM_IDENTIFYING, oddHalf(), R7)
+				.withMembershipHints(List.of(hint(0xBFFF, 1, 1)), refusals));
+		assertEquals(List.of(), refusals);
+		CallEffect effect = recover(fed1Model(strategy));
+		assertFalse(effect.argumentResolved());
+		assertNotNull(effect.readBack());
+		assertEquals(builder.addr("0xbfff"), effect.readBack().cell());
+	}
+
+	/** A hint whose encoding does not verify is refused, and the read-back stays dropped. */
+	@Test
+	public void fed1WithAMismatchedHintStillDropsTheReadBack() throws Exception {
+		caller();
+		put("0xfed1", FED1);
+		SelectDataBankSwitchStrategy strategy = mmc3();
+		List<String> refusals = new ArrayList<>();
+		strategy.observeMirrors(bfffMirror(BankMirrors.Kind.ROM_IDENTIFYING, oddHalf(), R7)
+				.withMembershipHints(List.of(hint(0xBFFF, 1, 0)), refusals));
+		assertEquals(1, refusals.size());
+		assertNull(recover(fed1Model(strategy)).readBack());
+	}
+
+	// ------------------------------------------------------------------
+	// BankMirrors.restoreMembership: proven membership and the hint
+	// ------------------------------------------------------------------
+
+	private static BankMirrors.MembershipHint hint(long offset, int shift, int low) {
+		return new BankMirrors.MembershipHint(offset, shift, low, "games/test.gmap");
+	}
+
+	private BankMirrors.Membership membership(BankMirrors mirrors, BankState atRead) {
+		return mirrors.restoreMembership(builder.addr("0xbfff"),
+			atRead == null ? List.of() : List.of(atRead));
+	}
+
+	/** R7 lives at bits [8,12): a state pinning it to {@code r7}. */
+	private static BankState r7Known(int r7) {
+		return new BankState(0xF00, r7 << 8);
+	}
+
+	@Test
+	public void aKnownOddVerifiedBankProvesMembership() {
+		BankMirrors m = bfffMirror(BankMirrors.Kind.ROM_IDENTIFYING, oddHalf(), R7);
+		assertEquals(BankMirrors.Membership.PROVEN, membership(m, r7Known(3)));
+		// Partial knowledge counts when every consistent value is verified: bits 0, 2 and 3
+		// known (1, 0, 0) leave {1, 3}, both verified.
+		assertEquals(BankMirrors.Membership.PROVEN,
+			membership(m, new BankState(0xD00, 0x100)));
+	}
+
+	@Test
+	public void anEvenUnverifiedOrUnknownBankDoesNotProveMembership() {
+		BankMirrors m = bfffMirror(BankMirrors.Kind.ROM_IDENTIFYING, oddHalf(), R7);
+		assertEquals("known even (nesmmc3idtest e28d's shape)", BankMirrors.Membership.UNPROVEN,
+			membership(m, r7Known(4)));
+		assertEquals("known odd but unverified (e2cd's bank 15)", BankMirrors.Membership.UNPROVEN,
+			membership(m, r7Known(15)));
+		assertEquals("unknown (e310's shape): not contradicted is not enough",
+			BankMirrors.Membership.UNPROVEN, membership(m, BankState.unknown()));
+		assertEquals("no state at all", BankMirrors.Membership.UNPROVEN, membership(m, null));
+		// One consistent value outside the verified set is enough to refuse: {1, 9} with 9
+		// unverified here (verified = {1,3,5,7}).
+		assertEquals(BankMirrors.Membership.UNPROVEN,
+			membership(m, new BankState(0x700, 0x100)));
+	}
+
+	@Test
+	public void identityAndWriteThroughNeedNoMembership() {
+		assertEquals(BankMirrors.Membership.NOT_NEEDED,
+			membership(bfffMirror(BankMirrors.Kind.ROM_IDENTIFYING,
+				BankMirrors.IdentifyingEncoding.identity(), R7), BankState.unknown()));
+		assertEquals(BankMirrors.Membership.NOT_NEEDED,
+			membership(bfffMirror(BankMirrors.Kind.WRITE_THROUGH, null, null), null));
+	}
+
+	@Test
+	public void aVerifiedHintEstablishesMembershipAsHinted() {
+		List<String> refusals = new ArrayList<>();
+		BankMirrors m = bfffMirror(BankMirrors.Kind.ROM_IDENTIFYING, oddHalf(), R7)
+				.withMembershipHints(List.of(hint(0xBFFF, 1, 1)), refusals);
+		assertEquals(List.of(), refusals);
+		assertEquals(BankMirrors.Membership.HINTED, membership(m, BankState.unknown()));
+		assertEquals("games/test.gmap", m.membershipHint(builder.addr("0xbfff")));
+		// A state that PROVES membership is reported as proven -- the derivation, not the hint.
+		assertEquals(BankMirrors.Membership.PROVEN, membership(m, r7Known(5)));
+	}
+
+	@Test
+	public void aHintThatDoesNotVerifyIsRefusedWithAReason() {
+		BankMirrors base = bfffMirror(BankMirrors.Kind.ROM_IDENTIFYING, oddHalf(), R7);
+		List<String> refusals = new ArrayList<>();
+		BankMirrors wrongEncoding =
+			base.withMembershipHints(List.of(hint(0xBFFF, 0, 0)), refusals);
+		assertEquals(BankMirrors.Membership.UNPROVEN,
+			membership(wrongEncoding, BankState.unknown()));
+		assertEquals(1, refusals.size());
+		assertTrue(refusals.get(0), refusals.get(0).contains("ROM bytes prove"));
+
+		refusals.clear();
+		BankMirrors wrongCell = base.withMembershipHints(List.of(hint(0xBFF0, 1, 1)), refusals);
+		assertEquals(BankMirrors.Membership.UNPROVEN, membership(wrongCell, BankState.unknown()));
+		assertEquals(1, refusals.size());
+		assertTrue(refusals.get(0), refusals.get(0).contains("do not prove that offset"));
+
+		refusals.clear();
+		BankMirrors noField = BankMirrors.of(program.getAddressFactory().getDefaultAddressSpace(),
+			Map.of(0xBFFFL, Set.of(BankMirrors.Kind.ROM_IDENTIFYING)), Map.of(),
+			Map.of(0xBFFFL, oddHalf())).withMembershipHints(List.of(hint(0xBFFF, 1, 1)), refusals);
+		assertEquals(BankMirrors.Membership.UNPROVEN, membership(noField, BankState.unknown()));
+		assertEquals(1, refusals.size());
+	}
+
+	@Test
+	public void noHintMeansUnproven() {
+		BankMirrors m = bfffMirror(BankMirrors.Kind.ROM_IDENTIFYING, oddHalf(), R7)
+				.withMembershipHints(List.of(), new ArrayList<>());
+		assertEquals(BankMirrors.Membership.UNPROVEN, membership(m, BankState.unknown()));
+		assertNull(m.membershipHint(builder.addr("0xbfff")));
+	}
+
+	/** The loader-to-analyzer property round-trips the compiled hint. */
+	@Test
+	public void membershipHintPropertyRoundTrips() {
+		JsonObject gmap = JsonParser.parseString("""
+				{ "schema": 2, "banking": { "bank_identifying_offsets": [
+				  { "address": 49151, "shift": 1, "low": 1, "provenance": "p" } ] } }
+				""").getAsJsonObject();
+		String value = DescriptorSupport.formatMembershipHints(gmap, "games/rcransom.gmap");
+		assertNotNull(value);
+		assertNull(DescriptorSupport.formatMembershipHints(
+			JsonParser.parseString("{ \"schema\": 2 }").getAsJsonObject(), "x"));
+		int tx = program.startTransaction("set property");
+		try {
+			program.getOptions(ghidra.program.model.listing.Program.PROGRAM_INFO).setString(
+				DescriptorSupport.BANK_IDENTIFYING_HINTS_PROPERTY, value);
+		}
+		finally {
+			program.endTransaction(tx, true);
+		}
+		List<String> problems = new ArrayList<>();
+		List<BankMirrors.MembershipHint> hints =
+			DescriptorSupport.parseMembershipHints(program, problems);
+		assertEquals(List.of(), problems);
+		assertEquals(List.of(new BankMirrors.MembershipHint(0xBFFF, 1, 1, "games/rcransom.gmap")),
+			hints);
 	}
 
 	// ------------------------------------------------------------------

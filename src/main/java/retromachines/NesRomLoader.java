@@ -730,6 +730,14 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 				log.appendMsg(
 					"game descriptor resolved: " + gameDescriptor.gmapPath() + " ('" +
 						gameDescriptor.id() + "')");
+				// bead grm-mej.7: publish the bank_identifying_offsets hint for the analyzer,
+				// which verifies it against the ROM bytes before it may license anything.
+				String hints = DescriptorSupport.formatMembershipHints(gameDescriptor.doc(),
+					gameDescriptor.gmapPath());
+				if (hints != null) {
+					program.getOptions(Program.PROGRAM_INFO).setString(
+						DescriptorSupport.BANK_IDENTIFYING_HINTS_PROPERTY, hints);
+				}
 			}
 		}
 

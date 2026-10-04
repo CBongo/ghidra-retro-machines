@@ -208,6 +208,53 @@ public class GameCompilerTest {
 			"unsupported kind");
 	}
 
+	// ---- banking.bank_identifying_offsets (bead grm-mej.7) ----
+
+	private static final String IDENTIFYING = """
+		  bank_identifying_offsets:
+		    - address: 0xBFFF
+		      shift: 1
+		      low: 1
+		      provenance: "fed1 commits 2*A+1; checks $BFFF at $FEFB"
+		""";
+
+	@Test
+	public void compilesBankIdentifyingOffsets() throws Exception {
+		JsonObject doc = compile("ident", validYaml() + IDENTIFYING);
+		JsonObject banking = doc.getAsJsonObject("banking");
+		assertEquals(1, banking.getAsJsonObject("initial_state").get("prg_mode").getAsInt());
+		JsonObject entry =
+			banking.getAsJsonArray("bank_identifying_offsets").get(0).getAsJsonObject();
+		assertEquals(0xBFFF, entry.get("address").getAsInt());
+		assertEquals(1, entry.get("shift").getAsInt());
+		assertEquals(1, entry.get("low").getAsInt());
+		assertEquals("fed1 commits 2*A+1; checks $BFFF at $FEFB",
+			entry.get("provenance").getAsString());
+	}
+
+	@Test
+	public void bankIdentifyingOffsetsAloneIsABankingSection() throws Exception {
+		String yaml = validYaml().replace("  initial_state: { prg_mode: 1 }\n", "") + IDENTIFYING;
+		JsonObject banking = compile("identonly", yaml).getAsJsonObject("banking");
+		assertFalse(banking.has("initial_state"));
+		assertEquals(1, banking.getAsJsonArray("bank_identifying_offsets").size());
+	}
+
+	@Test
+	public void malformedBankIdentifyingOffsetsAreRejected() throws Exception {
+		expectError("shift3", validYaml() + IDENTIFYING.replace("shift: 1", "shift: 3"),
+			"shift must be");
+		expectError("lowwide", validYaml() + IDENTIFYING.replace("low: 1", "low: 2"),
+			"low must be");
+		expectError("noprov", validYaml() + IDENTIFYING.replace(
+			"      provenance: \"fed1 commits 2*A+1; checks $BFFF at $FEFB\"\n", ""),
+			"provenance");
+		expectError("extra", validYaml() + IDENTIFYING.replace("low: 1", "low: 1\n      bank: 3"),
+			"unknown key 'bank'");
+		expectError("notlist", validYaml() + "  bank_identifying_offsets: 0xBFFF\n",
+			"non-empty list");
+	}
+
 	private void expectError(String name, String yaml, String messagePart) throws Exception {
 		Path dir = tmp.getRoot().toPath();
 		Path yamlPath = dir.resolve(name + ".yaml");

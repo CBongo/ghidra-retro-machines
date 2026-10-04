@@ -770,6 +770,39 @@ one-shot re-run support the way an analyzer-consumed hint would. It does keep
 provenance -- the resolved descriptor's path is recorded on the program
 (`Retro Machines.Game Descriptor`), and every field the hint actually changes is logged.
 
+### `banking.bank_identifying_offsets` (bead `grm-mej.7`)
+
+```yaml
+banking:
+  bank_identifying_offsets:
+    - address: 0xBFFF     # CPU address of a bank-identifying ROM byte
+      shift: 1            # the encoding: bank = (byte << shift) + low
+      low: 1
+      provenance: "why the premise below holds for this game"   # required
+```
+
+The second hint kind, in `grm-hb6.11`'s `bank_identifying_offset` vocabulary. It states a
+**membership premise**: at every read of that byte, the bank live in its window is one the
+encoding holds for. It is needed only for a NON-identity encoding (`shift` > 0, `grm-km4f`:
+River City Ransom's `$BFFF` holds `(bank-1)/2` on odd banks). Such an encoding is proven from
+the ROM bytes only on its congruent, verified banks, so "the byte read identifies the live
+bank" is true only if the live bank is one of those. Without this hint, a read-back of that
+byte is called RESTORED only where the tracked state at the read pins the window's field into
+the verified set (`BankMirrors.restoreMembership`). "Not contradicted" is not enough.
+
+It licenses ONLY that premise -- it creates no mirror, encoding or field, and it never
+overrides the derivation. At analysis time (`BoardBankAnalyzer`, so a re-analysis picks it up;
+the loader only publishes it as the `Retro Machines.Bank Identifying Hints` property) each
+entry must match a `ROM_IDENTIFYING` offset the ROM bytes proved, with exactly the derived
+`shift`/`low` and a recorded window field. A non-matching entry is refused with a logged
+reason and has no effect (`grm-hb6.4`'s SEED, DO NOT INJECT). The rest of the proof still has
+to hold at each site: the read-back must reach the helper's commit, and the helper must apply
+that same encoding. A note relying on the hint says so: "HINTED, not derived: stated by the
+game descriptor <path>". Where the state at the read proves membership, the note says PROVEN
+instead and the hint is not used. Shape validation (16-bit `address`, `shift` 0-2,
+`low` in `[0, 2^shift)`, `provenance` present, no other keys) is `GameCompiler`'s. Not yet
+carried by `ExportGameDescriptor.java`.
+
 ### Annotation layer and export (bead `grm-hb6.5`)
 
 A game descriptor may carry `symbols:` -- the machine-descriptor set shape (`set`, `default`,

@@ -484,6 +484,16 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// at every site rather than at the ones pass 2 happens to revisit. ---
 		BankMirrors mirrors =
 			BankAnnotationAdapter.deriveBankMirrors(program, board, bankUniverse, flow, helpers);
+		// bead grm-mej.7: a game descriptor's bank_identifying_offsets hint licenses ONLY the
+		// membership premise of a shift-encoded identifying cell, and only once it verifies
+		// against what the ROM bytes proved above -- see BankMirrors.withMembershipHints.
+		List<String> hintProblems = new ArrayList<>();
+		mirrors = mirrors.withMembershipHints(
+			DescriptorSupport.parseMembershipHints(program, hintProblems), hintProblems);
+		for (String problem : hintProblems) {
+			AnalyzerLog.info(this, problem);
+			log.appendMsg(problem);
+		}
 		for (ConfiguredMechanism cm : mechanisms) {
 			cm.strategy().observeMirrors(mirrors);
 		}
@@ -564,6 +574,13 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 						? directRestoreDetail(program, listing, flow, addr, switchResult.readBack(),
 							mirrors, asyncEntries)
 						: null;
+				// grm-mej.7: restoreDetail answers null when the read-back's cell needs a
+				// membership premise nothing established; the site is then NOT a restore.
+				BankSwitchStrategy.ValueStop directStop =
+					switchResult.readBack() != null && honestDetail == null &&
+						switchResult.stop() == BankSwitchStrategy.ValueStop.RESTORED_BANK
+								? BankSwitchStrategy.ValueStop.ANALYZER_LIMIT
+								: switchResult.stop();
 				// grm-wul: a site path forking carried forward as several states is RESOLVED, to
 				// several values -- render every arm; its merged effect is unknown and must not
 				// be read as a failed recovery. A site whose arms resolved but were DENIED by the
@@ -580,7 +597,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 										"pin down even one tracked bank bit -- e.g. a load of an " +
 										"unrelated address followed directly by the store, with no " +
 										"AND/ORA immediate to constrain it)",
-							switchResult.stop(), provenance, false, honestDetail);
+							directStop, provenance, false, honestDetail);
 				if (marked == BankAnnotationAdapter.Marked.WARNED) {
 					warnings++;
 				}
@@ -707,7 +724,9 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 						"analyzer failed to pin down -- a property of the game, not a gap in " +
 						"analysis.";
 				}
-				else if (callSwitch.readBack() != null && !callSwitch.argumentResolved()) {
+				else if (callSwitch.readBack() != null && !callSwitch.argumentResolved() &&
+					(honestDetail = callerRestoreDetail(program, listing, flow, addr, callSwitch,
+						mirrors, asyncEntries)) != null) {
 					// bead grm-yflf, the caller-side half: the CALLER read the bank back from a
 					// live-bank mirror and handed it, unmodified, to the switch helper --
 					// megaman2's `LDA $29 / PHA / JSR c96b / PLA / JSR c000` and the bare
@@ -715,9 +734,9 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 					// THAT READ, a relational fact the annotation states; the two clauses below
 					// say what more the listing proves about it (an entry-bank read, an interrupt
 					// entry), and nothing is claimed beyond what those checks establish.
+					// grm-mej.7: honestDetail was assigned in the condition above -- null there
+					// means the membership premise is unestablished, and this branch is skipped.
 					callStop = BankSwitchStrategy.ValueStop.RESTORED_BANK;
-					honestDetail = callerRestoreDetail(program, listing, flow, addr, callSwitch,
-						mirrors, asyncEntries);
 				}
 				else {
 					callStop = BankSwitchStrategy.ValueStop.ANALYZER_LIMIT;
@@ -841,8 +860,11 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	private static String callerRestoreDetail(Program program, Listing listing,
 			DataflowResult flow, Address callAddr, CallSwitch callSwitch, BankMirrors mirrors,
 			Set<Address> asyncEntries) {
+		// encodingApplied: HelperArgumentRecovery keeps a call-site read-back of a NON-identity
+		// encoded cell only when the helper's own transform of the byte was proved to BE that
+		// encoding (readBackMatchesReload), and drops it on every other call path (grm-mej.7).
 		return restoreDetail(program, listing, flow, callAddr, callSwitch.readBack(), mirrors,
-			asyncEntries, "call");
+			asyncEntries, "call", true);
 	}
 
 	/**
@@ -859,8 +881,10 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	private static String directRestoreDetail(Program program, Listing listing,
 			DataflowResult flow, Address siteAddr, StoredValueScanner.ReadBack readBack,
 			BankMirrors mirrors, Set<Address> asyncEntries) {
+		// A direct write commits the byte it read; nothing proves it applied a non-identity
+		// encoding on the way, so such a read-back is never called a restore here (grm-mej.7).
 		return restoreDetail(program, listing, flow, siteAddr, readBack, mirrors, asyncEntries,
-			"write");
+			"write", false);
 	}
 
 	/**
@@ -886,7 +910,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 	 */
 	private static String restoreDetail(Program program, Listing listing, DataflowResult flow,
 			Address siteAddr, StoredValueScanner.ReadBack readBack, BankMirrors mirrors,
-			Set<Address> asyncEntries, String committerNoun) {
+			Set<Address> asyncEntries, String committerNoun, boolean encodingApplied) {
 		Address cell = readBack.cell();
 		// What the read-back byte IS depends on the mirror's kind, and the wording must not
 		// promote a shadow to the live bank: a write-through shadow holds the last bank
@@ -895,12 +919,43 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// one has -- and the restore is correct BECAUSE the shadow is stale). A bank-identifying
 		// ROM byte cannot go stale: its value is the bank it is read from.
 		boolean shadow = mirrors.is(cell, BankMirrors.Kind.WRITE_THROUGH);
-		String source = shadow
-				? "write-through bank shadow " + cell + " -- a RAM cell the switch code keeps " +
-					"in step with every bank it commits, so the byte read is the last bank " +
-					"committed through it"
-				: "bank-identifying ROM byte " + cell + " -- a byte whose value is the bank it " +
-					"is read from, so the byte read is the bank live at the read";
+		// grm-mej.7 (owner ruling 2026-10-03): a NON-identity encoding identifies a bank only on
+		// the banks it was verified on, so the claim needs the live bank's membership PROVEN by
+		// the tracked state at the read, or stated by a verified game-descriptor hint -- and the
+		// wording must say which. Unestablished: no RESTORED claim at all (null).
+		BankMirrors.Membership membership =
+			mirrors.restoreMembership(cell, flow.statesAt(readBack.readAt()));
+		if (membership == BankMirrors.Membership.UNPROVEN) {
+			return null;
+		}
+		BankMirrors.IdentifyingEncoding encoding = mirrors.identifyingEncoding(cell);
+		boolean encoded = !shadow && encoding != null && !encoding.isIdentity();
+		if (encoded && !encodingApplied) {
+			return null;
+		}
+		String source;
+		if (encoded) {
+			int step = 1 << encoding.shift();
+			source = "bank-identifying ROM byte " + cell + " -- a byte that ENCODES the bank it " +
+				"is read from as an index in units of " + step + " banks (" +
+				encoding.describe() + ", i.e. bank = " + step + "*byte" +
+				(encoding.low() == 0 ? "" : "+" + encoding.low()) + "), which this call's " +
+				"helper re-commits through that same encoding, so the bank committed is the " +
+				"bank live at the read -- " + (membership == BankMirrors.Membership.PROVEN
+						? "that the live bank is one this encoding was verified on is PROVEN by " +
+							"the tracked state at the read"
+						: "that the live bank is one this encoding was verified on is HINTED, " +
+							"not derived: stated by the game descriptor " +
+							mirrors.membershipHint(cell) + " (bank_identifying_offsets)");
+		}
+		else {
+			source = shadow
+					? "write-through bank shadow " + cell + " -- a RAM cell the switch code keeps " +
+						"in step with every bank it commits, so the byte read is the last bank " +
+						"committed through it"
+					: "bank-identifying ROM byte " + cell + " -- a byte whose value is the bank " +
+						"it is read from, so the byte read is the bank live at the read";
+		}
 		StringBuilder text = new StringBuilder();
 		text.append("Bank value is RESTORED here, not resolved: this ").append(committerNoun)
 				.append(" re-commits the bank READ BACK at ").append(readBack.readAt())
@@ -917,8 +972,10 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 					.append(readBack.carriedAcross());
 		}
 		text.append(" -- the save/restore idiom. The bank after this ").append(committerNoun)
-				.append(" is whatever ").append(cell).append(" held at that read, not a fresh " +
-					"value this analyzer failed to pin down.");
+				.append(encoded
+						? " is the bank " + cell + " identified at that read"
+						: " is whatever " + cell + " held at that read")
+				.append(", not a fresh value this analyzer failed to pin down.");
 		Function function = program.getFunctionManager().getFunctionContaining(siteAddr);
 		if (function != null && readsEntryBank(program, listing, flow, function, readBack.readAt())) {
 			text.append(" That read sits at the ENTRY of ").append(function.getName())

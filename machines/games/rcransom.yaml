@@ -1,0 +1,49 @@
+# Curated per-game descriptor (title tier). Compiled to data/games/rcransom.gmap.
+# docs/per-game-descriptors-design.md; bead grm-mej.7 (2026-10-03). The first user of
+# banking.bank_identifying_offsets (docs/SCHEMA.md; grm-hb6.11's bank_identifying_offset
+# vocabulary).
+#
+# WHY THIS FILE EXISTS. River City Ransom keeps a bank-identifying byte at $BFFF: in every odd
+# PRG bank N it holds (N-1)/2 -- the logical 16K bank index that FUN_fed1 takes in A and commits
+# as R6 = 2*A, R7 = 2*A+1 (grm-km4f). The analyzer DERIVES that from the ROM bytes on its own
+# (byte = (bank-1)/2 on odd banks, verified on banks 1,3,...,13). What it cannot derive is the
+# MEMBERSHIP premise: that whenever the game reads $BFFF, the bank live in $A000-$BFFF is one of
+# those verified odd banks (and not, say, an even bank, or the fixed bank 15 whose $BFFF is
+# junk). Without it, the owner's 2026-10-03 ruling on grm-mej.7 forbids calling a
+# `LDA $BFFF ... JSR fed1` save/restore a RESTORED bank, because "the byte identifies the live
+# bank" would rest on nothing.
+#
+# The premise is the game's own invariant, recorded here as a human-established fact rather
+# than proved: fed1 commits R7 = 2*A+1, and its tail (CMP $BFFF / BNE at $FEFB) asserts that
+# the byte now live at $BFFF equals the index it was given -- the game checks the encoding
+# after every fed1 switch.
+#
+# WHAT THIS HINT DOES NOT DO. It licenses only the membership premise. The cell and encoding
+# below are re-checked against the derivation from the ROM bytes at analysis time, and a
+# mismatch is refused with a logged reason (no annotation, never a confident one); the
+# dataflow proof that the read-back reaches fed1's stack reload must still hold at each site.
+
+schema: 2
+
+game:
+  id: rcransom
+  title: "River City Ransom (U)"
+  board: nes_mmc3
+  identity:
+    # PRG-slice SHA-256 (16-byte iNES header excluded), copied from the "REALROM prgsha256"
+    # line of tools/banktest/realrom/expected/rcransom.dump.
+    prg_sha256: "254fb57592ed397d4fd4a247b22810ab97f001d53a89632647cf48d11154a7f9"
+    # Whole-file SHA-256, copied from the rcransom row of tools/banktest/realrom/manifest-gme.tsv.
+    file_sha256: "b95f8def04c0012604b7cc68cf4ed8f49b2dfe4beda6182051de4b2423bea7b1"
+  provenance: "Owner's hand reads of the pinned rcransom real ROM (grm-km4f 2026-09-19:
+    $BFFF holds (r7-1)/2, fed1 sets R6=2A, R7=2A+1 and checks $BFFF against A at $FEFB);
+    membership premise ruled acceptable as a per-game fact on grm-mej.7, 2026-10-03."
+
+banking:
+  bank_identifying_offsets:
+    - address: 0xBFFF
+      shift: 1
+      low: 1
+      provenance: "Owner ruling on grm-mej.7 (2026-10-03): the bank live at the game's reads
+        of $BFFF is one the (bank-1)/2 encoding holds for. FUN_fed1 commits R7 = 2*A+1 and its
+        $FEFB check asserts $BFFF == A after the switch (grm-km4f)."

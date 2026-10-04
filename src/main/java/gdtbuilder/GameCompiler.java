@@ -293,7 +293,7 @@ public class GameCompiler {
 		return out;
 	}
 
-	// ---- banking.initial_state hint (bead grm-hb6.12) ----
+	// ---- banking hints: initial_state (bead grm-hb6.12), bank_identifying_offsets (grm-mej.7) ----
 
 	@SuppressWarnings("unchecked")
 	private static Map<String, Object> buildBanking(Map<String, Object> descriptor) {
@@ -305,7 +305,21 @@ public class GameCompiler {
 			throw new IllegalArgumentException("descriptor 'banking:' must be a mapping");
 		}
 		Map<String, Object> banking = (Map<String, Object>) bankingObj;
-		Object initialStateObj = banking.get("initial_state");
+		Map<String, Object> out = new LinkedHashMap<>();
+		Map<String, Object> initialState = buildInitialState(banking.get("initial_state"));
+		if (initialState != null) {
+			out.put("initial_state", initialState);
+		}
+		List<Map<String, Object>> identifying =
+			buildIdentifyingOffsets(banking.get("bank_identifying_offsets"));
+		if (identifying != null) {
+			out.put("bank_identifying_offsets", identifying);
+		}
+		return out.isEmpty() ? null : out;
+	}
+
+	@SuppressWarnings("unchecked")
+	private static Map<String, Object> buildInitialState(Object initialStateObj) {
 		if (initialStateObj == null) {
 			return null;
 		}
@@ -324,8 +338,62 @@ public class GameCompiler {
 		for (Map.Entry<String, Object> entry : initialState.entrySet()) {
 			fields.put(entry.getKey(), MapCompiler.toInt(entry.getValue()));
 		}
-		Map<String, Object> out = new LinkedHashMap<>();
-		out.put("initial_state", fields);
+		return fields;
+	}
+
+	/**
+	 * {@code banking.bank_identifying_offsets:} (bead grm-mej.7, in grm-hb6.11's
+	 * {@code bank_identifying_offset} vocabulary): a list of {@code { address, shift, low,
+	 * provenance }} entries, each stating that at every read of the bank-identifying ROM byte at
+	 * {@code address} the live bank is one its encoding ({@code bank = (byte << shift) + low})
+	 * holds for. Validated for SHAPE only here; whether the cell and encoding are real is checked
+	 * against the ROM bytes at analysis time (BankMirrors.withMembershipHints), where a hint
+	 * that does not verify is refused with a logged reason.
+	 */
+	@SuppressWarnings("unchecked")
+	private static List<Map<String, Object>> buildIdentifyingOffsets(Object listObj) {
+		if (listObj == null) {
+			return null;
+		}
+		if (!(listObj instanceof List) || ((List<Object>) listObj).isEmpty()) {
+			throw new IllegalArgumentException(
+				"game descriptor 'banking.bank_identifying_offsets:' must be a non-empty list");
+		}
+		List<Map<String, Object>> out = new ArrayList<>();
+		for (Object entryObj : (List<Object>) listObj) {
+			if (!(entryObj instanceof Map)) {
+				throw new IllegalArgumentException("each 'banking.bank_identifying_offsets:' " +
+					"entry must be a mapping with address, shift, low and provenance");
+			}
+			Map<String, Object> entry = (Map<String, Object>) entryObj;
+			for (String key : entry.keySet()) {
+				if (!Set.of("address", "shift", "low", "provenance").contains(key)) {
+					throw new IllegalArgumentException("'banking.bank_identifying_offsets:' " +
+						"entry has unknown key '" + key + "'");
+				}
+			}
+			String where = "banking.bank_identifying_offsets entry";
+			int address = MapCompiler.requireAddr(entry, "address", where);
+			int shift = MapCompiler.requireAddr(entry, "shift", where);
+			int low = MapCompiler.requireAddr(entry, "low", where);
+			if (address < 0 || address > 0xFFFF) {
+				throw new IllegalArgumentException(where + ": address must be a 16-bit CPU address");
+			}
+			if (shift < 0 || shift > 2) {
+				throw new IllegalArgumentException(where + ": shift must be 0, 1 or 2 (the " +
+					"encodings the derivation tries)");
+			}
+			if (low < 0 || low >= (1 << shift)) {
+				throw new IllegalArgumentException(where + ": low must be in [0, 2^shift)");
+			}
+			String provenance = MapCompiler.requireString(entry, "provenance", where);
+			Map<String, Object> e = new LinkedHashMap<>();
+			e.put("address", address);
+			e.put("shift", shift);
+			e.put("low", low);
+			e.put("provenance", provenance);
+			out.add(e);
+		}
 		return out;
 	}
 }

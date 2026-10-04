@@ -202,7 +202,7 @@ public final class BankMirrors {
 	private static final long STACK_PAGE_END = 0x01FF;
 
 	private static final BankMirrors EMPTY =
-		new BankMirrors(null, Map.of(), Map.of(), Map.of(), Map.of(), Map.of());
+		new BankMirrors(null, Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of());
 
 	/** Null exactly when this set is empty, in which case no query can match anyway. */
 	private final AddressSpace baseSpace;
@@ -219,17 +219,23 @@ public final class BankMirrors {
 	/** Per {@link Kind#ROM_IDENTIFYING} offset, the encoding {@code romIdentifyingOffsets} proved
 	 *  for it -- see {@link #identifyingEncoding} and bead grm-km4f. */
 	private final Map<Long, IdentifyingEncoding> identifyingEncodingByOffset;
+	/** Per {@link Kind#ROM_IDENTIFYING} offset whose MEMBERSHIP PREMISE a game descriptor
+	 *  states and which verified against the derivation, the hint's source (its descriptor
+	 *  path) -- see {@link #withMembershipHints} and bead grm-mej.7. */
+	private final Map<Long, String> membershipHintByOffset;
 
 	private BankMirrors(AddressSpace baseSpace, Map<Long, Set<Kind>> byOffset,
 			Map<Long, Set<Address>> pairedByOffset, Map<Long, Set<Address>> evidenceByOffset,
 			Map<Long, BoardDescriptorModel.FieldSpec> identifyingFieldByOffset,
-			Map<Long, IdentifyingEncoding> identifyingEncodingByOffset) {
+			Map<Long, IdentifyingEncoding> identifyingEncodingByOffset,
+			Map<Long, String> membershipHintByOffset) {
 		this.baseSpace = baseSpace;
 		this.byOffset = byOffset;
 		this.pairedByOffset = pairedByOffset;
 		this.evidenceByOffset = evidenceByOffset;
 		this.identifyingFieldByOffset = identifyingFieldByOffset;
 		this.identifyingEncodingByOffset = identifyingEncodingByOffset;
+		this.membershipHintByOffset = membershipHintByOffset;
 	}
 
 	/**
@@ -396,7 +402,7 @@ public final class BankMirrors {
 			}
 		});
 		return new BankMirrors(baseSpace, Collections.unmodifiableMap(frozen), Map.of(), Map.of(),
-			Map.copyOf(identifyingFields), Map.copyOf(encodings));
+			Map.copyOf(identifyingFields), Map.copyOf(encodings), Map.of());
 	}
 
 	/**
@@ -542,6 +548,123 @@ public final class BankMirrors {
 			return null;
 		}
 		return identifyingEncodingByOffset.get(offset);
+	}
+
+	/**
+	 * How a RESTORED read-back of {@code cell} may be described (bead grm-mej.7, owner ruling
+	 * 2026-10-03). A read-back claims "the byte read identifies the bank live at the read"; for
+	 * a NON-identity {@link IdentifyingEncoding} that is true only when the live bank is one the
+	 * encoding was VERIFIED on, so the claim needs that membership established:
+	 * <ul>
+	 * <li>{@link Membership#NOT_NEEDED} -- a write-through shadow, or an identity encoding, which
+	 * {@link #romIdentifyingOffsets} verifies on EVERY realized bank: nothing extra to prove;</li>
+	 * <li>{@link Membership#PROVEN} -- every tracked state at the read pins the cell's window
+	 * field to values that ALL lie in {@link IdentifyingEncoding#verified()} (every field value
+	 * consistent with the known bits is checked, not only the realized ones);</li>
+	 * <li>{@link Membership#HINTED} -- not proven, but a game descriptor states the premise for
+	 * this cell and the hint verified ({@link #withMembershipHints});</li>
+	 * <li>{@link Membership#UNPROVEN} -- anything else, including a cell with no recorded field or
+	 * encoding, and no state at the read at all. "Not contradicted" is NOT enough (owner ruling).
+	 * The caller must then not call the site RESTORED.</li>
+	 * </ul>
+	 *
+	 * @param cell the read-back cell
+	 * @param statesAtRead every distinct whole (positioned) state at the read instruction
+	 */
+	Membership restoreMembership(Address cell, List<BankState> statesAtRead) {
+		if (is(cell, Kind.WRITE_THROUGH) && !is(cell, Kind.ROM_IDENTIFYING)) {
+			return Membership.NOT_NEEDED;
+		}
+		IdentifyingEncoding encoding = identifyingEncoding(cell);
+		if (encoding != null && encoding.isIdentity()) {
+			return Membership.NOT_NEEDED;
+		}
+		BoardDescriptorModel.FieldSpec field = identifyingField(cell);
+		if (encoding != null && field != null && statesAtRead != null &&
+			!statesAtRead.isEmpty() &&
+			statesAtRead.stream().allMatch(st -> fieldPinnedToVerified(st, field, encoding))) {
+			return Membership.PROVEN;
+		}
+		return membershipHint(cell) != null ? Membership.HINTED : Membership.UNPROVEN;
+	}
+
+	/** Whether every value of {@code field} consistent with {@code state}'s known bits is a
+	 *  bank {@code encoding} verified. Enumerates the whole field range (at most 2^width). */
+	private static boolean fieldPinnedToVerified(BankState state,
+			BoardDescriptorModel.FieldSpec field, IdentifyingEncoding encoding) {
+		if (state == null || field.width() > 16) {
+			return false;
+		}
+		int mask = (1 << field.width()) - 1;
+		int known = (state.knownMask() >>> field.lsb()) & mask;
+		int bits = (state.bits() >>> field.lsb()) & mask & known;
+		for (int v = 0; v <= mask; v++) {
+			if ((v & known) == bits && !encoding.verified().contains(v)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** The outcome of {@link #restoreMembership}. */
+	enum Membership {
+		NOT_NEEDED, PROVEN, HINTED, UNPROVEN
+	}
+
+	/** The source (descriptor path) of a VERIFIED membership hint for {@code cell}, or null. */
+	String membershipHint(Address cell) {
+		Long offset = normalizedQueryOffset(cell);
+		return offset == null ? null : membershipHintByOffset.get(offset);
+	}
+
+	/**
+	 * A game descriptor's statement that, at reads of a ROM-identifying cell, the live bank is
+	 * always one its encoding holds for (bead grm-mej.7; the grm-hb6.11 {@code
+	 * bank_identifying_offset} vocabulary). {@code shift}/{@code low} restate the encoding the
+	 * descriptor author believes, so a hint about a DIFFERENT encoding can be caught.
+	 */
+	record MembershipHint(long offset, int shift, int low, String source) {}
+
+	/**
+	 * This set with {@code hints} applied, each one ONLY if it verifies against the derivation:
+	 * the offset must be a {@link Kind#ROM_IDENTIFYING} cell {@link #romIdentifyingOffsets}
+	 * admitted from the ROM bytes, with a recorded window field, and with exactly the hint's
+	 * {@code shift}/{@code low}. A hint that fails any of those is refused and its reason
+	 * appended to {@code refusals}; it then has no effect at all (grm-hb6.4's SEED, DO NOT
+	 * INJECT: a wrong hint yields no annotation, never a confident one). A hint licenses only
+	 * the membership premise -- it never creates a mirror, an encoding, or a field.
+	 */
+	BankMirrors withMembershipHints(List<MembershipHint> hints, List<String> refusals) {
+		if (hints == null || hints.isEmpty()) {
+			return this;
+		}
+		Map<Long, String> accepted = new LinkedHashMap<>(membershipHintByOffset);
+		for (MembershipHint hint : hints) {
+			String where = String.format("%s: bank_identifying_offsets $%04X", hint.source(),
+				hint.offset());
+			Set<Kind> kinds = byOffset.getOrDefault(hint.offset(), Set.of());
+			IdentifyingEncoding encoding = identifyingEncodingByOffset.get(hint.offset());
+			if (!kinds.contains(Kind.ROM_IDENTIFYING) || encoding == null) {
+				refusals.add(where + " refused: the ROM bytes do not prove that offset " +
+					"bank-identifying (no derived ROM_IDENTIFYING mirror there)");
+				continue;
+			}
+			if (encoding.shift() != hint.shift() || encoding.low() != hint.low()) {
+				refusals.add(where + " refused: it states shift=" + hint.shift() + ", low=" +
+					hint.low() + " but the ROM bytes prove " + encoding.describe() +
+					" (shift=" + encoding.shift() + ", low=" + encoding.low() + ")");
+				continue;
+			}
+			if (identifyingFieldByOffset.get(hint.offset()) == null) {
+				refusals.add(where + " refused: the derivation attributed no window field to " +
+					"that offset");
+				continue;
+			}
+			accepted.put(hint.offset(), hint.source());
+		}
+		return new BankMirrors(baseSpace, byOffset, pairedByOffset, evidenceByOffset,
+			identifyingFieldByOffset, identifyingEncodingByOffset,
+			Collections.unmodifiableMap(accepted));
 	}
 
 	/** {@code addr}'s offset on the physical bus, or null when it is not on this program's. */
@@ -1301,7 +1424,8 @@ public final class BankMirrors {
 			return new BankMirrors(baseSpace, Collections.unmodifiableMap(frozen),
 				Collections.unmodifiableMap(paired), Collections.unmodifiableMap(evidence),
 				Collections.unmodifiableMap(new LinkedHashMap<>(romIdentifyingField)),
-				Collections.unmodifiableMap(new LinkedHashMap<>(romIdentifyingEncoding)));
+				Collections.unmodifiableMap(new LinkedHashMap<>(romIdentifyingEncoding)),
+				Map.of());
 		}
 
 		/** Whether the fall-through path from {@code prev} is exactly {@code cur} -- the block

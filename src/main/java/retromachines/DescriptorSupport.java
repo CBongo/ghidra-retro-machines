@@ -174,6 +174,19 @@ final class DescriptorSupport {
 	static final String ASYNC_ENTRY_POINTS_PROPERTY = "Retro Machines.Async Entry Points";
 
 	/**
+	 * Program-info property carrying the resolved game descriptor's
+	 * {@code banking.bank_identifying_offsets} hint (bead grm-mej.7) from the loader, which
+	 * resolves the descriptor, to {@link BoardBankAnalyzer}, which verifies each entry against
+	 * the ROM-byte derivation before it may license anything
+	 * ({@code BankMirrors.withMembershipHints}). JSON: {@code {"source": <descriptor path>,
+	 * "offsets": [{address, shift, low, provenance}, ...]}}. Absent when the descriptor states
+	 * no such hint. Same loader-publishes / analyzer-reads split as
+	 * {@link #ASYNC_ENTRY_POINTS_PROPERTY}.
+	 */
+	static final String BANK_IDENTIFYING_HINTS_PROPERTY =
+		"Retro Machines.Bank Identifying Hints";
+
+	/**
 	 * Program-info property carrying the iNES mapper number parsed from the cartridge header
 	 * (bead {@code grm-3ppn}): a plain decimal string for an iNES 1.0/archaic header (e.g.
 	 * {@code "4"}), or {@code "<mapper> (submapper <n>)"} when the header is NES 2.0, since NES
@@ -258,6 +271,55 @@ final class DescriptorSupport {
 			}
 		}
 		return byWindow;
+	}
+
+	// ------------------------------------------------------------------
+	// Game-descriptor bank-identifying membership hints (bead grm-mej.7)
+	// ------------------------------------------------------------------
+
+	/**
+	 * The {@link #BANK_IDENTIFYING_HINTS_PROPERTY} value for {@code gameDescriptor}, or null when
+	 * it states no {@code banking.bank_identifying_offsets}.
+	 */
+	static String formatMembershipHints(JsonObject gameDescriptor, String source) {
+		JsonObject banking = gameDescriptor == null ? null
+				: gameDescriptor.getAsJsonObject("banking");
+		if (banking == null || !banking.has("bank_identifying_offsets")) {
+			return null;
+		}
+		JsonObject out = new JsonObject();
+		out.addProperty("source", source);
+		out.add("offsets", banking.getAsJsonArray("bank_identifying_offsets").deepCopy());
+		return out.toString();
+	}
+
+	/**
+	 * The membership hints {@code program}'s loader recorded, or an empty list. A malformed
+	 * property, or a malformed entry, is reported through {@code problems} and contributes
+	 * nothing -- a hint that cannot be read is a hint that is not applied, never a guess.
+	 */
+	static List<BankMirrors.MembershipHint> parseMembershipHints(Program program,
+			List<String> problems) {
+		String spec = programInfoString(program, BANK_IDENTIFYING_HINTS_PROPERTY);
+		List<BankMirrors.MembershipHint> hints = new ArrayList<>();
+		if (spec == null || spec.isBlank()) {
+			return hints;
+		}
+		try {
+			JsonObject root = JsonParser.parseString(spec).getAsJsonObject();
+			String source = root.get("source").getAsString();
+			for (JsonElement el : root.getAsJsonArray("offsets")) {
+				JsonObject o = el.getAsJsonObject();
+				hints.add(new BankMirrors.MembershipHint(o.get("address").getAsLong(),
+					o.get("shift").getAsInt(), o.get("low").getAsInt(), source));
+			}
+		}
+		catch (RuntimeException e) {
+			problems.add(BANK_IDENTIFYING_HINTS_PROPERTY + " is malformed (" + e.getMessage() +
+				"); no bank_identifying_offsets hint applied");
+			return List.of();
+		}
+		return hints;
 	}
 
 	// ------------------------------------------------------------------
