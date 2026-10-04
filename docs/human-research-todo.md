@@ -139,7 +139,7 @@ acting on it; the "yours?" column is the only part that asks anything of you.
 
 | item | state | last activity | yours? |
 |---|---|---|---|
-| [ghidra#9447](https://github.com/NationalSecurityAgency/ghidra/issues/9447) jump-table over-read (`grm-b3m`) | open, `Status: Triage`, assigned `caheckman`; **no maintainer reply** | your lowest-target-bound proposal, 2026-08-16 | **Optional PR. Branch is pushed and the body is drafted**: first item below |
+| [ghidra#9447](https://github.com/NationalSecurityAgency/ghidra/issues/9447) jump-table over-read + fix PR [#9717](https://github.com/NationalSecurityAgency/ghidra/pull/9717) (`grm-b3m`) | issue open, `Status: Triage`, assigned `caheckman`; PR open, `blocked` = awaiting review | PR opened 2026-10-04 | No, waiting on a maintainer |
 | [ghidra#9655](https://github.com/NationalSecurityAgency/ghidra/issues/9655) GP-6936 join varnodes (`grm-qp5x.2`) | open, no labels, no assignee, no replies | filed 2026-09-19 | Not yet. The issue promises a PR; agent work comes first (re-run the bisect on a corrected shadow install, prep the branch). The item comes back here when that's done |
 | [ghidra#9656](https://github.com/NationalSecurityAgency/ghidra/pull/9656) 6502 ADC/SBC flags + zp pointer wrap (`grm-ef46`) | open PR, `Status: Triage`, assigned `GhidorahRex`, no reviews (`blocked` = awaiting review) | your regression tests added 2026-09-20; the only other comments are from a third party (who also opened a separate 65C02 `BIT #imm` PR, [#9670](https://github.com/NationalSecurityAgency/ghidra/pull/9670)) | No, waiting on a maintainer |
 | [ghidra#9658](https://github.com/NationalSecurityAgency/ghidra/issues/9658) `validateOptions` (`grm-vsg`) | **closed, fixed for 12.3** | maintainer: "an oversight", 2026-09-21 | No. Retired, see Answered |
@@ -149,20 +149,8 @@ acting on it; the "yours?" column is the only part that asks anything of you.
 | [ghidra discussion #9349](https://github.com/NationalSecurityAgency/ghidra/discussions/9349) banked-memory RFC | open, **zero replies** | opened 2026-07-05 | Addendum post rides with the fall-through issue below (deferred) |
 | Fall-through-into-overlay issue (`grm-p3dy`) | **not posted**; draft on the bead | deferred 2026-10-04 | Not until a Ghidra release carries GP-7010, second item below |
 
-- [ ] **#9447 (jump-table over-read, `grm-eyn`/`grm-b3m`): the PR is ready to open, if you want to
-  send it unprompted.** Branch `fix/jumptable-lowest-target` is pushed to `CBongo/ghidra`, cut from
-  upstream `master` `a462673d` (2026-09-30). It cherry-picked cleanly over master's GP-7003 jump-table
-  rework, the decompiler builds clean from it, and the commit message is rewritten for upstream.
-  Open it at <https://github.com/CBongo/ghidra/pull/new/fix/jumptable-lowest-target> (base: NSA
-  `master`), and paste the **draft PR body from `grm-b3m`'s 2026-10-04 comment**. Three things to
-  know before you send it: (i) master still has the hole (the guard is `maxsize == 256`,
-  post-stride); (ii) every number in the body was measured on 12.1.2/12.1.3, not master, and the
-  body says so; (iii) there is no datatest, because `decomp_test_dbg` does not build under MinGW
-  here, and the body offers one. Known limit, also stated: it declines on the table-after-code idiom
-  (megaman `e000`/`e121`/`e44e`). Still your call, per `grm-b3m`'s standing rule that silence is not
-  a reason to send one. The commit carries no Claude trailers; add them if you want them.
-
-*Filed and awaiting a maintainer, nothing to do:* [#9655](https://github.com/NationalSecurityAgency/ghidra/issues/9655)
+*Filed and awaiting a maintainer, nothing to do:* [#9717](https://github.com/NationalSecurityAgency/ghidra/pull/9717)
+(jump-table lowest-target bound, `grm-b3m`), [#9655](https://github.com/NationalSecurityAgency/ghidra/issues/9655)
 (GP-6936, `grm-qp5x.2` — the promised PR returns to this list once its agent-side
 re-measurement and branch prep land), [#9656](https://github.com/NationalSecurityAgency/ghidra/pull/9656)
 (6502 flags, `grm-ef46`), [ghidra-snes#6](https://github.com/joshleaves/ghidra-snes/pull/6)
@@ -314,3 +302,4 @@ re-measurement and branch prep land), [#9656](https://github.com/NationalSecurit
 | wizwarr: is the code behind grm-fxtp's lost "bank 0" comments (`882b`, `88f4`, `c4b4`, `e9f2`, `c4ba`; notes `bb84`, `e99e`) reached some other way? | **Yes: through the NMI handler's state dispatch (owner, 2026-10-03).** `b198 JMP ($0066)` dispatches through table `b19b`, indexed by state `$03`, and reaches `880c`, `c436` and others. `b198` is reached from NMI, entered at `b178`. The vector `ff86` does `LDA #0 / STA $8000`, a self-window AxROM switch, and continues with bank 0's `JMP $b178`; banks 1–3 hold `JMP $ffff` at that address. So the `bcb3` cut is right: the old over-read reached this code by accident, the same class as lwings `dc61`. **Do not loosen the bound.** The real route is agent work: `grm-cqwn` (related: `grm-p3dy`). | `grm-fxtp`, `grm-cqwn` |
 | contra bank 1: is `849f`'s table (`86bf`) 7 entries with `86cd` a separate table, or 11? | **7, and `86cd` is a separate table (owner, 2026-10-04).** The 7 entries are `8651 8651 8673 86a6 8683 86a6 8651`. The next 4 words (`8500 8522 855c 84a2`) are `8285`'s own table at `86cd`. The switch-window bound's 11 is wrong: those targets happen to fall inside `849f`'s window, so the cut never fires. contra stays unblessed until the bound stops at the next table's base. **Do not bless contra at 11.** | `grm-akiv`, `grm-t223` |
 | tmnt: is `8f34`'s table (`8fb8`) 6 entries, and how is the code around `cfcf`–`dbe1` really reached? | **6 is right (owner, 2026-10-04).** `8fb8` is followed by other routines' tables: `8fc4` (from `849e`, 4 entries), `8fcc` (from `8b1a`, 12) and `8fe4` (from `8b8a`). The last two are sound-chip period tables. The lost bank-6 code and the `JSR FUN_cea5` comments are real code. They were reached before only through phantom entries. The real path: bank 6 `9f75` is `JSR $C702`, an inline jump-table dispatcher, and entry 14 of its table is `d2c0`, which leads on to the `cfcd`/`cfcf` call. tmnt is blessed at refs 0 / instrs 0 / bankComments 8. **Do not loosen the bound to get them back**; the fix is reachability through `c702`. | `grm-akiv`, `grm-qa5z`, `grm-t223` |
+| #9447: send the lowest-target-bound PR unprompted? | **Yes, sent (owner, 2026-10-04) as [NationalSecurityAgency/ghidra PR #9717](https://github.com/NationalSecurityAgency/ghidra/pull/9717)**, from `CBongo/ghidra` `fix/jumptable-lowest-target` (`5be3ac25`, cut from upstream master `a462673d`) with the body drafted on `grm-b3m`. It states its gaps up front: numbers from 12.1.2/12.1.3, not master; 6502-only corpus; no datatest; declines on the table-after-code idiom. Follow review on the PR. If a datatest is requested, the #9447 dispatcher (megaman `a721`) as a `6502:LE:16` `binaryimage` asserting 8 cases is the planned one, and it needs a toolchain that builds `decomp_test_dbg` (MSYS2 POSIX gcc or Linux). The extension-side `JumpTableBoundAnalyzer` stays regardless. | `grm-b3m` (open, pending review) |
