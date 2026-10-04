@@ -145,6 +145,13 @@ final class InlineJumpTableDispatch {
 				continue;
 			}
 			if (pending == PENDING_LOAD_STORE) {
+				// The Y restore may also sit BETWEEN the high-byte load and its store (tmnt's
+				// c702: LDA ($00),Y; LDY $03; STA $03; JMP ($0002), grm-qa5z) -- harmless there
+				// too, since LDY leaves A alone and Y is not read again.
+				if (loadCount == 1 && directZeroPageLoadAddress(instr) != null) {
+					pc = instr.getFallThrough();
+					continue;
+				}
 				Address zp = directZeroPageStoreAddress(instr);
 				if (!"STA".equals(mn) || zp == null) {
 					return Boolean.FALSE;

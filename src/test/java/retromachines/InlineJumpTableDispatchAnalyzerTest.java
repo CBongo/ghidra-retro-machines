@@ -95,6 +95,21 @@ public class InlineJumpTableDispatchAnalyzerTest extends AbstractBundledLanguage
 		assertEquals(Boolean.TRUE, result);
 	}
 
+	/** The tmnt c702 shape (grm-qa5z): the LDY restore sits between the high-byte load and its
+	 *  store, and that store overwrites the very cell Y was saved in. */
+	@Test
+	public void recognizesTmntShapeDispatcherWithRestoreBeforeHighStore() throws Exception {
+		ProgramDB program = freshProgram();
+		long entry = 0xc702;
+		// ASL A; STY $03; TAY; INY; PLA; STA $00; PLA; STA $01;
+		// LDA ($00),Y; STA $02; INY; LDA ($00),Y; LDY $03; STA $03; JMP ($0002)
+		builder.setBytes(String.format("0x%x", entry),
+			"0a 84 03 a8 c8 68 85 00 68 85 01 b1 00 85 02 c8 b1 00 a4 03 85 03 6c 02 00", true);
+
+		Boolean result = InlineJumpTableDispatch.recognizeDispatcher(program, addr(entry));
+		assertEquals(Boolean.TRUE, result);
+	}
+
 	// ---------------------------------------------------------------------
 	// Recognizer: declines.
 	// ---------------------------------------------------------------------
