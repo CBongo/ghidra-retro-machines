@@ -43,20 +43,6 @@ bash tools/banktest/realrom-test.sh nominate <romdir>   # board-gap survey
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
-### - [ ] grm-akiv: tmnt row the switch-window bound moved, held unblessed
-
-The new rule bounds a jump table that sits AFTER its code: the real entries point between the
-`JMP (ind)` and the table, and the first entry that doesn't is past the end. megaman (e000 = 18,
-e121 = 19, e44e = 10, your numbers) and lwings are blessed on it, and ff1 since. This one moved too and needs
-a read before bless (contra's half is answered, see the table at the bottom):
-
-- **tmnt `8f34`** (table `8fb8`): now 6 entries — `8f37 8f37 8f45 8f71 8f55 8f37`. After them the
-  old over-read ran into `894e`'s table (`8cfb 8d22 8d70 8e66`), then a descending word run
-  `0d5c 0c9c 0be8 … 01c5` (a note-period table?), then fixed-bank seeds like `c901 d083 e286`.
-  With those gone, tmnt loses ALL its bank-6 overlay code (refs 44 → 0, instrs 103 → 0) and six
-  `JSR FUN_cea5` bank comments (`cfcf`/`d01f` = 6, `d8e9` = 3, `d8f7` = 1, `dbc4` = 4, `dbe1` = 1).
-  **Is 6 right, and how is the code around `cfcf`–`dbe1` really reached?**
-
 ---
 
 ## 2. Def-use passes on untraced titles
@@ -345,3 +331,4 @@ re-measurement and branch prep land), [#9658](https://github.com/NationalSecurit
 | ff1 bank 11 (B): is grm-akiv's 3-entry bound at `a449` (table `a7aa`) right? | **Yes (owner, 2026-10-03).** The table is 3 entries (`a44c a4e4 a590`), and what follows is an `INY` slide, not more entries. The `c8c8` words are `INY INY`, and the slide's first `INY` is never used. **Do not extend the bound into the slide.** This was ff1's last open read, so the row can be blessed under grm-q1bi. | `grm-akiv`, `grm-q1bi` |
 | wizwarr: is the code behind grm-fxtp's lost "bank 0" comments (`882b`, `88f4`, `c4b4`, `e9f2`, `c4ba`; notes `bb84`, `e99e`) reached some other way? | **Yes: through the NMI handler's state dispatch (owner, 2026-10-03).** `b198 JMP ($0066)` dispatches through table `b19b`, indexed by state `$03`, and reaches `880c`, `c436` and others. `b198` is reached from NMI, entered at `b178`. The vector `ff86` does `LDA #0 / STA $8000`, a self-window AxROM switch, and continues with bank 0's `JMP $b178`; banks 1–3 hold `JMP $ffff` at that address. So the `bcb3` cut is right: the old over-read reached this code by accident, the same class as lwings `dc61`. **Do not loosen the bound.** The real route is agent work: `grm-cqwn` (related: `grm-p3dy`). | `grm-fxtp`, `grm-cqwn` |
 | contra bank 1: is `849f`'s table (`86bf`) 7 entries with `86cd` a separate table, or 11? | **7, and `86cd` is a separate table (owner, 2026-10-04).** The 7 entries are `8651 8651 8673 86a6 8683 86a6 8651`. The next 4 words (`8500 8522 855c 84a2`) are `8285`'s own table at `86cd`. The switch-window bound's 11 is wrong: those targets happen to fall inside `849f`'s window, so the cut never fires. contra stays unblessed until the bound stops at the next table's base. **Do not bless contra at 11.** | `grm-akiv`, `grm-t223` |
+| tmnt: is `8f34`'s table (`8fb8`) 6 entries, and how is the code around `cfcf`–`dbe1` really reached? | **6 is right (owner, 2026-10-04).** `8fb8` is followed by other routines' tables: `8fc4` (from `849e`, 4 entries), `8fcc` (from `8b1a`, 12) and `8fe4` (from `8b8a`). The last two are sound-chip period tables. The lost bank-6 code and the `JSR FUN_cea5` comments are real code. They were reached before only through phantom entries. The owner traced `cfcf` (called at `cfcd`) back to bank 6 `9f75`, entry 14 of `c702`'s inline switch table. tmnt is blessed at refs 0 / instrs 0 / bankComments 8. **Do not loosen the bound to get them back**; the fix is reachability through `c702`. | `grm-akiv`, `grm-qa5z`, `grm-t223` |
