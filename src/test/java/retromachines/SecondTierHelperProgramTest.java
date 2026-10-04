@@ -329,10 +329,9 @@ public class SecondTierHelperProgramTest extends AbstractBundledLanguageTest {
 	// ------------------------------------------------------------------
 
 	/**
-	 * Mega Man 2's {@code FUN_c760}/{@code c78d} shape, WITHOUT the branch that makes the real
-	 * ROM's prefix fail the straight-line precondition (see
-	 * {@link HelperDiscovery#findSecondTierHelpers}'s javadoc for why the real {@code c78d}
-	 * itself is not covered): the caller supplies the bank in X, a straight run of unrelated
+	 * Mega Man 2's {@code FUN_c760}/{@code c78d} shape, WITHOUT the branch (the straight-line
+	 * baseline; the diamond itself is pinned by
+	 * {@link #aDiamondThatNeverWritesTheRegisterIsAdmittedWithOriginX}, bead grm-46ch): the caller supplies the bank in X, a straight run of unrelated
 	 * X-preserving work happens, then {@code TXA} moves it into A immediately before the relay.
 	 * Proves admission survives a register-to-register transfer -- the register is not hardcoded
 	 * to the accumulator -- even though the resulting model (constState-only, per the correctness
@@ -357,6 +356,130 @@ public class SecondTierHelperProgramTest extends AbstractBundledLanguageTest {
 		assertNotNull("the transfer shape must be admitted", model);
 		assertEquals(BankState.fullyKnown(FULL_MASK, 0x0D), model.constState());
 		assertTrue(result.relayCallSites().contains(addr(0x9043)));
+	}
+
+	// ------------------------------------------------------------------
+	// Crossing a branch (bead grm-46ch): the register's origin on ALL paths
+	// ------------------------------------------------------------------
+
+	/**
+	 * Megaman2's {@code FUN_c760}, diamond included (hand-trimmed: the shift/ROR prologue is
+	 * dropped, the control flow and the register effects that matter are kept byte-faithful).
+	 * The not-taken arm of the {@code BCC} is {@code ntArm} (exactly two bytes) followed by a
+	 * {@code JMP} to the join; the taken arm is {@code LDA $09}/{@code ADC #9}; the join stores,
+	 * computes with Y, then {@code TXA} and the relay -- X is never written on a default arm.
+	 * Returns the wrapper (body 0x27 bytes from {@code base}); the relay is at {@code base+0x1D}.
+	 */
+	private Function diamondWrapper(long base, String ntArm) throws Exception {
+		long join = base + 0x13;
+		String jmp = String.format("4c %02x %02x", join & 0xff, join >> 8);
+		builder.setBytes(hex(base),
+			"a5 fd 85 09 a5 fd c9 08 90 05 " + ntArm + " " + jmp + " a5 09 69 09 " +
+				"8d b6 03 18 98 65 09 85 09 8a 20 00 95 ea a9 0d 20 00 95 60",
+			true);
+		return builder.createEmptyFunction("diamond" + Long.toHexString(base), hex(base), 0x27,
+			null);
+	}
+
+	/**
+	 * <b>The deliverable of grm-46ch.</b> A diamond between entry and the relay, with X untouched
+	 * on both arms, is admitted -- the origin of the relayed A is X on every path -- where the
+	 * straight-line predicate declined it for having a branch at all.
+	 */
+	@Test
+	public void aDiamondThatNeverWritesTheRegisterIsAdmittedWithOriginX() throws Exception {
+		wrappedHelper(0x9500);
+		Function wrapper = diamondWrapper(0x9100, "a5 09"); // LDA $09 on both arms
+
+		assertEquals(Character.valueOf('X'), HelperDiscovery.inboundRegisterOrigin(program,
+			wrapper, addr(0x911d), 'A', Map.of()));
+		SecondTierResult result = discover();
+
+		HelperModel model = result.helpers().get(wrapper);
+		assertNotNull("the diamond-shaped FUN_c760 must be admitted", model);
+		assertEquals(BankState.fullyKnown(FULL_MASK, 0x0D), model.constState());
+		assertTrue(result.relayCallSites().contains(addr(0x911d)));
+	}
+
+	/** One arm defines X locally ({@code LDX #5}), so at the join X is not inbound: decline. */
+	@Test
+	public void aDiamondWhoseArmDefinesTheRegisterIsDeclined() throws Exception {
+		wrappedHelper(0x9500);
+		Function wrapper = diamondWrapper(0x9100, "a2 05"); // LDX #5 on the not-taken arm
+
+		assertNull(HelperDiscovery.inboundRegisterOrigin(program, wrapper, addr(0x911d), 'A',
+			Map.of()));
+		assertNull(discover().helpers().get(wrapper));
+	}
+
+	/**
+	 * The smallest diamond: {@code CPX #8 / BCC}; not-taken arm is the single byte {@code ntArm}
+	 * then {@code JMP} to the join; the taken arm is the single byte {@code tArm}, falling into
+	 * the join; the relay is at {@code base+9}. Neither arm uses X's or Y's value except through
+	 * the transfer under test.
+	 */
+	private Function smallDiamond(long base, String ntArm, String tArm) throws Exception {
+		long join = base + 9;
+		builder.setBytes(hex(base), "e0 08 90 04 " + ntArm + " " +
+			String.format("4c %02x %02x", join & 0xff, join >> 8) + " " + tArm +
+			" 20 00 95 ea a9 0d 20 00 95 60", true);
+		return builder.createEmptyFunction("small" + Long.toHexString(base), hex(base), 0x13,
+			null);
+	}
+
+	/** Anti-vacuity for the next two tests: both arms {@code TXA} -- agreement is admitted. */
+	@Test
+	public void aDiamondWhoseArmsAgreeOnTheTransferIsAdmitted() throws Exception {
+		wrappedHelper(0x9500);
+		Function wrapper = smallDiamond(0x9200, "8a", "8a");
+
+		assertEquals(Character.valueOf('X'), HelperDiscovery.inboundRegisterOrigin(program,
+			wrapper, addr(0x9209), 'A', Map.of()));
+		assertNotNull(discover().helpers().get(wrapper));
+	}
+
+	/** One arm {@code TXA}, the other {@code TYA}: A is X on one path, Y on the other. Decline. */
+	@Test
+	public void aDiamondWhoseArmsDisagreeOnTheTransferIsDeclined() throws Exception {
+		wrappedHelper(0x9500);
+		Function wrapper = smallDiamond(0x9200, "8a", "98");
+
+		assertNull(HelperDiscovery.inboundRegisterOrigin(program, wrapper, addr(0x9209), 'A',
+			Map.of()));
+		assertNull(discover().helpers().get(wrapper));
+	}
+
+	/**
+	 * An arm that returns before the relay: the relay is not THE behaviour of the wrapper, so
+	 * even though the surviving path would resolve, the wrapper must decline.
+	 */
+	@Test
+	public void aDiamondWithAnArmThatReturnsBeforeTheRelayIsDeclined() throws Exception {
+		wrappedHelper(0x9500);
+		Function wrapper = smallDiamond(0x9200, "60", "8a"); // RTS on the not-taken arm
+
+		assertNull(HelperDiscovery.inboundRegisterOrigin(program, wrapper, addr(0x9209), 'A',
+			Map.of()));
+		assertNull(discover().helpers().get(wrapper));
+	}
+
+	/**
+	 * An arm that writes a recognized mechanism: asked of the primitive directly, since the
+	 * discovery loop independently rejects any body containing a mechanism write and would mask
+	 * whether the region walk itself notices.
+	 */
+	@Test
+	public void aDiamondWithAnArmThatWritesAMechanismIsDeclined() throws Exception {
+		wrappedHelper(0x9500);
+		Function wrapper = smallDiamond(0x9200, "8a", "8a");
+		BankDataflowEngine.SwitchResult mech = new BankDataflowEngine.SwitchResult(
+			BankState.unknown(), FULL_MASK, 0, null, BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
+
+		assertNull(HelperDiscovery.inboundRegisterOrigin(program, wrapper, addr(0x9209), 'A',
+			Map.of(addr(0x9204), mech)));
+		assertEquals("control: the same region with no mechanism recorded resolves",
+			Character.valueOf('X'), HelperDiscovery.inboundRegisterOrigin(program, wrapper,
+				addr(0x9209), 'A', Map.of()));
 	}
 
 	/**

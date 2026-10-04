@@ -15,8 +15,10 @@
  */
 package retromachines;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -27,11 +29,13 @@ import java.util.Set;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSetView;
 import ghidra.program.model.lang.Register;
+import ghidra.program.model.listing.FlowOverride;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.FunctionManager;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
+import ghidra.program.model.symbol.FlowType;
 import ghidra.program.model.symbol.Symbol;
 
 import static retromachines.BankDataflowEngine.overwrite;
@@ -744,12 +748,14 @@ final class HelperDiscovery {
 	}
 
 	/**
-	 * Depth cap for {@link #traceInboundRegisterOrigin}'s backward walk. The span it walks is
-	 * already bounded to a straight-line, branch-free, call-free run by {@link #isPassThroughInto}
-	 * (its one caller checks that first), so nothing here can loop; this exists only so a
-	 * pathologically long straight-line prologue cannot make discovery slow.
+	 * Policy cap on the number of distinct instructions {@link #inboundRegisterOrigin} will put
+	 * in its region. The dataflow itself terminates without it (a finite lattice that only moves
+	 * toward LOCAL), so this is not a termination guard: it bounds how large a wrapper prefix
+	 * this pass is willing to reason about, so a pathologically large function cannot make
+	 * discovery slow. megaman2's {@code FUN_c760} prefix is 23 instructions; real prologues in
+	 * front of a relay are tens, not hundreds. Exceeding it DECLINES.
 	 */
-	private static final int MAX_ORIGIN_TRACE = 64;
+	private static final int MAX_ORIGIN_TRACE = 256;
 
 	/**
 	 * {@code helpers}, plus every SECOND-TIER helper found among the functions {@code helpers}
@@ -808,8 +814,8 @@ final class HelperDiscovery {
 	 * model at all, so nothing about {@code argReg} or a per-caller value can leak back out.
 	 * <p>
 	 * <b>The relayed argument and the register it arrives in still matter, but only as PROOF, not
-	 * as a value this pass ships anywhere.</b> {@link #traceInboundRegisterOrigin} establishes
-	 * that the relay's register is genuinely undefined by the wrapper's own straight-line prefix
+	 * as a value this pass ships anywhere.</b> {@link #inboundRegisterOrigin} establishes
+	 * that the relay's register is genuinely undefined by the wrapper's own prefix on every path
 	 * (following {@code TAX}/{@code TAY}/{@code TXA}/{@code TYA} transfers, so the register is not
 	 * assumed to be A -- megaman2's {@code FUN_c760} relays through X) -- which is what justifies
 	 * reclassifying the relay's OWN warning as {@link BankSwitchStrategy.ValueStop#SECOND_TIER_ARGUMENT}
@@ -830,28 +836,27 @@ final class HelperDiscovery {
 	 * {@code FUN_e61b} included) -- it only ever looks at functions {@code helpers} does not
 	 * already contain.
 	 * <p>
-	 * <b>{@code FUN_c760}'s OWN {@code c78d} call site is NOT admitted by this pass, on this ROM,
-	 * and that is correctly conservative rather than a bug to chase.</b> The straight-line prefix
-	 * {@link #isPassThroughInto} demands does not hold for it: {@code FUN_c760}'s body contains a
-	 * conditional branch ({@code BCC}) and an intervening {@code JMP} to a different function
-	 * between its entry and the {@code TXA}/relay pair, i.e. there is a real control-flow join on
-	 * the way to the call this pass would need to walk past. {@code SecondTierHelperProgramTest}
-	 * pins the register-transfer MECHANISM against a synthetic fixture shaped like
-	 * {@code FUN_c760} but WITHOUT the branch, to prove the transfer-following code path works;
-	 * {@code c78d} itself stays unresolved on the real ROM until a future increment teaches this
-	 * family to cross a proven-safe branch (compare {@link #findPassThroughWrappers}, which never
-	 * needed to).
+	 * <b>{@code FUN_c760}'s OWN {@code c78d} call site IS admitted, across its diamond (bead
+	 * grm-46ch).</b> grm-ylm6 shipped without it because the straight-line prefix
+	 * {@link #isPassThroughInto} demands does not hold: the body contains a {@code BCC} and a
+	 * {@code JMP c783} between entry and the {@code TXA}/relay pair. That is an INTERNAL diamond
+	 * (measured: {@code c783} is not a function entry, the body is one range, {@code c78d} is in
+	 * FUN_c760), and nothing on either arm writes X, so {@link #inboundRegisterOrigin} -- a join-aware
+	 * forward dataflow -- proves the relayed A is X's inbound value on every path.
+	 * {@code SecondTierHelperProgramTest} pins the admission and each way it must still decline
+	 * (an arm that defines the register, writes a mechanism, returns early, or disagrees with the
+	 * other arm).
 	 * <p>
 	 * <b>What is checked, in order</b>: the candidate is not already a helper of any kind; its
 	 * body is one contiguous range; walking its instructions finds no mechanism write of its own,
 	 * exactly one FIRST known-helper call (the relay) and EXACTLY ONE further call to that SAME
 	 * wrapped function (a call to a DIFFERENT known helper, or a SECOND further call, still
 	 * declines -- staying conservative rather than guessing how to fold several restores); the
-	 * prefix {@code [wrapper entry, relay call)} is a proven straight-line pass-through
-	 * ({@link #isPassThroughInto}, reused exactly as {@link #findCallEdgeWrappers} reuses it, plus
-	 * a documented zero-length special case for a relay that IS the wrapper's own entry);
-	 * {@link #traceInboundRegisterOrigin} finds a register genuinely undefined over that prefix;
-	 * the wrapped helper's OWN prologue ({@code [wrapped entry, wrapped firstSite)}) still
+	 * prefix {@code [wrapper entry, relay call)} is a closed, inert region (no call, exit,
+	 * mechanism write or indirect jump; every branch stays inside the body) in which, on every
+	 * path, the relayed register holds one single inbound register's value
+	 * ({@link #inboundRegisterOrigin}; a relay that IS the wrapper's own entry is its trivial,
+	 * zero-length case); the wrapped helper's OWN prologue ({@code [wrapped entry, wrapped firstSite)}) still
 	 * preserves ITS argument register; and the FURTHER call's own argument resolves via
 	 * {@link HelperArgumentRecovery#recoverCallArgument}. Any failure declines the WHOLE wrapper,
 	 * never partially.
@@ -909,23 +914,13 @@ final class HelperDiscovery {
 				wrapped.argReg() == null || wrapped.firstSite() == null) {
 				continue; // no exactly-one further call: that shape is not this pass's to admit
 			}
-			// The zero-length prefix (megaman2's FUN_c628/FUN_c70c: the relay call IS the
-			// wrapper's own first instruction) is trivially a pass-through, exactly as an empty
-			// prologueSegment is trivially SURVIVES in HelperArgumentRecovery -- there is nothing
-			// between entry and the relay to disqualify. isPassThroughInto itself cannot say so:
-			// its walk always examines the instruction AT the wrapper's entry before ever
-			// comparing against target, so a call instruction sitting there (which necessarily
-			// has flows) fails its very first check. That is correct behavior for the question
-			// isPassThroughInto answers elsewhere (a fallthrough chain of at least one
-			// instruction) and simply does not cover this degenerate case, so it is handled here
-			// instead of papering over it inside that shared, heavily-relied-on predicate.
-			if (!relayCall.equals(wrapper.getEntryPoint()) &&
-				!isPassThroughInto(program, wrapper, relayCall, switchResults)) {
-				continue; // the prefix reaching the relay is not a proven straight line
-			}
-			if (traceInboundRegisterOrigin(program, wrapper.getEntryPoint(), relayCall,
-				wrapped.argReg()) == null) {
-				continue; // the register is defined locally after all -- not a second-tier argument
+			// (grm-46ch) The zero-length case needs no special handling any more: the region
+			// [entry, relay) is empty, the relay's in-state IS the entry state, and the register
+			// is trivially its own inbound label. Everything else -- a straight line, or a
+			// diamond like FUN_c760's -- is decided by inboundRegisterOrigin over ALL paths.
+			if (inboundRegisterOrigin(program, wrapper, relayCall, wrapped.argReg(),
+				switchResults) == null) {
+				continue; // prefix not provably inert/closed, or the register is local after all
 			}
 			if (!argumentSurvivesPrologue(program, wrapped.entry(), wrapped.firstSite(),
 				wrapped.argReg())) {
@@ -965,53 +960,166 @@ final class HelperDiscovery {
 	record SecondTierResult(Map<Function, HelperModel> helpers, Set<Address> relayCallSites) {}
 
 	/**
-	 * The register whose value at {@code entry} still reaches {@code reg} at {@code before},
-	 * unclobbered, allowing the value to be RELABELED by a straight chain of register-to-register
-	 * transfers ({@code TAX}/{@code TAY}/{@code TXA}/{@code TYA}) along the way -- what
-	 * {@link #findSecondTierHelpers} needs to determine a wrapper's own argument-passing
-	 * convention when it is not simply {@code reg} itself (bead grm-ylm6). Returns {@code reg}
-	 * unchanged when nothing between {@code entry} and {@code before} touches it at all (the
-	 * zero-transfer case -- megaman2's {@code FUN_c628}, whose relay call IS its own entry); a
-	 * DIFFERENT register when one or more transfers intervened and nothing else ever redefines
-	 * the register currently being traced (megaman2's {@code FUN_c760}: a {@code TXA} immediately
-	 * before the relay returns {@code 'X'} for a query about {@code 'A'}); or {@code null} when
-	 * the traced register IS defined locally by something other than a transfer, meaning the
-	 * value is not a second-tier argument at all.
+	 * Which INBOUND register's value {@code reg} holds when control reaches {@code relayCall}, on
+	 * EVERY path from {@code wrapper}'s entry -- or {@code null} when that is not one single
+	 * inbound register, or when this method cannot prove the prefix is a closed, inert region
+	 * (bead grm-46ch, generalizing grm-ylm6's straight-line {@code isPassThroughInto} +
+	 * backward-by-address trace, which it subsumes for {@link #findSecondTierHelpers}).
 	 * <p>
-	 * <b>Callers MUST establish {@code [entry, before)} is straight-line first.</b> This method
-	 * does not check it and does not need to: {@link #findSecondTierHelpers} only calls it after
-	 * {@link #isPassThroughInto} has already proved the span contains no branch, no jump, no call
-	 * and no gap, which is exactly what makes walking it BACKWARD BY ADDRESS equivalent to
-	 * walking it forward in execution order. Calling this over a branchy span would silently
-	 * trust an address-order walk that is not an execution-order one.
+	 * <b>What it answers, concretely.</b> The result is the register ({@code 'A'}, {@code 'X'} or
+	 * {@code 'Y'}) whose value AT THE WRAPPER'S ENTRY is what {@code reg} holds at the relay: the
+	 * argument convention of the wrapper's own caller. {@code reg} itself when nothing between
+	 * entry and relay touches it (megaman2's {@code FUN_c628}, whose relay IS its entry, a
+	 * zero-length region); a different register when transfers intervened and nothing else wrote
+	 * the register being followed (megaman2's {@code FUN_c760}: {@code TXA} before the relay gives
+	 * {@code 'X'} for a query about {@code 'A'}); {@code null} when the value was defined locally
+	 * on any path, i.e. it is not a second-tier argument at all.
+	 * <p>
+	 * <b>The mechanism: a forward dataflow over the sub-CFG reachable from entry without passing
+	 * the relay.</b> The abstract state records, for each of A, X and Y, which inbound register
+	 * its value currently is, or LOCAL. Entry is (A, X, Y); {@code TAX}/{@code TAY}/{@code TXA}/
+	 * {@code TYA} relabel; ANY other write of a register ({@link StoredValueScanner#writesRegister},
+	 * the same oracle the straight-line trace used) makes it LOCAL; at a join, equal labels
+	 * survive and disagreeing ones become LOCAL. That last rule is what makes a diamond sound
+	 * rather than merely tolerated: FUN_c760's two arms both leave X untouched, so X is X at the
+	 * join, while an arm that did {@code LDX #5}, or two arms disagreeing on which register a
+	 * transfer read, collapse to LOCAL and decline. The lattice is finite and moves only toward
+	 * LOCAL, so the worklist terminates; {@link #MAX_ORIGIN_TRACE} is a separate policy cap.
+	 * <p>
+	 * <b>Why Ghidra's body for such a function is usable here.</b> FUN_c760's {@code BCC c77f} /
+	 * {@code JMP c783} diamond is entirely INTERNAL: measured on the real ROM, {@code c783} and
+	 * {@code c77f} are not function entries, the body is one contiguous range
+	 * {@code [c760, c7a3]}, and {@code c78d} lives in FUN_c760. (The bead text called the
+	 * {@code JMP} an escape to a different function; it is not -- an unconditional jump to a
+	 * non-entry address inside the body is an ordinary join.)
+	 * <p>
+	 * <b>What declines, and why each is a decline rather than a modeling choice.</b> A reachable
+	 * instruction in the region that: is not disassembled; is a call (its effect on registers and
+	 * on the bank is unmodeled -- the relay itself is the only call permitted, and it is the
+	 * region's sink); is terminal ({@code RTS}/{@code RTI}/a tail call: a path that leaves
+	 * without reaching the relay means the relay is not "the" behaviour of the wrapper);
+	 * is a computed jump; carries a flow override or a fall-through other than the next
+	 * instruction; is a recognized mechanism write ({@code switchResults}); or transfers control
+	 * to an address outside the wrapper's own body (an exit, never a join). The relay must also
+	 * be reached by at least one path. NOT checked: that every path TERMINATES -- a path that
+	 * loops forever never reaches the relay, which cannot make the relay's in-state wrong.
+	 * <p>
+	 * It agrees with the old straight-line trace on every straight-line prefix (same oracle,
+	 * walked in execution order instead of backward by address). {@link #findPassThroughWrappers}
+	 * and {@link HelperArgumentRecovery#argumentSurvivesPrologue} still decline a join; they
+	 * could adopt this primitive later, but this bead deliberately changes only
+	 * {@link #findSecondTierHelpers}.
 	 */
-	private static Character traceInboundRegisterOrigin(Program program, Address entry,
-			Address before, char reg) {
+	static Character inboundRegisterOrigin(Program program, Function wrapper, Address relayCall,
+			char reg, Map<Address, SwitchResult> switchResults) {
+		final String regs = "AXY";
+		int regIdx = regs.indexOf(reg);
+		if (regIdx < 0) {
+			return null;
+		}
 		Listing listing = program.getListing();
-		Character current = reg;
-		Address cursor = before;
-		for (int steps = 0; steps < MAX_ORIGIN_TRACE; steps++) {
-			Instruction instr = listing.getInstructionBefore(cursor);
-			if (instr == null || instr.getMinAddress().compareTo(entry) < 0) {
-				return current; // ran off the start of the straight-line span: current is inbound
-			}
-			Character source = transferSourceInto(instr.getMnemonicString(), current);
-			if (source != null) {
-				current = source;
-			}
-			else {
-				Register register = program.getLanguage().getRegister(String.valueOf(current));
-				if (register != null && StoredValueScanner.writesRegister(instr, register)) {
-					return null; // defined locally by something other than a plain transfer
-				}
-			}
-			cursor = instr.getMinAddress();
-			if (cursor.equals(entry)) {
-				return current; // reached entry cleanly, current untouched by anything but transfers
+		AddressSetView body = wrapper.getBody();
+		Register[] registers = new Register[3];
+		for (int i = 0; i < 3; i++) {
+			registers[i] = program.getLanguage().getRegister(String.valueOf(regs.charAt(i)));
+			if (registers[i] == null) {
+				return null;
 			}
 		}
-		return null; // pathologically long straight-line span -- decline rather than guess
+		Map<Address, char[]> inState = new HashMap<>();
+		Set<Address> visited = new HashSet<>();
+		ArrayDeque<Address> work = new ArrayDeque<>();
+		inState.put(wrapper.getEntryPoint(), new char[] { 'A', 'X', 'Y' });
+		work.add(wrapper.getEntryPoint());
+		while (!work.isEmpty()) {
+			Address at = work.poll();
+			if (at.equals(relayCall)) {
+				continue; // the sink: its in-state is the answer, nothing beyond it is examined
+			}
+			Instruction instr = listing.getInstructionAt(at);
+			if (instr == null) {
+				return null; // not disassembled (or a target mid-instruction)
+			}
+			visited.add(at);
+			if (visited.size() > MAX_ORIGIN_TRACE) {
+				return null;
+			}
+			if (instr.getFlowOverride() != FlowOverride.NONE ||
+				switchResults.containsKey(at)) {
+				return null;
+			}
+			FlowType flow = instr.getFlowType();
+			if (flow.isCall() || flow.isTerminal() || flow.isComputed()) {
+				return null;
+			}
+			Address next = instr.getMaxAddress().next();
+			Address fall = instr.getFallThrough();
+			Address[] flows = instr.getFlows();
+			List<Address> successors = new ArrayList<>();
+			if (flow.isJump()) {
+				if (flows.length != 1) {
+					return null;
+				}
+				successors.add(flows[0]);
+				if (flow.isConditional()) {
+					if (next == null || fall == null || !fall.equals(next)) {
+						return null;
+					}
+					successors.add(next);
+				}
+				else if (fall != null) {
+					return null; // an unconditional jump that also falls through is not understood
+				}
+			}
+			else {
+				if (flows.length != 0 || next == null || fall == null || !fall.equals(next)) {
+					return null;
+				}
+				successors.add(next);
+			}
+			char[] state = inState.get(at);
+			char[] out = state.clone();
+			String mnemonic = instr.getMnemonicString();
+			for (int d = 0; d < 3; d++) {
+				Character source = transferSourceInto(mnemonic, regs.charAt(d));
+				if (source != null) {
+					out[d] = state[regs.indexOf(source)];
+				}
+				else if (StoredValueScanner.writesRegister(instr, registers[d])) {
+					out[d] = LOCAL;
+				}
+			}
+			for (Address succ : successors) {
+				if (!body.contains(succ)) {
+					return null; // leaves the wrapper's own body: an exit, not a join
+				}
+				char[] prior = inState.get(succ);
+				if (prior == null) {
+					inState.put(succ, out.clone());
+					work.add(succ);
+					continue;
+				}
+				boolean changed = false;
+				for (int d = 0; d < 3; d++) {
+					if (prior[d] != out[d] && prior[d] != LOCAL) {
+						prior[d] = LOCAL;
+						changed = true;
+					}
+				}
+				if (changed) {
+					work.add(succ);
+				}
+			}
+		}
+		char[] atRelay = inState.get(relayCall);
+		if (atRelay == null || atRelay[regIdx] == LOCAL) {
+			return null;
+		}
+		return atRelay[regIdx];
 	}
+
+	/** The abstract "defined inside this function" label of {@link #inboundRegisterOrigin}. */
+	private static final char LOCAL = 'L';
 
 	/**
 	 * The source register of a transfer that writes {@code dest} ({@code TXA}/{@code TYA} write
