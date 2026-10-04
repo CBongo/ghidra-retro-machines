@@ -43,30 +43,6 @@ bash tools/banktest/realrom-test.sh nominate <romdir>   # board-gap survey
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
-- [ ] **Read rcransom's four lost bank claims against the cartridge** (`grm-vt1i` P2). These are the
-      urgent part of nine claims grm-913 dropped outright rather than weakened, because they are
-      pinned into the rcransom golden blessed at `6c7983c`, so the tier will never show the loss
-      again. Before the bless:
-
-      ```
-      e315  bank -> select=2,prg_mode=0,r6=0,r7=1 via FUN_fea1 [switch-value flow]
-      e323  bank -> select=3,prg_mode=0,r6=0,r7=1 via FUN_fead [switch-value flow]
-      e331  bank -> select=4,prg_mode=0,r6=0,r7=1 via FUN_feb9 [switch-value flow]
-      e33f  bank -> select=5,prg_mode=0,r6=0,r7=1 via FUN_fec5 [switch-value flow]
-      ```
-
-      `select` differs per site, so it was really recovered and is not an `initial_state` echo.
-      Only `r6=0,r7=1` match the seed. The question at each site: is `r6=0,r7=1` actually live
-      there, so the loss is a real regression, or is it unknowable, so the loss is honest? The
-      other five are megaman2 `d097 d09b d09f d0a3`, which read verbatim as MMC1 `initial_state`
-      (probably the weakened-class story), and smb3 `f8cd`, which grm-2pie flagged as the
-      interesting one. It was partly known at base (`r6=0,r7=1?` assumed) and then lost entirely.
-      rcransom is already traced (grm-1fv, and your hand pass on grm-vgod).
-
-      *Coming next, agent-side first:* `grm-nqxt` (helper-argument warnings, 19 helpers, 98 sites).
-      An agent re-runs the inventory uncapped and diffs it against grm-2pie's 29. Only the
-      survivors come here.
-
 - [ ] **Name cv3's trampoline idiom** (`grm-dos9` P3). cv3 (MMC5) reaches almost none of its banked
       code: 316 overlays, 341 overlay instructions. grm-ulnc's five split-dispatch probes (e.g.
       `W8000_M3_B2::94cb`) are all undisassembled, with no references. Candidates: unresolved
@@ -140,10 +116,13 @@ Blocked on judgment, not effort.
 - [ ] **Community disassembly licensing survey** (`grm-hb6.6` P3). The bead names licensing as "the
       gating constraint and a per-source judgment, not a policy set once". Deliverable: a table of
       *project · URL · license · redistributable? · symbol format · maintenance state* for Zelda
-      (already hash-pinned), Metroid, Mega Man, SMB. The schema side is solved — `docs/SCHEMA.md`
-      defines named symbol sets with provenance and `tools/gensymbols/gen_c64ref_symbols.py` is the
-      generator precedent. Only one new concept is needed: a `block: bank` qualifier, since a label
-      at `$8000` is ambiguous across 16 UxROM banks.
+      (already hash-pinned), Metroid, Mega Man, SMB. The schema side is fully solved: game
+      descriptors carry `symbols:` sets with required `provenance:` and a `block:` qualifier for
+      banked labels (`grm-hb6.5`, `docs/SCHEMA.md` "Annotation layer and export"). A `source:` key
+      is reserved for the harvester. `tools/gensymbols/gen_c64ref_symbols.py` is the generator
+      precedent. *An agent survey of candidate projects is in progress (2026-10-04). It records
+      stated licenses as facts and leaves the redistributability calls blank for you. The results
+      will be posted on the bead.*
 
       *Two additions from you, 2026-09-07 (`grm-hb6.6` comment) — neither ingested, and neither to
       be ingested without a ruling here.* **zelda2** now has a candidate,
@@ -158,27 +137,6 @@ Blocked on judgment, not effort.
 - [ ] **c64ref sourcing** (`grm-p5w`, typed as a `decision`) — generator + committed
       `generated/*.yaml`, or git submodule + build-time generation. Binds `grm-hb6.6` and `grm-54p`
       too. Decide once.
-
-- [ ] **Homebrew ROMs as committable real-ROM fixtures?** (`grm-5ioo` P4, your idea, 2026-08-22).
-      A ROM the repo may actually commit would give the default gate and CI a real-cartridge
-      signal with no `GRM_ROM_DIR`. It would add to the commercial pins, not replace them. An
-      agent can do the survey: what exists on itch.io, the NESdev forums and GitHub, and whether
-      the license covers the *binary* and not just the source. The rulings are yours: is it worth
-      doing at all, and how is it sourced (committed binaries, submodule, or build from source at
-      gate time, which needs a toolchain the gate cannot assume)?
-
-- [ ] **SPC700 upload-image corpus** (`grm-ced` P3). These are your extracted images, ground truth
-      for grm-1.7.3's extractor. The Secret of Mana sample is single-block, so the two most
-      valuable additions are a game with **multiple IPL uploads** and a game whose **entry point
-      is not the first block's destination**. Two open questions on the bead, neither blocking:
-      is the `size/dest/data … size=0 → entry` container your own convention from
-      game-music-extraction or a named third-party format? And are the images committed anywhere
-      durable, so a test can hash-pin one?
-
-*Deferred, so not open here: packaging and release.* The GitHub Actions release matrix (`grm-9ut`)
-and the end-user README (`grm-fy0`) wait together for the general packaging/release push. When
-that resumes, `grm-9ut` will need your rulings on any post-12.0 API dependency (work around it or
-raise the version floor).
 
 ---
 
@@ -362,3 +320,4 @@ re-measurement and branch prep land), [#9656](https://github.com/NationalSecurit
 | contra bank 1: is `849f`'s table (`86bf`) 7 entries with `86cd` a separate table, or 11? | **7, and `86cd` is a separate table (owner, 2026-10-04).** The 7 entries are `8651 8651 8673 86a6 8683 86a6 8651`. The next 4 words (`8500 8522 855c 84a2`) are `8285`'s own table at `86cd`. The switch-window bound's 11 is wrong: those targets happen to fall inside `849f`'s window, so the cut never fires. contra stays unblessed until the bound stops at the next table's base. **Do not bless contra at 11.** | `grm-akiv`, `grm-t223` |
 | tmnt: is `8f34`'s table (`8fb8`) 6 entries, and how is the code around `cfcf`–`dbe1` really reached? | **6 is right (owner, 2026-10-04).** `8fb8` is followed by other routines' tables: `8fc4` (from `849e`, 4 entries), `8fcc` (from `8b1a`, 12) and `8fe4` (from `8b8a`). The last two are sound-chip period tables. The lost bank-6 code and the `JSR FUN_cea5` comments are real code. They were reached before only through phantom entries. The real path: bank 6 `9f75` is `JSR $C702`, an inline jump-table dispatcher, and entry 14 of its table is `d2c0`, which leads on to the `cfcd`/`cfcf` call. tmnt is blessed at refs 0 / instrs 0 / bankComments 8. **Do not loosen the bound to get them back**; the fix is reachability through `c702`. | `grm-akiv`, `grm-qa5z`, `grm-t223` |
 | #9447: send the lowest-target-bound PR unprompted? | **Yes, sent (owner, 2026-10-04) as [NationalSecurityAgency/ghidra PR #9717](https://github.com/NationalSecurityAgency/ghidra/pull/9717)**, from `CBongo/ghidra` `fix/jumptable-lowest-target` (`5be3ac25`, cut from upstream master `a462673d`) with the body drafted on `grm-b3m`. It states its gaps up front: numbers from 12.1.2/12.1.3, not master; 6502-only corpus; no datatest; declines on the table-after-code idiom. Follow review on the PR. If a datatest is requested, the #9447 dispatcher (megaman `a721`) as a `6502:LE:16` `binaryimage` asserting 8 cases is the planned one, and it needs a toolchain that builds `decomp_test_dbg` (MSYS2 POSIX gcc or Linux). The extension-side `JumpTableBoundAnalyzer` stays regardless. | `grm-b3m` (open, pending review) |
+| Homebrew ROMs as committable real-ROM fixtures? | **No committed binaries (owner, 2026-09-19); punted to P4, semi-open.** When picked up: a separate opt-in `manifest-homebrew.tsv` set for titles the user has built locally. Rows are identified by source commit/tag, not only by a binary SHA-256. Like every opt-in tier it SKIPs loudly when unset, never gates `check`, and never runs in CI. The binary license survey is moot because nothing is redistributed. The one residual question is whether committed golden *dumps* (which quote disassembly) are OK. Do not re-ask "commit the ROMs?". | `grm-5ioo` (open, P4) |
