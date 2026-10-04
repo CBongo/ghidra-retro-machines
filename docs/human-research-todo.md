@@ -157,7 +157,13 @@ re-measurement and branch prep land), [#9658](https://github.com/NationalSecurit
 
 - [ ] **Fall-through override into an overlay space is accepted by the listing and fatal to the
   decompiler — ask upstream whether that is deliberate.** (`grm-p3dy`, ruled 2026-09-21: ask
-  first, build nothing.) The mechanics spike (`FallThroughIntoOverlayProgramTest`, 11 rows)
+  first, build nothing.) **DEFERRED 2026-10-04 (owner): do not post until a Ghidra release
+  carries GP-7010** (`da5c0f2`, on `master` since July, not in 12.1.4). It moves flow overrides
+  into the decompiler as p-code override records, and its `CallReturn` record may turn this
+  override's `BRANCH` into a cross-space CALL, which would make the question moot. On that
+  release: retarget, re-run `FallThroughIntoOverlayProgramTest`
+  (`callReturnFlowOverrideDoesNotRescueIt` is the deciding row), and only then decide whether the
+  draft below is still needed. 12.1.4 changed nothing here (re-verified 2026-10-04). The mechanics spike (`FallThroughIntoOverlayProgramTest`, 11 rows)
   established that `Instruction.setFallThrough(overlayAddr)` lands, `CreateFunctionCmd` ends the
   base function at the overridden instruction as hoped, but the base function then **fails to
   decompile outright** — `FlowInfo` bounds flow to the entry's address space (`flow.cc:29`), the
@@ -176,46 +182,6 @@ re-measurement and branch prep land), [#9658](https://github.com/NationalSecurit
   there with the addendum now in `docs/rfc-banked-memory.md` ("the decompiler has a second
   wall, independent of resolution"), so the discussion stops over-claiming and gains a small,
   reviewable lead-in.
-- [ ] **`bd prime`: ask beads to expose its compact memory index in CLI mode.** (`grm-8ctl`,
-  researched 2026-08-26, **re-checked against upstream 2026-09-20** — the draft on the bead is
-  now stale and should be SHRUNK, not posted as-is.)
-
-  **What changed upstream.** `v1.3.0` shipped 2026-09-15 (verified from the tag's
-  `cmd/bd/prime.go`, not from PR merge dates — that is how the 2026-09-03 prediction went wrong:
-  PR `#4336` was on `main` in July but missed the 1.2.2 cut). 1.3.0 has `--no-memories`, and
-  `--max-memories N` / `--max-memory-chars N` (PR `#4569`, also settable as
-  `prime.max-memories` / `prime.max-memory-chars` config keys), which cap injection at
-  whole-memory boundaries, alphabetically, with an elision banner pointing at `bd memories`.
-  So the draft's "only two settings — full or none" framing, and its "stretch" ask for an
-  automatic byte threshold, are both overtaken. Also: **under 1.3.x a custom `PRIME.md` no
-  longer suppresses memories** — they are appended after it — which is why the upgrade is
-  tracked as its own bead. **Done 2026-09-26 (`grm-9t2g`):** bd is on 1.3.0, both hooks run
-  `bd prime --no-memories && bd memories`, and `.beads/PRIME.md` is deleted.
-
-  **What is still genuinely missing, and is the whole ask now.** The caps *elide* the
-  alphabetically-last memories entirely; an index shows every key. And the index renderer
-  already exists in `prime.go` — `renderPrimeMemories(compact=true)` emits
-  `- **key**: <first 150 chars>` per memory — but is reachable only in MCP mode. The ask is
-  therefore one paragraph: expose the compact renderer in CLI mode (a flag or a `prime.*`
-  config key), with a one-line trailer naming `bd recall <key>`; and make the truncation
-  word-safe, since it still cuts mid-word. Cite `#3961`/`#4336`/`#4569` as the prior art and
-  distance it from `#5153` as before. Nothing filed since duplicates it (`#6626`, 2026-09-19,
-  is about `bd recall` docs; `#6115` is the config-table read size).
-
-  **Still DEPRIORITISED.** The local two-command hook already delivers the index; this buys one
-  command instead of two. File it when you are already in that repo. `gh` on this machine is
-  not authenticated.
-
-- [ ] **SingleStepTests/65816: report the one wrong `(d,x)` case (`grm-9nxj.20`).** Case
-  `e1 e 8669` reads the `(d,x)` pointer's high byte from `$F500`. With e=1, D=`$F400` and
-  LL+X=`$FF`, it should come from `$F400`, inside the direct page (Clark §5.11, higan/bsnes).
-  The generator, TomHarte/CLK, keeps that fetch inside the page for `(d)` but not for `(d,x)`.
-  **The issue body is drafted on the bead**, with the CLK source lines and an optional hardware
-  check. Posting it is yours. There is nothing to do locally in the meantime: the case is excluded
-  by name in `W65816VectorHarnessSupport.CORPUS_DEFECT_CASES`. Once upstream fixes it, the
-  `w65816-vectors` tier fails on purpose, saying the case "now PASSES". At that point, drop the
-  entry and regenerate the exhaustive baseline. Low priority: it is one case in 5,120,000.
-
 *Two things learned that the next upstream item should inherit:*
 
 - *`CBongo/ghidra` now exists as a fork, and a separate full clone of it (kept apart from the
@@ -237,6 +203,8 @@ re-measurement and branch prep land), [#9658](https://github.com/NationalSecurit
 | db3: are the jump-table bound's three new tables the right size? | **Yes, by agent decode of the ROM bytes (2026-09-27); no owner read needed.** The dispatches `c1ab`/`c1ed`/`c269` jump through tables at `c2ac` (31 entries), `ca2f` (43) and `d041` (40), and each table ends where its entry 0 starts. The lost `a018` note sits behind the `JSR $803a` inline-table dispatcher, which Ghidra can't follow either way (`grm-j2kl`). db3 is blessable. | `grm-eyn` |
 | The globally installed beads Claude Code plugin runs its own plain `bd prime` hook at SessionStart/PreCompact, duplicating the repo hooks' payload. Update it or disable it? | **Disabled (owner, 2026-09-27)**: `"beads@beads-marketplace": false` in the global `~/.claude/settings.json`. Updating was not an option: plugin 1.3.0 (`f6637545`) still registers plain `bd prime`. Verified the next session: the SessionStart hook produced **one** prime payload, 15,398 bytes, with one copy of the workflow text and the close protocol (before, there were two, the plugin's held down only by the cap). The repo hooks carry everything the plugin did; its skills were conveniences. Keep `prime.max-memories: 1` in `.beads/config.yaml` anyway: the repo hooks don't need it (they pass `--no-memories`), but it still keeps a hand-run or post-compaction plain `bd prime` from dumping every memory body. If the plugin is ever re-enabled, check its `plugin.json` hook for `--no-memories` first. | `grm-9t2g` (closed) |
 | bd 1.3.0 is installed — can `.beads/PRIME.md` finally be retired, and is `agent.profile team-maintainer` right for this repo? | **Yes to both (owner, 2026-09-26).** Upstream's docs define `team-maintainer` as the profile for "repositories that explicitly delegate session close to agents" — close beads, run gates, commit, `bd dolt push`, `git push` as routine work — which is what AGENTS.md's Session Completion section mandates, so the hand-maintained push-policy divergence in PRIME.md is no longer needed. The profile is set in `.beads/config.yaml` (that is where `bd config set` writes it, not the Dolt DB). Both hooks now run `bd prime --no-memories && bd memories`: 15,233 bytes, against 179,339 for plain `bd prime && bd memories` on 1.3.0. This supersedes the 2026-09-02 row below's "permanent, not interim" conclusion; that row stays as history. The upstream index-emission ask in section 5 is unaffected. | `grm-9t2g` **closed** |
+| Ask beads to expose `bd prime`'s compact memory index in CLI mode | **Filed (owner, 2026-10-04) as [gastownhall/beads#7208](https://github.com/gastownhall/beads/issues/7208)**, re-checked first against v1.3.1 and `main`: the compact renderer is still MCP-only, and there it is also subject to `max-memories`. Measured with 61 memories: all bodies 174,031 bytes, a compact index of every key about 12.8 KB. Also commented on [#6626](https://github.com/gastownhall/beads/issues/6626): the 1.3.x elision banner says `bd remember <key>`, which stores a junk memory; it should say `bd recall <key>`. Nothing to do locally meanwhile: the hooks stay `bd prime --no-memories && bd memories`. When #7208 ships, switch both hooks to the single command and re-measure. Do not file a second ask. | `grm-8ctl` **closed** |
+| SingleStepTests/65816: report the one wrong `(d,x)` case (`e1 e 8669`) | **Done (owner, 2026-10-04).** Upstream already had it as [#3](https://github.com/SingleStepTests/65816/issues/3) (their index 8668 is our `e1 e 8669`), confirmed by two others, and PR #5's fix is incomplete (it leaves `cycles[4]` at `$F500`). So no new issue: you filed the generator root cause as [TomHarte/CLK#1887](https://github.com/TomHarte/CLK/issues/1887) (`OperationConstructDirectIndexedIndirect` sets the increment mask to `0x00ffff` unconditionally) and commented on #3. Nothing to do locally until upstream moves: then the `CORPUS_DEFECT_CASES` tripwire fires by design; drop the entry and regenerate the baseline. Issue #6 / PR #7 (JSR `(a,x)` stack wrap) are the same kind of defect behind our FC.E row; that is `grm-fl65`, agent work. | `grm-9nxj.20` |
 | Ask `SingleStepTests/65816` upstream to state a license explicitly | **Already asked by someone else — [SingleStepTests/65816#9](https://github.com/SingleStepTests/65816/issues/9) (opened 2026-08-28) requests MIT and a LICENSE file; you added a supporting comment there on 2026-09-19 rather than opening a duplicate.** The human half is done; `grm-9nxj.8` stays open only to wait on upstream. When a LICENSE lands, update `src/test/resources/w65816-vectors/NOTICE` to cite it and close; if upstream declines, remove the vendored sample and clone-gate `W65816VectorSampleTest`. Do not file a second issue. | `grm-9nxj.8` (open, waiting on upstream) |
 | Where does the 12.1.3 native decompiler regression come from, and was it reported upstream? | **GP-6936 (`6dd07f90ff`), and yes — filed 2026-09-19 as [NationalSecurityAgency/ghidra#9655](https://github.com/NationalSecurityAgency/ghidra/issues/9655).** There was never a 185-commit bisect to do: exactly one commit touches `Ghidra/Features/Decompiler/src/decompile` between the 12.1.2 and 12.1.3 tags, and instrumenting its two new call sites showed a single trigger shape repeated 2062 times — a 2-byte access at stack offset −1 on a 16-bit stack space, rewritten from a plain `stack:ffff` varnode into a `join`. That is the `JSR` return slot at the top of a 6502 stack frame, not a wrapped range, so it fires at every call site. Reverting the wrap-range hunks alone restores 12.1.2's output exactly; the `type.cc`/`type.hh` half is inert. The PR, the #4148 cross-reference and the patched-install decision remain — see section 5. | `grm-qp5x.1` **closed**; `grm-qp5x.2` |
 | Was the Ghidra upstream 6502 semantics fix submitted? | **Yes — submitted 2026-09-19 as [NationalSecurityAgency/ghidra PR #9656](https://github.com/NationalSecurityAgency/ghidra/pull/9656).** The PR covers ADC carry-in/overflow (including the separate 65C02 ZIOP constructor), SBC carry polarity, and zero-page-wrapped `(zp,X)`/`(zp),Y` pointer fetches. Follow review on the upstream PR. | `grm-ef46` **closed** |
