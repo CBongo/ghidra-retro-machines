@@ -16,6 +16,7 @@
 package retromachines;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
@@ -353,5 +354,68 @@ public class HelperNoArgumentRestoreProgramTest extends AbstractBundledLanguageT
 		assertEquals(cell, base.restoreCell());
 		assertEquals(cell, flipped.restoreCell());
 		assertTrue(flipped.secondTierRelay());
+	}
+
+	// ------------------------------------------------------------------
+	// grm-lb54: the clobber proof survives a branch AFTER the byte is lost for good
+	// ------------------------------------------------------------------
+
+	/** Lays {@code hex} (space-separated bytes) down from {@code start} and disassembles it. */
+	private void code(long start, String hex) throws Exception {
+		builder.setBytes(String.format("0x%04x", start), hex, true);
+	}
+
+	private boolean clobbered(long entry, long end) {
+		return HelperArgumentRecovery.argumentDefinitelyClobbered(program, addr(entry), addr(end),
+			'A');
+	}
+
+	/**
+	 * rcransom {@code FUN_ff07}, byte for byte from the pinned ROM: {@code LDA #$06} at entry
+	 * loses the caller's A with nothing saved, and the walk to the select-data switchSite (the
+	 * tail's second {@code STA $8000}) crosses the {@code BNE} that splits the tail. Before
+	 * grm-lb54 that branch alone made the proof INDETERMINATE.
+	 */
+	@Test
+	public void ff07ShapeIsClobberedAcrossItsConditionalTail() throws Exception {
+		code(0x9100, "a9 06 8d 00 80 a5 fc 8d 01 80 a9 07 8d 00 80 a5 fd 8d 01 80 " +
+			"a5 ff d0 06 a5 fb 8d 00 80 60 8d 00 80 60");
+		// LDA $FF at 9114, BNE 911e at 9116, LDA $FB / STA $8000 / RTS, STA $8000 at 911e
+		assertTrue(clobbered(0x9100, 0x911e));
+	}
+
+	/** The caller's A was PHA'd before the clobber: a copy lives on the stack, no latch. */
+	@Test
+	public void aPushedArgumentDoesNotLatch() throws Exception {
+		code(0x9200, "48 a9 06 8d 00 80 a5 ff d0 01 ea 8d 00 80 60");
+		assertFalse(clobbered(0x9200, 0x920b));
+	}
+
+	/** A TAX before the clobber leaves a copy in X the walk does not track: no latch. */
+	@Test
+	public void aTransferredArgumentDoesNotLatch() throws Exception {
+		code(0x9300, "aa a9 06 8d 00 80 a5 ff d0 01 ea 8d 00 80 60");
+		assertFalse(clobbered(0x9300, 0x930b));
+	}
+
+	/** A branch out of the scanned span after the latch reaches code the tripwire never saw. */
+	@Test
+	public void aBranchOutOfTheSpanDefeatsTheLatch() throws Exception {
+		code(0x9400, "a9 06 8d 00 80 a5 ff d0 20 ea 8d 00 80 60");
+		assertFalse(clobbered(0x9400, 0x940a));
+	}
+
+	/** The stack-page tripwire still applies after the latch (fed1's reload, behind a branch). */
+	@Test
+	public void aStackRelativeReadAfterTheLatchStillDeclines() throws Exception {
+		code(0x9500, "a9 06 8d 00 80 a5 ff d0 05 ba bd 02 01 ea 8d 00 80 60");
+		assertFalse(clobbered(0x9500, 0x950e));
+	}
+
+	/** A branch BEFORE the clobber means the loss was never on a straight line: no latch. */
+	@Test
+	public void aBranchBeforeTheClobberDoesNotLatch() throws Exception {
+		code(0x9600, "d0 00 a9 06 8d 00 80 60");
+		assertFalse(clobbered(0x9600, 0x9604));
 	}
 }

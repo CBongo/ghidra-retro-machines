@@ -895,7 +895,14 @@ final class HelperArgumentRecovery {
 	 * witness) and still ended with {@code holdsArgument} false. Every write to {@code reg} this
 	 * walk saw was therefore evaluated under fully trustworthy save/restore accounting, so a
 	 * "does not survive" here is a PROOF, not a guess: {@code reg} is provably redefined from
-	 * something other than the caller's value on every path this prologue can take.</li>
+	 * something other than the caller's value on every path this prologue can take. <b>Or</b>
+	 * (bead grm-lb54) {@code straightLine} went false only AFTER {@code reg} had already lost the
+	 * caller's byte on a straight-line prefix with no copy anywhere -- nothing pushed, nothing in
+	 * a tracked cell, nothing read out of {@code reg} by any other instruction -- and no later
+	 * flow could leave the walked span. A byte with no surviving copy cannot be restored by any
+	 * path, so a branch past that point cannot reopen the question; the stack-page tripwire
+	 * still covers the whole span. rcransom's {@code FUN_ff07} ({@code LDA #$06} at entry, then a
+	 * {@code BNE}-split tail of select restores) is the case.</li>
 	 * <li>{@code INDETERMINATE} -- everything else: a disassembly gap, a call, running off the
 	 * end of the space, an unaskable register, a malformed span, OR a completed walk whose
 	 * {@code straightLine} went false somewhere along the way. That last case matters: once
@@ -1000,6 +1007,17 @@ final class HelperArgumentRecovery {
 		// wording ("could not be recovered"), never a wrong claim. Blunt is correct here: a false
 		// trigger is free, a missed one ships a false "no argument" statement.
 		boolean sawStackRelativeAccess = false;
+		// bead grm-lb54: the LATCH that lets a later branch leave a clobber proof standing.
+		// argumentCopied: an instruction READ reg while it still held the caller's byte, in a way
+		// this walk does not track (TAX, ASL A, an indexed store...) -- a copy may live on, so
+		// nothing below may call the byte gone. lostForGood: reg lost the caller's byte on a
+		// straight-line prefix with no copy anywhere this walk could know of (none pushed, none
+		// in a tracked cell, none transferred), so no later instruction can bring it back,
+		// whatever the control flow. leftSpan: after the latch, a flow could reach code outside
+		// [entry, firstSite], which this walk never scanned for the stack-relative tripwire.
+		boolean argumentCopied = false;
+		boolean lostForGood = false;
+		boolean leftSpan = false;
 		Address cursor = entry;
 		while (cursor.compareTo(firstSite) < 0) {
 			Instruction instr = listing.getInstructionAt(cursor);
@@ -1008,6 +1026,9 @@ final class HelperArgumentRecovery {
 			}
 			if (isStackPageIndexedAccess(instr)) {
 				sawStackRelativeAccess = true;
+			}
+			if (holdsArgument && copiesArgument(instr, register, reg)) {
+				argumentCopied = true;
 			}
 			boolean modelled = false;
 			if (reg == 'A') {
@@ -1085,6 +1106,13 @@ final class HelperArgumentRecovery {
 					straightLine = false;
 				}
 			}
+			if (!holdsArgument && straightLine && !argumentCopied && argumentCells.isEmpty() &&
+				!saved.contains(Boolean.TRUE)) {
+				lostForGood = true;
+			}
+			if (lostForGood && leavesSpan(instr, entry, firstSite)) {
+				leftSpan = true;
+			}
 			// A branch or jump means the walk's straight line is not necessarily a real path, so
 			// a PLA after it cannot be trusted to pair with a PHA before it. Plain clobber
 			// detection is unaffected and stays conservative.
@@ -1106,9 +1134,55 @@ final class HelperArgumentRecovery {
 		// holdsArgument is false. That is a PROOF of clobber only if straightLine held for the
 		// WHOLE walk AND no stack-relative reload was seen anywhere in it -- see
 		// PrologueOutcome's javadoc for the straightLine argument and sawStackRelativeAccess's
-		// declaration above for the third hazard (rcransom's FUN_fed1/FUN_fe56).
-		return straightLine && !sawStackRelativeAccess ? PrologueOutcome.DEFINITELY_CLOBBERED
+		// declaration above for the third hazard (rcransom's FUN_fed1/FUN_fe56). OR if the byte
+		// was lost for good before any flow broke the line and no flow after that left the
+		// scanned span (grm-lb54: rcransom FUN_ff07's LDA #$06 entry, then a BNE-split tail of
+		// two $8000 select restores before its switchSite).
+		boolean proven = straightLine || (lostForGood && !leftSpan);
+		return proven && !sawStackRelativeAccess ? PrologueOutcome.DEFINITELY_CLOBBERED
 				: PrologueOutcome.INDETERMINATE;
+	}
+
+	/**
+	 * Whether {@code instr} reads {@code register} in a way {@link #prologueOutcome}'s
+	 * save/restore model does not track, so the caller's byte may survive somewhere the walk
+	 * cannot see (bead grm-lb54). {@code PHA} and a plain absolute store of {@code reg} are
+	 * tracked (the saved stack, {@code argumentCells}) and so are not copies here. Errs towards
+	 * {@code true}: a read that only feeds the flags (a {@code CMP}) still counts, costing only
+	 * the latch, never a false proof.
+	 */
+	private static boolean copiesArgument(Instruction instr, Register register, char reg) {
+		if ("PH".concat(String.valueOf(reg)).equals(instr.getMnemonicString())) {
+			return false;
+		}
+		Character stored = StoredValueScanner.storeRegister(instr);
+		if (stored != null && stored.charValue() == reg &&
+			StoredValueScanner.plainAbsoluteTarget(instr) != null) {
+			return false;
+		}
+		for (Object in : instr.getInputObjects()) {
+			if (in instanceof Register r && r.contains(register)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Whether control can leave {@code [entry, end]} at {@code instr}: a flow target outside
+	 * it, or a computed jump whose target is not known (bead grm-lb54). A plain terminator
+	 * ({@code RTS}) has no flows and leaves to the caller, which is not helper code.
+	 */
+	private static boolean leavesSpan(Instruction instr, Address entry, Address end) {
+		if (instr.getFlowType().isComputed()) {
+			return true;
+		}
+		for (Address target : instr.getFlows()) {
+			if (target.compareTo(entry) < 0 || target.compareTo(end) > 0) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
