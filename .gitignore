@@ -86,3 +86,7 @@ data/descriptor-sources.sha256
 
 # Per-user editor settings
 .vscode/settings.json
+
+# Runtime lock file dropped at the repo root by the beads tooling (nothing in this repo writes
+# it) -- transient state, never committed
+.beads.gate.lock
