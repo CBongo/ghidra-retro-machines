@@ -14,23 +14,23 @@ COMMENT c019 bank -> 3 (bank=3)
 COMMENT c01e bank -> 3 (bank=3)
 COMMENT c027 bank -> 1 (bank=1)
 COMMENT c02f bank -> 1 (bank=1)
-COMMENT c034 bank ? [WARNING: analyzer limit]
+COMMENT c034 bank ? [NOTE: runtime source]
 COMMENT c037 bank -> 1 (bank=1) via FUN_c100
 COMMENT c03a bank ? via FUN_c140 [WARNING: analyzer limit]
 COMMENT c102 bank ? [WARNING: analyzer limit]
-COMMENT c107 bank ? [WARNING: analyzer limit]
+COMMENT c107 bank ? [NOTE: runtime source]
 COMMENT c10c bank -> 1 (bank=1)
 COMMENT c122 bank ? [NOTE: restored bank]
 COMMENT c135 bank -> 1 (bank=1)
-COMMENT c142 bank ? [WARNING: analyzer limit]
+COMMENT c142 bank ? [NOTE: runtime source]
 COMMENT c145 bank -> 1 (bank=1) via FUN_c130
+BOOKMARK Note c034
+BOOKMARK Note c107
 BOOKMARK Note c122
-BOOKMARK Warning c034
+BOOKMARK Note c142
 BOOKMARK Warning c03a
 BOOKMARK Warning c102
-BOOKMARK Warning c107
 BOOKMARK Warning c130
-BOOKMARK Warning c142
 BOOKMARK Warning c145
 REF c005 -> PRG_LO_B2::8200 READ primary=true
 REF c00b -> PRG_LO_B2::8005 UNCONDITIONAL_CALL primary=true

@@ -816,23 +816,27 @@ final class StoredValueScanner {
 					return stopped(aAcc, oAcc, mask, BankState.unknown(),
 						BankSwitchStrategy.ValueStop.RUNTIME_SOURCE);
 				}
-				// A load from writable memory is DELIBERATELY NOT classified RUNTIME_SOURCE here,
-				// though grm-3ou's description proposes exactly that. Measured 2026-09-02: the rule
-				// is too broad, and it claims territory that is actively being FIXED elsewhere.
-				//
-				// A read of writable memory is honest only if nothing could ever determine what was
-				// stored there. That is true of an untouched RAM cell (nesmirrortest c032/c105 read
-				// $30/$31, which nothing writes) and FALSE of a parameter latch (nesmirrortest c100
-				// reads $59, stored from $8200 twelve bytes earlier; dbz_datach cc2a is a mechanism
-				// write inside helper FUN_cc28 whose argument arrives through memory). This test
-				// cannot tell them apart, and the second kind is precisely grm-hum's population --
-				// "memory-latch sites resolve to unknown", an open P1. Marking it "nothing to fix"
-				// would delete the evidence for the very work in progress, which is the same error
-				// as calling a failed CALL-SITE argument recovery honest.
-				//
-				// RUNTIME_SOURCE is therefore left to the register-clobbering call below, where the
-				// value is gone whatever we do. Widening it needs a real "no static store to this
-				// cell anywhere" test -- filed separately.
+				// A load from writable memory that NOTHING in the image ever stores to (bead
+				// grm-rr5p). "Loads from writable memory" is two opposite situations, and only
+				// one is honest:
+				//   untouched cell   no instruction writes it, so nothing could have determined
+				//                    its content and no analysis could ever pin it down.
+				//                    nesmirrortest's $30/$31/$33 (cells that fixture creates
+				//                    precisely as having "no known content") and banktest2's
+				//                    $0400 are this -- a NOTE is correct.
+				//   parameter latch  written elsewhere and read here. nesmirrortest c102 reads
+				//                    $59, stored at c02d; dbz_datach cc2a is `LDA $59 / STA $8008`
+				//                    inside helper FUN_cc28 with ~300 `STA $59` sites in the PRG.
+				//                    The value is recoverable in principle -- grm-hum's own
+				//                    population -- so it stays ANALYZER_LIMIT, visible as work.
+				// The first attempt (2026-09-02, grm-3ou) used "writable block" alone and could not
+				// tell them apart; re-measured 2026-10-04 it flipped c102 and cc2a wrongly. The
+				// test below is the narrower one: see neverStoredTo. A failed recovery where SOME
+				// store exists -- even one we cannot follow -- remains ANALYZER_LIMIT.
+				if (neverStoredTo(program, target)) {
+					return stopped(aAcc, oAcc, mask, BankState.unknown(),
+						BankSwitchStrategy.ValueStop.RUNTIME_SOURCE);
+				}
 				//
 				// Last resort (grm-4bgh.1): a STACK-RELATIVE RELOAD -- see stackRelativePush's
 				// javadoc for the shape and soundness argument. Restricted to reg == 'A': the push
@@ -1816,6 +1820,130 @@ final class StoredValueScanner {
 		}
 		MemoryBlock block = program.getMemory().getBlock(target);
 		return block != null && block.isVolatile();
+	}
+
+	// ------------------------------------------------------------------
+	// "No static store to this cell" (bead grm-rr5p)
+	// ------------------------------------------------------------------
+
+	/**
+	 * Whether {@code target} is a WRITABLE, non-volatile RAM cell that no instruction in the
+	 * program stores to -- the condition under which a load of it is genuinely
+	 * {@link BankSwitchStrategy.ValueStop#RUNTIME_SOURCE}: nothing in the image could have
+	 * determined what it holds, so no analysis could recover it. A null target is NOT
+	 * qualifying (failing to work out where a load reads from is our limitation).
+	 * <p>
+	 * Three conditions, all required:
+	 * <ol>
+	 * <li>the block is writable and not volatile (a read-only block is a constant ROM byte,
+	 * volatile is memory-mapped I/O -- both handled elsewhere);</li>
+	 * <li>zero {@code isWrite()} references to the cell in the {@code ReferenceManager}
+	 * <em>and</em> no disassembled instruction with a plain (non-indexed, non-indirect) operand
+	 * that stores to it. The second leg exists because a reference is laid down only where
+	 * something created one -- see {@link #writesMemory}'s refless-store note -- so references
+	 * alone would call a plainly written cell untouched;</li>
+	 * <li><b>for a ZERO-PAGE cell, additionally no store instruction anywhere in the program
+	 * with an indexed or indirect operand.</b> Zero page is where 6502 parameter latches live
+	 * and where {@code STA ($10),Y} / {@code STA $00,X} reach cells Ghidra never resolved to a
+	 * concrete address, so absence of a write reference is much weaker evidence there. Outside
+	 * zero page an indirect store is not assumed to reach the cell (the conservative variant
+	 * the bead's measurement supported), but an ABSOLUTE-INDEXED store is: {@code STA base,X}
+	 * can write any of {@code base..base+$FF}, so a cell in that window of any such store is
+	 * treated as stored to. That range is exactly what the operand can address, so it costs
+	 * nothing to honour and closes the obvious hole ({@code STA $03F0,X} reaching
+	 * {@code $0400}).</li>
+	 * </ol>
+	 * Measured 2026-10-04 (bead grm-rr5p, Phase 1): the unqualified "writable block" rule flipped
+	 * 5 fixture sites WARNING to NOTE plus dbz_datach cc2a on the real-ROM tier. This test keeps
+	 * the untouched cells and refuses nesmirrortest c102 ($59) and dbz_datach cc2a, both of which
+	 * have stores.
+	 */
+	static boolean neverStoredTo(Program program, Address target) {
+		if (target == null) {
+			return false;
+		}
+		MemoryBlock block = program.getMemory().getBlock(target);
+		if (block == null || !block.isWrite() || block.isVolatile()) {
+			return false;
+		}
+		for (Reference ref : program.getReferenceManager().getReferencesTo(target)) {
+			if (ref.getReferenceType().isWrite()) {
+				return false;
+			}
+		}
+		StoreCensus census = storeCensus(program);
+		if (census.plainTargets().contains(target)) {
+			return false;
+		}
+		if (target.getOffset() < 0x100 && census.anyUnresolvedStore()) {
+			return false;
+		}
+		for (Address base : census.absIndexedBases()) {
+			if (base.getAddressSpace().equals(target.getAddressSpace()) &&
+				target.getOffset() >= base.getOffset() &&
+				target.getOffset() <= base.getOffset() + 0xFF) {
+				return false; // inside an absolute-indexed store's reachable window
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * What one pass over the program's instructions found out about its stores: the set of
+	 * addresses written by a plain operand or by a write reference, whether ANY store has
+	 * an indexed/indirect operand, and the base of every absolute-indexed store.
+	 */
+	private record StoreCensus(long modNumber, Set<Address> plainTargets,
+			boolean anyUnresolvedStore, List<Address> absIndexedBases) {
+	}
+
+	/**
+	 * One census per program, recomputed only when {@link Program#getModificationNumber()} has
+	 * moved -- so {@link #neverStoredTo} costs one listing pass per analysis state, not one per
+	 * load.
+	 */
+	private static final Map<Program, StoreCensus> STORE_CENSUS =
+		new java.util.WeakHashMap<>();
+
+	private static StoreCensus storeCensus(Program program) {
+		synchronized (STORE_CENSUS) {
+			StoreCensus cached = STORE_CENSUS.get(program);
+			if (cached != null && cached.modNumber() == program.getModificationNumber()) {
+				return cached;
+			}
+			Set<Address> plain = new HashSet<>();
+			boolean unresolved = false;
+			List<Address> absIndexedBases = new ArrayList<>();
+			for (Instruction instr : program.getListing().getInstructions(true)) {
+				String mnem = instr.getMnemonicString().toUpperCase();
+				if (!(MEMORY_WRITERS.contains(mnem) || mnem.equals("STZ") ||
+					mnem.equals("TSB") || mnem.equals("TRB")) || isAccumulatorForm(instr)) {
+					continue;
+				}
+				for (Reference ref : instr.getReferencesFrom()) {
+					if (ref.getReferenceType().isWrite()) {
+						plain.add(ref.getToAddress());
+					}
+				}
+				Address t = plainAbsoluteTarget(instr);
+				if (t != null) {
+					plain.add(t);
+				}
+				else {
+					unresolved = true;
+					if (isAbsoluteIndexed(instr)) {
+						Address base = LoopIdioms.indexedBase(instr);
+						if (base != null) {
+							absIndexedBases.add(base);
+						}
+					}
+				}
+			}
+			StoreCensus census = new StoreCensus(program.getModificationNumber(), plain, unresolved,
+				List.copyOf(absIndexedBases));
+			STORE_CENSUS.put(program, census);
+			return census;
+		}
 	}
 
 	/**

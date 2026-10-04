@@ -2863,10 +2863,13 @@ public class VerifyBankTest extends GhidraScript {
 		criterion("C2", c.contains("bank -> 5 (") && !c.contains("?"),
 			"mask algebra alone resolves bank 5 at 0811: \"" + c + "\"");
 
-		// C3: LDA $0400 / STA $01 is undeterminable -> WARNING bookmark, no comment
-		criterion("C3", hasWarningBookmark(0x0816) && !eol(0x0816).contains("bank ->"),
-			"undeterminable store at 0816: warning=" + hasWarningBookmark(0x0816) +
-				" comment=\"" + eol(0x0816) + "\"");
+		// C3: LDA $0400 / STA $01 is undeterminable. Nothing in the image stores to $0400, so
+		// it is an untouched RAM cell: an HONEST gap (grm-rr5p) -- NOTE bookmark, no warning,
+		// no resolved bank.
+		criterion("C3", hasNoteBookmark(0x0816) && !hasWarningBookmark(0x0816) &&
+			!eol(0x0816).contains("bank ->") && eol(0x0816).contains("NOTE: runtime source"),
+			"undeterminable store at 0816 (untouched RAM $0400): note=" + hasNoteBookmark(0x0816) +
+				" warning=" + hasWarningBookmark(0x0816) + " comment=\"" + eol(0x0816) + "\"");
 
 		// C4: LDA $01 / ORA #$04 / STA $01 with unknown in-state -> partial (CHAREN known)
 		c = eol(0x081C);
@@ -3956,11 +3959,17 @@ public class VerifyBankTest extends GhidraScript {
 			"SAVE_SLOT reload stays unresolved at c102: warning=" + hasWarningBookmark(0xC102) +
 				" eol=\"" + eol(0xC102) + "\"");
 
-		// M6: ANTI-OVERREACH (U3-shaped) -- a RAM cell ($31) with no shadow and no in-block
-		// store at all must ALSO stay unresolved.
-		criterion("M6", hasWarningBookmark(0xC107) && !eol(0xC107).contains("bank ->"),
-			"no-shadow RAM load stays unresolved at c107: warning=" + hasWarningBookmark(0xC107) +
-				" eol=\"" + eol(0xC107) + "\"");
+		// M6: ANTI-OVERREACH (U3-shaped) -- a RAM cell ($31) with no shadow and no store anywhere
+		// in the program must ALSO stay unresolved. Since grm-rr5p it is classified an honest
+		// runtime source (NOTE, not WARNING): nothing could ever have determined its content,
+		// in contrast to M5's $59, which has a store and stays a WARNING. Same for the other
+		// untouched cells $30 (c034) and $33 (c142).
+		criterion("M6", hasNoteBookmark(0xC107) && !hasWarningBookmark(0xC107) &&
+			!eol(0xC107).contains("bank ->") && eol(0xC107).contains("NOTE: runtime source") &&
+			hasNoteBookmark(0xC034) && hasNoteBookmark(0xC142),
+			"untouched RAM loads stay unresolved as honest NOTEs at c107/c034/c142: c107 note=" +
+				hasNoteBookmark(0xC107) + " warning=" + hasWarningBookmark(0xC107) + " eol=\"" +
+				eol(0xC107) + "\"");
 
 		// M7: and load-bearing in the OTHER direction -- FUN_C100's own last switch (c10c, a
 		// plain immediate) still resolves fully, proving M5/M6's declines didn't poison the
