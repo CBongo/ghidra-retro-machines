@@ -43,6 +43,37 @@ bash tools/banktest/realrom-test.sh nominate <romdir>   # board-gap survey
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
+- [ ] **Read rcransom's four lost bank claims against the cartridge** (`grm-vt1i` P2). These are the
+      urgent part of nine claims grm-913 dropped outright rather than weakened, because they are
+      pinned into the rcransom golden blessed at `6c7983c`, so the tier will never show the loss
+      again. Before the bless:
+
+      ```
+      e315  bank -> select=2,prg_mode=0,r6=0,r7=1 via FUN_fea1 [switch-value flow]
+      e323  bank -> select=3,prg_mode=0,r6=0,r7=1 via FUN_fead [switch-value flow]
+      e331  bank -> select=4,prg_mode=0,r6=0,r7=1 via FUN_feb9 [switch-value flow]
+      e33f  bank -> select=5,prg_mode=0,r6=0,r7=1 via FUN_fec5 [switch-value flow]
+      ```
+
+      `select` differs per site, so it was really recovered and is not an `initial_state` echo.
+      Only `r6=0,r7=1` match the seed. The question at each site: is `r6=0,r7=1` actually live
+      there, so the loss is a real regression, or is it unknowable, so the loss is honest? The
+      other five are megaman2 `d097 d09b d09f d0a3`, which read verbatim as MMC1 `initial_state`
+      (probably the weakened-class story), and smb3 `f8cd`, which grm-2pie flagged as the
+      interesting one. It was partly known at base (`r6=0,r7=1?` assumed) and then lost entirely.
+      rcransom is already traced (grm-1fv, and your hand pass on grm-vgod).
+
+      *Coming next, agent-side first:* `grm-nqxt` (helper-argument warnings, 19 helpers, 98 sites).
+      An agent re-runs the inventory uncapped and diffs it against grm-2pie's 29. Only the
+      survivors come here.
+
+- [ ] **Name cv3's trampoline idiom** (`grm-dos9` P3). cv3 (MMC5) reaches almost none of its banked
+      code: 316 overlays, 341 overlay instructions. grm-ulnc's five split-dispatch probes (e.g.
+      `W8000_M3_B2::94cb`) are all undisassembled, with no references. Candidates: unresolved
+      `$5114-$5117` writes, a `prg_mode` question (grm-fick), a far-call trampoline in the fixed
+      bank, or computed dispatch. Watching one transfer into banked code in an emulator should say
+      which, faster than an agent can.
+
 ---
 
 ## 2. Def-use passes on untraced titles
@@ -128,6 +159,27 @@ Blocked on judgment, not effort.
       `generated/*.yaml`, or git submodule + build-time generation. Binds `grm-hb6.6` and `grm-54p`
       too. Decide once.
 
+- [ ] **Homebrew ROMs as committable real-ROM fixtures?** (`grm-5ioo` P4, your idea, 2026-08-22).
+      A ROM the repo may actually commit would give the default gate and CI a real-cartridge
+      signal with no `GRM_ROM_DIR`. It would add to the commercial pins, not replace them. An
+      agent can do the survey: what exists on itch.io, the NESdev forums and GitHub, and whether
+      the license covers the *binary* and not just the source. The rulings are yours: is it worth
+      doing at all, and how is it sourced (committed binaries, submodule, or build from source at
+      gate time, which needs a toolchain the gate cannot assume)?
+
+- [ ] **SPC700 upload-image corpus** (`grm-ced` P3). These are your extracted images, ground truth
+      for grm-1.7.3's extractor. The Secret of Mana sample is single-block, so the two most
+      valuable additions are a game with **multiple IPL uploads** and a game whose **entry point
+      is not the first block's destination**. Two open questions on the bead, neither blocking:
+      is the `size/dest/data … size=0 → entry` container your own convention from
+      game-music-extraction or a named third-party format? And are the images committed anywhere
+      durable, so a test can hash-pin one?
+
+*Deferred, so not open here: packaging and release.* The GitHub Actions release matrix (`grm-9ut`)
+and the end-user README (`grm-fy0`) wait together for the general packaging/release push. When
+that resumes, `grm-9ut` will need your rulings on any post-12.0 API dependency (work around it or
+raise the version floor).
+
 ---
 
 ## 5. Upstream (needs your GitHub identity)
@@ -156,6 +208,18 @@ re-measurement and branch prep land), [#9656](https://github.com/NationalSecurit
 (6502 flags, `grm-ef46`), [ghidra-snes#6](https://github.com/joshleaves/ghidra-snes/pull/6)
 (65816 semantics, `grm-9nxj.7`), [deity-informant#359](https://github.com/anarkiwi/deity-informant/pull/359)
 (6510 illegal opcodes, `grm-c9hv`). Check them before re-deriving anything they cover.
+
+- [ ] **Ask SingleStepTests/65816 to add a LICENSE** (`grm-9nxj.8` P3). The repo has no LICENSE
+  file and no licensing text in its README. We vendored its vector sample on your 2026-09-04
+  ruling, on the inference that it shares the license of its MIT sibling (SingleStepTests/spc700),
+  and `NOTICE` says plainly that this is an inference. An issue asking for a LICENSE file is
+  enough, and the spc700 repo's MIT text is the obvious one to suggest. When a grant lands, update
+  `NOTICE` and close the bead.
+
+- [ ] **Optional: offer the SPC700 semantic fixes to qwertymodo/SPCdra** (`grm-c9d.6` P4). Your
+  own framing, 2026-08-16: nice to have, not a requirement. Closing it as won't-do is fine if our
+  copy has diverged too far. The bead lists each fix separately. An agent can cut the branches.
+  Opening the PRs is yours.
 
 - [ ] **Fall-through override into an overlay space is accepted by the listing and fatal to the
   decompiler — ask upstream whether that is deliberate.** (`grm-p3dy`, ruled 2026-09-21: ask
