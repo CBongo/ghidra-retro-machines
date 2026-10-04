@@ -198,6 +198,7 @@ acting on it; the "yours?" column is the only part that asks anything of you.
 | [ghidra#9513](https://github.com/NationalSecurityAgency/ghidra/pull/9513) `setMinStoreLoadOffset` (`grm-6xh`) | **merged** 2026-08-20, milestone 12.2 | — | No. Done |
 | [ghidra-snes#6](https://github.com/joshleaves/ghidra-snes/pull/6) seven 65816 defects (`grm-9nxj.7`) | open PR, mergeable, no comments or reviews | opened 2026-09-21 | No, waiting on the maintainer |
 | [deity-informant#359](https://github.com/anarkiwi/deity-informant/pull/359) 6510 illegal-opcode SLEIGH (`grm-c9hv`) | open PR, no comments or reviews | opened 2026-09-19 | No, waiting on the maintainer |
+| [SingleStepTests/65816#9](https://github.com/SingleStepTests/65816/issues/9) license request (`grm-9nxj.8`) | open, filed by a third party asking for MIT; no maintainer reply | your supporting comment 2026-09-19 | No, waiting on the maintainer. When a grant lands, update `NOTICE` and close the bead |
 | [ghidra discussion #9349](https://github.com/NationalSecurityAgency/ghidra/discussions/9349) banked-memory RFC | open, **zero replies** | opened 2026-07-05 | Addendum post rides with the fall-through issue below (deferred) |
 | Fall-through-into-overlay issue (`grm-p3dy`) | **not posted**; draft on the bead | deferred 2026-10-04 | Not until a Ghidra release carries GP-7010, second item below |
 
@@ -207,14 +208,8 @@ acting on it; the "yours?" column is the only part that asks anything of you.
 re-measurement and branch prep land), [#9656](https://github.com/NationalSecurityAgency/ghidra/pull/9656)
 (6502 flags, `grm-ef46`), [ghidra-snes#6](https://github.com/joshleaves/ghidra-snes/pull/6)
 (65816 semantics, `grm-9nxj.7`), [deity-informant#359](https://github.com/anarkiwi/deity-informant/pull/359)
-(6510 illegal opcodes, `grm-c9hv`). Check them before re-deriving anything they cover.
-
-- [ ] **Ask SingleStepTests/65816 to add a LICENSE** (`grm-9nxj.8` P3). The repo has no LICENSE
-  file and no licensing text in its README. We vendored its vector sample on your 2026-09-04
-  ruling, on the inference that it shares the license of its MIT sibling (SingleStepTests/spc700),
-  and `NOTICE` says plainly that this is an inference. An issue asking for a LICENSE file is
-  enough, and the spc700 repo's MIT text is the obvious one to suggest. When a grant lands, update
-  `NOTICE` and close the bead.
+(6510 illegal opcodes, `grm-c9hv`), [SingleStepTests/65816#9](https://github.com/SingleStepTests/65816/issues/9)
+(65816 vector license, `grm-9nxj.8`). Check them before re-deriving anything they cover.
 
 - [ ] **Optional: offer the SPC700 semantic fixes to qwertymodo/SPCdra** (`grm-c9d.6` P4). Your
   own framing, 2026-08-16: nice to have, not a requirement. Closing it as won't-do is fine if our
