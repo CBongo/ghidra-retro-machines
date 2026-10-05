@@ -120,7 +120,7 @@ REALROM sample.ref 8108 -> W8000_M0_B22::810d CONDITIONAL_JUMP primary=true
 REALROM sample.ref 810a -> W8000_M0_B22::81ae UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 810d -> W8000_M0_B22::8a40 READ primary=true
 REALROM sample.ref.truncated 25 of 175
-REALROM sample.warn c0b8 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ff41, which this analyzer models with no argument register, so no caller argument was sought at this call site; its effect is not resolved here
+REALROM sample.warn c0b8 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ff41 whose bank argument could not be recovered at this call site
 REALROM sample.warn c0bd [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn ff49 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn ff4e [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)

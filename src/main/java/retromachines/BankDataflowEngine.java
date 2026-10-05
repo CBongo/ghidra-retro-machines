@@ -1109,6 +1109,11 @@ final class BankDataflowEngine {
 		 * or it was composed through a tail call. {@code recoverCallArgument} short-circuits on
 		 * that before consulting any caller state. The analyzer's wording names only the null
 		 * register, never which of these caused it.
+		 * <p>
+		 * NOT reported for a per-site strategy whose sites merely store from different registers
+		 * (grm-fekc, MMC3's {@code STY $8000 / STA $8001}): that model is recovered site by site
+		 * under the caller's registers, so recovery does run -- see
+		 * {@link HelperDiscovery.HelperModel#recoversPerSiteWithoutArgReg}.
 		 */
 		NO_ARGUMENT_REGISTER,
 		/**
@@ -1119,7 +1124,7 @@ final class BankDataflowEngine {
 		RE_DERIVED_IN_HELPER;
 
 		static ArgumentSought of(HelperModel helper) {
-			if (helper.argReg() == null) {
+			if (helper.argReg() == null && !helper.recoversPerSiteWithoutArgReg()) {
 				return NO_ARGUMENT_REGISTER;
 			}
 			if (helper.strategy() != null && !helper.strategy().consumesHelperArgument()) {

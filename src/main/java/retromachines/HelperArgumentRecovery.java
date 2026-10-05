@@ -350,6 +350,10 @@ final class HelperArgumentRecovery {
 			return new CallEffect(BankState.unknown(), 0);
 		}
 		Character reg = helper.argReg();
+		if (helper.recoversPerSiteWithoutArgReg()) {
+			return recoverPerSiteWithoutArgReg(program, callInstr, helper, callSiteIn, envCache,
+				path, oracle, crossBlockMemo);
+		}
 		if (reg == null) {
 			// grm-5l14: a null argReg means HelperDiscovery.findHelpers found no plain
 			// STA/STX/STY to attribute the argument to -- historically read as "no derivable
@@ -540,10 +544,10 @@ final class HelperArgumentRecovery {
 		// The argument-bearing deposit, computed exactly as it was before grm-4bgh.5 -- this
 		// is both the answer for a single-site helper and, for a folded one, the deposit whose
 		// emptiness decides whether this CALL SITE gets a warning. See foldDeposits.
-		BankSwitchStrategy.HelperDeposit primary = helper.strategy()
-				.depositHelperArgument(program, switchSite, local, localIn, stateMask, callerRegs);
-		BankSwitchStrategy.HelperDeposit deposit = foldDeposits(program, helper, primary, localIn,
-			stateMask, callerRegs);
+		Fold fold = foldDeposits(program, helper, switchSite, local, localIn, stateMask,
+			callerRegs);
+		BankSwitchStrategy.HelperDeposit primary = fold.primary();
+		BankSwitchStrategy.HelperDeposit deposit = fold.deposit();
 		BankState positionedValue = position(deposit.value(), helper.lsb(), helper.effectMask());
 		int positionedOwnedMask = (deposit.ownedMask() << helper.lsb()) & helper.effectMask();
 		boolean argumentResolved = primary.value().knownMask() != 0;
@@ -579,6 +583,61 @@ final class HelperArgumentRecovery {
 		return new CallEffect(positionedValue, positionedOwnedMask,
 			argumentResolved, definitelyNoInboundArgument, false, restoreCell,
 			readBack);
+	}
+
+	/**
+	 * {@link #recoverCallArgument} for a model with no argument register whose strategy deposits
+	 * per site (bead grm-fekc; see {@link HelperModel#recoversPerSiteWithoutArgReg}).
+	 * <p>
+	 * <b>No face-value argument is offered to any site</b>, the switch site included. With no
+	 * {@code argReg} there is no register whose caller-side value could honestly be called the
+	 * argument, and guessing one is exactly the stale-argument hazard grm-mu7 guards: tmnt3's
+	 * {@code FUN_8705} stores {@code A} at {@code $870C} and {@code A+1} at {@code $8718}, so the
+	 * caller's raw {@code A} offered to the max-address site would deposit the wrong R6. Every
+	 * site instead re-derives its stored byte under {@code callerRegs} -- the
+	 * {@code SelectDataBankSwitchStrategy} mini-inline (grm-4bgh.4), which already walks
+	 * {@code CLC / ADC #$01} -- and {@link #foldDeposits} combines them under its usual
+	 * unconditional-sites guard.
+	 * <p>
+	 * The read-back, reload and inbound-cell refinements of the register path are not attempted:
+	 * each is defined over a named argument register. {@code argumentResolved} follows
+	 * {@code primary} exactly as on that path, so a call whose switch site still resolves nothing
+	 * keeps its warning.
+	 */
+	private static CallEffect recoverPerSiteWithoutArgReg(Program program, Instruction callInstr,
+			HelperModel helper, BankState callSiteIn, Map<CallSiteRegKey, RegisterEnv> envCache,
+			RegisterEnv path, StateOracle oracle,
+			Map<Address, StoredValueScanner.CrossBlockProof> crossBlockMemo) {
+		Instruction switchSite = program.getListing().getInstructionAt(helper.switchSite());
+		if (switchSite == null) {
+			return new CallEffect(BankState.unknown(), helper.effectMask());
+		}
+		int stateMask = helper.effectMask() >>> helper.lsb();
+		BankState localIn = toFieldLocal(callSiteIn, helper.lsb(), helper.effectMask());
+		OracleHooks oracleHooks = oracle == null ? null
+				: new OracleHooks(callerHooksFor(helper), oracle, helper.lsb(), helper.effectMask(),
+					helper.strategy().observedMirrors(), crossBlockMemo);
+		StoredValueScanner.Hooks callerHooks =
+			oracleHooks == null ? callerHooksFor(helper) : oracleHooks;
+		Address scanStop = insideHelperEntry(helper);
+		CallSiteRegKey key =
+			new CallSiteRegKey(callInstr.getMinAddress(), localIn, path.armPredecessors());
+		RegisterEnv callerRegs = envCache.get(key);
+		if (callerRegs == null) {
+			int before = oracleHooks == null ? 0 : oracleHooks.consultations;
+			callerRegs = callSiteRegisters(program, callInstr, scanStop,
+				crossableWrapperJoin(program, helper.firstSite(), scanStop), helper, localIn,
+				path, callerHooks);
+			if (oracleHooks == null || oracleHooks.consultations == before) {
+				envCache.put(key, callerRegs);
+			}
+		}
+		Fold fold = foldDeposits(program, helper, switchSite, BankState.unknown(), localIn,
+			stateMask, callerRegs);
+		BankSwitchStrategy.HelperDeposit deposit = fold.deposit();
+		return new CallEffect(position(deposit.value(), helper.lsb(), helper.effectMask()),
+			(deposit.ownedMask() << helper.lsb()) & helper.effectMask(),
+			fold.primary().value().knownMask() != 0, false);
 	}
 
 	/** Whether {@code cell} is a ROM-identifying byte with a NON-identity encoding in
@@ -674,45 +733,69 @@ final class HelperArgumentRecovery {
 	 * The rule also makes the fold a strict superset of the old behaviour at {@code switchSite}
 	 * itself: that site's deposit is byte-identical to what it was.
 	 * <p>
-	 * {@code inState} ({@code localIn}) IS the same for every site: it is the state flowing into
-	 * the CALL, which no site changes. Threading each site's accumulated result into the next as
-	 * its {@code inState} was considered and not done -- the one thing it would buy for
-	 * select-data (a data write routed by a select the same helper set) is already answered per
-	 * site, and better, by {@code selectSuppliedInsideHelper} reading the helper's own body.
+	 * <b>Each site's {@code inState} is THREADED: the call's {@code localIn} overwritten by
+	 * every earlier site's deposit</b> (bead grm-fekc). This was once left out on the grounds
+	 * that the one thing it buys -- a data write routed by a select the same helper set -- is
+	 * already answered by {@code selectSuppliedInsideHelper}. It buys a second thing that is not:
+	 * a site whose VALUE reads a bank mirror. nesmmc3mirrortest's CrossCopy sets r7 = 4 and then
+	 * commits {@code LDA $A100} (R7's identifying byte) into r6; evaluated against the call's
+	 * in-state, that read answers whatever r7 was at the CALL (3), not the 4 the helper itself
+	 * latched two writes earlier. An unresolved earlier deposit threads as unknown on the bits it
+	 * owns, so threading never manufactures knowledge the unthreaded state lacked on those bits.
+	 * {@code primary} is re-evaluated under the threaded state too, still the only site offered
+	 * {@code argValue}; the unthreaded deposit is used only when nothing precedes it.
 	 */
-	private static BankSwitchStrategy.HelperDeposit foldDeposits(Program program,
-			HelperModel helper, BankSwitchStrategy.HelperDeposit primary, BankState localIn,
-			int stateMask, RegisterEnv callerRegs) {
+	private static Fold foldDeposits(Program program, HelperModel helper, Instruction switchSite,
+			BankState argValue, BankState localIn, int stateMask, RegisterEnv callerRegs) {
 		BankSwitchStrategy strategy = helper.strategy();
+		BankSwitchStrategy.HelperDeposit primary = strategy.depositHelperArgument(program,
+			switchSite, argValue, localIn, stateMask, callerRegs);
 		List<Address> sites = helper.sites();
 		if (!strategy.depositsPerSite() || sites.size() < 2
 				|| !sitesRunUnconditionally(program, sites)) {
-			return primary;
+			return new Fold(primary, primary);
 		}
 		Listing listing = program.getListing();
-		BankState value = primary.value();
-		int owned = primary.ownedMask();
+		BankState value = BankState.unknown();
+		int owned = 0;
+		// primary is folded in at ITS OWN position in address order, not used as the base the
+		// other sites are laid over (grm-fekc). switchSite is the max-address site, so seeding
+		// with it let every EARLIER site overwrite it -- invisible on rcransom's fed1, whose
+		// sites write disjoint fields, but wrong on tmnt3's FUN_919e: R7 = #$3a at $91b7, then
+		// R7 = the saved $a000 byte at $91c7, and the stale $3a won.
 		for (Address siteAddr : sites) {
+			BankState threadedIn = overwrite(localIn, value, owned);
+			BankSwitchStrategy.HelperDeposit deposit;
 			if (siteAddr.equals(helper.switchSite())) {
-				continue; // already folded in as primary, and the only site offered argValue
+				// the only site offered argValue
+				if (owned != 0) {
+					primary = strategy.depositHelperArgument(program, switchSite, argValue,
+						threadedIn, stateMask, callerRegs);
+				}
+				deposit = primary;
 			}
-			Instruction site = listing.getInstructionAt(siteAddr);
-			if (site == null) {
-				// No instruction to interpret. Cannot happen for a site findHelpers recorded,
-				// but claiming a field on the strength of an address alone is exactly the kind
-				// of guess this engine refuses: skip it, owning nothing.
-				continue;
+			else {
+				Instruction site = listing.getInstructionAt(siteAddr);
+				if (site == null) {
+					// No instruction to interpret. Cannot happen for a site findHelpers
+					// recorded, but claiming a field on the strength of an address alone is
+					// exactly the kind of guess this engine refuses: skip it, owning nothing.
+					continue;
+				}
+				deposit = strategy.depositHelperArgument(program, site, BankState.unknown(),
+					threadedIn, stateMask, callerRegs);
 			}
-			BankSwitchStrategy.HelperDeposit deposit = strategy.depositHelperArgument(program,
-				site, BankState.unknown(), localIn, stateMask, callerRegs);
 			int siteOwned = deposit.ownedMask();
 			BankState scoped = new BankState(deposit.value().knownMask() & siteOwned,
 				deposit.value().bits() & siteOwned);
 			value = overwrite(value, scoped, siteOwned);
 			owned |= siteOwned;
 		}
-		return new BankSwitchStrategy.HelperDeposit(owned, value);
+		return new Fold(new BankSwitchStrategy.HelperDeposit(owned, value), primary);
 	}
+
+	/** {@link #foldDeposits}' result: the folded deposit, and the switch-site deposit that decides the warning. */
+	record Fold(BankSwitchStrategy.HelperDeposit deposit, BankSwitchStrategy.HelperDeposit primary) {}
 
 	/**
 	 * Whether every one of {@code sites} runs on every call that reaches the first of them --

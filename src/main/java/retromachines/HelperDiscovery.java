@@ -1450,6 +1450,26 @@ final class HelperDiscovery {
 		}
 
 		/**
+		 * Whether this model has no argument register yet can still be recovered call site by
+		 * call site, because its strategy re-evaluates each recognized site under the caller's
+		 * registers (bead grm-fekc).
+		 * <p>
+		 * {@link #findHelpers} nulls {@code argReg} when one mechanism's sites store from
+		 * different registers. For a {@link BankSwitchStrategy#depositsPerSite} mechanism that
+		 * is the ORDINARY shape, not a degrade: an MMC3 helper writes its select from a
+		 * constant in one register and its data from the argument in another (tmnt3's
+		 * {@code FUN_8705}: {@code LDY #$47 / STY $8000 / STA $8001}). No single register
+		 * names "the argument" there, but none is needed -- every site earns its value from
+		 * {@code callerRegs} in {@code HelperArgumentRecovery.foldDeposits}, and the
+		 * face-value argument is simply not offered. The multi-mechanism union and the
+		 * tail-composed model both null {@code strategy} and so stay excluded.
+		 */
+		boolean recoversPerSiteWithoutArgReg() {
+			return argReg == null && strategy != null && strategy.depositsPerSite()
+					&& switchSite != null;
+		}
+
+		/**
 		 * This record as it was before bead grm-4bgh.5 added {@code sites}: a model whose
 		 * recognized-site set is just its {@code switchSite}. Every construction site that
 		 * genuinely summarizes one site -- the first site seen for a function, the
