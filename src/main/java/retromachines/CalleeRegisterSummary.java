@@ -235,6 +235,52 @@ final class CalleeRegisterSummary {
 		}
 	}
 
+	/** Per-program memo cache for consumers with no run-scoped holder (bead grm-mej.13). */
+	private static final Map<Program, long[]> CACHE_MOD = new java.util.WeakHashMap<>();
+	private static final Map<Program, Memo> CACHE_MEMO = new java.util.WeakHashMap<>();
+
+	/**
+	 * A {@link Memo} shared by every caller asking about {@code program}, discarded whenever
+	 * {@link Program#getModificationNumber()} has moved (any listing change may change a summary).
+	 * Summaries are state-free (they read only the listing), so sharing one across scans is sound.
+	 */
+	static synchronized Memo memoFor(Program program) {
+		long mod = program.getModificationNumber();
+		long[] seen = CACHE_MOD.get(program);
+		Memo m = CACHE_MEMO.get(program);
+		if (m == null || seen == null || seen[0] != mod) {
+			m = new Memo();
+			CACHE_MEMO.put(program, m);
+			CACHE_MOD.put(program, new long[] { mod });
+		}
+		return m;
+	}
+
+	/**
+	 * The summary of the routine a {@code JSR} instruction calls, or {@code null} when there is
+	 * nothing to trust: not a plain call, not exactly one resolved direct target, the target is in
+	 * a banked window other than the call's own block (the window's occupant is a bank-state
+	 * question this class does not ask), the target is not disassembled, or the summary abandons.
+	 */
+	static synchronized Summary summarizeCallSite(Program program, Instruction call, Memo memo) {
+		if (!call.getFlowType().isCall() || call.getFlowType().isComputed() ||
+			call.getFlowType().isConditional()) {
+			return null;
+		}
+		Address[] flows = call.getFlows();
+		if (flows == null || flows.length != 1) {
+			return null;
+		}
+		Runner r = new Runner(program, memo);
+		Address target = r.resolveTarget(call, new Varnode(flows[0], 1));
+		if (program.getListing().getInstructionAt(target) == null ||
+			r.bankedFromOutside(call, target)) {
+			return null;
+		}
+		Summary s = r.summarizeEntry(target).summary;
+		return s.isAbandoned() ? null : s;
+	}
+
 	/** Summarizes the routine entered at {@code entry}. Never throws on odd input; abandons. */
 	static Summary summarize(Program program, Address entry, Memo memo) {
 		return new Runner(program, memo).summarizeEntry(entry).summary;

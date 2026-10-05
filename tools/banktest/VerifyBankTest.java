@@ -2879,9 +2879,12 @@ public class VerifyBankTest extends GhidraScript {
 				!hasWarningBookmark(0x081C),
 			"partial-knowledge comment, no warning, at 081c: \"" + c + "\"");
 
-		// C5: LDA #$35 / JSR sub / STA $01 -> call clobbers the immediate -> WARNING
-		criterion("C5", hasWarningBookmark(0x0823),
-			"call-clobber store at 0823: warning=" + hasWarningBookmark(0x0823));
+		// C5: LDA #$35 / JSR sub / STA $01. `sub` is a bare RTS, so CalleeRegisterSummary proves A
+		// preserved and the immediate survives the call -> bank -> 5 (grm-mej.13; before that any
+		// call was assumed to clobber the register and this was a WARNING).
+		criterion("C5", !hasWarningBookmark(0x0823) && eol(0x0823).contains("bank -> 5 ("),
+			"preserving-call store at 0823: warning=" + hasWarningBookmark(0x0823) +
+				" comment=\"" + eol(0x0823) + "\"");
 
 		// C6: backward scan from the STA at 082d crosses the intervening STX $01, so the
 		// base must NOT inherit in-state (which would yield fully-known "bank -> 6 (");

@@ -70,7 +70,7 @@ BANKTEST = [
 # 081C  85 01     STA $01      ; C4: partial -> bank -> 7? [known: CHAREN=1; ...]
 # 081E  A9 35     LDA #$35
 # 0820  20 43 08  JSR $0843    ; sub
-# 0823  85 01     STA $01      ; C5: call clobbers pending immediate -> WARNING
+# 0823  85 01     STA $01      ; C5: sub (bare RTS) preserves A -> bank -> 5 (grm-mej.13)
 # 0825  A5 01     LDA $01
 # 0827  A2 34     LDX #$34
 # 0829  86 01     STX $01      ; bank -> 4 (STX immediate, fully known)

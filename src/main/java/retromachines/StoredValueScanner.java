@@ -598,6 +598,15 @@ final class StoredValueScanner {
 		// strategy's tracked state were unknown, which it effectively is. The parameter itself
 		// stays untouched so the withdrawal cannot leak back to a caller.
 		BankState inState = inStateAtStore;
+		// grm-mej.13: true once the walk has stepped back over a register-preserving call with no
+		// state available at that call. The register's value still survives the call, but the
+		// BANK may not have -- the callee can switch it -- so inState no longer describes anything
+		// read before the call. A blind walk may still finish on a state-free definition (an
+		// immediate, a transfer, an immediate AND/ORA); every read that would consult inState
+		// stops with today's ANALYZER_LIMIT instead, WITHOUT asking the hook, so no strategy probe
+		// records our blindness as a property of the game (the ironsword rule, see
+		// resumeStateAfterPairing). Cleared only by a resume that obtains a real state.
+		boolean stateBlind = false;
 		// The last call a PHA/PLA pairing or stack-relative reload carried the tracked byte
 		// across (bead grm-yflf) -- reported in a RESTORED_BANK stop's ReadBack, decided on by
 		// nothing. Null until a resume crosses one.
@@ -668,6 +677,11 @@ final class StoredValueScanner {
 			i++;
 
 			String mnem = prev.getMnemonicString().toUpperCase();
+
+			if (stateBlind && (mnem.equals("AND") || mnem.equals("ORA") || mnem.equals(loadMnemonic))
+					&& !isImmediate(prev)) {
+				return stopped(aAcc, oAcc, mask, BankState.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
+			}
 
 			if (reg == 'A' && mnem.equals("AND")) {
 				Integer imm = operandByte(program, prev, inState, hooks, env, budget, depth);
@@ -855,6 +869,7 @@ final class StoredValueScanner {
 					// (grm-mej.3 increment 3). Same rules as the PLA case below, applied HERE
 					// because the walk that resumes from the push is this one.
 					BankState resumed = resumeStateAfterPairing(reload, pha, hooks, inState);
+					stateBlind = stateBlind && !(reload.crossedCall || reload.crossedBlock);
 					if (pha != null && resumed != null) {
 						inState = resumed;
 						if (reload.crossedCall) {
@@ -903,6 +918,7 @@ final class StoredValueScanner {
 				// (a mechanism write, a call, a control-flow join) lands on THIS walk's in-state
 				// -- see resumeStateAfterPairing.
 				BankState resumed = resumeStateAfterPairing(pairing, pha, hooks, inState);
+				stateBlind = stateBlind && !(pairing.crossedCall || pairing.crossedBlock);
 				if (pha == null || resumed == null) {
 					return stopped(aAcc, oAcc, mask, BankState.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 				}
@@ -970,7 +986,26 @@ final class StoredValueScanner {
 				}
 				return stopped(aAcc, oAcc, mask, BankState.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 			}
+			if (prev.getFlowType().isCall() && calleePreserves(program, prev, reg)) {
+				// grm-mej.13: the register survives the call; the bank state need not. Resume with
+				// the state AT the call (before it ran), exactly as a call-crossing pairing does
+				// (resumeStateAfterPairing); with none available, go blind (see stateBlind).
+				BankState atCall = hooks.stateAt(prev.getMinAddress());
+				if (atCall != null) {
+					inState = atCall;
+					stateBlind = false;
+				}
+				else {
+					stateBlind = true;
+				}
+				cur = prev;
+				continue;
+			}
 			if (prev.getFlowType().isCall()) {
+				// (grm-mej.13: a call the callee provably leaves `reg` untouched across is
+				// stepped over -- see calleePreserves. Everything below is the unchanged
+				// clobber path.)
+				//
 				// NOT RUNTIME_SOURCE, though grm-3ou's description proposes it. banktest2's C5
 				// fixture is the counter-example: LDA #$35 / JSR sub / STA $01 -- the value WAS
 				// known and we lost it only because this scanner conservatively assumes any call
@@ -2392,6 +2427,32 @@ final class StoredValueScanner {
 					: Mos6502ConstantSemantics.INSTANCE;
 	}
 
+	/**
+	 * Whether the routine {@code call} ({@code JSR}) invokes provably returns register {@code reg}
+	 * unchanged (bead grm-mej.13), so a backward walk resolving {@code reg} may step over it
+	 * instead of declaring it clobbered. Answers {@code false} -- today's behaviour -- for anything
+	 * not a plain direct call to one resolved, disassembled, non-banked-from-outside target, for
+	 * an abandoned summary, and for any register other than A/X/Y.
+	 * <p>
+	 * ASSUMPTIONS RELIED ON (named in {@link CalleeRegisterSummary}): a {@code true} answer rests on
+	 * {@code StackDiscipline.CROSSED_CALL_IS_STACK_NEUTRAL} (owner ruling O4) whenever the callee
+	 * itself contains a call, and on {@code StackAssumption.INDIRECT_STORES_DO_NOT_WRITE_STACK_FRAME}
+	 * (O3) when it contains an indirect store; both are recorded on the {@code Summary} returned
+	 * by {@link CalleeRegisterSummary#summarizeCallSite}. This concerns only the REGISTER VALUE;
+	 * the bank STATE across the call is the engine's separate business. The summary memo is the
+	 * per-program one ({@link CalleeRegisterSummary#memoFor}) because these walks run from hooks
+	 * with no run-scoped holder.
+	 */
+	private static boolean calleePreserves(Program program, Instruction call, char reg) {
+		char r = Character.toUpperCase(reg);
+		if (r != 'A' && r != 'X' && r != 'Y') {
+			return false;
+		}
+		CalleeRegisterSummary.Summary sum = CalleeRegisterSummary.summarizeCallSite(program, call,
+			CalleeRegisterSummary.memoFor(program));
+		return sum != null && sum.preserves(r);
+	}
+
 	/** {@link #constantRegisterValue}'s walk, over any {@link ConstantSemantics.Loc}. */
 	private static Integer constantValue(Program program, Instruction at,
 			ConstantSemantics.Loc loc, Hooks hooks, RegisterEnv env, Budget budget, int depth) {
@@ -2438,8 +2499,11 @@ final class StoredValueScanner {
 				return semantics.after(prev, loc,
 					new WalkInputs(program, prev, hooks, env, budget, depth, MAX_BACKWARD_SCAN - i));
 			}
-			if (prev.getFlowType().isCall()) {
-				return null; // a subroutine may clobber any register, and returns any carry
+			if (prev.getFlowType().isCall() &&
+				!(loc.isRegister() && calleePreserves(program, prev, loc.register()))) {
+				// a subroutine may clobber any register, and returns any carry -- unless
+				// (grm-mej.13) a callee summary proves THIS register preserved; flags never are
+				return null;
 			}
 			cur = prev;
 		}
