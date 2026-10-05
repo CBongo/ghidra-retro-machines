@@ -57,6 +57,12 @@ Each is minutes of work and settles something specific. Highest value per unit e
       overwritten mid-span and these two warnings can never become sound restores, so
       `grm-zsxz` loses its only confirmed customer and needs re-scoping. A yes/no plus the path
       (or "dispatch targets are X, none reach e692") is enough.
+      *Context (agent, 2026-10-05, listing-bounded):* the Z2 writer census found no `$D3` write,
+      indirect jump, return-dispatch, or banked-window call in `e953`'s or `eb51`'s closure — but
+      only as far as Ghidra's flow refs reach, so a dispatch Ghidra never resolved would be
+      invisible. The proof actually stops earlier, at `e9bf JSR ea3a`: `ea3a` calls the switch
+      helper `e61b`, whose deferred-frame handler (`eb98`) reaches `def4 JSR $BFE8` into the
+      banked window.
 
 ---
 
