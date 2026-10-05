@@ -71,8 +71,10 @@ import ghidra.program.model.mem.MemoryBlock;
  * answered from tracked in-state. An {@link Kind#INPUT} or {@link Kind#SAVE_SLOT} cell holds a
  * bank that is deliberately NOT the live one -- TMNT saves the current bank precisely because it
  * is about to change it -- so resolving one from in-state would ship a confidently wrong bank,
- * which this engine rates strictly worse than no bank. They are carried for grm-zsxz's
- * cross-block forwarding (split out of grm-mej.3) and grm-mej.4's labelling to consume.
+ * which this engine rates strictly worse than no bank. They are carried for grm-mej.4's
+ * labelling; grm-zsxz's
+ * save-slot forwarding (StoredValueScanner.saveSlotForwarded) recovers such a cell's value from
+ * the store that filled it, without consulting the kind at all.
  */
 public final class BankMirrors {
 
@@ -1348,8 +1350,8 @@ public final class BankMirrors {
 		 * confidently wrong answer is a fix rather than a regression. It does mean this route's
 		 * blast radius has to be measured on real ROMs and not assumed away.
 		 * <p>
-		 * Otherwise this exists so that grm-zsxz's cross-block forwarding and grm-mej.4's labelling
-		 * are handed the right KIND rather than having to re-derive it -- and, more immediately, so
+		 * Otherwise this exists so that grm-mej.4's labelling (and any reader of the mirror set)
+		 * is handed the right KIND rather than having to re-derive it -- and, more immediately, so
 		 * that a cell carrying both roles cannot be silently flattened into the request half.
 		 */
 		void scanSaveSlotCopies(Program program) {

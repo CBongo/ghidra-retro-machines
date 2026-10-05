@@ -317,8 +317,9 @@ final class BankDataflowEngine {
 		// The cross-block PHA/PLA pairing proof (bead grm-mej.3 increment X1) is STATE-FREE -- a
 		// function of the listing and control flow alone, like armCache above -- so it too is
 		// computed once per PLA address for the whole run and handed to every OracleHooks that
-		// might walk through it.
-		Map<Address, StoredValueScanner.CrossBlockProof> crossBlockProofMemo = new HashMap<>();
+		// might walk through it. The same holder carries grm-zsxz Z2's save-slot proofs and
+		// callee-closure writer censuses, which are state-free for the same reason.
+		StoredValueScanner.ProofMemo crossBlockProofMemo = new StoredValueScanner.ProofMemo();
 		ForkBudget budget = new ForkBudget(program);
 
 		Set<Address> seeds = new LinkedHashSet<>();
@@ -551,7 +552,7 @@ final class BankDataflowEngine {
 			Map<Address, Optional<List<Arm>>> armCache, ForkBudget budget, CallTally call,
 			Map<Address, LinkedHashMap<PathId, BankState>> stateIn,
 			Map<Address, Set<Address>> stateDependents,
-			Map<Address, StoredValueScanner.CrossBlockProof> crossBlockProofMemo,
+			StoredValueScanner.ProofMemo crossBlockProofMemo,
 			BankStackBrackets.Claims bracketClaims) {
 		Address addr = instr.getMinAddress();
 		// The recording StateOracle for THIS call (grm-mej.3 increment 3): answers the merged

@@ -292,6 +292,16 @@ final class StoredValueScanner {
 		}
 
 		/**
+		 * The per-run memo of {@link #saveSlotForwarded} proofs and callee-closure writer censuses
+		 * (bead grm-zsxz increment Z2), or {@code null} (the default) to compute fresh every time.
+		 * Both are STATE-FREE -- functions of the listing, its references and the memory map --
+		 * so a whole run may share them, for the same reason as {@link #crossBlockProofMemo}.
+		 */
+		default ProofMemo saveSlotMemo() {
+			return null;
+		}
+
+		/**
 		 * Whether the ABSOLUTE-INDEXED table {@code loadInstr} reads, based at {@code base}, is an
 		 * IDENTITY TABLE over this strategy's tracked field -- {@code table[v] == v} for every
 		 * {@code v} in {@code [0, fieldMask]}, after this mechanism's own shift/mask extraction and
@@ -348,6 +358,44 @@ final class StoredValueScanner {
 	}
 
 	/**
+	 * The per-run memo of the scanner's STATE-FREE proofs (bead grm-zsxz increment Z2): X1's
+	 * cross-block pairing proofs (keyed by {@code PLA}), and Z2's save-slot proofs and
+	 * callee-closure writer censuses. One instance per dataflow run, created by the engine and
+	 * threaded to {@code HelperArgumentRecovery}'s {@code OracleHooks}.
+	 */
+	static final class ProofMemo {
+
+		final Map<Address, CrossBlockProof> crossBlock = new HashMap<>();
+
+		final Map<SlotKey, SlotProof> slotProofs = new HashMap<>();
+
+		final Map<CensusKey, CensusResult> censuses = new HashMap<>();
+	}
+
+	/** {@link ProofMemo} key for a save-slot proof: the load, the slot's physical offset, and the
+	 *  env entry the search abandons at ({@code null} for none). */
+	record SlotKey(Address load, long cellOffset, Address envEntry) {}
+
+	/** A save-slot proof: the single store every path reaches ({@code null} = declined), and
+	 *  whether {@link SlotAssumption#INDIRECT_STORES_DO_NOT_WRITE_SLOT} was relied on. */
+	record SlotProof(Address store, boolean indirectStoresAssumed) {
+
+		static final SlotProof DECLINED = new SlotProof(null, false);
+	}
+
+	/** {@link ProofMemo} key for a callee-closure census: the callee entry and the slot's
+	 *  physical offset. */
+	record CensusKey(Address entry, long cellOffset) {}
+
+	/** A callee-closure census: {@code clean} when no instruction reachable from the entry may
+	 *  write the slot (and the closure was fully resolved), plus whether an indirect store was
+	 *  stepped over under the named assumption. */
+	record CensusResult(boolean clean, boolean indirectStoresAssumed) {
+
+		static final CensusResult DIRTY = new CensusResult(false, false);
+	}
+
+	/**
 	 * Where a {@link BankSwitchStrategy.ValueStop#RESTORED_BANK} scan read the bank back from
 	 * (bead grm-yflf): the mirror {@code cell}, the load instruction {@code readAt}, and -- when a
 	 * PHA/PLA pairing or stack-relative reload carried the byte over a call between the read and
@@ -356,12 +404,63 @@ final class StoredValueScanner {
 	 * this only lets the annotation say where the bank came from and what it was carried over.
 	 */
 	record ReadBack(Address cell, Address readAt, Address carriedAcross, Address crossBlockPush,
-			Address crossBlockPull) {
+			Address crossBlockPull, SlotCarrier slot) {
 
 		/** Pre-grm-mej.3-increment-X1 form: no cross-block span. */
 		ReadBack(Address cell, Address readAt, Address carriedAcross) {
-			this(cell, readAt, carriedAcross, null, null);
+			this(cell, readAt, carriedAcross, null, null, null);
 		}
+
+		/** Pre-grm-zsxz form: not carried through a RAM save slot. */
+		ReadBack(Address cell, Address readAt, Address carriedAcross, Address crossBlockPush,
+				Address crossBlockPull) {
+			this(cell, readAt, carriedAcross, crossBlockPush, crossBlockPull, null);
+		}
+
+		/** This read-back, additionally carried to the site through {@code carrier}. */
+		ReadBack withSlot(SlotCarrier carrier) {
+			return new ReadBack(cell, readAt, carriedAcross, crossBlockPush, crossBlockPull,
+				carrier);
+		}
+	}
+
+	/**
+	 * The CARRIER a {@link ReadBack} went through when the read byte reached the site via a RAM
+	 * SAVE SLOT rather than directly or on the stack (bead grm-zsxz increment Z2): the byte was
+	 * stored into {@code cell} at {@code store} and reloaded at {@code load}, with every path
+	 * between the two proved free of other writers of {@code cell} by
+	 * {@link #saveSlotForwarded}. {@code indirectStoresAssumed} records whether that proof stepped
+	 * over at least one indirect store under {@link SlotAssumption#INDIRECT_STORES_DO_NOT_WRITE_SLOT}
+	 * -- descriptive, so the annotation can say the assumption was actually relied on.
+	 */
+	record SlotCarrier(Address cell, Address store, Address load, boolean indirectStoresAssumed) {}
+
+	/**
+	 * The NAMED, BOUNDED ASSUMPTIONS the RAM save-slot proof ({@link #saveSlotForwarded}, bead
+	 * grm-zsxz increment Z2) rests on -- the memory-slot counterpart of {@link StackFloor} for the
+	 * stack slot. Named here so every place that relies on one cites the same constant, and so the
+	 * restore note can state it (owner ruling Q2, 2026-10-05).
+	 */
+	enum SlotAssumption {
+
+		/**
+		 * An INDIRECT store -- {@code STA ($zp),Y} or {@code STA ($zp,X)} -- whose target Ghidra
+		 * did not resolve to a concrete address is assumed NOT to write the save slot being
+		 * forwarded. Neither a pointer nor its contents is modelled, so such a store cannot be
+		 * proved to miss the slot; counting every one as a possible writer would block nearly every
+		 * proof (game code is full of pointer copies). The assumption is BOUNDED: it covers only
+		 * the two true indirect modes, never an unplaceable store of any other shape, and never
+		 * an indexed store whose reachable window covers the slot ({@code STA base,X} reaches
+		 * {@code base..base+$FF}; a zero-page-indexed store reaches the whole zero page) -- those
+		 * are counted as writers. An indirect store that Ghidra DID resolve (a write reference to
+		 * the slot) is a writer too. The residual risk is a pointer genuinely aimed at the slot,
+		 * which is the same class of risk {@link StackFloor} accepts for a deep push.
+		 */
+		INDIRECT_STORES_DO_NOT_WRITE_SLOT;
+
+		/** The short form the restore note quotes. */
+		static final String NOTE_WORDING = "assuming no indirect store (STA ($zp),Y / " +
+			"STA ($zp,X)) writes the slot";
 	}
 
 	private static final int MAX_BACKWARD_SCAN = 16;
@@ -984,6 +1083,21 @@ final class StoredValueScanner {
 					return stopped(aAcc, oAcc, mask, BankState.fullyKnown(0xFF, exact),
 						BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 				}
+				// FALLBACK (bead grm-zsxz increment Z2): a load of a RAM cell that nothing above
+				// could resolve -- forwarding stopped at a call or a block boundary -- is traced
+				// backward over ALL paths, across calls and joins, to the one store that filled it.
+				// Oracle path only (it resumes through Hooks.stateAt), never along a grm-wul arm,
+				// and it returns null on every failure so this line's answer is exactly today's.
+				// Its own node/join/census caps bound it; the enclosing walk ends here either way, so
+				// (unlike X1's resumed pairing) there is no remaining step budget to charge.
+				if (mnem.equals(loadMnemonic) && !isImmediate(prev) && hooks.hasStateOracle() &&
+					!env.hasArms()) {
+					Scan viaSlot = saveSlotForwarded(program, prev, aAcc, oAcc, mask, hooks, env,
+						budget, depth);
+					if (viaSlot != null) {
+						return viaSlot;
+					}
+				}
 				return stopped(aAcc, oAcc, mask, BankState.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 			}
 			if (prev.getFlowType().isCall() && calleePreserves(program, prev, reg)) {
@@ -1547,6 +1661,534 @@ final class StoredValueScanner {
 				? new CrossBlockResult(child.pha(), child.crossedCall(), child.lastCallOnPath(),
 					true)
 				: child;
+	}
+
+	// ------------------------------------------------------------------
+	// RAM save-slot forwarding across calls and joins (bead grm-zsxz increment Z2)
+	// ------------------------------------------------------------------
+
+	/** {@link #saveSlotForwarded}'s own cap on the instructions ONE callee closure's writer
+	 *  census may visit. A sentinel against a pathological closure (a game's whole main loop is
+	 *  reachable from some calls), not a value tuned to one title; over it, the census abandons. */
+	private static final int SLOT_CENSUS_INSTRUCTION_CAP = 4096;
+
+	/** How far back from an {@code RTS}/{@code RTI} the census looks for the push-then-return
+	 *  dispatch idiom ({@link #looksLikeReturnDispatch}). */
+	private static final int RETURN_DISPATCH_LOOKBACK = 8;
+
+	/** Thrown internally by the save-slot search and census to abandon the WHOLE proof from any
+	 *  recursion depth; caught only at the top. Stateless, no stack trace -- pure control flow. */
+	private static final class SlotAbandon extends RuntimeException {
+		static final SlotAbandon INSTANCE = new SlotAbandon();
+
+		private SlotAbandon() {
+			super(null, null, false, false);
+		}
+	}
+
+	/** How one instruction relates to the save slot a proof is forwarding. */
+	private enum SlotWrite {
+		/** Provably does not write the slot. */
+		NONE,
+		/** A plain {@code STA}/{@code STX}/{@code STY} to exactly the slot -- a usable source. */
+		STORES_SLOT,
+		/** Writes (or may write) the slot in a way that is not a usable source: a read-modify-
+		 *  write, an indexed store whose reachable window covers the slot, a resolved write
+		 *  reference from anything else. */
+		WRITES_SLOT,
+		/** A memory write this proof cannot place at all. */
+		UNPLACEABLE,
+		/** A true indirect store, stepped over under
+		 *  {@link SlotAssumption#INDIRECT_STORES_DO_NOT_WRITE_SLOT}. */
+		INDIRECT_ASSUMED
+	}
+
+	/** One save-slot search node's resolution: the store every path from it reaches, and whether
+	 *  any of those paths relied on the indirect-store assumption. */
+	private record SlotResult(Address store, boolean indirectAssumed) {}
+
+	/** Mutable search-wide state for one save-slot proof. Spending mirrors
+	 *  {@link CrossBlockSearch}: once per node entered, once more per terminal store. */
+	private static final class SlotSearch {
+
+		int nodeBudget = CROSS_BLOCK_NODE_CAP;
+		int joinBudget = CROSS_BLOCK_JOIN_CAP;
+		final Set<Address> visited = new HashSet<>();
+		final Map<Address, SlotResult> memo = new HashMap<>();
+		final Set<Address> inProgress = new HashSet<>();
+
+		void spend() {
+			if (--nodeBudget < 0) {
+				throw SlotAbandon.INSTANCE;
+			}
+		}
+	}
+
+	/**
+	 * The value a load of a RAM SAVE SLOT reads, forwarded from the ONE store that filled it --
+	 * across calls and control-flow joins within one function body (bead grm-zsxz increment Z2).
+	 * The RAM-slot model in the same backward ALL-PATHS skeleton X1 built for stack slots
+	 * ({@link #crossBlockMatchingPush}): slot identity is an ADDRESS rather than a depth, a path
+	 * ends at a placeable store to that address, and a call is crossed only on a WRITER CENSUS of
+	 * its callee closure instead of the stack's fall-through witness. Blaster Master's
+	 * {@code FUN_e9b8} is the shape ({@code e9bb LDA $DB / STA $D3}, three calls, {@code e9c9 LDA
+	 * $D3 / JSR $E61B}).
+	 * <p>
+	 * <b>A FALLBACK ONLY</b>, called solely where {@link #resolveStoredValue} was about to return
+	 * a wholly unknown {@code ANALYZER_LIMIT} for this load, and only under a state oracle
+	 * ({@link Hooks#hasStateOracle}) off any grm-wul arm. Returns {@code null} on EVERY failure --
+	 * a declined proof, no state at the store, or a resumed walk that ends anywhere other than a
+	 * value or a restore -- so the caller keeps today's answer exactly; it can only turn a decline
+	 * into an answer, never change a classification it did not improve (grm-mej.3's lesson:
+	 * widening what a walk traverses changes stop classification, so a resumed walk ending in,
+	 * say, {@code RUNTIME_SOURCE} is NOT adopted).
+	 * <p>
+	 * <b>Resolution.</b> The store is re-scanned for the register it stores, under the tracked
+	 * state AT THE STORE ({@link Hooks#stateAt}; {@code null} abandons -- the ironsword rule,
+	 * {@link #resumeStateAfterPairing}). That state predates every call and mechanism write
+	 * between the store and the load, so a mirror read feeding the store is attributed the bank
+	 * live at the read. A resolved value is folded through this walk's accumulators exactly as
+	 * {@link #forwardedStoreValue} folds one; a {@code RESTORED_BANK} stop is kept, with the slot
+	 * recorded as its {@link SlotCarrier}, when this walk's accumulators are still the identity
+	 * (the stored byte reaches the site unmodified).
+	 * <p>
+	 * <b>The proof</b> (all paths backward from the load, under {@link #closedWorldPredecessors}'
+	 * closed-world rules): every path must reach the SAME plain store to the slot before reaching
+	 * anything that may write it. Abandons on: different stores on different paths (stores whose
+	 * values might agree are NOT reconciled -- that would need each resolved under its own state,
+	 * and no measured customer needs it); a path reaching a function entry, a call reference, an
+	 * undisassembled or cross-function predecessor, or the env's entry; any other writer of the
+	 * slot on a path ({@link #classifySlotWrite}); a crossed call whose callee closure may write
+	 * the slot ({@link #calleeClosureCensus}); the node/join caps (the same
+	 * {@link #CROSS_BLOCK_NODE_CAP}/{@link #CROSS_BLOCK_JOIN_CAP} X1 uses). Slots that may alias
+	 * the stack ({@link StackFloor}), non-writable and volatile cells, and indexed loads are
+	 * refused up front. Interrupt handlers are not modelled as writers -- the same stance the
+	 * within-block forwarding has always taken.
+	 */
+	private static Scan saveSlotForwarded(Program program, Instruction load, int aAcc, int oAcc,
+			int mask, Hooks hooks, RegisterEnv env, Budget budget, int depth) {
+		if (depth >= MAX_RESOLVE_DEPTH) {
+			return null;
+		}
+		Address cell = plainAbsoluteTarget(load);
+		if (cell == null) {
+			return null;
+		}
+		MemoryBlock block = program.getMemory().getBlock(cell);
+		if (block == null || !block.isWrite() || block.isVolatile() ||
+			StackFloor.mayAliasStack(program, cell)) {
+			return null;
+		}
+		int innerMask = mask & aAcc & ~oAcc & 0xFF;
+		if (innerMask == 0) {
+			return null;
+		}
+		SlotProof proof = saveSlotProof(program, load, cell, hooks, env);
+		if (proof.store() == null) {
+			return null;
+		}
+		Listing listing = program.getListing();
+		Instruction store = listing.getInstructionAt(proof.store());
+		Character storeReg = store == null ? null : storeRegister(store);
+		if (storeReg == null) {
+			return null;
+		}
+		BankState atStore = hooks.stateAt(store.getMinAddress());
+		if (atStore == null) {
+			return null; // no state at the store: abandon, never withdraw-and-continue
+		}
+		Scan inner = resolveStoredValue(program, store, storeReg, atStore, innerMask, hooks, env,
+			budget, depth + 1);
+		SlotCarrier carrier = new SlotCarrier(cell, store.getMinAddress(), load.getMinAddress(),
+			proof.indirectStoresAssumed());
+		Msg.debug(StoredValueScanner.class, "save-slot forwarding: load=" + load.getMinAddress() +
+			" cell=" + cell + " store=" + store.getMinAddress() + " -> " + inner.stop());
+		if (inner.value().knownMask() != 0) {
+			return stopped(aAcc, oAcc, mask, inner.value(),
+				BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
+		}
+		if (inner.stop() == BankSwitchStrategy.ValueStop.RESTORED_BANK && inner.readBack() != null &&
+			aAcc == 0xFF && oAcc == 0x00) {
+			return stopped(aAcc, oAcc, mask, inner.value(),
+				BankSwitchStrategy.ValueStop.RESTORED_BANK, inner.readBack().withSlot(carrier));
+		}
+		return null;
+	}
+
+	/** The (possibly memoized) save-slot proof for {@code load} reading {@code cell}. */
+	private static SlotProof saveSlotProof(Program program, Instruction load, Address cell,
+			Hooks hooks, RegisterEnv env) {
+		ProofMemo memo = hooks.saveSlotMemo();
+		SlotKey key = new SlotKey(load.getMinAddress(), cell.getOffset(), env.entryAddr());
+		SlotProof cached = memo == null ? null : memo.slotProofs.get(key);
+		if (cached != null) {
+			return cached;
+		}
+		SlotSearch ctx = new SlotSearch();
+		SlotProof proof;
+		try {
+			proof = solveSlot(program, program.getListing(), env, memo, ctx, cell,
+				load.getMinAddress())
+					.map(r -> new SlotProof(r.store(), r.indirectAssumed()))
+					.orElse(SlotProof.DECLINED);
+		}
+		catch (SlotAbandon abandon) {
+			proof = SlotProof.DECLINED;
+		}
+		if (memo != null) {
+			memo.slotProofs.put(key, proof);
+		}
+		return proof;
+	}
+
+	/**
+	 * The recursive heart of {@link #saveSlotProof}: what every path backward from {@code addr}
+	 * resolves to. {@link Optional#empty()} means a loop back-edge (or a node whose every edge
+	 * was one) -- no new contribution -- exactly as in {@link #solveCrossBlock}.
+	 */
+	private static Optional<SlotResult> solveSlot(Program program, Listing listing,
+			RegisterEnv env, ProofMemo memo, SlotSearch ctx, Address cell, Address addr) {
+		if (ctx.visited.contains(addr)) {
+			if (ctx.inProgress.contains(addr)) {
+				return Optional.empty();
+			}
+			return Optional.ofNullable(ctx.memo.get(addr));
+		}
+		ctx.visited.add(addr);
+		ctx.spend();
+		ctx.inProgress.add(addr);
+		if (env.stopsAt(addr)) {
+			throw SlotAbandon.INSTANCE; // the caller's memory is not modelled
+		}
+		List<Address> preds = closedWorldPredecessors(program, listing, addr);
+		if (preds == null || preds.isEmpty()) {
+			throw SlotAbandon.INSTANCE; // a function entry, a call ref, an unsound edge, a dead end
+		}
+		if (preds.size() > 1 && --ctx.joinBudget < 0) {
+			throw SlotAbandon.INSTANCE;
+		}
+		List<SlotResult> contributions = new ArrayList<>();
+		for (Address predAddr : preds) {
+			Instruction pred = listing.getInstructionAt(predAddr);
+			if (pred == null) {
+				throw SlotAbandon.INSTANCE;
+			}
+			boolean assumed = false;
+			switch (classifySlotWrite(program, pred, cell)) {
+				case STORES_SLOT -> {
+					ctx.spend(); // a terminal node, charged once (see SlotSearch)
+					contributions.add(new SlotResult(predAddr, false));
+					continue;
+				}
+				case WRITES_SLOT, UNPLACEABLE -> throw SlotAbandon.INSTANCE;
+				case INDIRECT_ASSUMED -> assumed = true;
+				case NONE -> {
+				}
+			}
+			if (pred.getFlowType().isCall()) {
+				CensusResult census = callCensus(program, listing, memo, pred, cell);
+				if (!census.clean()) {
+					throw SlotAbandon.INSTANCE; // the callee closure may write the slot
+				}
+				assumed |= census.indirectStoresAssumed();
+			}
+			boolean viaAssumption = assumed;
+			solveSlot(program, listing, env, memo, ctx, cell, predAddr).ifPresent(child ->
+				contributions.add(viaAssumption && !child.indirectAssumed()
+						? new SlotResult(child.store(), true) : child));
+		}
+		ctx.inProgress.remove(addr);
+		if (contributions.isEmpty()) {
+			ctx.memo.put(addr, null);
+			return Optional.empty();
+		}
+		Address store = contributions.get(0).store();
+		boolean anyAssumed = false;
+		for (SlotResult c : contributions) {
+			if (!c.store().equals(store)) {
+				throw SlotAbandon.INSTANCE; // different stores on different paths
+			}
+			anyAssumed |= c.indirectAssumed();
+		}
+		SlotResult combined = new SlotResult(store, anyAssumed);
+		ctx.memo.put(addr, combined);
+		return Optional.of(combined);
+	}
+
+	/**
+	 * The writer census for one crossed {@code call}: whether NOTHING its callee closure may
+	 * execute writes {@code cell}. The call must have exactly one resolved, disassembled target in
+	 * a known bank; see {@link #calleeClosureCensus} for the closure itself.
+	 */
+	private static CensusResult callCensus(Program program, Listing listing, ProofMemo memo,
+			Instruction call, Address cell) {
+		Address[] flows = call.getFlows();
+		if (call.getFlowType().isComputed() || flows == null || flows.length != 1) {
+			return CensusResult.DIRTY; // an indirect or unresolved call
+		}
+		Address entry = flows[0];
+		if (entersUnknownBank(program, call, entry)) {
+			return CensusResult.DIRTY;
+		}
+		CensusKey key = new CensusKey(entry, cell.getOffset());
+		CensusResult cached = memo == null ? null : memo.censuses.get(key);
+		if (cached != null) {
+			return cached;
+		}
+		CensusResult result = calleeClosureCensus(program, listing, entry, cell);
+		if (memo != null) {
+			memo.censuses.put(key, result);
+		}
+		return result;
+	}
+
+	/**
+	 * Every instruction reachable from {@code entry} -- following fall-through, branches, jumps
+	 * and calls TRANSITIVELY, instruction by instruction rather than through Ghidra's function
+	 * bodies (which can be wrong) -- is checked with {@link #classifySlotWrite}. DIRTY (abandon)
+	 * when any of them may write {@code cell}, or the closure cannot be fully resolved: a computed
+	 * jump or call ({@code JMP ($nnnn)}), a jump or call with no resolved target, an undisassembled
+	 * target, a target in a banked window entered from outside that bank's own image
+	 * ({@link #entersUnknownBank} -- which bank runs there depends on state this census does not
+	 * have), a {@code BRK}, a return that looks like a push-then-return dispatch
+	 * ({@link #looksLikeReturnDispatch}, whose real targets are invisible to the listing), or more
+	 * than {@link #SLOT_CENSUS_INSTRUCTION_CAP} instructions. Indirect stores are stepped over
+	 * under {@link SlotAssumption#INDIRECT_STORES_DO_NOT_WRITE_SLOT}, and reported.
+	 */
+	private static CensusResult calleeClosureCensus(Program program, Listing listing,
+			Address entry, Address cell) {
+		Set<Address> seen = new HashSet<>();
+		List<Address> work = new ArrayList<>();
+		work.add(entry);
+		seen.add(entry);
+		boolean assumed = false;
+		while (!work.isEmpty()) {
+			Address at = work.remove(work.size() - 1);
+			if (seen.size() > SLOT_CENSUS_INSTRUCTION_CAP) {
+				return CensusResult.DIRTY;
+			}
+			Instruction instr = listing.getInstructionAt(at);
+			if (instr == null) {
+				return CensusResult.DIRTY; // undisassembled
+			}
+			switch (classifySlotWrite(program, instr, cell)) {
+				case STORES_SLOT, WRITES_SLOT, UNPLACEABLE -> {
+					return CensusResult.DIRTY;
+				}
+				case INDIRECT_ASSUMED -> assumed = true;
+				case NONE -> {
+				}
+			}
+			String mnem = instr.getMnemonicString().toUpperCase();
+			if (mnem.equals("BRK")) {
+				return CensusResult.DIRTY;
+			}
+			if (mnem.equals("RTS") || mnem.equals("RTI")) {
+				if (looksLikeReturnDispatch(listing, instr)) {
+					return CensusResult.DIRTY;
+				}
+				continue;
+			}
+			ghidra.program.model.symbol.FlowType ft = instr.getFlowType();
+			if (ft.isComputed()) {
+				return CensusResult.DIRTY;
+			}
+			Address[] flows = instr.getFlows();
+			if ((ft.isJump() || ft.isCall()) && (flows == null || flows.length == 0)) {
+				return CensusResult.DIRTY;
+			}
+			if (flows != null) {
+				for (Address target : flows) {
+					if (entersUnknownBank(program, instr, target)) {
+						return CensusResult.DIRTY;
+					}
+					if (seen.add(target)) {
+						work.add(target);
+					}
+				}
+			}
+			Address ft2 = instr.getFallThrough();
+			if (ft2 != null && seen.add(ft2)) {
+				work.add(ft2);
+			}
+		}
+		return new CensusResult(true, assumed);
+	}
+
+	/**
+	 * Whether control passing from {@code from} to {@code target} lands in a BANKED window
+	 * ({@link SplitDispatchTableAnalyzer#isBanked}) other than the bank image {@code from} itself
+	 * executes in -- i.e. the code that runs there depends on which bank is mapped, which a
+	 * state-free census cannot know. Undefined memory counts as unknown too.
+	 */
+	private static boolean entersUnknownBank(Program program, Instruction from, Address target) {
+		MemoryBlock targetBlock = program.getMemory().getBlock(target);
+		if (targetBlock == null) {
+			return true;
+		}
+		if (!SplitDispatchTableAnalyzer.isBanked(program, targetBlock)) {
+			return false;
+		}
+		MemoryBlock fromBlock = program.getMemory().getBlock(from.getMinAddress());
+		return !targetBlock.equals(fromBlock);
+	}
+
+	/**
+	 * Whether {@code ret} ({@code RTS}/{@code RTI}) ends a PUSH-THEN-RETURN dispatch ({@code LDA
+	 * hi,X / PHA / LDA lo,X / PHA / RTS}): walking back over straight-line code, pushes outnumber
+	 * pops before anything else intervenes. Such a return jumps to an address the listing never
+	 * records, so the census cannot see where it goes and must abandon. A heuristic over the
+	 * last {@link #RETURN_DISPATCH_LOOKBACK} instructions -- an epilogue restoring saved registers
+	 * ({@code PLA / TAY / PLA / RTS}) pops, and passes.
+	 */
+	private static boolean looksLikeReturnDispatch(Listing listing, Instruction ret) {
+		int balance = 0;
+		Instruction cur = ret;
+		for (int k = 0; k < RETURN_DISPATCH_LOOKBACK; k++) {
+			Instruction prev = listing.getInstructionBefore(cur.getMinAddress());
+			if (prev == null || prev.getFallThrough() == null ||
+				!prev.getFallThrough().equals(cur.getMinAddress()) ||
+				prev.getFlowType().isCall() || prev.getFlows().length > 0) {
+				return false;
+			}
+			String m = prev.getMnemonicString().toUpperCase();
+			if (m.equals("PHA") || m.equals("PHP")) {
+				if (++balance > 0) {
+					return true;
+				}
+			}
+			else if (m.equals("PLA") || m.equals("PLP")) {
+				balance--;
+			}
+			cur = prev;
+		}
+		return false;
+	}
+
+	/**
+	 * How {@code instr} relates to the save slot {@code cell} (bead grm-zsxz increment Z2) -- the
+	 * per-instruction writer test both the save-slot search and the callee census use. Compared by
+	 * PHYSICAL offset, so an overlay-space operand naming the same RAM cell still matches.
+	 * <ul>
+	 * <li>a write reference to the slot, from anything: {@code STORES_SLOT} if the instruction is
+	 * a plain {@code ST<r>} whose operand is the slot, else {@code WRITES_SLOT};</li>
+	 * <li>otherwise only the memory-writing mnemonics ({@link #MEMORY_WRITERS}, plus the 65C02
+	 * {@code STZ}/{@code TSB}/{@code TRB}) are considered -- stack pushes and calls write only the
+	 * stack page, which {@link StackFloor} keeps out of scope;</li>
+	 * <li>a plain operand: {@code STORES_SLOT}/{@code WRITES_SLOT} on the slot (by store vs.
+	 * read-modify-write), {@code NONE} elsewhere;</li>
+	 * <li>by 6502 addressing mode: {@code (zp,X)}/{@code (zp),Y} are {@code INDIRECT_ASSUMED}
+	 * ({@link SlotAssumption#INDIRECT_STORES_DO_NOT_WRITE_SLOT}); an indexed store whose index is
+	 * a provable constant ({@link #constantIndex}) writes exactly {@code base+idx} (mod {@code $100}
+	 * for zero-page indexed); otherwise zero-page indexed wraps within
+	 * the zero page, so it writes a zero-page slot and nothing else; absolute indexed reaches
+	 * {@code base..base+$FF}; anything else is {@code UNPLACEABLE}.</li>
+	 * </ul>
+	 */
+	private static SlotWrite classifySlotWrite(Program program, Instruction instr, Address cell) {
+		Character storeReg = storeRegister(instr);
+		Address plain = plainAbsoluteTarget(instr);
+		for (Reference ref : instr.getReferencesFrom()) {
+			if (ref.getReferenceType().isWrite() && sameCell(ref.getToAddress(), cell)) {
+				return storeReg != null && plain != null && sameCell(plain, cell)
+						? SlotWrite.STORES_SLOT : SlotWrite.WRITES_SLOT;
+			}
+		}
+		String mnem = instr.getMnemonicString().toUpperCase();
+		boolean writer = (MEMORY_WRITERS.contains(mnem) && !isAccumulatorForm(instr)) ||
+			mnem.equals("STZ") || mnem.equals("TSB") || mnem.equals("TRB");
+		if (!writer) {
+			return SlotWrite.NONE;
+		}
+		if (plain != null) {
+			if (!sameCell(plain, cell)) {
+				return SlotWrite.NONE;
+			}
+			return storeReg != null ? SlotWrite.STORES_SLOT : SlotWrite.WRITES_SLOT;
+		}
+		int op;
+		try {
+			op = instr.getByte(0) & 0xFF;
+		}
+		catch (MemoryAccessException e) {
+			return SlotWrite.UNPLACEABLE;
+		}
+		int mode = (op >> 2) & 7;
+		int group = op & 3;
+		if (group == 1 && (mode == 0 || mode == 4)) {
+			return SlotWrite.INDIRECT_ASSUMED; // (zp,X) / (zp),Y -- the named assumption
+		}
+		if (mode == 5 || mode == 6 || mode == 7) {
+			Address base = LoopIdioms.indexedBase(instr);
+			Integer idx = constantIndex(program, instr);
+			boolean zeroPage = mode == 5;
+			if (idx != null && base != null) {
+				// A provably constant index pins the ONE cell written: base+idx, wrapping inside
+				// page zero for the zero-page indexed modes ($FF,X with X=1 writes $00).
+				long target = zeroPage ? (base.getOffset() + idx) & 0xFF : base.getOffset() + idx;
+				if (target != cell.getOffset()) {
+					return SlotWrite.NONE;
+				}
+				// it writes exactly the slot, but through an indexed form: not a source this
+				// proof re-scans, so it counts as a writer
+				return SlotWrite.WRITES_SLOT;
+			}
+			if (zeroPage) {
+				// unknown index: the effective address may be any zero-page cell
+				return cell.getOffset() < 0x100 ? SlotWrite.WRITES_SLOT : SlotWrite.NONE;
+			}
+			if (base == null) {
+				return SlotWrite.UNPLACEABLE;
+			}
+			long lo = base.getOffset();
+			long c = cell.getOffset();
+			return c >= lo && c <= lo + 0xFF ? SlotWrite.WRITES_SLOT : SlotWrite.NONE;
+		}
+		return SlotWrite.UNPLACEABLE;
+	}
+
+	/** Hooks that resolve nothing and see no mechanism -- the state-free context
+	 *  {@link #constantIndex} evaluates in, so a census or slot proof stays memoizable. */
+	private static final Hooks INERT_HOOKS = new Hooks() {
+		@Override
+		public boolean isMechanismWrite(Instruction instr) {
+			return false;
+		}
+
+		@Override
+		public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+				BankState inStateAtStore) {
+			return null;
+		}
+	};
+
+	/**
+	 * The index register's value on entry to an indexed store, when it is a PROVABLE constant
+	 * (bead grm-zsxz Z2, owner ruling 2026-10-05): {@link #constantRegisterValue}'s
+	 * all-or-nothing straight-line walk, so a redefinition it cannot evaluate ({@code INX} of an
+	 * unknown, {@code TAX}, {@code PLA}-fed transfers, a call, a join, a block boundary) yields
+	 * {@code null} and the caller keeps its conservative window rule. State-free: evaluated under
+	 * {@link #INERT_HOOKS} and {@link RegisterEnv#NONE}, with a fresh budget. Blaster Master's
+	 * {@code ea3a} ({@code LDX #$7A / ... / STA $00,X / STA $01,X}) is the measured case.
+	 */
+	private static Integer constantIndex(Program program, Instruction instr) {
+		Register idx = LoopIdioms.indexReg(instr);
+		if (idx == null) {
+			return null;
+		}
+		String name = idx.getName().toUpperCase();
+		if (!name.equals("X") && !name.equals("Y")) {
+			return null;
+		}
+		Integer v = constantRegisterValue(program, instr, name.charAt(0), INERT_HOOKS,
+			RegisterEnv.NONE, new Budget(MAX_RESOLVE_STEPS));
+		return v == null ? null : v & 0xFF;
+	}
+
+	/** Same physical RAM cell, whichever (overlay or base) space names it. */
+	private static boolean sameCell(Address a, Address cell) {
+		return a != null && a.getOffset() == cell.getOffset() &&
+			a.getAddressSpace().getPhysicalSpace().equals(cell.getAddressSpace().getPhysicalSpace());
 	}
 
 	/**

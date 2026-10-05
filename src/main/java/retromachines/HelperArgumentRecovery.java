@@ -240,15 +240,16 @@ final class HelperArgumentRecovery {
 		/** The helper's strategy's mirror set, for the KIND query {@link #isLiveBankMirror}
 		 *  (bead grm-yflf) -- see {@link BankSwitchStrategy#observedMirrors}. */
 		private final BankMirrors mirrors;
-		/** The per-run cross-block proof memo (bead grm-mej.3 increment X1), or {@code null} when
+		/** The per-run proof memo -- X1's cross-block pairings (bead grm-mej.3) and Z2's save-slot
+		 *  proofs and callee censuses (bead grm-zsxz) -- or {@code null} when
 		 *  the caller has none to offer -- {@link #crossBlockProofMemo} then answers {@code null}
 		 *  too, and {@code StoredValueScanner.crossBlockMatchingPush} computes fresh every time. */
-		private final Map<Address, StoredValueScanner.CrossBlockProof> crossBlockMemo;
+		private final StoredValueScanner.ProofMemo crossBlockMemo;
 		private int consultations;
 
 		OracleHooks(StoredValueScanner.Hooks base, StateOracle oracle, int lsb, int effectMask,
 				BankMirrors mirrors,
-				Map<Address, StoredValueScanner.CrossBlockProof> crossBlockMemo) {
+				StoredValueScanner.ProofMemo crossBlockMemo) {
 			this.base = base;
 			this.oracle = oracle;
 			this.lsb = lsb;
@@ -303,6 +304,12 @@ final class HelperArgumentRecovery {
 
 		@Override
 		public Map<Address, StoredValueScanner.CrossBlockProof> crossBlockProofMemo() {
+			return crossBlockMemo == null ? null : crossBlockMemo.crossBlock;
+		}
+
+		/** The same per-run memo's save-slot half (bead grm-zsxz increment Z2). */
+		@Override
+		public StoredValueScanner.ProofMemo saveSlotMemo() {
 			return crossBlockMemo;
 		}
 	}
@@ -340,7 +347,7 @@ final class HelperArgumentRecovery {
 	static CallEffect recoverCallArgument(Program program, Instruction callInstr,
 			HelperModel helper, BankState callSiteIn, Map<CallSiteRegKey, RegisterEnv> envCache,
 			Map<Function, Integer> restoringTrampolines, RegisterEnv path, StateOracle oracle,
-			Map<Address, StoredValueScanner.CrossBlockProof> crossBlockMemo) {
+			StoredValueScanner.ProofMemo crossBlockMemo) {
 		Integer restoredField = restoringTrampolines.get(helper.function());
 		if (restoredField != null) {
 			// A VERIFIED no-op (grm-mej.3): this helper puts the entry bank back before returning,
@@ -622,7 +629,7 @@ final class HelperArgumentRecovery {
 	private static CallEffect recoverPerSiteWithoutArgReg(Program program, Instruction callInstr,
 			HelperModel helper, BankState callSiteIn, Map<CallSiteRegKey, RegisterEnv> envCache,
 			RegisterEnv path, StateOracle oracle,
-			Map<Address, StoredValueScanner.CrossBlockProof> crossBlockMemo) {
+			StoredValueScanner.ProofMemo crossBlockMemo) {
 		Instruction switchSite = program.getListing().getInstructionAt(helper.switchSite());
 		if (switchSite == null) {
 			return new CallEffect(BankState.unknown(), helper.effectMask());

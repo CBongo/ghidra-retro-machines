@@ -971,6 +971,14 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// one has -- and the restore is correct BECAUSE the shadow is stale). A bank-identifying
 		// ROM byte cannot go stale: its value is the bank it is read from.
 		boolean shadow = mirrors.is(cell, BankMirrors.Kind.WRITE_THROUGH);
+		// bead grm-zsxz (design section 5 point 3): the else-branch below words a non-shadow
+		// cell as a bank-identifying ROM byte, so a cell that is NEITHER -- a SAVE_SLOT or INPUT
+		// cell, which holds a bank by intent rather than mirroring the live one -- must not reach
+		// it. A save slot reaches this note only as a CARRIER (readBack.slot()), never as the
+		// read-back cell itself; if one ever arrives here as the cell, no restore claim is made.
+		if (!shadow && !mirrors.is(cell, BankMirrors.Kind.ROM_IDENTIFYING)) {
+			return null;
+		}
 		// grm-mej.7 (owner ruling 2026-10-03): a NON-identity encoding identifies a bank only on
 		// the banks it was verified on, so the claim needs the live bank's membership PROVEN by
 		// the tracked state at the read, or stated by a verified game-descriptor hint -- and the
@@ -1022,6 +1030,19 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		else if (readBack.carriedAcross() != null) {
 			text.append(", carried on the stack across the call at ")
 					.append(readBack.carriedAcross());
+		}
+		if (readBack.slot() != null) {
+			// bead grm-zsxz increment Z2: the byte travelled through a RAM save slot. Name the
+			// slot, both ends, and the named assumption the all-paths writer proof rests on.
+			StoredValueScanner.SlotCarrier slot = readBack.slot();
+			text.append(", saved into RAM save slot ").append(slot.cell()).append(" at ")
+					.append(slot.store()).append(" and reloaded at ").append(slot.load())
+					.append(" (every path between them, and every call crossed, proved free of " +
+						"other writers of the slot -- ")
+					.append(StoredValueScanner.SlotAssumption.NOTE_WORDING)
+					.append(slot.indirectStoresAssumed()
+							? "; at least one such store was stepped over)"
+							: ")");
 		}
 		text.append(" -- the save/restore idiom. The bank after this ").append(committerNoun)
 				.append(encoded
