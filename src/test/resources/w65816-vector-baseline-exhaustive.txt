@@ -518,7 +518,7 @@ FA.E  PLX  PASS  10000/10000
 FA.N  PLX  PASS  9998/9998  (2 bank-wrap)
 FB.E  XCE  PASS  10000/10000
 FB.N  XCE  PASS  10000/10000
-FC.E  JSR (!$0x172f,X)  FAIL  9956/9999  (1 bank-wrap)  $1ff
+FC.E  JSR (!$0x172f,X)  PASS  9956/9956  (1 bank-wrap)  (43 corpus-defect)
 FC.N  JSR (!$0x30b4,X)  PASS  10000/10000
 FD.E  SBC !$0xaf33,X  PASS  9999/9999  (1 bank-wrap)
 FD.N  SBC !$0x2a1a,X  PASS  10000/10000

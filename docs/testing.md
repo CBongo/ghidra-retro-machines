@@ -445,13 +445,12 @@ failed, which is why 4 rows moved from `10000/10000` to `9999/9999` rather than 
 Classifying by symptom instead — "the case failed and `PBR` was its only mismatched field" — is
 cheaper and was rejected, because it would hide a genuine `PBR` defect in the language forever.
 
-**The residue is now the whole story, which was the point of the exercise.** The 4 remaining
+**The residue is now the whole story, which was the point of the exercise.** The 3 remaining
 `FAIL` rows are `PLP.N` and `RTI.N` (0/10,000, throwing on the language's own
-`unknown_native_status_pull` pcodeop, sequenced behind `grm-9nxj.5`); `AB.E` (`PLB`) at
-9,964/10,000; `FC.E` at 9,956/9,999, the emulation-mode stack wrapping within page 1 during an
-indexed-indirect call. A fifth, `E1.E` (`SBC (dp,X)`) at 9,999/10,000, had been sitting invisibly
-among the 142 and only became legible once the bank-wrap noise was removed; it is now classified
-(below).
+`unknown_native_status_pull` pcodeop, sequenced behind `grm-9nxj.5`) and `AB.E` (`PLB`) at
+9,964/10,000. Two more were corpus defects and are now classified (below): `E1.E` (`SBC (dp,X)`)
+at 9,999/10,000, which had been sitting invisibly among the 142 and only became legible once the
+bank-wrap noise was removed, and `FC.E` (`JSR (a,x)`, emulation) at 9,956/9,999.
 
 **`E1.E`'s one failing case was a corpus defect, not a language bug (`grm-9nxj.20`).** The case is
 `e1 e 8669`: emulation mode, `D=$F400` (DL=0), `LL+X=$FF`. The language reads the pointer from
@@ -473,6 +472,17 @@ list honest. A listed case that starts **passing** fails the run, which catches 
 corpus fix and someone "fixing" `RefDPIdxInd` to match the defect. A listed case that is not found
 at all also fails the run. **Keep that map narrow: one named case per entry, with the evidence,
 never a pattern.**
+
+**`FC.E`'s 43 failing cases are corpus defects too (`grm-fl65`).** They are exactly the 43
+`fc.e.json` cases whose initial S is `$0100`. Every one of them expects `JSR (a,x)` to push PCH to
+`$0100` and PCL to `$01FF`, wrapping within page 1. `JSR (a,x)` is new on the 65816, and the new
+opcodes do not wrap the stack in emulation mode: the language pushes PCL to `$00FF` (`push16_native`)
+and then forces SH back to 1, and bsnes agrees. Upstream SingleStepTests/65816 issue #6 / PR #7
+(open) edit exactly those 43 cases. The equality is measured, not assumed: with the 43 names listed,
+neither tripwire fires and the row reads `PASS 9956/9956 (1 bank-wrap) (43 corpus-defect)`, so
+every failure was a listed case and no listed case passes. PR #7 does not update the cases'
+`cycles` arrays. This harness does not compare cycles, so if PR #7 merges, the passing tripwire
+fires anyway: drop the 43 entries and regenerate.
 
 **Rank a failing row by its pass fraction before believing it is a bug** still holds, but there is
 now very little to rank.

@@ -274,6 +274,28 @@ final class W65816VectorHarnessSupport {
 	static final int BANK_WRAP_CAP = 400;
 
 	/**
+	 * Bead grm-fl65: the FC.E ({@code JSR (a,x)}, emulation) cases whose initial S is $0100.
+	 * Exactly these 43 (every fc.e.json case with S low byte $00) are the ones upstream
+	 * SingleStepTests/65816 PR #7 edits, and the 43 the row failed on before they were listed.
+	 */
+	private static final String[] FC_E_PAGE1_WRAP_CASES = {
+		"fc e 458", "fc e 811", "fc e 831", "fc e 1155", "fc e 1322", "fc e 1600", "fc e 1727",
+		"fc e 1755", "fc e 1964", "fc e 2289", "fc e 2589", "fc e 2857", "fc e 2923", "fc e 3001",
+		"fc e 3191", "fc e 3213", "fc e 3466", "fc e 4265", "fc e 4346", "fc e 4648", "fc e 4773",
+		"fc e 4904", "fc e 6055", "fc e 6139", "fc e 6201", "fc e 6351", "fc e 6799", "fc e 7003",
+		"fc e 7054", "fc e 7122", "fc e 7155", "fc e 7314", "fc e 8224", "fc e 8255", "fc e 8303",
+		"fc e 8371", "fc e 8428", "fc e 8926", "fc e 8947", "fc e 9030", "fc e 9088", "fc e 9145",
+		"fc e 9282" };
+
+	private static final String FC_E_PAGE1_WRAP_REASON =
+		"JSR (a,x), emulation mode, initial S=$0100: the corpus pushes PCH to $0100 and PCL to " +
+			"$01FF (wrapping within page 1), the language to $0100 and $00FF. JSR (a,x) is a " +
+			"65816-new opcode, and new opcodes do not wrap the stack in emulation mode -- only " +
+			"SH is forced back to 1 afterwards (bsnes agrees). Upstream SingleStepTests/65816 " +
+			"issue #6 / PR #7 make the same correction to exactly these cases. See push16_native " +
+			"in the JSR emulation constructor in 658xx.sinc.";
+
+	/**
 	 * Bead grm-9nxj.20: individual corpus cases shown to be WRONG, case name -&gt; the evidence.
 	 * Excluded from their row's ratio and counted in the baseline's {@code (N corpus-defect)}
 	 * token. Keep this narrow: one entry per case, each with the reason the oracle (not the
@@ -288,14 +310,22 @@ final class W65816VectorHarnessSupport {
 	 * catches {@code PASS -> FAIL}. A row pinned at {@code FAIL 9999/10000} could drop to 0
 	 * without the gate noticing, so one bad oracle case would leave all 9,999 good ones unguarded.
 	 */
-	static final Map<String, String> CORPUS_DEFECT_CASES = Map.of(
-		"e1 e 8669",
-		"SBC (dp,X), emulation mode, D=$F400 (DL=0), LL+X=$FF: the corpus reads the pointer high " +
-			"byte from $F500, the language from $F400. Real hardware wraps the second fetch " +
-			"within the direct page too (Bruce Clark's 65C816 opcodes tutorial section 5.11, " +
-			"higan/bsnes, and this corpus's own (d) mode). The generator, TomHarte/CLK, wraps " +
-			"the LL+X add for (d,x) but leaves the second fetch's increment mask at 0x00FFFF. " +
-			"See the comment on RefDPIdxInd in 658xx_memaccess.sinc.");
+	static final Map<String, String> CORPUS_DEFECT_CASES = corpusDefectCases();
+
+	private static Map<String, String> corpusDefectCases() {
+		Map<String, String> cases = new LinkedHashMap<>();
+		cases.put("e1 e 8669",
+			"SBC (dp,X), emulation mode, D=$F400 (DL=0), LL+X=$FF: the corpus reads the pointer " +
+				"high byte from $F500, the language from $F400. Real hardware wraps the second " +
+				"fetch within the direct page too (Bruce Clark's 65C816 opcodes tutorial section " +
+				"5.11, higan/bsnes, and this corpus's own (d) mode). The generator, TomHarte/CLK, " +
+				"wraps the LL+X add for (d,x) but leaves the second fetch's increment mask at " +
+				"0x00FFFF. See the comment on RefDPIdxInd in 658xx_memaccess.sinc.");
+		for (String name : FC_E_PAGE1_WRAP_CASES) {
+			cases.put(name, FC_E_PAGE1_WRAP_REASON);
+		}
+		return Map.copyOf(cases);
+	}
 
 	/**
 	 * Fails if the exhaustive run did not meet every {@link #CORPUS_DEFECT_CASES} entry exactly
