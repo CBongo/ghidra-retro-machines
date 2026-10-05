@@ -50,6 +50,14 @@ Each is minutes of work and settles something specific. Highest value per unit e
       bank, or computed dispatch. Watching one transfer into banked code in an emulator should say
       which, faster than an agent can.
 
+- [ ] **Can blmaster's `e953` far-call body reach `e692 STA $D3 / JMP $E61B`?** (`grm-zsxz` P3,
+      design Q6 on `grm-mej.3`). `FUN_e9b8` saves the live bank into `$D3` at `e9bb`, calls out
+      through `ea3a`, `eb51` and `e953` (a dispatch loop), then restores from `$D3` at `e9c9`/`e9cb`
+      (and `e9ff`, after a loop). If anything `e953` dispatches to can run `e692`, the slot is
+      overwritten mid-span and these two warnings can never become sound restores, so
+      `grm-zsxz` loses its only confirmed customer and needs re-scoping. A yes/no plus the path
+      (or "dispatch targets are X, none reach e692") is enough.
+
 ---
 
 ## 2. Def-use passes on untraced titles
