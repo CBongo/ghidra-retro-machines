@@ -861,6 +861,19 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 				log.appendMsg("banking.initial_state resolved to " + initialState +
 					" against the " + header.prgSize() + "-byte PRG image");
 			}
+			// bead grm-mej.12: banking.fixed_after_init -> a mask the analyzer seeds async
+			// entries with (the hint's fields are known at their initial value there).
+			if (gameDescriptor != null) {
+				long fixedMask = DescriptorSupport.resolveFixedAfterInitMask(map,
+					gameDescriptor.doc(), gameDescriptor.gmapPath(), log);
+				if (fixedMask != 0) {
+					program.getOptions(Program.PROGRAM_INFO).setString(
+						DescriptorSupport.FIXED_AFTER_INIT_MASK_PROPERTY,
+						Long.toString(fixedMask));
+					log.appendMsg(gameDescriptor.gmapPath() + ": banking.fixed_after_init " +
+						"resolves to state mask " + fixedMask);
+				}
+			}
 			DescriptorSupport.LayoutPlan plan =
 				DescriptorSupport.planWindows(map, log, board.mapPath(), liveMode);
 

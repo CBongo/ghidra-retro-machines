@@ -138,4 +138,28 @@ public class AsyncEntryPointsProgramTest extends AbstractBundledLanguageTest {
 	public void emptyListFormatsToEmptyString() {
 		assertEquals("", DescriptorSupport.formatAsyncEntryPoints(List.of()));
 	}
+
+	// ------------------------------------------------------------------
+	// banking.fixed_after_init mask property (bead grm-mej.12)
+	// ------------------------------------------------------------------
+
+	private void setFixedMask(String value) {
+		int tx = program.startTransaction("set fixed mask");
+		try {
+			program.getOptions(Program.PROGRAM_INFO)
+					.setString(DescriptorSupport.FIXED_AFTER_INIT_MASK_PROPERTY, value);
+		}
+		finally {
+			program.endTransaction(tx, true);
+		}
+	}
+
+	@Test
+	public void fixedAfterInitMaskReadsBackAndDegradesToZero() {
+		assertEquals("absent property = no hint", 0, DescriptorSupport.readFixedAfterInitMask(program));
+		setFixedMask("12");
+		assertEquals(12, DescriptorSupport.readFixedAfterInitMask(program));
+		setFixedMask("garbage");
+		assertEquals(0, DescriptorSupport.readFixedAfterInitMask(program));
+	}
 }

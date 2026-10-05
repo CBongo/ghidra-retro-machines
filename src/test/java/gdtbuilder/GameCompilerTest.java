@@ -90,6 +90,35 @@ public class GameCompilerTest {
 	}
 
 	@Test
+	public void compilesFixedAfterInit() throws Exception {
+		String yaml = validYaml().replace("initial_state: { prg_mode: 1 }",
+			"fixed_after_init: [prg_mode, mirroring]");
+		JsonObject doc = compile("fixed", yaml);
+		var list = doc.getAsJsonObject("banking").getAsJsonArray("fixed_after_init");
+		assertEquals(2, list.size());
+		assertEquals("prg_mode", list.get(0).getAsString());
+		assertEquals("mirroring", list.get(1).getAsString());
+	}
+
+	@Test
+	public void emptyFixedAfterInitIsRejected() throws Exception {
+		expectError("fixedempty", validYaml().replace("initial_state: { prg_mode: 1 }",
+			"fixed_after_init: []"), "names no fields");
+	}
+
+	@Test
+	public void nonListFixedAfterInitIsRejected() throws Exception {
+		expectError("fixedmap", validYaml().replace("initial_state: { prg_mode: 1 }",
+			"fixed_after_init: { prg_mode: 1 }"), "list of field names");
+	}
+
+	@Test
+	public void nonStringFixedAfterInitEntryIsRejected() throws Exception {
+		expectError("fixedint", validYaml().replace("initial_state: { prg_mode: 1 }",
+			"fixed_after_init: [3]"), "field-name strings");
+	}
+
+	@Test
 	public void hashesAreLowercased() throws Exception {
 		String yaml = validYaml().replace(PRG_SHA, PRG_SHA.toUpperCase())
 			.replace(FILE_SHA, FILE_SHA.toUpperCase());

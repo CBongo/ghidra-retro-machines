@@ -324,8 +324,14 @@ final class BankDataflowEngine {
 		// merely consumes the list. Bead grm-913.
 		BankState seedState = BankState.fullyKnown(board.mask(), board.initialState());
 		Set<Address> asyncEntries = DescriptorSupport.parseAsyncEntryPoints(program);
+		// Bead grm-mej.12: a per-game banking.fixed_after_init hint names fields that hold their
+		// initial value at every instruction after init, so those bits (only) are known on an
+		// async entry too. Mask 0 (no hint) leaves this exactly BankState.unknown().
+		int fixedMask = DescriptorSupport.readFixedAfterInitMask(program) & board.mask();
+		BankState asyncSeed = fixedMask == 0 ? BankState.unknown()
+				: new BankState(fixedMask, seedState.bits() & fixedMask);
 		for (Address seed : seeds) {
-			BankState entryState = asyncEntries.contains(seed) ? BankState.unknown() : seedState;
+			BankState entryState = asyncEntries.contains(seed) ? asyncSeed : seedState;
 			mergeAndEnqueue(seed, PathId.ROOT, entryState, stateIn, collapsedAddrs, worklist,
 				listing, board, clampCache, budget, stateDependents);
 		}

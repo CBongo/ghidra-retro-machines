@@ -770,6 +770,22 @@ loader-side above; it is consumed by `NesRomLoader.load` / `DescriptorSupport
 .applyGameInitialStateHint`, not by an analyzer, and needs none of the three properties below
 except provenance.)
 
+**`banking.fixed_after_init` (bead `grm-mej.12`) is the second loader-published hint.** Syntax:
+`banking: { fixed_after_init: [prg_mode] }` -- a non-empty list of board state-field NAMES
+(GameCompiler rejects an empty list, a non-list, or a non-string entry). Meaning: those fields hold
+their effective `initial_state` value at every instruction after init. `NesRomLoader.load`
+resolves the names against the matched board's `banking.state` layout
+(`DescriptorSupport.resolveFixedAfterInitMask`; an unknown name is logged and ignored, never
+thrown) and publishes the bit mask in the `Retro Machines.Fixed After Init Mask` program
+property. `BankDataflowEngine` then seeds each asynchronous entry (NMI/IRQ, grm-913) with exactly
+those bits known at the effective initial value instead of `BankState.unknown()`; every other bit
+(notably the bank fields) stays unknown, so grm-913's soundness argument still holds for them. No
+hint (mask 0) is byte-identical to the previous behaviour. Like `initial_state` it is consumed at
+import, so changing it needs a RE-IMPORT. It is a *claim about the title*, not something the
+analyzer verifies: the descriptor's `provenance` should record the survey of every write to the
+field (blmaster: `machines/games/blmaster.yaml`, the one shipped user). The general
+whole-image invariance pass was deliberately deferred until a title needs it.
+
 Three properties for every ANALYZER-consumed hint kind to inherit exactly:
 
 - **One-shot re-run support** (`:93`) — the user-facing recovery path.

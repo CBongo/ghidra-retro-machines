@@ -315,7 +315,49 @@ public class GameCompiler {
 		if (identifying != null) {
 			out.put("bank_identifying_offsets", identifying);
 		}
+		List<String> fixed = buildFixedAfterInit(banking.get("fixed_after_init"));
+		if (fixed != null) {
+			out.put("fixed_after_init", fixed);
+		}
 		return out.isEmpty() ? null : out;
+	}
+
+	/**
+	 * {@code banking.fixed_after_init:} (bead grm-mej.12): a non-empty list of board state-field
+	 * NAMES the game never changes after initialization, so asynchronously reached entries
+	 * (NMI/IRQ) may be seeded with those fields known at their effective initial value. Names
+	 * only here -- whether each names a real field of the matched board is checked at import
+	 * (DescriptorSupport.resolveFixedAfterInitMask), where the board's bit layout is known.
+	 */
+	@SuppressWarnings("unchecked")
+	private static List<String> buildFixedAfterInit(Object listObj) {
+		if (listObj == null) {
+			return null;
+		}
+		if (!(listObj instanceof List)) {
+			throw new IllegalArgumentException(
+				"game descriptor 'banking.fixed_after_init:' must be a list of field names " +
+					"(e.g. [ prg_mode ])");
+		}
+		List<Object> raw = (List<Object>) listObj;
+		if (raw.isEmpty()) {
+			throw new IllegalArgumentException(
+				"game descriptor 'banking.fixed_after_init:' is present but names no fields");
+		}
+		List<String> out = new ArrayList<>();
+		for (Object o : raw) {
+			if (!(o instanceof String) || ((String) o).isBlank()) {
+				throw new IllegalArgumentException(
+					"game descriptor 'banking.fixed_after_init:' entries must be non-empty " +
+						"field-name strings, got: " + o);
+			}
+			if (out.contains(o)) {
+				throw new IllegalArgumentException(
+					"game descriptor 'banking.fixed_after_init:' names '" + o + "' twice");
+			}
+			out.add((String) o);
+		}
+		return out;
 	}
 
 	@SuppressWarnings("unchecked")

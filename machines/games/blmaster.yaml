@@ -1,0 +1,42 @@
+# Curated per-game descriptor (title tier). Compiled to data/games/blmaster.gmap.
+# docs/per-game-descriptors-design.md; bead grm-mej.12 (owner ruling 2026-10-05).
+#
+# WHY THIS FILE EXISTS. Async entry points (NMI/IRQ) are seeded with a fully UNKNOWN bank state
+# (BankDataflowEngine, grm-913), so NMI-reached code (eb7e -> eb98 -> ec51 -> deeb -> def4, and
+# ec53) reported MMC1 prg_mode as "assumed from initial". Blaster Master never changes prg_mode
+# after init, so `banking.fixed_after_init: [prg_mode]` seeds async entries with prg_mode KNOWN at
+# its effective initial value (mode 3, machines/nes-mmc1.yaml's reset default). Every other state
+# bit -- prg_bank, mirroring -- stays unknown on an async entry; grm-913's soundness argument is
+# untouched for the bank field itself. prg_mode is deliberately NOT set in initial_state: the
+# board's default (3) is already the value this game runs in.
+#
+# SOUNDNESS RESIDUAL: an undisassembled/undiscovered control-register writer is invisible to
+# the survey below. The claim is the owner's and the byte scan's, not a proof over all code.
+
+schema: 2
+
+game:
+  id: blmaster
+  title: "Blaster Master (U) [o1]"
+  board: nes_mmc1
+  identity:
+    # PRG-slice SHA-256 (16-byte iNES header excluded, no trainer), from the "REALROM prgsha256"
+    # line of tools/banktest/realrom/expected/blmaster.dump -- recomputed by hand from the pinned
+    # image the same way NesRomLoader.gameIdentity does (prgBanks*16384 = 131072 bytes).
+    prg_sha256: "8f0eb1e74ab31ffb8c1e168cbafbb07472cb86deef71ea3de8769c841cc09647"
+    # Whole-file SHA-256, copied from the blmaster row of tools/banktest/realrom/manifest-gme.tsv.
+    file_sha256: "af1ddc67e01436573fc633b73730e13d1add1d64acb3f2a77d880efe9d67ba68"
+  provenance: "owner ruling grm-mej.12 (2026-10-05): prg_mode never changes after init. Byte
+    survey of the pinned image, 2026-10-05: the only serial-write helpers are in the fixed bank
+    -- e678 (five STA $9FFF with LSR between: the CONTROL register), e664 ($BFFF, CHR 1), e660
+    ($DFFF, PRG bank) and e68c (LDA #$80, STA $FFFF: the shifter reset, which hardware also
+    resolves to prg_mode 3). e678 has exactly one caller, f25f (JSR $E678 with LDA #$1E =
+    %11110: mirroring 2, prg_mode 3, chr_mode 1), reached after the e68c reset at f25a; e68c's only
+    other effect is the reset. Every control write in the image therefore sets prg_mode 3, the
+    board's initial value. No other STA/STX/STY into $8000-$9FFF decodes as code in any bank."
+
+banking:
+  # Board state-field NAMES whose bits hold their effective initial_state value at every
+  # instruction after init; folded into the program as a mask at import (NesRomLoader ->
+  # DescriptorSupport.resolveFixedAfterInitMask) and read by BankDataflowEngine.
+  fixed_after_init: [prg_mode]

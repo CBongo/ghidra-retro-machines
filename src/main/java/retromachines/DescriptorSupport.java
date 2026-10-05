@@ -187,6 +187,17 @@ final class DescriptorSupport {
 		"Retro Machines.Bank Identifying Hints";
 
 	/**
+	 * Program-info property carrying the bit mask (decimal, in the board's packed state layout)
+	 * of the state fields a game descriptor's {@code banking.fixed_after_init} hint (bead
+	 * grm-mej.12) declares never change after initialization. Written by the loader, which
+	 * resolves the descriptor and knows the board's field layout; read by
+	 * {@link BankDataflowEngine}, which seeds asynchronous entries with exactly those bits known
+	 * at the effective initial value. Absent (or 0) means no hint: async entries stay fully
+	 * unknown (grm-913).
+	 */
+	static final String FIXED_AFTER_INIT_MASK_PROPERTY = "Retro Machines.Fixed After Init Mask";
+
+	/**
 	 * Program-info property carrying the iNES mapper number parsed from the cartridge header
 	 * (bead {@code grm-3ppn}): a plain decimal string for an iNES 1.0/archaic header (e.g.
 	 * {@code "4"}), or {@code "<mapper> (submapper <n>)"} when the header is NES 2.0, since NES
@@ -778,6 +789,61 @@ final class DescriptorSupport {
 			packed = (packed & ~(field.mask() << field.lsb())) | (value << field.lsb());
 		}
 		return packed;
+	}
+
+	/**
+	 * Resolves a game descriptor's {@code banking.fixed_after_init} hint (bead grm-mej.12) to a
+	 * bit mask in the board's packed state layout. A name that is not a {@code banking.state}
+	 * field of this board is LOGGED and ignored -- never thrown (a game descriptor is the least
+	 * trusted input, and {@code load()} is authoritative). Returns 0 when the descriptor states
+	 * no such hint or no listed field resolves.
+	 */
+	static long resolveFixedAfterInitMask(JsonObject boardMap, JsonObject gameDescriptor,
+			String gameDescriptorPath, MessageLog log) {
+		JsonObject gameBanking = gameDescriptor.getAsJsonObject("banking");
+		if (gameBanking == null || !gameBanking.has("fixed_after_init")) {
+			return 0;
+		}
+		List<StateField> fields = parseStateFields(boardMap);
+		long mask = 0;
+		for (JsonElement el : gameBanking.getAsJsonArray("fixed_after_init")) {
+			String name;
+			try {
+				name = el.getAsString();
+			}
+			catch (RuntimeException e) {
+				log.appendMsg(gameDescriptorPath +
+					": banking.fixed_after_init has a non-string entry; ignoring it");
+				continue;
+			}
+			StateField field = findField(fields, name);
+			if (field == null) {
+				log.appendMsg(gameDescriptorPath + ": banking.fixed_after_init names '" + name +
+					"', which is not a banking.state field of this board; ignoring it");
+				continue;
+			}
+			mask |= field.mask() << field.lsb();
+		}
+		return mask;
+	}
+
+	/**
+	 * The mask the loader published in {@link #FIXED_AFTER_INIT_MASK_PROPERTY}, or 0 when the
+	 * property is absent, blank, or not a number (ignored, not raised: 0 is the pre-hint
+	 * behaviour).
+	 */
+	static int readFixedAfterInitMask(Program program) {
+		String value = program.getOptions(Program.PROGRAM_INFO)
+				.getString(FIXED_AFTER_INIT_MASK_PROPERTY, null);
+		if (value == null || value.isBlank()) {
+			return 0;
+		}
+		try {
+			return Integer.parseInt(value.trim());
+		}
+		catch (NumberFormatException e) {
+			return 0;
+		}
 	}
 
 	/**
