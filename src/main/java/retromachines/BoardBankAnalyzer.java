@@ -509,6 +509,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// after deriveBankMirrors: the proof that the saved byte IS the entry bank is that it was
 		// loaded from a live-bank mirror. ---
 		Map<Function, Integer> restoringTrampolines = new java.util.LinkedHashMap<>();
+		Map<Function, BankStackBrackets.Restore> helperRestores = new java.util.LinkedHashMap<>();
 		// bead grm-mej.9: banking.save_cells -- RAM cells a game descriptor states survive a
 		// helper's inner call. Read here, at analysis time, so a re-analysis picks it up; used
 		// only as a premise of the restoring-trampoline walk, never as a source of a bank value.
@@ -518,12 +519,29 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			AnalyzerLog.info(this, problem);
 			log.appendMsg(problem);
 		}
+		// bead grm-mej.10: banking.bank_stacks / banking.paired_fields, read once here.
+		List<String> stackProblems = new ArrayList<>();
+		List<DescriptorSupport.BankStack> bankStacks =
+			DescriptorSupport.parseBankStacks(program, stackProblems);
+		List<DescriptorSupport.PairedFields> pairedFields =
+			DescriptorSupport.parsePairedFields(program, stackProblems);
+		for (String problem : stackProblems) {
+			AnalyzerLog.info(this, problem);
+			log.appendMsg(problem);
+		}
+		List<SaveRestoreTrampolines.FieldPairing> pairings =
+			BankStackBrackets.resolvePairings(board, pairedFields);
 		for (HelperModel h : helpers.values()) {
 			Integer restored = SaveRestoreTrampolines.restoredFieldMask(program, h, mirrors,
-				flow.switchResults().keySet(), saveCells);
+				flow.switchResults().keySet(), saveCells, pairings);
 			if (restored != null) {
 				restoringTrampolines.put(h.function(),
 					restored == 0 ? SaveRestoreTrampolines.ALL_FIELDS : restored);
+				BankStackBrackets.Restore computed = SaveRestoreTrampolines.pairedRestore(program,
+					h, mirrors, flow.switchResults().keySet(), saveCells, pairings);
+				if (computed != null) {
+					helperRestores.put(h.function(), computed);
+				}
 			}
 		}
 		if (!restoringTrampolines.isEmpty()) {
@@ -536,9 +554,18 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// what makes a board with mirrors but no helper actually benefit. Passing an EMPTY
 		// helper map is deliberately equivalent to pass 1's null (runDataflow's helper branch is
 		// a lookup that misses), so a mirrors-only rerun changes nothing on its own.
+		// bead grm-mej.10: RAM bank-stack brackets, from the descriptor's bank_stacks /
+		// paired_fields hints. Proven once here, never inside the fixpoint.
+		BankStackBrackets.Claims bracketClaims = BankStackBrackets.find(program, mirrors,
+			mechanisms, flow.switchResults().keySet(), bankStacks, pairings)
+			.withHelperRestores(helperRestores);
+		if (!bracketClaims.isEmpty()) {
+			AnalyzerLog.info(this, "bank-stack brackets (pops restore the pushed bank): " +
+				bracketClaims.pops().keySet().stream().sorted().toList());
+		}
 		if (!helpers.isEmpty() || !mirrors.isEmpty()) {
 			flow = runDataflow(program, monitor, listing, mechanisms, board, helpers,
-				restoringTrampolines, secondTier.relayCallSites());
+				restoringTrampolines, secondTier.relayCallSites(), bracketClaims);
 		}
 
 		// --- Bank mirror naming (grm-mej.4): turn the derived mirror set into symbols and

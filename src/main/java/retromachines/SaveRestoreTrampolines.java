@@ -353,6 +353,257 @@ final class SaveRestoreTrampolines {
 	}
 
 	/**
+	 * A stated {@code high == low + offset} pairing between two board state fields (bead
+	 * grm-mej.10, {@code banking.paired_fields}), as positioned masks.
+	 */
+	record FieldPairing(int highMask, int lowMask, int offset) {
+	}
+
+	/**
+	 * {@link #restoredFieldMask(Program, HelperModel, BankMirrors, Set, Set)} with the
+	 * descriptor's stated field pairings (bead grm-mej.10). Whatever the pairing-free walk
+	 * proves is returned unchanged; only when it declines, the game states pairings and save
+	 * cells, is the {@link #pairedRestoredFieldMask} walk tried. With no pairings this IS the
+	 * five-argument form.
+	 */
+	static Integer restoredFieldMask(Program program, HelperModel helper,
+			BankMirrors mirrors, Set<Address> switchSites, Set<Long> saveCells,
+			java.util.List<FieldPairing> pairings) {
+		Integer plain = restoredFieldMask(program, helper, mirrors, switchSites, saveCells);
+		if (plain != null || pairings.isEmpty() || saveCells.isEmpty()) {
+			return plain;
+		}
+		BankStackBrackets.Restore r = pairedRestoredFieldMask(program, helper, mirrors,
+			switchSites, saveCells, pairings);
+		return r == null ? null : r.restoredMask();
+	}
+
+	/**
+	 * The computed restore of a helper that only the pairing-aware walk proves (null when the
+	 * helper is a pairing-free claim or no claim): the engine folds it per call, computing the
+	 * paired field from the low field instead of leaving both at their pre-call values.
+	 */
+	static BankStackBrackets.Restore pairedRestore(Program program, HelperModel helper,
+			BankMirrors mirrors, Set<Address> switchSites, Set<Long> saveCells,
+			java.util.List<FieldPairing> pairings) {
+		if (pairings.isEmpty() || saveCells.isEmpty() ||
+			restoredFieldMask(program, helper, mirrors, switchSites, saveCells) != null) {
+			return null;
+		}
+		return pairedRestoredFieldMask(program, helper, mirrors, switchSites, saveCells,
+			pairings);
+	}
+
+	/** What a register is known to hold: the entry bank plus {@code plus}, from {@code source}. */
+	private record Held(boolean entry, Address source, int plus) {
+		static final Held NO = new Held(false, null, 0);
+	}
+
+	/**
+	 * The two-register, pairing-aware restoring-trampoline walk (bead grm-mej.10; tmnt3's
+	 * {@code FUN_9169}, grm-mej.17):
+	 * <pre>
+	 *   LDA $A000 / STA $F0            ; save the live R7 identity byte in the hinted cell
+	 *   LDX #$3A / ... / STX $8001     ; R7 = $3A
+	 *   JSR $A1A1                      ; inner call
+	 *   LDX $F0 / ... / STX $8001      ; R7 := saved identity               (low, +0)
+	 *   INX / ... / STX $8001          ; R6 := saved identity + 1           (high, +1)
+	 * </pre>
+	 * It follows the same rules as the single-register walk -- hinted cells survive the inner
+	 * call, a biased byte needs {@link BankMirrors#restoreAliasesLiveBank}, the early-out branch
+	 * is allowed for a game that stated save cells -- and differs in three ways: A and X are both
+	 * tracked (with an {@code INX} offset), it does NOT stop at the helper's recorded switch site
+	 * but runs to the {@code RTS} with the helper's own stack depth back at zero, and the claim
+	 * is the set of fields whose LAST data commit is the saved byte (offset 0 into the identity
+	 * cell's own field, or the stated offset into a paired {@code high} field). A data commit
+	 * into any field not so restored declines the whole helper: it switched something it did not
+	 * put back.
+	 */
+	private static BankStackBrackets.Restore pairedRestoredFieldMask(Program program, HelperModel helper,
+			BankMirrors mirrors, Set<Address> switchSites, Set<Long> saveCells,
+			java.util.List<FieldPairing> pairings) {
+		if (helper.switchSite() == null || helper.strategy() == null || mirrors.isEmpty()) {
+			return null;
+		}
+		Register stackPointer = program.getCompilerSpec().getStackPointer();
+		if (stackPointer == null) {
+			return null;
+		}
+		Listing listing = program.getListing();
+		Deque<Held> saved = new ArrayDeque<>();
+		Held a = Held.NO;
+		Held x = Held.NO;
+		Map<Long, Address> cells = new HashMap<>();
+		boolean sawMechanismWrite = false;
+		Map<Integer, Integer> lastCommit = new java.util.LinkedHashMap<>();
+		Address source = null;
+
+		Address cursor = insideHelperEntry(helper);
+		for (int i = 0; i < MAX_TRAMPOLINE_SCAN; i++) {
+			Instruction instr = listing.getInstructionAt(cursor);
+			if (instr == null) {
+				return null;
+			}
+			String mnemonic = instr.getMnemonicString().toUpperCase();
+			if (mnemonic.equals("RTS")) {
+				if (!saved.isEmpty() || lastCommit.isEmpty() || source == null) {
+					return null;
+				}
+				return pairedClaim(mirrors, source, lastCommit, pairings);
+			}
+			boolean modelled = true;
+			switch (mnemonic) {
+				case "PHA" -> saved.push(a);
+				case "PLA" -> {
+					if (saved.isEmpty()) {
+						return null;
+					}
+					a = saved.pop();
+				}
+				case "PHP" -> saved.push(Held.NO);
+				case "PLP" -> {
+					if (saved.isEmpty()) {
+						return null;
+					}
+					saved.pop();
+				}
+				default -> modelled = false;
+			}
+			if (!modelled) {
+				if (instr.getFlowType().isCall()) {
+					if (instr.getFlowType().isComputed() || instr.getFallThrough() == null) {
+						return null;
+					}
+					a = Held.NO;
+					x = Held.NO;
+					cursor = instr.getFallThrough();
+					continue;
+				}
+				if (switchSites.contains(instr.getMinAddress())) {
+					sawMechanismWrite = true;
+					Character stored = StoredValueScanner.storeRegister(instr);
+					int committed = helper.strategy().bankFieldCommittedBySite(program, instr);
+					if (stored == null || committed < 0) {
+						return null;
+					}
+					if (committed > 0) {
+						int field = (committed << helper.lsb()) & helper.effectMask();
+						Held h = stored == 'A' ? a : stored == 'X' ? x : Held.NO;
+						if (h.entry()) {
+							if (source != null && !source.equals(h.source())) {
+								return null;
+							}
+							source = h.source();
+						}
+						lastCommit.put(field, h.entry() ? h.plus() : -1);
+					}
+				}
+				Held newA = null;
+				Held newX = null;
+				if (mnemonic.equals("LDA") || mnemonic.equals("LDX")) {
+					char reg = mnemonic.charAt(2);
+					Address from = argumentReloadSource(instr, reg);
+					Held loaded = Held.NO;
+					if (from != null && !sawMechanismWrite && isLiveBankMirror(mirrors, from)) {
+						loaded = new Held(true, from, 0);
+					}
+					else if (from != null && cells.containsKey(from.getOffset())) {
+						loaded = new Held(true, cells.get(from.getOffset()), 0);
+					}
+					if (reg == 'A') {
+						newA = loaded;
+					}
+					else {
+						newX = loaded;
+					}
+				}
+				else if (mnemonic.equals("INX")) {
+					newX = x.entry() ? new Held(true, x.source(), x.plus() + 1) : Held.NO;
+				}
+				else {
+					if (StoredValueScanner.modifiesRegister(instr, 'A')) {
+						newA = Held.NO;
+					}
+					if (StoredValueScanner.modifiesRegister(instr, 'X')) {
+						newX = Held.NO;
+					}
+				}
+				if (StoredValueScanner.writesMemory(instr)) {
+					Address target = StoredValueScanner.plainAbsoluteTarget(instr);
+					if (target == null) {
+						cells.clear();
+					}
+					else if (saveCells.contains(target.getOffset())) {
+						Character stored = StoredValueScanner.storeRegister(instr);
+						Held h = stored == null ? Held.NO : stored == 'A' ? a : stored == 'X' ? x
+								: Held.NO;
+						if (h.entry() && h.plus() == 0) {
+							cells.put(target.getOffset(), h.source());
+						}
+						else {
+							cells.remove(target.getOffset());
+						}
+					}
+				}
+				if (newA != null) {
+					a = newA;
+				}
+				if (newX != null) {
+					x = newX;
+				}
+				if (writesStackPointer(instr, stackPointer)) {
+					return null;
+				}
+				if (isNoOpExitBranch(instr)) {
+					if (!takenPathIsNoOpExit(program, instr.getFlows()[0], saved.size(),
+						switchSites, stackPointer)) {
+						return null;
+					}
+					cursor = instr.getFallThrough();
+					continue;
+				}
+				if (instr.getFlows().length > 0 || instr.getFallThrough() == null) {
+					return null;
+				}
+			}
+			cursor = instr.getFallThrough();
+			if (cursor == null) {
+				return null;
+			}
+		}
+		return null;
+	}
+
+	/** The positioned fields whose last commit restores {@code source}'s field, or null. */
+	private static BankStackBrackets.Restore pairedClaim(BankMirrors mirrors, Address source,
+			Map<Integer, Integer> lastCommit, java.util.List<FieldPairing> pairings) {
+		BoardDescriptorModel.FieldSpec low = mirrors.identifyingField(source);
+		if (low == null || !mirrors.restoreAliasesLiveBank(source)) {
+			return null;
+		}
+		int mask = 0;
+		java.util.List<FieldPairing> highs = new java.util.ArrayList<>();
+		for (FieldPairing p : pairings) {
+			if (p.lowMask() == low.positionedMask()) {
+				highs.add(p);
+			}
+		}
+		for (Map.Entry<Integer, Integer> commit : lastCommit.entrySet()) {
+			int field = commit.getKey();
+			int plus = commit.getValue();
+			boolean restores = plus == 0 && field == low.positionedMask() ||
+				plus > 0 && pairings.stream().anyMatch(p -> p.highMask() == field &&
+					p.lowMask() == low.positionedMask() && p.offset() == plus);
+			if (!restores) {
+				return null;
+			}
+			mask |= field;
+		}
+		return mask == 0 ? null : new BankStackBrackets.Restore(mask, low.positionedMask(),
+			mirrors.identifyingEncoding(source), highs);
+	}
+
+	/**
 	 * For a BIASED identity byte (grm-mej.9) as the source of the restored value: the byte must be
 	 * trusted to alias the live bank, and every mechanism write on the walk must be either a
 	 * write that commits no bank (a register select) or a bank commit into exactly the field the
@@ -394,6 +645,19 @@ final class SaveRestoreTrampolines {
 			committedField = true;
 		}
 		return committedField ? fieldMask : null;
+	}
+
+	/**
+	 * A conditional branch with one target and a fall-through, in EITHER direction (bead
+	 * grm-mej.10: tmnt3's FUN_9169 early-outs with {@code BNE $9168}, a backward branch onto a
+	 * shared {@code RTS}). Sound without the forward requirement because the taken path is
+	 * accepted only by {@link #takenPathIsNoOpExit}, which follows straight-line code to an
+	 * {@code RTS} within a few instructions, so no loop can hide behind the direction.
+	 */
+	private static boolean isNoOpExitBranch(Instruction instr) {
+		return instr.getFlowType().isConditional() && !instr.getFlowType().isCall() &&
+			!instr.getFlowType().isComputed() && instr.getFlows().length == 1 &&
+			instr.getFallThrough() != null;
 	}
 
 	private static boolean isForwardConditionalBranch(Instruction instr) {
@@ -454,7 +718,7 @@ final class SaveRestoreTrampolines {
 	 * {@link BankMirrors.Kind#WRITE_THROUGH} and {@link BankMirrors.Kind#ROM_IDENTIFYING} do --
 	 * the same two kinds the strategies answer from tracked state, and for the same H2 reason.
 	 */
-	private static boolean isLiveBankMirror(BankMirrors mirrors, Address addr) {
+	static boolean isLiveBankMirror(BankMirrors mirrors, Address addr) {
 		return mirrors.is(addr, BankMirrors.Kind.WRITE_THROUGH) ||
 			mirrors.is(addr, BankMirrors.Kind.ROM_IDENTIFYING);
 	}

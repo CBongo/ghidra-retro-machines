@@ -319,11 +319,124 @@ public class GameCompiler {
 		if (saveCells != null) {
 			out.put("save_cells", saveCells);
 		}
+		List<Map<String, Object>> bankStacks = buildBankStacks(banking.get("bank_stacks"));
+		if (bankStacks != null) {
+			out.put("bank_stacks", bankStacks);
+		}
+		List<Map<String, Object>> paired = buildPairedFields(banking.get("paired_fields"));
+		if (paired != null) {
+			out.put("paired_fields", paired);
+		}
 		List<String> fixed = buildFixedAfterInit(banking.get("fixed_after_init"));
 		if (fixed != null) {
 			out.put("fixed_after_init", fixed);
 		}
 		return out.isEmpty() ? null : out;
+	}
+
+	/**
+	 * {@code banking.bank_stacks:} (bead grm-mej.10): a non-empty list of {@code { pointer,
+	 * slots, provenance }} entries, each naming a RAM bank stack: {@code pointer} is the stack
+	 * pointer cell and {@code slots} the base of the slot array it indexes (a push stores the
+	 * live bank's identity byte at {@code slots[pointer]} and increments the pointer; a pop
+	 * decrements it and reloads the slot). SHAPE only here; the analyzer
+	 * ({@code BankStackBrackets}) uses it as the premise of its push/pop pairing proof.
+	 */
+	@SuppressWarnings("unchecked")
+	private static List<Map<String, Object>> buildBankStacks(Object listObj) {
+		if (listObj == null) {
+			return null;
+		}
+		if (!(listObj instanceof List) || ((List<Object>) listObj).isEmpty()) {
+			throw new IllegalArgumentException(
+				"game descriptor 'banking.bank_stacks:' must be a non-empty list");
+		}
+		List<Map<String, Object>> out = new ArrayList<>();
+		Set<Integer> seen = new java.util.HashSet<>();
+		for (Object entryObj : (List<Object>) listObj) {
+			if (!(entryObj instanceof Map)) {
+				throw new IllegalArgumentException("each 'banking.bank_stacks:' entry must be a " +
+					"mapping with pointer, slots and provenance");
+			}
+			Map<String, Object> entry = (Map<String, Object>) entryObj;
+			for (String key : entry.keySet()) {
+				if (!Set.of("pointer", "slots", "provenance").contains(key)) {
+					throw new IllegalArgumentException(
+						"'banking.bank_stacks:' entry has unknown key '" + key + "'");
+				}
+			}
+			String where = "banking.bank_stacks entry";
+			int pointer = MapCompiler.requireAddr(entry, "pointer", where);
+			int slots = MapCompiler.requireAddr(entry, "slots", where);
+			if (pointer < 0 || pointer > 0xFFFF || slots < 0 || slots > 0xFFFF) {
+				throw new IllegalArgumentException(
+					where + ": pointer and slots must be 16-bit CPU addresses");
+			}
+			if (!seen.add(pointer)) {
+				throw new IllegalArgumentException(where + ": pointer " + pointer + " listed twice");
+			}
+			String provenance = MapCompiler.requireString(entry, "provenance", where);
+			Map<String, Object> e = new LinkedHashMap<>();
+			e.put("pointer", pointer);
+			e.put("slots", slots);
+			e.put("provenance", provenance);
+			out.add(e);
+		}
+		return out;
+	}
+
+	/**
+	 * {@code banking.paired_fields:} (bead grm-mej.10): a non-empty list of {@code { high, low,
+	 * offset, provenance }} entries, each asserting that board state field {@code high} always
+	 * holds field {@code low}'s bank plus {@code offset} (tmnt3: r6 == r7 + 1). Names only here;
+	 * whether they name real fields of the matched board is checked at analysis time.
+	 */
+	@SuppressWarnings("unchecked")
+	private static List<Map<String, Object>> buildPairedFields(Object listObj) {
+		if (listObj == null) {
+			return null;
+		}
+		if (!(listObj instanceof List) || ((List<Object>) listObj).isEmpty()) {
+			throw new IllegalArgumentException(
+				"game descriptor 'banking.paired_fields:' must be a non-empty list");
+		}
+		List<Map<String, Object>> out = new ArrayList<>();
+		Set<String> seen = new java.util.HashSet<>();
+		for (Object entryObj : (List<Object>) listObj) {
+			if (!(entryObj instanceof Map)) {
+				throw new IllegalArgumentException("each 'banking.paired_fields:' entry must be " +
+					"a mapping with high, low, offset and provenance");
+			}
+			Map<String, Object> entry = (Map<String, Object>) entryObj;
+			for (String key : entry.keySet()) {
+				if (!Set.of("high", "low", "offset", "provenance").contains(key)) {
+					throw new IllegalArgumentException(
+						"'banking.paired_fields:' entry has unknown key '" + key + "'");
+				}
+			}
+			String where = "banking.paired_fields entry";
+			String high = MapCompiler.requireString(entry, "high", where);
+			String low = MapCompiler.requireString(entry, "low", where);
+			if (high.equals(low)) {
+				throw new IllegalArgumentException(where + ": high and low name the same field");
+			}
+			int offset = MapCompiler.requireAddr(entry, "offset", where);
+			if (offset < 1 || offset > 0xFF) {
+				throw new IllegalArgumentException(where + ": offset must be in [1, 255]");
+			}
+			if (!seen.add(high + "/" + low)) {
+				throw new IllegalArgumentException(
+					where + ": " + high + "/" + low + " listed twice");
+			}
+			String provenance = MapCompiler.requireString(entry, "provenance", where);
+			Map<String, Object> e = new LinkedHashMap<>();
+			e.put("high", high);
+			e.put("low", low);
+			e.put("offset", offset);
+			e.put("provenance", provenance);
+			out.add(e);
+		}
+		return out;
 	}
 
 	/**

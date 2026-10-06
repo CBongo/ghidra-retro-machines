@@ -745,6 +745,19 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 					program.getOptions(Program.PROGRAM_INFO).setString(
 						DescriptorSupport.SAVE_CELLS_PROPERTY, saveCells);
 				}
+				// bead grm-mej.10: banking.bank_stacks and banking.paired_fields.
+				String bankStacks = DescriptorSupport.formatBankStacks(gameDescriptor.doc(),
+					gameDescriptor.gmapPath());
+				if (bankStacks != null) {
+					program.getOptions(Program.PROGRAM_INFO).setString(
+						DescriptorSupport.BANK_STACKS_PROPERTY, bankStacks);
+				}
+				String pairedFields = DescriptorSupport.formatPairedFields(gameDescriptor.doc(),
+					gameDescriptor.gmapPath());
+				if (pairedFields != null) {
+					program.getOptions(Program.PROGRAM_INFO).setString(
+						DescriptorSupport.PAIRED_FIELDS_PROPERTY, pairedFields);
+				}
 			}
 		}
 

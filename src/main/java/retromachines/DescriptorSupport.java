@@ -197,6 +197,20 @@ final class DescriptorSupport {
 	static final String SAVE_CELLS_PROPERTY = "Retro Machines.Save Cells";
 
 	/**
+	 * Program-info property carrying the game descriptor's {@code banking.bank_stacks} hint
+	 * (bead grm-mej.10): JSON {@code {"source": ..., "stacks": [{pointer, slots, provenance}]}}.
+	 * Read at analysis time by {@link BoardBankAnalyzer} and handed to {@link BankStackBrackets}.
+	 */
+	static final String BANK_STACKS_PROPERTY = "Retro Machines.Bank Stacks";
+
+	/**
+	 * Program-info property carrying the game descriptor's {@code banking.paired_fields} hint
+	 * (bead grm-mej.10): JSON {@code {"source": ..., "pairs": [{high, low, offset,
+	 * provenance}]}}.
+	 */
+	static final String PAIRED_FIELDS_PROPERTY = "Retro Machines.Paired Fields";
+
+	/**
 	 * Program-info property carrying the bit mask (decimal, in the board's packed state layout)
 	 * of the state fields a game descriptor's {@code banking.fixed_after_init} hint (bead
 	 * grm-mej.12) declares never change after initialization. Written by the loader, which
@@ -386,6 +400,86 @@ final class DescriptorSupport {
 			return Set.of();
 		}
 		return cells;
+	}
+
+	// ------------------------------------------------------------------
+	// Game-descriptor RAM bank stacks and paired fields (bead grm-mej.10)
+	// ------------------------------------------------------------------
+
+	/** A RAM bank stack: the pointer cell and the slot-array base, CPU addresses. */
+	record BankStack(long pointer, long slots) {
+	}
+
+	/** {@code high} field always equals {@code low} field's bank plus {@code offset}. */
+	record PairedFields(String high, String low, int offset) {
+	}
+
+	private static String formatBankingList(JsonObject gameDescriptor, String source, String key,
+			String outKey) {
+		JsonObject banking = gameDescriptor == null ? null
+				: gameDescriptor.getAsJsonObject("banking");
+		if (banking == null || !banking.has(key)) {
+			return null;
+		}
+		JsonObject out = new JsonObject();
+		out.addProperty("source", source);
+		out.add(outKey, banking.getAsJsonArray(key).deepCopy());
+		return out.toString();
+	}
+
+	/** The {@link #BANK_STACKS_PROPERTY} value, or null when the descriptor states none. */
+	static String formatBankStacks(JsonObject gameDescriptor, String source) {
+		return formatBankingList(gameDescriptor, source, "bank_stacks", "stacks");
+	}
+
+	/** The {@link #PAIRED_FIELDS_PROPERTY} value, or null when the descriptor states none. */
+	static String formatPairedFields(JsonObject gameDescriptor, String source) {
+		return formatBankingList(gameDescriptor, source, "paired_fields", "pairs");
+	}
+
+	/** The recorded bank stacks, or empty; malformed input is reported and contributes nothing. */
+	static List<BankStack> parseBankStacks(Program program, List<String> problems) {
+		String spec = programInfoString(program, BANK_STACKS_PROPERTY);
+		List<BankStack> stacks = new ArrayList<>();
+		if (spec == null || spec.isBlank()) {
+			return stacks;
+		}
+		try {
+			JsonObject root = JsonParser.parseString(spec).getAsJsonObject();
+			for (JsonElement el : root.getAsJsonArray("stacks")) {
+				JsonObject o = el.getAsJsonObject();
+				stacks.add(new BankStack(o.get("pointer").getAsLong(), o.get("slots").getAsLong()));
+			}
+		}
+		catch (RuntimeException e) {
+			problems.add(BANK_STACKS_PROPERTY + " is malformed (" + e.getMessage() +
+				"); no bank_stacks hint applied");
+			return List.of();
+		}
+		return stacks;
+	}
+
+	/** The recorded field pairings, or empty; malformed input is reported and ignored. */
+	static List<PairedFields> parsePairedFields(Program program, List<String> problems) {
+		String spec = programInfoString(program, PAIRED_FIELDS_PROPERTY);
+		List<PairedFields> pairs = new ArrayList<>();
+		if (spec == null || spec.isBlank()) {
+			return pairs;
+		}
+		try {
+			JsonObject root = JsonParser.parseString(spec).getAsJsonObject();
+			for (JsonElement el : root.getAsJsonArray("pairs")) {
+				JsonObject o = el.getAsJsonObject();
+				pairs.add(new PairedFields(o.get("high").getAsString(),
+					o.get("low").getAsString(), o.get("offset").getAsInt()));
+			}
+		}
+		catch (RuntimeException e) {
+			problems.add(PAIRED_FIELDS_PROPERTY + " is malformed (" + e.getMessage() +
+				"); no paired_fields hint applied");
+			return List.of();
+		}
+		return pairs;
 	}
 
 	// ------------------------------------------------------------------

@@ -843,6 +843,59 @@ conditional branch whose taken path is a no-op `PLA / RTS` exit. Shape validatio
 list, 16-bit unique `address`, `provenance` present, no other keys) is `GameCompiler`'s;
 `ExportGameDescriptor.java` carries it verbatim. First user: `machines/games/tmnt3.yaml`.
 
+`banking.save_cells` also gains one consumer in `grm-mej.10`: the pairing-aware walk below
+(`SaveRestoreTrampolines.restoredFieldMask` with `paired_fields`) follows the same cells, and
+tmnt3's `FUN_9169` (the `grm-mej.17` case: `R7 := $F0`, `R6 := $F0 + 1`) is its first user.
+
+### `banking.bank_stacks` and `banking.paired_fields` (bead `grm-mej.10`)
+
+```yaml
+banking:
+  bank_stacks:
+    - pointer: 0xF2     # CPU address of the stack-pointer cell
+      slots: 0xF3       # base of the slot array it indexes (LDA slots,Y / STA slots,Y)
+      provenance: "why this is a bank stack and why inner calls are stack-balanced"   # required
+  paired_fields:
+    - high: r6          # board state field names (docs/SCHEMA.md, banking.state)
+      low: r7
+      offset: 1         # high == low + offset, always
+      provenance: "why the game holds this invariant"                                 # required
+```
+
+Two hand-stated facts about a game that keeps its bank in RAM, both consumed at analysis time
+(the loader publishes the `Retro Machines.Bank Stacks` / `Retro Machines.Paired Fields`
+program properties; `BoardBankAnalyzer` reads them, so a re-analysis picks them up).
+
+**`bank_stacks`.** States that `slots[pointer]` is a bank stack: a PUSH helper stores the live
+bank's identity byte (a `bank_identifying_offsets` cell -- tmnt3's `$A000`) at `slots[ptr]` and
+increments `ptr`; a POP helper decrements `ptr` and re-commits `slots[ptr]` to a bank register.
+`BankStackBrackets` finds the helpers by SHAPE over those two cells (never by address), including
+an entry stub that sets A and branches into the push (`LDA #$20 / BNE push`). It then proves,
+per push call site, that the push DOMINATES the pop: every path from the push to the pop stays
+in code reachable only through the push, with no other push or pop, no direct write to the
+pointer or the slots, and no other flow into the region. A pop so paired restores the fields it
+commits the slot byte to; at that call site the engine deposits the tracked state AT THE PUSH
+for those fields (never a made-up value), and the call keeps its ordinary effect on its select
+and mode writes. **Premise stated, not proved: the code BETWEEN the push and the pop (inner
+calls) is stack-balanced** -- the same balance a call-crossing `PHA`/`PLA` pair relies on, but
+here nothing in the 6502 stack proves it, so the descriptor's provenance must. A push belonging
+to a verified bracket whose own bank argument cannot be recovered (`LDA $59 / JSR push`) is not
+reported as a failed argument recovery: the bank it installs lasts only until the pop.
+
+**`paired_fields`.** States that field `high` always equals field `low`'s bank plus `offset`
+(tmnt3: a 16K PRG pair, `r6 == r7 + 1`). It lets a restore that writes the slot byte PLUS
+`offset` into `high` count as restoring `high`: the saved identity byte is `low`'s bank, so the
+write puts `high` back to `low`'s bank + `offset`, which by the pairing is `high`'s old value.
+Without the entry the `+1` commit restores nothing and the helper restores only `low`. It is
+consumed by both `BankStackBrackets` (a pop that writes `A` then `A+1`) and the pairing-aware
+restoring-trampoline walk (`LDX $F0 / STX R7 ... INX / STX R6`). Names are validated against
+the matched board's fields at analysis time; an unknown name licenses nothing.
+
+Shape validation (non-empty lists, 16-bit unique `pointer`, `slots`, `offset` in 1-255,
+distinct `high`/`low`, `provenance` present, no other keys) is `GameCompiler`'s;
+`ExportGameDescriptor.java` carries both verbatim. With the keys absent nothing changes. First
+user: `machines/games/tmnt3.yaml`.
+
 ### Annotation layer and export (bead `grm-hb6.5`)
 
 A game descriptor may carry `symbols:` -- the machine-descriptor set shape (`set`, `default`,

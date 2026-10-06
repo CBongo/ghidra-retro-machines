@@ -31,8 +31,14 @@
 # WHAT THESE HINTS DO NOT DO. They are premises of the restoring-trampoline walk
 # (SaveRestoreTrampolines.restoresEntryBank) and nothing else: neither supplies a bank value. The
 # walk must still find the save, the restore through the hinted cell, and the restoring commit to
-# the same field, in the helper's own code. FUN_9169 (R7 = $F0 AND R6 = $F0+1) is NOT covered --
-# it is not a plain restore (split to its own bead).
+# the same field, in the helper's own code.
+#
+# grm-mej.10 / grm-mej.17 (owner rulings 2026-10-06) add two more stated facts, bank_stacks and
+# paired_fields at the end of this file. bank_stacks makes the RAM bank stack ($F2 pointer, $F3,Y
+# slots) recognizable, so a function that pushes (86f9/873a, directly or via an entry stub such as
+# 86a5), calls, and pops (871c/8751) is a verified bracket; paired_fields (r6 == r7 + 1) makes the
+# pop's R6 := saved+1 commit count as restoring R6, and is what makes FUN_9169 (R7 = $F0 AND
+# R6 = $F0+1) a verified restore too.
 
 schema: 2
 
@@ -66,3 +72,20 @@ banking:
       provenance: "Owner ruling on grm-mej.9 (2026-10-05): $F0 is the dedicated save cell of
         FUN_919e/FUN_91d1 (stores at 9173/91ac/91da are its only real writers); a store of the
         entry bank there is still there after the helper's inner call (JSR $A001 / JSR $A15D)."
+  bank_stacks:
+    - pointer: 0xF2
+      slots: 0xF3
+      provenance: "Owner ruling on grm-mej.10 (2026-10-06): $F2 is the RAM bank-stack pointer and
+        $00F3,Y its slots. A push (FUN_86f9 / FUN_873a) stores the live $A000 identity byte at
+        slots[$F2] and increments $F2; a pop (FUN_871c / FUN_8751) decrements $F2 and re-commits
+        slots[$F2] to R7 (871c: and slot+1 to R6). Every push/pop pair is local to one
+        trampoline, and the code between a push and its pop (inner calls) is stack-balanced:
+        that balance is stated here, not proved."
+  paired_fields:
+    - high: r6
+      low: r7
+      offset: 1
+      provenance: "Owner ruling on grm-mej.10 (2026-10-06): the game keeps R6 == R7 + 1 (a 16K
+        PRG pair: R7 even at $A000, R6 = R7 + 1 at $C000) wherever it runs, so a restore that
+        writes R6 := saved R7 identity + 1 puts R6 back as surely as the R7 restore does. Also
+        covers FUN_9169 (grm-mej.17), whose restore writes R7 = $F0 then R6 = $F0 + 1."

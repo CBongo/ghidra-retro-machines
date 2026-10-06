@@ -241,6 +241,21 @@ final class BankDataflowEngine {
 			Map<Function, HelperModel> helpers, Map<Function, Integer> restoringTrampolines,
 			Set<Address> secondTierRelaySites)
 			throws CancelledException {
+		return runDataflow(program, monitor, listing, mechanisms, board, helpers,
+			restoringTrampolines, secondTierRelaySites, BankStackBrackets.Claims.NONE);
+	}
+
+	/**
+	 * As the 8-argument form, with the verified RAM bank-stack brackets (bead grm-mej.10): at a
+	 * claimed POP call site the restored fields are deposited from the tracked state at the
+	 * matching PUSH, and a claimed push's own unrecoverable argument is private to its bracket.
+	 * {@link BankStackBrackets.Claims#NONE} is the 8-argument form exactly.
+	 */
+	static DataflowResult runDataflow(Program program, TaskMonitor monitor, Listing listing,
+			List<ConfiguredMechanism> mechanisms, BoardModel board,
+			Map<Function, HelperModel> helpers, Map<Function, Integer> restoringTrampolines,
+			Set<Address> secondTierRelaySites, BankStackBrackets.Claims bracketClaims)
+			throws CancelledException {
 
 		Map<Address, LinkedHashMap<PathId, BankState>> stateIn = new HashMap<>();
 		Set<Address> collapsedAddrs = new HashSet<>();
@@ -466,7 +481,8 @@ final class BankDataflowEngine {
 						// its out-state is the in-state.
 						mine = applyHelperCall(program, instr, helper, pathId, mine.get(0).out(),
 							callSiteRegCache, restoringTrampolines, secondTierRelaySites, listing,
-							armCache, budget, call, stateIn, stateDependents, crossBlockProofMemo);
+							armCache, budget, call, stateIn, stateDependents, crossBlockProofMemo,
+							bracketClaims);
 					}
 				}
 				outs.addAll(mine);
@@ -535,7 +551,8 @@ final class BankDataflowEngine {
 			Map<Address, Optional<List<Arm>>> armCache, ForkBudget budget, CallTally call,
 			Map<Address, LinkedHashMap<PathId, BankState>> stateIn,
 			Map<Address, Set<Address>> stateDependents,
-			Map<Address, StoredValueScanner.CrossBlockProof> crossBlockProofMemo) {
+			Map<Address, StoredValueScanner.CrossBlockProof> crossBlockProofMemo,
+			BankStackBrackets.Claims bracketClaims) {
 		Address addr = instr.getMinAddress();
 		// The recording StateOracle for THIS call (grm-mej.3 increment 3): answers the merged
 		// state at any instruction and records the ask as a dependency edge P -> addr, so a later
@@ -559,6 +576,14 @@ final class BankDataflowEngine {
 				? new CallEffect(helper.constState(), helper.effectMask())
 				: recoverCallArgument(program, instr, helper, outState, callSiteRegCache,
 					restoringTrampolines, RegisterEnv.NONE, oracle, crossBlockProofMemo);
+		callEffect = applyBracketClaim(callEffect, addr, bracketClaims, oracle);
+		BankStackBrackets.Restore helperRestore =
+			bracketClaims.helperRestores().get(helper.function());
+		if (helperRestore != null) {
+			// a self-contained restoring helper (grm-mej.10, FUN_9169): restore from the state
+			// at the call itself, computing the paired field rather than copying it
+			callEffect = BankStackBrackets.fold(callEffect, helperRestore, outState);
+		}
 		List<CallEffect> forkEffects = null;
 		boolean denied = false;
 		// grm-wul, the call-site twin of the direct case: the caller's argument did not resolve
@@ -657,6 +682,41 @@ final class BankDataflowEngine {
 			callEffect.argumentResolved(), callEffect.noInboundArgument(),
 			callEffect.secondTierRelay(), callEffect.restoreCell(), callEffect.readBack());
 		return outs;
+	}
+
+	/**
+	 * Folds a verified RAM bank-stack bracket (bead grm-mej.10, {@link BankStackBrackets}) into
+	 * a helper call's effect.
+	 * <p>
+	 * At a verified POP the fields the pop restores take the tracked state AT THE MATCHING PUSH
+	 * (the oracle's merged in-state there: a bracket whose entry bank was unknown deposits an
+	 * unknown, never a made-up value), and the call keeps its ordinary effect on every other
+	 * field. The deposit counts as resolved only when every OTHER owned bit was already known --
+	 * a pop whose own select/mode writes were unrecoverable still warns.
+	 * <p>
+	 * At a PUSH belonging to a verified bracket, the bank argument it could not recover is the
+	 * bracket's private business: the bank it installs lasts only until the pop. The deposit is
+	 * kept (the in-bracket state really is unknown) but the call is not reported as a failed
+	 * argument recovery, provided the only unknown owned bits are the fields the push helper's
+	 * data commits write.
+	 */
+	static CallEffect applyBracketClaim(CallEffect effect, Address addr,
+			BankStackBrackets.Claims claims, StateOracle oracle) {
+		if (claims.isEmpty()) {
+			return effect;
+		}
+		BankStackBrackets.Pop pop = claims.pops().get(addr);
+		if (pop != null) {
+			return BankStackBrackets.fold(effect, pop.restore(), oracle.stateAt(pop.pushSite()));
+		}
+		Integer pushFields = claims.privatePushes().get(addr);
+		if (pushFields != null && !effect.argumentResolved() && effect.ownedMask() != 0 &&
+			(effect.ownedMask() & ~effect.state().knownMask() & ~pushFields) == 0) {
+			return new CallEffect(effect.state(), effect.ownedMask(), true,
+				effect.noInboundArgument(), effect.secondTierRelay(), effect.restoreCell(),
+				effect.readBack());
+		}
+		return effect;
 	}
 
 	/** A strategy's answer for one address: which mechanism matched (null: none) and what it said. */

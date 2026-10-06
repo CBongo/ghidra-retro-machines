@@ -355,6 +355,69 @@ public class GameCompilerTest {
 			"    - address: 0xF0\n      provenance: \"again\"\n", "listed twice");
 	}
 
+	// ---- banking.bank_stacks and banking.paired_fields (bead grm-mej.10) ----
+
+	private static final String BANK_STACKS = """
+		  bank_stacks:
+		    - pointer: 0xF2
+		      slots: 0xF3
+		      provenance: "RAM bank stack"
+		""";
+
+	private static final String PAIRED_FIELDS = """
+		  paired_fields:
+		    - high: r6
+		      low: r7
+		      offset: 1
+		      provenance: "R6 == R7 + 1"
+		""";
+
+	@Test
+	public void compilesBankStacksAndPairedFields() throws Exception {
+		JsonObject banking = compile("stacks", validYaml() + BANK_STACKS + PAIRED_FIELDS)
+			.getAsJsonObject("banking");
+		JsonObject stack = banking.getAsJsonArray("bank_stacks").get(0).getAsJsonObject();
+		assertEquals(0xF2, stack.get("pointer").getAsInt());
+		assertEquals(0xF3, stack.get("slots").getAsInt());
+		assertEquals("RAM bank stack", stack.get("provenance").getAsString());
+		JsonObject pair = banking.getAsJsonArray("paired_fields").get(0).getAsJsonObject();
+		assertEquals("r6", pair.get("high").getAsString());
+		assertEquals("r7", pair.get("low").getAsString());
+		assertEquals(1, pair.get("offset").getAsInt());
+	}
+
+	@Test
+	public void absentBankStacksAndPairedFieldsEmitNothing() throws Exception {
+		JsonObject banking = compile("nostacks", validYaml()).getAsJsonObject("banking");
+		assertFalse(banking.has("bank_stacks"));
+		assertFalse(banking.has("paired_fields"));
+	}
+
+	@Test
+	public void malformedBankStacksAndPairedFieldsAreRejected() throws Exception {
+		expectError("stacknotlist", validYaml() + "  bank_stacks: 0xF2\n", "non-empty list");
+		expectError("stackempty", validYaml() + "  bank_stacks: []\n", "non-empty list");
+		expectError("stacknoprov", validYaml() + BANK_STACKS.replace(
+			"      provenance: \"RAM bank stack\"\n", ""), "provenance");
+		expectError("stacknoslots", validYaml() + BANK_STACKS.replace("      slots: 0xF3\n", ""),
+			"slots");
+		expectError("stackwide", validYaml() + BANK_STACKS.replace("0xF3", "0x10000"), "16-bit");
+		expectError("stackextra", validYaml() + BANK_STACKS.replace("slots: 0xF3",
+			"slots: 0xF3\n      depth: 4"), "unknown key 'depth'");
+		expectError("stackdup", validYaml() + BANK_STACKS +
+			"    - pointer: 0xF2\n      slots: 0x100\n      provenance: \"again\"\n",
+			"listed twice");
+		expectError("pairnotlist", validYaml() + "  paired_fields: r6\n", "non-empty list");
+		expectError("pairnoprov", validYaml() + PAIRED_FIELDS.replace(
+			"      provenance: \"R6 == R7 + 1\"\n", ""), "provenance");
+		expectError("pairsame", validYaml() + PAIRED_FIELDS.replace("low: r7", "low: r6"),
+			"same field");
+		expectError("pairoffset0", validYaml() + PAIRED_FIELDS.replace("offset: 1", "offset: 0"),
+			"offset must be");
+		expectError("pairextra", validYaml() + PAIRED_FIELDS.replace("offset: 1",
+			"offset: 1\n      width: 2"), "unknown key 'width'");
+	}
+
 	private void expectError(String name, String yaml, String messagePart) throws Exception {
 		Path dir = tmp.getRoot().toPath();
 		Path yamlPath = dir.resolve(name + ".yaml");

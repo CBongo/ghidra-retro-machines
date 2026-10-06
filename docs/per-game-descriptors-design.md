@@ -802,6 +802,19 @@ walk's one new allowance, a forward conditional branch whose taken path is itsel
 `PLA / RTS` exit. The first user is `machines/games/tmnt3.yaml` (`FUN_919e` / `FUN_91d1`),
 together with a biased `bank_identifying_offsets` entry for `$A000` (docs/SCHEMA.md).
 
+**`banking.bank_stacks` and `banking.paired_fields` (bead `grm-mej.10`) are the fourth and
+fifth.** Syntax and meaning: docs/SCHEMA.md. `bank_stacks: [{ pointer, slots, provenance }]`
+names a RAM bank stack; `paired_fields: [{ high, low, offset, provenance }]` asserts
+`high == low + offset` (tmnt3: `r6 == r7 + 1`). Both are published by `NesRomLoader.load` as
+`Retro Machines.Bank Stacks` / `Retro Machines.Paired Fields` and read by `BoardBankAnalyzer` at
+analysis time. `BankStackBrackets` proves, per push call site, that the push dominates the pop
+it pairs with, and `BankDataflowEngine.applyBracketClaim` folds the result in: the pop deposits
+the state at the push for the fields it restores. The owner's stated fact that inner calls are
+stack-balanced is the one premise nothing proves. The pairing also drives the pairing-aware
+restoring-trampoline walk (`SaveRestoreTrampolines.restoredFieldMask` with pairings), which is
+what makes tmnt3's `FUN_9169` (`grm-mej.17`) a verified `r6`+`r7` restore. First user:
+`machines/games/tmnt3.yaml` (its `FUN_871c`/`FUN_8751`/`FUN_86f9` pop and push sites).
+
 Three properties for every ANALYZER-consumed hint kind to inherit exactly:
 
 - **One-shot re-run support** (`:93`) — the user-facing recovery path.

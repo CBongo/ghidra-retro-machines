@@ -295,6 +295,18 @@ public final class GameDescriptorExporter {
 		if (!saveCells.isEmpty()) {
 			banking.put("save_cells", saveCells);
 		}
+		List<Map<String, Object>> bankStacks = verbatimBankingList(program, skipped,
+			DescriptorSupport.BANK_STACKS_PROPERTY, "stacks", "banking.bank_stacks",
+			new String[] { "pointer", "slots" }, new String[0]);
+		if (!bankStacks.isEmpty()) {
+			banking.put("bank_stacks", bankStacks);
+		}
+		List<Map<String, Object>> pairedFields = verbatimBankingList(program, skipped,
+			DescriptorSupport.PAIRED_FIELDS_PROPERTY, "pairs", "banking.paired_fields",
+			new String[0], new String[] { "high", "low", "offset" });
+		if (!pairedFields.isEmpty()) {
+			banking.put("paired_fields", pairedFields);
+		}
 		if (!banking.isEmpty()) {
 			doc.put("banking", banking);
 		}
@@ -387,6 +399,43 @@ public final class GameDescriptorExporter {
 		catch (RuntimeException e) {
 			skipped.add(DescriptorSupport.SAVE_CELLS_PROPERTY + " is malformed (" +
 				e.getMessage() + "); banking.save_cells not carried");
+			return new ArrayList<>();
+		}
+		return out;
+	}
+
+	/**
+	 * A hand-stated banking hint list (bead grm-mej.10), copied verbatim, provenance included,
+	 * from the program property the loader recorded. {@code hexKeys} are written as hex
+	 * addresses, {@code plainKeys} as recorded (a string or small integer).
+	 */
+	private static List<Map<String, Object>> verbatimBankingList(Program program,
+			List<String> skipped, String property, String arrayKey, String label,
+			String[] hexKeys, String[] plainKeys) {
+		List<Map<String, Object>> out = new ArrayList<>();
+		String spec = DescriptorSupport.programInfoString(program, property);
+		if (spec == null || spec.isBlank()) {
+			return out;
+		}
+		try {
+			JsonObject root = JsonParser.parseString(spec).getAsJsonObject();
+			for (JsonElement el : root.getAsJsonArray(arrayKey)) {
+				JsonObject o = el.getAsJsonObject();
+				Map<String, Object> e = new LinkedHashMap<>();
+				for (String k : hexKeys) {
+					e.put(k, new HexInt(o.get(k).getAsLong()));
+				}
+				for (String k : plainKeys) {
+					var v = o.get(k).getAsJsonPrimitive();
+					e.put(k, v.isNumber() ? (Object) v.getAsInt() : v.getAsString());
+				}
+				e.put("provenance", o.get("provenance").getAsString());
+				out.add(e);
+			}
+		}
+		catch (RuntimeException e) {
+			skipped.add(property + " is malformed (" + e.getMessage() + "); " + label +
+				" not carried");
 			return new ArrayList<>();
 		}
 		return out;
