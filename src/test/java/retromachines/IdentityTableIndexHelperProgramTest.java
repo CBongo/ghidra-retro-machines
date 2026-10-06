@@ -284,7 +284,7 @@ public class IdentityTableIndexHelperProgramTest extends AbstractBundledLanguage
 
 		StateOracle oracle = addr -> BankState.unknown();
 		CallEffect effect = HelperArgumentRecovery.recoverCallArgument(program,
-			instructionAt("0x8008"), helper, BankState.unknown(), new HashMap<>(), new HashSet<>(),
+			instructionAt("0x8008"), helper, BankState.unknown(), new HashMap<>(), new java.util.HashMap<>(),
 			RegisterEnv.NONE, oracle);
 
 		assertFalse("the table index (Y) never resolves to a number", effect.argumentResolved());
@@ -316,7 +316,7 @@ public class IdentityTableIndexHelperProgramTest extends AbstractBundledLanguage
 		StateOracle oracle =
 			addr -> phaAddr.equals(addr) ? BankState.fullyKnown(0x07, 3) : BankState.unknown();
 		CallEffect effect = HelperArgumentRecovery.recoverCallArgument(program,
-			instructionAt("0x8008"), helper, BankState.unknown(), new HashMap<>(), new HashSet<>(),
+			instructionAt("0x8008"), helper, BankState.unknown(), new HashMap<>(), new java.util.HashMap<>(),
 			RegisterEnv.NONE, oracle);
 
 		assertTrue("a known in-state at the push must still resolve to a number",
@@ -346,7 +346,7 @@ public class IdentityTableIndexHelperProgramTest extends AbstractBundledLanguage
 
 		StateOracle oracle = addr -> BankState.unknown();
 		CallEffect effect = HelperArgumentRecovery.recoverCallArgument(program,
-			instructionAt("0x8008"), helper, BankState.unknown(), new HashMap<>(), new HashSet<>(),
+			instructionAt("0x8008"), helper, BankState.unknown(), new HashMap<>(), new java.util.HashMap<>(),
 			RegisterEnv.NONE, oracle);
 
 		assertFalse(effect.argumentResolved());
@@ -368,7 +368,7 @@ public class IdentityTableIndexHelperProgramTest extends AbstractBundledLanguage
 
 		StateOracle oracle = addr -> BankState.unknown();
 		CallEffect effect = HelperArgumentRecovery.recoverCallArgument(program,
-			instructionAt("0x8008"), helper, BankState.unknown(), new HashMap<>(), new HashSet<>(),
+			instructionAt("0x8008"), helper, BankState.unknown(), new HashMap<>(), new java.util.HashMap<>(),
 			RegisterEnv.NONE, oracle);
 
 		assertFalse(effect.argumentResolved());
@@ -407,7 +407,7 @@ public class IdentityTableIndexHelperProgramTest extends AbstractBundledLanguage
 
 		StateOracle oracle = addr -> BankState.unknown();
 		CallEffect effect = HelperArgumentRecovery.recoverCallArgument(program,
-			instructionAt("0x8008"), helper, BankState.unknown(), new HashMap<>(), new HashSet<>(),
+			instructionAt("0x8008"), helper, BankState.unknown(), new HashMap<>(), new java.util.HashMap<>(),
 			RegisterEnv.NONE, oracle);
 
 		assertFalse(effect.argumentResolved());
@@ -445,7 +445,7 @@ public class IdentityTableIndexHelperProgramTest extends AbstractBundledLanguage
 
 		StateOracle oracle = addr -> BankState.unknown();
 		CallEffect effect = HelperArgumentRecovery.recoverCallArgument(program,
-			instructionAt("0x8008"), helper, BankState.unknown(), new HashMap<>(), new HashSet<>(),
+			instructionAt("0x8008"), helper, BankState.unknown(), new HashMap<>(), new java.util.HashMap<>(),
 			RegisterEnv.NONE, oracle);
 
 		assertNull("Y is reloaded inside the helper -- the caller's read-back is not what the "
@@ -468,7 +468,7 @@ public class IdentityTableIndexHelperProgramTest extends AbstractBundledLanguage
 
 		StateOracle oracle = addr -> BankState.unknown();
 		CallEffect effect = HelperArgumentRecovery.recoverCallArgument(program,
-			instructionAt("0x8008"), helper, BankState.unknown(), new HashMap<>(), new HashSet<>(),
+			instructionAt("0x8008"), helper, BankState.unknown(), new HashMap<>(), new java.util.HashMap<>(),
 			RegisterEnv.NONE, oracle);
 
 		assertFalse(effect.argumentResolved());

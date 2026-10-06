@@ -278,7 +278,7 @@ public class HelperNoArgumentRestoreProgramTest extends AbstractBundledLanguageT
 	private CallEffect recover(HelperModel helper, String callSite) throws Exception {
 		Instruction callInstr = program.getListing().getInstructionAt(builder.addr(callSite));
 		Map<HelperArgumentRecovery.CallSiteRegKey, RegisterEnv> envCache = new HashMap<>();
-		Set<Function> restoringTrampolines = new HashSet<>();
+		Map<Function, Integer> restoringTrampolines = new java.util.HashMap<>();
 		return HelperArgumentRecovery.recoverCallArgument(program, callInstr, helper,
 			BankState.unknown(), envCache, restoringTrampolines);
 	}

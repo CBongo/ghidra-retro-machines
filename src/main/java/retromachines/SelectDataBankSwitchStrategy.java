@@ -897,6 +897,26 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 		return false;
 	}
 
+	/** An even-offset (select) write commits no bank; an odd-offset (data) write commits into the
+	 *  target the helper's own select names, or nothing for an untracked register; a data write
+	 *  whose select the helper does not supply is undeterminable (-1). */
+	@Override
+	public int bankFieldCommittedBySite(Program program, Instruction site) {
+		Long offset = writesInRange(site);
+		if (offset == null) {
+			return -1;
+		}
+		if ((offset & 1) == 0) {
+			return 0;
+		}
+		Integer selectValue = selectSuppliedInsideHelper(program, site);
+		if (selectValue == null) {
+			return -1;
+		}
+		FieldPos target = targets.get(selectValue);
+		return target == null ? 0 : target.mask();
+	}
+
 	private Long writesInRange(Instruction instr) {
 		for (Reference ref : instr.getReferencesFrom()) {
 			Address to = ref.getToAddress();

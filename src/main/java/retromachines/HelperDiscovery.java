@@ -937,7 +937,7 @@ final class HelperDiscovery {
 				continue;
 			}
 			HelperArgumentRecovery.CallEffect restoreEffect = recoverCallArgument(program,
-				furtherInstr, wrapped, BankState.unknown(), new HashMap<>(), Set.of());
+				furtherInstr, wrapped, BankState.unknown(), new HashMap<>(), Map.of());
 			if (!restoreEffect.argumentResolved()) {
 				continue; // cannot establish the exit state -- decline rather than guess
 			}

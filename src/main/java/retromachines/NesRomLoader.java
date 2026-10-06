@@ -738,6 +738,13 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 					program.getOptions(Program.PROGRAM_INFO).setString(
 						DescriptorSupport.BANK_IDENTIFYING_HINTS_PROPERTY, hints);
 				}
+				// bead grm-mej.9: banking.save_cells, read by the analyzer at analysis time.
+				String saveCells = DescriptorSupport.formatSaveCells(gameDescriptor.doc(),
+					gameDescriptor.gmapPath());
+				if (saveCells != null) {
+					program.getOptions(Program.PROGRAM_INFO).setString(
+						DescriptorSupport.SAVE_CELLS_PROPERTY, saveCells);
+				}
 			}
 		}
 

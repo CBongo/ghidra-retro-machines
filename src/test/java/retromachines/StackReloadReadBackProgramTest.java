@@ -175,7 +175,7 @@ public class StackReloadReadBackProgramTest extends AbstractBundledLanguageTest 
 	private CallEffect recover(HelperModel helper) {
 		StateOracle oracle = a -> BankState.unknown();
 		return HelperArgumentRecovery.recoverCallArgument(program, instructionAt("0xc003"), helper,
-			BankState.unknown(), new HashMap<>(), new HashSet<>(), RegisterEnv.NONE, oracle);
+			BankState.unknown(), new HashMap<>(), new java.util.HashMap<>(), RegisterEnv.NONE, oracle);
 	}
 
 	private ReloadTransform transform(String entry, String valueSite) {
@@ -401,7 +401,7 @@ public class StackReloadReadBackProgramTest extends AbstractBundledLanguageTest 
 	private CallEffect recoverShadow(HelperModel helper) {
 		StateOracle oracle = a -> BankState.unknown();
 		return HelperArgumentRecovery.recoverCallArgument(program, instructionAt("0xc002"), helper,
-			BankState.unknown(), new HashMap<>(), new HashSet<>(), RegisterEnv.NONE, oracle);
+			BankState.unknown(), new HashMap<>(), new java.util.HashMap<>(), RegisterEnv.NONE, oracle);
 	}
 
 	/** The read-back is KEPT: A does not survive to firstSite (it holds the select constant),
@@ -597,7 +597,7 @@ public class StackReloadReadBackProgramTest extends AbstractBundledLanguageTest 
 		assertNull(HelperArgumentRecovery.argumentReloadTransform(program, helper, 'A'));
 		StateOracle oracle = a -> BankState.unknown();
 		CallEffect effect = HelperArgumentRecovery.recoverCallArgument(program,
-			instructionAt("0xc005"), helper, BankState.unknown(), new HashMap<>(), new HashSet<>(),
+			instructionAt("0xc005"), helper, BankState.unknown(), new HashMap<>(), new java.util.HashMap<>(),
 			RegisterEnv.NONE, oracle);
 		assertFalse(effect.argumentResolved());
 		assertNull(effect.readBack());

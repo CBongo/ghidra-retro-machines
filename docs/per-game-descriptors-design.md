@@ -786,6 +786,22 @@ analyzer verifies: the descriptor's `provenance` should record the survey of eve
 field (blmaster: `machines/games/blmaster.yaml`, the one shipped user). The general
 whole-image invariance pass was deliberately deferred until a title needs it.
 
+**`banking.save_cells` (bead `grm-mej.9`) is the third loader-published hint.** Syntax:
+`banking: { save_cells: [{ address: 0xF0, provenance: "..." }] }` -- a non-empty list of RAM cell
+addresses (GameCompiler rejects an empty list, a non-list, an unknown key, a duplicate, a
+non-16-bit address, or a missing provenance). Meaning (the owner's fact about the title): a store
+of the entry bank into the cell by a bank-switch helper is still there after that helper's inner
+call. `NesRomLoader.load` publishes it as the `Retro Machines.Save Cells` program property;
+`BoardBankAnalyzer` reads it at analysis time (so a re-analysis picks it up) and hands it to
+`SaveRestoreTrampolines.restoresEntryBank`, whose straight-line walk then follows
+`LDA <live-bank mirror> / STA cell ... JSR inner ... LDA cell / STA <commit>` as a restore. It
+is a premise of that walk and never a source of a bank value (SEED, DO NOT INJECT): with no
+hint the walk is what it was, and a wrong hint can only ever leave a call unannotated or
+mis-annotated in the direction the owner's fact points. The same key also opts the game into the
+walk's one new allowance, a forward conditional branch whose taken path is itself a no-op
+`PLA / RTS` exit. The first user is `machines/games/tmnt3.yaml` (`FUN_919e` / `FUN_91d1`),
+together with a biased `bank_identifying_offsets` entry for `$A000` (docs/SCHEMA.md).
+
 Three properties for every ANALYZER-consumed hint kind to inherit exactly:
 
 - **One-shot re-run support** (`:93`) — the user-facing recovery path.

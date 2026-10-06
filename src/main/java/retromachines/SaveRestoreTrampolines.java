@@ -17,6 +17,9 @@ package retromachines;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 
 import ghidra.program.model.address.Address;
@@ -146,49 +149,121 @@ final class SaveRestoreTrampolines {
 	// directly with a hand-built HelperModel; see the visibility note on HelperModel itself.
 	static boolean restoresEntryBank(Program program, HelperModel helper,
 			BankMirrors mirrors, Set<Address> switchSites) {
+		return restoredFieldMask(program, helper, mirrors, switchSites, Set.of()) != null;
+	}
+
+	/** As above, with the descriptor's hinted save cells (bead grm-mej.9). */
+	static boolean restoresEntryBank(Program program, HelperModel helper,
+			BankMirrors mirrors, Set<Address> switchSites, Set<Long> saveCells) {
+		return restoredFieldMask(program, helper, mirrors, switchSites, saveCells) != null;
+	}
+
+	/**
+	 * The {@code restoringTrampolines} map value meaning "a call to this helper is a verified
+	 * whole-state no-op"; any other value is the positioned field mask the helper alone
+	 * restores (bead grm-mej.9), and a call keeps its ordinary effect on every other field.
+	 * Being a map value rather than a side channel makes it impossible for a caller to pass
+	 * the membership and lose the scope.
+	 */
+	static final int ALL_FIELDS = -1;
+
+	/**
+	 * What a stack slot, or the accumulator, is known to hold: the entry bank or not, and the
+	 * live-bank mirror cell the entry bank was read from (null when not the entry bank).
+	 */
+	private record Holds(boolean entryBank, Address source) {
+		static final Holds NO = new Holds(false, null);
+	}
+
+	/**
+	 * {@link #restoresEntryBank(Program, HelperModel, BankMirrors, Set)} with the grm-mej.9
+	 * additions: a HINTED save cell, and the per-site field masks needed to check a biased
+	 * identity byte against the field it restores.
+	 * <p>
+	 * <b>Hinted save cell</b> ({@code banking.save_cells}, a per-game fact). A store of A into a
+	 * cell in {@code saveCells} while A holds the entry bank records "this cell holds the entry
+	 * bank"; the inner call does NOT invalidate it -- exactly what the hint licenses, the
+	 * owner's fact being that the callee does not disturb the cell -- though it still clobbers
+	 * every register; any OTHER write to the cell, or any write whose target is not a plain
+	 * absolute address (it might be the cell), invalidates it; a later load of the cell sets
+	 * "A holds the entry bank". Cells outside the hint are not tracked at all, so with no hint
+	 * the walk is exactly what it was. SEED, DO NOT INJECT: the hint never supplies a bank
+	 * value, only the one premise the walk cannot prove, and a wrong hint at worst leaves the
+	 * claim unmade.
+	 * <p>
+	 * <b>Biased identity byte</b> (tmnt3's {@code LDA $A000}: {@code $20+N} on even banks N).
+	 * Committing that byte back selects the same PHYSICAL bank, because the board ignores the
+	 * bit {@code bias} stands for. The walk therefore accepts it as "the entry bank" only when
+	 * {@link BankMirrors#restoreAliasesLiveBank} holds (a verified membership hint excludes the
+	 * junk odd banks) and every mechanism write on the walk, including the restoring commit,
+	 * writes exactly the field that byte's window belongs to -- a helper that also switched some
+	 * OTHER field and did not put it back is not a no-op. The claim is "the bank the caller had
+	 * is the bank the caller gets back"; the tracked field value may differ by the ignored bit,
+	 * which is why the deposit is {@code ownedMask = 0} (the caller's state is left untouched).
+	 * <p>
+	 * <b>Early-out branch</b> (tmnt3's {@code PHA / LDA $27 / BNE out}, out = {@code PLA / RTS}).
+	 * Only when {@code saveCells} is non-empty (the game has opted in), a forward conditional
+	 * branch is allowed if its taken path is itself a no-op: it reaches {@code RTS} within a few
+	 * instructions with this helper's own stack depth back at zero, without a call, a memory
+	 * write, a stack-pointer write other than that {@code RTS}, a mechanism write, or any other
+	 * branch. Anything else still declines.
+	 *
+	 * @param saveCells CPU offsets of the descriptor's hinted save cells
+	 * @return null when the helper is not a restoring trampoline; 0 when a call to it is a
+	 *         whole-state no-op (every pre-grm-mej.9 claim); a positive positioned field mask
+	 *         when it only restores that field (a biased identity byte -- see above)
+	 */
+	static Integer restoredFieldMask(Program program, HelperModel helper,
+			BankMirrors mirrors, Set<Address> switchSites, Set<Long> saveCells) {
 		Address switchSite = helper.switchSite();
 		if (switchSite == null || mirrors.isEmpty()) {
-			return false;
+			return null;
 		}
 		Register stackPointer = program.getCompilerSpec().getStackPointer();
 		if (stackPointer == null) {
-			return false; // cannot verify the depth model -> do not assume the favorable answer
+			return null; // cannot verify the depth model -> do not assume the favorable answer
 		}
 		Listing listing = program.getListing();
-		// One entry per byte this walk watched being pushed, true when that byte IS the bank that
-		// was live on entry.
-		Deque<Boolean> saved = new ArrayDeque<>();
-		boolean holdsEntryBank = false;
+		// One entry per byte this walk watched being pushed.
+		Deque<Holds> saved = new ArrayDeque<>();
+		Holds a = Holds.NO;
+		// Hinted save cells currently known to hold the entry bank, by CPU offset.
+		Map<Long, Address> cells = new HashMap<>();
+		Set<Address> mechanismWritesSeen = new HashSet<>();
 		boolean sawMechanismWrite = false;
 
 		Address cursor = insideHelperEntry(helper);
 		for (int i = 0; i < MAX_TRAMPOLINE_SCAN; i++) {
 			Instruction instr = listing.getInstructionAt(cursor);
 			if (instr == null) {
-				return false;
+				return null;
 			}
 			if (cursor.equals(switchSite)) {
 				// The restore itself. It commits A, so the helper is a verified no-op exactly when
 				// A holds the bank that was live on entry.
 				Character stored = StoredValueScanner.storeRegister(instr);
-				return holdsEntryBank && stored != null && stored.charValue() == 'A';
+				if (!(a.entryBank() && stored != null && stored.charValue() == 'A')) {
+					return null;
+				}
+				mechanismWritesSeen.add(cursor);
+				return fieldScopedMask(program, helper, mirrors, a.source(), mechanismWritesSeen);
 			}
 
 			boolean modelled = true;
 			switch (instr.getMnemonicString().toUpperCase()) {
-				case "PHA" -> saved.push(holdsEntryBank);
+				case "PHA" -> saved.push(a);
 				case "PLA" -> {
 					if (saved.isEmpty()) {
-						return false; // popping the caller's frame, or a depth this walk lost
+						return null; // popping the caller's frame, or a depth this walk lost
 					}
-					holdsEntryBank = saved.pop();
+					a = saved.pop();
 				}
 				// PHP/PLP are modelled ONLY to keep the depth honest, so an interleaved status
 				// push cannot make a later PLA pop the wrong byte. A status byte is never a bank.
-				case "PHP" -> saved.push(Boolean.FALSE);
+				case "PHP" -> saved.push(Holds.NO);
 				case "PLP" -> {
 					if (saved.isEmpty()) {
-						return false;
+						return null;
 					}
 					saved.pop();
 				}
@@ -203,24 +278,53 @@ final class SaveRestoreTrampolines {
 					// fall-through reasoning at all, and a missing fall-through is Ghidra saying
 					// the callee does not return.
 					if (instr.getFlowType().isComputed() || instr.getFallThrough() == null) {
-						return false;
+						return null;
 					}
-					holdsEntryBank = false; // the callee may clobber A; the stack slot is what carries
+					a = Holds.NO; // the callee may clobber A; the stack slot (and a hinted cell) carry
 					cursor = instr.getFallThrough();
 					continue;
 				}
 				if (switchSites.contains(instr.getMinAddress())) {
 					sawMechanismWrite = true;
+					mechanismWritesSeen.add(instr.getMinAddress());
 				}
 				Address from = argumentReloadSource(instr, 'A');
 				if (!sawMechanismWrite && from != null && isLiveBankMirror(mirrors, from)) {
-					holdsEntryBank = true;
+					a = new Holds(true, from);
+				}
+				else if (from != null && cells.containsKey(from.getOffset())) {
+					a = new Holds(true, cells.get(from.getOffset()));
 				}
 				else if (StoredValueScanner.modifiesRegister(instr, 'A')) {
-					holdsEntryBank = false;
+					a = Holds.NO;
+				}
+				if (!saveCells.isEmpty() && StoredValueScanner.writesMemory(instr)) {
+					Address target = StoredValueScanner.plainAbsoluteTarget(instr);
+					if (target == null) {
+						cells.clear(); // an indexed/indirect write might be the cell
+					}
+					else if (saveCells.contains(target.getOffset())) {
+						Character stored = StoredValueScanner.storeRegister(instr);
+						if (stored != null && stored.charValue() == 'A' && a.entryBank()) {
+							cells.put(target.getOffset(), a.source());
+						}
+						else {
+							cells.remove(target.getOffset());
+						}
+					}
 				}
 				if (writesStackPointer(instr, stackPointer)) {
-					return false;
+					return null;
+				}
+				// A forward conditional branch whose taken path is itself a no-op exit (see the
+				// javadoc). Opt-in only: the game has stated save cells.
+				if (!saveCells.isEmpty() && isForwardConditionalBranch(instr)) {
+					if (!takenPathIsNoOpExit(program, instr.getFlows()[0], saved.size(),
+						switchSites, stackPointer)) {
+						return null;
+					}
+					cursor = instr.getFallThrough();
+					continue;
 				}
 				// The walk may only advance along a REAL fall-through, and the test is stated that
 				// way round on purpose: "has no outgoing flows" is not the same property and does
@@ -237,12 +341,109 @@ final class SaveRestoreTrampolines {
 				// p-code decrements SP, so writesStackPointer above already declines it. Do not
 				// read the test that covers it as pinning this line specifically.
 				if (instr.getFlows().length > 0 || instr.getFallThrough() == null) {
-					return false;
+					return null;
 				}
 			}
 			cursor = instr.getFallThrough();
 			if (cursor == null) {
-				return false; // a modelled stack op with no fall-through: off the line, decline
+				return null; // a modelled stack op with no fall-through: off the line, decline
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * For a BIASED identity byte (grm-mej.9) as the source of the restored value: the byte must be
+	 * trusted to alias the live bank, and every mechanism write on the walk must be either a
+	 * write that commits no bank (a register select) or a bank commit into exactly the field the
+	 * byte's window belongs to, as the helper's own body establishes
+	 * ({@link BankSwitchStrategy#bankFieldCommittedBySite}). Returns that positioned field mask,
+	 * or {@code null} to refuse. Any other source (a write-through shadow, an identity or
+	 * shift-encoded ROM byte) is accepted exactly as before this bead, as a whole-state no-op
+	 * ({@code 0}).
+	 */
+	private static Integer fieldScopedMask(Program program, HelperModel helper,
+			BankMirrors mirrors, Address source, Set<Address> mechanismWrites) {
+		BankMirrors.IdentifyingEncoding encoding =
+			source == null ? null : mirrors.identifyingEncoding(source);
+		if (encoding == null || !encoding.isBiased()) {
+			return 0;
+		}
+		BoardDescriptorModel.FieldSpec field = mirrors.identifyingField(source);
+		if (!mirrors.restoreAliasesLiveBank(source) || field == null ||
+			helper.strategy() == null) {
+			return null;
+		}
+		int fieldMask = field.positionedMask();
+		boolean committedField = false;
+		for (Address site : mechanismWrites) {
+			Instruction instr = program.getListing().getInstructionAt(site);
+			if (instr == null) {
+				return null;
+			}
+			int committed = helper.strategy().bankFieldCommittedBySite(program, instr);
+			if (committed < 0) {
+				return null;
+			}
+			if (committed == 0) {
+				continue;
+			}
+			if (((committed << helper.lsb()) & helper.effectMask()) != fieldMask) {
+				return null; // commits a bank into some OTHER field, which nothing here restores
+			}
+			committedField = true;
+		}
+		return committedField ? fieldMask : null;
+	}
+
+	private static boolean isForwardConditionalBranch(Instruction instr) {
+		return instr.getFlowType().isConditional() && !instr.getFlowType().isCall() &&
+			!instr.getFlowType().isComputed() && instr.getFlows().length == 1 &&
+			instr.getFallThrough() != null &&
+			instr.getFlows()[0].compareTo(instr.getMinAddress()) > 0;
+	}
+
+	/** How many instructions {@link #takenPathIsNoOpExit} follows. */
+	private static final int MAX_EXIT_PATH = 8;
+
+	/**
+	 * Whether the path starting at {@code target} is itself a no-op: straight-line code that
+	 * pops back to this helper's entry stack depth and returns, touching no memory, calling
+	 * nothing, and writing no mechanism. {@code depth} is the number of bytes this helper has
+	 * pushed so far.
+	 */
+	private static boolean takenPathIsNoOpExit(Program program, Address target, int depth,
+			Set<Address> switchSites, Register stackPointer) {
+		Listing listing = program.getListing();
+		Address cursor = target;
+		for (int i = 0; i < MAX_EXIT_PATH; i++) {
+			Instruction instr = listing.getInstructionAt(cursor);
+			if (instr == null) {
+				return false;
+			}
+			String mnemonic = instr.getMnemonicString().toUpperCase();
+			switch (mnemonic) {
+				case "RTS" -> {
+					return depth == 0;
+				}
+				case "PHA", "PHP" -> depth++;
+				case "PLA", "PLP" -> {
+					if (depth == 0) {
+						return false;
+					}
+					depth--;
+				}
+				default -> {
+					if (instr.getFlowType().isCall() || switchSites.contains(instr.getMinAddress()) ||
+						StoredValueScanner.writesMemory(instr) ||
+						writesStackPointer(instr, stackPointer) || instr.getFlows().length > 0) {
+						return false;
+					}
+				}
+			}
+			cursor = instr.getFallThrough();
+			if (cursor == null) {
+				return false;
 			}
 		}
 		return false;

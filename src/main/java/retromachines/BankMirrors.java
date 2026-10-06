@@ -261,7 +261,14 @@ public final class BankMirrors {
 	 * it anyway would ship a confidently wrong number for a bank that only ever fails safe here
 	 * because nothing tried to read it as one.
 	 */
-	record IdentifyingEncoding(int shift, int low, Set<Integer> verified, Set<Integer> realized) {
+	record IdentifyingEncoding(int shift, int low, int bias, int modBits, Set<Integer> verified,
+			Set<Integer> realized) {
+
+		/** The classic form: {@code byte == bank >> shift} on banks congruent to {@code low}
+		 *  modulo {@code 2^shift}, no bias. */
+		IdentifyingEncoding(int shift, int low, Set<Integer> verified, Set<Integer> realized) {
+			this(shift, low, 0, shift, verified, realized);
+		}
 
 		/** The trivial encoding: {@code byte == bank}, unconditionally. */
 		static IdentifyingEncoding identity() {
@@ -269,9 +276,23 @@ public final class BankMirrors {
 		}
 
 		/** Whether this is the ordinary {@code byte == bank} convention, with no congruence
-		 *  restriction at all. */
+		 *  restriction and no bias at all. */
 		boolean isIdentity() {
-			return shift == 0;
+			return shift == 0 && bias == 0 && modBits == 0;
+		}
+
+		/**
+		 * Whether this is the BIASED form (bead grm-mej.9): {@code byte == bank + bias} on the
+		 * banks congruent to {@code low} modulo {@code 2^modBits}, where {@code bias} is the
+		 * window's realized bank count -- tmnt3's {@code $A000} holds {@code $20+N} on even
+		 * banks N of a 32-bank board. The byte is NOT the bank number, but it names the same
+		 * PHYSICAL bank when written to a bank register whose hardware ignores the bit
+		 * {@code bias} stands for (MMC3 masks the PRG bank number to the bank count), which is
+		 * the only property a save/restore read-back needs. It deliberately resolves to no
+		 * tracked value ({@link #byteFor} refuses) and supports no re-encoded commit.
+		 */
+		boolean isBiased() {
+			return bias != 0;
 		}
 
 		/**
@@ -284,6 +305,13 @@ public final class BankMirrors {
 		String describe() {
 			if (isIdentity()) {
 				return "byte = bank";
+			}
+			if (isBiased()) {
+				int modulus = 1 << modBits;
+				String cls = modulus == 1 ? "" : modulus == 2
+						? " on " + (low == 0 ? "even" : "odd") + " banks"
+						: " on banks == " + low + " (mod " + modulus + ")";
+				return "byte = bank+" + bias + cls;
 			}
 			int divisor = 1 << shift;
 			String numerator = low == 0 ? "bank" : "(bank-" + low + ")";
@@ -321,6 +349,9 @@ public final class BankMirrors {
 		 * @return the resolved byte, or {@link BankState#unknown()} when the proof does not reach it
 		 */
 		BankState byteFor(int fieldKnown, int fieldBits, int fieldMask) {
+			if (isBiased()) {
+				return BankState.unknown(); // a biased byte is a physical-bank alias, not a value
+			}
 			int lowMask = (1 << shift) - 1;
 			if ((fieldKnown & lowMask) != lowMask || (fieldBits & lowMask) != low) {
 				return BankState.unknown();
@@ -579,6 +610,11 @@ public final class BankMirrors {
 		if (encoding != null && encoding.isIdentity()) {
 			return Membership.NOT_NEEDED;
 		}
+		if (encoding != null && encoding.isBiased()) {
+			// grm-mej.9: no read-back claim (RESTORED value) is ever made through a biased byte;
+			// it is consumed only by SaveRestoreTrampolines, via restoreAliasesLiveBank.
+			return Membership.UNPROVEN;
+		}
 		BoardDescriptorModel.FieldSpec field = identifyingField(cell);
 		if (encoding != null && field != null && statesAtRead != null &&
 			!statesAtRead.isEmpty() &&
@@ -611,6 +647,32 @@ public final class BankMirrors {
 		NOT_NEEDED, PROVEN, HINTED, UNPROVEN
 	}
 
+	/**
+	 * Whether a load of {@code cell} yields a byte that, committed back to the register owning
+	 * the cell's window, re-selects the bank that was live at the load (bead grm-mej.9): true
+	 * for a {@link Kind#WRITE_THROUGH} shadow, an identity-encoded {@link Kind#ROM_IDENTIFYING}
+	 * byte, and a BIASED byte whose membership premise a verified game-descriptor hint states.
+	 * False for everything else -- in particular a shift-encoded byte (a re-commit would need
+	 * the helper to re-apply the encoding) and an unhinted biased byte (its junk odd-bank bytes
+	 * are only excluded by the hint).
+	 */
+	boolean restoreAliasesLiveBank(Address cell) {
+		if (cell == null) {
+			return false;
+		}
+		if (is(cell, Kind.WRITE_THROUGH)) {
+			return true;
+		}
+		IdentifyingEncoding encoding = identifyingEncoding(cell);
+		if (encoding == null) {
+			return false;
+		}
+		if (encoding.isIdentity()) {
+			return true;
+		}
+		return encoding.isBiased() && encoding.shift() == 0 && membershipHint(cell) != null;
+	}
+
 	/** The source (descriptor path) of a VERIFIED membership hint for {@code cell}, or null. */
 	String membershipHint(Address cell) {
 		Long offset = normalizedQueryOffset(cell);
@@ -623,7 +685,11 @@ public final class BankMirrors {
 	 * bank_identifying_offset} vocabulary). {@code shift}/{@code low} restate the encoding the
 	 * descriptor author believes, so a hint about a DIFFERENT encoding can be caught.
 	 */
-	record MembershipHint(long offset, int shift, int low, String source) {}
+	record MembershipHint(long offset, int shift, int low, int bias, int modBits, String source) {
+		MembershipHint(long offset, int shift, int low, String source) {
+			this(offset, shift, low, 0, shift, source);
+		}
+	}
 
 	/**
 	 * This set with {@code hints} applied, each one ONLY if it verifies against the derivation:
@@ -649,10 +715,13 @@ public final class BankMirrors {
 					"bank-identifying (no derived ROM_IDENTIFYING mirror there)");
 				continue;
 			}
-			if (encoding.shift() != hint.shift() || encoding.low() != hint.low()) {
+			if (encoding.shift() != hint.shift() || encoding.low() != hint.low() ||
+				encoding.bias() != hint.bias() || encoding.modBits() != hint.modBits()) {
 				refusals.add(where + " refused: it states shift=" + hint.shift() + ", low=" +
-					hint.low() + " but the ROM bytes prove " + encoding.describe() +
-					" (shift=" + encoding.shift() + ", low=" + encoding.low() + ")");
+					hint.low() + ", bias=" + hint.bias() + ", modulus_bits=" + hint.modBits() +
+					" but the ROM bytes prove " + encoding.describe() +
+					" (shift=" + encoding.shift() + ", low=" + encoding.low() + ", bias=" +
+					encoding.bias() + ", modulus_bits=" + encoding.modBits() + ")");
 				continue;
 			}
 			if (identifyingFieldByOffset.get(hint.offset()) == null) {
@@ -810,6 +879,40 @@ public final class BankMirrors {
 						offsets.put(start + k,
 							new IdentifyingEncoding(shift, low, Set.copyOf(matched), realized));
 						continue nextOffset; // first admitted encoding wins -- see class javadoc
+					}
+				}
+			}
+			// grm-mej.9: the BIASED form, tried only after every classic form failed, so no offset
+			// a classic encoding admitted can change. byte == bank + B on banks congruent to
+			// low mod 2^modBits, with B the window's realized bank count -- legitimate only when
+			// the realized banks are exactly 0..B-1 with B a power of two, because then the board
+			// masks a bank number to B-1 and (bank + B) selects the same physical bank as bank.
+			// The window's fixed-bank proxy is exempt, as for a shift form (tmnt3's PRG[30], the
+			// fixed $8000 bank, holds code at this offset): such a bank is realized but never
+			// VERIFIED, and the membership hint is what keeps it out. Floor as for a shift form.
+			int count = banks.size();
+			if (Integer.bitCount(count) == 1 && count <= 0x80 && banks.get(0) == 0 &&
+				banks.get(count - 1) == count - 1) {
+				int modBits = 1;
+				for (int low = 0; low < (1 << modBits); low++) {
+					Set<Integer> matched = new LinkedHashSet<>();
+					boolean disagreed = false;
+					for (int i = 0; i < count && !disagreed; i++) {
+						int bank = banks.get(i);
+						if ((bank & ((1 << modBits) - 1)) != low) {
+							continue;
+						}
+						if ((images[i][k] & 0xFF) == bank + count) {
+							matched.add(bank);
+						}
+						else if (!exempt.contains(bank)) {
+							disagreed = true;
+						}
+					}
+					if (!disagreed && matched.size() >= MIN_SHIFTED_IDENTIFYING_BANKS) {
+						offsets.put(start + k, new IdentifyingEncoding(0, low, count, modBits,
+							Set.copyOf(matched), realized));
+						continue nextOffset;
 					}
 				}
 			}

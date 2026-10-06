@@ -162,7 +162,7 @@ final class BankDataflowEngine {
 	 */
 	static DataflowResult runDataflow(Program program, TaskMonitor monitor, Listing listing,
 			List<ConfiguredMechanism> mechanisms, BoardModel board,
-			Map<Function, HelperModel> helpers, Set<Function> restoringTrampolines)
+			Map<Function, HelperModel> helpers, Map<Function, Integer> restoringTrampolines)
 			throws CancelledException {
 		return runDataflow(program, monitor, listing, mechanisms, board, helpers,
 			restoringTrampolines, Set.of());
@@ -238,7 +238,7 @@ final class BankDataflowEngine {
 	 */
 	static DataflowResult runDataflow(Program program, TaskMonitor monitor, Listing listing,
 			List<ConfiguredMechanism> mechanisms, BoardModel board,
-			Map<Function, HelperModel> helpers, Set<Function> restoringTrampolines,
+			Map<Function, HelperModel> helpers, Map<Function, Integer> restoringTrampolines,
 			Set<Address> secondTierRelaySites)
 			throws CancelledException {
 
@@ -530,7 +530,7 @@ final class BankDataflowEngine {
 	 */
 	private static List<OutElement> applyHelperCall(Program program, Instruction instr,
 			HelperModel helper, PathId pathId, BankState outState,
-			Map<CallSiteRegKey, RegisterEnv> callSiteRegCache, Set<Function> restoringTrampolines,
+			Map<CallSiteRegKey, RegisterEnv> callSiteRegCache, Map<Function, Integer> restoringTrampolines,
 			Set<Address> secondTierRelaySites, Listing listing,
 			Map<Address, Optional<List<Arm>>> armCache, ForkBudget budget, CallTally call,
 			Map<Address, LinkedHashMap<PathId, BankState>> stateIn,

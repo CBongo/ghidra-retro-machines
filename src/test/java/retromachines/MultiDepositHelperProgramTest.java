@@ -192,7 +192,7 @@ public class MultiDepositHelperProgramTest extends AbstractBundledLanguageTest {
 	private CallEffect recover(HelperModel helper) throws Exception {
 		Instruction callInstr = instructionAt("0x8001");
 		return HelperArgumentRecovery.recoverCallArgument(program, callInstr, helper,
-			BankState.unknown(), new HashMap<>(), new HashSet<>());
+			BankState.unknown(), new HashMap<>(), new java.util.HashMap<>());
 	}
 
 	// ------------------------------------------------------------------
@@ -322,7 +322,7 @@ public class MultiDepositHelperProgramTest extends AbstractBundledLanguageTest {
 
 		Instruction callInstr = instructionAt("0x8002");
 		CallEffect result = HelperArgumentRecovery.recoverCallArgument(program, callInstr, helper,
-			callSiteIn, new HashMap<>(), new HashSet<>());
+			callSiteIn, new HashMap<>(), new java.util.HashMap<>());
 
 		assertEquals("only r6 is owned -- select-data's single-target no-poison contract, exactly"
 			+ " as with zero sites folded", R6_MASK, result.ownedMask());

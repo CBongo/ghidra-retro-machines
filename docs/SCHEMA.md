@@ -779,6 +779,10 @@ banking:
       shift: 1            # the encoding: bank = (byte << shift) + low
       low: 1
       provenance: "why the premise below holds for this game"   # required
+      # optional, the BIASED form (bead grm-mej.9): byte = bank + bias on banks == low mod
+      # 2^modulus_bits. shift must be 0; modulus_bits defaults to shift.
+      bias: 32
+      modulus_bits: 1
 ```
 
 The second hint kind, in `grm-hb6.11`'s `bank_identifying_offset` vocabulary. It states a
@@ -789,6 +793,21 @@ the ROM bytes only on its congruent, verified banks, so "the byte read identifie
 bank" is true only if the live bank is one of those. Without this hint, a read-back of that
 byte is called RESTORED only where the tracked state at the read pins the window's field into
 the verified set (`BankMirrors.restoreMembership`). "Not contradicted" is not enough.
+
+**The biased form (`grm-mej.9`).** tmnt3's `$A000` holds `$20+N` on every even 8K bank N of a
+32-bank MMC3 (odd banks: junk), i.e. `byte = bank + 32` on banks `== 0 (mod 2)`. The derivation
+admits that shape (after every classic form failed, so no existing offset changes) only when
+the window's realized banks are exactly `0..B-1` with `B` a power of two and the byte equals
+`bank + B` on every bank of the congruence class: then `bias = B`, `modulus_bits = 1`, `low`
+the residue. The byte is NOT the bank number but names the same PHYSICAL bank when written back
+to a register whose hardware ignores the bit `B` stands for (the MMC3 masks the PRG bank number
+to the bank count; the tracked field is 6 bits wide, so a restored `N+32` differs from the
+tracked `N` only in that ignored bit). A biased byte therefore resolves to no tracked value,
+supports no re-encoded commit and is never a read-back RESTORED source
+(`restoreMembership` answers UNPROVEN); its only consumer is
+`SaveRestoreTrampolines.restoresEntryBank`, which accepts it as "the entry bank" only with this
+hint present and only when every mechanism write on the walk writes the field the byte's window
+belongs to. The hint must state `bias`/`modulus_bits` exactly as derived, like `shift`/`low`.
 
 It licenses ONLY that premise -- it creates no mirror, encoding or field, and it never
 overrides the derivation. At analysis time (`BoardBankAnalyzer`, so a re-analysis picks it up;
@@ -803,6 +822,26 @@ instead and the hint is not used. Shape validation (16-bit `address`, `shift` 0-
 `low` in `[0, 2^shift)`, `provenance` present, no other keys) is `GameCompiler`'s.
 `ExportGameDescriptor.java` carries it verbatim, provenance included, from the recorded
 property (`grm-hb6.19`); it never exports a derived offset.
+
+### `banking.save_cells` (bead `grm-mej.9`)
+
+```yaml
+banking:
+  save_cells:
+    - address: 0xF0     # CPU address of a RAM cell
+      provenance: "why a stored entry bank survives the helper's inner call"   # required
+```
+
+States that a store of the entry bank into the cell, by a bank-switch helper, is still there
+after that helper's inner call (the owner's fact: nothing in the callee, nor a re-entry, writes
+it). Consumed at analysis time (the loader publishes the `Retro Machines.Save Cells` property;
+`BoardBankAnalyzer` reads it, so a re-analysis picks it up) by the restoring-trampoline walk
+only: `LDA <live-bank mirror> / STA cell ... LDA cell / STA <commit>` is then followed as a
+restore. It never supplies a bank value and never overrides the walk's own requirements; with
+the key absent nothing changes. A game that states it also lets the walk follow a forward
+conditional branch whose taken path is a no-op `PLA / RTS` exit. Shape validation (non-empty
+list, 16-bit unique `address`, `provenance` present, no other keys) is `GameCompiler`'s;
+`ExportGameDescriptor.java` carries it verbatim. First user: `machines/games/tmnt3.yaml`.
 
 ### Annotation layer and export (bead `grm-hb6.5`)
 

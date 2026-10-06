@@ -291,6 +291,10 @@ public final class GameDescriptorExporter {
 		if (!identifying.isEmpty()) {
 			banking.put("bank_identifying_offsets", identifying);
 		}
+		List<Map<String, Object>> saveCells = saveCells(program, skipped);
+		if (!saveCells.isEmpty()) {
+			banking.put("save_cells", saveCells);
+		}
 		if (!banking.isEmpty()) {
 			doc.put("banking", banking);
 		}
@@ -340,6 +344,12 @@ public final class GameDescriptorExporter {
 				e.put("address", new HexInt(o.get("address").getAsLong()));
 				e.put("shift", o.get("shift").getAsInt());
 				e.put("low", o.get("low").getAsInt());
+				if (o.has("bias")) {
+					e.put("bias", o.get("bias").getAsInt());
+				}
+				if (o.has("modulus_bits")) {
+					e.put("modulus_bits", o.get("modulus_bits").getAsInt());
+				}
 				e.put("provenance", o.get("provenance").getAsString());
 				out.add(e);
 			}
@@ -347,6 +357,36 @@ public final class GameDescriptorExporter {
 		catch (RuntimeException e) {
 			skipped.add(DescriptorSupport.BANK_IDENTIFYING_HINTS_PROPERTY + " is malformed (" +
 				e.getMessage() + "); banking.bank_identifying_offsets not carried");
+			return new ArrayList<>();
+		}
+		return out;
+	}
+
+	/**
+	 * The {@code banking.save_cells} entries (bead grm-mej.9), copied verbatim, provenance
+	 * included, from the {@link DescriptorSupport#SAVE_CELLS_PROPERTY} the loader recorded --
+	 * a human-established fact, never derived.
+	 */
+	private static List<Map<String, Object>> saveCells(Program program, List<String> skipped) {
+		List<Map<String, Object>> out = new ArrayList<>();
+		String spec = DescriptorSupport.programInfoString(program,
+			DescriptorSupport.SAVE_CELLS_PROPERTY);
+		if (spec == null || spec.isBlank()) {
+			return out;
+		}
+		try {
+			JsonObject root = JsonParser.parseString(spec).getAsJsonObject();
+			for (JsonElement el : root.getAsJsonArray("cells")) {
+				JsonObject o = el.getAsJsonObject();
+				Map<String, Object> e = new LinkedHashMap<>();
+				e.put("address", new HexInt(o.get("address").getAsLong()));
+				e.put("provenance", o.get("provenance").getAsString());
+				out.add(e);
+			}
+		}
+		catch (RuntimeException e) {
+			skipped.add(DescriptorSupport.SAVE_CELLS_PROPERTY + " is malformed (" +
+				e.getMessage() + "); banking.save_cells not carried");
 			return new ArrayList<>();
 		}
 		return out;

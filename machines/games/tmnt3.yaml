@@ -1,0 +1,68 @@
+# Curated per-game descriptor (title tier). Compiled to data/games/tmnt3.gmap.
+# docs/per-game-descriptors-design.md; bead grm-mej.9 (owner rulings 2026-10-05).
+#
+# WHY THIS FILE EXISTS. TMNT3 (MMC3, PRG mode 1) has two helpers, FUN_919e and FUN_91d1, that
+# save R7's identity byte, switch R7 = $3A, JSR into the $A000 window and then restore:
+#
+#   919e: PHA; LDA $27; BNE 91cf (PLA; RTS -- no bank effect); LDA #1; STA $2A; STY $F1;
+#         LDA $A000; STA $F0;                                  ; save the live R7 bank's byte
+#         LDA #$3A; LDY #$47; STY $E9; STY $8000; STA $8001;   ; R7 = $3A
+#         PLA; JSR $A001;                                      ; run code in bank $3A
+#         LDY #$47; STY $E9; STY $8000; LDA $F0; STA $8001;    ; restore R7 from the saved byte
+#         LDY $F1; DEC $2A; RTS
+#   91d1: the same via X, inner JSR $A15D, no $27 early-out.
+#
+# Their net effect on R7 is "unchanged from the caller", but nothing the analyzer can prove from
+# the code alone says so. Two facts are needed, and both are the owner's, stated here rather than
+# proved (owner ruling grm-mej.9, 2026-10-05: a per-game hint, not an automatic proof):
+#
+#  (a) $A000 is a bank-identifying byte. Byte 0 of every EVEN 8K PRG bank N is $20+N (odd banks
+#      hold junk), so LDA $A000 reads N+32; with 32 banks the MMC3 ignores bit 5 of the bank
+#      number, so writing N+32 back to R7 maps bank N again. The ROM bytes prove the encoding
+#      (the derivation checks every even bank; the entry below must match it exactly); the hint
+#      supplies the MEMBERSHIP premise -- that the live bank at the game's reads of $A000 is an
+#      even one -- which the ROM bytes cannot.
+#  (b) $F0 is a dedicated save cell that survives the helpers' inner call. $F0 writers: the only
+#      real stores are the three helpers' saves (9173/91ac/91da); the other byte-pattern hits
+#      (banks 6 and 12: LDA $84 / ORA $85 plus BEQ operands; bank 27: data) are not code. A byte
+#      census cannot rule out indexed/indirect writes or re-entry from the inner callee ($2A looks
+#      like a re-entry lock), which is why this is a stated fact and not a proof.
+#
+# WHAT THESE HINTS DO NOT DO. They are premises of the restoring-trampoline walk
+# (SaveRestoreTrampolines.restoresEntryBank) and nothing else: neither supplies a bank value. The
+# walk must still find the save, the restore through the hinted cell, and the restoring commit to
+# the same field, in the helper's own code. FUN_9169 (R7 = $F0 AND R6 = $F0+1) is NOT covered --
+# it is not a plain restore (split to its own bead).
+
+schema: 2
+
+game:
+  id: tmnt3
+  title: "Teenage Mutant Ninja Turtles III - The Manhattan Project (U)"
+  board: nes_mmc3
+  identity:
+    # PRG-slice SHA-256 (16-byte iNES header excluded), copied from the "REALROM prgsha256"
+    # line of tools/banktest/realrom/expected/tmnt3.dump.
+    prg_sha256: "d76f4618a35f685b2841993530e6f159d8d9ddbce9f31fe0d69f33bbda84f7ff"
+    # Whole-file SHA-256, copied from the tmnt3 row of tools/banktest/realrom/manifest.tsv.
+    file_sha256: "d6dc27e16afd5d2ad151c0d593908aff9e59c9f710d2c559d5f13c856350560e"
+  provenance: "Owner's byte reads of the pinned tmnt3 image (fixed $8000 bank = PRG 8K bank 30,
+    MMC3 mode 1) and rulings on grm-mej.9, 2026-10-05: per-game hint, not an automatic proof;
+    FUN_9169 split out."
+
+banking:
+  bank_identifying_offsets:
+    - address: 0xA000
+      shift: 0
+      low: 0
+      bias: 32
+      modulus_bits: 1
+      provenance: "Owner ruling on grm-mej.9 (2026-10-05): byte 0 of every even 8K bank N is
+        $20+N (odd banks: junk), so LDA $A000 reads N+32; with 32 banks the MMC3 ignores bit 5,
+        so R7 = N+32 maps bank N. The game reads $A000 only while an even bank is live in
+        the R7 window."
+  save_cells:
+    - address: 0xF0
+      provenance: "Owner ruling on grm-mej.9 (2026-10-05): $F0 is the dedicated save cell of
+        FUN_919e/FUN_91d1 (stores at 9173/91ac/91da are its only real writers); a store of the
+        entry bank there is still there after the helper's inner call (JSR $A001 / JSR $A15D)."

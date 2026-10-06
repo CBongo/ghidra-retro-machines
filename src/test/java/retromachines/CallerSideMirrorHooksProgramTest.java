@@ -238,7 +238,7 @@ public class CallerSideMirrorHooksProgramTest extends AbstractBundledLanguageTes
 
 		CallEffect effect = HelperArgumentRecovery.recoverCallArgument(program,
 			instructionAt("0x8003"), helper, BankState.fullyKnown(0xFF, 5), new HashMap<>(),
-			new HashSet<>());
+			new java.util.HashMap<>());
 
 		assertEquals("the mirror load must resolve the tracked bank", 0xFF,
 			effect.state().knownMask());
@@ -280,7 +280,7 @@ public class CallerSideMirrorHooksProgramTest extends AbstractBundledLanguageTes
 		// load that executed BEFORE that write.
 		CallEffect effect = HelperArgumentRecovery.recoverCallArgument(program,
 			instructionAt("0x8006"), helper, BankState.fullyKnown(0xFF, 9), new HashMap<>(),
-			new HashSet<>());
+			new java.util.HashMap<>());
 
 		assertEquals("a mirror load before an intervening mechanism write must NOT resolve", 0,
 			effect.state().knownMask());
@@ -310,7 +310,7 @@ public class CallerSideMirrorHooksProgramTest extends AbstractBundledLanguageTes
 
 		CallEffect effect = HelperArgumentRecovery.recoverCallArgument(program,
 			instructionAt("0x8003"), helper, BankState.fullyKnown(0xFF, 5), new HashMap<>(),
-			new HashSet<>());
+			new java.util.HashMap<>());
 
 		assertEquals("the default callerSideHooks must decline every mirror, like NO_HOOKS", 0,
 			effect.state().knownMask());
@@ -342,7 +342,7 @@ public class CallerSideMirrorHooksProgramTest extends AbstractBundledLanguageTes
 			strategy, builder.addr("0x9100"), builder.addr("0x9100"), null);
 
 		Map<CallSiteRegKey, RegisterEnv> sharedEnvCache = new HashMap<>();
-		Set<Function> restoringTrampolines = new HashSet<>();
+		Map<Function, Integer> restoringTrampolines = new java.util.HashMap<>();
 		Instruction callInstr = instructionAt("0x8003");
 
 		HelperArgumentRecovery.recoverCallArgument(program, callInstr, helper,

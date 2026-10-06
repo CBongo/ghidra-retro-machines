@@ -187,6 +187,16 @@ final class DescriptorSupport {
 		"Retro Machines.Bank Identifying Hints";
 
 	/**
+	 * Program-info property carrying the resolved game descriptor's {@code banking.save_cells}
+	 * hint (bead grm-mej.9): JSON {@code {"source": <descriptor path>, "cells": [{address,
+	 * provenance}, ...]}}. Written by the loader, read at analysis time by
+	 * {@link BoardBankAnalyzer} (so re-analysis picks it up) and handed to
+	 * {@link SaveRestoreTrampolines}, which treats each cell as surviving a helper's inner call.
+	 * Absent when the descriptor states none.
+	 */
+	static final String SAVE_CELLS_PROPERTY = "Retro Machines.Save Cells";
+
+	/**
 	 * Program-info property carrying the bit mask (decimal, in the board's packed state layout)
 	 * of the state fields a game descriptor's {@code banking.fixed_after_init} hint (bead
 	 * grm-mej.12) declares never change after initialization. Written by the loader, which
@@ -321,8 +331,10 @@ final class DescriptorSupport {
 			String source = root.get("source").getAsString();
 			for (JsonElement el : root.getAsJsonArray("offsets")) {
 				JsonObject o = el.getAsJsonObject();
-				hints.add(new BankMirrors.MembershipHint(o.get("address").getAsLong(),
-					o.get("shift").getAsInt(), o.get("low").getAsInt(), source));
+				int shift = o.get("shift").getAsInt();
+				hints.add(new BankMirrors.MembershipHint(o.get("address").getAsLong(), shift,
+					o.get("low").getAsInt(), o.has("bias") ? o.get("bias").getAsInt() : 0,
+					o.has("modulus_bits") ? o.get("modulus_bits").getAsInt() : shift, source));
 			}
 		}
 		catch (RuntimeException e) {
@@ -331,6 +343,49 @@ final class DescriptorSupport {
 			return List.of();
 		}
 		return hints;
+	}
+
+	// ------------------------------------------------------------------
+	// Game-descriptor save cells (bead grm-mej.9)
+	// ------------------------------------------------------------------
+
+	/** The {@link #SAVE_CELLS_PROPERTY} value for {@code gameDescriptor}, or null when it states
+	 *  no {@code banking.save_cells}. */
+	static String formatSaveCells(JsonObject gameDescriptor, String source) {
+		JsonObject banking = gameDescriptor == null ? null
+				: gameDescriptor.getAsJsonObject("banking");
+		if (banking == null || !banking.has("save_cells")) {
+			return null;
+		}
+		JsonObject out = new JsonObject();
+		out.addProperty("source", source);
+		out.add("cells", banking.getAsJsonArray("save_cells").deepCopy());
+		return out.toString();
+	}
+
+	/**
+	 * The save-cell addresses {@code program}'s loader recorded (CPU addresses, base space), or
+	 * an empty set. A malformed property or entry is reported through {@code problems} and
+	 * contributes nothing -- a hint that cannot be read is a hint that is not applied.
+	 */
+	static Set<Long> parseSaveCells(Program program, List<String> problems) {
+		String spec = programInfoString(program, SAVE_CELLS_PROPERTY);
+		Set<Long> cells = new java.util.LinkedHashSet<>();
+		if (spec == null || spec.isBlank()) {
+			return cells;
+		}
+		try {
+			JsonObject root = JsonParser.parseString(spec).getAsJsonObject();
+			for (JsonElement el : root.getAsJsonArray("cells")) {
+				cells.add(el.getAsJsonObject().get("address").getAsLong());
+			}
+		}
+		catch (RuntimeException e) {
+			problems.add(SAVE_CELLS_PROPERTY + " is malformed (" + e.getMessage() +
+				"); no save_cells hint applied");
+			return Set.of();
+		}
+		return cells;
 	}
 
 	// ------------------------------------------------------------------

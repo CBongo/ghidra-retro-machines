@@ -136,7 +136,7 @@ public class BankPathForkProgramTest extends AbstractBundledLanguageTest {
 			List<BankStrategyRegistry.ConfiguredMechanism> mechanisms,
 			BoardDescriptorModel.BoardModel board) throws Exception {
 		return BankDataflowEngine.runDataflow(program, TaskMonitor.DUMMY, program.getListing(),
-			mechanisms, board, null, Set.of());
+			mechanisms, board, null, java.util.Map.of());
 	}
 
 	/**

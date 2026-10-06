@@ -126,7 +126,7 @@ public class PerSiteNoArgRegHelperProgramTest extends AbstractBundledLanguageTes
 	private CallEffect recover(HelperModel helper) throws Exception {
 		Instruction callInstr = instructionAt("0x8002");
 		return HelperArgumentRecovery.recoverCallArgument(program, callInstr, helper,
-			BankState.unknown(), new HashMap<>(), new HashSet<>());
+			BankState.unknown(), new HashMap<>(), new java.util.HashMap<>());
 	}
 
 	/** Caller: LDA #$05 / JSR $9100. */

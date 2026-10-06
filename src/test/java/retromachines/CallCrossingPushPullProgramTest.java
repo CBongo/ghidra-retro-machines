@@ -382,7 +382,7 @@ public class CallCrossingPushPullProgramTest extends AbstractBundledLanguageTest
 
 		CallEffect effect = HelperArgumentRecovery.recoverCallArgument(program,
 			instructionAt("0x8007"), helper, BankState.fullyKnown(0xFF, 9), new HashMap<>(),
-			new HashSet<>());
+			new java.util.HashMap<>());
 
 		assertEquals("no oracle -> withdraw, must NOT confidently report bank 9", 0,
 			effect.state().knownMask());
@@ -413,7 +413,7 @@ public class CallCrossingPushPullProgramTest extends AbstractBundledLanguageTest
 
 		CallEffect effect = HelperArgumentRecovery.recoverCallArgument(program,
 			instructionAt("0x8007"), helper, BankState.fullyKnown(0xFF, 9), new HashMap<>(),
-			new HashSet<>(), RegisterEnv.NONE, oracle);
+			new java.util.HashMap<>(), RegisterEnv.NONE, oracle);
 
 		assertEquals("the state at the push (bank 5), not at the call (bank 9)", 0xFF,
 			effect.state().knownMask());
@@ -441,7 +441,7 @@ public class CallCrossingPushPullProgramTest extends AbstractBundledLanguageTest
 
 		CallEffect effect = HelperArgumentRecovery.recoverCallArgument(program,
 			instructionAt("0x8007"), helper, BankState.fullyKnown(0xFF, 9), new HashMap<>(),
-			new HashSet<>(), RegisterEnv.NONE, oracle);
+			new java.util.HashMap<>(), RegisterEnv.NONE, oracle);
 
 		assertEquals(0, effect.state().knownMask());
 	}
@@ -481,10 +481,10 @@ public class CallCrossingPushPullProgramTest extends AbstractBundledLanguageTest
 				: BankState.fullyKnown(0xFF, 9);
 
 		CallEffect first = HelperArgumentRecovery.recoverCallArgument(program, callInstr, helper,
-			BankState.fullyKnown(0xFF, 9), envCache, new HashSet<>(), RegisterEnv.NONE,
+			BankState.fullyKnown(0xFF, 9), envCache, new java.util.HashMap<>(), RegisterEnv.NONE,
 			oracleFive);
 		CallEffect second = HelperArgumentRecovery.recoverCallArgument(program, callInstr, helper,
-			BankState.fullyKnown(0xFF, 9), envCache, new HashSet<>(), RegisterEnv.NONE, oracleSix);
+			BankState.fullyKnown(0xFF, 9), envCache, new java.util.HashMap<>(), RegisterEnv.NONE, oracleSix);
 
 		assertEquals("first oracle's answer (bank 5) must not leak into the second call", 5,
 			first.state().bits());
@@ -536,7 +536,7 @@ public class CallCrossingPushPullProgramTest extends AbstractBundledLanguageTest
 		// RESTORED_BANK stop rather than resolving to a number.
 		StateOracle oracle = addr -> BankState.unknown();
 		CallEffect effect = HelperArgumentRecovery.recoverCallArgument(program,
-			instructionAt("0x8009"), helper, BankState.unknown(), new HashMap<>(), new HashSet<>(),
+			instructionAt("0x8009"), helper, BankState.unknown(), new HashMap<>(), new java.util.HashMap<>(),
 			RegisterEnv.NONE, oracle);
 
 		assertTrue("Y is unrelated RAM: the argument must not resolve",
@@ -668,7 +668,7 @@ public class CallCrossingPushPullProgramTest extends AbstractBundledLanguageTest
 
 		BankDataflowEngine.DataflowResult result = BankDataflowEngine.runDataflow(program,
 			TaskMonitor.DUMMY, program.getListing(), List.of(mechanism), board,
-			Map.of(h16, helper), Set.of());
+			Map.of(h16, helper), java.util.Map.of());
 
 		BankDataflowEngine.CallSwitch callSwitch = result.callSwitches().get(addr(0xC011));
 		assertNotNull("the final JSR H16 must be recognized as a resolved call switch",

@@ -284,6 +284,77 @@ public class GameCompilerTest {
 			"non-empty list");
 	}
 
+	// ---- biased bank_identifying_offsets and banking.save_cells (bead grm-mej.9) ----
+
+	private static final String BIASED = """
+		  bank_identifying_offsets:
+		    - address: 0xA000
+		      shift: 0
+		      low: 0
+		      bias: 32
+		      modulus_bits: 1
+		      provenance: "byte 0 of even bank N is $20+N"
+		""";
+
+	private static final String SAVE_CELLS = """
+		  save_cells:
+		    - address: 0xF0
+		      provenance: "dedicated save cell of FUN_919e/FUN_91d1"
+		""";
+
+	@Test
+	public void compilesBiasedIdentifyingOffsetAndSaveCells() throws Exception {
+		JsonObject banking =
+			compile("biased", validYaml() + BIASED + SAVE_CELLS).getAsJsonObject("banking");
+		JsonObject entry =
+			banking.getAsJsonArray("bank_identifying_offsets").get(0).getAsJsonObject();
+		assertEquals(32, entry.get("bias").getAsInt());
+		assertEquals(1, entry.get("modulus_bits").getAsInt());
+		JsonObject cell = banking.getAsJsonArray("save_cells").get(0).getAsJsonObject();
+		assertEquals(0xF0, cell.get("address").getAsInt());
+		assertEquals("dedicated save cell of FUN_919e/FUN_91d1",
+			cell.get("provenance").getAsString());
+	}
+
+	@Test
+	public void classicIdentifyingOffsetEmitsNoBiasKeys() throws Exception {
+		JsonObject entry = compile("classic", validYaml() + IDENTIFYING)
+			.getAsJsonObject("banking").getAsJsonArray("bank_identifying_offsets").get(0)
+			.getAsJsonObject();
+		assertFalse(entry.has("bias"));
+		assertFalse(entry.has("modulus_bits"));
+	}
+
+	@Test
+	public void saveCellsAloneIsABankingSection() throws Exception {
+		String yaml = validYaml().replace("  initial_state: { prg_mode: 1 }\n", "") + SAVE_CELLS;
+		JsonObject banking = compile("cellsonly", yaml).getAsJsonObject("banking");
+		assertEquals(1, banking.getAsJsonArray("save_cells").size());
+	}
+
+	@Test
+	public void malformedBiasedOffsetsAndSaveCellsAreRejected() throws Exception {
+		expectError("biashuge", validYaml() + BIASED.replace("bias: 32", "bias: 300"),
+			"bias must be");
+		expectError("biasshift", validYaml() + BIASED.replace("shift: 0", "shift: 1"),
+			"must have shift 0");
+		expectError("modlow", validYaml() + BIASED.replace("modulus_bits: 1", "modulus_bits: 0")
+			.replace("low: 0", "low: 1"),
+			"low must be");
+		expectError("modbig", validYaml() + BIASED.replace("modulus_bits: 1", "modulus_bits: 3"),
+			"modulus_bits must be");
+		expectError("cellsnotlist", validYaml() + "  save_cells: 0xF0\n", "non-empty list");
+		expectError("cellsempty", validYaml() + "  save_cells: []\n", "non-empty list");
+		expectError("cellsnoprov", validYaml() + SAVE_CELLS.replace(
+			"      provenance: \"dedicated save cell of FUN_919e/FUN_91d1\"\n", ""), "provenance");
+		expectError("cellswide", validYaml() + SAVE_CELLS.replace("0xF0", "0x10000"), "16-bit");
+		expectError("cellsextra",
+			validYaml() + SAVE_CELLS.replace("address: 0xF0", "address: 0xF0\n      size: 2"),
+			"unknown key 'size'");
+		expectError("cellsdup", validYaml() + SAVE_CELLS +
+			"    - address: 0xF0\n      provenance: \"again\"\n", "listed twice");
+	}
+
 	private void expectError(String name, String yaml, String messagePart) throws Exception {
 		Path dir = tmp.getRoot().toPath();
 		Path yamlPath = dir.resolve(name + ".yaml");

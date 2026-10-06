@@ -352,7 +352,7 @@ public class CallerSideRestoreProgramTest extends AbstractBundledLanguageTest {
 	private CallEffect recoverWithOracle(HelperModel helper, String callSite, StateOracle oracle)
 			throws Exception {
 		return HelperArgumentRecovery.recoverCallArgument(program, instructionAt(callSite), helper,
-			BankState.unknown(), new HashMap<>(), new HashSet<>(), RegisterEnv.NONE, oracle);
+			BankState.unknown(), new HashMap<>(), new java.util.HashMap<>(), RegisterEnv.NONE, oracle);
 	}
 
 	/** {@code LDA $29 / PHA / JSR work / PLA / JSR helper} -- the ca12 shape, with the mirror
@@ -510,7 +510,7 @@ public class CallerSideRestoreProgramTest extends AbstractBundledLanguageTest {
 		HelperModel helper = mirrorHelper(strategy);
 
 		CallEffect effect = HelperArgumentRecovery.recoverCallArgument(program,
-			instructionAt("0x8007"), helper, BankState.unknown(), new HashMap<>(), new HashSet<>());
+			instructionAt("0x8007"), helper, BankState.unknown(), new HashMap<>(), new java.util.HashMap<>());
 
 		assertNull(effect.readBack());
 	}
@@ -603,7 +603,7 @@ public class CallerSideRestoreProgramTest extends AbstractBundledLanguageTest {
 			addr(0xC030), addr(0xC030), null);
 
 		return BankDataflowEngine.runDataflow(program, TaskMonitor.DUMMY, program.getListing(),
-			List.of(mechanism), board, Map.of(h16, helper), Set.of());
+			List.of(mechanism), board, Map.of(h16, helper), java.util.Map.of());
 	}
 
 	/**

@@ -106,7 +106,7 @@ public class HelperEnvNarrowingProgramTest extends AbstractBundledLanguageTest {
 			throws Exception {
 		Instruction callInstr = instructionAt(callSite);
 		Map<HelperArgumentRecovery.CallSiteRegKey, RegisterEnv> envCache = new HashMap<>();
-		Set<Function> restoringTrampolines = new HashSet<>();
+		Map<Function, Integer> restoringTrampolines = new java.util.HashMap<>();
 		HelperArgumentRecovery.recoverCallArgument(program, callInstr, helper, BankState.unknown(),
 			envCache, restoringTrampolines);
 		return probe.captured;

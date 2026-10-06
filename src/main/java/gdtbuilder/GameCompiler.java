@@ -315,6 +315,10 @@ public class GameCompiler {
 		if (identifying != null) {
 			out.put("bank_identifying_offsets", identifying);
 		}
+		List<Map<String, Object>> saveCells = buildSaveCells(banking.get("save_cells"));
+		if (saveCells != null) {
+			out.put("save_cells", saveCells);
+		}
 		List<String> fixed = buildFixedAfterInit(banking.get("fixed_after_init"));
 		if (fixed != null) {
 			out.put("fixed_after_init", fixed);
@@ -409,7 +413,8 @@ public class GameCompiler {
 			}
 			Map<String, Object> entry = (Map<String, Object>) entryObj;
 			for (String key : entry.keySet()) {
-				if (!Set.of("address", "shift", "low", "provenance").contains(key)) {
+				if (!Set.of("address", "shift", "low", "bias", "modulus_bits", "provenance")
+						.contains(key)) {
 					throw new IllegalArgumentException("'banking.bank_identifying_offsets:' " +
 						"entry has unknown key '" + key + "'");
 				}
@@ -425,14 +430,85 @@ public class GameCompiler {
 				throw new IllegalArgumentException(where + ": shift must be 0, 1 or 2 (the " +
 					"encodings the derivation tries)");
 			}
-			if (low < 0 || low >= (1 << shift)) {
-				throw new IllegalArgumentException(where + ": low must be in [0, 2^shift)");
+			// grm-mej.9: optional BIASED form (byte = bank + bias on banks == low mod
+			// 2^modulus_bits). Both default to the classic form's values.
+			int bias = entry.containsKey("bias") ? MapCompiler.requireAddr(entry, "bias", where) : 0;
+			int modBits = entry.containsKey("modulus_bits")
+					? MapCompiler.requireAddr(entry, "modulus_bits", where) : shift;
+			if (bias < 0 || bias > 0xFF) {
+				throw new IllegalArgumentException(where + ": bias must be in [0, 255]");
+			}
+			if (modBits < shift || modBits > 2) {
+				throw new IllegalArgumentException(where +
+					": modulus_bits must be in [shift, 2]");
+			}
+			if (bias != 0 && shift != 0) {
+				throw new IllegalArgumentException(where + ": a biased encoding (bias != 0) " +
+					"must have shift 0");
+			}
+			if (low < 0 || low >= (1 << modBits)) {
+				throw new IllegalArgumentException(where +
+					": low must be in [0, 2^modulus_bits) (modulus_bits defaults to shift)");
 			}
 			String provenance = MapCompiler.requireString(entry, "provenance", where);
 			Map<String, Object> e = new LinkedHashMap<>();
 			e.put("address", address);
 			e.put("shift", shift);
 			e.put("low", low);
+			if (entry.containsKey("bias")) {
+				e.put("bias", bias);
+			}
+			if (entry.containsKey("modulus_bits")) {
+				e.put("modulus_bits", modBits);
+			}
+			e.put("provenance", provenance);
+			out.add(e);
+		}
+		return out;
+	}
+
+	/**
+	 * {@code banking.save_cells:} (bead grm-mej.9): a non-empty list of {@code { address,
+	 * provenance }} entries, each stating that a RAM cell at {@code address} (zero page or
+	 * 16-bit CPU address) is a dedicated save cell: a store of the entry bank into it by a
+	 * bank-switch helper is still there after that helper's inner call. SHAPE only here; the
+	 * analyzer (SaveRestoreTrampolines) uses it only as a premise of the restoring-trampoline
+	 * walk and never as a source of any bank value.
+	 */
+	@SuppressWarnings("unchecked")
+	private static List<Map<String, Object>> buildSaveCells(Object listObj) {
+		if (listObj == null) {
+			return null;
+		}
+		if (!(listObj instanceof List) || ((List<Object>) listObj).isEmpty()) {
+			throw new IllegalArgumentException(
+				"game descriptor 'banking.save_cells:' must be a non-empty list");
+		}
+		List<Map<String, Object>> out = new ArrayList<>();
+		Set<Integer> seen = new java.util.HashSet<>();
+		for (Object entryObj : (List<Object>) listObj) {
+			if (!(entryObj instanceof Map)) {
+				throw new IllegalArgumentException("each 'banking.save_cells:' entry must be a " +
+					"mapping with address and provenance");
+			}
+			Map<String, Object> entry = (Map<String, Object>) entryObj;
+			for (String key : entry.keySet()) {
+				if (!Set.of("address", "provenance").contains(key)) {
+					throw new IllegalArgumentException(
+						"'banking.save_cells:' entry has unknown key '" + key + "'");
+				}
+			}
+			String where = "banking.save_cells entry";
+			int address = MapCompiler.requireAddr(entry, "address", where);
+			if (address < 0 || address > 0xFFFF) {
+				throw new IllegalArgumentException(where + ": address must be a 16-bit CPU address");
+			}
+			if (!seen.add(address)) {
+				throw new IllegalArgumentException(where + ": address " + address + " listed twice");
+			}
+			String provenance = MapCompiler.requireString(entry, "provenance", where);
+			Map<String, Object> e = new LinkedHashMap<>();
+			e.put("address", address);
 			e.put("provenance", provenance);
 			out.add(e);
 		}

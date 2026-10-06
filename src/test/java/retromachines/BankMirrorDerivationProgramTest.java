@@ -17,6 +17,7 @@ package retromachines;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import java.util.LinkedHashMap;
@@ -962,5 +963,60 @@ public class BankMirrorDerivationProgramTest extends AbstractBundledLanguageTest
 		assertTrue(mirrors.isEmpty());
 		assertEquals(Set.of(), mirrors.kindsAt(addr("0x42")));
 		assertEquals(BankMirrors.none().isEmpty(), mirrors.isEmpty());
+	}
+
+	// ------------------------------------------------------------------
+	// The biased encoding (bead grm-mej.9): tmnt3's $A000, byte == bank + 32 on EVEN banks.
+	// ------------------------------------------------------------------
+
+	/**
+	 * Thirty-two banks, even bank N holding {@code $20+N} at byte 0, odd banks junk, and the fixed
+	 * bank 30 holding code there -- tmnt3's own map. Admitted as the biased form with
+	 * {@code bias == 32, modBits == 1, low == 0}, verified on the even banks that agree (the
+	 * exempt top banks included only if they happen to).
+	 */
+	@Test
+	public void evenBanksHoldingBankPlusBankCountAreIdentifyingWithBias() throws Exception {
+		layBankOverlays(32);
+		for (int bank = 0; bank < 32; bank++) {
+			int value = (bank & 1) == 0 ? 0x20 + bank : 0xC0 ^ bank; // odd: junk
+			setBankByte(bank, 0x8000, bank == 30 ? 0xE6 : value);
+		}
+
+		BankMirrors.IdentifyingEncoding encoding = identifyingOffsets(32).get(0x8000L);
+
+		assertNotNull(encoding);
+		assertTrue(encoding.isBiased());
+		assertEquals(32, encoding.bias());
+		assertEquals(1, encoding.modBits());
+		assertEquals(0, encoding.low());
+		assertEquals(Set.of(0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28),
+			encoding.verified());
+		assertEquals("byte = bank+32 on even banks", encoding.describe());
+		assertFalse("a biased byte resolves to no tracked value",
+			encoding.byteFor(0x3F, 0x04, 0x3F).knownMask() != 0);
+	}
+
+	/** The bias must be the bank count: byte == bank + 16 over 32 banks aliases a DIFFERENT bank. */
+	@Test
+	public void aBiasThatIsNotTheBankCountIsNotAdmitted() throws Exception {
+		layBankOverlays(32);
+		for (int bank = 0; bank < 32; bank++) {
+			setBankByte(bank, 0x8000, (bank & 1) == 0 ? 0x10 + bank : 0xC0 ^ bank);
+		}
+
+		assertEquals(Set.of(), identifyingOffsets(32).keySet());
+	}
+
+	/** One non-exempt even bank disagreeing refuses the whole candidate. */
+	@Test
+	public void aDisagreeingNonExemptEvenBankRefusesTheBiasedForm() throws Exception {
+		layBankOverlays(32);
+		for (int bank = 0; bank < 32; bank++) {
+			setBankByte(bank, 0x8000, (bank & 1) == 0 ? 0x20 + bank : 0xC0 ^ bank);
+		}
+		setBankByte(10, 0x8000, 0x00);
+
+		assertEquals(Set.of(), identifyingOffsets(32).keySet());
 	}
 }

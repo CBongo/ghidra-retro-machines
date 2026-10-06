@@ -189,7 +189,7 @@ final class HelperArgumentRecovery {
 	 */
 	static CallEffect recoverCallArgument(Program program, Instruction callInstr,
 			HelperModel helper, BankState callSiteIn, Map<CallSiteRegKey, RegisterEnv> envCache,
-			Set<Function> restoringTrampolines) {
+			Map<Function, Integer> restoringTrampolines) {
 		return recoverCallArgument(program, callInstr, helper, callSiteIn, envCache,
 			restoringTrampolines, RegisterEnv.NONE);
 	}
@@ -205,7 +205,7 @@ final class HelperArgumentRecovery {
 	 */
 	static CallEffect recoverCallArgument(Program program, Instruction callInstr,
 			HelperModel helper, BankState callSiteIn, Map<CallSiteRegKey, RegisterEnv> envCache,
-			Set<Function> restoringTrampolines, RegisterEnv path) {
+			Map<Function, Integer> restoringTrampolines, RegisterEnv path) {
 		return recoverCallArgument(program, callInstr, helper, callSiteIn, envCache,
 			restoringTrampolines, path, null);
 	}
@@ -324,7 +324,7 @@ final class HelperArgumentRecovery {
 	 */
 	static CallEffect recoverCallArgument(Program program, Instruction callInstr,
 			HelperModel helper, BankState callSiteIn, Map<CallSiteRegKey, RegisterEnv> envCache,
-			Set<Function> restoringTrampolines, RegisterEnv path, StateOracle oracle) {
+			Map<Function, Integer> restoringTrampolines, RegisterEnv path, StateOracle oracle) {
 		return recoverCallArgument(program, callInstr, helper, callSiteIn, envCache,
 			restoringTrampolines, path, oracle, null);
 	}
@@ -339,15 +339,30 @@ final class HelperArgumentRecovery {
 	 */
 	static CallEffect recoverCallArgument(Program program, Instruction callInstr,
 			HelperModel helper, BankState callSiteIn, Map<CallSiteRegKey, RegisterEnv> envCache,
-			Set<Function> restoringTrampolines, RegisterEnv path, StateOracle oracle,
+			Map<Function, Integer> restoringTrampolines, RegisterEnv path, StateOracle oracle,
 			Map<Address, StoredValueScanner.CrossBlockProof> crossBlockMemo) {
-		if (restoringTrampolines.contains(helper.function())) {
+		Integer restoredField = restoringTrampolines.get(helper.function());
+		if (restoredField != null) {
 			// A VERIFIED no-op (grm-mej.3): this helper puts the entry bank back before returning,
 			// so the call owns nothing. Answered before argReg is even consulted, because the
 			// argument is genuinely irrelevant here -- it selects the bank the INNER call runs in,
 			// and that is over by the time the caller resumes. See
 			// SaveRestoreTrampolines.restoresEntryBank.
-			return new CallEffect(BankState.unknown(), 0);
+			int fieldOnly = restoredField;
+			if (fieldOnly == SaveRestoreTrampolines.ALL_FIELDS) {
+				return new CallEffect(BankState.unknown(), 0);
+			}
+			// grm-mej.9: this helper restores ONE field (the biased-byte save/restore) but still
+			// writes the register-select/mode fields, so the call keeps its ordinary per-site
+			// effect on everything else and merely does not own the restored field. The
+			// argument is irrelevant to the restored field, so the call counts as resolved.
+			if (!helper.recoversPerSiteWithoutArgReg()) {
+				return new CallEffect(BankState.unknown(), helper.effectMask() & ~fieldOnly);
+			}
+			CallEffect full = recoverPerSiteWithoutArgReg(program, callInstr, helper, callSiteIn,
+				envCache, path, oracle, crossBlockMemo);
+			return new CallEffect(full.state(), full.ownedMask() & ~fieldOnly, true,
+				full.noInboundArgument(), full.secondTierRelay(), null);
 		}
 		Character reg = helper.argReg();
 		if (helper.recoversPerSiteWithoutArgReg()) {
@@ -1832,7 +1847,8 @@ final class HelperArgumentRecovery {
 		if (mirrors.is(cell, BankMirrors.Kind.ROM_IDENTIFYING)) {
 			BankMirrors.IdentifyingEncoding encoding = mirrors.identifyingEncoding(cell);
 			BoardDescriptorModel.FieldSpec field = mirrors.identifyingField(cell);
-			if (encoding == null || field == null || encoding.shift() != t.shift() ||
+			if (encoding == null || field == null || encoding.isBiased() ||
+				encoding.shift() != t.shift() ||
 				encoding.low() != t.add()) {
 				return false;
 			}

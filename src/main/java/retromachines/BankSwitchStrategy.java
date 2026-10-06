@@ -655,6 +655,18 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	}
 
 	/**
+	 * The positioned mask of the tracked bank field that a mechanism write at {@code site}
+	 * commits a BANK VALUE into, decided from what the helper's own body establishes (never the
+	 * caller's state) -- bead grm-mej.9's per-site field check for a save/restore helper that is
+	 * a no-op on ONE field. {@code 0} when the write commits no bank value to a tracked field (a
+	 * register-select or mode write, or a write to an untracked register); {@code -1}, the
+	 * default, when that cannot be said, which a consumer must treat as "refuse".
+	 */
+	default int bankFieldCommittedBySite(Program program, Instruction site) {
+		return -1;
+	}
+
+	/**
 	 * Where inside a multi-site helper the HELPER'S OWN supplied value lives, when the caller's
 	 * argument has been ruled out and {@code HelperArgumentRecovery.valueSuppliedInsideHelper} goes
 	 * looking for what the body itself puts there: {@code true} (the default) reads the argument

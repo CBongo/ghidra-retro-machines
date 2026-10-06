@@ -447,7 +447,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// --- Phase 1: forward dataflow to fixpoint; rerun with helper knowledge if any ---
 		Listing listing = program.getListing();
 		DataflowResult flow =
-			runDataflow(program, monitor, listing, mechanisms, board, null, Set.of());
+			runDataflow(program, monitor, listing, mechanisms, board, null, Map.of());
 
 		// Order is load-bearing. findCallEdgeWrappers runs LAST so its relay lookups see
 		// pass-through wrappers as helpers; it is also why exitEffect never encounters a relay
@@ -508,15 +508,27 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// fixpoint, where it would be a whole-body walk per dequeue per call site. It has to come
 		// after deriveBankMirrors: the proof that the saved byte IS the entry bank is that it was
 		// loaded from a live-bank mirror. ---
-		Set<Function> restoringTrampolines = new LinkedHashSet<>();
+		Map<Function, Integer> restoringTrampolines = new java.util.LinkedHashMap<>();
+		// bead grm-mej.9: banking.save_cells -- RAM cells a game descriptor states survive a
+		// helper's inner call. Read here, at analysis time, so a re-analysis picks it up; used
+		// only as a premise of the restoring-trampoline walk, never as a source of a bank value.
+		List<String> saveCellProblems = new ArrayList<>();
+		Set<Long> saveCells = DescriptorSupport.parseSaveCells(program, saveCellProblems);
+		for (String problem : saveCellProblems) {
+			AnalyzerLog.info(this, problem);
+			log.appendMsg(problem);
+		}
 		for (HelperModel h : helpers.values()) {
-			if (restoresEntryBank(program, h, mirrors, flow.switchResults().keySet())) {
-				restoringTrampolines.add(h.function());
+			Integer restored = SaveRestoreTrampolines.restoredFieldMask(program, h, mirrors,
+				flow.switchResults().keySet(), saveCells);
+			if (restored != null) {
+				restoringTrampolines.put(h.function(),
+					restored == 0 ? SaveRestoreTrampolines.ALL_FIELDS : restored);
 			}
 		}
 		if (!restoringTrampolines.isEmpty()) {
 			AnalyzerLog.info(this, "save/restore trampolines (calls are verified no-ops): " +
-				restoringTrampolines.stream().map(Function::getName).sorted().toList());
+				restoringTrampolines.keySet().stream().map(Function::getName).sorted().toList());
 		}
 
 		// The second pass is what lets the analysis see anything pass 1 structurally could not.
