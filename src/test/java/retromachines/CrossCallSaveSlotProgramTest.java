@@ -368,6 +368,88 @@ public class CrossCallSaveSlotProgramTest extends AbstractBundledLanguageTest {
 		assertDeclined(scan(site, oracle()));
 	}
 
+	// ------------------------------------------------------------------
+	// Known branch outcomes prune the census (bead grm-uurl)
+	// ------------------------------------------------------------------
+
+	/** blmaster ebf2: {@code LDA #0 / STA $2006 / BEQ} is always taken, so the BRK it would fall
+	 *  into (a data table disassembled as code) is unreachable and the census stays clean. */
+	@Test
+	public void alwaysTakenBranchSkipsFallThroughIntoData() throws Exception {
+		String site = saveCallRestore("a9 05");
+		put("0xc040", "a9 00"); // LDA #0
+		put("0xc042", "8d 06 20"); // STA $2006
+		put("0xc045", "f0 01"); // BEQ $C048
+		put("0xc047", "00"); // BRK -- data, reached only by the impossible fall-through
+		put("0xc048", "60"); // RTS
+		assertBank(5, scan(site, oracle()).value());
+	}
+
+	/** ... and a never-taken branch drops its target instead. */
+	@Test
+	public void neverTakenBranchSkipsItsTarget() throws Exception {
+		String site = saveCallRestore("a9 05");
+		put("0xc040", "a9 01"); // LDA #1
+		put("0xc042", "f0 01"); // BEQ $C045 -- never
+		put("0xc044", "60"); // RTS
+		put("0xc045", "00"); // BRK
+		assertBank(5, scan(site, oracle()).value());
+	}
+
+	/** Flags from memory are unknown: both successors stay live, the BRK is reached. */
+	@Test
+	public void unknownFlagsKeepBothSuccessors() throws Exception {
+		String site = saveCallRestore("a9 05");
+		put("0xc040", "a5 20"); // LDA $20
+		put("0xc042", "f0 01"); // BEQ $C045
+		put("0xc044", "00"); // BRK
+		put("0xc045", "60"); // RTS
+		assertDeclined(scan(site, oracle()));
+	}
+
+	private Boolean outcome(String branchAddress) {
+		return StoredValueScanner.knownBranchOutcome(program, instructionAt(branchAddress));
+	}
+
+	@Test
+	public void branchOutcomeFollowsTheFlagSetter() throws Exception {
+		put("0xc100", "a9 80"); // LDA #$80
+		put("0xc102", "30 00"); // BMI -> taken (N)
+		put("0xc104", "a2 01"); // LDX #1
+		put("0xc106", "ca"); // DEX  -> 0
+		put("0xc107", "d0 00"); // BNE -> not taken
+		put("0xc109", "a0 80"); // LDY #$80
+		put("0xc10b", "48"); // PHA  -- leaves N/Z alone
+		put("0xc10c", "10 00"); // BPL -> not taken
+		put("0xc10e", "60");
+		assertEquals(Boolean.TRUE, outcome("0xc102"));
+		assertEquals(Boolean.FALSE, outcome("0xc107"));
+		assertEquals(Boolean.FALSE, outcome("0xc10c"));
+	}
+
+	/** ADC is not a modeled setter (decimal mode), nor is a carry branch. */
+	@Test
+	public void unmodeledSettersAndBranchesDecline() throws Exception {
+		put("0xc100", "18"); // CLC
+		put("0xc101", "a9 00"); // LDA #0
+		put("0xc103", "69 00"); // ADC #0
+		put("0xc105", "f0 00"); // BEQ
+		put("0xc107", "90 00"); // BCC
+		put("0xc109", "60");
+		assertEquals(null, outcome("0xc105"));
+		assertEquals(null, outcome("0xc107"));
+	}
+
+	/** A join between the setter and the branch: another path may arrive with other flags. */
+	@Test
+	public void joinBeforeTheBranchDeclines() throws Exception {
+		put("0xc0f0", "4c 02 c1"); // JMP $C102
+		put("0xc100", "a9 00"); // LDA #0
+		put("0xc102", "f0 00"); // BEQ -- also reached from c0f0
+		put("0xc104", "60");
+		assertEquals(null, outcome("0xc102"));
+	}
+
 	// ==================================================================
 	// 3. An unresolvable callee closure -> declines
 	// ==================================================================

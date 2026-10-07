@@ -1997,6 +1997,23 @@ final class StoredValueScanner {
 			if ((ft.isJump() || ft.isCall()) && (flows == null || flows.length == 0)) {
 				return CensusResult.DIRTY;
 			}
+			// A conditional branch whose flags are provable has one live successor (grm-uurl):
+			// blmaster ebf2 BEQ after LDA #0 never falls into the palette table at ebf4.
+			Boolean taken = ft.isConditional() ? knownBranchOutcome(program, instr) : null;
+			if (Boolean.TRUE.equals(taken)) {
+				for (Address target : flows) {
+					if (entersUnknownBank(program, instr, target)) {
+						return CensusResult.DIRTY;
+					}
+					if (seen.add(target)) {
+						work.add(target);
+					}
+				}
+				continue;
+			}
+			if (Boolean.FALSE.equals(taken)) {
+				flows = null;
+			}
 			if (flows != null) {
 				for (Address target : flows) {
 					if (entersUnknownBank(program, instr, target)) {
@@ -2013,6 +2030,73 @@ final class StoredValueScanner {
 			}
 		}
 		return new CensusResult(true, assumed);
+	}
+
+	/** Instructions that leave N and Z alone, which {@link #knownBranchOutcome} may walk back over
+	 *  to the flag setter. Deliberately short: anything not listed ends the walk. */
+	private static final Set<String> NZ_NEUTRAL = Set.of("STA", "STX", "STY", "STZ", "PHA",
+		"PHX", "PHY", "PHP", "CLC", "SEC", "CLI", "SEI", "CLD", "SED", "CLV", "NOP", "TXS");
+
+	/** Instructions that set N and Z from the register they write, keyed to that register. */
+	private static final Map<String, Character> NZ_FROM_RESULT = Map.ofEntries(
+		Map.entry("LDA", 'A'), Map.entry("LDX", 'X'), Map.entry("LDY", 'Y'),
+		Map.entry("TAX", 'X'), Map.entry("TAY", 'Y'), Map.entry("TXA", 'A'),
+		Map.entry("TYA", 'A'), Map.entry("TSX", 'X'), Map.entry("PLA", 'A'),
+		Map.entry("INX", 'X'), Map.entry("DEX", 'X'), Map.entry("INY", 'Y'),
+		Map.entry("DEY", 'Y'), Map.entry("AND", 'A'), Map.entry("ORA", 'A'),
+		Map.entry("EOR", 'A'));
+	// ADC/SBC are left out on purpose: in NMOS decimal mode they set N/Z from the BINARY sum
+	// while A holds the BCD one, so A's value does not determine the flags.
+
+	/**
+	 * Whether conditional branch {@code branch} is provably TAKEN ({@code TRUE}), provably NOT
+	 * taken ({@code FALSE}), or either ({@code null}) -- bead grm-uurl. Modeled for {@code BEQ},
+	 * {@code BNE}, {@code BMI} and {@code BPL}, whose Z/N come from the last instruction that set
+	 * them: the walk goes back over {@link #NZ_NEUTRAL} instructions within one straight-line run
+	 * ({@link #isControlFlowJoin} ends it) to a setter in {@link #NZ_FROM_RESULT}, and asks
+	 * {@link #constantRegisterValue} -- state-free, as for {@link #constantIndex} -- for the
+	 * register's value right after it. Z is "that value is 0", N its bit 7. Anything else, or an
+	 * accumulator shift/rotate or a memory read-modify-write (which set flags from a result this
+	 * does not evaluate), declines. Blaster Master's {@code ebf2}: {@code LDA #0 / STA $2006 /
+	 * BEQ $EC34} is always taken.
+	 */
+	static Boolean knownBranchOutcome(Program program, Instruction branch) {
+		String br = branch.getMnemonicString().toUpperCase();
+		if (!br.equals("BEQ") && !br.equals("BNE") && !br.equals("BMI") && !br.equals("BPL")) {
+			return null;
+		}
+		Listing listing = program.getListing();
+		Instruction after = branch;
+		for (int i = 0; i < MAX_BACKWARD_SCAN; i++) {
+			Instruction prev = listing.getInstructionBefore(after.getMinAddress());
+			if (prev == null || !after.getMinAddress().equals(prev.getFallThrough()) ||
+				isControlFlowJoin(program, after, prev) || prev.getFlowType().isCall()) {
+				return null;
+			}
+			String m = prev.getMnemonicString().toUpperCase();
+			if (NZ_NEUTRAL.contains(m)) {
+				after = prev;
+				continue;
+			}
+			Character reg = NZ_FROM_RESULT.get(m);
+			if (reg == null) {
+				return null;
+			}
+			Integer v = constantRegisterValue(program, after, reg, INERT_HOOKS, RegisterEnv.NONE,
+				new Budget(MAX_RESOLVE_STEPS));
+			if (v == null) {
+				return null;
+			}
+			boolean z = (v & 0xFF) == 0;
+			boolean n = (v & 0x80) != 0;
+			return switch (br) {
+				case "BEQ" -> z;
+				case "BNE" -> !z;
+				case "BMI" -> n;
+				default -> !n; // BPL
+			};
+		}
+		return null;
 	}
 
 	/**
