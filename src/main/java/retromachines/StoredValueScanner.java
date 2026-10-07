@@ -2044,9 +2044,7 @@ final class StoredValueScanner {
 		Map.entry("TYA", 'A'), Map.entry("TSX", 'X'), Map.entry("PLA", 'A'),
 		Map.entry("INX", 'X'), Map.entry("DEX", 'X'), Map.entry("INY", 'Y'),
 		Map.entry("DEY", 'Y'), Map.entry("AND", 'A'), Map.entry("ORA", 'A'),
-		Map.entry("EOR", 'A'));
-	// ADC/SBC are left out on purpose: in NMOS decimal mode they set N/Z from the BINARY sum
-	// while A holds the BCD one, so A's value does not determine the flags.
+		Map.entry("EOR", 'A'), Map.entry("ADC", 'A'), Map.entry("SBC", 'A'));
 
 	/**
 	 * Whether conditional branch {@code branch} is provably TAKEN ({@code TRUE}), provably NOT
@@ -2055,9 +2053,10 @@ final class StoredValueScanner {
 	 * them: the walk goes back over {@link #NZ_NEUTRAL} instructions within one straight-line run
 	 * ({@link #isControlFlowJoin} ends it) to a setter in {@link #NZ_FROM_RESULT}, and asks
 	 * {@link #constantRegisterValue} -- state-free, as for {@link #constantIndex} -- for the
-	 * register's value right after it. Z is "that value is 0", N its bit 7. Anything else, or an
-	 * accumulator shift/rotate or a memory read-modify-write (which set flags from a result this
-	 * does not evaluate), declines. Blaster Master's {@code ebf2}: {@code LDA #0 / STA $2006 /
+	 * register's value right after it. Z is "that value is 0", N its bit 7 ({@code ADC}/{@code SBC}
+	 * only in binary mode -- {@link #binaryModeFlags}). Anything else, or an accumulator
+	 * shift/rotate or a memory read-modify-write (which set flags from a result this does not
+	 * evaluate), declines. Blaster Master's {@code ebf2}: {@code LDA #0 / STA $2006 /
 	 * BEQ $EC34} is always taken.
 	 */
 	static Boolean knownBranchOutcome(Program program, Instruction branch) {
@@ -2079,7 +2078,7 @@ final class StoredValueScanner {
 				continue;
 			}
 			Character reg = NZ_FROM_RESULT.get(m);
-			if (reg == null) {
+			if (reg == null || !binaryModeFlags(program, prev, m)) {
 				return null;
 			}
 			Integer v = constantRegisterValue(program, after, reg, INERT_HOOKS, RegisterEnv.NONE,
@@ -2097,6 +2096,28 @@ final class StoredValueScanner {
 			};
 		}
 		return null;
+	}
+
+	/**
+	 * Whether {@code setter}'s N/Z are the flags of the value {@link #constantRegisterValue}
+	 * evaluates for it. Always, except for {@code ADC}/{@code SBC}: in NMOS decimal mode they set
+	 * N/Z from the BINARY result while A receives the BCD one. So they qualify when D is provably
+	 * clear before {@code setter}, or -- D unknown -- under the TABLE evaluator, which computes A
+	 * as the binary sum by its own named assumption ({@link Mos6502ConstantSemantics}' "binary
+	 * mode is assumed", the hardware on NES's 2A03), so the flags and the value agree. A provably
+	 * SET D, or an unknown D under the PCODE evaluator (whose {@code ADC} honours D), declines.
+	 */
+	private static boolean binaryModeFlags(Program program, Instruction setter, String mnem) {
+		if (!mnem.equals("ADC") && !mnem.equals("SBC")) {
+			return true;
+		}
+		Integer d = constantLocValue(program, setter, ConstantSemantics.Loc.D, INERT_HOOKS,
+			RegisterEnv.NONE, new Budget(MAX_RESOLVE_STEPS));
+		if (d != null) {
+			return d == 0;
+		}
+		return BoardBankAnalyzer.constantSemanticsMode(program) ==
+			BoardBankAnalyzer.ConstantSemanticsMode.TABLE;
 	}
 
 	/**

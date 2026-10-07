@@ -427,17 +427,42 @@ public class CrossCallSaveSlotProgramTest extends AbstractBundledLanguageTest {
 		assertEquals(Boolean.FALSE, outcome("0xc10c"));
 	}
 
-	/** ADC is not a modeled setter (decimal mode), nor is a carry branch. */
+	/** ADC with D unknown: admitted under the TABLE evaluator's binary-mode assumption (the
+	 *  default), so {@code CLC / LDA #0 / ADC #0} sets Z. A carry branch is not modeled. */
 	@Test
-	public void unmodeledSettersAndBranchesDecline() throws Exception {
+	public void adcFlagsUnderTheBinaryModeAssumption() throws Exception {
 		put("0xc100", "18"); // CLC
 		put("0xc101", "a9 00"); // LDA #0
 		put("0xc103", "69 00"); // ADC #0
-		put("0xc105", "f0 00"); // BEQ
-		put("0xc107", "90 00"); // BCC
+		put("0xc105", "f0 00"); // BEQ -> taken
+		put("0xc107", "90 00"); // BCC -> not modeled
 		put("0xc109", "60");
-		assertEquals(null, outcome("0xc105"));
+		assertEquals(Boolean.TRUE, outcome("0xc105"));
 		assertEquals(null, outcome("0xc107"));
+	}
+
+	/** D provably clear ({@code CLD}) admits SBC: $05 - $05 = 0 -> BNE not taken. */
+	@Test
+	public void sbcFlagsWithDecimalProvablyClear() throws Exception {
+		put("0xc100", "d8"); // CLD
+		put("0xc101", "38"); // SEC
+		put("0xc102", "a9 05"); // LDA #5
+		put("0xc104", "e9 05"); // SBC #5
+		put("0xc106", "d0 00"); // BNE -> not taken
+		put("0xc108", "60");
+		assertEquals(Boolean.FALSE, outcome("0xc106"));
+	}
+
+	/** D provably SET: A's value does not determine NMOS decimal-mode flags -> declines. */
+	@Test
+	public void adcFlagsWithDecimalSetDecline() throws Exception {
+		put("0xc100", "f8"); // SED
+		put("0xc101", "18"); // CLC
+		put("0xc102", "a9 00"); // LDA #0
+		put("0xc104", "69 00"); // ADC #0
+		put("0xc106", "f0 00"); // BEQ
+		put("0xc108", "60");
+		assertEquals(null, outcome("0xc106"));
 	}
 
 	/** A join between the setter and the branch: another path may arrive with other flags. */
