@@ -2080,7 +2080,8 @@ final class StoredValueScanner {
 	 * <li>by 6502 addressing mode: {@code (zp,X)}/{@code (zp),Y} are {@code INDIRECT_ASSUMED}
 	 * ({@link SlotAssumption#INDIRECT_STORES_DO_NOT_WRITE_SLOT}); an indexed store whose index is
 	 * a provable constant ({@link #constantIndex}) writes exactly {@code base+idx} (mod {@code $100}
-	 * for zero-page indexed); otherwise zero-page indexed wraps within
+	 * for zero-page indexed); failing that, one inside a counted loop ({@link #loopIndexRange},
+	 * grm-mej.15) writes exactly {@code base+lo..base+hi}; otherwise zero-page indexed wraps within
 	 * the zero page, so it writes a zero-page slot and nothing else; absolute indexed reaches
 	 * {@code base..base+$FF}; anything else is {@code UNPLACEABLE}.</li>
 	 * </ul>
@@ -2133,6 +2134,18 @@ final class StoredValueScanner {
 				// proof re-scans, so it counts as a writer
 				return SlotWrite.WRITES_SLOT;
 			}
+			LoopIdioms.IndexRange range = base == null ? null : loopIndexRange(program, instr);
+			if (range != null) {
+				// A counted loop bounds the index (grm-mej.15): the store reaches exactly
+				// base+lo..base+hi, wrapping inside page zero for the zero-page indexed modes.
+				long delta = cell.getOffset() - base.getOffset();
+				if (zeroPage) {
+					delta &= 0xFF;
+				}
+				boolean reachable = (!zeroPage || cell.getOffset() < 0x100) && delta >= 0 &&
+					delta <= 0xFF && range.contains((int) delta);
+				return reachable ? SlotWrite.WRITES_SLOT : SlotWrite.NONE;
+			}
 			if (zeroPage) {
 				// unknown index: the effective address may be any zero-page cell
 				return cell.getOffset() < 0x100 ? SlotWrite.WRITES_SLOT : SlotWrite.NONE;
@@ -2183,6 +2196,25 @@ final class StoredValueScanner {
 		Integer v = constantRegisterValue(program, instr, name.charAt(0), INERT_HOOKS,
 			RegisterEnv.NONE, new Budget(MAX_RESOLVE_STEPS));
 		return v == null ? null : v & 0xFF;
+	}
+
+	/**
+	 * The index range of an indexed store inside a counted loop
+	 * ({@link LoopIdioms#countedLoopIndexRange}, bead grm-mej.15), with the counter's entry value
+	 * proven by the same state-free evaluator as {@link #constantIndex}. Blaster Master's
+	 * {@code e6fe}/{@code ce02} ({@code LDX #$1F / STA $58,X / DEX / BPL}: {@code $58..$77}) and
+	 * {@code e8d8} ({@code LDX #1 / ... STA $F5,X / DEX / BPL}: {@code $F5..$F6}) are the cases
+	 * that otherwise count as writing every zero-page cell.
+	 */
+	private static LoopIdioms.IndexRange loopIndexRange(Program program, Instruction instr) {
+		Register idx = LoopIdioms.indexReg(instr);
+		if (idx == null) {
+			return null;
+		}
+		char reg = Character.toUpperCase(idx.getName().charAt(0));
+		return LoopIdioms.countedLoopIndexRange(program, instr,
+			p -> constantRegisterValue(program, p, reg, INERT_HOOKS, RegisterEnv.NONE,
+				new Budget(MAX_RESOLVE_STEPS)));
 	}
 
 	/** Same physical RAM cell, whichever (overlay or base) space names it. */

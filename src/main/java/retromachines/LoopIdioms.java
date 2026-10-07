@@ -29,6 +29,9 @@ import ghidra.program.model.symbol.RefType;
 import ghidra.program.model.symbol.Reference;
 import ghidra.program.model.symbol.ReferenceManager;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.Function;
 import java.util.function.Predicate;
 
 /**
@@ -345,5 +348,212 @@ final class LoopIdioms {
 			}
 		}
 		return null;
+	}
+
+	/** The inclusive range {@code [lo, hi]} (both in {@code 0..$FF}, {@code lo <= hi}) an index
+	 *  register provably stays within at an indexed access -- {@link #countedLoopIndexRange}. */
+	record IndexRange(int lo, int hi) {
+
+		boolean contains(int v) {
+			return v >= lo && v <= hi;
+		}
+	}
+
+	/** How many instructions a counted loop's body may span, head to back edge inclusive. The
+	 *  idioms this models (clear a table, copy a few bytes) are tight; a longer body is declined. */
+	static final int COUNTED_LOOP_MAX_BODY = 32;
+
+	/**
+	 * The range index register {@code R} (X or Y) provably holds at {@code access} when the access
+	 * sits in a COUNTED LOOP (bead grm-mej.15), or {@code null} when that cannot be shown. The
+	 * shapes, with {@code n} the counter's value on entry to the loop head {@code L}:
+	 * <pre>
+	 *   LDX #n / L: ... access ... / DEX / BPL L           X in [0, n]
+	 *   LDX #n / L: ... access ... / DEX / BNE L           X in [1, n]    (n = 0: all 256)
+	 *   LDX #n / L: ... access ... / INX / BNE L           X in [n, $FF]
+	 *   LDX #n / L: ... access ... / INX / CPX #m / BNE L  X in [n, m-1]  (DEX / CPX #m: [m+1, n])
+	 *   LDX #n / L: ... access ... / INX / BPL L           X in [n, $7F]  (n &gt;= $80: just n)
+	 * </pre>
+	 * and the same with Y. A range that would wrap past {@code $FF}/{@code $00} declines rather
+	 * than splitting in two.
+	 * <p>
+	 * <b>What makes it sound.</b> The loop is the contiguous fall-through run from {@code L} to
+	 * the backward conditional branch {@code B} that targets it, at most
+	 * {@link #COUNTED_LOOP_MAX_BODY} instructions, containing {@code access}, and:
+	 * <ul>
+	 * <li>no call anywhere in it (a callee may change {@code R});</li>
+	 * <li>exactly ONE instruction writes {@code R} -- the step ({@code DEX/DEY/INX/INY}) -- and it
+	 * comes after {@code access}, immediately before {@code B} or before a {@code CP<R> #m} that
+	 * is, so the flags {@code B} tests are the step's (or the compare's);</li>
+	 * <li>the only flow INTO the run is {@code B}'s back edge to {@code L} plus {@code L}'s
+	 * fall-through predecessor {@code P}: no reference reaches any other body instruction, and
+	 * every flow reference to {@code L} comes from {@code B}. Forward branches OUT are exits and
+	 * only ever cut the sequence of values short, so they are allowed;</li>
+	 * <li>{@code n} is provable: {@code P} is {@code LD<R> #n}, or {@code P} does not write
+	 * {@code R} and {@code valueBefore} proves {@code R}'s value on entry to {@code P}.</li>
+	 * </ul>
+	 * Then every iteration sees {@code R} = {@code n}, {@code n+d}, ... in order, stopping where
+	 * the branch first falls through, which is the range above. "Writes {@code R}" is
+	 * {@link Mos6502ConstantSemantics#writes}, which unions the mnemonic table with the
+	 * instruction's p-code, so it is conservative under either constant-evaluator mode.
+	 *
+	 * @param valueBefore {@code R}'s provable constant on entry to an instruction, or null
+	 */
+	static IndexRange countedLoopIndexRange(Program program, Instruction access,
+			Function<Instruction, Integer> valueBefore) {
+		Register idx = indexReg(access);
+		if (idx == null) {
+			return null;
+		}
+		String rn = idx.getName().toUpperCase();
+		if (!rn.equals("X") && !rn.equals("Y")) {
+			return null;
+		}
+		ConstantSemantics.Loc loc = ConstantSemantics.Loc.ofRegister(rn.charAt(0));
+		Listing listing = program.getListing();
+		Address accessAddr = access.getMinAddress();
+
+		// Forward from the access to the back edge B: a conditional jump to some L <= access.
+		Instruction b = null;
+		Address head = null;
+		Instruction cur = access;
+		for (int i = 0; i < COUNTED_LOOP_MAX_BODY; i++) {
+			FlowType ft = cur.getFlowType();
+			if (ft.isCall()) {
+				return null;
+			}
+			if (ft.isJump() && ft.isConditional()) {
+				for (Address t : cur.getFlows()) {
+					if (t.getAddressSpace().equals(accessAddr.getAddressSpace()) &&
+						t.compareTo(accessAddr) <= 0) {
+						b = cur;
+						head = t;
+					}
+				}
+				if (b != null) {
+					break;
+				}
+			}
+			cur = fallThroughInstruction(listing, cur);
+			if (cur == null) {
+				return null;
+			}
+		}
+		if (b == null) {
+			return null;
+		}
+
+		// The body L..B, contiguous by fall-through.
+		List<Instruction> body = new ArrayList<>();
+		cur = listing.getInstructionAt(head);
+		while (cur != null && body.size() < COUNTED_LOOP_MAX_BODY) {
+			body.add(cur);
+			if (cur.equals(b)) {
+				break;
+			}
+			cur = fallThroughInstruction(listing, cur);
+		}
+		if (body.isEmpty() || !body.get(body.size() - 1).equals(b) || !body.contains(access)) {
+			return null;
+		}
+		ReferenceManager refs = program.getReferenceManager();
+		Address bAddr = b.getMinAddress();
+		Instruction writer = null;
+		for (int i = 0; i < body.size(); i++) {
+			Instruction in = body.get(i);
+			if (in.getFlowType().isCall()) {
+				return null;
+			}
+			for (Reference ref : refs.getReferencesTo(in.getMinAddress())) {
+				if (ref.getReferenceType().isFlow() &&
+					!(i == 0 && ref.getFromAddress().equals(bAddr))) {
+					return null; // a second way into the body
+				}
+			}
+			if (Mos6502ConstantSemantics.INSTANCE.writes(in, loc)) {
+				if (writer != null) {
+					return null;
+				}
+				writer = in;
+			}
+		}
+		if (writer == null) {
+			return null; // loop-invariant index: not a counted loop
+		}
+
+		// The step and the optional compare, in the last slots before B.
+		int stepAt = body.size() - 2;
+		Integer compareTo = null;
+		if (stepAt > 0 && mnem(body.get(stepAt)).equals("CP" + rn) &&
+			StoredValueScanner.isImmediate(body.get(stepAt))) {
+			compareTo = StoredValueScanner.immediateOperandValue(body.get(stepAt));
+			if (compareTo == null) {
+				return null;
+			}
+			stepAt--;
+		}
+		if (stepAt < 0 || !body.get(stepAt).equals(writer) || body.indexOf(access) >= stepAt) {
+			return null;
+		}
+		String step = mnem(writer);
+		int d;
+		if (step.equals("DE" + rn)) {
+			d = -1;
+		}
+		else if (step.equals("IN" + rn)) {
+			d = +1;
+		}
+		else {
+			return null;
+		}
+
+		// n: R's value on entry to L along its fall-through predecessor.
+		Instruction p = listing.getInstructionBefore(head);
+		if (p == null || !head.equals(p.getFallThrough()) || p.getFlowType().isCall()) {
+			return null;
+		}
+		Integer n;
+		if (mnem(p).equals("LD" + rn) && StoredValueScanner.isImmediate(p)) {
+			n = StoredValueScanner.immediateOperandValue(p);
+		}
+		else if (Mos6502ConstantSemantics.INSTANCE.writes(p, loc)) {
+			return null;
+		}
+		else {
+			n = valueBefore.apply(p);
+		}
+		if (n == null) {
+			return null;
+		}
+		n &= 0xFF;
+
+		String br = mnem(b);
+		if (br.equals("BPL") && compareTo == null) {
+			if (d < 0) {
+				return new IndexRange(0, n);
+			}
+			return n <= 0x7F ? new IndexRange(n, 0x7F) : new IndexRange(n, n);
+		}
+		if (!br.equals("BNE")) {
+			return null;
+		}
+		// BNE: the body sees n, n+d, ..., and the loop exits when the STEPPED value equals t.
+		int t = compareTo == null ? 0 : compareTo & 0xFF;
+		int k = ((t - d - n) * d) & 0xFF; // iterations after the first
+		if (k == 0xFF) {
+			return new IndexRange(0, 0xFF); // all 256 values (DEX / BNE entered at 0)
+		}
+		int lo = d > 0 ? n : n - k;
+		int hi = d > 0 ? n + k : n;
+		if (lo < 0 || hi > 0xFF) {
+			return null; // the sequence wraps: two ranges, not modeled
+		}
+		return new IndexRange(lo, hi);
+	}
+
+	/** The instruction {@code instr} falls through to, or null when it has no fall-through. */
+	private static Instruction fallThroughInstruction(Listing listing, Instruction instr) {
+		Address ft = instr.getFallThrough();
+		return ft == null ? null : listing.getInstructionAt(ft);
 	}
 }

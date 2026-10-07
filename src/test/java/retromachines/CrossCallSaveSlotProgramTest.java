@@ -279,7 +279,8 @@ public class CrossCallSaveSlotProgramTest extends AbstractBundledLanguageTest {
 		assertDeclined(scan(site, oracle()));
 	}
 
-	/** A call between the constant and the store may clobber X: conservative. */
+	/** A call between the constant and the store that clobbers X: conservative. (A callee that
+	 *  provably preserves X -- a bare {@code RTS} -- no longer counts, since grm-mej.13.) */
 	@Test
 	public void indexClobberedByACallIsConservative() throws Exception {
 		String site = saveCallRestore("a9 05");
@@ -287,7 +288,8 @@ public class CrossCallSaveSlotProgramTest extends AbstractBundledLanguageTest {
 		put("0xc042", "20 60 c0"); // JSR $C060
 		put("0xc045", "95 00"); // STA $00,X
 		put("0xc047", "60"); // RTS
-		put("0xc060", "60"); // RTS
+		put("0xc060", "a6 20"); // LDX $20  -- the callee clobbers X
+		put("0xc062", "60"); // RTS
 		assertDeclined(scan(site, oracle()));
 	}
 
@@ -300,6 +302,69 @@ public class CrossCallSaveSlotProgramTest extends AbstractBundledLanguageTest {
 		put("0xc044", "a2 7a"); // LDX #$7A
 		put("0xc046", "95 00"); // STA $00,X  -- join: X is $7A or the caller's
 		put("0xc048", "60"); // RTS
+		assertDeclined(scan(site, oracle()));
+	}
+
+	/** blmaster e6fe/ce02 (bead grm-mej.15): {@code LDX #$1F / LDA #0 / L: STA $58,X / DEX /
+	 *  BPL L} writes exactly $58..$77, so a callee holding it does not write $D3. */
+	@Test
+	public void countedLoopMissingTheSlotResolves() throws Exception {
+		String site = saveCallRestore("a9 05");
+		put("0xc040", "a2 1f"); // LDX #$1F
+		put("0xc042", "a9 00"); // LDA #0
+		put("0xc044", "95 58"); // L: STA $58,X
+		put("0xc046", "ca"); // DEX
+		put("0xc047", "10 fb"); // BPL L
+		put("0xc049", "60"); // RTS
+		assertBank(5, scan(site, oracle()).value());
+	}
+
+	/** blmaster e8d8's shape: {@code LDX #1 / L: STA $F5,X / DEX / BPL L} -- $F5..$F6. */
+	@Test
+	public void shortCountedLoopMissingTheSlotResolves() throws Exception {
+		String site = saveCallRestore("a9 05");
+		put("0xc040", "a2 01"); // LDX #1
+		put("0xc042", "95 f5"); // L: STA $F5,X
+		put("0xc044", "ca"); // DEX
+		put("0xc045", "10 fb"); // BPL L
+		put("0xc047", "60"); // RTS
+		assertBank(5, scan(site, oracle()).value());
+	}
+
+	/** The same loop whose window covers the slot ($C0..$DF) is a writer. */
+	@Test
+	public void countedLoopCoveringTheSlotDeclines() throws Exception {
+		String site = saveCallRestore("a9 05");
+		put("0xc040", "a2 1f"); // LDX #$1F
+		put("0xc042", "95 c0"); // L: STA $C0,X  -> $C0..$DF
+		put("0xc044", "ca"); // DEX
+		put("0xc045", "10 fb"); // BPL L
+		put("0xc047", "60"); // RTS
+		assertDeclined(scan(site, oracle()));
+	}
+
+	/** A counted loop whose zero-page window wraps onto the slot: $E0,X for X in 0..$F3 reaches
+	 *  ($E0+$F3) mod $100 = $D3. */
+	@Test
+	public void countedLoopWrappingOntoTheSlotDeclines() throws Exception {
+		String site = saveCallRestore("a9 05");
+		put("0xc040", "a2 f3"); // LDX #$F3
+		put("0xc042", "95 e0"); // L: STA $E0,X
+		put("0xc044", "ca"); // DEX
+		put("0xc045", "d0 fb"); // BNE L  -> X in 1..$F3
+		put("0xc047", "60"); // RTS
+		assertDeclined(scan(site, oracle()));
+	}
+
+	/** A loop the recognizer cannot bound (unknown seed) keeps the any-zero-page rule. */
+	@Test
+	public void unboundedLoopIsConservative() throws Exception {
+		String site = saveCallRestore("a9 05");
+		put("0xc040", "a6 20"); // LDX $20
+		put("0xc042", "95 58"); // L: STA $58,X
+		put("0xc044", "ca"); // DEX
+		put("0xc045", "10 fb"); // BPL L
+		put("0xc047", "60"); // RTS
 		assertDeclined(scan(site, oracle()));
 	}
 
