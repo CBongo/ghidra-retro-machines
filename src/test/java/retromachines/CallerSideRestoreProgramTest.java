@@ -687,4 +687,143 @@ public class CallerSideRestoreProgramTest extends AbstractBundledLanguageTest {
 		assertEquals(readBack, flipped.readBack());
 		assertTrue(flipped.secondTierRelay());
 	}
+
+	// ==================================================================
+	// grm-mej.8 -- a PARTLY known live-mirror read keeps its read-back
+	// ==================================================================
+
+	/** Hooks answering {@code cell} as a live bank mirror; {@code loadAnswer} comes back from
+	 *  {@code resolveLoad}, {@code mirrorAnswer} from {@code resolveMirrorLoad} (either may be
+	 *  null = decline). */
+	private static StoredValueScanner.Hooks liveMirrorHooks(Address cell, BankState loadAnswer,
+			BankState mirrorAnswer) {
+		return new StoredValueScanner.Hooks() {
+			@Override
+			public boolean isMechanismWrite(Instruction instr) {
+				return false;
+			}
+
+			@Override
+			public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+					BankState inStateAtStore) {
+				return cell.equals(resolvedTarget) ? loadAnswer : null;
+			}
+
+			@Override
+			public BankState resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
+					BankState inStateAtStore) {
+				return cell.equals(resolvedTarget) ? mirrorAnswer : null;
+			}
+
+			@Override
+			public boolean isLiveBankMirror(Address target) {
+				return cell.equals(target);
+			}
+		};
+	}
+
+	private StoredValueScanner.Scan scanStore(String storeAddress, int mask,
+			StoredValueScanner.Hooks hooks) {
+		return StoredValueScanner.resolveStoredValueScan(program, instructionAt(storeAddress), 'A',
+			BankState.unknown(), mask, hooks, RegisterEnv.NONE);
+	}
+
+	/** {@code LDA $BFFF / STA $8000} (and the AND-modified variant at a different base). */
+	private void layBfffRead(String base, boolean withAnd) throws Exception {
+		int b = (int) addr(base).getOffset();
+		put(base, "ad ff bf"); // LDA $BFFF
+		if (withAnd) {
+			put(String.format("0x%x", b + 3), "29 0f"); // AND #$0F
+			put(String.format("0x%x", b + 5), "8d 00 80"); // STA $8000
+		}
+		else {
+			put(String.format("0x%x", b + 3), "8d 00 80"); // STA $8000
+		}
+	}
+
+	/**
+	 * grm-mej.8, mirror channel (the one rcransom hits): an unmodified read of a live mirror whose
+	 * byte {@code resolveMirrorLoad} answers PARTLY known must stop RESTORED_BANK carrying both the
+	 * partial value and the read-back. Before the fix {@code stopped()} collapsed any known bit to
+	 * RESOLVED and dropped the ReadBack, so a helper that discards the caller's register value
+	 * ended with neither. Uses a 16-bit mask, as MMC3's field-local state does.
+	 */
+	@Test
+	public void partlyKnownMirrorReadKeepsItsReadBack() throws Exception {
+		layBfffRead("0x8200", false);
+		Address cell = addr("0xbfff");
+
+		StoredValueScanner.Scan scan = scanStore("0x8203", 0xFFFF,
+			liveMirrorHooks(cell, null, new BankState(0xF9, 0x00)));
+
+		assertEquals(BankSwitchStrategy.ValueStop.RESTORED_BANK, scan.stop());
+		assertEquals("the partial value must survive", 0xF9, scan.value().knownMask());
+		assertEquals(0x00, scan.value().bits());
+		assertNotNull(scan.readBack());
+		assertEquals(cell, scan.readBack().cell());
+		assertEquals(addr("0x8200"), scan.readBack().readAt());
+	}
+
+	/** grm-mej.8: a FULLY known mirror byte is still RESOLVED with no read-back, including under
+	 *  a 16-bit mask (the dev-time bug compared against the full mask instead of mask & 0xFF). */
+	@Test
+	public void fullyKnownMirrorReadStillResolves() throws Exception {
+		layBfffRead("0x8210", false);
+
+		for (int mask : new int[] { 0xFF, 0xFFFF }) {
+			StoredValueScanner.Scan scan = scanStore("0x8213", mask,
+				liveMirrorHooks(addr("0xbfff"), null, new BankState(0xFF, 0x04)));
+
+			assertEquals("mask " + mask, BankSwitchStrategy.ValueStop.RESOLVED, scan.stop());
+			assertEquals(0xFF, scan.value().knownMask() & 0xFF);
+			assertEquals(0x04, scan.value().bits() & 0xFF);
+			assertNull("mask " + mask, scan.readBack());
+		}
+	}
+
+	/** grm-mej.8, resolveLoad channel: same pair -- partly known keeps the read-back. */
+	@Test
+	public void partlyKnownResolveLoadReadKeepsItsReadBack() throws Exception {
+		layBfffRead("0x8220", false);
+		Address cell = addr("0xbfff");
+
+		StoredValueScanner.Scan scan = scanStore("0x8223", 0xFFFF,
+			liveMirrorHooks(cell, new BankState(0xF9, 0x00), null));
+
+		assertEquals(BankSwitchStrategy.ValueStop.RESTORED_BANK, scan.stop());
+		assertEquals(0xF9, scan.value().knownMask());
+		assertNotNull(scan.readBack());
+		assertEquals(cell, scan.readBack().cell());
+		assertEquals(addr("0x8220"), scan.readBack().readAt());
+	}
+
+	/** grm-mej.8, resolveLoad channel: fully known is still RESOLVED, no read-back. */
+	@Test
+	public void fullyKnownResolveLoadReadStillResolves() throws Exception {
+		layBfffRead("0x8230", false);
+
+		StoredValueScanner.Scan scan = scanStore("0x8233", 0xFFFF,
+			liveMirrorHooks(addr("0xbfff"), new BankState(0xFF, 0x04), null));
+
+		assertEquals(BankSwitchStrategy.ValueStop.RESOLVED, scan.stop());
+		assertNull(scan.readBack());
+	}
+
+	/** grm-mej.8: a MODIFIED read ({@code LDA $BFFF / AND #$0F}) is never a read-back, however
+	 *  the hook answers -- identity accumulators are part of the shape. */
+	@Test
+	public void modifiedPartlyKnownMirrorReadIsNotAReadBack() throws Exception {
+		layBfffRead("0x8240", true);
+		Address cell = addr("0xbfff");
+
+		for (StoredValueScanner.Hooks hooks : new StoredValueScanner.Hooks[] {
+			liveMirrorHooks(cell, null, new BankState(0xF9, 0x00)),
+			liveMirrorHooks(cell, new BankState(0xF9, 0x00), null) }) {
+			StoredValueScanner.Scan scan = scanStore("0x8245", 0xFFFF, hooks);
+
+			assertTrue("a modified read must not stop RESTORED_BANK",
+				scan.stop() != BankSwitchStrategy.ValueStop.RESTORED_BANK);
+			assertNull(scan.readBack());
+		}
+	}
 }

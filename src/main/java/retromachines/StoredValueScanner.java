@@ -826,6 +826,18 @@ final class StoredValueScanner {
 				Address target = effectiveOperandTarget(program, prev, hooks, env);
 				BankState base = hooks.resolveLoad(prev, target, inState);
 				if (base != null) {
+					// grm-mej.8: a read-back of a live-bank mirror stays a read-back when the strategy
+					// can ALSO partly evaluate it (see restoredKeepingValue). Same shape test as the
+					// mirror branch below; only the reason and the ReadBack change, never the value.
+					if (aAcc == 0xFF && oAcc == 0x00 && plainAbsoluteTarget(prev) != null &&
+						hooks.isLiveBankMirror(target)) {
+						Scan restored = restoredKeepingValue(aAcc, oAcc, mask, base,
+							new ReadBack(target, prev.getMinAddress(), carriedAcross,
+								crossBlockPush, crossBlockPull));
+						if (restored != null) {
+							return restored;
+						}
+					}
 					return stopped(aAcc, oAcc, mask, base, BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 				}
 				// No strategy claims this address; try to forward a store to it from earlier in
@@ -854,6 +866,15 @@ final class StoredValueScanner {
 				boolean readBack = aAcc == 0xFF && oAcc == 0x00 &&
 					plainAbsoluteTarget(prev) != null && hooks.isLiveBankMirror(target);
 				if (mirrored != null || readBack) {
+					if (readBack && mirrored != null) {
+						// grm-mej.8: a partly known mirror value keeps its read-back too.
+						Scan restored = restoredKeepingValue(aAcc, oAcc, mask, mirrored,
+							new ReadBack(target, prev.getMinAddress(), carriedAcross,
+								crossBlockPush, crossBlockPull));
+						if (restored != null) {
+							return restored;
+						}
+					}
 					return stopped(aAcc, oAcc, mask, mirrored != null ? mirrored : BankState.unknown(),
 						readBack ? BankSwitchStrategy.ValueStop.RESTORED_BANK
 								: BankSwitchStrategy.ValueStop.ANALYZER_LIMIT,
@@ -1803,14 +1824,19 @@ final class StoredValueScanner {
 			proof.indirectStoresAssumed());
 		Msg.debug(StoredValueScanner.class, "save-slot forwarding: load=" + load.getMinAddress() +
 			" cell=" + cell + " store=" + store.getMinAddress() + " -> " + inner.stop());
+		if (inner.stop() == BankSwitchStrategy.ValueStop.RESTORED_BANK && inner.readBack() != null &&
+			aAcc == 0xFF && oAcc == 0x00) {
+			// grm-mej.8: checked BEFORE the partly-known case below, so a restore whose byte the
+			// strategy could partly evaluate keeps its read-back -- see restoredKeepingValue.
+			Scan restored = restoredKeepingValue(aAcc, oAcc, mask, inner.value(),
+				inner.readBack().withSlot(carrier));
+			if (restored != null) {
+				return restored;
+			}
+		}
 		if (inner.value().knownMask() != 0) {
 			return stopped(aAcc, oAcc, mask, inner.value(),
 				BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
-		}
-		if (inner.stop() == BankSwitchStrategy.ValueStop.RESTORED_BANK && inner.readBack() != null &&
-			aAcc == 0xFF && oAcc == 0x00) {
-			return stopped(aAcc, oAcc, mask, inner.value(),
-				BankSwitchStrategy.ValueStop.RESTORED_BANK, inner.readBack().withSlot(carrier));
 		}
 		return null;
 	}
@@ -2613,7 +2639,10 @@ final class StoredValueScanner {
 
 	/**
 	 * A scan's answer plus, when it did not resolve, WHY (bead {@code grm-3ou} part 1).
-	 * {@code stop} is only meaningful when {@code value.knownMask() == 0}.
+	 * {@code stop} is only meaningful when {@code value.knownMask() == 0} -- with ONE exception, a
+	 * {@code RESTORED_BANK} stop whose read-back the strategy could partly evaluate, which keeps
+	 * both its partial value and its {@code readBack} (bead grm-mej.8; see
+	 * {@code restoredKeepingValue}).
 	 */
 	record Scan(BankState value, BankSwitchStrategy.ValueStop stop, ReadBack readBack) {
 
@@ -2783,6 +2812,34 @@ final class StoredValueScanner {
 		BankState value = combine(aAcc, oAcc, mask, base);
 		return value.knownMask() != 0 ? new Scan(value, BankSwitchStrategy.ValueStop.RESOLVED)
 				: new Scan(value, reason, readBack);
+	}
+
+	/**
+	 * A {@code RESTORED_BANK} stop that KEEPS a partly known value (bead grm-mej.8), or {@code null}
+	 * when the value is fully known over {@code mask} -- then the caller stops {@code RESOLVED} as
+	 * before, since a concrete bank says strictly more than "restored".
+	 * <p>
+	 * {@link #stopped(int, int, int, BankState, BankSwitchStrategy.ValueStop, ReadBack)} turns ANY
+	 * known bit into {@code RESOLVED} and drops the {@link ReadBack}. That is wrong for a read-back
+	 * the strategy can only partly evaluate: rcransom's {@code LDA $bfff / PHA / ... / PLA / JSR
+	 * fed1} at cd57/ef85 reaches the read with the bank partly pinned, so the ROM byte is partly
+	 * known (A in {0,2,4,6}), and fed1's prologue then discards the caller's register value
+	 * ({@code HelperArgumentRecovery.recoverCallArgument}), leaving neither a value nor the restore
+	 * it really is. Keeping both is safe because every consumer of a call's read-back
+	 * ({@code BoardBankAnalyzer}'s classification) gates on the argument NOT having resolved: where
+	 * the partial value survives to the deposit, the read-back is simply unused.
+	 * <p>
+	 * Callers must establish the read-back's own shape first (identity accumulators, a live-bank
+	 * mirror) -- this only decides between the two stop reasons.
+	 */
+	private static Scan restoredKeepingValue(int aAcc, int oAcc, int mask, BankState base,
+			ReadBack readBack) {
+		BankState value = combine(aAcc, oAcc, mask, base);
+		int width = mask & 0xFF; // combine's own clip: a register is one byte wide
+		if ((value.knownMask() & width) == width) {
+			return null;
+		}
+		return new Scan(value, BankSwitchStrategy.ValueStop.RESTORED_BANK, readBack);
 	}
 
 	// ------------------------------------------------------------------
