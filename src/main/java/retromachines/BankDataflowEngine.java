@@ -655,8 +655,7 @@ final class BankDataflowEngine {
 		}
 		// The annotation state echoes the in-state only within the helper's own
 		// mechanism window -- see CallSwitch's javadoc.
-		BankState mechIn = new BankState(outState.knownMask() & helper.effectMask(),
-			outState.bits() & helper.effectMask());
+		BankState mechIn = helper.placement().window(outState);
 		String label = helperLabel(program, helper);
 		if (forkEffects != null) {
 			List<BankState> afters = new ArrayList<>();

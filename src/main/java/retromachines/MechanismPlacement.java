@@ -50,6 +50,17 @@ public record MechanismPlacement(int lsb, int effectMask) {
 			(local.bits() << lsb) & effectMask);
 	}
 
+	/**
+	 * Board bits restricted to this mechanism's window, and NOT shifted: the result stays in
+	 * BOARD coordinates, with every bit outside {@code effectMask} unknown (bead grm-ze06.3).
+	 * This is not a coordinate conversion -- contrast {@link #toLocal}, which also shifts down
+	 * to bit 0. The engine uses it for a helper call's annotation state, which echoes the
+	 * in-state only within the helper's own mechanism (see {@code CallSwitch}).
+	 */
+	public BankState window(BankState board) {
+		return new BankState(board.knownMask() & effectMask, board.bits() & effectMask);
+	}
+
 	/** Positions a field-local owned-bit mask into board bits, clipped to {@code effectMask}. */
 	public int positionMask(int ownedMask) {
 		return (ownedMask << lsb) & effectMask;

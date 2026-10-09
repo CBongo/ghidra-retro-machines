@@ -100,12 +100,13 @@ final class BankStrategyRegistry {
 				continue;
 			}
 
-			int[] positioning = mechanismPositioning(analyzer, mechanism, board, log, strategyName);
-			if (positioning == null) {
+			MechanismPlacement placement =
+				mechanismPositioning(analyzer, mechanism, board, log, strategyName);
+			if (placement == null) {
 				continue;
 			}
-			int effectMask = positioning[0];
-			int lsb = positioning[1];
+			int effectMask = placement.effectMask();
+			int lsb = placement.lsb();
 
 			try {
 				BankSwitchStrategy instance =
@@ -141,7 +142,7 @@ final class BankStrategyRegistry {
 				}
 				// Strategies always compute in field-local [0, width) coordinates; the mask
 				// they configure with is that field-local width, not the whole board mask.
-				instance.configure(program, params, effectMask >>> lsb);
+				instance.configure(program, params, placement.widthMask());
 				configured.add(new ConfiguredMechanism(instance, effectMask, lsb));
 			}
 			catch (Exception e) {
@@ -170,12 +171,12 @@ final class BankStrategyRegistry {
 	 * covering the whole board mask at {@code lsb} 0 -- today's single-mechanism-per-board
 	 * behavior, verbatim.
 	 *
-	 * @return {@code {effectMask, lsb}}, or {@code null} to skip this mechanism
+	 * @return the mechanism's placement, or {@code null} to skip this mechanism
 	 */
-	static int[] mechanismPositioning(Analyzer analyzer, JsonObject mechanism, BoardModel board,
+	static MechanismPlacement mechanismPositioning(Analyzer analyzer, JsonObject mechanism, BoardModel board,
 			MessageLog log, String strategyName) {
 		if (!mechanism.has("sets") || mechanism.getAsJsonArray("sets").size() == 0) {
-			return new int[] { board.mask(), 0 };
+			return new MechanismPlacement(0, board.mask());
 		}
 		JsonArray sets = mechanism.getAsJsonArray("sets");
 		int effectMask = 0;
@@ -194,12 +195,13 @@ final class BankStrategyRegistry {
 			effectMask |= field.positionedMask();
 			lsb = Math.min(lsb, field.lsb());
 		}
-		int widthMask = effectMask >>> lsb;
+		MechanismPlacement placement = new MechanismPlacement(lsb, effectMask);
+		int widthMask = placement.widthMask();
 		if (widthMask == 0 || (widthMask & (widthMask + 1)) != 0) {
 			AnalyzerLog.warn(analyzer, log, "mechanism '" + strategyName + "' sets fields " + sets +
 				" that are not a contiguous bit run in banking.state; skipping that mechanism");
 			return null;
 		}
-		return new int[] { effectMask, lsb };
+		return placement;
 	}
 }

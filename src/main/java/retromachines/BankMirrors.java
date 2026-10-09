@@ -987,19 +987,19 @@ public final class BankMirrors {
 		boolean savedFromReadBack;
 	}
 
-	/**
+	/*
 	 * Which bit-field of the tracked bank state a mechanism write commits -- the granularity at
-	 * which {@link Discovery#build} asks "is this cell maintained by EVERY switch?". Two sites
-	 * share a field exactly when a shadow store paired with both maintains the same bits, which
-	 * is what {@code SwitchResult}'s {@code lsb}/{@code effectMask} pair already expresses.
+	 * which Discovery#build asks "is this cell maintained by EVERY switch?" -- is the switch's
+	 * MechanismPlacement (bead grm-ze06.3; this was a duplicate record, MechanismField). Two
+	 * sites share a field exactly when a shadow store paired with both maintains the same bits,
+	 * which is what equal placements express.
 	 */
-	record MechanismField(int lsb, int effectMask) {}
 
-	/** The field the {@code Collection} form of {@link Discovery#scanWriteThroughShadows} assumes
+	/** The placement the {@code Collection} form of {@link Discovery#scanWriteThroughShadows} assumes
 	 *  when the caller does not distinguish mechanisms: every site commits the same field, so
 	 *  coverage means "paired with all of them". Correct for a single-mechanism fixture, and
 	 *  strictly conservative otherwise, since merging fields can only enlarge the denominator. */
-	private static final MechanismField SOLE_FIELD = new MechanismField(0, -1);
+	private static final MechanismPlacement SOLE_FIELD = new MechanismPlacement(0, -1);
 
 	/**
 	 * The mutable side of {@link BankMirrors}: one derivation pass's accumulated evidence,
@@ -1024,7 +1024,7 @@ public final class BankMirrors {
 		private final Map<Long, Cell> cells = new LinkedHashMap<>();
 		/** Every mechanism write {@link #scanWriteThroughShadows} was handed, grouped by the
 		 *  bit-field it commits -- the denominator of {@link #coversAMechanismField}. */
-		private final Map<MechanismField, Set<Address>> sitesByField = new LinkedHashMap<>();
+		private final Map<MechanismPlacement, Set<Address>> sitesByField = new LinkedHashMap<>();
 
 		Discovery(AddressSpace baseSpace) {
 			this.baseSpace = baseSpace;
@@ -1115,7 +1115,7 @@ public final class BankMirrors {
 		 *                    switch there and cannot be attributed forward
 		 */
 		void scanWriteThroughShadows(Program program, Collection<Address> switchSites) {
-			Map<Address, MechanismField> single = new LinkedHashMap<>();
+			Map<Address, MechanismPlacement> single = new LinkedHashMap<>();
 			for (Address site : switchSites) {
 				single.put(site, SOLE_FIELD);
 			}
@@ -1127,7 +1127,7 @@ public final class BankMirrors {
 		 * site commits, so {@link #build} can ask whether a cell is maintained by every switch to
 		 * a field rather than only how many times it was seen. See {@link #coversAMechanismField}.
 		 */
-		void scanWriteThroughShadows(Program program, Map<Address, MechanismField> switchSites) {
+		void scanWriteThroughShadows(Program program, Map<Address, MechanismPlacement> switchSites) {
 			Listing listing = program.getListing();
 			Set<Address> sites = switchSites.keySet();
 			switchSites.forEach((site, field) -> sitesByField

@@ -741,9 +741,8 @@ final class BankAnnotationAdapter {
 		}
 		// Hand over WHICH bit-field each site commits, not just the addresses: build()'s third
 		// corroboration route (grm-3n4f) asks whether a cell is stored by every switch to a field.
-		Map<Address, BankMirrors.MechanismField> switchFields = new LinkedHashMap<>();
-		flow.switchResults().forEach((site, result) -> switchFields.put(site,
-			new BankMirrors.MechanismField(result.lsb(), result.effectMask())));
+		Map<Address, MechanismPlacement> switchFields = new LinkedHashMap<>();
+		flow.switchResults().forEach((site, result) -> switchFields.put(site, result.placement()));
 		discovery.scanWriteThroughShadows(program, switchFields);
 		// Route (b) also gets each call's helper BODY (bead grm-yflf), so a load feeding a helper
 		// that stores its argument through into the same cell corroborates that store.

@@ -15,7 +15,7 @@
  */
 package retromachines;
 
-import static org.junit.Assert.assertArrayEquals;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -92,7 +92,7 @@ public class MechanismPositioningTest {
 		return JsonParser.parseString(json).getAsJsonObject();
 	}
 
-	private static int[] position(JsonObject mech, MessageLog log) {
+	private static MechanismPlacement position(JsonObject mech, MessageLog log) {
 		return BankStrategyRegistry.mechanismPositioning(new StubAnalyzer(), mech, board(), log,
 			"test-strategy");
 	}
@@ -104,45 +104,45 @@ public class MechanismPositioningTest {
 	 */
 	@Test
 	public void mechanismWithoutSetsCoversTheWholeBoard() {
-		assertArrayEquals(new int[] { 0xF, 0 },
+		assertEquals(new MechanismPlacement(0, 0xF),
 			position(mechanism("{ \"strategy\": \"x\" }"), new MessageLog()));
 	}
 
 	/** An empty {@code sets} array is treated as absent, not as "sets nothing". */
 	@Test
 	public void mechanismWithEmptySetsCoversTheWholeBoard() {
-		assertArrayEquals(new int[] { 0xF, 0 },
+		assertEquals(new MechanismPlacement(0, 0xF),
 			position(mechanism("{ \"strategy\": \"x\", \"sets\": [] }"), new MessageLog()));
 	}
 
 	@Test
 	public void singleFieldAtTheBottomPositionsAtLsbZero() {
-		assertArrayEquals(new int[] { 0x3, 0 },
+		assertEquals(new MechanismPlacement(0, 0x3),
 			position(mechanism("{ \"sets\": [\"bank\"] }"), new MessageLog()));
 	}
 
 	/** A field above bit 0 reports its own lsb, so the strategy can compute field-locally. */
 	@Test
 	public void singleFieldAboveTheBottomReportsItsOwnLsb() {
-		assertArrayEquals(new int[] { 0x4, 2 },
+		assertEquals(new MechanismPlacement(2, 0x4),
 			position(mechanism("{ \"sets\": [\"mode\"] }"), new MessageLog()));
-		assertArrayEquals(new int[] { 0x8, 3 },
+		assertEquals(new MechanismPlacement(3, 0x8),
 			position(mechanism("{ \"sets\": [\"hi\"] }"), new MessageLog()));
 	}
 
 	/** Adjacent fields union into one run; the lsb is the lowest of them. */
 	@Test
 	public void adjacentFieldsUnionIntoOneContiguousRun() {
-		assertArrayEquals(new int[] { 0x7, 0 },
+		assertEquals(new MechanismPlacement(0, 0x7),
 			position(mechanism("{ \"sets\": [\"bank\", \"mode\"] }"), new MessageLog()));
-		assertArrayEquals(new int[] { 0xC, 2 },
+		assertEquals(new MechanismPlacement(2, 0xC),
 			position(mechanism("{ \"sets\": [\"mode\", \"hi\"] }"), new MessageLog()));
 	}
 
 	/** Order within {@code sets} is irrelevant -- it is a union plus a minimum. */
 	@Test
 	public void setsOrderDoesNotMatter() {
-		assertArrayEquals(position(mechanism("{ \"sets\": [\"bank\", \"mode\"] }"), new MessageLog()),
+		assertEquals(position(mechanism("{ \"sets\": [\"bank\", \"mode\"] }"), new MessageLog()),
 			position(mechanism("{ \"sets\": [\"mode\", \"bank\"] }"), new MessageLog()));
 	}
 
