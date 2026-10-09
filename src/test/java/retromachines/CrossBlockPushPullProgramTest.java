@@ -107,13 +107,13 @@ public class CrossBlockPushPullProgramTest extends AbstractBundledLanguageTest {
 
 		@Override
 		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-				BankState inStateAtStore) {
+				MechanismState inStateAtStore) {
 			return null;
 		}
 
 		@Override
-		public BankState stateAt(Address addr) {
-			return BankState.unknown();
+		public MechanismState stateAt(Address addr) {
+			return MechanismState.unknown();
 		}
 
 		@Override
@@ -133,13 +133,13 @@ public class CrossBlockPushPullProgramTest extends AbstractBundledLanguageTest {
 
 			@Override
 			public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-					BankState inStateAtStore) {
+					MechanismState inStateAtStore) {
 				return null;
 			}
 
 			@Override
-			public BankState stateAt(Address addr) {
-				return BankState.unknown();
+			public MechanismState stateAt(Address addr) {
+				return MechanismState.unknown();
 			}
 
 			@Override
@@ -157,7 +157,7 @@ public class CrossBlockPushPullProgramTest extends AbstractBundledLanguageTest {
 	/** The scanner on a direct {@code STA} site under {@code hooks}. */
 	private StoredValueScanner.Scan scan(String storeAddress, StoredValueScanner.Hooks hooks) {
 		return StoredValueScanner.resolveStoredValueScan(program, instructionAt(storeAddress), 'A',
-			BankState.unknown(), 0xFF, hooks, RegisterEnv.NONE);
+			MechanismState.unknown(), 0xFF, hooks, RegisterEnv.NONE);
 	}
 
 	// ==================================================================
@@ -419,7 +419,7 @@ public class CrossBlockPushPullProgramTest extends AbstractBundledLanguageTest {
 
 			@Override
 			public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-					BankState inStateAtStore) {
+					MechanismState inStateAtStore) {
 				return null;
 			}
 		};
@@ -528,13 +528,13 @@ public class CrossBlockPushPullProgramTest extends AbstractBundledLanguageTest {
 
 			@Override
 			public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-					BankState inStateAtStore) {
+					MechanismState inStateAtStore) {
 				return null;
 			}
 
 			@Override
-			public BankState stateAt(Address addr) {
-				return BankState.unknown();
+			public MechanismState stateAt(Address addr) {
+				return MechanismState.unknown();
 			}
 
 			@Override

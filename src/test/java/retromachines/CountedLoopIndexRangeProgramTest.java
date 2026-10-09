@@ -64,7 +64,7 @@ public class CountedLoopIndexRangeProgramTest extends AbstractBundledLanguageTes
 					@Override
 					public PartialByte resolveLoad(Instruction loadInstr,
 							ghidra.program.model.address.Address resolvedTarget,
-							BankState inStateAtStore) {
+							MechanismState inStateAtStore) {
 						return null;
 					}
 				}, RegisterEnv.NONE, new StoredValueScanner.Budget(1000)));

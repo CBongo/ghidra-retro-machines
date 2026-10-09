@@ -191,7 +191,7 @@ public class NoDepositSiteProgramTest extends AbstractBundledLanguageTest {
 	}
 
 	private SwitchOutcome outcomeAt(BankSwitchStrategy strategy, String address,
-			BankState inState) {
+			MechanismState inState) {
 		SwitchOutcome outcome =
 			strategy.computeSwitchOutcome(program, instructionAt(address), inState);
 		assertNotNull("fixture produced no mechanism write at " + address +
@@ -199,7 +199,7 @@ public class NoDepositSiteProgramTest extends AbstractBundledLanguageTest {
 		return outcome;
 	}
 
-	private static void assertEcho(BankState inState, SwitchOutcome outcome) {
+	private static void assertEcho(MechanismState inState, SwitchOutcome outcome) {
 		assertEquals("a NO_DEPOSIT site must echo the in-state's known bits: " + outcome,
 			inState.knownMask(), outcome.value().knownMask());
 		assertEquals("a NO_DEPOSIT site must echo the in-state's values: " + outcome,
@@ -220,7 +220,7 @@ public class NoDepositSiteProgramTest extends AbstractBundledLanguageTest {
 	public void chainWritesOneThroughFourDepositNothingAndTheFifthCommits() throws Exception {
 		String[] writes = buildChain(0x9000, "a9 0c", PRG_OFFSET); // LDA #$0C
 		SerialShiftBankSwitchStrategy mmc1 = mmc1();
-		BankState in = BankState.fullyKnown(MMC1_STATE_MASK, 0);
+		MechanismState in = MechanismState.fullyKnown(MMC1_STATE_MASK, 0);
 
 		for (int i = 0; i < 4; i++) {
 			SwitchOutcome outcome = outcomeAt(mmc1, writes[i], in);
@@ -243,7 +243,7 @@ public class NoDepositSiteProgramTest extends AbstractBundledLanguageTest {
 	@Test
 	public void chainWriteFromAnUnknownInStateIsStillNoDeposit() throws Exception {
 		String[] writes = buildChain(0x9100, "a9 0c", PRG_OFFSET);
-		SwitchOutcome outcome = outcomeAt(mmc1(), writes[1], BankState.unknown());
+		SwitchOutcome outcome = outcomeAt(mmc1(), writes[1], MechanismState.unknown());
 		assertEquals("an echo of an unknown state is still not a failed recovery",
 			ValueStop.NO_DEPOSIT, outcome.stop());
 		assertEquals("nothing may be deposited here", 0, outcome.value().knownMask());
@@ -257,7 +257,7 @@ public class NoDepositSiteProgramTest extends AbstractBundledLanguageTest {
 	@Test
 	public void writeToAnUnconfiguredTargetDepositsNothing() throws Exception {
 		String[] writes = buildChain(0x9200, "a9 0c", CHR0_OFFSET);
-		BankState in = BankState.fullyKnown(MMC1_STATE_MASK, 0);
+		MechanismState in = MechanismState.fullyKnown(MMC1_STATE_MASK, 0);
 		SwitchOutcome outcome = outcomeAt(mmc1(), writes[4], in);
 		assertEquals("an un-configured target is discarded, not un-recovered",
 			ValueStop.NO_DEPOSIT, outcome.stop());
@@ -279,7 +279,7 @@ public class NoDepositSiteProgramTest extends AbstractBundledLanguageTest {
 		builder.setBytes("0x9300", "8d 01 80", true); // STA $8001 -- the data port
 		SelectDataBankSwitchStrategy mmc3 = mmc3();
 		// select=2 (CHR R2), every field known so the echo is visible as knowledge preserved.
-		BankState in = BankState.fullyKnown(MMC3_STATE_MASK, 2);
+		MechanismState in = MechanismState.fullyKnown(MMC3_STATE_MASK, 2);
 
 		SwitchOutcome outcome = outcomeAt(mmc3, "0x9300", in);
 		assertEquals("an untracked select target is discarded, not un-recovered",
@@ -296,7 +296,7 @@ public class NoDepositSiteProgramTest extends AbstractBundledLanguageTest {
 	public void dataWriteToATrackedSelectTargetIsStillADeposit() throws Exception {
 		builder.setBytes("0x9400", "a9 05", true); // LDA #$05
 		builder.setBytes("0x9402", "8d 01 80", true); // STA $8001
-		BankState in = BankState.fullyKnown(MMC3_STATE_MASK, 6);
+		MechanismState in = MechanismState.fullyKnown(MMC3_STATE_MASK, 6);
 
 		SwitchOutcome outcome = outcomeAt(mmc3(), "0x9402", in);
 		assertEquals("a tracked target's data write deposits a bank", ValueStop.RESOLVED,

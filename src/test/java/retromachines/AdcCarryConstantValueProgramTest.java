@@ -82,7 +82,7 @@ public class AdcCarryConstantValueProgramTest extends AbstractBundledLanguageTes
 
 		@Override
 		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-				BankState inStateAtStore) {
+				MechanismState inStateAtStore) {
 			return null;
 		}
 	};

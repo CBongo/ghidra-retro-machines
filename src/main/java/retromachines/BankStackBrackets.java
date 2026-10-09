@@ -222,7 +222,7 @@ final class BankStackBrackets {
 		for (ConfiguredMechanism cm : c.mechanisms()) {
 			int r = cm.strategy().bankFieldCommittedBySite(c.program(), instr);
 			if (r >= 0) {
-				return r == 0 ? 0 : (r << cm.lsb()) & cm.effectMask();
+				return r == 0 ? 0 : cm.placement().positionMask(r);
 			}
 		}
 		return -1;

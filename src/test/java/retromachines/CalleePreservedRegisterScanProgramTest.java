@@ -49,7 +49,7 @@ public class CalleePreservedRegisterScanProgramTest extends AbstractBundledLangu
 
 		@Override
 		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-				BankState inStateAtStore) {
+				MechanismState inStateAtStore) {
 			return null;
 		}
 	};
@@ -91,7 +91,7 @@ public class CalleePreservedRegisterScanProgramTest extends AbstractBundledLangu
 	/** The byte the scanner resolves for the store at {@code storeAddr}, or null if not fully known. */
 	private Integer storedA(String storeAddr) {
 		PartialByte v = StoredValueScanner.resolveStoredValueScan(program, at(storeAddr), 'A',
-			BankState.unknown(), 0xFF, NO_HOOKS, RegisterEnv.NONE).value();
+			MechanismState.unknown(), 0xFF, NO_HOOKS, RegisterEnv.NONE).value();
 		return v.exact();
 	}
 
@@ -195,10 +195,10 @@ public class CalleePreservedRegisterScanProgramTest extends AbstractBundledLangu
 	 * direct-site strategy with no oracle.
 	 */
 	private static final class StateEchoHooks implements StoredValueScanner.Hooks {
-		final BankState stateAtCall;
+		final MechanismState stateAtCall;
 		int loadsAsked;
 
-		StateEchoHooks(BankState stateAtCall) {
+		StateEchoHooks(MechanismState stateAtCall) {
 			this.stateAtCall = stateAtCall;
 		}
 
@@ -209,13 +209,13 @@ public class CalleePreservedRegisterScanProgramTest extends AbstractBundledLangu
 
 		@Override
 		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-				BankState inStateAtStore) {
+				MechanismState inStateAtStore) {
 			loadsAsked++;
 			return new PartialByte(inStateAtStore.knownMask(), inStateAtStore.bits());
 		}
 
 		@Override
-		public BankState stateAt(Address addr) {
+		public MechanismState stateAt(Address addr) {
 			return stateAtCall;
 		}
 	}
@@ -225,12 +225,12 @@ public class CalleePreservedRegisterScanProgramTest extends AbstractBundledLangu
 		code("0xc000", "ad 00 03 20 00 c1 8d 00 02");
 		code("0xc100", "60");
 		return StoredValueScanner.resolveStoredValueScan(program, at("0xc006"), 'A',
-			BankState.fullyKnown(0xFF, 0x77), 0xFF, hooks, RegisterEnv.NONE).value();
+			MechanismState.fullyKnown(0xFF, 0x77), 0xFF, hooks, RegisterEnv.NONE).value();
 	}
 
 	@Test
 	public void loadBeforeAPreservingCallUsesTheStateAtTheCall() throws Exception {
-		StateEchoHooks hooks = new StateEchoHooks(BankState.fullyKnown(0xFF, 0x22));
+		StateEchoHooks hooks = new StateEchoHooks(MechanismState.fullyKnown(0xFF, 0x22));
 		PartialByte v = loadAcrossPreservingCall(hooks);
 		assertEquals("resolved under the state at the call, not the store's", 0xFF,
 			v.knownMask());

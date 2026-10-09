@@ -162,11 +162,11 @@ final class StoredValueScanner {
 		 *                        scanner rather than recomputed per hook so that the indexed
 		 *                        case is resolved once, under one shared step budget.
 		 * @param inStateAtStore  the strategy's tracked in-state at the store being scanned (mechanism
-		 *                        state, field-local -- a {@link BankState}, not a byte)
+		 *                        state, field-local -- a {@link MechanismState}, not a byte)
 		 * @return the loaded BYTE, partly known ({@link PartialByte}), or {@code null} to decline
 		 */
 		PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-				BankState inStateAtStore);
+				MechanismState inStateAtStore);
 
 		/**
 		 * <b>Last resort</b> (bead grm-mej.2): resolves a load of an address that MIRRORS THE
@@ -196,7 +196,7 @@ final class StoredValueScanner {
 		 * <b>A non-null answer may be wholly unknown</b>, and that is meaningful rather than a
 		 * degenerate null: it says "this site read the bank back and the bank was not known here",
 		 * which is precisely what
-		 * {@link BankSwitchStrategy#effectDependsOnPriorState(Program, Instruction, BankState)}
+		 * {@link BankSwitchStrategy#effectDependsOnPriorState(Program, Instruction, MechanismState)}
 		 * reports as a bank-known-on-entry requirement. Callers must therefore treat non-null as
 		 * authoritative, not test {@code knownMask() != 0}.
 		 *
@@ -206,7 +206,7 @@ final class StoredValueScanner {
 		 *                        that mechanism's field-local {@code [0, width)} coordinates
 		 */
 		default PartialByte resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
-				BankState inStateAtStore) {
+				MechanismState inStateAtStore) {
 			return null;
 		}
 
@@ -239,7 +239,7 @@ final class StoredValueScanner {
 		 * alone. Direct-site strategies keep the default and so keep {@code matchCache}'s
 		 * state-independence claim intact.
 		 */
-		default BankState stateAt(Address addr) {
+		default MechanismState stateAt(Address addr) {
 			return null;
 		}
 
@@ -612,13 +612,13 @@ final class StoredValueScanner {
 	 * <li>neither: the store's state still describes the push -- unchanged.</li>
 	 * </ul>
 	 */
-	private static BankState resumeStateAfterPairing(Span span, Instruction push, Hooks hooks,
-			BankState current) {
+	private static MechanismState resumeStateAfterPairing(Span span, Instruction push, Hooks hooks,
+			MechanismState current) {
 		if (span.crossedCall || span.crossedBlock) {
 			return push == null ? null : hooks.stateAt(push.getMinAddress());
 		}
 		if (span.crossedMechanismWrite) {
-			return BankState.unknown();
+			return MechanismState.unknown();
 		}
 		return current;
 	}
@@ -638,7 +638,7 @@ final class StoredValueScanner {
 	 * simpler "resolved load or wholly unknown" behavior.
 	 */
 	static PartialByte resolveStoredValue(Program program, Instruction storeInstr, char reg,
-			BankState inStateAtStore, int mask, Hooks hooks) {
+			MechanismState inStateAtStore, int mask, Hooks hooks) {
 		return resolveStoredValue(program, storeInstr, reg, inStateAtStore, mask, hooks,
 			RegisterEnv.NONE);
 	}
@@ -660,7 +660,7 @@ final class StoredValueScanner {
 	 * argument and the structural enforcement.
 	 */
 	static PartialByte resolveStoredValue(Program program, Instruction storeInstr, char reg,
-			BankState inStateAtStore, int mask, Hooks hooks, RegisterEnv env) {
+			MechanismState inStateAtStore, int mask, Hooks hooks, RegisterEnv env) {
 		return resolveStoredValueScan(program, storeInstr, reg, inStateAtStore, mask, hooks, env)
 				.value();
 	}
@@ -672,7 +672,7 @@ final class StoredValueScanner {
 	 * the return, which the {@link PartialByte}-returning forms discard.
 	 */
 	static Scan resolveStoredValueScan(Program program, Instruction storeInstr, char reg,
-			BankState inStateAtStore, int mask, Hooks hooks, RegisterEnv env) {
+			MechanismState inStateAtStore, int mask, Hooks hooks, RegisterEnv env) {
 		return resolveStoredValue(program, storeInstr, reg, inStateAtStore, mask, hooks, env,
 			new Budget(MAX_RESOLVE_STEPS), 0);
 	}
@@ -690,7 +690,7 @@ final class StoredValueScanner {
 	 * the recursion this method can now enter.
 	 */
 	private static Scan resolveStoredValue(Program program, Instruction storeInstr, char reg,
-			BankState inStateAtStore, int mask, Hooks hooks, RegisterEnv env, Budget budget,
+			MechanismState inStateAtStore, int mask, Hooks hooks, RegisterEnv env, Budget budget,
 			int depth) {
 		Listing listing = program.getListing();
 		Set<String> modifiers = registerModifiers(reg);
@@ -700,7 +700,7 @@ final class StoredValueScanner {
 		// (bead grm-4bgh.7): everything reached beyond that point is evaluated as though the
 		// strategy's tracked state were unknown, which it effectively is. The parameter itself
 		// stays untouched so the withdrawal cannot leak back to a caller.
-		BankState inState = inStateAtStore;
+		MechanismState inState = inStateAtStore;
 		// grm-mej.13: true once the walk has stepped back over a register-preserving call with no
 		// state available at that call. The register's value still survives the call, but the
 		// BANK may not have -- the callee can switch it -- so inState no longer describes anything
@@ -771,7 +771,7 @@ final class StoredValueScanner {
 				// bits the accumulators already pinned are unchanged, and a later base can only
 				// add more. See findMatchingPush's javadoc, which asked for exactly this
 				// distinction and named the ASL modeling it was waiting on.
-				inState = BankState.unknown();
+				inState = MechanismState.unknown();
 			}
 
 			// Every prev reached past this point is examined and stepped over -- exactly the
@@ -930,7 +930,7 @@ final class StoredValueScanner {
 							// helper that reloads idx from the same mirror yields an equal partial
 							// value while committing the bank live at the CALL, not the read-back.
 							Scan idxScan = resolveStoredValue(program, prev, idxChar,
-								BankState.unknown(), CLASSIFY_ONLY, hooks, env, budget, depth + 1);
+								MechanismState.unknown(), CLASSIFY_ONLY, hooks, env, budget, depth + 1);
 							boolean idxUnmodifiedFromEntry =
 								idxScan.stop() == BankSwitchStrategy.ValueStop.HELPER_ARGUMENT;
 							if (idxUnmodifiedFromEntry
@@ -992,7 +992,7 @@ final class StoredValueScanner {
 					// push (rcransom's FUN_fed1 does exactly this -- see grm-4bgh.7), or a call
 					// (grm-mej.3 increment 3). Same rules as the PLA case below, applied HERE
 					// because the walk that resumes from the push is this one.
-					BankState resumed = resumeStateAfterPairing(reload, pha, hooks, inState);
+					MechanismState resumed = resumeStateAfterPairing(reload, pha, hooks, inState);
 					stateBlind = stateBlind && !(reload.crossedCall || reload.crossedBlock);
 					if (pha != null && resumed != null) {
 						inState = resumed;
@@ -1041,7 +1041,7 @@ final class StoredValueScanner {
 				// This walk resumes from the push, so the consequence of what the search crossed
 				// (a mechanism write, a call, a control-flow join) lands on THIS walk's in-state
 				// -- see resumeStateAfterPairing.
-				BankState resumed = resumeStateAfterPairing(pairing, pha, hooks, inState);
+				MechanismState resumed = resumeStateAfterPairing(pairing, pha, hooks, inState);
 				stateBlind = stateBlind && !(pairing.crossedCall || pairing.crossedBlock);
 				if (pha == null || resumed == null) {
 					return stopped(aAcc, oAcc, mask, PartialByte.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
@@ -1100,7 +1100,7 @@ final class StoredValueScanner {
 				// it would silently shorten the outer scan that is still running.
 				//
 				// Note this inherits constantRegisterValue's conservative in-state rule -- it
-				// asks resolveLoad with BankState.unknown(), never inStateAtStore -- so nothing
+				// asks resolveLoad with MechanismState.unknown(), never inStateAtStore -- so nothing
 				// resolved through here can make a cacheable strategy state-dependent.
 				Integer exact = constantRegisterValue(program, cur, reg, hooks, env,
 					new Budget(MAX_RESOLVE_STEPS));
@@ -1129,7 +1129,7 @@ final class StoredValueScanner {
 				// grm-mej.13: the register survives the call; the bank state need not. Resume with
 				// the state AT the call (before it ran), exactly as a call-crossing pairing does
 				// (resumeStateAfterPairing); with none available, go blind (see stateBlind).
-				BankState atCall = hooks.stateAt(prev.getMinAddress());
+				MechanismState atCall = hooks.stateAt(prev.getMinAddress());
 				if (atCall != null) {
 					inState = atCall;
 					stateBlind = false;
@@ -1818,7 +1818,7 @@ final class StoredValueScanner {
 		if (storeReg == null) {
 			return null;
 		}
-		BankState atStore = hooks.stateAt(store.getMinAddress());
+		MechanismState atStore = hooks.stateAt(store.getMinAddress());
 		if (atStore == null) {
 			return null; // no state at the store: abandon, never withdraw-and-continue
 		}
@@ -2305,7 +2305,7 @@ final class StoredValueScanner {
 
 		@Override
 		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-				BankState inStateAtStore) {
+				MechanismState inStateAtStore) {
 			return null;
 		}
 	};
@@ -2625,7 +2625,7 @@ final class StoredValueScanner {
 
 	/**
 	 * Folds the accumulated transform {@code result = (x & aAcc) | oAcc} against a
-	 * (possibly partially known) base {@link BankState} for {@code x}, reduced to
+	 * (possibly partially known) base {@link MechanismState} for {@code x}, reduced to
 	 * {@code mask}: {@code oAcc} setting a bit forces a known 1; otherwise {@code aAcc}
 	 * clearing it forces a known 0; otherwise the bit passes {@code x} through, so it is
 	 * known in the result iff it is known in {@code base}. A result bit is 1 exactly when
@@ -2890,7 +2890,7 @@ final class StoredValueScanner {
 	 * the mirror path it is not needed by anything measured. Adding it is one line at the top of
 	 * this method.
 	 */
-	private static Integer operandByte(Program program, Instruction instr, BankState inStateAtStore,
+	private static Integer operandByte(Program program, Instruction instr, MechanismState inStateAtStore,
 			Hooks hooks, RegisterEnv env, Budget budget, int depth) {
 		if (isImmediate(instr)) {
 			return immediateOperandValue(instr);
@@ -2937,28 +2937,28 @@ final class StoredValueScanner {
 	 * {@code valueSuppliedInsideHelper} needs an env and this does not.
 	 * <p>
 	 * <b>{@code inStateAtStore} is the CALLER's tracked in-state at {@code useInstr}, not
-	 * {@link BankState#unknown()}</b> (bead grm-mej.3 item 4 -- this was {@code unknown()}
+	 * {@link MechanismState#unknown()}</b> (bead grm-mej.3 item 4 -- this was {@code unknown()}
 	 * hardcoded before, back when the sole production caller passed {@code NO_HOOKS} and no hook
 	 * ever consulted it). It is consulted only through {@code hooks.resolveMirrorLoad} /
 	 * {@code hooks.resolveLoad}, and {@link #forwardedStoreValue} WITHDRAWS it to
-	 * {@link BankState#unknown()} the moment it crosses a {@link Hooks#isMechanismWrite} on the
+	 * {@link MechanismState#unknown()} the moment it crosses a {@link Hooks#isMechanismWrite} on the
 	 * walk from {@code useInstr} back to the store that fills {@code cell} -- the identical
 	 * grm-4bgh.7 machinery {@link #resolveStoredValue} itself relies on. That withdrawal is what
 	 * makes passing the CALL's state here sound rather than "a state that is off by the
 	 * intervening instructions": the state offered to a hook is never further from the truth than
 	 * the nearest mechanism write between it and {@code useInstr}, and past that write it is
 	 * honestly unknown instead of stale. A caller that still wants the pre-mirror behaviour (no
-	 * hook ever sees a non-{@code unknown()} state) passes {@link BankState#unknown()} explicitly.
+	 * hook ever sees a non-{@code unknown()} state) passes {@link MechanismState#unknown()} explicitly.
 	 */
 	static PartialByte callerCellValue(Program program, Instruction useInstr, Address cell,
-			BankState inStateAtStore, int mask, Hooks hooks) {
+			MechanismState inStateAtStore, int mask, Hooks hooks) {
 		return callerCellValue(program, useInstr, cell, inStateAtStore, mask, hooks,
 			RegisterEnv.NONE);
 	}
 
 	/** {@link #callerCellValue} along {@code env}'s arms (bead grm-wul); {@code NONE} crosses nothing. */
 	static PartialByte callerCellValue(Program program, Instruction useInstr, Address cell,
-			BankState inStateAtStore, int mask, Hooks hooks, RegisterEnv env) {
+			MechanismState inStateAtStore, int mask, Hooks hooks, RegisterEnv env) {
 		PartialByte value = forwardedStoreValue(program, useInstr, cell, inStateAtStore, hooks,
 			env, new Budget(MAX_RESOLVE_STEPS), 0);
 		// Equivalent to combine(0xFF, 0x00, mask, value), spelled out because there is no
@@ -2969,7 +2969,7 @@ final class StoredValueScanner {
 	/**
 	 * The value {@code target} holds when {@code useInstr} reads it, forwarded from the nearest
 	 * preceding store to that same cell <em>within {@code useInstr}'s own basic block</em>, by
-	 * recursing into {@link #resolveStoredValue} on that store. {@link BankState#unknown()} when
+	 * recursing into {@link #resolveStoredValue} on that store. {@link MechanismState#unknown()} when
 	 * no such store is provably reached.
 	 * <p>
 	 * This is the piece grm-hum could only work around. Ironsword's {@code FUN_ffc0} launders the
@@ -2993,7 +2993,7 @@ final class StoredValueScanner {
 	 * cell is stepped over; anything it cannot place at all ends the walk. Declining
 	 * under-reports, which is this scanner's failure mode everywhere else.
 	 * <p>
-	 * The {@code env} entry stop ends the walk with {@link BankState#unknown()} rather than
+	 * The {@code env} entry stop ends the walk with {@link MechanismState#unknown()} rather than
 	 * adopting anything: {@link RegisterEnv} describes a call site's <em>registers</em>, and says
 	 * nothing whatever about memory. A caller's zero page is not modeled and must not be guessed.
 	 * <p>
@@ -3038,7 +3038,7 @@ final class StoredValueScanner {
 	 * it, only the low-probability argument above.
 	 */
 	private static PartialByte forwardedStoreValue(Program program, Instruction useInstr,
-			Address target, BankState inStateAtStore, Hooks hooks, RegisterEnv env, Budget budget,
+			Address target, MechanismState inStateAtStore, Hooks hooks, RegisterEnv env, Budget budget,
 			int depth) {
 		if (target == null || depth >= MAX_RESOLVE_DEPTH) {
 			return PartialByte.unknown();
@@ -3049,7 +3049,7 @@ final class StoredValueScanner {
 		}
 		Listing listing = program.getListing();
 		// Withdrawn rather than aborted on, exactly as in resolveStoredValue -- see grm-4bgh.7.
-		BankState inState = inStateAtStore;
+		MechanismState inState = inStateAtStore;
 		Instruction cur = useInstr;
 		for (int i = 0; i < MAX_BACKWARD_SCAN; i++) {
 			if (env.stopsAt(cur.getMinAddress())) {
@@ -3076,7 +3076,7 @@ final class StoredValueScanner {
 				// still runs on this very instruction, so a mechanism write that IS a store to
 				// the cell being forwarded is forwarded from rather than skipped, which is the
 				// right answer and was previously unreachable.
-				inState = BankState.unknown();
+				inState = MechanismState.unknown();
 			}
 
 			if (writesMemory(prev)) {
@@ -3233,7 +3233,7 @@ final class StoredValueScanner {
 	 * is the one that actually needs it, since Contra's caller-supplied Y is consumed as the
 	 * INDEX of the switch site's operand rather than as its stored value.
 	 * <p>
-	 * <b>{@link BankState#unknown()} is passed to {@link Hooks#resolveLoad}, never a caller's
+	 * <b>{@link MechanismState#unknown()} is passed to {@link Hooks#resolveLoad}, never a caller's
 	 * in-state.</b> That is load-bearing for {@link BankSwitchStrategy#cacheable()}: an
 	 * effective address computed from the in-state would make {@code computeSwitch} a function
 	 * of {@code (program, instr, inState)}, while {@code BoardBankAnalyzer}'s {@code matchCache}
@@ -3341,7 +3341,7 @@ final class StoredValueScanner {
 			// stronger statement than resolveStoredValue's withdrawal above. That abort exists
 			// solely to stop an in-state-derived value being read across the write; THIS
 			// evaluator never consults a caller's in-state in the first place -- it passes
-			// BankState.unknown() to resolveLoad by construction, for the cacheability reason in
+			// MechanismState.unknown() to resolveLoad by construction, for the cacheability reason in
 			// its javadoc -- so it has nothing to withdraw and never had a hazard to guard. The
 			// abort it used to carry was copied from the walk that does.
 
@@ -3414,7 +3414,7 @@ final class StoredValueScanner {
 		public Integer memoryOperand() {
 			Address target = effectiveTarget();
 			// unknown() in-state, never a caller's -- see constantRegisterValue's javadoc
-			PartialByte base = hooks.resolveLoad(instr, target, BankState.unknown());
+			PartialByte base = hooks.resolveLoad(instr, target, MechanismState.unknown());
 			if (base != null && base.isFullyKnown()) {
 				return base.exact();
 			}

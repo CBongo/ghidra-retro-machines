@@ -203,7 +203,7 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		Instruction store = instructionAt("0x8003");
 		assertNoWriteReference(store);
 
-		BankState result = discreteLatch().computeSwitch(program, store, BankState.unknown());
+		MechanismState result = discreteLatch().computeSwitch(program, store, MechanismState.unknown());
 
 		assertNotNull("indexed latch store was not recognized as a mechanism write", result);
 		assertEquals(0x0F, result.knownMask());
@@ -223,7 +223,7 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		stripWriteReferences(store);
 		assertNoWriteReference(store);
 
-		BankState result = discreteLatch().computeSwitch(program, store, BankState.unknown());
+		MechanismState result = discreteLatch().computeSwitch(program, store, MechanismState.unknown());
 
 		assertNotNull("absolute latch store was not recognized as a mechanism write", result);
 		assertEquals(0x0F, result.knownMask());
@@ -240,12 +240,12 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		stripWriteReferences(store);
 		assertNoWriteReference(store);
 
-		assertNull(discreteLatch().computeSwitch(program, store, BankState.unknown()));
+		assertNull(discreteLatch().computeSwitch(program, store, MechanismState.unknown()));
 	}
 
 	/**
 	 * Read-modify-write stores keep reference-only behaviour. {@code computeSwitch} answers
-	 * {@link BankState#unknown()} for them, so newly <em>seeing</em> one would poison bank state
+	 * {@link MechanismState#unknown()} for them, so newly <em>seeing</em> one would poison bank state
 	 * rather than recover it -- the wrong direction for a reachability fix.
 	 */
 	@Test
@@ -257,7 +257,7 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		assertNoWriteReference(store);
 
 		assertNull("RMW store must stay tier-1-only, not poison state",
-			discreteLatch().computeSwitch(program, store, BankState.unknown()));
+			discreteLatch().computeSwitch(program, store, MechanismState.unknown()));
 	}
 
 	// ------------------------------------------------------------------
@@ -279,7 +279,7 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		assertNoWriteReference(store);
 
 		assertNull("indexed operand under addr_mask must decline, not guess",
-			latch(0x0FL, 0x08L).computeSwitch(program, store, BankState.unknown()));
+			latch(0x0FL, 0x08L).computeSwitch(program, store, MechanismState.unknown()));
 	}
 
 	/** An absolute target is statically certain, so the decode predicate still applies to it. */
@@ -299,12 +299,12 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 
 		MemoryLatchBankSwitchStrategy strategy = latch(0x0FL, 0x08L);
 
-		BankState latched = strategy.computeSwitch(program, prgWrite, BankState.unknown());
+		MechanismState latched = strategy.computeSwitch(program, prgWrite, MechanismState.unknown());
 		assertNotNull("nibble-8 absolute write is this mechanism's register", latched);
 		assertEquals(0x05, latched.bits());
 
 		assertNull("nibble-0 write belongs to a sibling register, not the PRG latch",
-			strategy.computeSwitch(program, siblingWrite, BankState.unknown()));
+			strategy.computeSwitch(program, siblingWrite, MechanismState.unknown()));
 	}
 
 	// ------------------------------------------------------------------
@@ -334,7 +334,7 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 			overlayTarget.getAddressSpace().isOverlaySpace());
 		addWriteReference(store, overlayTarget);
 
-		BankState result = discreteLatch().computeSwitch(program, store, BankState.unknown());
+		MechanismState result = discreteLatch().computeSwitch(program, store, MechanismState.unknown());
 
 		assertNotNull("overlay-space write reference was not seen as a mechanism write", result);
 		assertEquals("an RMW store's value is not modelled", 0x00, result.knownMask());
@@ -359,7 +359,7 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		addWriteReference(store, other.getAddress(0x9000));
 
 		assertNull("only the code space (or an overlay over it) carries the latch",
-			discreteLatch().computeSwitch(program, store, BankState.unknown()));
+			discreteLatch().computeSwitch(program, store, MechanismState.unknown()));
 	}
 
 	// ------------------------------------------------------------------
@@ -378,8 +378,8 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		builder.setBytes("0x8005", "8d 00 c0", true); // STA $C000
 		romifyPrg();
 
-		BankState result =
-			discreteLatch().computeSwitch(program, instructionAt("0x8005"), BankState.unknown());
+		MechanismState result =
+			discreteLatch().computeSwitch(program, instructionAt("0x8005"), MechanismState.unknown());
 
 		assertNotNull(result);
 		assertEquals("index resolved -> $9003 is a statically known ROM byte", 0x0F,
@@ -403,8 +403,8 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		builder.setBytes("0x8009", "8d 00 c0", true); // STA $C000
 		romifyPrg();
 
-		BankState result =
-			discreteLatch().computeSwitch(program, instructionAt("0x8009"), BankState.unknown());
+		MechanismState result =
+			discreteLatch().computeSwitch(program, instructionAt("0x8009"), MechanismState.unknown());
 
 		assertNotNull(result);
 		assertEquals(0x0F, result.knownMask());
@@ -436,18 +436,18 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 
 		MemoryLatchBankSwitchStrategy latch = busConflictLatch();
 
-		BankState first = latch.computeSwitch(program, instructionAt("0xd84a"), BankState.unknown());
+		MechanismState first = latch.computeSwitch(program, instructionAt("0xd84a"), MechanismState.unknown());
 		assertNotNull("STA $C006 is a mechanism write", first);
 		assertEquals("switch #1 is a plain immediate", 0x0F, first.knownMask());
 		assertEquals(0x06, first.bits());
 
-		BankState looped =
-			latch.computeSwitch(program, instructionAt("0xd861"), BankState.unknown());
+		MechanismState looped =
+			latch.computeSwitch(program, instructionAt("0xd861"), MechanismState.unknown());
 		assertNotNull("STA $C000,Y is a mechanism write (tier-2 operand decode)", looped);
 		assertEquals("loop-carried index must NOT resolve -- $D859 is a control-flow join", 0x00,
 			looped.knownMask());
 
-		BankState last = latch.computeSwitch(program, instructionAt("0xd88d"), BankState.unknown());
+		MechanismState last = latch.computeSwitch(program, instructionAt("0xd88d"), MechanismState.unknown());
 		assertNotNull(last);
 		assertEquals("the post-loop restore is what the helper actually leaves behind", 0x0F,
 			last.knownMask());
@@ -495,8 +495,8 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		builder.setBytes("0x8006", "8d 00 c0", true); // STA $C000
 		romifyPrg();
 
-		BankState result =
-			discreteLatch().computeSwitch(program, instructionAt("0x8006"), BankState.unknown());
+		MechanismState result =
+			discreteLatch().computeSwitch(program, instructionAt("0x8006"), MechanismState.unknown());
 
 		assertNotNull(result);
 		assertEquals(0x0F, result.knownMask());
@@ -514,8 +514,8 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		builder.setBytes("0x8008", "8d 00 c0", true); // STA $C000
 		romifyPrg();
 
-		BankState result =
-			discreteLatch().computeSwitch(program, instructionAt("0x8008"), BankState.unknown());
+		MechanismState result =
+			discreteLatch().computeSwitch(program, instructionAt("0x8008"), MechanismState.unknown());
 
 		assertNotNull(result);
 		assertEquals(0x0F, result.knownMask());
@@ -535,8 +535,8 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		builder.setBytes("0x8006", "8d 00 c0", true); // STA $C000
 		romifyPrg();
 
-		BankState result =
-			discreteLatch().computeSwitch(program, instructionAt("0x8006"), BankState.unknown());
+		MechanismState result =
+			discreteLatch().computeSwitch(program, instructionAt("0x8006"), MechanismState.unknown());
 
 		assertNotNull(result);
 		assertEquals("an unknown index must yield no bits, not the base's byte", 0x00,
@@ -559,7 +559,7 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		Instruction store = instructionAt("0x8003");
 		assertNoWriteReference(store);
 
-		BankState result = busConflictLatch().computeSwitch(program, store, BankState.unknown());
+		MechanismState result = busConflictLatch().computeSwitch(program, store, MechanismState.unknown());
 
 		assertNotNull(result);
 		assertEquals(0x0F, result.knownMask());
@@ -580,8 +580,8 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		builder.setBytes("0x8004", "99 00 c0", true); // STA $C000,Y -> $C005
 		romifyPrg();
 
-		BankState result =
-			busConflictLatch().computeSwitch(program, instructionAt("0x8004"), BankState.unknown());
+		MechanismState result =
+			busConflictLatch().computeSwitch(program, instructionAt("0x8004"), MechanismState.unknown());
 
 		assertNotNull(result);
 		assertEquals("ROM byte 0x00 forces every field bit to a known 0", 0x0F,
@@ -605,8 +605,8 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		romifyPrg();
 		makeReadOnly(ro);
 
-		BankState result =
-			discreteLatch().computeSwitch(program, instructionAt("0x8004"), BankState.unknown());
+		MechanismState result =
+			discreteLatch().computeSwitch(program, instructionAt("0x8004"), MechanismState.unknown());
 
 		assertNotNull(result);
 		assertEquals("zp,X wraps in page zero -- must not resolve to $017F", 0x00,
@@ -623,8 +623,8 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		builder.setBytes("0x8004", "8d 00 c0", true); // STA $C000
 		romifyPrg();
 
-		BankState result =
-			discreteLatch().computeSwitch(program, instructionAt("0x8004"), BankState.unknown());
+		MechanismState result =
+			discreteLatch().computeSwitch(program, instructionAt("0x8004"), MechanismState.unknown());
 
 		assertNotNull(result);
 		assertEquals("(zp),Y is an unmodeled pointer read, not a base+index", 0x00,
@@ -655,7 +655,7 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 	 * relaxation is ever suspected of shipping a wrong bank.
 	 * <p>
 	 * Note {@code constantRegisterValue} -- the evaluator that resolves the index -- consults no
-	 * caller in-state at all (it passes {@code BankState.unknown()} to {@code resolveLoad} by
+	 * caller in-state at all (it passes {@code MechanismState.unknown()} to {@code resolveLoad} by
 	 * construction), which is why grm-4bgh.7 removed its mechanism-write abort outright rather
 	 * than merely withdrawing the in-state as the value walk does.
 	 */
@@ -668,8 +668,8 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		builder.setBytes("0x8008", "8d 00 80", true); // STA $8000 -- the store under test
 		romifyPrg();
 
-		BankState result =
-			discreteLatch().computeSwitch(program, instructionAt("0x8008"), BankState.unknown());
+		MechanismState result =
+			discreteLatch().computeSwitch(program, instructionAt("0x8008"), MechanismState.unknown());
 
 		assertNotNull(result);
 		assertEquals("X is unaffected by a store, so the index still resolves across it", 0x07,
@@ -697,8 +697,8 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		builder.setBytes("0x8008", "8d 00 80", true); // STA $8000 -- the store under test
 		romifyPrg();
 
-		BankState result =
-			discreteLatch().computeSwitch(program, instructionAt("0x8008"), BankState.unknown());
+		MechanismState result =
+			discreteLatch().computeSwitch(program, instructionAt("0x8008"), MechanismState.unknown());
 
 		assertNotNull(result);
 		assertEquals("a writable cell is not a bank-invariant ROM byte, whatever the index says",
@@ -719,7 +719,7 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 			program.getReferenceManager().getReferenceCountTo(store.getMinAddress()) > 0);
 		romifyPrg();
 
-		BankState result = discreteLatch().computeSwitch(program, store, BankState.unknown());
+		MechanismState result = discreteLatch().computeSwitch(program, store, MechanismState.unknown());
 
 		assertNotNull(result);
 		assertEquals(0x00, result.knownMask());
@@ -738,8 +738,8 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 				.getReferenceCountTo(builder.addr("0x8002")) > 0);
 		romifyPrg();
 
-		BankState result =
-			discreteLatch().computeSwitch(program, instructionAt("0x8005"), BankState.unknown());
+		MechanismState result =
+			discreteLatch().computeSwitch(program, instructionAt("0x8005"), MechanismState.unknown());
 
 		assertNotNull(result);
 		assertEquals("X's value on the branching path is not known", 0x00, result.knownMask());
@@ -760,8 +760,8 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		builder.setBytes("0x8007", "8d 00 c0", true); // STA $C000
 		romifyPrg();
 
-		BankState result =
-			discreteLatch().computeSwitch(program, instructionAt("0x8007"), BankState.unknown());
+		MechanismState result =
+			discreteLatch().computeSwitch(program, instructionAt("0x8007"), MechanismState.unknown());
 
 		assertNotNull(result);
 		assertEquals("ROL's carry bit is unmodeled -- decline, do not guess", 0x00,
@@ -791,9 +791,9 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		MemoryLatchBankSwitchStrategy strategy = busConflictLatch();
 		Instruction store = instructionAt("0x8003");
 
-		BankState fromUnknown = strategy.computeSwitch(program, store, BankState.unknown());
-		BankState fromKnown =
-			strategy.computeSwitch(program, store, BankState.fullyKnown(0x0F, 0x02));
+		MechanismState fromUnknown = strategy.computeSwitch(program, store, MechanismState.unknown());
+		MechanismState fromKnown =
+			strategy.computeSwitch(program, store, MechanismState.fullyKnown(0x0F, 0x02));
 
 		assertEquals(fromUnknown, fromKnown);
 		assertFalse("a mirror read makes computeSwitch state-dependent in general (grm-mej.2)",
@@ -900,7 +900,7 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		layContraWrapper();
 
 		BankSwitchStrategy.HelperDeposit deposit = busConflictLatch().depositHelperArgument(program,
-			instructionAt("0xc142"), PartialByte.unknown(), BankState.unknown(), 0x0F,
+			instructionAt("0xc142"), PartialByte.unknown(), MechanismState.unknown(), 0x0F,
 			envAt(contraWrapperEntry(), contraEntry(), PartialByte.fullyKnown(0x02)));
 
 		assertEquals("a memory-latch call replaces this mechanism's whole field", 0x0F,
@@ -924,7 +924,7 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		layContraWrapper();
 
 		BankSwitchStrategy.HelperDeposit deposit = busConflictLatch().depositHelperArgument(program,
-			instructionAt("0xc142"), PartialByte.unknown(), BankState.unknown(), 0x0F,
+			instructionAt("0xc142"), PartialByte.unknown(), MechanismState.unknown(), 0x0F,
 			envAt(contraWrapperEntry(), null, PartialByte.fullyKnown(0x02)));
 
 		assertEquals("the call still writes the field -- it is owned, just unresolved", 0x0F,
@@ -945,7 +945,7 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		layContraWrapper();
 
 		BankSwitchStrategy.HelperDeposit deposit = busConflictLatch().depositHelperArgument(program,
-			instructionAt("0xc142"), PartialByte.unknown(), BankState.unknown(), 0x0F,
+			instructionAt("0xc142"), PartialByte.unknown(), MechanismState.unknown(), 0x0F,
 			envAt(contraWrapperEntry(), contraEntry(), PartialByte.fullyKnown(0x06)));
 
 		assertEquals(0x0F, deposit.value().knownMask());
@@ -963,7 +963,7 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		layContraHelper();
 
 		BankSwitchStrategy.HelperDeposit deposit = busConflictLatch().depositHelperArgument(program,
-			instructionAt("0xc142"), PartialByte.unknown(), BankState.unknown(), 0x0F,
+			instructionAt("0xc142"), PartialByte.unknown(), MechanismState.unknown(), 0x0F,
 			envAt(contraEntry(), PartialByte.fullyKnown(0x02)));
 
 		assertEquals("a memory-latch call replaces this mechanism's whole field", 0x0F,
@@ -985,7 +985,7 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 
 		BankSwitchStrategy.HelperDeposit deposit =
 			busConflictLatch().depositHelperArgument(program, instructionAt("0xc142"),
-				PartialByte.unknown(), BankState.unknown(), 0x0F,
+				PartialByte.unknown(), MechanismState.unknown(), 0x0F,
 				envAt(contraEntry(), PartialByte.unknown()));
 
 		assertEquals("the call still writes the field -- it is owned, just unresolved", 0x0F,
@@ -1013,14 +1013,14 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		MemoryLatchBankSwitchStrategy latch = busConflictLatch();
 		Instruction switchSite = instructionAt("0xc142");
 
-		BankState noEntryStop = latch.computeSwitch(program, switchSite, BankState.unknown());
+		MechanismState noEntryStop = latch.computeSwitch(program, switchSite, MechanismState.unknown());
 		assertNotNull(noEntryStop);
 		assertEquals("fixture must actually be walkable, or the test proves nothing", 0x0F,
 			noEntryStop.knownMask());
 		assertEquals(0x07, noEntryStop.bits());
 
 		BankSwitchStrategy.HelperDeposit deposit = latch.depositHelperArgument(program, switchSite,
-			PartialByte.unknown(), BankState.unknown(), 0x0F,
+			PartialByte.unknown(), MechanismState.unknown(), 0x0F,
 			envAt(contraEntry(), PartialByte.unknown()));
 
 		assertEquals("must stop at the entry, not adopt the LDY #$07 that precedes it", 0x00,
@@ -1056,7 +1056,7 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 			program.getReferenceManager().getReferenceCountTo(builder.addr("0xc153")) > 0);
 
 		BankSwitchStrategy.HelperDeposit deposit = busConflictLatch().depositHelperArgument(program,
-			instructionAt("0xc154"), PartialByte.unknown(), BankState.unknown(), 0x0F,
+			instructionAt("0xc154"), PartialByte.unknown(), MechanismState.unknown(), 0x0F,
 			envAt(builder.addr("0xc150"), PartialByte.fullyKnown(0x02)));
 
 		assertEquals("an internal join must not be mini-inlined past", 0x00,
@@ -1081,9 +1081,9 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		Address entry = builder.addr("0xd846");
 
 		BankSwitchStrategy.HelperDeposit blind = latch.depositHelperArgument(program, restoreSite,
-			PartialByte.unknown(), BankState.unknown(), 0x0F, envAt(entry, PartialByte.unknown()));
+			PartialByte.unknown(), MechanismState.unknown(), 0x0F, envAt(entry, PartialByte.unknown()));
 		BankSwitchStrategy.HelperDeposit seeded = latch.depositHelperArgument(program, restoreSite,
-			PartialByte.unknown(), BankState.unknown(), 0x0F,
+			PartialByte.unknown(), MechanismState.unknown(), 0x0F,
 			envAt(entry, PartialByte.fullyKnown(0x03)));
 
 		assertEquals(0x0F, blind.ownedMask());
@@ -1107,9 +1107,9 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		RegisterEnv env = envAt(contraEntry(), PartialByte.fullyKnown(0x02));
 
 		BankSwitchStrategy.HelperDeposit fromUnknownArg = latch.depositHelperArgument(program,
-			instructionAt("0xc142"), PartialByte.unknown(), BankState.unknown(), 0x0F, env);
+			instructionAt("0xc142"), PartialByte.unknown(), MechanismState.unknown(), 0x0F, env);
 		BankSwitchStrategy.HelperDeposit fromMisleadingArg = latch.depositHelperArgument(program,
-			instructionAt("0xc142"), PartialByte.of(0x0F, 0x0D), BankState.unknown(), 0x0F,
+			instructionAt("0xc142"), PartialByte.of(0x0F, 0x0D), MechanismState.unknown(), 0x0F,
 			env);
 
 		assertEquals(0x02, fromUnknownArg.value().bits());
@@ -1156,7 +1156,7 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		Instruction store = instructionAt("0x8002");
 		stripWriteReferences(store);
 
-		BankState result = busConflictLatch().computeSwitch(program, store, BankState.unknown());
+		MechanismState result = busConflictLatch().computeSwitch(program, store, MechanismState.unknown());
 
 		assertNotNull(result);
 		assertEquals("the AND against ROM byte 0x09 leaves the driven 9 intact", 0x0F,
@@ -1185,7 +1185,7 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		Instruction store = instructionAt("0x8002");
 		stripWriteReferences(store);
 
-		BankState result = busConflictLatch().computeSwitch(program, store, BankState.unknown());
+		MechanismState result = busConflictLatch().computeSwitch(program, store, MechanismState.unknown());
 
 		assertNotNull(result);
 		assertEquals(0x02, result.bits());
@@ -1252,8 +1252,8 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		builder.setBytes("0x8005", "8d 00 80", true); // STA $8000
 		romifyPrg();
 
-		BankState result =
-			discreteLatch().computeSwitch(program, instructionAt("0x8005"), BankState.unknown());
+		MechanismState result =
+			discreteLatch().computeSwitch(program, instructionAt("0x8005"), MechanismState.unknown());
 
 		assertNotNull("latch store not recognized", result);
 		assertEquals("$FFCE is byte-identical in base and every overlay: invariant by content",
@@ -1278,8 +1278,8 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		builder.setBytes("0x8005", "8d 00 80", true); // STA $8000
 		romifyPrg();
 
-		BankState result =
-			discreteLatch().computeSwitch(program, instructionAt("0x8005"), BankState.unknown());
+		MechanismState result =
+			discreteLatch().computeSwitch(program, instructionAt("0x8005"), MechanismState.unknown());
 
 		assertNotNull(result);
 		assertEquals("a bank-variant byte must not resolve", 0, result.knownMask());
@@ -1306,8 +1306,8 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		builder.setBytes("0x8005", "8d 00 80", true); // STA $8000
 		romifyPrg();
 
-		BankState result =
-			discreteLatch().computeSwitch(program, instructionAt("0x8005"), BankState.unknown());
+		MechanismState result =
+			discreteLatch().computeSwitch(program, instructionAt("0x8005"), MechanismState.unknown());
 
 		assertNotNull(result);
 		assertEquals("per-offset: $FFCE is invariant even though $FFFA is not", 0x0F,

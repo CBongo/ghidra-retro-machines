@@ -81,12 +81,11 @@ import retromachines.HelperDiscovery.HelperModel;
  * {@code calledHelper} and {@code helperLabel} are referenced here via {@code import static} from
  * {@link HelperDiscovery}; {@code recoverCallArgument} the same way from
  * {@link HelperArgumentRecovery} -- none of the three needs a receiver.
- * {@link #position} and {@link #overwrite} are needed the OTHER way too: helper-propagation code
- * in both split-out classes ({@code composeWithCallee} in {@link HelperDiscovery},
- * {@code recoverCallArgument}'s own body in {@link HelperArgumentRecovery}) calls them, so both
- * were widened from {@code private} to package-private {@code static} here and are referenced
- * back from those classes via {@code import static} so those call sites stay byte-unchanged --
- * the mirror image of {@code toFieldLocal}/{@code reachableEntries} below. {@code CallEffect}, a
+ * {@link #overwrite} is needed the OTHER way too: helper-propagation code
+ * in {@link HelperDiscovery} ({@code composeWithCallee}) calls it, so it
+ * was widened from {@code private} to package-private {@code static} here and is referenced
+ * back from there via {@code import static}. (The coordinate conversions that used to sit beside
+ * it, {@code toFieldLocal}/{@code position}, are now {@link MechanismPlacement}, bead grm-ze06.2.) {@code CallEffect}, a
  * record {@code runDataflow} constructs and holds directly, moved to {@link HelperArgumentRecovery}
  * with the rest of grm-shnf's step 3 (helper-propagation code there also constructs it) and is
  * referenced here via {@code import retromachines.HelperArgumentRecovery.CallEffect}.
@@ -95,9 +94,7 @@ import retromachines.HelperDiscovery.HelperModel;
  * needed no visibility change, and {@code BoardBankAnalyzer}'s own harness method now reaches them
  * via {@code import retromachines.BankDataflowEngine.<Name>} instead. {@code MatchInfo} moved here
  * unchanged (still {@code private}, nested in this
- * class instead) because {@code runDataflow} is its sole consumer. {@code toFieldLocal} is a
- * static helper referenced by {@link BankAnnotationAdapter} via {@code import static}; that
- * import now targets this class instead of {@code BoardBankAnalyzer}. {@code clampToResidence}
+ * class instead) because {@code runDataflow} is its sole consumer. {@code clampToResidence}
  * calls back into {@code BankAnnotationAdapter.findModeWindowInstance(...)} (already qualified,
  * already {@code static}) -- the one place this section is called INTO from the annotation side,
  * documented on {@link BankAnnotationAdapter} as well.
@@ -385,22 +382,22 @@ final class BankDataflowEngine {
 				// Out-elements for THIS in-element: one, or one per arm value when the site forks.
 				List<OutElement> mine = new ArrayList<>();
 				if (switchedLocal != null) {
-					int lsb = matchedMechanism.lsb();
+					MechanismPlacement placement = matchedMechanism.placement();
 					int effectMask = matchedMechanism.effectMask();
-					List<BankState> forkValues = null;
-					List<BankState> deniedValues = null;
+					List<MechanismState> forkValues = null;
+					List<MechanismState> deniedValues = null;
 					if (unresolvedOurs(switchedLocal)) {
 						// grm-wul: the site did not resolve and blamed us. Ask along each arm of
 						// the join heading its block, if there is one.
 						List<Arm> arms = armsFor(program, listing, instr, armCache);
-						List<BankState> perArm = arms == null ? null
+						List<MechanismState> perArm = arms == null ? null
 								: evaluateArms(program, listing, arms, env -> {
 									Probe along = probeSite(program, instr, inState, mechanisms,
 										matchCache, env);
 									return along.outcome() == null ? null : along.outcome().value();
 								}, 1);
 						if (perArm != null) {
-							List<BankState> values = distinct(perArm);
+							List<MechanismState> values = distinct(perArm);
 							if (values.size() == 1) {
 								// Every arm agrees: the site resolves to that one value outright.
 								// Not a fork -- nothing to budget, nothing to carry separately.
@@ -408,13 +405,13 @@ final class BankDataflowEngine {
 									BankSwitchStrategy.ValueStop.RESOLVED);
 								budget.resolvedThroughArms++;
 							}
-							else if (budget.grant(addr, values, lsb, effectMask)) {
+							else if (budget.grant(addr, values.size(), ForkBudget.render(values))) {
 								forkValues = values;
 							}
 							else {
 								deniedValues = values;
 								switchedLocal = new BankSwitchStrategy.SwitchOutcome(
-									BankState.unknown(),
+									MechanismState.unknown(),
 									BankSwitchStrategy.ValueStop.MULTI_VALUED_AT_MERGE);
 							}
 						}
@@ -424,8 +421,8 @@ final class BankDataflowEngine {
 						// each with that value's positioned effect folded in on the mechanism's
 						// own bits, exactly as a resolved single value is below.
 						List<BankState> positionedArms = new ArrayList<>();
-						for (BankState armLocal : forkValues) {
-							BankState positioned = position(armLocal, lsb, effectMask);
+						for (MechanismState armLocal : forkValues) {
+							BankState positioned = placement.position(armLocal);
 							positionedArms.add(positioned);
 							site.add(positioned, BankSwitchStrategy.ValueStop.RESOLVED);
 							BankState out = overwrite(inState, positioned, effectMask);
@@ -439,7 +436,7 @@ final class BankDataflowEngine {
 						// knew about other mechanisms' fields. For a single-mechanism board
 						// effectMask covers every tracked bit, so this reduces exactly to the old
 						// whole-state replace.
-						BankState positionedEffect = position(switchedLocal.value(), lsb, effectMask);
+						BankState positionedEffect = placement.position(switchedLocal.value());
 						BankSwitchStrategy.ValueStop stop = deniedValues != null
 								? BankSwitchStrategy.ValueStop.MULTI_VALUED_AT_MERGE
 								: classifyGap(program, instr, inState, matchedMechanism,
@@ -452,7 +449,7 @@ final class BankDataflowEngine {
 									? switchedLocal.readBack() : null);
 						if (deniedValues != null) {
 							site.arms(deniedValues.stream()
-									.map(v -> position(v, lsb, effectMask))
+									.map(placement::position)
 									.toList(), true);
 						}
 						BankState out = overwrite(inState, positionedEffect, effectMask);
@@ -530,7 +527,7 @@ final class BankDataflowEngine {
 			}
 			merged.put(e.getKey(), acc);
 			if (e.getValue().size() > 1) {
-				forkedStates.put(e.getKey(), distinct(new ArrayList<>(e.getValue().values())));
+				forkedStates.put(e.getKey(), distinctBoard(new ArrayList<>(e.getValue().values())));
 			}
 		}
 		return new DataflowResult(merged, switchResults, callSwitches, forkedStates,
@@ -623,8 +620,8 @@ final class BankDataflowEngine {
 						callEffect = values.get(0);
 						budget.resolvedThroughArms++;
 					}
-					else if (budget.grant(addr, values.stream().map(CallEffect::state).toList(),
-						0, helper.effectMask())) {
+					else if (budget.grant(addr, values.size(),
+						ForkBudget.render(values.stream().map(CallEffect::state).toList()))) {
 						forkEffects = values;
 					}
 					else {
@@ -758,7 +755,7 @@ final class BankDataflowEngine {
 			ConfiguredMechanism matched = null;
 			BankSwitchStrategy.SwitchOutcome result = null;
 			for (ConfiguredMechanism cm : mechanisms) {
-				BankState localIn = toFieldLocal(inState, cm.lsb(), cm.effectMask());
+				MechanismState localIn = cm.placement().toLocal(inState);
 				result = cm.strategy().computeSwitchOutcome(program, instr, localIn, env);
 				if (result != null) {
 					matched = cm;
@@ -784,7 +781,7 @@ final class BankDataflowEngine {
 		// non-cacheable strategy matched before (or this is an arm query); only it can match
 		// here, re-probe it alone with the current in-state along the requested path
 		ConfiguredMechanism mech = cached.mechanism();
-		BankState localIn = toFieldLocal(inState, mech.lsb(), mech.effectMask());
+		MechanismState localIn = mech.placement().toLocal(inState);
 		return new Probe(mech, mech.strategy().computeSwitchOutcome(program, instr, localIn, env));
 	}
 
@@ -801,9 +798,9 @@ final class BankDataflowEngine {
 	 * to the lower bank regardless of which arm happened to fall through are what a reader and
 	 * a golden want.
 	 */
-	private static List<BankState> distinct(List<BankState> states) {
-		List<BankState> out = new ArrayList<>();
-		for (BankState s : states) {
+	private static <T extends BitKnowledge> List<T> distinct(List<T> states) {
+		List<T> out = new ArrayList<>();
+		for (T s : states) {
 			if (!out.contains(s)) {
 				out.add(s);
 			}
@@ -811,6 +808,11 @@ final class BankDataflowEngine {
 		out.sort((a, b) -> a.bits() != b.bits() ? Integer.compare(a.bits(), b.bits())
 				: Integer.compare(a.knownMask(), b.knownMask()));
 		return out;
+	}
+
+	/** {@link #distinct} over board states (the per-element view of a forked address). */
+	private static List<BankState> distinctBoard(List<BankState> states) {
+		return distinct(states);
 	}
 
 	// ------------------------------------------------------------------
@@ -896,14 +898,14 @@ final class BankDataflowEngine {
 	 * three resolved arms and dropped a fourth would assert the site takes only those three
 	 * values, which is the fabrication this whole mechanism must never commit.
 	 */
-	private static List<BankState> evaluateArms(Program program, Listing listing, List<Arm> arms,
-			java.util.function.Function<RegisterEnv, BankState> eval, int depth) {
+	private static <T extends BitKnowledge> List<T> evaluateArms(Program program, Listing listing,
+			List<Arm> arms, java.util.function.Function<RegisterEnv, T> eval, int depth) {
 		if (arms.size() > MAX_ARMS_SCANNED) {
 			return null;
 		}
-		List<BankState> values = new ArrayList<>();
+		List<T> values = new ArrayList<>();
 		for (Arm arm : arms) {
-			BankState value = eval.apply(RegisterEnv.onArms(arm.preds()));
+			T value = eval.apply(RegisterEnv.onArms(arm.preds()));
 			if (value != null && value.knownMask() != 0) {
 				values.add(value);
 				continue;
@@ -918,7 +920,7 @@ final class BankDataflowEngine {
 			if (nested == null) {
 				return null;
 			}
-			List<BankState> below = evaluateArms(program, listing, nested, eval, depth + 1);
+			List<T> below = evaluateArms(program, listing, nested, eval, depth + 1);
 			if (below == null) {
 				return null;
 			}
@@ -1016,21 +1018,20 @@ final class BankDataflowEngine {
 
 		/**
 		 * Whether {@code site} may fork into {@code values.size()} elements. Sticky: the first
-		 * answer for a site is its answer forever. {@code lsb}/{@code effectMask} only render the
-		 * values for the log.
+		 * answer for a site is its answer forever. {@code renderedValues} (from {@link #render})
+		 * is only for the log, so the value type -- board or field-local -- never matters here.
 		 */
-		boolean grant(Address site, List<BankState> values, int lsb, int effectMask) {
+		boolean grant(Address site, int k, String renderedValues) {
 			if (granted.containsKey(site)) {
 				return true;
 			}
 			if (denied.contains(site)) {
 				return false;
 			}
-			int k = values.size();
 			Function f = fm.getFunctionContaining(site);
 			int used = perFunction.getOrDefault(f, 0);
 			String where = "site " + site + " in " + (f == null ? "(no function)" : f.getName());
-			String what = k + " arm values " + render(values, lsb, effectMask);
+			String what = k + " arm values " + renderedValues;
 			if (k > MAX_LIVE_FORKS_PER_BLOCK) {
 				denied.add(site);
 				forksDenied += k;
@@ -1070,9 +1071,9 @@ final class BankDataflowEngine {
 				" per block; merged field-wise from here on");
 		}
 
-		private static String render(List<BankState> values, int lsb, int effectMask) {
+		static String render(List<? extends BitKnowledge> values) {
 			StringBuilder sb = new StringBuilder("{");
-			for (BankState v : values) {
+			for (BitKnowledge v : values) {
 				if (sb.length() > 1) {
 					sb.append(", ");
 				}
@@ -1292,41 +1293,15 @@ final class BankDataflowEngine {
 		if (helper == null || helper.entry() == null) {
 			return outcome.stop();
 		}
-		BankState localIn = toFieldLocal(inState, mech.lsb(), mech.effectMask());
+		MechanismState localIn = mech.placement().toLocal(inState);
 		return mech.strategy().classifyHelperBodyGap(program, instr, localIn, helper.entry());
-	}
-
-	/**
-	 * Narrows a board-absolute {@link BankState} to one mechanism's field-local
-	 * {@code [0, width)} coordinate space: the bits outside {@code effectMask} are
-	 * discarded and the surviving bits are shifted down by {@code lsb}. This is what a
-	 * {@link BankSwitchStrategy} actually sees as its {@code inState} -- e.g. its own
-	 * mechanism read back ({@code LDA} of a register-write's own address/register)
-	 * resolves against only the field(s) that mechanism owns, not the whole board state.
-	 * The inverse of {@link #position}.
-	 */
-	static BankState toFieldLocal(BankState state, int lsb, int effectMask) {
-		return new BankState((state.knownMask() & effectMask) >>> lsb,
-			(state.bits() & effectMask) >>> lsb);
-	}
-
-	/**
-	 * Positions a mechanism's field-local {@code [0, width)} result back into the board's
-	 * absolute state bits: shifted up by {@code lsb} and masked to {@code effectMask} (a
-	 * defensive mask -- a well-behaved strategy result is already {@code <= width} bits,
-	 * but this keeps a stray high bit from a strategy from ever leaking outside the
-	 * mechanism's own field). The inverse of {@link #toFieldLocal}.
-	 */
-	static BankState position(BankState fieldLocal, int lsb, int effectMask) {
-		return new BankState((fieldLocal.knownMask() << lsb) & effectMask,
-			(fieldLocal.bits() << lsb) & effectMask);
 	}
 
 	/**
 	 * Folds a mechanism's positioned effect into a base state: bits inside {@code mask}
 	 * take the effect's knowledge (whether known or not), every other bit keeps whatever
 	 * {@code base} already knew. {@code effect}'s known bits are always a subset of
-	 * {@code mask} by construction ({@link #position} masks to it), so this is a clean
+	 * {@code mask} by construction ({@link MechanismPlacement#position} masks to it), so this is a clean
 	 * per-bit replace, not a merge -- one mechanism's switch never has to agree with what
 	 * was known before it fired. When {@code mask} covers every tracked bit (every shipped
 	 * board today, since each has exactly one mechanism spanning the whole board mask),
@@ -1489,6 +1464,11 @@ final class BankDataflowEngine {
 	record SwitchResult(BankState effect, int effectMask, int lsb,
 			BankSwitchStrategy strategy, BankSwitchStrategy.ValueStop stop,
 			StoredValueScanner.ReadBack readBack, List<BankState> arms, boolean armsDenied) {
+
+		/** Where the mechanism that produced this result sits in the board state. */
+		MechanismPlacement placement() {
+			return new MechanismPlacement(lsb, effectMask);
+		}
 
 		/** The pre-grm-rd6h form: no read-back. */
 		SwitchResult(BankState effect, int effectMask, int lsb, BankSwitchStrategy strategy,

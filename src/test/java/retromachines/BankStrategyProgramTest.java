@@ -90,7 +90,7 @@ public class BankStrategyProgramTest extends AbstractBundledLanguageTest {
 		RegisterWriteBankSwitchStrategy strategy = new RegisterWriteBankSwitchStrategy();
 		strategy.configure(program, params, 0xFF);
 
-		BankState result = strategy.computeSwitch(program, storeInstr, BankState.unknown());
+		MechanismState result = strategy.computeSwitch(program, storeInstr, MechanismState.unknown());
 
 		assertEquals(0xFF, result.knownMask());
 		assertEquals(0x05, result.bits());

@@ -35,8 +35,6 @@ import ghidra.program.model.pcode.PcodeOp;
 import ghidra.program.model.pcode.Varnode;
 
 import static retromachines.BankDataflowEngine.overwrite;
-import static retromachines.BankDataflowEngine.position;
-import static retromachines.BankDataflowEngine.toFieldLocal;
 
 import retromachines.HelperDiscovery.HelperModel;
 
@@ -235,8 +233,7 @@ final class HelperArgumentRecovery {
 
 		private final StoredValueScanner.Hooks base;
 		private final StateOracle oracle;
-		private final int lsb;
-		private final int effectMask;
+		private final MechanismPlacement placement;
 		/** The helper's strategy's mirror set, for the KIND query {@link #isLiveBankMirror}
 		 *  (bead grm-yflf) -- see {@link BankSwitchStrategy#observedMirrors}. */
 		private final BankMirrors mirrors;
@@ -247,13 +244,12 @@ final class HelperArgumentRecovery {
 		private final StoredValueScanner.ProofMemo crossBlockMemo;
 		private int consultations;
 
-		OracleHooks(StoredValueScanner.Hooks base, StateOracle oracle, int lsb, int effectMask,
-				BankMirrors mirrors,
+		OracleHooks(StoredValueScanner.Hooks base, StateOracle oracle,
+				MechanismPlacement placement, BankMirrors mirrors,
 				StoredValueScanner.ProofMemo crossBlockMemo) {
 			this.base = base;
 			this.oracle = oracle;
-			this.lsb = lsb;
-			this.effectMask = effectMask;
+			this.placement = placement;
 			this.mirrors = mirrors == null ? BankMirrors.none() : mirrors;
 			this.crossBlockMemo = crossBlockMemo;
 		}
@@ -265,21 +261,21 @@ final class HelperArgumentRecovery {
 
 		@Override
 		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-				BankState inStateAtStore) {
+				MechanismState inStateAtStore) {
 			return base.resolveLoad(loadInstr, resolvedTarget, inStateAtStore);
 		}
 
 		@Override
 		public PartialByte resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
-				BankState inStateAtStore) {
+				MechanismState inStateAtStore) {
 			return base.resolveMirrorLoad(loadInstr, resolvedTarget, inStateAtStore);
 		}
 
 		@Override
-		public BankState stateAt(Address addr) {
+		public MechanismState stateAt(Address addr) {
 			consultations++;
 			BankState whole = oracle.stateAt(addr);
-			return whole == null ? null : toFieldLocal(whole, lsb, effectMask);
+			return whole == null ? null : placement.toLocal(whole);
 		}
 
 		/**
@@ -393,14 +389,16 @@ final class HelperArgumentRecovery {
 				BankSwitchStrategy.HelperDeposit indep =
 					helper.strategy().callerIndependentDeposit(program, site);
 				if (indep != null) {
-					return new CallEffect(position(indep.value(), helper.lsb(), helper.effectMask()),
-						(indep.ownedMask() << helper.lsb()) & helper.effectMask(),
+					MechanismPlacement placement = helper.placement();
+					return new CallEffect(placement.position(indep.value()),
+						placement.positionMask(indep.ownedMask()),
 						indep.value().knownMask() != 0, true);
 				}
 			}
 			return new CallEffect(BankState.unknown(), helper.effectMask());
 		}
-		int stateMask = helper.effectMask() >>> helper.lsb();
+		MechanismPlacement placement = helper.placement();
+		int stateMask = placement.widthMask();
 		// The scanner takes a BYTE mask (bead grm-ze06.1): which bits of the stored byte this
 		// helper's mechanism consumes. stateMask stays the mechanism's field-local width, which
 		// is what foldDeposits/depositHelperArgument speak.
@@ -414,7 +412,7 @@ final class HelperArgumentRecovery {
 		// hooks.resolveMirrorLoad from exactly this state, in exactly this coordinate space -- see
 		// MemoryLatchBankSwitchStrategy.mirroredByte's "COORDINATE CONVERSION" javadoc for why
 		// getting that space wrong is the easiest way to ship a wrong bank here.
-		BankState localIn = toFieldLocal(callSiteIn, helper.lsb(), helper.effectMask());
+		MechanismState localIn = placement.toLocal(callSiteIn);
 		// The Hooks a scan running at THIS call site (i.e. outside helper's own instructions) may
 		// use (bead grm-mej.3 item 4). NOT NO_HOOKS any more for a strategy that overrides
 		// BankSwitchStrategy.callerSideHooks() (MemoryLatchBankSwitchStrategy does, for contra's
@@ -426,7 +424,7 @@ final class HelperArgumentRecovery {
 		// see the eight-argument overload's javadoc. OracleHooks is used directly (not through
 		// the interface) below, where the memo needs its consultation count.
 		OracleHooks oracleHooks = oracle == null ? null
-				: new OracleHooks(callerHooksFor(helper), oracle, helper.lsb(), helper.effectMask(),
+				: new OracleHooks(callerHooksFor(helper), oracle, placement,
 					helper.strategy() == null ? null : helper.strategy().observedMirrors(),
 					crossBlockMemo);
 		StoredValueScanner.Hooks callerHooks =
@@ -535,7 +533,7 @@ final class HelperArgumentRecovery {
 		}
 		if (helper.strategy() == null || switchSite == null) {
 			// grm-mej.7: no deposit here to check a reload-kept read-back against -- drop it.
-			return new CallEffect(position(fieldFromArgumentByte(local, stateMask), helper.lsb(), helper.effectMask()),
+			return new CallEffect(placement.position(fieldFromArgumentByte(local, stateMask)),
 				helper.effectMask(), local.knownMask() != 0, definitelyNoInboundArgument, false,
 				restoreCell, reloadTransform != null ||
 					(readBack != null && encodedIdentifyingCell(helper, readBack.cell()))
@@ -574,8 +572,8 @@ final class HelperArgumentRecovery {
 			callerRegs);
 		BankSwitchStrategy.HelperDeposit primary = fold.primary();
 		BankSwitchStrategy.HelperDeposit deposit = fold.deposit();
-		BankState positionedValue = position(deposit.value(), helper.lsb(), helper.effectMask());
-		int positionedOwnedMask = (deposit.ownedMask() << helper.lsb()) & helper.effectMask();
+		BankState positionedValue = placement.position(deposit.value());
+		int positionedOwnedMask = placement.positionMask(deposit.ownedMask());
 		boolean argumentResolved = primary.value().knownMask() != 0;
 		// grm-mej.7, the second half: a read-back kept only on the strength of a stack-relative
 		// reload survives only if the reload's transform IS the cell's encoding on the field the
@@ -638,10 +636,11 @@ final class HelperArgumentRecovery {
 		if (switchSite == null) {
 			return new CallEffect(BankState.unknown(), helper.effectMask());
 		}
-		int stateMask = helper.effectMask() >>> helper.lsb();
-		BankState localIn = toFieldLocal(callSiteIn, helper.lsb(), helper.effectMask());
+		MechanismPlacement placement = helper.placement();
+		int stateMask = placement.widthMask();
+		MechanismState localIn = placement.toLocal(callSiteIn);
 		OracleHooks oracleHooks = oracle == null ? null
-				: new OracleHooks(callerHooksFor(helper), oracle, helper.lsb(), helper.effectMask(),
+				: new OracleHooks(callerHooksFor(helper), oracle, placement,
 					helper.strategy().observedMirrors(), crossBlockMemo);
 		StoredValueScanner.Hooks callerHooks =
 			oracleHooks == null ? callerHooksFor(helper) : oracleHooks;
@@ -661,8 +660,8 @@ final class HelperArgumentRecovery {
 		Fold fold = foldDeposits(program, helper, switchSite, PartialByte.unknown(), localIn,
 			stateMask, callerRegs);
 		BankSwitchStrategy.HelperDeposit deposit = fold.deposit();
-		return new CallEffect(position(deposit.value(), helper.lsb(), helper.effectMask()),
-			(deposit.ownedMask() << helper.lsb()) & helper.effectMask(),
+		return new CallEffect(placement.position(deposit.value()),
+			placement.positionMask(deposit.ownedMask()),
 			fold.primary().value().knownMask() != 0, false);
 	}
 
@@ -772,7 +771,7 @@ final class HelperArgumentRecovery {
 	 * {@code argValue}; the unthreaded deposit is used only when nothing precedes it.
 	 */
 	private static Fold foldDeposits(Program program, HelperModel helper, Instruction switchSite,
-			PartialByte argValue, BankState localIn, int stateMask, RegisterEnv callerRegs) {
+			PartialByte argValue, MechanismState localIn, int stateMask, RegisterEnv callerRegs) {
 		BankSwitchStrategy strategy = helper.strategy();
 		BankSwitchStrategy.HelperDeposit primary = strategy.depositHelperArgument(program,
 			switchSite, argValue, localIn, stateMask, callerRegs);
@@ -782,7 +781,7 @@ final class HelperArgumentRecovery {
 			return new Fold(primary, primary);
 		}
 		Listing listing = program.getListing();
-		BankState value = BankState.unknown();
+		MechanismState value = MechanismState.unknown();
 		int owned = 0;
 		// primary is folded in at ITS OWN position in address order, not used as the base the
 		// other sites are laid over (grm-fekc). switchSite is the max-address site, so seeding
@@ -790,7 +789,7 @@ final class HelperArgumentRecovery {
 		// sites write disjoint fields, but wrong on tmnt3's FUN_919e: R7 = #$3a at $91b7, then
 		// R7 = the saved $a000 byte at $91c7, and the stale $3a won.
 		for (Address siteAddr : sites) {
-			BankState threadedIn = overwrite(localIn, value, owned);
+			MechanismState threadedIn = MechanismState.overwrite(localIn, value, owned);
 			BankSwitchStrategy.HelperDeposit deposit;
 			if (siteAddr.equals(helper.switchSite())) {
 				// the only site offered argValue
@@ -812,9 +811,9 @@ final class HelperArgumentRecovery {
 					threadedIn, stateMask, callerRegs);
 			}
 			int siteOwned = deposit.ownedMask();
-			BankState scoped = new BankState(deposit.value().knownMask() & siteOwned,
+			MechanismState scoped = new MechanismState(deposit.value().knownMask() & siteOwned,
 				deposit.value().bits() & siteOwned);
-			value = overwrite(value, scoped, siteOwned);
+			value = MechanismState.overwrite(value, scoped, siteOwned);
 			owned |= siteOwned;
 		}
 		return new Fold(new BankSwitchStrategy.HelperDeposit(owned, value), primary);
@@ -1373,7 +1372,7 @@ final class HelperArgumentRecovery {
 		}
 		RegisterEnv insideOnly = new RegisterEnv(insideHelperEntry(helper), PartialByte.unknown(),
 			PartialByte.unknown(), PartialByte.unknown());
-		return StoredValueScanner.resolveStoredValue(program, site, reg, BankState.unknown(),
+		return StoredValueScanner.resolveStoredValue(program, site, reg, MechanismState.unknown(),
 			byteMask, NO_HOOKS, insideOnly);
 	}
 
@@ -1397,7 +1396,7 @@ final class HelperArgumentRecovery {
 	 * was the unnamed {@code position(local, ...)} over a byte-typed {@code BankState}; it is the
 	 * same conversion {@link BankSwitchStrategy#depositHelperArgument}'s default makes.
 	 */
-	private static BankState fieldFromArgumentByte(PartialByte argument, int stateMask) {
+	private static MechanismState fieldFromArgumentByte(PartialByte argument, int stateMask) {
 		return BankSwitchStrategy.verbatimFieldFromByte(argument, stateMask);
 	}
 
@@ -1891,7 +1890,7 @@ final class HelperArgumentRecovery {
 				BankMirrors.Membership.UNPROVEN) {
 				return false;
 			}
-			int owned = (primary.ownedMask() << helper.lsb()) & helper.effectMask();
+			int owned = helper.placement().positionMask(primary.ownedMask());
 			return owned != 0 && owned == field.positionedMask();
 		}
 		return mirrors.is(cell, BankMirrors.Kind.WRITE_THROUGH) && t.isIdentity();
@@ -2251,7 +2250,7 @@ final class HelperArgumentRecovery {
 	 * address under different {@code localIn}.
 	 */
 	private static RegisterEnv callSiteRegisters(Program program, Instruction callInstr,
-			Address entryAddr, Address crossableJoin, HelperModel helper, BankState localIn,
+			Address entryAddr, Address crossableJoin, HelperModel helper, MechanismState localIn,
 			RegisterEnv path, StoredValueScanner.Hooks callerHooks) {
 		List<PrologueSegment> unwalked = unwalkedPrologueSegments(entryAddr, helper);
 		// The env this builds describes the helper's ENTRY and is consumed by scans inside the
@@ -2271,7 +2270,7 @@ final class HelperArgumentRecovery {
 		Instruction switchSite = helper.switchSite() == null ? null
 				: program.getListing().getInstructionAt(helper.switchSite());
 		int byteMask = argumentByteMask(program, helper, switchSite,
-			helper.effectMask() >>> helper.lsb());
+			helper.placement().widthMask());
 		readBackFor(readBacks, 'A', aScan, program, callInstr, unwalked, localIn, path,
 			callerHooks, byteMask);
 		readBackFor(readBacks, 'X', xScan, program, callInstr, unwalked, localIn, path,
@@ -2313,7 +2312,7 @@ final class HelperArgumentRecovery {
 	 */
 	private static void readBackFor(Map<Character, StoredValueScanner.ReadBack> readBacks,
 			char reg, StoredValueScanner.Scan wideScan, Program program, Instruction callInstr,
-			List<PrologueSegment> unwalked, BankState localIn, RegisterEnv path,
+			List<PrologueSegment> unwalked, MechanismState localIn, RegisterEnv path,
 			StoredValueScanner.Hooks callerHooks, int byteMask) {
 		if (wideScan.stop() == BankSwitchStrategy.ValueStop.RESTORED_BANK
 				&& wideScan.readBack() != null) {
@@ -2430,7 +2429,7 @@ final class HelperArgumentRecovery {
 	 * sees these three scans too; the memo decision depends on it.
 	 */
 	private static StoredValueScanner.Scan survivingScan(Program program, Instruction callInstr,
-			char reg, List<PrologueSegment> unwalked, BankState localIn, RegisterEnv path,
+			char reg, List<PrologueSegment> unwalked, MechanismState localIn, RegisterEnv path,
 			StoredValueScanner.Hooks callerHooks, int mask) {
 		if (!unwalked.isEmpty() && !argumentSurvivesPrologue(program, unwalked, reg)) {
 			return new StoredValueScanner.Scan(PartialByte.unknown(),
@@ -2677,7 +2676,7 @@ final class HelperArgumentRecovery {
 	 * gets value equality on {@code localIn} for free -- two keys with the same address and the
 	 * same known/bits pair collide exactly when they should.
 	 */
-	record CallSiteRegKey(Address address, BankState localIn, Map<Address, Address> arms) {
+	record CallSiteRegKey(Address address, MechanismState localIn, Map<Address, Address> arms) {
 	}
 
 	private static final StoredValueScanner.Hooks NO_HOOKS = new StoredValueScanner.Hooks() {
@@ -2688,7 +2687,7 @@ final class HelperArgumentRecovery {
 
 		@Override
 		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-				BankState inStateAtStore) {
+				MechanismState inStateAtStore) {
 			return null;
 		}
 	};

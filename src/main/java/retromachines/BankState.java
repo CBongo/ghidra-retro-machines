@@ -35,7 +35,7 @@ package retromachines;
 	 * @param knownMask bits whose values are known
 	 * @param bits the known bit values; bits outside {@code knownMask} are insignificant
  */
-public record BankState(int knownMask, int bits) {
+public record BankState(int knownMask, int bits) implements BitKnowledge {
 
 	private static final BankState BOTTOM = new BankState(0, 0);
 

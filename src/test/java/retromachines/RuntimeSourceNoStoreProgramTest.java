@@ -52,7 +52,7 @@ public class RuntimeSourceNoStoreProgramTest extends AbstractBundledLanguageTest
 
 		@Override
 		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-				BankState inStateAtStore) {
+				MechanismState inStateAtStore) {
 			return null;
 		}
 	};
@@ -77,7 +77,7 @@ public class RuntimeSourceNoStoreProgramTest extends AbstractBundledLanguageTest
 	private ValueStop stopOfStoreAt(String address) {
 		Instruction store = program.getListing().getInstructionAt(builder.addr(address));
 		assertNotNull("nothing disassembled at " + address, store);
-		return StoredValueScanner.resolveStoredValueScan(program, store, 'A', BankState.unknown(),
+		return StoredValueScanner.resolveStoredValueScan(program, store, 'A', MechanismState.unknown(),
 			0x07, NO_HOOKS, RegisterEnv.NONE).stop();
 	}
 

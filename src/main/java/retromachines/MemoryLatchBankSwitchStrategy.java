@@ -201,11 +201,11 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * so flipping this alone would have made EVERY unresolved latch site on EVERY NES board declare
 	 * an entry requirement and emit a violation WARNING -- Mega Man's {@code FUN_c39c} fails because
 	 * it reads {@code $31}, not because it needed the bank on entry. The per-site overload
-	 * {@link #effectDependsOnPriorState(Program, Instruction, BankState)} below is what keeps the
+	 * {@link #effectDependsOnPriorState(Program, Instruction, MechanismState)} below is what keeps the
 	 * two questions apart; the two changes are one change and cannot be landed separately.
 	 * <p>
 	 * Termination is unaffected. {@code stateIn[addr]} only ever loses known bits
-	 * ({@code BankState.merge} is a monotone agree-join), so a mirror-derived effect can only
+	 * ({@code MechanismState.merge} is a monotone agree-join), so a mirror-derived effect can only
 	 * degrade across dequeues and the downstream state with it -- the same argument
 	 * {@link RegisterWriteBankSwitchStrategy} has always relied on.
 	 */
@@ -254,7 +254,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 
 		@Override
 		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-				BankState inStateAtStore) {
+				MechanismState inStateAtStore) {
 			// The ROM byte a load with a statically certain target reads is a compile-time
 			// constant when nothing can rebank it out from under us. The target is whatever
 			// the scanner resolved -- plain absolute, or absolute-indexed with a constant
@@ -266,7 +266,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 
 		@Override
 		public PartialByte resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
-				BankState inStateAtStore) {
+				MechanismState inStateAtStore) {
 			return mirroredByte(loadInstr, resolvedTarget, inStateAtStore);
 		}
 
@@ -308,7 +308,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * {@code isMechanismWrite} delegating to the SAME {@link #writesInRange} the direct-path
 	 * hooks use. That delegation is the mandatory half of this override, not the mirror-answer
 	 * half: a caller-side scan using this object is handed the REAL tracked in-state at the
-	 * call (unlike the retired {@code NO_HOOKS}, which hardcoded {@code BankState.unknown()}
+	 * call (unlike the retired {@code NO_HOOKS}, which hardcoded {@code MechanismState.unknown()}
 	 * and so never needed {@code isMechanismWrite} to mean anything), so an
 	 * {@code isMechanismWrite} that answered {@code false} here would let a mirror load
 	 * BEFORE an intervening mechanism write resolve against the state AFTER it -- a confidently
@@ -324,13 +324,13 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 
 		@Override
 		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-				BankState inStateAtStore) {
+				MechanismState inStateAtStore) {
 			return null; // scope discipline -- see BankSwitchStrategy.callerSideHooks()
 		}
 
 		@Override
 		public PartialByte resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
-				BankState inStateAtStore) {
+				MechanismState inStateAtStore) {
 			return mirroredByte(loadInstr, resolvedTarget, inStateAtStore);
 		}
 	};
@@ -356,10 +356,12 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * StoredValueScanner.saveSlotForwarded, not from in-state here. Declining is this method's whole
 	 * contribution to them.
 	 * <p>
-	 * <b>COORDINATE CONVERSION -- the easiest place in this increment to ship a wrong bank.</b>
-	 * {@code inStateAtStore} arrives in this mechanism's FIELD-LOCAL {@code [0, width)} space (the
-	 * engine narrows it at {@code BankDataflowEngine}'s {@code toFieldLocal} before calling
-	 * {@link #computeSwitch}), while this hook's contract is to answer in the RAW WRITTEN BYTE,
+	 * <b>Field-local state to raw byte -- the easiest place in this increment to ship a wrong
+	 * bank.</b> {@code inStateAtStore} is a {@link MechanismState}, i.e. in this mechanism's
+	 * FIELD-LOCAL {@code [0, width)} space; the type now guarantees it is not a board-absolute
+	 * {@code BankState}, so that half of the old hazard (bead grm-ze06.2) is closed by
+	 * {@link MechanismPlacement}. What the types do NOT police is the byte shift below: this
+	 * hook's contract is to answer in the RAW WRITTEN BYTE,
 	 * because {@link #evaluateLatch} applies the byte-to-field extraction
 	 * {@code (stored >> shift) & mask} afterwards. So the conversion runs that extraction
 	 * BACKWARDS, and it belongs here because this is the only place that knows {@code shift}.
@@ -422,7 +424,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * this", which is true, instead of answering the one bank that is certainly wrong.
 	 */
 	private PartialByte mirroredByte(Instruction loadInstr, Address target,
-			BankState inStateAtStore) {
+			MechanismState inStateAtStore) {
 		if (target == null || mirrors.isEmpty()) {
 			return null;
 		}
@@ -533,7 +535,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	/** Computes the bank effect of a direct write to the configured latch range. */
 	@Override
 	public SwitchOutcome computeSwitchOutcome(Program program, Instruction instr,
-			BankState inState) {
+			MechanismState inState) {
 		return computeSwitchOutcome(program, instr, inState, RegisterEnv.NONE);
 	}
 
@@ -545,7 +547,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 */
 	@Override
 	public SwitchOutcome computeSwitchOutcome(Program program, Instruction instr,
-			BankState inState, RegisterEnv path) {
+			MechanismState inState, RegisterEnv path) {
 		if (!writesInRange(instr)) {
 			return null;
 		}
@@ -556,7 +558,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	/** Classifies an unresolved latch write encountered inside a helper body. */
 	@Override
 	public ValueStop classifyHelperBodyGap(Program program, Instruction switchSite,
-			BankState inState, Address helperEntry) {
+			MechanismState inState, Address helperEntry) {
 		if (!writesInRange(switchSite)) {
 			return ValueStop.ANALYZER_LIMIT;
 		}
@@ -585,16 +587,16 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * <b>{@code inState} is the mechanism's FIELD-LOCAL tracked state at this store</b> and is
 	 * consulted only through {@link StoredValueScanner.Hooks#resolveMirrorLoad} -- see
 	 * {@link #mirroredByte} for the coordinate conversion that lands on. Before grm-mej.2 this was
-	 * hardcoded {@link BankState#unknown()}, which was behavior-identical then because no hook
+	 * hardcoded {@link MechanismState#unknown()}, which was behavior-identical then because no hook
 	 * here read it, and is what made {@link #cacheable()} structurally true. Both halves of that
 	 * sentence have now changed together.
 	 * <p>
 	 * {@code hooks} is a parameter rather than the field so that
-	 * {@link #effectDependsOnPriorState(Program, Instruction, BankState)} can re-run this exact
+	 * {@link #effectDependsOnPriorState(Program, Instruction, MechanismState)} can re-run this exact
 	 * evaluation under an instrumented wrapper. Every other caller passes the field.
 	 */
-	private BankState evaluateLatch(Program program, Instruction store, RegisterEnv env,
-			BankState inState, StoredValueScanner.Hooks hooks) {
+	private MechanismState evaluateLatch(Program program, Instruction store, RegisterEnv env,
+			MechanismState inState, StoredValueScanner.Hooks hooks) {
 		return evaluateLatchScan(program, store, env, inState, hooks).value();
 	}
 
@@ -606,11 +608,11 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * final value knows something.
 	 */
 	private LatchEvaluation evaluateLatchScan(Program program, Instruction store,
-			RegisterEnv env, BankState inState, StoredValueScanner.Hooks hooks) {
+			RegisterEnv env, MechanismState inState, StoredValueScanner.Hooks hooks) {
 		Character reg = StoredValueScanner.storeRegister(store);
 		if (reg == null) {
 			// The stored register is unidentifiable, so nothing was scanned: our limitation.
-			return new LatchEvaluation(BankState.unknown(), ValueStop.ANALYZER_LIMIT, null);
+			return new LatchEvaluation(MechanismState.unknown(), ValueStop.ANALYZER_LIMIT, null);
 		}
 		StoredValueScanner.Scan scan = StoredValueScanner.resolveStoredValueScan(program, store,
 			reg, inState, PartialByte.BYTE_MASK, hooks, env);
@@ -636,8 +638,8 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * byte and deposits it at state bits {@code [0, width)} -- see class javadoc. The inverse
 	 * direction is {@link #mirroredByte}.
 	 */
-	private BankState fieldFromStoredByte(PartialByte stored) {
-		return new BankState((stored.knownMask() >> shift) & mask,
+	private MechanismState fieldFromStoredByte(PartialByte stored) {
+		return new MechanismState((stored.knownMask() >> shift) & mask,
 			(stored.bits() >> shift) & mask);
 	}
 
@@ -647,7 +649,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * the byte's recovery. Not a {@link StoredValueScanner.Scan}, because a {@code Scan}'s value
 	 * is a byte and this one is mechanism state (bead grm-ze06.1).
 	 */
-	private record LatchEvaluation(BankState value, ValueStop stop,
+	private record LatchEvaluation(MechanismState value, ValueStop stop,
 			StoredValueScanner.ReadBack readBack) {
 	}
 
@@ -750,7 +752,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	/** Recovers a helper's latch write using the caller's register environment. */
 	@Override
 	public HelperDeposit depositHelperArgument(Program program, Instruction switchSite,
-			PartialByte argValue, BankState inState, int stateMask, RegisterEnv callerRegs) {
+			PartialByte argValue, MechanismState inState, int stateMask, RegisterEnv callerRegs) {
 		// argValue is unused on purpose -- see the javadoc. Evaluation is the only model here;
 		// when it pins nothing down the deposit is unknown, which warns rather than guesses.
 		// inState IS used: it is the caller's own field-local state at the call, which is the
@@ -760,12 +762,12 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 		// rides in the Scan's ReadBack, which evaluateLatch's value-only return discards.
 		LatchEvaluation scan =
 			evaluateLatchScan(program, switchSite, callerRegs, inState, hooks);
-		BankState evaluated = scan.value();
+		MechanismState evaluated = scan.value();
 		StoredValueScanner.ReadBack readBack =
 			scan.stop() == ValueStop.RESTORED_BANK && evaluated.knownMask() == 0
 					? scan.readBack() : null;
 		return new HelperDeposit(stateMask,
-			new BankState(evaluated.knownMask() & stateMask, evaluated.bits() & stateMask),
+			new MechanismState(evaluated.knownMask() & stateMask, evaluated.bits() & stateMask),
 			readBack);
 	}
 
@@ -786,7 +788,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * CALLER, so no assumption about what survives the prologue is being made. It re-derives
 	 * the value INSIDE the helper, where a clobbering prologue is simply part of the code the
 	 * scan reads -- and where a genuinely unresolvable one (Bionic Commando's
-	 * {@code LDA $65}, reading RAM) comes back {@link BankState#unknown()} on its own merits.
+	 * {@code LDA $65}, reading RAM) comes back {@link MechanismState#unknown()} on its own merits.
 	 * <p>
 	 * Keep this in sync with {@link #depositHelperArgument} above: if that override ever grows
 	 * a path that reads {@code argValue}, this must go back to the default {@code true}.
@@ -829,7 +831,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * A site that never reads a mirror cannot have depended on prior state, whatever else went
 	 * wrong there.
 	 * <p>
-	 * <b>Why the real {@code siteInState} and not {@link BankState#unknown()}</b>: this must count
+	 * <b>Why the real {@code siteInState} and not {@link MechanismState#unknown()}</b>: this must count
 	 * the sites that consulted a mirror AND CAME UP UNKNOWN, since those are exactly the ones that
 	 * needed a bank they did not have -- so the probe has to see the same in-state the real
 	 * evaluation saw, or it is measuring a different evaluation. {@link #mirroredByte} answers
@@ -841,7 +843,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	/** Reports whether this site actually depends on the incoming bank state. */
 	@Override
 	public boolean effectDependsOnPriorState(Program program, Instruction site,
-			BankState siteInState) {
+			MechanismState siteInState) {
 		if (mirrors.isEmpty() || site == null || !writesInRange(site)) {
 			return false;
 		}
@@ -866,13 +868,13 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 
 		@Override
 		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-				BankState inStateAtStore) {
+				MechanismState inStateAtStore) {
 			return hooks.resolveLoad(loadInstr, resolvedTarget, inStateAtStore);
 		}
 
 		@Override
 		public PartialByte resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
-				BankState inStateAtStore) {
+				MechanismState inStateAtStore) {
 			PartialByte mirrored = hooks.resolveMirrorLoad(loadInstr, resolvedTarget, inStateAtStore);
 			if (mirrored != null) {
 				consultedMirror = true;
@@ -919,7 +921,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * Gated on {@link StoredValueScanner#storeRegister} being non-null, i.e. a true
 	 * {@code STA}/{@code STX}/{@code STY}. The read-modify-write stores ({@code INC $8000}
 	 * and friends) keep tier-1-only behaviour deliberately: {@code computeSwitch} answers
-	 * {@link BankState#unknown()} for them, so newly <em>seeing</em> one would poison bank
+	 * {@link MechanismState#unknown()} for them, so newly <em>seeing</em> one would poison bank
 	 * state rather than recover it -- a reachability fix must not widen into that.
 	 * <p>
 	 * <b>Soundness: an indexed operand under an {@code addr_mask} declines.</b> Tier 2 knows
@@ -928,7 +930,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * register and an IRQ register sharing the same range -- claiming a match would latch
 	 * {@code prg_bank} off an IRQ write, precisely what {@code addr_mask} exists to prevent.
 	 * Declining under-reports, which is this predicate's pre-existing failure mode and is
-	 * safe; answering {@link BankState#unknown()} instead would be a fresh source of WARNINGs
+	 * safe; answering {@link MechanismState#unknown()} instead would be a fresh source of WARNINGs
 	 * across the Bandai titles as a side effect of a fix aimed elsewhere.
 	 * <p>
 	 * Only the base is range-tested, never {@code base + 0xFF}: the canonical bank table sits

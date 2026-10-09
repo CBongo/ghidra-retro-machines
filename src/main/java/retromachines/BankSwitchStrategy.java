@@ -34,7 +34,7 @@ import ghidra.util.classfinder.ExtensionPoint;
  * The planned vocabulary is small and closed: {@code register-write} (implemented),
  * {@code memory-latch}, {@code select-data}, {@code serial-shift}, {@code io-port},
  * {@code mode-register}. A strategy owns candidate-write recognition and value recovery
- * (with per-bit confidence, {@link BankState}); the engine owns dataflow, merging,
+ * (with per-bit confidence, {@link MechanismState}); the engine owns dataflow, merging,
  * annotation, and application.
  */
 public interface BankSwitchStrategy extends ExtensionPoint {
@@ -242,7 +242,7 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 		 * bank bit") is simply false here. Bead grm-pdd6: megaman2's warnings at c024/c028/c02c/
 		 * c030 are the first four links of the chain that RESOLVES {@code prg_bank=12} at c034.
 		 * <p>
-		 * <b>This member is not subject to {@link SwitchOutcome#of(BankState, ValueStop)}'s
+		 * <b>This member is not subject to {@link SwitchOutcome#of(MechanismState, ValueStop)}'s
 		 * knownMask promotion</b> -- see {@link SwitchOutcome#noDeposit}. An echo of a partly
 		 * known in-state is still not a deposit, and rendering a bank comment from it would
 		 * attribute the previous site's knowledge to this one (which is what happened before
@@ -270,30 +270,30 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * @param stop why an entirely unknown value could not be recovered
 	 * @param readBack where a {@code RESTORED_BANK} stop read the bank back from, or {@code null}
 	 */
-	record SwitchOutcome(BankState value, ValueStop stop, StoredValueScanner.ReadBack readBack) {
+	record SwitchOutcome(MechanismState value, ValueStop stop, StoredValueScanner.ReadBack readBack) {
 
 		/** The pre-grm-rd6h form: no read-back. */
-		SwitchOutcome(BankState value, ValueStop stop) {
+		SwitchOutcome(MechanismState value, ValueStop stop) {
 			this(value, stop, null);
 		}
 
 		/** The conservative outcome: resolved if any bit is known, else an analyzer limit. */
-		static SwitchOutcome of(BankState value) {
+		static SwitchOutcome of(MechanismState value) {
 			return new SwitchOutcome(value,
 				value.knownMask() != 0 ? ValueStop.RESOLVED : ValueStop.ANALYZER_LIMIT);
 		}
 
-		/** As {@link #of(BankState)} but with a known reason for an unrecovered value. */
-		static SwitchOutcome of(BankState value, ValueStop stop) {
+		/** As {@link #of(MechanismState)} but with a known reason for an unrecovered value. */
+		static SwitchOutcome of(MechanismState value, ValueStop stop) {
 			return new SwitchOutcome(value, value.knownMask() != 0 ? ValueStop.RESOLVED : stop);
 		}
 
 		/**
-		 * As {@link #of(BankState, ValueStop)}, threading a {@link StoredValueScanner.Scan}'s
+		 * As {@link #of(MechanismState, ValueStop)}, threading a {@link StoredValueScanner.Scan}'s
 		 * {@code readBack} through when the value stayed unresolved (bead grm-rd6h) -- dropped
 		 * the same way the reason itself is when {@code value} turns out to know something.
 		 */
-		static SwitchOutcome of(BankState value, ValueStop stop,
+		static SwitchOutcome of(MechanismState value, ValueStop stop,
 				StoredValueScanner.ReadBack readBack) {
 			return value.knownMask() != 0 ? new SwitchOutcome(value, ValueStop.RESOLVED)
 					: new SwitchOutcome(value, stop, readBack);
@@ -301,13 +301,13 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 
 		/**
 		 * A site that deposits nothing by design, echoing {@code inState} unchanged (bead
-		 * grm-pdd6). Deliberately NOT routed through {@link #of(BankState, ValueStop)}: that
+		 * grm-pdd6). Deliberately NOT routed through {@link #of(MechanismState, ValueStop)}: that
 		 * method promotes any state with a known bit to {@link ValueStop#RESOLVED}, which is
 		 * exactly wrong here -- the known bits belong to the state flowing IN, not to a recovery
 		 * performed at this site, and calling them RESOLVED would render a bank comment claiming
 		 * this write set them.
 		 */
-		static SwitchOutcome noDeposit(BankState echoed) {
+		static SwitchOutcome noDeposit(MechanismState echoed) {
 			return new SwitchOutcome(echoed, ValueStop.NO_DEPOSIT);
 		}
 	}
@@ -320,14 +320,14 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * @param instr the instruction to examine
 	 * @param inState the field-local state flowing into the instruction
 	 * @return the effect of this instruction if it is a switch this mechanism recognizes
-	 *         (carrying {@link BankState#unknown()} plus a {@link ValueStop} for a recognized
+	 *         (carrying {@link MechanismState#unknown()} plus a {@link ValueStop} for a recognized
 	 *         switch whose value could not be recovered), or {@code null} if the instruction
 	 *         is not a mechanism write at all and the state flows through unchanged
 	 */
-	SwitchOutcome computeSwitchOutcome(Program program, Instruction instr, BankState inState);
+	SwitchOutcome computeSwitchOutcome(Program program, Instruction instr, MechanismState inState);
 
 	/**
-	 * {@link #computeSwitchOutcome(Program, Instruction, BankState)} evaluated along ONE ARM of a
+	 * {@link #computeSwitchOutcome(Program, Instruction, MechanismState)} evaluated along ONE ARM of a
 	 * control-flow join (bead grm-wul): {@code path} names, per join, the predecessor the value
 	 * recovery walks to instead of refusing -- see {@link RegisterEnv#armPredecessorAt}. The
 	 * engine asks this once per incoming arm of the join heading an unresolved site's block, and
@@ -341,7 +341,7 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * thread an env overrides this to pass {@code path} through; that is the whole opt-in.
 	 */
 	default SwitchOutcome computeSwitchOutcome(Program program, Instruction instr,
-			BankState inState, RegisterEnv path) {
+			MechanismState inState, RegisterEnv path) {
 		return computeSwitchOutcome(program, instr, inState);
 	}
 
@@ -355,7 +355,7 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * @param inState the field-local state flowing into the instruction
 	 * @return the recognized switch's state effect, or {@code null} for a non-switch
 	 */
-	default BankState computeSwitch(Program program, Instruction instr, BankState inState) {
+	default MechanismState computeSwitch(Program program, Instruction instr, MechanismState inState) {
 		SwitchOutcome outcome = computeSwitchOutcome(program, instr, inState);
 		return outcome == null ? null : outcome.value();
 	}
@@ -372,7 +372,7 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * the value.</b> That two-phase shape is deliberate and is what makes the question safe to ask
 	 * at all. The natural implementation is to re-run the same backward scan under a
 	 * {@link RegisterEnv} whose {@code entryAddr} is {@code helperEntry} and whose registers are
-	 * all {@link BankState#unknown()}; that env's entry stop fires iff the walk actually reached
+	 * all {@link MechanismState#unknown()}; that env's entry stop fires iff the walk actually reached
 	 * the entry with the register still unresolved, which is precisely a proof that the register
 	 * is LIVE at the helper's entry -- nothing between entry and the store defined it, or the scan
 	 * would have stopped on that definition first. An entry stop can only TRUNCATE a walk, so it
@@ -395,7 +395,7 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * @return the more specific stop reason for the unresolved helper-body value
 	 */
 	default ValueStop classifyHelperBodyGap(Program program, Instruction switchSite,
-			BankState inState, Address helperEntry) {
+			MechanismState inState, Address helperEntry) {
 		return ValueStop.ANALYZER_LIMIT;
 	}
 
@@ -410,9 +410,9 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * because the call really did write it, just not to a value this scanner could pin
 	 * down), whereas an unowned bit is not touched at all, known or not (e.g. a serial-shift
 	 * helper site targeting a DIFFERENT field, or a CHR target this mechanism deliberately
-	 * tracks nothing for) -- a single {@link BankState} cannot represent that
+	 * tracks nothing for) -- a single {@link MechanismState} cannot represent that
 	 * touched-but-unresolved / untouched distinction, which is why this is a two-part
-	 * result rather than a bare {@code BankState}. {@code value.knownMask()} is always a
+	 * result rather than a bare {@code MechanismState}. {@code value.knownMask()} is always a
 	 * subset of {@code ownedMask} by construction.
 	 *
 	 * @param ownedMask bits this call site authoritatively replaces
@@ -426,10 +426,10 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 *                 use, which promotes this to {@code CallEffect.readBack} only when the
 	 *                 caller-side scan itself found none and the argument did not resolve.
 	 */
-	record HelperDeposit(int ownedMask, BankState value, StoredValueScanner.ReadBack readBack) {
+	record HelperDeposit(int ownedMask, MechanismState value, StoredValueScanner.ReadBack readBack) {
 
 		/** The pre-grm-ld68 form: no read-back. */
-		HelperDeposit(int ownedMask, BankState value) {
+		HelperDeposit(int ownedMask, MechanismState value) {
 			this(ownedMask, value, null);
 		}
 	}
@@ -485,14 +485,14 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * @return the field-local deposit made by this call
 	 */
 	default HelperDeposit depositHelperArgument(Program program, Instruction switchSite,
-			PartialByte argValue, BankState inState, int stateMask) {
+			PartialByte argValue, MechanismState inState, int stateMask) {
 		return new HelperDeposit(stateMask, verbatimFieldFromByte(argValue, stateMask));
 	}
 
 	/**
 	 * The BYTE-to-FIELD conversion the default {@link #depositHelperArgument} makes (bead
 	 * grm-ze06.1): the recovered argument byte IS the mechanism's field value, verbatim, reduced
-	 * to {@code stateMask}. Named so the byte {@code PartialByte} -> field-local {@code BankState}
+	 * to {@code stateMask}. Named so the byte {@code PartialByte} -> field-local {@code MechanismState}
 	 * step is visible rather than an implicit reinterpretation of one record; a strategy that
 	 * decodes its field some other way ({@code SelectDataBankSwitchStrategy},
 	 * {@code SerialShiftBankSwitchStrategy}) has its own named conversion instead.
@@ -501,8 +501,8 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * @param stateMask the mechanism's field-local width mask
 	 * @return the field-local state the byte deposits verbatim
 	 */
-	static BankState verbatimFieldFromByte(PartialByte argument, int stateMask) {
-		return new BankState(argument.knownMask() & stateMask, argument.bits() & stateMask);
+	static MechanismState verbatimFieldFromByte(PartialByte argument, int stateMask) {
+		return new MechanismState(argument.knownMask() & stateMask, argument.bits() & stateMask);
 	}
 
 	/**
@@ -566,7 +566,7 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * {@code callerRegs} carries the helper function's entry point as its stop address, so a
 	 * backward scan started inside the helper adopts the caller's A/X/Y at the entry instead of
 	 * walking into the unrelated code that physically precedes it. Any register the call site
-	 * could not pin down arrives {@link BankState#unknown()}, so an unresolvable call site
+	 * could not pin down arrives {@link MechanismState#unknown()}, so an unresolvable call site
 	 * degrades to an unresolved deposit rather than to a guess.
 	 * <p>
 	 * <b>Soundness.</b> A result derived from {@code callerRegs} is valid for THIS call site
@@ -582,7 +582,7 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * @return the field-local deposit made by this call
 	 */
 	default HelperDeposit depositHelperArgument(Program program, Instruction switchSite,
-			PartialByte argValue, BankState inState, int stateMask, RegisterEnv callerRegs) {
+			PartialByte argValue, MechanismState inState, int stateMask, RegisterEnv callerRegs) {
 		return depositHelperArgument(program, switchSite, argValue, inState, stateMask);
 	}
 
@@ -862,7 +862,7 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * whatsoever. {@link MemoryLatchBankSwitchStrategy} is the shipped case.
 	 * <p>
 	 * <b>{@code siteInState} is not optional and must not be stubbed with
-	 * {@link BankState#unknown()}.</b> The sites this predicate exists to FIND are precisely those
+	 * {@link MechanismState#unknown()}.</b> The sites this predicate exists to FIND are precisely those
 	 * that wanted a state bit and did not get it, so an implementation that re-derives its effect
 	 * to answer has to re-derive it under the state the real evaluation saw. It arrives in the
 	 * mechanism's own field-local {@code [0, width)} coordinates, like every other in-state a
@@ -875,7 +875,7 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * @return whether this site can consume the state flowing into it
 	 */
 	default boolean effectDependsOnPriorState(Program program, Instruction site,
-			BankState siteInState) {
+			MechanismState siteInState) {
 		return effectDependsOnPriorState();
 	}
 
@@ -900,7 +900,7 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * <b>{@code isMechanismWrite} is NOT optional to get right here, even though the default
 	 * below answers {@code false} unconditionally.</b> A caller-side scan given this method's
 	 * result is handed the REAL tracked in-state at the call, unlike the historical
-	 * {@code NO_HOOKS} sites, which hardcoded {@link BankState#unknown()} and so never
+	 * {@code NO_HOOKS} sites, which hardcoded {@link MechanismState#unknown()} and so never
 	 * consulted it regardless of what {@code isMechanismWrite} said. The moment
 	 * {@link StoredValueScanner.Hooks#resolveMirrorLoad} can answer from that real state, an
 	 * {@code isMechanismWrite} that always answers {@code false} becomes a live soundness bug:
@@ -939,7 +939,7 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 
 		@Override
 		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-				BankState inStateAtStore) {
+				MechanismState inStateAtStore) {
 			return null;
 		}
 	};

@@ -90,13 +90,13 @@ public class CrossCallSaveSlotProgramTest extends AbstractBundledLanguageTest {
 
 			@Override
 			public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-					BankState inStateAtStore) {
+					MechanismState inStateAtStore) {
 				return null;
 			}
 
 			@Override
-			public BankState stateAt(Address addr) {
-				return stateAvailable ? BankState.unknown() : null;
+			public MechanismState stateAt(Address addr) {
+				return stateAvailable ? MechanismState.unknown() : null;
 			}
 
 			@Override
@@ -117,7 +117,7 @@ public class CrossCallSaveSlotProgramTest extends AbstractBundledLanguageTest {
 
 	private StoredValueScanner.Scan scan(String storeAddress, StoredValueScanner.Hooks hooks) {
 		return StoredValueScanner.resolveStoredValueScan(program, instructionAt(storeAddress), 'A',
-			BankState.unknown(), 0xFF, hooks, RegisterEnv.NONE);
+			MechanismState.unknown(), 0xFF, hooks, RegisterEnv.NONE);
 	}
 
 	/** {@code <source> / STA $D3 / JSR $C040 / LDA $D3 / STA $8000}; returns the site. */
@@ -608,7 +608,7 @@ public class CrossCallSaveSlotProgramTest extends AbstractBundledLanguageTest {
 
 			@Override
 			public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-					BankState inStateAtStore) {
+					MechanismState inStateAtStore) {
 				return null;
 			}
 		};
@@ -641,13 +641,13 @@ public class CrossCallSaveSlotProgramTest extends AbstractBundledLanguageTest {
 
 			@Override
 			public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-					BankState inStateAtStore) {
+					MechanismState inStateAtStore) {
 				return null;
 			}
 
 			@Override
-			public BankState stateAt(Address addr) {
-				return BankState.unknown();
+			public MechanismState stateAt(Address addr) {
+				return MechanismState.unknown();
 			}
 
 			@Override

@@ -56,7 +56,6 @@ import ghidra.program.model.symbol.SourceType;
 import ghidra.util.exception.InvalidInputException;
 import ghidra.util.task.TaskMonitor;
 
-import static retromachines.BankDataflowEngine.toFieldLocal;
 import static retromachines.HelperDiscovery.calledHelper;
 import static retromachines.HelperDiscovery.reachableEntries;
 
@@ -96,10 +95,9 @@ import retromachines.HelperDiscovery.HelperModel;
  * {@link BoardBankAnalyzer} here rather than {@code Analyzer} at those two call sites.
  * {@code helperArgumentCallSites} no longer needs a threaded receiver for this reason:
  * {@code calledHelper} became {@code static} as of grm-shnf step 2 and is referenced here via
- * {@code import static} instead. {@code toFieldLocal} and {@code reachableEntries} are static
- * helpers, referenced here via {@code import static} so the call sites themselves are
- * byte-identical to their originals; {@code toFieldLocal} moved to {@link BankDataflowEngine} with
- * the Dataflow section (bead grm-gqrj) and {@code reachableEntries} moved to
+ * {@code import static} instead. {@code reachableEntries} is a static
+ * helper, referenced here via {@code import static} so the call sites themselves are
+ * byte-identical to their originals; it moved to
  * {@link HelperDiscovery} with the rest of the Helper-call-propagation section's discovery half
  * (bead grm-shnf step 3). {@code findModeWindowInstance}
  * moved here with "Reference retargeting" but is also called from
@@ -1407,7 +1405,7 @@ final class BankAnnotationAdapter {
 			// resolves (to unknown) whether or not the bank was known here.
 			if (sr.strategy() != null && siteIn != null &&
 				sr.strategy().effectDependsOnPriorState(program, listing.getInstructionAt(addr),
-					toFieldLocal(siteIn, sr.lsb(), sr.effectMask()))) {
+					sr.placement().toLocal(siteIn))) {
 				int required = sr.effectMask() & ~(siteIn.knownMask() & sr.effectMask()) &
 					~sr.effect().knownMask();
 				if (required != 0) {

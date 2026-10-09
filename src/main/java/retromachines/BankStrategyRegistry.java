@@ -60,7 +60,13 @@ final class BankStrategyRegistry {
 	 * For every shipped (single-mechanism) board {@code effectMask == board.mask()} and
 	 * {@code lsb == 0}, so field-local and absolute coincide.
 	 */
-	record ConfiguredMechanism(BankSwitchStrategy strategy, int effectMask, int lsb) {}
+	record ConfiguredMechanism(BankSwitchStrategy strategy, int effectMask, int lsb) {
+
+		/** Where this mechanism's field sits in the board state (bead grm-ze06.2). */
+		MechanismPlacement placement() {
+			return new MechanismPlacement(lsb, effectMask);
+		}
+	}
 
 	// ------------------------------------------------------------------
 	// Strategy configuration

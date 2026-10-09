@@ -149,16 +149,16 @@ public class SelectDataMirrorConsumptionProgramTest extends AbstractBundledLangu
 	}
 
 	/** select, prg_mode, r6 and r7 all fully known: select 6 / mode 0 / r6=2 / r7=4. */
-	private static BankState allKnown(int select, int mode, int r6, int r7) {
-		return BankState.fullyKnown(STATE_MASK,
+	private static MechanismState allKnown(int select, int mode, int r6, int r7) {
+		return MechanismState.fullyKnown(STATE_MASK,
 			(select & 7) | ((mode & 1) << 3) | ((r6 & 0x3F) << 4) | ((r7 & 0x3F) << 10));
 	}
 
-	private static int r6Of(BankState s) {
+	private static int r6Of(MechanismState s) {
 		return (s.bits() >>> 4) & 0x3F;
 	}
 
-	private static boolean r6Known(BankState s) {
+	private static boolean r6Known(MechanismState s) {
 		return ((s.knownMask() >>> 4) & 0x3F) == 0x3F;
 	}
 
@@ -179,9 +179,9 @@ public class SelectDataMirrorConsumptionProgramTest extends AbstractBundledLangu
 		return instructionAt(String.format("0x%x", start + 3));
 	}
 
-	private BankState switchAt(SelectDataBankSwitchStrategy strategy, Instruction site,
-			BankState inState) {
-		BankState result = strategy.computeSwitch(program, site, inState);
+	private MechanismState switchAt(SelectDataBankSwitchStrategy strategy, Instruction site,
+			MechanismState inState) {
+		MechanismState result = strategy.computeSwitch(program, site, inState);
 		assertNotNull("fixture produced no mechanism write at " + site.getMinAddress() +
 			" -- the test would prove nothing", result);
 		return result;
@@ -204,7 +204,7 @@ public class SelectDataMirrorConsumptionProgramTest extends AbstractBundledLangu
 		strategy.observeMirrors(identifyingIn(R7));
 		Instruction site = identifyingReadThenDataWrite();
 
-		BankState result = switchAt(strategy, site, allKnown(6, 0, 2, 4));
+		MechanismState result = switchAt(strategy, site, allKnown(6, 0, 2, 4));
 
 		assertTrue("r6 must be fully known after the copy: " + result, r6Known(result));
 		assertEquals("r6 takes R7's bank (4), not its own stale 2", 4, r6Of(result));
@@ -221,7 +221,7 @@ public class SelectDataMirrorConsumptionProgramTest extends AbstractBundledLangu
 		SelectDataBankSwitchStrategy strategy = mmc3(); // observeMirrors never called
 		Instruction site = identifyingReadThenDataWrite();
 
-		BankState result = switchAt(strategy, site, allKnown(6, 0, 2, 4));
+		MechanismState result = switchAt(strategy, site, allKnown(6, 0, 2, 4));
 
 		assertFalse("r6 must come out unknown with no mirror to answer: " + result,
 			r6Known(result));
@@ -240,7 +240,7 @@ public class SelectDataMirrorConsumptionProgramTest extends AbstractBundledLangu
 		builder.setBytes("0xe000", "ad 00 a1", true); // LDA $A100
 		builder.setBytes("0xe003", "8d 00 80", true); // STA $8000 -- a SELECT write
 
-		BankState result = switchAt(strategy, instructionAt("0xe003"), allKnown(6, 1, 2, 4));
+		MechanismState result = switchAt(strategy, instructionAt("0xe003"), allKnown(6, 1, 2, 4));
 
 		assertEquals("select := R7's byte & 7 = 4, prg_mode := bit 6 = 0 (proved), r6/r7 kept",
 			allKnown(4, 0, 2, 4), result);
@@ -262,7 +262,7 @@ public class SelectDataMirrorConsumptionProgramTest extends AbstractBundledLangu
 		strategy.observeMirrors(identifyingWithEncoding(R7, oddHalfEncoding()));
 		Instruction site = identifyingReadThenDataWrite();
 
-		BankState result = switchAt(strategy, site, allKnown(6, 0, 2, 3));
+		MechanismState result = switchAt(strategy, site, allKnown(6, 0, 2, 3));
 
 		assertTrue("r6 must be fully known: " + result, r6Known(result));
 		assertEquals("r6 takes the derived byte (3-1)/2 = 1", 1, r6Of(result));
@@ -276,7 +276,7 @@ public class SelectDataMirrorConsumptionProgramTest extends AbstractBundledLangu
 		strategy.observeMirrors(identifyingWithEncoding(R7, oddHalfEncoding()));
 		Instruction site = identifyingReadThenDataWrite();
 
-		BankState result = switchAt(strategy, site, allKnown(6, 0, 2, 4));
+		MechanismState result = switchAt(strategy, site, allKnown(6, 0, 2, 4));
 
 		assertFalse("an even bank must not satisfy a low=1 encoding: " + result, r6Known(result));
 	}
@@ -288,10 +288,10 @@ public class SelectDataMirrorConsumptionProgramTest extends AbstractBundledLangu
 		SelectDataBankSwitchStrategy strategy = mmc3();
 		strategy.observeMirrors(identifyingWithEncoding(R7, oddHalfEncoding()));
 		Instruction site = identifyingReadThenDataWrite();
-		BankState r7Bit0Unknown =
-			new BankState(allKnown(6, 0, 2, 7).knownMask() & ~(1 << 10), allKnown(6, 0, 2, 7).bits());
+		MechanismState r7Bit0Unknown =
+			new MechanismState(allKnown(6, 0, 2, 7).knownMask() & ~(1 << 10), allKnown(6, 0, 2, 7).bits());
 
-		BankState result = switchAt(strategy, site, r7Bit0Unknown);
+		MechanismState result = switchAt(strategy, site, r7Bit0Unknown);
 
 		assertFalse("bit 0 of r7 unknown must refuse: " + result, r6Known(result));
 	}
@@ -308,7 +308,7 @@ public class SelectDataMirrorConsumptionProgramTest extends AbstractBundledLangu
 		strategy.observeMirrors(identifyingWithEncoding(R7, oddHalfEncodingMissingBankSeven()));
 		Instruction site = identifyingReadThenDataWrite();
 
-		BankState result = switchAt(strategy, site, allKnown(6, 0, 2, 7));
+		MechanismState result = switchAt(strategy, site, allKnown(6, 0, 2, 7));
 
 		assertFalse("an unverified realized bank must refuse: " + result, r6Known(result));
 	}
@@ -379,7 +379,7 @@ public class SelectDataMirrorConsumptionProgramTest extends AbstractBundledLangu
 		builder.setBytes("0xe000", "ad 00 a1", true); // LDA $A100 (attributed to R6 here)
 		builder.setBytes("0xe003", "8d 01 80", true); // STA $8001 under select 7 -> r7
 
-		BankState result = switchAt(strategy, instructionAt("0xe003"), allKnown(7, 0, 2, 4));
+		MechanismState result = switchAt(strategy, instructionAt("0xe003"), allKnown(7, 0, 2, 4));
 
 		assertEquals("r7 := R6's bank (2)", allKnown(7, 0, 2, 2), result);
 	}
@@ -396,7 +396,7 @@ public class SelectDataMirrorConsumptionProgramTest extends AbstractBundledLangu
 		strategy.observeMirrors(identifyingIn(R7));
 		Instruction site = identifyingReadThenDataWrite();
 
-		BankState r7Unknown = new BankState(0x03FF, 6); // select=6, mode, r6 known; r7 unknown
+		MechanismState r7Unknown = new MechanismState(0x03FF, 6); // select=6, mode, r6 known; r7 unknown
 		assertTrue(strategy.effectDependsOnPriorState(program, site, r7Unknown));
 	}
 
@@ -410,7 +410,7 @@ public class SelectDataMirrorConsumptionProgramTest extends AbstractBundledLangu
 		builder.setBytes("0xe003", "8d 01 80", true); // STA $8001
 
 		assertFalse(strategy.effectDependsOnPriorState(program, instructionAt("0xe003"),
-			new BankState(0x03FF, 6)));
+			new MechanismState(0x03FF, 6)));
 	}
 
 	/** False when select is unknown: the data write poisons without scanning, so no mirror is
@@ -422,7 +422,7 @@ public class SelectDataMirrorConsumptionProgramTest extends AbstractBundledLangu
 		strategy.observeMirrors(identifyingIn(R7));
 		Instruction site = identifyingReadThenDataWrite();
 
-		assertFalse(strategy.effectDependsOnPriorState(program, site, BankState.unknown()));
+		assertFalse(strategy.effectDependsOnPriorState(program, site, MechanismState.unknown()));
 	}
 
 	/** False with no mirrors observed -- the cheap short-circuit every mirrorless board takes. */
@@ -431,7 +431,7 @@ public class SelectDataMirrorConsumptionProgramTest extends AbstractBundledLangu
 		SelectDataBankSwitchStrategy strategy = mmc3();
 		Instruction site = identifyingReadThenDataWrite();
 
-		assertFalse(strategy.effectDependsOnPriorState(program, site, new BankState(0x03FF, 6)));
+		assertFalse(strategy.effectDependsOnPriorState(program, site, new MechanismState(0x03FF, 6)));
 	}
 
 	/** The strategy-wide answer is unchanged: still {@code false} (grm-vgod). */

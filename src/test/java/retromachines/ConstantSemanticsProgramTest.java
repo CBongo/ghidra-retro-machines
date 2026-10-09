@@ -62,7 +62,7 @@ public class ConstantSemanticsProgramTest extends AbstractBundledLanguageTest {
 
 		@Override
 		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-				BankState inStateAtStore) {
+				MechanismState inStateAtStore) {
 			return null;
 		}
 	};
@@ -76,7 +76,7 @@ public class ConstantSemanticsProgramTest extends AbstractBundledLanguageTest {
 
 		@Override
 		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-				BankState inStateAtStore) {
+				MechanismState inStateAtStore) {
 			return resolvedTarget != null && resolvedTarget.getOffset() == 0x9000
 					? PartialByte.fullyKnown(0x3C)
 					: null;

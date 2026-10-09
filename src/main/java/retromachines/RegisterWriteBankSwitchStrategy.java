@@ -90,8 +90,8 @@ public class RegisterWriteBankSwitchStrategy implements BankSwitchStrategy {
 	 * verbatim -- the scan already ran at this mechanism's {@code mask}, so no further reduction
 	 * is needed. This was the unnamed {@code SwitchOutcome.of(scan.value(), ...)}.
 	 */
-	private static BankState fieldFromStoredByte(PartialByte stored) {
-		return new BankState(stored.knownMask(), stored.bits());
+	private static MechanismState fieldFromStoredByte(PartialByte stored) {
+		return new MechanismState(stored.knownMask(), stored.bits());
 	}
 
 	/**
@@ -99,7 +99,7 @@ public class RegisterWriteBankSwitchStrategy implements BankSwitchStrategy {
 	 * ({@code LDA $01} / {@code LDA PORT}) yields the tracked field-local state as the byte
 	 * loaded. This was the unnamed {@code return inStateAtStore} in {@link #hooks}.
 	 */
-	private static PartialByte byteFromField(BankState field) {
+	private static PartialByte byteFromField(MechanismState field) {
 		return new PartialByte(field.knownMask(), field.bits());
 	}
 
@@ -111,7 +111,7 @@ public class RegisterWriteBankSwitchStrategy implements BankSwitchStrategy {
 
 		@Override
 		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-				BankState inStateAtStore) {
+				MechanismState inStateAtStore) {
 			// x is the port's value as tracked in-state at our own store. resolvedTarget is
 			// irrelevant here: the mechanism is a CPU register, matched by identity.
 			return readsMechanism(loadInstr) ? byteFromField(inStateAtStore) : null;
@@ -121,7 +121,7 @@ public class RegisterWriteBankSwitchStrategy implements BankSwitchStrategy {
 	/** Computes the state effect of a register write, or {@code null} when unmatched. */
 	@Override
 	public SwitchOutcome computeSwitchOutcome(Program program, Instruction instr,
-			BankState inState) {
+			MechanismState inState) {
 		return computeSwitchOutcome(program, instr, inState, RegisterEnv.NONE);
 	}
 
@@ -131,7 +131,7 @@ public class RegisterWriteBankSwitchStrategy implements BankSwitchStrategy {
 	 */
 	@Override
 	public SwitchOutcome computeSwitchOutcome(Program program, Instruction instr,
-			BankState inState, RegisterEnv path) {
+			MechanismState inState, RegisterEnv path) {
 		if (!writesMechanism(instr)) {
 			return null;
 		}
@@ -140,7 +140,7 @@ public class RegisterWriteBankSwitchStrategy implements BankSwitchStrategy {
 		if (reg == null) {
 			// A mechanism write whose stored register we cannot even identify. Nothing was
 			// scanned, so there is no honest runtime gap to report -- this is our limitation.
-			return SwitchOutcome.of(BankState.unknown(), ValueStop.ANALYZER_LIMIT);
+			return SwitchOutcome.of(MechanismState.unknown(), ValueStop.ANALYZER_LIMIT);
 		}
 		StoredValueScanner.Scan scan = StoredValueScanner.resolveStoredValueScan(program, instr,
 			reg, inState, mask, hooks, path);
@@ -150,7 +150,7 @@ public class RegisterWriteBankSwitchStrategy implements BankSwitchStrategy {
 	/** Classifies an unresolved write while scanning a helper body. */
 	@Override
 	public ValueStop classifyHelperBodyGap(Program program, Instruction switchSite,
-			BankState inState, Address helperEntry) {
+			MechanismState inState, Address helperEntry) {
 		Character reg = StoredValueScanner.storeRegister(switchSite);
 		if (reg == null) {
 			return ValueStop.ANALYZER_LIMIT;

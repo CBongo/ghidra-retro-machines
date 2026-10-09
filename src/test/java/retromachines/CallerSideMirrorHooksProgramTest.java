@@ -57,7 +57,7 @@ import retromachines.HelperDiscovery.HelperModel;
  * <b>The mandatory landmine test in this file</b> ({@link #mirrorLoadBeforeAnInterveningMechanismWriteStaysUnknown})
  * is the one this bead's own instructions call out as non-negotiable: {@code NO_HOOKS}
  * answering {@code isMechanismWrite() == false} unconditionally was harmless only because the
- * in-state at these sites was hardcoded {@link BankState#unknown()} and nothing consulted it.
+ * in-state at these sites was hardcoded {@link MechanismState#unknown()} and nothing consulted it.
  * The moment a caller-side scan is handed a REAL in-state, an {@code isMechanismWrite} that
  * still answers {@code false} lets a mirror load that executes BEFORE a mechanism write resolve
  * against the state AFTER it -- a confidently wrong bank. The test below is built on a MIRROR
@@ -159,16 +159,16 @@ public class CallerSideMirrorHooksProgramTest extends AbstractBundledLanguageTes
 
 		@Override
 		public SwitchOutcome computeSwitchOutcome(ghidra.program.model.listing.Program program,
-				Instruction instr, BankState inState) {
-			return SwitchOutcome.of(BankState.unknown());
+				Instruction instr, MechanismState inState) {
+			return SwitchOutcome.of(MechanismState.unknown());
 		}
 
 		@Override
 		public HelperDeposit depositHelperArgument(ghidra.program.model.listing.Program program,
-				Instruction switchSite, PartialByte argValue, BankState inState, int stateMask,
+				Instruction switchSite, PartialByte argValue, MechanismState inState, int stateMask,
 				RegisterEnv callerRegs) {
 			this.captured = callerRegs;
-			return new HelperDeposit(stateMask, new BankState(argValue.knownMask(), argValue.bits()));
+			return new HelperDeposit(stateMask, new MechanismState(argValue.knownMask(), argValue.bits()));
 		}
 
 		@Override
@@ -198,13 +198,13 @@ public class CallerSideMirrorHooksProgramTest extends AbstractBundledLanguageTes
 
 			@Override
 			public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-					BankState inStateAtStore) {
+					MechanismState inStateAtStore) {
 				return null; // scope discipline: caller-side hooks never answer resolveLoad
 			}
 
 			@Override
 			public PartialByte resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
-					BankState inStateAtStore) {
+					MechanismState inStateAtStore) {
 				return mirrorAddress.equals(resolvedTarget) ? new PartialByte(inStateAtStore.knownMask(), inStateAtStore.bits()) : null;
 			}
 		};
@@ -218,7 +218,7 @@ public class CallerSideMirrorHooksProgramTest extends AbstractBundledLanguageTes
 	 * {@code LDA $9000 / JSR $9100} where {@code $9000} is a stated mirror: before this bead the
 	 * caller-side register scan ({@code recoverCallArgument}'s primary {@code local}, the
 	 * historical {@code NO_HOOKS} site at what was line 202) always came back
-	 * {@link BankState#unknown()} here, because {@code NO_HOOKS} never resolves a mirror
+	 * {@link MechanismState#unknown()} here, because {@code NO_HOOKS} never resolves a mirror
 	 * regardless of what is tracked. With a strategy that overrides
 	 * {@link BankSwitchStrategy#callerSideHooks} to resolve {@code $9000}, and the call's real
 	 * tracked in-state (bank 5) threaded through as {@code localIn}, the same scan now resolves
@@ -388,10 +388,10 @@ public class CallerSideMirrorHooksProgramTest extends AbstractBundledLanguageTes
 		assertNull("resolveLoad must stay out of scope for caller-side hooks -- see "
 				+ "BankSwitchStrategy.callerSideHooks()'s scope-discipline note",
 			callerHooks.resolveLoad(instructionAt("0x8000"), builder.addr("0x42"),
-				BankState.fullyKnown(0x0F, 5)));
+				MechanismState.fullyKnown(0x0F, 5)));
 
 		PartialByte mirrored = callerHooks.resolveMirrorLoad(instructionAt("0x8000"),
-			builder.addr("0x42"), BankState.fullyKnown(0x0F, 5));
+			builder.addr("0x42"), MechanismState.fullyKnown(0x0F, 5));
 		assertNotNull("a ROM_IDENTIFYING mirror on a shift=0 board must resolve", mirrored);
 		assertEquals(5, mirrored.bits() & 0x0F);
 	}

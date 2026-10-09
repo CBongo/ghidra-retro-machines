@@ -101,7 +101,7 @@ public class PcodeConstantSemanticsDifferentialTest extends AbstractBundledLangu
 
 		@Override
 		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-				BankState inStateAtStore) {
+				MechanismState inStateAtStore) {
 			return null;
 		}
 	};
@@ -115,7 +115,7 @@ public class PcodeConstantSemanticsDifferentialTest extends AbstractBundledLangu
 
 		@Override
 		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-				BankState inStateAtStore) {
+				MechanismState inStateAtStore) {
 			return resolvedTarget != null && resolvedTarget.getOffset() == 0x9000
 					? PartialByte.fullyKnown(0x3C)
 					: null;
@@ -131,7 +131,7 @@ public class PcodeConstantSemanticsDifferentialTest extends AbstractBundledLangu
 
 		@Override
 		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-				BankState inStateAtStore) {
+				MechanismState inStateAtStore) {
 			return resolvedTarget != null && resolvedTarget.getOffset() == 0x0010
 					? PartialByte.fullyKnown(0x7A)
 					: null;

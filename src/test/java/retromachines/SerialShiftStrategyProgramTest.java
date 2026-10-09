@@ -124,8 +124,8 @@ public class SerialShiftStrategyProgramTest extends AbstractBundledLanguageTest 
 	}
 
 	/** Everything known and zero, so a poison shows up as knowledge destroyed. */
-	private static BankState allKnownZero() {
-		return BankState.fullyKnown(STATE_MASK, 0);
+	private static MechanismState allKnownZero() {
+		return MechanismState.fullyKnown(STATE_MASK, 0);
 	}
 
 	/**
@@ -133,21 +133,21 @@ public class SerialShiftStrategyProgramTest extends AbstractBundledLanguageTest 
 	 * as a mechanism write at all -- if it was not, the fixture failed to produce a write
 	 * reference and the test would otherwise pass vacuously.
 	 */
-	private BankState switchAt(String address) {
-		BankState result = mmc1().computeSwitch(program, instructionAt(address), allKnownZero());
+	private MechanismState switchAt(String address) {
+		MechanismState result = mmc1().computeSwitch(program, instructionAt(address), allKnownZero());
 		assertNotNull("fixture produced no mechanism write at " + address +
 			" -- no write reference? the test would prove nothing", result);
 		return result;
 	}
 
-	private void assertReset(BankState result) {
+	private void assertReset(MechanismState result) {
 		assertEquals("prg_mode should be fully known after a reset: " + result, PRG_MODE_MASK,
 			result.knownMask() & PRG_MODE_MASK);
 		assertEquals("reset must deposit prg_mode=3: " + result, PRG_MODE_3,
 			result.bits() & PRG_MODE_MASK);
 	}
 
-	private void assertPoisoned(BankState result) {
+	private void assertPoisoned(MechanismState result) {
 		assertEquals("every tracked field should have been poisoned: " + result, 0,
 			result.knownMask());
 	}

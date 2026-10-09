@@ -59,7 +59,7 @@ public class SelectDataHelperFallbackProgramTest extends AbstractBundledLanguage
 	/**
 	 * A select/data pair over {@code $9000-$9FFF} with one tracked target: select value 1 routes
 	 * a data write to field {@code r}. {@code select} occupies field-local bits {@code [0,4)},
-	 * {@code r} occupies {@code [4,8)} -- disjoint, so packing one {@link BankState} with both is
+	 * {@code r} occupies {@code [4,8)} -- disjoint, so packing one {@link MechanismState} with both is
 	 * unambiguous.
 	 */
 	private SelectDataBankSwitchStrategy strategy() {
@@ -89,8 +89,8 @@ public class SelectDataHelperFallbackProgramTest extends AbstractBundledLanguage
 	}
 
 	/** {@code select} known as 1 (the tracked target), {@code r} left unknown. */
-	private BankState selectKnownAsOne() {
-		return new BankState(0x0F, 0x01);
+	private MechanismState selectKnownAsOne() {
+		return new MechanismState(0x0F, 0x01);
 	}
 
 	private Instruction instructionAt(String address) {
@@ -140,7 +140,7 @@ public class SelectDataHelperFallbackProgramTest extends AbstractBundledLanguage
 
 		Instruction switchSite = instructionAt("0x9101");
 		PartialByte argValue = PartialByte.fullyKnown(0x33);
-		BankState inState = selectKnownAsOne();
+		MechanismState inState = selectKnownAsOne();
 		RegisterEnv misleadingCallerRegs = new RegisterEnv(builder.addr("0x9101"),
 			PartialByte.fullyKnown(0x99), PartialByte.unknown(), PartialByte.unknown());
 

@@ -83,7 +83,7 @@ public class MultiDepositHelperProgramTest extends AbstractBundledLanguageTest {
 	 * A select/data pair over {@code $9000-$9FFF} (MMC3-shaped, address-parity dispatch) with
 	 * THREE tracked fields packed into one 12-bit field-local space: {@code select[0,4)},
 	 * {@code r6[4,8)}, {@code r7[8,12)} -- disjoint, so R6 and R7 can both be owned by one
-	 * {@link BankState} unambiguously. Mirrors {@code SelectDataHelperFallbackProgramTest}'s
+	 * {@link MechanismState} unambiguously. Mirrors {@code SelectDataHelperFallbackProgramTest}'s
 	 * configuration approach, extended to two data targets instead of one.
 	 */
 	private SelectDataBankSwitchStrategy strategy() {

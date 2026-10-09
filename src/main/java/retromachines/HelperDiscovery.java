@@ -1450,6 +1450,16 @@ final class HelperDiscovery {
 		}
 
 		/**
+		 * Where this model's mechanism sits in the board state (bead grm-ze06.2). For the
+		 * composed/degraded models built with {@code lsb == 0} and a union {@code effectMask}
+		 * this is that same union placement, preserved as-is; whether {@code lsb 0} is right
+		 * for them on a mixed-lsb board is a latent question for a follow-up bead.
+		 */
+		MechanismPlacement placement() {
+			return new MechanismPlacement(lsb, effectMask);
+		}
+
+		/**
 		 * Whether this model has no argument register yet can still be recovered call site by
 		 * call site, because its strategy re-evaluates each recognized site under the caller's
 		 * registers (bead grm-fekc).

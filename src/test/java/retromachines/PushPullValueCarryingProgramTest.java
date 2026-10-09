@@ -81,12 +81,12 @@ public class PushPullValueCarryingProgramTest extends AbstractBundledLanguageTes
 		return instr;
 	}
 
-	private void assertBank(int expected, BankState actual) {
+	private void assertBank(int expected, MechanismState actual) {
 		assertEquals("tracked bits not fully known: " + actual, 0x07, actual.knownMask());
 		assertEquals(expected, actual.bits());
 	}
 
-	private void assertUnresolved(BankState actual) {
+	private void assertUnresolved(MechanismState actual) {
 		assertEquals("expected no tracked bit to be pinned down, got " + actual, 0,
 			actual.knownMask());
 	}
@@ -100,7 +100,7 @@ public class PushPullValueCarryingProgramTest extends AbstractBundledLanguageTes
 
 		@Override
 		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-				BankState inStateAtStore) {
+				MechanismState inStateAtStore) {
 			return null;
 		}
 	};
@@ -119,7 +119,7 @@ public class PushPullValueCarryingProgramTest extends AbstractBundledLanguageTes
 		builder.setBytes("0x8006", "8d 00 80", true); // STA $8000
 
 		assertBank(5, axromLatch().computeSwitch(program, instructionAt("0x8006"),
-			BankState.unknown()));
+			MechanismState.unknown()));
 	}
 
 	// ------------------------------------------------------------------
@@ -138,7 +138,7 @@ public class PushPullValueCarryingProgramTest extends AbstractBundledLanguageTes
 
 		// $0F reduced to the 3-bit latch field is $07.
 		assertBank(7, axromLatch().computeSwitch(program, instructionAt("0x8008"),
-			BankState.unknown()));
+			MechanismState.unknown()));
 	}
 
 	// ------------------------------------------------------------------
@@ -158,7 +158,7 @@ public class PushPullValueCarryingProgramTest extends AbstractBundledLanguageTes
 		builder.setBytes("0x8008", "8d 00 80", true); // STA $8000
 
 		assertBank(5, axromLatch().computeSwitch(program, instructionAt("0x8008"),
-			BankState.unknown()));
+			MechanismState.unknown()));
 	}
 
 	// ------------------------------------------------------------------
@@ -174,7 +174,7 @@ public class PushPullValueCarryingProgramTest extends AbstractBundledLanguageTes
 		builder.setBytes("0x8004", "8d 00 80", true); // STA $8000
 
 		assertUnresolved(axromLatch().computeSwitch(program, instructionAt("0x8004"),
-			BankState.unknown()));
+			MechanismState.unknown()));
 	}
 
 	// ------------------------------------------------------------------
@@ -196,7 +196,7 @@ public class PushPullValueCarryingProgramTest extends AbstractBundledLanguageTes
 		builder.setBytes("0x800c", "8d 00 80", true); // STA $8000
 
 		assertBank(5, axromLatch().computeSwitch(program, instructionAt("0x800c"),
-			BankState.unknown()));
+			MechanismState.unknown()));
 	}
 
 	// ------------------------------------------------------------------
@@ -221,7 +221,7 @@ public class PushPullValueCarryingProgramTest extends AbstractBundledLanguageTes
 		builder.setBytes("0x8007", "8d 00 80", true); // STA $8000
 
 		assertUnresolved(axromLatch().computeSwitch(program, instructionAt("0x8007"),
-			BankState.unknown()));
+			MechanismState.unknown()));
 	}
 
 	// ------------------------------------------------------------------
@@ -239,7 +239,7 @@ public class PushPullValueCarryingProgramTest extends AbstractBundledLanguageTes
 		builder.setBytes("0x8006", "8d 00 80", true); // STA $8000
 
 		assertUnresolved(axromLatch().computeSwitch(program, instructionAt("0x8006"),
-			BankState.unknown()));
+			MechanismState.unknown()));
 	}
 
 	// ------------------------------------------------------------------
@@ -266,7 +266,7 @@ public class PushPullValueCarryingProgramTest extends AbstractBundledLanguageTes
 		String storeAddr = String.format("0x%x", cursor);
 
 		assertUnresolved(
-			axromLatch().computeSwitch(program, instructionAt(storeAddr), BankState.unknown()));
+			axromLatch().computeSwitch(program, instructionAt(storeAddr), MechanismState.unknown()));
 	}
 
 	// ------------------------------------------------------------------
@@ -306,7 +306,7 @@ public class PushPullValueCarryingProgramTest extends AbstractBundledLanguageTes
 		builder.setBytes("0xff1f", "8d ff ff", true); // STA $FFFF
 
 		PartialByte result = StoredValueScanner.resolveStoredValue(program, instructionAt("0xff1f"),
-			'A', BankState.unknown(), 0xFF, NO_HOOKS);
+			'A', MechanismState.unknown(), 0xFF, NO_HOOKS);
 
 		assertEquals("tracked bits not fully known: " + result, 0xFF, result.knownMask());
 		assertEquals(0x99, result.bits());
@@ -325,7 +325,7 @@ public class PushPullValueCarryingProgramTest extends AbstractBundledLanguageTes
 		builder.setBytes("0x8003", "8d 00 80", true); // STA $8000
 
 		assertUnresolved(axromLatch().computeSwitch(program, instructionAt("0x8003"),
-			BankState.unknown()));
+			MechanismState.unknown()));
 	}
 
 	// ------------------------------------------------------------------
@@ -367,14 +367,14 @@ public class PushPullValueCarryingProgramTest extends AbstractBundledLanguageTes
 
 			@Override
 			public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-					BankState inStateAtStore) {
+					MechanismState inStateAtStore) {
 				return resolvedTarget != null && resolvedTarget.equals(mirrorCell) ? new PartialByte(inStateAtStore.knownMask(), inStateAtStore.bits())
 						: null;
 			}
 		};
 
 		PartialByte result = StoredValueScanner.resolveStoredValue(program,
-			instructionAt("0x8007"), 'A', BankState.fullyKnown(0xFF, 0x42), 0xFF, hooks);
+			instructionAt("0x8007"), 'A', MechanismState.fullyKnown(0xFF, 0x42), 0xFF, hooks);
 
 		assertEquals("a mechanism write between the PHA and the PLA must abandon the pairing -- "
 			+ "otherwise the mirror load resolves against inStateAtStore, the state AFTER this "

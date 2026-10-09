@@ -155,8 +155,8 @@ public class SerialShiftMirrorConsumptionProgramTest extends AbstractBundledLang
 	/** {@code prg_bank} known and equal to {@code bank}, every other field unknown -- the
 	 *  in-state every PRG-target case below starts from, so a successful round trip is visible
 	 *  as "the same bank comes back out". */
-	private static BankState prgBankKnown(int bank) {
-		return BankState.fullyKnown(PRG_BANK_MASK, (bank & 0x1F) << 4);
+	private static MechanismState prgBankKnown(int bank) {
+		return MechanismState.fullyKnown(PRG_BANK_MASK, (bank & 0x1F) << 4);
 	}
 
 	private static String hex(long addr) {
@@ -213,15 +213,15 @@ public class SerialShiftMirrorConsumptionProgramTest extends AbstractBundledLang
 	 * recognized as a mechanism write at all -- if it was not, the fixture failed to produce a
 	 * write reference and the test would otherwise pass vacuously.
 	 */
-	private BankState switchAt(SerialShiftBankSwitchStrategy strategy, String address,
-			BankState inState) {
-		BankState result = strategy.computeSwitch(program, instructionAt(address), inState);
+	private MechanismState switchAt(SerialShiftBankSwitchStrategy strategy, String address,
+			MechanismState inState) {
+		MechanismState result = strategy.computeSwitch(program, instructionAt(address), inState);
 		assertNotNull("fixture produced no mechanism write at " + address +
 			" -- no write reference? the test would prove nothing", result);
 		return result;
 	}
 
-	private void assertPoisoned(BankState result) {
+	private void assertPoisoned(MechanismState result) {
 		assertEquals("every tracked field should have been poisoned: " + result, 0,
 			result.knownMask());
 	}
@@ -251,8 +251,8 @@ public class SerialShiftMirrorConsumptionProgramTest extends AbstractBundledLang
 
 		ChainAddrs chain = buildChain(0x9000, "a5 50", PRG_OFFSET); // LDA $50 (the mirror)
 
-		BankState inState = prgBankKnown(11);
-		BankState result = switchAt(strategy, chain.write5(), inState);
+		MechanismState inState = prgBankKnown(11);
+		MechanismState result = switchAt(strategy, chain.write5(), inState);
 
 		assertEquals("the chain must survive the bit-7 gate and deposit the already-known bank "
 			+ "unchanged", inState, result);
@@ -264,7 +264,7 @@ public class SerialShiftMirrorConsumptionProgramTest extends AbstractBundledLang
 		// then unrecoverable, and write 5 must come back with prg_bank UNKNOWN. Getting a
 		// different answer at the same site is what proves the commit is real.
 		SerialShiftBankSwitchStrategy noMirrors = mmc1();
-		BankState withoutMirror = switchAt(noMirrors, chain.write5(), inState);
+		MechanismState withoutMirror = switchAt(noMirrors, chain.write5(), inState);
 		assertNotEquals("write 5 must be a COMMIT, not an echo -- the same site with no mirror "
 			+ "observed has to produce a different answer", inState, withoutMirror);
 	}
@@ -291,7 +291,7 @@ public class SerialShiftMirrorConsumptionProgramTest extends AbstractBundledLang
 
 		ChainAddrs chain = buildChain(0x9000, "a5 50", PRG_OFFSET); // LDA $50 (the mirror)
 
-		BankState result = switchAt(strategy, chain.write1(), prgBankKnown(11));
+		MechanismState result = switchAt(strategy, chain.write1(), prgBankKnown(11));
 
 		assertPoisoned(result);
 	}
@@ -318,7 +318,7 @@ public class SerialShiftMirrorConsumptionProgramTest extends AbstractBundledLang
 			// Each iteration gets its own, non-overlapping code region.
 			ChainAddrs chain = buildChain(0x9000 + i * 0x100L, "a5 50", PRG_OFFSET); // LDA $50
 
-			BankState result = switchAt(strategy, chain.write1(), prgBankKnown(11));
+			MechanismState result = switchAt(strategy, chain.write1(), prgBankKnown(11));
 
 			assertPoisoned(result);
 		}
@@ -342,7 +342,7 @@ public class SerialShiftMirrorConsumptionProgramTest extends AbstractBundledLang
 
 		ChainAddrs chain = buildChain(0x9000, "a5 60", PRG_OFFSET); // LDA $60 -- not a mirror
 
-		BankState result = switchAt(strategy, chain.write1(), prgBankKnown(11));
+		MechanismState result = switchAt(strategy, chain.write1(), prgBankKnown(11));
 
 		assertPoisoned(result);
 	}
@@ -369,7 +369,7 @@ public class SerialShiftMirrorConsumptionProgramTest extends AbstractBundledLang
 		ChainAddrs chain = buildChain(0x9100, "a5 50", CONTROL_OFFSET); // LDA $50, commits to
 																			// Control
 
-		BankState result = switchAt(strategy, chain.write1(), prgBankKnown(11));
+		MechanismState result = switchAt(strategy, chain.write1(), prgBankKnown(11));
 
 		assertPoisoned(result);
 	}
@@ -397,8 +397,8 @@ public class SerialShiftMirrorConsumptionProgramTest extends AbstractBundledLang
 
 		ChainAddrs chain = buildChain(0x9000, "a9 05", CHR0_OFFSET); // LDA #$05, commits to CHR0
 
-		BankState inState = BankState.fullyKnown(STATE_MASK, 0x155);
-		BankState result = switchAt(strategy, chain.write5(), inState);
+		MechanismState inState = MechanismState.fullyKnown(STATE_MASK, 0x155);
+		MechanismState result = switchAt(strategy, chain.write5(), inState);
 
 		assertEquals("an unconfigured target must echo inState, never deposit", inState, result);
 	}
@@ -421,7 +421,7 @@ public class SerialShiftMirrorConsumptionProgramTest extends AbstractBundledLang
 		ChainAddrs chain = buildChain(0x9000, "a5 50", PRG_OFFSET); // LDA $50 (the mirror)
 
 		assertTrue(strategy.effectDependsOnPriorState(program, instructionAt(chain.write5()),
-			BankState.unknown()));
+			MechanismState.unknown()));
 	}
 
 	/**
@@ -441,7 +441,7 @@ public class SerialShiftMirrorConsumptionProgramTest extends AbstractBundledLang
 		ChainAddrs chain = buildChain(0x9000, "a5 60", PRG_OFFSET); // LDA $60 -- not a mirror
 
 		assertFalse(strategy.effectDependsOnPriorState(program, instructionAt(chain.write5()),
-			BankState.unknown()));
+			MechanismState.unknown()));
 	}
 
 	/** False when the observed mirror set is empty outright -- the cheap short-circuit that
@@ -453,7 +453,7 @@ public class SerialShiftMirrorConsumptionProgramTest extends AbstractBundledLang
 		ChainAddrs chain = buildChain(0x9000, "a5 50", PRG_OFFSET); // LDA $50
 
 		assertFalse(strategy.effectDependsOnPriorState(program, instructionAt(chain.write5()),
-			BankState.unknown()));
+			MechanismState.unknown()));
 	}
 
 	// ------------------------------------------------------------------
@@ -472,13 +472,13 @@ public class SerialShiftMirrorConsumptionProgramTest extends AbstractBundledLang
 	public void emptyMirrorSetLeavesComputeSwitchUnaffected() throws Exception {
 		SerialShiftBankSwitchStrategy defaultStrategy = mmc1(); // observeMirrors never called
 		ChainAddrs defaultChain = buildChain(0x9000, "a5 50", PRG_OFFSET);
-		BankState defaultResult =
+		MechanismState defaultResult =
 			switchAt(defaultStrategy, defaultChain.write1(), prgBankKnown(11));
 
 		SerialShiftBankSwitchStrategy explicitStrategy = mmc1();
 		explicitStrategy.observeMirrors(BankMirrors.none());
 		ChainAddrs explicitChain = buildChain(0x9100, "a5 50", PRG_OFFSET);
-		BankState explicitResult =
+		MechanismState explicitResult =
 			switchAt(explicitStrategy, explicitChain.write1(), prgBankKnown(11));
 
 		assertPoisoned(defaultResult);

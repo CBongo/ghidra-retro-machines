@@ -180,7 +180,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 
 		@Override
 		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-				BankState inStateAtStore) {
+				MechanismState inStateAtStore) {
 			// This strategy resolves no load as a bank-INVARIANT constant. The select/data
 			// registers themselves are write-only -- a read at $8000-$9FFF hits the ROM
 			// window behind them, never the register -- but that only settles the question
@@ -195,7 +195,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 
 		@Override
 		public PartialByte resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
-				BankState inStateAtStore) {
+				MechanismState inStateAtStore) {
 			return mirroredByte(resolvedTarget, inStateAtStore);
 		}
 
@@ -235,13 +235,13 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 
 		@Override
 		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-				BankState inStateAtStore) {
+				MechanismState inStateAtStore) {
 			return null; // scope discipline -- see BankSwitchStrategy.callerSideHooks()
 		}
 
 		@Override
 		public PartialByte resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
-				BankState inStateAtStore) {
+				MechanismState inStateAtStore) {
 			return mirroredByte(resolvedTarget, inStateAtStore);
 		}
 	};
@@ -311,7 +311,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	 * which needs no value at all and is filed separately. {@code SAVE_SLOT} and {@code INPUT}
 	 * decline as they do everywhere (H2).
 	 */
-	private PartialByte mirroredByte(Address target, BankState inState) {
+	private PartialByte mirroredByte(Address target, MechanismState inState) {
 		if (target == null || mirrors.isEmpty()) {
 			return null;
 		}
@@ -366,7 +366,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	 * resolved back" stopped being true at exactly the sites that read one. The strategy-wide
 	 * answer therefore stays {@code false} -- still right for every site that does not read a
 	 * mirror, which on a real cartridge is nearly all of them -- and the per-site overload
-	 * {@link #effectDependsOnPriorState(Program, Instruction, BankState)} below answers the
+	 * {@link #effectDependsOnPriorState(Program, Instruction, MechanismState)} below answers the
 	 * sites where it is not. That is grm-mej.2 §2d's precedent followed exactly, from the same
 	 * direction {@code SerialShiftBankSwitchStrategy} arrived at it: a hardcoded {@code false}
 	 * that would now UNDER-report, with the override stopping a real requirement from being
@@ -432,7 +432,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	 * the unknown-select case's genuine requirement on {@code selectField} remains the
 	 * unexpressible third bullet above, unchanged by this.</li>
 	 * </ul>
-	 * {@code siteInState} is the real field-local in-state, never {@link BankState#unknown()}:
+	 * {@code siteInState} is the real field-local in-state, never {@link MechanismState#unknown()}:
 	 * the sites this exists to find are those that consulted a mirror AND came up unknown, and
 	 * {@link #mirroredByte} answers non-null even when wholly unknown for that reason. Cheap by
 	 * construction -- the mirror set is empty on every board without one and the whole probe
@@ -441,7 +441,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	/** Returns whether this switch site consulted prior bank state. */
 	@Override
 	public boolean effectDependsOnPriorState(Program program, Instruction site,
-			BankState siteInState) {
+			MechanismState siteInState) {
 		if (mirrors.isEmpty() || site == null || siteInState == null) {
 			return false;
 		}
@@ -471,13 +471,13 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 
 			@Override
 			public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-					BankState inStateAtStore) {
+					MechanismState inStateAtStore) {
 				return hooks.resolveLoad(loadInstr, resolvedTarget, inStateAtStore);
 			}
 
 			@Override
 			public PartialByte resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
-					BankState inStateAtStore) {
+					MechanismState inStateAtStore) {
 				PartialByte mirrored = hooks.resolveMirrorLoad(loadInstr, resolvedTarget,
 					inStateAtStore);
 				if (mirrored != null) {
@@ -493,7 +493,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	/** Computes the state effect of a select or data write. */
 	@Override
 	public SwitchOutcome computeSwitchOutcome(Program program, Instruction instr,
-			BankState inState) {
+			MechanismState inState) {
 		// The recovery body classifies its own outcome: SwitchOutcome.of derives the
 		// conservative stop reason from the recovered value, except at the untracked-target
 		// data write, which deposits nothing by design and says so (bead grm-pdd6).
@@ -522,7 +522,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	/** Classifies an unresolved select/data write in a helper body. */
 	@Override
 	public ValueStop classifyHelperBodyGap(Program program, Instruction switchSite,
-			BankState inState, Address helperEntry) {
+			MechanismState inState, Address helperEntry) {
 		Long offset = writesInRange(switchSite);
 		if (offset == null) {
 			return ValueStop.ANALYZER_LIMIT;
@@ -560,7 +560,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	}
 
 	private SwitchOutcome computeSwitchOutcomeValue(Program program, Instruction instr,
-			BankState inState) {
+			MechanismState inState) {
 		Long offset = writesInRange(instr);
 		if (offset == null) {
 			return null;
@@ -578,12 +578,12 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	 * shape. Every target field is left untouched (the result starts from {@code inState}
 	 * and only these two fields are ever overwritten).
 	 */
-	private BankState computeSelectWrite(Program program, Instruction instr, Character reg,
-			BankState inState) {
+	private MechanismState computeSelectWrite(Program program, Instruction instr, Character reg,
+			MechanismState inState) {
 		PartialByte stored = reg == null ? PartialByte.unknown()
 				: StoredValueScanner.resolveStoredValue(program, instr, reg, inState, PartialByte.BYTE_MASK, hooks);
 
-		BankState result =
+		MechanismState result =
 			setFieldFromByte(inState, selectField, extractByteField(stored, selectByteMask, selectByteShift));
 		if (modeField != null) {
 			result =
@@ -603,10 +603,10 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	 * that target field.
 	 */
 	private SwitchOutcome computeDataWrite(Program program, Instruction instr, Character reg,
-			BankState inState) {
+			MechanismState inState) {
 		Integer selectValue = fieldValueIfFullyKnown(inState, selectField);
 		if (selectValue == null) {
-			BankState result = inState;
+			MechanismState result = inState;
 			for (FieldPos target : targets.values()) {
 				result = setUnknownField(result, target);
 			}
@@ -714,19 +714,19 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	/** Recovers a helper argument using the selector/data state model. */
 	@Override
 	public HelperDeposit depositHelperArgument(Program program, Instruction switchSite,
-			PartialByte argValue, BankState inState, int stateMask) {
+			PartialByte argValue, MechanismState inState, int stateMask) {
 		Long offset = writesInRange(switchSite);
 		if (offset == null) {
 			// switchSite isn't a shape this strategy itself recognizes as a mechanism
 			// write -- can't happen for a genuine HelperModel.switchSite (it was recorded
 			// because THIS strategy matched it), but stay conservative: own nothing rather
 			// than guess (same stance as SerialShiftBankSwitchStrategy's override).
-			return new HelperDeposit(0, new BankState(0, 0));
+			return new HelperDeposit(0, new MechanismState(0, 0));
 		}
 
 		if ((offset & 1) == 0) {
-			BankState empty = new BankState(0, 0);
-			BankState value =
+			MechanismState empty = new MechanismState(0, 0);
+			MechanismState value =
 				setFieldFromByte(empty, selectField, extractByteField(argValue, selectByteMask, selectByteShift));
 			int owned = selectField.mask();
 			if (modeField != null) {
@@ -751,28 +751,28 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 			for (FieldPos target : targets.values()) {
 				owned |= target.mask();
 			}
-			return new HelperDeposit(owned, new BankState(0, 0));
+			return new HelperDeposit(owned, new MechanismState(0, 0));
 		}
 
 		FieldPos target = targets.get(selectValue);
 		if (target == null) {
 			// Untracked register (e.g. MMC3 CHR banks R0-R5): verified no-op -- see method
 			// javadoc.
-			return new HelperDeposit(0, new BankState(0, 0));
+			return new HelperDeposit(0, new MechanismState(0, 0));
 		}
 
-		BankState value = setFieldFromByte(new BankState(0, 0), target, fieldFromDataByte(argValue));
+		MechanismState value = setFieldFromByte(new MechanismState(0, 0), target, fieldFromDataByte(argValue));
 		return new HelperDeposit(target.mask(), value);
 	}
 
 	/**
-	 * {@link #depositHelperArgument(Program, Instruction, BankState, BankState, int)} above, with
+	 * {@link #depositHelperArgument(Program, Instruction, MechanismState, MechanismState, int)} above, with
 	 * one additive FALLBACK: when {@code argValue} came back with nothing pinned down at all
 	 * ({@code knownMask() == 0}) -- the shape {@code HelperArgumentRecovery} produces for a
 	 * helper whose prologue transforms or clobbers its argument register rather than merely
 	 * relaying it -- re-evaluate the switch site's own store under the CALLER's registers
 	 * ({@code callerRegs}) via {@link StoredValueScanner#resolveStoredValue(Program, Instruction,
-	 * char, BankState, int, StoredValueScanner.Hooks, RegisterEnv)} before falling through to the
+	 * char, MechanismState, int, StoredValueScanner.Hooks, RegisterEnv)} before falling through to the
 	 * 5-arg method (bead grm-4bgh increment 4).
 	 * <p>
 	 * <b>This is a fallback, never a substitution.</b> Unlike
@@ -795,7 +795,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	 */
 	@Override
 	public HelperDeposit depositHelperArgument(Program program, Instruction switchSite,
-			PartialByte argValue, BankState inState, int stateMask, RegisterEnv callerRegs) {
+			PartialByte argValue, MechanismState inState, int stateMask, RegisterEnv callerRegs) {
 		PartialByte effective = argValue;
 		if (argValue.knownMask() == 0) {
 			Character reg = StoredValueScanner.storeRegister(switchSite);
@@ -863,7 +863,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	 * twice, and which select governs which is exactly the question this walk cannot answer by
 	 * looking backward from one of them.
 	 * <p>
-	 * <b>Why {@link BankState#unknown()} is the right in-state here</b>, unlike in
+	 * <b>Why {@link MechanismState#unknown()} is the right in-state here</b>, unlike in
 	 * {@code effectDependsOnPriorState} where stubbing it would over-report: the question is
 	 * whether the select byte resolves WITHOUT depending on tracked state, since the answer must
 	 * hold for every caller. Resolving under a wholly unknown in-state proves exactly that. A
@@ -890,8 +890,8 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 					return null;
 				}
 				PartialByte stored = StoredValueScanner.resolveStoredValue(program, prev, reg,
-					BankState.unknown(), PartialByte.BYTE_MASK, hooks);
-				BankState value = setFieldFromByte(new BankState(0, 0), selectField,
+					MechanismState.unknown(), PartialByte.BYTE_MASK, hooks);
+				MechanismState value = setFieldFromByte(new MechanismState(0, 0), selectField,
 					extractByteField(stored, selectByteMask, selectByteShift));
 				return fieldValueIfFullyKnown(value, selectField);
 			}
@@ -957,24 +957,24 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	 *  {@code byteMask} (already shifted to {@code byteShift}) out of the written byte,
 	 *  repositioned to bit 0 -- same convention as {@link MemoryLatchBankSwitchStrategy}'s
 	 *  {@code fieldFromStoredByte}. */
-	private static BankState extractByteField(PartialByte byteValue, int byteMask, int byteShift) {
+	private static MechanismState extractByteField(PartialByte byteValue, int byteMask, int byteShift) {
 		int widthMask = byteMask >>> byteShift;
-		return new BankState((byteValue.knownMask() >>> byteShift) & widthMask,
+		return new MechanismState((byteValue.knownMask() >>> byteShift) & widthMask,
 			(byteValue.bits() >>> byteShift) & widthMask);
 	}
 
 	/** The BYTE-to-FIELD conversion for a data write (bead grm-ze06.1): the written byte IS the
 	 *  selected register's value, verbatim, and {@link #setFieldFromByte} then reduces it to the
 	 *  field's width. This was an implicit reuse of the byte's record as field-local state. */
-	private static BankState fieldFromDataByte(PartialByte dataByte) {
-		return new BankState(dataByte.knownMask(), dataByte.bits());
+	private static MechanismState fieldFromDataByte(PartialByte dataByte) {
+		return new MechanismState(dataByte.knownMask(), dataByte.bits());
 	}
 
 	/** Fully known iff every bit of {@code field}'s mask is known in {@code state}; returns
 	 *  that field's value (right-shifted to bit 0), or null when any bit is unknown -- a
 	 *  dispatch decision (e.g. which register a data write targets) cannot be made from a
 	 *  partially known field. */
-	private static Integer fieldValueIfFullyKnown(BankState state, FieldPos field) {
+	private static Integer fieldValueIfFullyKnown(MechanismState state, FieldPos field) {
 		int mask = field.mask();
 		if ((state.knownMask() & mask) != mask) {
 			return null;
@@ -984,21 +984,21 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 
 	/** Returns {@code base} with {@code field}'s bits marked unknown, leaving every other
 	 *  bit of {@code base} exactly as it was. */
-	private static BankState setUnknownField(BankState base, FieldPos field) {
+	private static MechanismState setUnknownField(MechanismState base, FieldPos field) {
 		int mask = field.mask();
-		return new BankState(base.knownMask() & ~mask, base.bits() & ~mask);
+		return new MechanismState(base.knownMask() & ~mask, base.bits() & ~mask);
 	}
 
 	/** Returns {@code base} with {@code field}'s bits replaced by {@code fieldValue} (a
-	 *  {@link BankState} already reduced to {@code [0, field.width())}, possibly only
+	 *  {@link MechanismState} already reduced to {@code [0, field.width())}, possibly only
 	 *  partially known -- e.g. mask-algebra partial knowledge from
 	 *  {@link StoredValueScanner}), leaving every other bit of {@code base} exactly as it
 	 *  was. Generalizes {@link #setUnknownField} to fully- and partially-known values alike. */
-	private static BankState setFieldFromByte(BankState base, FieldPos field, BankState fieldValue) {
+	private static MechanismState setFieldFromByte(MechanismState base, FieldPos field, MechanismState fieldValue) {
 		int mask = field.mask();
 		int knownBits = (fieldValue.knownMask() << field.lsb()) & mask;
 		int valueBits = (fieldValue.bits() << field.lsb()) & mask;
-		return new BankState((base.knownMask() & ~mask) | knownBits,
+		return new MechanismState((base.knownMask() & ~mask) | knownBits,
 			(base.bits() & ~mask) | valueBits);
 	}
 }

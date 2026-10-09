@@ -103,18 +103,18 @@ public class ArithmeticFallbackProgramTest extends AbstractBundledLanguageTest {
 		return instr;
 	}
 
-	private void assertBank(int expected, BankState actual) {
+	private void assertBank(int expected, MechanismState actual) {
 		assertEquals("tracked bits not fully known: " + actual, 0x0F, actual.knownMask());
 		assertEquals(expected, actual.bits());
 	}
 
-	private void assertUnresolved(BankState actual) {
+	private void assertUnresolved(MechanismState actual) {
 		assertEquals("expected no tracked bit to be pinned down, got " + actual, 0,
 			actual.knownMask());
 	}
 
-	private BankState switchAt(String address) {
-		return latch().computeSwitch(program, instructionAt(address), BankState.unknown());
+	private MechanismState switchAt(String address) {
+		return latch().computeSwitch(program, instructionAt(address), MechanismState.unknown());
 	}
 
 	// ------------------------------------------------------------------

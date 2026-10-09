@@ -113,7 +113,7 @@ public class IdentityTableIndexHelperProgramTest extends AbstractBundledLanguage
 
 		@Override
 		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-				BankState inStateAtStore) {
+				MechanismState inStateAtStore) {
 			return null;
 		}
 	};
@@ -130,7 +130,7 @@ public class IdentityTableIndexHelperProgramTest extends AbstractBundledLanguage
 		put("0xc003", "8c 00 80"); // STY $8000
 
 		PartialByte value = StoredValueScanner.resolveStoredValue(program, instructionAt("0xc003"),
-			'Y', BankState.unknown(), 0xFF, NO_HOOKS);
+			'Y', MechanismState.unknown(), 0xFF, NO_HOOKS);
 		assertEquals(0xFF, value.knownMask());
 		assertEquals(5, value.bits());
 	}
@@ -146,7 +146,7 @@ public class IdentityTableIndexHelperProgramTest extends AbstractBundledLanguage
 		put("0xc003", "8e 00 80"); // STX $8000
 
 		PartialByte value = StoredValueScanner.resolveStoredValue(program, instructionAt("0xc003"),
-			'X', BankState.unknown(), 0xFF, NO_HOOKS);
+			'X', MechanismState.unknown(), 0xFF, NO_HOOKS);
 		assertEquals(0xFF, value.knownMask());
 		assertEquals(7, value.bits());
 	}
@@ -174,7 +174,7 @@ public class IdentityTableIndexHelperProgramTest extends AbstractBundledLanguage
 
 			@Override
 			public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-					BankState inStateAtStore) {
+					MechanismState inStateAtStore) {
 				return null;
 			}
 
@@ -185,7 +185,7 @@ public class IdentityTableIndexHelperProgramTest extends AbstractBundledLanguage
 		};
 
 		StoredValueScanner.Scan scan = StoredValueScanner.resolveStoredValueScan(program,
-			instructionAt("0xc005"), 'Y', BankState.unknown(), 0xFF, mirrorHooks, RegisterEnv.NONE);
+			instructionAt("0xc005"), 'Y', MechanismState.unknown(), 0xFF, mirrorHooks, RegisterEnv.NONE);
 		assertEquals(BankSwitchStrategy.ValueStop.RESTORED_BANK, scan.stop());
 		assertNotNull("a RESTORED_BANK stop must carry a ReadBack", scan.readBack());
 		assertEquals(builder.addr("0x10"), scan.readBack().cell());
@@ -210,7 +210,7 @@ public class IdentityTableIndexHelperProgramTest extends AbstractBundledLanguage
 		put("0xc003", "8d 00 80"); // STA $8000
 
 		PartialByte value = StoredValueScanner.resolveStoredValue(program, instructionAt("0xc003"),
-			'A', BankState.unknown(), 0xFF, NO_HOOKS);
+			'A', MechanismState.unknown(), 0xFF, NO_HOOKS);
 		assertEquals("constantRegisterValue's fallback still resolves TXA -- this pins that the "
 				+ "answer comes from THAT evaluator, not from a (wrong) rename onto X", 0xFF,
 			value.knownMask());

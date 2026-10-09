@@ -82,12 +82,12 @@ public class StackRelativeReloadProgramTest extends AbstractBundledLanguageTest 
 		return instr;
 	}
 
-	private void assertBank(int expected, BankState actual) {
+	private void assertBank(int expected, MechanismState actual) {
 		assertEquals("tracked bits not fully known: " + actual, 0x07, actual.knownMask());
 		assertEquals(expected, actual.bits());
 	}
 
-	private void assertUnresolved(BankState actual) {
+	private void assertUnresolved(MechanismState actual) {
 		assertEquals("expected no tracked bit to be pinned down, got " + actual, 0,
 			actual.knownMask());
 	}
@@ -101,7 +101,7 @@ public class StackRelativeReloadProgramTest extends AbstractBundledLanguageTest 
 
 		@Override
 		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-				BankState inStateAtStore) {
+				MechanismState inStateAtStore) {
 			return null;
 		}
 	};
@@ -131,7 +131,7 @@ public class StackRelativeReloadProgramTest extends AbstractBundledLanguageTest 
 		builder.setBytes("0x800d", "8d 00 80", true); // STA $8000
 
 		assertBank(5, axromLatch().computeSwitch(program, instructionAt("0x800d"),
-			BankState.unknown()));
+			MechanismState.unknown()));
 	}
 
 	// ------------------------------------------------------------------
@@ -149,7 +149,7 @@ public class StackRelativeReloadProgramTest extends AbstractBundledLanguageTest 
 		builder.setBytes("0x8009", "8d 00 80", true); // STA $8000
 
 		assertBank(7, axromLatch().computeSwitch(program, instructionAt("0x8009"),
-			BankState.unknown()));
+			MechanismState.unknown()));
 	}
 
 	// ------------------------------------------------------------------
@@ -171,7 +171,7 @@ public class StackRelativeReloadProgramTest extends AbstractBundledLanguageTest 
 		builder.setBytes("0x800d", "8d 00 80", true); // STA $8000
 
 		assertBank(3, axromLatch().computeSwitch(program, instructionAt("0x800d"),
-			BankState.unknown()));
+			MechanismState.unknown()));
 	}
 
 	// ------------------------------------------------------------------
@@ -191,7 +191,7 @@ public class StackRelativeReloadProgramTest extends AbstractBundledLanguageTest 
 		builder.setBytes("0x800a", "8d 00 80", true); // STA $8000
 
 		assertUnresolved(axromLatch().computeSwitch(program, instructionAt("0x800a"),
-			BankState.unknown()));
+			MechanismState.unknown()));
 	}
 
 	// ------------------------------------------------------------------
@@ -213,7 +213,7 @@ public class StackRelativeReloadProgramTest extends AbstractBundledLanguageTest 
 		builder.setBytes("0x8009", "8d 00 80", true); // STA $8000
 
 		assertUnresolved(axromLatch().computeSwitch(program, instructionAt("0x8009"),
-			BankState.unknown()));
+			MechanismState.unknown()));
 	}
 
 	// ------------------------------------------------------------------
@@ -232,7 +232,7 @@ public class StackRelativeReloadProgramTest extends AbstractBundledLanguageTest 
 		builder.setBytes("0x8009", "8d 00 80", true); // STA $8000
 
 		assertUnresolved(axromLatch().computeSwitch(program, instructionAt("0x8009"),
-			BankState.unknown()));
+			MechanismState.unknown()));
 	}
 
 	// ------------------------------------------------------------------
@@ -250,7 +250,7 @@ public class StackRelativeReloadProgramTest extends AbstractBundledLanguageTest 
 		builder.setBytes("0x8007", "8d 00 80", true); // STA $8000
 
 		assertUnresolved(axromLatch().computeSwitch(program, instructionAt("0x8007"),
-			BankState.unknown()));
+			MechanismState.unknown()));
 	}
 
 	// ------------------------------------------------------------------
@@ -270,7 +270,7 @@ public class StackRelativeReloadProgramTest extends AbstractBundledLanguageTest 
 		builder.setBytes("0x800a", "8d 00 80", true); // STA $8000
 
 		assertUnresolved(axromLatch().computeSwitch(program, instructionAt("0x800a"),
-			BankState.unknown()));
+			MechanismState.unknown()));
 	}
 
 	// ------------------------------------------------------------------
@@ -292,7 +292,7 @@ public class StackRelativeReloadProgramTest extends AbstractBundledLanguageTest 
 		builder.setBytes("0x9000", "4c 04 80", true); // JMP $8004
 
 		assertUnresolved(axromLatch().computeSwitch(program, instructionAt("0x8007"),
-			BankState.unknown()));
+			MechanismState.unknown()));
 	}
 
 	// ------------------------------------------------------------------
@@ -318,7 +318,7 @@ public class StackRelativeReloadProgramTest extends AbstractBundledLanguageTest 
 		builder.setBytes("0xfed0", "ea", true); // NOP        -- filler so 0xfed1 is a fresh instr
 
 		PartialByte result = StoredValueScanner.resolveStoredValue(program,
-			instructionAt("0xfedf"), 'A', BankState.unknown(), 0xFF, NO_HOOKS);
+			instructionAt("0xfedf"), 'A', MechanismState.unknown(), 0xFF, NO_HOOKS);
 
 		assertEquals("tracked bits not fully known: " + result, 0xFF, result.knownMask());
 		assertEquals(0x2a, result.bits());

@@ -291,15 +291,15 @@ public class CallerSideRestoreProgramTest extends AbstractBundledLanguageTest {
 
 		@Override
 		public SwitchOutcome computeSwitchOutcome(ghidra.program.model.listing.Program program,
-				Instruction instr, BankState inState) {
-			return SwitchOutcome.of(BankState.unknown());
+				Instruction instr, MechanismState inState) {
+			return SwitchOutcome.of(MechanismState.unknown());
 		}
 
 		@Override
 		public HelperDeposit depositHelperArgument(ghidra.program.model.listing.Program program,
-				Instruction switchSite, PartialByte argValue, BankState inState, int stateMask,
+				Instruction switchSite, PartialByte argValue, MechanismState inState, int stateMask,
 				RegisterEnv callerRegs) {
-			return new HelperDeposit(stateMask, new BankState(argValue.knownMask(), argValue.bits()));
+			return new HelperDeposit(stateMask, new MechanismState(argValue.knownMask(), argValue.bits()));
 		}
 
 		@Override
@@ -326,13 +326,13 @@ public class CallerSideRestoreProgramTest extends AbstractBundledLanguageTest {
 
 			@Override
 			public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-					BankState inStateAtStore) {
+					MechanismState inStateAtStore) {
 				return null;
 			}
 
 			@Override
 			public PartialByte resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
-					BankState inStateAtStore) {
+					MechanismState inStateAtStore) {
 				return mirrorCell.equals(resolvedTarget) ? PartialByte.unknown() : null;
 			}
 		};
@@ -705,13 +705,13 @@ public class CallerSideRestoreProgramTest extends AbstractBundledLanguageTest {
 
 			@Override
 			public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-					BankState inStateAtStore) {
+					MechanismState inStateAtStore) {
 				return cell.equals(resolvedTarget) ? loadAnswer : null;
 			}
 
 			@Override
 			public PartialByte resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
-					BankState inStateAtStore) {
+					MechanismState inStateAtStore) {
 				return cell.equals(resolvedTarget) ? mirrorAnswer : null;
 			}
 
@@ -725,7 +725,7 @@ public class CallerSideRestoreProgramTest extends AbstractBundledLanguageTest {
 	private StoredValueScanner.Scan scanStore(String storeAddress, int mask,
 			StoredValueScanner.Hooks hooks) {
 		return StoredValueScanner.resolveStoredValueScan(program, instructionAt(storeAddress), 'A',
-			BankState.unknown(), mask, hooks, RegisterEnv.NONE);
+			MechanismState.unknown(), mask, hooks, RegisterEnv.NONE);
 	}
 
 	/** {@code LDA $BFFF / STA $8000} (and the AND-modified variant at a different base). */

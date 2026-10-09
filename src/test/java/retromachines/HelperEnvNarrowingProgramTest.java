@@ -83,16 +83,16 @@ public class HelperEnvNarrowingProgramTest extends AbstractBundledLanguageTest {
 
 		@Override
 		public SwitchOutcome computeSwitchOutcome(ghidra.program.model.listing.Program program,
-				Instruction instr, BankState inState) {
-			return SwitchOutcome.of(BankState.unknown());
+				Instruction instr, MechanismState inState) {
+			return SwitchOutcome.of(MechanismState.unknown());
 		}
 
 		@Override
 		public HelperDeposit depositHelperArgument(ghidra.program.model.listing.Program program,
-				Instruction switchSite, PartialByte argValue, BankState inState, int stateMask,
+				Instruction switchSite, PartialByte argValue, MechanismState inState, int stateMask,
 				RegisterEnv callerRegs) {
 			this.captured = callerRegs;
-			return new HelperDeposit(0, BankState.unknown());
+			return new HelperDeposit(0, MechanismState.unknown());
 		}
 	}
 
@@ -116,7 +116,7 @@ public class HelperEnvNarrowingProgramTest extends AbstractBundledLanguageTest {
 	 * <b>Ordinary helper, one prologue segment, entirely WALKED by the mini-inline scan.</b> The
 	 * helper's prologue clobbers Y with an unrelated immediate before the mechanism write (which
 	 * reads A, not Y) -- exactly the shape that, before grm-4bgh increment 3, forced the whole
-	 * env's Y to {@link BankState#unknown()} even though this segment is fully covered by the
+	 * env's Y to {@link MechanismState#unknown()} even though this segment is fully covered by the
 	 * scan {@code recoverCallArgument} itself would run.
 	 * <p>
 	 * Per the class javadoc: this is observed only because the env is captured directly. A real

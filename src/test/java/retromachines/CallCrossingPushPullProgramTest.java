@@ -118,7 +118,7 @@ public class CallCrossingPushPullProgramTest extends AbstractBundledLanguageTest
 		return strategy;
 	}
 
-	private void assertBank(int expected, BankState actual) {
+	private void assertBank(int expected, MechanismState actual) {
 		assertEquals("tracked bits not fully known: " + actual, 0x07, actual.knownMask());
 		assertEquals(expected, actual.bits());
 	}
@@ -129,7 +129,7 @@ public class CallCrossingPushPullProgramTest extends AbstractBundledLanguageTest
 		assertEquals(expected, actual.bits());
 	}
 
-	private void assertUnresolved(BankState actual) {
+	private void assertUnresolved(MechanismState actual) {
 		assertEquals("expected no tracked bit to be pinned down, got " + actual, 0,
 			actual.knownMask());
 	}
@@ -150,20 +150,20 @@ public class CallCrossingPushPullProgramTest extends AbstractBundledLanguageTest
 
 			@Override
 			public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-					BankState inStateAtStore) {
+					MechanismState inStateAtStore) {
 				return null;
 			}
 
 			@Override
-			public BankState stateAt(Address addr) {
-				return BankState.unknown();
+			public MechanismState stateAt(Address addr) {
+				return MechanismState.unknown();
 			}
 		};
 
 	/** The scanner on a direct {@code STA} site under {@link #STATE_AVAILABLE_HOOKS}. */
 	private PartialByte scanWithStateAvailable(String storeAddress) {
 		return StoredValueScanner.resolveStoredValue(program, instructionAt(storeAddress), 'A',
-			BankState.unknown(), 0x07, STATE_AVAILABLE_HOOKS);
+			MechanismState.unknown(), 0x07, STATE_AVAILABLE_HOOKS);
 	}
 
 	/**
@@ -210,7 +210,7 @@ public class CallCrossingPushPullProgramTest extends AbstractBundledLanguageTest
 		put("0xc020", "60"); // RTS (sub)
 
 		assertUnresolved(axromLatch().computeSwitch(program, instructionAt("0xc009"),
-			BankState.unknown()));
+			MechanismState.unknown()));
 	}
 
 	/**
@@ -278,7 +278,7 @@ public class CallCrossingPushPullProgramTest extends AbstractBundledLanguageTest
 		put("0xc006", "8d 00 80"); // STA $8000
 
 		assertUnresolved(axromLatch().computeSwitch(program, instructionAt("0xc006"),
-			BankState.unknown()));
+			MechanismState.unknown()));
 	}
 
 	// ==================================================================
@@ -308,16 +308,16 @@ public class CallCrossingPushPullProgramTest extends AbstractBundledLanguageTest
 
 		@Override
 		public SwitchOutcome computeSwitchOutcome(ghidra.program.model.listing.Program program,
-				Instruction instr, BankState inState) {
-			return SwitchOutcome.of(BankState.unknown());
+				Instruction instr, MechanismState inState) {
+			return SwitchOutcome.of(MechanismState.unknown());
 		}
 
 		@Override
 		public HelperDeposit depositHelperArgument(ghidra.program.model.listing.Program program,
-				Instruction switchSite, PartialByte argValue, BankState inState, int stateMask,
+				Instruction switchSite, PartialByte argValue, MechanismState inState, int stateMask,
 				RegisterEnv callerRegs) {
 			this.captured = callerRegs;
-			return new HelperDeposit(stateMask, new BankState(argValue.knownMask(), argValue.bits()));
+			return new HelperDeposit(stateMask, new MechanismState(argValue.knownMask(), argValue.bits()));
 		}
 
 		@Override
@@ -342,13 +342,13 @@ public class CallCrossingPushPullProgramTest extends AbstractBundledLanguageTest
 
 			@Override
 			public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-					BankState inStateAtStore) {
+					MechanismState inStateAtStore) {
 				return null; // scope discipline: caller-side hooks never answer resolveLoad
 			}
 
 			@Override
 			public PartialByte resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
-					BankState inStateAtStore) {
+					MechanismState inStateAtStore) {
 				return mirrorAddress.equals(resolvedTarget) ? new PartialByte(inStateAtStore.knownMask(), inStateAtStore.bits()) : null;
 			}
 		};

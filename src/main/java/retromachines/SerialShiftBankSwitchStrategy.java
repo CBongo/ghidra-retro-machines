@@ -256,7 +256,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 
 		@Override
 		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-				BankState inStateAtStore) {
+				MechanismState inStateAtStore) {
 			// MMC1's shift register is write-only -- nothing reads it back, at any
 			// resolvedTarget.
 			return null;
@@ -298,13 +298,13 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 
 			@Override
 			public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-					BankState inStateAtStore) {
+					MechanismState inStateAtStore) {
 				return hooks.resolveLoad(loadInstr, resolvedTarget, inStateAtStore);
 			}
 
 			@Override
 			public PartialByte resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
-					BankState inStateAtStore) {
+					MechanismState inStateAtStore) {
 				return mirroredByte(resolvedTarget, inStateAtStore, fields);
 			}
 
@@ -352,7 +352,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	 * Control is not a coherent program. This is the same refusal, for the same reason, that
 	 * {@code MemoryLatchBankSwitchStrategy.mirroredByte} makes when its {@code shift != 0}.
 	 */
-	private PartialByte mirroredByte(Address target, BankState inState, List<TargetField> fields) {
+	private PartialByte mirroredByte(Address target, MechanismState inState, List<TargetField> fields) {
 		if (target == null || !mirrors.is(target, BankMirrors.Kind.ROM_IDENTIFYING)) {
 			return null;
 		}
@@ -379,7 +379,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	/** Computes the state effect of a serial-shift write or commit branch. */
 	@Override
 	public SwitchOutcome computeSwitchOutcome(Program program, Instruction instr,
-			BankState inState) {
+			MechanismState inState) {
 		// The recovery body classifies its own outcome: SwitchOutcome.of derives the
 		// conservative stop reason from the recovered value, except at the three sites that
 		// deposit nothing by design, which say so (NO_DEPOSIT, bead grm-pdd6).
@@ -409,7 +409,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	/** Classifies an unresolved serial-shift operation in a helper body. */
 	@Override
 	public ValueStop classifyHelperBodyGap(Program program, Instruction switchSite,
-			BankState inState, Address helperEntry) {
+			MechanismState inState, Address helperEntry) {
 		Long offset = writesInRange(switchSite);
 		if (offset == null) {
 			// The counted-loop BNE: a structural commit, with no per-site register scan.
@@ -444,7 +444,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	 * The scanned VALUE is discarded, so this can only reclassify; see
 	 * {@link BankSwitchStrategy#classifyHelperBodyGap} for why that makes the extra scan safe.
 	 */
-	private ValueStop entryGap(Program program, Instruction from, char reg, BankState inState,
+	private ValueStop entryGap(Program program, Instruction from, char reg, MechanismState inState,
 			StoredValueScanner.Hooks hooks, Address helperEntry) {
 		StoredValueScanner.Scan atEntry = StoredValueScanner.resolveStoredValueScan(program, from,
 			reg, inState, PartialByte.BYTE_MASK, hooks, RegisterEnv.entryStopOnly(helperEntry));
@@ -453,7 +453,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	}
 
 	private SwitchOutcome computeSwitchOutcomeValue(Program program, Instruction instr,
-			BankState inState) {
+			MechanismState inState) {
 		Long offset = writesInRange(instr);
 		if (offset == null) {
 			// Not a mechanism write. The ONLY non-write instruction this strategy claims is
@@ -601,7 +601,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	/** Returns whether this site actually consulted prior bank state. */
 	@Override
 	public boolean effectDependsOnPriorState(Program program, Instruction site,
-			BankState siteInState) {
+			MechanismState siteInState) {
 		if (mirrors.isEmpty() || site == null) {
 			return false;
 		}
@@ -622,13 +622,13 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 
 			@Override
 			public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-					BankState inStateAtStore) {
+					MechanismState inStateAtStore) {
 				return hooks.resolveLoad(loadInstr, resolvedTarget, inStateAtStore);
 			}
 
 			@Override
 			public PartialByte resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
-					BankState inStateAtStore) {
+					MechanismState inStateAtStore) {
 				PartialByte mirrored = mirroredByte(resolvedTarget, inStateAtStore, fields);
 				if (mirrored != null) {
 					consulted[0] = true;
@@ -708,24 +708,24 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	/** Recovers a helper argument for a serial-shift operation. */
 	@Override
 	public HelperDeposit depositHelperArgument(Program program, Instruction switchSite,
-			PartialByte argValue, BankState inState, int stateMask) {
+			PartialByte argValue, MechanismState inState, int stateMask) {
 		Integer targetIdx = targetIndexOf(program, switchSite);
 		if (targetIdx == null) {
 			// switchSite isn't a shape this strategy itself recognizes as a commit -- can't
 			// happen for a genuine HelperModel.switchSite (it was recorded because THIS
 			// strategy matched it), but stay conservative: own nothing rather than guess.
-			return new HelperDeposit(0, new BankState(0, 0));
+			return new HelperDeposit(0, new MechanismState(0, 0));
 		}
 		List<TargetField> fields = targets.get(targetIdx);
 		if (fields == null) {
 			// CHR target: owns nothing -- see method javadoc.
-			return new HelperDeposit(0, new BankState(0, 0));
+			return new HelperDeposit(0, new MechanismState(0, 0));
 		}
 		int owned = 0;
 		for (TargetField tf : fields) {
 			owned |= tf.pos().mask();
 		}
-		return new HelperDeposit(owned, depositFields(new BankState(0, 0), fields, argValue));
+		return new HelperDeposit(owned, depositFields(new MechanismState(0, 0), fields, argValue));
 	}
 
 	/** The reassembled commit value's target register index (write-5's/the loop STA's
@@ -753,11 +753,11 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	 *  shared core of a chain commit, a counted-loop commit, and a helper call-site
 	 *  deposit; only what {@code base} is (the current in-state, or "nothing known" when
 	 *  there is none) differs between callers. */
-	private static BankState depositFields(BankState base, List<TargetField> fields,
+	private static MechanismState depositFields(MechanismState base, List<TargetField> fields,
 			PartialByte byteValue) {
-		BankState result = base;
+		MechanismState result = base;
 		for (TargetField tf : fields) {
-			BankState fieldValue = extractByteField(byteValue, tf.bits(), tf.shift());
+			MechanismState fieldValue = extractByteField(byteValue, tf.bits(), tf.shift());
 			result = setFieldFromByte(result, tf.pos(), fieldValue);
 		}
 		return result;
@@ -891,26 +891,26 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 			return null; // an unresolved RMW -- stays a poison, not a guess
 		}
 		int owned = 0;
-		BankState value = new BankState(0, 0);
+		MechanismState value = new MechanismState(0, 0);
 		for (ResetField rf : resetFields) {
 			owned |= rf.pos().mask();
 			int widthMask = (1 << rf.pos().width()) - 1;
-			value = setFieldFromByte(value, rf.pos(), BankState.fullyKnown(widthMask, rf.value()));
+			value = setFieldFromByte(value, rf.pos(), MechanismState.fullyKnown(widthMask, rf.value()));
 		}
 		return new BankSwitchStrategy.HelperDeposit(owned, value);
 	}
 
-	private BankState applyReset(BankState inState) {
-		BankState result = inState;
+	private MechanismState applyReset(MechanismState inState) {
+		MechanismState result = inState;
 		for (ResetField rf : resetFields) {
 			int widthMask = (1 << rf.pos().width()) - 1;
-			result = setFieldFromByte(result, rf.pos(), BankState.fullyKnown(widthMask, rf.value()));
+			result = setFieldFromByte(result, rf.pos(), MechanismState.fullyKnown(widthMask, rf.value()));
 		}
 		return result;
 	}
 
-	private BankState poisonAll(BankState inState) {
-		BankState result = inState;
+	private MechanismState poisonAll(MechanismState inState) {
+		MechanismState result = inState;
 		for (FieldPos fp : allPoisonFields) {
 			result = setUnknownField(result, fp);
 		}
@@ -1019,7 +1019,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	 * been a hardware RESET (and the remaining four writes an uncommitted partial
 	 * sequence), so nothing about the loop's effect can be trusted.
 	 */
-	private BankState commitCountedLoop(Program program, CountedLoop loop, BankState inState) {
+	private MechanismState commitCountedLoop(Program program, CountedLoop loop, MechanismState inState) {
 		// Target decoded BEFORE the seed scan (grm-mej.2 increment 3): a mirror read inside that
 		// scan can only be interpreted against the register the loop is committing to, and the
 		// bit-7 gate below is exactly what a mirror answer exists to get past.
@@ -1210,22 +1210,22 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 		return null;
 	}
 
-	private static BankState extractByteField(PartialByte byteState, int bits, int shift) {
+	private static MechanismState extractByteField(PartialByte byteState, int bits, int shift) {
 		int widthMask = (1 << bits) - 1;
-		return new BankState((byteState.knownMask() >>> shift) & widthMask,
+		return new MechanismState((byteState.knownMask() >>> shift) & widthMask,
 			(byteState.bits() >>> shift) & widthMask);
 	}
 
-	private static BankState setUnknownField(BankState base, FieldPos field) {
+	private static MechanismState setUnknownField(MechanismState base, FieldPos field) {
 		int mask = field.mask();
-		return new BankState(base.knownMask() & ~mask, base.bits() & ~mask);
+		return new MechanismState(base.knownMask() & ~mask, base.bits() & ~mask);
 	}
 
-	private static BankState setFieldFromByte(BankState base, FieldPos field, BankState fieldValue) {
+	private static MechanismState setFieldFromByte(MechanismState base, FieldPos field, MechanismState fieldValue) {
 		int mask = field.mask();
 		int knownBits = (fieldValue.knownMask() << field.lsb()) & mask;
 		int valueBits = (fieldValue.bits() << field.lsb()) & mask;
-		return new BankState((base.knownMask() & ~mask) | knownBits,
+		return new MechanismState((base.knownMask() & ~mask) | knownBits,
 			(base.bits() & ~mask) | valueBits);
 	}
 }

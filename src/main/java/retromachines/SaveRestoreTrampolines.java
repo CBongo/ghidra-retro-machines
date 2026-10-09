@@ -487,7 +487,7 @@ final class SaveRestoreTrampolines {
 						return null;
 					}
 					if (committed > 0) {
-						int field = (committed << helper.lsb()) & helper.effectMask();
+						int field = helper.placement().positionMask(committed);
 						Held h = stored == 'A' ? a : stored == 'X' ? x : Held.NO;
 						if (h.entry()) {
 							if (source != null && !source.equals(h.source())) {
@@ -639,7 +639,7 @@ final class SaveRestoreTrampolines {
 			if (committed == 0) {
 				continue;
 			}
-			if (((committed << helper.lsb()) & helper.effectMask()) != fieldMask) {
+			if ((helper.placement().positionMask(committed)) != fieldMask) {
 				return null; // commits a bank into some OTHER field, which nothing here restores
 			}
 			committedField = true;

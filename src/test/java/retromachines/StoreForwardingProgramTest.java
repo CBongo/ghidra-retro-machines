@@ -120,13 +120,13 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 			actual.knownMask());
 	}
 
-	/** The {@link BankState} form, for a mechanism's field-local result. */
-	private void assertBank(int expected, BankState actual) {
+	/** The {@link MechanismState} form, for a mechanism's field-local result. */
+	private void assertBank(int expected, MechanismState actual) {
 		assertEquals("tracked bits not fully known: " + actual, 0x07, actual.knownMask());
 		assertEquals(expected, actual.bits());
 	}
 
-	private void assertUnresolved(BankState actual) {
+	private void assertUnresolved(MechanismState actual) {
 		assertEquals("expected no tracked bit to be pinned down, got " + actual, 0,
 			actual.knownMask());
 	}
@@ -149,7 +149,7 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 
 		@Override
 		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-				BankState inStateAtStore) {
+				MechanismState inStateAtStore) {
 			return null;
 		}
 	};
@@ -195,7 +195,7 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 		assertTrue(StoredValueScanner.modifiesRegister(instructionAt("0x800d"), 'A'));
 
 		assertBank(5, axromLatch().computeSwitch(program, instructionAt("0x8007"),
-			BankState.unknown()));
+			MechanismState.unknown()));
 	}
 
 	// ------------------------------------------------------------------
@@ -211,7 +211,7 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 		builder.setBytes("0x8006", "8d 00 80", true); // STA $8000
 
 		assertBank(5, axromLatch().computeSwitch(program, instructionAt("0x8006"),
-			BankState.unknown()));
+			MechanismState.unknown()));
 	}
 
 	/**
@@ -228,7 +228,7 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 		builder.setBytes("0x8008", "8d 00 80", true); // STA $8000
 
 		assertBank(6, axromLatch().computeSwitch(program, instructionAt("0x8008"),
-			BankState.unknown()));
+			MechanismState.unknown()));
 	}
 
 	/** A non-immediate {@code ORA} operand, which used to end the scan unconditionally. */
@@ -241,14 +241,14 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 		builder.setBytes("0x8008", "8d 00 80", true); // STA $8000
 
 		assertBank(3, axromLatch().computeSwitch(program, instructionAt("0x8008"),
-			BankState.unknown()));
+			MechanismState.unknown()));
 	}
 
 	/**
 	 * <b>The Ironsword commit site, evaluated under a call site's registers.</b> This is the case
 	 * grm-hum could only cover with a convention fallback.
 	 * <p>
-	 * {@code argValue} is passed {@link BankState#unknown()} deliberately: that is what the
+	 * {@code argValue} is passed {@link MechanismState#unknown()} deliberately: that is what the
 	 * convention would contribute, so a passing assertion can ONLY come from the evaluation
 	 * deriving the value through {@code $C3}. If forwarding regresses, this test fails rather than
 	 * silently falling back to an assumption that happens to agree.
@@ -274,7 +274,7 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 
 		BankSwitchStrategy.HelperDeposit deposit =
 			axromLatch().depositHelperArgument(program, instructionAt("0x800d"),
-				PartialByte.unknown(), BankState.unknown(), 0x07, callerRegs);
+				PartialByte.unknown(), MechanismState.unknown(), 0x07, callerRegs);
 
 		assertEquals("the call site should own the mechanism's whole field", 0x07,
 			deposit.ownedMask());
@@ -321,7 +321,7 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 
 		BankSwitchStrategy.HelperDeposit deposit =
 			axromLatch().depositHelperArgument(program, instructionAt("0x8016"),
-				PartialByte.of(0x07, 0x05), BankState.unknown(), 0x07, callerRegs);
+				PartialByte.of(0x07, 0x05), MechanismState.unknown(), 0x07, callerRegs);
 
 		assertUnresolved(deposit.value());
 	}
@@ -341,7 +341,7 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 		builder.setBytes("0x8002", "8d 00 80", true); // STA $8000
 
 		assertUnresolved(axromLatch().computeSwitch(program, instructionAt("0x8002"),
-			BankState.unknown()));
+			MechanismState.unknown()));
 	}
 
 	/** A read-modify-write on the cell between the store and the load invalidates the value. */
@@ -354,7 +354,7 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 		builder.setBytes("0x8008", "8d 00 80", true); // STA $8000
 
 		assertUnresolved(axromLatch().computeSwitch(program, instructionAt("0x8008"),
-			BankState.unknown()));
+			MechanismState.unknown()));
 	}
 
 	/**
@@ -371,7 +371,7 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 		builder.setBytes("0x8009", "8d 00 80", true); // STA $8000
 
 		assertUnresolved(axromLatch().computeSwitch(program, instructionAt("0x8009"),
-			BankState.unknown()));
+			MechanismState.unknown()));
 	}
 
 	/** A subroutine may write anywhere, so a call between store and load ends the walk. */
@@ -385,7 +385,7 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 		builder.setBytes("0x8020", "60", true); // RTS
 
 		assertUnresolved(axromLatch().computeSwitch(program, instructionAt("0x8009"),
-			BankState.unknown()));
+			MechanismState.unknown()));
 	}
 
 	/** Forwarding is strictly intra-block: a {@code JMP} between the two ends the walk. */
@@ -398,7 +398,7 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 		builder.setBytes("0x8009", "8d 00 80", true); // STA $8000
 
 		assertUnresolved(axromLatch().computeSwitch(program, instructionAt("0x8009"),
-			BankState.unknown()));
+			MechanismState.unknown()));
 	}
 
 	/**
@@ -425,7 +425,7 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 		builder.setBytes("0x8009", "8d 00 80", true); // STA $8000
 
 		assertBank(5, axromLatch().computeSwitch(program, instructionAt("0x8009"),
-			BankState.unknown()));
+			MechanismState.unknown()));
 	}
 
 	/**
@@ -444,7 +444,7 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 		builder.setBytes("0x8009", "8d 00 80", true); // STA $8000
 
 		assertUnresolved(axromLatch().computeSwitch(program, instructionAt("0x8009"),
-			BankState.unknown()));
+			MechanismState.unknown()));
 	}
 
 	/**
@@ -470,7 +470,7 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 		}
 
 		assertUnresolved(axromLatch().computeSwitch(program, instructionAt("0x8009"),
-			BankState.unknown()));
+			MechanismState.unknown()));
 	}
 
 	/**
@@ -487,7 +487,7 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 		builder.setBytes("0x800a", "8d 00 80", true); // STA $8000
 
 		assertUnresolved(axromLatch().computeSwitch(program, instructionAt("0x800a"),
-			BankState.unknown()));
+			MechanismState.unknown()));
 	}
 
 	// ------------------------------------------------------------------
@@ -517,7 +517,7 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 		builder.setBytes("0xffc2", "60", true); // RTS (callee, not otherwise touched)
 
 		assertCellValue(0xFF, 0x1B, StoredValueScanner.callerCellValue(program,
-			instructionAt("0x8005"), builder.addr("0x0720"), BankState.unknown(), 0xFF, NO_HOOKS));
+			instructionAt("0x8005"), builder.addr("0x0720"), MechanismState.unknown(), 0xFF, NO_HOOKS));
 	}
 
 	/**
@@ -534,7 +534,7 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 		builder.setBytes("0xffc2", "60", true); // RTS
 
 		assertUnresolved(StoredValueScanner.callerCellValue(program, instructionAt("0x8006"),
-			builder.addr("0x0720"), BankState.unknown(), 0xFF, NO_HOOKS));
+			builder.addr("0x0720"), MechanismState.unknown(), 0xFF, NO_HOOKS));
 	}
 
 	/**
@@ -551,6 +551,6 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 		builder.setBytes("0xffc2", "60", true); // RTS
 
 		assertCellValue(0x0F, 0x05, StoredValueScanner.callerCellValue(program,
-			instructionAt("0x8005"), builder.addr("0x0720"), BankState.unknown(), 0x0F, NO_HOOKS));
+			instructionAt("0x8005"), builder.addr("0x0720"), MechanismState.unknown(), 0x0F, NO_HOOKS));
 	}
 }

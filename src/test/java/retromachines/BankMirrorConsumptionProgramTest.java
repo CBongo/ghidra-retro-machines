@@ -172,8 +172,8 @@ public class BankMirrorConsumptionProgramTest extends AbstractBundledLanguageTes
 		builder.setBytes("0x8000", "a5 42", true); // LDA $42
 		builder.setBytes("0x8002", "8d 00 80", true); // STA $8000
 
-		BankState result = latch.computeSwitch(program, instructionAt("0x8002"),
-			BankState.fullyKnown(0x3, 2)); // field-local prg=2
+		MechanismState result = latch.computeSwitch(program, instructionAt("0x8002"),
+			MechanismState.fullyKnown(0x3, 2)); // field-local prg=2
 
 		assertNotNull(result);
 		assertEquals("the field-local coordinate must round-trip through << shift and >> shift",
@@ -204,8 +204,8 @@ public class BankMirrorConsumptionProgramTest extends AbstractBundledLanguageTes
 		builder.setBytes("0x8000", "a5 44", true); // LDA $44
 		builder.setBytes("0x8002", "8d 00 c0", true); // STA $C000
 
-		BankState result =
-			latch.computeSwitch(program, instructionAt("0x8002"), BankState.fullyKnown(0x7, 5));
+		MechanismState result =
+			latch.computeSwitch(program, instructionAt("0x8002"), MechanismState.fullyKnown(0x7, 5));
 
 		assertNotNull(result);
 		assertEquals("a missing shift here would report a partially-known WRONG bank, not decline",
@@ -227,8 +227,8 @@ public class BankMirrorConsumptionProgramTest extends AbstractBundledLanguageTes
 		builder.setBytes("0x8000", "a5 42", true); // LDA $42
 		builder.setBytes("0x8002", "8d 00 c0", true); // STA $C000
 
-		BankState result =
-			latch.computeSwitch(program, instructionAt("0x8002"), BankState.fullyKnown(0x0F, 5));
+		MechanismState result =
+			latch.computeSwitch(program, instructionAt("0x8002"), MechanismState.fullyKnown(0x0F, 5));
 
 		assertNotNull(result);
 		assertEquals(0x0F, result.knownMask());
@@ -276,8 +276,8 @@ public class BankMirrorConsumptionProgramTest extends AbstractBundledLanguageTes
 		builder.setBytes("0x8000", "a5 50", true); // LDA $50
 		builder.setBytes("0x8002", "8d 00 c0", true); // STA $C000
 
-		BankState onShiftZero = shiftZero.computeSwitch(program, instructionAt("0x8002"),
-			BankState.fullyKnown(0x0F, 7));
+		MechanismState onShiftZero = shiftZero.computeSwitch(program, instructionAt("0x8002"),
+			MechanismState.fullyKnown(0x0F, 7));
 
 		assertNotNull(onShiftZero);
 		assertEquals("byteShift 0 coincides with the board's own shift 0", 0x0F,
@@ -289,8 +289,8 @@ public class BankMirrorConsumptionProgramTest extends AbstractBundledLanguageTes
 		builder.setBytes("0x8010", "a5 51", true); // LDA $51
 		builder.setBytes("0x8012", "8d 00 80", true); // STA $8000
 
-		BankState onGxrom = gxrom.computeSwitch(program, instructionAt("0x8012"),
-			BankState.fullyKnown(0x3, 2)); // same field-local value as case 1's WRITE_THROUGH
+		MechanismState onGxrom = gxrom.computeSwitch(program, instructionAt("0x8012"),
+			MechanismState.fullyKnown(0x3, 2)); // same field-local value as case 1's WRITE_THROUGH
 
 		assertNotNull(onGxrom);
 		assertEquals(
@@ -302,7 +302,7 @@ public class BankMirrorConsumptionProgramTest extends AbstractBundledLanguageTes
 				+ "byte was erased by the extraction -- with the upper bits proved zero, "
 				+ "synthesizing here would report a confident bank 0",
 			gxrom.effectDependsOnPriorState(program, instructionAt("0x8012"),
-				BankState.fullyKnown(0x3, 2)));
+				MechanismState.fullyKnown(0x3, 2)));
 	}
 
 	// ------------------------------------------------------------------
@@ -324,8 +324,8 @@ public class BankMirrorConsumptionProgramTest extends AbstractBundledLanguageTes
 		builder.setBytes("0x8000", "a5 59", true); // LDA $59
 		builder.setBytes("0x8002", "8d 00 c0", true); // STA $C000
 
-		BankState result =
-			latch.computeSwitch(program, instructionAt("0x8002"), BankState.fullyKnown(0x0F, 3));
+		MechanismState result =
+			latch.computeSwitch(program, instructionAt("0x8002"), MechanismState.fullyKnown(0x0F, 3));
 
 		assertNotNull(result);
 		assertEquals("a save slot must never resolve as a live-bank mirror", 0x00,
@@ -347,8 +347,8 @@ public class BankMirrorConsumptionProgramTest extends AbstractBundledLanguageTes
 		builder.setBytes("0x8000", "a5 d3", true); // LDA $D3
 		builder.setBytes("0x8002", "8d 00 c0", true); // STA $C000
 
-		BankState result =
-			latch.computeSwitch(program, instructionAt("0x8002"), BankState.fullyKnown(0x0F, 4));
+		MechanismState result =
+			latch.computeSwitch(program, instructionAt("0x8002"), MechanismState.fullyKnown(0x0F, 4));
 
 		assertNotNull(result);
 		assertEquals("an input mirror holds the REQUESTED bank, not yet the live one", 0x00,
@@ -369,8 +369,8 @@ public class BankMirrorConsumptionProgramTest extends AbstractBundledLanguageTes
 		builder.setBytes("0x8000", "a5 60", true); // LDA $60 -- not a mirror
 		builder.setBytes("0x8002", "8d 00 c0", true); // STA $C000
 
-		BankState result =
-			latch.computeSwitch(program, instructionAt("0x8002"), BankState.fullyKnown(0x0F, 9));
+		MechanismState result =
+			latch.computeSwitch(program, instructionAt("0x8002"), MechanismState.fullyKnown(0x0F, 9));
 
 		assertNotNull(result);
 		assertEquals(0x00, result.knownMask());
@@ -407,8 +407,8 @@ public class BankMirrorConsumptionProgramTest extends AbstractBundledLanguageTes
 		builder.setBytes("0x8004", "a5 1c", true); // LDA $1C      -- reload the shadow
 		builder.setBytes("0x8006", "8d 00 c0", true); // STA $C000 -- commit
 
-		BankState result = latch.computeSwitch(program, instructionAt("0x8006"),
-			BankState.fullyKnown(0x0F, 9)); // stale in-state, deliberately disagreeing
+		MechanismState result = latch.computeSwitch(program, instructionAt("0x8006"),
+			MechanismState.fullyKnown(0x0F, 9)); // stale in-state, deliberately disagreeing
 
 		assertNotNull(result);
 		assertEquals("the forwarded NEW value must win, not the stale in-state the mirror would "
@@ -438,8 +438,8 @@ public class BankMirrorConsumptionProgramTest extends AbstractBundledLanguageTes
 		builder.setBytes("0x8000", "ad 00 90", true); // LDA $9000
 		builder.setBytes("0x8003", "8d 00 c0", true); // STA $C000
 
-		BankState result = latch.computeSwitch(program, instructionAt("0x8003"),
-			BankState.fullyKnown(0x0F, 2)); // disagrees with the ROM byte on purpose
+		MechanismState result = latch.computeSwitch(program, instructionAt("0x8003"),
+			MechanismState.fullyKnown(0x0F, 2)); // disagrees with the ROM byte on purpose
 
 		assertNotNull(result);
 		assertEquals("the ROM byte answers first -- the mirror is never consulted", 0x0F,
@@ -458,7 +458,7 @@ public class BankMirrorConsumptionProgramTest extends AbstractBundledLanguageTes
 	 * explicitly: a non-null-but-unknown answer means "this site read the bank back and the bank
 	 * was not known here", which is exactly the signal
 	 * {@link MemoryLatchBankSwitchStrategy#effectDependsOnPriorState(ghidra.program.model.listing.Program,
-	 * Instruction, BankState)} needs (pinned directly in case 12 below) to tell "needed the bank
+	 * Instruction, MechanismState)} needs (pinned directly in case 12 below) to tell "needed the bank
 	 * on entry and didn't have it" apart from "never consulted a mirror at all".
 	 */
 	@Test
@@ -469,8 +469,8 @@ public class BankMirrorConsumptionProgramTest extends AbstractBundledLanguageTes
 		builder.setBytes("0x8000", "a5 42", true); // LDA $42
 		builder.setBytes("0x8002", "8d 00 c0", true); // STA $C000
 
-		BankState result =
-			latch.computeSwitch(program, instructionAt("0x8002"), BankState.unknown());
+		MechanismState result =
+			latch.computeSwitch(program, instructionAt("0x8002"), MechanismState.unknown());
 
 		assertNotNull("a consulted mirror must answer non-null even when wholly unknown", result);
 		assertEquals(0x00, result.knownMask());
@@ -514,7 +514,7 @@ public class BankMirrorConsumptionProgramTest extends AbstractBundledLanguageTes
 
 		Instruction store = instructionAt(storeSite);
 
-		BankState result = latch.computeSwitch(program, store, BankState.fullyKnown(0x0F, 6));
+		MechanismState result = latch.computeSwitch(program, store, MechanismState.fullyKnown(0x0F, 6));
 
 		assertNotNull("a mirror load from inside the overlay must not silently decline", result);
 		assertEquals(0x0F, result.knownMask());
@@ -544,8 +544,8 @@ public class BankMirrorConsumptionProgramTest extends AbstractBundledLanguageTes
 		builder.setBytes("0x8002", "8d 00 c0", true); // STA $C000
 		Instruction store = instructionAt("0x8002");
 
-		BankState fromThree = latch.computeSwitch(program, store, BankState.fullyKnown(0x0F, 3));
-		BankState fromNine = latch.computeSwitch(program, store, BankState.fullyKnown(0x0F, 9));
+		MechanismState fromThree = latch.computeSwitch(program, store, MechanismState.fullyKnown(0x0F, 3));
+		MechanismState fromNine = latch.computeSwitch(program, store, MechanismState.fullyKnown(0x0F, 9));
 
 		assertNotEquals("two in-states at the same site must give different answers when a "
 			+ "mirror is consulted -- memoizing either would be unsound", fromThree, fromNine);
@@ -569,7 +569,7 @@ public class BankMirrorConsumptionProgramTest extends AbstractBundledLanguageTes
 		builder.setBytes("0x8002", "8d 00 c0", true); // STA $C000
 		Instruction site = instructionAt("0x8002");
 
-		assertTrue(latch.effectDependsOnPriorState(program, site, BankState.unknown()));
+		assertTrue(latch.effectDependsOnPriorState(program, site, MechanismState.unknown()));
 	}
 
 	/**
@@ -591,7 +591,7 @@ public class BankMirrorConsumptionProgramTest extends AbstractBundledLanguageTes
 		builder.setBytes("0x8002", "8d 00 c0", true); // STA $C000
 		Instruction site = instructionAt("0x8002");
 
-		assertFalse(latch.effectDependsOnPriorState(program, site, BankState.unknown()));
+		assertFalse(latch.effectDependsOnPriorState(program, site, MechanismState.unknown()));
 	}
 
 	/** False when the observed mirror set is empty outright -- the cheap short-circuit that keeps
@@ -604,7 +604,7 @@ public class BankMirrorConsumptionProgramTest extends AbstractBundledLanguageTes
 		builder.setBytes("0x8002", "8d 00 c0", true); // STA $C000
 		Instruction site = instructionAt("0x8002");
 
-		assertFalse(latch.effectDependsOnPriorState(program, site, BankState.unknown()));
+		assertFalse(latch.effectDependsOnPriorState(program, site, MechanismState.unknown()));
 	}
 
 	// ------------------------------------------------------------------
@@ -631,8 +631,8 @@ public class BankMirrorConsumptionProgramTest extends AbstractBundledLanguageTes
 		builder.setBytes("0x8002", "05 42", true); // ORA $42
 		builder.setBytes("0x8004", "8d 00 c0", true); // STA $C000
 
-		BankState result = fullByte.computeSwitch(program, instructionAt("0x8004"),
-			BankState.fullyKnown(0xFF, 0x0A));
+		MechanismState result = fullByte.computeSwitch(program, instructionAt("0x8004"),
+			MechanismState.fullyKnown(0xFF, 0x0A));
 
 		assertNotNull(result);
 		assertEquals("a full-byte mirror must contribute through ORA", 0xFF, result.knownMask());
@@ -649,8 +649,8 @@ public class BankMirrorConsumptionProgramTest extends AbstractBundledLanguageTes
 		builder.setBytes("0x8012", "05 43", true); // ORA $43
 		builder.setBytes("0x8014", "8d 00 c0", true); // STA $C000
 
-		BankState narrowResult = narrow.computeSwitch(program, instructionAt("0x8014"),
-			BankState.fullyKnown(0x0F, 0x0A));
+		MechanismState narrowResult = narrow.computeSwitch(program, instructionAt("0x8014"),
+			MechanismState.fullyKnown(0x0F, 0x0A));
 
 		assertNotNull(narrowResult);
 		assertEquals("a mirror narrower than the whole byte must contribute nothing through ORA",
@@ -694,8 +694,8 @@ public class BankMirrorConsumptionProgramTest extends AbstractBundledLanguageTes
 		builder.setBytes("0x8002", "a5 42", true); // LDA $42   -- the load
 		builder.setBytes("0x8004", "8d 00 c0", true); // STA $C000 -- the write under test
 
-		BankState result =
-			latch.computeSwitch(program, instructionAt("0x8004"), BankState.fullyKnown(0x0F, 6));
+		MechanismState result =
+			latch.computeSwitch(program, instructionAt("0x8004"), MechanismState.fullyKnown(0x0F, 6));
 
 		assertNotNull(result);
 		assertEquals("a store into the cell right before the load makes the shadow current",
@@ -715,8 +715,8 @@ public class BankMirrorConsumptionProgramTest extends AbstractBundledLanguageTes
 		builder.setBytes("0x8000", "a5 42", true); // LDA $42 -- first instruction, no predecessor
 		builder.setBytes("0x8002", "8d 00 c0", true); // STA $C000 -- the write under test
 
-		BankState result =
-			latch.computeSwitch(program, instructionAt("0x8002"), BankState.fullyKnown(0x0F, 3));
+		MechanismState result =
+			latch.computeSwitch(program, instructionAt("0x8002"), MechanismState.fullyKnown(0x0F, 3));
 
 		assertNotNull(result);
 		assertEquals("a load with nothing before it cannot have been bypassed", 0x0F,
@@ -743,8 +743,8 @@ public class BankMirrorConsumptionProgramTest extends AbstractBundledLanguageTes
 		builder.setBytes("0x8005", "8d 00 c0", true); // STA $C000 -- the write under test
 		builder.createEmptyFunction("handler", "0x8003", 5, null);
 
-		BankState result =
-			latch.computeSwitch(program, instructionAt("0x8005"), BankState.fullyKnown(0x0F, 4));
+		MechanismState result =
+			latch.computeSwitch(program, instructionAt("0x8005"), MechanismState.fullyKnown(0x0F, 4));
 
 		assertNotNull(result);
 		assertEquals(
@@ -794,8 +794,8 @@ public class BankMirrorConsumptionProgramTest extends AbstractBundledLanguageTes
 		MemoryLatchBankSwitchStrategy latch = discreteLatch();
 		latch.observeMirrors(mirrors);
 
-		BankState result =
-			latch.computeSwitch(program, instructionAt("0x8007"), BankState.fullyKnown(0x0F, 6));
+		MechanismState result =
+			latch.computeSwitch(program, instructionAt("0x8007"), MechanismState.fullyKnown(0x0F, 6));
 
 		assertNotNull(result);
 		assertEquals("a paired switch does not itself resolve the shadow -- the walk must "
@@ -823,8 +823,8 @@ public class BankMirrorConsumptionProgramTest extends AbstractBundledLanguageTes
 		builder.setBytes("0x8003", "a5 42", true); // LDA $42 -- still holds the interrupted bank
 		builder.setBytes("0x8005", "8d 00 c0", true); // STA $C000 -- the restore under test
 
-		BankState result =
-			latch.computeSwitch(program, instructionAt("0x8005"), BankState.fullyKnown(0x0F, 4));
+		MechanismState result =
+			latch.computeSwitch(program, instructionAt("0x8005"), MechanismState.fullyKnown(0x0F, 4));
 
 		assertNotNull(result);
 		assertEquals("an unpaired switch between the shadow write and the load must decline the "
@@ -858,7 +858,7 @@ public class BankMirrorConsumptionProgramTest extends AbstractBundledLanguageTes
 		builder.setBytes("0x8005", "8d 00 c0", true); // STA $C000 -- the restore under test
 
 		BankSwitchStrategy.SwitchOutcome outcome = latch.computeSwitchOutcome(program,
-			instructionAt("0x8005"), BankState.fullyKnown(0x0F, 4));
+			instructionAt("0x8005"), MechanismState.fullyKnown(0x0F, 4));
 
 		assertNotNull(outcome);
 		assertEquals("the value stays withdrawn -- grm-p9y is unaffected by this bead", 0x00,
@@ -897,7 +897,7 @@ public class BankMirrorConsumptionProgramTest extends AbstractBundledLanguageTes
 		assertFalse("a DECLINED (stale) mirror was never consulted, whatever the kind query now "
 			+ "says about the same cell",
 			latch.effectDependsOnPriorState(program, instructionAt("0x8005"),
-				BankState.fullyKnown(0x0F, 4)));
+				MechanismState.fullyKnown(0x0F, 4)));
 	}
 
 	/**
@@ -918,8 +918,8 @@ public class BankMirrorConsumptionProgramTest extends AbstractBundledLanguageTes
 		builder.setBytes("0x8006", "a5 00", true); // LDA $00 -- still holds the interrupted bank
 		builder.setBytes("0x8008", "8d 01 80", true); // STA $8001 -- the restore under test
 
-		BankState result =
-			latch.computeSwitch(program, instructionAt("0x8008"), BankState.fullyKnown(0x0F, 5));
+		MechanismState result =
+			latch.computeSwitch(program, instructionAt("0x8008"), MechanismState.fullyKnown(0x0F, 5));
 
 		assertNotNull(result);
 		assertEquals("a call between the shadow and the load must decline -- the callee is opaque "
@@ -945,8 +945,8 @@ public class BankMirrorConsumptionProgramTest extends AbstractBundledLanguageTes
 		builder.setBytes("0x8004", "8d 00 c0", true); // STA $C000 -- the write under test
 		builder.setBytes("0x9000", "4c 02 80", true); // JMP $8002 -- the join
 
-		BankState result =
-			latch.computeSwitch(program, instructionAt("0x8004"), BankState.fullyKnown(0x0F, 7));
+		MechanismState result =
+			latch.computeSwitch(program, instructionAt("0x8004"), MechanismState.fullyKnown(0x0F, 7));
 
 		assertNotNull(result);
 		assertEquals("a control-flow join before the load must decline even though the "
@@ -974,8 +974,8 @@ public class BankMirrorConsumptionProgramTest extends AbstractBundledLanguageTes
 		Address storeAddr = loadAddr.add(2);
 		builder.setBytes(storeAddr.toString(), "8d 00 c0", true); // STA $C000 -- write under test
 
-		BankState result =
-			latch.computeSwitch(program, instructionAt(storeAddr), BankState.fullyKnown(0x0F, 2));
+		MechanismState result =
+			latch.computeSwitch(program, instructionAt(storeAddr), MechanismState.fullyKnown(0x0F, 2));
 
 		assertNotNull(result);
 		assertEquals("exhausting the scan budget must decline even though the walk would "
@@ -1001,8 +1001,8 @@ public class BankMirrorConsumptionProgramTest extends AbstractBundledLanguageTes
 		builder.setBytes("0x8003", "a5 50", true); // LDA $50 -- the identifying-offset load
 		builder.setBytes("0x8005", "8d 00 c0", true); // STA $C000 -- the write under test
 
-		BankState result =
-			latch.computeSwitch(program, instructionAt("0x8005"), BankState.fullyKnown(0x0F, 6));
+		MechanismState result =
+			latch.computeSwitch(program, instructionAt("0x8005"), MechanismState.fullyKnown(0x0F, 6));
 
 		assertNotNull(result);
 		assertEquals(

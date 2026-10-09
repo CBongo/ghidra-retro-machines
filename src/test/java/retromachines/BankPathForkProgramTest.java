@@ -303,9 +303,9 @@ public class BankPathForkProgramTest extends AbstractBundledLanguageTest {
 		// reproduce the old engine's answer exactly. Calling the strategy directly, with no
 		// arm awareness at all, IS that old engine's computation.
 		Instruction mergeInstr = program.getListing().getInstructionAt(site);
-		BankState singleStateAnswer = strategy.computeSwitch(program, mergeInstr, BankState.unknown());
+		MechanismState singleStateAnswer = strategy.computeSwitch(program, mergeInstr, MechanismState.unknown());
 		assertEquals("a denial must reproduce the single-state engine's answer exactly",
-			singleStateAnswer, sr.effect());
+			sr.placement().position(singleStateAnswer), sr.effect());
 		assertEquals("the join is genuinely unresolvable without path awareness", 0,
 			singleStateAnswer.knownMask());
 
@@ -470,7 +470,7 @@ public class BankPathForkProgramTest extends AbstractBundledLanguageTest {
 
 		@Override
 		public BankSwitchStrategy.SwitchOutcome computeSwitchOutcome(Program program,
-				Instruction instr, BankState inState) {
+				Instruction instr, MechanismState inState) {
 			if (!instr.getMinAddress().equals(site)) {
 				return null; // not this mechanism's instruction
 			}
