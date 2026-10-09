@@ -110,6 +110,17 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 		return instr;
 	}
 
+	private void assertBank(int expected, PartialByte actual) {
+		assertEquals("tracked bits not fully known: " + actual, 0x07, actual.knownMask());
+		assertEquals(expected, actual.bits());
+	}
+
+	private void assertUnresolved(PartialByte actual) {
+		assertEquals("expected no tracked bit to be pinned down, got " + actual, 0,
+			actual.knownMask());
+	}
+
+	/** The {@link BankState} form, for a mechanism's field-local result. */
 	private void assertBank(int expected, BankState actual) {
 		assertEquals("tracked bits not fully known: " + actual, 0x07, actual.knownMask());
 		assertEquals(expected, actual.bits());
@@ -137,14 +148,14 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 		}
 
 		@Override
-		public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 				BankState inStateAtStore) {
 			return null;
 		}
 	};
 
 	/** A resolved, fully-known {@code cell} value reduced to {@code mask}. */
-	private void assertCellValue(int expectedKnownMask, int expectedBits, BankState actual) {
+	private void assertCellValue(int expectedKnownMask, int expectedBits, PartialByte actual) {
 		assertEquals("tracked bits not fully known: " + actual, expectedKnownMask,
 			actual.knownMask());
 		assertEquals(expectedBits, actual.bits());
@@ -259,11 +270,11 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 		builder.setBytes("0x800d", "8d 00 80", true); // STA $8000    <- the commit
 
 		RegisterEnv callerRegs = new RegisterEnv(builder.addr("0x8000"),
-			BankState.fullyKnown(0xFF, 0x05), BankState.unknown(), BankState.unknown());
+			PartialByte.fullyKnown(0x05), PartialByte.unknown(), PartialByte.unknown());
 
 		BankSwitchStrategy.HelperDeposit deposit =
 			axromLatch().depositHelperArgument(program, instructionAt("0x800d"),
-				BankState.unknown(), BankState.unknown(), 0x07, callerRegs);
+				PartialByte.unknown(), BankState.unknown(), 0x07, callerRegs);
 
 		assertEquals("the call site should own the mechanism's whole field", 0x07,
 			deposit.ownedMask());
@@ -306,11 +317,11 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 		builder.setBytes("0x8020", "60", true); // RTS
 
 		RegisterEnv callerRegs = new RegisterEnv(builder.addr("0x8000"),
-			BankState.fullyKnown(0xFF, 0x05), BankState.unknown(), BankState.unknown());
+			PartialByte.fullyKnown(0x05), PartialByte.unknown(), PartialByte.unknown());
 
 		BankSwitchStrategy.HelperDeposit deposit =
 			axromLatch().depositHelperArgument(program, instructionAt("0x8016"),
-				BankState.fullyKnown(0x07, 0x05), BankState.unknown(), 0x07, callerRegs);
+				PartialByte.of(0x07, 0x05), BankState.unknown(), 0x07, callerRegs);
 
 		assertUnresolved(deposit.value());
 	}

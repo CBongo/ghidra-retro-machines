@@ -111,19 +111,19 @@ import ghidra.program.model.address.Address;
  *                      built from a scan that stopped that way. Carried so a strategy re-
  *                      evaluating its own switch semantics under this env (grm-hum increment 2's
  *                      mini-inlining) can still name WHERE an unresolved index register's value
- *                      was read back from, even though the register's own {@code BankState} here
+ *                      was read back from, even though the register's own {@code PartialByte} here
  *                      is unknown -- see {@code MemoryLatchBankSwitchStrategy}'s identity-table
  *                      rule, the first consumer. Not part of the record's identity for caching
  *                      purposes any more than {@code a}/{@code x}/{@code y} are -- see this
  *                      class's own javadoc: {@code RegisterEnv} is memoized VALUE, never key.
  */
-public record RegisterEnv(Address entryAddr, Address crossableJoin, BankState a, BankState x,
-		BankState y, Map<Address, Address> armPredecessors,
+public record RegisterEnv(Address entryAddr, Address crossableJoin, PartialByte a, PartialByte x,
+		PartialByte y, Map<Address, Address> armPredecessors,
 		Map<Character, StoredValueScanner.ReadBack> readBacks) {
 
 	/** The empty environment: no entry stop, no crossable join, nothing known. */
 	public static final RegisterEnv NONE =
-		new RegisterEnv(null, BankState.unknown(), BankState.unknown(), BankState.unknown());
+		new RegisterEnv(null, PartialByte.unknown(), PartialByte.unknown(), PartialByte.unknown());
 
 	public RegisterEnv {
 		armPredecessors = armPredecessors == null ? Map.of() : Map.copyOf(armPredecessors);
@@ -132,8 +132,8 @@ public record RegisterEnv(Address entryAddr, Address crossableJoin, BankState a,
 
 	/** An env that crosses no join and knows nothing, but follows {@code arms} at each join it names. */
 	public static RegisterEnv onArms(Map<Address, Address> arms) {
-		return new RegisterEnv(null, null, BankState.unknown(), BankState.unknown(),
-			BankState.unknown(), arms, Map.of());
+		return new RegisterEnv(null, null, PartialByte.unknown(), PartialByte.unknown(),
+			PartialByte.unknown(), arms, Map.of());
 	}
 
 	/** This env with {@code arms} as its arm map (replacing any it had); {@code readBacks} carries
@@ -194,8 +194,8 @@ public record RegisterEnv(Address entryAddr, Address crossableJoin, BankState a,
 	 * @return an environment with unknown register values
 	 */
 	public static RegisterEnv entryStopOnly(Address entryAddr) {
-		return new RegisterEnv(entryAddr, BankState.unknown(), BankState.unknown(),
-			BankState.unknown());
+		return new RegisterEnv(entryAddr, PartialByte.unknown(), PartialByte.unknown(),
+			PartialByte.unknown());
 	}
 
 	/**
@@ -210,19 +210,19 @@ public record RegisterEnv(Address entryAddr, Address crossableJoin, BankState a,
 	 * @param x value held by X on entry
 	 * @param y value held by Y on entry
 	 */
-	public RegisterEnv(Address entryAddr, BankState a, BankState x, BankState y) {
+	public RegisterEnv(Address entryAddr, PartialByte a, PartialByte x, PartialByte y) {
 		this(entryAddr, null, a, x, y);
 	}
 
 	/** The pre-grm-wul five-argument form: no arm map, no read-backs. */
-	public RegisterEnv(Address entryAddr, Address crossableJoin, BankState a, BankState x,
-			BankState y) {
+	public RegisterEnv(Address entryAddr, Address crossableJoin, PartialByte a, PartialByte x,
+			PartialByte y) {
 		this(entryAddr, crossableJoin, a, x, y, Map.of(), Map.of());
 	}
 
 	/** The pre-grm-ld68 six-argument form: no read-backs. */
-	public RegisterEnv(Address entryAddr, Address crossableJoin, BankState a, BankState x,
-			BankState y, Map<Address, Address> armPredecessors) {
+	public RegisterEnv(Address entryAddr, Address crossableJoin, PartialByte a, PartialByte x,
+			PartialByte y, Map<Address, Address> armPredecessors) {
 		this(entryAddr, crossableJoin, a, x, y, armPredecessors, Map.of());
 	}
 
@@ -230,12 +230,12 @@ public record RegisterEnv(Address entryAddr, Address crossableJoin, BankState a,
 	 * @param reg register to query
 	 * @return the register's known state, or unknown
 	 */
-	public BankState get(char reg) {
+	public PartialByte get(char reg) {
 		return switch (reg) {
 			case 'A' -> a;
 			case 'X' -> x;
 			case 'Y' -> y;
-			default -> BankState.unknown();
+			default -> PartialByte.unknown();
 		};
 	}
 

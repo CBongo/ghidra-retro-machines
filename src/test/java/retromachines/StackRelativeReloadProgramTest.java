@@ -100,7 +100,7 @@ public class StackRelativeReloadProgramTest extends AbstractBundledLanguageTest 
 		}
 
 		@Override
-		public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 				BankState inStateAtStore) {
 			return null;
 		}
@@ -317,7 +317,7 @@ public class StackRelativeReloadProgramTest extends AbstractBundledLanguageTest 
 		builder.setBytes("0xfece", "a9 2a", true); // LDA #$2A
 		builder.setBytes("0xfed0", "ea", true); // NOP        -- filler so 0xfed1 is a fresh instr
 
-		BankState result = StoredValueScanner.resolveStoredValue(program,
+		PartialByte result = StoredValueScanner.resolveStoredValue(program,
 			instructionAt("0xfedf"), 'A', BankState.unknown(), 0xFF, NO_HOOKS);
 
 		assertEquals("tracked bits not fully known: " + result, 0xFF, result.knownMask());

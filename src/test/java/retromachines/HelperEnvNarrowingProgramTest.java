@@ -89,7 +89,7 @@ public class HelperEnvNarrowingProgramTest extends AbstractBundledLanguageTest {
 
 		@Override
 		public HelperDeposit depositHelperArgument(ghidra.program.model.listing.Program program,
-				Instruction switchSite, BankState argValue, BankState inState, int stateMask,
+				Instruction switchSite, PartialByte argValue, BankState inState, int stateMask,
 				RegisterEnv callerRegs) {
 			this.captured = callerRegs;
 			return new HelperDeposit(0, BankState.unknown());

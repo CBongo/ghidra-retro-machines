@@ -165,10 +165,10 @@ public class CallerSideMirrorHooksProgramTest extends AbstractBundledLanguageTes
 
 		@Override
 		public HelperDeposit depositHelperArgument(ghidra.program.model.listing.Program program,
-				Instruction switchSite, BankState argValue, BankState inState, int stateMask,
+				Instruction switchSite, PartialByte argValue, BankState inState, int stateMask,
 				RegisterEnv callerRegs) {
 			this.captured = callerRegs;
-			return new HelperDeposit(stateMask, argValue);
+			return new HelperDeposit(stateMask, new BankState(argValue.knownMask(), argValue.bits()));
 		}
 
 		@Override
@@ -197,15 +197,15 @@ public class CallerSideMirrorHooksProgramTest extends AbstractBundledLanguageTes
 			}
 
 			@Override
-			public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+			public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 					BankState inStateAtStore) {
 				return null; // scope discipline: caller-side hooks never answer resolveLoad
 			}
 
 			@Override
-			public BankState resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
+			public PartialByte resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
 					BankState inStateAtStore) {
-				return mirrorAddress.equals(resolvedTarget) ? inStateAtStore : null;
+				return mirrorAddress.equals(resolvedTarget) ? new PartialByte(inStateAtStore.knownMask(), inStateAtStore.bits()) : null;
 			}
 		};
 	}
@@ -347,11 +347,11 @@ public class CallerSideMirrorHooksProgramTest extends AbstractBundledLanguageTes
 
 		HelperArgumentRecovery.recoverCallArgument(program, callInstr, helper,
 			BankState.fullyKnown(0xFF, 5), sharedEnvCache, restoringTrampolines);
-		BankState firstEnvA = strategy.captured.a();
+		PartialByte firstEnvA = strategy.captured.a();
 
 		HelperArgumentRecovery.recoverCallArgument(program, callInstr, helper,
 			BankState.fullyKnown(0xFF, 9), sharedEnvCache, restoringTrampolines);
-		BankState secondEnvA = strategy.captured.a();
+		PartialByte secondEnvA = strategy.captured.a();
 
 		assertEquals("first in-state's bank must resolve in the env", 5, firstEnvA.bits());
 		assertEquals("second in-state's bank must resolve in the env", 9, secondEnvA.bits());
@@ -390,7 +390,7 @@ public class CallerSideMirrorHooksProgramTest extends AbstractBundledLanguageTes
 			callerHooks.resolveLoad(instructionAt("0x8000"), builder.addr("0x42"),
 				BankState.fullyKnown(0x0F, 5)));
 
-		BankState mirrored = callerHooks.resolveMirrorLoad(instructionAt("0x8000"),
+		PartialByte mirrored = callerHooks.resolveMirrorLoad(instructionAt("0x8000"),
 			builder.addr("0x42"), BankState.fullyKnown(0x0F, 5));
 		assertNotNull("a ROM_IDENTIFYING mirror on a shift=0 board must resolve", mirrored);
 		assertEquals(5, mirrored.bits() & 0x0F);

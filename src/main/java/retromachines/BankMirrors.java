@@ -348,26 +348,26 @@ public final class BankMirrors {
 		 * @param fieldKnown the tracked field's known-bits mask, lifted to bit 0
 		 * @param fieldBits  the tracked field's bits, lifted to bit 0
 		 * @param fieldMask  the tracked field's own width mask, e.g. {@code (1 << width) - 1}
-		 * @return the resolved byte, or {@link BankState#unknown()} when the proof does not reach it
+		 * @return the resolved byte, or {@link PartialByte#unknown()} when the proof does not reach it
 		 */
-		BankState byteFor(int fieldKnown, int fieldBits, int fieldMask) {
+		PartialByte byteFor(int fieldKnown, int fieldBits, int fieldMask) {
 			if (isBiased()) {
-				return BankState.unknown(); // a biased byte is a physical-bank alias, not a value
+				return PartialByte.unknown(); // a biased byte is a physical-bank alias, not a value
 			}
 			int lowMask = (1 << shift) - 1;
 			if ((fieldKnown & lowMask) != lowMask || (fieldBits & lowMask) != low) {
-				return BankState.unknown();
+				return PartialByte.unknown();
 			}
 			for (int bank : realized) {
 				if ((bank & fieldKnown & fieldMask) == (fieldBits & fieldKnown & fieldMask) &&
 					!verified.contains(bank)) {
-					return BankState.unknown();
+					return PartialByte.unknown();
 				}
 			}
 			int byteMaskOut = fieldMask >> shift;
-			int known = ((fieldKnown >> shift) & byteMaskOut) | (~byteMaskOut & 0xFF);
+			int known = ((fieldKnown >> shift) & byteMaskOut) | ~byteMaskOut; // PartialByte clips to the byte
 			int bits = (fieldBits >> shift) & byteMaskOut;
-			return new BankState(known, bits);
+			return new PartialByte(known, bits);
 		}
 	}
 

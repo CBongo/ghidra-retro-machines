@@ -264,13 +264,13 @@ final class HelperArgumentRecovery {
 		}
 
 		@Override
-		public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 				BankState inStateAtStore) {
 			return base.resolveLoad(loadInstr, resolvedTarget, inStateAtStore);
 		}
 
 		@Override
-		public BankState resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
+		public PartialByte resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
 				BankState inStateAtStore) {
 			return base.resolveMirrorLoad(loadInstr, resolvedTarget, inStateAtStore);
 		}
@@ -401,6 +401,10 @@ final class HelperArgumentRecovery {
 			return new CallEffect(BankState.unknown(), helper.effectMask());
 		}
 		int stateMask = helper.effectMask() >>> helper.lsb();
+		// The scanner takes a BYTE mask (bead grm-ze06.1): which bits of the stored byte this
+		// helper's mechanism consumes. stateMask stays the mechanism's field-local width, which
+		// is what foldDeposits/depositHelperArgument speak.
+		int byteMask = argumentByteMask(helper, stateMask);
 		// The call's tracked in-state, narrowed to THIS helper's mechanism's field-local
 		// [0, width) space -- computed once, up front, rather than where the pre-grm-mej.3 code
 		// first needed it (just before the depositHelperArgument call below). Every caller-side
@@ -426,8 +430,8 @@ final class HelperArgumentRecovery {
 		StoredValueScanner.Hooks callerHooks =
 			oracleHooks == null ? callerHooksFor(helper) : oracleHooks;
 		StoredValueScanner.Scan registerScan = StoredValueScanner.resolveStoredValueScan(program,
-			callInstr, reg, localIn, stateMask, callerHooks, path);
-		BankState local = registerScan.value();
+			callInstr, reg, localIn, byteMask, callerHooks, path);
+		PartialByte local = registerScan.value();
 		// bead grm-yflf: the register scan ended on a plain read-back of a live-bank mirror --
 		// the caller-side restore shape (megaman2 ca12/cb60/d0c3). Kept only while the register
 		// answer is the one that counts: the memory-argument fallbacks below replace the value
@@ -513,9 +517,9 @@ final class HelperArgumentRecovery {
 		if ((helper.strategy() == null || helper.strategy().consumesHelperArgument()) &&
 			!argumentSurvives) {
 			Address inbound = inboundArgumentCell(program, helper, reg);
-			BankState viaCell = inbound == null ? BankState.unknown()
+			PartialByte viaCell = inbound == null ? PartialByte.unknown()
 					: StoredValueScanner.callerCellValue(program, callInstr, inbound, localIn,
-						stateMask, callerHooks, path);
+						byteMask, callerHooks, path);
 			// Partial knowledge counts, matching how combine() and setFieldFromByte already treat
 			// a per-bit answer. Mirror-aware as of grm-mej.3 item 4 for the same reason the
 			// caller-side register scan above is: this scan runs in the CALLER, outside any
@@ -525,13 +529,13 @@ final class HelperArgumentRecovery {
 			// provably different cell than `inbound`; what changed is only that a LOAD of a mirror
 			// encountered on the way there can now resolve instead of declining outright.
 			local = viaCell.knownMask() != 0 ? viaCell
-					: valueSuppliedInsideHelper(program, helper, reg, stateMask);
+					: valueSuppliedInsideHelper(program, helper, reg, byteMask);
 		}
 		Instruction switchSite = helper.switchSite() == null ? null
 				: program.getListing().getInstructionAt(helper.switchSite());
 		if (helper.strategy() == null || switchSite == null) {
 			// grm-mej.7: no deposit here to check a reload-kept read-back against -- drop it.
-			return new CallEffect(position(local, helper.lsb(), helper.effectMask()),
+			return new CallEffect(position(fieldFromArgumentByte(local, stateMask), helper.lsb(), helper.effectMask()),
 				helper.effectMask(), local.knownMask() != 0, definitelyNoInboundArgument, false,
 				restoreCell, reloadTransform != null ||
 					(readBack != null && encodedIdentifyingCell(helper, readBack.cell()))
@@ -654,7 +658,7 @@ final class HelperArgumentRecovery {
 				envCache.put(key, callerRegs);
 			}
 		}
-		Fold fold = foldDeposits(program, helper, switchSite, BankState.unknown(), localIn,
+		Fold fold = foldDeposits(program, helper, switchSite, PartialByte.unknown(), localIn,
 			stateMask, callerRegs);
 		BankSwitchStrategy.HelperDeposit deposit = fold.deposit();
 		return new CallEffect(position(deposit.value(), helper.lsb(), helper.effectMask()),
@@ -768,7 +772,7 @@ final class HelperArgumentRecovery {
 	 * {@code argValue}; the unthreaded deposit is used only when nothing precedes it.
 	 */
 	private static Fold foldDeposits(Program program, HelperModel helper, Instruction switchSite,
-			BankState argValue, BankState localIn, int stateMask, RegisterEnv callerRegs) {
+			PartialByte argValue, BankState localIn, int stateMask, RegisterEnv callerRegs) {
 		BankSwitchStrategy strategy = helper.strategy();
 		BankSwitchStrategy.HelperDeposit primary = strategy.depositHelperArgument(program,
 			switchSite, argValue, localIn, stateMask, callerRegs);
@@ -804,7 +808,7 @@ final class HelperArgumentRecovery {
 					// exactly the kind of guess this engine refuses: skip it, owning nothing.
 					continue;
 				}
-				deposit = strategy.depositHelperArgument(program, site, BankState.unknown(),
+				deposit = strategy.depositHelperArgument(program, site, PartialByte.unknown(),
 					threadedIn, stateMask, callerRegs);
 			}
 			int siteOwned = deposit.ownedMask();
@@ -1360,17 +1364,40 @@ final class HelperArgumentRecovery {
 	 * refinement, since "the helper reads RAM" was never the real question. "Whose byte is in that
 	 * RAM" is.
 	 */
-	private static BankState valueSuppliedInsideHelper(Program program, HelperModel helper,
-			char reg, int stateMask) {
+	private static PartialByte valueSuppliedInsideHelper(Program program, HelperModel helper,
+			char reg, int byteMask) {
 		Address readAt = helperValueSite(helper);
 		Instruction site = readAt == null ? null : program.getListing().getInstructionAt(readAt);
 		if (site == null) {
-			return BankState.unknown();
+			return PartialByte.unknown();
 		}
-		RegisterEnv insideOnly = new RegisterEnv(insideHelperEntry(helper), BankState.unknown(),
-			BankState.unknown(), BankState.unknown());
+		RegisterEnv insideOnly = new RegisterEnv(insideHelperEntry(helper), PartialByte.unknown(),
+			PartialByte.unknown(), PartialByte.unknown());
 		return StoredValueScanner.resolveStoredValue(program, site, reg, BankState.unknown(),
-			stateMask, NO_HOOKS, insideOnly);
+			byteMask, NO_HOOKS, insideOnly);
+	}
+
+	/**
+	 * The BYTE mask the caller-side scans of {@code helper}'s argument run at (bead grm-ze06.1):
+	 * which bits of the argument byte its mechanism consumes, as the helper's strategy answers
+	 * ({@link BankSwitchStrategy#argumentByteMask}), or the strategy-less default
+	 * ({@link BankSwitchStrategy#defaultArgumentByteMask}) for a model with none.
+	 */
+	private static int argumentByteMask(HelperModel helper, int stateMask) {
+		return helper.strategy() == null
+				? BankSwitchStrategy.defaultArgumentByteMask(stateMask)
+				: helper.strategy().argumentByteMask(stateMask);
+	}
+
+	/**
+	 * The BYTE-to-FIELD conversion for a helper that has no strategy to interpret its argument
+	 * (the no-strategy fallback of {@link #recoverCallArgument}, bead grm-ze06.1): the caller's
+	 * argument byte IS the mechanism's field value, verbatim, reduced to the field's width. This
+	 * was the unnamed {@code position(local, ...)} over a byte-typed {@code BankState}; it is the
+	 * same conversion {@link BankSwitchStrategy#depositHelperArgument}'s default makes.
+	 */
+	private static BankState fieldFromArgumentByte(PartialByte argument, int stateMask) {
+		return BankSwitchStrategy.verbatimFieldFromByte(argument, stateMask);
 	}
 
 	/**
@@ -2230,22 +2257,22 @@ final class HelperArgumentRecovery {
 		// helper; it deliberately carries no arms of its own (see the eight-argument
 		// recoverCallArgument). The caller-side scans that populate it do walk the arms.
 		StoredValueScanner.Scan aScan = survivingScan(program, callInstr, 'A', unwalked, localIn,
-			path, callerHooks, 0xFF);
+			path, callerHooks, PartialByte.BYTE_MASK);
 		StoredValueScanner.Scan xScan = survivingScan(program, callInstr, 'X', unwalked, localIn,
-			path, callerHooks, 0xFF);
+			path, callerHooks, PartialByte.BYTE_MASK);
 		StoredValueScanner.Scan yScan = survivingScan(program, callInstr, 'Y', unwalked, localIn,
-			path, callerHooks, 0xFF);
+			path, callerHooks, PartialByte.BYTE_MASK);
 		Map<Character, StoredValueScanner.ReadBack> readBacks = new HashMap<>();
 		// bead grm-ld68: classification at the MECHANISM's own field mask, separately from the
 		// 0xFF-masked scans above -- see readBackFor's javadoc for why the wider scan alone
 		// cannot be trusted here.
-		int stateMask = helper.effectMask() >>> helper.lsb();
+		int byteMask = argumentByteMask(helper, helper.effectMask() >>> helper.lsb());
 		readBackFor(readBacks, 'A', aScan, program, callInstr, unwalked, localIn, path,
-			callerHooks, stateMask);
+			callerHooks, byteMask);
 		readBackFor(readBacks, 'X', xScan, program, callInstr, unwalked, localIn, path,
-			callerHooks, stateMask);
+			callerHooks, byteMask);
 		readBackFor(readBacks, 'Y', yScan, program, callInstr, unwalked, localIn, path,
-			callerHooks, stateMask);
+			callerHooks, byteMask);
 		return new RegisterEnv(entryAddr, crossableJoin, aScan.value(), xScan.value(),
 			yScan.value()).withReadBacks(readBacks);
 	}
@@ -2280,14 +2307,14 @@ final class HelperArgumentRecovery {
 	private static void readBackFor(Map<Character, StoredValueScanner.ReadBack> readBacks,
 			char reg, StoredValueScanner.Scan wideScan, Program program, Instruction callInstr,
 			List<PrologueSegment> unwalked, BankState localIn, RegisterEnv path,
-			StoredValueScanner.Hooks callerHooks, int stateMask) {
+			StoredValueScanner.Hooks callerHooks, int byteMask) {
 		if (wideScan.stop() == BankSwitchStrategy.ValueStop.RESTORED_BANK
 				&& wideScan.readBack() != null) {
 			readBacks.put(reg, wideScan.readBack());
 			return;
 		}
 		StoredValueScanner.Scan narrowScan = survivingScan(program, callInstr, reg, unwalked,
-			localIn, path, callerHooks, stateMask);
+			localIn, path, callerHooks, byteMask);
 		if (narrowScan.stop() == BankSwitchStrategy.ValueStop.RESTORED_BANK
 				&& narrowScan.readBack() != null) {
 			readBacks.put(reg, narrowScan.readBack());
@@ -2399,7 +2426,7 @@ final class HelperArgumentRecovery {
 			char reg, List<PrologueSegment> unwalked, BankState localIn, RegisterEnv path,
 			StoredValueScanner.Hooks callerHooks, int mask) {
 		if (!unwalked.isEmpty() && !argumentSurvivesPrologue(program, unwalked, reg)) {
-			return new StoredValueScanner.Scan(BankState.unknown(),
+			return new StoredValueScanner.Scan(PartialByte.unknown(),
 				BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 		}
 		// bead grm-ld68: keep the Scan (not just its value) so a RESTORED_BANK stop's ReadBack
@@ -2653,7 +2680,7 @@ final class HelperArgumentRecovery {
 		}
 
 		@Override
-		public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 				BankState inStateAtStore) {
 			return null;
 		}

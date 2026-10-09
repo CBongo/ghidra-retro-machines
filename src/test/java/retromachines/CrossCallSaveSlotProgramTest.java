@@ -67,7 +67,7 @@ public class CrossCallSaveSlotProgramTest extends AbstractBundledLanguageTest {
 		builder.setBytes(address, hex, true);
 	}
 
-	private void assertBank(int expected, BankState actual) {
+	private void assertBank(int expected, PartialByte actual) {
 		assertEquals("tracked bits not fully known: " + actual, 0xFF, actual.knownMask());
 		assertEquals(expected, actual.bits());
 	}
@@ -89,7 +89,7 @@ public class CrossCallSaveSlotProgramTest extends AbstractBundledLanguageTest {
 			}
 
 			@Override
-			public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+			public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 					BankState inStateAtStore) {
 				return null;
 			}
@@ -607,7 +607,7 @@ public class CrossCallSaveSlotProgramTest extends AbstractBundledLanguageTest {
 			}
 
 			@Override
-			public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+			public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 					BankState inStateAtStore) {
 				return null;
 			}
@@ -640,7 +640,7 @@ public class CrossCallSaveSlotProgramTest extends AbstractBundledLanguageTest {
 			}
 
 			@Override
-			public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+			public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 					BankState inStateAtStore) {
 				return null;
 			}

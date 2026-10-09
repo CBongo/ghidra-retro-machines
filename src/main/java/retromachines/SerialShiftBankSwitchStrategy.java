@@ -255,7 +255,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 		}
 
 		@Override
-		public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 				BankState inStateAtStore) {
 			// MMC1's shift register is write-only -- nothing reads it back, at any
 			// resolvedTarget.
@@ -297,13 +297,13 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 			}
 
 			@Override
-			public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+			public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 					BankState inStateAtStore) {
 				return hooks.resolveLoad(loadInstr, resolvedTarget, inStateAtStore);
 			}
 
 			@Override
-			public BankState resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
+			public PartialByte resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
 					BankState inStateAtStore) {
 				return mirroredByte(resolvedTarget, inStateAtStore, fields);
 			}
@@ -352,7 +352,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	 * Control is not a coherent program. This is the same refusal, for the same reason, that
 	 * {@code MemoryLatchBankSwitchStrategy.mirroredByte} makes when its {@code shift != 0}.
 	 */
-	private BankState mirroredByte(Address target, BankState inState, List<TargetField> fields) {
+	private PartialByte mirroredByte(Address target, BankState inState, List<TargetField> fields) {
 		if (target == null || !mirrors.is(target, BankMirrors.Kind.ROM_IDENTIFYING)) {
 			return null;
 		}
@@ -447,7 +447,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	private ValueStop entryGap(Program program, Instruction from, char reg, BankState inState,
 			StoredValueScanner.Hooks hooks, Address helperEntry) {
 		StoredValueScanner.Scan atEntry = StoredValueScanner.resolveStoredValueScan(program, from,
-			reg, inState, 0xFF, hooks, RegisterEnv.entryStopOnly(helperEntry));
+			reg, inState, PartialByte.BYTE_MASK, hooks, RegisterEnv.entryStopOnly(helperEntry));
 		return atEntry.stop() == ValueStop.HELPER_ARGUMENT ? ValueStop.HELPER_ARGUMENT
 				: ValueStop.ANALYZER_LIMIT;
 	}
@@ -514,10 +514,10 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 			// interpreted at all (grm-mej.2 increment 3) -- and it must be available HERE, not
 			// only at the write-5 commit below, because this gate runs first and a poison here
 			// wipes the state the commit would have read.
-			BankState storedByte = StoredValueScanner.resolveStoredValue(program, instr, reg,
-				inState, 0xFF, hooksFor(targets.get(targetIndex(offset))));
-			bit7Known = (storedByte.knownMask() & 0x80) != 0;
-			bit7Set = bit7Known && (storedByte.bits() & 0x80) != 0;
+			PartialByte storedByte = StoredValueScanner.resolveStoredValue(program, instr, reg,
+				inState, PartialByte.BYTE_MASK, hooksFor(targets.get(targetIndex(offset))));
+			bit7Known = storedByte.isKnown(7);
+			bit7Set = bit7Known && storedByte.bit(7) != 0;
 		}
 		if (!bit7Known) {
 			return SwitchOutcome.of(poisonAll(inState));
@@ -551,8 +551,8 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 			return SwitchOutcome.noDeposit(inState);
 		}
 
-		BankState preChainByte = StoredValueScanner.resolveStoredValue(program, chain.chainStart(),
-			reg, inState, 0xFF, hooksFor(fields));
+		PartialByte preChainByte = StoredValueScanner.resolveStoredValue(program, chain.chainStart(),
+			reg, inState, PartialByte.BYTE_MASK, hooksFor(fields));
 		return SwitchOutcome.of(depositFields(inState, fields, preChainByte));
 	}
 
@@ -621,15 +621,15 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 			}
 
 			@Override
-			public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+			public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 					BankState inStateAtStore) {
 				return hooks.resolveLoad(loadInstr, resolvedTarget, inStateAtStore);
 			}
 
 			@Override
-			public BankState resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
+			public PartialByte resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
 					BankState inStateAtStore) {
-				BankState mirrored = mirroredByte(resolvedTarget, inStateAtStore, fields);
+				PartialByte mirrored = mirroredByte(resolvedTarget, inStateAtStore, fields);
 				if (mirrored != null) {
 					consulted[0] = true;
 				}
@@ -640,7 +640,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 		if (scanFrom == null) {
 			return false;
 		}
-		StoredValueScanner.resolveStoredValue(program, scanFrom, 'A', siteInState, 0xFF, probe);
+		StoredValueScanner.resolveStoredValue(program, scanFrom, 'A', siteInState, PartialByte.BYTE_MASK, probe);
 		return consulted[0];
 	}
 
@@ -687,7 +687,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	/** Recovers a helper argument for a serial-shift operation. */
 	@Override
 	public HelperDeposit depositHelperArgument(Program program, Instruction switchSite,
-			BankState argValue, BankState inState, int stateMask) {
+			PartialByte argValue, BankState inState, int stateMask) {
 		Integer targetIdx = targetIndexOf(program, switchSite);
 		if (targetIdx == null) {
 			// switchSite isn't a shape this strategy itself recognizes as a commit -- can't
@@ -733,7 +733,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	 *  deposit; only what {@code base} is (the current in-state, or "nothing known" when
 	 *  there is none) differs between callers. */
 	private static BankState depositFields(BankState base, List<TargetField> fields,
-			BankState byteValue) {
+			PartialByte byteValue) {
 		BankState result = base;
 		for (TargetField tf : fields) {
 			BankState fieldValue = extractByteField(byteValue, tf.bits(), tf.shift());
@@ -1005,9 +1005,9 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 		int targetIdx = targetIndex(loop.staOffset());
 		List<TargetField> fields = targets.get(targetIdx);
 
-		BankState seed = StoredValueScanner.resolveStoredValue(program, loop.counterInit(), 'A',
-			inState, 0xFF, hooksFor(fields));
-		boolean bit7KnownClear = (seed.knownMask() & 0x80) != 0 && (seed.bits() & 0x80) == 0;
+		PartialByte seed = StoredValueScanner.resolveStoredValue(program, loop.counterInit(), 'A',
+			inState, PartialByte.BYTE_MASK, hooksFor(fields));
+		boolean bit7KnownClear = seed.isKnown(7) && seed.bit(7) == 0;
 		if (!bit7KnownClear) {
 			return poisonAll(inState);
 		}
@@ -1189,7 +1189,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 		return null;
 	}
 
-	private static BankState extractByteField(BankState byteState, int bits, int shift) {
+	private static BankState extractByteField(PartialByte byteState, int bits, int shift) {
 		int widthMask = (1 << bits) - 1;
 		return new BankState((byteState.knownMask() >>> shift) & widthMask,
 			(byteState.bits() >>> shift) & widthMask);

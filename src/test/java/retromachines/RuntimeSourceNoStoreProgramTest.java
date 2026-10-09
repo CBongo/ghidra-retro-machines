@@ -51,7 +51,7 @@ public class RuntimeSourceNoStoreProgramTest extends AbstractBundledLanguageTest
 		}
 
 		@Override
-		public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 				BankState inStateAtStore) {
 			return null;
 		}

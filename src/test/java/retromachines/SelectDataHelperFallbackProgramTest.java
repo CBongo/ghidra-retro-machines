@@ -114,10 +114,10 @@ public class SelectDataHelperFallbackProgramTest extends AbstractBundledLanguage
 
 		Instruction switchSite = instructionAt("0x9101");
 		RegisterEnv callerRegs = new RegisterEnv(builder.addr("0x9101"),
-			BankState.fullyKnown(0xFF, 0x2A), BankState.unknown(), BankState.unknown());
+			PartialByte.fullyKnown(0x2A), PartialByte.unknown(), PartialByte.unknown());
 
 		HelperDeposit deposit = strategy().depositHelperArgument(program, switchSite,
-			BankState.unknown(), selectKnownAsOne(), 0xFF, callerRegs);
+			PartialByte.unknown(), selectKnownAsOne(), 0xFF, callerRegs);
 
 		assertEquals("only the routed target field r is owned", 0xF0, deposit.ownedMask());
 		assertEquals("r's 4 bits are fully resolved via the caller's A", 0xF0,
@@ -139,10 +139,10 @@ public class SelectDataHelperFallbackProgramTest extends AbstractBundledLanguage
 		builder.setBytes("0x9101", "8d 01 90", true); // STA $9001 <- entry == switchSite, odd = data write
 
 		Instruction switchSite = instructionAt("0x9101");
-		BankState argValue = BankState.fullyKnown(0xFF, 0x33);
+		PartialByte argValue = PartialByte.fullyKnown(0x33);
 		BankState inState = selectKnownAsOne();
 		RegisterEnv misleadingCallerRegs = new RegisterEnv(builder.addr("0x9101"),
-			BankState.fullyKnown(0xFF, 0x99), BankState.unknown(), BankState.unknown());
+			PartialByte.fullyKnown(0x99), PartialByte.unknown(), PartialByte.unknown());
 
 		SelectDataBankSwitchStrategy strategy = strategy();
 		HelperDeposit viaEnv = strategy.depositHelperArgument(program, switchSite, argValue,

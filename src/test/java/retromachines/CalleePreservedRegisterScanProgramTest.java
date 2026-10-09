@@ -48,7 +48,7 @@ public class CalleePreservedRegisterScanProgramTest extends AbstractBundledLangu
 		}
 
 		@Override
-		public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 				BankState inStateAtStore) {
 			return null;
 		}
@@ -90,9 +90,9 @@ public class CalleePreservedRegisterScanProgramTest extends AbstractBundledLangu
 
 	/** The byte the scanner resolves for the store at {@code storeAddr}, or null if not fully known. */
 	private Integer storedA(String storeAddr) {
-		BankState v = StoredValueScanner.resolveStoredValueScan(program, at(storeAddr), 'A',
+		PartialByte v = StoredValueScanner.resolveStoredValueScan(program, at(storeAddr), 'A',
 			BankState.unknown(), 0xFF, NO_HOOKS, RegisterEnv.NONE).value();
-		return (v.knownMask() & 0xFF) == 0xFF ? v.bits() & 0xFF : null;
+		return v.exact();
 	}
 
 	private Integer constant(String instrAddr, char reg) {
@@ -208,10 +208,10 @@ public class CalleePreservedRegisterScanProgramTest extends AbstractBundledLangu
 		}
 
 		@Override
-		public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 				BankState inStateAtStore) {
 			loadsAsked++;
-			return inStateAtStore;
+			return new PartialByte(inStateAtStore.knownMask(), inStateAtStore.bits());
 		}
 
 		@Override
@@ -221,7 +221,7 @@ public class CalleePreservedRegisterScanProgramTest extends AbstractBundledLangu
 	}
 
 	/** LDA $0300 / JSR $C100 (bare RTS) / STA $0200; resolved with the store's state = $77. */
-	private BankState loadAcrossPreservingCall(StateEchoHooks hooks) throws Exception {
+	private PartialByte loadAcrossPreservingCall(StateEchoHooks hooks) throws Exception {
 		code("0xc000", "ad 00 03 20 00 c1 8d 00 02");
 		code("0xc100", "60");
 		return StoredValueScanner.resolveStoredValueScan(program, at("0xc006"), 'A',
@@ -231,16 +231,16 @@ public class CalleePreservedRegisterScanProgramTest extends AbstractBundledLangu
 	@Test
 	public void loadBeforeAPreservingCallUsesTheStateAtTheCall() throws Exception {
 		StateEchoHooks hooks = new StateEchoHooks(BankState.fullyKnown(0xFF, 0x22));
-		BankState v = loadAcrossPreservingCall(hooks);
+		PartialByte v = loadAcrossPreservingCall(hooks);
 		assertEquals("resolved under the state at the call, not the store's", 0xFF,
-			v.knownMask() & 0xFF);
-		assertEquals(0x22, v.bits() & 0xFF);
+			v.knownMask());
+		assertEquals(0x22, v.bits());
 	}
 
 	@Test
 	public void loadBeforeAPreservingCallWithNoStateStopsWithoutAskingTheHook() throws Exception {
 		StateEchoHooks hooks = new StateEchoHooks(null);
-		BankState v = loadAcrossPreservingCall(hooks);
+		PartialByte v = loadAcrossPreservingCall(hooks);
 		assertEquals("blind walk must not resolve a state-dependent load", 0, v.knownMask());
 		assertEquals("blind walk must not consult the hook (the ironsword rule)", 0,
 			hooks.loadsAsked);

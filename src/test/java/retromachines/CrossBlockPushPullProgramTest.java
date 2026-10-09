@@ -83,12 +83,12 @@ public class CrossBlockPushPullProgramTest extends AbstractBundledLanguageTest {
 		builder.setBytes(address, hex, true);
 	}
 
-	private void assertBank(int expected, BankState actual) {
+	private void assertBank(int expected, PartialByte actual) {
 		assertEquals("tracked bits not fully known: " + actual, 0xFF, actual.knownMask());
 		assertEquals(expected, actual.bits());
 	}
 
-	private void assertUnresolved(BankState actual) {
+	private void assertUnresolved(PartialByte actual) {
 		assertEquals("expected no tracked bit to be pinned down, got " + actual, 0,
 			actual.knownMask());
 	}
@@ -106,7 +106,7 @@ public class CrossBlockPushPullProgramTest extends AbstractBundledLanguageTest {
 		}
 
 		@Override
-		public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 				BankState inStateAtStore) {
 			return null;
 		}
@@ -132,7 +132,7 @@ public class CrossBlockPushPullProgramTest extends AbstractBundledLanguageTest {
 			}
 
 			@Override
-			public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+			public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 					BankState inStateAtStore) {
 				return null;
 			}
@@ -418,7 +418,7 @@ public class CrossBlockPushPullProgramTest extends AbstractBundledLanguageTest {
 			}
 
 			@Override
-			public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+			public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 					BankState inStateAtStore) {
 				return null;
 			}
@@ -527,7 +527,7 @@ public class CrossBlockPushPullProgramTest extends AbstractBundledLanguageTest {
 			}
 
 			@Override
-			public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+			public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 					BankState inStateAtStore) {
 				return null;
 			}

@@ -99,7 +99,7 @@ public class PushPullValueCarryingProgramTest extends AbstractBundledLanguageTes
 		}
 
 		@Override
-		public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 				BankState inStateAtStore) {
 			return null;
 		}
@@ -305,7 +305,7 @@ public class PushPullValueCarryingProgramTest extends AbstractBundledLanguageTes
 		builder.setBytes("0xff1c", "ad 03 01", true); // LDA $0103  -- forwards through the stack page
 		builder.setBytes("0xff1f", "8d ff ff", true); // STA $FFFF
 
-		BankState result = StoredValueScanner.resolveStoredValue(program, instructionAt("0xff1f"),
+		PartialByte result = StoredValueScanner.resolveStoredValue(program, instructionAt("0xff1f"),
 			'A', BankState.unknown(), 0xFF, NO_HOOKS);
 
 		assertEquals("tracked bits not fully known: " + result, 0xFF, result.knownMask());
@@ -366,14 +366,14 @@ public class PushPullValueCarryingProgramTest extends AbstractBundledLanguageTes
 			}
 
 			@Override
-			public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+			public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 					BankState inStateAtStore) {
-				return resolvedTarget != null && resolvedTarget.equals(mirrorCell) ? inStateAtStore
+				return resolvedTarget != null && resolvedTarget.equals(mirrorCell) ? new PartialByte(inStateAtStore.knownMask(), inStateAtStore.bits())
 						: null;
 			}
 		};
 
-		BankState result = StoredValueScanner.resolveStoredValue(program,
+		PartialByte result = StoredValueScanner.resolveStoredValue(program,
 			instructionAt("0x8007"), 'A', BankState.fullyKnown(0xFF, 0x42), 0xFF, hooks);
 
 		assertEquals("a mechanism write between the PHA and the PLA must abandon the pairing -- "

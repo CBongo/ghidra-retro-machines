@@ -100,7 +100,7 @@ public class PcodeConstantSemanticsDifferentialTest extends AbstractBundledLangu
 		}
 
 		@Override
-		public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 				BankState inStateAtStore) {
 			return null;
 		}
@@ -114,10 +114,10 @@ public class PcodeConstantSemanticsDifferentialTest extends AbstractBundledLangu
 		}
 
 		@Override
-		public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 				BankState inStateAtStore) {
 			return resolvedTarget != null && resolvedTarget.getOffset() == 0x9000
-					? BankState.fullyKnown(0xFF, 0x3C)
+					? PartialByte.fullyKnown(0x3C)
 					: null;
 		}
 	};
@@ -130,10 +130,10 @@ public class PcodeConstantSemanticsDifferentialTest extends AbstractBundledLangu
 		}
 
 		@Override
-		public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 				BankState inStateAtStore) {
 			return resolvedTarget != null && resolvedTarget.getOffset() == 0x0010
-					? BankState.fullyKnown(0xFF, 0x7A)
+					? PartialByte.fullyKnown(0x7A)
 					: null;
 		}
 	};

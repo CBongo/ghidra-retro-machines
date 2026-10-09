@@ -179,7 +179,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 		}
 
 		@Override
-		public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 				BankState inStateAtStore) {
 			// This strategy resolves no load as a bank-INVARIANT constant. The select/data
 			// registers themselves are write-only -- a read at $8000-$9FFF hits the ROM
@@ -194,7 +194,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 		}
 
 		@Override
-		public BankState resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
+		public PartialByte resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
 				BankState inStateAtStore) {
 			return mirroredByte(resolvedTarget, inStateAtStore);
 		}
@@ -234,13 +234,13 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 		}
 
 		@Override
-		public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 				BankState inStateAtStore) {
 			return null; // scope discipline -- see BankSwitchStrategy.callerSideHooks()
 		}
 
 		@Override
-		public BankState resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
+		public PartialByte resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
 				BankState inStateAtStore) {
 			return mirroredByte(resolvedTarget, inStateAtStore);
 		}
@@ -311,7 +311,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	 * which needs no value at all and is filed separately. {@code SAVE_SLOT} and {@code INPUT}
 	 * decline as they do everywhere (H2).
 	 */
-	private BankState mirroredByte(Address target, BankState inState) {
+	private PartialByte mirroredByte(Address target, BankState inState) {
 		if (target == null || mirrors.isEmpty()) {
 			return null;
 		}
@@ -452,7 +452,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 		}
 		int mask;
 		if ((offset & 1) == 0) {
-			mask = 0xFF;
+			mask = PartialByte.BYTE_MASK;
 		}
 		else {
 			Integer selectValue = fieldValueIfFullyKnown(siteInState, selectField);
@@ -470,15 +470,15 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 			}
 
 			@Override
-			public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+			public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 					BankState inStateAtStore) {
 				return hooks.resolveLoad(loadInstr, resolvedTarget, inStateAtStore);
 			}
 
 			@Override
-			public BankState resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
+			public PartialByte resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
 					BankState inStateAtStore) {
-				BankState mirrored = hooks.resolveMirrorLoad(loadInstr, resolvedTarget,
+				PartialByte mirrored = hooks.resolveMirrorLoad(loadInstr, resolvedTarget,
 					inStateAtStore);
 				if (mirrored != null) {
 					consulted[0] = true;
@@ -537,7 +537,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 
 		int mask;
 		if ((offset & 1) == 0) {
-			mask = 0xFF;
+			mask = PartialByte.BYTE_MASK;
 		}
 		else {
 			Integer selectValue = fieldValueIfFullyKnown(inState, selectField);
@@ -580,8 +580,8 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	 */
 	private BankState computeSelectWrite(Program program, Instruction instr, Character reg,
 			BankState inState) {
-		BankState stored = reg == null ? BankState.unknown()
-				: StoredValueScanner.resolveStoredValue(program, instr, reg, inState, 0xFF, hooks);
+		PartialByte stored = reg == null ? PartialByte.unknown()
+				: StoredValueScanner.resolveStoredValue(program, instr, reg, inState, PartialByte.BYTE_MASK, hooks);
 
 		BankState result =
 			setFieldFromByte(inState, selectField, extractByteField(stored, selectByteMask, selectByteShift));
@@ -622,9 +622,9 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 		}
 
 		int byteMask = (1 << target.width()) - 1;
-		BankState stored = reg == null ? BankState.unknown()
+		PartialByte stored = reg == null ? PartialByte.unknown()
 				: StoredValueScanner.resolveStoredValue(program, instr, reg, inState, byteMask, hooks);
-		return SwitchOutcome.of(setFieldFromByte(inState, target, stored));
+		return SwitchOutcome.of(setFieldFromByte(inState, target, fieldFromDataByte(stored)));
 	}
 
 	/**
@@ -688,7 +688,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	/** Recovers a helper argument using the selector/data state model. */
 	@Override
 	public HelperDeposit depositHelperArgument(Program program, Instruction switchSite,
-			BankState argValue, BankState inState, int stateMask) {
+			PartialByte argValue, BankState inState, int stateMask) {
 		Long offset = writesInRange(switchSite);
 		if (offset == null) {
 			// switchSite isn't a shape this strategy itself recognizes as a mechanism
@@ -700,13 +700,12 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 
 		if ((offset & 1) == 0) {
 			BankState empty = new BankState(0, 0);
-			BankState stored = new BankState(argValue.knownMask() & 0xFF, argValue.bits() & 0xFF);
 			BankState value =
-				setFieldFromByte(empty, selectField, extractByteField(stored, selectByteMask, selectByteShift));
+				setFieldFromByte(empty, selectField, extractByteField(argValue, selectByteMask, selectByteShift));
 			int owned = selectField.mask();
 			if (modeField != null) {
 				value =
-					setFieldFromByte(value, modeField, extractByteField(stored, modeByteMask, modeByteShift));
+					setFieldFromByte(value, modeField, extractByteField(argValue, modeByteMask, modeByteShift));
 				owned |= modeField.mask();
 			}
 			return new HelperDeposit(owned, value);
@@ -736,7 +735,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 			return new HelperDeposit(0, new BankState(0, 0));
 		}
 
-		BankState value = setFieldFromByte(new BankState(0, 0), target, argValue);
+		BankState value = setFieldFromByte(new BankState(0, 0), target, fieldFromDataByte(argValue));
 		return new HelperDeposit(target.mask(), value);
 	}
 
@@ -770,13 +769,13 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	 */
 	@Override
 	public HelperDeposit depositHelperArgument(Program program, Instruction switchSite,
-			BankState argValue, BankState inState, int stateMask, RegisterEnv callerRegs) {
-		BankState effective = argValue;
+			PartialByte argValue, BankState inState, int stateMask, RegisterEnv callerRegs) {
+		PartialByte effective = argValue;
 		if (argValue.knownMask() == 0) {
 			Character reg = StoredValueScanner.storeRegister(switchSite);
 			if (reg != null) {
-				BankState evaluated = StoredValueScanner.resolveStoredValue(program, switchSite,
-					reg, inState, 0xFF, hooks, callerRegs);
+				PartialByte evaluated = StoredValueScanner.resolveStoredValue(program, switchSite,
+					reg, inState, PartialByte.BYTE_MASK, hooks, callerRegs);
 				if (evaluated.knownMask() != 0) {
 					effective = evaluated;
 				}
@@ -864,8 +863,8 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 				if (reg == null) {
 					return null;
 				}
-				BankState stored = StoredValueScanner.resolveStoredValue(program, prev, reg,
-					BankState.unknown(), 0xFF, hooks);
+				PartialByte stored = StoredValueScanner.resolveStoredValue(program, prev, reg,
+					BankState.unknown(), PartialByte.BYTE_MASK, hooks);
 				BankState value = setFieldFromByte(new BankState(0, 0), selectField,
 					extractByteField(stored, selectByteMask, selectByteShift));
 				return fieldValueIfFullyKnown(value, selectField);
@@ -928,13 +927,21 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 		return null;
 	}
 
-	/** Extracts the sub-bits {@code byteMask} (already shifted to {@code byteShift}) out of
-	 *  a byte-space {@link BankState}, repositioned to bit 0 -- same convention as
-	 *  {@link MemoryLatchBankSwitchStrategy}'s final field deposit. */
-	private static BankState extractByteField(BankState byteState, int byteMask, int byteShift) {
+	/** The BYTE-to-FIELD conversion for a select write (bead grm-ze06.1): extracts the sub-bits
+	 *  {@code byteMask} (already shifted to {@code byteShift}) out of the written byte,
+	 *  repositioned to bit 0 -- same convention as {@link MemoryLatchBankSwitchStrategy}'s
+	 *  {@code fieldFromStoredByte}. */
+	private static BankState extractByteField(PartialByte byteValue, int byteMask, int byteShift) {
 		int widthMask = byteMask >>> byteShift;
-		return new BankState((byteState.knownMask() >>> byteShift) & widthMask,
-			(byteState.bits() >>> byteShift) & widthMask);
+		return new BankState((byteValue.knownMask() >>> byteShift) & widthMask,
+			(byteValue.bits() >>> byteShift) & widthMask);
+	}
+
+	/** The BYTE-to-FIELD conversion for a data write (bead grm-ze06.1): the written byte IS the
+	 *  selected register's value, verbatim, and {@link #setFieldFromByte} then reduces it to the
+	 *  field's width. This was an implicit reuse of the byte's record as field-local state. */
+	private static BankState fieldFromDataByte(PartialByte dataByte) {
+		return new BankState(dataByte.knownMask(), dataByte.bits());
 	}
 
 	/** Fully known iff every bit of {@code field}'s mask is known in {@code state}; returns

@@ -485,9 +485,59 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * @return the field-local deposit made by this call
 	 */
 	default HelperDeposit depositHelperArgument(Program program, Instruction switchSite,
-			BankState argValue, BankState inState, int stateMask) {
-		return new HelperDeposit(stateMask,
-			new BankState(argValue.knownMask() & stateMask, argValue.bits() & stateMask));
+			PartialByte argValue, BankState inState, int stateMask) {
+		return new HelperDeposit(stateMask, verbatimFieldFromByte(argValue, stateMask));
+	}
+
+	/**
+	 * The BYTE-to-FIELD conversion the default {@link #depositHelperArgument} makes (bead
+	 * grm-ze06.1): the recovered argument byte IS the mechanism's field value, verbatim, reduced
+	 * to {@code stateMask}. Named so the byte {@code PartialByte} -> field-local {@code BankState}
+	 * step is visible rather than an implicit reinterpretation of one record; a strategy that
+	 * decodes its field some other way ({@code SelectDataBankSwitchStrategy},
+	 * {@code SerialShiftBankSwitchStrategy}) has its own named conversion instead.
+	 *
+	 * @param argument the argument byte
+	 * @param stateMask the mechanism's field-local width mask
+	 * @return the field-local state the byte deposits verbatim
+	 */
+	static BankState verbatimFieldFromByte(PartialByte argument, int stateMask) {
+		return new BankState(argument.knownMask() & stateMask, argument.bits() & stateMask);
+	}
+
+	/**
+	 * Which bits of the written BYTE this mechanism's argument deposit consumes -- the mask the
+	 * caller-side scans of a helper's argument register run at (bead grm-ze06.1). It replaces
+	 * {@code HelperArgumentRecovery} passing {@code effectMask >>> lsb}, a MECHANISM-width mask,
+	 * straight into a byte scan: MMC3's select-data field is {@code 0xFFFF} wide and MMC1's
+	 * serial-shift field {@code 0x1FF}, and the only thing that made those work as byte masks
+	 * was an incidental clip to eight bits inside the scanner.
+	 * <p>
+	 * <b>This preserves today's behaviour exactly, not the ideal one.</b> Every strategy's
+	 * effective value is {@code stateMask & 0xFF}, which is what the default returns:
+	 * register-write (C64 {@code 0x7}, C128 {@code 0xFF}) and memory-latch (width-bit masks, e.g.
+	 * UxROM {@code 0xF}, GxROM {@code 0x3}) are already byte-sized and pass through; select-data
+	 * MMC3 {@code 0xFFFF} -> {@code 0xFF}; serial-shift MMC1 {@code 0x1FF} -> {@code 0xFF}. GxROM
+	 * is a KNOWN LATENT MISMATCH: its field sits at bits [4,6) of the written byte, but the mask
+	 * returned here selects [0,2). That is harmless today (memory-latch ignores the scanned
+	 * argument value) and is tracked by bead grm-hp9s -- fixing it here would change behaviour.
+	 *
+	 * @param stateMask this mechanism's field-local width mask
+	 * @return the byte bits of the written argument this mechanism consumes
+	 */
+	default int argumentByteMask(int stateMask) {
+		return defaultArgumentByteMask(stateMask);
+	}
+
+	/**
+	 * {@link #argumentByteMask}'s default, also used for a helper model that has no strategy:
+	 * the mechanism's field-local width mask, clipped to the one byte a register holds.
+	 *
+	 * @param stateMask the mechanism's field-local width mask
+	 * @return {@code stateMask} reduced to a byte mask
+	 */
+	static int defaultArgumentByteMask(int stateMask) {
+		return stateMask & PartialByte.BYTE_MASK;
 	}
 
 	/**
@@ -526,7 +576,7 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * @return the field-local deposit made by this call
 	 */
 	default HelperDeposit depositHelperArgument(Program program, Instruction switchSite,
-			BankState argValue, BankState inState, int stateMask, RegisterEnv callerRegs) {
+			PartialByte argValue, BankState inState, int stateMask, RegisterEnv callerRegs) {
 		return depositHelperArgument(program, switchSite, argValue, inState, stateMask);
 	}
 
@@ -882,7 +932,7 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 		}
 
 		@Override
-		public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 				BankState inStateAtStore) {
 			return null;
 		}

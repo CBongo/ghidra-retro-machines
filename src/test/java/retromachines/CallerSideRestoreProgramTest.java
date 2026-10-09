@@ -297,9 +297,9 @@ public class CallerSideRestoreProgramTest extends AbstractBundledLanguageTest {
 
 		@Override
 		public HelperDeposit depositHelperArgument(ghidra.program.model.listing.Program program,
-				Instruction switchSite, BankState argValue, BankState inState, int stateMask,
+				Instruction switchSite, PartialByte argValue, BankState inState, int stateMask,
 				RegisterEnv callerRegs) {
-			return new HelperDeposit(stateMask, argValue);
+			return new HelperDeposit(stateMask, new BankState(argValue.knownMask(), argValue.bits()));
 		}
 
 		@Override
@@ -325,15 +325,15 @@ public class CallerSideRestoreProgramTest extends AbstractBundledLanguageTest {
 			}
 
 			@Override
-			public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+			public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 					BankState inStateAtStore) {
 				return null;
 			}
 
 			@Override
-			public BankState resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
+			public PartialByte resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
 					BankState inStateAtStore) {
-				return mirrorCell.equals(resolvedTarget) ? BankState.unknown() : null;
+				return mirrorCell.equals(resolvedTarget) ? PartialByte.unknown() : null;
 			}
 		};
 	}
@@ -695,8 +695,8 @@ public class CallerSideRestoreProgramTest extends AbstractBundledLanguageTest {
 	/** Hooks answering {@code cell} as a live bank mirror; {@code loadAnswer} comes back from
 	 *  {@code resolveLoad}, {@code mirrorAnswer} from {@code resolveMirrorLoad} (either may be
 	 *  null = decline). */
-	private static StoredValueScanner.Hooks liveMirrorHooks(Address cell, BankState loadAnswer,
-			BankState mirrorAnswer) {
+	private static StoredValueScanner.Hooks liveMirrorHooks(Address cell, PartialByte loadAnswer,
+			PartialByte mirrorAnswer) {
 		return new StoredValueScanner.Hooks() {
 			@Override
 			public boolean isMechanismWrite(Instruction instr) {
@@ -704,13 +704,13 @@ public class CallerSideRestoreProgramTest extends AbstractBundledLanguageTest {
 			}
 
 			@Override
-			public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+			public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 					BankState inStateAtStore) {
 				return cell.equals(resolvedTarget) ? loadAnswer : null;
 			}
 
 			@Override
-			public BankState resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
+			public PartialByte resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
 					BankState inStateAtStore) {
 				return cell.equals(resolvedTarget) ? mirrorAnswer : null;
 			}
@@ -754,7 +754,7 @@ public class CallerSideRestoreProgramTest extends AbstractBundledLanguageTest {
 		Address cell = addr("0xbfff");
 
 		StoredValueScanner.Scan scan = scanStore("0x8203", 0xFFFF,
-			liveMirrorHooks(cell, null, new BankState(0xF9, 0x00)));
+			liveMirrorHooks(cell, null, new PartialByte(0xF9, 0x00)));
 
 		assertEquals(BankSwitchStrategy.ValueStop.RESTORED_BANK, scan.stop());
 		assertEquals("the partial value must survive", 0xF9, scan.value().knownMask());
@@ -772,7 +772,7 @@ public class CallerSideRestoreProgramTest extends AbstractBundledLanguageTest {
 
 		for (int mask : new int[] { 0xFF, 0xFFFF }) {
 			StoredValueScanner.Scan scan = scanStore("0x8213", mask,
-				liveMirrorHooks(addr("0xbfff"), null, new BankState(0xFF, 0x04)));
+				liveMirrorHooks(addr("0xbfff"), null, new PartialByte(0xFF, 0x04)));
 
 			assertEquals("mask " + mask, BankSwitchStrategy.ValueStop.RESOLVED, scan.stop());
 			assertEquals(0xFF, scan.value().knownMask() & 0xFF);
@@ -788,7 +788,7 @@ public class CallerSideRestoreProgramTest extends AbstractBundledLanguageTest {
 		Address cell = addr("0xbfff");
 
 		StoredValueScanner.Scan scan = scanStore("0x8223", 0xFFFF,
-			liveMirrorHooks(cell, new BankState(0xF9, 0x00), null));
+			liveMirrorHooks(cell, new PartialByte(0xF9, 0x00), null));
 
 		assertEquals(BankSwitchStrategy.ValueStop.RESTORED_BANK, scan.stop());
 		assertEquals(0xF9, scan.value().knownMask());
@@ -803,7 +803,7 @@ public class CallerSideRestoreProgramTest extends AbstractBundledLanguageTest {
 		layBfffRead("0x8230", false);
 
 		StoredValueScanner.Scan scan = scanStore("0x8233", 0xFFFF,
-			liveMirrorHooks(addr("0xbfff"), new BankState(0xFF, 0x04), null));
+			liveMirrorHooks(addr("0xbfff"), new PartialByte(0xFF, 0x04), null));
 
 		assertEquals(BankSwitchStrategy.ValueStop.RESOLVED, scan.stop());
 		assertNull(scan.readBack());
@@ -817,8 +817,8 @@ public class CallerSideRestoreProgramTest extends AbstractBundledLanguageTest {
 		Address cell = addr("0xbfff");
 
 		for (StoredValueScanner.Hooks hooks : new StoredValueScanner.Hooks[] {
-			liveMirrorHooks(cell, null, new BankState(0xF9, 0x00)),
-			liveMirrorHooks(cell, new BankState(0xF9, 0x00), null) }) {
+			liveMirrorHooks(cell, null, new PartialByte(0xF9, 0x00)),
+			liveMirrorHooks(cell, new PartialByte(0xF9, 0x00), null) }) {
 			StoredValueScanner.Scan scan = scanStore("0x8245", 0xFFFF, hooks);
 
 			assertTrue("a modified read must not stop RESTORED_BANK",

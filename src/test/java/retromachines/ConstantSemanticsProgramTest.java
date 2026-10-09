@@ -61,7 +61,7 @@ public class ConstantSemanticsProgramTest extends AbstractBundledLanguageTest {
 		}
 
 		@Override
-		public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 				BankState inStateAtStore) {
 			return null;
 		}
@@ -75,10 +75,10 @@ public class ConstantSemanticsProgramTest extends AbstractBundledLanguageTest {
 		}
 
 		@Override
-		public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 				BankState inStateAtStore) {
 			return resolvedTarget != null && resolvedTarget.getOffset() == 0x9000
-					? BankState.fullyKnown(0xFF, 0x3C)
+					? PartialByte.fullyKnown(0x3C)
 					: null;
 		}
 	};

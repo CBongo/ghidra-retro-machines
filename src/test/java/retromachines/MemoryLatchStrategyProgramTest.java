@@ -837,12 +837,12 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		return builder.addr("0xc13f");
 	}
 
-	private RegisterEnv envAt(Address entry, BankState y) {
-		return new RegisterEnv(entry, BankState.unknown(), BankState.unknown(), y);
+	private RegisterEnv envAt(Address entry, PartialByte y) {
+		return new RegisterEnv(entry, PartialByte.unknown(), PartialByte.unknown(), y);
 	}
 
-	private RegisterEnv envAt(Address entry, Address crossableJoin, BankState y) {
-		return new RegisterEnv(entry, crossableJoin, BankState.unknown(), BankState.unknown(), y);
+	private RegisterEnv envAt(Address entry, Address crossableJoin, PartialByte y) {
+		return new RegisterEnv(entry, crossableJoin, PartialByte.unknown(), PartialByte.unknown(), y);
 	}
 
 	/**
@@ -900,8 +900,8 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		layContraWrapper();
 
 		BankSwitchStrategy.HelperDeposit deposit = busConflictLatch().depositHelperArgument(program,
-			instructionAt("0xc142"), BankState.unknown(), BankState.unknown(), 0x0F,
-			envAt(contraWrapperEntry(), contraEntry(), BankState.fullyKnown(0xFF, 0x02)));
+			instructionAt("0xc142"), PartialByte.unknown(), BankState.unknown(), 0x0F,
+			envAt(contraWrapperEntry(), contraEntry(), PartialByte.fullyKnown(0x02)));
 
 		assertEquals("a memory-latch call replaces this mechanism's whole field", 0x0F,
 			deposit.ownedMask());
@@ -924,8 +924,8 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		layContraWrapper();
 
 		BankSwitchStrategy.HelperDeposit deposit = busConflictLatch().depositHelperArgument(program,
-			instructionAt("0xc142"), BankState.unknown(), BankState.unknown(), 0x0F,
-			envAt(contraWrapperEntry(), null, BankState.fullyKnown(0xFF, 0x02)));
+			instructionAt("0xc142"), PartialByte.unknown(), BankState.unknown(), 0x0F,
+			envAt(contraWrapperEntry(), null, PartialByte.fullyKnown(0x02)));
 
 		assertEquals("the call still writes the field -- it is owned, just unresolved", 0x0F,
 			deposit.ownedMask());
@@ -945,8 +945,8 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		layContraWrapper();
 
 		BankSwitchStrategy.HelperDeposit deposit = busConflictLatch().depositHelperArgument(program,
-			instructionAt("0xc142"), BankState.unknown(), BankState.unknown(), 0x0F,
-			envAt(contraWrapperEntry(), contraEntry(), BankState.fullyKnown(0xFF, 0x06)));
+			instructionAt("0xc142"), PartialByte.unknown(), BankState.unknown(), 0x0F,
+			envAt(contraWrapperEntry(), contraEntry(), PartialByte.fullyKnown(0x06)));
 
 		assertEquals(0x0F, deposit.value().knownMask());
 		assertEquals("$FFD0 + Y=6 is the table's bank 6", 0x06, deposit.value().bits());
@@ -963,8 +963,8 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		layContraHelper();
 
 		BankSwitchStrategy.HelperDeposit deposit = busConflictLatch().depositHelperArgument(program,
-			instructionAt("0xc142"), BankState.unknown(), BankState.unknown(), 0x0F,
-			envAt(contraEntry(), BankState.fullyKnown(0xFF, 0x02)));
+			instructionAt("0xc142"), PartialByte.unknown(), BankState.unknown(), 0x0F,
+			envAt(contraEntry(), PartialByte.fullyKnown(0x02)));
 
 		assertEquals("a memory-latch call replaces this mechanism's whole field", 0x0F,
 			deposit.ownedMask());
@@ -985,8 +985,8 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 
 		BankSwitchStrategy.HelperDeposit deposit =
 			busConflictLatch().depositHelperArgument(program, instructionAt("0xc142"),
-				BankState.unknown(), BankState.unknown(), 0x0F,
-				envAt(contraEntry(), BankState.unknown()));
+				PartialByte.unknown(), BankState.unknown(), 0x0F,
+				envAt(contraEntry(), PartialByte.unknown()));
 
 		assertEquals("the call still writes the field -- it is owned, just unresolved", 0x0F,
 			deposit.ownedMask());
@@ -1020,8 +1020,8 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		assertEquals(0x07, noEntryStop.bits());
 
 		BankSwitchStrategy.HelperDeposit deposit = latch.depositHelperArgument(program, switchSite,
-			BankState.unknown(), BankState.unknown(), 0x0F,
-			envAt(contraEntry(), BankState.unknown()));
+			PartialByte.unknown(), BankState.unknown(), 0x0F,
+			envAt(contraEntry(), PartialByte.unknown()));
 
 		assertEquals("must stop at the entry, not adopt the LDY #$07 that precedes it", 0x00,
 			deposit.value().knownMask());
@@ -1056,8 +1056,8 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 			program.getReferenceManager().getReferenceCountTo(builder.addr("0xc153")) > 0);
 
 		BankSwitchStrategy.HelperDeposit deposit = busConflictLatch().depositHelperArgument(program,
-			instructionAt("0xc154"), BankState.unknown(), BankState.unknown(), 0x0F,
-			envAt(builder.addr("0xc150"), BankState.fullyKnown(0xFF, 0x02)));
+			instructionAt("0xc154"), PartialByte.unknown(), BankState.unknown(), 0x0F,
+			envAt(builder.addr("0xc150"), PartialByte.fullyKnown(0x02)));
 
 		assertEquals("an internal join must not be mini-inlined past", 0x00,
 			deposit.value().knownMask());
@@ -1081,10 +1081,10 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		Address entry = builder.addr("0xd846");
 
 		BankSwitchStrategy.HelperDeposit blind = latch.depositHelperArgument(program, restoreSite,
-			BankState.unknown(), BankState.unknown(), 0x0F, envAt(entry, BankState.unknown()));
+			PartialByte.unknown(), BankState.unknown(), 0x0F, envAt(entry, PartialByte.unknown()));
 		BankSwitchStrategy.HelperDeposit seeded = latch.depositHelperArgument(program, restoreSite,
-			BankState.unknown(), BankState.unknown(), 0x0F,
-			envAt(entry, BankState.fullyKnown(0xFF, 0x03)));
+			PartialByte.unknown(), BankState.unknown(), 0x0F,
+			envAt(entry, PartialByte.fullyKnown(0x03)));
 
 		assertEquals(0x0F, blind.ownedMask());
 		assertEquals(0x0F, blind.value().knownMask());
@@ -1104,12 +1104,12 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		layContraHelper();
 
 		MemoryLatchBankSwitchStrategy latch = busConflictLatch();
-		RegisterEnv env = envAt(contraEntry(), BankState.fullyKnown(0xFF, 0x02));
+		RegisterEnv env = envAt(contraEntry(), PartialByte.fullyKnown(0x02));
 
 		BankSwitchStrategy.HelperDeposit fromUnknownArg = latch.depositHelperArgument(program,
-			instructionAt("0xc142"), BankState.unknown(), BankState.unknown(), 0x0F, env);
+			instructionAt("0xc142"), PartialByte.unknown(), BankState.unknown(), 0x0F, env);
 		BankSwitchStrategy.HelperDeposit fromMisleadingArg = latch.depositHelperArgument(program,
-			instructionAt("0xc142"), BankState.fullyKnown(0x0F, 0x0D), BankState.unknown(), 0x0F,
+			instructionAt("0xc142"), PartialByte.of(0x0F, 0x0D), BankState.unknown(), 0x0F,
 			env);
 
 		assertEquals(0x02, fromUnknownArg.value().bits());

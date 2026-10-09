@@ -460,7 +460,7 @@ public class SelectDataMirrorConsumptionProgramTest extends AbstractBundledLangu
 		assertNull("scope discipline: resolveLoad answers nothing caller-side",
 			hooks.resolveLoad(instructionAt("0xe000"), builder.addr("0xa100"), allKnown(6, 0, 2, 4)));
 
-		BankState mirrored = hooks.resolveMirrorLoad(instructionAt("0xe000"),
+		PartialByte mirrored = hooks.resolveMirrorLoad(instructionAt("0xe000"),
 			builder.addr("0xa100"), allKnown(6, 0, 2, 4));
 		assertNotNull(mirrored);
 		assertEquals("the raw byte is R7's bank, upper bits proved zero", 0xFF,

@@ -112,7 +112,7 @@ public class IdentityTableIndexHelperProgramTest extends AbstractBundledLanguage
 		}
 
 		@Override
-		public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 				BankState inStateAtStore) {
 			return null;
 		}
@@ -129,7 +129,7 @@ public class IdentityTableIndexHelperProgramTest extends AbstractBundledLanguage
 		put("0xc002", "a8"); // TAY
 		put("0xc003", "8c 00 80"); // STY $8000
 
-		BankState value = StoredValueScanner.resolveStoredValue(program, instructionAt("0xc003"),
+		PartialByte value = StoredValueScanner.resolveStoredValue(program, instructionAt("0xc003"),
 			'Y', BankState.unknown(), 0xFF, NO_HOOKS);
 		assertEquals(0xFF, value.knownMask());
 		assertEquals(5, value.bits());
@@ -145,7 +145,7 @@ public class IdentityTableIndexHelperProgramTest extends AbstractBundledLanguage
 		put("0xc002", "aa"); // TAX
 		put("0xc003", "8e 00 80"); // STX $8000
 
-		BankState value = StoredValueScanner.resolveStoredValue(program, instructionAt("0xc003"),
+		PartialByte value = StoredValueScanner.resolveStoredValue(program, instructionAt("0xc003"),
 			'X', BankState.unknown(), 0xFF, NO_HOOKS);
 		assertEquals(0xFF, value.knownMask());
 		assertEquals(7, value.bits());
@@ -173,7 +173,7 @@ public class IdentityTableIndexHelperProgramTest extends AbstractBundledLanguage
 			}
 
 			@Override
-			public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+			public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 					BankState inStateAtStore) {
 				return null;
 			}
@@ -209,7 +209,7 @@ public class IdentityTableIndexHelperProgramTest extends AbstractBundledLanguage
 		put("0xc002", "8a"); // TXA
 		put("0xc003", "8d 00 80"); // STA $8000
 
-		BankState value = StoredValueScanner.resolveStoredValue(program, instructionAt("0xc003"),
+		PartialByte value = StoredValueScanner.resolveStoredValue(program, instructionAt("0xc003"),
 			'A', BankState.unknown(), 0xFF, NO_HOOKS);
 		assertEquals("constantRegisterValue's fallback still resolves TXA -- this pins that the "
 				+ "answer comes from THAT evaluator, not from a (wrong) rename onto X", 0xFF,

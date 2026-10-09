@@ -253,7 +253,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 		}
 
 		@Override
-		public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 				BankState inStateAtStore) {
 			// The ROM byte a load with a statically certain target reads is a compile-time
 			// constant when nothing can rebank it out from under us. The target is whatever
@@ -261,11 +261,11 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 			// index (grm-hum); this hook deliberately does not re-derive it.
 			Integer romByte = resolvedTarget == null ? null
 					: bankInvariantRomByte(loadInstr.getProgram(), resolvedTarget);
-			return romByte == null ? null : BankState.fullyKnown(0xFF, romByte);
+			return romByte == null ? null : PartialByte.fullyKnown(romByte);
 		}
 
 		@Override
-		public BankState resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
+		public PartialByte resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
 				BankState inStateAtStore) {
 			return mirroredByte(loadInstr, resolvedTarget, inStateAtStore);
 		}
@@ -323,13 +323,13 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 		}
 
 		@Override
-		public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 				BankState inStateAtStore) {
 			return null; // scope discipline -- see BankSwitchStrategy.callerSideHooks()
 		}
 
 		@Override
-		public BankState resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
+		public PartialByte resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
 				BankState inStateAtStore) {
 			return mirroredByte(loadInstr, resolvedTarget, inStateAtStore);
 		}
@@ -421,7 +421,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * scan loses the value at that shift instruction anyway. Declining says "I cannot interpret
 	 * this", which is true, instead of answering the one bank that is certainly wrong.
 	 */
-	private BankState mirroredByte(Instruction loadInstr, Address target,
+	private PartialByte mirroredByte(Instruction loadInstr, Address target,
 			BankState inStateAtStore) {
 		if (target == null || mirrors.isEmpty()) {
 			return null;
@@ -442,8 +442,8 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 			if (!shadowCoherentAt(loadInstr, target)) {
 				return null; // the shadow has gone stale -- see shadowCoherentAt
 			}
-			return new BankState(((inStateAtStore.knownMask() & mask) << shift) & 0xFF,
-				((inStateAtStore.bits() & mask) << shift) & 0xFF);
+			return new PartialByte((inStateAtStore.knownMask() & mask) << shift,
+				(inStateAtStore.bits() & mask) << shift); // PartialByte clips to the byte
 		}
 		return null; // INPUT, SAVE_SLOT, or not a mirror at all -- see above
 	}
@@ -549,7 +549,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 		if (!writesInRange(instr)) {
 			return null;
 		}
-		StoredValueScanner.Scan scan = evaluateLatchScan(program, instr, path, inState, hooks);
+		LatchEvaluation scan = evaluateLatchScan(program, instr, path, inState, hooks);
 		return SwitchOutcome.of(scan.value(), scan.stop(), scan.readBack());
 	}
 
@@ -562,7 +562,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 		}
 		// The same latch evaluation again, differing only in the entry stop; the value is
 		// discarded, so this can only reclassify. See BankSwitchStrategy.classifyHelperBodyGap.
-		StoredValueScanner.Scan atEntry = evaluateLatchScan(program, switchSite,
+		LatchEvaluation atEntry = evaluateLatchScan(program, switchSite,
 			RegisterEnv.entryStopOnly(helperEntry), inState, hooks);
 		return atEntry.stop() == ValueStop.HELPER_ARGUMENT ? ValueStop.HELPER_ARGUMENT
 				: ValueStop.ANALYZER_LIMIT;
@@ -605,32 +605,50 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * route it through {@code SwitchOutcome.of(value, stop)}, which drops the reason whenever the
 	 * final value knows something.
 	 */
-	private StoredValueScanner.Scan evaluateLatchScan(Program program, Instruction store,
+	private LatchEvaluation evaluateLatchScan(Program program, Instruction store,
 			RegisterEnv env, BankState inState, StoredValueScanner.Hooks hooks) {
 		Character reg = StoredValueScanner.storeRegister(store);
 		if (reg == null) {
 			// The stored register is unidentifiable, so nothing was scanned: our limitation.
-			return new StoredValueScanner.Scan(BankState.unknown(), ValueStop.ANALYZER_LIMIT);
+			return new LatchEvaluation(BankState.unknown(), ValueStop.ANALYZER_LIMIT, null);
 		}
 		StoredValueScanner.Scan scan = StoredValueScanner.resolveStoredValueScan(program, store,
-			reg, inState, 0xFF, hooks, env);
-		BankState stored = scan.value();
+			reg, inState, PartialByte.BYTE_MASK, hooks, env);
+		PartialByte stored = scan.value();
 
 		if (busConflict) {
 			Address target = StoredValueScanner.effectiveOperandTarget(program, store, hooks, env);
 			Integer romByte = target == null ? null : bankInvariantRomByte(program, target);
 			if (romByte != null) {
-				// effective = driven AND rom: rom's 0 bits are known 0 whatever was driven
-				stored = new BankState(stored.knownMask() | (~romByte & 0xFF),
-					stored.bits() & romByte);
+				// effective = driven AND rom: rom's 0 bits are known 0 whatever was driven. This
+				// stays a BYTE-level step, before the byte-to-field conversion below.
+				stored = new PartialByte(stored.knownMask() | ~romByte, stored.bits() & romByte);
 			}
 		}
 
-		// deposit the extracted field at state bits [0, width) -- see class javadoc. readBack
-		// (bead grm-rd6h) rides along unchanged: it names the CELL and the READ, neither of
-		// which this shift/mask extraction touches.
-		return new StoredValueScanner.Scan(new BankState((stored.knownMask() >> shift) & mask,
-			(stored.bits() >> shift) & mask), scan.stop(), scan.readBack());
+		// readBack (bead grm-rd6h) rides along unchanged: it names the CELL and the READ, neither
+		// of which the byte-to-field extraction touches.
+		return new LatchEvaluation(fieldFromStoredByte(stored), scan.stop(), scan.readBack());
+	}
+
+	/**
+	 * The BYTE-to-FIELD conversion (bead grm-ze06.1): extracts the latch field from the written
+	 * byte and deposits it at state bits {@code [0, width)} -- see class javadoc. The inverse
+	 * direction is {@link #mirroredByte}.
+	 */
+	private BankState fieldFromStoredByte(PartialByte stored) {
+		return new BankState((stored.knownMask() >> shift) & mask,
+			(stored.bits() >> shift) & mask);
+	}
+
+	/**
+	 * What {@link #evaluateLatchScan} recovered: the latch's FIELD-LOCAL state (already converted
+	 * from the written byte by {@link #fieldFromStoredByte}), plus the stop reason and read-back of
+	 * the byte's recovery. Not a {@link StoredValueScanner.Scan}, because a {@code Scan}'s value
+	 * is a byte and this one is mechanism state (bead grm-ze06.1).
+	 */
+	private record LatchEvaluation(BankState value, ValueStop stop,
+			StoredValueScanner.ReadBack readBack) {
 	}
 
 	/**
@@ -732,7 +750,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	/** Recovers a helper's latch write using the caller's register environment. */
 	@Override
 	public HelperDeposit depositHelperArgument(Program program, Instruction switchSite,
-			BankState argValue, BankState inState, int stateMask, RegisterEnv callerRegs) {
+			PartialByte argValue, BankState inState, int stateMask, RegisterEnv callerRegs) {
 		// argValue is unused on purpose -- see the javadoc. Evaluation is the only model here;
 		// when it pins nothing down the deposit is unknown, which warns rather than guesses.
 		// inState IS used: it is the caller's own field-local state at the call, which is the
@@ -740,7 +758,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 		// at the point the scan reaches back to.
 		// evaluateLatchScan, not evaluateLatch (bead grm-ld68): the identity-table rule's answer
 		// rides in the Scan's ReadBack, which evaluateLatch's value-only return discards.
-		StoredValueScanner.Scan scan =
+		LatchEvaluation scan =
 			evaluateLatchScan(program, switchSite, callerRegs, inState, hooks);
 		BankState evaluated = scan.value();
 		StoredValueScanner.ReadBack readBack =
@@ -834,15 +852,15 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 		}
 
 		@Override
-		public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 				BankState inStateAtStore) {
 			return hooks.resolveLoad(loadInstr, resolvedTarget, inStateAtStore);
 		}
 
 		@Override
-		public BankState resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
+		public PartialByte resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
 				BankState inStateAtStore) {
-			BankState mirrored = hooks.resolveMirrorLoad(loadInstr, resolvedTarget, inStateAtStore);
+			PartialByte mirrored = hooks.resolveMirrorLoad(loadInstr, resolvedTarget, inStateAtStore);
 			if (mirrored != null) {
 				consultedMirror = true;
 			}

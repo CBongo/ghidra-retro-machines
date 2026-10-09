@@ -123,6 +123,12 @@ public class CallCrossingPushPullProgramTest extends AbstractBundledLanguageTest
 		assertEquals(expected, actual.bits());
 	}
 
+	/** The {@link PartialByte} form, for a scanned register value. */
+	private void assertBank(int expected, PartialByte actual) {
+		assertEquals("tracked bits not fully known: " + actual, 0x07, actual.knownMask());
+		assertEquals(expected, actual.bits());
+	}
+
 	private void assertUnresolved(BankState actual) {
 		assertEquals("expected no tracked bit to be pinned down, got " + actual, 0,
 			actual.knownMask());
@@ -143,7 +149,7 @@ public class CallCrossingPushPullProgramTest extends AbstractBundledLanguageTest
 			}
 
 			@Override
-			public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+			public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 					BankState inStateAtStore) {
 				return null;
 			}
@@ -155,7 +161,7 @@ public class CallCrossingPushPullProgramTest extends AbstractBundledLanguageTest
 		};
 
 	/** The scanner on a direct {@code STA} site under {@link #STATE_AVAILABLE_HOOKS}. */
-	private BankState scanWithStateAvailable(String storeAddress) {
+	private PartialByte scanWithStateAvailable(String storeAddress) {
 		return StoredValueScanner.resolveStoredValue(program, instructionAt(storeAddress), 'A',
 			BankState.unknown(), 0x07, STATE_AVAILABLE_HOOKS);
 	}
@@ -308,10 +314,10 @@ public class CallCrossingPushPullProgramTest extends AbstractBundledLanguageTest
 
 		@Override
 		public HelperDeposit depositHelperArgument(ghidra.program.model.listing.Program program,
-				Instruction switchSite, BankState argValue, BankState inState, int stateMask,
+				Instruction switchSite, PartialByte argValue, BankState inState, int stateMask,
 				RegisterEnv callerRegs) {
 			this.captured = callerRegs;
-			return new HelperDeposit(stateMask, argValue);
+			return new HelperDeposit(stateMask, new BankState(argValue.knownMask(), argValue.bits()));
 		}
 
 		@Override
@@ -335,15 +341,15 @@ public class CallCrossingPushPullProgramTest extends AbstractBundledLanguageTest
 			}
 
 			@Override
-			public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+			public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 					BankState inStateAtStore) {
 				return null; // scope discipline: caller-side hooks never answer resolveLoad
 			}
 
 			@Override
-			public BankState resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
+			public PartialByte resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
 					BankState inStateAtStore) {
-				return mirrorAddress.equals(resolvedTarget) ? inStateAtStore : null;
+				return mirrorAddress.equals(resolvedTarget) ? new PartialByte(inStateAtStore.knownMask(), inStateAtStore.bits()) : null;
 			}
 		};
 	}

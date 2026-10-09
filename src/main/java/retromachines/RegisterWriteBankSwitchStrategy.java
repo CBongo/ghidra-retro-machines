@@ -84,6 +84,25 @@ public class RegisterWriteBankSwitchStrategy implements BankSwitchStrategy {
 			(mechReg != null && StoredValueScanner.readsRegister(instr, mechReg));
 	}
 
+	/**
+	 * The BYTE-to-FIELD conversion (bead grm-ze06.1): a register-write mechanism IS the register
+	 * it writes, so the byte the scan recovered at the store is the mechanism's field-local state
+	 * verbatim -- the scan already ran at this mechanism's {@code mask}, so no further reduction
+	 * is needed. This was the unnamed {@code SwitchOutcome.of(scan.value(), ...)}.
+	 */
+	private static BankState fieldFromStoredByte(PartialByte stored) {
+		return new BankState(stored.knownMask(), stored.bits());
+	}
+
+	/**
+	 * The FIELD-to-BYTE conversion (bead grm-ze06.1), its inverse: reading the mechanism back
+	 * ({@code LDA $01} / {@code LDA PORT}) yields the tracked field-local state as the byte
+	 * loaded. This was the unnamed {@code return inStateAtStore} in {@link #hooks}.
+	 */
+	private static PartialByte byteFromField(BankState field) {
+		return new PartialByte(field.knownMask(), field.bits());
+	}
+
 	private final StoredValueScanner.Hooks hooks = new StoredValueScanner.Hooks() {
 		@Override
 		public boolean isMechanismWrite(Instruction instr) {
@@ -91,11 +110,11 @@ public class RegisterWriteBankSwitchStrategy implements BankSwitchStrategy {
 		}
 
 		@Override
-		public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 				BankState inStateAtStore) {
 			// x is the port's value as tracked in-state at our own store. resolvedTarget is
 			// irrelevant here: the mechanism is a CPU register, matched by identity.
-			return readsMechanism(loadInstr) ? inStateAtStore : null;
+			return readsMechanism(loadInstr) ? byteFromField(inStateAtStore) : null;
 		}
 	};
 
@@ -125,7 +144,7 @@ public class RegisterWriteBankSwitchStrategy implements BankSwitchStrategy {
 		}
 		StoredValueScanner.Scan scan = StoredValueScanner.resolveStoredValueScan(program, instr,
 			reg, inState, mask, hooks, path);
-		return SwitchOutcome.of(scan.value(), scan.stop());
+		return SwitchOutcome.of(fieldFromStoredByte(scan.value()), scan.stop());
 	}
 
 	/** Classifies an unresolved write while scanning a helper body. */

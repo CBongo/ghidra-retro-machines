@@ -161,9 +161,11 @@ final class StoredValueScanner {
 		 *                        the target is not statically determinable. Supplied by the
 		 *                        scanner rather than recomputed per hook so that the indexed
 		 *                        case is resolved once, under one shared step budget.
-		 * @param inStateAtStore  the strategy's tracked in-state at the store being scanned
+		 * @param inStateAtStore  the strategy's tracked in-state at the store being scanned (mechanism
+		 *                        state, field-local -- a {@link BankState}, not a byte)
+		 * @return the loaded BYTE, partly known ({@link PartialByte}), or {@code null} to decline
 		 */
-		BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+		PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 				BankState inStateAtStore);
 
 		/**
@@ -203,7 +205,7 @@ final class StoredValueScanner {
 		 * @param inStateAtStore  the strategy's tracked in-state at the store being scanned, in
 		 *                        that mechanism's field-local {@code [0, width)} coordinates
 		 */
-		default BankState resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
+		default PartialByte resolveMirrorLoad(Instruction loadInstr, Address resolvedTarget,
 				BankState inStateAtStore) {
 			return null;
 		}
@@ -622,8 +624,10 @@ final class StoredValueScanner {
 	}
 
 	/**
-	 * Scans backward from {@code storeInstr} to determine the {@link BankState} it
-	 * stores, reduced to {@code mask} (full algorithm in the class javadoc). After every
+	 * Scans backward from {@code storeInstr} to determine the {@link PartialByte} it
+	 * stores, reduced to {@code mask} -- a BYTE mask: which bits of the stored byte the caller
+	 * consumes (see {@link #CLASSIFY_ONLY}; bits beyond the eighth select nothing, as
+	 * {@link PartialByte} clips) -- full algorithm in the class javadoc. After every
 	 * composition step the base can be folded in via {@link #combine}; as an
 	 * optimization, {@link #fullyDeterminedByAccumulator} lets the scan return without
 	 * ever inspecting the base when the mask algebra alone already pins down every
@@ -633,7 +637,7 @@ final class StoredValueScanner {
 	 * composition only ever applies when {@code reg == 'A'}; the X/Y paths retain the
 	 * simpler "resolved load or wholly unknown" behavior.
 	 */
-	static BankState resolveStoredValue(Program program, Instruction storeInstr, char reg,
+	static PartialByte resolveStoredValue(Program program, Instruction storeInstr, char reg,
 			BankState inStateAtStore, int mask, Hooks hooks) {
 		return resolveStoredValue(program, storeInstr, reg, inStateAtStore, mask, hooks,
 			RegisterEnv.NONE);
@@ -655,7 +659,7 @@ final class StoredValueScanner {
 	 * {@code env} describes</b> -- see {@link RegisterEnv}'s class javadoc for the soundness
 	 * argument and the structural enforcement.
 	 */
-	static BankState resolveStoredValue(Program program, Instruction storeInstr, char reg,
+	static PartialByte resolveStoredValue(Program program, Instruction storeInstr, char reg,
 			BankState inStateAtStore, int mask, Hooks hooks, RegisterEnv env) {
 		return resolveStoredValueScan(program, storeInstr, reg, inStateAtStore, mask, hooks, env)
 				.value();
@@ -665,7 +669,7 @@ final class StoredValueScanner {
 	 * {@link #resolveStoredValue} keeping the {@link Scan#stop()} reason a caller needs to
 	 * tell an HONEST unresolved value from one this scanner simply gave up on (bead
 	 * {@code grm-3ou} part 1). Same walk, same answer -- only the classification survives
-	 * the return, which the {@link BankState}-returning forms discard.
+	 * the return, which the {@link PartialByte}-returning forms discard.
 	 */
 	static Scan resolveStoredValueScan(Program program, Instruction storeInstr, char reg,
 			BankState inStateAtStore, int mask, Hooks hooks, RegisterEnv env) {
@@ -747,7 +751,7 @@ final class StoredValueScanner {
 			// the mechanism-write abort below still runs. See pathPredecessor.
 			Instruction prev = pathPredecessor(program, listing, cur, env);
 			if (prev == null) {
-				return stopped(aAcc, oAcc, mask, BankState.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
+				return stopped(aAcc, oAcc, mask, PartialByte.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 			}
 
 			if (hooks.isMechanismWrite(prev)) {
@@ -779,7 +783,7 @@ final class StoredValueScanner {
 
 			if (stateBlind && (mnem.equals("AND") || mnem.equals("ORA") || mnem.equals(loadMnemonic))
 					&& !isImmediate(prev)) {
-				return stopped(aAcc, oAcc, mask, BankState.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
+				return stopped(aAcc, oAcc, mask, PartialByte.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 			}
 
 			if (reg == 'A' && mnem.equals("AND")) {
@@ -787,11 +791,11 @@ final class StoredValueScanner {
 				if (imm == null) {
 					// an operand we couldn't pull a scalar out of, and couldn't forward a store
 					// to either, is an opaque modifier of A.
-					return stopped(aAcc, oAcc, mask, BankState.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
+					return stopped(aAcc, oAcc, mask, PartialByte.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 				}
 				aAcc = imm & aAcc;
 				if (fullyDeterminedByAccumulator(aAcc, oAcc, mask)) {
-					return stopped(aAcc, oAcc, mask, BankState.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
+					return stopped(aAcc, oAcc, mask, PartialByte.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 				}
 				cur = prev;
 				continue;
@@ -800,11 +804,11 @@ final class StoredValueScanner {
 			if (reg == 'A' && mnem.equals("ORA")) {
 				Integer imm = operandByte(program, prev, inState, hooks, env, budget, depth);
 				if (imm == null) {
-					return stopped(aAcc, oAcc, mask, BankState.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
+					return stopped(aAcc, oAcc, mask, PartialByte.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 				}
 				oAcc = (imm & aAcc) | oAcc;
 				if (fullyDeterminedByAccumulator(aAcc, oAcc, mask)) {
-					return stopped(aAcc, oAcc, mask, BankState.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
+					return stopped(aAcc, oAcc, mask, PartialByte.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 				}
 				cur = prev;
 				continue;
@@ -814,7 +818,7 @@ final class StoredValueScanner {
 				Integer imm = immediateOperandValue(prev);
 				if (imm != null) {
 					// x is now fully known -- fold it through the accumulated transform.
-					return stopped(aAcc, oAcc, mask, BankState.fullyKnown(0xFF, imm), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
+					return stopped(aAcc, oAcc, mask, PartialByte.fullyKnown(imm), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 				}
 				// Scalar extraction failed; fall through and treat like any other modifier.
 			}
@@ -824,7 +828,7 @@ final class StoredValueScanner {
 				// target needs the whole constant-index evaluator, and doing it once keeps
 				// every strategy's hook a pure "do I understand this address" question.
 				Address target = effectiveOperandTarget(program, prev, hooks, env);
-				BankState base = hooks.resolveLoad(prev, target, inState);
+				PartialByte base = hooks.resolveLoad(prev, target, inState);
 				if (base != null) {
 					// grm-mej.8: a read-back of a live-bank mirror stays a read-back when the strategy
 					// can ALSO partly evaluate it (see restoredKeepingValue). Same shape test as the
@@ -844,7 +848,7 @@ final class StoredValueScanner {
 				// this same block (grm-mej.1). A partial answer is fine here -- combine() folds
 				// a partially known base per bit -- unlike the AND/ORA operand case, which needs
 				// all eight bits to compose into the accumulator.
-				BankState forwarded = forwardedStoreValue(program, prev, target, inState,
+				PartialByte forwarded = forwardedStoreValue(program, prev, target, inState,
 					hooks, env, budget, depth);
 				if (forwarded.knownMask() != 0) {
 					return stopped(aAcc, oAcc, mask, forwarded, BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
@@ -852,7 +856,7 @@ final class StoredValueScanner {
 				// Last resort (grm-mej.2): does this address MIRROR the live bank? Strictly below
 				// forwarding -- see Hooks.resolveMirrorLoad for the cv2 case that ordering exists
 				// for. A non-null answer is authoritative even when wholly unknown.
-				BankState mirrored = hooks.resolveMirrorLoad(prev, target, inState);
+				PartialByte mirrored = hooks.resolveMirrorLoad(prev, target, inState);
 				// A plain, UNMODIFIED read-back of a live-bank mirror is a RESTORE of the bank
 				// live at that read, not an argument we failed to pin down (bead grm-yflf):
 				// megaman2's `LDA $29 / PHA / JSR c96b / PLA / JSR c000` re-commits whatever the
@@ -875,7 +879,7 @@ final class StoredValueScanner {
 							return restored;
 						}
 					}
-					return stopped(aAcc, oAcc, mask, mirrored != null ? mirrored : BankState.unknown(),
+					return stopped(aAcc, oAcc, mask, mirrored != null ? mirrored : PartialByte.unknown(),
 						readBack ? BankSwitchStrategy.ValueStop.RESTORED_BANK
 								: BankSwitchStrategy.ValueStop.ANALYZER_LIMIT,
 						readBack ? new ReadBack(target, prev.getMinAddress(), carriedAcross,
@@ -926,7 +930,7 @@ final class StoredValueScanner {
 							// helper that reloads idx from the same mirror yields an equal partial
 							// value while committing the bank live at the CALL, not the read-back.
 							Scan idxScan = resolveStoredValue(program, prev, idxChar,
-								BankState.unknown(), 0, hooks, env, budget, depth + 1);
+								BankState.unknown(), CLASSIFY_ONLY, hooks, env, budget, depth + 1);
 							boolean idxUnmodifiedFromEntry =
 								idxScan.stop() == BankSwitchStrategy.ValueStop.HELPER_ARGUMENT;
 							if (idxUnmodifiedFromEntry
@@ -935,7 +939,7 @@ final class StoredValueScanner {
 								// back is known, not what it was. See Hooks.isIdentityTableLoad's
 								// javadoc for why idxReadBack itself (not a new ReadBack about
 								// this load) is the right thing to report.
-								return stopped(aAcc, oAcc, mask, BankState.unknown(),
+								return stopped(aAcc, oAcc, mask, PartialByte.unknown(),
 									BankSwitchStrategy.ValueStop.RESTORED_BANK, idxReadBack);
 							}
 						}
@@ -947,7 +951,7 @@ final class StoredValueScanner {
 				// IoPolicy already keys off it), and it cannot overlap grm-hum, because nothing in
 				// the image stores a determinable value to a hardware register.
 				if (readsVolatileMemory(program, target)) {
-					return stopped(aAcc, oAcc, mask, BankState.unknown(),
+					return stopped(aAcc, oAcc, mask, PartialByte.unknown(),
 						BankSwitchStrategy.ValueStop.RUNTIME_SOURCE);
 				}
 				// A load from writable memory that NOTHING in the image ever stores to (bead
@@ -968,7 +972,7 @@ final class StoredValueScanner {
 				// test below is the narrower one: see neverStoredTo. A failed recovery where SOME
 				// store exists -- even one we cannot follow -- remains ANALYZER_LIMIT.
 				if (neverStoredTo(program, target)) {
-					return stopped(aAcc, oAcc, mask, BankState.unknown(),
+					return stopped(aAcc, oAcc, mask, PartialByte.unknown(),
 						BankSwitchStrategy.ValueStop.RUNTIME_SOURCE);
 				}
 				//
@@ -1040,7 +1044,7 @@ final class StoredValueScanner {
 				BankState resumed = resumeStateAfterPairing(pairing, pha, hooks, inState);
 				stateBlind = stateBlind && !(pairing.crossedCall || pairing.crossedBlock);
 				if (pha == null || resumed == null) {
-					return stopped(aAcc, oAcc, mask, BankState.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
+					return stopped(aAcc, oAcc, mask, PartialByte.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 				}
 				inState = resumed;
 				if (pairing.crossedCall) {
@@ -1101,7 +1105,7 @@ final class StoredValueScanner {
 				Integer exact = constantRegisterValue(program, cur, reg, hooks, env,
 					new Budget(MAX_RESOLVE_STEPS));
 				if (exact != null) {
-					return stopped(aAcc, oAcc, mask, BankState.fullyKnown(0xFF, exact),
+					return stopped(aAcc, oAcc, mask, PartialByte.fullyKnown(exact),
 						BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 				}
 				// FALLBACK (bead grm-zsxz increment Z2): a load of a RAM cell that nothing above
@@ -1119,7 +1123,7 @@ final class StoredValueScanner {
 						return viaSlot;
 					}
 				}
-				return stopped(aAcc, oAcc, mask, BankState.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
+				return stopped(aAcc, oAcc, mask, PartialByte.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 			}
 			if (prev.getFlowType().isCall() && calleePreserves(program, prev, reg)) {
 				// grm-mej.13: the register survives the call; the bank state need not. Resume with
@@ -1147,12 +1151,12 @@ final class StoredValueScanner {
 				// clobbers the register. If the callee never touches A, $35 survives on real
 				// hardware. That is recoverable in principle by inter-procedural analysis, so it is
 				// our limitation and must stay visible as such. See grm-rr5p.
-				return stopped(aAcc, oAcc, mask, BankState.unknown(),
+				return stopped(aAcc, oAcc, mask, PartialByte.unknown(),
 					BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 			}
 			cur = prev;
 		}
-		return stopped(aAcc, oAcc, mask, BankState.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
+		return stopped(aAcc, oAcc, mask, PartialByte.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 	}
 
 	/**
@@ -1800,7 +1804,7 @@ final class StoredValueScanner {
 			StackFloor.mayAliasStack(program, cell)) {
 			return null;
 		}
-		int innerMask = mask & aAcc & ~oAcc & 0xFF;
+		int innerMask = mask & aAcc & ~oAcc;
 		if (innerMask == 0) {
 			return null;
 		}
@@ -2300,7 +2304,7 @@ final class StoredValueScanner {
 		}
 
 		@Override
-		public BankState resolveLoad(Instruction loadInstr, Address resolvedTarget,
+		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
 				BankState inStateAtStore) {
 			return null;
 		}
@@ -2445,8 +2449,8 @@ final class StoredValueScanner {
 	 */
 	static Instruction stackRelativeReloadPush(Program program, Instruction load, Hooks hooks,
 			Address helperEntry, int budgetSteps) {
-		RegisterEnv env = new RegisterEnv(helperEntry, BankState.unknown(), BankState.unknown(),
-			BankState.unknown());
+		RegisterEnv env = new RegisterEnv(helperEntry, PartialByte.unknown(), PartialByte.unknown(),
+			PartialByte.unknown());
 		Span span = new Span();
 		Instruction pha = stackRelativePush(program, load, hooks, env, budgetSteps, span);
 		return pha == null || span.crossedCall ? null : pha;
@@ -2616,7 +2620,7 @@ final class StoredValueScanner {
 	 * {@code gradle test}.)
 	 */
 	private static boolean fullyDeterminedByAccumulator(int aAcc, int oAcc, int mask) {
-		return (((~aAcc | oAcc) & mask) & 0xFF) == (mask & 0xFF);
+		return ((~aAcc | oAcc) & mask) == mask;
 	}
 
 	/**
@@ -2631,11 +2635,22 @@ final class StoredValueScanner {
 	 * original per-bit loop is proved exhaustively by
 	 * {@code src/test/java/retromachines/BitAlgebraEquivalenceTest.java} ({@code gradle test}).
 	 */
-	private static BankState combine(int aAcc, int oAcc, int mask, BankState base) {
-		int knownMask = mask & (oAcc | ~aAcc | base.knownMask()) & 0xFF;
-		int bits = mask & (oAcc | (aAcc & base.knownMask() & base.bits())) & 0xFF;
-		return new BankState(knownMask, bits);
+	private static PartialByte combine(int aAcc, int oAcc, int mask, PartialByte base) {
+		int knownMask = mask & (oAcc | ~aAcc | base.knownMask());
+		int bits = mask & (oAcc | (aAcc & base.knownMask() & base.bits()));
+		return new PartialByte(knownMask, bits); // the constructor clips to one byte
 	}
+
+	/**
+	 * The scan mask meaning "CLASSIFY ONLY, the value is not wanted" (bead grm-ze06.1). Every
+	 * scan's {@code mask} is a BYTE mask -- which bits of the stored byte the caller consumes. At
+	 * mask 0 {@link #combine} can know nothing, so a scan reports only WHY it stopped (its
+	 * {@link BankSwitchStrategy.ValueStop}): the identity-table index check and
+	 * {@code HelperArgumentRecovery}'s read-back re-scan rely on exactly that, because at any
+	 * wider mask {@link #stopped} would demote a partly known entry value to {@code RESOLVED}
+	 * and lose the stop reason they are asking about.
+	 */
+	static final int CLASSIFY_ONLY = 0;
 
 	/**
 	 * A scan's answer plus, when it did not resolve, WHY (bead {@code grm-3ou} part 1).
@@ -2644,10 +2659,10 @@ final class StoredValueScanner {
 	 * both its partial value and its {@code readBack} (bead grm-mej.8; see
 	 * {@code restoredKeepingValue}).
 	 */
-	record Scan(BankState value, BankSwitchStrategy.ValueStop stop, ReadBack readBack) {
+	record Scan(PartialByte value, BankSwitchStrategy.ValueStop stop, ReadBack readBack) {
 
 		/** The pre-grm-yflf form: no read-back. */
-		Scan(BankState value, BankSwitchStrategy.ValueStop stop) {
+		Scan(PartialByte value, BankSwitchStrategy.ValueStop stop) {
 			this(value, stop, null);
 		}
 	}
@@ -2797,19 +2812,19 @@ final class StoredValueScanner {
 	 * that here, once, is what keeps every {@code return} in the walk free to name its own
 	 * reason without also having to work out whether it still applies.
 	 */
-	private static Scan stopped(int aAcc, int oAcc, int mask, BankState base,
+	private static Scan stopped(int aAcc, int oAcc, int mask, PartialByte base,
 			BankSwitchStrategy.ValueStop reason) {
 		return stopped(aAcc, oAcc, mask, base, reason, null);
 	}
 
 	/**
-	 * {@link #stopped(int, int, int, BankState, BankSwitchStrategy.ValueStop)} with the
+	 * {@link #stopped(int, int, int, PartialByte, BankSwitchStrategy.ValueStop)} with the
 	 * {@link ReadBack} a {@code RESTORED_BANK} stop names. Discarded with the reason when the
 	 * combined value knows something: a read-back that resolved is just a resolved value.
 	 */
-	private static Scan stopped(int aAcc, int oAcc, int mask, BankState base,
+	private static Scan stopped(int aAcc, int oAcc, int mask, PartialByte base,
 			BankSwitchStrategy.ValueStop reason, ReadBack readBack) {
-		BankState value = combine(aAcc, oAcc, mask, base);
+		PartialByte value = combine(aAcc, oAcc, mask, base);
 		return value.knownMask() != 0 ? new Scan(value, BankSwitchStrategy.ValueStop.RESOLVED)
 				: new Scan(value, reason, readBack);
 	}
@@ -2819,7 +2834,7 @@ final class StoredValueScanner {
 	 * when the value is fully known over {@code mask} -- then the caller stops {@code RESOLVED} as
 	 * before, since a concrete bank says strictly more than "restored".
 	 * <p>
-	 * {@link #stopped(int, int, int, BankState, BankSwitchStrategy.ValueStop, ReadBack)} turns ANY
+	 * {@link #stopped(int, int, int, PartialByte, BankSwitchStrategy.ValueStop, ReadBack)} turns ANY
 	 * known bit into {@code RESOLVED} and drops the {@link ReadBack}. That is wrong for a read-back
 	 * the strategy can only partly evaluate: rcransom's {@code LDA $bfff / PHA / ... / PLA / JSR
 	 * fed1} at cd57/ef85 reaches the read with the bank partly pinned, so the ROM byte is partly
@@ -2832,11 +2847,10 @@ final class StoredValueScanner {
 	 * Callers must establish the read-back's own shape first (identity accumulators, a live-bank
 	 * mirror) -- this only decides between the two stop reasons.
 	 */
-	private static Scan restoredKeepingValue(int aAcc, int oAcc, int mask, BankState base,
+	private static Scan restoredKeepingValue(int aAcc, int oAcc, int mask, PartialByte base,
 			ReadBack readBack) {
-		BankState value = combine(aAcc, oAcc, mask, base);
-		int width = mask & 0xFF; // combine's own clip: a register is one byte wide
-		if ((value.knownMask() & width) == width) {
+		PartialByte value = combine(aAcc, oAcc, mask, base);
+		if (value.knowsAll(mask)) {
 			return null;
 		}
 		return new Scan(value, BankSwitchStrategy.ValueStop.RESTORED_BANK, readBack);
@@ -2882,15 +2896,15 @@ final class StoredValueScanner {
 			return immediateOperandValue(instr);
 		}
 		Address target = effectiveOperandTarget(program, instr, hooks, env);
-		BankState forwarded =
+		PartialByte forwarded =
 			forwardedStoreValue(program, instr, target, inStateAtStore, hooks, env, budget, depth);
-		if ((forwarded.knownMask() & 0xFF) == 0xFF) {
-			return forwarded.bits() & 0xFF;
+		if (forwarded.isFullyKnown()) {
+			return forwarded.exact();
 		}
 		if (forwarded.knownMask() == 0) {
-			BankState mirrored = hooks.resolveMirrorLoad(instr, target, inStateAtStore);
-			if (mirrored != null && (mirrored.knownMask() & 0xFF) == 0xFF) {
-				return mirrored.bits() & 0xFF;
+			PartialByte mirrored = hooks.resolveMirrorLoad(instr, target, inStateAtStore);
+			if (mirrored != null && mirrored.isFullyKnown()) {
+				return mirrored.exact();
 			}
 		}
 		return null;
@@ -2936,20 +2950,20 @@ final class StoredValueScanner {
 	 * honestly unknown instead of stale. A caller that still wants the pre-mirror behaviour (no
 	 * hook ever sees a non-{@code unknown()} state) passes {@link BankState#unknown()} explicitly.
 	 */
-	static BankState callerCellValue(Program program, Instruction useInstr, Address cell,
+	static PartialByte callerCellValue(Program program, Instruction useInstr, Address cell,
 			BankState inStateAtStore, int mask, Hooks hooks) {
 		return callerCellValue(program, useInstr, cell, inStateAtStore, mask, hooks,
 			RegisterEnv.NONE);
 	}
 
 	/** {@link #callerCellValue} along {@code env}'s arms (bead grm-wul); {@code NONE} crosses nothing. */
-	static BankState callerCellValue(Program program, Instruction useInstr, Address cell,
+	static PartialByte callerCellValue(Program program, Instruction useInstr, Address cell,
 			BankState inStateAtStore, int mask, Hooks hooks, RegisterEnv env) {
-		BankState value = forwardedStoreValue(program, useInstr, cell, inStateAtStore, hooks,
+		PartialByte value = forwardedStoreValue(program, useInstr, cell, inStateAtStore, hooks,
 			env, new Budget(MAX_RESOLVE_STEPS), 0);
 		// Equivalent to combine(0xFF, 0x00, mask, value), spelled out because there is no
 		// accumulated AND/ORA transform to fold here -- the cell's byte arrives verbatim.
-		return new BankState(value.knownMask() & mask, value.bits() & mask);
+		return value.restrict(mask);
 	}
 
 	/**
@@ -3023,15 +3037,15 @@ final class StoredValueScanner {
 	 * still stepped over rather than caught -- there is no cheaper per-instruction detector for
 	 * it, only the low-probability argument above.
 	 */
-	private static BankState forwardedStoreValue(Program program, Instruction useInstr,
+	private static PartialByte forwardedStoreValue(Program program, Instruction useInstr,
 			Address target, BankState inStateAtStore, Hooks hooks, RegisterEnv env, Budget budget,
 			int depth) {
 		if (target == null || depth >= MAX_RESOLVE_DEPTH) {
-			return BankState.unknown();
+			return PartialByte.unknown();
 		}
 		if (StackFloor.mayAliasStack(program, target)) {
 			// A push between the store and the use would be stepped over silently -- see javadoc.
-			return BankState.unknown();
+			return PartialByte.unknown();
 		}
 		Listing listing = program.getListing();
 		// Withdrawn rather than aborted on, exactly as in resolveStoredValue -- see grm-4bgh.7.
@@ -3039,10 +3053,10 @@ final class StoredValueScanner {
 		Instruction cur = useInstr;
 		for (int i = 0; i < MAX_BACKWARD_SCAN; i++) {
 			if (env.stopsAt(cur.getMinAddress())) {
-				return BankState.unknown(); // the caller's memory is not modeled -- see javadoc
+				return PartialByte.unknown(); // the caller's memory is not modeled -- see javadoc
 			}
 			if (!budget.spend()) {
-				return BankState.unknown();
+				return PartialByte.unknown();
 			}
 			// Block start, left the basic block, or another path reaches cur with a different
 			// cell value -- unless the env licenses this exact join (grm-k90) or names the arm
@@ -3053,7 +3067,7 @@ final class StoredValueScanner {
 			// crossed would make the two disagree about what the same instruction stream did.
 			Instruction prev = pathPredecessor(program, listing, cur, env);
 			if (prev == null) {
-				return BankState.unknown();
+				return PartialByte.unknown();
 			}
 			if (hooks.isMechanismWrite(prev)) {
 				// Same rule as the register scan's, and now the same REMEDY (grm-4bgh.7): the
@@ -3073,20 +3087,20 @@ final class StoredValueScanner {
 				Address storeTarget = storeReg == null ? null
 						: effectiveTarget(program, prev, hooks, env, budget, depth + 1);
 				if (storeTarget == null) {
-					return BankState.unknown(); // a memory write this scanner cannot place
+					return PartialByte.unknown(); // a memory write this scanner cannot place
 				}
 				if (storeTarget.equals(target)) {
-					return resolveStoredValue(program, prev, storeReg, inState, 0xFF, hooks,
+					return resolveStoredValue(program, prev, storeReg, inState, PartialByte.BYTE_MASK, hooks,
 						env, budget, depth + 1).value();
 				}
 				// provably a different cell -- harmless, keep walking
 			}
 			if (prev.getFlowType().isCall()) {
-				return BankState.unknown(); // a subroutine may write anywhere
+				return PartialByte.unknown(); // a subroutine may write anywhere
 			}
 			cur = prev;
 		}
-		return BankState.unknown();
+		return PartialByte.unknown();
 	}
 
 	/**
@@ -3307,8 +3321,8 @@ final class StoredValueScanner {
 				if (!loc.isRegister()) {
 					return null;
 				}
-				BankState entryValue = env.get(loc.register());
-				return (entryValue.knownMask() & 0xFF) == 0xFF ? entryValue.bits() & 0xFF : null;
+				PartialByte entryValue = env.get(loc.register());
+				return entryValue.exact();
 			}
 			if (!budget.spend()) {
 				return null;
@@ -3400,9 +3414,9 @@ final class StoredValueScanner {
 		public Integer memoryOperand() {
 			Address target = effectiveTarget();
 			// unknown() in-state, never a caller's -- see constantRegisterValue's javadoc
-			BankState base = hooks.resolveLoad(instr, target, BankState.unknown());
-			if (base != null && (base.knownMask() & 0xFF) == 0xFF) {
-				return base.bits() & 0xFF;
+			PartialByte base = hooks.resolveLoad(instr, target, BankState.unknown());
+			if (base != null && base.isFullyKnown()) {
+				return base.exact();
 			}
 			// Last resort (grm-4bgh.1): a stack-relative reload -- see stackRelativePush's
 			// javadoc for the shape and soundness argument, which is about the ADDRESS read and
