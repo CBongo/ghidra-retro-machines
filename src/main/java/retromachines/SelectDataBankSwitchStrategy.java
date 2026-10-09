@@ -685,6 +685,32 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 		return true;
 	}
 
+	/**
+	 * The argument byte bits {@link #depositHelperArgument} reads, which depend on WHICH write
+	 * the helper commits (bead grm-hp9s): a select write reads the select (and co-emitted mode)
+	 * bits -- MMC3 {@code 0x07 | 0x40} -- and a data write reads the selected register's value
+	 * from bit 0, as wide as the widest tracked target (MMC3 R6/R7: {@code 0x3F}), since which
+	 * target is routed is decided later from state this mask cannot see. An unrecognized site
+	 * keeps the default.
+	 */
+	@Override
+	public int argumentByteMask(Program program, Instruction switchSite, int stateMask) {
+		Long offset = switchSite == null ? null : writesInRange(switchSite);
+		if (offset == null) {
+			return BankSwitchStrategy.defaultArgumentByteMask(stateMask);
+		}
+		if ((offset & 1) == 0) {
+			return (selectByteMask | (modeField != null ? modeByteMask : 0)) &
+				PartialByte.BYTE_MASK;
+		}
+		int widest = 0;
+		for (FieldPos target : targets.values()) {
+			widest |= (1 << target.width()) - 1;
+		}
+		return widest == 0 ? BankSwitchStrategy.defaultArgumentByteMask(stateMask)
+				: widest & PartialByte.BYTE_MASK;
+	}
+
 	/** Recovers a helper argument using the selector/data state model. */
 	@Override
 	public HelperDeposit depositHelperArgument(Program program, Instruction switchSite,

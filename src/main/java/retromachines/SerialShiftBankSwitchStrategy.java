@@ -684,6 +684,27 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	 * {@link SelectDataBankSwitchStrategy}, which has no address-based routing signal and
 	 * must consult {@code inState}'s tracked select value instead.
 	 */
+	/**
+	 * The argument byte bits {@link #depositHelperArgument} reads (bead grm-hp9s): the union of
+	 * the committed target register's fields, each {@code bits} wide at its own {@code shift}
+	 * (MMC1 PRG: {@code 0x1F}). A site this strategy does not recognize, or a CHR target that
+	 * deposits nothing, keeps the default rather than a zero mask -- zero is the scanner's
+	 * {@code CLASSIFY_ONLY} mode, a different question.
+	 */
+	@Override
+	public int argumentByteMask(Program program, Instruction switchSite, int stateMask) {
+		Integer targetIdx = switchSite == null ? null : targetIndexOf(program, switchSite);
+		List<TargetField> fields = targetIdx == null ? null : targets.get(targetIdx);
+		int consumed = 0;
+		if (fields != null) {
+			for (TargetField tf : fields) {
+				consumed |= ((1 << tf.bits()) - 1) << tf.shift();
+			}
+		}
+		return consumed == 0 ? BankSwitchStrategy.defaultArgumentByteMask(stateMask)
+				: consumed & PartialByte.BYTE_MASK;
+	}
+
 	/** Recovers a helper argument for a serial-shift operation. */
 	@Override
 	public HelperDeposit depositHelperArgument(Program program, Instruction switchSite,
