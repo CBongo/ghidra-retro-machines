@@ -1450,12 +1450,37 @@ final class HelperDiscovery {
 		}
 
 		/**
-		 * Where this model's mechanism sits in the board state (bead grm-ze06.2). For the
-		 * composed/degraded models built with {@code lsb == 0} and a union {@code effectMask}
-		 * this is that same union placement, preserved as-is; whether {@code lsb 0} is right
-		 * for them on a mixed-lsb board is a latent question for a follow-up bead.
+		 * Where this model's mechanism sits in the board state (bead grm-ze06.2).
+		 * <p>
+		 * <b>A model with neither a {@code strategy} nor an {@code argReg} has none</b> (bead
+		 * grm-wiwv). Exactly three constructions build one, all with {@code lsb == 0}: the
+		 * degraded multi-mechanism union in {@link #findHelpers}, {@link #composeTailCalls}'
+		 * composed exit effect, and {@link #findSecondTierHelpers}' wrapper (whose
+		 * {@code effectMask} is the wrapped helper's own, but whose {@code lsb} is still 0). The
+		 * derived forms ({@link #atMidBodyEntry}, {@link #atFallThroughWrapper},
+		 * {@link #atCallEdgeWrapper}) copy all three fields from their source. Such a model's
+		 * {@code lsb} describes no real field: on {@code nes-mmc5} (latches at lsb 2/9/16/23) or
+		 * {@code nes-modetest} (prg_mode at lsb 2), a placement built from it would shift by the
+		 * wrong amount. It also has nothing to convert: {@code HelperArgumentRecovery} positions
+		 * only through a strategy's deposit or an argument register, and the engine reads such a
+		 * model's {@code constState} and {@code effectMask} directly.
+		 * <p>
+		 * A model with an {@code argReg} but no strategy IS meaningful (HAR's no-strategy
+		 * fallback, which several JUnit fixtures exercise), so it still answers. This throws
+		 * rather than answer, so a future path that converts through a composed model fails
+		 * loudly instead of shipping a mis-shifted bank. Measured 2026-10-09: the throw's only
+		 * real-ROM trigger across check nes was grm-ze06.3's own {@code window} call, an
+		 * lsb-free restriction that never needed a placement (now
+		 * {@link BankState#restrictedTo}).
+		 *
+		 * @throws IllegalStateException for a model with neither a strategy nor an argReg
 		 */
 		MechanismPlacement placement() {
+			if (strategy == null && argReg == null) {
+				throw new IllegalStateException("helper model at " + entry +
+					" has neither a strategy nor an argument register, so its lsb describes no " +
+					"single field (grm-wiwv)");
+			}
 			return new MechanismPlacement(lsb, effectMask);
 		}
 

@@ -37,7 +37,7 @@ import retromachines.BoardDescriptorModel.BoardModel;
 /**
  * Direct coverage of {@link BankStrategyRegistry#mechanismPositioning} without standing up an
  * analyzer or a {@code Program} (bead grm-ft8 increment 2). The method is nearly pure -- a
- * descriptor mechanism object and a {@link BoardModel} in, {@code {effectMask, lsb}} out -- and
+ * descriptor mechanism object and a {@link BoardModel} in, a {@link MechanismPlacement} out -- and
  * it is the half of the registry that decides where one mechanism's writes land in the board's
  * absolute state bits, so a mistake here silently mispositions every switch that mechanism
  * recognizes.

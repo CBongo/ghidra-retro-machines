@@ -76,6 +76,22 @@ public record BankState(int knownMask, int bits) implements BitKnowledge {
 	}
 
 	/**
+	 * This state restricted to {@code mask}, and NOT shifted: it stays in BOARD coordinates,
+	 * with every bit outside {@code mask} unknown (bead grm-ze06.3). The engine uses it for a
+	 * helper call's annotation state, which echoes the in-state only within the helper's own
+	 * bits (see {@code CallSwitch}). It needs no lsb -- contrast
+	 * {@link MechanismPlacement#toLocal}, which also shifts down to bit 0 -- so it is safe on a
+	 * composed helper model whose union mask has no single placement (grm-wiwv; it briefly
+	 * lived on {@code MechanismPlacement} as {@code window}, which forced exactly that).
+	 *
+	 * @param mask the board bits to keep
+	 * @return the restricted state
+	 */
+	public BankState restrictedTo(int mask) {
+		return new BankState(knownMask & mask, bits & mask);
+	}
+
+	/**
 	 * The effective bank state used for reference retargeting and switch comments: bits
 	 * known here keep their tracked value; any bit left unknown is assumed to hold its
 	 * {@code banking.initial_state} value. Degrades gracefully -- a fully known state is
