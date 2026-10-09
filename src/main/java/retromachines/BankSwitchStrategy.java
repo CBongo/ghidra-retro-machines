@@ -513,19 +513,25 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * serial-shift field {@code 0x1FF}, and the only thing that made those work as byte masks
 	 * was an incidental clip to eight bits inside the scanner.
 	 * <p>
-	 * <b>This preserves today's behaviour exactly, not the ideal one.</b> Every strategy's
-	 * effective value is {@code stateMask & 0xFF}, which is what the default returns:
-	 * register-write (C64 {@code 0x7}, C128 {@code 0xFF}) and memory-latch (width-bit masks, e.g.
-	 * UxROM {@code 0xF}, GxROM {@code 0x3}) are already byte-sized and pass through; select-data
-	 * MMC3 {@code 0xFFFF} -> {@code 0xFF}; serial-shift MMC1 {@code 0x1FF} -> {@code 0xFF}. GxROM
-	 * is a KNOWN LATENT MISMATCH: its field sits at bits [4,6) of the written byte, but the mask
-	 * returned here selects [0,2). That is harmless today (memory-latch ignores the scanned
-	 * argument value) and is tracked by bead grm-hp9s -- fixing it here would change behaviour.
+	 * <b>The bits the deposit READS, not the mechanism's field width</b> (bead grm-hp9s). A wider
+	 * mask makes the scans demand bits nothing consumes: {@code restoredKeepingValue} then calls a
+	 * byte whose consumed bits are all known "partly known", and {@code stopped()} keeps a
+	 * read-back alive on bits nobody reads. A mask at the wrong POSITION is worse -- GxROM's field
+	 * sits at bits [4,6) of the written byte, and the old {@code stateMask} answer of {@code 0x3}
+	 * resolved and classified the scan on bits [0,2), which the latch never reads. Strategies whose consumed bits depend on WHICH
+	 * write the helper commits (select-data's select vs data, serial-shift's target register)
+	 * answer from {@code switchSite}; it is {@code null} when the helper model has none.
+	 * <p>
+	 * The default, {@link #defaultArgumentByteMask}, is right for a mechanism whose field IS the
+	 * byte from bit 0 (register-write: C64 {@code 0x7}, C128 {@code 0xFF}) and for a helper with
+	 * no strategy.
 	 *
+	 * @param program the program, for strategies that inspect {@code switchSite}
+	 * @param switchSite the helper's switch-site instruction, or {@code null} if unknown
 	 * @param stateMask this mechanism's field-local width mask
 	 * @return the byte bits of the written argument this mechanism consumes
 	 */
-	default int argumentByteMask(int stateMask) {
+	default int argumentByteMask(Program program, Instruction switchSite, int stateMask) {
 		return defaultArgumentByteMask(stateMask);
 	}
 

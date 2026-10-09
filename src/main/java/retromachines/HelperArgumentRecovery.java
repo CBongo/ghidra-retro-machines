@@ -404,7 +404,9 @@ final class HelperArgumentRecovery {
 		// The scanner takes a BYTE mask (bead grm-ze06.1): which bits of the stored byte this
 		// helper's mechanism consumes. stateMask stays the mechanism's field-local width, which
 		// is what foldDeposits/depositHelperArgument speak.
-		int byteMask = argumentByteMask(helper, stateMask);
+		Instruction switchSite = helper.switchSite() == null ? null
+				: program.getListing().getInstructionAt(helper.switchSite());
+		int byteMask = argumentByteMask(program, helper, switchSite, stateMask);
 		// The call's tracked in-state, narrowed to THIS helper's mechanism's field-local
 		// [0, width) space -- computed once, up front, rather than where the pre-grm-mej.3 code
 		// first needed it (just before the depositHelperArgument call below). Every caller-side
@@ -531,8 +533,6 @@ final class HelperArgumentRecovery {
 			local = viaCell.knownMask() != 0 ? viaCell
 					: valueSuppliedInsideHelper(program, helper, reg, byteMask);
 		}
-		Instruction switchSite = helper.switchSite() == null ? null
-				: program.getListing().getInstructionAt(helper.switchSite());
 		if (helper.strategy() == null || switchSite == null) {
 			// grm-mej.7: no deposit here to check a reload-kept read-back against -- drop it.
 			return new CallEffect(position(fieldFromArgumentByte(local, stateMask), helper.lsb(), helper.effectMask()),
@@ -1383,10 +1383,11 @@ final class HelperArgumentRecovery {
 	 * ({@link BankSwitchStrategy#argumentByteMask}), or the strategy-less default
 	 * ({@link BankSwitchStrategy#defaultArgumentByteMask}) for a model with none.
 	 */
-	private static int argumentByteMask(HelperModel helper, int stateMask) {
+	private static int argumentByteMask(Program program, HelperModel helper,
+			Instruction switchSite, int stateMask) {
 		return helper.strategy() == null
 				? BankSwitchStrategy.defaultArgumentByteMask(stateMask)
-				: helper.strategy().argumentByteMask(stateMask);
+				: helper.strategy().argumentByteMask(program, switchSite, stateMask);
 	}
 
 	/**
@@ -2263,10 +2264,14 @@ final class HelperArgumentRecovery {
 		StoredValueScanner.Scan yScan = survivingScan(program, callInstr, 'Y', unwalked, localIn,
 			path, callerHooks, PartialByte.BYTE_MASK);
 		Map<Character, StoredValueScanner.ReadBack> readBacks = new HashMap<>();
-		// bead grm-ld68: classification at the MECHANISM's own field mask, separately from the
-		// 0xFF-masked scans above -- see readBackFor's javadoc for why the wider scan alone
+		// bead grm-ld68: classification at the byte bits the MECHANISM consumes (grm-hp9s:
+		// argumentByteMask, no longer its field-local width), separately from the 0xFF-masked
+		// scans above -- see readBackFor's javadoc for why the wider scan alone
 		// cannot be trusted here.
-		int byteMask = argumentByteMask(helper, helper.effectMask() >>> helper.lsb());
+		Instruction switchSite = helper.switchSite() == null ? null
+				: program.getListing().getInstructionAt(helper.switchSite());
+		int byteMask = argumentByteMask(program, helper, switchSite,
+			helper.effectMask() >>> helper.lsb());
 		readBackFor(readBacks, 'A', aScan, program, callInstr, unwalked, localIn, path,
 			callerHooks, byteMask);
 		readBackFor(readBacks, 'X', xScan, program, callInstr, unwalked, localIn, path,
@@ -2292,10 +2297,12 @@ final class HelperArgumentRecovery {
 	 * {@code combine()} reports {@code knownMask != 0} and demotes even though the FIELD itself
 	 * -- the only part the identity-table rule needs -- never resolved. The register's real
 	 * caller-side scan (the {@code argReg} scan in {@link #recoverCallArgument}, masked to
-	 * {@code stateMask}) never hits this: its own mask already excludes exactly those bits, so
+	 * the strategy's {@code argumentByteMask}) never hits this: its own mask already excludes
+	 * exactly those bits (grm-hp9s: the consumed bits at their BYTE position, which for a
+	 * shifted latch such as GxROM's {@code mask 3, shift 4} is not the field-local width) -- so
 	 * {@code knownMask} comes back zero there and the classification survives -- which is why
 	 * contra's A-channel restore worked before this bead touched anything. A second scan,
-	 * {@code narrowScan}, run at {@code stateMask} purely to recover the classification the wide
+	 * {@code narrowScan}, run at that same byte mask purely to recover the classification the wide
 	 * scan lost, reproduces that same alignment for X/Y. Its OWN value is never used -- only its
 	 * {@code stop()}/{@code readBack()} -- so the register's tracked {@code BankState} keeps
 	 * coming from {@code wideScan} exactly as {@link #surviving}'s original 0xFF convention

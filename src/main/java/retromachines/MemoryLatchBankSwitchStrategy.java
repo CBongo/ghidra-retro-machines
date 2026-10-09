@@ -791,6 +791,19 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * Keep this in sync with {@link #depositHelperArgument} above: if that override ever grows
 	 * a path that reads {@code argValue}, this must go back to the default {@code true}.
 	 */
+	/**
+	 * The latch's field bits at their BYTE position, {@code mask << shift} (bead grm-hp9s) --
+	 * the bits {@link #fieldFromStoredByte} reads. {@link #depositHelperArgument} never reads
+	 * the caller's argument value, but the caller-side scans still RESOLVE and CLASSIFY on this
+	 * mask (a {@code RESTORED_BANK} read-back is demoted the moment any masked bit is known), so
+	 * it must name the bits the latch actually consumes: GxROM's {@code mask 3, shift 4} is
+	 * {@code 0x30}, where {@code stateMask} would say {@code 0x3}.
+	 */
+	@Override
+	public int argumentByteMask(Program program, Instruction switchSite, int stateMask) {
+		return (mask << shift) & PartialByte.BYTE_MASK;
+	}
+
 	/** Returns whether helper argument recovery is consumed by this strategy. */
 	@Override
 	public boolean consumesHelperArgument() {
