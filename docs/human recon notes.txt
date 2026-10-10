@@ -295,6 +295,8 @@ bab3: table at bab6 length 6; first addr after is bac2 which is index 1.
 C:85c9: table at 85cc length 10; first addr after is 85e0 which is index 0.
 both tables were recovered correctly thanks to JumpTableBound.
 
+tmnt 8f34/cfcf: one call path is cfcd <- d08d <- d067 <- 2:bd6c <- d2c0 <- 6:9f75 (c702 jump table entry 14)
+
 
   Next session's shortest path
 

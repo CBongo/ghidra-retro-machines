@@ -216,19 +216,29 @@ paste a resolved install path into the repo.
 
 If you find an absolute path in a committed file, treat it as a bug and generalize it.
 
-## Persistent memory: the index is not the memory
+## Persistent memory: run `bd memories` first; the index is not the memory
 
-**The session-start hook injects a memory INDEX, not memory bodies** (bead `grm-8ctl`, changed
-2026-09-02). So a key you can see in your context is a *pointer*: you have its name and a
-truncated first line, and nothing more until you fetch it.
+**The session-start hook injects NO memories at all — not bodies, not even the index** (bead
+`grm-uuji`, 2026-10-10). **Run `bd memories` yourself at the start of every session, and again
+after a compaction**, before starting real work. It prints the index of every memory: a key and a
+truncated first line, which is a *pointer* — nothing more until you fetch it.
+
+Why it is not in the hook: hosts cap each hook output string at 10,000 characters (Claude Code's
+documented cap; over it, only a 2,000-character preview is injected and the rest goes to a file
+nobody is told to read). On 2026-10-10 `bd prime --no-memories` was 5,799 characters and the
+index alone 10,081 — over the cap by itself, and growing ~160 characters per memory. Every
+session was getting prime's first 2 KB and no index. The hooks now run only
+`bd prime --no-memories`, which fits with room to spare. **Do not add `bd memories` back to a
+hook**, and re-measure `bd prime --no-memories | wc -m` after any bd upgrade.
 
 It did inject every body in full until then, and that was the problem: measured 2026-09-02 at
 115,504 bytes, of which 110,823 were memory bodies. Hosts truncate that to a ~2 KB preview and
 spill the rest to a file, so everything after the first memory alphabetically was silently absent
 from every session — for Codex as much as for Claude, since `.codex/hooks.json` and
 `.claude/settings.json` run the same command. The fix, since bd 1.3.0 (bead `grm-9t2g`,
-2026-09-26), is the hook command `bd prime --no-memories && bd memories`: prime omits the bodies
-and `bd memories` emits the index. The pair measured 15,233 bytes. **Keep `--no-memories` on both
+2026-09-26), is `--no-memories` on the hook's `bd prime`. (That bead paired it with
+`bd memories` and measured the pair at 15,233 bytes — already past the 10,000 cap, so the index
+was in fact being truncated away from then until `grm-uuji`.) **Keep `--no-memories` on both
 hooks** — without it, 1.3.x appends every body again (~165 KB) and the truncation returns silently.
 
 (From 2026-09-02 to 2026-09-26 this was done by a custom `.beads/PRIME.md`, which on 1.2.x
@@ -252,9 +262,6 @@ not act on it as if it were the whole memory.** If a key looks relevant to what 
 class of expensive mistake, and their first line does not tell you which class. This mattered
 before the index change and matters more after it: `bd recall` is now the ONLY way a body reaches
 you, so "I saw it in `bd prime`" is no longer a thing that can happen.
-
-If the index itself is missing from your context — a smaller payload is still not a guaranteed-
-small one — run `bd memories` yourself. It is one cheap command.
 
 Write new knowledge with `bd remember` (see the Rules section below); do not create memory files.
 
