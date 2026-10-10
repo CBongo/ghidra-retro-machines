@@ -18,15 +18,41 @@ This project uses **bd** (beads) for issue tracking. Run `bd prime` for full wor
 > source of truth; don't `bd import` during normal operation; don't
 > reach for third-party Dolt hosting before trying the default).
 
-## Run commands through git bash, not PowerShell
+## Shell choice: git bash by default, WSL and PowerShell only for their one job each
 
-**Git bash is the normal shell for this project — reach for the Bash tool first.** Nearly all
-the tooling here is POSIX shell (`tools/banktest/*.sh`, the gradle invocations, `bd`), the
-documented command lines throughout this file are written for it, and the permission
-allowlist is tuned for that route — so a bash call is far more likely to run without
-prompting than the PowerShell equivalent of the same thing.
+**Git bash is the normal shell for this project — reach for the Bash tool first.** The deciding
+reason is *where the toolchain lives*: the JDK, Gradle, the Ghidra install, the locally patched
+`decompile.exe` the real-ROM tier fingerprints by sha256, and `bd` with its Dolt database are all
+Windows-side, and the tooling that drives them is POSIX shell (`tools/banktest/*.sh`, the gradle
+invocations, `bd`). Every command line in this file is written for git bash. A second reason
+survives auto mode: the committed permission allowlist is tuned for this route, and a call that
+matches an allow rule skips the auto-mode classifier entirely, while an unmatched one can be
+blocked by it. Do not drift to PowerShell just because a host lists it as the primary shell.
 
-Three practical consequences:
+Pick by task, and keep to it — consistency across sessions is the point (re-ruled 2026-10-10 when
+the project moved to auto mode):
+
+| Task | Use |
+|---|---|
+| File reads/edits/searches | The agent's own file tools; otherwise git bash |
+| Gradle, `build-and-test.sh`, `realrom-test.sh`, JUnit | **git bash** |
+| `git`, `bd` | **git bash only** |
+| Building the shipped `decompile.exe` (MinGW, `make ghidra_opt`) | **git bash** — it is a Windows binary |
+| POSIX-only native work: `decomp_test_dbg`, decompiler datatests | **WSL**, in a copy under the WSL home dir |
+| Junctions (`mklink /J`), `%APPDATA%`, `tools/install-gui.ps1`, registry, ACLs | **PowerShell** |
+
+WSL rules — it is reachable only nested (`wsl -e bash -lc '…'` from the Bash tool), and it has
+none of this project's toolchain (no JDK, no `bd`):
+
+- **WSL never runs `git`, `gradle`, or `bd` against the Windows checkout.** Two gits on one working
+  tree disagree about line endings, file mode, and stat data (phantom modifications); Linux build
+  output would mix into `build/`; a Linux `bd` would contend for the Dolt lock.
+- **Work in a copy under the WSL home dir, not under `/mnt/<drive>`.** The 9P bridge to Windows
+  drives is far slower than WSL's native filesystem.
+- **A Linux Ghidra run is not this project's test.** It would load the stock Linux decompiler, not
+  the patched Windows binary, and `megaman`/`wizwarr` would fail as a fake regression.
+
+Three practical consequences for git bash:
 
 - **Never prefix a command with `cd` to the repo root.** Your shell already starts at the repo
   root and its working directory persists between calls, so `cd <repo root> && <cmd>` is pure
@@ -38,8 +64,8 @@ Three practical consequences:
 - **Long or multi-line arguments go in a file, not on the command line.** Prompts to approve a
   wall of inline text get rejected. Write the text to a scratchpad file and pass it by path:
   `bd comment <id> --file notes.txt`, `git commit -F msg.txt`.
-- PowerShell is still the right tool for genuinely Windows-shaped work (`%APPDATA%` paths,
-  `tools/install-gui.ps1`, registry, ACLs). Use it there and nowhere else.
+- PowerShell is the right tool only for the Windows-shaped rows in the table above. Use it there
+  and nowhere else.
 
 ## Stop and ask when a human would be more efficient
 

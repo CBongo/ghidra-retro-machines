@@ -12,7 +12,7 @@ extension; use `bd` for all task tracking; and the session-completion/push proto
 This file adds the Claude-specific and Ghidra-specific detail on top of that core: build and test
 mechanics, the opt-in tiers, reading Ghidra source, and loader conventions.
 
-<!-- The "Run commands through git bash" and "Stop and ask when a human would be more
+<!-- The shell-choice ("git bash by default") and "Stop and ask when a human would be more
      efficient" sections moved verbatim to AGENTS.md on 2026-08-26 (grm-yaat) so Codex/ChatGPT
      sessions get them too. Do not re-add them here — edit AGENTS.md instead. -->
 
