@@ -45,6 +45,7 @@ import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.symbol.RefType;
 import ghidra.program.model.symbol.Reference;
 import ghidra.program.model.symbol.SourceType;
+import ghidra.program.model.symbol.Symbol;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.task.TaskMonitor;
 
@@ -68,6 +69,26 @@ import ghidra.util.task.TaskMonitor;
  * them by accident. Surveyed over the pinned NES corpus: 10 sites in 3 titles (rcproam 4, cv3 5,
  * dbz_datach 1).
  *
+ * <p><b>The inline form</b> (grm-cqwn): the same four instructions falling straight into the
+ * {@code JMP (P)} itself, with no stub. wizwarr's NMI state dispatch is the case:
+ * <pre>
+ *   b18c: LDX $03
+ *   b18e: LDA $b19b,X / STA $66
+ *   b193: LDA $b19c,X / STA $67
+ *   b198: JMP ($0066)
+ * </pre>
+ * Here the load and the jump ARE in one function, but the decompiler still declines it ("Could
+ * not recover jumptable ... Too many branches", then "Treating indirect jump as call"): the index
+ * is a raw RAM byte with no guard in this function (the only one, {@code BMI} at {@code ff89}, is
+ * in the NMI entry that reaches {@code b178} by {@code JMP}), and {@code
+ * JumpBasic::findSmallestNormal} refuses a 1-byte switch variable's 256-value range unless a
+ * {@code LOAD} lies on the path COMMON to every address byte. In a split pointer each byte has its
+ * own {@code LOAD}, so neither is common, and no model is recovered at all -- leaving nothing for
+ * {@link JumpTableBoundAnalyzer} to bound. The inline form is matched only when the {@code JMP (P)}
+ * still carries no computed reference, i.e. when stock switch analysis (which runs before this
+ * analyzer) recovered nothing there; the references and functions are the same as for a stub,
+ * CALL-typed as the decompiler itself already treats the jump.
+ *
  * <p><b>The table's extent</b> is not written anywhere in the code: the index is a doubled RAM
  * byte. Entries are therefore walked from the table start, interleaved low/high, and the walk
  * stops at the FIRST entry that:
@@ -79,6 +100,10 @@ import ghidra.util.task.TaskMonitor;
  * <li>points outside initialized, non-volatile memory (RAM, I/O, unmapped), or into a banked
  *     window other than the caller's own block;</li>
  * <li>points into the middle of an existing instruction;</li>
+ * <li>would itself overlap the lowest target above the table seen so far -- a table cannot run
+ *     into code it dispatches to, the {@link JumpTableBound#bound} rule (wizwarr {@code b19b}'s
+ *     19 entries end at {@code b1c1}, entry 15's own handler, which nothing has disassembled yet
+ *     when the walk runs);</li>
  * <li>or is past {@link #MAX_ENTRIES}.</li>
  * </ul>
  * Fewer than 2 surviving entries declines the site, and so does a table outside the block the
@@ -124,8 +149,14 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 	}
 
 	/** One recognized call site: the call, the stub's {@code JMP (P)}, and the table's low byte
-	 *  of entry 0 (the high byte follows it). */
-	record Site(Instruction call, Instruction stub, Address table) {}
+	 *  of entry 0 (the high byte follows it). In the inline form (grm-cqwn) {@code call} and
+	 *  {@code stub} are the same {@code JMP (P)}. */
+	record Site(Instruction call, Instruction stub, Address table) {
+
+		boolean inline() {
+			return call == stub;
+		}
+	}
 
 	/**
 	 * Whether {@code block} is a banked window: some overlay block (another bank's image) covers
@@ -183,7 +214,8 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 			}
 			String comment = "split dispatch: " + targets.size() + "-entry table at " +
 				site.table() + " via JMP (" + IndirectJumpConstantPointer.pointerCell(site.stub()) +
-				") at " + site.stub().getMinAddress() + " (grm-3er5)";
+				") at " + site.stub().getMinAddress() +
+				(site.inline() ? " (grm-cqwn)" : " (grm-3er5)");
 			AnnotationGuard.addComment(listing, site.call().getMinAddress(), CommentType.EOL,
 				comment, "split dispatch:");
 		}
@@ -198,19 +230,33 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 	 * The site {@code call} completes, or null: {@code call} is a {@code JSR}/{@code JMP} to a
 	 * {@code JMP (P)} stub, and the four instructions falling through into it are
 	 * {@code LDA L,r / STA P / LDA L+1,r / STA P+1} in either load order, one index register.
+	 * Or (grm-cqwn) {@code call} is itself a {@code JMP (P)} with no computed reference yet, and
+	 * those four instructions fall through into it.
 	 */
 	static Site match(Listing listing, Instruction call) {
-		int op = opcode(call);
-		if (op != 0x20 && op != 0x4c) {
-			return null;
+		Instruction stub;
+		if (IndirectJumpConstantPointer.isIndirectJumpSite(call)) {
+			if (hasComputedReference(call) || isDeclaredSwitch(call)) {
+				// Switch analysis (or an earlier round) already resolved it, or a jump-table
+				// override awaits stock switch analysis there (shenlong 8655, bounded by
+				// JumpTableBoundAnalyzer): that switch has an owner.
+				return null;
+			}
+			stub = call;
 		}
-		Address[] flows = call.getFlows();
-		if (flows.length != 1) {
-			return null;
-		}
-		Instruction stub = listing.getInstructionAt(flows[0]);
-		if (stub == null || !IndirectJumpConstantPointer.isIndirectJumpSite(stub)) {
-			return null;
+		else {
+			int op = opcode(call);
+			if (op != 0x20 && op != 0x4c) {
+				return null;
+			}
+			Address[] flows = call.getFlows();
+			if (flows.length != 1) {
+				return null;
+			}
+			stub = listing.getInstructionAt(flows[0]);
+			if (stub == null || !IndirectJumpConstantPointer.isIndirectJumpSite(stub)) {
+				return null;
+			}
 		}
 		long cell = IndirectJumpConstantPointer.pointerCell(stub).getOffset();
 		Instruction st2 = fallingInto(listing, call);
@@ -262,6 +308,8 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 		if (home == null || !home.equals(memory.getBlock(site.table()))) {
 			return targets;
 		}
+		// Lowest target in the table's own block above the table, so far (grm-cqwn).
+		long minTarget = Long.MAX_VALUE;
 		for (int i = 0; i < MAX_ENTRIES; i++) {
 			Address lo;
 			Address hi;
@@ -274,6 +322,9 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 			}
 			if (i > 0 && tableStarts.contains(lo)) {
 				break; // the next table begins here
+			}
+			if (hi.getOffset() >= minTarget) {
+				break; // the table ran into one of its own handlers, disassembled or not
 			}
 			if (listing.getInstructionContaining(lo) != null ||
 				listing.getInstructionContaining(hi) != null) {
@@ -298,9 +349,32 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 			if (at != null && !at.getMinAddress().equals(target)) {
 				break; // mid-instruction
 			}
+			if (block.equals(home) && value > site.table().getOffset()) {
+				minTarget = Math.min(minTarget, value);
+			}
 			targets.add(target);
 		}
 		return targets;
+	}
+
+	/** Whether a {@code switch} label sits on {@code instr}: what a {@link
+	 *  ghidra.program.model.pcode.JumpTable} override (and stock switch labelling) leaves there. */
+	private static boolean isDeclaredSwitch(Instruction instr) {
+		for (Symbol sym : instr.getProgram().getSymbolTable().getSymbols(instr.getMinAddress())) {
+			if ("switch".equals(sym.getName())) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean hasComputedReference(Instruction instr) {
+		for (Reference ref : instr.getReferencesFrom()) {
+			if (ref.getReferenceType().isComputed()) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static Instruction fallingInto(Listing listing, Instruction instr) {

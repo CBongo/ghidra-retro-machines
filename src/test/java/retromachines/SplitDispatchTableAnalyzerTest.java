@@ -186,6 +186,88 @@ public class SplitDispatchTableAnalyzerTest extends AbstractBundledLanguageTest 
 		assertNull(program.getListing().getComment(CommentType.EOL, addr(CALLER + 11)));
 	}
 
+	/** grm-cqwn's inline form, shaped like wizwarr's NMI state dispatch: {@code LDX $03 / LDA
+	 *  tbl,X / STA $66 / LDA tbl+1,X / STA $67 / JMP ($0066)} with the table straight after the
+	 *  jump. Entry 2's handler is the first byte past the table and is not disassembled, so only
+	 *  the lowest-target rule stops the walk before the valid-looking word that follows. */
+	private ProgramDB buildInline(String computedRefTo) throws Exception {
+		builder = new ProgramBuilder("Test", LANG);
+		uninitializedRam(builder, ".ram", "0x0", 0x800);
+		builder.createMemory(".text", "0x8000", 0x8000);
+		long table = CALLER + 15;
+		builder.setBytes(String.format("0x%x", CALLER), "a6 03 bd " + word(table) + " 85 66 bd " +
+			word(table + 1) + " 85 67 6c 66 00", true);
+		builder.setBytes(String.format("0x%x", table), word(HANDLERS[0]) + " " +
+			word(HANDLERS[1]) + " " + word(table + 6) + " " + word(HANDLERS[3]), false);
+		for (long h : HANDLERS) {
+			builder.setBytes(String.format("0x%x", h), "60", false);
+		}
+		ProgramDB program = builder.getProgram();
+		if (computedRefTo != null) {
+			int tx = program.startTransaction("ref");
+			try {
+				program.getListing().getInstructionAt(addr(CALLER + 12)).addMnemonicReference(
+					addr(Long.parseLong(computedRefTo, 16)), RefType.COMPUTED_JUMP,
+					ghidra.program.model.symbol.SourceType.ANALYSIS);
+			}
+			finally {
+				program.endTransaction(tx, true);
+			}
+		}
+		return program;
+	}
+
+	private List<Long> computedTargets(ProgramDB program, long at) {
+		List<Long> out = new ArrayList<>();
+		for (Reference r : program.getListing().getInstructionAt(addr(at)).getReferencesFrom()) {
+			if (r.getReferenceType().isComputed()) {
+				out.add(r.getToAddress().getOffset());
+			}
+		}
+		out.sort(null);
+		return out;
+	}
+
+	@Test
+	public void followsInlineDispatchUpToItsOwnLowestTarget() throws Exception {
+		ProgramDB program = buildInline(null);
+		run(program);
+		long jmp = CALLER + 12;
+		assertEquals(List.of(CALLER + 21, HANDLERS[0], HANDLERS[1]), computedTargets(program, jmp));
+		assertNull("the word past the table is not an entry",
+			program.getListing().getInstructionAt(addr(HANDLERS[3])));
+		String eol = program.getListing().getComment(CommentType.EOL, addr(jmp));
+		assertNotNull(eol);
+		assertTrue(eol, eol.startsWith("split dispatch: 3-entry table at 900f"));
+		assertTrue(eol, eol.endsWith("(grm-cqwn)"));
+	}
+
+	/** Switch analysis already resolved the inline jump: leave it alone. */
+	@Test
+	public void leavesAnAlreadyResolvedInlineJumpAlone() throws Exception {
+		ProgramDB program = buildInline("9200");
+		run(program);
+		assertEquals(List.of(HANDLERS[0]), computedTargets(program, CALLER + 12));
+		assertNull(program.getListing().getComment(CommentType.EOL, addr(CALLER + 12)));
+	}
+
+	/** A jump-table override (its {@code switch} label) already owns the inline jump, though stock
+	 *  switch analysis has not laid its references down yet: leave it alone. */
+	@Test
+	public void leavesAnOverriddenInlineJumpAlone() throws Exception {
+		ProgramDB program = buildInline(null);
+		int tx = program.startTransaction("label");
+		try {
+			program.getSymbolTable().createLabel(addr(CALLER + 12), "switch",
+				ghidra.program.model.symbol.SourceType.USER_DEFINED);
+		}
+		finally {
+			program.endTransaction(tx, true);
+		}
+		run(program);
+		assertEquals(List.of(), computedTargets(program, CALLER + 12));
+	}
+
 	/** The caller runs from one block and the table sits in another (a banked window): the bytes
 	 *  there are whichever bank is mapped, so the table is not established -- decline. */
 	@Test
