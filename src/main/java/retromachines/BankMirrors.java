@@ -633,9 +633,9 @@ public final class BankMirrors {
 		if (state == null || field.width() > 16) {
 			return false;
 		}
-		int mask = (1 << field.width()) - 1;
-		int known = (state.knownMask() >>> field.lsb()) & mask;
-		int bits = (state.bits() >>> field.lsb()) & mask & known;
+		int mask = field.widthMask();
+		int known = field.pos().extract(state.knownMask());
+		int bits = field.pos().extract(state.bits()) & known;
 		for (int v = 0; v <= mask; v++) {
 			if ((v & known) == bits && !encoding.verified().contains(v)) {
 				return false;

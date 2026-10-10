@@ -66,7 +66,7 @@ import ghidra.program.model.symbol.Reference;
  * expressed by narrowing the *mask* of the result -- it has to be expressed by echoing
  * back {@code inState}'s own bits for every field this call leaves alone. Concretely, every
  * branch below starts from {@code inState} and only overwrites (via
- * {@link #setFieldFromByte}/{@link #setUnknownField}) the specific field(s) that switch
+ * {@link BitField#deposit}/{@link BitField#forget}) the specific field(s) that switch
  * actually touches; an untracked-target data write returns {@code inState} completely
  * unmodified. This also keeps {@code computeSwitch} non-null for <em>every</em> in-range
  * write regardless of {@code inState} (the match/no-match decision is the address-parity-
@@ -79,13 +79,6 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	public SelectDataBankSwitchStrategy() {
 	}
 
-	/** One tracked sub-field's field-local {@code [lsb, lsb+width)} bit position. */
-	private record FieldPos(int lsb, int width) {
-		int mask() {
-			return ((1 << width) - 1) << lsb;
-		}
-	}
-
 	private AddressSpace space;
 	private long rangeStart;
 	private long rangeEnd;
@@ -95,14 +88,14 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	private int modeByteMask;
 	private int modeByteShift;
 
-	private FieldPos selectField;
-	private FieldPos modeField; // null when this board has no co-emitted mode bit
-	private Map<Integer, FieldPos> targets;
+	private BitField selectField;
+	private BitField modeField; // null when this board has no co-emitted mode bit
+	private Map<Integer, BitField> targets;
 	/** {@link #targets} keyed by the descriptor's FIELD NAME rather than select value -- the
 	 *  key {@link BankMirrors#identifyingField} answers in, so {@link #mirroredByte} can tell
 	 *  whether the window an identifying byte was read from is banked by a register this
 	 *  mechanism tracks at all. */
-	private Map<String, FieldPos> targetsByName;
+	private Map<String, BitField> targetsByName;
 
 	/**
 	 * The addresses that MIRROR THE LIVE BANK on this program (bead grm-mej.2), delivered by
@@ -155,21 +148,21 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 		if (params.has("targets")) {
 			for (Map.Entry<String, JsonElement> e : params.getAsJsonObject("targets").entrySet()) {
 				String fieldName = e.getValue().getAsString();
-				FieldPos pos = fieldPos(fieldLayout, fieldName);
+				BitField pos = fieldPos(fieldLayout, fieldName);
 				targets.put(Integer.valueOf(e.getKey()), pos);
 				targetsByName.put(fieldName, pos);
 			}
 		}
 	}
 
-	private static FieldPos fieldPos(JsonObject fieldLayout, String fieldName) {
+	private static BitField fieldPos(JsonObject fieldLayout, String fieldName) {
 		JsonObject fl = fieldLayout.has(fieldName) ? fieldLayout.getAsJsonObject(fieldName) : null;
 		if (fl == null) {
 			throw new IllegalArgumentException(
 				"select-data: no field-layout entry for '" + fieldName +
 					"' -- is it listed in this mechanism's 'sets:'?");
 		}
-		return new FieldPos(fl.get("lsb").getAsInt(), fl.get("width").getAsInt());
+		return new BitField(fl.get("lsb").getAsInt(), fl.get("width").getAsInt());
 	}
 
 	private final StoredValueScanner.Hooks hooks = new StoredValueScanner.Hooks() {
@@ -319,7 +312,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 		if (windowField == null) {
 			return null; // not ROM_IDENTIFYING, or its window was not attributed -- refuse
 		}
-		FieldPos pos = targetsByName.get(windowField.name());
+		BitField pos = targetsByName.get(windowField.name());
 		if (pos == null || pos.width() != windowField.width()) {
 			return null; // banked by a register this mechanism does not track -- refuse
 		}
@@ -327,9 +320,9 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 		if (encoding == null) {
 			return null; // defensive: a ROM_IDENTIFYING offset always carries one once derived
 		}
-		int byteMask = (1 << pos.width()) - 1;
-		int known = (inState.knownMask() >>> pos.lsb()) & byteMask;
-		int bits = (inState.bits() >>> pos.lsb()) & byteMask;
+		int byteMask = pos.widthMask();
+		int known = pos.extract(inState.knownMask());
+		int bits = pos.extract(inState.bits());
 		return encoding.byteFor(known, bits, byteMask);
 	}
 
@@ -455,12 +448,12 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 			mask = PartialByte.BYTE_MASK;
 		}
 		else {
-			Integer selectValue = fieldValueIfFullyKnown(siteInState, selectField);
-			FieldPos target = selectValue == null ? null : targets.get(selectValue);
+			Integer selectValue = selectField.valueIfFullyKnown(siteInState);
+			BitField target = selectValue == null ? null : targets.get(selectValue);
 			if (target == null) {
 				return false; // poisons or deposits nothing -- no scan, no mirror
 			}
-			mask = (1 << target.width()) - 1;
+			mask = target.widthMask();
 		}
 		boolean[] consulted = new boolean[1];
 		StoredValueScanner.Hooks probe = new StoredValueScanner.Hooks() {
@@ -540,15 +533,15 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 			mask = PartialByte.BYTE_MASK;
 		}
 		else {
-			Integer selectValue = fieldValueIfFullyKnown(inState, selectField);
+			Integer selectValue = selectField.valueIfFullyKnown(inState);
 			if (selectValue == null) {
 				return ValueStop.ANALYZER_LIMIT;
 			}
-			FieldPos target = targets.get(selectValue);
+			BitField target = targets.get(selectValue);
 			if (target == null) {
 				return ValueStop.ANALYZER_LIMIT;
 			}
-			mask = (1 << target.width()) - 1;
+			mask = target.widthMask();
 		}
 
 		// Same scan, differing only in the entry stop; the value is discarded, so this can only
@@ -584,10 +577,10 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 				: StoredValueScanner.resolveStoredValue(program, instr, reg, inState, PartialByte.BYTE_MASK, hooks);
 
 		MechanismState result =
-			setFieldFromByte(inState, selectField, extractByteField(stored, selectByteMask, selectByteShift));
+			selectField.deposit(inState, extractByteField(stored, selectByteMask, selectByteShift));
 		if (modeField != null) {
 			result =
-				setFieldFromByte(result, modeField, extractByteField(stored, modeByteMask, modeByteShift));
+				modeField.deposit(result, extractByteField(stored, modeByteMask, modeByteShift));
 		}
 		return result;
 	}
@@ -604,16 +597,16 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	 */
 	private SwitchOutcome computeDataWrite(Program program, Instruction instr, Character reg,
 			MechanismState inState) {
-		Integer selectValue = fieldValueIfFullyKnown(inState, selectField);
+		Integer selectValue = selectField.valueIfFullyKnown(inState);
 		if (selectValue == null) {
 			MechanismState result = inState;
-			for (FieldPos target : targets.values()) {
-				result = setUnknownField(result, target);
+			for (BitField target : targets.values()) {
+				result = target.forget(result);
 			}
 			return SwitchOutcome.of(result);
 		}
 
-		FieldPos target = targets.get(selectValue);
+		BitField target = targets.get(selectValue);
 		if (target == null) {
 			// Untracked register (e.g. MMC3 CHR banks R0-R5): no poison -- see class javadoc.
 			// Nothing is deposited here and nothing was attempted, so this is NOT the
@@ -621,10 +614,10 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 			return SwitchOutcome.noDeposit(inState);
 		}
 
-		int byteMask = (1 << target.width()) - 1;
+		int byteMask = target.widthMask();
 		PartialByte stored = reg == null ? PartialByte.unknown()
 				: StoredValueScanner.resolveStoredValue(program, instr, reg, inState, byteMask, hooks);
-		return SwitchOutcome.of(setFieldFromByte(inState, target, fieldFromDataByte(stored)));
+		return SwitchOutcome.of(target.deposit(inState, fieldFromDataByte(stored)));
 	}
 
 	/**
@@ -648,7 +641,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	 * fields' masks. {@code inState} is irrelevant here (a select write's routing is fixed,
 	 * not state-dependent) and is ignored.</li>
 	 * <li><b>Odd (data-write helper):</b> dispatches on
-	 * {@code fieldValueIfFullyKnown(inState, selectField)}, mirroring
+	 * {@code selectField.valueIfFullyKnown(inState)}, mirroring
 	 * {@link #computeDataWrite}'s three-way split:
 	 * <ul>
 	 * <li>select known and a tracked target (MMC3 R6/R7): {@code ownedMask} is that target
@@ -704,8 +697,8 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 				PartialByte.BYTE_MASK;
 		}
 		int widest = 0;
-		for (FieldPos target : targets.values()) {
-			widest |= (1 << target.width()) - 1;
+		for (BitField target : targets.values()) {
+			widest |= target.widthMask();
 		}
 		return widest == 0 ? BankSwitchStrategy.defaultArgumentByteMask(stateMask)
 				: widest & PartialByte.BYTE_MASK;
@@ -727,12 +720,12 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 		if ((offset & 1) == 0) {
 			MechanismState empty = new MechanismState(0, 0);
 			MechanismState value =
-				setFieldFromByte(empty, selectField, extractByteField(argValue, selectByteMask, selectByteShift));
-			int owned = selectField.mask();
+				selectField.deposit(empty, extractByteField(argValue, selectByteMask, selectByteShift));
+			int owned = selectField.positionedMask();
 			if (modeField != null) {
 				value =
-					setFieldFromByte(value, modeField, extractByteField(argValue, modeByteMask, modeByteShift));
-				owned |= modeField.mask();
+					modeField.deposit(value, extractByteField(argValue, modeByteMask, modeByteShift));
+				owned |= modeField.positionedMask();
 			}
 			return new HelperDeposit(owned, value);
 		}
@@ -744,25 +737,25 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 		// several data-write-only calls -- does the caller's in-state get a say.
 		Integer selectValue = selectSuppliedInsideHelper(program, switchSite);
 		if (selectValue == null) {
-			selectValue = fieldValueIfFullyKnown(inState, selectField);
+			selectValue = selectField.valueIfFullyKnown(inState);
 		}
 		if (selectValue == null) {
 			int owned = 0;
-			for (FieldPos target : targets.values()) {
-				owned |= target.mask();
+			for (BitField target : targets.values()) {
+				owned |= target.positionedMask();
 			}
 			return new HelperDeposit(owned, new MechanismState(0, 0));
 		}
 
-		FieldPos target = targets.get(selectValue);
+		BitField target = targets.get(selectValue);
 		if (target == null) {
 			// Untracked register (e.g. MMC3 CHR banks R0-R5): verified no-op -- see method
 			// javadoc.
 			return new HelperDeposit(0, new MechanismState(0, 0));
 		}
 
-		MechanismState value = setFieldFromByte(new MechanismState(0, 0), target, fieldFromDataByte(argValue));
-		return new HelperDeposit(target.mask(), value);
+		MechanismState value = target.deposit(new MechanismState(0, 0), fieldFromDataByte(argValue));
+		return new HelperDeposit(target.positionedMask(), value);
 	}
 
 	/**
@@ -891,9 +884,9 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 				}
 				PartialByte stored = StoredValueScanner.resolveStoredValue(program, prev, reg,
 					MechanismState.unknown(), PartialByte.BYTE_MASK, hooks);
-				MechanismState value = setFieldFromByte(new MechanismState(0, 0), selectField,
+				MechanismState value = selectField.deposit(new MechanismState(0, 0),
 					extractByteField(stored, selectByteMask, selectByteShift));
-				return fieldValueIfFullyKnown(value, selectField);
+				return selectField.valueIfFullyKnown(value);
 			}
 			cur = prev;
 		}
@@ -938,8 +931,8 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 		if (selectValue == null) {
 			return -1;
 		}
-		FieldPos target = targets.get(selectValue);
-		return target == null ? 0 : target.mask();
+		BitField target = targets.get(selectValue);
+		return target == null ? 0 : target.positionedMask();
 	}
 
 	private Long writesInRange(Instruction instr) {
@@ -964,41 +957,9 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	}
 
 	/** The BYTE-to-FIELD conversion for a data write (bead grm-ze06.1): the written byte IS the
-	 *  selected register's value, verbatim, and {@link #setFieldFromByte} then reduces it to the
+	 *  selected register's value, verbatim, and {@link BitField#deposit} then reduces it to the
 	 *  field's width. This was an implicit reuse of the byte's record as field-local state. */
 	private static MechanismState fieldFromDataByte(PartialByte dataByte) {
 		return new MechanismState(dataByte.knownMask(), dataByte.bits());
-	}
-
-	/** Fully known iff every bit of {@code field}'s mask is known in {@code state}; returns
-	 *  that field's value (right-shifted to bit 0), or null when any bit is unknown -- a
-	 *  dispatch decision (e.g. which register a data write targets) cannot be made from a
-	 *  partially known field. */
-	private static Integer fieldValueIfFullyKnown(MechanismState state, FieldPos field) {
-		int mask = field.mask();
-		if ((state.knownMask() & mask) != mask) {
-			return null;
-		}
-		return (state.bits() & mask) >>> field.lsb();
-	}
-
-	/** Returns {@code base} with {@code field}'s bits marked unknown, leaving every other
-	 *  bit of {@code base} exactly as it was. */
-	private static MechanismState setUnknownField(MechanismState base, FieldPos field) {
-		int mask = field.mask();
-		return new MechanismState(base.knownMask() & ~mask, base.bits() & ~mask);
-	}
-
-	/** Returns {@code base} with {@code field}'s bits replaced by {@code fieldValue} (a
-	 *  {@link MechanismState} already reduced to {@code [0, field.width())}, possibly only
-	 *  partially known -- e.g. mask-algebra partial knowledge from
-	 *  {@link StoredValueScanner}), leaving every other bit of {@code base} exactly as it
-	 *  was. Generalizes {@link #setUnknownField} to fully- and partially-known values alike. */
-	private static MechanismState setFieldFromByte(MechanismState base, FieldPos field, MechanismState fieldValue) {
-		int mask = field.mask();
-		int knownBits = (fieldValue.knownMask() << field.lsb()) & mask;
-		int valueBits = (fieldValue.bits() << field.lsb()) & mask;
-		return new MechanismState((base.knownMask() & ~mask) | knownBits,
-			(base.bits() & ~mask) | valueBits);
 	}
 }

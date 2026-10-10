@@ -520,7 +520,7 @@ final class HelperArgumentRecovery {
 			PartialByte viaCell = inbound == null ? PartialByte.unknown()
 					: StoredValueScanner.callerCellValue(program, callInstr, inbound, localIn,
 						byteMask, callerHooks, path);
-			// Partial knowledge counts, matching how combine() and setFieldFromByte already treat
+			// Partial knowledge counts, matching how combine() and BitField.deposit already treat
 			// a per-bit answer. Mirror-aware as of grm-mej.3 item 4 for the same reason the
 			// caller-side register scan above is: this scan runs in the CALLER, outside any
 			// mechanism's interpretation, and callerHooks' isMechanismWrite (when the strategy

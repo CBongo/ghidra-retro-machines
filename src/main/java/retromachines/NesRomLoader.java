@@ -200,7 +200,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 			return null; // no mode field on this board -- nothing to resolve
 		}
 		String modeName = params.get("mode_field").getAsString();
-		DescriptorSupport.StateField field =
+		BoardDescriptorModel.FieldSpec field =
 			DescriptorSupport.findField(DescriptorSupport.parseStateFields(map), modeName);
 		if (field == null) {
 			log.appendMsg(mapPath + ": a mechanism names mode_field '" + modeName +
@@ -263,10 +263,9 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 				break;
 			}
 		}
-		DescriptorSupport.StateField field = DescriptorSupport.findField(
+		BoardDescriptorModel.FieldSpec field = DescriptorSupport.findField(
 			DescriptorSupport.parseStateFields(map), params.get("mode_field").getAsString());
-		long mask = (1L << field.width()) - 1;
-		return (initialState & ~(mask << field.lsb())) | ((long) mode << field.lsb());
+		return field.pos().deposit(initialState, mode);
 	}
 
 	private static final int INES_HEADER_LEN = 16;
@@ -827,7 +826,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 			// every other in-range bank value gets an overlay block <name>_B<value> that
 			// the bank analyzer retargets references into.
 			List<PlacedWindow> placed = new ArrayList<>();
-			List<DescriptorSupport.StateField> fields = DescriptorSupport.parseStateFields(map);
+			List<BoardDescriptorModel.FieldSpec> fields = DescriptorSupport.parseStateFields(map);
 			// Image-relative seeds (banking.initial_state_expr, bead grm-y0ml) resolve HERE:
 			// the PRG size is a load-time fact, so the .map keeps the expression symbolic and
 			// this is the first place it can be evaluated. Published below for the analyzer,
@@ -1010,7 +1009,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 	 * {@code <name>_B<bank>} overlays for every other in-range bank).
 	 */
 	private static void realizeInvariantWindow(Program program, AddressSpace baseSpace,
-			DescriptorSupport.PlannedWindow pw, List<DescriptorSupport.StateField> fields,
+			DescriptorSupport.PlannedWindow pw, List<BoardDescriptorModel.FieldSpec> fields,
 			Long initialState, InesHeader header, FileBytes fileBytes, String mapPath,
 			List<PlacedWindow> placed, MessageLog log) {
 
@@ -1044,7 +1043,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 		}
 
 		Set<String> exprFields = DescriptorExpressions.referencedFields(expr);
-		DescriptorSupport.StateField field = exprFields.size() == 1
+		BoardDescriptorModel.FieldSpec field = exprFields.size() == 1
 				? DescriptorSupport.findField(fields, exprFields.iterator().next())
 				: null;
 		if (field == null) {
@@ -1101,11 +1100,11 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 	 * expression's non-home (layout, bank) pair).
 	 */
 	private static void realizeVaryingWindows(Program program, AddressSpace baseSpace,
-			DescriptorSupport.LayoutPlan plan, List<DescriptorSupport.StateField> fields,
+			DescriptorSupport.LayoutPlan plan, List<BoardDescriptorModel.FieldSpec> fields,
 			Long initialState, InesHeader header, FileBytes fileBytes, String mapPath,
 			List<PlacedWindow> placed, MessageLog log) {
 
-		DescriptorSupport.StateField modeFieldSpec =
+		BoardDescriptorModel.FieldSpec modeFieldSpec =
 			DescriptorSupport.findField(fields, plan.modeField());
 		if (modeFieldSpec == null || initialState == null) {
 			log.appendMsg("memory.layouts[] present but mode field '" + plan.modeField() +
@@ -1170,7 +1169,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 				}
 
 				Set<String> exprFields = DescriptorExpressions.referencedFields(expr);
-				DescriptorSupport.StateField bankField = exprFields.size() == 1
+				BoardDescriptorModel.FieldSpec bankField = exprFields.size() == 1
 						? DescriptorSupport.findField(fields, exprFields.iterator().next())
 						: null;
 				if (bankField == null) {

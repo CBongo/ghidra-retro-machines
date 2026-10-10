@@ -1387,7 +1387,7 @@ final class BankDataflowEngine {
 				Integer v = DescriptorSupport.OverlayNaming.parseBankValue(w.name(), name);
 				if (v != null) {
 					FieldSpec f = w.field();
-					return new int[] { f.positionedMask(), (v << f.lsb()) & f.positionedMask() };
+					return new int[] { f.positionedMask(), f.pos().place(v) };
 				}
 				// null: not one of ours (e.g. a C64 occupant overlay) -- keep looking
 			}
@@ -1407,16 +1407,14 @@ final class BankDataflowEngine {
 							FieldSpec bankField = instance.bankField();
 							int posMask = modeField.positionedMask() | bankField.positionedMask();
 							int posBits =
-								((mb.mode() << modeField.lsb()) & modeField.positionedMask()) |
-									((mb.bank() << bankField.lsb()) & bankField.positionedMask());
+								modeField.pos().place(mb.mode()) | bankField.pos().place(mb.bank());
 							return new int[] { posMask, posBits };
 						}
 						continue;
 					}
 					Integer mv = DescriptorSupport.OverlayNaming.parseModeValue(windowName, name);
 					if (mv != null) {
-						return new int[] { modeField.positionedMask(),
-							(mv << modeField.lsb()) & modeField.positionedMask() };
+						return new int[] { modeField.positionedMask(), modeField.pos().place(mv) };
 					}
 				}
 			}

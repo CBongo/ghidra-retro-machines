@@ -606,8 +606,7 @@ final class BankAnnotationAdapter {
 	private static ImpossibleInAllLayouts impossibleInEveryReachableLayout(BoardModel board,
 			BankState state, Map<String, Set<Integer>> bankUniverse, int effective,
 			FieldSpec modeField) {
-		int modeWidthMask = (1 << modeField.width()) - 1;
-		int knownModeBits = (state.knownMask() >>> modeField.lsb()) & modeWidthMask;
+		int knownModeBits = modeField.pos().extract(state.knownMask());
 		int knownMode = modeField.valueIn(effective) & knownModeBits;
 
 		for (FieldSpec bankField : distinctBankFields(board)) {

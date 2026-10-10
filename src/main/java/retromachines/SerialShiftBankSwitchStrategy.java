@@ -151,20 +151,13 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	public SerialShiftBankSwitchStrategy() {
 	}
 
-	/** One tracked sub-field's field-local {@code [lsb, lsb+width)} bit position. */
-	private record FieldPos(int lsb, int width) {
-		int mask() {
-			return ((1 << width) - 1) << lsb;
-		}
-	}
-
 	/** One field deposit out of the reassembled 5-bit commit value: bits
 	 *  {@code [shift, shift+bits)} of that value land at {@code pos}. */
-	private record TargetField(FieldPos pos, int shift, int bits) {
+	private record TargetField(BitField pos, int shift, int bits) {
 	}
 
 	/** One field deposit applied unconditionally on a bit-7 reset. */
-	private record ResetField(FieldPos pos, int value) {
+	private record ResetField(BitField pos, int value) {
 	}
 
 	/** The result of statically walking the unrolled STA/LSR chain containing one write. */
@@ -177,7 +170,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 
 	private Map<Integer, List<TargetField>> targets;
 	private List<ResetField> resetFields;
-	private final Set<FieldPos> allPoisonFields = new LinkedHashSet<>();
+	private final Set<BitField> allPoisonFields = new LinkedHashSet<>();
 
 	/** The addresses that MIRROR THE LIVE BANK (grm-mej.2), delivered by {@link #observeMirrors}
 	 *  between the analyzer's two dataflow passes. Empty for pass 1 and for any board with no
@@ -218,7 +211,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 				List<TargetField> fields = new ArrayList<>();
 				for (JsonElement fe : e.getValue().getAsJsonObject().getAsJsonArray("fields")) {
 					JsonObject fo = fe.getAsJsonObject();
-					FieldPos pos = fieldPos(fieldLayout, fo.get("name").getAsString());
+					BitField pos = fieldPos(fieldLayout, fo.get("name").getAsString());
 					int shift = fo.get("shift").getAsInt();
 					int bits = fo.get("bits").getAsInt();
 					fields.add(new TargetField(pos, shift, bits));
@@ -231,21 +224,21 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 		resetFields = new ArrayList<>();
 		if (params.has("reset")) {
 			for (Map.Entry<String, JsonElement> e : params.getAsJsonObject("reset").entrySet()) {
-				FieldPos pos = fieldPos(fieldLayout, e.getKey());
+				BitField pos = fieldPos(fieldLayout, e.getKey());
 				resetFields.add(new ResetField(pos, e.getValue().getAsInt()));
 				allPoisonFields.add(pos);
 			}
 		}
 	}
 
-	private static FieldPos fieldPos(JsonObject fieldLayout, String fieldName) {
+	private static BitField fieldPos(JsonObject fieldLayout, String fieldName) {
 		JsonObject fl = fieldLayout.has(fieldName) ? fieldLayout.getAsJsonObject(fieldName) : null;
 		if (fl == null) {
 			throw new IllegalArgumentException(
 				"serial-shift: no field-layout entry for '" + fieldName +
 					"' -- is it listed in this mechanism's 'sets:'?");
 		}
-		return new FieldPos(fl.get("lsb").getAsInt(), fl.get("width").getAsInt());
+		return new BitField(fl.get("lsb").getAsInt(), fl.get("width").getAsInt());
 	}
 
 	private final StoredValueScanner.Hooks hooks = new StoredValueScanner.Hooks() {
@@ -364,13 +357,13 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 			return null; // defensive: a ROM_IDENTIFYING offset always carries one once derived
 		}
 		TargetField tf = fields.get(0);
-		// Undo setFieldFromByte: lift the tracked field back down to bit 0 of the byte. Both
+		// Undo the BitField.deposit: lift the tracked field back down to bit 0 of the byte. Both
 		// widths are applied -- the board field's and the byte field's -- because a descriptor may
 		// legitimately declare a byte field wider than the state field behind it (MMC1's prg_bank
 		// takes 5 bits on the wire for a 4-bit bank universe).
-		int byteMask = ((1 << tf.bits()) - 1) & (((1 << tf.pos().width()) - 1));
-		int known = (inState.knownMask() >>> tf.pos().lsb()) & byteMask;
-		int bits = (inState.bits() >>> tf.pos().lsb()) & byteMask;
+		int byteMask = ((1 << tf.bits()) - 1) & tf.pos().widthMask();
+		int known = tf.pos().extract(inState.knownMask()) & byteMask;
+		int bits = tf.pos().extract(inState.bits()) & byteMask;
 		// The encoding's proved formula, not necessarily byte == bank -- see the class javadoc
 		// above and BankMirrors.IdentifyingEncoding#byteFor for what "proved" refuses.
 		return encoding.byteFor(known, bits, byteMask);
@@ -723,7 +716,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 		}
 		int owned = 0;
 		for (TargetField tf : fields) {
-			owned |= tf.pos().mask();
+			owned |= tf.pos().positionedMask();
 		}
 		return new HelperDeposit(owned, depositFields(new MechanismState(0, 0), fields, argValue));
 	}
@@ -758,7 +751,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 		MechanismState result = base;
 		for (TargetField tf : fields) {
 			MechanismState fieldValue = extractByteField(byteValue, tf.bits(), tf.shift());
-			result = setFieldFromByte(result, tf.pos(), fieldValue);
+			result = tf.pos().deposit(result, fieldValue);
 		}
 		return result;
 	}
@@ -893,9 +886,9 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 		int owned = 0;
 		MechanismState value = new MechanismState(0, 0);
 		for (ResetField rf : resetFields) {
-			owned |= rf.pos().mask();
-			int widthMask = (1 << rf.pos().width()) - 1;
-			value = setFieldFromByte(value, rf.pos(), MechanismState.fullyKnown(widthMask, rf.value()));
+			owned |= rf.pos().positionedMask();
+			int widthMask = rf.pos().widthMask();
+			value = rf.pos().deposit(value, MechanismState.fullyKnown(widthMask, rf.value()));
 		}
 		return new BankSwitchStrategy.HelperDeposit(owned, value);
 	}
@@ -903,16 +896,16 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	private MechanismState applyReset(MechanismState inState) {
 		MechanismState result = inState;
 		for (ResetField rf : resetFields) {
-			int widthMask = (1 << rf.pos().width()) - 1;
-			result = setFieldFromByte(result, rf.pos(), MechanismState.fullyKnown(widthMask, rf.value()));
+			int widthMask = rf.pos().widthMask();
+			result = rf.pos().deposit(result, MechanismState.fullyKnown(widthMask, rf.value()));
 		}
 		return result;
 	}
 
 	private MechanismState poisonAll(MechanismState inState) {
 		MechanismState result = inState;
-		for (FieldPos fp : allPoisonFields) {
-			result = setUnknownField(result, fp);
+		for (BitField fp : allPoisonFields) {
+			result = fp.forget(result);
 		}
 		return result;
 	}
@@ -1214,18 +1207,5 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 		int widthMask = (1 << bits) - 1;
 		return new MechanismState((byteState.knownMask() >>> shift) & widthMask,
 			(byteState.bits() >>> shift) & widthMask);
-	}
-
-	private static MechanismState setUnknownField(MechanismState base, FieldPos field) {
-		int mask = field.mask();
-		return new MechanismState(base.knownMask() & ~mask, base.bits() & ~mask);
-	}
-
-	private static MechanismState setFieldFromByte(MechanismState base, FieldPos field, MechanismState fieldValue) {
-		int mask = field.mask();
-		int knownBits = (fieldValue.knownMask() << field.lsb()) & mask;
-		int valueBits = (fieldValue.bits() << field.lsb()) & mask;
-		return new MechanismState((base.knownMask() & ~mask) | knownBits,
-			(base.bits() & ~mask) | valueBits);
 	}
 }

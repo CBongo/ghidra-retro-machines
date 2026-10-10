@@ -66,6 +66,7 @@ import ghidra.program.model.mem.MemoryConflictException;
 import ghidra.program.model.symbol.SourceType;
 import ghidra.program.util.DefaultLanguageService;
 import ghidra.util.exception.AssertException;
+import retromachines.BoardDescriptorModel.FieldSpec;
 
 /**
  * The system-neutral half of the descriptor-driven loader stack: everything a loader
@@ -752,29 +753,11 @@ final class DescriptorSupport {
 	// ------------------------------------------------------------------
 
 	/**
-	 * One {@code banking.state} field: its name, LSB position, and bit width within the
-	 * packed state int. Fields pack LSB-first in declaration order (mirrors
-	 * {@code MapCompiler.packState} at build time and {@code BoardDescriptorModel.FieldSpec}
-	 * at analysis time -- all three must agree on this layout).
-	 */
-	record StateField(String name, int lsb, int width) {
-
-		long mask() {
-			return (1L << width) - 1;
-		}
-
-		/** This field's value as packed into {@code packedState}. */
-		long valueIn(long packedState) {
-			return (packedState >> lsb) & mask();
-		}
-	}
-
-	/**
 	 * Parses {@code banking.state} into its ordered field tuple, LSB-first. Returns an
 	 * empty list when the descriptor has no {@code banking} section (or no {@code state}).
 	 */
-	static List<StateField> parseStateFields(JsonObject map) {
-		List<StateField> fields = new ArrayList<>();
+	static List<FieldSpec> parseStateFields(JsonObject map) {
+		List<FieldSpec> fields = new ArrayList<>();
 		JsonObject banking = map.getAsJsonObject("banking");
 		if (banking == null || !banking.has("state")) {
 			return fields;
@@ -784,7 +767,7 @@ final class DescriptorSupport {
 			JsonObject f = fe.getAsJsonObject();
 			String name = f.get("name").getAsString();
 			int bits = f.get("bits").getAsInt();
-			fields.add(new StateField(name, lsb, bits));
+			fields.add(new FieldSpec(name, lsb, bits));
 			lsb += bits;
 		}
 		return fields;
@@ -823,13 +806,13 @@ final class DescriptorSupport {
 		if (literal == null || banking == null || !banking.has("initial_state_expr")) {
 			return literal;
 		}
-		List<StateField> fields = parseStateFields(map);
+		List<FieldSpec> fields = parseStateFields(map);
 		long packed = literal;
 		for (Map.Entry<String, JsonElement> entry : banking.getAsJsonObject("initial_state_expr")
 				.entrySet()) {
 			String fieldName = entry.getKey();
 			String expr = entry.getValue().getAsString();
-			StateField field = findField(fields, fieldName);
+			FieldSpec field = findField(fields, fieldName);
 			if (field == null) {
 				log.appendMsg(mapPath + ": banking.initial_state_expr names '" + fieldName +
 					"', which is not a banking.state field; ignoring it");
@@ -845,14 +828,14 @@ final class DescriptorSupport {
 					"); leaving the field at its compiled value");
 				continue;
 			}
-			if (value < 0 || value > field.mask()) {
+			if (value < 0 || value > field.widthMask()) {
 				log.appendMsg(mapPath + ": banking.initial_state_expr '" + fieldName + ": " +
 					expr + "' resolves to " + value + " against a " + imageSize +
 					"-byte image, which does not fit the field's " + field.width() +
 					" bits; leaving the field at its compiled value");
 				continue;
 			}
-			packed = (packed & ~(field.mask() << field.lsb())) | (value << field.lsb());
+			packed = field.pos().deposit(packed, value);
 		}
 		return packed;
 	}
@@ -900,7 +883,7 @@ final class DescriptorSupport {
 			return null;
 		}
 		JsonObject hint = gameBanking.getAsJsonObject("initial_state");
-		List<StateField> fields = parseStateFields(boardMap);
+		List<FieldSpec> fields = parseStateFields(boardMap);
 		Set<String> exprFields = new LinkedHashSet<>();
 		JsonObject boardBanking = boardMap.getAsJsonObject("banking");
 		if (boardBanking != null && boardBanking.has("initial_state_expr")) {
@@ -909,7 +892,7 @@ final class DescriptorSupport {
 		long packed = resolvedInitialState;
 		for (Map.Entry<String, JsonElement> entry : hint.entrySet()) {
 			String fieldName = entry.getKey();
-			StateField field = findField(fields, fieldName);
+			FieldSpec field = findField(fields, fieldName);
 			if (field == null) {
 				log.appendMsg(gameDescriptorPath + ": banking.initial_state names '" +
 					fieldName + "', which is not a banking.state field of this board; " +
@@ -925,7 +908,7 @@ final class DescriptorSupport {
 					"' is not an integer; ignoring it");
 				continue;
 			}
-			if (value < 0 || value > field.mask()) {
+			if (value < 0 || value > field.widthMask()) {
 				log.appendMsg(gameDescriptorPath + ": banking.initial_state '" + fieldName +
 					": " + value + "' does not fit the field's " + field.width() +
 					" bits; leaving the field at its previously resolved value");
@@ -935,7 +918,7 @@ final class DescriptorSupport {
 				log.appendMsg(gameDescriptorPath + ": banking.initial_state '" + fieldName +
 					"' overrides the value banking.initial_state_expr had set for it");
 			}
-			packed = (packed & ~(field.mask() << field.lsb())) | (value << field.lsb());
+			packed = field.pos().deposit(packed, value);
 		}
 		return packed;
 	}
@@ -953,7 +936,7 @@ final class DescriptorSupport {
 		if (gameBanking == null || !gameBanking.has("fixed_after_init")) {
 			return 0;
 		}
-		List<StateField> fields = parseStateFields(boardMap);
+		List<FieldSpec> fields = parseStateFields(boardMap);
 		long mask = 0;
 		for (JsonElement el : gameBanking.getAsJsonArray("fixed_after_init")) {
 			String name;
@@ -965,13 +948,13 @@ final class DescriptorSupport {
 					": banking.fixed_after_init has a non-string entry; ignoring it");
 				continue;
 			}
-			StateField field = findField(fields, name);
+			FieldSpec field = findField(fields, name);
 			if (field == null) {
 				log.appendMsg(gameDescriptorPath + ": banking.fixed_after_init names '" + name +
 					"', which is not a banking.state field of this board; ignoring it");
 				continue;
 			}
-			mask |= field.mask() << field.lsb();
+			mask |= field.positionedMask();
 		}
 		return mask;
 	}
@@ -1026,7 +1009,7 @@ final class DescriptorSupport {
 		}
 		String modeField = when.keySet().iterator().next();
 		JsonObject hint = gameBanking.getAsJsonObject("initial_state");
-		StateField field = findField(parseStateFields(boardMap), modeField);
+		FieldSpec field = findField(parseStateFields(boardMap), modeField);
 		if (!hint.has(modeField) || field == null) {
 			return null;
 		}
@@ -1037,7 +1020,7 @@ final class DescriptorSupport {
 		catch (RuntimeException e) {
 			return null;
 		}
-		if (value < 0 || value > field.mask()) {
+		if (value < 0 || value > field.widthMask()) {
 			return null;
 		}
 		return (int) value;
@@ -1064,8 +1047,8 @@ final class DescriptorSupport {
 	}
 
 	/** Finds a field by name in a {@link #parseStateFields} result, or null. */
-	static StateField findField(List<StateField> fields, String name) {
-		for (StateField f : fields) {
+	static FieldSpec findField(List<FieldSpec> fields, String name) {
+		for (FieldSpec f : fields) {
 			if (f.name().equals(name)) {
 				return f;
 			}
@@ -1279,7 +1262,7 @@ final class DescriptorSupport {
 			MessageLog log, String source) {
 
 		LayoutPlan plan = planWindows(map, log, source);
-		List<StateField> fields = parseStateFields(map);
+		List<FieldSpec> fields = parseStateFields(map);
 		List<PlannedWindow> all = new ArrayList<>(plan.invariant());
 		all.addAll(plan.varying());
 
@@ -1298,7 +1281,7 @@ final class DescriptorSupport {
 				// falls through: bank-state-dependent, like the loaders' realization loops
 			}
 			Set<String> exprFields = DescriptorExpressions.referencedFields(pw.expr());
-			StateField field = exprFields.size() == 1
+			FieldSpec field = exprFields.size() == 1
 					? findField(fields, exprFields.iterator().next())
 					: null;
 			if (field == null) {

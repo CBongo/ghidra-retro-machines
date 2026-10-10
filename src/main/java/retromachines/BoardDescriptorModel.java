@@ -50,17 +50,39 @@ final class BoardDescriptorModel {
 	}
 
 	/**
-	 * One {@code banking.state} field: its bit position and width within the state int.
+	 * One {@code banking.state} field: its name and its {@link BitField} position within the
+	 * packed state. Fields pack LSB-first in declaration order (mirrors
+	 * {@code MapCompiler.packState} at build time). The loader side
+	 * ({@link DescriptorSupport#parseStateFields}) uses this same record; until grm-ze06.4 it
+	 * had its own {@code StateField} whose {@code mask()} meant the UNPOSITIONED width mask.
 	 * Package-private, and it must stay that way: {@link BoardBankAnalyzer} consumes it
 	 * throughout, and {@code FieldSpecKnownTest} exercises {@link #fullyKnownIn} directly
 	 * without standing up an analyzer. (Before the grm-ft8 extraction this javadoc read
 	 * "nothing outside this class uses it", which was true while the record was nested in
 	 * {@code BoardBankAnalyzer} and is not any more.)
 	 */
-	record FieldSpec(String name, int lsb, int width) {
+	record FieldSpec(String name, BitField pos) {
 
+		FieldSpec(String name, int lsb, int width) {
+			this(name, new BitField(lsb, width));
+		}
+
+		int lsb() {
+			return pos.lsb();
+		}
+
+		int width() {
+			return pos.width();
+		}
+
+		/** The field's width as a mask at bit 0 -- see {@link BitField#widthMask}. */
+		int widthMask() {
+			return pos.widthMask();
+		}
+
+		/** The field's bits in the packed state -- see {@link BitField#positionedMask}. */
 		int positionedMask() {
-			return ((1 << width) - 1) << lsb;
+			return pos.positionedMask();
 		}
 
 		/**
@@ -76,7 +98,12 @@ final class BoardDescriptorModel {
 		}
 
 		int valueIn(int state) {
-			return (state >> lsb) & ((1 << width) - 1);
+			return pos.extract(state);
+		}
+
+		/** This field's value as packed into the loader's {@code long} {@code packedState}. */
+		long valueIn(long packedState) {
+			return pos.extract(packedState);
 		}
 	}
 
