@@ -153,6 +153,12 @@ output (e.g. a Ghidra GDT archive) embedding something path/build-instance-speci
 `ext_identity()` mismatch as informative, not proof of a real source difference; the dump-vs-dump
 diff `ab-test.sh` prints is the reliable signal regardless.
 
+**Editing the decompiler's C++ (`$GRM_GHIDRA_SRC/.../src/decompile/cpp`) to rebuild that patched
+binary? Enable the `clangd-lsp` plugin first** — it is off by default on purpose. `bd recall
+cpp-decompiler-work-enable-clangd-lsp` has the switch, the `compile_flags.txt` contents (MinGW
+target; they come from the Makefile's `ghidra_opt` target, NOT `buildNatives.gradle`), how to
+re-derive them, and which clangd errors are real.
+
 When none of the selected sets' platforms have a ROM-dir variable set (`GRM_ROM_DIR` for NES,
 `GRM_SNES_ROM_DIR` for SNES) and no romdir is passed, `realrom-test.sh` refuses to run (nonzero
 exit, loud stderr message naming the variable(s) it wanted) rather than silently doing nothing —
