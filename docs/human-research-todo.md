@@ -168,7 +168,7 @@ acting on it; the "yours?" column is the only part that asks anything of you.
 | item | state | last activity | yours? |
 |---|---|---|---|
 | [ghidra#9447](https://github.com/NationalSecurityAgency/ghidra/issues/9447) jump-table over-read + fix PR [#9717](https://github.com/NationalSecurityAgency/ghidra/pull/9717) (`grm-b3m`) | issue open, `Status: Triage`, assigned `caheckman`; PR open, `blocked` = awaiting review | PR opened 2026-10-04 | No, waiting on a maintainer |
-| [ghidra#9655](https://github.com/NationalSecurityAgency/ghidra/issues/9655) GP-6936 join varnodes (`grm-qp5x.2`) | open, no labels, no assignee, no replies | filed 2026-09-19 | Not yet. The issue promises a PR; agent work comes first (re-run the bisect on a corrected shadow install, prep the branch). The item comes back here when that's done |
+| [ghidra#9655](https://github.com/NationalSecurityAgency/ghidra/issues/9655) GP-6936 join varnodes (`grm-qp5x.2`) | open, `Status: Triage`, assigned `caheckman`, no replies (re-checked 2026-10-10) | filed 2026-09-19 | **Yes**, see the item below: one PR to open and one comment to post |
 | [ghidra#9656](https://github.com/NationalSecurityAgency/ghidra/pull/9656) 6502 ADC/SBC flags + zp pointer wrap (`grm-ef46`) | open PR, `Status: Triage`, assigned `GhidorahRex`, no reviews (`blocked` = awaiting review) | your regression tests added 2026-09-20; the only other comments are from a third party (who also opened a separate 65C02 `BIT #imm` PR, [#9670](https://github.com/NationalSecurityAgency/ghidra/pull/9670)) | No, waiting on a maintainer |
 | [ghidra#9658](https://github.com/NationalSecurityAgency/ghidra/issues/9658) `validateOptions` (`grm-vsg`) | **closed, fixed for 12.3** | maintainer: "an oversight", 2026-09-21 | No. Retired, see Answered |
 | [ghidra#9513](https://github.com/NationalSecurityAgency/ghidra/pull/9513) `setMinStoreLoadOffset` (`grm-6xh`) | **merged** 2026-08-20, milestone 12.2 | — | No. Done |
@@ -179,13 +179,22 @@ acting on it; the "yours?" column is the only part that asks anything of you.
 | Fall-through-into-overlay issue (`grm-p3dy`) | **not posted**; draft on the bead | deferred 2026-10-04 | Not until a Ghidra release carries GP-7010, second item below |
 
 *Filed and awaiting a maintainer, nothing to do:* [#9717](https://github.com/NationalSecurityAgency/ghidra/pull/9717)
-(jump-table lowest-target bound, `grm-b3m`), [#9655](https://github.com/NationalSecurityAgency/ghidra/issues/9655)
-(GP-6936, `grm-qp5x.2` — the promised PR returns to this list once its agent-side
-re-measurement and branch prep land), [#9656](https://github.com/NationalSecurityAgency/ghidra/pull/9656)
+(jump-table lowest-target bound, `grm-b3m`), [#9656](https://github.com/NationalSecurityAgency/ghidra/pull/9656)
 (6502 flags, `grm-ef46`), [ghidra-snes#6](https://github.com/joshleaves/ghidra-snes/pull/6)
 (65816 semantics, `grm-9nxj.7`), [deity-informant#359](https://github.com/anarkiwi/deity-informant/pull/359)
 (6510 illegal opcodes, `grm-c9hv`), [SingleStepTests/65816#9](https://github.com/SingleStepTests/65816/issues/9)
 (65816 vector license, `grm-9nxj.8`). Check them before re-deriving anything they cover.
+
+- [ ] **GP-6936: open the RAM-half PR (fixes #4148) and post the correction on #9655**
+  (`grm-qp5x.2`, prepared 2026-10-10). The branch `fix-wrapped-ram-range` (one commit, `space.cc`
+  plus a new `datatests/wraprange2.xml`) is in the `ghidra-pr-4148` worktree of the fork clone,
+  cut from upstream `master` 918d44e and **not pushed**. Push it to your GitHub fork remote and
+  open the PR against `master`. The PR body and the #9655 comment are both on the bead
+  (2026-10-10 comments); put the PR number into the comment's `#____`. Why the plan changed:
+  `decomp_test_dbg` now runs here (WSL), and it showed that exempting spacebase spaces, the fix
+  #9655 itself proposes, breaks upstream's x86-64 `wraprange.xml` (the decompile fails outright).
+  So the comment withdraws that suggestion and asks the maintainer which of two directions they
+  want for the 6502 half. Do not PR a spacebase fix before they answer.
 
 - [ ] **Optional: offer the SPC700 semantic fixes to qwertymodo/SPCdra** (`grm-c9d.6` P4). Your
   own framing, 2026-08-16: nice to have, not a requirement. Closing it as won't-do is fine if our
