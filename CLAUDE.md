@@ -4,10 +4,12 @@
 
 **Read `AGENTS.md` — it is the always-on instruction core, it applies to you, and the rules in it
 are not repeated here.** The `@AGENTS.md` line above imports it; if for any reason it did not
-load, open `AGENTS.md` yourself before doing anything else. It carries: run commands through git
-bash and never prefix with `cd`; stop and ask when a human would be more efficient; never edit (but
-always commit when changed) `docs/human recon notes.txt`; only `build-and-test.sh` builds the
-extension; use `bd` for all task tracking; and the session-completion/push protocol.
+load, open `AGENTS.md` yourself before doing anything else. It carries: git bash by default (WSL
+and PowerShell only for their scoped jobs) and never prefix with `cd`; stop and ask when a human
+would be more efficient; never edit (but always commit when changed) `docs/human recon notes.txt`;
+the runners build by default (`build-and-test.sh`, `run-banktest.sh`, `realrom-test.sh`; only
+`measure-overlay-scale.sh` does not); use `bd` for all task tracking; and the
+session-completion/push protocol.
 
 This file adds the Claude-specific and Ghidra-specific detail on top of that core: build and test
 mechanics, the opt-in tiers, reading Ghidra source, and loader conventions.
