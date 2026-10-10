@@ -150,6 +150,8 @@
 #   GRM_BANKTEST_WORK       base dir for per-run work dirs (defaults to
 #                            <repo>/build/banktest-work; kept on failure)
 #   REALROM_WORK_DIR        use this exact dir instead of a fresh one
+#   GRM_KEEP_PROJECT_DIR    base dir for --keep-project (defaults to
+#                            <repo>/build/kept-projects/realrom)
 #   GRM_SKIP_BUILD=1        same opt-out as --no-build (below), for scripted callers
 set -u
 
@@ -161,7 +163,7 @@ REALROM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/realrom"
 SETS_TSV="$REALROM_DIR/sets.tsv"
 PLATFORMS_TSV="$REALROM_DIR/platforms.tsv"
 
-USAGE="usage: $0 check|bless|nominate [SET ...] [--only <ids>|--except <ids>] [--no-build] <romdir> ...
+USAGE="usage: $0 check|bless|nominate [SET ...] [--only <ids>|--except <ids>] [--no-build] [--keep-project] <romdir> ...
        $0 coverage [SET ...] [--only <ids>|--except <ids>] [--no-build]
        $0 --list-sets
 
@@ -170,6 +172,15 @@ row whether build/realrom-cache holds an entry for the CURRENT extension build -
 the row has RAN at this build. It says nothing about whether the row passed. Like check it
 stages the build first (so the build identity matches what a check would use) unless
 --no-build/GRM_SKIP_BUILD is given. It never fails a run.
+
+--keep-project (check/bless only; requires --only, bead grm-haj3) keeps each imported row's
+analyzed Ghidra project instead of passing -deleteProject, at a FIXED path that the next
+--keep-project run of the same row overwrites:
+  build/kept-projects/realrom/<id>/headless.gpr     (base: GRM_KEEP_PROJECT_DIR)
+That is the exact program the row's dump was taken from -- same loader, options, extension
+build and decompiler -- so a follow-up tool (e.g. pyghidra-mcp --project-path) can be pointed
+at it. It forces a real import: bless's cached-candidate shortcut is skipped. It changes
+nothing about the dump, the golden comparison, or the candidate cache.
 
 SETs are named positionally and compose (rows are deduplicated by id). With no SET,
 'core' is used -- the always-run floor, NOT the whole tier. Run --list-sets for the
@@ -273,6 +284,7 @@ EXCEPT_IDS=""
 # deprecation notes can tell the two apart.
 REQUESTED_SETS=()
 NO_BUILD=0
+KEEP_PROJECT=0
 DEPRECATED_FLAG=""
 while [ $# -gt 0 ]; do
 	case "$1" in
@@ -288,6 +300,10 @@ while [ $# -gt 0 ]; do
 			REQUESTED_SETS+=(snes); DEPRECATED_FLAG="$DEPRECATED_FLAG --snes=>snes"; shift ;;
 		--no-build)
 			NO_BUILD=1
+			shift
+			;;
+		--keep-project)
+			KEEP_PROJECT=1
 			shift
 			;;
 		--only|--except)
@@ -327,6 +343,20 @@ while [ $# -gt 0 ]; do
 			;;
 	esac
 done
+# --keep-project keeps one analyzed project per row (tens of MB each), so it is scoped to an
+# explicit --only list rather than silently keeping a whole set's worth; and only check/bless
+# import anything to keep.
+if [ "$KEEP_PROJECT" = 1 ]; then
+	if [ "$MODE" != check ] && [ "$MODE" != bless ]; then
+		echo "ERROR: --keep-project applies to check/bless only (got '$MODE')." >&2
+		exit 2
+	fi
+	if [ -z "$ONLY_IDS" ]; then
+		echo "ERROR: --keep-project needs --only <ids>: it keeps one project per row, so name" \
+			"the rows you want kept." >&2
+		exit 2
+	fi
+fi
 if [ -n "$DEPRECATED_FLAG" ]; then
 	echo "note: deprecated flag(s):$DEPRECATED_FLAG -- name the set positionally instead" \
 		"($0 --list-sets)." >&2
@@ -1033,6 +1063,15 @@ fi
 WORK="${REALROM_WORK_DIR:-$(grm_work_dir realrom)}"
 mkdir -p "$WORK"
 echo "== work dir: $WORK =="
+KEEP_DIR="${GRM_KEEP_PROJECT_DIR:-$REPO_ROOT/build/kept-projects/realrom}"
+# Same dot-segment hazard as grm_work_dir (bead grm-hhd): Ghidra rejects a project path with a
+# dot-leading segment, e.g. an agent worktree under .claude/worktrees/. Same fallback.
+if [ -z "${GRM_KEEP_PROJECT_DIR:-}" ] && _grm_path_has_dot_segment "$REPO_ROOT"; then
+	KEEP_DIR="${TMPDIR:-${TEMP:-/tmp}}/grm-kept-projects-$(printf '%s' "$REPO_ROOT" | tr -c 'A-Za-z0-9' '_')/realrom"
+fi
+if [ "$KEEP_PROJECT" = 1 ]; then
+	echo "== keeping analyzed projects under: $KEEP_DIR =="
+fi
 
 sanitize() {
 	# analyzeHeadless.bat chokes on parentheses/spaces -- strip to a safe copy name.
@@ -1094,6 +1133,13 @@ import_and_dump() {
 	rom_copy="$WORK/${safe}$ROM_COPY_EXT"
 	cp -f "$rom" "$rom_copy"
 	proj="$WORK/proj_${safe}"
+	local -a delete_arg=(-deleteProject)
+	if [ "$KEEP_PROJECT" = 1 ]; then
+		# Fixed per-row path, wiped first so a kept project is always exactly this run's import.
+		proj="$KEEP_DIR/$safe"
+		rm -rf "$proj"
+		delete_arg=()
+	fi
 	mkdir -p "$proj"
 	log="$WORK/${safe}.log"
 
@@ -1114,7 +1160,7 @@ import_and_dump() {
 		${REALROM_EXTRA_PRESCRIPT:+-preScript $REALROM_EXTRA_PRESCRIPT} \
 		-postScript "$ROM_DUMP_SCRIPT" \
 		${REALROM_EXTRA_POSTSCRIPT:+-postScript "$REALROM_EXTRA_POSTSCRIPT"} \
-		-deleteProject \
+		${delete_arg[@]+"${delete_arg[@]}"} \
 		>"$log" 2>&1
 	local status=$?
 	if [ $status -ne 0 ]; then
@@ -1185,7 +1231,7 @@ while IFS=$'\t' read -r row_plat id title sha mapper board golden opts member ||
 	# ROM + opts + build, showing the golden diff before accepting it. The
 	# cached dump was only stored after its sha recheck passed, so it is
 	# known-good.
-	if [ "$MODE" = bless ] && [ -n "$key" ] && [ -f "$cached" ]; then
+	if [ "$MODE" = bless ] && [ "$KEEP_PROJECT" = 0 ] && [ -n "$key" ] && [ -f "$cached" ]; then
 		# Assert the candidate is about THIS row before believing the key. A cache key is a
 		# claim that nothing outside it can change the dump, and that claim has been wrong
 		# twice: the id was missing (a rename reused the pre-rename candidate and wrote the
@@ -1225,6 +1271,9 @@ while IFS=$'\t' read -r row_plat id title sha mapper board golden opts member ||
 		ROW_ID+=("$id"); ROW_STATUS+=("FAIL"); ROW_DETAIL+=("import/dump error")
 		n_fail=$((n_fail + 1))
 		continue
+	fi
+	if [ "$KEEP_PROJECT" = 1 ]; then
+		echo "    kept project: $KEEP_DIR/$(sanitize "$id")/headless.gpr"
 	fi
 
 	# Second-layer hash check: the SHA-256 Ghidra computed on the imported bytes must
