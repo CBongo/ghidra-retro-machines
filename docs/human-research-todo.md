@@ -162,29 +162,28 @@ Blocked on judgment, not effort.
 
 Agents can't file these — they need an account and CLA agreement.
 
-**Current state of everything upstream, checked against GitHub on 2026-10-04.** Re-check before
-acting on it; the "yours?" column is the only part that asks anything of you.
+**Current state of everything upstream** — full re-check against GitHub 2026-10-04; `#9655`/`#9765`
+re-checked 2026-10-10. Re-check before acting on it, and before re-deriving anything a row covers.
+
+**Ordering rule:** rows that need you come first, then your deliberately deferred items, then rows
+waiting on someone else (most recent activity first). A row whose upstream item is **merged or
+closed leaves this table** once its outcome is recorded in the `## Answered` table at the bottom;
+do not keep "Done" rows here.
 
 | item | state | last activity | yours? |
 |---|---|---|---|
+| [ghidra discussion #9349](https://github.com/NationalSecurityAgency/ghidra/discussions/9349) banked-memory RFC | open, **zero replies** | opened 2026-07-05 | **Deferred:** the addendum post rides with the fall-through issue below |
+| Fall-through-into-overlay issue (`grm-p3dy`) | **not posted**; draft on the bead | deferred 2026-10-04 | **Deferred:** not until a Ghidra release carries GP-7010 (second item below) |
+| [ghidra#9655](https://github.com/NationalSecurityAgency/ghidra/issues/9655) GP-6936 join varnodes + RAM-half fix PR [#9765](https://github.com/NationalSecurityAgency/ghidra/pull/9765) (`grm-qp5x.2`) | issue open, `Status: Triage`, assigned `caheckman`, [correction comment](https://github.com/NationalSecurityAgency/ghidra/issues/9655#issuecomment-6102852548) asks which of two directions for the 6502 half; PR open, `blocked` = awaiting review | 2026-10-10: PR + comment, then the `certification.manifest` line a third party flagged | No, waiting on a maintainer. Do not PR a spacebase fix until they pick a direction |
 | [ghidra#9447](https://github.com/NationalSecurityAgency/ghidra/issues/9447) jump-table over-read + fix PR [#9717](https://github.com/NationalSecurityAgency/ghidra/pull/9717) (`grm-b3m`) | issue open, `Status: Triage`, assigned `caheckman`; PR open, `blocked` = awaiting review | PR opened 2026-10-04 | No, waiting on a maintainer |
-| [ghidra#9655](https://github.com/NationalSecurityAgency/ghidra/issues/9655) GP-6936 join varnodes + RAM-half fix PR [#9765](https://github.com/NationalSecurityAgency/ghidra/pull/9765) (`grm-qp5x.2`) | issue open, `Status: Triage`, assigned `caheckman`; [correction comment](https://github.com/NationalSecurityAgency/ghidra/issues/9655#issuecomment-6102852548) posted asking which of two directions for the 6502 half. PR open, `blocked` = awaiting review | PR + comment 2026-10-10; on the PR, third party `jobermayr` flagged the missing `certification.manifest` line; owner pushed it the same day | No, waiting on a maintainer (manifest line added by owner 2026-10-10). Do not PR a spacebase fix until they pick a direction for #9655 |
-| [ghidra#9656](https://github.com/NationalSecurityAgency/ghidra/pull/9656) 6502 ADC/SBC flags + zp pointer wrap (`grm-ef46`) | open PR, `Status: Triage`, assigned `GhidorahRex`, no reviews (`blocked` = awaiting review) | your regression tests added 2026-09-20; the only other comments are from a third party (who also opened a separate 65C02 `BIT #imm` PR, [#9670](https://github.com/NationalSecurityAgency/ghidra/pull/9670)) | No, waiting on a maintainer |
-| [ghidra#9658](https://github.com/NationalSecurityAgency/ghidra/issues/9658) `validateOptions` (`grm-vsg`) | **closed, fixed for 12.3** | maintainer: "an oversight", 2026-09-21 | No. Retired, see Answered |
-| [ghidra#9513](https://github.com/NationalSecurityAgency/ghidra/pull/9513) `setMinStoreLoadOffset` (`grm-6xh`) | **merged** 2026-08-20, milestone 12.2 | — | No. Done |
 | [ghidra-snes#6](https://github.com/joshleaves/ghidra-snes/pull/6) seven 65816 defects (`grm-9nxj.7`) | open PR, mergeable, no comments or reviews | opened 2026-09-21 | No, waiting on the maintainer |
-| [deity-informant#359](https://github.com/anarkiwi/deity-informant/pull/359) 6510 illegal-opcode SLEIGH (`grm-c9hv`) | open PR, no comments or reviews | opened 2026-09-19 | No, waiting on the maintainer |
+| [ghidra#9656](https://github.com/NationalSecurityAgency/ghidra/pull/9656) 6502 ADC/SBC flags + zp pointer wrap (`grm-ef46`) | open PR, `Status: Triage`, assigned `GhidorahRex`, no reviews (`blocked` = awaiting review) | your regression tests added 2026-09-20; other comments are a third party's (who also opened 65C02 `BIT #imm` PR [#9670](https://github.com/NationalSecurityAgency/ghidra/pull/9670)) | No, waiting on a maintainer |
 | [SingleStepTests/65816#9](https://github.com/SingleStepTests/65816/issues/9) license request (`grm-9nxj.8`) | open, filed by a third party asking for MIT; no maintainer reply | your supporting comment 2026-09-19 | No, waiting on the maintainer. When a grant lands, update `NOTICE` and close the bead |
-| [ghidra discussion #9349](https://github.com/NationalSecurityAgency/ghidra/discussions/9349) banked-memory RFC | open, **zero replies** | opened 2026-07-05 | Addendum post rides with the fall-through issue below (deferred) |
-| Fall-through-into-overlay issue (`grm-p3dy`) | **not posted**; draft on the bead | deferred 2026-10-04 | Not until a Ghidra release carries GP-7010, second item below |
+| [deity-informant#359](https://github.com/anarkiwi/deity-informant/pull/359) 6510 illegal-opcode SLEIGH (`grm-c9hv`) | open PR, no comments or reviews | opened 2026-09-19 | No, waiting on the maintainer |
 
-*Filed and awaiting a maintainer, nothing to do:* [#9717](https://github.com/NationalSecurityAgency/ghidra/pull/9717)
-(jump-table lowest-target bound, `grm-b3m`), [#9656](https://github.com/NationalSecurityAgency/ghidra/pull/9656)
-(6502 flags, `grm-ef46`), [ghidra-snes#6](https://github.com/joshleaves/ghidra-snes/pull/6)
-(65816 semantics, `grm-9nxj.7`), [deity-informant#359](https://github.com/anarkiwi/deity-informant/pull/359)
-(6510 illegal opcodes, `grm-c9hv`), [SingleStepTests/65816#9](https://github.com/SingleStepTests/65816/issues/9)
-(65816 vector license, `grm-9nxj.8`), [#9765](https://github.com/NationalSecurityAgency/ghidra/pull/9765)
-(GP-6936 RAM half, `grm-qp5x.2`). Check them before re-deriving anything they cover.
+*Retired from this table (outcomes in `## Answered`):* [#9513](https://github.com/NationalSecurityAgency/ghidra/pull/9513)
+`setMinStoreLoadOffset`, merged for 12.2 (`grm-6xh`); [#9658](https://github.com/NationalSecurityAgency/ghidra/issues/9658)
+`validateOptions`, fixed for 12.3 (`grm-vsg`).
 
 - [ ] **Optional: offer the SPC700 semantic fixes to qwertymodo/SPCdra** (`grm-c9d.6` P4). Your
   own framing, 2026-08-16: nice to have, not a requirement. Closing it as won't-do is fine if our
