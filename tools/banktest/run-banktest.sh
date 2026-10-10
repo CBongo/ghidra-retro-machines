@@ -1009,6 +1009,10 @@ if selected nes-banking; then
 	# base-space reference at the retargeted site must survive (as a secondary) rather than
 	# be retired. See make_prg_forkhome()'s docstring.
 	run_one nesforkhometest "$WORK/nes/nesforkhometest.nes" NesRomLoader
+	# grm-fj4m: a base-space call INTO ITS OWN window, bank pinned to a non-home bank whose
+	# overlay copy of the callee is a bare RTS while the home (base) copy is a helper -- helper
+	# resolution must follow the overlay. See make_prg_intrawin()'s docstring.
+	run_one nesintrawintest "$WORK/nes/nesintrawintest.nes" NesRomLoader
 	run_one nesforkbudgettest "$WORK/nes/nesforkbudgettest.nes" NesRomLoader
 	# The analyzer's per-program fork summary line is the MEASUREMENT the owner's ruling asks for
 	# (it is what the real-ROM tally tabulates), and it lives in the headless log, outside the

@@ -253,6 +253,24 @@ final class BankDataflowEngine {
 			Map<Function, HelperModel> helpers, Map<Function, Integer> restoringTrampolines,
 			Set<Address> secondTierRelaySites, BankStackBrackets.Claims bracketClaims)
 			throws CancelledException {
+		return runDataflow(program, monitor, listing, mechanisms, board, helpers,
+			restoringTrampolines, secondTierRelaySites, bracketClaims, null);
+	}
+
+	/**
+	 * As the 9-argument form, with the bank-resolution context (bead grm-fj4m): when non-null,
+	 * the helper branch resolves a call's callee through
+	 * {@link HelperDiscovery#calledHelper(Program, Instruction, Map, BankState, HelperDiscovery.BankResolution)}
+	 * against the in-state at the call, so a base-space call into a window whose bank that state
+	 * pins reaches the overlay callee, not the home bank's function. Null is the stateless
+	 * lookup (pass 1 has no helpers, and tests that predate the bead).
+	 */
+	static DataflowResult runDataflow(Program program, TaskMonitor monitor, Listing listing,
+			List<ConfiguredMechanism> mechanisms, BoardModel board,
+			Map<Function, HelperModel> helpers, Map<Function, Integer> restoringTrampolines,
+			Set<Address> secondTierRelaySites, BankStackBrackets.Claims bracketClaims,
+			HelperDiscovery.BankResolution bankResolution)
+			throws CancelledException {
 
 		Map<Address, LinkedHashMap<PathId, BankState>> stateIn = new HashMap<>();
 		Set<Address> collapsedAddrs = new HashSet<>();
@@ -473,7 +491,8 @@ final class BankDataflowEngine {
 				// a COMPUTED_JUMP to a CALL. No additional filtering (e.g. cross-referencing
 				// DescriptorSupport.ASYNC_ENTRY_POINTS_PROPERTY) is needed on top of this gate.
 				if (helpers != null && instr.getFlowType().isCall()) {
-					HelperModel helper = calledHelper(program, instr, helpers);
+					HelperModel helper = calledHelper(program, instr, helpers, mine.get(0).out(),
+						bankResolution);
 					if (helper != null) {
 						// A store is never a call, so `mine` holds exactly one element here, and
 						// its out-state is the in-state.

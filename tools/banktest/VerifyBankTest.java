@@ -444,6 +444,9 @@ public class VerifyBankTest extends GhidraScript {
 		else if (name.contains("nesforkbudgettest")) {
 			checkNesForkBudgettest();
 		}
+		else if (name.contains("nesintrawintest")) {
+			checkNesIntrawintest();
+		}
 		else if (name.contains("nesforkhometest")) {
 			checkNesForkHometest();
 		}
@@ -4414,6 +4417,41 @@ public class VerifyBankTest extends GhidraScript {
 		criterion("F9", baseRefCount(0xC00B, 0x8010) == 0 && baseRefCount(0xC00E, 0x8020) == 0,
 			"no base-space refs remain at c00b/c00e once both arms retargeted (got " +
 				baseRefCount(0xC00B, 0x8010) + "/" + baseRefCount(0xC00E, 0x8020) + ")");
+	}
+
+	/**
+	 * See {@code mknesbanktest.py}'s {@code make_prg_intrawin()} (bead grm-fj4m). Base-space
+	 * window code at $8000 switches itself to bank 2 and then calls $8010 INSIDE its own window.
+	 * grm-bfb keeps that call's base-space reference beside the overlay one, so the helper
+	 * lookup used to see the HOME copy of $8010 (a helper selecting bank 1) even though the
+	 * pinned bank 2's copy (a bare RTS) is what runs. Resolved through the overlay the call has
+	 * no bank effect, so the read after it stays in bank 2.
+	 */
+	private void checkNesIntrawintest() {
+		// W1: the intra-window call keeps its base reference (grm-bfb) AND gains the overlay one.
+		Reference j2 = findOverlayRef(0x8005, "PRG_LO_B2", 0x8010);
+		criterion("W1", baseRefCount(0x8005, 0x8010) == 1 && j2 != null && j2.getReferenceType().isCall(),
+			"JSR at 8005 keeps base::8010 and is retargeted to PRG_LO_B2::8010: " + describe(j2));
+
+		// W2: the bank-2 copy of the callee was disassembled (the precondition for resolving it).
+		criterion("W2", hasInstructionAt("PRG_LO_B2", 0x8010),
+			"the pinned bank's copy of the callee is code");
+
+		// W3 (the point): the read after the call reaches bank 2 -- the overlay callee is no
+		// helper. The old base-space lookup says bank 1 and never produces this reference. (A
+		// bank-1 reference may ALSO remain from the first round, which runs before the overlay
+		// callee exists as a function and falls back to base; retargeting is additive across
+		// rounds, so that is not asserted either way.)
+		Reference d2 = findOverlayRef(0x8008, "PRG_LO_B2", 0x8020);
+		criterion("W3", d2 != null,
+			"LDA at 8008 reaches PRG_LO_B2::8020 (the pinned bank, overlay callee is no helper): " +
+				describe(d2));
+
+		// W4: the JSR carries no helper-derived bank comment -- the base callee's "via FUN_8010"
+		// claim is wrong at this site and the provenance sweep retracts the first round's copy.
+		String c = eol(0x8005);
+		criterion("W4", !c.contains("via "),
+			"JSR at 8005 carries no helper-derived bank comment: \"" + c + "\"");
 	}
 
 	/**

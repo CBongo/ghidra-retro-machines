@@ -27,7 +27,9 @@ import java.util.Objects;
 import java.util.Set;
 
 import ghidra.program.model.address.Address;
+import ghidra.program.model.address.AddressRange;
 import ghidra.program.model.address.AddressSetView;
+import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.lang.Register;
 import ghidra.program.model.listing.FlowOverride;
 import ghidra.program.model.listing.Function;
@@ -35,6 +37,8 @@ import ghidra.program.model.listing.FunctionManager;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
+import ghidra.program.model.mem.Memory;
+import ghidra.program.model.mem.MemoryAccessException;
 import ghidra.program.model.symbol.FlowType;
 import ghidra.program.model.symbol.Symbol;
 
@@ -44,6 +48,7 @@ import static retromachines.HelperArgumentRecovery.prologueSegments;
 import static retromachines.HelperArgumentRecovery.recoverCallArgument;
 
 import retromachines.BankDataflowEngine.SwitchResult;
+import retromachines.BoardDescriptorModel.BoardModel;
 
 /**
  * Helper-function <em>discovery</em>: recognizing which functions are bank-switch helpers,
@@ -1194,12 +1199,103 @@ final class HelperDiscovery {
 	static List<Address> reachableEntries(Program program, Instruction callInstr) {
 		List<Address> entries = new ArrayList<>();
 		for (Address flow : callInstr.getFlows()) {
-			Set<Address> seen = new LinkedHashSet<>();
-			Address cur = flow;
-			for (int hop = 0; cur != null && seen.add(cur); hop++) {
-				entries.add(cur);
-				cur = hop < MAX_RELAY_HOPS ? relayTarget(program, cur) : null;
+			appendRelayChain(program, flow, entries);
+		}
+		return entries;
+	}
+
+	/**
+	 * True when {@code base} and {@code overlay} (a base-space function and the overlay copy of
+	 * the function at the same offset) have the same body size and the same bytes at the same
+	 * offsets (bead grm-fj4m). False when either is null or any byte cannot be read.
+	 */
+	private static boolean sameBodyBytes(Program program, Function base, Function overlay) {
+		if (base == null || overlay == null ||
+			base.getBody().getNumAddresses() != overlay.getBody().getNumAddresses()) {
+			return false;
+		}
+		Memory memory = program.getMemory();
+		AddressSpace overlaySpace = overlay.getEntryPoint().getAddressSpace();
+		try {
+			for (AddressRange range : base.getBody()) {
+				int n = (int) range.getLength();
+				byte[] a = new byte[n];
+				byte[] b = new byte[n];
+				memory.getBytes(range.getMinAddress(), a);
+				memory.getBytes(overlaySpace.getAddress(range.getMinAddress().getOffset()), b);
+				if (!java.util.Arrays.equals(a, b)) {
+					return false;
+				}
 			}
+		}
+		catch (MemoryAccessException | RuntimeException e) {
+			return false;
+		}
+		return true;
+	}
+
+	/** {@code flow} then each relay hop from it (thunk / one-instruction jump), nearest first. */
+	private static void appendRelayChain(Program program, Address flow, List<Address> entries) {
+		Set<Address> seen = new LinkedHashSet<>();
+		Address cur = flow;
+		for (int hop = 0; cur != null && seen.add(cur); hop++) {
+			entries.add(cur);
+			cur = hop < MAX_RELAY_HOPS ? relayTarget(program, cur) : null;
+		}
+	}
+
+	/**
+	 * What {@link #calledHelper(Program, Instruction, Map, BankState, BankResolution)} needs to
+	 * ask "which overlay does this base-space flow target reach under the in-state at the call":
+	 * the same board / realized-bank universe / placement override
+	 * {@link BankAnnotationAdapter#resolveOffsetOccupant} is given everywhere else.
+	 */
+	record BankResolution(BoardModel board, Map<String, Set<Integer>> bankUniverse,
+			Map<String, Integer> placementOverride) {}
+
+	/**
+	 * Like {@link #reachableEntries(Program, Instruction)} but BANK-AWARE (bead grm-fj4m): a flow
+	 * target in base space, inside a banked window, whose bank {@code state} FULLY pins to a
+	 * non-home occupant whose overlay copy has a function at the same offset is replaced by that
+	 * overlay address (and its relay chain) -- the callee the game actually reaches. Anything
+	 * short of that (no context/state, bank not fully known, home occupant, no function in the
+	 * overlay copy, an overlay function byte-identical to the base one, or a flow already in an
+	 * overlay space) keeps the base-space chain. The no-function fallback is deliberate, so a
+	 * routine duplicated into every bank whose overlay copy was never disassembled does not lose
+	 * its helper effect; the byte-identical one is the same routine whose overlay copy pass 1
+	 * cannot classify (nesmmc1test c06c: registers inside the switchable window).
+	 */
+	static List<Address> reachableEntries(Program program, Instruction callInstr,
+			BankState state, BankResolution ctx) {
+		if (state == null || ctx == null) {
+			return reachableEntries(program, callInstr);
+		}
+		FunctionManager fm = program.getFunctionManager();
+		List<Address> entries = new ArrayList<>();
+		for (Address flow : callInstr.getFlows()) {
+			Address start = flow;
+			if (!flow.getAddressSpace().isOverlaySpace()) {
+				BankAnnotationAdapter.OffsetResolution r =
+					BankAnnotationAdapter.resolveOffsetOccupant(ctx.board(), ctx.bankUniverse(),
+						state, flow.getOffset(), ctx.placementOverride());
+				if (r != null && r.fullyKnown() && !r.home()) {
+					AddressSpace overlay = program.getAddressFactory().getAddressSpace(r.space());
+					if (overlay != null) {
+						Address at = overlay.getAddress(flow.getOffset());
+						Function overlayFn = fm.getFunctionAt(at);
+						// A byte-identical copy of the base function is the SAME routine
+						// duplicated into this bank. Its helper classification may be missing
+						// only because pass 1 cannot recognise register stores inside a banked
+						// copy (MMC1/MMC3 registers live in the switchable window itself), so
+						// "overlay function is no helper" proves nothing there: keep base.
+						if (overlayFn != null &&
+							!sameBodyBytes(program, fm.getFunctionAt(flow), overlayFn)) {
+							start = at;
+						}
+					}
+				}
+			}
+			appendRelayChain(program, start, entries);
 		}
 		return entries;
 	}
@@ -1278,8 +1374,27 @@ final class HelperDiscovery {
 	 */
 	static HelperModel calledHelper(Program program, Instruction callInstr,
 			Map<Function, HelperModel> helpers) {
+		return calledHelper(program, callInstr, helpers, null, null);
+	}
+
+	/**
+	 * Bank-aware {@link #calledHelper(Program, Instruction, Map)} (bead grm-fj4m), for the callers
+	 * that hold the dataflow in-state at the call. An INTRA-window call from base space keeps its
+	 * base-space reference (see {@code BankAnnotationAdapter.retargetReferences}), so the plain
+	 * lookup classifies the HOME bank's function even when {@code state} pins the window to
+	 * another bank whose overlay copy is what runs (nesintrawintest: {@code JSR $8010} from base
+	 * {@code $8000} with bank 2 pinned reaches {@code PRG_LO_B2::8010}, a bare RTS, while home
+	 * bank 0's {@code $8010} is a bank-switch helper). The bead was found at megaman2 c037, a
+	 * CROSS-window call that grm-bfb's base-reference retirement already fixed. Resolution per
+	 * {@link #reachableEntries(Program, Instruction, BankState, BankResolution)}; a non-helper
+	 * function at the resolved overlay address means "not a helper call", with no fallback to
+	 * base. The stateless discovery-time callers keep the 3-argument form: pass 1 has no pinned
+	 * state to consult.
+	 */
+	static HelperModel calledHelper(Program program, Instruction callInstr,
+			Map<Function, HelperModel> helpers, BankState state, BankResolution ctx) {
 		FunctionManager fm = program.getFunctionManager();
-		for (Address entry : reachableEntries(program, callInstr)) {
+		for (Address entry : reachableEntries(program, callInstr, state, ctx)) {
 			Function f = fm.getFunctionAt(entry);
 			if (f != null) {
 				HelperModel helper = helpers.get(f);

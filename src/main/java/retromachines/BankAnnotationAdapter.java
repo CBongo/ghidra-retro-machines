@@ -722,7 +722,7 @@ final class BankAnnotationAdapter {
 	 */
 	static BankMirrors deriveBankMirrors(Program program,
 			BoardModel board, Map<String, Set<Integer>> bankUniverse, DataflowResult flow,
-			Map<Function, HelperModel> helpers) {
+			Map<Function, HelperModel> helpers, Map<String, Integer> placementOverride) {
 		BankMirrors.Discovery discovery =
 			new BankMirrors.Discovery(program.getAddressFactory().getDefaultAddressSpace());
 		for (ComputedWindowModel w : board.computedWindows().values()) {
@@ -745,7 +745,8 @@ final class BankAnnotationAdapter {
 		discovery.scanWriteThroughShadows(program, switchFields);
 		// Route (b) also gets each call's helper BODY (bead grm-yflf), so a load feeding a helper
 		// that stores its argument through into the same cell corroborates that store.
-		Map<Address, HelperModel> argumentCalls = helperArgumentCallSites(program, flow, helpers);
+		Map<Address, HelperModel> argumentCalls = helperArgumentCallSites(program, flow, helpers,
+			new HelperDiscovery.BankResolution(board, bankUniverse, placementOverride));
 		Map<Address, Character> argumentRegs = new LinkedHashMap<>();
 		Map<Address, AddressSetView> helperBodies = new LinkedHashMap<>();
 		argumentCalls.forEach((site, helper) -> {
@@ -900,18 +901,22 @@ final class BankAnnotationAdapter {
 	 * cells for call sites the engine does not agree are helper calls.
 	 */
 	private static Map<Address, HelperModel> helperArgumentCallSites(Program program,
-			DataflowResult flow, Map<Function, HelperModel> helpers) {
+			DataflowResult flow, Map<Function, HelperModel> helpers,
+			HelperDiscovery.BankResolution ctx) {
 		Map<Address, HelperModel> sites = new LinkedHashMap<>();
 		if (helpers.isEmpty()) {
 			return sites;
 		}
 		Listing listing = program.getListing();
-		for (Address addr : flow.stateIn().keySet()) {
+		for (Map.Entry<Address, BankState> in : flow.stateIn().entrySet()) {
+			Address addr = in.getKey();
 			Instruction instr = listing.getInstructionAt(addr);
 			if (instr == null || !instr.getFlowType().isCall()) {
 				continue;
 			}
-			HelperModel helper = calledHelper(program, instr, helpers);
+			// grm-fj4m: resolved against the in-state at the call, the same as the engine's own
+			// helper branch, so the cells nominated are the ones the dataflow agrees are helper calls.
+			HelperModel helper = calledHelper(program, instr, helpers, in.getValue(), ctx);
 			if (helper != null && helper.argReg() != null) {
 				sites.put(addr, helper);
 			}
@@ -2040,6 +2045,69 @@ final class BankAnnotationAdapter {
 	}
 
 	/**
+	 * Where a base-space OFFSET lands under one bank state, as {@link #resolveOffsetOccupant}
+	 * answers it: the overlay address-space name of the occupant/bank the state selects for the
+	 * window the offset falls in, whether the selecting state was fully known (a guess must
+	 * not displace a correct default), and whether that occupant is the window's HOME one (base
+	 * space is then already right and no overlay copy need be consulted).
+	 */
+	record OffsetResolution(String space, boolean fullyKnown, boolean home) {}
+
+	/**
+	 * The shared "which overlay does this base-space offset reach under this state" resolution
+	 * (bead grm-fj4m, extracted from {@link #retargetInlineJumpTablePointers}'s inline copy so
+	 * {@code HelperDiscovery.calledHelper}'s bank-aware overload uses the SAME answer rather
+	 * than one that could drift). Tries, in order: an enumerated window's occupant, a computed
+	 * window's bank, then a {@code memory.layouts[]} mode window's instance (with the
+	 * {@code modeKnown && bank known} rule). Returns null when the offset is in no tracked
+	 * window or the state names no occupant for it. A pure readout: no placement, no logging.
+	 */
+	static OffsetResolution resolveOffsetOccupant(BoardModel board,
+			Map<String, Set<Integer>> bankUniverse, BankState state, long offset,
+			Map<String, Integer> placementOverride) {
+		int effective = state.effective(board.initialState(), board.mask());
+		boolean wholeStateKnown = (state.knownMask() & board.mask()) == board.mask();
+		WindowModel window = findWindow(board.windows(), offset);
+		if (window != null) {
+			Map<String, String> stateRow = board.occupantByWindowForState().get(effective);
+			WindowResolution wr =
+				stateRow == null ? null : resolveWindowOccupant(board, stateRow, window);
+			if (wr == null) {
+				return null;
+			}
+			return new OffsetResolution(wr.readTarget(), wholeStateKnown,
+				wr.readTarget().equals(wr.homeOccupant()));
+		}
+		ComputedWindowModel computed = findWindow(board.computedWindows(), offset);
+		if (computed != null) {
+			ComputedResolution cr = resolveComputedBank(board, bankUniverse, state, effective,
+				placementOverride, computed);
+			return new OffsetResolution(
+				DescriptorSupport.OverlayNaming.bankBlockName(computed.name(), cr.bank()),
+				cr.fullyKnown() || cr.overridden(), cr.home());
+		}
+		if (board.modeField() != null) {
+			int modeValue = board.modeField().valueIn(effective);
+			boolean modeKnown = board.modeField().fullyKnownIn(state);
+			ModeWindowModel instance = findModeWindowAt(board.modeWindows(), modeValue, offset);
+			if (instance == null) {
+				return null;
+			}
+			if (instance.bankField() == null) {
+				return new OffsetResolution(
+					DescriptorSupport.OverlayNaming.modeBlockName(instance.name(), modeValue),
+					modeKnown, modeValue == board.homeModeValue());
+			}
+			ModeBankResolution mr = resolveModeBank(board, bankUniverse, state, effective,
+				modeValue, placementOverride, instance);
+			return new OffsetResolution(DescriptorSupport.OverlayNaming.modeBankBlockName(
+				instance.name(), modeValue, mr.bank()),
+				modeKnown && (mr.fullyKnown() || mr.overridden()), mr.home());
+		}
+		return null;
+	}
+
+	/**
 	 * Resolves the CROSS-WINDOW pointer entries of one inline-jump-table (bead grm-rnf0;
 	 * {@link InlineJumpTableDispatch}/{@link InlineJumpTableDispatchAnalyzer}, grm-j2kl) against
 	 * the bank state(s) live at the dispatching {@code JSR} -- the same window/occupant/
@@ -2141,65 +2209,15 @@ final class BankAnnotationAdapter {
 			// takes it, later arms are secondary (grm-wul), and the next pointer starts afresh.
 			boolean makePrimary = true;
 			for (BankState state : states) {
-				int effective = state.effective(board.initialState(), board.mask());
-				boolean wholeStateKnown = (state.knownMask() & board.mask()) == board.mask();
-
-				String targetSpace;
-				boolean fullyKnown;
-				boolean home;
-
-				WindowModel window = findWindow(board.windows(), offset);
-				if (window != null) {
-					Map<String, String> stateRow = board.occupantByWindowForState().get(effective);
-					WindowResolution wr =
-						stateRow == null ? null : resolveWindowOccupant(board, stateRow, window);
-					if (wr == null) {
-						everyStateResolved = false;
-						continue;
-					}
-					fullyKnown = wholeStateKnown;
-					home = wr.readTarget().equals(wr.homeOccupant());
-					targetSpace = wr.readTarget();
+				OffsetResolution resolved =
+					resolveOffsetOccupant(board, bankUniverse, state, offset, placementOverride);
+				if (resolved == null) {
+					everyStateResolved = false; // no tracked window / no occupant under this state
+					continue;
 				}
-				else {
-					ComputedWindowModel computed = findWindow(board.computedWindows(), offset);
-					if (computed != null) {
-						ComputedResolution cr = resolveComputedBank(board, bankUniverse, state,
-							effective, placementOverride, computed);
-						fullyKnown = cr.fullyKnown() || cr.overridden();
-						home = cr.home();
-						targetSpace = DescriptorSupport.OverlayNaming.bankBlockName(computed.name(),
-							cr.bank());
-					}
-					else if (board.modeField() != null) {
-						int modeValue = board.modeField().valueIn(effective);
-						boolean modeKnown = board.modeField().fullyKnownIn(state);
-						ModeWindowModel instance =
-							findModeWindowAt(board.modeWindows(), modeValue, offset);
-						if (instance == null) {
-							everyStateResolved = false;
-							continue;
-						}
-						if (instance.bankField() == null) {
-							fullyKnown = modeKnown;
-							home = modeValue == board.homeModeValue();
-							targetSpace =
-								DescriptorSupport.OverlayNaming.modeBlockName(instance.name(), modeValue);
-						}
-						else {
-							ModeBankResolution mr = resolveModeBank(board, bankUniverse, state,
-								effective, modeValue, placementOverride, instance);
-							fullyKnown = modeKnown && (mr.fullyKnown() || mr.overridden());
-							home = mr.home();
-							targetSpace = DescriptorSupport.OverlayNaming.modeBankBlockName(
-								instance.name(), modeValue, mr.bank());
-						}
-					}
-					else {
-						everyStateResolved = false;
-						continue; // offset not inside any tracked window under this state
-					}
-				}
+				String targetSpace = resolved.space();
+				boolean fullyKnown = resolved.fullyKnown();
+				boolean home = resolved.home();
 
 				if (!fullyKnown) {
 					everyStateResolved = false; // a guess must not plant code or retire the base ref

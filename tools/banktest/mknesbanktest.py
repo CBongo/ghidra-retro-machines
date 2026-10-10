@@ -1688,6 +1688,65 @@ def make_prg_forkhome():
     return bytes(prg)
 
 
+def make_prg_intrawin():
+    """INTRA-WINDOW helper resolution through the pinned overlay (bead grm-fj4m).
+
+    A base-space instruction INSIDE the switchable window ($8000, the home bank's bytes) calls
+    another routine in that same window. grm-bfb deliberately keeps such a call's base-space
+    reference (it is the block's own flow graph) next to the overlay one, so the helper lookup
+    saw BOTH flow targets and the HOME bank's function could win even when the dataflow in-state
+    fully pins the window to bank 2, where the overlay copy of $8010 is what actually runs.
+    Here the two copies differ observably, in the direction the old lookup got wrong:
+
+      bank 0 (home, base space) $8010:   LDX #$01 / STX $FFDF / RTS   ; a constant-bank helper
+      bank 2 (overlay PRG_LO_B2) $8010:  RTS                          ; NOT a helper
+
+    RESET ($C000):  JMP $8000               ; home state -> base space, base copy disassembled
+    Base $8000 (bank 0's bytes; the window code switches ITSELF to bank 2, so the state on its
+    fall-through is pinned to 2 with the code still being walked in base space):
+      8000  A2 02        LDX #$02
+      8002  8E DF FF     STX $FFDF          ; latch <- 2
+      8005  20 10 80     JSR $8010          ; INTRA-window call, bank 2 pinned: really bank 2's RTS
+      8008  AD 20 80     LDA $8020          ; bank 2 still (-> PRG_LO_B2::8020) once the overlay
+                                            ;   callee is resolved; the base helper would say 1
+      800B  4C 0B 80     JMP $800B
+
+    The FIRST analysis round runs before the overlay callee exists as a function, so it falls
+    back to base space (helper -> bank 1) and places PRG_LO_B1 references; retargeting is
+    additive across rounds, so those stay. What the fix adds is round two's bank-2 resolution,
+    and the withdrawal of the helper comment the base callee earned at the JSR.
+
+    Bank 1/2 carry distinct markers at $8020 so the read's overlay target names the bank.
+    """
+    prg = bytearray([0x00] * PRG_SIZE)
+    for bank in range(PRG_BANKS):
+        prg[bank * PRG_BANK_SIZE] = bank
+
+    def put_bank(bank, off, data):
+        base = bank * PRG_BANK_SIZE + off
+        prg[base:base + len(data)] = bytes(data)
+
+    # Bank 0 (home): the window code itself, a constant-bank-1 helper at $8010, a marker at $8020.
+    put_bank(0, 0x0000, [0xA2, 0x02, 0x8E, 0xDF, 0xFF, 0x20, 0x10, 0x80,
+                         0xAD, 0x20, 0x80, 0x4C, 0x0B, 0x80])
+    put_bank(0, 0x0010, [0xA2, 0x01, 0x8E, 0xDF, 0xFF, 0x60])
+    put_bank(0, 0x0020, [0xA0])
+    # Bank 1: marker only (the base helper's destination).
+    put_bank(1, 0x0020, [0xA1])
+    # Bank 2: $8010 is a bare RTS (not a helper), marker at $8020.
+    put_bank(2, 0x0010, [0x60])
+    put_bank(2, 0x0020, [0xA2])
+
+    put = _bank3_putter(prg)
+    put(0xC000, [0x4C, 0x00, 0x80])         # JMP $8000
+    put(0xC020, [0x40])                     # RTI
+    put(0xFFDF, [0xFF])                     # bus-conflict AND is a no-op
+    put(0xFFFA, [0x20, 0xC0])
+    put(0xFFFC, [0x00, 0xC0])
+    put(0xFFFE, [0x20, 0xC0])
+    return bytes(prg)
+
+
 def make_prg_forkbudget():
     """The BUDGET-EXHAUSTED sibling of make_prg_fork() (bead grm-wul): FIVE constants merging
     before the switch, one more than BankDataflowEngine.MAX_LIVE_FORKS_PER_BLOCK (4). Every
@@ -4593,6 +4652,19 @@ def main():
     _assert_vectors(prgforkhome, "nesforkhometest", handler=0xC020, reset=0xC000)
 
     _write_rom(outdir, "nesforkhometest.nes", prgforkhome)
+
+    prgintra = make_prg_intrawin()
+
+    # Sanity-check the intra-window fixture (bead grm-fj4m) before writing.
+    assert len(prgintra) == PRG_SIZE
+    assert prgintra[0x0000:0x0005] == bytes([0xA2, 0x02, 0x8E, 0xDF, 0xFF])   # LDX #2 / STX $FFDF
+    assert prgintra[0x0005:0x0008] == bytes([0x20, 0x10, 0x80])               # JSR $8010
+    assert prgintra[0x0010:0x0016] == bytes([0xA2, 0x01, 0x8E, 0xDF, 0xFF, 0x60])  # base: helper
+    assert prgintra[2 * PRG_BANK_SIZE + 0x0010] == 0x60                       # B2 copy: RTS
+    assert prgintra[0xC000:0xC003] == bytes([0x4C, 0x00, 0x80])               # JMP $8000
+    _assert_vectors(prgintra, "nesintrawintest", handler=0xC020, reset=0xC000)
+
+    _write_rom(outdir, "nesintrawintest.nes", prgintra)
 
     prgfb = make_prg_forkbudget()
 

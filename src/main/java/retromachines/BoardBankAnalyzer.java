@@ -484,7 +484,8 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// configured strategy BEFORE the second pass so a strategy that consumes them sees them
 		// at every site rather than at the ones pass 2 happens to revisit. ---
 		BankMirrors mirrors =
-			BankAnnotationAdapter.deriveBankMirrors(program, board, bankUniverse, flow, helpers);
+			BankAnnotationAdapter.deriveBankMirrors(program, board, bankUniverse, flow, helpers,
+				placementOverride);
 		// bead grm-mej.7: a game descriptor's bank_identifying_offsets hint licenses ONLY the
 		// membership premise of a shift-encoded identifying cell, and only once it verifies
 		// against what the ROM bytes proved above -- see BankMirrors.withMembershipHints.
@@ -565,7 +566,8 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		}
 		if (!helpers.isEmpty() || !mirrors.isEmpty()) {
 			flow = runDataflow(program, monitor, listing, mechanisms, board, helpers,
-				restoringTrampolines, secondTier.relayCallSites(), bracketClaims);
+				restoringTrampolines, secondTier.relayCallSites(), bracketClaims,
+				new HelperDiscovery.BankResolution(board, bankUniverse, placementOverride));
 		}
 
 		// --- Bank mirror naming (grm-mej.4): turn the derived mirror set into symbols and
