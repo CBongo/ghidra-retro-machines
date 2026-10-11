@@ -23,13 +23,13 @@ REALROM count refs.intoOverlay 0
 REALROM count refs.intoOverlay.retargeted 0
 REALROM count refs.intoOverlay.intraOverlay 0
 REALROM count instrs.inOverlay 0
-REALROM count bankComments 2
-REALROM count warnings 1
+REALROM count bankComments 3
+REALROM count warnings 0
 REALROM count notes 6
 REALROM count symbols 18
-REALROM sample.bankcomment ff1b bank -> mirroring=0,prg_mode=0,prg_bank=0? via FUN_b8cc [known: mirroring.0=0,mirroring.1=0,prg_mode.0=0,prg_mode.1=0; assumed from initial: prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
+REALROM sample.bankcomment ff16 bank -> mirroring=0,prg_mode=3,prg_bank=0 [switch-value flow]
+REALROM sample.bankcomment ff1b bank -> mirroring=0,prg_mode=0,prg_bank=0 via FUN_b8cc [switch-value flow]
 REALROM sample.bankcomment ff2a bank -> mirroring=0,prg_mode=0,prg_bank=0 via FUN_b908 [switch-value flow]
-REALROM sample.warn ff16 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.note b8cc [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
 REALROM sample.note b8dc [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
 REALROM sample.note b8e0 [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.

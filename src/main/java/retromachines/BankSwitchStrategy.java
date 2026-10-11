@@ -617,7 +617,7 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * That conflates two different reasons a store might have no argument register: an ordinary
 	 * RMW whose committed value genuinely depends on a byte this analyzer cannot pin down, and
 	 * MMC1's self-modifying reset idiom ({@code SerialShiftBankSwitchStrategy
-	 * .selfModifyingRmwResetsShifter}), whose effect is determinable from the instruction's own
+	 * .rmwResetsShifter}), whose effect is determinable from the instruction's own
 	 * bytes and is the SAME regardless of what any caller ever passed in A/X/Y -- there is no
 	 * argument to recover because the mechanism does not read one. Recognizing that second case
 	 * is what retires the "call to bank-switch helper RESET whose bank argument could not be

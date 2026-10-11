@@ -248,15 +248,38 @@ public class SerialShiftStrategyProgramTest extends AbstractBundledLanguageTest 
 	}
 
 	/**
-	 * A read-modify-write whose target is NOT inside its own encoding. The byte would have to
-	 * come from memory, and on an MMC1 board every address is shadowed by the 32K-mode
-	 * overlays -- so this stays declined (see grm-4kc's deferred tier).
+	 * A read-modify-write whose target is in ANOTHER 16K region than the instruction. Which
+	 * bank is mapped there depends on the PRG mode and bank, so the byte is not derivable --
+	 * even though the listing holds a bit-7-set {@code $FF} there, it stays declined.
 	 */
 	@Test
-	public void rmwOnAnUnrelatedAddressStillPoisons() throws Exception {
-		builder.setBytes("0x8010", "ee 00 90", true); // INC $9000 -- not self-referential
+	public void rmwIntoAnotherRegionStillPoisons() throws Exception {
+		builder.setBytes("0xc000", "ff", true);
+		builder.setBytes("0x8010", "ee 00 c0", true); // INC $C000 -- another 16K region
 
 		assertPoisoned(switchAt("0x8010"));
+	}
+
+	/**
+	 * Dr. Mario's RESET (grm-dos9.8): {@code ff16: INC $FF00}, where {@code $FF00} holds
+	 * {@code $D8} -- RESET's own {@code CLD}. Same 16K region as the instruction, so the same
+	 * bank in every MMC1 mode; the dummy write has bit 7 set.
+	 */
+	@Test
+	public void rmwInTheSameRegionReadsTheInstructionsBank() throws Exception {
+		builder.setBytes("0xff00", "d8", true);
+		builder.setBytes("0xff16", "ee 00 ff", true); // INC $FF00
+
+		assertReset(switchAt("0xff16"));
+	}
+
+	/** Same region, bit 7 clear in both writes: still a poison, not a guess. */
+	@Test
+	public void rmwInTheSameRegionWithBit7ClearStillPoisons() throws Exception {
+		builder.setBytes("0xff00", "10", true);
+		builder.setBytes("0xff16", "ee 00 ff", true); // INC $FF00 -- $10 then $11
+
+		assertPoisoned(switchAt("0xff16"));
 	}
 
 	// ------------------------------------------------------------------
@@ -371,12 +394,26 @@ public class SerialShiftStrategyProgramTest extends AbstractBundledLanguageTest 
 		assertNull(mmc1().callerIndependentDeposit(program, instructionAt("0x807d")));
 	}
 
-	/** An RMW into the range that is not self-referential is still declined -- grm-4kc's deferred tier. */
+	/** An RMW into another 16K region is still declined: that byte's bank is not derivable. */
 	@Test
-	public void callerIndependentDepositDeclinesANonSelfReferentialRmw() throws Exception {
-		builder.setBytes("0x8010", "ee 00 90", true); // INC $9000 -- not self-referential
+	public void callerIndependentDepositDeclinesAnRmwIntoAnotherRegion() throws Exception {
+		builder.setBytes("0xc000", "ff", true);
+		builder.setBytes("0x8010", "ee 00 c0", true); // INC $C000 -- another 16K region
 
 		assertNull(mmc1().callerIndependentDeposit(program, instructionAt("0x8010")));
+	}
+
+	/** Dr. Mario's same-region reset resolves at a call site too (grm-dos9.8). */
+	@Test
+	public void callerIndependentDepositResetsFromTheSameRegion() throws Exception {
+		builder.setBytes("0xff00", "d8", true);
+		builder.setBytes("0xff16", "ee 00 ff", true); // INC $FF00
+
+		BankSwitchStrategy.HelperDeposit deposit =
+			mmc1().callerIndependentDeposit(program, instructionAt("0xff16"));
+
+		assertNotNull(deposit);
+		assertEquals(PRG_MODE_3, deposit.value().bits() & PRG_MODE_MASK);
 	}
 
 	/** An instruction that never writes the mechanism range at all is not this shape either. */

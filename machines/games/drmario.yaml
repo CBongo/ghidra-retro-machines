@@ -16,6 +16,12 @@
 # This hint is the per-game tier's designed answer for exactly that -- a fact a human (or a
 # prior analysis run) can establish in minutes but no byte scan can.
 #
+# The analyzer now reaches the same answer on its own: it recognizes the ff16 INC $FF00 shifter
+# reset (grm-dos9.8), the explicit control writes outvote it, and prg_mode locks to 0
+# (grm-dos9.9). That lock acts at ANALYSIS time only; the base-block layout is fixed at LOAD
+# time, so this hint is still what puts the mode-0 image in base. Do not remove it on the
+# strength of the lock.
+#
 # prg_bank is deliberately NOT hinted: the analyzer's own recovery leaves it at the descriptor's
 # initial 0, and in mode 0 the hardware ignores its LSB, so bank 0 (PRG[0x0000..0x8000)) is
 # the resident 32 KiB image in base -- which is where every sampled reference already points.

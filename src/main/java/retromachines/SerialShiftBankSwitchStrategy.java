@@ -467,7 +467,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 			// A read-modify-write store (INC/ASL/... to the range) isn't a plain byte commit
 			// this scanner can attribute a value to; it DID hit the register. It poisons --
 			// UNLESS it is the self-modifying reset idiom, which is exactly determinable.
-			if (selfModifyingRmwResetsShifter(instr, offset)) {
+			if (rmwResetsShifter(instr, offset)) {
 				return SwitchOutcome.implicitDeposit(applyReset(inState));
 			}
 			return SwitchOutcome.of(poisonAll(inState));
@@ -777,7 +777,15 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	 * {@link MemoryLatchBankSwitchStrategy}-style "read a bank-invariant ROM byte" refuses any
 	 * address an overlay shadows, and {@code nes-mmc1.map} emits 32K-mode overlays
 	 * ({@code W8000_M0_B*}) spanning {@code $8000-$FFFF}, so on an MMC1 board it can only ever
-	 * answer no. See grm-4kc for the deferred non-self-referential tier.
+	 * answer no.
+	 * <p>
+	 * <b>The same-bank tier (grm-dos9.8).</b> Self-reference is the narrow case of a wider fact:
+	 * every MMC1 PRG window is 16K or 32K and 16K-aligned, so in EVERY mode an address in the same
+	 * 16K-aligned region as the executing instruction is mapped from the same bank as the
+	 * instruction's own bytes. The byte is then read from the instruction's own address space
+	 * (base or overlay -- whichever bank the listing has it in). Dr. Mario's RESET is the case:
+	 * {@code ff16: INC $FF00}, and {@code $FF00} holds {@code $D8} (RESET's own {@code CLD}), so
+	 * the dummy write has bit 7 set. A target in another region is still "not derivable".
 	 * <p>
 	 * <b>A 6502 RMW puts TWO writes on the bus</b> -- the unmodified byte, then the modified
 	 * one on the next cycle. {@code INC $FFE1} presents {@code $EE}, then {@code $EF}. Per the
@@ -810,22 +818,12 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	 * {@code poisonAll}, which raises a WARNING bookmark at the instruction -- so it surfaces
 	 * as a diagnosable warning rather than as silence.
 	 */
-	private boolean selfModifyingRmwResetsShifter(Instruction instr, long offset) {
-		// Self-reference: does the write land inside this instruction's own bytes? Comparing
-		// raw offsets is right even across spaces -- writesInRange already pinned the target
-		// to the base space, and an overlay shares the base offset, which is the point: the
-		// instruction may well be executing out of one.
-		long idx = offset - instr.getMinAddress().getOffset();
-		if (idx < 0 || idx >= instr.getLength()) {
+	private boolean rmwResetsShifter(Instruction instr, long offset) {
+		Integer read = rmwOriginalByte(instr, offset);
+		if (read == null) {
 			return false;
 		}
-		int original;
-		try {
-			original = instr.getByte((int) idx) & 0xFF;
-		}
-		catch (Exception e) {
-			return false;
-		}
+		int original = read;
 		if ((original & 0x80) != 0) {
 			return true; // tier A: the first write is the unmodified byte, op-independent
 		}
@@ -843,19 +841,48 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 		return (modified & 0x80) != 0; // tier B: the second write sets bit 7
 	}
 
+	/** Every MMC1 PRG window is a multiple of this size and aligned to it. */
+	private static final long PRG_WINDOW_GRANULE = 0x4000;
+
+	/**
+	 * The byte an RMW at {@code instr} reads from {@code offset}, when the bank it comes from is
+	 * provably the instruction's own: the instruction's own bytes (grm-4kc), or anywhere in the
+	 * same 16K-aligned region (grm-dos9.8). Comparing raw offsets is right even across spaces --
+	 * writesInRange already pinned the target to the base space, and an overlay shares the base
+	 * offset, which is the point: the instruction may well be executing out of one. Null when
+	 * the bank is not provable or the byte is not initialized.
+	 */
+	private static Integer rmwOriginalByte(Instruction instr, long offset) {
+		long at = instr.getMinAddress().getOffset();
+		long idx = offset - at;
+		try {
+			if (idx >= 0 && idx < instr.getLength()) {
+				return instr.getByte((int) idx) & 0xFF;
+			}
+			if (offset / PRG_WINDOW_GRANULE != at / PRG_WINDOW_GRANULE) {
+				return null;
+			}
+			Address target = instr.getMinAddress().getNewAddress(offset);
+			return instr.getProgram().getMemory().getByte(target) & 0xFF;
+		}
+		catch (Exception e) {
+			return null; // uninitialized, or no such address in this space
+		}
+	}
+
 	/**
 	 * The caller-independent half of {@code grm-5l14}: a self-modifying RMW reset write has no
 	 * argument register ({@link StoredValueScanner#storeRegister} never recognizes an
 	 * {@code INC}/{@code DEC} as a store), which -- before this override existed -- sent every
 	 * call reaching such a site through {@link HelperArgumentRecovery#recoverCallArgument}'s
 	 * {@code argReg == null} degrade and poisoned the whole mechanism at the call site, exactly
-	 * as if the value were genuinely unrecoverable. It is not: {@link #selfModifyingRmwResetsShifter}
+	 * as if the value were genuinely unrecoverable. It is not: {@link #rmwResetsShifter}
 	 * already proves the reset is determinable from the instruction's own bytes alone, with no
 	 * dependence on any caller-supplied value, at the DIRECT-dataflow site
 	 * ({@link #computeSwitchOutcomeValue}) -- this method gives call-site recovery the same
 	 * answer instead of asking it to re-derive determinism it cannot see (a call site only ever
 	 * gets a switch-site {@link Instruction} and this mechanism's descriptor, and
-	 * {@code selfModifyingRmwResetsShifter} needs exactly those, so no extra plumbing is needed).
+	 * {@code rmwResetsShifter} needs exactly those, so no extra plumbing is needed).
 	 * <p>
 	 * Megaman's and megaman2's {@code RESET} vectors ({@code SEI / INC $FFE1 / JMP ...}) are the
 	 * motivating case (grm-5l14, grm-78b): {@code RESET} is discovered as a one-site helper whose
@@ -880,7 +907,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 		if (offset == null || StoredValueScanner.storeRegister(switchSite) != null) {
 			return null; // not a mechanism write, or an ordinary STA/STX/STY -- has a real argument
 		}
-		if (!selfModifyingRmwResetsShifter(switchSite, offset)) {
+		if (!rmwResetsShifter(switchSite, offset)) {
 			return null; // an unresolved RMW -- stays a poison, not a guess
 		}
 		int owned = 0;
