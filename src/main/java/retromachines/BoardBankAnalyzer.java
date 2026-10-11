@@ -857,6 +857,12 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				flow.modeLock().writes().size() + " agreeing writes (first at " +
 				flow.modeLock().source() + ")");
 		}
+		else if (flow.noModeLock() != null) {
+			// grm-dos9.7: say why the phase-A census formed no lock, so a row that "should" lock
+			// can be diagnosed from its log rather than re-derived by hand.
+			AnalyzerLog.info(this, tag + ": " + board.modeField().name() + " not locked: " +
+				flow.noModeLock());
+		}
 
 		// --- Context stamping: only when the language actually declares the register ---
 		BankAnnotationAdapter.stampContextRegister(this, program, banking, flow.stateIn(), listing,

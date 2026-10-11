@@ -35,8 +35,7 @@ game:
     other effect is the reset. Every control write in the image therefore sets prg_mode 3, the
     board's initial value. No other STA/STX/STY into $8000-$9FFF decodes as code in any bank."
 
-banking:
-  # Board state-field NAMES whose bits hold their effective initial_state value at every
-  # instruction after init; folded into the program as a mask at import (NesRomLoader ->
-  # DescriptorSupport.resolveFixedAfterInitMask) and read by BankDataflowEngine.
-  fixed_after_init: [prg_mode]
+# No banking hints (grm-dos9.7, 2026-10-11): the fixed_after_init: [prg_mode] hint the provenance
+# above justified is now derived. The engine's layout-mode lock (grm-dos9.6) forms prg_mode 3 from
+# the reset-reached control writes and seeds the NMI with it; the real-ROM golden is byte-identical
+# without the hint, and drops prg_mode from the NMI-reached comments without either.

@@ -286,7 +286,7 @@ final class BankDataflowEngine {
 			helpers, restoringTrampolines, secondTierRelaySites, bracketClaims, bankResolution,
 			false);
 		return new DataflowResult(plain.stateIn(), plain.switchResults(), plain.callSwitches(),
-			plain.forkedStates(), plain.forkStats(), lock);
+			plain.forkedStates(), plain.forkStats(), lock, null);
 	}
 
 	/**
@@ -416,13 +416,16 @@ final class BankDataflowEngine {
 		Map<Address, ModeWrite> modeWrites = new HashMap<>();
 		boolean asyncSeeded = false;
 		ModeLock lock = null;
+		String noLock = null;
 		BankState fallbackSeed = seedState;
 
 		while (true) {
 			if (worklist.isEmpty()) {
 				if (!asyncSeeded) {
 					asyncSeeded = true;
-					lock = formModeLock(modeWrites, modeMask);
+					LockCensus census = censusModeLock(modeWrites, modeMask);
+					lock = census.lock();
+					noLock = census.noLock();
 					BankState asyncEntryState = asyncSeed;
 					if (lock != null) {
 						asyncEntryState = overwrite(asyncSeed, lock.state(), modeMask);
@@ -582,12 +585,22 @@ final class BankDataflowEngine {
 			if (site.seen()) {
 				SwitchResult sr = site.result();
 				switchResults.put(addr, sr);
-				recordModeWrite(modeWrites, addr, sr.effectMask() & modeMask, sr.effect());
+				// Two kinds of direct site are not census entries (grm-dos9.7; together they made
+				// every MMC1 row refuse the lock). A NO_DEPOSIT site writes nothing -- MMC1's shift
+				// writes 1-4, a discarded CHR commit -- its "effect" is an echo of the in-state. A
+				// HELPER_ARGUMENT site's value is its caller's: the census judges it once per CALL
+				// SITE, under that caller's registers, so the body's merged non-answer is not a
+				// second, unresolved vote.
+				if (sr.stop() != BankSwitchStrategy.ValueStop.NO_DEPOSIT &&
+					sr.stop() != BankSwitchStrategy.ValueStop.HELPER_ARGUMENT) {
+					recordModeWrite(modeWrites, addr, sr.effectMask() & modeMask, sr.effect(),
+						sr.stop());
+				}
 			}
 			if (call.seen()) {
 				CallSwitch cs = call.result();
 				callSwitches.put(addr, cs);
-				recordModeWrite(modeWrites, addr, call.ownedMask() & modeMask, cs.effect());
+				recordModeWrite(modeWrites, addr, call.ownedMask() & modeMask, cs.effect(), null);
 			}
 
 			boolean isCall = instr.getFlowType().isCall();
@@ -631,7 +644,7 @@ final class BankDataflowEngine {
 			lock = lock.verified(modeWrites);
 		}
 		return new DataflowResult(merged, switchResults, callSwitches, forkedStates,
-			budget.stats(), lock);
+			budget.stats(), lock, noLock);
 	}
 
 	/**
@@ -639,7 +652,11 @@ final class BankDataflowEngine {
 	 * and the deposit it makes -- merged over its path elements and fork arms, so arms that
 	 * disagree leave the bits unknown.
 	 */
-	record ModeWrite(int ownedMode, BankState effect) {
+	record ModeWrite(int ownedMode, BankState effect, BankSwitchStrategy.ValueStop stop) {
+
+		ModeWrite(int ownedMode, BankState effect) {
+			this(ownedMode, effect, null);
+		}
 
 		boolean resolved() {
 			return (effect.knownMask() & ownedMode) == ownedMode;
@@ -716,9 +733,9 @@ final class BankDataflowEngine {
 	}
 
 	private static void recordModeWrite(Map<Address, ModeWrite> modeWrites, Address addr,
-			int ownedMode, BankState effect) {
+			int ownedMode, BankState effect, BankSwitchStrategy.ValueStop stop) {
 		if (ownedMode != 0) {
-			modeWrites.put(addr, new ModeWrite(ownedMode, effect));
+			modeWrites.put(addr, new ModeWrite(ownedMode, effect, stop));
 		}
 	}
 
@@ -728,33 +745,76 @@ final class BankDataflowEngine {
 	 * field.
 	 */
 	static ModeLock formModeLock(Map<Address, ModeWrite> modeWrites, int modeMask) {
-		if (modeMask == 0 || modeWrites.isEmpty()) {
-			return null;
+		return censusModeLock(modeWrites, modeMask).lock();
+	}
+
+	/**
+	 * The phase-A census's verdict (grm-dos9.7): the lock, or -- when none formed -- WHY, for
+	 * the analyzer log. {@code noLock} is null when a lock formed or the board has no
+	 * layout-mode field, so there was nothing to explain.
+	 */
+	record LockCensus(ModeLock lock, String noLock) {}
+
+	/** Reports at most this many unresolved writes by address in a no-lock reason. */
+	private static final int NO_LOCK_SITE_LIMIT = 8;
+
+	static LockCensus censusModeLock(Map<Address, ModeWrite> modeWrites, int modeMask) {
+		if (modeMask == 0) {
+			return new LockCensus(null, null);
+		}
+		if (modeWrites.isEmpty()) {
+			return new LockCensus(null, "no reset-reached write owns the field");
 		}
 		int known = 0;
 		int bits = 0;
 		Address source = null;
+		Address firstAt = null;
+		List<String> unresolved = new ArrayList<>();
+		String disagreement = null;
 		for (Map.Entry<Address, ModeWrite> e : new TreeMap<>(modeWrites).entrySet()) {
 			ModeWrite w = e.getValue();
 			if (!w.resolved()) {
-				return null;
+				unresolved.add(e.getKey() + " (owns 0x" + Integer.toHexString(w.ownedMode()) +
+					", known 0x" + Integer.toHexString(w.effect().knownMask() & w.ownedMode()) +
+					(w.stop() == null ? ", call" : ", " + w.stop()) + ")");
+				continue;
 			}
 			int value = w.effect().bits() & w.ownedMode();
 			int overlap = known & w.ownedMode();
 			if ((bits & overlap) != (value & overlap)) {
-				return null;
+				if (disagreement == null) {
+					disagreement = "disagreement: " + e.getKey() + " writes 0x" +
+						Integer.toHexString(value & overlap) + " where " + firstAt +
+						" and earlier writes gave 0x" + Integer.toHexString(bits & overlap);
+				}
+				continue;
 			}
 			known |= w.ownedMode();
 			bits |= value;
 			if (source == null) {
 				source = e.getKey();
+				firstAt = source;
 			}
 		}
-		if ((known & modeMask) != modeMask) {
-			return null;
+		if (!unresolved.isEmpty()) {
+			String more = unresolved.size() > NO_LOCK_SITE_LIMIT
+					? ", ... (" + (unresolved.size() - NO_LOCK_SITE_LIMIT) + " more)" : "";
+			return new LockCensus(null, unresolved.size() + " of " + modeWrites.size() +
+				" write(s) leave owned mode bits unresolved: " +
+				String.join(", ", unresolved.subList(0,
+					Math.min(unresolved.size(), NO_LOCK_SITE_LIMIT))) + more +
+				(disagreement == null ? "" : "; also " + disagreement));
 		}
-		return new ModeLock(new BankState(modeMask, bits & modeMask), source, List.of(),
-			List.of(), Map.of());
+		if (disagreement != null) {
+			return new LockCensus(null, disagreement);
+		}
+		if ((known & modeMask) != modeMask) {
+			return new LockCensus(null, modeWrites.size() + " agreeing write(s) cover only 0x" +
+				Integer.toHexString(known & modeMask) + " of field mask 0x" +
+				Integer.toHexString(modeMask));
+		}
+		return new LockCensus(new ModeLock(new BankState(modeMask, bits & modeMask), source,
+			List.of(), List.of(), Map.of()), null);
 	}
 
 	/**
@@ -1875,7 +1935,8 @@ final class BankDataflowEngine {
 	 */
 	record DataflowResult(Map<Address, BankState> stateIn,
 			Map<Address, SwitchResult> switchResults, Map<Address, CallSwitch> callSwitches,
-			Map<Address, List<BankState>> forkedStates, ForkStats forkStats, ModeLock modeLock) {
+			Map<Address, List<BankState>> forkedStates, ForkStats forkStats, ModeLock modeLock,
+			String noModeLock) {
 
 		/** Every distinct whole state at {@code addr}: the forked set, or the single state. */
 		List<BankState> statesAt(Address addr) {
