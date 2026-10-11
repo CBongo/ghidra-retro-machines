@@ -676,6 +676,14 @@ final class HelperArgumentRecovery {
 		BankMirrors mirrors = helper.strategy().observedMirrors();
 		BankMirrors.IdentifyingEncoding encoding =
 			mirrors == null ? null : mirrors.identifyingEncoding(cell);
+		if (encoding != null && encoding.isAlias()) {
+			// grm-mej.18: an ALIAS byte is committed as read -- no encoding to re-apply -- so it
+			// describes what the helper commits exactly when the helper commits the field the
+			// cell's window belongs to. Membership is still checked where the note is worded.
+			BoardDescriptorModel.FieldSpec field = mirrors.identifyingField(cell);
+			return field == null ||
+				(helper.effectMask() & field.positionedMask()) != field.positionedMask();
+		}
 		return encoding != null && !encoding.isIdentity();
 	}
 

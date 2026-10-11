@@ -1019,4 +1019,111 @@ public class BankMirrorDerivationProgramTest extends AbstractBundledLanguageTest
 
 		assertEquals(Set.of(), identifyingOffsets(32).keySet());
 	}
+
+	// ------------------------------------------------------------------
+	// The ALIAS encoding (bead grm-mej.18): cv3's MMC5 mode-2 16K window, field values 2k and
+	// 2k+1 select the same image, byte 0 of image k is $80 | 2k.
+	// ------------------------------------------------------------------
+
+	/** Banks 0..banks-1 as pairs sharing an image; byte 0 of pair p is 0x80|2p, the last pair 0x3F. */
+	private void layPairedImages(int banks) throws Exception {
+		layBankOverlays(banks);
+		int lastPair = (banks - 1) / 2;
+		for (int bank = 0; bank < banks; bank++) {
+			int pair = bank / 2;
+			setBankByte(bank, 0x8000, pair == lastPair ? 0x3F : 0x80 | (pair * 2));
+		}
+	}
+
+	private Map<Long, BankMirrors.IdentifyingEncoding> aliasOffsets(int banks, int fieldMask) {
+		Set<Integer> realized = new java.util.LinkedHashSet<>();
+		for (int bank = 0; bank < banks; bank++) {
+			realized.add(bank);
+		}
+		return BankMirrors.romIdentifyingOffsets(program, "PRG_LO", 0x8000, 0xBFFF, realized,
+			fieldMask);
+	}
+
+	/**
+	 * MMC2's shape (nesmmc2test): byte == bank on every bank but the top one, whose byte is code
+	 * ($A9). Identity refuses it (no exemption at shift 0, grm-km4f), and the alias form must not
+	 * admit it either: none of its agreement is anything identity could not already explain.
+	 */
+	@Test
+	public void identityWithOneDisagreeingTopBankIsNotAdmittedAsAlias() throws Exception {
+		layBankOverlays(8);
+		for (int bank = 0; bank < 7; bank++) {
+			setBankByte(bank, 0x8000, bank);
+		}
+		setBankByte(7, 0x8000, 0xA9);
+
+		assertEquals(Set.of(), aliasOffsets(8, 0x0F).keySet());
+	}
+
+	@Test
+	public void cv3PairedImagesAreAdmittedAsAlias() throws Exception {
+		layPairedImages(32);
+
+		BankMirrors.IdentifyingEncoding encoding = aliasOffsets(32, 0x7F).get(0x8000L);
+
+		assertNotNull(encoding);
+		assertTrue(encoding.isAlias());
+		assertFalse(encoding.isIdentity());
+		assertFalse(encoding.isBiased());
+		Set<Integer> expected = new java.util.TreeSet<>();
+		for (int bank = 0; bank < 30; bank++) {
+			expected.add(bank);
+		}
+		assertEquals(expected, new java.util.TreeSet<>(encoding.verified()));
+		assertEquals("byte re-selects the same bank image", encoding.describe());
+		assertEquals(0, encoding.byteFor(0x7F, 0x04, 0x7F).knownMask());
+	}
+
+	@Test
+	public void aliasFormIsOffWithoutAFieldMask() throws Exception {
+		layPairedImages(32);
+
+		assertEquals(Set.of(), identifyingOffsets(32).keySet());
+		assertEquals(Set.of(), aliasOffsets(32, 0).keySet());
+	}
+
+	@Test
+	public void aDisagreeingNonExemptBankRefusesTheAliasForm() throws Exception {
+		layPairedImages(32);
+		setBankByte(10, 0x8000, 0x80 | 4); // names another pair's image
+
+		assertEquals(Set.of(), aliasOffsets(32, 0x7F).keySet());
+	}
+
+	@Test
+	public void fewerThanFourDistinctImagesRefuseTheAliasForm() throws Exception {
+		layPairedImages(8); // pairs 0,1,2 agree, pair 3 is the exempt top: 3 classes
+
+		assertEquals(Set.of(), aliasOffsets(8, 0x7F).keySet());
+	}
+
+	@Test
+	public void identicalImagesEverywhereRefuseTheAliasForm() throws Exception {
+		layBankOverlays(8);
+		for (int bank = 0; bank < 8; bank++) {
+			setBankByte(bank, 0x8000, 0x80);
+		}
+
+		assertEquals(Set.of(), aliasOffsets(8, 0x7F).keySet());
+	}
+
+	@Test
+	public void anOffsetAnOlderFormAdmitsKeepsItsIdentityEncodingWhenAMaskIsPassed()
+			throws Exception {
+		layBankOverlays(4);
+		for (int bank = 0; bank < 4; bank++) {
+			setBankByte(bank, 0x8000, bank);
+		}
+
+		BankMirrors.IdentifyingEncoding encoding = aliasOffsets(4, 0x7F).get(0x8000L);
+
+		assertNotNull(encoding);
+		assertTrue(encoding.isIdentity());
+		assertFalse(encoding.isAlias());
+	}
 }

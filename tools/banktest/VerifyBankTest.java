@@ -4305,11 +4305,15 @@ public class VerifyBankTest extends GhidraScript {
 			"bank_id_bff0 label=" + hasLabel + " eol=\"" + bffComment + "\"");
 
 		// ID8: no bank_id_ label exists at any OTHER address -- in particular not at offset 0
-		// (broken by the RTS targets) and not at any of the junk-byte offsets.
+		// (broken by the RTS targets) and not at any of the junk-byte offsets. bank_id_9ff0 is
+		// allowed (grm-mej.18): RESET locks prg_mode 0, so the mode-0 W8000 window is
+		// content-scanned too, and it maps the same 8K images through R6 -- $9FF0 is the very
+		// same identity byte (bank offset $1FF0) as $BFF0, read through the other window.
 		boolean extraLabel = false;
 		String extraLabelDetail = "";
 		for (Symbol sym : currentProgram.getSymbolTable().getAllSymbols(false)) {
-			if (sym.getName().startsWith("bank_id_") && !"bank_id_bff0".equals(sym.getName())) {
+			if (sym.getName().startsWith("bank_id_") && !"bank_id_bff0".equals(sym.getName()) &&
+				!"bank_id_9ff0".equals(sym.getName())) {
 				extraLabel = true;
 				extraLabelDetail = sym.getName() + "@" + sym.getAddress();
 				break;

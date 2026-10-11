@@ -1016,11 +1016,25 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		}
 		BankMirrors.IdentifyingEncoding encoding = mirrors.identifyingEncoding(cell);
 		boolean encoded = !shadow && encoding != null && !encoding.isIdentity();
-		if (encoded && !encodingApplied) {
+		// grm-mej.18: an ALIAS byte needs no re-encoding -- committed as read, the register keeps
+		// only the field's bits, and those re-select the image the byte was read from.
+		boolean alias = encoded && encoding.isAlias();
+		if (encoded && !alias && !encodingApplied) {
 			return null;
 		}
 		String source;
-		if (encoded) {
+		if (alias) {
+			source = "bank-identifying ROM byte " + cell + " -- a byte that, committed back to " +
+				"the bank register as read, re-selects a bank whose window image is identical to " +
+				"the one it is read from (" + encoding.describe() + "), so the bank committed is " +
+				"the bank live at the read -- " + (membership == BankMirrors.Membership.PROVEN
+						? "that the live bank is one this was verified on is PROVEN by the " +
+							"tracked state at the read"
+						: "that the live bank is one this was verified on is HINTED, not " +
+							"derived: stated by the game descriptor " +
+							mirrors.membershipHint(cell) + " (bank_identifying_offsets)");
+		}
+		else if (encoded) {
 			int step = 1 << encoding.shift();
 			source = "bank-identifying ROM byte " + cell + " -- a byte that ENCODES the bank it " +
 				"is read from as an index in units of " + step + " banks (" +

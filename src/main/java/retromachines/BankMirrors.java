@@ -264,12 +264,23 @@ public final class BankMirrors {
 	 * because nothing tried to read it as one.
 	 */
 	record IdentifyingEncoding(int shift, int low, int bias, int modBits, Set<Integer> verified,
-			Set<Integer> realized) {
+			Set<Integer> realized, boolean alias) {
+
+		/** Every non-{@link #isAlias alias} form. */
+		IdentifyingEncoding(int shift, int low, int bias, int modBits, Set<Integer> verified,
+				Set<Integer> realized) {
+			this(shift, low, bias, modBits, verified, realized, false);
+		}
 
 		/** The classic form: {@code byte == bank >> shift} on banks congruent to {@code low}
 		 *  modulo {@code 2^shift}, no bias. */
 		IdentifyingEncoding(int shift, int low, Set<Integer> verified, Set<Integer> realized) {
 			this(shift, low, 0, shift, verified, realized);
+		}
+
+		/** The ALIAS form (bead grm-mej.18) -- see {@link #isAlias}. */
+		static IdentifyingEncoding alias(Set<Integer> verified, Set<Integer> realized) {
+			return new IdentifyingEncoding(0, 0, 0, 0, verified, realized, true);
 		}
 
 		/** The trivial encoding: {@code byte == bank}, unconditionally. */
@@ -280,7 +291,22 @@ public final class BankMirrors {
 		/** Whether this is the ordinary {@code byte == bank} convention, with no congruence
 		 *  restriction and no bias at all. */
 		boolean isIdentity() {
-			return shift == 0 && bias == 0 && modBits == 0;
+			return shift == 0 && bias == 0 && modBits == 0 && !alias;
+		}
+
+		/**
+		 * Whether this is the ALIAS form (bead grm-mej.18): the byte, cut to the window field's
+		 * width the way the bank register stores it, names a realized bank whose window image is
+		 * BYTE-IDENTICAL to the image of the bank it is read from. Castlevania III's MMC5 mode-2
+		 * {@code $8000} holds {@code $80 | bank} on every 16K bank: bit 7 is the ROM-select bit
+		 * the tracked field does not carry, and the field's low bit is one the 16K window
+		 * ignores, so {@code bank_5115 = 2k+1} reads {@code $80+2k}, which re-selects the same
+		 * 16K bank. Like the biased form it is a physical-bank alias, not a value: it resolves
+		 * to no tracked value ({@link #byteFor} refuses), and a read-back of it is a restore only
+		 * when the live bank's membership in {@code verified} is PROVEN or HINTED.
+		 */
+		boolean isAlias() {
+			return alias;
 		}
 
 		/**
@@ -307,6 +333,9 @@ public final class BankMirrors {
 		String describe() {
 			if (isIdentity()) {
 				return "byte = bank";
+			}
+			if (isAlias()) {
+				return "byte re-selects the same bank image";
 			}
 			if (isBiased()) {
 				int modulus = 1 << modBits;
@@ -351,8 +380,8 @@ public final class BankMirrors {
 		 * @return the resolved byte, or {@link PartialByte#unknown()} when the proof does not reach it
 		 */
 		PartialByte byteFor(int fieldKnown, int fieldBits, int fieldMask) {
-			if (isBiased()) {
-				return PartialByte.unknown(); // a biased byte is a physical-bank alias, not a value
+			if (isBiased() || isAlias()) {
+				return PartialByte.unknown(); // a physical-bank alias, not a value
 			}
 			int lowMask = (1 << shift) - 1;
 			if ((fieldKnown & lowMask) != lowMask || (fieldBits & lowMask) != low) {
@@ -654,7 +683,8 @@ public final class BankMirrors {
 	 * the cell's window, re-selects the bank that was live at the load (bead grm-mej.9): true
 	 * for a {@link Kind#WRITE_THROUGH} shadow, an identity-encoded {@link Kind#ROM_IDENTIFYING}
 	 * byte, and a BIASED byte whose membership premise a verified game-descriptor hint states.
-	 * False for everything else -- in particular a shift-encoded byte (a re-commit would need
+	 * An ALIAS byte (bead grm-mej.18) qualifies on the same terms as a biased one. False for
+	 * everything else -- in particular a shift-encoded byte (a re-commit would need
 	 * the helper to re-apply the encoding) and an unhinted biased byte (its junk odd-bank bytes
 	 * are only excluded by the hint).
 	 */
@@ -672,7 +702,8 @@ public final class BankMirrors {
 		if (encoding.isIdentity()) {
 			return true;
 		}
-		return encoding.isBiased() && encoding.shift() == 0 && membershipHint(cell) != null;
+		return (encoding.isAlias() || encoding.isBiased() && encoding.shift() == 0) &&
+			membershipHint(cell) != null;
 	}
 
 	/** The source (descriptor path) of a VERIFIED membership hint for {@code cell}, or null. */
@@ -809,6 +840,25 @@ public final class BankMirrors {
 	 */
 	static Map<Long, IdentifyingEncoding> romIdentifyingOffsets(Program program, String windowName,
 			long start, long end, Set<Integer> realizedBanks) {
+		return romIdentifyingOffsets(program, windowName, start, end, realizedBanks, 0);
+	}
+
+	/**
+	 * {@link #romIdentifyingOffsets(Program, String, long, long, Set)} plus, when
+	 * {@code fieldMask} is non-zero, the ALIAS form (bead grm-mej.18), tried LAST so no offset an
+	 * earlier form admits can change: {@code byte & fieldMask} names a realized bank whose window
+	 * image is byte-identical to the image of the bank the byte was read from -- committing it
+	 * back through the window's field therefore re-selects the same code and data. The window's
+	 * fixed-bank proxy is exempt as for a shift form (cv3's mode-2 {@code W8000} banks 30/31 are
+	 * the 16K bank behind the fixed {@code $C000}/{@code $E000} pair and hold code there), and
+	 * the floor counts DISTINCT images rather than banks: duplicate images (both values of a
+	 * field bit the window ignores) prove nothing twice.
+	 *
+	 * @param fieldMask the window field's width mask (e.g. {@code 0x7F}), or 0 to skip the alias
+	 *                  form
+	 */
+	static Map<Long, IdentifyingEncoding> romIdentifyingOffsets(Program program, String windowName,
+			long start, long end, Set<Integer> realizedBanks, int fieldMask) {
 		if (realizedBanks.size() < MIN_IDENTIFYING_BANKS || end < start) {
 			return Map.of();
 		}
@@ -839,6 +889,21 @@ public final class BankMirrors {
 			exempt.add(banks.get(i));
 		}
 		Set<Integer> realized = Set.copyOf(realizedBanks);
+		// grm-mej.18: banks whose whole window image is identical share a class, so the alias form
+		// can ask "does the byte re-select THIS image" without re-comparing images per offset.
+		Map<Integer, Integer> imageClass = new LinkedHashMap<>();
+		if (fieldMask != 0) {
+			for (int i = 0; i < banks.size(); i++) {
+				int cls = i;
+				for (int j = 0; j < i; j++) {
+					if (java.util.Arrays.equals(images[i], images[j])) {
+						cls = imageClass.get(banks.get(j));
+						break;
+					}
+				}
+				imageClass.put(banks.get(i), cls);
+			}
+		}
 
 		Map<Long, IdentifyingEncoding> offsets = new LinkedHashMap<>();
 		nextOffset: for (int k = 0; k < length; k++) {
@@ -918,8 +983,49 @@ public final class BankMirrors {
 					}
 				}
 			}
+			if (fieldMask != 0) {
+				IdentifyingEncoding alias = aliasAt(images, banks, imageClass, exempt, realized,
+					k, fieldMask);
+				if (alias != null) {
+					offsets.put(start + k, alias);
+				}
+			}
 		}
 		return offsets;
+	}
+
+	/**
+	 * The ALIAS form at offset {@code k} (bead grm-mej.18), or null: every non-exempt bank's byte,
+	 * cut to {@code fieldMask}, names a realized bank of the same image class, and the agreeing
+	 * banks whose raw byte is NOT their own number span at least
+	 * {@link #MIN_SHIFTED_IDENTIFYING_BANKS} distinct images.
+	 */
+	private static IdentifyingEncoding aliasAt(byte[][] images, List<Integer> banks,
+			Map<Integer, Integer> imageClass, Set<Integer> exempt, Set<Integer> realized, int k,
+			int fieldMask) {
+		Set<Integer> matched = new LinkedHashSet<>();
+		Set<Integer> classes = new LinkedHashSet<>();
+		for (int i = 0; i < banks.size(); i++) {
+			int bank = banks.get(i);
+			int raw = images[i][k] & 0xFF;
+			Integer named = imageClass.get(raw & fieldMask);
+			if (named != null && named.equals(imageClass.get(bank))) {
+				matched.add(bank);
+				if (raw != bank) {
+					// Only agreement identity CANNOT explain counts toward the floor: identity
+					// draws no exemption (grm-km4f), and an offset that is identity on every bank
+					// but an exempt one -- MMC2's W8000, whose home bank holds RESET code at
+					// $8000 -- must not slip in through this form instead.
+					classes.add(named);
+				}
+			}
+			else if (!exempt.contains(bank)) {
+				return null;
+			}
+		}
+		return classes.size() >= MIN_SHIFTED_IDENTIFYING_BANKS
+				? IdentifyingEncoding.alias(Set.copyOf(matched), realized)
+				: null;
 	}
 
 	/**

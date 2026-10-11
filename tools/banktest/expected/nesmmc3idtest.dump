@@ -98,6 +98,7 @@ SYMBOL 4014 OAMDMA IMPORTED primary=true
 SYMBOL 4015 SND_CHN IMPORTED primary=true
 SYMBOL 4016 JOY1 IMPORTED primary=true
 SYMBOL 4017 JOY2 IMPORTED primary=true
+SYMBOL 9ff0 bank_id_9ff0 ANALYSIS primary=true
 SYMBOL bff0 bank_id_bff0 ANALYSIS primary=true
 SYMBOL e000 RESET IMPORTED primary=true
 SYMBOL e012 IRQ IMPORTED primary=false

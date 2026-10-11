@@ -604,7 +604,7 @@ final class SaveRestoreTrampolines {
 	}
 
 	/**
-	 * For a BIASED identity byte (grm-mej.9) as the source of the restored value: the byte must be
+	 * For a BIASED identity byte (grm-mej.9), or an ALIAS one (grm-mej.18), as the source of the restored value: the byte must be
 	 * trusted to alias the live bank, and every mechanism write on the walk must be either a
 	 * write that commits no bank (a register select) or a bank commit into exactly the field the
 	 * byte's window belongs to, as the helper's own body establishes
@@ -617,7 +617,7 @@ final class SaveRestoreTrampolines {
 			BankMirrors mirrors, Address source, Set<Address> mechanismWrites) {
 		BankMirrors.IdentifyingEncoding encoding =
 			source == null ? null : mirrors.identifyingEncoding(source);
-		if (encoding == null || !encoding.isBiased()) {
+		if (encoding == null || !(encoding.isBiased() || encoding.isAlias())) {
 			return 0;
 		}
 		BoardDescriptorModel.FieldSpec field = mirrors.identifyingField(source);

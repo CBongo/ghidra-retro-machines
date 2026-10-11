@@ -3513,7 +3513,9 @@ def make_prg_mmc3_id():
     naming the non-identity encoding (matched loosely against "bank-1", since the exact
     wording is BankMirrors.IdentifyingEncoding.describe()'s to choose). ID8 -- no
     `bank_id_` label exists at any OTHER address (in particular not at offset 0, which
-    is broken by the RTS targets, and not at any of the junk-byte offsets).
+    is broken by the RTS targets, and not at any of the junk-byte offsets). `bank_id_9ff0`
+    is the one allowed extra (grm-mej.18): RESET locks prg_mode 0, so the mode-0 W8000
+    window is scanned too, and it shows the same bank offset $1FF0 through R6.
     """
     prg = bytearray([0x00] * (ID_BANKS * MMC3_BANK_SIZE))
 

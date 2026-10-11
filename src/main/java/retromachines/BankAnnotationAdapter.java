@@ -820,7 +820,26 @@ final class BankAnnotationAdapter {
 				// recording the field without a mode qualifier sound -- see
 				// BankMirrors.identifyingField before scanning a mode-varying window here.
 				discovery.addRomIdentifying(BankMirrors.romIdentifyingOffsets(program, w.name(),
-					w.start(), w.end(), banks), w.field());
+					w.start(), w.end(), banks, w.field().widthMask()), w.field());
+			}
+		}
+		// bead grm-mej.18: a mode-varying window is scanned too, but ONLY under a layout-mode
+		// LOCK (grm-dos9.6) that pass 1 formed and verified -- the mode is then one value at
+		// every instruction after init, so the window's field selects its bank under the only
+		// mode the game runs, which is the mode-invariance BankMirrors.identifyingField needs.
+		// The pre-lock init code is the residual: it runs before any game code reads a bank.
+		Integer lockedMode = lockedModeValue(board, flow);
+		if (lockedMode != null) {
+			for (ModeWindowModel w : board.modeWindows()) {
+				if (w.bankField() == null || w.modeValue() != lockedMode) {
+					continue;
+				}
+				String key = modeBankKey(w.name(), w.modeValue());
+				Set<Integer> banks = bankUniverse.get(key);
+				if (banks != null) {
+					discovery.addRomIdentifying(BankMirrors.romIdentifyingOffsets(program, key,
+						w.start(), w.end(), banks, w.bankField().widthMask()), w.bankField());
+				}
 			}
 		}
 		// Hand over WHICH bit-field each site commits, not just the addresses: build()'s third
@@ -843,6 +862,17 @@ final class BankAnnotationAdapter {
 		// bank" can only be judged once (a) and (b) have established what does.
 		discovery.scanSaveSlotCopies(program);
 		return discovery.build();
+	}
+
+	/** The layout-mode value pass 1's verified mode lock pins, or null when there is none. */
+	private static Integer lockedModeValue(BoardModel board, DataflowResult flow) {
+		FieldSpec modeField = board.modeField();
+		BankDataflowEngine.ModeLock lock = flow.modeLock();
+		if (modeField == null || lock == null || lock.rejected() ||
+			!modeField.fullyKnownIn(lock.state())) {
+			return null;
+		}
+		return modeField.valueIn(lock.state().bits());
 	}
 
 	/**
