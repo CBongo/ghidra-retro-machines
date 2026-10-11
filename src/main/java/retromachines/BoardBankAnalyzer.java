@@ -629,9 +629,15 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				// fork budget gets the warning that names them, not the generic one.
 				BankAnnotationAdapter.Marked marked = switchResult.forked()
 						? BankAnnotationAdapter.annotateForked(this, program, listing, addr,
-							switchResult.arms(), board, bankUniverse, null, provenance)
+							switchResult.arms().stream()
+									.map(arm -> BankAnnotationAdapter.withLayoutMode(arm, inState,
+										switchResult.effectMask(), board))
+									.toList(),
+							board, bankUniverse, null, provenance)
 						: BankAnnotationAdapter.annotateOrWarn(this, program, listing, addr,
-							switchResult.effect(), board, bankUniverse, null,
+							BankAnnotationAdapter.withLayoutMode(switchResult.effect(), inState,
+								switchResult.effectMask(), board),
+							board, bankUniverse, null,
 							switchResult.stop() == BankSwitchStrategy.ValueStop.MULTI_VALUED_AT_MERGE
 									? multiValuedWarning(board, switchResult.arms())
 									: "Bank state becomes unknown here: mechanism write with a " +

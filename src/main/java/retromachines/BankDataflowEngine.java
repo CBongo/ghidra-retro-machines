@@ -409,8 +409,10 @@ final class BankDataflowEngine {
 		for (Function f : program.getFunctionManager().getFunctions(true)) {
 			functionEntries.add(f.getEntryPoint());
 		}
-		int modeMask = !allowModeLock || board.modeField() == null ? 0
+		// The board's layout-mode field (MapCompiler's single shared `when:` field), or 0.
+		int layoutMask = board.modeField() == null ? 0
 				: board.modeField().positionedMask() & board.mask();
+		int modeMask = allowModeLock ? layoutMask : 0;
 		Map<Address, ModeWrite> modeWrites = new HashMap<>();
 		boolean asyncSeeded = false;
 		ModeLock lock = null;
@@ -571,7 +573,7 @@ final class BankDataflowEngine {
 						mine = applyHelperCall(program, instr, helper, pathId, mine.get(0).out(),
 							callSiteRegCache, restoringTrampolines, secondTierRelaySites, listing,
 							armCache, budget, call, stateIn, stateDependents, crossBlockProofMemo,
-							bracketClaims, lock, modeMask);
+							bracketClaims, lock, layoutMask);
 					}
 				}
 				outs.addAll(mine);
@@ -875,8 +877,8 @@ final class BankDataflowEngine {
 			return outs;
 		}
 		// The annotation state echoes the in-state only within the helper's own
-		// mechanism window -- see CallSwitch's javadoc.
-		BankState mechIn = outState.restrictedTo(helper.effectMask());
+		// mechanism window, plus the board's layout-mode field -- see CallSwitch's javadoc.
+		BankState mechIn = outState.restrictedTo(helper.effectMask() | modeMask);
 		String label = helperLabel(program, helper);
 		if (forkEffects != null) {
 			List<BankState> afters = new ArrayList<>();
@@ -1803,9 +1805,13 @@ final class BankDataflowEngine {
 	 * horizon identical to a direct switch's at the same spot -- a {@code computeSwitch}
 	 * result echoes exactly its own mechanism's in-state bits, never another mechanism's,
 	 * so a helper-call comment on a multi-mechanism board keeps showing other mechanisms'
-	 * fields as assumed, exactly as it always did. For a single-field helper (owned == the
-	 * whole mechanism window) {@code stateAfter == effect}, so the historical path is
-	 * unchanged byte-for-byte.
+	 * fields as assumed, exactly as it always did -- with ONE exception (bead grm-dos9.3): the
+	 * board's layout-mode field is always echoed too. On a mode-varying board the mode decides
+	 * WHICH window a bank field feeds, so it is part of the meaning of every bank write; cv3's
+	 * {@code e03d} (MMC5, where {@code $5100} and {@code $5116} are separate mechanisms) rendered
+	 * {@code prg_mode} as "assumed from initial" although the dataflow knew it was 2. The
+	 * analyzer renders {@code stateAfter} only when the call's own effect knows something, so
+	 * the echoed mode can never turn a call that resolved nothing into a comment.
 	 * <p>
 	 * {@code noInboundArgument} is carried straight through from
 	 * {@link HelperArgumentRecovery.CallEffect#noInboundArgument} (bead grm-jqt0): a helper whose

@@ -3521,8 +3521,8 @@ public class VerifyBankTest extends GhidraScript {
 		// recognized by a mechanism owning only ONE state field (bank_5114 or prg_mode),
 		// so per the multi-mechanism engine's per-switch-effect annotation these are
 		// partial comments: the acted-on field is "known", the others fall back to
-		// "assumed from initial" (nesmodetest's F4 is the precedent for this assertion
-		// shape).
+		// "assumed from initial" -- except prg_mode, the layout-mode field, which a bank
+		// write's comment shows whenever the dataflow knows it (grm-dos9.3; nesmodetest's F4).
 		String e002 = eol(0xE002);
 		criterion("M3:e002", e002.contains("bank_5114 -> 1") || e002.contains("bank_5114=1"),
 			"bank_5114 latch -> 1 at e002: \"" + e002 + "\"");
@@ -4661,22 +4661,22 @@ public class VerifyBankTest extends GhidraScript {
 				describe(r));
 
 		// F4: bank-switch comments at the three latch-write sites. Each write is recognized
-		// by a mechanism that owns only ONE of the two state fields (bank / prg_mode), so
-		// per the multi-mechanism engine's per-switch-effect annotation these are partial
-		// comments: the acted-on field is "known", the other field falls back to "assumed
-		// from initial" -- assert on the effective per-field breakdown, not exact wording.
+		// by a mechanism that owns only ONE of the two state fields (bank / prg_mode). The
+		// BANK writes now also show prg_mode, because it is the board's layout-mode field and
+		// decides which window the bank feeds (grm-dos9.3): fully known, no "?". Before that
+		// bead these rendered prg_mode as "assumed from initial" -- and at 8042, inside the
+		// mode-1 overlay, that assumption was WRONG (it read prg_mode=0). The MODE write at
+		// c00a is unchanged: bank is not the layout field, so it stays "assumed from initial".
 		String c = eol(0xC002);
-		criterion("F4:c002", c.contains("bank ->") && c.contains("bank=1") &&
-			c.contains("known: bank"),
-			"bank latch -> 1 (bank field known, prg_mode assumed) at c002: \"" + c + "\"");
+		criterion("F4:c002", c.contains("bank=1,prg_mode=0") && !c.contains("?"),
+			"bank latch -> 1, prg_mode 0 known from the reset seed, at c002: \"" + c + "\"");
 		c = eol(0xC00A);
 		criterion("F4:c00a", c.contains("prg_mode=1") && c.contains("known: prg_mode"),
 			"mode latch -> 1 (prg_mode field known, bank assumed) at c00a: \"" + c + "\"");
 		c = eol("W8000_M1", 0x8042);
-		criterion("F4:8042", c.contains("bank ->") && c.contains("bank=2") &&
-			c.contains("known: bank"),
-			"bank latch -> 2 inside overlay (bank field known, prg_mode assumed) at 8042: \"" +
-				c + "\"");
+		criterion("F4:8042", c.contains("bank=2,prg_mode=1") && !c.contains("?"),
+			"bank latch -> 2 inside the mode-1 overlay, prg_mode 1 known, at 8042: \"" + c +
+				"\"");
 
 		// F5: the phase-2 disassembly cascade actually produced instructions at all three
 		// overlay targets reached above.

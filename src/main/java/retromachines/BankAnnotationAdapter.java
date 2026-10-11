@@ -283,6 +283,30 @@ final class BankAnnotationAdapter {
 	}
 
 	/**
+	 * The state a DIRECT switch's comment renders (bead grm-dos9.3): the site's own deposit, plus
+	 * the board's layout-mode field as the in-state knows it, where this mechanism does not own
+	 * the mode. On a mode-varying board the mode decides which window the bank field feeds, so it
+	 * is part of the meaning of the write -- cv3's {@code e2dc} ({@code STA $5116}) rendered
+	 * {@code prg_mode} as "assumed from initial" although the dataflow knew it was 2.
+	 * <p>
+	 * Only alongside knowledge the site itself has: a deposit that resolved nothing is returned
+	 * unchanged, so the in-state's mode can never turn a genuinely undeterminable write's WARNING
+	 * into a comment ({@link #annotateOrWarn} keys that choice on "is anything known").
+	 */
+	static BankState withLayoutMode(BankState deposit, BankState inState, int effectMask,
+			BoardModel board) {
+		if (board.modeField() == null || deposit.knownMask() == 0 || inState == null) {
+			return deposit;
+		}
+		int mode = board.modeField().positionedMask() & ~effectMask & inState.knownMask();
+		if (mode == 0) {
+			return deposit;
+		}
+		return new BankState(deposit.knownMask() | mode,
+			(deposit.bits() & ~mode) | (inState.bits() & mode));
+	}
+
+	/**
 	 * Reports the layout-mode lock (bead grm-dos9.6) in the listing and the program properties.
 	 * <ul>
 	 * <li><b>Rejected</b> (owner ruling 2026-10-11: a wrong lock is significant enough to tell the
