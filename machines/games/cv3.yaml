@@ -1,0 +1,51 @@
+# Curated per-game descriptor (title tier). Compiled to data/games/cv3.gmap.
+# docs/per-game-descriptors-design.md; bead grm-dos9.1 (2026-10-10).
+#
+# WHY THIS FILE EXISTS. machines/nes-mmc5.yaml's reset layout is PRG mode 3 (four 8 KiB windows),
+# the hardware power-on value. Castlevania III is the one MMC5 title in the corpus that runs in
+# PRG mode 2 instead: RESET calls FUN_e0df, whose `LDY #$02 / STY $5100` (e0f9/e0fb) sets mode 2
+# once, and nothing changes it afterwards (owner's hand pass, 2026-10-10, grm-dos9).
+#
+# The dataflow seeds EVERY function entry with the descriptor's initial_state, not only RESET, so
+# without this hint each callee merged the caller's mode 2 with a mode-3 seed: helper call sites
+# (FUN_e2da/e2e6/e2e8) rendered prg_mode=3, and $5115 writes resolved into mode 3's 8 KiB WA000
+# window (WA000_M3_B2/B24 references) next to the correct 16 KiB W8000_M2 ones. That is the
+# measured cause of most of grm-dos9's unreached banked code.
+#
+# NesRomLoader.imageResolvedMode cannot recover this from the image: it reads only LDA #imm /
+# STA abs pairs and needs MIN_MODE_EVIDENCE_SITES (4) agreeing sites, while cv3 has exactly one
+# mode write, and it is an LDY/STY. This is the per-game tier's designed answer for that case.
+#
+# fixed_after_init: [prg_mode] also seeds async entries (NMI/IRQ, otherwise fully unknown per
+# grm-913) with mode 2 known; every bank field stays unknown there. The pre-e0fb RESET prologue
+# runs in the fixed $E000 window, which is bank 31 in both mode 2 and mode 3, so seeding RESET
+# itself with mode 2 changes nothing observable.
+#
+# SOUNDNESS RESIDUAL: an undisassembled writer of $5100 is invisible to the survey below. The
+# claim is the owner's and the code read's, not a proof over all code.
+
+schema: 2
+
+game:
+  id: cv3
+  title: "Castlevania 3: Dracula's Curse (U) [o2]"
+  board: nes_mmc5
+  identity:
+    # PRG-slice SHA-256 (16-byte iNES header excluded, no trainer), copied from the
+    # "REALROM prgsha256" line of tools/banktest/realrom/expected/cv3.dump -- the same value
+    # NesRomLoader.gameIdentity computes at import.
+    prg_sha256: "e2851967c3dff2b2a516b86d4952d3be6f0aeb926835d189b57f7845301fce47"
+    # Whole-file SHA-256, copied from the cv3 row of tools/banktest/realrom/manifest-gme.tsv.
+    file_sha256: "366bfec7490d1db1c05d882b6d21125d2d6828a49d61292da5609abecee24b48"
+  provenance: "owner hand pass 2026-10-10 (grm-dos9): cv3 runs MMC5 PRG mode 2, set once in
+    RESET by FUN_e0df (e0f9 LDY #$02 / e0fb STY $5100) and never changed. Golden survey: e03a's
+    bank comment resolves prg_mode=2, and mainline references reach W8000_M2_B24."
+
+banking:
+  # Field-NAME map, never a packed integer (the game tier does not know the board's bit
+  # layout); folded in last, after banking.initial_state_expr, by
+  # DescriptorSupport.applyGameInitialStateHint.
+  initial_state: { prg_mode: 2 }
+  # Board state-field NAMES whose bits hold their effective initial_state value at every
+  # instruction after init (grm-mej.12); read by BankDataflowEngine for async entries.
+  fixed_after_init: [prg_mode]
