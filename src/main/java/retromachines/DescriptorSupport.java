@@ -258,6 +258,18 @@ final class DescriptorSupport {
 	 */
 	static final String BOARD_NAME_PROPERTY = "NES Board";
 
+	/**
+	 * Program-info property carrying the layout-mode value the bank analyzer LOCKED (bead
+	 * {@code grm-dos9.6}): every mode write reached from reset agreed on it, and no write found
+	 * afterwards contradicted it. A plain decimal string, e.g. {@code "2"} for cv3's MMC5 PRG mode 2.
+	 * Written by {@link BankAnnotationAdapter#annotateModeLock} while the lock holds and REMOVED
+	 * when no lock formed or it was rejected, so a stale value cannot survive a re-analysis.
+	 * <p>
+	 * Named for people, like {@link #BOARD_NAME_PROPERTY}: no {@code "Retro Machines."} prefix, so
+	 * the About/Info program dialogs show it (owner request, 2026-10-11).
+	 */
+	static final String DETECTED_PRG_MODE_PROPERTY = "Detected PRG mode";
+
 	/** One {@code window:bank} token: capture group 1 = window name, 2 = bank digits. The
 	 *  separator is a colon, not '=': the headless {@code analyzeHeadless.bat} arg parser
 	 *  (cmd.exe) splits values on '=', so an '='-based grammar can't be passed on Windows. */

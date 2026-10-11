@@ -271,6 +271,34 @@ final class BankDataflowEngine {
 			Set<Address> secondTierRelaySites, BankStackBrackets.Claims bracketClaims,
 			HelperDiscovery.BankResolution bankResolution)
 			throws CancelledException {
+		DataflowResult locked = runDataflowOnce(program, monitor, listing, mechanisms, board,
+			helpers, restoringTrampolines, secondTierRelaySites, bracketClaims, bankResolution,
+			true);
+		ModeLock lock = locked.modeLock();
+		if (lock == null || !lock.rejected()) {
+			return locked;
+		}
+		// The lock did not survive verification (grm-dos9.6): some write reached only after it
+		// was formed writes another mode, or one the analyzer could not resolve. Nothing derived
+		// under the lock may reach the output, so the whole run is redone without it; the
+		// rejected lock rides along only as evidence for the warning the analyzer raises.
+		DataflowResult plain = runDataflowOnce(program, monitor, listing, mechanisms, board,
+			helpers, restoringTrampolines, secondTierRelaySites, bracketClaims, bankResolution,
+			false);
+		return new DataflowResult(plain.stateIn(), plain.switchResults(), plain.callSwitches(),
+			plain.forkedStates(), plain.forkStats(), lock);
+	}
+
+	/**
+	 * One fixpoint run. {@code allowModeLock} (bead grm-dos9.6) lets the run lock the board's
+	 * layout-mode field once the reset-reached code has written it -- see {@link ModeLock}.
+	 */
+	private static DataflowResult runDataflowOnce(Program program, TaskMonitor monitor,
+			Listing listing, List<ConfiguredMechanism> mechanisms, BoardModel board,
+			Map<Function, HelperModel> helpers, Map<Function, Integer> restoringTrampolines,
+			Set<Address> secondTierRelaySites, BankStackBrackets.Claims bracketClaims,
+			HelperDiscovery.BankResolution bankResolution, boolean allowModeLock)
+			throws CancelledException {
 
 		Map<Address, LinkedHashMap<PathId, BankState>> stateIn = new HashMap<>();
 		Set<Address> collapsedAddrs = new HashSet<>();
@@ -366,20 +394,50 @@ final class BankDataflowEngine {
 		int fixedMask = DescriptorSupport.readFixedAfterInitMask(program) & board.mask();
 		BankState asyncSeed = fixedMask == 0 ? BankState.unknown()
 				: new BankState(fixedMask, seedState.bits() & fixedMask);
-		seeds.addAll(asyncEntries);
+		// Seeding runs in three phases (grm-dos9.6). The reset-side entries go first, alone, so
+		// that when the worklist first runs dry every mode write the reset path reaches has
+		// converged -- that census is what may lock the layout-mode field. The async entries
+		// follow, seeded with the locked mode when there is one, and then the fallback seeds for
+		// functions nothing reached (grm-dos9.4), again with the locked mode.
 		for (Address seed : seeds) {
-			BankState entryState = asyncEntries.contains(seed) ? asyncSeed : seedState;
-			mergeAndEnqueue(seed, PathId.ROOT, entryState, stateIn, collapsedAddrs, worklist,
-				listing, board, clampCache, budget, stateDependents);
+			if (!asyncEntries.contains(seed)) {
+				mergeAndEnqueue(seed, PathId.ROOT, seedState, stateIn, collapsedAddrs, worklist,
+					listing, board, clampCache, budget, stateDependents);
+			}
 		}
 		List<Address> functionEntries = new ArrayList<>();
 		for (Function f : program.getFunctionManager().getFunctions(true)) {
 			functionEntries.add(f.getEntryPoint());
 		}
+		int modeMask = !allowModeLock || board.modeField() == null ? 0
+				: board.modeField().positionedMask() & board.mask();
+		Map<Address, ModeWrite> modeWrites = new HashMap<>();
+		boolean asyncSeeded = false;
+		ModeLock lock = null;
+		BankState fallbackSeed = seedState;
 
-		while (!worklist.isEmpty() ||
-			seedUnreachedFunctions(program, listing, functionEntries, seedState, stateIn,
-				collapsedAddrs, worklist, board, clampCache, budget, stateDependents)) {
+		while (true) {
+			if (worklist.isEmpty()) {
+				if (!asyncSeeded) {
+					asyncSeeded = true;
+					lock = formModeLock(modeWrites, modeMask);
+					BankState asyncEntryState = asyncSeed;
+					if (lock != null) {
+						asyncEntryState = overwrite(asyncSeed, lock.state(), modeMask);
+						fallbackSeed = overwrite(seedState, lock.state(), modeMask);
+					}
+					for (Address seed : asyncEntries) {
+						mergeAndEnqueue(seed, PathId.ROOT, asyncEntryState, stateIn,
+							collapsedAddrs, worklist, listing, board, clampCache, budget,
+							stateDependents);
+					}
+				}
+				if (worklist.isEmpty() && !seedUnreachedFunctions(program, listing,
+					functionEntries, fallbackSeed, stateIn, collapsedAddrs, worklist, board,
+					clampCache, budget, stateDependents)) {
+					break;
+				}
+			}
 			monitor.checkCancelled();
 			Address addr = worklist.poll();
 			Instruction instr = listing.getInstructionAt(addr);
@@ -455,7 +513,8 @@ final class BankDataflowEngine {
 							BankState positioned = placement.position(armLocal);
 							positionedArms.add(positioned);
 							site.add(positioned, BankSwitchStrategy.ValueStop.RESOLVED);
-							BankState out = overwrite(inState, positioned, effectMask);
+							BankState out = overwrite(inState,
+								fillFromLock(positioned, effectMask & modeMask, lock), effectMask);
 							mine.add(new OutElement(pathId.with(addr, positioned), out, out));
 						}
 						site.arms(positionedArms, false);
@@ -482,7 +541,8 @@ final class BankDataflowEngine {
 									.map(placement::position)
 									.toList(), true);
 						}
-						BankState out = overwrite(inState, positionedEffect, effectMask);
+						BankState out = overwrite(inState,
+							fillFromLock(positionedEffect, effectMask & modeMask, lock), effectMask);
 						mine.add(new OutElement(pathId, out, out));
 					}
 					site.mechanism(matchedMechanism);
@@ -511,17 +571,21 @@ final class BankDataflowEngine {
 						mine = applyHelperCall(program, instr, helper, pathId, mine.get(0).out(),
 							callSiteRegCache, restoringTrampolines, secondTierRelaySites, listing,
 							armCache, budget, call, stateIn, stateDependents, crossBlockProofMemo,
-							bracketClaims);
+							bracketClaims, lock, modeMask);
 					}
 				}
 				outs.addAll(mine);
 			}
 
 			if (site.seen()) {
-				switchResults.put(addr, site.result());
+				SwitchResult sr = site.result();
+				switchResults.put(addr, sr);
+				recordModeWrite(modeWrites, addr, sr.effectMask() & modeMask, sr.effect());
 			}
 			if (call.seen()) {
-				callSwitches.put(addr, call.result());
+				CallSwitch cs = call.result();
+				callSwitches.put(addr, cs);
+				recordModeWrite(modeWrites, addr, call.ownedMask() & modeMask, cs.effect());
 			}
 
 			boolean isCall = instr.getFlowType().isCall();
@@ -561,8 +625,134 @@ final class BankDataflowEngine {
 				forkedStates.put(e.getKey(), distinctBoard(new ArrayList<>(e.getValue().values())));
 			}
 		}
+		if (lock != null) {
+			lock = lock.verified(modeWrites);
+		}
 		return new DataflowResult(merged, switchResults, callSwitches, forkedStates,
-			budget.stats());
+			budget.stats(), lock);
+	}
+
+	/**
+	 * One converged write to the layout-mode field (grm-dos9.6): the mode bits the site OWNS,
+	 * and the deposit it makes -- merged over its path elements and fork arms, so arms that
+	 * disagree leave the bits unknown.
+	 */
+	record ModeWrite(int ownedMode, BankState effect) {
+
+		boolean resolved() {
+			return (effect.knownMask() & ownedMode) == ownedMode;
+		}
+
+		/** A KNOWN owned mode bit that differs from the lock: the premise is disproved. */
+		boolean contradicts(BankState lock) {
+			int known = effect.knownMask() & ownedMode;
+			return (effect.bits() & known) != (lock.bits() & known);
+		}
+	}
+
+	/**
+	 * The board's layout-mode field, locked to the one value every reset-reached write gives it
+	 * (bead grm-dos9.6; the general form of grm-mej.12's per-game {@code fixed_after_init}).
+	 * Most games set the PRG mode once at reset, or rewrite it with every control-register write
+	 * but always to the same value. Once the reset path has done that, the mode holds that value
+	 * at every later instruction, so async entries and unreached functions are seeded with it
+	 * instead of an unknown or power-on mode.
+	 * <p>
+	 * {@code source} is the lowest-addressed write the lock was formed from. After the whole
+	 * fixpoint the lock is re-checked against EVERY mode write ({@link #verified});
+	 * {@code contradictions} lists the writes with a KNOWN mode bit that differs from it; a
+	 * non-empty list means the lock was wrong, so the engine reruns without it and the analyzer
+	 * raises a WARNING at each. {@code assumed} lists the writes whose owned mode bits did not
+	 * resolve: per the owner's ruling (2026-10-11) they keep the lock -- see
+	 * {@link #fillFromLock} -- and the analyzer NOTEs each as assumed rather than verified.
+	 * {@code writes} is the census both were judged against.
+	 */
+	record ModeLock(BankState state, Address source, List<Address> contradictions,
+			List<Address> assumed, Map<Address, ModeWrite> writes) {
+
+		boolean rejected() {
+			return !contradictions.isEmpty();
+		}
+
+		ModeLock verified(Map<Address, ModeWrite> all) {
+			List<Address> bad = new ArrayList<>();
+			List<Address> unverified = new ArrayList<>();
+			for (Map.Entry<Address, ModeWrite> e : new TreeMap<>(all).entrySet()) {
+				ModeWrite w = e.getValue();
+				if (w.contradicts(state)) {
+					bad.add(e.getKey());
+				}
+				else if (!w.resolved()) {
+					unverified.add(e.getKey());
+				}
+			}
+			return new ModeLock(state, source, List.copyOf(bad), List.copyOf(unverified),
+				Map.copyOf(all));
+		}
+	}
+
+	/**
+	 * Under a lock, a mode write whose owned mode bits did not resolve deposits the LOCKED value
+	 * on them (owner ruling 2026-10-11, grm-dos9.6): the lock's premise is that the game never
+	 * changes the mode, and a write the analyzer cannot read -- smb2's {@code ff73} loop,
+	 * {@code TYA / ORA #$80 / STA $8000} with Y in 0..5, whose bit 6 is always 0 -- is exactly
+	 * what the premise covers. Only bits the write owns and left unknown are filled; a known bit
+	 * is never overridden, and a known bit that DISAGREES is a contradiction that rejects the
+	 * lock instead. The site's own tally keeps the unfilled deposit, so its comment and the
+	 * census still say what was actually resolved, and the analyzer NOTEs it as assumed.
+	 */
+	static BankState fillFromLock(BankState effect, int ownedMode, ModeLock lock) {
+		if (lock == null || ownedMode == 0) {
+			return effect;
+		}
+		int unknown = ownedMode & ~effect.knownMask();
+		if (unknown == 0) {
+			return effect;
+		}
+		return new BankState(effect.knownMask() | unknown,
+			(effect.bits() & ~unknown) | (lock.state().bits() & unknown));
+	}
+
+	private static void recordModeWrite(Map<Address, ModeWrite> modeWrites, Address addr,
+			int ownedMode, BankState effect) {
+		if (ownedMode != 0) {
+			modeWrites.put(addr, new ModeWrite(ownedMode, effect));
+		}
+	}
+
+	/**
+	 * The lock the converged reset-side census supports, or null: at least one write, every
+	 * write's owned mode bits resolved, all of them agreeing, and together covering the whole
+	 * field.
+	 */
+	static ModeLock formModeLock(Map<Address, ModeWrite> modeWrites, int modeMask) {
+		if (modeMask == 0 || modeWrites.isEmpty()) {
+			return null;
+		}
+		int known = 0;
+		int bits = 0;
+		Address source = null;
+		for (Map.Entry<Address, ModeWrite> e : new TreeMap<>(modeWrites).entrySet()) {
+			ModeWrite w = e.getValue();
+			if (!w.resolved()) {
+				return null;
+			}
+			int value = w.effect().bits() & w.ownedMode();
+			int overlap = known & w.ownedMode();
+			if ((bits & overlap) != (value & overlap)) {
+				return null;
+			}
+			known |= w.ownedMode();
+			bits |= value;
+			if (source == null) {
+				source = e.getKey();
+			}
+		}
+		if ((known & modeMask) != modeMask) {
+			return null;
+		}
+		return new ModeLock(new BankState(modeMask, bits & modeMask), source, List.of(),
+			List.of(), Map.of());
 	}
 
 	/**
@@ -581,7 +771,7 @@ final class BankDataflowEngine {
 			Map<Address, LinkedHashMap<PathId, BankState>> stateIn,
 			Map<Address, Set<Address>> stateDependents,
 			StoredValueScanner.ProofMemo crossBlockProofMemo,
-			BankStackBrackets.Claims bracketClaims) {
+			BankStackBrackets.Claims bracketClaims, ModeLock lock, int modeMask) {
 		Address addr = instr.getMinAddress();
 		// The recording StateOracle for THIS call (grm-mej.3 increment 3): answers the merged
 		// state at any instruction and records the ask as a dependency edge P -> addr, so a later
@@ -691,16 +881,20 @@ final class BankDataflowEngine {
 		if (forkEffects != null) {
 			List<BankState> afters = new ArrayList<>();
 			for (CallEffect arm : forkEffects) {
-				BankState fall = overwrite(outState, arm.state(), arm.ownedMask());
+				BankState fall = overwrite(outState,
+					fillFromLock(arm.state(), arm.ownedMask() & modeMask, lock), arm.ownedMask());
 				BankState after = overwrite(mechIn, arm.state(), arm.ownedMask());
 				afters.add(after);
 				outs.add(new OutElement(pathId.with(addr, arm.state()), outState, fall));
 				call.add(label, arm.state(), after, true, false, false, null, null);
+				call.owned(arm.ownedMask());
 			}
 			call.arms(afters, false);
 			return outs;
 		}
-		BankState fallState = overwrite(outState, callEffect.state(), callEffect.ownedMask());
+		BankState fallState = overwrite(outState,
+			fillFromLock(callEffect.state(), callEffect.ownedMask() & modeMask, lock),
+			callEffect.ownedMask());
 		outs.add(new OutElement(pathId, outState, fallState));
 		// grm-9z9t: an unresolved call must not be worded as a failed argument recovery when
 		// no recovery was attempted -- see ArgumentSought.
@@ -709,6 +903,7 @@ final class BankDataflowEngine {
 			overwrite(mechIn, callEffect.state(), callEffect.ownedMask()),
 			callEffect.argumentResolved(), callEffect.noInboundArgument(),
 			callEffect.secondTierRelay(), callEffect.restoreCell(), callEffect.readBack());
+		call.owned(callEffect.ownedMask());
 		return outs;
 	}
 
@@ -1246,9 +1441,22 @@ final class BankDataflowEngine {
 		private StoredValueScanner.ReadBack readBack;
 		private List<BankState> arms = List.of();
 		private boolean armsDenied;
+		private int ownedMask;
 
 		boolean seen() {
 			return helperName != null;
+		}
+
+		/**
+		 * grm-dos9.6: the bits this call site OWNS, which its effect cannot tell apart from bits
+		 * it merely failed to resolve -- the mode-lock census needs the difference.
+		 */
+		void owned(int mask) {
+			ownedMask |= mask;
+		}
+
+		int ownedMask() {
+			return ownedMask;
 		}
 
 		void add(String name, BankState e, BankState after, boolean resolved, boolean noInbound,
@@ -1661,7 +1869,7 @@ final class BankDataflowEngine {
 	 */
 	record DataflowResult(Map<Address, BankState> stateIn,
 			Map<Address, SwitchResult> switchResults, Map<Address, CallSwitch> callSwitches,
-			Map<Address, List<BankState>> forkedStates, ForkStats forkStats) {
+			Map<Address, List<BankState>> forkedStates, ForkStats forkStats, ModeLock modeLock) {
 
 		/** Every distinct whole state at {@code addr}: the forked set, or the single state. */
 		List<BankState> statesAt(Address addr) {

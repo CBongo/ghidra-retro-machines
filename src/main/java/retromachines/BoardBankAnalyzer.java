@@ -842,6 +842,16 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		int violations = BankAnnotationAdapter.annotateBankRequirementViolations(this, program,
 			listing, flow, board, alreadyWarned, log);
 
+		// --- Mode lock (grm-dos9.6): warn where a locked layout mode was contradicted ---
+		warnings += BankAnnotationAdapter.annotateModeLock(this, program, board, flow.modeLock(),
+			monitor);
+		if (flow.modeLock() != null && !flow.modeLock().rejected()) {
+			AnalyzerLog.info(this, tag + ": " + board.modeField().name() + " locked to " +
+				board.modeField().valueIn(flow.modeLock().state().bits()) + " from " +
+				flow.modeLock().writes().size() + " agreeing writes (first at " +
+				flow.modeLock().source() + ")");
+		}
+
 		// --- Context stamping: only when the language actually declares the register ---
 		BankAnnotationAdapter.stampContextRegister(this, program, banking, flow.stateIn(), listing,
 			board.mask(), log);

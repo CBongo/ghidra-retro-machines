@@ -30,6 +30,7 @@ import com.google.gson.JsonObject;
 import ghidra.app.cmd.disassemble.DisassembleCommand;
 import ghidra.app.cmd.function.CreateFunctionCmd;
 import ghidra.app.util.importer.MessageLog;
+import ghidra.framework.options.Options;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.address.AddressSetView;
@@ -53,6 +54,7 @@ import ghidra.program.model.symbol.Reference;
 import ghidra.program.model.symbol.ReferenceManager;
 import ghidra.program.model.symbol.RefType;
 import ghidra.program.model.symbol.SourceType;
+import ghidra.util.exception.CancelledException;
 import ghidra.util.exception.InvalidInputException;
 import ghidra.util.task.TaskMonitor;
 
@@ -278,6 +280,65 @@ final class BankAnnotationAdapter {
 		}
 		annotateBankSwitch(listing, addr, state, board, bankUniverse, viaHelper, provenance);
 		return Marked.ANNOTATED;
+	}
+
+	/**
+	 * Reports the layout-mode lock (bead grm-dos9.6) in the listing and the program properties.
+	 * <ul>
+	 * <li><b>Rejected</b> (owner ruling 2026-10-11: a wrong lock is significant enough to tell the
+	 * user): one WARNING per write whose KNOWN mode bits contradict the lock, plus a NOTE at the
+	 * write it was formed from. The engine has already discarded the lock and rerun without it;
+	 * this reports that the "mode never changes after reset" premise failed -- either the game
+	 * really switches modes or a write was resolved wrongly, both worth a human look.</li>
+	 * <li><b>Held</b>: a NOTE at each write whose mode bits the analyzer could not resolve, where
+	 * the engine ASSUMED the locked value (owner ruling 2026-10-11), so the assumption is visible
+	 * at the site it was made.</li>
+	 * </ul>
+	 * {@link DescriptorSupport#DETECTED_PRG_MODE_PROPERTY} carries the locked value while the lock
+	 * holds and is removed otherwise. The bookmarks live in their own category, cleared on every
+	 * round, so a stale one cannot outlive the round that raised it, and one can never replace (or
+	 * be replaced by) an ordinary switch-site bookmark at the same address -- Ghidra keeps a single
+	 * bookmark per (address, type, category). Returns the number of WARNINGs raised.
+	 */
+	static int annotateModeLock(BoardBankAnalyzer analyzer, Program program, BoardModel board,
+			BankDataflowEngine.ModeLock lock, TaskMonitor monitor) throws CancelledException {
+		String category = analyzer.getBookmarkCategory() + " mode lock";
+		BookmarkManager bm = program.getBookmarkManager();
+		bm.removeBookmarks(BookmarkType.WARNING, category, monitor);
+		bm.removeBookmarks(BookmarkType.NOTE, category, monitor);
+		Options info = program.getOptions(Program.PROGRAM_INFO);
+		FieldSpec field = board.modeField();
+		if (lock == null || field == null) {
+			info.removeOption(DescriptorSupport.DETECTED_PRG_MODE_PROPERTY);
+			return 0;
+		}
+		int locked = field.valueIn(lock.state().bits());
+		String origin = "code reached from reset only ever sets " + field.name() + "=" + locked +
+			" (first at " + lock.source() + ")";
+		if (!lock.rejected()) {
+			info.setString(DescriptorSupport.DETECTED_PRG_MODE_PROPERTY, Integer.toString(locked));
+			for (Address site : lock.assumed()) {
+				bm.setBookmark(site, BookmarkType.NOTE, category, field.name() + " assumed to stay " +
+					locked + " here: this write's " + field.name() + " bits could not be resolved, and " +
+					origin + ". Not verified at this site.");
+			}
+			return 0;
+		}
+		info.removeOption(DescriptorSupport.DETECTED_PRG_MODE_PROPERTY);
+		for (Address site : lock.contradictions()) {
+			BankDataflowEngine.ModeWrite w = lock.writes().get(site);
+			String what = w.resolved()
+					? "writes " + field.name() + "=" + field.valueIn(w.effect().bits())
+					: "writes " + field.name() + " bits that differ from it";
+			bm.setBookmark(site, BookmarkType.WARNING, category, field.name() + " lock rejected: " +
+				origin + ", but this site " + what + ". Analysis was rerun without the lock. Either " +
+				"the game switches " + field.name() + " after reset, or this write was resolved " +
+				"wrongly.");
+		}
+		bm.setBookmark(lock.source(), BookmarkType.NOTE, category, field.name() + "=" + locked +
+			" was locked from the writes reached from reset and then contradicted at " +
+			lock.contradictions() + "; the lock was discarded and analysis rerun without it.");
+		return lock.contradictions().size();
 	}
 
 	/**
