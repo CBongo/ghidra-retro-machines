@@ -1,8 +1,9 @@
 # Asking Ghidra questions through pyghidra-mcp
 
 Agent-driven, on demand, from git bash; **no MCP registration** in any Claude Code or Codex config
-(configured servers start at session start, before anyone knows which ROM to open). Bead
-`grm-haj3` has the design history and the acceptance run.
+(configured servers start at session start, before anyone knows which ROM to open). This file is
+the how-to; [`docs/ghidra-mcp.md`](../../docs/ghidra-mcp.md) explains the mechanism and why it is
+shaped this way. Bead `grm-haj3` has the design history and the acceptance run.
 
 Use it for **static** questions about one real-ROM row's analysis: "what is at `X`", "does
 Ghidra have a function at `Y`", "can routine `A` reach `B` through direct control flow",
