@@ -21,7 +21,9 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -326,5 +328,111 @@ public class HelperWrapperProgramTest extends AbstractBundledLanguageTest {
 		builder.setBytes("0x9400", "99 d0 ff", true); // STA $FFD0,Y, in no function at all
 
 		assertNull(crossableJoin("0x9400", "0x9400"));
+	}
+
+	// ------------------------------------------------------------------
+	// grm-dos9.2: the joins a call's straight-line entry path licenses
+	// ------------------------------------------------------------------
+
+	/** {@link HelperArgumentRecovery#entryPathJoins} over addresses. */
+	private Set<Address> entryPathJoins(String entry, String... sites) {
+		return HelperArgumentRecovery.entryPathJoins(program, builder.addr(entry),
+			java.util.Arrays.stream(sites).map(builder::addr).toList());
+	}
+
+	/**
+	 * cv3's {@code FUN_e2e0}, one page down: three entries stacked on one store. The two later
+	 * entries are joins only because something calls them -- the {@code JSR}s at {@code $9700} are
+	 * not scenery, exactly as {@code $C157} is not in the grm-k90 fixture.
+	 */
+	private void layStackedEntries() throws Exception {
+		builder.setBytes("0x9600", "48", true); // PHA          <- FUN_e2e0's entry
+		builder.setBytes("0x9601", "a5 21", true); // LDA $21
+		builder.setBytes("0x9603", "85 22", true); // STA $22
+		builder.setBytes("0x9605", "68", true); // PLA
+		builder.setBytes("0x9606", "85 21", true); // STA $21      <- FUN_e2e6: a join
+		builder.setBytes("0x9608", "8d 15 51", true); // STA $5115 <- FUN_e2e8: a join, the store
+		builder.setBytes("0x960b", "60", true); // RTS
+		builder.setBytes("0x9700", "20 06 96 20 08 96 60", true); // JSR $9606 / JSR $9608 / RTS
+	}
+
+	/** <b>The cv3 headline.</b> A call at the outer entry crosses both later entries, in order. */
+	@Test
+	public void stackedEntriesAreAllCrossableFromTheOuterEntry() throws Exception {
+		layStackedEntries();
+
+		assertEquals(List.of(builder.addr("0x9606"), builder.addr("0x9608")),
+			List.copyOf(entryPathJoins("0x9600", "0x9608")));
+	}
+
+	/**
+	 * The entry itself is never licensed: entering at {@code $9606} crosses {@code $9608} only.
+	 * Crossing the stop's own join would walk behind it into the {@code PLA} this call skipped.
+	 */
+	@Test
+	public void theEntryItselfIsNeverLicensed() throws Exception {
+		layStackedEntries();
+
+		assertEquals(Set.of(builder.addr("0x9608")), entryPathJoins("0x9606", "0x9608"));
+	}
+
+	/**
+	 * cv3's {@code FUN_e2da}: the store is a join because a sibling entry's {@code BNE} targets it.
+	 * From {@code $9804} the path to it is one fall-through, so it is licensed; from the sibling
+	 * entry at {@code $9800} the path is the branch, which this licence never covers.
+	 */
+	@Test
+	public void aBranchTargetedStoreIsLicensedOnlyFromTheFallThroughEntry() throws Exception {
+		builder.setBytes("0x9800", "a9 87", true); // LDA #$87     <- sibling entry
+		builder.setBytes("0x9802", "d0 02", true); // BNE $9806
+		builder.setBytes("0x9804", "a9 9e", true); // LDA #$9e     <- FUN_e2da's entry
+		builder.setBytes("0x9806", "8d 16 51", true); // STA $5116 <- join: BNE + fall-through
+		builder.setBytes("0x9809", "60", true); // RTS
+
+		assertEquals(Set.of(builder.addr("0x9806")), entryPathJoins("0x9804", "0x9806"));
+		assertEquals("a branch on the path ends the proof before the join", Set.of(),
+			entryPathJoins("0x9800", "0x9806"));
+	}
+
+	/**
+	 * <b>A loop's head is never licensed</b>, smb3's {@code FUN_ffad} byte-exact one page down. The
+	 * head at {@code $9c02} IS on the straight-line prefix from the entry, but the {@code BPL}
+	 * re-enters it on the same call, so the site's last execution does not come from the
+	 * fall-through. The first cut of grm-dos9.2 licensed it and rendered {@code select=5} where
+	 * the loop ends on 0.
+	 */
+	@Test
+	public void aJoinTheCallReEntersIsNotLicensed() throws Exception {
+		builder.setBytes("0x9c00", "a0 05", true); // LDY #$05     <- entry
+		builder.setBytes("0x9c02", "98", true); // TYA             <- loop head: a join via the BPL
+		builder.setBytes("0x9c03", "09 40", true); // ORA #$40
+		builder.setBytes("0x9c05", "8d 00 80", true); // STA $8000 <- select site
+		builder.setBytes("0x9c08", "b9 19 07", true); // LDA $0719,Y
+		builder.setBytes("0x9c0b", "8d 01 80", true); // STA $8001 <- data site
+		builder.setBytes("0x9c0e", "88", true); // DEY
+		builder.setBytes("0x9c0f", "10 f1", true); // BPL $9c02
+		builder.setBytes("0x9c11", "60", true); // RTS
+
+		assertEquals(Set.of(), entryPathJoins("0x9c00", "0x9c05", "0x9c0b"));
+	}
+
+	/** A call on the path ends the walk: joins after it are not on a proven straight line. */
+	@Test
+	public void aCallOnThePathEndsTheProof() throws Exception {
+		builder.setBytes("0x9a00", "20 00 9b", true); // JSR $9B00
+		builder.setBytes("0x9b00", "60", true); // RTS
+		builder.setBytes("0x9a03", "8d 15 51", true); // STA $5115 <- would-be join
+		builder.setBytes("0x9a10", "4c 03 9a", true); // JMP $9A03 -- makes $9A03 a join
+
+		assertEquals(Set.of(), entryPathJoins("0x9a00", "0x9a03"));
+	}
+
+	/** A site at or before the entry licenses nothing -- there is no forward path to walk. */
+	@Test
+	public void aSiteNotAfterTheEntryLicensesNothing() throws Exception {
+		layStackedEntries();
+
+		assertEquals(Set.of(), entryPathJoins("0x9608", "0x9608"));
+		assertEquals(Set.of(), entryPathJoins("0x9608", "0x9600"));
 	}
 }

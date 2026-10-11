@@ -16,6 +16,7 @@
 package retromachines;
 
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 
 import ghidra.program.model.address.Address;
@@ -116,10 +117,16 @@ import ghidra.program.model.address.Address;
  *                      rule, the first consumer. Not part of the record's identity for caching
  *                      purposes any more than {@code a}/{@code x}/{@code y} are -- see this
  *                      class's own javadoc: {@code RegisterEnv} is memoized VALUE, never key.
+ * @param entryPathJoins the control-flow joins on the STRAIGHT-LINE FALL-THROUGH PATH from
+ *                      {@code entryAddr} into the helper (bead grm-dos9.2), each crossable along
+ *                      its fall-through edge; empty for every env but one
+ *                      {@link HelperArgumentRecovery#callSiteRegisters} built. See
+ *                      {@link HelperArgumentRecovery#entryPathJoins} for the proof and
+ *                      {@link #mayCrossJoinAt} for how it is spent.
  */
 public record RegisterEnv(Address entryAddr, Address crossableJoin, PartialByte a, PartialByte x,
 		PartialByte y, Map<Address, Address> armPredecessors,
-		Map<Character, StoredValueScanner.ReadBack> readBacks) {
+		Map<Character, StoredValueScanner.ReadBack> readBacks, Set<Address> entryPathJoins) {
 
 	/** The empty environment: no entry stop, no crossable join, nothing known. */
 	public static final RegisterEnv NONE =
@@ -128,6 +135,14 @@ public record RegisterEnv(Address entryAddr, Address crossableJoin, PartialByte 
 	public RegisterEnv {
 		armPredecessors = armPredecessors == null ? Map.of() : Map.copyOf(armPredecessors);
 		readBacks = readBacks == null ? Map.of() : Map.copyOf(readBacks);
+		entryPathJoins = entryPathJoins == null ? Set.of() : Set.copyOf(entryPathJoins);
+	}
+
+	/** The pre-grm-dos9.2 seven-argument form: no entry-path joins. */
+	public RegisterEnv(Address entryAddr, Address crossableJoin, PartialByte a, PartialByte x,
+			PartialByte y, Map<Address, Address> armPredecessors,
+			Map<Character, StoredValueScanner.ReadBack> readBacks) {
+		this(entryAddr, crossableJoin, a, x, y, armPredecessors, readBacks, Set.of());
 	}
 
 	/** An env that crosses no join and knows nothing, but follows {@code arms} at each join it names. */
@@ -139,14 +154,22 @@ public record RegisterEnv(Address entryAddr, Address crossableJoin, PartialByte 
 	/** This env with {@code arms} as its arm map (replacing any it had); {@code readBacks} carries
 	 * over unchanged. */
 	public RegisterEnv withArms(Map<Address, Address> arms) {
-		return new RegisterEnv(entryAddr, crossableJoin, a, x, y, arms, readBacks);
+		return new RegisterEnv(entryAddr, crossableJoin, a, x, y, arms, readBacks, entryPathJoins);
 	}
 
 	/** This env with {@code readBacks} as its per-register read-back map (replacing any it had);
 	 * every other field carries over unchanged. See the class javadoc's {@code readBacks} param
 	 * for what populates this (bead grm-ld68). */
 	public RegisterEnv withReadBacks(Map<Character, StoredValueScanner.ReadBack> newReadBacks) {
-		return new RegisterEnv(entryAddr, crossableJoin, a, x, y, armPredecessors, newReadBacks);
+		return new RegisterEnv(entryAddr, crossableJoin, a, x, y, armPredecessors, newReadBacks,
+			entryPathJoins);
+	}
+
+	/** This env with {@code joins} as its entry-path joins (replacing any it had); every other
+	 * field carries over unchanged. See the class javadoc's {@code entryPathJoins} param (bead
+	 * grm-dos9.2). */
+	public RegisterEnv withEntryPathJoins(Set<Address> joins) {
+		return new RegisterEnv(entryAddr, crossableJoin, a, x, y, armPredecessors, readBacks, joins);
 	}
 
 	/** The {@link StoredValueScanner.ReadBack} named for {@code reg} ({@code 'A'}/{@code 'X'}/
@@ -257,11 +280,20 @@ public record RegisterEnv(Address entryAddr, Address crossableJoin, PartialByte 
 	 * so anything looser would be crossing joins nobody proved anything about. Every other
 	 * guard the scan applies at that instruction -- fall-through linkage, the mechanism-write
 	 * abort, the step bound -- is untouched and still runs.
+	 * <p>
+	 * {@code entryPathJoins} (bead grm-dos9.2) is the same licence for a CHAIN of joins: cv3's
+	 * {@code e2e0} falls through two more helper entries ({@code e2e6}, {@code e2e8}) before its
+	 * store, and {@code e2da} falls into a store at {@code e2dc} that a {@code BNE} also targets.
+	 * Each address in it was reached by fall-through from {@code entryAddr} with no branch, jump,
+	 * call or terminator in between, so on THIS call's path its predecessor is the fall-through
+	 * one -- exactly the edge {@link StoredValueScanner#pathPredecessor} steps along after its
+	 * linkage test. The class javadoc's "deliberately ONE address" concern was about crossing
+	 * joins whose edge nobody proved; this set is proved address by address.
 	 *
 	 * @param addr address being considered
 	 * @return true if the scan may cross the join at the address
 	 */
 	public boolean mayCrossJoinAt(Address addr) {
-		return crossableJoin != null && crossableJoin.equals(addr);
+		return (crossableJoin != null && crossableJoin.equals(addr)) || entryPathJoins.contains(addr);
 	}
 }

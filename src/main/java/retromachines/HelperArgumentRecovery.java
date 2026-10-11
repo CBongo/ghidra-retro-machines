@@ -25,6 +25,8 @@ import java.util.Map;
 import java.util.Set;
 
 import ghidra.program.model.address.Address;
+import ghidra.program.model.symbol.FlowType;
+import ghidra.program.model.symbol.Reference;
 import ghidra.program.model.lang.Register;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Instruction;
@@ -2278,7 +2280,8 @@ final class HelperArgumentRecovery {
 		readBackFor(readBacks, 'Y', yScan, program, callInstr, unwalked, localIn, path,
 			callerHooks, byteMask);
 		return new RegisterEnv(entryAddr, crossableJoin, aScan.value(), xScan.value(),
-			yScan.value()).withReadBacks(readBacks);
+			yScan.value()).withReadBacks(readBacks)
+				.withEntryPathJoins(entryPathJoins(program, entryAddr, helper.sites()));
 	}
 
 	/**
@@ -2526,6 +2529,155 @@ final class HelperArgumentRecovery {
 			return null;
 		}
 		return nominee;
+	}
+
+	/** How far {@link #entryPathJoins} walks before giving up; a helper whose store sits further
+	 * than this from its entry gets no licence, which only forfeits a fold. */
+	private static final int ENTRY_PATH_MAX_STEPS = 32;
+
+	/**
+	 * The control-flow joins a call entering at {@code entryAddr} passes through by plain
+	 * fall-through on its way to the helper's sites (bead grm-dos9.2) -- the licence
+	 * {@link RegisterEnv#mayCrossJoinAt} spends for {@link RegisterEnv#entryPathJoins}.
+	 * <p>
+	 * <b>The shape.</b> A helper with several entries that converge on one store: every later
+	 * entry is a join (its own callers' JSRs, a JMP, a BNE), so the in-helper backward scan
+	 * refuses it and the call resolves nothing, although on THIS call's path the predecessor is
+	 * certain. cv3, byte-exact:
+	 * <pre>
+	 *   e2d6  LDA #$87 / e2d8 BNE e2dc     ; second entry, always taken
+	 *   e2da  LDA #$9e                     ; FUN_e2da's entry
+	 *   e2dc  STA $5116 / RTS              ; join: the BNE and the fall-through
+	 *
+	 *   e2e0  PHA / LDA $21 / STA $22 / PLA ; FUN_e2e0: save the old shadow, keep A
+	 *   e2e6  STA $21                       ; FUN_e2e6: a join (JSRs, JMP e2e6 from e9b0/ff3d)
+	 *   e2e8  STA $5115 / RTS               ; FUN_e2e8: a join (JSRs)
+	 * </pre>
+	 * <p>
+	 * <b>The proof.</b> Walk FORWARD from {@code entryAddr}, one instruction at a time, while each
+	 * instruction is disassembled and has no flow of its own (no branch, jump, call or terminator)
+	 * and falls through to the next. Every instruction reached that way is reached on this call's
+	 * path from its fall-through predecessor and from nothing else, so a join among them may be
+	 * crossed along that one edge -- the entry stop's context-sensitive argument
+	 * ({@link RegisterEnv}'s class javadoc), applied once per join instead of once. The walk stops
+	 * at the first instruction that is not straight-line, at the last of {@code sites}, or after
+	 * {@link #ENTRY_PATH_MAX_STEPS}; joins collected before a stop stay valid, because the prefix
+	 * before it is still the only path. The entry itself is never included: crossing it would walk
+	 * behind the stop into code this call skipped (bionic's mid-body {@code $DCAA}).
+	 * <p>
+	 * <b>A join this call can RE-ENTER is excluded</b> -- the half of the proof the first cut of
+	 * this bead missed, caught on smb3's {@code FUN_ffad}, a six-iteration select loop whose
+	 * {@code BPL} targets an instruction on the straight-line prefix. "Reached by fall-through" is
+	 * true of that join's FIRST execution only; the site's last execution comes round the back-edge
+	 * with a different Y, and licensing the crossing rendered {@code select=5} as known where the
+	 * loop ends on 0. So every other incoming flow must come from code this call cannot execute --
+	 * other callers, a sibling entry above this one (cv3's {@code BNE e2dc} at {@code e2d8}), an
+	 * outside {@code JMP} -- checked against {@link #reachableFromEntry}, and when that set cannot
+	 * be bounded nothing is licensed at all.
+	 * <p>
+	 * <b>What it does NOT license.</b> A join entered by a JMP or a taken branch on this path
+	 * (bionic's {@code dcbe STA $65 / JMP dcaa}) -- that edge is not the fall-through one
+	 * {@link StoredValueScanner#pathPredecessor} steps along, and would need an arm map instead.
+	 * Same structural guarantee as the single crossable join: the env carrying this set is used for
+	 * one call site's {@code CallEffect} only, never cached as a switch result.
+	 *
+	 * @param program the program
+	 * @param entryAddr where the call enters the helper (the scan's stop)
+	 * @param sites the helper's mechanism-write sites; the walk ends at the last of them
+	 * @return the joins on the straight-line path, in path order; empty when there are none
+	 */
+	static Set<Address> entryPathJoins(Program program, Address entryAddr, List<Address> sites) {
+		if (entryAddr == null || sites == null || sites.isEmpty()) {
+			return Set.of();
+		}
+		Address last = sites.stream().max(Address::compareTo).get();
+		if (last.compareTo(entryAddr) <= 0) {
+			return Set.of();
+		}
+		Listing listing = program.getListing();
+		Set<Address> reachable = reachableFromEntry(listing, entryAddr);
+		if (reachable == null) {
+			return Set.of();
+		}
+		Instruction prev = listing.getInstructionAt(entryAddr);
+		Set<Address> joins = new LinkedHashSet<>();
+		for (int steps = 0; prev != null && steps < ENTRY_PATH_MAX_STEPS; steps++) {
+			FlowType flow = prev.getFlowType();
+			Address next = prev.getFallThrough();
+			if (flow.isJump() || flow.isCall() || flow.isTerminal() || next == null) {
+				break;
+			}
+			Instruction cur = listing.getInstructionAt(next);
+			if (cur == null || cur.getMinAddress().compareTo(last) > 0) {
+				break;
+			}
+			if (StoredValueScanner.isControlFlowJoin(program, cur, prev) &&
+				!reentered(program, cur.getMinAddress(), reachable)) {
+				joins.add(cur.getMinAddress());
+			}
+			prev = cur;
+		}
+		return joins;
+	}
+
+	/** How many instructions {@link #reachableFromEntry} visits before declining. */
+	private static final int ENTRY_REACH_MAX_INSTRS = 256;
+
+	/**
+	 * Every instruction a call entering at {@code entryAddr} can execute before it returns, as far
+	 * as the listing's own flows say: branch and jump targets, and the fall-through of everything
+	 * that has one -- a {@code JSR}'s included, its callee not. {@code null} when that cannot be
+	 * bounded honestly: an undisassembled successor, a computed jump with no resolved target, or
+	 * more than {@link #ENTRY_REACH_MAX_INSTRS} instructions.
+	 */
+	private static Set<Address> reachableFromEntry(Listing listing, Address entryAddr) {
+		Set<Address> seen = new LinkedHashSet<>();
+		Deque<Address> work = new ArrayDeque<>();
+		work.add(entryAddr);
+		while (!work.isEmpty()) {
+			Address a = work.poll();
+			if (!seen.add(a)) {
+				continue;
+			}
+			if (seen.size() > ENTRY_REACH_MAX_INSTRS) {
+				return null;
+			}
+			Instruction instr = listing.getInstructionAt(a);
+			if (instr == null) {
+				return null;
+			}
+			FlowType flow = instr.getFlowType();
+			if (flow.isJump()) {
+				Address[] targets = instr.getFlows();
+				if (targets.length == 0) {
+					return null; // computed jump with no resolved target
+				}
+				work.addAll(List.of(targets));
+			}
+			Address fall = instr.getFallThrough();
+			if (fall != null && !flow.isTerminal()) {
+				work.add(fall);
+			}
+		}
+		return seen;
+	}
+
+	/**
+	 * Whether {@code join} has an incoming flow from an instruction this same call can execute --
+	 * a loop's back-edge (smb3 {@code FUN_ffad}: {@code LDY #5 / ffaf TYA ... DEY / BPL ffaf}). Its
+	 * fall-through predecessor carries no reference, so every flow reference counted here is
+	 * another edge; one from inside {@code reachable} means the join is entered on this call's path
+	 * by more than the straight-line prefix, and the last execution of the site may not be the
+	 * first.
+	 */
+	private static boolean reentered(Program program, Address join, Set<Address> reachable) {
+		for (Reference ref : program.getReferenceManager().getReferencesTo(join)) {
+			if (ref.getReferenceType().isFlow() && !ref.getReferenceType().isCall() &&
+				reachable.contains(ref.getFromAddress())) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**

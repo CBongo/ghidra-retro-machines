@@ -933,6 +933,77 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 			deposit.value().knownMask());
 	}
 
+	// ------------------------------------------------------------------
+	// grm-dos9.2: a helper with several entries converging on one store
+	// ------------------------------------------------------------------
+
+	/**
+	 * cv3's {@code FUN_e2e0}, with the store moved into this latch's window:
+	 *
+	 * <pre>
+	 * C200: PHA          &lt;- entry: save the caller's A
+	 * C201: LDA $21      &lt;- RAM: the old bank shadow
+	 * C203: STA $22
+	 * C205: PLA          &lt;- the caller's A is back
+	 * C206: STA $21      &lt;- second entry -- a JOIN (JSR'd from C300)
+	 * C208: STA $8000    &lt;- third entry and the switch site -- a JOIN (JSR'd from C303)
+	 * C20B: RTS
+	 * </pre>
+	 *
+	 * Two joins between the stop and the site, where grm-k90's licence names one. The
+	 * {@code LDA $21} is the trap: zero page is RAM here, so a scan that loses the PHA/PLA pairing
+	 * answers unknown rather than wrongly.
+	 */
+	private void layStackedEntryHelper() throws Exception {
+		builder.setBytes("0xc200", "48 a5 21 85 22 68", true); // PHA / LDA $21 / STA $22 / PLA
+		builder.setBytes("0xc206", "85 21", true); // STA $21    <- join
+		builder.setBytes("0xc208", "8d 00 80", true); // STA $8000 <- join, switch site
+		builder.setBytes("0xc20b", "60", true); // RTS
+		builder.setBytes("0xc300", "20 06 c2 20 08 c2 60", true); // JSR $C206 / JSR $C208 / RTS
+		romifyPrg();
+	}
+
+	private RegisterEnv stackedEntryEnv(boolean licensed) {
+		Address entry = builder.addr("0xc200");
+		RegisterEnv env = new RegisterEnv(entry, null, PartialByte.fullyKnown(0x08),
+			PartialByte.unknown(), PartialByte.unknown());
+		return licensed
+				? env.withEntryPathJoins(HelperArgumentRecovery.entryPathJoins(program, entry,
+					java.util.List.of(builder.addr("0xc208"))))
+				: env;
+	}
+
+	/**
+	 * <b>The grm-dos9.2 headline</b> (cv3 {@code e677 LDA #$88 / JSR e2e0}): the caller's A reaches
+	 * the store across both later entries and the PHA/PLA save-around.
+	 */
+	@Test
+	public void helperMiniInlineCrossesEveryJoinOnTheEntryPath() throws Exception {
+		layStackedEntryHelper();
+
+		BankSwitchStrategy.HelperDeposit deposit = discreteLatch().depositHelperArgument(program,
+			instructionAt("0xc208"), PartialByte.unknown(), MechanismState.unknown(), 0x0F,
+			stackedEntryEnv(true));
+
+		assertEquals(0x0F, deposit.value().knownMask());
+		assertEquals("the caller's A=8, carried through PHA/PLA and two entries", 0x08,
+			deposit.value().bits());
+	}
+
+	/** The mechanism pin: the same query without the entry-path licence stays unknown. */
+	@Test
+	public void helperMiniInlineWithoutTheEntryPathLicenceStaysUnknown() throws Exception {
+		layStackedEntryHelper();
+
+		BankSwitchStrategy.HelperDeposit deposit = discreteLatch().depositHelperArgument(program,
+			instructionAt("0xc208"), PartialByte.unknown(), MechanismState.unknown(), 0x0F,
+			stackedEntryEnv(false));
+
+		assertEquals(0x0F, deposit.ownedMask());
+		assertEquals("the join refusal must still fire when nothing licenses it", 0x00,
+			deposit.value().knownMask());
+	}
+
 	/**
 	 * The wrapper clobbering A does not matter, and this says so out loud. {@code $C139 LDA $8000}
 	 * writes A from a readable ROM byte, so A across the wrapper is both wrong and confidently
