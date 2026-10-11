@@ -30,9 +30,15 @@ case "$(uname -s 2>/dev/null)" in
 	*) VENV_BIN="$VENV/bin"; EXE= ;;
 esac
 
+# Written by `stop` before it kills the server, so `start` (which waits on the server as a child
+# rather than exec'ing into it) can tell a requested stop from a crash and exit 0 for it. Without
+# this, every deliberate stop surfaced as a failed background task.
+STOP_MARKER="$REPO_ROOT/build/mcp-stop-requested.$PORT"
+
 stop_server() {
 	# Kill the whole tree: the harness stopping the background shell leaves pyghidra-mcp, its
 	# python and decompile.exe alive, still holding the snapshot jars.
+	mkdir -p "$(dirname "$STOP_MARKER")"; : > "$STOP_MARKER"
 	if [ -n "$EXE" ]; then
 		powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='pyghidra-mcp.exe'\" |
 			Where-Object { \$_.CommandLine -match '--port $PORT\b' } |
@@ -103,5 +109,14 @@ export GHIDRA_INSTALL_DIR="$(native "$GRM_GHIDRA_INSTALL")"
 # cpu.core.override=1: the same analysis-thread pin the runners apply (grm-nems).
 export JAVA_TOOL_OPTIONS="-Dapplication.settingsdir=$snap_native -Dapplication.cachedir=$snap_native/cache -Dcpu.core.override=1"
 echo "== serving $row on http://127.0.0.1:$PORT/mcp (stop: bash tools/ghidra-mcp/serve.sh stop) =="
-exec "$VENV_BIN/pyghidra-mcp$EXE" -t streamable-http --port "$PORT" --no-symbols \
-	--project-path "$(native "$proj/headless.gpr")"
+rm -f "$STOP_MARKER"
+rc=0
+"$VENV_BIN/pyghidra-mcp$EXE" -t streamable-http --port "$PORT" --no-symbols \
+	--project-path "$(native "$proj/headless.gpr")" || rc=$?
+if [ -f "$STOP_MARKER" ]; then
+	rm -f "$STOP_MARKER"
+	echo "== server stopped by 'serve.sh stop' (server exit $rc; not a failure) =="
+	exit 0
+fi
+echo "== server exited on its own with status $rc ==" >&2
+exit "$rc"

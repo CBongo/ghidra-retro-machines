@@ -47,7 +47,10 @@ bash tools/ghidra-mcp/serve.sh stop
   flagged analyzed, and saves on clean exit, so it serves a copy (`build/mcp-project/<row>`).
 - **Orphaned servers.** Stopping the background shell that ran `serve.sh start` does NOT stop
   the server: `pyghidra-mcp`, its python and `decompile.exe` live on, holding the snapshot.
-  `serve.sh stop` kills the whole process tree.
+  `serve.sh stop` kills the whole process tree. It leaves a marker first, so the background
+  `serve.sh start` task exits 0 on a requested stop and nonzero only if the server died on its
+  own. (pyghidra-mcp's only graceful shutdown is Ctrl+C, which Windows cannot easily deliver to
+  a background process; its save-on-exit is moot for a project copy anyway.)
 
 ## `closure6502.py` limits
 
