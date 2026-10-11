@@ -468,7 +468,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 			// this scanner can attribute a value to; it DID hit the register. It poisons --
 			// UNLESS it is the self-modifying reset idiom, which is exactly determinable.
 			if (selfModifyingRmwResetsShifter(instr, offset)) {
-				return SwitchOutcome.of(applyReset(inState));
+				return SwitchOutcome.implicitDeposit(applyReset(inState));
 			}
 			return SwitchOutcome.of(poisonAll(inState));
 		}
@@ -516,7 +516,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 			return SwitchOutcome.of(poisonAll(inState));
 		}
 		if (bit7Set) {
-			return SwitchOutcome.of(applyReset(inState));
+			return SwitchOutcome.implicitDeposit(applyReset(inState));
 		}
 
 		if (reg != 'A') {

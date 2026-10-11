@@ -414,6 +414,11 @@ final class BankDataflowEngine {
 				: board.modeField().positionedMask() & board.mask();
 		int modeMask = allowModeLock ? layoutMask : 0;
 		Map<Address, ModeWrite> modeWrites = new HashMap<>();
+		// grm-dos9.9: the direct sites whose every deposit was implicit (a shifter reset), and the
+		// helper sites each mode-writing CALL reaches. A call is an implicit set when every site
+		// of its helper is -- rcproam's ffea calls ff83, LDA #$80 / STA $8000 / RTS.
+		Set<Address> implicitSites = new HashSet<>();
+		Map<Address, List<Address>> callHelperSites = new HashMap<>();
 		boolean asyncSeeded = false;
 		ModeLock lock = null;
 		String noLock = null;
@@ -423,6 +428,7 @@ final class BankDataflowEngine {
 			if (worklist.isEmpty()) {
 				if (!asyncSeeded) {
 					asyncSeeded = true;
+					markImplicitCalls(modeWrites, callHelperSites, implicitSites);
 					LockCensus census = censusModeLock(modeWrites, modeMask);
 					lock = census.lock();
 					noLock = census.noLock();
@@ -458,6 +464,7 @@ final class BankDataflowEngine {
 			SiteTally site = new SiteTally();
 			CallTally call = new CallTally();
 			List<OutElement> outs = new ArrayList<>();
+			List<Address> calledSites = null;
 
 			for (Map.Entry<PathId, BankState> element : elements) {
 				PathId pathId = element.getKey();
@@ -540,7 +547,8 @@ final class BankDataflowEngine {
 						// -- the guard below is defensive, not load-bearing.
 						site.add(positionedEffect, stop,
 							stop == BankSwitchStrategy.ValueStop.RESTORED_BANK
-									? switchedLocal.readBack() : null);
+									? switchedLocal.readBack() : null,
+							switchedLocal.implicit());
 						if (deniedValues != null) {
 							site.arms(deniedValues.stream()
 									.map(placement::position)
@@ -571,6 +579,7 @@ final class BankDataflowEngine {
 					HelperModel helper = calledHelper(program, instr, helpers, mine.get(0).out(),
 						bankResolution);
 					if (helper != null) {
+						calledSites = helper.sites();
 						// A store is never a call, so `mine` holds exactly one element here, and
 						// its out-state is the in-state.
 						mine = applyHelperCall(program, instr, helper, pathId, mine.get(0).out(),
@@ -594,13 +603,23 @@ final class BankDataflowEngine {
 				if (sr.stop() != BankSwitchStrategy.ValueStop.NO_DEPOSIT &&
 					sr.stop() != BankSwitchStrategy.ValueStop.HELPER_ARGUMENT) {
 					recordModeWrite(modeWrites, addr, sr.effectMask() & modeMask, sr.effect(),
-						sr.stop());
+						sr.stop(), site.implicit());
+				}
+				if (site.implicit()) {
+					implicitSites.add(addr);
+				}
+				else {
+					implicitSites.remove(addr);
 				}
 			}
 			if (call.seen()) {
 				CallSwitch cs = call.result();
 				callSwitches.put(addr, cs);
-				recordModeWrite(modeWrites, addr, call.ownedMask() & modeMask, cs.effect(), null);
+				recordModeWrite(modeWrites, addr, call.ownedMask() & modeMask, cs.effect(), null,
+					false);
+				if (calledSites != null) {
+					callHelperSites.put(addr, calledSites);
+				}
 			}
 
 			boolean isCall = instr.getFlowType().isCall();
@@ -641,6 +660,7 @@ final class BankDataflowEngine {
 			}
 		}
 		if (lock != null) {
+			markImplicitCalls(modeWrites, callHelperSites, implicitSites);
 			lock = lock.verified(modeWrites);
 		}
 		return new DataflowResult(merged, switchResults, callSwitches, forkedStates,
@@ -652,7 +672,12 @@ final class BankDataflowEngine {
 	 * and the deposit it makes -- merged over its path elements and fork arms, so arms that
 	 * disagree leave the bits unknown.
 	 */
-	record ModeWrite(int ownedMode, BankState effect, BankSwitchStrategy.ValueStop stop) {
+	record ModeWrite(int ownedMode, BankState effect, BankSwitchStrategy.ValueStop stop,
+			boolean implicit) {
+
+		ModeWrite(int ownedMode, BankState effect, BankSwitchStrategy.ValueStop stop) {
+			this(ownedMode, effect, stop, false);
+		}
 
 		ModeWrite(int ownedMode, BankState effect) {
 			this(ownedMode, effect, null);
@@ -693,10 +718,18 @@ final class BankDataflowEngine {
 			return !contradictions.isEmpty();
 		}
 
+		/** The implicit writes (shifter resets) the explicit ones outvoted (grm-dos9.9). */
+		List<Address> outvoted() {
+			Map<Address, ModeWrite> voters = modeVoters(writes);
+			return new TreeMap<>(writes).keySet().stream()
+					.filter(a -> !voters.containsKey(a))
+					.toList();
+		}
+
 		ModeLock verified(Map<Address, ModeWrite> all) {
 			List<Address> bad = new ArrayList<>();
 			List<Address> unverified = new ArrayList<>();
-			for (Map.Entry<Address, ModeWrite> e : new TreeMap<>(all).entrySet()) {
+			for (Map.Entry<Address, ModeWrite> e : new TreeMap<>(modeVoters(all)).entrySet()) {
 				ModeWrite w = e.getValue();
 				if (w.contradicts(state)) {
 					bad.add(e.getKey());
@@ -733,10 +766,47 @@ final class BankDataflowEngine {
 	}
 
 	private static void recordModeWrite(Map<Address, ModeWrite> modeWrites, Address addr,
-			int ownedMode, BankState effect, BankSwitchStrategy.ValueStop stop) {
+			int ownedMode, BankState effect, BankSwitchStrategy.ValueStop stop, boolean implicit) {
 		if (ownedMode != 0) {
-			modeWrites.put(addr, new ModeWrite(ownedMode, effect, stop));
+			modeWrites.put(addr, new ModeWrite(ownedMode, effect, stop, implicit));
 		}
+	}
+
+	/**
+	 * Marks a recorded CALL write implicit when every switch site of the helper it calls is an
+	 * implicit set (grm-dos9.9): a call to a reset-only helper is a reset, not a mode the game
+	 * chose. Re-run before each judgment, since the fixpoint re-records calls as explicit.
+	 */
+	private static void markImplicitCalls(Map<Address, ModeWrite> modeWrites,
+			Map<Address, List<Address>> callHelperSites, Set<Address> implicitSites) {
+		callHelperSites.forEach((callAddr, sites) -> {
+			ModeWrite w = modeWrites.get(callAddr);
+			if (w != null && !w.implicit() && !sites.isEmpty() &&
+				implicitSites.containsAll(sites)) {
+				modeWrites.put(callAddr, new ModeWrite(w.ownedMode(), w.effect(), w.stop(), true));
+			}
+		});
+	}
+
+	/**
+	 * The writes that vote on the lock (owner ruling 2026-10-11, grm-dos9.9): an explicit mode
+	 * set trumps an implicit one. When the game writes the field itself anywhere, the hardware's
+	 * side-effect deposits (MMC1's shifter reset forcing prg_mode 3) are outvoted -- drmario and
+	 * rcproam reset the shifter, then set prg_mode 0 at every control write, and run in mode 0.
+	 * The premise is the lock's own: a game runs in one mode, because its ROM organization
+	 * depends on it. With no explicit write at all, the implicit ones are all there is, and vote.
+	 */
+	static Map<Address, ModeWrite> modeVoters(Map<Address, ModeWrite> modeWrites) {
+		if (modeWrites.values().stream().allMatch(ModeWrite::implicit)) {
+			return modeWrites;
+		}
+		Map<Address, ModeWrite> explicit = new HashMap<>();
+		modeWrites.forEach((a, w) -> {
+			if (!w.implicit()) {
+				explicit.put(a, w);
+			}
+		});
+		return explicit;
 	}
 
 	/**
@@ -758,10 +828,11 @@ final class BankDataflowEngine {
 	/** Reports at most this many unresolved writes by address in a no-lock reason. */
 	private static final int NO_LOCK_SITE_LIMIT = 8;
 
-	static LockCensus censusModeLock(Map<Address, ModeWrite> modeWrites, int modeMask) {
+	static LockCensus censusModeLock(Map<Address, ModeWrite> allWrites, int modeMask) {
 		if (modeMask == 0) {
 			return new LockCensus(null, null);
 		}
+		Map<Address, ModeWrite> modeWrites = modeVoters(allWrites);
 		if (modeWrites.isEmpty()) {
 			return new LockCensus(null, "no reset-reached write owns the field");
 		}
@@ -1413,9 +1484,16 @@ final class BankDataflowEngine {
 		private StoredValueScanner.ReadBack readBack;
 		private List<BankState> arms = List.of();
 		private boolean armsDenied;
+		// grm-dos9.9: every element's deposit was a hardware side effect (an MMC1 shifter reset),
+		// not a value the game wrote. One explicit element makes the site explicit.
+		private boolean implicit = true;
 
 		boolean seen() {
 			return mechanism != null;
+		}
+
+		boolean implicit() {
+			return effect != null && implicit;
 		}
 
 		void mechanism(ConfiguredMechanism m) {
@@ -1423,11 +1501,12 @@ final class BankDataflowEngine {
 		}
 
 		void add(BankState positioned, BankSwitchStrategy.ValueStop s) {
-			add(positioned, s, null);
+			add(positioned, s, null, false);
 		}
 
 		void add(BankState positioned, BankSwitchStrategy.ValueStop s,
-				StoredValueScanner.ReadBack read) {
+				StoredValueScanner.ReadBack read, boolean implicitDeposit) {
+			implicit &= implicitDeposit;
 			effect = effect == null ? positioned : BankState.merge(effect, positioned);
 			// RESOLVED (any element knowing anything) beats a denial beats the first reason.
 			if (stop == null || s == BankSwitchStrategy.ValueStop.RESOLVED ||

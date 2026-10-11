@@ -43,7 +43,8 @@ import retromachines.BankDataflowEngine.ModeWrite;
 import retromachines.HelperDiscovery.HelperModel;
 
 /**
- * Pins bead {@code grm-dos9.7}: the layout-mode lock forms on an MMC1 (serial-shift) board.
+ * Pins bead {@code grm-dos9.7}: the layout-mode lock forms on an MMC1 (serial-shift) board --
+ * and bead {@code grm-dos9.9}: an explicit mode set outvotes the shifter reset's implicit one.
  * <p>
  * Before the fix no MMC1 row ever locked, not even blmaster, which writes prg_mode 3 at every
  * control write. The census counted every direct site whose mechanism owns the mode field, and on
@@ -219,6 +220,78 @@ public class ModeLockSerialShiftProgramTest extends AbstractBundledLanguageTest 
 
 		assertNotNull(result.noModeLock(), result.modeLock());
 		assertEquals(0, result.modeLock().state().bits() & MODE_MASK);
+	}
+
+	/**
+	 * drmario's and rcproam's shape (grm-dos9.9): RESET resets the shifter -- the hardware forces
+	 * prg_mode 3 -- then the control write sets prg_mode 0. The explicit set outvotes the implicit
+	 * one, so the mode locks to 0 and the reset is reported as outvoted, not as a contradiction.
+	 */
+	@Test
+	public void anExplicitModeSetOutvotesTheShifterReset() throws Exception {
+		// c000 LDA #$80 / c002 STA $8000 (reset) / c005 LDA #$00 / c007 JSR $C100 / c00a JMP *
+		put(0xc000, "a9 80 8d 00 80 a9 00 20 00 c1 4c 0a c0");
+		makeFunction(0xc000, 0xc00c, "RESET", true);
+		put(0xc100, "8d 00 80 4a 8d 00 80 4a 8d 00 80 4a 8d 00 80 4a 8d 00 80 60");
+		makeFunction(0xc100, 0xc113, "SET_CONTROL", false);
+
+		BankDataflowEngine.DataflowResult result = run();
+
+		assertNotNull(result.noModeLock(), result.modeLock());
+		assertFalse("the reset must not contradict the lock: " + result.modeLock().contradictions(),
+			result.modeLock().rejected());
+		assertEquals(0, result.modeLock().state().bits() & MODE_MASK);
+		assertEquals(addr(0xc007), result.modeLock().source());
+		assertEquals(List.of(addr(0xc002)), result.modeLock().outvoted());
+		assertTrue("the reset write is in the census, marked implicit",
+			result.modeLock().writes().get(addr(0xc002)).implicit());
+	}
+
+	/**
+	 * rcproam's shape (grm-dos9.9): the reset is a helper of its own ({@code ff83}:
+	 * {@code LDA #$80 / STA $8000 / RTS}) that RESET calls. The CALL is the census entry, and it
+	 * is an implicit set because every site of its helper is.
+	 */
+	@Test
+	public void aCallToAResetOnlyHelperIsOutvotedToo() throws Exception {
+		// c000 JSR $C200 (reset) / c003 LDA #$00 / c005 JSR $C100 / c008 JMP *
+		put(0xc000, "20 00 c2 a9 00 20 00 c1 4c 08 c0");
+		makeFunction(0xc000, 0xc00a, "RESET", true);
+		put(0xc100, "8d 00 80 4a 8d 00 80 4a 8d 00 80 4a 8d 00 80 4a 8d 00 80 60");
+		makeFunction(0xc100, 0xc113, "SET_CONTROL", false);
+		put(0xc200, "a9 80 8d 00 80 60");
+		makeFunction(0xc200, 0xc205, "RESET_SHIFTER", false);
+
+		BankDataflowEngine.DataflowResult result = run();
+
+		assertNotNull(result.noModeLock(), result.modeLock());
+		assertFalse("the reset call must not contradict the lock: " +
+			result.modeLock().contradictions(), result.modeLock().rejected());
+		assertEquals(0, result.modeLock().state().bits() & MODE_MASK);
+		assertTrue(result.modeLock().outvoted().toString(),
+			result.modeLock().outvoted().contains(addr(0xc000)));
+	}
+
+	/** Implicit sets vote only when nothing sets the field explicitly (grm-dos9.9). */
+	@Test
+	public void implicitSetsVoteOnlyWhenNoExplicitSetExists() {
+		ModeWrite reset = new ModeWrite(MODE_MASK, new BankState(MODE_MASK, 0xc), null, true);
+		ModeWrite control = new ModeWrite(MODE_MASK, new BankState(MODE_MASK, 0x0));
+
+		BankDataflowEngine.ModeLock alone =
+			BankDataflowEngine.censusModeLock(Map.of(addr(0xc000), reset), MODE_MASK).lock();
+		assertNotNull("a reset alone still locks", alone);
+		assertEquals(0xc, alone.state().bits());
+
+		BankDataflowEngine.ModeLock both = BankDataflowEngine.censusModeLock(
+			Map.of(addr(0xc000), reset, addr(0xc010), control), MODE_MASK).lock();
+		assertNotNull(both);
+		assertEquals(0x0, both.state().bits());
+		assertEquals(addr(0xc010), both.source());
+		BankDataflowEngine.ModeLock checked =
+			both.verified(Map.of(addr(0xc000), reset, addr(0xc010), control));
+		assertFalse(checked.rejected());
+		assertEquals(List.of(addr(0xc000)), checked.outvoted());
 	}
 
 	/** The no-lock reasons the analyzer logs (grm-dos9.7's diagnostic). */

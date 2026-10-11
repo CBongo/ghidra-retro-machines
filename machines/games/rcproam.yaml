@@ -25,8 +25,13 @@
 # initial 0, and in mode 0 the hardware ignores its LSB, so bank 0 (PRG[0x0000..0x8000)) is
 # the resident 32 KiB image in base -- which is where every sampled reference already points.
 #
-# rcproam is a BISTABLE real-ROM row (grm-q1bi has a pending re-bless): do not read its
-# refs/instrs count jitter as mode evidence, and sequence its bless with that bead's diff.
+# The analyzer now reaches the same answer on its own: its layout-mode lock lets the explicit
+# control writes outvote the ff85/ffea shifter resets and locks prg_mode 0 (grm-dos9.9). That
+# lock acts at ANALYSIS time only; the base-block layout is fixed at LOAD time, so this hint is
+# still what puts the mode-0 image in base. Do not remove it on the strength of the lock.
+#
+# rcproam is a BISTABLE real-ROM row (grm-q1bi, closed): do not read its refs/instrs count
+# jitter as mode evidence.
 
 schema: 2
 

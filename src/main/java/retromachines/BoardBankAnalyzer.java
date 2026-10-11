@@ -852,10 +852,12 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		warnings += BankAnnotationAdapter.annotateModeLock(this, program, board, flow.modeLock(),
 			monitor);
 		if (flow.modeLock() != null && !flow.modeLock().rejected()) {
+			List<Address> outvoted = flow.modeLock().outvoted();
 			AnalyzerLog.info(this, tag + ": " + board.modeField().name() + " locked to " +
 				board.modeField().valueIn(flow.modeLock().state().bits()) + " from " +
-				flow.modeLock().writes().size() + " agreeing writes (first at " +
-				flow.modeLock().source() + ")");
+				(flow.modeLock().writes().size() - outvoted.size()) + " agreeing writes (first at " +
+				flow.modeLock().source() + ")" + (outvoted.isEmpty() ? ""
+						: "; outvoted implicit sets (shifter resets) at " + outvoted));
 		}
 		else if (flow.noModeLock() != null) {
 			// grm-dos9.7: say why the phase-A census formed no lock, so a row that "should" lock

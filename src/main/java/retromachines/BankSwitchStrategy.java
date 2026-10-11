@@ -270,7 +270,13 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * @param stop why an entirely unknown value could not be recovered
 	 * @param readBack where a {@code RESTORED_BANK} stop read the bank back from, or {@code null}
 	 */
-	record SwitchOutcome(MechanismState value, ValueStop stop, StoredValueScanner.ReadBack readBack) {
+	record SwitchOutcome(MechanismState value, ValueStop stop, StoredValueScanner.ReadBack readBack,
+			boolean implicit) {
+
+		/** The pre-grm-dos9.9 form: a value the game wrote, not a hardware side effect. */
+		SwitchOutcome(MechanismState value, ValueStop stop, StoredValueScanner.ReadBack readBack) {
+			this(value, stop, readBack, false);
+		}
 
 		/** The pre-grm-rd6h form: no read-back. */
 		SwitchOutcome(MechanismState value, ValueStop stop) {
@@ -309,6 +315,19 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 		 */
 		static SwitchOutcome noDeposit(MechanismState echoed) {
 			return new SwitchOutcome(echoed, ValueStop.NO_DEPOSIT);
+		}
+
+		/**
+		 * A deposit the HARDWARE makes as a side effect of the write, not a value the game chose
+		 * to put in the field (bead grm-dos9.9): MMC1's shifter reset forces prg_mode 3 whatever
+		 * the game meant by the write. The deposit is real and the dataflow applies it like any
+		 * other; only the layout-mode lock census treats it differently -- an implicit mode set
+		 * does not vote against the game's explicit ones (see
+		 * {@code BankDataflowEngine.censusModeLock}).
+		 */
+		static SwitchOutcome implicitDeposit(MechanismState value) {
+			return new SwitchOutcome(value,
+				value.knownMask() != 0 ? ValueStop.RESOLVED : ValueStop.ANALYZER_LIMIT, null, true);
 		}
 	}
 
