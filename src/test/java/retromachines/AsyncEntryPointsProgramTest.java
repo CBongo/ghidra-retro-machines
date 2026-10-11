@@ -37,8 +37,9 @@ import ghidra.program.model.listing.Program;
  * <p>
  * Why this channel is worth its own test rather than being covered incidentally: it is the only
  * thing standing between {@link BoardBankAnalyzer}'s dataflow and an unsound seed. The analyzer
- * seeds every function entry with {@code banking.initial_state} fully known, which is true of a
- * reset entry and false of an interrupt handler -- an interrupt fires from arbitrary mainline
+ * seeds the real entries (and, as a fallback, any function nothing calls -- grm-dos9.4) with
+ * {@code banking.initial_state} fully known, which is true of a reset entry and false of an
+ * interrupt handler -- an interrupt fires from arbitrary mainline
  * context, so the bank live on entry is whatever the interrupted code had. If a token stops
  * round-tripping, the seeding silently reverts to the unsound state for that entry and nothing
  * else fails, which is the failure direction that reads as "no change".

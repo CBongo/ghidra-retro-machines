@@ -77,11 +77,11 @@ REALROM block WE000 e000-ffff overlay=false
 REALROM count blocks.total 70
 REALROM count blocks.overlay 62
 REALROM count spaces.overlay 62
-REALROM count refs.intoOverlay 834
-REALROM count refs.intoOverlay.retargeted 23
-REALROM count refs.intoOverlay.intraOverlay 811
-REALROM count instrs.inOverlay 3425
-REALROM count bankComments 119
+REALROM count refs.intoOverlay 1076
+REALROM count refs.intoOverlay.retargeted 70
+REALROM count refs.intoOverlay.intraOverlay 1006
+REALROM count instrs.inOverlay 4365
+REALROM count bankComments 120
 REALROM count warnings 6
 REALROM count notes 0
 REALROM count symbols 17
@@ -95,6 +95,7 @@ REALROM sample.bankcomment 8106 bank -> select=7,prg_mode=1,r6=0,r7=44 (wraps to
 REALROM sample.bankcomment 839e bank -> select=6,prg_mode=1,r6=0,r7=1? via FUN_871c [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment 83bd bank -> select=6,prg_mode=1,r6=0,r7=1? via FUN_871c [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment 83c6 bank -> select=6,prg_mode=1,r6=0,r7=1? via FUN_871c [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 8475 bank -> select=6,prg_mode=1,r6=1,r7=0 via FUN_871c [switch-value flow]
 REALROM sample.bankcomment 847e bank -> select=6,prg_mode=1,r6=0,r7=1? via FUN_871c [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment 8491 bank -> select=6,prg_mode=1,r6=0,r7=1? via FUN_871c [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment 84d8 bank -> select=6,prg_mode=1,r6=0,r7=1? via FUN_871c [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
@@ -102,26 +103,26 @@ REALROM sample.bankcomment 851d bank -> select=6,prg_mode=1,r6=0,r7=1? via FUN_8
 REALROM sample.bankcomment 853b bank -> select=6,prg_mode=1,r6=0,r7=1? via FUN_871c [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment 8544 bank -> select=6,prg_mode=1,r6=0,r7=1? via FUN_871c [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment 8550 bank -> select=6,prg_mode=1,r6=0,r7=1? via FUN_871c [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
-REALROM sample.bankcomment 8564 bank -> select=6,prg_mode=1,r6=0,r7=1? via FUN_871c [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
-REALROM sample.bankcomment 856d bank -> select=6,prg_mode=1,r6=0,r7=1? via FUN_871c [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 8564 bank -> select=6,prg_mode=1,r6=9,r7=8 via FUN_871c [switch-value flow]
+REALROM sample.bankcomment 856d bank -> select=6,prg_mode=1,r6=9,r7=8 via FUN_871c [switch-value flow]
 REALROM sample.bankcomment 858a bank -> select=6,prg_mode=1,r6=0,r7=1? via FUN_871c [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment 8593 bank -> select=6,prg_mode=1,r6=0,r7=1? via FUN_871c [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment 8599 bank -> select=7,prg_mode=1,r6=0,r7=44 (wraps to 12) via FUN_873a [switch-value flow]
-REALROM sample.bankcomment 85a0 bank -> select=7,prg_mode=1,r6=0,r7=1? via FUN_8751 [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0; assumed from initial: r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 85a0 bank -> select=7,prg_mode=1,r6=0,r7=12 via FUN_8751 [switch-value flow]
 REALROM sample.bankcomment 85a9 bank -> select=6,prg_mode=1,r6=0,r7=1? via FUN_871c [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment 85c8 bank -> select=6,prg_mode=1,r6=0,r7=1? via FUN_871c [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment 85e4 bank -> select=6,prg_mode=1,r6=0,r7=1? via FUN_871c [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment 85ed bank -> select=6,prg_mode=1,r6=9,r7=8 via FUN_871c [switch-value flow]
-REALROM sample.bankcomment 85f6 bank -> select=6,prg_mode=1,r6=0,r7=1? via FUN_871c [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 85f6 bank -> select=6,prg_mode=1,r6=9,r7=8 via FUN_871c [switch-value flow]
 REALROM sample.bankcomment 8608 bank -> select=6,prg_mode=1,r6=0,r7=1? via FUN_871c [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment 8611 bank -> select=6,prg_mode=1,r6=0,r7=1? via FUN_871c [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
-REALROM sample.bankcomment 861a bank -> select=6,prg_mode=1,r6=0,r7=1? via FUN_871c [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
-REALROM sample.bankcomment 8623 bank -> select=6,prg_mode=1,r6=0,r7=1? via FUN_871c [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 861a bank -> select=6,prg_mode=1,r6=9,r7=8 via FUN_871c [switch-value flow]
+REALROM sample.bankcomment 8623 bank -> select=6,prg_mode=1,r6=9,r7=8 via FUN_871c [switch-value flow]
 REALROM sample.bankcomment 862c bank -> select=6,prg_mode=1,r6=0,r7=1? via FUN_871c [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
-REALROM sample.bankcomment 8635 bank -> select=6,prg_mode=1,r6=0,r7=1? via FUN_871c [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 8635 bank -> select=6,prg_mode=1,r6=9,r7=8 via FUN_871c [switch-value flow]
 REALROM sample.bankcomment 863e bank -> select=6,prg_mode=1,r6=0,r7=1? via FUN_871c [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment 869c bank -> select=6,prg_mode=1,r6=0,r7=1? via FUN_86f9 [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
-REALROM sample.bankcomment 86a2 bank -> select=6,prg_mode=1,r6=0,r7=1? via FUN_871c [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment 86a2 bank -> select=6,prg_mode=1,r6=9,r7=8 via FUN_871c [switch-value flow]
 REALROM sample.bankcomment 8709 bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.2=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment 870c bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment 8715 bank -> select=6,prg_mode=1,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
@@ -132,7 +133,7 @@ REALROM sample.bankcomment 8733 bank -> select=6,prg_mode=1,r6=0,r7=1? [known: s
 REALROM sample.bankcomment 8736 bank -> select=6,prg_mode=1,r6=0,r7=1? [known: select.0=0,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment 874a bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.2=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment 874d bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
-REALROM sample.bankcomment 875c bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0,r7.1=0,r7.4=0; assumed from initial: r7.0,r7.2,r7.3,r7.5] [switch-value flow]
+REALROM sample.bankcomment 875c bank -> select=7,prg_mode=1,r6=0,r7=44 (wraps to 12) [switch-value flow]
 REALROM sample.bankcomment 875f bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0; assumed from initial: r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment 8767 bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0,r7.1=0,r7.4=0; assumed from initial: r7.0,r7.2,r7.3,r7.5] [switch-value flow]
 REALROM sample.bankcomment 876a bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0; assumed from initial: r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
@@ -153,7 +154,7 @@ REALROM sample.bankcomment 91b4 bank -> select=7,prg_mode=1,r6=0,r7=1? [known: s
 REALROM sample.bankcomment 91b7 bank -> select=7,prg_mode=1,r6=0,r7=58 (wraps to 26)? [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
 REALROM sample.bankcomment 91c2 bank -> select=7,prg_mode=1,r6=0,r7=58 (wraps to 26)? [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
 REALROM sample.bankcomment 91c7 bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
-REALROM sample.bankcomment 91e2 bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0,r7.1=0,r7.4=0; assumed from initial: r7.0,r7.2,r7.3,r7.5] [switch-value flow]
+REALROM sample.bankcomment 91e2 bank -> select=7,prg_mode=1,r6=0,r7=8? [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0,r7.0=0,r7.1=0,r7.3=1,r7.4=0; assumed from initial: r7.2,r7.5] [switch-value flow]
 REALROM sample.bankcomment 91e5 bank -> select=7,prg_mode=1,r6=0,r7=58 (wraps to 26) [switch-value flow]
 REALROM sample.bankcomment 91f1 bank -> select=7,prg_mode=1,r6=0,r7=58 (wraps to 26) [switch-value flow]
 REALROM sample.bankcomment 91f4 bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0; assumed from initial: r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
@@ -180,7 +181,7 @@ REALROM sample.bankcomment b952 bank -> select=7,prg_mode=1,r6=0,r7=8 via FUN_91
 REALROM sample.bankcomment b957 bank -> select=7,prg_mode=1,r6=0,r7=8 via FUN_919e [switch-value flow]
 REALROM sample.bankcomment bf08 bank -> select=7,prg_mode=1,r6=0,r7=8 via FUN_91d1 [switch-value flow]
 REALROM sample.bankcomment bf0d bank -> select=7,prg_mode=1,r6=0,r7=8 via FUN_919e [switch-value flow]
-REALROM sample.bankcomment d92e bank -> select=7,prg_mode=1,r6=0,r7=1? via FUN_919e [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r7.1=0,r7.2=0,r7.3=0,r7.4=0; assumed from initial: r6.0,r6.5,r7.0,r7.5] [switch-value flow]
+REALROM sample.bankcomment d92e bank -> select=7,prg_mode=1,r6=0,r7=1 via FUN_919e [switch-value flow]
 REALROM sample.bankcomment ef20 bank -> select=0,prg_mode=1,r6=0,r7=1? [known: r6.0=0,r6.1=0,r6.2=0,r6.3=0,r6.4=0,r6.5=0,r7.0=1,r7.1=0,r7.2=0,r7.3=0,r7.4=0,r7.5=0; assumed from initial: select.0,select.1,select.2,prg_mode] [switch-value flow]
 REALROM sample.bankcomment f5a8 bank -> select=0,prg_mode=1,r6=0,r7=1? [known: select.0=0,select.1=0,select.2=0,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment f5b2 bank -> select=1,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=0,select.2=0,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
@@ -206,30 +207,30 @@ REALROM sample.bankcomment fe1a bank -> select=7,prg_mode=1,r6=0,r7=1? via FUN_9
 REALROM sample.bankcomment fe94 bank -> select=6,prg_mode=1,r6=33 (wraps to 1),r7=32 (wraps to 0) via FUN_8705 [switch-value flow]
 REALROM sample.ref 8069 -> WA000_B12::a62c UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8109 -> WA000_B12::a101 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 83ba -> WA000_B0::b793 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 83c3 -> WC000_M1_B1::c6fe UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 847b -> WC000_M1_B1::d00b UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8481 -> WC000_M1_B1::df7a DATA primary=true
+REALROM sample.ref 8486 -> WC000_M1_B1::df7b DATA primary=true
+REALROM sample.ref 84ad -> WC000_M1_B1::debe DATA primary=true
+REALROM sample.ref 84b2 -> WC000_M1_B1::debf DATA primary=true
+REALROM sample.ref 84c2 -> WC000_M1_B1::db99 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 84ec -> WC000_M1_B1::df4c DATA primary=true
+REALROM sample.ref 84f1 -> WC000_M1_B1::df4d DATA primary=true
+REALROM sample.ref 84fb -> WC000_M1_B1::db99 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 851a -> WA000_B0::a001 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8587 -> WA000_B0::a001 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8590 -> WC000_M1_B1::cee1 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 859d -> WA000_B12::a135 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 85b0 -> WC000_M1_B1::df5c DATA primary=true
+REALROM sample.ref 85b5 -> WC000_M1_B1::df5d DATA primary=true
+REALROM sample.ref 85bf -> WC000_M1_B1::db99 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 85e1 -> WA000_B26::a007 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 85ea -> WA000_B8::a30e UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 9163 -> WA000_B26::a1a1 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 9181 -> WA000_B26::a1a1 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 91bb -> WA000_B26::a001 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 91e8 -> WA000_B26::a15d UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 92fd -> WA000_B12::af4c UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 9603 -> WA000_B16::bfd0 DATA primary=true
-REALROM sample.ref 9608 -> WA000_B16::bfd1 DATA primary=true
-REALROM sample.ref 9610 -> WC000_M1_B17::c0d0 DATA primary=true
-REALROM sample.ref 9615 -> WC000_M1_B17::c0d1 DATA primary=true
-REALROM sample.ref 962a -> WA000_B18::a000 DATA primary=true
-REALROM sample.ref 9632 -> WA000_B18::a0ff DATA primary=true
-REALROM sample.ref 9637 -> WA000_B18::a100 DATA primary=true
-REALROM sample.ref 9647 -> WA000_B18::a40f DATA primary=true
-REALROM sample.ref 964c -> WA000_B18::a410 DATA primary=true
-REALROM sample.ref 9654 -> WA000_B18::a50f DATA primary=true
-REALROM sample.ref 9659 -> WA000_B18::a510 DATA primary=true
-REALROM sample.ref a00a -> WA000_B26::a01c CONDITIONAL_JUMP primary=true
-REALROM sample.ref a00e -> WA000_B26::a016 CONDITIONAL_JUMP primary=true
-REALROM sample.ref a010 -> WA000_B26::a97c UNCONDITIONAL_CALL primary=true
-REALROM sample.ref a013 -> WA000_B26::a0ef UNCONDITIONAL_JUMP primary=true
-REALROM sample.ref a016 -> WA000_B26::a152 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref.truncated 25 of 834
+REALROM sample.ref 85f3 -> WA000_B8::a3c3 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 860e -> WA000_B0::a311 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8617 -> WA000_B8::a328 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref.truncated 25 of 1076
 REALROM sample.warn 8bdb [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_8705 whose bank argument could not be recovered at this call site
 REALROM sample.warn 9163 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_WA000_B26__a1a1 whose bank argument could not be recovered at this call site
 REALROM sample.warn 9181 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_WA000_B26__a1a1 whose bank argument could not be recovered at this call site

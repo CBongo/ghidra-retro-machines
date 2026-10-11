@@ -47,18 +47,19 @@ REALROM block WC000_M2_B7 c000-ffff overlay=true
 REALROM count blocks.total 40
 REALROM count blocks.overlay 32
 REALROM count spaces.overlay 32
-REALROM count refs.intoOverlay 2561
-REALROM count refs.intoOverlay.retargeted 76
-REALROM count refs.intoOverlay.intraOverlay 2485
-REALROM count instrs.inOverlay 11395
-REALROM count bankComments 91
+REALROM count refs.intoOverlay 2567
+REALROM count refs.intoOverlay.retargeted 77
+REALROM count refs.intoOverlay.intraOverlay 2490
+REALROM count instrs.inOverlay 11428
+REALROM count bankComments 92
 REALROM count warnings 1
-REALROM count notes 30
+REALROM count notes 31
 REALROM count symbols 18
-REALROM sample.bankcomment 7245 bank -> mirroring=0,prg_mode=3,prg_bank=2 via FUN_bfac [switch-value flow]
+REALROM sample.bankcomment 7245 bank -> mirroring=0,prg_mode=3,prg_bank=2 via FUN_W8000_M3_B2__bfac [switch-value flow]
 REALROM sample.bankcomment 7258 bank -> mirroring=0,prg_mode=3,prg_bank=5? via FUN_bfac [known: mirroring.0=0,prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.1] [switch-value flow]
 REALROM sample.bankcomment 747e bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_bfac [switch-value flow]
-REALROM sample.bankcomment e446 bank -> mirroring=0,prg_mode=3,prg_bank=5? via FUN_ffac [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
+REALROM sample.bankcomment bfbc bank -> mirroring=0,prg_mode=3,prg_bank=0? [known: prg_mode.0=1,prg_mode.1=1; assumed from initial: mirroring.0,mirroring.1,prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
+REALROM sample.bankcomment e446 bank -> mirroring=3,prg_mode=3,prg_bank=5 via FUN_ffac [switch-value flow]
 REALROM sample.bankcomment e4be bank -> mirroring=0,prg_mode=3,prg_bank=6? via FUN_ffac [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment e4e4 bank -> mirroring=0,prg_mode=3,prg_bank=5? via FUN_ffac [known: prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment e55e bank -> mirroring=0,prg_mode=3,prg_bank=0? via FUN_ffac [known: prg_bank.0=0,prg_bank.1=0,prg_bank.2=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
@@ -146,6 +147,7 @@ REALROM sample.bankcomment ff70 bank -> mirroring=0,prg_mode=3,prg_bank=0 [switc
 REALROM sample.bankcomment ff73 bank -> mirroring=0,prg_mode=3,prg_bank=0 [switch-value flow]
 REALROM sample.bankcomment ff78 bank -> mirroring=3,prg_mode=3,prg_bank=0 via FUN_ff98 [switch-value flow]
 REALROM sample.bankcomment ff92 bank -> mirroring=3,prg_mode=3,prg_bank=7 via FUN_ffac [switch-value flow]
+REALROM sample.ref 7245 -> W8000_M3_B2::bfac UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 725d -> W8000_M3_B5::bf98 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 7260 -> W8000_M3_B5::a8de UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 7481 -> W8000_M3_B1::a1b1 UNCONDITIONAL_JUMP primary=true
@@ -170,8 +172,7 @@ REALROM sample.ref 8048 -> W8000_M3_B4::804e CONDITIONAL_JUMP primary=true
 REALROM sample.ref 8049 -> W8000_M3_B5::8130 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 804a -> W8000_M3_B3::805e UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 804f -> W8000_M3_B3::8064 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8050 -> W8000_M3_B6::805e CONDITIONAL_JUMP primary=true
-REALROM sample.ref.truncated 25 of 2561
+REALROM sample.ref.truncated 25 of 2567
 REALROM sample.warn 8124 [CopyLoopAnalyzer] copy-shaped loop RAM:0000 -> RAM:6ba7 could not be bounded; not applied
 REALROM sample.note 6d00 [CopyLoopAnalyzer] copy-shaped loop RAM:6c97 -> RAM:0302 (41 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note 83b6 [CopyLoopAnalyzer] copy-shaped loop W8000_M3_B5:83ae -> RAM:0200 (4 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
@@ -195,6 +196,7 @@ REALROM sample.note a9a0 [CopyLoopAnalyzer] copy-shaped loop W8000_M3_B2:a98d ->
 REALROM sample.note b5be [CopyLoopAnalyzer] copy-shaped loop RAM:0305 -> RAM:0306 (15 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note bf98 [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
 REALROM sample.note bfa8 [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
+REALROM sample.note bfac [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
 REALROM sample.note bfac [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
 REALROM sample.note bfbc [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
 REALROM sample.note eabc [CopyLoopAnalyzer] copy-shaped loop RAM:6b9d -> RAM:6817 (4 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.

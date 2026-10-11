@@ -45,32 +45,40 @@ REALROM block WC000_M2_B7 c000-ffff overlay=true
 REALROM count blocks.total 38
 REALROM count blocks.overlay 32
 REALROM count spaces.overlay 32
-REALROM count refs.intoOverlay 432
-REALROM count refs.intoOverlay.retargeted 4
+REALROM count refs.intoOverlay 440
+REALROM count refs.intoOverlay.retargeted 12
 REALROM count refs.intoOverlay.intraOverlay 428
-REALROM count instrs.inOverlay 1405
+REALROM count instrs.inOverlay 1404
 REALROM count bankComments 10
 REALROM count warnings 6
 REALROM count notes 44
 REALROM count symbols 18
 REALROM sample.bankcomment 814b bank -> mirroring=3,prg_mode=3,prg_bank=0 via FUN_bf9d [switch-value flow]
-REALROM sample.bankcomment c00a bank -> mirroring=0,prg_mode=3,prg_bank=5? via FUN_ffcc [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
+REALROM sample.bankcomment c00a bank -> mirroring=3,prg_mode=3,prg_bank=5 via FUN_ffcc [switch-value flow]
 REALROM sample.bankcomment c067 bank -> mirroring=0,prg_mode=3,prg_bank=6? via FUN_ffcc [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment c1c3 bank -> mirroring=0,prg_mode=3,prg_bank=6? via FUN_ffcc [known: prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1,prg_mode.0,prg_mode.1] [switch-value flow]
 REALROM sample.bankcomment c33e bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffcc [switch-value flow]
 REALROM sample.bankcomment c38a bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffcc [switch-value flow]
-REALROM sample.bankcomment c4d2 bank -> mirroring=2,prg_mode=3,prg_bank=0? via FUN_ff9d [known: mirroring.0=0,mirroring.1=1,prg_mode.0=1,prg_mode.1=1,prg_bank.1=0,prg_bank.3=0,prg_bank.4=0; assumed from initial: prg_bank.0,prg_bank.2] [switch-value flow]
+REALROM sample.bankcomment c4d2 bank -> mirroring=2,prg_mode=3,prg_bank=5 via FUN_ff9d [switch-value flow]
 REALROM sample.bankcomment cf23 bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_ffcc [switch-value flow]
 REALROM sample.bankcomment ff8f bank -> mirroring=3,prg_mode=3,prg_bank=0? via FUN_ff9d [known: mirroring.0=1,mirroring.1=1,prg_mode.0=1,prg_mode.1=1; assumed from initial: prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
 REALROM sample.bankcomment ff97 bank -> mirroring=3,prg_mode=3,prg_bank=7 via FUN_ffcc [switch-value flow]
+REALROM sample.ref 8ffa -> W8000_M3_B6::8faa DATA primary=true
+REALROM sample.ref 9001 -> W8000_M3_B6::8ffa CONDITIONAL_JUMP primary=true
 REALROM sample.ref 9002 -> W8000_M3_B6::900b CONDITIONAL_JUMP primary=true
 REALROM sample.ref 9009 -> W8000_M3_B6::9030 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 900b -> W8000_M3_B6::9012 CONDITIONAL_JUMP primary=true
 REALROM sample.ref 9010 -> W8000_M3_B6::920b UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 9012 -> W8000_M3_B6::8fb2 READ primary=true
 REALROM sample.ref 9013 -> W8000_M3_B6::990b UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 9016 -> W8000_M3_B6::92f4 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 9018 -> W8000_M3_B6::8fb3 READ primary=true
 REALROM sample.ref 9019 -> W8000_M3_B6::9408 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 901c -> W8000_M3_B6::95a7 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 901e -> W8000_M3_B6::8fb4 READ primary=true
 REALROM sample.ref 901f -> W8000_M3_B6::9b18 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 9028 -> W8000_M3_B6::9039 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 9032 -> W8000_M3_B6::9036 CONDITIONAL_JUMP primary=true
 REALROM sample.ref 903f -> W8000_M3_B6::9031 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 9045 -> W8000_M3_B6::9190 DATA primary=true
 REALROM sample.ref 9048 -> W8000_M3_B6::9063 CONDITIONAL_JUMP primary=true
@@ -80,15 +88,7 @@ REALROM sample.ref 9057 -> W8000_M3_B6::905b CONDITIONAL_JUMP primary=true
 REALROM sample.ref 905b -> W8000_M3_B6::918f DATA primary=true
 REALROM sample.ref 9064 -> W8000_M3_B6::9038 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 9069 -> W8000_M3_B6::9044 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 906d -> W8000_M3_B6::9044 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 907b -> W8000_M3_B6::914d DATA primary=true
-REALROM sample.ref 9082 -> W8000_M3_B6::908c CONDITIONAL_JUMP primary=true
-REALROM sample.ref 9087 -> W8000_M3_B6::908c CONDITIONAL_JUMP primary=true
-REALROM sample.ref 9090 -> W8000_M3_B6::909e CONDITIONAL_JUMP primary=true
-REALROM sample.ref 9095 -> W8000_M3_B6::909a CONDITIONAL_JUMP primary=true
-REALROM sample.ref 90a3 -> W8000_M3_B6::90ac CONDITIONAL_JUMP primary=true
-REALROM sample.ref 90aa -> W8000_M3_B6::90b1 CONDITIONAL_JUMP primary=true
-REALROM sample.ref.truncated 25 of 432
+REALROM sample.ref.truncated 25 of 440
 REALROM sample.warn b9f8 [CopyLoopAnalyzer] copy-shaped loop RAM:0008 -> RAM:0000 could not be bounded; not applied
 REALROM sample.warn cd5c [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffcc whose bank argument could not be recovered at this call site
 REALROM sample.warn ff81 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)

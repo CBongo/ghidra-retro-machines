@@ -19,8 +19,8 @@ REALROM block RAM 0000-07ff overlay=false
 REALROM count blocks.total 12
 REALROM count blocks.overlay 7
 REALROM count spaces.overlay 7
-REALROM count refs.intoOverlay 1719
-REALROM count refs.intoOverlay.retargeted 20
+REALROM count refs.intoOverlay 1736
+REALROM count refs.intoOverlay.retargeted 37
 REALROM count refs.intoOverlay.intraOverlay 1699
 REALROM count instrs.inOverlay 7722
 REALROM count bankComments 120
@@ -171,8 +171,8 @@ REALROM sample.ref 9061 -> PRG_LO_B5::905e CONDITIONAL_JUMP primary=true
 REALROM sample.ref 9065 -> PRG_LO_B5::906a CONDITIONAL_JUMP primary=true
 REALROM sample.ref 906e -> PRG_LO_B5::9075 CONDITIONAL_JUMP primary=true
 REALROM sample.ref 9070 -> PRG_LO_B5::9424 DATA primary=true
-REALROM sample.ref 9086 -> PRG_LO_B4::907d CONDITIONAL_JUMP primary=true
-REALROM sample.ref.truncated 25 of 1719
+REALROM sample.ref 907e -> PRG_LO_B5::8020 READ primary=true
+REALROM sample.ref.truncated 25 of 1736
 REALROM sample.warn 91bc [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_d896, which this analyzer models with no argument register, so no caller argument was sought at this call site; its effect is not resolved here
 REALROM sample.warn ac9f [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c666, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
 REALROM sample.warn c3ab [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)

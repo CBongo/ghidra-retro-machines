@@ -86,9 +86,9 @@ REALROM count warnings 2
 REALROM count notes 3
 REALROM count symbols 18
 REALROM sample.bankcomment c04b bank -> mirroring=2,prg_mode=3,prg_bank=0? via FUN_dcc3 [known: mirroring.0=0,mirroring.1=1,prg_mode.0=1,prg_mode.1=1; assumed from initial: prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
-REALROM sample.bankcomment c13f bank -> mirroring=0,prg_mode=3,prg_bank=12? via LAB_dcaa (mid-body entry in FUN_dca8) [known: mirroring.0=0,prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.1] [switch-value flow]
-REALROM sample.bankcomment c14a bank -> mirroring=0,prg_mode=3,prg_bank=12? via LAB_dcaa (mid-body entry in FUN_dca8) [known: mirroring.0=0,prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.1] [switch-value flow]
-REALROM sample.bankcomment c5e0 bank -> mirroring=0,prg_mode=3,prg_bank=12? via LAB_dcaa (mid-body entry in FUN_dca8) [known: mirroring.0=0,prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.1] [switch-value flow]
+REALROM sample.bankcomment c13f bank -> mirroring=2,prg_mode=3,prg_bank=12 via LAB_dcaa (mid-body entry in FUN_dca8) [switch-value flow]
+REALROM sample.bankcomment c14a bank -> mirroring=2,prg_mode=3,prg_bank=12 via LAB_dcaa (mid-body entry in FUN_dca8) [switch-value flow]
+REALROM sample.bankcomment c5e0 bank -> mirroring=2,prg_mode=3,prg_bank=12 via LAB_dcaa (mid-body entry in FUN_dca8) [switch-value flow]
 REALROM sample.bankcomment ffe1 bank -> mirroring=0,prg_mode=3,prg_bank=0 [switch-value flow]
 REALROM sample.ref 8000 -> W8000_M3_B12::8235 UNCONDITIONAL_JUMP primary=true
 REALROM sample.ref 8224 -> W8000_M3_B12::822f CONDITIONAL_JUMP primary=true

@@ -45,8 +45,8 @@ REALROM block WC000_M2_B7 c000-ffff overlay=true
 REALROM count blocks.total 38
 REALROM count blocks.overlay 32
 REALROM count spaces.overlay 32
-REALROM count refs.intoOverlay 2557
-REALROM count refs.intoOverlay.retargeted 25
+REALROM count refs.intoOverlay 2563
+REALROM count refs.intoOverlay.retargeted 31
 REALROM count refs.intoOverlay.intraOverlay 2532
 REALROM count instrs.inOverlay 11447
 REALROM count bankComments 25
@@ -103,7 +103,7 @@ REALROM sample.ref 8027 -> W8000_M3_B4::91e4 UNCONDITIONAL_JUMP primary=true
 REALROM sample.ref 802a -> W8000_M3_B4::930f UNCONDITIONAL_JUMP primary=true
 REALROM sample.ref 802d -> W8000_M3_B4::96ab UNCONDITIONAL_JUMP primary=true
 REALROM sample.ref 8030 -> W8000_M3_B4::8a60 UNCONDITIONAL_JUMP primary=true
-REALROM sample.ref.truncated 25 of 2557
+REALROM sample.ref.truncated 25 of 2563
 REALROM sample.warn a913 [Bad Instruction] Disassembly not permitted within uninitialized memory block (flow from W8000_M3_B3::a913)
 REALROM sample.warn fa11 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ff08 whose bank argument could not be recovered at this call site
 REALROM sample.warn fa25 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ff08 whose bank argument could not be recovered at this call site

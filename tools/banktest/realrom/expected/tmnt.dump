@@ -45,10 +45,10 @@ REALROM block WC000_M2_B7 c000-ffff overlay=true
 REALROM count blocks.total 38
 REALROM count blocks.overlay 32
 REALROM count spaces.overlay 32
-REALROM count refs.intoOverlay 3794
-REALROM count refs.intoOverlay.retargeted 66
-REALROM count refs.intoOverlay.intraOverlay 3728
-REALROM count instrs.inOverlay 14972
+REALROM count refs.intoOverlay 3856
+REALROM count refs.intoOverlay.retargeted 95
+REALROM count refs.intoOverlay.intraOverlay 3761
+REALROM count instrs.inOverlay 15149
 REALROM count bankComments 105
 REALROM count warnings 10
 REALROM count notes 7
@@ -79,7 +79,7 @@ REALROM sample.bankcomment cf6c bank -> mirroring=0,prg_mode=3,prg_bank=6 via FU
 REALROM sample.bankcomment cf77 bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_cea7 [switch-value flow]
 REALROM sample.bankcomment cf86 bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_cea5 [switch-value flow]
 REALROM sample.bankcomment cf94 bank -> mirroring=0,prg_mode=3,prg_bank=6 via FUN_cea5 [switch-value flow]
-REALROM sample.bankcomment cf99 bank -> mirroring=0,prg_mode=3,prg_bank=4? via FUN_cea7 [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=0,prg_bank.2=1,prg_bank.3=0,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
+REALROM sample.bankcomment cf99 bank -> mirroring=3,prg_mode=3,prg_bank=4 via FUN_cea7 [switch-value flow]
 REALROM sample.bankcomment cfa4 bank -> mirroring=0,prg_mode=3,prg_bank=4 via FUN_cea7 [switch-value flow]
 REALROM sample.bankcomment cfba bank -> mirroring=0,prg_mode=3,prg_bank=4 via FUN_cea5 [switch-value flow]
 REALROM sample.bankcomment cfc2 bank -> mirroring=0,prg_mode=3,prg_bank=5 via FUN_cea5 [switch-value flow]
@@ -183,7 +183,7 @@ REALROM sample.ref 803b -> W8000_M3_B5::8212 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 803b -> W8000_M3_B6::8047 CONDITIONAL_JUMP primary=true
 REALROM sample.ref 8041 -> W8000_M3_B5::803b CONDITIONAL_JUMP primary=true
 REALROM sample.ref 8043 -> W8000_M3_B5::93f0 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref.truncated 25 of 3794
+REALROM sample.ref.truncated 25 of 3856
 REALROM sample.warn 97a5 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn c3c8 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_cea7 whose bank argument could not be recovered at this call site
 REALROM sample.warn ced2 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_cea7 whose bank argument could not be recovered at this call site

@@ -18,10 +18,12 @@ COMMENT 8042 bank -> bank=2,prg_mode=0? [known: bank.0=0,bank.1=1; assumed from 
 COMMENT c002 bank -> bank=1,prg_mode=0? [known: bank.0=1,bank.1=0; assumed from initial: prg_mode] [switch-value flow]
 COMMENT c00a bank -> bank=0,prg_mode=1? [known: prg_mode=1; assumed from initial: bank.0,bank.1] [switch-value flow]
 COMMENT c00d bank -> bank=2,prg_mode=0? via FUN_W8000_M1__8040 [known: bank.0=0,bank.1=1; assumed from initial: prg_mode] [switch-value flow]
+REF 8040 -> WC000_M1_B1::c010 COMPUTED_JUMP primary=true
 REF 8045 -> WC000_M1_B2::c030 UNCONDITIONAL_CALL primary=true
 REF 8048 -> W8000_M1::8048 UNCONDITIONAL_JUMP primary=true
 REF c005 -> W8000_M0_B1::8000 UNCONDITIONAL_CALL primary=true
 REF c00d -> W8000_M1::8040 UNCONDITIONAL_CALL primary=true
+REF c030 -> WC000_M1_B2::c010 COMPUTED_JUMP primary=true
 SYMBOL 2000 PPUCTRL IMPORTED primary=true
 SYMBOL 2001 PPUMASK IMPORTED primary=true
 SYMBOL 2002 PPUSTATUS IMPORTED primary=true

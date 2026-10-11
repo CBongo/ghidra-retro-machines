@@ -32,11 +32,11 @@ import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressIterator;
 import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.listing.Function;
-import ghidra.program.model.listing.FunctionIterator;
 import ghidra.program.model.listing.FunctionManager;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
+import ghidra.program.model.symbol.Reference;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.task.TaskMonitor;
 
@@ -337,14 +337,19 @@ final class BankDataflowEngine {
 		StoredValueScanner.ProofMemo crossBlockProofMemo = new StoredValueScanner.ProofMemo();
 		ForkBudget budget = new ForkBudget(program);
 
+		// Only the REAL entries are seeded up front: the external entry points (reset and the
+		// vectors) and the loader's async entries. An ordinary function entry used to be seeded
+		// too, with the power-on state marked fully KNOWN, and that seed then merged against the
+		// state its callers carried in -- so wherever a caller had moved a field off its power-on
+		// value (cv3's RESET sets MMC5 prg_mode 2; the board resets to 3), the two "known"
+		// values disagreed and every callee lost the field. Bead grm-dos9.4. A function entry no
+		// real entry reaches is still seeded, as a FALLBACK once the fixpoint runs dry (see
+		// seedUnreachedFunctions), so the power-on state is what is assumed when no caller says
+		// otherwise, never a claim competing with one.
 		Set<Address> seeds = new LinkedHashSet<>();
 		AddressIterator eps = program.getSymbolTable().getExternalEntryPointIterator();
 		while (eps.hasNext()) {
 			seeds.add(eps.next());
-		}
-		FunctionIterator funcs = program.getFunctionManager().getFunctions(true);
-		for (Function f : funcs) {
-			seeds.add(f.getEntryPoint());
 		}
 
 		// Two seed states, not one. banking.initial_state is what the board powers up holding,
@@ -361,13 +366,20 @@ final class BankDataflowEngine {
 		int fixedMask = DescriptorSupport.readFixedAfterInitMask(program) & board.mask();
 		BankState asyncSeed = fixedMask == 0 ? BankState.unknown()
 				: new BankState(fixedMask, seedState.bits() & fixedMask);
+		seeds.addAll(asyncEntries);
 		for (Address seed : seeds) {
 			BankState entryState = asyncEntries.contains(seed) ? asyncSeed : seedState;
 			mergeAndEnqueue(seed, PathId.ROOT, entryState, stateIn, collapsedAddrs, worklist,
 				listing, board, clampCache, budget, stateDependents);
 		}
+		List<Address> functionEntries = new ArrayList<>();
+		for (Function f : program.getFunctionManager().getFunctions(true)) {
+			functionEntries.add(f.getEntryPoint());
+		}
 
-		while (!worklist.isEmpty()) {
+		while (!worklist.isEmpty() ||
+			seedUnreachedFunctions(program, listing, functionEntries, seedState, stateIn,
+				collapsedAddrs, worklist, board, clampCache, budget, stateDependents)) {
 			monitor.checkCancelled();
 			Address addr = worklist.poll();
 			Instruction instr = listing.getInstructionAt(addr);
@@ -1331,6 +1343,65 @@ final class BankDataflowEngine {
 			(base.bits() & ~mask) | effect.bits());
 	}
 
+
+	/**
+	 * The fallback half of the seeding policy (bead grm-dos9.4): called when the worklist has run
+	 * dry, it seeds function entries the fixpoint never reached with the power-on state and
+	 * reports whether it enqueued anything, so the caller's loop resumes.
+	 * <p>
+	 * Only entries with NO calling instruction are seeded in a round -- a function some code
+	 * calls should get its state from that call, and its caller may simply be another unreached
+	 * function that this same round is about to seed. Seeding the callee as well would recreate
+	 * exactly the conflict this policy removes: a fully-known power-on seed merged against the
+	 * caller's state. When every unreached entry has a caller (a cycle, or callers that are
+	 * themselves dead code), the lowest-addressed one is seeded alone, which breaks the cycle
+	 * deterministically and guarantees progress: each round gives at least one unreached entry
+	 * a state, so the loop ends once every function entry has one -- the same coverage the old
+	 * "seed every function up front" policy had.
+	 * <p>
+	 * A "calling instruction" is any instruction with a flow reference to the entry, or whose
+	 * fall-through is the entry. Async entries are already seeded up front and never reach here.
+	 */
+	private static boolean seedUnreachedFunctions(Program program, Listing listing,
+			List<Address> functionEntries, BankState seedState,
+			Map<Address, LinkedHashMap<PathId, BankState>> stateIn, Set<Address> collapsedAddrs,
+			Deque<Address> worklist, BoardModel board, Map<String, int[]> clampCache,
+			ForkBudget budget, Map<Address, Set<Address>> stateDependents) {
+		List<Address> unreached = new ArrayList<>();
+		for (Address entry : functionEntries) {
+			if (!stateIn.containsKey(entry) && listing.getInstructionAt(entry) != null) {
+				unreached.add(entry);
+			}
+		}
+		if (unreached.isEmpty()) {
+			return false;
+		}
+		List<Address> roots = new ArrayList<>();
+		for (Address entry : unreached) {
+			if (!hasCallingInstruction(program, listing, entry)) {
+				roots.add(entry);
+			}
+		}
+		if (roots.isEmpty()) {
+			roots.add(unreached.get(0));
+		}
+		for (Address entry : roots) {
+			mergeAndEnqueue(entry, PathId.ROOT, seedState, stateIn, collapsedAddrs, worklist,
+				listing, board, clampCache, budget, stateDependents);
+		}
+		return !worklist.isEmpty();
+	}
+
+	private static boolean hasCallingInstruction(Program program, Listing listing, Address entry) {
+		for (Reference ref : program.getReferenceManager().getReferencesTo(entry)) {
+			if (ref.getReferenceType().isFlow() &&
+				listing.getInstructionAt(ref.getFromAddress()) != null) {
+				return true;
+			}
+		}
+		Instruction before = listing.getInstructionBefore(entry);
+		return before != null && entry.equals(before.getFallThrough());
+	}
 
 	/**
 	 * Folds {@code incoming} into the element for {@code pathId} at {@code addr} and enqueues

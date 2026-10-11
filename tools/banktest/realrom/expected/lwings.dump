@@ -19,10 +19,10 @@ REALROM block RAM 0000-07ff overlay=false
 REALROM count blocks.total 12
 REALROM count blocks.overlay 7
 REALROM count spaces.overlay 7
-REALROM count refs.intoOverlay 1674
-REALROM count refs.intoOverlay.retargeted 48
-REALROM count refs.intoOverlay.intraOverlay 1626
-REALROM count instrs.inOverlay 7471
+REALROM count refs.intoOverlay 1710
+REALROM count refs.intoOverlay.retargeted 71
+REALROM count refs.intoOverlay.intraOverlay 1639
+REALROM count instrs.inOverlay 7506
 REALROM count bankComments 48
 REALROM count warnings 10
 REALROM count notes 4
@@ -80,27 +80,27 @@ REALROM sample.ref 8003 -> PRG_LO_B3::862c UNCONDITIONAL_JUMP primary=true
 REALROM sample.ref 8006 -> PRG_LO_B3::82ef UNCONDITIONAL_JUMP primary=true
 REALROM sample.ref 8009 -> PRG_LO_B3::aa8f DATA primary=true
 REALROM sample.ref 800e -> PRG_LO_B3::8951 DATA primary=true
+REALROM sample.ref 8011 -> PRG_LO_B6::8015 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8015 -> PRG_LO_B6::8498 READ primary=true
+REALROM sample.ref 801b -> PRG_LO_B6::8498 READ primary=true
+REALROM sample.ref 801e -> PRG_LO_B6::818f UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8021 -> PRG_LO_B6::817c UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 802a -> PRG_LO_B6::8045 CONDITIONAL_JUMP primary=true
 REALROM sample.ref 802b -> PRG_LO_B3::803d CONDITIONAL_JUMP primary=true
 REALROM sample.ref 802f -> PRG_LO_B3::8020 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8030 -> PRG_LO_B6::803f CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8039 -> PRG_LO_B6::849c READ primary=true
+REALROM sample.ref 803c -> PRG_LO_B6::81ad UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 803f -> PRG_LO_B3::8032 CONDITIONAL_JUMP primary=true
+REALROM sample.ref 8042 -> PRG_LO_B6::8024 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 804a -> PRG_LO_B6::81ba UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 804d -> PRG_LO_B3::8046 CONDITIONAL_JUMP primary=true
 REALROM sample.ref 804d -> PRG_LO_B6::8161 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8054 -> PRG_LO_B3::805b CONDITIONAL_JUMP primary=true
 REALROM sample.ref 8057 -> PRG_LO_B6::818f UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 805c -> PRG_LO_B3::8042 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8068 -> PRG_LO_B3::807f CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8071 -> PRG_LO_B3::8076 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8073 -> PRG_LO_B3::8092 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 8078 -> PRG_LO_B6::817c UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 807c -> PRG_LO_B3::806e CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8081 -> PRG_LO_B6::819f UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 8084 -> PRG_LO_B6::83bb UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 8086 -> PRG_LO_B3::808b CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8088 -> PRG_LO_B3::8092 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 8089 -> PRG_LO_B6::81ad UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 808f -> PRG_LO_B3::8083 CONDITIONAL_JUMP primary=true
-REALROM sample.ref 8091 -> PRG_LO_B6::81ad UNCONDITIONAL_CALL primary=true
-REALROM sample.ref.truncated 25 of 1674
+REALROM sample.ref.truncated 25 of 1710
 REALROM sample.warn c1fd [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c34c, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
 REALROM sample.warn c27c [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c34c, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
 REALROM sample.warn c361 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c34c, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
