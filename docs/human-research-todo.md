@@ -43,12 +43,7 @@ bash tools/banktest/realrom-test.sh nominate <romdir>   # board-gap survey
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
-- [ ] **Name cv3's trampoline idiom** (`grm-dos9` P3). cv3 (MMC5) reaches almost none of its banked
-      code: 316 overlays, 341 overlay instructions. grm-ulnc's five split-dispatch probes (e.g.
-      `W8000_M3_B2::94cb`) are all undisassembled, with no references. Candidates: unresolved
-      `$5114-$5117` writes, a `prg_mode` question (grm-fick), a far-call trampoline in the fixed
-      bank, or computed dispatch. Watching one transfer into banked code in an emulator should say
-      which, faster than an agent can.
+_(none open)_
 
 ---
 
@@ -219,6 +214,7 @@ do not keep "Done" rows here.
 
 | question | answer | bead |
 |---|---|---|
+| What idiom carries cv3 (MMC5) into its banked code, given almost none of it is reached? | **Probably not an idiom at all — a lost PRG mode (owner, 2026-10-10).** cv3 is the one MMC5 title in the corpus that runs in **PRG mode 2**, set by `FUN_e0df` in RESET. The comment at that call (`e03a`) correctly says `prg_mode=2`, but the very next instruction, `e03d JSR e2da` (`$5116 <- #$9e`), is commented mode 3. The golden dump shows the same at every later `FUN_e2e6`/`e2e8` call site, and 44 `WA000_M3` overlays: `$5115` read as mode 3's 8K window, not mode 2's 16K `W8000`. **Do not hunt for a far-call trampoline until `grm-dos9.1` (carry `prg_mode` past a helper call) has landed and cv3 has been re-measured.** | `grm-dos9`; `grm-dos9.1` |
 | Can blmaster's `e953` far-call body reach `e692 STA $D3 / JMP $E61B`? | **No (owner confirmed, 2026-10-10; agent walk via pyghidra-mcp, `grm-haj3`).** `e953` is not a dispatch loop. It is an RLE decoder (`LDA ($7A),Y` into `STA $2007`) whose whole closure is 14 blocks of direct calls (`e949 e6f0 e895 e996 e974 e986 e9a2`, exit `JMP e93f`), with no `$D3` write and no indirect jump; it never reaches `e61b` or `e692`. `grm-zsxz` keeps its customer as far as `e953` goes. **Still open, on `grm-zsxz`:** the span's `e9bf JSR ea3a` calls `e61b` directly. From there the only fixed-bank route to `e692` is the restart exit `f270 JMP c24f`, which never returns to the `e9c9` restore (and clears `$D3` itself at `c251`); with that cut, 72 blocks and no `$D3` write. **Banked calls `$bfe5/$bfe8/$bff1` (`dec5/def4/df02`), owner 2026-10-10:** in PRG mode 3 the only bank with valid code there is **bank 5**, self-contained sound code that appears not to touch the bank shadows or save slots. (Ghidra has no instructions in `W8000_M3_B5` at all, so the walk cannot check this; it is the owner's read.) **Indirect stores `e2af`/`e2b4 STA ($CE),Y`, owner 2026-10-10:** the only `$CE/$CF` writes found are `e24e` (`#$7400`) and `e266` (copied from `$7A/$7B`, which every ref seen loads with ROM addresses), so the pointer never targets zero page. **Net: the `e9b8` save/restore span is sound as far as anyone has looked — `grm-zsxz` keeps blmaster as its customer.** Reproduce with `tools/ghidra-mcp/closure6502.py` (it walks Ghidra's existing instructions, not raw bytes). | `grm-zsxz` |
 | dragonpower/shenlong `9913`: how is it reached now? | **By `JSR`, from the game's main program (owner, 2026-09-27).** Analysis doesn't get there: hand disassembly from `82ac` (the target of `8008 JMP $82ac`) reaches several `JSR $9913` in `8300`–`8600` (`836b 839f 8553 85a1 85c8 861d`). The only route to `8008` is RESET: `ffad` stores `$8008` in `$17/$18` and enters the far-call trampoline at `ffe8`, which ends `JMP ($0017)`, a jump Ghidra can't resolve. So this is a far-call reachability gap (`grm-v60`), not a fault in the jump-table bound. **Do not loosen the bound to get `9913` back.** | `grm-wayn` |
 | ultimaav: is the table at `97d7` 4 entries long? | **Yes (owner, 2026-09-27).** Bank 0, dispatch `97c4`, `JMP ($3a)` at `97d4`; the entries are `97df 97e7 97f1 986d`, and the table ends at entry 0's code. The table size is settled. The row still waits on `grm-eyn.1` (why the `de2f` bank comment vanished), which is agent work. | `grm-eyn` |
