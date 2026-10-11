@@ -83,8 +83,13 @@ task where the economics genuinely invert:
   say what the game is *doing*. The `grm-8iy.5` def-use passes are the worked example.
 - **Ground truth that needs an emulator.** "Is bank 6 actually live at `$9067` at runtime?" is
   one breakpoint for a human and unanswerable by static analysis.
-- **A yes/no that needs a handful of addresses read.** If the next step is "does Ghidra create a
-  function at `c183`?", ask — don't build a probe.
+- **A yes/no that needs a handful of addresses read — UNLESS it is a static question about a
+  real-ROM row.** "Does Ghidra create a function at `c183`?", "what is at `X`?", "can routine `A`
+  reach `B` through direct flow?" are now agent work: keep the row's project and query it through
+  pyghidra-mcp (`tools/ghidra-mcp/README.md`, bead `grm-haj3`) — minutes, not a probe. Do not
+  build a bespoke probe instead. Always `serve.sh stop` when done. Report what the walk could not
+  see (indirect jumps, banked-window targets) with the answer; deciding those is still the
+  human's, as are the runtime and hand-RE rows above.
 - **Licensing, sourcing, and product judgment.** Which community disassembly to ingest, submodule
   vs. committed artifacts, whether a board is worth shipping. These need a decision, not analysis.
 - **Anything needing the user's identity.** Upstream GitHub issues and PRs, CLA agreements.
