@@ -19,7 +19,8 @@ bash tools/banktest/realrom-test.sh check nes --only blmaster --keep-project
 #    for "Uvicorn running" in its output.
 bash tools/ghidra-mcp/serve.sh start blmaster
 
-# 3. Ask. (First use creates build/pyghidra-mcp-venv; serve.sh does that too.)
+# 3. Ask. (serve.sh creates build/pyghidra-mcp-venv on first use -- with uv when installed --
+#    and rebuilds it whenever PYGHIDRA_MCP_VERSION in serve.sh changes: that bump IS the upgrade.)
 build/pyghidra-mcp-venv/Scripts/python tools/ghidra-mcp/query.py tools
 build/pyghidra-mcp-venv/Scripts/python tools/ghidra-mcp/query.py disassemble \
     '{"binary_name":"blmaster.nes","address":"e953","count":40}'
@@ -50,8 +51,12 @@ bash tools/ghidra-mcp/serve.sh stop
 
 ## `closure6502.py` limits
 
-It follows direct flow only, decoding raw bytes at each target (so, unlike Ghidra's listing, it
-is not limited to references analysis already created). It does not follow indirect jumps,
-push-dispatch or banked-window targets; it flags them instead. Treat a "no path" result as "no
-path through fixed-bank direct flow", and report the flagged unknowns with it. Use `STOP=` to cut
-non-returning exits (a restart `JMP`) that would otherwise make everything reachable.
+It follows direct flow only, over **instructions Ghidra has already created**: pyghidra-mcp's
+`disassemble` lists existing instructions and does not decode raw bytes (it silently returns the
+NEXT instruction when the start is undisassembled; the walker detects that and flags the target
+as a blind spot). It does follow targets itself rather than trusting existing references. It
+cannot see into undisassembled banks (blmaster's `W8000_M3_B5` has no instructions at all) and
+does not follow indirect jumps, push-dispatch or banked-window targets; it flags them instead.
+Treat a "no path" result as "no path through fixed-bank direct flow", and report the flagged
+unknowns with it. Use `STOP=` to cut non-returning exits (a restart `JMP`) that would otherwise
+make everything reachable.

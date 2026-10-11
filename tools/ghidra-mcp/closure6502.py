@@ -1,10 +1,12 @@
-"""Static reachability closure of 6502 code via pyghidra-mcp's raw `disassemble` (grm-haj3).
+"""Static reachability closure of 6502 code via pyghidra-mcp's `disassemble` (grm-haj3).
 
-Follows every DIRECT control-flow target (JSR/JMP abs, branches, fall-through) from the roots,
-decoding raw bytes rather than trusting Ghidra's existing flow refs, and prints the first path
-found to the target. Flags what could hide control flow (indirect JMP, PHA;RTS push-dispatch),
-writes to the given zero-page slot, indirect stores, and banked-window targets (< $C000, not
-followed: which bank runs there is not a static fact).
+Follows every DIRECT control-flow target (JSR/JMP abs, branches, fall-through) from the roots
+itself, rather than trusting Ghidra's existing flow refs, and prints the first path found to the
+target. It walks EXISTING listing instructions only (`disassemble` does not decode raw bytes): a
+target Ghidra never disassembled is flagged as a blind spot, never walked. Also flags what
+could hide control flow (indirect JMP, PHA;RTS push-dispatch), writes to the given zero-page
+slot, indirect stores, and banked-window targets (< $C000, not followed: which bank runs there
+is not a static fact).
 
 usage: closure6502.py <binary> <slot-zp-hex> <target-hex> <root-hex>...
   STOP="f270 ..."  treat the instructions at these addresses as non-returning exits (e.g. a
@@ -71,7 +73,13 @@ async def main(binary, slot, goal, roots):
                     flags.append(f"banked-window target {start:04x} (not followed)")
                     continue
                 prev = None
-                for addr, mn, ops in await disasm(s, binary, start):
+                rows = await disasm(s, binary, start)
+                # `disassemble` lists EXISTING instructions from `start` forward; when `start` itself
+                # is not an instruction it silently returns the NEXT one. Never walk from that.
+                if not rows or rows[0][0] != start:
+                    flags.append(f"target {start:04x} is not disassembled in Ghidra's listing (blind spot)")
+                    continue
+                for addr, mn, ops in rows:
                     if addr != start and addr in seen_blocks:
                         break
                     if addr == goal:

@@ -57,10 +57,20 @@ kept="$REPO_ROOT/build/kept-projects/realrom/$row"
 }
 [ -d "$REPO_ROOT/build/ghidra-home" ] || { echo "FAIL: build/ghidra-home missing; run a gate first" >&2; exit 3; }
 
-if [ ! -x "$VENV_BIN/pyghidra-mcp$EXE" ]; then
-	echo "== creating $VENV (pyghidra-mcp $PYGHIDRA_MCP_VERSION) =="
-	python -m venv "$VENV"
-	"$VENV_BIN/python" -m pip install -q "pyghidra-mcp==$PYGHIDRA_MCP_VERSION"
+# (Re)build the venv when it is missing or was built for a different pin: bumping
+# PYGHIDRA_MCP_VERSION is the whole upgrade. uv when present (much faster), else venv + pip.
+pin_stamp="$VENV/.grm-pyghidra-mcp-version"
+if [ ! -x "$VENV_BIN/pyghidra-mcp$EXE" ] || [ "$(cat "$pin_stamp" 2>/dev/null)" != "$PYGHIDRA_MCP_VERSION" ]; then
+	echo "== (re)building $VENV for pyghidra-mcp $PYGHIDRA_MCP_VERSION =="
+	rm -rf "$VENV"
+	if command -v uv >/dev/null 2>&1; then
+		uv venv -q "$VENV"
+		uv pip install -q --python "$VENV_BIN/python$EXE" "pyghidra-mcp==$PYGHIDRA_MCP_VERSION"
+	else
+		python -m venv "$VENV"
+		"$VENV_BIN/python" -m pip install -q "pyghidra-mcp==$PYGHIDRA_MCP_VERSION"
+	fi
+	echo "$PYGHIDRA_MCP_VERSION" > "$pin_stamp"
 fi
 
 # Snapshot minus logs (old application/script logs run ~50 MB each and are irrelevant).
