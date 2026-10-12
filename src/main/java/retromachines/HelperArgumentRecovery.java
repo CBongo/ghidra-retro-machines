@@ -582,7 +582,7 @@ final class HelperArgumentRecovery {
 		// consuming deposit owns. See readBackMatchesReload.
 		if (reloadTransform != null && readBack != null &&
 			!readBackMatchesReload(readBack, reloadTransform, helper, primary,
-				statesAt(oracle, readBack.readAt()))) {
+				readBack.statesAtEveryRead(addr -> statesAt(oracle, addr)))) {
 			readBack = null;
 		}
 		StoredValueScanner.ReadBack reloadVerified = reloadTransform == null ? null : readBack;

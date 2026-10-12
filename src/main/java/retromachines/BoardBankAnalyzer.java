@@ -1010,7 +1010,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// the tracked state at the read, or stated by a verified game-descriptor hint -- and the
 		// wording must say which. Unestablished: no RESTORED claim at all (null).
 		BankMirrors.Membership membership =
-			mirrors.restoreMembership(cell, flow.statesAt(readBack.readAt()));
+			mirrors.restoreMembership(cell, readBack.statesAtEveryRead(flow::statesAt));
 		if (membership == BankMirrors.Membership.UNPROVEN) {
 			return null;
 		}
@@ -1022,6 +1022,10 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		if (encoded && !alias && !encodingApplied) {
 			return null;
 		}
+		// bead grm-mej.21: a joined read-back's claims hold at EACH of its reads.
+		boolean joined = readBack.reads().size() > 1;
+		String atRead = joined ? "each read" : "the read";
+		String thatRead = joined ? "the read on the path taken" : "that read";
 		String source;
 		if (alias) {
 			source = "bank-identifying ROM byte " + cell + " -- a byte that, committed back to " +
@@ -1029,7 +1033,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				"the one it is read from (" + encoding.describe() + "), so the bank committed is " +
 				"the bank live at the read -- " + (membership == BankMirrors.Membership.PROVEN
 						? "that the live bank is one this was verified on is PROVEN by the " +
-							"tracked state at the read"
+							"tracked state at " + atRead
 						: "that the live bank is one this was verified on is HINTED, not " +
 							"derived: stated by the game descriptor " +
 							mirrors.membershipHint(cell) + " (bank_identifying_offsets)");
@@ -1043,7 +1047,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				"helper re-commits through that same encoding, so the bank committed is the " +
 				"bank live at the read -- " + (membership == BankMirrors.Membership.PROVEN
 						? "that the live bank is one this encoding was verified on is PROVEN by " +
-							"the tracked state at the read"
+							"the tracked state at " + atRead
 						: "that the live bank is one this encoding was verified on is HINTED, " +
 							"not derived: stated by the game descriptor " +
 							mirrors.membershipHint(cell) + " (bank_identifying_offsets)");
@@ -1057,19 +1061,34 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 						"it is read from, so the byte read is the bank live at the read";
 		}
 		StringBuilder text = new StringBuilder();
-		text.append("Bank value is RESTORED here, not resolved: this ").append(committerNoun)
-				.append(" re-commits the bank READ BACK at ").append(readBack.readAt())
-				.append(" from ").append(source);
-		if (readBack.crossBlockPush() != null) {
-			// bead grm-mej.3 increment X1: the pairing crossed a control-flow join (a loop, a
-			// diamond), not only -- or not agreeably enough among its paths -- a call, so the
-			// wording names the SPAN the byte was carried across rather than a single call.
-			text.append(", carried on the stack across control flow ")
-					.append(readBack.crossBlockPush()).append("..").append(readBack.crossBlockPull());
+		text.append("Bank value is RESTORED here, not resolved: this ").append(committerNoun);
+		if (joined) {
+			// bead grm-mej.21: the pop sits at a join whose every arm pushed its own read of the
+			// same cell -- name each read with the span that carried it.
+			text.append(" re-commits the bank READ BACK on whichever of ")
+					.append(readBack.reads().size()).append(" joining paths ran -- ");
+			List<String> arms = new ArrayList<>();
+			for (StoredValueScanner.ReadBack arm : readBack.reads()) {
+				arms.add("at " + arm.readAt() + " (carried on the stack across control flow " +
+					arm.crossBlockPush() + ".." + arm.crossBlockPull() + ")");
+			}
+			text.append(String.join(" or ", arms)).append(" -- from ").append(source);
 		}
-		else if (readBack.carriedAcross() != null) {
-			text.append(", carried on the stack across the call at ")
-					.append(readBack.carriedAcross());
+		else {
+			text.append(" re-commits the bank READ BACK at ").append(readBack.readAt())
+					.append(" from ").append(source);
+			if (readBack.crossBlockPush() != null) {
+				// bead grm-mej.3 increment X1: the pairing crossed a control-flow join (a loop, a
+				// diamond), not only -- or not agreeably enough among its paths -- a call, so the
+				// wording names the SPAN the byte was carried across rather than a single call.
+				text.append(", carried on the stack across control flow ")
+						.append(readBack.crossBlockPush()).append("..")
+						.append(readBack.crossBlockPull());
+			}
+			else if (readBack.carriedAcross() != null) {
+				text.append(", carried on the stack across the call at ")
+						.append(readBack.carriedAcross());
+			}
 		}
 		if (readBack.slot() != null) {
 			// bead grm-zsxz increment Z2: the byte travelled through a RAM save slot. Name the
@@ -1086,11 +1105,14 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		}
 		text.append(" -- the save/restore idiom. The bank after this ").append(committerNoun)
 				.append(encoded
-						? " is the bank " + cell + " identified at that read"
-						: " is whatever " + cell + " held at that read")
+						? " is the bank " + cell + " identified at " + thatRead
+						: " is whatever " + cell + " held at " + thatRead)
 				.append(", not a fresh value this analyzer failed to pin down.");
 		Function function = program.getFunctionManager().getFunctionContaining(siteAddr);
-		if (function != null && readsEntryBank(program, listing, flow, function, readBack.readAt())) {
+		// A joined read-back's arms sit in different routines (cv3's shared epilogue), so the
+		// entry-of-THIS-function claim below is made only for a single read.
+		if (!joined && function != null &&
+			readsEntryBank(program, listing, flow, function, readBack.readAt())) {
 			text.append(" That read sits at the ENTRY of ").append(function.getName())
 					.append(" (nothing switches between its entry and the read), so it is the ")
 					.append(shadow ? "shadow as the caller left it" : "bank live on entry");

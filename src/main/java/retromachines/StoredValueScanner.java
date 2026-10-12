@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeSet;
 
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressOutOfBoundsException;
@@ -348,15 +349,25 @@ final class StoredValueScanner {
 
 	/**
 	 * The state-free result of a {@link #crossBlockMatchingPush} proof (bead grm-mej.3 increment
-	 * X1): the {@code PHA} it found ({@code null} for a decline), whether any explored path
-	 * crossed a call, the sole call address every path agreed was the nearest one crossed
+	 * X1): the {@code PHA}s it found, in address order (empty for a decline; more than one when
+	 * the {@code PLA}'s arms each pushed their own byte, bead grm-mej.21), whether any explored
+	 * path crossed a call, the sole call address every path agreed was the nearest one crossed
 	 * ({@code null} when some path crossed none, or paths disagreed about which), and whether any
 	 * path crossed a mechanism write. See {@link Hooks#crossBlockProofMemo}.
 	 */
-	record CrossBlockProof(Address pha, boolean crossedCall, Address agreedLastCall,
+	record CrossBlockProof(List<Address> phas, boolean crossedCall, Address agreedLastCall,
 			boolean crossedMechanismWrite) {
 
-		static final CrossBlockProof DECLINED = new CrossBlockProof(null, false, null, false);
+		static final CrossBlockProof DECLINED = new CrossBlockProof(List.of(), false, null, false);
+
+		CrossBlockProof {
+			phas = List.copyOf(phas);
+		}
+
+		/** The push when every path agreed on exactly one, else {@code null}. */
+		Address pha() {
+			return phas.size() == 1 ? phas.get(0) : null;
+		}
 	}
 
 	/**
@@ -406,7 +417,25 @@ final class StoredValueScanner {
 	 * this only lets the annotation say where the bank came from and what it was carried over.
 	 */
 	record ReadBack(Address cell, Address readAt, Address carriedAcross, Address crossBlockPush,
-			Address crossBlockPull, SlotCarrier slot) {
+			Address crossBlockPull, SlotCarrier slot, List<ReadBack> arms) {
+
+		/**
+		 * {@code arms} is empty for an ordinary read-back. A JOINED read-back (bead grm-mej.21)
+		 * lists one single-read ReadBack per pushing arm -- the {@code PLA} sits at a join each of
+		 * whose arms pushed its OWN read of {@code cell} -- and its own {@code readAt}/push/pull
+		 * fields repeat the first arm's, so a consumer that has not learned about joins still reads
+		 * something true about one arm. Every claim about "the read" must hold for each of
+		 * {@link #reads()}.
+		 */
+		ReadBack {
+			arms = arms == null ? List.of() : List.copyOf(arms);
+		}
+
+		/** Pre-grm-mej.21 form: one read. */
+		ReadBack(Address cell, Address readAt, Address carriedAcross, Address crossBlockPush,
+				Address crossBlockPull, SlotCarrier slot) {
+			this(cell, readAt, carriedAcross, crossBlockPush, crossBlockPull, slot, List.of());
+		}
 
 		/** Pre-grm-mej.3-increment-X1 form: no cross-block span. */
 		ReadBack(Address cell, Address readAt, Address carriedAcross) {
@@ -422,7 +451,39 @@ final class StoredValueScanner {
 		/** This read-back, additionally carried to the site through {@code carrier}. */
 		ReadBack withSlot(SlotCarrier carrier) {
 			return new ReadBack(cell, readAt, carriedAcross, crossBlockPush, crossBlockPull,
-				carrier);
+				carrier, arms);
+		}
+
+		/** Every read this read-back stands for: its arms when joined, else itself alone. */
+		List<ReadBack> reads() {
+			return arms.isEmpty() ? List.of(this) : arms;
+		}
+
+		/**
+		 * The tracked states at EVERY read, concatenated, for a claim that must hold at each of
+		 * them ({@code BankMirrors.restoreMembership} requires it of every state it is given) --
+		 * or an empty list as soon as any one read has no state, so a stateless arm can never be
+		 * outvoted by the others.
+		 */
+		List<BankState> statesAtEveryRead(
+				java.util.function.Function<Address, List<BankState>> statesAt) {
+			List<BankState> all = new ArrayList<>();
+			for (ReadBack read : reads()) {
+				List<BankState> states = statesAt.apply(read.readAt());
+				if (states == null || states.isEmpty()) {
+					return List.of();
+				}
+				all.addAll(states);
+			}
+			return all;
+		}
+
+		/** The read-back joined from one per-arm read-back each (bead grm-mej.21); the arms must
+		 *  share one {@code cell}. */
+		static ReadBack joined(List<ReadBack> arms) {
+			ReadBack first = arms.get(0);
+			return new ReadBack(first.cell(), first.readAt(), first.carriedAcross(),
+				first.crossBlockPush(), first.crossBlockPull(), first.slot(), arms);
 		}
 	}
 
@@ -692,6 +753,18 @@ final class StoredValueScanner {
 	private static Scan resolveStoredValue(Program program, Instruction storeInstr, char reg,
 			MechanismState inStateAtStore, int mask, Hooks hooks, RegisterEnv env, Budget budget,
 			int depth) {
+		return resolveStoredValue(program, storeInstr, reg, inStateAtStore, mask, hooks, env,
+			budget, depth, 0);
+	}
+
+	/**
+	 * The walk itself, with {@code startStep} of its {@link #MAX_BACKWARD_SCAN} budget already
+	 * spent -- nonzero only for an arm {@link #pairedArms} resumes from a push, which continues
+	 * the enclosing walk's budget rather than starting a fresh one.
+	 */
+	private static Scan resolveStoredValue(Program program, Instruction storeInstr, char reg,
+			MechanismState inStateAtStore, int mask, Hooks hooks, RegisterEnv env, Budget budget,
+			int depth, int startStep) {
 		Listing listing = program.getListing();
 		Set<String> modifiers = registerModifiers(reg);
 		String loadMnemonic = "LD" + reg;
@@ -732,7 +805,7 @@ final class StoredValueScanner {
 		// therefore incremented by hand -- by exactly 1 for every ordinary step, matching the
 		// for-loop's old semantics exactly, and by the pairing search's own step count on a
 		// PLA. See findMatchingPush.
-		int i = 0;
+		int i = startStep;
 		while (i < MAX_BACKWARD_SCAN) {
 			if (env.stopsAt(cur.getMinAddress())) {
 				// Reached the entry this query was asked on behalf of: the register's value
@@ -1030,11 +1103,16 @@ final class StoredValueScanner {
 					// excluded outright rather than searched (grm-wul arm queries, out of scope
 					// for this increment).
 					Span crossBlock = new Span();
-					Instruction crossPha = crossBlockMatchingPush(program, prev, hooks, env,
+					List<Instruction> crossPhas = crossBlockMatchingPush(program, prev, hooks, env,
 						crossBlock);
 					i += 1;
-					if (crossPha != null) {
-						pha = crossPha;
+					if (crossPhas.size() > 1) {
+						// bead grm-mej.21: the pop's arms each pushed their own byte.
+						return pairedArms(program, prev, crossPhas, reg, aAcc, oAcc, mask, hooks,
+							env, budget, depth, i);
+					}
+					if (crossPhas.size() == 1) {
+						pha = crossPhas.get(0);
 						pairing = crossBlock;
 					}
 				}
@@ -1353,6 +1431,23 @@ final class StoredValueScanner {
 	 */
 	static List<Address> closedWorldPredecessors(Program program, Listing listing,
 			Address headAddr) {
+		return closedWorldPredecessors(program, listing, headAddr, false);
+	}
+
+	/**
+	 * {@link #closedWorldPredecessors(Program, Listing, Address)}, optionally admitting a JUMP
+	 * from another function (bead grm-mej.21). Two routines ending in one common epilogue are the
+	 * case: cv3's {@code FUN_e61e} ends {@code e62a JMP e63d} into {@code FUN_e62f}'s own
+	 * {@code e63d PLA / e63e JMP e2e6}. Ghidra cannot give both functions the tail (bodies may not
+	 * overlap), so the edge always looks cross-function. Walking it backward is still one more
+	 * enumerated edge: a jump moves no stack byte, and every rule the walk applies -- the
+	 * function-entry and call-reference abandons, the per-address depth check -- is applied at
+	 * each node it reaches, relative to that node's own function. Only
+	 * {@link #crossBlockMatchingPush} opts in; {@code joinArms} and the save-slot proof keep the
+	 * strict rule.
+	 */
+	static List<Address> closedWorldPredecessors(Program program, Listing listing,
+			Address headAddr, boolean admitCrossFunctionJumps) {
 		FunctionManager fm = program.getFunctionManager();
 		if (fm.getFunctionAt(headAddr) != null) {
 			return null; // entered by callers, not a predecessor edge in this function
@@ -1375,9 +1470,11 @@ final class StoredValueScanner {
 			if (preds.contains(fromAddr)) {
 				continue; // a branch whose target is also its own fall-through
 			}
-			if (listing.getInstructionAt(fromAddr) == null ||
-				fm.getFunctionContaining(fromAddr) != scope) {
-				return null; // undisassembled predecessor, or from a different function
+			if (listing.getInstructionAt(fromAddr) == null) {
+				return null; // undisassembled predecessor
+			}
+			if (fm.getFunctionContaining(fromAddr) != scope && !admitCrossFunctionJumps) {
+				return null; // from a different function
 			}
 			preds.add(fromAddr);
 		}
@@ -1411,13 +1508,21 @@ final class StoredValueScanner {
 
 	/**
 	 * One backward search node's contribution once it resolves (bead grm-mej.3 increment X1):
-	 * which {@code PHA} every path from here reaches ({@code pha}), whether any of those paths
-	 * crossed a call ({@code crossedCall}), the nearest call address EVERY path agreed on
-	 * ({@code lastCallOnPath}, {@code null} when some path crossed none or they disagreed), and
-	 * whether any path crossed a mechanism write ({@code sawMechanismWrite}).
+	 * which {@code PHA}s the paths from here reach ({@code phas} -- one unless the paths' arms
+	 * each pushed their own byte, bead grm-mej.21), whether any of those paths crossed a call
+	 * ({@code crossedCall}), the nearest call address EVERY path agreed on ({@code lastCallOnPath},
+	 * {@code null} when some path crossed none or they disagreed), and whether any path crossed a
+	 * mechanism write ({@code sawMechanismWrite}).
 	 */
-	private record CrossBlockResult(Address pha, boolean crossedCall, Address lastCallOnPath,
+	private record CrossBlockResult(Set<Address> phas, boolean crossedCall, Address lastCallOnPath,
 			boolean sawMechanismWrite) {}
+
+	/**
+	 * How many DISTINCT pushes one {@code PLA}'s proof may name (bead grm-mej.21). Each is resumed
+	 * as its own walk, and the answer is adopted only when every one of them ends on a read-back
+	 * of the same cell, so this bounds work rather than soundness. cv3's {@code e63d} needs two.
+	 */
+	private static final int CROSS_BLOCK_PUSH_CAP = 4;
 
 	/**
 	 * Mutable search-wide state for one {@link #crossBlockMatchingPush} call.
@@ -1468,11 +1573,18 @@ final class StoredValueScanner {
 	 * {@code TXS}, or any other -- see {@link HelperArgumentRecovery#writesStackPointer}) abandons;
 	 * a call is stepped over via the existing fall-through witness, exactly as
 	 * {@link #findMatchingPush} already crosses one; a mechanism write is stepped over and merely
-	 * recorded, per {@link Span#crossedMechanismWrite}'s existing rule; different push sites on
-	 * different paths, or the same address reached at two different owed depths, abandon
-	 * (bead-tracked as "disagreeing joins"); a predecessor edge {@link #closedWorldPredecessors}
-	 * cannot enumerate (a call reference into the span, a cross-function or undisassembled
-	 * predecessor, or the span reaching a function entry) abandons the whole search.
+	 * recorded, per {@link Span#crossedMechanismWrite}'s existing rule; the same address reached
+	 * at two different owed depths abandons (bead-tracked as "disagreeing joins"); a predecessor
+	 * edge {@link #closedWorldPredecessors} cannot enumerate (a call reference into the span, an
+	 * undisassembled predecessor, or the span reaching a function entry) abandons the whole
+	 * search. A JUMP in from another function is walked like any other edge (bead grm-mej.21;
+	 * X1 abandoned on it) -- see the four-argument {@link #closedWorldPredecessors}.
+	 * <p>
+	 * <b>Different push sites on different paths</b> (bead grm-mej.21; X1 abandoned on them) are
+	 * returned together, up to {@link #CROSS_BLOCK_PUSH_CAP}: the pop then reads whichever arm's
+	 * byte the execution pushed, so the CALLER resumes from each and adopts the answer only when
+	 * every arm agrees -- see {@link #pairedArms}. cv3's shared epilogue {@code e63d PLA}, reached
+	 * from {@code e621 PHA} and {@code e634 PHA}, is the case.
 	 * <p>
 	 * <b>Budget</b> is this method's OWN -- {@link #CROSS_BLOCK_NODE_CAP} nodes,
 	 * {@link #CROSS_BLOCK_JOIN_CAP} joins -- independent of {@link #MAX_BACKWARD_SCAN}; the caller
@@ -1493,17 +1605,17 @@ final class StoredValueScanner {
 	 *             local in-state); {@link Span#crossedCall}/{@code crossedCallAt} name the sole
 	 *             agreed nearest call, when every path crossed one and agreed on which; {@link
 	 *             Span#crossedMechanismWrite} is set when any path crossed one
-	 * @return the found {@code PHA}, or {@code null} to decline (the caller keeps today's
-	 *         {@code ANALYZER_LIMIT} answer unchanged)
+	 * @return the found {@code PHA}s in address order, or an empty list to decline (the caller
+	 *         keeps today's {@code ANALYZER_LIMIT} answer unchanged)
 	 */
-	private static Instruction crossBlockMatchingPush(Program program, Instruction pla, Hooks hooks,
-			RegisterEnv env, Span span) {
+	private static List<Instruction> crossBlockMatchingPush(Program program, Instruction pla,
+			Hooks hooks, RegisterEnv env, Span span) {
 		if (env.hasArms()) {
-			return null; // grm-wul arm queries do not search (out of scope for this increment)
+			return List.of(); // grm-wul arm queries do not search (out of scope for this increment)
 		}
 		Register stackPointer = program.getCompilerSpec().getStackPointer();
 		if (stackPointer == null) {
-			return null;
+			return List.of();
 		}
 		Listing listing = program.getListing();
 		Address plaAddr = pla.getMinAddress();
@@ -1520,8 +1632,8 @@ final class StoredValueScanner {
 			// The top-level call is never itself in-progress, so an empty Optional here can only
 			// mean the whole search resolved to nothing -- treat exactly like a decline.
 			proof = solveCrossBlock(program, listing, hooks, env, stackPointer, ctx, plaAddr, 1)
-				.map(result -> new CrossBlockProof(result.pha(), result.crossedCall(),
-					result.lastCallOnPath(), result.sawMechanismWrite()))
+				.map(result -> new CrossBlockProof(new ArrayList<>(new TreeSet<>(result.phas())),
+					result.crossedCall(), result.lastCallOnPath(), result.sawMechanismWrite()))
 				.orElse(CrossBlockProof.DECLINED);
 		}
 		catch (CrossBlockAbandon abandon) {
@@ -1530,25 +1642,85 @@ final class StoredValueScanner {
 		if (memo != null) {
 			memo.put(plaAddr, proof);
 		}
-		Instruction found = applyProof(listing, proof, span);
-		if (found != null) {
+		List<Instruction> found = applyProof(listing, proof, span);
+		if (!found.isEmpty()) {
 			Msg.debug(StoredValueScanner.class, "cross-block PHA/PLA pairing: pull=" + plaAddr +
-				" push=" + proof.pha() + " paths=" + ctx.terminalCount);
+				" push=" + proof.phas() + " paths=" + ctx.terminalCount);
 		}
 		return found;
 	}
 
 	/** Applies a {@link CrossBlockProof} (fresh or memoized) to {@code span} and returns the
-	 * found {@code PHA} instruction, or {@code null} for a declined proof. */
-	private static Instruction applyProof(Listing listing, CrossBlockProof proof, Span span) {
-		if (proof.pha() == null) {
-			return null;
+	 * found {@code PHA} instructions in address order, or an empty list for a declined proof. */
+	private static List<Instruction> applyProof(Listing listing, CrossBlockProof proof,
+			Span span) {
+		List<Instruction> pushes = new ArrayList<>();
+		for (Address pha : proof.phas()) {
+			Instruction instr = listing.getInstructionAt(pha);
+			if (instr == null) {
+				return List.of();
+			}
+			pushes.add(instr);
+		}
+		if (pushes.isEmpty()) {
+			return pushes;
 		}
 		span.crossedBlock = true;
 		span.crossedCall = proof.crossedCall();
 		span.crossedCallAt = proof.agreedLastCall();
 		span.crossedMechanismWrite = proof.crossedMechanismWrite();
-		return listing.getInstructionAt(proof.pha());
+		return pushes;
+	}
+
+	/**
+	 * The answer for a {@code PLA} whose cross-block proof found SEVERAL pushes -- one per arm of
+	 * a join, each pushing its own byte (bead grm-mej.21; cv3's shared epilogue {@code e63d PLA /
+	 * e63e JMP e2e6}, reached from {@code e61e LDA $8000 / PHA} and {@code e631 LDA $8000 / PHA}).
+	 * The popped byte is whichever arm's push executed, so the walk resumes from EACH push under
+	 * {@link Hooks#stateAt} there, exactly as a single cross-block pairing resumes, and the answer
+	 * is adopted only when EVERY arm ends on a {@code RESTORED_BANK} read-back of the SAME cell:
+	 * then the site re-commits the bank read back on whichever arm ran, and the value is the
+	 * {@link PartialByte#merge} of the arms'. Anything else -- an arm with no state at its push,
+	 * an arm that resolves or declines, arms reading different cells -- returns today's
+	 * {@code ANALYZER_LIMIT} unknown. Merging resolved arm values would be sound too, but is not
+	 * attempted: X1 ruled those disagreeing joins an abandon, and this lifts that only for the
+	 * restore idiom the bead names.
+	 * <p>
+	 * Only for a bare pop: the accumulators must still be the identity (nothing composed onto the
+	 * popped byte before the store), since each arm is resumed as a fresh walk.
+	 */
+	private static Scan pairedArms(Program program, Instruction pla, List<Instruction> pushes,
+			char reg, int aAcc, int oAcc, int mask, Hooks hooks, RegisterEnv env, Budget budget,
+			int depth, int step) {
+		Scan declined = stopped(aAcc, oAcc, mask, PartialByte.unknown(),
+			BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
+		if (reg != 'A' || aAcc != 0xFF || oAcc != 0x00 || depth >= MAX_RESOLVE_DEPTH) {
+			return declined;
+		}
+		List<ReadBack> reads = new ArrayList<>();
+		PartialByte merged = null;
+		for (Instruction push : pushes) {
+			MechanismState atPush = hooks.stateAt(push.getMinAddress());
+			if (atPush == null) {
+				return declined; // no state at this push -- abandon, never withdraw (ironsword)
+			}
+			Scan arm = resolveStoredValue(program, push, reg, atPush, mask, hooks, env, budget,
+				depth + 1, step);
+			ReadBack rb = arm.readBack();
+			if (arm.stop() != BankSwitchStrategy.ValueStop.RESTORED_BANK || rb == null ||
+				!rb.arms().isEmpty() || rb.crossBlockPush() != null || rb.slot() != null ||
+				(!reads.isEmpty() && !rb.cell().equals(reads.get(0).cell()))) {
+				return declined;
+			}
+			reads.add(new ReadBack(rb.cell(), rb.readAt(), rb.carriedAcross(),
+				push.getMinAddress(), pla.getMinAddress()));
+			merged = merged == null ? arm.value() : PartialByte.merge(merged, arm.value());
+		}
+		Msg.debug(StoredValueScanner.class, "cross-block PHA/PLA pairing over " + reads.size() +
+			" arms: pull=" + pla.getMinAddress() + " cell=" + reads.get(0).cell());
+		Scan restored = restoredKeepingValue(aAcc, oAcc, mask, merged, ReadBack.joined(reads));
+		return restored != null ? restored
+				: stopped(aAcc, oAcc, mask, merged, BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 	}
 
 	/**
@@ -1580,7 +1752,7 @@ final class StoredValueScanner {
 		if (env.stopsAt(addr)) {
 			throw CrossBlockAbandon.INSTANCE; // the caller's stack is not modeled
 		}
-		List<Address> preds = closedWorldPredecessors(program, listing, addr);
+		List<Address> preds = closedWorldPredecessors(program, listing, addr, true);
 		if (preds == null || preds.isEmpty()) {
 			throw CrossBlockAbandon.INSTANCE; // unsound edge, or a dead end
 		}
@@ -1603,7 +1775,7 @@ final class StoredValueScanner {
 				// entry (bead grm-mej.3 X1 follow-up -- see solveCrossBlock's javadoc on the
 				// double-charge this replaced).
 				solveCrossBlock(program, listing, hooks, env, stackPointer, ctx, predAddr, depth)
-					.ifPresent(child -> contributions.add(new CrossBlockResult(child.pha(), true,
+					.ifPresent(child -> contributions.add(new CrossBlockResult(child.phas(), true,
 						predAddr, child.sawMechanismWrite() || mech)));
 				continue;
 			}
@@ -1617,7 +1789,7 @@ final class StoredValueScanner {
 						// walk), so it has no other entry point to charge it. Charge it here,
 						// exactly once, matching every other node's single charge.
 						ctx.spend();
-						contributions.add(new CrossBlockResult(predAddr, false, null, mech));
+						contributions.add(new CrossBlockResult(Set.of(predAddr), false, null, mech));
 						ctx.terminalCount++;
 					}
 					else {
@@ -1651,15 +1823,19 @@ final class StoredValueScanner {
 			ctx.memo.put(addr, null); // record the resolution as "no contribution", not "unvisited"
 			return Optional.empty(); // every edge was itself a cycle -- no new contribution here
 		}
-		Address pha = contributions.get(0).pha();
+		// Different push sites on different paths no longer abandon (bead grm-mej.21): each is a
+		// separate arm the caller resumes from, and the caller adopts the answer only when every
+		// arm agrees on what it read back. Bounded by CROSS_BLOCK_PUSH_CAP.
+		Set<Address> phas = new TreeSet<>();
 		boolean crossedCall = false;
 		boolean sawMechanismWrite = false;
 		Address agreedLastCall = null;
 		boolean firstCall = true;
 		boolean lastCallAgrees = true;
 		for (CrossBlockResult c : contributions) {
-			if (!c.pha().equals(pha)) {
-				throw CrossBlockAbandon.INSTANCE; // different push sites on different paths
+			phas.addAll(c.phas());
+			if (phas.size() > CROSS_BLOCK_PUSH_CAP) {
+				throw CrossBlockAbandon.INSTANCE;
 			}
 			crossedCall |= c.crossedCall();
 			sawMechanismWrite |= c.sawMechanismWrite();
@@ -1674,7 +1850,7 @@ final class StoredValueScanner {
 				lastCallAgrees = false;
 			}
 		}
-		CrossBlockResult combined = new CrossBlockResult(pha, crossedCall,
+		CrossBlockResult combined = new CrossBlockResult(Set.copyOf(phas), crossedCall,
 			lastCallAgrees ? agreedLastCall : null, sawMechanismWrite);
 		ctx.memo.put(addr, combined);
 		return Optional.of(combined);
@@ -1683,7 +1859,7 @@ final class StoredValueScanner {
 	/** {@code child}, with {@code mech} folded into its {@code sawMechanismWrite} flag. */
 	private static CrossBlockResult carryMechanism(CrossBlockResult child, boolean mech) {
 		return mech && !child.sawMechanismWrite()
-				? new CrossBlockResult(child.pha(), child.crossedCall(), child.lastCallOnPath(),
+				? new CrossBlockResult(child.phas(), child.crossedCall(), child.lastCallOnPath(),
 					true)
 				: child;
 	}

@@ -395,6 +395,159 @@ public class CrossBlockPushPullProgramTest extends AbstractBundledLanguageTest {
 	}
 
 	// ==================================================================
+	// 5b. Per-arm pushes of one read-back (bead grm-mej.21)
+	// ==================================================================
+
+	/**
+	 * Each arm of a diamond pushes its OWN read of the same live-bank mirror, and the arms
+	 * reconverge at the {@code PLA}: whichever arm ran, the pop re-commits the bank that arm read
+	 * back, so the site is a RESTORE whose read-back names both reads. The X1 search used to
+	 * abandon on the two push sites (see {@link #differentPushSitesPerArmStaysUnknown}, which
+	 * still stays unknown: its arms push immediates, not read-backs).
+	 */
+	@Test
+	public void perArmMirrorPushesRestore() throws Exception {
+		put("0xc000", "a5 20"); // LDA $20      -- decide
+		put("0xc002", "f0 06"); // BEQ $c00a     (c004 + 6 = c00a, arm B)
+		put("0xc004", "a5 10"); // LDA $10      -- arm A's read-back
+		put("0xc006", "48"); // PHA
+		put("0xc007", "4c 0e c0"); // JMP $c00e
+		put("0xc00a", "a5 10"); // LDA $10      -- arm B's read-back
+		put("0xc00c", "48"); // PHA
+		put("0xc00d", "ea"); // NOP
+		put("0xc00e", "68"); // PLA          -- the join
+		put("0xc00f", "8d 00 80"); // STA $8000
+
+		StoredValueScanner.Scan scan = scan("0xc00f", oracleHooksWithMirror(builder.addr("0x10")));
+		assertEquals(BankSwitchStrategy.ValueStop.RESTORED_BANK, scan.stop());
+		StoredValueScanner.ReadBack readBack = scan.readBack();
+		assertNotNull(readBack);
+		assertEquals(builder.addr("0x10"), readBack.cell());
+		assertEquals(2, readBack.reads().size());
+		assertEquals(builder.addr("0xc004"), readBack.reads().get(0).readAt());
+		assertEquals(builder.addr("0xc006"), readBack.reads().get(0).crossBlockPush());
+		assertEquals(builder.addr("0xc00a"), readBack.reads().get(1).readAt());
+		assertEquals(builder.addr("0xc00c"), readBack.reads().get(1).crossBlockPush());
+		assertEquals(builder.addr("0xc00e"), readBack.reads().get(1).crossBlockPull());
+	}
+
+	/** The same diamond with the arms reading DIFFERENT mirrors: the site restores one of two
+	 *  unrelated cells, which is no single restore claim -- today's unknown. */
+	@Test
+	public void perArmPushesOfDifferentCellsStayUnknown() throws Exception {
+		put("0xc000", "a5 20"); // LDA $20
+		put("0xc002", "f0 06"); // BEQ $c00a
+		put("0xc004", "a5 10"); // LDA $10      -- arm A reads $10
+		put("0xc006", "48"); // PHA
+		put("0xc007", "4c 0e c0"); // JMP $c00e
+		put("0xc00a", "a5 11"); // LDA $11      -- arm B reads $11
+		put("0xc00c", "48"); // PHA
+		put("0xc00d", "ea"); // NOP
+		put("0xc00e", "68"); // PLA
+		put("0xc00f", "8d 00 80"); // STA $8000
+
+		StoredValueScanner.Hooks bothMirrors = new StoredValueScanner.Hooks() {
+			@Override
+			public boolean isMechanismWrite(Instruction instr) {
+				return false;
+			}
+
+			@Override
+			public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
+					MechanismState inStateAtStore) {
+				return null;
+			}
+
+			@Override
+			public MechanismState stateAt(Address addr) {
+				return MechanismState.unknown();
+			}
+
+			@Override
+			public boolean hasStateOracle() {
+				return true;
+			}
+
+			@Override
+			public boolean isLiveBankMirror(Address target) {
+				return target.getOffset() == 0x10 || target.getOffset() == 0x11;
+			}
+		};
+		StoredValueScanner.Scan scan = scan("0xc00f", bothMirrors);
+		assertEquals(BankSwitchStrategy.ValueStop.ANALYZER_LIMIT, scan.stop());
+		assertUnresolved(scan.value());
+	}
+
+	/**
+	 * cv3's shared epilogue, reduced: routine A ({@code c000}) calls and {@code JMP}s into routine
+	 * B's tail; routine B ({@code c010}) pushes its read-back, calls, and falls into that tail,
+	 * {@code PLA / STA}. Ghidra cannot give both functions the tail (bodies may not overlap), so
+	 * A's {@code JMP} is a cross-function edge into B. With {@code aPushes}, A first pushes its
+	 * own read-back ({@code LDA $10 / PHA}) and the site restores on both arms; without it, A's
+	 * arm walks back to A's ENTRY owing the push, which still abandons.
+	 */
+	private StoredValueScanner.Scan sharedTailScan(boolean aPushes) throws Exception {
+		if (aPushes) {
+			put("0xc000", "a5 10"); // A: LDA $10
+			put("0xc002", "48"); // A: PHA
+		}
+		else {
+			put("0xc000", "ea ea ea"); // A: NOP x3  -- no push on A's arm
+		}
+		put("0xc003", "20 40 c0"); // A: JSR $c040
+		put("0xc006", "4c 16 c0"); // A: JMP $c016   -- into B's tail
+		put("0xc010", "a5 10"); // B: LDA $10
+		put("0xc012", "48"); // B: PHA
+		put("0xc013", "20 40 c0"); // B: JSR $c040
+		put("0xc016", "68"); // tail: PLA     -- the join
+		put("0xc017", "8d 00 80"); // tail: STA $8000
+		put("0xc01a", "60"); // tail: RTS
+		put("0xc040", "60"); // helper: RTS
+
+		int tx = program.startTransaction("create routines A and B");
+		try {
+			program.getFunctionManager()
+				.createFunction("routineB", builder.addr("0xc010"),
+					new AddressSet(builder.addr("0xc010"), builder.addr("0xc01a")),
+					SourceType.ANALYSIS);
+			program.getFunctionManager()
+				.createFunction("routineA", builder.addr("0xc000"),
+					new AddressSet(builder.addr("0xc000"), builder.addr("0xc008")),
+					SourceType.ANALYSIS);
+		}
+		finally {
+			program.endTransaction(tx, true);
+		}
+		return scan("0xc017", oracleHooksWithMirror(builder.addr("0x10")));
+	}
+
+	@Test
+	public void sharedTailPerArmPushesRestore() throws Exception {
+		StoredValueScanner.Scan scan = sharedTailScan(true);
+		assertEquals(BankSwitchStrategy.ValueStop.RESTORED_BANK, scan.stop());
+		assertEquals(2, scan.readBack().reads().size());
+		assertEquals(builder.addr("0xc000"), scan.readBack().reads().get(0).readAt());
+		assertEquals(builder.addr("0xc010"), scan.readBack().reads().get(1).readAt());
+	}
+
+	@Test
+	public void sharedTailArmReachingItsEntryStaysUnknown() throws Exception {
+		StoredValueScanner.Scan scan = sharedTailScan(false);
+		assertEquals(BankSwitchStrategy.ValueStop.ANALYZER_LIMIT, scan.stop());
+	}
+
+	/** The strict rule is unchanged for every OTHER user of the predicate: {@code joinArms} and
+	 *  the save-slot proof still see A's {@code JMP} as an edge they cannot enumerate. */
+	@Test
+	public void strictPredecessorRuleStillRefusesTheCrossFunctionJump() throws Exception {
+		sharedTailScan(true);
+		assertEquals(null, StoredValueScanner.closedWorldPredecessors(program,
+			program.getListing(), builder.addr("0xc016")));
+		assertEquals(2, StoredValueScanner.closedWorldPredecessors(program,
+			program.getListing(), builder.addr("0xc016"), true).size());
+	}
+
+	// ==================================================================
 	// 6. No oracle -> today's answer exactly
 	// ==================================================================
 
