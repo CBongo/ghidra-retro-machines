@@ -229,9 +229,10 @@ public class JumpTableBoundTest {
 	@Test
 	public void nonDivisibleExtentDeclines() {
 		long tableStart = 0xa000;
-		// caseCount 7, but the moving table's extent (1*10=10) doesn't divide by 7.
+		// caseCount 7, but the moving table's extent (1*15=15) doesn't divide by 7. (An extent of
+		// 7 + 2..6 bytes would be read as a grm-d59c planar split table instead; 15 is past it.)
 		List<Long> targets = targetsWithJunk(new long[] { 0xa100, 0xa110 }, 0xb000, 5);
-		List<LoadTableEntry> tables = List.of(new LoadTableEntry(tableStart, 1, 10));
+		List<LoadTableEntry> tables = List.of(new LoadTableEntry(tableStart, 1, 15));
 
 		Result r = JumpTableBound.bound(targets, tables);
 		assertFalse(r.isBounded());
@@ -453,8 +454,11 @@ public class JumpTableBoundTest {
 	@Test
 	public void overlappingShapeIsRecognisedNarrowly() {
 		List<Long> targets = targetsWithJunk(new long[] { 0xa100, 0xa110 }, 0xb000, 6); // 8 cases
-		assertFalse(JumpTableBound.bound(targets,
-			List.of(new LoadTableEntry(0xa000, 1, 10))).isBounded()); // +2, not +1
+		// +2, not +1: never the overlapping shape (no stride 2). It is the grm-d59c planar band,
+		// though, so it bounds as two 2-entry byte tables instead.
+		Result plusTwo = JumpTableBound.bound(targets, List.of(new LoadTableEntry(0xa000, 1, 10)));
+		assertEquals(1, plusTwo.stride());
+		assertEquals(2, plusTwo.planarGap());
 		assertFalse(JumpTableBound.bound(targets,
 			List.of(new LoadTableEntry(0xa000, 3, 3))).isBounded()); // 9 bytes, but 3 wide
 		assertFalse(JumpTableBound.bound(targets, List.of(new LoadTableEntry(0xa000, 1, 9),
@@ -695,5 +699,58 @@ public class JumpTableBoundTest {
 		garbage.set(3, false);
 		assertFalse(JumpTableBound.boundByKnownCode(targets, tables, List.of(0x94a5L), garbage)
 			.isBounded());
+	}
+	/** dodge 8251 (grm-d59c, owner's hand read): low bytes at 8254, high bytes at 826e, 26
+	 *  entries, case 0 at 8288 right after the high table. AND #$3F gives the decompiler 64 cases,
+	 *  and the two byte LOADs arrive merged as one size-1 table of 64 + 0x1a = 90 bytes. The 64
+	 *  targets are the decompiler's own, from the pinned ROM. */
+	@Test
+	public void planarSplitTableBoundsByTheGapBetweenItsHalves() {
+		List<Long> targets = targets(0x8288, 0x828d, 0x8295, 0x8299, 0x82bd, 0x82c1, 0x82d4,
+			0x82db, 0x82e6, 0x82ed, 0x82f6, 0x82ff, 0x831c, 0x8323, 0x83ad, 0x83c0, 0x83d3, 0x83e1,
+			0x83fe, 0x840b, 0x8396, 0x8388, 0x8308, 0x8312, 0x8381, 0x8376, 0xb182, 0x6182, 0x4c82,
+			0xd182, 0x8182, 0xb182, 0x6182, 0x7d82, 0x3182, 0x0782, 0x4c82, 0xd182, 0x8183, 0xb183,
+			0x6183, 0x9083, 0x1683, 0xb183, 0x6183, 0x3084, 0x0a83, 0x7d83, 0x3983, 0x0783, 0x9083,
+			0x0d83, 0xfeb1, 0x3161, 0x074c, 0xb0d1, 0x0881, 0x7db1, 0x3961, 0x077d, 0xb031, 0x0307,
+			0xde4c, 0x31d1);
+		List<LoadTableEntry> tables = List.of(new LoadTableEntry(0x8254, 1, 90));
+
+		assertEquals(0x1a, JumpTableBound.planarGap(64, tables));
+		Result r = JumpTableBound.bound(targets, tables);
+		assertTrue(r.isBounded());
+		assertEquals(26, r.count());
+		assertEquals(JumpTableBound.Rule.LOWEST_TARGET, r.rule());
+		assertEquals(0x8288, r.lowestTarget());
+		assertEquals(0x1a, r.planarGap());
+		assertEquals(1, r.stride());
+	}
+
+	/** The planar band is 2 <= gap < caseCount: a gap of 1 is grm-yjiq's overlapping 2-byte table,
+	 *  a gap of caseCount is an interleaved/contiguous table Shape.of already reads, and two moving
+	 *  tables are not a merged extent at all. */
+	@Test
+	public void planarGapClaimsOnlyItsOwnBand() {
+		assertEquals(-1, JumpTableBound.planarGap(64, List.of(new LoadTableEntry(0x8000, 1, 65))));
+		assertEquals(2, JumpTableBound.planarGap(64, List.of(new LoadTableEntry(0x8000, 1, 66))));
+		assertEquals(63, JumpTableBound.planarGap(64, List.of(new LoadTableEntry(0x8000, 1, 127))));
+		assertEquals(-1, JumpTableBound.planarGap(64, List.of(new LoadTableEntry(0x8000, 1, 128))));
+		assertEquals(-1, JumpTableBound.planarGap(64, List.of(new LoadTableEntry(0x8000, 2, 90))));
+		assertEquals(-1, JumpTableBound.planarGap(64,
+			List.of(new LoadTableEntry(0x8000, 1, 90), new LoadTableEntry(0x9000, 1, 64))));
+		// A fixed (num == 1) load beside the merged extent does not disqualify it.
+		assertEquals(0x1a, JumpTableBound.planarGap(64,
+			List.of(new LoadTableEntry(0x8254, 1, 90), new LoadTableEntry(0x0716, 1, 1))));
+	}
+
+	/** A planar table that does NOT precede its code still declines: the gap alone never cuts,
+	 *  the lowest-target rule over both halves has to agree. */
+	@Test
+	public void planarTableAfterItsCodeDeclines() {
+		List<Long> targets = new ArrayList<>();
+		for (int i = 0; i < 64; i++) {
+			targets.add(0x8000L + i * 3); // every target below the table at 9000
+		}
+		assertFalse(
+			JumpTableBound.bound(targets, List.of(new LoadTableEntry(0x9000, 1, 90))).isBounded());
 	}
 }

@@ -496,6 +496,11 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		if (!result.isBounded() || result.count() >= realCases.size()) {
 			return false; // decline, or would not shrink the table -- must be a no-op
 		}
+		if (result.planarGap() > 0 &&
+			!planarBytesMatch(program, lowestMovingTableAddr, result.planarGap(),
+				targets.subList(0, result.count()))) {
+			return false; // grm-d59c: the merged extent only LOOKED planar; leave it alone
+		}
 
 		// Normally the first count() cases; every other one for a grm-yjiq overlapping byte table.
 		ArrayList<Address> firstN = new ArrayList<>(result.keep(realCases));
@@ -559,12 +564,44 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		if (result.stride() > 1) {
 			why += ", even cases only"; // grm-yjiq: odd cases straddle two entries
 		}
+		if (result.planarGap() > 0) {
+			// grm-d59c: two byte tables, low then high, merged by the decompiler into one extent
+			why += ", planar lo/hi tables " + Integer.toHexString(result.planarGap()) + " apart";
+		}
 		String text = "[JumpTableBound] table at " + Long.toHexString(tableStart) + " bounded " +
 			realCases.size() + " -> " + result.count() + " entries (" + why + ")";
 		String existing = listing.getComment(CommentType.EOL, switchAddr);
 		listing.setComment(switchAddr, CommentType.EOL,
 			existing == null || existing.isBlank() ? text : existing + "; " + text);
 		return true;
+	}
+
+	/**
+	 * Proves a grm-d59c planar split reading against the table's own bytes: every kept target
+	 * {@code i} must be {@code byte(lo+i) | byte(lo+gap+i) << 8}. {@link JumpTableBound} infers the
+	 * gap from the merged load-table extent alone, and other non-dividing single-byte extents
+	 * could land in the same band; the decompiler built each target from exactly these two bytes
+	 * when the layout really is planar, so agreement on every kept entry is what licenses the cut.
+	 */
+	private static boolean planarBytesMatch(Program program, Address lo, int gap,
+			List<Long> keptTargets) {
+		if (lo == null) {
+			return false;
+		}
+		try {
+			for (int i = 0; i < keptTargets.size(); i++) {
+				int low = program.getMemory().getByte(lo.add(i)) & 0xff;
+				int high = program.getMemory().getByte(lo.add(gap + i)) & 0xff;
+				if ((low | high << 8) != (keptTargets.get(i) & 0xffff)) {
+					return false;
+				}
+			}
+			return true;
+		}
+		catch (ghidra.program.model.mem.MemoryAccessException |
+				ghidra.program.model.address.AddressOutOfBoundsException e) {
+			return false;
+		}
 	}
 
 	/** Pins {@code switchAddr}'s table to exactly {@code keptTargets} by writing computed

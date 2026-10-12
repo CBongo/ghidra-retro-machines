@@ -148,25 +148,38 @@ public final class JumpTableBound {
 		private final long lowestTarget;
 		private final Rule rule;
 		private final int stride;
+		private final int planarGap;
 
-		private Result(boolean bounded, int count, long lowestTarget, Rule rule, int stride) {
+		private Result(boolean bounded, int count, long lowestTarget, Rule rule, int stride,
+				int planarGap) {
 			this.bounded = bounded;
 			this.count = count;
 			this.lowestTarget = lowestTarget;
 			this.rule = rule;
 			this.stride = stride;
+			this.planarGap = planarGap;
 		}
 
 		private static Result decline() {
-			return new Result(false, -1, -1, null, 1);
+			return new Result(false, -1, -1, null, 1, 0);
 		}
 
 		private static Result bounded(int count, long lowestTarget, Rule rule) {
-			return new Result(true, count, lowestTarget, rule, 1);
+			return new Result(true, count, lowestTarget, rule, 1, 0);
 		}
 
 		private Result withStride(int newStride) {
-			return new Result(bounded, count, lowestTarget, rule, newStride);
+			return new Result(bounded, count, lowestTarget, rule, newStride, planarGap);
+		}
+
+		private Result withPlanarGap(int gap) {
+			return new Result(bounded, count, lowestTarget, rule, stride, gap);
+		}
+
+		/** The distance between the low-byte and high-byte tables when this result came from a
+		 *  grm-d59c planar split table (see {@link #planarGap(int, List)}), else 0. */
+		public int planarGap() {
+			return planarGap;
 		}
 
 		/** Whether the rule applied at all (the shape was understood and the table precedes
@@ -258,6 +271,10 @@ public final class JumpTableBound {
 			Block tableBlock) {
 		Shape shape = Shape.of(targets.size(), loadTables);
 		if (shape == null) {
+			Result planar = onPlanarPrefix(targets, loadTables, (t, l) -> bound(t, l, tableBlock));
+			if (planar.isBounded()) {
+				return planar;
+			}
 			return onEvenCases(targets, loadTables, (t, l) -> bound(t, l, tableBlock));
 		}
 		int caseCount = targets.size();
@@ -421,6 +438,65 @@ public final class JumpTableBound {
 			}
 		}
 		return Result.bounded(cut, minTarget, Rule.SWITCH_WINDOW);
+	}
+
+	/**
+	 * grm-d59c: the gap between the two halves of a PLANAR split pointer table, or -1. The game
+	 * keeps the low bytes of N pointers at {@code tbl} and the high bytes at {@code tbl+g}
+	 * ({@code LDA lo,X / STA $63 / LDA hi,X / STA $64 / JMP ($0063)} -- dodge 8251, lo 8254 and
+	 * hi 826e), and the decompiler, recovering more cases than there are entries, reads both
+	 * halves past their ends. The two moving byte LOADs then overlap and arrive merged as ONE
+	 * size-1 load table of {@code caseCount + g} bytes, which divides by nothing, so
+	 * {@link Shape#of} declines it outright and no rule ever runs.
+	 * <p>
+	 * The merged extent itself gives the gap away, and the gap caps the table: entry {@code i}'s
+	 * low byte sits at {@code tbl+i}, so a {@code g+1}-th entry would read its low byte out of the
+	 * high table. The band {@code 2 <= g < caseCount} is exactly the one no other shape claims: a
+	 * gap of 1 is grm-yjiq's overlapping 2-byte table ({@link #overlappingByteTable}), and a gap of
+	 * {@code caseCount} or more means the halves do not overlap and arrive as a shape
+	 * {@link Shape#of} already understands. Exactly one moving table, as for grm-yjiq.
+	 */
+	static int planarGap(int caseCount, List<LoadTableEntry> loadTables) {
+		LoadTableEntry found = null;
+		for (LoadTableEntry t : loadTables) {
+			if (t.num() <= 1) {
+				continue;
+			}
+			if (found != null) {
+				return -1; // more than one moving table; not this shape
+			}
+			found = t;
+		}
+		if (found == null || found.entrySize() != 1) {
+			return -1;
+		}
+		int gap = found.num() - caseCount;
+		return gap >= 2 && gap < caseCount ? gap : -1;
+	}
+
+	/** Re-runs {@code rule} over the first {@link #planarGap} cases of a grm-d59c planar split
+	 *  table, re-described as the two {@code gap}-entry byte tables it really is (fixed loads kept
+	 *  as they were), so the rule walks BOTH halves -- the lowest-target cut then also stops the
+	 *  high table short of the code it dispatches to. The gap only ever shrinks the case list, and
+	 *  the rule only ever shrinks it further. Declines when the tables are not that shape. */
+	private static Result onPlanarPrefix(List<Long> targets, List<LoadTableEntry> loadTables,
+			BiFunction<List<Long>, List<LoadTableEntry>, Result> rule) {
+		int gap = planarGap(targets.size(), loadTables);
+		if (gap < 0) {
+			return Result.decline();
+		}
+		List<LoadTableEntry> halves = new ArrayList<>();
+		for (LoadTableEntry t : loadTables) {
+			if (t.num() <= 1) {
+				halves.add(t);
+			}
+			else {
+				halves.add(new LoadTableEntry(t.start(), 1, gap));
+				halves.add(new LoadTableEntry(t.start() + gap, 1, gap));
+			}
+		}
+		Result r = rule.apply(targets.subList(0, gap), halves);
+		return r.isBounded() ? r.withPlanarGap(gap) : r;
 	}
 
 	/**
