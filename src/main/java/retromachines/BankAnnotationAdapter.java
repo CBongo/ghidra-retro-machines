@@ -820,7 +820,7 @@ final class BankAnnotationAdapter {
 				// recording the field without a mode qualifier sound -- see
 				// BankMirrors.identifyingField before scanning a mode-varying window here.
 				discovery.addRomIdentifying(BankMirrors.romIdentifyingOffsets(program, w.name(),
-					w.start(), w.end(), banks, w.field().widthMask()), w.field());
+					w.start(), w.end(), banks, w.field().widthMask(), w.decodedMask()), w.field());
 			}
 		}
 		// bead grm-mej.18: a mode-varying window is scanned too, but ONLY under a layout-mode
@@ -838,7 +838,8 @@ final class BankAnnotationAdapter {
 				Set<Integer> banks = bankUniverse.get(key);
 				if (banks != null) {
 					discovery.addRomIdentifying(BankMirrors.romIdentifyingOffsets(program, key,
-						w.start(), w.end(), banks, w.bankField().widthMask()), w.bankField());
+						w.start(), w.end(), banks, w.bankField().widthMask(), w.decodedMask()),
+						w.bankField());
 				}
 			}
 		}
@@ -1164,8 +1165,8 @@ final class BankAnnotationAdapter {
 	static Map<String, Set<Integer>> bankUniverse(Program program, BoardModel board) {
 		Map<String, Set<Integer>> universe = new LinkedHashMap<>();
 		for (ComputedWindowModel w : board.computedWindows().values()) {
-			universe.put(w.name(), realizedBanks(program, w.name(),
-				w.field().valueIn(board.initialState())));
+			universe.put(w.name(), expandAliases(realizedBanks(program, w.name(),
+				w.canonical(w.field().valueIn(board.initialState()))), w.field(), w.decodedMask()));
 		}
 		FieldSpec modeField = board.modeField();
 		for (ModeWindowModel w : board.modeWindows()) {
@@ -1173,10 +1174,33 @@ final class BankAnnotationAdapter {
 				continue;
 			}
 			boolean homeMode = modeField != null && w.modeValue() == board.homeModeValue();
-			universe.put(modeBankKey(w.name(), w.modeValue()), realizedModeBanks(program, w.name(),
-				w.modeValue(), homeMode ? w.bankField().valueIn(board.initialState()) : null));
+			universe.put(modeBankKey(w.name(), w.modeValue()), expandAliases(
+				realizedModeBanks(program, w.name(), w.modeValue(),
+					homeMode ? w.canonical(w.bankField().valueIn(board.initialState())) : null),
+				w.bankField(), w.decodedMask()));
 		}
 		return universe;
+	}
+
+	/**
+	 * Expands the canonical bank values the loader realizes (grm-5dgx) to every FIELD value that
+	 * aliases one of them -- {@code u} with {@code (u & decodedMask)} in {@code canonical} --
+	 * so the universe keeps meaning "valid field values" and everything that reads it
+	 * ({@link #impossibleBank}, {@link #canonicalBank}'s power-of-two guard, the bank-number
+	 * logic in {@link BankMirrors}) sees exactly the set it saw when twins were realized.
+	 * The identity for an injective window (full mask).
+	 */
+	static Set<Integer> expandAliases(Set<Integer> canonical, FieldSpec field, long decodedMask) {
+		if (decodedMask == BoardDescriptorModel.fullMask(field)) {
+			return canonical;
+		}
+		Set<Integer> banks = new LinkedHashSet<>(canonical);
+		for (int u = 0; u <= field.widthMask(); u++) {
+			if (canonical.contains((int) (u & decodedMask))) {
+				banks.add(u);
+			}
+		}
+		return banks;
 	}
 
 	/**
@@ -1946,15 +1970,18 @@ final class BankAnnotationAdapter {
 			Map<String, Set<Integer>> bankUniverse, BankState state, int effective,
 			Map<String, Integer> placementOverride, ComputedWindowModel computed) {
 		FieldSpec field = computed.field();
-		int bankValue = canonicalBank(board.bankWrap(), bankUniverse.get(computed.name()),
-			field.valueIn(effective));
-		boolean bankKnown = field.fullyKnownIn(state);
+		// Names an overlay, so every path canonicalizes (grm-5dgx): a window that ignores low
+		// field bits realizes only the lowest value per image. "Known" means the DECODED bits
+		// are pinned -- the residence clamp pins no more than those.
+		int bankValue = computed.canonical(canonicalBank(board.bankWrap(),
+			bankUniverse.get(computed.name()), field.valueIn(effective)));
+		boolean bankKnown = computed.decodedKnownIn(state);
 		Integer overrideBank = placementOverride.get(computed.name());
 		boolean overridden = !bankKnown && overrideBank != null;
 		if (overridden) {
-			bankValue = overrideBank;
+			bankValue = computed.canonical(overrideBank);
 		}
-		boolean home = bankValue == field.valueIn(board.initialState());
+		boolean home = bankValue == computed.canonical(field.valueIn(board.initialState()));
 		return new ComputedResolution(bankValue, home, bankKnown, overridden);
 	}
 
@@ -1970,17 +1997,17 @@ final class BankAnnotationAdapter {
 	private static ModeBankResolution resolveModeBank(BoardModel board,
 			Map<String, Set<Integer>> bankUniverse, BankState state, int effective, int modeValue,
 			Map<String, Integer> placementOverride, ModeWindowModel instance) {
-		int bank = canonicalBank(board.bankWrap(),
+		int bank = instance.canonical(canonicalBank(board.bankWrap(),
 			bankUniverse.get(modeBankKey(instance.name(), modeValue)),
-			instance.bankField().valueIn(effective));
-		boolean bankKnown = instance.bankField().fullyKnownIn(state);
+			instance.bankField().valueIn(effective)));
+		boolean bankKnown = instance.decodedKnownIn(state);
 		Integer overrideBank = placementOverride.get(instance.name());
 		boolean overridden = !bankKnown && overrideBank != null;
 		if (overridden) {
-			bank = overrideBank;
+			bank = instance.canonical(overrideBank);
 		}
 		boolean home = modeValue == board.homeModeValue() &&
-			bank == instance.bankField().valueIn(board.initialState());
+			bank == instance.canonical(instance.bankField().valueIn(board.initialState()));
 		return new ModeBankResolution(bank, home, bankKnown, overridden);
 	}
 

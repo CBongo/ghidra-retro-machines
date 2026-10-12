@@ -3509,13 +3509,36 @@ public class VerifyBankTest extends GhidraScript {
 		// M2: the JMP $8100 at $E00D, taken right after the prg_mode 3 -> 0 switch,
 		// retargets into mode 0's 32 KiB window arrangement -- the PRG MODE CHANGE
 		// criterion. bank_5117 is untouched by that switch, so it still holds the RESOLVED
-		// image-relative seed (7), and the overlay named must be _B7: a build that dropped
-		// the resolved seed on the way to the analyzer would land in _B0 instead, which
-		// makes this criterion the end-to-end check on grm-y0ml as well as on the mode change.
-		r = findOverlayRef(0xE00D, "W8000_M0_B7", 0x8100);
+		// image-relative seed (7), and the overlay named must be _B4: mode 0's W8000 is
+		// PRG[(bank_5117 >> 2) * 0x8000], so field value 7 is the ODD twin of canonical value 4
+		// and selects the same 32 KiB image (grm-5dgx: only the canonical value is realized,
+		// every aliasing value retargets into it). A build that dropped the resolved seed on
+		// the way to the analyzer would land in _B0 instead, which makes this criterion the
+		// end-to-end check on grm-y0ml as well as on the mode change.
+		r = findOverlayRef(0xE00D, "W8000_M0_B4", 0x8100);
 		criterion("M2", r != null && r.getReferenceType().isCall() && r.isPrimary(),
-			"JMP $8100 (mode change 3->0) retargeted to W8000_M0_B7 overlay, primary: " +
+			"JMP $8100 (mode change 3->0) retargeted to W8000_M0_B4 overlay (7 aliases 4), primary: " +
 				describe(r));
+
+		// M5 (grm-5dgx): no twin overlay is realized. Mode 0's W8000 decodes bank_5117 bits 2-6
+		// (quads), modes 1/2 decode bits 1-6 (pairs) and mode 1's WC000 likewise: only the
+		// lowest value per image has a space. The aliasing values must not.
+		String twins = "";
+		for (String twin : new String[] { "W8000_M0_B1", "W8000_M0_B2", "W8000_M0_B3",
+			"W8000_M0_B5", "W8000_M0_B6", "W8000_M0_B7", "W8000_M1_B1", "W8000_M1_B3",
+			"W8000_M2_B1", "W8000_M2_B7", "WC000_M1_B1", "WC000_M1_B7" }) {
+			if (currentProgram.getAddressFactory().getAddressSpace(twin) != null) {
+				twins += " " + twin;
+			}
+		}
+		criterion("M5:noTwinOverlays", twins.isEmpty(),
+			"no byte-identical twin overlay is realized (found:" + twins + ")");
+		criterion("M5:canonicalOverlays",
+			currentProgram.getAddressFactory().getAddressSpace("W8000_M0_B4") != null &&
+				currentProgram.getAddressFactory().getAddressSpace("W8000_M1_B2") != null &&
+				currentProgram.getAddressFactory().getAddressSpace("W8000_M2_B6") != null &&
+				currentProgram.getAddressFactory().getAddressSpace("WC000_M1_B6") != null,
+			"the canonical (lowest) value of each image keeps its overlay");
 
 		// M3: bank-switch comments at the two latch-write sites -- each write is
 		// recognized by a mechanism owning only ONE state field (bank_5114 or prg_mode),
@@ -3534,8 +3557,8 @@ public class VerifyBankTest extends GhidraScript {
 		// overlay targets reached above.
 		criterion("M4:W8000_M3_B1_8000", hasInstructionAt("W8000_M3_B1", 0x8000),
 			"instruction exists at W8000_M3_B1::8000");
-		criterion("M4:W8000_M0_B7_8100", hasInstructionAt("W8000_M0_B7", 0x8100),
-			"instruction exists at W8000_M0_B7::8100");
+		criterion("M4:W8000_M0_B4_8100", hasInstructionAt("W8000_M0_B4", 0x8100),
+			"instruction exists at W8000_M0_B4::8100");
 	}
 
 	// ------------------------------------------------------------------

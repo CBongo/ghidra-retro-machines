@@ -1053,7 +1053,12 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 						: " (references " + exprFields + ")"));
 			return;
 		}
-		long fieldInitial = initialState == null ? 0 : field.valueIn(initialState);
+		// Windows that ignore low field bits (grm-5dgx) realize ONE overlay per distinct image:
+		// the canonical field value (v & decodedMask); the aliasing values name the same overlay.
+		long decodedMask =
+			DescriptorExpressions.decodedMask(expr, length, field.name(), field.width());
+		long fieldInitial =
+			(initialState == null ? 0 : field.valueIn(initialState)) & decodedMask;
 
 		// Build one named candidate per in-range bank value, then hand them to the shared
 		// home-in-base placement policy (DescriptorSupport.placeHomeInBaseWindow); only the
@@ -1062,6 +1067,9 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 		Map<String, Long> srcOffsetsByName = new HashMap<>();
 		List<DescriptorSupport.NamedCandidate> candidates = new ArrayList<>();
 		for (long v = 0; v < (1L << field.width()); v++) {
+			if ((v & decodedMask) != v) {
+				continue; // non-canonical twin of a lower field value
+			}
 			long srcOffset =
 				DescriptorExpressions.evalExpr(expr, header.prgSize(), length, Map.of(field.name(), v));
 			if (srcOffset < 0 || srcOffset + length > header.prgSize()) {
@@ -1178,8 +1186,13 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 						" (references " + exprFields + ")");
 					continue;
 				}
-				long bankInitial = bankField.valueIn(initialState);
+				long bankDecodedMask = DescriptorExpressions.decodedMask(expr, length,
+					bankField.name(), bankField.width());
+				long bankInitial = bankField.valueIn(initialState) & bankDecodedMask;
 				for (long v = 0; v < (1L << bankField.width()); v++) {
+					if ((v & bankDecodedMask) != v) {
+						continue; // non-canonical twin of a lower field value (grm-5dgx)
+					}
 					long srcOffset = DescriptorExpressions.evalExpr(expr, header.prgSize(), length,
 						Map.of(bankField.name(), v));
 					if (srcOffset < 0 || srcOffset + length > header.prgSize()) {

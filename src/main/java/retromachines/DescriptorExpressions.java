@@ -86,6 +86,56 @@ final class DescriptorExpressions {
 	}
 
 	/**
+	 * The field-local bits of {@code fieldName} that a switchable window's {@code maps:}
+	 * expression actually DECODES (bead {@code grm-5dgx}): bit {@code b} is decoded iff flipping
+	 * it changes the expression's value for at least one field value {@code v} (with
+	 * {@code v} and {@code v ^ (1 << b)} both inside the field's width). Derived by evaluation,
+	 * so it needs no {@code >>} parse: {@code (prg_bank >> 1) * 0x8000} decodes every bit but
+	 * bit 0, {@code (bank_5117 >> 2) * 0x8000} every bit but 0 and 1, and an injective
+	 * expression such as {@code bank * 0x2000} decodes them all.
+	 * <p>
+	 * The result {@code canonical(v) = v & decodedMask} is the lowest field value selecting the
+	 * same image; the loader realizes only canonical values and every bank-to-overlay-name step
+	 * canonicalizes first.
+	 * <p>
+	 * <b>The in-range check is deliberately ignored</b> (the expression is evaluated against a
+	 * synthetic, effectively unbounded image): the analyzer has no image size, and whether two
+	 * field values alias is a property of the expression alone -- {@code last}/{@code
+	 * second_last} only appear in fixed windows. Loader and analyzer both call this method with
+	 * the same arguments, so they cannot drift. Any evaluation failure yields the full mask
+	 * (treat as injective).
+	 *
+	 * @param windowSize size of the window in bytes
+	 * @param fieldWidth width of the field in bits
+	 */
+	static long decodedMask(String expr, long windowSize, String fieldName, int fieldWidth) {
+		long full = (1L << fieldWidth) - 1;
+		if (fieldWidth > 16) {
+			return full;
+		}
+		final long syntheticImage = 1L << 40;
+		try {
+			long[] values = new long[(int) (full + 1)];
+			for (int v = 0; v <= full; v++) {
+				values[v] = evalExpr(expr, syntheticImage, windowSize, Map.of(fieldName, (long) v));
+			}
+			long mask = 0;
+			for (int b = 0; b < fieldWidth; b++) {
+				for (int v = 0; v <= full; v++) {
+					if ((v & (1 << b)) == 0 && values[v] != values[v | (1 << b)]) {
+						mask |= 1L << b;
+						break;
+					}
+				}
+			}
+			return mask;
+		}
+		catch (IllegalArgumentException e) {
+			return full;
+		}
+	}
+
+	/**
 	 * The identifier bound to the image size in bytes (bead {@code grm-y0ml}). It exists so a
 	 * {@code banking.initial_state} field can name an <em>image-relative bank number</em> --
 	 * MMC5's {@code bank_5117: "(image_size >> 13) - 1"}, "the last 8 KiB bank of whatever

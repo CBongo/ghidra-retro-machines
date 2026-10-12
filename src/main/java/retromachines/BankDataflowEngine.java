@@ -1904,8 +1904,11 @@ final class BankDataflowEngine {
 			for (ComputedWindowModel w : board.computedWindows().values()) {
 				Integer v = DescriptorSupport.OverlayNaming.parseBankValue(w.name(), name);
 				if (v != null) {
+					// Pin only the bits the window decodes (grm-5dgx); ignored bits stay as
+					// they arrived -- execution inside the overlay never constrains them.
 					FieldSpec f = w.field();
-					return new int[] { f.positionedMask(), f.pos().place(v) };
+					int decoded = (int) w.decodedMask() << f.lsb();
+					return new int[] { decoded, f.pos().place(v) & decoded };
 				}
 				// null: not one of ours (e.g. a C64 occupant overlay) -- keep looking
 			}
@@ -1923,9 +1926,10 @@ final class BankDataflowEngine {
 							.findModeWindowInstance(board.modeWindows(), windowName, mb.mode());
 						if (instance != null && instance.bankField() != null) {
 							FieldSpec bankField = instance.bankField();
-							int posMask = modeField.positionedMask() | bankField.positionedMask();
-							int posBits =
-								modeField.pos().place(mb.mode()) | bankField.pos().place(mb.bank());
+							int bankDecoded = (int) instance.decodedMask() << bankField.lsb();
+							int posMask = modeField.positionedMask() | bankDecoded;
+							int posBits = modeField.pos().place(mb.mode()) |
+								(bankField.pos().place(mb.bank()) & bankDecoded);
 							return new int[] { posMask, posBits };
 						}
 						continue;

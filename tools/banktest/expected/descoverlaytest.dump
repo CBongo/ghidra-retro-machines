@@ -4,7 +4,6 @@ BLOCK PPU_REGS 2000-2007 overlay=false
 BLOCK PRG_RAM 6000-7fff overlay=false
 BLOCK RAM 0000-07ff overlay=false
 BLOCK W8000 8000-ffff overlay=false
-BLOCK W8000_M0_B1 8000-ffff overlay=true
 SYMBOL 2000 PPUCTRL IMPORTED primary=true
 SYMBOL 2001 PPUMASK IMPORTED primary=true
 SYMBOL 2002 PPUSTATUS IMPORTED primary=true

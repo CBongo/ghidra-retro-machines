@@ -859,6 +859,18 @@ public final class BankMirrors {
 	 */
 	static Map<Long, IdentifyingEncoding> romIdentifyingOffsets(Program program, String windowName,
 			long start, long end, Set<Integer> realizedBanks, int fieldMask) {
+		return romIdentifyingOffsets(program, windowName, start, end, realizedBanks, fieldMask,
+			-1L);
+	}
+
+	/**
+	 * {@link #romIdentifyingOffsets(Program, String, long, long, Set, int)} for a window that
+	 * may ignore low field bits (grm-5dgx): {@code realizedBanks} stays the set of valid FIELD
+	 * values, but only the canonical value of each ({@code bank & decodedMask}) has an overlay,
+	 * so each image is read from that one. {@code -1} (all bits decoded) is the injective case.
+	 */
+	static Map<Long, IdentifyingEncoding> romIdentifyingOffsets(Program program, String windowName,
+			long start, long end, Set<Integer> realizedBanks, int fieldMask, long decodedMask) {
 		if (realizedBanks.size() < MIN_IDENTIFYING_BANKS || end < start) {
 			return Map.of();
 		}
@@ -875,7 +887,8 @@ public final class BankMirrors {
 			if (bank < 0 || bank > 0xFF) {
 				return Map.of(); // a byte cannot name this bank, so no offset can identify it
 			}
-			images[i] = readWindowImage(program, windowName, bank, start, length);
+			images[i] = readWindowImage(program, windowName, (int) (bank & decodedMask), start,
+				length);
 			if (images[i] == null) {
 				return Map.of();
 			}

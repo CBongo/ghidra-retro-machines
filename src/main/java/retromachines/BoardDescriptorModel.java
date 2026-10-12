@@ -153,7 +153,34 @@ final class BoardDescriptorModel {
 	/** A computed window driven by a single state field; per-bank overlays are named
 	 *  {@code <name>_B<fieldValue>} by the loader, home bank in base space. */
 	record ComputedWindowModel(String name, long start, long end, FieldSpec field,
-			String onWrite) implements Bounded {}
+			String onWrite, long decodedMask) implements Bounded {
+
+		/** Injective window: every field bit is decoded. */
+		ComputedWindowModel(String name, long start, long end, FieldSpec field, String onWrite) {
+			this(name, start, end, field, onWrite, fullMask(field));
+		}
+
+		/** Field value to the lowest value selecting the same image (grm-5dgx). */
+		int canonical(int fieldValue) {
+			return fieldValue & (int) decodedMask;
+		}
+
+		/** True when dataflow pinned every DECODED bit of the field (grm-5dgx): the bank is
+		 *  known even if bits the window ignores are not. */
+		boolean decodedKnownIn(BankState state) {
+			return decodedKnown(field, decodedMask, state);
+		}
+	}
+
+	static boolean decodedKnown(FieldSpec field, long decodedMask, BankState state) {
+		int positioned = (int) decodedMask << field.lsb();
+		return (state.knownMask() & positioned) == positioned;
+	}
+
+	/** All-ones mask of {@code field}'s width (every bit decoded); full for a null field. */
+	static long fullMask(FieldSpec field) {
+		return field == null ? 0 : (1L << field.width()) - 1;
+	}
 
 	/**
 	 * One {@code (windowName, modeValue)} instance out of {@code memory.layouts[]}
@@ -167,7 +194,24 @@ final class BoardDescriptorModel {
 	 * which instances are fixed without re-deriving it differently.
 	 */
 	record ModeWindowModel(String name, long start, long end, int modeValue,
-			FieldSpec bankField, String onWrite) {}
+			FieldSpec bankField, String onWrite, long decodedMask) {
+
+		/** Injective (or fixed) instance: every bank-field bit is decoded. */
+		ModeWindowModel(String name, long start, long end, int modeValue, FieldSpec bankField,
+				String onWrite) {
+			this(name, start, end, modeValue, bankField, onWrite, fullMask(bankField));
+		}
+
+		/** Bank field value to the lowest value selecting the same image (grm-5dgx). */
+		int canonical(int fieldValue) {
+			return fieldValue & (int) decodedMask;
+		}
+
+		/** True when dataflow pinned every DECODED bit of the bank field (grm-5dgx). */
+		boolean decodedKnownIn(BankState state) {
+			return decodedKnown(bankField, decodedMask, state);
+		}
+	}
 
 	/** Everything phase-independent parsed out of the descriptor. */
 	record BoardModel(int mask, int initialState, List<String> stateBitNames,
@@ -310,7 +354,9 @@ final class BoardDescriptorModel {
 					continue;
 				}
 				computedByName.put(pw.name(),
-					new ComputedWindowModel(pw.name(), pw.start(), pw.end(), fieldSpec, pw.onWrite()));
+					new ComputedWindowModel(pw.name(), pw.start(), pw.end(), fieldSpec, pw.onWrite(),
+						DescriptorExpressions.decodedMask(pw.expr(), pw.length(), fieldSpec.name(),
+							fieldSpec.width())));
 			}
 
 			// --- Mode-varying windows (memory.layouts[]) ---
@@ -357,7 +403,10 @@ final class BoardDescriptorModel {
 							}
 						}
 						modeWindows.add(new ModeWindowModel(pw.name(), pw.start(), pw.end(),
-							pw.modeValue(), bankField, pw.onWrite()));
+							pw.modeValue(), bankField, pw.onWrite(),
+							bankField == null ? 0
+									: DescriptorExpressions.decodedMask(pw.expr(), pw.length(),
+										bankField.name(), bankField.width())));
 					}
 				}
 			}

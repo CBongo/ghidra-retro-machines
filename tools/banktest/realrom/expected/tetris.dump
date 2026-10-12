@@ -9,16 +9,12 @@ REALROM block PPU_REGS 2000-2007 overlay=false
 REALROM block PRG_RAM 6000-7fff overlay=false
 REALROM block RAM 0000-07ff overlay=false
 REALROM block W8000 8000-ffff overlay=false
-REALROM block W8000_M0_B1 8000-ffff overlay=true
 REALROM block W8000_M0_B2 8000-ffff overlay=true
-REALROM block W8000_M0_B3 8000-ffff overlay=true
 REALROM block W8000_M0_B4 8000-ffff overlay=true
-REALROM block W8000_M0_B5 8000-ffff overlay=true
 REALROM block W8000_M0_B6 8000-ffff overlay=true
-REALROM block W8000_M0_B7 8000-ffff overlay=true
-REALROM count blocks.total 12
-REALROM count blocks.overlay 7
-REALROM count spaces.overlay 7
+REALROM count blocks.total 8
+REALROM count blocks.overlay 3
+REALROM count spaces.overlay 3
 REALROM count refs.intoOverlay 0
 REALROM count refs.intoOverlay.retargeted 0
 REALROM count refs.intoOverlay.intraOverlay 0
