@@ -702,6 +702,23 @@ than silent.
 Run it occasionally, after a change to `SnesRomHeader`'s detection or scoring; it is not a
 per-commit step.
 
+## Scratch retention and `clean.sh` (`grm-uqhd`)
+
+`build/banktest-work`, `build/banktest-cache`, `build/realrom-cache` and `build/kept-projects`
+used to grow without bound (1.7 GB / 218 run dirs measured). Now:
+
+- `run-banktest.sh` removes its work dir on success (as before); `realrom-test.sh` now does too.
+  A failing real-ROM run keeps logs, dumps and diffs but deletes the ROM copies and `proj_*`
+  dirs. A dir named by `REALROM_WORK_DIR` is caller-owned and never deleted.
+- At the start of each runner, `grm_prune_work_dirs` (lib/common.sh) deletes kept-on-failure
+  dirs under the work base older than `GRM_WORK_KEEP_DAYS` (default 7), always keeping the newest
+  `GRM_WORK_KEEP_FAILURES` (default 3) per runner tag. The age floor protects a concurrent run.
+- Candidate-cache entries (`*.dump`/`*.crit` only) are touched on a hit and deleted when
+  untouched for `GRM_CACHE_KEEP_DAYS` (default 14). `build/realrom-cache/.last-verified` (the
+  staleness stamp) is never pruned.
+- `bash tools/banktest/clean.sh [--dry-run]` reports sizes and wipes all of the above (the stamp
+  and `build/ghidra-home` survive). Use `--dry-run` first.
+
 ## When to add which
 
 - **Pure function, no `Program`/`Instruction`** (mask algebra, descriptor parsing, string

@@ -270,23 +270,84 @@ _grm_path_has_dot_segment() {
 #
 # $1 is a short tag naming the caller, so a kept directory says which run left it.
 grm_work_dir() {
-	local base="${GRM_BANKTEST_WORK:-}"
-	if [ -z "$base" ]; then
-		if _grm_path_has_dot_segment "$REPO_ROOT"; then
-			local safe_root tmp_root
-			safe_root="$(printf '%s' "$REPO_ROOT" | tr -c 'A-Za-z0-9' '_')"
-			tmp_root="${TMPDIR:-${TEMP:-/tmp}}"
-			base="$tmp_root/grm-banktest-work-$safe_root"
-			echo "NOTE: REPO_ROOT ($REPO_ROOT) has a dot-leading path segment" \
-				"(e.g. .claude/worktrees/...), which Ghidra's project-name validation" \
-				"rejects; redirecting the banktest work dir to $base." \
-				"Override with GRM_BANKTEST_WORK if you want it elsewhere." >&2
-		else
-			base="$REPO_ROOT/build/banktest-work"
-		fi
+	local base
+	base="$(grm_work_base)"
+	if [ -z "${GRM_BANKTEST_WORK:-}" ] && _grm_path_has_dot_segment "$REPO_ROOT"; then
+		echo "NOTE: REPO_ROOT ($REPO_ROOT) has a dot-leading path segment" \
+			"(e.g. .claude/worktrees/...), which Ghidra's project-name validation" \
+			"rejects; redirecting the banktest work dir to $base." \
+			"Override with GRM_BANKTEST_WORK if you want it elsewhere." >&2
 	fi
 	mkdir -p "$base" || return 1
 	mktemp -d "$base/${1:-run}.XXXXXXXX"
+}
+
+# The work BASE grm_work_dir() creates run dirs under -- factored out (bead grm-uqhd) so
+# grm_prune_work_dirs and clean.sh resolve EXACTLY the same directory, dot-segment TEMP
+# fallback (grm-hhd) included. Silent: grm_work_dir owns the fallback NOTE.
+grm_work_base() {
+	if [ -n "${GRM_BANKTEST_WORK:-}" ]; then
+		printf '%s\n' "$GRM_BANKTEST_WORK"
+	elif _grm_path_has_dot_segment "$REPO_ROOT"; then
+		printf '%s\n' "${TMPDIR:-${TEMP:-/tmp}}/grm-banktest-work-$(printf '%s' "$REPO_ROOT" | tr -c 'A-Za-z0-9' '_')"
+	else
+		printf '%s\n' "$REPO_ROOT/build/banktest-work"
+	fi
+}
+
+# Retention for kept-on-failure work dirs (bead grm-uqhd). Run at the START of a runner.
+# Under the work base, only dirs shaped like grm_work_dir's output (<tag>.XXXXXXXX) are
+# candidates; per tag (realrom, banktest, ...) the newest GRM_WORK_KEEP_FAILURES (default 3)
+# are always kept, and any older than GRM_WORK_KEEP_DAYS (default 7) are deleted. The age
+# floor is what protects a concurrent run in the same worktree: its dir is minutes old.
+# Prints one line, only when something was pruned. Never fails the caller.
+grm_prune_work_dirs() {
+	local base keep_days keep_n d tag n_dirs=0 kb=0 sz
+	base="$(grm_work_base)"
+	[ -d "$base" ] || return 0
+	keep_days="${GRM_WORK_KEEP_DAYS:-7}"
+	keep_n="${GRM_WORK_KEEP_FAILURES:-3}"
+	case "$keep_days$keep_n" in *[!0-9]*|"") return 0 ;; esac
+	local -A seen=()
+	# Newest first, so the first keep_n per tag are the ones to protect.
+	while IFS= read -r d; do
+		[ -n "$d" ] || continue
+		tag="${d%.*}"
+		seen[$tag]=$(( ${seen[$tag]:-0} + 1 ))
+		[ "${seen[$tag]}" -le "$keep_n" ] && continue
+		# find -mtime +N: strictly older than N whole days. -maxdepth 0 tests $d itself.
+		[ -n "$(find "$base/$d" -maxdepth 0 -mtime +"$keep_days" 2>/dev/null)" ] || continue
+		sz="$(du -sk "$base/$d" 2>/dev/null | cut -f1)"
+		kb=$((kb + ${sz:-0}))
+		rm -rf "$base/$d" && n_dirs=$((n_dirs + 1))
+	done < <(cd "$base" 2>/dev/null && ls -1dt -- *.???????? 2>/dev/null | grep -E '^[A-Za-z0-9_-]+\.[A-Za-z0-9]{8}$')
+	[ "$n_dirs" -gt 0 ] &&
+		echo "== pruned $n_dirs old work dir(s), $((kb / 1024)) MB, from $base (keep ${keep_n}/tag, ${keep_days}d) =="
+	return 0
+}
+
+# LRU retention for a content-addressed candidate cache (bead grm-uqhd). $1 = cache dir.
+# Deletes ONLY *.dump / *.crit entries not touched for GRM_CACHE_KEEP_DAYS (default 14);
+# entries are touched on every hit (grm_touch_cache_entry) and rewritten by every check, so a
+# live build's entries never age out. Dotfiles are never matched -- build/realrom-cache/
+# .last-verified is the REALROM staleness stamp (GRM_REALROM_STAMP), not a cache entry.
+grm_prune_cache() {
+	local dir="$1" days="${GRM_CACHE_KEEP_DAYS:-14}" n=0
+	[ -d "$dir" ] || return 0
+	case "$days" in *[!0-9]*|"") return 0 ;; esac
+	n="$(find "$dir" -maxdepth 1 -type f \( -name '*.dump' -o -name '*.crit' \) -mtime +"$days" -print -delete 2>/dev/null | wc -l)"
+	[ "${n:-0}" -gt 0 ] && echo "== pruned $n stale cache file(s) from $dir (untouched ${days}d) =="
+	return 0
+}
+
+# Mark a cache entry as recently used. $1 = path prefix without extension; touches whichever
+# of .dump/.crit exist.
+grm_touch_cache_entry() {
+	local f
+	for f in "$1.dump" "$1.crit"; do
+		[ -f "$f" ] && touch "$f" 2>/dev/null
+	done
+	return 0
 }
 
 # Python interpreter for ext_identity()'s native zip-CRC read (bead grm-4w6). Resolved

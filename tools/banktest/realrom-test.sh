@@ -148,7 +148,13 @@
 #                            NES-only, and both are read with identical semantics --
 #                            space-separated dirs, each indexed at DEPTH 1 ONLY.
 #   GRM_BANKTEST_WORK       base dir for per-run work dirs (defaults to
-#                            <repo>/build/banktest-work; kept on failure)
+#                            <repo>/build/banktest-work). A PASSING run deletes its work
+#                            dir; a FAILING one keeps logs/dumps/diffs but not the ROM copies
+#                            or proj_* dirs. Old kept dirs are pruned at the start of each
+#                            run (GRM_WORK_KEEP_DAYS, default 7; GRM_WORK_KEEP_FAILURES,
+#                            default 3 newest per tag) and stale cache entries too
+#                            (GRM_CACHE_KEEP_DAYS, default 14) -- bead grm-uqhd. A dir
+#                            named via REALROM_WORK_DIR is never deleted.
 #   REALROM_WORK_DIR        use this exact dir instead of a fresh one
 #   GRM_KEEP_PROJECT_DIR    base dir for --keep-project (defaults to
 #                            <repo>/build/kept-projects/realrom)
@@ -1060,6 +1066,15 @@ if [ "$MODE" = coverage ]; then
 	exit 0
 fi
 
+# Retention (bead grm-uqhd): drop old kept-on-failure work dirs and stale cache entries BEFORE
+# this run makes its own. Knobs: GRM_WORK_KEEP_DAYS/GRM_WORK_KEEP_FAILURES/GRM_CACHE_KEEP_DAYS.
+# Never touches build/realrom-cache/.last-verified (dotfile, not a *.dump/*.crit entry).
+grm_prune_work_dirs
+grm_prune_cache "$CACHE_DIR"
+# Did WE create $WORK (so we may delete it), or did the caller name it? A caller-named dir
+# (REALROM_WORK_DIR, e.g. ab-test.sh reading the dumps back afterwards) is never removed.
+WORK_IS_OURS=1
+[ -n "${REALROM_WORK_DIR:-}" ] && WORK_IS_OURS=0
 WORK="${REALROM_WORK_DIR:-$(grm_work_dir realrom)}"
 mkdir -p "$WORK"
 echo "== work dir: $WORK =="
@@ -1247,6 +1262,7 @@ while IFS=$'\t' read -r row_plat id title sha mapper board golden opts member ||
 			rm -f "$cached"
 		else
 			echo "-- $id ($title): reusing cached candidate from prior check (no re-import)"
+			grm_touch_cache_entry "${cached%.dump}"	# LRU (grm-uqhd)
 			if [ -f "$golden_path" ]; then
 				diff -u "$golden_path" "$cached" && echo "    no change vs golden"
 			fi
@@ -1367,6 +1383,7 @@ fi
 # "nobody ran this" signal stays honest.
 if [ "$n_pass" -eq 0 ] && [ "$n_fail" -eq 0 ] && [ "$n_bless" -eq 0 ]; then
 	echo "REALROM $MODE: SKIPPED (no matching ROMs supplied) -- nothing verified"
+	[ "$WORK_IS_OURS" = 1 ] && rm -rf "$WORK"	# nothing worth keeping (grm-uqhd)
 	exit 0
 fi
 
@@ -1453,8 +1470,18 @@ else
 fi
 
 if [ "$n_fail" -gt 0 ]; then
+	# Keep logs, dumps and diffs for diagnosis, but drop the bulk (bead grm-uqhd): the ROM copies
+	# (re-derivable from the ROM dir, and copyrighted images we would rather not scatter) and any
+	# leftover proj_* dirs. A caller-named REALROM_WORK_DIR is theirs and is left untouched.
+	if [ "$WORK_IS_OURS" = 1 ]; then
+		find "$WORK" -maxdepth 1 -type f \( -name '*.nes' -o -name '*.sfc' \) -delete 2>/dev/null
+		find "$WORK" -maxdepth 1 -type d -name 'proj_*' -exec rm -rf {} + 2>/dev/null
+	fi
 	echo "REALROM $MODE: FAIL"
 	exit 1
 fi
+# Success: nothing in $WORK is worth keeping (run-banktest.sh does the same at its end), and
+# 200+ never-removed realrom.* dirs of ROM copies were 1.7 GB (bead grm-uqhd).
+[ "$WORK_IS_OURS" = 1 ] && rm -rf "$WORK"
 echo "REALROM $MODE: OK"
 exit 0

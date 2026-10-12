@@ -227,6 +227,10 @@ if [ "${GRM_SHARED_GHIDRA_INSTALL:-}" != 1 ]; then
 fi
 grm_apply_settings_base
 
+# Retention (bead grm-uqhd): drop old kept-on-failure work dirs and stale cache entries BEFORE
+# this run makes its own. Knobs: GRM_WORK_KEEP_DAYS/GRM_WORK_KEEP_FAILURES/GRM_CACHE_KEEP_DAYS.
+grm_prune_work_dirs
+grm_prune_cache "$REPO_ROOT/build/banktest-cache"
 WORK="$(grm_work_dir banktest)"
 fail=0
 # Rows bless_candidate refused (criteria failed) or forced through anyway, so the
@@ -505,6 +509,7 @@ run_one() {
 	# as on the fresh path, so the two cannot decide differently.
 	if [ "$MODE" = bless ] && [ -n "$key" ] && [ -f "$cached" ]; then
 		echo "== $name: reusing cached candidate from prior check (no re-import) =="
+		grm_touch_cache_entry "$CACHE_DIR/$key"	# LRU (grm-uqhd): a hit keeps the entry alive
 		[ -f "$CACHE_DIR/$key.crit" ] && cat "$CACHE_DIR/$key.crit"
 		# A .crit that is missing (or empty, which is what the `|| true` on its
 		# writer leaves when the run produced no verdict at all) counts as a
