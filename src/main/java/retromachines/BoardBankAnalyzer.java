@@ -636,8 +636,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 									.toList(),
 							board, bankUniverse, null, provenance)
 						: BankAnnotationAdapter.annotateOrWarn(this, program, listing, addr,
-							BankAnnotationAdapter.withLayoutMode(switchResult.effect(), inState,
-								switchResult.effectMask(), board),
+							directShownState(switchResult, inState, board),
 							board, bankUniverse, null,
 							switchResult.stop() == BankSwitchStrategy.ValueStop.MULTI_VALUED_AT_MERGE
 									? multiValuedWarning(board, switchResult.arms())
@@ -1141,6 +1140,25 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 
 	/** How far {@link #readsEntryBank} walks from a function's entry before declining. */
 	private static final int ENTRY_BANK_READ_SCAN = 16;
+
+	/**
+	 * The state a non-forked DIRECT site's annotation is judged and rendered on. A site whose
+	 * stop says its own deposit recovered nothing renders as the gap it is: any known bits in
+	 * its effect are an in-state ECHO of fields it does not write (grm-dos9.10 -- an MMC1
+	 * write-5 commit passes {@code prg_mode} through), and {@code annotateOrWarn} keys its
+	 * note/warning choice on "is anything known". {@code NO_DEPOSIT} keeps its echo:
+	 * {@code annotateOrWarn} skips it before looking at the state at all.
+	 */
+	private static BankState directShownState(BankDataflowEngine.SwitchResult switchResult,
+			BankState inState, BoardModel board) {
+		BankSwitchStrategy.ValueStop stop = switchResult.stop();
+		if (stop != BankSwitchStrategy.ValueStop.RESOLVED &&
+			stop != BankSwitchStrategy.ValueStop.NO_DEPOSIT) {
+			return BankState.unknown();
+		}
+		return BankAnnotationAdapter.withLayoutMode(switchResult.effect(), inState,
+			switchResult.effectMask(), board);
+	}
 
 	/**
 	 * The WARNING text for a {@link BankSwitchStrategy.ValueStop#MULTI_VALUED_AT_MERGE} site

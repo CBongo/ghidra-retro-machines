@@ -48,8 +48,10 @@ COMMENT c03f bank -> mirroring=0,prg_mode=3,prg_bank=1 via FUN_c2a0 [switch-valu
 COMMENT c047 bank ? via FUN_c250 [NOTE: restored bank]
 COMMENT c04c bank -> mirroring=0,prg_mode=3,prg_bank=7 via FUN_c200 [switch-value flow]
 COMMENT c061 bank -> mirroring=0,prg_mode=2,prg_bank=7 [switch-value flow]
-COMMENT c06c bank ? via FUN_c200 [WARNING: analyzer limit]
+COMMENT c06c bank ? via FUN_WC000_M2_B7__c200 [WARNING: analyzer limit]
 COMMENT c200 bank ? [NOTE: helper argument]
+COMMENT c200 bank ? [NOTE: helper argument]
+COMMENT c210 bank ? [NOTE: helper argument]
 COMMENT c210 bank ? [NOTE: helper argument]
 COMMENT c252 bank ? [WARNING: analyzer limit]
 COMMENT c262 bank ? [WARNING: analyzer limit]
@@ -58,6 +60,8 @@ COMMENT c2b7 bank ? [NOTE: helper argument]
 BOOKMARK Note c032
 BOOKMARK Note c047
 BOOKMARK Note c200
+BOOKMARK Note c200
+BOOKMARK Note c210
 BOOKMARK Note c210
 BOOKMARK Note c2a7
 BOOKMARK Note c2b7

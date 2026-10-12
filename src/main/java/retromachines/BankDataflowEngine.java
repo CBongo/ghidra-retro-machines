@@ -1655,7 +1655,8 @@ final class BankDataflowEngine {
 	 * the strategy recovers the value with no notion of a helper (phase one, unchanged), and the
 	 * engine, holding the helper set, asks the classification question afterward.
 	 * <p>
-	 * Asked ONLY for a wholly unresolved value that the strategy already called our limitation, so
+	 * Asked ONLY for a site whose own deposit recovered nothing and that the strategy already
+	 * called our limitation (its value may still echo other in-state fields, grm-dos9.10), so
 	 * it can never overwrite a {@code RESOLVED} or a reason the strategy established positively --
 	 * and the VALUE recorded is phase one's regardless, so nothing here can move a bank number.
 	 * The default {@link BankSwitchStrategy#classifyHelperBodyGap} answers
@@ -1664,8 +1665,9 @@ final class BankDataflowEngine {
 	private static BankSwitchStrategy.ValueStop classifyGap(Program program, Instruction instr,
 			BankState inState, ConfiguredMechanism mech,
 			BankSwitchStrategy.SwitchOutcome outcome, Map<Function, HelperModel> helpers) {
-		if (helpers == null || outcome.value().knownMask() != 0 ||
-			outcome.stop() != BankSwitchStrategy.ValueStop.ANALYZER_LIMIT) {
+		// The stop, not value.knownMask(), says whether the site recovered anything: a deposit
+		// outcome's value can carry echoed in-state bits it did not recover (grm-dos9.10).
+		if (helpers == null || outcome.stop() != BankSwitchStrategy.ValueStop.ANALYZER_LIMIT) {
 			return outcome.stop();
 		}
 		Function containing =
@@ -1960,8 +1962,10 @@ final class BankDataflowEngine {
 	/**
 	 * A recognized direct switch at one address. {@code stop} says WHY {@code effect} did
 	 * not resolve when it did not (bead {@code grm-3ou} part 1) -- it is
-	 * {@link BankSwitchStrategy.ValueStop#RESOLVED} whenever any bit of {@code effect} is
-	 * known, and is what lets an annotator tell a gap that is HONEST (the value really is
+	 * {@link BankSwitchStrategy.ValueStop#RESOLVED} whenever the site recovered a bit of its own
+	 * deposit (any other known bit of {@code effect} is an in-state echo, grm-dos9.10, so the
+	 * stop and not {@code effect.knownMask()} is the test), and is what lets an annotator tell
+	 * a gap that is HONEST (the value really is
 	 * runtime-determined, or is the caller's argument) from one that is OUR LIMITATION.
 	 * <p>
 	 * {@code arms} (bead grm-wul) is non-empty in exactly two cases. FORKED ({@code armsDenied}

@@ -935,15 +935,30 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 		return target == null ? 0 : target.positionedMask();
 	}
 
+	/**
+	 * The register offset {@code instr} writes, or null: a write reference first, then the
+	 * store's own plain-absolute operand, compared by PHYSICAL space. Same two tiers and same
+	 * reason as {@code SerialShiftBankSwitchStrategy.writesInRange} (grm-xwnc): a store in a
+	 * banked overlay copy references its own overlay's address inside the switchable window,
+	 * typed {@code DATA} rather than {@code WRITE}.
+	 */
 	private Long writesInRange(Instruction instr) {
 		for (Reference ref : instr.getReferencesFrom()) {
 			Address to = ref.getToAddress();
-			if (ref.getReferenceType().isWrite() && to.getAddressSpace().equals(space) &&
-				to.getOffset() >= rangeStart && to.getOffset() <= rangeEnd) {
+			if (ref.getReferenceType().isWrite() && inRange(to)) {
 				return to.getOffset();
 			}
 		}
-		return null;
+		if (StoredValueScanner.storeRegister(instr) == null) {
+			return null;
+		}
+		Address target = StoredValueScanner.plainAbsoluteTarget(instr);
+		return target != null && inRange(target) ? target.getOffset() : null;
+	}
+
+	private boolean inRange(Address to) {
+		return to.getAddressSpace().getPhysicalSpace().equals(space) &&
+			to.getOffset() >= rangeStart && to.getOffset() <= rangeEnd;
 	}
 
 	/** The BYTE-to-FIELD conversion for a select write (bead grm-ze06.1): extracts the sub-bits

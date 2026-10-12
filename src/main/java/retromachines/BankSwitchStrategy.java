@@ -259,7 +259,9 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * same per-site detail a call-site restore gets ({@code BoardBankAnalyzer.callerRestoreDetail})
 	 * instead of the generic, cell-free {@code honestGapMessage} text.
 	 * <p>
-	 * {@code stop} is only meaningful when {@code value.knownMask() == 0}; a partially or
+	 * {@code stop} is only meaningful when the site recovered nothing: {@code value.knownMask()
+	 * == 0}, or, for a {@link #deposit} outcome, no known bit inside its deposit (the rest of
+	 * {@code value} is then an in-state echo, grm-dos9.10). A partially or
 	 * wholly recovered value carries {@link ValueStop#RESOLVED}, and {@code readBack} is dropped
 	 * along with the reason in that case -- same rationale as {@link StoredValueScanner#stopped}.
 	 * Use {@link #of} rather than the canonical constructor unless a strategy genuinely knows the
@@ -303,6 +305,24 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 				StoredValueScanner.ReadBack readBack) {
 			return value.knownMask() != 0 ? new SwitchOutcome(value, ValueStop.RESOLVED)
 					: new SwitchOutcome(value, stop, readBack);
+		}
+
+		/**
+		 * A deposit into {@code depositMask}'s bits only, where every OTHER bit of {@code value}
+		 * is an echo of the in-state (bead grm-dos9.10): MMC1's write-5 commit to the PRG
+		 * register owns {@code prg_bank} and passes {@code prg_mode} and {@code mirroring}
+		 * through. Resolved iff the site recovered a bit of its OWN deposit. Judged on the whole
+		 * value instead, an unrecovered deposit read as {@link ValueStop#RESOLVED} whenever the
+		 * in-state knew another field -- a mode lock, or an overlay's residence clamp
+		 * ({@code nesmmc1test}'s {@code WC000_M2_B7::c210}) -- and rendered as a partly-known
+		 * bank comment, its honest note or warning lost.
+		 * <p>
+		 * {@code value} itself is kept whole: the echoed bits are correct out-state, and
+		 * {@code stop} is what says that none of them were recovered here.
+		 */
+		static SwitchOutcome deposit(MechanismState value, int depositMask) {
+			return new SwitchOutcome(value, (value.knownMask() & depositMask) != 0
+					? ValueStop.RESOLVED : ValueStop.ANALYZER_LIMIT);
 		}
 
 		/**

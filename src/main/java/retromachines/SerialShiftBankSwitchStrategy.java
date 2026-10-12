@@ -459,7 +459,10 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 			if (loop == null) {
 				return null;
 			}
-			return SwitchOutcome.of(commitCountedLoop(program, loop, inState));
+			MechanismState committed = commitCountedLoop(program, loop, inState);
+			List<TargetField> loopFields = targets.get(targetIndex(loop.staOffset()));
+			return loopFields == null ? SwitchOutcome.of(committed)
+					: SwitchOutcome.deposit(committed, depositMask(loopFields));
 		}
 
 		Character reg = StoredValueScanner.storeRegister(instr);
@@ -546,7 +549,18 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 
 		PartialByte preChainByte = StoredValueScanner.resolveStoredValue(program, chain.chainStart(),
 			reg, inState, PartialByte.BYTE_MASK, hooksFor(fields));
-		return SwitchOutcome.of(depositFields(inState, fields, preChainByte));
+		// Judged on the target's own fields, not the echoed rest of the in-state (grm-dos9.10).
+		return SwitchOutcome.deposit(depositFields(inState, fields, preChainByte),
+			depositMask(fields));
+	}
+
+	/** The local bits a commit to a target with these fields deposits into. */
+	private static int depositMask(List<TargetField> fields) {
+		int mask = 0;
+		for (TargetField tf : fields) {
+			mask |= tf.pos().positionedMask();
+		}
+		return mask;
 	}
 
 	/**
@@ -1219,15 +1233,37 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	// Field/byte helpers (same conventions as SelectDataBankSwitchStrategy)
 	// ------------------------------------------------------------------
 
+	/**
+	 * The register offset {@code instr} writes, or null: a write reference first, then the
+	 * store's own plain-absolute operand -- the same two tiers as
+	 * {@code MemoryLatchBankSwitchStrategy.writesInRange}, compared by PHYSICAL space.
+	 * <p>
+	 * <b>Why the operand tier (grm-xwnc).</b> A store in a banked overlay copy of a helper
+	 * ({@code WC000_M2_B7::c200 STA $E000}, MMC1's register range lying inside the switchable
+	 * window itself) gets its operand reference in its OWN overlay, and Ghidra types it
+	 * {@code DATA}, not {@code WRITE}: the p-code {@code STORE} goes to {@code ram:e000}, which
+	 * the overlay address does not match. With the reference tier alone, every such copy went
+	 * unclassified, so a call that the dataflow knows reaches it folded to "no bank effect".
+	 * Gated on {@link StoredValueScanner#storeRegister} (true STA/STX/STY), and plain absolute
+	 * only, so no read-modify-write and no indexed store is newly seen.
+	 */
 	private Long writesInRange(Instruction instr) {
 		for (Reference ref : instr.getReferencesFrom()) {
 			Address to = ref.getToAddress();
-			if (ref.getReferenceType().isWrite() && to.getAddressSpace().equals(space) &&
-				to.getOffset() >= rangeStart && to.getOffset() <= rangeEnd) {
+			if (ref.getReferenceType().isWrite() && inRange(to)) {
 				return to.getOffset();
 			}
 		}
-		return null;
+		if (StoredValueScanner.storeRegister(instr) == null) {
+			return null;
+		}
+		Address target = StoredValueScanner.plainAbsoluteTarget(instr);
+		return target != null && inRange(target) ? target.getOffset() : null;
+	}
+
+	private boolean inRange(Address to) {
+		return to.getAddressSpace().getPhysicalSpace().equals(space) &&
+			to.getOffset() >= rangeStart && to.getOffset() <= rangeEnd;
 	}
 
 	private static MechanismState extractByteField(PartialByte byteState, int bits, int shift) {

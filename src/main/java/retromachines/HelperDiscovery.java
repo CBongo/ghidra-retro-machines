@@ -27,7 +27,6 @@ import java.util.Objects;
 import java.util.Set;
 
 import ghidra.program.model.address.Address;
-import ghidra.program.model.address.AddressRange;
 import ghidra.program.model.address.AddressSetView;
 import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.lang.Register;
@@ -37,8 +36,6 @@ import ghidra.program.model.listing.FunctionManager;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
-import ghidra.program.model.mem.Memory;
-import ghidra.program.model.mem.MemoryAccessException;
 import ghidra.program.model.symbol.FlowType;
 import ghidra.program.model.symbol.Symbol;
 
@@ -1204,36 +1201,6 @@ final class HelperDiscovery {
 		return entries;
 	}
 
-	/**
-	 * True when {@code base} and {@code overlay} (a base-space function and the overlay copy of
-	 * the function at the same offset) have the same body size and the same bytes at the same
-	 * offsets (bead grm-fj4m). False when either is null or any byte cannot be read.
-	 */
-	private static boolean sameBodyBytes(Program program, Function base, Function overlay) {
-		if (base == null || overlay == null ||
-			base.getBody().getNumAddresses() != overlay.getBody().getNumAddresses()) {
-			return false;
-		}
-		Memory memory = program.getMemory();
-		AddressSpace overlaySpace = overlay.getEntryPoint().getAddressSpace();
-		try {
-			for (AddressRange range : base.getBody()) {
-				int n = (int) range.getLength();
-				byte[] a = new byte[n];
-				byte[] b = new byte[n];
-				memory.getBytes(range.getMinAddress(), a);
-				memory.getBytes(overlaySpace.getAddress(range.getMinAddress().getOffset()), b);
-				if (!java.util.Arrays.equals(a, b)) {
-					return false;
-				}
-			}
-		}
-		catch (MemoryAccessException | RuntimeException e) {
-			return false;
-		}
-		return true;
-	}
-
 	/** {@code flow} then each relay hop from it (thunk / one-instruction jump), nearest first. */
 	private static void appendRelayChain(Program program, Address flow, List<Address> entries) {
 		Set<Address> seen = new LinkedHashSet<>();
@@ -1259,11 +1226,11 @@ final class HelperDiscovery {
 	 * non-home occupant whose overlay copy has a function at the same offset is replaced by that
 	 * overlay address (and its relay chain) -- the callee the game actually reaches. Anything
 	 * short of that (no context/state, bank not fully known, home occupant, no function in the
-	 * overlay copy, an overlay function byte-identical to the base one, or a flow already in an
-	 * overlay space) keeps the base-space chain. The no-function fallback is deliberate, so a
-	 * routine duplicated into every bank whose overlay copy was never disassembled does not lose
-	 * its helper effect; the byte-identical one is the same routine whose overlay copy pass 1
-	 * cannot classify (nesmmc1test c06c: registers inside the switchable window).
+	 * overlay copy, or a flow already in an overlay space) keeps the base-space chain. The
+	 * no-function fallback is deliberate, so a routine duplicated into every bank whose overlay
+	 * copy was never disassembled does not lose its helper effect. An overlay copy that IS a
+	 * function is followed unconditionally (owner ruling on grm-xwnc): it is classified as a
+	 * helper in its own right, registers inside the switchable window included.
 	 */
 	static List<Address> reachableEntries(Program program, Instruction callInstr,
 			BankState state, BankResolution ctx) {
@@ -1282,14 +1249,7 @@ final class HelperDiscovery {
 					AddressSpace overlay = program.getAddressFactory().getAddressSpace(r.space());
 					if (overlay != null) {
 						Address at = overlay.getAddress(flow.getOffset());
-						Function overlayFn = fm.getFunctionAt(at);
-						// A byte-identical copy of the base function is the SAME routine
-						// duplicated into this bank. Its helper classification may be missing
-						// only because pass 1 cannot recognise register stores inside a banked
-						// copy (MMC1/MMC3 registers live in the switchable window itself), so
-						// "overlay function is no helper" proves nothing there: keep base.
-						if (overlayFn != null &&
-							!sameBodyBytes(program, fm.getFunctionAt(flow), overlayFn)) {
+						if (fm.getFunctionAt(at) != null) {
 							start = at;
 						}
 					}
