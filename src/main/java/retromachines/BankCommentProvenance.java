@@ -252,21 +252,33 @@ final class BankCommentProvenance {
 	 * {@code comment} with the whole segment {@code segment} removed, or null when it is not
 	 * present as a complete segment. Whole-segment matching, never substring: a recorded
 	 * {@code "bank -> 5"} must not match inside a longer human sentence that happens to quote it.
+	 * <p>
+	 * A segment is located by its BOUNDARIES -- the comment's start or a {@link #JOIN} before it,
+	 * the comment's end or a {@link #JOIN} after it -- not by splitting the comment on
+	 * {@link #JOIN} (bead grm-mej.20). The separator also occurs INSIDE our own text: every
+	 * partial-state bank comment carries {@code [known: ...; assumed from initial: ...]}, so a
+	 * split never yielded it as one part, {@link #plan} took the "a human edited it" fail-safe on
+	 * every refresh, forgot the record, and the FIRST round's comment stayed in the listing for
+	 * good (cv3 e722: round 1 saw one caller and wrote bank_5115 fully known; rounds 2-3 found
+	 * the second caller in bank 10 and could not replace it).
 	 */
 	static String removeSegment(String comment, String segment) {
 		if (comment == null || segment == null || segment.isEmpty()) {
 			return null;
 		}
-		List<String> kept = new ArrayList<>();
-		boolean found = false;
-		for (String part : comment.split(java.util.regex.Pattern.quote(JOIN), -1)) {
-			if (!found && part.equals(segment)) {
-				found = true;
+		for (int at = comment.indexOf(segment); at >= 0; at = comment.indexOf(segment, at + 1)) {
+			int end = at + segment.length();
+			boolean startsSegment = at == 0 || comment.startsWith(JOIN, at - JOIN.length());
+			boolean endsSegment = end == comment.length() || comment.startsWith(JOIN, end);
+			if (!startsSegment || !endsSegment) {
 				continue;
 			}
-			kept.add(part);
+			if (end < comment.length()) {
+				return comment.substring(0, at) + comment.substring(end + JOIN.length());
+			}
+			return at == 0 ? "" : comment.substring(0, at - JOIN.length());
 		}
-		return found ? String.join(JOIN, kept) : null;
+		return null;
 	}
 
 	/** The program this record belongs to; used only by tests and assertions. */

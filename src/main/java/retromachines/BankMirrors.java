@@ -1258,13 +1258,27 @@ public final class BankMirrors {
 			// The stores seen on THIS walk, retyped wholesale if the walk turns out to have been
 			// carrying a read-back rather than a bank being committed (see below).
 			List<Cell> storedOnThisWalk = new ArrayList<>();
+			// Whether this walk has already passed a load of a RAM cell on its way up from the
+			// mechanism write -- the guard on crossing a CALL entry below (bead grm-mej.20).
+			boolean loadedACell = false;
 
 			Instruction cur = store;
 			for (int i = 0; i < MAX_BACKWARD_SCAN; i++) {
 				Instruction prev = listing.getInstructionBefore(cur.getMinAddress());
 				if (prev == null || !fallsInto(prev, cur) ||
-					StoredValueScanner.isControlFlowJoin(program, cur, prev) ||
+					branchJoin(program, cur, prev) ||
 					prev.getFlowType().isCall() || switchSites.contains(prev.getMinAddress())) {
+					return;
+				}
+				// A CALL landing on cur is a second ENTRY, not a merge (see branchJoin), and may be
+				// crossed -- but only while the entry's own path to the mechanism write reads no
+				// cell. Castlevania III's IRQ enters FUN_e2e6 at e2e8 = the latch store itself,
+				// committing A and bypassing STA $21: a stale-shadow bypass, answered where the
+				// shadow is READ (shadowCoherentAt). Dragon Ball Z Datach's callers do
+				// LDA #$08 / STA $59 / JSR $cc0b, whose JSR $cc28 lands on LDA $59 / STA $8008:
+				// that entry COMMITS the cell, so callers fill it with the bank they ask for --
+				// an argument cell, not a copy of the live bank. Stop there, as before.
+				if (loadedACell && StoredValueScanner.isControlFlowJoin(program, cur, prev)) {
 					return;
 				}
 				String mnem = prev.getMnemonicString().toUpperCase();
@@ -1301,6 +1315,7 @@ public final class BankMirrors {
 					}
 					cells.computeIfAbsent(offset, k -> new Cell())
 							.writeThroughLoads.add(prev.getMinAddress());
+					loadedACell = true;
 					cur = prev;
 					continue;
 				}
@@ -1637,6 +1652,23 @@ public final class BankMirrors {
 				Collections.unmodifiableMap(new LinkedHashMap<>(romIdentifyingField)),
 				Collections.unmodifiableMap(new LinkedHashMap<>(romIdentifyingEncoding)),
 				Map.of());
+		}
+
+		/**
+		 * {@link StoredValueScanner#isControlFlowJoin} minus CALLS (bead grm-mej.20): another path
+		 * MERGES into {@code cur} only by a branch or jump. A call landing on {@code cur} is a
+		 * second ENTRY into a helper, which the walk may cross subject to the loadedACell guard in
+		 * {@link #walkFromMechanismWrite}.
+		 */
+		private static boolean branchJoin(Program program, Instruction cur, Instruction prev) {
+			for (ghidra.program.model.symbol.Reference ref : program.getReferenceManager()
+					.getReferencesTo(cur.getMinAddress())) {
+				if (ref.getReferenceType().isFlow() && !ref.getReferenceType().isCall() &&
+					!ref.getFromAddress().equals(prev.getMinAddress())) {
+					return true;
+				}
+			}
+			return false;
 		}
 
 		/** Whether the fall-through path from {@code prev} is exactly {@code cur} -- the block

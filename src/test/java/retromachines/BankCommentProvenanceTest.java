@@ -44,6 +44,8 @@ public class BankCommentProvenanceTest {
 	private static final String MARKER = "bank ->";
 
 	private static final String OURS = "bank -> 2 (bank=2) via FUN_c170";
+	private static final String PARTIAL =
+		"bank -> 0? via FUN_e2e6 [known: b.0=0,b.1=0; assumed from initial: c.0]";
 	private static final String REFRESHED = "bank -> 2 (bank=2) via FUN_c173";
 	private static final String USER = "loop counter, see $c150";
 
@@ -202,6 +204,33 @@ public class BankCommentProvenanceTest {
 			BankCommentProvenance.removeSegment("a; b; " + OURS, OURS));
 		assertEquals("a; b",
 			BankCommentProvenance.removeSegment("a; " + OURS + "; b", OURS));
+	}
+
+	/**
+	 * Our own text may contain the separator: every partial-state bank comment carries
+	 * {@code [known: ...; assumed from initial: ...]} (bead grm-mej.20). It must still be found
+	 * and removed whole, at every position -- splitting on the separator never found it.
+	 */
+	@Test
+	public void aSegmentContainingTheSeparatorIsStillOneSegment() {
+		assertEquals("", BankCommentProvenance.removeSegment(PARTIAL, PARTIAL));
+		assertEquals("a; b", BankCommentProvenance.removeSegment(PARTIAL + "; a; b", PARTIAL));
+		assertEquals("a; b", BankCommentProvenance.removeSegment("a; b; " + PARTIAL, PARTIAL));
+		assertEquals("a; b", BankCommentProvenance.removeSegment("a; " + PARTIAL + "; b", PARTIAL));
+		assertNull(BankCommentProvenance.removeSegment("see \"" + PARTIAL + "\" above", PARTIAL));
+	}
+
+	/**
+	 * The cv3 e722 shape end to end (bead grm-mej.20): a later round that learns LESS about the
+	 * bank must replace the earlier partial comment, not take the human-edit fail-safe.
+	 */
+	@Test
+	public void aPartialCommentIsRefreshedByALaterRound() {
+		String later = "bank -> 0? via FUN_e2e6 [known: b.0=0; assumed from initial: b.1]";
+		Plan plan = BankCommentProvenance.plan(PARTIAL, PARTIAL, later, MARKER);
+		assertTrue(plan.write());
+		assertEquals(later, plan.comment());
+		assertEquals(later, plan.record());
 	}
 
 	/**
