@@ -446,8 +446,16 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 
 		// --- Phase 1: forward dataflow to fixpoint; rerun with helper knowledge if any ---
 		Listing listing = program.getListing();
+		// Which banks each switchable window actually has an image slice for (grm-hum
+		// increment 3). Derived once, here, because it is a property of the loaded program and
+		// cannot change under the analysis. Hoisted above BOTH dataflow passes: bank-mirror
+		// derivation asks the same realized-bank question (grm-mej.2), and pass 1 needs it to
+		// keep state out of base-space bytes the flowing bank does not map (grm-dos9.5).
+		Map<String, Set<Integer>> bankUniverse = BankAnnotationAdapter.bankUniverse(program, board);
 		DataflowResult flow =
-			runDataflow(program, monitor, listing, mechanisms, board, null, Map.of());
+			runDataflow(program, monitor, listing, mechanisms, board, null, Map.of(), Set.of(),
+				BankStackBrackets.Claims.NONE,
+				new HelperDiscovery.BankResolution(board, bankUniverse, placementOverride));
 
 		// Order is load-bearing. findCallEdgeWrappers runs LAST so its relay lookups see
 		// pass-through wrappers as helpers; it is also why exitEffect never encounters a relay
@@ -471,13 +479,6 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			findSecondTierHelpers(program, callEdgeHelpers, flow.switchResults());
 		Map<Function, HelperModel> helpers = secondTier.helpers();
 		reportHelpers(program, helpers.keySet());
-
-		// Which banks each switchable window actually has an image slice for (grm-hum
-		// increment 3). Derived once, here, because it is a property of the loaded program and
-		// cannot change under the analysis. Hoisted above the second dataflow pass by grm-mej.2:
-		// bank-mirror derivation asks the same realized-bank question, and deriving it twice
-		// would let the two answers drift.
-		Map<String, Set<Integer>> bankUniverse = BankAnnotationAdapter.bankUniverse(program, board);
 
 		// --- Bank mirrors (grm-mej.2): the addresses that mirror the LIVE bank, derived from
 		// pass 1's recognized switch sites plus the loaded bank images, and handed to every

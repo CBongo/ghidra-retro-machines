@@ -28,6 +28,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 
+import ghidra.program.database.mem.FileBytes;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressIterator;
 import ghidra.program.model.address.AddressSpace;
@@ -36,6 +37,8 @@ import ghidra.program.model.listing.FunctionManager;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
+import ghidra.program.model.mem.MemoryBlock;
+import ghidra.program.model.mem.MemoryBlockSourceInfo;
 import ghidra.program.model.symbol.Reference;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.task.TaskMonitor;
@@ -445,7 +448,7 @@ final class BankDataflowEngine {
 				}
 				if (worklist.isEmpty() && !seedUnreachedFunctions(program, listing,
 					functionEntries, fallbackSeed, stateIn, collapsedAddrs, worklist, board,
-					clampCache, budget, stateDependents)) {
+					clampCache, budget, stateDependents, bankResolution)) {
 					break;
 				}
 			}
@@ -625,6 +628,9 @@ final class BankDataflowEngine {
 			boolean isCall = instr.getFlowType().isCall();
 			for (OutElement out : outs) {
 				for (Address flowAddr : instr.getFlows()) {
+					if (mapsElsewhere(program, flowAddr, addr, out.out(), bankResolution)) {
+						continue;
+					}
 					// A fork ends at a function entry: a call target, or a jump onto an entry
 					// point (a tail call). The callee sees the merged ROOT state, exactly as
 					// the single-state engine gave it.
@@ -634,7 +640,9 @@ final class BankDataflowEngine {
 						listing, board, clampCache, budget, stateDependents);
 				}
 				Address fallThrough = instr.getFallThrough();
-				if (fallThrough != null) {
+				if (fallThrough != null &&
+					!mapsElsewhere(program, fallThrough, addr, out.fall(),
+						bankResolution)) {
 					PathId to = budget.isFunctionEntry(fallThrough) ? PathId.ROOT : out.pathId();
 					mergeAndEnqueue(fallThrough, to, out.fall(), stateIn, collapsedAddrs,
 						worklist, listing, board, clampCache, budget, stateDependents);
@@ -1715,10 +1723,15 @@ final class BankDataflowEngine {
 			List<Address> functionEntries, BankState seedState,
 			Map<Address, LinkedHashMap<PathId, BankState>> stateIn, Set<Address> collapsedAddrs,
 			Deque<Address> worklist, BoardModel board, Map<String, int[]> clampCache,
-			ForkBudget budget, Map<Address, Set<Address>> stateDependents) {
+			ForkBudget budget, Map<Address, Set<Address>> stateDependents,
+			HelperDiscovery.BankResolution bankResolution) {
 		List<Address> unreached = new ArrayList<>();
 		for (Address entry : functionEntries) {
-			if (!stateIn.containsKey(entry) && listing.getInstructionAt(entry) != null) {
+			// An entry the seed maps elsewhere is filtered here, not dropped at the merge: a
+			// dropped root would leave stateIn without it, so it would be re-picked forever and
+			// starve the entries behind it.
+			if (!stateIn.containsKey(entry) && listing.getInstructionAt(entry) != null &&
+				!mapsElsewhere(program, entry, null, seedState, bankResolution)) {
 				unreached.add(entry);
 			}
 		}
@@ -1739,6 +1752,70 @@ final class BankDataflowEngine {
 				listing, board, clampCache, budget, stateDependents);
 		}
 		return !worklist.isEmpty();
+	}
+
+	/**
+	 * Whether a base-space {@code target} is NOT the byte that runs under {@code state}
+	 * (bead grm-dos9.5). Base space holds each banked window's HOME occupant only; when the
+	 * state fully pins the window to another bank or mode, the CPU executes that occupant's
+	 * overlay copy at this offset, and the base bytes there never run under it. Feeding them
+	 * the state anyway let base-space filler (a $00 = BRK in bank 0 under a mode that maps the
+	 * last bank) retarget its IRQ jump into phantom overlays (nesmodetest 8040 -> c010).
+	 * <p>
+	 * Mirrors {@code BankAnnotationAdapter.retargetForState}'s rule for retiring the base
+	 * reference: only dataflow KNOWLEDGE counts (no placement override -- a guess must not
+	 * starve code), and a flow from a base instruction into its OWN window stays, since a
+	 * routine duplicated into every bank reaches its own bytes whatever bank is live.
+	 * {@code from} is null for a seed. The overlay copy gets its state from the retargeted
+	 * reference on the next analyzer round.
+	 * <p>
+	 * An occupant that is not the home one can still map the SAME image byte -- e.g. MMC1's 32K
+	 * mode 0 with bank 0 selects exactly the slices a mode-3 home layout put in base space. The
+	 * base byte is then the one that runs, so it keeps the state.
+	 */
+	static boolean mapsElsewhere(Program program, Address target, Address from,
+			BankState state, HelperDiscovery.BankResolution ctx) {
+		if (ctx == null || target.getAddressSpace().isOverlaySpace()) {
+			return false;
+		}
+		BankAnnotationAdapter.OffsetResolution r = BankAnnotationAdapter.resolveOffsetOccupant(
+			ctx.board(), ctx.bankUniverse(), state, target.getOffset(), Map.of());
+		if (r == null || !r.fullyKnown() || r.home()) {
+			return false;
+		}
+		if (from != null && !from.getAddressSpace().isOverlaySpace() &&
+			BankAnnotationAdapter.sameWindow(ctx.board(), state, from.getOffset(),
+				target.getOffset())) {
+			return false;
+		}
+		// No realized overlay (a stated layout mode suppressed the others' blocks -- drmario's
+		// gmap) leaves the state nowhere else to go: keep it, as retargeting keeps the base
+		// reference when it cannot place an overlay one.
+		AddressSpace overlay = program.getAddressFactory().getAddressSpace(r.space());
+		return overlay != null &&
+			!sameImageByte(program, target, overlay.getAddress(target.getOffset()));
+	}
+
+	/** Whether two addresses are backed by the same byte of the same loaded file. */
+	private static boolean sameImageByte(Program program, Address a, Address b) {
+		FileByte fa = fileByte(program, a);
+		return fa != null && fa.equals(fileByte(program, b));
+	}
+
+	private record FileByte(FileBytes source, long offset) {}
+
+	private static FileByte fileByte(Program program, Address addr) {
+		MemoryBlock block = program.getMemory().getBlock(addr);
+		if (block == null) {
+			return null;
+		}
+		for (MemoryBlockSourceInfo info : block.getSourceInfos()) {
+			if (info.contains(addr) && info.getFileBytes().isPresent()) {
+				long offset = info.getFileBytesOffset(addr);
+				return offset < 0 ? null : new FileByte(info.getFileBytes().get(), offset);
+			}
+		}
+		return null;
 	}
 
 	private static boolean hasCallingInstruction(Program program, Listing listing, Address entry) {

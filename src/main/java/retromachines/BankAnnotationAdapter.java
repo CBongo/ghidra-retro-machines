@@ -2223,6 +2223,31 @@ final class BankAnnotationAdapter {
 	}
 
 	/**
+	 * Whether two base-space offsets fall in the SAME banked window under {@code state} -- the
+	 * {@code selfWindow} test {@link #retargetForState} applies to an instruction's reference
+	 * into its own window (enumerated, computed, then the active mode's instance by name).
+	 * False when either offset is in no tracked window.
+	 */
+	static boolean sameWindow(BoardModel board, BankState state, long a, long b) {
+		WindowModel wa = findWindow(board.windows(), a);
+		if (wa != null) {
+			return wa == findWindow(board.windows(), b);
+		}
+		ComputedWindowModel ca = findWindow(board.computedWindows(), a);
+		if (ca != null) {
+			return ca == findWindow(board.computedWindows(), b);
+		}
+		if (board.modeField() != null) {
+			int modeValue =
+				board.modeField().valueIn(state.effective(board.initialState(), board.mask()));
+			ModeWindowModel ma = findModeWindowAt(board.modeWindows(), modeValue, a);
+			ModeWindowModel mb = findModeWindowAt(board.modeWindows(), modeValue, b);
+			return ma != null && mb != null && ma.name().equals(mb.name());
+		}
+		return false;
+	}
+
+	/**
 	 * Resolves the CROSS-WINDOW pointer entries of one inline-jump-table (bead grm-rnf0;
 	 * {@link InlineJumpTableDispatch}/{@link InlineJumpTableDispatchAnalyzer}, grm-j2kl) against
 	 * the bank state(s) live at the dispatching {@code JSR} -- the same window/occupant/
