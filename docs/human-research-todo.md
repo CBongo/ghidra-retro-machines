@@ -43,7 +43,75 @@ bash tools/banktest/realrom-test.sh nominate <romdir>   # board-gap survey
 
 Each is minutes of work and settles something specific. Highest value per unit effort on this list.
 
-_(none open)_
+### 1.1 cv3 `e681`: does the shared `$22` restore really give back the caller's bank on every arm? (`grm-mej.19`)
+
+- [ ] **Question.** `e67f LDA $22 / e681 JMP e2e6` is the shared epilogue of ~30 far-call
+  trampolines. Each has the shape `LDA #$8n / JSR e2e0 / JSR <far> / JMP e67f`. `FUN_e2e0` copies
+  the old bank shadow into the save slot (`e2e1 LDA $21 / e2e3 STA $22`) before switching. Does
+  `LDA $22` always re-commit the bank that was live when the trampoline was entered? The agent's
+  static read says **no on at least one arm**, which is why the `e681` warning was judged honest.
+  Please confirm or refute that. What settles it is one emulator breakpoint, plus a check of who
+  dispatches to `FUN_e725`.
+
+**What to check, in order:**
+
+1. **Is the `FUN_e725` arm a real nest?** Break at `e727` (in `FUN_e725`'s `JSR e2e0`) and note
+   `$21`, which is the caller's bank. Then break at `e67f` on that same entry and read `$22`.
+   - The static prediction is that `$22` is **0**, not the caller's bank. The far callee `8574`
+     (16K bank 0) does `JSR 85bb`, and `85bb LDY $054e / LDA $85c9,Y / JSR ece9`. `ece9` is
+     itself a trampoline (`PHA / LDA #$80 / JSR e2e0 / PLA / JSR 9825 / JMP e67f`), so it
+     overwrites `$22` with the bank live inside the far call, which is bank 0. `85c4 LDA #$04 /
+     JMP ece9` repeats that.
+   - If the prediction holds, the outer `e67f` puts back bank 0, not `e725`'s caller's bank.
+2. **Does it matter to the game?** Who reaches `FUN_e725`? No `JSR`/`JMP $e725` exists anywhere
+   in the image. The word `$e724` (that is, `e725 - 1`, a push-then-`RTS` dispatch target) appears
+   at PRG offsets `0x1622a` and `0x16273` (16K bank 5, CPU `$A22A`/`$A273` when mapped at
+   `$8000`). If every caller runs with bank 0 at `$8000` anyway, or does not care, the "wrong"
+   restore is harmless in practice. The analyzer still cannot claim RESTORED there.
+3. **`FUN_e7ec` arm** (`LDA #$96 / JSR e2e0 / JSR 9fc9 / JMP e67f`): the agent's closure walk
+   from `9fc9` (16K bank 11) also reached `e2e3 STA $22`, so it is a second suspected nest. Its
+   path was not traced; please spot-check it the same way.
+4. Optionally, spot-check one **clean** arm, such as `FUN_e677`: `LDA #$88 / JSR e2e0 / JSR b1fb
+   / e67f`. Its far-callee closure is 53 instructions and never writes `$22`. Expect `$22` at
+   `e67f` to equal `$21` at `e679`.
+
+**Existing findings (agent, static, 2026-10-12; decoded from the pinned image, details on
+`grm-mej.19`'s comment):**
+
+- `$22` has exactly ONE plain writer in the 512 KiB image, `e2e3 STA $22`. Three `STA $22,X`
+  byte hits in banked data are unverified.
+- `e67f` has 30+ incoming `JMP e67f` from other functions, among them `FUN_e684`, `e68f`, `e700`,
+  `e725`, `e73d`, `e748`, `e760`, `e78a`, `e795`, `e7a0`, `e7ab`, `e7b6`, `e7c1`, `e7ec`, `e819`,
+  `ece9`, `ecf6`, `fba4` and `fbaf`. `FUN_e677` is the one that falls through into it.
+- A rough census of each far callee for writes to `$22` (zero-page indexed loops placed by their
+  bounds):
+  - **Clean** (4–145 instructions): `e19b e679 e686 e691 e69c e6d6 e6e1 e6ec e6f7 e702 e70d e73f
+    e763 e76e e7a2 e7ad e7b8 e7c3 fba6 fbb1`.
+  - **Nested via another trampoline:** `e727` (`FUN_e725`) and `e7ee` (`FUN_e7ec`).
+  - **Not censused:** the PHA/PLA-shaped trampolines (`ece9`, `ecf6`, ... `JSR 9825`/`9873`).
+    `ece9` is called from ~60 banked sites.
+- The sibling site `ebdd` (`FUN_ebd5`, epilogue `ebdb`, also entered by `ebfa JMP ebdb`) is a
+  different case. Its far callee `ec04` reaches `e899 ... e89c STA $00,X` after `ec27 LDX #$00`,
+  so it is harmless at runtime (it writes `$00`/`$01`). The analyzer cannot see X there yet
+  (`grm-mej.25`).
+
+**What influences the answer** (beads, so you can track it):
+
+| bead | piece | effect on `e681` |
+|---|---|---|
+| `grm-mej.22` | save-slot proof follows jumps from other functions into the shared `e67f` tail | needed to reach any store at all |
+| `grm-mej.23` | callee save-helper summary (`FUN_e2e0` stores `$22`), resolved per arm at each call site's state | where the value comes from |
+| `grm-mej.24` | the writer check follows far calls into known-bank overlays (`e67c` → `W8000_M2_B8::b1fb`) | needed to clear the far callees |
+| `grm-mej.25` | carry a constant X/Y from the call site into the callee | needed for `ebdd` only |
+| `grm-mej.21` | per-arm adopt rule (EVERY arm RESTORED on the same cell) | a single real nest keeps `e681` a warning |
+| `grm-5dgx` (closed) | twin overlays removed; `W8000_M2_B<even>` names 16K bank `<even>/2` | read bank numbers with that in mind |
+
+**What the answer changes:**
+- If (1) shows `$22 = 0` at `e67f` for `e725`, the `e681` warning is honest as it stands. Then
+  `grm-mej.19`'s best outcome is RESTORED on the clean arms and a precise warning naming
+  `e725`/`e7ec`.
+- If `$22` is the caller's bank, the static nest reading is wrong, perhaps because `$054e` makes
+  `85bb` unreachable from `8574`. Say so, and `grm-mej.19` can aim for a full RESTORED note.
 
 ---
 
