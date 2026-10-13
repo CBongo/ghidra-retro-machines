@@ -2335,9 +2335,9 @@ final class StoredValueScanner {
 	 * bodies (which can be wrong) -- is checked with {@link #classifySlotWrite}. DIRTY (abandon)
 	 * when any of them may write {@code cell}, or the closure cannot be fully resolved: a computed
 	 * jump or call ({@code JMP ($nnnn)}), a jump or call with no resolved target, an undisassembled
-	 * target, a target in a banked window entered from outside that bank's own image
+	 * target, a base-space target in a banked window entered from outside that bank's own image
 	 * ({@link #entersUnknownBank} -- which bank runs there depends on state this census does not
-	 * have), a {@code BRK}, a return that looks like a push-then-return dispatch
+	 * have; a realized overlay is one known image and is walked), a {@code BRK}, a return that looks like a push-then-return dispatch
 	 * ({@link #looksLikeReturnDispatch}, whose real targets are invisible to the listing), or more
 	 * than {@link #SLOT_CENSUS_INSTRUCTION_CAP} instructions. Indirect stores are stepped over
 	 * under {@link SlotAssumption#INDIRECT_STORES_DO_NOT_WRITE_SLOT}, and reported.
@@ -2512,11 +2512,20 @@ final class StoredValueScanner {
 	 * ({@link SplitDispatchTableAnalyzer#isBanked}) other than the bank image {@code from} itself
 	 * executes in -- i.e. the code that runs there depends on which bank is mapped, which a
 	 * state-free census cannot know. Undefined memory counts as unknown too.
+	 * <p>
+	 * A target inside a realized OVERLAY block is a known bank, whoever jumps there (bead
+	 * grm-mej.24): an overlay holds one bank image by construction, and a flow into it is the
+	 * analysis's own claim of which bank runs -- cv3's trampolines {@code JSR} into
+	 * {@code W8000_M2_B8::b1fb}. Only base-space banked targets (a window's home bytes, cv3's
+	 * {@code $C000} window under {@code bank_5116}) entered from another block stay unknown.
 	 */
 	private static boolean entersUnknownBank(Program program, Instruction from, Address target) {
 		MemoryBlock targetBlock = program.getMemory().getBlock(target);
 		if (targetBlock == null) {
 			return true;
+		}
+		if (targetBlock.isOverlay()) {
+			return false;
 		}
 		if (!SplitDispatchTableAnalyzer.isBanked(program, targetBlock)) {
 			return false;

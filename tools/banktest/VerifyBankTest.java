@@ -4188,11 +4188,13 @@ public class VerifyBankTest extends GhidraScript {
 
 		// MM9: H2's ruling on this board -- the restore THROUGH THE HELPER from the save slot
 		// (LDA $59 / JSR H) must NOT be answered from in-state, which says r7=2 while the slot
-		// holds 3. A warning and no r7=2 claim; carrying the 3 forward is grm-mej.3.
+		// holds 3. Since grm-mej.24 the slot proof carries the 3 forward: the crossed
+		// JSR $A000 lands in the realized WA000_B2 overlay, a known bank, so its census walks
+		// the lone RTS there. No assertion on e2dc's bookmark either way: round 1 (before the
+		// retarget) warns, and that bookmark is not retracted yet (grm-mej.26).
 		c = eol(0xE2DC);
-		criterion("MM9", hasWarningBookmark(0xE2DC) && !c.contains("r7=2"),
-			"restore from the save slot via H claims no in-state bank at e2dc: warning=" +
-				hasWarningBookmark(0xE2DC) + " eol=\"" + c + "\"");
+		criterion("MM9", c.contains("r7=3") && fieldKnownIn(c, "r7") && !c.contains("r7=2"),
+			"restore from the save slot via H carries the slot's r7=3 at e2dc: \"" + c + "\"");
 
 		// MM10: the DIRECT restore from the slot (LDA $59 / STA $8001), same ruling: r7 wholly
 		// unknown (every r7 bit "assumed from initial"), never a confident 2 or 3.

@@ -3168,8 +3168,9 @@ def make_prg_mmc3_mirror():
       LDA #$02 / JSR H                ; switch to bank 2 through the helper (r7=2)
       JSR $A000                       ; -> WA000_B2::A000
       LDA $59 / JSR H                 ; MM9: the restore through the helper from the slot
-                                      ; must NOT claim r7=2 (in-state) -- the slot holds 3;
-                                      ; carrying that forward is grm-mej.3, not this bead
+                                      ; must NOT claim r7=2 (in-state) -- the slot holds 3,
+                                      ; carried forward since grm-mej.24 (the JSR above is
+                                      ; a call into an overlay, a known bank)
       LDA $59 / STA $8001             ; MM10: the direct restore, same ruling: r7 UNKNOWN
       RTS
 

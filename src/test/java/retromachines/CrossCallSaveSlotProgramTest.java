@@ -34,6 +34,7 @@ import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.mem.MemoryBlock;
+import ghidra.program.model.symbol.RefType;
 import ghidra.program.model.symbol.SourceType;
 
 /**
@@ -908,5 +909,106 @@ public class CrossCallSaveSlotProgramTest extends AbstractBundledLanguageTest {
 		put("0xc100", helperHex);
 		put("0xc200", farHex);
 		createFunctions("routineA", "0xc000", "0xc00d", "routineB", "0xc010", "0xc01a");
+	}
+
+	// ==================================================================
+	// 11. Far calls into a realized OVERLAY (bead grm-mej.24)
+	// ==================================================================
+
+	/**
+	 * {@link #trampolines} with the far callee in a banked window, the way cv3 lays it out: the
+	 * base block is split into a {@code $8000-$BFFF} window and a fixed {@code $C000} bank, and
+	 * an overlay {@code W8000_B8} realizes one bank image over {@code $8000-$9FFF}. Both
+	 * routines {@code JSR $8200}; when {@code retarget}, each call's flow lands in
+	 * {@code W8000_B8::8200} (as the analyzer retargets cv3's {@code e67c JSR} to
+	 * {@code W8000_M2_B8::b1fb}), else it stays on the window's base-space home bytes.
+	 * {@code extra} is address/hex pairs placed before any caller is disassembled.
+	 */
+	private void overlayTrampolines(String farHex, boolean retarget, String... extra)
+			throws Exception {
+		int tx = program.startTransaction("split the window from the fixed bank");
+		try {
+			program.getMemory()
+					.split(program.getMemory().getBlock(builder.addr("0x8000")),
+						builder.addr("0xc000"));
+		}
+		finally {
+			program.endTransaction(tx, true);
+		}
+		builder.createOverlayMemory("W8000_B8", "0x8000", 0x2000);
+		for (int i = 0; i < extra.length; i += 2) {
+			put(extra[i], extra[i + 1]);
+		}
+		put("0xc100", SAVE_HELPER);
+		put("0x8200", farHex); // the window's base-space home bytes
+		put("W8000_B8::8200", farHex);
+		put("0xc000", "a9 01"); // A: LDA #$01
+		put("0xc002", "20 00 c1"); // A: JSR helper
+		put("0xc005", "20 00 82"); // A: JSR $8200  -- the far call
+		put("0xc008", "a5 22"); // tail: LDA $22
+		put("0xc00a", "8d 00 80"); // tail: STA $8000
+		put("0xc00d", "60"); // tail: RTS
+		put("0xc010", "a9 02"); // B: LDA #$02
+		put("0xc012", "20 00 c1"); // B: JSR helper
+		put("0xc015", "20 00 82"); // B: JSR $8200
+		put("0xc018", "4c 08 c0"); // B: JMP $c008
+		createFunctions("routineA", "0xc000", "0xc00d", "routineB", "0xc010", "0xc01a");
+		if (retarget) {
+			tx = program.startTransaction("retarget the far calls into the overlay");
+			try {
+				for (String call : List.of("0xc005", "0xc015")) {
+					program.getReferenceManager().removeAllReferencesFrom(builder.addr(call));
+					program.getReferenceManager()
+							.addMemoryReference(builder.addr(call),
+								builder.addr("W8000_B8::8200"), RefType.UNCONDITIONAL_CALL,
+								SourceType.ANALYSIS, 0);
+				}
+			}
+			finally {
+				program.endTransaction(tx, true);
+			}
+		}
+	}
+
+	/** The census walks the overlay callee: it is one bank image, so its bytes are the ones
+	 *  that run, and they write only $10. */
+	@Test
+	public void farCallIntoAnOverlayIsAKnownBankAndRestores() throws Exception {
+		overlayTrampolines("85 10 60", true); // far: STA $10 / RTS
+		StoredValueScanner.Scan scan = helperScan();
+		assertEquals(BankSwitchStrategy.ValueStop.RESTORED_BANK, scan.stop());
+		assertEquals(2, scan.readBack().reads().size());
+	}
+
+	/** The same far call left on the window's base-space bytes: which bank runs there is not
+	 *  known, so the census still abandons. */
+	@Test
+	public void farCallIntoTheBaseWindowStillDeclines() throws Exception {
+		overlayTrampolines("85 10 60", false);
+		assertDeclined(helperScan());
+	}
+
+	@Test
+	public void overlayCalleeWritingTheSlotDeclines() throws Exception {
+		overlayTrampolines("85 22 60", true); // far: STA $22 / RTS
+		assertDeclined(helperScan());
+	}
+
+	/** Inside the overlay, a call out to base-space banked bytes outside its image (cv3's
+	 *  $C000 window under bank_5116) is unknown again. */
+	@Test
+	public void overlayCalleeCallingIntoTheBaseWindowDeclines() throws Exception {
+		overlayTrampolines("20 00 a0 60", true, // far: JSR $a000 / RTS
+			"0xa000", "85 10 60"); // base window, outside the overlay's $8000-$9FFF image
+		assertDeclined(helperScan());
+	}
+
+	/** Intra-overlay flow and fixed-bank flow out of the overlay are both walked. */
+	@Test
+	public void overlayCalleeCallingWithinItselfAndTheFixedBankRestores() throws Exception {
+		overlayTrampolines("20 00 83 20 00 c3 60", true, // far: JSR $8300 / JSR $c300 / RTS
+			"0xc300", "85 10 60", // fixed bank: STA $10 / RTS
+			"W8000_B8::8300", "85 11 60"); // same image: STA $11 / RTS
+		assertEquals(BankSwitchStrategy.ValueStop.RESTORED_BANK, helperScan().stop());
 	}
 }
