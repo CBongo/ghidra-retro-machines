@@ -536,8 +536,9 @@ public class CrossBlockPushPullProgramTest extends AbstractBundledLanguageTest {
 		assertEquals(BankSwitchStrategy.ValueStop.ANALYZER_LIMIT, scan.stop());
 	}
 
-	/** The strict rule is unchanged for every OTHER user of the predicate: {@code joinArms} and
-	 *  the save-slot proof still see A's {@code JMP} as an edge they cannot enumerate. */
+	/** The strict rule is unchanged for the three-argument form, which {@code joinArms} still
+	 *  uses: it sees A's {@code JMP} as an edge it cannot enumerate. (The save-slot proof opted in
+	 *  with bead grm-mej.22 -- see {@link CrossCallSaveSlotProgramTest}.) */
 	@Test
 	public void strictPredecessorRuleStillRefusesTheCrossFunctionJump() throws Exception {
 		sharedTailScan(true);

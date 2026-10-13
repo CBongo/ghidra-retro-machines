@@ -18,7 +18,12 @@ package retromachines;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -26,8 +31,10 @@ import org.junit.Test;
 import ghidra.program.database.ProgramBuilder;
 import ghidra.program.database.ProgramDB;
 import ghidra.program.model.address.Address;
+import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.mem.MemoryBlock;
+import ghidra.program.model.symbol.SourceType;
 
 /**
  * {@code ProgramBuilder} coverage of bead grm-zsxz increment Z2, RAM SAVE-SLOT forwarding across
@@ -665,5 +672,241 @@ public class CrossCallSaveSlotProgramTest extends AbstractBundledLanguageTest {
 		assertEquals(1, memo.censuses.size());
 		assertBank(5, scan(site, memoHooks).value());
 		assertEquals(1, memo.slotProofs.size());
+	}
+
+	// ==================================================================
+	// 9. A JUMP in from another function (bead grm-mej.22)
+	// ==================================================================
+
+	/**
+	 * Routine B ({@code c010}) saves the shadow into $22, calls, and {@code JMP}s into the tail of
+	 * routine T ({@code c030}), whose {@code c033 LDA $22 / STA $8000} nothing else reaches.
+	 * {@code storeSaves} false replaces B's save with NOPs, so B's arm walks to B's entry.
+	 */
+	private void crossFunctionTail(boolean storeSaves) throws Exception {
+		put("0xc010", storeSaves ? "a5 21 85 22" : "ea ea ea ea"); // B: LDA $21 / STA $22
+		put("0xc014", "20 00 c2"); // B: JSR $c200
+		put("0xc017", "4c 33 c0"); // B: JMP $c033  -- into T's tail
+		put("0xc030", "85 22"); // T: STA $22  -- off every path; else $22 is never stored at all
+		put("0xc032", "60"); // T: RTS
+		put("0xc033", "a5 22"); // T: LDA $22   -- the reload
+		put("0xc035", "8d 00 80"); // T: STA $8000
+		put("0xc038", "60"); // T: RTS
+		put("0xc200", "85 10"); // far: STA $10 -- a different cell
+		put("0xc202", "60"); // far: RTS
+		createFunctions("routineB", "0xc010", "0xc019", "routineT", "0xc030", "0xc038",
+			"far", "0xc200", "0xc202");
+	}
+
+	private void createFunctions(String... nameStartEnd) {
+		int tx = program.startTransaction("create functions");
+		try {
+			for (int i = 0; i < nameStartEnd.length; i += 3) {
+				program.getFunctionManager()
+					.createFunction(nameStartEnd[i], builder.addr(nameStartEnd[i + 1]),
+						new AddressSet(builder.addr(nameStartEnd[i + 1]),
+							builder.addr(nameStartEnd[i + 2])),
+						SourceType.ANALYSIS);
+			}
+		}
+		catch (Exception e) {
+			throw new AssertionError(e);
+		}
+		finally {
+			program.endTransaction(tx, true);
+		}
+	}
+
+	@Test
+	public void saveReachedByAJumpFromAnotherFunctionRestores() throws Exception {
+		crossFunctionTail(true);
+		StoredValueScanner.Scan scan = scan("0xc035", oracleHooks(builder.addr("0x21"), true));
+		assertEquals(BankSwitchStrategy.ValueStop.RESTORED_BANK, scan.stop());
+		assertEquals(builder.addr("0x21"), scan.readBack().cell());
+		assertEquals(builder.addr("0xc010"), scan.readBack().readAt());
+		assertEquals(builder.addr("0xc012"), scan.readBack().slot().store());
+		assertNull(scan.readBack().slot().storedVia());
+	}
+
+	/** The per-node entry abandon still applies in the other function. */
+	@Test
+	public void crossFunctionArmReachingItsEntryDeclines() throws Exception {
+		crossFunctionTail(false);
+		assertDeclined(scan("0xc035", oracleHooks(builder.addr("0x21"), true)));
+	}
+
+	// ==================================================================
+	// 10. A SAVE HELPER the paths call (bead grm-mej.23)
+	// ==================================================================
+
+	/** cv3's FUN_e2e0, reduced: {@code PHA / LDA $21 / STA $22 / PLA / STA $21 / STA $8000 /
+	 *  RTS} -- the old shadow saved into $22 before the switch. */
+	private static final String SAVE_HELPER = "48 a5 21 85 22 68 85 21 8d 00 80 60";
+
+	/**
+	 * cv3's trampolines into the shared {@code e67f} epilogue, reduced. Routine A ({@code c000})
+	 * is {@code LDA #1 / JSR helper / JSR far} and falls into the tail {@code c008 LDA $22 /
+	 * c00a STA $8000}; routine B ({@code c010}, when {@code withB}) is {@code LDA #2 / JSR helper
+	 * / JSR far / JMP c008}. The helper is at {@code c100}, the far callee at {@code c200}.
+	 */
+	private void trampolines(String helperHex, String farHex, boolean withB) throws Exception {
+		put("0xc000", "a9 01"); // A: LDA #$01
+		put("0xc002", "20 00 c1"); // A: JSR helper
+		put("0xc005", "20 00 c2"); // A: JSR far
+		put("0xc008", "a5 22"); // tail: LDA $22  -- the reload
+		put("0xc00a", "8d 00 80"); // tail: STA $8000
+		put("0xc00d", "60"); // tail: RTS
+		if (withB) {
+			put("0xc010", "a9 02"); // B: LDA #$02
+			put("0xc012", "20 00 c1"); // B: JSR helper
+			put("0xc015", "20 00 c2"); // B: JSR far
+			put("0xc018", "4c 08 c0"); // B: JMP $c008  -- into A's tail
+		}
+		put("0xc100", helperHex);
+		put("0xc200", farHex);
+		if (withB) {
+			createFunctions("routineA", "0xc000", "0xc00d", "routineB", "0xc010", "0xc01a");
+		}
+		else {
+			createFunctions("routineA", "0xc000", "0xc00d");
+		}
+	}
+
+	/** Oracle hooks with $21 as the mirror; no state at {@code noState}, a mechanism write at
+	 *  {@code mechanism}; every stateAt query is recorded in {@code queried}. */
+	private StoredValueScanner.Hooks helperHooks(Set<Address> noState, Set<Address> mechanism,
+			List<Address> queried) {
+		Address mirror = builder.addr("0x21");
+		return new StoredValueScanner.Hooks() {
+			@Override
+			public boolean isMechanismWrite(Instruction instr) {
+				return mechanism.contains(instr.getMinAddress());
+			}
+
+			@Override
+			public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
+					MechanismState inStateAtStore) {
+				return null;
+			}
+
+			@Override
+			public MechanismState stateAt(Address addr) {
+				queried.add(addr);
+				return noState.contains(addr) ? null : MechanismState.unknown();
+			}
+
+			@Override
+			public boolean hasStateOracle() {
+				return true;
+			}
+
+			@Override
+			public boolean isLiveBankMirror(Address target) {
+				return mirror.equals(target);
+			}
+		};
+	}
+
+	private StoredValueScanner.Scan helperScan() {
+		return scan("0xc00a", helperHooks(Set.of(), Set.of(), new ArrayList<>()));
+	}
+
+	@Test
+	public void sharedEpilogueThroughSaveHelperRestoresOnEveryArm() throws Exception {
+		trampolines(SAVE_HELPER, "85 10 60", true); // far: STA $10 / RTS
+		List<Address> queried = new ArrayList<>();
+		StoredValueScanner.Scan scan = scan("0xc00a", helperHooks(Set.of(), Set.of(), queried));
+		assertEquals(BankSwitchStrategy.ValueStop.RESTORED_BANK, scan.stop());
+		StoredValueScanner.ReadBack rb = scan.readBack();
+		assertEquals(builder.addr("0x21"), rb.cell());
+		assertEquals(2, rb.reads().size());
+		List<Address> vias = new ArrayList<>();
+		for (StoredValueScanner.ReadBack arm : rb.reads()) {
+			assertEquals(builder.addr("0xc101"), arm.readAt());
+			assertEquals(builder.addr("0x22"), arm.slot().cell());
+			assertEquals(builder.addr("0xc103"), arm.slot().store());
+			assertEquals(builder.addr("0xc008"), arm.slot().load());
+			vias.add(arm.slot().storedVia());
+		}
+		assertEquals(List.of(builder.addr("0xc002"), builder.addr("0xc012")), vias);
+		// each arm is resolved under its own CALL's state, never the store's merged one
+		assertTrue(queried.contains(builder.addr("0xc002")));
+		assertTrue(queried.contains(builder.addr("0xc012")));
+		assertFalse(queried.contains(builder.addr("0xc103")));
+	}
+
+	@Test
+	public void singleCallThroughSaveHelperRestores() throws Exception {
+		trampolines(SAVE_HELPER, "85 10 60", false);
+		StoredValueScanner.Scan scan = helperScan();
+		assertEquals(BankSwitchStrategy.ValueStop.RESTORED_BANK, scan.stop());
+		assertEquals(1, scan.readBack().reads().size());
+		assertEquals(builder.addr("0xc002"), scan.readBack().slot().storedVia());
+	}
+
+	/** cv3's e725 arm: the far callee itself calls the save helper, so the outer reload gets
+	 *  the bank live INSIDE the far call. The far call is a dirty census, not a save helper. */
+	@Test
+	public void farCalleeNestingTheSaveHelperDeclines() throws Exception {
+		trampolines(SAVE_HELPER, "20 00 c1 60", true); // far: JSR helper / RTS
+		assertDeclined(helperScan());
+	}
+
+	@Test
+	public void noStateAtOneCallDeclines() throws Exception {
+		trampolines(SAVE_HELPER, "85 10 60", true);
+		assertDeclined(scan("0xc00a",
+			helperHooks(Set.of(builder.addr("0xc012")), Set.of(), new ArrayList<>())));
+	}
+
+	/** A switch before the read inside the helper: the call's state is not the read's. */
+	@Test
+	public void mechanismWriteBeforeTheHelperStoreDeclines() throws Exception {
+		trampolines("8d 00 80 a5 21 85 22 60", "85 10 60", true); // STA $8000 / LDA $21 / STA $22
+		assertDeclined(scan("0xc00a",
+			helperHooks(Set.of(), Set.of(builder.addr("0xc100")), new ArrayList<>())));
+	}
+
+	@Test
+	public void branchBeforeTheHelperStoreDeclines() throws Exception {
+		trampolines("a5 21 f0 00 85 22 60", "85 10 60", true); // LDA $21 / BEQ +0 / STA $22
+		assertDeclined(helperScan());
+	}
+
+	@Test
+	public void helperRewritingTheSlotAfterItsStoreDeclines() throws Exception {
+		trampolines("a5 21 85 22 e6 22 60", "85 10 60", true); // LDA $21 / STA $22 / INC $22
+		assertDeclined(helperScan());
+	}
+
+	/** Only a read-back is adopted through a helper: an immediate keeps today's answer. */
+	@Test
+	public void helperStoringAnImmediateKeepsTodaysAnswer() throws Exception {
+		trampolines("a9 05 85 22 60", "85 10 60", true); // LDA #$05 / STA $22
+		assertDeclined(helperScan());
+	}
+
+	/** One arm saves on its own path, the other through the helper: different stores. */
+	@Test
+	public void directAndHelperArmsDecline() throws Exception {
+		put("0xc002", "85 22 ea"); // A: STA $22 / NOP  -- saves on its own path
+		trampolinesKeepingA(SAVE_HELPER, "85 10 60");
+		assertDeclined(helperScan());
+	}
+
+	/** {@link #trampolines} with A's first five bytes left as the caller wrote them. */
+	private void trampolinesKeepingA(String helperHex, String farHex) throws Exception {
+		put("0xc000", "a5 21"); // A: LDA $21
+		put("0xc005", "20 00 c2"); // A: JSR far
+		put("0xc008", "a5 22"); // tail: LDA $22
+		put("0xc00a", "8d 00 80"); // tail: STA $8000
+		put("0xc00d", "60"); // tail: RTS
+		put("0xc010", "a9 02"); // B: LDA #$02
+		put("0xc012", "20 00 c1"); // B: JSR helper
+		put("0xc015", "20 00 c2"); // B: JSR far
+		put("0xc018", "4c 08 c0"); // B: JMP $c008
+		put("0xc100", helperHex);
+		put("0xc200", farHex);
+		createFunctions("routineA", "0xc000", "0xc00d", "routineB", "0xc010", "0xc01a");
 	}
 }

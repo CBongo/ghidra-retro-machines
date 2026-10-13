@@ -389,11 +389,13 @@ final class StoredValueScanner {
 	 *  env entry the search abandons at ({@code null} for none). */
 	record SlotKey(Address load, long cellOffset, Address envEntry) {}
 
-	/** A save-slot proof: the single store every path reaches ({@code null} = declined), and
-	 *  whether {@link SlotAssumption#INDIRECT_STORES_DO_NOT_WRITE_SLOT} was relied on. */
-	record SlotProof(Address store, boolean indirectStoresAssumed) {
+	/** A save-slot proof: the single store every path reaches ({@code null} = declined), the
+	 *  calls through which the paths reach it when it sits inside a SAVE HELPER ({@code via},
+	 *  sorted; empty for a store on the paths themselves -- bead grm-mej.23), and whether
+	 *  {@link SlotAssumption#INDIRECT_STORES_DO_NOT_WRITE_SLOT} was relied on. */
+	record SlotProof(Address store, List<Address> via, boolean indirectStoresAssumed) {
 
-		static final SlotProof DECLINED = new SlotProof(null, false);
+		static final SlotProof DECLINED = new SlotProof(null, List.of(), false);
 	}
 
 	/** {@link ProofMemo} key for a callee-closure census: the callee entry and the slot's
@@ -496,7 +498,16 @@ final class StoredValueScanner {
 	 * over at least one indirect store under {@link SlotAssumption#INDIRECT_STORES_DO_NOT_WRITE_SLOT}
 	 * -- descriptive, so the annotation can say the assumption was actually relied on.
 	 */
-	record SlotCarrier(Address cell, Address store, Address load, boolean indirectStoresAssumed) {}
+	record SlotCarrier(Address cell, Address store, Address load, boolean indirectStoresAssumed,
+			Address storedVia) {
+
+		/** {@code storedVia} is the call whose SAVE HELPER ran {@code store} on this read's path
+		 *  (bead grm-mej.23; cv3's {@code JSR e2e0}, whose {@code e2e3 STA $22} is the save), or
+		 *  {@code null} when the store sits on the path itself. */
+		SlotCarrier(Address cell, Address store, Address load, boolean indirectStoresAssumed) {
+			this(cell, store, load, indirectStoresAssumed, null);
+		}
+	}
 
 	/**
 	 * The NAMED, BOUNDED ASSUMPTIONS the RAM save-slot proof ({@link #saveSlotForwarded}, bead
@@ -1442,9 +1453,9 @@ final class StoredValueScanner {
 	 * overlap), so the edge always looks cross-function. Walking it backward is still one more
 	 * enumerated edge: a jump moves no stack byte, and every rule the walk applies -- the
 	 * function-entry and call-reference abandons, the per-address depth check -- is applied at
-	 * each node it reaches, relative to that node's own function. Only
-	 * {@link #crossBlockMatchingPush} opts in; {@code joinArms} and the save-slot proof keep the
-	 * strict rule.
+	 * each node it reaches, relative to that node's own function. {@link #crossBlockMatchingPush}
+	 * and the save-slot proof ({@link #solveSlot}, bead grm-mej.22) opt in; {@code joinArms}
+	 * keeps the strict rule.
 	 */
 	static List<Address> closedWorldPredecessors(Program program, Listing listing,
 			Address headAddr, boolean admitCrossFunctionJumps) {
@@ -1904,9 +1915,15 @@ final class StoredValueScanner {
 		INDIRECT_ASSUMED
 	}
 
-	/** One save-slot search node's resolution: the store every path from it reaches, and whether
-	 *  any of those paths relied on the indirect-store assumption. */
-	private record SlotResult(Address store, boolean indirectAssumed) {}
+	/** One save-slot search node's resolution: the store every path from it reaches, the calls
+	 *  whose save helper ran it ({@code via}; empty when the store is on the paths themselves --
+	 *  bead grm-mej.23), and whether any of those paths relied on the indirect-store assumption. */
+	private record SlotResult(Address store, Set<Address> via, boolean indirectAssumed) {}
+
+	/** Sentinel cap on the distinct calls ({@link SlotResult#via}) one save-slot proof may resolve
+	 *  a save helper through (bead grm-mej.23). cv3's shared {@code e67f} epilogue measured 31 arms;
+	 *  this is about twice that, a sentinel against a pathological fan-in, not a tuned value. */
+	private static final int SLOT_HELPER_ARM_CAP = 64;
 
 	/** Mutable search-wide state for one save-slot proof. Spending mirrors
 	 *  {@link CrossBlockSearch}: once per node entered, once more per terminal store. */
@@ -1958,9 +1975,12 @@ final class StoredValueScanner {
 	 * anything that may write it. Abandons on: different stores on different paths (stores whose
 	 * values might agree are NOT reconciled -- that would need each resolved under its own state,
 	 * and no measured customer needs it); a path reaching a function entry, a call reference, an
-	 * undisassembled or cross-function predecessor, or the env's entry; any other writer of the
-	 * slot on a path ({@link #classifySlotWrite}); a crossed call whose callee closure may write
-	 * the slot ({@link #calleeClosureCensus}); the node/join caps (the same
+	 * undisassembled predecessor, or the env's entry (a JUMP in from another function is walked,
+	 * bead grm-mej.22); any other writer of the slot on a path ({@link #classifySlotWrite}); a
+	 * crossed call whose callee closure may write the slot ({@link #calleeClosureCensus}) --
+	 * unless that callee is a SAVE HELPER ({@link #saveHelperStore}, bead grm-mej.23), when the
+	 * call ends the path as its store, resolved per call by {@link #saveHelperArms}; the node/join
+	 * caps (the same
 	 * {@link #CROSS_BLOCK_NODE_CAP}/{@link #CROSS_BLOCK_JOIN_CAP} X1 uses). Slots that may alias
 	 * the stack ({@link StackFloor}), non-writable and volatile cells, and indexed loads are
 	 * refused up front. Interrupt handlers are not modelled as writers -- the same stance the
@@ -1994,6 +2014,10 @@ final class StoredValueScanner {
 		if (storeReg == null) {
 			return null;
 		}
+		if (!proof.via().isEmpty()) {
+			return saveHelperArms(program, load, store, storeReg, cell, proof, aAcc, oAcc, mask,
+				innerMask, hooks, budget, depth);
+		}
 		MechanismState atStore = hooks.stateAt(store.getMinAddress());
 		if (atStore == null) {
 			return null; // no state at the store: abandon, never withdraw-and-continue
@@ -2021,6 +2045,69 @@ final class StoredValueScanner {
 		return null;
 	}
 
+	/**
+	 * {@link #saveSlotForwarded}'s answer when the proof's store sits inside a SAVE HELPER the
+	 * paths CALL (bead grm-mej.23; {@link #saveHelperStore}). Each call is an arm: the paths
+	 * reach the same store through different calls (cv3's ~30 trampolines each {@code JSR e2e0}),
+	 * and the store's state is the merge over every caller, so each arm is resolved under the
+	 * state AT ITS OWN CALL ({@link Hooks#stateAt}) -- sound because the helper's line from its
+	 * entry to the store switches nothing. The answer is adopted only as grm-mej.21's
+	 * {@link #pairedArms} adopts one: EVERY arm a {@code RESTORED_BANK} read-back of the SAME
+	 * cell, read on that straight line (so the call-site state is the state at the read), with
+	 * this walk's accumulators still the identity. Anything else -- an arm with no state at its
+	 * call, an arm that resolves to a number or declines -- returns {@code null}, keeping today's
+	 * answer: merging resolved arm values would be sound too, but no measured customer needs it.
+	 */
+	private static Scan saveHelperArms(Program program, Instruction load, Instruction store,
+			char storeReg, Address cell, SlotProof proof, int aAcc, int oAcc, int mask,
+			int innerMask, Hooks hooks, Budget budget, int depth) {
+		if (aAcc != 0xFF || oAcc != 0x00) {
+			return null;
+		}
+		Listing listing = program.getListing();
+		List<ReadBack> reads = new ArrayList<>();
+		PartialByte merged = null;
+		for (Address callAt : proof.via()) {
+			Instruction call = listing.getInstructionAt(callAt);
+			Address[] flows = call == null ? null : call.getFlows();
+			if (flows == null || flows.length != 1) {
+				return null;
+			}
+			Address entry = flows[0];
+			MechanismState atCall = hooks.stateAt(callAt);
+			if (atCall == null) {
+				return null; // no state at this call -- abandon, never withdraw (ironsword)
+			}
+			Scan arm = resolveStoredValue(program, store, storeReg, atCall, innerMask, hooks,
+				RegisterEnv.NONE, budget, depth + 1);
+			ReadBack rb = arm.readBack();
+			if (arm.stop() != BankSwitchStrategy.ValueStop.RESTORED_BANK || rb == null ||
+				!rb.arms().isEmpty() || rb.slot() != null || rb.crossBlockPush() != null ||
+				rb.carriedAcross() != null || !sameSpace(rb.readAt(), entry) ||
+				rb.readAt().compareTo(entry) < 0 ||
+				rb.readAt().compareTo(store.getMinAddress()) >= 0 ||
+				(!reads.isEmpty() && !rb.cell().equals(reads.get(0).cell()))) {
+				return null;
+			}
+			reads.add(rb.withSlot(new SlotCarrier(cell, store.getMinAddress(),
+				load.getMinAddress(), proof.indirectStoresAssumed(), callAt)));
+			merged = merged == null ? arm.value() : PartialByte.merge(merged, arm.value());
+		}
+		Msg.debug(StoredValueScanner.class, "save-slot forwarding through a save helper: load=" +
+			load.getMinAddress() + " cell=" + cell + " store=" + store.getMinAddress() + " over " +
+			reads.size() + " call(s)");
+		ReadBack readBack = reads.size() == 1 ? reads.get(0) : ReadBack.joined(reads);
+		Scan restored = restoredKeepingValue(aAcc, oAcc, mask, merged, readBack);
+		// Every arm's state pinned the read-back byte whole: the merged value, as the direct
+		// route keeps one (saveSlotForwarded's partly-known branch).
+		return restored != null ? restored
+				: stopped(aAcc, oAcc, mask, merged, BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
+	}
+
+	private static boolean sameSpace(Address a, Address b) {
+		return a.getAddressSpace().equals(b.getAddressSpace());
+	}
+
 	/** The (possibly memoized) save-slot proof for {@code load} reading {@code cell}. */
 	private static SlotProof saveSlotProof(Program program, Instruction load, Address cell,
 			Hooks hooks, RegisterEnv env) {
@@ -2033,9 +2120,10 @@ final class StoredValueScanner {
 		SlotSearch ctx = new SlotSearch();
 		SlotProof proof;
 		try {
-			proof = solveSlot(program, program.getListing(), env, memo, ctx, cell,
+			proof = solveSlot(program, program.getListing(), env, hooks, memo, ctx, cell,
 				load.getMinAddress())
-					.map(r -> new SlotProof(r.store(), r.indirectAssumed()))
+					.map(r -> new SlotProof(r.store(), new ArrayList<>(new TreeSet<>(r.via())),
+						r.indirectAssumed()))
 					.orElse(SlotProof.DECLINED);
 		}
 		catch (SlotAbandon abandon) {
@@ -2053,7 +2141,8 @@ final class StoredValueScanner {
 	 * was one) -- no new contribution -- exactly as in {@link #solveCrossBlock}.
 	 */
 	private static Optional<SlotResult> solveSlot(Program program, Listing listing,
-			RegisterEnv env, ProofMemo memo, SlotSearch ctx, Address cell, Address addr) {
+			RegisterEnv env, Hooks hooks, ProofMemo memo, SlotSearch ctx, Address cell,
+			Address addr) {
 		if (ctx.visited.contains(addr)) {
 			if (ctx.inProgress.contains(addr)) {
 				return Optional.empty();
@@ -2066,7 +2155,10 @@ final class StoredValueScanner {
 		if (env.stopsAt(addr)) {
 			throw SlotAbandon.INSTANCE; // the caller's memory is not modelled
 		}
-		List<Address> preds = closedWorldPredecessors(program, listing, addr);
+		// grm-mej.22: a JUMP in from another function is one more enumerated edge (cv3's e67f
+		// LDA $22, the shared tail of ~30 trampolines that each JMP e67f) -- the same rule, and
+		// the same per-node entry/call-reference abandons, crossBlockMatchingPush walks under.
+		List<Address> preds = closedWorldPredecessors(program, listing, addr, true);
 		if (preds == null || preds.isEmpty()) {
 			throw SlotAbandon.INSTANCE; // a function entry, a call ref, an unsound edge, a dead end
 		}
@@ -2083,7 +2175,7 @@ final class StoredValueScanner {
 			switch (classifySlotWrite(program, pred, cell)) {
 				case STORES_SLOT -> {
 					ctx.spend(); // a terminal node, charged once (see SlotSearch)
-					contributions.add(new SlotResult(predAddr, false));
+					contributions.add(new SlotResult(predAddr, Set.of(), false));
 					continue;
 				}
 				case WRITES_SLOT, UNPLACEABLE -> throw SlotAbandon.INSTANCE;
@@ -2094,14 +2186,24 @@ final class StoredValueScanner {
 			if (pred.getFlowType().isCall()) {
 				CensusResult census = callCensus(program, listing, memo, pred, cell);
 				if (!census.clean()) {
-					throw SlotAbandon.INSTANCE; // the callee closure may write the slot
+					// grm-mej.23: a callee that may write the slot is still a usable SOURCE when it
+					// is a save helper -- it stores the slot exactly once, last, on every path.
+					SaveHelperStore helper = saveHelperStore(program, listing, hooks, memo, pred,
+						cell);
+					if (helper == null) {
+						throw SlotAbandon.INSTANCE; // the callee closure may write the slot
+					}
+					ctx.spend(); // a terminal node, charged once (see SlotSearch)
+					contributions.add(new SlotResult(helper.store(), Set.of(predAddr),
+						assumed || helper.indirectStoresAssumed()));
+					continue;
 				}
 				assumed |= census.indirectStoresAssumed();
 			}
 			boolean viaAssumption = assumed;
-			solveSlot(program, listing, env, memo, ctx, cell, predAddr).ifPresent(child ->
+			solveSlot(program, listing, env, hooks, memo, ctx, cell, predAddr).ifPresent(child ->
 				contributions.add(viaAssumption && !child.indirectAssumed()
-						? new SlotResult(child.store(), true) : child));
+						? new SlotResult(child.store(), child.via(), true) : child));
 		}
 		ctx.inProgress.remove(addr);
 		if (contributions.isEmpty()) {
@@ -2109,14 +2211,23 @@ final class StoredValueScanner {
 			return Optional.empty();
 		}
 		Address store = contributions.get(0).store();
+		boolean direct = contributions.get(0).via().isEmpty();
 		boolean anyAssumed = false;
+		Set<Address> via = new HashSet<>();
 		for (SlotResult c : contributions) {
 			if (!c.store().equals(store)) {
 				throw SlotAbandon.INSTANCE; // different stores on different paths
 			}
+			if (c.via().isEmpty() != direct) {
+				throw SlotAbandon.INSTANCE; // the store reached both directly and through a call
+			}
 			anyAssumed |= c.indirectAssumed();
+			via.addAll(c.via());
 		}
-		SlotResult combined = new SlotResult(store, anyAssumed);
+		if (via.size() > SLOT_HELPER_ARM_CAP) {
+			throw SlotAbandon.INSTANCE;
+		}
+		SlotResult combined = new SlotResult(store, via, anyAssumed);
 		ctx.memo.put(addr, combined);
 		return Optional.of(combined);
 	}
@@ -2136,6 +2247,12 @@ final class StoredValueScanner {
 		if (entersUnknownBank(program, call, entry)) {
 			return CensusResult.DIRTY;
 		}
+		return memoizedCensus(program, listing, memo, entry, cell);
+	}
+
+	/** {@link #calleeClosureCensus} from {@code entry}, through {@code memo} when there is one. */
+	private static CensusResult memoizedCensus(Program program, Listing listing, ProofMemo memo,
+			Address entry, Address cell) {
 		CensusKey key = new CensusKey(entry, cell.getOffset());
 		CensusResult cached = memo == null ? null : memo.censuses.get(key);
 		if (cached != null) {
@@ -2146,6 +2263,70 @@ final class StoredValueScanner {
 			memo.censuses.put(key, result);
 		}
 		return result;
+	}
+
+	/** A save helper's slot store ({@link #saveHelperStore}): the store, the callee entry, and
+	 *  whether the census after the store relied on the indirect-store assumption. */
+	record SaveHelperStore(Address entry, Address store, boolean indirectStoresAssumed) {}
+
+	/**
+	 * Whether {@code call}'s callee is a SAVE HELPER for {@code cell} (bead grm-mej.23): every
+	 * path from its entry stores the slot exactly once, with a plain store, and nothing after
+	 * that store writes it again -- so after the call returns, the slot holds what that store
+	 * wrote, and the call can end a save-slot path as if the store were on it. cv3's
+	 * {@code FUN_e2e0} ({@code PHA / LDA $21 / STA $22 / PLA / STA $21 / STA $5115 / RTS}) is the
+	 * shape.
+	 * <p>
+	 * Deliberately narrow: the entry must reach the store by a STRAIGHT fall-through line (no
+	 * flow, no call, no other writer of the slot, no {@link Hooks#isMechanismWrite}, at most
+	 * {@link #MAX_BACKWARD_SCAN} instructions), which makes "every path stores it once" and "no
+	 * bank switches between the entry and the store" both hold by construction -- the second is
+	 * what lets {@link #saveSlotForwarded} resolve the store under the state AT THE CALL. What
+	 * follows the store must pass the same closure census a crossed call does
+	 * ({@link #calleeClosureCensus}); a loop back to the store is caught there, as the store
+	 * itself is a writer. The call needs one resolved target in a known bank, as
+	 * {@link #callCensus} requires. {@code null} on any failure.
+	 */
+	private static SaveHelperStore saveHelperStore(Program program, Listing listing, Hooks hooks,
+			ProofMemo memo, Instruction call, Address cell) {
+		Address[] flows = call.getFlows();
+		if (call.getFlowType().isComputed() || flows == null || flows.length != 1) {
+			return null;
+		}
+		Address entry = flows[0];
+		if (entersUnknownBank(program, call, entry)) {
+			return null;
+		}
+		Address cursor = entry;
+		for (int i = 0; i < MAX_BACKWARD_SCAN; i++) {
+			Instruction instr = listing.getInstructionAt(cursor);
+			if (instr == null || hooks.isMechanismWrite(instr)) {
+				return null;
+			}
+			SlotWrite write = classifySlotWrite(program, instr, cell);
+			if (write == SlotWrite.STORES_SLOT) {
+				Address after = instr.getFallThrough();
+				if (after == null) {
+					return null;
+				}
+				CensusResult rest = memoizedCensus(program, listing, memo, after, cell);
+				return rest.clean()
+						? new SaveHelperStore(entry, instr.getMinAddress(),
+							rest.indirectStoresAssumed())
+						: null;
+			}
+			if (write != SlotWrite.NONE) {
+				return null;
+			}
+			ghidra.program.model.symbol.FlowType ft = instr.getFlowType();
+			Address next = instr.getFallThrough();
+			if (!ft.isFallthrough() || ft.isCall() || instr.getFlows().length > 0 ||
+				next == null) {
+				return null;
+			}
+			cursor = next;
+		}
+		return null;
 	}
 
 	/**

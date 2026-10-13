@@ -1069,8 +1069,13 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 					.append(readBack.reads().size()).append(" joining paths ran -- ");
 			List<String> arms = new ArrayList<>();
 			for (StoredValueScanner.ReadBack arm : readBack.reads()) {
-				arms.add("at " + arm.readAt() + " (carried on the stack across control flow " +
-					arm.crossBlockPush() + ".." + arm.crossBlockPull() + ")");
+				// bead grm-mej.23: a save-helper arm is one CALL to the helper, whose read is
+				// resolved under that call's own state; name the call.
+				arms.add(arm.slot() != null && arm.slot().storedVia() != null
+						? "at " + arm.readAt() + " (in the save helper called at " +
+							arm.slot().storedVia() + ")"
+						: "at " + arm.readAt() + " (carried on the stack across control flow " +
+							arm.crossBlockPush() + ".." + arm.crossBlockPull() + ")");
 			}
 			text.append(String.join(" or ", arms)).append(" -- from ").append(source);
 		}
@@ -1095,7 +1100,14 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			// slot, both ends, and the named assumption the all-paths writer proof rests on.
 			StoredValueScanner.SlotCarrier slot = readBack.slot();
 			text.append(", saved into RAM save slot ").append(slot.cell()).append(" at ")
-					.append(slot.store()).append(" and reloaded at ").append(slot.load())
+					.append(slot.store());
+			if (slot.storedVia() != null) {
+				// bead grm-mej.23: the save ran inside a helper the paths call.
+				text.append(joined
+						? " inside the save helper each path calls"
+						: " inside the save helper called at " + slot.storedVia());
+			}
+			text.append(" and reloaded at ").append(slot.load())
 					.append(" (every path between them, and every call crossed, proved free of " +
 						"other writers of the slot -- ")
 					.append(StoredValueScanner.SlotAssumption.NOTE_WORDING)
@@ -1111,7 +1123,9 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		Function function = program.getFunctionManager().getFunctionContaining(siteAddr);
 		// A joined read-back's arms sit in different routines (cv3's shared epilogue), so the
 		// entry-of-THIS-function claim below is made only for a single read.
-		if (!joined && function != null &&
+		// A read inside a called save helper (grm-mej.23) is not in this function at all.
+		boolean readInHelper = readBack.slot() != null && readBack.slot().storedVia() != null;
+		if (!joined && !readInHelper && function != null &&
 			readsEntryBank(program, listing, flow, function, readBack.readAt())) {
 			text.append(" That read sits at the ENTRY of ").append(function.getName())
 					.append(" (nothing switches between its entry and the read), so it is the ")
