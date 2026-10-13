@@ -110,8 +110,9 @@ Each is minutes of work and settles something specific. Highest value per unit e
 - If (1) shows `$22 = 0` at `e67f` for `e725`, the `e681` warning is honest as it stands. Then
   `grm-mej.19`'s best outcome is RESTORED on the clean arms and a precise warning naming
   `e725`/`e7ec`.
-- If `$22` is the caller's bank, the static nest reading is wrong, perhaps because `$054e` makes
-  `85bb` unreachable from `8574`. Say so, and `grm-mej.19` can aim for a full RESTORED note.
+- If `$22` is the caller's bank, the static nest reading is wrong. `8574` calls `85bb` directly, so
+  the likely cause is a wrong assumption about which bank `e72a JSR $8574` enters (`$80` gives 16K
+  bank 0). Say so, and `grm-mej.19` can aim for a full RESTORED note.
 
 ---
 
