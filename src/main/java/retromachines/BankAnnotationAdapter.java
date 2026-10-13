@@ -19,11 +19,13 @@ import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 
 import com.google.gson.JsonObject;
 
@@ -396,6 +398,48 @@ final class BankAnnotationAdapter {
 			bm.removeBookmark(stale);
 		}
 		bm.setBookmark(addr, type, analyzer.getBookmarkCategory(), message);
+	}
+
+	/**
+	 * Removes every WARNING and NOTE bookmark in this analyzer's own category at an address NOT
+	 * in {@code bookmarkedThisRound}, returning the addresses retracted (bead grm-mej.26).
+	 * <p>
+	 * The bookmark-side counterpart of {@link BankCommentProvenance#sweep}. A site's outcome can
+	 * improve between two rounds of the same run: synthetic {@code nesmmc3mirrortest}'s
+	 * {@code e2dc} WARNs in round 1, while {@code JSR $A000} is still a base-space flow, and
+	 * resolves cleanly in round 2 once the call is retargeted into its overlay (grm-mej.24). The
+	 * clean exit writes a comment and no bookmark, and {@link #setBookmarkClearingOther} only
+	 * swaps one bookmark type for the other, so the round-1 WARNING outlived the round that
+	 * raised it and inflated every bookmark count read from the program. A site that stops being
+	 * a switch site at all, or a requirement violation a later round no longer finds, went stale
+	 * the same way.
+	 * <p>
+	 * Must run after Phase 3, the last writer of this category in a round, with every address
+	 * either phase bookmarked. The mode-lock bookmarks live in their own category and clear
+	 * themselves ({@link #annotateModeLock}). Write-free on a settled program.
+	 */
+	static List<Address> retractStaleBookmarks(BoardBankAnalyzer analyzer, Program program,
+			Set<Address> bookmarkedThisRound, TaskMonitor monitor) throws CancelledException {
+		BookmarkManager bm = program.getBookmarkManager();
+		String category = analyzer.getBookmarkCategory();
+		List<Bookmark> stale = new ArrayList<>();
+		for (String type : List.of(BookmarkType.WARNING, BookmarkType.NOTE)) {
+			Iterator<Bookmark> it = bm.getBookmarksIterator(type);
+			while (it.hasNext()) {
+				monitor.checkCancelled();
+				Bookmark b = it.next();
+				if (b.getCategory().equals(category) && !bookmarkedThisRound.contains(b.getAddress())) {
+					stale.add(b);
+				}
+			}
+		}
+		// Removed after the walk, not during it: the iterator reads the live table.
+		Set<Address> retracted = new TreeSet<>();
+		for (Bookmark b : stale) {
+			retracted.add(b.getAddress());
+			bm.removeBookmark(b);
+		}
+		return new ArrayList<>(retracted);
 	}
 
 	/**
@@ -1681,6 +1725,9 @@ final class BankAnnotationAdapter {
 					analyzer.getBookmarkCategory(), "Bank state requirement violated: call to " +
 						cs.callee().getName() + " requires " + describeBits(board, missing) +
 						" known on entry, but it is unknown here");
+				// The set doubles as this round's bookmarked-site record for
+				// retractStaleBookmarks (grm-mej.26), so a violation site must join it too.
+				alreadyWarned.add(cs.addr());
 				violations++;
 			}
 		}

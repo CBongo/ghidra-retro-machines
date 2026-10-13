@@ -848,6 +848,22 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		int violations = BankAnnotationAdapter.annotateBankRequirementViolations(this, program,
 			listing, flow, board, alreadyWarned, log);
 
+		// Retract bookmarks an EARLIER round placed at sites this round did not bookmark (bead
+		// grm-mej.26) -- the bookmark twin of the comment sweep above. alreadyWarned now holds
+		// every address Phase 2 or Phase 3 bookmarked, so this must follow Phase 3.
+		List<Address> staleMarks = BankAnnotationAdapter.retractStaleBookmarks(this, program,
+			alreadyWarned, monitor);
+		if (!staleMarks.isEmpty()) {
+			String where = staleMarks.stream()
+					.limit(RETRACTION_LOG_LIMIT)
+					.map(Object::toString)
+					.collect(Collectors.joining(", "));
+			String more = staleMarks.size() > RETRACTION_LOG_LIMIT
+					? ", ... (" + (staleMarks.size() - RETRACTION_LOG_LIMIT) + " more)" : "";
+			AnalyzerLog.info(this, tag + ": retracted " + staleMarks.size() +
+				" stale bookmark(s) from an earlier analysis round at " + where + more);
+		}
+
 		// --- Mode lock (grm-dos9.6): warn where a locked layout mode was contradicted ---
 		warnings += BankAnnotationAdapter.annotateModeLock(this, program, board, flow.modeLock(),
 			monitor);
