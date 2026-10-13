@@ -103,7 +103,7 @@ REALROM count instrs.inOverlay 19345
 REALROM count bankComments 171
 REALROM count warnings 15
 REALROM count notes 14
-REALROM count symbols 147
+REALROM count symbols 181
 REALROM sample.bankcomment a1d0 bank -> prg_mode=2,bank_5114=0,bank_5115=0,bank_5116=30,bank_5117=31? via FUN_e2da [known: prg_mode.0=0,prg_mode.1=1,bank_5116.0=0,bank_5116.1=1,bank_5116.2=1,bank_5116.3=1,bank_5116.4=1,bank_5116.5=0,bank_5116.6=0; assumed from initial: bank_5114.0,bank_5114.1,bank_5114.2,bank_5114.3,bank_5114.4,bank_5114.5,bank_5114.6,bank_5115.0,bank_5115.1,bank_5115.2,bank_5115.3,bank_5115.4,bank_5115.5,bank_5115.6,bank_5117.0,bank_5117.1,bank_5117.2,bank_5117.3,bank_5117.4,bank_5117.5,bank_5117.6] [switch-value flow]
 REALROM sample.bankcomment a825 bank -> prg_mode=2,bank_5114=0,bank_5115=0,bank_5116=30,bank_5117=31? via FUN_e2da [known: prg_mode.0=0,prg_mode.1=1,bank_5116.0=0,bank_5116.1=1,bank_5116.2=1,bank_5116.3=1,bank_5116.4=1,bank_5116.5=0,bank_5116.6=0; assumed from initial: bank_5114.0,bank_5114.1,bank_5114.2,bank_5114.3,bank_5114.4,bank_5114.5,bank_5114.6,bank_5115.0,bank_5115.1,bank_5115.2,bank_5115.3,bank_5115.4,bank_5115.5,bank_5115.6,bank_5117.0,bank_5117.1,bank_5117.2,bank_5117.3,bank_5117.4,bank_5117.5,bank_5117.6] [switch-value flow]
 REALROM sample.bankcomment b11c bank -> prg_mode=2,bank_5114=0,bank_5115=0,bank_5116=30,bank_5117=31? via FUN_e2da [known: prg_mode.0=0,prg_mode.1=1,bank_5116.0=0,bank_5116.1=1,bank_5116.2=1,bank_5116.3=1,bank_5116.4=1,bank_5116.5=0,bank_5116.6=0; assumed from initial: bank_5114.0,bank_5114.1,bank_5114.2,bank_5114.3,bank_5114.4,bank_5114.5,bank_5114.6,bank_5115.0,bank_5115.1,bank_5115.2,bank_5115.3,bank_5115.4,bank_5115.5,bank_5115.6,bank_5117.0,bank_5117.1,bank_5117.2,bank_5117.3,bank_5117.4,bank_5117.5,bank_5117.6] [switch-value flow]
@@ -355,5 +355,5 @@ REALROM sample.symbol 8434 case_7 USER_DEFINED primary=false
 REALROM sample.symbol 8434 case_8 USER_DEFINED primary=false
 REALROM sample.symbol 8434 case_9 USER_DEFINED primary=true
 REALROM sample.symbol 8667 switch USER_DEFINED primary=true
-REALROM sample.symbol.truncated 25 of 147
+REALROM sample.symbol.truncated 25 of 181
 === REALROM END ===

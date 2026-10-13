@@ -217,17 +217,30 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 				" location(s) no function (real or synthesized) could be resolved for, and " +
 				skippedThunk + " thunk location(s) (not attempted; see class javadoc)");
 		}
-		if (functions.isEmpty()) {
-			return true;
+		int bounded = boundFunctions(program, functions, monitor, log);
+		if (bounded > 0) {
+			AnalyzerLog.info(this, "bounded " + bounded + " jump table(s)");
 		}
+		return true;
+	}
 
+	/** Decompiles each of {@code functions} and bounds every jump table found; returns how many it
+	 *  bounded. The body of {@link #added}, shared with {@link JumpTableOverrideRelocatorAnalyzer},
+	 *  which calls it for a switch this analyzer could only pin by references (grm-kon2). */
+	int boundFunctions(Program program, Set<Function> functions, TaskMonitor monitor,
+			MessageLog log) throws CancelledException {
+		if (functions.isEmpty()) {
+			return 0;
+		}
+		Listing listing = program.getListing();
+		int bounded = 0;
 		DecompInterface ifc = new DecompInterface();
 		try {
 			new SwitchAnalysisDecompileConfigurer(program).configure(ifc);
 			if (!ifc.openProgram(program)) {
 				AnalyzerLog.warn(this, log, "decompiler failed to open program: " +
 					ifc.getLastMessage());
-				return true;
+				return 0;
 			}
 			// Two passes (grm-2m07): every table's load-table starts must be known before ANY
 			// table is bounded, because boundByNeighbourTable cuts one table where another
@@ -260,7 +273,6 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 			// grm-rsxe: a second pass offers every table still declined the kept targets of the
 			// tables the first pass bounded (boundByKnownCode). Only this pass's own results feed
 			// it, so which tables it cuts does not depend on analysis order.
-			int bounded = 0;
 			List<Address> keptTargets = new ArrayList<>();
 			Map<JumpTable, Function> declined = new LinkedHashMap<>();
 			for (Map.Entry<Function, JumpTable[]> e : decompiled.entrySet()) {
@@ -284,14 +296,11 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 					}
 				}
 			}
-			if (bounded > 0) {
-				AnalyzerLog.info(this, "bounded " + bounded + " jump table(s)");
-			}
 		}
 		finally {
 			ifc.dispose();
 		}
-		return true;
+		return bounded;
 	}
 
 	/** Finds computed-jump instructions in {@code set}, the same predicate stock
@@ -571,8 +580,14 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		String text = "[JumpTableBound] table at " + Long.toHexString(tableStart) + " bounded " +
 			realCases.size() + " -> " + result.count() + " entries (" + why + ")";
 		String existing = listing.getComment(CommentType.EOL, switchAddr);
-		listing.setComment(switchAddr, CommentType.EOL,
-			existing == null || existing.isBlank() ? text : existing + "; " + text);
+		if (existing == null || existing.isBlank()) {
+			listing.setComment(switchAddr, CommentType.EOL, text);
+		}
+		else if (!existing.contains(text)) {
+			// A switch is bounded once per pass that reaches it, and how many passes do depends on
+			// analysis order (grm-kon2: dragonpower a546 carried this text 3 or 4 times).
+			listing.setComment(switchAddr, CommentType.EOL, existing + "; " + text);
+		}
 		return true;
 	}
 
@@ -752,6 +767,25 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 			return true;
 		}
 		return false;
+	}
+
+	/** Whether this analyzer bounded {@code switchAddr} (its EOL comment says so) and no override
+	 *  for it exists under any function -- i.e. it was pinned by references only, because no real
+	 *  function contained the switch on any pass that reached it (grm-kon2). */
+	static boolean boundWithoutOverride(Program program, Address switchAddr) {
+		String eol = program.getListing().getComment(CommentType.EOL, switchAddr);
+		if (eol == null || !eol.contains("[JumpTableBound] table at ")) {
+			return false;
+		}
+		String jmpName = "jmp_" + switchAddr.toString();
+		for (Symbol sym : program.getSymbolTable().getSymbols(switchAddr)) {
+			Namespace jmpSpace = sym.getParentNamespace();
+			if ("switch".equals(sym.getName()) && jmpSpace != null &&
+				jmpName.equals(jmpSpace.getName())) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/** Whether {@code switchAddr}'s jump table already carries an override -- ours from an

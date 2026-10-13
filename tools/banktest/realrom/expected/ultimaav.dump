@@ -68,7 +68,7 @@ REALROM count instrs.inOverlay 867
 REALROM count bankComments 9
 REALROM count warnings 8
 REALROM count notes 4
-REALROM count symbols 18
+REALROM count symbols 23
 REALROM sample.bankcomment c181 bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_f331 [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
 REALROM sample.bankcomment c1db bank -> mirroring=0,prg_mode=3,prg_bank=13? via FUN_f331 [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=1,prg_bank.1=0,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
 REALROM sample.bankcomment c1e4 bank -> mirroring=0,prg_mode=3,prg_bank=14? via FUN_f331 [known: prg_mode.0=1,prg_mode.1=1,prg_bank.0=0,prg_bank.1=1,prg_bank.2=1,prg_bank.3=1,prg_bank.4=0; assumed from initial: mirroring.0,mirroring.1] [switch-value flow]
@@ -128,6 +128,11 @@ REALROM sample.symbol 4014 OAMDMA IMPORTED primary=true
 REALROM sample.symbol 4015 SND_CHN IMPORTED primary=true
 REALROM sample.symbol 4016 JOY1 IMPORTED primary=true
 REALROM sample.symbol 4017 JOY2 IMPORTED primary=true
+REALROM sample.symbol 97d4 switch USER_DEFINED primary=true
+REALROM sample.symbol 97df case_0 USER_DEFINED primary=true
+REALROM sample.symbol 97e7 case_1 USER_DEFINED primary=true
+REALROM sample.symbol 97f1 case_2 USER_DEFINED primary=true
+REALROM sample.symbol 986d case_3 USER_DEFINED primary=true
 REALROM sample.symbol f1a1 NMI IMPORTED primary=true
 REALROM sample.symbol ffda IRQ IMPORTED primary=false
 REALROM sample.symbol ffda RESET IMPORTED primary=true

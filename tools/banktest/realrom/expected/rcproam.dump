@@ -19,7 +19,7 @@ REALROM count instrs.inOverlay 0
 REALROM count bankComments 12
 REALROM count warnings 1
 REALROM count notes 11
-REALROM count symbols 37
+REALROM count symbols 109
 REALROM sample.bankcomment 8011 bank -> mirroring=0,prg_mode=0,prg_bank=0 via FUN_ff89 [switch-value flow]
 REALROM sample.bankcomment 801b bank -> mirroring=0,prg_mode=0,prg_bank=0 via FUN_ffc5 [switch-value flow]
 REALROM sample.bankcomment 9327 bank -> mirroring=0,prg_mode=0,prg_bank=0? via FUN_ff89 [known: mirroring.0=0,mirroring.1=0,prg_mode.0=0,prg_mode.1=0; assumed from initial: prg_bank.0,prg_bank.1,prg_bank.2,prg_bank.3,prg_bank.4] [switch-value flow]
@@ -69,5 +69,5 @@ REALROM sample.symbol 87a5 case_4 USER_DEFINED primary=true
 REALROM sample.symbol 884d case_4 USER_DEFINED primary=true
 REALROM sample.symbol 8d61 case_3 USER_DEFINED primary=true
 REALROM sample.symbol 8d85 case_5 USER_DEFINED primary=true
-REALROM sample.symbol.truncated 25 of 37
+REALROM sample.symbol.truncated 25 of 109
 === REALROM END ===

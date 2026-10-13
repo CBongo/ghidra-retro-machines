@@ -15,6 +15,9 @@
  */
 package retromachines;
 
+import java.util.LinkedHashSet;
+import java.util.Set;
+
 import ghidra.app.services.AbstractAnalyzer;
 import ghidra.app.services.AnalysisPriority;
 import ghidra.app.services.AnalyzerType;
@@ -42,6 +45,14 @@ import ghidra.util.task.TaskMonitor;
  * and 168 symbols over three runs. This analyzer hooks the event that causes the problem instead:
  * for each newly created function, it moves any stranded override for a computed jump in the new
  * body, via {@link JumpTableBoundAnalyzer#relocateStaleOverride}.
+ * <p>
+ * Second job, same event (grm-kon2): a switch the bound analyzer only ever reached while no real
+ * function contained it carries pinned references and no override at all, so there is nothing to
+ * move. For each new function containing such a switch, this runs the bound analyzer's own
+ * decompile-and-bound ({@link JumpTableBoundAnalyzer#boundFunctions}) so the override is written
+ * either way. dragonpower a546 (inside the NMI handler's flow) got its override only when the
+ * NMI function's body happened to reach it before the bound analyzer's second pass: 168 symbols
+ * or 152, flipped by timing, which is why the analysis thread pin seemed to matter (grm-uioc).
  */
 public class JumpTableOverrideRelocatorAnalyzer extends AbstractAnalyzer {
 
@@ -72,6 +83,7 @@ public class JumpTableOverrideRelocatorAnalyzer extends AbstractAnalyzer {
 			throws CancelledException {
 		FunctionIterator functions = program.getFunctionManager().getFunctions(set, true);
 		int moved = 0;
+		Set<Function> pinnedOnly = new LinkedHashSet<>();
 		while (functions.hasNext()) {
 			monitor.checkCancelled();
 			Function function = functions.next();
@@ -85,10 +97,28 @@ public class JumpTableOverrideRelocatorAnalyzer extends AbstractAnalyzer {
 					instr.getMinAddress(), log)) {
 					moved++;
 				}
+				else if (!function.isThunk() &&
+					JumpTableBoundAnalyzer.boundWithoutOverride(program, instr.getMinAddress())) {
+					pinnedOnly.add(function);
+				}
 			}
 		}
 		if (moved > 0) {
 			AnalyzerLog.info(this, "moved " + moved + " stranded jump table override(s)");
+		}
+		// grm-kon2: a switch the bound analyzer reached only while no real function contained it was
+		// pinned by references, and stock switch analysis never revisits a site with computed
+		// references -- so it never got the override (and its switch/case labels) that the same
+		// switch gets when a pass happens to reach it after its function exists. Whether one does
+		// is analysis order (dragonpower a546: 152 or 168 symbols). Bound it now that a function
+		// contains it, the same way the bound analyzer would have, so both orders end the same.
+		if (!pinnedOnly.isEmpty()) {
+			int bounded =
+				new JumpTableBoundAnalyzer().boundFunctions(program, pinnedOnly, monitor, log);
+			if (bounded > 0) {
+				AnalyzerLog.info(this, "wrote " + bounded +
+					" override(s) for jump table(s) previously pinned by references only");
+			}
 		}
 		return true;
 	}

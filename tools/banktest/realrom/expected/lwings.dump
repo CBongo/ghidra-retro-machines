@@ -26,7 +26,7 @@ REALROM count instrs.inOverlay 7445
 REALROM count bankComments 48
 REALROM count warnings 10
 REALROM count notes 4
-REALROM count symbols 18
+REALROM count symbols 95
 REALROM sample.bankcomment 8194 bank -> 6 (bank=6) via FUN_c34c
 REALROM sample.bankcomment 8c3b bank -> 3 (bank=3) via FUN_c389
 REALROM sample.bankcomment 912d bank -> 3 (bank=3) via FUN_c389
@@ -130,7 +130,15 @@ REALROM sample.symbol 4017 JOY2 IMPORTED primary=true
 REALROM sample.symbol c100 IRQ IMPORTED primary=false
 REALROM sample.symbol c100 RESET IMPORTED primary=true
 REALROM sample.symbol c19d NMI IMPORTED primary=true
-REALROM sample.symbol fffa NMI_VEC IMPORTED primary=true
-REALROM sample.symbol fffc RESET_VEC IMPORTED primary=true
-REALROM sample.symbol fffe IRQ_VEC IMPORTED primary=true
+REALROM sample.symbol d397 switch USER_DEFINED primary=true
+REALROM sample.symbol d3a4 case_0 USER_DEFINED primary=true
+REALROM sample.symbol d3cb case_1 USER_DEFINED primary=true
+REALROM sample.symbol d3f2 case_2 USER_DEFINED primary=true
+REALROM sample.symbol d41d case_3 USER_DEFINED primary=true
+REALROM sample.symbol d444 case_4 USER_DEFINED primary=true
+REALROM sample.symbol dcaf switch USER_DEFINED primary=true
+REALROM sample.symbol dd37 case_1 USER_DEFINED primary=true
+REALROM sample.symbol dd67 case_0 USER_DEFINED primary=true
+REALROM sample.symbol dd67 case_46 USER_DEFINED primary=false
+REALROM sample.symbol.truncated 25 of 95
 === REALROM END ===

@@ -52,7 +52,7 @@ REALROM count instrs.inOverlay 11779
 REALROM count bankComments 82
 REALROM count warnings 23
 REALROM count notes 9
-REALROM count symbols 31
+REALROM count symbols 49
 REALROM sample.bankcomment 9c4d bank -> select=5,prg_mode=0,r6=2,r7=3 via FUN_fe74 [switch-value flow]
 REALROM sample.bankcomment b734 bank -> select=5,prg_mode=0,r6=4,r7=5 via FUN_fe74 [switch-value flow]
 REALROM sample.bankcomment b93c bank -> select=1,prg_mode=0,r6=12,r7=13 via FUN_WA000_B13__ba21 [switch-value flow]
@@ -205,18 +205,18 @@ REALROM sample.symbol 4014 OAMDMA IMPORTED primary=true
 REALROM sample.symbol 4015 SND_CHN IMPORTED primary=true
 REALROM sample.symbol 4016 JOY1 IMPORTED primary=true
 REALROM sample.symbol 4017 JOY2 IMPORTED primary=true
+REALROM sample.symbol 85c9 switch USER_DEFINED primary=true
+REALROM sample.symbol 85e0 case_0 USER_DEFINED primary=true
+REALROM sample.symbol 85f8 case_1 USER_DEFINED primary=true
+REALROM sample.symbol 8607 case_2 USER_DEFINED primary=true
+REALROM sample.symbol 8614 case_3 USER_DEFINED primary=true
+REALROM sample.symbol 8626 case_4 USER_DEFINED primary=true
+REALROM sample.symbol 8637 case_5 USER_DEFINED primary=true
+REALROM sample.symbol 8648 case_6 USER_DEFINED primary=true
+REALROM sample.symbol 866a case_7 USER_DEFINED primary=true
+REALROM sample.symbol 867b case_8 USER_DEFINED primary=true
+REALROM sample.symbol 868c case_9 USER_DEFINED primary=true
 REALROM sample.symbol aff0 switch USER_DEFINED primary=true
 REALROM sample.symbol b03e case_0 USER_DEFINED primary=true
-REALROM sample.symbol b081 case_1 USER_DEFINED primary=true
-REALROM sample.symbol b0d8 case_2 USER_DEFINED primary=true
-REALROM sample.symbol b1ef case_5 USER_DEFINED primary=true
-REALROM sample.symbol b245 case_9 USER_DEFINED primary=true
-REALROM sample.symbol b267 case_10 USER_DEFINED primary=true
-REALROM sample.symbol b285 case_11 USER_DEFINED primary=true
-REALROM sample.symbol b2dc case_3 USER_DEFINED primary=true
-REALROM sample.symbol b39e case_4 USER_DEFINED primary=true
-REALROM sample.symbol b430 case_6 USER_DEFINED primary=true
-REALROM sample.symbol b4e2 case_7 USER_DEFINED primary=true
-REALROM sample.symbol b516 case_8 USER_DEFINED primary=true
-REALROM sample.symbol.truncated 25 of 31
+REALROM sample.symbol.truncated 25 of 49
 === REALROM END ===
