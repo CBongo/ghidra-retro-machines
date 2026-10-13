@@ -135,7 +135,8 @@ that only one configuration ever produced; the real blocker is a decompiler cras
 (`grm-gz42`). See `grm-qp5x`, and the **`realrom-current-fails`** bd
 memory for the current, authoritative row list — that memory is the single place a row's status
 lives, is revised as rows get fixed or reclassified, and supersedes any older summary including
-this one. (It replaced `realrom-expected-baseline-fails`, which was only half-authoritative: it
+this one. Its superseded entries move to `docs/realrom-bless-history.md` when it nears the bd
+CLI's ~32 KB limit. (It replaced `realrom-expected-baseline-fails`, which was only half-authoritative: it
 was never itself updated when a *later* memory superseded its `megaman` paragraph, so it named a
 jitter signature that no longer applies while still calling itself current. Its durable method
 content — invocation, manifest-set semantics, cache and A/B mechanics — now lives in
