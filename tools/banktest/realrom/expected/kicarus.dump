@@ -37,10 +37,10 @@ REALROM block WC000_M2_B7 c000-ffff overlay=true
 REALROM count blocks.total 30
 REALROM count blocks.overlay 24
 REALROM count spaces.overlay 24
-REALROM count refs.intoOverlay 50
+REALROM count refs.intoOverlay 45
 REALROM count refs.intoOverlay.retargeted 2
-REALROM count refs.intoOverlay.intraOverlay 48
-REALROM count instrs.inOverlay 215
+REALROM count refs.intoOverlay.intraOverlay 43
+REALROM count instrs.inOverlay 199
 REALROM count bankComments 10
 REALROM count warnings 3
 REALROM count notes 4
@@ -60,18 +60,13 @@ REALROM sample.ref a003 -> W8000_M3_B4::a0fd UNCONDITIONAL_JUMP primary=true
 REALROM sample.ref a02f -> W8000_M3_B4::a02b CONDITIONAL_JUMP primary=true
 REALROM sample.ref a0fd -> W8000_M3_B4::a2cd UNCONDITIONAL_JUMP primary=true
 REALROM sample.ref a215 -> W8000_M3_B4::a22c CONDITIONAL_JUMP primary=true
-REALROM sample.ref a21c -> W8000_M3_B4::a22c CONDITIONAL_JUMP primary=true
-REALROM sample.ref a223 -> W8000_M3_B4::a22c CONDITIONAL_JUMP primary=true
-REALROM sample.ref a22a -> W8000_M3_B4::a22c CONDITIONAL_JUMP primary=true
 REALROM sample.ref a22c -> W8000_M3_B4::a3d7 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref a237 -> W8000_M3_B4::a22c UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref a237 -> W8000_M3_B4::a22c UNCONDITIONAL_CALL primary=true
 REALROM sample.ref a247 -> W8000_M3_B4::a3d7 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref a24a -> W8000_M3_B4::ac0d UNCONDITIONAL_CALL primary=true
 REALROM sample.ref a24d -> W8000_M3_B4::ac1d UNCONDITIONAL_CALL primary=true
 REALROM sample.ref a26e -> W8000_M3_B4::a271 CONDITIONAL_JUMP primary=true
 REALROM sample.ref a278 -> W8000_M3_B4::a284 CONDITIONAL_JUMP primary=true
-REALROM sample.ref a27c -> W8000_M3_B4::a284 CONDITIONAL_JUMP primary=true
-REALROM sample.ref a280 -> W8000_M3_B4::a284 CONDITIONAL_JUMP primary=true
 REALROM sample.ref a29a -> W8000_M3_B4::a292 CONDITIONAL_JUMP primary=true
 REALROM sample.ref a2a0 -> W8000_M3_B4::a35a UNCONDITIONAL_CALL primary=true
 REALROM sample.ref a2aa -> W8000_M3_B4::a29d CONDITIONAL_JUMP primary=true
@@ -80,7 +75,12 @@ REALROM sample.ref a2b3 -> W8000_M3_B4::a2cc CONDITIONAL_JUMP primary=true
 REALROM sample.ref a2b7 -> W8000_M3_B4::a2bd CONDITIONAL_JUMP primary=true
 REALROM sample.ref a2bb -> W8000_M3_B4::a2bf CONDITIONAL_JUMP primary=true
 REALROM sample.ref a2c2 -> W8000_M3_B4::a2c9 CONDITIONAL_JUMP primary=true
-REALROM sample.ref.truncated 25 of 50
+REALROM sample.ref a2c6 -> W8000_M3_B4::a276 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref a2d2 -> W8000_M3_B4::a25f UNCONDITIONAL_CALL primary=true
+REALROM sample.ref a2d9 -> W8000_M3_B4::a305 CONDITIONAL_JUMP primary=true
+REALROM sample.ref a2dd -> W8000_M3_B4::a2a7 CONDITIONAL_JUMP primary=true
+REALROM sample.ref a2e4 -> W8000_M3_B4::a210 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref.truncated 25 of 45
 REALROM sample.warn c134 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c17f whose bank argument could not be recovered at this call site
 REALROM sample.warn c143 [CopyLoopAnalyzer] copy RAM:0000 -> RAM:7f00 not materialized: the source is RAM, whose contents exist only at runtime, so there is nothing static to place
 REALROM sample.warn c872 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c17f whose bank argument could not be recovered at this call site

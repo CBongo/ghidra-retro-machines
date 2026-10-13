@@ -1238,7 +1238,10 @@ final class HelperArgumentRecovery {
 				straightLine = false;
 				argumentCells.clear();
 			}
-			cursor = instr.getMaxAddress().next();
+			cursor = decidedBranchTarget(instr, firstSite);
+			if (cursor == null) {
+				cursor = instr.getMaxAddress().next();
+			}
 			if (cursor == null) {
 				return PrologueOutcome.INDETERMINATE; // ran off the end before reaching firstSite
 			}
@@ -1293,6 +1296,28 @@ final class HelperArgumentRecovery {
 	 * it, or a computed jump whose target is not known (bead grm-lb54). A plain terminator
 	 * ({@code RTS}) has no flows and leaves to the caller, which is not helper code.
 	 */
+	/**
+	 * Where {@link #prologueOutcome}'s address-order walk resumes after a conditional branch whose
+	 * fall-through was overridden away as impossible ({@link DecidedBranchAnalyzer},
+	 * {@link BranchAlwaysPairAnalyzer}): its one remaining flow, when that lands forward and
+	 * inside the span; else {@code null}, and the walk steps to the next address as usual. The
+	 * bytes skipped are not on the path, and may hold no instruction at all once the dead
+	 * fall-through is cleared -- ultimaav's multi-entry {@code FUN_f34b}: {@code LDA #$0E / BNE
+	 * $f351 / (f34f LDA #$0F, cleared) / f351 LDX #$05 ...} (grm-kdgv).
+	 */
+	private static Address decidedBranchTarget(Instruction instr, Address firstSite) {
+		if (!instr.getFlowType().isConditional() || !instr.isFallThroughOverridden() ||
+			instr.getFallThrough() != null) {
+			return null;
+		}
+		Address[] flows = instr.getFlows();
+		if (flows.length != 1 || flows[0].compareTo(instr.getMaxAddress()) <= 0 ||
+			flows[0].compareTo(firstSite) > 0) {
+			return null;
+		}
+		return flows[0];
+	}
+
 	private static boolean leavesSpan(Instruction instr, Address entry, Address end) {
 		if (instr.getFlowType().isComputed()) {
 			return true;

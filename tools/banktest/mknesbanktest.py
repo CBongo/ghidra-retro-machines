@@ -1553,8 +1553,10 @@ def make_prg_fork():
     two whole elements, so everything downstream of the switch is retargeted to BOTH banks.
 
     RESET ($C000):
-      C000  A5 10        LDA $10       ; RAM flag -- genuinely runtime, selects the arm
-      C002  A2 01        LDX #$01      ; arm A: X = 1
+      C000  A2 01        LDX #$01      ; arm A: X = 1
+      C002  A5 10        LDA $10       ; RAM flag -- genuinely runtime, selects the arm
+                                       ;   (AFTER the LDX: LDX sets Z too, so a flag
+                                       ;   load before it would decide the BEQ, grm-kdgv)
       C004  F0 02        BEQ $C008     ; ...taken straight to the merge
       C006  A2 02        LDX #$02      ; arm B: X = 2, falls into the merge
       C008  8E DF FF     STX $FFDF     ; THE MERGE SITE: latch <- {1, 2}. Must annotate
@@ -1591,8 +1593,8 @@ def make_prg_fork():
     put = _bank3_putter(prg)
 
     # --- RESET ---
-    put(0xC000, [0xA5, 0x10])              # LDA $10     (runtime flag)
-    put(0xC002, [0xA2, 0x01])              # LDX #$01    (arm A)
+    put(0xC000, [0xA2, 0x01])              # LDX #$01    (arm A)
+    put(0xC002, [0xA5, 0x10])              # LDA $10     (runtime flag; sets Z last)
     put(0xC004, [0xF0, 0x02])              # BEQ $C008
     put(0xC006, [0xA2, 0x02])              # LDX #$02    (arm B)
     put(0xC008, [0x8E, 0xDF, 0xFF])         # STX $FFDF   (THE MERGE SITE)
@@ -1628,8 +1630,10 @@ def make_prg_forkhome():
     home case keeps primacy).
 
     RESET ($C000):
-      C000  A5 10        LDA $10       ; RAM flag -- genuinely runtime, selects the arm
-      C002  A2 00        LDX #$00      ; arm A: X = 0 (HOME bank)
+      C000  A2 00        LDX #$00      ; arm A: X = 0 (HOME bank)
+      C002  A5 10        LDA $10       ; RAM flag -- genuinely runtime, selects the arm
+                                       ;   (AFTER the LDX: LDX sets Z too, so a flag
+                                       ;   load before it would decide the BEQ, grm-kdgv)
       C004  F0 02        BEQ $C008     ; ...taken straight to the merge
       C006  A2 02        LDX #$02      ; arm B: X = 2, falls into the merge
       C008  8E DF FF     STX $FFDF     ; THE MERGE SITE: latch <- {0, 2}. Must annotate
@@ -1666,8 +1670,8 @@ def make_prg_forkhome():
     put = _bank3_putter(prg)
 
     # --- RESET ---
-    put(0xC000, [0xA5, 0x10])              # LDA $10     (runtime flag)
-    put(0xC002, [0xA2, 0x00])              # LDX #$00    (arm A: HOME)
+    put(0xC000, [0xA2, 0x00])              # LDX #$00    (arm A: HOME)
+    put(0xC002, [0xA5, 0x10])              # LDA $10     (runtime flag; sets Z last)
     put(0xC004, [0xF0, 0x02])              # BEQ $C008
     put(0xC006, [0xA2, 0x02])              # LDX #$02    (arm B)
     put(0xC008, [0x8E, 0xDF, 0xFF])         # STX $FFDF   (THE MERGE SITE)
@@ -4611,8 +4615,8 @@ def main():
     for bank in (1, 2):
         assert prgfork[bank * PRG_BANK_SIZE + 0x0010] == 0x60          # RTS at $8010
         assert prgfork[bank * PRG_BANK_SIZE + 0x0020] == (0xA0 | bank)  # marker at $8020
-    assert prgfork[0xC000] == 0xA5 and prgfork[0xC001] == 0x10        # LDA $10
-    assert prgfork[0xC002] == 0xA2 and prgfork[0xC003] == 0x01        # LDX #$01
+    assert prgfork[0xC000] == 0xA2 and prgfork[0xC001] == 0x01        # LDX #$01
+    assert prgfork[0xC002] == 0xA5 and prgfork[0xC003] == 0x10        # LDA $10 (sets Z last)
     assert prgfork[0xC004] == 0xF0 and prgfork[0xC005] == 0x02        # BEQ +2 -> $C008
     assert 0xC006 + prgfork[0xC005] == 0xC008
     assert prgfork[0xC006] == 0xA2 and prgfork[0xC007] == 0x02        # LDX #$02
@@ -4638,8 +4642,8 @@ def main():
     for bank in (0, 2):
         assert prgforkhome[bank * PRG_BANK_SIZE + 0x0010] == 0x60          # RTS at $8010
         assert prgforkhome[bank * PRG_BANK_SIZE + 0x0020] == (0xA0 | bank)  # marker at $8020
-    assert prgforkhome[0xC000] == 0xA5 and prgforkhome[0xC001] == 0x10    # LDA $10
-    assert prgforkhome[0xC002] == 0xA2 and prgforkhome[0xC003] == 0x00    # LDX #$00 (arm A: HOME)
+    assert prgforkhome[0xC000] == 0xA2 and prgforkhome[0xC001] == 0x00    # LDX #$00 (arm A: HOME)
+    assert prgforkhome[0xC002] == 0xA5 and prgforkhome[0xC003] == 0x10    # LDA $10 (sets Z last)
     assert prgforkhome[0xC004] == 0xF0 and prgforkhome[0xC005] == 0x02    # BEQ +2 -> $C008
     assert 0xC006 + prgforkhome[0xC005] == 0xC008
     assert prgforkhome[0xC006] == 0xA2 and prgforkhome[0xC007] == 0x02    # LDX #$02

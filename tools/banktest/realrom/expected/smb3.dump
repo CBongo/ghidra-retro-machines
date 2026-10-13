@@ -80,7 +80,7 @@ REALROM count spaces.overlay 62
 REALROM count refs.intoOverlay 2583
 REALROM count refs.intoOverlay.retargeted 92
 REALROM count refs.intoOverlay.intraOverlay 2491
-REALROM count instrs.inOverlay 11694
+REALROM count instrs.inOverlay 11693
 REALROM count bankComments 160
 REALROM count warnings 24
 REALROM count notes 7
