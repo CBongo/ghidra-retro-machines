@@ -63,7 +63,12 @@ Three practical consequences for git bash:
   `bash tools/… <path>`) over `cd`.
 - **Long or multi-line arguments go in a file, not on the command line.** Prompts to approve a
   wall of inline text get rejected. Write the text to a scratchpad file and pass it by path:
-  `bd comment <id> --file notes.txt`, `git commit -F msg.txt`.
+  `bd comment <id> --file notes.txt`, `git commit -F msg.txt`. **This includes scripts:** any
+  multi-line Python/awk/sed program, or an edit script containing quotes, `$` or backticks, is
+  written to the scratchpad with the file-write tool and run by path (`python -I <file>`), never
+  passed as a heredoc. Nested quoting through the agent harness and git bash fails unpredictably
+  (a quoted `<<'EOF'` heredoc that a later, near-identical one survived was rejected for an
+  unmatched quote), and a failed heredoc costs a retry plus a rewrite.
 - PowerShell is the right tool only for the Windows-shaped rows in the table above. Use it there
   and nowhere else.
 
