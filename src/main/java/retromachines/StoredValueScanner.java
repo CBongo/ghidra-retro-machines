@@ -2249,9 +2249,8 @@ final class StoredValueScanner {
 		if (entersUnknownBank(program, call, entry)) {
 			return CensusResult.DIRTY;
 		}
-		// grm-mej.25: the index registers this call site provably passes in. cv3's ec27
-		// LDX #$00 / JSR e899 enters a 16-bit add helper whose STA $00,X / INC $01,X write only
-		// $00/$01 under X=0 -- state-free, the census counts them as any zero-page cell.
+		// grm-mej.25: the index registers this call site provably passes in, the census's seed
+		// for propagating X/Y through the closure (see calleeClosureCensus).
 		Integer x = constantRegisterValue(program, call, 'X', INERT_HOOKS, RegisterEnv.NONE,
 			new Budget(MAX_RESOLVE_STEPS));
 		Integer y = constantRegisterValue(program, call, 'Y', INERT_HOOKS, RegisterEnv.NONE,
@@ -2267,11 +2266,8 @@ final class StoredValueScanner {
 
 	/**
 	 * {@link #memoizedCensus} with the index registers known on entry ({@code null} = unknown),
-	 * keyed on them too (bead grm-mej.25). A known register becomes a {@link RegisterEnv} entry
-	 * stop at {@code entry}, so an indexed store in the closure whose index walks straight back
-	 * to the entry unchanged is placed by the caller's value. Sound only while the closure has
-	 * no edge back INTO {@code entry} -- on such a path the register need not hold the caller's
-	 * value any more -- so a closure with one is re-run state-free.
+	 * keyed on them too (bead grm-mej.25): {@link #calleeClosureCensus} propagates them forward
+	 * through the closure.
 	 */
 	private static CensusResult memoizedCensus(Program program, Listing listing, ProofMemo memo,
 			Address entry, Address cell, Integer x, Integer y) {
@@ -2280,21 +2276,7 @@ final class StoredValueScanner {
 		if (cached != null) {
 			return cached;
 		}
-		CensusResult result;
-		if (x == null && y == null) {
-			result = calleeClosureCensus(program, listing, entry, cell, RegisterEnv.NONE);
-		}
-		else {
-			RegisterEnv env = new RegisterEnv(entry, PartialByte.unknown(),
-				x == null ? PartialByte.unknown() : PartialByte.fullyKnown(x & 0xFF),
-				y == null ? PartialByte.unknown() : PartialByte.fullyKnown(y & 0xFF));
-			result = calleeClosureCensus(program, listing, entry, cell, env);
-			if (result == null) {
-				// the closure re-enters its own entry: the caller's registers are not the only
-				// ones that reach it
-				result = memoizedCensus(program, listing, memo, entry, cell);
-			}
-		}
+		CensusResult result = calleeClosureCensus(program, listing, entry, cell, x, y);
 		if (memo != null) {
 			memo.censuses.put(key, result);
 		}
@@ -2378,32 +2360,37 @@ final class StoredValueScanner {
 	 * than {@link #SLOT_CENSUS_INSTRUCTION_CAP} instructions. Indirect stores are stepped over
 	 * under {@link SlotAssumption#INDIRECT_STORES_DO_NOT_WRITE_SLOT}, and reported.
 	 * <p>
-	 * Under a non-{@link RegisterEnv#NONE} {@code env} (entry-stopped at {@code entry}, bead
-	 * grm-mej.25) indexed stores are placed with the caller's index registers, and the census
-	 * answers {@code null} -- not a verdict -- when any edge in the closure leads back to
-	 * {@code entry}, where the env's values no longer hold.
+	 * <b>Index registers are propagated FORWARD through the closure</b> (bead grm-mej.25): each
+	 * instruction carries the X and Y it may be reached with, starting from {@code entryX}/
+	 * {@code entryY} (the crossed call's provable values, {@code null} = unknown) and merged at
+	 * every join -- two different constants, or a constant and unknown, merge to unknown, and a
+	 * merged address is re-visited, so a store is classified under every value that reaches it.
+	 * Sound because only closure paths run between the crossed call and its return (interrupts
+	 * are out of scope, as everywhere here). A callee is entered with the caller's registers; the
+	 * fall-through after a call keeps a register only when {@link #calleePreserves} proves it.
+	 * cv3's ec04 is the measured shape: {@code LDX #$00}, then a loop that calls the zero-page
+	 * add helper e899 ({@code STA $00,X / INC $01,X}) from three sites behind loop joins, where
+	 * no backward straight-line walk can see the {@code LDX}. An index the propagation does not
+	 * know falls back to the state-free {@link #constantIndex}/{@link #loopIndexRange}.
 	 */
 	private static CensusResult calleeClosureCensus(Program program, Listing listing,
-			Address entry, Address cell, RegisterEnv env) {
-		boolean contextual = env != RegisterEnv.NONE;
-		Set<Address> seen = new HashSet<>();
+			Address entry, Address cell, Integer entryX, Integer entryY) {
+		Map<Address, IndexRegs> regs = new HashMap<>();
 		List<Address> work = new ArrayList<>();
+		regs.put(entry, new IndexRegs(entryX, entryY));
 		work.add(entry);
-		seen.add(entry);
 		boolean assumed = false;
 		while (!work.isEmpty()) {
 			Address at = work.remove(work.size() - 1);
-			if (seen.size() > SLOT_CENSUS_INSTRUCTION_CAP) {
+			if (regs.size() > SLOT_CENSUS_INSTRUCTION_CAP) {
 				return CensusResult.DIRTY;
 			}
 			Instruction instr = listing.getInstructionAt(at);
 			if (instr == null) {
 				return CensusResult.DIRTY; // undisassembled
 			}
-			if (contextual && reentersEntry(instr, entry)) {
-				return null;
-			}
-			switch (classifySlotWrite(program, instr, cell, env)) {
+			IndexRegs in = regs.get(at);
+			switch (classifySlotWrite(program, instr, cell, in)) {
 				case STORES_SLOT, WRITES_SLOT, UNPLACEABLE -> {
 					return CensusResult.DIRTY;
 				}
@@ -2429,6 +2416,9 @@ final class StoredValueScanner {
 			if ((ft.isJump() || ft.isCall()) && (flows == null || flows.length == 0)) {
 				return CensusResult.DIRTY;
 			}
+			// A call enters its callee with the registers it was reached with; everything else
+			// passes on what it leaves behind.
+			IndexRegs out = ft.isCall() ? in : in.after(instr);
 			// A conditional branch whose flags are provable has one live successor (grm-uurl):
 			// blmaster ebf2 BEQ after LDA #0 never falls into the palette table at ebf4.
 			Boolean taken = ft.isConditional() ? knownBranchOutcome(program, instr) : null;
@@ -2437,9 +2427,7 @@ final class StoredValueScanner {
 					if (entersUnknownBank(program, instr, target)) {
 						return CensusResult.DIRTY;
 					}
-					if (seen.add(target)) {
-						work.add(target);
-					}
+					reach(regs, work, target, out);
 				}
 				continue;
 			}
@@ -2451,33 +2439,109 @@ final class StoredValueScanner {
 					if (entersUnknownBank(program, instr, target)) {
 						return CensusResult.DIRTY;
 					}
-					if (seen.add(target)) {
-						work.add(target);
-					}
+					reach(regs, work, target, out);
 				}
 			}
 			Address ft2 = instr.getFallThrough();
-			if (ft2 != null && seen.add(ft2)) {
-				work.add(ft2);
+			if (ft2 != null) {
+				reach(regs, work, ft2, ft.isCall()
+						? in.afterCall(calleePreserves(program, instr, 'X'),
+							calleePreserves(program, instr, 'Y'))
+						: out);
 			}
 		}
 		return new CensusResult(true, assumed);
 	}
 
-	/** Whether {@code instr} can pass control to {@code entry}: a flow to it, or falling into it. */
-	private static boolean reentersEntry(Instruction instr, Address entry) {
-		if (entry.equals(instr.getFallThrough())) {
-			return true;
+	/** Records that {@code target} is reached with {@code with}, (re)queueing it when that is new
+	 *  or weakens what it was already reached with. */
+	private static void reach(Map<Address, IndexRegs> regs, List<Address> work, Address target,
+			IndexRegs with) {
+		IndexRegs old = regs.get(target);
+		IndexRegs merged = old == null ? with : old.merge(with);
+		if (!merged.equals(old)) {
+			regs.put(target, merged);
+			work.add(target);
 		}
-		Address[] flows = instr.getFlows();
-		if (flows != null) {
-			for (Address target : flows) {
-				if (entry.equals(target)) {
+	}
+
+	/**
+	 * The X and Y {@link #calleeClosureCensus} may reach an instruction with: a provable constant
+	 * ({@code 0..255}) or {@code null} (unknown). Bead grm-mej.25.
+	 */
+	record IndexRegs(Integer x, Integer y) {
+
+		static final IndexRegs UNKNOWN = new IndexRegs(null, null);
+
+		/** Every path's value: a register both sides agree on stays, anything else is unknown. */
+		IndexRegs merge(IndexRegs other) {
+			return new IndexRegs(java.util.Objects.equals(x, other.x) ? x : null,
+				java.util.Objects.equals(y, other.y) ? y : null);
+		}
+
+		/** After a call: a register survives only when the callee provably preserves it. */
+		IndexRegs afterCall(boolean keepX, boolean keepY) {
+			return new IndexRegs(keepX ? x : null, keepY ? y : null);
+		}
+
+		/** The registers after the non-call {@code instr} executes. */
+		IndexRegs after(Instruction instr) {
+			int op;
+			try {
+				op = instr.getByte(0) & 0xFF;
+			}
+			catch (MemoryAccessException e) {
+				return UNKNOWN;
+			}
+			Integer nx = x;
+			Integer ny = y;
+			switch (op) {
+				case 0xA2 -> nx = immediate(instr); // LDX #imm
+				case 0xA0 -> ny = immediate(instr); // LDY #imm
+				case 0xE8 -> nx = x == null ? null : (x + 1) & 0xFF; // INX
+				case 0xCA -> nx = x == null ? null : (x - 1) & 0xFF; // DEX
+				case 0xC8 -> ny = y == null ? null : (y + 1) & 0xFF; // INY
+				case 0x88 -> ny = y == null ? null : (y - 1) & 0xFF; // DEY
+				default -> {
+					if (writesRegister(instr, 'X')) {
+						nx = null;
+					}
+					if (writesRegister(instr, 'Y')) {
+						ny = null;
+					}
+				}
+			}
+			return new IndexRegs(nx, ny);
+		}
+
+		private static Integer immediate(Instruction instr) {
+			try {
+				return instr.getByte(1) & 0xFF;
+			}
+			catch (MemoryAccessException e) {
+				return null;
+			}
+		}
+
+		/** By mnemonic (LDX/TAX/TSX/PLX, LAX and kin) and by Ghidra's own result objects, so an
+		 *  instruction either one says writes the register makes it unknown. */
+		private static boolean writesRegister(Instruction instr, char reg) {
+			String m = instr.getMnemonicString().toUpperCase();
+			boolean byName = reg == 'X'
+					? Set.of("LDX", "TAX", "TSX", "PLX", "INX", "DEX", "LAX", "LAS", "SBX", "AXS")
+							.contains(m)
+					: Set.of("LDY", "TAY", "PLY", "INY", "DEY").contains(m);
+			if (byName) {
+				return true;
+			}
+			for (Object o : instr.getResultObjects()) {
+				if (o instanceof Register r &&
+					r.getName().equalsIgnoreCase(String.valueOf(reg))) {
 					return true;
 				}
 			}
+			return false;
 		}
-		return false;
 	}
 
 	/** Instructions that leave N and Z alone, which {@link #knownBranchOutcome} may walk back over
@@ -2649,13 +2713,14 @@ final class StoredValueScanner {
 	 * </ul>
 	 */
 	private static SlotWrite classifySlotWrite(Program program, Instruction instr, Address cell) {
-		return classifySlotWrite(program, instr, cell, RegisterEnv.NONE);
+		return classifySlotWrite(program, instr, cell, IndexRegs.UNKNOWN);
 	}
 
-	/** {@link #classifySlotWrite} with the index registers {@code env} supplies at its entry stop
-	 *  (bead grm-mej.25; {@link #calleeClosureCensus}). */
+	/** {@link #classifySlotWrite} with the index registers {@link #calleeClosureCensus}
+	 *  propagated to {@code instr} (bead grm-mej.25); an unknown one falls back to the
+	 *  state-free evaluators. */
 	private static SlotWrite classifySlotWrite(Program program, Instruction instr, Address cell,
-			RegisterEnv env) {
+			IndexRegs known) {
 		Character storeReg = storeRegister(instr);
 		Address plain = plainAbsoluteTarget(instr);
 		for (Reference ref : instr.getReferencesFrom()) {
@@ -2690,7 +2755,10 @@ final class StoredValueScanner {
 		}
 		if (mode == 5 || mode == 6 || mode == 7) {
 			Address base = LoopIdioms.indexedBase(instr);
-			Integer idx = constantIndex(program, instr, env);
+			Integer idx = knownIndex(instr, known);
+			if (idx == null) {
+				idx = constantIndex(program, instr);
+			}
 			boolean zeroPage = mode == 5;
 			if (idx != null && base != null) {
 				// A provably constant index pins the ONE cell written: base+idx, wrapping inside
@@ -2703,8 +2771,7 @@ final class StoredValueScanner {
 				// proof re-scans, so it counts as a writer
 				return SlotWrite.WRITES_SLOT;
 			}
-			LoopIdioms.IndexRange range =
-				base == null ? null : loopIndexRange(program, instr, env);
+			LoopIdioms.IndexRange range = base == null ? null : loopIndexRange(program, instr);
 			if (range != null) {
 				// A counted loop bounds the index (grm-mej.15): the store reaches exactly
 				// base+lo..base+hi, wrapping inside page zero for the zero-page indexed modes.
@@ -2754,7 +2821,17 @@ final class StoredValueScanner {
 	 * {@link #INERT_HOOKS} and {@link RegisterEnv#NONE}, with a fresh budget. Blaster Master's
 	 * {@code ea3a} ({@code LDX #$7A / ... / STA $00,X / STA $01,X}) is the measured case.
 	 */
-	private static Integer constantIndex(Program program, Instruction instr, RegisterEnv env) {
+	/** The propagated value of {@code instr}'s index register, or {@code null}. */
+	private static Integer knownIndex(Instruction instr, IndexRegs known) {
+		Register idx = LoopIdioms.indexReg(instr);
+		if (idx == null) {
+			return null;
+		}
+		String name = idx.getName().toUpperCase();
+		return name.equals("X") ? known.x() : name.equals("Y") ? known.y() : null;
+	}
+
+	private static Integer constantIndex(Program program, Instruction instr) {
 		Register idx = LoopIdioms.indexReg(instr);
 		if (idx == null) {
 			return null;
@@ -2763,8 +2840,8 @@ final class StoredValueScanner {
 		if (!name.equals("X") && !name.equals("Y")) {
 			return null;
 		}
-		Integer v = constantRegisterValue(program, instr, name.charAt(0), INERT_HOOKS, env,
-			new Budget(MAX_RESOLVE_STEPS));
+		Integer v = constantRegisterValue(program, instr, name.charAt(0), INERT_HOOKS,
+			RegisterEnv.NONE, new Budget(MAX_RESOLVE_STEPS));
 		return v == null ? null : v & 0xFF;
 	}
 
@@ -2776,15 +2853,14 @@ final class StoredValueScanner {
 	 * {@code e8d8} ({@code LDX #1 / ... STA $F5,X / DEX / BPL}: {@code $F5..$F6}) are the cases
 	 * that otherwise count as writing every zero-page cell.
 	 */
-	private static LoopIdioms.IndexRange loopIndexRange(Program program, Instruction instr,
-			RegisterEnv env) {
+	private static LoopIdioms.IndexRange loopIndexRange(Program program, Instruction instr) {
 		Register idx = LoopIdioms.indexReg(instr);
 		if (idx == null) {
 			return null;
 		}
 		char reg = Character.toUpperCase(idx.getName().charAt(0));
 		return LoopIdioms.countedLoopIndexRange(program, instr,
-			p -> constantRegisterValue(program, p, reg, INERT_HOOKS, env,
+			p -> constantRegisterValue(program, p, reg, INERT_HOOKS, RegisterEnv.NONE,
 				new Budget(MAX_RESOLVE_STEPS)));
 	}
 

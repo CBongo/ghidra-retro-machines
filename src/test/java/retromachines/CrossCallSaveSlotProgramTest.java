@@ -1018,10 +1018,15 @@ public class CrossCallSaveSlotProgramTest extends AbstractBundledLanguageTest {
 
 	/** {@code LDA #5 / STA $D3 / <xload> / JSR $C040 / LDA $D3 / STA $8000}; returns the site. */
 	private String saveIndexedCallRestore(String xLoadHex) throws Exception {
+		return saveIndexedCallRestore(xLoadHex, "40 c0");
+	}
+
+	/** {@link #saveIndexedCallRestore(String)} calling {@code calleeLeHex} (little-endian). */
+	private String saveIndexedCallRestore(String xLoadHex, String calleeLeHex) throws Exception {
 		put("0xc000", "a9 05"); // LDA #$05
 		put("0xc002", "85 d3"); // STA $D3      -- the save
 		put("0xc004", xLoadHex); // 2-byte X load: LDX #imm or LDX $zp
-		put("0xc006", "20 40 c0"); // JSR $C040
+		put("0xc006", "20 " + calleeLeHex); // JSR callee
 		put("0xc009", "a5 d3"); // LDA $D3      -- the reload
 		put("0xc00b", "8d 00 80"); // STA $8000
 		return "0xc00b";
@@ -1079,6 +1084,55 @@ public class CrossCallSaveSlotProgramTest extends AbstractBundledLanguageTest {
 		put("0xc042", "e8"); // INX
 		put("0xc043", "d0 fb"); // BNE $C040  -- back into the entry
 		put("0xc045", "60"); // RTS
+		assertDeclined(scan(site, oracle()));
+	}
+
+	/** cv3 ec04's shape: the crossed call enters with X unknown, the callee sets
+	 *  {@code LDX #$00} and then calls the add helper from inside a loop, behind a join no
+	 *  backward walk crosses. Forward propagation carries X=0 into the nested helper. */
+	@Test
+	public void nestedHelperBehindALoopJoinIsPlaced() throws Exception {
+		String site = saveIndexedCallRestore("a6 20", "50 c0"); // LDX $20 -- unknown at the call
+		put("0xc050", "a2 00"); // LDX #$00
+		put("0xc052", "a9 02"); // LDA #$02   -- loop head (a join)
+		put("0xc054", "20 40 c0"); // JSR $C040 (the add helper)
+		put("0xc057", "a5 21"); // LDA $21
+		put("0xc059", "d0 f7"); // BNE $C052
+		put("0xc05b", "60"); // RTS
+		addHelper();
+
+		assertBank(5, scan(site, oracle()).value());
+	}
+
+	/** The same loop stepping X each pass reaches the helper with every X: declines. */
+	@Test
+	public void nestedHelperInALoopSteppingXDeclines() throws Exception {
+		String site = saveIndexedCallRestore("a6 20", "50 c0");
+		put("0xc050", "a2 00"); // LDX #$00
+		put("0xc052", "a9 02"); // LDA #$02
+		put("0xc054", "20 40 c0"); // JSR $C040
+		put("0xc057", "e8"); // INX
+		put("0xc058", "d0 f8"); // BNE $C052
+		put("0xc05a", "60"); // RTS
+		addHelper();
+
+		assertDeclined(scan(site, oracle()));
+	}
+
+	/** A call that does not preserve X between the LDX and the helper call: X is unknown after
+	 *  it, so the helper's store is unplaced. */
+	@Test
+	public void nonPreservingCallBeforeTheNestedHelperDeclines() throws Exception {
+		String site = saveIndexedCallRestore("a6 20", "50 c0");
+		put("0xc050", "a2 00"); // LDX #$00
+		put("0xc052", "20 60 c0"); // JSR $C060 -- clobbers X
+		put("0xc055", "a9 02"); // LDA #$02
+		put("0xc057", "20 40 c0"); // JSR $C040
+		put("0xc05a", "60"); // RTS
+		put("0xc060", "a6 20"); // LDX $20
+		put("0xc062", "60"); // RTS
+		addHelper();
+
 		assertDeclined(scan(site, oracle()));
 	}
 
