@@ -1011,4 +1011,116 @@ public class CrossCallSaveSlotProgramTest extends AbstractBundledLanguageTest {
 			"W8000_B8::8300", "85 11 60"); // same image: STA $11 / RTS
 		assertEquals(BankSwitchStrategy.ValueStop.RESTORED_BANK, helperScan().stop());
 	}
+
+	// ==================================================================
+	// 12. Index registers the CALL SITE proves (bead grm-mej.25)
+	// ==================================================================
+
+	/** {@code LDA #5 / STA $D3 / <xload> / JSR $C040 / LDA $D3 / STA $8000}; returns the site. */
+	private String saveIndexedCallRestore(String xLoadHex) throws Exception {
+		put("0xc000", "a9 05"); // LDA #$05
+		put("0xc002", "85 d3"); // STA $D3      -- the save
+		put("0xc004", xLoadHex); // 2-byte X load: LDX #imm or LDX $zp
+		put("0xc006", "20 40 c0"); // JSR $C040
+		put("0xc009", "a5 d3"); // LDA $D3      -- the reload
+		put("0xc00b", "8d 00 80"); // STA $8000
+		return "0xc00b";
+	}
+
+	/** cv3's e899, a 16-bit add on a zero-page pointer selected by X: {@code CLC / ADC $00,X /
+	 *  STA $00,X / BCC + / INC $01,X / + RTS}. */
+	private void addHelper() throws Exception {
+		put("0xc040", "18"); // CLC
+		put("0xc041", "75 00"); // ADC $00,X
+		put("0xc043", "95 00"); // STA $00,X
+		put("0xc045", "90 02"); // BCC $C049
+		put("0xc047", "f6 01"); // INC $01,X
+		put("0xc049", "60"); // RTS
+	}
+
+	/** cv3 ec27 {@code LDX #$00 / JSR e899}: under X=0 the helper writes only $00/$01. */
+	@Test
+	public void callerConstantIndexPlacesTheCalleeStore() throws Exception {
+		String site = saveIndexedCallRestore("a2 00"); // LDX #$00
+		addHelper();
+		assertBank(5, scan(site, oracle()).value());
+	}
+
+	/** The same helper handed X=$D3 writes the slot. */
+	@Test
+	public void callerConstantIndexAimedAtTheSlotDeclines() throws Exception {
+		String site = saveIndexedCallRestore("a2 d3"); // LDX #$D3
+		addHelper();
+		assertDeclined(scan(site, oracle()));
+	}
+
+	/** ... as does X=$D2, through the helper's {@code INC $01,X}. */
+	@Test
+	public void callerConstantIndexReachingTheSlotThroughIncDeclines() throws Exception {
+		String site = saveIndexedCallRestore("a2 d2"); // LDX #$D2
+		addHelper();
+		assertDeclined(scan(site, oracle()));
+	}
+
+	/** An index the call site cannot prove keeps the any-zero-page rule. */
+	@Test
+	public void unknownCallerIndexDeclines() throws Exception {
+		String site = saveIndexedCallRestore("a6 20"); // LDX $20
+		addHelper();
+		assertDeclined(scan(site, oracle()));
+	}
+
+	/** A callee that loops back to its own entry sees X other than the caller's
+	 *  ({@code STA $00,X / INX / BNE entry} sweeps the zero page): the census runs state-free. */
+	@Test
+	public void calleeLoopingBackToItsEntryDeclines() throws Exception {
+		String site = saveIndexedCallRestore("a2 00"); // LDX #$00
+		put("0xc040", "95 00"); // STA $00,X
+		put("0xc042", "e8"); // INX
+		put("0xc043", "d0 fb"); // BNE $C040  -- back into the entry
+		put("0xc045", "60"); // RTS
+		assertDeclined(scan(site, oracle()));
+	}
+
+	/** The census memo keys on the call site's registers, so the same callee entered with a
+	 *  different X is never answered from this entry. */
+	@Test
+	public void censusMemoKeysOnTheCallerIndex() throws Exception {
+		String site = saveIndexedCallRestore("a2 00"); // LDX #$00
+		addHelper();
+		StoredValueScanner.ProofMemo memo = new StoredValueScanner.ProofMemo();
+		assertBank(5, scan(site, memoOracle(memo)).value());
+		assertEquals(Set.of(new StoredValueScanner.CensusKey(builder.addr("0xc040"), 0xd3, 0, null)),
+			memo.censuses.keySet());
+	}
+
+	private StoredValueScanner.Hooks memoOracle(StoredValueScanner.ProofMemo memo) {
+		return new StoredValueScanner.Hooks() {
+			@Override
+			public boolean isMechanismWrite(Instruction instr) {
+				return false;
+			}
+
+			@Override
+			public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
+					MechanismState inStateAtStore) {
+				return null;
+			}
+
+			@Override
+			public MechanismState stateAt(Address addr) {
+				return MechanismState.unknown();
+			}
+
+			@Override
+			public boolean hasStateOracle() {
+				return true;
+			}
+
+			@Override
+			public StoredValueScanner.ProofMemo saveSlotMemo() {
+				return memo;
+			}
+		};
+	}
 }

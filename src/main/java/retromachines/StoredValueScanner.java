@@ -400,7 +400,9 @@ final class StoredValueScanner {
 
 	/** {@link ProofMemo} key for a callee-closure census: the callee entry and the slot's
 	 *  physical offset. */
-	record CensusKey(Address entry, long cellOffset) {}
+	/** A census memo key. {@code x}/{@code y} are the index registers the CALL SITE proves on
+	 *  entry ({@link #callCensus}, bead grm-mej.25), {@code null} when not a provable constant. */
+	record CensusKey(Address entry, long cellOffset, Integer x, Integer y) {}
 
 	/** A callee-closure census: {@code clean} when no instruction reachable from the entry may
 	 *  write the slot (and the closure was fully resolved), plus whether an indirect store was
@@ -2247,18 +2249,52 @@ final class StoredValueScanner {
 		if (entersUnknownBank(program, call, entry)) {
 			return CensusResult.DIRTY;
 		}
-		return memoizedCensus(program, listing, memo, entry, cell);
+		// grm-mej.25: the index registers this call site provably passes in. cv3's ec27
+		// LDX #$00 / JSR e899 enters a 16-bit add helper whose STA $00,X / INC $01,X write only
+		// $00/$01 under X=0 -- state-free, the census counts them as any zero-page cell.
+		Integer x = constantRegisterValue(program, call, 'X', INERT_HOOKS, RegisterEnv.NONE,
+			new Budget(MAX_RESOLVE_STEPS));
+		Integer y = constantRegisterValue(program, call, 'Y', INERT_HOOKS, RegisterEnv.NONE,
+			new Budget(MAX_RESOLVE_STEPS));
+		return memoizedCensus(program, listing, memo, entry, cell, x, y);
 	}
 
 	/** {@link #calleeClosureCensus} from {@code entry}, through {@code memo} when there is one. */
 	private static CensusResult memoizedCensus(Program program, Listing listing, ProofMemo memo,
 			Address entry, Address cell) {
-		CensusKey key = new CensusKey(entry, cell.getOffset());
+		return memoizedCensus(program, listing, memo, entry, cell, null, null);
+	}
+
+	/**
+	 * {@link #memoizedCensus} with the index registers known on entry ({@code null} = unknown),
+	 * keyed on them too (bead grm-mej.25). A known register becomes a {@link RegisterEnv} entry
+	 * stop at {@code entry}, so an indexed store in the closure whose index walks straight back
+	 * to the entry unchanged is placed by the caller's value. Sound only while the closure has
+	 * no edge back INTO {@code entry} -- on such a path the register need not hold the caller's
+	 * value any more -- so a closure with one is re-run state-free.
+	 */
+	private static CensusResult memoizedCensus(Program program, Listing listing, ProofMemo memo,
+			Address entry, Address cell, Integer x, Integer y) {
+		CensusKey key = new CensusKey(entry, cell.getOffset(), x, y);
 		CensusResult cached = memo == null ? null : memo.censuses.get(key);
 		if (cached != null) {
 			return cached;
 		}
-		CensusResult result = calleeClosureCensus(program, listing, entry, cell);
+		CensusResult result;
+		if (x == null && y == null) {
+			result = calleeClosureCensus(program, listing, entry, cell, RegisterEnv.NONE);
+		}
+		else {
+			RegisterEnv env = new RegisterEnv(entry, PartialByte.unknown(),
+				x == null ? PartialByte.unknown() : PartialByte.fullyKnown(x & 0xFF),
+				y == null ? PartialByte.unknown() : PartialByte.fullyKnown(y & 0xFF));
+			result = calleeClosureCensus(program, listing, entry, cell, env);
+			if (result == null) {
+				// the closure re-enters its own entry: the caller's registers are not the only
+				// ones that reach it
+				result = memoizedCensus(program, listing, memo, entry, cell);
+			}
+		}
 		if (memo != null) {
 			memo.censuses.put(key, result);
 		}
@@ -2341,9 +2377,15 @@ final class StoredValueScanner {
 	 * ({@link #looksLikeReturnDispatch}, whose real targets are invisible to the listing), or more
 	 * than {@link #SLOT_CENSUS_INSTRUCTION_CAP} instructions. Indirect stores are stepped over
 	 * under {@link SlotAssumption#INDIRECT_STORES_DO_NOT_WRITE_SLOT}, and reported.
+	 * <p>
+	 * Under a non-{@link RegisterEnv#NONE} {@code env} (entry-stopped at {@code entry}, bead
+	 * grm-mej.25) indexed stores are placed with the caller's index registers, and the census
+	 * answers {@code null} -- not a verdict -- when any edge in the closure leads back to
+	 * {@code entry}, where the env's values no longer hold.
 	 */
 	private static CensusResult calleeClosureCensus(Program program, Listing listing,
-			Address entry, Address cell) {
+			Address entry, Address cell, RegisterEnv env) {
+		boolean contextual = env != RegisterEnv.NONE;
 		Set<Address> seen = new HashSet<>();
 		List<Address> work = new ArrayList<>();
 		work.add(entry);
@@ -2358,7 +2400,10 @@ final class StoredValueScanner {
 			if (instr == null) {
 				return CensusResult.DIRTY; // undisassembled
 			}
-			switch (classifySlotWrite(program, instr, cell)) {
+			if (contextual && reentersEntry(instr, entry)) {
+				return null;
+			}
+			switch (classifySlotWrite(program, instr, cell, env)) {
 				case STORES_SLOT, WRITES_SLOT, UNPLACEABLE -> {
 					return CensusResult.DIRTY;
 				}
@@ -2417,6 +2462,22 @@ final class StoredValueScanner {
 			}
 		}
 		return new CensusResult(true, assumed);
+	}
+
+	/** Whether {@code instr} can pass control to {@code entry}: a flow to it, or falling into it. */
+	private static boolean reentersEntry(Instruction instr, Address entry) {
+		if (entry.equals(instr.getFallThrough())) {
+			return true;
+		}
+		Address[] flows = instr.getFlows();
+		if (flows != null) {
+			for (Address target : flows) {
+				if (entry.equals(target)) {
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	/** Instructions that leave N and Z alone, which {@link #knownBranchOutcome} may walk back over
@@ -2588,6 +2649,13 @@ final class StoredValueScanner {
 	 * </ul>
 	 */
 	private static SlotWrite classifySlotWrite(Program program, Instruction instr, Address cell) {
+		return classifySlotWrite(program, instr, cell, RegisterEnv.NONE);
+	}
+
+	/** {@link #classifySlotWrite} with the index registers {@code env} supplies at its entry stop
+	 *  (bead grm-mej.25; {@link #calleeClosureCensus}). */
+	private static SlotWrite classifySlotWrite(Program program, Instruction instr, Address cell,
+			RegisterEnv env) {
 		Character storeReg = storeRegister(instr);
 		Address plain = plainAbsoluteTarget(instr);
 		for (Reference ref : instr.getReferencesFrom()) {
@@ -2622,7 +2690,7 @@ final class StoredValueScanner {
 		}
 		if (mode == 5 || mode == 6 || mode == 7) {
 			Address base = LoopIdioms.indexedBase(instr);
-			Integer idx = constantIndex(program, instr);
+			Integer idx = constantIndex(program, instr, env);
 			boolean zeroPage = mode == 5;
 			if (idx != null && base != null) {
 				// A provably constant index pins the ONE cell written: base+idx, wrapping inside
@@ -2635,7 +2703,8 @@ final class StoredValueScanner {
 				// proof re-scans, so it counts as a writer
 				return SlotWrite.WRITES_SLOT;
 			}
-			LoopIdioms.IndexRange range = base == null ? null : loopIndexRange(program, instr);
+			LoopIdioms.IndexRange range =
+				base == null ? null : loopIndexRange(program, instr, env);
 			if (range != null) {
 				// A counted loop bounds the index (grm-mej.15): the store reaches exactly
 				// base+lo..base+hi, wrapping inside page zero for the zero-page indexed modes.
@@ -2685,7 +2754,7 @@ final class StoredValueScanner {
 	 * {@link #INERT_HOOKS} and {@link RegisterEnv#NONE}, with a fresh budget. Blaster Master's
 	 * {@code ea3a} ({@code LDX #$7A / ... / STA $00,X / STA $01,X}) is the measured case.
 	 */
-	private static Integer constantIndex(Program program, Instruction instr) {
+	private static Integer constantIndex(Program program, Instruction instr, RegisterEnv env) {
 		Register idx = LoopIdioms.indexReg(instr);
 		if (idx == null) {
 			return null;
@@ -2694,8 +2763,8 @@ final class StoredValueScanner {
 		if (!name.equals("X") && !name.equals("Y")) {
 			return null;
 		}
-		Integer v = constantRegisterValue(program, instr, name.charAt(0), INERT_HOOKS,
-			RegisterEnv.NONE, new Budget(MAX_RESOLVE_STEPS));
+		Integer v = constantRegisterValue(program, instr, name.charAt(0), INERT_HOOKS, env,
+			new Budget(MAX_RESOLVE_STEPS));
 		return v == null ? null : v & 0xFF;
 	}
 
@@ -2707,14 +2776,15 @@ final class StoredValueScanner {
 	 * {@code e8d8} ({@code LDX #1 / ... STA $F5,X / DEX / BPL}: {@code $F5..$F6}) are the cases
 	 * that otherwise count as writing every zero-page cell.
 	 */
-	private static LoopIdioms.IndexRange loopIndexRange(Program program, Instruction instr) {
+	private static LoopIdioms.IndexRange loopIndexRange(Program program, Instruction instr,
+			RegisterEnv env) {
 		Register idx = LoopIdioms.indexReg(instr);
 		if (idx == null) {
 			return null;
 		}
 		char reg = Character.toUpperCase(idx.getName().charAt(0));
 		return LoopIdioms.countedLoopIndexRange(program, instr,
-			p -> constantRegisterValue(program, p, reg, INERT_HOOKS, RegisterEnv.NONE,
+			p -> constantRegisterValue(program, p, reg, INERT_HOOKS, env,
 				new Budget(MAX_RESOLVE_STEPS)));
 	}
 
