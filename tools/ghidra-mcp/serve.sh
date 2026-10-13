@@ -106,8 +106,11 @@ grm_installed_extension_note "$snap_id" \
 
 snap_native="$(native "$SNAP")"
 export GHIDRA_INSTALL_DIR="$(native "$GRM_GHIDRA_INSTALL")"
-# cpu.core.override=1: the same analysis-thread pin the runners apply (grm-nems).
-export JAVA_TOOL_OPTIONS="-Dapplication.settingsdir=$snap_native -Dapplication.cachedir=$snap_native/cache -Dcpu.core.override=1"
+export JAVA_TOOL_OPTIONS="-Dapplication.settingsdir=$snap_native -Dapplication.cachedir=$snap_native/cache"
+# Default thread pool, as the runners use since grm-uioc; GRM_THREAD_PIN=1 pins it as they do.
+if [ "${GRM_THREAD_PIN:-0}" = 1 ]; then
+	JAVA_TOOL_OPTIONS="$JAVA_TOOL_OPTIONS -Dcpu.core.override=1"
+fi
 echo "== serving $row on http://127.0.0.1:$PORT/mcp (stop: bash tools/ghidra-mcp/serve.sh stop) =="
 rm -f "$STOP_MARKER"
 rc=0

@@ -341,10 +341,10 @@ cache_key() {
 		# pointing GHIDRA_HEADLESS at another install, changes every dump this key claims to
 		# describe while leaving every other term identical. See toolchain_identity().
 		printf 'toolchain:%s\n' "$TOOLCHAIN_ID"
-		# The analysis thread pin (lib/common.sh, grm-nems), as realrom_cache_key() already keys
-		# it: without this term a GRM_THREAD_PIN=0 measurement `check` stashes its candidate under
-		# the pinned key, and a later normal `bless` would reuse it (grm-uioc).
-		printf 'threadpin:%s\n' "${GRM_THREAD_PIN:-1}"
+		# The optional analysis thread pin (lib/common.sh; off by default since grm-uioc), as
+		# realrom_cache_key() already keys it: without this term a GRM_THREAD_PIN=1 diagnostic
+		# `check` stashes its candidate under the normal key, and a later `bless` would reuse it.
+		printf 'threadpin:%s\n' "${GRM_THREAD_PIN:-0}"
 		# Only fixtures that pass extra headless args run one of the repo's ghidra_scripts/
 		# scripts (via the installed extension), or a tools/banktest/-local postScript of their
 		# own (pargs), so fold those inputs in ONLY for them -- an unconditional term would

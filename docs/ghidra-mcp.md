@@ -96,8 +96,9 @@ that dir per worktree (`build/ghidra-home`) by passing `-Dapplication.settingsdi
 `GHIDRA_HEADLESS_JAVA_OPTIONS`, which `analyzeHeadless` reads. PyGhidra does not read that
 variable. It builds JVM arguments only from the install's `support/launch.properties` plus its
 own additions. The HotSpot JVM, however, reads **`JAVA_TOOL_OPTIONS`** when it is created, and
-that applies to a JVM embedded through JNI too. `serve.sh` sets the settings dir, cache dir and the
-analysis thread pin (`-Dcpu.core.override=1`, the runners' `grm-nems` pin) that way.
+that applies to a JVM embedded through JNI too. `serve.sh` sets the settings dir and cache dir that
+way. With `GRM_THREAD_PIN=1` it also adds the runners' optional analysis thread pin
+(`-Dcpu.core.override=1`; unpinned by default since `grm-uioc`).
 
 If the settings dir is wrong, Ghidra falls back to `%APPDATA%` **without any error**, and this
 machine has an `%APPDATA%` copy of the extension too. "It ran" therefore proves nothing. The

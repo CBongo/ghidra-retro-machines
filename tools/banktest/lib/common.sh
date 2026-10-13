@@ -154,10 +154,19 @@ grm_settings_base_fallback() {
 #   touching any install file.
 # The settings/cache redirection is a no-op when BANKTEST_SETTINGS_BASE is unset/empty,
 # which preserves the manual GUI-adjacent flow that runs against the shared %APPDATA%
-# install. (The thread-pool pin below is NOT conditional -- see the next paragraph.)
+# install.
 #
-# It also pins Ghidra's analysis thread pool to a single thread, which is about
-# REPRODUCIBILITY rather than isolation and applies unconditionally (bead grm-nems).
+# GRM_THREAD_PIN=1 also pins Ghidra's analysis thread pool to a single thread. That is OFF by
+# default since grm-uioc (2026-10-13): after grm-kon2, check nes was 34/34 byte-identical
+# pinned and unpinned at 12, 4 and 2 threads, the synthetic gate was SUITE OK unpinned, and
+# the pin no longer saved or cost wall clock. Every pinned/unpinned split measured below
+# turned out to be an analysis-ORDER race in our own analyzers (grm-4nr, grm-eyn, grm-v60.1,
+# grm-kon2) that the pin only made rarer -- so a row that moves with thread count is a bug to
+# fix, and the pin is now a diagnostic ("does it also move pinned?"), not a gate setting.
+# GRM_THREAD_PIN is in both runners' candidate-cache keys, so a pinned run never serves a bless.
+#
+# History (why the pin existed, bead grm-nems): it was about REPRODUCIBILITY rather than
+# isolation and applied unconditionally.
 # SystemUtilities.getDefaultThreadPoolSize() sizes the pool from
 # Runtime.availableProcessors() unless the `cpu.core.override` system property is set,
 # and with the default multi-threaded pool the amount of code Ghidra disassembles for a
@@ -178,17 +187,12 @@ grm_settings_base_fallback() {
 # runs; only ff1 moves, as it does pinned) and tmnt no longer splits. But pinned vs unpinned
 # still differ DETERMINISTICALLY on dodge (refs 2470 vs 2473) and lwings (bankComments 40 vs
 # 37), so without the pin a golden would depend on the machine's CORE COUNT. The pin's job is
-# now machine-independence of shared goldens, and that is why it stays.
-#
-# GRM_THREAD_PIN=0 drops the pin for one invocation. It exists to MEASURE whether the pin is
-# still needed (grm-nems, re-opened after grm-eyn's jump-table bound removed the grm-4nr race);
-# it is not a supported way to run the gates.
+# then machine-independence of shared goldens. (grm-kon2 found the last such split; see above.)
 grm_apply_settings_base() {
 	local base_native
-	if [ "${GRM_THREAD_PIN:-1}" != 0 ]; then
+	if [ "${GRM_THREAD_PIN:-0}" = 1 ]; then
 		export GHIDRA_HEADLESS_JAVA_OPTIONS="${GHIDRA_HEADLESS_JAVA_OPTIONS:-} -Dcpu.core.override=1"
-	else
-		echo "== analysis thread pool NOT pinned (GRM_THREAD_PIN=0; measurement only, grm-nems) ==" >&2
+		echo "== analysis thread pool PINNED to 1 (GRM_THREAD_PIN=1; diagnostic, grm-uioc) ==" >&2
 	fi
 	if [ -n "${BANKTEST_SETTINGS_BASE:-}" ]; then
 		base_native="$(native "$BANKTEST_SETTINGS_BASE")"
@@ -204,7 +208,8 @@ grm_apply_settings_base() {
 # was a silent input to real-ROM output: tmnt landed on refs.intoOverlay 0 cold and 44 warm,
 # byte-identical within each side, and nothing recorded which side a run was on. Measured
 # 2026-09-13 with the pin live: cold and warm produce byte-identical tmnt dumps, so the state
-# no longer decides anything -- it is printed (grm_packed_db_cache_note) purely so that if it
+# no longer decides anything (that measurement was pinned; the pin is off by default since
+# grm-uioc, so re-check cold vs warm if tmnt ever moves) -- it is printed (grm_packed_db_cache_note) purely so that if it
 # ever does again, the run says so instead of the reader reconstructing it.
 GRM_PACKED_DB_CACHE_STATE=""
 grm_capture_packed_db_cache_state() {

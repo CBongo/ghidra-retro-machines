@@ -734,13 +734,27 @@ used to grow without bound (1.7 GB / 218 run dirs measured). Now:
 - **Reworking behavior of an existing fixture** → change the code, run the chunk, review the
   `expected/*.dump` diff, and bless it deliberately.
 
-## Analysis runs single-threaded (`grm-nems`)
+## Analysis thread count: unpinned since `grm-uioc`, `GRM_THREAD_PIN=1` to pin
 
-Every headless invocation the banktest scripts make — both tiers — carries
-`-Dcpu.core.override=1`, exported unconditionally by `grm_apply_settings_base`
-(`tools/banktest/lib/common.sh`). This pins Ghidra's analysis thread pool to one thread.
+**Current state (2026-10-13, `grm-uioc`):** the runners use Ghidra's default analysis thread pool
+(one thread per core). `GRM_THREAD_PIN=1` restores the old single-thread pin
+(`-Dcpu.core.override=1`, applied by `grm_apply_settings_base` in `tools/banktest/lib/common.sh`)
+for one invocation. That is a diagnostic: if a row moves between runs or between machines, check
+whether it also moves pinned. `GRM_THREAD_PIN` is part of both runners' candidate-cache keys, so a
+pinned run never serves a dump to an unpinned `bless`.
 
-**Why:** with the default pool, *the amount of code Ghidra disassembles for a given ROM
+**Why the pin could go:** after `grm-kon2`, `check nes` gave 34/34 byte-identical dumps across
+pinned runs and unpinned runs at 12, 4 and 2 threads, and the synthetic gate was `SUITE OK`
+unpinned. The pin no longer cost wall clock either (pinned 480s, unpinned 470–478s). Every
+pinned-vs-unpinned difference measured along the way was an order race in our own analyzers
+(`grm-4nr`, `grm-eyn`, `grm-v60.1`, `grm-kon2`), and the pin had only shifted which order usually
+won. A single debug print once flipped a pinned row. So pinning never guaranteed determinism: it
+made races rarer and harder to see. **A row that differs by thread count is a bug to fix, not a
+reason to restore the pin.**
+
+The rest of this section is the history of why the pin existed (`grm-nems`, 2026-09).
+
+**Why it was added:** with the default pool, *the amount of code Ghidra disassembles for a given ROM
 varies between runs.* Measured on `tmnt` (bead `grm-nems`): the same binary and the same
 input yield either 2006 or 3426 base-space instructions, and the smaller outcome loses 44
 overlay references, 103 overlay instructions and 6 bank comments from the dump. That is not
@@ -761,12 +775,7 @@ flips a race in Ghidra's own disassembly — the shortfall happens before our an
 invoked, and our analyzer neither deletes nor suppresses anything. `grm-nems` carries the
 measurements and the open mechanism question.
 
-**If you run `analyzeHeadless` by hand** and compare against a golden, pass the same property or
-your result is not comparable:
-
-```bash
-GHIDRA_HEADLESS_JAVA_OPTIONS="-Dcpu.core.override=1" analyzeHeadless ...
-```
+Running `analyzeHeadless` by hand against a golden no longer needs `-Dcpu.core.override=1`.
 
 A useful general check when a row moves unexpectedly, and the one that produced the finding: run
 it with `NES Bank State` disabled (a `-preScript` calling
