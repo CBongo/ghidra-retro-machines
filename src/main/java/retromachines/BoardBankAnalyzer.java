@@ -585,6 +585,11 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// map is unavailable, which degrades to the old append-only behaviour -- see
 		// BankCommentProvenance.open.
 		BankCommentProvenance provenance = BankCommentProvenance.open(program);
+		// Its reference twin (bead grm-if81): which overlay references retargeting placed out of
+		// each instruction, so a reference an earlier round derived from a state this round no
+		// longer holds is retracted rather than left beside the right one. Null degrades to the
+		// old additive behaviour, as above.
+		OverlayRefProvenance refProvenance = OverlayRefProvenance.open(program);
 		ReferenceManager refMgr = program.getReferenceManager();
 		BankAnnotationAdapter.Retargeted refs = BankAnnotationAdapter.Retargeted.NONE;
 		int warnings = 0;
@@ -761,7 +766,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 						alreadyWarned.add(addr);
 					}
 					refs = refs.plus(retargetAll(program, refMgr, baseSpace, instr, board,
-						bankUniverse, flow, addr, placementOverride, monitor, log, provenance));
+						bankUniverse, flow, addr, placementOverride, monitor, log, provenance, refProvenance));
 					continue;
 				}
 				if (callSwitch.secondTierRelay() && !callSwitch.argumentResolved()) {
@@ -814,7 +819,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			}
 
 			refs = refs.plus(retargetAll(program, refMgr, baseSpace, instr, board, bankUniverse,
-				flow, addr, placementOverride, monitor, log, provenance));
+				flow, addr, placementOverride, monitor, log, provenance, refProvenance));
 		}
 
 		// Retract bank comments an EARLIER round wrote at sites this round did not annotate
@@ -838,6 +843,24 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 						? ", ... (" + (retracted.size() - RETRACTION_LOG_LIMIT) + " more)" : "";
 				AnalyzerLog.info(this, tag + ": retracted " + retracted.size() +
 					" stale bank comment(s) from an earlier analysis round at " + where + more);
+			}
+		}
+
+		// The reference twin of that sweep (bead grm-if81): every instruction the loop above
+		// retargeted has already settled its own record; this retracts the records of
+		// instructions that left the tracked flow since an earlier round placed them.
+		if (refProvenance != null) {
+			List<Address> swept = refProvenance.sweep(refMgr, baseSpace);
+			if (!swept.isEmpty()) {
+				String where = swept.stream()
+						.limit(RETRACTION_LOG_LIMIT)
+						.map(Object::toString)
+						.collect(Collectors.joining(", "));
+				String more = swept.size() > RETRACTION_LOG_LIMIT
+						? ", ... (" + (swept.size() - RETRACTION_LOG_LIMIT) + " more)" : "";
+				AnalyzerLog.info(this, tag + ": retracted the overlay references of " + swept.size() +
+					" instruction(s) no longer tracked, placed by an earlier analysis round, at " +
+					where + more);
 			}
 		}
 
@@ -895,7 +918,8 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		if (stable) {
 			AnalyzerLog.info(this, tag + ": " + flow.stateIn().size() + " instructions tracked, " +
 				refs.added() + " overlay references added/confirmed, " + refs.retired() +
-				" stale base-space references retired, " + warnings +
+				" stale base-space references retired, " + refs.retracted() +
+				" stale overlay references retracted, " + warnings +
 				" unknown-state warnings, " + violations + " bank-state requirement violations");
 			// grm-wul: every fork decision (grant, denial, address collapse), then the one-line
 			// per-program summary the owner's ruling makes THE measurement -- tabulated across
@@ -1249,10 +1273,10 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			AddressSpace baseSpace, Instruction instr, BoardModel board,
 			Map<String, Set<Integer>> bankUniverse, DataflowResult flow, Address addr,
 			Map<String, Integer> placementOverride, TaskMonitor monitor, MessageLog log,
-			BankCommentProvenance provenance) {
+			BankCommentProvenance provenance, OverlayRefProvenance refProvenance) {
 		BankAnnotationAdapter.Retargeted refs = BankAnnotationAdapter.retargetReferences(this, program,
 			refMgr, baseSpace, instr, board, bankUniverse, flow.statesAt(addr), placementOverride,
-			monitor, log, provenance);
+			monitor, log, provenance, refProvenance);
 		return refs.plus(
 			retargetInlineJumpTableTable(program, refMgr, baseSpace, instr, board, bankUniverse, flow,
 				addr, placementOverride, monitor, log));

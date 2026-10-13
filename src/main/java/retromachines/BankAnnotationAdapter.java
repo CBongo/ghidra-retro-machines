@@ -1782,14 +1782,19 @@ final class BankAnnotationAdapter {
 
 	/**
 	 * What {@link #retargetReferences} did at one instruction: {@code added} overlay references
-	 * placed or confirmed, and {@code retired} stale base-space references deleted because an
-	 * overlay reference replaced them (bead grm-bfb).
+	 * placed or confirmed, {@code retired} stale base-space references deleted because an
+	 * overlay reference replaced them (bead grm-bfb), and {@code retracted} overlay references an
+	 * earlier analysis round placed that this one no longer derives (bead grm-if81).
 	 */
-	record Retargeted(int added, int retired) {
-		static final Retargeted NONE = new Retargeted(0, 0);
+	record Retargeted(int added, int retired, int retracted) {
+		static final Retargeted NONE = new Retargeted(0, 0, 0);
+
+		Retargeted(int added, int retired) {
+			this(added, retired, 0);
+		}
 
 		Retargeted plus(Retargeted o) {
-			return new Retargeted(added + o.added, retired + o.retired);
+			return new Retargeted(added + o.added, retired + o.retired, retracted + o.retracted);
 		}
 	}
 
@@ -1862,11 +1867,11 @@ final class BankAnnotationAdapter {
 	 */
 	private static int placeOverlayRef(BoardBankAnalyzer analyzer, Program program,
 			ReferenceManager refMgr, Instruction instr, BaseRefKey key, String targetSpaceName,
-			RefType refType, boolean makePrimary, Set<BaseRefKey> primaryGiven, TaskMonitor monitor,
-			MessageLog log) {
+			RefType refType, boolean makePrimary, Set<BaseRefKey> primaryGiven,
+			OverlayRefProvenance.Placements placed, TaskMonitor monitor, MessageLog log) {
 		boolean primary = makePrimary && !primaryGiven.contains(key);
 		int n = addOverlayRef(analyzer, program, refMgr, instr, key.offset(), key.opIndex(),
-			targetSpaceName, refType, primary, monitor, log);
+			targetSpaceName, refType, primary, placed, monitor, log);
 		if (n > 0 && primary) {
 			primaryGiven.add(key);
 		}
@@ -1927,15 +1932,16 @@ final class BankAnnotationAdapter {
 			ReferenceManager refMgr, AddressSpace baseSpace, Instruction instr, BoardModel board,
 			Map<String, Set<Integer>> bankUniverse, List<BankState> states,
 			Map<String, Integer> placementOverride, TaskMonitor monitor, MessageLog log,
-			BankCommentProvenance provenance) {
+			BankCommentProvenance provenance, OverlayRefProvenance refProvenance) {
 		Set<BaseRefKey> replaced = new HashSet<>();
 		Set<BaseRefKey> keepBase = new HashSet<>();
+		OverlayRefProvenance.Placements placed = new OverlayRefProvenance.Placements();
 		int added = 0;
 		boolean makePrimary = true;
 		for (BankState state : states) {
 			added += retargetForState(analyzer, program, refMgr, baseSpace, instr, board,
 				bankUniverse, state, placementOverride, monitor, log, provenance, makePrimary,
-				replaced, keepBase);
+				replaced, keepBase, placed);
 			makePrimary = false;
 		}
 		int retired = 0;
@@ -1950,19 +1956,23 @@ final class BankAnnotationAdapter {
 				retired++;
 			}
 		}
-		return new Retargeted(added, retired);
+		// grm-if81: retract the overlay references an EARLIER round placed here and this one did
+		// not -- after retirement, so a base reference this round retired is never "restored".
+		int retracted = refProvenance == null ? 0
+				: refProvenance.settle(refMgr, instr, baseSpace, placed);
+		return new Retargeted(added, retired, retracted);
 	}
 
 	/** Single-state {@link #retargetReferences(BoardBankAnalyzer, Program, ReferenceManager,
 	 *  AddressSpace, Instruction, BoardModel, Map, List, Map, TaskMonitor, MessageLog,
-	 *  BankCommentProvenance)}. */
+	 *  BankCommentProvenance, OverlayRefProvenance)}. */
 	static Retargeted retargetReferences(BoardBankAnalyzer analyzer, Program program,
 			ReferenceManager refMgr, AddressSpace baseSpace, Instruction instr, BoardModel board,
 			Map<String, Set<Integer>> bankUniverse, BankState inState,
 			Map<String, Integer> placementOverride, TaskMonitor monitor, MessageLog log,
-			BankCommentProvenance provenance) {
+			BankCommentProvenance provenance, OverlayRefProvenance refProvenance) {
 		return retargetReferences(analyzer, program, refMgr, baseSpace, instr, board, bankUniverse,
-			List.of(inState), placementOverride, monitor, log, provenance);
+			List.of(inState), placementOverride, monitor, log, provenance, refProvenance);
 	}
 
 	/**
@@ -2063,7 +2073,7 @@ final class BankAnnotationAdapter {
 			Map<String, Set<Integer>> bankUniverse, BankState inState,
 			Map<String, Integer> placementOverride, TaskMonitor monitor, MessageLog log,
 			BankCommentProvenance provenance, boolean makePrimary, Set<BaseRefKey> replaced,
-			Set<BaseRefKey> keepBase) {
+			Set<BaseRefKey> keepBase, OverlayRefProvenance.Placements placed) {
 
 		int effective = inState.effective(board.initialState(), board.mask());
 		Map<String, String> stateRow = board.occupantByWindowForState().get(effective);
@@ -2106,12 +2116,12 @@ final class BankAnnotationAdapter {
 					int placedRead = 0;
 					if (!writeHome) {
 						placedWrite = placeOverlayRef(analyzer, program, refMgr, instr, key,
-							writeTarget, RefType.WRITE, makePrimary, primaryGiven, monitor, log);
+							writeTarget, RefType.WRITE, makePrimary, primaryGiven, placed, monitor, log);
 						added += placedWrite;
 					}
 					if (!readHome) {
 						placedRead = placeOverlayRef(analyzer, program, refMgr, instr, key,
-							readTarget, RefType.READ, makePrimary, primaryGiven, monitor, log);
+							readTarget, RefType.READ, makePrimary, primaryGiven, placed, monitor, log);
 						added += placedRead;
 					}
 					if (writeHome || readHome || !wholeStateKnown || selfWindow) {
@@ -2127,7 +2137,7 @@ final class BankAnnotationAdapter {
 						keepBase.add(key);
 					}
 					else if (placeOverlayRef(analyzer, program, refMgr, instr, key, target, refType,
-						makePrimary, primaryGiven, monitor, log) > 0) {
+						makePrimary, primaryGiven, placed, monitor, log) > 0) {
 						added++;
 						(wholeStateKnown && !selfWindow ? replaced : keepBase).add(key);
 					}
@@ -2159,7 +2169,7 @@ final class BankAnnotationAdapter {
 						fromBase && findWindow(board.computedWindows(), fromOffset) == computed;
 					if (placeOverlayRef(analyzer, program, refMgr, instr, key,
 						DescriptorSupport.OverlayNaming.bankBlockName(computed.name(), cr.bank()),
-						refType, makePrimary, primaryGiven, monitor, log) > 0) {
+						refType, makePrimary, primaryGiven, placed, monitor, log) > 0) {
 						added++;
 						((cr.fullyKnown() || cr.overridden()) && !selfWindow ? replaced : keepBase)
 								.add(key);
@@ -2195,7 +2205,7 @@ final class BankAnnotationAdapter {
 						}
 						if (placeOverlayRef(analyzer, program, refMgr, instr, key,
 							DescriptorSupport.OverlayNaming.modeBlockName(instance.name(), modeValue),
-							refType, makePrimary, primaryGiven, monitor, log) > 0) {
+							refType, makePrimary, primaryGiven, placed, monitor, log) > 0) {
 							added++;
 							(modeKnown && !selfWindow ? replaced : keepBase).add(key);
 						}
@@ -2217,7 +2227,7 @@ final class BankAnnotationAdapter {
 						}
 						if (placeOverlayRef(analyzer, program, refMgr, instr, key,
 							DescriptorSupport.OverlayNaming.modeBankBlockName(instance.name(), modeValue,
-								mr.bank()), refType, makePrimary, primaryGiven, monitor, log) > 0) {
+								mr.bank()), refType, makePrimary, primaryGiven, placed, monitor, log) > 0) {
 							added++;
 							(modeKnown && (mr.fullyKnown() || mr.overridden()) && !selfWindow
 									? replaced : keepBase).add(key);
@@ -2544,8 +2554,8 @@ final class BankAnnotationAdapter {
 	 */
 	private static int addOverlayRef(BoardBankAnalyzer analyzer, Program program,
 			ReferenceManager refMgr, Instruction instr, long offset, int opIndex,
-			String targetSpaceName, RefType refType, boolean makePrimary, TaskMonitor monitor,
-			MessageLog log) {
+			String targetSpaceName, RefType refType, boolean makePrimary,
+			OverlayRefProvenance.Placements placed, TaskMonitor monitor, MessageLog log) {
 		AddressSpace overlaySpace = program.getAddressFactory().getAddressSpace(targetSpaceName);
 		if (overlaySpace == null) {
 			// Reaching here with a bank suffix means the state named a bank the image has no
@@ -2571,6 +2581,16 @@ final class BankAnnotationAdapter {
 		Reference newRef = existingAnalysisRef != null ? existingAnalysisRef
 				: refMgr.addMemoryReference(instr.getMinAddress(), overlayAddr, refType,
 					SourceType.ANALYSIS, opIndex);
+		// grm-if81: only a reference this call CREATED establishes ownership; finding one already
+		// there (an earlier round's, or another pass's) only confirms it.
+		OverlayRefProvenance.Placed p =
+			new OverlayRefProvenance.Placed(opIndex, targetSpaceName, offset);
+		if (existingAnalysisRef != null) {
+			placed.confirm(p);
+		}
+		else {
+			placed.create(p);
+		}
 		// grm-mej.4: setPrimary would bump whatever reference currently holds primacy on this
 		// operand. If that is a USER_DEFINED reference -- the user pinned a different target by
 		// hand -- an analysis-derived overlay ref must not displace it.

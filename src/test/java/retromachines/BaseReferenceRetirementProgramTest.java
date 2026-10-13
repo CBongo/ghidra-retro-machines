@@ -144,7 +144,24 @@ public class BaseReferenceRetirementProgramTest extends AbstractBundledLanguageT
 		try {
 			return BankAnnotationAdapter.retargetReferences(new NesBankingAnalyzer(), program,
 				refMgr, base, call, board, Map.of("PRG_LO", Set.of(0, 1, 2, 3)), List.of(states),
-				Map.of(), TaskMonitor.DUMMY, new MessageLog(), null);
+				Map.of(), TaskMonitor.DUMMY, new MessageLog(), null, null);
+		}
+		finally {
+			program.endTransaction(tx, true);
+		}
+	}
+
+	/**
+	 * {@link #retarget} as the analyzer runs it (bead grm-if81): one analysis ROUND, with the
+	 * program's overlay-reference provenance record opened fresh, exactly as each
+	 * {@code BoardBankAnalyzer} invocation opens it.
+	 */
+	private BankAnnotationAdapter.Retargeted retargetTracked(BankState... states) {
+		int tx = program.startTransaction("retarget");
+		try {
+			return BankAnnotationAdapter.retargetReferences(new NesBankingAnalyzer(), program,
+				refMgr, base, call, board, Map.of("PRG_LO", Set.of(0, 1, 2, 3)), List.of(states),
+				Map.of(), TaskMonitor.DUMMY, new MessageLog(), null, OverlayRefProvenance.open(program));
 		}
 		finally {
 			program.endTransaction(tx, true);
@@ -288,7 +305,7 @@ public class BaseReferenceRetirementProgramTest extends AbstractBundledLanguageT
 		try {
 			result = BankAnnotationAdapter.retargetReferences(new NesBankingAnalyzer(), program,
 				refMgr, base, inner, board, Map.of("PRG_LO", Set.of(0, 1, 2, 3)), List.of(bank(2)),
-				Map.of(), TaskMonitor.DUMMY, new MessageLog(), null);
+				Map.of(), TaskMonitor.DUMMY, new MessageLog(), null, null);
 		}
 		finally {
 			program.endTransaction(tx, true);
@@ -356,8 +373,9 @@ public class BaseReferenceRetirementProgramTest extends AbstractBundledLanguageT
 	 * {@code c009} is bank 2 until {@code FixSkipInstructions} recovers the hidden entry that
 	 * establishes bank 1. Round one retired the stock reference; round two must still find the
 	 * banked access to resolve, seeded from the overlay reference round one left, and place bank
-	 * 1's reference as the new primary. Bank 2's reference stays as a secondary: this pass has
-	 * never removed an overlay reference an earlier round placed, and that is unchanged.
+	 * 1's reference as the new primary. Bank 2's reference stays as a secondary here because this
+	 * helper runs WITHOUT a provenance record (the degraded, additive path); with one, round two
+	 * retracts it -- see {@link #laterRoundRetractsTheEarlierRoundsOverlayReference}.
 	 */
 	@Test
 	public void laterRoundWithADifferentBankStillRetargetsARetiredSite() throws Exception {
@@ -384,5 +402,112 @@ public class BaseReferenceRetirementProgramTest extends AbstractBundledLanguageT
 		assertEquals(new BankAnnotationAdapter.Retargeted(1, 0), again);
 		assertEquals("one overlay reference, not two", 1, call.getReferencesFrom().length);
 		assertTrue(overlayRef("PRG_LO_B2").isPrimary());
+	}
+
+	// ------------------------------------------------------------------
+	// (d) Retraction across rounds (bead grm-if81): the provenance record
+	// ------------------------------------------------------------------
+
+	/**
+	 * nesintrawintest's shape at the adapter boundary: round one resolved the site against an
+	 * incomplete program (bank 2 here), round two against the final one (bank 1). Round two's
+	 * reference becomes the only one -- round one's is retracted, not left as a secondary.
+	 */
+	@Test
+	public void laterRoundRetractsTheEarlierRoundsOverlayReference() throws Exception {
+		assertEquals(new BankAnnotationAdapter.Retargeted(1, 1, 0), retargetTracked(bank(2)));
+
+		BankAnnotationAdapter.Retargeted roundTwo = retargetTracked(bank(1));
+
+		assertEquals(new BankAnnotationAdapter.Retargeted(1, 0, 1), roundTwo);
+		assertNull("round one's bank-2 reference is retracted", overlayRef("PRG_LO_B2"));
+		assertNotNull(overlayRef("PRG_LO_B1"));
+		assertTrue(overlayRef("PRG_LO_B1").isPrimary());
+		assertTrue("bank 1 still replaces the stock reference", baseRefsTo(TARGET).isEmpty());
+		assertEquals(1, call.getReferencesFrom().length);
+	}
+
+	/**
+	 * Round one retired the stock reference; round two resolves the site to HOME, which places
+	 * nothing. Retracting round one's overlay reference would leave the JSR with no reference at
+	 * all -- no callee for {@code getFlows()} -- so the base reference is restored, as primary.
+	 */
+	@Test
+	public void laterRoundResolvingHomeRestoresTheBaseReference() throws Exception {
+		assertEquals(new BankAnnotationAdapter.Retargeted(1, 1, 0), retargetTracked(bank(2)));
+		assertTrue(baseRefsTo(TARGET).isEmpty());
+
+		BankAnnotationAdapter.Retargeted roundTwo = retargetTracked(bank(0));
+
+		assertEquals(new BankAnnotationAdapter.Retargeted(0, 0, 1), roundTwo);
+		assertNull(overlayRef("PRG_LO_B2"));
+		assertEquals("the base reference is back", 1, baseRefsTo(TARGET).size());
+		Reference restored = baseRefsTo(TARGET).get(0);
+		assertTrue(restored.isPrimary());
+		assertTrue(restored.getReferenceType().isCall());
+		assertEquals(1, call.getFlows().length);
+		assertEquals(addr(TARGET), call.getFlows()[0]);
+	}
+
+	/**
+	 * An overlay reference this pass found already present -- {@code TransferMaterializer}'s, or
+	 * a hand-placed one -- is CONFIRMED by a round that resolves to it, never adopted, so a
+	 * later round that resolves elsewhere leaves it alone.
+	 */
+	@Test
+	public void overlayReferenceThisPassDidNotCreateIsNeverRetracted() throws Exception {
+		int tx = program.startTransaction("another pass's reference");
+		try {
+			refMgr.addMemoryReference(call.getMinAddress(),
+				program.getAddressFactory().getAddressSpace("PRG_LO_B1").getAddress(TARGET),
+				RefType.UNCONDITIONAL_CALL, SourceType.ANALYSIS, 0);
+		}
+		finally {
+			program.endTransaction(tx, true);
+		}
+		retargetTracked(bank(1)); // confirms the existing bank-1 reference
+
+		BankAnnotationAdapter.Retargeted roundTwo = retargetTracked(bank(2));
+
+		assertEquals("nothing of ours to retract", 0, roundTwo.retracted());
+		assertNotNull("the other pass's reference survives", overlayRef("PRG_LO_B1"));
+		assertNotNull(overlayRef("PRG_LO_B2"));
+	}
+
+	/** A settled round -- the same state again -- retracts nothing and writes nothing. */
+	@Test
+	public void settledTrackedRoundIsWriteFree() throws Exception {
+		retargetTracked(bank(2));
+		long before = program.getModificationNumber();
+
+		BankAnnotationAdapter.Retargeted again = retargetTracked(bank(2));
+
+		assertEquals(new BankAnnotationAdapter.Retargeted(1, 0, 0), again);
+		assertEquals("a settled round must not mutate the program", before,
+			program.getModificationNumber());
+	}
+
+	/**
+	 * An instruction that drops out of the tracked flow is never settled by the next round; the
+	 * end-of-round sweep retracts its record instead, restoring the stock reference it retired.
+	 */
+	@Test
+	public void sweepRetractsTheRecordOfAnInstructionThisRoundDidNotSettle() throws Exception {
+		retargetTracked(bank(2));
+		assertTrue(baseRefsTo(TARGET).isEmpty());
+
+		List<Address> swept;
+		int tx = program.startTransaction("next round, site not tracked");
+		try {
+			swept = OverlayRefProvenance.open(program).sweep(refMgr, base);
+		}
+		finally {
+			program.endTransaction(tx, true);
+		}
+
+		assertEquals(List.of(call.getMinAddress()), swept);
+		assertNull(overlayRef("PRG_LO_B2"));
+		assertEquals(1, baseRefsTo(TARGET).size());
+		assertTrue(baseRefsTo(TARGET).get(0).isPrimary());
 	}
 }

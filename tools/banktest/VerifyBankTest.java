@@ -4469,14 +4469,20 @@ public class VerifyBankTest extends GhidraScript {
 			"the pinned bank's copy of the callee is code");
 
 		// W3 (the point): the read after the call reaches bank 2 -- the overlay callee is no
-		// helper. The old base-space lookup says bank 1 and never produces this reference. (A
-		// bank-1 reference may ALSO remain from the first round, which runs before the overlay
-		// callee exists as a function and falls back to base; retargeting is additive across
-		// rounds, so that is not asserted either way.)
+		// helper. The old base-space lookup says bank 1 and never produces this reference.
 		Reference d2 = findOverlayRef(0x8008, "PRG_LO_B2", 0x8020);
 		criterion("W3", d2 != null,
 			"LDA at 8008 reaches PRG_LO_B2::8020 (the pinned bank, overlay callee is no helper): " +
 				describe(d2));
+
+		// W5 (grm-if81): the FIRST round runs before the overlay callee exists as a function,
+		// falls back to base (a bank-1 helper) and places PRG_LO_B1 references at 8008/800b. The
+		// overlay-reference provenance record retracts them once a later round concludes bank 2.
+		Reference d1 = findOverlayRef(0x8008, "PRG_LO_B1", 0x8020);
+		Reference j1 = findOverlayRef(0x800b, "PRG_LO_B1", 0x800b);
+		criterion("W5", d1 == null && j1 == null,
+			"round one's stale PRG_LO_B1 references at 8008/800b are retracted: " +
+				describe(d1) + " / " + describe(j1));
 
 		// W4: the JSR carries no helper-derived bank comment -- the base callee's "via FUN_8010"
 		// claim is wrong at this site and the provenance sweep retracts the first round's copy.
