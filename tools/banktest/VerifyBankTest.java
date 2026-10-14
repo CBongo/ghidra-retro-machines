@@ -35,7 +35,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import ghidra.app.script.GhidraScript;
 import ghidra.app.util.importer.MessageLog;
@@ -93,388 +95,174 @@ public class VerifyBankTest extends GhidraScript {
 
 	private boolean allPassed = true;
 
-	@Override
-	protected void run() throws Exception {
-		String name = currentProgram.getName();
+	/** One fixture's verification body; may throw like run() itself. */
+	private interface Check {
+		void run() throws Exception;
+	}
 
-		// The emulation-recovery fixture is not a loader/analyzer regression like the bank
-		// suites; it drives retromachines.EmulationRecovery directly and emits its own dump
-		// section, so it takes a separate path from dump() + the bank-fixture dispatch below.
-		if (name.contains("emurecoverytest")) {
-			checkEmuRecovery();
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
-		}
+	/**
+	 * Fixture name (the imported file's name without its extension) -> how it is verified. Exact
+	 * match only: an unregistered name hard-fails in run() instead of falling through to a default
+	 * (bd memory fixture-dispatch-two-sided; bead grm-w9ev.2). Register a new fixture here AND in
+	 * run-banktest.sh.
+	 */
+	private final Map<String, Check> checks = new LinkedHashMap<>();
 
-		if (name.contains("c000emutest")) {
-			checkC000EmuRecovery();
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
-		}
+	/** A focused check that bypasses dump() and the generic identity criteria. */
+	private void focused(String fixture, Check check) {
+		register(fixture, check);
+	}
 
-		if (name.contains("prgplacementtest")) {
-			checkPrgPlacement();
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
-		}
-
-		if (name.contains("prgwraptest")) {
-			checkPrgWrap();
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
-		}
-
-		// bead grm-gea: exhaustive size/wrap-boundary coverage, following up grm-dvx.
-		if (name.contains("prgnowraptest")) {
-			checkPrgNoWrap();
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
-		}
-
-		if (name.contains("prgwrap1test")) {
-			checkPrgWrap1();
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
-		}
-
-		if (name.contains("prgfulltest")) {
-			checkPrgFull();
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
-		}
-
-		if (name.contains("prgentrytest")) {
-			checkPrgEntry();
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
-		}
-
-		if (name.contains("prgstraddletest")) {
-			checkPrgStraddle();
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
-		}
-
-		if (name.contains("prgemptytest")) {
-			checkPrgEmpty();
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
-		}
-
-		if (name.contains("decryptloop")) {
-			checkDecryptLoop();
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
-		}
-
-		if (name.contains("rollingdecrypt")) {
-			checkRollingDecrypt();
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
-		}
-
-		if (name.contains("suspectdecrypt")) {
-			checkSuspectDecrypt();
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
-		}
-
-		if (name.contains("copyloop")) {
-			checkCopyLoop();
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
-		}
-
-		if (name.contains("copydata")) {
-			checkCopyData();
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
-		}
-
-		if (name.contains("copyoverlay")) {
-			checkCopyOverlay();
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
-		}
-
-		if (name.contains("copyfar")) {
-			checkCopyFar();
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
-		}
-
-		if (name.contains("copychain")) {
-			checkCopyChain();
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
-		}
-
-		// Order matters: "copybankedsrc"/"copybankedsrcrom" also contain "copybanked". One branch
-		// serves both, keying off the full name -- unlike the copybanked pair below, these two runs
-		// are REQUIRED to differ (grm-9a0).
-		if (name.contains("copybankedsrc")) {
-			checkCopyBankedSrc();
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
-		}
-		// Same ordering hazard: "copybankedinplace"/"copybankedinplacerom" contain "copybanked".
-		if (name.contains("copybankedinplace")) {
-			checkCopyBankedInPlace();
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
-		}
-
-		// One branch serves both the no-ROM and ROM-supplied runs -- "copybankedrom" contains
-		// "copybanked", and checkCopyBanked keys off the full name for the single criterion that
-		// differs. No ordering hazard here, unlike copyhint/copyhintnorom below.
-		if (name.contains("copybanked")) {
-			checkCopyBanked();
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
-		}
-
-		// The NES copy fixture takes the same focused COPYBLOCK dump as the C64 ones above
-		// (not the NES bank dump()), so it returns here rather than falling into the
-		// nes* chain below.
-		if (name.contains("nescopytest")) {
-			checkNesCopyLoop();
-			// Its dump block is COPYBLOCK-shaped and carries no IDENTITY line, but it is still an
-			// NES import, so the identity criteria apply -- called here so all ten NES fixtures
-			// are covered, not just the nine that reach dump(). Criterion lines print after
-			// verifyCopy's "=== BANKDUMP END ===", so this moves no golden.
+	/** A bank-style fixture: dump(), the generic identity criteria, then its own check. */
+	private void dumped(String fixture, Check check) {
+		register(fixture, () -> {
+			dump();
 			checkGameIdentity();
 			checkAsyncEntryPoints();
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
-		}
+			check.run();
+		});
+	}
 
-		if (name.contains("rfemanual")) {
-			checkRfeManual();
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
+	private void register(String fixture, Check check) {
+		if (checks.put(fixture, check) != null) {
+			throw new IllegalStateException("fixture registered twice: " + fixture);
 		}
+	}
 
-		// Order matters: "copyhintnorom" also contains "copyhint".
-		if (name.contains("copyhintnorom")) {
-			checkCopyHintNoRom();
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
-		}
+	private void registerChecks() {
+		// run() rebuilds the map each time, so a script instance reused across programs (e.g. one
+		// headless JVM importing several fixtures, grm-w9ev.5) does not trip register()'s guard.
+		checks.clear();
+		// Focused checks (no dump()): the emulation/PRG/copy/BASIC/SNES families.
+		focused("emurecoverytest", this::checkEmuRecovery);
+		focused("c000emutest", this::checkC000EmuRecovery);
+		focused("prgplacementtest", this::checkPrgPlacement);
+		focused("prgwraptest", this::checkPrgWrap);
+		focused("prgnowraptest", this::checkPrgNoWrap);
+		focused("prgwrap1test", this::checkPrgWrap1);
+		focused("prgfulltest", this::checkPrgFull);
+		focused("prgentrytest", this::checkPrgEntry);
+		focused("prgstraddletest", this::checkPrgStraddle);
+		focused("prgemptytest", this::checkPrgEmpty);
+		focused("decryptloop", this::checkDecryptLoop);
+		focused("rollingdecrypt", this::checkRollingDecrypt);
+		focused("suspectdecrypt", this::checkSuspectDecrypt);
+		focused("copyloop", this::checkCopyLoop);
+		focused("copydata", this::checkCopyData);
+		focused("copyoverlay", this::checkCopyOverlay);
+		focused("copyfar", this::checkCopyFar);
+		focused("copychain", this::checkCopyChain);
+		// The copybanked* runs share checkCopyBanked / checkCopyBankedSrc, which key off the full
+		// name for the single criterion that differs (the *rom variants); the src and inplace
+		// pairs are REQUIRED to differ from plain copybanked (grm-9a0).
+		focused("copybanked", this::checkCopyBanked);
+		focused("copybankedrom", this::checkCopyBanked);
+		focused("copybankedsrc", this::checkCopyBankedSrc);
+		focused("copybankedsrcrom", this::checkCopyBankedSrc);
+		focused("copybankedinplace", this::checkCopyBankedInPlace);
+		focused("copybankedinplacerom", this::checkCopyBankedInPlace);
+		// The NES copy fixture takes the focused COPYBLOCK dump (not the NES bank dump()). Its
+		// block carries no IDENTITY line but it is still an NES import, so the identity criteria
+		// apply -- criterion lines print after verifyCopy's "=== BANKDUMP END ===", so this moves
+		// no golden.
+		focused("nescopytest", () -> {
+			checkNesCopyLoop();
+			checkGameIdentity();
+			checkAsyncEntryPoints();
+		});
+		// cp-renamed alias fixtures (run-banktest.sh copies another PRG to these names).
+		focused("rfemanual", this::checkRfeManual);
+		focused("copyhinttest", this::checkCopyHint);
+		focused("copyhintnorom", this::checkCopyHintNoRom);
+		focused("symtoggle", this::checkSymToggle);
+		focused("romload", this::checkRomLoad);
+		focused("pet4032test", this::checkPet4032);
+		focused("snestest", this::checkSnes);
+		focused("snestestcopier", this::checkSnes);
+		focused("snestestinterleaved", this::checkSnesInterleaved);
+		focused("c128nativebasic7test", this::checkC128NativeBasic7);
+		focused("c64basic2tokentest", this::checkC64Basic2Dialect);
+		focused("c64basicoverflowtest", this::checkC64BasicOverflowDialect);
+		focused("petbasic4test", this::checkPetBasic4Dialect);
+		focused("c128basic7test", this::checkC128Basic7Dialect);
+		focused("petsciistringtest", this::checkPetsciiStringTest);
+		// grm-s3wo: same string layout as nestbltest, in a LoROM cartridge; the byte-mapped
+		// mirror of bank 00 sits at $80:8000 (grm-a6n0: it must stay unannotated).
+		focused("snestbltest", () -> checkTblTest("snes", 0x800000L, "snestbltest.tbl"));
+		// grm-a6n0: 16 KiB PRG, mirrored byte-mapped at $C000.
+		focused("nestbltest16", () -> checkTblTest("nes16", 0x4000L, "nestbltest.tbl"));
+		focused("nestbltest", () -> checkTblTest("nes", 0L, "nestbltest.tbl"));
 
-		if (name.contains("copyhint")) {
-			checkCopyHint();
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
-		}
-
-		if (name.contains("romload")) {
-			checkRomLoad();
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
-		}
-
-		if (name.contains("symtoggle")) {
-			checkSymToggle();
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
-		}
-
-		if (name.contains("pet4032test")) {
-			checkPet4032();
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
-		}
-
-		if (name.contains("snestestinterleaved")) {
-			checkSnesInterleaved();
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
-		}
-
-		if (name.contains("snestest")) {
-			checkSnes();
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
-		}
-
-		if (name.contains("c128nativebasic7test")) {
-			checkC128NativeBasic7();
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
-		}
-
-		if (name.contains("c64basic2tokentest")) {
-			checkC64Basic2Dialect();
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
-		}
-		if (name.contains("c64basicoverflowtest")) {
-			checkC64BasicOverflowDialect();
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
-		}
-
-		if (name.contains("petbasic4test")) {
-			checkPetBasic4Dialect();
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
-		}
-
-		if (name.contains("c128basic7test")) {
-			checkC128Basic7Dialect();
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
-		}
-
-		if (name.contains("petsciistringtest")) {
-			checkPetsciiStringTest();
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
-		}
-
-		if (name.contains("snestbltest")) {
-			// grm-s3wo: same string layout as nestbltest, in a LoROM cartridge; the byte-mapped
-			// mirror of bank 00 sits at $80:8000 (grm-a6n0: it must stay unannotated).
-			checkTblTest("snes", 0x800000L, "snestbltest.tbl");
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
-		}
-
-		if (name.contains("nestbltest16")) {
-			// grm-a6n0: 16 KiB PRG, mirrored byte-mapped at $C000.
-			checkTblTest("nes16", 0x4000L, "nestbltest.tbl");
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
-		}
-
-		if (name.contains("nestbltest")) {
-			checkTblTest("nes", 0L, "nestbltest.tbl");
-			println(allPassed ? "SUITE PASS" : "SUITE FAIL");
-			return;
-		}
-
-		dump();
-		checkGameIdentity();
-		checkAsyncEntryPoints();
-
-		if (name.contains("descoverlaytest")) {
-			checkDescOverlay(true);
-		}
-		else if (name.contains("descoverlayctltest")) {
-			checkDescOverlay(false);
-		}
-		else if (name.contains("descannotationtest")) {
-			// The generic dump + identity criteria above are the whole post-import story; the
-			// substance (re-running DescriptorAnnotationAnalyzer one-shot) is the post-verify
-			// AssertDescriptorReanalysis.java script's (bead grm-hb6.16). This branch exists only
-			// so the fixture does not fall through to the C64 banking default below.
-		}
-		else if (name.contains("descexporttest")) {
-			// Phase A of the export round trip (grm-hb6.17): the dump is the plain import; the
-			// seeding and export are post-verify scripts.
-		}
-		else if (name.contains("descreimporttest")) {
+		// dump()-based fixtures: C64 banking, descriptor and NES board suites.
+		dumped("banktest", this::checkBanktest);
+		dumped("banktest2", this::checkBanktest2);
+		dumped("banktest3", this::checkBanktest3);
+		dumped("banktest4", this::checkBanktest4);
+		dumped("c64basictest", this::checkC64Basictest);
+		dumped("descoverlaytest", () -> checkDescOverlay(true));
+		dumped("descoverlayctltest", () -> checkDescOverlay(false));
+		// The generic dump + identity criteria are the whole post-import story; the substance
+		// (re-running DescriptorAnnotationAnalyzer one-shot) is the post-verify
+		// AssertDescriptorReanalysis.java script's (bead grm-hb6.16).
+		dumped("descannotationtest", () -> { });
+		// Phase A of the export round trip (grm-hb6.17): the dump is the plain import; the
+		// seeding and export are post-verify scripts.
+		dumped("descexporttest", () -> { });
+		dumped("descreimporttest", () -> {
 			String path = currentProgram.getOptions(Program.PROGRAM_INFO)
 					.getString(GAME_DESCRIPTOR_PROPERTY, null);
 			String norm = path == null ? null : path.replace('\\', '/');
 			criterion("REIMP1:exported-overlay-resolved",
 				norm != null && norm.endsWith("/retro-machines/games/descexportedtest.yaml"),
 				"Game Descriptor property = " + path);
-		}
-		else if (name.contains("nesrelaytest")) {
-			checkNesRelayTest();
-		}
-		else if (name.contains("neswrappertest")) {
-			checkNesWrapperTest();
-		}
-		else if (name.contains("nesmmc1overridetest")) {
-			checkNesMmc1Override();
-		}
-		else if (name.contains("nesmmc3overridetest")) {
-			checkNesMmc3Override();
-		}
-		else if (name.contains("nesmmc3mirrortest")) {
-			checkNesMmc3Mirrortest();
-		}
-		else if (name.contains("nesmmc3idtest")) {
-			checkNesMmc3Idtest();
-		}
-		else if (name.contains("nesmmc1test")) {
-			checkNesMmc1test();
-		}
-		else if (name.contains("nesserialtest")) {
-			checkNesSerialtest();
-		}
-		else if (name.contains("nesmmc3test2")) {
-			checkNesMmc3test2();
-		}
-		else if (name.contains("nesmmc3test")) {
-			checkNesMmc3test();
-		}
-		else if (name.contains("nesnromsubtest")) {
-			checkNesNromSubtest();
-		}
-		else if (name.contains("nesmodetest")) {
-			checkNesModetest();
-		}
-		else if (name.contains("nesmmc2test")) {
-			checkNesMmc2test();
-		}
-		else if (name.contains("nesmmc5wraptest")) {
-			checkNesMmc5Wraptest();
-		}
-		else if (name.contains("nesmmc5test")) {
-			checkNesMmc5test();
-		}
-		else if (name.contains("nesbandaitest")) {
-			checkNesBandaitest();
-		}
-		else if (name.contains("nesuxhelpertest")) {
-			checkNesUxHelpertest();
-		}
-		else if (name.contains("nesskiptest")) {
-			checkNesSkiptest();
-		}
-		else if (name.contains("nesmirrortest")) {
-			checkNesMirrortest();
-		}
-		else if (name.contains("nesnmitest")) {
-			checkNesNmitest();
-		}
-		else if (name.contains("nesforkbudgettest")) {
-			checkNesForkBudgettest();
-		}
-		else if (name.contains("nesintrawintest")) {
-			checkNesIntrawintest();
-		}
-		else if (name.contains("nesforkhometest")) {
-			checkNesForkHometest();
-		}
-		else if (name.contains("nesforktest")) {
-			checkNesForktest();
-		}
-		else if (name.contains("nesbanktest2")) {
-			checkNesBanktest2();
-		}
-		else if (name.contains("nesbanktest")) {
-			checkNesBanktest();
-		}
-		else if (name.contains("c64basictest")) {
-			checkC64Basictest();
-		}
-		else if (name.contains("banktest4")) {
-			checkBanktest4();
-		}
-		else if (name.contains("banktest3")) {
-			checkBanktest3();
-		}
-		else if (name.contains("banktest2")) {
-			checkBanktest2();
-		}
-		else {
-			checkBanktest();
+		});
+		dumped("nesrelaytest", this::checkNesRelayTest);
+		dumped("neswrappertest", this::checkNesWrapperTest);
+		dumped("nesmmc1overridetest", this::checkNesMmc1Override);
+		dumped("nesmmc3overridetest", this::checkNesMmc3Override);
+		dumped("nesmmc3mirrortest", this::checkNesMmc3Mirrortest);
+		dumped("nesmmc3idtest", this::checkNesMmc3Idtest);
+		dumped("nesmmc1test", this::checkNesMmc1test);
+		dumped("nesserialtest", this::checkNesSerialtest);
+		dumped("nesmmc3test2", this::checkNesMmc3test2);
+		dumped("nesmmc3test", this::checkNesMmc3test);
+		dumped("nesnromsubtest", this::checkNesNromSubtest);
+		dumped("nesmodetest", this::checkNesModetest);
+		dumped("nesmmc2test", this::checkNesMmc2test);
+		dumped("nesmmc5wraptest", this::checkNesMmc5Wraptest);
+		dumped("nesmmc5test", this::checkNesMmc5test);
+		dumped("nesbandaitest", this::checkNesBandaitest);
+		dumped("nesuxhelpertest", this::checkNesUxHelpertest);
+		dumped("nesskiptest", this::checkNesSkiptest);
+		dumped("nesmirrortest", this::checkNesMirrortest);
+		dumped("nesnmitest", this::checkNesNmitest);
+		dumped("nesforkbudgettest", this::checkNesForkBudgettest);
+		dumped("nesintrawintest", this::checkNesIntrawintest);
+		dumped("nesforkhometest", this::checkNesForkHometest);
+		dumped("nesforktest", this::checkNesForktest);
+		dumped("nesbanktest2", this::checkNesBanktest2);
+		dumped("nesbanktest", this::checkNesBanktest);
+	}
+
+	@Override
+	protected void run() throws Exception {
+		registerChecks();
+
+		// The program name is the imported file's name; fixtures are registered without extension.
+		String name = currentProgram.getName();
+		int dot = name.lastIndexOf('.');
+		String fixture = dot > 0 ? name.substring(0, dot) : name;
+
+		Check check = checks.get(fixture);
+		if (check == null) {
+			criterion("DISPATCH:unregistered-fixture", false,
+				"no check registered for fixture '" + fixture + "' (program " + name
+					+ "); add it to VerifyBankTest.registerChecks()");
+			println("SUITE FAIL");
+			return;
 		}
 
+		check.run();
 		println(allPassed ? "SUITE PASS" : "SUITE FAIL");
 	}
 
