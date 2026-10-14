@@ -44,7 +44,7 @@ public class ByteMappedMirrorTest extends AbstractBundledLanguageTest {
 
 	@Test
 	public void codeDisassemblesInsideAByteMappedMirror() throws Exception {
-		ProgramBuilder builder = new ProgramBuilder("Test", "65816:LE:24:retro");
+		ProgramBuilder builder = newBuilder("Test", "65816:LE:24:retro");
 		builder.createMemory("rom", "0x008000", 0x100);
 		ProgramDB program = builder.getProgram();
 

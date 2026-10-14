@@ -53,7 +53,7 @@ public class PcodeConstantSemanticsProgramTest extends AbstractBundledLanguageTe
 	private ProgramDB program;
 
 	private void build(String languageId) throws Exception {
-		builder = new ProgramBuilder("Test", languageId);
+		builder = newBuilder("Test", languageId);
 		builder.createMemory(".zp", "0x0", 0x100);
 		builder.createMemory("PRG", "0x8000", 0x8000);
 		program = builder.getProgram();

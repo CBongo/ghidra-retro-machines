@@ -76,7 +76,7 @@ public class BaseReferenceRetirementProgramTest extends AbstractBundledLanguageT
 
 	@Before
 	public void setUp() throws Exception {
-		builder = new ProgramBuilder("Test", "6502:LE:16:default");
+		builder = newBuilder("Test", "6502:LE:16:default");
 		builder.createMemory("PRG_LO", "0x8000", 0x4000);
 		builder.createMemory("PRG_HI", "0xC000", 0x4000);
 		builder.createOverlayMemory("PRG_LO_B1", "0x8000", 0x4000);

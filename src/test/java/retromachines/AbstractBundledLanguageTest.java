@@ -17,7 +17,9 @@ package retromachines;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import generic.jar.ResourceFile;
@@ -28,6 +30,7 @@ import ghidra.program.database.ProgramBuilder;
 import ghidra.program.database.ProgramDB;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.util.exception.AssertException;
+import org.junit.After;
 import utility.application.ApplicationLayout;
 
 /**
@@ -61,6 +64,29 @@ public abstract class AbstractBundledLanguageTest extends AbstractGenericTest {
 
 	/** Set by build.gradle's {@code test} task; the root of this Ghidra module. */
 	public static final String MODULE_DIR_PROPERTY = "grm.moduleDir";
+
+	private final List<ProgramBuilder> builders = new ArrayList<>();
+
+	/**
+	 * Creates a {@link ProgramBuilder} that this base class disposes after the test. Use this in
+	 * place of {@code new ProgramBuilder(...)}: an undisposed builder keeps its program database
+	 * open for the life of the JVM. {@code ProgramBuilder.dispose()} is idempotent, so a test
+	 * that also disposes its builder explicitly is harmless.
+	 */
+	protected ProgramBuilder newBuilder(String name, String languageId) throws Exception {
+		ProgramBuilder builder = new ProgramBuilder(name, languageId);
+		builders.add(builder);
+		return builder;
+	}
+
+	/** Runs after any subclass {@code @After} (JUnit 4 runs superclass afters last). */
+	@After
+	public void disposeTrackedBuilders() {
+		for (ProgramBuilder builder : builders) {
+			builder.dispose();
+		}
+		builders.clear();
+	}
 
 	@Override
 	protected ApplicationLayout createApplicationLayout() throws IOException {

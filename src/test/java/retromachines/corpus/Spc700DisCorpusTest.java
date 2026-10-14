@@ -143,7 +143,7 @@ public class Spc700DisCorpusTest extends AbstractBundledLanguageTest {
 	private String compareOne(String title, Path file, Path outDir, List<String> problems,
 			List<String> residue) throws Exception {
 		DisListing listing = DisListing.parse(file);
-		ProgramBuilder builder = new ProgramBuilder(title, LANGUAGE_ID);
+		ProgramBuilder builder = newBuilder(title, LANGUAGE_ID);
 		builder.createMemory(".ram", "0x0", 0x10000);
 		ProgramDB program = builder.getProgram();
 

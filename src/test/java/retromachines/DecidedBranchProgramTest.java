@@ -59,7 +59,7 @@ public class DecidedBranchProgramTest extends AbstractBundledLanguageTest {
 	/** {@code lda} is the LDA instruction's two bytes, {@code branch} the opcode at 8005;
 	 *  {@code jumpToDead} adds a JMP $8007 at 8010. */
 	private ProgramDB build(String lda, int branch, boolean jumpToDead) throws Exception {
-		builder = new ProgramBuilder("Test", LANG);
+		builder = newBuilder("Test", LANG);
 		builder.createMemory(".text", "0x8000", 0x100);
 		builder.setBytes("0x8000",
 			String.format("%s 8d 06 20 %02x 04 ea ea ea 00 60", lda, branch), true);
@@ -127,7 +127,7 @@ public class DecidedBranchProgramTest extends AbstractBundledLanguageTest {
 	 */
 	@Test
 	public void unreachedMultiEntryChainIsCleared() throws Exception {
-		builder = new ProgramBuilder("Test", LANG);
+		builder = newBuilder("Test", LANG);
 		builder.createMemory(".text", "0x8000", 0x100);
 		builder.setBytes("0x8000", "a9 10 d0 0a a9 11 d0 06 a9 12 d0 02 a9 13 60", true);
 		ProgramDB program = builder.getProgram();
@@ -156,7 +156,7 @@ public class DecidedBranchProgramTest extends AbstractBundledLanguageTest {
 	 */
 	@Test
 	public void multiEntryChainNamedByAPointerTableIsKept() throws Exception {
-		builder = new ProgramBuilder("Test", LANG);
+		builder = newBuilder("Test", LANG);
 		builder.createMemory(".text", "0x8000", 0x100);
 		builder.setBytes("0x8000", "a9 10 d0 0a a9 11 d0 06 a9 12 d0 02 a9 13 60", true);
 		// Pointer table at 8040: 8000, 8004, 8008 -- the last entry, 800c, is left unnamed.
@@ -192,7 +192,7 @@ public class DecidedBranchProgramTest extends AbstractBundledLanguageTest {
 	 */
 	@Test
 	public void prologueWalkFollowsADecidedBranchOverTheClearedGap() throws Exception {
-		builder = new ProgramBuilder("Test", LANG);
+		builder = newBuilder("Test", LANG);
 		builder.createMemory(".text", "0x9000", 0x100);
 		builder.setBytes("0x9000", "a9 0e d0 02 a9 0f a2 05 8d ff 9f 60", true);
 		ProgramDB program = builder.getProgram();

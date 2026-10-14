@@ -55,7 +55,7 @@ public class Spc700LanguageTest extends AbstractBundledLanguageTest {
 
 	@Before
 	public void setUp() throws Exception {
-		builder = new ProgramBuilder("Test", LANGUAGE_ID);
+		builder = newBuilder("Test", LANGUAGE_ID);
 		builder.createMemory(".ram", "0x0", 0x10000);
 		program = builder.getProgram();
 	}

@@ -58,7 +58,7 @@ public class InlineJumpTableDispatchAnalyzerTest extends AbstractBundledLanguage
 	}
 
 	private ProgramDB freshProgram() throws Exception {
-		builder = new ProgramBuilder("Test", LANG);
+		builder = newBuilder("Test", LANG);
 		uninitializedRam(builder, ".zp", "0x0", 0x100);
 		builder.createMemory(".text", "0x8000", 0x8000); // 0x8000-0xffff, ROM
 		return builder.getProgram();
@@ -296,7 +296,7 @@ public class InlineJumpTableDispatchAnalyzerTest extends AbstractBundledLanguage
 	 */
 	@Test
 	public void resolvesTargetInFixedBankWhenTableIsInBankedOverlay() throws Exception {
-		builder = new ProgramBuilder("Test", LANG);
+		builder = newBuilder("Test", LANG);
 		uninitializedRam(builder, ".zp", "0x0", 0x100);
 		builder.createMemory("PRG_HI", "0xc000", 0x4000); // fixed bank, base/physical space
 		var overlay = builder.createOverlayMemory("PRG_LO_B1", "0x8000", 0x4000); // switchable
@@ -375,7 +375,7 @@ public class InlineJumpTableDispatchAnalyzerTest extends AbstractBundledLanguage
 	 */
 	@Test
 	public void doesNotTrimCrossWindowTailEntry() throws Exception {
-		builder = new ProgramBuilder("Test", LANG);
+		builder = newBuilder("Test", LANG);
 		uninitializedRam(builder, ".zp", "0x0", 0x100);
 		builder.createMemory("PRG_HI", "0xc000", 0x4000); // fixed bank -- the table lives here
 		builder.createMemory("W8000_HOME", "0x8000", 0x4000); // $8000 window's home occupant
@@ -413,7 +413,7 @@ public class InlineJumpTableDispatchAnalyzerTest extends AbstractBundledLanguage
 	 */
 	@Test
 	public void crossWindowEntryIsNotDisassembledInBaseSpace() throws Exception {
-		builder = new ProgramBuilder("Test", LANG);
+		builder = newBuilder("Test", LANG);
 		uninitializedRam(builder, ".zp", "0x0", 0x100);
 		builder.createMemory("PRG_HI", "0xc000", 0x4000); // fixed bank
 		builder.createMemory("W8000_HOME", "0x8000", 0x4000); // $8000 window's home occupant

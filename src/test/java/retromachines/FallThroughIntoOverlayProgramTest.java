@@ -65,7 +65,7 @@ public class FallThroughIntoOverlayProgramTest extends AbstractBundledLanguageTe
 
 	@Before
 	public void setUp() throws Exception {
-		builder = new ProgramBuilder("Test", "6502:LE:16:default");
+		builder = newBuilder("Test", "6502:LE:16:default");
 		builder.createMemory("PRG", "0x8000", 0x8000);
 		builder.createOverlayMemory("OV", "0xc000", 0x10);
 		builder.setBytes("0xc000", "a9 01", true); // LDA #1

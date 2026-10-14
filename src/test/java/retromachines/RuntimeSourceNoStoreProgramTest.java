@@ -59,7 +59,7 @@ public class RuntimeSourceNoStoreProgramTest extends AbstractBundledLanguageTest
 
 	@Before
 	public void setUp() throws Exception {
-		builder = new ProgramBuilder("Test", "6502:LE:16:default");
+		builder = newBuilder("Test", "6502:LE:16:default");
 		MemoryBlock zp = builder.createMemory(".zp", "0x0", 0x100);
 		MemoryBlock ram = builder.createMemory(".ram", "0x100", 0x700);
 		builder.createMemory("PRG", "0x8000", 0x8000);

@@ -93,7 +93,7 @@ public class JumpTableBoundProgramTest extends AbstractBundledLanguageTest {
 	/** As above, with every fake entry after the 8 real ones pointing at {@code junk}. */
 	private ProgramDB buildProgram(long tableAddr, boolean maskIndex, long junk)
 			throws Exception {
-		builder = new ProgramBuilder("Test", LANG);
+		builder = newBuilder("Test", LANG);
 		uninitializedRam(builder, ".zp", "0x0", 0x100);
 		builder.createMemory(".text", "0x8000", 0x1000);
 
@@ -303,7 +303,7 @@ public class JumpTableBoundProgramTest extends AbstractBundledLanguageTest {
 	 *  physical-of relationships rather than blanket physical-space equality). */
 	@Test
 	public void analyzerBoundsAcrossOverlayPhysicalSpaceMismatch() throws Exception {
-		builder = new ProgramBuilder("Test", LANG);
+		builder = newBuilder("Test", LANG);
 		uninitializedRam(builder, ".zp", "0x0", 0x100);
 		// The real 16 bytes of table live in a small BASE (non-overlay) block -- exactly
 		// [0x8000, 0x8010). The rest of the notional 256-byte table region (the "over-read" past

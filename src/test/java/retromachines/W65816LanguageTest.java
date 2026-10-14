@@ -62,7 +62,7 @@ public class W65816LanguageTest extends AbstractBundledLanguageTest {
 
 	@Before
 	public void setUp() throws Exception {
-		builder = new ProgramBuilder("Test", LANGUAGE_ID);
+		builder = newBuilder("Test", LANGUAGE_ID);
 		builder.createMemory(".text", "0x8000", 0x1000);
 		program = builder.getProgram();
 	}

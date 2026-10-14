@@ -63,7 +63,7 @@ public class GameDescriptorExportRoundTripTest extends AbstractBundledLanguageTe
 	public TemporaryFolder tmp = new TemporaryFolder();
 
 	private ProgramBuilder newBuilder() throws Exception {
-		ProgramBuilder b = new ProgramBuilder("Test", "6502:LE:16:default");
+		ProgramBuilder b = newBuilder("Test", "6502:LE:16:default");
 		uninitializedRam(b, "RAM", "0x1000", 0x100);
 		uninitializedRamOverlay(b, "PRG_LO_B1", "0x8000", 0x100);
 		return b;
@@ -260,7 +260,7 @@ public class GameDescriptorExportRoundTripTest extends AbstractBundledLanguageTe
 		JsonObject doc = new Gson().toJsonTree(GameCompiler.compileOverlay(f).gameDoc())
 				.getAsJsonObject();
 
-		ProgramBuilder noOverlay = new ProgramBuilder("Test", "6502:LE:16:default");
+		ProgramBuilder noOverlay = newBuilder("Test", "6502:LE:16:default");
 		uninitializedRam(noOverlay, "RAM", "0x1000", 0x100);
 		ProgramDB p = noOverlay.getProgram();
 		MessageLog log = new MessageLog();

@@ -49,7 +49,7 @@ public class StockRomHelperReportTest extends AbstractBundledLanguageTest {
 
 	@Before
 	public void setUp() throws Exception {
-		builder = new ProgramBuilder("Test", "6502:LE:16:default");
+		builder = newBuilder("Test", "6502:LE:16:default");
 		builder.createMemory("PRG", "0x2000", 0x1000);        // the imported program
 		MemoryBlock kernal = builder.createMemory("KERNAL", "0xe000", 0x2000);
 		program = builder.getProgram();

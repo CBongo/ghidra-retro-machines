@@ -68,7 +68,7 @@ public class BankMirrorDerivationProgramTest extends AbstractBundledLanguageTest
 
 	@Before
 	public void setUp() throws Exception {
-		builder = new ProgramBuilder("Test", "6502:LE:16:default");
+		builder = newBuilder("Test", "6502:LE:16:default");
 		MemoryBlock zp = builder.createMemory(".zp", "0x0", 0x100);
 		// Spans the stack page and ordinary RAM above it, so the stack-page refusal and the
 		// "any RAM address, not just zero page" rule are both reachable.

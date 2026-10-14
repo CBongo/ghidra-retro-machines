@@ -72,7 +72,7 @@ public class SecondTierHelperProgramTest extends AbstractBundledLanguageTest {
 
 	@Before
 	public void setUp() throws Exception {
-		builder = new ProgramBuilder("Test", "6502:LE:16:default");
+		builder = newBuilder("Test", "6502:LE:16:default");
 		builder.createMemory("PRG", "0x8000", 0x8000);
 		program = builder.getProgram();
 		helpers = new LinkedHashMap<>();

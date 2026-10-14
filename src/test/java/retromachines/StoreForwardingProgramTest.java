@@ -68,7 +68,7 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 
 	@Before
 	public void setUp() throws Exception {
-		builder = new ProgramBuilder("Test", "6502:LE:16:default");
+		builder = newBuilder("Test", "6502:LE:16:default");
 		MemoryBlock zp = builder.createMemory(".zp", "0x0", 0x100);
 		// Deliberately spans the stack page AND ordinary RAM above it, so the stack-page guard
 		// and the "any RAM address, not just zero page" rule can both be exercised.

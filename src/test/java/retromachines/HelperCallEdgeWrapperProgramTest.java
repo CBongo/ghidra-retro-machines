@@ -64,7 +64,7 @@ public class HelperCallEdgeWrapperProgramTest extends AbstractBundledLanguageTes
 
 	@Before
 	public void setUp() throws Exception {
-		builder = new ProgramBuilder("Test", "6502:LE:16:default");
+		builder = newBuilder("Test", "6502:LE:16:default");
 		builder.createMemory("PRG", "0x8000", 0x8000);
 		builder.createMemory("RAM", "0x0000", 0x800);
 		program = builder.getProgram();

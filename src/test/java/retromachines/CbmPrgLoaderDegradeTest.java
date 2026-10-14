@@ -56,7 +56,7 @@ public class CbmPrgLoaderDegradeTest extends AbstractBundledLanguageTest {
 	}
 
 	/** Runs load() on a PRG of {@code payload} bytes at {@code loadAddr}; returns the log. */
-	private static MessageLog runLoad(JsonObject map, int loadAddr, int payload)
+	private MessageLog runLoad(JsonObject map, int loadAddr, int payload)
 			throws Exception {
 		byte[] prg = new byte[2 + payload];
 		prg[0] = (byte) (loadAddr & 0xFF);
@@ -64,7 +64,7 @@ public class CbmPrgLoaderDegradeTest extends AbstractBundledLanguageTest {
 		for (int i = 0; i < payload; i++) {
 			prg[2 + i] = (byte) 0xEA;
 		}
-		ProgramBuilder builder = new ProgramBuilder("Test", "6510:LE:16:default");
+		ProgramBuilder builder = newBuilder("Test", "6510:LE:16:default");
 		ProgramDB program = builder.getProgram();
 		MessageLog log = new MessageLog();
 		ImporterSettings settings = new ImporterSettings(

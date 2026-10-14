@@ -75,7 +75,7 @@ public class DescriptorAnnotationAnalyzerTest extends AbstractBundledLanguageTes
 	}
 
 	private ProgramBuilder newBuilder() throws Exception {
-		ProgramBuilder b = new ProgramBuilder("Test", "6502:LE:16:default");
+		ProgramBuilder b = newBuilder("Test", "6502:LE:16:default");
 		uninitializedRam(b, "RAM", "0x1000", 0x100);
 		return b;
 	}

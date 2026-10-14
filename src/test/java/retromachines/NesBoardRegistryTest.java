@@ -16,6 +16,7 @@
 package retromachines;
 
 import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.fail;
 import static org.junit.Assert.assertTrue;
 
 import java.util.List;
@@ -44,11 +45,16 @@ public class NesBoardRegistryTest {
 
 	@Test
 	public void noConflictPasses() {
-		NesBoardRegistry.validateUnique(List.of(
-			board("nrom", "machines/nes-nrom.map", 0),
-			board("uxrom", "machines/nes-uxrom.map", 2),
-			board("bandai-fcg", "machines/nes-bandai-fcg.map", 16, 157, 159)));
-		// no exception: distinct ids, distinct mapper numbers (including a multi-mapper board)
+		// distinct ids, distinct mapper numbers (including a multi-mapper board): must not throw
+		try {
+			NesBoardRegistry.validateUnique(List.of(
+				board("nrom", "machines/nes-nrom.map", 0),
+				board("uxrom", "machines/nes-uxrom.map", 2),
+				board("bandai-fcg", "machines/nes-bandai-fcg.map", 16, 157, 159)));
+		}
+		catch (IllegalStateException e) {
+			fail("a conflict-free board set must validate, but: " + e.getMessage());
+		}
 	}
 
 	@Test

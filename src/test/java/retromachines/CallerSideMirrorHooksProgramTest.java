@@ -76,7 +76,7 @@ public class CallerSideMirrorHooksProgramTest extends AbstractBundledLanguageTes
 
 	@Before
 	public void setUp() throws Exception {
-		builder = new ProgramBuilder("Test", "6502:LE:16:default");
+		builder = newBuilder("Test", "6502:LE:16:default");
 		zp = builder.createMemory(".zp", "0x0", 0x100);
 		prg = builder.createMemory("PRG", "0x8000", 0x8000);
 		program = builder.getProgram();

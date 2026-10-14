@@ -57,7 +57,7 @@ public class TransferMaterializerTest extends AbstractBundledLanguageTest {
 	private static final String CATEGORY = "Test";
 
 	private ProgramBuilder newBuilder() throws Exception {
-		return new ProgramBuilder("Test", "6502:LE:16:default");
+		return newBuilder("Test", "6502:LE:16:default");
 	}
 
 	/** Runs {@link TransferMaterializer#materialize} inside its own transaction, as production

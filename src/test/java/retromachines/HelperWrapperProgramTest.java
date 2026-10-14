@@ -65,7 +65,7 @@ public class HelperWrapperProgramTest extends AbstractBundledLanguageTest {
 
 	@Before
 	public void setUp() throws Exception {
-		builder = new ProgramBuilder("Test", "6502:LE:16:default");
+		builder = newBuilder("Test", "6502:LE:16:default");
 		builder.createMemory("PRG", "0x8000", 0x8000);
 		// Not load-bearing for this predicate -- isPassThroughInto never reads write
 		// references -- but kept to match this tier's fixture idiom (see

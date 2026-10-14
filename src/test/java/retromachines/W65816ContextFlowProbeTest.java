@@ -51,7 +51,7 @@ public class W65816ContextFlowProbeTest extends AbstractBundledLanguageTest {
 
 	@Before
 	public void setUp() throws Exception {
-		builder = new ProgramBuilder("Test", "65816:LE:24:retro");
+		builder = newBuilder("Test", "65816:LE:24:retro");
 		builder.createMemory(".text", "0x8000", 0x1000);
 		program = builder.getProgram();
 		// Native mode throughout: emulation mode forces 8-bit and would mask the question.

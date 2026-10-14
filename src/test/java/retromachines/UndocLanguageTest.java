@@ -53,7 +53,7 @@ public class UndocLanguageTest extends AbstractBundledLanguageTest {
 
 	/** A program in {@code languageId} with zero page and a code block at $8000. */
 	private ProgramBuilder builderFor(String languageId) throws Exception {
-		ProgramBuilder builder = new ProgramBuilder("Test", languageId);
+		ProgramBuilder builder = newBuilder("Test", languageId);
 		builder.createMemory(".zp", "0x0", 0x100);
 		builder.createMemory(".text", "0x8000", 0x1000);
 		return builder;

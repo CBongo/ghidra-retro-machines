@@ -55,7 +55,7 @@ public class BranchAlwaysPairProgramTest extends AbstractBundledLanguageTest {
 
 	/** {@code secondBranch} is the opcode at 8004; {@code jumpToSecond} adds a JMP $8004 at 8010. */
 	private ProgramDB build(int secondBranch, boolean jumpToSecond) throws Exception {
-		builder = new ProgramBuilder("Test", LANG);
+		builder = newBuilder("Test", LANG);
 		builder.createMemory(".text", "0x8000", 0x100);
 		builder.setBytes("0x8000",
 			String.format("a5 10 d0 04 %02x 02 ea 60 60", secondBranch), true);

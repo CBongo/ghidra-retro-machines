@@ -66,7 +66,7 @@ public class BankPathForkProgramTest extends AbstractBundledLanguageTest {
 
 	@Before
 	public void setUp() throws Exception {
-		builder = new ProgramBuilder("Test", "6502:LE:16:default");
+		builder = newBuilder("Test", "6502:LE:16:default");
 		builder.createMemory(".zp", "0x0", 0x100);
 		builder.createMemory("PRG", "0x8000", 0x8000);
 		program = builder.getProgram();
@@ -147,16 +147,16 @@ public class BankPathForkProgramTest extends AbstractBundledLanguageTest {
 	 * Returns the fork site's address ({@code base + 8}, the {@code STX}).
 	 *
 	 * <pre>
-	 * base+00  LDA $10       ; RAM flag -- genuinely runtime, selects the arm
-	 * base+02  LDX #$01      ; arm A: X = 1
-	 * base+04  BEQ +2        ; ...straight to the merge
+	 * base+00  LDX #$01      ; arm A: X = 1 (first, so the LDA below sets Z last)
+	 * base+02  LDA $10       ; RAM flag -- genuinely runtime, selects the arm
+	 * base+04  BEQ +2        ; Z set -> arm A straight to the merge
 	 * base+06  LDX #$02      ; arm B: X = 2, falls into the merge
 	 * base+08  STX $9000     ; THE MERGE SITE -- the fork site
 	 * </pre>
 	 */
 	private Address layTwoArmFork(int base) throws Exception {
-		put(base, "a5 10"); // LDA $10
-		put(base + 2, "a2 01"); // LDX #$01      (arm A)
+		put(base, "a2 01"); // LDX #$01      (arm A)
+		put(base + 2, "a5 10"); // LDA $10       (runtime flag; sets Z last)
 		put(base + 4, "f0 02"); // BEQ +2 -> merge
 		put(base + 6, "a2 02"); // LDX #$02      (arm B)
 		put(base + 8, "8e 00 90"); // STX $9000  <- fork site
@@ -325,8 +325,8 @@ public class BankPathForkProgramTest extends AbstractBundledLanguageTest {
 		List<Address> sites = new ArrayList<>();
 		int cur = base;
 		for (int i = 0; i < count; i++) {
-			put(cur, "a5 10"); // LDA $10
-			put(cur + 2, "a2 01"); // LDX #$01      (arm A)
+			put(cur, "a2 01"); // LDX #$01      (arm A)
+			put(cur + 2, "a5 10"); // LDA $10       (runtime flag; sets Z last)
 			put(cur + 4, "f0 02"); // BEQ +2 -> merge
 			put(cur + 6, "a2 02"); // LDX #$02      (arm B)
 			int target = 0x9000 + i * 4;
@@ -381,9 +381,9 @@ public class BankPathForkProgramTest extends AbstractBundledLanguageTest {
 	 *
 	 * <pre>
 	 * C000  LDY #$03      ; loop count
-	 * C002  LDA $10       ; LOOP head (2 preds: fall-through, and the back edge below)
-	 * C004  LDX #$01      ; arm A
-	 * C006  BEQ +2        ; -> merge
+	 * C002  LDX #$01      ; LOOP head (2 preds: fall-through, and the back edge below); arm A
+	 * C004  LDA $10       ; runtime flag, sets Z last
+	 * C006  BEQ +2        ; Z set -> merge (arm A)
 	 * C008  LDX #$02      ; arm B
 	 * C00A  STX $9000     ; THE FORK SITE, re-dequeued every iteration
 	 * C00D  DEY
@@ -394,8 +394,8 @@ public class BankPathForkProgramTest extends AbstractBundledLanguageTest {
 	@Test(timeout = 30000)
 	public void forkInsideALoopReachesAFixpointRatherThanGrowingPerIteration() throws Exception {
 		put(0xc000, "a0 03"); // LDY #$03
-		put(0xc002, "a5 10"); // LDA $10       <- LOOP head
-		put(0xc004, "a2 01"); // LDX #$01      (arm A)
+		put(0xc002, "a2 01"); // LDX #$01      <- LOOP head (arm A)
+		put(0xc004, "a5 10"); // LDA $10       (runtime flag; sets Z last)
 		put(0xc006, "f0 02"); // BEQ +2 -> merge
 		put(0xc008, "a2 02"); // LDX #$02      (arm B)
 		put(0xc00a, "8e 00 90"); // STX $9000  <- FORK SITE, inside the loop

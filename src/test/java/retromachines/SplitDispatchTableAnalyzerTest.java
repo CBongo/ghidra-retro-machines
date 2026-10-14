@@ -75,7 +75,7 @@ public class SplitDispatchTableAnalyzerTest extends AbstractBundledLanguageTest 
 	}
 
 	private ProgramDB build(String tableHex, boolean hiFirst, String stubHex) throws Exception {
-		builder = new ProgramBuilder("Test", LANG);
+		builder = newBuilder("Test", LANG);
 		uninitializedRam(builder, ".ram", "0x0", 0x800);
 		builder.createMemory(".text", "0x8000", 0x8000);
 		builder.setBytes(String.format("0x%x", STUB), stubHex, true);
@@ -191,7 +191,7 @@ public class SplitDispatchTableAnalyzerTest extends AbstractBundledLanguageTest 
 	 *  jump. Entry 2's handler is the first byte past the table and is not disassembled, so only
 	 *  the lowest-target rule stops the walk before the valid-looking word that follows. */
 	private ProgramDB buildInline(String computedRefTo) throws Exception {
-		builder = new ProgramBuilder("Test", LANG);
+		builder = newBuilder("Test", LANG);
 		uninitializedRam(builder, ".ram", "0x0", 0x800);
 		builder.createMemory(".text", "0x8000", 0x8000);
 		long table = CALLER + 15;
@@ -272,7 +272,7 @@ public class SplitDispatchTableAnalyzerTest extends AbstractBundledLanguageTest 
 	 *  there are whichever bank is mapped, so the table is not established -- decline. */
 	@Test
 	public void declinesTableOutsideTheCallersBlock() throws Exception {
-		builder = new ProgramBuilder("Test", LANG);
+		builder = newBuilder("Test", LANG);
 		uninitializedRam(builder, ".ram", "0x0", 0x800);
 		builder.createMemory("PRG_LO", "0x8000", 0x4000);
 		builder.createMemory("PRG_HI", "0xc000", 0x4000);

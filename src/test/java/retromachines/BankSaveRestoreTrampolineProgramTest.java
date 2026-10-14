@@ -70,7 +70,7 @@ public class BankSaveRestoreTrampolineProgramTest extends AbstractBundledLanguag
 
 	@Before
 	public void setUp() throws Exception {
-		builder = new ProgramBuilder("Test", "6502:LE:16:default");
+		builder = newBuilder("Test", "6502:LE:16:default");
 		// Zero page holds the mirror cells ($10, $30); RAM extends far enough to also hold the
 		// indirect-jump pointer case's operand ($0300).
 		builder.createMemory("RAM", "0x0000", 0x800);

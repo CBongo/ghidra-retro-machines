@@ -126,7 +126,7 @@ public class IndirectJumpConstantPointerAnalyzerTest extends AbstractBundledLang
 	}
 
 	private ProgramDB buildProgram(Variant variant) throws Exception {
-		builder = new ProgramBuilder("Test", LANG);
+		builder = newBuilder("Test", LANG);
 		uninitializedRam(builder, ".zp", "0x0", 0x100);
 		builder.createMemory(".text", "0x8000", 0x8000); // 0x8000-0xffff, reports non-writable (ROM)
 

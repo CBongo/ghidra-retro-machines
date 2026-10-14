@@ -54,7 +54,7 @@ public class HelperPrologueProgramTest extends AbstractBundledLanguageTest {
 
 	@Before
 	public void setUp() throws Exception {
-		builder = new ProgramBuilder("Test", "6502:LE:16:default");
+		builder = newBuilder("Test", "6502:LE:16:default");
 		builder.createMemory("PRG", "0x8000", 0x8000);
 		// The save/restore tests park the argument in RAM, and the "was this cell overwritten"
 		// half of that model reads Ghidra's write REFERENCES -- which only exist for an operand

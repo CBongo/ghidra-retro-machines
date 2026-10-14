@@ -83,7 +83,7 @@ public class DescriptorCopyHintAnalyzerTest extends AbstractBundledLanguageTest 
 	}
 
 	private ProgramBuilder newBuilder() throws Exception {
-		return new ProgramBuilder("Test", "6502:LE:16:default");
+		return newBuilder("Test", "6502:LE:16:default");
 	}
 
 	/**

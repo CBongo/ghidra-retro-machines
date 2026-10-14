@@ -57,8 +57,8 @@ public class MosConstantReferenceAnalyzerTest extends AbstractBundledLanguageTes
 	 * is not backed by real program memory, so every fixture below needs its computed
 	 * (pre-retarget) address to land inside a real block, not just its retargeted base.
 	 */
-	private static ProgramBuilder newBuilder(String languageId) throws Exception {
-		ProgramBuilder builder = new ProgramBuilder("Test", languageId);
+	private ProgramBuilder newMemoryBuilder(String languageId) throws Exception {
+		ProgramBuilder builder = newBuilder("Test", languageId);
 		builder.createMemory(".zp", "0x0", 0x100);
 		builder.createMemory(".text", "0x8000", 0x1000);
 		builder.createMemory(".data", "0x2000", 0x1000);
@@ -99,7 +99,7 @@ public class MosConstantReferenceAnalyzerTest extends AbstractBundledLanguageTes
 	public void absoluteIndexedXRetargetsToBase() throws Exception {
 		// LDX #$05 ; LDA $2000,X -- stock would reference the computed $2005, burying the
 		// table's actual base.
-		ProgramBuilder builder = newBuilder("6502:LE:16:default");
+		ProgramBuilder builder = newMemoryBuilder("6502:LE:16:default");
 		builder.setBytes("0x8000", "a2 05", true); // LDX #$05
 		builder.setBytes("0x8002", "bd 00 20", true); // LDA $2000,X
 		ProgramDB program = builder.getProgram();
@@ -116,7 +116,7 @@ public class MosConstantReferenceAnalyzerTest extends AbstractBundledLanguageTes
 	@Test
 	public void absoluteIndexedYRetargetsToBase() throws Exception {
 		// LDY #$05 ; LDA $2000,Y -- same shape as abs,X with the Y-indexed opcode/mode.
-		ProgramBuilder builder = newBuilder("6502:LE:16:default");
+		ProgramBuilder builder = newMemoryBuilder("6502:LE:16:default");
 		builder.setBytes("0x8000", "a0 05", true); // LDY #$05
 		builder.setBytes("0x8002", "b9 00 20", true); // LDA $2000,Y
 		ProgramDB program = builder.getProgram();
@@ -133,7 +133,7 @@ public class MosConstantReferenceAnalyzerTest extends AbstractBundledLanguageTes
 	@Test
 	public void zeroPageIndexedXRetargetsToBase() throws Exception {
 		// LDX #$05 ; LDA $80,X -- zero-page indexed, no wraparound (base + index stays < $100).
-		ProgramBuilder builder = newBuilder("6502:LE:16:default");
+		ProgramBuilder builder = newMemoryBuilder("6502:LE:16:default");
 		builder.setBytes("0x8000", "a2 05", true); // LDX #$05
 		builder.setBytes("0x8002", "b5 80", true); // LDA $80,X
 		ProgramDB program = builder.getProgram();
@@ -155,7 +155,7 @@ public class MosConstantReferenceAnalyzerTest extends AbstractBundledLanguageTes
 		// correct: address($0070) - X($F0) would give $FF80, address($0070) is itself wrong to
 		// report as the table's identity, and neither matches the real base $0080 the operand
 		// names.
-		ProgramBuilder builder = newBuilder("6502:LE:16:default");
+		ProgramBuilder builder = newMemoryBuilder("6502:LE:16:default");
 		builder.setBytes("0x8000", "a2 f0", true); // LDX #$F0
 		builder.setBytes("0x8002", "b5 80", true); // LDA $80,X
 		ProgramDB program = builder.getProgram();
@@ -201,7 +201,7 @@ public class MosConstantReferenceAnalyzerTest extends AbstractBundledLanguageTes
 	 */
 	@Test
 	public void indirectIndexedYRetargetsToPointerTarget() throws Exception {
-		ProgramBuilder builder = newBuilder("6502:LE:16:default");
+		ProgramBuilder builder = newMemoryBuilder("6502:LE:16:default");
 		// Zero-page pointer at $80/$81 -> $2010 (little endian).
 		builder.setBytes("0x0080", "10 20");
 		builder.setBytes("0x8000", "a0 05", true); // LDY #$05
@@ -229,7 +229,7 @@ public class MosConstantReferenceAnalyzerTest extends AbstractBundledLanguageTes
 	 */
 	@Test
 	public void indexedIndirectIsLeftToStockBehavior() throws Exception {
-		ProgramBuilder onBuilder = newBuilder("6502:LE:16:default");
+		ProgramBuilder onBuilder = newMemoryBuilder("6502:LE:16:default");
 		onBuilder.setBytes("0x8000", "a2 05", true); // LDX #$05
 		onBuilder.setBytes("0x8002", "a1 80", true); // LDA ($80,X)
 		ProgramDB onProgram = onBuilder.getProgram();
@@ -238,7 +238,7 @@ public class MosConstantReferenceAnalyzerTest extends AbstractBundledLanguageTes
 		assertNotNull(onInstr);
 		Set<Address> onTargets = nonFlowTargets(onInstr);
 
-		ProgramBuilder offBuilder = newBuilder("6502:LE:16:default");
+		ProgramBuilder offBuilder = newMemoryBuilder("6502:LE:16:default");
 		offBuilder.setBytes("0x8000", "a2 05", true);
 		offBuilder.setBytes("0x8002", "a1 80", true);
 		ProgramDB offProgram = offBuilder.getProgram();
@@ -274,7 +274,7 @@ public class MosConstantReferenceAnalyzerTest extends AbstractBundledLanguageTes
 		// Same fixture as case 1 (abs,X), but with the real Options plumbing driving the
 		// option off: register, flip, and re-read through optionsChanged, exactly as
 		// AutoAnalysisManager would when a user unchecks the option in the GUI.
-		ProgramBuilder builder = newBuilder("6502:LE:16:default");
+		ProgramBuilder builder = newMemoryBuilder("6502:LE:16:default");
 		builder.setBytes("0x8000", "a2 05", true); // LDX #$05
 		builder.setBytes("0x8002", "bd 00 20", true); // LDA $2000,X
 		ProgramDB program = builder.getProgram();
@@ -310,7 +310,7 @@ public class MosConstantReferenceAnalyzerTest extends AbstractBundledLanguageTes
 		// Repeats case 1 (abs,X) with the second subclass on a program built with this
 		// module's bundled 6510:LE:16:default language, proving both the 6510 subclass and
 		// the bundled-language test layout work together.
-		ProgramBuilder builder = newBuilder("6510:LE:16:default");
+		ProgramBuilder builder = newMemoryBuilder("6510:LE:16:default");
 		builder.setBytes("0x8000", "a2 05", true); // LDX #$05
 		builder.setBytes("0x8002", "bd 00 20", true); // LDA $2000,X
 		ProgramDB program = builder.getProgram();

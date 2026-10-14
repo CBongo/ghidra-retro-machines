@@ -123,7 +123,7 @@ public class BoardBankAnalyzerCacheProgramTest extends AbstractBundledLanguageTe
 			writer.write(MAP_JSON);
 		}
 
-		builder = new ProgramBuilder("Test", "6502:LE:16:default");
+		builder = newBuilder("Test", "6502:LE:16:default");
 		builder.createMemory("PRG", "0x8000", 0x2000);
 		program = builder.getProgram();
 	}

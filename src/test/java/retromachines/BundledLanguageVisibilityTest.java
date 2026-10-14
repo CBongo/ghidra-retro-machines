@@ -44,7 +44,7 @@ public class BundledLanguageVisibilityTest extends AbstractBundledLanguageTest {
 
 	@Before
 	public void setUp() throws Exception {
-		builder = new ProgramBuilder("Test", "6510:LE:16:default");
+		builder = newBuilder("Test", "6510:LE:16:default");
 		builder.createMemory(".zp", "0x0", 0x100);
 		builder.createMemory(".text", "0x8000", 0x1000);
 		program = builder.getProgram();

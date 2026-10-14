@@ -83,7 +83,7 @@ public class BrkIsNotACallSiteProgramTest extends AbstractBundledLanguageTest {
 		// The stock language every NES board loads with -- see machines/nes-mmc1.yaml and
 		// NesRomLoader.LANGUAGE_ID. This is deliberately NOT this repo's own 6510/6502undoc
 		// sinc: the point is that BRK's non-call semantics are Ghidra's, not ours to fix.
-		builder = new ProgramBuilder("Test", "6502:LE:16:default");
+		builder = newBuilder("Test", "6502:LE:16:default");
 		builder.createMemory("PRG", "0x8000", 0x8000);
 		program = builder.getProgram();
 	}
