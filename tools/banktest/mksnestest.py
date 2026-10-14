@@ -16,6 +16,8 @@ the accumulator so the following immediate is three bytes rather than two, and a
 
 import os
 import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import bankgen  # noqa: E402
 
 LOROM_HEADER_AT = 0x7FC0
 BANK_SIZE = 0x8000
@@ -92,26 +94,20 @@ def interleaved_hirom(title):
 
 
 def main():
-    if len(sys.argv) != 2:
-        sys.exit("usage: mksnestest.py <output-dir>")
-    outdir = sys.argv[1]
-    os.makedirs(outdir, exist_ok=True)
+    outdir = bankgen.outdir_arg(__file__)
 
     plain = cartridge("SNESTEST LOROM")
-    with open(os.path.join(outdir, "snestest.smc"), "wb") as f:
-        f.write(plain)
+    bankgen.write_bytes(outdir, "snestest.smc", plain)
 
     # The same cartridge behind a copier header: the loader must detect it from the file size
     # and read every offset past it, producing an otherwise identical program.
-    with open(os.path.join(outdir, "snestestcopier.smc"), "wb") as f:
-        f.write(b"\x00" * 0x200 + cartridge("SNESTEST COPIER"))
+    bankgen.write_bytes(outdir, "snestestcopier.smc", b"\x00" * 0x200 + cartridge("SNESTEST COPIER"))
 
     # grm-9nxj.19: an INTERLEAVED HiROM cartridge (the 32 KiB halves of each 64 KiB unit
     # swapped, as a copier may have dumped it). The loader's Auto layout must find the header
     # at logical $FFC0 (stored at $7FC0, the LoROM position) and de-interleave, so the program
     # is a HiROM one whose reset code is at $C0:8000 -- stored at FILE offset 0.
-    with open(os.path.join(outdir, "snestestinterleaved.smc"), "wb") as f:
-        f.write(interleaved_hirom("SNESTEST INTERLEAVED"))
+    bankgen.write_bytes(outdir, "snestestinterleaved.smc", interleaved_hirom("SNESTEST INTERLEAVED"))
 
     print("wrote SNES LoROM fixtures (plain and copier-headered) and an interleaved HiROM one to " + outdir)
 

@@ -34,6 +34,8 @@ dump lives in expected/petsciistringtest.dump.
 
 import sys
 import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import bankgen  # noqa: E402
 
 LOAD_ADDR = 0x2000
 
@@ -41,8 +43,7 @@ SEPARATOR = 0x80
 
 
 def prg(code_bytes):
-    """Prefix code with the 2-byte little-endian load address header."""
-    return bytes([LOAD_ADDR & 0xFF, LOAD_ADDR >> 8]) + bytes(code_bytes)
+    return bankgen.prg(LOAD_ADDR, code_bytes)
 
 
 def build():
@@ -84,15 +85,10 @@ def build():
 
 
 def main():
-    if len(sys.argv) != 2:
-        sys.exit("usage: mkpetsciistringtest.py <output-dir>")
-    outdir = sys.argv[1]
-    os.makedirs(outdir, exist_ok=True)
+    outdir = bankgen.outdir_arg(__file__)
 
     code, labels = build()
-    path = os.path.join(outdir, "petsciistringtest.prg")
-    with open(path, "wb") as f:
-        f.write(prg(code))
+    path = bankgen.write_prg(outdir, "petsciistringtest.prg", LOAD_ADDR, code)
     print("wrote %s (%d bytes); labels: %s" %
           (path, 2 + len(code),
            ", ".join("%s=$%04X" % (name, addr) for name, addr in labels.items())))

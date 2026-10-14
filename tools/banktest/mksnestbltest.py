@@ -11,8 +11,8 @@ Padding is $00, unmapped in the table, as in the NES fixture.
 """
 import os
 import sys
-
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import bankgen  # noqa: E402
 import mknestbltest as nes   # noqa: E402
 
 HEADER_AT = 0x7FC0
@@ -47,16 +47,12 @@ def cartridge():
 
 
 def main():
-    if len(sys.argv) != 2:
-        sys.exit("usage: mksnestbltest.py <output-dir>")
-    outdir = sys.argv[1]
-    os.makedirs(outdir, exist_ok=True)
+    outdir = bankgen.outdir_arg(__file__)
     img = cartridge()
     # self-check: strings landed where the criteria expect (LoROM $00:9000 == offset $1000)
     assert img[0x1000] == 0x87 and img[0x100C] == 0xFF
     assert img[0x10E4] == 0xFF
-    with open(os.path.join(outdir, "snestbltest.smc"), "wb") as f:
-        f.write(img)
+    bankgen.write_bytes(outdir, "snestbltest.smc", img)
     with open(os.path.join(outdir, "snestbltest.tbl"), "w", newline="") as f:
         f.write(nes.make_tbl())
     print("wrote snestbltest.smc (%d bytes) and snestbltest.tbl" % len(img))

@@ -30,13 +30,14 @@ dump lives in expected/c64basictest.dump.
 
 import sys
 import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import bankgen  # noqa: E402
 
 LOAD_ADDR = 0x0801
 
 
 def prg(code_bytes):
-    """Prefix code with the 2-byte little-endian load address header."""
-    return bytes([LOAD_ADDR & 0xFF, LOAD_ADDR >> 8]) + bytes(code_bytes)
+    return bankgen.prg(LOAD_ADDR, code_bytes)
 
 
 def line_bytes(line_number, text_bytes):
@@ -150,15 +151,10 @@ def build():
 
 
 def main():
-    if len(sys.argv) != 2:
-        sys.exit("usage: mkbasictest.py <output-dir>")
-    outdir = sys.argv[1]
-    os.makedirs(outdir, exist_ok=True)
+    outdir = bankgen.outdir_arg(__file__)
 
     code, ml_addr, sub_addr, line_addrs = build()
-    path = os.path.join(outdir, "c64basictest.prg")
-    with open(path, "wb") as f:
-        f.write(prg(code))
+    path = bankgen.write_prg(outdir, "c64basictest.prg", LOAD_ADDR, code)
     print("wrote %s (%d bytes); ML entry at $%04X (sub at $%04X); line addrs: %s" %
           (path, 2 + len(code), ml_addr, sub_addr,
            ", ".join("$%04X" % a for a in line_addrs)))

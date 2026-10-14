@@ -333,6 +333,8 @@ through $E250 (it needs three extra bytes for its own select-establishing LDA/ST
 
 import sys
 import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import bankgen  # noqa: E402
 
 PRG_BANK_SIZE = 0x4000
 PRG_BANKS = 4
@@ -394,6 +396,18 @@ def _bank3_putter(prg):
     return put
 
 
+def _put_vectors(put, nmi, reset, irq):
+    """Write the 6502 vector table at $FFFA (NMI), $FFFC (RESET), $FFFE (IRQ) through `put`."""
+    for addr, target in ((0xFFFA, nmi), (0xFFFC, reset), (0xFFFE, irq)):
+        put(addr, [target & 0xFF, target >> 8])
+
+
+def _bank_markers(prg, banks, bank_size, offset=0):
+    """Mark each bank by writing its own number at `offset` into the bank."""
+    for bank in range(banks):
+        prg[bank * bank_size + offset] = bank
+
+
 def _assert_vectors(prg, name, handler, reset, opcode=0x40, opcode_name="RTI"):
     """Self-check a fixture's 6502 vector table: RESET at `reset`, NMI and IRQ both at
     `handler`, and -- the part that matters -- the expected opcode sitting at `handler`.
@@ -439,8 +453,7 @@ def make_prg():
     prg = bytearray([0x00] * PRG_SIZE)
 
     # Bank markers at the first byte of each bank (offset $8000 once mapped in).
-    for bank in range(PRG_BANKS):
-        prg[bank * PRG_BANK_SIZE] = bank
+    _bank_markers(prg, PRG_BANKS, PRG_BANK_SIZE)
 
     # Bank 2's JSR target routine at CPU $8005 -> file offset 2*0x4000 + 5.
     bank2_rts_off = 2 * PRG_BANK_SIZE + 0x0005
@@ -459,9 +472,7 @@ def make_prg():
     put(0xFFF0, [0x02])
 
     # Vector table.
-    put(0xFFFA, [0x0B, 0xC0])  # NMI   -> $C00B (RTI)
-    put(0xFFFC, [0x00, 0xC0])  # RESET -> $C000
-    put(0xFFFE, [0x0B, 0xC0])  # IRQ   -> $C00B (RTI)
+    _put_vectors(put, nmi=0xC00B, reset=0xC000, irq=0xC00B)
 
     return bytes(prg)
 
@@ -498,8 +509,7 @@ def make_prg_bandai():
     prg = bytearray([0x00] * PRG_SIZE)
 
     # Bank markers at the first byte of each bank (offset $8000 once mapped in).
-    for bank in range(PRG_BANKS):
-        prg[bank * PRG_BANK_SIZE] = bank
+    _bank_markers(prg, PRG_BANKS, PRG_BANK_SIZE)
 
     # Bank 2's JSR target routine at CPU $8005 -> file offset 2*0x4000 + 5.
     prg[2 * PRG_BANK_SIZE + 0x0005] = 0x60  # RTS
@@ -517,9 +527,7 @@ def make_prg_bandai():
     put(0xC015, [0x40])                     # RTI
 
     # Vector table.
-    put(0xFFFA, [0x15, 0xC0])  # NMI   -> $C015 (RTI)
-    put(0xFFFC, [0x00, 0xC0])  # RESET -> $C000
-    put(0xFFFE, [0x15, 0xC0])  # IRQ   -> $C015 (RTI)
+    _put_vectors(put, nmi=0xC015, reset=0xC000, irq=0xC015)
 
     return bytes(prg)
 
@@ -570,9 +578,7 @@ def make_prg2():
     put(0xFFE0, [0x00, 0x01, 0x02, 0x03])
 
     # Vector table.
-    put(0xFFFA, [0x0B, 0xC0])  # NMI   -> $C00B (RTI)
-    put(0xFFFC, [0x00, 0xC0])  # RESET -> $C000
-    put(0xFFFE, [0x0B, 0xC0])  # IRQ   -> $C00B (RTI)
+    _put_vectors(put, nmi=0xC00B, reset=0xC000, irq=0xC00B)
 
     return bytes(prg)
 
@@ -673,8 +679,7 @@ def make_prg_uxhelper():
     # Bank markers at the first byte of each bank (offset $8000 once mapped in). This is
     # also, incidentally, the "bank-identifying byte" idiom Contra uses at $8000 -- see
     # bead A in grm-hum's plan; nothing in this fixture reads it yet.
-    for bank in range(PRG_BANKS):
-        prg[bank * PRG_BANK_SIZE] = bank
+    _bank_markers(prg, PRG_BANKS, PRG_BANK_SIZE)
 
     # Bank 1's routine at CPU $8010, bank 2's at CPU $8005 and $8020 -- the retarget targets.
     prg[1 * PRG_BANK_SIZE + 0x0010] = 0x60  # RTS
@@ -769,9 +774,7 @@ def make_prg_uxhelper():
     # the vector target and the dump stayed clean. A vector pointing into the middle of an
     # instruction is precisely what this fixture family exists to NOT model by accident, and it
     # would have gone live the moment an opcode-table change made $80 decode.
-    put(0xFFFA, [0x2A, 0xC0])  # NMI   -> $C02A (RTI)
-    put(0xFFFC, [0x00, 0xC0])  # RESET -> $C000
-    put(0xFFFE, [0x2A, 0xC0])  # IRQ   -> $C02A (RTI)
+    _put_vectors(put, nmi=0xC02A, reset=0xC000, irq=0xC02A)
 
     return bytes(prg)
 
@@ -878,8 +881,7 @@ def make_prg_skip():
     # Bank markers at the first byte of each bank (offset $8000 once mapped in). Bank 3's
     # lands at file offset 0xC000, which IS CPU $C000, so RESET's first opcode overwrites
     # it -- same as make_prg_uxhelper(); the markers are a hex-dump convenience only.
-    for bank in range(PRG_BANKS):
-        prg[bank * PRG_BANK_SIZE] = bank
+    _bank_markers(prg, PRG_BANKS, PRG_BANK_SIZE)
 
     # The retarget targets: bank 1's routine at CPU $8010, bank 2's at CPU $8005.
     prg[1 * PRG_BANK_SIZE + 0x0010] = 0x60  # RTS
@@ -934,9 +936,7 @@ def make_prg_skip():
     put(0xFFD0, [0x00, 0x01, 0x02, 0x03])
 
     # Vector table.
-    put(0xFFFA, [0x1F, 0xC0])  # NMI   -> $C01F (RTI)
-    put(0xFFFC, [0x00, 0xC0])  # RESET -> $C000
-    put(0xFFFE, [0x1F, 0xC0])  # IRQ   -> $C01F (RTI)
+    _put_vectors(put, nmi=0xC01F, reset=0xC000, irq=0xC01F)
 
     return bytes(prg)
 
@@ -980,8 +980,7 @@ def make_prg_mmc2():
     # Bank markers at the first byte of each bank (harmless trace, matches the other
     # fixtures' convention). Bank 7's marker is overwritten by RESET's own code below
     # (same collision every other fixture's home/fixed bank has -- see module doc).
-    for bank in range(MMC2_BANKS):
-        prg[bank * MMC2_BANK_SIZE] = bank
+    _bank_markers(prg, MMC2_BANKS, MMC2_BANK_SIZE)
 
     # Bank 2's JSR target at CPU $8005 -> file offset 2 * 0x2000 + 5.
     prg[2 * MMC2_BANK_SIZE + 0x0005] = 0x60  # RTS
@@ -1002,9 +1001,7 @@ def make_prg_mmc2():
     put(0xE010, [0x40])                     # RTI (NMI/IRQ handler)
 
     # Vector table.
-    put(0xFFFA, [0x10, 0xE0])  # NMI   -> $E010 (RTI)
-    put(0xFFFC, [0x00, 0xE0])  # RESET -> $E000
-    put(0xFFFE, [0x10, 0xE0])  # IRQ   -> $E010 (RTI)
+    _put_vectors(put, nmi=0xE010, reset=0xE000, irq=0xE010)
 
     return bytes(prg)
 
@@ -1069,8 +1066,7 @@ def make_prg_mmc5():
     # Bank markers at the first byte of each bank (harmless trace, matches the other
     # fixtures' convention). Bank 0's marker is overwritten by RESET's own code below,
     # same collision every other fixture's home bank has.
-    for bank in range(MMC5_BANKS):
-        prg[bank * MMC5_BANK_SIZE] = bank
+    _bank_markers(prg, MMC5_BANKS, MMC5_BANK_SIZE)
 
     # Bank 1's JSR target at CPU $8000 (mode 3, bank_5114=1) -> file offset 1 * 0x2000.
     prg[1 * MMC5_BANK_SIZE] = 0x60  # RTS
@@ -1097,9 +1093,7 @@ def make_prg_mmc5():
     prg[mode0_loop:mode0_loop + 3] = bytes([0x4C, 0x00, 0x81])  # JMP $8100 (self-loop)
 
     # Vector table (mode-3 home window, bank_5117=7: file offset == CPU address).
-    put(0xFFFA, [0x20, 0xE0])  # NMI   -> $E020 (RTI)
-    put(0xFFFC, [0x00, 0xE0])  # RESET -> $E000
-    put(0xFFFE, [0x20, 0xE0])  # IRQ   -> $E020 (RTI)
+    _put_vectors(put, nmi=0xE020, reset=0xE000, irq=0xE020)
 
     return bytes(prg)
 
@@ -1153,8 +1147,7 @@ def make_prg_mmc5wrap():
 
     # Bank markers at the first byte of each bank (same harmless trace convention as every
     # other fixture); banks 1 and 3 are then overwritten with their RTS below.
-    for bank in range(MMC5_BANKS):
-        prg[bank * MMC5_BANK_SIZE] = bank
+    _bank_markers(prg, MMC5_BANKS, MMC5_BANK_SIZE)
 
     prg[1 * MMC5_BANK_SIZE] = 0x60  # RTS -- W8000 mode3/bank_5114=1 (the WRAPPED target)
     prg[3 * MMC5_BANK_SIZE] = 0x60  # RTS -- WA000 mode3/bank_5115=3 (the in-range control)
@@ -1175,9 +1168,7 @@ def make_prg_mmc5wrap():
     put(0xE020, [0x40])                    # RTI (NMI/IRQ handler)
 
     # Vector table (mode-3 home window, bank_5117=7: file offset == CPU address).
-    put(0xFFFA, [0x20, 0xE0])  # NMI   -> $E020 (RTI)
-    put(0xFFFC, [0x00, 0xE0])  # RESET -> $E000
-    put(0xFFFE, [0x20, 0xE0])  # IRQ   -> $E020 (RTI)
+    _put_vectors(put, nmi=0xE020, reset=0xE000, irq=0xE020)
 
     return bytes(prg)
 
@@ -1295,8 +1286,7 @@ def make_prg_mirrortest():
 
     # ROM_IDENTIFYING marker: byte IDENT_OFFSET of every realized PRG_LO bank equals that
     # bank's own number (Contra's $8000 convention, relocated -- see module doc).
-    for bank in range(PRG_BANKS):
-        prg[bank * PRG_BANK_SIZE + IDENT_OFFSET] = bank
+    _bank_markers(prg, PRG_BANKS, PRG_BANK_SIZE, IDENT_OFFSET)
 
     # Bank 2's routine at CPU $8005 -- the JSR target once bank 2 is (re-)selected.
     prg[2 * PRG_BANK_SIZE + 0x0005] = 0x60  # RTS
@@ -1440,9 +1430,7 @@ def make_prg_mirrortest():
     put(0xFFDC, [0xFF])
 
     # Vector table.
-    put(0xFFFA, [0xF0, 0xC0])  # NMI   -> $C0F0 (RTI -- moved from $C03D by grm-mlp2)
-    put(0xFFFC, [0x00, 0xC0])  # RESET -> $C000
-    put(0xFFFE, [0xF0, 0xC0])  # IRQ   -> $C0F0 (RTI -- moved from $C03D by grm-mlp2)
+    _put_vectors(put, nmi=0xC0F0, reset=0xC000, irq=0xC0F0)  # NMI/IRQ moved from $C03D by grm-mlp2
 
     return bytes(prg)
 
@@ -1503,8 +1491,7 @@ def make_prg_nmi():
 
     # Bank markers at the first byte of each bank. Bank 3's marker is at file offset
     # 0xC000, which IS CPU $C000 -- RESET's first opcode overwrites it, as in make_prg().
-    for bank in range(PRG_BANKS):
-        prg[bank * PRG_BANK_SIZE] = bank
+    _bank_markers(prg, PRG_BANKS, PRG_BANK_SIZE)
 
     put = _bank3_putter(prg)
 
@@ -1533,9 +1520,7 @@ def make_prg_nmi():
 
     # Vector table. NMI/IRQ point at a handler DISTINCT from RESET -- and, unlike every
     # other fixture here, at one that is not a bare RTI.
-    put(0xFFFA, [0x20, 0xC0])  # NMI   -> $C020
-    put(0xFFFC, [0x00, 0xC0])  # RESET -> $C000
-    put(0xFFFE, [0x20, 0xC0])  # IRQ   -> $C020
+    _put_vectors(put, nmi=0xC020, reset=0xC000, irq=0xC020)
 
     return bytes(prg)
 
@@ -1581,8 +1566,7 @@ def make_prg_fork():
 
     # Bank markers at the first byte of each bank. Bank 3's marker is at file offset
     # 0xC000, which IS CPU $C000 -- RESET's first opcode overwrites it, as in make_prg().
-    for bank in range(PRG_BANKS):
-        prg[bank * PRG_BANK_SIZE] = bank
+    _bank_markers(prg, PRG_BANKS, PRG_BANK_SIZE)
 
     # Banks 1 and 2: an RTS at $8010 (the forked JSR's target in BOTH overlays) and a
     # distinct marker at $8020 (the forked data read's target).
@@ -1608,9 +1592,7 @@ def make_prg_fork():
     # Latch target: $FF so the bus-conflict AND passes every arm value through.
     put(0xFFDF, [0xFF])
 
-    put(0xFFFA, [0x20, 0xC0])  # NMI   -> $C020
-    put(0xFFFC, [0x00, 0xC0])  # RESET -> $C000
-    put(0xFFFE, [0x20, 0xC0])  # IRQ   -> $C020
+    _put_vectors(put, nmi=0xC020, reset=0xC000, irq=0xC020)
 
     return bytes(prg)
 
@@ -1658,8 +1640,7 @@ def make_prg_forkhome():
 
     # Bank markers at the first byte of each bank. Bank 3's marker is at file offset
     # 0xC000, which IS CPU $C000 -- RESET's first opcode overwrites it, as in make_prg().
-    for bank in range(PRG_BANKS):
-        prg[bank * PRG_BANK_SIZE] = bank
+    _bank_markers(prg, PRG_BANKS, PRG_BANK_SIZE)
 
     # Banks 0 (home) and 2: an RTS at $8010 (the forked JSR's target in both) and a
     # distinct marker at $8020 (the forked data read's target).
@@ -1685,9 +1666,7 @@ def make_prg_forkhome():
     # Latch target: $FF so the bus-conflict AND passes every arm value through.
     put(0xFFDF, [0xFF])
 
-    put(0xFFFA, [0x20, 0xC0])  # NMI   -> $C020
-    put(0xFFFC, [0x00, 0xC0])  # RESET -> $C000
-    put(0xFFFE, [0x20, 0xC0])  # IRQ   -> $C020
+    _put_vectors(put, nmi=0xC020, reset=0xC000, irq=0xC020)
 
     return bytes(prg)
 
@@ -1723,8 +1702,7 @@ def make_prg_intrawin():
     Bank 1/2 carry distinct markers at $8020 so the read's overlay target names the bank.
     """
     prg = bytearray([0x00] * PRG_SIZE)
-    for bank in range(PRG_BANKS):
-        prg[bank * PRG_BANK_SIZE] = bank
+    _bank_markers(prg, PRG_BANKS, PRG_BANK_SIZE)
 
     def put_bank(bank, off, data):
         base = bank * PRG_BANK_SIZE + off
@@ -1745,9 +1723,7 @@ def make_prg_intrawin():
     put(0xC000, [0x4C, 0x00, 0x80])         # JMP $8000
     put(0xC020, [0x40])                     # RTI
     put(0xFFDF, [0xFF])                     # bus-conflict AND is a no-op
-    put(0xFFFA, [0x20, 0xC0])
-    put(0xFFFC, [0x00, 0xC0])
-    put(0xFFFE, [0x20, 0xC0])
+    _put_vectors(put, nmi=0xC020, reset=0xC000, irq=0xC020)
     return bytes(prg)
 
 
@@ -1789,8 +1765,7 @@ def make_prg_forkbudget():
     """
     prg = bytearray([0x00] * PRG_SIZE)
 
-    for bank in range(PRG_BANKS):
-        prg[bank * PRG_BANK_SIZE] = bank
+    _bank_markers(prg, PRG_BANKS, PRG_BANK_SIZE)
     for bank in range(1, 3):
         prg[bank * PRG_BANK_SIZE + 0x0010] = 0x60          # RTS, as in make_prg_fork()
 
@@ -1821,9 +1796,7 @@ def make_prg_forkbudget():
 
     put(0xFFDF, [0xFF])
 
-    put(0xFFFA, [0x30, 0xC0])  # NMI   -> $C030
-    put(0xFFFC, [0x00, 0xC0])  # RESET -> $C000
-    put(0xFFFE, [0x30, 0xC0])  # IRQ   -> $C030
+    _put_vectors(put, nmi=0xC030, reset=0xC000, irq=0xC030)
 
     return bytes(prg)
 
@@ -1835,8 +1808,7 @@ def make_prg_mode():
     # Bank markers at the first byte of each bank, matching the other fixtures' convention.
     # Bank 1's marker is immediately replaced by its RTS routine, and bank 3's by RESET's
     # first opcode -- both intentional (see the module doc's nesmodetest section).
-    for bank in range(PRG_BANKS):
-        prg[bank * PRG_BANK_SIZE] = bank
+    _bank_markers(prg, PRG_BANKS, PRG_BANK_SIZE)
 
     # Bank 1 offset 0 (= W8000_M0_B1::8000, the mode-0/bank-1 JSR target): RTS.
     prg[1 * PRG_BANK_SIZE + 0x0000] = 0x60  # RTS
@@ -1865,9 +1837,7 @@ def make_prg_mode():
     put(0xC048, [0x4C, 0x48, 0x80])         # 8048: JMP $8048 (self idle)
 
     # Vector table.
-    put(0xFFFA, [0x10, 0xC0])  # NMI   -> $C010 (RTI)
-    put(0xFFFC, [0x00, 0xC0])  # RESET -> $C000
-    put(0xFFFE, [0x10, 0xC0])  # IRQ   -> $C010 (RTI)
+    _put_vectors(put, nmi=0xC010, reset=0xC000, irq=0xC010)
 
     return bytes(prg)
 
@@ -1878,8 +1848,7 @@ def make_prg_mmc3():
 
     # Bank markers at the first byte of each bank (harmless -- not referenced directly,
     # matches the other fixtures' convention of leaving a visible trace per bank).
-    for bank in range(MMC3_BANKS):
-        prg[bank * MMC3_BANK_SIZE] = bank
+    _bank_markers(prg, MMC3_BANKS, MMC3_BANK_SIZE)
 
     # Bank 2 offset 0 (dual-mapped: W8000_M0_B2::8000 AND WC000_M1_B2::C000): RTS.
     prg[2 * MMC3_BANK_SIZE] = 0x60
@@ -1917,9 +1886,7 @@ def make_prg_mmc3():
     put(0xE032, [0x40])                     # RTI (NMI/IRQ handler)
 
     # Vector table.
-    put(0xFFFA, [0x32, 0xE0])  # NMI   -> $E032 (RTI)
-    put(0xFFFC, [0x00, 0xE0])  # RESET -> $E000
-    put(0xFFFE, [0x32, 0xE0])  # IRQ   -> $E032 (RTI)
+    _put_vectors(put, nmi=0xE032, reset=0xE000, irq=0xE032)
 
     return bytes(prg)
 
@@ -1935,8 +1902,7 @@ def make_prg_mmc3_2():
     """
     prg = bytearray([0x00] * MMC3_PRG_SIZE)
 
-    for bank in range(MMC3_BANKS):
-        prg[bank * MMC3_BANK_SIZE] = bank
+    _bank_markers(prg, MMC3_BANKS, MMC3_BANK_SIZE)
 
     # Bank 7 == PRG[last] == the fixed WE000 window; file offset == CPU address, as in
     # make_prg_mmc3() above.
@@ -2262,9 +2228,7 @@ def make_prg_mmc3_2():
     put(0xE363, [0x60])                     # RTS
 
     # Vector table.
-    put(0xFFFA, [0x21, 0xE0])  # NMI   -> $E021 (RTI)
-    put(0xFFFC, [0x00, 0xE0])  # RESET -> $E000
-    put(0xFFFE, [0x21, 0xE0])  # IRQ   -> $E021 (RTI)
+    _put_vectors(put, nmi=0xE021, reset=0xE000, irq=0xE021)
 
     return bytes(prg)
 
@@ -2439,8 +2403,7 @@ def make_prg_serial():
     """
     prg = bytearray([0x00] * SERIAL_PRG_SIZE)
 
-    for bank in range(SERIAL_BANKS):
-        prg[bank * PRG_BANK_SIZE] = bank  # bank marker, matching the other fixtures
+    _bank_markers(prg, SERIAL_BANKS, PRG_BANK_SIZE)  # bank marker, matching the other fixtures
 
     # JSR $8000 targets: banks 3 (F-loop), 5, and 6, each an RTS at their window-local
     # offset 0 (replacing the marker byte, as in nesmodetest/nesmmc3test).
@@ -2528,9 +2491,7 @@ def make_prg_serial():
     put7(0xC200, [0x11, 0x22])
 
     # Vector table.
-    put7(0xFFFA, [labels['rti'] & 0xFF, (labels['rti'] >> 8) & 0xFF])
-    put7(0xFFFC, [labels['reset'] & 0xFF, (labels['reset'] >> 8) & 0xFF])
-    put7(0xFFFE, [labels['rti'] & 0xFF, (labels['rti'] >> 8) & 0xFF])
+    _put_vectors(put7, nmi=labels['rti'], reset=labels['reset'], irq=labels['rti'])
 
     return bytes(prg), labels
 
@@ -2681,8 +2642,7 @@ def make_prg_mmc1():
     """
     prg = bytearray([0x00] * MMC1_PRG_SIZE)
 
-    for bank in range(MMC1_BANKS):
-        prg[bank * PRG_BANK_SIZE] = bank  # bank marker, matching the other fixtures
+    _bank_markers(prg, MMC1_BANKS, PRG_BANK_SIZE)  # bank marker, matching the other fixtures
 
     # Bank 2/5's JSR targets (W8000_M3_B2::8000 / W8000_M3_B5::8000): RTS, replacing the
     # marker byte, as in nesserialtest/nesmmc3test. Bank 7 is deliberately NOT given a
@@ -2895,9 +2855,7 @@ def make_prg_mmc1():
     put7(0xC400, [0x33, 0x44])
 
     # Vector table.
-    put7(0xFFFA, [labels['rti'] & 0xFF, (labels['rti'] >> 8) & 0xFF])
-    put7(0xFFFC, [labels['reset'] & 0xFF, (labels['reset'] >> 8) & 0xFF])
-    put7(0xFFFE, [labels['rti'] & 0xFF, (labels['rti'] >> 8) & 0xFF])
+    _put_vectors(put7, nmi=labels['rti'], reset=labels['reset'], irq=labels['rti'])
 
     return bytes(prg), labels
 
@@ -2938,8 +2896,7 @@ def make_prg_mmc1_override():
     """
     prg = bytearray([0x00] * MMC1_PRG_SIZE)
 
-    for bank in range(MMC1_BANKS):
-        prg[bank * PRG_BANK_SIZE] = bank  # bank marker, matching the other fixtures
+    _bank_markers(prg, MMC1_BANKS, PRG_BANK_SIZE)  # bank marker, matching the other fixtures
 
     # Banks 3 and 5's JSR targets (W8000_M3_B3::8000 / W8000_M3_B5::8000): lone RTS,
     # replacing the marker byte, as in nesmmc1test's bank 2/5 targets.
@@ -2983,9 +2940,7 @@ def make_prg_mmc1_override():
     put7(0xC400, [0x33, 0x44])
 
     # Vector table.
-    put7(0xFFFA, [labels['rti'] & 0xFF, (labels['rti'] >> 8) & 0xFF])
-    put7(0xFFFC, [labels['reset'] & 0xFF, (labels['reset'] >> 8) & 0xFF])
-    put7(0xFFFE, [labels['rti'] & 0xFF, (labels['rti'] >> 8) & 0xFF])
+    _put_vectors(put7, nmi=labels['rti'], reset=labels['reset'], irq=labels['rti'])
 
     return bytes(prg), labels
 
@@ -3042,8 +2997,7 @@ def make_prg_mmc3_override():
     """
     prg = bytearray([0x00] * MMC3_PRG_SIZE)
 
-    for bank in range(MMC3_BANKS):
-        prg[bank * MMC3_BANK_SIZE] = bank  # bank marker, matching the other fixtures
+    _bank_markers(prg, MMC3_BANKS, MMC3_BANK_SIZE)  # bank marker, matching the other fixtures
 
     # Banks 3 and 5's JSR targets (WA000_B3::A000 / WA000_B5::A000): lone RTS, replacing
     # the marker byte, as in nesmmc3test's bank 3 target.
@@ -3097,9 +3051,7 @@ def make_prg_mmc3_override():
     put7(0xE400, [0x33, 0x44])
 
     # Vector table.
-    put7(0xFFFA, [labels['rti'] & 0xFF, (labels['rti'] >> 8) & 0xFF])
-    put7(0xFFFC, [labels['reset'] & 0xFF, (labels['reset'] >> 8) & 0xFF])
-    put7(0xFFFE, [labels['rti'] & 0xFF, (labels['rti'] >> 8) & 0xFF])
+    _put_vectors(put7, nmi=labels['rti'], reset=labels['reset'], irq=labels['rti'])
 
     return bytes(prg), labels
 
@@ -3208,9 +3160,8 @@ def make_prg_mmc3_mirror():
 
     IDENT_OFFSET = 0x0100
 
-    for bank in range(MMC3_BANKS):
-        prg[bank * MMC3_BANK_SIZE] = bank                  # marker (broken below)
-        prg[bank * MMC3_BANK_SIZE + IDENT_OFFSET] = bank   # the identifying byte
+    _bank_markers(prg, MMC3_BANKS, MMC3_BANK_SIZE)                  # marker (broken below)
+    _bank_markers(prg, MMC3_BANKS, MMC3_BANK_SIZE, IDENT_OFFSET)    # the identifying byte
 
     # JSR targets: lone RTS at offset 0 of banks 2..5 (WA000_B<n>::A000 / W8000_M0_B<n>::8000).
     # Replacing the marker byte also breaks byte==bank at offset 0, so only $100 qualifies.
@@ -3383,9 +3334,7 @@ def make_prg_mmc3_mirror():
     put7(0xE400, [0x33])
 
     # Vector table.
-    put7(0xFFFA, [labels['rti'] & 0xFF, (labels['rti'] >> 8) & 0xFF])
-    put7(0xFFFC, [labels['reset'] & 0xFF, (labels['reset'] >> 8) & 0xFF])
-    put7(0xFFFE, [labels['rti'] & 0xFF, (labels['rti'] >> 8) & 0xFF])
+    _put_vectors(put7, nmi=labels['rti'], reset=labels['reset'], irq=labels['rti'])
 
     return bytes(prg), labels
 
@@ -3664,9 +3613,7 @@ def make_prg_mmc3_id():
     put7(0xE400, [0x33])
 
     # Vector table.
-    put7(0xFFFA, [labels['rti'] & 0xFF, (labels['rti'] >> 8) & 0xFF])
-    put7(0xFFFC, [labels['reset'] & 0xFF, (labels['reset'] >> 8) & 0xFF])
-    put7(0xFFFE, [labels['rti'] & 0xFF, (labels['rti'] >> 8) & 0xFF])
+    _put_vectors(put7, nmi=labels['rti'], reset=labels['reset'], irq=labels['rti'])
 
     return bytes(prg), labels
 
@@ -3766,8 +3713,7 @@ def make_prg_wrapper():
     """
     prg = bytearray([0x00] * MMC1_PRG_SIZE)
 
-    for bank in range(MMC1_BANKS):
-        prg[bank * PRG_BANK_SIZE] = bank  # bank marker, matching make_prg_mmc1()
+    _bank_markers(prg, MMC1_BANKS, PRG_BANK_SIZE)  # bank marker, matching make_prg_mmc1()
 
     # JSR $8000 targets for the three RESOLVING wrapper call sites (W1/W2/W3): RTS,
     # replacing the marker byte, as in make_prg_mmc1(). Banks used only by the
@@ -3902,9 +3848,7 @@ def make_prg_wrapper():
     main.rti()                                # NMI/IRQ handler
 
     # Vector table.
-    put7(0xFFFA, [labels['rti'] & 0xFF, (labels['rti'] >> 8) & 0xFF])
-    put7(0xFFFC, [labels['reset'] & 0xFF, (labels['reset'] >> 8) & 0xFF])
-    put7(0xFFFE, [labels['rti'] & 0xFF, (labels['rti'] >> 8) & 0xFF])
+    _put_vectors(put7, nmi=labels['rti'], reset=labels['reset'], irq=labels['rti'])
 
     return bytes(prg), labels
 
@@ -3985,8 +3929,7 @@ def make_prg_relay():
     """
     prg = bytearray([0x00] * MMC1_PRG_SIZE)
 
-    for bank in range(MMC1_BANKS):
-        prg[bank * PRG_BANK_SIZE] = bank  # bank marker, matching make_prg_mmc1()
+    _bank_markers(prg, MMC1_BANKS, PRG_BANK_SIZE)  # bank marker, matching make_prg_mmc1()
 
     # JSR $8000 targets for the two RESOLVING call sites (R1/R2): RTS, replacing the
     # marker byte, as in make_prg_mmc1(). Banks reached only by the fixture-integrity
@@ -4132,9 +4075,7 @@ def make_prg_relay():
     main.rti()                                # NMI/IRQ handler
 
     # Vector table.
-    put7(0xFFFA, [labels['rti'] & 0xFF, (labels['rti'] >> 8) & 0xFF])
-    put7(0xFFFC, [labels['reset'] & 0xFF, (labels['reset'] >> 8) & 0xFF])
-    put7(0xFFFE, [labels['rti'] & 0xFF, (labels['rti'] >> 8) & 0xFF])
+    _put_vectors(put7, nmi=labels['rti'], reset=labels['reset'], irq=labels['rti'])
 
     return bytes(prg), labels
 
@@ -4187,25 +4128,6 @@ def make_prg_nromsub():
     return bytes(prg)
 
 
-def make_ines_header(prg_banks, chr_banks, mapper, nes2_prg_exponent=False):
-    # nes2_prg_exponent switches the PRG size field to NES 2.0's EXPONENT form, where h[9]'s
-    # low nibble is 0xF and `prg_banks` is not a unit count at all but EEEEEEMM, for a size of
-    # 2^E * (2M+1) BYTES. It is the only way to declare a PRG smaller than one 16 KiB unit --
-    # see make_prg_nromsub() and InesHeader.nes2RomSize. The CHR field stays linear (h[9]'s
-    # high nibble 0), so chr_banks keeps its ordinary meaning.
-    h = bytearray(16)
-    h[0:4] = b"NES\x1a"
-    h[4] = prg_banks
-    h[5] = chr_banks
-    h[6] = (mapper & 0x0F) << 4  # low mapper nibble, no trainer/mirroring flags
-    h[7] = mapper & 0xF0         # high mapper nibble; NES 2.0 bits (h[7] & 0x0C) left 0
-    # bytes 8-15 stay zero: plain iNES 1.0, no DiskDude tail
-    if nes2_prg_exponent:
-        h[7] |= 0x08             # flags7 bits 2-3 == 0b10: this is a NES 2.0 header
-        h[9] = 0x0F              # PRG size nibble 0xF -> h[4] is an exponent, not a count
-    return bytes(h)
-
-
 def _write_rom(outdir, filename, prg, mapper=MAPPER, prg_banks=None,
                nes2_prg_exponent=False):
     # prg_banks is the iNES header's PRG-size field, defined by the format in 16 KiB
@@ -4218,19 +4140,13 @@ def _write_rom(outdir, filename, prg, mapper=MAPPER, prg_banks=None,
         assert len(prg) % 0x4000 == 0, \
             "PRG payload %d is not a whole number of 16 KiB iNES units" % len(prg)
         prg_banks = len(prg) // 0x4000
-    header = make_ines_header(prg_banks, 0, mapper, nes2_prg_exponent)
-    rom = header + prg
-    path = os.path.join(outdir, filename)
-    with open(path, "wb") as f:
-        f.write(rom)
+    rom = bankgen.ines_header(prg_banks, 0, mapper, nes2_prg_exponent) + prg
+    path = bankgen.write_bytes(outdir, filename, rom)
     print("wrote %s (%d bytes)" % (path, len(rom)))
 
 
 def main():
-    if len(sys.argv) != 2:
-        sys.exit("usage: mknesbanktest.py <output-dir>")
-    outdir = sys.argv[1]
-    os.makedirs(outdir, exist_ok=True)
+    outdir = bankgen.outdir_arg(__file__)
 
     prg = make_prg()
 

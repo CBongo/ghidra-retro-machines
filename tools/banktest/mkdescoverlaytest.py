@@ -34,6 +34,8 @@ PRG layout (last bank fixed at $C000):
 import hashlib
 import os
 import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import bankgen  # noqa: E402
 
 PRG_SIZE = 0x8000
 HEADER = 16
@@ -47,12 +49,8 @@ def make_rom(marker=0):
     for vec, target in ((0x7FFA, 0xC003), (0x7FFC, 0xC000), (0x7FFE, 0xC003)):
         prg[vec] = target & 0xFF
         prg[vec + 1] = target >> 8
-    header = bytearray(16)
-    header[0:4] = b"NES\x1a"
-    header[4] = PRG_SIZE // 0x4000
-    header[5] = 0
-    header[6] = 0x10          # mapper 1 (low nibble in flags 6 bits 4-7)
-    return bytes(header) + bytes(prg), bytes(prg)
+    header = bankgen.ines_header(PRG_SIZE // 0x4000, 0, 1)    # mapper 1
+    return header + bytes(prg), bytes(prg)
 
 
 OVERLAY = """\
@@ -86,21 +84,16 @@ game:
 
 
 def main():
-    if len(sys.argv) != 2:
-        sys.exit("usage: mkdescoverlaytest.py <output-dir>")
-    outdir = sys.argv[1]
-    os.makedirs(outdir, exist_ok=True)
+    outdir = bankgen.outdir_arg(__file__)
     rom, prg = make_rom()
     assert len(rom) == HEADER + PRG_SIZE
     assert prg[0x7FFC] | (prg[0x7FFD] << 8) == 0xC000
     for name in ("descoverlaytest", "descoverlayctltest", "descannotationtest"):
-        with open(os.path.join(outdir, name + ".nes"), "wb") as f:
-            f.write(rom)
+        bankgen.write_bytes(outdir, name + ".nes", rom)
     xrom, _ = make_rom(marker=0xA5)
     assert xrom != rom
     for name in ("descexporttest", "descreimporttest"):
-        with open(os.path.join(outdir, name + ".nes"), "wb") as f:
-            f.write(xrom)
+        bankgen.write_bytes(outdir, name + ".nes", xrom)
     prg_sha = hashlib.sha256(prg).hexdigest()
     file_sha = hashlib.sha256(rom).hexdigest()
     with open(os.path.join(outdir, "descoverlaytest.yaml"), "w", newline="\n") as f:

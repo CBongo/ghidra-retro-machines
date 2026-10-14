@@ -20,28 +20,24 @@ No dependencies beyond Python 3.
 
 import sys
 import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import bankgen  # noqa: E402
 
 LOAD_ADDR = 0x2000
 
 
 def main():
-    if len(sys.argv) != 2:
-        sys.exit("usage: mkromtest.py <output-dir>")
-    outdir = sys.argv[1]
-    os.makedirs(outdir, exist_ok=True)
+    outdir = bankgen.outdir_arg(__file__)
 
     # Trivial PRG: load $2000, body = LDA #$00 ; RTS.
-    prg = bytes([LOAD_ADDR & 0xFF, LOAD_ADDR >> 8, 0xA9, 0x00, 0x60])
-    with open(os.path.join(outdir, "romload.prg"), "wb") as f:
-        f.write(prg)
+    bankgen.write_prg(outdir, "romload.prg", LOAD_ADDR, [0xA9, 0x00, 0x60])
 
     kernal = bytes(i & 0xFF for i in range(0x2000))
     basic = bytes((i & 0xFF) ^ 0x55 for i in range(0x2000))
     chargen = bytes((i & 0xFF) ^ 0xAA for i in range(0x1000))
     for name, data in (("kernal.bin", kernal), ("basic.bin", basic),
                        ("chargen.bin", chargen)):
-        with open(os.path.join(outdir, name), "wb") as f:
-            f.write(data)
+        bankgen.write_bytes(outdir, name, data)
 
     print("wrote romload.prg + kernal.bin(%d)/basic.bin(%d)/chargen.bin(%d) to %s" %
           (len(kernal), len(basic), len(chargen), outdir))

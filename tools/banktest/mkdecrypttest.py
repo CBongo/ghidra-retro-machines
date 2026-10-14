@@ -31,6 +31,8 @@ Plaintext is $01..$08.
 
 import sys
 import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import bankgen  # noqa: E402
 
 LOAD_ADDR = 0x2000
 KEY = 0xAA
@@ -55,18 +57,12 @@ def build():
 
 
 def main():
-    if len(sys.argv) != 2:
-        sys.exit("usage: mkdecrypttest.py <output-dir>")
-    outdir = sys.argv[1]
-    os.makedirs(outdir, exist_ok=True)
+    outdir = bankgen.outdir_arg(__file__)
 
     body = build()
-    header = bytes([LOAD_ADDR & 0xFF, LOAD_ADDR >> 8])
-    path = os.path.join(outdir, "decryptloop.prg")
-    with open(path, "wb") as f:
-        f.write(header + body)
+    path = bankgen.write_prg(outdir, "decryptloop.prg", LOAD_ADDR, body)
     print("wrote %s (%d bytes); entry $%04X, payload $%04X-$%04X, key $%02X" %
-          (path, len(header) + len(body), LOAD_ADDR, PAYLOAD_ADDR,
+          (path, 2 + len(body), LOAD_ADDR, PAYLOAD_ADDR,
            PAYLOAD_ADDR + len(PLAINTEXT) - 1, KEY))
 
 

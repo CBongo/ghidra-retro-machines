@@ -12,11 +12,12 @@ common function-marking behavior.
 
 import os
 import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import bankgen  # noqa: E402
 
 
 def write(path, load_addr, payload):
-    with open(path, "wb") as stream:
-        stream.write(bytes([load_addr & 0xff, load_addr >> 8]) + payload)
+    bankgen.write_prg(os.path.dirname(path), os.path.basename(path), load_addr, payload)
 
 
 def make_c64():
@@ -72,10 +73,7 @@ def make_c128():
 
 
 def main():
-    if len(sys.argv) != 2:
-        sys.exit("usage: mkdialectbasictest.py <output-dir>")
-    outdir = sys.argv[1]
-    os.makedirs(outdir, exist_ok=True)
+    outdir = bankgen.outdir_arg(__file__)
     write(os.path.join(outdir, "c64basic2tokentest.prg"), 0x0801, make_c64())
     write(os.path.join(outdir, "c64basicoverflowtest.prg"), 0x0801, make_c64_overflow())
     write(os.path.join(outdir, "petbasic4test.prg"), 0x0401, make_pet4())

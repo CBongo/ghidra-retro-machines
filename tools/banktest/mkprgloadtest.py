@@ -11,16 +11,15 @@ prove that base-space code loaded at $C000 is visible to EmulationRecovery.
 import os
 import sys
 
-# mkemutest.py lives alongside this script; running as `python mkprgloadtest.py`
-# puts this script's directory at sys.path[0], so the plain import resolves.
-import mkemutest
+# mkemutest.py lives alongside this script. `python -I` does not put the script directory
+# on sys.path, so add it explicitly before importing siblings.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import bankgen  # noqa: E402
+import mkemutest  # noqa: E402
 
 
 def write_prg(outdir, name, load_address, payload):
-    path = os.path.join(outdir, name)
-    with open(path, "wb") as stream:
-        stream.write(bytes((load_address & 0xff, load_address >> 8)))
-        stream.write(payload)
+    path = bankgen.write_prg(outdir, name, load_address, payload)
     print("wrote %s (%d payload bytes at $%04X)" %
           (path, len(payload), load_address))
 
@@ -92,10 +91,7 @@ def overflow_payload():
 
 
 def main():
-    if len(sys.argv) != 2:
-        sys.exit("usage: mkprgloadtest.py <output-dir>")
-    outdir = sys.argv[1]
-    os.makedirs(outdir, exist_ok=True)
+    outdir = bankgen.outdir_arg(__file__)
     write_prg(outdir, "prgplacementtest.prg", 0xa000, placement_payload())
     write_prg(outdir, "prgwraptest.prg", 0xfffc, wrapping_payload())
     # grm-z15.2: 0x101-byte payload at $FF00 wraps exactly 1 byte to $0000,

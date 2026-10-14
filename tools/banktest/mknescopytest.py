@@ -115,6 +115,8 @@ Vectors: RESET -> $C000, NMI/IRQ -> $C01D (the lone RTI).
 
 import sys
 import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import bankgen  # noqa: E402
 
 PRG_BANK_SIZE = 0x4000
 PRG_BANKS = 8                 # 128 KiB, matching nesmmc1test.nes's shape
@@ -189,30 +191,14 @@ def make_prg():
     return bytes(prg)
 
 
-def make_ines_header(prg_banks, chr_banks, mapper):
-    h = bytearray(16)
-    h[0:4] = b"NES\x1a"
-    h[4] = prg_banks
-    h[5] = chr_banks
-    h[6] = (mapper & 0x0F) << 4  # low mapper nibble, no trainer/mirroring flags
-    h[7] = mapper & 0xF0         # high mapper nibble; NES 2.0 bits (h[7] & 0x0C) left 0
-    # bytes 8-15 stay zero: plain iNES 1.0, no DiskDude tail
-    return bytes(h)
-
-
 def write_rom(outdir, filename, prg):
-    rom = make_ines_header(PRG_BANKS, 0, MAPPER_MMC1) + prg
-    path = os.path.join(outdir, filename)
-    with open(path, "wb") as f:
-        f.write(rom)
+    rom = bankgen.ines_header(PRG_BANKS, 0, MAPPER_MMC1) + prg
+    path = bankgen.write_bytes(outdir, filename, rom)
     print("wrote %s (%d bytes)" % (path, len(rom)))
 
 
 def main():
-    if len(sys.argv) != 2:
-        sys.exit("usage: mknescopytest.py <output-dir>")
-    outdir = sys.argv[1]
-    os.makedirs(outdir, exist_ok=True)
+    outdir = bankgen.outdir_arg(__file__)
 
     prg = make_prg()
 

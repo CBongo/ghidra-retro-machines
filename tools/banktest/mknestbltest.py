@@ -24,6 +24,8 @@ so every string is bounded by an undecodable byte on the left.
 """
 import os
 import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import bankgen  # noqa: E402
 
 PRG_SIZE = 0x8000
 BASE = 0x8000
@@ -88,10 +90,7 @@ def make_prg(size=PRG_SIZE):
 
 
 def main():
-    if len(sys.argv) != 2:
-        sys.exit("usage: mknestbltest.py <output-dir>")
-    outdir = sys.argv[1]
-    os.makedirs(outdir, exist_ok=True)
+    outdir = bankgen.outdir_arg(__file__)
     prg = make_prg()
     assert len(prg) == PRG_SIZE
 
@@ -122,14 +121,10 @@ def main():
 
 
 def write_rom(outdir, stem, prg):
-    header = bytearray(16)
-    header[0:4] = b"NES\x1a"
-    header[4] = len(prg) // 0x4000   # 1 or 2 x 16 KiB, mapper 0 (NROM-128/256)
-    header[5] = 0
-    rom = bytes(header) + prg
-    with open(os.path.join(outdir, stem + ".nes"), "wb") as f:
-        f.write(rom)
-    print("wrote %s (%d bytes)" % (os.path.join(outdir, stem + ".nes"), len(rom)))
+    # 1 or 2 x 16 KiB, mapper 0 (NROM-128/256)
+    rom = bankgen.ines_header(len(prg) // 0x4000, 0, 0) + prg
+    path = bankgen.write_bytes(outdir, stem + ".nes", rom)
+    print("wrote %s (%d bytes)" % (path, len(rom)))
 
 
 if __name__ == "__main__":

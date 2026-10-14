@@ -207,6 +207,8 @@ where the materializer must then disassemble from (entryPoint), leaving $C100-$C
 
 import sys
 import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import bankgen  # noqa: E402
 
 LOAD_ADDR = 0x2000
 
@@ -348,18 +350,12 @@ def build_copychain():
 
 
 def write_prg(outdir, name, body):
-    header = bytes([LOAD_ADDR & 0xFF, LOAD_ADDR >> 8])
-    path = os.path.join(outdir, name)
-    with open(path, "wb") as f:
-        f.write(header + body)
-    print("wrote %s (%d bytes); load $%04X" % (path, len(header) + len(body), LOAD_ADDR))
+    path = bankgen.write_prg(outdir, name, LOAD_ADDR, body)
+    print("wrote %s (%d bytes); load $%04X" % (path, 2 + len(body), LOAD_ADDR))
 
 
 def main():
-    if len(sys.argv) != 2:
-        sys.exit("usage: mkcopytest.py <output-dir>")
-    outdir = sys.argv[1]
-    os.makedirs(outdir, exist_ok=True)
+    outdir = bankgen.outdir_arg(__file__)
     write_prg(outdir, "copyloop.prg", build_copyloop())
     write_prg(outdir, "copydata.prg", build_copydata())
     write_prg(outdir, "copyoverlay.prg", build_copyoverlay())

@@ -13,22 +13,20 @@ the fixed C128 power-up map slots.
 
 import os
 import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import bankgen  # noqa: E402
 
 
 LOAD_ADDR = 0x1C01
 MAX_PRG_END_EXCLUSIVE = 0xFF00
 
 
-def write_rom(path, size, seed):
-    with open(path, "wb") as stream:
-        stream.write(bytes((seed + i) & 0xff for i in range(size)))
+def write_rom(outdir, name, size, seed):
+    bankgen.write_bytes(outdir, name, bytes((seed + i) & 0xff for i in range(size)))
 
 
 def main():
-    if len(sys.argv) != 2:
-        sys.exit("usage: mkc128test.py <output-dir>")
-    outdir = sys.argv[1]
-    os.makedirs(outdir, exist_ok=True)
+    outdir = bankgen.outdir_arg(__file__)
 
     # 10 REM <raw BASIC 7 CE/FE prefixed token pairs>.  A REM token keeps the
     # fixture harmless to an eventual BASIC 7 parser while retaining the raw
@@ -59,8 +57,7 @@ def main():
         append_line(bytes([0x8F]) * text_size)
     assert cursor == master_link
     payload.extend((0, 0))
-    with open(os.path.join(outdir, "c128nativebasic7test.prg"), "wb") as stream:
-        stream.write(bytes([LOAD_ADDR & 0xff, LOAD_ADDR >> 8]) + payload)
+    bankgen.write_prg(outdir, "c128nativebasic7test.prg", LOAD_ADDR, payload)
 
     # Exact-slot images with distinct position-dependent patterns.  These are
     # intentionally synthetic; they exercise loader paths without distributing
@@ -70,7 +67,7 @@ def main():
             ("c128-basic-hi.bin", 0x4000, 0x20),
             ("c128-editor.bin", 0x1000, 0x30),
             ("c128-kernal.bin", 0x2000, 0x40)):
-        write_rom(os.path.join(outdir, name), size, seed)
+        write_rom(outdir, name, size, seed)
 
     print("wrote C128 native BASIC PRG and synthetic BASIC/editor/KERNAL ROMs to " + outdir)
 
