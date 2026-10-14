@@ -79,13 +79,23 @@ This is the load-bearing suite. It lives in `tools/banktest/` and works like thi
    NesRomLoader` etc.), runs default auto-analysis, and executes `VerifyBankTest.java` as a
    post-script. Plain fixtures are **batched** (bead `grm-w9ev.5`): `run-banktest.sh` queues
    them and imports up to N per `analyzeHeadless` JVM (startup is ~70% of a fixture's cost),
-   splitting the log per fixture on the `=== FIXTURE <name> ===` line `VerifyBankTest` prints
-   first. Order is preserved: the queue flushes before any unbatched step. Each flush prints
+   splitting the log per fixture on headless's `IMPORTING:` line (so each program's analysis
+   output stays with it) and checking each slice for the `=== FIXTURE <name> ===` line
+   `VerifyBankTest` prints first. Order is preserved: the queue flushes before any unbatched step
+   and before anything that writes shared state, such as the overlay plant. Each flush prints
    `BATCH n=<k> flush=<reason>`; a batch that fails is re-run fixture by fixture (a `NOTE: batch
    N FALLBACK` line), so a crash still names its fixture. Size: `--batch-size N`, else
    `GRM_BATCH_SIZE`, else `GRM_BATCH_SIZE_DEFAULT` (30; measured against 10 back to back, see its comment);
    `1` or `GRM_BATCH=0` means unbatched (for A/B and debugging); `0`/non-integer is an error.
    The banner shows `== batching: size N (default|env|--batch-size) ==` or `off`.
+   Every headless run, batched or single, has a **timeout**: `GRM_HEADLESS_TIMEOUT_BASE` (120s)
+   plus `GRM_HEADLESS_TIMEOUT_PER_PROGRAM` (10s) per program, or a flat `GRM_HEADLESS_TIMEOUT=S`
+   (`0` = off). A timed-out batch falls back to single runs, and a timed-out single run FAILs that
+   fixture and the gate continues. The kill goes through `tools/banktest/lib/kill-headless.ps1`,
+   which matches only `java.exe`/`cmd.exe` whose command line contains that run's own project dir
+   and kills them by PID. **Never use `taskkill /T` for this**: it walks stale parent PIDs and can
+   reach unrelated processes (it is suspected of having killed an agent session).
+   `GRM_HEADLESS_KILL_DRYRUN=1` prints what would be killed and kills nothing.
 4. **`VerifyBankTest.java`** asserts per-fixture `CRITERION` checks and emits a normalized
    behavior **dump** (blocks, overlay references, switch comments, bookmarks) that is diffed
    against the committed golden in `tools/banktest/expected/<name>.dump` — one golden per
