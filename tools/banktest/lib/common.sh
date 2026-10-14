@@ -697,8 +697,12 @@ for path in sys.stdin.read().splitlines():
             print("%08x %s" % (zi.CRC, zi.filename))
 ' 2>/dev/null
 		fi
-		[ -z "$loose" ] || printf '%s\n' "$loose" | while IFS= read -r p; do
-			printf '%s %s\n' "$(sha256sum "$p" | cut -d' ' -f1)" "${p#"$base"}"
+		# One sha256sum over every loose file (NUL-separated), not a subshell+pipeline per file:
+		# ~135 files cost ~4s of fork overhead on Windows (grm-x4y1.4). The emitted
+		# "<hash> <path minus base>" lines match the per-file loop's, so no cache key moves.
+		[ -z "$loose" ] || printf '%s\n' "$loose" | tr '\n' '\0' | xargs -0 sha256sum | while read -r h p; do
+			p="${p#\*}"	# sha256sum's binary-mode marker
+			printf '%s %s\n' "$h" "${p#"$base"}"
 		done
 	} | LC_ALL=C sort | sha256sum | cut -d' ' -f1)"
 	[ -n "$out" ] || return 1

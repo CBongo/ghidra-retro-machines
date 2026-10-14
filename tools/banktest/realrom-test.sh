@@ -576,24 +576,38 @@ EXPECTED_DIR="$REALROM_DIR/expected"
 # import and golden-check code below works unchanged in a multi-platform run: it still reads
 # ROM_LOADER/ROM_DUMP_SCRIPT/ROM_COPY_EXT/ROM_IMPORT_ARGS/ROM_EXTS, they are simply set from
 # the table now instead of from a `case` on the manifest set.
+# Memoized per platform (grm-x4y1.4): the first call for a platform pays the seven tsv_field awk
+# spawns, every later call is pure assignment. It used to re-resolve on every manifest row
+# (35 x 7 spawns, ~7s on Windows), including rows --only filtered out.
+declare -A _PLAT_MEMO=()
 use_platform() {
 	local p="$1" ia ex
 	PLATFORM="$p"
-	ROM_ENV="$(tsv_field "$PLATFORMS_TSV" "$p" rom_dir_env)"
-	ROM_LOADER="$(tsv_field "$PLATFORMS_TSV" "$p" loader)"
-	ROM_DUMP_SCRIPT="$(tsv_field "$PLATFORMS_TSV" "$p" dump_script)"
-	ROM_COPY_EXT="$(tsv_field "$PLATFORMS_TSV" "$p" copy_ext)"
-	# '-' rather than an empty cell, so the column is never ambiguous in a TSV where a
-	# trailing empty field and a missing one look identical.
-	ia="$(tsv_field "$PLATFORMS_TSV" "$p" import_args)"
-	if [ "$ia" = "-" ] || [ -z "$ia" ]; then
-		ROM_IMPORT_ARGS=()
-	else
-		read -r -a ROM_IMPORT_ARGS <<< "$ia"
+	if [ -z "${_PLAT_MEMO[$p]+x}" ]; then
+		# '-' rather than an empty cell, so the column is never ambiguous in a TSV where a
+		# trailing empty field and a missing one look identical.
+		ia="$(tsv_field "$PLATFORMS_TSV" "$p" import_args)"
+		if [ "$ia" = "-" ]; then ia=""; fi
+		ex="$(tsv_field "$PLATFORMS_TSV" "$p" image_exts)"
+		_PLAT_MEMO[$p]=1
+		_PLAT_ENV[$p]="$(tsv_field "$PLATFORMS_TSV" "$p" rom_dir_env)"
+		_PLAT_LOADER[$p]="$(tsv_field "$PLATFORMS_TSV" "$p" loader)"
+		_PLAT_DUMP[$p]="$(tsv_field "$PLATFORMS_TSV" "$p" dump_script)"
+		_PLAT_COPY[$p]="$(tsv_field "$PLATFORMS_TSV" "$p" copy_ext)"
+		_PLAT_IA[$p]="$ia"
+		_PLAT_EXTS[$p]="$ex"
 	fi
-	ex="$(tsv_field "$PLATFORMS_TSV" "$p" image_exts)"
-	IFS=',' read -r -a ROM_EXTS <<< "$ex"
+	ROM_ENV="${_PLAT_ENV[$p]}"
+	ROM_LOADER="${_PLAT_LOADER[$p]}"
+	ROM_DUMP_SCRIPT="${_PLAT_DUMP[$p]}"
+	ROM_COPY_EXT="${_PLAT_COPY[$p]}"
+	ROM_IMPORT_ARGS=()
+	if [ -n "${_PLAT_IA[$p]}" ]; then
+		read -r -a ROM_IMPORT_ARGS <<< "${_PLAT_IA[$p]}"
+	fi
+	IFS=',' read -r -a ROM_EXTS <<< "${_PLAT_EXTS[$p]}"
 }
+declare -A _PLAT_ENV=() _PLAT_LOADER=() _PLAT_DUMP=() _PLAT_COPY=() _PLAT_IA=() _PLAT_EXTS=()
 
 # Emits every row of the SELECTED manifests, each prefixed with its platform, so a consumer
 # can resolve per-row parameters without knowing which file a row came from.
@@ -1100,6 +1114,29 @@ sanitize() {
 # ------------------------------------------------------------------
 declare -A ROM_BY_SHA
 ALL_INDEXED_DIRS=()
+
+# Persistent sha256 index (grm-x4y1.4). Hashing every image in every ROM dir on every run cost
+# ~9s for the NES dirs and ~34s more for the SNES dir (959MB), to find the one or five files a
+# run actually uses. The cache maps path -> (size, mtime, sha256); a file is re-hashed only when
+# its stat changed or it is new, and entries for files that vanished from a scanned dir are
+# dropped. It lives under build/ (gitignored), outside build/realrom-cache so that cache's LRU
+# prune can never touch it. NOT part of any dump cache key: it only decides WHICH file is
+# imported; the pinned-hash check is unchanged and still authoritative, because the row's
+# "Second-layer hash check" below compares the sha256 Ghidra itself computed over the bytes it
+# imported with the manifest pin. A stale index entry (same size and mtime, different bytes)
+# therefore FAILs that row loudly -- it cannot pass a wrong ROM. Concurrent runs in one
+# worktree are safe: the index is replaced atomically (grm_atomic_publish_stdin, per-pid temp),
+# so the worst case is a run re-hashing what another run already hashed.
+ROM_SHA_INDEX="$REPO_ROOT/build/realrom-sha-index.tsv"
+declare -A IDX_OLD=() IDX_SEEN=() IDX_DIR_SCANNED=()
+idx_dirty=0
+if [ -f "$ROM_SHA_INDEX" ]; then
+	while IFS=$'	' read -r ix_sz ix_mt ix_h ix_path; do
+		[ -n "$ix_path" ] || continue
+		IDX_OLD[$ix_path]="$ix_sz $ix_mt $ix_h"
+	done < "$ROM_SHA_INDEX"
+fi
+idx_hashed=0
 echo "== indexing ROM dirs by sha256 =="
 shopt -s nullglob nocaseglob
 for idx_plat in "${PLATFORMS_USED[@]}"; do
@@ -1113,25 +1150,67 @@ for idx_plat in "${PLATFORMS_USED[@]}"; do
 			continue
 		fi
 		count=0
+		IDX_DIR_SCANNED[$dir]=1
 		# ROM_EXTS is per platform (nes; or sfc/smc/fig/swc for SNES -- a SNES collection uses
 		# all four interchangeably, and the copier-headered rows are precisely the .smc ones,
 		# so scanning only one extension would SKIP half of a clean/copier pair and quietly
 		# turn the pair principle off).
 		for ext in "${ROM_EXTS[@]}"; do
-			for f in "$dir"/*."$ext"; do
+			idx_files=("$dir"/*."$ext")
+			[ ${#idx_files[@]} -gt 0 ] || continue
+			# One stat for the whole glob, not one per file; %n last so a name containing the
+			# separator still parses.
+			while IFS='|' read -r ix_sz ix_mt f; do
 				[ -f "$f" ] || continue
-				h="$(sha256sum "$f" | cut -d' ' -f1 | tr 'A-Z' 'a-z')"
+				ix_old="${IDX_OLD[$f]:-}"
+				if [ -n "$ix_old" ] && [ "${ix_old%% *}" = "$ix_sz" ] &&
+					{ ix_rest="${ix_old#* }"; [ "${ix_rest%% *}" = "$ix_mt" ]; }; then
+					h="${ix_rest#* }"
+				else
+					h="$(sha256sum "$f" | cut -d' ' -f1 | tr 'A-Z' 'a-z')"
+					idx_dirty=1
+					idx_hashed=$((idx_hashed + 1))
+				fi
+				IDX_SEEN[$f]="$ix_sz $ix_mt $h"
 				# First occurrence wins; a manifest pins one exact dump anyway.
 				if [ -z "${ROM_BY_SHA[$h]:-}" ]; then
 					ROM_BY_SHA[$h]="$f"
 				fi
 				count=$((count + 1))
-			done
+			done < <(stat -c '%s|%.9Y|%n' -- "${idx_files[@]}")
 		done
-		echo "  [$idx_plat] $dir: hashed $count file(s) matching ${ROM_EXTS[*]}"
+		echo "  [$idx_plat] $dir: indexed $count file(s) matching ${ROM_EXTS[*]}"
 		ALL_INDEXED_DIRS+=("$dir")
 	done
 done
+# Persist: every entry seen this run, plus untouched entries for dirs this run did not scan
+# (a NES-only run must not forget the SNES hashes). Entries for scanned dirs that were not seen
+# are exactly the vanished files, and are dropped.
+if [ "$idx_dirty" = 0 ]; then
+	for ix_path in "${!IDX_OLD[@]}"; do
+		if [ -n "${IDX_DIR_SCANNED[${ix_path%/*}]:-}" ] && [ -z "${IDX_SEEN[$ix_path]:-}" ]; then
+			idx_dirty=1; break
+		fi
+	done
+fi
+if [ "$idx_dirty" = 1 ]; then
+	echo "  sha256 index: re-hashed $idx_hashed file(s); updating $ROM_SHA_INDEX"
+	{
+		for ix_path in "${!IDX_SEEN[@]}"; do
+			printf '%s	%s
+' "${IDX_SEEN[$ix_path]// /$'	'}" "$ix_path"
+		done
+		for ix_path in "${!IDX_OLD[@]}"; do
+			[ -z "${IDX_SEEN[$ix_path]:-}" ] || continue
+			[ -z "${IDX_DIR_SCANNED[${ix_path%/*}]:-}" ] || continue
+			printf '%s	%s
+' "${IDX_OLD[$ix_path]// /$'	'}" "$ix_path"
+		done
+	} | LC_ALL=C sort -t$'	' -k4 | { mkdir -p "${ROM_SHA_INDEX%/*}" && grm_atomic_publish_stdin "$ROM_SHA_INDEX"; } ||
+		echo "  NOTE: could not write the sha256 index -- the next run will re-hash" >&2
+else
+	echo "  sha256 index: all files unchanged, nothing re-hashed"
+fi
 shopt -u nullglob nocaseglob
 
 # ------------------------------------------------------------------
@@ -1205,10 +1284,6 @@ while IFS=$'\t' read -r row_plat id title sha mapper board golden opts member ||
 	# rows) -- see realrom/README.md -- but a one-off comment stays legal.
 	case "${id:-}" in ""|id|\#*) continue ;; esac
 
-	# The row's PLATFORM decides its loader, dump script, copy extension and import args.
-	# Installed per row rather than per run, which is what lets one invocation span platforms.
-	use_platform "$row_plat"
-
 	# SET membership. A set whose `rows` column is an explicit id list (today: core) admits
 	# only those ids; a set with '*' admitted every id in its manifests during resolution. This
 	# is applied BEFORE --only/--except so the two compose: --only narrows within the set.
@@ -1225,6 +1300,11 @@ while IFS=$'\t' read -r row_plat id title sha mapper board golden opts member ||
 		echo "-- $id ($title): filtered out"
 		continue
 	fi
+
+	# The row's PLATFORM decides its loader, dump script, copy extension and import args.
+	# Installed per row rather than per run, which is what lets one invocation span platforms;
+	# placed after the filters, and memoized, so filtered rows cost nothing (grm-x4y1.4).
+	use_platform "$row_plat"
 	sha="$(printf '%s' "$sha" | tr 'A-Z' 'a-z' | tr -d '[:space:]')"
 	golden="${golden:-$id.dump}"
 	opts="${opts:-}"
@@ -1300,6 +1380,7 @@ while IFS=$'\t' read -r row_plat id title sha mapper board golden opts member ||
 		ROW_DETAIL+=("sha mismatch: dumped=$dumped_sha manifest=$sha")
 		n_fail=$((n_fail + 1))
 		echo "    FAIL: program sha256 $dumped_sha != manifest $sha"
+		echo "    (if the ROM file changed without its size/mtime moving, delete $ROM_SHA_INDEX)" >&2
 		continue
 	fi
 
