@@ -2,7 +2,7 @@
 # C64 + C128 + NES banking-analyzer regression suite driver (bead grm-wzl, extended
 # to NES by grm-5tl.17).
 #
-# Usage: run-banktest.sh [check|bless] [--force-criteria] [--no-build] [chunk ...]
+# Usage: run-banktest.sh [check|bless] [--force-criteria] [--no-build] [--batch-size N] [chunk ...]
 #
 #   check (default)  Generate the test PRGs, import each with analyzeHeadless
 #                    using the C64PrgLoader, run VerifyBankTest.java, and fail
@@ -14,6 +14,8 @@
 #   --force-criteria bless a fixture even though its criteria failed. Only
 #                    meaningful with bless; reports every row it forced.
 #   --no-build       skip the pre-flight build/install (see GRM_SKIP_BUILD below).
+#   --batch-size N   import up to N plain fixtures per analyzeHeadless JVM (bead grm-w9ev.5).
+#                    N=1 means unbatched; N<1 or a non-integer is a usage error.
 #
 # Chunks (default: all):
 #   c64-banking   banktest through banktest4
@@ -55,6 +57,10 @@
 #                            ever writes that install. Note BANKTEST_SETTINGS_BASE=
 #                            (explicitly empty) does NOT do this; the fallback
 #                            treats empty as unset, so this flag is the way.
+#   GRM_BATCH=0             fully unbatched (one analyzeHeadless per fixture), for A/B and
+#                            debugging. Batching (bead grm-w9ev.5) queues plain fixtures and
+#                            imports up to a batch of them per JVM; see "batched imports" below.
+#   GRM_BATCH_SIZE=N        batch size (default GRM_BATCH_SIZE_DEFAULT); --batch-size N wins.
 #   GRM_SKIP_BUILD=1        same opt-out as --no-build, for scripted callers that would
 #                            rather set an env var than thread a flag through. Either form
 #                            is a no-op when GRM_EXTENSION_BUILT_THIS_RUN=1 is already set
@@ -82,7 +88,7 @@ EXPECTED_DIR="$SCRIPT_DIR/expected"
 grm_default_headless
 
 usage() {
-	echo "usage: $0 [check|bless] [--force-criteria] [--no-build] [chunk ...]" >&2
+	echo "usage: $0 [check|bless] [--force-criteria] [--no-build] [--batch-size N] [chunk ...]" >&2
 	echo "       $0 --list-chunks" >&2
 }
 
@@ -122,14 +128,45 @@ fi
 # chunk validator below keeps rejecting typos outright.
 FORCE_CRITERIA=0
 NO_BUILD=0
+BATCH_SIZE_ARG=""
 while [ $# -gt 0 ]; do
 	case "$1" in
+		--batch-size=*) BATCH_SIZE_ARG="${1#--batch-size=}"; shift ;;
+		--batch-size)
+			if [ $# -lt 2 ]; then echo "--batch-size needs a value" >&2; usage; exit 2; fi
+			BATCH_SIZE_ARG="$2"; shift 2 ;;
 		--force-criteria) FORCE_CRITERIA=1; shift ;;
 		--no-build) NO_BUILD=1; shift ;;
 		--) shift; break ;;
 		*) break ;;
 	esac
 done
+# Batch size: a tunable starting point, NOT a measured optimum (measured: groups of ~8 project
+# ~1.5m for the whole gate, ~20 ~1.2m; larger means a bigger crash-fallback re-run, a longer shared
+# log, and more programs per JVM). Precedence: --batch-size, then GRM_BATCH_SIZE, then this.
+GRM_BATCH_SIZE_DEFAULT=10
+BATCH_SRC="default"
+BATCH_N="$GRM_BATCH_SIZE_DEFAULT"
+if [ -n "$BATCH_SIZE_ARG" ]; then
+	BATCH_N="$BATCH_SIZE_ARG"; BATCH_SRC="--batch-size"
+elif [ -n "${GRM_BATCH_SIZE:-}" ]; then
+	BATCH_N="$GRM_BATCH_SIZE"; BATCH_SRC="env"
+fi
+case "$BATCH_N" in
+	''|*[!0-9]*|0|0[0-9]*)
+		echo "invalid batch size '$BATCH_N' ($BATCH_SRC): must be a positive integer (1 = unbatched)" >&2
+		usage
+		exit 2
+		;;
+esac
+if [ "${GRM_BATCH:-1}" = 0 ] || [ "$BATCH_N" -le 1 ]; then
+	BATCH_ON=0
+	BATCH_BANNER="off"
+else
+	BATCH_ON=1
+	BATCH_BANNER="size $BATCH_N ($BATCH_SRC)"
+fi
+
 # A check run writes no goldens, so the flag could only mislead there -- refuse
 # it rather than accept a no-op that reads as "and bless the failures too".
 if [ "$FORCE_CRITERIA" -eq 1 ] && [ "$MODE" != bless ]; then
@@ -303,6 +340,7 @@ case "${GRM_EXTENSION_BUILT_THIS_RUN:-}/$EXT_NOTE_SUFFIX" in
 		;;
 esac
 grm_packed_db_cache_note
+echo "== batching: $BATCH_BANNER =="
 
 normalize_opts() {
 	# Echo the loader-opts string with each existing-file argument replaced by
@@ -479,6 +517,94 @@ bless_candidate() {
 	fi
 }
 
+# --- batched imports (bead grm-w9ev.5) -----------------------------------
+# ~70% of a fixture's 4.7s is JVM/Ghidra startup, so plain fixtures are queued by run_one and
+# imported together by flush_batch: ONE analyzeHeadless with several -import args (same -loader,
+# options, -scriptPath, -postScript; the postScript runs once per program). The queue is flushed
+# (in order) before anything that is not a plain queued import -- a non-batchable run_one,
+# run_reject, run_census, a cache hit, a step that reads a fixture's log -- when the loader or
+# options change, when a basename would repeat (program names must be unique in a project),
+# at the batch size, and at the end of the run. Every flush prints "BATCH n=<k> flush=<reason>".
+# Failure isolation: a batch that exits non-zero, or leaves a fixture without its section, is
+# re-run fixture by fixture through run_one_import, so a crash is attributed to its fixture.
+BQ_NAME=()
+BQ_FIX=()
+BQ_BASE=()
+BQ_KEY=()
+BQ_LOADER=""
+BQ_EXTRA=""
+BATCH_SEQ=0
+
+flush_batch() {
+	local reason="${1:-unspecified}"
+	local n=${#BQ_NAME[@]}
+	[ "$n" -gt 0 ] || return 0
+	local names=("${BQ_NAME[@]}") fixes=("${BQ_FIX[@]}") bases=("${BQ_BASE[@]}") keys=("${BQ_KEY[@]}")
+	local loader="$BQ_LOADER" extra="$BQ_EXTRA"
+	BQ_NAME=(); BQ_FIX=(); BQ_BASE=(); BQ_KEY=()
+	BATCH_SEQ=$((BATCH_SEQ + 1))
+	local seq=$BATCH_SEQ i
+	echo "BATCH n=$n flush=$reason"
+	if [ "$n" -eq 1 ]; then
+		run_one_import "${names[0]}" "${fixes[0]}" "$loader" "$extra" "" "" "${keys[0]}"
+		return 0
+	fi
+
+	local proj="$WORK/proj_batch$seq" blog="$WORK/batch$seq.log"
+	mkdir -p "$proj"
+	echo "== batch $seq: importing ${names[*]} via analyzeHeadless ($loader) =="
+	local imports=()
+	for i in "${!names[@]}"; do imports+=(-import "$(native "${fixes[$i]}")"); done
+	# $extra is intentionally unquoted (multi-token loader options), as in run_one_import.
+	"$GHIDRA_HEADLESS" "$(native "$proj")" headless \
+		"${imports[@]}" \
+		-loader "$loader" \
+		$extra \
+		-scriptPath "$(native "$SCRIPT_DIR")" \
+		-postScript VerifyBankTest.java \
+		>"$blog" 2>&1
+	local status=$?
+
+	# Split the batch log into one file per fixture at each "IMPORTING: file:///.../<basename>"
+	# line (analysis output for a program follows its IMPORTING line, so it stays with it);
+	# anything before the first import (startup) goes to the first fixture.
+	local pairs=""
+	for i in "${!names[@]}"; do
+		# Forward slashes: awk -v would eat the backslashes of a Windows-style $WORK.
+		pairs="$pairs ${bases[$i]}=${WORK//\\//}/${names[$i]}.log"
+		rm -f "$WORK/${names[$i]}.log"
+	done
+	awk -v list="$pairs" '
+		BEGIN { n = split(list, a, " "); for (i = 1; i <= n; i++) { k = index(a[i], "="); map[substr(a[i], 1, k - 1)] = substr(a[i], k + 1) } cur = ""; pre = "" }
+		/IMPORTING: file:/ && !/Loaded [0-9]+ additional/ {
+			line = $0; sub(/[ \t\r]*\(HeadlessAnalyzer\).*$/, "", line); sub(/^.*\//, "", line)
+			if (line in map) { cur = map[line]; if (pre != "") { printf "%s", pre > cur; pre = "" } }
+		}
+		{ if (cur == "") pre = pre $0 "\n"; else print $0 > cur }
+	' "$blog"
+
+	local lognote
+	for i in "${!names[@]}"; do
+		local nm="${names[$i]}" sec="$WORK/${names[$i]}.log" why=""
+		lognote=" [fixture $nm in batch $seq log: $blog]"
+		if [ "$status" -ne 0 ]; then
+			why="batch analyzeHeadless exited $status"
+		elif [ ! -s "$sec" ]; then
+			why="no section in the batch log"
+		elif ! grep -qF "=== FIXTURE ${bases[$i]} ===" "$sec"; then
+			why="no FIXTURE marker (VerifyBankTest did not run for it)"
+		elif ! grep -qF '=== BANKDUMP END ===' "$sec"; then
+			why="no BANKDUMP END"
+		fi
+		if [ -n "$why" ]; then
+			echo "NOTE: batch $seq FALLBACK -- re-running $nm individually ($why; batch log: $blog)"
+			run_one_import "$nm" "${fixes[$i]}" "$loader" "$extra" "" "" "${keys[$i]}"
+		else
+			finish_fixture "$nm" "$sec" 0 "${keys[$i]}" "$lognote"
+		fi
+	done
+}
+
 # Imports $2 (a .prg or .nes fixture) via $3 (the loader name), runs VerifyBankTest.java,
 # extracts the normalized dump, and check|bless's it against expected/$1.dump.
 #
@@ -512,6 +638,7 @@ run_one() {
 	# skip the expensive re-import. The bless itself is bless_candidate's, exactly
 	# as on the fresh path, so the two cannot decide differently.
 	if [ "$MODE" = bless ] && [ -n "$key" ] && [ -f "$cached" ]; then
+		flush_batch "cache-hit:$name"
 		echo "== $name: reusing cached candidate from prior check (no re-import) =="
 		grm_touch_cache_entry "$CACHE_DIR/$key"	# LRU (grm-uqhd): a hit keeps the entry alive
 		[ -f "$CACHE_DIR/$key.crit" ] && cat "$CACHE_DIR/$key.crit"
@@ -526,6 +653,36 @@ run_one() {
 		return
 	fi
 
+	# Batched path (bead grm-w9ev.5): only a plain import -- no pre/post-script arguments, no
+	# key inputs, no produced file (GRM_NO_CACHE) -- is queued; everything else flushes the queue
+	# first (so ordering and side effects hold) and runs on its own.
+	if [ "$BATCH_ON" -eq 1 ] && [ -z "$hargs" ] && [ -z "$pargs" ] &&
+		[ -z "${GRM_KEY_INPUTS:-}" ] && [ -z "${GRM_NO_CACHE:-}" ]; then
+		local base
+		base="$(basename "$fixture")"
+		if [ ${#BQ_NAME[@]} -gt 0 ]; then
+			if [ "$loader" != "$BQ_LOADER" ] || [ "$extra" != "$BQ_EXTRA" ]; then
+				flush_batch "loader-or-options-change:$name"
+			elif [[ " ${BQ_BASE[*]} " == *" $base "* ]]; then
+				flush_batch "duplicate-basename:$name"
+			fi
+		fi
+		BQ_LOADER="$loader"
+		BQ_EXTRA="$extra"
+		BQ_NAME+=("$name")
+		BQ_FIX+=("$fixture")
+		BQ_BASE+=("$base")
+		BQ_KEY+=("$key")
+		if [ ${#BQ_NAME[@]} -ge "$BATCH_N" ]; then flush_batch "size-cap"; fi
+		return
+	fi
+	flush_batch "non-batchable:$name"
+	run_one_import "$name" "$fixture" "$loader" "$extra" "$hargs" "$pargs" "$key"
+}
+
+# The unbatched import: one analyzeHeadless for one fixture, then finish_fixture.
+run_one_import() {
+	local name="$1" fixture="$2" loader="$3" extra="${4:-}" hargs="${5:-}" pargs="${6:-}" key="${7:-}"
 	local proj="$WORK/proj_$name"
 	mkdir -p "$proj"
 	local log="$WORK/$name.log"
@@ -550,7 +707,19 @@ run_one() {
 		-postScript VerifyBankTest.java \
 		$pargs \
 		>"$log" 2>&1
-	local status=$?
+	finish_fixture "$name" "$log" $? "$key" ""
+}
+
+# Everything after the headless run for one fixture, shared by the unbatched path and the
+# batched one (flush_batch) so the two cannot drift: carve, criteria, verdict, cache, golden.
+#
+#   finish_fixture <name> <log> <headless-status> <cache-key> <log-note>
+#
+# <log> holds ONLY this fixture's output (for a batch, its slice of the batch log); <log-note>
+# is appended inside FAIL messages' "(log: ...)" to point at the batch log.
+finish_fixture() {
+	local name="$1" log="$2" status="$3" key="$4" lognote="${5:-}"
+	local cached="$CACHE_DIR/$key.dump"
 
 	# Headless wraps script println output as
 	#   "INFO  VerifyBankTest.java> <msg> (GhidraScript)  "
@@ -567,12 +736,12 @@ run_one() {
 	grep -E '^(CRITERION |SUITE (PASS|FAIL))' "$stripped" || true
 
 	if [ $status -ne 0 ]; then
-		echo "FAIL: analyzeHeadless exited $status for $name (log: $log)"
+		echo "FAIL: analyzeHeadless exited $status for $name (log: $log$lognote)"
 		fail=1
 		return
 	fi
 	if ! grep -q '^=== BANKDUMP END ===$' "$stripped"; then
-		echo "FAIL: no BANKDUMP section for $name -- did VerifyBankTest run? (log: $log)"
+		echo "FAIL: no BANKDUMP section for $name -- did VerifyBankTest run? (log: $log$lognote)"
 		fail=1
 		return
 	fi
@@ -583,7 +752,7 @@ run_one() {
 		# and report). Flagging the suite here as well would make --force-criteria
 		# unable to exit 0, i.e. an override that does not actually override.
 		if [ "$MODE" != bless ]; then
-			echo "FAIL: criteria failed for $name (log: $log)"
+			echo "FAIL: criteria failed for $name (log: $log$lognote)"
 			fail=1
 		fi
 	fi
@@ -645,6 +814,7 @@ run_one() {
 # confirmed empirically by diffing a successful project directory against this one.
 run_reject() {
 	local name="$1" fixture="$2" loader="$3" expect_msg="$4"
+	flush_batch "run_reject:$name"
 	local proj="$WORK/proj_$name"
 	mkdir -p "$proj"
 	local log="$WORK/$name.log"
@@ -694,6 +864,7 @@ run_reject() {
 # run the same two imports and the same assertion.
 run_census() {
 	local name="$1" fixture="$2" loader="$3"
+	flush_batch "run_census:$name"
 
 	local proj_on="$WORK/proj_${name}_census_on"
 	local proj_off="$WORK/proj_${name}_census_off"
@@ -1023,32 +1194,6 @@ if selected nes-banking; then
 	# resolution must follow the overlay. See make_prg_intrawin()'s docstring.
 	run_one nesintrawintest "$WORK/nes/nesintrawintest.nes" NesRomLoader
 	run_one nesforkbudgettest "$WORK/nes/nesforkbudgettest.nes" NesRomLoader
-	# The analyzer's per-program fork summary line is the MEASUREMENT the owner's ruling asks for
-	# (it is what the real-ROM tally tabulates), and it lives in the headless log, outside the
-	# dump markers -- so pin it here, the way nesskiptest pins its SKIPFIX line. Skipped when
-	# bless reused a cached candidate: that path runs no import, so there is no fresh log.
-	if [ -f "$WORK/nesforktest.log" ] &&
-		! grep -q 'path forking: forks created=2 (sites 1) collapsed=0 (sites 0, address collapses 0) max live at one block=2' \
-			"$WORK/nesforktest.log"; then
-		echo "FAIL: nesforktest's fork summary did not report 2 forks at 1 site with 2 live (grm-wul)"
-		grep 'path fork' "$WORK/nesforktest.log" >&2 || true
-		fail=1
-	fi
-	if [ -f "$WORK/nesforkhometest.log" ] &&
-		! grep -q 'path forking: forks created=2 (sites 1) collapsed=0 (sites 0, address collapses 0) max live at one block=2' \
-			"$WORK/nesforkhometest.log"; then
-		echo "FAIL: nesforkhometest's fork summary did not report 2 forks at 1 site with 2 live (grm-bfb)"
-		grep 'path fork' "$WORK/nesforkhometest.log" >&2 || true
-		fail=1
-	fi
-	if [ -f "$WORK/nesforkbudgettest.log" ] &&
-		! grep -q 'path forking: forks created=0 (sites 0) collapsed=5 (sites 1, address collapses 0) max live at one block=1' \
-			"$WORK/nesforkbudgettest.log"; then
-		echo "FAIL: nesforkbudgettest's fork summary did not report 5 arms denied at 1 site (grm-wul)"
-		grep 'path fork' "$WORK/nesforkbudgettest.log" >&2 || true
-		fail=1
-	fi
-
 	# grm-7e5o: an 8 KiB NROM PRG -- SMALLER than either 16 KiB window, so the image
 	# mirrors four times across $8000-$FFFF. Synthetic stand-in for Galaxian (J) and
 	# Controller Test Program (J), which cannot be shipped. See make_prg_nromsub().
@@ -1120,6 +1265,36 @@ if selected nes-banking; then
 	# coverage of that widened gate, and the only fixture where a recognized copy's
 	# destination has to cross out of an overlay space to be carved in place.
 	run_one nescopytest "$WORK/nes/nescopytest.nes" NesRomLoader
+
+	# The fork-summary checks below read each fixture's own log, so the batch holding them must
+	# have run: flush first. (They sit here, not beside their run_one calls, so those calls
+	# can share a batch with their neighbours -- bead grm-w9ev.5.)
+	flush_batch "dependency:fork-summary-log-checks"
+	# The analyzer's per-program fork summary line is the MEASUREMENT the owner's ruling asks for
+	# (it is what the real-ROM tally tabulates), and it lives in the headless log, outside the
+	# dump markers -- so pin it here, the way nesskiptest pins its SKIPFIX line. Skipped when
+	# bless reused a cached candidate: that path runs no import, so there is no fresh log.
+	if [ -f "$WORK/nesforktest.log" ] &&
+		! grep -q 'path forking: forks created=2 (sites 1) collapsed=0 (sites 0, address collapses 0) max live at one block=2' \
+			"$WORK/nesforktest.log"; then
+		echo "FAIL: nesforktest's fork summary did not report 2 forks at 1 site with 2 live (grm-wul)"
+		grep 'path fork' "$WORK/nesforktest.log" >&2 || true
+		fail=1
+	fi
+	if [ -f "$WORK/nesforkhometest.log" ] &&
+		! grep -q 'path forking: forks created=2 (sites 1) collapsed=0 (sites 0, address collapses 0) max live at one block=2' \
+			"$WORK/nesforkhometest.log"; then
+		echo "FAIL: nesforkhometest's fork summary did not report 2 forks at 1 site with 2 live (grm-bfb)"
+		grep 'path fork' "$WORK/nesforkhometest.log" >&2 || true
+		fail=1
+	fi
+	if [ -f "$WORK/nesforkbudgettest.log" ] &&
+		! grep -q 'path forking: forks created=0 (sites 0) collapsed=5 (sites 1, address collapses 0) max live at one block=1' \
+			"$WORK/nesforkbudgettest.log"; then
+		echo "FAIL: nesforkbudgettest's fork summary did not report 5 arms denied at 1 site (grm-wul)"
+		grep 'path fork' "$WORK/nesforkbudgettest.log" >&2 || true
+		fail=1
+	fi
 
 	run_census nesbanktest "$WORK/nes/nesbanktest.nes" NesRomLoader
 	# A second board, deliberately: on UxROM (nesbanktest) the loader places almost all PRG into
@@ -1203,6 +1378,7 @@ if selected descriptors; then
 			fi
 		fi
 		run_one descoverlayctltest "$WORK/nes/descoverlayctltest.nes" NesRomLoader
+		flush_batch "dependency:descoverlayctltest-log-check"
 		if [ -f "$WORK/descoverlayctltest.log" ] &&
 			grep -q "game descriptor resolved" "$WORK/descoverlayctltest.log"; then
 			echo "FAIL: control import resolved a game descriptor -- overlay leaked (grm-hb6.15)"
@@ -1279,6 +1455,8 @@ if selected descriptors; then
 		fi
 	fi
 fi
+
+flush_batch "end-of-run"
 
 # Name the rows bless_candidate acted unusually on. A bless over a whole chunk
 # scrolls, and both of these are exactly the lines you must not miss.

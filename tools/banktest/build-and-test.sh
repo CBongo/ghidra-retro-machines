@@ -44,7 +44,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 usage() {
 	cat <<EOF
-usage: $0 [check|bless] [--force-criteria] [chunk ...]
+usage: $0 [check|bless] [--force-criteria] [--batch-size N] [chunk ...]
 
 Chunks: c64-banking c64-loader c64-recovery basic-petscii basic-dialects pet-loader snes-loader c128-loader nes-banking
         petscii-strings nes-text descriptors unit spc700-vectors spc700-dis-corpus snes-rom-corpus w65816-vectors 6502-vectors all
@@ -98,13 +98,20 @@ fi
 # Passed straight through to run-banktest.sh, which owns the semantics; validated
 # there too, so the two front ends cannot disagree about when it is legal.
 RUNNER_FLAGS=()
+FORCE_REQUESTED=0
 while [ "$#" -gt 0 ]; do
 	case "${1:-}" in
-		--force-criteria) RUNNER_FLAGS+=("$1"); shift ;;
+		--force-criteria) RUNNER_FLAGS+=("$1"); FORCE_REQUESTED=1; shift ;;
+		--batch-size=*) RUNNER_FLAGS+=("$1"); shift ;;
+		--batch-size)
+			RUNNER_FLAGS+=("$1" "${2:-}")
+			shift
+			[ "$#" -gt 0 ] && shift
+			;;
 		*) break ;;
 	esac
 done
-if [ "${#RUNNER_FLAGS[@]}" -gt 0 ] && [ "$MODE" != "bless" ]; then
+if [ "$FORCE_REQUESTED" -eq 1 ] && [ "$MODE" != "bless" ]; then
 	echo "FAIL: --force-criteria is only meaningful with bless" >&2
 	usage >&2
 	exit 2

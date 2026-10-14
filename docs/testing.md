@@ -77,7 +77,15 @@ This is the load-bearing suite. It lives in `tools/banktest/` and works like thi
    `build-and-test.sh` run — see AGENTS.md's "The runners build by default" section.
 3. Each fixture imports its ROM headless with the **real loader** (`analyzeHeadless -loader
    NesRomLoader` etc.), runs default auto-analysis, and executes `VerifyBankTest.java` as a
-   post-script.
+   post-script. Plain fixtures are **batched** (bead `grm-w9ev.5`): `run-banktest.sh` queues
+   them and imports up to N per `analyzeHeadless` JVM (startup is ~70% of a fixture's cost),
+   splitting the log per fixture on the `=== FIXTURE <name> ===` line `VerifyBankTest` prints
+   first. Order is preserved: the queue flushes before any unbatched step. Each flush prints
+   `BATCH n=<k> flush=<reason>`; a batch that fails is re-run fixture by fixture (a `NOTE: batch
+   N FALLBACK` line), so a crash still names its fixture. Size: `--batch-size N`, else
+   `GRM_BATCH_SIZE`, else `GRM_BATCH_SIZE_DEFAULT` (10; a tunable, not a measured optimum);
+   `1` or `GRM_BATCH=0` means unbatched (for A/B and debugging); `0`/non-integer is an error.
+   The banner shows `== batching: size N (default|env|--batch-size) ==` or `off`.
 4. **`VerifyBankTest.java`** asserts per-fixture `CRITERION` checks and emits a normalized
    behavior **dump** (blocks, overlay references, switch comments, bookmarks) that is diffed
    against the committed golden in `tools/banktest/expected/<name>.dump` — one golden per

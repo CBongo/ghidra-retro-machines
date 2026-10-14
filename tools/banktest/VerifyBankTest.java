@@ -246,6 +246,9 @@ public class VerifyBankTest extends GhidraScript {
 
 	@Override
 	protected void run() throws Exception {
+		// First output of the run: run-banktest.sh splits a multi-program (batched) log on this
+		// line (bead grm-w9ev.5). Not a CRITERION/SUITE/BANKDUMP line, so it reaches no golden.
+		println("=== FIXTURE " + currentProgram.getName() + " ===");
 		registerChecks();
 
 		// The program name is the imported file's name; fixtures are registered without extension.
