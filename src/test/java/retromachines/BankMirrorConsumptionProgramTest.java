@@ -31,7 +31,6 @@ import org.junit.Test;
 import com.google.gson.JsonObject;
 
 import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.listing.Function;
@@ -54,10 +53,8 @@ import ghidra.program.model.mem.MemoryBlock;
  * to be told it is ROM explicitly too even though that already matches the default -- a test that
  * asserts a recovered ROM byte should not rest silently on an unstated default.
  */
-public class BankMirrorConsumptionProgramTest extends AbstractBundledLanguageTest {
+public class BankMirrorConsumptionProgramTest extends AbstractProgramTest {
 
-	private ProgramBuilder builder;
-	private ProgramDB program;
 	private MemoryBlock prg;
 	private AddressSpace baseSpace;
 
@@ -115,30 +112,6 @@ public class BankMirrorConsumptionProgramTest extends AbstractBundledLanguageTes
 	 *  test asserting a recovered ROM byte does not rest silently on that default. */
 	private void romifyPrg() {
 		setWritable(prg, false);
-	}
-
-	private void makeWritable(MemoryBlock block) {
-		setWritable(block, true);
-	}
-
-	private void setWritable(MemoryBlock block, boolean writable) {
-		int tx = program.startTransaction("set block write permission");
-		try {
-			block.setWrite(writable);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
-	}
-
-	private Instruction instructionAt(String address) {
-		return instructionAt(builder.addr(address));
-	}
-
-	private Instruction instructionAt(Address address) {
-		Instruction instr = program.getListing().getInstructionAt(address);
-		assertNotNull("nothing disassembled at " + address, instr);
-		return instr;
 	}
 
 	// ------------------------------------------------------------------

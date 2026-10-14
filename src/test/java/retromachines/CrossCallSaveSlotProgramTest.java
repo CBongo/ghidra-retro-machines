@@ -29,7 +29,6 @@ import org.junit.Before;
 import org.junit.Test;
 
 import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.listing.Instruction;
@@ -45,10 +44,8 @@ import ghidra.program.model.symbol.SourceType;
  * LDA $D3 / <switch>}, reduced here to a direct {@code STA $8000} site scanned under hooks that
  * carry a state oracle.
  */
-public class CrossCallSaveSlotProgramTest extends AbstractBundledLanguageTest {
+public class CrossCallSaveSlotProgramTest extends AbstractProgramTest {
 
-	private ProgramBuilder builder;
-	private ProgramDB program;
 
 	@Before
 	public void setUp() throws Exception {
@@ -56,23 +53,9 @@ public class CrossCallSaveSlotProgramTest extends AbstractBundledLanguageTest {
 		MemoryBlock zp = builder.createMemory(".zp", "0x0", 0x100);
 		builder.createMemory("PRG", "0x8000", 0x8000);
 		program = builder.getProgram();
-		int tx = program.startTransaction("set block write permission");
-		try {
+		inTx(program, "set block write permission", () -> {
 			zp.setWrite(true);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
-	}
-
-	private Instruction instructionAt(String address) {
-		Instruction instr = program.getListing().getInstructionAt(builder.addr(address));
-		assertNotNull("nothing disassembled at " + address, instr);
-		return instr;
-	}
-
-	private void put(String address, String hex) throws Exception {
-		builder.setBytes(address, hex, true);
+		});
 	}
 
 	private void assertBank(int expected, PartialByte actual) {
@@ -700,22 +683,20 @@ public class CrossCallSaveSlotProgramTest extends AbstractBundledLanguageTest {
 	}
 
 	private void createFunctions(String... nameStartEnd) {
-		int tx = program.startTransaction("create functions");
-		try {
-			for (int i = 0; i < nameStartEnd.length; i += 3) {
-				program.getFunctionManager()
-					.createFunction(nameStartEnd[i], builder.addr(nameStartEnd[i + 1]),
-						new AddressSet(builder.addr(nameStartEnd[i + 1]),
-							builder.addr(nameStartEnd[i + 2])),
-						SourceType.ANALYSIS);
+		inTx(program, "create functions", () -> {
+			try {
+				for (int i = 0; i < nameStartEnd.length; i += 3) {
+					program.getFunctionManager()
+						.createFunction(nameStartEnd[i], builder.addr(nameStartEnd[i + 1]),
+							new AddressSet(builder.addr(nameStartEnd[i + 1]),
+								builder.addr(nameStartEnd[i + 2])),
+							SourceType.ANALYSIS);
+				}
 			}
-		}
-		catch (Exception e) {
-			throw new AssertionError(e);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+			catch (Exception e) {
+				throw new AssertionError(e);
+			}
+		});
 	}
 
 	@Test
@@ -926,15 +907,11 @@ public class CrossCallSaveSlotProgramTest extends AbstractBundledLanguageTest {
 	 */
 	private void overlayTrampolines(String farHex, boolean retarget, String... extra)
 			throws Exception {
-		int tx = program.startTransaction("split the window from the fixed bank");
-		try {
+		inTx(program, "split the window from the fixed bank", () -> {
 			program.getMemory()
 					.split(program.getMemory().getBlock(builder.addr("0x8000")),
 						builder.addr("0xc000"));
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 		builder.createOverlayMemory("W8000_B8", "0x8000", 0x2000);
 		for (int i = 0; i < extra.length; i += 2) {
 			put(extra[i], extra[i + 1]);
@@ -954,8 +931,7 @@ public class CrossCallSaveSlotProgramTest extends AbstractBundledLanguageTest {
 		put("0xc018", "4c 08 c0"); // B: JMP $c008
 		createFunctions("routineA", "0xc000", "0xc00d", "routineB", "0xc010", "0xc01a");
 		if (retarget) {
-			tx = program.startTransaction("retarget the far calls into the overlay");
-			try {
+			inTx(program, "retarget the far calls into the overlay", () -> {
 				for (String call : List.of("0xc005", "0xc015")) {
 					program.getReferenceManager().removeAllReferencesFrom(builder.addr(call));
 					program.getReferenceManager()
@@ -963,10 +939,7 @@ public class CrossCallSaveSlotProgramTest extends AbstractBundledLanguageTest {
 								builder.addr("W8000_B8::8200"), RefType.UNCONDITIONAL_CALL,
 								SourceType.ANALYSIS, 0);
 				}
-			}
-			finally {
-				program.endTransaction(tx, true);
-			}
+			});
 		}
 	}
 

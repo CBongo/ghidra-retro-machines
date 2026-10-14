@@ -153,17 +153,13 @@ public class InlineJumpTableDispatchAnalyzerTest extends AbstractBundledLanguage
 	public void boundsTableAtLowestTargetLikeDb3() throws Exception {
 		ProgramDB program = freshProgram();
 		long tableStart = 0x9d0a;
-		int tx = program.startTransaction("build table");
-		try {
+		inTx(program, "build table", () -> {
 			for (int i = 0; i < 11; i++) {
 				long target = tableStart + 20 + 2L * i;
 				builder.setBytes(String.format("0x%x", tableStart + 2L * i),
 					String.format("%02x %02x", target & 0xff, (target >> 8) & 0xff), false);
 			}
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 
 		List<Address> entries = InlineJumpTableDispatch.tableEntriesAt(program, addr(tableStart));
 		assertEquals(10, entries.size());
@@ -178,8 +174,7 @@ public class InlineJumpTableDispatchAnalyzerTest extends AbstractBundledLanguage
 	public void boundsTableAtFirstEntryIntoUninitializedMemory() throws Exception {
 		ProgramDB program = freshProgram();
 		long tableStart = 0x9e00;
-		int tx = program.startTransaction("build table");
-		try {
+		inTx(program, "build table", () -> {
 			for (int i = 0; i < 3; i++) {
 				long target = tableStart + 40 + 2L * i;
 				builder.setBytes(String.format("0x%x", tableStart + 2L * i),
@@ -188,10 +183,7 @@ public class InlineJumpTableDispatchAnalyzerTest extends AbstractBundledLanguage
 			}
 			// 4th entry: points into the zero-page RAM block, which is uninitialized.
 			builder.setBytes(String.format("0x%x", tableStart + 6), "50 00", false);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 
 		List<Address> entries = InlineJumpTableDispatch.tableEntriesAt(program, addr(tableStart));
 		assertEquals(3, entries.size());
@@ -209,18 +201,14 @@ public class InlineJumpTableDispatchAnalyzerTest extends AbstractBundledLanguage
 		long tableStart = 0x9500;
 		// Three below the table, then 0x950c = tableStart + 6 entries * 2, then one further up.
 		long[] targets = { 0x8100, 0x8110, 0x8120, 0x9520, 0x950c, 0x9530 };
-		int tx = program.startTransaction("build table");
-		try {
+		inTx(program, "build table", () -> {
 			for (int i = 0; i < targets.length; i++) {
 				builder.setBytes(String.format("0x%x", tableStart + 2L * i),
 					String.format("%02x %02x", targets[i] & 0xff, (targets[i] >> 8) & 0xff), false);
 			}
 			// The handler at 950c: its bytes, read as a word, point back into ROM (0x8120).
 			builder.setBytes("0x950c", "20 81", false);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 
 		InlineJumpTableDispatch.CallSiteScan scan =
 			InlineJumpTableDispatch.scanTable(program, addr(tableStart));
@@ -241,8 +229,7 @@ public class InlineJumpTableDispatchAnalyzerTest extends AbstractBundledLanguage
 	public void trimsImplausibleTailOfTableEndingAtInvalidWord() throws Exception {
 		ProgramDB program = freshProgram();
 		long tableStart = 0x9500;
-		int tx = program.startTransaction("build table");
-		try {
+		inTx(program, "build table", () -> {
 			builder.setBytes("0x8100", "ea 60", false); // NOP; RTS
 			builder.setBytes("0x8110", "a9 00", true); // LDA #$00, disassembled
 			builder.setBytes("0x8120", "00 00", false); // BRK
@@ -250,10 +237,7 @@ public class InlineJumpTableDispatchAnalyzerTest extends AbstractBundledLanguage
 			// then 0050 (RAM) ends the table.
 			builder.setBytes(String.format("0x%x", tableStart),
 				"00 81 11 81 00 81 11 81 20 81 50 00", false);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 
 		InlineJumpTableDispatch.CallSiteScan scan =
 			InlineJumpTableDispatch.scanTable(program, addr(tableStart));
@@ -270,15 +254,11 @@ public class InlineJumpTableDispatchAnalyzerTest extends AbstractBundledLanguage
 	public void declinesSiteWhenNothingEndsTheTable() throws Exception {
 		ProgramDB program = freshProgram();
 		long tableStart = 0x9500;
-		int tx = program.startTransaction("build table");
-		try {
+		inTx(program, "build table", () -> {
 			for (int i = 0; i <= InlineJumpTableDispatch.MAX_TABLE_ENTRIES; i++) {
 				builder.setBytes(String.format("0x%x", tableStart + 2L * i), "00 81", false);
 			}
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 
 		InlineJumpTableDispatch.CallSiteScan scan =
 			InlineJumpTableDispatch.scanTable(program, addr(tableStart));
@@ -305,18 +285,14 @@ public class InlineJumpTableDispatchAnalyzerTest extends AbstractBundledLanguage
 		long tableStart = 0x9000; // inside the overlay window
 		long target0 = 0xc010; // fixed bank -- base/physical space only
 		long target1 = 0xc020;
-		int tx = program.startTransaction("build table");
-		try {
+		inTx(program, "build table", () -> {
 			builder.setBytes(String.format("PRG_LO_B1::%x", tableStart),
 				String.format("%02x %02x %02x %02x", target0 & 0xff, (target0 >> 8) & 0xff,
 					target1 & 0xff, (target1 >> 8) & 0xff),
 				false);
 			builder.setBytes(String.format("0x%x", target0), "ea 60", false);
 			builder.setBytes(String.format("0x%x", target1), "ea 60", false);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 
 		var overlaySpace = overlay.getStart().getAddressSpace();
 		Address tableStartAddr = overlaySpace.getAddress(tableStart);
@@ -343,8 +319,7 @@ public class InlineJumpTableDispatchAnalyzerTest extends AbstractBundledLanguage
 		long tableStart = 0x9500;
 		long branchSource = 0x9490; // before the table -- real code
 		long realCodeAddr = tableStart + 2L * 9; // where entry 9 would start
-		int tx = program.startTransaction("build table");
-		try {
+		inTx(program, "build table", () -> {
 			for (int i = 0; i < 9; i++) {
 				long target = 0x8500 + 0x10L * i; // below the table -- never bounds it
 				builder.setBytes(String.format("0x%x", tableStart + 2L * i),
@@ -353,10 +328,7 @@ public class InlineJumpTableDispatchAnalyzerTest extends AbstractBundledLanguage
 			builder.setBytes(String.format("0x%x", realCodeAddr), "a4 98", false); // LDY $98
 			program.getReferenceManager().addMemoryReference(addr(branchSource), addr(realCodeAddr),
 				RefType.CONDITIONAL_JUMP, SourceType.ANALYSIS, 0);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 
 		InlineJumpTableDispatch.CallSiteScan scan =
 			InlineJumpTableDispatch.scanTable(program, addr(tableStart));
@@ -384,17 +356,13 @@ public class InlineJumpTableDispatchAnalyzerTest extends AbstractBundledLanguage
 
 		long tableStart = 0xc100;
 		long crossWindowTarget = 0xb517; // inside the $8000 window
-		int tx = program.startTransaction("build table");
-		try {
+		inTx(program, "build table", () -> {
 			builder.setBytes(String.format("0x%x", crossWindowTarget), "00 00", false); // BRK BRK
 			builder.setBytes(String.format("0x%x", tableStart),
 				String.format("%02x %02x 50 00", crossWindowTarget & 0xff,
 					(crossWindowTarget >> 8) & 0xff), // then 0x0050 -- RAM, INVALID_WORD
 				false);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 
 		InlineJumpTableDispatch.CallSiteScan scan =
 			InlineJumpTableDispatch.scanTable(program, addr(tableStart));
@@ -442,14 +410,10 @@ public class InlineJumpTableDispatchAnalyzerTest extends AbstractBundledLanguage
 
 		InlineJumpTableDispatchAnalyzer analyzer = new InlineJumpTableDispatchAnalyzer();
 		assertTrue(analyzer.canAnalyze(program));
-		int tx = program.startTransaction("analyze");
-		try {
+		inTx(program, "analyze", () -> {
 			analyzer.added(program, new AddressSet(addr(caller), addr(caller + 2)), TaskMonitor.DUMMY,
 				new MessageLog());
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 
 		Address entry0 = addr(caller + 3);
 		Data data0 = program.getListing().getDataAt(entry0);
@@ -523,14 +487,10 @@ public class InlineJumpTableDispatchAnalyzerTest extends AbstractBundledLanguage
 
 		InlineJumpTableDispatchAnalyzer analyzer = new InlineJumpTableDispatchAnalyzer();
 		assertTrue(analyzer.canAnalyze(program));
-		int tx = program.startTransaction("analyze");
-		try {
+		inTx(program, "analyze", () -> {
 			analyzer.added(program, new AddressSet(addr(caller), addr(caller + 2)),
 				TaskMonitor.DUMMY, new MessageLog());
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 
 		Function dispatcher = program.getFunctionManager().getFunctionAt(addr(dispatch));
 		assertNotNull("dispatcher function must exist after analysis", dispatcher);

@@ -16,7 +16,7 @@
 package retromachines;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
+import static retromachines.StoredValueScannerTestSupport.assertUnresolved;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -24,8 +24,6 @@ import org.junit.Test;
 import com.google.gson.JsonObject;
 
 import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
-import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.mem.MemoryBlock;
 
 /**
@@ -55,10 +53,7 @@ import ghidra.program.model.mem.MemoryBlock;
  * Fixture note inherited from {@link StackRelativeReloadProgramTest}: {@link ProgramBuilder}
  * blocks are created read-only, so every RAM block must be made writable explicitly.
  */
-public class ArithmeticFallbackProgramTest extends AbstractBundledLanguageTest {
-
-	private ProgramBuilder builder;
-	private ProgramDB program;
+public class ArithmeticFallbackProgramTest extends AbstractProgramTest {
 
 	@Before
 	public void setUp() throws Exception {
@@ -69,16 +64,6 @@ public class ArithmeticFallbackProgramTest extends AbstractBundledLanguageTest {
 		program = builder.getProgram();
 		makeWritable(zp);
 		makeWritable(ram);
-	}
-
-	private void makeWritable(MemoryBlock block) {
-		int tx = program.startTransaction("set block write permission");
-		try {
-			block.setWrite(true);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
 	}
 
 	/**
@@ -97,20 +82,9 @@ public class ArithmeticFallbackProgramTest extends AbstractBundledLanguageTest {
 		return strategy;
 	}
 
-	private Instruction instructionAt(String address) {
-		Instruction instr = program.getListing().getInstructionAt(builder.addr(address));
-		assertNotNull("nothing disassembled at " + address, instr);
-		return instr;
-	}
-
 	private void assertBank(int expected, MechanismState actual) {
 		assertEquals("tracked bits not fully known: " + actual, 0x0F, actual.knownMask());
 		assertEquals(expected, actual.bits());
-	}
-
-	private void assertUnresolved(MechanismState actual) {
-		assertEquals("expected no tracked bit to be pinned down, got " + actual, 0,
-			actual.knownMask());
 	}
 
 	private MechanismState switchAt(String address) {

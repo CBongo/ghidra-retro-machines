@@ -90,8 +90,7 @@ public class JumpTableOverrideRelocationProgramTest extends AbstractBundledLangu
 	@Test
 	public void movesOverrideOntoTheFunctionNowContainingTheSwitch() throws Exception {
 		ProgramDB program = build();
-		int tx = program.startTransaction("t");
-		try {
+		inTx(program, "t", () -> {
 			Function caller = createFunction(program, "caller", CALLER, 0x801f);
 			writeOverride(caller);
 			// A JSR target becomes a function: the caller's body shrinks, the callee owns SWITCH.
@@ -109,17 +108,13 @@ public class JumpTableOverrideRelocationProgramTest extends AbstractBundledLangu
 			assertNull("the stale override under the caller should be gone",
 				overrideOf(program, caller));
 			assertEquals(1 + CASES.length, countSymbols(program, moved));
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 	}
 
 	@Test
 	public void leavesOverrideAloneWhileItsFunctionStillContainsTheSwitch() throws Exception {
 		ProgramDB program = build();
-		int tx = program.startTransaction("t");
-		try {
+		inTx(program, "t", () -> {
 			Function caller = createFunction(program, "caller", CALLER, 0x801f);
 			writeOverride(caller);
 			Function other = createFunction(program, "other", 0x8050, 0x805f);
@@ -129,10 +124,7 @@ public class JumpTableOverrideRelocationProgramTest extends AbstractBundledLangu
 				new MessageLog()));
 			assertNotNull(overrideOf(program, caller));
 			assertNull(overrideOf(program, other));
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 	}
 
 	private static int countSymbols(ProgramDB program, Namespace space) {

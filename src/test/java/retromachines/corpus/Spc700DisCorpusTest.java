@@ -149,7 +149,7 @@ public class Spc700DisCorpusTest extends AbstractBundledLanguageTest {
 
 		int from = listing.minAddress();
 		int to = listing.maxAddress();
-		builder.setBytes(hex(from), listing.imageBytes(from, to), false);
+		builder.setBytes(hex(from & 0xffff), listing.imageBytes(from, to), false);
 
 		AddressSet seeds = new AddressSet();
 		AddressSet covered = new AddressSet();
@@ -158,8 +158,8 @@ public class Spc700DisCorpusTest extends AbstractBundledLanguageTest {
 			if (row.kind() == Kind.NARRATIVE || row.length() == 0) {
 				continue;
 			}
-			Address start = builder.addr(hex(row.address()));
-			Address end = builder.addr(hex(row.address() + row.length() - 1));
+			Address start = builder.addr(hex(row.address() & 0xffff));
+			Address end = builder.addr(hex((row.address() + row.length() - 1) & 0xffff));
 			covered.addRange(start, end);
 			if (row.kind() == Kind.CODE) {
 				seeds.addRange(start, start);
@@ -171,20 +171,16 @@ public class Spc700DisCorpusTest extends AbstractBundledLanguageTest {
 		// disassemble; both instances in this corpus are one-byte address-column slips inside a
 		// data table (see DisListing.conflicts), which cannot affect any instruction.
 		for (int conflict : listing.conflicts()) {
-			if (codeBytes.contains(builder.addr(hex(conflict)))) {
+			if (codeBytes.contains(builder.addr(hex(conflict & 0xffff)))) {
 				problems.add(String.format("%s: image byte %04X written twice with conflicting " +
 					"values and is inside a listing-declared instruction -- a flat 64K image " +
 					"cannot represent this listing", title, conflict));
 			}
 		}
 
-		int tx = program.startTransaction("disassemble corpus seeds");
-		try {
+		inTx(program, "disassemble corpus seeds", () -> {
 			new DisassembleCommand(seeds, covered, false).applyTo(program, TaskMonitor.DUMMY);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 
 		List<String> report = new ArrayList<>();
 		report.add("line\taddr\tbytes\tkind\ttheirLen\tourLen\ttheirText\tourText\tcomment");
@@ -212,7 +208,7 @@ public class Spc700DisCorpusTest extends AbstractBundledLanguageTest {
 				}
 				case CODE -> code++;
 			}
-			Address at = builder.addr(hex(row.address()));
+			Address at = builder.addr(hex(row.address() & 0xffff));
 			Instruction instr = program.getListing().getInstructionAt(at);
 			String kind = "CODE";
 			if (instr == null) {
@@ -437,9 +433,6 @@ public class Spc700DisCorpusTest extends AbstractBundledLanguageTest {
 		return out.toString();
 	}
 
-	private static String hex(int address) {
-		return String.format("0x%04x", address & 0xffff);
-	}
 
 	private static String nz(String s) {
 		return s == null ? "" : s;

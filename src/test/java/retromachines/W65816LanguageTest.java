@@ -214,15 +214,11 @@ public class W65816LanguageTest extends AbstractBundledLanguageTest {
 	private void setContext(String start, String end, String field, int value) throws Exception {
 		Register register = program.getLanguage().getRegister(field);
 		assertNotNull("no context field named " + field, register);
-		int tx = program.startTransaction("set " + field);
-		try {
+		inTx(program, "set " + field, () -> {
 			program.getProgramContext()
 					.setValue(register, builder.addr(start), builder.addr(end),
 						BigInteger.valueOf(value));
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 	}
 
 	/**

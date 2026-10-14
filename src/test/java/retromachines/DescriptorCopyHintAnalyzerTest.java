@@ -247,13 +247,9 @@ public class DescriptorCopyHintAnalyzerTest extends AbstractBundledLanguageTest 
 		builder.createOverlayMemory("KERNAL", "0xE000", 0x2000);
 		ProgramDB program = builder.getProgram();
 		MemoryBlock kernal = program.getMemory().getBlock("KERNAL");
-		int tx = program.startTransaction("fill");
-		try {
+		inTx(program, "fill", () -> {
 			program.getMemory().setBytes(kernal.getStart().add(0x3A2), expectedChrget());
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 
 		assertTrue(apply(program));
 
@@ -300,14 +296,10 @@ public class DescriptorCopyHintAnalyzerTest extends AbstractBundledLanguageTest 
 
 		// User work inside the copied range.
 		Address userAddr = builder.addr("0x0080");
-		int tx = program.startTransaction("user work");
-		try {
+		inTx(program, "user work", () -> {
 			program.getSymbolTable().createLabel(userAddr, "my_label", SourceType.USER_DEFINED);
 			program.getListing().setComment(userAddr, CommentType.EOL, "user note");
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 
 		// v2 = v1 plus a second, non-overlapping hint in the same region.
 		JsonObject v2 = map();

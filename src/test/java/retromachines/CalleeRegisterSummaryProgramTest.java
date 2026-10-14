@@ -24,8 +24,6 @@ import static org.junit.Assert.assertTrue;
 import org.junit.After;
 import org.junit.Test;
 
-import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.mem.MemoryBlock;
 
@@ -45,13 +43,11 @@ import retromachines.CalleeRegisterSummary.Summary;
  * Layout: {@code $0000} zero page, {@code $0100-$07FF} RAM, {@code $8000-$BFFF} "PRG", and a
  * separate {@code $C000-$FFFF} "FIX" block. Nothing is banked unless a test makes it so.
  */
-public class CalleeRegisterSummaryProgramTest extends AbstractBundledLanguageTest {
+public class CalleeRegisterSummaryProgramTest extends AbstractProgramTest {
 
 	private static final String[] LANGUAGES =
 		{ "6502:LE:16:default", "6502:LE:16:undoc", "6510:LE:16:default" };
 
-	private ProgramBuilder builder;
-	private ProgramDB program;
 
 	@After
 	public void dispose() {
@@ -88,16 +84,6 @@ public class CalleeRegisterSummaryProgramTest extends AbstractBundledLanguageTes
 		program = builder.getProgram();
 		makeWritable(zp);
 		makeWritable(ram);
-	}
-
-	private void makeWritable(MemoryBlock block) {
-		int tx = program.startTransaction("set block write permission");
-		try {
-			block.setWrite(true);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
 	}
 
 	/** Writes {@code hex} at {@code addr} and disassembles exactly those bytes (no flow chasing). */

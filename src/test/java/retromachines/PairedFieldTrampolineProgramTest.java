@@ -26,8 +26,6 @@ import java.util.Set;
 import org.junit.Before;
 import org.junit.Test;
 
-import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSpace;
 
@@ -46,7 +44,7 @@ import retromachines.SaveRestoreTrampolines.FieldPairing;
  *   9016: INX / STX $8003 / RTS         ; R6 := saved + 1       (high, +1)
  * </pre>
  */
-public class PairedFieldTrampolineProgramTest extends AbstractBundledLanguageTest {
+public class PairedFieldTrampolineProgramTest extends AbstractProgramTest {
 
 	private static final BoardDescriptorModel.FieldSpec R7 =
 		new BoardDescriptorModel.FieldSpec("r7", 10, 6);
@@ -56,8 +54,6 @@ public class PairedFieldTrampolineProgramTest extends AbstractBundledLanguageTes
 	private static final List<FieldPairing> PAIR =
 		List.of(new FieldPairing(R6.positionedMask(), R7.positionedMask(), 1));
 
-	private ProgramBuilder builder;
-	private ProgramDB program;
 	private AddressSpace baseSpace;
 
 	@Before
@@ -69,10 +65,6 @@ public class PairedFieldTrampolineProgramTest extends AbstractBundledLanguageTes
 		baseSpace = program.getAddressFactory().getDefaultAddressSpace();
 		builder.setBytes("0x8ff0", "60", true); // the shared RTS
 		builder.setBytes("0x9100", "a9 ff 60", true); // inner: LDA #$FF / RTS
-	}
-
-	private Address addr(String a) {
-		return builder.addr(a);
 	}
 
 	private void lay(String restoreLoad, String highStore) throws Exception {

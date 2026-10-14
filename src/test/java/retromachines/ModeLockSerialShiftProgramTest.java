@@ -32,9 +32,6 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
 import ghidra.app.util.importer.MessageLog;
-import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
-import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.symbol.SourceType;
@@ -56,14 +53,12 @@ import retromachines.HelperDiscovery.HelperModel;
  * The fixture is blmaster's shape: RESET loads the control value and calls a five-write helper
  * that shifts it into {@code $8000}.
  */
-public class ModeLockSerialShiftProgramTest extends AbstractBundledLanguageTest {
+public class ModeLockSerialShiftProgramTest extends AbstractProgramTest {
 
 	/** mirroring(2) | prg_mode(2) | prg_bank(5), matching machines/nes-mmc1.yaml. */
 	private static final int STATE_MASK = 0x1FF;
 	private static final int MODE_MASK = 0x0C;
 
-	private ProgramBuilder builder;
-	private ProgramDB program;
 
 	@Before
 	public void setUp() throws Exception {
@@ -73,24 +68,12 @@ public class ModeLockSerialShiftProgramTest extends AbstractBundledLanguageTest 
 		program = builder.getProgram();
 	}
 
-	private Address addr(int a) {
-		return builder.addr(String.format("0x%x", a));
-	}
-
-	private void put(int a, String hex) throws Exception {
-		builder.setBytes(String.format("0x%x", a), hex, true);
-	}
-
 	private void makeFunction(int start, int endInclusive, String name, boolean entryPoint)
 			throws Exception {
-		int tx = program.startTransaction("create function");
-		try {
+		inTx(program, "create function", () -> {
 			program.getFunctionManager().createFunction(name, addr(start),
 				new AddressSet(addr(start), addr(endInclusive)), SourceType.ANALYSIS);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 		if (entryPoint) {
 			builder.createEntryPoint(String.format("0x%x", start), name);
 		}

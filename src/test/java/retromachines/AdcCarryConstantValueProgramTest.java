@@ -16,16 +16,13 @@
 package retromachines;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static retromachines.StoredValueScannerTestSupport.NO_HOOKS;
 
 import org.junit.Before;
 import org.junit.Test;
 
 import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
-import ghidra.program.model.address.Address;
-import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.mem.MemoryBlock;
 
 /**
@@ -47,10 +44,7 @@ import ghidra.program.model.mem.MemoryBlock;
  * Fixture note inherited from {@link StackRelativeReloadProgramTest}: {@link ProgramBuilder}
  * blocks are created read-only, so every RAM block must be made writable explicitly.
  */
-public class AdcCarryConstantValueProgramTest extends AbstractBundledLanguageTest {
-
-	private ProgramBuilder builder;
-	private ProgramDB program;
+public class AdcCarryConstantValueProgramTest extends AbstractProgramTest {
 
 	@Before
 	public void setUp() throws Exception {
@@ -61,36 +55,6 @@ public class AdcCarryConstantValueProgramTest extends AbstractBundledLanguageTes
 		program = builder.getProgram();
 		makeWritable(zp);
 		makeWritable(ram);
-	}
-
-	private void makeWritable(MemoryBlock block) {
-		int tx = program.startTransaction("set block write permission");
-		try {
-			block.setWrite(true);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
-	}
-
-	/** Hooks that answer neither question -- same shape as every other test file's NO_HOOKS. */
-	private static final StoredValueScanner.Hooks NO_HOOKS = new StoredValueScanner.Hooks() {
-		@Override
-		public boolean isMechanismWrite(Instruction instr) {
-			return false;
-		}
-
-		@Override
-		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-				MechanismState inStateAtStore) {
-			return null;
-		}
-	};
-
-	private Instruction instructionAt(String address) {
-		Instruction instr = program.getListing().getInstructionAt(builder.addr(address));
-		assertNotNull("nothing disassembled at " + address, instr);
-		return instr;
 	}
 
 	/** The byte A holds immediately before {@code address}, or null when unmodeled. */

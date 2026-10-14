@@ -28,6 +28,7 @@ import ghidra.GhidraTestApplicationLayout;
 import ghidra.framework.GModule;
 import ghidra.program.database.ProgramBuilder;
 import ghidra.program.database.ProgramDB;
+import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.util.exception.AssertException;
 import org.junit.After;
@@ -86,6 +87,67 @@ public abstract class AbstractBundledLanguageTest extends AbstractGenericTest {
 			builder.dispose();
 		}
 		builders.clear();
+	}
+
+	/**
+	 * An address offset as a {@code ProgramBuilder} address string ({@code 0x%04x}). Every test's
+	 * private copy fed only the builder's parser, so their differing widths never mattered.
+	 */
+	protected static String hex(long offset) {
+		return String.format("0x%04x", offset);
+	}
+
+	/** A transaction body that may throw; the exception type is inferred from the lambda. */
+	@FunctionalInterface
+	protected interface TxBody<E extends Throwable> {
+		void run() throws E;
+	}
+
+	/** A transaction body that yields a value; the exception type is inferred from the lambda. */
+	@FunctionalInterface
+	protected interface TxSupplier<T, E extends Throwable> {
+		T get() throws E;
+	}
+
+	/** Runs {@code body} in a transaction that is always committed (even if the body throws). */
+	protected static <E extends Throwable> void inTx(Program program, String name,
+			TxBody<E> body) throws E {
+		int tx = program.startTransaction(name);
+		try {
+			body.run();
+		}
+		finally {
+			program.endTransaction(tx, true);
+		}
+	}
+
+	/** {@link #inTx} for a body that returns a value. */
+	protected static <T, E extends Throwable> T inTxGet(Program program, String name,
+			TxSupplier<T, E> body) throws E {
+		int tx = program.startTransaction(name);
+		try {
+			return body.get();
+		}
+		finally {
+			program.endTransaction(tx, true);
+		}
+	}
+
+	/**
+	 * Runs {@code body} in a transaction that commits only if the body completes normally; a
+	 * throwing body rolls the transaction back.
+	 */
+	protected static <E extends Throwable> void inTxCommitOnSuccess(Program program, String name,
+			TxBody<E> body) throws E {
+		int tx = program.startTransaction(name);
+		boolean success = false;
+		try {
+			body.run();
+			success = true;
+		}
+		finally {
+			program.endTransaction(tx, success);
+		}
 	}
 
 	@Override

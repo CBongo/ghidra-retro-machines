@@ -23,7 +23,6 @@ import org.junit.Before;
 import org.junit.Test;
 
 import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
 import ghidra.program.model.listing.Instruction;
 
 /**
@@ -32,10 +31,8 @@ import ghidra.program.model.listing.Instruction;
  * loop it builds; the seed evaluator is the scanner's own state-free constant walk, as in
  * production.
  */
-public class CountedLoopIndexRangeProgramTest extends AbstractBundledLanguageTest {
+public class CountedLoopIndexRangeProgramTest extends AbstractProgramTest {
 
-	private ProgramBuilder builder;
-	private ProgramDB program;
 
 	@Before
 	public void setUp() throws Exception {
@@ -43,10 +40,6 @@ public class CountedLoopIndexRangeProgramTest extends AbstractBundledLanguageTes
 		builder.createMemory(".zp", "0x0", 0x100);
 		builder.createMemory("PRG", "0x8000", 0x8000);
 		program = builder.getProgram();
-	}
-
-	private void put(String address, String hex) throws Exception {
-		builder.setBytes(address, hex, true);
 	}
 
 	private LoopIdioms.IndexRange rangeAt(String address) {

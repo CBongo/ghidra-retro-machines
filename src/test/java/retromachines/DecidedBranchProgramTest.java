@@ -70,8 +70,7 @@ public class DecidedBranchProgramTest extends AbstractBundledLanguageTest {
 	}
 
 	private Function runAnalyzer(ProgramDB program) throws Exception {
-		int tx = program.startTransaction("analyze");
-		try {
+		return inTxGet(program, "analyze", () -> {
 			CreateFunctionCmd cmd = new CreateFunctionCmd(addr(0x8000));
 			cmd.applyTo(program, TaskMonitor.DUMMY);
 			Function function = cmd.getFunction();
@@ -82,10 +81,7 @@ public class DecidedBranchProgramTest extends AbstractBundledLanguageTest {
 			analyzer.added(program, program.getMemory().getLoadedAndInitializedAddressSet(),
 				TaskMonitor.DUMMY, new MessageLog());
 			return function;
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 	}
 
 	private Instruction instr(ProgramDB program, long offset) {
@@ -131,15 +127,11 @@ public class DecidedBranchProgramTest extends AbstractBundledLanguageTest {
 		builder.createMemory(".text", "0x8000", 0x100);
 		builder.setBytes("0x8000", "a9 10 d0 0a a9 11 d0 06 a9 12 d0 02 a9 13 60", true);
 		ProgramDB program = builder.getProgram();
-		int tx = program.startTransaction("analyze");
-		try {
+		inTx(program, "analyze", () -> {
 			new DecidedBranchAnalyzer().added(program,
 				program.getMemory().getLoadedAndInitializedAddressSet(), TaskMonitor.DUMMY,
 				new MessageLog());
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 		assertTrue(instr(program, 0x8002).isFallThroughOverridden());
 		for (long a : new long[] { 0x8004, 0x8008, 0x800c }) {
 			assertNull("unreached entry still code at " + Long.toHexString(a),
@@ -162,8 +154,7 @@ public class DecidedBranchProgramTest extends AbstractBundledLanguageTest {
 		// Pointer table at 8040: 8000, 8004, 8008 -- the last entry, 800c, is left unnamed.
 		builder.setBytes("0x8040", "00 80 04 80 08 80");
 		ProgramDB program = builder.getProgram();
-		int tx = program.startTransaction("analyze");
-		try {
+		inTx(program, "analyze", () -> {
 			for (long a = 0x8040; a < 0x8046; a += 2) {
 				DataUtilities.createData(program, addr(a), PointerDataType.dataType, -1,
 					ClearDataMode.CLEAR_ALL_UNDEFINED_CONFLICT_DATA);
@@ -173,10 +164,7 @@ public class DecidedBranchProgramTest extends AbstractBundledLanguageTest {
 			new DecidedBranchAnalyzer().added(program,
 				program.getMemory().getLoadedAndInitializedAddressSet(), TaskMonitor.DUMMY,
 				new MessageLog());
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 		assertTrue("the override is still set", instr(program, 0x8002).isFallThroughOverridden());
 		assertNotNull("pointed-at entry kept", instr(program, 0x8004));
 		assertNotNull("pointed-at entry kept", instr(program, 0x8008));
@@ -199,15 +187,11 @@ public class DecidedBranchProgramTest extends AbstractBundledLanguageTest {
 		assertTrue("control: clobbered before the analyzer runs",
 			HelperArgumentRecovery.argumentDefinitelyClobbered(program, addr(0x9000),
 				addr(0x9008), 'A'));
-		int tx = program.startTransaction("analyze");
-		try {
+		inTx(program, "analyze", () -> {
 			new DecidedBranchAnalyzer().added(program,
 				program.getMemory().getLoadedAndInitializedAddressSet(), TaskMonitor.DUMMY,
 				new MessageLog());
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 		assertNull("second entry cleared", instr(program, 0x9004));
 		assertTrue(HelperArgumentRecovery.argumentDefinitelyClobbered(program, addr(0x9000),
 			addr(0x9008), 'A'));

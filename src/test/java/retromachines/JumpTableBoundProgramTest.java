@@ -127,15 +127,11 @@ public class JumpTableBoundProgramTest extends AbstractBundledLanguageTest {
 	}
 
 	private Function createFunction(ProgramDB program, Address entry) {
-		int tx = program.startTransaction("fn");
-		try {
+		return inTxGet(program, "fn", () -> {
 			CreateFunctionCmd cmd = new CreateFunctionCmd(entry);
 			cmd.applyTo(program, TaskMonitor.DUMMY);
 			return cmd.getFunction();
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 	}
 
 	private DecompileResults decompileWithJumpLoads(ProgramDB program, Function function) {
@@ -181,14 +177,10 @@ public class JumpTableBoundProgramTest extends AbstractBundledLanguageTest {
 
 		JumpTableBoundAnalyzer analyzer = new JumpTableBoundAnalyzer();
 		assertTrue(analyzer.canAnalyze(program));
-		int tx = program.startTransaction("analyze");
-		try {
+		inTx(program, "analyze", () -> {
 			analyzer.added(program, new AddressSet(function.getBody()), TaskMonitor.DUMMY,
 				new MessageLog());
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 
 		DecompileResults results = decompileWithJumpLoads(program, function);
 		assertTrue("post-override decompile failed: " + results.getErrorMessage(),
@@ -245,14 +237,10 @@ public class JumpTableBoundProgramTest extends AbstractBundledLanguageTest {
 		JumpTableBoundAnalyzer analyzer = new JumpTableBoundAnalyzer();
 		assertNull("test precondition: no function should be registered yet",
 			program.getFunctionManager().getFunctionContaining(dispatcher));
-		int tx = program.startTransaction("analyze");
-		try {
+		inTx(program, "analyze", () -> {
 			analyzer.added(program, new AddressSet(dispatcher, switchAddr.add(2)),
 				TaskMonitor.DUMMY, new MessageLog());
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 
 		Instruction switchInstr = program.getListing().getInstructionAt(switchAddr);
 		assertNotNull(switchInstr);
@@ -366,14 +354,10 @@ public class JumpTableBoundProgramTest extends AbstractBundledLanguageTest {
 
 		JumpTableBoundAnalyzer analyzer = new JumpTableBoundAnalyzer();
 		assertTrue(analyzer.canAnalyze(program));
-		int tx = program.startTransaction("analyze");
-		try {
+		inTx(program, "analyze", () -> {
 			analyzer.added(program, new AddressSet(dispatchAddr, switchAddr.add(2)),
 				TaskMonitor.DUMMY, new MessageLog());
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 
 		// No real Function exists here either (still an UndefinedFunction case), so the analyzer
 		// took the reference-pinning path, not the override path -- verify it the same way
@@ -406,14 +390,10 @@ public class JumpTableBoundProgramTest extends AbstractBundledLanguageTest {
 		Function function = createFunction(program, dispatcher);
 
 		JumpTableBoundAnalyzer analyzer = new JumpTableBoundAnalyzer();
-		int tx = program.startTransaction("analyze");
-		try {
+		inTx(program, "analyze", () -> {
 			analyzer.added(program, new AddressSet(function.getBody()), TaskMonitor.DUMMY,
 				new MessageLog());
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 
 		assertNoOverrideWritten(program, function, true);
 	}
@@ -427,14 +407,10 @@ public class JumpTableBoundProgramTest extends AbstractBundledLanguageTest {
 		Function function = createFunction(program, addr(0x8000));
 
 		JumpTableBoundAnalyzer analyzer = new JumpTableBoundAnalyzer();
-		int tx = program.startTransaction("analyze");
-		try {
+		inTx(program, "analyze", () -> {
 			analyzer.added(program, new AddressSet(function.getBody()), TaskMonitor.DUMMY,
 				new MessageLog());
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 
 		DecompileResults results = decompileWithJumpLoads(program, function);
 		assertTrue(results.decompileCompleted());
@@ -460,14 +436,10 @@ public class JumpTableBoundProgramTest extends AbstractBundledLanguageTest {
 		Function function = createFunction(program, dispatcher);
 
 		JumpTableBoundAnalyzer analyzer = new JumpTableBoundAnalyzer();
-		int tx = program.startTransaction("analyze");
-		try {
+		inTx(program, "analyze", () -> {
 			analyzer.added(program, new AddressSet(function.getBody()), TaskMonitor.DUMMY,
 				new MessageLog());
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 
 		assertNoOverrideWritten(program, function, false);
 	}

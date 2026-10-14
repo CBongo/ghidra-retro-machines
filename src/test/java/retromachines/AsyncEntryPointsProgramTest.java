@@ -62,14 +62,10 @@ public class AsyncEntryPointsProgramTest extends AbstractBundledLanguageTest {
 
 	/** Writes {@code spec} straight into the property, bypassing the format side. */
 	private void setProperty(String spec) {
-		int tx = program.startTransaction("set async entry points");
-		try {
+		inTx(program, "set async entry points", () -> {
 			program.getOptions(Program.PROGRAM_INFO)
 					.setString(DescriptorSupport.ASYNC_ENTRY_POINTS_PROPERTY, spec);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 	}
 
 	// ------------------------------------------------------------------
@@ -145,14 +141,10 @@ public class AsyncEntryPointsProgramTest extends AbstractBundledLanguageTest {
 	// ------------------------------------------------------------------
 
 	private void setFixedMask(String value) {
-		int tx = program.startTransaction("set fixed mask");
-		try {
+		inTx(program, "set fixed mask", () -> {
 			program.getOptions(Program.PROGRAM_INFO)
 					.setString(DescriptorSupport.FIXED_AFTER_INIT_MASK_PROPERTY, value);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 	}
 
 	@Test

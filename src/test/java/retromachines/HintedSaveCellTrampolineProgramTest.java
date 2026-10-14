@@ -29,8 +29,6 @@ import java.util.Set;
 import org.junit.Before;
 import org.junit.Test;
 
-import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSpace;
 
@@ -49,7 +47,7 @@ import ghidra.program.model.address.AddressSpace;
  *   9018: RTS
  * </pre>
  */
-public class HintedSaveCellTrampolineProgramTest extends AbstractBundledLanguageTest {
+public class HintedSaveCellTrampolineProgramTest extends AbstractProgramTest {
 
 	private static final Set<Long> HINT = Set.of(0xF0L);
 	private static final BoardDescriptorModel.FieldSpec R7 =
@@ -57,8 +55,6 @@ public class HintedSaveCellTrampolineProgramTest extends AbstractBundledLanguage
 	private static final BoardDescriptorModel.FieldSpec R6 =
 		new BoardDescriptorModel.FieldSpec("r6", 4, 6);
 
-	private ProgramBuilder builder;
-	private ProgramDB program;
 	private AddressSpace baseSpace;
 
 	@Before
@@ -68,10 +64,6 @@ public class HintedSaveCellTrampolineProgramTest extends AbstractBundledLanguage
 		builder.createMemory("PRG", "0x8000", 0x8000);
 		program = builder.getProgram();
 		baseSpace = program.getAddressFactory().getDefaultAddressSpace();
-	}
-
-	private Address addr(String address) {
-		return builder.addr(address);
 	}
 
 	private HelperDiscovery.HelperModel model(Address entry, Address switchSite) {

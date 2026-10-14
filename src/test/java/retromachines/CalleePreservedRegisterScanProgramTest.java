@@ -18,6 +18,7 @@ package retromachines;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static retromachines.StoredValueScannerTestSupport.NO_HOOKS;
 
 import org.junit.After;
 import org.junit.Before;
@@ -41,19 +42,6 @@ public class CalleePreservedRegisterScanProgramTest extends AbstractBundledLangu
 	private ProgramBuilder builder;
 	private ProgramDB program;
 
-	private static final StoredValueScanner.Hooks NO_HOOKS = new StoredValueScanner.Hooks() {
-		@Override
-		public boolean isMechanismWrite(Instruction instr) {
-			return false;
-		}
-
-		@Override
-		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-				MechanismState inStateAtStore) {
-			return null;
-		}
-	};
-
 	@Before
 	public void setUp() throws Exception {
 		builder = newBuilder("Test", "6502:LE:16:default");
@@ -62,14 +50,10 @@ public class CalleePreservedRegisterScanProgramTest extends AbstractBundledLangu
 		builder.createMemory("PRG", "0x8000", 0x4000);
 		builder.createMemory("FIX", "0xC000", 0x4000);
 		program = builder.getProgram();
-		int tx = program.startTransaction("writable");
-		try {
+		inTx(program, "writable", () -> {
 			zp.setWrite(true);
 			ram.setWrite(true);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 	}
 
 	@After

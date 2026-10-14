@@ -30,10 +30,7 @@ import org.junit.Test;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 
-import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
 import ghidra.program.model.address.AddressSpace;
-import ghidra.program.model.listing.Instruction;
 
 /**
  * Pins {@link SerialShiftBankSwitchStrategy}'s CONSUMPTION of a {@link BankMirrors} set
@@ -63,7 +60,7 @@ import ghidra.program.model.listing.Instruction;
  * a declined gate would show only that write 5's own OWN field failed to resolve, not that
  * every tracked field was poisoned).
  */
-public class SerialShiftMirrorConsumptionProgramTest extends AbstractBundledLanguageTest {
+public class SerialShiftMirrorConsumptionProgramTest extends AbstractProgramTest {
 
 	/** mirroring(2) | prg_mode(2) | prg_bank(5), matching machines/nes-mmc1.yaml. */
 	private static final int STATE_MASK = 0x1FF;
@@ -76,8 +73,6 @@ public class SerialShiftMirrorConsumptionProgramTest extends AbstractBundledLang
 	/** PRG target's address (bits 14:13 = 3). */
 	private static final int PRG_OFFSET = 0xE000;
 
-	private ProgramBuilder builder;
-	private ProgramDB program;
 	private AddressSpace baseSpace;
 
 	@Before
@@ -159,9 +154,6 @@ public class SerialShiftMirrorConsumptionProgramTest extends AbstractBundledLang
 		return MechanismState.fullyKnown(PRG_BANK_MASK, (bank & 0x1F) << 4);
 	}
 
-	private static String hex(long addr) {
-		return String.format("0x%x", addr);
-	}
 
 	private static String staAbs(int offset) {
 		return String.format("8d %02x %02x", offset & 0xFF, (offset >>> 8) & 0xFF);
@@ -200,12 +192,6 @@ public class SerialShiftMirrorConsumptionProgramTest extends AbstractBundledLang
 			addr += 3;
 		}
 		return new ChainAddrs(write1, write5);
-	}
-
-	private Instruction instructionAt(String address) {
-		Instruction instr = program.getListing().getInstructionAt(builder.addr(address));
-		assertNotNull("nothing disassembled at " + address, instr);
-		return instr;
 	}
 
 	/**

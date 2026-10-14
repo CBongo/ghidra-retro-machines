@@ -17,7 +17,6 @@ package retromachines;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import java.util.HashMap;
@@ -29,8 +28,6 @@ import org.junit.Test;
 
 import com.google.gson.JsonObject;
 
-import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
 import ghidra.program.model.listing.Instruction;
 
 import retromachines.HelperArgumentRecovery.CallEffect;
@@ -67,10 +64,8 @@ import retromachines.HelperDiscovery.HelperModel;
  * when only one of the two values actually resolves -- an even stronger reading of "the R6
  * deposit... is never consulted" than a fixture where both happen to resolve.
  */
-public class MultiDepositHelperProgramTest extends AbstractBundledLanguageTest {
+public class MultiDepositHelperProgramTest extends AbstractProgramTest {
 
-	private ProgramBuilder builder;
-	private ProgramDB program;
 
 	@Before
 	public void setUp() throws Exception {
@@ -120,12 +115,6 @@ public class MultiDepositHelperProgramTest extends AbstractBundledLanguageTest {
 	private static final int SELECT_MASK = 0x00F;
 	private static final int R6_MASK = 0x0F0;
 	private static final int R7_MASK = 0xF00;
-
-	private Instruction instructionAt(String address) {
-		Instruction instr = program.getListing().getInstructionAt(builder.addr(address));
-		assertNotNull("nothing disassembled at " + address, instr);
-		return instr;
-	}
 
 	/**
 	 * Builds the {@code FUN_fed1} shape, straight-line, with sites at {@code $9102} (select R6),

@@ -75,13 +75,9 @@ public class GameDescriptorExportRoundTripTest extends AbstractBundledLanguageTe
 	}
 
 	private static void edit(ProgramDB p, Runnable r) {
-		int tx = p.startTransaction("edit");
-		try {
+		inTx(p, "edit", () -> {
 			r.run();
-		}
-		finally {
-			p.endTransaction(tx, true);
-		}
+		});
 	}
 
 	private static void label(ProgramDB p, Address a, String name, SourceType src) {

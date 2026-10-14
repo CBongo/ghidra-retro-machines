@@ -17,6 +17,7 @@ package retromachines;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static retromachines.StoredValueScannerTestSupport.assertUnresolved;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -25,7 +26,6 @@ import org.junit.Before;
 import org.junit.Test;
 
 import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.address.AddressSpace;
@@ -49,10 +49,7 @@ import ghidra.program.model.symbol.SourceType;
  * 2026-09-27 entries for the megaman2 {@code cb60} and contra {@code c0d3} ROM shapes these
  * fixtures are reduced from.
  */
-public class CrossBlockPushPullProgramTest extends AbstractBundledLanguageTest {
-
-	private ProgramBuilder builder;
-	private ProgramDB program;
+public class CrossBlockPushPullProgramTest extends AbstractProgramTest {
 
 	@Before
 	public void setUp() throws Exception {
@@ -63,34 +60,9 @@ public class CrossBlockPushPullProgramTest extends AbstractBundledLanguageTest {
 		makeWritable(zp);
 	}
 
-	private void makeWritable(MemoryBlock block) {
-		int tx = program.startTransaction("set block write permission");
-		try {
-			block.setWrite(true);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
-	}
-
-	private Instruction instructionAt(String address) {
-		Instruction instr = program.getListing().getInstructionAt(builder.addr(address));
-		assertNotNull("nothing disassembled at " + address, instr);
-		return instr;
-	}
-
-	private void put(String address, String hex) throws Exception {
-		builder.setBytes(address, hex, true);
-	}
-
 	private void assertBank(int expected, PartialByte actual) {
 		assertEquals("tracked bits not fully known: " + actual, 0xFF, actual.knownMask());
 		assertEquals(expected, actual.bits());
-	}
-
-	private void assertUnresolved(PartialByte actual) {
-		assertEquals("expected no tracked bit to be pinned down, got " + actual, 0,
-			actual.knownMask());
 	}
 
 	/**
@@ -352,15 +324,11 @@ public class CrossBlockPushPullProgramTest extends AbstractBundledLanguageTest {
 		put("0xc009", "68"); // PLA
 		put("0xc00a", "8d 00 80"); // STA $8000
 
-		int tx = program.startTransaction("mark loop head a function entry");
-		try {
+		inTx(program, "mark loop head a function entry", () -> {
 			Address head = builder.addr("0xc005");
 			program.getFunctionManager()
 				.createFunction("loopHead", head, new AddressSet(head, head), SourceType.ANALYSIS);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 
 		assertUnresolved(scan("0xc00a", ORACLE_HOOKS).value());
 	}
@@ -382,14 +350,10 @@ public class CrossBlockPushPullProgramTest extends AbstractBundledLanguageTest {
 		put("0xc00a", "8d 00 80"); // STA $8000
 		put("0xc020", "60"); // RTS -- a dummy call source
 
-		int tx = program.startTransaction("add a call reference into the span");
-		try {
+		inTx(program, "add a call reference into the span", () -> {
 			program.getReferenceManager().addMemoryReference(builder.addr("0xc020"),
 				builder.addr("0xc005"), RefType.UNCONDITIONAL_CALL, SourceType.USER_DEFINED, 0);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 
 		assertUnresolved(scan("0xc00a", ORACLE_HOOKS).value());
 	}
@@ -504,8 +468,7 @@ public class CrossBlockPushPullProgramTest extends AbstractBundledLanguageTest {
 		put("0xc01a", "60"); // tail: RTS
 		put("0xc040", "60"); // helper: RTS
 
-		int tx = program.startTransaction("create routines A and B");
-		try {
+		inTx(program, "create routines A and B", () -> {
 			program.getFunctionManager()
 				.createFunction("routineB", builder.addr("0xc010"),
 					new AddressSet(builder.addr("0xc010"), builder.addr("0xc01a")),
@@ -514,10 +477,7 @@ public class CrossBlockPushPullProgramTest extends AbstractBundledLanguageTest {
 				.createFunction("routineA", builder.addr("0xc000"),
 					new AddressSet(builder.addr("0xc000"), builder.addr("0xc008")),
 					SourceType.ANALYSIS);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 		return scan("0xc017", oracleHooksWithMirror(builder.addr("0x10")));
 	}
 

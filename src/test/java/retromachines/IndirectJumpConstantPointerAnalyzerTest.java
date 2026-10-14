@@ -199,14 +199,10 @@ public class IndirectJumpConstantPointerAnalyzerTest extends AbstractBundledLang
 	private void runAnalyzer(ProgramDB program) throws Exception {
 		IndirectJumpConstantPointerAnalyzer analyzer = new IndirectJumpConstantPointerAnalyzer();
 		assertTrue(analyzer.canAnalyze(program));
-		int tx = program.startTransaction("analyze");
-		try {
+		inTx(program, "analyze", () -> {
 			analyzer.added(program, new AddressSet(addr(BASE), siteAddr.add(2)), TaskMonitor.DUMMY,
 				new MessageLog());
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 	}
 
 	@Test

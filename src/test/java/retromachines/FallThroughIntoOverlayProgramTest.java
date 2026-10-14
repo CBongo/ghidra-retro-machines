@@ -90,13 +90,9 @@ public class FallThroughIntoOverlayProgramTest extends AbstractBundledLanguageTe
 	private Instruction override() throws Exception {
 		Instruction instr = program.getListing().getInstructionAt(commit);
 		assertNotNull(instr);
-		int tx = program.startTransaction("override");
-		try {
+		inTx(program, "override", () -> {
 			instr.setFallThrough(overlayNext);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 		return instr;
 	}
 
@@ -153,13 +149,9 @@ public class FallThroughIntoOverlayProgramTest extends AbstractBundledLanguageTe
 	@Test
 	public void overrideCanBeRetracted() throws Exception {
 		Instruction instr = override();
-		int tx = program.startTransaction("clear");
-		try {
+		inTx(program, "clear", () -> {
 			instr.clearFallThroughOverride();
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 		assertFalse(instr.isFallThroughOverridden());
 		assertEquals(baseNext, instr.getFallThrough());
 		for (Reference r : program.getReferenceManager().getReferencesFrom(commit)) {
@@ -246,13 +238,9 @@ public class FallThroughIntoOverlayProgramTest extends AbstractBundledLanguageTe
 	@Test
 	public void callReturnFlowOverrideDoesNotRescueIt() throws Exception {
 		Instruction instr = override();
-		int tx = program.startTransaction("flow override");
-		try {
+		inTx(program, "flow override", () -> {
 			instr.setFlowOverride(FlowOverride.CALL_RETURN);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 		Function base = createFunction(builder.addr("0xc000"));
 		createFunction(overlayNext);
 		DecompileResults res = decompileRaw(base);
@@ -286,15 +274,11 @@ public class FallThroughIntoOverlayProgramTest extends AbstractBundledLanguageTe
 	// ---- helpers ---------------------------------------------------------------------------
 
 	private Function createFunction(Address entry) {
-		int tx = program.startTransaction("fn");
-		try {
+		return inTxGet(program, "fn", () -> {
 			CreateFunctionCmd cmd = new CreateFunctionCmd(entry);
 			cmd.applyTo(program, TaskMonitor.DUMMY);
 			return cmd.getFunction();
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 	}
 
 	private DecompileResults decompileRaw(Function f) {

@@ -81,24 +81,16 @@ public class DescriptorAnnotationAnalyzerTest extends AbstractBundledLanguageTes
 	}
 
 	private void apply(ProgramDB program, JsonObject map, FileDataTypeManager gdt) {
-		int tx = program.startTransaction("descriptor annotations");
-		try {
+		inTx(program, "descriptor annotations", () -> {
 			new DescriptorAnnotationAnalyzer().applyAll(program, map, gdt, true, true,
 				TaskMonitor.DUMMY, new MessageLog());
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 	}
 
 	private void record(ProgramDB program, String set, boolean applied) {
-		int tx = program.startTransaction("record");
-		try {
+		inTx(program, "record", () -> {
 			DescriptorAnnotationAnalyzer.recordSymbolSetChoice(program, set, applied);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 	}
 
 	private static Symbol primary(Program p, Address a) {

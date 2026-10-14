@@ -26,8 +26,6 @@ import java.util.Set;
 import org.junit.Before;
 import org.junit.Test;
 
-import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.listing.FlowOverride;
@@ -62,10 +60,8 @@ import ghidra.program.model.listing.Instruction;
  * reads {@code HelperModel.function()}, so every fixture below passes {@code null} for it rather
  * than standing up a real {@code Function} that would add nothing to what is being pinned.
  */
-public class BankSaveRestoreTrampolineProgramTest extends AbstractBundledLanguageTest {
+public class BankSaveRestoreTrampolineProgramTest extends AbstractProgramTest {
 
-	private ProgramBuilder builder;
-	private ProgramDB program;
 	private AddressSpace baseSpace;
 
 	@Before
@@ -97,10 +93,6 @@ public class BankSaveRestoreTrampolineProgramTest extends AbstractBundledLanguag
 	private HelperDiscovery.HelperModel model(Address entry, Address switchSite) {
 		return new HelperDiscovery.HelperModel(null, entry, null, null, 0xFF, 0, null,
 			switchSite, entry, null);
-	}
-
-	private Address addr(String address) {
-		return builder.addr(address);
 	}
 
 	private boolean restores(Address entry, Address switchSite, BankMirrors mirrors,
@@ -498,13 +490,9 @@ public class BankSaveRestoreTrampolineProgramTest extends AbstractBundledLanguag
 		builder.setBytes("0x9007", "8d 00 80", true); // STA $8000    -- would-be switchSite
 
 		Instruction jmp = program.getListing().getInstructionAt(addr("0x9003"));
-		int tx = program.startTransaction("override indirect jump to a computed call");
-		try {
+		inTx(program, "override indirect jump to a computed call", () -> {
 			jmp.setFlowOverride(FlowOverride.CALL);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 
 		boolean result = restores(addr("0x9000"), addr("0x9007"),
 			mirrorsOf(0x10, BankMirrors.Kind.WRITE_THROUGH), Set.of());
@@ -532,13 +520,9 @@ public class BankSaveRestoreTrampolineProgramTest extends AbstractBundledLanguag
 		builder.setBytes("0x9100", "60", true); // RTS
 
 		Instruction jsr = program.getListing().getInstructionAt(addr("0x9003"));
-		int tx = program.startTransaction("mark the call non-returning");
-		try {
+		inTx(program, "mark the call non-returning", () -> {
 			jsr.setFallThrough(null);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 
 		boolean result = restores(addr("0x9000"), addr("0x9007"),
 			mirrorsOf(0x10, BankMirrors.Kind.WRITE_THROUGH), Set.of());

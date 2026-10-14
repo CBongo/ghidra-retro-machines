@@ -27,9 +27,6 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
 import ghidra.app.util.importer.MessageLog;
-import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
-import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.symbol.SourceType;
 import ghidra.util.task.TaskMonitor;
@@ -47,13 +44,11 @@ import ghidra.util.task.TaskMonitor;
  * The board here is cv3's shape cut down: a 2-bit {@code mode} field (bits 0-1, power-on 3) and
  * a 4-bit {@code bank} field (bits 2-5, power-on 0), each set by its own memory latch.
  */
-public class CallerStateReachesCalleeProgramTest extends AbstractBundledLanguageTest {
+public class CallerStateReachesCalleeProgramTest extends AbstractProgramTest {
 
 	private static final int MODE_MASK = 0x03;
 	private static final int BANK_MASK = 0x3C;
 
-	private ProgramBuilder builder;
-	private ProgramDB program;
 
 	@Before
 	public void setUp() throws Exception {
@@ -62,24 +57,12 @@ public class CallerStateReachesCalleeProgramTest extends AbstractBundledLanguage
 		program = builder.getProgram();
 	}
 
-	private void put(int addr, String hex) throws Exception {
-		builder.setBytes(String.format("0x%x", addr), hex, true);
-	}
-
-	private Address addr(int a) {
-		return builder.addr(String.format("0x%x", a));
-	}
-
 	private void makeFunction(int start, int endInclusive, String name, boolean entryPoint)
 			throws Exception {
-		int tx = program.startTransaction("create function");
-		try {
+		inTx(program, "create function", () -> {
 			program.getFunctionManager().createFunction(name, addr(start),
 				new AddressSet(addr(start), addr(endInclusive)), SourceType.ANALYSIS);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 		if (entryPoint) {
 			builder.createEntryPoint(String.format("0x%x", start), name);
 		}

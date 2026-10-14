@@ -67,13 +67,9 @@ public class BankMirrorNamingProgramTest extends AbstractBundledLanguageTest {
 		// ProgramBuilder blocks are created read-only (BankMirrorConsumptionProgramTest's own
 		// fixture note); the write-through derivation test below needs $42 to be writable RAM,
 		// or Discovery.writableCellOffset refuses it before it ever becomes evidence.
-		int tx = program.startTransaction("make zero page writable");
-		try {
+		inTx(program, "make zero page writable", () -> {
 			zp.setWrite(true);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 	}
 
 	/** States a mirror set outright -- see {@link BankMirrors#of}'s javadoc for why this route
@@ -83,13 +79,9 @@ public class BankMirrorNamingProgramTest extends AbstractBundledLanguageTest {
 	}
 
 	private void name(BankMirrors mirrors) {
-		int tx = program.startTransaction("name bank mirrors");
-		try {
+		inTx(program, "name bank mirrors", () -> {
 			BankAnnotationAdapter.nameBankMirrors(program, listing, mirrors, baseSpace);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 	}
 
 	private Symbol primarySymbol(long offset) {
@@ -303,13 +295,9 @@ public class BankMirrorNamingProgramTest extends AbstractBundledLanguageTest {
 	@Test
 	public void userDefinedLabelAtAMirrorAddressIsNotDisplaced() throws Exception {
 		Address addr = baseSpace.getAddress(0x42);
-		int tx = program.startTransaction("create user label");
-		try {
+		inTx(program, "create user label", () -> {
 			program.getSymbolTable().createLabel(addr, "my_own_name", SourceType.USER_DEFINED);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 
 		name(mirrorsOf(0x42, BankMirrors.Kind.WRITE_THROUGH));
 

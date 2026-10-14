@@ -22,7 +22,6 @@ import org.junit.Before;
 import org.junit.Test;
 
 import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.mem.MemoryBlock;
 
@@ -52,10 +51,8 @@ import ghidra.program.model.mem.MemoryBlock;
  * a pure function of {@code (program, entry, valueSite, reg)}, so they run in the fast JUnit
  * tier with no analyzer, no board descriptor, no helper map.
  */
-public class HelperInboundCellProgramTest extends AbstractBundledLanguageTest {
+public class HelperInboundCellProgramTest extends AbstractProgramTest {
 
-	private ProgramBuilder builder;
-	private ProgramDB program;
 
 	@Before
 	public void setUp() throws Exception {
@@ -72,16 +69,6 @@ public class HelperInboundCellProgramTest extends AbstractBundledLanguageTest {
 		MemoryBlock ram = builder.createMemory("RAM", "0x0000", 0x800);
 		program = builder.getProgram();
 		makeWritable(ram);
-	}
-
-	private void makeWritable(MemoryBlock block) {
-		int tx = program.startTransaction("set block write permission");
-		try {
-			block.setWrite(true);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
 	}
 
 	/** The predicate over a helper entered at {@code entry} whose value site is {@code valueSite}. */

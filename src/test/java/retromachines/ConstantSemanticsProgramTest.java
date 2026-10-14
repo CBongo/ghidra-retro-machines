@@ -18,6 +18,7 @@ package retromachines;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static retromachines.StoredValueScannerTestSupport.NO_HOOKS;
 
 import org.junit.Test;
 
@@ -44,28 +45,10 @@ public class ConstantSemanticsProgramTest extends AbstractBundledLanguageTest {
 		MemoryBlock zp = builder.createMemory(".zp", "0x0", 0x100);
 		builder.createMemory("PRG", "0x8000", 0x8000);
 		program = builder.getProgram();
-		int tx = program.startTransaction("set block write permission");
-		try {
+		inTx(program, "set block write permission", () -> {
 			zp.setWrite(true);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 	}
-
-	/** Hooks that resolve no load. */
-	private static final StoredValueScanner.Hooks NO_HOOKS = new StoredValueScanner.Hooks() {
-		@Override
-		public boolean isMechanismWrite(Instruction instr) {
-			return false;
-		}
-
-		@Override
-		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-				MechanismState inStateAtStore) {
-			return null;
-		}
-	};
 
 	/** Hooks that answer a load of {@code $9000} with {@code $3C}, as a ROM-byte hook would. */
 	private static final StoredValueScanner.Hooks ROM_9000 = new StoredValueScanner.Hooks() {

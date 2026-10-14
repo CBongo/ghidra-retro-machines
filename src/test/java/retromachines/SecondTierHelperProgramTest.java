@@ -30,8 +30,6 @@ import java.util.Map;
 import org.junit.Before;
 import org.junit.Test;
 
-import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Instruction;
@@ -62,12 +60,10 @@ import retromachines.HelperDiscovery.SecondTierResult;
  * JUnit tier. {@code switchResults} is {@code Map.of()} throughout unless a test needs it to
  * reject a candidate, for the same reason {@link HelperWrapperProgramTest} documents.
  */
-public class SecondTierHelperProgramTest extends AbstractBundledLanguageTest {
+public class SecondTierHelperProgramTest extends AbstractProgramTest {
 
 	private static final int FULL_MASK = 0x0F;
 
-	private ProgramBuilder builder;
-	private ProgramDB program;
 	private Map<Function, HelperModel> helpers;
 
 	@Before
@@ -78,13 +74,6 @@ public class SecondTierHelperProgramTest extends AbstractBundledLanguageTest {
 		helpers = new LinkedHashMap<>();
 	}
 
-	private static String hex(long addr) {
-		return String.format("0x%04x", addr);
-	}
-
-	private Address addr(long a) {
-		return builder.addr(hex(a));
-	}
 
 	/**
 	 * The wrapped helper: a one-instruction mechanism write ({@code STA $E000}) immediately

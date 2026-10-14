@@ -28,9 +28,6 @@ import org.junit.Test;
 
 import com.google.gson.JsonObject;
 
-import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
-import ghidra.program.model.address.Address;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Instruction;
 
@@ -54,10 +51,8 @@ import retromachines.HelperDiscovery.Relay;
  * ability to resolve the same clobber, which for an ordinary helper would otherwise mask the
  * narrowing entirely (see the first test's javadoc).
  */
-public class HelperEnvNarrowingProgramTest extends AbstractBundledLanguageTest {
+public class HelperEnvNarrowingProgramTest extends AbstractProgramTest {
 
-	private ProgramBuilder builder;
-	private ProgramDB program;
 
 	@Before
 	public void setUp() throws Exception {
@@ -94,12 +89,6 @@ public class HelperEnvNarrowingProgramTest extends AbstractBundledLanguageTest {
 			this.captured = callerRegs;
 			return new HelperDeposit(0, MechanismState.unknown());
 		}
-	}
-
-	private Instruction instructionAt(String address) {
-		Instruction instr = program.getListing().getInstructionAt(builder.addr(address));
-		assertNotNull("nothing disassembled at " + address, instr);
-		return instr;
 	}
 
 	private RegisterEnv recover(HelperModel helper, String callSite, EnvCapturingStrategy probe)

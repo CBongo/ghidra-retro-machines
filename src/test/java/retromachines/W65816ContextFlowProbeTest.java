@@ -24,8 +24,6 @@ import java.math.BigInteger;
 import org.junit.Before;
 import org.junit.Test;
 
-import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
 import ghidra.program.model.lang.Register;
 import ghidra.program.model.listing.Instruction;
 
@@ -44,10 +42,8 @@ import ghidra.program.model.listing.Instruction;
  * the assertions are written to state what was measured. If a future Ghidra changes any of this,
  * the analyzer's scope changes with it, and this test is what says so.
  */
-public class W65816ContextFlowProbeTest extends AbstractBundledLanguageTest {
+public class W65816ContextFlowProbeTest extends AbstractProgramTest {
 
-	private ProgramBuilder builder;
-	private ProgramDB program;
 
 	@Before
 	public void setUp() throws Exception {
@@ -155,23 +151,13 @@ public class W65816ContextFlowProbeTest extends AbstractBundledLanguageTest {
 		assertEquals("branch target did not inherit the widened accumulator", 3, lda.getLength());
 	}
 
-	private Instruction instructionAt(String address) {
-		Instruction instruction = program.getListing().getInstructionAt(builder.addr(address));
-		assertNotNull("no instruction at " + address, instruction);
-		return instruction;
-	}
-
 	private void setContext(String start, String end, String field, int value) throws Exception {
 		Register register = program.getLanguage().getRegister(field);
 		assertNotNull("no context field named " + field, register);
-		int tx = program.startTransaction("set " + field);
-		try {
+		inTx(program, "set " + field, () -> {
 			program.getProgramContext()
 					.setValue(register, builder.addr(start), builder.addr(end),
 						BigInteger.valueOf(value));
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 	}
 }

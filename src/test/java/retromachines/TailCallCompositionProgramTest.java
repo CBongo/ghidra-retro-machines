@@ -29,9 +29,6 @@ import java.util.Map;
 import org.junit.Before;
 import org.junit.Test;
 
-import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
-import ghidra.program.model.address.Address;
 import ghidra.program.model.listing.FlowOverride;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Instruction;
@@ -85,13 +82,11 @@ import retromachines.HelperDiscovery.HelperModel;
  * call, so a literal self-tail-call never reaches this pass through the real pipeline. Measured,
  * not assumed: a self-jump build of that fixture annotated {@code bank -> 1} with no warning.
  */
-public class TailCallCompositionProgramTest extends AbstractBundledLanguageTest {
+public class TailCallCompositionProgramTest extends AbstractProgramTest {
 
 	/** The bank field every helper in this file writes, unless it says otherwise. */
 	private static final int FULL_MASK = 0x0F;
 
-	private ProgramBuilder builder;
-	private ProgramDB program;
 
 	/** Insertion-ordered so {@code composeTailCalls}' iteration order is deterministic. */
 	private Map<Function, HelperModel> helpers;
@@ -108,13 +103,6 @@ public class TailCallCompositionProgramTest extends AbstractBundledLanguageTest 
 	// fixture construction
 	// ------------------------------------------------------------------
 
-	private static String hex(long addr) {
-		return String.format("0x%04x", addr);
-	}
-
-	private Address addr(long a) {
-		return builder.addr(hex(a));
-	}
 
 	/**
 	 * A two-instruction body {@code NOP ; RTS} at {@code at}, made a function. Stands in for a
@@ -164,8 +152,7 @@ public class TailCallCompositionProgramTest extends AbstractBundledLanguageTest 
 	 * whole pass would never look at it and every test here would pass vacuously.
 	 */
 	private void callReturn(long at) {
-		int tx = program.startTransaction("flow override");
-		try {
+		inTx(program, "flow override", () -> {
 			Instruction instr = program.getListing().getInstructionAt(addr(at));
 			assertNotNull("no instruction at " + hex(at), instr);
 			instr.setFlowOverride(FlowOverride.CALL_RETURN);
@@ -173,10 +160,7 @@ public class TailCallCompositionProgramTest extends AbstractBundledLanguageTest 
 				instr.getFlowType().isTerminal());
 			assertTrue("jump at " + hex(at) + " is not typed as a call",
 				instr.getFlowType().isCall());
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 	}
 
 	/** Registers {@code f} as a helper that unconditionally leaves {@code bank} in {@code mask}. */

@@ -29,8 +29,6 @@ import org.junit.Test;
 
 import com.google.gson.JsonObject;
 
-import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
 import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.listing.Instruction;
 
@@ -56,15 +54,13 @@ import retromachines.BoardDescriptorModel.FieldSpec;
  * values so that answering from the wrong field is visible as the wrong number, not as a
  * coincidence.
  */
-public class SelectDataMirrorConsumptionProgramTest extends AbstractBundledLanguageTest {
+public class SelectDataMirrorConsumptionProgramTest extends AbstractProgramTest {
 
 	private static final int STATE_MASK = 0xFFFF;
 	private static final FieldSpec R6 = new FieldSpec("r6", 4, 6);
 	private static final FieldSpec R7 = new FieldSpec("r7", 10, 6);
 	private static final long IDENT = 0xA100;
 
-	private ProgramBuilder builder;
-	private ProgramDB program;
 	private AddressSpace baseSpace;
 
 	@Before
@@ -160,12 +156,6 @@ public class SelectDataMirrorConsumptionProgramTest extends AbstractBundledLangu
 
 	private static boolean r6Known(MechanismState s) {
 		return ((s.knownMask() >>> 4) & 0x3F) == 0x3F;
-	}
-
-	private Instruction instructionAt(String address) {
-		Instruction instr = program.getListing().getInstructionAt(builder.addr(address));
-		assertNotNull("nothing disassembled at " + address, instr);
-		return instr;
 	}
 
 	/** {@code LDA $A100 / STA $8001} at {@code $E000}; returns the data write. */

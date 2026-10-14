@@ -90,14 +90,10 @@ public class SplitDispatchTableAnalyzerTest extends AbstractBundledLanguageTest 
 	private void run(ProgramDB program) throws Exception {
 		SplitDispatchTableAnalyzer analyzer = new SplitDispatchTableAnalyzer();
 		assertTrue(analyzer.canAnalyze(program));
-		int tx = program.startTransaction("analyze");
-		try {
+		inTx(program, "analyze", () -> {
 			analyzer.added(program, new AddressSet(addr(0x8000), addr(0xffff)), TaskMonitor.DUMMY,
 				new MessageLog());
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 	}
 
 	private List<Long> stubTargets(ProgramDB program) {
@@ -117,14 +113,10 @@ public class SplitDispatchTableAnalyzerTest extends AbstractBundledLanguageTest 
 			word(HANDLERS[0]) + " " + word(HANDLERS[1]) + " " + word(HANDLERS[2]) + " ea 60",
 			false, "6c 1e 00");
 		// the bytes after the third entry are reachable code
-		int tx = program.startTransaction("code");
-		try {
+		inTx(program, "code", () -> {
 			new ghidra.app.cmd.disassemble.DisassembleCommand(addr(TABLE + 6), null, true)
 					.applyTo(program);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 		run(program);
 		assertEquals(List.of(HANDLERS[0], HANDLERS[1], HANDLERS[2]), stubTargets(program));
 		for (int i = 0; i < 3; i++) {
@@ -152,13 +144,9 @@ public class SplitDispatchTableAnalyzerTest extends AbstractBundledLanguageTest 
 		ProgramDB program = build(word(HANDLERS[0]) + " " + word(HANDLERS[1]) + " " +
 			word(HANDLERS[2]) + " " + word(HANDLERS[3]) + " " + word(0x0400), false,
 			"6c 1e 00");
-		int tx = program.startTransaction("caller2");
-		try {
+		inTx(program, "caller2", () -> {
 			builder.setBytes(String.format("0x%x", CALLER2), caller(TABLE + 4, false), true);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 		run(program);
 		// first table: entries 0-1 (stops at 9104); second: 2-3 (stops at the RAM entry)
 		assertEquals(List.of(HANDLERS[0], HANDLERS[1], HANDLERS[2], HANDLERS[3]),
@@ -204,15 +192,11 @@ public class SplitDispatchTableAnalyzerTest extends AbstractBundledLanguageTest 
 		}
 		ProgramDB program = builder.getProgram();
 		if (computedRefTo != null) {
-			int tx = program.startTransaction("ref");
-			try {
+			inTx(program, "ref", () -> {
 				program.getListing().getInstructionAt(addr(CALLER + 12)).addMnemonicReference(
 					addr(Long.parseLong(computedRefTo, 16)), RefType.COMPUTED_JUMP,
 					ghidra.program.model.symbol.SourceType.ANALYSIS);
-			}
-			finally {
-				program.endTransaction(tx, true);
-			}
+			});
 		}
 		return program;
 	}
@@ -256,14 +240,10 @@ public class SplitDispatchTableAnalyzerTest extends AbstractBundledLanguageTest 
 	@Test
 	public void leavesAnOverriddenInlineJumpAlone() throws Exception {
 		ProgramDB program = buildInline(null);
-		int tx = program.startTransaction("label");
-		try {
+		inTx(program, "label", () -> {
 			program.getSymbolTable().createLabel(addr(CALLER + 12), "switch",
 				ghidra.program.model.symbol.SourceType.USER_DEFINED);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 		run(program);
 		assertEquals(List.of(), computedTargets(program, CALLER + 12));
 	}

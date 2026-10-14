@@ -31,8 +31,6 @@ import org.junit.Test;
 
 import com.google.gson.JsonObject;
 
-import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.listing.Function;
@@ -66,10 +64,8 @@ import retromachines.HelperDiscovery.HelperModel;
  * -- see {@code StoredValueScanner.findMatchingPush}'s javadoc for this exact test-design trap
  * from a previous increment.
  */
-public class CallerSideMirrorHooksProgramTest extends AbstractBundledLanguageTest {
+public class CallerSideMirrorHooksProgramTest extends AbstractProgramTest {
 
-	private ProgramBuilder builder;
-	private ProgramDB program;
 	private MemoryBlock zp;
 	private MemoryBlock prg;
 	private AddressSpace baseSpace;
@@ -89,28 +85,8 @@ public class CallerSideMirrorHooksProgramTest extends AbstractBundledLanguageTes
 	// Scaffolding
 	// ------------------------------------------------------------------
 
-	private void makeWritable(MemoryBlock block) {
-		setWritable(block, true);
-	}
-
 	private void romifyPrg() {
 		setWritable(prg, false);
-	}
-
-	private void setWritable(MemoryBlock block, boolean writable) {
-		int tx = program.startTransaction("set block write permission");
-		try {
-			block.setWrite(writable);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
-	}
-
-	private Instruction instructionAt(String address) {
-		Instruction instr = program.getListing().getInstructionAt(builder.addr(address));
-		assertNotNull("nothing disassembled at " + address, instr);
-		return instr;
 	}
 
 	private MemoryLatchBankSwitchStrategy discreteLatch() {

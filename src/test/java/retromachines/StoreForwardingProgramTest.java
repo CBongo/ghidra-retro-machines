@@ -18,7 +18,9 @@ package retromachines;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.assertNotNull;
+import static retromachines.StoredValueScannerTestSupport.NO_HOOKS;
+import static retromachines.StoredValueScannerTestSupport.assertBank;
+import static retromachines.StoredValueScannerTestSupport.assertUnresolved;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -26,9 +28,6 @@ import org.junit.Test;
 import com.google.gson.JsonObject;
 
 import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
-import ghidra.program.model.address.Address;
-import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryBlock;
 
@@ -61,10 +60,7 @@ import ghidra.program.model.mem.MemoryBlock;
  * {@code bankInvariantRomByte} treats a RAM load as a constant ROM byte and the tests that mean to
  * model an unrecoverable value would quietly recover one.
  */
-public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
-
-	private ProgramBuilder builder;
-	private ProgramDB program;
+public class StoreForwardingProgramTest extends AbstractProgramTest {
 
 	@Before
 	public void setUp() throws Exception {
@@ -77,16 +73,6 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 		program = builder.getProgram();
 		makeWritable(zp);
 		makeWritable(ram);
-	}
-
-	private void makeWritable(MemoryBlock block) {
-		int tx = program.startTransaction("set block write permission");
-		try {
-			block.setWrite(true);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
 	}
 
 	/**
@@ -104,32 +90,7 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 		return strategy;
 	}
 
-	private Instruction instructionAt(String address) {
-		Instruction instr = program.getListing().getInstructionAt(builder.addr(address));
-		assertNotNull("nothing disassembled at " + address, instr);
-		return instr;
-	}
-
-	private void assertBank(int expected, PartialByte actual) {
-		assertEquals("tracked bits not fully known: " + actual, 0x07, actual.knownMask());
-		assertEquals(expected, actual.bits());
-	}
-
-	private void assertUnresolved(PartialByte actual) {
-		assertEquals("expected no tracked bit to be pinned down, got " + actual, 0,
-			actual.knownMask());
-	}
-
 	/** The {@link MechanismState} form, for a mechanism's field-local result. */
-	private void assertBank(int expected, MechanismState actual) {
-		assertEquals("tracked bits not fully known: " + actual, 0x07, actual.knownMask());
-		assertEquals(expected, actual.bits());
-	}
-
-	private void assertUnresolved(MechanismState actual) {
-		assertEquals("expected no tracked bit to be pinned down, got " + actual, 0,
-			actual.knownMask());
-	}
 
 	/**
 	 * Hooks that answer neither question: no instruction is a mechanism write, and no load
@@ -141,19 +102,6 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 	 * resolution has nothing to say about a cell the caller is merely setting up ahead of the
 	 * call.
 	 */
-	private static final StoredValueScanner.Hooks NO_HOOKS = new StoredValueScanner.Hooks() {
-		@Override
-		public boolean isMechanismWrite(Instruction instr) {
-			return false;
-		}
-
-		@Override
-		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-				MechanismState inStateAtStore) {
-			return null;
-		}
-	};
-
 	/** A resolved, fully-known {@code cell} value reduced to {@code mask}. */
 	private void assertCellValue(int expectedKnownMask, int expectedBits, PartialByte actual) {
 		assertEquals("tracked bits not fully known: " + actual, expectedKnownMask,
@@ -461,13 +409,9 @@ public class StoreForwardingProgramTest extends AbstractBundledLanguageTest {
 		builder.setBytes("0x8006", "ad 03 01", true); // LDA $0103
 		builder.setBytes("0x8009", "8d 00 80", true); // STA $8000
 
-		int tx = program.startTransaction("set stack floor");
-		try {
+		inTx(program, "set stack floor", () -> {
 			program.getOptions(Program.PROGRAM_INFO).setString(StackFloor.PROPERTY, "$00");
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 
 		assertUnresolved(axromLatch().computeSwitch(program, instructionAt("0x8009"),
 			MechanismState.unknown()));

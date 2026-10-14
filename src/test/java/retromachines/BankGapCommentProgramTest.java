@@ -32,8 +32,6 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
 import ghidra.app.util.importer.MessageLog;
-import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.listing.Bookmark;
 import ghidra.program.model.listing.BookmarkType;
@@ -58,10 +56,8 @@ import retromachines.BankSwitchStrategy.ValueStop;
  * change: {@code RealRomDump} samples only {@code bank ->} comments and bookmarks, so a gap
  * comment is pinned there only through the bookmark it must always accompany.
  */
-public class BankGapCommentProgramTest extends AbstractBundledLanguageTest {
+public class BankGapCommentProgramTest extends AbstractProgramTest {
 
-	private ProgramBuilder builder;
-	private ProgramDB program;
 	private BoardDescriptorModel.BoardModel board;
 	private Map<String, Set<Integer>> universe;
 	private final NesBankingAnalyzer analyzer = new NesBankingAnalyzer();
@@ -103,10 +99,6 @@ public class BankGapCommentProgramTest extends AbstractBundledLanguageTest {
 			new MessageLog(), "test", "test-descriptor.json");
 		assertNotNull(b);
 		return b;
-	}
-
-	private Address addr(int a) {
-		return builder.addr(String.format("0x%x", a));
 	}
 
 	private Marked annotate(Address at, BankState state, String via, ValueStop stop,

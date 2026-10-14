@@ -19,6 +19,8 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static retromachines.StoredValueScannerTestSupport.assertBank;
+import static retromachines.StoredValueScannerTestSupport.assertUnresolved;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -34,7 +36,6 @@ import com.google.gson.JsonParser;
 
 import ghidra.app.util.importer.MessageLog;
 import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.address.AddressSpace;
@@ -69,10 +70,7 @@ import retromachines.HelperDiscovery.HelperModel;
  * Fixture note inherited from {@code StoreForwardingProgramTest}: {@link ProgramBuilder} blocks
  * are created read-only, so every RAM block must be made writable explicitly.
  */
-public class CallCrossingPushPullProgramTest extends AbstractBundledLanguageTest {
-
-	private ProgramBuilder builder;
-	private ProgramDB program;
+public class CallCrossingPushPullProgramTest extends AbstractProgramTest {
 
 	@Before
 	public void setUp() throws Exception {
@@ -81,26 +79,6 @@ public class CallCrossingPushPullProgramTest extends AbstractBundledLanguageTest
 		builder.createMemory("PRG", "0x8000", 0x8000);
 		program = builder.getProgram();
 		makeWritable(zp);
-	}
-
-	private void makeWritable(MemoryBlock block) {
-		int tx = program.startTransaction("set block write permission");
-		try {
-			block.setWrite(true);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
-	}
-
-	private Instruction instructionAt(String address) {
-		Instruction instr = program.getListing().getInstructionAt(builder.addr(address));
-		assertNotNull("nothing disassembled at " + address, instr);
-		return instr;
-	}
-
-	private void put(String address, String hex) throws Exception {
-		builder.setBytes(address, hex, true);
 	}
 
 	// ==================================================================
@@ -118,21 +96,7 @@ public class CallCrossingPushPullProgramTest extends AbstractBundledLanguageTest
 		return strategy;
 	}
 
-	private void assertBank(int expected, MechanismState actual) {
-		assertEquals("tracked bits not fully known: " + actual, 0x07, actual.knownMask());
-		assertEquals(expected, actual.bits());
-	}
-
 	/** The {@link PartialByte} form, for a scanned register value. */
-	private void assertBank(int expected, PartialByte actual) {
-		assertEquals("tracked bits not fully known: " + actual, 0x07, actual.knownMask());
-		assertEquals(expected, actual.bits());
-	}
-
-	private void assertUnresolved(MechanismState actual) {
-		assertEquals("expected no tracked bit to be pinned down, got " + actual, 0,
-			actual.knownMask());
-	}
 
 	/**
 	 * Hooks with a state AVAILABLE at every address -- wholly unknown, but non-null. This is
@@ -555,10 +519,6 @@ public class CallCrossingPushPullProgramTest extends AbstractBundledLanguageTest
 	// Engine-level fixture (BankDataflowEngine.runDataflow) -- case 9
 	// ==================================================================
 
-	private Address addr(int a) {
-		return builder.addr(String.format("0x%x", a));
-	}
-
 	private void putAt(int a, String hex) throws Exception {
 		builder.setBytes(String.format("0x%x", a), hex, true);
 	}
@@ -582,14 +542,10 @@ public class CallCrossingPushPullProgramTest extends AbstractBundledLanguageTest
 	private void makeFunction(int start, int endInclusive, String name) throws Exception {
 		Address startAddr = addr(start);
 		Address endAddr = addr(endInclusive);
-		int tx = program.startTransaction("create function");
-		try {
+		inTx(program, "create function", () -> {
 			program.getFunctionManager().createFunction(name, startAddr,
 				new AddressSet(startAddr, endAddr), SourceType.ANALYSIS);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 		builder.createEntryPoint(String.format("0x%x", start), name);
 	}
 

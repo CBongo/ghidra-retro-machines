@@ -209,16 +209,10 @@ public class BoardBankAnalyzerCacheProgramTest extends AbstractBundledLanguageTe
 	private void retype(String address, String hex) throws Exception {
 		Address addr = builder.addr(address);
 		byte[] bytes = NumericUtilities.convertStringToBytes(hex);
-		int tx = program.startTransaction("retype");
-		boolean commit = false;
-		try {
+		inTxCommitOnSuccess(program, "retype", () -> {
 			program.getListing().clearCodeUnits(addr, addr.add(bytes.length - 1), false);
 			program.getMemory().setBytes(addr, bytes);
-			commit = true;
-		}
-		finally {
-			program.endTransaction(tx, commit);
-		}
+		});
 		builder.disassemble(address, bytes.length);
 	}
 

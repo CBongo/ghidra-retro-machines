@@ -34,7 +34,6 @@ import com.google.gson.JsonParser;
 
 import ghidra.app.util.importer.MessageLog;
 import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.address.AddressSpace;
@@ -102,10 +101,8 @@ import retromachines.HelperDiscovery.HelperModel;
  * blocks are created read-only, so a RAM block backing any mirror cell must be made writable
  * explicitly.
  */
-public class CallerSideRestoreProgramTest extends AbstractBundledLanguageTest {
+public class CallerSideRestoreProgramTest extends AbstractProgramTest {
 
-	private ProgramBuilder builder;
-	private ProgramDB program;
 	private AddressSpace baseSpace;
 
 	@Before
@@ -118,36 +115,8 @@ public class CallerSideRestoreProgramTest extends AbstractBundledLanguageTest {
 		makeWritable(zp);
 	}
 
-	private void makeWritable(MemoryBlock block) {
-		int tx = program.startTransaction("set block write permission");
-		try {
-			block.setWrite(true);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
-	}
-
-	private Address addr(String address) {
-		return builder.addr(address);
-	}
-
-	private Address addr(int a) {
-		return addr(String.format("0x%x", a));
-	}
-
-	private void put(String address, String hex) throws Exception {
-		builder.setBytes(address, hex, true);
-	}
-
 	private void putAt(int a, String hex) throws Exception {
 		put(String.format("0x%x", a), hex);
-	}
-
-	private Instruction instructionAt(String address) {
-		Instruction instr = program.getListing().getInstructionAt(builder.addr(address));
-		assertNotNull("nothing disassembled at " + address, instr);
-		return instr;
 	}
 
 	// ==================================================================
@@ -538,27 +507,19 @@ public class CallerSideRestoreProgramTest extends AbstractBundledLanguageTest {
 	private void makeFunction(int start, int endInclusive, String name) throws Exception {
 		Address startAddr = addr(start);
 		Address endAddr = addr(endInclusive);
-		int tx = program.startTransaction("create function");
-		try {
+		inTx(program, "create function", () -> {
 			program.getFunctionManager().createFunction(name, startAddr,
 				new AddressSet(startAddr, endAddr), SourceType.ANALYSIS);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 		builder.createEntryPoint(String.format("0x%x", start), name);
 	}
 
 	private void markAsyncEntry(Address... entries) {
-		int tx = program.startTransaction("set async entry points");
-		try {
+		inTx(program, "set async entry points", () -> {
 			program.getOptions(Program.PROGRAM_INFO).setString(
 				DescriptorSupport.ASYNC_ENTRY_POINTS_PROPERTY,
 				DescriptorSupport.formatAsyncEntryPoints(List.of(entries)));
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 	}
 
 	/**

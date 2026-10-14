@@ -26,9 +26,6 @@ import org.junit.Test;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 
-import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
-import ghidra.program.model.listing.Instruction;
 
 /**
  * Pins {@link SerialShiftBankSwitchStrategy}'s handling of a read-modify-write into the MMC1
@@ -49,15 +46,13 @@ import ghidra.program.model.listing.Instruction;
  * Every case runs against an in-state where all three fields are KNOWN, so a poison is visible
  * as knowledge being destroyed rather than merely absent.
  */
-public class SerialShiftStrategyProgramTest extends AbstractBundledLanguageTest {
+public class SerialShiftStrategyProgramTest extends AbstractProgramTest {
 
 	/** mirroring(2) | prg_mode(2) | prg_bank(5), matching machines/nes-mmc1.yaml. */
 	private static final int STATE_MASK = 0x1FF;
 	private static final int PRG_MODE_MASK = 0x0C;
 	private static final int PRG_MODE_3 = 3 << 2;
 
-	private ProgramBuilder builder;
-	private ProgramDB program;
 
 	@Before
 	public void setUp() throws Exception {
@@ -115,12 +110,6 @@ public class SerialShiftStrategyProgramTest extends AbstractBundledLanguageTest 
 		SerialShiftBankSwitchStrategy strategy = new SerialShiftBankSwitchStrategy();
 		strategy.configure(program, params, STATE_MASK);
 		return strategy;
-	}
-
-	private Instruction instructionAt(String address) {
-		Instruction instr = program.getListing().getInstructionAt(builder.addr(address));
-		assertNotNull("nothing disassembled at " + address, instr);
-		return instr;
 	}
 
 	/** Everything known and zero, so a poison shows up as knowledge destroyed. */

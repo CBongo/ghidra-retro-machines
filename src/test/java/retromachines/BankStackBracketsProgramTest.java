@@ -29,8 +29,6 @@ import java.util.Set;
 import org.junit.Before;
 import org.junit.Test;
 
-import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSpace;
 
@@ -50,7 +48,7 @@ import retromachines.HelperArgumentRecovery.CallEffect;
  *   stub 9010: LDA #$20 / BNE $9000
  * </pre>
  */
-public class BankStackBracketsProgramTest extends AbstractBundledLanguageTest {
+public class BankStackBracketsProgramTest extends AbstractProgramTest {
 
 	private static final BoardDescriptorModel.FieldSpec R7 =
 		new BoardDescriptorModel.FieldSpec("r7", 10, 6);
@@ -60,8 +58,6 @@ public class BankStackBracketsProgramTest extends AbstractBundledLanguageTest {
 	private static final SaveRestoreTrampolines.FieldPairing PAIR =
 		new SaveRestoreTrampolines.FieldPairing(R6.positionedMask(), R7.positionedMask(), 1);
 
-	private ProgramBuilder builder;
-	private ProgramDB program;
 	private AddressSpace baseSpace;
 
 	@Before
@@ -72,14 +68,6 @@ public class BankStackBracketsProgramTest extends AbstractBundledLanguageTest {
 		program = builder.getProgram();
 		baseSpace = program.getAddressFactory().getDefaultAddressSpace();
 		helpers();
-	}
-
-	private Address addr(String a) {
-		return builder.addr(a);
-	}
-
-	private void put(String at, String bytes) throws Exception {
-		builder.setBytes(at, bytes, true);
 	}
 
 	/** Push, pop, pop2 (R7 then R6 := slot+1), the stub, and an empty inner routine. */

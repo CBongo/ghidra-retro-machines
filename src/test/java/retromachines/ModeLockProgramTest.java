@@ -30,9 +30,6 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
 import ghidra.app.util.importer.MessageLog;
-import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
-import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.listing.Bookmark;
 import ghidra.program.model.listing.BookmarkType;
@@ -53,14 +50,12 @@ import ghidra.util.task.TaskMonitor;
  * {@code bank} field (bits 2-5, power-on 0), each set by its own memory latch ($9000 / $A000).
  * The NMI handler at $C100 is the loader-declared async entry (grm-913).
  */
-public class ModeLockProgramTest extends AbstractBundledLanguageTest {
+public class ModeLockProgramTest extends AbstractProgramTest {
 
 	private static final int MODE_MASK = 0x03;
 	private static final int BANK_MASK = 0x3C;
 	private static final int NMI = 0xc100;
 
-	private ProgramBuilder builder;
-	private ProgramDB program;
 
 	@Before
 	public void setUp() throws Exception {
@@ -70,24 +65,12 @@ public class ModeLockProgramTest extends AbstractBundledLanguageTest {
 		program = builder.getProgram();
 	}
 
-	private void put(int addr, String hex) throws Exception {
-		builder.setBytes(String.format("0x%x", addr), hex, true);
-	}
-
-	private Address addr(int a) {
-		return builder.addr(String.format("0x%x", a));
-	}
-
 	private void makeFunction(int start, int endInclusive, String name, boolean entryPoint)
 			throws Exception {
-		int tx = program.startTransaction("create function");
-		try {
+		inTx(program, "create function", () -> {
 			program.getFunctionManager().createFunction(name, addr(start),
 				new AddressSet(addr(start), addr(endInclusive)), SourceType.ANALYSIS);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 		if (entryPoint) {
 			builder.createEntryPoint(String.format("0x%x", start), name);
 		}
@@ -101,15 +84,11 @@ public class ModeLockProgramTest extends AbstractBundledLanguageTest {
 	private void layNmi(String hex) throws Exception {
 		put(NMI, hex);
 		makeFunction(NMI, NMI + hex.split(" ").length - 1, "NMI", false);
-		int tx = program.startTransaction("async entries");
-		try {
+		inTx(program, "async entries", () -> {
 			program.getOptions(Program.PROGRAM_INFO).setString(
 				DescriptorSupport.ASYNC_ENTRY_POINTS_PROPERTY,
 				DescriptorSupport.formatAsyncEntryPoints(List.of(addr(NMI))));
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 	}
 
 	private BoardDescriptorModel.BoardModel board() {

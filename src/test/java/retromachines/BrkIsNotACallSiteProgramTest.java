@@ -105,16 +105,12 @@ public class BrkIsNotACallSiteProgramTest extends AbstractBundledLanguageTest {
 		builder.createEntryPoint("0xffe0", "RESET");
 
 		AutoAnalysisManager mgr = AutoAnalysisManager.getAnalysisManager(program);
-		int tx = program.startTransaction("analyze");
-		try {
+		inTx(program, "analyze", () -> {
 			program.getFunctionManager().createFunction("RESET", builder.addr("0xffe0"),
 				new AddressSet(builder.addr("0xffe0"), builder.addr("0xffe1")), SourceType.ANALYSIS);
 			mgr.reAnalyzeAll(null);
 			mgr.startAnalysis(TaskMonitor.DUMMY);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 
 		Instruction brk = program.getListing().getInstructionAt(builder.addr("0x8003"));
 		assertFalse("BRK's flow is a computed jump (goto [*:2 target]), never a call -- see the " +

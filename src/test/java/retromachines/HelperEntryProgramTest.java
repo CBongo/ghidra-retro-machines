@@ -83,13 +83,9 @@ public class HelperEntryProgramTest extends AbstractBundledLanguageTest {
 	}
 
 	private void makeThunk(Function thunk, Function thunked) throws Exception {
-		int tx = program.startTransaction("set thunked function");
-		try {
+		inTx(program, "set thunked function", () -> {
 			thunk.setThunkedFunction(thunked);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 	}
 
 	// ------------------------------------------------------------------

@@ -16,7 +16,9 @@
 package retromachines;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
+import static retromachines.StoredValueScannerTestSupport.NO_HOOKS;
+import static retromachines.StoredValueScannerTestSupport.assertBank;
+import static retromachines.StoredValueScannerTestSupport.assertUnresolved;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -24,7 +26,6 @@ import org.junit.Test;
 import com.google.gson.JsonObject;
 
 import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.mem.MemoryBlock;
@@ -38,10 +39,7 @@ import ghidra.program.model.mem.MemoryBlock;
  * Fixture note inherited from {@link StoreForwardingProgramTest}: {@link ProgramBuilder} blocks
  * are created read-only, so every RAM block must be made writable explicitly.
  */
-public class PushPullValueCarryingProgramTest extends AbstractBundledLanguageTest {
-
-	private ProgramBuilder builder;
-	private ProgramDB program;
+public class PushPullValueCarryingProgramTest extends AbstractProgramTest {
 
 	@Before
 	public void setUp() throws Exception {
@@ -54,16 +52,6 @@ public class PushPullValueCarryingProgramTest extends AbstractBundledLanguageTes
 		makeWritable(ram);
 	}
 
-	private void makeWritable(MemoryBlock block) {
-		int tx = program.startTransaction("set block write permission");
-		try {
-			block.setWrite(true);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
-	}
-
 	/** An AxROM-shaped latch: the whole ROM area, no address decode, 3-bit field. */
 	private MemoryLatchBankSwitchStrategy axromLatch() {
 		JsonObject params = new JsonObject();
@@ -74,36 +62,6 @@ public class PushPullValueCarryingProgramTest extends AbstractBundledLanguageTes
 		strategy.configure(program, params, 0x07);
 		return strategy;
 	}
-
-	private Instruction instructionAt(String address) {
-		Instruction instr = program.getListing().getInstructionAt(builder.addr(address));
-		assertNotNull("nothing disassembled at " + address, instr);
-		return instr;
-	}
-
-	private void assertBank(int expected, MechanismState actual) {
-		assertEquals("tracked bits not fully known: " + actual, 0x07, actual.knownMask());
-		assertEquals(expected, actual.bits());
-	}
-
-	private void assertUnresolved(MechanismState actual) {
-		assertEquals("expected no tracked bit to be pinned down, got " + actual, 0,
-			actual.knownMask());
-	}
-
-	/** Hooks that answer neither question -- same shape as every other test file's NO_HOOKS. */
-	private static final StoredValueScanner.Hooks NO_HOOKS = new StoredValueScanner.Hooks() {
-		@Override
-		public boolean isMechanismWrite(Instruction instr) {
-			return false;
-		}
-
-		@Override
-		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-				MechanismState inStateAtStore) {
-			return null;
-		}
-	};
 
 	// ------------------------------------------------------------------
 	// 1. Simple pair

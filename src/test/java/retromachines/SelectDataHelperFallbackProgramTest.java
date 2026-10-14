@@ -16,15 +16,12 @@
 package retromachines;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
 
 import org.junit.Before;
 import org.junit.Test;
 
 import com.google.gson.JsonObject;
 
-import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
 import ghidra.program.model.listing.Instruction;
 
 import retromachines.BankSwitchStrategy.HelperDeposit;
@@ -44,10 +41,8 @@ import retromachines.BankSwitchStrategy.HelperDeposit;
  * directly -- the simplest fixture that exercises the fallback without needing a real
  * multi-instruction prologue.
  */
-public class SelectDataHelperFallbackProgramTest extends AbstractBundledLanguageTest {
+public class SelectDataHelperFallbackProgramTest extends AbstractProgramTest {
 
-	private ProgramBuilder builder;
-	private ProgramDB program;
 
 	@Before
 	public void setUp() throws Exception {
@@ -91,12 +86,6 @@ public class SelectDataHelperFallbackProgramTest extends AbstractBundledLanguage
 	/** {@code select} known as 1 (the tracked target), {@code r} left unknown. */
 	private MechanismState selectKnownAsOne() {
 		return new MechanismState(0x0F, 0x01);
-	}
-
-	private Instruction instructionAt(String address) {
-		Instruction instr = program.getListing().getInstructionAt(builder.addr(address));
-		assertNotNull("nothing disassembled at " + address, instr);
-		return instr;
 	}
 
 	/**

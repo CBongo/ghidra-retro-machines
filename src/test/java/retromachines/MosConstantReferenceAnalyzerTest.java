@@ -84,15 +84,9 @@ public class MosConstantReferenceAnalyzerTest extends AbstractBundledLanguageTes
 			Address start) throws Exception {
 		assertTrue("canAnalyze should be true for this processor's program",
 			analyzer.canAnalyze(program));
-		int tx = program.startTransaction("analyze");
-		boolean success = false;
-		try {
+		inTxCommitOnSuccess(program, "analyze", () -> {
 			analyzer.analyzeLocation(program, start, null, TaskMonitor.DUMMY);
-			success = true;
-		}
-		finally {
-			program.endTransaction(tx, success);
-		}
+		});
 	}
 
 	@Test
@@ -244,9 +238,7 @@ public class MosConstantReferenceAnalyzerTest extends AbstractBundledLanguageTes
 		ProgramDB offProgram = offBuilder.getProgram();
 		Mos6502ConstantReferenceAnalyzer offAnalyzer = new Mos6502ConstantReferenceAnalyzer();
 		assertTrue(offAnalyzer.canAnalyze(offProgram)); // also computes per-program defaults
-		int tx = offProgram.startTransaction("configure+analyze");
-		boolean success = false;
-		try {
+		inTxCommitOnSuccess(offProgram, "configure+analyze", () -> {
 			Options options = offProgram.getOptions(Program.ANALYSIS_PROPERTIES);
 			offAnalyzer.registerOptions(options, offProgram);
 			options.setBoolean(MosConstantReferenceAnalyzer.OPTION_NAME_INDEXED_BASE, false);
@@ -254,11 +246,7 @@ public class MosConstantReferenceAnalyzerTest extends AbstractBundledLanguageTes
 			assertFalse(offAnalyzer.referenceIndexedBase);
 			offAnalyzer.analyzeLocation(offProgram, offBuilder.addr("0x8000"), null,
 				TaskMonitor.DUMMY);
-			success = true;
-		}
-		finally {
-			offProgram.endTransaction(tx, success);
-		}
+		});
 		Instruction offInstr = offProgram.getListing().getInstructionAt(offBuilder.addr("0x8002"));
 		assertNotNull(offInstr);
 		Set<Address> offTargets = nonFlowTargets(offInstr);
@@ -282,20 +270,14 @@ public class MosConstantReferenceAnalyzerTest extends AbstractBundledLanguageTes
 		Mos6502ConstantReferenceAnalyzer analyzer = new Mos6502ConstantReferenceAnalyzer();
 		assertTrue(analyzer.canAnalyze(program));
 
-		int tx = program.startTransaction("configure+analyze");
-		boolean success = false;
-		try {
+		inTxCommitOnSuccess(program, "configure+analyze", () -> {
 			Options options = program.getOptions(Program.ANALYSIS_PROPERTIES);
 			analyzer.registerOptions(options, program);
 			options.setBoolean(MosConstantReferenceAnalyzer.OPTION_NAME_INDEXED_BASE, false);
 			analyzer.optionsChanged(options, program);
 			assertFalse(analyzer.referenceIndexedBase);
 			analyzer.analyzeLocation(program, builder.addr("0x8000"), null, TaskMonitor.DUMMY);
-			success = true;
-		}
-		finally {
-			program.endTransaction(tx, success);
-		}
+		});
 
 		Instruction lda = program.getListing().getInstructionAt(builder.addr("0x8002"));
 		assertNotNull(lda);

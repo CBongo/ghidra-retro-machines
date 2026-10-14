@@ -29,7 +29,6 @@ import org.junit.Before;
 import org.junit.Test;
 
 import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Instruction;
@@ -69,12 +68,10 @@ import retromachines.HelperDiscovery.Relay;
  * shape) failing in the full synthetic gate; those criteria were then corrected to accept the
  * new honest NOTE rather than the recognizer narrowed to dodge them.
  */
-public class HelperNoArgumentRestoreProgramTest extends AbstractBundledLanguageTest {
+public class HelperNoArgumentRestoreProgramTest extends AbstractProgramTest {
 
 	private static final int FULL_MASK = 0x0F;
 
-	private ProgramBuilder builder;
-	private ProgramDB program;
 
 	@Before
 	public void setUp() throws Exception {
@@ -86,20 +83,6 @@ public class HelperNoArgumentRestoreProgramTest extends AbstractBundledLanguageT
 		MemoryBlock ram = builder.createMemory("RAM", "0x0000", 0x800);
 		program = builder.getProgram();
 		makeWritable(ram);
-	}
-
-	private void makeWritable(MemoryBlock block) {
-		int tx = program.startTransaction("set block write permission");
-		try {
-			block.setWrite(true);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
-	}
-
-	private Address addr(long a) {
-		return builder.addr(String.format("0x%04x", a));
 	}
 
 	/** A pass-through-wrapper-shaped model: {@code function} is the wrapper itself, relay null. */

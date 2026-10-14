@@ -34,10 +34,7 @@ import org.junit.Test;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
-import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
 import ghidra.program.model.address.AddressSpace;
-import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.mem.MemoryBlock;
 
 import retromachines.HelperArgumentRecovery.CallEffect;
@@ -64,10 +61,8 @@ import retromachines.HelperDiscovery.HelperModel;
  * field is not the cell's window). The grm-oj20 memory-latch case keeps its own pin in
  * {@code CallCrossingPushPullProgramTest}; a stack-reload variant of it is added here.
  */
-public class StackReloadReadBackProgramTest extends AbstractBundledLanguageTest {
+public class StackReloadReadBackProgramTest extends AbstractProgramTest {
 
-	private ProgramBuilder builder;
-	private ProgramDB program;
 
 	@Before
 	public void setUp() throws Exception {
@@ -75,23 +70,9 @@ public class StackReloadReadBackProgramTest extends AbstractBundledLanguageTest 
 		MemoryBlock ram = builder.createMemory("RAM", "0x0", 0x800);
 		builder.createMemory("PRG", "0x8000", 0x8000);
 		program = builder.getProgram();
-		int tx = program.startTransaction("set block write permission");
-		try {
+		inTx(program, "set block write permission", () -> {
 			ram.setWrite(true);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
-	}
-
-	private void put(String address, String hex) throws Exception {
-		builder.setBytes(address, hex, true);
-	}
-
-	private Instruction instructionAt(String address) {
-		Instruction instr = program.getListing().getInstructionAt(builder.addr(address));
-		assertNotNull("nothing disassembled at " + address, instr);
-		return instr;
+		});
 	}
 
 	// ------------------------------------------------------------------
@@ -353,14 +334,10 @@ public class StackReloadReadBackProgramTest extends AbstractBundledLanguageTest 
 		assertNotNull(value);
 		assertNull(DescriptorSupport.formatMembershipHints(
 			JsonParser.parseString("{ \"schema\": 2 }").getAsJsonObject(), "x"));
-		int tx = program.startTransaction("set property");
-		try {
+		inTx(program, "set property", () -> {
 			program.getOptions(ghidra.program.model.listing.Program.PROGRAM_INFO).setString(
 				DescriptorSupport.BANK_IDENTIFYING_HINTS_PROPERTY, value);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 		List<String> problems = new ArrayList<>();
 		List<BankMirrors.MembershipHint> hints =
 			DescriptorSupport.parseMembershipHints(program, problems);

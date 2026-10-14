@@ -20,6 +20,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static retromachines.StoredValueScannerTestSupport.NO_HOOKS;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -32,7 +33,6 @@ import org.junit.Test;
 import com.google.gson.JsonObject;
 
 import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.listing.Instruction;
@@ -61,10 +61,8 @@ import retromachines.HelperDiscovery.HelperModel;
  * an identity over the field and whose index arrives as a provable read-back of the bank number.
  * </ol>
  */
-public class IdentityTableIndexHelperProgramTest extends AbstractBundledLanguageTest {
+public class IdentityTableIndexHelperProgramTest extends AbstractProgramTest {
 
-	private ProgramBuilder builder;
-	private ProgramDB program;
 	private MemoryBlock prg;
 
 	@Before
@@ -76,26 +74,6 @@ public class IdentityTableIndexHelperProgramTest extends AbstractBundledLanguage
 		makeWritable(zp);
 	}
 
-	private void makeWritable(MemoryBlock block) {
-		int tx = program.startTransaction("set block write permission");
-		try {
-			block.setWrite(true);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
-	}
-
-	private Instruction instructionAt(String address) {
-		Instruction instr = program.getListing().getInstructionAt(builder.addr(address));
-		assertNotNull("nothing disassembled at " + address, instr);
-		return instr;
-	}
-
-	private void put(String address, String hex) throws Exception {
-		builder.setBytes(address, hex, true);
-	}
-
 	private void putData(String address, String hex) throws Exception {
 		builder.setBytes(address, hex);
 	}
@@ -103,20 +81,6 @@ public class IdentityTableIndexHelperProgramTest extends AbstractBundledLanguage
 	// ==================================================================
 	// Scanner-level fixtures: TAX/TAY renaming (StoredValueScanner.resolveStoredValue)
 	// ==================================================================
-
-	/** Hooks that answer neither question -- direct-site, no mirrors, no oracle. */
-	private static final StoredValueScanner.Hooks NO_HOOKS = new StoredValueScanner.Hooks() {
-		@Override
-		public boolean isMechanismWrite(Instruction instr) {
-			return false;
-		}
-
-		@Override
-		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-				MechanismState inStateAtStore) {
-			return null;
-		}
-	};
 
 	/**
 	 * 1. {@code LDA #$05 / TAY / STY $8000}: a Y-tracked walk meeting {@code TAY} renames to A and

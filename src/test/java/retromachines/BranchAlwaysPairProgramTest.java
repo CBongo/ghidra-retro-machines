@@ -66,8 +66,7 @@ public class BranchAlwaysPairProgramTest extends AbstractBundledLanguageTest {
 	}
 
 	private Function runAnalyzer(ProgramDB program) throws Exception {
-		int tx = program.startTransaction("analyze");
-		try {
+		return inTxGet(program, "analyze", () -> {
 			CreateFunctionCmd cmd = new CreateFunctionCmd(addr(0x8000));
 			cmd.applyTo(program, TaskMonitor.DUMMY);
 			Function function = cmd.getFunction();
@@ -78,10 +77,7 @@ public class BranchAlwaysPairProgramTest extends AbstractBundledLanguageTest {
 			analyzer.added(program, program.getMemory().getLoadedAndInitializedAddressSet(),
 				TaskMonitor.DUMMY, new MessageLog());
 			return function;
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 	}
 
 	@Test

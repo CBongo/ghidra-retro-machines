@@ -17,7 +17,6 @@ package retromachines;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 
 import java.util.EnumSet;
@@ -25,12 +24,9 @@ import java.util.Set;
 
 import org.junit.Test;
 
-import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Program;
-import ghidra.program.model.mem.MemoryBlock;
 
 import retromachines.BoardBankAnalyzer.ConstantSemanticsMode;
 import retromachines.ConstantSemantics.Inputs;
@@ -47,22 +43,14 @@ import retromachines.ConstantSemantics.Loc;
  * evaluator) is covered by {@link PcodeConstantSemanticsDifferentialTest} and the option test
  * below.
  */
-public class PcodeConstantSemanticsProgramTest extends AbstractBundledLanguageTest {
+public class PcodeConstantSemanticsProgramTest extends AbstractProgramTest {
 
-	private ProgramBuilder builder;
-	private ProgramDB program;
 
 	private void build(String languageId) throws Exception {
 		builder = newBuilder("Test", languageId);
 		builder.createMemory(".zp", "0x0", 0x100);
 		builder.createMemory("PRG", "0x8000", 0x8000);
 		program = builder.getProgram();
-	}
-
-	private Instruction instructionAt(String address) {
-		Instruction instr = program.getListing().getInstructionAt(builder.addr(address));
-		assertNotNull("nothing disassembled at " + address, instr);
-		return instr;
 	}
 
 	/** An {@link Inputs} with fixed answers for {@link Loc#A}/{@link Loc#C}, {@code null}
@@ -326,15 +314,11 @@ public class PcodeConstantSemanticsProgramTest extends AbstractBundledLanguageTe
 	@Test
 	public void optionSelectsPcodeUnderEitherAnalyzerName() throws Exception {
 		build("6502:LE:16:default");
-		int tx = program.startTransaction("set option");
-		try {
+		inTx(program, "set option", () -> {
 			program.getOptions(Program.ANALYSIS_PROPERTIES)
 					.getOptions(C64BankingAnalyzer.NAME)
 					.setEnum(BoardBankAnalyzer.CONSTANT_SEMANTICS_OPTION, ConstantSemanticsMode.PCODE);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 		assertEquals(ConstantSemanticsMode.PCODE, BoardBankAnalyzer.constantSemanticsMode(program));
 	}
 
@@ -345,13 +329,9 @@ public class PcodeConstantSemanticsProgramTest extends AbstractBundledLanguageTe
 		build("6502:LE:16:default");
 		ghidra.framework.options.Options options =
 			program.getOptions(Program.ANALYSIS_PROPERTIES).getOptions(NesBankingAnalyzer.NAME);
-		int tx = program.startTransaction("register options");
-		try {
+		inTx(program, "register options", () -> {
 			new NesBankingAnalyzer().registerOptions(options, program);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 		// Passing PCODE as getEnum's own fallback here: if registerOptions had NOT seeded
 		// TABLE as the option's actual default/current value, this would come back PCODE.
 		assertEquals(ConstantSemanticsMode.TABLE,

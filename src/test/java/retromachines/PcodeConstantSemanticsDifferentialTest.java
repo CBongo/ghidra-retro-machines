@@ -18,11 +18,11 @@ package retromachines;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static retromachines.StoredValueScannerTestSupport.NO_HOOKS;
 
 import org.junit.Test;
 
 import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Program;
@@ -51,10 +51,7 @@ import retromachines.ConstantSemantics.Loc;
  * in an {@code expectedDifference*} (or, for one case that turned out to AGREE despite looking
  * like it should not, {@code agreeingLax*}) method, each constructed specifically to land on it.
  */
-public class PcodeConstantSemanticsDifferentialTest extends AbstractBundledLanguageTest {
-
-	private ProgramBuilder builder;
-	private ProgramDB program;
+public class PcodeConstantSemanticsDifferentialTest extends AbstractProgramTest {
 
 	private void build(String languageId) throws Exception {
 		builder = newBuilder("Test", languageId);
@@ -66,45 +63,17 @@ public class PcodeConstantSemanticsDifferentialTest extends AbstractBundledLangu
 		makeWritable(ram);
 	}
 
-	private void makeWritable(MemoryBlock block) {
-		int tx = program.startTransaction("set block write permission");
-		try {
-			block.setWrite(true);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
-	}
-
 	/** Sets the {@code Constant Evaluator} option directly (no {@code AutoAnalysisManager} runs
 	 * under a plain {@link ProgramBuilder} fixture) -- under BOTH analyzer names, since a test
 	 * program carries neither loader's marker and either sub-{@link Options} would do. */
 	private void setMode(ConstantSemanticsMode mode) {
-		int tx = program.startTransaction("set constant evaluator mode");
-		try {
+		inTx(program, "set constant evaluator mode", () -> {
 			ghidra.framework.options.Options analysisOptions =
 				program.getOptions(Program.ANALYSIS_PROPERTIES);
 			analysisOptions.getOptions(NesBankingAnalyzer.NAME)
 					.setEnum(BoardBankAnalyzer.CONSTANT_SEMANTICS_OPTION, mode);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 	}
-
-	/** Hooks that resolve no load -- same shape as every other test file's NO_HOOKS. */
-	private static final StoredValueScanner.Hooks NO_HOOKS = new StoredValueScanner.Hooks() {
-		@Override
-		public boolean isMechanismWrite(Instruction instr) {
-			return false;
-		}
-
-		@Override
-		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-				MechanismState inStateAtStore) {
-			return null;
-		}
-	};
 
 	/** Hooks that answer a load of {@code $9000} with {@code $3C}. */
 	private static final StoredValueScanner.Hooks ROM_9000 = new StoredValueScanner.Hooks() {

@@ -24,9 +24,6 @@ import org.junit.Test;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 
-import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
-import ghidra.program.model.listing.Instruction;
 import retromachines.BankSwitchStrategy.SwitchOutcome;
 import retromachines.BankSwitchStrategy.ValueStop;
 
@@ -47,7 +44,7 @@ import retromachines.BankSwitchStrategy.ValueStop;
  * said about it. A test that only checked the stop reason would pass just as happily if the echo
  * had been replaced by a poison.
  */
-public class NoDepositSiteProgramTest extends AbstractBundledLanguageTest {
+public class NoDepositSiteProgramTest extends AbstractProgramTest {
 
 	/** mirroring(2) | prg_mode(2) | prg_bank(5), matching machines/nes-mmc1.yaml. */
 	private static final int MMC1_STATE_MASK = 0x1FF;
@@ -59,8 +56,6 @@ public class NoDepositSiteProgramTest extends AbstractBundledLanguageTest {
 	/** select(3) | prg0(6) | prg1(6), a stripped MMC3-shaped packing. */
 	private static final int MMC3_STATE_MASK = 0x7FFF;
 
-	private ProgramBuilder builder;
-	private ProgramDB program;
 
 	@Before
 	public void setUp() throws Exception {
@@ -156,15 +151,6 @@ public class NoDepositSiteProgramTest extends AbstractBundledLanguageTest {
 		return strategy;
 	}
 
-	private Instruction instructionAt(String address) {
-		Instruction instr = program.getListing().getInstructionAt(builder.addr(address));
-		assertNotNull("nothing disassembled at " + address, instr);
-		return instr;
-	}
-
-	private static String hex(long addr) {
-		return String.format("0x%x", addr);
-	}
 
 	private static String staAbs(int offset) {
 		return String.format("8d %02x %02x", offset & 0xFF, (offset >>> 8) & 0xFF);

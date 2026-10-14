@@ -70,15 +70,9 @@ public class CbmPrgLoaderDegradeTest extends AbstractBundledLanguageTest {
 		ImporterSettings settings = new ImporterSettings(
 			new ByteArrayProvider("t.prg", prg), "t.prg", null, null, false, null,
 			List.<Option>of(), new Object(), log, TaskMonitor.DUMMY);
-		int tx = program.startTransaction("load");
-		boolean commit = false;
-		try {
+		inTxCommitOnSuccess(program, "load", () -> {
 			new CraftedMapLoader(map).load(program, settings);
-			commit = true;
-		}
-		finally {
-			program.endTransaction(tx, commit);
-		}
+		});
 		return log;
 	}
 

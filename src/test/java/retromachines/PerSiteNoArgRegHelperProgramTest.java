@@ -17,7 +17,6 @@ package retromachines;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import java.util.ArrayList;
@@ -30,8 +29,6 @@ import org.junit.Test;
 
 import com.google.gson.JsonObject;
 
-import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.listing.Instruction;
 
@@ -59,10 +56,8 @@ import retromachines.HelperDiscovery.HelperModel;
  * shape is rcransom's {@code FUN_ff29}: {@code LDA #$07 / STA $8000} ... {@code LDA $fb /
  * STA $8000} -- the folded select must be UNKNOWN, not the stale 7.
  */
-public class PerSiteNoArgRegHelperProgramTest extends AbstractBundledLanguageTest {
+public class PerSiteNoArgRegHelperProgramTest extends AbstractProgramTest {
 
-	private ProgramBuilder builder;
-	private ProgramDB program;
 
 	@Before
 	public void setUp() throws Exception {
@@ -106,12 +101,6 @@ public class PerSiteNoArgRegHelperProgramTest extends AbstractBundledLanguageTes
 	private static final int SELECT_MASK = 0x00F;
 	private static final int R6_MASK = 0x0F0;
 	private static final int R7_MASK = 0xF00;
-
-	private Instruction instructionAt(String address) {
-		Instruction instr = program.getListing().getInstructionAt(builder.addr(address));
-		assertNotNull("nothing disassembled at " + address, instr);
-		return instr;
-	}
 
 	/** argReg = null, all sites listed, switchSite = max site, firstSite = min site. */
 	private HelperModel nullArgRegModel(BankSwitchStrategy strategy, String... sites) {

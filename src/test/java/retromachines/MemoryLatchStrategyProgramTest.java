@@ -27,7 +27,6 @@ import org.junit.Test;
 import com.google.gson.JsonObject;
 
 import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.listing.Instruction;
@@ -51,10 +50,8 @@ import ghidra.program.model.symbol.SourceType;
  * All boards using {@code memory-latch} are NES discrete mappers, whose latch range is the
  * whole {@code $8000-$FFFF} ROM area; the fixture mirrors that.
  */
-public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest {
+public class MemoryLatchStrategyProgramTest extends AbstractProgramTest {
 
-	private ProgramBuilder builder;
-	private ProgramDB program;
 	private MemoryBlock prg;
 
 	@Before
@@ -121,28 +118,8 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 		setWritable(prg, false);
 	}
 
-	private void makeWritable(MemoryBlock block) {
-		setWritable(block, true);
-	}
-
 	private void makeReadOnly(MemoryBlock block) {
 		setWritable(block, false);
-	}
-
-	private void setWritable(MemoryBlock block, boolean writable) {
-		int tx = program.startTransaction("set block write permission");
-		try {
-			block.setWrite(writable);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
-	}
-
-	private Instruction instructionAt(String address) {
-		Instruction instr = program.getListing().getInstructionAt(builder.addr(address));
-		assertNotNull("nothing disassembled at " + address, instr);
-		return instr;
 	}
 
 	/**
@@ -175,15 +152,11 @@ public class MemoryLatchStrategyProgramTest extends AbstractBundledLanguageTest 
 	 * at all, so the reference those tests are about has to be constructed rather than observed.
 	 */
 	private void addWriteReference(Instruction instr, Address to) {
-		int tx = program.startTransaction("add write reference");
-		try {
+		inTx(program, "add write reference", () -> {
 			program.getReferenceManager()
 					.addMemoryReference(instr.getMinAddress(), to, RefType.READ_WRITE,
 						SourceType.ANALYSIS, 0);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 	}
 
 	// ------------------------------------------------------------------

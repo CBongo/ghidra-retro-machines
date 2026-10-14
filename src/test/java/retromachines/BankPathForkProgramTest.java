@@ -33,7 +33,6 @@ import com.google.gson.JsonParser;
 
 import ghidra.app.util.importer.MessageLog;
 import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.listing.Instruction;
@@ -59,10 +58,8 @@ import ghidra.util.task.TaskMonitor;
  * UxROM shape (mask {@code 0x0F}, no bus conflict needed here since the driven values never
  * collide with a ROM byte).
  */
-public class BankPathForkProgramTest extends AbstractBundledLanguageTest {
+public class BankPathForkProgramTest extends AbstractProgramTest {
 
-	private ProgramBuilder builder;
-	private ProgramDB program;
 
 	@Before
 	public void setUp() throws Exception {
@@ -75,14 +72,6 @@ public class BankPathForkProgramTest extends AbstractBundledLanguageTest {
 	// ------------------------------------------------------------------
 	// Fixture plumbing
 	// ------------------------------------------------------------------
-
-	private void put(int addr, String hex) throws Exception {
-		builder.setBytes(String.format("0x%x", addr), hex, true);
-	}
-
-	private Address addr(int a) {
-		return builder.addr(String.format("0x%x", a));
-	}
 
 	/** A single 4-bit {@code bank} field board, matching every E2E fork fixture's mask. */
 	private BoardDescriptorModel.BoardModel board() {
@@ -121,14 +110,10 @@ public class BankPathForkProgramTest extends AbstractBundledLanguageTest {
 	private void makeFunction(int start, int endInclusive, String name) throws Exception {
 		Address startAddr = addr(start);
 		Address endAddr = addr(endInclusive);
-		int tx = program.startTransaction("create function");
-		try {
+		inTx(program, "create function", () -> {
 			program.getFunctionManager().createFunction(name, startAddr,
 				new AddressSet(startAddr, endAddr), SourceType.ANALYSIS);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 		builder.createEntryPoint(String.format("0x%x", start), name);
 	}
 

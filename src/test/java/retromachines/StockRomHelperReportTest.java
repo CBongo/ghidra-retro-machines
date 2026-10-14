@@ -54,14 +54,10 @@ public class StockRomHelperReportTest extends AbstractBundledLanguageTest {
 		MemoryBlock kernal = builder.createMemory("KERNAL", "0xe000", 0x2000);
 		program = builder.getProgram();
 
-		int tx = program.startTransaction("stamp ROM provenance");
-		try {
+		inTx(program, "stamp ROM provenance", () -> {
 			kernal.setSourceName(DescriptorMemory.STOCK_ROM_SOURCE);
 			kernal.setWrite(false);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 	}
 
 	private Function function(String name, String entry) throws Exception {
@@ -96,13 +92,9 @@ public class StockRomHelperReportTest extends AbstractBundledLanguageTest {
 	@Test
 	public void readOnlyWithoutRomProvenanceIsNot() throws Exception {
 		MemoryBlock prg = program.getMemory().getBlock("PRG");
-		int tx = program.startTransaction("make PRG read-only");
-		try {
+		inTx(program, "make PRG read-only", () -> {
 			prg.setWrite(false);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 		assertFalse("read-only is not the discriminator",
 			DescriptorMemory.inStockSystemRom(program, builder.addr("0x2000")));
 	}

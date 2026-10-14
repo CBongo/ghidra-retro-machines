@@ -29,7 +29,6 @@ import org.junit.Before;
 import org.junit.Test;
 
 import ghidra.program.database.ProgramBuilder;
-import ghidra.program.database.ProgramDB;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.mem.MemoryBlock;
@@ -60,10 +59,8 @@ import ghidra.program.model.mem.MemoryBlock;
  * but the actual mechanism under test, since "in writable memory" is how the pass expresses
  * "outside the latch range".
  */
-public class BankMirrorDerivationProgramTest extends AbstractBundledLanguageTest {
+public class BankMirrorDerivationProgramTest extends AbstractProgramTest {
 
-	private ProgramBuilder builder;
-	private ProgramDB program;
 	private AddressSpace baseSpace;
 
 	@Before
@@ -80,22 +77,8 @@ public class BankMirrorDerivationProgramTest extends AbstractBundledLanguageTest
 		setWritable(ram, true);
 	}
 
-	private void setWritable(MemoryBlock block, boolean writable) {
-		int tx = program.startTransaction("set block write permission");
-		try {
-			block.setWrite(writable);
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
-	}
-
 	private BankMirrors.Discovery discovery() {
 		return new BankMirrors.Discovery(baseSpace);
-	}
-
-	private Address addr(String address) {
-		return builder.addr(address);
 	}
 
 	private Set<BankMirrors.Kind> kindsAt(BankMirrors mirrors, String address) {
@@ -121,13 +104,9 @@ public class BankMirrorDerivationProgramTest extends AbstractBundledLanguageTest
 	private void setBankByte(int bank, long offset, int value) throws Exception {
 		AddressSpace space = bank == 0 ? baseSpace
 				: program.getAddressFactory().getAddressSpace("PRG_LO_B" + bank);
-		int tx = program.startTransaction("write bank image byte");
-		try {
+		inTx(program, "write bank image byte", () -> {
 			program.getMemory().setBytes(space.getAddress(offset), new byte[] { (byte) value });
-		}
-		finally {
-			program.endTransaction(tx, true);
-		}
+		});
 	}
 
 	private Map<Long, BankMirrors.IdentifyingEncoding> identifyingOffsets(int banks) {
