@@ -943,6 +943,17 @@ run_census() {
 		"verdict=$verdict"
 }
 
+# ---- Fixture order (bead grm-w9ev.5 reorder) -------------------------------------------
+# run_one queues plain imports and flush_batch runs them in ONE analyzeHeadless per
+# (loader, loader options) tuple, so fixtures are listed here grouped by tuple, not by chunk.
+# Each chunk still selects exactly the same fixtures: a chunk's rows are spread over several
+# `if selected <chunk>` blocks below, each guarded by that same chunk. Hard ordering that must
+# survive any edit: a log-grep step stays after its fixture's flush; the overlay plant/unplant
+# wraps descoverlaytest and is preceded by a flush; descoverlayctltest runs after the unplant;
+# descexporttest before descreimporttest; each cp-derived alias after its cp. Tuples that differ
+# only by a per-fixture loader option cannot share a batch (copybankedsrcrom, copybankedinplacerom,
+# symtoggle, pet4032test, c128nativebasic7test, snestbltest, nestbltest*, nesmmc1/3overridetest).
+
 if selected c64-banking; then
 	for name in banktest banktest2 banktest3 banktest4; do
 		run_one "$name" "$WORK/prg/$name.prg" C64PrgLoader
@@ -959,28 +970,6 @@ if selected basic-dialects; then
 	run_one c64basictest "$WORK/prg/c64basictest.prg" C64PrgLoader
 	run_one c64basic2tokentest "$WORK/prg/c64basic2tokentest.prg" C64PrgLoader
 	run_one c64basicoverflowtest "$WORK/prg/c64basicoverflowtest.prg" C64PrgLoader
-	run_one petbasic4test "$WORK/prg/petbasic4test.prg" PetPrgLoader
-	run_one c128basic7test "$WORK/prg/c128basic7test.prg" C128PrgLoader
-fi
-
-if selected pet-loader; then
-	run_one pet4032test "$WORK/prg/pet4032test.prg" PetPrgLoader \
-		"-loader-basicRom $(native "$WORK/prg/pet-basic.bin") -loader-editorRom $(native "$WORK/prg/pet-editor.bin") -loader-kernalRom $(native "$WORK/prg/pet-kernal.bin")"
-fi
-
-if selected snes-loader; then
-	# The pair is deliberate: identical cartridges, one behind a 512-byte copier header, so a
-	# regression in copier detection (which shifts every offset in the image) cannot hide.
-	run_one snestest "$WORK/snes/snestest.smc" SnesRomLoader
-	run_one snestestcopier "$WORK/snes/snestestcopier.smc" SnesRomLoader
-	# grm-9nxj.19: an interleaved HiROM image; Auto must de-interleave it (header at logical
-	# $FFC0, stored at $7FC0) -- the reset code is at FILE offset 0, shown as fileOffset=0 at C0:8000.
-	run_one snestestinterleaved "$WORK/snes/snestestinterleaved.smc" SnesRomLoader
-fi
-
-if selected c128-loader; then
-	run_one c128nativebasic7test "$WORK/prg/c128nativebasic7test.prg" C128PrgLoader \
-		"-loader-basicLoRom $(native "$WORK/prg/c128-basic-lo.bin") -loader-basicHiRom $(native "$WORK/prg/c128-basic-hi.bin") -loader-editorRom $(native "$WORK/prg/c128-editor.bin") -loader-kernalRom $(native "$WORK/prg/c128-kernal.bin")"
 fi
 
 if selected c64-recovery; then
@@ -1005,9 +994,6 @@ if selected c64-recovery; then
 	# also what hid the bug, since a supplied dump made KERNAL initialized and refused the
 	# carve for the wrong reason. Same copyhinttest/copyhintnorom pattern used below.
 	run_one copybanked "$WORK/prg/copybanked.prg" C64PrgLoader
-	cp -f "$WORK/prg/copybanked.prg" "$WORK/prg/copybankedrom.prg"
-	run_one copybankedrom "$WORK/prg/copybankedrom.prg" C64PrgLoader \
-		"-loader-kernalRom $(native "$WORK/prg/kernal.bin")"
 
 	# grm-9a0: the mirror case -- a copy loop whose SOURCE is a banked, NON-HOME occupant (the
 	# character ROM, banked in over $D000 by the fixture's own LDA #$33 / STA $01), with an
@@ -1020,9 +1006,6 @@ if selected c64-recovery; then
 	# nothing and the character ROM's bytes were never reached. chargen.bin comes from
 	# mkromtest.py, already generated for this chunk above.
 	run_one copybankedsrc "$WORK/prg/copybankedsrc.prg" C64PrgLoader
-	cp -f "$WORK/prg/copybankedsrc.prg" "$WORK/prg/copybankedsrcrom.prg"
-	run_one copybankedsrcrom "$WORK/prg/copybankedsrcrom.prg" C64PrgLoader \
-		"-loader-chargenRom $(native "$WORK/prg/chargen.bin")"
 
 	# grm-cpj: the SAME-BASE cross-occupant copy -- LDA $A000,X / STA $A000,X, reading the BASIC
 	# ROM and writing the RAM underneath it. Load and store share a base address, which the
@@ -1030,10 +1013,43 @@ if selected c64-recovery; then
 	# sides resolve to different occupants. Run both ways like copybankedsrc: no dump refuses at
 	# gate 0 (BASIC uninitialized), the dump materializes the BASIC bytes inside RAM_A000.
 	run_one copybankedinplace "$WORK/prg/copybankedinplace.prg" C64PrgLoader
-	cp -f "$WORK/prg/copybankedinplace.prg" "$WORK/prg/copybankedinplacerom.prg"
-	run_one copybankedinplacerom "$WORK/prg/copybankedinplacerom.prg" C64PrgLoader \
-		"-loader-basicRom $(native "$WORK/prg/basic.bin")"
+fi
 
+if selected c64-loader; then
+	# Arbitrary-address PRG placement (grm-dvx): base RAM, RAM beneath the three
+	# banked windows, 16-bit wrapping through P6510, and base-space emulation at $C000.
+	run_one prgplacementtest "$WORK/prg/prgplacementtest.prg" C64PrgLoader
+	run_one prgwraptest "$WORK/prg/prgwraptest.prg" C64PrgLoader
+	run_one c000emutest "$WORK/prg/c000emutest.prg" C64PrgLoader
+
+	# grm-gea: exhaustive size/wrap-boundary coverage, following up grm-dvx. The
+	# implementation already enforces every one of these; these fixtures close the
+	# acceptance-test coverage gap identified in grm-dvx's final review.
+	run_one prgnowraptest "$WORK/prg/prgnowraptest.prg" C64PrgLoader
+	run_one prgwrap1test "$WORK/prg/prgwrap1test.prg" C64PrgLoader
+	run_one prgfulltest "$WORK/prg/prgfulltest.prg" C64PrgLoader
+
+	# grm-z15.2: 0x101-byte payload at $FF00 wraps 1 byte to $0000, straddling the
+	# P6510 R6510 struct's memory-block boundary (DDR initialized, PORT not).
+	run_one prgstraddletest "$WORK/prg/prgstraddletest.prg" C64PrgLoader
+
+	# grm-z15.1: entry point in a non-executable block, and a zero-payload PRG.
+	run_one prgentrytest "$WORK/prg/prgentrytest.prg" C64PrgLoader
+
+	cp -f "$WORK/prg/romload.prg" "$WORK/prg/copyhintnorom.prg"
+	run_one copyhintnorom "$WORK/prg/copyhintnorom.prg" C64PrgLoader
+fi
+
+if selected petscii-strings; then
+	run_one petsciistringtest "$WORK/prg/petsciistringtest.prg" C64PrgLoader
+fi
+
+if selected c64-loader; then
+	run_reject prgoverflowtest "$WORK/prg/prgoverflowtest.prg" C64PrgLoader \
+		"16-bit CBM image may contain at most 65536 bytes"
+fi
+
+if selected c64-recovery; then
 	# The MANUAL run-from-elsewhere front-end (grm-1.7.1.1): the shipped
 	# ghidra_scripts/RunFromElsewhereTransfer.java driven as a -preScript, which is the only
 	# regression path the manual front-ends have (the GUI plugin is untestable here -- see
@@ -1060,28 +1076,24 @@ if selected c64-recovery; then
 	fi
 fi
 
+if selected c64-recovery; then
+	cp -f "$WORK/prg/copybanked.prg" "$WORK/prg/copybankedrom.prg"
+	run_one copybankedrom "$WORK/prg/copybankedrom.prg" C64PrgLoader \
+		"-loader-kernalRom $(native "$WORK/prg/kernal.bin")"
+fi
+
 if selected c64-loader; then
-	# Arbitrary-address PRG placement (grm-dvx): base RAM, RAM beneath the three
-	# banked windows, 16-bit wrapping through P6510, and base-space emulation at $C000.
-	run_one prgplacementtest "$WORK/prg/prgplacementtest.prg" C64PrgLoader
-	run_one prgwraptest "$WORK/prg/prgwraptest.prg" C64PrgLoader
-	run_one c000emutest "$WORK/prg/c000emutest.prg" C64PrgLoader
+	# Descriptor copied_from boot-copy hint (bead grm-1.7.1.2): machines/c64.yaml declares
+	# CHRGET as 0x18 bytes of KERNAL $E3A2 copied to $0073. With the synthetic KERNAL supplied
+	# the hint must materialize in the base space holding $A2..$B9; with NO ROM option the
+	# directive must be ignored outright (no block, no overlay fallback) -- the ROM-gated rule
+	# of docs/smc-inplace-vs-overlay.md section 6. Reuses romload.prg as an ordinary C64 PRG.
+	cp -f "$WORK/prg/romload.prg" "$WORK/prg/copyhinttest.prg"
+	run_one copyhinttest "$WORK/prg/copyhinttest.prg" C64PrgLoader \
+		"-loader-kernalRom $(native "$WORK/prg/kernal.bin")"
+fi
 
-	# grm-gea: exhaustive size/wrap-boundary coverage, following up grm-dvx. The
-	# implementation already enforces every one of these; these fixtures close the
-	# acceptance-test coverage gap identified in grm-dvx's final review.
-	run_one prgnowraptest "$WORK/prg/prgnowraptest.prg" C64PrgLoader
-	run_one prgwrap1test "$WORK/prg/prgwrap1test.prg" C64PrgLoader
-	run_one prgfulltest "$WORK/prg/prgfulltest.prg" C64PrgLoader
-	run_reject prgoverflowtest "$WORK/prg/prgoverflowtest.prg" C64PrgLoader \
-		"16-bit CBM image may contain at most 65536 bytes"
-
-	# grm-z15.2: 0x101-byte payload at $FF00 wraps 1 byte to $0000, straddling the
-	# P6510 R6510 struct's memory-block boundary (DDR initialized, PORT not).
-	run_one prgstraddletest "$WORK/prg/prgstraddletest.prg" C64PrgLoader
-
-	# grm-z15.1: entry point in a non-executable block, and a zero-payload PRG.
-	run_one prgentrytest "$WORK/prg/prgentrytest.prg" C64PrgLoader
+if selected c64-loader; then
 	# A zero-payload PRG places no bytes anywhere, so with no ROM images supplied the
 	# whole memory map would stay uninitialized and analyzeHeadless refuses to import
 	# ("No memory blocks were defined") before VerifyBankTest ever runs. Supply the
@@ -1095,18 +1107,19 @@ if selected c64-loader; then
 	# initialized. Exercises the same command-line option path a headless user would use.
 	run_one romload "$WORK/prg/romload.prg" C64PrgLoader \
 		"-loader-kernalRom $(native "$WORK/prg/kernal.bin") -loader-basicRom $(native "$WORK/prg/basic.bin") -loader-chargenRom $(native "$WORK/prg/chargen.bin")"
+fi
 
-	# Descriptor copied_from boot-copy hint (bead grm-1.7.1.2): machines/c64.yaml declares
-	# CHRGET as 0x18 bytes of KERNAL $E3A2 copied to $0073. With the synthetic KERNAL supplied
-	# the hint must materialize in the base space holding $A2..$B9; with NO ROM option the
-	# directive must be ignored outright (no block, no overlay fallback) -- the ROM-gated rule
-	# of docs/smc-inplace-vs-overlay.md section 6. Reuses romload.prg as an ordinary C64 PRG.
-	cp -f "$WORK/prg/romload.prg" "$WORK/prg/copyhinttest.prg"
-	run_one copyhinttest "$WORK/prg/copyhinttest.prg" C64PrgLoader \
-		"-loader-kernalRom $(native "$WORK/prg/kernal.bin")"
-	cp -f "$WORK/prg/romload.prg" "$WORK/prg/copyhintnorom.prg"
-	run_one copyhintnorom "$WORK/prg/copyhintnorom.prg" C64PrgLoader
+if selected c64-recovery; then
+	cp -f "$WORK/prg/copybankedsrc.prg" "$WORK/prg/copybankedsrcrom.prg"
+	run_one copybankedsrcrom "$WORK/prg/copybankedsrcrom.prg" C64PrgLoader \
+		"-loader-chargenRom $(native "$WORK/prg/chargen.bin")"
 
+	cp -f "$WORK/prg/copybankedinplace.prg" "$WORK/prg/copybankedinplacerom.prg"
+	run_one copybankedinplacerom "$WORK/prg/copybankedinplacerom.prg" C64PrgLoader \
+		"-loader-basicRom $(native "$WORK/prg/basic.bin")"
+fi
+
+if selected c64-loader; then
 	# Symbol-set toggle (bead grm-zlj): import with the basic-zeropage checkbox on (a
 	# default-off set) and assert it -- and only it -- was applied. Reuses any valid C64 PRG.
 	cp -f "$WORK/prg/romload.prg" "$WORK/prg/symtoggle.prg"
@@ -1114,96 +1127,48 @@ if selected c64-loader; then
 		"-loader-symbols-basic-zeropage true"
 fi
 
+if selected basic-dialects; then
+	run_one petbasic4test "$WORK/prg/petbasic4test.prg" PetPrgLoader
+fi
+
+if selected pet-loader; then
+	run_one pet4032test "$WORK/prg/pet4032test.prg" PetPrgLoader \
+		"-loader-basicRom $(native "$WORK/prg/pet-basic.bin") -loader-editorRom $(native "$WORK/prg/pet-editor.bin") -loader-kernalRom $(native "$WORK/prg/pet-kernal.bin")"
+fi
+
+if selected basic-dialects; then
+	run_one c128basic7test "$WORK/prg/c128basic7test.prg" C128PrgLoader
+fi
+
+if selected c128-loader; then
+	run_one c128nativebasic7test "$WORK/prg/c128nativebasic7test.prg" C128PrgLoader \
+		"-loader-basicLoRom $(native "$WORK/prg/c128-basic-lo.bin") -loader-basicHiRom $(native "$WORK/prg/c128-basic-hi.bin") -loader-editorRom $(native "$WORK/prg/c128-editor.bin") -loader-kernalRom $(native "$WORK/prg/c128-kernal.bin")"
+fi
+
+if selected snes-loader; then
+	# The pair is deliberate: identical cartridges, one behind a 512-byte copier header, so a
+	# regression in copier detection (which shifts every offset in the image) cannot hide.
+	run_one snestest "$WORK/snes/snestest.smc" SnesRomLoader
+	run_one snestestcopier "$WORK/snes/snestestcopier.smc" SnesRomLoader
+	# grm-9nxj.19: an interleaved HiROM image; Auto must de-interleave it (header at logical
+	# $FFC0, stored at $7FC0) -- the reset code is at FILE offset 0, shown as fileOffset=0 at C0:8000.
+	run_one snestestinterleaved "$WORK/snes/snestestinterleaved.smc" SnesRomLoader
+fi
+
+if selected nes-text; then
+	# grm-s3wo: the same option on the SNES loader (LoROM, mirror at $80:8000).
+	run_one snestbltest "$WORK/snes/snestbltest.smc" SnesRomLoader "-loader-tblFile $WORK/snes/snestbltest.tbl"
+fi
+
+if selected nes-text; then
+	# grm-pqk: the .tbl text-table loader option (-loader-tblFile) + TblStringAnalyzer. The
+	# table is passed as a loader option, so normalize_opts folds its sha256 into the cache key.
+	run_one nestbltest "$WORK/nes/nestbltest.nes" NesRomLoader "-loader-tblFile $WORK/nes/nestbltest.tbl"
+	# grm-a6n0: 16 KiB PRG, PRG_HI at $C000 re-exposes the same file bytes; no duplicate annotations.
+	run_one nestbltest16 "$WORK/nes/nestbltest16.nes" NesRomLoader "-loader-tblFile $WORK/nes/nestbltest.tbl"
+fi
+
 if selected nes-banking; then
-	run_one nesbanktest "$WORK/nes/nesbanktest.nes" NesRomLoader
-	run_one nesbanktest2 "$WORK/nes/nesbanktest2.nes" NesRomLoader
-	run_one nesuxhelpertest "$WORK/nes/nesuxhelpertest.nes" NesRomLoader
-
-	# The 6502 SKIP-IDIOM front-end (bead grm-pfp): the shipped
-	# ghidra_scripts/FixSkipInstructions.java driven as a -postScript, which is the only
-	# regression path that script has -- and it MUST be a postScript, because the conflict it
-	# repairs (a BIT whose operand bytes are themselves an instruction, so the offcut entry can
-	# be neither disassembled nor made a function) does not exist until after disassembly.
-	# See make_prg_skip()'s docstring for the fixture's three sites and what each one proves;
-	# the shape is Wizards & Warriors (U) $BC05/$BC08.
-	#
-	# $5 is run_one's slot for non-loader headless arguments and is placed BEFORE
-	# -postScript VerifyBankTest.java, so the repair happens first and VerifyBankTest observes
-	# the repaired program. function:true is the default, stated explicitly because S6 asserts
-	# on it: a recovered entry that is not a function belongs to no body and is never analyzed.
-	#
-	# $6 is run_one's slot for POST-verify headless arguments -- AssertBankOrderIndependence.java
-	# (bead grm-q39f), which retracts this round's bank comments and re-derives them in one pass
-	# to check that the result does not depend on having gone through the repair-then-reanalyze
-	# sequence above. It runs after VerifyBankTest's dump on purpose (see run_one's docstring),
-	# so it perturbs the program only after the golden-compared artifact has already been taken.
-	run_one nesskiptest "$WORK/nes/nesskiptest.nes" NesRomLoader "" \
-		"-postScript FixSkipInstructions.java function:true" \
-		"-postScript AssertBankOrderIndependence.java"
-	# The script's own verdict line, which lives outside the dump markers so VerifyBankTest
-	# cannot assert on it -- and it is the only place the WEAK candidate is visible at all,
-	# since not applying it leaves nothing in the program to observe. The counts pin the whole
-	# classification: three carriers found, one per confidence tier, and only the two confident
-	# ones acted on. Skipped when bless reused a cached candidate: that path runs no import, so
-	# there is no fresh log to read.
-	if [ -f "$WORK/nesskiptest.log" ] &&
-		! grep -q 'SKIPFIX summary candidates=3 referenced=1 strong=1 weak=1 applied=2 failed=0' \
-			"$WORK/nesskiptest.log"; then
-		echo "FAIL: FixSkipInstructions did not report 3 candidates (1/1/1) with 2 applied"
-		fail=1
-	fi
-	# grm-q39f: bank-comment order-independence. A program analyzed once over its final
-	# structure must produce the same bank-comment set as one analyzed, perturbed by
-	# FixSkipInstructions above, and re-analyzed -- which is what every fixture here actually
-	# measures. AssertBankOrderIndependence.java's own verdict line is what proves it; a MATCH
-	# means the two paths agreed, and anything else (including VACUOUS, which means the
-	# comparison never actually exercised retraction) is a genuine finding, not noise. Same
-	# cached-candidate caveat as the SKIPFIX check above: skipped when bless reused a cached
-	# candidate, since that path runs no fresh import.
-	if [ -f "$WORK/nesskiptest.log" ] &&
-		! grep -q 'ORDERINDEP .* verdict=MATCH' "$WORK/nesskiptest.log"; then
-		echo "FAIL: bank-comment order-independence check failed (bead grm-q39f) -- a program" >&2
-		echo "      analyzed once over its final structure produced a DIFFERENT bank-comment" >&2
-		echo "      set than one analyzed, perturbed, and re-analyzed. See the ORDERINDEP" >&2
-		echo "      line(s) below for the verdict and any differing addresses:" >&2
-		grep 'ORDERINDEP' "$WORK/nesskiptest.log" >&2 || true
-		fail=1
-	fi
-
-	# grm-mej.2 increment 2 (Tier 3): bank-MIRROR derive/observe/consume/annotate/retarget
-	# end-to-end, plus the SS2d requiresOnEntry guard -- see make_prg_mirrortest()'s docstring.
-	run_one nesmirrortest "$WORK/nes/nesmirrortest.nes" NesRomLoader
-
-	# grm-913: interrupt-entry bank state. An NMI/IRQ handler must NOT be seeded with
-	# banking.initial_state fully known -- see make_prg_nmi()'s docstring for the megaman /
-	# wizwarr shape it reproduces, and for the RESET-path control that keeps the fix from
-	# reading as "weaken everything".
-	run_one nesnmitest "$WORK/nes/nesnmitest.nes" NesRomLoader
-
-	# grm-wul: PATH FORKING. Two constants merging before the switch must resolve BOTH arms and
-	# retarget both refs (nesforktest); the same shape with five arms -- one over the per-block
-	# fork cap -- must decline with the MULTI_VALUED_AT_MERGE warning instead (nesforkbudgettest).
-	# See make_prg_fork()/make_prg_forkbudget()'s docstrings for the blmaster c9a4 shape.
-	run_one nesforktest "$WORK/nes/nesforktest.nes" NesRomLoader
-	# grm-bfb: the SURVIVAL sibling -- one arm resolves to the HOME bank, so the stale
-	# base-space reference at the retargeted site must survive (as a secondary) rather than
-	# be retired. See make_prg_forkhome()'s docstring.
-	run_one nesforkhometest "$WORK/nes/nesforkhometest.nes" NesRomLoader
-	# grm-fj4m: a base-space call INTO ITS OWN window, bank pinned to a non-home bank whose
-	# overlay copy of the callee is a bare RTS while the home (base) copy is a helper -- helper
-	# resolution must follow the overlay. See make_prg_intrawin()'s docstring.
-	run_one nesintrawintest "$WORK/nes/nesintrawintest.nes" NesRomLoader
-	run_one nesforkbudgettest "$WORK/nes/nesforkbudgettest.nes" NesRomLoader
-	# grm-7e5o: an 8 KiB NROM PRG -- SMALLER than either 16 KiB window, so the image
-	# mirrors four times across $8000-$FFFF. Synthetic stand-in for Galaxian (J) and
-	# Controller Test Program (J), which cannot be shipped. See make_prg_nromsub().
-	run_one nesnromsubtest "$WORK/nes/nesnromsubtest.nes" NesRomLoader
-
-	run_one nesmodetest "$WORK/nes/nesmodetest.nes" NesRomLoader
-	run_one nesmmc3test "$WORK/nes/nesmmc3test.nes" NesRomLoader
-	run_one nesmmc3test2 "$WORK/nes/nesmmc3test2.nes" NesRomLoader
-	run_one nesserialtest "$WORK/nes/nesserialtest.nes" NesRomLoader
-	run_one nesmmc1test "$WORK/nes/nesmmc1test.nes" NesRomLoader
 	run_one nesmmc1overridetest "$WORK/nes/nesmmc1overridetest.nes" NesRomLoader \
 		"-loader-placement W8000:5"
 
@@ -1213,109 +1178,6 @@ if selected nes-banking; then
 	# the hoisted WA000_B5. See make_prg_mmc3_override().
 	run_one nesmmc3overridetest "$WORK/nes/nesmmc3overridetest.nes" NesRomLoader \
 		"-loader-placement WA000:5"
-
-	# grm-sen5: bank-mirror read-back on a SELECT-DATA board, resolved PER WINDOW (MMC3's
-	# R6/R7 own different windows), plus the per-site effectDependsOnPriorState guard in
-	# both directions. The MMC3 sibling of nesmirrortest -- see make_prg_mmc3_mirror().
-	run_one nesmmc3mirrortest "$WORK/nes/nesmmc3mirrortest.nes" NesRomLoader
-
-	# grm-km4f: the (bank-1)/2 identifying byte -- rcransom's non-identity ROM_IDENTIFYING
-	# shape (shift=1/low=1, a 3-bank verified floor, the two-highest-bank EXEMPT tolerance).
-	# Separate fixture from nesmmc3mirrortest so THAT golden stays byte-identical -- see
-	# make_prg_mmc3_id()'s docstring.
-	run_one nesmmc3idtest "$WORK/nes/nesmmc3idtest.nes" NesRomLoader
-
-	# grm-2dr increment 1: pass-through-wrapper recognition (a fallthrough-only function
-	# whose last instruction lands exactly on a real bank-switch helper's entry). Separate
-	# fixture from nesmmc1test so that one stays byte-identical -- see make_prg_wrapper()'s
-	# docstring for the real-ROM shapes (Castlevania 2, TMNT) it models.
-	run_one neswrappertest "$WORK/nes/neswrappertest.nes" NesRomLoader
-
-	# grm-2dr increment 2: call-edge-wrapper recognition (a function that reaches its
-	# helper by an interior JSR rather than by falling through). Separate again from
-	# neswrappertest, so THAT golden staying byte-identical remains the proof increment 2
-	# left increment 1 alone -- see make_prg_relay()'s docstring for blmaster's FUN_e61b.
-	run_one nesrelaytest "$WORK/nes/nesrelaytest.nes" NesRomLoader
-
-	run_one nesbandaitest "$WORK/nes/nesbandaitest.nes" NesRomLoader
-
-	# grm-tas: MMC2 board (machines/nes-mmc2.yaml, iNES mapper 9) -- PRG bank select at
-	# $A000-$AFFF plus the CHR0-register decoy proving the mechanism does not also claim
-	# $B000-$BFFF. See make_prg_mmc2()'s docstring.
-	run_one nesmmc2test "$WORK/nes/nesmmc2test.nes" NesRomLoader
-
-	# grm-fxm: MMC5 board (machines/nes-mmc5.yaml, iNES mapper 5) -- the first shipped board
-	# with NO register-less PRG window in ANY mode, and the only one whose registers live
-	# outside the $8000-$FFFF PRG space entirely ($5100/$5114-$5117), so no PRG window needs
-	# on_write: mechanism and there is no bus-conflict hazard. The fixture exercises both
-	# axes: an ordinary within-mode bank switch, then a PRG MODE change (3 -> 0) whose
-	# window set is a different shape, not just a different bank. See make_prg_mmc5().
-	run_one nesmmc5test "$WORK/nes/nesmmc5test.nes" NesRomLoader
-
-	# grm-p25h: MMC5 BANK-NUMBER WRAPPING (banking.bank_wrap: image). A bank register is
-	# wider than any one cartridge decodes, so the hardware truncates and games rely on it
-	# (rtk2 writes 96/97/126 to a 32-bank cart, meaning 0/1/30). Separate fixture from
-	# nesmmc5test so that golden stays byte-identical and a moved line here cannot be
-	# confused with the mode-change axis. See make_prg_mmc5wrap().
-	run_one nesmmc5wraptest "$WORK/nes/nesmmc5wraptest.nes" NesRomLoader
-
-	# grm-1.7.6: CopyLoopAnalyzer is gated on the descriptor + a 6502/6510 language, not on
-	# the C64 loader, so it fires on NES ROMs too. This is the only fixture where the copy
-	# loop runs from a bank overlay and stores into base-space PRG RAM -- i.e. the only
-	# coverage of that widened gate, and the only fixture where a recognized copy's
-	# destination has to cross out of an overlay space to be carved in place.
-	run_one nescopytest "$WORK/nes/nescopytest.nes" NesRomLoader
-
-	# The fork-summary checks below read each fixture's own log, so the batch holding them must
-	# have run: flush first. (They sit here, not beside their run_one calls, so those calls
-	# can share a batch with their neighbours -- bead grm-w9ev.5.)
-	flush_batch "dependency:fork-summary-log-checks"
-	# The analyzer's per-program fork summary line is the MEASUREMENT the owner's ruling asks for
-	# (it is what the real-ROM tally tabulates), and it lives in the headless log, outside the
-	# dump markers -- so pin it here, the way nesskiptest pins its SKIPFIX line. Skipped when
-	# bless reused a cached candidate: that path runs no import, so there is no fresh log.
-	if [ -f "$WORK/nesforktest.log" ] &&
-		! grep -q 'path forking: forks created=2 (sites 1) collapsed=0 (sites 0, address collapses 0) max live at one block=2' \
-			"$WORK/nesforktest.log"; then
-		echo "FAIL: nesforktest's fork summary did not report 2 forks at 1 site with 2 live (grm-wul)"
-		grep 'path fork' "$WORK/nesforktest.log" >&2 || true
-		fail=1
-	fi
-	if [ -f "$WORK/nesforkhometest.log" ] &&
-		! grep -q 'path forking: forks created=2 (sites 1) collapsed=0 (sites 0, address collapses 0) max live at one block=2' \
-			"$WORK/nesforkhometest.log"; then
-		echo "FAIL: nesforkhometest's fork summary did not report 2 forks at 1 site with 2 live (grm-bfb)"
-		grep 'path fork' "$WORK/nesforkhometest.log" >&2 || true
-		fail=1
-	fi
-	if [ -f "$WORK/nesforkbudgettest.log" ] &&
-		! grep -q 'path forking: forks created=0 (sites 0) collapsed=5 (sites 1, address collapses 0) max live at one block=1' \
-			"$WORK/nesforkbudgettest.log"; then
-		echo "FAIL: nesforkbudgettest's fork summary did not report 5 arms denied at 1 site (grm-wul)"
-		grep 'path fork' "$WORK/nesforkbudgettest.log" >&2 || true
-		fail=1
-	fi
-
-	run_census nesbanktest "$WORK/nes/nesbanktest.nes" NesRomLoader
-	# A second board, deliberately: on UxROM (nesbanktest) the loader places almost all PRG into
-	# overlay windows, so base space holds only a handful of instructions and the inequality has
-	# very little to bite on. MMC3 keeps a FIXED bank, which lands in base space -- the same shape
-	# tmnt has, and tmnt is the row grm-nems measured the violation on.
-	run_census nesmmc3test "$WORK/nes/nesmmc3test.nes" NesRomLoader
-fi
-
-if selected petscii-strings; then
-	run_one petsciistringtest "$WORK/prg/petsciistringtest.prg" C64PrgLoader
-fi
-
-if selected nes-text; then
-	# grm-pqk: the .tbl text-table loader option (-loader-tblFile) + TblStringAnalyzer. The
-	# table is passed as a loader option, so normalize_opts folds its sha256 into the cache key.
-	run_one nestbltest "$WORK/nes/nestbltest.nes" NesRomLoader "-loader-tblFile $WORK/nes/nestbltest.tbl"
-	# grm-a6n0: 16 KiB PRG, PRG_HI at $C000 re-exposes the same file bytes; no duplicate annotations.
-	run_one nestbltest16 "$WORK/nes/nestbltest16.nes" NesRomLoader "-loader-tblFile $WORK/nes/nestbltest.tbl"
-	# grm-s3wo: the same option on the SNES loader (LoROM, mirror at $80:8000).
-	run_one snestbltest "$WORK/snes/snestbltest.smc" SnesRomLoader "-loader-tblFile $WORK/snes/snestbltest.tbl"
 fi
 
 if selected descriptors; then
@@ -1357,6 +1219,8 @@ if selected descriptors; then
 			for f in "${fs[@]}"; do rm -f "$overlay_dir/$f"; done
 		}
 		# A previous interrupted run could have left files behind; start clean either way.
+		# Nothing queued may run while an overlay descriptor is planted: drain the queue first.
+		flush_batch "dependency:overlay-plant"
 		unplant_overlay
 		plant_overlay
 		GRM_KEY_INPUTS="$WORK/nes/descoverlaytest.yaml $WORK/nes/descoverlaybad.yaml"
@@ -1376,13 +1240,6 @@ if selected descriptors; then
 				echo "FAIL: the malformed overlay was not skipped with a logged error (grm-hb6.15)"
 				fail=1
 			fi
-		fi
-		run_one descoverlayctltest "$WORK/nes/descoverlayctltest.nes" NesRomLoader
-		flush_batch "dependency:descoverlayctltest-log-check"
-		if [ -f "$WORK/descoverlayctltest.log" ] &&
-			grep -q "game descriptor resolved" "$WORK/descoverlayctltest.log"; then
-			echo "FAIL: control import resolved a game descriptor -- overlay leaked (grm-hb6.15)"
-			fail=1
 		fi
 
 		# grm-hb6.17: export -> overlay -> re-import round trip through the SHIPPED script.
@@ -1455,6 +1312,211 @@ if selected descriptors; then
 		fi
 	fi
 fi
+
+if selected descriptors && [ -n "${BANKTEST_SETTINGS_BASE:-}" ] && [ -n "${overlay_settings:-}" ]; then
+	# Control import: runs after the overlay was unplanted (D block above), joins the NES batch.
+	run_one descoverlayctltest "$WORK/nes/descoverlayctltest.nes" NesRomLoader
+fi
+
+if selected nes-banking; then
+	run_one nesbanktest "$WORK/nes/nesbanktest.nes" NesRomLoader
+	run_one nesbanktest2 "$WORK/nes/nesbanktest2.nes" NesRomLoader
+	run_one nesuxhelpertest "$WORK/nes/nesuxhelpertest.nes" NesRomLoader
+
+	# grm-mej.2 increment 2 (Tier 3): bank-MIRROR derive/observe/consume/annotate/retarget
+	# end-to-end, plus the SS2d requiresOnEntry guard -- see make_prg_mirrortest()'s docstring.
+	run_one nesmirrortest "$WORK/nes/nesmirrortest.nes" NesRomLoader
+
+	# grm-913: interrupt-entry bank state. An NMI/IRQ handler must NOT be seeded with
+	# banking.initial_state fully known -- see make_prg_nmi()'s docstring for the megaman /
+	# wizwarr shape it reproduces, and for the RESET-path control that keeps the fix from
+	# reading as "weaken everything".
+	run_one nesnmitest "$WORK/nes/nesnmitest.nes" NesRomLoader
+
+	# grm-wul: PATH FORKING. Two constants merging before the switch must resolve BOTH arms and
+	# retarget both refs (nesforktest); the same shape with five arms -- one over the per-block
+	# fork cap -- must decline with the MULTI_VALUED_AT_MERGE warning instead (nesforkbudgettest).
+	# See make_prg_fork()/make_prg_forkbudget()'s docstrings for the blmaster c9a4 shape.
+	run_one nesforktest "$WORK/nes/nesforktest.nes" NesRomLoader
+	# grm-bfb: the SURVIVAL sibling -- one arm resolves to the HOME bank, so the stale
+	# base-space reference at the retargeted site must survive (as a secondary) rather than
+	# be retired. See make_prg_forkhome()'s docstring.
+	run_one nesforkhometest "$WORK/nes/nesforkhometest.nes" NesRomLoader
+	# grm-fj4m: a base-space call INTO ITS OWN window, bank pinned to a non-home bank whose
+	# overlay copy of the callee is a bare RTS while the home (base) copy is a helper -- helper
+	# resolution must follow the overlay. See make_prg_intrawin()'s docstring.
+	run_one nesintrawintest "$WORK/nes/nesintrawintest.nes" NesRomLoader
+	run_one nesforkbudgettest "$WORK/nes/nesforkbudgettest.nes" NesRomLoader
+fi
+
+if selected descriptors; then
+	flush_batch "dependency:descoverlayctltest-log-check"
+	if [ -f "$WORK/descoverlayctltest.log" ] &&
+		grep -q "game descriptor resolved" "$WORK/descoverlayctltest.log"; then
+		echo "FAIL: control import resolved a game descriptor -- overlay leaked (grm-hb6.15)"
+		fail=1
+	fi
+fi
+
+if selected nes-banking; then
+	# The fork-summary checks below read each fixture's own log, so the batch holding them must
+	# have run: flush first. (They sit here, not beside their run_one calls, so those calls
+	# can share a batch with their neighbours -- bead grm-w9ev.5.)
+	flush_batch "dependency:fork-summary-log-checks"
+	# The analyzer's per-program fork summary line is the MEASUREMENT the owner's ruling asks for
+	# (it is what the real-ROM tally tabulates), and it lives in the headless log, outside the
+	# dump markers -- so pin it here, the way nesskiptest pins its SKIPFIX line. Skipped when
+	# bless reused a cached candidate: that path runs no import, so there is no fresh log.
+	if [ -f "$WORK/nesforktest.log" ] &&
+		! grep -q 'path forking: forks created=2 (sites 1) collapsed=0 (sites 0, address collapses 0) max live at one block=2' \
+			"$WORK/nesforktest.log"; then
+		echo "FAIL: nesforktest's fork summary did not report 2 forks at 1 site with 2 live (grm-wul)"
+		grep 'path fork' "$WORK/nesforktest.log" >&2 || true
+		fail=1
+	fi
+	if [ -f "$WORK/nesforkhometest.log" ] &&
+		! grep -q 'path forking: forks created=2 (sites 1) collapsed=0 (sites 0, address collapses 0) max live at one block=2' \
+			"$WORK/nesforkhometest.log"; then
+		echo "FAIL: nesforkhometest's fork summary did not report 2 forks at 1 site with 2 live (grm-bfb)"
+		grep 'path fork' "$WORK/nesforkhometest.log" >&2 || true
+		fail=1
+	fi
+	if [ -f "$WORK/nesforkbudgettest.log" ] &&
+		! grep -q 'path forking: forks created=0 (sites 0) collapsed=5 (sites 1, address collapses 0) max live at one block=1' \
+			"$WORK/nesforkbudgettest.log"; then
+		echo "FAIL: nesforkbudgettest's fork summary did not report 5 arms denied at 1 site (grm-wul)"
+		grep 'path fork' "$WORK/nesforkbudgettest.log" >&2 || true
+		fail=1
+	fi
+fi
+
+if selected nes-banking; then
+	# grm-7e5o: an 8 KiB NROM PRG -- SMALLER than either 16 KiB window, so the image
+	# mirrors four times across $8000-$FFFF. Synthetic stand-in for Galaxian (J) and
+	# Controller Test Program (J), which cannot be shipped. See make_prg_nromsub().
+	run_one nesnromsubtest "$WORK/nes/nesnromsubtest.nes" NesRomLoader
+
+	run_one nesmodetest "$WORK/nes/nesmodetest.nes" NesRomLoader
+	run_one nesmmc3test "$WORK/nes/nesmmc3test.nes" NesRomLoader
+	run_one nesmmc3test2 "$WORK/nes/nesmmc3test2.nes" NesRomLoader
+	run_one nesserialtest "$WORK/nes/nesserialtest.nes" NesRomLoader
+	run_one nesmmc1test "$WORK/nes/nesmmc1test.nes" NesRomLoader
+
+	# grm-sen5: bank-mirror read-back on a SELECT-DATA board, resolved PER WINDOW (MMC3's
+	# R6/R7 own different windows), plus the per-site effectDependsOnPriorState guard in
+	# both directions. The MMC3 sibling of nesmirrortest -- see make_prg_mmc3_mirror().
+	run_one nesmmc3mirrortest "$WORK/nes/nesmmc3mirrortest.nes" NesRomLoader
+
+	# grm-km4f: the (bank-1)/2 identifying byte -- rcransom's non-identity ROM_IDENTIFYING
+	# shape (shift=1/low=1, a 3-bank verified floor, the two-highest-bank EXEMPT tolerance).
+	# Separate fixture from nesmmc3mirrortest so THAT golden stays byte-identical -- see
+	# make_prg_mmc3_id()'s docstring.
+	run_one nesmmc3idtest "$WORK/nes/nesmmc3idtest.nes" NesRomLoader
+
+	# grm-2dr increment 1: pass-through-wrapper recognition (a fallthrough-only function
+	# whose last instruction lands exactly on a real bank-switch helper's entry). Separate
+	# fixture from nesmmc1test so that one stays byte-identical -- see make_prg_wrapper()'s
+	# docstring for the real-ROM shapes (Castlevania 2, TMNT) it models.
+	run_one neswrappertest "$WORK/nes/neswrappertest.nes" NesRomLoader
+
+	# grm-2dr increment 2: call-edge-wrapper recognition (a function that reaches its
+	# helper by an interior JSR rather than by falling through). Separate again from
+	# neswrappertest, so THAT golden staying byte-identical remains the proof increment 2
+	# left increment 1 alone -- see make_prg_relay()'s docstring for blmaster's FUN_e61b.
+	run_one nesrelaytest "$WORK/nes/nesrelaytest.nes" NesRomLoader
+
+	run_one nesbandaitest "$WORK/nes/nesbandaitest.nes" NesRomLoader
+
+	# grm-tas: MMC2 board (machines/nes-mmc2.yaml, iNES mapper 9) -- PRG bank select at
+	# $A000-$AFFF plus the CHR0-register decoy proving the mechanism does not also claim
+	# $B000-$BFFF. See make_prg_mmc2()'s docstring.
+	run_one nesmmc2test "$WORK/nes/nesmmc2test.nes" NesRomLoader
+
+	# grm-fxm: MMC5 board (machines/nes-mmc5.yaml, iNES mapper 5) -- the first shipped board
+	# with NO register-less PRG window in ANY mode, and the only one whose registers live
+	# outside the $8000-$FFFF PRG space entirely ($5100/$5114-$5117), so no PRG window needs
+	# on_write: mechanism and there is no bus-conflict hazard. The fixture exercises both
+	# axes: an ordinary within-mode bank switch, then a PRG MODE change (3 -> 0) whose
+	# window set is a different shape, not just a different bank. See make_prg_mmc5().
+	run_one nesmmc5test "$WORK/nes/nesmmc5test.nes" NesRomLoader
+
+	# grm-p25h: MMC5 BANK-NUMBER WRAPPING (banking.bank_wrap: image). A bank register is
+	# wider than any one cartridge decodes, so the hardware truncates and games rely on it
+	# (rtk2 writes 96/97/126 to a 32-bank cart, meaning 0/1/30). Separate fixture from
+	# nesmmc5test so that golden stays byte-identical and a moved line here cannot be
+	# confused with the mode-change axis. See make_prg_mmc5wrap().
+	run_one nesmmc5wraptest "$WORK/nes/nesmmc5wraptest.nes" NesRomLoader
+
+	# grm-1.7.6: CopyLoopAnalyzer is gated on the descriptor + a 6502/6510 language, not on
+	# the C64 loader, so it fires on NES ROMs too. This is the only fixture where the copy
+	# loop runs from a bank overlay and stores into base-space PRG RAM -- i.e. the only
+	# coverage of that widened gate, and the only fixture where a recognized copy's
+	# destination has to cross out of an overlay space to be carved in place.
+	run_one nescopytest "$WORK/nes/nescopytest.nes" NesRomLoader
+fi
+
+if selected nes-banking; then
+	run_census nesbanktest "$WORK/nes/nesbanktest.nes" NesRomLoader
+	# A second board, deliberately: on UxROM (nesbanktest) the loader places almost all PRG into
+	# overlay windows, so base space holds only a handful of instructions and the inequality has
+	# very little to bite on. MMC3 keeps a FIXED bank, which lands in base space -- the same shape
+	# tmnt has, and tmnt is the row grm-nems measured the violation on.
+	run_census nesmmc3test "$WORK/nes/nesmmc3test.nes" NesRomLoader
+fi
+
+if selected nes-banking; then
+	# The 6502 SKIP-IDIOM front-end (bead grm-pfp): the shipped
+	# ghidra_scripts/FixSkipInstructions.java driven as a -postScript, which is the only
+	# regression path that script has -- and it MUST be a postScript, because the conflict it
+	# repairs (a BIT whose operand bytes are themselves an instruction, so the offcut entry can
+	# be neither disassembled nor made a function) does not exist until after disassembly.
+	# See make_prg_skip()'s docstring for the fixture's three sites and what each one proves;
+	# the shape is Wizards & Warriors (U) $BC05/$BC08.
+	#
+	# $5 is run_one's slot for non-loader headless arguments and is placed BEFORE
+	# -postScript VerifyBankTest.java, so the repair happens first and VerifyBankTest observes
+	# the repaired program. function:true is the default, stated explicitly because S6 asserts
+	# on it: a recovered entry that is not a function belongs to no body and is never analyzed.
+	#
+	# $6 is run_one's slot for POST-verify headless arguments -- AssertBankOrderIndependence.java
+	# (bead grm-q39f), which retracts this round's bank comments and re-derives them in one pass
+	# to check that the result does not depend on having gone through the repair-then-reanalyze
+	# sequence above. It runs after VerifyBankTest's dump on purpose (see run_one's docstring),
+	# so it perturbs the program only after the golden-compared artifact has already been taken.
+	run_one nesskiptest "$WORK/nes/nesskiptest.nes" NesRomLoader "" \
+		"-postScript FixSkipInstructions.java function:true" \
+		"-postScript AssertBankOrderIndependence.java"
+	# The script's own verdict line, which lives outside the dump markers so VerifyBankTest
+	# cannot assert on it -- and it is the only place the WEAK candidate is visible at all,
+	# since not applying it leaves nothing in the program to observe. The counts pin the whole
+	# classification: three carriers found, one per confidence tier, and only the two confident
+	# ones acted on. Skipped when bless reused a cached candidate: that path runs no import, so
+	# there is no fresh log to read.
+	if [ -f "$WORK/nesskiptest.log" ] &&
+		! grep -q 'SKIPFIX summary candidates=3 referenced=1 strong=1 weak=1 applied=2 failed=0' \
+			"$WORK/nesskiptest.log"; then
+		echo "FAIL: FixSkipInstructions did not report 3 candidates (1/1/1) with 2 applied"
+		fail=1
+	fi
+	# grm-q39f: bank-comment order-independence. A program analyzed once over its final
+	# structure must produce the same bank-comment set as one analyzed, perturbed by
+	# FixSkipInstructions above, and re-analyzed -- which is what every fixture here actually
+	# measures. AssertBankOrderIndependence.java's own verdict line is what proves it; a MATCH
+	# means the two paths agreed, and anything else (including VACUOUS, which means the
+	# comparison never actually exercised retraction) is a genuine finding, not noise. Same
+	# cached-candidate caveat as the SKIPFIX check above: skipped when bless reused a cached
+	# candidate, since that path runs no fresh import.
+	if [ -f "$WORK/nesskiptest.log" ] &&
+		! grep -q 'ORDERINDEP .* verdict=MATCH' "$WORK/nesskiptest.log"; then
+		echo "FAIL: bank-comment order-independence check failed (bead grm-q39f) -- a program" >&2
+		echo "      analyzed once over its final structure produced a DIFFERENT bank-comment" >&2
+		echo "      set than one analyzed, perturbed, and re-analyzed. See the ORDERINDEP" >&2
+		echo "      line(s) below for the verdict and any differing addresses:" >&2
+		grep 'ORDERINDEP' "$WORK/nesskiptest.log" >&2 || true
+		fail=1
+	fi
+fi
+
 
 flush_batch "end-of-run"
 
