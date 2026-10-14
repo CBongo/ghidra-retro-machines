@@ -396,6 +396,11 @@ def _bank3_putter(prg):
     return put
 
 
+def _bank3_asm(prg):
+    """A `_Asm` over the fixed PRG_HI window (CPU $C000 == file offset $C000)."""
+    return _Asm(prg, 0xC000, 0xC000)
+
+
 def _put_vectors(put, nmi, reset, irq):
     """Write the 6502 vector table at $FFFA (NMI), $FFFC (RESET), $FFFE (IRQ) through `put`."""
     for addr, target in ((0xFFFA, nmi), (0xFFFC, reset), (0xFFFE, irq)):
@@ -460,12 +465,14 @@ def make_prg():
     prg[bank2_rts_off] = 0x60  # RTS
 
     put = _bank3_putter(prg)
+    asm = _bank3_asm(prg)
 
-    put(0xC000, [0xA9, 0x02])              # LDA #$02
-    put(0xC002, [0x8D, 0xF0, 0xFF])         # STA $FFF0
-    put(0xC005, [0x20, 0x05, 0x80])         # JSR $8005
-    put(0xC008, [0x4C, 0x08, 0xC0])         # JMP $C008 (self loop)
-    put(0xC00B, [0x40])                     # RTI
+    asm.org(0xC000)
+    asm.lda_imm(0x02)
+    asm.sta_abs(0xFFF0)
+    asm.jsr(0x8005)
+    asm.jmp(asm.label())  # self loop
+    asm.rti()
 
     # Bus-conflict target byte: must equal the value latched (0x02) so
     # MemoryLatchBankSwitchStrategy's bus-conflict AND is a faithful no-op.
@@ -515,16 +522,18 @@ def make_prg_bandai():
     prg[2 * PRG_BANK_SIZE + 0x0005] = 0x60  # RTS
 
     put = _bank3_putter(prg)
+    asm = _bank3_asm(prg)
 
-    put(0xC000, [0xA9, 0x02])              # LDA #$02
-    put(0xC002, [0x8D, 0x08, 0x80])         # STA $8008  (register $8: PRG bank)
-    put(0xC005, [0xA9, 0x01])              # LDA #$01
-    put(0xC007, [0x8D, 0x00, 0x80])         # STA $8000  (register $0: CHR -- decoy)
-    put(0xC00A, [0xA9, 0x03])              # LDA #$03
-    put(0xC00C, [0x8D, 0x0A, 0x80])         # STA $800A  (register $A: IRQ -- decoy)
-    put(0xC00F, [0x20, 0x05, 0x80])         # JSR $8005
-    put(0xC012, [0x4C, 0x12, 0xC0])         # JMP $C012 (self loop)
-    put(0xC015, [0x40])                     # RTI
+    asm.org(0xC000)
+    asm.lda_imm(0x02)
+    asm.sta_abs(0x8008)  # register $8: PRG bank
+    asm.lda_imm(0x01)
+    asm.sta_abs(0x8000)  # register $0: CHR -- decoy
+    asm.lda_imm(0x03)
+    asm.sta_abs(0x800A)  # register $A: IRQ -- decoy
+    asm.jsr(0x8005)
+    asm.jmp(asm.label())  # self loop
+    asm.rti()
 
     # Vector table.
     _put_vectors(put, nmi=0xC015, reset=0xC000, irq=0xC015)
@@ -542,37 +551,44 @@ def make_prg2():
 
     # Bank 1's routine at CPU $8010 -> file offset 1*0x4000 + 0x10.
     b1 = 1 * PRG_BANK_SIZE
-    prg[b1 + 0x0010:b1 + 0x0013] = bytes([0x20, 0x20, 0xC0])  # JSR $C020
-    prg[b1 + 0x0013] = 0x60                                    # RTS
+    r1 = _Asm(prg, 0x8010, b1 + 0x0010)
+    r1.jsr(0xC020)
+    r1.rts()
 
     # Bank 2's routine at CPU $8005 -> file offset 2*0x4000 + 5.
     b2 = 2 * PRG_BANK_SIZE
-    prg[b2 + 0x0005:b2 + 0x0008] = bytes([0x20, 0x10, 0xC0])  # JSR $C010
-    prg[b2 + 0x0008] = 0x60                                    # RTS
+    r2 = _Asm(prg, 0x8005, b2 + 0x0005)
+    r2.jsr(0xC010)
+    r2.rts()
 
     put = _bank3_putter(prg)
+    asm = _bank3_asm(prg)
 
-    put(0xC000, [0xA9, 0x02])              # LDA #$02
-    put(0xC002, [0x8D, 0xE2, 0xFF])         # STA $FFE2 (latch bank 2)
-    put(0xC005, [0x20, 0x05, 0x80])         # JSR $8005 (round 1 -> PRG_LO_B2::8005)
-    put(0xC008, [0x4C, 0x08, 0xC0])         # JMP $C008 (self loop)
-    put(0xC00B, [0x40])                     # RTI
+    asm.org(0xC000)
+    asm.lda_imm(0x02)
+    asm.sta_abs(0xFFE2)  # latch bank 2
+    asm.jsr(0x8005)  # round 1 -> PRG_LO_B2::8005
+    asm.jmp(asm.label())  # self loop
+    asm.rti()
 
-    put(0xC010, [0xA9, 0x01])              # LDA #$01 (trampoline1)
-    put(0xC012, [0x8D, 0xE1, 0xFF])         # STA $FFE1 (latch bank 1)
-    put(0xC015, [0x20, 0x10, 0x80])         # JSR $8010 (round 2 -> PRG_LO_B1::8010)
-    put(0xC018, [0xA9, 0x02])              # LDA #$02
-    put(0xC01A, [0x8D, 0xE2, 0xFF])         # STA $FFE2 (restore bank 2)
-    put(0xC01D, [0x60])                     # RTS
+    asm.org(0xC010)
+    asm.lda_imm(0x01)  # trampoline1
+    asm.sta_abs(0xFFE1)  # latch bank 1
+    asm.jsr(0x8010)  # round 2 -> PRG_LO_B1::8010
+    asm.lda_imm(0x02)
+    asm.sta_abs(0xFFE2)  # restore bank 2
+    asm.rts()
 
-    put(0xC020, [0xA9, 0x03])              # LDA #$03 (trampoline2)
-    put(0xC022, [0x8D, 0xE3, 0xFF])         # STA $FFE3 (latch bank 3)
-    put(0xC025, [0x20, 0x30, 0x80])         # JSR $8030 (round 3 -> PRG_LO_B3::8030)
-    put(0xC028, [0xA9, 0x01])              # LDA #$01
-    put(0xC02A, [0x8D, 0xE1, 0xFF])         # STA $FFE1 (restore bank 1)
-    put(0xC02D, [0x60])                     # RTS
+    asm.org(0xC020)
+    asm.lda_imm(0x03)  # trampoline2
+    asm.sta_abs(0xFFE3)  # latch bank 3
+    asm.jsr(0x8030)  # round 3 -> PRG_LO_B3::8030
+    asm.lda_imm(0x01)
+    asm.sta_abs(0xFFE1)  # restore bank 1
+    asm.rts()
 
-    put(0xC030, [0x60])                     # RTS (bank-3 routine; dual-mapped with PRG_HI)
+    asm.org(0xC030)
+    asm.rts()  # bank-3 routine; dual-mapped with PRG_HI
 
     # UxROM bank-number table: bus-conflict-safe latch targets (byte at address N == N-FFE0).
     put(0xFFE0, [0x00, 0x01, 0x02, 0x03])
@@ -687,24 +703,26 @@ def make_prg_uxhelper():
     prg[2 * PRG_BANK_SIZE + 0x0020] = 0x60  # RTS (tail-call test's target)
 
     put = _bank3_putter(prg)
+    asm = _bank3_asm(prg)
 
     # --- RESET ---
-    put(0xC000, [0xA0, 0x02])              # LDY #$02
-    put(0xC002, [0x20, 0x40, 0xC1])         # JSR $C140   (recoverable -> bank 2)
-    put(0xC005, [0x20, 0x05, 0x80])         # JSR $8005   (-> PRG_LO_B2::8005)
-    put(0xC008, [0xA4, 0x10])              # LDY $10     (RAM -- unrecoverable on purpose)
-    put(0xC00A, [0x20, 0x40, 0xC1])         # JSR $C140   (must NOT resolve)
-    put(0xC00D, [0x20, 0x20, 0xC1])         # JSR $C120   (-> bank 1)
-    put(0xC010, [0x20, 0x10, 0x80])         # JSR $8010   (-> PRG_LO_B1::8010)
-    put(0xC013, [0x20, 0x70, 0xC1])         # JSR $C170   (makes SetBank2 a real function)
-    put(0xC016, [0x20, 0x60, 0xC1])         # JSR $C160   (tail-call helper -> bank 2, NOT 3)
-    put(0xC019, [0x20, 0x20, 0x80])         # JSR $8020   (-> PRG_LO_B2::8020)
-    put(0xC01C, [0xA9, 0x09])              # LDA #$09
-    put(0xC01E, [0x8D, 0xD9, 0xFF])         # STA $FFD9   (impossible bank 9 of 4)
-    put(0xC021, [0x20, 0x80, 0xC1])         # JSR $C180   (tail-call CYCLE -- must WARN)
-    put(0xC024, [0x20, 0x90, 0xC1])         # JSR $C190   (makes PingB a real function)
-    put(0xC027, [0x4C, 0x27, 0xC0])         # JMP $C027   (self loop)
-    put(0xC02A, [0x40])                     # RTI
+    asm.org(0xC000)
+    asm.ldy_imm(0x02)
+    asm.jsr(0xC140)  # recoverable -> bank 2
+    asm.jsr(0x8005)  # -> PRG_LO_B2::8005
+    asm.ldy_zp(0x10)  # RAM -- unrecoverable on purpose
+    asm.jsr(0xC140)  # must NOT resolve
+    asm.jsr(0xC120)  # -> bank 1
+    asm.jsr(0x8010)  # -> PRG_LO_B1::8010
+    asm.jsr(0xC170)  # makes SetBank2 a real function
+    asm.jsr(0xC160)  # tail-call helper -> bank 2, NOT 3
+    asm.jsr(0x8020)  # -> PRG_LO_B2::8020
+    asm.lda_imm(0x09)
+    asm.sta_abs(0xFFD9)  # impossible bank 9 of 4
+    asm.jsr(0xC180)  # tail-call CYCLE -- must WARN
+    asm.jsr(0xC190)  # makes PingB a real function
+    asm.jmp(asm.label())  # self loop
+    asm.rti()
 
     # --- TailSwitch ($C160) / SetBank2 ($C170): the MEGA MAN FUN_d846 -> FUN_c3b3 shape ---
     # TailSwitch's own highest-address switch says bank 3, but it does not RETURN -- it tail
@@ -714,12 +732,14 @@ def make_prg_uxhelper():
     # SetBank2 is JSR'd directly from RESET as well, so Ghidra makes it a separate function
     # and the JMP is a genuine inter-function tail call rather than an intra-function jump
     # that would fold the two bodies together and hide the whole problem.
-    put(0xC160, [0xA9, 0x03])              # LDA #$03
-    put(0xC162, [0x8D, 0xD3, 0xFF])         # STA $FFD3   (switch -> bank 3)
-    put(0xC165, [0x4C, 0x70, 0xC1])         # JMP $C170   (TAIL CALL -- control leaves here)
-    put(0xC170, [0xA9, 0x02])              # LDA #$02
-    put(0xC172, [0x8D, 0xD2, 0xFF])         # STA $FFD2   (switch -> bank 2)
-    put(0xC175, [0x60])                     # RTS
+    asm.org(0xC160)
+    asm.lda_imm(0x03)
+    asm.sta_abs(0xFFD3)  # switch -> bank 3
+    asm.jmp(0xC170)  # TAIL CALL -- control leaves here
+    asm.org(0xC170)
+    asm.lda_imm(0x02)
+    asm.sta_abs(0xFFD2)  # switch -> bank 2
+    asm.rts()
 
     # --- PingA ($C180) / PingB ($C190): the tail-call CYCLE, the DECLINE half of grm-hum's
     # composition pass (bead grm-432). Each helper commits a bank and then tail-jumps to the
@@ -732,28 +752,32 @@ def make_prg_uxhelper():
     # call, so that exact shape is unreachable from this tier and is pinned at Tier 2 instead.
     # Both are JSR'd from RESET so Ghidra makes each a real function and each JMP is a genuine
     # inter-function tail call rather than an intra-function jump.
-    put(0xC180, [0xA9, 0x01])              # LDA #$01
-    put(0xC182, [0x8D, 0xD1, 0xFF])         # STA $FFD1   (switch -> bank 1)
-    put(0xC185, [0x4C, 0x90, 0xC1])         # JMP $C190   (TAIL CALL -> PingB)
-    put(0xC190, [0xA9, 0x02])              # LDA #$02
-    put(0xC192, [0x8D, 0xD2, 0xFF])         # STA $FFD2   (switch -> bank 2)
-    put(0xC195, [0x4C, 0x80, 0xC1])         # JMP $C180   (TAIL CALL -> PingA: THE CYCLE)
+    asm.org(0xC180)
+    asm.lda_imm(0x01)
+    asm.sta_abs(0xFFD1)  # switch -> bank 1
+    asm.jmp(0xC190)  # TAIL CALL -> PingB
+    asm.org(0xC190)
+    asm.lda_imm(0x02)
+    asm.sta_abs(0xFFD2)  # switch -> bank 2
+    asm.jmp(0xC180)  # TAIL CALL -> PingA: THE CYCLE
 
     # --- TwoSwitch ($C120): Mega Man FUN_d846 idiom ---
-    put(0xC120, [0xA9, 0x03])              # LDA #$03
-    put(0xC122, [0x8D, 0xD3, 0xFF])         # STA $FFD3   (switch #1 -> bank 3)
-    put(0xC125, [0xA9, 0x00])              # LDA #$00
-    put(0xC127, [0x0A])                     # ASL A
-    put(0xC128, [0xAA])                     # TAX         (X = 0)
-    put(0xC129, [0xBD, 0x1E, 0xD8])         # LDA $D81E,X (-> 0x01)
-    put(0xC12C, [0xA8])                     # TAY         (Y = 1)
-    put(0xC12D, [0x99, 0xD0, 0xFF])         # STA $FFD0,Y (switch #2 -> bank 1)
-    put(0xC130, [0x60])                     # RTS
+    asm.org(0xC120)
+    asm.lda_imm(0x03)
+    asm.sta_abs(0xFFD3)  # switch #1 -> bank 3
+    asm.lda_imm(0x00)
+    asm.asl_a()
+    asm.tax()  # X = 0
+    asm.lda_absx(0xD81E)  # -> 0x01
+    asm.tay()  # Y = 1
+    asm.sta_absy(0xFFD0)  # switch #2 -> bank 1
+    asm.rts()
 
     # --- SelectBank ($C140): Contra $C13F idiom ---
-    put(0xC140, [0xB9, 0xD0, 0xFF])         # LDA $FFD0,Y
-    put(0xC143, [0x99, 0xD0, 0xFF])         # STA $FFD0,Y
-    put(0xC146, [0x60])                     # RTS
+    asm.org(0xC140)
+    asm.lda_absy(0xFFD0)
+    asm.sta_absy(0xFFD0)
+    asm.rts()
 
     # Index table read by TwoSwitch with a statically known X=0. Sited well away from the
     # bank table so a scan that confuses the two cannot accidentally pass.
@@ -888,49 +912,54 @@ def make_prg_skip():
     prg[2 * PRG_BANK_SIZE + 0x0005] = 0x60  # RTS
 
     put = _bank3_putter(prg)
+    asm = _bank3_asm(prg)
 
     # --- RESET ---
-    put(0xC000, [0x20, 0x50, 0xC1])         # JSR $C150 (site A, VISIBLE entry -> bank 2)
-    put(0xC003, [0x20, 0x05, 0x80])         # JSR $8005 (-> PRG_LO_B2::8005)
-    put(0xC006, [0x20, 0x58, 0xC1])         # JSR $C158 (site A, HIDDEN entry -> bank 1)
-    put(0xC009, [0x20, 0x10, 0x80])         # JSR $8010 (-> PRG_LO_B1::8010, the payoff)
-    put(0xC00C, [0x20, 0x70, 0xC1])         # JSR $C170 (site B's visible entry)
-    put(0xC00F, [0x20, 0x80, 0xC1])         # JSR $C180 (the WEAK decoy)
-    put(0xC012, [0xA9, 0x00])              # LDA #$00
-    put(0xC014, [0x20, 0x5A, 0xC1])         # JSR $C15A (makes Latch A its own function)
-    put(0xC017, [0xA9, 0x00])              # LDA #$00
-    put(0xC019, [0x20, 0x75, 0xC1])         # JSR $C175 (makes Latch B its own function)
-    put(0xC01C, [0x4C, 0x1C, 0xC0])         # JMP $C01C (self loop)
-    put(0xC01F, [0x40])                     # RTI
+    asm.org(0xC000)
+    asm.jsr(0xC150)  # site A, VISIBLE entry -> bank 2
+    asm.jsr(0x8005)  # -> PRG_LO_B2::8005
+    asm.jsr(0xC158)  # site A, HIDDEN entry -> bank 1
+    asm.jsr(0x8010)  # -> PRG_LO_B1::8010, the payoff
+    asm.jsr(0xC170)  # site B's visible entry
+    asm.jsr(0xC180)  # the WEAK decoy
+    asm.lda_imm(0x00)
+    asm.jsr(0xC15A)  # makes Latch A its own function
+    asm.lda_imm(0x00)
+    asm.jsr(0xC175)  # makes Latch B its own function
+    asm.jmp(asm.label())  # self loop
+    asm.rti()
 
     # --- Site A ($C150): REFERENCED. RESET JSRs $C158, so a flow reference already lands on
     # the offcut and upstream's own gate would fire -- if anything had put it there. The
     # switch at $C152 belongs to the VISIBLE stream alone and is what keeps that stream's
     # call site off the contested wrapper mechanism; see the docstring. ---
-    put(0xC150, [0xA9, 0x02])              # LDA #$02
-    put(0xC152, [0x8D, 0xD2, 0xFF])         # STA $FFD2   (visible entry's OWN switch -> 2)
-    put(0xC155, [0xA9, 0x02])              # LDA #$02    (latch argument, visible stream)
-    put(0xC157, [0x2C, 0xA9, 0x01])         # BIT $01A9   (carrier; hides LDA #$01 at $C158)
-    put(0xC15A, [0xAA])                     # TAX         <- Latch A entry: the SHARED TAIL
-    put(0xC15B, [0x9D, 0xD0, 0xFF])         # STA $FFD0,X (value == X == bank)
-    put(0xC15E, [0x60])                     # RTS
+    asm.org(0xC150)
+    asm.lda_imm(0x02)
+    asm.sta_abs(0xFFD2)  # visible entry's OWN switch -> 2
+    asm.lda_imm(0x02)  # latch argument, visible stream
+    asm.bit_abs(0x01A9)  # carrier; hides LDA #$01 at $C158
+    asm.tax()  # <- Latch A entry: the SHARED TAIL
+    asm.sta_absx(0xFFD0)  # value == X == bank
+    asm.rts()
 
     # --- Site B ($C170): STRONG. Nothing references $C173, so only the pattern match plus
     # the LDA/LDA fallthrough corroboration can reach it. No bank criteria ride on this
     # site -- its whole job is to prove the STRONG tier fires with no reference to lean
     # on, which is the half of the classifier that is net-new relative to upstream. ---
-    put(0xC170, [0xA9, 0x02])              # LDA #$02
-    put(0xC172, [0x2C, 0xA9, 0x01])         # BIT $01A9   (carrier; hides LDA #$01 at $C173)
-    put(0xC175, [0xAA])                     # TAX         <- Latch B entry: the SHARED TAIL
-    put(0xC176, [0x9D, 0xD0, 0xFF])         # STA $FFD0,X
-    put(0xC179, [0x60])                     # RTS
+    asm.org(0xC170)
+    asm.lda_imm(0x02)
+    asm.bit_abs(0x01A9)  # carrier; hides LDA #$01 at $C173
+    asm.tax()  # <- Latch B entry: the SHARED TAIL
+    asm.sta_absx(0xFFD0)
+    asm.rts()
 
     # --- Site C ($C180): WEAK decoy. The hidden LDA $10 is a real, ordinary operand of a
     # real, ordinary BIT; "repairing" it would destroy both instructions. Must be REPORTED
     # (the SKIPFIX summary line pins weak=1) and NOT applied. ---
-    put(0xC180, [0x38])                     # SEC         (mnemonic != LDA: no corroboration)
-    put(0xC181, [0x2C, 0xA5, 0x10])         # BIT $10A5   (operand bytes A5 10 == LDA $10)
-    put(0xC184, [0x60])                     # RTS
+    asm.org(0xC180)
+    asm.sec()  # mnemonic != LDA: no corroboration
+    asm.bit_abs(0x10A5)  # operand bytes A5 10 == LDA $10
+    asm.rts()
 
     # UxROM bank-number table: identity, so the bus-conflict AND is a no-op (byte == index).
     put(0xFFD0, [0x00, 0x01, 0x02, 0x03])
@@ -991,14 +1020,16 @@ def make_prg_mmc2():
     def put(cpu_addr, data):
         # File offset == CPU address across the whole $A000-$FFFF range (see module doc).
         prg[cpu_addr:cpu_addr + len(data)] = bytes(data)
+    asm = _Asm(prg, 0xE000, 0xE000)
 
-    put(0xE000, [0xA9, 0x02])              # LDA #$02
-    put(0xE002, [0x8D, 0x05, 0xA0])         # STA $A005 (PRG register -> prg_bank=2)
-    put(0xE005, [0xA9, 0x05])              # LDA #$05 (decoy)
-    put(0xE007, [0x8D, 0x00, 0xB0])         # STA $B000 (CHR0 register -- must not latch)
-    put(0xE00A, [0x20, 0x05, 0x80])         # JSR $8005 (-> W8000_B2::8005)
-    put(0xE00D, [0x4C, 0x0D, 0xE0])         # JMP $E00D (self loop)
-    put(0xE010, [0x40])                     # RTI (NMI/IRQ handler)
+    asm.org(0xE000)
+    asm.lda_imm(0x02)
+    asm.sta_abs(0xA005)  # PRG register -> prg_bank=2
+    asm.lda_imm(0x05)  # decoy
+    asm.sta_abs(0xB000)  # CHR0 register -- must not latch
+    asm.jsr(0x8005)  # -> W8000_B2::8005
+    asm.jmp(asm.label())  # self loop
+    asm.rti()  # NMI/IRQ handler
 
     # Vector table.
     _put_vectors(put, nmi=0xE010, reset=0xE000, irq=0xE010)
@@ -1077,20 +1108,24 @@ def make_prg_mmc5():
         # address for everything this helper places. See the docstring.
         off = cpu_addr - 0xE000 + MMC5_TOP_BANK * MMC5_BANK_SIZE
         prg[off:off + len(data)] = bytes(data)
+    asm = _Asm(prg, 0xE000, MMC5_TOP_BANK * MMC5_BANK_SIZE)
 
-    put(0xE000, [0xA9, 0x01])              # LDA #$01
-    put(0xE002, [0x8D, 0x14, 0x51])        # STA $5114 (bank_5114 -> 1)
-    put(0xE005, [0x20, 0x00, 0x80])        # JSR $8000 (-> W8000 mode3/bank1 overlay)
-    put(0xE008, [0xA9, 0x00])              # LDA #$00
-    put(0xE00A, [0x8D, 0x00, 0x51])        # STA $5100 (prg_mode 3 -> 0)
-    put(0xE00D, [0x4C, 0x00, 0x81])        # JMP $8100 (-> mode 0 window, self-loop)
-    put(0xE020, [0x40])                     # RTI (NMI/IRQ handler)
+    asm.org(0xE000)
+    asm.lda_imm(0x01)
+    asm.sta_abs(0x5114)  # bank_5114 -> 1
+    asm.jsr(0x8000)  # -> W8000 mode3/bank1 overlay
+    asm.lda_imm(0x00)
+    asm.sta_abs(0x5100)  # prg_mode 3 -> 0
+    asm.jmp(0x8100)  # -> mode 0 window, self-loop
+    asm.org(0xE020)
+    asm.rti()  # NMI/IRQ handler
 
     # Mode 0's self-loop marker, placed directly at its file offset: mode 0's 32K window
     # maps file offset (bank_5117 >> 2) * 0x8000 + (CPU - 0x8000), and with the resolved
     # bank_5117 = 7 that is 0x8000 + (CPU - 0x8000) = CPU, so CPU $8100 -> file 0x8100.
     mode0_loop = ((MMC5_TOP_BANK >> 2) * 0x8000) + 0x0100
-    prg[mode0_loop:mode0_loop + 3] = bytes([0x4C, 0x00, 0x81])  # JMP $8100 (self-loop)
+    loop = _Asm(prg, 0x8100, mode0_loop)
+    loop.jmp(loop.label())  # self-loop at $8100
 
     # Vector table (mode-3 home window, bank_5117=7: file offset == CPU address).
     _put_vectors(put, nmi=0xE020, reset=0xE000, irq=0xE020)
@@ -1157,15 +1192,18 @@ def make_prg_mmc5wrap():
         # the mode-3 $E000-$FFFF window maps file 0xE000-0xFFFF one-to-one.
         off = cpu_addr - 0xE000 + MMC5_TOP_BANK * MMC5_BANK_SIZE
         prg[off:off + len(data)] = bytes(data)
+    asm = _Asm(prg, 0xE000, MMC5_TOP_BANK * MMC5_BANK_SIZE)
 
-    put(0xE000, [0xA9, 0x29])              # LDA #$29 (41 -- out of range)
-    put(0xE002, [0x8D, 0x14, 0x51])        # STA $5114 (bank_5114 -> 41, wraps to 1)
-    put(0xE005, [0x20, 0x00, 0x80])        # JSR $8000 (-> W8000_M3_B1)
-    put(0xE008, [0xA9, 0x03])              # LDA #$03 (3 -- in range)
-    put(0xE00A, [0x8D, 0x15, 0x51])        # STA $5115 (bank_5115 -> 3, no wrap)
-    put(0xE00D, [0x20, 0x00, 0xA0])        # JSR $A000 (-> WA000_M3_B3)
-    put(0xE010, [0x4C, 0x10, 0xE0])        # JMP $E010 (self-loop)
-    put(0xE020, [0x40])                    # RTI (NMI/IRQ handler)
+    asm.org(0xE000)
+    asm.lda_imm(0x29)  # 41 -- out of range
+    asm.sta_abs(0x5114)  # bank_5114 -> 41, wraps to 1
+    asm.jsr(0x8000)  # -> W8000_M3_B1
+    asm.lda_imm(0x03)  # 3 -- in range
+    asm.sta_abs(0x5115)  # bank_5115 -> 3, no wrap
+    asm.jsr(0xA000)  # -> WA000_M3_B3
+    asm.jmp(asm.label())  # self-loop
+    asm.org(0xE020)
+    asm.rti()  # NMI/IRQ handler
 
     # Vector table (mode-3 home window, bank_5117=7: file offset == CPU address).
     _put_vectors(put, nmi=0xE020, reset=0xE000, irq=0xE020)
@@ -1292,47 +1330,51 @@ def make_prg_mirrortest():
     prg[2 * PRG_BANK_SIZE + 0x0005] = 0x60  # RTS
 
     put = _bank3_putter(prg)
+    asm = _bank3_asm(prg)
 
     # --- RESET ---
-    put(0xC000, [0xA9, 0x02])              # LDA #$02
-    put(0xC002, [0x8D, 0xD2, 0xFF])         # STA $FFD2   (latch -> bank 2)
-    put(0xC005, [0xAD, 0x00, 0x82])         # LDA $8200   (ROM_IDENTIFYING mirror)
-    put(0xC008, [0x8D, 0xD2, 0xFF])         # STA $FFD2   (re-latch from mirror -> bank 2)
-    put(0xC00B, [0x20, 0x05, 0x80])         # JSR $8005   (-> PRG_LO_B2::8005, load-bearing)
-    put(0xC00E, [0xA9, 0x01])              # LDA #$01
-    put(0xC010, [0x85, 0x42])              # STA $42     (write-through shadow store #1)
-    put(0xC012, [0x8D, 0xD1, 0xFF])         # STA $FFD1   (latch -> bank 1)
-    put(0xC015, [0xA9, 0x03])              # LDA #$03
-    put(0xC017, [0x85, 0x42])              # STA $42     (write-through shadow store #2)
-    put(0xC019, [0x8D, 0xD3, 0xFF])         # STA $FFD3   (latch -> bank 3)
-    put(0xC01C, [0xA5, 0x42])              # LDA $42     (write-through mirror)
-    put(0xC01E, [0x8D, 0xD3, 0xFF])         # STA $FFD3   (re-latch from shadow -> bank 3)
-    put(0xC021, [0xA9, 0x01])              # LDA #$01    (H1: forwarded value disagrees)
-    put(0xC023, [0x85, 0x42])              # STA $42     (plain RAM store, not a switch)
-    put(0xC025, [0xA5, 0x42])              # LDA $42     (must forward the 1, not mirror
+    asm.org(0xC000)
+    asm.lda_imm(0x02)
+    asm.sta_abs(0xFFD2)  # latch -> bank 2
+    asm.lda_abs(0x8200)  # ROM_IDENTIFYING mirror
+    asm.sta_abs(0xFFD2)  # re-latch from mirror -> bank 2
+    asm.jsr(0x8005)  # -> PRG_LO_B2::8005, load-bearing
+    asm.lda_imm(0x01)
+    asm.sta_zp(0x42)  # write-through shadow store #1
+    asm.sta_abs(0xFFD1)  # latch -> bank 1
+    asm.lda_imm(0x03)
+    asm.sta_zp(0x42)  # write-through shadow store #2
+    asm.sta_abs(0xFFD3)  # latch -> bank 3
+    asm.lda_zp(0x42)  # write-through mirror
+    asm.sta_abs(0xFFD3)  # re-latch from shadow -> bank 3
+    asm.lda_imm(0x01)  # H1: forwarded value disagrees
+    asm.sta_zp(0x42)  # plain RAM store, not a switch
+    asm.lda_zp(0x42)  # (must forward the 1, not mirror
                                              #  the stale tracked 3)
-    put(0xC027, [0x8D, 0xD1, 0xFF])         # STA $FFD1   (latch -> bank 1, forwarded)
-    put(0xC02A, [0xAD, 0x00, 0x82])         # LDA $8200   (SAVE_SLOT derivation: read-back)
-    put(0xC02D, [0x85, 0x59])              # STA $59     (stash the read-back bank)
-    put(0xC02F, [0x8D, 0xD1, 0xFF])         # STA $FFD1   (re-commit same bank -- types
+    asm.sta_abs(0xFFD1)  # latch -> bank 1, forwarded
+    asm.lda_abs(0x8200)  # SAVE_SLOT derivation: read-back
+    asm.sta_zp(0x59)  # stash the read-back bank
+    asm.sta_abs(0xFFD1)  # (re-commit same bank -- types
                                              #  $59 SAVE_SLOT, never WRITE_THROUGH)
-    put(0xC032, [0xA5, 0x30])              # LDA $30     (poison: unresolvable RAM load)
-    put(0xC034, [0x8D, 0xDA, 0xFF])         # STA $FFDA   (mechanism write -> unknown;
+    asm.lda_zp(0x30)  # poison: unresolvable RAM load
+    asm.sta_abs(0xFFDA)  # (mechanism write -> unknown;
                                              #  bank state is now genuinely unknown)
-    put(0xC037, [0x20, 0x00, 0xC1])         # JSR $C100   (SS2d guard checkpoint)
-    put(0xC03A, [0x20, 0x40, 0xC1])         # JSR $C140   (CallerP -- grm-mlp2 checkpoint)
-    put(0xC03D, [0x4C, 0x3D, 0xC0])         # JMP $C03D   (self loop)
-    put(0xC0F0, [0x40])                     # RTI (NMI/IRQ handler -- moved from $C03D by
+    asm.jsr(0xC100)  # SS2d guard checkpoint
+    asm.jsr(0xC140)  # CallerP -- grm-mlp2 checkpoint
+    asm.jmp(asm.label())  # self loop
+    asm.org(0xC0F0)
+    asm.rti()  # (NMI/IRQ handler -- moved from $C03D by
                                              #  grm-mlp2 to make room for CallerP's dispatch)
 
     # --- FUN_C100: the SS2d (requiresOnEntry) guard fixture ---
-    put(0xC100, [0xA5, 0x59])              # LDA $59     (SAVE_SLOT -- must decline)
-    put(0xC102, [0x8D, 0xDB, 0xFF])         # STA $FFDB   (stays UNRESOLVED)
-    put(0xC105, [0xA5, 0x31])              # LDA $31     (no shadow at all -- must decline)
-    put(0xC107, [0x8D, 0xDC, 0xFF])         # STA $FFDC   (stays UNRESOLVED)
-    put(0xC10A, [0xA9, 0x01])              # LDA #$01    (last site: always resolvable)
-    put(0xC10C, [0x8D, 0xD1, 0xFF])         # STA $FFD1   (-> bank 1, unconditionally)
-    put(0xC10F, [0x60])                     # RTS
+    asm.org(0xC100)
+    asm.lda_zp(0x59)  # SAVE_SLOT -- must decline
+    asm.sta_abs(0xFFDB)  # stays UNRESOLVED
+    asm.lda_zp(0x31)  # no shadow at all -- must decline
+    asm.sta_abs(0xFFDC)  # stays UNRESOLVED
+    asm.lda_imm(0x01)  # last site: always resolvable
+    asm.sta_abs(0xFFD1)  # -> bank 1, unconditionally
+    asm.rts()
 
     # ------------------------------------------------------------------
     # grm-mlp2: the POSITIVE test for the bank-state requirement-violation diagnostic --
@@ -1387,21 +1429,23 @@ def make_prg_mirrortest():
     # shadow at all, and neither is a live mirror, so neither trips the probe -- which is why
     # M8 can demand NO violation there while this demands one here. The two are the A/B pair
     # for the whole per-site predicate.
-    put(0xC120, [0xA5, 0x42])              # LDA $42     (WRITE_THROUGH mirror -- LIVE)
-    put(0xC122, [0x8D, 0xDB, 0xFF])         # STA $FFDB   (latch; $FFDB holds $FF so the
+    asm.org(0xC120)
+    asm.lda_zp(0x42)  # WRITE_THROUGH mirror -- LIVE
+    asm.sta_abs(0xFFDB)  # (latch; $FFDB holds $FF so the
                                              #  bus-conflict AND is a no-op and an unknown
                                              #  value stays honestly unknown)
-    put(0xC125, [0x60])                     # RTS
+    asm.rts()
 
     # WorkerM ($C130): the hop. Calls MirrorLeaf with the bank unknown -- so it inherits the
     # requirement AND the helper-argument warning sinks onto $C130 rather than CallerP's
     # site -- then closes with a plain, always-resolvable immediate latch. That trailing
     # write is FUN_C100's own recipe ($C10A/$C10C): it hands CallerP's call site a fully
     # known effect, keeping CallerP out of the helper-argument path in its own right.
-    put(0xC130, [0x20, 0x20, 0xC1])         # JSR $C120   (MirrorLeaf)
-    put(0xC133, [0xA9, 0x01])              # LDA #$01    (LAST switch site: plain immediate)
-    put(0xC135, [0x8D, 0xD1, 0xFF])         # STA $FFD1   (-> bank 1, unconditionally)
-    put(0xC138, [0x60])                     # RTS
+    asm.org(0xC130)
+    asm.jsr(0xC120)  # MirrorLeaf
+    asm.lda_imm(0x01)  # LAST switch site: plain immediate
+    asm.sta_abs(0xFFD1)  # -> bank 1, unconditionally
+    asm.rts()
 
     # CallerP ($C140): poisons the bank with the same idiom RESET uses at $C032, then calls
     # WorkerM. requiresOnEntry(WorkerM) is non-empty and unmet here, so the violation WARNING
@@ -1414,10 +1458,11 @@ def make_prg_mirrortest():
     # unaffected (INPUT declines just as an untyped cell does), but a fixture addition should
     # not silently re-type another routine's cells; a fresh address keeps the blast radius on
     # new addresses only.
-    put(0xC140, [0xA5, 0x33])              # LDA $33     (poison: unresolvable RAM load)
-    put(0xC142, [0x8D, 0xDA, 0xFF])         # STA $FFDA   (bank -> genuinely unknown)
-    put(0xC145, [0x20, 0x30, 0xC1])         # JSR $C130   (WorkerM -- requirement unmet)
-    put(0xC148, [0x60])                     # RTS
+    asm.org(0xC140)
+    asm.lda_zp(0x33)  # poison: unresolvable RAM load
+    asm.sta_abs(0xFFDA)  # bank -> genuinely unknown
+    asm.jsr(0xC130)  # WorkerM -- requirement unmet
+    asm.rts()
 
     # Latch targets: bus-conflict-safe bytes. $FFD1/$FFD2/$FFD3 hold the bank number they
     # latch (the canonical table idiom); $FFDA/$FFDB/$FFDC hold 0xFF so the bus-conflict
@@ -1494,22 +1539,25 @@ def make_prg_nmi():
     _bank_markers(prg, PRG_BANKS, PRG_BANK_SIZE)
 
     put = _bank3_putter(prg)
+    asm = _bank3_asm(prg)
 
     # --- RESET ---
-    put(0xC000, [0xA9, 0x02])              # LDA #$02
-    put(0xC002, [0x85, 0x42])              # STA $42     (write-through shadow store #1)
-    put(0xC004, [0x8D, 0xD2, 0xFF])         # STA $FFD2   (latch -> bank 2)
-    put(0xC007, [0xA9, 0x01])              # LDA #$01
-    put(0xC009, [0x85, 0x42])              # STA $42     (write-through shadow store #2)
-    put(0xC00B, [0x8D, 0xD1, 0xFF])         # STA $FFD1   (latch -> bank 1)
-    put(0xC00E, [0xA5, 0x42])              # LDA $42     (CONTROL: read-back on RESET path)
-    put(0xC010, [0x8D, 0xD1, 0xFF])         # STA $FFD1   (must resolve bank 1)
-    put(0xC013, [0x4C, 0x13, 0xC0])         # JMP $C013   (self loop)
+    asm.org(0xC000)
+    asm.lda_imm(0x02)
+    asm.sta_zp(0x42)  # write-through shadow store #1
+    asm.sta_abs(0xFFD2)  # latch -> bank 2
+    asm.lda_imm(0x01)
+    asm.sta_zp(0x42)  # write-through shadow store #2
+    asm.sta_abs(0xFFD1)  # latch -> bank 1
+    asm.lda_zp(0x42)  # CONTROL: read-back on RESET path
+    asm.sta_abs(0xFFD1)  # must resolve bank 1
+    asm.jmp(asm.label())  # self loop
 
     # --- NMI/IRQ handler: the interrupt-exit bank restore ---
-    put(0xC020, [0xA5, 0x42])              # LDA $42     (write-through shadow)
-    put(0xC022, [0x8D, 0xDF, 0xFF])         # STA $FFDF   (must NOT resolve to a bank)
-    put(0xC025, [0x40])                     # RTI
+    asm.org(0xC020)
+    asm.lda_zp(0x42)  # write-through shadow
+    asm.sta_abs(0xFFDF)  # must NOT resolve to a bank
+    asm.rti()
 
     # Latch targets. $FFD1/$FFD2 hold the bank number they latch (the canonical table
     # idiom, bus-conflict-safe); $FFDF holds 0xFF so the bus-conflict AND is a no-op and
@@ -1575,19 +1623,24 @@ def make_prg_fork():
         prg[bank * PRG_BANK_SIZE + 0x0020] = 0xA0 | bank   # marker byte
 
     put = _bank3_putter(prg)
+    asm = _bank3_asm(prg)
 
     # --- RESET ---
-    put(0xC000, [0xA2, 0x01])              # LDX #$01    (arm A)
-    put(0xC002, [0xA5, 0x10])              # LDA $10     (runtime flag; sets Z last)
-    put(0xC004, [0xF0, 0x02])              # BEQ $C008
-    put(0xC006, [0xA2, 0x02])              # LDX #$02    (arm B)
-    put(0xC008, [0x8E, 0xDF, 0xFF])         # STX $FFDF   (THE MERGE SITE)
-    put(0xC00B, [0x20, 0x10, 0x80])         # JSR $8010
-    put(0xC00E, [0xAD, 0x20, 0x80])         # LDA $8020
-    put(0xC011, [0x4C, 0x11, 0xC0])         # JMP $C011   (self loop)
+    asm.org(0xC000)
+    asm.ldx_imm(0x01)  # arm A
+    asm.lda_zp(0x10)  # runtime flag; sets Z last
+    merge = asm.fwd()
+    asm.beq(merge)
+    asm.ldx_imm(0x02)  # arm B
+    asm.bind(merge)
+    asm.stx_abs(0xFFDF)  # THE MERGE SITE
+    asm.jsr(0x8010)
+    asm.lda_abs(0x8020)
+    asm.jmp(asm.label())  # self loop
 
     # --- NMI/IRQ handler ---
-    put(0xC020, [0x40])                     # RTI
+    asm.org(0xC020)
+    asm.rti()
 
     # Latch target: $FF so the bus-conflict AND passes every arm value through.
     put(0xFFDF, [0xFF])
@@ -1649,19 +1702,24 @@ def make_prg_forkhome():
         prg[bank * PRG_BANK_SIZE + 0x0020] = 0xA0 | bank   # marker byte
 
     put = _bank3_putter(prg)
+    asm = _bank3_asm(prg)
 
     # --- RESET ---
-    put(0xC000, [0xA2, 0x00])              # LDX #$00    (arm A: HOME)
-    put(0xC002, [0xA5, 0x10])              # LDA $10     (runtime flag; sets Z last)
-    put(0xC004, [0xF0, 0x02])              # BEQ $C008
-    put(0xC006, [0xA2, 0x02])              # LDX #$02    (arm B)
-    put(0xC008, [0x8E, 0xDF, 0xFF])         # STX $FFDF   (THE MERGE SITE)
-    put(0xC00B, [0x20, 0x10, 0x80])         # JSR $8010
-    put(0xC00E, [0xAD, 0x20, 0x80])         # LDA $8020
-    put(0xC011, [0x4C, 0x11, 0xC0])         # JMP $C011   (self loop)
+    asm.org(0xC000)
+    asm.ldx_imm(0x00)  # arm A: HOME
+    asm.lda_zp(0x10)  # runtime flag; sets Z last
+    merge = asm.fwd()
+    asm.beq(merge)
+    asm.ldx_imm(0x02)  # arm B
+    asm.bind(merge)
+    asm.stx_abs(0xFFDF)  # THE MERGE SITE
+    asm.jsr(0x8010)
+    asm.lda_abs(0x8020)
+    asm.jmp(asm.label())  # self loop
 
     # --- NMI/IRQ handler ---
-    put(0xC020, [0x40])                     # RTI
+    asm.org(0xC020)
+    asm.rti()
 
     # Latch target: $FF so the bus-conflict AND passes every arm value through.
     put(0xFFDF, [0xFF])
@@ -1720,8 +1778,11 @@ def make_prg_intrawin():
     put_bank(2, 0x0020, [0xA2])
 
     put = _bank3_putter(prg)
-    put(0xC000, [0x4C, 0x00, 0x80])         # JMP $8000
-    put(0xC020, [0x40])                     # RTI
+    asm = _bank3_asm(prg)
+    asm.org(0xC000)
+    asm.jmp(0x8000)
+    asm.org(0xC020)
+    asm.rti()
     put(0xFFDF, [0xFF])                     # bus-conflict AND is a no-op
     _put_vectors(put, nmi=0xC020, reset=0xC000, irq=0xC020)
     return bytes(prg)
@@ -1770,29 +1831,38 @@ def make_prg_forkbudget():
         prg[bank * PRG_BANK_SIZE + 0x0010] = 0x60          # RTS, as in make_prg_fork()
 
     put = _bank3_putter(prg)
+    asm = _bank3_asm(prg)
 
-    put(0xC000, [0xA5, 0x10])              # LDA $10
-    put(0xC002, [0xF0, 0x11])              # BEQ $C015   (arm 1)
-    put(0xC004, [0xC9, 0x01])              # CMP #$01
-    put(0xC006, [0xF0, 0x12])              # BEQ $C01A   (arm 2)
-    put(0xC008, [0xC9, 0x02])              # CMP #$02
-    put(0xC00A, [0xF0, 0x13])              # BEQ $C01F   (arm 3)
-    put(0xC00C, [0xC9, 0x03])              # CMP #$03
-    put(0xC00E, [0xF0, 0x14])              # BEQ $C024   (arm 4)
-    put(0xC010, [0xA2, 0x05])              # LDX #$05    (arm 5)
-    put(0xC012, [0x4C, 0x26, 0xC0])         # JMP $C026
-    put(0xC015, [0xA2, 0x01])              # LDX #$01    (arm 1)
-    put(0xC017, [0x4C, 0x26, 0xC0])         # JMP $C026
-    put(0xC01A, [0xA2, 0x02])              # LDX #$02    (arm 2)
-    put(0xC01C, [0x4C, 0x26, 0xC0])         # JMP $C026
-    put(0xC01F, [0xA2, 0x03])              # LDX #$03    (arm 3)
-    put(0xC021, [0x4C, 0x26, 0xC0])         # JMP $C026
-    put(0xC024, [0xA2, 0x04])              # LDX #$04    (arm 4, falls through)
-    put(0xC026, [0x8E, 0xDF, 0xFF])         # STX $FFDF   (THE MERGE SITE)
-    put(0xC029, [0x20, 0x10, 0x80])         # JSR $8010
-    put(0xC02C, [0x4C, 0x2C, 0xC0])         # JMP $C02C
+    asm.org(0xC000)
+    asm.lda_zp(0x10)
+    arm1, arm2, arm3, arm4, merge = (asm.fwd() for _ in range(5))
+    asm.beq(arm1)
+    asm.cmp_imm(0x01)
+    asm.beq(arm2)
+    asm.cmp_imm(0x02)
+    asm.beq(arm3)
+    asm.cmp_imm(0x03)
+    asm.beq(arm4)
+    asm.ldx_imm(0x05)  # arm 5
+    asm.jmp(merge)
+    asm.bind(arm1)
+    asm.ldx_imm(0x01)
+    asm.jmp(merge)
+    asm.bind(arm2)
+    asm.ldx_imm(0x02)
+    asm.jmp(merge)
+    asm.bind(arm3)
+    asm.ldx_imm(0x03)
+    asm.jmp(merge)
+    asm.bind(arm4)
+    asm.ldx_imm(0x04)  # falls through
+    asm.bind(merge)
+    asm.stx_abs(0xFFDF)  # THE MERGE SITE
+    asm.jsr(0x8010)
+    asm.jmp(asm.label())
 
-    put(0xC030, [0x40])                     # RTI
+    asm.org(0xC030)
+    asm.rti()
 
     put(0xFFDF, [0xFF])
 
@@ -1819,22 +1889,25 @@ def make_prg_mode():
     # Bank 3 = PRG[last]: the home-mode WC000 window (CPU $C000+) AND the mode-1 W8000
     # window (CPU $8000+). put() addresses it by its home-mode CPU address.
     put = _bank3_putter(prg)
+    asm = _bank3_asm(prg)
 
     # RESET phase (home mode prg_mode=0, bank seeded 0).
-    put(0xC000, [0xA9, 0x01])               # LDA #$01
-    put(0xC002, [0x8D, 0x00, 0x50])         # STA $5000 (bank latch -> 1)
-    put(0xC005, [0x20, 0x00, 0x80])         # JSR $8000 (mode0/bank1 -> W8000_M0_B1::8000)
-    put(0xC008, [0xA9, 0x01])               # LDA #$01
-    put(0xC00A, [0x8D, 0x00, 0x60])         # STA $6000 (mode latch -> 1; bank=1 survives)
-    put(0xC00D, [0x4C, 0x40, 0x80])         # JMP $8040 (mode1 -> W8000_M1::8040)
-    put(0xC010, [0x40])                     # RTI (NMI/IRQ handler)
+    asm.org(0xC000)
+    asm.lda_imm(0x01)
+    asm.sta_abs(0x5000)  # bank latch -> 1
+    asm.jsr(0x8000)  # mode0/bank1 -> W8000_M0_B1::8000
+    asm.lda_imm(0x01)
+    asm.sta_abs(0x6000)  # mode latch -> 1; bank=1 survives
+    asm.jmp(0x8040)  # mode1 -> W8000_M1::8040
+    asm.rti()  # NMI/IRQ handler
 
     # Mode-1 phase; written at PRG 0xC040 == W8000_M1's CPU $8040 (dual-mapped -- the
     # code deliberately runs in the fixed $8000 window; see module doc).
-    put(0xC040, [0xA9, 0x02])               # 8040: LDA #$02
-    put(0xC042, [0x8D, 0x00, 0x50])         # 8042: STA $5000 (bank -> 2 inside overlay)
-    put(0xC045, [0x20, 0x30, 0xC0])         # 8045: JSR $C030 (mode1/bank2 -> WC000_M1_B2::C030)
-    put(0xC048, [0x4C, 0x48, 0x80])         # 8048: JMP $8048 (self idle)
+    asm.org(0xC040)
+    asm.lda_imm(0x02)
+    asm.sta_abs(0x5000)  # bank -> 2 inside overlay
+    asm.jsr(0xC030)  # mode1/bank2 -> WC000_M1_B2::C030
+    asm.jmp(0x8048)  # self idle
 
     # Vector table.
     _put_vectors(put, nmi=0xC010, reset=0xC000, irq=0xC010)
@@ -1863,27 +1936,29 @@ def make_prg_mmc3():
     def put(cpu_addr, data):
         off = bank7_base + (cpu_addr - 0xE000)
         prg[off:off + len(data)] = bytes(data)
+    asm = _Asm(prg, 0xE000, bank7_base)
 
-    put(0xE000, [0xA9, 0x06])              # LDA #$06 (select R6)
-    put(0xE002, [0x8D, 0x00, 0x80])        # STA $8000 (select=6, prg_mode=0)
-    put(0xE005, [0xA9, 0x02])              # LDA #$02
-    put(0xE007, [0x8D, 0x01, 0x80])        # STA $8001 (data -> r6=2)
-    put(0xE00A, [0x20, 0x00, 0x80])        # JSR $8000 (F1 -> W8000_M0_B2::8000)
-    put(0xE00D, [0xA9, 0x00])              # LDA #$00 (select R0, CHR -- untracked)
-    put(0xE00F, [0x8D, 0x00, 0x80])        # STA $8000 (select=0, prg_mode=0)
-    put(0xE012, [0xA9, 0xAA])              # LDA #$AA (arbitrary CHR data byte)
-    put(0xE014, [0x8D, 0x01, 0x80])        # STA $8001 (CHR data -- r6/r7 untouched)
-    put(0xE017, [0x20, 0x00, 0x80])        # JSR $8000 (F2 -- r6=2 survived -> W8000_M0_B2::8000)
-    put(0xE01A, [0xA9, 0x07])              # LDA #$07 (select R7)
-    put(0xE01C, [0x8D, 0x00, 0x80])        # STA $8000 (select=7, prg_mode=0)
-    put(0xE01F, [0xA9, 0x03])              # LDA #$03
-    put(0xE021, [0x8D, 0x01, 0x80])        # STA $8001 (data -> r7=3)
-    put(0xE024, [0x20, 0x00, 0xA0])        # JSR $A000 (F3 -> WA000_B3::A000, hoisted, no _M)
-    put(0xE027, [0xA9, 0x46])              # LDA #$46 (select=6, mode bit set)
-    put(0xE029, [0x8D, 0x00, 0x80])        # STA $8000 (select=6, prg_mode=1 -- mode flip)
-    put(0xE02C, [0x20, 0x00, 0xC0])        # JSR $C000 (F4 -> WC000_M1_B2::C000)
-    put(0xE02F, [0x4C, 0x2F, 0xE0])        # JMP $E02F (idle loop, fixed home window)
-    put(0xE032, [0x40])                     # RTI (NMI/IRQ handler)
+    asm.org(0xE000)
+    asm.lda_imm(0x06)  # select R6
+    asm.sta_abs(0x8000)  # select=6, prg_mode=0
+    asm.lda_imm(0x02)
+    asm.sta_abs(0x8001)  # data -> r6=2
+    asm.jsr(0x8000)  # F1 -> W8000_M0_B2::8000
+    asm.lda_imm(0x00)  # select R0, CHR -- untracked
+    asm.sta_abs(0x8000)  # select=0, prg_mode=0
+    asm.lda_imm(0xAA)  # arbitrary CHR data byte
+    asm.sta_abs(0x8001)  # CHR data -- r6/r7 untouched
+    asm.jsr(0x8000)  # F2 -- r6=2 survived -> W8000_M0_B2::8000
+    asm.lda_imm(0x07)  # select R7
+    asm.sta_abs(0x8000)  # select=7, prg_mode=0
+    asm.lda_imm(0x03)
+    asm.sta_abs(0x8001)  # data -> r7=3
+    asm.jsr(0xA000)  # F3 -> WA000_B3::A000, hoisted, no _M
+    asm.lda_imm(0x46)  # select=6, mode bit set
+    asm.sta_abs(0x8000)  # select=6, prg_mode=1 -- mode flip
+    asm.jsr(0xC000)  # F4 -> WC000_M1_B2::C000
+    asm.jmp(asm.label())  # idle loop, fixed home window
+    asm.rti()  # NMI/IRQ handler
 
     # Vector table.
     _put_vectors(put, nmi=0xE032, reset=0xE000, irq=0xE032)
@@ -1912,6 +1987,7 @@ def make_prg_mmc3_2():
     def put(cpu_addr, data):
         off = bank7_base + (cpu_addr - 0xE000)
         prg[off:off + len(data)] = bytes(data)
+    asm = _Asm(prg, 0xE000, bank7_base)
 
     # RESET ($E000): call CallerA (no violation, routes to r6), CallerB (violation,
     # poisons r6+r7), CallerC (no violation, verified no-op via untracked CHR select),
@@ -1919,29 +1995,31 @@ def make_prg_mmc3_2():
     # trio (CallerE positive, CallerF intervening-call control, CallerG self-written-
     # cell control), then idle. The idle loop and NMI/IRQ RTI moved from $E00C/$E00F
     # to $E015/$E018 to make room for the three new dispatch calls.
-    put(0xE000, [0x20, 0x00, 0xE1])        # JSR $E100 (CallerA)
-    put(0xE003, [0x20, 0x20, 0xE1])        # JSR $E120 (CallerB)
-    put(0xE006, [0x20, 0x60, 0xE1])        # JSR $E160 (CallerC)
-    put(0xE009, [0x20, 0x80, 0xE1])        # JSR $E180 (CallerD)
-    put(0xE00C, [0x20, 0x20, 0xE2])        # JSR $E220 (CallerE)
-    put(0xE00F, [0x20, 0x40, 0xE2])        # JSR $E240 (CallerF)
-    put(0xE012, [0x20, 0x80, 0xE2])        # JSR $E280 (CallerG -- moved from $E260)
-    put(0xE015, [0x20, 0xC0, 0xE2])        # JSR $E2C0 (CallerH -- grm-vgod guard)
-    put(0xE018, [0x20, 0x20, 0xE3])        # JSR $E320 (CallerJ -- grm-qd0u positive)
-    put(0xE01B, [0x20, 0x60, 0xE3])        # JSR $E360 (CallerK -- grm-qd0u decline control)
-    put(0xE01E, [0x4C, 0x1E, 0xE0])        # JMP $E01E (idle loop)
-    put(0xE021, [0x40])                     # RTI (NMI/IRQ handler)
+    asm.org(0xE000)
+    asm.jsr(0xE100)  # CallerA
+    asm.jsr(0xE120)  # CallerB
+    asm.jsr(0xE160)  # CallerC
+    asm.jsr(0xE180)  # CallerD
+    asm.jsr(0xE220)  # CallerE
+    asm.jsr(0xE240)  # CallerF
+    asm.jsr(0xE280)  # CallerG -- moved from $E260
+    asm.jsr(0xE2C0)  # CallerH -- grm-vgod guard
+    asm.jsr(0xE320)  # CallerJ -- grm-qd0u positive
+    asm.jsr(0xE360)  # CallerK -- grm-qd0u decline control
+    asm.jmp(asm.label())  # idle loop
+    asm.rti()  # NMI/IRQ handler
 
     # CallerA ($E100): establishes select=6 itself before calling the data-only helper
     # -- requiresOnEntry(H) is satisfied here, so no WARNING at CallerA's JSR. bead
     # grm-snu: the routed deposit lands data byte 2 in r6 alone, leaving select=6 and
     # prg_mode=0 untouched (fully known).
-    put(0xE100, [0xA9, 0x06])              # LDA #$06 (select R6)
-    put(0xE102, [0x8D, 0x00, 0x80])        # STA $8000 (select=6, prg_mode=0 known)
-    put(0xE105, [0xA9, 0x02])              # LDA #$02 (data byte)
-    put(0xE107, [0x20, 0x40, 0xE1])        # JSR $E140 (H) -- select known, no violation;
+    asm.org(0xE100)
+    asm.lda_imm(0x06)  # select R6
+    asm.sta_abs(0x8000)  # select=6, prg_mode=0 known
+    asm.lda_imm(0x02)  # data byte
+    asm.jsr(0xE140)  # (H) -- select known, no violation;
                                              # routed deposit -> r6=2
-    put(0xE10A, [0x60])                     # RTS
+    asm.rts()
 
     # CallerB ($E120): poisons select via an unresolvable load (plain LDA of an address
     # select-data's hooks.resolveLoad never resolves -- the registers are write-only)
@@ -1950,41 +2028,45 @@ def make_prg_mmc3_2():
     # the routed deposit honestly poisons r6+r7 ONLY (never select/prg_mode, which a data
     # write can't reach), rather than the pre-fix DEFAULT deposit that fabricated a known
     # select value out of the data byte.
-    put(0xE120, [0xAD, 0x00, 0xE2])        # LDA $E200 (unresolvable -- opaque load)
-    put(0xE123, [0x8D, 0x00, 0x80])        # STA $8000 (select -> unknown)
-    put(0xE126, [0xA9, 0x03])              # LDA #$03 (data byte -- itself known, doesn't
+    asm.org(0xE120)
+    asm.lda_abs(0xE200)  # unresolvable -- opaque load
+    asm.sta_abs(0x8000)  # select -> unknown
+    asm.lda_imm(0x03)  # (data byte -- itself known, doesn't
                                              # matter: H's dispatch needs SELECT, not data)
-    put(0xE128, [0x20, 0x40, 0xE1])        # JSR $E140 (H) -- select unknown -> violation
-    put(0xE12B, [0x60])                     # RTS
+    asm.jsr(0xE140)  # (H) -- select unknown -> violation
+    asm.rts()
 
     # CallerC ($E160) -- bead grm-snu: establishes select=0 (R0, an untracked CHR
     # register) before calling H. select IS known here, so requiresOnEntry(H) is
     # satisfied (no WARNING) -- but the routed deposit's ownedMask is 0 (verified no-op),
     # so the call site also gets NO bank-> comment, and r6/r7's prior knowledge survives
     # the call untouched.
-    put(0xE160, [0xA9, 0x00])              # LDA #$00 (select R0, CHR -- untracked)
-    put(0xE162, [0x8D, 0x00, 0x80])        # STA $8000 (select=0, prg_mode=0 known)
-    put(0xE165, [0xA9, 0x04])              # LDA #$04 (data byte -- irrelevant, CHR target)
-    put(0xE167, [0x20, 0x40, 0xE1])        # JSR $E140 (H) -- select known (CHR) ->
+    asm.org(0xE160)
+    asm.lda_imm(0x00)  # select R0, CHR -- untracked
+    asm.sta_abs(0x8000)  # select=0, prg_mode=0 known
+    asm.lda_imm(0x04)  # data byte -- irrelevant, CHR target
+    asm.jsr(0xE140)  # (H) -- select known (CHR) ->
                                              # verified no-op: no comment, no warning
-    put(0xE16A, [0x60])                     # RTS
+    asm.rts()
 
     # CallerD ($E180) -- bead grm-snu: establishes select=7 (R7) before calling H. Mirrors
     # CallerA but routes to the OTHER tracked target, proving the routing genuinely reads
     # the tracked select value rather than being hardcoded to R6.
-    put(0xE180, [0xA9, 0x07])              # LDA #$07 (select R7)
-    put(0xE182, [0x8D, 0x00, 0x80])        # STA $8000 (select=7, prg_mode=0 known)
-    put(0xE185, [0xA9, 0x04])              # LDA #$04 (data byte)
-    put(0xE187, [0x20, 0x40, 0xE1])        # JSR $E140 (H) -- select known, no violation;
+    asm.org(0xE180)
+    asm.lda_imm(0x07)  # select R7
+    asm.sta_abs(0x8000)  # select=7, prg_mode=0 known
+    asm.lda_imm(0x04)  # data byte
+    asm.jsr(0xE140)  # (H) -- select known, no violation;
                                              # routed deposit -> r7=4
-    put(0xE18A, [0x60])                     # RTS
+    asm.rts()
 
     # H ($E140): the bare data-write helper -- select is assumed already set by the
     # caller (real MMC3 code commonly amortizes one select write across several data
     # writes). Call-site recovery routes through SelectDataBankSwitchStrategy's own
     # depositHelperArgument override (bead grm-snu) rather than the interface DEFAULT.
-    put(0xE140, [0x8D, 0x01, 0x80])        # STA $8001 (data write; A = caller's argument)
-    put(0xE143, [0x60])                     # RTS
+    asm.org(0xE140)
+    asm.sta_abs(0x8001)  # data write; A = caller's argument
+    asm.rts()
 
     # Arbitrary byte CallerB's unresolvable load reads (value itself is irrelevant --
     # the point is that value recovery cannot pin it down at all).
@@ -2012,12 +2094,13 @@ def make_prg_mmc3_2():
     # STA $0721 is the decoy: one byte off the real cell, present so
     # BoardBankAnalyzer#inboundArgumentCell has something to rule out via its `written`
     # set before it settles on $0720.
-    put(0xE210, [0xA9, 0x47])              # LDA #$47 (select=7, prg_mode=1 -- constant)
-    put(0xE212, [0x8D, 0x21, 0x07])        # STA $0721 (decoy cell, NOT the argument cell)
-    put(0xE215, [0x8D, 0x00, 0x80])        # STA $8000 (select=7, prg_mode=1 known)
-    put(0xE218, [0xAD, 0x20, 0x07])        # LDA $0720 (the argument cell -- caller-supplied)
-    put(0xE21B, [0x8D, 0x01, 0x80])        # STA $8001 (data write -> r7 = whatever $0720 held)
-    put(0xE21E, [0x60])                     # RTS
+    asm.org(0xE210)
+    asm.lda_imm(0x47)  # select=7, prg_mode=1 -- constant
+    asm.sta_abs(0x0721)  # decoy cell, NOT the argument cell
+    asm.sta_abs(0x8000)  # select=7, prg_mode=1 known
+    asm.lda_abs(0x0720)  # the argument cell -- caller-supplied
+    asm.sta_abs(0x8001)  # data write -> r7 = whatever $0720 held
+    asm.rts()
 
     # CallerE ($E220): the positive case -- establishes select=7/prg_mode=1 itself (its
     # own $47 -> $8000, the fixture idiom) so H2's routed deposit has a known select to
@@ -2031,19 +2114,20 @@ def make_prg_mmc3_2():
     # criterion fail on a CORRECT recovery and make the controls below pass vacuously.
     # Expect select=7, prg_mode=1, r7=5 (never r7=3), fully known, no warning at the
     # JSR $E210 (E22C).
-    put(0xE220, [0xA9, 0x47])              # LDA #$47 (select=7, prg_mode=1 -- fixture idiom)
-    put(0xE222, [0x8D, 0x00, 0x80])        # STA $8000 (select=7, prg_mode=1 known)
-    put(0xE225, [0xA9, 0x05])              # LDA #$05 (5 -- the real bank, IN RANGE)
-    put(0xE227, [0x8D, 0x20, 0x07])        # STA $0720 (the argument cell)
-    put(0xE22A, [0xA9, 0x03])              # LDA #$03 (3 -- DECOY in A, also in range;
+    asm.org(0xE220)
+    asm.lda_imm(0x47)  # select=7, prg_mode=1 -- fixture idiom
+    asm.sta_abs(0x8000)  # select=7, prg_mode=1 known
+    asm.lda_imm(0x05)  # 5 -- the real bank, IN RANGE
+    asm.sta_abs(0x0720)  # the argument cell
+    asm.lda_imm(0x03)  # (3 -- DECOY in A, also in range;
                                              # would (wrongly) give r7=3)
-    put(0xE22C, [0x20, 0x10, 0xE2])        # JSR $E210 (H2) -> select=7/prg_mode=1/r7=5
-    put(0xE22F, [0x60])                     # RTS
+    asm.jsr(0xE210)  # (H2) -> select=7/prg_mode=1/r7=5
+    asm.rts()
 
     # Harmless ($E230): an arbitrary intervening subroutine CallerF calls between its
     # store to $0720 and its call to H2 -- content doesn't matter, only that it is a CALL
     # (a JSR may write anywhere, so the caller-side scan must decline across it).
-    put(0xE230, [0x60])                     # RTS
+    asm.rts()
 
     # CallerF ($E240): the intervening-call control -- establishes select=7/prg_mode=1
     # itself (same idiom as CallerE), then is otherwise identical to CallerE except a JSR
@@ -2051,14 +2135,15 @@ def make_prg_mmc3_2():
     # forwardedStoreValue's straight-line/no-call requirement, so the $0720 store cannot
     # be attributed across the call. Expect a WARNING at the JSR $E210 (E24D), not a value
     # (no r7=5 claim).
-    put(0xE240, [0xA9, 0x47])              # LDA #$47 (select=7, prg_mode=1 -- fixture idiom)
-    put(0xE242, [0x8D, 0x00, 0x80])        # STA $8000 (select=7, prg_mode=1 known)
-    put(0xE245, [0xA9, 0x05])              # LDA #$05 (5)
-    put(0xE247, [0x8D, 0x20, 0x07])        # STA $0720 (the argument cell)
-    put(0xE24A, [0x20, 0x30, 0xE2])        # JSR $E230 (Harmless) -- breaks the forward scan
-    put(0xE24D, [0x20, 0x10, 0xE2])        # JSR $E210 (H2) -> select=7/prg_mode=1 known,
+    asm.org(0xE240)
+    asm.lda_imm(0x47)  # select=7, prg_mode=1 -- fixture idiom
+    asm.sta_abs(0x8000)  # select=7, prg_mode=1 known
+    asm.lda_imm(0x05)  # 5
+    asm.sta_abs(0x0720)  # the argument cell
+    asm.jsr(0xE230)  # (Harmless) -- breaks the forward scan
+    asm.jsr(0xE210)  # (H2) -> select=7/prg_mode=1 known,
                                              # r7 UNKNOWN -- WARNING, no "bank ->" for r7
-    put(0xE250, [0x60])                     # RTS
+    asm.rts()
 
     # H3 ($E260) -- moved from $E250 because CallerF now runs through $E250: the
     # self-written-cell control -- same shape as H2, EXCEPT the decoy write lands on
@@ -2069,14 +2154,15 @@ def make_prg_mmc3_2():
     # TRUTH here, because H3 really does write $47 to $8001. The wrong answer to guard
     # against is r7=5, the caller's dead byte -- and 5 is a real bank here, so that wrong
     # answer would be annotated rather than suppressed by the out-of-range guard.
-    put(0xE260, [0xA9, 0x47])              # LDA #$47 (select=7, prg_mode=1 -- constant)
-    put(0xE262, [0x8D, 0x20, 0x07])        # STA $0720 (SELF-writes the cell it reads below)
-    put(0xE265, [0x8D, 0x00, 0x80])        # STA $8000 (select=7, prg_mode=1 known)
-    put(0xE268, [0xAD, 0x20, 0x07])        # LDA $0720 (reads back H3's OWN $47, not the
+    asm.org(0xE260)
+    asm.lda_imm(0x47)  # select=7, prg_mode=1 -- constant
+    asm.sta_abs(0x0720)  # SELF-writes the cell it reads below
+    asm.sta_abs(0x8000)  # select=7, prg_mode=1 known
+    asm.lda_abs(0x0720)  # (reads back H3's OWN $47, not the
                                              # caller's byte)
-    put(0xE26B, [0x8D, 0x01, 0x80])        # STA $8001 (data write -- r7=7 is correct here;
+    asm.sta_abs(0x8001)  # (data write -- r7=7 is correct here;
                                              # r7=5 would be the caller's dead byte)
-    put(0xE26E, [0x60])                     # RTS
+    asm.rts()
 
     # CallerG ($E280) -- moved from $E260: establishes select=7/prg_mode=1 itself (same
     # idiom as CallerE/F), then mirrors CallerE's store shape (same $05) so the only
@@ -2086,12 +2172,13 @@ def make_prg_mmc3_2():
     # 5 is a REAL bank here, so a wrong attribution would be ANNOTATED rather than caught
     # by the out-of-range guard -- which is what makes this a control and not a formality.
     # Expect r7=7 (H3's own byte), and specifically NOT r7=5, at the JSR $E260 (E28A).
-    put(0xE280, [0xA9, 0x47])              # LDA #$47 (select=7, prg_mode=1 -- fixture idiom)
-    put(0xE282, [0x8D, 0x00, 0x80])        # STA $8000 (select=7, prg_mode=1 known)
-    put(0xE285, [0xA9, 0x05])              # LDA #$05 (5, but H3 never sees it)
-    put(0xE287, [0x8D, 0x20, 0x07])        # STA $0720 (dead store -- H3 overwrites this)
-    put(0xE28A, [0x20, 0x60, 0xE2])        # JSR $E260 (H3) -> r7=7, never r7=5
-    put(0xE28D, [0x60])                     # RTS
+    asm.org(0xE280)
+    asm.lda_imm(0x47)  # select=7, prg_mode=1 -- fixture idiom
+    asm.sta_abs(0x8000)  # select=7, prg_mode=1 known
+    asm.lda_imm(0x05)  # 5, but H3 never sees it
+    asm.sta_abs(0x0720)  # dead store -- H3 overwrites this
+    asm.jsr(0xE260)  # (H3) -> r7=7, never r7=5
+    asm.rts()
 
     # ------------------------------------------------------------------
     # grm-vgod: the MMC3 analogue of nesmirrortest's M8 guard.
@@ -2121,15 +2208,16 @@ def make_prg_mmc3_2():
     #     ownRequires(H4) = r6 -- not because it needed r6 on entry (knowing r6 would not
     #     have helped; the write overwrites it regardless) but merely because it failed.
     #   - the second is a plain immediate, so r7 resolves.
-    put(0xE2A0, [0xA9, 0x06])              # LDA #$06 (select R6)
-    put(0xE2A2, [0x8D, 0x00, 0x80])        # STA $8000 (select=6, prg_mode=0 known)
-    put(0xE2A5, [0xAD, 0x00, 0xE2])        # LDA $E200 (unresolvable -- opaque load)
-    put(0xE2A8, [0x8D, 0x01, 0x80])        # STA $8001 (data write -> r6 UNKNOWN)
-    put(0xE2AB, [0xA9, 0x07])              # LDA #$07 (select R7)
-    put(0xE2AD, [0x8D, 0x00, 0x80])        # STA $8000 (select=7, prg_mode=0 known)
-    put(0xE2B0, [0xA9, 0x02])              # LDA #$02 (data byte -- plain immediate)
-    put(0xE2B2, [0x8D, 0x01, 0x80])        # STA $8001 (data write -> r7=2, fully known)
-    put(0xE2B5, [0x60])                     # RTS
+    asm.org(0xE2A0)
+    asm.lda_imm(0x06)  # select R6
+    asm.sta_abs(0x8000)  # select=6, prg_mode=0 known
+    asm.lda_abs(0xE200)  # unresolvable -- opaque load
+    asm.sta_abs(0x8001)  # data write -> r6 UNKNOWN
+    asm.lda_imm(0x07)  # select R7
+    asm.sta_abs(0x8000)  # select=7, prg_mode=0 known
+    asm.lda_imm(0x02)  # data byte -- plain immediate
+    asm.sta_abs(0x8001)  # data write -> r7=2, fully known
+    asm.rts()
 
     # Worker ($E2D0): an ORDINARY function that reaches the failing switch through H4
     # rather than performing it inline. This indirection is the whole point of the shape,
@@ -2150,9 +2238,10 @@ def make_prg_mmc3_2():
     # pass-through wrapper for H4 (bead grm-2dr increment 2, nesrelaytest's shape) -- a
     # bare "JSR H4 / RTS" would be exactly that, and would re-attribute CallerH's call to
     # the helper, putting the collision back.
-    put(0xE2D0, [0x20, 0xA0, 0xE2])        # JSR $E2A0 (H4) -- takes the helper-arg warning
-    put(0xE2D3, [0x20, 0x30, 0xE2])        # JSR $E230 (Harmless) -- not a relay wrapper
-    put(0xE2D6, [0x60])                     # RTS
+    asm.org(0xE2D0)
+    asm.jsr(0xE2A0)  # (H4) -- takes the helper-arg warning
+    asm.jsr(0xE230)  # (Harmless) -- not a relay wrapper
+    asm.rts()
 
     # CallerH ($E2C0): calls Worker with r6 UNKNOWN at the call site. It has to poison r6
     # ITSELF, with the same select-then-opaque-load idiom H4 uses -- an earlier draft
@@ -2162,12 +2251,13 @@ def make_prg_mmc3_2():
     # the violation scan's `missing = required & ~callerIn.knownMask()`
     # (BoardBankAnalyzer:3710) then clears the whole mask before it can warn. The
     # requirement must be unsatisfied AT THE CALL SITE, not merely derivable in the callee.
-    put(0xE2C0, [0xA9, 0x06])              # LDA #$06 (select R6)
-    put(0xE2C2, [0x8D, 0x00, 0x80])        # STA $8000 (select=6, prg_mode=0 known)
-    put(0xE2C5, [0xAD, 0x00, 0xE2])        # LDA $E200 (unresolvable -- opaque load)
-    put(0xE2C8, [0x8D, 0x01, 0x80])        # STA $8001 (data write -> r6 UNKNOWN here)
-    put(0xE2CB, [0x20, 0xD0, 0xE2])        # JSR $E2D0 (Worker) -- THE GUARDED SITE
-    put(0xE2CE, [0x60])                     # RTS
+    asm.org(0xE2C0)
+    asm.lda_imm(0x06)  # select R6
+    asm.sta_abs(0x8000)  # select=6, prg_mode=0 known
+    asm.lda_abs(0xE200)  # unresolvable -- opaque load
+    asm.sta_abs(0x8001)  # data write -> r6 UNKNOWN here
+    asm.jsr(0xE2D0)  # (Worker) -- THE GUARDED SITE
+    asm.rts()
 
     # ------------------------------------------------------------------
     # grm-qd0u: the helper's own select beats the caller's stale one -- plus the NEGATIVE
@@ -2188,11 +2278,12 @@ def make_prg_mmc3_2():
 
     # H5 ($E300): own constant select=6 (R6), then a data write of $03. A caller that
     # establishes NO select of its own must still get r6=3 out of this.
-    put(0xE300, [0xA9, 0x06])              # LDA #$06 (select R6 -- the helper's own)
-    put(0xE302, [0x8D, 0x00, 0x80])        # STA $8000 (select=6, prg_mode=0)
-    put(0xE305, [0xA9, 0x03])              # LDA #$03 (data byte)
-    put(0xE307, [0x8D, 0x01, 0x80])        # STA $8001 (data write -> r6=3)
-    put(0xE30A, [0x60])                     # RTS
+    asm.org(0xE300)
+    asm.lda_imm(0x06)  # select R6 -- the helper's own
+    asm.sta_abs(0x8000)  # select=6, prg_mode=0
+    asm.lda_imm(0x03)  # data byte
+    asm.sta_abs(0x8001)  # data write -> r6=3
+    asm.rts()
 
     # CallerJ ($E320): calls H5 with NO select write of its own. MEASURED: tracked select is
     # UNKNOWN at this call site ("assumed from initial: select.0,select.1,select.2"), so
@@ -2201,31 +2292,37 @@ def make_prg_mmc3_2():
     # STALE select (6, routing to the wrong register) there. smb3 exhibits both.
     # Expect r6=3 and no warning. select/prg_mode stay unknown in the comment and that is
     # CORRECT: a data write owns its target field alone and must not fabricate the rest.
-    put(0xE320, [0x20, 0x00, 0xE3])        # JSR $E300 (H5)
-    put(0xE323, [0x60])                     # RTS
+    asm.org(0xE320)
+    asm.jsr(0xE300)  # H5
+    asm.rts()
 
     # H6 ($E340): the DECLINE control. Two paths reach the select write at $E34A carrying
     # DIFFERENT constants ($06 and $07), so "select is 6 on every path" and "select is 7 on
     # every path" are both false. The straight-line walk must abandon at the control-flow
     # join and fall back to the caller's in-state rather than pick whichever constant it
     # happens to meet walking backward.
-    put(0xE340, [0xA5, 0x10])              # LDA $10 (opaque -- decides the branch)
-    put(0xE342, [0xF0, 0x04])              # BEQ +4 -> $E348
-    put(0xE344, [0xA9, 0x06])              # LDA #$06 (select R6)
-    put(0xE346, [0xD0, 0x02])              # BNE +2 -> $E34A  (unconditional in practice)
-    put(0xE348, [0xA9, 0x07])              # LDA #$07 (select R7)
-    put(0xE34A, [0x8D, 0x00, 0x80])        # STA $8000 <- JOIN: select is 6 OR 7, unknowable
-    put(0xE34D, [0xA9, 0x05])              # LDA #$05 (data byte -- itself perfectly known)
-    put(0xE34F, [0x8D, 0x01, 0x80])        # STA $8001 (data write -> target UNKNOWABLE)
-    put(0xE352, [0x60])                     # RTS
+    asm.org(0xE340)
+    asm.lda_zp(0x10)  # opaque -- decides the branch
+    seven, join = asm.fwd(), asm.fwd()
+    asm.beq(seven)
+    asm.lda_imm(0x06)  # select R6
+    asm.bne(join)  # unconditional in practice
+    asm.bind(seven)
+    asm.lda_imm(0x07)  # select R7
+    asm.bind(join)
+    asm.sta_abs(0x8000)  # <- JOIN: select is 6 OR 7, unknowable
+    asm.lda_imm(0x05)  # data byte -- itself perfectly known
+    asm.sta_abs(0x8001)  # data write -> target UNKNOWABLE
+    asm.rts()
 
     # CallerK ($E360): calls H6 with no select of its own either. Because H6 supplies no
     # single select, the deposit must fall back to the caller's tracked select -- and must
     # NOT claim r6=5 or r7=5 off H6's own ambiguous pair. The data byte $05 is a real bank
     # in this 8-bank image, so a wrong claim here would be ANNOTATED rather than caught by
     # the out-of-range guard, which is what makes this a control and not a formality.
-    put(0xE360, [0x20, 0x40, 0xE3])        # JSR $E340 (H6)
-    put(0xE363, [0x60])                     # RTS
+    asm.org(0xE360)
+    asm.jsr(0xE340)  # H6
+    asm.rts()
 
     # Vector table.
     _put_vectors(put, nmi=0xE021, reset=0xE000, irq=0xE021)
@@ -2233,14 +2330,22 @@ def make_prg_mmc3_2():
     return bytes(prg)
 
 
+class _Fwd:
+    """A forward label for `_Asm` branches/jumps (see `_Asm.fwd` / `_Asm.bind`)."""
+
+    def __init__(self):
+        self.addr = None
+        self.sites = []
+
+
 class _Asm:
-    """Tiny sequential 6502 assembler over a bytearray, used only by
-    make_prg_serial() (bead grm-hsv.1): tracks its own CPU address so instruction
-    offsets don't have to be hand-counted the way the other fixtures above do --
-    this fixture has too many same-shaped chain instructions for that to stay
-    readable/correct by hand. put(addr, data) below (module-level helper reused
-    by the older fixtures) is the same idea; this class just automates the
-    CPU-address bookkeeping for a long straight-line stream."""
+    """Tiny sequential 6502 assembler over a bytearray (bead grm-hsv.1, adopted by every
+    code-bearing fixture builder in bead grm-w9ev.4): tracks its own CPU address so
+    instruction offsets and branch displacements are computed, not hand-counted, and the
+    source reads as mnemonics -- an instruction-order mistake (the grm-kdgv dead arm) shows
+    in the source instead of hiding in a byte list. `org(addr)` moves the cursor,
+    `label()` is the address of the next instruction, and `fwd()`/`bind()` give forward
+    branch targets. Tables, markers and vectors stay as raw bytes via put()."""
 
     def __init__(self, prg, base_cpu, base_file):
         self.prg = prg
@@ -2250,6 +2355,10 @@ class _Asm:
 
     def label(self):
         return self.cpu
+
+    def org(self, cpu):
+        """Move the assembly cursor to CPU address `cpu` (same CPU-to-file mapping)."""
+        self.cpu = cpu
 
     def _emit(self, data):
         off = self.base_file + (self.cpu - self.base_cpu)
@@ -2274,10 +2383,38 @@ class _Asm:
     def dey(self):
         self._emit([0x88])
 
-    def bne(self, target):
+    def fwd(self):
+        """A forward label: pass it to a branch/jmp now, `bind()` it where it lands."""
+        return _Fwd()
+
+    def bind(self, f):
+        """Bind forward label `f` to the current address and patch every use of it."""
+        f.addr = self.cpu
+        for kind, off, nxt in f.sites:
+            if kind == "rel":
+                rel = f.addr - nxt
+                assert -128 <= rel <= 127, "forward branch target out of range"
+                self.prg[off] = rel & 0xFF
+            else:
+                self.prg[off:off + 2] = bytes([f.addr & 0xFF, f.addr >> 8])
+
+    def _use(self, target, kind, operand_off, nxt):
+        """Resolve a target: an int, a bound `_Fwd`, or an unbound `_Fwd` (recorded, 0 for now)."""
+        if isinstance(target, _Fwd):
+            if target.addr is not None:
+                return target.addr
+            target.sites.append((kind, self.base_file + (self.cpu - self.base_cpu) + operand_off, nxt))
+            return nxt if kind == "rel" else 0
+        return target
+
+    def _branch(self, op, target, name):
+        target = self._use(target, "rel", 1, self.cpu + 2)
         rel = target - (self.cpu + 2)
-        assert -128 <= rel <= 127, "BNE target out of range"
-        self._emit([0xD0, rel & 0xFF])
+        assert -128 <= rel <= 127, f"{name} target out of range"
+        self._emit([op, rel & 0xFF])
+
+    def bne(self, target):
+        self._branch(0xD0, target, "BNE")
 
     def sta_abs(self, addr):
         self._emit([0x8D, addr & 0xFF, (addr >> 8) & 0xFF])
@@ -2298,6 +2435,7 @@ class _Asm:
         self._emit([0x20, addr & 0xFF, (addr >> 8) & 0xFF])
 
     def jmp(self, addr):
+        addr = self._use(addr, "abs", 1, 0)
         self._emit([0x4C, addr & 0xFF, (addr >> 8) & 0xFF])
 
     def lda_absx(self, addr):
@@ -2335,6 +2473,36 @@ class _Asm:
 
     def adc_imm(self, v):
         self._emit([0x69, v & 0xFF])
+
+    def cmp_imm(self, v):
+        self._emit([0xC9, v & 0xFF])
+
+    def ldy_zp(self, addr):
+        self._emit([0xA4, addr & 0xFF])
+
+    def stx_abs(self, addr):
+        self._emit([0x8E, addr & 0xFF, (addr >> 8) & 0xFF])
+
+    def bit_abs(self, addr):
+        self._emit([0x2C, addr & 0xFF, (addr >> 8) & 0xFF])
+
+    def lda_absy(self, addr):
+        self._emit([0xB9, addr & 0xFF, (addr >> 8) & 0xFF])
+
+    def sta_absx(self, addr):
+        self._emit([0x9D, addr & 0xFF, (addr >> 8) & 0xFF])
+
+    def sta_absy(self, addr):
+        self._emit([0x99, addr & 0xFF, (addr >> 8) & 0xFF])
+
+    def tay(self):
+        self._emit([0xA8])
+
+    def sec(self):
+        self._emit([0x38])
+
+    def beq(self, target):
+        self._branch(0xF0, target, "BEQ")
 
     def chain5(self, addr):
         """Emits the fully-unrolled STA/LSR commit chain (5 stores, 4 shifts --
@@ -4112,12 +4280,10 @@ def make_prg_nromsub():
     three ways this feature can be half-built.
     """
     prg = bytearray([0x00] * NROMSUB_SIZE)
-    prg[0x0000] = 0xA9              # LDA #$5A
-    prg[0x0001] = NROMSUB_A
-    prg[0x0002] = 0x4C              # JMP $E002 (itself)
-    prg[0x0003] = 0x02
-    prg[0x0004] = 0xE0
-    prg[0x0005] = 0x40              # RTI
+    asm = _Asm(prg, 0xE000, 0x0000)
+    asm.lda_imm(NROMSUB_A)
+    asm.jmp(asm.label())  # itself
+    asm.rti()
     prg[0x1000] = NROMSUB_MARKER
     prg[0x1FFA] = 0x05              # NMI -> $E005
     prg[0x1FFB] = 0xE0
