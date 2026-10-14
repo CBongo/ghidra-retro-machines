@@ -2597,11 +2597,11 @@ public class VerifyBankTest extends GhidraScript {
 
 		// C5/C6: fully-known bank-switch comments at the two STA $01 sites
 		String c = eol(0x0803);
-		criterion("C5", c.contains("bank -> 7 (") && !c.contains("?"),
-			"fully known bank -> 7 comment at 0803: \"" + c + "\"");
+		criterionEolKnown("C5", c, "bank -> 7 (",
+			"fully known bank -> 7 comment at 0803: \"");
 		c = eol(0x080D);
-		criterion("C6", c.contains("bank -> 5 (") && !c.contains("?"),
-			"fully known bank -> 5 comment at 080d: \"" + c + "\"");
+		criterionEolKnown("C6", c, "bank -> 5 (",
+			"fully known bank -> 5 comment at 080d: \"");
 
 		// C8 (grm-nip): the narrow unit check for the structural predicate used to
 		// distinguish a changing phase-2 round from its stable follow-on round.
@@ -2649,13 +2649,13 @@ public class VerifyBankTest extends GhidraScript {
 	private void checkBanktest2() {
 		// C1: LDA $01 / AND #$FE / STA $01 with in-state 5 resolves exactly to bank 4
 		String c = eol(0x0809);
-		criterion("C1", c.contains("bank -> 4 (") && !c.contains("?"),
-			"in-state fallback resolves AND #$FE exactly at 0809: \"" + c + "\"");
+		criterionEolKnown("C1", c, "bank -> 4 (",
+			"in-state fallback resolves AND #$FE exactly at 0809: \"");
 
 		// C2: LDA $01 / AND #$F8 / ORA #$05 / STA $01 resolves by mask algebra alone
 		c = eol(0x0811);
-		criterion("C2", c.contains("bank -> 5 (") && !c.contains("?"),
-			"mask algebra alone resolves bank 5 at 0811: \"" + c + "\"");
+		criterionEolKnown("C2", c, "bank -> 5 (",
+			"mask algebra alone resolves bank 5 at 0811: \"");
 
 		// C3: LDA $0400 / STA $01 is undeterminable. Nothing in the image stores to $0400, so
 		// it is an untouched RAM cell: an HONEST gap (grm-rr5p) -- NOTE bookmark, no warning,
@@ -3146,14 +3146,14 @@ public class VerifyBankTest extends GhidraScript {
 		// (the STA's target $FFF0 is a bank-invariant ROM byte this fixture set to 0x02, so
 		// the AND is a faithful no-op on the driven value).
 		String c = eol(0xC002);
-		criterion("N4", c.contains("bank -> 2 (") && !c.contains("?"),
-			"fully known bank -> 2 comment at c002: \"" + c + "\"");
+		criterionEolKnown("N4", c, "bank -> 2 (",
+			"fully known bank -> 2 comment at c002: \"");
 
 		// N5: the JSR $8005 at $C005, taken with bank=2 in effect (non-home -- PRG_LO's
 		// home bank is 0), retargets into the PRG_LO_B2 overlay space.
 		Reference r = findOverlayRef(0xC005, "PRG_LO_B2", 0x8005);
-		criterion("N5", r != null && r.getReferenceType().isCall() && r.isPrimary(),
-			"JSR $8005 in bank 2 retargeted to PRG_LO_B2 overlay, primary: " + describe(r));
+		criterionPrimaryCall("N5", r,
+			"JSR $8005 in bank 2 retargeted to PRG_LO_B2 overlay, primary: ");
 
 		// N6 (grm-bfb): the synthetic twin of the smb3 witnesses -- a cross-bank JSR whose
 		// stock base-space CALL ref pointed at the HOME bank's bytes at $8005. With the
@@ -3189,8 +3189,8 @@ public class VerifyBankTest extends GhidraScript {
 		// fully-known "bank -> 2" comment. FCG has no bus conflict, so the recovered value
 		// is just the driven immediate (no ROM-byte AND).
 		String c002 = eol(0xC002);
-		criterion("D2", c002.contains("bank -> 2 (") && !c002.contains("?"),
-			"fully known bank -> 2 comment at c002 (STA $8008): \"" + c002 + "\"");
+		criterionEolKnown("D2", c002, "bank -> 2 (",
+			"fully known bank -> 2 comment at c002 (STA $8008): \"");
 
 		// D3/D4: THE address-decode proof. The intervening writes to register $0 (STA $8000,
 		// CHR, decoy value 1) at $C007 and register $A (STA $800A, IRQ, decoy value 3) at
@@ -3207,8 +3207,8 @@ public class VerifyBankTest extends GhidraScript {
 		// D5: the JSR $8005 at $C00F, taken with prg_bank still 2 (the decoys did not move
 		// it), retargets into the PRG_LO_B2 overlay -- the positive counterpart to D3/D4.
 		Reference r = findOverlayRef(0xC00F, "PRG_LO_B2", 0x8005);
-		criterion("D5", r != null && r.getReferenceType().isCall() && r.isPrimary(),
-			"JSR $8005 in bank 2 retargeted to PRG_LO_B2 overlay, primary: " + describe(r));
+		criterionPrimaryCall("D5", r,
+			"JSR $8005 in bank 2 retargeted to PRG_LO_B2 overlay, primary: ");
 	}
 
 	// ------------------------------------------------------------------
@@ -3238,8 +3238,8 @@ public class VerifyBankTest extends GhidraScript {
 		// $A000-$AFFF) at $E002 gets a fully-known "bank -> 2" comment. MMC2 has no bus
 		// conflict, so the recovered value is just the driven immediate.
 		String e002 = eol(0xE002);
-		criterion("M2", e002.contains("bank -> 2 (") && !e002.contains("?"),
-			"fully known bank -> 2 comment at e002 (STA $A005): \"" + e002 + "\"");
+		criterionEolKnown("M2", e002, "bank -> 2 (",
+			"fully known bank -> 2 comment at e002 (STA $A005): \"");
 
 		// M3: THE address-decode proof. The decoy write to $B000 (the CHR0 register,
 		// immediately past the PRG register's $A000-$AFFF range) at $E007 must NOT be
@@ -3253,8 +3253,8 @@ public class VerifyBankTest extends GhidraScript {
 		// M4: the JSR $8005 at $E00A, taken with prg_bank still 2 (the decoy did not move
 		// it), retargets into the W8000_B2 overlay -- the positive counterpart to M3.
 		Reference r = findOverlayRef(0xE00A, "W8000_B2", 0x8005);
-		criterion("M4", r != null && r.getReferenceType().isCall() && r.isPrimary(),
-			"JSR $8005 in bank 2 retargeted to W8000_B2 overlay, primary: " + describe(r));
+		criterionPrimaryCall("M4", r,
+			"JSR $8005 in bank 2 retargeted to W8000_B2 overlay, primary: ");
 
 		// M5: the phase-2 disassembly cascade actually produced an instruction at the
 		// overlay target -- without this, M4's ref couldn't exist, but this checks the
@@ -3293,9 +3293,8 @@ public class VerifyBankTest extends GhidraScript {
 		// M1: RESET's JSR $8000 at $E005, taken with bank_5114=1 in mode 3 (home mode,
 		// matching initial_state), retargets into the mode-3/bank-1 overlay.
 		Reference r = findOverlayRef(0xE005, "W8000_M3_B1", 0x8000);
-		criterion("M1", r != null && r.getReferenceType().isCall() && r.isPrimary(),
-			"JSR $8000 (mode3/bank_5114=1) retargeted to W8000_M3_B1 overlay, primary: " +
-				describe(r));
+		criterionPrimaryCall("M1", r,
+			"JSR $8000 (mode3/bank_5114=1) retargeted to W8000_M3_B1 overlay, primary: ");
 
 		// M2: the JMP $8100 at $E00D, taken right after the prg_mode 3 -> 0 switch,
 		// retargets into mode 0's 32 KiB window arrangement -- the PRG MODE CHANGE
@@ -3307,9 +3306,8 @@ public class VerifyBankTest extends GhidraScript {
 		// the way to the analyzer would land in _B0 instead, which makes this criterion the
 		// end-to-end check on grm-y0ml as well as on the mode change.
 		r = findOverlayRef(0xE00D, "W8000_M0_B4", 0x8100);
-		criterion("M2", r != null && r.getReferenceType().isCall() && r.isPrimary(),
-			"JMP $8100 (mode change 3->0) retargeted to W8000_M0_B4 overlay (7 aliases 4), primary: " +
-				describe(r));
+		criterionPrimaryCall("M2", r,
+			"JMP $8100 (mode change 3->0) retargeted to W8000_M0_B4 overlay (7 aliases 4), primary: ");
 
 		// M5 (grm-5dgx): no twin overlay is realized. Mode 0's W8000 decodes bank_5117 bits 2-6
 		// (quads), modes 1/2 decode bits 1-6 (pairs) and mode 1's WC000 likewise: only the
@@ -3373,9 +3371,9 @@ public class VerifyBankTest extends GhidraScript {
 		// nonexistent W8000_M3_B41. This is the criterion that fails on every build
 		// before grm-p25h, with no reference placed at all.
 		Reference r = findOverlayRef(0xE005, "W8000_M3_B1", 0x8000);
-		criterion("W1", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+		criterionPrimaryCall("W1", r,
 			"JSR $8000 after an out-of-range bank_5114=41 retargeted to the canonical " +
-				"W8000_M3_B1 overlay (41 & 7 = 1), primary: " + describe(r));
+				"W8000_M3_B1 overlay (41 & 7 = 1), primary: ");
 
 		// W2: and the annotation says it wrapped, showing BOTH numbers. Printing 1 alone
 		// would hide that the code wrote 41, which is exactly how a genuine value-recovery
@@ -3401,9 +3399,8 @@ public class VerifyBankTest extends GhidraScript {
 
 		// W4: and it retargets to its own bank's overlay, unchanged.
 		r = findOverlayRef(0xE00D, "WA000_M3_B3", 0xA000);
-		criterion("W4", r != null && r.getReferenceType().isCall() && r.isPrimary(),
-			"JSR $A000 with in-range bank_5115=3 retargeted to WA000_M3_B3, primary: " +
-				describe(r));
+		criterionPrimaryCall("W4", r,
+			"JSR $A000 with in-range bank_5115=3 retargeted to WA000_M3_B3, primary: ");
 
 		// W5: the phase-2 disassembly cascade reached both overlay targets.
 		criterion("W5:W8000_M3_B1_8000", hasInstructionAt("W8000_M3_B1", 0x8000),
@@ -3420,17 +3417,17 @@ public class VerifyBankTest extends GhidraScript {
 		// F1: RESET's JSR $8005 at $C005, taken with bank=2 in effect, retargets into the
 		// PRG_LO_B2 overlay space -- round 1 evidence.
 		Reference r = findOverlayRef(0xC005, "PRG_LO_B2", 0x8005);
-		criterion("F1", r != null && r.getReferenceType().isCall() && r.isPrimary(),
-			"JSR $8005 in bank 2 retargeted to PRG_LO_B2 overlay, primary: " + describe(r));
+		criterionPrimaryCall("F1", r,
+			"JSR $8005 in bank 2 retargeted to PRG_LO_B2 overlay, primary: ");
 
 		// F2: trampoline1's JSR $8010 at $C015 retargets into PRG_LO_B1 -- this instruction
 		// is only disassembled at all once round 1's flow-follow from PRG_LO_B2::8005's own
 		// JSR $C010 reaches it, and is only analyzed in round 2, so a resolved ref here is
 		// round-2 evidence.
 		r = findOverlayRef(0xC015, "PRG_LO_B1", 0x8010);
-		criterion("F2", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+		criterionPrimaryCall("F2", r,
 			"JSR $8010 in bank 1 (trampoline1, round-2 evidence) retargeted to PRG_LO_B1 " +
-				"overlay, primary: " + describe(r));
+				"overlay, primary: ");
 
 		// F3: trampoline2's JSR $8030 at $C025 retargets into PRG_LO_B3 -- reachable only
 		// through trampoline1's JSR $C020, itself only disassembled by round 2's flow-follow
@@ -3438,28 +3435,27 @@ public class VerifyBankTest extends GhidraScript {
 		// resolution is direct proof that at least 3 full analyzer rounds ran to convergence
 		// -- the load-bearing criterion for bead grm-5tl.13.3's fingerprint-skip guard.
 		r = findOverlayRef(0xC025, "PRG_LO_B3", 0x8030);
-		criterion("F3", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+		criterionPrimaryCall("F3", r,
 			"JSR $8030 in bank 3 (trampoline2, round-3/deepest evidence -- proves >= 3 " +
-				"analyzer rounds converged) retargeted to PRG_LO_B3 overlay, primary: " +
-				describe(r));
+				"analyzer rounds converged) retargeted to PRG_LO_B3 overlay, primary: ");
 
 		// F4: fully-known bank-switch comments at the five latch-write sites (the two
 		// forward selects at c002/c012/c022, and the two restores at c01a/c02a).
 		String c = eol(0xC002);
-		criterion("F4:c002", c.contains("bank -> 2 (") && !c.contains("?"),
-			"fully known bank -> 2 comment at c002: \"" + c + "\"");
+		criterionEolKnown("F4:c002", c, "bank -> 2 (",
+			"fully known bank -> 2 comment at c002: \"");
 		c = eol(0xC012);
-		criterion("F4:c012", c.contains("bank -> 1 (") && !c.contains("?"),
-			"fully known bank -> 1 comment at c012: \"" + c + "\"");
+		criterionEolKnown("F4:c012", c, "bank -> 1 (",
+			"fully known bank -> 1 comment at c012: \"");
 		c = eol(0xC022);
-		criterion("F4:c022", c.contains("bank -> 3 (") && !c.contains("?"),
-			"fully known bank -> 3 comment at c022: \"" + c + "\"");
+		criterionEolKnown("F4:c022", c, "bank -> 3 (",
+			"fully known bank -> 3 comment at c022: \"");
 		c = eol(0xC01A);
-		criterion("F4:c01a", c.contains("bank -> 2 (") && !c.contains("?"),
-			"fully known bank -> 2 (restore) comment at c01a: \"" + c + "\"");
+		criterionEolKnown("F4:c01a", c, "bank -> 2 (",
+			"fully known bank -> 2 (restore) comment at c01a: \"");
 		c = eol(0xC02A);
-		criterion("F4:c02a", c.contains("bank -> 1 (") && !c.contains("?"),
-			"fully known bank -> 1 (restore) comment at c02a: \"" + c + "\"");
+		criterionEolKnown("F4:c02a", c, "bank -> 1 (",
+			"fully known bank -> 1 (restore) comment at c02a: \"");
 
 		// F5: the phase-2 disassembly cascade actually produced instructions at all three
 		// deepest overlay targets -- without this, F1-F3's refs couldn't exist, but this
@@ -3500,8 +3496,8 @@ public class VerifyBankTest extends GhidraScript {
 		// U2: and the recovery is load-bearing -- the following JSR $8005 retargets into
 		// bank 2's overlay. Without U1 there is no bank state to retarget against.
 		Reference r = findOverlayRef(0xC005, "PRG_LO_B2", 0x8005);
-		criterion("U2", r != null && r.getReferenceType().isCall() && r.isPrimary(),
-			"JSR $8005 retargeted to PRG_LO_B2 overlay, primary: " + describe(r));
+		criterionPrimaryCall("U2", r,
+			"JSR $8005 retargeted to PRG_LO_B2 overlay, primary: ");
 		criterion("U2:disasm", hasInstructionAt("PRG_LO_B2", 0x8005),
 			"instruction exists at PRG_LO_B2::8005");
 
@@ -3515,8 +3511,8 @@ public class VerifyBankTest extends GhidraScript {
 		// TAY <- LDA $D81E,X <- TAX <- ASL A <- LDA #$00. Increment 1 alone: no helper
 		// machinery involved, and the bus-conflict AND against $FFD1 is what pins it.
 		c = eol(0xC12D);
-		criterion("U4", c.contains("bank -> 1 (") && !c.contains("?"),
-			"indexed store with resolved index at c12d: \"" + c + "\"");
+		criterionEolKnown("U4", c, "bank -> 1 (",
+			"indexed store with resolved index at c12d: \"");
 
 		// U5: JSR $C120 -- the helper has TWO switch sites that disagree (bank 3 then bank 1),
 		// so the constState model cannot describe it; the call must resolve to the bank that
@@ -3530,16 +3526,15 @@ public class VerifyBankTest extends GhidraScript {
 		// holds despite U3 having poisoned the tracked state two calls earlier: the helper's
 		// deposit owns the whole field regardless of what the caller knew.
 		r = findOverlayRef(0xC010, "PRG_LO_B1", 0x8010);
-		criterion("U6", r != null && r.getReferenceType().isCall() && r.isPrimary(),
-			"JSR $8010 retargeted to PRG_LO_B1 overlay (switch #2 beat switch #1), primary: " +
-				describe(r));
+		criterionPrimaryCall("U6", r,
+			"JSR $8010 retargeted to PRG_LO_B1 overlay (switch #2 beat switch #1), primary: ");
 		criterion("U6:disasm", hasInstructionAt("PRG_LO_B1", 0x8010),
 			"instruction exists at PRG_LO_B1::8010");
 
 		// U7: switch #1 inside the same helper does not regress now that switch #2 is visible.
 		c = eol(0xC122);
-		criterion("U7", c.contains("bank -> 3 (") && !c.contains("?"),
-			"first switch still resolved at c122: \"" + c + "\"");
+		criterionEolKnown("U7", c, "bank -> 3 (",
+			"first switch still resolved at c122: \"");
 
 		// U8: LDA #$09 / STA $FFD9 on a 4-bank image. $FFD9 holds 0x09 so the bus-conflict AND
 		// does NOT launder the value into a legal bank first -- the guard has to fire on a
@@ -3562,9 +3557,8 @@ public class VerifyBankTest extends GhidraScript {
 		// composition were skipped this retargets into PRG_LO_B3 instead, so the two banks are
 		// distinguishable rather than coincidentally equal.
 		r = findOverlayRef(0xC019, "PRG_LO_B2", 0x8020);
-		criterion("U10", r != null && r.getReferenceType().isCall() && r.isPrimary(),
-			"JSR $8020 after the tail-call helper retargeted to PRG_LO_B2 overlay, primary: " +
-				describe(r));
+		criterionPrimaryCall("U10", r,
+			"JSR $8020 after the tail-call helper retargeted to PRG_LO_B2 overlay, primary: ");
 
 		// U11: TAIL-CALL DECLINE (bead grm-432), the only one of composeTailCalls' four decline
 		// branches with dump-level coverage. FUN_c180 and FUN_c190 tail-jump to each other, so
@@ -3587,8 +3581,8 @@ public class VerifyBankTest extends GhidraScript {
 		// passing for the wrong reason (the site was never recognized at all, so there was no
 		// helper to decline).
 		c = eol(0xC182);
-		criterion("U12", c.contains("bank -> 1 (") && !c.contains("?"),
-			"the declining helper's own switch site still resolves at c182: \"" + c + "\"");
+		criterionEolKnown("U12", c, "bank -> 1 (",
+			"the declining helper's own switch site still resolves at c182: \"");
 	}
 
 	// ------------------------------------------------------------------
@@ -3656,11 +3650,11 @@ public class VerifyBankTest extends GhidraScript {
 		// middle of this function's body and split a function entry out of it, and the
 		// stream that was already correct came through unchanged.
 		String c = eol(0xC000);
-		criterion("S4", c.contains("bank -> 2 (") && !c.contains("?"),
-			"visible entry still resolves bank 2 at c000: \"" + c + "\"");
+		criterionEolKnown("S4", c, "bank -> 2 (",
+			"visible entry still resolves bank 2 at c000: \"");
 		Reference r = findOverlayRef(0xC003, "PRG_LO_B2", 0x8005);
-		criterion("S4:retarget", r != null && r.getReferenceType().isCall() && r.isPrimary(),
-			"JSR $8005 retargeted to PRG_LO_B2 overlay, primary: " + describe(r));
+		criterionPrimaryCall("S4:retarget", r,
+			"JSR $8005 retargeted to PRG_LO_B2 overlay, primary: ");
 
 		// S5: THE PAYOFF, and the anti-vacuity check for S1. The recovered $C158 entry
 		// establishes bank 1 (LDA #$01 into the shared latch), so the JSR that follows it in
@@ -3671,9 +3665,8 @@ public class VerifyBankTest extends GhidraScript {
 		// and bank 2 are deliberately different so a repair that merged the two streams
 		// (see S3) would answer this WRONGLY rather than coincidentally right.
 		r = findOverlayRef(0xC009, "PRG_LO_B1", 0x8010);
-		criterion("S5", r != null && r.getReferenceType().isCall() && r.isPrimary(),
-			"JSR $8010 after the recovered entry retargeted to PRG_LO_B1 overlay, primary: " +
-				describe(r));
+		criterionPrimaryCall("S5", r,
+			"JSR $8010 after the recovered entry retargeted to PRG_LO_B1 overlay, primary: ");
 		criterion("S5:disasm", hasInstructionAt("PRG_LO_B1", 0x8010),
 			"instruction exists at PRG_LO_B1::8010");
 
@@ -3745,14 +3738,14 @@ public class VerifyBankTest extends GhidraScript {
 		// reads $8200 (mirrors the live bank, currently 2) and re-commits it. Must resolve
 		// to bank 2, not poison to unknown.
 		String c = eol(0xC008);
-		criterion("M1", c.contains("bank -> 2 (") && !c.contains("?"),
-			"ROM_IDENTIFYING mirror re-latch resolves to bank 2 at c008: \"" + c + "\"");
+		criterionEolKnown("M1", c, "bank -> 2 (",
+			"ROM_IDENTIFYING mirror re-latch resolves to bank 2 at c008: \"");
 
 		// M2: and load-bearing -- JSR $8005 right after retargets into PRG_LO_B2::8005 only
 		// because c008 actually resolved.
 		Reference r = findOverlayRef(0xC00B, "PRG_LO_B2", 0x8005);
-		criterion("M2", r != null && r.getReferenceType().isCall() && r.isPrimary(),
-			"JSR $8005 retargeted to PRG_LO_B2 overlay, primary: " + describe(r));
+		criterionPrimaryCall("M2", r,
+			"JSR $8005 retargeted to PRG_LO_B2 overlay, primary: ");
 		criterion("M2:disasm", hasInstructionAt("PRG_LO_B2", 0x8005),
 			"instruction exists at PRG_LO_B2::8005");
 
@@ -3760,8 +3753,8 @@ public class VerifyBankTest extends GhidraScript {
 		// AND consumed -- the reload at c01e must resolve to bank 3 (the second store's
 		// value) from tracked state.
 		c = eol(0xC01E);
-		criterion("M3", c.contains("bank -> 3 (") && !c.contains("?"),
-			"WRITE_THROUGH mirror re-latch resolves to bank 3 at c01e: \"" + c + "\"");
+		criterionEolKnown("M3", c, "bank -> 3 (",
+			"WRITE_THROUGH mirror re-latch resolves to bank 3 at c01e: \"");
 
 		// M4: H1 ordering (Castlevania 2's shape) -- a forwarded immediate (1) that
 		// DISAGREES with tracked in-state (3) must win: the annotation shows the forwarded
@@ -3795,8 +3788,8 @@ public class VerifyBankTest extends GhidraScript {
 		// plain immediate) still resolves fully, proving M5/M6's declines didn't poison the
 		// function's own later, unrelated site.
 		c = eol(0xC10C);
-		criterion("M7", c.contains("bank -> 1 (") && !c.contains("?"),
-			"FUN_C100's own trailing plain switch still resolves at c10c: \"" + c + "\"");
+		criterionEolKnown("M7", c, "bank -> 1 (",
+			"FUN_C100's own trailing plain switch still resolves at c10c: \"");
 
 		// M8: THE SS2d GUARD -- the reason this fixture exists. c037 (JSR $C100, called with
 		// bank state genuinely unknown by construction) must NOT carry a bank-state
@@ -3923,14 +3916,14 @@ public class VerifyBankTest extends GhidraScript {
 		// bank's number) AND consumed on a select-data board -- the re-commit at e20d reads
 		// $A100 with r7 = 3 tracked and must deposit r7 = 3, fully known.
 		String c = eol(0xE20D);
-		criterion("MM1", c.contains("r7=3") && !c.contains("?"),
-			"identifying-byte re-commit resolves r7=3 at e20d: \"" + c + "\"");
+		criterionEolKnown("MM1", c, "r7=3",
+			"identifying-byte re-commit resolves r7=3 at e20d: \"");
 
 		// MM2: and load-bearing -- JSR $A000 right after retargets into WA000_B3::A000 only
 		// because e20d resolved (an unresolved r7 would have poisoned the window).
 		Reference r = findOverlayRef(0xE210, "WA000_B3", 0xA000);
-		criterion("MM2", r != null && r.getReferenceType().isCall() && r.isPrimary(),
-			"JSR $A000 retargeted to WA000_B3, primary: " + describe(r));
+		criterionPrimaryCall("MM2", r,
+			"JSR $A000 retargeted to WA000_B3, primary: ");
 		criterion("MM2:disasm", hasInstructionAt("WA000_B3", 0xA000),
 			"instruction exists at WA000_B3::A000");
 
@@ -3968,8 +3961,8 @@ public class VerifyBankTest extends GhidraScript {
 
 		// MM7: retarget into the hoisted WA000_B5 (no _M suffix).
 		r = findOverlayRef(0xE290, "WA000_B5", 0xA000);
-		criterion("MM7", r != null && r.getReferenceType().isCall() && r.isPrimary(),
-			"JSR $A000 retargeted to WA000_B5, primary: " + describe(r));
+		criterionPrimaryCall("MM7", r,
+			"JSR $A000 retargeted to WA000_B5, primary: ");
 
 		// MM8: the read-back-then-re-commit that establishes $59 as a SAVE_SLOT (TMNT's cec0
 		// shape) itself resolves through the mirror: r7=3 at e2cf.
@@ -4459,8 +4452,8 @@ public class VerifyBankTest extends GhidraScript {
 		// F1: RESET's JSR $8000 at $C005, taken with bank=1 in effect (mode still 0/home),
 		// retargets into the home layout's non-home-bank overlay W8000_M0_B1.
 		Reference r = findOverlayRef(0xC005, "W8000_M0_B1", 0x8000);
-		criterion("F1", r != null && r.getReferenceType().isCall() && r.isPrimary(),
-			"JSR $8000 (mode0/bank1) retargeted to W8000_M0_B1 overlay, primary: " + describe(r));
+		criterionPrimaryCall("F1", r,
+			"JSR $8000 (mode0/bank1) retargeted to W8000_M0_B1 overlay, primary: ");
 
 		// F2: RESET's JMP $8040 at $C00D, taken after the mode latch write (prg_mode -> 1),
 		// retargets into the mode-1 FIXED instance of W8000 (W8000_M1) -- proves the mode
@@ -4472,9 +4465,9 @@ public class VerifyBankTest extends GhidraScript {
 		// evidenced by the "via FUN_W8000_M1__8040" wording this also adds to c00d's
 		// bank-switch comment (see the F4 checks below, which do not depend on it).
 		r = findOverlayRef(0xC00D, "W8000_M1", 0x8040);
-		criterion("F2", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+		criterionPrimaryCall("F2", r,
 			"JMP $8040 (mode1) retargeted to W8000_M1 overlay (as a CALL -- Ghidra's " +
-				"non-returning-function reclassification), primary: " + describe(r));
+				"non-returning-function reclassification), primary: ");
 
 		// F3: the JSR $C030 at (overlay-relative) 8045 -- physically inside the W8000_M1
 		// overlay -- retargets into WC000_M1_B2. This is the load-bearing criterion: mode=1
@@ -4484,9 +4477,8 @@ public class VerifyBankTest extends GhidraScript {
 		// finds WC000's mode-1 switchable instance at bank 2. Structurally impossible before
 		// residence-clamping understood mode-qualified overlays.
 		r = findOverlayRefFrom(overlayAddr("W8000_M1", 0x8045), "WC000_M1_B2", 0xC030);
-		criterion("F3", r != null && r.getReferenceType().isCall() && r.isPrimary(),
-			"JSR $C030 in W8000_M1 (mode1/bank2) retargeted to WC000_M1_B2 overlay, primary: " +
-				describe(r));
+		criterionPrimaryCall("F3", r,
+			"JSR $C030 in W8000_M1 (mode1/bank2) retargeted to WC000_M1_B2 overlay, primary: ");
 
 		// F4: bank-switch comments at the three latch-write sites. Each write is recognized
 		// by a mechanism that owns only ONE of the two state fields (bank / prg_mode). The
@@ -4496,15 +4488,14 @@ public class VerifyBankTest extends GhidraScript {
 		// mode-1 overlay, that assumption was WRONG (it read prg_mode=0). The MODE write at
 		// c00a is unchanged: bank is not the layout field, so it stays "assumed from initial".
 		String c = eol(0xC002);
-		criterion("F4:c002", c.contains("bank=1,prg_mode=0") && !c.contains("?"),
-			"bank latch -> 1, prg_mode 0 known from the reset seed, at c002: \"" + c + "\"");
+		criterionEolKnown("F4:c002", c, "bank=1,prg_mode=0",
+			"bank latch -> 1, prg_mode 0 known from the reset seed, at c002: \"");
 		c = eol(0xC00A);
 		criterion("F4:c00a", c.contains("prg_mode=1") && c.contains("known: prg_mode"),
 			"mode latch -> 1 (prg_mode field known, bank assumed) at c00a: \"" + c + "\"");
 		c = eol("W8000_M1", 0x8042);
-		criterion("F4:8042", c.contains("bank=2,prg_mode=1") && !c.contains("?"),
-			"bank latch -> 2 inside the mode-1 overlay, prg_mode 1 known, at 8042: \"" + c +
-				"\"");
+		criterionEolKnown("F4:8042", c, "bank=2,prg_mode=1",
+			"bank latch -> 2 inside the mode-1 overlay, prg_mode 1 known, at 8042: \"");
 
 		// F5: the phase-2 disassembly cascade actually produced instructions at all three
 		// overlay targets reached above.
@@ -4525,24 +4516,24 @@ public class VerifyBankTest extends GhidraScript {
 		// the select=6/data=2 write pair), retargets into the mode-0 switchable instance's
 		// non-home-bank overlay W8000_M0_B2.
 		Reference r = findOverlayRef(0xE00A, "W8000_M0_B2", 0x8000);
-		criterion("F1", r != null && r.getReferenceType().isCall() && r.isPrimary(),
-			"JSR $8000 (mode0/r6=2) retargeted to W8000_M0_B2 overlay, primary: " + describe(r));
+		criterionPrimaryCall("F1", r,
+			"JSR $8000 (mode0/r6=2) retargeted to W8000_M0_B2 overlay, primary: ");
 
 		// F2: RESET's second JSR $8000 at $E017 -- issued AFTER a select=0 (CHR)/data=$AA
 		// write pair in between -- retargets to the SAME W8000_M0_B2 overlay, proving r6
 		// SURVIVED the CHR write (SelectDataBankSwitchStrategy's no-poison contract).
 		r = findOverlayRef(0xE017, "W8000_M0_B2", 0x8000);
-		criterion("F2", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+		criterionPrimaryCall("F2", r,
 			"JSR $8000 after a CHR-register write still retargets to W8000_M0_B2 (r6 " +
-				"survived the CHR write, no-poison contract holds): " + describe(r));
+				"survived the CHR write, no-poison contract holds): ");
 
 		// F3: RESET's JSR $A000 at $E024, with r7=3 in effect, retargets into WA000_B3 --
 		// WA000 is INVARIANT-HOISTED (identical across both prg_mode layouts), so the
 		// overlay name carries no _M qualifier at all.
 		r = findOverlayRef(0xE024, "WA000_B3", 0xA000);
-		criterion("F3", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+		criterionPrimaryCall("F3", r,
 			"JSR $A000 (r7=3) retargeted to hoisted WA000_B3 overlay (no _M qualifier), " +
-				"primary: " + describe(r));
+				"primary: ");
 
 		// F4: RESET's JSR $C000 at $E02C, issued AFTER the mode-flip write (select=6,
 		// prg_mode=1, co-emitted from ONE byte), retargets into WC000's mode-1 switchable
@@ -4550,9 +4541,9 @@ public class VerifyBankTest extends GhidraScript {
 		// were correctly split out of the same recovered byte, and that r6 survived every
 		// intervening write (including the CHR write at $E014).
 		r = findOverlayRef(0xE02C, "WC000_M1_B2", 0xC000);
-		criterion("F4", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+		criterionPrimaryCall("F4", r,
 			"JSR $C000 after the mode flip (prg_mode=1, r6=2) retargeted to WC000_M1_B2 " +
-				"overlay, primary: " + describe(r));
+				"overlay, primary: ");
 
 		// F5: bank-switch comments exist at the mechanism write sites -- the two select
 		// writes that flip prg_mode (home 0 stays known throughout, then the flip to 1)
@@ -4858,8 +4849,8 @@ public class VerifyBankTest extends GhidraScript {
 		// known -- idempotent re-assertion of the seeded initial state (this board's home
 		// mode already is prg_mode=3), but the comment must show it as known, not "?".
 		String c = eol(0xC002);
-		criterion("F-reset", c.contains("prg_mode=3") && !c.contains("?"),
-			"bit-7 reset -> prg_mode=3 known at c002: \"" + c + "\"");
+		criterionEolKnown("F-reset", c, "prg_mode=3",
+			"bit-7 reset -> prg_mode=3 known at c002: \"");
 
 		// F-unrolled: the 5th write of the canonical-address ($E000) chain at $C017
 		// commits prg_bank=5; the JSR $8000 right after it at $C01A retargets into the
@@ -4868,9 +4859,8 @@ public class VerifyBankTest extends GhidraScript {
 		criterion("F-unrolled:comment", c.contains("prg_bank=5"),
 			"unrolled chain commits prg_bank=5 at c017: \"" + c + "\"");
 		Reference r = findOverlayRef(0xC01A, "W8000_M3_B5", 0x8000);
-		criterion("F-unrolled:jsr", r != null && r.getReferenceType().isCall() && r.isPrimary(),
-			"JSR $8000 (prg_bank=5) retargeted to W8000_M3_B5 overlay, primary: " +
-				describe(r));
+		criterionPrimaryCall("F-unrolled:jsr", r,
+			"JSR $8000 (prg_bank=5) retargeted to W8000_M3_B5 overlay, primary: ");
 
 		// Writes 1-4 of the unrolled chain (c007-c013) deposit NOTHING: the state flows
 		// through unchanged and the commit is deferred entirely to write 5 (c017, checked
@@ -4898,9 +4888,9 @@ public class VerifyBankTest extends GhidraScript {
 		criterion("F-noncanonical:comment", c.contains("prg_bank=6"),
 			"non-canonical-address chain commits prg_bank=6 at c02f: \"" + c + "\"");
 		r = findOverlayRef(0xC032, "W8000_M3_B6", 0x8000);
-		criterion("F-noncanonical:jsr", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+		criterionPrimaryCall("F-noncanonical:jsr", r,
 			"JSR $8000 (prg_bank=6, non-canonical commit) retargeted to W8000_M3_B6 " +
-				"overlay, primary: " + describe(r));
+				"overlay, primary: ");
 
 		// F-chr-discard: the chain to $A000 (CHR0, target 1 -- no `targets` entry in the
 		// board's serial-shift mechanism) is recognized but discarded: prg_bank must
@@ -4908,9 +4898,9 @@ public class VerifyBankTest extends GhidraScript {
 		// W8000_M3_B6 (bank 6, set by F-noncanonical above, not clobbered by the CHR
 		// write in between).
 		r = findOverlayRef(0xC04A, "W8000_M3_B6", 0x8000);
-		criterion("F-chr-discard", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+		criterionPrimaryCall("F-chr-discard", r,
 			"JSR $8000 after a CHR0 chain still retargets to W8000_M3_B6 (prg_bank " +
-				"survived the discarded CHR commit): " + describe(r));
+				"survived the discarded CHR commit): ");
 
 		// F-loop: the counted-loop idiom (LDA #$03 / LDY #$05 / loop: STA $E000 / LSR A /
 		// DEY / BNE loop). The commit attaches to the BNE at $C056 (the secondary
@@ -4918,8 +4908,8 @@ public class VerifyBankTest extends GhidraScript {
 		// SerialShiftBankSwitchStrategy's javadoc), fully known since every field was
 		// known coming in.
 		c = eol(0xC056);
-		criterion("F-loop:comment", c.contains("prg_bank=3") && !c.contains("?"),
-			"counted loop commits prg_bank=3 at its BNE (c056): \"" + c + "\"");
+		criterionEolKnown("F-loop:comment", c, "prg_bank=3",
+			"counted loop commits prg_bank=3 at its BNE (c056): \"");
 
 		// The in-loop STA at $C051 must be suppressed (echo, not poison): no WARNING
 		// bookmark, and no CONFIDENT early commit of prg_bank=3. Its comment is the
@@ -4937,9 +4927,9 @@ public class VerifyBankTest extends GhidraScript {
 
 		// The JSR $8000 on the loop's exit edge at $C058 retargets into W8000_M3_B3.
 		r = findOverlayRef(0xC058, "W8000_M3_B3", 0x8000);
-		criterion("F-loop:jsr", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+		criterionPrimaryCall("F-loop:jsr", r,
 			"JSR $8000 after the counted loop (prg_bank=3) retargeted to W8000_M3_B3 " +
-				"overlay, primary: " + describe(r));
+				"overlay, primary: ");
 
 		// F-unresolvable: write 1 of the chain seeded from an opaque indexed load
 		// (LDX #$00 / LDA $C200,X) at $C060 can't have its own bit 7 resolved -> honest
@@ -5033,8 +5023,8 @@ public class VerifyBankTest extends GhidraScript {
 		// M1: the reset dance (LDA #$80 / STA $8000) at $C002 forces prg_mode=3 known --
 		// idempotent re-assertion of the seeded home mode, comment must show it known.
 		String c = eol(0xC002);
-		criterion("M1", c.contains("prg_mode=3") && !c.contains("?"),
-			"reset dance -> prg_mode=3 known at c002: \"" + c + "\"");
+		criterionEolKnown("M1", c, "prg_mode=3",
+			"reset dance -> prg_mode=3 known at c002: \"");
 
 		// M2: call site 1's JSR $C200 (SwitchBank) at $C007 -- the LOAD-BEARING check for
 		// this bead: findHelpers/recoverCallArgument must recognize $C200 as a bank-switch
@@ -5051,9 +5041,8 @@ public class VerifyBankTest extends GhidraScript {
 		// M3: the JSR $8000 right after it, at $C00A, retargets to W8000_M3_B2 (mode 3 is
 		// this board's home mode; bank 2 is non-home -> the _M3_B2 overlay).
 		Reference r = findOverlayRef(0xC00A, "W8000_M3_B2", 0x8000);
-		criterion("M3", r != null && r.getReferenceType().isCall() && r.isPrimary(),
-			"JSR $8000 (prg_bank=2) retargeted to W8000_M3_B2 overlay, primary: " +
-				describe(r));
+		criterionPrimaryCall("M3", r,
+			"JSR $8000 (prg_bank=2) retargeted to W8000_M3_B2 overlay, primary: ");
 
 		// M4: call site 2's JSR $C200 at $C024 -- issued AFTER the CHR0 chain to $A000
 		// (target 1, no `targets` entry) sandwiched between the two PRG switches --
@@ -5067,9 +5056,8 @@ public class VerifyBankTest extends GhidraScript {
 
 		// M5: the JSR $8000 after it, at $C027, retargets to W8000_M3_B5.
 		r = findOverlayRef(0xC027, "W8000_M3_B5", 0x8000);
-		criterion("M5", r != null && r.getReferenceType().isCall() && r.isPrimary(),
-			"JSR $8000 (prg_bank=5) retargeted to W8000_M3_B5 overlay, primary: " +
-				describe(r));
+		criterionPrimaryCall("M5", r,
+			"JSR $8000 (prg_bank=5) retargeted to W8000_M3_B5 overlay, primary: ");
 
 		// M11 (bead grm-nju): call site 5's JSR $C280 at $C02C resolves prg_bank=3. $C280
 		// is a 3-byte relay slot -- JMP $C200 -- whose target is the helper's ENTRY, so
@@ -5089,9 +5077,9 @@ public class VerifyBankTest extends GhidraScript {
 		// to W8000_M3_B3. A recovered value nothing retargets against would not be worth
 		// much.
 		r = findOverlayRef(0xC02F, "W8000_M3_B3", 0x8000);
-		criterion("M11b", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+		criterionPrimaryCall("M11b", r,
 			"JSR $8000 (prg_bank=3, via thunk relay) retargeted to W8000_M3_B3 overlay, " +
-				"primary: " + describe(r));
+				"primary: ");
 
 		// M12 (bead grm-nju): call site 7's JSR $C286 at $C037 resolves prg_bank=4. This
 		// is the harder half. $C286 is JMP $C252, and $C252 is MID-BODY of FUN_c250 --
@@ -5123,9 +5111,9 @@ public class VerifyBankTest extends GhidraScript {
 
 		// M12b: likewise load-bearing -- JSR $8000 at $C03A retargets to W8000_M3_B4.
 		r = findOverlayRef(0xC03A, "W8000_M3_B4", 0x8000);
-		criterion("M12b", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+		criterionPrimaryCall("M12b", r,
 			"JSR $8000 (prg_bank=4, via mid-body relay) retargeted to W8000_M3_B4 " +
-				"overlay, primary: " + describe(r));
+				"overlay, primary: ");
 
 		// M13 (bead grm-nju): call site 6's JSR $C283 at $C032 -- reaching the shadow
 		// helper's OWN entry, where the bank is loaded from $65 and A is stale. The
@@ -5190,9 +5178,9 @@ public class VerifyBankTest extends GhidraScript {
 		// M15b: load-bearing, like M11b/M12b -- the JSR $8000 at $C042 retargets to
 		// W8000_M3_B1. A recovered value nothing retargets against would not be worth much.
 		r = findOverlayRef(0xC042, "W8000_M3_B1", 0x8000);
-		criterion("M15b", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+		criterionPrimaryCall("M15b", r,
 			"JSR $8000 (prg_bank=1, via save/restore helper) retargeted to W8000_M3_B1 " +
-				"overlay, primary: " + describe(r));
+				"overlay, primary: ");
 
 		// UPDATED, bead grm-yflf: as with M13 above, $C250's shadow-entry helper is now a
 		// recognized no-argument RESTORE ENTRY, so the honest form at this call site is a
@@ -5264,8 +5252,8 @@ public class VerifyBankTest extends GhidraScript {
 		// 0, prg_bank stays 7 (survived every write above, including M14's honest poison,
 		// which M6's call site overwrote), so the WHOLE state is known, no '?'.
 		c = eol(0xC061);
-		criterion("M7", c.contains("prg_mode=2") && !c.contains("?"),
-			"mode-2 transition commits prg_mode=2, fully known, at c061: \"" + c + "\"");
+		criterionEolKnown("M7", c, "prg_mode=2",
+			"mode-2 transition commits prg_mode=2, fully known, at c061: \"");
 
 		// M8: the JSR $C300 right after the transition, at $C05C, retargets to
 		// WC000_M2_B7 -- WC000 just became the switchable window (mode 2), at the
@@ -5273,9 +5261,9 @@ public class VerifyBankTest extends GhidraScript {
 		// JSR instruction itself sits in the SAME physical bytes (bank 7) before and
 		// after the flip, only the symbolic window name changes.
 		r = findOverlayRef(0xC064, "WC000_M2_B7", 0xC300);
-		criterion("M8", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+		criterionPrimaryCall("M8", r,
 			"JSR $C300 after the mode-2 transition retargeted to WC000_M2_B7 overlay, " +
-				"primary: " + describe(r));
+				"primary: ");
 
 		// M9: call site 4's JSR $C200 at $C064 -- an opaque indexed load (LDX #$00 / LDA
 		// $C400,X) feeds the same helper's argReg='A'; recoverCallArgument's backward
@@ -5375,8 +5363,8 @@ public class VerifyBankTest extends GhidraScript {
 		// R1: the reset dance (LDA #$80 / STA $8000) at $C002 forces prg_mode=3 known --
 		// sanity-checks the fixture's own base state before anything relay-specific.
 		String c = eol(0xC002);
-		criterion("R1", c.contains("prg_mode=3") && !c.contains("?"),
-			"reset dance -> prg_mode=3 known at c002: \"" + c + "\"");
+		criterionEolKnown("R1", c, "prg_mode=3",
+			"reset dance -> prg_mode=3 known at c002: \"");
 
 		// R2: THE LOAD-BEARING CHECK for this increment. Call site R1's JSR $C100 at
 		// $C007 lands on relay_wrapper -- `STA $22` / `LDA $22` / `JSR relay_helper`,
@@ -5393,9 +5381,9 @@ public class VerifyBankTest extends GhidraScript {
 		// W8000_M3_B3 (bank 3 is non-home). A recovered value nothing retargets against
 		// would not be worth much.
 		Reference r = findOverlayRef(0xC00A, "W8000_M3_B3", 0x8000);
-		criterion("R2b", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+		criterionPrimaryCall("R2b", r,
 			"JSR $8000 (prg_bank=3, via call-edge wrapper) retargeted to W8000_M3_B3 " +
-				"overlay, primary: " + describe(r));
+				"overlay, primary: ");
 
 		// R3: the SAME wrapper with a distinct immediate (prg_bank=6), proving the
 		// resolution tracks each call site's own argument rather than caching the first.
@@ -5407,9 +5395,9 @@ public class VerifyBankTest extends GhidraScript {
 
 		// R3b: load-bearing -- the JSR $8000 at $C012 retargets to W8000_M3_B6.
 		r = findOverlayRef(0xC012, "W8000_M3_B6", 0x8000);
-		criterion("R3b", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+		criterionPrimaryCall("R3b", r,
 			"JSR $8000 (prg_bank=6, via call-edge wrapper) retargeted to W8000_M3_B6 " +
-				"overlay, primary: " + describe(r));
+				"overlay, primary: ");
 
 		// R4: negative control -- two_call_pred makes TWO known-helper calls, so the
 		// effect at its return is not either helper's and it must not be admitted. This
@@ -5501,8 +5489,8 @@ public class VerifyBankTest extends GhidraScript {
 		// same shape as nesmmc1test's M1 -- sanity-checks the fixture's own base state
 		// before anything wrapper-specific is asserted.
 		String c = eol(0xC002);
-		criterion("W1", c.contains("prg_mode=3") && !c.contains("?"),
-			"reset dance -> prg_mode=3 known at c002: \"" + c + "\"");
+		criterionEolKnown("W1", c, "prg_mode=3",
+			"reset dance -> prg_mode=3 known at c002: \"");
 
 		// W2: the LOAD-BEARING check for this increment. Call site W1a's JSR $C100 at
 		// $C007 lands on single_wrapper -- a bare `STA $20` (writes no mechanism, A
@@ -5519,9 +5507,9 @@ public class VerifyBankTest extends GhidraScript {
 		// W8000_M3_B3 (bank 3 is non-home). A recovered value nothing retargets against
 		// would not be worth much.
 		Reference r = findOverlayRef(0xC00A, "W8000_M3_B3", 0x8000);
-		criterion("W2b", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+		criterionPrimaryCall("W2b", r,
 			"JSR $8000 (prg_bank=3, via single wrapper) retargeted to W8000_M3_B3 " +
-				"overlay, primary: " + describe(r));
+				"overlay, primary: ");
 
 		// W3: call site W1b's JSR $C100 at $C00F -- the SAME wrapper, a distinct
 		// immediate (prg_bank=6), proving the resolution genuinely tracks each call
@@ -5534,9 +5522,9 @@ public class VerifyBankTest extends GhidraScript {
 
 		// W3b: load-bearing -- the JSR $8000 at $C012 retargets to W8000_M3_B6.
 		r = findOverlayRef(0xC012, "W8000_M3_B6", 0x8000);
-		criterion("W3b", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+		criterionPrimaryCall("W3b", r,
 			"JSR $8000 (prg_bank=6, via single wrapper) retargeted to W8000_M3_B6 " +
-				"overlay, primary: " + describe(r));
+				"overlay, primary: ");
 
 		// W4: the Castlevania 2 stacked shape, and the only real test of the fixpoint (a
 		// wrapper falling into ANOTHER wrapper). Call site W2's JSR $C140 at $C017 lands
@@ -5553,9 +5541,9 @@ public class VerifyBankTest extends GhidraScript {
 
 		// W4b: load-bearing -- the JSR $8000 at $C01A retargets to W8000_M3_B4.
 		r = findOverlayRef(0xC01A, "W8000_M3_B4", 0x8000);
-		criterion("W4b", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+		criterionPrimaryCall("W4b", r,
 			"JSR $8000 (prg_bank=4, via stacked outer wrapper) retargeted to " +
-				"W8000_M3_B4 overlay, primary: " + describe(r));
+				"W8000_M3_B4 overlay, primary: ");
 
 		// W5: the stacked pair's INNER call -- JSR $C142 at $C01D, entering DIRECTLY at
 		// `LDA $21` with no immediate beforehand (and no visibility into outer_wrapper's
@@ -5682,9 +5670,9 @@ public class VerifyBankTest extends GhidraScript {
 		// O3 (OVERRIDE FIRES): the JSR $8000 at $C01D, where prg_bank is unknown, retargets
 		// into W8000_M3_B5 -- the bank pinned by the override, NOT the home-bank fallback.
 		Reference r = findOverlayRef(0xC01D, "W8000_M3_B5", 0x8000);
-		criterion("O3", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+		criterionPrimaryCall("O3", r,
 			"JSR $8000 with unknown prg_bank retargeted to the override's W8000_M3_B5, " +
-				"primary: " + describe(r));
+				"primary: ");
 
 		// O4: the override site carries "[user override]" provenance in the listing/dump.
 		c = eol(0xC01D);
@@ -5761,9 +5749,9 @@ public class VerifyBankTest extends GhidraScript {
 		// $A000 at $E017 retargets into WA000_B5, the override's bank, tagged [user override].
 		// The old predicate would have left this JSR in base with no overlay reference.
 		r = findOverlayRef(0xE017, "WA000_B5", 0xA000);
-		criterion("Q4", r != null && r.getReferenceType().isCall() && r.isPrimary(),
+		criterionPrimaryCall("Q4", r,
 			"JSR $A000 with PARTIALLY-known r7 retargeted to the override's WA000_B5, " +
-				"primary: " + describe(r));
+				"primary: ");
 		c = eol(0xE017);
 		criterion("Q4:tag", c.contains("bank -> 5") && c.contains("[user override]"),
 			"partial-knowledge override site tagged [user override] at e017: \"" + c + "\"");
@@ -5861,6 +5849,19 @@ public class VerifyBankTest extends GhidraScript {
 			allPassed = false;
 		}
 		println("CRITERION " + id + " " + (passed ? "PASS" : "FAIL") + " " + detail);
+	}
+
+	/** criterion(id, ref is a primary call, prefix + describe(ref)) -- the retargeted-call shape. */
+	private void criterionPrimaryCall(String id, Reference ref, String detailPrefix) {
+		criterion(id, ref != null && ref.getReferenceType().isCall() && ref.isPrimary(),
+			detailPrefix + describe(ref));
+	}
+
+	/** criterion(id, comment contains needle and has no unresolved "?", lead + comment + closing quote).
+	 *  {@code detailLead} must already end with an escaped opening quote. */
+	private void criterionEolKnown(String id, String comment, String needle, String detailLead) {
+		criterion(id, comment.contains(needle) && !comment.contains("?"),
+			detailLead + comment + "\"");
 	}
 
 	private Address addr(long offset) {
