@@ -83,7 +83,7 @@ This is the load-bearing suite. It lives in `tools/banktest/` and works like thi
    first. Order is preserved: the queue flushes before any unbatched step. Each flush prints
    `BATCH n=<k> flush=<reason>`; a batch that fails is re-run fixture by fixture (a `NOTE: batch
    N FALLBACK` line), so a crash still names its fixture. Size: `--batch-size N`, else
-   `GRM_BATCH_SIZE`, else `GRM_BATCH_SIZE_DEFAULT` (10; a tunable, not a measured optimum);
+   `GRM_BATCH_SIZE`, else `GRM_BATCH_SIZE_DEFAULT` (30; measured against 10 back to back, see its comment);
    `1` or `GRM_BATCH=0` means unbatched (for A/B and debugging); `0`/non-integer is an error.
    The banner shows `== batching: size N (default|env|--batch-size) ==` or `off`.
 4. **`VerifyBankTest.java`** asserts per-fixture `CRITERION` checks and emits a normalized

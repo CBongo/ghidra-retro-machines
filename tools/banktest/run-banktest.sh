@@ -141,10 +141,13 @@ while [ $# -gt 0 ]; do
 		*) break ;;
 	esac
 done
-# Batch size: a tunable starting point, NOT a measured optimum (measured: groups of ~8 project
-# ~1.5m for the whole gate, ~20 ~1.2m; larger means a bigger crash-fallback re-run, a longer shared
-# log, and more programs per JVM). Precedence: --batch-size, then GRM_BATCH_SIZE, then this.
-GRM_BATCH_SIZE_DEFAULT=10
+# Batch size. Measured back to back 2026-10-14 (after the c3eb122 reorder): size 10 = 196s and 20
+# batches, size 30 = 181s and 17. The plain C64 (29) and plain NES (25) groups each fit in one
+# batch, and per-program cost did not grow with batch size (29 C64 fixtures: 20s in one batch vs
+# 30s in three). Single runs vary widely with machine load (one size-30 run took 333s), so A/B
+# back to back before changing this. Larger means a bigger crash-fallback re-run and a longer
+# shared log. Precedence: --batch-size, then GRM_BATCH_SIZE, then this.
+GRM_BATCH_SIZE_DEFAULT=30
 BATCH_SRC="default"
 BATCH_N="$GRM_BATCH_SIZE_DEFAULT"
 if [ -n "$BATCH_SIZE_ARG" ]; then
