@@ -10,6 +10,12 @@ Ghidra have a function at `Y`", "can routine `A` reach `B` through direct contro
 "decompile `Z`". It does **not** answer runtime questions ("which bank is live at `$9067`"):
 those stay with the human and an emulator, per `AGENTS.md`.
 
+For a single fixed question (refs and comments at a site, symbols and namespaces, jump-table
+targets, whether the decompiler completes, a per-block instruction census), check the narrow
+postScript probes first: see "Narrow probes" in
+[`tools/banktest/realrom/README.md`](../banktest/realrom/README.md). They run inside a normal
+import, with no kept project and no server.
+
 ## Workflow
 
 ```bash

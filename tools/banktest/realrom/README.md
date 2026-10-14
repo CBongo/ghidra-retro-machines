@@ -311,6 +311,34 @@ whether anything **consumes** the switchable window once a bank is known.
   Used in grm-8iy to refute a consumer-side gate hypothesis and localize all six remaining
   zero-resolvers to call-site helper-argument recovery instead.
 
+### Narrow probes: a lighter alternative to pyghidra-mcp
+
+pyghidra-mcp (`tools/ghidra-mcp/README.md`) is the general route for static questions about a
+row. It needs a `--keep-project` import, a venv, and a background server you must remember to
+stop. The probes below need none of that. Each one is a single read-only postScript that runs
+inside the row's normal import, and its output is fenced off the golden. **Use one when it
+already answers your question, and especially when you are running the row anyway.** Use MCP
+for open-ended exploration, or when the next question depends on the last answer. Reusing a
+probe is not the "bespoke probe" `AGENTS.md` warns against. Writing a new one per question is.
+
+| Probe | Answers | Input |
+|---|---|---|
+| `SiteStateProbe.java` | At each site: owning function, EOL comment, every outgoing ref with type and source | `GRM_SITES=c183,e953` (default space) |
+| `SymbolNamespaceProbe.java` | Every symbol at each site with its namespace path, and whether the enclosing function's body contains the site; `ALL` dumps every symbol, for diffing two runs | `GRM_NS_SITES=…` or `ALL` |
+| `JumpTableProbe.java` | Every computed jump and its recovered targets (`targets=` counts DISTINCT targets, not table slots) | — |
+| `DecompileSiteProbe.java` | Did the decompiler complete the function at each site, its error if not, and its BRANCHIND / jump-table counts | `GRM_DECOMPILE_SITES=<space>::<hex>,…` |
+| `InstructionCensus.java` | Per-block instruction counts and address ranges, for A/B-ing two builds or toolchains by diff | — |
+| `CopyEvidenceProbe.java` | For each copy loop: why a declined one declined (refs into its destination), and what a materialized `COPY_*` block holds | — |
+
+The whole-program sweeps (`JumpTableProbe`, `InstructionCensus`, `SymbolNamespaceProbe ALL`)
+are the ones MCP does worst. They produce one diffable listing per run, which is what an A/B of
+two builds needs. Run them through `ab-test.sh` or twice by hand, and diff the outputs.
+
+`SetAnalyzerOption.java` is a **pre**Script for `REALROM_EXTRA_PRESCRIPT`, not a probe. It
+forces one enum analyzer option before analysis (e.g. StoredValueScanner's Constant Evaluator
+to `PCODE`) for a report-only A/B. Read its header for the token syntax. A prescript changes
+the analysis, so `bless` refuses to run with one set.
+
 ## Bless discipline
 
 Regenerate with `bless`, review the `expected/*.dump` diff, commit deliberately — same

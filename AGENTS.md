@@ -92,7 +92,10 @@ task where the economics genuinely invert:
   real-ROM row.** "Does Ghidra create a function at `c183`?", "what is at `X`?", "can routine `A`
   reach `B` through direct flow?" are now agent work: keep the row's project and query it through
   pyghidra-mcp (`tools/ghidra-mcp/README.md`, bead `grm-haj3`) — minutes, not a probe. Do not
-  build a bespoke probe instead. Always `serve.sh stop` when done. Report what the walk could not
+  build a bespoke probe instead — but DO reuse an existing narrow probe when one already answers
+  the question, especially when you are running the row anyway: they cost one postScript, with no
+  kept project or server (table under "Narrow probes" in `tools/banktest/realrom/README.md`).
+  Always `serve.sh stop` when done. Report what the walk could not
   see (indirect jumps, banked-window targets) with the answer; deciding those is still the
   human's, as are the runtime and hand-RE rows above.
 - **Licensing, sourcing, and product judgment.** Which community disassembly to ingest, submodule
