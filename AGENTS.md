@@ -166,7 +166,8 @@ glance rather than reconstructed. See `which-script-builds-the-extension` and
 task.** Run them in the foreground with a generous timeout and wait. Both gates run in **minutes,
 not hours** — measured 2026-08-31 on the 33-row NES corpus, four consecutive `realrom-test.sh
 check nes` (then spelled `--all`) runs took 6m10s–6m36s (median 7s per row), and a full
-`build-and-test.sh check` 5–6½ minutes. The `core` floor `realrom-test.sh` now runs by default
+`build-and-test.sh check` 5–6½ minutes, about 4 minutes since grm-w9ev.5 batched the synthetic
+fixtures into shared headless runs (230s measured 2026-10-14). The `core` floor `realrom-test.sh` now runs by default
 on a bare `check` (bead grm-ughg) is far cheaper still — 5 rows, measured 46s — so there is even
 less excuse to background it. They are slow enough that backgrounding them looks like the way to
 stay responsive. For a subagent it is not.
