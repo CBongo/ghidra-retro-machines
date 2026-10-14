@@ -20,12 +20,12 @@ the same word). Sets **compose** and are deduplicated by id, so naming several i
 | name | rows | what |
 |---|---|---|
 | `core` | 5 | Always-run floor: the two stable grm-mu7 victims, the thread-pin canary, and two controls. **The default for a bare `check`.** |
-| `nes-curated` | 14 | Curated NES board-representative set (one title per shipped board) |
-| `nes-gme` | 20 | NES game-music-extraction titles of interest |
+| `nes-curated` | 13 | Curated NES board-representative set (one title per shipped board) |
+| `nes-gme` | 19 | NES game-music-extraction titles of interest |
 | `snes-cart` | 13 | SNES alt-board cartridge loader sample (loader layout only, `-noanalysis`) |
-| `nes` | 34 | platform group: every NES set (`nes-curated` + `nes-gme`) |
+| `nes` | 32 | platform group: every NES set (`nes-curated` + `nes-gme`) |
 | `snes` | 13 | platform group: every SNES set (`snes-cart`) |
-| `all` | 47 | every set on every platform |
+| `all` | 45 | every set on every platform |
 
 **A bare `check` now runs `core`, not the curated NES set** — the owner's ruling on grm-ughg.
 `core` is a *new* always-run floor, not a renamed manifest: it is a cross-manifest subset of
@@ -37,7 +37,7 @@ see that paragraph.
 to mean `nes-curated`, and is now spelled `nes-curated`; `--gme` → `nes-gme`; `--all` → `nes`;
 `--snes` → `snes`. Note `--all` still maps to exactly what it always meant — both NES manifests,
 33 rows — that part of the old contract is honored, not broken. The word that changed meaning is
-the *bare, unflagged* `all`: it now spans every platform (47 rows), because a word that didn't
+the *bare, unflagged* `all`: it now spans every platform (45 rows), because a word that didn't
 mean what it said is what grm-ughg was filed to fix.
 
 **Multi-platform runs now work in one invocation.** `all` runs NES and SNES rows together;
