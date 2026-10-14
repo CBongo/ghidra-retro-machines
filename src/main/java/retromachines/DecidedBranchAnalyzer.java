@@ -27,6 +27,7 @@ import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.address.AddressSetView;
 import ghidra.program.model.lang.Processor;
+import ghidra.program.model.listing.Data;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
@@ -57,16 +58,18 @@ import ghidra.util.task.TaskMonitor;
  *
  * <p><b>Why it is sound.</b> knownBranchOutcome only decides a branch whose flag setter sits in
  * the same straight-line run with no join in between, so no other path can bring different
- * flags to it. The clear is guarded separately: a FLOW reference, an entry point, a function or
- * a non-default label at the fall-through address means something else runs it, and then only
- * the override is set.
+ * flags to it. The clear is guarded separately: a FLOW reference, a reference from defined
+ * pointer data, an entry point, a function or a non-default label at the fall-through address
+ * means something else runs it, and then only the override is set.
  *
  * <p><b>Clearing is a reachability statement, not a data claim.</b> The cleared bytes are often
- * live code in the running game: tmnt's bank 4 {@code b786 LDA #$10 / BNE $b794 / b78a LDA #$11
- * / BNE $b794 / ...} is a chain of entries reached through the word table at {@code $B5A2}. They
- * are cleared anyway (owner ruling, 2026-10-13): the listing holds what the analysis has shown
- * reachable, and those entries were decoded only by a fall-through that cannot happen. Reaching
- * them through their table is a separate reachability job (grm-x51h).
+ * live code in the running game: a multi-entry chain like tmnt's bank 4 {@code b786 LDA #$10 /
+ * BNE $b794 / b78a LDA #$11 / BNE $b794 / ...} is entered at each LDA. The listing holds what
+ * the analysis has shown reachable (owner ruling, 2026-10-13), so an entry nothing reaches is
+ * cleared; but an entry a recognized table points at IS reached. tmnt's are: they are entries of
+ * the JumpEngine table at {@code b579 JSR $C702} ({@code $B5A2 = b786, b78a, ...}), which
+ * {@link InlineJumpTableDispatchAnalyzer} lays as pointers -- hence the pointer guard
+ * (grm-x51h).
  *
  * <p>Provably NOT-taken branches are left alone: Ghidra has no override that drops a
  * conditional branch's target flow. 6502/6510 only: knownBranchOutcome reads Z/N from the low
@@ -150,8 +153,15 @@ public class DecidedBranchAnalyzer extends AbstractAnalyzer {
 
 	/**
 	 * Whether the instruction at {@code dead} -- the old fall-through of a decided branch -- is
-	 * reached by nothing else, so the code from there may be cleared. Any flow reference, an
-	 * entry point, a function, or a label someone named keeps it.
+	 * reached by nothing else, so the code from there may be cleared. Any flow reference, a
+	 * reference from defined pointer data, an entry point, a function, or a label someone named
+	 * keeps it.
+	 *
+	 * <p>The pointer case is grm-x51h: {@link InlineJumpTableDispatchAnalyzer} lays a JumpEngine
+	 * table's entries as pointer data (DATA references) and only SCHEDULES a function at each
+	 * target, which lands after this analyzer's priority. A table entry that linear disassembly
+	 * of an earlier entry already decoded as a fall-through (tmnt's {@code b78a}) is therefore
+	 * reached at this point by nothing but its pointer.
 	 */
 	static boolean deadCodeStart(Program program, Address dead) {
 		if (dead == null || program.getListing().getInstructionAt(dead) == null ||
@@ -160,7 +170,7 @@ public class DecidedBranchAnalyzer extends AbstractAnalyzer {
 			return false;
 		}
 		for (Reference ref : program.getReferenceManager().getReferencesTo(dead)) {
-			if (ref.getReferenceType().isFlow()) {
+			if (ref.getReferenceType().isFlow() || isFromPointer(program, ref)) {
 				return false;
 			}
 		}
@@ -170,5 +180,15 @@ public class DecidedBranchAnalyzer extends AbstractAnalyzer {
 			}
 		}
 		return true;
+	}
+
+	/** Whether {@code ref} is a memory reference made by a defined pointer, i.e. a table that
+	 *  names its destination as an address code is entered at. */
+	private static boolean isFromPointer(Program program, Reference ref) {
+		if (!ref.isMemoryReference()) {
+			return false;
+		}
+		Data data = program.getListing().getDataAt(ref.getFromAddress());
+		return data != null && data.isPointer();
 	}
 }

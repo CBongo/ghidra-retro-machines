@@ -28,6 +28,9 @@ import ghidra.app.util.importer.MessageLog;
 import ghidra.program.database.ProgramBuilder;
 import ghidra.program.database.ProgramDB;
 import ghidra.program.model.address.Address;
+import ghidra.program.model.data.DataUtilities;
+import ghidra.program.model.data.DataUtilities.ClearDataMode;
+import ghidra.program.model.data.PointerDataType;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Instruction;
 import ghidra.util.task.TaskMonitor;
@@ -118,9 +121,9 @@ public class DecidedBranchProgramTest extends AbstractBundledLanguageTest {
 
 	/**
 	 * tmnt bank 4 b786: {@code LDA #$10 / BNE c / LDA #$11 / BNE c / LDA #$12 / BNE c /
-	 * LDA #$13 / RTS}. At runtime each LDA is an entry reached through a word table the listing
-	 * has no reference for; here, as there, nothing reaches the later entries, so they are
-	 * cleared -- reaching them is grm-x51h's job. The first entry and the common tail stay.
+	 * LDA #$13 / RTS}, with no table: nothing reaches the later entries, so they are cleared. The
+	 * first entry and the common tail stay. (In tmnt a pointer table does name them; see
+	 * {@link #multiEntryChainNamedByAPointerTableIsKept}.)
 	 */
 	@Test
 	public void unreachedMultiEntryChainIsCleared() throws Exception {
@@ -144,6 +147,40 @@ public class DecidedBranchProgramTest extends AbstractBundledLanguageTest {
 		}
 		assertNotNull(instr(program, 0x8000));
 		assertNotNull("common tail must survive", instr(program, 0x800e));
+	}
+
+	/**
+	 * The same chain, but a JumpEngine table names its entries (grm-x51h; tmnt's {@code $B5A2}):
+	 * {@link InlineJumpTableDispatchAnalyzer} lays them as pointer data before any function exists
+	 * at them, so the pointer's DATA reference alone must keep each entry.
+	 */
+	@Test
+	public void multiEntryChainNamedByAPointerTableIsKept() throws Exception {
+		builder = new ProgramBuilder("Test", LANG);
+		builder.createMemory(".text", "0x8000", 0x100);
+		builder.setBytes("0x8000", "a9 10 d0 0a a9 11 d0 06 a9 12 d0 02 a9 13 60", true);
+		// Pointer table at 8040: 8000, 8004, 8008 -- the last entry, 800c, is left unnamed.
+		builder.setBytes("0x8040", "00 80 04 80 08 80");
+		ProgramDB program = builder.getProgram();
+		int tx = program.startTransaction("analyze");
+		try {
+			for (long a = 0x8040; a < 0x8046; a += 2) {
+				DataUtilities.createData(program, addr(a), PointerDataType.dataType, -1,
+					ClearDataMode.CLEAR_ALL_UNDEFINED_CONFLICT_DATA);
+			}
+			assertTrue("control: the pointer laid its reference",
+				program.getReferenceManager().getReferencesTo(addr(0x8004)).hasNext());
+			new DecidedBranchAnalyzer().added(program,
+				program.getMemory().getLoadedAndInitializedAddressSet(), TaskMonitor.DUMMY,
+				new MessageLog());
+		}
+		finally {
+			program.endTransaction(tx, true);
+		}
+		assertTrue("the override is still set", instr(program, 0x8002).isFallThroughOverridden());
+		assertNotNull("pointed-at entry kept", instr(program, 0x8004));
+		assertNotNull("pointed-at entry kept", instr(program, 0x8008));
+		assertNull("unnamed entry still cleared", instr(program, 0x800c));
 	}
 
 	/**

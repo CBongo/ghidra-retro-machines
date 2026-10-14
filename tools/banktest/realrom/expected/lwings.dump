@@ -19,10 +19,10 @@ REALROM block RAM 0000-07ff overlay=false
 REALROM count blocks.total 12
 REALROM count blocks.overlay 7
 REALROM count spaces.overlay 7
-REALROM count refs.intoOverlay 1690
+REALROM count refs.intoOverlay 1695
 REALROM count refs.intoOverlay.retargeted 67
-REALROM count refs.intoOverlay.intraOverlay 1623
-REALROM count instrs.inOverlay 7445
+REALROM count refs.intoOverlay.intraOverlay 1628
+REALROM count instrs.inOverlay 7473
 REALROM count bankComments 48
 REALROM count warnings 10
 REALROM count notes 4
@@ -100,7 +100,7 @@ REALROM sample.ref 8088 -> PRG_LO_B3::8092 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8089 -> PRG_LO_B6::81ad UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 808f -> PRG_LO_B3::8083 CONDITIONAL_JUMP primary=true
 REALROM sample.ref 8091 -> PRG_LO_B6::81ad UNCONDITIONAL_CALL primary=true
-REALROM sample.ref.truncated 25 of 1690
+REALROM sample.ref.truncated 25 of 1695
 REALROM sample.warn c1fd [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c34c, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
 REALROM sample.warn c27c [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c34c, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
 REALROM sample.warn c361 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c34c, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here

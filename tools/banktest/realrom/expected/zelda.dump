@@ -39,10 +39,10 @@ REALROM block WC000_M2_B7 c000-ffff overlay=true
 REALROM count blocks.total 32
 REALROM count blocks.overlay 24
 REALROM count spaces.overlay 24
-REALROM count refs.intoOverlay 2866
+REALROM count refs.intoOverlay 2889
 REALROM count refs.intoOverlay.retargeted 77
-REALROM count refs.intoOverlay.intraOverlay 2789
-REALROM count instrs.inOverlay 12868
+REALROM count refs.intoOverlay.intraOverlay 2812
+REALROM count instrs.inOverlay 12957
 REALROM count bankComments 92
 REALROM count warnings 1
 REALROM count notes 40
@@ -164,7 +164,7 @@ REALROM sample.ref 8048 -> W8000_M3_B4::804e CONDITIONAL_JUMP primary=true
 REALROM sample.ref 8049 -> W8000_M3_B5::8130 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 804a -> W8000_M3_B3::805e UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 804f -> W8000_M3_B3::8064 CONDITIONAL_JUMP primary=true
-REALROM sample.ref.truncated 25 of 2866
+REALROM sample.ref.truncated 25 of 2889
 REALROM sample.warn 8124 [CopyLoopAnalyzer] copy-shaped loop RAM:0000 -> RAM:6ba7 could not be bounded; not applied
 REALROM sample.note 6d00 [CopyLoopAnalyzer] copy-shaped loop RAM:6c97 -> RAM:0302 (41 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note 83b6 [CopyLoopAnalyzer] copy-shaped loop W8000_M3_B5:83ae -> RAM:0200 (4 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
