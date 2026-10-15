@@ -12,12 +12,12 @@ REALROM block RAM 0000-07ff overlay=false
 REALROM count blocks.total 7
 REALROM count blocks.overlay 3
 REALROM count refs.intoOverlay.retargeted 529
-REALROM count refs.intoOverlay.intraOverlay 1660
-REALROM count instrs.inOverlay 4517
+REALROM count refs.intoOverlay.intraOverlay 1915
+REALROM count instrs.inOverlay 4734
 REALROM count bankComments 232
-REALROM count warnings 1
+REALROM count warnings 2
 REALROM count notes 0
-REALROM count symbols 636
+REALROM count symbols 350
 REALROM sample.bankcomment 806b bank -> 0 (bank=0) via caseD_ae
 REALROM sample.bankcomment 8074 bank -> 0 (bank=0) via FUN_PRG_ALL_B3__fc54
 REALROM sample.bankcomment 8081 bank -> 0 (bank=0) via caseD_ae
@@ -251,6 +251,8 @@ REALROM sample.bankcomment fd47 bank -> 2 (bank=2) via FUN_PRG_ALL_B2__fc2a
 REALROM sample.bankcomment fd47 bank -> 2 (bank=2) via FUN_PRG_ALL_B3__fc2a
 REALROM sample.bankcomment fd47 bank -> 2 (bank=2) via FUN_PRG_ALL_B3__fc2a
 REALROM sample.ref 805d -> PRG_ALL_B3::813c UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 805f -> PRG_ALL_B2::8a95 DATA primary=true
+REALROM sample.ref 8062 -> PRG_ALL_B2::873e DATA primary=true
 REALROM sample.ref 8062 -> PRG_ALL_B3::813c UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8067 -> PRG_ALL_B3::813c UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 806b -> PRG_ALL_B1::fc54 UNCONDITIONAL_CALL primary=true
@@ -273,34 +275,33 @@ REALROM sample.ref 8090 -> PRG_ALL_B1::fc54 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8090 -> PRG_ALL_B3::fc54 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8095 -> PRG_ALL_B1::80d4 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8095 -> PRG_ALL_B3::813c UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 8098 -> PRG_ALL_B1::fc54 UNCONDITIONAL_CALL primary=true
-REALROM sample.ref 809a -> PRG_ALL_B3::813c UNCONDITIONAL_CALL primary=true
-REALROM sample.ref.truncated 25 of 2189
+REALROM sample.ref.truncated 25 of 2444
 REALROM sample.warn 9fba [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
-REALROM sample.symbol 805b case_0 USER_DEFINED primary=false
-REALROM sample.symbol 805b case_0 USER_DEFINED primary=false
+REALROM sample.warn ad41 [Bad Instruction] Disassembly not permitted within uninitialized memory block (flow from PRG_ALL_B3::ad41)
 REALROM sample.symbol 805b case_0 USER_DEFINED primary=true
-REALROM sample.symbol 806b case_17 USER_DEFINED primary=false
-REALROM sample.symbol 806b case_17 USER_DEFINED primary=false
 REALROM sample.symbol 806b case_17 USER_DEFINED primary=true
 REALROM sample.symbol 806b case_18 USER_DEFINED primary=false
-REALROM sample.symbol 806b case_18 USER_DEFINED primary=false
-REALROM sample.symbol 806b case_18 USER_DEFINED primary=false
-REALROM sample.symbol 8074 case_7 USER_DEFINED primary=false
-REALROM sample.symbol 8074 case_7 USER_DEFINED primary=false
 REALROM sample.symbol 8074 case_7 USER_DEFINED primary=true
-REALROM sample.symbol 8077 case_1 USER_DEFINED primary=false
-REALROM sample.symbol 8077 case_1 USER_DEFINED primary=false
 REALROM sample.symbol 8077 case_1 USER_DEFINED primary=true
-REALROM sample.symbol 8084 case_8 USER_DEFINED primary=false
-REALROM sample.symbol 8084 case_8 USER_DEFINED primary=false
 REALROM sample.symbol 8084 case_8 USER_DEFINED primary=true
-REALROM sample.symbol 8093 case_16 USER_DEFINED primary=false
-REALROM sample.symbol 8093 case_16 USER_DEFINED primary=false
 REALROM sample.symbol 8093 case_16 USER_DEFINED primary=true
-REALROM sample.symbol 8093 case_2 USER_DEFINED primary=false
-REALROM sample.symbol 8093 case_2 USER_DEFINED primary=false
 REALROM sample.symbol 8093 case_2 USER_DEFINED primary=true
-REALROM sample.symbol 80aa case_3 USER_DEFINED primary=false
-REALROM sample.symbol.truncated 25 of 624
+REALROM sample.symbol 80aa case_3 USER_DEFINED primary=true
+REALROM sample.symbol 80c1 case_4 USER_DEFINED primary=true
+REALROM sample.symbol 80d8 case_5 USER_DEFINED primary=true
+REALROM sample.symbol 80e3 case_6 USER_DEFINED primary=true
+REALROM sample.symbol 80ee case_7 USER_DEFINED primary=true
+REALROM sample.symbol 80f5 case_1 USER_DEFINED primary=true
+REALROM sample.symbol 80f6 case_9 USER_DEFINED primary=true
+REALROM sample.symbol 8106 case_10 USER_DEFINED primary=true
+REALROM sample.symbol 810c case_11 USER_DEFINED primary=true
+REALROM sample.symbol 8153 case_0 USER_DEFINED primary=true
+REALROM sample.symbol 827f switch USER_DEFINED primary=true
+REALROM sample.symbol 829f case_12 USER_DEFINED primary=true
+REALROM sample.symbol 82b9 case_13 USER_DEFINED primary=true
+REALROM sample.symbol 82d2 case_9 USER_DEFINED primary=true
+REALROM sample.symbol 82eb case_10 USER_DEFINED primary=true
+REALROM sample.symbol 82fe case_0 USER_DEFINED primary=true
+REALROM sample.symbol 82fe case_22 USER_DEFINED primary=false
+REALROM sample.symbol.truncated 25 of 338
 === REALROM END ===

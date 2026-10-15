@@ -234,6 +234,9 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		}
 		Listing listing = program.getListing();
 		int bounded = 0;
+		// Held for the whole pass: BankContext's cache is weak (see BankContext.CACHE), and
+		// rebuilding it per switch would be wasteful.
+		BankContext keepAlive = BankContext.forProgram(program);
 		DecompInterface ifc = new DecompInterface();
 		try {
 			new SwitchAnalysisDecompileConfigurer(program).configure(ifc);
@@ -299,6 +302,7 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		}
 		finally {
 			ifc.dispose();
+			java.lang.ref.Reference.reachabilityFence(keepAlive);
 		}
 		return bounded;
 	}
@@ -460,6 +464,28 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 			}
 		}
 
+		// grm-pwuh: the dispatch may read its table from a DIFFERENT bank than the decompiler did
+		// (the code switches banks first, then reads). Re-read it from the switched-in bank.
+		CrossBank crossBank = null;
+		if (lowestMovingTableAddr != null) {
+			crossBank = crossBankTable(program, listing, switchAddr, table, lowestMovingTableAddr,
+				targets);
+		}
+		if (crossBank != null) {
+			realCases = crossBank.cases();
+			targets = new ArrayList<>(realCases.size());
+			for (Address a : realCases) {
+				targets.add(a.getOffset());
+			}
+			targetSpace = crossBank.table().getAddressSpace();
+			lowestMovingTableAddr = crossBank.table();
+			MemoryBlock block = program.getMemory().getBlock(lowestMovingTableAddr);
+			tableBlock = block == null ? null
+					: new JumpTableBound.Block(block.getStart().getOffset(),
+						block.getEnd().getOffset());
+		}
+		boolean isCrossBank = crossBank != null;
+
 		// Other switches' load-table starts, for grm-t223 and grm-2m07 below. Only starts in this
 		// table's own memory count (same rule as the load tables above); the rules themselves
 		// ignore this table's own starts.
@@ -502,18 +528,24 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 			}
 			result = JumpTableBound.boundByKnownCode(targets, loadTables, codeStarts, inCode);
 		}
-		if (!result.isBounded() || result.count() >= realCases.size()) {
+		boolean shrinks = result.isBounded() && result.count() < realCases.size();
+		if (!shrinks && !isCrossBank) {
 			return false; // decline, or would not shrink the table -- must be a no-op
 		}
-		if (result.planarGap() > 0 &&
+		// A cross-bank table is pinned whether or not it could be bounded (grm-pwuh): the
+		// decompiler's own reading is the wrong bank's, so declining would leave its garbage.
+		if (shrinks && result.planarGap() > 0 &&
 			!planarBytesMatch(program, lowestMovingTableAddr, result.planarGap(),
 				targets.subList(0, result.count()))) {
 			return false; // grm-d59c: the merged extent only LOOKED planar; leave it alone
 		}
 
 		// Normally the first count() cases; every other one for a grm-yjiq overlapping byte table.
-		ArrayList<Address> firstN = new ArrayList<>(result.keep(realCases));
-		keptOut.addAll(firstN);
+		ArrayList<Address> firstN =
+			shrinks ? new ArrayList<>(result.keep(realCases)) : new ArrayList<>(realCases);
+		if (shrinks) {
+			keptOut.addAll(firstN);
+		}
 		// grm-rsxe: a KNOWN_CODE cut is pinned by references even in a real function. The one
 		// table it exists for (tmnt B5 9474) makes the decompiler reject the override outright
 		// ("Overlapping input varnodes" with 23 cases, clean with its own 128), and a rejected
@@ -521,7 +553,10 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		// Checking each override by re-decompiling was tried and dropped: on megaman's FUN_dc21
 		// the check itself killed the decompiler process, so a failure there proves nothing, and
 		// undoing the override took its switch/case labels with it.
-		if (isUndefined || result.rule() == JumpTableBound.Rule.KNOWN_CODE) {
+		// A jump-table override cannot carry cross-space targets (the decompiler cannot follow a
+		// branch into another address space), so a cross-bank table is always pinned by references.
+		if (isUndefined || isCrossBank ||
+			(shrinks && result.rule() == JumpTableBound.Rule.KNOWN_CODE)) {
 			if (!pinByReferences(program, listing, switchAddr, firstN, monitor)) {
 				AnalyzerLog.warn(this, log,
 					"could not pin jump table by references at " + switchAddr +
@@ -552,7 +587,10 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 			}
 		}
 		String why;
-		if (result.rule() == JumpTableBound.Rule.SWITCH_WINDOW) {
+		if (!shrinks) {
+			why = "kept all"; // cross-bank table no rule could cut (grm-pwuh)
+		}
+		else if (result.rule() == JumpTableBound.Rule.SWITCH_WINDOW) {
 			why = "targets between switch and table";
 		}
 		else if (result.rule() == JumpTableBound.Rule.WINDOW_AT_NEIGHBOUR) {
@@ -570,15 +608,20 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		else {
 			why = "lowest target " + Long.toHexString(result.lowestTarget());
 		}
-		if (result.stride() > 1) {
+		if (shrinks && result.stride() > 1) {
 			why += ", even cases only"; // grm-yjiq: odd cases straddle two entries
 		}
-		if (result.planarGap() > 0) {
+		if (shrinks && result.planarGap() > 0) {
 			// grm-d59c: two byte tables, low then high, merged by the decompiler into one extent
 			why += ", planar lo/hi tables " + Integer.toHexString(result.planarGap()) + " apart";
 		}
+		if (isCrossBank) {
+			why += ", table read from switched-in bank " + targetSpace.getName() + " as " +
+				crossBank.model();
+		}
 		String text = "[JumpTableBound] table at " + Long.toHexString(tableStart) + " bounded " +
-			realCases.size() + " -> " + result.count() + " entries (" + why + ")";
+			realCases.size() + " -> " + (shrinks ? result.count() : realCases.size()) +
+			" entries (" + why + ")";
 		String existing = listing.getComment(CommentType.EOL, switchAddr);
 		if (existing == null || existing.isBlank()) {
 			listing.setComment(switchAddr, CommentType.EOL, text);
@@ -589,6 +632,112 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 			listing.setComment(switchAddr, CommentType.EOL, existing + "; " + text);
 		}
 		return true;
+	}
+
+	/** The jump table as read from the switched-in bank: its table address and case targets there. */
+	private record CrossBank(Address table, List<Address> cases, CrossBankTable.Model model) {}
+
+	/**
+	 * grm-pwuh: when the bank state in force at the switch makes the table's load address reach a
+	 * DIFFERENT bank than the one the decompiler read it from, re-reads the table from that bank.
+	 * {@link BankContext} says which bank; {@link CrossBankTable#fit} recovers the layout the
+	 * decompiler used from its own (wrong-bank) bytes; the same layout then decodes the right
+	 * bank's. Returns null (leave the decompiler's reading alone) when there is no banked
+	 * context, the table resolves to the same memory, or no layout reproduces every decompiler
+	 * case.
+	 */
+	private CrossBank crossBankTable(Program program, Listing listing, Address switchAddr,
+			JumpTable table, Address tableAddr, List<Long> targets) {
+		Instruction switchInstr = listing.getInstructionAt(switchAddr);
+		BankContext ctx = BankContext.forProgram(program);
+		if (switchInstr == null || ctx == null) {
+			return null;
+		}
+		Address resolved = ctx.resolve(switchInstr, tableAddr);
+		AnalyzerLog.debug(this, "cross-bank probe at " + switchAddr + ": table " + tableAddr +
+			" -> " + resolved + ", state " + ctx.stateBefore(switchInstr));
+		if (resolved == null) {
+			return null;
+		}
+		long gap = 0;
+		List<Long> starts = new ArrayList<>();
+		for (JumpTable.LoadTable lt : table.getLoadTables()) {
+			if (lt.getNum() > 1 &&
+				sameMemory(lt.getAddress().getAddressSpace(), tableAddr.getAddressSpace())) {
+				starts.add(lt.getAddress().getOffset());
+			}
+		}
+		java.util.Collections.sort(starts);
+		if (starts.size() >= 2) {
+			gap = starts.get(1) - starts.get(0);
+		}
+		var memory = program.getMemory();
+		AddressSpace readSpace = tableAddr.getAddressSpace();
+		AddressSpace newSpace = resolved.getAddressSpace();
+		CrossBankTable.Model model = CrossBankTable.fit(tableAddr.getOffset(),
+			(int) Math.min(gap, 0xffff), targets, bytesIn(memory, readSpace));
+		if (model == null) {
+			AnalyzerLog.info(this, "cross-bank jump table at " + switchAddr + " (reads " +
+				newSpace.getName() + ", decompiler read " + readSpace.getName() +
+				") fits no known layout; left as the decompiler read it");
+			return null;
+		}
+		List<Long> entries =
+			model.read(tableAddr.getOffset(), targets.size(), bytesIn(memory, newSpace));
+		if (entries.size() < 2) {
+			return null;
+		}
+		// Valid prefix (see CrossBankTable.validPrefix): inside the switched window and in
+		// initialized, non-volatile memory of the resolved space.
+		MemoryBlock window = memory.getBlock(resolved);
+		CrossBankTable.Prefix prefix = CrossBankTable.validPrefix(entries, off -> {
+			if (window == null || off < window.getStart().getOffset() ||
+				off > window.getEnd().getOffset()) {
+				return false;
+			}
+			MemoryBlock b = memory.getBlock(newSpace.getAddress(off));
+			return b != null && b.isInitialized() && !b.isVolatile();
+		});
+		if (prefix.count() == 0) {
+			AnalyzerLog.info(this, "cross-bank jump table at " + switchAddr + ": " + newSpace.getName() +
+				" holds no valid entries at " + resolved + "; left as the decompiler read it");
+			return null;
+		}
+		// Corroboration: the switched-in bank's own copy of the routine must read an
+		// overlapping table, or this is not a table in that bank at all.
+		long stride = model.stride();
+		long lo = tableAddr.getOffset();
+		long hi = lo + stride * (prefix.skip() + prefix.count());
+		// Counterpart of the one-leading-junk-slot allowance above: the switched-in bank's copy
+		// may sit exactly ONE stride below our base (its table starts a slot earlier, with the
+		// junk slot first), so the corroboration window starts one stride below it.
+		if (!ctx.switchedInCopyReadsTableIn(switchInstr, newSpace, lo - stride, hi)) {
+			AnalyzerLog.info(this, "cross-bank jump table at " + switchAddr + ": " +
+				newSpace.getName() + "'s copy of the routine does not read a table overlapping " +
+				Long.toHexString(lo) + ".." + Long.toHexString(hi) + "; left as the decompiler read it");
+			return null;
+		}
+		AnalyzerLog.info(this, "cross-bank jump table at " + switchAddr + ": " + tableAddr + " (" +
+			targets.size() + " cases) refit as " + model + " from " + resolved + ", corroborated, kept " +
+			prefix.count() + (prefix.skip() > 0 ? " (after 1 junk slot)" : ""));
+		List<Address> cases = new ArrayList<>(prefix.count());
+		for (long e : entries.subList(prefix.skip(), prefix.skip() + prefix.count())) {
+			cases.add(newSpace.getAddress(e));
+		}
+		return new CrossBank(resolved, cases, model);
+	}
+
+	private static CrossBankTable.Bytes bytesIn(ghidra.program.model.mem.Memory memory,
+			AddressSpace space) {
+		return offset -> {
+			try {
+				return memory.getByte(space.getAddress(offset)) & 0xff;
+			}
+			catch (ghidra.program.model.mem.MemoryAccessException |
+					ghidra.program.model.address.AddressOutOfBoundsException e) {
+				return -1;
+			}
+		};
 	}
 
 	/**
@@ -774,8 +923,9 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 	 *  function contained the switch on any pass that reached it (grm-kon2). */
 	static boolean boundWithoutOverride(Program program, Address switchAddr) {
 		String eol = program.getListing().getComment(CommentType.EOL, switchAddr);
-		if (eol == null || !eol.contains("[JumpTableBound] table at ")) {
-			return false;
+		if (eol == null || !eol.contains("[JumpTableBound] table at ") ||
+			eol.contains("read from switched-in bank")) {
+			return false; // a cross-bank pin can never carry an override (grm-pwuh)
 		}
 		String jmpName = "jmp_" + switchAddr.toString();
 		for (Symbol sym : program.getSymbolTable().getSymbols(switchAddr)) {

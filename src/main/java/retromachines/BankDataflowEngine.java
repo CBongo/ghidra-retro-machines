@@ -1151,6 +1151,27 @@ final class BankDataflowEngine {
 		return new Probe(mech, mech.strategy().computeSwitchOutcome(program, instr, localIn, env));
 	}
 
+	/**
+	 * One straight-line step of the direct-switch transfer function, outside the fixpoint: the
+	 * state after {@code instr} given the state before it, applying the first mechanism whose
+	 * strategy recognizes the instruction exactly as the main loop does (probe in field-local
+	 * coordinates, then {@code overwrite} the mechanism's own bits with the positioned result).
+	 * An instruction no mechanism recognizes leaves the state as it was; a recognized switch
+	 * whose value is unrecovered makes the mechanism's bits unknown. Calls (helper effects) are
+	 * NOT modelled -- callers of this walk stop at a call. Used by {@link BankContext}.
+	 */
+	static BankState applyDirectSwitch(Program program, Instruction instr, BankState inState,
+			List<ConfiguredMechanism> mechanisms) {
+		Probe probe = probeSite(program, instr, inState, mechanisms, new HashMap<>(),
+			RegisterEnv.NONE);
+		if (probe.mechanism() == null || probe.outcome() == null) {
+			return inState;
+		}
+		ConfiguredMechanism cm = probe.mechanism();
+		return overwrite(inState, cm.placement().position(probe.outcome().value()),
+			cm.effectMask());
+	}
+
 	/** Whether a strategy's answer is a wholly unrecovered value that it called OUR limitation. */
 	private static boolean unresolvedOurs(BankSwitchStrategy.SwitchOutcome outcome) {
 		return outcome.value().knownMask() == 0 &&
@@ -1894,7 +1915,7 @@ final class BankDataflowEngine {
 	 * holds {@code n}, so those bits are forced known regardless of what flowed in.
 	 * (Idempotent and deterministic per address, so the fixpoint still terminates.)
 	 */
-	private static BankState clampToResidence(Address addr, BankState state, BoardModel board,
+	static BankState clampToResidence(Address addr, BankState state, BoardModel board,
 			Map<String, int[]> clampCache) {
 		AddressSpace space = addr.getAddressSpace();
 		if (!space.isOverlaySpace()) {
