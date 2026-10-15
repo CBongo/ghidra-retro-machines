@@ -580,7 +580,9 @@ same change because they blocked the ADC/SBC verdicts:
 2. **Zero-page indirect pointers did not wrap within page zero.** `(zp,X)`/`(zp),Y` fetched the
    pointer with one `*:2` read, so a pointer at `$FF` took its high byte from `$0100` instead of
    `$00` -- ~1/256 of cases for every opcode using either mode. Now `readZpPointer` in
-   `6502core.sinc`, used by `OP1`, `OP3`, `SAX`, `LAX` and `SHA`.
+   `6502core.sinc` (used by `OP1`), and upstream's equivalent `illegalReadZpPointer` in the
+   vendored `6510_illegal.sinc` (used by `OP3`, `SAX`, `LAX` and `SHA`) since grm-gtmp
+   re-synced that file to deity-informant 0.6.0, which absorbed these fixes (PR #359).
 
 The 14 remaining FAIL rows are one coherent family and two known groups, all filed as
 **`grm-m9nu`** with the per-row analysis: the stack-fidelity family (`BRK`/`PHP`/`JSR`/`RTS` fail

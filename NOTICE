@@ -14,8 +14,8 @@ data/languages/6510_illegal.sinc
   Licensed under the Apache License, Version 2.0
 
   Upstream: https://github.com/anarkiwi/deity-informant
-  Commit:   1ec8c31646f142e11e77b84215bfb970f7675fce
-  Path:     ghidra/6510/data/languages/6510_illegal.sinc
+  Commit:   deb3466c1481d9edd0f0b6c325e6188bbe9257ca  (release 0.6.0)
+  Path:     deity_informant/sleigh/languages/6510_illegal.sinc
 
   Vendored verbatim; the only modification is a prepended attribution header.
   Its file name and body retain upstream's "illegal" terminology so that future

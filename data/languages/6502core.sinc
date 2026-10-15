@@ -21,8 +21,9 @@
 #     overflow formula.
 #   - grm-hzv8: stock decodes D (SED/CLD/PLP) and never reads it, so decimal-mode ADC/SBC
 #     decompile as binary arithmetic. The adcNmos/sbcNmos macros below branch on D with the
-#     NMOS (not 65C02/65816) decimal semantics; ADC, SBC, and 6510_illegal.sinc's RRA/ISC/$EB
-#     all go through them. The NES's 2A03 has no decimal mode, but the NES boards use stock
+#     NMOS (not 65C02/65816) decimal semantics; ADC and SBC go through them. The vendored
+#     6510_illegal.sinc carries its own equivalent illegalAdcNmos/illegalSbcNmos for
+#     RRA/ISC/$EB (upstream's form of the same fixes, deity-informant PR #359, grm-gtmp). The NES's 2A03 has no decimal mode, but the NES boards use stock
 #     Ghidra's 6502, not this file, so nothing here reaches the NES corpus.
 
 define endian=little;
@@ -109,9 +110,9 @@ macro readZpPointer(ptr, zp) {
 	ptr = zext(*:1 lo) | (zext(*:1 hi) << 8);
 }
 
-# NMOS 6502 add-with-carry, D-aware (bead grm-hzv8). Shared by ADC and 6510_illegal.sinc's
-# RRA (ROR-then-ADC), which go through the same ALU path on silicon and so share the decimal
-# behaviour too. The binary path is grm-o9k's two-step carry chain, unchanged.
+# NMOS 6502 add-with-carry, D-aware (bead grm-hzv8). RRA (ROR-then-ADC) goes through the same
+# ALU path on silicon and so shares the decimal behaviour; 6510_illegal.sinc implements it
+# with its own illegalAdcNmos, which must stay equivalent to this. The binary path is grm-o9k's two-step carry chain, unchanged.
 #
 # The decimal path is Bruce Clark's "Decimal Mode in the NMOS 6502" (6502.org), Appendix A,
 # followed step for step -- NOT 658xx.sinc's CMOS path, which differs exactly where NMOS is
@@ -169,8 +170,8 @@ macro adcNmos(op1) {
 	<done>
 }
 
-# NMOS 6502 subtract-with-borrow, D-aware (bead grm-hzv8). Shared by SBC (both encodings) and
-# 6510_illegal.sinc's ISC (INC-then-SBC). Clark's Appendix A again: in decimal mode the NMOS
+# NMOS 6502 subtract-with-borrow, D-aware (bead grm-hzv8). Used by SBC; 6510_illegal.sinc's
+# ISC (INC-then-SBC) and $EB SBC alias use its own equivalent illegalSbcNmos. Clark's Appendix A again: in decimal mode the NMOS
 # part computes N, V, Z AND C exactly as binary SBC does -- only A differs -- which is why the
 # flags are settled first, from the binary difference, on both paths.
 macro sbcNmos(op1) {
