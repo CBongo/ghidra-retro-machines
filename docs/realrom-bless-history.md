@@ -15,6 +15,28 @@ underscores or asterisks may render oddly. Each was true when written, and later
 supersede earlier ones. A bead id or commit hash in an entry is the authoritative record of
 that change.
 
+## 2026-10-15 -- deadly_towers re-blessed (grm-pwuh, 53597e2)
+
+deadly_towers was carried as "BATCH-DEPENDENT: fails every batched run, solo passes" from
+grm-x4y1.6 until this fix. That label was wrong. The row failed SOLO too, most runs (solo FAIL,
+FAIL, PASS; with DeterminismProbe 1 pass in 11); the harness's one solo diagnostic rerun had
+simply passed. The real cause was its BNROM trampolines (fc27/fc3c/fc51 in every bank), which
+switch banks and THEN read their jump table. Ghidra read each copy's table from its own bank, the
+B2 copy got 59 garbage targets, and their decodes raced real flow, so the fc3f helper model (fd42
+bank 3 vs 0) varied run to run.
+
+The fix reads such tables from the switched-in bank (BankContext + CrossBankTable in
+JumpTableBoundAnalyzer, pinned by references), keeps only the valid prefix, and requires the
+switched-in bank's own copy to read an overlapping table. Re-blessed from a dump that was
+byte-identical across 4 solo runs and the batched run:
+- every sample.bankcomment line is unchanged from the old golden;
+- symbols 636 -> 350 (garbage switch/case labels gone);
+- intraOverlay 1660 -> 1915 and instrs.inOverlay 4517 -> 4734 (the real cross-bank targets);
+- warnings 1 -> 2, the new one being ad41, real code flowing into RAM.
+No other row moved on check nes. Follow-ups: grm-ktne (the 'via fcfa' RESET attributions),
+grm-1qi7 (other BankContext consumers), grm-u7cy (one solo rerun cannot tell "batch-dependent"
+from "flaky").
+
 ## Retired status records, 2026-08-22 to 2026-10-13 (moved 2026-10-15, grm-x4y1.1)
 
 These are summaries (not verbatim) of status text that used to live in the
