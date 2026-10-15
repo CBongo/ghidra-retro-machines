@@ -55,12 +55,12 @@ safe.
 
 | set | platform | manifest(s) | rows | what |
 | --- | --- | --- | --- | --- |
-| `core` | nes | both | kicarus, cv2, tmnt, smb, zelda | Always-run floor (~46s measured): the two stable grm-mu7 victims, the thread-pin canary, and two controls. **The default for a bare `check`.** |
+| `core` | nes | both | kicarus, cv2, tmnt, smb, zelda | Always-run floor (about a minute, ~50s measured 2026-10-14): the two stable grm-mu7 victims and three controls. **The default for a bare `check`.** |
 | `nes-curated` | nes | `manifest.tsv` | every row | The curated NES minimum: one representative title per shipped board, plus fuller coverage of the boards where a single title proves least — Bandai FCG (mappers 16/157/159), the newest addition when the set was assembled. |
 | `nes-gme` | nes | `manifest-gme.tsv` | every row | The expanded NES reference set: titles of interest to the parent game-music-extraction project. Deliberately *not* a gate — a reference point for planning and an occasional thorough check. |
-| `snes-cart` | snes | `manifest-snes.tsv` | every row | The SNES loader set: thirteen cartridges covering the alt-board axis the eleven-ROM GME corpus does not — SA-1, SuperFX 1/2, DSP-1 in both LoROM and HiROM form, S-DD1, CX4, the one genuine ExHiROM, a clean/copier pair on each of two titles, and one cartridge whose declared map mode contradicts its header location. |
+| `snes-cart` | snes | `manifest-snes.tsv` | every row | The SNES loader set: cartridges covering the alt-board axis the NES GME corpus does not — SA-1, SuperFX 1/2, DSP-1 in both LoROM and HiROM form, S-DD1, CX4, the one genuine ExHiROM, a clean/copier pair on each of two titles, and one cartridge whose declared map mode contradicts its header location. |
 
-Platform groups, derived from `platforms.tsv`: **`nes`** (`nes-curated` + `nes-gme`, 32 rows —
+Platform groups, derived from `platforms.tsv`: **`nes`** (`nes-curated` + `nes-gme`, 35 rows —
 what `--all` used to mean, and still does under that spelling) and **`snes`** (`snes-cart`, 13
 rows — what `--snes` used to mean). **`all`** is the driver's own union of every set on every
 platform (46 rows) — the word that changed meaning in `grm-ughg`, since before it there was no
@@ -78,7 +78,7 @@ bash tools/banktest/realrom-test.sh check all <romdir>          # every set, eve
 **The old flags still work, as deprecated aliases that print a one-line note:** `(no flag)` →
 `nes-curated`, `--gme` → `nes-gme`, `--all` → `nes`, `--snes` → `snes`. The flags/sets *select*
 rather than adding to a running total, and every run announces which sets it resolved and the
-rows they expanded to — `--gme` silently meaning "the GME set *plus* the curated thirteen" would
+rows they expanded to — `--gme` silently meaning "the GME set *plus* the curated set" would
 be a costly surprise under `bless`, re-blessing goldens you never asked about.
 
 **`nes` means the two NES manifests, and deliberately does *not* include `snes`.** The SNES rows
@@ -126,7 +126,7 @@ environment variable, the file extensions the sha256 index scans (`.nes`; or `.s
 are precisely the `.smc` ones), the extension of the temp copy the import sees, and whether
 analysis runs at all. The SNES rows import with `-noanalysis`: they are loader rows, nothing
 the dump emits depends on auto-analysis, and skipping it is both much faster on a 4–6 MB
-cartridge and immune to the analyzer jitter that makes two NES rows unstable.
+cartridge and immune to the analysis-order sensitivity that used to make some NES rows unstable.
 
 The SNES rows use **`SnesRealRomDump.java`**, not `RealRomDump.java`, and not
 `VerifyBankTest.java`. `RealRomDump` is entirely about the NES banking model — overlay

@@ -825,8 +825,8 @@ it is never a `run-banktest.sh` chunk (whose `all` would otherwise pull it in).
   subset, and where a bare `check` silently meant "the curated NES set, one-third of the tier" —
   the old flags still work as deprecated aliases that print a one-line note (`--gme`→`nes-gme`,
   `--all`→`nes`, `--snes`→`snes`), and `--all` still means exactly what it always meant (both NES
-  manifests, 33 rows). Only the *bare word* `all` changed meaning: before grm-ughg there was no
-  such word, and now it spans every platform (46 rows).
+  manifests, 35 rows today). Only the *bare word* `all` changed meaning: before grm-ughg there was no
+  such word, and now it spans every platform (48 rows today).
 - **A bare `check` now runs `core`, not the curated NES set.** `core` (`realrom/sets.tsv`) is a
   new always-run floor — five rows (kicarus, cv2, tmnt, smb, zelda) drawn across both NES
   manifests, measured at ~46s — added beneath the full-tier requirement below for changes that
@@ -866,7 +866,7 @@ it is never a `run-banktest.sh` chunk (whose `all` would otherwise pull it in).
   stamp also now records, as a third line, which sets a run resolved — a `core`-only run says so
   plainly, and a pre-grm-ughg stamp reads as "unknown (pre-grm-ughg stamp)" rather than guessing.
 - **The SNES set is a LOADER tier, with its own dump script.** Thirteen hash-pinned cartridges
-  covering the alt-board axis the eleven-ROM GME corpus does not — SA-1, SuperFX 1/2, DSP-1 in
+  covering the alt-board axis the NES GME corpus does not — SA-1, SuperFX 1/2, DSP-1 in
   both LoROM and HiROM form, S-DD1, CX4, the corpus's one genuine ExHiROM, and a clean/copier
   **pair** on each of two titles (Pilotwings and Star Fox), which is the real-ROM form of what
   the synthetic `snestest`/`snestestcopier` fixtures encode: a copier-detection regression
@@ -913,54 +913,34 @@ it is never a `run-banktest.sh` chunk (whose `all` would otherwise pull it in).
   in the manifest is a hard **error**, never a silent no-op, because a typo in
   `--except megman` must not bless megaman. Filtered rows are reported as `filtered=N`, not as
   `SKIP` — `SKIP` means the ROM was absent, which is a different fact.
-- **`megaman` flaps on 12.1.2 (grm-g73) — but on 12.1.3 it fails every run, for a different
-  reason.** Read both halves; the second supersedes the first on any current tree.
+- **`megaman` and its history (resolved).** `megaman` was this tier's long-running problem row,
+  and the lesson it left is still the rule: a golden whose diff you can trust is what the tier is
+  *for*, so the harness never retries a row or tolerates a delta. It was bistable on 12.1.2
+  (grm-g73: two dumps differing only in `refs.intoOverlay 1704 <-> 1703` and
+  `instrs.inOverlay 7429 <-> 7431`); on stock 12.1.3 it failed every run, with `refs` ~1744 and an
+  unstable `bankComments` of 160/161/162 (the grm-9wl6 A/B, 2026-08-22, which held source
+  byte-identical and flipped only `ghidraTargetVersion`); since 2026-09-20 (grm-qp5x.3) the
+  reference install runs a locally patched `decompile.exe` carrying the GP-6936 fix (upstream
+  #9655), and `megaman` and `wizwarr` are blessed on it. The remaining analysis-order bistability
+  of megaman and the other formerly bistable rows (`dodge`, `ff1`, `rcproam`, `dragonpower`,
+  `lwings`) was bistable until grm-kon2 and grm-uioc (2026-10-13), which fixed the order races at
+  the root; `check all` has since been byte-identical across repeated runs and batch sizes
+  (grm-x4y1.3, 2026-10-14). A row that moves between runs now is a determinism bug to file, not a
+  known flap.
 
-  On **12.1.2**, two identical imports of the same ROM against the same build produce one of two
-  dumps, differing *only* in these lines and always moving in opposite directions:
-
-  ```
-  REALROM count refs.intoOverlay    1704  <->  1703
-  REALROM count instrs.inOverlay    7429  <->  7431
-  ```
-
-  So the row flaps PASS/FAIL with nothing changed. **The rule: if those two lines are the only
-  diff, it is grm-g73, not a regression — any other line moving is real.** It is *not* held back
-  any more (grm-hum blessed it at 1704/7429); it simply flaps. The harness deliberately does not
-  retry the row or tolerate the delta: a golden whose diff you can trust is what this tier is
-  *for*, and special-casing a noisy row would weaken that guarantee for every other row.
-
-  On **12.1.3 — which is what `ghidraTargetVersion` pins today — that flap description no longer
-  applies**, and treating it as current will misattribute a failure in both directions. A
-  controlled A/B (grm-9wl6, 2026-08-22) holding source byte-identical and flipping only
-  `ghidraTargetVersion` puts `megaman` back on its golden's classic pole exactly, so the golden is
-  right and the 12.1.3 output is degraded: `refs` moves to ~1744 and `bankComments` to 160/161/162
-  — and `bankComments` is unstable *against itself* across consecutive 12.1.3 runs, so there is no
-  stable value to pin. `wizwarr` (GME set) is the same story.
-
-  **Since 2026-09-20 (grm-qp5x.3) the reference install runs a locally patched `decompile.exe`**
-  carrying the GP-6936 fix (upstream #9655), and both rows are blessed on it: megaman
-  1705/7428/156, wizwarr warnings 3. Every runner prints `== decompiler: <build> (<sha256>) ==`
-  and the staleness stamp's fourth line records the same, so on a *stock* install the two rows
-  fail with the 12.1.3 signature above and the banner says why. Goldens blessed on the patched
-  build are therefore reproducible only on it — which is the accepted cost of the ruling, stated
-  here so nobody bisects the repo for it. 12.1.4 changed no decompiler source, so the 12.1.3
-  patched binary carries over to the 12.1.4 install unchanged (grm-rap8). The stock binary is kept
-  beside the patched one as `decompile.exe.stock-12.1.4`; the build recipe is in the
-  `ghidra-12-1-3-native-regression-gp6936` bd memory, and the known hashes live in
+  Every runner prints `== decompiler: <build> (<sha256>) ==` and the staleness stamp's fourth line
+  records the same, so on a *stock* install `megaman` and `wizwarr` fail with the 12.1.3 signature
+  and the banner says why. Goldens blessed on the patched build are reproducible only on it,
+  which is the accepted cost of the ruling, stated here so nobody bisects the repo for it. 12.1.4
+  changed no decompiler source, so the patched binary carries over unchanged (grm-rap8); the build
+  recipe is in the `ghidra-12-1-3-native-regression-gp6936` bd memory and the known hashes live in
   `grm_decompiler_build_name` (`tools/banktest/lib/common.sh`).
 
-  Because expected pass/fail counts go stale faster than anything else in this document, they are
-  deliberately **not** stated here as an ongoing expectation. The `realrom-current-fails` bd
-  memory is the single authoritative list of which rows are expected to fail and why;
-  `realrom-12-1-3-toolchain-fails` carries the full experiment, and `realrom-howto` the method.
-  See also `grm-qp5x`. As a one-time data point rather than a baseline to match, the full
-  multi-platform `check all` run that verified the `grm-ughg` set-selection refactor (2026-09-06)
-  measured `pass=39 fail=7`, and the 7 were exactly the documented attributed-or-bistable set:
-  `megaman` and `wizwarr` (attributed to the 12.1.3 toolchain, above) plus `dodge`, `ff1`,
-  `rcproam`, `dragonpower` and `lwings` (bistable/jitter rows tracked elsewhere in this file and
-  in `realrom-current-fails`). Nothing new failed — the point of citing it here is that the
-  refactor changed *how rows are selected*, not *which rows pass*.
+  Expected pass/fail counts go stale faster than anything else in this document, so they are not
+  stated here. The `realrom-current-fails` bd memory holds the tier's *current* state (last verified
+  result, known failing rows, if any); `docs/realrom-bless-history.md` holds the history, including
+  the retired 12.1.3-toolchain and flap-hash records; `realrom-howto` holds the method. See also
+  `grm-qp5x`.
 - **Scripted A/B (`tools/banktest/ab-test.sh`, grm-5jjs):** attributing a real-ROM row's
   behaviour to a specific commit (or to a Ghidra toolchain change, via `--toolchain`) used to be
   a hand-run stash/rebuild/diff procedure with an easy-to-forget rebuild step in the middle.

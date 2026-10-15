@@ -19,25 +19,25 @@ the same word). Sets **compose** and are deduplicated by id, so naming several i
 
 | name | rows | what |
 |---|---|---|
-| `core` | 5 | Always-run floor: the two stable grm-mu7 victims, the thread-pin canary, and two controls. **The default for a bare `check`.** |
-| `nes-curated` | 13 | Curated NES board-representative set (one title per shipped board) |
+| `core` | 5 | Always-run floor: the two stable grm-mu7 victims and three controls. **The default for a bare `check`.** |
+| `nes-curated` | 16 | Curated NES board-representative set (one title per shipped board) |
 | `nes-gme` | 19 | NES game-music-extraction titles of interest |
 | `snes-cart` | 13 | SNES alt-board cartridge loader sample (loader layout only, `-noanalysis`) |
-| `nes` | 32 | platform group: every NES set (`nes-curated` + `nes-gme`) |
+| `nes` | 35 | platform group: every NES set (`nes-curated` + `nes-gme`) |
 | `snes` | 13 | platform group: every SNES set (`snes-cart`) |
-| `all` | 45 | every set on every platform |
+| `all` | 48 | every set on every platform |
 
 **A bare `check` now runs `core`, not the curated NES set** — the owner's ruling on grm-ughg.
 `core` is a *new* always-run floor, not a renamed manifest: it is a cross-manifest subset of
-existing rows (kicarus, cv2, tmnt, smb, zelda), assembled to be cheap (measured 46s) so there is
+existing rows (kicarus, cv2, tmnt, smb, zelda), assembled to be cheap (about a minute: ~50s measured 2026-10-14) so there is
 no longer an excuse to run nothing. It does **not** satisfy the full-tier requirement below —
 see that paragraph.
 
 **The old flags still work, as deprecated aliases that print a one-line note:** `(no flag)` used
 to mean `nes-curated`, and is now spelled `nes-curated`; `--gme` → `nes-gme`; `--all` → `nes`;
 `--snes` → `snes`. Note `--all` still maps to exactly what it always meant — both NES manifests,
-33 rows — that part of the old contract is honored, not broken. The word that changed meaning is
-the *bare, unflagged* `all`: it now spans every platform (45 rows), because a word that didn't
+35 rows today — that part of the old contract is honored, not broken. The word that changed meaning is
+the *bare, unflagged* `all`: it now spans every platform (48 rows), because a word that didn't
 mean what it said is what grm-ughg was filed to fix.
 
 **Skips and timeouts (bead grm-x4y1.2).** A run with SKIPped rows still exits 0 but prints
@@ -68,7 +68,7 @@ this tier never reports a clean gate for something that did not execute.
 The SNES rows still import with `-noanalysis`: they are LOADER rows (block inventory,
 byte-mapped mirrors, IO typing, entry point), nothing `SnesRealRomDump.java` emits depends on
 auto-analysis, and skipping it is both much faster on a 4–6 MB cartridge and immune to the
-analyzer jitter that makes some NES rows unstable. For the same reason a SNES row never
+analysis-order sensitivity that used to make some NES rows unstable (fixed at the root by grm-kon2/grm-uioc; none is known to be unstable now). For the same reason a SNES row never
 refreshes the `REALROM STALENESS:` stamp described below (`platforms.tsv` declares
 `stamps_staleness=no` for it) — that stamp answers "has anyone checked real-ROM *analysis*
 regressions at this commit", which a `-noanalysis` loader pass answers not at all.
@@ -151,8 +151,8 @@ that only one configuration ever produced; the real blocker is a decompiler cras
 (`grm-gz42`). See `grm-qp5x`, and the **`realrom-current-fails`** bd
 memory for the current, authoritative row list — that memory is the single place a row's status
 lives, is revised as rows get fixed or reclassified, and supersedes any older summary including
-this one. Its superseded entries move to `docs/realrom-bless-history.md` when it nears the bd
-CLI's ~32 KB limit. (It replaced `realrom-expected-baseline-fails`, which was only half-authoritative: it
+this one. It holds current state only; all history (dated entries, retired flap and failure
+records) lives in `docs/realrom-bless-history.md`. (It replaced `realrom-expected-baseline-fails`, which was only half-authoritative: it
 was never itself updated when a *later* memory superseded its `megaman` paragraph, so it named a
 jitter signature that no longer applies while still calling itself current. Its durable method
 content — invocation, manifest-set semantics, cache and A/B mechanics — now lives in

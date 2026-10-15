@@ -4,16 +4,102 @@ The append-only archive of the real-ROM tier's re-bless log. Each entry records 
 `tools/banktest/realrom/expected/*.dump` goldens moved: which rows, which count or sample
 lines, which bead or commit caused it, and what the owner ruled.
 
-**This file is history, not status.** The current state of every row (the expected
-`check nes` floor, the known flaps and their signatures, the toolchain banner a run must show)
-lives in the `realrom-current-fails` bd memory (`bd recall realrom-current-fails`). That memory
-keeps only its newest entries and the standing facts. When it nears the bd CLI's ~32 KB limit,
-move its older `LATEST` entries here, newest first, under a new dated section at the top.
+**This file is history, not status.** The current state of the tier (last verified result, known
+failing or bistable rows, the toolchain banner a run must show) lives in the
+`realrom-current-fails` bd memory (`bd recall realrom-current-fails`), which is deliberately kept
+short and current-only. Anything that stops being current there, and every dated `LATEST` entry,
+is moved here, newest first, under a new dated section at the top.
 
 Entries are copied verbatim from the memory and are plain text, not Markdown: identifiers with
 underscores or asterisks may render oddly. Each was true when written, and later entries
 supersede earlier ones. A bead id or commit hash in an entry is the authoritative record of
 that change.
+
+## Retired status records, 2026-08-22 to 2026-10-13 (moved 2026-10-15, grm-x4y1.1)
+
+These are summaries (not verbatim) of status text that used to live in the
+`realrom-current-fails`, `realrom-flap-hashes` and `realrom-12-1-3-toolchain-fails` bd
+memories. All of it is obsolete: as of 2026-10-14 (grm-x4y1.3, cd59001) `check all` is
+all-PASS and byte-identical across five consecutive runs at batch sizes 1/5/10/20/45, and no row
+is failing or bistable. `realrom-current-fails` now holds current state only; the two other
+memories were retired. Kept here so the reasoning behind each past state is not lost.
+
+**Steady state before the fixes (2026-09-20 to 2026-09-26, patched decompiler).** `check nes` was
+`pass=30 fail=3` of 33 (floor `fail=2`, dodge and ff1, after grm-hvc1 re-blessed rcproam on
+2026-09-21), and a run could legitimately report anywhere from `fail=2` to `fail=6` depending on
+which bistable rows landed on which pole. Rows involved: `dodge` was a STALE GOLDEN (grm-q1bi:
+grm-pdd6's NO_DEPOSIT removals, warnings 40->29 / bankComments 29->25) mixed with jitter; `ff1`
+bistable with coupled states 1847/7382 <-> 1880/7426(7444) and a third 1849/7400 (grm-4nr,
+grm-g73); `dragonpower` warnings 5<->6 at 8ee4 and symbols 152<->168 at a546; `shenlong` symbols
+97<->113; `lwings` bankComments 37<->40 via the three caseD_f8 sites (ede6, ee2e, ee8d), the only
+one whose jitter moved `sample.bankcomment` lines, and ALSO a stale golden hidden behind that
+bistability (grm-k5m, ea90ba9, reworded three CopyLoopAnalyzer sample.note lines on 2026-09-20 and
+the golden was not refreshed until grm-rap8 on 2026-09-26); `rcproam` bistable, re-blessed under
+grm-hvc1; `megaman` found nondeterministic on 2026-09-26 (grm-4wqd: refs.intoOverlay 1705<->1698,
+one bankcomment a9ac<->a9ab, on both sides of an `ab-test.sh --repeat 2` including unmodified
+HEAD 0e891a0). The 12.1.4 retarget run (grm-rap8, 2026-09-26) was `pass=42 fail=5 skip=0` of 47:
+megaman, dragonpower, dodge, ff1, lwings. The rule then was "read WHICH rows, the count alone is
+not the test; a ninth candidate or a non-matching signature is real".
+
+**Patched-decompiler blesses (2026-09-20 to 2026-09-25).** After the owner's 2026-09-20 ruling
+(grm-qp5x.3), megaman (1705/7428/156, warnings 31, notes 11) and wizwarr (warnings 5, notes 15)
+were blessed green on the GP-6936-patched `decompile.exe` (sha256 1afff91d...); grm-rd6h
+(099df21, 2026-09-25) re-blessed megaman (warnings 30 / notes 12, d571 a RESTORED_BANK note),
+wizwarr (warnings 3 / notes 17) and ironsword (warnings 5 / notes 5, 040a). Also 2026-09-20
+(grm-qp5x.4): rcransom blessed at refs 1221 / instrs.inOverlay 5722; the old 6434 was STOCK
+walking the 9352 jump table for 128 entries (grm-b3m guard defeat) on one configuration only;
+the decompiler crashes on FUN_9314 on every build (grm-gz42), so a return to 6434 would be the
+over-read reappearing. The candidate cache keys on the binary's hash, the staleness stamp's
+line 4 names the build, and `grm_decompiler_build_name` in `tools/banktest/lib/common.sh` is the
+hash table (a rebuild gives a new hash; MinGW is not reproducible). Stock 12.1.4 is ea42e06d...,
+kept as `decompile.exe.stock-12.1.4`.
+
+**The 12.1.3 stock-toolchain failures (`realrom-12-1-3-toolchain-fails`, 2026-08-22, grm-9wl6).**
+A controlled A/B (source byte-identical, only `ghidraTargetVersion` flipped, cache removed per
+side, repeated runs) showed megaman and wizwarr failing on stock 12.1.3 and matching their
+goldens on 12.1.2: megaman refs 1704 -> ~1744, bankComments 156 -> 160/161/162 (unstable against
+itself, so unblessable); wizwarr warnings 4 -> 7 (extra lines at 81b3, ffa1 and 8631). Ruling
+then: the goldens were right, the 12.1.3 output wrong, neither row blessable; owner decision
+2026-08-22 was to leave both failing and documented (grm-qp5x). Root cause was found 2026-09-04
+(grm-qp5x.1): the single commit 6dd07f90ff, GP-6936 "wrapped memory ranges", rewrites a 2-byte
+access at stack offset -1 of the 16-bit 6502 stack into a JOIN varnode; the local patch of
+2026-09-20 removed the failures (see `ghidra-12-1-3-native-regression-gp6936`). Oddity noted at
+the time: the three 12.1.2 control runs all landed on 1703, the minority pole of grm-g73's 8/2
+split (~0.8% by chance); moot once megaman's jitter was fixed. The reusable method is the
+one-line toolchain toggle above plus `git log <tagA>..<tagB> -- <subtree>`.
+
+**Flap hashes (`realrom-flap-hashes`, 2026-10-09, grm-hp9s).** A table of full sha256 dump
+hashes for the two known GxROM flaps, used to clear `ab-test.sh` diffs without repeat runs:
+dragonpower (a546 jump-table race, symbols 152 <-> 168) 3e767dda...8430 / 6ed95cf4...d (the
+golden) seen on 7c78302 and 3402b79, reused to clear grm-ze06.3; shenlong (symbols 97 <-> 113)
+0a1f002b...b4c / e070b8d7...a96 (the golden) on 3402b79, reused to clear grm-ze06.2. Other
+flapping rows (ff1, megaman, lwings, dodge, rcproam) were never hashed (grm-du7y).
+
+**How it ended (2026-10-13, current facts moved to the memory).** grm-kon2
+(JumpTableOverrideRelocatorAnalyzer writes the override for a switch the bound analyzer could only
+pin by references) fixed the timing-dependent dragonpower/shenlong symbol flap and the symbol
+lines of ten rows; grm-uioc made the analysis thread pin off by default (pinned, unpinned, 4- and
+2-thread runs all byte-identical; the pin had been tmnt's canary, refs.intoOverlay 44, instrs 103);
+grm-x51h and grm-if81 fixed the remaining dead-fall-through/pointer-data races. `check nes` was
+all-PASS and byte-identical from then. The 2026-10-14 re-measurement (grm-x4y1.3) found `check
+all` all-PASS, so every hash in the flap table above is obsolete. tetris and shenlong were then
+dropped from the tier (grm-x4y1.7, 2026-10-14) as duplicates of drmario and dragonpower, and their
+goldens deleted. Full per-change detail for the blesses is in the verbatim sections below.
+
+## LATEST entries 2026-09-26 to 2026-10-13, verbatim
+
+Moved here from `realrom-current-fails` on 2026-10-15 (grm-x4y1.1). Their `Expected floor` and
+flap sentences are obsolete; see the section above.
+
+LATEST 2026-10-13 (grm-x51h: DecidedBranchAnalyzer.deadCodeStart also keeps a dead fall-through that defined POINTER DATA references. Cause: InlineJumpTableDispatchAnalyzer lays JumpEngine table entries as pointers (DATA refs) and only SCHEDULES functions at the targets; DecidedBranch (BLOCK_ANALYSIS) runs on the freshly disassembled targets before those functions exist, so chain entries that linear disassembly reached as fall-throughs (tmnt b78a.. via b579 JSR $C702, table b57c incl. $B5A2) were cleared with only a pointer pointing at them. The table recognizer was never the problem.) Re-blessed 7 rows, COUNT lines only, every count UP (refs.intoOverlay/intraOverlay/instrs.inOverlay; no bankComment/warning/note/sample line changed): tmnt instrs 14930->15099 (= pre-kdgv), zelda 12868->12957, cv3 19345->19416, contra 2785->2798, tmnt3 4489->4514, lwings 7445->7473, smb2 6522->6524. blmaster (kdgv's ebf4 palette target) unchanged. check nes before bless: 27 pass + exactly these 7. Synthetic SUITE OK. Expected floor: fail=0.
+
+LATEST 2026-10-13 (grm-uioc): THE ANALYSIS THREAD PIN IS OFF BY DEFAULT. The runners and serve.sh now use Ghidra's default pool; GRM_THREAD_PIN=1 re-pins (-Dcpu.core.override=1) as a DIAGNOSTIC, and it is keyed in both candidate caches. Basis: after grm-kon2, check nes 34/34 byte-identical across pinned, unpinned 12-thread x2, 4-thread and 2-thread runs; synthetic gate SUITE OK unpinned; goldens unchanged (they were already unpinned-correct). A row that moves with thread count is now an ORDER RACE TO FIX (cf. grm-4nr, grm-eyn, grm-v60.1, grm-kon2), not a reason to restore the pin. Old "pinned" mentions in older entries below are history. Expected floor still fail=0.
+
+LATEST 2026-10-13 (grm-kon2: JumpTableOverrideRelocatorAnalyzer also writes the override for a switch JumpTableBoundAnalyzer could only PIN BY REFERENCES (no real function contained it on any pass that reached it), by re-running the bound analyzer's decompile-and-bound (boundFunctions) when a function containing it is created. Before, whether such a switch got its override (and its switch/case_N labels) depended on whether its function body existed by the bound analyzer's 2nd pass -- timing, not thread count: dragonpower a546 152<->168, shenlong 97<->113. Bound EOL comment no longer repeats per pass.) Re-blessed 10 rows, SYMBOL lines only (counts UP, every new line a USER_DEFINED override switch/case label; no ref/instr/bankComment/warning/note changed anywhere): cv3 147->181, dodge 136->239, ff1 108->143, lwings 18->95, megaman 122->216, rcproam 37->109, rcransom 31->49, smb3 18->31, tmnt 103->110 (new override is jmp_8f34; the grm-rsxe KNOWN_CODE pin at 9474 is untouched), ultimaav 18->23. dragonpower 168 / shenlong 113 now match their existing goldens every run. check nes on the final build: pinned and two unpinned runs gave 34/34 BYTE-IDENTICAL dumps (first time pinned==unpinned holds on every row; grm-uioc). Expected floor: fail=0. THE SHENLONG/DRAGONPOWER SYMBOL FLAP NAMED BELOW IS FIXED -- a recurrence is a regression.
+
+LATEST 2026-10-13 (grm-kdgv: DecidedBranchAnalyzer -- a conditional branch StoredValueScanner.knownBranchOutcome decides TAKEN gets a fall-through override of none, and code reached ONLY from that dead fall-through is cleared (ClearFlowAndRepairCmd; kept if any FLOW ref, entry point, function or user label at the fall-through). Owner ruling: clearing is right even when the cleared bytes are live at runtime -- the multi-entry 'LDA #n / BNE common' chains (tmnt b786.. via word table $B5A2, kicarus a217/a21e/a225) were decoded only by the impossible fall-through; reaching them is grm-x51h. HelperArgumentRecovery.prologueOutcome now steps along a decided branch over the cleared gap, keeping ultimaav f35f's 'NO INBOUND ARGUMENT' wording): re-blessed 12 rows, COUNT/sample-ref lines only, every count DOWN -- contra cv3 ff1 kicarus lwings megaman3 rcransom smb2 smb3 tmnt tmnt3 zelda (cv3 instrs.inOverlay 19831->19345, tmnt 15099->14930, zelda 12958->12868; kicarus a237 JMP $a22c becomes a call-return ref, Ghidra's shared-return handling once a22c lost its fall-from). No bank comment, warning or note changed on any row. Synthetic: nesforktest/nesforkhometest IDENTITY only -- their fixtures were wrong (LDA $10 / LDX #imm / BEQ: LDX set Z, so one 'runtime' arm was dead); generator now does LDX first. check nes on the final build: 20 pass + those 12 (intended, blessed) + dragonpower 152 / shenlong 97 flap; 3 consecutive runs gave byte-identical dumps for the 12. Expected floor: fail=0 plus the shenlong/dragonpower symbol flap.
+
+LATEST, 2026-09-26 (grm-rap8, 12.1.4 RETARGET): 'realrom-test.sh check all' on D:/ghidra_12.1.4_PUBLIC with the patched binary carried over (12.1.4 changed no decompiler source; stock 12.1.4 is ea42e06d..., kept as decompile.exe.stock-12.1.4): pass=42 fail=5 skip=0 of 47 -- megaman (1698/7413/157, the known 1698 state), dragonpower (warnings 6->5 at 8ee4), dodge (stale, 40->29 / 29->25), ff1 (1849/7400 -- a THIRD ff1 state, also seen on 12.1.3 in an earlier run, so jitter), lwings. All SNES rows and nes-curated otherwise green. LWINGS WAS ALSO A STALE GOLDEN, hidden behind its bistability: grm-k5m (ea90ba9, 2026-09-20) reworded three CopyLoopAnalyzer sample.note lines ('...and the payload does not decode as a subroutine...') and the golden (blessed 2026-09-03) was never refreshed, so lwings failed EVERY run since. Re-blessed 2026-09-26 in grm-rap8 (wording-only diff, bankComments-40 state). From now on an lwings failure should be count lines only (37<->40).
 
 ## Entries 2026-10-03 to 2026-10-13
 

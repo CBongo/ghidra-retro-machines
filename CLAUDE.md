@@ -86,9 +86,9 @@ bash tools/banktest/build-and-test.sh --list-chunks
 
 ```bash
 bash tools/banktest/realrom-test.sh check            # core floor, 5 rows, ~46s
-bash tools/banktest/realrom-test.sh check nes         # full NES tier, 32 rows -- romdirs from GRM_ROM_DIR
+bash tools/banktest/realrom-test.sh check nes         # full NES tier, 35 rows -- romdirs from GRM_ROM_DIR
 bash tools/banktest/realrom-test.sh check snes        # full SNES tier, 13 rows -- romdirs from GRM_SNES_ROM_DIR
-bash tools/banktest/realrom-test.sh check all         # everything, every platform, 45 rows
+bash tools/banktest/realrom-test.sh check all         # everything, every platform, 48 rows
 bash tools/banktest/realrom-test.sh --list-sets       # print the table below
 bash tools/banktest/realrom-test.sh coverage [SET]    # read-only: which rows have RAN at this build (not "passed")
 ```

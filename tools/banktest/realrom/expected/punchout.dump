@@ -1,0 +1,74 @@
+=== REALROM BEGIN ===
+REALROM program punchout.nes
+REALROM sha256 2f06867500d5bc105cfa30f041fcb6bf5934d6b464779fbc4b041203af72b052
+REALROM prgsha256 61d4b443ce269d4bcda3e3d3756098abb036e2d2110162863655daa6fda23551
+REALROM map machines/nes-mmc2.map
+REALROM placement NONE
+REALROM block APU_IO 4000-401f overlay=false
+REALROM block PPU_REGS 2000-2007 overlay=false
+REALROM block RAM 0000-07ff overlay=false
+REALROM block W8000 8000-9fff overlay=false
+REALROM block W8000_B1 8000-9fff overlay=true
+REALROM block W8000_B10 8000-9fff overlay=true
+REALROM block W8000_B11 8000-9fff overlay=true
+REALROM block W8000_B12 8000-9fff overlay=true
+REALROM block W8000_B13 8000-9fff overlay=true
+REALROM block W8000_B14 8000-9fff overlay=true
+REALROM block W8000_B15 8000-9fff overlay=true
+REALROM block W8000_B2 8000-9fff overlay=true
+REALROM block W8000_B3 8000-9fff overlay=true
+REALROM block W8000_B4 8000-9fff overlay=true
+REALROM block W8000_B5 8000-9fff overlay=true
+REALROM block W8000_B6 8000-9fff overlay=true
+REALROM block W8000_B7 8000-9fff overlay=true
+REALROM block W8000_B8 8000-9fff overlay=true
+REALROM block W8000_B9 8000-9fff overlay=true
+REALROM block WA000 a000-bfff overlay=false
+REALROM block WC000 c000-dfff overlay=false
+REALROM block WE000 e000-ffff overlay=false
+REALROM count blocks.total 22
+REALROM count blocks.overlay 15
+REALROM count spaces.overlay 15
+REALROM count refs.intoOverlay 0
+REALROM count refs.intoOverlay.retargeted 0
+REALROM count refs.intoOverlay.intraOverlay 0
+REALROM count instrs.inOverlay 0
+REALROM count bankComments 0
+REALROM count warnings 13
+REALROM count notes 3
+REALROM count symbols 18
+REALROM sample.warn a665 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_aa17, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
+REALROM sample.warn a671 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_b165, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
+REALROM sample.warn a67a [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_aa17, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
+REALROM sample.warn a68c [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_aa17, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
+REALROM sample.warn a7ed [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_aa17, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
+REALROM sample.warn aa19 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn aa62 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_aa17, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
+REALROM sample.warn aa6b [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_aa17, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
+REALROM sample.warn aa74 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_aa17, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
+REALROM sample.warn aac5 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_aa17, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
+REALROM sample.warn abf1 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_aa17, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
+REALROM sample.warn b18c [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn c45d [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_aa17, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
+REALROM sample.note a245 [CopyLoopAnalyzer] copy-shaped loop RAM:a1ab -> RAM:0160 (16 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note af12 [CopyLoopAnalyzer] copy-shaped loop RAM:af1e -> RAM:0200 (12 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note b664 [CopyLoopAnalyzer] copy-shaped loop RAM:b696 -> RAM:0208 (4 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.symbol 2000 PPUCTRL IMPORTED primary=true
+REALROM sample.symbol 2001 PPUMASK IMPORTED primary=true
+REALROM sample.symbol 2002 PPUSTATUS IMPORTED primary=true
+REALROM sample.symbol 2003 OAMADDR IMPORTED primary=true
+REALROM sample.symbol 2004 OAMDATA IMPORTED primary=true
+REALROM sample.symbol 2005 PPUSCROLL IMPORTED primary=true
+REALROM sample.symbol 2006 PPUADDR IMPORTED primary=true
+REALROM sample.symbol 2007 PPUDATA IMPORTED primary=true
+REALROM sample.symbol 4014 OAMDMA IMPORTED primary=true
+REALROM sample.symbol 4015 SND_CHN IMPORTED primary=true
+REALROM sample.symbol 4016 JOY1 IMPORTED primary=true
+REALROM sample.symbol 4017 JOY2 IMPORTED primary=true
+REALROM sample.symbol a000 IRQ IMPORTED primary=false
+REALROM sample.symbol a000 RESET IMPORTED primary=true
+REALROM sample.symbol a008 NMI IMPORTED primary=true
+REALROM sample.symbol fffa NMI_VEC IMPORTED primary=true
+REALROM sample.symbol fffc RESET_VEC IMPORTED primary=true
+REALROM sample.symbol fffe IRQ_VEC IMPORTED primary=true
+=== REALROM END ===

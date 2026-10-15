@@ -1,0 +1,44 @@
+=== REALROM BEGIN ===
+REALROM program adventure_island.nes
+REALROM sha256 f4083971fb7341ba6560fdd8ef588bd6e2ad450a8694a563cec099a5d306d42e
+REALROM prgsha256 d3dad6dfe9fd47563cb02a7984a916b67bdde4b05c68201f3648475e3deda78b
+REALROM map machines/nes-cnrom.map
+REALROM placement NONE
+REALROM block APU_IO 4000-401f overlay=false
+REALROM block PPU_REGS 2000-2007 overlay=false
+REALROM block PRG_HI c000-ffff overlay=false
+REALROM block PRG_LO 8000-bfff overlay=false
+REALROM block RAM 0000-07ff overlay=false
+REALROM count blocks.total 5
+REALROM count blocks.overlay 0
+REALROM count spaces.overlay 0
+REALROM count refs.intoOverlay 0
+REALROM count refs.intoOverlay.retargeted 0
+REALROM count refs.intoOverlay.intraOverlay 0
+REALROM count instrs.inOverlay 0
+REALROM count bankComments 1
+REALROM count warnings 1
+REALROM count notes 1
+REALROM count symbols 18
+REALROM sample.bankcomment 8049 bank -> 0 (chr_bank=0) via FUN_b817
+REALROM sample.warn b81a [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.note 8965 [CopyLoopAnalyzer] copy-shaped loop RAM:8943 -> RAM:0694 (6 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.symbol 2000 PPUCTRL IMPORTED primary=true
+REALROM sample.symbol 2001 PPUMASK IMPORTED primary=true
+REALROM sample.symbol 2002 PPUSTATUS IMPORTED primary=true
+REALROM sample.symbol 2003 OAMADDR IMPORTED primary=true
+REALROM sample.symbol 2004 OAMDATA IMPORTED primary=true
+REALROM sample.symbol 2005 PPUSCROLL IMPORTED primary=true
+REALROM sample.symbol 2006 PPUADDR IMPORTED primary=true
+REALROM sample.symbol 2007 PPUDATA IMPORTED primary=true
+REALROM sample.symbol 4014 OAMDMA IMPORTED primary=true
+REALROM sample.symbol 4015 SND_CHN IMPORTED primary=true
+REALROM sample.symbol 4016 JOY1 IMPORTED primary=true
+REALROM sample.symbol 4017 JOY2 IMPORTED primary=true
+REALROM sample.symbol 8000 RESET IMPORTED primary=true
+REALROM sample.symbol b706 NMI IMPORTED primary=true
+REALROM sample.symbol b754 IRQ IMPORTED primary=true
+REALROM sample.symbol fffa NMI_VEC IMPORTED primary=true
+REALROM sample.symbol fffc RESET_VEC IMPORTED primary=true
+REALROM sample.symbol fffe IRQ_VEC IMPORTED primary=true
+=== REALROM END ===
