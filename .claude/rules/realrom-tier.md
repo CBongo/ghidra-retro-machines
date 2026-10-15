@@ -46,6 +46,16 @@ nonzero. Every row's `analyzeHeadless` runs under the shared `run_headless_timed
 default 200s + 90s/program (`GRM_HEADLESS_TIMEOUT=S` flat, `0` off, `GRM_HEADLESS_TIMEOUT_BASE` /
 `_PER_PROGRAM`); a timeout FAILs the row and kills only that row's java processes.
 
+**Batched imports (bead grm-x4y1.3).** `realrom-test.sh` imports rows several per `analyzeHeadless`
+JVM: `--batch-size N` / `GRM_REALROM_BATCH_SIZE` (flag wins; `1` = one JVM per row, the old
+behaviour; default 20; `check all` 537s -> 376s). Imports stay serial inside a JVM. Rows share a
+batch only with identical platform and loader-opts; `--keep-project` forces size 1. A batch crash or
+timeout re-runs its rows solo; a batched row whose dump differs from its golden stays FAIL and gets
+one solo diagnostic rerun labelled `BATCH-DEPENDENT` (an analysis determinism bug: file a bead — the
+owner ruling is that shared JVMs are fine and such a row is a bug to fix, `realrom-shared-jvm-ok`)
+or `genuine diff`; `bless` refuses a batched dump a solo import does not reproduce. `ab-test.sh`
+inherits `GRM_REALROM_BATCH_SIZE`; `coverage` is unaffected.
+
 **Multi-platform runs now work in one invocation.** `all` runs NES and SNES rows together;
 every per-row parameter (ROM-dir env var, image extensions indexed, loader, dump script,
 import args, whether the row refreshes the staleness stamp) is resolved per row from

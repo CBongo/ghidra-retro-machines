@@ -22,7 +22,26 @@ A run with SKIPped rows (ROM not found) still exits 0, but prints `REALROM check
 skipped)` rather than a bare `OK`; pass `--require-all` to make any skip exit nonzero. Every
 `analyzeHeadless` row runs under a timeout (default 200s + 90s per program; `GRM_HEADLESS_TIMEOUT=S`
 sets a flat limit, `0` disables, `GRM_HEADLESS_TIMEOUT_BASE`/`_PER_PROGRAM` tune it); a timeout
-FAILs that row (bead grm-x4y1.2). The goldens under `expected/` — our derived,
+FAILs that row (bead grm-x4y1.2).
+
+**Batching (bead `grm-x4y1.3`).** Rows are imported several to a JVM: `--batch-size N` (or
+`GRM_REALROM_BATCH_SIZE`; the flag wins; `1` = one `analyzeHeadless` per row; default 20,
+measured: `check all` 537s per-row vs 376s batched) runs one `analyzeHeadless` with several `-import` args and the dump postScript once per
+program. Imports stay serial inside the JVM; only JVM startup is shared. Rows share a batch only
+if their import is identical apart from the file (same platform, same loader-opts column);
+`--keep-project` forces size 1. The output keeps its per-row `-- id (title): importing ...` /
+`PASS` lines, with `BATCH n=<k> flush=<reason>` lines between batches, and the timeout scales with
+the batch (200s + 90s per program). Failure handling differs for two cases on purpose:
+
+- a batch that crashes or times out, or a row whose section or `REALROM END` is missing, is
+  re-run **solo** (crash attribution) — a `NOTE: batch N FALLBACK` line says so;
+- a row whose batched dump simply **differs from its golden** is *not* silently replaced by a solo
+  result. It stays FAIL; one solo rerun is made as a diagnostic and prints `solo rerun: PASS ->
+  BATCH-DEPENDENT output (determinism bug: file a bead)` or `solo rerun: FAIL too -> genuine
+  diff`. `bless` refuses to write a batched dump that a solo import does not reproduce
+  (it makes that solo import only when the dump would change the golden).
+
+The goldens under `expected/` — our derived,
 copyright-safe analysis metadata, never ROM bytes or disassembly — *are* committed.
 
 ## The sets

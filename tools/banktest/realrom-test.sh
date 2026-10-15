@@ -159,6 +159,8 @@
 #   GRM_KEEP_PROJECT_DIR    base dir for --keep-project (defaults to
 #                            <repo>/build/kept-projects/realrom)
 #   GRM_SKIP_BUILD=1        same opt-out as --no-build (below), for scripted callers
+#   GRM_REALROM_BATCH_SIZE  rows per analyzeHeadless JVM (bead grm-x4y1.3); --batch-size wins; 1 =
+#                            one JVM per row. See the "batched imports" block above flush_batch.
 set -u
 
 # realrom/ holds the two driver tables (bead grm-ughg) as well as the manifests and goldens.
@@ -169,7 +171,15 @@ REALROM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/realrom"
 SETS_TSV="$REALROM_DIR/sets.tsv"
 PLATFORMS_TSV="$REALROM_DIR/platforms.tsv"
 
-USAGE="usage: $0 check|bless|nominate [SET ...] [--only <ids>|--except <ids>] [--no-build] [--keep-project] [--require-all] <romdir> ...
+# Rows per analyzeHeadless JVM (bead grm-x4y1.3). Measured 2026-10-14, check all (45 rows), all
+# 45/45 PASS at every size, so every size's dumps are byte-identical to the per-row ones:
+# size 1 537s, 5 409s, 10 387s, 20 376s, 45 368s. Past ~10 the curve is flat (the 45-row run
+# only forms 3 batches anyway: grouping by platform/loader-opts flushes first), while a batch
+# crash re-runs every row in it solo, so 20 trades the last ~2% of wall time for a smaller
+# fallback. Precedence: --batch-size, then GRM_REALROM_BATCH_SIZE, then this.
+GRM_REALROM_BATCH_SIZE_DEFAULT=20
+
+USAGE="usage: $0 check|bless|nominate [SET ...] [--only <ids>|--except <ids>] [--no-build] [--keep-project] [--require-all] [--batch-size N] <romdir> ...
        $0 coverage [SET ...] [--only <ids>|--except <ids>] [--no-build]
        $0 --list-sets
 
@@ -184,6 +194,15 @@ of a ROM. Without it a run with skips exits 0 and prints: REALROM check: OK (PAR
 
 Every analyzeHeadless run has a timeout (200s + 90s per program; GRM_HEADLESS_TIMEOUT=S sets a flat
 limit, 0 disables; GRM_HEADLESS_TIMEOUT_BASE / _PER_PROGRAM tune it). A timeout FAILs that row.
+
+--batch-size N (check/bless, bead grm-x4y1.3; env GRM_REALROM_BATCH_SIZE, the flag wins; default
+$GRM_REALROM_BATCH_SIZE_DEFAULT) imports up to N rows per analyzeHeadless JVM instead of one JVM per row, to pay JVM
+startup once per batch. Imports stay serial inside the JVM. Only rows whose import is identical
+apart from the file (same platform, same loader-opts column) share a batch. 1 = one JVM per row
+(the pre-grm-x4y1.3 behaviour). A batch that crashes or times out is re-run row by row. A row whose
+batched dump DIFFERS from its golden stays FAIL and is re-run solo once as a diagnostic, printing
+\"BATCH-DEPENDENT\" (solo passes: an analysis determinism bug) or \"genuine diff\"; bless refuses to
+bless a batched dump that a solo import does not reproduce. --keep-project forces size 1.
 
 --keep-project (check/bless only; requires --only, bead grm-haj3) keeps each imported row's
 analyzed Ghidra project instead of passing -deleteProject, at a FIXED path that the next
@@ -298,6 +317,7 @@ REQUESTED_SETS=()
 NO_BUILD=0
 KEEP_PROJECT=0
 REQUIRE_ALL=0
+BATCH_SIZE_ARG=""
 DEPRECATED_FLAG=""
 while [ $# -gt 0 ]; do
 	case "$1" in
@@ -323,6 +343,10 @@ while [ $# -gt 0 ]; do
 			REQUIRE_ALL=1
 			shift
 			;;
+		--batch-size=*) BATCH_SIZE_ARG="${1#--batch-size=}"; shift ;;
+		--batch-size)
+			[ $# -ge 2 ] || { echo "ERROR: --batch-size needs a value" >&2; exit 2; }
+			BATCH_SIZE_ARG="$2"; shift 2 ;;
 		--only|--except)
 			[ $# -ge 2 ] || { echo "ERROR: $1 needs a comma-separated id list" >&2; exit 2; }
 			# Normalize to ",a,b,c," so ",$id," can never match a partial id.
@@ -373,6 +397,30 @@ if [ "$KEEP_PROJECT" = 1 ]; then
 			"the rows you want kept." >&2
 		exit 2
 	fi
+fi
+# Batch size (bead grm-x4y1.3): validated for every mode so a typo fails fast, applied below.
+BATCH_SRC="default"
+BATCH_N="$GRM_REALROM_BATCH_SIZE_DEFAULT"
+if [ -n "$BATCH_SIZE_ARG" ]; then
+	BATCH_N="$BATCH_SIZE_ARG"; BATCH_SRC="--batch-size"
+elif [ -n "${GRM_REALROM_BATCH_SIZE:-}" ]; then
+	BATCH_N="$GRM_REALROM_BATCH_SIZE"; BATCH_SRC="env GRM_REALROM_BATCH_SIZE"
+fi
+case "$BATCH_N" in
+	''|*[!0-9]*|0|0[0-9]*)
+		echo "ERROR: invalid batch size '$BATCH_N' ($BATCH_SRC): must be a positive integer (1 = one JVM per row)" >&2
+		exit 2
+		;;
+esac
+if [ "$KEEP_PROJECT" = 1 ]; then
+	BATCH_ON=0
+	BATCH_BANNER="off -- --keep-project forces size 1 (each row keeps its own project)"
+elif [ "$BATCH_N" -le 1 ]; then
+	BATCH_ON=0
+	BATCH_BANNER="off (size 1 = one analyzeHeadless per row; $BATCH_SRC)"
+else
+	BATCH_ON=1
+	BATCH_BANNER="up to $BATCH_N rows per analyzeHeadless JVM ($BATCH_SRC); imports serial inside it"
 fi
 if [ -n "$DEPRECATED_FLAG" ]; then
 	echo "note: deprecated flag(s):$DEPRECATED_FLAG -- name the set positionally instead" \
@@ -1146,6 +1194,7 @@ fi
 # real hang is still cut off in minutes. The per-program term is what grm-x4y1.3's batching scales.
 grm_headless_timeout_init 200 90
 echo "== headless timeout: $TIMEOUT_BANNER =="
+echo "== batching: $BATCH_BANNER =="
 if [ "$KEEP_PROJECT" = 1 ]; then
 	echo "== keeping analyzed projects under: $KEEP_DIR =="
 fi
@@ -1267,14 +1316,57 @@ shopt -u nullglob nocaseglob
 declare -a ROW_ID ROW_STATUS ROW_DETAIL
 n_pass=0; n_fail=0; n_skip=0; n_bless=0; n_filtered=0
 
+# Builds RR_ARGS: every analyzeHeadless argument that follows the -import arg(s) and precedes
+# -deleteProject, for the current platform ($ROM_*) and a row's loader opts. ONE definition shared
+# by the solo import and the batched import (bead grm-x4y1.3), so the two cannot drift: a batch
+# is "the solo invocation with several -import args", and nothing else may differ.
+rr_headless_args() {
+	local opts="$1"
+	RR_ARGS=(-loader "$ROM_LOADER" ${ROM_IMPORT_ARGS[@]+"${ROM_IMPORT_ARGS[@]}"})
+	# $opts is intentionally unquoted (multi-token loader options), as it always was.
+	# shellcheck disable=SC2206
+	RR_ARGS+=($opts)
+	RR_ARGS+=(-scriptPath "$(native "$SCRIPT_DIR")")
+	# shellcheck disable=SC2206
+	[ -z "${REALROM_EXTRA_PRESCRIPT:-}" ] || RR_ARGS+=(-preScript $REALROM_EXTRA_PRESCRIPT)
+	RR_ARGS+=(-postScript "$ROM_DUMP_SCRIPT")
+	# REALROM_EXTRA_POSTSCRIPT runs one more script (e.g. BankReachProbe.java) on the same
+	# import, so a diagnostic does not cost a second analysis (~7s median per row, worst ~52s --
+	# grm-yfma). Goldens are unaffected:
+	# the awk carve in extract_dump only extracts the REALROM block, and every other script fences its
+	# own output. Give it its OWN invocation rather than piggybacking a routine run, though --
+	# realrom_cache_key() above does not key REALROM_EXTRA_POSTSCRIPT (only the prescript), so a
+	# `bless` (or a re-`check`) can legitimately reuse a cached dump and never run the extra
+	# script at all.
+	[ -z "${REALROM_EXTRA_POSTSCRIPT:-}" ] || RR_ARGS+=(-postScript "$REALROM_EXTRA_POSTSCRIPT")
+}
+
+# Carves the normalized REALROM block out of a headless log (solo log, or one program's section
+# of a batch log, bead grm-x4y1.3) into $2. Returns 1, quietly, if the END marker is absent --
+# callers say what that means for them.
+extract_dump() {
+	local log="$1" out="$2"
+	# Strip headless's "INFO RealRomDump.java> <msg> (GhidraScript)" wrapping, then carve
+	# the REALROM block.
+	# The postScript's own name appears in headless's line prefix, so the strip has to
+	# name the script this row actually ran (bead grm-9nxj.15).
+	local dump_re="${ROM_DUMP_SCRIPT//./\\.}"
+	sed "s/\r\$//; s/^.*$dump_re> //; s/ (GhidraScript)[[:space:]]*\$//" "$log" \
+		| awk '/^=== REALROM BEGIN ===$/{c=1} c{print} /^=== REALROM END ===$/{c=0}' >"$out"
+	grep -q '^=== REALROM END ===$' "$out"
+}
+
 import_and_dump() {
 	# $1 id  $2 rom_path  $3 loader_opts  -> writes normalized dump to $4
-	local id="$1" rom="$2" opts="$3" out="$4"
+	# $5 (optional) tag: gives the log and project a distinct name so a diagnostic solo rerun of a
+	# row (bead grm-x4y1.3) never clobbers that row's batch-section log. The ROM COPY keeps its
+	# plain name on purpose: the program name reaches the dump as `REALROM program <id><ext>`.
+	local id="$1" rom="$2" opts="$3" out="$4" tag="${5:-}"
 	local safe rom_copy proj log
 	safe="$(sanitize "$id")"
 	rom_copy="$WORK/${safe}$ROM_COPY_EXT"
 	cp -f "$rom" "$rom_copy"
-	proj="$WORK/proj_${safe}"
+	proj="$WORK/proj_${safe}${tag}"
 	local -a delete_arg=(-deleteProject)
 	if [ "$KEEP_PROJECT" = 1 ]; then
 		# Fixed per-row path, wiped first so a kept project is always exactly this run's import.
@@ -1283,29 +1375,15 @@ import_and_dump() {
 		delete_arg=()
 	fi
 	mkdir -p "$proj"
-	log="$WORK/${safe}.log"
+	log="$WORK/${safe}${tag}.log"
 
-	# REALROM_EXTRA_POSTSCRIPT runs one more script (e.g. BankReachProbe.java) on the same
-	# import, so a diagnostic does not cost a second analysis (~7s median per row, worst ~52s --
-	# grm-yfma). Goldens are unaffected:
-	# the awk carve below extracts only the REALROM block, and every other script fences its
-	# own output. Give it its OWN invocation rather than piggybacking a routine run, though --
-	# realrom_cache_key() above does not key REALROM_EXTRA_POSTSCRIPT (only the prescript), so a
-	# `bless` (or a re-`check`) can legitimately reuse a cached dump and never run the extra
-	# script at all.
-	# shellcheck disable=SC2086
+	rr_headless_args "$opts"
 	# Under the shared per-run timeout (bead grm-x4y1.2): a hung import FAILs this row instead of
 	# stalling the gate. The needle is this row's own project dir, so only its processes die.
 	run_headless_timed 1 "row $id" "$log" "$(native "$proj")" \
 		"$GHIDRA_HEADLESS" "$(native "$proj")" headless \
 		-import "$(native "$rom_copy")" \
-		-loader "$ROM_LOADER" \
-		${ROM_IMPORT_ARGS[@]+"${ROM_IMPORT_ARGS[@]}"} \
-		$opts \
-		-scriptPath "$(native "$SCRIPT_DIR")" \
-		${REALROM_EXTRA_PRESCRIPT:+-preScript $REALROM_EXTRA_PRESCRIPT} \
-		-postScript "$ROM_DUMP_SCRIPT" \
-		${REALROM_EXTRA_POSTSCRIPT:+-postScript "$REALROM_EXTRA_POSTSCRIPT"} \
+		"${RR_ARGS[@]}" \
 		${delete_arg[@]+"${delete_arg[@]}"}
 	local status=$?
 	if [ $status -eq 124 ]; then
@@ -1317,19 +1395,237 @@ import_and_dump() {
 		return 1
 	fi
 
-	# Strip headless's "INFO RealRomDump.java> <msg> (GhidraScript)" wrapping, then carve
-	# the REALROM block.
-	# The postScript's own name appears in headless's line prefix, so the strip has to
-	# name the script this row actually ran (bead grm-9nxj.15).
-	local dump_re="${ROM_DUMP_SCRIPT//./\\.}"
-	sed "s/\r\$//; s/^.*$dump_re> //; s/ (GhidraScript)[[:space:]]*\$//" "$log" \
-		| awk '/^=== REALROM BEGIN ===$/{c=1} c{print} /^=== REALROM END ===$/{c=0}' >"$out"
-
-	if ! grep -q '^=== REALROM END ===$' "$out"; then
+	if ! extract_dump "$log" "$out"; then
 		echo "    no REALROM block produced (log: $log)" >&2
 		return 1
 	fi
 	return 0
+}
+
+# The per-row tail, shared by the solo path and the batched path (bead grm-x4y1.3, as
+# run-banktest.sh's finish_fixture is for grm-w9ev.5): given a row's normalized dump in $out,
+# the second-layer hash check, candidate-cache write, bless/golden diff, ROW_* bookkeeping and the
+# PASS/FAIL line. Reads the current platform's ROM_* (call use_platform first).
+#
+#   finish_row <id> <rom> <sha> <golden> <opts> <out> <key> <batched 0|1>
+#
+# BATCHED ROWS ARE HELD TO ONE EXTRA RULE (owner ruling 2026-10-14, bd memory
+# realrom-shared-jvm-ok): shared JVMs are fine, so a batched dump that differs from its golden
+# is NEVER silently replaced by a solo result -- that would paper over exactly the analysis
+# determinism bug batching is supposed to surface. The row stays FAIL; one solo rerun is made as a
+# DIAGNOSTIC and labelled "BATCH-DEPENDENT" (solo passes) or "genuine diff" (solo fails too).
+# bless is the same rule seen from the other side: a batched dump is blessed only if a solo
+# import of the row reproduces it byte for byte (otherwise we would pin a golden that a plain
+# `check --batch-size 1` could not reproduce). To keep bless cheap that solo import is made only
+# when the batched dump would CHANGE the golden (or none exists); an unchanged dump is just
+# re-written as-is.
+finish_row() {
+	local id="$1" rom="$2" sha="$3" golden="$4" opts="$5" out="$6" key="$7" batched="$8"
+	local golden_path="$EXPECTED_DIR/$golden" cached="$CACHE_DIR/$key.dump"
+	local solo_out="$WORK/${id}.solo.out" solo_ok=0 solo_same=0
+
+	# Second-layer hash check: the SHA-256 Ghidra computed on the imported bytes must
+	# equal the manifest pin (belt-and-suspenders over the index match).
+	local dumped_sha
+	dumped_sha="$(sed -n 's/^REALROM sha256 //p' "$out" | head -n1 | tr 'A-Z' 'a-z')"
+	if [ "$dumped_sha" != "$sha" ]; then
+		ROW_ID+=("$id"); ROW_STATUS+=("FAIL")
+		ROW_DETAIL+=("sha mismatch: dumped=$dumped_sha manifest=$sha")
+		n_fail=$((n_fail + 1))
+		echo "    FAIL: program sha256 $dumped_sha != manifest $sha"
+		echo "    (if the ROM file changed without its size/mtime moving, delete $ROM_SHA_INDEX)" >&2
+		return 0
+	fi
+
+	# bless of a batched row that would change the golden: require the solo import to agree first
+	# (see the header). Done BEFORE the cache write so a refused dump is never cached as a
+	# blessable candidate.
+	if [ "$batched" = 1 ] && [ "$MODE" = bless ] &&
+		{ [ ! -f "$golden_path" ] || ! cmp -s "$golden_path" "$out"; }; then
+		echo "    batched dump changes the golden; confirming with a solo import before blessing"
+		if import_and_dump "$id" "$rom" "$opts" "$solo_out" ".solo" && cmp -s "$out" "$solo_out"; then
+			echo "    solo import agrees with the batched dump"
+		else
+			ROW_ID+=("$id"); ROW_STATUS+=("FAIL")
+			ROW_DETAIL+=("REFUSED to bless: solo import differs from batched dump (BATCH-DEPENDENT or nondeterministic)")
+			n_fail=$((n_fail + 1))
+			echo "    FAIL: REFUSED to bless -- the solo import of $id did not reproduce the batched" \
+				"dump (BATCH-DEPENDENT output or a nondeterministic row: file a determinism bead)." \
+				"Re-run with --batch-size 1 to bless it from a solo import."
+			return 0
+		fi
+	fi
+
+	# Known-good candidate (sha recheck passed): stash it so a follow-up bless
+	# reuses it without re-importing. Disposable (build/-cache) same as run-banktest.sh's
+	# candidate cache, so a write failure (grm-z34) disables caching for this row rather
+	# than failing it -- but the publish is still atomic, so a torn write is never read
+	# back as a valid entry.
+	if [ -n "$key" ]; then
+		if ! mkdir -p "$CACHE_DIR"; then
+			echo "    NOTE: could not create $CACHE_DIR -- candidate cache disabled for $id" >&2
+		elif ! grm_atomic_publish "$out" "$cached"; then
+			echo "    NOTE: could not write candidate cache for $id -- skipping" >&2
+			rm -f "$cached"
+		fi
+	fi
+
+	if [ "$MODE" = bless ]; then
+		if ! grm_atomic_publish "$out" "$golden_path"; then
+			ROW_ID+=("$id"); ROW_STATUS+=("FAIL"); ROW_DETAIL+=("could not write $golden")
+			n_fail=$((n_fail + 1))
+			echo "    FAIL: could not write $golden_path"
+			return 0
+		fi
+		ROW_ID+=("$id"); ROW_STATUS+=("BLESS"); ROW_DETAIL+=("$golden")
+		n_bless=$((n_bless + 1))
+		echo "    blessed -> $golden_path"
+		return 0
+	fi
+
+	# check mode
+	if [ ! -f "$golden_path" ]; then
+		ROW_ID+=("$id"); ROW_STATUS+=("FAIL"); ROW_DETAIL+=("missing golden $golden (bless first)")
+		n_fail=$((n_fail + 1))
+		echo "    FAIL: golden not found: $golden_path"
+		return 0
+	fi
+	if diff -u "$golden_path" "$out" >"$WORK/${id}.diff" 2>&1; then
+		ROW_ID+=("$id"); ROW_STATUS+=("PASS"); ROW_DETAIL+=("")
+		n_pass=$((n_pass + 1))
+		echo "    PASS"
+		return 0
+	fi
+	local detail="dump differs from golden"
+	n_fail=$((n_fail + 1))
+	echo "    FAIL: dump differs from golden (see $WORK/${id}.diff)"
+	sed -n '1,40p' "$WORK/${id}.diff"
+	if [ "$batched" = 1 ]; then
+		# Diagnostic only -- the verdict above stands whatever this prints.
+		echo "    running $id solo once as a diagnostic (the row stays FAIL either way)"
+		if import_and_dump "$id" "$rom" "$opts" "$solo_out" ".solo"; then
+			solo_ok=1
+			cmp -s "$out" "$solo_out" && solo_same=1
+		fi
+		if [ "$solo_ok" = 0 ]; then
+			echo "    solo rerun: import/dump error -> inconclusive"
+			detail="$detail (solo rerun inconclusive)"
+		elif diff -u "$golden_path" "$solo_out" >"$WORK/${id}.solo.diff" 2>&1; then
+			echo "    solo rerun: PASS -> BATCH-DEPENDENT output (determinism bug: file a bead)"
+			detail="$detail; BATCH-DEPENDENT (solo passes)"
+			# The batched dump is not a trustworthy candidate for a later bless.
+			[ -z "$key" ] || rm -f "$cached"
+		else
+			echo "    solo rerun: FAIL too -> genuine diff"
+			detail="$detail (solo fails too)"
+			if [ "$solo_same" = 0 ]; then
+				echo "    NOTE: the solo dump also differs from the batched dump (row is not deterministic;" \
+					"compare $out and $solo_out)"
+				[ -z "$key" ] || rm -f "$cached"
+			fi
+		fi
+	fi
+	ROW_ID+=("$id"); ROW_STATUS+=("FAIL"); ROW_DETAIL+=("$detail")
+	return 0
+}
+
+# One row, one analyzeHeadless JVM: the pre-grm-x4y1.3 flow, and still the whole flow at
+# --batch-size 1, with --keep-project, and for batch-crash fallback.
+run_row_solo() {
+	local id="$1" title="$2" rom="$3" sha="$4" golden="$5" opts="$6" key="$7"
+	local out="$WORK/${id}.dump"
+	echo "-- $id ($title): importing $(basename "$rom")"
+	if ! import_and_dump "$id" "$rom" "$opts" "$out"; then
+		ROW_ID+=("$id"); ROW_STATUS+=("FAIL"); ROW_DETAIL+=("import/dump error")
+		n_fail=$((n_fail + 1))
+		return 0
+	fi
+	if [ "$KEEP_PROJECT" = 1 ]; then
+		echo "    kept project: $KEEP_DIR/$(sanitize "$id")/headless.gpr"
+	fi
+	finish_row "$id" "$rom" "$sha" "$golden" "$opts" "$out" "$key" 0
+}
+
+# --- batched imports (bead grm-x4y1.3; modelled on run-banktest.sh's grm-w9ev.5 flush_batch) ---
+# Rows are queued, then imported by ONE analyzeHeadless with several -import args (Ghidra
+# headless processes them serially; the postScript runs once per program), so JVM startup is paid
+# per batch rather than per row. A row may share a batch only if its import invocation is
+# identical apart from the file: same platform (=> loader, import args, dump script, copy
+# extension), same loader-opts column; the prescript and extra postscript are run-wide. Program
+# names are the per-row ROM copies "<id><ext>" in $WORK, so they are unique within a project
+# (ids are unique across all manifests); a duplicate would flush anyway.
+#
+# Failure isolation, as in run-banktest.sh: a batch that exits non-zero / times out, or a row
+# whose log section or REALROM block is missing, is re-run solo so a crash is attributed to its
+# row. A row whose batched dump merely DIFFERS from its golden is NOT re-run in its place -- see
+# finish_row.
+BQ_ID=(); BQ_TITLE=(); BQ_ROM=(); BQ_SHA=(); BQ_GOLDEN=(); BQ_KEY=()
+BQ_PLAT=""; BQ_OPTS=""; BQ_NAMES=""
+BATCH_SEQ=0
+
+flush_batch() {
+	local reason="${1:-unspecified}"
+	local n=${#BQ_ID[@]}
+	[ "$n" -gt 0 ] || return 0
+	local ids=("${BQ_ID[@]}") titles=("${BQ_TITLE[@]}") roms=("${BQ_ROM[@]}") shas=("${BQ_SHA[@]}")
+	local goldens=("${BQ_GOLDEN[@]}") keys=("${BQ_KEY[@]}")
+	local plat="$BQ_PLAT" opts="$BQ_OPTS" saved_plat="$PLATFORM"
+	BQ_ID=(); BQ_TITLE=(); BQ_ROM=(); BQ_SHA=(); BQ_GOLDEN=(); BQ_KEY=()
+	BATCH_SEQ=$((BATCH_SEQ + 1))
+	local seq=$BATCH_SEQ i
+	echo "BATCH n=$n flush=$reason"
+	# The row walk has already moved on to later rows' platforms; the batch needs its own.
+	use_platform "$plat"
+	if [ "$n" -eq 1 ]; then
+		run_row_solo "${ids[0]}" "${titles[0]}" "${roms[0]}" "${shas[0]}" "${goldens[0]}" "$opts" "${keys[0]}"
+		use_platform "$saved_plat"
+		return 0
+	fi
+
+	local proj="$WORK/proj_batch$seq" blog="$WORK/batch$seq.log"
+	mkdir -p "$proj"
+	echo "== batch $seq: importing ${ids[*]} via analyzeHeadless ($ROM_LOADER) =="
+	local imports=() bases=() pairs="" safe
+	for i in "${!ids[@]}"; do
+		safe="$(sanitize "${ids[$i]}")"
+		cp -f "${roms[$i]}" "$WORK/${safe}$ROM_COPY_EXT"
+		imports+=(-import "$(native "$WORK/${safe}$ROM_COPY_EXT")")
+		bases+=("${safe}$ROM_COPY_EXT")
+		# Forward slashes: awk -v would eat the backslashes of a Windows-style $WORK.
+		pairs="$pairs ${safe}$ROM_COPY_EXT=${WORK//\\//}/${safe}.log"
+		rm -f "$WORK/${safe}.log"
+	done
+	rr_headless_args "$opts"
+	run_headless_timed "$n" "batch $seq" "$blog" "$(native "$proj")" \
+		"$GHIDRA_HEADLESS" "$(native "$proj")" headless \
+		"${imports[@]}" \
+		"${RR_ARGS[@]}" \
+		-deleteProject
+	local status=$?
+	grm_split_batch_log "$blog" "$pairs"
+
+	for i in "${!ids[@]}"; do
+		local id="${ids[$i]}" why="" out
+		safe="$(sanitize "$id")"
+		local sec="$WORK/${safe}.log"
+		out="$WORK/${id}.dump"
+		if [ "$status" -ne 0 ]; then
+			why="batch analyzeHeadless exited $status"
+			[ "$status" -eq 124 ] && why="batch analyzeHeadless timed out"
+		elif [ ! -s "$sec" ]; then
+			why="no section in the batch log"
+		elif ! extract_dump "$sec" "$out"; then
+			why="no REALROM block in its section of the batch log"
+		fi
+		if [ -n "$why" ]; then
+			echo "NOTE: batch $seq FALLBACK -- re-running $id individually ($why; batch log: $blog)"
+			run_row_solo "$id" "${titles[$i]}" "${roms[$i]}" "${shas[$i]}" "${goldens[$i]}" "$opts" "${keys[$i]}"
+		else
+			echo "-- $id (${titles[$i]}): importing $(basename "${roms[$i]}") [batch $seq, log: $sec]"
+			finish_row "$id" "${roms[$i]}" "${shas[$i]}" "${goldens[$i]}" "$opts" "$out" "${keys[$i]}" 1
+		fi
+	done
+	use_platform "$saved_plat"
 }
 
 while IFS=$'\t' read -r row_plat id title sha mapper board golden opts member ||
@@ -1373,7 +1669,6 @@ while IFS=$'\t' read -r row_plat id title sha mapper board golden opts member ||
 		continue
 	fi
 
-	out="$WORK/${id}.dump"
 	key="$(realrom_cache_key "$id" "$sha" "$opts")"
 	cached="$CACHE_DIR/$key.dump"
 
@@ -1417,78 +1712,32 @@ while IFS=$'\t' read -r row_plat id title sha mapper board golden opts member ||
 		fi
 	fi
 
-	echo "-- $id ($title): importing $(basename "$rom")"
-	if ! import_and_dump "$id" "$rom" "$opts" "$out"; then
-		ROW_ID+=("$id"); ROW_STATUS+=("FAIL"); ROW_DETAIL+=("import/dump error")
-		n_fail=$((n_fail + 1))
-		continue
-	fi
-	if [ "$KEEP_PROJECT" = 1 ]; then
-		echo "    kept project: $KEEP_DIR/$(sanitize "$id")/headless.gpr"
-	fi
-
-	# Second-layer hash check: the SHA-256 Ghidra computed on the imported bytes must
-	# equal the manifest pin (belt-and-suspenders over the index match).
-	dumped_sha="$(sed -n 's/^REALROM sha256 //p' "$out" | head -n1 | tr 'A-Z' 'a-z')"
-	if [ "$dumped_sha" != "$sha" ]; then
-		ROW_ID+=("$id"); ROW_STATUS+=("FAIL")
-		ROW_DETAIL+=("sha mismatch: dumped=$dumped_sha manifest=$sha")
-		n_fail=$((n_fail + 1))
-		echo "    FAIL: program sha256 $dumped_sha != manifest $sha"
-		echo "    (if the ROM file changed without its size/mtime moving, delete $ROM_SHA_INDEX)" >&2
-		continue
-	fi
-
-	# Known-good candidate (sha recheck passed): stash it so a follow-up bless
-	# reuses it without re-importing. Disposable (build/-cache) same as run-banktest.sh's
-	# candidate cache, so a write failure (grm-z34) disables caching for this row rather
-	# than failing it -- but the publish is still atomic, so a torn write is never read
-	# back as a valid entry.
-	if [ -n "$key" ]; then
-		if ! mkdir -p "$CACHE_DIR"; then
-			echo "    NOTE: could not create $CACHE_DIR -- candidate cache disabled for $id" >&2
-		elif ! grm_atomic_publish "$out" "$cached"; then
-			echo "    NOTE: could not write candidate cache for $id -- skipping" >&2
-			rm -f "$cached"
+	# Batched path (bead grm-x4y1.3): queue the row; a batch is flushed when the next row cannot
+	# share its import invocation, at the size cap, or after the last row.
+	if [ "$BATCH_ON" -eq 1 ]; then
+		bq_name="$(sanitize "$id")$ROM_COPY_EXT"
+		if [ ${#BQ_ID[@]} -gt 0 ]; then
+			if [ "$row_plat|$opts" != "$BQ_PLAT|$BQ_OPTS" ]; then
+				flush_batch "platform-or-options-change:$id"
+			elif [[ " ${BQ_NAMES} " == *" $bq_name "* ]]; then
+				flush_batch "duplicate-program-name:$id"
+			fi
 		fi
-	fi
-
-	if [ "$MODE" = bless ]; then
-		if ! grm_atomic_publish "$out" "$golden_path"; then
-			ROW_ID+=("$id"); ROW_STATUS+=("FAIL"); ROW_DETAIL+=("could not write $golden")
-			n_fail=$((n_fail + 1))
-			echo "    FAIL: could not write $golden_path"
-			continue
-		fi
-		ROW_ID+=("$id"); ROW_STATUS+=("BLESS"); ROW_DETAIL+=("$golden")
-		n_bless=$((n_bless + 1))
-		echo "    blessed -> $golden_path"
+		[ ${#BQ_ID[@]} -gt 0 ] || BQ_NAMES=""
+		BQ_PLAT="$row_plat"; BQ_OPTS="$opts"; BQ_NAMES="$BQ_NAMES $bq_name"
+		BQ_ID+=("$id"); BQ_TITLE+=("$title"); BQ_ROM+=("$rom"); BQ_SHA+=("$sha")
+		BQ_GOLDEN+=("$golden"); BQ_KEY+=("$key")
+		if [ ${#BQ_ID[@]} -ge "$BATCH_N" ]; then flush_batch "size-cap"; fi
 		continue
 	fi
-
-	# check mode
-	if [ ! -f "$golden_path" ]; then
-		ROW_ID+=("$id"); ROW_STATUS+=("FAIL"); ROW_DETAIL+=("missing golden $golden (bless first)")
-		n_fail=$((n_fail + 1))
-		echo "    FAIL: golden not found: $golden_path"
-		continue
-	fi
-	if diff -u "$golden_path" "$out" >"$WORK/${id}.diff" 2>&1; then
-		ROW_ID+=("$id"); ROW_STATUS+=("PASS"); ROW_DETAIL+=("")
-		n_pass=$((n_pass + 1))
-		echo "    PASS"
-	else
-		ROW_ID+=("$id"); ROW_STATUS+=("FAIL"); ROW_DETAIL+=("dump differs from golden")
-		n_fail=$((n_fail + 1))
-		echo "    FAIL: dump differs from golden (see $WORK/${id}.diff)"
-		sed -n '1,40p' "$WORK/${id}.diff"
-	fi
+	run_row_solo "$id" "$title" "$rom" "$sha" "$golden" "$opts" "$key"
 # Process substitution, NOT a pipe: the loop body appends to ROW_ID/ROW_STATUS/ROW_DETAIL
 # and bumps the n_* counters, and a pipe would run it in a subshell that discards every
 # result at `done` -- while still exiting 0. The `tr` is a second layer behind
 # .gitattributes' `*.tsv text eol=lf`, covering a working-tree copy an editor rewrote with
 # CRLF after checkout; a stray \r on the row's last field otherwise rides into a path.
 done < <(manifest_rows)
+flush_batch "end"
 
 echo
 printf '%-16s %-6s %s\n' "ID" "STATUS" "DETAIL"

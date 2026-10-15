@@ -858,3 +858,23 @@ run_headless_timed() {
 	fi
 	return $st
 }
+
+# Splits a batched analyzeHeadless log into one file per program (bead grm-w9ev.5; moved here from
+# run-banktest.sh's flush_batch by grm-x4y1.3 so realrom-test.sh shares it).
+#
+#   grm_split_batch_log <batch-log> "<base>=<out-log> <base>=<out-log> ..."
+#
+# Cuts at each "IMPORTING: file:///.../<basename>" line (analysis output for a program follows its
+# IMPORTING line, so it stays with it); anything before the first import (startup) goes to the
+# first program. <out-log> paths must use forward slashes and contain no spaces (awk -v eats
+# backslashes). Existing <out-log> files are the caller's to remove first.
+grm_split_batch_log() {
+	awk -v list="$2" '
+		BEGIN { n = split(list, a, " "); for (i = 1; i <= n; i++) { k = index(a[i], "="); map[substr(a[i], 1, k - 1)] = substr(a[i], k + 1) } cur = ""; pre = "" }
+		/IMPORTING: file:/ && !/Loaded [0-9]+ additional/ {
+			line = $0; sub(/[ \t\r]*\(HeadlessAnalyzer\).*$/, "", line); sub(/^.*\//, "", line)
+			if (line in map) { cur = map[line]; if (pre != "") { printf "%s", pre > cur; pre = "" } }
+		}
+		{ if (cur == "") pre = pre $0 "\n"; else print $0 > cur }
+	' "$1"
+}

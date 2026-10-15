@@ -588,14 +588,7 @@ flush_batch() {
 		pairs="$pairs ${bases[$i]}=${WORK//\\//}/${names[$i]}.log"
 		rm -f "$WORK/${names[$i]}.log"
 	done
-	awk -v list="$pairs" '
-		BEGIN { n = split(list, a, " "); for (i = 1; i <= n; i++) { k = index(a[i], "="); map[substr(a[i], 1, k - 1)] = substr(a[i], k + 1) } cur = ""; pre = "" }
-		/IMPORTING: file:/ && !/Loaded [0-9]+ additional/ {
-			line = $0; sub(/[ \t\r]*\(HeadlessAnalyzer\).*$/, "", line); sub(/^.*\//, "", line)
-			if (line in map) { cur = map[line]; if (pre != "") { printf "%s", pre > cur; pre = "" } }
-		}
-		{ if (cur == "") pre = pre $0 "\n"; else print $0 > cur }
-	' "$blog"
+	grm_split_batch_log "$blog" "$pairs"
 
 	local lognote
 	for i in "${!names[@]}"; do

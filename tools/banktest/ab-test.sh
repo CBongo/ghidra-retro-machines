@@ -72,6 +72,11 @@
 #   --keep-worktrees        do not remove the throwaway worktrees on exit (post-mortem).
 #   -h | --help
 #
+# Batching (grm-x4y1.3): each side's realrom-test.sh runs with ITS default batch size, or whatever
+# GRM_REALROM_BATCH_SIZE is exported here (inherited, both sides alike). Set it to 1 to compare
+# per-row JVMs. Batch composition does not change the dumps this script diffs (they are the same
+# <id>.dump files); a batch-dependent dump would show up in each side's own FAIL diagnostic.
+#
 # THE GRM-MEJ.2 GUARD, ENFORCED: after both sides build, this script asserts their installed
 # extension identities (ext_identity(), lib/common.sh) DIFFER (or, under --toolchain, that their
 # resolved Ghidra install paths differ) and ABORTS LOUDLY if they do not. A silent zero-movement
