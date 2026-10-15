@@ -169,7 +169,7 @@ REALROM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/realrom"
 SETS_TSV="$REALROM_DIR/sets.tsv"
 PLATFORMS_TSV="$REALROM_DIR/platforms.tsv"
 
-USAGE="usage: $0 check|bless|nominate [SET ...] [--only <ids>|--except <ids>] [--no-build] [--keep-project] <romdir> ...
+USAGE="usage: $0 check|bless|nominate [SET ...] [--only <ids>|--except <ids>] [--no-build] [--keep-project] [--require-all] <romdir> ...
        $0 coverage [SET ...] [--only <ids>|--except <ids>] [--no-build]
        $0 --list-sets
 
@@ -178,6 +178,12 @@ row whether build/realrom-cache holds an entry for the CURRENT extension build -
 the row has RAN at this build. It says nothing about whether the row passed. Like check it
 stages the build first (so the build identity matches what a check would use) unless
 --no-build/GRM_SKIP_BUILD is given. It never fails a run.
+
+--require-all (check/bless, bead grm-x4y1.2) exits nonzero if ANY selected row was SKIPPED for want
+of a ROM. Without it a run with skips exits 0 and prints: REALROM check: OK (PARTIAL: N skipped)
+
+Every analyzeHeadless run has a timeout (200s + 90s per program; GRM_HEADLESS_TIMEOUT=S sets a flat
+limit, 0 disables; GRM_HEADLESS_TIMEOUT_BASE / _PER_PROGRAM tune it). A timeout FAILs that row.
 
 --keep-project (check/bless only; requires --only, bead grm-haj3) keeps each imported row's
 analyzed Ghidra project instead of passing -deleteProject, at a FIXED path that the next
@@ -291,6 +297,7 @@ EXCEPT_IDS=""
 REQUESTED_SETS=()
 NO_BUILD=0
 KEEP_PROJECT=0
+REQUIRE_ALL=0
 DEPRECATED_FLAG=""
 while [ $# -gt 0 ]; do
 	case "$1" in
@@ -310,6 +317,10 @@ while [ $# -gt 0 ]; do
 			;;
 		--keep-project)
 			KEEP_PROJECT=1
+			shift
+			;;
+		--require-all)
+			REQUIRE_ALL=1
 			shift
 			;;
 		--only|--except)
@@ -985,8 +996,33 @@ else
 	echo "   Candidate-dump caching is DISABLED for this run; every row re-imports."
 fi
 
+# sha256 of the REALROM_EXTRA_PRESCRIPT script FILE (bead grm-x4y1.2), resolved the way
+# analyzeHeadless resolves it for -preScript: the first word is the script (the rest are its
+# arguments, already keyed by name), found as given or under -scriptPath ($SCRIPT_DIR). Empty
+# when no prescript is set; "unresolved" when it names no file (the run itself would fail).
+prescript_content_hash() {
+	local ps="${REALROM_EXTRA_PRESCRIPT:-}" f
+	[ -n "$ps" ] || return 0
+	ps="${ps%% *}"
+	for f in "$ps" "$SCRIPT_DIR/$ps"; do
+		[ -f "$f" ] && { sha256sum "$f" | cut -d' ' -f1; return 0; }
+	done
+	printf 'unresolved'
+}
+
+# sha256 of the current $PLATFORM's raw platforms.tsv line (bead grm-x4y1.2), memoized per platform.
+declare -A _PLAT_ROWHASH=()
+platform_row_hash() {
+	if [ -z "${_PLAT_ROWHASH[$PLATFORM]+x}" ]; then
+		_PLAT_ROWHASH[$PLATFORM]="$(awk -F'\t' -v p="$PLATFORM" '{ sub(/\r$/, "") } $1 == p { print }' \
+			"$PLATFORMS_TSV" | sha256sum | cut -d' ' -f1)"
+	fi
+	printf '%s' "${_PLAT_ROWHASH[$PLATFORM]}"
+}
+
 realrom_cache_key() {
 	# args: id rom_sha opts  ->  sha256 key on stdout, or empty if disabled
+	# (reads $PLATFORM/$ROM_DUMP_SCRIPT, so call use_platform first)
 	#
 	# The id is part of the key because it is part of the OUTPUT: import_and_dump names the
 	# ROM copy after it, so it reaches the dump as `REALROM program <id>.nes`. Leaving it out
@@ -1019,7 +1055,13 @@ realrom_cache_key() {
 		# analyzer-OFF dump and a normal dump share a key and the cache would serve one for the
 		# other -- into a `bless`, in the worst case. The bless path is refused outright when
 		# this is set (see the guard after mode parsing); this term is the second lock.
-		printf 'prescript:%s\n' "${REALROM_EXTRA_PRESCRIPT:-}"
+		# Name AND content (bead grm-x4y1.2): editing the script in place keeps its name, so the
+		# name alone left a changed prescript sharing a key with the old one.
+		printf 'prescript:%s:%s\n' "${REALROM_EXTRA_PRESCRIPT:-}" "$(prescript_content_hash)"
+		# The platform's whole platforms.tsv row (bead grm-x4y1.2): loader, import_args and
+		# copy_ext all shape the import (a different loader or -noanalysis changes the dump)
+		# and the dumpscript/ext terms above only cover two of those columns.
+		printf 'platform-row:%s\n' "$(platform_row_hash)"
 		# The optional analysis thread pin (lib/common.sh; off by default since grm-uioc). Pinned
 		# and unpinned dumps have differed before (grm-nems, grm-kon2), so a GRM_THREAD_PIN=1
 		# diagnostic run must never serve its dump to a normal `bless`.
@@ -1098,6 +1140,12 @@ KEEP_DIR="${GRM_KEEP_PROJECT_DIR:-$REPO_ROOT/build/kept-projects/realrom}"
 if [ -z "${GRM_KEEP_PROJECT_DIR:-}" ] && _grm_path_has_dot_segment "$REPO_ROOT"; then
 	KEEP_DIR="${TMPDIR:-${TEMP:-/tmp}}/grm-kept-projects-$(printf '%s' "$REPO_ROOT" | tr -c 'A-Za-z0-9' '_')/realrom"
 fi
+# Headless timeout (beads grm-w9ev.5, grm-x4y1.2; shared helper in lib/common.sh). Real-ROM rows
+# are slower than synthetic fixtures: median ~7s, worst ~52s (dragonpower ~36s). One row = one
+# program, so 200s + 90s/program = 290s, 5.6x the slowest row ever seen -- load can't trip it, a
+# real hang is still cut off in minutes. The per-program term is what grm-x4y1.3's batching scales.
+grm_headless_timeout_init 200 90
+echo "== headless timeout: $TIMEOUT_BANNER =="
 if [ "$KEEP_PROJECT" = 1 ]; then
 	echo "== keeping analyzed projects under: $KEEP_DIR =="
 fi
@@ -1242,10 +1290,14 @@ import_and_dump() {
 	# grm-yfma). Goldens are unaffected:
 	# the awk carve below extracts only the REALROM block, and every other script fences its
 	# own output. Give it its OWN invocation rather than piggybacking a routine run, though --
-	# realrom_cache_key() above hashes RealRomDump.java only, so a `bless` (or a re-`check`)
-	# can legitimately reuse a cached dump and never run the extra script at all.
+	# realrom_cache_key() above does not key REALROM_EXTRA_POSTSCRIPT (only the prescript), so a
+	# `bless` (or a re-`check`) can legitimately reuse a cached dump and never run the extra
+	# script at all.
 	# shellcheck disable=SC2086
-	"$GHIDRA_HEADLESS" "$(native "$proj")" headless \
+	# Under the shared per-run timeout (bead grm-x4y1.2): a hung import FAILs this row instead of
+	# stalling the gate. The needle is this row's own project dir, so only its processes die.
+	run_headless_timed 1 "row $id" "$log" "$(native "$proj")" \
+		"$GHIDRA_HEADLESS" "$(native "$proj")" headless \
 		-import "$(native "$rom_copy")" \
 		-loader "$ROM_LOADER" \
 		${ROM_IMPORT_ARGS[@]+"${ROM_IMPORT_ARGS[@]}"} \
@@ -1254,10 +1306,13 @@ import_and_dump() {
 		${REALROM_EXTRA_PRESCRIPT:+-preScript $REALROM_EXTRA_PRESCRIPT} \
 		-postScript "$ROM_DUMP_SCRIPT" \
 		${REALROM_EXTRA_POSTSCRIPT:+-postScript "$REALROM_EXTRA_POSTSCRIPT"} \
-		${delete_arg[@]+"${delete_arg[@]}"} \
-		>"$log" 2>&1
+		${delete_arg[@]+"${delete_arg[@]}"}
 	local status=$?
-	if [ $status -ne 0 ]; then
+	if [ $status -eq 124 ]; then
+		echo "    TIMED OUT: analyzeHeadless for $id exceeded the headless timeout ($TIMEOUT_BANNER;" \
+			"raise GRM_HEADLESS_TIMEOUT, or 0 disables) -- row FAILs (log: $log)" >&2
+		return 1
+	elif [ $status -ne 0 ]; then
 		echo "    analyzeHeadless exited $status (log: $log)" >&2
 		return 1
 	fi
@@ -1465,6 +1520,7 @@ fi
 if [ "$n_pass" -eq 0 ] && [ "$n_fail" -eq 0 ] && [ "$n_bless" -eq 0 ]; then
 	echo "REALROM $MODE: SKIPPED (no matching ROMs supplied) -- nothing verified"
 	[ "$WORK_IS_OURS" = 1 ] && rm -rf "$WORK"	# nothing worth keeping (grm-uqhd)
+	[ "$REQUIRE_ALL" = 1 ] && [ "$n_skip" -gt 0 ] && exit 1	# --require-all (grm-x4y1.2)
 	exit 0
 fi
 
@@ -1564,5 +1620,15 @@ fi
 # Success: nothing in $WORK is worth keeping (run-banktest.sh does the same at its end), and
 # 200+ never-removed realrom.* dirs of ROM copies were 1.7 GB (bead grm-uqhd).
 [ "$WORK_IS_OURS" = 1 ] && rm -rf "$WORK"
+# A run with SKIPs still exits 0 (callers rely on it) but must not read like a clean full pass
+# (bead grm-x4y1.2); --require-all opts into failing on any skip.
+if [ "$n_skip" -gt 0 ]; then
+	if [ "$REQUIRE_ALL" = 1 ]; then
+		echo "REALROM $MODE: FAIL ($n_skip skipped, --require-all)"
+		exit 1
+	fi
+	echo "REALROM $MODE: OK (PARTIAL: $n_skip skipped)"
+	exit 0
+fi
 echo "REALROM $MODE: OK"
 exit 0

@@ -155,22 +155,7 @@ GRM_BATCH_SIZE_DEFAULT=30
 # ~20x the biggest batch -- machine load (one run was 70% slower) can never trip it, while a real
 # hang is still cut off in minutes. GRM_HEADLESS_TIMEOUT=S overrides the whole figure with a flat
 # S seconds per invocation; 0 disables the timeout. BASE/PER are also env-overridable.
-GRM_HEADLESS_TIMEOUT_BASE="${GRM_HEADLESS_TIMEOUT_BASE:-120}"
-GRM_HEADLESS_TIMEOUT_PER_PROGRAM="${GRM_HEADLESS_TIMEOUT_PER_PROGRAM:-10}"
-for _v in "${GRM_HEADLESS_TIMEOUT:-0}" "$GRM_HEADLESS_TIMEOUT_BASE" "$GRM_HEADLESS_TIMEOUT_PER_PROGRAM"; do
-	case "$_v" in
-		''|*[!0-9]*) echo "invalid headless timeout value '$_v': must be a non-negative integer (seconds)" >&2; exit 2 ;;
-	esac
-done
-if [ -n "${GRM_HEADLESS_TIMEOUT:-}" ]; then
-	if [ "$GRM_HEADLESS_TIMEOUT" -eq 0 ]; then
-		TIMEOUT_BANNER="off (GRM_HEADLESS_TIMEOUT=0)"
-	else
-		TIMEOUT_BANNER="${GRM_HEADLESS_TIMEOUT}s flat per headless run (GRM_HEADLESS_TIMEOUT)"
-	fi
-else
-	TIMEOUT_BANNER="${GRM_HEADLESS_TIMEOUT_BASE}s + ${GRM_HEADLESS_TIMEOUT_PER_PROGRAM}s/program"
-fi
+grm_headless_timeout_init 120 10
 BATCH_SRC="default"
 BATCH_N="$GRM_BATCH_SIZE_DEFAULT"
 if [ -n "$BATCH_SIZE_ARG" ]; then
@@ -554,67 +539,7 @@ bless_candidate() {
 # at the batch size, and at the end of the run. Every flush prints "BATCH n=<k> flush=<reason>".
 # Failure isolation: a batch that exits non-zero, or leaves a fixture without its section, is
 # re-run fixture by fixture through run_one_import, so a crash is attributed to its fixture.
-# Runs a headless command under the timeout, output to <log>. Returns the command's status, or
-# 124 (after printing a TIMEOUT line) if it was killed for exceeding the limit.
-#
-#   run_headless_timed <n-programs> <label> <log> <needle> <command> [args...]
-#
-# GHIDRA_HEADLESS is analyzeHeadless.bat: cmd.exe -> java.exe. coreutils timeout / kill signal only
-# the direct child and leave java.exe running (holding the project dir locked). Do NOT use
-# `taskkill /T` here: it walks stale parent PIDs and can reach unrelated processes (an earlier
-# draft is suspected of killing the agent session that ran it). The watchdog instead runs
-# lib/kill-headless.ps1, which kills only java.exe/cmd.exe whose command line contains <needle>.
-# <needle> is the run's own project dir, which lives under the per-run mktemp $WORK, so it matches
-# this run's Ghidra and nothing else. GRM_HEADLESS_KILL_DRYRUN=1 makes the watchdog print what it
-# would kill and kill nothing. The watchdog is a subshell torn down when the command finishes
-# first, so no stray sleep outlives the call.
-run_headless_timed() {
-	local n="$1" label="$2" log="$3" needle="$4"
-	shift 4
-	local limit
-	if [ -n "${GRM_HEADLESS_TIMEOUT:-}" ]; then
-		limit="$GRM_HEADLESS_TIMEOUT"
-	else
-		limit=$((GRM_HEADLESS_TIMEOUT_BASE + n * GRM_HEADLESS_TIMEOUT_PER_PROGRAM))
-	fi
-	if [ "$limit" -eq 0 ]; then
-		"$@" >"$log" 2>&1
-		return $?
-	fi
-	local flag="$log.timedout"
-	rm -f "$flag"
-	"$@" >"$log" 2>&1 &
-	local pid=$!
-	(
-		sleep "$limit" &
-		sp=$!
-		trap 'kill $sp 2>/dev/null; exit 0' TERM
-		wait $sp
-		if kill -0 "$pid" 2>/dev/null; then
-			: >"$flag"
-			if [ "${GRM_HEADLESS_KILL_DRYRUN:-0}" = 1 ]; then
-				powershell.exe -NoProfile -ExecutionPolicy Bypass \
-					-File "$(native "$SCRIPT_DIR/lib/kill-headless.ps1")" -Needle "$needle" -DryRun
-			else
-				powershell.exe -NoProfile -ExecutionPolicy Bypass \
-					-File "$(native "$SCRIPT_DIR/lib/kill-headless.ps1")" -Needle "$needle"
-				# Our own MSYS-level child only (no tree walk): reaps the job if anything is left.
-				kill -9 "$pid" 2>/dev/null
-			fi
-		fi
-	) &
-	local wd=$!
-	wait "$pid"
-	local st=$?
-	kill "$wd" 2>/dev/null
-	wait "$wd" 2>/dev/null
-	if [ -e "$flag" ]; then
-		rm -f "$flag"
-		echo "TIMEOUT: $label exceeded ${limit}s; killed its headless processes (matched by project dir)"
-		return 124
-	fi
-	return $st
-}
+# run_headless_timed lives in lib/common.sh (shared with realrom-test.sh, grm-x4y1.2).
 
 BQ_NAME=()
 BQ_FIX=()

@@ -40,6 +40,12 @@ to mean `nes-curated`, and is now spelled `nes-curated`; `--gme` → `nes-gme`; 
 the *bare, unflagged* `all`: it now spans every platform (45 rows), because a word that didn't
 mean what it said is what grm-ughg was filed to fix.
 
+**Skips and timeouts (bead grm-x4y1.2).** A run with SKIPped rows still exits 0 but prints
+`REALROM check: OK (PARTIAL: N skipped)`; the opt-in `--require-all` flag makes any skip exit
+nonzero. Every row's `analyzeHeadless` runs under the shared `run_headless_timed` (`lib/common.sh`):
+default 200s + 90s/program (`GRM_HEADLESS_TIMEOUT=S` flat, `0` off, `GRM_HEADLESS_TIMEOUT_BASE` /
+`_PER_PROGRAM`); a timeout FAILs the row and kills only that row's java processes.
+
 **Multi-platform runs now work in one invocation.** `all` runs NES and SNES rows together;
 every per-row parameter (ROM-dir env var, image extensions indexed, loader, dump script,
 import args, whether the row refreshes the staleness stamp) is resolved per row from

@@ -87,8 +87,8 @@
 // USAGE (opt-in, alongside the normal dump):
 //   REALROM_WORK_DIR=... REALROM_EXTRA_POSTSCRIPT=BankConsumerProbe.java \
 //     bash tools/banktest/realrom-test.sh check --gme --only <ids> <romdir>
-// Run it in its OWN invocation: the realrom cache key (~:121-131) hashes RealRomDump.java
-// only, so a cached `check`/`bless` pair would silently skip the import this script needs.
+// Run it in its OWN invocation: the realrom cache key does not include the extra postScript,
+// so a cached `check`/`bless` pair would silently skip the import this script needs.
 //
 // WHY THE HELPERS ARE RE-IMPLEMENTED HERE
 // retromachines.DescriptorSupport (planWindows, referencedFields, OverlayNaming, the maps:

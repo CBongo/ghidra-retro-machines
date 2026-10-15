@@ -16,7 +16,13 @@ bash tools/banktest/realrom-test.sh check [SET ...] [--only|--except <ids>] <rom
 bash tools/banktest/realrom-test.sh bless [SET ...] [--only|--except <ids>] <romdir> [<romdir> ...]
 ```
 
-(or set `GRM_ROM_DIR`/`GRM_SNES_ROM_DIR`). The goldens under `expected/` — our derived,
+(or set `GRM_ROM_DIR`/`GRM_SNES_ROM_DIR`).
+
+A run with SKIPped rows (ROM not found) still exits 0, but prints `REALROM check: OK (PARTIAL: N
+skipped)` rather than a bare `OK`; pass `--require-all` to make any skip exit nonzero. Every
+`analyzeHeadless` row runs under a timeout (default 200s + 90s per program; `GRM_HEADLESS_TIMEOUT=S`
+sets a flat limit, `0` disables, `GRM_HEADLESS_TIMEOUT_BASE`/`_PER_PROGRAM` tune it); a timeout
+FAILs that row (bead grm-x4y1.2). The goldens under `expected/` — our derived,
 copyright-safe analysis metadata, never ROM bytes or disassembly — *are* committed.
 
 ## The sets
