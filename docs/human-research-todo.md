@@ -9,7 +9,7 @@ This is a running list, not a snapshot. Add to it whenever an agent stops and as
 
 ## Retiring an answered item — the exact procedure
 
-Sections 1–5 hold **only open questions**. An answered item does not stay here in any form.
+Sections 1–6 hold **only open questions**. An answered item does not stay here in any form.
 
 1. `bd comment <id>` the finding on the owning bead. That is what the next session actually reads.
 2. **Delete the item from its section**, entirely — heading line, body, code blocks, all of it.
@@ -276,6 +276,21 @@ do not keep "Done" rows here.
   build tree stays on its own branch. Full recipe on `grm-6xh`.*
 - *An agent cannot confirm a fork exists by searching for it: GitHub repo search omits forks unless
   the query carries `fork:true`. Check the fork's `master` head directly instead.*
+
+---
+
+## 6. Your machine (files outside the repo)
+
+Agents don't write into your ROM library or other personal directories.
+
+- [ ] **Copy the three new real-ROM images into an indexed ROM dir** (`grm-x4y1.8`, `grm-3rel`).
+      `adventure_island`, `punchout` and `deadly_towers` were added to `manifest.tsv` on 2026-10-15
+      from `H:/emulators/nes/ROMs/All NES Roms (GoodNES)/USA`. That folder is not in `GRM_ROM_DIR`
+      and can't be, because its path contains spaces (`grm-3rel`). Until the files are copied, a
+      plain `check nes` SKIPs those rows and ends `OK (PARTIAL: 3 skipped)`. Copy into
+      `H:/emulators/nes/roms` (or any dir already in `GRM_ROM_DIR`):
+      `Adventure Island (U) [!].nes`, `Punch-Out!! (U) [!].nes`, `Deadly Towers (U) [!].nes`.
+      Then `bash tools/banktest/realrom-test.sh check nes` should report `pass=35`.
 
 ---
 
