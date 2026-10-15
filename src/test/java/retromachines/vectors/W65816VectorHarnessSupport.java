@@ -314,13 +314,6 @@ final class W65816VectorHarnessSupport {
 
 	private static Map<String, String> corpusDefectCases() {
 		Map<String, String> cases = new LinkedHashMap<>();
-		cases.put("e1 e 8669",
-			"SBC (dp,X), emulation mode, D=$F400 (DL=0), LL+X=$FF: the corpus reads the pointer " +
-				"high byte from $F500, the language from $F400. Real hardware wraps the second " +
-				"fetch within the direct page too (Bruce Clark's 65C816 opcodes tutorial section " +
-				"5.11, higan/bsnes, and this corpus's own (d) mode). The generator, TomHarte/CLK, " +
-				"wraps the LL+X add for (d,x) but leaves the second fetch's increment mask at " +
-				"0x00FFFF. See the comment on RefDPIdxInd in 658xx_memaccess.sinc.");
 		for (String name : FC_E_PAGE1_WRAP_CASES) {
 			cases.put(name, FC_E_PAGE1_WRAP_REASON);
 		}
@@ -453,25 +446,16 @@ final class W65816VectorHarnessSupport {
 	 * is {@code op=0xcb}, {@code STP} (the 65816's mnemonic for this opcode; upstream's own
 	 * comment spells it "STP", not "STOP") is {@code op=0xdb}.
 	 *
-	 * <p><b>MVN/MVP are here for a different reason, and the tempting reading is that they are
-	 * simply broken.</b> Every other sampled opcode's cases carry their instruction's natural
-	 * cycle count (2 to 8). MVN ({@code 0x54}) and MVP ({@code 0x44}) carry EXACTLY 100 in all
-	 * 128 sampled cases, which is a cap, not a length: a block move of {@code C+1} bytes with a
-	 * randomized {@code C} would vary enormously. Decoding one case confirms it -- 100 cycles at
-	 * 7 cycles per byte moved 14 bytes, with {@code A} down by 14 and {@code X}/{@code Y} up by
-	 * 14, stopping mid-block. This language performs the whole transfer in one p-code step,
-	 * which is the right shape for analysis and cannot by construction match a truncated one.
-	 * Chasing these rows green would mean rewriting correct semantics to imitate a harness
-	 * artifact, so they are declared not-applicable WITH the evidence rather than left on a
-	 * worklist for the next reader to "fix".
+	 * <p>MVN ({@code 0x54}) and MVP ({@code 0x44}) used to be here too: the old corpus capped
+	 * their cases at 100 cycles, so the 'final' state was a partial transfer that a whole-transfer
+	 * single step cannot match. Upstream PR #12 (2026-10) replaced those files with 100 cases each
+	 * that run to completion (initial A capped at 999), so they are checked like any other opcode.
+	 * Their cycle-level bus activity cannot match a one-step block move by construction; the harness
+	 * compares registers and memory only.
 	 */
 	private static final Map<String, String> NOT_APPLICABLE_OPCODES = Map.of(
 		"CB", "WAI halts the processor pending an interrupt; no post-single-step state exists",
-		"DB", "STP halts the processor pending a hardware reset; no post-single-step state exists",
-		"44", "MVP block move: the corpus caps these cases at 100 cycles, so its 'final' state " +
-			"is a PARTIAL transfer, not a completed instruction (see the class doc)",
-		"54", "MVN block move: the corpus caps these cases at 100 cycles, so its 'final' state " +
-			"is a PARTIAL transfer, not a completed instruction (see the class doc)");
+		"DB", "STP halts the processor pending a hardware reset; no post-single-step state exists");
 
 
 	/**

@@ -46,6 +46,22 @@ DEFAULT_OPCODES = [
 ]
 MODES = ["n", "e"]
 
+# Per-opcode sampling rule: the block moves MVN (54) and MVP (44) run to completion upstream
+# (initial A capped at 999), so each case's cycles array is up to ~7 * (A+1) entries long and
+# the first 8 cases of each file came to 1.3-2.0 MB per file. For these opcodes ONLY, the sample
+# takes the N cases with the SMALLEST initial accumulator (the `a` field of `initial`; the
+# transfer length is A+1 bytes), ties broken by original file order, and keeps them in original
+# file order. Every other opcode keeps the plain first-N prefix.
+SMALLEST_INITIAL_A_OPCODES = {"44", "54"}
+
+
+def pick_sample(opcode: str, cases: list, n: int) -> list:
+    if opcode not in SMALLEST_INITIAL_A_OPCODES:
+        return cases[:n]
+    # sorted() is stable, so equal initial A keeps original file order.
+    chosen = sorted(range(len(cases)), key=lambda i: cases[i]["initial"]["a"])[:n]
+    return [cases[i] for i in sorted(chosen)]
+
 
 def git_commit(clone_dir: pathlib.Path) -> str:
     try:
@@ -106,7 +122,7 @@ def main() -> int:
                 continue
             with src_file.open("r", encoding="utf-8") as f:
                 cases = json.load(f)
-            sample = cases[:args.n]
+            sample = pick_sample(opcode, cases, args.n)
             dest_file = args.dest / src_file.name
             with dest_file.open("w", encoding="utf-8", newline="\n") as f:
                 json.dump(sample, f, indent=1)
@@ -142,6 +158,9 @@ def main() -> int:
         f"upstream_commit: {commit}",
         f"cases_per_file: {args.n}",
         "source_pattern: v1/<opcode-hex>.<n|e>.json",
+        "sampling_rule: first cases_per_file cases of each file, in file order; EXCEPT opcodes "
+        "44 (MVP) and 54 (MVN), which take the cases_per_file cases with the SMALLEST initial A "
+        "(ties by file order), kept in file order, because their cycles arrays scale with A",
         "",
         "# PARTIAL COVERAGE -- READ THIS BEFORE TRUSTING A 'PASS' ROW FOR AN OPCODE NOT LISTED.",
         "# A passing baseline says nothing about the 256 - N opcodes this sample never runs.",

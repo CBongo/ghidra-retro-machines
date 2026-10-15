@@ -154,8 +154,8 @@
 42.N  WDM  PASS  8/8
 43.E  EOR $0x12,S  PASS  8/8
 43.N  EOR $0x9d,S  PASS  8/8
-44.E  MVP 0x69,0x17  N/A  0/8  MVP block move: the corpus caps these cases at 100 cycles, so its 'final' state is a PARTIAL transfer, not a completed instruction (see the class doc)
-44.N  MVP 0xb9,0x54  N/A  0/8  MVP block move: the corpus caps these cases at 100 cycles, so its 'final' state is a PARTIAL transfer, not a completed instruction (see the class doc)
+44.E  MVP 0xec,0xc0  PASS  8/8
+44.N  MVP 0x34,0xf1  PASS  8/8
 45.E  EOR <$0x1b  PASS  8/8
 45.N  EOR <$0xc1  PASS  8/8
 46.E  LSR <$0x1f  PASS  8/8
@@ -186,8 +186,8 @@
 52.N  EOR (<$0x49)  PASS  8/8
 53.E  EOR ($0x57,S),Y  PASS  8/8
 53.N  EOR ($0x74,S),Y  PASS  8/8
-54.E  MVN 0xf3,0x5c  N/A  0/8  MVN block move: the corpus caps these cases at 100 cycles, so its 'final' state is a PARTIAL transfer, not a completed instruction (see the class doc)
-54.N  MVN 0x6d,0x3d  N/A  0/8  MVN block move: the corpus caps these cases at 100 cycles, so its 'final' state is a PARTIAL transfer, not a completed instruction (see the class doc)
+54.E  MVN 0xbf,0x73  PASS  8/8
+54.N  MVN 0x28,0x72  PASS  8/8
 55.E  EOR <$0x60,X  PASS  8/8
 55.N  EOR <$0x8e,X  PASS  8/8
 56.E  LSR <$0x64,X  PASS  8/8

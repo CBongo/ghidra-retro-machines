@@ -150,8 +150,8 @@
 42.N  WDM  PASS  9999/9999  (1 bank-wrap)
 43.E  EOR $0x12,S  PASS  10000/10000
 43.N  EOR $0x9d,S  PASS  9999/9999  (1 bank-wrap)
-44.E  MVP 0x69,0x17  N/A  0/10000  MVP block move: the corpus caps these cases at 100 cycles, so its 'final' state is a PARTIAL transfer, not a completed instruction (see the class doc)
-44.N  MVP 0xb9,0x54  N/A  0/10000  MVP block move: the corpus caps these cases at 100 cycles, so its 'final' state is a PARTIAL transfer, not a completed instruction (see the class doc)
+44.E  MVP 0x69,0x17  PASS  100/100
+44.N  MVP 0xd1,0xc9  PASS  100/100
 45.E  EOR <$0x1b  PASS  10000/10000
 45.N  EOR <$0xc1  PASS  9999/9999  (1 bank-wrap)
 46.E  LSR <$0x1f  PASS  10000/10000
@@ -182,8 +182,8 @@
 52.N  EOR (<$0x49)  PASS  10000/10000
 53.E  EOR ($0x57,S),Y  PASS  9999/9999  (1 bank-wrap)
 53.N  EOR ($0x74,S),Y  PASS  10000/10000
-54.E  MVN 0xf3,0x5c  N/A  0/10000  MVN block move: the corpus caps these cases at 100 cycles, so its 'final' state is a PARTIAL transfer, not a completed instruction (see the class doc)
-54.N  MVN 0x6d,0x3d  N/A  0/10000  MVN block move: the corpus caps these cases at 100 cycles, so its 'final' state is a PARTIAL transfer, not a completed instruction (see the class doc)
+54.E  MVN 0xf3,0x5c  PASS  100/100
+54.N  MVN 0x5a,0xe  PASS  100/100
 55.E  EOR <$0x60,X  PASS  10000/10000
 55.N  EOR <$0x8e,X  PASS  10000/10000
 56.E  LSR <$0x64,X  PASS  9999/9999  (1 bank-wrap)
@@ -464,7 +464,7 @@ DF.E  CMP !>$0x66cdb2,X  PASS  10000/10000
 DF.N  CMP !>$0x9910b5,X  PASS  9999/9999  (1 bank-wrap)
 E0.E  CPX #$0xb6  PASS  9998/9998  (2 bank-wrap)
 E0.N  CPX #$0xa5  PASS  9999/9999  (1 bank-wrap)
-E1.E  SBC (<$0xba,X)  PASS  9999/9999  (1 corpus-defect)
+E1.E  SBC (<$0xba,X)  PASS  10000/10000
 E1.N  SBC (<$0x7a,X)  PASS  10000/10000
 E2.E  SEP #$0xbf  PASS  9999/9999  (1 bank-wrap)
 E2.N  SEP #$0xd6  PASS  9998/9998  (2 bank-wrap)
