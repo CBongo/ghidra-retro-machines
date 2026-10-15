@@ -4,8 +4,6 @@ REALROM sha256 17fec54a27a7783c6e36739c00cc7ad1c9447d7788e6458486b169354e9a36fa
 REALROM prgsha256 a1370e7410a98a4a2de19f4872281a065b1d7d7cd7b5f2ba0da70504b4a1d52d
 REALROM map machines/nes-bandai-fcg.map
 REALROM placement NONE
-REALROM block APU_IO 4000-401f overlay=false
-REALROM block PPU_REGS 2000-2007 overlay=false
 REALROM block PRG_HI c000-ffff overlay=false
 REALROM block PRG_LO 8000-bfff overlay=false
 REALROM block PRG_LO_B1 8000-bfff overlay=true
@@ -26,8 +24,6 @@ REALROM block PRG_LO_B9 8000-bfff overlay=true
 REALROM block RAM 0000-07ff overlay=false
 REALROM count blocks.total 20
 REALROM count blocks.overlay 15
-REALROM count spaces.overlay 15
-REALROM count refs.intoOverlay 0
 REALROM count refs.intoOverlay.retargeted 0
 REALROM count refs.intoOverlay.intraOverlay 0
 REALROM count instrs.inOverlay 0
@@ -38,18 +34,6 @@ REALROM count symbols 18
 REALROM sample.warn c099 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn cc11 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_cc28, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
 REALROM sample.warn cc2a [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
-REALROM sample.symbol 2000 PPUCTRL IMPORTED primary=true
-REALROM sample.symbol 2001 PPUMASK IMPORTED primary=true
-REALROM sample.symbol 2002 PPUSTATUS IMPORTED primary=true
-REALROM sample.symbol 2003 OAMADDR IMPORTED primary=true
-REALROM sample.symbol 2004 OAMDATA IMPORTED primary=true
-REALROM sample.symbol 2005 PPUSCROLL IMPORTED primary=true
-REALROM sample.symbol 2006 PPUADDR IMPORTED primary=true
-REALROM sample.symbol 2007 PPUDATA IMPORTED primary=true
-REALROM sample.symbol 4014 OAMDMA IMPORTED primary=true
-REALROM sample.symbol 4015 SND_CHN IMPORTED primary=true
-REALROM sample.symbol 4016 JOY1 IMPORTED primary=true
-REALROM sample.symbol 4017 JOY2 IMPORTED primary=true
 REALROM sample.symbol c001 RESET IMPORTED primary=true
 REALROM sample.symbol c115 NMI IMPORTED primary=true
 REALROM sample.symbol c257 IRQ IMPORTED primary=true

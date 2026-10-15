@@ -54,7 +54,7 @@ turned out to be a coin flip and nearly caused a row to be misfiled. The run it 
 cost six minutes. **When a full run is the decisive experiment, run it.**
 
 The corollary for the opt-in tiers: the real-ROM tier being ~6 minutes is why
-`realrom-test.sh check nes` (the current spelling of what used to be `--all`; see "Set selection"
+`realrom-test.sh check nes` (what the removed `--all` flag meant; see "Set selection"
 below) is a *required local step* before committing analysis-behaviour changes rather than a
 ceremonial occasional check, and why the SPC700 vector tier (~15s) is routine verification rather
 than a final gate. The `core` floor a bare `check` now runs (5 rows, ~46s) is cheap enough to
@@ -822,11 +822,11 @@ it is never a `run-banktest.sh` chunk (whose `all` would otherwise pull it in).
   (every set on every platform). Sets **compose** and are deduplicated by id, so
   `check core nes-gme` is a valid, if redundant, invocation. `--list-sets` prints the table.
   This replaced a design where a flag (`--gme`/`--all`/`--snes`) selected a platform-specific
-  subset, and where a bare `check` silently meant "the curated NES set, one-third of the tier" —
-  the old flags still work as deprecated aliases that print a one-line note (`--gme`→`nes-gme`,
-  `--all`→`nes`, `--snes`→`snes`), and `--all` still means exactly what it always meant (both NES
-  manifests, 35 rows today). Only the *bare word* `all` changed meaning: before grm-ughg there was no
-  such word, and now it spans every platform (48 rows today).
+  subset, and where a bare `check` silently meant "the curated NES set, one-third of the tier".
+  Those flags were deprecated aliases until grm-x4y1.5 removed them; they now exit 2 with a hint
+  (`--gme`→`nes-gme`, `--all`→`nes` — both NES manifests, 35 rows today — `--snes`→`snes`). The
+  *bare word* `all` is the one that changed meaning: before grm-ughg there was no such word, and
+  now it spans every platform (48 rows today).
 - **A bare `check` now runs `core`, not the curated NES set.** `core` (`realrom/sets.tsv`) is a
   new always-run floor — five rows (kicarus, cv2, tmnt, smb, zelda) drawn across both NES
   manifests, measured at ~46s — added beneath the full-tier requirement below for changes that
@@ -852,7 +852,7 @@ it is never a `run-banktest.sh` chunk (whose `all` would otherwise pull it in).
   repo-wide regardless of which sets a run selected — because an id names a golden *and* names
   the ROM copy the import sees, so a duplicate would let one row silently overwrite another's
   golden, and `expected/` is one directory shared by both platforms.
-- **`nes` (formerly `--all`) does not include `snes`, and a SNES row does not refresh the
+- **`nes` (the old `--all`) does not include `snes`, and a SNES row does not refresh the
   staleness stamp.** Both are deliberate. The SNES rows come from `GRM_SNES_ROM_DIR` rather than
   `GRM_ROM_DIR`, run `SnesRomLoader` rather than `NesRomLoader`, and emit a different dump — so
   folding them into the NES platform group would make "the NES tier" silently SKIP thirteen rows

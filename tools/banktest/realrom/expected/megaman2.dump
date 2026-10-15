@@ -4,8 +4,6 @@ REALROM sha256 27b5a635df33ed57ed339dfc7fd62fc603b39c1d1603adb5cdc3562a0b0d555b
 REALROM prgsha256 1e588d435e75d80c5c0b578b4fa8d196f2cf4346c11c9a7b7e435d768828ad01
 REALROM map machines/nes-mmc1.map
 REALROM placement NONE
-REALROM block APU_IO 4000-401f overlay=false
-REALROM block PPU_REGS 2000-2007 overlay=false
 REALROM block PRG_RAM 6000-7fff overlay=false
 REALROM block RAM 0000-07ff overlay=false
 REALROM block W8000 8000-bfff overlay=false
@@ -60,8 +58,6 @@ REALROM block WC000_M2_B8 c000-ffff overlay=true
 REALROM block WC000_M2_B9 c000-ffff overlay=true
 REALROM count blocks.total 54
 REALROM count blocks.overlay 48
-REALROM count spaces.overlay 48
-REALROM count refs.intoOverlay 1188
 REALROM count refs.intoOverlay.retargeted 71
 REALROM count refs.intoOverlay.intraOverlay 1117
 REALROM count instrs.inOverlay 5310
@@ -217,18 +213,6 @@ REALROM sample.note ca12 [NesBankingAnalyzer] Bank value is RESTORED here, not r
 REALROM sample.note cb4d [CopyLoopAnalyzer] copy-shaped loop RAM:0008 -> RAM:03b8 (32 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note cb60 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call re-commits the bank READ BACK at cb13 from write-through bank shadow 0029 -- a RAM cell the switch code keeps in step with every bank it commits, so the byte read is the last bank committed through it, carried on the stack across control flow cb15..cb5f -- the save/restore idiom. The bank after this call is whatever 0029 held at that read, not a fresh value this analyzer failed to pin down. A property of the game, not a gap in analysis.
 REALROM sample.note d0c3 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this call re-commits the bank READ BACK at d0c1 from write-through bank shadow 0029 -- a RAM cell the switch code keeps in step with every bank it commits, so the byte read is the last bank committed through it -- the save/restore idiom. The bank after this call is whatever 0029 held at that read, not a fresh value this analyzer failed to pin down. A property of the game, not a gap in analysis.
-REALROM sample.symbol 2000 PPUCTRL IMPORTED primary=true
-REALROM sample.symbol 2001 PPUMASK IMPORTED primary=true
-REALROM sample.symbol 2002 PPUSTATUS IMPORTED primary=true
-REALROM sample.symbol 2003 OAMADDR IMPORTED primary=true
-REALROM sample.symbol 2004 OAMDATA IMPORTED primary=true
-REALROM sample.symbol 2005 PPUSCROLL IMPORTED primary=true
-REALROM sample.symbol 2006 PPUADDR IMPORTED primary=true
-REALROM sample.symbol 2007 PPUDATA IMPORTED primary=true
-REALROM sample.symbol 4014 OAMDMA IMPORTED primary=true
-REALROM sample.symbol 4015 SND_CHN IMPORTED primary=true
-REALROM sample.symbol 4016 JOY1 IMPORTED primary=true
-REALROM sample.symbol 4017 JOY2 IMPORTED primary=true
 REALROM sample.symbol 92e4 switch USER_DEFINED primary=false
 REALROM sample.symbol bdb5 case_14 USER_DEFINED primary=false
 REALROM sample.symbol cff0 NMI IMPORTED primary=true
@@ -242,5 +226,13 @@ REALROM sample.symbol ee7c case_7 USER_DEFINED primary=false
 REALROM sample.symbol eeb5 case_11 USER_DEFINED primary=false
 REALROM sample.symbol eeb5 case_12 USER_DEFINED primary=false
 REALROM sample.symbol eeb5 case_13 USER_DEFINED primary=false
-REALROM sample.symbol.truncated 25 of 34
+REALROM sample.symbol eeb5 case_8 USER_DEFINED primary=false
+REALROM sample.symbol eeb5 case_9 USER_DEFINED primary=false
+REALROM sample.symbol efaf case_1 USER_DEFINED primary=false
+REALROM sample.symbol efb3 case_0 USER_DEFINED primary=false
+REALROM sample.symbol ffe0 IRQ IMPORTED primary=false
+REALROM sample.symbol ffe0 RESET IMPORTED primary=true
+REALROM sample.symbol fffa NMI_VEC IMPORTED primary=true
+REALROM sample.symbol fffc RESET_VEC IMPORTED primary=true
+REALROM sample.symbol fffe IRQ_VEC IMPORTED primary=true
 === REALROM END ===

@@ -33,6 +33,7 @@
 //@category RetroMachines.Test
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
@@ -47,8 +48,6 @@ import ghidra.program.model.listing.InstructionIterator;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.symbol.Reference;
-import ghidra.program.model.symbol.SourceType;
-import ghidra.program.model.symbol.Symbol;
 
 public class RealRomDump extends GhidraScript {
 
@@ -80,10 +79,14 @@ public class RealRomDump extends GhidraScript {
 	// raising it would move nothing.
 	private static final int SAMPLE_SYMBOLS = 25;
 
-	// Program-info property the loader stamps with the board's .map path
-	// (DescriptorSupport.MAP_PATH_PROPERTY / .PLACEMENT_OVERRIDE_PROPERTY -- kept as
-	// literals here so this script needs no extension classes on its path).
-	private static final String MAP_PATH_PROPERTY = "Retro Machine Map";
+	// Program-info property the loader stamps with the user's bank-placement override
+	// (DescriptorSupport.PLACEMENT_OVERRIDE_PROPERTY -- kept as a literal here so this script
+	// needs no extension classes on its path; the .map path property is in the shared helper).
+	//
+	// `REALROM placement NONE` is KEPT in every golden although it reads NONE on all 35 NES rows:
+	// it is the only line that would show the override being stamped where no row asked for one
+	// (bead grm-x4y1.6 investigated dropping it and kept it -- it has been in the dump since the
+	// tier's first commit as the sole witness of that property).
 	private static final String PLACEMENT_OVERRIDE_PROPERTY = "Retro Machines.Placement Override";
 
 	// Program-info property the loader stamps with this image's per-game identity,
@@ -91,8 +94,26 @@ public class RealRomDump extends GhidraScript {
 	// literal here for the same reason as the two above).
 	private static final String GAME_IDENTITY_PROPERTY = "Retro Machines.Game Identity";
 
+	// Fixed by the NES loader's machine definition on EVERY row (identical in all 35 goldens
+	// before grm-x4y1.6), so they are CHECKED, not printed: a mismatch prints
+	// `REALROM invariant FAIL ...`. They still count toward `count blocks.total`.
+	private static final List<String> FIXED_BLOCKS = Arrays.asList(
+		"block PPU_REGS 2000-2007 overlay=false",
+		"block APU_IO 4000-401f overlay=false");
+
+	// The hardware-register symbols the descriptor imports on every row; same treatment.
+	// They still count toward `count symbols`.
+	private static final List<String> FIXED_SYMBOLS = Arrays.asList(
+		"2000 PPUCTRL IMPORTED primary=true", "2001 PPUMASK IMPORTED primary=true",
+		"2002 PPUSTATUS IMPORTED primary=true", "2003 OAMADDR IMPORTED primary=true",
+		"2004 OAMDATA IMPORTED primary=true", "2005 PPUSCROLL IMPORTED primary=true",
+		"2006 PPUADDR IMPORTED primary=true", "2007 PPUDATA IMPORTED primary=true",
+		"4014 OAMDMA IMPORTED primary=true", "4015 SND_CHN IMPORTED primary=true",
+		"4016 JOY1 IMPORTED primary=true", "4017 JOY2 IMPORTED primary=true");
+
 	@Override
 	protected void run() throws Exception {
+		RealRomDumpSupport out = new RealRomDumpSupport(this, currentProgram);
 		List<String> blocks = new ArrayList<>();
 		int blocksTotal = 0;
 		int blocksOverlay = 0;
@@ -105,12 +126,7 @@ public class RealRomDump extends GhidraScript {
 				fmt(block.getEnd()) + " overlay=" + block.isOverlay());
 		}
 
-		int spacesOverlay = 0;
-		for (AddressSpace space : currentProgram.getAddressFactory().getAllAddressSpaces()) {
-			if (space.isOverlaySpace()) {
-				spacesOverlay++;
-			}
-		}
+		int spacesOverlay = out.overlaySpaceCount();
 
 		List<String> bankComments = new ArrayList<>();
 		List<String> overlayRefs = new ArrayList<>();
@@ -127,8 +143,8 @@ public class RealRomDump extends GhidraScript {
 		//
 		// The two sub-counters PARTITION the total by construction (a source space either is
 		// or is not an overlay), so retargeted + intraOverlay == intoOverlay on every row.
-		// The total is kept so that invariant is checkable in the golden itself, and so the
-		// existing coarse signal stays comparable across the format change.
+		// The total is no longer printed (grm-x4y1.6): the invariant is checked in-script and a
+		// violation prints `REALROM invariant FAIL`; the two components are the pinned lines.
 		long refsRetargeted = 0;
 		long refsIntraOverlay = 0;
 		long instrsInOverlay = 0;
@@ -218,37 +234,36 @@ public class RealRomDump extends GhidraScript {
 		// in THIS dump. Naming is pinned by Tier 2 and by the synthetic goldens, which do emit it;
 		// real-ROM coverage of analyzer-created names would need a way to tell ours from Ghidra's,
 		// and there is none today.
-		List<String> symbols = new ArrayList<>();
-		long symbolCount = 0;
-		for (Symbol sym : currentProgram.getSymbolTable().getAllSymbols(false)) {
-			SourceType src = sym.getSource();
-			if (src == SourceType.IMPORTED || src == SourceType.USER_DEFINED) {
-				symbolCount++;
-				symbols.add(fmt(sym.getAddress()) + " " + sym.getName() + " " + src +
-					(sym.isPrimary() ? " primary=true" : " primary=false"));
-			}
-		}
+		List<String> symbols = out.deliberateSymbols(4, true);
+		long symbolCount = symbols.size();
+		// Hardware-register symbols are an invariant check (grm-x4y1.6), removed from the sample.
+		symbols = out.requireAndRemove("symbol", symbols, FIXED_SYMBOLS);
 
 		Collections.sort(blocks);
-		Collections.sort(symbols);
+		// Fixed-block invariant (grm-x4y1.6): present exactly once, removed from the printed layout.
+		for (String fixed : FIXED_BLOCKS) {
+			if (!blocks.remove(fixed)) {
+				out.fail("block", "missing [" + fixed + "]");
+			}
+		}
+		// Counter invariants (grm-x4y1.6): each overlay block is its own overlay space; the
+		// retarget/intra split partitions the total (see grm-jwh note above).
+		out.requireEq("spaces.overlay==blocks.overlay", blocksOverlay, spacesOverlay);
+		out.requireEq("refs.intoOverlay==retargeted+intraOverlay", refsIntoOverlay,
+			refsRetargeted + refsIntraOverlay);
 		Collections.sort(bankComments);
 		Collections.sort(overlayRefs);
 		Collections.sort(warnings);
 		Collections.sort(notes);
 
-		String sha = currentProgram.getExecutableSHA256();
-		String mapPath = currentProgram.getOptions(Program.PROGRAM_INFO)
-				.getString(MAP_PATH_PROPERTY, null);
 		String placement = currentProgram.getOptions(Program.PROGRAM_INFO)
 				.getString(PLACEMENT_OVERRIDE_PROPERTY, null);
 		String prgSha = prgSha256(currentProgram.getOptions(Program.PROGRAM_INFO)
 				.getString(GAME_IDENTITY_PROPERTY, null));
 
-		println("=== REALROM BEGIN ===");
-		println("REALROM program " + currentProgram.getName());
-		println("REALROM sha256 " + (sha == null ? "NONE" : sha));
+		out.begin();
 		println("REALROM prgsha256 " + prgSha);
-		println("REALROM map " + (mapPath == null ? "NONE" : mapPath));
+		println("REALROM map " + out.mapPath());
 		println("REALROM placement " + (placement == null ? "NONE" : placement));
 
 		// Full block layout -- bounded by the board's window/bank count (<=~200).
@@ -258,8 +273,6 @@ public class RealRomDump extends GhidraScript {
 
 		println("REALROM count blocks.total " + blocksTotal);
 		println("REALROM count blocks.overlay " + blocksOverlay);
-		println("REALROM count spaces.overlay " + spacesOverlay);
-		println("REALROM count refs.intoOverlay " + refsIntoOverlay);
 		println("REALROM count refs.intoOverlay.retargeted " + refsRetargeted);
 		println("REALROM count refs.intoOverlay.intraOverlay " + refsIntraOverlay);
 		println("REALROM count instrs.inOverlay " + instrsInOverlay);
@@ -268,13 +281,13 @@ public class RealRomDump extends GhidraScript {
 		println("REALROM count notes " + noteCount);
 		println("REALROM count symbols " + symbolCount);
 
-		emitSample("bankcomment", bankComments, SAMPLE_BANKCOMMENTS);
-		emitSample("ref", overlayRefs, SAMPLE_REFS);
-		emitSample("warn", warnings, SAMPLE_WARNINGS);
-		emitSample("note", notes, SAMPLE_NOTES);
-		emitSample("symbol", symbols, SAMPLE_SYMBOLS);
+		out.emitSample("sample.bankcomment", bankComments, SAMPLE_BANKCOMMENTS);
+		out.emitSample("sample.ref", overlayRefs, SAMPLE_REFS);
+		out.emitSample("sample.warn", warnings, SAMPLE_WARNINGS);
+		out.emitSample("sample.note", notes, SAMPLE_NOTES);
+		out.emitSample("sample.symbol", symbols, SAMPLE_SYMBOLS);
 
-		println("=== REALROM END ===");
+		out.end();
 	}
 
 	// The "prg:" half of a "prg:<64 hex> file:<64 hex>" identity value -- the per-game key a
@@ -292,28 +305,9 @@ public class RealRomDump extends GhidraScript {
 		return "NONE";
 	}
 
-	// Print the first `cap` (sorted) entries of a category, so the golden stays small and
-	// stable while still pinning concrete annotation text.
-	//
-	// When the cap actually bites, say so IN THE GOLDEN. The truncation used to be silent,
-	// which is how it went years without anyone noticing that the sample is a prefix by
-	// address and the high addresses were simply gone (bead grm-3pnz). A marker line costs
-	// one line on the rows that are truncated, makes the remaining refs cap self-documenting,
-	// and means a future reader can never again mistake "absent from the sample" for "absent
-	// from the program".
-	private void emitSample(String tag, List<String> lines, int cap) {
-		int n = Math.min(cap, lines.size());
-		for (int i = 0; i < n; i++) {
-			println("REALROM sample." + tag + " " + lines.get(i));
-		}
-		if (n < lines.size()) {
-			println("REALROM sample." + tag + ".truncated " + n + " of " + lines.size());
-		}
-	}
-
 	// 6502 is a 16-bit CPU; every offset fits in 4 hex digits. Block/ref identity comes
 	// from the (overlay) space name, printed alongside where it matters.
 	private String fmt(Address addr) {
-		return String.format("%04x", addr.getOffset());
+		return RealRomDumpSupport.fmt(addr, 4);
 	}
 }

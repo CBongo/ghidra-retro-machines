@@ -4,8 +4,6 @@ REALROM sha256 f045d72683d3156555eccbb56090888f03a15e5b25e59db49dca7a87330472d3
 REALROM prgsha256 d415f6d96f16035cec326f54deb184c24e664c3cac320bdde022b6423db38de2
 REALROM map machines/nes-mmc1.map
 REALROM placement NONE
-REALROM block APU_IO 4000-401f overlay=false
-REALROM block PPU_REGS 2000-2007 overlay=false
 REALROM block PRG_RAM 6000-7fff overlay=false
 REALROM block RAM 0000-07ff overlay=false
 REALROM block W8000 8000-bfff overlay=false
@@ -36,8 +34,6 @@ REALROM block WC000_M2_B6 c000-ffff overlay=true
 REALROM block WC000_M2_B7 c000-ffff overlay=true
 REALROM count blocks.total 30
 REALROM count blocks.overlay 24
-REALROM count spaces.overlay 24
-REALROM count refs.intoOverlay 1
 REALROM count refs.intoOverlay.retargeted 1
 REALROM count refs.intoOverlay.intraOverlay 0
 REALROM count instrs.inOverlay 8
@@ -63,18 +59,6 @@ REALROM sample.note c159 [NesBankingAnalyzer mode lock] prg_mode assumed to stay
 REALROM sample.note c16f [NesBankingAnalyzer mode lock] prg_mode assumed to stay 3 here: this write's prg_mode bits could not be resolved, and code reached from reset only ever sets prg_mode=3 (first at ffd2). Not verified at this site.
 REALROM sample.note c18e [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
 REALROM sample.note c19e [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
-REALROM sample.symbol 2000 PPUCTRL IMPORTED primary=true
-REALROM sample.symbol 2001 PPUMASK IMPORTED primary=true
-REALROM sample.symbol 2002 PPUSTATUS IMPORTED primary=true
-REALROM sample.symbol 2003 OAMADDR IMPORTED primary=true
-REALROM sample.symbol 2004 OAMDATA IMPORTED primary=true
-REALROM sample.symbol 2005 PPUSCROLL IMPORTED primary=true
-REALROM sample.symbol 2006 PPUADDR IMPORTED primary=true
-REALROM sample.symbol 2007 PPUDATA IMPORTED primary=true
-REALROM sample.symbol 4014 OAMDMA IMPORTED primary=true
-REALROM sample.symbol 4015 SND_CHN IMPORTED primary=true
-REALROM sample.symbol 4016 JOY1 IMPORTED primary=true
-REALROM sample.symbol 4017 JOY2 IMPORTED primary=true
 REALROM sample.symbol c046 NMI IMPORTED primary=true
 REALROM sample.symbol c096 IRQ IMPORTED primary=true
 REALROM sample.symbol ffd0 RESET IMPORTED primary=true

@@ -61,24 +61,24 @@ safe.
 | `snes-cart` | snes | `manifest-snes.tsv` | every row | The SNES loader set: cartridges covering the alt-board axis the NES GME corpus does not — SA-1, SuperFX 1/2, DSP-1 in both LoROM and HiROM form, S-DD1, CX4, the one genuine ExHiROM, a clean/copier pair on each of two titles, and one cartridge whose declared map mode contradicts its header location. |
 
 Platform groups, derived from `platforms.tsv`: **`nes`** (`nes-curated` + `nes-gme`, 35 rows —
-what `--all` used to mean, and still does under that spelling) and **`snes`** (`snes-cart`, 13
-rows — what `--snes` used to mean). **`all`** is the driver's own union of every set on every
-platform (46 rows) — the word that changed meaning in `grm-ughg`, since before it there was no
+what the removed `--all` flag meant) and **`snes`** (`snes-cart`, 13
+rows — what the removed `--snes` flag meant). **`all`** is the driver's own union of every set on every
+platform (48 rows today) — the word that changed meaning in `grm-ughg`, since before it there was no
 bare `all` at all, only the `--all` flag meaning "both NES manifests."
 
 ```bash
 bash tools/banktest/realrom-test.sh check <romdir>              # core floor (default), 5 rows
 bash tools/banktest/realrom-test.sh check nes-curated <romdir>  # curated NES set only
 bash tools/banktest/realrom-test.sh check nes-gme <romdir>      # NES GME set only
-bash tools/banktest/realrom-test.sh check nes <romdir>          # both NES manifests (formerly --all)
-bash tools/banktest/realrom-test.sh check snes <romdir>         # SNES set only (formerly --snes)
+bash tools/banktest/realrom-test.sh check nes <romdir>          # both NES manifests
+bash tools/banktest/realrom-test.sh check snes <romdir>         # SNES set only
 bash tools/banktest/realrom-test.sh check all <romdir>          # every set, every platform
 ```
 
-**The old flags still work, as deprecated aliases that print a one-line note:** `(no flag)` →
-`nes-curated`, `--gme` → `nes-gme`, `--all` → `nes`, `--snes` → `snes`. The flags/sets *select*
-rather than adding to a running total, and every run announces which sets it resolved and the
-rows they expanded to — `--gme` silently meaning "the GME set *plus* the curated set" would
+**The old `--gme`/`--all`/`--snes` flags were removed in grm-x4y1.5** and now exit 2 with a hint
+(`--gme` → `nes-gme`, `--all` → `nes`, `--snes` → `snes`; no flag used to mean `nes-curated`). Sets
+*select* rather than adding to a running total, and every run announces which sets it resolved and
+the rows they expanded to — a set silently meaning "the GME set *plus* the curated set" would
 be a costly surprise under `bless`, re-blessing goldens you never asked about.
 
 **`nes` means the two NES manifests, and deliberately does *not* include `snes`.** The SNES rows
@@ -185,7 +185,7 @@ shape for. It belongs to bead `grm-9nxj.14` and becomes an ordinary positive row
 map-type override option exists there.
 
 Each row costs a headless import — median ~7s, worst ~52s, so a full 33-row `check nes` run
-(formerly `--all`) is about 6 minutes (measured 2026-08-31, bead `grm-yfma`; see docs/testing.md "How long the
+is about 6 minutes (measured 2026-08-31, bead `grm-yfma`; see docs/testing.md "How long the
 gates actually take"). The expanded set is opt-in because it needs user-supplied hash-pinned
 ROMs this repo cannot ship, not because it is slow. An id must be unique **across every manifest** — ids name goldens and name the ROM
 copy the import sees, so a duplicate would import twice and let the second row silently
@@ -331,7 +331,7 @@ whether anything **consumes** the switchable window once a bank is known.
   censuses every reference into a switchable range by source bucket and ref type, counts
   indirect dispatches, and walks forward from each **fully-known non-home** switch site to see
   whether the recovered bank ever reaches a consumer. Its `refs.intoOverlay.retargeted` is the
-  honest fix metric that `RealRomDump`'s `refs.intoOverlay` is not — the latter also counts
+  honest fix metric that the retired `refs.intoOverlay` total is not — the latter also counted
   intra-overlay references, which dominate on a healthy title (grm-jwh).
   Used in grm-8iy to refute a consumer-side gate hypothesis and localize all six remaining
   zero-resolvers to call-site helper-argument recovery instead.
@@ -363,6 +363,19 @@ two builds needs. Run them through `ab-test.sh` or twice by hand, and diff the o
 forces one enum analyzer option before analysis (e.g. StoredValueScanner's Constant Evaluator
 to `PCODE`) for a report-only A/B. Read its header for the token syntax. A prescript changes
 the analysis, so `bless` refuses to run with one set.
+
+## Dump format and the invariant-line convention
+
+`RealRomDump.java` (NES) and `SnesRealRomDump.java` (SNES) share their header, symbol filter and
+capped-sample code through `RealRomDumpSupport.java` (a plain class beside them in
+`tools/banktest/`, compiled with them via `-scriptPath`; not a `-postScript`). Facts that are
+true of every row are CHECKED rather than printed (grm-x4y1.6): the NES hardware-register
+symbols (`2000-2007`, `4014-4017`), the fixed `PPU_REGS`/`APU_IO` blocks, `spaces.overlay ==
+blocks.overlay`, and `refs.intoOverlay == retargeted + intraOverlay`. A check emits nothing when
+it holds and `REALROM invariant FAIL <what> <detail>` (just before the END fence) when it does
+not, so a regression still shows as a golden diff; `grep 'invariant FAIL'` a dump to audit it.
+Those items still count toward `count blocks.total` / `count symbols`. `REALROM placement NONE`
+is deliberately kept: it is the only line that shows a placement override being stamped.
 
 ## Bless discipline
 

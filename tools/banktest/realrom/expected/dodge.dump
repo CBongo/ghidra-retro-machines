@@ -1,11 +1,9 @@
 === REALROM BEGIN ===
 REALROM program dodge.nes
-REALROM sha256 48ecc9a3e93a1d92ecfa84f2b651a3542ef02d484ecf484639aedd2574ec63bd
+REALROM sha256 36fe18ef11f9dc7ac1dc563f4b4a6af84fb48a04660f2cabe7885dc24983fa3a
 REALROM prgsha256 8956adc93bd788f4a28a5cfac730cc7cff56f58d3252a7bc259a4980745c51cd
 REALROM map machines/nes-mmc1.map
 REALROM placement NONE
-REALROM block APU_IO 4000-401f overlay=false
-REALROM block PPU_REGS 2000-2007 overlay=false
 REALROM block PRG_RAM 6000-7fff overlay=false
 REALROM block RAM 0000-07ff overlay=false
 REALROM block W8000 8000-bfff overlay=false
@@ -36,8 +34,6 @@ REALROM block WC000_M2_B6 c000-ffff overlay=true
 REALROM block WC000_M2_B7 c000-ffff overlay=true
 REALROM count blocks.total 30
 REALROM count blocks.overlay 24
-REALROM count spaces.overlay 24
-REALROM count refs.intoOverlay 2563
 REALROM count refs.intoOverlay.retargeted 31
 REALROM count refs.intoOverlay.intraOverlay 2532
 REALROM count instrs.inOverlay 11447
@@ -146,18 +142,6 @@ REALROM sample.note c155 [CopyLoopAnalyzer] copy-shaped loop RAM:0015 -> RAM:004
 REALROM sample.note cd68 [CopyLoopAnalyzer] copy-shaped loop RAM:0051 -> RAM:0061 (4 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note e79b [CopyLoopAnalyzer] copy-shaped loop RAM:0044 -> RAM:00e0 (9 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note f991 [CopyLoopAnalyzer] copy-shaped loop RAM:f99d -> RAM:07f0 (7 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
-REALROM sample.symbol 2000 PPUCTRL IMPORTED primary=true
-REALROM sample.symbol 2001 PPUMASK IMPORTED primary=true
-REALROM sample.symbol 2002 PPUSTATUS IMPORTED primary=true
-REALROM sample.symbol 2003 OAMADDR IMPORTED primary=true
-REALROM sample.symbol 2004 OAMDATA IMPORTED primary=true
-REALROM sample.symbol 2005 PPUSCROLL IMPORTED primary=true
-REALROM sample.symbol 2006 PPUADDR IMPORTED primary=true
-REALROM sample.symbol 2007 PPUDATA IMPORTED primary=true
-REALROM sample.symbol 4014 OAMDMA IMPORTED primary=true
-REALROM sample.symbol 4015 SND_CHN IMPORTED primary=true
-REALROM sample.symbol 4016 JOY1 IMPORTED primary=true
-REALROM sample.symbol 4017 JOY2 IMPORTED primary=true
 REALROM sample.symbol 8098 switch USER_DEFINED primary=true
 REALROM sample.symbol 80ed switch USER_DEFINED primary=true
 REALROM sample.symbol 80f2 case_6 USER_DEFINED primary=true
@@ -171,5 +155,17 @@ REALROM sample.symbol 820b case_31 USER_DEFINED primary=false
 REALROM sample.symbol 820b case_33 USER_DEFINED primary=false
 REALROM sample.symbol 822b case_30 USER_DEFINED primary=true
 REALROM sample.symbol 822b case_32 USER_DEFINED primary=false
-REALROM sample.symbol.truncated 25 of 239
+REALROM sample.symbol 822b case_34 USER_DEFINED primary=false
+REALROM sample.symbol 8241 case_3 USER_DEFINED primary=true
+REALROM sample.symbol 824b case_35 USER_DEFINED primary=true
+REALROM sample.symbol 8251 switch USER_DEFINED primary=true
+REALROM sample.symbol 826b case_36 USER_DEFINED primary=true
+REALROM sample.symbol 8288 case_0 USER_DEFINED primary=true
+REALROM sample.symbol 828b case_37 USER_DEFINED primary=true
+REALROM sample.symbol 828b case_38 USER_DEFINED primary=false
+REALROM sample.symbol 828b case_39 USER_DEFINED primary=false
+REALROM sample.symbol 828b case_40 USER_DEFINED primary=false
+REALROM sample.symbol 828b case_41 USER_DEFINED primary=false
+REALROM sample.symbol 828b case_42 USER_DEFINED primary=false
+REALROM sample.symbol.truncated 25 of 227
 === REALROM END ===

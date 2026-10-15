@@ -30,12 +30,12 @@
 # paragraphs warning about. Naming something SMALLER and clearly labelled is the fix; every
 # run still announces the sets it resolved and the rows they expanded to.
 #
-# THE OLD FLAGS STILL WORK, as deprecated aliases that print a one-line note:
-#   (no flag) -> nes-curated   --gme -> nes-gme   --all -> nes   --snes -> snes
-# Note --all now maps to the `nes` PLATFORM GROUP, preserving exactly what it always meant
-# (both NES manifests). The bare word `all` is the thing that changed meaning: it now spans
-# every platform, because a word that does not mean what it says is what this bead was filed
-# about. Sets compose and are deduplicated by id, so naming several is safe.
+# THE PRE-grm-ughg FLAGS WERE REMOVED (grm-x4y1.5): `--gme`, `--all` and `--snes` are now
+# ordinary unknown options (exit 2) whose error names the replacement:
+#   --gme -> nes-gme   --all -> nes   --snes -> snes   (no flag -> core, no longer nes-curated)
+# The bare word `all` spans every platform, because a word that does not mean what it says is
+# what grm-ughg was filed about. Sets compose and are deduplicated by id, so naming several is
+# safe.
 #
 # MULTI-PLATFORM RUNS ARE NOW POSSIBLE, and every per-platform parameter is resolved PER ROW
 # from realrom/platforms.tsv rather than once per invocation: the ROM-dir environment
@@ -60,7 +60,7 @@
 # iNES mapper and resolving the claiming board -- and flags any mapper no shipped descriptor
 # claims as a board gap. It needs no Ghidra install. It is NES-ONLY: it decodes iNES headers
 # and resolves machines/nes-*.yaml, neither of which means anything for a SNES cartridge, so
-# it refuses --snes rather than emitting garbage rows. Use the grm-9nxj.13 corpus survey
+# it refuses SNES sets rather than emitting garbage rows. Use the grm-9nxj.13 corpus survey
 # (build-and-test.sh check snes-rom-corpus -> build/snes-rom-corpus/roms.tsv) to select and
 # hash SNES candidates instead; that is what the current thirteen rows were drawn from.
 #
@@ -144,7 +144,7 @@
 #   BANKTEST_SETTINGS_BASE  relocate Ghidra user-settings/Extensions dir (defaults to
 #                            <repo>/build/ghidra-home)
 #   GRM_ROM_DIR             default rom dir(s) if none given on the command line (NES sets)
-#   GRM_SNES_ROM_DIR        the same, for --snes. Separate on purpose: GRM_ROM_DIR stays
+#   GRM_SNES_ROM_DIR        the same, for the SNES sets. Separate on purpose: GRM_ROM_DIR stays
 #                            NES-only, and both are read with identical semantics --
 #                            space-separated dirs, each indexed at DEPTH 1 ONLY.
 #   GRM_BANKTEST_WORK       base dir for per-run work dirs (defaults to
@@ -182,6 +182,11 @@ GRM_REALROM_BATCH_SIZE_DEFAULT=20
 USAGE="usage: $0 check|bless|nominate [SET ...] [--only <ids>|--except <ids>] [--no-build] [--keep-project] [--require-all] [--batch-size N] <romdir> ...
        $0 coverage [SET ...] [--only <ids>|--except <ids>] [--no-build]
        $0 --list-sets
+       $0 ids [SET ...]
+
+ids (bead grm-x4y1.5) is read-only and instant: it prints the manifest id of every row the named
+SETs admit, one per line on stdout, and nothing else (no build, no ROM dirs, no staleness note).
+ab-test.sh uses it to check --only ids against a set without re-parsing sets.tsv itself.
 
 coverage (bead grm-eawl) is read-only: it imports nothing, needs no ROM dirs, and reports per
 row whether build/realrom-cache holds an entry for the CURRENT extension build -- i.e. whether
@@ -283,7 +288,7 @@ fi
 
 MODE="${1:-}"
 case "$MODE" in
-	check|bless|nominate|coverage) shift ;;
+	check|bless|nominate|coverage|ids) shift ;;
 	*)
 		echo "$USAGE" >&2
 		exit 2
@@ -312,25 +317,23 @@ ONLY_IDS=""
 EXCEPT_IDS=""
 # Which SETS this run considers, in the order named. Empty here means "the caller named
 # none", which resolves to `core` below -- kept distinct from an explicit `core` so the
-# deprecation notes can tell the two apart.
+# notes can tell the two apart.
 REQUESTED_SETS=()
 NO_BUILD=0
 KEEP_PROJECT=0
 REQUIRE_ALL=0
 BATCH_SIZE_ARG=""
-DEPRECATED_FLAG=""
 while [ $# -gt 0 ]; do
 	case "$1" in
-		# The pre-grm-ughg flags, kept working as aliases so nothing in anyone's habits or
-		# scrollback breaks on the day this lands. Each prints a one-line note naming its
-		# replacement. Note --all maps to the `nes` PLATFORM GROUP: it always meant "both NES
-		# manifests" and still does, which is why it is NOT mapped to the new `all`.
-		--gme)
-			REQUESTED_SETS+=(nes-gme); DEPRECATED_FLAG="$DEPRECATED_FLAG --gme=>nes-gme"; shift ;;
-		--all)
-			REQUESTED_SETS+=(nes); DEPRECATED_FLAG="$DEPRECATED_FLAG --all=>nes"; shift ;;
-		--snes)
-			REQUESTED_SETS+=(snes); DEPRECATED_FLAG="$DEPRECATED_FLAG --snes=>snes"; shift ;;
+		# The pre-grm-ughg flags were removed in grm-x4y1.5. Say what to type instead of a bare
+		# "unknown option", so a stale invocation from habit or scrollback is told its fix.
+		--gme|--all|--snes)
+			case "$1" in --gme) repl=nes-gme ;; --all) repl=nes ;; --snes) repl=snes ;; esac
+			echo "ERROR: unknown option '$1' (removed in grm-x4y1.5) -- name the set positionally:" \
+				"'$repl' instead of '$1'." >&2
+			echo "$USAGE" >&2
+			exit 2
+			;;
 		--no-build)
 			NO_BUILD=1
 			shift
@@ -422,10 +425,6 @@ else
 	BATCH_ON=1
 	BATCH_BANNER="up to $BATCH_N rows per analyzeHeadless JVM ($BATCH_SRC); imports serial inside it"
 fi
-if [ -n "$DEPRECATED_FLAG" ]; then
-	echo "note: deprecated flag(s):$DEPRECATED_FLAG -- name the set positionally instead" \
-		"($0 --list-sets)." >&2
-fi
 
 # Sourced BEFORE the GRM_ROM_DIR/ROM_DIRS check (bead grm-6kv), unlike every other block
 # below that only needs it once ROM dirs are known: the staleness note below must still
@@ -442,7 +441,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # stamp format. Printed on every invocation (check, bless, nominate, and even the "no ROM
 # dirs" usage-exit below), so no code path through this script goes quiet about how long
 # it's been.
-grm_realrom_staleness_note
+[ "$MODE" = ids ] || grm_realrom_staleness_note
 
 # ------------------------------------------------------------------
 # SET AND PLATFORM RESOLUTION (bead grm-ughg). Everything that used to be a `case` on
@@ -581,6 +580,13 @@ for s in "${RESOLVED_SETS[@]}"; do
 		IFS="$old_ifs"
 	fi
 done
+
+if [ "$MODE" = ids ]; then
+	# Read-only row listing for ab-test.sh (grm-x4y1.5): SET_IDS is ",a,b,c," -- one id per line.
+	ids_out="${SET_IDS#,}"; ids_out="${ids_out%,}"
+	[ -z "$ids_out" ] || printf '%s\n' "$ids_out" | tr ',' '\n'
+	exit 0
+fi
 
 echo "== sets: ${RESOLVED_SETS[*]} (platform(s): ${PLATFORMS_USED[*]};" \
 	"${#MANIFESTS[@]} manifest file(s)) =="
@@ -1089,6 +1095,10 @@ realrom_cache_key() {
 		# SnesRealRomDump.java -- into a `bless`, in the worst case (bead grm-9nxj.15).
 		printf 'dumpscript:%s:' "$ROM_DUMP_SCRIPT"
 		sha256sum "$SCRIPT_DIR/$ROM_DUMP_SCRIPT" | cut -d' ' -f1
+		# Both dump scripts compile against this shared helper (grm-x4y1.6); an edit to it
+		# alone changes every dump, so it must move the key too.
+		printf 'dumpsupport:'
+		sha256sum "$SCRIPT_DIR/RealRomDumpSupport.java" | cut -d' ' -f1
 		printf 'ext:%s\n' "$EXT_ID"
 		# The TOOLCHAIN that produces the dump, not just the extension that steers it (bead
 		# grm-kt44). Every other term here describes this repo; without this one a run against a

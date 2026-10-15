@@ -17,7 +17,7 @@
 # Running build-and-test.sh per side first would just pay for the same build twice.
 #
 # Usage:
-#   ab-test.sh [options] REF_A REF_B [REF_C]
+#   ab-test.sh [options] [SET ...] REF_A REF_B [REF_C]
 #   ab-test.sh --dirty   [options] REF_B
 #
 #   REF_A, REF_B, REF_C   git refs (commit/branch/tag). Three refs compares adjacent pairs,
@@ -30,24 +30,31 @@
 #                         Mutually exclusive with supplying REF_A.
 #
 # Row selection (forwarded verbatim to realrom-test.sh; same semantics there):
-#   --gme | --all             select the SET (default, with neither given: core, 5 rows)
-#   --only IDS | --except IDS filter WITHIN whichever set --gme/--all (or the core default)
-#                             selected -- they narrow it, they do NOT widen it. An --only
-#                             naming rows outside core (e.g. dodge, lwings) needs --all or
-#                             --gme too, or every named row is filtered out and NOTHING is
+#   SET ...                   positional SET names, the same vocabulary as realrom-test.sh
+#                             (core, nes-curated, nes-gme, snes-cart, nes, snes, all; see
+#                             `realrom-test.sh --list-sets`). Forwarded UNCHANGED to realrom-test.sh
+#                             on every side, which owns set resolution. Default with none given:
+#                             core (5 rows). A word is taken as a SET only if realrom-test.sh knows
+#                             it, so a git ref that shares a set's name must be spelled
+#                             refs/heads/<name> (or the like). The old --gme/--all flags are gone
+#                             (grm-x4y1.5): use nes-gme / nes.
+#   --only IDS | --except IDS filter WITHIN whichever SET(s) are named (or the core default)
+#                             -- they narrow it, they do NOT widen it. An --only naming rows
+#                             outside core (e.g. dodge, lwings) needs a wider SET too (nes,
+#                             nes-gme, ...), or every named row is filtered out and NOTHING is
 #                             compared (see grm-29a9: this used to print a false movement=NO).
 #
 #   *** A SINGLE-ROW A/B CAN MASK ORDER-DEPENDENT MOVEMENT. *** tmnt (grm-82u3, 2026-08-28)
 #   passed on both sides of `--only tmnt` alone and FAILED on the second side of
-#   `--only tetris,tmnt` -- same two builds, different verdict, because Ghidra's ClassSearcher
+#   `--only smb,tmnt` -- same two builds, different verdict, because Ghidra's ClassSearcher
 #   indexing is apparently sensitive to which program is analyzed first in an invocation. This
 #   script WARNS if --only names exactly one id with no comma. Prefer naming at least one
-#   preceding row (`--only <other-id>,<id-you-care-about>`), or use --gme/--all.
+#   preceding row (`--only <other-id>,<id-you-care-about>`), or name a wider SET (nes, nes-gme).
 #
 # Repeat / nondeterminism handling (bistable-golden-sticky-states):
 #   --repeat N            run EACH side N times (default 1). Sticky rows are NOT independent
 #                         per-run draws -- dodge and ff1 traded places between two consecutive
-#                         --all runs on 2026-08-28, and tmnt was byte-identical across two. The
+#                         nes-set runs on 2026-08-28, and tmnt was byte-identical across two. The
 #                         report is therefore a per-side SET of observed dump hashes per id, not
 #                         a single diff. A single non-matching run proves nothing.
 #
@@ -104,7 +111,7 @@ fi
 DIRTY=0
 ONLY_IDS=""
 EXCEPT_IDS=""
-ROWFLAG=""
+SETS=()
 REPEAT=1
 RAISE_SAMPLE=""
 TOOLCHAIN_VERSION=""
@@ -119,8 +126,11 @@ while [ $# -gt 0 ]; do
 			ONLY_IDS="$2"; shift 2 ;;
 		--except) [ $# -ge 2 ] || { echo "ERROR: --except needs an id list" >&2; exit 2; }
 			EXCEPT_IDS="$2"; shift 2 ;;
-		--gme) ROWFLAG="--gme"; shift ;;
-		--all) ROWFLAG="--all"; shift ;;
+		--gme|--all)
+			case "$1" in --gme) repl=nes-gme ;; *) repl=nes ;; esac
+			echo "ERROR: unknown option '$1' (removed in grm-x4y1.5) -- name the set positionally:" \
+				"'$repl' instead of '$1'." >&2
+			exit 2 ;;
 		--repeat) [ $# -ge 2 ] || { echo "ERROR: --repeat needs a count" >&2; exit 2; }
 			REPEAT="$2"; shift 2 ;;
 		--raise-sample) [ $# -ge 2 ] || { echo "ERROR: --raise-sample needs a count" >&2; exit 2; }
@@ -132,7 +142,14 @@ while [ $# -gt 0 ]; do
 		--keep-worktrees) KEEP_WORKTREES=1; shift ;;
 		-h|--help) usage; exit 0 ;;
 		-*) echo "ERROR: unknown option '$1'" >&2; usage >&2; exit 2 ;;
-		*) REFS+=("$1"); shift ;;
+		*)
+			# SET name (realrom-test.sh decides: `ids WORD` exits 0 and prints rows) or git ref.
+			if [ -n "$("$SCRIPT_DIR/realrom-test.sh" ids "$1" 2>/dev/null)" ]; then
+				SETS+=("$1")
+			else
+				REFS+=("$1")
+			fi
+			shift ;;
 	esac
 done
 
@@ -146,72 +163,18 @@ if [ -n "$ONLY_IDS" ]; then
 		echo "WARNING: --only names exactly ONE row ('$ONLY_IDS'). A single-row A/B can MASK" >&2
 		echo "  order-dependent movement -- tmnt passed alone and failed with a preceding row" >&2
 		echo "  in the same invocation (grm-82u3, 2026-08-28). Consider --only <other>,$ONLY_IDS" >&2
-		echo "  or --gme/--all instead. Proceeding anyway." >&2
+		echo "  or a wider SET instead. Proceeding anyway." >&2
 	fi
 fi
 
 # --- grm-29a9 point 4: catch a --only that names ids outside the selected set(s), BEFORE ----
 # either side runs. This is the actual user error grm-29a9 was filed over: --only/--except
-# filter WITHIN whatever --gme/--all (or the core default) selected, they do not widen it, so
-# an id that exists in some manifest but not in the selected set is silently "filtered out"
-# by realrom-test.sh on every side -- comparing nothing while still printing a verdict.
-#
-# This duplicates a (much smaller) slice of realrom-test.sh's own set/platform resolution
-# (realrom/sets.tsv, realrom/platforms.tsv) rather than reusing it directly, because
-# realrom-test.sh has no "just resolve ids, don't run anything" mode to call into. Kept
-# deliberately minimal: this script only ever forwards ROWFLAG as "" / --gme / --all.
-REALROM_DIR="$SCRIPT_DIR/realrom"
-SETS_TSV="$REALROM_DIR/sets.tsv"
-
-ab_tsv_field() {
-	local file="$1" key="$2" column="$3"
-	awk -F'\t' -v key="$key" -v col="$column" '
-		NR == 1 { for (i = 1; i <= NF; i++) if ($i == col) c = i; next }
-		!/^#/ && NF && $1 == key { if (c) { print $c; found = 1 } exit }
-		END { exit(found ? 0 : 1) }
-	' "$file"
-}
-ab_tsv_column() {
-	local file="$1" column="$2"
-	awk -F'\t' -v col="$column" '
-		NR == 1 { for (i = 1; i <= NF; i++) if ($i == col) c = i; next }
-		!/^#/ && NF && c { print $c }
-	' "$file"
-}
-
-# Prints every id the current ROWFLAG's selected set(s) admit, one per line.
-resolve_rowflag_ids() {
-	local set_names=() s s_rows mf mpath old_ifs
-	case "$ROWFLAG" in
-		"") set_names=(core) ;;
-		--gme) set_names=(nes-gme) ;;
-		--all)
-			while IFS= read -r s; do
-				[ "$(ab_tsv_field "$SETS_TSV" "$s" platform 2>/dev/null)" = nes ] || continue
-				set_names+=("$s")
-			done < <(ab_tsv_column "$SETS_TSV" set)
-			;;
-	esac
-	for s in "${set_names[@]}"; do
-		s_rows="$(ab_tsv_field "$SETS_TSV" "$s" rows 2>/dev/null || true)"
-		if [ "$s_rows" = '*' ]; then
-			old_ifs="$IFS"; IFS=','
-			for mf in $(ab_tsv_field "$SETS_TSV" "$s" manifests); do
-				IFS="$old_ifs"
-				mpath="$REALROM_DIR/$mf"
-				[ -f "$mpath" ] || continue
-				awk -F'\t' '!/^#/ && NF && $1 != "id" { sub(/\r$/, "", $1); print $1 }' "$mpath"
-				IFS=','
-			done
-			IFS="$old_ifs"
-		else
-			printf '%s\n' "$s_rows" | tr ',' '\n'
-		fi
-	done
-}
-
-if [ -n "$ONLY_IDS" ] && [ -f "$SETS_TSV" ]; then
-	mapfile -t _rowflag_ids < <(resolve_rowflag_ids | LC_ALL=C sort -u)
+# filter WITHIN the selected SET(s), they do not widen them, so an id that exists in some manifest
+# but not in the selected set is silently "filtered out" by realrom-test.sh on every side --
+# comparing nothing while still printing a verdict. The row list comes from realrom-test.sh's own
+# read-only `ids` mode (grm-x4y1.5), so set resolution lives in exactly one place.
+if [ -n "$ONLY_IDS" ]; then
+	mapfile -t _rowflag_ids < <("$SCRIPT_DIR/realrom-test.sh" ids ${SETS[@]+"${SETS[@]}"} 2>/dev/null | LC_ALL=C sort -u)
 	_unknown=()
 	old_ifs="$IFS"; IFS=','
 	for _id in $ONLY_IDS; do
@@ -225,11 +188,11 @@ if [ -n "$ONLY_IDS" ] && [ -f "$SETS_TSV" ]; then
 	done
 	IFS="$old_ifs"
 	if [ "${#_unknown[@]}" -gt 0 ]; then
-		echo "WARNING: --only names id(s) NOT in the selected set (${ROWFLAG:-core, the default}):" >&2
+		echo "WARNING: --only names id(s) NOT in the selected set (${SETS[*]:-core, the default}):" >&2
 		echo "  ${_unknown[*]}" >&2
 		echo "  --only/--except filter WITHIN the selected set(s); they do not widen it. The" >&2
-		echo "  default is core (5 rows) -- an --only naming rows outside core needs --gme or" >&2
-		echo "  --all too. As given, these id(s) will be filtered out by realrom-test.sh on" >&2
+		echo "  default is core (5 rows) -- an --only naming rows outside core needs a wider" >&2
+		echo "  SET (nes, nes-gme, ...) too. As given, these id(s) will be filtered out by realrom-test.sh on" >&2
 		echo "  EVERY side, comparing nothing for them (grm-29a9). Proceeding anyway." >&2
 	fi
 fi
@@ -415,7 +378,7 @@ done
 # step is a no-op-with-extra-steps here and is deliberately NOT run.
 declare -a ROWARGS
 ROWARGS=()
-[ -n "$ROWFLAG" ] && ROWARGS+=("$ROWFLAG")
+[ "${#SETS[@]}" -gt 0 ] && ROWARGS+=("${SETS[@]}")
 [ -n "$ONLY_IDS" ] && ROWARGS+=(--only "$ONLY_IDS")
 [ -n "$EXCEPT_IDS" ] && ROWARGS+=(--except "$EXCEPT_IDS")
 
@@ -618,7 +581,7 @@ fi
 
 # --- grm-29a9 points 1-3: never let movement=NO do double duty for "compared zero rows" ---
 # COMPARED is read out of the sides' OWN realrom-test.sh logs (repeat 1), not re-derived from
-# ROWFLAG/--only/--except -- that is the actual row list each side attempted, filtered rows
+# SETS/--only/--except -- that is the actual row list each side attempted, filtered rows
 # excluded, so it can't drift from what really ran even if row selection changes underneath
 # this script later. SELECTED is the union of ids any side attempted at all (not filtered
 # out); COMPARED is the subset of those with a dump on EVERY side, i.e. what the per-id table

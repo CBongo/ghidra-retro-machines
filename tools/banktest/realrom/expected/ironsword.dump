@@ -4,9 +4,7 @@ REALROM sha256 ee026cae8fb9953cb22cef92313d429aa4c8600f05c699ef47e22061518f691e
 REALROM prgsha256 aab5e0ecc46e575b1b396bd63d8fa4f3bd740061f3157a1d4afdf9f7f2dabd88
 REALROM map machines/nes-axrom.map
 REALROM placement NONE
-REALROM block APU_IO 4000-401f overlay=false
 REALROM block COPY_03fc 03fc-040e overlay=false
-REALROM block PPU_REGS 2000-2007 overlay=false
 REALROM block PRG_ALL 8000-ffff overlay=false
 REALROM block PRG_ALL_B1 8000-ffff overlay=true
 REALROM block PRG_ALL_B2 8000-ffff overlay=true
@@ -19,8 +17,6 @@ REALROM block RAM 0000-03fb overlay=false
 REALROM block RAM_040F 040f-07ff overlay=false
 REALROM count blocks.total 13
 REALROM count blocks.overlay 7
-REALROM count spaces.overlay 7
-REALROM count refs.intoOverlay 0
 REALROM count refs.intoOverlay.retargeted 0
 REALROM count refs.intoOverlay.intraOverlay 0
 REALROM count instrs.inOverlay 0
@@ -42,18 +38,6 @@ REALROM sample.note 040a [NesBankingAnalyzer] Bank value is RESTORED here, not r
 REALROM sample.note 808b [CopyLoopAnalyzer] copy-shaped loop RAM:8049 -> RAM:06fa (6 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note 8096 [CopyLoopAnalyzer] copy-shaped loop RAM:f247 -> RAM:0100 (35 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note c6d9 [CopyLoopAnalyzer] copy loop (no jump into the copy; its bytes decode as a subroutine) -> COPY_03fc: 19 bytes RAM:c6e5 -> RAM:03fc; disassembled as code
-REALROM sample.symbol 2000 PPUCTRL IMPORTED primary=true
-REALROM sample.symbol 2001 PPUMASK IMPORTED primary=true
-REALROM sample.symbol 2002 PPUSTATUS IMPORTED primary=true
-REALROM sample.symbol 2003 OAMADDR IMPORTED primary=true
-REALROM sample.symbol 2004 OAMDATA IMPORTED primary=true
-REALROM sample.symbol 2005 PPUSCROLL IMPORTED primary=true
-REALROM sample.symbol 2006 PPUADDR IMPORTED primary=true
-REALROM sample.symbol 2007 PPUDATA IMPORTED primary=true
-REALROM sample.symbol 4014 OAMDMA IMPORTED primary=true
-REALROM sample.symbol 4015 SND_CHN IMPORTED primary=true
-REALROM sample.symbol 4016 JOY1 IMPORTED primary=true
-REALROM sample.symbol 4017 JOY2 IMPORTED primary=true
 REALROM sample.symbol a020 IRQ IMPORTED primary=true
 REALROM sample.symbol ff91 RESET IMPORTED primary=true
 REALROM sample.symbol ffdd NMI IMPORTED primary=true

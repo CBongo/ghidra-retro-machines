@@ -4,8 +4,6 @@ REALROM sha256 9a9a33dfe4f51e66465c323850be66412010b9f6d156ffe2c563c1ddcc1fa1fa
 REALROM prgsha256 0115356b0791cc8ddcb7d3163d6ef7aa664f3ff4e68dba561ffffb79eefcbca9
 REALROM map machines/nes-bnrom.map
 REALROM placement NONE
-REALROM block APU_IO 4000-401f overlay=false
-REALROM block PPU_REGS 2000-2007 overlay=false
 REALROM block PRG_ALL 8000-ffff overlay=false
 REALROM block PRG_ALL_B1 8000-ffff overlay=true
 REALROM block PRG_ALL_B2 8000-ffff overlay=true
@@ -13,8 +11,6 @@ REALROM block PRG_ALL_B3 8000-ffff overlay=true
 REALROM block RAM 0000-07ff overlay=false
 REALROM count blocks.total 7
 REALROM count blocks.overlay 3
-REALROM count spaces.overlay 3
-REALROM count refs.intoOverlay 2189
 REALROM count refs.intoOverlay.retargeted 529
 REALROM count refs.intoOverlay.intraOverlay 1660
 REALROM count instrs.inOverlay 4517
@@ -246,8 +242,8 @@ REALROM sample.bankcomment fd21 bank -> 0 (bank=0)
 REALROM sample.bankcomment fd21 bank -> 0 (bank=0)
 REALROM sample.bankcomment fd21 bank -> 0 (bank=0)
 REALROM sample.bankcomment fd21 bank -> 0 (bank=0)
-REALROM sample.bankcomment fd42 bank -> 0 (bank=0) via FUN_PRG_ALL_B2__fc3f
 REALROM sample.bankcomment fd42 bank -> 3 (bank=3) via FUN_PRG_ALL_B1__fc3f
+REALROM sample.bankcomment fd42 bank -> 3 (bank=3) via FUN_PRG_ALL_B2__fc3f
 REALROM sample.bankcomment fd42 bank -> 3 (bank=3) via FUN_PRG_ALL_B3__fc3f
 REALROM sample.bankcomment fd42 bank -> 3 (bank=3) via FUN_fc3f
 REALROM sample.bankcomment fd47 bank -> 2 (bank=2) via FUN_PRG_ALL_B1__fc2a
@@ -281,18 +277,6 @@ REALROM sample.ref 8098 -> PRG_ALL_B1::fc54 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 809a -> PRG_ALL_B3::813c UNCONDITIONAL_CALL primary=true
 REALROM sample.ref.truncated 25 of 2189
 REALROM sample.warn 9fba [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
-REALROM sample.symbol 2000 PPUCTRL IMPORTED primary=true
-REALROM sample.symbol 2001 PPUMASK IMPORTED primary=true
-REALROM sample.symbol 2002 PPUSTATUS IMPORTED primary=true
-REALROM sample.symbol 2003 OAMADDR IMPORTED primary=true
-REALROM sample.symbol 2004 OAMDATA IMPORTED primary=true
-REALROM sample.symbol 2005 PPUSCROLL IMPORTED primary=true
-REALROM sample.symbol 2006 PPUADDR IMPORTED primary=true
-REALROM sample.symbol 2007 PPUDATA IMPORTED primary=true
-REALROM sample.symbol 4014 OAMDMA IMPORTED primary=true
-REALROM sample.symbol 4015 SND_CHN IMPORTED primary=true
-REALROM sample.symbol 4016 JOY1 IMPORTED primary=true
-REALROM sample.symbol 4017 JOY2 IMPORTED primary=true
 REALROM sample.symbol 805b case_0 USER_DEFINED primary=false
 REALROM sample.symbol 805b case_0 USER_DEFINED primary=false
 REALROM sample.symbol 805b case_0 USER_DEFINED primary=true
@@ -306,5 +290,17 @@ REALROM sample.symbol 8074 case_7 USER_DEFINED primary=false
 REALROM sample.symbol 8074 case_7 USER_DEFINED primary=false
 REALROM sample.symbol 8074 case_7 USER_DEFINED primary=true
 REALROM sample.symbol 8077 case_1 USER_DEFINED primary=false
-REALROM sample.symbol.truncated 25 of 636
+REALROM sample.symbol 8077 case_1 USER_DEFINED primary=false
+REALROM sample.symbol 8077 case_1 USER_DEFINED primary=true
+REALROM sample.symbol 8084 case_8 USER_DEFINED primary=false
+REALROM sample.symbol 8084 case_8 USER_DEFINED primary=false
+REALROM sample.symbol 8084 case_8 USER_DEFINED primary=true
+REALROM sample.symbol 8093 case_16 USER_DEFINED primary=false
+REALROM sample.symbol 8093 case_16 USER_DEFINED primary=false
+REALROM sample.symbol 8093 case_16 USER_DEFINED primary=true
+REALROM sample.symbol 8093 case_2 USER_DEFINED primary=false
+REALROM sample.symbol 8093 case_2 USER_DEFINED primary=false
+REALROM sample.symbol 8093 case_2 USER_DEFINED primary=true
+REALROM sample.symbol 80aa case_3 USER_DEFINED primary=false
+REALROM sample.symbol.truncated 25 of 624
 === REALROM END ===

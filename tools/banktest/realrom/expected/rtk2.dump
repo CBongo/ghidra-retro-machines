@@ -4,13 +4,11 @@ REALROM sha256 f07679db2c7f74bd2b0da95d15833220631033a399cde83db05a53986adc054f
 REALROM prgsha256 acd5616e511edca702307de4b020293d89d36a1b095feb03b1c64bb0cce995a4
 REALROM map machines/nes-mmc5.map
 REALROM placement NONE
-REALROM block APU_IO 4000-401f overlay=false
 REALROM block MMC5_CHR_HI 5130-5130 overlay=false
 REALROM block MMC5_CHR_REGS 5120-512b overlay=false
 REALROM block MMC5_EXRAM 5c00-5fff overlay=false
 REALROM block MMC5_MISC_REGS 5200-520a overlay=false
 REALROM block MMC5_REGS 5100-5117 overlay=false
-REALROM block PPU_REGS 2000-2007 overlay=false
 REALROM block PRG_RAM 6000-7fff overlay=false
 REALROM block RAM 0000-07ff overlay=false
 REALROM block W8000 8000-9fff overlay=false
@@ -263,8 +261,6 @@ REALROM block WE000_M3_B8 e000-ffff overlay=true
 REALROM block WE000_M3_B9 e000-ffff overlay=true
 REALROM count blocks.total 257
 REALROM count blocks.overlay 244
-REALROM count spaces.overlay 244
-REALROM count refs.intoOverlay 0
 REALROM count refs.intoOverlay.retargeted 0
 REALROM count refs.intoOverlay.intraOverlay 0
 REALROM count instrs.inOverlay 0
@@ -277,18 +273,6 @@ REALROM sample.bankcomment f579 bank -> prg_mode=3,bank_5114=96 (wraps to 0),ban
 REALROM sample.bankcomment f581 bank -> prg_mode=3,bank_5114=0,bank_5115=97 (wraps to 1),bank_5116=0,bank_5117=31? [known: prg_mode.0=1,prg_mode.1=1,bank_5115.0=1,bank_5115.1=0,bank_5115.2=0,bank_5115.3=0,bank_5115.4=0,bank_5115.5=1,bank_5115.6=1; assumed from initial: bank_5114.0,bank_5114.1,bank_5114.2,bank_5114.3,bank_5114.4,bank_5114.5,bank_5114.6,bank_5116.0,bank_5116.1,bank_5116.2,bank_5116.3,bank_5116.4,bank_5116.5,bank_5116.6,bank_5117.0,bank_5117.1,bank_5117.2,bank_5117.3,bank_5117.4,bank_5117.5,bank_5117.6] [switch-value flow]
 REALROM sample.warn f525 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_f55f, which this analyzer models with no argument register, so no caller argument was sought at this call site; its effect is not resolved here
 REALROM sample.note e4dd [CopyLoopAnalyzer] copy-shaped loop RAM:0000 -> RAM:000c (8 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
-REALROM sample.symbol 2000 PPUCTRL IMPORTED primary=true
-REALROM sample.symbol 2001 PPUMASK IMPORTED primary=true
-REALROM sample.symbol 2002 PPUSTATUS IMPORTED primary=true
-REALROM sample.symbol 2003 OAMADDR IMPORTED primary=true
-REALROM sample.symbol 2004 OAMDATA IMPORTED primary=true
-REALROM sample.symbol 2005 PPUSCROLL IMPORTED primary=true
-REALROM sample.symbol 2006 PPUADDR IMPORTED primary=true
-REALROM sample.symbol 2007 PPUDATA IMPORTED primary=true
-REALROM sample.symbol 4014 OAMDMA IMPORTED primary=true
-REALROM sample.symbol 4015 SND_CHN IMPORTED primary=true
-REALROM sample.symbol 4016 JOY1 IMPORTED primary=true
-REALROM sample.symbol 4017 JOY2 IMPORTED primary=true
 REALROM sample.symbol f500 RESET IMPORTED primary=true
 REALROM sample.symbol f671 NMI IMPORTED primary=true
 REALROM sample.symbol ff66 IRQ IMPORTED primary=true

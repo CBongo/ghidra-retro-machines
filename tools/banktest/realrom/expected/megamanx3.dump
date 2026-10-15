@@ -158,7 +158,6 @@ REALROM count blocks.byteMapped 66
 REALROM count blocks.initialized 64
 REALROM count blocks.volatile 3
 REALROM count blocks.mirrorMismatch 0
-REALROM count spaces.overlay 0
 REALROM count symbols 120
 REALROM count entryPoints 1
 REALROM entry 008000

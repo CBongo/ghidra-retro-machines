@@ -86,7 +86,7 @@
 //
 // USAGE (opt-in, alongside the normal dump):
 //   REALROM_WORK_DIR=... REALROM_EXTRA_POSTSCRIPT=BankConsumerProbe.java \
-//     bash tools/banktest/realrom-test.sh check --gme --only <ids> <romdir>
+//     bash tools/banktest/realrom-test.sh check nes-gme --only <ids> <romdir>
 // Run it in its OWN invocation: the realrom cache key does not include the extra postScript,
 // so a cached `check`/`bless` pair would silently skip the import this script needs.
 //

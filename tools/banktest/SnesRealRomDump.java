@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 // Read-only golden dump for the SNES rows of the OPTIONAL, hash-pinned real-ROM tier
-// (tools/banktest/realrom-test.sh --snes), bead grm-9nxj.15.
+// (tools/banktest/realrom-test.sh check snes), bead grm-9nxj.15.
 //
 // SEPARATE FROM RealRomDump.java ON PURPOSE, and separate from VerifyBankTest.java for a
 // sharper reason. VerifyBankTest dispatches on FIXTURE NAME and an unrecognized name falls
@@ -64,13 +64,9 @@ import java.util.TreeMap;
 import ghidra.app.script.GhidraScript;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressRange;
-import ghidra.program.model.address.AddressSpace;
-import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.mem.MemoryBlockSourceInfo;
 import ghidra.program.model.mem.MemoryBlockType;
-import ghidra.program.model.symbol.SourceType;
-import ghidra.program.model.symbol.Symbol;
 
 import retromachines.SnesRomHeader;
 
@@ -87,30 +83,22 @@ public class SnesRealRomDump extends GhidraScript {
 	// sample plus an exact count is all the signal there is here.
 	private static final int SAMPLE_SYMBOLS = 25;
 
-	// Program-info property SnesRomLoader stamps with the descriptor path
-	// (DescriptorSupport.MAP_PATH_PROPERTY -- kept as a literal, as RealRomDump does, so the
-	// line does not depend on an extension constant that may be refactored).
-	private static final String MAP_PATH_PROPERTY = "Retro Machine Map";
+	// Shared header/sample/invariant plumbing (RealRomDumpSupport.java, bead grm-x4y1.6).
+	private RealRomDumpSupport out;
 
 	@Override
 	protected void run() throws Exception {
-		println("=== REALROM BEGIN ===");
-		println("REALROM program " + currentProgram.getName());
-
-		String sha = currentProgram.getExecutableSHA256();
-		println("REALROM sha256 " + (sha == null ? "NONE" : sha));
-
-		String mapPath = currentProgram.getOptions(Program.PROGRAM_INFO)
-				.getString(MAP_PATH_PROPERTY, null);
+		out = new RealRomDumpSupport(this, currentProgram);
+		out.begin();
 		println("REALROM format " + currentProgram.getExecutableFormat());
 		println("REALROM language " + currentProgram.getLanguageID().getIdAsString());
-		println("REALROM map " + (mapPath == null ? "NONE" : mapPath));
+		println("REALROM map " + out.mapPath());
 
 		emitHeader();
 		emitBlocks();
 		emitSymbolsAndEntry();
 
-		println("=== REALROM END ===");
+		out.end();
 	}
 
 	// ------------------------------------------------------------------
@@ -263,12 +251,9 @@ public class SnesRealRomDump extends GhidraScript {
 			lines.add(line.toString());
 		}
 
-		int spacesOverlay = 0;
-		for (AddressSpace space : currentProgram.getAddressFactory().getAllAddressSpaces()) {
-			if (space.isOverlaySpace()) {
-				spacesOverlay++;
-			}
-		}
+		// spaces.overlay is no longer printed (grm-x4y1.6): every overlay block is its own
+		// overlay space, so it must equal blocks.overlay; a mismatch prints an invariant FAIL.
+		out.requireEq("spaces.overlay==blocks.overlay", overlay, out.overlaySpaceCount());
 
 		Collections.sort(lines);
 		emitSample("block", lines, SAMPLE_BLOCKS);
@@ -283,7 +268,6 @@ public class SnesRealRomDump extends GhidraScript {
 		// byte-mapped view is pointed somewhere wrong -- exactly what a copier-offset
 		// regression looks like from the inside.
 		println("REALROM count blocks.mirrorMismatch " + mirrorBad);
-		println("REALROM count spaces.overlay " + spacesOverlay);
 	}
 
 	/** The range a byte-mapped block views, or null when the block reports none. */
@@ -339,16 +323,8 @@ public class SnesRealRomDump extends GhidraScript {
 		// grm-mej.4): an ANALYSIS-sourced name tracks disassembly rather than intent. On these
 		// rows the filter is nearly moot anyway -- they import with -noanalysis -- but keeping
 		// it means the line does not change meaning if that ever stops being true.
-		List<String> symbols = new ArrayList<>();
-		long symbolCount = 0;
-		for (Symbol sym : currentProgram.getSymbolTable().getAllSymbols(false)) {
-			SourceType src = sym.getSource();
-			if (src == SourceType.IMPORTED || src == SourceType.USER_DEFINED) {
-				symbolCount++;
-				symbols.add(fmt(sym.getAddress()) + " " + sym.getName() + " " + src);
-			}
-		}
-		Collections.sort(symbols);
+		List<String> symbols = out.deliberateSymbols(6, false);
+		long symbolCount = symbols.size();
 
 		List<String> entries = new ArrayList<>();
 		for (Address entry : currentProgram.getSymbolTable().getExternalEntryPointIterator()) {
@@ -368,24 +344,13 @@ public class SnesRealRomDump extends GhidraScript {
 	// Formatting helpers
 	// ------------------------------------------------------------------
 
-	/**
-	 * RealRomDump's truncation idiom (bead grm-3pnz): print a prefix of a SORTED list, and when
-	 * the cap actually bites SAY SO IN THE GOLDEN, so "absent from the sample" can never be
-	 * mistaken for "absent from the program".
-	 */
 	private void emitSample(String tag, List<String> lines, int cap) {
-		int n = Math.min(cap, lines.size());
-		for (int i = 0; i < n; i++) {
-			println("REALROM " + tag + " " + lines.get(i));
-		}
-		if (n < lines.size()) {
-			println("REALROM " + tag + ".truncated " + n + " of " + lines.size());
-		}
+		out.emitSample(tag, lines, cap);
 	}
 
 	/** 65816 addresses are 24-bit; every offset fits in 6 hex digits. */
 	private String fmt(Address addr) {
-		return String.format("%06x", addr.getOffset());
+		return RealRomDumpSupport.fmt(addr, 6);
 	}
 
 	private static String hex8(int v) {

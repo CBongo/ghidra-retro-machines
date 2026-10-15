@@ -4,12 +4,10 @@ REALROM sha256 463018ac63de3b31a006882538fa1e0b500ba113ad7263e09669039e1193d7dc
 REALROM prgsha256 3ba4f6fd63a74338e438df43ddd1195f8913d69c11f6668d3bbf23a2a3cea459
 REALROM map machines/nes-axrom.map
 REALROM placement NONE
-REALROM block APU_IO 4000-401f overlay=false
 REALROM block COPY_0300 0300-0328 overlay=false
 REALROM block COPY_032d 032d-033c overlay=false
 REALROM block COPY_033d 033d-034f overlay=false
 REALROM block COPY_0600 0600-0611 overlay=false
-REALROM block PPU_REGS 2000-2007 overlay=false
 REALROM block PRG_ALL 8000-ffff overlay=false
 REALROM block PRG_ALL_B1 8000-ffff overlay=true
 REALROM block PRG_ALL_B2 8000-ffff overlay=true
@@ -20,8 +18,6 @@ REALROM block RAM_0329_033D_0350 0350-05ff overlay=false
 REALROM block RAM_0612 0612-07ff overlay=false
 REALROM count blocks.total 14
 REALROM count blocks.overlay 3
-REALROM count spaces.overlay 3
-REALROM count refs.intoOverlay 0
 REALROM count refs.intoOverlay.retargeted 0
 REALROM count refs.intoOverlay.intraOverlay 0
 REALROM count instrs.inOverlay 0
@@ -114,18 +110,6 @@ REALROM sample.note ce0f [CopyLoopAnalyzer] copy-shaped loop RAM:ce1b -> RAM:036
 REALROM sample.note ce8b [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
 REALROM sample.note e99e [CopyLoopAnalyzer] copy-shaped loop RAM:e8e1 -> RAM:0204 (16 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note ffa6 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this write re-commits the bank READ BACK at ffa4 from write-through bank shadow 0000 -- a RAM cell the switch code keeps in step with every bank it commits, so the byte read is the last bank committed through it -- the save/restore idiom. The bank after this write is whatever 0000 held at that read, not a fresh value this analyzer failed to pin down. A property of the game, not a gap in analysis.
-REALROM sample.symbol 2000 PPUCTRL IMPORTED primary=true
-REALROM sample.symbol 2001 PPUMASK IMPORTED primary=true
-REALROM sample.symbol 2002 PPUSTATUS IMPORTED primary=true
-REALROM sample.symbol 2003 OAMADDR IMPORTED primary=true
-REALROM sample.symbol 2004 OAMDATA IMPORTED primary=true
-REALROM sample.symbol 2005 PPUSCROLL IMPORTED primary=true
-REALROM sample.symbol 2006 PPUADDR IMPORTED primary=true
-REALROM sample.symbol 2007 PPUDATA IMPORTED primary=true
-REALROM sample.symbol 4014 OAMDMA IMPORTED primary=true
-REALROM sample.symbol 4015 SND_CHN IMPORTED primary=true
-REALROM sample.symbol 4016 JOY1 IMPORTED primary=true
-REALROM sample.symbol 4017 JOY2 IMPORTED primary=true
 REALROM sample.symbol 890d RESET IMPORTED primary=true
 REALROM sample.symbol bcb3 switch USER_DEFINED primary=true
 REALROM sample.symbol bcc8 case_1 USER_DEFINED primary=true

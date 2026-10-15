@@ -4,8 +4,6 @@ REALROM sha256 e52cc421c726181a35f0cc9e8969a8aad50abd17bdc7eea59dc065990a576147
 REALROM prgsha256 1ffdddca20ec238e5fca32579314a7d757e8924db229e372025e26429142e1fa
 REALROM map machines/nes-gxrom.map
 REALROM placement NONE
-REALROM block APU_IO 4000-401f overlay=false
-REALROM block PPU_REGS 2000-2007 overlay=false
 REALROM block PRG_ALL 8000-ffff overlay=false
 REALROM block PRG_ALL_B1 8000-ffff overlay=true
 REALROM block PRG_ALL_B2 8000-ffff overlay=true
@@ -13,8 +11,6 @@ REALROM block PRG_ALL_B3 8000-ffff overlay=true
 REALROM block RAM 0000-07ff overlay=false
 REALROM count blocks.total 7
 REALROM count blocks.overlay 3
-REALROM count spaces.overlay 3
-REALROM count refs.intoOverlay 0
 REALROM count refs.intoOverlay.retargeted 0
 REALROM count refs.intoOverlay.intraOverlay 0
 REALROM count instrs.inOverlay 0
@@ -26,18 +22,6 @@ REALROM sample.warn 9913 [NesBankingAnalyzer] Bank state becomes unknown here: c
 REALROM sample.warn ffc8 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn ffea [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffbe, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
 REALROM sample.note 82ba [CopyLoopAnalyzer] copy-shaped loop RAM:ffcc -> RAM:014b (4 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
-REALROM sample.symbol 2000 PPUCTRL IMPORTED primary=true
-REALROM sample.symbol 2001 PPUMASK IMPORTED primary=true
-REALROM sample.symbol 2002 PPUSTATUS IMPORTED primary=true
-REALROM sample.symbol 2003 OAMADDR IMPORTED primary=true
-REALROM sample.symbol 2004 OAMDATA IMPORTED primary=true
-REALROM sample.symbol 2005 PPUSCROLL IMPORTED primary=true
-REALROM sample.symbol 2006 PPUADDR IMPORTED primary=true
-REALROM sample.symbol 2007 PPUDATA IMPORTED primary=true
-REALROM sample.symbol 4014 OAMDMA IMPORTED primary=true
-REALROM sample.symbol 4015 SND_CHN IMPORTED primary=true
-REALROM sample.symbol 4016 JOY1 IMPORTED primary=true
-REALROM sample.symbol 4017 JOY2 IMPORTED primary=true
 REALROM sample.symbol 800b NMI IMPORTED primary=true
 REALROM sample.symbol 8096 IRQ IMPORTED primary=true
 REALROM sample.symbol 8655 switch USER_DEFINED primary=true
@@ -51,5 +35,17 @@ REALROM sample.symbol 86b6 case_21 USER_DEFINED primary=true
 REALROM sample.symbol 86ba case_26 USER_DEFINED primary=true
 REALROM sample.symbol 86cd case_10 USER_DEFINED primary=true
 REALROM sample.symbol 86d1 case_15 USER_DEFINED primary=true
-REALROM sample.symbol.truncated 25 of 168
+REALROM sample.symbol 86d5 case_11 USER_DEFINED primary=true
+REALROM sample.symbol 86d9 case_27 USER_DEFINED primary=true
+REALROM sample.symbol 86dd case_16 USER_DEFINED primary=true
+REALROM sample.symbol 86e1 case_17 USER_DEFINED primary=true
+REALROM sample.symbol 86e5 case_18 USER_DEFINED primary=true
+REALROM sample.symbol 86e9 case_19 USER_DEFINED primary=true
+REALROM sample.symbol 86f1 case_22 USER_DEFINED primary=true
+REALROM sample.symbol 86f5 case_29 USER_DEFINED primary=true
+REALROM sample.symbol 86f9 case_32 USER_DEFINED primary=true
+REALROM sample.symbol 86fd case_33 USER_DEFINED primary=true
+REALROM sample.symbol 873a case_6 USER_DEFINED primary=true
+REALROM sample.symbol 8765 case_13 USER_DEFINED primary=false
+REALROM sample.symbol.truncated 25 of 156
 === REALROM END ===

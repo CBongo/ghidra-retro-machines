@@ -15,7 +15,7 @@ paths:
 replaced a design where a flag selected a platform-specific subset and this file spent three
 paragraphs warning which third of the tier each flag actually covered (a bare `check` meant the
 curated NES set alone, `--all` didn't mean "all", `--snes` was a fourth undocumented meaning of
-the same word). Sets **compose** and are deduplicated by id, so naming several is safe:
+the same word; the flags were removed in grm-x4y1.5, see below). Sets **compose** and are deduplicated by id, so naming several is safe:
 
 | name | rows | what |
 |---|---|---|
@@ -33,12 +33,14 @@ existing rows (kicarus, cv2, tmnt, smb, zelda), assembled to be cheap (about a m
 no longer an excuse to run nothing. It does **not** satisfy the full-tier requirement below —
 see that paragraph.
 
-**The old flags still work, as deprecated aliases that print a one-line note:** `(no flag)` used
-to mean `nes-curated`, and is now spelled `nes-curated`; `--gme` → `nes-gme`; `--all` → `nes`;
-`--snes` → `snes`. Note `--all` still maps to exactly what it always meant — both NES manifests,
-35 rows today — that part of the old contract is honored, not broken. The word that changed meaning is
-the *bare, unflagged* `all`: it now spans every platform (48 rows), because a word that didn't
-mean what it said is what grm-ughg was filed to fix.
+**The old `--gme`/`--all`/`--snes` flags were removed in grm-x4y1.5** (they had been deprecated
+aliases since grm-ughg). They are now ordinary unknown options: exit 2, with an error naming the
+replacement. Type the set positionally instead: `--gme` → `nes-gme`, `--all` → `nes` (both NES
+manifests, 35 rows today — what `--all` always meant), `--snes` → `snes`; an unflagged run used to
+mean `nes-curated` and is now spelled `nes-curated`. The bare word `all` spans every platform
+(48 rows), because a word that didn't mean what it said is what grm-ughg was filed to fix.
+`ab-test.sh` takes the same positional SET names and forwards them to `realrom-test.sh`;
+`realrom-test.sh ids [SET ...]` prints a set's row ids (read-only, instant).
 
 **Skips and timeouts (bead grm-x4y1.2).** A run with SKIPped rows still exits 0 but prints
 `REALROM check: OK (PARTIAL: N skipped)`; the opt-in `--require-all` flag makes any skip exit

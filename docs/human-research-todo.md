@@ -283,14 +283,17 @@ do not keep "Done" rows here.
 
 Agents don't write into your ROM library or other personal directories.
 
-- [ ] **Copy the three new real-ROM images into an indexed ROM dir** (`grm-x4y1.8`, `grm-3rel`).
-      `adventure_island`, `punchout` and `deadly_towers` were added to `manifest.tsv` on 2026-10-15
-      from `H:/emulators/nes/ROMs/All NES Roms (GoodNES)/USA`. That folder is not in `GRM_ROM_DIR`
+- [ ] **Copy five real-ROM images into an indexed ROM dir** (`grm-x4y1.8`, `grm-x4y1.6`,
+      `grm-3rel`). On 2026-10-15 `adventure_island`, `punchout` and `deadly_towers` were added, and
+      `cv3`/`dodge` were retargeted from overdumps to clean dumps, all pinned to files in
+      `H:/emulators/nes/ROMs/All NES Roms (GoodNES)/USA`. That folder is not in `GRM_ROM_DIR`
       and can't be, because its path contains spaces (`grm-3rel`). Until the files are copied, a
-      plain `check nes` SKIPs those rows and ends `OK (PARTIAL: 3 skipped)`. Copy into
+      plain `check nes` SKIPs those rows and ends `OK (PARTIAL: 5 skipped)`. Copy into
       `H:/emulators/nes/roms` (or any dir already in `GRM_ROM_DIR`):
-      `Adventure Island (U) [!].nes`, `Punch-Out!! (U) [!].nes`, `Deadly Towers (U) [!].nes`.
-      Then `bash tools/banktest/realrom-test.sh check nes` should report `pass=35`.
+      `Adventure Island (U) [!].nes`, `Punch-Out!! (U) [!].nes`, `Deadly Towers (U) [!].nes`,
+      `Castlevania III - Dracula's Curse (U) [!].nes`, `Super Dodge Ball (U) [!].nes`.
+      Then `bash tools/banktest/realrom-test.sh check nes` should run all 35 rows with none
+      skipped (`deadly_towers` fails as BATCH-DEPENDENT until `grm-pwuh` is fixed).
 
 ---
 
