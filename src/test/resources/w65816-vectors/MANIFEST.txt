@@ -6,9 +6,10 @@
 #  invocation wrote, so adding one opcode later does not erase the record of the rest)
 #
 upstream_repo: https://github.com/SingleStepTests/65816
-upstream_commit: db6b10401729d5f20f2181dde5d3d7b037093a4a
+upstream_commit: 9bf6b708bd8203073fbfbfc54f0aaed8bdda331d
 cases_per_file: 8
 source_pattern: v1/<opcode-hex>.<n|e>.json
+sampling_rule: first cases_per_file cases of each file, in file order; EXCEPT opcodes 44 (MVP) and 54 (MVN), which take the cases_per_file cases with the SMALLEST initial A (ties by file order), kept in file order, because their cycles arrays scale with A
 
 # PARTIAL COVERAGE -- READ THIS BEFORE TRUSTING A 'PASS' ROW FOR AN OPCODE NOT LISTED.
 # A passing baseline says nothing about the 256 - N opcodes this sample never runs.
