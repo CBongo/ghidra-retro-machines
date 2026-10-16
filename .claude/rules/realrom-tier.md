@@ -123,10 +123,13 @@ worktree reads `--` everywhere.
 
 `GRM_ROM_DIR` is set per machine (`.claude/settings.local.json`, gitignored) and holds **several
 space-separated dirs**, because the curated manifest is split across more than one and the driver
-indexes each at **depth 1 only**. The driver reads it as `ROM_DIRS=($GRM_ROM_DIR)` — unquoted,
-so it splits on *any* whitespace with no escaping: multiple dirs separated by spaces work, but a
-**single directory whose own name contains a space cannot be represented** this way (pass it on
-the command line instead, where each argument is a distinct dir regardless of its contents). So:
+indexes each at **depth 1 only**. A value with no `;` splits on any whitespace, with no
+escaping. **A value containing `;` splits on `;` only** (surrounding whitespace trimmed), which is
+how a dir whose own name has a space is written: `H:/emulators/nes/roms;H:/All NES Roms/USA`
+(bead grm-3rel; `GRM_SNES_ROM_DIR` and the `snes-rom-corpus` tier read it the same way). On the
+command line each argument is one dir regardless of its contents. Before grm-3rel that was false
+even though this file claimed it: positional dirs were space-joined and re-split. The SKIP note
+lists every dir it *tried*, flagging any that is not a directory. So:
 **never conclude "this machine doesn't have the ROM" from a `SKIP`** — suspect the dir list first,
 and look at the dirs the driver prints beside the skip count. `smb3` was blessed 2026-08-16 once a
 hand pass established that its two remaining warnings are honest (`FUN_c542` really is a

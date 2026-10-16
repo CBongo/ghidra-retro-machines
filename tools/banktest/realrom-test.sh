@@ -146,7 +146,9 @@
 #   GRM_ROM_DIR             default rom dir(s) if none given on the command line (NES sets)
 #   GRM_SNES_ROM_DIR        the same, for the SNES sets. Separate on purpose: GRM_ROM_DIR stays
 #                            NES-only, and both are read with identical semantics --
-#                            space-separated dirs, each indexed at DEPTH 1 ONLY.
+#                            space-separated dirs, each indexed at DEPTH 1 ONLY. A value
+#                            containing ';' is split on ';' only, so a dir whose name has a
+#                            space is written 'H:/a;H:/All NES Roms/USA' (grm-3rel).
 #   GRM_BANKTEST_WORK       base dir for per-run work dirs (defaults to
 #                            <repo>/build/banktest-work). A PASSING run deletes its work
 #                            dir; a FAILING one keeps logs/dumps/diffs but not the ROM copies
@@ -604,14 +606,45 @@ echo "== sets: ${RESOLVED_SETS[*]} (platform(s): ${PLATFORMS_USED[*]};" \
 # a clean gate for something that did not execute (CLAUDE.md), and that guarantee predates and
 # survives this refactor.
 # ------------------------------------------------------------------
+#
+# PLATFORM_DIRS_OF holds each platform's dirs NEWLINE-separated (bead grm-3rel), never
+# space-joined: a space-joined list was word-split again by every reader, so a dir whose own
+# name contains a space was cut in pieces even when passed as a single argument. Read it back
+# with platform_dirs, never with an unquoted expansion.
+#
+# The env variables keep their whitespace-separated form for compatibility, but a value that
+# contains ';' (PATH-style on Windows; ':' cannot work here, every drive letter has one) is split
+# on ';' ONLY, which is how a dir with a space in its name is spelled in GRM_ROM_DIR.
+dir_list_from_env() {
+	local v="$1" part
+	if [[ "$v" == *";"* ]]; then
+		local IFS=';'
+		for part in $v; do
+			# Trim surrounding whitespace so 'a; b' means 'a' and 'b'.
+			part="${part#"${part%%[![:space:]]*}"}"
+			part="${part%"${part##*[![:space:]]}"}"
+			[ -n "$part" ] && printf '%s\n' "$part"
+		done
+	else
+		for part in $v; do printf '%s\n' "$part"; done
+	fi
+	return 0
+}
+# platform_dirs <platform> <array-name>: fill the named array with that platform's dirs.
+platform_dirs() {
+	local -n pd_out="$2"
+	pd_out=()
+	[ -n "${PLATFORM_DIRS_OF[$1]:-}" ] || return 0
+	mapfile -t pd_out <<<"${PLATFORM_DIRS_OF[$1]}"
+}
 POSITIONAL_DIRS=("$@")
 ANY_DIRS=0
 for p in "${PLATFORMS_USED[@]}"; do
 	p_env="$(tsv_field "$PLATFORMS_TSV" "$p" rom_dir_env)"
 	if [ ${#POSITIONAL_DIRS[@]} -gt 0 ]; then
-		PLATFORM_DIRS_OF["$p"]="${POSITIONAL_DIRS[*]}"
+		PLATFORM_DIRS_OF["$p"]="$(printf '%s\n' "${POSITIONAL_DIRS[@]}")"
 	else
-		PLATFORM_DIRS_OF["$p"]="${!p_env:-}"
+		PLATFORM_DIRS_OF["$p"]="$(dir_list_from_env "${!p_env:-}")"
 	fi
 	if [ -n "${PLATFORM_DIRS_OF[$p]}" ]; then
 		ANY_DIRS=1
@@ -629,7 +662,7 @@ if [ "$ANY_DIRS" -eq 0 ] && [ "$MODE" != coverage ]; then
 	done
 	echo "REALROM: SKIPPED -- no ROM dirs supplied and none of$envs is set. This tier was" \
 		"NOT run; nothing about real-ROM regressions was checked. Set one (each may hold" \
-		"several space-separated dirs) or pass romdir arguments." >&2
+		"several dirs, space-separated, or ';'-separated if a name has a space) or pass" 		"romdir arguments." >&2
 	echo "$USAGE" >&2
 	exit 2
 fi
@@ -855,8 +888,7 @@ if [ "$MODE" = nominate ]; then
 	echo "# (your game-music-extraction shorthand), else the file's base name."
 	n_new=0; n_known=0; n_unsupported=0; n_notines=0
 	shopt -s nullglob nocaseglob
-	# shellcheck disable=SC2206
-	nominate_dirs=(${PLATFORM_DIRS_OF[${PLATFORMS_USED[0]}]})
+	platform_dirs "${PLATFORMS_USED[0]}" nominate_dirs
 	for dir in "${nominate_dirs[@]}"; do
 		# Normalize away trailing slashes so the "is it in a per-title subdir?" test below
 		# is an exact path comparison rather than a basename guess.
@@ -1248,12 +1280,14 @@ echo "== indexing ROM dirs by sha256 =="
 shopt -s nullglob nocaseglob
 for idx_plat in "${PLATFORMS_USED[@]}"; do
 	use_platform "$idx_plat"
-	# shellcheck disable=SC2206
-	idx_dirs=(${PLATFORM_DIRS_OF[$idx_plat]})
+	platform_dirs "$idx_plat" idx_dirs
 	[ ${#idx_dirs[@]} -gt 0 ] || continue
 	for dir in "${idx_dirs[@]}"; do
 		if [ ! -d "$dir" ]; then
 			echo "  WARN: not a directory, skipping: $dir" >&2
+			# Still listed in the SKIP note: it prints the dirs TRIED, not only the ones that
+			# indexed, so a mangled or mistyped dir is visible right where it matters (grm-3rel).
+			ALL_INDEXED_DIRS+=("$dir   <-- NOT A DIRECTORY, not indexed")
 			continue
 		fi
 		count=0
@@ -1768,7 +1802,8 @@ echo "summary: pass=$n_pass fail=$n_fail skip=$n_skip bless=$n_bless$filtered_no
 if [ "$n_skip" -gt 0 ]; then
 	echo "note: $n_skip row(s) SKIPPED for want of a ROM. If that is unexpected, suspect the DIR"
 	echo "      LIST before concluding the ROMs are absent: dirs are indexed at depth 1 only, and"
-	echo "      several may be given (GRM_ROM_DIR holds them space-separated). Supplied here:"
+	echo "      several may be given (GRM_ROM_DIR holds them space-separated, or ';'-separated"
+	echo "      when a dir's own name has a space). Tried here:"
 	for dir in ${ALL_INDEXED_DIRS[@]+"${ALL_INDEXED_DIRS[@]}"}; do
 		echo "        $dir"
 	done

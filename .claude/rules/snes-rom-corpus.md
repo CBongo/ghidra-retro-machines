@@ -11,8 +11,8 @@ paths:
 
 **The SNES ROM header corpus survey (`snes-rom-corpus` chunk) is the fourth opt-in tier and, like
 the `.dis` differential, REPORTS rather than gates.** It needs `GRM_SNES_ROM_DIR` — one or more
-space-separated directories of cartridge images, indexed at depth 1 only, exactly as `GRM_ROM_DIR`
-is read — and Assume-*skips* when unset. It runs `SnesRomHeader.parse` over every file there and
+space-separated (or, if the value contains `;`, `;`-separated) directories of cartridge images,
+indexed at depth 1 only, exactly as `GRM_ROM_DIR` is read — and Assume-*skips* when unset. It runs `SnesRomHeader.parse` over every file there and
 writes `build/snes-rom-corpus/roms.tsv` (per image, with sha256) and `summary.txt`. It asserts only
 corpus-INDEPENDENT invariants — parse never throws on any file including the non-cartridges, an
 image with a valid checksum/complement pair is always accepted, an accepted header is structurally

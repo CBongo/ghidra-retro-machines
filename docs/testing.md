@@ -669,9 +669,9 @@ GRM_SNES_ROM_DIR=<rom dir> bash tools/banktest/build-and-test.sh check snes-rom-
 ```
 
 `GRM_SNES_ROM_DIR` holds one or more **space-separated** directories indexed at **depth 1 only** —
-the same convention `GRM_ROM_DIR` uses for the real-ROM tier, and with the same caveat: the value
-is split on whitespace with no escaping, so a single directory whose own name contains a space
-cannot be represented this way. It **Assume-skips** when the variable is unset or names nothing
+the same convention `GRM_ROM_DIR` uses for the real-ROM tier, including its escape for a directory
+whose own name contains a space: a value containing `;` is split on `;` only, PATH-style
+(`grm-3rel`). It **Assume-skips** when the variable is unset or names nothing
 that exists, following the `.dis` corpus rather than the vector tiers: this class asserts weak
 invariants and exists to produce a report, so there is no green here worth protecting.
 
@@ -828,7 +828,8 @@ it is never a `run-banktest.sh` chunk (whose `all` would otherwise pull it in).
 - **Several romdirs are normal, and a `SKIP` usually means one is missing.** Dirs are indexed at
   **depth 1 only** — a title one directory down is invisible — so a collection split across two
   places needs both named, and the curated set on the primary dev machine does. `GRM_ROM_DIR`
-  holds them space-separated and is the intended way to supply them; set it once per machine
+  holds them space-separated (or `;`-separated, when a dir's own name has a space) and is the
+  intended way to supply them; set it once per machine
   (it is machine-local, so it belongs in your environment or `.claude/settings.local.json`,
   never committed) and every invocation below can then omit the paths entirely. **Read a `SKIP`
   as "this run did not look everywhere" before reading it as "this machine lacks the ROM"** —

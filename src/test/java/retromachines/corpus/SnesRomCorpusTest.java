@@ -84,9 +84,9 @@ import retromachines.SnesRomHeader;
  * </ul>
  *
  * <p><b>{@code GRM_SNES_ROM_DIR} holds one or more SPACE-SEPARATED directories, indexed at depth 1
- * only</b> -- the same convention {@code GRM_ROM_DIR} uses for the real-ROM tier, and with the same
- * caveat: because the value is split on whitespace with no escaping, a single directory whose own
- * name contains a space cannot be represented this way. Nothing here reads a subdirectory, so a
+ * only</b> -- the same convention {@code GRM_ROM_DIR} uses for the real-ROM tier, including its
+ * escape for a directory whose own name contains a space: a value containing {@code ;} is split on
+ * {@code ;} only (surrounding whitespace trimmed), PATH-style (bead grm-3rel). Nothing here reads a subdirectory, so a
  * collection filed one-title-per-folder will look empty rather than wrong.
  *
  * <p><b>When {@code GRM_SNES_ROM_DIR} is unset (or names nothing that exists) this Assume-skips</b>,
@@ -126,9 +126,14 @@ public class SnesRomCorpusTest {
 		assumeTrue(CORPUS_ENV + " is not set -- skipping the SNES ROM corpus survey (grm-9nxj.13)",
 			configured != null && !configured.isBlank());
 
-		// Space-separated dirs, depth 1 only -- see the class doc.
+		// Space-separated dirs, or ';'-separated when the value has one; depth 1 only -- see the
+		// class doc.
 		List<Path> dirs = new ArrayList<>();
-		for (String part : configured.trim().split("\\s+")) {
+		String separator = configured.contains(";") ? "\\s*;\\s*" : "\\s+";
+		for (String part : configured.trim().split(separator)) {
+			if (part.isBlank()) {
+				continue;
+			}
 			Path dir = Path.of(part);
 			if (Files.isDirectory(dir)) {
 				dirs.add(dir);
