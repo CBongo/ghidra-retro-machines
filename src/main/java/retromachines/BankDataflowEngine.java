@@ -628,7 +628,8 @@ final class BankDataflowEngine {
 			boolean isCall = instr.getFlowType().isCall();
 			for (OutElement out : outs) {
 				for (Address flowAddr : instr.getFlows()) {
-					if (mapsElsewhere(program, flowAddr, addr, out.out(), bankResolution)) {
+					if (mapsElsewhere(program, flowAddr, addr, out.out(), bankResolution) ||
+						contradictsResidence(program, flowAddr, addr, out.out(), bankResolution)) {
 						continue;
 					}
 					// A fork ends at a function entry: a call target, or a jump onto an entry
@@ -642,6 +643,8 @@ final class BankDataflowEngine {
 				Address fallThrough = instr.getFallThrough();
 				if (fallThrough != null &&
 					!mapsElsewhere(program, fallThrough, addr, out.fall(),
+						bankResolution) &&
+					!contradictsResidence(program, fallThrough, addr, out.fall(),
 						bankResolution)) {
 					PathId to = budget.isFunctionEntry(fallThrough) ? PathId.ROOT : out.pathId();
 					mergeAndEnqueue(fallThrough, to, out.fall(), stateIn, collapsedAddrs,
@@ -1817,6 +1820,42 @@ final class BankDataflowEngine {
 		AddressSpace overlay = program.getAddressFactory().getAddressSpace(r.space());
 		return overlay != null &&
 			!sameImageByte(program, target, overlay.getAddress(target.getOffset()));
+	}
+
+	/**
+	 * Whether an OVERLAY {@code target} is NOT the byte that runs under {@code state} -- the
+	 * overlay-side mirror of {@link #mapsElsewhere} (bead grm-dos9.12). Without it such a flow
+	 * (a base reference kept beside its overlay sibling, an overlay reference placed for one fork
+	 * arm and followed by every arm) reached {@link #clampToResidence}, which overwrote the
+	 * window's bits and merged a path that cannot execute there in with the real ones.
+	 * <p>
+	 * Decided by occupant, not by raw bits, so a bank number the image wraps (MMC3's r7=44 on a
+	 * 32-bank ROM selects bank 12) still reaches its overlay. Same exemptions as
+	 * {@code mapsElsewhere}: only fully known state counts (a partly known one still clamps), a
+	 * flow from the target's own window stays (code that switches its own window runs on into
+	 * whatever bank is now live), and so does an occupant backed by the same image byte.
+	 */
+	static boolean contradictsResidence(Program program, Address target, Address from,
+			BankState state, HelperDiscovery.BankResolution ctx) {
+		AddressSpace space = target.getAddressSpace();
+		if (ctx == null || !space.isOverlaySpace()) {
+			return false;
+		}
+		if (from != null && BankAnnotationAdapter.sameWindow(ctx.board(), state,
+			from.getOffset(), target.getOffset())) {
+			return false;
+		}
+		BankAnnotationAdapter.OffsetResolution r = BankAnnotationAdapter.resolveOffsetOccupant(
+			ctx.board(), ctx.bankUniverse(), state, target.getOffset(), Map.of());
+		if (r == null || !r.fullyKnown()) {
+			return false;
+		}
+		AddressSpace runs = r.home() ? space.getPhysicalSpace()
+				: program.getAddressFactory().getAddressSpace(r.space());
+		if (runs == null || runs.equals(space)) {
+			return false;
+		}
+		return !sameImageByte(program, target, runs.getAddress(target.getOffset()));
 	}
 
 	/** Whether two addresses are backed by the same byte of the same loaded file. */
