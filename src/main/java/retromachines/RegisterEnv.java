@@ -222,6 +222,20 @@ public record RegisterEnv(Address entryAddr, Address crossableJoin, PartialByte 
 	}
 
 	/**
+	 * {@link #entryStopOnly} along one arm of a join (bead grm-dos9.14): the classification env
+	 * {@link BankSwitchStrategy#classifyHelperBodyArm} scans under. Same rule: its VALUE is never
+	 * used, only whether the walk reached {@code entryAddr} with the register undefined.
+	 *
+	 * @param entryAddr address at which the scan stops
+	 * @param arms per join, the predecessor the walk steps to
+	 * @return an environment with unknown register values, following {@code arms}
+	 */
+	public static RegisterEnv entryStopOnArms(Address entryAddr, Map<Address, Address> arms) {
+		return new RegisterEnv(entryAddr, null, PartialByte.unknown(), PartialByte.unknown(),
+			PartialByte.unknown(), arms, Map.of(), Set.of());
+	}
+
+	/**
 	 * An env that crosses no join -- every env predating grm-k90, spelled the way it was
 	 * spelled then. Kept as a convenience constructor rather than pushed onto callers because
 	 * "cross nothing" is the correct and overwhelmingly common answer, and because a

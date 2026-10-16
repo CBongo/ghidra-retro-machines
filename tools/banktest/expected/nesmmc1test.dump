@@ -45,8 +45,8 @@ COMMENT c200 bank ? [NOTE: helper argument]
 COMMENT c200 bank ? [NOTE: helper argument]
 COMMENT c210 bank ? [NOTE: helper argument]
 COMMENT c210 bank ? [NOTE: helper argument]
-COMMENT c252 bank ? [WARNING: analyzer limit]
-COMMENT c262 bank ? [WARNING: analyzer limit]
+COMMENT c252 bank ? [NOTE: entry-supplied]
+COMMENT c262 bank ? [NOTE: entry-supplied]
 COMMENT c2a7 bank ? [NOTE: helper argument]
 COMMENT c2b7 bank ? [NOTE: helper argument]
 BOOKMARK Note c032
@@ -55,11 +55,12 @@ BOOKMARK Note c200
 BOOKMARK Note c200
 BOOKMARK Note c210
 BOOKMARK Note c210
+BOOKMARK Note c252
+BOOKMARK Note c262
 BOOKMARK Note c2a7
 BOOKMARK Note c2b7
 BOOKMARK Warning c06c
-BOOKMARK Warning c252
-BOOKMARK Warning c262
+REF 8000 -> WC000_M2_B0::c072 COMPUTED_JUMP primary=true
 REF c00a -> W8000_M3_B2::8000 UNCONDITIONAL_CALL primary=true
 REF c027 -> W8000_M3_B5::8000 UNCONDITIONAL_CALL primary=true
 REF c02f -> W8000_M3_B3::8000 UNCONDITIONAL_CALL primary=true

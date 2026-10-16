@@ -15,6 +15,8 @@
  */
 package retromachines;
 
+import java.util.Map;
+
 import com.google.gson.JsonObject;
 
 import ghidra.program.model.address.Address;
@@ -93,6 +95,21 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 		 * get it, so that stays {@link #ANALYZER_LIMIT}.
 		 */
 		HELPER_ARGUMENT,
+		/**
+		 * The site is inside a recognized helper, and its register scan stops at a JOIN of several
+		 * helper ENTRIES, each of whose values is judged at that entry's own call sites (bead
+		 * grm-dos9.14). Honest -- report as a NOTE -- and, like {@link #HELPER_ARGUMENT}, not a
+		 * layout-mode census vote, since the census already judges each call site.
+		 * <p>
+		 * Its own member because {@code HELPER_ARGUMENT}'s claim -- "the register holds whatever the
+		 * caller supplied" -- is false on one kind of arm this admits. Bionic Commando's
+		 * {@code dcaa STA $E000} is reached from {@code FUN_dca8}'s {@code LDA $65} (a proven
+		 * no-argument restore, so that arm's value is the RAM shadow) as well as from a wrapper
+		 * and a thunk that pass the caller's bank in A. See
+		 * {@code BankDataflowEngine.everyArmJudgedElsewhere} for the per-arm rules; an arm whose
+		 * own code sets the register is judged nowhere, and keeps the site {@link #ANALYZER_LIMIT}.
+		 */
+		ENTRY_SUPPLIED,
 		/**
 		 * The site is a CALL SITE that is itself a SECOND-TIER helper's own RELAY call (bead
 		 * grm-ylm6): a function that writes no mechanism of its own, forwards a register argument
@@ -435,6 +452,28 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 */
 	default ValueStop classifyHelperBodyGap(Program program, Instruction switchSite,
 			MechanismState inState, Address helperEntry) {
+		return ValueStop.ANALYZER_LIMIT;
+	}
+
+	/**
+	 * The RAW stop of the same register scan {@link #classifyHelperBodyGap} runs, walked along
+	 * ONE ARM of the join that ended it ({@code arms}) and stopping at {@code entry} (bead
+	 * grm-dos9.14). Unlike {@code classifyHelperBodyGap} it does not collapse an honest
+	 * non-argument stop ({@code RESTORED_BANK}, {@code RUNTIME_SOURCE}) to
+	 * {@code ANALYZER_LIMIT}: the engine decides per arm which stops it accepts, because only it
+	 * knows whose entry each arm reaches. Asked only for a site already classified
+	 * {@code ANALYZER_LIMIT}; like its sibling it may only change the classification, never the
+	 * value. The default answers {@code ANALYZER_LIMIT}, which no arm accepts.
+	 *
+	 * @param program the program containing the helper
+	 * @param switchSite the recognized mechanism write inside the helper
+	 * @param inState the field-local state flowing into {@code switchSite}
+	 * @param entry the entry whose caller supplies the register on this arm
+	 * @param arms the {@code join -> predecessor} choice naming this arm
+	 * @return the scan's stop along the arm
+	 */
+	default ValueStop classifyHelperBodyArm(Program program, Instruction switchSite,
+			MechanismState inState, Address entry, Map<Address, Address> arms) {
 		return ValueStop.ANALYZER_LIMIT;
 	}
 

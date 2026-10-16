@@ -40,6 +40,7 @@ import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.mem.MemoryBlockSourceInfo;
+import ghidra.program.model.symbol.RefType;
 import ghidra.program.model.symbol.Reference;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.task.TaskMonitor;
@@ -604,9 +605,11 @@ final class BankDataflowEngine {
 				// writes 1-4, a discarded CHR commit -- its "effect" is an echo of the in-state. A
 				// HELPER_ARGUMENT site's value is its caller's: the census judges it once per CALL
 				// SITE, under that caller's registers, so the body's merged non-answer is not a
-				// second, unresolved vote.
+				// second, unresolved vote. An ENTRY_SUPPLIED site (grm-dos9.14) is the same
+				// argument made per entry.
 				if (sr.stop() != BankSwitchStrategy.ValueStop.NO_DEPOSIT &&
-					sr.stop() != BankSwitchStrategy.ValueStop.HELPER_ARGUMENT) {
+					sr.stop() != BankSwitchStrategy.ValueStop.HELPER_ARGUMENT &&
+					sr.stop() != BankSwitchStrategy.ValueStop.ENTRY_SUPPLIED) {
 					recordModeWrite(modeWrites, addr, sr.effectMask() & modeMask, sr.effect(),
 						sr.stop(), site.implicit());
 				}
@@ -1721,7 +1724,142 @@ final class BankDataflowEngine {
 			return outcome.stop();
 		}
 		MechanismState localIn = mech.placement().toLocal(inState);
-		return mech.strategy().classifyHelperBodyGap(program, instr, localIn, helper.entry());
+		BankSwitchStrategy.ValueStop stop =
+			mech.strategy().classifyHelperBodyGap(program, instr, localIn, helper.entry());
+		if (stop == BankSwitchStrategy.ValueStop.ANALYZER_LIMIT &&
+			everyArmJudgedElsewhere(program, instr, localIn, mech, containing, helper, helpers)) {
+			return BankSwitchStrategy.ValueStop.ENTRY_SUPPLIED;
+		}
+		return stop;
+	}
+
+	/**
+	 * Whether a helper-body site's register scan stops at a JOIN of several helper entries, each
+	 * of whose values is judged at that entry's own call sites (bead grm-dos9.14). The site is
+	 * then {@code ENTRY_SUPPLIED}: like a single-entry helper's {@code HELPER_ARGUMENT}, the census
+	 * judges its value once per call site, never as the body's merged non-answer.
+	 * <p>
+	 * Bionic Commando's PRG chain is the case. {@code dcaa STA $E000} heads a five-write chain
+	 * and is reached three ways: by falling through from {@code FUN_dca8}'s {@code LDA $65} (a
+	 * proven no-argument restore, reported RESTORED at its callers), by {@code FUN_dcbe}'s
+	 * {@code STA $65 / JMP dcaa} (a call-edge wrapper), and by {@code FUN_d6e2}'s lone
+	 * {@code JMP dcaa} (a relay thunk). One arm per incoming edge ({@link #joinArms}), and EVERY
+	 * arm must qualify:
+	 * <ul>
+	 * <li>An arm from another function is the wrapper's relay or a one-instruction thunk; the
+	 * strategy's scan along it, stopping at that function's entry, must reach the entry with the
+	 * register undefined; and that entry must be judged ({@link #judgedEntry}).</li>
+	 * <li>An arm from the helper's own body must be the helper's own entry instruction, the
+	 * helper must be a proven restore ({@link HelperArgumentRecovery#restoreSourceCell}: that
+	 * instruction reloads the register from a RAM cell and falls straight into the join), the
+	 * strategy's scan must reach the join with the register undefined, and the entry must be
+	 * judged.</li>
+	 * </ul>
+	 * Any other arm -- code that sets the register itself and jumps in -- is a value nobody
+	 * judges, so the site keeps its warning.
+	 */
+	private static boolean everyArmJudgedElsewhere(Program program, Instruction instr,
+			MechanismState localIn, ConfiguredMechanism mech, Function containing,
+			HelperModel helper, Map<Function, HelperModel> helpers) {
+		List<Arm> arms = joinArms(program, program.getListing(), instr, Map.of());
+		if (arms == null) {
+			return false;
+		}
+		FunctionManager fm = program.getFunctionManager();
+		for (Arm arm : arms) {
+			Address pred = arm.tip();
+			Function from = fm.getFunctionContaining(pred);
+			if (from == null) {
+				return false;
+			}
+			BankSwitchStrategy strategy = mech.strategy();
+			if (from.equals(containing)) {
+				// The restore proof covers the entry's load reaching the join directly; the scan
+				// stopping AT the join proves nothing redefines the register from the join to
+				// where the strategy reads it. (The load itself scans ANALYZER_LIMIT by design --
+				// a cell the image stores to is a parameter latch, grm-rr5p -- so its stop is
+				// not the test.)
+				Address join = arm.preds().keySet().iterator().next();
+				if (!pred.equals(helper.entry()) || helper.argReg() == null ||
+					HelperArgumentRecovery.restoreSourceCell(program, helper,
+						helper.argReg()) == null ||
+					!judgedEntry(program, helper.entry(), 0) ||
+					strategy.classifyHelperBodyArm(program, instr, localIn, join,
+						arm.preds()) != BankSwitchStrategy.ValueStop.HELPER_ARGUMENT) {
+					return false;
+				}
+				continue;
+			}
+			Address entry = relayEntry(program, from, pred, helpers);
+			if (entry == null || !judgedEntry(program, entry, 0) ||
+				strategy.classifyHelperBodyArm(program, instr, localIn, entry,
+					arm.preds()) != BankSwitchStrategy.ValueStop.HELPER_ARGUMENT) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * The entry whose callers supply the register on an arm arriving from {@code pred} in
+	 * function {@code from}, or null: a call-edge wrapper's entry when {@code pred} is its relay,
+	 * or {@code pred} itself when {@code from} is nothing but that one jump (a relay thunk, which
+	 * {@link HelperDiscovery#reachableEntries} follows from every call to it).
+	 */
+	private static Address relayEntry(Program program, Function from, Address pred,
+			Map<Function, HelperModel> helpers) {
+		HelperModel wrapper = helpers.get(from);
+		if (wrapper != null && wrapper.relay() != null && wrapper.relay().callSite().equals(pred)) {
+			return wrapper.entry();
+		}
+		Instruction jump = program.getListing().getInstructionAt(pred);
+		if (from.getEntryPoint().equals(pred) && jump != null &&
+			from.getBody().getMaxAddress().equals(jump.getMaxAddress()) &&
+			HelperDiscovery.isTailJump(jump, from)) {
+			return pred;
+		}
+		return null;
+	}
+
+	/** How many relay thunks {@link #judgedEntry} follows back from an entry. */
+	private static final int MAX_JUDGED_RELAY_DEPTH = 4;
+
+	/**
+	 * Whether every way into {@code entry} is a call the analysis judges: each incoming flow is a
+	 * CALL, or a jump from a relay thunk whose own entry is judged in turn; and no instruction
+	 * falls through into it. A plain jump from other code, or a fall-through, is a path whose
+	 * register value nothing judges.
+	 */
+	private static boolean judgedEntry(Program program, Address entry, int depth) {
+		if (depth > MAX_JUDGED_RELAY_DEPTH) {
+			return false;
+		}
+		Listing listing = program.getListing();
+		Instruction before = listing.getInstructionBefore(entry);
+		if (before != null && entry.equals(before.getFallThrough())) {
+			return false;
+		}
+		FunctionManager fm = program.getFunctionManager();
+		boolean any = false;
+		for (Reference ref : program.getReferenceManager().getReferencesTo(entry)) {
+			RefType type = ref.getReferenceType();
+			if (!type.isFlow()) {
+				continue;
+			}
+			any = true;
+			if (type.isCall()) {
+				continue;
+			}
+			Function thunk = fm.getFunctionContaining(ref.getFromAddress());
+			Instruction jump = listing.getInstructionAt(ref.getFromAddress());
+			if (thunk == null || jump == null ||
+				!thunk.getEntryPoint().equals(ref.getFromAddress()) ||
+				!HelperDiscovery.isTailJump(jump, thunk) ||
+				!judgedEntry(program, thunk.getEntryPoint(), depth + 1)) {
+				return false;
+			}
+		}
+		return any;
 	}
 
 	/**

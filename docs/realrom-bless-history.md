@@ -15,6 +15,19 @@ underscores or asterisks may render oddly. Each was true when written, and later
 supersede earlier ones. A bead id or commit hash in an entry is the authoritative record of
 that change.
 
+## 2026-10-16 -- bionic re-blessed (grm-dos9.14)
+
+Two changes, both owner-ruled 2026-10-16. (1) HelperDiscovery.findCallEdgeWrappers accepts a
+body-closing plain JMP as a relay, so FUN_dcbe (STA $65 / JMP dcaa, entering FUN_dca8's chain
+mid-body) is a call-edge wrapper: c2e2 (LDA #$0B / JSR d7cc -> thunk -> dcbe) now resolves
+prg_bank=11, verified against the bytes. (2) A helper-body site whose scan stops at a join of
+helper entries, every one judged at its own call sites, is the new ENTRY_SUPPLIED stop (a NOTE,
+census-exempt): dcaa/dcba warnings -> notes, and bionic's prg_mode lock forms (3, first at c04b,
+shifter reset at ffe1 outvoted). bionic warnings 2 -> 0, notes 3 -> 5, bankComments 5 -> 6,
+refs.intoOverlay.retargeted 1 -> 2. check nes: the other 34 rows byte-identical;
+build-and-test.sh check SUITE OK after nesmmc1test's M11 shadow-helper control moved from
+"stays a warning" to "entry-supplied note" (its c252/c262 are a transcription of dcaa/dcba).
+
 ## 2026-10-15 -- cv3 re-blessed (grm-dos9.11)
 
 BankDataflowEngine.joinArms now admits a join predecessor in another function's body (the

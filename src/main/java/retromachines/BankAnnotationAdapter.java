@@ -508,6 +508,7 @@ final class BankAnnotationAdapter {
 		return switch (stop) {
 			case RUNTIME_SOURCE -> "runtime source";
 			case HELPER_ARGUMENT -> "helper argument";
+			case ENTRY_SUPPLIED -> "entry-supplied";
 			case SECOND_TIER_ARGUMENT -> "second-tier argument";
 			case RESTORED_BANK -> "restored bank";
 			case MULTI_VALUED_AT_MERGE -> "fork budget";
@@ -546,6 +547,11 @@ final class BankAnnotationAdapter {
 				"reached the helper's entry, where the register holds whatever the caller " +
 				"supplied, so the bank cannot be known from inside the helper body. Each CALL " +
 				"SITE is resolved separately; see the call sites' own annotations.";
+			case ENTRY_SUPPLIED -> "Bank value is supplied at each ENTRY: this code is reached " +
+				"from several entries into the helper, and on every path the value is fixed at " +
+				"the entry -- either the caller's argument, or a bank the entry's own prologue " +
+				"restores from RAM -- so the bank cannot be known from inside the helper body. " +
+				"Each entry's CALL SITES are judged separately; see their own annotations.";
 			case SECOND_TIER_ARGUMENT -> "Bank value is a SECOND-TIER HELPER's inbound " +
 				"argument: this call forwards a register value that this wrapper function never " +
 				"defines itself -- it is supplied by the wrapper's OWN caller, one frame further " +

@@ -5289,24 +5289,34 @@ public class VerifyBankTest extends GhidraScript {
 		//                      PLA to its PHA; it then lands on the entry => NOTE as well. This
 		//                      is the half most likely to regress silently, since a lost PHA
 		//                      pairing would turn it into an ordinary analyzer limit.
-		//   $C250 shadow       LDA $65 then the chain -- the bank comes from a RAM shadow, NOT
-		//                      from the caller. The scan stops on that load, never reaches the
-		//                      entry, and the site stays a WARNING. THIS IS THE CONTROL: it is
-		//                      the assertion that would fail if the classification were merely
-		//                      "any unresolved value inside a helper is honest", which is the
-		//                      exact over-broad rule grm-rr5p exists to prevent.
+		//   $C250 shadow       LDA $65 then the chain -- Bionic Commando's FUN_dca8. Its chain
+		//                      head c252 is a JOIN: the c250 restore falls into it, and the
+		//                      $C286 thunk enters it mid-body with the caller's bank in A. Until
+		//                      grm-dos9.14 this was the CONTROL that stayed a WARNING. It is now
+		//                      ENTRY_SUPPLIED -- a NOTE of its own kind, not HELPER_ARGUMENT,
+		//                      whose "the caller supplied it" is false on the restore arm --
+		//                      because EVERY arm is judged at its entry's call sites: c250 is a
+		//                      proven restore reached only by calls (via the $C283 thunk), and
+		//                      $C286 is a thunk only calls reach. Owner ruling 2026-10-16. The
+		//                      guard against grm-rr5p's over-broad rule ("any unresolved value
+		//                      inside a helper is honest") moved with it: an arm whose own code
+		//                      sets A keeps the WARNING (ModeLockSerialShiftProgramTest
+		//                      .anArmThatSetsTheRegisterItselfKeepsTheWarning). Still no bank claim.
 		//
 		// The call sites keep their own warnings regardless -- see M9 at c06c.
 		boolean argHelperNoted = hasNoteBookmark(0xC200) && hasNoteBookmark(0xC210) &&
 			!hasWarningBookmark(0xC200) && !hasWarningBookmark(0xC210);
 		boolean saverNoted = hasNoteBookmark(0xC2A7) && hasNoteBookmark(0xC2B7) &&
 			!hasWarningBookmark(0xC2A7) && !hasWarningBookmark(0xC2B7);
-		boolean shadowStillWarns = hasWarningBookmark(0xC252) && hasWarningBookmark(0xC262) &&
-			!hasNoteBookmark(0xC252) && !hasNoteBookmark(0xC262);
-		criterion("M11", argHelperNoted && saverNoted && shadowStillWarns,
-			"argument helpers noted, RAM-shadow helper still warned: SwitchBank(c200/c210)=" +
+		boolean shadowEntrySupplied = hasNoteBookmark(0xC252) && hasNoteBookmark(0xC262) &&
+			!hasWarningBookmark(0xC252) && !hasWarningBookmark(0xC262) &&
+			eol(0xC252).contains("entry-supplied") && eol(0xC262).contains("entry-supplied") &&
+			!eol(0xC252).contains("bank ->") && !eol(0xC262).contains("bank ->");
+		criterion("M11", argHelperNoted && saverNoted && shadowEntrySupplied,
+			"argument helpers noted, RAM-shadow helper's join entry-supplied: SwitchBank(c200/c210)=" +
 				argHelperNoted + " saver(c2a7/c2b7)=" + saverNoted +
-				" shadow-stays-warning(c252/c262)=" + shadowStillWarns);
+				" shadow-entry-supplied(c252/c262)=" + shadowEntrySupplied + " [c252 \"" +
+				eol(0xC252) + "\"]");
 
 		// M10: disassembly sanity -- the JSR-target overlay instructions actually exist.
 		criterion("M10:W8000_M3_B2_8000", hasInstructionAt("W8000_M3_B2", 0x8000),

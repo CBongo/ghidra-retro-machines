@@ -255,6 +255,114 @@ public class ModeLockSerialShiftProgramTest extends AbstractProgramTest {
 			result.modeLock().outvoted().contains(addr(0xc000)));
 	}
 
+	/**
+	 * Bionic Commando's shape (grm-dos9.14): one PRG chain with two entries.
+	 *
+	 * <pre>
+	 * c000  LDA #$0c / JSR c100     ; control: prg_mode 3
+	 * c005  LDA #$05 / JSR c216     ; set PRG bank 5 through the shadow-recording entry
+	 * c00a  JSR c200                ; restore it from the shadow
+	 * c00d  JMP c00d
+	 * c200  LDA $65                 ; FUN_dca8: restore entry, reloads the shadow
+	 * c202  STA $E000 ... c212      ; five-write chain into the PRG register
+	 * c215  RTS
+	 * c216  STA $65                 ; FUN_dcbe: records the caller's bank
+	 * c218  JMP c202                ; and enters the chain mid-body
+	 * </pre>
+	 */
+	private void layTwoEntryPrgChain() throws Exception {
+		layTwoEntryPrgChain(false);
+	}
+
+	/** {@link #layTwoEntryPrgChain()}, optionally with RESET also calling {@code SET_PRG_3}. */
+	private void layTwoEntryPrgChain(boolean thirdEntry) throws Exception {
+		if (thirdEntry) {
+			// ... c00a JSR c200 / c00d JSR c21b / c010 JMP c010
+			put(0xc000, "a9 0c 20 00 c1 a9 05 20 16 c2 20 00 c2 20 1b c2 4c 10 c0");
+			makeFunction(0xc000, 0xc012, "RESET", true);
+			put(0xc21b, "a9 03 4c 02 c2"); // LDA #$03 / JMP c202
+			makeFunction(0xc21b, 0xc21f, "SET_PRG_3", false);
+		}
+		else {
+			put(0xc000, "a9 0c 20 00 c1 a9 05 20 16 c2 20 00 c2 4c 0d c0");
+			makeFunction(0xc000, 0xc00f, "RESET", true);
+		}
+		put(0xc100, "8d 00 80 4a 8d 00 80 4a 8d 00 80 4a 8d 00 80 4a 8d 00 80 60");
+		makeFunction(0xc100, 0xc113, "SET_CONTROL", false);
+		put(0xc200, "a5 65 8d 00 e0 4a 8d 00 e0 4a 8d 00 e0 4a 8d 00 e0 4a 8d 00 e0 60");
+		makeFunction(0xc200, 0xc215, "RESTORE_PRG", false);
+		put(0xc216, "85 65 4c 02 c2");
+		makeFunction(0xc216, 0xc21a, "SET_PRG", false);
+		// $65 is RAM: the restore proof and the RAM-read stop both require a writable block.
+		inTx(program, "zp writable",
+			() -> program.getMemory().getBlock(addr(0x65)).setWrite(true));
+	}
+
+	/** {@link #run()}, with the analyzer's whole discovery chain (BoardBankAnalyzer.added). */
+	private BankDataflowEngine.DataflowResult runWithWrappers() throws Exception {
+		List<BankStrategyRegistry.ConfiguredMechanism> mechanisms = List.of(mmc1());
+		BankDataflowEngine.DataflowResult pass1 = BankDataflowEngine.runDataflow(program,
+			TaskMonitor.DUMMY, program.getListing(), mechanisms, board(), null, Map.of());
+		Map<Function, HelperModel> helpers = HelperDiscovery.findCallEdgeWrappers(program,
+			HelperDiscovery.findPassThroughWrappers(program,
+				HelperDiscovery.composeTailCalls(program,
+					HelperDiscovery.findHelpers(program, pass1.switchResults())),
+				pass1.switchResults()),
+			pass1.switchResults());
+		return BankDataflowEngine.runDataflow(program, TaskMonitor.DUMMY, program.getListing(),
+			mechanisms, board(), helpers, Map.of());
+	}
+
+	/** The JMP-closed entry is a call-edge wrapper, so its caller's bank is deposited. */
+	@Test
+	public void aWrapperClosedByAJumpIntoTheChainDepositsItsCallersBank() throws Exception {
+		layTwoEntryPrgChain();
+
+		BankDataflowEngine.DataflowResult result = runWithWrappers();
+
+		BankDataflowEngine.CallSwitch call = result.callSwitches().get(addr(0xc007));
+		assertNotNull("JSR c216 must be recognized as a helper call", call);
+		assertTrue(call.argumentResolved());
+		assertEquals("prg_bank 5 (bits 4-8)", 0x50, call.effect().bits() & 0x1F0);
+		assertEquals(0x1F0, call.effect().knownMask() & 0x1F0);
+	}
+
+	/**
+	 * The chain's write 1 sits at a join of the two entries (c200's fall-through and c218's JMP).
+	 * Each arm's value is judged elsewhere -- the restore entry's at its own call sites, the
+	 * wrapper's at its callers -- so neither the write-1 gate nor the commit votes, and the
+	 * control call's prg_mode 3 locks.
+	 */
+	@Test
+	public void aChainJoinedByTwoJudgedEntriesDoesNotBlockTheModeLock() throws Exception {
+		layTwoEntryPrgChain();
+
+		BankDataflowEngine.DataflowResult result = runWithWrappers();
+
+		assertEquals(BankSwitchStrategy.ValueStop.ENTRY_SUPPLIED,
+			result.switchResults().get(addr(0xc202)).stop());
+		assertEquals(BankSwitchStrategy.ValueStop.ENTRY_SUPPLIED,
+			result.switchResults().get(addr(0xc212)).stop());
+		assertNotNull("reason given: " + result.noModeLock(), result.modeLock());
+		assertEquals(0x0c, result.modeLock().state().bits() & MODE_MASK);
+	}
+
+	/**
+	 * Control: a third way in that sets A itself ({@code c21b LDA #$03 / JMP c202}, a function
+	 * of its own) is not a wrapper or a thunk, so nothing judges its value and the chain keeps
+	 * its warning -- no lock rests on it.
+	 */
+	@Test
+	public void anArmThatSetsTheRegisterItselfKeepsTheWarning() throws Exception {
+		layTwoEntryPrgChain(true);
+
+		BankDataflowEngine.DataflowResult result = runWithWrappers();
+
+		assertEquals(BankSwitchStrategy.ValueStop.ANALYZER_LIMIT,
+			result.switchResults().get(addr(0xc202)).stop());
+		assertNull(result.modeLock());
+	}
+
 	/** Implicit sets vote only when nothing sets the field explicitly (grm-dos9.9). */
 	@Test
 	public void implicitSetsVoteOnlyWhenNoExplicitSetExists() {

@@ -640,7 +640,9 @@ final class HelperDiscovery {
 	 * <p>
 	 * A tail {@code JMP} that Ghidra's shared-return analysis retyped {@code CALL_TERMINATOR}
 	 * reports {@code isCall()} and counts as a relay. It is the SOUNDER case: control never
-	 * returns to the wrapper, so there is no post-relay body to assume anything about.
+	 * returns to the wrapper, so there is no post-relay body to assume anything about. A plain
+	 * {@code JMP} closing the body counts too ({@link #isTailJump}, bead grm-dos9.14): Ghidra
+	 * leaves it untyped when its target is a helper's MID-BODY entry rather than a function.
 	 * <p>
 	 * <b>What is checked versus what is ASSUMED.</b> Checked: the prefix is inert and
 	 * unconditional; no recognized mechanism write appears ANYWHERE in the wrapper's body (the
@@ -719,7 +721,7 @@ final class HelperDiscovery {
 					rejected = true; // writes a mechanism -- a helper, not a wrapper
 					break;
 				}
-				if (!instr.getFlowType().isCall()) {
+				if (!instr.getFlowType().isCall() && !isTailJump(instr, wrapper)) {
 					continue;
 				}
 				HelperModel target = calledHelper(program, instr, helpers);
@@ -747,6 +749,24 @@ final class HelperDiscovery {
 			result.put(wrapper, model);
 		}
 		return result;
+	}
+
+	/**
+	 * Whether {@code instr} is {@code wrapper}'s closing plain {@code JMP} (bead grm-dos9.14): an
+	 * unconditional, non-computed jump with one target, and the last instruction of the body.
+	 * {@link #findCallEdgeWrappers} accepts it as a relay alongside a call. Bionic's
+	 * {@code FUN_dcbe} ({@code STA $65 / JMP dcaa}) is the shape: it records the caller's bank in
+	 * the shadow and enters {@code FUN_dca8}'s serial chain mid-body. Ghidra types the JMP a plain
+	 * {@code UNCONDITIONAL_JUMP}, not the {@code CALL_TERMINATOR} the existing relay rule already
+	 * accepts, because its target is not a function entry. Like that case, control never returns
+	 * to the wrapper, so there is no post-relay body to assume anything about; being the body's
+	 * last instruction is what makes that true here.
+	 */
+	static boolean isTailJump(Instruction instr, Function wrapper) {
+		FlowType flow = instr.getFlowType();
+		return flow.isJump() && flow.isUnConditional() && !flow.isComputed() &&
+			instr.getFlows().length == 1 &&
+			instr.getMaxAddress().equals(wrapper.getBody().getMaxAddress());
 	}
 
 	/**

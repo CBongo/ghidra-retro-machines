@@ -283,17 +283,7 @@ licence, MIT added 2026-10-14 (`grm-9nxj.8`); [deity-informant#359](https://gith
 
 Agents don't write into your ROM library or other personal directories.
 
-- [ ] **Copy five real-ROM images into an indexed ROM dir** (`grm-x4y1.8`, `grm-x4y1.6`,
-      `grm-3rel`). On 2026-10-15 `adventure_island`, `punchout` and `deadly_towers` were added, and
-      `cv3`/`dodge` were retargeted from overdumps to clean dumps, all pinned to files in
-      `H:/emulators/nes/ROMs/All NES Roms (GoodNES)/USA`. That folder is not in `GRM_ROM_DIR`
-      and can't be, because its path contains spaces (`grm-3rel`). Until the files are copied, a
-      plain `check nes` SKIPs those rows and ends `OK (PARTIAL: 5 skipped)`. Copy into
-      `H:/emulators/nes/roms` (or any dir already in `GRM_ROM_DIR`):
-      `Adventure Island (U) [!].nes`, `Punch-Out!! (U) [!].nes`, `Deadly Towers (U) [!].nes`,
-      `Castlevania III - Dracula's Curse (U) [!].nes`, `Super Dodge Ball (U) [!].nes`.
-      Then `bash tools/banktest/realrom-test.sh check nes` should run all 35 rows with none
-      skipped (`deadly_towers` fails as BATCH-DEPENDENT until `grm-pwuh` is fixed).
+(No open items.)
 
 ---
 
@@ -408,3 +398,4 @@ Agents don't write into your ROM library or other personal directories.
 | #9447: send the lowest-target-bound PR unprompted? | **Yes, sent (owner, 2026-10-04) as [NationalSecurityAgency/ghidra PR #9717](https://github.com/NationalSecurityAgency/ghidra/pull/9717)**, from `CBongo/ghidra` `fix/jumptable-lowest-target` (`5be3ac25`, cut from upstream master `a462673d`) with the body drafted on `grm-b3m`. It states its gaps up front: numbers from 12.1.2/12.1.3, not master; 6502-only corpus; no datatest; declines on the table-after-code idiom. Follow review on the PR. If a datatest is requested, the #9447 dispatcher (megaman `a721`) as a `6502:LE:16` `binaryimage` asserting 8 cases is the planned one, and it needs a toolchain that builds `decomp_test_dbg` (MSYS2 POSIX gcc or Linux). The extension-side `JumpTableBoundAnalyzer` stays regardless. | `grm-b3m` (open, pending review) |
 | Homebrew ROMs as committable real-ROM fixtures? | **No committed binaries (owner, 2026-09-19); punted to P4, semi-open.** When picked up: a separate opt-in `manifest-homebrew.tsv` set for titles the user has built locally. Rows are identified by source commit/tag, not only by a binary SHA-256. Like every opt-in tier it SKIPs loudly when unset, never gates `check`, and never runs in CI. The binary license survey is moot because nothing is redistributed. The one residual question is whether committed golden *dumps* (which quote disassembly) are OK. Do not re-ask "commit the ROMs?". | `grm-5ioo` (open, P4) |
 | GP-6936: open the RAM-half PR (fixes #4148) and post the correction on #9655? | **Done (owner, 2026-10-10): [PR #9765](https://github.com/NationalSecurityAgency/ghidra/pull/9765)** from `fix-wrapped-ram-range` (`space.cc` + `datatests/wraprange2.xml`) and the [#9655 correction](https://github.com/NationalSecurityAgency/ghidra/issues/9655#issuecomment-6102852548), which withdraws "exempt spacebase spaces" (it breaks upstream's x86-64 `wraprange.xml`) and asks the maintainer to choose between two directions for the 6502 half. Do not PR a spacebase fix until they answer. Follow-up `certification.manifest` line pushed the same day. | `grm-qp5x.2` |
+| Copy the five GoodNES-USA real-ROM images into an indexed ROM dir? | **Not needed (owner, 2026-10-16): the GoodNES USA dir went straight into `GRM_ROM_DIR` instead**, using grm-3rel's `;`-separated form (`H:/emulators/nes/roms;Z:/nes/db;H:/emulators/nes/ROMs/All NES Roms (GoodNES)/USA` in `.claude/settings.local.json`). `adventure_island`, `punchout`, `deadly_towers`, `cv3` and `dodge` now resolve on a plain `check nes`; all 35 rows ran on 2026-10-15 (grm-dos9.11) with the dir passed positionally. Do not copy the files. | `grm-3rel`, `grm-x4y1.8` |

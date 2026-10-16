@@ -403,46 +403,71 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	@Override
 	public ValueStop classifyHelperBodyGap(Program program, Instruction switchSite,
 			MechanismState inState, Address helperEntry) {
+		GapScan gap = gapScan(program, switchSite);
+		if (gap == null) {
+			return ValueStop.ANALYZER_LIMIT;
+		}
+		return gapStop(program, gap, inState, RegisterEnv.entryStopOnly(helperEntry)) ==
+			ValueStop.HELPER_ARGUMENT ? ValueStop.HELPER_ARGUMENT : ValueStop.ANALYZER_LIMIT;
+	}
+
+	/** {@link #classifyHelperBodyGap}'s scan along one arm, its stop uncollapsed (grm-dos9.14). */
+	@Override
+	public ValueStop classifyHelperBodyArm(Program program, Instruction switchSite,
+			MechanismState inState, Address entry, Map<Address, Address> arms) {
+		GapScan gap = gapScan(program, switchSite);
+		if (gap == null) {
+			return ValueStop.ANALYZER_LIMIT;
+		}
+		return gapStop(program, gap, inState, RegisterEnv.entryStopOnArms(entry, arms));
+	}
+
+	/** Where a helper-body gap's register scan starts, which register, and under which hooks. */
+	private record GapScan(Instruction from, char reg, StoredValueScanner.Hooks hooks) {}
+
+	/**
+	 * The register scan behind an unresolved value here, or null when the gap is not a register
+	 * scan at all (see {@link #classifyHelperBodyGap}'s javadoc for the two forks and why every
+	 * other poison branch has none).
+	 */
+	private GapScan gapScan(Program program, Instruction switchSite) {
 		Long offset = writesInRange(switchSite);
 		if (offset == null) {
 			// The counted-loop BNE: a structural commit, with no per-site register scan.
-			return ValueStop.ANALYZER_LIMIT;
+			return null;
 		}
 		Character reg = StoredValueScanner.storeRegister(switchSite);
 		if (reg == null || isCountedLoopBody(program, switchSite)) {
-			return ValueStop.ANALYZER_LIMIT;
+			return null;
 		}
 
 		if (!precededByLsrA(program, switchSite)) {
-			return entryGap(program, switchSite, reg, inState,
-				hooksFor(targets.get(targetIndex(offset))), helperEntry);
+			return new GapScan(switchSite, reg, hooksFor(targets.get(targetIndex(offset))));
 		}
 		if (reg != 'A') {
-			return ValueStop.ANALYZER_LIMIT;
+			return null;
 		}
 		ChainInfo chain = analyzeChain(program, switchSite);
 		if (chain == null || chain.total() != 5 || chain.index() < 5) {
-			return ValueStop.ANALYZER_LIMIT;
+			return null;
 		}
 		List<TargetField> fields = targets.get(targetIndex(offset));
 		if (fields == null) {
-			return ValueStop.ANALYZER_LIMIT;
+			return null;
 		}
-		return entryGap(program, chain.chainStart(), 'A', inState, hooksFor(fields), helperEntry);
+		return new GapScan(chain.chainStart(), 'A', hooksFor(fields));
 	}
 
 	/**
-	 * {@code HELPER_ARGUMENT} iff a backward scan of {@code reg} from {@code from} reaches
-	 * {@code helperEntry} without finding a definition -- the shared tail of the two forks above.
-	 * The scanned VALUE is discarded, so this can only reclassify; see
+	 * The stop of {@code gap}'s backward scan under {@code env}, an entry-stop env:
+	 * {@code HELPER_ARGUMENT} iff it reaches the entry without finding a definition. The scanned
+	 * VALUE is discarded, so this can only reclassify; see
 	 * {@link BankSwitchStrategy#classifyHelperBodyGap} for why that makes the extra scan safe.
 	 */
-	private ValueStop entryGap(Program program, Instruction from, char reg, MechanismState inState,
-			StoredValueScanner.Hooks hooks, Address helperEntry) {
-		StoredValueScanner.Scan atEntry = StoredValueScanner.resolveStoredValueScan(program, from,
-			reg, inState, PartialByte.BYTE_MASK, hooks, RegisterEnv.entryStopOnly(helperEntry));
-		return atEntry.stop() == ValueStop.HELPER_ARGUMENT ? ValueStop.HELPER_ARGUMENT
-				: ValueStop.ANALYZER_LIMIT;
+	private static ValueStop gapStop(Program program, GapScan gap, MechanismState inState,
+			RegisterEnv env) {
+		return StoredValueScanner.resolveStoredValueScan(program, gap.from(), gap.reg(), inState,
+			PartialByte.BYTE_MASK, gap.hooks(), env).stop();
 	}
 
 	private SwitchOutcome computeSwitchOutcomeValue(Program program, Instruction instr,
