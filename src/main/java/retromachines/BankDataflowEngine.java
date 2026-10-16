@@ -1235,11 +1235,12 @@ final class BankDataflowEngine {
 	 * least two enumerable predecessors, returns one arm per predecessor: {@code base} extended
 	 * with {@code join -> predecessor}. {@code null} otherwise.
 	 * <p>
-	 * A join is FORKABLE only when every incoming edge is a known intraprocedural jump, branch or
-	 * fall-through from a disassembled instruction in the same function as the join, and the join
-	 * is not a function entry point. A CALL reference means the block is entered by callers, whose
-	 * context is not an arm; an edge from another function, or from an undisassembled address,
-	 * means the walk could not soundly continue along it. A block start with a SINGLE known
+	 * A join is FORKABLE only when every incoming edge is a known jump, branch or fall-through
+	 * from a disassembled instruction, and the join is not a function entry point. A CALL
+	 * reference means the block is entered by callers, whose context is not an arm; an edge from
+	 * an undisassembled address means the walk could not soundly continue along it. An edge from
+	 * another function's body is an arm like any other (bead grm-dos9.11: a store tail shared by
+	 * several entries). A block start with a SINGLE known
 	 * predecessor is deliberately not enumerated: the value scan refuses such a boundary today
 	 * for its linkage rule, not the join rule, and lifting that is a separate question from this
 	 * bead's (a two-armed merge). Unresolved computed jumps leave no reference and are invisible
@@ -1266,11 +1267,21 @@ final class BankDataflowEngine {
 		// Predecessor enumeration under the closed-world rules is shared with
 		// StoredValueScanner.crossBlockMatchingPush (bead grm-mej.3 increment X1), which needs
 		// the identical rule -- flow refs + fall-through only, no call references into the span,
-		// every predecessor disassembled and in the same function, never crossing a function
-		// entry -- for its own ALL-PATHS backward search. This method's own extra requirement (at
-		// least two predecessors -- a fork needs two arms; a single-predecessor boundary is the
-		// value scan's separate linkage refusal) is checked here, after the shared call.
-		List<Address> preds = StoredValueScanner.closedWorldPredecessors(program, listing, headAddr);
+		// every predecessor disassembled, never crossing a function entry -- for its own
+		// ALL-PATHS backward search. This method's own extra requirement (at least two
+		// predecessors -- a fork needs two arms; a single-predecessor boundary is the value
+		// scan's separate linkage refusal) is checked here, after the shared call.
+		//
+		// A predecessor in ANOTHER function is admitted (bead grm-dos9.11), as the cross-block
+		// search already does (grm-mej.21). The case is a store tail shared by several entries:
+		// cv3's e2d6 LDA #$87 / BNE e2dc and e2da LDA #$9e both reach e2dc STA $5116, and Ghidra
+		// gives the tail to one function only, so one edge always looks cross-function. An arm
+		// is a claim about the path through that edge, never about a caller's context: every
+		// rule a walk along it applies (refuse at a function entry, refuse at a call reference)
+		// still holds at each node it reaches, so the arm resolves only when its own straight
+		// line defines the value, exactly as a same-function arm does.
+		List<Address> preds =
+			StoredValueScanner.closedWorldPredecessors(program, listing, headAddr, true);
 		if (preds == null || preds.size() < 2) {
 			return null;
 		}

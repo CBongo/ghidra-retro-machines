@@ -15,6 +15,17 @@ underscores or asterisks may render oddly. Each was true when written, and later
 supersede earlier ones. A bead id or commit hash in an entry is the authoritative record of
 that change.
 
+## 2026-10-15 -- cv3 re-blessed (grm-dos9.11)
+
+BankDataflowEngine.joinArms now admits a join predecessor in another function's body (the
+4-arg closedWorldPredecessors, as grm-mej.21's cross-block search already did). cv3's e2dc
+STA $5116 is a store tail shared by the e2d6 (LDA #$87 / BNE e2dc) and e2da (LDA #$9e)
+entries; Ghidra gives the tail to FUN_e2da only, so the BNE edge looked cross-function and the
+site warned "genuinely undeterminable". It now forks on bank_5116 = 7 | 30 (bit 7 is MMC5's ROM
+select). cv3 warnings 15 -> 14, bankComments 171 -> 172, nothing else moved. check nes: the
+other 34 rows byte-identical (run with the GoodNES USA dir passed positionally, so no SKIPs);
+build-and-test.sh check SUITE OK.
+
 ## 2026-10-15 -- deadly_towers re-blessed (grm-pwuh, 53597e2)
 
 deadly_towers was carried as "BATCH-DEPENDENT: fails every batched run, solo passes" from

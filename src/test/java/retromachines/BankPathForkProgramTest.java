@@ -186,6 +186,44 @@ public class BankPathForkProgramTest extends AbstractProgramTest {
 		assertEquals(0, stats.forksDenied());
 	}
 
+	/**
+	 * cv3's {@code e2d6}/{@code e2da} shape (bead grm-dos9.11): two helper ENTRIES share one store
+	 * tail, and Ghidra gives the tail to the second entry's function only, so the first entry's
+	 * branch into it is a cross-function edge. Each arm's own straight line loads a constant, so
+	 * the site forks on {1, 2} instead of warning "genuinely undeterminable".
+	 *
+	 * <pre>
+	 * c000  LDX #$01     ; FUN_A entry
+	 * c002  BNE c006     ; always taken (Z clear) -- into FUN_B's tail
+	 * c004  LDX #$02     ; FUN_B entry
+	 * c006  STX $9000    ; the shared tail -- the fork site
+	 * c009  RTS
+	 * </pre>
+	 */
+	@Test
+	public void sharedStoreTailReachedFromAnotherEntrysBodyForksOnBothArms() throws Exception {
+		put(0xc000, "a2 01"); // LDX #$01
+		put(0xc002, "d0 02"); // BNE c006
+		put(0xc004, "a2 02"); // LDX #$02
+		put(0xc006, "8e 00 90"); // STX $9000
+		put(0xc009, "60"); // RTS
+		makeFunction(0xc000, 0xc003, "FUN_A");
+		makeFunction(0xc004, 0xc009, "FUN_B");
+
+		BoardDescriptorModel.BoardModel board = board();
+		BankDataflowEngine.DataflowResult result =
+			run(List.of(mechanism(latch(board, 0x9000, 0x9100), board)), board);
+
+		BankDataflowEngine.SwitchResult sr = result.switchResults().get(addr(0xc006));
+		assertNotNull(sr);
+		assertTrue("a cross-function arm into a shared tail is an arm like any other",
+			sr.forked());
+		assertEquals(BankSwitchStrategy.ValueStop.RESOLVED, sr.stop());
+		assertEquals(2, sr.arms().size());
+		assertEquals(0x1, sr.arms().get(0).bits());
+		assertEquals(0x2, sr.arms().get(1).bits());
+	}
+
 	// ------------------------------------------------------------------
 	// (b) Ordinary merges (not demanded by a switch site) still merge field-wise
 	// ------------------------------------------------------------------

@@ -496,9 +496,9 @@ public class CrossBlockPushPullProgramTest extends AbstractProgramTest {
 		assertEquals(BankSwitchStrategy.ValueStop.ANALYZER_LIMIT, scan.stop());
 	}
 
-	/** The strict rule is unchanged for the three-argument form, which {@code joinArms} still
-	 *  uses: it sees A's {@code JMP} as an edge it cannot enumerate. (The save-slot proof opted in
-	 *  with bead grm-mej.22 -- see {@link CrossCallSaveSlotProgramTest}.) */
+	/** The strict rule is unchanged for the three-argument form: it sees A's {@code JMP} as an
+	 *  edge it cannot enumerate. (The save-slot proof opted in with bead grm-mej.22 -- see
+	 *  {@link CrossCallSaveSlotProgramTest} -- and {@code joinArms} with grm-dos9.11.) */
 	@Test
 	public void strictPredecessorRuleStillRefusesTheCrossFunctionJump() throws Exception {
 		sharedTailScan(true);

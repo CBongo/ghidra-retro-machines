@@ -1440,7 +1440,9 @@ final class StoredValueScanner {
 	 * and {@link #crossBlockMatchingPush} enumerate a join's incoming edges under the identical
 	 * rule -- {@code joinArms} additionally requires at least two predecessors (a fork needs two
 	 * arms; a single-predecessor boundary is the value scan's separate linkage refusal, not a join
-	 * at all), which it still checks itself after calling this.
+	 * at all), which it still checks itself after calling this. Every production caller now uses
+	 * the four-argument form with cross-function edges admitted ({@code joinArms} since bead
+	 * grm-dos9.11); this strict form remains as the rule's reference definition.
 	 */
 	static List<Address> closedWorldPredecessors(Program program, Listing listing,
 			Address headAddr) {
@@ -1456,8 +1458,8 @@ final class StoredValueScanner {
 	 * enumerated edge: a jump moves no stack byte, and every rule the walk applies -- the
 	 * function-entry and call-reference abandons, the per-address depth check -- is applied at
 	 * each node it reaches, relative to that node's own function. {@link #crossBlockMatchingPush}
-	 * and the save-slot proof ({@link #solveSlot}, bead grm-mej.22) opt in; {@code joinArms}
-	 * keeps the strict rule.
+	 * and the save-slot proof ({@link #solveSlot}, bead grm-mej.22) opt in, and so does
+	 * {@code joinArms} (bead grm-dos9.11: cv3's e2d6/e2da entries sharing the e2dc store tail).
 	 */
 	static List<Address> closedWorldPredecessors(Program program, Listing listing,
 			Address headAddr, boolean admitCrossFunctionJumps) {
