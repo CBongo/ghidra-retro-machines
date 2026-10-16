@@ -31,6 +31,7 @@ import java.util.TreeMap;
 import ghidra.program.database.mem.FileBytes;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressIterator;
+import ghidra.program.model.address.AddressOutOfBoundsException;
 import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.FunctionManager;
@@ -309,6 +310,7 @@ final class BankDataflowEngine {
 		Map<Address, CallSwitch> callSwitches = new HashMap<>();
 		Deque<Address> worklist = new ArrayDeque<>();
 		Map<String, int[]> clampCache = new HashMap<>();
+		Map<String, int[]> residenceInvariantCache = new HashMap<>();
 		// Scoped to this runDataflow call (not a field): phase 1/2 separation guarantees no
 		// instruction appears mid-fixpoint, so per-call scoping sidesteps any staleness
 		// question. See probeSite for the soundness invariant this relies on (grm-5tl.13.2).
@@ -629,7 +631,8 @@ final class BankDataflowEngine {
 			for (OutElement out : outs) {
 				for (Address flowAddr : instr.getFlows()) {
 					if (mapsElsewhere(program, flowAddr, addr, out.out(), bankResolution) ||
-						contradictsResidence(program, flowAddr, addr, out.out(), bankResolution)) {
+						contradictsResidence(program, flowAddr, addr, out.out(), bankResolution,
+							residenceInvariantCache)) {
 						continue;
 					}
 					// A fork ends at a function entry: a call target, or a jump onto an entry
@@ -645,7 +648,7 @@ final class BankDataflowEngine {
 					!mapsElsewhere(program, fallThrough, addr, out.fall(),
 						bankResolution) &&
 					!contradictsResidence(program, fallThrough, addr, out.fall(),
-						bankResolution)) {
+						bankResolution, residenceInvariantCache)) {
 					PathId to = budget.isFunctionEntry(fallThrough) ? PathId.ROOT : out.pathId();
 					mergeAndEnqueue(fallThrough, to, out.fall(), stateIn, collapsedAddrs,
 						worklist, listing, board, clampCache, budget, stateDependents);
@@ -1831,12 +1834,18 @@ final class BankDataflowEngine {
 	 * <p>
 	 * Decided by occupant, not by raw bits, so a bank number the image wraps (MMC3's r7=44 on a
 	 * 32-bank ROM selects bank 12) still reaches its overlay. Same exemptions as
-	 * {@code mapsElsewhere}: only fully known state counts (a partly known one still clamps), a
-	 * flow from the target's own window stays (code that switches its own window runs on into
-	 * whatever bank is now live), and so does an occupant backed by the same image byte.
+	 * {@code mapsElsewhere}: a flow from the target's own window stays (code that switches its
+	 * own window runs on into whatever bank is now live), and so does an occupant backed by the
+	 * same image byte.
+	 * <p>
+	 * A PARTLY known state (grm-dos9.13) cannot name the occupant that runs, so it is tested
+	 * against {@link #residenceInvariant} instead: only the bits wrap cannot alias. Since the
+	 * occupant is unknown, the same-image-byte exemption is taken whenever ANY other space backs
+	 * this offset with the target's byte.
 	 */
 	static boolean contradictsResidence(Program program, Address target, Address from,
-			BankState state, HelperDiscovery.BankResolution ctx) {
+			BankState state, HelperDiscovery.BankResolution ctx,
+			Map<String, int[]> invariantCache) {
 		AddressSpace space = target.getAddressSpace();
 		if (ctx == null || !space.isOverlaySpace()) {
 			return false;
@@ -1847,15 +1856,108 @@ final class BankDataflowEngine {
 		}
 		BankAnnotationAdapter.OffsetResolution r = BankAnnotationAdapter.resolveOffsetOccupant(
 			ctx.board(), ctx.bankUniverse(), state, target.getOffset(), Map.of());
-		if (r == null || !r.fullyKnown()) {
+		if (r != null && r.fullyKnown()) {
+			AddressSpace runs = r.home() ? space.getPhysicalSpace()
+					: program.getAddressFactory().getAddressSpace(r.space());
+			if (runs == null || runs.equals(space)) {
+				return false;
+			}
+			return !sameImageByte(program, target, runs.getAddress(target.getOffset()));
+		}
+		int[] inv = invariantCache.computeIfAbsent(space.getName(),
+			name -> residenceInvariant(name, ctx));
+		if (inv.length == 0 || (state.knownMask() & inv[0] & (state.bits() ^ inv[1])) == 0) {
 			return false;
 		}
-		AddressSpace runs = r.home() ? space.getPhysicalSpace()
-				: program.getAddressFactory().getAddressSpace(r.space());
-		if (runs == null || runs.equals(space)) {
-			return false;
+		return !imageByteBackedElsewhere(program, target);
+	}
+
+	/**
+	 * {@code {mask, bits}}: the part of {@code overlayName}'s residence that bank wrap cannot
+	 * alias, or an empty array for an overlay that pins nothing. The mode field never wraps; of a
+	 * bank field, only the decoded bits {@link BankAnnotationAdapter#canonicalBank} preserves --
+	 * applied to an all-ones value, it returns exactly that mask (the truncation's {@code n-1},
+	 * an explicit {@code bank_wrap}, or every bit where the guard declines), so the wrap rule
+	 * lives in one place. {@link #clampToResidence}'s mask is the unwrapped superset.
+	 */
+	private static int[] residenceInvariant(String overlayName,
+			HelperDiscovery.BankResolution ctx) {
+		BoardModel board = ctx.board();
+		for (ComputedWindowModel w : board.computedWindows().values()) {
+			Integer v = DescriptorSupport.OverlayNaming.parseBankValue(w.name(), overlayName);
+			if (v != null) {
+				int mask = wrapInvariantBits(board, ctx.bankUniverse().get(w.name()), w.field(),
+					w.decodedMask());
+				return new int[] { mask, w.field().pos().place(v) & mask };
+			}
 		}
-		return !sameImageByte(program, target, runs.getAddress(target.getOffset()));
+		FieldSpec modeField = board.modeField();
+		if (modeField == null) {
+			return new int[0];
+		}
+		Set<String> windowNames = new LinkedHashSet<>();
+		for (ModeWindowModel w : board.modeWindows()) {
+			windowNames.add(w.name());
+		}
+		for (String windowName : windowNames) {
+			DescriptorSupport.OverlayNaming.ModeBank mb =
+				DescriptorSupport.OverlayNaming.parseModeBankValue(windowName, overlayName);
+			if (mb != null) {
+				ModeWindowModel instance = BankAnnotationAdapter
+					.findModeWindowInstance(board.modeWindows(), windowName, mb.mode());
+				if (instance == null || instance.bankField() == null) {
+					continue;
+				}
+				int bankMask = wrapInvariantBits(board, ctx.bankUniverse().get(
+					BankAnnotationAdapter.modeBankKey(windowName, mb.mode())),
+					instance.bankField(), instance.decodedMask());
+				return new int[] { modeField.positionedMask() | bankMask,
+					modeField.pos().place(mb.mode()) |
+						(instance.bankField().pos().place(mb.bank()) & bankMask) };
+			}
+			Integer mv = DescriptorSupport.OverlayNaming.parseModeValue(windowName, overlayName);
+			if (mv != null) {
+				return new int[] { modeField.positionedMask(), modeField.pos().place(mv) };
+			}
+		}
+		return new int[0];
+	}
+
+	/** Positioned bits of {@code field} that select the same image whatever wrap does. */
+	private static int wrapInvariantBits(BoardModel board, Set<Integer> realized, FieldSpec field,
+			long decodedMask) {
+		int full = (int) BoardDescriptorModel.fullMask(field);
+		int kept = BankAnnotationAdapter.canonicalBank(board.bankWrap(), realized, full);
+		return field.pos().place(kept & (int) decodedMask);
+	}
+
+	/**
+	 * Whether some OTHER space realizes {@code target}'s offset from the same image byte -- the
+	 * occupant-agnostic form of the same-image-byte exemption, for a state too partly known to
+	 * name its occupant.
+	 */
+	private static boolean imageByteBackedElsewhere(Program program, Address target) {
+		FileByte fb = fileByte(program, target);
+		if (fb == null) {
+			return true; // cannot tell -- keep the flow
+		}
+		for (MemoryBlock block : program.getMemory().getBlocks()) {
+			AddressSpace s = block.getStart().getAddressSpace();
+			if (s.equals(target.getAddressSpace())) {
+				continue;
+			}
+			Address a;
+			try {
+				a = s.getAddress(target.getOffset());
+			}
+			catch (AddressOutOfBoundsException e) {
+				continue;
+			}
+			if (block.contains(a) && fb.equals(fileByte(program, a))) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** Whether two addresses are backed by the same byte of the same loaded file. */
