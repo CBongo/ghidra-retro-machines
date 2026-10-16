@@ -280,7 +280,18 @@ final class BankContext {
 	 * in no tracked window.
 	 */
 	Address resolve(Instruction use, Address target) {
-		BankState state = stateBefore(use);
+		Address r = resolveUnder(stateBefore(use), target);
+		return r == null || r.getAddressSpace().equals(target.getAddressSpace()) ? null : r;
+	}
+
+	/**
+	 * The address the base-space offset of {@code target} reaches under an explicit
+	 * {@code state}: the home occupant's (base-space) address, an overlay address, or
+	 * {@code null} when the state does not fully determine the occupant or the offset is in no
+	 * tracked window. Unlike {@link #resolve}, "same memory" is answered with the address (grm-v60
+	 * needs to tell "home bank" from "undetermined").
+	 */
+	Address resolveUnder(BankState state, Address target) {
 		BankAnnotationAdapter.OffsetResolution r = BankAnnotationAdapter
 			.resolveOffsetOccupant(board, bankUniverse, state, target.getOffset(), placementOverride);
 		if (r == null || !r.fullyKnown()) {
@@ -288,7 +299,7 @@ final class BankContext {
 		}
 		AddressSpace space = r.home() ? program.getAddressFactory().getDefaultAddressSpace()
 				: program.getAddressFactory().getAddressSpace(r.space());
-		if (space == null || space.equals(target.getAddressSpace())) {
+		if (space == null) {
 			return null;
 		}
 		try {
@@ -297,6 +308,46 @@ final class BankContext {
 		catch (AddressOutOfBoundsException e) {
 			return null;
 		}
+	}
+
+	/** The first mechanism write {@link #switchedByEntry} found, and the bank state it sets. */
+	record EntrySwitch(Address writeSite, BankState state) {}
+
+	/**
+	 * What bank a routine entered at {@code entry} with the given A/X/Y switches in: walks the
+	 * unbroken fall-through run from {@code entry} to the first instruction some mechanism
+	 * recognizes as a bank write, and re-evaluates that write under the entry registers (the
+	 * helper mini-inline, {@link BankSwitchStrategy#depositHelperArgument}). {@code null} when
+	 * the run ends (branch, jump, call, return) before a write, or the write does not pin the
+	 * mechanism's whole field. The returned state knows only that mechanism's bits (grm-v60).
+	 */
+	EntrySwitch switchedByEntry(Address entry, PartialByte a, PartialByte x, PartialByte y) {
+		RegisterEnv env = new RegisterEnv(entry, null, a, x, y);
+		Listing listing = program.getListing();
+		Instruction cur = listing.getInstructionAt(entry);
+		for (int i = 0; cur != null && i < MAX_WALK; i++) {
+			for (ConfiguredMechanism cm : mechanisms) {
+				MechanismState unknown = MechanismState.unknown();
+				if (cm.strategy().computeSwitchOutcome(program, cur, unknown) == null) {
+					continue;
+				}
+				int width = cm.placement().widthMask();
+				BankSwitchStrategy.HelperDeposit deposit =
+					cm.strategy().depositHelperArgument(program, cur, a, unknown, width, env);
+				if (deposit == null || (deposit.value().knownMask() & width) != width) {
+					return null;
+				}
+				return new EntrySwitch(cur.getMinAddress(),
+					cm.placement().position(deposit.value()));
+			}
+			var ft = cur.getFlowType();
+			if (ft.isJump() || ft.isCall() || ft.isTerminal() || ft.isConditional()) {
+				return null;
+			}
+			Address next = cur.getFallThrough();
+			cur = next == null ? null : listing.getInstructionAt(next);
+		}
+		return null;
 	}
 
 	/** Which analyzer (if any) would claim the program: a pure gate probe for tests. */

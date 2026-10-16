@@ -318,6 +318,193 @@ final class IndirectJumpConstantPointer {
 		return null; // budget exhausted
 	}
 
+	// ---------------------------------------------------------------------
+	// grm-v60: pieces the far-call trampoline pass (FarCallTrampoline) reuses.
+	// ---------------------------------------------------------------------
+
+	/** A, X and Y as a straight-line walk left them (null = unknown). */
+	record Regs(Integer a, Integer x, Integer y) {
+	}
+
+	/**
+	 * Whether {@code instr} is a NON-INDEXED memory write whose operand is {@code offset} (the
+	 * 16-bit operand, compared without regard to address space): a plain {@code STA/STX/STY}, or
+	 * a memory read-modify-write ({@code INC/DEC/ASL/LSR/ROL/ROR}). Classified by opcode byte,
+	 * like {@link #classifyMode}. Indexed and indirect forms are deliberately NOT writers here;
+	 * that is the grm-v60 write-once rule's stated scope, which its corroboration step backstops.
+	 */
+	static boolean isDirectWriteTo(Instruction instr, long offset) {
+		int op = opcodeByte(instr);
+		switch (op) {
+			case 0x85, 0x8d, 0x86, 0x8e, 0x84, 0x8c, // STA STX STY
+				0xe6, 0xee, 0xc6, 0xce, // INC DEC
+				0x06, 0x0e, 0x46, 0x4e, 0x26, 0x2e, 0x66, 0x6e: // ASL LSR ROL ROR
+				break;
+			default:
+				return false;
+		}
+		Address a = directAddress(instr);
+		return a != null && a.getOffset() == offset;
+	}
+
+	/**
+	 * The constant a plain {@code STA/STX/STY} stores, when the store's own straight-line run
+	 * (backed up to its head, walked forward as a constant tracker) pins the stored register;
+	 * null otherwise (including when the store is not one of those three).
+	 */
+	static Integer storedConstant(Program program, Instruction store, TaskMonitor monitor)
+			throws CancelledException {
+		String mn = store.getMnemonicString();
+		Reg reg = switch (mn) {
+			case "STA" -> Reg.A;
+			case "STX" -> Reg.X;
+			case "STY" -> Reg.Y;
+			default -> null;
+		};
+		if (reg == null || classifyMode(store) != Mode.DIRECT) {
+			return null;
+		}
+		Listing listing = program.getListing();
+		Address pc = headOfRun(program, listing, store.getMinAddress(), monitor);
+		WalkState st = new WalkState();
+		for (int i = 0; i <= BACKWARD_STEP_CAP + 1; i++) {
+			Instruction instr = listing.getInstructionAt(pc);
+			if (instr == null) {
+				return null;
+			}
+			if (instr.getMinAddress().equals(store.getMinAddress())) {
+				return switch (reg) {
+					case A -> st.a;
+					case X -> st.x;
+					case Y -> st.y;
+				};
+			}
+			FlowType ft = instr.getFlowType();
+			if (ft.isJump() || ft.isCall() || ft.isTerminal() || ft.isConditional()) {
+				return null;
+			}
+			applyInstruction(program, instr, st);
+			pc = instr.getFallThrough();
+			if (pc == null) {
+				return null;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Walks forward from {@code start} as a static constant tracker (inline {@code JSR}s followed,
+	 * unconditional {@code JMP}s followed, no conditional branch) until control reaches
+	 * {@code goal}, and returns the registers there; null if the path does not provably reach
+	 * it. The same walker as {@link #resolveTargets}', aimed at an address rather than a jump.
+	 */
+	static Regs walkToAddress(Program program, Address start, Address goal, TaskMonitor monitor)
+			throws CancelledException {
+		Listing listing = program.getListing();
+		WalkState st = new WalkState();
+		Deque<Address> callStack = new ArrayDeque<>();
+		Address pc = start;
+		for (int steps = 0; steps < FORWARD_BUDGET; steps++) {
+			monitor.checkCancelled();
+			if (pc.equals(goal)) {
+				return new Regs(st.a, st.x, st.y);
+			}
+			Instruction instr = listing.getInstructionAt(pc);
+			if (instr == null) {
+				instr = hiddenInstructionAt(program, pc);
+			}
+			if (instr == null) {
+				return null;
+			}
+			if (st.mayHaveSwitched && !bankInvariant(program, instr)) {
+				return null;
+			}
+			FlowType ft = instr.getFlowType();
+			if (isDirectJump(instr)) {
+				pc = singleFlowTarget(instr);
+				if (pc == null) {
+					return null;
+				}
+				continue;
+			}
+			if (ft.isConditional() || ft.isComputed()) {
+				return null;
+			}
+			String mn = instr.getMnemonicString();
+			if ("JSR".equals(mn)) {
+				Address target = singleFlowTarget(instr);
+				Address ret = instr.getFallThrough();
+				if (target == null || ret == null || callStack.size() >= MAX_CALL_DEPTH) {
+					return null;
+				}
+				callStack.push(ret);
+				pc = target;
+				continue;
+			}
+			if ("RTS".equals(mn) || "RTI".equals(mn)) {
+				if (callStack.isEmpty()) {
+					return null;
+				}
+				pc = callStack.pop();
+				continue;
+			}
+			if (ft.isJump()) {
+				Address target = singleFlowTarget(instr);
+				if (target == null) {
+					return null;
+				}
+				pc = target;
+				continue;
+			}
+			if (ft.isTerminal() || ft.isCall()) {
+				return null;
+			}
+			applyInstruction(program, instr, st);
+			pc = instr.getFallThrough();
+			if (pc == null) {
+				return null;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Whether {@code instr} is a plain {@code JMP abs}, by opcode byte. Needed because the flow
+	 * type is NOT a reliable signal: once Ghidra decides a {@code JMP} is a tail call (wizwarr's
+	 * {@code bc0a JMP ff69}) it carries a CALL_RETURN override, so {@code getFlowType()} says
+	 * call-terminator, not jump.
+	 */
+	static boolean isDirectJump(Instruction instr) {
+		return opcodeByte(instr) == 0x4c;
+	}
+
+	/**
+	 * The instruction the CPU executes at {@code pc} when the listing has none there, decoded from
+	 * the bytes alone (never written to the listing): either {@code pc} is inside another
+	 * instruction (the skip idiom's hidden entry -- wizwarr's {@code bc08}, the {@code LDA #3}
+	 * inside {@code bc07 BIT $03a9}) or its bytes are simply not disassembled yet (the
+	 * {@code BIT} that {@code bc02}'s {@code LDA #1} falls into, which Ghidra cannot create
+	 * because {@code bc05} is an instruction start). Null where the bytes are defined data.
+	 */
+	private static Instruction hiddenInstructionAt(Program program, Address pc) {
+		Listing listing = program.getListing();
+		if (listing.getDefinedDataContaining(pc) != null) {
+			return null;
+		}
+		try {
+			return new ghidra.app.util.PseudoDisassembler(program).disassemble(pc);
+		}
+		catch (Exception e) {
+			return null;
+		}
+	}
+
+	/** Package-visible {@link #headOfRun}. */
+	static Address runHead(Program program, Address addr, TaskMonitor monitor)
+			throws CancelledException {
+		return headOfRun(program, program.getListing(), addr, monitor);
+	}
+
 	private static Address singleFlowTarget(Instruction instr) {
 		Address[] flows = instr.getFlows();
 		return flows.length == 1 ? flows[0] : null;

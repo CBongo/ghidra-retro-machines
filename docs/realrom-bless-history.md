@@ -15,6 +15,25 @@ underscores or asterisks may render oddly. Each was true when written, and later
 supersede earlier ones. A bead id or commit hash in an entry is the authoritative record of
 that change.
 
+## 2026-10-16 -- wizwarr re-blessed (grm-v60, far-call trampoline placement)
+
+New FarCallTrampolineAnalyzer resolves ff83 JMP ($001b) per call site: low byte from the
+caller's Y, high byte $80 from the write-once init store at 895a (owner ruling: general
+write-once rule, accepted only when the target lands on a JMP/JSR abs entry in the destination
+bank), bank from A via the bc02/bc05/bc08 BIT-skip entries. 58 call sites -> 24 vector slots in
+PRG_ALL_B1..B3, 0 declined. wizwarr: instrs.inOverlay 0 -> 3964, refs.intoOverlay.retargeted
+0 -> 24, intraOverlay 0 -> 915, bankComments 59 -> 61 (8c76/8ca0 bank 3 via FUN_0300), warnings
+3 -> 7 (ff76/ff7f "becomes unknown" now also in the B1/B2 overlay copies of the trampoline),
+symbols 23 -> 75. Removed sample lines are sampling only: the symbol sample now truncates
+(25 of 63), and the COPY_0300/033d notes are reworded because new bank-3 code calls into them.
+check nes: the other 34 rows byte-identical; build-and-test.sh check SUITE OK.
+
+## 2026-10-16 -- megaman/megaman3 and 21 other rows retargeted to GoodNES [!] (grm-cssm, grm-n2pa)
+
+Hash-line-only except drmario (overdump's phantom W8000_M0_B2/4/6 overlays gone, blocks 8 -> 5),
+kicarus (prgsha256: old pin had one corrupt byte) and megaman (relocation only, counts
+identical). See tools/banktest/realrom/README.md "Which dump each NES row pins".
+
 ## 2026-10-16 -- bionic re-blessed (grm-dos9.14)
 
 Two changes, both owner-ruled 2026-10-16. (1) HelperDiscovery.findCallEdgeWrappers accepts a

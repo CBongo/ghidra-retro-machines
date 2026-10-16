@@ -167,7 +167,7 @@ public class IndirectJumpConstantPointerAnalyzer extends AbstractAnalyzer {
 	 * register, mirroring {@code DecompilerSwitchAnalysisCmd.setSwitchTargetContext}). Function
 	 * creation is left to stock analysis; see the class javadoc for why.
 	 */
-	private void applyTarget(Program program, Listing listing, Instruction site, Address target,
+	static void applyTarget(Program program, Listing listing, Instruction site, Address target,
 			TaskMonitor monitor) throws CancelledException {
 		site.addMnemonicReference(target, RefType.COMPUTED_CALL, SourceType.ANALYSIS);
 
@@ -195,7 +195,7 @@ public class IndirectJumpConstantPointerAnalyzer extends AbstractAnalyzer {
 
 	/** Verbatim port of {@code DecompilerSwitchAnalysisCmd.setSwitchTargetContext} (see
 	 *  {@code JumpTableBoundAnalyzer}'s copy). */
-	private void setTargetContext(Program program, ProgramContext programContext, Address target,
+	private static void setTargetContext(Program program, ProgramContext programContext, Address target,
 			RegisterValue siteContext) throws ContextChangeException {
 		if (siteContext == null) {
 			return;

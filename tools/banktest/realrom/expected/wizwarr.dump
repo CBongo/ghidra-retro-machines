@@ -18,13 +18,13 @@ REALROM block RAM_0329_033D_0350 0350-05ff overlay=false
 REALROM block RAM_0612 0612-07ff overlay=false
 REALROM count blocks.total 14
 REALROM count blocks.overlay 3
-REALROM count refs.intoOverlay.retargeted 0
-REALROM count refs.intoOverlay.intraOverlay 0
-REALROM count instrs.inOverlay 0
-REALROM count bankComments 59
-REALROM count warnings 3
+REALROM count refs.intoOverlay.retargeted 24
+REALROM count refs.intoOverlay.intraOverlay 915
+REALROM count instrs.inOverlay 3964
+REALROM count bankComments 61
+REALROM count warnings 7
 REALROM count notes 23
-REALROM count symbols 23
+REALROM count symbols 75
 REALROM sample.bankcomment 0325 bank -> 3 (bank=3)
 REALROM sample.bankcomment 0344 bank -> 2 (bank=2)
 REALROM sample.bankcomment 0602 bank -> 0 (bank=0)
@@ -43,6 +43,8 @@ REALROM sample.bankcomment 8823 bank -> 0 (bank=0) via FUN_84a8
 REALROM sample.bankcomment 882b bank -> 0 (bank=0)
 REALROM sample.bankcomment 88f4 bank -> 0 (bank=0) via FUN_cf81
 REALROM sample.bankcomment 894b bank -> 0 (bank=0)
+REALROM sample.bankcomment 8c76 bank -> 3 (bank=3) via FUN_0300
+REALROM sample.bankcomment 8ca0 bank -> 3 (bank=3) via FUN_0300
 REALROM sample.bankcomment b1c3 bank -> 0 (bank=0)
 REALROM sample.bankcomment b1cb bank -> 0 (bank=0)
 REALROM sample.bankcomment b1d0 bank -> 0 (bank=0) via FUN_860d
@@ -84,15 +86,45 @@ REALROM sample.bankcomment ff8d bank -> 0 (bank=0)
 REALROM sample.bankcomment ff9e bank -> 0 (bank=0)
 REALROM sample.bankcomment ffb9 bank -> 0 (bank=0)
 REALROM sample.bankcomment ffbc bank -> 0 (bank=0) via FUN_804d
+REALROM sample.ref 8000 -> PRG_ALL_B1::80d4 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8000 -> PRG_ALL_B2::860b UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8000 -> PRG_ALL_B3::8c79 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8003 -> PRG_ALL_B1::8033 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8003 -> PRG_ALL_B2::80d7 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8003 -> PRG_ALL_B3::8c3e UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8006 -> PRG_ALL_B1::b50f UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8006 -> PRG_ALL_B2::ed93 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8006 -> PRG_ALL_B3::8c4f UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8009 -> PRG_ALL_B1::b5c2 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8009 -> PRG_ALL_B3::f9cb UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 800c -> PRG_ALL_B2::f6f0 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 800c -> PRG_ALL_B3::fa77 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 800f -> PRG_ALL_B2::f775 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8012 -> PRG_ALL_B2::d014 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8018 -> PRG_ALL_B2::ce79 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8018 -> PRG_ALL_B3::8b39 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 801b -> PRG_ALL_B2::f413 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 801b -> PRG_ALL_B3::8b3c UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 801e -> PRG_ALL_B3::8b3f UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8021 -> PRG_ALL_B2::fcb0 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8021 -> PRG_ALL_B3::d282 UNCONDITIONAL_CALL primary=true
+REALROM sample.ref 8027 -> PRG_ALL_B3::8b2f UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 802a -> PRG_ALL_B3::8059 UNCONDITIONAL_JUMP primary=true
+REALROM sample.ref 8041 -> PRG_ALL_B1::8054 DATA primary=true
+REALROM sample.ref.truncated 25 of 939
 REALROM sample.warn 0339 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn ff76 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn ff76 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn ff76 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn ff7f [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
+REALROM sample.warn ff7f [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn ff7f [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.note 0300 [CopyLoopAnalyzer] run-from-elsewhere copy of RAM:ce5b; initialized in place as COPY_0300
 REALROM sample.note 0302 [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
 REALROM sample.note 032d [CopyLoopAnalyzer] run-from-elsewhere copy of RAM:ce4b; initialized in place as COPY_032d
 REALROM sample.note 032d [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
 REALROM sample.note 033d [CopyLoopAnalyzer] run-from-elsewhere copy of RAM:ce38; initialized in place as COPY_033d
-REALROM sample.note 034b [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this write re-commits the bank READ BACK at 033d from write-through bank shadow 0000 -- a RAM cell the switch code keeps in step with every bank it commits, so the byte read is the last bank committed through it -- the save/restore idiom. The bank after this write is whatever 0000 held at that read, not a fresh value this analyzer failed to pin down. That read sits at the ENTRY of FUN_033d (nothing switches between its entry and the read), so it is the shadow as the caller left it: each of its call sites' own bank, which those sites already track -- the call passes it through unchanged. A property of the game, not a gap in analysis.
+REALROM sample.note 034b [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this write re-commits the bank READ BACK at 033d from write-through bank shadow 0000 -- a RAM cell the switch code keeps in step with every bank it commits, so the byte read is the last bank committed through it -- the save/restore idiom. The bank after this write is whatever 0000 held at that read, not a fresh value this analyzer failed to pin down. A property of the game, not a gap in analysis.
 REALROM sample.note 0600 [CopyLoopAnalyzer] run-from-elsewhere copy of RAM:b3a2; initialized in place as COPY_0600
 REALROM sample.note 8932 [CopyLoopAnalyzer] copy-shaped loop RAM:8981 -> RAM:0100 (36 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note b313 [CopyLoopAnalyzer] copy-shaped loop RAM:b37e -> RAM:0200 (20 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
@@ -102,23 +134,38 @@ REALROM sample.note b571 [CopyLoopAnalyzer] copy-shaped loop RAM:06ae -> RAM:00d
 REALROM sample.note b616 [CopyLoopAnalyzer] copy-shaped loop RAM:00db -> RAM:06ae (3 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note bb84 [CopyLoopAnalyzer] copy-shaped loop RAM:bba2 -> RAM:0200 (4 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note be58 [CopyLoopAnalyzer] copy-shaped loop RAM:ac75 -> RAM:0200 (64 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
-REALROM sample.note cde3 [CopyLoopAnalyzer] copy loop (no jump into the copy; its bytes decode as a subroutine) -> COPY_0300: 41 bytes RAM:ce5b -> RAM:0300; disassembled as code
+REALROM sample.note cde3 [CopyLoopAnalyzer] copy loop -> COPY_0300: 41 bytes RAM:ce5b -> RAM:0300; disassembled as code
 REALROM sample.note cdee [CopyLoopAnalyzer] copy loop -> COPY_032d: 16 bytes RAM:ce4b -> RAM:032d; disassembled as code
-REALROM sample.note cdf9 [CopyLoopAnalyzer] copy loop (no jump into the copy; its bytes decode as a subroutine) -> COPY_033d: 19 bytes RAM:ce38 -> RAM:033d; disassembled as code
+REALROM sample.note cdf9 [CopyLoopAnalyzer] copy loop -> COPY_033d: 19 bytes RAM:ce38 -> RAM:033d; disassembled as code
 REALROM sample.note ce04 [CopyLoopAnalyzer] copy-shaped loop RAM:ce30 -> RAM:0361 (8 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note ce0f [CopyLoopAnalyzer] copy-shaped loop RAM:ce1b -> RAM:0369 (21 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note ce8b [NesBankingAnalyzer] Bank value is this helper's ARGUMENT: the backward scan reached the helper's entry, where the register holds whatever the caller supplied, so the bank cannot be known from inside the helper body. Each CALL SITE is resolved separately; see the call sites' own annotations.
 REALROM sample.note e99e [CopyLoopAnalyzer] copy-shaped loop RAM:e8e1 -> RAM:0204 (16 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note ffa6 [NesBankingAnalyzer] Bank value is RESTORED here, not resolved: this write re-commits the bank READ BACK at ffa4 from write-through bank shadow 0000 -- a RAM cell the switch code keeps in step with every bank it commits, so the byte read is the last bank committed through it -- the save/restore idiom. The bank after this write is whatever 0000 held at that read, not a fresh value this analyzer failed to pin down. A property of the game, not a gap in analysis.
 REALROM sample.symbol 890d RESET IMPORTED primary=true
-REALROM sample.symbol bcb3 switch USER_DEFINED primary=true
-REALROM sample.symbol bcc8 case_1 USER_DEFINED primary=true
-REALROM sample.symbol bd70 case_0 USER_DEFINED primary=true
-REALROM sample.symbol be3e case_2 USER_DEFINED primary=true
-REALROM sample.symbol be7e case_3 USER_DEFINED primary=true
-REALROM sample.symbol ff86 NMI IMPORTED primary=true
-REALROM sample.symbol ffb7 IRQ IMPORTED primary=true
-REALROM sample.symbol fffa NMI_VEC IMPORTED primary=true
-REALROM sample.symbol fffc RESET_VEC IMPORTED primary=true
-REALROM sample.symbol fffe IRQ_VEC IMPORTED primary=true
+REALROM sample.symbol b5d1 switch USER_DEFINED primary=true
+REALROM sample.symbol b63a case_48 USER_DEFINED primary=true
+REALROM sample.symbol b63a case_49 USER_DEFINED primary=false
+REALROM sample.symbol b6bc case_46 USER_DEFINED primary=true
+REALROM sample.symbol b6e9 case_45 USER_DEFINED primary=true
+REALROM sample.symbol b6fd case_39 USER_DEFINED primary=true
+REALROM sample.symbol b6fd case_50 USER_DEFINED primary=false
+REALROM sample.symbol b70d case_10 USER_DEFINED primary=true
+REALROM sample.symbol b71a case_9 USER_DEFINED primary=true
+REALROM sample.symbol b77a case_0 USER_DEFINED primary=true
+REALROM sample.symbol b77a case_11 USER_DEFINED primary=false
+REALROM sample.symbol b77a case_12 USER_DEFINED primary=false
+REALROM sample.symbol b77a case_13 USER_DEFINED primary=false
+REALROM sample.symbol b77a case_15 USER_DEFINED primary=false
+REALROM sample.symbol b77a case_16 USER_DEFINED primary=false
+REALROM sample.symbol b77a case_17 USER_DEFINED primary=false
+REALROM sample.symbol b77a case_18 USER_DEFINED primary=false
+REALROM sample.symbol b77a case_19 USER_DEFINED primary=false
+REALROM sample.symbol b77a case_20 USER_DEFINED primary=false
+REALROM sample.symbol b77a case_21 USER_DEFINED primary=false
+REALROM sample.symbol b77a case_22 USER_DEFINED primary=false
+REALROM sample.symbol b77a case_23 USER_DEFINED primary=false
+REALROM sample.symbol b77a case_24 USER_DEFINED primary=false
+REALROM sample.symbol b77a case_25 USER_DEFINED primary=false
+REALROM sample.symbol.truncated 25 of 63
 === REALROM END ===
