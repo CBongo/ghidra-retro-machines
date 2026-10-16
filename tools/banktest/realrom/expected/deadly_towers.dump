@@ -14,7 +14,7 @@ REALROM count blocks.overlay 3
 REALROM count refs.intoOverlay.retargeted 529
 REALROM count refs.intoOverlay.intraOverlay 1915
 REALROM count instrs.inOverlay 4734
-REALROM count bankComments 232
+REALROM count bankComments 199
 REALROM count warnings 2
 REALROM count notes 0
 REALROM count symbols 350
@@ -54,7 +54,6 @@ REALROM sample.bankcomment 81da bank -> 3 (bank=3) via FUN_fc3f
 REALROM sample.bankcomment 8212 bank -> 3 (bank=3) via FUN_PRG_ALL_B1__fc3f
 REALROM sample.bankcomment 821a bank -> 3 (bank=3) via FUN_PRG_ALL_B3__fc3f
 REALROM sample.bankcomment 8220 bank -> 3 (bank=3) via FUN_fc3f
-REALROM sample.bankcomment 824f bank -> 0 (bank=0) via FUN_PRG_ALL_B2__fcfa
 REALROM sample.bankcomment 8252 bank -> 0 (bank=0) via caseD_e8
 REALROM sample.bankcomment 82b6 bank -> 0 (bank=0) via caseD_ae
 REALROM sample.bankcomment 82cf bank -> 0 (bank=0) via caseD_ae
@@ -98,34 +97,15 @@ REALROM sample.bankcomment 849c bank -> 1 (bank=1) via FUN_PRG_ALL_B1__fc15
 REALROM sample.bankcomment 84a4 bank -> 2 (bank=2) via FUN_PRG_ALL_B1__fc2a
 REALROM sample.bankcomment 84ac bank -> 2 (bank=2) via FUN_PRG_ALL_B2__fc5f
 REALROM sample.bankcomment 8567 bank -> 0 (bank=0) via caseD_ae
-REALROM sample.bankcomment 8573 bank -> 0 (bank=0) via FUN_PRG_ALL_B2__fcfa
-REALROM sample.bankcomment 85a9 bank -> 0 (bank=0) via FUN_PRG_ALL_B2__fcfa
 REALROM sample.bankcomment 85a9 bank -> 0 (bank=0) via caseD_ae
 REALROM sample.bankcomment 85f0 bank -> 0 (bank=0) via caseD_ae
 REALROM sample.bankcomment 85f7 bank -> 0 (bank=0) via caseD_ae
 REALROM sample.bankcomment 8611 bank -> 0 (bank=0) via caseD_ae
-REALROM sample.bankcomment 8636 bank -> 0 (bank=0) via FUN_PRG_ALL_B2__fcfa
-REALROM sample.bankcomment 873b bank -> 0 (bank=0) via FUN_PRG_ALL_B2__fcfa
-REALROM sample.bankcomment 8741 bank -> 0 (bank=0) via FUN_PRG_ALL_B2__fcfa
-REALROM sample.bankcomment 8803 bank -> 0 (bank=0) via FUN_PRG_ALL_B2__fcfa
-REALROM sample.bankcomment 88c9 bank -> 0 (bank=0) via FUN_PRG_ALL_B2__fcfa
-REALROM sample.bankcomment 8b98 bank -> 0 (bank=0) via FUN_PRG_ALL_B2__fcfa
-REALROM sample.bankcomment 8c9e bank -> 0 (bank=0) via FUN_PRG_ALL_B2__fcfa
-REALROM sample.bankcomment 8f66 bank -> 0 (bank=0) via FUN_PRG_ALL_B2__fcfa
-REALROM sample.bankcomment 90ea bank -> 0 (bank=0) via FUN_PRG_ALL_B2__fcfa
-REALROM sample.bankcomment 92f2 bank -> 0 (bank=0) via FUN_PRG_ALL_B2__fcfa
-REALROM sample.bankcomment 94bd bank -> 0 (bank=0) via FUN_PRG_ALL_B2__fcfa
-REALROM sample.bankcomment 957f bank -> 0 (bank=0) via FUN_PRG_ALL_B2__fcfa
-REALROM sample.bankcomment 9706 bank -> 0 (bank=0) via FUN_PRG_ALL_B2__fcfa
 REALROM sample.bankcomment 979d bank -> 2 (bank=2) via FUN_fc2a
 REALROM sample.bankcomment 97e5 bank -> 3 (bank=3) via FUN_fc3f
-REALROM sample.bankcomment 9a92 bank -> 0 (bank=0) via FUN_PRG_ALL_B2__fcfa
-REALROM sample.bankcomment 9c9a bank -> 0 (bank=0) via FUN_PRG_ALL_B2__fcfa
 REALROM sample.bankcomment a022 bank -> 2 (bank=2) via FUN_fc2a
-REALROM sample.bankcomment a09e bank -> 0 (bank=0) via FUN_PRG_ALL_B2__fcfa
 REALROM sample.bankcomment a182 bank -> 3 (bank=3) via FUN_fc3f
 REALROM sample.bankcomment a233 bank -> 3 (bank=3) via FUN_fc3f
-REALROM sample.bankcomment a362 bank -> 0 (bank=0) via FUN_PRG_ALL_B2__fcfa
 REALROM sample.bankcomment a573 bank -> 2 (bank=2) via FUN_fc2a
 REALROM sample.bankcomment a57c bank -> 3 (bank=3) via FUN_fc3f
 REALROM sample.bankcomment a581 bank -> 3 (bank=3) via FUN_PRG_ALL_B3__fc3f
@@ -135,22 +115,9 @@ REALROM sample.bankcomment a599 bank -> 3 (bank=3) via FUN_PRG_ALL_B3__fc3f
 REALROM sample.bankcomment a59e bank -> 3 (bank=3) via FUN_PRG_ALL_B3__fc3f
 REALROM sample.bankcomment a5be bank -> 3 (bank=3) via FUN_fc3f
 REALROM sample.bankcomment a5cb bank -> 3 (bank=3) via FUN_fc3f
-REALROM sample.bankcomment a5e6 bank -> 0 (bank=0) via FUN_PRG_ALL_B2__fcfa
 REALROM sample.bankcomment a5e8 bank -> 2 (bank=2) via FUN_PRG_ALL_B3__fc2a
-REALROM sample.bankcomment a7ea bank -> 0 (bank=0) via FUN_PRG_ALL_B2__fcfa
-REALROM sample.bankcomment af4a bank -> 0 (bank=0) via FUN_PRG_ALL_B2__fcfa
-REALROM sample.bankcomment b38e bank -> 0 (bank=0) via FUN_PRG_ALL_B2__fcfa
-REALROM sample.bankcomment b592 bank -> 0 (bank=0) via FUN_PRG_ALL_B2__fcfa
-REALROM sample.bankcomment b896 bank -> 0 (bank=0) via FUN_PRG_ALL_B2__fcfa
-REALROM sample.bankcomment b99a bank -> 0 (bank=0) via FUN_PRG_ALL_B2__fcfa
 REALROM sample.bankcomment ba90 bank -> 0 (bank=0) via FUN_PRG_ALL_B3__fc54
-REALROM sample.bankcomment ba9e bank -> 0 (bank=0) via FUN_PRG_ALL_B2__fcfa
-REALROM sample.bankcomment bba2 bank -> 0 (bank=0) via FUN_PRG_ALL_B2__fcfa
-REALROM sample.bankcomment bda6 bank -> 0 (bank=0) via FUN_PRG_ALL_B2__fcfa
-REALROM sample.bankcomment bfaa bank -> 0 (bank=0) via FUN_PRG_ALL_B2__fcfa
 REALROM sample.bankcomment c458 bank -> 3 (bank=3) via FUN_fc3f
-REALROM sample.bankcomment c47d bank -> 0 (bank=0) via FUN_PRG_ALL_B2__fcfa
-REALROM sample.bankcomment c585 bank -> 0 (bank=0) via FUN_PRG_ALL_B2__fcfa
 REALROM sample.bankcomment c8d8 bank -> 0 (bank=0) via caseD_e8
 REALROM sample.bankcomment c8ee bank -> 0 (bank=0) via caseD_e8
 REALROM sample.bankcomment d0b5 bank -> 0 (bank=0) via caseD_ae

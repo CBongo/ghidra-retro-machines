@@ -19,12 +19,11 @@ REALROM count blocks.overlay 7
 REALROM count refs.intoOverlay.retargeted 35
 REALROM count refs.intoOverlay.intraOverlay 1699
 REALROM count instrs.inOverlay 7722
-REALROM count bankComments 120
+REALROM count bankComments 114
 REALROM count warnings 27
 REALROM count notes 13
 REALROM count symbols 216
 REALROM sample.bankcomment 9067 bank -> 5 (bank=5) via FUN_d846
-REALROM sample.bankcomment 9160 bank -> 5 (bank=5) via RESET
 REALROM sample.bankcomment 9173 bank -> 6 (bank=6) via FUN_c3bf
 REALROM sample.bankcomment 91bf bank -> 5 (bank=5) via FUN_d131
 REALROM sample.bankcomment 9251 bank -> 5 (bank=5) via FUN_c219
@@ -35,9 +34,6 @@ REALROM sample.bankcomment a044 bank -> 5 (bank=5) via FUN_d131
 REALROM sample.bankcomment a082 bank -> 5 (bank=5) via FUN_d131
 REALROM sample.bankcomment a0c8 bank -> 5 (bank=5) via FUN_d131
 REALROM sample.bankcomment a24e bank -> 5 (bank=5) via FUN_c219
-REALROM sample.bankcomment a9c7 bank -> 5 (bank=5) via RESET
-REALROM sample.bankcomment a9f6 bank -> 5 (bank=5) via RESET
-REALROM sample.bankcomment aa23 bank -> 5 (bank=5) via RESET
 REALROM sample.bankcomment ab3c bank -> 6 (bank=6) via FUN_c442
 REALROM sample.bankcomment ab65 bank -> 6 (bank=6) via FUN_c442
 REALROM sample.bankcomment ab87 bank -> 6 (bank=6) via FUN_c442
@@ -90,7 +86,6 @@ REALROM sample.bankcomment c791 bank -> 0? (bank=0) via FUN_c7ae [known: bank.2=
 REALROM sample.bankcomment c7ab bank -> 5 (bank=5) via FUN_c3b3
 REALROM sample.bankcomment c7c1 bank -> 0? (bank=0) [known: bank.2=0,bank.3=0; assumed from initial: bank.0,bank.1]
 REALROM sample.bankcomment c890 bank -> 5 (bank=5) via FUN_c05a
-REALROM sample.bankcomment c955 bank -> 5 (bank=5) via RESET
 REALROM sample.bankcomment cafd bank -> 5 (bank=5) via FUN_c05a
 REALROM sample.bankcomment cb2f bank -> 5 (bank=5) via FUN_d131
 REALROM sample.bankcomment cb3c bank -> 5 (bank=5) via FUN_f0be
@@ -142,7 +137,6 @@ REALROM sample.bankcomment f24c bank -> 5 (bank=5) via FUN_d131
 REALROM sample.bankcomment f2e9 bank -> 5 (bank=5) via FUN_d131
 REALROM sample.bankcomment f6fa bank -> 5 (bank=5) via FUN_c3b3
 REALROM sample.bankcomment fa61 bank -> 5 (bank=5) via FUN_c3b3
-REALROM sample.bankcomment fe30 bank -> 5 (bank=5) via RESET
 REALROM sample.ref 9000 -> PRG_LO_B4::923f UNCONDITIONAL_JUMP primary=true
 REALROM sample.ref 9005 -> PRG_LO_B4::900a CONDITIONAL_JUMP primary=true
 REALROM sample.ref 9007 -> PRG_LO_B4::912a UNCONDITIONAL_JUMP primary=true

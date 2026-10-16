@@ -13,14 +13,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-// Prints, for each GRM_SITES address (comma-separated offsets in the default space), the owning
-// function, the EOL comment, and every outgoing reference with its type and source. Written for
+// Prints, for each GRM_SITES address (comma-separated offsets in the default space, or
+// space-qualified like PRG_ALL_B2::8573), the owning function, the instruction with its flow type
+// and flow override, the EOL comment, and every outgoing reference with its type and source. Written for
 // grm-kon2 to tell JumpTableBoundAnalyzer's override path from its reference-pinning path at a
 // switch. Run as REALROM_EXTRA_POSTSCRIPT. Read-only.
 import ghidra.app.script.GhidraScript;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.listing.CommentType;
 import ghidra.program.model.listing.Function;
+import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.symbol.Reference;
 
 public class SiteStateProbe extends GhidraScript {
@@ -35,6 +37,9 @@ public class SiteStateProbe extends GhidraScript {
 			Function owner = currentProgram.getFunctionManager().getFunctionContaining(a);
 			println("SSP " + a + " owner=" + (owner == null ? "NONE" : owner.getName() + "@" +
 				owner.getEntryPoint()));
+			Instruction instr = currentProgram.getListing().getInstructionAt(a);
+			println("SSP " + a + " instr=" + (instr == null ? "NONE" : instr + " flow=" +
+				instr.getFlowType() + " override=" + instr.getFlowOverride()));
 			println("SSP " + a + " eol=" +
 				currentProgram.getListing().getComment(CommentType.EOL, a));
 			for (Reference r : currentProgram.getReferenceManager().getReferencesFrom(a)) {

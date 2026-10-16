@@ -33,6 +33,7 @@ import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressIterator;
 import ghidra.program.model.address.AddressOutOfBoundsException;
 import ghidra.program.model.address.AddressSpace;
+import ghidra.program.model.listing.FlowOverride;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.FunctionManager;
 import ghidra.program.model.listing.Instruction;
@@ -40,6 +41,7 @@ import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.mem.MemoryBlockSourceInfo;
+import ghidra.program.model.symbol.FlowType;
 import ghidra.program.model.symbol.RefType;
 import ghidra.program.model.symbol.Reference;
 import ghidra.util.exception.CancelledException;
@@ -570,18 +572,9 @@ final class BankDataflowEngine {
 					mine.add(new OutElement(pathId, inState, inState));
 				}
 
-				// isCall() is also what keeps a BRK-derived IRQ/vector reference out of this whole
-				// mechanism (bead grm-htgl): BRK's p-code is "goto [*:2 target]", an indirect
-				// JUMP, never a call, in both this repo's own 6510 sinc and Ghidra's own stock
-				// 6502.slaspec (the language every NES board actually loads with) -- verified in
-				// BrkIsNotACallSiteProgramTest. So a routine an IRQ/BRK vector reaches (megaman2's
-				// RESET happens to be one, since its IRQ vector aliases its RESET vector) can
-				// never pick up a spurious "call site" here no matter how much of the image is
-				// misdisassembled data decoding as $00 (= BRK): FlowType is fixed at disassembly
-				// from the instruction's own p-code template, and no later analysis pass promotes
-				// a COMPUTED_JUMP to a CALL. No additional filtering (e.g. cross-referencing
-				// DescriptorSupport.ASYNC_ENTRY_POINTS_PROPERTY) is needed on top of this gate.
-				if (helpers != null && instr.getFlowType().isCall()) {
+				// isHelperCallSite, not bare isCall(), is what keeps a BRK-derived IRQ/vector
+				// reference out of this whole mechanism (beads grm-htgl, grm-ktne).
+				if (helpers != null && isHelperCallSite(instr)) {
 					HelperModel helper = calledHelper(program, instr, helpers, mine.get(0).out(),
 						bankResolution);
 					if (helper != null) {
@@ -1930,6 +1923,33 @@ final class BankDataflowEngine {
 				listing, board, clampCache, budget, stateDependents);
 		}
 		return !worklist.isEmpty();
+	}
+
+	/**
+	 * Whether {@code instr} can be a call site of a bank-switch helper: its flow is a call,
+	 * and not a COMPUTED jump that a flow override promoted to one (beads grm-htgl, grm-ktne).
+	 * <p>
+	 * BRK's p-code is {@code goto [*:2 0xfffe]} and {@code JMP (P)}'s is {@code goto [P]}:
+	 * computed jumps, in both Ghidra's stock 6502.slaspec and this repo's 6510 sinc. But
+	 * {@code getFlowType()} is not fixed at disassembly -- it applies the instruction's
+	 * {@code FlowOverride}. On a read-only PRG image constant propagation resolves the vector
+	 * read and adds a COMPUTED_JUMP reference to the IRQ or RESET handler, and when that
+	 * handler is a function entry and the jump sits outside any function, Ghidra's
+	 * SharedReturnAnalysisCmd sets CALL_RETURN on it, turning the flow into
+	 * COMPUTED_CALL_TERMINATOR. deadly_towers (BNROM) showed the cost: IRQ = RESET = fcfa, which
+	 * stores bank 0, so ~30 filler $00 bytes in bank 2's data each became "bank -> 0 via fcfa".
+	 * <p>
+	 * A computed target is a property of memory at run time, not of the instruction, so a
+	 * promoted computed jump is never a helper call -- the same rule
+	 * {@code HelperDiscovery}'s relay test applies. A DIRECT {@code JMP helper} that
+	 * SharedReturn promoted is a real tail call and stays a call site.
+	 */
+	static boolean isHelperCallSite(Instruction instr) {
+		FlowType flow = instr.getFlowType();
+		if (!flow.isCall()) {
+			return false;
+		}
+		return !(flow.isComputed() && instr.getFlowOverride() != FlowOverride.NONE);
 	}
 
 	/**

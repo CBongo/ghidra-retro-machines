@@ -22,11 +22,16 @@ import static org.junit.Assert.assertTrue;
 import org.junit.Before;
 import org.junit.Test;
 
+import ghidra.app.cmd.analysis.SharedReturnAnalysisCmd;
+import ghidra.app.cmd.disassemble.DisassembleCommand;
 import ghidra.app.plugin.core.analysis.AutoAnalysisManager;
 import ghidra.program.database.ProgramBuilder;
 import ghidra.program.database.ProgramDB;
+import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSet;
+import ghidra.program.model.listing.FlowOverride;
 import ghidra.program.model.listing.Instruction;
+import ghidra.program.model.symbol.RefType;
 import ghidra.program.model.symbol.Reference;
 import ghidra.program.model.symbol.SourceType;
 import ghidra.util.task.TaskMonitor;
@@ -46,7 +51,8 @@ import ghidra.util.task.TaskMonitor;
  * possibly by cross-referencing {@link DescriptorSupport#ASYNC_ENTRY_POINTS_PROPERTY} (bead
  * {@code grm-913}'s IRQ/NMI entry list).
  * <p>
- * <b>What this test settles.</b> The worry does not apply, and no filter is needed:
+ * <b>What this test settles.</b> As first written (grm-htgl), that the worry does not apply and
+ * no filter is needed -- half right; see the correction below:
  * <ol>
  * <li>{@code BRK}'s p-code is {@code goto [*:2 target]} -- an indirect (computed) jump, not a
  * {@code call} -- in BOTH this repo's own {@code 6502core.sinc} (used by the C64/PET 6510
@@ -54,24 +60,27 @@ import ghidra.util.task.TaskMonitor;
  * definition), which is the language every NES board actually loads with (see
  * {@code machines/nes-mmc1.yaml}'s {@code language: "6502:LE:16:default"} and
  * {@code NesRomLoader.LANGUAGE_ID}) -- so this is not a gap in code this repo controls.</li>
- * <li>{@code FlowType} is fixed at disassembly from the instruction's own p-code template; no
- * later analysis pass promotes a {@code COMPUTED_JUMP} to a {@code CALL}. Verified below even
- * after running full auto-analysis over a fixture where the IRQ vector aliases a real
- * subroutine's entry (megaman2's actual shape): the {@code BRK} instruction gains no
- * {@link Instruction#getFlows()} and no outgoing {@link Reference} at all -- Ghidra does not even
- * resolve the indirect target for this processor by default, so there is not even a spurious
- * JUMP-typed reference to worry about, let alone a CALL-typed one.</li>
- * <li>Every call-site path in this codebase already gates on {@code isCall()}:
- * {@code BankDataflowEngine.runDataflow}'s {@code helpers != null && instr.getFlowType().isCall()}
- * (the sole entry into {@link HelperArgumentRecovery#recoverCallArgument}), and every
- * {@code isCall()} check {@link HelperDiscovery} uses to tell a real call from a same-function
- * tail jump. A {@code BRK} can never satisfy any of them.</li>
+ * <li>On WRITABLE memory (the first test below) Ghidra does not resolve the indirect target, so
+ * the {@code BRK} gains no {@link Instruction#getFlows()} and no outgoing {@link Reference}.</li>
  * </ol>
- * The real, already-fixed defect at megaman2's RESET was bead {@code grm-5l14} (the MMC1
- * self-modifying reset idiom being booked as an unrecoverable argument at its 8 real {@code JSR}
- * call sites) -- confirmed by {@code tools/banktest/realrom/expected/megaman2.dump}, whose 8
- * {@code via RESET} sites are the same 8 addresses before and after that fix, all ordinary
- * {@code UNCONDITIONAL_CALL} references, with no BRK-derived site ever appearing.
+ * <b>CORRECTED by bead {@code grm-ktne} (2026-10-16).</b> The original point 2 -- "FlowType is
+ * fixed at disassembly; no later analysis pass promotes a COMPUTED_JUMP to a CALL" -- is false.
+ * {@code getFlowType()} applies the instruction's {@code FlowOverride}. On READ-ONLY PRG, which
+ * is what every NES loader creates, constant propagation resolves the vector read and adds a
+ * COMPUTED_JUMP reference to the handler; when the handler is a function entry and the
+ * {@code BRK} sits outside any function, {@code SharedReturnAnalysisCmd} sets CALL_RETURN and the
+ * flow becomes COMPUTED_CALL_TERMINATOR, so {@code isCall()} is TRUE. deadly_towers (BNROM,
+ * IRQ = RESET = fcfa, which stores bank 0) paid for it: ~30 filler {@code $00} bytes in bank 2's
+ * data each got "bank -> 0 via FUN_PRG_ALL_B2__fcfa". The dataflow's helper-call gate is
+ * therefore {@link BankDataflowEngine#isHelperCallSite}, which refuses a promoted computed flow;
+ * the second and third tests below pin both halves.
+ * <p>
+ * The paragraph that stood here claimed megaman2's {@code via RESET} sites were 8 real
+ * {@code JSR} call sites. They were not: the pinned image has no {@code JSR}/{@code JMP $FFE0}
+ * at all, and every one of its golden {@code via RESET} comments (9060, a000, ... da2e) sat on a
+ * {@code $00} byte -- exactly the BRK artifact this test was written to rule out. grm-ktne's fix
+ * removed them, along with megaman's 6 (IRQ = RESET = c008, likewise never called) and
+ * deadly_towers' 33.
  */
 public class BrkIsNotACallSiteProgramTest extends AbstractBundledLanguageTest {
 
@@ -131,5 +140,62 @@ public class BrkIsNotACallSiteProgramTest extends AbstractBundledLanguageTest {
 			}
 		}
 		assertEquals("exactly the one real JSR is CALL-typed", 1, callRefs);
+	}
+
+	/**
+	 * deadly_towers' shape (grm-ktne): IRQ = RESET = a function, and a lone {@code BRK} /
+	 * {@code JMP ($FFFC)} outside any function (filler data in bank 2). The import there gives
+	 * each a resolved COMPUTED_JUMP reference to the handler (source ANALYSIS: the vector is
+	 * read-only PRG, so its target is a constant), and {@code SharedReturnAnalysisCmd} then
+	 * promotes it. Auto-analysis in this fixture does not get that far (it creates no functions at
+	 * all), so the two steps are driven explicitly: the resolved reference, then Ghidra's own
+	 * SharedReturn command, unmodified. The helper-call gate must refuse the promoted computed
+	 * jumps, while a real {@code JSR} and a direct tail {@code JMP} into the handler stay call
+	 * sites.
+	 */
+	@Test
+	public void promotedComputedJumpIsNotAHelperCallSite() throws Exception {
+		builder.setBytes("0xfffe", "e0 ff", true); // IRQ vector -> $ffe0
+		builder.setBytes("0xfffc", "e0 ff", true); // RESET vector -> $ffe0 (deadly_towers' fcfa)
+		builder.setBytes("0xffe0", "78", true); // SEI
+		builder.setBytes("0xffe1", "60", true); // RTS
+		builder.setBytes("0x8000", "20 e0 ff 60", true); // JSR $ffe0 / RTS -- a real call
+		builder.setBytes("0x8010", "00", true); // BRK -- filler, outside any function
+		builder.setBytes("0x8020", "6c fc ff", true); // JMP ($fffc) -- a soft reset (bank 2 824f)
+		builder.setBytes("0x8030", "4c e0 ff", true); // JMP $ffe0 -- a DIRECT jump to the entry
+
+		Address reset = builder.addr("0xffe0");
+		inTx(program, "shape", () -> {
+			for (String at : new String[] { "0xffe0", "0x8000", "0x8010", "0x8020", "0x8030" }) {
+				new DisassembleCommand(builder.addr(at), null, false).applyTo(program);
+			}
+			program.getFunctionManager().createFunction("RESET", reset,
+				new AddressSet(reset, builder.addr("0xffe1")), SourceType.ANALYSIS);
+			for (String at : new String[] { "0x8010", "0x8020" }) {
+				program.getListing().getInstructionAt(builder.addr(at))
+						.addMnemonicReference(reset, RefType.COMPUTED_JUMP, SourceType.ANALYSIS);
+			}
+			new SharedReturnAnalysisCmd(new AddressSet(reset), false, false)
+					.applyTo(program, TaskMonitor.DUMMY);
+		});
+
+		Instruction brk = program.getListing().getInstructionAt(builder.addr("0x8010"));
+		Instruction jmpInd = program.getListing().getInstructionAt(builder.addr("0x8020"));
+		Instruction jmpDirect = program.getListing().getInstructionAt(builder.addr("0x8030"));
+		Instruction jsr = program.getListing().getInstructionAt(builder.addr("0x8000"));
+
+		for (Instruction promoted : new Instruction[] { brk, jmpInd }) {
+			assertEquals("SharedReturn promotes a resolved computed jump to a function entry: " +
+				promoted, FlowOverride.CALL_RETURN, promoted.getFlowOverride());
+			assertTrue("so bare isCall() is TRUE -- the grm-htgl premise fails here: " + promoted,
+				promoted.getFlowType().isCall());
+			assertFalse("but a promoted COMPUTED jump is never a helper call site: " + promoted,
+				BankDataflowEngine.isHelperCallSite(promoted));
+		}
+		assertEquals("SharedReturn promotes the direct tail JMP too", FlowOverride.CALL_RETURN,
+			jmpDirect.getFlowOverride());
+		assertTrue("and it stays a helper call site -- a real tail call",
+			BankDataflowEngine.isHelperCallSite(jmpDirect));
+		assertTrue("a real JSR is a helper call site", BankDataflowEngine.isHelperCallSite(jsr));
 	}
 }
