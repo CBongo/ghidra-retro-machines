@@ -36,9 +36,11 @@ the batch (200s + 90s per program). Failure handling differs for two cases on pu
 - a batch that crashes or times out, or a row whose section or `REALROM END` is missing, is
   re-run **solo** (crash attribution) — a `NOTE: batch N FALLBACK` line says so;
 - a row whose batched dump simply **differs from its golden** is *not* silently replaced by a solo
-  result. It stays FAIL; one solo rerun is made as a diagnostic and prints `solo rerun: PASS ->
-  BATCH-DEPENDENT output (determinism bug: file a bead)` or `solo rerun: FAIL too -> genuine
-  diff`. `bless` refuses to write a batched dump that a solo import does not reproduce
+  result. It stays FAIL; up to `GRM_REALROM_SOLO_RERUNS` (default 3) solo reruns are made as a
+  diagnostic (bead grm-u7cy) and the row is labelled `BATCH-DEPENDENT` (every solo rerun passes:
+  a batch-sensitivity bug, file a bead), `FLAKY` (they disagree: nondeterministic even solo, not a
+  batch leak) or `genuine diff` (every one fails; `NONDETERMINISTIC` is appended if the dumps
+  differ from each other). One sample cannot tell batch-dependent from flaky. `bless` refuses to write a batched dump that a solo import does not reproduce
   (it makes that solo import only when the dump would change the golden).
 
 The goldens under `expected/` — our derived,

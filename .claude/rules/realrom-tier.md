@@ -53,9 +53,13 @@ JVM: `--batch-size N` / `GRM_REALROM_BATCH_SIZE` (flag wins; `1` = one JVM per r
 behaviour; default 20; `check all` 537s -> 376s). Imports stay serial inside a JVM. Rows share a
 batch only with identical platform and loader-opts; `--keep-project` forces size 1. A batch crash or
 timeout re-runs its rows solo; a batched row whose dump differs from its golden stays FAIL and gets
-one solo diagnostic rerun labelled `BATCH-DEPENDENT` (an analysis determinism bug: file a bead — the
-owner ruling is that shared JVMs are fine and such a row is a bug to fix, `realrom-shared-jvm-ok`)
-or `genuine diff`; `bless` refuses a batched dump a solo import does not reproduce. `ab-test.sh`
+up to `GRM_REALROM_SOLO_RERUNS` (default 3) solo diagnostic reruns (bead grm-u7cy), labelled
+`BATCH-DEPENDENT` if every one passes (a batch-sensitivity bug: file a bead — the owner ruling is
+that shared JVMs are fine and such a row is a bug to fix, `realrom-shared-jvm-ok`), `FLAKY` if they
+disagree (nondeterministic even solo — *not* a batch leak; stops at the first disagreement), or
+`genuine diff` if every one fails, with `NONDETERMINISTIC` appended when the dumps differ from each
+other. One rerun used to decide this, and it misfiled grm-pwuh's flaky row as a leak. `bless`
+refuses a batched dump a solo import does not reproduce. `ab-test.sh`
 inherits `GRM_REALROM_BATCH_SIZE`; `coverage` is unaffected.
 
 **Multi-platform runs now work in one invocation.** `all` runs NES and SNES rows together;

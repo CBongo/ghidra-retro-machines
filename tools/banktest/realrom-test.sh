@@ -163,6 +163,8 @@
 #   GRM_SKIP_BUILD=1        same opt-out as --no-build (below), for scripted callers
 #   GRM_REALROM_BATCH_SIZE  rows per analyzeHeadless JVM (bead grm-x4y1.3); --batch-size wins; 1 =
 #                            one JVM per row. See the "batched imports" block above flush_batch.
+#   GRM_REALROM_SOLO_RERUNS solo diagnostic reruns for a batched row that FAILs (bead grm-u7cy;
+#                            default 3, minimum 1). See finish_row.
 set -u
 
 # realrom/ holds the two driver tables (bead grm-ughg) as well as the manifests and goldens.
@@ -180,6 +182,18 @@ PLATFORMS_TSV="$REALROM_DIR/platforms.tsv"
 # crash re-runs every row in it solo, so 20 trades the last ~2% of wall time for a smaller
 # fallback. Precedence: --batch-size, then GRM_REALROM_BATCH_SIZE, then this.
 GRM_REALROM_BATCH_SIZE_DEFAULT=20
+
+# Solo diagnostic reruns of a batched row that FAILs (bead grm-u7cy). One was not enough: grm-pwuh
+# (deadly_towers) passed its single solo rerun and was triaged for a day as a cross-program leak,
+# while solo it was FAIL/FAIL/PASS -- one sample cannot tell "batch-dependent" from "flaky". Three
+# samples, stopping early once a pass and a fail have both been seen. A row that passes solo
+# rarely (deadly_towers with DeterminismProbe: 1 in 11) can still fail all three; the
+# solo-vs-solo dump comparison in finish_row is what flags that case as nondeterministic.
+GRM_REALROM_SOLO_RERUNS="${GRM_REALROM_SOLO_RERUNS:-3}"
+if ! [[ "$GRM_REALROM_SOLO_RERUNS" =~ ^[1-9][0-9]*$ ]]; then
+	echo "REALROM: GRM_REALROM_SOLO_RERUNS must be a positive integer, got '$GRM_REALROM_SOLO_RERUNS'" >&2
+	exit 2
+fi
 
 USAGE="usage: $0 check|bless|nominate [SET ...] [--only <ids>|--except <ids>] [--no-build] [--keep-project] [--require-all] [--batch-size N] <romdir> ...
        $0 coverage [SET ...] [--only <ids>|--except <ids>] [--no-build]
@@ -207,9 +221,10 @@ $GRM_REALROM_BATCH_SIZE_DEFAULT) imports up to N rows per analyzeHeadless JVM in
 startup once per batch. Imports stay serial inside the JVM. Only rows whose import is identical
 apart from the file (same platform, same loader-opts column) share a batch. 1 = one JVM per row
 (the pre-grm-x4y1.3 behaviour). A batch that crashes or times out is re-run row by row. A row whose
-batched dump DIFFERS from its golden stays FAIL and is re-run solo once as a diagnostic, printing
-\"BATCH-DEPENDENT\" (solo passes: an analysis determinism bug) or \"genuine diff\"; bless refuses to
-bless a batched dump that a solo import does not reproduce. --keep-project forces size 1.
+batched dump DIFFERS from its golden stays FAIL and is re-run solo as a diagnostic, up to
+GRM_REALROM_SOLO_RERUNS (default 3) times, printing \"BATCH-DEPENDENT\" (every solo rerun passes: a
+batch-sensitivity bug), \"FLAKY\" (solo reruns disagree: nondeterministic even alone) or \"genuine
+diff\" (every one fails); bless refuses to bless a batched dump that a solo import does not reproduce. --keep-project forces size 1.
 
 --keep-project (check/bless only; requires --only, bead grm-haj3) keeps each imported row's
 analyzed Ghidra project instead of passing -deleteProject, at a FIXED path that the next
@@ -1456,8 +1471,11 @@ import_and_dump() {
 # BATCHED ROWS ARE HELD TO ONE EXTRA RULE (owner ruling 2026-10-14, bd memory
 # realrom-shared-jvm-ok): shared JVMs are fine, so a batched dump that differs from its golden
 # is NEVER silently replaced by a solo result -- that would paper over exactly the analysis
-# determinism bug batching is supposed to surface. The row stays FAIL; one solo rerun is made as a
-# DIAGNOSTIC and labelled "BATCH-DEPENDENT" (solo passes) or "genuine diff" (solo fails too).
+# determinism bug batching is supposed to surface. The row stays FAIL; up to GRM_REALROM_SOLO_RERUNS
+# solo reruns are made as a DIAGNOSTIC (bead grm-u7cy) and the row is labelled "BATCH-DEPENDENT"
+# (every solo rerun passes), "FLAKY" (they disagree; stops at the first disagreement) or "genuine
+# diff" (every one fails, with a NONDETERMINISTIC note if their dumps differ from each other or
+# from the batched one). A single rerun could not tell batch-dependent from flaky (grm-pwuh).
 # bless is the same rule seen from the other side: a batched dump is blessed only if a solo
 # import of the row reproduces it byte for byte (otherwise we would pin a golden that a plain
 # `check --batch-size 1` could not reproduce). To keep bless cheap that solo import is made only
@@ -1466,7 +1484,7 @@ import_and_dump() {
 finish_row() {
 	local id="$1" rom="$2" sha="$3" golden="$4" opts="$5" out="$6" key="$7" batched="$8"
 	local golden_path="$EXPECTED_DIR/$golden" cached="$CACHE_DIR/$key.dump"
-	local solo_out="$WORK/${id}.solo.out" solo_ok=0 solo_same=0
+	local solo_out="$WORK/${id}.solo.out"
 
 	# Second-layer hash check: the SHA-256 Ghidra computed on the imported bytes must
 	# equal the manifest pin (belt-and-suspenders over the index match).
@@ -1546,25 +1564,50 @@ finish_row() {
 	sed -n '1,40p' "$WORK/${id}.diff"
 	if [ "$batched" = 1 ]; then
 		# Diagnostic only -- the verdict above stands whatever this prints.
-		echo "    running $id solo once as a diagnostic (the row stays FAIL either way)"
-		if import_and_dump "$id" "$rom" "$opts" "$solo_out" ".solo"; then
-			solo_ok=1
-			cmp -s "$out" "$solo_out" && solo_same=1
-		fi
-		if [ "$solo_ok" = 0 ]; then
-			echo "    solo rerun: import/dump error -> inconclusive"
-			detail="$detail (solo rerun inconclusive)"
-		elif diff -u "$golden_path" "$solo_out" >"$WORK/${id}.solo.diff" 2>&1; then
-			echo "    solo rerun: PASS -> BATCH-DEPENDENT output (determinism bug: file a bead)"
-			detail="$detail; BATCH-DEPENDENT (solo passes)"
+		local n_runs="$GRM_REALROM_SOLO_RERUNS" r s_out s_pass=0 s_fail=0 s_err=0 s_varies=0
+		local first_ok=""
+		echo "    running $id solo up to $n_runs time(s) as a diagnostic (the row stays FAIL either way)"
+		for ((r = 1; r <= n_runs; r++)); do
+			s_out="$WORK/${id}.solo$r.out"
+			if ! import_and_dump "$id" "$rom" "$opts" "$s_out" ".solo$r"; then
+				s_err=$((s_err + 1))
+				echo "    solo rerun $r/$n_runs: import/dump error"
+				continue
+			fi
+			# Any two dumps of the same row that differ prove nondeterminism, whatever the golden
+			# says: compare every solo dump with the batched one and with the first solo dump.
+			cmp -s "$out" "$s_out" || s_varies=1
+			if [ -z "$first_ok" ]; then first_ok="$s_out"; else cmp -s "$first_ok" "$s_out" || s_varies=1; fi
+			if diff -u "$golden_path" "$s_out" >"$WORK/${id}.solo$r.diff" 2>&1; then
+				s_pass=$((s_pass + 1)); echo "    solo rerun $r/$n_runs: PASS"
+			else
+				s_fail=$((s_fail + 1)); echo "    solo rerun $r/$n_runs: FAIL"
+			fi
+			# A pass and a fail together already settle FLAKY; more samples cannot change that.
+			[ "$s_pass" -gt 0 ] && [ "$s_fail" -gt 0 ] && break
+		done
+		local s_tally="solo passes $s_pass/$((s_pass + s_fail))"
+		[ "$s_err" -eq 0 ] || s_tally="$s_tally, $s_err import error(s)"
+		if [ $((s_pass + s_fail)) -eq 0 ]; then
+			echo "    solo reruns: all import/dump errors -> inconclusive"
+			detail="$detail (solo reruns inconclusive)"
+		elif [ "$s_fail" -eq 0 ]; then
+			echo "    solo reruns: $s_tally -> BATCH-DEPENDENT output (batch-sensitivity bug: file a bead)"
+			detail="$detail; BATCH-DEPENDENT ($s_tally)"
 			# The batched dump is not a trustworthy candidate for a later bless.
 			[ -z "$key" ] || rm -f "$cached"
+		elif [ "$s_pass" -gt 0 ]; then
+			echo "    solo reruns: $s_tally -> FLAKY: nondeterministic even solo, NOT a batch leak" \
+				"(determinism bug: file a bead; compare the $WORK/${id}.solo*.out dumps)"
+			detail="$detail; FLAKY ($s_tally)"
+			[ -z "$key" ] || rm -f "$cached"
 		else
-			echo "    solo rerun: FAIL too -> genuine diff"
-			detail="$detail (solo fails too)"
-			if [ "$solo_same" = 0 ]; then
-				echo "    NOTE: the solo dump also differs from the batched dump (row is not deterministic;" \
-					"compare $out and $solo_out)"
+			echo "    solo reruns: $s_tally -> genuine diff"
+			detail="$detail (genuine diff: $s_tally)"
+			if [ "$s_varies" = 1 ]; then
+				echo "    NOTE: the dumps differ from each other (row is NONDETERMINISTIC; compare $out" \
+					"and the $WORK/${id}.solo*.out dumps)"
+				detail="$detail, NONDETERMINISTIC"
 				[ -z "$key" ] || rm -f "$cached"
 			fi
 		fi
