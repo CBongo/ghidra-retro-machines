@@ -237,6 +237,31 @@ means a ROM that is **absent, or a different dump, SKIPs** — never a spurious 
 present, hash-matched ROM whose dump differs from its golden FAILs. A run that matches
 nothing exits 0, so the tier is safe to ship for users with no ROMs at all.
 
+### Which dump each NES row pins (grm-cssm)
+
+**Pin a GoodNES-verified `[!]` dump.** An untagged clean dump comes next; an `[o#]` overdump,
+`[b#]` bad dump, `[a#]` alternate, or `[h#]`/`[t#]`/`[f#]`/`[p#]` hack/trainer/fix/pirate only
+if nothing better exists, and never a different region or revision silently. The `title` column
+carries the GoodNES filename of the pinned file, so its tags *are* the dump tier.
+
+As of 2026-10-16 every NES row except two pins a `[!]` dump. The retarget (grm-cssm) kept every
+id. All rows but one had byte-identical PRG, so their goldens changed only in the `sha256` line
+(and `kicarus` one byte in `prgsha256` -- its old untagged pin was V1.0 with one corrupt byte,
+nothing else moved). The exception is `drmario`: its old `[o4]` pin was V1.0's 32 KiB PRG and
+CHR repeated four times behind a `DiskDude!` header, which manufactured three phantom
+`W8000_M0_B2/4/6` overlays; the real cartridge has one 32 KiB bank and no overlays.
+
+The two exceptions are **not** retargeted because no `[!]` dump of the same build exists:
+
+| id | pinned file | why kept |
+| --- | --- | --- |
+| `megaman` | `MEGAMAN.NES` (untagged) | Banks 0-2 match `Mega Man (U) [!]`, banks 3-7 differ by 16-3597 bytes each: a different build of unknown provenance, blessed on the patched decompiler. |
+| `megaman3` | `MEGAMAN3.NES` (untagged, junk in header bytes 10-15) | Only bank 11 of 16 matches `Mega Man 3 (U) [!]`: a different build. |
+
+Several `[!]` pins live in `All NES Roms (GoodNES)/<region>` subdirs (`USA`, `USA-Europe`,
+`Japan-USA`). The driver indexes each dir at depth 1 only, so those region dirs must be listed in
+`GRM_ROM_DIR` themselves (`;`-separated, since the path contains spaces).
+
 ## Columns
 
 The file is tab-separated with a bare header row. It carries **no `#` comment block on
@@ -278,7 +303,8 @@ away.
 
 ## Adding a row
 
-1. `sha256sum` the dump you intend to pin, and append a row.
+1. `sha256sum` the dump you intend to pin (a `[!]` one -- see "Which dump each NES row pins"
+   above), and append a row.
 2. `bash tools/banktest/realrom-test.sh check --only <id> <romdir>` — expect FAIL with a
    missing golden.
 3. Review what the run reports, then `bless --only <id>` and inspect the new

@@ -25,7 +25,7 @@ game:
     # image the same way NesRomLoader.gameIdentity does (prgBanks*16384 = 131072 bytes).
     prg_sha256: "8f0eb1e74ab31ffb8c1e168cbafbb07472cb86deef71ea3de8769c841cc09647"
     # Whole-file SHA-256, copied from the blmaster row of tools/banktest/realrom/manifest-gme.tsv.
-    file_sha256: "af1ddc67e01436573fc633b73730e13d1add1d64acb3f2a77d880efe9d67ba68"
+    file_sha256: "bc527d5fc8000e3ef5e7bade10ed6f8300785ccf068b2a9d06869cd2c235aeb3"
   provenance: "owner ruling grm-mej.12 (2026-10-05): prg_mode never changes after init. Byte
     survey of the pinned image, 2026-10-05: the only serial-write helpers are in the fixed bank
     -- e678 (five STA $9FFF with LSR between: the CONTROL register), e664 ($BFFF, CHR 1), e660

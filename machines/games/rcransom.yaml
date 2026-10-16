@@ -34,7 +34,7 @@ game:
     # line of tools/banktest/realrom/expected/rcransom.dump.
     prg_sha256: "254fb57592ed397d4fd4a247b22810ab97f001d53a89632647cf48d11154a7f9"
     # Whole-file SHA-256, copied from the rcransom row of tools/banktest/realrom/manifest-gme.tsv.
-    file_sha256: "b95f8def04c0012604b7cc68cf4ed8f49b2dfe4beda6182051de4b2423bea7b1"
+    file_sha256: "276c1a1a37685717c0d808490100874a949ea79b68bdef0fcaeeab4586a72f62"
   provenance: "Owner's hand reads of the pinned rcransom real ROM (grm-km4f 2026-09-19:
     $BFFF holds (r7-1)/2, fed1 sets R6=2A, R7=2A+1 and checks $BFFF against A at $FEFB);
     membership premise ruled acceptable as a per-game fact on grm-mej.7, 2026-10-03."

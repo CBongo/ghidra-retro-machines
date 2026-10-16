@@ -1,6 +1,6 @@
 === REALROM BEGIN ===
 REALROM program bionic.nes
-REALROM sha256 6492e8d8b7526c5dbf2462d8a584073e59daab78d5b99758247caef716bb9ae1
+REALROM sha256 ade9a70b5cdb94ff24e2f37a0327262e5f94037580256dc36c483fae729f31f2
 REALROM prgsha256 aeb61fd5cf5a5ed73344c46a43f8a8d539f601ff57e8f56c49bc1caea4ab3d9e
 REALROM map machines/nes-mmc1.map
 REALROM placement NONE

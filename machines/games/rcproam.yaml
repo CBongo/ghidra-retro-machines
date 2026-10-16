@@ -45,7 +45,7 @@ game:
     # value NesRomLoader.gameIdentity computes at import.
     prg_sha256: "7c75ab09008ae1240be2851d777c8ee9cd4c9ba6c020abd9986452c65776c225"
     # Whole-file SHA-256, copied from the rcproam row of tools/banktest/realrom/manifest-gme.tsv.
-    file_sha256: "4aaaa0f1c125e96f2f76af926bec72f657a0331e80aeb697123be27cd81d870a"
+    file_sha256: "80e4ba558ade9758f8b2be35c9b6a51056725cfb222bdfa3e03243d5298b647d"
   provenance: "Owner's GUI read of the pinned rcproam real ROM, 2026-09-19 (grm-hvc1): every
     control-register write sets the PRG-mode bits to 0; ff85/ffea (the only prg_mode=3 sites,
     the standard MMC1 reset idiom) are reached from RESET alone. The cartridge runs MMC1 32 KiB

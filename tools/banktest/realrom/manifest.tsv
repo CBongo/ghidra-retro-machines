@@ -1,9 +1,9 @@
 id	title	sha256	mapper	board	golden	loader_opts	member
-zelda	Legend of Zelda (PRG 0) (U)	8f72dc2e98572eb4ba7c3a902bca5f69c448fc4391837e5f8f0d4556280440ac	1	nes_mmc1	zelda.dump	-preScript RunFromElsewhereTransfer.java src:W8000_M3_B1:a500 dst:6c90 len:0x1270 disassemble:true function:true site:W8000_M3_B1:8d00 jump:W8000_M3_B1:a13b	
-smb3	Super Mario Bros 3 (PRG 1) (U)	4377a7f5e6eb50bdd2ac6f249bf1a7085500aca8eb41f38545c3a2731c51a579	4	nes_mmc3	smb3.dump		
-contra	Contra (U)	26541a5550ee22deeb3d5484e4a96130219b58cff74d068fb1eb6567fa5e5519	2	nes_uxrom	contra.dump		
+zelda	Legend of Zelda, The (U) (V1.0) [!]	1dff2d002168e0234d206938afc5189a79eb0ec055ada12f2cd4e105f713fc7d	1	nes_mmc1	zelda.dump	-preScript RunFromElsewhereTransfer.java src:W8000_M3_B1:a500 dst:6c90 len:0x1270 disassemble:true function:true site:W8000_M3_B1:8d00 jump:W8000_M3_B1:a13b	
+smb3	Super Mario Bros. 3 (U) (V1.1) [!]	1ddc4b429490e298c05fa70389034107c0cb50f671c7c1baaa3f228224afc2e9	4	nes_mmc3	smb3.dump		
+contra	Contra (U) [!]	1f4a9b3f04e2f828688512c0b83611a87c3fc1bd4f85ed91da1b19abc5816d73	2	nes_uxrom	contra.dump		
 megaman	Mega Man (U)	e5bbc798798a0f5ae6e6d22a35df2fc3d08cefe6a1b278ed7f1cc325e8ee19e0	2	nes_uxrom	megaman.dump		
-ironsword	Ironsword - Wizards & Warriors 2 (U)	ee026cae8fb9953cb22cef92313d429aa4c8600f05c699ef47e22061518f691e	7	nes_axrom	ironsword.dump		
+ironsword	IronSword - Wizards & Warriors II (U) [!]	f5f90c7cab4011ca55bf60fef436691bc1d8707be6eff84d64b2661c636afe8f	7	nes_axrom	ironsword.dump		
 smb	Super Mario Bros. (W) (V1.0)	0b3d9e1f01ed1668205bab34d6c82b0e281456e137352e4f36a9b2cfa3b66dea	0	nes_nrom	smb.dump		
 db3	Dragon Ball 3 - Gokuu Den (Japan)	b7f865e4f7e80064982979f16afc659d9607519b8b858482f3d02475fb986c2b	16	nes_bandai_fcg	db3.dump		
 dbz2	Dragon Ball Z II - Gekishin Freeza!! (Japan)	f0569ec8cb1eb8140aa2465e5ce1319f41b8c81c98ff56556e8f543f31942713	16	nes_bandai_fcg	dbz2.dump		
@@ -11,7 +11,7 @@ dbz_datach	Dragon Ball Z - Gekitou Tenkaichi Budoukai (Japan) (Datach)	17fec54a2
 dbz_saiyan	Dragon Ball Z - Kyoushuu! Saiya Jin (Japan)	02ef93c157c226101bf0790639845bdfa8173df894e095e687f396bbddf583ce	159	nes_bandai_fcg	dbz_saiyan.dump		
 dragonpower	Dragon Power (USA)	e52cc421c726181a35f0cc9e8969a8aad50abd17bdc7eea59dc065990a576147	66	nes_gxrom	dragonpower.dump		
 rtk2	Romance of the Three Kingdoms 2 (U) [!]	f07679db2c7f74bd2b0da95d15833220631033a399cde83db05a53986adc054f	5	nes_mmc5	rtk2.dump		
-tmnt3	Teenage Mutant Ninja Turtles 3 (U)	d6dc27e16afd5d2ad151c0d593908aff9e59c9f710d2c559d5f13c856350560e	4	nes_mmc3	tmnt3.dump		
+tmnt3	Teenage Mutant Ninja Turtles III - The Manhattan Project (U) [!]	58631128884e7d5066c84eb2e1b9aa18d84c00ff562f8c38a6a0708a1a92b3da	4	nes_mmc3	tmnt3.dump		
 adventure_island	Adventure Island (U) [!]	f4083971fb7341ba6560fdd8ef588bd6e2ad450a8694a563cec099a5d306d42e	3	nes_cnrom	adventure_island.dump		
 punchout	Punch-Out!! (U) [!]	2f06867500d5bc105cfa30f041fcb6bf5934d6b464779fbc4b041203af72b052	9	nes_mmc2	punchout.dump		
 deadly_towers	Deadly Towers (U) [!]	9a9a33dfe4f51e66465c323850be66412010b9f6d156ffe2c563c1ddcc1fa1fa	34	nes_bnrom	deadly_towers.dump		

@@ -51,7 +51,7 @@ game:
     # line of tools/banktest/realrom/expected/tmnt3.dump.
     prg_sha256: "d76f4618a35f685b2841993530e6f159d8d9ddbce9f31fe0d69f33bbda84f7ff"
     # Whole-file SHA-256, copied from the tmnt3 row of tools/banktest/realrom/manifest.tsv.
-    file_sha256: "d6dc27e16afd5d2ad151c0d593908aff9e59c9f710d2c559d5f13c856350560e"
+    file_sha256: "58631128884e7d5066c84eb2e1b9aa18d84c00ff562f8c38a6a0708a1a92b3da"
   provenance: "Owner's byte reads of the pinned tmnt3 image (fixed $8000 bank = PRG 8K bank 30,
     MMC3 mode 1) and rulings on grm-mej.9, 2026-10-05: per-game hint, not an automatic proof;
     FUN_9169 split out."

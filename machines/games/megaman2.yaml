@@ -30,7 +30,7 @@ game:
     # value NesRomLoader.gameIdentity computes at import.
     prg_sha256: "1e588d435e75d80c5c0b578b4fa8d196f2cf4346c11c9a7b7e435d768828ad01"
     # Whole-file SHA-256, copied from the megaman2 row of tools/banktest/realrom/manifest-gme.tsv.
-    file_sha256: "27b5a635df33ed57ed339dfc7fd62fc603b39c1d1603adb5cdc3562a0b0d555b"
+    file_sha256: "9f5fa21062933e89c4f923d7755b6df185b054e84d9b5a6ef54216ac4dd67070"
   provenance: "owner's hand pass over the pinned megaman2 real-ROM row, 2026-09-07 (grm-nqxt):
     f2d1, called by RESET at game start, sets PRG bank $E, and every excursion from the fixed
     $C000 bank restores bank $E afterwards -- bank 14 is this cartridge's resident $8000 home."

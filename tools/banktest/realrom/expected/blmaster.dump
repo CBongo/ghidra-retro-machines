@@ -1,6 +1,6 @@
 === REALROM BEGIN ===
 REALROM program blmaster.nes
-REALROM sha256 af1ddc67e01436573fc633b73730e13d1add1d64acb3f2a77d880efe9d67ba68
+REALROM sha256 bc527d5fc8000e3ef5e7bade10ed6f8300785ccf068b2a9d06869cd2c235aeb3
 REALROM prgsha256 8f0eb1e74ab31ffb8c1e168cbafbb07472cb86deef71ea3de8769c841cc09647
 REALROM map machines/nes-mmc1.map
 REALROM placement NONE

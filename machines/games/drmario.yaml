@@ -30,15 +30,15 @@ schema: 2
 
 game:
   id: drmario
-  title: "Dr. Mario (JU) [o4]"
+  title: "Dr. Mario (JU) (V1.0) [!]"
   board: nes_mmc1
   identity:
     # PRG-slice SHA-256 (16-byte iNES header excluded, no trainer), copied from the
     # "REALROM prgsha256" line of tools/banktest/realrom/expected/drmario.dump -- the same
     # value NesRomLoader.gameIdentity computes at import.
-    prg_sha256: "ace0456db2526659619a53d1fcdf3c023f6c15385396c26b98ac30a5f31556bc"
+    prg_sha256: "55229322a9b6ae029b79bcad6f5b50088ee6e4805a8ae5cadd7e2c20876a507d"
     # Whole-file SHA-256, copied from the drmario row of tools/banktest/realrom/manifest-gme.tsv.
-    file_sha256: "33bf00489ec593bdf1d5255154735912503754de2f2d679c00b8229e5f024812"
+    file_sha256: "db97089822667cb5befe91ebc9e5c72be04383d60e6dbca9531ef2ba62187382"
   provenance: "grm-tsii survey of the pinned drmario real-ROM golden, 2026-09-08: both recovered
     bank comments (ff1b, ff2a) resolve prg_mode=0, and every sampled overlay reference targets
     W8000_M0_B0; the cartridge runs MMC1 32 KiB mode from init, not the control register's

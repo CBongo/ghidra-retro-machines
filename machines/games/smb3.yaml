@@ -35,7 +35,7 @@ game:
     prg_sha256: "f4130ba655229d9999fa3b2c59984165810c9b9b125c43b1ff899872e7fedff4"
     # Whole-file SHA-256, copied from the smb3 row of tools/banktest/realrom/manifest.tsv
     # (docs/per-game-descriptors-design.md section 2.3's copy-from-the-manifest workflow).
-    file_sha256: "4377a7f5e6eb50bdd2ac6f249bf1a7085500aca8eb41f38545c3a2731c51a579"
+    file_sha256: "1ddc4b429490e298c05fa70389034107c0cb50f671c7c1baaa3f228224afc2e9"
   provenance: "owner's hand pass over the pinned smb3 real-ROM row, 2026-09-07 (grm-3fvj): the
     $8000 bank-select write sets bit 6 (PRG mode) at every observed occurrence, i.e. this ROM
     runs MMC3 PRG mode 1 from init, not the board descriptor's mode-0 power-on convention."

@@ -1,6 +1,6 @@
 === REALROM BEGIN ===
 REALROM program lifeforce.nes
-REALROM sha256 803f1c82ae197d73f6522410eaab79424ee8cfbbc24e4127053e8e39cb1ef586
+REALROM sha256 c725a0c6b3eb52f542c10cf40538b69d0b163e5884ced7530dd250dbc02749b4
 REALROM prgsha256 dbd530e6ca07cc4b255b1b885cd5b6b2e23b8d3cac4733c3e4d96acd7d751c28
 REALROM map machines/nes-uxrom.map
 REALROM placement NONE
