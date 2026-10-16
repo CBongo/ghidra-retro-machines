@@ -1,7 +1,7 @@
 === REALROM BEGIN ===
 REALROM program megaman.nes
-REALROM sha256 e5bbc798798a0f5ae6e6d22a35df2fc3d08cefe6a1b278ed7f1cc325e8ee19e0
-REALROM prgsha256 05117c775581eb63f7686f58c24f1c9da0fa0669eede1e7bad12eed40e58935e
+REALROM sha256 6f74e8a7575ab43a36ea4cb337114ca1af8b1955b7e8ee4a6088a3824e736e34
+REALROM prgsha256 5314ad0c406161195b6bb100ee11304bab8af121bba85992be896d5cb26b109e
 REALROM map machines/nes-uxrom.map
 REALROM placement NONE
 REALROM block PRG_HI c000-ffff overlay=false
@@ -44,11 +44,11 @@ REALROM sample.bankcomment ac0a bank -> 6 (bank=6) via FUN_c442
 REALROM sample.bankcomment ad0c bank -> 6 (bank=6) via FUN_c442
 REALROM sample.bankcomment ad3a bank -> 6 (bank=6) via FUN_c442
 REALROM sample.bankcomment ad50 bank -> 6 (bank=6) via FUN_c442
-REALROM sample.bankcomment b316 bank -> 6 (bank=6) via FUN_c41b
-REALROM sample.bankcomment b326 bank -> 6 (bank=6) via FUN_c400
-REALROM sample.bankcomment b36f bank -> 6 (bank=6) via FUN_c400
-REALROM sample.bankcomment b3f8 bank -> 6 (bank=6) via FUN_c400
-REALROM sample.bankcomment bd15 bank -> 6 (bank=6) via FUN_c400
+REALROM sample.bankcomment b31e bank -> 6 (bank=6) via FUN_c41b
+REALROM sample.bankcomment b32e bank -> 6 (bank=6) via FUN_c400
+REALROM sample.bankcomment b377 bank -> 6 (bank=6) via FUN_c400
+REALROM sample.bankcomment b400 bank -> 6 (bank=6) via FUN_c400
+REALROM sample.bankcomment bd1d bank -> 6 (bank=6) via FUN_c400
 REALROM sample.bankcomment be46 bank -> 5 (bank=5) via FUN_c05a
 REALROM sample.bankcomment c015 bank -> 5 (bank=5)
 REALROM sample.bankcomment c083 bank -> 5 (bank=5) via FUN_f0be
@@ -136,7 +136,7 @@ REALROM sample.bankcomment f1b2 bank -> 5 (bank=5) via FUN_d131
 REALROM sample.bankcomment f24c bank -> 5 (bank=5) via FUN_d131
 REALROM sample.bankcomment f2e9 bank -> 5 (bank=5) via FUN_d131
 REALROM sample.bankcomment f6fa bank -> 5 (bank=5) via FUN_c3b3
-REALROM sample.bankcomment fa61 bank -> 5 (bank=5) via FUN_c3b3
+REALROM sample.bankcomment fa2b bank -> 5 (bank=5) via FUN_c3b3
 REALROM sample.ref 9000 -> PRG_LO_B4::923f UNCONDITIONAL_JUMP primary=true
 REALROM sample.ref 9005 -> PRG_LO_B4::900a CONDITIONAL_JUMP primary=true
 REALROM sample.ref 9007 -> PRG_LO_B4::912a UNCONDITIONAL_JUMP primary=true
@@ -202,7 +202,7 @@ REALROM sample.note e71e [CopyLoopAnalyzer] copy-shaped loop RAM:e744 -> RAM:03d
 REALROM sample.note f04b [CopyLoopAnalyzer] copy-shaped loop RAM:f069 -> RAM:03ed (3 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note f0d4 [CopyLoopAnalyzer] copy-shaped loop RAM:0059 -> RAM:0382 (33 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note f2f5 [CopyLoopAnalyzer] copy-shaped loop RAM:f398 -> RAM:03d5 (3 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
-REALROM sample.note fa64 [CopyLoopAnalyzer] copy-shaped loop RAM:fa8e -> RAM:0204 (4 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.note fa2e [CopyLoopAnalyzer] copy-shaped loop RAM:fa58 -> RAM:0204 (4 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.symbol a380 switch USER_DEFINED primary=true
 REALROM sample.symbol a393 case_1 USER_DEFINED primary=true
 REALROM sample.symbol a465 case_3 USER_DEFINED primary=true

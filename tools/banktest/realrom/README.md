@@ -244,19 +244,19 @@ nothing exits 0, so the tier is safe to ship for users with no ROMs at all.
 if nothing better exists, and never a different region or revision silently. The `title` column
 carries the GoodNES filename of the pinned file, so its tags *are* the dump tier.
 
-As of 2026-10-16 every NES row except two pins a `[!]` dump. The retarget (grm-cssm) kept every
+As of 2026-10-16 every NES row pins a `[!]` dump. The retarget (grm-cssm) kept every
 id. All rows but one had byte-identical PRG, so their goldens changed only in the `sha256` line
 (and `kicarus` one byte in `prgsha256` -- its old untagged pin was V1.0 with one corrupt byte,
 nothing else moved). The exception is `drmario`: its old `[o4]` pin was V1.0's 32 KiB PRG and
 CHR repeated four times behind a `DiskDude!` header, which manufactured three phantom
 `W8000_M0_B2/4/6` overlays; the real cartridge has one 32 KiB bank and no overlays.
 
-The two exceptions are **not** retargeted because no `[!]` dump of the same build exists:
-
-| id | pinned file | why kept |
-| --- | --- | --- |
-| `megaman` | `MEGAMAN.NES` (untagged) | Banks 0-2 match `Mega Man (U) [!]`, banks 3-7 differ by 16-3597 bytes each: a different build of unknown provenance, blessed on the patched decompiler. |
-| `megaman3` | `MEGAMAN3.NES` (untagged, junk in header bytes 10-15) | Only bank 11 of 16 matches `Mega Man 3 (U) [!]`: a different build. |
+`megaman` and `megaman3` were a different case: their old untagged pins (`MEGAMAN.NES`,
+`MEGAMAN3.NES`) were different *builds* from the `(U) [!]` dumps, not other dumps of them, and
+were moved by owner ruling (grm-n2pa). `megaman`'s golden only relocated (same counts; samples in
+bank 6 shift +8, in the fixed bank -0x36). `megaman3`'s changed only its hash lines because
+analysis reaches nothing but the reset stub and 8 KiB banks 22/23 (the sound engine) -- the one
+byte-identical part of the two builds. That row does not exercise the main game code.
 
 Several `[!]` pins live in `All NES Roms (GoodNES)/<region>` subdirs (`USA`, `USA-Europe`,
 `Japan-USA`). The driver indexes each dir at depth 1 only, so those region dirs must be listed in

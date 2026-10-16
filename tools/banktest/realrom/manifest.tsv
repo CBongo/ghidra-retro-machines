@@ -2,7 +2,7 @@ id	title	sha256	mapper	board	golden	loader_opts	member
 zelda	Legend of Zelda, The (U) (V1.0) [!]	1dff2d002168e0234d206938afc5189a79eb0ec055ada12f2cd4e105f713fc7d	1	nes_mmc1	zelda.dump	-preScript RunFromElsewhereTransfer.java src:W8000_M3_B1:a500 dst:6c90 len:0x1270 disassemble:true function:true site:W8000_M3_B1:8d00 jump:W8000_M3_B1:a13b	
 smb3	Super Mario Bros. 3 (U) (V1.1) [!]	1ddc4b429490e298c05fa70389034107c0cb50f671c7c1baaa3f228224afc2e9	4	nes_mmc3	smb3.dump		
 contra	Contra (U) [!]	1f4a9b3f04e2f828688512c0b83611a87c3fc1bd4f85ed91da1b19abc5816d73	2	nes_uxrom	contra.dump		
-megaman	Mega Man (U)	e5bbc798798a0f5ae6e6d22a35df2fc3d08cefe6a1b278ed7f1cc325e8ee19e0	2	nes_uxrom	megaman.dump		
+megaman	Mega Man (U) [!]	6f74e8a7575ab43a36ea4cb337114ca1af8b1955b7e8ee4a6088a3824e736e34	2	nes_uxrom	megaman.dump		
 ironsword	IronSword - Wizards & Warriors II (U) [!]	f5f90c7cab4011ca55bf60fef436691bc1d8707be6eff84d64b2661c636afe8f	7	nes_axrom	ironsword.dump		
 smb	Super Mario Bros. (W) (V1.0)	0b3d9e1f01ed1668205bab34d6c82b0e281456e137352e4f36a9b2cfa3b66dea	0	nes_nrom	smb.dump		
 db3	Dragon Ball 3 - Gokuu Den (Japan)	b7f865e4f7e80064982979f16afc659d9607519b8b858482f3d02475fb986c2b	16	nes_bandai_fcg	db3.dump		
