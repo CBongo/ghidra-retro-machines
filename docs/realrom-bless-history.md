@@ -15,6 +15,19 @@ underscores or asterisks may render oddly. Each was true when written, and later
 supersede earlier ones. A bead id or commit hash in an entry is the authoritative record of
 that change.
 
+## 2026-10-17 -- megaman3 re-blessed (grm-gipk.3, task-table dispatch)
+
+IndirectJumpConstantPointerAnalyzer's new task-table mode resolves the cooperative scheduler's
+START jump fedf JMP ($93), whose pointer is reloaded from the X-indexed slot table $82,X/$83,X:
+RESET installs task 0 = $C8D0 through the create routine fef2, so c8d0 is now a COMPUTED_CALL
+target and the fixed-bank game code is reached (fixed-bank functions ~10 -> 67).
+megaman3: refs.intoOverlay.retargeted 2 -> 50, instrs.inOverlay 689 -> 691, bankComments
+19 -> 50 (new fixed-bank sites c81a..e314, all "via FUN_ff6b"), notes 3 -> 7; nothing
+removed. The new comments read r6=0,r7=23 after FUN_ff6b, which is wrong (task 0 stores #$18
+into shadow $f4 first): that is grm-mej.27, and until it lands the banked game code (c8f4
+JSR $9009 into bank 24) stays unreached. check nes: the other 34 rows byte-identical;
+build-and-test.sh check SUITE OK.
+
 ## 2026-10-16 -- wizwarr re-blessed (grm-v60, far-call trampoline placement)
 
 New FarCallTrampolineAnalyzer resolves ff83 JMP ($001b) per call site: low byte from the

@@ -16,8 +16,13 @@
 package retromachines;
 
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.WeakHashMap;
 
 import ghidra.app.cmd.disassemble.DisassembleCommand;
 import ghidra.app.plugin.core.analysis.AutoAnalysisManager;
@@ -42,6 +47,7 @@ import ghidra.program.model.symbol.Reference;
 import ghidra.program.model.symbol.SourceType;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.task.TaskMonitor;
+import retromachines.IndirectJumpConstantPointer.SlotTable;
 
 /**
  * Resolves a {@code JMP (P)} whose pointer cell {@code P} is proven constant on a straight-line
@@ -74,6 +80,14 @@ import ghidra.util.task.TaskMonitor;
  * label set; symbols 207 vs 259), because {@code JumpTableBoundAnalyzer} shares this priority
  * and saw either a real function or a stand-in depending on which ran first.
  *
+ * <p><b>Task-table mode</b> (grm-gipk.3). When no walk proves the pointer but the site's own
+ * run reloads both pointer bytes from one slot of an indexed RAM table (megaman3's scheduler,
+ * {@code LDA $82,X; STA $93; LDA $83,X; STA $94; JMP ($93)}), the targets are instead the
+ * constant ROM pointers some walk leaves installed in that table
+ * ({@link IndirectJumpConstantPointer#resolveTableTargets}). Such sites are remembered, and
+ * re-resolved whenever later-added code writes the pointer cell or the table, because each
+ * newly reached task body may install more tasks.
+ *
  * <p><b>Placement.</b> A resolved target is placed in the {@code JMP} instruction's OWN address
  * space -- exactly what a direct {@code JMP $xxxx} at the same address would get. Bank
  * retargeting into the correct overlay is the existing machinery's job (grm-v60), not this
@@ -87,7 +101,11 @@ public class IndirectJumpConstantPointerAnalyzer extends AbstractAnalyzer {
 	private static final String DESCRIPTION =
 		"Resolves a JMP (P) whose pointer cell P is proven constant on a straight-line path " +
 			"reaching it, when nothing else in Ghidra's analysis can compute the target " +
-			"(grm-v60.1).";
+			"(grm-v60.1), or reloaded from a task slot table that holds constant pointers " +
+			"(grm-gipk.3).";
+
+	/** Task-table dispatch sites seen so far, per program, for {@link #revisitTableSites}. */
+	private final Map<Program, Map<Address, SlotTable>> tableSitesByProgram = new WeakHashMap<>();
 
 	public IndirectJumpConstantPointerAnalyzer() {
 		super(NAME, DESCRIPTION, AnalyzerType.INSTRUCTION_ANALYZER);
@@ -110,6 +128,8 @@ public class IndirectJumpConstantPointerAnalyzer extends AbstractAnalyzer {
 			throws CancelledException {
 		Listing listing = program.getListing();
 		List<Instruction> sites = findSites(listing, set, monitor);
+		Map<Address, SlotTable> tableSites =
+			tableSitesByProgram.computeIfAbsent(program, k -> new LinkedHashMap<>());
 		int resolvedSites = 0;
 		int resolvedTargets = 0;
 		for (Instruction site : sites) {
@@ -117,6 +137,15 @@ public class IndirectJumpConstantPointerAnalyzer extends AbstractAnalyzer {
 			Address pointerAddr = IndirectJumpConstantPointer.pointerCell(site);
 			Set<Address> targets = IndirectJumpConstantPointer.resolveTargets(program,
 				site.getMinAddress(), pointerAddr, monitor);
+			if (targets.isEmpty()) {
+				SlotTable table = IndirectJumpConstantPointer.slotTableFeeding(program,
+					site.getMinAddress(), pointerAddr, monitor);
+				if (table != null) {
+					tableSites.put(site.getMinAddress(), table);
+					targets = IndirectJumpConstantPointer.resolveTableTargets(program,
+						site.getMinAddress(), pointerAddr, table, monitor);
+				}
+			}
 			if (targets.isEmpty()) {
 				continue;
 			}
@@ -126,11 +155,69 @@ public class IndirectJumpConstantPointerAnalyzer extends AbstractAnalyzer {
 				resolvedTargets++;
 			}
 		}
+		resolvedTargets += revisitTableSites(program, listing, set, sites, tableSites, monitor);
 		if (resolvedSites > 0) {
 			AnalyzerLog.info(this, "resolved " + resolvedTargets + " constant target(s) at " +
 				resolvedSites + " indirect jump site(s)");
 		}
 		return true;
+	}
+
+	/**
+	 * grm-gipk.3: a task-table dispatcher's targets keep arriving as code is disassembled -- each
+	 * newly reached task body may install further tasks ({@code JSR} to the create routine with a
+	 * new pointer). A site already carrying our reference is skipped by {@link #findSites}, so
+	 * when {@code set} contains a write that feeds a known table site, that site is re-resolved
+	 * here and only targets it does not already reference are added. Returns targets added.
+	 */
+	private int revisitTableSites(Program program, Listing listing, AddressSetView set,
+			List<Instruction> handled, Map<Address, SlotTable> tableSites, TaskMonitor monitor)
+			throws CancelledException {
+		if (tableSites.isEmpty()) {
+			return 0;
+		}
+		Set<Address> handledAddrs = new HashSet<>();
+		for (Instruction site : handled) {
+			handledAddrs.add(site.getMinAddress());
+		}
+		Set<Address> touched = new LinkedHashSet<>();
+		InstructionIterator it = listing.getInstructions(set, true);
+		while (it.hasNext()) {
+			monitor.checkCancelled();
+			Instruction instr = it.next();
+			for (Map.Entry<Address, SlotTable> e : tableSites.entrySet()) {
+				Address siteAddr = e.getKey();
+				if (handledAddrs.contains(siteAddr) ||
+					!instr.getMinAddress().getAddressSpace().equals(siteAddr.getAddressSpace())) {
+					continue;
+				}
+				Instruction site = listing.getInstructionAt(siteAddr);
+				if (site != null && IndirectJumpConstantPointer.feedsTable(instr,
+					IndirectJumpConstantPointer.pointerCell(site), e.getValue())) {
+					touched.add(siteAddr);
+				}
+			}
+		}
+		int added = 0;
+		for (Address siteAddr : touched) {
+			Instruction site = listing.getInstructionAt(siteAddr);
+			if (site == null) {
+				continue;
+			}
+			Set<Address> existing = new HashSet<>();
+			for (Reference ref : site.getReferencesFrom()) {
+				existing.add(ref.getToAddress());
+			}
+			for (Address target : IndirectJumpConstantPointer.resolveTableTargets(program,
+				siteAddr, IndirectJumpConstantPointer.pointerCell(site), tableSites.get(siteAddr),
+				monitor)) {
+				if (existing.add(target)) {
+					applyTarget(program, listing, site, target, monitor);
+					added++;
+				}
+			}
+		}
+		return added;
 	}
 
 	/** Sites in {@code set}: {@code JMP (P)} instructions with no existing computed reference. */

@@ -116,12 +116,211 @@ final class IndirectJumpConstantPointer {
 		Set<Address> targets = new LinkedHashSet<>();
 		for (Address start : starts) {
 			monitor.checkCancelled();
-			Address target = walk(program, start, siteAddr, pointerAddr, pointerAddr1, monitor);
+			Address target = walk(program, start, siteAddr, pointerAddr, pointerAddr1,
+				new WalkState(), monitor);
 			if (target != null) {
 				targets.add(target);
 			}
 		}
 		return targets;
+	}
+
+	// ---------------------------------------------------------------------
+	// grm-gipk.3: task-table dispatch. The pointer cell is reloaded from an indexed RAM slot
+	// table immediately before the jump, so no walk reaches the site with P known; the targets
+	// are instead the constant pointer pairs some walk leaves INSTALLED in that table.
+	// ---------------------------------------------------------------------
+
+	/** The slot table a dispatcher reloads {@code P}/{@code P+1} from: the low byte from
+	 *  {@code loBase+i}, the high byte from {@code hiBase+i}, for one shared index {@code i}. */
+	record SlotTable(long loBase, long hiBase) {
+	}
+
+	/**
+	 * The slot table feeding {@code siteAddr}'s pointer cell, when the site's own straight-line
+	 * run loads BOTH pointer bytes as {@code LDA base,X} (or {@code ,Y}) then {@code STA P} /
+	 * {@code STA P+1}, with the same index register unchanged between the two loads; null
+	 * otherwise. megaman3's scheduler is the motivating shape: {@code fed7 LDA $82,X; STA $93;
+	 * LDA $83,X; STA $94; JMP ($93)}.
+	 */
+	static SlotTable slotTableFeeding(Program program, Address siteAddr, Address p,
+			TaskMonitor monitor) throws CancelledException {
+		Address p1 = nextByte(p);
+		Listing listing = program.getListing();
+		Address pc = headOfRun(program, listing, siteAddr, monitor);
+		// A symbolic A: {base offset, index register (0 = X, 1 = Y), that register's version}.
+		long[] symA = null;
+		long[] lo = null;
+		long[] hi = null;
+		int xVersion = 0;
+		int yVersion = 0;
+		for (int i = 0; i <= BACKWARD_STEP_CAP + 1 && !pc.equals(siteAddr); i++) {
+			monitor.checkCancelled();
+			Instruction instr = listing.getInstructionAt(pc);
+			if (instr == null) {
+				return null;
+			}
+			String mn = instr.getMnemonicString();
+			Mode mode = classifyMode(instr);
+			Address operand = directAddress(instr);
+			if ("LDA".equals(mn)) {
+				symA = operand == null ? null : switch (mode) {
+					case INDEXED_X -> new long[] { operand.getOffset(), 0, xVersion };
+					case INDEXED_Y -> new long[] { operand.getOffset(), 1, yVersion };
+					default -> null;
+				};
+			}
+			else if ("STA".equals(mn) && mode == Mode.DIRECT && operand != null &&
+				(operand.equals(p) || operand.equals(p1))) {
+				if (operand.equals(p)) {
+					lo = symA;
+				}
+				else {
+					hi = symA;
+				}
+			}
+			else {
+				if (isDirectWriteTo(instr, p.getOffset())) {
+					lo = null;
+				}
+				if (isDirectWriteTo(instr, p1.getOffset())) {
+					hi = null;
+				}
+				for (String r : writtenRegisters(program, instr)) {
+					switch (r) {
+						case "A" -> symA = null;
+						case "X" -> xVersion++;
+						case "Y" -> yVersion++;
+						default -> {
+						}
+					}
+				}
+			}
+			pc = instr.getFallThrough();
+			if (pc == null) {
+				return null;
+			}
+		}
+		if (!pc.equals(siteAddr) || lo == null || hi == null || lo[1] != hi[1] ||
+			lo[2] != hi[2]) {
+			return null;
+		}
+		return new SlotTable(lo[0], hi[0]);
+	}
+
+	/**
+	 * Every target some straight-line walk leaves installed in {@code table}: walks start at the
+	 * head of every run that stores to {@code P}/{@code P+1} directly (the create routine's
+	 * staging cell -- megaman3's {@code fe99 ... STA $93 ... JSR $fef2}) or to the table itself
+	 * through an index, and wherever each walk ends (a conditional branch, typically the
+	 * scheduler loop), any slot whose low and high cells both hold known constants is a candidate.
+	 * A candidate is kept only if it lands in initialized, non-writable memory (ROM): a slot
+	 * also holds saved stack pointers and zeroes, and neither is a code pointer.
+	 *
+	 * <p>Unlike {@link #resolveTargets}, this does not prove the installed pointer is still in
+	 * the slot when the dispatcher reads it -- the dispatcher's own state check (megaman3's
+	 * {@code CPY #8}) is what guards that at run time. The claim is "this constant is installed
+	 * as a code pointer for this dispatcher", which is the same evidence a human reads off the
+	 * listing.
+	 */
+	static Set<Address> resolveTableTargets(Program program, Address siteAddr, Address p,
+			SlotTable table, TaskMonitor monitor) throws CancelledException {
+		AddressSpace space = siteAddr.getAddressSpace();
+		Address p1 = nextByte(p);
+		Set<Address> starts = new LinkedHashSet<>(findWalkStarts(program, space, p, p1, monitor));
+		starts.addAll(findIndexedStoreStarts(program, space, table, monitor));
+		long mask = space.getMaxAddress().getOffset();
+		Set<Address> targets = new LinkedHashSet<>();
+		for (Address start : starts) {
+			monitor.checkCancelled();
+			WalkState st = new WalkState();
+			walk(program, start, siteAddr, p, p1, st, monitor);
+			Map<Long, Integer> cells = new HashMap<>();
+			for (Map.Entry<Address, Integer> e : st.ram.entrySet()) {
+				cells.put(e.getKey().getOffset(), e.getValue());
+			}
+			for (int k = 0; k < 0x100; k++) {
+				Integer lo = cells.get((table.loBase() + k) & mask);
+				Integer hi = cells.get((table.hiBase() + k) & mask);
+				if (lo == null || hi == null) {
+					continue;
+				}
+				Address target = space.getAddress(((hi & 0xff) << 8 | (lo & 0xff)) & mask);
+				if (isRom(program, target)) {
+					targets.add(target);
+				}
+			}
+		}
+		return targets;
+	}
+
+	/** Whether {@code instr} could change {@code site}'s table-dispatch result: a direct write
+	 *  to the pointer cell, or an indexed store into either half of the slot table. */
+	static boolean feedsTable(Instruction instr, Address p, SlotTable table) {
+		if (isDirectWriteTo(instr, p.getOffset()) || isDirectWriteTo(instr, nextByte(p).getOffset())) {
+			return true;
+		}
+		return isIndexedStoreTo(instr, table);
+	}
+
+	private static List<Address> findIndexedStoreStarts(Program program, AddressSpace space,
+			SlotTable table, TaskMonitor monitor) throws CancelledException {
+		Listing listing = program.getListing();
+		AddressSet spaceSet = new AddressSet(space.getMinAddress(), space.getMaxAddress());
+		List<Address> starts = new ArrayList<>();
+		InstructionIterator it = listing.getInstructions(spaceSet, true);
+		while (it.hasNext()) {
+			monitor.checkCancelled();
+			Instruction instr = it.next();
+			if (isIndexedStoreTo(instr, table)) {
+				starts.add(headOfRun(program, listing, instr.getMinAddress(), monitor));
+			}
+		}
+		return starts;
+	}
+
+	private static boolean isIndexedStoreTo(Instruction instr, SlotTable table) {
+		String mn = instr.getMnemonicString();
+		if (!("STA".equals(mn) || "STX".equals(mn) || "STY".equals(mn))) {
+			return false;
+		}
+		Mode mode = classifyMode(instr);
+		if (mode != Mode.INDEXED_X && mode != Mode.INDEXED_Y) {
+			return false;
+		}
+		Address base = directAddress(instr);
+		return base != null &&
+			(base.getOffset() == table.loBase() || base.getOffset() == table.hiBase());
+	}
+
+	private static boolean isRom(Program program, Address addr) {
+		MemoryBlock block = program.getMemory().getBlock(addr);
+		return block != null && block.isInitialized() && !block.isWrite();
+	}
+
+	/** The names (upper case) of the registers {@code instr}'s p-code writes; every register if
+	 *  the p-code cannot be obtained. */
+	private static Set<String> writtenRegisters(Program program, Instruction instr) {
+		Set<String> written = new LinkedHashSet<>();
+		PcodeOp[] ops;
+		try {
+			ops = instr.getPcode();
+		}
+		catch (RuntimeException e) {
+			ops = null;
+		}
+		if (ops == null) {
+			written.addAll(List.of("A", "X", "Y"));
+			return written;
+		}
+		for (PcodeOp op : ops) {
+			Varnode out = op.getOutput();
+			Register r = out == null ? null : safeGetRegister(program, out);
+			if (r != null) {
+				written.add(r.getName().toUpperCase());
+			}
+		}
+		return written;
 	}
 
 	/** {@code addr + 1}, wrapping within {@code addr}'s own address space. */
@@ -234,13 +433,13 @@ final class IndirectJumpConstantPointer {
 	 * path is proven not to resolve (returns null): budget exhausted, a conditional branch, an
 	 * unresolvable indirect jump (including reaching {@code siteAddr} with an unknown byte, or
 	 * any OTHER computed jump), a return with an empty inline-call stack, or a JSR nested past
-	 * {@link #MAX_CALL_DEPTH}.
+	 * {@link #MAX_CALL_DEPTH}. {@code st} is left as the walk ended, whichever way it ended
+	 * ({@link #resolveTableTargets} reads the RAM it leaves).
 	 */
 	private static Address walk(Program program, Address start, Address siteAddr,
-			Address pointerAddr, Address pointerAddr1, TaskMonitor monitor)
+			Address pointerAddr, Address pointerAddr1, WalkState st, TaskMonitor monitor)
 			throws CancelledException {
 		Listing listing = program.getListing();
-		WalkState st = new WalkState();
 		Deque<Address> callStack = new ArrayDeque<>();
 		Address pc = start;
 
