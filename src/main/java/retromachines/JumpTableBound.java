@@ -718,6 +718,46 @@ public final class JumpTableBound {
 		return Result.bounded(cut, minTarget, Rule.KNOWN_CODE);
 	}
 
+	/**
+	 * How many of a bounded table's kept cases to keep once each one's target bytes have been
+	 * judged as code (grm-0pen): the cases up to, but not including, the first whose target does
+	 * not decode as code -- trusted only when the {@link #CODE_CUT_CONFIRM} cases after it (as many
+	 * as exist) fail too, as {@link #boundByValidTargets} confirms its cut. Otherwise, or when the
+	 * prefix would hold fewer than 2 (nothing trustworthy to cut to), or every case decodes, all of
+	 * them. The confirm is what stops one odd real handler from truncating a real table.
+	 *
+	 * <p>This is a REFINEMENT of a bound some rule above already proved, never a rule of its own:
+	 * it can only shorten a kept list, so it cannot add a phantom case. That is the line grm-os9b
+	 * drew. A first-non-code cut used as a last-resort bound sails through an adjacent table's
+	 * (valid) entries and stamps them as this switch's cases. Here the extent is already capped,
+	 * and the bytes test is far stronger than "in code memory": Deadly Towers' bank-2 trampoline
+	 * table is capped at 96 entries by its lowest target, but only 6 are real (its 31 callers pass
+	 * indices 0..5); entry 6 onward point into 3-byte data records that decode to an undefined
+	 * opcode or a BRK within a few steps.
+	 *
+	 * @param decodes per kept case, in order: whether its target decodes as code
+	 * @return the number of leading cases to keep, between 2 and {@code decodes.size()}, or
+	 *         {@code decodes.size()} unchanged
+	 */
+	static int codePrefix(List<Boolean> decodes) {
+		int n = 0;
+		while (n < decodes.size() && decodes.get(n)) {
+			n++;
+		}
+		if (n < 2 || n == decodes.size()) {
+			return decodes.size();
+		}
+		for (int k = n + 1; k < Math.min(decodes.size(), n + 1 + CODE_CUT_CONFIRM); k++) {
+			if (decodes.get(k)) {
+				return decodes.size(); // a case right after the cut decodes again; ambiguous
+			}
+		}
+		return n;
+	}
+
+	/** How many cases after a {@link #codePrefix} cut must also fail to decode for it to stand. */
+	static final int CODE_CUT_CONFIRM = 2;
+
 	/** Which rule produced a bounded {@link Result}. */
 	public enum Rule {
 		/** {@link #bound}: the table precedes its targets and cannot overlap the lowest one. */

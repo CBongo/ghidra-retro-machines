@@ -17,7 +17,9 @@
 // space-qualified like PRG_ALL_B2::8573), the owning function, the instruction with its flow type
 // and flow override, the EOL comment, and every outgoing reference with its type and source. Written for
 // grm-kon2 to tell JumpTableBoundAnalyzer's override path from its reference-pinning path at a
-// switch. Run as REALROM_EXTRA_POSTSCRIPT. Read-only.
+// switch. grm-0pen added what REACHED the site: incoming references, the instruction falling into
+// it, and the head of its fall-through run with that head's incoming references. Run as
+// REALROM_EXTRA_POSTSCRIPT. Read-only.
 import ghidra.app.script.GhidraScript;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.listing.CommentType;
@@ -34,6 +36,10 @@ public class SiteStateProbe extends GhidraScript {
 		}
 		for (String s : spec.split(",")) {
 			Address a = toAddr(s.trim());
+			if (a == null) {
+				println("SSP " + s.trim() + " unresolvable (default-space sites take no prefix)");
+				continue;
+			}
 			Function owner = currentProgram.getFunctionManager().getFunctionContaining(a);
 			println("SSP " + a + " owner=" + (owner == null ? "NONE" : owner.getName() + "@" +
 				owner.getEntryPoint()));
@@ -45,6 +51,36 @@ public class SiteStateProbe extends GhidraScript {
 			for (Reference r : currentProgram.getReferenceManager().getReferencesFrom(a)) {
 				println("SSP " + a + " ref " + r.getToAddress() + " " + r.getReferenceType() + " " +
 					r.getSource() + " primary=" + r.isPrimary());
+			}
+			// What reached this site (grm-0pen): incoming references, and whether the instruction
+			// just before it falls through into it -- the two ways flow disassembles an address.
+			for (Reference r : currentProgram.getReferenceManager().getReferencesTo(a)) {
+				println("SSP " + a + " from " + r.getFromAddress() + " " + r.getReferenceType() + " " +
+					r.getSource() + " primary=" + r.isPrimary());
+			}
+			Instruction prev = currentProgram.getListing().getInstructionBefore(a);
+			if (prev != null && prev.getMaxAddress().next() != null &&
+				prev.getMaxAddress().next().equals(a)) {
+				println("SSP " + a + " prev=" + prev.getMinAddress() + " " + prev + " flow=" +
+					prev.getFlowType() + " fallthrough=" + prev.getFallThrough());
+			}
+			// Walk back through fall-through predecessors to the run's head: the first instruction
+			// nothing falls into, which is where some reference (or seed) started this flow.
+			Instruction head = currentProgram.getListing().getInstructionAt(a);
+			for (int i = 0; head != null && i < 256; i++) {
+				Instruction p = currentProgram.getListing().getInstructionBefore(head.getMinAddress());
+				if (p == null || !head.getMinAddress().equals(p.getFallThrough())) {
+					break;
+				}
+				head = p;
+			}
+			if (head != null && !head.getMinAddress().equals(a)) {
+				println("SSP " + a + " head=" + head.getMinAddress() + " " + head);
+				for (Reference r : currentProgram.getReferenceManager()
+						.getReferencesTo(head.getMinAddress())) {
+					println("SSP " + a + " head-from " + r.getFromAddress() + " " +
+						r.getReferenceType() + " " + r.getSource() + " primary=" + r.isPrimary());
+				}
 			}
 		}
 	}

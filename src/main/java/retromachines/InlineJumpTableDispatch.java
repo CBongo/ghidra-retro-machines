@@ -432,7 +432,7 @@ final class InlineJumpTableDispatch {
 		return SplitDispatchTableAnalyzer.isBanked(program, targetBlock);
 	}
 
-	/** How many instructions {@link #plausibleTarget} decodes before accepting a target. */
+	/** How many instructions {@link #decodesAsCode} decodes before accepting a target. */
 	private static final int PLAUSIBLE_DECODE_STEPS = 8;
 
 	/**
@@ -454,6 +454,22 @@ final class InlineJumpTableDispatch {
 		if (listing.getDefinedDataContaining(target) != null) {
 			return false;
 		}
+		return decodesAsCode(program, target, false);
+	}
+
+	/**
+	 * The bytes-only half of {@link #plausibleTarget}: whether the bytes at {@code target} decode
+	 * along fall-through for {@link #PLAUSIBLE_DECODE_STEPS} instructions (or up to a return/jump)
+	 * with no undefined opcode and no {@code BRK}. Consults no listing state, so the answer does
+	 * not depend on what analysis has already disassembled -- what {@code JumpTableBoundAnalyzer}'s
+	 * grm-0pen cut needs, since it runs before the over-read it judges is laid down.
+	 * <p>
+	 * {@code stopAtCall} also accepts at the first call: the bytes after a {@code JSR} are often
+	 * the callee's INLINE ARGUMENTS, not instructions (db3's {@code c7a0 LDA #0 / JSR $db47} is
+	 * followed by the argument byte {@code 13}, an undefined opcode), so decoding past one rejects
+	 * real handlers.
+	 */
+	static boolean decodesAsCode(Program program, Address target, boolean stopAtCall) {
 		PseudoDisassembler dis = new PseudoDisassembler(program);
 		Address at = target;
 		for (int i = 0; i < PLAUSIBLE_DECODE_STEPS; i++) {
@@ -468,7 +484,8 @@ final class InlineJumpTableDispatch {
 				return false;
 			}
 			FlowType flow = instr.getFlowType();
-			if (flow.isTerminal() || (flow.isJump() && !flow.isConditional())) {
+			if (flow.isTerminal() || (flow.isJump() && !flow.isConditional()) ||
+				(stopAtCall && flow.isCall())) {
 				return true;
 			}
 			at = instr.getFallThrough();

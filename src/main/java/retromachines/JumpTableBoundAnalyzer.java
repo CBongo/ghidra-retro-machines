@@ -543,7 +543,19 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		// Normally the first count() cases; every other one for a grm-yjiq overlapping byte table.
 		ArrayList<Address> firstN =
 			shrinks ? new ArrayList<>(result.keep(realCases)) : new ArrayList<>(realCases);
-		if (shrinks) {
+		// grm-0pen: the rule above capped the extent; now cut the kept cases at the first target
+		// whose bytes do not decode as code (see JumpTableBound.codePrefix for why this is only
+		// ever a refinement). Bytes only, never the listing, so analysis order cannot move it.
+		List<Boolean> decodes = new ArrayList<>(firstN.size());
+		for (Address a : firstN) {
+			decodes.add(InlineJumpTableDispatch.decodesAsCode(program, a, true));
+		}
+		int codePrefix = JumpTableBound.codePrefix(decodes);
+		boolean cutAtData = codePrefix < firstN.size();
+		if (cutAtData) {
+			firstN = new ArrayList<>(firstN.subList(0, codePrefix));
+		}
+		if (shrinks || cutAtData) {
 			keptOut.addAll(firstN);
 		}
 		// grm-rsxe: a KNOWN_CODE cut is pinned by references even in a real function. The one
@@ -588,7 +600,8 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		}
 		String why;
 		if (!shrinks) {
-			why = "kept all"; // cross-bank table no rule could cut (grm-pwuh)
+			// A cross-bank table no extent rule could cut (grm-pwuh), possibly cut by grm-0pen.
+			why = cutAtData ? "first target that does not decode as code" : "kept all";
 		}
 		else if (result.rule() == JumpTableBound.Rule.SWITCH_WINDOW) {
 			why = "targets between switch and table";
@@ -615,13 +628,15 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 			// grm-d59c: two byte tables, low then high, merged by the decompiler into one extent
 			why += ", planar lo/hi tables " + Integer.toHexString(result.planarGap()) + " apart";
 		}
+		if (shrinks && cutAtData) {
+			why += ", then first target that does not decode as code"; // grm-0pen
+		}
 		if (isCrossBank) {
 			why += ", table read from switched-in bank " + targetSpace.getName() + " as " +
 				crossBank.model();
 		}
 		String text = "[JumpTableBound] table at " + Long.toHexString(tableStart) + " bounded " +
-			realCases.size() + " -> " + (shrinks ? result.count() : realCases.size()) +
-			" entries (" + why + ")";
+			realCases.size() + " -> " + firstN.size() + " entries (" + why + ")";
 		String existing = listing.getComment(CommentType.EOL, switchAddr);
 		if (existing == null || existing.isBlank()) {
 			listing.setComment(switchAddr, CommentType.EOL, text);

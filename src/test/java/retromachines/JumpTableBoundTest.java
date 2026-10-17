@@ -753,4 +753,39 @@ public class JumpTableBoundTest {
 		assertFalse(
 			JumpTableBound.bound(targets, List.of(new LoadTableEntry(0x9000, 1, 90))).isBounded());
 	}
+
+	/** grm-0pen: kept cases are cut at the first target that does not decode as code. Deadly
+	 *  Towers' bank-2 trampoline table: 6 real handlers, then data records. */
+	@Test
+	public void codePrefixCutsAtFirstNonCodeTarget() {
+		assertEquals(6, JumpTableBound.codePrefix(
+			List.of(true, true, true, true, true, true, false, false, false, true)));
+	}
+
+	/** One non-code target followed by code again is ambiguous (an odd real handler): no cut. */
+	@Test
+	public void codePrefixNeedsTheCutConfirmed() {
+		assertEquals(6, JumpTableBound.codePrefix(List.of(true, true, true, false, true, false)));
+		assertEquals(6, JumpTableBound.codePrefix(List.of(true, true, true, false, false, true)));
+	}
+
+	/** A cut near the end confirms against as many cases as exist. */
+	@Test
+	public void codePrefixConfirmsAgainstWhatRemains() {
+		assertEquals(3, JumpTableBound.codePrefix(List.of(true, true, true, false)));
+		assertEquals(3, JumpTableBound.codePrefix(List.of(true, true, true, false, false)));
+	}
+
+	/** A prefix of fewer than 2 is nothing trustworthy to cut to: the list is left whole. */
+	@Test
+	public void codePrefixLeavesShortPrefixesAlone() {
+		assertEquals(4, JumpTableBound.codePrefix(List.of(false, true, true, true)));
+		assertEquals(3, JumpTableBound.codePrefix(List.of(true, false, true)));
+	}
+
+	/** Every target decodes: nothing to cut. */
+	@Test
+	public void codePrefixKeepsAllWhenEveryTargetDecodes() {
+		assertEquals(3, JumpTableBound.codePrefix(List.of(true, true, true)));
+	}
 }

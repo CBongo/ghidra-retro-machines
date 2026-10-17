@@ -12,12 +12,12 @@ REALROM block RAM 0000-07ff overlay=false
 REALROM count blocks.total 7
 REALROM count blocks.overlay 3
 REALROM count refs.intoOverlay.retargeted 529
-REALROM count refs.intoOverlay.intraOverlay 1915
-REALROM count instrs.inOverlay 4734
+REALROM count refs.intoOverlay.intraOverlay 1578
+REALROM count instrs.inOverlay 4549
 REALROM count bankComments 199
-REALROM count warnings 2
+REALROM count warnings 1
 REALROM count notes 0
-REALROM count symbols 350
+REALROM count symbols 260
 REALROM sample.bankcomment 806b bank -> 0 (bank=0) via caseD_ae
 REALROM sample.bankcomment 8074 bank -> 0 (bank=0) via FUN_PRG_ALL_B3__fc54
 REALROM sample.bankcomment 8081 bank -> 0 (bank=0) via caseD_ae
@@ -242,9 +242,8 @@ REALROM sample.ref 8090 -> PRG_ALL_B1::fc54 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8090 -> PRG_ALL_B3::fc54 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8095 -> PRG_ALL_B1::80d4 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8095 -> PRG_ALL_B3::813c UNCONDITIONAL_CALL primary=true
-REALROM sample.ref.truncated 25 of 2444
+REALROM sample.ref.truncated 25 of 2107
 REALROM sample.warn 9fba [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
-REALROM sample.warn ad41 [Bad Instruction] Disassembly not permitted within uninitialized memory block (flow from PRG_ALL_B3::ad41)
 REALROM sample.symbol 805b case_0 USER_DEFINED primary=true
 REALROM sample.symbol 806b case_17 USER_DEFINED primary=true
 REALROM sample.symbol 806b case_18 USER_DEFINED primary=false
@@ -270,5 +269,5 @@ REALROM sample.symbol 82d2 case_9 USER_DEFINED primary=true
 REALROM sample.symbol 82eb case_10 USER_DEFINED primary=true
 REALROM sample.symbol 82fe case_0 USER_DEFINED primary=true
 REALROM sample.symbol 82fe case_22 USER_DEFINED primary=false
-REALROM sample.symbol.truncated 25 of 338
+REALROM sample.symbol.truncated 25 of 248
 === REALROM END ===
