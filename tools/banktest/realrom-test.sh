@@ -1461,6 +1461,38 @@ import_and_dump() {
 	return 0
 }
 
+# The bless COMMIT is the bless record (bead grm-c8mv): `git log -p -- realrom/expected/<id>.dump`
+# is a row's history, so instead of a hand-written entry in docs/realrom-bless-history.md each
+# bless collects one line of count movement here, printed after the summary as a block to paste
+# into the commit message. Called BEFORE the golden is overwritten.
+#
+#   record_bless <id> <old golden path> <new dump path>
+BLESS_RECORD=()
+record_bless() {
+	local id="$1" old="$2" new="$3" moved
+	if [ ! -f "$old" ]; then
+		BLESS_RECORD+=("$id: new golden")
+		return 0
+	fi
+	if cmp -s "$old" "$new"; then
+		BLESS_RECORD+=("$id: unchanged")
+		return 0
+	fi
+	moved=$(awk '
+		$1 == "REALROM" && $2 == "count" { if (FNR == NR) o[$3] = $4; else { n[$3] = $4; ord[++k] = $3 } }
+		END {
+			s = ""
+			for (i = 1; i <= k; i++) { c = ord[i]
+				if (!(c in o)) s = s sep c " (new) " n[c]
+				else if (o[c] != n[c]) s = s sep c " " o[c] " -> " n[c]
+				else continue
+				sep = ", " }
+			for (c in o) if (!(c in n)) { s = s sep c " " o[c] " (gone)"; sep = ", " }
+			print s
+		}' "$old" "$new")
+	BLESS_RECORD+=("$id: ${moved:-counts unchanged (sample/hash lines only)}")
+}
+
 # The per-row tail, shared by the solo path and the batched path (bead grm-x4y1.3, as
 # run-banktest.sh's finish_fixture is for grm-w9ev.5): given a row's normalized dump in $out,
 # the second-layer hash check, candidate-cache write, bless/golden diff, ROW_* bookkeeping and the
@@ -1533,6 +1565,7 @@ finish_row() {
 	fi
 
 	if [ "$MODE" = bless ]; then
+		record_bless "$id" "$golden_path" "$out"
 		if ! grm_atomic_publish "$out" "$golden_path"; then
 			ROW_ID+=("$id"); ROW_STATUS+=("FAIL"); ROW_DETAIL+=("could not write $golden")
 			n_fail=$((n_fail + 1))
@@ -1786,6 +1819,7 @@ while IFS=$'\t' read -r row_plat id title sha mapper board golden opts member ||
 			# Atomic + fail-closed (grm-z34): a failed publish must not claim BLESS. No
 			# criteria-refusal concept here (realrom-test.sh has none, per grm-z34's scoping
 			# comment) -- only the write itself can fail.
+			record_bless "$id" "$golden_path" "$cached"
 			if ! grm_atomic_publish "$cached" "$golden_path"; then
 				ROW_ID+=("$id"); ROW_STATUS+=("FAIL"); ROW_DETAIL+=("could not write $golden")
 				n_fail=$((n_fail + 1))
@@ -1835,6 +1869,25 @@ echo
 filtered_note=""
 [ "$n_filtered" -gt 0 ] && filtered_note=" filtered=$n_filtered"
 echo "summary: pass=$n_pass fail=$n_fail skip=$n_skip bless=$n_bless$filtered_note   (work: $WORK)"
+
+# grm-c8mv: the bless record goes in the commit, not in docs/realrom-bless-history.md. A failed
+# publish still recorded its line, so only rows whose STATUS is BLESS are printed.
+if [ "${#BLESS_RECORD[@]}" -gt 0 ]; then
+	echo
+	echo "== bless record: paste into the commit message (body lines, then the trailers) =="
+	blessed_ids=" "
+	for i in "${!ROW_ID[@]}"; do
+		[ "${ROW_STATUS[$i]}" = BLESS ] && blessed_ids+="${ROW_ID[$i]} "
+	done
+	for line in "${BLESS_RECORD[@]}"; do
+		case "$blessed_ids" in *" ${line%%:*} "*) echo "  $line" ;; esac
+	done
+	echo
+	for line in "${BLESS_RECORD[@]}"; do
+		case "$blessed_ids" in *" ${line%%:*} "*) echo "Realrom-Bless: ${line%%:*}" ;; esac
+	done
+	echo "== (say WHY in the body; git log --grep=Realrom-Bless lists every bless) =="
+fi
 
 # A SKIP is reported per row and is easy to accept as "that ROM does not exist here" when the
 # real cause is a romdir that was never passed -- this tier indexes each dir at DEPTH 1 ONLY, so

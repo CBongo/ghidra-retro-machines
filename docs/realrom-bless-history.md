@@ -1,14 +1,32 @@
 # Real-ROM bless history
 
-The append-only archive of the real-ROM tier's re-bless log. Each entry records why
-`tools/banktest/realrom/expected/*.dump` goldens moved: which rows, which count or sample
-lines, which bead or commit caused it, and what the owner ruled.
+**Blesses are no longer logged here (bead grm-c8mv, 2026-10-17). The bless commit is the
+record.** A row's history is
+
+```bash
+git log -p -- tools/banktest/realrom/expected/<id>.dump   # one row, with the golden diffs
+git log --grep=Realrom-Bless                               # every bless since grm-c8mv
+```
+
+`realrom-test.sh bless` prints a block after its summary: one line of count movement per blessed
+row, then a `Realrom-Bless: <id>` trailer per row. Paste it into the commit message and say WHY
+the row moved in the body (bead, mechanism, what the owner ruled). Writing it here as well only
+duplicated the commit, and gave parallel worktrees a shared file to conflict on.
+
+**What still belongs here** is what no commit carries: observations from runs that blessed
+nothing. That means a flapping row ("dragonpower drew 152 in 1 of 3 runs on this build"), a row
+held back at a known-good golden and why, an owner ruling about the tier, or a correction to an
+earlier entry. Add those newest first, under a new dated section at the top.
+
+Everything below the 2026-10-17 entry is the archive from before that change: the re-bless log
+as it was kept by hand, including entries moved here from the memory, some of which have no
+matching commit. It is frozen; do not try to rebuild it from git.
 
 **This file is history, not status.** The current state of the tier (last verified result, known
 failing or bistable rows, the toolchain banner a run must show) lives in the
 `realrom-current-fails` bd memory (`bd recall realrom-current-fails`), which is deliberately kept
-short and current-only. Anything that stops being current there, and every dated `LATEST` entry,
-is moved here, newest first, under a new dated section at the top.
+short and current-only. Anything that stops being current there moves here, unless it is a bless,
+which the commit already records.
 
 Entries are copied verbatim from the memory and are plain text, not Markdown: identifiers with
 underscores or asterisks may render oddly. Each was true when written, and later entries

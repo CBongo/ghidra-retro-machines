@@ -932,9 +932,12 @@ it is never a `run-banktest.sh` chunk (whose `all` would otherwise pull it in).
 
   Expected pass/fail counts go stale faster than anything else in this document, so they are not
   stated here. The `realrom-current-fails` bd memory holds the tier's *current* state (last verified
-  result, known failing rows, if any); `docs/realrom-bless-history.md` holds the history, including
-  the retired 12.1.3-toolchain and flap-hash records; `realrom-howto` holds the method. See also
-  `grm-qp5x`.
+  result, known failing rows, if any). A bless's own record is its commit message (grm-c8mv):
+  `realrom-test.sh bless` prints the count movement and a `Realrom-Bless: <id>` trailer per row to
+  paste in, and `git log -p -- tools/banktest/realrom/expected/<id>.dump` is a row's history.
+  `docs/realrom-bless-history.md` holds what no commit carries (flaps, held rows, owner rulings)
+  plus the frozen pre-grm-c8mv archive, including the retired 12.1.3-toolchain and flap-hash
+  records; `realrom-howto` holds the method. See also `grm-qp5x`.
 - **Scripted A/B (`tools/banktest/ab-test.sh`, grm-5jjs):** attributing a real-ROM row's
   behaviour to a specific commit (or to a Ghidra toolchain change, via `--toolchain`) used to be
   a hand-run stash/rebuild/diff procedure with an easy-to-forget rebuild step in the middle.

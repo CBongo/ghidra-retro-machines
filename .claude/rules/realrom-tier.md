@@ -160,8 +160,12 @@ that only one configuration ever produced; the real blocker is a decompiler cras
 (`grm-gz42`). See `grm-qp5x`, and the **`realrom-current-fails`** bd
 memory for the current, authoritative row list — that memory is the single place a row's status
 lives, is revised as rows get fixed or reclassified, and supersedes any older summary including
-this one. It holds current state only; all history (dated entries, retired flap and failure
-records) lives in `docs/realrom-bless-history.md`. (It replaced `realrom-expected-baseline-fails`, which was only half-authoritative: it
+this one. It holds current state only. **A bless is recorded in its commit, not in a file**
+(grm-c8mv): paste the block `realrom-test.sh bless` prints (count movement per row plus one
+`Realrom-Bless: <id>` trailer each) into the commit message and say why the row moved;
+`git log -p -- tools/banktest/realrom/expected/<id>.dump` is that row's history.
+`docs/realrom-bless-history.md` keeps only what no commit carries (flaps, held rows, owner
+rulings about the tier) plus the frozen pre-grm-c8mv archive. (It replaced `realrom-expected-baseline-fails`, which was only half-authoritative: it
 was never itself updated when a *later* memory superseded its `megaman` paragraph, so it named a
 jitter signature that no longer applies while still calling itself current. Its durable method
 content — invocation, manifest-set semantics, cache and A/B mechanics — now lives in
