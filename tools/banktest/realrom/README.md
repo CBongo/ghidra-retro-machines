@@ -378,7 +378,8 @@ probe is not the "bespoke probe" `AGENTS.md` warns against. Writing a new one pe
 |---|---|---|
 | `SiteStateProbe.java` | At each site: owning function, EOL comment, every outgoing and incoming ref with type and source, the instruction falling into it, and the head of its fall-through run with that head's incoming refs (what flow disassembled it) | `GRM_SITES=c183,PRG_ALL_B2::8573` (default space unless qualified) |
 | `SymbolNamespaceProbe.java` | Every symbol at each site with its namespace path, and whether the enclosing function's body contains the site; `ALL` dumps every symbol, for diffing two runs | `GRM_NS_SITES=…` or `ALL` |
-| `JumpTableProbe.java` | Every computed jump and its recovered targets (`targets=` counts DISTINCT targets, not table slots) | — |
+| `JumpTableProbe.java` | Every computed jump and its recovered targets (`targets=` counts DISTINCT targets, not table slots), plus each switch's `[JumpTableBound]` comment | — |
+| `BankContextProbe.java` | Every reference whose target `BankContext.resolve` places in a DIFFERENT bank under the locally provable bank state, bucketed by consumer shape and by whether an in-run switch caused it (grm-1qi7). Existing references only: an operand with none is not checked | — |
 | `DecompileSiteProbe.java` | Did the decompiler complete the function at each site, its error if not, and its BRANCHIND / jump-table counts | `GRM_DECOMPILE_SITES=<space>::<hex>,…` |
 | `InstructionCensus.java` | Per-block instruction counts and address ranges, for A/B-ing two builds or toolchains by diff | — |
 | `CopyEvidenceProbe.java` | For each copy loop: why a declined one declined (refs into its destination), and what a materialized `COPY_*` block holds | — |
