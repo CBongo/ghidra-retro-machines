@@ -23,9 +23,10 @@ the same word; the flags were removed in grm-x4y1.5, see below). Sets **compose*
 | `nes-curated` | 16 | Curated NES board-representative set (one title per shipped board) |
 | `nes-gme` | 19 | NES game-music-extraction titles of interest |
 | `snes-cart` | 13 | SNES alt-board cartridge loader sample (loader layout only, `-noanalysis`) |
+| `snes-spc` | 9 | SNES SPC700 sound-driver upload recovery (65816 emulated against the IPL handshake; hashes of recovered blocks, `-noanalysis`) |
 | `nes` | 35 | platform group: every NES set (`nes-curated` + `nes-gme`) |
-| `snes` | 13 | platform group: every SNES set (`snes-cart`) |
-| `all` | 48 | every set on every platform |
+| `snes` | 22 | platform group: every SNES set (`snes-cart` + `snes-spc`; `snes-spc` is a `snes-*` sub-platform because it needs its own dump script) |
+| `all` | 57 | every set on every platform |
 
 **A bare `check` now runs `core`, not the curated NES set** — the owner's ruling on grm-ughg.
 `core` is a *new* always-run floor, not a renamed manifest: it is a cross-manifest subset of
@@ -38,7 +39,7 @@ aliases since grm-ughg). They are now ordinary unknown options: exit 2, with an 
 replacement. Type the set positionally instead: `--gme` → `nes-gme`, `--all` → `nes` (both NES
 manifests, 35 rows today — what `--all` always meant), `--snes` → `snes`; an unflagged run used to
 mean `nes-curated` and is now spelled `nes-curated`. The bare word `all` spans every platform
-(48 rows), because a word that didn't mean what it said is what grm-ughg was filed to fix.
+(57 rows), because a word that didn't mean what it said is what grm-ughg was filed to fix.
 `ab-test.sh` takes the same positional SET names and forwards them to `realrom-test.sh`;
 `realrom-test.sh ids [SET ...]` prints a set's row ids (read-only, instant).
 

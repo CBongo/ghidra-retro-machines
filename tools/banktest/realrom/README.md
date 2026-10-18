@@ -60,12 +60,13 @@ safe.
 | `core` | nes | both | kicarus, cv2, tmnt, smb, zelda | Always-run floor (about a minute, ~50s measured 2026-10-14): the two stable grm-mu7 victims and three controls. **The default for a bare `check`.** |
 | `nes-curated` | nes | `manifest.tsv` | every row | The curated NES minimum: one representative title per shipped board, plus fuller coverage of the boards where a single title proves least — Bandai FCG (mappers 16/157/159), the newest addition when the set was assembled. |
 | `nes-gme` | nes | `manifest-gme.tsv` | every row | The expanded NES reference set: titles of interest to the parent game-music-extraction project. Deliberately *not* a gate — a reference point for planning and an occasional thorough check. |
+| `snes-spc` | snes-spc | `manifest-snes-spc.tsv` | every row | SNES SPC700 sound-driver upload recovery (bead `grm-1.7.3`): the 65816 is emulated against the SPC700 IPL handshake model and the dump pins, per title, which entry strategy produced the result, the SPC700 entry address and each uploaded block's destination, length, 65816 issuer address and SHA-256 -- hashes only, never bytes. Imports with `-noanalysis`, like `snes-cart`. |
 | `snes-cart` | snes | `manifest-snes.tsv` | every row | The SNES loader set: cartridges covering the alt-board axis the NES GME corpus does not — SA-1, SuperFX 1/2, DSP-1 in both LoROM and HiROM form, S-DD1, CX4, the one genuine ExHiROM, a clean/copier pair on each of two titles, and one cartridge whose declared map mode contradicts its header location. |
 
 Platform groups, derived from `platforms.tsv`: **`nes`** (`nes-curated` + `nes-gme`, 35 rows —
-what the removed `--all` flag meant) and **`snes`** (`snes-cart`, 13
+what the removed `--all` flag meant) and **`snes`** (`snes-cart` + `snes-spc`, 22
 rows — what the removed `--snes` flag meant). **`all`** is the driver's own union of every set on every
-platform (48 rows today) — the word that changed meaning in `grm-ughg`, since before it there was no
+platform (57 rows today) — the word that changed meaning in `grm-ughg`, since before it there was no
 bare `all` at all, only the `--all` flag meaning "both NES manifests."
 
 ```bash

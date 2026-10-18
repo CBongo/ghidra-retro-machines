@@ -1,0 +1,15 @@
+=== REALROM BEGIN ===
+REALROM program spc_gradius3.sfc
+REALROM sha256 93da752a0c76167d0907efa832367e5d14aab8e835b864f345c386071a9af718
+REALROM language 65816:LE:24:retro
+REALROM spc strategy RESET
+REALROM spc stop IPL_DONE
+REALROM spc entry 0400
+REALROM spc attempts 1
+REALROM spc blocks 4
+REALROM spc block 0 dest=0000 len=0001 issuer=009b34 sha256=4bf5122f344554c53bde2ebb8cd2b7e3d1600ad631c385a5d7cce23c7785459a
+REALROM spc block 1 dest=5000 len=2f80 issuer=009b5d sha256=7ff634b23b8ef6d85f5d879c359a33b7da587d2122e2c7eff49020411e6e2ea7
+REALROM spc block 2 dest=7f80 len=8000 issuer=009b5d sha256=bdbb5c6457b7e22a24958dac6bc74488b01428a3d64d9093ee2dbd80a35a860c
+REALROM spc block 3 dest=0400 len=2c00 issuer=009b5d sha256=4a32c2e0d66caab852dd40b87158d3d24af0b272026797946f4d738991407d18
+REALROM spc image bytes=56193 sha256=ea5eb9bc7a006397b0fbe71d34cbb223ddd9751d83caa4f21e1c7adc3c25cf29
+=== REALROM END ===

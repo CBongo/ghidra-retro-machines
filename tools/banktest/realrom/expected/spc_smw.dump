@@ -1,0 +1,14 @@
+=== REALROM BEGIN ===
+REALROM program spc_smw.sfc
+REALROM sha256 0838e531fe22c077528febe14cb3ff7c492f1f5fa8de354192bdff7137c27f5b
+REALROM language 65816:LE:24:retro
+REALROM spc strategy RESET
+REALROM spc stop IPL_DONE
+REALROM spc entry 0500
+REALROM spc attempts 1
+REALROM spc blocks 3
+REALROM spc block 0 dest=0500 len=0e3e issuer=0080d0 sha256=3dbb0e4a81b95785e44324a281a0ede97af45fa96428bbd759adbdccca99fc59
+REALROM spc block 1 dest=5570 len=0a6b issuer=0080d0 sha256=151f03756f3d2a7411793881220c56534d7e6035fb1a644d2b235c2ebde99abe
+REALROM spc block 2 dest=1360 len=161d issuer=0080d0 sha256=6df2ecb3a7d123bdafa314dc38f580516c5b77c83b93acdeef2cd8cf17b33d31
+REALROM spc image bytes=11974 sha256=e00e8bcce3badd82554768dab9ddb2fed4fccd8e5b841f4923799e912d8ed584
+=== REALROM END ===

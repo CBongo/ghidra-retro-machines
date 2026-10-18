@@ -1,0 +1,12 @@
+=== REALROM BEGIN ===
+REALROM program spc_lufia.sfc
+REALROM sha256 73731a5a7932965de02a9e98055dcf88b4d17b8f710a6ecfde3e36a1f248773b
+REALROM language 65816:LE:24:retro
+REALROM spc strategy RESET
+REALROM spc stop IPL_DONE
+REALROM spc entry 0400
+REALROM spc attempts 1
+REALROM spc blocks 1
+REALROM spc block 0 dest=0400 len=1f0e issuer=00915c sha256=36818c07f259ad85dfd34187f7360b4c91bcd6c1fcf3e917e8e665791d5d6f80
+REALROM spc image bytes=7950 sha256=e3af260d7ac1b293f07f90484c8105e7d359ba0642b0188a7feb776594b5e350
+=== REALROM END ===

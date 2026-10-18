@@ -1,0 +1,17 @@
+=== REALROM BEGIN ===
+REALROM program spc_ff3.sfc
+REALROM sha256 10eccc5d2fab81346dd759f6be478dcb682eef981e8d3d662da176e1f9a996bc
+REALROM language 65816:LE:24:retro
+REALROM spc strategy RESET
+REALROM spc stop IPL_DONE
+REALROM spc entry 0200
+REALROM spc attempts 1
+REALROM spc blocks 6
+REALROM spc block 0 dest=0200 len=17b7 issuer=c5006d sha256=f3f122801400b1ff9c5c7e8a0fc4e2848ff21a154b8eebe933cb636640611d4d
+REALROM spc block 1 dest=2c00 len=1c00 issuer=c500d0 sha256=74017106ce4df4f0bb7413d731ca235a4ac3c8d8abeaf2467f822486b636ad7f
+REALROM spc block 2 dest=4800 len=014d issuer=c500d0 sha256=8f4e2730e8d7b695a6c41ec9172ec02d7ab81d680c0b306ca6f89a33d288e647
+REALROM spc block 3 dest=1b00 len=0020 issuer=c500d0 sha256=1c85e9ef40062449d86e36fc91509c4122922034e7b547b3eaeab65b9249510b
+REALROM spc block 4 dest=1a80 len=0010 issuer=c500d0 sha256=168783929fa0dfc183c6fae3a35c69d676974f5b327f6dcec3b524dc2577f2ad
+REALROM spc block 5 dest=1a00 len=0010 issuer=c500d0 sha256=01199b3d5a75461a4c0114645a151d944c57bf1cb22b7e8346465c529ddda0a9
+REALROM spc image bytes=13636 sha256=b317d0a85e49fd3416b2ad41bea0ab6ddd9194ff1336942c175d1bcbaab1ff17
+=== REALROM END ===

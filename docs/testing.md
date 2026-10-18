@@ -836,7 +836,7 @@ it is never a `run-banktest.sh` chunk (whose `all` would otherwise pull it in).
   no prior `build-and-test.sh` run is required; `measure-overlay-scale.sh` is the one script
   in this family that still needs one, since it was not in scope for that change.
 - **Set selection is positional (bead `grm-ughg`), not a flag per platform.** `realrom/sets.tsv`
-  names four sets (`core`, `nes-curated`, `nes-gme`, `snes-cart`); `realrom/platforms.tsv` derives
+  names five sets (`core`, `nes-curated`, `nes-gme`, `snes-cart`, `snes-spc`); `realrom/platforms.tsv` derives
   two platform groups (`nes`, `snes` — every set on that platform) and the driver adds `all`
   (every set on every platform). Sets **compose** and are deduplicated by id, so
   `check core nes-gme` is a valid, if redundant, invocation. `--list-sets` prints the table.
@@ -845,7 +845,7 @@ it is never a `run-banktest.sh` chunk (whose `all` would otherwise pull it in).
   Those flags were deprecated aliases until grm-x4y1.5 removed them; they now exit 2 with a hint
   (`--gme`→`nes-gme`, `--all`→`nes` — both NES manifests, 35 rows today — `--snes`→`snes`). The
   *bare word* `all` is the one that changed meaning: before grm-ughg there was no such word, and
-  now it spans every platform (48 rows today).
+  now it spans every platform (57 rows today).
 - **A bare `check` now runs `core`, not the curated NES set.** `core` (`realrom/sets.tsv`) is a
   new always-run floor — five rows (kicarus, cv2, tmnt, smb, zelda) drawn across both NES
   manifests, measured at ~46s — added beneath the full-tier requirement below for changes that
@@ -917,6 +917,23 @@ it is never a `run-banktest.sh` chunk (whose `all` would otherwise pull it in).
   edit changes the very layout the dump records. A reused candidate is additionally asserted
   to name this row and this ROM before it is accepted, so the next key omission fails loudly
   instead of blessing a stale dump.
+- **`snes-spc` (bead `grm-1.7.3`) is a real-ROM row set for SPC700 sound-driver upload recovery,
+  not a loader set.** Each of its nine rows (F-Zero, Super Mario World, Final Fantasy II/III,
+  Chrono Trigger, Secret of Mana, Lemmings, Gradius III, Lufia; clean `(USA).sfc` dumps, from
+  `GRM_SNES_ROM_DIR`) runs `SpcUploadRecovery` -- the 65816 under p-code emulation against the
+  `SpcIplModel` SPC700 IPL handshake on `$2140-$2143` -- via `SpcUploadRealRomDump.java`, and
+  pins which entry strategy produced the result (reset vector; or, for Secret of Mana, a
+  routine found by the `#$BBAA` handshake signature), the stop reason, the SPC700 entry
+  address, and per uploaded block the destination, length, 65816 issuer address and
+  **SHA-256** -- never bytes, so the golden carries nothing copyrighted. A `snes-spc` row is
+  its own platform (`platforms.tsv` row `snes-spc`: same `GRM_SNES_ROM_DIR`, same loader,
+  `-noanalysis`, no staleness stamp) because a platform carries the dump script; the driver
+  lets the group name `snes` cover every `snes-*` platform, so `check snes` runs both sets (22
+  rows). The goldens are the regression net for the emulation model (M/X/E context fix-ups,
+  interrupt injection, mapped-block loading); the unit tier (`SpcIplModelTest`,
+  `SpcUploadRecoveryProgramTest`) covers the protocol and a synthetic uploader. Cross-check
+  against the owner's game-music-extraction corpus reference extracts is manual and opt-in,
+  not part of the gate.
 - **`nominate` is NES-only** and refuses SNES rows rather than emitting garbage, since a
   SNES cartridge has no iNES header and no `machines/nes-*.yaml` claims it. SNES rows are
   selected from the `grm-9nxj.13` corpus survey (`build-and-test.sh check snes-rom-corpus` →

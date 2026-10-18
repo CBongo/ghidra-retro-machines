@@ -160,7 +160,7 @@ lite). This bead pilots the shared harness (§6).
 - **ROM-side extraction, static tier:** parse boot-time IPL uploads directly — the
   $2140-43 handshake carries documented address+length+data records; finding the
   record pointers in ROM is a static parse, no emulation.
-- **Generic tier (after harness):** emulate the 65816 uploader with a
+- **Generic tier (after harness) -- BUILT FIRST, before the static tier (grm-1.7.3):** the emulated tier now exists (`SpcIplModel`, `SpcUploadRecovery`, `SpcProgramMaterializer`, `SpcUploadAnalyzer`, the `ExtractSpcUpload` script, and the `snes-spc` real-ROM set) and was proven on the owner's 11-title corpus ahead of the static IPL-record parser, reversing the "static-first" order below. Original rationale: emulate the 65816 uploader with a
   port-write consumer modeling the IPL handshake state machine on the APU side —
   one consumer handles *every* game's uploader instead of per-game recognizers, and
   the same pattern covers C64→1541 drive-code upload later.

@@ -1,0 +1,10 @@
+id	title	sha256	mapper	board	golden	loader_opts	member
+spc_fzero	F-Zero (USA).sfc	bf16c3c867c58e2ab061c70de9295b6930d63f29f81cc986f5ecae03e0ad18d2	-	snes_lorom	spc_fzero.dump		
+spc_smw	Super Mario World (USA).sfc	0838e531fe22c077528febe14cb3ff7c492f1f5fa8de354192bdff7137c27f5b	-	snes_lorom	spc_smw.dump		
+spc_ff2	Final Fantasy II (USA) (Rev 1).sfc	414bacc05a18a6137c0de060b4094ab6d1b75105342b0bb36a42e45d945a0e4d	-	snes_lorom	spc_ff2.dump		
+spc_ff3	Final Fantasy III (USA) (Rev 1).sfc	10eccc5d2fab81346dd759f6be478dcb682eef981e8d3d662da176e1f9a996bc	-	snes_hirom	spc_ff3.dump		
+spc_ct	Chrono Trigger (USA).sfc	06d1c2b06b716052c5596aaa0c2e5632a027fee1a9a28439e509f813c30829a9	-	snes_hirom	spc_ct.dump		
+spc_som	Secret of Mana (USA).sfc	4c15013131351e694e05f22e38bb1b3e4031dedac77ec75abecebe8520d82d5f	-	snes_hirom	spc_som.dump		
+spc_lemmings	Lemmings (USA) (Rev 1).sfc	cd016c41c7ef9f4f243d57c2b1564b4ceb3b4c38cc165cd02ab6c8e35c93aa2e	-	snes_lorom	spc_lemmings.dump		
+spc_gradius3	Gradius III (USA).sfc	93da752a0c76167d0907efa832367e5d14aab8e835b864f345c386071a9af718	-	snes_lorom	spc_gradius3.dump		
+spc_lufia	Lufia & the Fortress of Doom (USA).sfc	73731a5a7932965de02a9e98055dcf88b4d17b8f710a6ecfde3e36a1f248773b	-	snes_lorom	spc_lufia.dump		

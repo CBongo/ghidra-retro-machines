@@ -515,7 +515,10 @@ for want in "${REQUESTED_SETS[@]}"; do
 				# quiet no-op -- "run every snes set" finding none means the tables disagree.
 				found=0
 				for s in "${ALL_SETS[@]}"; do
-					[ "$(tsv_field "$SETS_TSV" "$s" platform)" = "$want" ] || continue
+					# A platform also covers its "<platform>-*" sub-platforms (snes covers
+					# snes-spc, which needs its own dump script and so its own platform row).
+					s_p="$(tsv_field "$SETS_TSV" "$s" platform)"
+					case "$s_p" in "$want"|"$want"-*) ;; *) continue ;; esac
 					add_set "$s"; found=1
 				done
 				[ "$found" = 1 ] || {

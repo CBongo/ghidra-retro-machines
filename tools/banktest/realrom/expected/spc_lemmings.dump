@@ -1,0 +1,12 @@
+=== REALROM BEGIN ===
+REALROM program spc_lemmings.sfc
+REALROM sha256 cd016c41c7ef9f4f243d57c2b1564b4ceb3b4c38cc165cd02ab6c8e35c93aa2e
+REALROM language 65816:LE:24:retro
+REALROM spc strategy RESET
+REALROM spc stop IPL_DONE
+REALROM spc entry 0800
+REALROM spc attempts 1
+REALROM spc blocks 1
+REALROM spc block 0 dest=0800 len=0ac0 issuer=08d4bb sha256=9005f7da7431d61a37a5575b9705f92f527de65e05196c254f552ad0827768fd
+REALROM spc image bytes=2752 sha256=c86721aeb3759913ce7c98d19e8320ea0ee10275d19a3a52d922338d4b9730a1
+=== REALROM END ===
