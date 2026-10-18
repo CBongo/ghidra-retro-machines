@@ -25,6 +25,9 @@ import ghidra.program.model.address.Address;
 import ghidra.program.model.listing.CommentType;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Instruction;
+import ghidra.program.model.pcode.HighFunction;
+import ghidra.program.model.pcode.JumpTable;
+import ghidra.program.model.symbol.Namespace;
 import ghidra.program.model.symbol.Reference;
 
 public class SiteStateProbe extends GhidraScript {
@@ -48,6 +51,21 @@ public class SiteStateProbe extends GhidraScript {
 				instr.getFlowType() + " override=" + instr.getFlowOverride()));
 			println("SSP " + a + " eol=" +
 				currentProgram.getListing().getComment(CommentType.EOL, a));
+			// grm-jt7s: a jump-table override stored for this switch, and how many cases it holds.
+			Namespace overrideSpace = owner == null ? null : HighFunction.findOverrideSpace(owner);
+			Namespace jmpSpace = overrideSpace == null ? null
+					: HighFunction.findNamespace(currentProgram.getSymbolTable(), overrideSpace,
+						"jmp_" + a);
+			JumpTable jt = jmpSpace == null ? null
+					: JumpTable.readOverride(jmpSpace, currentProgram.getSymbolTable());
+			String cases;
+			try {
+				cases = jt == null ? "NONE" : jt.getCases().length + " cases";
+			}
+			catch (NullPointerException e) {
+				cases = "present (no case table read back)";
+			}
+			println("SSP " + a + " override=" + cases);
 			for (Reference r : currentProgram.getReferenceManager().getReferencesFrom(a)) {
 				println("SSP " + a + " ref " + r.getToAddress() + " " + r.getReferenceType() + " " +
 					r.getSource() + " primary=" + r.isPrimary());
