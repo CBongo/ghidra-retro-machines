@@ -114,6 +114,26 @@ Each is minutes of work and settles something specific. Highest value per unit e
   the likely cause is a wrong assumption about which bank `e72a JSR $8574` enters (`$80` gives 16K
   bank 0). Say so, and `grm-mej.19` can aim for a full RESTORED note.
 
+### 1.2 megaman2 `e6b5`: why is a mid-instruction target in the middle of the `92e4` jump table? (`grm-fnpu`)
+
+- [ ] **Question.** The bank-14 dispatch `92d8 TAY / DEY / LDA $9470,Y / … / 92e4 JMP ($0008)`
+  has 14 entries. Entries 8, 9 and 11–13 are `eeb5` (an `RTS`). Entry 10 is `e6b5`: same low byte,
+  high byte `e6` instead of `ee`. It lands on the operand byte of `e6b3 LDA $0400,Y`. Is it a typo
+  in a dead slot, or something the game really executes?
+
+**What the agent already found (static):** the entry index is `$93f0[object type] - 1`, and the
+128-entry `$93f0` table holds only 0–8, so no object type selects entry 10 (or any of 8–13).
+
+**What to check:**
+
+1. Emulator: break at `92e4` through normal play and confirm `Y` is never 10.
+2. A community disassembly or the Rockman 2 (J) build: does the same table have `ee` there?
+3. If cheap: what the `92e4` handler family is, so the table can be named.
+
+**What the answer changes:** probably nothing in the analyzer. `grm-8x6f` already keeps `e6b5`
+and cuts only the trailing `$ff` filler. A confirmed dead, typo'd slot is a per-game hint
+(`grm-hb6`), not a rule.
+
 ---
 
 ## 2. Def-use passes on untraced titles
