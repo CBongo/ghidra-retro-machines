@@ -50,6 +50,11 @@ public class JumpTableProbe extends GhidraScript {
 			}
 			String site = fmt(instr.getMinAddress());
 			println("JTAB site " + site + " " + instr.getMnemonicString() + " targets=" + n);
+			String eol = currentProgram.getListing()
+					.getComment(ghidra.program.model.listing.CommentType.EOL, instr.getMinAddress());
+			if (eol != null && eol.contains("[JumpTableBound]")) {
+				println("JTAB bound " + site + " " + eol);
+			}
 			for (Reference r : refs) {
 				if (r.getReferenceType().isFlow()) {
 					println("JTAB target " + site + " " + fmt(r.getToAddress()));

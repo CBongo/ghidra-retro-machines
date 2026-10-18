@@ -586,9 +586,13 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		// An exact search-loop set is not an extent to refine.
 		int codePrefix = searched != null ? firstN.size() : JumpTableBound.codePrefix(decodes);
 		boolean cutAtData = codePrefix < firstN.size();
+		// grm-8x6f: a kept case that still fails to decode means only the trailing run was cut.
+		boolean trailingCut = cutAtData && decodes.subList(0, codePrefix).contains(false);
 		if (cutAtData) {
 			firstN = new ArrayList<>(firstN.subList(0, codePrefix));
 		}
+		String dataCut = trailingCut ? "trailing targets that do not decode as code"
+				: "first target that does not decode as code";
 		if (shrinks || cutAtData) {
 			keptOut.addAll(firstN);
 		}
@@ -636,7 +640,7 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		String why;
 		if (!shrinks) {
 			// A cross-bank table no extent rule could cut (grm-pwuh), possibly cut by grm-0pen.
-			why = cutAtData ? "first target that does not decode as code" : "kept all";
+			why = cutAtData ? dataCut : "kept all";
 		}
 		else if (result.rule() == JumpTableBound.Rule.SWITCH_WINDOW) {
 			why = "targets between switch and table";
@@ -667,7 +671,7 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 			why += ", planar lo/hi tables " + Integer.toHexString(result.planarGap()) + " apart";
 		}
 		if (shrinks && cutAtData) {
-			why += ", then first target that does not decode as code"; // grm-0pen
+			why += ", then " + dataCut; // grm-0pen
 		}
 		if (isCrossBank) {
 			why += ", table read from switched-in bank " + targetSpace.getName() + " as " +

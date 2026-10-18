@@ -726,6 +726,12 @@ public final class JumpTableBound {
 	 * prefix would hold fewer than 2 (nothing trustworthy to cut to), or every case decodes, all of
 	 * them. The confirm is what stops one odd real handler from truncating a real table.
 	 *
+	 * <p>When that first cut is ambiguous, the TRAILING run of cases that do not decode is still
+	 * cut (grm-8x6f), keeping at least 2: nothing follows it to vouch for it, which is why a first
+	 * failure on the last case already stands unconfirmed. megaman2 92e4's 14 real entries hold
+	 * one odd one (entry 10, e6b5, an undefined opcode), and the planar extent's 15th entry is
+	 * $ff filler; the odd entry alone used to keep the filler.
+	 *
 	 * <p>This is a REFINEMENT of a bound some rule above already proved, never a rule of its own:
 	 * it can only shorten a kept list, so it cannot add a phantom case. That is the line grm-os9b
 	 * drew. A first-non-code cut used as a last-resort bound sails through an adjacent table's
@@ -749,7 +755,13 @@ public final class JumpTableBound {
 		}
 		for (int k = n + 1; k < Math.min(decodes.size(), n + 1 + CODE_CUT_CONFIRM); k++) {
 			if (decodes.get(k)) {
-				return decodes.size(); // a case right after the cut decodes again; ambiguous
+				// A case right after the cut decodes again; ambiguous. Cut only the trailing run,
+				// which stops at case k, so at least the n >= 2 prefix stays.
+				int tail = decodes.size();
+				while (!decodes.get(tail - 1)) {
+					tail--;
+				}
+				return tail;
 			}
 		}
 		return n;

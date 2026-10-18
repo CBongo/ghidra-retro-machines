@@ -21,6 +21,7 @@ import static org.junit.Assert.assertTrue;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 import org.junit.Test;
@@ -762,11 +763,25 @@ public class JumpTableBoundTest {
 			List.of(true, true, true, true, true, true, false, false, false, true)));
 	}
 
-	/** One non-code target followed by code again is ambiguous (an odd real handler): no cut. */
+	/** One non-code target followed by code again is ambiguous (an odd real handler): no cut
+	 *  there, and none at all when the last case decodes. */
 	@Test
 	public void codePrefixNeedsTheCutConfirmed() {
-		assertEquals(6, JumpTableBound.codePrefix(List.of(true, true, true, false, true, false)));
 		assertEquals(6, JumpTableBound.codePrefix(List.of(true, true, true, false, false, true)));
+		assertEquals(4, JumpTableBound.codePrefix(List.of(true, false, true, true)));
+	}
+
+	/** grm-8x6f: an ambiguous first cut still cuts the trailing non-code run. megaman2 92e4: 14
+	 *  real entries with one odd one (entry 10), then $ff filler as the 15th. */
+	@Test
+	public void codePrefixCutsTheTrailingRunPastAnOddHandler() {
+		List<Boolean> megaman2 = new ArrayList<>(Collections.nCopies(15, true));
+		megaman2.set(10, false);
+		megaman2.set(14, false);
+		assertEquals(14, JumpTableBound.codePrefix(megaman2));
+		assertEquals(5, JumpTableBound.codePrefix(List.of(true, true, true, false, true, false)));
+		assertEquals(5,
+			JumpTableBound.codePrefix(List.of(true, true, true, false, true, false, false)));
 	}
 
 	/** A cut near the end confirms against as many cases as exist. */
