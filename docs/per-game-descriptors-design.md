@@ -229,7 +229,7 @@ banking:
       comment: "UxROM bus-conflict latch (STA table,X); reached only via JMP ($0300)"
       provenance: "BankReachProbe candidate scan, confirmed by hand"   # grm-hb6.4: `provenance`, as every hint kind
 
-    # A SITE hint that also pins the VALUE (grm-m95). Ranks below recovered dataflow (§6.3).
+    # A SITE hint that also pins the VALUE (grm-m95). Wins over recovered dataflow (§6.3).
     - addr: 0xE7D4
       bank: 3                       # NOT YET SUPPORTED: GameCompiler rejects `bank:` (grm-hb6.4)
       comment: "bank index arrives from a jump table the value scanner cannot follow"
@@ -891,44 +891,40 @@ is the one `addOverlayRef` already uses for cross-bank flow targets (`:1588-1596
 A pleasing consequence for testing: because the hint *is* the seed, the Tier-3 fixture in §8 needs
 no `DisassembleAt.java` preScript to bootstrap it.
 
-### 6.3 Value hints rank below recovered dataflow and above descriptor defaults
+### 6.3 Value hints win over recovered dataflow (owner ruling 2026-10-18)
 
 An optional `bank:` on a site hint (grm-m95's gap: the bank index arrives through a helper or a
-table the value scanner cannot follow) supplies a value where the strategy recovered none.
+table the value scanner cannot follow) supplies the bank at that site.
 
-Its precedence slot is **exactly the one placement overrides already occupy**, and the rule is the
-one `DescriptorSupport.java:84-86` states in one clause — the analyzer "consults it only where dataflow
-did not determine the bank at a reference site (**flow always wins when it knows**)". The
-implementation shape is visible at `BoardBankAnalyzer.java:1520-1531`:
+**Tier-wide principle (owner, 2026-10-18): a per-game hint wins over what analysis autodetects, and
+when present it is relied upon.** Being told the answer by someone who has looked is one of the main
+reasons the tier exists. The same ruling governs every hint kind, not just this one -- e.g. an SPC
+upload location hint (grm-hb6.21) short-circuits emulation and scanning entirely. The original
+version of this section ranked value hints *below* dataflow, borrowing the "flow always wins when it
+knows" rule that `DescriptorSupport.java:84-86` states for **user placement overrides**; that rule is
+superseded for game-descriptor hints. Placement overrides themselves are a separate, session-scoped
+mechanism and are unchanged by this ruling.
 
-```java
-// When dataflow did not pin the switchable bank at this site, the value above is just the
-// initial-state fallback; a user placement override for this window instance takes over
-// (flow always wins when it knows). See grm-hsv.3 -- the override is the residual escape
-// hatch, never a guess.
-boolean bankKnown = (inState.knownMask() & instance.bankField().positionedMask()) != 0;
-Integer overrideBank = placementOverride.get(instance.name());
-boolean overridden = !bankKnown && overrideBank != null;
-```
-
-A value hint gates on the same `!known` test. Full ordering, highest first:
+Full ordering, highest first:
 
 | Rank | Source | Why here |
 |---|---|---|
-| 1 | Recovered dataflow value | Derived from the program's own instructions; the only evidence. |
-| 2 | **Game descriptor value hint** | A human's recorded finding about this title. |
-| 3 | User placement override | Session-scoped escape hatch, per window not per site. |
+| 1 | **Game descriptor value hint** | A human's recorded finding about this title; relied upon when present. |
+| 2 | Recovered dataflow value | Derived from the program's own instructions. |
+| 3 | User placement override | Session-scoped escape hatch, per window not per site; gates on `!known` as today (`BoardBankAnalyzer.java:1520-1531`). |
 | 4 | Descriptor `initial_state` default | What is true before anything switches. |
 
-Ranks 2 and 3 are distinguishable because they answer different questions: a value hint says "this
-*site* drives bank N", a placement override says "this *window* holds bank N where nothing else
-decided". Where both could apply, the site-specific statement is more specific and wins.
+**A bad hint warns, then falls back.** A hint that fails a cheap self-consistency check -- the
+`bank:` value is not a bank the window can hold for this board/mode, or the site address holds no
+latch store at all (which §6.2's seed already detects) -- is not applied: the analyzer emits a
+`BookmarkType.WARNING` naming the descriptor and the failed check, and the site falls back to rank 2.
+Validation stays cheap; it never re-runs analysis just to second-guess an internally valid hint.
 
-**Disagreement is reported, not swallowed.** If dataflow recovers a value and the hint states a
-different one, dataflow wins (rank 1) *and* the analyzer emits a `BookmarkType.WARNING` at the site
-naming both values and the descriptor. The hint is now demonstrably stale — the ROM was re-dumped,
-the descriptor was written for a variant, or the analysis improved — and silently discarding it
-would hide exactly the staleness the user needs to fix in their file. This is the tier's answer to
+**Disagreement is still reported.** If dataflow recovers a value and a valid hint states a different
+one, the hint wins (rank 1) *and* the analyzer emits a `BookmarkType.WARNING` at the site naming both
+values and the descriptor. The disagreement means either the hint is stale -- the ROM was re-dumped,
+the descriptor was written for a variant -- or the analysis is wrong at that site; both are worth a
+human's look, and silently discarding either side would hide it. This remains the tier's answer to
 the hint-rot risk.
 
 ### 6.4 Site hints raise no precedence question at all
@@ -1011,8 +1007,9 @@ descriptor object — no installed extension, no file on disk:
   §6.2's ruling, and the single most important assertion in the tier.
 - A site hint at undisassembled bytes triggers disassembly first, then resolves (the `:586-589`
   skip).
-- A value hint fills an unknown bank; the same hint contradicting a recovered value loses and
-  emits the warning (§6.3).
+- A value hint fills an unknown bank; the same hint contradicting a recovered value WINS and
+  emits the warning naming both values (§6.3); an invalid hint (bank out of range for the window)
+  is not applied, warns, and the site keeps its recovered value.
 - A `game.board` mismatch ignores the whole file (§3.2).
 
 `BankStrategyProgramTest` (`docs/testing.md:118-121`) is the model: a real strategy driven against a
