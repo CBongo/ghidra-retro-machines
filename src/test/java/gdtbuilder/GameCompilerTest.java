@@ -355,6 +355,75 @@ public class GameCompilerTest {
 			"    - address: 0xF0\n      provenance: \"again\"\n", "listed twice");
 	}
 
+	// ---- banking.switch_sites (bead grm-hb6.4) ----
+
+	private static final String SWITCH_SITES = """
+		  switch_sites:
+		    - addr: 0xC34A
+		      block: PRG_LO_B1
+		      entry: true
+		      comment: "UxROM latch; reached only via JMP ($0300)"
+		      provenance: "BankReachProbe candidate scan, confirmed by hand"
+		""";
+
+	@Test
+	public void compilesSwitchSites() throws Exception {
+		JsonObject banking =
+			compile("sites", validYaml() + SWITCH_SITES).getAsJsonObject("banking");
+		JsonObject site = banking.getAsJsonArray("switch_sites").get(0).getAsJsonObject();
+		assertEquals(0xC34A, site.get("addr").getAsInt());
+		assertEquals("PRG_LO_B1", site.get("block").getAsString());
+		assertTrue(site.get("entry").getAsBoolean());
+		assertEquals("UxROM latch; reached only via JMP ($0300)", site.get("comment").getAsString());
+		assertEquals("BankReachProbe candidate scan, confirmed by hand",
+			site.get("provenance").getAsString());
+	}
+
+	@Test
+	public void minimalSwitchSiteCarriesNoOptionalKeys() throws Exception {
+		JsonObject site = compile("sitemin", validYaml() +
+			"  switch_sites:\n    - addr: 0xC34A\n      provenance: \"hand\"\n")
+			.getAsJsonObject("banking").getAsJsonArray("switch_sites").get(0).getAsJsonObject();
+		assertFalse(site.has("block"));
+		assertFalse(site.has("entry"));
+		assertFalse(site.has("comment"));
+	}
+
+	@Test
+	public void malformedSwitchSitesAreRejected() throws Exception {
+		expectError("sitesnotlist", validYaml() + "  switch_sites: 0xC34A\n", "non-empty list");
+		expectError("sitesempty", validYaml() + "  switch_sites: []\n", "non-empty list");
+		expectError("sitenoaddr", validYaml() + SWITCH_SITES.replace("addr: 0xC34A\n      ", ""),
+			"addr");
+		expectError("sitewide", validYaml() + SWITCH_SITES.replace("0xC34A", "0x10000"),
+			"16-bit");
+		expectError("sitenoprov", validYaml() + SWITCH_SITES.replace(
+			"      provenance: \"BankReachProbe candidate scan, confirmed by hand\"\n", ""),
+			"provenance");
+		expectError("siteunknown",
+			validYaml() + SWITCH_SITES.replace("entry: true", "entry: true\n      size: 2"),
+			"unknown key 'size'");
+		expectError("sitebadentry", validYaml() + SWITCH_SITES.replace("entry: true", "entry: 1"),
+			"'entry' must be");
+		expectError("sitedup", validYaml() + SWITCH_SITES +
+			"    - addr: 0xC34A\n      block: PRG_LO_B1\n      provenance: \"again\"\n",
+			"listed twice");
+	}
+
+	@Test
+	public void sameAddressInDifferentBlocksIsNotADuplicate() throws Exception {
+		JsonObject banking = compile("sitetwoblocks", validYaml() + SWITCH_SITES +
+			"    - addr: 0xC34A\n      block: PRG_LO_B2\n      provenance: \"other bank\"\n")
+			.getAsJsonObject("banking");
+		assertEquals(2, banking.getAsJsonArray("switch_sites").size());
+	}
+
+	@Test
+	public void switchSiteBankValueHintIsRejectedAsNotYetSupported() throws Exception {
+		expectError("sitebank",
+			validYaml() + SWITCH_SITES.replace("entry: true", "bank: 3"), "not yet supported");
+	}
+
 	// ---- banking.bank_stacks and banking.paired_fields (bead grm-mej.10) ----
 
 	private static final String BANK_STACKS = """

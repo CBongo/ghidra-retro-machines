@@ -227,13 +227,13 @@ banking:
     # A SITE hint: "there is a bank-switch store here." Consumed as a dataflow seed (§6.2).
     - addr: 0xC34A
       comment: "UxROM bus-conflict latch (STA table,X); reached only via JMP ($0300)"
-      discovered_by: "BankReachProbe candidate scan, confirmed by hand"
+      provenance: "BankReachProbe candidate scan, confirmed by hand"   # grm-hb6.4: `provenance`, as every hint kind
 
     # A SITE hint that also pins the VALUE (grm-m95). Ranks below recovered dataflow (§6.3).
     - addr: 0xE7D4
-      bank: 3
+      bank: 3                       # NOT YET SUPPORTED: GameCompiler rejects `bank:` (grm-hb6.4)
       comment: "bank index arrives from a jump table the value scanner cannot follow"
-      discovered_by: "hand, 2026-07-31"
+      provenance: "hand, 2026-07-31"
 
 symbols:
   # Exactly the schema of docs/SCHEMA.md:484-495 -- a named, user-toggleable set with
@@ -1090,6 +1090,7 @@ descriptor yet, which is beads grm-hb6.2/grm-hb6.3. Nothing else below is implem
 
 - [x] Identity: PRG-slice + whole-file SHA-256, two Program Info properties — §2
 - [ ] `game:` schema section, `switch_sites[]`, and the schema-version ruling — §3, §3.3
+  - `switch_sites[]` SITE hints (compile, publish, seed, export): done, grm-hb6.4; the `bank:` value hint (§6.3) is not
 - [ ] Symbol reuse plus the `block:` bank qualifier — §3b.2, §3b.3
 - [ ] Curated set `machines/games/*.yaml` → `data/games/*.gmap` (+ `.gitignore`) — §4.1
 - [x] Overlay scan on `Application.getUserSettingsFiles` — §4.2 (grm-hb6.2)

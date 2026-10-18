@@ -315,6 +315,10 @@ public class GameCompiler {
 		if (identifying != null) {
 			out.put("bank_identifying_offsets", identifying);
 		}
+		List<Map<String, Object>> sites = buildSwitchSites(banking.get("switch_sites"));
+		if (sites != null) {
+			out.put("switch_sites", sites);
+		}
 		List<Map<String, Object>> saveCells = buildSaveCells(banking.get("save_cells"));
 		if (saveCells != null) {
 			out.put("save_cells", saveCells);
@@ -573,6 +577,82 @@ public class GameCompiler {
 			}
 			if (entry.containsKey("modulus_bits")) {
 				e.put("modulus_bits", modBits);
+			}
+			e.put("provenance", provenance);
+			out.add(e);
+		}
+		return out;
+	}
+
+	/**
+	 * {@code banking.switch_sites:} (bead grm-hb6.4): a non-empty list of SITE hints, each
+	 * {@code { addr, provenance, [block], [entry], [comment] }} stating "there is a bank-switch
+	 * store here". SHAPE only here; the analyzer disassembles the address if need be and seeds it
+	 * into the dataflow, whose own strategy still decides whether anything is annotated
+	 * (docs/per-game-descriptors-design.md section 6.2: seeds, not injected results).
+	 * {@code block:} is the same memory-block qualifier {@code symbols:} uses (omitted = the base
+	 * space). The design's VALUE hint ({@code bank:}, section 6.3) is not implemented and is
+	 * REJECTED, so nobody writes one believing it works.
+	 */
+	@SuppressWarnings("unchecked")
+	private static List<Map<String, Object>> buildSwitchSites(Object listObj) {
+		if (listObj == null) {
+			return null;
+		}
+		if (!(listObj instanceof List) || ((List<Object>) listObj).isEmpty()) {
+			throw new IllegalArgumentException(
+				"game descriptor 'banking.switch_sites:' must be a non-empty list");
+		}
+		List<Map<String, Object>> out = new ArrayList<>();
+		Set<String> seen = new java.util.HashSet<>();
+		for (Object entryObj : (List<Object>) listObj) {
+			if (!(entryObj instanceof Map)) {
+				throw new IllegalArgumentException("each 'banking.switch_sites:' entry must be " +
+					"a mapping with addr and provenance");
+			}
+			Map<String, Object> entry = (Map<String, Object>) entryObj;
+			if (entry.containsKey("bank")) {
+				throw new IllegalArgumentException("'banking.switch_sites:' key 'bank' (a " +
+					"site's bank VALUE hint) is not yet supported; state only the site " +
+					"(docs/per-game-descriptors-design.md section 6.3)");
+			}
+			for (String key : entry.keySet()) {
+				if (!Set.of("addr", "block", "entry", "comment", "provenance").contains(key)) {
+					throw new IllegalArgumentException(
+						"'banking.switch_sites:' entry has unknown key '" + key + "'");
+				}
+			}
+			String where = "banking.switch_sites entry";
+			int addr = MapCompiler.requireAddr(entry, "addr", where);
+			if (addr < 0 || addr > 0xFFFF) {
+				throw new IllegalArgumentException(where + ": addr must be a 16-bit CPU address");
+			}
+			String block = null;
+			if (entry.containsKey("block")) {
+				block = MapCompiler.requireString(entry, "block", where);
+			}
+			if (!seen.add((block == null ? "" : block) + ":" + addr)) {
+				throw new IllegalArgumentException(where + ": addr " + addr +
+					(block == null ? "" : " in block '" + block + "'") + " listed twice");
+			}
+			boolean isEntry = false;
+			if (entry.containsKey("entry")) {
+				if (!(entry.get("entry") instanceof Boolean)) {
+					throw new IllegalArgumentException(where + ": 'entry' must be true or false");
+				}
+				isEntry = (Boolean) entry.get("entry");
+			}
+			String provenance = MapCompiler.requireString(entry, "provenance", where);
+			Map<String, Object> e = new LinkedHashMap<>();
+			e.put("addr", addr);
+			if (block != null) {
+				e.put("block", block);
+			}
+			if (isEntry) {
+				e.put("entry", true);
+			}
+			if (entry.containsKey("comment")) {
+				e.put("comment", MapCompiler.requireString(entry, "comment", where));
 			}
 			e.put("provenance", provenance);
 			out.add(e);

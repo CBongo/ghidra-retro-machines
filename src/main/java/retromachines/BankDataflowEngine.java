@@ -419,6 +419,14 @@ final class BankDataflowEngine {
 		for (Function f : program.getFunctionManager().getFunctions(true)) {
 			functionEntries.add(f.getEntryPoint());
 		}
+		// Bead grm-hb6.4: banking.switch_sites -- a game descriptor's "there is a bank-switch store
+		// here" hints join the fallback seed set, exactly like a function entry nothing reached.
+		// A SEED, never an injected result: the site's own computeSwitch still decides.
+		for (Address hinted : SwitchSiteHints.seedAddresses(program)) {
+			if (!functionEntries.contains(hinted)) {
+				functionEntries.add(hinted);
+			}
+		}
 		// The board's layout-mode field (MapCompiler's single shared `when:` field), or 0.
 		int layoutMask = board.modeField() == null ? 0
 				: board.modeField().positionedMask() & board.mask();

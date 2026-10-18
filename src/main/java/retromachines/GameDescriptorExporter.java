@@ -80,9 +80,10 @@ import ghidra.program.model.symbol.SymbolType;
  * {@code Retro Machines.Bank Identifying Hints} property the loader recorded from the
  * descriptor in force (bead grm-hb6.19), for the same shadowing reason. Never derived from
  * the ROM bytes: the key states a human-established membership premise.</li>
+ * <li><b>{@code banking.switch_sites}:</b> the SITE hints the descriptor in force stated, copied
+ * verbatim (bead grm-hb6.4). Bank-switch sites the analysis itself recovered are NOT exported:
+ * they are analysis output, not a human fact.</li>
  * </ul>
- * Bank-switch sites are NOT exported: nothing reads {@code banking.switch_sites} yet (grm-hb6.4),
- * and recovered sites are analysis output, not a human fact.
  *
  * <p>The consumer ({@code DescriptorAnnotationAnalyzer}) applies entries as {@code IMPORTED},
  * never {@code USER_DEFINED}, so a re-import shows the same names at the same addresses with
@@ -291,6 +292,10 @@ public final class GameDescriptorExporter {
 		if (!identifying.isEmpty()) {
 			banking.put("bank_identifying_offsets", identifying);
 		}
+		List<Map<String, Object>> switchSites = switchSites(program, skipped);
+		if (!switchSites.isEmpty()) {
+			banking.put("switch_sites", switchSites);
+		}
 		List<Map<String, Object>> saveCells = saveCells(program, skipped);
 		if (!saveCells.isEmpty()) {
 			banking.put("save_cells", saveCells);
@@ -369,6 +374,46 @@ public final class GameDescriptorExporter {
 		catch (RuntimeException e) {
 			skipped.add(DescriptorSupport.BANK_IDENTIFYING_HINTS_PROPERTY + " is malformed (" +
 				e.getMessage() + "); banking.bank_identifying_offsets not carried");
+			return new ArrayList<>();
+		}
+		return out;
+	}
+
+	/**
+	 * The {@code banking.switch_sites} entries (bead grm-hb6.4), copied verbatim, provenance
+	 * included, from the {@link DescriptorSupport#SWITCH_SITES_PROPERTY} the loader recorded.
+	 * Only the hints the descriptor in force STATED: sites the analysis discovered are output,
+	 * not a human fact, and are never exported.
+	 */
+	private static List<Map<String, Object>> switchSites(Program program, List<String> skipped) {
+		List<Map<String, Object>> out = new ArrayList<>();
+		String spec = DescriptorSupport.programInfoString(program,
+			DescriptorSupport.SWITCH_SITES_PROPERTY);
+		if (spec == null || spec.isBlank()) {
+			return out;
+		}
+		try {
+			JsonObject root = JsonParser.parseString(spec).getAsJsonObject();
+			for (JsonElement el : root.getAsJsonArray("sites")) {
+				JsonObject o = el.getAsJsonObject();
+				Map<String, Object> e = new LinkedHashMap<>();
+				e.put("addr", new HexInt(o.get("addr").getAsLong()));
+				if (o.has("block")) {
+					e.put("block", o.get("block").getAsString());
+				}
+				if (o.has("entry") && o.get("entry").getAsBoolean()) {
+					e.put("entry", true);
+				}
+				if (o.has("comment")) {
+					e.put("comment", o.get("comment").getAsString());
+				}
+				e.put("provenance", o.get("provenance").getAsString());
+				out.add(e);
+			}
+		}
+		catch (RuntimeException e) {
+			skipped.add(DescriptorSupport.SWITCH_SITES_PROPERTY + " is malformed (" +
+				e.getMessage() + "); banking.switch_sites not carried");
 			return new ArrayList<>();
 		}
 		return out;

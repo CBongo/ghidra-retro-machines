@@ -198,6 +198,15 @@ final class DescriptorSupport {
 	static final String SAVE_CELLS_PROPERTY = "Retro Machines.Save Cells";
 
 	/**
+	 * Program-info property carrying the resolved game descriptor's {@code banking.switch_sites}
+	 * hint (bead grm-hb6.4): JSON {@code {"source": <descriptor path>, "sites": [{addr,
+	 * [block], [entry], [comment], provenance}, ...]}}. Written by the loader, read at analysis
+	 * time by {@link BoardBankAnalyzer} and {@link BankDataflowEngine} (see
+	 * {@link SwitchSiteHints}). Absent when the descriptor states none.
+	 */
+	static final String SWITCH_SITES_PROPERTY = "Retro Machines.Switch Sites";
+
+	/**
 	 * Program-info property carrying the game descriptor's {@code banking.bank_stacks} hint
 	 * (bead grm-mej.10): JSON {@code {"source": ..., "stacks": [{pointer, slots, provenance}]}}.
 	 * Read at analysis time by {@link BoardBankAnalyzer} and handed to {@link BankStackBrackets}.
@@ -438,6 +447,11 @@ final class DescriptorSupport {
 		out.addProperty("source", source);
 		out.add(outKey, banking.getAsJsonArray(key).deepCopy());
 		return out.toString();
+	}
+
+	/** The {@link #SWITCH_SITES_PROPERTY} value, or null when the descriptor states none. */
+	static String formatSwitchSites(JsonObject gameDescriptor, String source) {
+		return formatBankingList(gameDescriptor, source, "switch_sites", "sites");
 	}
 
 	/** The {@link #BANK_STACKS_PROPERTY} value, or null when the descriptor states none. */

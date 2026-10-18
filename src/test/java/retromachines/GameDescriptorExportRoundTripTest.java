@@ -223,6 +223,44 @@ public class GameDescriptorExportRoundTripTest extends AbstractBundledLanguageTe
 				.get("prg_mode").getAsInt());
 	}
 
+	/**
+	 * grm-hb6.4: the {@code banking.switch_sites} hints the loader recorded survive export ->
+	 * compile (both dispositions) -> the loader's own re-publication, block, entry, comment and
+	 * provenance included.
+	 */
+	@Test
+	public void switchSitesSurviveTheRoundTrip() throws Exception {
+		JsonObject descriptor = JsonParser.parseString("""
+				{ "schema": 2, "banking": { "switch_sites": [
+				  { "addr": 49994, "block": "PRG_LO_B1", "entry": true,
+				    "comment": "latch behind JMP ($0300)", "provenance": "hand, 2026-10-18" },
+				  { "addr": 59348, "provenance": "scan" } ] } }
+				""").getAsJsonObject();
+		String published = DescriptorSupport.formatSwitchSites(descriptor, "curated.gmap");
+		ProgramBuilder b = newBuilder();
+		ProgramDB src = b.getProgram();
+		edit(src, () -> src.getOptions(ghidra.program.model.listing.Program.PROGRAM_INFO)
+				.setString(DescriptorSupport.SWITCH_SITES_PROPERTY, published));
+
+		GameDescriptorExporter.Result result =
+			GameDescriptorExporter.export(src, request(Map.of("prg_mode", 0)));
+		assertTrue(result.yaml(), result.yaml().contains("addr: 0xC34A"));
+		assertTrue(result.yaml(), result.yaml().contains("block: PRG_LO_B1"));
+		assertTrue(result.skipped().toString(), result.skipped().isEmpty());
+
+		File overlay = new File(tmp.getRoot(), "sites.yaml");
+		Files.writeString(overlay.toPath(), result.yaml());
+		GameCompiler.CompileResult overlayResult = GameCompiler.compileOverlay(overlay);
+		assertTrue(overlayResult.errors().toString(), overlayResult.ok());
+		File gmap = new File(tmp.getRoot(), "sites.gmap");
+		GameCompiler.main(new String[] { overlay.getPath(), gmap.getPath() });
+		JsonObject curated = JsonParser.parseString(Files.readString(gmap.toPath()))
+				.getAsJsonObject();
+		assertEquals(curated, new Gson().toJsonTree(overlayResult.gameDoc()).getAsJsonObject());
+
+		assertEquals(published, DescriptorSupport.formatSwitchSites(curated, "curated.gmap"));
+	}
+
 	/** No recorded hint, no exported key -- the exporter never derives one. */
 	@Test
 	public void noRecordedHintExportsNoIdentifyingOffsets() throws Exception {

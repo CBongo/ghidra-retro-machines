@@ -452,6 +452,15 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// derivation asks the same realized-bank question (grm-mej.2), and pass 1 needs it to
 		// keep state out of base-space bytes the flowing bank does not map (grm-dos9.5).
 		Map<String, Set<Integer>> bankUniverse = BankAnnotationAdapter.bankUniverse(program, board);
+		// bead grm-hb6.4: banking.switch_sites -- disassemble (and, for entry: true, create a
+		// function at) each hinted address so the engine's worklist can see it; the engine itself
+		// seeds them. Idempotent, and read from the program property so a re-analysis picks up a
+		// descriptor that arrived after import.
+		List<Address> hintedSites = SwitchSiteHints.materialize(program, monitor, log);
+		if (!hintedSites.isEmpty()) {
+			AnalyzerLog.info(this, "switch_sites hints seeded (descriptor-named, not discovered): " +
+				hintedSites);
+		}
 		DataflowResult flow =
 			runDataflow(program, monitor, listing, mechanisms, board, null, Map.of(), Set.of(),
 				BankStackBrackets.Claims.NONE,

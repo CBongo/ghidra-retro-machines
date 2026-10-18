@@ -737,6 +737,13 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 					program.getOptions(Program.PROGRAM_INFO).setString(
 						DescriptorSupport.BANK_IDENTIFYING_HINTS_PROPERTY, hints);
 				}
+				// bead grm-hb6.4: banking.switch_sites, consumed as dataflow seeds at analysis time.
+				String switchSites = DescriptorSupport.formatSwitchSites(gameDescriptor.doc(),
+					gameDescriptor.gmapPath());
+				if (switchSites != null) {
+					program.getOptions(Program.PROGRAM_INFO).setString(
+						DescriptorSupport.SWITCH_SITES_PROPERTY, switchSites);
+				}
 				// bead grm-mej.9: banking.save_cells, read by the analyzer at analysis time.
 				String saveCells = DescriptorSupport.formatSaveCells(gameDescriptor.doc(),
 					gameDescriptor.gmapPath());

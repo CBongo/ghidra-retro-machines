@@ -823,6 +823,37 @@ instead and the hint is not used. Shape validation (16-bit `address`, `shift` 0-
 `ExportGameDescriptor.java` carries it verbatim, provenance included, from the recorded
 property (`grm-hb6.19`); it never exports a derived offset.
 
+### `banking.switch_sites` (bead `grm-hb6.4`)
+
+```yaml
+banking:
+  switch_sites:
+    - addr: 0xC34A          # 16-bit CPU address of the store                       (required)
+      block: PRG_LO_B1      # memory block, as for symbols: -- omitted = base space  (optional)
+      entry: true           # also create a function here                           (optional)
+      comment: "UxROM latch; reached only via JMP ($0300)"                          # (optional)
+      provenance: "who established it, and how"                                     # required
+```
+
+A SITE hint: "there is a bank-switch store here", for the store no flow reaches (it sits in
+bytes that were never disassembled, so the analysis cannot see it). It is a **dataflow seed, not
+an injected result** (design section 6.2): `BoardBankAnalyzer` reads the `Retro Machines.Switch
+Sites` property the loader publishes (so a re-analysis, or a descriptor that arrives after
+import, picks it up), disassembles the address if no instruction is there, creates a function
+there when `entry: true`, and `BankDataflowEngine` adds it to the same fallback seed set as an
+unreached function entry. The site's own strategy `computeSwitch` then decides, so a hint at an
+address that is not a switch store annotates nothing, and the bank value is always derived,
+never stated. A seeded site carries an `INFO` bookmark (category `Game descriptor switch site`)
+naming the descriptor and the provenance, so it can be told from a discovered one. An
+unresolvable `block`/address, an address interior to an existing instruction, or one that fails
+to disassemble is logged with its reason and skipped. Re-running is a no-op.
+
+The design's `bank:` VALUE hint (section 6.3) is **not implemented**: `GameCompiler` rejects a
+`bank:` key ("not yet supported") rather than ignoring it. Shape validation (non-empty list,
+16-bit `addr`, `(block, addr)` unique, boolean `entry`, `provenance` present, no other keys) is
+`GameCompiler`'s; `ExportGameDescriptor.java` carries the stated hints verbatim. Sites the
+analysis recovered itself are never exported.
+
 ### `banking.save_cells` (bead `grm-mej.9`)
 
 ```yaml
@@ -913,7 +944,8 @@ from the descriptor in force, and one `user-annotations` set holding the program
 `USER_DEFINED` global-namespace labels and the EOL comments at those addresses. The file is
 valid unedited as an overlay and as a `machines/games/*.yaml` PR. Not carried, and reported by
 the script: plate/pre/post comments, comments at unlabelled addresses, namespaced labels.
-Bank-switch sites are not exported (nothing reads `banking.switch_sites` yet, `grm-hb6.4`).
+Hinted bank-switch sites (`banking.switch_sites`) are carried verbatim from the recorded
+property; sites the analysis recovered itself are not exported.
 
 ```bash
 -postScript ExportGameDescriptor.java out:/path/game.yaml [id:x] [title:A_Title] [note:text] [overwrite:true]
