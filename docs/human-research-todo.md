@@ -114,26 +114,6 @@ Each is minutes of work and settles something specific. Highest value per unit e
   the likely cause is a wrong assumption about which bank `e72a JSR $8574` enters (`$80` gives 16K
   bank 0). Say so, and `grm-mej.19` can aim for a full RESTORED note.
 
-### 1.2 megaman2 `e6b5`: why is a mid-instruction target in the middle of the `92e4` jump table? (`grm-fnpu`)
-
-- [ ] **Question.** The bank-14 dispatch `92d8 TAY / DEY / LDA $9470,Y / … / 92e4 JMP ($0008)`
-  has 14 entries. Entries 8, 9 and 11–13 are `eeb5` (an `RTS`). Entry 10 is `e6b5`: same low byte,
-  high byte `e6` instead of `ee`. It lands on the operand byte of `e6b3 LDA $0400,Y`. Is it a typo
-  in a dead slot, or something the game really executes?
-
-**What the agent already found (static):** the entry index is `$93f0[object type] - 1`, and the
-128-entry `$93f0` table holds only 0–8, so no object type selects entry 10 (or any of 8–13).
-
-**What to check:**
-
-1. Emulator: break at `92e4` through normal play and confirm `Y` is never 10.
-2. A community disassembly or the Rockman 2 (J) build: does the same table have `ee` there?
-3. If cheap: what the `92e4` handler family is, so the table can be named.
-
-**What the answer changes:** probably nothing in the analyzer. `grm-8x6f` already keeps `e6b5`
-and cuts only the trailing `$ff` filler. A confirmed dead, typo'd slot is a per-game hint
-(`grm-hb6`), not a rule.
-
 ---
 
 ## 2. Def-use passes on untraced titles
@@ -419,3 +399,4 @@ Agents don't write into your ROM library or other personal directories.
 | Homebrew ROMs as committable real-ROM fixtures? | **No committed binaries (owner, 2026-09-19); punted to P4, semi-open.** When picked up: a separate opt-in `manifest-homebrew.tsv` set for titles the user has built locally. Rows are identified by source commit/tag, not only by a binary SHA-256. Like every opt-in tier it SKIPs loudly when unset, never gates `check`, and never runs in CI. The binary license survey is moot because nothing is redistributed. The one residual question is whether committed golden *dumps* (which quote disassembly) are OK. Do not re-ask "commit the ROMs?". | `grm-5ioo` (open, P4) |
 | GP-6936: open the RAM-half PR (fixes #4148) and post the correction on #9655? | **Done (owner, 2026-10-10): [PR #9765](https://github.com/NationalSecurityAgency/ghidra/pull/9765)** from `fix-wrapped-ram-range` (`space.cc` + `datatests/wraprange2.xml`) and the [#9655 correction](https://github.com/NationalSecurityAgency/ghidra/issues/9655#issuecomment-6102852548), which withdraws "exempt spacebase spaces" (it breaks upstream's x86-64 `wraprange.xml`) and asks the maintainer to choose between two directions for the 6502 half. Do not PR a spacebase fix until they answer. Follow-up `certification.manifest` line pushed the same day. | `grm-qp5x.2` |
 | Copy the five GoodNES-USA real-ROM images into an indexed ROM dir? | **Not needed (owner, 2026-10-16): the GoodNES USA dir went straight into `GRM_ROM_DIR` instead**, using grm-3rel's `;`-separated form (`H:/emulators/nes/roms;Z:/nes/db;H:/emulators/nes/ROMs/All NES Roms (GoodNES)/USA` in `.claude/settings.local.json`). `adventure_island`, `punchout`, `deadly_towers`, `cv3` and `dodge` now resolve on a plain `check nes`; all 35 rows ran on 2026-10-15 (grm-dos9.11) with the dir passed positionally. Do not copy the files. | `grm-3rel`, `grm-x4y1.8` |
+| megaman2 `e6b5`: why is a mid-instruction target in the middle of the `92e4` jump table? | **A typo in a dead slot (owner, 2026-10-18).** `92e4` is the bank-14 object AI dispatcher. `$93f0` is an alternate per-object table, consulted only when `game_mode` (`$AA`) is neither 0 nor 4: a 0 there sends the object ID straight into the split table `92f0`/`9370`, anything else is decremented and indexes the handler table `9470`/`947f`. `$93f0` never exceeds 8, so that table is really 8 entries long; entries 8–13 are never selected, and all but entry 10 are `eeb5` (`RTS`, "never used"). The `e6` at `$9489` is a typo or mastering hiccup for `ee`. **No analyzer change**: `grm-8x6f` already keeps it harmlessly. If it ever matters, use a per-game table-length hint (`grm-hb6`), not a rule. | `grm-fnpu` **closed** |
