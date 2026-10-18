@@ -919,6 +919,8 @@ final class HelperArgumentRecovery {
 			return null;
 		}
 		HelperLastWriters.Cfg cfg = HelperLastWriters.build(program, insideHelperEntry(helper));
+		// A body whose every path LEAVES it (no plain return of its own -- a far-jump trampoline,
+		// say) is not a commit routine this summary describes: keep the single-site answer.
 		if (cfg == null || cfg.exits().isEmpty()) {
 			return null;
 		}

@@ -58,10 +58,11 @@ import ghidra.program.model.symbol.FlowType;
  * on some paths and not others, and its value at the return is honestly unknown.
  * <p>
  * <b>Everything declines rather than guesses.</b> A gap in the disassembly, a computed jump, a
- * terminal that is not a plain return (a tail call leaves the body, so its exit state is the
- * callee's), a body larger than {@link #MAX_NODES}, or more sites than the set encoding holds
- * answers {@code null}, and the caller keeps its pre-grm-mej.27 behaviour. So does a walk that
- * leaves the function containing the entry: that is a tail call (see {@link #build}).
+ * body larger than {@link #MAX_NODES}, or more sites than the set encoding holds answers
+ * {@code null}, and the caller keeps its pre-grm-mej.27 behaviour. An edge that LEAVES the
+ * function containing the entry -- a tail call, or a jump into another body -- does not decline
+ * (bead grm-mej.28): it is an exit through code the walk cannot see, so every bit there counts
+ * as possibly rewritten (a CALL writer) and comes out owned-unknown. See {@link #build}.
  */
 final class HelperLastWriters {
 
@@ -79,10 +80,14 @@ final class HelperLastWriters {
 	/**
 	 * The helper's control-flow graph from {@code entry}: every instruction reachable by
 	 * following fall-throughs, branch targets and the return of each call, with its predecessor
-	 * edges, its plain returns, and the calls it does not follow.
+	 * edges, its plain returns, the calls it does not follow, and the instructions with an edge
+	 * that LEAVES the body ({@code leaves}: a tail call, or a jump into code outside the
+	 * function). A leaving edge is an exit whose writers are unknown -- see
+	 * {@link #writersAtExits}.
 	 */
 	record Cfg(Address entry, Map<Address, List<Address>> succs,
-			Map<Address, List<Address>> preds, List<Address> exits, Set<Address> calls) {
+			Map<Address, List<Address>> preds, List<Address> exits, Set<Address> calls,
+			Set<Address> leaves) {
 
 		/** Whether control can arrive at {@code a} from inside the helper itself. */
 		boolean hasInternalPredecessor(Address a) {
@@ -99,12 +104,18 @@ final class HelperLastWriters {
 		Listing listing = program.getListing();
 		// The walk must stay inside the function the entry belongs to: its recognized sites are the
 		// only writes the analysis can see, so following a jump into another body would read that
-		// body's mechanism writes as no writes at all. Leaving it is a tail call; decline.
+		// body's mechanism writes as no writes at all. An edge that leaves it (a tail call, or a
+		// jump into code outside the function) is therefore not followed but recorded in `leaves`:
+		// control returns to the caller from code this walk cannot see, so every bit may have been
+		// rewritten on that path (bead grm-mej.28 -- smb3's NMI body leaves through JMP $cecf on
+		// one arm, and declining the whole analysis for it fell back to the max-address site's
+		// confident r7=26).
 		Function body = program.getFunctionManager().getFunctionContaining(entry);
 		Map<Address, List<Address>> succs = new LinkedHashMap<>();
 		Map<Address, List<Address>> preds = new HashMap<>();
 		List<Address> exits = new ArrayList<>();
 		Set<Address> calls = new LinkedHashSet<>();
+		Set<Address> leaves = new LinkedHashSet<>();
 		Deque<Address> work = new ArrayDeque<>();
 		work.add(entry);
 		while (!work.isEmpty()) {
@@ -116,17 +127,21 @@ final class HelperLastWriters {
 				return null;
 			}
 			Instruction instr = listing.getInstructionAt(a);
-			if (instr == null || !a.getAddressSpace().equals(entry.getAddressSpace()) ||
-				(body != null && !body.getBody().contains(a))) {
+			if (instr == null) {
 				return null;
 			}
 			FlowType ft = instr.getFlowType();
 			List<Address> next = new ArrayList<>();
 			if (ft.isTerminal()) {
 				if (ft.isCall() || ft.isJump()) {
-					return null; // a tail call or a jump out: the exit state is not this body's
+					if (ft.isComputed()) {
+						return null; // targets this walk cannot enumerate, possibly back inside
+					}
+					leaves.add(a); // a tail call: the exit state is the callee's
 				}
-				exits.add(a);
+				else {
+					exits.add(a);
+				}
 			}
 			else if (ft.isCall()) {
 				Address fall = instr.getFallThrough();
@@ -159,6 +174,19 @@ final class HelperLastWriters {
 				}
 				next.add(fall);
 			}
+			// A successor outside the body (or in another address space) is a jump OUT: not walked,
+			// and the edge makes `a` a leaving node instead.
+			List<Address> inside = new ArrayList<>();
+			for (Address s : next) {
+				if (s.getAddressSpace().equals(entry.getAddressSpace()) &&
+					(body == null || body.getBody().contains(s))) {
+					inside.add(s);
+				}
+				else {
+					leaves.add(a);
+				}
+			}
+			next = inside;
 			succs.put(a, next);
 			for (Address s : next) {
 				preds.computeIfAbsent(s, k -> new ArrayList<>()).add(a);
@@ -167,7 +195,7 @@ final class HelperLastWriters {
 				}
 			}
 		}
-		return new Cfg(entry, succs, preds, exits, calls);
+		return new Cfg(entry, succs, preds, exits, calls, leaves);
 	}
 
 	/**
@@ -237,6 +265,16 @@ final class HelperLastWriters {
 			long[] at = in.get(exit);
 			for (int b = 0; b < 32; b++) {
 				result[b] |= at[b];
+			}
+		}
+		// A leaving edge returns through code this walk cannot see: whatever was live on the way
+		// out may still survive, and anything may have been rewritten -- both, as a CALL does.
+		for (Address leave : cfg.leaves()) {
+			long[] at = in.get(leave);
+			for (int b = 0; b < 32; b++) {
+				if ((stateMask & (1 << b)) != 0) {
+					result[b] |= at[b] | CALL;
+				}
 			}
 		}
 		return result;

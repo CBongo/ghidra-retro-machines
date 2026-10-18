@@ -27,7 +27,10 @@ import org.junit.Test;
 
 import com.google.gson.JsonObject;
 
+import ghidra.program.model.address.Address;
+import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.mem.MemoryBlock;
+import ghidra.program.model.symbol.SourceType;
 
 import retromachines.HelperArgumentRecovery.CallEffect;
 import retromachines.HelperDiscovery.HelperModel;
@@ -180,5 +183,61 @@ public class LastWriterHelperProgramTest extends AbstractProgramTest {
 		assertEquals("r6 unknown, select and r7 known", SELECT_MASK | R7_MASK,
 			result.state().knownMask());
 		assertEquals(0x407, result.state().bits() & (SELECT_MASK | R7_MASK));
+	}
+
+	/**
+	 * A jump OUT of the helper's body (bead grm-mej.28, generalized from smb3's NMI body leaving
+	 * through {@code JMP $cecf}) is an exit through code the walk cannot see, not a reason to
+	 * decline the whole analysis:
+	 * <pre>
+	 *   9100  LDA #$06 / STA $9000     S1  select R6
+	 *   9105  LDA #$02 / STA $9001     S2  R6 = 2
+	 *   910a  LDA #$07 / STA $9000     S3  select R7
+	 *   910f  LDA #$04 / STA $9001     S4  R7 = 4
+	 *   9114  LDA $f7  / BEQ $911b
+	 *   9118  JMP $9300                    into ANOTHER function: the exit state is not this body's
+	 *   911b  LDA #$05 / STA $9001     S5  R7 = 5 -- the max-address switchSite
+	 *   9120  RTS
+	 * </pre>
+	 * Before grm-mej.28 the walk declined at the jump and the call took S5 alone, claiming
+	 * R7 = 5 although the other arm returns from code that may write anything. Now every field
+	 * the helper writes is owned, and none is known: each one's writer set on the leaving arm
+	 * includes CALL.
+	 */
+	@Test
+	public void aJumpOutOfTheBodyIsAnUnknownExitNotADecline() throws Exception {
+		builder.setBytes("0x9100", "a9 06 8d 00 90", true); // S1
+		builder.setBytes("0x9105", "a9 02 8d 01 90", true); // S2
+		builder.setBytes("0x910a", "a9 07 8d 00 90", true); // S3
+		builder.setBytes("0x910f", "a9 04 8d 01 90", true); // S4
+		builder.setBytes("0x9114", "a5 f7 f0 03", true); // LDA $f7 / BEQ $911b
+		builder.setBytes("0x9118", "4c 00 93", true); // JMP $9300
+		builder.setBytes("0x911b", "a9 05 8d 01 90", true); // S5
+		builder.setBytes("0x9120", "60", true); // RTS
+		builder.setBytes("0x9300", "60", true); // RTS, a separate function
+		builder.setBytes("0x8000", "20 00 91", true); // JSR $9100
+		makeFunction(0x9100, 0x9120, "helper");
+		makeFunction(0x9300, 0x9300, "elsewhere");
+		HelperModel helper = new HelperModel(null, builder.addr("0x9100"), null, 'A', 0xFFF, 0,
+			strategy(), builder.addr("0x911d"), builder.addr("0x9102"), null,
+			List.of(builder.addr("0x9102"), builder.addr("0x9107"), builder.addr("0x910c"),
+				builder.addr("0x9111"), builder.addr("0x911d")));
+		CallEffect result = recover(helper, "0x8000");
+
+		assertEquals("every field the helper writes is owned", SELECT_MASK | R6_MASK | R7_MASK,
+			result.ownedMask());
+		assertEquals("nothing is known: the leaving arm may rewrite every field", 0,
+			result.state().knownMask());
+		assertFalse("no bank value recovered, so the call warns", result.argumentResolved());
+	}
+
+	private void makeFunction(int start, int endInclusive, String name) throws Exception {
+		Address s = builder.addr(String.format("0x%x", start));
+		Address e = builder.addr(String.format("0x%x", endInclusive));
+		inTx(program, "create function", () -> {
+			program.getFunctionManager().createFunction(name, s,
+				new AddressSet(s, e),
+				SourceType.ANALYSIS);
+		});
 	}
 }
