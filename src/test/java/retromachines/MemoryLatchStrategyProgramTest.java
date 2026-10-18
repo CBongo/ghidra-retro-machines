@@ -280,6 +280,103 @@ public class MemoryLatchStrategyProgramTest extends AbstractProgramTest {
 			strategy.computeSwitch(program, siblingWrite, MechanismState.unknown()));
 	}
 
+	/**
+	 * grm-bow: with the index pinned, {@code (base + X) & 0x0F} is exact, so a refless indexed
+	 * store is decoded at the address it really reaches. {@code $FFF0 + 8} is the PRG register.
+	 */
+	@Test
+	public void resolvableIndexedStoreIsDecodedAtItsEffectiveTarget() throws Exception {
+		builder.setBytes("0x8000", "a2 08", true); // LDX #$08
+		builder.setBytes("0x8002", "a9 05", true); // LDA #$05
+		builder.setBytes("0x8004", "9d f0 ff", true); // STA $FFF0,X -> $FFF8
+
+		Instruction store = instructionAt("0x8004");
+		assertNoWriteReference(store);
+
+		MechanismState latched =
+			latch(0x0FL, 0x08L).computeSwitch(program, store, MechanismState.unknown());
+		assertNotNull("X == 8 reaches the nibble-8 PRG register", latched);
+		assertEquals(0x0F, latched.knownMask());
+		assertEquals(0x05, latched.bits());
+	}
+
+	/**
+	 * grm-egw, the missed-write direction: {@code MosConstantReferenceAnalyzer} names the operand
+	 * BASE on a known index, and {@code $FFF0} decodes as a sibling register. The write still
+	 * reaches {@code $FFF8} and must latch.
+	 */
+	@Test
+	public void baseReferenceDoesNotHideAPrgRegisterWrite() throws Exception {
+		builder.setBytes("0x8000", "a2 08", true); // LDX #$08
+		builder.setBytes("0x8002", "a9 05", true); // LDA #$05
+		builder.setBytes("0x8004", "9d f0 ff", true); // STA $FFF0,X -> $FFF8
+
+		Instruction store = instructionAt("0x8004");
+		addWriteReference(store, builder.addr("0xfff0")); // as the base retargeting leaves it
+
+		MechanismState latched =
+			latch(0x0FL, 0x08L).computeSwitch(program, store, MechanismState.unknown());
+		assertNotNull("the base reference's nibble 0 must not decide the decode", latched);
+		assertEquals(0x05, latched.bits());
+	}
+
+	/**
+	 * grm-egw, the false-latch direction: here the BASE is nibble 8, so a reference at it matches,
+	 * but {@code X == 1} sends the write to {@code $FFF9} -- an IRQ register. It must not latch
+	 * {@code prg_bank}.
+	 */
+	@Test
+	public void baseReferenceDoesNotLatchASiblingRegisterWrite() throws Exception {
+		builder.setBytes("0x8000", "a2 01", true); // LDX #$01
+		builder.setBytes("0x8002", "a9 05", true); // LDA #$05
+		builder.setBytes("0x8004", "9d f8 ff", true); // STA $FFF8,X -> $FFF9
+
+		Instruction store = instructionAt("0x8004");
+		addWriteReference(store, builder.addr("0xfff8"));
+
+		assertNull("a nibble-8 base reference must not latch a nibble-9 write",
+			latch(0x0FL, 0x08L).computeSwitch(program, store, MechanismState.unknown()));
+	}
+
+	/**
+	 * An unresolvable index declines even when a reference sits on a matching base: that
+	 * reference is where stock const-prop parks an unknown-index access, not the target.
+	 */
+	@Test
+	public void unresolvableIndexDeclinesDespiteAMatchingBaseReference() throws Exception {
+		builder.setBytes("0x8000", "a6 10", true); // LDX $10 -- RAM, not a constant
+		builder.setBytes("0x8002", "a9 05", true); // LDA #$05
+		builder.setBytes("0x8004", "9d f8 ff", true); // STA $FFF8,X
+
+		Instruction store = instructionAt("0x8004");
+		addWriteReference(store, builder.addr("0xfff8"));
+
+		assertNull("unknown X: the decode is unknowable, so decline",
+			latch(0x0FL, 0x08L).computeSwitch(program, store, MechanismState.unknown()));
+	}
+
+	/**
+	 * Read-modify-write stores stay reference-established (see
+	 * {@link #reflessReadModifyWriteStoreDoesNotLatch}); under an {@code addr_mask} only their
+	 * DECODE moves to the effective target. Without the reference, nothing proves the write.
+	 */
+	@Test
+	public void indexedReadModifyWriteIsDecodedAtItsEffectiveTarget() throws Exception {
+		builder.setBytes("0x8000", "a2 08", true); // LDX #$08
+		builder.setBytes("0x8002", "fe f0 ff", true); // INC $FFF0,X -> $FFF8
+
+		Instruction store = instructionAt("0x8002");
+		MemoryLatchBankSwitchStrategy strategy = latch(0x0FL, 0x08L);
+		assertNoWriteReference(store);
+		assertNull("refless RMW stays invisible",
+			strategy.computeSwitch(program, store, MechanismState.unknown()));
+
+		addWriteReference(store, builder.addr("0xfff0"));
+		MechanismState result = strategy.computeSwitch(program, store, MechanismState.unknown());
+		assertNotNull("referenced RMW reaching the PRG register is a mechanism write", result);
+		assertEquals("an RMW store's value is not modelled", 0x00, result.knownMask());
+	}
+
 	// ------------------------------------------------------------------
 	// GAP 2: write references living in an overlay space
 	// ------------------------------------------------------------------

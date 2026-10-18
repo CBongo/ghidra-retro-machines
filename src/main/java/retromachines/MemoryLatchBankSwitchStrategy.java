@@ -61,7 +61,7 @@ import ghidra.program.model.symbol.Reference;
  * discrete-mapper default: UxROM/AxROM/CNROM/GxROM/BNROM), any write in range latches,
  * exactly as before. The predicate is purely address-based, so {@link #cacheable()} stays
  * true. It is also the one case where an <em>indexed</em> store cannot be judged from its
- * operand alone -- see the soundness ruling on {@link #operandStoresInRange}.
+ * operand base or its write reference -- see {@link #indexedWriteMatchesDecode}.
  * <p>
  * Differences from {@code register-write} injected via {@link StoredValueScanner.Hooks}:
  * <ul>
@@ -902,8 +902,13 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * plain-absolute stores too, in code const-prop never reached. Tier 1 alone therefore
 	 * misses live switch sites in real ROMs (contra, dragonpower, ironsword, megaman).</li>
 	 * </ol>
+	 * <b>Except an indexed operand under an {@code addr_mask}</b>, which neither tier may judge
+	 * (grm-egw, grm-bow) -- see {@link #indexedWriteMatchesDecode}.
 	 */
 	private boolean writesInRange(Instruction instr) {
+		if (addrMask != 0 && LoopIdioms.indexReg(instr) != null) {
+			return indexedWriteMatchesDecode(instr);
+		}
 		for (Reference ref : instr.getReferencesFrom()) {
 			Address to = ref.getToAddress();
 			if (ref.getReferenceType().isWrite() && inLatchRange(to) &&
@@ -924,27 +929,13 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * {@link MechanismState#unknown()} for them, so newly <em>seeing</em> one would poison bank
 	 * state rather than recover it -- a reachability fix must not widen into that.
 	 * <p>
-	 * <b>Soundness: an indexed operand under an {@code addr_mask} declines.</b> Tier 2 knows
-	 * only the base, and {@code base & 0x0F} says nothing whatever about
-	 * {@code (base + X) & 0x0F}. On Bandai FCG that is the difference between the PRG bank
-	 * register and an IRQ register sharing the same range -- claiming a match would latch
-	 * {@code prg_bank} off an IRQ write, precisely what {@code addr_mask} exists to prevent.
-	 * Declining under-reports, which is this predicate's pre-existing failure mode and is
-	 * safe; answering {@link MechanismState#unknown()} instead would be a fresh source of WARNINGs
-	 * across the Bandai titles as a side effect of a fix aimed elsewhere.
+	 * An indexed operand never reaches here under an {@code addr_mask} -- {@link #writesInRange}
+	 * routes it to {@link #indexedWriteMatchesDecode} -- so the indexed branch below only ever
+	 * runs with no decode predicate, where any in-range write latches whatever the index is.
 	 * <p>
 	 * Only the base is range-tested, never {@code base + 0xFF}: the canonical bank table sits
 	 * at the very top of the range (Contra's {@code STA $FFD0,X}), so requiring the whole
 	 * indexed span to fit would reject the exact idiom this tier exists to catch.
-	 * <p>
-	 * <b>Deliberately still {@link StoredValueScanner#plainAbsoluteTarget}, not
-	 * {@link StoredValueScanner#effectiveOperandTarget}</b> (grm-hum increment 1). The ruling
-	 * above does evaporate for an indexed store whose index resolves to a constant -- there
-	 * {@code (base + X) & 0x0F} <em>is</em> statically known, so the decode predicate could be
-	 * applied exactly. Acting on that would newly latch (or newly decline) Bandai FCG register
-	 * writes and so puts the four Bandai real-ROM goldens in play, for no benefit to the UxROM
-	 * titles this bead is about. Left as a follow-up (grm-hum bead F); the current behavior is
-	 * the safe under-reporting direction either way.
 	 */
 	private boolean operandStoresInRange(Instruction instr) {
 		if (StoredValueScanner.storeRegister(instr) == null) {
@@ -955,10 +946,63 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 			return inLatchRange(target) && matchesDecode(target.getOffset());
 		}
 		Address base = LoopIdioms.indexedBase(instr);
-		if (base == null || addrMask != 0) {
-			return false; // see the soundness ruling above
+		return base != null && inLatchRange(base);
+	}
+
+	/**
+	 * {@link #writesInRange} for an indexed operand when an {@code addr_mask} is configured: the
+	 * decode predicate is applied to the address the write actually reaches,
+	 * {@link StoredValueScanner#effectiveOperandTarget}, and to nothing else. An index that does
+	 * not resolve to a constant declines.
+	 * <p>
+	 * <b>Why neither ordinary tier can answer.</b> {@code base & 0x0F} says nothing whatever
+	 * about {@code (base + X) & 0x0F}, and on Bandai FCG that is the difference between the PRG
+	 * bank register and a CHR or IRQ register sharing the same range. The operand tier only
+	 * ever knew the base. The reference tier looks better but is no better: on a known index
+	 * {@code MosConstantReferenceAnalyzer} replaces the computed reference with one at the base
+	 * (grm-egw), and on an unknown index stock const-prop places it at the base too. Either way a
+	 * reference-tier answer is the base decoded, which is wrong in both directions --
+	 * {@code STA $8000,X} with {@code X == 8} writes the PRG register and would be missed, and
+	 * {@code STA $8008,X} with {@code X == 1} writes an IRQ register and would latch
+	 * {@code prg_bank}, precisely what {@code addr_mask} exists to prevent.
+	 * <p>
+	 * <b>The effective target is the right question</b> (grm-bow): with the index pinned,
+	 * {@code (base + X) & 0x0F} is exact, so the predicate applies as surely as it does to an
+	 * absolute operand. It is the same call, under the same {@link #hooks}, that
+	 * {@link #evaluateLatchScan}'s bus-conflict AND makes, so the address this mechanism decodes
+	 * and the address whose ROM byte it ANDs cannot disagree. It passes {@link RegisterEnv#NONE}
+	 * because which mechanism matches an address is cached by address alone (the
+	 * {@code matchCache} {@link #cacheable()} describes), so a caller's registers cannot be in
+	 * scope -- a helper whose index arrives from its caller declines, the
+	 * safe under-reporting direction this predicate has always failed in.
+	 * <p>
+	 * The write itself is still established the usual ways: a true store ({@code STA}/{@code STX}/
+	 * {@code STY}), or a write reference into the range for a read-modify-write store, whose
+	 * tier-1-only treatment {@link #operandStoresInRange} explains. Only the DECODE is moved off
+	 * the reference.
+	 * <p>
+	 * No Bandai title this repo pins exercises either direction today: every indexed register
+	 * write in the four FCG goldens is a {@code STA $8000,Y} CHR-block loop with Y counting down
+	 * from 7, which never reaches the PRG register's slot (owner's disassembler pass, on
+	 * grm-egw, 2026-08-15).
+	 */
+	private boolean indexedWriteMatchesDecode(Instruction instr) {
+		if (StoredValueScanner.storeRegister(instr) == null && !hasWriteReferenceInRange(instr)) {
+			return false;
 		}
-		return inLatchRange(base);
+		Address target = StoredValueScanner.effectiveOperandTarget(instr.getProgram(), instr,
+			hooks, RegisterEnv.NONE);
+		return target != null && inLatchRange(target) && matchesDecode(target.getOffset());
+	}
+
+	/** Whether {@code instr} carries a write reference anywhere in the latch range, decode aside. */
+	private boolean hasWriteReferenceInRange(Instruction instr) {
+		for (Reference ref : instr.getReferencesFrom()) {
+			if (ref.getReferenceType().isWrite() && inLatchRange(ref.getToAddress())) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
