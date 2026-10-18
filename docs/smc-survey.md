@@ -147,6 +147,7 @@ manual workflow — Debugger pure-emulation (Path B) or VICE snapshot import (Pa
 lite). This bead pilots the shared harness (§6).
 
 **grm-1.7.3 SPC700 upload — HYBRID, STATIC-FIRST. GO with one new prerequisite.**
+- *Status (2026-10-18):* the static tier now exists as `SpcIplFormat` (pure parser of the SPC700 IPL format) and `SpcIplScanner` (finds and ranks inline-address streams in a ROM image; opt-in corpus report via the `spc-ipl-corpus` chunk). It covers F-Zero/FF2/Lemmings-shaped uploads only; destination-out-of-line uploaders (SoM, FF3) need the emulation tier.
 - **Language sourcing (prerequisite, was wrongly assumed):** stock Ghidra ships **no
   SPC700 sleigh** (`Ghidra/Processors/` has 6502/Z80/68000/…, no SPC700). Community
   option: SPCdra (qwertymodo) — SPC700 sleigh + `.spc` loader + HW register symbols.

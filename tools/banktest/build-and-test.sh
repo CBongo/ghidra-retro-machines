@@ -47,7 +47,7 @@ usage() {
 usage: $0 [check|bless] [--force-criteria] [--batch-size N] [chunk ...]
 
 Chunks: c64-banking c64-loader c64-recovery basic-petscii basic-dialects pet-loader snes-loader c128-loader nes-banking
-        petscii-strings nes-text descriptors unit spc700-vectors spc700-dis-corpus snes-rom-corpus w65816-vectors 6502-vectors all
+        petscii-strings nes-text descriptors unit spc700-vectors spc700-dis-corpus spc-ipl-corpus snes-rom-corpus w65816-vectors 6502-vectors all
 
 With no chunks, all is selected. Use --list-chunks to print this list.
 
@@ -73,10 +73,11 @@ descriptors   per-game overlay descriptor in the user settings dir + DescriptorA
 unit          JUnit `gradle test` suite (all src/test/java; no extension build/install)
 spc700-vectors Exhaustive SPC700 vector regression (needs GRM_SPC700_VECTORS; opt-in, not in `all`)
 spc700-dis-corpus SPC700 disassembly vs. the hand .dis listings (needs GRM_SPC700_DIS_CORPUS; opt-in, reports)
+spc-ipl-corpus SPC700 IPL-format upload scan of the ROMs (needs GRM_SPC700_DIS_CORPUS; opt-in, reports)
 snes-rom-corpus SnesRomHeader.parse over a local SNES cartridge collection (needs GRM_SNES_ROM_DIR; opt-in, reports)
 w65816-vectors Exhaustive W65816 vector regression (needs GRM_W65816_VECTORS; opt-in, not in `all`)
 6502-vectors  Exhaustive NMOS 6502 vector regression (needs GRM_6502_VECTORS; opt-in, not in `all`)
-all           Every chunk (the default; does NOT include spc700-vectors/spc700-dis-corpus/snes-rom-corpus/w65816-vectors/6502-vectors -- see their rows)
+all           Every chunk (the default; does NOT include spc700-vectors/spc700-dis-corpus/spc-ipl-corpus/snes-rom-corpus/w65816-vectors/6502-vectors -- see their rows)
 EOF
 }
 
@@ -125,7 +126,7 @@ fi
 
 for chunk in "${REQUESTED_CHUNKS[@]}"; do
 	case "$chunk" in
-		c64-banking|c64-loader|c64-recovery|basic-petscii|basic-dialects|pet-loader|snes-loader|c128-loader|nes-banking|petscii-strings|nes-text|descriptors|unit|spc700-vectors|spc700-dis-corpus|snes-rom-corpus|w65816-vectors|6502-vectors|all) ;;
+		c64-banking|c64-loader|c64-recovery|basic-petscii|basic-dialects|pet-loader|snes-loader|c128-loader|nes-banking|petscii-strings|nes-text|descriptors|unit|spc700-vectors|spc700-dis-corpus|spc-ipl-corpus|snes-rom-corpus|w65816-vectors|6502-vectors|all) ;;
 		*)
 			echo "FAIL: unknown chunk '$chunk'" >&2
 			usage >&2
@@ -182,6 +183,7 @@ RUNNER_CHUNKS=()
 RUN_JUNIT=0
 RUN_SPC700_VECTORS=0
 RUN_SPC700_DIS_CORPUS=0
+RUN_SPC_IPL_CORPUS=0
 RUN_SNES_ROM_CORPUS=0
 RUN_W65816_VECTORS=0
 RUN_MOS6502_VECTORS=0
@@ -206,6 +208,9 @@ fi
 if has_chunk spc700-dis-corpus; then
 	RUN_SPC700_DIS_CORPUS=1
 fi
+if has_chunk spc-ipl-corpus; then
+	RUN_SPC_IPL_CORPUS=1
+fi
 if has_chunk snes-rom-corpus; then
 	RUN_SNES_ROM_CORPUS=1
 fi
@@ -219,6 +224,7 @@ GRADLE_CHECKS=()
 [ "$RUN_JUNIT" -eq 1 ] && GRADLE_CHECKS+=(test)
 [ "$RUN_SPC700_VECTORS" -eq 1 ] && GRADLE_CHECKS+=(spc700VectorTest)
 [ "$RUN_SPC700_DIS_CORPUS" -eq 1 ] && GRADLE_CHECKS+=(spc700DisCorpusTest)
+[ "$RUN_SPC_IPL_CORPUS" -eq 1 ] && GRADLE_CHECKS+=(spcIplCorpusTest)
 [ "$RUN_SNES_ROM_CORPUS" -eq 1 ] && GRADLE_CHECKS+=(snesRomCorpusTest)
 [ "$RUN_W65816_VECTORS" -eq 1 ] && GRADLE_CHECKS+=(w65816VectorTest)
 [ "$RUN_MOS6502_VECTORS" -eq 1 ] && GRADLE_CHECKS+=(mos6502VectorTest)

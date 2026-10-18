@@ -778,6 +778,29 @@ test {
 	// reporting tier whose assertions are weak -- so leaving it in `test` would be harmless but
 	// pointless noise; snesRomCorpusTest below runs it, and only it.
 	exclude '**/corpus/SnesRomCorpusTest.class'
+
+	// SpcIplCorpusTest (bead grm-1.7.3) is excluded for the same reason: it reads the owner's
+	// game-music-extraction ROMs via GRM_SPC700_DIS_CORPUS and Assume-skips when unset.
+	// spcIplCorpusTest below runs it, and only it.
+	exclude '**/corpus/SpcIplCorpusTest.class'
+}
+
+// The SPC700 IPL-format static-scan corpus tier (bead grm-1.7.3). Reports candidate streams per
+// title to build/spc-ipl-corpus/candidates.tsv and asserts the F-Zero and Lemmings ground truth.
+// Pure Java (SpcIplScanner has no Ghidra dependency), so like snesRomCorpusTest it declares no
+// bundled-language machinery.
+task spcIplCorpusTest(type: Test) {
+	group = "Ghidra Retro Machines"
+	description = "Scan the ROMs under GRM_SPC700_DIS_CORPUS for SPC700 IPL-format upload " +
+		"streams (grm-1.7.3); skips when unset."
+	useJUnit()
+	maxHeapSize = '1g'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	include '**/corpus/SpcIplCorpusTest.class'
+	testLogging { showStandardStreams = true }
+	// The inputs live outside the project tree; never report UP-TO-DATE over a stale report.
+	outputs.upToDateWhen { false }
 }
 
 // The SNES ROM header corpus survey (bead grm-9nxj.13). A reporting tier, not a gate: it writes

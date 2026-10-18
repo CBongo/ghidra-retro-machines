@@ -190,10 +190,11 @@ final acceptance and commits**. `build-and-test.sh --list-chunks` prints the cur
 | `unit` | the JUnit `gradle test` suite (all `src/test/java`; no extension build/install needed alone) |
 | `spc700-vectors` | exhaustive SPC700 p-code vector regression, 1000 cases/opcode (256,000 total) vs. the `unit` chunk's 32/opcode sample (`gradle spc700VectorTest`); needs `GRM_SPC700_VECTORS`, refuses loudly otherwise; opt-in, **not** included by `all` (see below), but routine (not just ceremonial) whenever the env var is configured — same standing as the real-ROM tier — and worth an explicit run after any SPC700 `.sinc` change, since the sample chunk can and does miss narrow edge cases (page-boundary wraps and the like) that the full suite catches |
 | `spc700-dis-corpus` | SPC700 *disassembly text* differential against nine hand-annotated `.dis` listings of real drivers (`gradle spc700DisCorpusTest`); needs `GRM_SPC700_DIS_CORPUS`, Assume-skips otherwise; opt-in, **not** included by `all`. A reporting tier, not a gate — the listings are leads, not an oracle. See its own section below |
+| `spc-ipl-corpus` | static scan of the corpus ROMs for "SPC700 IPL format" upload streams (`gradle spcIplCorpusTest`); needs `GRM_SPC700_DIS_CORPUS`, Assume-skips otherwise; opt-in, **not** included by `all`. A reporting tier with a few ground-truth assertions (F-Zero, FF2, Lemmings). See its own section below |
 | `w65816-vectors` | exhaustive W65816 p-code vector regression, 10,000 cases/opcode/mode (5,120,000 total, both native and emulation mode) vs. the `unit` chunk's PARTIAL 16-opcode/32-case sample (`gradle w65816VectorTest`); needs `GRM_W65816_VECTORS`, refuses loudly otherwise; opt-in, **not** included by `all`. See its own section below — in particular, the known-unverified `p` bits and the sample's partial opcode coverage |
 | `snes-rom-corpus` | `SnesRomHeader.parse` survey over a large local SNES cartridge collection (`gradle snesRomCorpusTest`); needs `GRM_SNES_ROM_DIR`, Assume-skips otherwise; opt-in, **not** included by `all`. A reporting tier, not a gate — the distribution it measures is per-machine and must never be pinned. See its own section below |
 | `6502-vectors` | exhaustive NMOS 6502 p-code vector regression, 10,000 cases/opcode (2,560,000 total) vs. the `unit` chunk's 32/opcode sample (`gradle mos6502VectorTest`); needs `GRM_6502_VECTORS`, refuses loudly otherwise; opt-in, **not** included by `all`. See its own section below |
-| `all` | every chunk (the default when no chunk is given) — **except** `spc700-vectors`, `spc700-dis-corpus`, `snes-rom-corpus`, `w65816-vectors`, and `6502-vectors`, which must be named explicitly |
+| `all` | every chunk (the default when no chunk is given) — **except** `spc700-vectors`, `spc700-dis-corpus`, `spc-ipl-corpus`, `snes-rom-corpus`, `w65816-vectors`, and `6502-vectors`, which must be named explicitly |
 
 **The shipped `ghidra_scripts/` front-ends are regression-tested inside these chunks, and nowhere
 else.** The GUI plugins are untestable here (see below), so a headless fixture that drives the
@@ -657,6 +658,31 @@ A by-product worth as much as the comparison: `<title>-datamap.tsv` extracts eac
 code/data map — contiguous data regions with the section heading that introduces them and the
 per-entry index labels (`vcmd dispatch table (D2-FF)`, `table for CPU cmds 80-8F and F0-FF`,
 `opcode length table`). A fresh Ghidra import of an SPC image has nothing like it.
+
+### SPC700 IPL-format upload scan (`grm-1.7.3`, static tier)
+
+`SpcIplCorpusTest` (its own `spc-ipl-corpus` chunk, **not** included by `all`) runs
+`SpcIplScanner` over one ROM per title directory under `GRM_SPC700_DIS_CORPUS` (the same
+variable as the `.dis` tier) and writes `build/spc-ipl-corpus/candidates.tsv`:
+
+```bash
+GRM_SPC700_DIS_CORPUS=<snes dir> bash tools/banktest/build-and-test.sh check spc-ipl-corpus
+```
+
+The scanner (`SpcIplFormat` parses, pure Java; `SpcIplScanner` finds and ranks) looks for the
+"SPC700 IPL format" at every byte offset: `[u16 len][u16 addr][data]…`, then `len == 0` and a
+`[u16 entry]`. It Assume-skips when the variable is unset. The `.bin` extracts and ROMs are read
+in place and never copied into the repo. Assertions are limited to what the owner's scripts and
+notes establish: F-Zero's seven-block stream at stripped `0x8000` (bytes equal to the `fzspc-*.bin`
+files), FF2's eight blocks at `04/8683` (`notes.txt`), and Lemmings' block at `0x467D7` (equal to
+`lemspc.bin`). Everything else is *reported*, not asserted.
+
+**Precision is weak and the report shows it:** the format has little redundancy and ROM data is
+full of zero words, so each title yields hundreds of chance candidates; the plausibility rules and
+ranking (documented on `SpcIplScanner`) float the genuine streams (F-Zero, FF2 first; Lemmings
+17th, a single-block stream) but a lone candidate is a lead, not a finding. Som and FF3 keep the
+destination out of line (`[len][data]` with the address elsewhere) and are invisible to this tier by
+construction; that is what the emulation tier is for.
 
 ### SNES ROM header corpus survey (`grm-9nxj.13`)
 
