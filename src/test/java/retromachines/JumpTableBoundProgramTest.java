@@ -23,6 +23,7 @@ import static org.junit.Assert.assertTrue;
 import org.junit.Test;
 
 import ghidra.app.cmd.function.CreateFunctionCmd;
+import ghidra.app.cmd.function.DecompilerSwitchAnalysisCmd;
 import ghidra.app.decompiler.DecompInterface;
 import ghidra.app.decompiler.DecompileResults;
 import ghidra.app.plugin.core.analysis.SwitchAnalysisDecompileConfigurer;
@@ -442,6 +443,62 @@ public class JumpTableBoundProgramTest extends AbstractBundledLanguageTest {
 		});
 
 		assertNoOverrideWritten(program, function, false);
+	}
+
+	/** grm-jt7s (megaman2 92e4): the usual order is stock switch analysis FIRST, laying a
+	 *  reference, a {@code switchD_::caseD_} label and disassembly at every over-read case, and the
+	 *  override LATER. Every fake entry here points at {@code $8400}, garbage that decodes as
+	 *  {@code ORA ($00,X) / SED / BRK}. After the late bound, the switch carries only the 8 real
+	 *  targets and the garbage nothing else reaches is cleared, label and function body included. */
+	@Test
+	public void lateOverrideRetractsStockOverReadCases() throws Exception {
+		long junk = 0x8400;
+		ProgramDB program = buildProgram(TABLE, false, junk);
+		Address switchAddr = addr(switchOffset(false));
+		inTx(program, "garbage", () -> {
+			try {
+				builder.setBytes(String.format("0x%x", junk), "01 00 f8 00", false);
+			}
+			catch (Exception e) {
+				throw new RuntimeException(e);
+			}
+		});
+		Function function = createFunction(program, addr(0x8000));
+		DecompileResults stock = decompileWithJumpLoads(program, function);
+		assertTrue(stock.getErrorMessage(), stock.decompileCompleted());
+		inTx(program, "stock", () -> {
+			new DecompilerSwitchAnalysisCmd(stock).applyTo(program, TaskMonitor.DUMMY);
+			CreateFunctionCmd.fixupFunctionBody(program, function, TaskMonitor.DUMMY);
+		});
+		// The control: stock really laid the over-read this test is about.
+		assertNotNull(program.getListing().getInstructionAt(addr(junk)));
+		assertTrue(targetsOf(program, switchAddr).contains(addr(junk)));
+
+		inTx(program, "analyze", () -> {
+			new JumpTableBoundAnalyzer().added(program, new AddressSet(function.getBody()),
+				TaskMonitor.DUMMY, new MessageLog());
+		});
+
+		java.util.Set<Address> expected = new java.util.HashSet<>();
+		for (long t : REAL_TARGETS) {
+			expected.add(addr(t));
+		}
+		assertEquals(expected, targetsOf(program, switchAddr));
+		assertNull("garbage reached only by the over-read is cleared",
+			program.getListing().getInstructionAt(addr(junk)));
+		assertEquals(0, program.getSymbolTable().getSymbols(addr(junk)).length);
+		assertTrue(!function.getBody().contains(addr(junk)));
+	}
+
+	/** The targets of every computed-jump reference on {@code switchAddr}. */
+	private java.util.Set<Address> targetsOf(ProgramDB program, Address switchAddr) {
+		java.util.Set<Address> targets = new java.util.HashSet<>();
+		for (Reference ref : program.getReferenceManager().getReferencesFrom(switchAddr)) {
+			if (ref.getReferenceType() == RefType.COMPUTED_JUMP) {
+				targets.add(ref.getToAddress());
+			}
+		}
+		return targets;
 	}
 
 	private void assertNoOverrideWritten(ProgramDB program, Function function, boolean maskIndex) {

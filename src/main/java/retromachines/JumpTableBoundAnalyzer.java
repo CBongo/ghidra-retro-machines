@@ -23,9 +23,11 @@ import java.util.Map;
 import java.util.Set;
 
 import ghidra.app.cmd.disassemble.DisassembleCommand;
+import ghidra.app.cmd.function.CreateFunctionCmd;
 import ghidra.app.decompiler.DecompInterface;
 import ghidra.app.decompiler.DecompileResults;
 import ghidra.app.plugin.core.analysis.SwitchAnalysisDecompileConfigurer;
+import ghidra.app.plugin.core.clear.ClearFlowAndRepairCmd;
 import ghidra.app.services.AbstractAnalyzer;
 import ghidra.app.services.AnalysisPriority;
 import ghidra.app.services.Analyzer;
@@ -600,6 +602,7 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 						e.getMessage());
 				return false;
 			}
+			retractStaleCases(program, function, switchAddr, firstN, monitor);
 		}
 
 		long tableStart = 0;
@@ -869,6 +872,68 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 			cmd.applyTo(program);
 		}
 		return true;
+	}
+
+	/**
+	 * Undoes stock switch analysis's over-read at a switch this analyzer just bounded by override
+	 * (grm-jt7s). Most overrides land late, after stock {@code DecompilerSwitchAnalyzer} already laid
+	 * one reference and one {@code switchD_<addr>::caseD_<n>} label per case it read, and
+	 * disassembled every target (see the {@code jumptablebound-late-override-load-bearing} memory).
+	 * The decompiler then honours the override, but the listing keeps the over-read: megaman2's
+	 * {@code 92e4} was bounded 255 -> 15 and still carried 224 targets, one of them {@code da2b},
+	 * an {@code ORA ($00,X)} decoded over data that falls into a {@code BRK}, all inside
+	 * {@code FUN_925b}'s body.
+	 *
+	 * <p>For each {@code ANALYSIS} computed-jump reference whose target is not a kept case, this
+	 * removes the reference and stock's {@code ANALYSIS} case label there, and then clears the code
+	 * from that target when nothing else reaches it -- the guard and the command
+	 * {@link DecidedBranchAnalyzer} uses for a dead fall-through. A kept case is matched by offset
+	 * alone, so a reference that was retargeted into an overlay copy of a kept target stays. Only
+	 * ever called after {@link JumpTable#writeOverride} succeeded: the pin path replaces every
+	 * reference itself.
+	 */
+	private void retractStaleCases(Program program, Function function, Address switchAddr,
+			List<Address> keptTargets, TaskMonitor monitor) throws CancelledException {
+		Set<Long> keptOffsets = new LinkedHashSet<>();
+		for (Address a : keptTargets) {
+			keptOffsets.add(a.getOffset());
+		}
+		SymbolTable symtab = program.getSymbolTable();
+		String switchNamespace = "switchD_" + switchAddr;
+		List<Address> stale = new ArrayList<>();
+		for (Reference ref : program.getReferenceManager().getReferencesFrom(switchAddr)) {
+			if (ref.getReferenceType() == RefType.COMPUTED_JUMP &&
+				ref.getSource() == SourceType.ANALYSIS &&
+				!keptOffsets.contains(ref.getToAddress().getOffset())) {
+				stale.add(ref.getToAddress());
+				program.getReferenceManager().delete(ref);
+			}
+		}
+		if (stale.isEmpty()) {
+			return;
+		}
+		AddressSet clearStarts = new AddressSet();
+		for (Address target : stale) {
+			monitor.checkCancelled();
+			for (Symbol symbol : symtab.getSymbols(target)) {
+				if (symbol.getSource() == SourceType.ANALYSIS &&
+					symbol.getParentNamespace().getName().equals(switchNamespace)) {
+					symbol.delete();
+				}
+			}
+			if (DecidedBranchAnalyzer.deadCodeStart(program, target)) {
+				clearStarts.add(target);
+			}
+		}
+		if (!clearStarts.isEmpty()) {
+			// Not clearing data: a defined table among the stale targets is someone's claim.
+			new ClearFlowAndRepairCmd(clearStarts, false, false, true).applyTo(program, monitor);
+		}
+		if (!function.isDeleted()) {
+			CreateFunctionCmd.fixupFunctionBody(program, function, monitor);
+		}
+		AnalyzerLog.info(this, "retracted " + stale.size() + " over-read case(s) at " + switchAddr +
+			"; cleared flow from " + clearStarts.getNumAddresses() + " of them");
 	}
 
 	/** Verbatim port of {@code DecompilerSwitchAnalysisCmd.setSwitchTargetContext}: flows the
