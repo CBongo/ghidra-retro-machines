@@ -212,7 +212,11 @@ public class CrossBankJumpTableProgramTest extends AbstractBundledLanguageTest {
 		assertTrue(!ctx.switchedInCopyReadsTableIn(jmp, b2, 0x8000, 0x9000));
 	}
 
-	/** Another bank's copy reads a different table: not corroborated, and the analyzer declines. */
+	/**
+	 * Bank 2's copy reads a different table: not corroborated as overlapping. Since grm-q4ga the
+	 * analyzer reads the table where the copy points ($a000), and declines here only because bank 2
+	 * holds no valid entries there.
+	 */
 	@Test
 	public void switchedInCopyReadingElsewhereDoesNotCorroborateAndAnalyzerDeclines()
 			throws Exception {
@@ -234,6 +238,90 @@ public class CrossBankJumpTableProgramTest extends AbstractBundledLanguageTest {
 		String comment = program.getListing().getComment(CommentType.EOL, bankAddr(0, 0x8012));
 		assertTrue("declined: no cross-bank comment, got " + comment,
 			comment == null || !comment.contains("switched-in bank"));
+	}
+
+	/** Moves bank 2's copy's two table loads to read {@code $a000/$a001}, and gives bank 2 a table
+	 *  there: 8 real targets, then entries pointing at the table itself. */
+	private void moveBank2TableTo0xa000() throws Exception {
+		StringBuilder table = new StringBuilder();
+		for (int i = 0; i < 128; i++) {
+			table.append(le16(i < 8 ? 0xa010 + 0x20 * i : 0xa000));
+		}
+		inTx(program, "move bank 2's table", () -> {
+			program.getMemory().setByte(bankAddr(2, 0x800a), (byte) 0xa0);
+			program.getMemory().setByte(bankAddr(2, 0x800f), (byte) 0xa0);
+		});
+		builder.setBytes(bankAddr(2, 0xa000).toString(), table.toString().trim(), false);
+	}
+
+	/** grm-q4ga: the copy's table operand moved by a constant, so the shift is that constant. */
+	@Test
+	public void switchedInCopyTableShiftIsTheCopysOperandDelta() throws Exception {
+		Instruction jmp = program.getListing().getInstructionAt(bankAddr(0, 0x8012));
+		BankContext ctx = BankContext.forProgram(program);
+		var b2 = program.getAddressFactory().getAddressSpace("PRG_ALL_B2");
+		assertEquals(Long.valueOf(0), ctx.switchedInCopyTableShift(jmp, b2, TABLE, TABLE + 0x100));
+		moveBank2TableTo0xa000();
+		assertEquals(Long.valueOf(0x1000),
+			ctx.switchedInCopyTableShift(jmp, b2, TABLE, TABLE + 0x100));
+	}
+
+	/** Two loads moved by different amounts are no single table: no shift. */
+	@Test
+	public void switchedInCopyTableShiftNeedsEveryLoadToAgree() throws Exception {
+		inTx(program, "move only the low-byte load", () -> {
+			program.getMemory().setByte(bankAddr(2, 0x800a), (byte) 0xa0);
+		});
+		Instruction jmp = program.getListing().getInstructionAt(bankAddr(0, 0x8012));
+		BankContext ctx = BankContext.forProgram(program);
+		var b2 = program.getAddressFactory().getAddressSpace("PRG_ALL_B2");
+		assertNull(ctx.switchedInCopyTableShift(jmp, b2, TABLE, TABLE + 0x100));
+	}
+
+	/** grm-q4ga: the analyzer reads the table the switched-in copy reads (deadly_towers' banks). */
+	@Test
+	public void analyzerReadsTheTableTheSwitchedInCopyReads() throws Exception {
+		moveBank2TableTo0xa000();
+		Address jmp = bankAddr(0, 0x8012);
+		JumpTableBoundAnalyzer analyzer = new JumpTableBoundAnalyzer();
+		inTx(program, "analyze", () -> {
+			analyzer.added(program, new AddressSet(bankAddr(0, 0x8000), jmp),
+				TaskMonitor.DUMMY, new MessageLog());
+		});
+		Set<Address> targets = new HashSet<>();
+		for (Reference ref : program.getListing().getInstructionAt(jmp).getReferencesFrom()) {
+			if (ref.getReferenceType().isComputed()) {
+				targets.add(ref.getToAddress());
+			}
+		}
+		Set<Address> expected = new HashSet<>();
+		for (int i = 0; i < 8; i++) {
+			expected.add(bankAddr(2, 0xa010 + 0x20 * i));
+		}
+		assertEquals(expected, targets);
+	}
+
+	/**
+	 * grm-q4ga: a call's return into base code that the state's bank holds different bytes for
+	 * cannot happen under that state; byte-identical copies (the trampoline) still can.
+	 */
+	@Test
+	public void callReturnIntoDifferentBytesReturnsElsewhere() throws Exception {
+		BankContext ctx = BankContext.forProgram(program);
+		BankState bank2 = BankState.fullyKnown(3, 2);
+		// $8006 (ASL / TAX) is byte-identical in every bank: the return lands on these bytes.
+		assertTrue(!BankDataflowEngine.returnsElsewhere(program, program.getListing(),
+			bankAddr(0, 0x8006), bank2, ctx.resolution()));
+		inTx(program, "change bank 2's byte at $8006", () -> {
+			program.getMemory().setByte(bankAddr(2, 0x8006), (byte) 0xea); // NOP
+		});
+		assertTrue(BankDataflowEngine.returnsElsewhere(program, program.getListing(),
+			bankAddr(0, 0x8006), bank2, ctx.resolution()));
+		// Under the home bank, or an unknown state, the base bytes are what runs.
+		assertTrue(!BankDataflowEngine.returnsElsewhere(program, program.getListing(),
+			bankAddr(0, 0x8006), BankState.fullyKnown(3, 0), ctx.resolution()));
+		assertTrue(!BankDataflowEngine.returnsElsewhere(program, program.getListing(),
+			bankAddr(0, 0x8006), BankState.unknown(), ctx.resolution()));
 	}
 
 	/** Window arithmetic the analyzer uses: a copy reading one stride below our base (lo - 2)

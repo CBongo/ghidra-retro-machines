@@ -478,6 +478,18 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 				targets.add(a.getOffset());
 			}
 			targetSpace = crossBank.table().getAddressSpace();
+			// grm-q4ga: the table may have moved to where the switched-in copy reads it, so move the
+			// decompiler's load tables with it; the extent rules below measure against them.
+			long shift = crossBank.table().getOffset() - lowestMovingTableAddr.getOffset();
+			if (shift != 0) {
+				List<JumpTableBound.LoadTableEntry> moved = new ArrayList<>(loadTables.size());
+				for (JumpTableBound.LoadTableEntry lt : loadTables) {
+					moved.add(new JumpTableBound.LoadTableEntry(lt.start() + shift, lt.entrySize(),
+						lt.num()));
+				}
+				loadTables.clear();
+				loadTables.addAll(moved);
+			}
 			lowestMovingTableAddr = crossBank.table();
 			MemoryBlock block = program.getMemory().getBlock(lowestMovingTableAddr);
 			tableBlock = block == null ? null
@@ -697,8 +709,17 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 				") fits no known layout; left as the decompiler read it");
 			return null;
 		}
-		List<Long> entries =
-			model.read(tableAddr.getOffset(), targets.size(), bytesIn(memory, newSpace));
+		// grm-q4ga: the switched-in bank's copy of the routine may read its own table at another
+		// address (deadly_towers' per-bank trampolines). Its bytes are what run after the switch,
+		// so read the table where the copy points.
+		long readBase = tableAddr.getOffset();
+		Long shift = ctx.switchedInCopyTableShift(switchInstr, newSpace, readBase,
+			readBase + model.stride() * targets.size());
+		if (shift != null && shift != 0) {
+			readBase += shift;
+			resolved = newSpace.getAddress(readBase);
+		}
+		List<Long> entries = model.read(readBase, targets.size(), bytesIn(memory, newSpace));
 		if (entries.size() < 2) {
 			return null;
 		}
@@ -721,7 +742,7 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		// Corroboration: the switched-in bank's own copy of the routine must read an
 		// overlapping table, or this is not a table in that bank at all.
 		long stride = model.stride();
-		long lo = tableAddr.getOffset();
+		long lo = readBase;
 		long hi = lo + stride * (prefix.skip() + prefix.count());
 		// Counterpart of the one-leading-junk-slot allowance above: the switched-in bank's copy
 		// may sit exactly ONE stride below our base (its table starts a slot earlier, with the

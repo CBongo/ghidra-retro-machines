@@ -17,6 +17,7 @@ package retromachines;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -39,6 +40,7 @@ import ghidra.program.model.listing.FunctionManager;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
+import ghidra.program.model.mem.MemoryAccessException;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.mem.MemoryBlockSourceInfo;
 import ghidra.program.model.symbol.FlowType;
@@ -640,13 +642,19 @@ final class BankDataflowEngine {
 						listing, board, clampCache, budget, stateDependents);
 				}
 				Address fallThrough = instr.getFallThrough();
+				// A return the state cannot explain still happens: forget the state, keep the edge
+				// (grm-q4ga), so the code after the call is still visited.
+				BankState fall = isCall && fallThrough != null &&
+					returnsElsewhere(program, listing, fallThrough, out.fall(), bankResolution)
+							? BankState.unknown()
+							: out.fall();
 				if (fallThrough != null &&
-					!mapsElsewhere(program, fallThrough, addr, out.fall(),
+					!mapsElsewhere(program, fallThrough, addr, fall,
 						bankResolution) &&
-					!contradictsResidence(program, fallThrough, addr, out.fall(),
+					!contradictsResidence(program, fallThrough, addr, fall,
 						bankResolution, residenceInvariantCache)) {
 					PathId to = budget.isFunctionEntry(fallThrough) ? PathId.ROOT : out.pathId();
-					mergeAndEnqueue(fallThrough, to, out.fall(), stateIn, collapsedAddrs,
+					mergeAndEnqueue(fallThrough, to, fall, stateIn, collapsedAddrs,
 						worklist, listing, board, clampCache, budget, stateDependents);
 				}
 			}
@@ -1992,6 +2000,56 @@ final class BankDataflowEngine {
 		AddressSpace overlay = program.getAddressFactory().getAddressSpace(r.space());
 		return overlay != null &&
 			!sameImageByte(program, target, overlay.getAddress(target.getOffset()));
+	}
+
+	/**
+	 * Whether a CALL's base-space fall-through cannot be where the call returns under
+	 * {@code state} (bead grm-q4ga). {@link #mapsElsewhere} exempts a flow within the caller's own
+	 * window, because sequential code that switches its own window runs on into the live bank. A
+	 * call's fall-through is not sequential: RTS lands on whatever the live bank holds at that
+	 * offset. When the state pins the window to an occupant whose bytes there differ from the base
+	 * instruction's, the base instruction never runs under that state. The state is then the
+	 * engine's mistake (the callee restored the bank on a path it cannot see), so none of its bits
+	 * can be trusted. The caller forgets it but keeps the edge: dropping the edge instead left
+	 * everything after deadly_towers' far calls unvisited (instrs.inOverlay 4549 -> 1393).
+	 * deadly_towers: {@code JSR $fc2a} switches to bank 2 and dispatches through a
+	 * table, and each handler returns through {@code fc54}, which stores bank 0. Without this guard,
+	 * bank 2 reached base {@code 8484 JMP $85a9}, which was retargeted onto bank 2's zero filler.
+	 * <p>
+	 * A routine duplicated byte for byte in every bank (as these trampolines are) still returns
+	 * into its own bytes, so equal bytes keep the flow. The overlay side needs no twin: there
+	 * {@link #clampToResidence} already forces the caller's own bank.
+	 */
+	static boolean returnsElsewhere(Program program, Listing listing, Address fallThrough,
+			BankState state, HelperDiscovery.BankResolution ctx) {
+		if (ctx == null || fallThrough.getAddressSpace().isOverlaySpace()) {
+			return false;
+		}
+		BankAnnotationAdapter.OffsetResolution r = BankAnnotationAdapter.resolveOffsetOccupant(
+			ctx.board(), ctx.bankUniverse(), state, fallThrough.getOffset(), Map.of());
+		if (r == null || !r.fullyKnown() || r.home()) {
+			return false;
+		}
+		AddressSpace overlay = program.getAddressFactory().getAddressSpace(r.space());
+		Instruction landing = listing.getInstructionAt(fallThrough);
+		if (overlay == null || landing == null) {
+			return false;
+		}
+		Address copy = overlay.getAddress(fallThrough.getOffset());
+		if (sameImageByte(program, fallThrough, copy)) {
+			return false;
+		}
+		try {
+			byte[] base = landing.getBytes();
+			byte[] other = new byte[base.length];
+			if (program.getMemory().getBytes(copy, other) != other.length) {
+				return true;
+			}
+			return !Arrays.equals(base, other);
+		}
+		catch (MemoryAccessException e) {
+			return true; // nothing readable there: the base instruction is not what runs
+		}
 	}
 
 	/**

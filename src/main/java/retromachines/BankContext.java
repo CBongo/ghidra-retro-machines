@@ -90,6 +90,11 @@ final class BankContext {
 		this.placementOverride = placementOverride;
 	}
 
+	/** The board, bank universe and placement override, in the form the dataflow guards take. */
+	HelperDiscovery.BankResolution resolution() {
+		return new HelperDiscovery.BankResolution(board, bankUniverse, placementOverride);
+	}
+
 	/**
 	 * The context for {@code program}, or {@code null} when it is not a banked-board import (no
 	 * banking analyzer's loader gate accepts it, it has no descriptor, or no usable mechanism).
@@ -248,6 +253,64 @@ final class BankContext {
 			}
 		}
 		return false;
+	}
+
+	/**
+	 * How far the switched-in bank's copy of this routine moves the table it reads (grm-q4ga).
+	 * Bank-switching trampolines are often duplicated in every bank with only the table operand
+	 * changed (deadly_towers: bank 0's {@code fc2a} reads {@code LDA $8000,X}, bank 2's copy
+	 * {@code LDA $8035,X}). Once the switch lands, the copy's bytes run, so its operand names the
+	 * table. Walks the same straight-line run as {@link #switchedInCopyReadsTableIn}. For each
+	 * listing instruction that is a 3-byte indexed pure load whose base lies in {@code [lo, hi)},
+	 * it pseudo-disassembles the copy at the same offset (bytes only, no listing writes), which
+	 * must be an indexed pure load as well. Returns the copy's base minus the routine's base when
+	 * every such pair agrees, or null when no pair is found, a copy instruction does not match,
+	 * or the pairs disagree.
+	 */
+	Long switchedInCopyTableShift(Instruction use, AddressSpace space, long lo, long hi) {
+		ghidra.app.util.PseudoDisassembler pd = new ghidra.app.util.PseudoDisassembler(program);
+		Long shift = null;
+		for (Instruction step : straightLineRun(use)) {
+			Long base = indexedLoadBase(step);
+			if (base == null || base < lo || base >= hi) {
+				continue;
+			}
+			ghidra.program.model.listing.Instruction copy;
+			try {
+				copy = pd.disassemble(space.getAddress(step.getMinAddress().getOffset()));
+			}
+			catch (Exception e) {
+				return null;
+			}
+			Long copyBase = copy == null ? null : indexedLoadBase(copy);
+			if (copyBase == null) {
+				return null;
+			}
+			long d = copyBase - base;
+			if (shift != null && shift != d) {
+				return null;
+			}
+			shift = d;
+		}
+		return shift;
+	}
+
+	/** The scalar base of a 3-byte indexed pure load, or null for anything else. */
+	private static Long indexedLoadBase(Instruction instr) {
+		if (instr.getLength() != 3 || instr.getNumOperands() == 0 || !isPureLoad(instr)) {
+			return null;
+		}
+		boolean indexed = false;
+		Long base = null;
+		for (Object o : instr.getOpObjects(0)) {
+			if (o instanceof ghidra.program.model.lang.Register) {
+				indexed = true;
+			}
+			else if (o instanceof ghidra.program.model.scalar.Scalar sc) {
+				base = sc.getUnsignedValue();
+			}
+		}
+		return indexed ? base : null;
 	}
 
 	private static boolean isPureLoad(Instruction instr) {

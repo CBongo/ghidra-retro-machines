@@ -1773,7 +1773,11 @@ def make_prg_intrawin():
     put_bank(0, 0x0020, [0xA0])
     # Bank 1: marker only (the base helper's destination).
     put_bank(1, 0x0020, [0xA1])
-    # Bank 2: $8010 is a bare RTS (not a helper), marker at $8020.
+    # Bank 2: the same window code at $8000 (grm-q4ga: once 8002 switches to bank 2, bank 2's
+    # bytes are what run, and the JSR at 8005 returns into bank 2's 8008 -- duplicated code is
+    # how a real ROM makes that the same LDA), $8010 a bare RTS (not a helper), marker at $8020.
+    put_bank(2, 0x0000, [0xA2, 0x02, 0x8E, 0xDF, 0xFF, 0x20, 0x10, 0x80,
+                         0xAD, 0x20, 0x80, 0x4C, 0x0B, 0x80])
     put_bank(2, 0x0010, [0x60])
     put_bank(2, 0x0020, [0xA2])
 
@@ -4750,6 +4754,7 @@ def main():
     assert prgintra[0x0005:0x0008] == bytes([0x20, 0x10, 0x80])               # JSR $8010
     assert prgintra[0x0010:0x0016] == bytes([0xA2, 0x01, 0x8E, 0xDF, 0xFF, 0x60])  # base: helper
     assert prgintra[2 * PRG_BANK_SIZE + 0x0010] == 0x60                       # B2 copy: RTS
+    assert prgintra[2 * PRG_BANK_SIZE:2 * PRG_BANK_SIZE + 0x0E] == prgintra[0:0x0E]  # B2 dup
     assert prgintra[0xC000:0xC003] == bytes([0x4C, 0x00, 0x80])               # JMP $8000
     _assert_vectors(prgintra, "nesintrawintest", handler=0xC020, reset=0xC000)
 
