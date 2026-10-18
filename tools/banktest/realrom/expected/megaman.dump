@@ -17,18 +17,19 @@ REALROM block RAM 0000-07ff overlay=false
 REALROM count blocks.total 12
 REALROM count blocks.overlay 7
 REALROM count refs.intoOverlay.retargeted 35
-REALROM count refs.intoOverlay.intraOverlay 1699
-REALROM count instrs.inOverlay 7722
-REALROM count bankComments 114
+REALROM count refs.intoOverlay.intraOverlay 1673
+REALROM count instrs.inOverlay 7816
+REALROM count bankComments 115
 REALROM count warnings 27
 REALROM count notes 13
-REALROM count symbols 216
+REALROM count symbols 233
 REALROM sample.bankcomment 9067 bank -> 5 (bank=5) via FUN_d846
 REALROM sample.bankcomment 9173 bank -> 6 (bank=6) via FUN_c3bf
 REALROM sample.bankcomment 91bf bank -> 5 (bank=5) via FUN_d131
 REALROM sample.bankcomment 9251 bank -> 5 (bank=5) via FUN_c219
 REALROM sample.bankcomment 949e bank -> 5 (bank=5) via FUN_d131
-REALROM sample.bankcomment 9782 bank -> 6 (bank=6) via caseD_a4
+REALROM sample.bankcomment 9782 bank -> 6 (bank=6) via FUN_c53d
+REALROM sample.bankcomment 9a5f bank -> 6 (bank=6) via FUN_c53d
 REALROM sample.bankcomment 9d05 bank -> 5 (bank=5) via FUN_c55d
 REALROM sample.bankcomment a044 bank -> 5 (bank=5) via FUN_d131
 REALROM sample.bankcomment a082 bank -> 5 (bank=5) via FUN_d131
@@ -117,9 +118,9 @@ REALROM sample.bankcomment d89d bank -> 6 (bank=6)
 REALROM sample.bankcomment d91e bank -> 5 (bank=5) via FUN_c3b3
 REALROM sample.bankcomment d986 bank -> 5 (bank=5) via FUN_c3b3
 REALROM sample.bankcomment dbbb bank -> 5 (bank=5) via FUN_f105
-REALROM sample.bankcomment dbfd bank -> 6 (bank=6) via caseD_a4
+REALROM sample.bankcomment dbfd bank -> 6 (bank=6) via FUN_c53d
 REALROM sample.bankcomment ec6d bank -> 5 (bank=5) via FUN_c05a
-REALROM sample.bankcomment ee87 bank -> 6 (bank=6) via caseD_a4
+REALROM sample.bankcomment ee87 bank -> 6 (bank=6) via FUN_c53d
 REALROM sample.bankcomment ef79 bank -> 5 (bank=5) via FUN_d131
 REALROM sample.bankcomment efc8 bank -> 5 (bank=5) via FUN_d131
 REALROM sample.bankcomment f032 bank -> 5 (bank=5) via FUN_d131
@@ -162,7 +163,7 @@ REALROM sample.ref 9065 -> PRG_LO_B5::906a CONDITIONAL_JUMP primary=true
 REALROM sample.ref 906e -> PRG_LO_B5::9075 CONDITIONAL_JUMP primary=true
 REALROM sample.ref 9070 -> PRG_LO_B5::9424 DATA primary=true
 REALROM sample.ref 9086 -> PRG_LO_B4::907d CONDITIONAL_JUMP primary=true
-REALROM sample.ref.truncated 25 of 1734
+REALROM sample.ref.truncated 25 of 1708
 REALROM sample.warn 91bc [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_d896, which this analyzer models with no argument register, so no caller argument was sought at this call site; its effect is not resolved here
 REALROM sample.warn ac9f [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_c666, whose latched value is re-derived inside the helper under this call site's registers (no caller argument is consulted), and that derivation did not resolve here
 REALROM sample.warn c3ab [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
@@ -203,6 +204,23 @@ REALROM sample.note f04b [CopyLoopAnalyzer] copy-shaped loop RAM:f069 -> RAM:03e
 REALROM sample.note f0d4 [CopyLoopAnalyzer] copy-shaped loop RAM:0059 -> RAM:0382 (33 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note f2f5 [CopyLoopAnalyzer] copy-shaped loop RAM:f398 -> RAM:03d5 (3 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
 REALROM sample.note fa2e [CopyLoopAnalyzer] copy-shaped loop RAM:fa58 -> RAM:0204 (4 bytes) recognized but NOT materialized: nothing jumps into the destination and the payload does not decode as a subroutine, so there is no evidence it holds code. If it does, materialize it with the Run From Elsewhere Transfer script or a descriptor copied_from hint.
+REALROM sample.symbol 99b5 switch USER_DEFINED primary=true
+REALROM sample.symbol 99eb case_0 USER_DEFINED primary=true
+REALROM sample.symbol 9a06 case_2 USER_DEFINED primary=true
+REALROM sample.symbol 9a49 case_3 USER_DEFINED primary=true
+REALROM sample.symbol 9a6a case_1 USER_DEFINED primary=true
+REALROM sample.symbol 9a9d case_10 USER_DEFINED primary=false
+REALROM sample.symbol 9a9d case_11 USER_DEFINED primary=false
+REALROM sample.symbol 9a9d case_4 USER_DEFINED primary=true
+REALROM sample.symbol 9a9d case_5 USER_DEFINED primary=false
+REALROM sample.symbol 9a9d case_6 USER_DEFINED primary=false
+REALROM sample.symbol 9a9d case_7 USER_DEFINED primary=false
+REALROM sample.symbol 9a9d case_8 USER_DEFINED primary=false
+REALROM sample.symbol 9a9d case_9 USER_DEFINED primary=false
+REALROM sample.symbol 9b0c case_12 USER_DEFINED primary=true
+REALROM sample.symbol 9b18 case_13 USER_DEFINED primary=true
+REALROM sample.symbol 9b1b case_14 USER_DEFINED primary=true
+REALROM sample.symbol 9b67 case_15 USER_DEFINED primary=true
 REALROM sample.symbol a380 switch USER_DEFINED primary=true
 REALROM sample.symbol a393 case_1 USER_DEFINED primary=true
 REALROM sample.symbol a465 case_3 USER_DEFINED primary=true
@@ -211,22 +229,5 @@ REALROM sample.symbol a512 case_5 USER_DEFINED primary=true
 REALROM sample.symbol a5c1 case_6 USER_DEFINED primary=true
 REALROM sample.symbol a620 case_7 USER_DEFINED primary=true
 REALROM sample.symbol a709 case_0 USER_DEFINED primary=false
-REALROM sample.symbol a709 case_2 USER_DEFINED primary=false
-REALROM sample.symbol a734 switch USER_DEFINED primary=true
-REALROM sample.symbol a747 case_0 USER_DEFINED primary=true
-REALROM sample.symbol a76d case_1 USER_DEFINED primary=true
-REALROM sample.symbol a784 case_2 USER_DEFINED primary=true
-REALROM sample.symbol a7a1 case_3 USER_DEFINED primary=true
-REALROM sample.symbol a7cd case_4 USER_DEFINED primary=true
-REALROM sample.symbol a7fa case_5 USER_DEFINED primary=true
-REALROM sample.symbol a827 case_6 USER_DEFINED primary=true
-REALROM sample.symbol a893 case_7 USER_DEFINED primary=true
-REALROM sample.symbol aa38 switch USER_DEFINED primary=true
-REALROM sample.symbol aad1 case_0 USER_DEFINED primary=false
-REALROM sample.symbol ab79 case_1 USER_DEFINED primary=true
-REALROM sample.symbol abf2 case_9 USER_DEFINED primary=true
-REALROM sample.symbol abf6 case_2 USER_DEFINED primary=true
-REALROM sample.symbol ac5e case_3 USER_DEFINED primary=true
-REALROM sample.symbol acca case_33 USER_DEFINED primary=false
-REALROM sample.symbol.truncated 25 of 204
+REALROM sample.symbol.truncated 25 of 221
 === REALROM END ===

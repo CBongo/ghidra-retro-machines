@@ -510,7 +510,25 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 			}
 		}
 
-		JumpTableBound.Result result = JumpTableBound.bound(targets, loadTables, tableBlock);
+		// grm-jt7s: a keyed linear search leaves the index in a value set the code itself states;
+		// read the cases from it exactly, ahead of every extent rule (none can cut every third case).
+		List<Address> searched = null;
+		if (!isCrossBank) {
+			Instruction switchInstr = listing.getInstructionAt(switchAddr);
+			searched = switchInstr == null ? null
+					: SearchLoopDispatch.cases(program, switchInstr, realCases);
+		}
+		JumpTableBound.Result result;
+		if (searched != null) {
+			long lowest = Long.MAX_VALUE;
+			for (Address a : searched) {
+				lowest = Math.min(lowest, a.getOffset());
+			}
+			result = JumpTableBound.boundBySearchLoop(searched.size(), lowest);
+		}
+		else {
+			result = JumpTableBound.bound(targets, loadTables, tableBlock);
+		}
 		if (!result.isBounded() && sameMemory(switchAddr.getAddressSpace(), targetSpace)) {
 			// Table after its code (grm-akiv): the lowest-target rule declines by design. The walk
 			// also stops at the next table (grm-t223: contra 849f runs into 8285's table at 86cd).
@@ -555,8 +573,9 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		}
 
 		// Normally the first count() cases; every other one for a grm-yjiq overlapping byte table.
-		ArrayList<Address> firstN =
-			shrinks ? new ArrayList<>(result.keep(realCases)) : new ArrayList<>(realCases);
+		ArrayList<Address> firstN = !shrinks ? new ArrayList<>(realCases)
+				: searched != null ? new ArrayList<>(searched)
+				: new ArrayList<>(result.keep(realCases));
 		// grm-0pen: the rule above capped the extent; now cut the kept cases at the first target
 		// whose bytes do not decode as code (see JumpTableBound.codePrefix for why this is only
 		// ever a refinement). Bytes only, never the listing, so analysis order cannot move it.
@@ -564,7 +583,8 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		for (Address a : firstN) {
 			decodes.add(InlineJumpTableDispatch.decodesAsCode(program, a, true));
 		}
-		int codePrefix = JumpTableBound.codePrefix(decodes);
+		// An exact search-loop set is not an extent to refine.
+		int codePrefix = searched != null ? firstN.size() : JumpTableBound.codePrefix(decodes);
 		boolean cutAtData = codePrefix < firstN.size();
 		if (cutAtData) {
 			firstN = new ArrayList<>(firstN.subList(0, codePrefix));
@@ -632,6 +652,9 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		}
 		else if (result.rule() == JumpTableBound.Rule.KNOWN_CODE) {
 			why = "ran into another table's target"; // grm-rsxe
+		}
+		else if (result.rule() == JumpTableBound.Rule.SEARCH_LOOP) {
+			why = "index from a keyed search loop"; // grm-jt7s
 		}
 		else {
 			why = "lowest target " + Long.toHexString(result.lowestTarget());

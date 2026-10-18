@@ -780,7 +780,19 @@ public final class JumpTableBound {
 		NEIGHBOUR_TABLE,
 		/** {@link #boundByKnownCode}: grm-rsxe -- cut where another bounded table's target
 		 *  begins. */
-		KNOWN_CODE
+		KNOWN_CODE,
+		/** {@link #boundBySearchLoop}: grm-jt7s -- the index comes from a keyed linear search,
+		 *  whose value set {@link SearchLoopDispatch} reads exactly. */
+		SEARCH_LOOP
+	}
+
+	/**
+	 * grm-jt7s: the bound {@link SearchLoopDispatch} recovered, {@code count} cases. Its cases are
+	 * that class's own list, not a prefix or stride of the decompiler's, so {@link Result#keep}
+	 * does not apply to it.
+	 */
+	public static Result boundBySearchLoop(int count, long lowestTarget) {
+		return Result.bounded(count, lowestTarget, Rule.SEARCH_LOOP);
 	}
 
 	/** The reconstructed table shape both rules share: each moving load table's start and
