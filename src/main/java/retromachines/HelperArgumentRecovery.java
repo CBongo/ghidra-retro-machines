@@ -571,7 +571,25 @@ final class HelperArgumentRecovery {
 		// is both the answer for a single-site helper and, for a folded one, the deposit whose
 		// emptiness decides whether this CALL SITE gets a warning. See foldDeposits.
 		Fold fold = foldDeposits(program, helper, switchSite, local, localIn, stateMask,
-			callerRegs);
+			callerRegs, (cell, mask) -> StoredValueScanner.callerCellValue(program, callInstr,
+				cell, localIn, mask, callerHooks, path));
+		if (!fold.primaryIsSwitchSite()) {
+			// grm-mej.27: the last-writer fold found switchSite is NOT what is live at the return,
+			// so every switchSite-derived claim above -- the read-back, the restore cell, the
+			// no-inbound-argument proof -- describes a deposit the caller never sees. Drop them.
+			readBack = null;
+			reloadTransform = null;
+			restoreCell = null;
+			// The no-inbound-argument proof is re-asked of the site that IS live: whether the
+			// caller's register is redefined on the linear run from the entry to it.
+			Instruction live = fold.primarySite() == null ? null
+					: program.getListing().getInstructionAt(fold.primarySite());
+			definitelyNoInboundArgument = live != null && helper.relay() == null &&
+				helper.strategy().consumesHelperArgument() &&
+				Character.valueOf(reg).equals(StoredValueScanner.storeRegister(live)) &&
+				argumentDefinitelyClobbered(program,
+					List.of(new PrologueSegment(helper.entry(), fold.primarySite())), reg);
+		}
 		BankSwitchStrategy.HelperDeposit primary = fold.primary();
 		BankSwitchStrategy.HelperDeposit deposit = fold.deposit();
 		BankState positionedValue = placement.position(deposit.value());
@@ -660,7 +678,8 @@ final class HelperArgumentRecovery {
 			}
 		}
 		Fold fold = foldDeposits(program, helper, switchSite, PartialByte.unknown(), localIn,
-			stateMask, callerRegs);
+			stateMask, callerRegs, (cell, mask) -> StoredValueScanner.callerCellValue(program,
+				callInstr, cell, localIn, mask, callerHooks, path));
 		BankSwitchStrategy.HelperDeposit deposit = fold.deposit();
 		return new CallEffect(placement.position(deposit.value()),
 			placement.positionMask(deposit.ownedMask()),
@@ -781,14 +800,22 @@ final class HelperArgumentRecovery {
 	 * {@code argValue}; the unthreaded deposit is used only when nothing precedes it.
 	 */
 	private static Fold foldDeposits(Program program, HelperModel helper, Instruction switchSite,
-			PartialByte argValue, MechanismState localIn, int stateMask, RegisterEnv callerRegs) {
+			PartialByte argValue, MechanismState localIn, int stateMask, RegisterEnv callerRegs,
+			CallerCell callerCell) {
 		BankSwitchStrategy strategy = helper.strategy();
 		BankSwitchStrategy.HelperDeposit primary = strategy.depositHelperArgument(program,
 			switchSite, argValue, localIn, stateMask, callerRegs);
 		List<Address> sites = helper.sites();
-		if (!strategy.depositsPerSite() || sites.size() < 2
-				|| !sitesRunUnconditionally(program, sites)) {
-			return new Fold(primary, primary);
+		if (!strategy.depositsPerSite() || sites.size() < 2) {
+			return new Fold(primary, primary, true, null);
+		}
+		if (!sitesRunUnconditionally(program, sites)) {
+			// grm-mej.27: the straight-line fold is unavailable, so ask which sites are actually
+			// live at the returns rather than trusting the max-address proxy. A decline there
+			// keeps the single-site answer this branch has always given.
+			Fold lastWriters = lastWriterFold(program, helper, argValue, localIn, stateMask,
+				callerRegs, callerCell);
+			return lastWriters != null ? lastWriters : new Fold(primary, primary, true, null);
 		}
 		Listing listing = program.getListing();
 		MechanismState value = MechanismState.unknown();
@@ -826,11 +853,211 @@ final class HelperArgumentRecovery {
 			value = MechanismState.overwrite(value, scoped, siteOwned);
 			owned |= siteOwned;
 		}
-		return new Fold(new BankSwitchStrategy.HelperDeposit(owned, value), primary);
+		return new Fold(new BankSwitchStrategy.HelperDeposit(owned, value), primary, true, null);
 	}
 
-	/** {@link #foldDeposits}' result: the folded deposit, and the switch-site deposit that decides the warning. */
-	record Fold(BankSwitchStrategy.HelperDeposit deposit, BankSwitchStrategy.HelperDeposit primary) {}
+	/**
+	 * {@link #foldDeposits}' result: the folded deposit, and the deposit that decides the warning.
+	 * {@code primaryIsSwitchSite} is {@code false} only when {@link #lastWriterFold} found that
+	 * {@code switchSite} is not live at the helper's returns, so {@code primary} is a different
+	 * site's deposit (or an empty one) and nothing derived from {@code switchSite} applies.
+	 * {@code primarySite} is then that other site's address, or {@code null} when no winner
+	 * commits a bank value.
+	 */
+	record Fold(BankSwitchStrategy.HelperDeposit deposit, BankSwitchStrategy.HelperDeposit primary,
+			boolean primaryIsSwitchSite, Address primarySite) {}
+
+	/**
+	 * The caller-side half of a per-site cell recovery (bead grm-mej.27): the byte the CALLER
+	 * left in {@code cell}, at the bits {@code byteMask} names, read from the call site exactly as
+	 * {@link #recoverCallArgument}'s single-site inbound-cell path reads it.
+	 */
+	@FunctionalInterface
+	interface CallerCell {
+		PartialByte valueAt(Address cell, int byteMask);
+	}
+
+	/**
+	 * The deposit for a per-site helper whose sites do NOT run straight-line, built from the sites
+	 * that are LAST WRITER on every path to a return (bead grm-mej.27; see
+	 * {@link HelperLastWriters} for the analysis and why the max-address proxy failed). {@code null}
+	 * when the analysis declines, and the caller keeps the single-site deposit.
+	 * <p>
+	 * <b>Ownership covers every bit any reachable site may write, resolved or not.</b> A bit whose
+	 * exit writer set is one exact site takes that site's deposit; a bit written on some paths but
+	 * not others, by different sites on different paths, or possibly by a call, is OWNED with an
+	 * unknown value. That is this file's standing rule ("a bit a helper writes is not a bit the
+	 * caller still knows"), and it is what stops the caller's stale select and R6 surviving a call
+	 * that demonstrably rewrites both. A bit no site writes on any path stays the caller's.
+	 * <p>
+	 * <b>Winners are evaluated against a POISONED base, not threaded.</b> Each winning site's
+	 * in-state is the call's {@code localIn} with every bit any reachable site may write made
+	 * unknown -- or wholly unknown when the body makes a call this walk does not follow. On a
+	 * branching body there is no single order to thread deposits in, and the poisoned base is
+	 * what every path agrees on. The cost is only the mirror-read refinement threading buys
+	 * straight-line folds (see {@link #foldDeposits}); nothing it gives up was sound here.
+	 * <p>
+	 * <b>The face-value rule is unchanged.</b> {@code argValue} is still offered to
+	 * {@code switchSite} and to no other site -- and only when {@code switchSite} wins. Every other
+	 * winner gets {@link PartialByte#unknown()}, or a value from its OWN straight-line load of a
+	 * caller-written cell ({@link #cellSourcedSiteValue}). That second channel does not break the
+	 * rule, because the rule exists to stop ONE register's byte being claimed by several deposits;
+	 * a cell value is per-site evidence -- this site's own instructions name the cell its stored
+	 * byte was loaded from, and nothing else is claimed for any other site.
+	 * <p>
+	 * {@code primary} -- the deposit that decides the call site's warning -- is {@code switchSite}'s
+	 * when it wins, as before. Otherwise it is the highest-addressed winner that commits a BANK
+	 * value ({@link BankSwitchStrategy#bankFieldCommittedBySite} {@code > 0}), never a select or
+	 * mode write: the helper's own constant there must not suppress the warning that says the bank
+	 * itself was not recovered. With no such winner it is empty, and the call warns.
+	 */
+	private static Fold lastWriterFold(Program program, HelperModel helper, PartialByte argValue,
+			MechanismState localIn, int stateMask, RegisterEnv callerRegs, CallerCell callerCell) {
+		BankSwitchStrategy strategy = helper.strategy();
+		List<Address> sites = helper.sites();
+		if (sites.size() > HelperLastWriters.MAX_SITES) {
+			return null;
+		}
+		HelperLastWriters.Cfg cfg = HelperLastWriters.build(program, insideHelperEntry(helper));
+		if (cfg == null || cfg.exits().isEmpty()) {
+			return null;
+		}
+		Listing listing = program.getListing();
+		int n = sites.size();
+		Instruction[] siteInstrs = new Instruction[n];
+		int[] masks = new int[n];
+		boolean[] exact = new boolean[n];
+		int mayWritten = 0;
+		for (int i = 0; i < n; i++) {
+			siteInstrs[i] = listing.getInstructionAt(sites.get(i));
+			if (siteInstrs[i] == null) {
+				return null;
+			}
+			// Ownership only: which bits this site writes does not depend on the byte it stores.
+			masks[i] = strategy.depositHelperArgument(program, siteInstrs[i], PartialByte.unknown(),
+				MechanismState.unknown(), stateMask).ownedMask() & stateMask;
+			exact[i] = strategy.bankFieldCommittedBySite(program, siteInstrs[i]) != -1;
+			if (cfg.succs().containsKey(sites.get(i))) {
+				mayWritten |= masks[i];
+			}
+		}
+		long[] writers = HelperLastWriters.writersAtExits(cfg, sites, masks, exact, stateMask);
+		int owned = 0;
+		int[] claimed = new int[n];
+		for (int b = 0; b < 32; b++) {
+			long set = writers[b];
+			if (set == 0 || set == HelperLastWriters.ENTRY) {
+				continue; // outside the mechanism, or never written: the caller's value survives
+			}
+			owned |= 1 << b;
+			if (Long.bitCount(set) == 1 && (set & (HelperLastWriters.ENTRY |
+				HelperLastWriters.CALL)) == 0) {
+				int i = Long.numberOfTrailingZeros(set) - 2;
+				if (exact[i]) {
+					claimed[i] |= 1 << b;
+				}
+			}
+		}
+		MechanismState base = cfg.calls().isEmpty()
+				? MechanismState.overwrite(localIn, MechanismState.unknown(), mayWritten)
+				: MechanismState.unknown();
+		int knownMask = 0;
+		int bits = 0;
+		BankSwitchStrategy.HelperDeposit primary = null;
+		boolean primaryIsSwitchSite = false;
+		Address primarySite = null;
+		for (int i = 0; i < n; i++) {
+			if (claimed[i] == 0) {
+				continue;
+			}
+			boolean isSwitchSite = sites.get(i).equals(helper.switchSite());
+			PartialByte arg = isSwitchSite && argValue.knownMask() != 0 ? argValue
+					: cellSourcedSiteValue(program, helper, cfg, siteInstrs[i], stateMask,
+						callerCell);
+			BankSwitchStrategy.HelperDeposit deposit = strategy.depositHelperArgument(program,
+				siteInstrs[i], arg, base, stateMask, callerRegs);
+			int keep = claimed[i] & deposit.ownedMask() & deposit.value().knownMask();
+			knownMask = (knownMask & ~claimed[i]) | keep;
+			bits = (bits & ~claimed[i]) | (deposit.value().bits() & keep);
+			if (isSwitchSite) {
+				primary = deposit;
+				primaryIsSwitchSite = true;
+			}
+			else if (!primaryIsSwitchSite &&
+				strategy.bankFieldCommittedBySite(program, siteInstrs[i]) > 0) {
+				primary = deposit; // ascending order: the last one assigned is the highest
+				primarySite = sites.get(i);
+			}
+		}
+		if (primary == null) {
+			primary = new BankSwitchStrategy.HelperDeposit(0, MechanismState.unknown());
+		}
+		return new Fold(new BankSwitchStrategy.HelperDeposit(owned,
+			new MechanismState(knownMask, bits)), primary, primaryIsSwitchSite,
+			primaryIsSwitchSite ? null : primarySite);
+	}
+
+	/**
+	 * The byte {@code site} stores, when its own straight-line load from the helper's entry names a
+	 * RAM cell the CALLER filled -- {@code LDA $f4 / STA $f2 / STA $8001} after a caller's
+	 * {@code STX $f4} (bead grm-mej.27). {@link PartialByte#unknown()} otherwise.
+	 * <p>
+	 * The cell comes from {@link #inboundArgumentCell} run to THIS site rather than to the model's
+	 * value site: a linear run from the entry, the register last plainly loaded from that cell, no
+	 * write the walk can see landing on it, no call, no branch, nothing at or above the stack
+	 * floor. On top of that, no instruction after the entry on that run may be a join -- control
+	 * arriving mid-run from elsewhere in the helper would have skipped the load.
+	 * <p>
+	 * <b>When the helper's entry is itself a join</b> (a back-edge re-enters it, so the run may be
+	 * executed again after other helper code), the caller's byte must still be in the cell on that
+	 * second pass. A placeable store to the cell anywhere in the helper's body declines. Calls the
+	 * body makes and stores this scanner cannot place are ASSUMED not to write the cell: an
+	 * OWNER-ACCEPTED PREMISE for the deferred-work path of a commit-from-shadow helper (grm-mej.27,
+	 * 2026-10-18), whose motivating case re-enters its own entry only after running a sound driver
+	 * in another bank -- code this analyzer cannot follow -- and re-commits from the same shadows.
+	 * It is not proved. If a shipped helper's back-edge path does rewrite its shadow cell through a
+	 * call or an indexed store, this channel reports the caller's value where the truth is the
+	 * rewritten one, and this is where to look.
+	 */
+	private static PartialByte cellSourcedSiteValue(Program program, HelperModel helper,
+			HelperLastWriters.Cfg cfg, Instruction site, int stateMask, CallerCell callerCell) {
+		if (callerCell == null || helper.relay() != null) {
+			return PartialByte.unknown();
+		}
+		Character reg = StoredValueScanner.storeRegister(site);
+		Address entry = cfg.entry();
+		Address cell = reg == null ? null
+				: inboundArgumentCell(program, entry, site.getMinAddress(), reg);
+		if (cell == null) {
+			return PartialByte.unknown();
+		}
+		// inboundArgumentCell proved the run is linear by address; check nothing joins it.
+		Listing listing = program.getListing();
+		Instruction cur = listing.getInstructionAt(entry);
+		while (cur != null && !cur.getMinAddress().equals(site.getMinAddress())) {
+			Address next = cur.getFallThrough();
+			List<Address> preds = next == null ? null : cfg.preds().get(next);
+			if (preds == null || preds.size() != 1 || !preds.get(0).equals(cur.getMinAddress())) {
+				return PartialByte.unknown();
+			}
+			cur = listing.getInstructionAt(next);
+		}
+		if (cur == null) {
+			return PartialByte.unknown();
+		}
+		if (cfg.hasInternalPredecessor(entry)) {
+			// The owner-accepted premise above covers calls and unplaceable stores only.
+			for (Address a : cfg.succs().keySet()) {
+				Instruction instr = listing.getInstructionAt(a);
+				if (instr != null && StoredValueScanner.writesMemory(instr) &&
+					cell.equals(StoredValueScanner.effectiveOperandTarget(program, instr, NO_HOOKS,
+						RegisterEnv.NONE))) {
+					return PartialByte.unknown();
+				}
+			}
+		}
+		return callerCell.valueAt(cell, argumentByteMask(program, helper, site, stateMask));
+	}
 
 	/**
 	 * Whether every one of {@code sites} runs on every call that reaches the first of them --

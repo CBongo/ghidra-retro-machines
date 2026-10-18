@@ -192,10 +192,8 @@ public class MultiDepositHelperProgramTest extends AbstractProgramTest {
 	 * <b>Fails without the fold.</b> {@code HelperModel.switchSite} is the max-address site --
 	 * here {@code $9110}, the R7 data write -- and {@code foldDeposits} without the
 	 * {@code depositsPerSite()} branch calls {@code depositHelperArgument} exactly ONCE, at that
-	 * single site. This test's own case 3 ({@link #straightLineGuardDeclinesFoldsToSingleSite})
-	 * IS that single-site computation (the guard that disables folding falls back to precisely
-	 * this call) and independently pins its answer as {@code ownedMask == R7_MASK} with R7
-	 * unresolved -- i.e. R6 is not owned AT ALL. That is the confident regression described by
+	 * single site. Without the fold the answer would be {@code ownedMask == R7_MASK} with R7
+	 * unresolved -- i.e. R6 not owned AT ALL. That is the confident regression described by
 	 * {@link BankSwitchStrategy#depositsPerSite}'s javadoc: "the R6 deposit -- the one that
 	 * actually resolves -- is never consulted." With the fold, R6's field is not merely resolved,
 	 * it is the only one of the two that resolves in this fixture, so keeping it depends entirely
@@ -245,17 +243,18 @@ public class MultiDepositHelperProgramTest extends AbstractProgramTest {
 	// ------------------------------------------------------------------
 
 	/**
-	 * Same shape as {@link #buildFed1Fixture}, with an unconditional-shaped span broken by a
-	 * conditional branch ({@code BEQ +0}) inserted between the R6 data write and the R7 select
-	 * write. {@code sitesRunUnconditionally} refuses to fold across ANY jump in the walked span
-	 * -- a conditional branch could route around a later site, so attributing every site's
-	 * deposit to one call would risk shipping a value from a path that did not run. The fold must
-	 * decline and fall back to the single {@code switchSite} deposit it always produced: only R7
-	 * (the max-address site) is owned, and its value is unresolved for the same reason as in
-	 * case 1 (crossing R3's select write is forbidden).
+	 * Same shape as {@link #buildFed1Fixture}, with the straight-line span broken by a
+	 * conditional branch ({@code BEQ +0}) between the R6 data write and the R7 select write.
+	 * {@code sitesRunUnconditionally} refuses to fold across ANY jump, and until bead grm-mej.27
+	 * this fell back to the single max-address {@code switchSite} deposit -- R7 alone owned,
+	 * select and R6 left as the caller's even though the helper writes both. It now asks which
+	 * sites are LAST WRITER on every path to the return ({@code lastWriterFold}): both arms of the
+	 * branch reach S3 and S4, so select (S3 = 7), R6 (S2 = $0A) and R7 (S4, unresolved for the
+	 * same reason as in case 1) are all owned, and the result matches the straight-line fold.
+	 * {@code LastWriterHelperProgramTest} covers the branching shapes where the two differ.
 	 */
 	@Test
-	public void straightLineGuardDeclinesFoldsToSingleSite() throws Exception {
+	public void branchInSpanFoldsTheLastWritersOnEveryPath() throws Exception {
 		builder.setBytes("0x8000", "ea", true); // NOP -- A left unresolved
 		builder.setBytes("0x8001", "20 00 91", true); // JSR $9100
 
@@ -277,10 +276,13 @@ public class MultiDepositHelperProgramTest extends AbstractProgramTest {
 
 		CallEffect result = recover(helper);
 
-		assertEquals("only r7 (the max-address switchSite) is owned -- r6 is never consulted"
-			+ " once the guard declines", R7_MASK, result.ownedMask());
-		assertEquals("r7's value is unresolved (honest poison, not a wrong guess)", 0,
-			result.state().knownMask() & R7_MASK);
+		assertEquals("select, r6 and r7 are all owned -- every one is written on every path",
+			SELECT_MASK | R6_MASK | R7_MASK, result.ownedMask());
+		assertEquals("select and r6 resolve; r7 does not (the TXA wall)", SELECT_MASK | R6_MASK,
+			result.state().knownMask());
+		assertEquals(0x0A7, result.state().bits());
+		assertFalse("the switch site's own deposit is unresolved, so the call still warns",
+			result.argumentResolved());
 	}
 
 	// ------------------------------------------------------------------
