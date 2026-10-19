@@ -560,8 +560,13 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 		}
 		Character reg = StoredValueScanner.storeRegister(instr);
 		boolean even = (offset & 1) == 0;
-		return even ? SwitchOutcome.of(computeSelectWrite(program, instr, reg, inState))
-				: computeDataWrite(program, instr, reg, inState);
+		if (even) {
+			int deposited = selectField.positionedMask() |
+				(modeField == null ? 0 : modeField.positionedMask());
+			return SwitchOutcome.of(computeSelectWrite(program, instr, reg, inState))
+					.withDepositMask(deposited);
+		}
+		return computeDataWrite(program, instr, reg, inState);
 	}
 
 	/**
@@ -600,10 +605,13 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 		Integer selectValue = selectField.valueIfFullyKnown(inState);
 		if (selectValue == null) {
 			MechanismState result = inState;
+			int forgotten = 0;
 			for (BitField target : targets.values()) {
 				result = target.forget(result);
+				forgotten |= target.positionedMask();
 			}
-			return SwitchOutcome.of(result);
+			// Every target may have taken this write, so the deposit spans them all (grm-hb6.22).
+			return SwitchOutcome.of(result).withDepositMask(forgotten);
 		}
 
 		BitField target = targets.get(selectValue);
@@ -617,7 +625,8 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 		int byteMask = target.widthMask();
 		PartialByte stored = reg == null ? PartialByte.unknown()
 				: StoredValueScanner.resolveStoredValue(program, instr, reg, inState, byteMask, hooks);
-		return SwitchOutcome.of(target.deposit(inState, fieldFromDataByte(stored)));
+		return SwitchOutcome.of(target.deposit(inState, fieldFromDataByte(stored)))
+				.withDepositMask(target.positionedMask());
 	}
 
 	/**

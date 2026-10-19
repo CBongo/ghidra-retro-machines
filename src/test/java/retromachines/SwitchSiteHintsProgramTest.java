@@ -549,6 +549,237 @@ public class SwitchSiteHintsProgramTest extends AbstractProgramTest {
 		assertNotNull(valueHintWarning(addr(0xc102), result));
 	}
 
+	// ---- multi-field mechanisms: the hint names the field the store commits (grm-hb6.22) ----
+
+	/** select(3) | r6(6) | r7(6), MMC3-shaped, with banked windows so select is not a bank. */
+	private static final int R6 = 0x3F << 3;
+	private static final int R7 = 0x3F << 9;
+
+	private BoardDescriptorModel.BoardModel parseBoard(String json) {
+		BoardDescriptorModel.BoardModel b = BoardDescriptorModel.BoardModel.parse(
+			JsonParser.parseString(json).getAsJsonObject(), new MessageLog(), "test",
+			"test-descriptor.json");
+		assertNotNull(b);
+		return b;
+	}
+
+	private BoardDescriptorModel.BoardModel mmc3Board() {
+		return parseBoard("""
+				{
+				  "physical": [ { "name": "PRG", "image": "prg_rom" } ],
+				  "windows": [
+				    { "name": "W6", "start": 32768, "end": 40959,
+				      "maps": { "space": "PRG", "expr": "r6 * 0x2000" }, "on_write": "mechanism" },
+				    { "name": "W7", "start": 40960, "end": 49151,
+				      "maps": { "space": "PRG", "expr": "r7 * 0x2000" }, "on_write": "mechanism" },
+				    { "name": "FIX", "start": 49152, "end": 65535,
+				      "maps": { "space": "PRG", "expr": "last" }, "on_write": "mechanism" }
+				  ],
+				  "banking": {
+				    "initial_state": 0,
+				    "state": [ { "name": "select", "bits": 3 }, { "name": "r6", "bits": 6 },
+				               { "name": "r7", "bits": 6 } ],
+				    "mechanisms": [ { "strategy": "select-data" } ]
+				  }
+				}
+				""");
+	}
+
+	private static JsonObject pos(int lsb, int width) {
+		JsonObject o = new JsonObject();
+		o.addProperty("lsb", lsb);
+		o.addProperty("width", width);
+		return o;
+	}
+
+	private SelectDataBankSwitchStrategy mmc3Strategy(BoardDescriptorModel.BoardModel b) {
+		JsonObject layout = new JsonObject();
+		layout.add("select", pos(0, 3));
+		layout.add("r6", pos(3, 6));
+		layout.add("r7", pos(9, 6));
+		JsonObject targets = new JsonObject();
+		targets.addProperty("6", "r6");
+		targets.addProperty("7", "r7");
+		JsonObject params = new JsonObject();
+		params.addProperty("start", 0x8000);
+		params.addProperty("end", 0x9FFF);
+		params.addProperty("select_field", "select");
+		params.addProperty("select_mask", 0x07);
+		params.add("_field_layout", layout);
+		params.add("targets", targets);
+		SelectDataBankSwitchStrategy strategy = new SelectDataBankSwitchStrategy();
+		strategy.configure(program, params, b.mask());
+		return strategy;
+	}
+
+	/** mirroring(2) | prg_mode(2) | prg_bank(5), MMC1-shaped, PRG register only. */
+	private BoardDescriptorModel.BoardModel mmc1Board() {
+		return parseBoard("""
+				{
+				  "physical": [ { "name": "PRG", "image": "prg_rom" } ],
+				  "windows": [
+				    { "name": "PRG_LO", "start": 32768, "end": 49151,
+				      "maps": { "space": "PRG", "expr": "prg_bank * 0x4000" }, "on_write": "mechanism" },
+				    { "name": "PRG_HI", "start": 49152, "end": 65535,
+				      "maps": { "space": "PRG", "expr": "last" }, "on_write": "mechanism" }
+				  ],
+				  "banking": {
+				    "initial_state": 0,
+				    "state": [ { "name": "mirroring", "bits": 2 }, { "name": "prg_mode", "bits": 2 },
+				               { "name": "prg_bank", "bits": 5 } ],
+				    "mechanisms": [ { "strategy": "serial-shift" } ]
+				  }
+				}
+				""");
+	}
+
+	private SerialShiftBankSwitchStrategy mmc1Strategy(BoardDescriptorModel.BoardModel b) {
+		JsonObject layout = new JsonObject();
+		layout.add("mirroring", pos(0, 2));
+		layout.add("prg_mode", pos(2, 2));
+		layout.add("prg_bank", pos(4, 5));
+		JsonObject prgBank = new JsonObject();
+		prgBank.addProperty("name", "prg_bank");
+		prgBank.addProperty("shift", 0);
+		prgBank.addProperty("bits", 5);
+		com.google.gson.JsonArray fields = new com.google.gson.JsonArray();
+		fields.add(prgBank);
+		JsonObject prgTarget = new JsonObject();
+		prgTarget.add("fields", fields);
+		JsonObject targets = new JsonObject();
+		targets.add("3", prgTarget);
+		JsonObject params = new JsonObject();
+		params.addProperty("start", 0x8000);
+		params.addProperty("end", 0xFFFF);
+		params.add("_field_layout", layout);
+		params.add("targets", targets);
+		SerialShiftBankSwitchStrategy strategy = new SerialShiftBankSwitchStrategy();
+		strategy.configure(program, params, b.mask());
+		return strategy;
+	}
+
+	private BankDataflowEngine.DataflowResult runWith(BoardDescriptorModel.BoardModel b,
+			BankSwitchStrategy strategy) throws Exception {
+		return BankDataflowEngine.runDataflow(program, TaskMonitor.DUMMY, program.getListing(),
+			List.of(new BankStrategyRegistry.ConfiguredMechanism(strategy, b.mask(), 0)), b, null,
+			Map.of(), java.util.Set.of(), BankStackBrackets.Claims.NONE, null);
+	}
+
+	/**
+	 * {@code LDA #6 / STA $8000 / <dataLoad> / STA $8001 / RTS} at c100 as a function: the select
+	 * store is c102, the data store c107.
+	 */
+	private void layMmc3(String dataLoad) throws Exception {
+		put(0xc100, "a9 06 8d 00 80 " + dataLoad + " 8d 01 80 60");
+		makeFunction(0xc100, 0xc10a, "MMC3");
+	}
+
+	@Test
+	public void aValueHintAtAnMmc3DataWriteNamesTheSelectedRegister() throws Exception {
+		layMmc3("a5 10"); // LDA $10: the data byte is unrecoverable
+		BoardDescriptorModel.BoardModel b = mmc3Board();
+		BankDataflowEngine.SwitchResult before =
+			runWith(b, mmc3Strategy(b)).switchResults().get(addr(0xc107));
+		assertNotNull(before);
+		assertEquals("baseline: r6 is not recovered", 0, before.effect().knownMask() & R6);
+
+		bankHintAt(0xc107, 5);
+		BankDataflowEngine.DataflowResult result = runWith(b, mmc3Strategy(b));
+
+		BankDataflowEngine.SwitchResult sr = result.switchResults().get(addr(0xc107));
+		assertEquals(R6, sr.effect().knownMask() & R6);
+		assertEquals(5, (sr.effect().bits() & R6) >>> 3);
+		assertEquals("the select echo is kept", 6, sr.effect().bits() & 7);
+		assertEquals("r7 keeps its in-state echo", before.effect().knownMask() & R7,
+			sr.effect().knownMask() & R7);
+		assertEquals(before.effect().bits() & R7, sr.effect().bits() & R7);
+		assertEquals(BankSwitchStrategy.ValueStop.RESOLVED, sr.stop());
+		assertTrue(result.hintNotes().get(addr(0xc107)).applied());
+		assertNull(valueHintWarning(addr(0xc107), result));
+	}
+
+	@Test
+	public void aContradictingValueHintAtAnMmc3DataWriteWinsAndWarnsOnTheFieldValue()
+			throws Exception {
+		layMmc3("a9 02"); // LDA #2: dataflow recovers r6 = 2
+		BoardDescriptorModel.BoardModel b = mmc3Board();
+		bankHintAt(0xc107, 5);
+
+		BankDataflowEngine.DataflowResult result = runWith(b, mmc3Strategy(b));
+
+		assertEquals(5, (result.switchResults().get(addr(0xc107)).effect().bits() & R6) >>> 3);
+		assertEquals("the FIELD's recovered value, not the whole mechanism word", "2",
+			result.hintNotes().get(addr(0xc107)).recovered());
+		String warning = valueHintWarning(addr(0xc107), result);
+		assertTrue(warning, warning != null && warning.contains("(2)"));
+	}
+
+	@Test
+	public void aValueHintAtAnMmc3DataWriteWithUnknownSelectIsAmbiguous() throws Exception {
+		// LDA $10 / STA $8000 (select from RAM) / LDA $11 / STA $8001: R6 or R7, nobody knows
+		put(0xc100, "a5 10 8d 00 80 a5 11 8d 01 80 60");
+		makeFunction(0xc100, 0xc10a, "MMC3");
+		BoardDescriptorModel.BoardModel b = mmc3Board();
+		bankHintAt(0xc107, 5);
+
+		SwitchSiteHints.HintNote note = runWith(b, mmc3Strategy(b)).hintNotes().get(addr(0xc107));
+
+		assertFalse(note.applied());
+		assertTrue(note.problem(), note.problem().contains("more than one bank field"));
+	}
+
+	@Test
+	public void aValueHintAtAnMmc3SelectWriteIsNotApplied() throws Exception {
+		layMmc3("a5 10");
+		BoardDescriptorModel.BoardModel b = mmc3Board();
+		bankHintAt(0xc102, 6);
+
+		BankDataflowEngine.DataflowResult result = runWith(b, mmc3Strategy(b));
+
+		SwitchSiteHints.HintNote note = result.hintNotes().get(addr(0xc102));
+		assertFalse(note.applied());
+		assertTrue(note.problem(), note.problem().contains("not a bank any window maps by"));
+		assertEquals("select keeps what dataflow recovered", 6,
+			result.switchResults().get(addr(0xc102)).effect().bits() & 7);
+	}
+
+	/**
+	 * {@code LDA $10 / AND #$1F} (bit 7 known clear, so not a reset) then a five-write PRG-register
+	 * chain {@code STA $E000 / (LSR A / STA $E000) x4 / RTS} at c100; the writes are c104, c108,
+	 * c10c, c110 and the commit c114.
+	 */
+	private void layMmc1Chain() throws Exception {
+		put(0xc100, "a5 10 29 1f 8d 00 e0 4a 8d 00 e0 4a 8d 00 e0 4a 8d 00 e0 4a 8d 00 e0 60");
+		makeFunction(0xc100, 0xc117, "MMC1");
+	}
+
+	@Test
+	public void aValueHintAtAnMmc1CommitResolvesThePrgBank() throws Exception {
+		layMmc1Chain();
+		BoardDescriptorModel.BoardModel b = mmc1Board();
+		bankHintAt(0xc114, 9);
+
+		BankDataflowEngine.DataflowResult result = runWith(b, mmc1Strategy(b));
+
+		BankDataflowEngine.SwitchResult sr = result.switchResults().get(addr(0xc114));
+		assertNotNull(sr);
+		assertEquals(0x1F0, sr.effect().knownMask() & 0x1F0);
+		assertEquals(9, (sr.effect().bits() & 0x1F0) >>> 4);
+		assertTrue(result.hintNotes().get(addr(0xc114)).applied());
+	}
+
+	@Test
+	public void aValueHintAtAnMmc1ShiftWriteBeforeTheCommitIsNotApplied() throws Exception {
+		layMmc1Chain();
+		BoardDescriptorModel.BoardModel b = mmc1Board();
+		bankHintAt(0xc108, 9); // write 2 of 5
+
+		SwitchSiteHints.HintNote note = runWith(b, mmc1Strategy(b)).hintNotes().get(addr(0xc108));
+
+		assertFalse(note.applied());
+		assertTrue(note.problem(), note.problem().contains("commits no tracked bank field"));
+	}
+
 	@Test
 	public void aValueHintAtAJsrWithNoHelperKnownIsNotApplied() throws Exception {
 		put(0xc100, "a5 10 20 00 c2 60");

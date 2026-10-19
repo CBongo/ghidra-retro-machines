@@ -288,13 +288,39 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * @param value the switch's field-local bank-state effect
 	 * @param stop why an entirely unknown value could not be recovered
 	 * @param readBack where a {@code RESTORED_BANK} stop read the bank back from, or {@code null}
+	 * @param depositMask the field-local bits this write actually deposits into (bead grm-hb6.22),
+	 *        every other bit of {@code value} being an in-state echo; {@link #WHOLE_MECHANISM}
+	 *        when the strategy does not say, which reads as every bit the mechanism owns
 	 */
 	record SwitchOutcome(MechanismState value, ValueStop stop, StoredValueScanner.ReadBack readBack,
-			boolean implicit) {
+			boolean implicit, int depositMask) {
+
+		/**
+		 * The {@code depositMask} of a write that deposits into the mechanism's whole width (or
+		 * whose strategy does not narrow it): the only shape a single-field mechanism has.
+		 */
+		static final int WHOLE_MECHANISM = -1;
+
+		/** The pre-grm-hb6.22 form: the deposit is not narrowed below the whole mechanism. */
+		SwitchOutcome(MechanismState value, ValueStop stop, StoredValueScanner.ReadBack readBack,
+				boolean implicit) {
+			this(value, stop, readBack, implicit, WHOLE_MECHANISM);
+		}
 
 		/** The pre-grm-dos9.9 form: a value the game wrote, not a hardware side effect. */
 		SwitchOutcome(MechanismState value, ValueStop stop, StoredValueScanner.ReadBack readBack) {
 			this(value, stop, readBack, false);
+		}
+
+		/**
+		 * This outcome with its deposit narrowed to {@code mask}'s field-local bits (bead
+		 * grm-hb6.22): what lets a {@code bank:} value hint at a direct store on a multi-field
+		 * mechanism (MMC3's select+R6+R7, MMC1's serial shift) name the one field the store
+		 * commits instead of being rejected as ambiguous. Carries nothing else; the engine's fold
+		 * still overwrites the mechanism's whole {@code effectMask} from {@code value}.
+		 */
+		SwitchOutcome withDepositMask(int mask) {
+			return new SwitchOutcome(value, stop, readBack, implicit, mask);
 		}
 
 		/** The pre-grm-rd6h form: no read-back. */
@@ -339,7 +365,7 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 		 */
 		static SwitchOutcome deposit(MechanismState value, int depositMask) {
 			return new SwitchOutcome(value, (value.knownMask() & depositMask) != 0
-					? ValueStop.RESOLVED : ValueStop.ANALYZER_LIMIT);
+					? ValueStop.RESOLVED : ValueStop.ANALYZER_LIMIT, null, false, depositMask);
 		}
 
 		/**
@@ -351,7 +377,7 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 		 * this write set them.
 		 */
 		static SwitchOutcome noDeposit(MechanismState echoed) {
-			return new SwitchOutcome(echoed, ValueStop.NO_DEPOSIT);
+			return new SwitchOutcome(echoed, ValueStop.NO_DEPOSIT, null, false, 0);
 		}
 
 		/**

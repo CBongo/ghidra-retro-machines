@@ -1204,6 +1204,10 @@ final class BankDataflowEngine {
 			return new HintFit(null, "the deposit covers only part of field '" + field.name() +
 				"', so one bank number is ambiguous");
 		}
+		if (!isBankField(board, field)) {
+			return new HintFit(null, "field '" + field.name() + "' is not a bank any window maps " +
+				"by (a select or mode field), so a bank number has no referent");
+		}
 		if (bank < 0 || bank > field.widthMask()) {
 			return new HintFit(null, "bank " + bank + " does not fit field '" + field.name() +
 				"' (" + field.width() + " bit(s), 0.." + field.widthMask() + ")");
@@ -1222,6 +1226,34 @@ final class BankDataflowEngine {
 			}
 		}
 		return new HintFit(field, null);
+	}
+
+	/**
+	 * Whether {@code field} is one a banked window maps by (bead grm-hb6.22): what keeps a
+	 * {@code bank:} hint off a multi-field mechanism's select index (MMC3's {@code select}) or
+	 * mode bits once a store may name a single field. A board declaring no banked window at all
+	 * (CNROM's CHR-only latch, the unit tests' bare boards) has nothing to test against, so every
+	 * field passes, exactly as before.
+	 */
+	private static boolean isBankField(BoardModel board, FieldSpec field) {
+		boolean anyBanked = false;
+		for (ComputedWindowModel w : board.computedWindows().values()) {
+			if (w.field() != null) {
+				anyBanked = true;
+				if (w.field().name().equals(field.name())) {
+					return true;
+				}
+			}
+		}
+		for (ModeWindowModel w : board.modeWindows()) {
+			if (w.bankField() != null) {
+				anyBanked = true;
+				if (w.bankField().name().equals(field.name())) {
+					return true;
+				}
+			}
+		}
+		return !anyBanked;
 	}
 
 	/** A recovered field value for a hint diagnostic: the bank number, or what little is known. */
@@ -1244,13 +1276,30 @@ final class BankDataflowEngine {
 			BoardModel board, HelperDiscovery.BankResolution bankResolution, Program program,
 			Listing listing, Instruction instr, List<ConfiguredMechanism> mechanisms,
 			Map<Address, MatchInfo> matchCache, Map<Address, Optional<List<Arm>>> armCache) {
-		HintFit fit = fitHint(tally.bank, cm.effectMask(), inState, board, bankResolution);
+		if (plain.implicit()) {
+			tally.reject("the write's deposit is a hardware side effect (a shifter reset), " +
+				"not a bank the game chose");
+			return plain;
+		}
+		if (plain.stop() == BankSwitchStrategy.ValueStop.NO_DEPOSIT) {
+			tally.reject("the write commits no tracked bank field (a serial-shift write " +
+				"before the commit, or a select-data write to an untracked register)");
+			return plain;
+		}
+		MechanismPlacement placement = cm.placement();
+		// grm-hb6.22: judged on the bits THIS write deposits, so a multi-field mechanism's store
+		// that commits exactly one field (MMC3 R6 after select 6, MMC1's PRG commit) qualifies.
+		int deposited = plain.depositMask() == BankSwitchStrategy.SwitchOutcome.WHOLE_MECHANISM
+				? cm.effectMask() : placement.positionMask(plain.depositMask());
+		HintFit fit = fitHint(tally.bank, deposited, inState, board, bankResolution);
 		if (fit.problem() != null) {
 			tally.reject(fit.problem());
 			return plain;
 		}
-		MechanismPlacement placement = cm.placement();
-		int widthMask = placement.widthMask();
+		// The hinted field in the mechanism's local coordinates; the rest of the outcome is the
+		// in-state echo the strategy already computed, and is kept as is.
+		BitField local = new BitField(fit.field().lsb() - placement.lsb(), fit.field().width());
+		int fieldMask = local.positionedMask();
 		List<MechanismState> recovered = new ArrayList<>();
 		if (plain.stop() == BankSwitchStrategy.ValueStop.RESOLVED) {
 			recovered.add(plain.value());
@@ -1268,13 +1317,16 @@ final class BankDataflowEngine {
 		}
 		List<String> differing = new ArrayList<>();
 		for (MechanismState r : recovered) {
-			if (((r.bits() ^ tally.bank) & r.knownMask()) != 0) {
-				differing.add(renderRecovered(r.knownMask(), r.bits(), widthMask));
+			MechanismState f = local.extract(r);
+			if (((f.bits() ^ tally.bank) & f.knownMask()) != 0) {
+				differing.add(renderRecovered(f.knownMask(), f.bits(), local.widthMask()));
 			}
 		}
 		tally.apply(differing);
-		return new BankSwitchStrategy.SwitchOutcome(MechanismState.fullyKnown(widthMask, tally.bank),
-			BankSwitchStrategy.ValueStop.RESOLVED);
+		MechanismState echo = plain.value();
+		return new BankSwitchStrategy.SwitchOutcome(new MechanismState(echo.knownMask() | fieldMask,
+			(echo.bits() & ~fieldMask) | local.place(tally.bank)),
+			BankSwitchStrategy.ValueStop.RESOLVED, null, false, plain.depositMask());
 	}
 
 	/**

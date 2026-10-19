@@ -860,7 +860,12 @@ bookmark (category `Game descriptor bank hint`) at the site names both values an
 An invalid hint is not applied: a `WARNING` names the descriptor and the failed check, and the
 site falls back to dataflow. The checks are cheap self-consistency only -- the bank fits the field's
 width and is one the window can hold for this ROM; the deposit is one field (a store or helper call
-depositing several fields is ambiguous); the address is a latch store or a recognized helper call
+depositing several fields is ambiguous). On a multi-field mechanism the deposit is what *that* store
+commits (bead `grm-hb6.22`): an MMC3 `$8001` write after a known select of 6 or 7 deposits R6 or R7
+alone, and an MMC1 fifth shift write deposits `prg_bank` alone, so either takes a hint. A data write
+with an unknown select, shift writes 1-4, and a shifter reset do not take one. When the board
+declares banked windows, the field must be one a window maps by, so a select or mode field never
+takes a hint. The address is a latch store or a recognized helper call
 ("no latch store or bank-switch helper call" otherwise). The site's `bank ->` comment ends
 "(game descriptor hint)". Placement overrides are a separate mechanism and are unchanged.
 `GameCompiler` checks only that `bank:` is a non-negative integer. Shape validation (non-empty list,

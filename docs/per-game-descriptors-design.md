@@ -933,7 +933,17 @@ recognized bank-switch helper whose deposit is a single bank field* -- grm-m95's
 GxROM: `JSR helper` with an unrecovered argument), where the hint replaces the call's
 argument-derived deposit. Either way the deposit must be exactly one board field (a store or call
 that deposits several -- one call setting R6 and R7, or a field plus mode bits -- cannot be given one
-bank number: ambiguous, warned, not applied) and the bank must fit the field's width and be one the
+bank number: ambiguous, warned, not applied). "The deposit" is what THIS store commits, not
+everything its mechanism owns (grm-hb6.22, decided in favour of a strategy hook over a `field:` key
+on the hint): the strategy narrows its outcome's deposit, so an MMC3 data write after a known select
+of 6 or 7 deposits R6 or R7 alone, and an MMC1 serial-shift commit deposits `prg_bank` alone. Each
+qualifies on its own, and the rest of the mechanism's state passes through as the strategy echoed it.
+A data write whose select is unknown still spans both registers and stays ambiguous. Shift writes
+1-4, writes to an untracked register, and shifter resets deposit no game-chosen bank, so they are
+refused by name. The field must also be one a banked window maps by, when the board declares any,
+which keeps a hint off a select index or mode field. A `field:` key would have been the one way to
+pin an unknown-select write, but it would also have had to imply the select value, so it is
+deferred until a real title needs it. The bank must also fit the field's width and be one the
 window can hold (the same realized-bank test, `BankAnnotationAdapter.impossibleBank`, that would
 reject the same bank were dataflow to recover it). An address that is neither a store nor a helper
 call warns "no latch store or bank-switch helper call". A hinted site never forks: the hint replaces

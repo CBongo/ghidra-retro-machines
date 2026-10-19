@@ -68,7 +68,9 @@ import ghidra.util.task.TaskMonitor;
  * autodetection and is relied upon), and records a {@link HintNote} per hinted site saying
  * whether it was applied, why not, and what dataflow would have said. {@link #reportValueHints}
  * turns those notes into WARNING bookmarks. A hint is valid at a direct latch store a strategy
- * recognizes, or at a call to a recognized bank-switch helper whose deposit is a single field;
+ * recognizes and that commits a single bank field (on a multi-field mechanism, the one field that
+ * store deposits -- grm-hb6.22), or at a call to a recognized bank-switch helper whose deposit is
+ * a single field;
  * validity is cheap self-consistency only (the value fits the field and the window can hold the
  * bank), never a re-run of the analysis.
  */
