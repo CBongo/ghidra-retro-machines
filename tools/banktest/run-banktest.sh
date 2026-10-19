@@ -472,7 +472,10 @@ if selected nes-text; then
 	generate mknestbltest.py "$WORK/nes"
 	generate mksnestbltest.py "$WORK/snes"
 fi
-if selected descriptors; then generate mkdescoverlaytest.py "$WORK/nes"; fi
+if selected descriptors; then
+	generate mkdescoverlaytest.py "$WORK/nes"
+	generate mkdescbankhinttest.py "$WORK/nes"
+fi
 
 # The ENTIRE tail of a bless, shared by the cached fast path and the fresh-import
 # path below (bead grm-aqi). Both used to carry their own copy of this, and the two
@@ -1311,6 +1314,22 @@ if selected descriptors; then
 				fi
 			fi
 		fi
+
+		# grm-hb6.23 (+ grm-hb6.22): switch_sites bank: VALUE hints end to end. Each image is
+		# imported with its own overlay planted; the criteria (VerifyBankTest.checkDescBankHint*)
+		# pin the "(game descriptor hint)" comment suffix, the WINS warning, the not-applied
+		# warning, and the retargets the hinted banks drive. The descriptor-control leak check
+		# below (descoverlayctltest) covers these overlays too: it runs after they are removed.
+		bankhint_files=(descbankhinttest.yaml descbankhintmmc3test.yaml)
+		flush_batch "dependency:bankhint-overlay-plant"
+		unplant_overlay "${bankhint_files[@]}"
+		plant_overlay "${bankhint_files[@]}"
+		GRM_KEY_INPUTS="$WORK/nes/descbankhinttest.yaml $WORK/nes/descbankhintmmc3test.yaml"
+		run_one descbankhinttest "$WORK/nes/descbankhinttest.nes" NesRomLoader
+		run_one descbankhintmmc3test "$WORK/nes/descbankhintmmc3test.nes" NesRomLoader
+		unset GRM_KEY_INPUTS
+		flush_batch "dependency:bankhint-overlay-unplant"
+		unplant_overlay "${bankhint_files[@]}"
 	fi
 
 	# grm-hb6.16: DescriptorAnnotationAnalyzer re-run one-shot on an already-imported program.

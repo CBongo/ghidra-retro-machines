@@ -216,6 +216,8 @@ public class VerifyBankTest extends GhidraScript {
 				norm != null && norm.endsWith("/retro-machines/games/descexportedtest.yaml"),
 				"Game Descriptor property = " + path);
 		});
+		dumped("descbankhinttest", this::checkDescBankHint);
+		dumped("descbankhintmmc3test", this::checkDescBankHintMmc3);
 		dumped("nesrelaytest", this::checkNesRelayTest);
 		dumped("neswrappertest", this::checkNesWrapperTest);
 		dumped("nesmmc1overridetest", this::checkNesMmc1Override);
@@ -3058,6 +3060,65 @@ public class VerifyBankTest extends GhidraScript {
 	// ------------------------------------------------------------------
 
 	private static final String GAME_DESCRIPTOR_PROPERTY = "Retro Machines.Game Descriptor";
+
+	// ------------------------------------------------------------------
+	// descbankhinttest / descbankhintmmc3test criteria (switch_sites bank: value hints,
+	// beads grm-hb6.20, grm-hb6.22, grm-hb6.23) -- see mkdescbankhinttest.py's listings
+	// ------------------------------------------------------------------
+
+	/** SwitchSiteHints.VALUE_HINT_CATEGORY / HINT_COMMENT_SUFFIX, restated (scripts see no
+	 *  package-private API). */
+	private static final String VALUE_HINT_CATEGORY = "Game descriptor bank hint";
+	private static final String HINT_SUFFIX = "(game descriptor hint)";
+
+	private String valueHintWarning(long offset) {
+		Bookmark bm = currentProgram.getBookmarkManager().getBookmark(addr(offset),
+			BookmarkType.WARNING, VALUE_HINT_CATEGORY);
+		return bm == null ? null : bm.getComment();
+	}
+
+	private void checkDescBankHint() {
+		String path = currentProgram.getOptions(Program.PROGRAM_INFO)
+				.getString(GAME_DESCRIPTOR_PROPERTY, null);
+		criterion("BH0:overlay-resolved", path != null &&
+			path.replace('\\', '/').endsWith("/retro-machines/games/descbankhinttest.yaml"),
+			"Game Descriptor property = " + path);
+
+		// H1: RAM-fed store, nothing recoverable -- the hint supplies bank 2, says so, no warning.
+		String c = eol(0xC002);
+		criterion("BH1:hint-fills", c.contains("bank -> 2 (") && c.endsWith(HINT_SUFFIX) &&
+			valueHintWarning(0xC002) == null,
+			"c002: \"" + c + "\" warning=" + valueHintWarning(0xC002));
+		criterionPrimaryCall("BH1:retarget", findOverlayRef(0xC005, "PRG_LO_B2", 0x8000),
+			"JSR $8000 retargeted to PRG_LO_B2, primary: ");
+
+		// H2: dataflow recovers 1 (LDA #1); the hint's 5 WINS and the warning names both.
+		c = eol(0xC00A);
+		String w = valueHintWarning(0xC00A);
+		criterion("BH2:hint-wins", c.contains("bank -> 5 (") && c.endsWith(HINT_SUFFIX),
+			"c00a: \"" + c + "\"");
+		criterion("BH2:warns-both", w != null && w.contains("5") && w.contains("(1)") &&
+			w.contains("descbankhinttest.yaml"), "c00a warning: " + w);
+		criterionPrimaryCall("BH2:retarget", findOverlayRef(0xC00D, "PRG_LO_B5", 0x8000),
+			"JSR $8000 retargeted to PRG_LO_B5 (the hint's bank, not dataflow's 1), primary: ");
+
+		// H3: bank 9 of 8 is not applied: dataflow's 3 stands, unsuffixed, and it warns.
+		c = eol(0xC012);
+		w = valueHintWarning(0xC012);
+		criterion("BH3:invalid-not-applied", c.contains("bank -> 3 (") && !c.contains("hint") &&
+			w != null && w.contains("not applied"), "c012: \"" + c + "\" warning=" + w);
+	}
+
+	private void checkDescBankHintMmc3() {
+		// M1 (grm-hb6.22): the $8001 data write after select 6 takes the hint for R6 alone.
+		String c = eol(0xE007);
+		// A multi-field board renders every field: "bank -> select=6,prg_mode=0,r6=5,r7=1 [...]".
+		criterion("BHM1:r6-hinted", c.contains("r6=5") && c.endsWith(HINT_SUFFIX) &&
+			valueHintWarning(0xE007) == null,
+			"e007: \"" + c + "\" warning=" + valueHintWarning(0xE007));
+		criterionPrimaryCall("BHM1:retarget", findOverlayRef(0xE00A, "W8000_M0_B5", 0x8000),
+			"JSR $8000 retargeted to R6's bank 5, primary: ");
+	}
 
 	/**
 	 * The same MMC1 image imported with ({@code overlay}) and without a planted overlay
