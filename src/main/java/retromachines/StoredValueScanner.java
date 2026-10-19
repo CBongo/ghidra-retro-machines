@@ -837,7 +837,8 @@ final class StoredValueScanner {
 			// the mechanism-write abort below still runs. See pathPredecessor.
 			Instruction prev = pathPredecessor(program, listing, cur, env);
 			if (prev == null) {
-				return stopped(aAcc, oAcc, mask, PartialByte.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
+				return stopped(aAcc, oAcc, mask, countedLoopValue(program, cur, reg),
+					BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 			}
 
 			if (hooks.isMechanismWrite(prev)) {
@@ -2864,6 +2865,28 @@ final class StoredValueScanner {
 		return LoopIdioms.countedLoopIndexRange(program, instr,
 			p -> constantRegisterValue(program, p, reg, INERT_HOOKS, RegisterEnv.NONE,
 				new Budget(MAX_RESOLVE_STEPS)));
+	}
+
+	/**
+	 * What a backward walk that reached a JOIN at {@code at} can still say about {@code reg}
+	 * (bead grm-mej.29): when {@code reg} is the counter of a counted loop whose body contains
+	 * {@code at} before the step ({@link LoopIdioms#countedLoopRange}), the bits every value in
+	 * the range shares -- the bits above the highest one {@code lo} and {@code hi} differ in. A
+	 * join is exactly where a loop head sits, so this is the walk's one chance to see the range.
+	 * megaman3's {@code ff49} ({@code LDX #0 / L: STX $8000 / ... / INX / CPX #6 / BNE L}, X in
+	 * 0..5) is the case: bits 3..7, prg_mode among them, are provably 0. Unknown otherwise.
+	 */
+	private static PartialByte countedLoopValue(Program program, Instruction at, char reg) {
+		LoopIdioms.IndexRange range = LoopIdioms.countedLoopRange(program, at, reg,
+			p -> constantRegisterValue(program, p, Character.toUpperCase(reg), INERT_HOOKS,
+				RegisterEnv.NONE, new Budget(MAX_RESOLVE_STEPS)));
+		if (range == null) {
+			return PartialByte.unknown();
+		}
+		int differ = range.lo() ^ range.hi();
+		int varying = differ == 0 ? 0 : (Integer.highestOneBit(differ) << 1) - 1;
+		int known = ~varying & 0xFF;
+		return PartialByte.of(known, range.lo() & known);
 	}
 
 	/** Same physical RAM cell, whichever (overlay or base) space names it. */

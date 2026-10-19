@@ -265,4 +265,72 @@ public class CountedLoopIndexRangeProgramTest extends AbstractProgramTest {
 		put("0xc009", "60");
 		assertNull(rangeAt("0xc002"));
 	}
+
+	// ==================================================================
+	// 2. The counter as the STORED value (bead grm-mej.29)
+	// ==================================================================
+
+	/** megaman3 ff45: the loop's counter written to a register, not used as an index. */
+	private void megaman3SelectLoop() throws Exception {
+		put("0xc000", "a2 00"); // LDX #0
+		put("0xc002", "86 1b"); // STX $1B
+		put("0xc004", "8e 00 80"); // L: STX $8000
+		put("0xc007", "b5 e8"); // LDA $E8,X
+		put("0xc009", "8d 01 80"); // STA $8001
+		put("0xc00c", "e8"); // INX
+		put("0xc00d", "e0 06"); // CPX #6
+		put("0xc00f", "d0 f3"); // BNE L
+		put("0xc011", "60");
+	}
+
+	@Test
+	public void namedCounterRangeAtANonIndexedStore() throws Exception {
+		megaman3SelectLoop();
+		Instruction stx = program.getListing().getInstructionAt(builder.addr("0xc004"));
+		assertRange(0, 5, LoopIdioms.countedLoopRange(program, stx, 'X',
+			p -> StoredValueScanner.constantRegisterValue(program, p, 'X', INERT,
+				RegisterEnv.NONE, new StoredValueScanner.Budget(1000))));
+		// A is not the counter
+		assertNull(LoopIdioms.countedLoopRange(program, stx, 'A', p -> null));
+	}
+
+	/** The scanner's walk stops at the loop-head join, where the range now answers: X in 0..5
+	 *  pins bits 3..7 (MMC3 prg_mode and CHR inversion among them) to 0. */
+	@Test
+	public void storedCounterKnowsTheBitsTheRangeShares() throws Exception {
+		megaman3SelectLoop();
+		Instruction stx = program.getListing().getInstructionAt(builder.addr("0xc004"));
+		PartialByte v = StoredValueScanner.resolveStoredValue(program, stx, 'X',
+			MechanismState.unknown(), 0xFF, INERT);
+		assertEquals("known", 0xF8, v.knownMask());
+		assertEquals("bits", 0x00, v.bits());
+	}
+
+	/** A join that is not a counted loop still yields nothing. */
+	@Test
+	public void storeAtAPlainJoinStaysUnknown() throws Exception {
+		put("0xc000", "a6 30"); // LDX $30
+		put("0xc002", "f0 02"); // BEQ J
+		put("0xc004", "a2 05"); // LDX #5
+		put("0xc006", "8e 00 80"); // J: STX $8000
+		put("0xc009", "60");
+		Instruction stx = program.getListing().getInstructionAt(builder.addr("0xc006"));
+		PartialByte v = StoredValueScanner.resolveStoredValue(program, stx, 'X',
+			MechanismState.unknown(), 0xFF, INERT);
+		assertEquals("known", 0, v.knownMask());
+	}
+
+	private static final StoredValueScanner.Hooks INERT = new StoredValueScanner.Hooks() {
+		@Override
+		public boolean isMechanismWrite(Instruction instr) {
+			return false;
+		}
+
+		@Override
+		public PartialByte resolveLoad(Instruction loadInstr,
+				ghidra.program.model.address.Address resolvedTarget,
+				MechanismState inStateAtStore) {
+			return null;
+		}
+	};
 }

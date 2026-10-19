@@ -409,6 +409,22 @@ final class LoopIdioms {
 		if (!rn.equals("X") && !rn.equals("Y")) {
 			return null;
 		}
+		return countedLoopRange(program, access, rn.charAt(0), valueBefore);
+	}
+
+	/**
+	 * {@link #countedLoopIndexRange} for a NAMED counter register rather than {@code access}'s
+	 * index register (bead grm-mej.29): the range {@code reg} (X or Y) provably holds on entry
+	 * to {@code access}, same shapes and same soundness conditions. megaman3's {@code ff49}
+	 * ({@code LDX #0 / L: STX $8000 / ... / INX / CPX #6 / BNE L}) is the case: the counter is
+	 * the STORED value, not an index.
+	 */
+	static IndexRange countedLoopRange(Program program, Instruction access, char reg,
+			Function<Instruction, Integer> valueBefore) {
+		String rn = String.valueOf(Character.toUpperCase(reg));
+		if (!rn.equals("X") && !rn.equals("Y")) {
+			return null;
+		}
 		ConstantSemantics.Loc loc = ConstantSemantics.Loc.ofRegister(rn.charAt(0));
 		Listing listing = program.getListing();
 		Address accessAddr = access.getMinAddress();
