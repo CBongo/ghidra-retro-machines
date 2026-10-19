@@ -231,7 +231,7 @@ banking:
 
     # A SITE hint that also pins the VALUE (grm-m95). Wins over recovered dataflow (§6.3).
     - addr: 0xE7D4
-      bank: 3                       # NOT YET SUPPORTED: GameCompiler rejects `bank:` (grm-hb6.4)
+      bank: 3                       # grm-hb6.20: a non-negative bank number; wins over dataflow (§6.3)
       comment: "bank index arrives from a jump table the value scanner cannot follow"
       provenance: "hand, 2026-07-31"
 
@@ -927,6 +927,21 @@ the descriptor was written for a variant -- or the analysis is wrong at that sit
 human's look, and silently discarding either side would hide it. This remains the tier's answer to
 the hint-rot risk.
 
+**Where a value hint applies (scope ruling, owner, 2026-10-18; implemented in grm-hb6.20).** A
+`bank:` is valid at EITHER (a) a direct latch store some strategy recognizes, or (b) a *call to a
+recognized bank-switch helper whose deposit is a single bank field* -- grm-m95's shape (Bandai FCG /
+GxROM: `JSR helper` with an unrecovered argument), where the hint replaces the call's
+argument-derived deposit. Either way the deposit must be exactly one board field (a store or call
+that deposits several -- one call setting R6 and R7, or a field plus mode bits -- cannot be given one
+bank number: ambiguous, warned, not applied) and the bank must fit the field's width and be one the
+window can hold (the same realized-bank test, `BankAnnotationAdapter.impossibleBank`, that would
+reject the same bank were dataflow to recover it). An address that is neither a store nor a helper
+call warns "no latch store or bank-switch helper call". A hinted site never forks: the hint replaces
+the outcome before the arm logic runs. The listing's EOL comment on a hinted site ends
+"(game descriptor hint)" so a stated bank reads differently from a derived one; the WARNINGs live
+in the bookmark category `Game descriptor bank hint`, and come from the engine's final fixpoint run
+only.
+
 ### 6.4 Site hints raise no precedence question at all
 
 Worth stating explicitly because it is easy to miss: **a site hint cannot contradict analysis.** It
@@ -1087,7 +1102,7 @@ descriptor yet, which is beads grm-hb6.2/grm-hb6.3. Nothing else below is implem
 
 - [x] Identity: PRG-slice + whole-file SHA-256, two Program Info properties — §2
 - [ ] `game:` schema section, `switch_sites[]`, and the schema-version ruling — §3, §3.3
-  - `switch_sites[]` SITE hints (compile, publish, seed, export): done, grm-hb6.4; the `bank:` value hint (§6.3) is not
+  - `switch_sites[]` SITE hints (compile, publish, seed, export): done, grm-hb6.4; the `bank:` value hint (§6.3, direct store or single-field helper call, wins over dataflow, warns on disagreement): done, grm-hb6.20
 - [ ] Symbol reuse plus the `block:` bank qualifier — §3b.2, §3b.3
 - [ ] Curated set `machines/games/*.yaml` → `data/games/*.gmap` (+ `.gitignore`) — §4.1
 - [x] Overlay scan on `Application.getUserSettingsFiles` — §4.2 (grm-hb6.2)

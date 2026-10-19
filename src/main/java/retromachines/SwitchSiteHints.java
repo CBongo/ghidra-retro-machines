@@ -16,8 +16,11 @@
 package retromachines;
 
 import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import com.google.gson.JsonElement;
@@ -43,7 +46,8 @@ import ghidra.util.task.TaskMonitor;
  * reaches, so it was never disassembled).
  * <p>
  * <b>Seed, do not inject</b> (docs/per-game-descriptors-design.md section 6.2). A hint never
- * produces a {@code SwitchResult} or an annotation. It does two things only:
+ * produces a {@code SwitchResult} or an annotation (the optional {@code bank:} value hint, below,
+ * is the one exception, and it is a separate key). It does two things only:
  * <ol>
  * <li>{@link #materialize} makes the address analyzable -- disassembles it if no instruction is
  * present and, for {@code entry: true}, creates a function there -- using the same
@@ -56,21 +60,50 @@ import ghidra.util.task.TaskMonitor;
  * Both halves read the hint from the program property the loader published, so a re-analysis
  * (or a descriptor that arrives after import) picks it up, and {@link #materialize} is
  * idempotent: it touches only what is still missing.
+ * <p>
+ * <b>The optional {@code bank:} VALUE hint</b> (bead grm-hb6.20, design section 6.3 as amended by
+ * the owner's 2026-10-18 rulings) is the one place a descriptor states a result rather than a
+ * place. {@link #valueHints} hands the engine the hinted addresses and values; the ENGINE applies
+ * a valid one at its site in preference to anything it recovered (a per-game hint wins over
+ * autodetection and is relied upon), and records a {@link HintNote} per hinted site saying
+ * whether it was applied, why not, and what dataflow would have said. {@link #reportValueHints}
+ * turns those notes into WARNING bookmarks. A hint is valid at a direct latch store a strategy
+ * recognizes, or at a call to a recognized bank-switch helper whose deposit is a single field;
+ * validity is cheap self-consistency only (the value fits the field and the window can hold the
+ * bank), never a re-run of the analysis.
  */
 final class SwitchSiteHints {
 
 	/** Bookmark category marking a site that was seeded from a descriptor, not discovered. */
 	static final String BOOKMARK_CATEGORY = "Game descriptor switch site";
 
-	/** One {@code switch_sites[]} entry; {@code block} and {@code comment} may be null. */
-	record Site(long addr, String block, boolean entry, String comment, String provenance) {
+	/** Bookmark category of the WARNINGs a {@code bank:} value hint raises (grm-hb6.20). */
+	static final String VALUE_HINT_CATEGORY = "Game descriptor bank hint";
+
+	/** End-of-line comment suffix marking a bank value that came from a descriptor hint. */
+	static final String HINT_COMMENT_SUFFIX = " (game descriptor hint)";
+
+	/**
+	 * One {@code switch_sites[]} entry; {@code block}, {@code comment} and {@code bank} may be null.
+	 */
+	record Site(long addr, String block, boolean entry, String comment, String provenance,
+			Integer bank) {
+	}
+
+	/**
+	 * What the engine did with one {@code bank:} hint at its final evaluation of the site
+	 * (grm-hb6.20). {@code applied} false means the hint was NOT used and {@code problem} says why;
+	 * {@code recovered} is non-null only for an applied hint that dataflow DISAGREED with, and
+	 * renders the value(s) dataflow had recovered.
+	 */
+	record HintNote(int bank, boolean applied, String problem, String recovered) {
 	}
 
 	private SwitchSiteHints() {
 	}
 
 	/** The recorded hint's source path, or null when absent/unreadable. */
-	private static String source(Program program) {
+	static String source(Program program) {
 		String spec = DescriptorSupport.programInfoString(program,
 			DescriptorSupport.SWITCH_SITES_PROPERTY);
 		if (spec == null || spec.isBlank()) {
@@ -104,7 +137,8 @@ final class SwitchSiteHints {
 					o.has("block") ? o.get("block").getAsString() : null,
 					o.has("entry") && o.get("entry").getAsBoolean(),
 					o.has("comment") ? o.get("comment").getAsString() : null,
-					o.get("provenance").getAsString()));
+					o.get("provenance").getAsString(),
+						o.has("bank") ? Integer.valueOf(o.get("bank").getAsInt()) : null));
 			}
 		}
 		catch (RuntimeException e) {
@@ -190,5 +224,82 @@ final class SwitchSiteHints {
 			}
 		}
 		return out;
+	}
+
+	/**
+	 * The {@code bank:} value hints, keyed by the resolved address of their site (bead grm-hb6.20).
+	 * Empty -- and cheap -- when the descriptor states none, which is every shipped descriptor.
+	 */
+	static Map<Address, Integer> valueHints(Program program) {
+		Map<Address, Integer> out = new LinkedHashMap<>();
+		for (Site site : parse(program, new ArrayList<>())) {
+			if (site.bank() == null) {
+				continue;
+			}
+			Address addr = resolve(program, site);
+			if (addr != null) {
+				out.put(addr, site.bank());
+			}
+		}
+		return out;
+	}
+
+	/**
+	 * Raises (and retracts) the WARNING bookmarks for {@code bank:} hints, from the engine's
+	 * final-pass {@code notes} (bead grm-hb6.20). One bookmark per hinted site that needs
+	 * attention: a hint that was NOT applied (naming the failed check; the site fell back to
+	 * dataflow), or an applied hint dataflow disagreed with (naming both values; the hint won).
+	 * A hint that was applied and agrees raises nothing. Own category, so it neither displaces nor
+	 * is swept with the analyzer's unknown-state warning at the same site, and write-free on a
+	 * settled program (a bookmark is rewritten only when its text changed).
+	 *
+	 * @return the warning texts raised, for the analyzer log
+	 */
+	static List<String> reportValueHints(Program program, Map<Address, HintNote> notes) {
+		String source = source(program);
+		Map<Address, String> wanted = new LinkedHashMap<>();
+		for (Map.Entry<Address, Integer> hint : valueHints(program).entrySet()) {
+			Address addr = hint.getKey();
+			HintNote note = notes.get(addr);
+			String text = null;
+			if (note == null) {
+				text = "bank hint " + hint.getValue() + " from game descriptor " + source +
+					" was not applied: dataflow never reached this address";
+			}
+			else if (!note.applied()) {
+				text = "bank hint " + note.bank() + " from game descriptor " + source +
+					" was not applied (" + note.problem() + "); the site falls back to the " +
+					"value dataflow recovers";
+			}
+			else if (note.recovered() != null) {
+				text = "bank hint " + note.bank() + " from game descriptor " + source +
+					" WINS over the bank dataflow recovered here (" + note.recovered() +
+					"); if the recovered value is right, the hint is stale";
+			}
+			if (text != null) {
+				wanted.put(addr, text);
+			}
+		}
+		BookmarkManager bookmarks = program.getBookmarkManager();
+		List<Bookmark> stale = new ArrayList<>();
+		Iterator<Bookmark> it = bookmarks.getBookmarksIterator(BookmarkType.WARNING);
+		while (it.hasNext()) {
+			Bookmark b = it.next();
+			if (VALUE_HINT_CATEGORY.equals(b.getCategory()) && !wanted.containsKey(b.getAddress())) {
+				stale.add(b);
+			}
+		}
+		for (Bookmark b : stale) {
+			bookmarks.removeBookmark(b);
+		}
+		for (Map.Entry<Address, String> w : wanted.entrySet()) {
+			Bookmark existing =
+				bookmarks.getBookmark(w.getKey(), BookmarkType.WARNING, VALUE_HINT_CATEGORY);
+			if (existing == null || !w.getValue().equals(existing.getComment())) {
+				bookmarks.setBookmark(w.getKey(), BookmarkType.WARNING, VALUE_HINT_CATEGORY,
+					w.getValue());
+			}
+		}
+		return new ArrayList<>(wanted.values());
 	}
 }

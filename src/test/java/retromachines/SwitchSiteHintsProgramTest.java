@@ -16,6 +16,7 @@
 package retromachines;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -33,6 +34,7 @@ import ghidra.app.util.importer.MessageLog;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.listing.Bookmark;
 import ghidra.program.model.listing.BookmarkType;
+import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Program;
 import ghidra.util.task.TaskMonitor;
 
@@ -57,6 +59,8 @@ public class SwitchSiteHintsProgramTest extends AbstractProgramTest {
 		builder.createMemory(".zp", "0x0", 0x100);
 		builder.createMemory("PRG", "0x8000", 0x8000);
 		program = builder.getProgram();
+		// RAM must be WRITABLE, or a load from it reads as a constant (a read-only block is ROM)
+		makeWritable(program.getMemory().getBlock(".zp"));
 		// The only reachable code: RESET, a lone RTS. Nothing refers to 0xc100.
 		put(0xc000, "60");
 		inTx(program, "reset function", () -> {
@@ -103,17 +107,71 @@ public class SwitchSiteHintsProgramTest extends AbstractProgramTest {
 		return board;
 	}
 
-	private BankDataflowEngine.DataflowResult run() throws Exception {
-		BoardDescriptorModel.BoardModel board = board();
+	private MemoryLatchBankSwitchStrategy latchStrategy(BoardDescriptorModel.BoardModel board) {
 		JsonObject params = new JsonObject();
 		params.addProperty("start", 0x9000);
 		params.addProperty("end", 0x9100);
 		params.addProperty("mask", board.mask());
 		MemoryLatchBankSwitchStrategy strategy = new MemoryLatchBankSwitchStrategy();
 		strategy.configure(program, params, board.mask());
+		return strategy;
+	}
+
+	private BankDataflowEngine.DataflowResult run() throws Exception {
+		return run(board(), null, null);
+	}
+
+	private BankDataflowEngine.DataflowResult run(BoardDescriptorModel.BoardModel board,
+			Map<Function, HelperDiscovery.HelperModel> helpers,
+			HelperDiscovery.BankResolution resolution) throws Exception {
 		return BankDataflowEngine.runDataflow(program, TaskMonitor.DUMMY, program.getListing(),
-			List.of(new BankStrategyRegistry.ConfiguredMechanism(strategy, board.mask(), 0)),
-			board, null, Map.of());
+			List.of(new BankStrategyRegistry.ConfiguredMechanism(latchStrategy(board), board.mask(),
+				0)),
+			board, helpers, Map.of(), java.util.Set.of(), BankStackBrackets.Claims.NONE,
+			resolution);
+	}
+
+	/** The UxROM shape: PRG_LO computed from a 4-bit {@code bank}, so the bank universe can bind. */
+	private BoardDescriptorModel.BoardModel windowedBoard() {
+		JsonObject map = JsonParser.parseString("""
+				{
+				  "physical": [ { "name": "PRG", "image": "prg_rom" } ],
+				  "windows": [
+				    { "name": "PRG_LO", "start": 32768, "end": 49151,
+				      "maps": { "space": "PRG", "expr": "bank * 0x4000" },
+				      "on_write": "mechanism" },
+				    { "name": "PRG_HI", "start": 49152, "end": 65535,
+				      "maps": { "space": "PRG", "expr": "last" },
+				      "on_write": "mechanism" }
+				  ],
+				  "banking": {
+				    "initial_state": 0,
+				    "state": [ { "name": "bank", "bits": 4 } ],
+				    "mechanisms": [ { "strategy": "memory-latch" } ]
+				  }
+				}
+				""").getAsJsonObject();
+		BoardDescriptorModel.BoardModel b = BoardDescriptorModel.BoardModel.parse(map,
+			new MessageLog(), "test", "test-descriptor.json");
+		assertNotNull(b);
+		return b;
+	}
+
+	/** Two 4-bit fields behind one 8-bit latch. */
+	private BoardDescriptorModel.BoardModel twoFieldBoard() {
+		JsonObject map = JsonParser.parseString("""
+				{
+				  "banking": {
+				    "initial_state": 0,
+				    "mechanisms": [ { "strategy": "memory-latch" } ],
+				    "state": [ { "name": "bank", "bits": 4 }, { "name": "chr", "bits": 4 } ]
+				  }
+				}
+				""").getAsJsonObject();
+		BoardDescriptorModel.BoardModel b = BoardDescriptorModel.BoardModel.parse(map,
+			new MessageLog(), "test", "test-descriptor.json");
+		assertNotNull(b);
+		return b;
 	}
 
 	private void layUnreachedStore(String bytes) throws Exception {
@@ -232,5 +290,274 @@ public class SwitchSiteHintsProgramTest extends AbstractProgramTest {
 		assertTrue(log.toString(), log.toString().contains("malformed"));
 		assertTrue(ready.isEmpty());
 		assertTrue(SwitchSiteHints.seedAddresses(program).isEmpty());
+	}
+
+	// ------------------------------------------------------------------
+	// bank: VALUE hints (bead grm-hb6.20, design section 6.3 as amended 2026-10-18)
+	// ------------------------------------------------------------------
+
+	/** LDA $10 (a RAM byte: unrecoverable) / STA $9000 / RTS, disassembled at c100; the STA is c102. */
+	private static final String UNKNOWN_STORE = "a5 10 8d 00 90 60";
+
+	private static final String DESCRIPTOR = "machines/games/test.gmap";
+
+	private void bankHintAt(long site, int bank) {
+		hint("[{\"addr\": " + site + ", \"bank\": " + bank + ", \"provenance\": \"unit test\"}]");
+	}
+
+	/** The WARNING a value hint raised at {@code at}, or null; reports from {@code result} first. */
+	private String valueHintWarning(Address at, BankDataflowEngine.DataflowResult result) {
+		inTx(program, "report value hints",
+			() -> SwitchSiteHints.reportValueHints(program, result.hintNotes()));
+		Bookmark b = program.getBookmarkManager().getBookmark(at, BookmarkType.WARNING,
+			SwitchSiteHints.VALUE_HINT_CATEGORY);
+		return b == null ? null : b.getComment();
+	}
+
+	@Test
+	public void aValueHintFillsAnOtherwiseUnknownStore() throws Exception {
+		put(0xc100, UNKNOWN_STORE);
+		hintAt("49410", ""); // a SITE hint only: the seed, no value
+		BankDataflowEngine.SwitchResult base = run().switchResults().get(addr(0xc102));
+		assertTrue("baseline: nothing recovers the byte: " + base,
+			base.stop() != BankSwitchStrategy.ValueStop.RESOLVED);
+
+		bankHintAt(0xc102, 5);
+		BankDataflowEngine.DataflowResult result = run();
+
+		BankDataflowEngine.SwitchResult sr = result.switchResults().get(addr(0xc102));
+		assertEquals(5, sr.effect().bits());
+		assertEquals(0xF, sr.effect().knownMask());
+		assertEquals(BankSwitchStrategy.ValueStop.RESOLVED, sr.stop());
+		SwitchSiteHints.HintNote note = result.hintNotes().get(addr(0xc102));
+		assertTrue(note.applied());
+		assertNull("nothing was recovered, so nothing disagrees", note.recovered());
+		assertNull("an applied, agreeing hint raises no warning",
+			valueHintWarning(addr(0xc102), result));
+	}
+
+	@Test
+	public void aContradictingValueHintWinsAndWarnsNamingBothValuesAndTheDescriptor()
+			throws Exception {
+		put(0xc100, LATCH_STORE); // LDA #3 / STA $9000: dataflow recovers 3
+		bankHintAt(0xc102, 5);
+
+		BankDataflowEngine.DataflowResult result = run();
+
+		assertEquals("the hint WINS over the recovered 3", 5,
+			result.switchResults().get(addr(0xc102)).effect().bits());
+		SwitchSiteHints.HintNote note = result.hintNotes().get(addr(0xc102));
+		assertTrue(note.applied());
+		assertEquals("3", note.recovered());
+		String warning = valueHintWarning(addr(0xc102), result);
+		assertNotNull(warning);
+		assertTrue(warning, warning.contains("5") && warning.contains("(3)"));
+		assertTrue(warning, warning.contains(DESCRIPTOR));
+	}
+
+	@Test
+	public void aValueHintAgreeingWithDataflowRaisesNothing() throws Exception {
+		put(0xc100, LATCH_STORE);
+		bankHintAt(0xc102, 3);
+
+		BankDataflowEngine.DataflowResult result = run();
+
+		assertEquals(3, result.switchResults().get(addr(0xc102)).effect().bits());
+		assertNull(result.hintNotes().get(addr(0xc102)).recovered());
+		assertNull(valueHintWarning(addr(0xc102), result));
+	}
+
+	@Test
+	public void aValueHintTooWideForTheFieldIsNotAppliedAndWarns() throws Exception {
+		put(0xc100, LATCH_STORE);
+		bankHintAt(0xc102, 16); // the field is 4 bits wide
+
+		BankDataflowEngine.DataflowResult result = run();
+
+		assertEquals("the site keeps the value dataflow recovered", 3,
+			result.switchResults().get(addr(0xc102)).effect().bits());
+		SwitchSiteHints.HintNote note = result.hintNotes().get(addr(0xc102));
+		assertFalse(note.applied());
+		assertTrue(note.problem(), note.problem().contains("does not fit"));
+		String warning = valueHintWarning(addr(0xc102), result);
+		assertNotNull(warning);
+		assertTrue(warning, warning.contains("not applied") && warning.contains(DESCRIPTOR));
+	}
+
+	@Test
+	public void aValueHintForABankTheWindowCannotHoldIsNotApplied() throws Exception {
+		put(0xc100, LATCH_STORE);
+		bankHintAt(0xc102, 5);
+		BoardDescriptorModel.BoardModel windowed = windowedBoard();
+		// the image realizes three banks of PRG_LO: 0, 1, 2
+		HelperDiscovery.BankResolution resolution = new HelperDiscovery.BankResolution(windowed,
+			Map.of("PRG_LO", java.util.Set.of(0, 1, 2)), Map.of());
+
+		BankDataflowEngine.DataflowResult result = run(windowed, null, resolution);
+
+		assertEquals(3, result.switchResults().get(addr(0xc102)).effect().bits());
+		SwitchSiteHints.HintNote note = result.hintNotes().get(addr(0xc102));
+		assertFalse(note.applied());
+		assertTrue(note.problem(), note.problem().contains("can hold"));
+
+		bankHintAt(0xc102, 2);
+		assertEquals("a bank the window does hold is applied", 2,
+			run(windowed, null, resolution).switchResults().get(addr(0xc102)).effect().bits());
+	}
+
+	@Test
+	public void aValueHintAtANonSwitchInstructionWarnsAndAnnotatesNothing() throws Exception {
+		put(0xc100, "a9 03 85 10 60"); // LDA #3 / STA $10 / RTS -- a plain RAM store at c102
+		bankHintAt(0xc102, 4);
+
+		BankDataflowEngine.DataflowResult result = run();
+
+		assertTrue(result.switchResults().isEmpty());
+		SwitchSiteHints.HintNote note = result.hintNotes().get(addr(0xc102));
+		assertFalse(note.applied());
+		assertTrue(note.problem(), note.problem().contains("no latch store or bank-switch helper"));
+		assertNotNull(valueHintWarning(addr(0xc102), result));
+	}
+
+	@Test
+	public void staleValueHintWarningsAreRetractedWhenTheHintGoes() throws Exception {
+		put(0xc100, LATCH_STORE);
+		bankHintAt(0xc102, 5);
+		assertNotNull(valueHintWarning(addr(0xc102), run()));
+
+		hintAt("49410", ""); // the same site, now without a value
+		assertNull(valueHintWarning(addr(0xc102), run()));
+	}
+
+	@Test
+	public void aProgramWithNoValueHintsCarriesNoHintNotes() throws Exception {
+		put(0xc100, LATCH_STORE);
+		hintAt("49410", "");
+
+		assertTrue(run().hintNotes().isEmpty());
+	}
+
+	@Test
+	public void theCommentSuffixMarksAHintedBankAndOnlyThen() throws Exception {
+		BoardDescriptorModel.BoardModel b = board();
+		BankState state = BankState.fullyKnown(b.mask(), 5);
+		NesBankingAnalyzer analyzer = new NesBankingAnalyzer();
+		inTx(program, "annotate", () -> {
+			BankAnnotationAdapter.annotateOrWarn(analyzer, program, program.getListing(),
+				addr(0xc102), state, b, Map.of(), null, "w", BankSwitchStrategy.ValueStop.RESOLVED,
+				null, false, null, SwitchSiteHints.HINT_COMMENT_SUFFIX);
+			BankAnnotationAdapter.annotateOrWarn(analyzer, program, program.getListing(),
+				addr(0xc105), state, b, Map.of(), null, "w", BankSwitchStrategy.ValueStop.RESOLVED,
+				null, false, null);
+		});
+		String hinted = program.getListing().getComment(
+			ghidra.program.model.listing.CommentType.EOL, addr(0xc102));
+		String plain = program.getListing().getComment(
+			ghidra.program.model.listing.CommentType.EOL, addr(0xc105));
+		assertTrue(hinted, hinted.startsWith("bank -> 5") && hinted.endsWith("(game descriptor hint)"));
+		assertFalse(plain, plain.contains("hint"));
+	}
+
+	// ---- a hint at a call to a bank-switch helper ----
+
+	/**
+	 * Caller {@code LDA $10 / JSR $c200 / RTS} at c100 (the JSR is c102), helper
+	 * {@code STA $9000 / RTS} at c200 taking its bank in A.
+	 */
+	private Map<Function, HelperDiscovery.HelperModel> buildHelperAndCaller(
+			BoardDescriptorModel.BoardModel b, int helperMask, String callerBytes)
+			throws Exception {
+		put(0xc100, callerBytes);
+		put(0xc200, "8d 00 90 60");
+		makeFunction(0xc100, 0xc105, "CALLER");
+		makeFunction(0xc200, 0xc203, "HELPER");
+		MemoryLatchBankSwitchStrategy strategy = latchStrategy(b);
+		Function helper = program.getFunctionManager().getFunctionAt(addr(0xc200));
+		return Map.of(helper, new HelperDiscovery.HelperModel(helper, addr(0xc200), null, 'A',
+			helperMask, 0, strategy, addr(0xc200), addr(0xc200), null, List.of(addr(0xc200))));
+	}
+
+	private void makeFunction(int start, int endInclusive, String name) throws Exception {
+		inTx(program, "create function " + name, () -> {
+			try {
+				program.getFunctionManager().createFunction(name, addr(start),
+					new ghidra.program.model.address.AddressSet(addr(start), addr(endInclusive)),
+					ghidra.program.model.symbol.SourceType.ANALYSIS);
+			}
+			catch (Exception e) {
+				throw new RuntimeException(e);
+			}
+		});
+		builder.createEntryPoint(String.format("0x%x", start), name);
+	}
+
+	@Test
+	public void aValueHintAtAHelperCallResolvesAnUnrecoverableArgument() throws Exception {
+		BoardDescriptorModel.BoardModel b = board();
+		Map<Function, HelperDiscovery.HelperModel> helpers =
+			buildHelperAndCaller(b, b.mask(), "a5 10 20 00 c2 60");
+		BankDataflowEngine.CallSwitch before =
+			run(b, helpers, null).callSwitches().get(addr(0xc102));
+		assertFalse("baseline: LDA $10 leaves the argument unrecovered", before.argumentResolved());
+
+		bankHintAt(0xc102, 6);
+		BankDataflowEngine.DataflowResult result = run(b, helpers, null);
+
+		BankDataflowEngine.CallSwitch cs = result.callSwitches().get(addr(0xc102));
+		assertTrue(cs.argumentResolved());
+		assertEquals(6, cs.effect().bits());
+		assertEquals(0xF, cs.effect().knownMask());
+		assertEquals(6, result.stateIn().get(addr(0xc105)).bits());
+		assertTrue(result.hintNotes().get(addr(0xc102)).applied());
+		assertNull(valueHintWarning(addr(0xc102), result));
+	}
+
+	@Test
+	public void aValueHintAtAHelperCallOverridesAndWarnsOnADifferentRecoveredArgument()
+			throws Exception {
+		BoardDescriptorModel.BoardModel b = board();
+		// LDA #2 / JSR $c200 / RTS: the argument IS recoverable
+		Map<Function, HelperDiscovery.HelperModel> helpers =
+			buildHelperAndCaller(b, b.mask(), "a9 02 20 00 c2 60");
+		assertEquals(2, run(b, helpers, null).callSwitches().get(addr(0xc102)).effect().bits());
+
+		bankHintAt(0xc102, 6);
+		BankDataflowEngine.DataflowResult result = run(b, helpers, null);
+
+		assertEquals(6, result.callSwitches().get(addr(0xc102)).effect().bits());
+		assertEquals("2", result.hintNotes().get(addr(0xc102)).recovered());
+		String warning = valueHintWarning(addr(0xc102), result);
+		assertTrue(warning, warning.contains("6") && warning.contains("(2)") &&
+			warning.contains(DESCRIPTOR));
+	}
+
+	@Test
+	public void aValueHintAtAMultiFieldHelperCallIsAmbiguousAndNotApplied() throws Exception {
+		// two 4-bit fields behind one 8-bit latch: one call deposits both, so "bank 6" has no referent
+		BoardDescriptorModel.BoardModel two = twoFieldBoard();
+		Map<Function, HelperDiscovery.HelperModel> helpers =
+			buildHelperAndCaller(two, two.mask(), "a5 10 20 00 c2 60");
+		bankHintAt(0xc102, 6);
+
+		BankDataflowEngine.DataflowResult result = run(two, helpers, null);
+
+		SwitchSiteHints.HintNote note = result.hintNotes().get(addr(0xc102));
+		assertFalse(note.applied());
+		assertTrue(note.problem(), note.problem().contains("more than one bank field"));
+		assertFalse("the call falls back to dataflow", result.callSwitches().get(addr(0xc102))
+				.argumentResolved());
+		assertNotNull(valueHintWarning(addr(0xc102), result));
+	}
+
+	@Test
+	public void aValueHintAtAJsrWithNoHelperKnownIsNotApplied() throws Exception {
+		put(0xc100, "a5 10 20 00 c2 60");
+		put(0xc200, "8d 00 90 60");
+		bankHintAt(0xc102, 6);
+
+		SwitchSiteHints.HintNote note = run().hintNotes().get(addr(0xc102));
+
+		assertFalse(note.applied());
+		assertTrue(note.problem(), note.problem().contains("no latch store or bank-switch helper"));
 	}
 }

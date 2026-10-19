@@ -659,7 +659,8 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 										"pin down even one tracked bank bit -- e.g. a load of an " +
 										"unrelated address followed directly by the store, with no " +
 										"AND/ORA immediate to constrain it)",
-							directStop, provenance, false, honestDetail);
+							directStop, provenance, false, honestDetail,
+							hintSuffix(flow, addr));
 				if (marked == BankAnnotationAdapter.Marked.WARNED) {
 					warnings++;
 				}
@@ -818,7 +819,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				BankAnnotationAdapter.Marked marked = BankAnnotationAdapter.annotateOrWarn(this,
 					program, listing, addr, annotState, board, bankUniverse,
 					callSwitch.helperName(), warningText, callStop, provenance,
-					!callSwitch.argumentResolved(), honestDetail);
+					!callSwitch.argumentResolved(), honestDetail, hintSuffix(flow, addr));
 				if (marked == BankAnnotationAdapter.Marked.WARNED) {
 					warnings++;
 				}
@@ -879,6 +880,13 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// is and is not fed back into the dataflow) ---
 		int violations = BankAnnotationAdapter.annotateBankRequirementViolations(this, program,
 			listing, flow, board, alreadyWarned, log);
+
+		// Bead grm-hb6.20: banking.switch_sites bank: value hints -- WARNING bookmarks, from the
+		// FINAL dataflow run's per-site notes only, for a hint that was not applied or that
+		// overrode a different recovered value. Own category (see SwitchSiteHints).
+		for (String hintWarning : SwitchSiteHints.reportValueHints(program, flow.hintNotes())) {
+			AnalyzerLog.info(this, tag + ": " + hintWarning);
+		}
 
 		// Retract bookmarks an EARLIER round placed at sites this round did not bookmark (bead
 		// grm-mej.26) -- the bookmark twin of the comment sweep above. alreadyWarned now holds
@@ -963,6 +971,15 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			LAST_COMPLETED.put(program, new RunStamp(program.getModificationNumber(), mapPath));
 		}
 		return true;
+	}
+
+	/**
+	 * The EOL-comment suffix for a switch site whose bank came from a game descriptor's
+	 * {@code bank:} hint (bead grm-hb6.20); empty for every site dataflow resolved itself.
+	 */
+	private static String hintSuffix(DataflowResult flow, Address addr) {
+		SwitchSiteHints.HintNote note = flow.hintNotes().get(addr);
+		return note != null && note.applied() ? SwitchSiteHints.HINT_COMMENT_SUFFIX : "";
 	}
 
 	/**

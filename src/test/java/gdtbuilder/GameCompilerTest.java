@@ -419,9 +419,26 @@ public class GameCompilerTest {
 	}
 
 	@Test
-	public void switchSiteBankValueHintIsRejectedAsNotYetSupported() throws Exception {
-		expectError("sitebank",
-			validYaml() + SWITCH_SITES.replace("entry: true", "bank: 3"), "not yet supported");
+	public void switchSiteBankValueHintIsAcceptedAndEmitted() throws Exception {
+		JsonObject site = compile("sitebank",
+			validYaml() + SWITCH_SITES.replace("entry: true", "bank: 0x0A"))
+			.getAsJsonObject("banking").getAsJsonArray("switch_sites").get(0).getAsJsonObject();
+		assertEquals(10, site.get("bank").getAsInt());
+		JsonObject plain = compile("sitenobank", validYaml() + SWITCH_SITES)
+			.getAsJsonObject("banking").getAsJsonArray("switch_sites").get(0).getAsJsonObject();
+		assertFalse("absent unless stated", plain.has("bank"));
+	}
+
+	@Test
+	public void switchSiteBankValueHintMustBeANonNegativeInteger() throws Exception {
+		expectError("sitebankneg",
+			validYaml() + SWITCH_SITES.replace("entry: true", "bank: -1"), "'bank' must be");
+		expectError("sitebankstr",
+			validYaml() + SWITCH_SITES.replace("entry: true", "bank: three"), "'bank' must be");
+		expectError("sitebankbool",
+			validYaml() + SWITCH_SITES.replace("entry: true", "bank: true"), "'bank' must be");
+		expectError("sitebankfrac",
+			validYaml() + SWITCH_SITES.replace("entry: true", "bank: 1.5"), "'bank' must be");
 	}
 
 	// ---- banking.bank_stacks and banking.paired_fields (bead grm-mej.10) ----

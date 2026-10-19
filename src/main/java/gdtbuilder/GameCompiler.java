@@ -586,13 +586,16 @@ public class GameCompiler {
 
 	/**
 	 * {@code banking.switch_sites:} (bead grm-hb6.4): a non-empty list of SITE hints, each
-	 * {@code { addr, provenance, [block], [entry], [comment] }} stating "there is a bank-switch
-	 * store here". SHAPE only here; the analyzer disassembles the address if need be and seeds it
-	 * into the dataflow, whose own strategy still decides whether anything is annotated
-	 * (docs/per-game-descriptors-design.md section 6.2: seeds, not injected results).
+	 * {@code { addr, provenance, [block], [entry], [comment], [bank] }} stating "there is a
+	 * bank-switch store here". SHAPE only here; the analyzer disassembles the address if need be
+	 * and seeds it into the dataflow, whose own strategy still decides whether anything is
+	 * annotated (docs/per-game-descriptors-design.md section 6.2: seeds, not injected results).
 	 * {@code block:} is the same memory-block qualifier {@code symbols:} uses (omitted = the base
-	 * space). The design's VALUE hint ({@code bank:}, section 6.3) is not implemented and is
-	 * REJECTED, so nobody writes one believing it works.
+	 * space). {@code bank:} (bead grm-hb6.20, design section 6.3 as amended by the 2026-10-18
+	 * owner ruling) is the optional VALUE hint: a non-negative bank number the analyzer applies at
+	 * the site in preference to anything it recovered. Only its SHAPE (a non-negative integer) is
+	 * checked here; whether the board's window can hold it, and whether the site is a latch store
+	 * or a bank-switch helper call, are the analyzer's checks (they need the board and the ROM).
 	 */
 	@SuppressWarnings("unchecked")
 	private static List<Map<String, Object>> buildSwitchSites(Object listObj) {
@@ -611,13 +614,9 @@ public class GameCompiler {
 					"a mapping with addr and provenance");
 			}
 			Map<String, Object> entry = (Map<String, Object>) entryObj;
-			if (entry.containsKey("bank")) {
-				throw new IllegalArgumentException("'banking.switch_sites:' key 'bank' (a " +
-					"site's bank VALUE hint) is not yet supported; state only the site " +
-					"(docs/per-game-descriptors-design.md section 6.3)");
-			}
 			for (String key : entry.keySet()) {
-				if (!Set.of("addr", "block", "entry", "comment", "provenance").contains(key)) {
+				if (!Set.of("addr", "block", "entry", "comment", "provenance", "bank")
+						.contains(key)) {
 					throw new IllegalArgumentException(
 						"'banking.switch_sites:' entry has unknown key '" + key + "'");
 				}
@@ -642,6 +641,20 @@ public class GameCompiler {
 				}
 				isEntry = (Boolean) entry.get("entry");
 			}
+			Integer bank = null;
+			if (entry.containsKey("bank")) {
+				Object raw = entry.get("bank");
+				if (!(raw instanceof Integer) && !(raw instanceof Long)) {
+					throw new IllegalArgumentException(where +
+						": 'bank' must be a non-negative integer (a bank number)");
+				}
+				long v = ((Number) raw).longValue();
+				if (v < 0 || v > Integer.MAX_VALUE) {
+					throw new IllegalArgumentException(where +
+						": 'bank' must be a non-negative integer (a bank number)");
+				}
+				bank = (int) v;
+			}
 			String provenance = MapCompiler.requireString(entry, "provenance", where);
 			Map<String, Object> e = new LinkedHashMap<>();
 			e.put("addr", addr);
@@ -653,6 +666,9 @@ public class GameCompiler {
 			}
 			if (entry.containsKey("comment")) {
 				e.put("comment", MapCompiler.requireString(entry, "comment", where));
+			}
+			if (bank != null) {
+				e.put("bank", bank);
 			}
 			e.put("provenance", provenance);
 			out.add(e);

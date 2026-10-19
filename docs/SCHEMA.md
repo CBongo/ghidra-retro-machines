@@ -832,6 +832,7 @@ banking:
       block: PRG_LO_B1      # memory block, as for symbols: -- omitted = base space  (optional)
       entry: true           # also create a function here                           (optional)
       comment: "UxROM latch; reached only via JMP ($0300)"                          # (optional)
+      bank: 3               # the bank this site selects; WINS over dataflow (bead grm-hb6.20)  (optional)
       provenance: "who established it, and how"                                     # required
 ```
 
@@ -848,11 +849,24 @@ naming the descriptor and the provenance, so it can be told from a discovered on
 unresolvable `block`/address, an address interior to an existing instruction, or one that fails
 to disassemble is logged with its reason and skipped. Re-running is a no-op.
 
-The design's `bank:` VALUE hint (section 6.3) is **not implemented**: `GameCompiler` rejects a
-`bank:` key ("not yet supported") rather than ignoring it. Shape validation (non-empty list,
+**`bank:` is a VALUE hint (bead `grm-hb6.20`, design section 6.3 as amended by the owner's
+2026-10-18 rulings) and the one key that states a result rather than a place.** A valid hint is
+applied at its site **in preference to anything dataflow recovered** (a per-game hint wins over
+autodetection and is relied upon). It is valid at a direct latch store a strategy recognizes, or at
+a call to a recognized bank-switch helper whose deposit is a *single* bank field (the call's
+argument-derived deposit is replaced; this is the shape of a `JSR helper` whose bank argument is
+unrecoverable). When dataflow recovered a *different* bank, the hint still wins and a `WARNING`
+bookmark (category `Game descriptor bank hint`) at the site names both values and the descriptor.
+An invalid hint is not applied: a `WARNING` names the descriptor and the failed check, and the
+site falls back to dataflow. The checks are cheap self-consistency only -- the bank fits the field's
+width and is one the window can hold for this ROM; the deposit is one field (a store or helper call
+depositing several fields is ambiguous); the address is a latch store or a recognized helper call
+("no latch store or bank-switch helper call" otherwise). The site's `bank ->` comment ends
+"(game descriptor hint)". Placement overrides are a separate mechanism and are unchanged.
+`GameCompiler` checks only that `bank:` is a non-negative integer. Shape validation (non-empty list,
 16-bit `addr`, `(block, addr)` unique, boolean `entry`, `provenance` present, no other keys) is
-`GameCompiler`'s; `ExportGameDescriptor.java` carries the stated hints verbatim. Sites the
-analysis recovered itself are never exported.
+`GameCompiler`'s; `ExportGameDescriptor.java` carries the stated hints (including `bank:`)
+verbatim. Sites the analysis recovered itself are never exported.
 
 ### `banking.save_cells` (bead `grm-mej.9`)
 

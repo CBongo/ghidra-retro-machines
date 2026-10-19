@@ -226,6 +226,21 @@ final class BankAnnotationAdapter {
 			Map<String, Set<Integer>> bankUniverse, String viaHelper, String warning,
 			BankSwitchStrategy.ValueStop stop, BankCommentProvenance provenance,
 			boolean warnDespiteKnowledge, String honestDetail) {
+		return annotateOrWarn(analyzer, program, listing, addr, state, board, bankUniverse,
+			viaHelper, warning, stop, provenance, warnDespiteKnowledge, honestDetail, "");
+	}
+
+	/**
+	 * {@link #annotateOrWarn} with {@code commentSuffix} appended to a {@code bank ->} comment it
+	 * writes (bead grm-hb6.20): {@link SwitchSiteHints#HINT_COMMENT_SUFFIX} where the bank came
+	 * from a game descriptor's {@code bank:} hint rather than from dataflow, so a reader can tell
+	 * a stated value from a derived one. Empty is every other overload's behaviour exactly.
+	 */
+	static Marked annotateOrWarn(BoardBankAnalyzer analyzer, Program program, Listing listing,
+			Address addr, BankState state, BoardModel board,
+			Map<String, Set<Integer>> bankUniverse, String viaHelper, String warning,
+			BankSwitchStrategy.ValueStop stop, BankCommentProvenance provenance,
+			boolean warnDespiteKnowledge, String honestDetail, String commentSuffix) {
 		// Before every other test, including the knownMask ones: a site that deposits nothing
 		// by design is not describable by this method's vocabulary at all. Its state is the
 		// state that flowed IN, so "is anything known" answers a question about the PREVIOUS
@@ -252,14 +267,16 @@ final class BankAnnotationAdapter {
 				// call-site restore branches pass honestDetail with warnDespiteKnowledge, so no
 				// other classification moves.
 				setBookmarkClearingOther(analyzer, program, addr, BookmarkType.NOTE, honestDetail);
-				annotateBankSwitch(listing, addr, state, board, bankUniverse, viaHelper, provenance);
+				annotateBankSwitch(listing, addr, state, board, bankUniverse, viaHelper, provenance,
+					commentSuffix);
 				return Marked.NOTED;
 			}
 			setBookmarkClearingOther(analyzer, program, addr, BookmarkType.WARNING, warning);
 			// The one bookmarked exit that writes a bank comment, not a gap comment: the state
 			// DOES know something, and that comment is where the reader learns it. The WARNING
 			// carries the unrecovered-argument half on its own (see the javadoc).
-			annotateBankSwitch(listing, addr, state, board, bankUniverse, viaHelper, provenance);
+			annotateBankSwitch(listing, addr, state, board, bankUniverse, viaHelper, provenance,
+					commentSuffix);
 			return Marked.WARNED;
 		}
 		if (state.knownMask() == 0) {
@@ -280,7 +297,8 @@ final class BankAnnotationAdapter {
 			annotateGap(listing, addr, IMPOSSIBLE_GAP, viaHelper, provenance);
 			return Marked.WARNED;
 		}
-		annotateBankSwitch(listing, addr, state, board, bankUniverse, viaHelper, provenance);
+		annotateBankSwitch(listing, addr, state, board, bankUniverse, viaHelper, provenance,
+					commentSuffix);
 		return Marked.ANNOTATED;
 	}
 
@@ -1317,7 +1335,7 @@ final class BankAnnotationAdapter {
 	 */
 	private static void annotateBankSwitch(Listing listing, Address addr, BankState newState,
 			BoardModel board, Map<String, Set<Integer>> bankUniverse, String viaHelper,
-			BankCommentProvenance provenance) {
+			BankCommentProvenance provenance, String commentSuffix) {
 		String via = viaHelper == null ? "" : " via " + viaHelper;
 		String bankComment = "bank -> " + bankCommentBody(newState, board, bankUniverse, via);
 
@@ -1330,7 +1348,7 @@ final class BankAnnotationAdapter {
 			bankComment += " [switch-value flow]";
 		}
 
-		writeBankComment(listing, addr, bankComment, provenance);
+		writeBankComment(listing, addr, bankComment + commentSuffix, provenance);
 	}
 
 	/**

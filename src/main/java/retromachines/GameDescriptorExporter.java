@@ -80,8 +80,8 @@ import ghidra.program.model.symbol.SymbolType;
  * {@code Retro Machines.Bank Identifying Hints} property the loader recorded from the
  * descriptor in force (bead grm-hb6.19), for the same shadowing reason. Never derived from
  * the ROM bytes: the key states a human-established membership premise.</li>
- * <li><b>{@code banking.switch_sites}:</b> the SITE hints the descriptor in force stated, copied
- * verbatim (bead grm-hb6.4). Bank-switch sites the analysis itself recovered are NOT exported:
+ * <li><b>{@code banking.switch_sites}:</b> the site hints the descriptor in force stated, copied
+ * verbatim (bead grm-hb6.4), including the optional {@code bank:} value hint (grm-hb6.20). Bank-switch sites the analysis itself recovered are NOT exported:
  * they are analysis output, not a human fact.</li>
  * </ul>
  *
@@ -406,6 +406,9 @@ public final class GameDescriptorExporter {
 				}
 				if (o.has("comment")) {
 					e.put("comment", o.get("comment").getAsString());
+				}
+				if (o.has("bank")) {
+					e.put("bank", o.get("bank").getAsInt());
 				}
 				e.put("provenance", o.get("provenance").getAsString());
 				out.add(e);

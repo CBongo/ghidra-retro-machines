@@ -295,7 +295,7 @@ final class BankDataflowEngine {
 			helpers, restoringTrampolines, secondTierRelaySites, bracketClaims, bankResolution,
 			false);
 		return new DataflowResult(plain.stateIn(), plain.switchResults(), plain.callSwitches(),
-			plain.forkedStates(), plain.forkStats(), lock, null);
+			plain.forkedStates(), plain.forkStats(), lock, null, plain.hintNotes());
 	}
 
 	/**
@@ -397,6 +397,13 @@ final class BankDataflowEngine {
 		// (DescriptorSupport.ASYNC_ENTRY_POINTS_PROPERTY); this stays machine-independent and
 		// merely consumes the list. Bead grm-913.
 		BankState seedState = BankState.fullyKnown(board.mask(), board.initialState());
+		// Bead grm-hb6.20: banking.switch_sites bank: VALUE hints. Empty (and every use below is
+		// then skipped outright) for every program whose descriptor states none. hintNotes is
+		// per-RUN state like switchResults: the last evaluation of a site wins, and the caller of
+		// runDataflow only ever sees the final run's, so a re-run (the mode-lock redo) or an
+		// earlier analysis pass cannot leave a duplicate or stale diagnosis behind.
+		Map<Address, Integer> valueHints = SwitchSiteHints.valueHints(program);
+		Map<Address, SwitchSiteHints.HintNote> hintNotes = new HashMap<>();
 		Set<Address> asyncEntries = DescriptorSupport.parseAsyncEntryPoints(program);
 		// Bead grm-mej.12: a per-game banking.fixed_after_init hint names fields that hold their
 		// initial value at every instruction after init, so those bits (only) are known on an
@@ -481,6 +488,8 @@ final class BankDataflowEngine {
 				new ArrayList<>(stateIn.get(addr).entrySet());
 			SiteTally site = new SiteTally();
 			CallTally call = new CallTally();
+			Integer hint = valueHints.isEmpty() ? null : valueHints.get(addr);
+			HintTally hintTally = hint == null ? null : new HintTally(hint);
 			List<OutElement> outs = new ArrayList<>();
 			List<Address> calledSites = null;
 
@@ -502,6 +511,13 @@ final class BankDataflowEngine {
 				if (switchedLocal != null) {
 					MechanismPlacement placement = matchedMechanism.placement();
 					int effectMask = matchedMechanism.effectMask();
+					if (hintTally != null) {
+						// grm-hb6.20: a VALID hint replaces the outcome with a fully known,
+						// RESOLVED one BEFORE the arm logic below, so a hinted site never forks.
+						switchedLocal = applyStoreHint(hintTally, switchedLocal, matchedMechanism,
+							inState, board, bankResolution, program, listing, instr, mechanisms,
+							matchCache, armCache);
+					}
 					List<MechanismState> forkValues = null;
 					List<MechanismState> deniedValues = null;
 					if (unresolvedOurs(switchedLocal)) {
@@ -594,12 +610,19 @@ final class BankDataflowEngine {
 						mine = applyHelperCall(program, instr, helper, pathId, mine.get(0).out(),
 							callSiteRegCache, restoringTrampolines, secondTierRelaySites, listing,
 							armCache, budget, call, stateIn, stateDependents, crossBlockProofMemo,
-							bracketClaims, lock, layoutMask);
+							bracketClaims, lock, layoutMask, hintTally, board, bankResolution);
 					}
 				}
 				outs.addAll(mine);
 			}
 
+			if (hintTally != null) {
+				// grm-hb6.20: neither a recognized latch store nor a recognized helper call
+				if (!hintTally.handled) {
+					hintTally.reject("no latch store or bank-switch helper call at this address");
+				}
+				hintNotes.put(addr, hintTally.note());
+			}
 			if (site.seen()) {
 				SwitchResult sr = site.result();
 				switchResults.put(addr, sr);
@@ -690,7 +713,7 @@ final class BankDataflowEngine {
 			lock = lock.verified(modeWrites);
 		}
 		return new DataflowResult(merged, switchResults, callSwitches, forkedStates,
-			budget.stats(), lock, noLock);
+			budget.stats(), lock, noLock, hintNotes);
 	}
 
 	/**
@@ -930,7 +953,8 @@ final class BankDataflowEngine {
 			Map<Address, LinkedHashMap<PathId, BankState>> stateIn,
 			Map<Address, Set<Address>> stateDependents,
 			StoredValueScanner.ProofMemo crossBlockProofMemo,
-			BankStackBrackets.Claims bracketClaims, ModeLock lock, int modeMask) {
+			BankStackBrackets.Claims bracketClaims, ModeLock lock, int modeMask,
+			HintTally hintTally, BoardModel board, HelperDiscovery.BankResolution bankResolution) {
 		Address addr = instr.getMinAddress();
 		// The recording StateOracle for THIS call (grm-mej.3 increment 3): answers the merged
 		// state at any instruction and records the ask as a dependency edge P -> addr, so a later
@@ -961,6 +985,11 @@ final class BankDataflowEngine {
 			// a self-contained restoring helper (grm-mej.10, FUN_9169): restore from the state
 			// at the call itself, computing the paired field rather than copying it
 			callEffect = BankStackBrackets.fold(callEffect, helperRestore, outState);
+		}
+		if (hintTally != null) {
+			callEffect = applyCallHint(hintTally, callEffect, helper, outState, board,
+				bankResolution, program, listing, instr, callSiteRegCache, restoringTrampolines,
+				oracle, crossBlockProofMemo, armCache, secondTierRelaySites);
 		}
 		List<CallEffect> forkEffects = null;
 		boolean denied = false;
@@ -1099,6 +1128,206 @@ final class BankDataflowEngine {
 				effect.readBack());
 		}
 		return effect;
+	}
+
+	/**
+	 * One hinted site's evaluation within a single dequeue (bead grm-hb6.20), merged over the
+	 * address's path elements: {@code handled} once the site was recognized as a latch store or a
+	 * helper call (whether or not the hint then turned out valid), {@code applied} if ANY element
+	 * took the hint, {@code differing} the renderings of recovered values the hint overrode.
+	 */
+	private static final class HintTally {
+
+		private final int bank;
+		private boolean handled;
+		private boolean applied;
+		private String problem;
+		private final Set<String> differing = new LinkedHashSet<>();
+
+		HintTally(int bank) {
+			this.bank = bank;
+		}
+
+		void reject(String why) {
+			handled = true;
+			if (problem == null) {
+				problem = why;
+			}
+		}
+
+		void apply(List<String> overridden) {
+			handled = true;
+			applied = true;
+			differing.addAll(overridden);
+		}
+
+		SwitchSiteHints.HintNote note() {
+			return new SwitchSiteHints.HintNote(bank, applied, applied ? null : problem,
+				applied && !differing.isEmpty() ? String.join(" | ", differing) : null);
+		}
+	}
+
+	/** A hint checked against a deposit's field: the field it targets, or why it cannot. */
+	private record HintFit(FieldSpec field, String problem) {}
+
+	/**
+	 * The cheap self-consistency checks a {@code bank:} hint must pass at a deposit owning
+	 * {@code ownedMask} (bead grm-hb6.20; never a re-run of the analysis):
+	 * <ol>
+	 * <li>the deposit is a SINGLE bank field -- exactly one board field, and the deposit covers
+	 * all of it. A deposit touching several fields (a field plus mode bits; MMC3's R6 and R7)
+	 * cannot be attributed one bank number, so it is ambiguous and the hint is not applied;</li>
+	 * <li>the bank number fits the field's width;</li>
+	 * <li>the window can hold it: the state after the deposit is asked of
+	 * {@link BankAnnotationAdapter#impossibleBank} against the realized-bank universe -- the very
+	 * test that would reject the same bank were dataflow to recover it -- when the caller has that
+	 * universe ({@code bankResolution} non-null).</li>
+	 * </ol>
+	 */
+	private static HintFit fitHint(int bank, int ownedMask, BankState inState, BoardModel board,
+			HelperDiscovery.BankResolution bankResolution) {
+		FieldSpec field = null;
+		for (FieldSpec f : board.fieldSpecs()) {
+			if ((f.positionedMask() & ownedMask) == 0) {
+				continue;
+			}
+			if (field != null) {
+				return new HintFit(null, "the deposit spans more than one bank field (" +
+					field.name() + ", " + f.name() + "), so one bank number is ambiguous");
+			}
+			field = f;
+		}
+		if (field == null) {
+			return new HintFit(null, "the deposit owns no tracked bank field");
+		}
+		if (field.positionedMask() != ownedMask) {
+			return new HintFit(null, "the deposit covers only part of field '" + field.name() +
+				"', so one bank number is ambiguous");
+		}
+		if (bank < 0 || bank > field.widthMask()) {
+			return new HintFit(null, "bank " + bank + " does not fit field '" + field.name() +
+				"' (" + field.width() + " bit(s), 0.." + field.widthMask() + ")");
+		}
+		if (bankResolution != null) {
+			BankAnnotationAdapter.Impossible impossible = BankAnnotationAdapter.impossibleBank(
+				board, overwrite(inState, new BankState(ownedMask, bank << field.lsb()), ownedMask),
+				bankResolution.bankUniverse());
+			if (impossible instanceof BankAnnotationAdapter.ImpossibleBank bad) {
+				return new HintFit(null, "bank " + bank + " is not one this window can hold: " +
+					"the image provides only " + bad.realized() + " bank(s) for " + bad.window());
+			}
+			if (impossible != null) {
+				return new HintFit(null, "bank " + bank + " is not one this window can hold: " +
+					"no layout reachable here provides a slice for it");
+			}
+		}
+		return new HintFit(field, null);
+	}
+
+	/** A recovered field value for a hint diagnostic: the bank number, or what little is known. */
+	private static String renderRecovered(int knownMask, int bits, int fieldMask) {
+		return (knownMask & fieldMask) == fieldMask ? Integer.toString(bits & fieldMask)
+				: "partly known: bits 0x" + Integer.toHexString(bits & knownMask) +
+					" of mask 0x" + Integer.toHexString(knownMask);
+	}
+
+	/**
+	 * Applies a {@code bank:} hint at a DIRECT latch store (bead grm-hb6.20): when it passes
+	 * {@link #fitHint}, the strategy's outcome is REPLACED by a fully known RESOLVED one, and the
+	 * values dataflow would have recovered (the plain probe, or along each arm of the join heading
+	 * the block when the plain probe blamed us) are noted if they disagree. The caller's arm/fork
+	 * logic then sees a resolved site and does nothing. An invalid hint returns {@code plain}
+	 * untouched.
+	 */
+	private static BankSwitchStrategy.SwitchOutcome applyStoreHint(HintTally tally,
+			BankSwitchStrategy.SwitchOutcome plain, ConfiguredMechanism cm, BankState inState,
+			BoardModel board, HelperDiscovery.BankResolution bankResolution, Program program,
+			Listing listing, Instruction instr, List<ConfiguredMechanism> mechanisms,
+			Map<Address, MatchInfo> matchCache, Map<Address, Optional<List<Arm>>> armCache) {
+		HintFit fit = fitHint(tally.bank, cm.effectMask(), inState, board, bankResolution);
+		if (fit.problem() != null) {
+			tally.reject(fit.problem());
+			return plain;
+		}
+		MechanismPlacement placement = cm.placement();
+		int widthMask = placement.widthMask();
+		List<MechanismState> recovered = new ArrayList<>();
+		if (plain.stop() == BankSwitchStrategy.ValueStop.RESOLVED) {
+			recovered.add(plain.value());
+		}
+		else if (unresolvedOurs(plain)) {
+			List<Arm> arms = armsFor(program, listing, instr, armCache);
+			List<MechanismState> perArm = arms == null ? null
+					: evaluateArms(program, listing, arms, env -> {
+						Probe along = probeSite(program, instr, inState, mechanisms, matchCache, env);
+						return along.outcome() == null ? null : along.outcome().value();
+					}, 1);
+			if (perArm != null) {
+				recovered.addAll(distinct(perArm));
+			}
+		}
+		List<String> differing = new ArrayList<>();
+		for (MechanismState r : recovered) {
+			if (((r.bits() ^ tally.bank) & r.knownMask()) != 0) {
+				differing.add(renderRecovered(r.knownMask(), r.bits(), widthMask));
+			}
+		}
+		tally.apply(differing);
+		return new BankSwitchStrategy.SwitchOutcome(MechanismState.fullyKnown(widthMask, tally.bank),
+			BankSwitchStrategy.ValueStop.RESOLVED);
+	}
+
+	/**
+	 * Applies a {@code bank:} hint at a CALL to a recognized bank-switch helper (bead grm-hb6.20,
+	 * the owner's 2026-10-18 scope ruling): the hint REPLACES the call's argument-derived
+	 * {@link CallEffect} with a fully known deposit on the helper's single owned field. The
+	 * recovered effect (or, when the argument did not resolve, the per-arm effects) is noted if it
+	 * disagrees. An invalid or ambiguous (multi-field) hint returns {@code recovered} untouched.
+	 */
+	private static CallEffect applyCallHint(HintTally tally, CallEffect recovered,
+			HelperModel helper, BankState outState, BoardModel board,
+			HelperDiscovery.BankResolution bankResolution, Program program, Listing listing,
+			Instruction instr, Map<CallSiteRegKey, RegisterEnv> callSiteRegCache,
+			Map<Function, Integer> restoringTrampolines, StateOracle oracle,
+			StoredValueScanner.ProofMemo crossBlockProofMemo,
+			Map<Address, Optional<List<Arm>>> armCache, Set<Address> secondTierRelaySites) {
+		int owned = recovered.ownedMask();
+		HintFit fit = fitHint(tally.bank, owned, outState, board, bankResolution);
+		if (fit.problem() != null) {
+			tally.reject(owned == 0 ? "the call deposits nothing on a tracked bank field"
+					: fit.problem());
+			return recovered;
+		}
+		FieldSpec field = fit.field();
+		List<BankState> recoveredStates = new ArrayList<>();
+		if (recovered.argumentResolved()) {
+			recoveredStates.add(recovered.state());
+		}
+		else if (helper.constState() == null &&
+			!secondTierRelaySites.contains(instr.getMinAddress()) &&
+			!recovered.noInboundArgument() && recovered.restoredFrom() == null) {
+			List<Arm> arms = armsFor(program, listing, instr, armCache);
+			List<BankState> perArm = arms == null ? null
+					: evaluateArms(program, listing, arms, env -> {
+						CallEffect along = recoverCallArgument(program, instr, helper, outState,
+							callSiteRegCache, restoringTrampolines, env, oracle, crossBlockProofMemo);
+						return along.argumentResolved() ? along.state() : null;
+					}, 1);
+			if (perArm != null) {
+				recoveredStates.addAll(distinct(perArm));
+			}
+		}
+		List<String> differing = new ArrayList<>();
+		for (BankState r : recoveredStates) {
+			int known = r.knownMask() & owned;
+			int hinted = tally.bank << field.lsb();
+			if (((r.bits() ^ hinted) & known) != 0) {
+				differing.add(renderRecovered(known >>> field.lsb(), r.bits() >>> field.lsb(),
+					field.widthMask()));
+			}
+		}
+		tally.apply(differing);
+		return new CallEffect(new BankState(owned, tally.bank << field.lsb()), owned);
 	}
 
 	/** A strategy's answer for one address: which mechanism matched (null: none) and what it said. */
@@ -2493,11 +2722,22 @@ final class BankDataflowEngine {
 	 * unchanged. {@code forkedStates} (bead grm-wul) lists, for the addresses that hold more
 	 * than one element, each distinct whole state; reference retargeting places one reference
 	 * per state. {@code forkStats} is the per-run ledger the analyzer log summarizes.
+	 * {@code hintNotes} (bead grm-hb6.20) holds, per site a game descriptor's {@code bank:} value
+	 * hint named, what the engine's FINAL evaluation of that site did with it; empty when the
+	 * descriptor states no value hint.
 	 */
 	record DataflowResult(Map<Address, BankState> stateIn,
 			Map<Address, SwitchResult> switchResults, Map<Address, CallSwitch> callSwitches,
 			Map<Address, List<BankState>> forkedStates, ForkStats forkStats, ModeLock modeLock,
-			String noModeLock) {
+			String noModeLock, Map<Address, SwitchSiteHints.HintNote> hintNotes) {
+
+		/** The pre-grm-hb6.20 form: no {@code bank:} value hints were in play. */
+		DataflowResult(Map<Address, BankState> stateIn, Map<Address, SwitchResult> switchResults,
+				Map<Address, CallSwitch> callSwitches, Map<Address, List<BankState>> forkedStates,
+				ForkStats forkStats, ModeLock modeLock, String noModeLock) {
+			this(stateIn, switchResults, callSwitches, forkedStates, forkStats, modeLock,
+				noModeLock, Map.of());
+		}
 
 		/** Every distinct whole state at {@code addr}: the forked set, or the single state. */
 		List<BankState> statesAt(Address addr) {
