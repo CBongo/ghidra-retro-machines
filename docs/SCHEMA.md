@@ -946,6 +946,51 @@ distinct `high`/`low`, `provenance` present, no other keys) is `GameCompiler`'s;
 `ExportGameDescriptor.java` carries both verbatim. With the keys absent nothing changes. First
 user: `machines/games/tmnt3.yaml`.
 
+### `banking.shadow_commits` (bead `grm-hb6.26`)
+
+```yaml
+banking:
+  shadow_commits:
+    - helper: 0xFFBE    # 16-bit CPU address: entry of a bank-switch helper
+      cell: 0xF2        # 16-bit CPU address of the RAM cell holding the field's value
+      field: prg_bank   # board banking.state field name
+      provenance: "why the cell is the field's shadow and who writes it"           # required
+```
+
+A hand-stated fact about a game whose bank-switch helper takes NO register argument but re-derives
+the bank from a RAM shadow (Dragon Power / Shenlong, GxROM: `FFBE LDA $F2 / ASL / ASL / ORA $F9 /
+TAY / LDA $FFCC,Y / STA $FFCC,Y`, reached through `FFE8 STA $F2 / JSR $FFBE`). Statement: **a call
+to `helper` commits `field` := the byte in `cell`** (identity encoding: the cell's byte is the
+field's value, masked to the field's width), **and the cell is coherent with the live field**
+(every write to it is committed by the helper before the bank matters). Consumed at analysis time
+(the loader publishes the `Retro Machines.Shadow Commits` program property; `BoardBankAnalyzer`
+reads it, so a re-analysis picks it up) by `ShadowCommits`, folded into
+`BankDataflowEngine.applyHelperCall` beside the bank-stack fold.
+
+**Validation** is cheap self-consistency, once per analysis run, and a hint that fails is NOT
+applied: it raises a WARNING bookmark in category `Game descriptor shadow commit` (at the helper's
+address) naming the descriptor and the failed check, and the call sites fall back to dataflow.
+The checks: the helper address is the entry of a function discovery modelled as a bank-switch
+helper; `field` is a board state field lying within that helper's effect mask; and the coherence
+PREMISE -- every direct (plain absolute / zero-page, non-indexed, non-indirect) store to `cell`
+in the image is followed, in its own basic block with no intervening flow change, by a call to
+`helper`. An indexed or indirect store to the cell is invisible to that check, so the premise is
+also a stated fact the provenance must carry.
+
+**At a call to a validated helper:** (a) with a direct store to `cell` earlier in the call's own
+basic block, the field takes the value the caller scan recovers for the cell at the call (the
+hint wins over what dataflow recovered; if dataflow had recovered a DIFFERENT known value a
+WARNING names both, as for `bank:` hints), the bank comment carries ` (game descriptor hint)`,
+and a cell value the scan cannot recover leaves the call's own effect and warning untouched;
+(b) with no such store, the coherence premise makes the call re-commit the live value, a verified
+no-op on the field -- no fold, no annotation, no warning, exactly like a restoring trampoline.
+A `bank:` value hint at the same call site still wins over both.
+
+Shape validation (non-empty list, 16-bit `helper` and `cell`, `helper` unique, `field` a non-blank
+string, `provenance` present, no other keys) is `GameCompiler`'s; `ExportGameDescriptor.java`
+carries the key verbatim. With the key absent nothing changes. First user:
+`machines/games/dragonpower.yaml`.
+
 ### Annotation layer and export (bead `grm-hb6.5`)
 
 A game descriptor may carry `symbols:` -- the machine-descriptor set shape (`set`, `default`,

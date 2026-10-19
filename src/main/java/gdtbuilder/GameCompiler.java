@@ -490,6 +490,11 @@ public class GameCompiler {
 		if (bankStacks != null) {
 			out.put("bank_stacks", bankStacks);
 		}
+		List<Map<String, Object>> shadowCommits =
+			buildShadowCommits(banking.get("shadow_commits"));
+		if (shadowCommits != null) {
+			out.put("shadow_commits", shadowCommits);
+		}
 		List<Map<String, Object>> paired = buildPairedFields(banking.get("paired_fields"));
 		if (paired != null) {
 			out.put("paired_fields", paired);
@@ -546,6 +551,62 @@ public class GameCompiler {
 			Map<String, Object> e = new LinkedHashMap<>();
 			e.put("pointer", pointer);
 			e.put("slots", slots);
+			e.put("provenance", provenance);
+			out.add(e);
+		}
+		return out;
+	}
+
+	/**
+	 * {@code banking.shadow_commits:} (bead grm-hb6.26): a non-empty list of {@code { helper,
+	 * cell, field, provenance }} entries, each stating that a call to the bank-switch helper at
+	 * {@code helper} commits board state field {@code field} from the RAM cell {@code cell}
+	 * (identity encoding), and that the cell is coherent with the live field. SHAPE only here;
+	 * whether the helper, the field and the coherence premise hold in the image is checked at
+	 * analysis time ({@code ShadowCommits}).
+	 */
+	@SuppressWarnings("unchecked")
+	private static List<Map<String, Object>> buildShadowCommits(Object listObj) {
+		if (listObj == null) {
+			return null;
+		}
+		if (!(listObj instanceof List) || ((List<Object>) listObj).isEmpty()) {
+			throw new IllegalArgumentException(
+				"game descriptor 'banking.shadow_commits:' must be a non-empty list");
+		}
+		List<Map<String, Object>> out = new ArrayList<>();
+		Set<Integer> seen = new java.util.HashSet<>();
+		for (Object entryObj : (List<Object>) listObj) {
+			if (!(entryObj instanceof Map)) {
+				throw new IllegalArgumentException("each 'banking.shadow_commits:' entry must be " +
+					"a mapping with helper, cell, field and provenance");
+			}
+			Map<String, Object> entry = (Map<String, Object>) entryObj;
+			for (String key : entry.keySet()) {
+				if (!Set.of("helper", "cell", "field", "provenance").contains(key)) {
+					throw new IllegalArgumentException(
+						"'banking.shadow_commits:' entry has unknown key '" + key + "'");
+				}
+			}
+			String where = "banking.shadow_commits entry";
+			int helper = MapCompiler.requireAddr(entry, "helper", where);
+			int cell = MapCompiler.requireAddr(entry, "cell", where);
+			if (helper < 0 || helper > 0xFFFF || cell < 0 || cell > 0xFFFF) {
+				throw new IllegalArgumentException(
+					where + ": helper and cell must be 16-bit CPU addresses");
+			}
+			if (!seen.add(helper)) {
+				throw new IllegalArgumentException(where + ": helper " + helper + " listed twice");
+			}
+			String field = MapCompiler.requireString(entry, "field", where);
+			if (!(entry.get("field") instanceof String) || field.isBlank()) {
+				throw new IllegalArgumentException(where + ": field must be a non-blank name");
+			}
+			String provenance = MapCompiler.requireString(entry, "provenance", where);
+			Map<String, Object> e = new LinkedHashMap<>();
+			e.put("helper", helper);
+			e.put("cell", cell);
+			e.put("field", field);
 			e.put("provenance", provenance);
 			out.add(e);
 		}

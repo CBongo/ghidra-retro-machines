@@ -630,6 +630,25 @@ final class HelperArgumentRecovery {
 	}
 
 	/**
+	 * What the RAM {@code cell} holds when {@code callInstr} executes, scanned in the CALLER under
+	 * the same hooks and tracked-state narrowing {@link #recoverCallArgument} gives its own
+	 * caller-side cell scan (bead grm-hb6.26, {@code banking.shadow_commits}). {@code byteMask}
+	 * is the bits of the cell's byte the caller wants.
+	 */
+	static PartialByte callerCellAtCall(Program program, Instruction callInstr, HelperModel helper,
+			BankState callSiteIn, Address cell, int byteMask, StateOracle oracle,
+			StoredValueScanner.ProofMemo crossBlockMemo) {
+		MechanismPlacement placement = helper.placement();
+		MechanismState localIn = placement.toLocal(callSiteIn);
+		StoredValueScanner.Hooks hooks = oracle == null ? callerHooksFor(helper)
+				: new OracleHooks(callerHooksFor(helper), oracle, placement,
+					helper.strategy() == null ? null : helper.strategy().observedMirrors(),
+					crossBlockMemo);
+		return StoredValueScanner.callerCellValue(program, callInstr, cell, localIn, byteMask,
+			hooks, RegisterEnv.NONE);
+	}
+
+	/**
 	 * {@link #recoverCallArgument} for a model with no argument register whose strategy deposits
 	 * per site (bead grm-fekc; see {@link HelperModel#recoversPerSiteWithoutArgReg}).
 	 * <p>

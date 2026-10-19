@@ -758,6 +758,13 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 					program.getOptions(Program.PROGRAM_INFO).setString(
 						DescriptorSupport.BANK_STACKS_PROPERTY, bankStacks);
 				}
+				// bead grm-hb6.26: banking.shadow_commits, read by the analyzer at analysis time.
+				String shadowCommits = DescriptorSupport.formatShadowCommits(gameDescriptor.doc(),
+					gameDescriptor.gmapPath());
+				if (shadowCommits != null) {
+					program.getOptions(Program.PROGRAM_INFO).setString(
+						DescriptorSupport.SHADOW_COMMITS_PROPERTY, shadowCommits);
+				}
 				String pairedFields = DescriptorSupport.formatPairedFields(gameDescriptor.doc(),
 					gameDescriptor.gmapPath());
 				if (pairedFields != null) {

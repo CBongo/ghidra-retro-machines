@@ -352,6 +352,12 @@ public final class GameDescriptorExporter {
 		if (!bankStacks.isEmpty()) {
 			banking.put("bank_stacks", bankStacks);
 		}
+		List<Map<String, Object>> shadowCommits = verbatimBankingList(program, skipped,
+			DescriptorSupport.SHADOW_COMMITS_PROPERTY, "commits", "banking.shadow_commits",
+			new String[] { "helper", "cell" }, new String[] { "field" });
+		if (!shadowCommits.isEmpty()) {
+			banking.put("shadow_commits", shadowCommits);
+		}
 		List<Map<String, Object>> pairedFields = verbatimBankingList(program, skipped,
 			DescriptorSupport.PAIRED_FIELDS_PROPERTY, "pairs", "banking.paired_fields",
 			new String[0], new String[] { "high", "low", "offset" });

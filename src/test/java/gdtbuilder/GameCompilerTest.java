@@ -504,6 +504,58 @@ public class GameCompilerTest {
 			"offset: 1\n      width: 2"), "unknown key 'width'");
 	}
 
+	// ---- banking.shadow_commits (bead grm-hb6.26) ----
+
+	private static final String SHADOW_COMMITS = """
+		  shadow_commits:
+		    - helper: 0xFFBE
+		      cell: 0xF2
+		      field: prg_bank
+		      provenance: "PRG shadow committed by FUN_ffbe"
+		""";
+
+	@Test
+	public void compilesShadowCommits() throws Exception {
+		JsonObject banking =
+			compile("shadow", validYaml() + SHADOW_COMMITS).getAsJsonObject("banking");
+		JsonObject e = banking.getAsJsonArray("shadow_commits").get(0).getAsJsonObject();
+		assertEquals(0xFFBE, e.get("helper").getAsInt());
+		assertEquals(0xF2, e.get("cell").getAsInt());
+		assertEquals("prg_bank", e.get("field").getAsString());
+		assertEquals("PRG shadow committed by FUN_ffbe", e.get("provenance").getAsString());
+	}
+
+	@Test
+	public void absentShadowCommitsEmitNothing() throws Exception {
+		assertFalse(compile("noshadow", validYaml()).getAsJsonObject("banking")
+			.has("shadow_commits"));
+	}
+
+	@Test
+	public void malformedShadowCommitsAreRejected() throws Exception {
+		expectError("shnotlist", validYaml() + "  shadow_commits: 0xF2\n", "non-empty list");
+		expectError("shempty", validYaml() + "  shadow_commits: []\n", "non-empty list");
+		expectError("shnoprov", validYaml() + SHADOW_COMMITS.replace(
+			"      provenance: \"PRG shadow committed by FUN_ffbe\"\n", ""), "provenance");
+		expectError("shnofield", validYaml() + SHADOW_COMMITS.replace(
+			"      field: prg_bank\n", ""), "field");
+		expectError("shblankfield", validYaml() + SHADOW_COMMITS.replace("field: prg_bank",
+			"field: \"  \""), "non-blank");
+		expectError("shnumfield", validYaml() + SHADOW_COMMITS.replace("field: prg_bank",
+			"field: 5"), "non-blank");
+		expectError("shnohelper", validYaml() + SHADOW_COMMITS.replace(
+			"    - helper: 0xFFBE\n      cell: 0xF2\n", "    - cell: 0xF2\n"), "helper");
+		expectError("shwidehelper", validYaml() + SHADOW_COMMITS.replace("0xFFBE", "0x10000"),
+			"16-bit");
+		expectError("shwidecell", validYaml() + SHADOW_COMMITS.replace("0xF2", "0x10000"),
+			"16-bit");
+		expectError("shextra", validYaml() + SHADOW_COMMITS.replace("cell: 0xF2",
+			"cell: 0xF2\n      mask: 3"), "unknown key 'mask'");
+		expectError("shdup", validYaml() + SHADOW_COMMITS +
+			"    - helper: 0xFFBE\n      cell: 0xF3\n      field: prg_bank\n" +
+			"      provenance: \"again\"\n", "listed twice");
+	}
+
 	private void expectError(String name, String yaml, String messagePart) throws Exception {
 		Path dir = tmp.getRoot().toPath();
 		Path yamlPath = dir.resolve(name + ".yaml");

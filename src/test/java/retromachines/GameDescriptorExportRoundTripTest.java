@@ -274,6 +274,42 @@ public class GameDescriptorExportRoundTripTest extends AbstractBundledLanguageTe
 		assertEquals(published, DescriptorSupport.formatSwitchSites(curated, "curated.gmap"));
 	}
 
+	/**
+	 * grm-hb6.26: the {@code banking.shadow_commits} hints the loader recorded survive export ->
+	 * compile (both dispositions) -> the loader's own re-publication, field and provenance included.
+	 */
+	@Test
+	public void shadowCommitsSurviveTheRoundTrip() throws Exception {
+		JsonObject descriptor = JsonParser.parseString("""
+				{ "schema": 2, "banking": { "shadow_commits": [
+				  { "helper": 65470, "cell": 242, "field": "prg_bank",
+				    "provenance": "hand, 2026-10-19" } ] } }
+				""").getAsJsonObject();
+		String published = DescriptorSupport.formatShadowCommits(descriptor, "curated.gmap");
+		ProgramBuilder b = newBuilder();
+		ProgramDB src = b.getProgram();
+		edit(src, () -> src.getOptions(ghidra.program.model.listing.Program.PROGRAM_INFO)
+				.setString(DescriptorSupport.SHADOW_COMMITS_PROPERTY, published));
+
+		GameDescriptorExporter.Result result =
+			GameDescriptorExporter.export(src, request(Map.of("prg_mode", 0)));
+		assertTrue(result.yaml(), result.yaml().contains("helper: 0xFFBE"));
+		assertTrue(result.yaml(), result.yaml().contains("cell: 0x00F2"));
+		assertTrue(result.skipped().toString(), result.skipped().isEmpty());
+
+		File overlay = new File(tmp.getRoot(), "shadow.yaml");
+		Files.writeString(overlay.toPath(), result.yaml());
+		GameCompiler.CompileResult overlayResult = GameCompiler.compileOverlay(overlay);
+		assertTrue(overlayResult.errors().toString(), overlayResult.ok());
+		File gmap = new File(tmp.getRoot(), "shadow.gmap");
+		GameCompiler.main(new String[] { overlay.getPath(), gmap.getPath() });
+		JsonObject curated = JsonParser.parseString(Files.readString(gmap.toPath()))
+				.getAsJsonObject();
+		assertEquals(curated, new Gson().toJsonTree(overlayResult.gameDoc()).getAsJsonObject());
+
+		assertEquals(published, DescriptorSupport.formatShadowCommits(curated, "curated.gmap"));
+	}
+
 	/** No recorded hint, no exported key -- the exporter never derives one. */
 	@Test
 	public void noRecordedHintExportsNoIdentifyingOffsets() throws Exception {

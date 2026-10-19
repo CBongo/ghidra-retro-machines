@@ -1,0 +1,64 @@
+# Curated per-game descriptor (title tier). Compiled to data/games/dragonpower.gmap.
+# docs/per-game-descriptors-design.md; bead grm-hb6.26 (split from grm-hb6.11; supersedes the
+# generic route of grm-wayn, owner suggestion of 2026-09-27: punt the composite-table recovery
+# to a hint).
+#
+# WHY THIS FILE EXISTS. Dragon Power (GxROM, iNES mapper 66) switches banks through one engine,
+# byte-identical in every PRG bank (and in Shenlong's):
+#
+#   FFBE  LDA $F2 / ASL / ASL / ORA $F9 / TAY       ; Y = PRG shadow << 2 | CHR shadow
+#         LDA $FFCC,Y / STA $FFCC,Y / RTS           ; table[Y] = PRG << 4 | CHR, written to the
+#                                                   ; latch onto itself (bus conflict is benign)
+#   FFCC  00 01 02 03 10 11 12 13 20 21 22 23 30 31 32 33      ; the bus-conflict table
+#   FFE7  PLA
+#   FFE8  STA $F2 / JSR $FFBE / JMP ($0017)         ; far-call entry: bank arrives in A
+#
+# $F2 is the PRG bank's RAM shadow, $F9 the CHR bank's. FUN_ffbe takes NO register argument: it
+# recomposes the mapper-66 register (PRG in bits 4-5, CHR in bits 0-1) from the two shadows and
+# stores the composite through the bus-conflict table. The board descriptor tracks only prg_bank.
+#
+# Why derivation cannot type $F2 (measured 2026-10-19, grm-hb6.26): BankMirrors.Discovery does
+# not recognize $F2 as a write-through shadow of the live bank, because the STA $F2 at ffe8 is
+# not in the mechanism write's own basic block (the mechanism write is ffc8, inside the helper),
+# and what the helper commits is a COMPOSITE read back through the $FFCC table, not the shadow
+# byte. So three sites warn today: 9913 and ffea ("call to bank-switch helper FUN_ffbe, whose
+# latched value is re-derived inside the helper ... did not resolve") and ffc8 (the helper's own
+# write; honest by construction, and this hint deliberately leaves it alone).
+#
+# WHAT THE HINT STATES. A call to $FFBE commits prg_bank := the byte in $F2 (identity encoding:
+# the cell holds the bank number, masked to the field's two bits), and $F2 is COHERENT with the
+# live prg_bank: its only writer is ffe8, which is immediately followed by JSR $FFBE (the
+# analyzer re-verifies that premise against the image on every run: every direct store to $F2
+# must be followed, in its own block, by a call to $FFBE, or the hint is not applied).
+#
+# EFFECT. A call with a store to $F2 earlier in its own basic block takes the value of that store
+# when its register recovers. A call with NO such store (9913 is the first instruction of its
+# function: the far-call machinery stored $F2 long before) re-commits the live value, which is a
+# verified no-op on prg_bank. ffea sits right after the STA $F2 at ffe8, but A is inbound there
+# (relayed from ffe8's caller), so it stays an honest, reported relay, and keeps its warning.
+
+schema: 2
+
+game:
+  id: dragonpower
+  title: "Dragon Power (USA)"
+  board: nes_gxrom
+  identity:
+    # PRG-slice SHA-256 (16-byte iNES header excluded), copied from the "REALROM prgsha256"
+    # line of tools/banktest/realrom/expected/dragonpower.dump.
+    prg_sha256: "1ffdddca20ec238e5fca32579314a7d757e8924db229e372025e26429142e1fa"
+    # Whole-file SHA-256, copied from the dragonpower row of tools/banktest/realrom/manifest.tsv.
+    file_sha256: "e52cc421c726181a35f0cc9e8969a8aad50abd17bdc7eea59dc065990a576147"
+  provenance: "Owner's def-use pass over the pinned dragonpower image (grm-hum, 2026-08-15) and
+    the byte trace on grm-wayn, verified 2026-09-27 against the pinned dump."
+
+banking:
+  shadow_commits:
+    - helper: 0xFFBE
+      cell: 0xF2
+      field: prg_bank
+      provenance: "Byte trace on grm-wayn / grm-hum, verified 2026-09-27 against the pinned dump:
+        FUN_ffbe is LDA $F2 / ASL / ASL / ORA $F9 / TAY / LDA $FFCC,Y / STA $FFCC,Y / RTS, the
+        far-call entry ffe8 is STA $F2 / JSR $FFBE / JMP ($0017), and $F2 has exactly one writer
+        (ffe8), so every write to it is committed by FUN_ffbe at once and $F2 always equals the
+        live PRG bank. Byte-identical in all four PRG banks."

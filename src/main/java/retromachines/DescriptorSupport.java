@@ -214,6 +214,14 @@ final class DescriptorSupport {
 	static final String BANK_STACKS_PROPERTY = "Retro Machines.Bank Stacks";
 
 	/**
+	 * Program-info property carrying the game descriptor's {@code banking.shadow_commits} hint
+	 * (bead grm-hb6.26): JSON {@code {"source": ..., "commits": [{helper, cell, field,
+	 * provenance}]}}. Read at analysis time by {@link BoardBankAnalyzer} and handed to
+	 * {@link ShadowCommits}.
+	 */
+	static final String SHADOW_COMMITS_PROPERTY = "Retro Machines.Shadow Commits";
+
+	/**
 	 * Program-info property carrying the game descriptor's {@code banking.paired_fields} hint
 	 * (bead grm-mej.10): JSON {@code {"source": ..., "pairs": [{high, low, offset,
 	 * provenance}]}}.
@@ -457,6 +465,11 @@ final class DescriptorSupport {
 	/** The {@link #BANK_STACKS_PROPERTY} value, or null when the descriptor states none. */
 	static String formatBankStacks(JsonObject gameDescriptor, String source) {
 		return formatBankingList(gameDescriptor, source, "bank_stacks", "stacks");
+	}
+
+	/** The {@link #SHADOW_COMMITS_PROPERTY} value, or null when the descriptor states none. */
+	static String formatShadowCommits(JsonObject gameDescriptor, String source) {
+		return formatBankingList(gameDescriptor, source, "shadow_commits", "commits");
 	}
 
 	/** The {@link #PAIRED_FIELDS_PROPERTY} value, or null when the descriptor states none. */

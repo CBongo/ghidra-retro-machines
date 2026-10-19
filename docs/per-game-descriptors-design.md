@@ -815,6 +815,16 @@ restoring-trampoline walk (`SaveRestoreTrampolines.restoredFieldMask` with pairi
 what makes tmnt3's `FUN_9169` (`grm-mej.17`) a verified `r6`+`r7` restore. First user:
 `machines/games/tmnt3.yaml` (its `FUN_871c`/`FUN_8751`/`FUN_86f9` pop and push sites).
 
+**`banking.shadow_commits` (bead `grm-hb6.26`) is the sixth.** Syntax and meaning: docs/SCHEMA.md.
+`shadow_commits: [{ helper, cell, field, provenance }]` states that a call to `helper` commits
+board field `field` from RAM cell `cell`, and that the cell is coherent with the live field.
+Published by `NesRomLoader.load` as `Retro Machines.Shadow Commits`, validated once per run by
+`ShadowCommits.plan` (helper modelled, field inside its effect mask, every direct store to the
+cell followed by a call to the helper; a failure is a WARNING bookmark and no hint), and folded
+into `BankDataflowEngine.applyHelperCall`: a store to the cell earlier in the call's block gives
+the field that value, no store makes the call a verified no-op. First user:
+`machines/games/dragonpower.yaml` (`FUN_ffbe` / `$F2`).
+
 Three properties for every ANALYZER-consumed hint kind to inherit exactly:
 
 - **One-shot re-run support** (`:93`) — the user-facing recovery path.

@@ -280,9 +280,25 @@ final class BankDataflowEngine {
 			Set<Address> secondTierRelaySites, BankStackBrackets.Claims bracketClaims,
 			HelperDiscovery.BankResolution bankResolution)
 			throws CancelledException {
+		return runDataflow(program, monitor, listing, mechanisms, board, helpers,
+			restoringTrampolines, secondTierRelaySites, bracketClaims, bankResolution,
+			ShadowCommits.Plan.NONE);
+	}
+
+	/**
+	 * As the 10-argument form, with the validated {@code banking.shadow_commits} hints (bead
+	 * grm-hb6.26): at a call to a hinted helper the field is committed from the hinted RAM cell,
+	 * or the call is a no-op on it. {@link ShadowCommits.Plan#NONE} is the 10-argument form exactly.
+	 */
+	static DataflowResult runDataflow(Program program, TaskMonitor monitor, Listing listing,
+			List<ConfiguredMechanism> mechanisms, BoardModel board,
+			Map<Function, HelperModel> helpers, Map<Function, Integer> restoringTrampolines,
+			Set<Address> secondTierRelaySites, BankStackBrackets.Claims bracketClaims,
+			HelperDiscovery.BankResolution bankResolution, ShadowCommits.Plan shadowCommits)
+			throws CancelledException {
 		DataflowResult locked = runDataflowOnce(program, monitor, listing, mechanisms, board,
 			helpers, restoringTrampolines, secondTierRelaySites, bracketClaims, bankResolution,
-			true);
+			true, shadowCommits);
 		ModeLock lock = locked.modeLock();
 		if (lock == null || !lock.rejected()) {
 			return locked;
@@ -293,7 +309,7 @@ final class BankDataflowEngine {
 		// rejected lock rides along only as evidence for the warning the analyzer raises.
 		DataflowResult plain = runDataflowOnce(program, monitor, listing, mechanisms, board,
 			helpers, restoringTrampolines, secondTierRelaySites, bracketClaims, bankResolution,
-			false);
+			false, shadowCommits);
 		return new DataflowResult(plain.stateIn(), plain.switchResults(), plain.callSwitches(),
 			plain.forkedStates(), plain.forkStats(), lock, null, plain.hintNotes());
 	}
@@ -306,7 +322,8 @@ final class BankDataflowEngine {
 			Listing listing, List<ConfiguredMechanism> mechanisms, BoardModel board,
 			Map<Function, HelperModel> helpers, Map<Function, Integer> restoringTrampolines,
 			Set<Address> secondTierRelaySites, BankStackBrackets.Claims bracketClaims,
-			HelperDiscovery.BankResolution bankResolution, boolean allowModeLock)
+			HelperDiscovery.BankResolution bankResolution, boolean allowModeLock,
+			ShadowCommits.Plan shadowCommits)
 			throws CancelledException {
 
 		Map<Address, LinkedHashMap<PathId, BankState>> stateIn = new HashMap<>();
@@ -490,6 +507,11 @@ final class BankDataflowEngine {
 			CallTally call = new CallTally();
 			Integer hint = valueHints.isEmpty() ? null : valueHints.get(addr);
 			HintTally hintTally = hint == null ? null : new HintTally(hint);
+			if (!shadowCommits.isEmpty() && hintTally == null) {
+				// grm-hb6.26: the last evaluation of a call wins -- retract a note an earlier
+				// dequeue left (ShadowCommits.apply re-records it if it still applies)
+				hintNotes.remove(addr);
+			}
 			List<OutElement> outs = new ArrayList<>();
 			List<Address> calledSites = null;
 
@@ -610,7 +632,8 @@ final class BankDataflowEngine {
 						mine = applyHelperCall(program, instr, helper, pathId, mine.get(0).out(),
 							callSiteRegCache, restoringTrampolines, secondTierRelaySites, listing,
 							armCache, budget, call, stateIn, stateDependents, crossBlockProofMemo,
-							bracketClaims, lock, layoutMask, hintTally, board, bankResolution);
+							bracketClaims, lock, layoutMask, hintTally, board, bankResolution,
+							shadowCommits, hintNotes);
 					}
 				}
 				outs.addAll(mine);
@@ -954,7 +977,8 @@ final class BankDataflowEngine {
 			Map<Address, Set<Address>> stateDependents,
 			StoredValueScanner.ProofMemo crossBlockProofMemo,
 			BankStackBrackets.Claims bracketClaims, ModeLock lock, int modeMask,
-			HintTally hintTally, BoardModel board, HelperDiscovery.BankResolution bankResolution) {
+			HintTally hintTally, BoardModel board, HelperDiscovery.BankResolution bankResolution,
+			ShadowCommits.Plan shadowCommits, Map<Address, SwitchSiteHints.HintNote> hintNotes) {
 		Address addr = instr.getMinAddress();
 		// The recording StateOracle for THIS call (grm-mej.3 increment 3): answers the merged
 		// state at any instruction and records the ask as a dependency edge P -> addr, so a later
@@ -985,6 +1009,11 @@ final class BankDataflowEngine {
 			// a self-contained restoring helper (grm-mej.10, FUN_9169): restore from the state
 			// at the call itself, computing the paired field rather than copying it
 			callEffect = BankStackBrackets.fold(callEffect, helperRestore, outState);
+		}
+		if (!shadowCommits.isEmpty()) {
+			// bead grm-hb6.26: banking.shadow_commits. Before the bank: value hint, which wins.
+			callEffect = ShadowCommits.apply(shadowCommits, hintNotes, callEffect, helper, outState,
+				program, instr, oracle, crossBlockProofMemo);
 		}
 		if (hintTally != null) {
 			callEffect = applyCallHint(hintTally, callEffect, helper, outState, board,

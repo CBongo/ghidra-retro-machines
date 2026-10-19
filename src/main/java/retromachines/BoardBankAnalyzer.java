@@ -574,10 +574,14 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			AnalyzerLog.info(this, "bank-stack brackets (pops restore the pushed bank): " +
 				bracketClaims.pops().keySet().stream().sorted().toList());
 		}
+		// bead grm-hb6.26: banking.shadow_commits -- validated once here against the modelled
+		// helpers; a hint that fails is reported (below) and not applied.
+		ShadowCommits.Plan shadowCommits = ShadowCommits.plan(program, board, helpers);
 		if (!helpers.isEmpty() || !mirrors.isEmpty()) {
 			flow = runDataflow(program, monitor, listing, mechanisms, board, helpers,
 				restoringTrampolines, secondTier.relayCallSites(), bracketClaims,
-				new HelperDiscovery.BankResolution(board, bankUniverse, placementOverride));
+				new HelperDiscovery.BankResolution(board, bankUniverse, placementOverride),
+				shadowCommits);
 		}
 
 		// --- Bank mirror naming (grm-mej.4): turn the derived mirror set into symbols and
@@ -888,6 +892,11 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// FINAL dataflow run's per-site notes only, for a hint that was not applied or that
 		// overrode a different recovered value. Own category (see SwitchSiteHints).
 		for (String hintWarning : SwitchSiteHints.reportValueHints(program, flow.hintNotes())) {
+			AnalyzerLog.info(this, tag + ": " + hintWarning);
+		}
+		// Bead grm-hb6.26: banking.shadow_commits -- failed validation and overridden dataflow.
+		for (String hintWarning : ShadowCommits.report(program, shadowCommits, flow.hintNotes(),
+			SwitchSiteHints.valueHints(program).keySet())) {
 			AnalyzerLog.info(this, tag + ": " + hintWarning);
 		}
 
