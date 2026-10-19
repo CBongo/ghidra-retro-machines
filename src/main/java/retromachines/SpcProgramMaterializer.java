@@ -200,7 +200,7 @@ public final class SpcProgramMaterializer {
 			Address entry = space.getAddress(result.entry());
 			program.getSymbolTable().addExternalEntryPoint(entry);
 			program.getSymbolTable().createLabel(entry, ENTRY_LABEL, SourceType.IMPORTED);
-			program.getListing().setComment(entry, CommentType.PLATE,
+			AnalyzerCommentRecord.set(program, entry, CommentType.PLATE,
 				"Entry address jumped to by the SPC700 IPL command, recovered from " +
 					result.programName() + " (" + result.strategy() + ")");
 		}

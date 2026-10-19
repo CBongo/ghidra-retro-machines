@@ -319,20 +319,52 @@ public class DescriptorAnnotationAnalyzer extends AbstractAnalyzer {
 	 */
 	void applyGameSymbols(Program program, JsonObject gameDoc, TaskMonitor monitor,
 			MessageLog log) {
-		if (!gameDoc.has("symbols")) {
-			return;
-		}
 		AddressSpace base = program.getAddressFactory().getDefaultAddressSpace();
-		for (JsonElement se : gameDoc.getAsJsonArray("symbols")) {
-			if (monitor.isCancelled()) {
-				return;
-			}
-			JsonObject set = se.getAsJsonObject();
-			if (symbolSetEnabled(program, set)) {
-				DescriptorSupport.applySymbolSet(program, base, set, (name, addr) -> {
-				}, log);
+		if (gameDoc.has("symbols")) {
+			for (JsonElement se : gameDoc.getAsJsonArray("symbols")) {
+				if (monitor.isCancelled()) {
+					return;
+				}
+				JsonObject set = se.getAsJsonObject();
+				if (symbolSetEnabled(program, set)) {
+					// a GAME descriptor's comments are not recorded: re-export is a round trip
+					DescriptorSupport.applySymbolSet(program, base, set, (name, addr) -> {
+					}, log, false);
+				}
 			}
 		}
+		// The top-level comments: sets (bead grm-hb6.18), toggled the same way but under a
+		// namespaced key so a comments set and a symbols set may share a name.
+		if (gameDoc.has("comments")) {
+			for (JsonElement se : gameDoc.getAsJsonArray("comments")) {
+				if (monitor.isCancelled()) {
+					return;
+				}
+				JsonObject set = se.getAsJsonObject();
+				if (commentSetEnabled(program, set)) {
+					DescriptorSupport.applyCommentSet(program, base, set, log);
+				}
+			}
+		}
+	}
+
+	/** Key prefix under which a comments set's choice is recorded in {@link #SYMBOL_SETS_PROPERTY}. */
+	static final String COMMENT_SET_KEY_PREFIX = "comments:";
+
+	/** Record a comments set's on/off choice (namespaced; see {@link #COMMENT_SET_KEY_PREFIX}). */
+	static void recordCommentSetChoice(Program program, String setName, boolean applied) {
+		recordSymbolSetChoice(program, COMMENT_SET_KEY_PREFIX + setName, applied);
+	}
+
+	/** Whether the comments {@code set} is enabled: the recorded choice, else its default. */
+	static boolean commentSetEnabled(Program program, JsonObject set) {
+		JsonObject choices =
+			parseChoices(DescriptorSupport.programInfoString(program, SYMBOL_SETS_PROPERTY));
+		String key = COMMENT_SET_KEY_PREFIX + set.get("set").getAsString();
+		if (choices.has(key)) {
+			return choices.get(key).getAsBoolean();
+		}
+		return set.has("default") && set.get("default").getAsBoolean();
 	}
 
 	private void applyStructsInWindows(Program program, JsonArray windows,

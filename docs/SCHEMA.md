@@ -953,18 +953,59 @@ A game descriptor may carry `symbols:` -- the machine-descriptor set shape (`set
 **requires `provenance:`**, and `block:` (set default, entry override) names the memory block
 of the imported program whose address space the entry lives in (`PRG_LO_B1`, `W8000_M3_B1`;
 omitted = the base space). `kind` is `label` or `entry`; `source:` is rejected (reserved for
-the harvester, `grm-hb6.6`). An unresolvable block ignores that entry and logs. The sets are
+the harvester, `grm-hb6.6`). An unresolvable block ignores that entry and logs. A `block:` name
+(here and in `banking.switch_sites`) is grammar-checked at compile time (`grm-hb6.18`): it must
+not be blank or contain whitespace/control characters, and each `_`-segment after the first must not look
+like a botched overlay suffix -- `B`/`M` plus a digit and then a non-digit (`W8000_B3x`,
+`W8000_M0B5`) or a number with a leading zero (`W8000_B05`), none of which the loader produces.
+Whether the block exists is still only checked at apply time. The sets are
 applied by `DescriptorAnnotationAnalyzer` (so also on re-analysis) as `IMPORTED` symbols plus
 an EOL comment, never overwriting a `USER_DEFINED` label.
 
 `ghidra_scripts/ExportGameDescriptor.java` writes exactly this shape from the open program:
 identity (from the `Retro Machines.Game Identity` property), `banking.initial_state` copied
 from the descriptor in force, and one `user-annotations` set holding the program's
-`USER_DEFINED` global-namespace labels and the EOL comments at those addresses. The file is
-valid unedited as an overlay and as a `machines/games/*.yaml` PR. Not carried, and reported by
-the script: plate/pre/post comments, comments at unlabelled addresses, namespaced labels.
+`USER_DEFINED` global-namespace labels and the EOL comments at those addresses (text the
+extension's own analyzers/loaders wrote is removed by exact recorded provenance --
+`Retro Machines.Bank Comment` and `Retro Machines.Analyzer Comment <TYPE>` user properties --
+not by text prefix; a program analyzed before that existed falls back to a prefix list and
+the script says so). The file is
+valid unedited as an overlay and as a `machines/games/*.yaml` PR. Every other user comment goes
+into one `comments:` set (below). Not carried, and reported by the script: comments in an
+overlay address with no containing block, namespaced labels.
 Hinted bank-switch sites (`banking.switch_sites`) are carried verbatim from the recorded
 property; sites the analysis recovered itself are not exported.
+
+#### `comments:` (bead `grm-hb6.18`, owner ruling 2026-10-18)
+
+A top-level list, sibling of `symbols:`, in the same set shape, for the comments a symbol entry
+cannot carry -- non-EOL comments, and comments at unlabelled addresses. (A labelled address may
+still put an EOL comment on its `symbols:` entry as the shorthand.)
+
+```yaml
+comments:
+  - set: smb3-comments        # unique among comments sets (may equal a symbols set name)
+    default: on               # on|off (or true|false): the set's initial state
+    provenance: "..."         # required
+    block: PRG_LO_B1          # optional set-level default (same grammar as symbols)
+    inline:                   # required, non-empty
+      - { addr: 0xC010, pre: "...", eol: "..." }
+      - { addr: 0x8020, block: W8000_M0_B5, plate: "...", post: "...", repeatable: "..." }
+```
+
+An entry has `addr`, optional `block`, and one or more of `eol`/`pre`/`plate`/`post`/
+`repeatable` (text, non-blank). An entry with none, an unknown key, or a duplicate (block, addr)
+within a set is a compile error. Applied by `DescriptorAnnotationAnalyzer` through the same
+append-only guard as symbol comments (text as its own idempotence marker: never clobbers a user
+comment, a second apply writes nothing); an unresolvable block/address logs once and ignores
+the entry. The per-set toggle is the `symbols:` mechanism (recorded loader choice, else
+`default:`), keyed `comments:<set>` in the `Retro Machines.Symbol Sets` property so a comments
+set and a symbols set of the same name do not collide. Descriptor-applied comments are not
+recorded as analyzer-written, so they re-export (a correct round trip); machine-descriptor
+(loader) symbol comments ARE recorded, and are never exported.
+
+The exporter writes one set, `<id>-comments` (`default: on`, the symbols set's provenance),
+entries sorted by (block, addr), only when there is something to carry (no empty key).
 
 ```bash
 -postScript ExportGameDescriptor.java out:/path/game.yaml [id:x] [title:A_Title] [note:text] [overwrite:true]

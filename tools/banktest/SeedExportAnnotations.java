@@ -22,6 +22,12 @@
 //   $C020  user_data       USER_DEFINED  (no comment)           -> exported
 //   <first overlay block>+0x10  banked_routine USER_DEFINED, EOL "lives in banked window" -> exported
 //   $C030  analyzer_guess  ANALYSIS      EOL "analyzer prose; bank -> 3" -> NOT exported
+//   $C010  PRE "seeded pre" (labelled address, non-EOL)    -> exported via comments:
+//   $C040  PLATE "seeded plate" (unlabelled)                -> exported via comments:
+//   $C050  EOL "seeded unlabelled eol" (unlabelled)         -> exported via comments:
+//   <overlay>+0x20 POST "seeded banked post" (unlabelled)   -> exported via comments:
+// The C030 comment is RECORDED as extension-written in the analyzer-comment map (as an analyzer
+// would have), which is what makes it non-exportable (grm-hb6.18).
 //
 // Prints SEEDEXPORT ok=<bool> outside the BANKDUMP markers.
 //
@@ -66,6 +72,22 @@ public class SeedExportAnnotations extends GhidraScript {
 			listing.setComment(toAddr(0xC030), CommentType.EOL, "analyzer prose; bank -> 3");
 			st.createLabel(banked, "banked_routine", SourceType.USER_DEFINED);
 			listing.setComment(banked, CommentType.EOL, "lives in banked window");
+
+			// grm-hb6.18: the analyzer's comment at $C030 is recorded as extension-written, the
+			// way AnalyzerCommentRecord does it (segments joined by U+001F).
+			var pm = currentProgram.getUsrPropertyManager();
+			String mapName = "Retro Machines.Analyzer Comment EOL";
+			var rec = pm.getStringPropertyMap(mapName);
+			if (rec == null) {
+				rec = pm.createStringPropertyMap(mapName);
+			}
+			rec.add(toAddr(0xC030), "analyzer prose\u001fbank -> 3");
+
+			// grm-hb6.18: comments the symbol entries cannot carry (comments: carrier).
+			listing.setComment(toAddr(0xC010), CommentType.PRE, "seeded pre");
+			listing.setComment(toAddr(0xC040), CommentType.PLATE, "seeded plate");
+			listing.setComment(toAddr(0xC050), CommentType.EOL, "seeded unlabelled eol");
+			listing.setComment(banked.add(0x10), CommentType.POST, "seeded banked post");
 		}
 		finally {
 			currentProgram.endTransaction(tx, true);

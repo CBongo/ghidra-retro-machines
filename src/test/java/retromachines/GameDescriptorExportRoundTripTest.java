@@ -106,9 +106,21 @@ public class GameDescriptorExportRoundTripTest extends AbstractBundledLanguageTe
 		label(p, b.addr("0x1000"), "user_main", SourceType.USER_DEFINED);
 		// user text plus an analyzer segment: only the user text may be exported
 		comment(p, b.addr("0x1000"), CommentType.EOL, "my note; bank -> 3");
+		// the analyzer's record of its own segment (grm-hb6.18): a program analyzed after comment
+		// provenance exists has the record maps, and only RECORDED text is stripped
+		edit(p, () -> {
+			AnalyzerCommentRecord.openAll(p);
+			try {
+				p.getUsrPropertyManager().createStringPropertyMap(
+					BankCommentProvenance.PROPERTY_MAP).add(b.addr("0x1000"), "bank -> 3");
+			}
+			catch (Exception e) {
+				throw new RuntimeException(e);
+			}
+		});
 		label(p, b.addr("0x1010"), "user_data", SourceType.USER_DEFINED);
 		label(p, b.addr("0x1020"), "analyzer_guess", SourceType.ANALYSIS);
-		comment(p, b.addr("0x1020"), CommentType.EOL, "analyzer prose");
+		edit(p, () -> AnalyzerCommentRecord.set(p, b.addr("0x1020"), CommentType.EOL, "analyzer prose"));
 		label(p, b.addr("0x1030"), "imported_name", SourceType.IMPORTED);
 		comment(p, b.addr("0x1010"), CommentType.PLATE, "plate has no carrier");
 		Address banked = b.getProgram().getMemory().getBlock("PRG_LO_B1").getStart()
@@ -126,13 +138,13 @@ public class GameDescriptorExportRoundTripTest extends AbstractBundledLanguageTe
 		String yaml = result.yaml();
 
 		assertEquals(3, result.labels());
-		assertEquals(2, result.comments());
+		assertEquals(3, result.comments());   // 2 on symbols + the plate in comments:
 		assertFalse("analyzer-created labels must not be exported", yaml.contains("analyzer_guess"));
 		assertFalse("IMPORTED labels must not be exported", yaml.contains("imported_name"));
 		assertFalse("analyzer comment segments must be stripped", yaml.contains("bank ->"));
 		assertFalse(yaml.contains("include"));
 		assertTrue(yaml, yaml.contains("0x1000"));
-		assertEquals(1, result.skipped().size());   // the plate comment
+		assertTrue(result.skipped().toString(), result.skipped().isEmpty());
 
 		File dir = tmp.getRoot();
 		File overlay = new File(dir, "roundtrip.yaml");
@@ -179,6 +191,7 @@ public class GameDescriptorExportRoundTripTest extends AbstractBundledLanguageTe
 		Address banked = p.getMemory().getBlock("PRG_LO_B1").getStart().add(0x10);
 		assertEquals("banked_routine", primary(p, banked).getName());
 		assertEquals("lives in bank 1", p.getListing().getComment(CommentType.EOL, banked));
+		assertEquals("plate has no carrier", p.getListing().getComment(CommentType.PLATE, fresh.addr("0x1010")));
 		assertEquals(1, p.getSymbolTable().getSymbols(banked).length);
 		assertNotNull(log);
 	}

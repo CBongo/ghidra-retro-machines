@@ -408,8 +408,7 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 				LineRender rendered = renderLine(textBytes, tokenLookup, petscii,
 					config.petsciiVariant());
 				String listing = line.lineNumber() + " " + rendered.text();
-				AnnotationGuard.addComment(program.getListing(), lineAddr, CommentType.PRE,
-					listing, listing);
+				AnalyzerCommentRecord.append(program, lineAddr, CommentType.PRE, listing, listing);
 				typeText(program, baseSpace, loadedSlices, line, rendered, config.petsciiVariant(),
 					enumCache, log);
 
@@ -576,8 +575,7 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 		if (format != null) {
 			FormatSettingsDefinition.DEF.setChoice(data, format);
 		}
-		AnnotationGuard.addComment(program.getListing(), at, CommentType.EOL, fieldName,
-			fieldName);
+		AnalyzerCommentRecord.append(program, at, CommentType.EOL, fieldName, fieldName);
 	}
 
 	/** Types a line's text bytes and its $00 terminator from the renderer's segments
@@ -648,7 +646,7 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 				program.getSymbolTable().createLabel(sysAddr, "sys_entry", SourceType.IMPORTED);
 			}
 			new CreateFunctionCmd(sysAddr).applyTo(program, monitor);
-			program.getListing().setComment(sysAddr, CommentType.PLATE,
+			AnalyzerCommentRecord.set(program, sysAddr, CommentType.PLATE,
 				"SYS target from BASIC line " + lineNumber);
 		}
 		catch (Exception e) {

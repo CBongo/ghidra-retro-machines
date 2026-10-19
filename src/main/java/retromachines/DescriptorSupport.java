@@ -713,6 +713,18 @@ final class DescriptorSupport {
 	 */
 	static void applySymbolSet(Program program, AddressSpace baseSpace, JsonObject set,
 			BiConsumer<String, Address> functionMarker, MessageLog log) {
+		applySymbolSet(program, baseSpace, set, functionMarker, log, true);
+	}
+
+	/**
+	 * As above; {@code recordComments} says whether the EOL comments written are recorded in
+	 * {@link AnalyzerCommentRecord} (bead grm-hb6.18). True for MACHINE descriptor sets -- loader
+	 * output that must never be exported into a game descriptor -- and false for GAME descriptor
+	 * sets, whose comments came from a human-curated descriptor, so re-exporting them is a correct
+	 * round trip.
+	 */
+	static void applySymbolSet(Program program, AddressSpace baseSpace, JsonObject set,
+			BiConsumer<String, Address> functionMarker, MessageLog log, boolean recordComments) {
 
 		JsonArray entries = set.getAsJsonArray("entries");
 		for (JsonElement ee : entries) {
@@ -748,8 +760,14 @@ final class DescriptorSupport {
 					// text itself is the idempotence marker, since (unlike the analyzer's
 					// "bank ->" annotations) there is no shared prefix across descriptor
 					// comments to key on.
-					AnnotationGuard.addComment(program.getListing(), symAddr, CommentType.EOL,
-						comment, comment);
+					if (recordComments) {
+						AnalyzerCommentRecord.append(program, symAddr, CommentType.EOL, comment,
+							comment);
+					}
+					else {
+						AnnotationGuard.addComment(program.getListing(), symAddr, CommentType.EOL,
+							comment, comment);
+					}
 				}
 			}
 			catch (Exception e) {
@@ -757,6 +775,49 @@ final class DescriptorSupport {
 					Long.toHexString(addr) + ": " + e.getMessage());
 			}
 		}
+	}
+
+	/**
+	 * Applies one {@code comments[]} set of a game descriptor (bead grm-hb6.18): each entry's
+	 * {@code eol/pre/plate/post/repeatable} text goes in through {@link AnnotationGuard#addComment}
+	 * with the text itself as the idempotence marker -- append-only, so a user's comment is never
+	 * clobbered and a second application writes nothing. Deliberately NOT recorded in
+	 * {@link AnalyzerCommentRecord}: these came from a descriptor, and re-exporting them is a
+	 * correct round trip. An unresolvable block/address logs once and ignores that entry
+	 * (design section 3.1). Returns how many comments were written.
+	 */
+	static int applyCommentSet(Program program, AddressSpace baseSpace, JsonObject set,
+			MessageLog log) {
+		int written = 0;
+		for (JsonElement ee : set.getAsJsonArray("entries")) {
+			JsonObject entry = ee.getAsJsonObject();
+			long addr = entry.get("addr").getAsLong();
+			String block = entry.has("block") ? entry.get("block").getAsString()
+					: set.has("block") ? set.get("block").getAsString() : null;
+			Address at;
+			try {
+				at = block == null ? baseSpace.getAddress(addr) : blockAddress(program, block, addr);
+			}
+			catch (RuntimeException e) {
+				at = null;
+			}
+			if (at == null || !program.getMemory().contains(at)) {
+				log.appendMsg("Comment at 0x" + Long.toHexString(addr) +
+					(block == null ? "" : " in block '" + block + "'") +
+					" has no such address in this program; ignored");
+				continue;
+			}
+			for (CommentType type : CommentType.values()) {
+				String key = type.name().toLowerCase();
+				if (entry.has(key)) {
+					String text = entry.get(key).getAsString();
+					if (AnnotationGuard.addComment(program.getListing(), at, type, text, text)) {
+						written++;
+					}
+				}
+			}
+		}
+		return written;
 	}
 
 	/** {@code offset} in the address space of memory block {@code blockName}, or null. */

@@ -1070,7 +1070,7 @@ final class BankAnnotationAdapter {
 					comment += " encoding " + encoding.describe();
 				}
 			}
-			AnnotationGuard.addComment(listing, addr, CommentType.EOL, comment, "bank mirror:");
+			AnalyzerCommentRecord.append(program, addr, CommentType.EOL, comment, "bank mirror:");
 		}
 	}
 

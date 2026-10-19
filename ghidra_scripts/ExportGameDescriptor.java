@@ -15,7 +15,7 @@
  */
 // Exports the current program's annotation layer as a per-game descriptor YAML (bead grm-hb6.5,
 // docs/per-game-descriptors-design.md section 7): the game identity the loader recorded, plus
-// the USER_DEFINED labels (and their EOL comments) you added. The output is valid, unedited, as
+// the USER_DEFINED labels and the user comments you added. The output is valid, unedited, as
 // BOTH an overlay file (<Ghidra user settings>/retro-machines/games/*.yaml, re-read on the next
 // import or re-analysis) AND a machines/games/*.yaml pull request. Analyzer-created labels are
 // deliberately not exported. All logic lives in retromachines.GameDescriptorExporter; this

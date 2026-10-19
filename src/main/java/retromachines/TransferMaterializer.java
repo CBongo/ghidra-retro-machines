@@ -436,7 +436,7 @@ final class TransferMaterializer {
 			bm.setBookmark(spec.provenanceSite(), BookmarkType.NOTE, category,
 				spec.originLabel() + " -> " + block.getName() + ": " + spec.len() + " bytes " +
 					fmt(spec.srcStart()) + " -> " + fmt(spec.dstStart()) + kindNote);
-			program.getListing().setComment(spec.provenanceSite(), CommentType.EOL,
+			AnalyzerCommentRecord.set(program, spec.provenanceSite(), CommentType.EOL,
 				spec.originLabel() + " -> " + block.getName());
 		}
 		bm.setBookmark(spec.dstStart(), BookmarkType.NOTE, category,

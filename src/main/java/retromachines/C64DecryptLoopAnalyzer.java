@@ -313,6 +313,6 @@ public class C64DecryptLoopAnalyzer extends AbstractAnalyzer {
 		program.getBookmarkManager().setBookmark(base,
 			suspect ? BookmarkType.WARNING : BookmarkType.NOTE, CATEGORY,
 			"decrypted range start; see overlay " + name);
-		program.getListing().setComment(rd.entry(), CommentType.EOL, "decrypt loop -> " + name);
+		AnalyzerCommentRecord.set(program, rd.entry(), CommentType.EOL, "decrypt loop -> " + name);
 	}
 }

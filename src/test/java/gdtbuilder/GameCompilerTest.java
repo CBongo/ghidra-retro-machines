@@ -514,4 +514,94 @@ public class GameCompilerTest {
 		assertTrue("expected error containing '" + messagePart + "', got: " + e.getMessage(),
 			e.getMessage().contains(messagePart));
 	}
+
+	// ---- block: name grammar (bead grm-hb6.18) ----
+
+	@Test
+	public void blockNameGrammarAcceptsLoaderShapedAndOtherNames() {
+		for (String ok : new String[] { "PRG_LO_B2", "W8000_M0_B5", "RAM", "WA000_B12", "W8000_M3_B1",
+			"W8000_B0", "B2", "SRAM_BANK" }) {
+			assertEquals(ok, GameCompiler.checkBlockName(ok, "ctx"));
+		}
+	}
+
+	@Test
+	public void blockNameGrammarRejectsBadNames() {
+		for (String bad : new String[] { "", "   ", "W8000 B1", "W8000_B1\n", "W8000\t_B1",
+			"W8000_B3x", "W8000_M0B5", "W8000_B05", "W8000_M01_B2", "W8000_B00" }) {
+			IllegalArgumentException e = assertThrows("'" + bad + "'",
+				IllegalArgumentException.class, () -> GameCompiler.checkBlockName(bad, "ctx"));
+			assertTrue(e.getMessage(), e.getMessage().startsWith("ctx"));
+		}
+	}
+
+	@Test
+	public void everyBlockSiteIsGrammarChecked() throws Exception {
+		expectError("symsetblock", validYaml() + SYMBOLS.replace("    default: true\n",
+			"    default: true\n    block: W8000_B05\n"), "overlay suffix");
+		expectError("symentryblock", validYaml() + SYMBOLS.replace("W8000_M3_B1", "W8000_M0B5"),
+			"overlay suffix");
+		expectError("symblank", validYaml() + SYMBOLS.replace("W8000_M3_B1", "\"\""), "blank");
+		expectError("sitesblock", validYaml() + SWITCH_SITES.replace("PRG_LO_B1", "PRG_LO_B1x"),
+			"overlay suffix");
+		expectError("sitesblockspace", validYaml() + SWITCH_SITES.replace("PRG_LO_B1", "\"PRG LO\""),
+			"whitespace");
+	}
+
+	// ---- comments: carrier (bead grm-hb6.18) ----
+
+	private static final String COMMENTS = """
+		comments:
+		  - set: notes
+		    default: on
+		    provenance: "me"
+		    inline:
+		      - { addr: 0x1000, plate: "top", eol: "side" }
+		      - { addr: 0x1004, block: W8000_M0_B5, pre: "p", post: "q", repeatable: "r" }
+		""";
+
+	@Test
+	public void compilesCommentSets() throws Exception {
+		JsonObject doc = compile("cmts", validYaml() + COMMENTS);
+		JsonObject set = doc.getAsJsonArray("comments").get(0).getAsJsonObject();
+		assertEquals("notes", set.get("set").getAsString());
+		assertTrue(set.get("default").getAsBoolean());
+		assertEquals("me", set.get("provenance").getAsString());
+		JsonObject e0 = set.getAsJsonArray("entries").get(0).getAsJsonObject();
+		assertEquals(0x1000, e0.get("addr").getAsInt());
+		assertEquals("top", e0.get("plate").getAsString());
+		assertEquals("side", e0.get("eol").getAsString());
+		JsonObject e1 = set.getAsJsonArray("entries").get(1).getAsJsonObject();
+		assertEquals("W8000_M0_B5", e1.get("block").getAsString());
+		assertEquals("r", e1.get("repeatable").getAsString());
+	}
+
+	@Test
+	public void commentSetsMayShareANameWithASymbolsSet() throws Exception {
+		compile("cmtshare", validYaml() + SYMBOLS + COMMENTS.replace("notes", "mine"));
+	}
+
+	@Test
+	public void rejectsBadCommentSets() throws Exception {
+		expectError("cmtnone", validYaml() + COMMENTS.replace("{ addr: 0x1000, plate: \"top\", eol: \"side\" }",
+			"{ addr: 0x1000 }"), "carries no comment");
+		expectError("cmtunk", validYaml() + COMMENTS.replace("plate: \"top\"", "banner: \"top\""),
+			"unknown key 'banner'");
+		expectError("cmtdup", validYaml() + COMMENTS.replace("0x1004, block: W8000_M0_B5,",
+			"0x1000,"), "listed twice");
+		expectError("cmtnoprov", validYaml() + COMMENTS.replace("    provenance: \"me\"\n", ""),
+			"provenance");
+		expectError("cmtnodef", validYaml() + COMMENTS.replace("    default: on\n", ""), "default");
+		expectError("cmtbaddef", validYaml() + COMMENTS.replace("default: on", "default: maybe"),
+			"unrecognized default");
+		expectError("cmtblock", validYaml() + COMMENTS.replace("W8000_M0_B5", "W8000_B05"),
+			"overlay suffix");
+		expectError("cmtblank", validYaml() + COMMENTS.replace("\"top\"", "\"  \""), "blank");
+		expectError("cmtdupset", validYaml() + COMMENTS +
+			COMMENTS.replace("comments:\n", ""), "duplicate comments set");
+		expectError("cmtnoinline", validYaml() + """
+			comments:
+			  - { set: x, default: on, provenance: "p" }
+			""", "inline");
+	}
 }

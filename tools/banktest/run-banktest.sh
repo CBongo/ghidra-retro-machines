@@ -1278,9 +1278,9 @@ if selected descriptors; then
 				echo "FAIL: SeedExportAnnotations did not complete (grm-hb6.17)"
 				fail=1
 			fi
-			if ! grep -q "Wrote .*descexportedtest\.yaml: 3 label(s), 2 comment(s)" \
+			if ! grep -q "Wrote .*descexportedtest\.yaml: 3 label(s), 6 comment(s)" \
 				"$WORK/descexporttest.log"; then
-				echo "FAIL: ExportGameDescriptor did not report 3 labels + 2 comments (grm-hb6.17):"
+				echo "FAIL: ExportGameDescriptor did not report 3 labels + 6 comments (grm-hb6.17, grm-hb6.18):"
 				grep -i "ExportGameDescriptor\|not carried" "$WORK/descexporttest.log" || true
 				fail=1
 			fi

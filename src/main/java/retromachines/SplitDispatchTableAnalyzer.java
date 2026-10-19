@@ -216,7 +216,7 @@ public class SplitDispatchTableAnalyzer extends AbstractAnalyzer {
 				site.table() + " via JMP (" + IndirectJumpConstantPointer.pointerCell(site.stub()) +
 				") at " + site.stub().getMinAddress() +
 				(site.inline() ? " (grm-cqwn)" : " (grm-3er5)");
-			AnnotationGuard.addComment(listing, site.call().getMinAddress(), CommentType.EOL,
+			AnalyzerCommentRecord.append(program, site.call().getMinAddress(), CommentType.EOL,
 				comment, "split dispatch:");
 		}
 		if (resolvedSites > 0) {

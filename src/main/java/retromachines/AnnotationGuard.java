@@ -135,15 +135,21 @@ final class AnnotationGuard {
 	 * Several markers may be given when the caller's annotations form a family whose members
 	 * must not stack beside one another either (the bank analyzer's {@code bank ->} and
 	 * {@code bank ?}, see {@code BankCommentProvenance#plan}); any one of them present is a no-op.
+	 *
+	 * @return whether the listing was written (extension writers use this to record provenance,
+	 *         see {@link AnalyzerCommentRecord})
 	 */
-	static void addComment(Listing listing, Address addr, CommentType type, String text,
+	static boolean addComment(Listing listing, Address addr, CommentType type, String text,
 			String... markers) {
 		String existing = listing.getComment(type, addr);
 		if (existing == null || existing.isBlank()) {
 			listing.setComment(addr, type, text);
+			return true;
 		}
 		else if (!BankCommentProvenance.containsAny(existing, markers)) {
 			listing.setComment(addr, type, existing + "; " + text);
+			return true;
 		}
+		return false;
 	}
 }

@@ -679,15 +679,10 @@ public class JumpTableBoundAnalyzer extends AbstractAnalyzer {
 		}
 		String text = "[JumpTableBound] table at " + Long.toHexString(tableStart) + " bounded " +
 			realCases.size() + " -> " + firstN.size() + " entries (" + why + ")";
-		String existing = listing.getComment(CommentType.EOL, switchAddr);
-		if (existing == null || existing.isBlank()) {
-			listing.setComment(switchAddr, CommentType.EOL, text);
-		}
-		else if (!existing.contains(text)) {
-			// A switch is bounded once per pass that reaches it, and how many passes do depends on
-			// analysis order (grm-kon2: dragonpower a546 carried this text 3 or 4 times).
-			listing.setComment(switchAddr, CommentType.EOL, existing + "; " + text);
-		}
+		// A switch is bounded once per pass that reaches it, and how many passes do depends on
+		// analysis order (grm-kon2: dragonpower a546 carried this text 3 or 4 times), hence the
+		// text itself as the idempotence marker. Recorded for the exporter (grm-hb6.18).
+		AnalyzerCommentRecord.append(program, switchAddr, CommentType.EOL, text, text);
 		return true;
 	}
 

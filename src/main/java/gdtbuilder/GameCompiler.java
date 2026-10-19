@@ -155,6 +155,10 @@ public class GameCompiler {
 		if (symbols != null) {
 			gameDoc.put("symbols", symbols);
 		}
+		List<Map<String, Object>> comments = buildComments(descriptor);
+		if (comments != null) {
+			gameDoc.put("comments", comments);
+		}
 		return gameDoc;
 	}
 
@@ -202,6 +206,166 @@ public class GameCompiler {
 
 	// ---- symbols: the annotation layer (bead grm-hb6.5) ----
 
+	/** The comment-type keys of a {@code comments:} entry, in compiled/exported order. */
+	public static final List<String> COMMENT_KEYS = List.of("eol", "pre", "plate", "post", "repeatable");
+
+	/**
+	 * Compiles the optional top-level {@code comments:} list (bead grm-hb6.18): named,
+	 * user-toggleable sets in the same shape as {@code symbols:} ({@code set}, {@code default},
+	 * required {@code provenance}, optional set-level {@code block:}, {@code inline:} entries), but
+	 * each entry is {@code { addr, [block], eol|pre|plate|post|repeatable: <text> ... }} -- at
+	 * least one comment key, any number of them -- and names no symbol. This is the carrier for
+	 * comments {@code symbols:} cannot hold: non-EOL comments, and comments at unlabelled
+	 * addresses (a labelled address may still use {@code comment:} on its symbol entry as the EOL
+	 * shorthand). Set names are unique among comments sets (a symbols set may share the name; the
+	 * two toggles are namespaced apart). Unknown keys, an entry with no comment key, blank text and
+	 * a duplicate (block, addr) within a set are rejected. {@code block:} gets the same
+	 * grammar-only check as everywhere else; whether it exists is an apply-time matter.
+	 */
+	@SuppressWarnings("unchecked")
+	private static List<Map<String, Object>> buildComments(Map<String, Object> descriptor) {
+		Object commentsObj = descriptor.get("comments");
+		if (commentsObj == null) {
+			return null;
+		}
+		if (!(commentsObj instanceof List) || ((List<Object>) commentsObj).isEmpty()) {
+			throw new IllegalArgumentException(
+				"descriptor 'comments:' must be a non-empty list of sets");
+		}
+		List<Map<String, Object>> out = new ArrayList<>();
+		Set<String> setNames = new LinkedHashSet<>();
+		for (Object setObj : (List<Object>) commentsObj) {
+			if (!(setObj instanceof Map)) {
+				throw new IllegalArgumentException("each 'comments:' item must be a mapping");
+			}
+			Map<String, Object> set = (Map<String, Object>) setObj;
+			for (String key : set.keySet()) {
+				if (!Set.of("set", "default", "provenance", "block", "inline").contains(key)) {
+					throw new IllegalArgumentException(
+						"'comments:' set has unknown key '" + key + "'");
+				}
+			}
+			String setName = MapCompiler.requireString(set, "set", "comments[]");
+			String setCtx = "comments set '" + setName + "'";
+			if (!setNames.add(setName)) {
+				throw new IllegalArgumentException("duplicate comments set name: " + setName);
+			}
+			if (set.get("default") == null) {
+				throw new IllegalArgumentException(setCtx + " is missing 'default:'");
+			}
+			boolean def;
+			try {
+				def = MapCompiler.parseDefault(set);
+			}
+			catch (IllegalArgumentException e) {
+				throw new IllegalArgumentException(setCtx + " has unrecognized default: " +
+					set.get("default"));
+			}
+			Map<String, Object> s = new LinkedHashMap<>();
+			s.put("set", setName);
+			s.put("default", def);
+			s.put("provenance", MapCompiler.requireString(set, "provenance", setCtx));
+			String setBlock = optionalBlock(set, setCtx);
+			if (setBlock != null) {
+				s.put("block", setBlock);
+			}
+			Object inlineObj = set.get("inline");
+			if (!(inlineObj instanceof List) || ((List<Object>) inlineObj).isEmpty()) {
+				throw new IllegalArgumentException(setCtx + " 'inline:' must be a non-empty list");
+			}
+			List<Map<String, Object>> entries = new ArrayList<>();
+			Set<String> seen = new LinkedHashSet<>();
+			String ctx = setCtx + " entry";
+			for (Object eo : (List<Object>) inlineObj) {
+				if (!(eo instanceof Map)) {
+					throw new IllegalArgumentException(setCtx + " has a non-mapping entry");
+				}
+				Map<String, Object> entry = (Map<String, Object>) eo;
+				for (String key : entry.keySet()) {
+					if (!key.equals("addr") && !key.equals("block") && !COMMENT_KEYS.contains(key)) {
+						throw new IllegalArgumentException(ctx + " has unknown key '" + key + "'");
+					}
+				}
+				int addr = MapCompiler.requireAddr(entry, "addr", ctx);
+				String block = optionalBlock(entry, ctx);
+				Map<String, Object> e = new LinkedHashMap<>();
+				e.put("addr", addr);
+				if (block != null) {
+					e.put("block", block);
+				}
+				int texts = 0;
+				for (String key : COMMENT_KEYS) {
+					if (entry.get(key) == null) {
+						continue;
+					}
+					String text = entry.get(key).toString();
+					if (text.isBlank()) {
+						throw new IllegalArgumentException(ctx + " at " + addr + ": '" + key +
+							":' must not be blank");
+					}
+					e.put(key, text);
+					texts++;
+				}
+				if (texts == 0) {
+					throw new IllegalArgumentException(ctx + " at " + addr + " carries no comment (" +
+						"one or more of eol|pre|plate|post|repeatable)");
+				}
+				if (!seen.add((block != null ? block : setBlock) + "@" + addr)) {
+					throw new IllegalArgumentException(ctx + " at " + addr + " is listed twice");
+				}
+				entries.add(e);
+			}
+			s.put("entries", entries);
+			out.add(s);
+		}
+		return out;
+	}
+
+	/** The optional {@code block:} of {@code map} (null if absent), grammar-checked. */
+	private static String optionalBlock(Map<String, Object> map, String context) {
+		Object v = map.get("block");
+		return v == null ? null : checkBlockName(v.toString(), context);
+	}
+
+	/**
+	 * Grammar-only validation of a {@code block:} name (bead grm-hb6.18); whether the block exists
+	 * in the program stays an apply-time check, as this compiler is board-agnostic. Rejects a
+	 * blank name, whitespace or control characters, and any {@code _}-segment (after the first) shaped like a
+	 * botched overlay suffix -- {@code B}/{@code M} then a digit then a non-digit
+	 * ({@code W8000_B3x}, {@code W8000_M0B5}), or a number with a leading zero
+	 * ({@code W8000_B05}) -- since the loader never produces those. Everything else passes.
+	 * Package-private for tests.
+	 *
+	 * @return {@code name}, for chaining
+	 */
+	static String checkBlockName(String name, String context) {
+		if (name == null || name.isBlank()) {
+			throw new IllegalArgumentException(context + ": 'block:' must not be blank");
+		}
+		for (int i = 0; i < name.length(); i++) {
+			char c = name.charAt(i);
+			if (Character.isWhitespace(c) || Character.isISOControl(c)) {
+				throw new IllegalArgumentException(context + ": block name '" + name +
+					"' contains whitespace or a control character");
+			}
+		}
+		String[] parts = name.split("_", -1);
+		for (int i = 1; i < parts.length; i++) {
+			String seg = parts[i];
+			if (seg.length() >= 2 && (seg.charAt(0) == 'B' || seg.charAt(0) == 'M') &&
+				Character.isDigit(seg.charAt(1))) {
+				String digits = seg.substring(1);
+				boolean allDigits = digits.chars().allMatch(ch -> ch >= '0' && ch <= '9');
+				if (!allDigits || (digits.length() > 1 && digits.charAt(0) == '0')) {
+					throw new IllegalArgumentException(context + ": block name '" + name +
+						"' has segment '_" + seg + "', which looks like an overlay suffix but is " +
+						"not one the loader produces (_B<n> / _M<n>, no leading zeros)");
+				}
+			}
+		}
+		return name;
+	}
+
 	/**
 	 * Compiles the optional {@code symbols:} list: named, user-toggleable sets of
 	 * {@code inline:} entries ({@code addr}/{@code name}/{@code kind}/optional {@code comment}),
@@ -243,7 +407,7 @@ public class GameCompiler {
 			s.put("default", MapCompiler.parseDefault(set));
 			s.put("provenance",
 				MapCompiler.requireString(set, "provenance", "symbols set '" + setName + "'"));
-			String setBlock = set.get("block") == null ? null : set.get("block").toString();
+			String setBlock = optionalBlock(set, "symbols set '" + setName + "'");
 			if (setBlock != null) {
 				s.put("block", setBlock);
 			}
@@ -263,8 +427,7 @@ public class GameCompiler {
 					Map<String, Object> entry = (Map<String, Object>) eo;
 					String ctx = "symbols set '" + setName + "' entry";
 					int addr = MapCompiler.requireAddr(entry, "addr", ctx);
-					String block =
-						entry.get("block") == null ? null : entry.get("block").toString();
+					String block = optionalBlock(entry, ctx);
 					if (!seen.add((block != null ? block : setBlock) + "@" + addr)) {
 						continue;
 					}
@@ -628,7 +791,7 @@ public class GameCompiler {
 			}
 			String block = null;
 			if (entry.containsKey("block")) {
-				block = MapCompiler.requireString(entry, "block", where);
+				block = checkBlockName(MapCompiler.requireString(entry, "block", where), where);
 			}
 			if (!seen.add((block == null ? "" : block) + ":" + addr)) {
 				throw new IllegalArgumentException(where + ": addr " + addr +

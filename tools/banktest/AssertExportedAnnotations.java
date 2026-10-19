@@ -59,6 +59,17 @@ public class AssertExportedAnnotations extends GhidraScript {
 		expect("user_data", toAddr(0xC020), null);
 		expect("banked_routine", banked, "lives in banked window");
 
+		// grm-hb6.18: the comments: carrier (non-EOL, unlabelled, banked-unlabelled)
+		var listing = currentProgram.getListing();
+		check("comment:pre-labelled",
+			"seeded pre".equals(listing.getComment(CommentType.PRE, toAddr(0xC010))));
+		check("comment:plate-unlabelled",
+			"seeded plate".equals(listing.getComment(CommentType.PLATE, toAddr(0xC040))));
+		check("comment:eol-unlabelled",
+			"seeded unlabelled eol".equals(listing.getComment(CommentType.EOL, toAddr(0xC050))));
+		check("comment:post-banked",
+			"seeded banked post".equals(listing.getComment(CommentType.POST, banked.add(0x10))));
+
 		Address guess = toAddr(0xC030);
 		check("analyzer-label-absent", currentProgram.getSymbolTable().getSymbols(guess).length == 0);
 		check("analyzer-comment-absent",

@@ -327,7 +327,7 @@ Machine maps are unaffected. This is a game-tier addition, not a `MAP_FORMAT.md`
 |---|---|---|
 | Bank-switch site/value hints | tens of bytes | designed here, first increment (grm-2yx, grm-m95) |
 | Symbols (labels + entry points) | thousands of entries | reuses the existing schema, §3b.2 |
-| Comments | thousands of entries | rides on symbol entries in v1; see §9 q4 |
+| Comments | thousands of entries | `comments:` carrier (§9 q4, resolved 2026-10-18); EOL at a labelled address may still ride on the symbol entry |
 | Types | hundreds | later increment, §3b.4 |
 
 The banking hints are what unblocks grm-2yx today. The symbols are what makes the tier matter.
@@ -975,6 +975,10 @@ containing:
 - `USER_DEFINED` labels and comments as a `symbols:` set with a `provenance` block naming the
   program, the user, and the date — and **only** `USER_DEFINED`, per §3c.3, so an analyzer's guess
   is never laundered into a recorded fact;
+- every user comment the symbol entries do not carry (non-EOL, or at an unlabelled address) as one
+  `comments:` set (grm-hb6.18). Comments the extension itself wrote are excluded by exact recorded
+  provenance (`Retro Machines.Bank Comment`, `Retro Machines.Analyzer Comment <TYPE>`), not by text
+  prefix; only a program analyzed before that existed falls back to a prefix list, and says so;
 - `schema: 2` and a `game:` block (§3.3).
 
 snakeyaml **emits** as well as parses, so §4.3's dependency serves both directions; the export needs
@@ -1083,12 +1087,12 @@ document does not hedge in the sections above.
    one hint per call site. A helper-shaped or table-shaped hint kind may be the right vocabulary —
    but it is a much larger claim about program structure, so it wants grm-m95's findings first.
 
-4. **Free-standing comments at unlabelled addresses.** §3b.1 rides comments on symbol entries,
-   because `docs/SCHEMA.md:484-495`'s `entries[]` already carries `comment` and reusing it costs
-   nothing. That covers a labelled address and not a mid-routine EOL comment, which is a large
-   fraction of what a real annotation layer contains. Inventing a carrier now would fork the schema
-   before the harvest generators (§3b.2) have told us what shape upstream data actually takes;
-   revisit with a real harvest in hand.
+4. **Free-standing comments at unlabelled addresses.** *Resolved by owner ruling 2026-10-18
+   (grm-hb6.18).* A new top-level `comments:` list, sibling of `symbols:` and in the same set
+   shape (`set`, `default`, `provenance`, optional `block`, `inline:`), carries entries
+   `{ addr, [block], eol|pre|plate|post|repeatable }`; `symbols:` entries keep `comment:` as the
+   EOL shorthand for a labelled address. The exporter writes one `<id>-comments` set for every
+   user comment the symbol entries do not carry. See docs/SCHEMA.md ("`comments:`").
 
 5. **Does the tier want a per-title `.gdt`** (§3b.4), and if so does `GdtBuilder`'s
    `Application.initializeApplication` requirement (`docs/MAP_FORMAT.md:18-20`) force build-time-only
@@ -1121,5 +1125,5 @@ descriptor yet, which is beads grm-hb6.2/grm-hb6.3. Nothing else below is implem
 - [x] Overlay-before-curated search order with logged shadowing; no static memoization; `include:` rejected in overlay — §5.2, §5.3, §5.5 (grm-hb6.2)
 - [ ] Analyzer-side consumption: seeds not injections, value-hint precedence, provenance — §6
 - [ ] `RunStamp` widened with a descriptor-content digest — §3c.2
-- [x] `ghidra_scripts/ExportGameDescriptor.java` + the round-trip test — §7 (grm-hb6.5; labels + EOL comments only, `symbols:` compiled by `GameCompiler`, applied by `DescriptorAnnotationAnalyzer`)
+- [x] `ghidra_scripts/ExportGameDescriptor.java` + the round-trip test — §7 (grm-hb6.5; labels + EOL comments, `symbols:` compiled by `GameCompiler`, applied by `DescriptorAnnotationAnalyzer`; all other user comments via `comments:`, grm-hb6.18; exact comment provenance replaced the prefix heuristic)
 - [ ] Tier 1/2/3 coverage — §8

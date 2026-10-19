@@ -585,6 +585,9 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// listing rather than only in the strategies that consume it. After pass 2 (mirrors
 		// are already final by then) and before Phase 2, which is unrelated annotation work
 		// over the same listing. ---
+		// Comment provenance for the exporter (grm-hb6.18): created up front so "no record map"
+		// reliably means "analyzed before comment provenance existed", not "wrote no comments".
+		AnalyzerCommentRecord.openAll(program);
 		BankAnnotationAdapter.nameBankMirrors(program, listing, mirrors, baseSpace);
 
 		// --- Phase 2: annotate bank switches + retarget references ---

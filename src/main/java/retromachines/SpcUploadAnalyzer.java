@@ -132,7 +132,7 @@ public class SpcUploadAnalyzer extends AbstractAnalyzer {
 				String.format("\n  then entry $%04X", result.entry());
 			program.getBookmarkManager().setBookmark(e.getKey(), BookmarkType.NOTE, CATEGORY,
 				"SPC700 upload: " + text.replace('\n', ' ').replaceAll("\\s+", " "));
-			program.getListing().setComment(e.getKey(), CommentType.PRE,
+			AnalyzerCommentRecord.set(program, e.getKey(), CommentType.PRE,
 				"SPC700 IPL upload command (" + result.strategy() + ")\n" + text.substring(
 					text.indexOf('\n') + 1));
 		}

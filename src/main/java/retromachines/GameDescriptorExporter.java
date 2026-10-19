@@ -21,6 +21,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.Yaml;
@@ -31,6 +32,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
+import gdtbuilder.GameCompiler;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.listing.CommentType;
@@ -41,6 +43,7 @@ import ghidra.program.model.symbol.Namespace;
 import ghidra.program.model.symbol.SourceType;
 import ghidra.program.model.symbol.Symbol;
 import ghidra.program.model.symbol.SymbolType;
+import ghidra.program.model.util.StringPropertyMap;
 
 /**
  * Selective export of a program's human annotation layer as a per-game descriptor (bead
@@ -62,14 +65,18 @@ import ghidra.program.model.symbol.SymbolType;
  * exporting it would launder it into a recorded fact under the user's name (design section
  * 3c.3). Namespaced (function-local) labels are skipped because the schema has no namespace
  * qualifier; they are counted in {@link Result#skipped()}.</li>
- * <li><b>Comments:</b> the {@code comment} field of a symbol entry is the only comment carrier
- * the schema has (design section 9 q4), and the consumer applies it as an EOL comment. So only
- * EOL comments at an exported label's address are carried. Ghidra comments have no
- * {@code SourceType}, so "user comment" cannot be told from an analyzer one by provenance;
- * segments the bank analyzer writes ({@code bank ->}, {@code bank ?}) are filtered out by
- * their prefix, and anything else at a user-labelled address is treated as the user's. Comments
- * at unlabelled addresses, and non-EOL comments, are counted as skipped, never invented a
- * carrier for.</li>
+ * <li><b>Comments:</b> an EOL comment at an exported label's address rides on that symbol entry's
+ * {@code comment} field (the EOL shorthand). Every other user comment -- EOL at an unlabelled
+ * address, and pre/plate/post/repeatable anywhere -- goes into ONE {@code comments:} set named
+ * {@code <id>-comments} (bead grm-hb6.18, owner ruling 2026-10-18). Ghidra comments have no
+ * {@code SourceType}, so the extension records the EXACT segments its analyzers and loaders
+ * wrote ({@link BankCommentProvenance} for bank EOL comments, {@link AnalyzerCommentRecord}
+ * for every other extension writer, per comment type, bead grm-hb6.18); those are removed as
+ * whole {@code "; "}-joined segments and anything else at a user-labelled address is the
+ * user's -- including a human's own {@code bank -> 5}. Only a program with no
+ * analyzer-comment record at all (analyzed before this existed) falls back to the old
+ * text-prefix list, with a note in {@link Result#skipped()}. Only a comment in an overlay
+ * address with no containing block (nothing to name) cannot travel and is counted as skipped.</li>
  * <li><b>Bank qualifier:</b> a label in an overlay (banked) address space is exported with
  * {@code block:} naming the memory block that holds it; the consumer resolves the block by name
  * and ignores the entry (logging) if the fresh import lacks it.</li>
@@ -94,7 +101,15 @@ public final class GameDescriptorExporter {
 	/** The symbol set name used for the exported labels. */
 	public static final String SET_NAME = "user-annotations";
 
-	private static final String[] ANALYZER_PREFIXES = { "bank ->", "bank ?" };
+	/** Appended to the game id to name the {@code comments:} set (bead grm-hb6.18). */
+	public static final String COMMENTS_SET_SUFFIX = "-comments";
+
+	/**
+	 * Legacy fallback only (programs with no analyzer-comment record, i.e. analyzed before comment
+	 * provenance existed): text prefixes of what extension writers emit.
+	 */
+	private static final String[] ANALYZER_PREFIXES =
+		{ "bank ->", "bank ?", "bank mirror:", "[JumpTableBound]" };
 
 	private GameDescriptorExporter() {
 	}
@@ -158,7 +173,7 @@ public final class GameDescriptorExporter {
 				.replaceAll("[^a-z0-9]+", "_").replaceAll("^_+|_+$", "");
 		String provenance = "exported from Ghidra program '" + name + "' by " +
 			System.getProperty("user.name", "unknown") + " on " + java.time.LocalDate.now() +
-			" (USER_DEFINED labels and their EOL comments only)" +
+			" (USER_DEFINED labels and user comments)" +
 			(note == null || note.isBlank() ? "" : "; " + note.strip());
 		return new Request(id != null ? id : slug.isEmpty() ? "exported_game" : slug,
 			title != null ? title : name, boardId, provenance,
@@ -208,6 +223,7 @@ public final class GameDescriptorExporter {
 		}
 
 		int comments = 0;
+		AtomicBoolean fallbackDropped = new AtomicBoolean();
 		for (Map.Entry<String, Map<Long, Symbol>> be : byKey.entrySet()) {
 			String block = be.getKey();
 			for (Map.Entry<Long, Symbol> se : be.getValue().entrySet()) {
@@ -220,7 +236,8 @@ public final class GameDescriptorExporter {
 				if (!block.isEmpty()) {
 					e.put("block", block);
 				}
-				String comment = userComment(listing.getComment(CommentType.EOL, a));
+				String comment = userComment(program, a, CommentType.EOL,
+					listing.getComment(CommentType.EOL, a), fallbackDropped);
 				if (comment != null) {
 					e.put("comment", comment);
 					comments++;
@@ -232,34 +249,63 @@ public final class GameDescriptorExporter {
 		entries.sort(Comparator.comparing((Map<String, Object> m) -> (String) m.getOrDefault("block", ""))
 				.thenComparingInt(m -> ((HexInt) m.get("addr")).value()));
 
-		int stray = 0;
+		// Every user comment the symbol entries do not already carry goes into ONE comments set
+		// (bead grm-hb6.18): EOL at a non-exported address, and every other type anywhere. EOL at
+		// an exported label's address stays on that symbol entry as the shorthand.
+		TreeMap<String, TreeMap<Long, Map<String, Object>>> commentRows = new TreeMap<>();
+		int unnamedBlock = 0;
 		var it = listing.getCommentAddressIterator(program.getMemory(), true);
 		while (it.hasNext()) {
 			Address a = it.next();
-			boolean carried = Boolean.TRUE.equals(exportedAddrs.get(a));
-			boolean hasOther = false;
-			for (CommentType t : CommentType.values()) {
-				String c = listing.getComment(t, a);
-				if (c == null || c.isBlank()) {
+			Map<String, Object> row = null;
+			String block = null;
+			boolean blockResolved = false;
+			boolean unresolvable = false;
+			for (String key : GameCompiler.COMMENT_KEYS) {
+				CommentType t = CommentType.valueOf(key.toUpperCase());
+				if (t == CommentType.EOL && exportedAddrs.containsKey(a)) {
 					continue;
 				}
-				if (t == CommentType.EOL) {
-					if (!carried && userComment(c) != null) {
-						hasOther = true;
+				String c = listing.getComment(t, a);
+				String text = userComment(program, a, t, c, fallbackDropped);
+				if (text == null) {
+					continue;
+				}
+				if (!blockResolved) {
+					block = blockKey(program, a);
+					blockResolved = true;
+				}
+				if (block == null) {
+					unresolvable = true;
+					continue;
+				}
+				if (row == null) {
+					row = new LinkedHashMap<>();
+					row.put("addr", new HexInt(a.getOffset()));
+					if (!block.isEmpty()) {
+						row.put("block", block);
 					}
 				}
-				else {
-					hasOther = true;
-				}
+				row.put(key, text);
+				comments++;
 			}
-			if (hasOther) {
-				stray++;
+			if (unresolvable) {
+				unnamedBlock++;
+			}
+			if (row != null) {
+				commentRows.computeIfAbsent(block, k -> new TreeMap<>()).put(a.getOffset(), row);
 			}
 		}
-		if (stray > 0) {
-			skipped.add(stray + " commented address(es) not carried (comments ride on a " +
-				"user label's entry as EOL text; plate/pre/post/repeatable comments and " +
-				"comments at unlabelled addresses have no carrier in the schema yet)");
+		List<Map<String, Object>> commentEntries = new ArrayList<>();
+		commentRows.values().forEach(m -> commentEntries.addAll(m.values()));
+		if (unnamedBlock > 0) {
+			skipped.add(unnamedBlock + " commented address(es) not carried (overlay address with " +
+				"no containing block to name)");
+		}
+
+		if (fallbackDropped.get()) {
+			skipped.add("comment filtering used the legacy text-prefix heuristic because the " +
+				"program predates comment provenance (re-run analysis to record it)");
 		}
 
 		if (req.prgSha256() == null || req.fileSha256() == null) {
@@ -323,6 +369,14 @@ public final class GameDescriptorExporter {
 			set.put("inline", entries);
 			doc.put("symbols", List.of(set));
 		}
+		if (!commentEntries.isEmpty()) {
+			Map<String, Object> set = new LinkedHashMap<>();
+			set.put("set", req.id() + COMMENTS_SET_SUFFIX);
+			set.put("default", true);
+			set.put("provenance", req.provenance());
+			set.put("inline", commentEntries);
+			doc.put("comments", List.of(set));
+		}
 
 		DumperOptions opts = new DumperOptions();
 		opts.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
@@ -332,8 +386,8 @@ public final class GameDescriptorExporter {
 		HexRepresenter hex = new HexRepresenter(opts);
 		String header = "# Per-game descriptor exported by ghidra_scripts/ExportGameDescriptor.java.\n" +
 			"# Valid as a drop-in overlay (<Ghidra user settings>/retro-machines/games/) and as a\n" +
-			"# machines/games/*.yaml pull request. Only USER_DEFINED labels (and their EOL\n" +
-			"# comments) are carried; see docs/per-game-descriptors-design.md section 7.\n";
+			"# machines/games/*.yaml pull request. Only USER_DEFINED labels and user\n" +
+			"# comments are carried; see docs/per-game-descriptors-design.md section 7.\n";
 		return new Result(header + new Yaml(hex, opts).dump(doc), entries.size(), comments,
 			skipped);
 	}
@@ -499,24 +553,62 @@ public final class GameDescriptorExporter {
 		return block == null ? null : block.getName();
 	}
 
-	/** The comment with analyzer-written segments removed, or null if nothing is left. */
-	static String userComment(String comment) {
-		if (comment == null || comment.isBlank()) {
+	/**
+	 * The comment at {@code addr} of {@code type} with extension-written segments removed, or
+	 * null if nothing is left. Callable for ANY comment type.
+	 */
+	static String userComment(Program program, Address addr, CommentType type, String text) {
+		return userComment(program, addr, type, text, new AtomicBoolean());
+	}
+
+	/**
+	 * As {@link #userComment(Program, Address, CommentType, String)}; sets
+	 * {@code fallbackDropped} when the legacy prefix heuristic (used only for a program with no
+	 * analyzer-comment record) actually removed a segment.
+	 */
+	static String userComment(Program program, Address addr, CommentType type, String text,
+			AtomicBoolean fallbackDropped) {
+		if (text == null || text.isBlank()) {
 			return null;
 		}
-		List<String> kept = new ArrayList<>();
-		for (String segment : comment.split("; ")) {
-			boolean analyzer = false;
-			for (String prefix : ANALYZER_PREFIXES) {
-				if (segment.startsWith(prefix)) {
-					analyzer = true;
+		String remaining = text;
+		if (AnalyzerCommentRecord.hasAnyMap(program)) {
+			List<String> recorded = new ArrayList<>();
+			if (type == CommentType.EOL) {
+				StringPropertyMap bank = program.getUsrPropertyManager()
+						.getStringPropertyMap(BankCommentProvenance.PROPERTY_MAP);
+				String bankText = bank == null ? null : bank.getString(addr);
+				if (bankText != null) {
+					recorded.add(bankText);
 				}
 			}
-			if (!analyzer) {
-				kept.add(segment);
+			recorded.addAll(AnalyzerCommentRecord.recorded(program, addr, type));
+			for (String segment : recorded) {
+				String cut = BankCommentProvenance.removeSegment(remaining, segment);
+				if (cut != null) {
+					remaining = cut;
+				}
 			}
 		}
-		String out = String.join("; ", kept).strip();
+		else {
+			List<String> kept = new ArrayList<>();
+			for (String segment : text.split("; ")) {
+				boolean analyzer = false;
+				for (String prefix : ANALYZER_PREFIXES) {
+					if (segment.startsWith(prefix)) {
+						analyzer = true;
+					}
+				}
+				if (analyzer) {
+					fallbackDropped.set(true);
+				}
+				else {
+					kept.add(segment);
+				}
+			}
+			remaining = String.join("; ", kept);
+		}
+		String out = remaining.strip();
 		return out.isEmpty() ? null : out;
 	}
 
