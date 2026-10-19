@@ -184,6 +184,72 @@ public class GameDescriptorCommentProvenanceTest extends AbstractBundledLanguage
 		assertEquals(BOUND, p.getListing().getComment(CommentType.EOL, a));
 	}
 
+	private static final String TBL = "TBL: ";
+
+	@Test
+	public void planReplaceRules() {
+		String old = "TBL: HELLO$FF";
+		String neu = "TBL: HELLO WORLD$FF";
+		// empty -> write
+		assertEquals(neu, AnalyzerCommentRecord.planReplace(List.of(), null, neu, TBL));
+		// own recorded segment -> replaced in place, human text kept
+		assertEquals("pre; " + neu + "; post", AnalyzerCommentRecord.planReplace(List.of(old),
+			"pre; " + old + "; post", neu, TBL));
+		// settled -> nothing
+		assertNull(AnalyzerCommentRecord.planReplace(List.of(neu), neu, neu, TBL));
+		// legacy, unrecorded, whole comment ours -> replaced
+		assertEquals(neu, AnalyzerCommentRecord.planReplace(List.of(), old, neu, TBL));
+		// foreign comment -> nothing
+		assertNull(AnalyzerCommentRecord.planReplace(List.of(), "my label", neu, TBL));
+		// our recorded text edited by a human -> nothing, even though it carries the prefix
+		assertNull(AnalyzerCommentRecord.planReplace(List.of(old), old + " (sic)", neu, TBL));
+		// another writer's recorded segment is not ours
+		assertNull(AnalyzerCommentRecord.planReplace(List.of("10 PRINT"), "10 PRINT", neu, TBL));
+	}
+
+	@Test
+	public void replaceOwnRefreshesRecordsAndIsNotExported() throws Exception {
+		ProgramBuilder b = newBuilder();
+		ProgramDB p = b.getProgram();
+		Address a = b.addr("0x1000");
+		label(p, a, "user_text");
+		boolean[] ok = new boolean[1];
+		inTx(p, "first", () -> ok[0] =
+			AnalyzerCommentRecord.replaceOwn(p, a, CommentType.PRE, "TBL: OLD", TBL));
+		assertTrue(ok[0]);
+		setComment(p, a, CommentType.PRE, "TBL: OLD; my note");
+		inTx(p, "refresh", () -> ok[0] =
+			AnalyzerCommentRecord.replaceOwn(p, a, CommentType.PRE, "TBL: NEW", TBL));
+		assertTrue(ok[0]);
+		assertEquals("TBL: NEW; my note", p.getListing().getComment(CommentType.PRE, a));
+		assertEquals(List.of("TBL: NEW"), AnalyzerCommentRecord.recorded(p, a, CommentType.PRE));
+
+		long before = p.getModificationNumber();
+		inTx(p, "settled", () -> ok[0] =
+			AnalyzerCommentRecord.replaceOwn(p, a, CommentType.PRE, "TBL: NEW", TBL));
+		assertTrue(ok[0]);
+		assertEquals("a settled re-run must not mutate the program", before,
+			p.getModificationNumber());
+
+		GameDescriptorExporter.Result r = export(p);
+		assertTrue(r.yaml(), r.yaml().contains("my note"));
+		assertFalse(r.yaml(), r.yaml().contains("TBL:"));
+	}
+
+	@Test
+	public void replaceOwnLeavesAForeignCommentAlone() throws Exception {
+		ProgramBuilder b = newBuilder();
+		ProgramDB p = b.getProgram();
+		Address a = b.addr("0x1000");
+		setComment(p, a, CommentType.PRE, "title screen text");
+		boolean[] ok = new boolean[1];
+		inTx(p, "tbl", () -> ok[0] =
+			AnalyzerCommentRecord.replaceOwn(p, a, CommentType.PRE, "TBL: X", TBL));
+		assertFalse(ok[0]);
+		assertEquals("title screen text", p.getListing().getComment(CommentType.PRE, a));
+		assertTrue(AnalyzerCommentRecord.recorded(p, a, CommentType.PRE).isEmpty());
+	}
+
 	@Test
 	public void severalSegmentsAreRecordedSeparately() throws Exception {
 		ProgramBuilder b = newBuilder();

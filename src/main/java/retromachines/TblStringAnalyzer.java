@@ -28,7 +28,6 @@ import ghidra.program.model.address.AddressSetView;
 import ghidra.program.model.data.DataUtilities;
 import ghidra.program.model.listing.BookmarkType;
 import ghidra.program.model.listing.CommentType;
-import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.mem.MemoryBlockSourceInfo;
@@ -227,13 +226,13 @@ public class TblStringAnalyzer extends AbstractAnalyzer {
 
 	private static boolean annotate(Program program, Address start, TblTable.Run run,
 			String endLabel) {
-		Listing listing = program.getListing();
-		String existing = listing.getComment(CommentType.PRE, start);
-		if (existing != null && !existing.startsWith(COMMENT_PREFIX)) {
-			return false; // somebody else's comment: never clobber
-		}
 		String text = run.text().replace("\r", "").replace("\n", "\\n");
-		listing.setComment(start, CommentType.PRE, COMMENT_PREFIX + text + endLabel);
+		// Refreshes our own earlier text, never somebody else's comment; recorded so the
+		// descriptor exporter does not export it as a human's (grm-hb6.25).
+		if (!AnalyzerCommentRecord.replaceOwn(program, start, CommentType.PRE,
+			COMMENT_PREFIX + text + endLabel, COMMENT_PREFIX)) {
+			return false;
+		}
 		program.getBookmarkManager().setBookmark(start, BookmarkType.NOTE, CATEGORY,
 			"text: " + text);
 		return true;

@@ -151,6 +151,86 @@ final class AnalyzerCommentRecord {
 		return true;
 	}
 
+	/**
+	 * Replace-own-text write (bead grm-hb6.25), for a writer that refreshes its OWN earlier
+	 * comment on re-run but must never clobber anyone else's: neither {@link #set} (clobbers) nor
+	 * {@link #append} (stacks a second copy beside the stale one) fits. Its own text is the
+	 * recorded segment carrying {@code ownPrefix}; that segment is replaced in place, so a human's
+	 * text added beside it survives. See {@link #planReplace} for the rule.
+	 *
+	 * @return whether the address now carries this writer's {@code text} -- written now, or
+	 *         already there; false means a foreign comment was left alone
+	 */
+	static boolean replaceOwn(Program program, Address addr, CommentType type, String text,
+			String ownPrefix) {
+		Listing listing = program.getListing();
+		String existing = listing.getComment(type, addr);
+		List<String> recorded = recorded(program, addr, type);
+		String comment = planReplace(recorded, existing, text, ownPrefix);
+		boolean settled = text.equals(existing) ||
+			recorded.contains(text) && BankCommentProvenance.containsSegment(existing, text);
+		if (comment == null && !settled) {
+			return false;
+		}
+		if (comment != null) {
+			listing.setComment(addr, type, comment);
+		}
+		if (comment != null || !recorded.contains(text)) {
+			// A settled legacy comment gets recorded once, then re-runs are write-free.
+			AnalyzerCommentRecord rec = open(program, type);
+			if (rec != null) {
+				rec.replaceOwnRecord(addr, recorded, text, ownPrefix);
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * The comment {@link #replaceOwn} should install, or null for "leave the listing alone"
+	 * (settled, or a foreign comment). Pure, like {@link BankCommentProvenance#plan}:
+	 * <ul>
+	 * <li>no comment: write {@code text};
+	 * <li>a recorded segment carrying {@code ownPrefix} is present as a whole segment: replace it
+	 * in place, or nothing if it already reads {@code text};
+	 * <li>no own segment is recorded and the WHOLE comment starts with {@code ownPrefix}: a
+	 * comment from before provenance was recorded -- replace it, as the writer always did;
+	 * <li>otherwise -- foreign text, or our recorded text was edited away: touch nothing.
+	 * </ul>
+	 */
+	static String planReplace(List<String> recorded, String existing, String text,
+			String ownPrefix) {
+		if (existing == null || existing.isBlank()) {
+			return text;
+		}
+		boolean ownRecorded = false;
+		for (String own : recorded) {
+			if (!own.startsWith(ownPrefix)) {
+				continue;
+			}
+			ownRecorded = true;
+			String replaced = BankCommentProvenance.replaceSegment(existing, own, text);
+			if (replaced != null) {
+				return replaced.equals(existing) ? null : replaced;
+			}
+		}
+		if (!ownRecorded && existing.startsWith(ownPrefix) && !existing.equals(text)) {
+			return text;
+		}
+		return null;
+	}
+
+	/** Records {@code text} in place of every recorded segment carrying {@code ownPrefix}. */
+	private void replaceOwnRecord(Address addr, List<String> recorded, String text,
+			String ownPrefix) {
+		StringBuilder sb = new StringBuilder();
+		for (String s : recorded) {
+			if (!s.startsWith(ownPrefix)) {
+				sb.append(s).append(SEPARATOR);
+			}
+		}
+		map.add(addr, sb.append(text).toString());
+	}
+
 	private void add(Address addr, String text) {
 		String raw = map.getString(addr);
 		if (raw == null || raw.isEmpty()) {

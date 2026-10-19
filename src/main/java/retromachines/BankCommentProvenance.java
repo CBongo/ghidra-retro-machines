@@ -244,7 +244,7 @@ final class BankCommentProvenance {
 	}
 
 	/** Whether {@code comment} contains {@code segment} as a whole {@link #JOIN}-separated part. */
-	private static boolean containsSegment(String comment, String segment) {
+	static boolean containsSegment(String comment, String segment) {
 		return removeSegment(comment, segment) != null;
 	}
 
@@ -263,22 +263,44 @@ final class BankCommentProvenance {
 	 * the second caller in bank 10 and could not replace it).
 	 */
 	static String removeSegment(String comment, String segment) {
-		if (comment == null || segment == null || segment.isEmpty()) {
+		int at = findSegment(comment, segment);
+		if (at < 0) {
 			return null;
+		}
+		int end = at + segment.length();
+		if (end < comment.length()) {
+			return comment.substring(0, at) + comment.substring(end + JOIN.length());
+		}
+		return at == 0 ? "" : comment.substring(0, at - JOIN.length());
+	}
+
+	/**
+	 * {@code comment} with the whole segment {@code segment} replaced IN PLACE by
+	 * {@code replacement}, or null when it is not present as a complete segment. Same boundary
+	 * rule as {@link #removeSegment}; text around the segment keeps its position (grm-hb6.25).
+	 */
+	static String replaceSegment(String comment, String segment, String replacement) {
+		int at = findSegment(comment, segment);
+		if (at < 0) {
+			return null;
+		}
+		return comment.substring(0, at) + replacement + comment.substring(at + segment.length());
+	}
+
+	/** Start of the first whole-segment occurrence of {@code segment}, or -1. */
+	private static int findSegment(String comment, String segment) {
+		if (comment == null || segment == null || segment.isEmpty()) {
+			return -1;
 		}
 		for (int at = comment.indexOf(segment); at >= 0; at = comment.indexOf(segment, at + 1)) {
 			int end = at + segment.length();
 			boolean startsSegment = at == 0 || comment.startsWith(JOIN, at - JOIN.length());
 			boolean endsSegment = end == comment.length() || comment.startsWith(JOIN, end);
-			if (!startsSegment || !endsSegment) {
-				continue;
+			if (startsSegment && endsSegment) {
+				return at;
 			}
-			if (end < comment.length()) {
-				return comment.substring(0, at) + comment.substring(end + JOIN.length());
-			}
-			return at == 0 ? "" : comment.substring(0, at - JOIN.length());
 		}
-		return null;
+		return -1;
 	}
 
 	/** The program this record belongs to; used only by tests and assertions. */
