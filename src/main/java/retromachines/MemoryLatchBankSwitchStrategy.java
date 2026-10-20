@@ -353,7 +353,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * either from in-state ships a confidently wrong bank, which this engine rates strictly worse
 	 * than no bank. Both kinds are nonetheless delivered here with full provenance, for grm-mej.4's
 	 * labelling; a save slot's VALUE is recovered from the store that filled it, by grm-zsxz's
-	 * StoredValueScanner.saveSlotForwarded, not from in-state here. Declining is this method's whole
+	 * SaveSlotForwarding.saveSlotForwarded, not from in-state here. Declining is this method's whole
 	 * contribution to them.
 	 * <p>
 	 * <b>Field-local state to raw byte -- the easiest place in this increment to ship a wrong
@@ -521,7 +521,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 			if (prev.getFlowType().isCall()) {
 				return false; // the callee may have switched banks without touching the shadow
 			}
-			if (StoredValueScanner.writesAddress(prev, cell)) {
+			if (MosOperands.writesAddress(prev, cell)) {
 				return true; // the shadow was refreshed here
 			}
 			if (writesInRange(prev) && !paired.contains(prev.getMinAddress())) {
@@ -609,7 +609,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 */
 	private LatchEvaluation evaluateLatchScan(Program program, Instruction store,
 			RegisterEnv env, MechanismState inState, StoredValueScanner.Hooks hooks) {
-		Character reg = StoredValueScanner.storeRegister(store);
+		Character reg = MosOperands.storeRegister(store);
 		if (reg == null) {
 			// The stored register is unidentifiable, so nothing was scanned: our limitation.
 			return new LatchEvaluation(MechanismState.unknown(), ValueStop.ANALYZER_LIMIT, null);
@@ -923,7 +923,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * Tier 2 of {@link #writesInRange}: read the store's target straight off its operand,
 	 * for the stores that carry no write reference at all.
 	 * <p>
-	 * Gated on {@link StoredValueScanner#storeRegister} being non-null, i.e. a true
+	 * Gated on {@link MosOperands#storeRegister} being non-null, i.e. a true
 	 * {@code STA}/{@code STX}/{@code STY}. The read-modify-write stores ({@code INC $8000}
 	 * and friends) keep tier-1-only behaviour deliberately: {@code computeSwitch} answers
 	 * {@link MechanismState#unknown()} for them, so newly <em>seeing</em> one would poison bank
@@ -938,10 +938,10 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * indexed span to fit would reject the exact idiom this tier exists to catch.
 	 */
 	private boolean operandStoresInRange(Instruction instr) {
-		if (StoredValueScanner.storeRegister(instr) == null) {
+		if (MosOperands.storeRegister(instr) == null) {
 			return false;
 		}
-		Address target = StoredValueScanner.plainAbsoluteTarget(instr);
+		Address target = MosOperands.plainAbsoluteTarget(instr);
 		if (target != null) {
 			return inLatchRange(target) && matchesDecode(target.getOffset());
 		}
@@ -987,7 +987,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * grm-egw, 2026-08-15).
 	 */
 	private boolean indexedWriteMatchesDecode(Instruction instr) {
-		if (StoredValueScanner.storeRegister(instr) == null && !hasWriteReferenceInRange(instr)) {
+		if (MosOperands.storeRegister(instr) == null && !hasWriteReferenceInRange(instr)) {
 			return false;
 		}
 		Address target = StoredValueScanner.effectiveOperandTarget(instr.getProgram(), instr,

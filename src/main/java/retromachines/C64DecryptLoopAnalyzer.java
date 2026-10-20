@@ -133,8 +133,8 @@ public class C64DecryptLoopAnalyzer extends AbstractAnalyzer {
 
 		// Key model from the EOR operand.
 		RecognizedDecryptor.KeyModel key;
-		if (StoredValueScanner.isImmediate(eor)) {
-			Integer k = StoredValueScanner.immediateOperandValue(eor);
+		if (MosOperands.isImmediate(eor)) {
+			Integer k = MosOperands.immediateOperandValue(eor);
 			if (k == null) {
 				return;
 			}
@@ -158,7 +158,7 @@ public class C64DecryptLoopAnalyzer extends AbstractAnalyzer {
 		// gives a range certain to be [base, base+len); other counter/branch forms have
 		// off-by-one traps, so we recognize but do not auto-apply them.
 		Instruction init = LoopIdioms.findCounterInit(listing, lda, idx);
-		Integer n = init == null ? null : StoredValueScanner.immediateOperandValue(init);
+		Integer n = init == null ? null : MosOperands.immediateOperandValue(init);
 		if (!(downCount && bpl && backEdge) || n == null) {
 			program.getBookmarkManager().setBookmark(lda.getAddress(), BookmarkType.WARNING,
 				CATEGORY, "decrypt-shaped loop (key=" + key + ") could not be bounded; not applied");

@@ -20,24 +20,30 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
-import java.util.TreeSet;
 
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressOutOfBoundsException;
 import ghidra.program.model.lang.Register;
 import ghidra.program.model.listing.Function;
-import ghidra.program.model.listing.FunctionManager;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryAccessException;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.scalar.Scalar;
-import ghidra.program.model.symbol.RefType;
 import ghidra.program.model.symbol.Reference;
-import ghidra.util.Msg;
+
+import retromachines.SaveSlotForwarding.IndexRegs;
+import retromachines.SaveSlotForwarding.SlotWrite;
+
+import static retromachines.SaveSlotForwarding.RETURN_DISPATCH_LOOKBACK;
+import static retromachines.CrossBlockStackPairing.crossBlockMatchingPush;
+import static retromachines.CrossBlockStackPairing.findMatchingPush;
+import static retromachines.LocalStoreForwarding.forwardedStoreValue;
+import static retromachines.LocalStoreForwarding.operandByte;
+import static retromachines.CrossBlockStackPairing.pairedArms;
+import static retromachines.SaveSlotForwarding.saveSlotForwarded;
 
 /**
  * The 6502-family backward "mask algebra" scan shared by the store-recognizing
@@ -59,7 +65,7 @@ import ghidra.util.Msg;
  * absolute-indexed with a constant-resolvable index). Register-write resolves a read-back
  * of its own mechanism register to the tracked in-state; memory-latch resolves a load of a
  * bank-invariant ROM byte to that byte. When no strategy claims the load,
- * {@link #forwardedStoreValue} tries local store-to-load forwarding (below), and only if
+ * {@link LocalStoreForwarding#forwardedStoreValue} tries local store-to-load forwarding (below), and only if
  * THAT comes back empty is the load offered to {@link Hooks#resolveMirrorLoad} (bead
  * grm-mej.2). An otherwise unresolved load leaves {@code x} wholly unknown.</li>
  * <li><b>Local store-to-load forwarding</b> (grm-mej.1): a load, or a non-immediate
@@ -71,12 +77,12 @@ import ghidra.util.Msg;
  * {@link MemoryLatchBankSwitchStrategy}'s {@code depositHelperArgument}. The forwarding is
  * deliberately <b>not</b> restricted to the zero page: the measured examples happen to live
  * there, but Contra's save slots are {@code $07EC}/{@code $07ED}, and
- * {@link #plainAbsoluteTarget} already treats zero-page and absolute operands identically.
+ * {@link MosOperands#plainAbsoluteTarget} already treats zero-page and absolute operands identically.
  * If anything the zero page is the <em>worse</em>-supported case, since zero-page indexed
  * wraps inside the page and {@link #effectiveOperandTarget} therefore declines it.</li>
  * <li>{@code PLA} (register A only) is paired to the {@code PHA} it pops, BY STACK DEPTH rather
  * than address, over an intra-block straight-line walk (grm-mej.3 increment 2, see
- * {@link #findMatchingPush}). Once found, the scan continues from the instruction before that
+ * {@link CrossBlockStackPairing#findMatchingPush}). Once found, the scan continues from the instruction before that
  * {@code PHA} with the accumulators intact, so composition after the pop (e.g. {@code PLA / AND
  * #imm / STA}) still applies. A {@code PLA} paired to a {@code PHP} (a status byte, never a
  * value), one with no matching push in range, or one separated from its push by ANY control
@@ -185,7 +191,7 @@ final class StoredValueScanner {
 		 *   c187: 5x STA/LSR  ; commit
 		 * </pre>
 		 * {@link #resolveStoredValue}'s {@code LD<reg>} branch returns on ANY non-null
-		 * {@link #resolveLoad} answer, short-circuiting {@link #forwardedStoreValue}. Answering
+		 * {@link #resolveLoad} answer, short-circuiting {@link LocalStoreForwarding#forwardedStoreValue}. Answering
 		 * mirrors there would therefore preempt grm-mej.1's correct forwarded value with the stale
 		 * in-state -- a silently wrong bank on the easiest case in the bead. Ranking mirrors below
 		 * forwarding makes the precedence explicit and unmissable.
@@ -270,7 +276,7 @@ final class StoredValueScanner {
 
 		/**
 		 * Whether this env supplies a per-address state oracle at all (bead grm-mej.3 increment
-		 * X1; default {@code false}). {@link #crossBlockMatchingPush} runs ONLY when this is
+		 * X1; default {@code false}). {@link CrossBlockStackPairing#crossBlockMatchingPush} runs ONLY when this is
 		 * true, so direct-site hooks and {@code MemoryLatchBankSwitchStrategy
 		 * .effectDependsOnPriorState}'s {@code MirrorProbe} -- which have no oracle to resume
 		 * from and would otherwise see a blind cross-block resume report "consulted a mirror,
@@ -283,7 +289,7 @@ final class StoredValueScanner {
 		}
 
 		/**
-		 * The per-run memo of {@link #crossBlockMatchingPush} proofs, keyed by the {@code PLA}'s
+		 * The per-run memo of {@link CrossBlockStackPairing#crossBlockMatchingPush} proofs, keyed by the {@code PLA}'s
 		 * address, or {@code null} (the default) to compute the proof fresh every time. The proof
 		 * is STATE-FREE -- it depends only on the listing and control flow, never on tracked bank
 		 * state -- so caching it across a whole analysis run is sound, exactly like
@@ -295,7 +301,7 @@ final class StoredValueScanner {
 		}
 
 		/**
-		 * The per-run memo of {@link #saveSlotForwarded} proofs and callee-closure writer censuses
+		 * The per-run memo of {@link SaveSlotForwarding#saveSlotForwarded} proofs and callee-closure writer censuses
 		 * (bead grm-zsxz increment Z2), or {@code null} (the default) to compute fresh every time.
 		 * Both are STATE-FREE -- functions of the listing, its references and the memory map --
 		 * so a whole run may share them, for the same reason as {@link #crossBlockProofMemo}.
@@ -345,10 +351,31 @@ final class StoredValueScanner {
 				ReadBack idxReadBack) {
 			return false;
 		}
+
+		/**
+		 * Hooks that resolve nothing and see no mechanism: {@link #isMechanismWrite} is always
+		 * {@code false} and {@link #resolveLoad} always {@code null}. The state-free context
+		 * {@link #constantIndex} evaluates in, so a census or slot proof stays memoizable; and the
+		 * safe default for a caller-side scan, because it never looks at an in-state. One shared
+		 * instance rather than one per call site. It overrides only those two methods, so every
+		 * other hook keeps its interface default.
+		 */
+		Hooks INERT = new Hooks() {
+			@Override
+			public boolean isMechanismWrite(Instruction instr) {
+				return false;
+			}
+
+			@Override
+			public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
+					MechanismState inStateAtStore) {
+				return null;
+			}
+		};
 	}
 
 	/**
-	 * The state-free result of a {@link #crossBlockMatchingPush} proof (bead grm-mej.3 increment
+	 * The state-free result of a {@link CrossBlockStackPairing#crossBlockMatchingPush} proof (bead grm-mej.3 increment
 	 * X1): the {@code PHA}s it found, in address order (empty for a decline; more than one when
 	 * the {@code PLA}'s arms each pushed their own byte, bead grm-mej.21), whether any explored
 	 * path crossed a call, the sole call address every path agreed was the nearest one crossed
@@ -401,7 +428,7 @@ final class StoredValueScanner {
 	/** {@link ProofMemo} key for a callee-closure census: the callee entry and the slot's
 	 *  physical offset. */
 	/** A census memo key. {@code x}/{@code y} are the index registers the CALL SITE proves on
-	 *  entry ({@link #callCensus}, bead grm-mej.25), {@code null} when not a provable constant. */
+	 *  entry ({@link SaveSlotForwarding#callCensus}, bead grm-mej.25), {@code null} when not a provable constant. */
 	record CensusKey(Address entry, long cellOffset, Integer x, Integer y) {}
 
 	/** A callee-closure census: {@code clean} when no instruction reachable from the entry may
@@ -496,7 +523,7 @@ final class StoredValueScanner {
 	 * SAVE SLOT rather than directly or on the stack (bead grm-zsxz increment Z2): the byte was
 	 * stored into {@code cell} at {@code store} and reloaded at {@code load}, with every path
 	 * between the two proved free of other writers of {@code cell} by
-	 * {@link #saveSlotForwarded}. {@code indirectStoresAssumed} records whether that proof stepped
+	 * {@link SaveSlotForwarding#saveSlotForwarded}. {@code indirectStoresAssumed} records whether that proof stepped
 	 * over at least one indirect store under {@link SlotAssumption#INDIRECT_STORES_DO_NOT_WRITE_SLOT}
 	 * -- descriptive, so the annotation can say the assumption was actually relied on.
 	 */
@@ -512,7 +539,7 @@ final class StoredValueScanner {
 	}
 
 	/**
-	 * The NAMED, BOUNDED ASSUMPTIONS the RAM save-slot proof ({@link #saveSlotForwarded}, bead
+	 * The NAMED, BOUNDED ASSUMPTIONS the RAM save-slot proof ({@link SaveSlotForwarding#saveSlotForwarded}, bead
 	 * grm-zsxz increment Z2) rests on -- the memory-slot counterpart of {@link StackFloor} for the
 	 * stack slot. Named here so every place that relies on one cites the same constant, and so the
 	 * restore note can state it (owner ruling Q2, 2026-10-05).
@@ -539,13 +566,13 @@ final class StoredValueScanner {
 			"STA ($zp,X)) writes the slot";
 	}
 
-	private static final int MAX_BACKWARD_SCAN = 16;
+	static final int MAX_BACKWARD_SCAN = 16;
 
 	/**
 	 * How deep {@link #constantRegisterValue} may recurse through register-to-register
 	 * dependencies (a {@code TAX} asks about A, whose {@code LDA table,X} asks about X, ...).
 	 */
-	private static final int MAX_RESOLVE_DEPTH = 4;
+	static final int MAX_RESOLVE_DEPTH = 4;
 
 	/**
 	 * Instructions one whole {@link #effectiveOperandTarget} query tree may inspect. The depth
@@ -554,20 +581,15 @@ final class StoredValueScanner {
 	 * a single {@link Budget} shared across the entire tree. Mega Man's real chain
 	 * ({@code LDA #$00 / STA $0C / ASL A / TAX / LDA $D81E,X}) uses depth 3 and about 10 steps.
 	 */
-	private static final int MAX_RESOLVE_STEPS = 64;
-
-	private static final Set<String> A_MODIFIERS = Set.of("LDA", "TXA", "TYA", "PLA", "ADC", "SBC",
-		"AND", "ORA", "EOR", "ASL", "LSR", "ROL", "ROR");
-	private static final Set<String> X_MODIFIERS = Set.of("LDX", "TAX", "TSX", "INX", "DEX");
-	private static final Set<String> Y_MODIFIERS = Set.of("LDY", "TAY", "INY", "DEY");
+	static final int MAX_RESOLVE_STEPS = 64;
 
 	/**
-	 * 6502 mnemonics that write memory, for {@link #writesMemory}'s third detector. The stores
-	 * are here as well as in {@link #storeRegister} because that method deliberately excludes the
+	 * 6502 mnemonics that write memory, for {@link LocalStoreForwarding#writesMemory}'s third detector. The stores
+	 * are here as well as in {@link MosOperands#storeRegister} because that method deliberately excludes the
 	 * read-modify-write forms, which write memory just the same. The shift/rotate entries write
-	 * memory only in their non-accumulator addressing modes, which {@link #writesMemory} tests.
+	 * memory only in their non-accumulator addressing modes, which {@link LocalStoreForwarding#writesMemory} tests.
 	 * Stack pushes ({@code PHA}/{@code PHP}) are absent on purpose, and this is still true after
-	 * grm-mej.3 increment 2 relaxed {@link #forwardedStoreValue}'s stack-page refusal: they write
+	 * grm-mej.3 increment 2 relaxed {@link LocalStoreForwarding#forwardedStoreValue}'s stack-page refusal: they write
 	 * the stack without naming an address any detector here can see, so they are still stepped
 	 * over as inert rather than recognized as writing whatever cell the walk is forwarding. A
 	 * call -- the other way the stack is written -- ends the walk anyway. What keeps that sound
@@ -575,7 +597,7 @@ final class StoredValueScanner {
 	 * per-instruction detector for a push's target is possible without tracking {@code S}, so
 	 * the guard has to key on the address the walk cares about instead.
 	 */
-	private static final Set<String> MEMORY_WRITERS =
+	static final Set<String> MEMORY_WRITERS =
 		Set.of("STA", "STX", "STY", "INC", "DEC", "ASL", "LSR", "ROL", "ROR");
 
 	private StoredValueScanner() {
@@ -621,13 +643,13 @@ final class StoredValueScanner {
 	 * reason its callers document: a sub-walk spends from the caller's own
 	 * {@link #MAX_BACKWARD_SCAN} budget, so the caller has to know how much was spent on every
 	 * return path including a failed one. The crossing flag has exactly the same shape of
-	 * requirement -- {@link #findMatchingPush} and {@link #stackRelativePush} may now step OVER a
+	 * requirement -- {@link CrossBlockStackPairing#findMatchingPush} and {@link #stackRelativePush} may now step OVER a
 	 * mechanism write instead of stopping at one, and the walk that resumes from the instruction
 	 * they found is the CALLER's, so only the caller can apply the consequence
 	 * ({@link #resolveStoredValue} withdrawing its in-state). Two parallel out-params would have
 	 * been two chances to update one and forget the other.
 	 */
-	private static final class Span {
+	static final class Span {
 
 		int steps;
 
@@ -650,7 +672,7 @@ final class StoredValueScanner {
 
 		/**
 		 * Whether the search that found this pairing was the CROSS-BLOCK ALL-PATHS proof (bead
-		 * grm-mej.3 increment X1) rather than {@link #findMatchingPush}'s straight-line walk.
+		 * grm-mej.3 increment X1) rather than {@link CrossBlockStackPairing#findMatchingPush}'s straight-line walk.
 		 * Handled by {@link #resumeStateAfterPairing} exactly like {@link #crossedCall}: crossing
 		 * a control-flow join is one more crossing the resumed walk cannot assume is state-stable,
 		 * whether or not a call happened to sit on any explored path. A block crossing with no
@@ -753,7 +775,7 @@ final class StoredValueScanner {
 
 	/**
 	 * {@link #resolveStoredValue} within an ongoing store-to-load forwarding chain's depth and
-	 * step budget. Only {@link #forwardedStoreValue} passes a non-fresh budget: every public
+	 * step budget. Only {@link LocalStoreForwarding#forwardedStoreValue} passes a non-fresh budget: every public
 	 * entry point starts a new one, so a top-level scan is unaffected by this parameterization.
 	 * <p>
 	 * Note the {@link #effectiveOperandTarget} call in the {@code LD<reg>} branch below
@@ -763,7 +785,7 @@ final class StoredValueScanner {
 	 * The forwarding lookups are the only ones that share {@code budget}, which is what bounds
 	 * the recursion this method can now enter.
 	 */
-	private static Scan resolveStoredValue(Program program, Instruction storeInstr, char reg,
+	static Scan resolveStoredValue(Program program, Instruction storeInstr, char reg,
 			MechanismState inStateAtStore, int mask, Hooks hooks, RegisterEnv env, Budget budget,
 			int depth) {
 		return resolveStoredValue(program, storeInstr, reg, inStateAtStore, mask, hooks, env,
@@ -772,14 +794,14 @@ final class StoredValueScanner {
 
 	/**
 	 * The walk itself, with {@code startStep} of its {@link #MAX_BACKWARD_SCAN} budget already
-	 * spent -- nonzero only for an arm {@link #pairedArms} resumes from a push, which continues
+	 * spent -- nonzero only for an arm {@link CrossBlockStackPairing#pairedArms} resumes from a push, which continues
 	 * the enclosing walk's budget rather than starting a fresh one.
 	 */
-	private static Scan resolveStoredValue(Program program, Instruction storeInstr, char reg,
+	static Scan resolveStoredValue(Program program, Instruction storeInstr, char reg,
 			MechanismState inStateAtStore, int mask, Hooks hooks, RegisterEnv env, Budget budget,
 			int depth, int startStep) {
 		Listing listing = program.getListing();
-		Set<String> modifiers = registerModifiers(reg);
+		Set<String> modifiers = MosOperands.registerModifiers(reg);
 		String loadMnemonic = "LD" + reg;
 
 		// The in-state is a LOCAL from here on, because crossing a mechanism write WITHDRAWS it
@@ -869,7 +891,7 @@ final class StoredValueScanner {
 			String mnem = prev.getMnemonicString().toUpperCase();
 
 			if (stateBlind && (mnem.equals("AND") || mnem.equals("ORA") || mnem.equals(loadMnemonic))
-					&& !isImmediate(prev)) {
+					&& !MosOperands.isImmediate(prev)) {
 				return stopped(aAcc, oAcc, mask, PartialByte.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 			}
 
@@ -901,8 +923,8 @@ final class StoredValueScanner {
 				continue;
 			}
 
-			if (mnem.equals(loadMnemonic) && isImmediate(prev)) {
-				Integer imm = immediateOperandValue(prev);
+			if (mnem.equals(loadMnemonic) && MosOperands.isImmediate(prev)) {
+				Integer imm = MosOperands.immediateOperandValue(prev);
 				if (imm != null) {
 					// x is now fully known -- fold it through the accumulated transform.
 					return stopped(aAcc, oAcc, mask, PartialByte.fullyKnown(imm), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
@@ -920,7 +942,7 @@ final class StoredValueScanner {
 					// grm-mej.8: a read-back of a live-bank mirror stays a read-back when the strategy
 					// can ALSO partly evaluate it (see restoredKeepingValue). Same shape test as the
 					// mirror branch below; only the reason and the ReadBack change, never the value.
-					if (aAcc == 0xFF && oAcc == 0x00 && plainAbsoluteTarget(prev) != null &&
+					if (aAcc == 0xFF && oAcc == 0x00 && MosOperands.plainAbsoluteTarget(prev) != null &&
 						hooks.isLiveBankMirror(target)) {
 						Scan restored = restoredKeepingValue(aAcc, oAcc, mask, base,
 							new ReadBack(target, prev.getMinAddress(), carriedAcross,
@@ -955,7 +977,7 @@ final class StoredValueScanner {
 				// The value stays whatever the hook said (unknown when it declined), so the
 				// deposit is unchanged; only the reason and the ReadBack differ.
 				boolean readBack = aAcc == 0xFF && oAcc == 0x00 &&
-					plainAbsoluteTarget(prev) != null && hooks.isLiveBankMirror(target);
+					MosOperands.plainAbsoluteTarget(prev) != null && hooks.isLiveBankMirror(target);
 				if (mirrored != null || readBack) {
 					if (readBack && mirrored != null) {
 						// grm-mej.8: a partly known mirror value keeps its read-back too.
@@ -1162,13 +1184,13 @@ final class StoredValueScanner {
 			Character transferredFrom = transferSource(mnem, reg);
 			if (transferredFrom != null && transferredFrom == 'A') {
 				reg = transferredFrom;
-				modifiers = registerModifiers(reg);
+				modifiers = MosOperands.registerModifiers(reg);
 				loadMnemonic = "LD" + reg;
 				cur = prev;
 				continue;
 			}
 
-			if (modifiesRegister(modifiers, mnem, prev)) {
+			if (MosOperands.modifiesRegister(modifiers, mnem, prev)) {
 				// The mask algebra has met something it cannot decompose per bit -- an
 				// ASL/LSR/ROL/ROR, an ADC/SBC, a transfer, or a load whose base nothing above
 				// could resolve. Before declining, ask the OTHER evaluator whether the register
@@ -1207,7 +1229,7 @@ final class StoredValueScanner {
 				// and it returns null on every failure so this line's answer is exactly today's.
 				// Its own node/join/census caps bound it; the enclosing walk ends here either way, so
 				// (unlike X1's resumed pairing) there is no remaining step budget to charge.
-				if (mnem.equals(loadMnemonic) && !isImmediate(prev) && hooks.hasStateOracle() &&
+				if (mnem.equals(loadMnemonic) && !MosOperands.isImmediate(prev) && hooks.hasStateOracle() &&
 					!env.hasArms()) {
 					Scan viaSlot = saveSlotForwarded(program, prev, aAcc, oAcc, mask, hooks, env,
 						budget, depth);
@@ -1251,1301 +1273,6 @@ final class StoredValueScanner {
 		return stopped(aAcc, oAcc, mask, PartialByte.unknown(), BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
 	}
 
-	/**
-	 * Finds the {@code PHA} that a {@code PLA} pairs with, walking backward from the
-	 * instruction immediately preceding {@code pla} and matching by STACK DEPTH rather than
-	 * address (grm-mej.3 increment 2). A counter starts at 1 (one push is owed); {@code PHA}/
-	 * {@code PHP} decrement it and a nested {@code PLA}/{@code PLP} increment it, so an inner
-	 * push/pull pair fully balances before an outer pairing is considered. The match is the
-	 * push instruction seen when the counter reaches 0.
-	 * <p>
-	 * <b>A MECHANISM WRITE IN THE SPAN IS NO LONGER AN ABANDON</b> (bead grm-4bgh.7). It was one
-	 * for a real reason: once a matching {@code PHA} is found, the ENCLOSING walk resumes
-	 * resolving from before it, and a value that walk eventually reads from {@code inStateAtStore}
-	 * (a write-through mirror load, say) would be attributed the state AFTER the final store --
-	 * i.e. after a mechanism write this span skipped over, a confidently WRONG value. But the
-	 * hazard is entirely about the in-state and says nothing about the pairing itself: a store to
-	 * the mechanism does not move {@code S}, so the depth counter stays exact across it. The span
-	 * is therefore stepped over and the crossing REPORTED to the caller through {@link Span},
-	 * which withdraws its in-state and keeps walking -- so a value derived from an immediate,
-	 * from the stack, or from the {@code env}'s caller-supplied registers survives the crossing,
-	 * while an in-state-derived one still cannot be formed at all.
-	 * <p>
-	 * The previous version of this javadoc predicted this fix and named its blocker: telling the
-	 * two kinds of value apart "also needs bit-wise {@code ASL} modeling to be of any use" on
-	 * smb2's {@code ff88} shape ({@code ASL A / PHA / LDA #imm / STA <mechanism> / PLA / STA
-	 * <chain>}), because {@code ASL A} was an opaque A-modifier everywhere. grm-4bgh.6 supplied
-	 * that modeling, which is what made this relaxation worth making.
-	 * <p>
-	 * <b>Returns {@code null} (abandon) when:</b>
-	 * <ul>
-	 * <li>the matching push is a {@code PHP} -- a status byte pushed by {@code PHP} is never a
-	 * value, so a {@code PLA} that pairs with one cannot be resolved as one either;</li>
-	 * <li>the stack pointer moves by anything other than {@code PHA}/{@code PHP}/{@code PLA}/
-	 * {@code PLP} -- compared by BASE register via {@link HelperArgumentRecovery#writesStackPointer},
-	 * reused rather than reimplemented because the 6502 stack-pointer-by-two-names trap it
-	 * guards against ({@code TXS}'s p-code writing the 1-byte {@code S} while
-	 * {@code CompilerSpec.getStackPointer()} answers the 2-byte {@code SP}) applies here
-	 * identically;</li>
-	 * <li>any instruction in the span has {@code getFlows().length > 0} or a null fall-through,
-	 * OTHER THAN A CALL -- this walk is intra-block and straight-line only, matching the
-	 * increment's own name, and is what makes the pairing sound: if any control flow could enter
-	 * between the {@code PHA} and the {@code PLA}, a different path could have pushed a different
-	 * byte, and attributing the pop to THIS push would be a confident wrong value rather than a
-	 * missing one (see the class javadoc's PLA bullet for the full soundness argument). A call
-	 * IS stepped over as of grm-mej.3 increment 3, reported through {@link Span#crossedCall}; the
-	 * inline comment at the crossing carries the fall-through-witness argument for why the depth
-	 * counter stays exact across it;</li>
-	 * <li>{@code cur} is a control-flow join not licensed by {@code env}
-	 * ({@link FlowEdges#isControlFlowJoin}) -- the same reasoning as every other backward walk in this
-	 * class: a join means some other path reaches this point in the span with a potentially
-	 * different stack depth, which is exactly the hazard the bullet above describes for an
-	 * outgoing branch, mirrored for an incoming one;</li>
-	 * <li>{@code env} claims this address as its entry -- the caller's stack contents are not
-	 * modeled, mirroring {@link #forwardedStoreValue}'s identical refusal for memory;</li>
-	 * <li>the instruction before {@code cur} does not exist ({@code null}) -- the block's start
-	 * was reached with the counter still nonzero, i.e. an unbalanced pop;</li>
-	 * <li>{@code budgetSteps} is exhausted before a match is found.</li>
-	 * </ul>
-	 *
-	 * @param budgetSteps    how many further instructions this search may step over -- SPENT
-	 *                       FROM the caller's {@link #MAX_BACKWARD_SCAN} budget, not a fresh one,
-	 *                       so a save/restore spanning more than the budget degrades to unknown
-	 *                       rather than silently scanning further
-	 * @param span           out-param, valid on every return path including a null one: how many
-	 *                       instructions this search stepped over (so the caller's own counter
-	 *                       stays accurate whether or not a match was found), and whether it
-	 *                       crossed a mechanism write doing so
-	 */
-	private static Instruction findMatchingPush(Program program, Instruction pla, int budgetSteps,
-			Hooks hooks, RegisterEnv env, Span span) {
-		return findMatchingPush(program, pla, budgetSteps, hooks, env, span, 1);
-	}
-
-	/**
-	 * {@link #findMatchingPush} generalized to an arbitrary starting depth (bead grm-4bgh.1):
-	 * a {@code PLA} always owes exactly one push, but a stack-relative reload's {@code $01nn,X}
-	 * operand names depth {@code n = nn} counted from the top of stack AT THE {@code TSX}
-	 * that set X ({@link #stackRelativePush}), which may be any {@code n >= 1}. {@code initialDepth}
-	 * is that counter's starting value -- 1 for a {@code PLA} (the 4-arg overload above, kept so
-	 * every pre-existing {@code PLA} caller is byte-identical), {@code n} for a stack-relative
-	 * reload. Everything else -- the {@code PHP} abandon, the stack-pointer-write abandon, the
-	 * join/linkage/call breaks, the mechanism-write step-over, the budget and {@link Span}
-	 * accounting --
-	 * is unchanged and applies identically regardless of where the counter started.
-	 */
-	private static Instruction findMatchingPush(Program program, Instruction pla, int budgetSteps,
-			Hooks hooks, RegisterEnv env, Span span, int initialDepth) {
-		Register stackPointer = program.getCompilerSpec().getStackPointer();
-		if (stackPointer == null) {
-			span.steps = 0;
-			return null; // cannot verify the depth model -- do not assume the favorable answer
-		}
-		Listing listing = program.getListing();
-		int depth = initialDepth;
-		Instruction cur = pla;
-		int steps = 0;
-		while (steps < budgetSteps) {
-			if (env.stopsAt(cur.getMinAddress())) {
-				break; // the caller's stack is not modeled -- mirrors forwardedStoreValue
-			}
-			Instruction prev = pathPredecessor(program, listing, cur, env);
-			if (prev == null) {
-				// block start reached with the counter still nonzero (unbalanced), left the
-				// basic block, or another path could reach here with a different stack depth
-				break;
-			}
-			boolean stepOverCall = prev.getFlowType().isCall();
-			if (stepOverCall) {
-				// A CALL IS STEPPED OVER (grm-mej.3 increment 3), and the depth counter stays
-				// exact across it. pathPredecessor only handed us prev because its fall-through
-				// is cur, so if the pop we are pairing executes at all, the callee returned to
-				// that fall-through -- and JSR/RTS are balanced by construction: the pushed byte
-				// sits BELOW the return address, RTS pops exactly the two bytes above it, and a
-				// callee with a non-zero net stack delta at its RTS returns somewhere other than
-				// the fall-through, so the pop never runs. REACHING THE FALL-THROUGH IS THE
-				// WITNESS -- the same argument SaveRestoreTrampolines.restoresEntryBank crosses
-				// its inner JSR on (increment 1), and it needs no look inside the callee, which
-				// is what makes ironsword's JSR $FFDA -> JMP ($00C1) crossable at all. The
-				// accepted residual is identical too: a callee that BOTH returns normally AND
-				// rewrote the slot beneath its own return address -- constructed, not
-				// incidental. What a crossed call does disturb is the in-state the resumed walk
-				// may consult, and that consequence is the caller's (resumeStateAfterPairing).
-				span.crossedCall = true;
-				span.crossedCallAt = prev.getMinAddress();
-			}
-			else if (prev.getFlows().length > 0) {
-				break; // not straight-line -- see this method's javadoc
-			}
-			if (hooks.isMechanismWrite(prev)) {
-				// NO LONGER A BREAK (bead grm-4bgh.7). Stepping over a mechanism write cannot
-				// disturb the stack DEPTH this walk tracks -- a store writes memory, not S -- so
-				// the pairing itself stays exact. What it does disturb is any value the RESUMED
-				// walk might read from the caller's in-state, and that consequence is applied
-				// there, by the caller, on this flag. See this method's javadoc.
-				span.crossedMechanismWrite = true;
-			}
-			steps++;
-			String mnem = prev.getMnemonicString().toUpperCase();
-			switch (mnem) {
-				case "PHA" -> {
-					if (--depth == 0) {
-						span.steps = steps;
-						return prev;
-					}
-				}
-				case "PHP" -> {
-					if (--depth == 0) {
-						span.steps = steps;
-						return null; // the matching push is a status byte, not a value
-					}
-				}
-				case "PLA", "PLP" -> depth++;
-				default -> {
-					// BUG FIX (grm-mej.3 increment 3, found by CallCrossingPushPullProgramTest):
-					// writesStackPointer must NOT fire on the call instruction itself. A JSR's
-					// own p-code writes S (it pushes a two-byte return address), so this check --
-					// meant to catch a TXS-style base-register move that desyncs the depth
-					// counter -- fired on every crossed call and defeated the crossing entirely,
-					// even though a call's own SP write is exactly the balanced push/pop this
-					// method's own javadoc argues nets to zero (JSR pushes, RTS pops, before the
-					// pairing's resumed walk ever sees the net effect). Excluded here rather than
-					// weakening the check itself, so a genuine mid-span TXS/TSX still aborts.
-					if (!stepOverCall
-						&& HelperArgumentRecovery.writesStackPointer(prev, stackPointer)) {
-						span.steps = steps;
-						return null; // the stack pointer moved under us -- see javadoc
-					}
-				}
-			}
-			cur = prev;
-		}
-		span.steps = steps;
-		return null; // budget exhausted before a match was found
-	}
-
-	/**
-	 * A join instruction's predecessors, under the CLOSED-WORLD rules every backward walk in this
-	 * class already assumes (bead grm-mej.3 increment X1): the physical fall-through predecessor
-	 * (when its fall-through actually reaches {@code headAddr}) plus every incoming FLOW reference,
-	 * deduplicated against it. Returns {@code null} -- meaning "cannot be soundly enumerated" -- when
-	 * {@code headAddr} is itself a function entry (its predecessors are callers, not a control-flow
-	 * edge in this function), when any incoming reference is a CALL (code enters here from outside
-	 * this span, which no depth or state proof below can account for), or when an incoming edge
-	 * comes from an undisassembled address or a different function (the walk could not soundly
-	 * continue along it either way). An empty, non-null list means {@code headAddr} is reachable
-	 * only by falling off the end of a disassembled predecessor that does not lead here -- a dead
-	 * end.
-	 * <p>
-	 * Factored out of {@link BankDataflowEngine#joinArms} (bead grm-mej.3 increment X1) so both it
-	 * and {@link #crossBlockMatchingPush} enumerate a join's incoming edges under the identical
-	 * rule -- {@code joinArms} additionally requires at least two predecessors (a fork needs two
-	 * arms; a single-predecessor boundary is the value scan's separate linkage refusal, not a join
-	 * at all), which it still checks itself after calling this. Every production caller now uses
-	 * the four-argument form with cross-function edges admitted ({@code joinArms} since bead
-	 * grm-dos9.11); this strict form remains as the rule's reference definition.
-	 */
-	static List<Address> closedWorldPredecessors(Program program, Listing listing,
-			Address headAddr) {
-		return closedWorldPredecessors(program, listing, headAddr, false);
-	}
-
-	/**
-	 * {@link #closedWorldPredecessors(Program, Listing, Address)}, optionally admitting a JUMP
-	 * from another function (bead grm-mej.21). Two routines ending in one common epilogue are the
-	 * case: cv3's {@code FUN_e61e} ends {@code e62a JMP e63d} into {@code FUN_e62f}'s own
-	 * {@code e63d PLA / e63e JMP e2e6}. Ghidra cannot give both functions the tail (bodies may not
-	 * overlap), so the edge always looks cross-function. Walking it backward is still one more
-	 * enumerated edge: a jump moves no stack byte, and every rule the walk applies -- the
-	 * function-entry and call-reference abandons, the per-address depth check -- is applied at
-	 * each node it reaches, relative to that node's own function. {@link #crossBlockMatchingPush}
-	 * and the save-slot proof ({@link #solveSlot}, bead grm-mej.22) opt in, and so does
-	 * {@code joinArms} (bead grm-dos9.11: cv3's e2d6/e2da entries sharing the e2dc store tail).
-	 */
-	static List<Address> closedWorldPredecessors(Program program, Listing listing,
-			Address headAddr, boolean admitCrossFunctionJumps) {
-		FunctionManager fm = program.getFunctionManager();
-		if (fm.getFunctionAt(headAddr) != null) {
-			return null; // entered by callers, not a predecessor edge in this function
-		}
-		Function scope = fm.getFunctionContaining(headAddr);
-		List<Address> preds = new ArrayList<>();
-		Instruction physical = listing.getInstructionBefore(headAddr);
-		if (physical != null && headAddr.equals(physical.getFallThrough())) {
-			preds.add(physical.getMinAddress());
-		}
-		for (Reference ref : program.getReferenceManager().getReferencesTo(headAddr)) {
-			RefType type = ref.getReferenceType();
-			if (!type.isFlow()) {
-				continue;
-			}
-			if (type.isCall()) {
-				return null; // a call reference into the span -- not a closed world
-			}
-			Address fromAddr = ref.getFromAddress();
-			if (preds.contains(fromAddr)) {
-				continue; // a branch whose target is also its own fall-through
-			}
-			if (listing.getInstructionAt(fromAddr) == null) {
-				return null; // undisassembled predecessor
-			}
-			if (fm.getFunctionContaining(fromAddr) != scope && !admitCrossFunctionJumps) {
-				return null; // from a different function
-			}
-			preds.add(fromAddr);
-		}
-		return preds;
-	}
-
-	/** Sentinel cap for {@link #crossBlockMatchingPush}'s own bounded search, independent of
-	 * {@link #MAX_BACKWARD_SCAN}. OWNER RULING Q1 set it at 64 on 2026-09-27; the owner approved
-	 * raising it on 2026-10-03 (grm-mej.7) to cover River City Ransom's measured mainline
-	 * {@code FUN_fed1} restores, whose proofs need (grm-3jzn's 2026-10-03 trace, caps lifted)
-	 * c08e 45, c0f4 79, c7db 81, cd57 177 and ef85 317 nodes. 384 is that worst case plus ~20%
-	 * headroom -- a sentinel against a pathological search, not a value tuned to one title. */
-	private static final int CROSS_BLOCK_NODE_CAP = 384;
-
-	/** {@link #crossBlockMatchingPush}'s own join cap. OWNER RULING Q1 set it at 8 forks on
-	 * 2026-09-27; raised with the node cap on the owner's 2026-10-03 approval (grm-mej.7) to cover
-	 * the same rcransom sites' measured needs (grm-3jzn: c08e 1, c0f4 3, c7db 3, cd57 11, ef85 24
-	 * joins) with ~33% headroom. */
-	private static final int CROSS_BLOCK_JOIN_CAP = 32;
-
-	/** Thrown internally by {@link #crossBlockMatchingPush}'s search to abandon the WHOLE proof
-	 * from arbitrary recursion depth; caught only at the top level. Stateless and carries no
-	 * message or stack trace -- it is pure control flow within one bounded search. */
-	private static final class CrossBlockAbandon extends RuntimeException {
-		static final CrossBlockAbandon INSTANCE = new CrossBlockAbandon();
-
-		private CrossBlockAbandon() {
-			super(null, null, false, false);
-		}
-	}
-
-	/**
-	 * One backward search node's contribution once it resolves (bead grm-mej.3 increment X1):
-	 * which {@code PHA}s the paths from here reach ({@code phas} -- one unless the paths' arms
-	 * each pushed their own byte, bead grm-mej.21), whether any of those paths crossed a call
-	 * ({@code crossedCall}), the nearest call address EVERY path agreed on ({@code lastCallOnPath},
-	 * {@code null} when some path crossed none or they disagreed), and whether any path crossed a
-	 * mechanism write ({@code sawMechanismWrite}).
-	 */
-	private record CrossBlockResult(Set<Address> phas, boolean crossedCall, Address lastCallOnPath,
-			boolean sawMechanismWrite) {}
-
-	/**
-	 * How many DISTINCT pushes one {@code PLA}'s proof may name (bead grm-mej.21). Each is resumed
-	 * as its own walk, and the answer is adopted only when every one of them ends on a read-back
-	 * of the same cell, so this bounds work rather than soundness. cv3's {@code e63d} needs two.
-	 */
-	private static final int CROSS_BLOCK_PUSH_CAP = 4;
-
-	/**
-	 * Mutable search-wide state for one {@link #crossBlockMatchingPush} call.
-	 * <p>
-	 * <b>{@link #spend()} is called EXACTLY ONCE per node visited</b> (bead grm-mej.3 X1 follow-up
-	 * fix): once when {@link #solveCrossBlock} is entered for a NEW address (covers every
-	 * predecessor that gets recursed into -- a call crossing, a nested push/pop, an ordinary
-	 * straight-line step), and once more, directly, for a TERMINAL {@code PHA} at depth 0, which
-	 * is never itself passed to a recursive call (there is nothing further to walk from it) and so
-	 * has no other entry point to charge it. Earlier code charged BOTH the parent's loop (for every
-	 * {@code predAddr} examined) AND the recursive call's own entry, double-counting every
-	 * non-terminal node and letting a real 64-node span exhaust the budget at ~32 -- caught by
-	 * megaman2's {@code cb60} declining with "node cap exceeded" well under its true span. A node
-	 * revisited via the loop-convergence path ({@code inProgress}) or the completed-memo path is
-	 * NOT charged again, matching {@code depthSeen}'s existing once-per-address bookkeeping.
-	 */
-	private static final class CrossBlockSearch {
-
-		int nodeBudget = CROSS_BLOCK_NODE_CAP;
-		int joinBudget = CROSS_BLOCK_JOIN_CAP;
-		int terminalCount;
-		final Map<Address, Integer> depthSeen = new HashMap<>();
-		final Map<Address, CrossBlockResult> memo = new HashMap<>();
-		final Set<Address> inProgress = new HashSet<>();
-
-		void spend() {
-			if (--nodeBudget < 0) {
-				throw CrossBlockAbandon.INSTANCE;
-			}
-		}
-	}
-
-	/**
-	 * A bounded backward ALL-PATHS search for the {@code PHA} a {@code PLA} pairs with, used ONLY
-	 * as a FALLBACK where {@link #findMatchingPush}'s straight-line walk gives up (bead grm-mej.3
-	 * increment X1 -- the design's ROM examples are megaman2 {@code cb60} and a contra-{@code
-	 * c0d3}-shaped diamond, both on register A). Unlike {@code findMatchingPush}, a control-flow
-	 * join does not abandon the search: every incoming edge ({@link #closedWorldPredecessors}) is
-	 * explored, and the pairing is trusted only when EVERY explored path agrees -- on the SAME
-	 * {@code PHA} at depth 0, with every address visited at a SINGLE owed depth. A loop with zero
-	 * net stack effect is stepped over regardless of trip count: its back-edge reconverges on an
-	 * already-in-progress node at the same depth and contributes nothing new, rather than being
-	 * walked again.
-	 * <p>
-	 * <b>Soundness rules, applied identically to every explored edge:</b> {@code env.stopsAt} and
-	 * an exhausted budget abandon the whole search; a {@code PHP} found at depth 0 abandons (a
-	 * status byte, never a value); a stack-pointer write other than a crossed call ({@code TSX}/
-	 * {@code TXS}, or any other -- see {@link HelperArgumentRecovery#writesStackPointer}) abandons;
-	 * a call is stepped over via the existing fall-through witness, exactly as
-	 * {@link #findMatchingPush} already crosses one; a mechanism write is stepped over and merely
-	 * recorded, per {@link Span#crossedMechanismWrite}'s existing rule; the same address reached
-	 * at two different owed depths abandons (bead-tracked as "disagreeing joins"); a predecessor
-	 * edge {@link #closedWorldPredecessors} cannot enumerate (a call reference into the span, an
-	 * undisassembled predecessor, or the span reaching a function entry) abandons the whole
-	 * search. A JUMP in from another function is walked like any other edge (bead grm-mej.21;
-	 * X1 abandoned on it) -- see the four-argument {@link #closedWorldPredecessors}.
-	 * <p>
-	 * <b>Different push sites on different paths</b> (bead grm-mej.21; X1 abandoned on them) are
-	 * returned together, up to {@link #CROSS_BLOCK_PUSH_CAP}: the pop then reads whichever arm's
-	 * byte the execution pushed, so the CALLER resumes from each and adopts the answer only when
-	 * every arm agrees -- see {@link #pairedArms}. cv3's shared epilogue {@code e63d PLA}, reached
-	 * from {@code e621 PHA} and {@code e634 PHA}, is the case.
-	 * <p>
-	 * <b>Budget</b> is this method's OWN -- {@link #CROSS_BLOCK_NODE_CAP} nodes,
-	 * {@link #CROSS_BLOCK_JOIN_CAP} joins -- independent of {@link #MAX_BACKWARD_SCAN}; the caller
-	 * charges its own budget exactly ONE step regardless of outcome (OWNER RULING Q1, 2026-09-27).
-	 * <p>
-	 * <b>Runs only under a state oracle</b> ({@link Hooks#hasStateOracle}) and never along a
-	 * {@code grm-wul} arm ({@link RegisterEnv#hasArms}, out of scope for this increment) --
-	 * enforced by the caller, not here, so this method itself has no oracle-vs-direct-site branch
-	 * to keep in sync.
-	 * <p>
-	 * <b>Memoized per PLA</b> across a whole analysis run via {@link Hooks#crossBlockProofMemo} --
-	 * the proof is state-free, so nothing about it can go stale within one run.
-	 *
-	 * @param pla  the {@code PLA} instruction the search resolves, entered at depth 1 exactly like
-	 *             {@link #findMatchingPush}'s 4-argument overload
-	 * @param span out-param: {@link Span#crossedBlock} is set whenever this method returns
-	 *             non-null (so the caller always resumes through {@link Hooks#stateAt}, never the
-	 *             local in-state); {@link Span#crossedCall}/{@code crossedCallAt} name the sole
-	 *             agreed nearest call, when every path crossed one and agreed on which; {@link
-	 *             Span#crossedMechanismWrite} is set when any path crossed one
-	 * @return the found {@code PHA}s in address order, or an empty list to decline (the caller
-	 *         keeps today's {@code ANALYZER_LIMIT} answer unchanged)
-	 */
-	private static List<Instruction> crossBlockMatchingPush(Program program, Instruction pla,
-			Hooks hooks, RegisterEnv env, Span span) {
-		if (env.hasArms()) {
-			return List.of(); // grm-wul arm queries do not search (out of scope for this increment)
-		}
-		Register stackPointer = program.getCompilerSpec().getStackPointer();
-		if (stackPointer == null) {
-			return List.of();
-		}
-		Listing listing = program.getListing();
-		Address plaAddr = pla.getMinAddress();
-
-		Map<Address, CrossBlockProof> memo = hooks.crossBlockProofMemo();
-		CrossBlockProof cached = memo == null ? null : memo.get(plaAddr);
-		if (cached != null) {
-			return applyProof(listing, cached, span);
-		}
-
-		CrossBlockSearch ctx = new CrossBlockSearch();
-		CrossBlockProof proof;
-		try {
-			// The top-level call is never itself in-progress, so an empty Optional here can only
-			// mean the whole search resolved to nothing -- treat exactly like a decline.
-			proof = solveCrossBlock(program, listing, hooks, env, stackPointer, ctx, plaAddr, 1)
-				.map(result -> new CrossBlockProof(new ArrayList<>(new TreeSet<>(result.phas())),
-					result.crossedCall(), result.lastCallOnPath(), result.sawMechanismWrite()))
-				.orElse(CrossBlockProof.DECLINED);
-		}
-		catch (CrossBlockAbandon abandon) {
-			proof = CrossBlockProof.DECLINED;
-		}
-		if (memo != null) {
-			memo.put(plaAddr, proof);
-		}
-		List<Instruction> found = applyProof(listing, proof, span);
-		if (!found.isEmpty()) {
-			Msg.debug(StoredValueScanner.class, "cross-block PHA/PLA pairing: pull=" + plaAddr +
-				" push=" + proof.phas() + " paths=" + ctx.terminalCount);
-		}
-		return found;
-	}
-
-	/** Applies a {@link CrossBlockProof} (fresh or memoized) to {@code span} and returns the
-	 * found {@code PHA} instructions in address order, or an empty list for a declined proof. */
-	private static List<Instruction> applyProof(Listing listing, CrossBlockProof proof,
-			Span span) {
-		List<Instruction> pushes = new ArrayList<>();
-		for (Address pha : proof.phas()) {
-			Instruction instr = listing.getInstructionAt(pha);
-			if (instr == null) {
-				return List.of();
-			}
-			pushes.add(instr);
-		}
-		if (pushes.isEmpty()) {
-			return pushes;
-		}
-		span.crossedBlock = true;
-		span.crossedCall = proof.crossedCall();
-		span.crossedCallAt = proof.agreedLastCall();
-		span.crossedMechanismWrite = proof.crossedMechanismWrite();
-		return pushes;
-	}
-
-	/**
-	 * The answer for a {@code PLA} whose cross-block proof found SEVERAL pushes -- one per arm of
-	 * a join, each pushing its own byte (bead grm-mej.21; cv3's shared epilogue {@code e63d PLA /
-	 * e63e JMP e2e6}, reached from {@code e61e LDA $8000 / PHA} and {@code e631 LDA $8000 / PHA}).
-	 * The popped byte is whichever arm's push executed, so the walk resumes from EACH push under
-	 * {@link Hooks#stateAt} there, exactly as a single cross-block pairing resumes, and the answer
-	 * is adopted only when EVERY arm ends on a {@code RESTORED_BANK} read-back of the SAME cell:
-	 * then the site re-commits the bank read back on whichever arm ran, and the value is the
-	 * {@link PartialByte#merge} of the arms'. Anything else -- an arm with no state at its push,
-	 * an arm that resolves or declines, arms reading different cells -- returns today's
-	 * {@code ANALYZER_LIMIT} unknown. Merging resolved arm values would be sound too, but is not
-	 * attempted: X1 ruled those disagreeing joins an abandon, and this lifts that only for the
-	 * restore idiom the bead names.
-	 * <p>
-	 * Only for a bare pop: the accumulators must still be the identity (nothing composed onto the
-	 * popped byte before the store), since each arm is resumed as a fresh walk.
-	 */
-	private static Scan pairedArms(Program program, Instruction pla, List<Instruction> pushes,
-			char reg, int aAcc, int oAcc, int mask, Hooks hooks, RegisterEnv env, Budget budget,
-			int depth, int step) {
-		Scan declined = stopped(aAcc, oAcc, mask, PartialByte.unknown(),
-			BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
-		if (reg != 'A' || aAcc != 0xFF || oAcc != 0x00 || depth >= MAX_RESOLVE_DEPTH) {
-			return declined;
-		}
-		List<ReadBack> reads = new ArrayList<>();
-		PartialByte merged = null;
-		for (Instruction push : pushes) {
-			MechanismState atPush = hooks.stateAt(push.getMinAddress());
-			if (atPush == null) {
-				return declined; // no state at this push -- abandon, never withdraw (ironsword)
-			}
-			Scan arm = resolveStoredValue(program, push, reg, atPush, mask, hooks, env, budget,
-				depth + 1, step);
-			ReadBack rb = arm.readBack();
-			if (arm.stop() != BankSwitchStrategy.ValueStop.RESTORED_BANK || rb == null ||
-				!rb.arms().isEmpty() || rb.crossBlockPush() != null || rb.slot() != null ||
-				(!reads.isEmpty() && !rb.cell().equals(reads.get(0).cell()))) {
-				return declined;
-			}
-			reads.add(new ReadBack(rb.cell(), rb.readAt(), rb.carriedAcross(),
-				push.getMinAddress(), pla.getMinAddress()));
-			merged = merged == null ? arm.value() : PartialByte.merge(merged, arm.value());
-		}
-		Msg.debug(StoredValueScanner.class, "cross-block PHA/PLA pairing over " + reads.size() +
-			" arms: pull=" + pla.getMinAddress() + " cell=" + reads.get(0).cell());
-		Scan restored = restoredKeepingValue(aAcc, oAcc, mask, merged, ReadBack.joined(reads));
-		return restored != null ? restored
-				: stopped(aAcc, oAcc, mask, merged, BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
-	}
-
-	/**
-	 * The recursive heart of {@link #crossBlockMatchingPush}: what every path backward from
-	 * {@code addr}, owing {@code depth} pushes, resolves to. Returns {@link Optional#empty()} --
-	 * meaning "a cycle back to a node still being computed above this one on the call stack; no
-	 * NEW contribution" -- rather than a result, so a loop's back-edge can reconverge without
-	 * re-deriving what the loop's other arm(s) already establish. Throws {@link CrossBlockAbandon}
-	 * to abandon the WHOLE search from any depth.
-	 */
-	private static Optional<CrossBlockResult> solveCrossBlock(Program program, Listing listing,
-			Hooks hooks, RegisterEnv env, Register stackPointer, CrossBlockSearch ctx, Address addr,
-			int depth) {
-		Integer seenDepth = ctx.depthSeen.get(addr);
-		if (seenDepth != null) {
-			if (seenDepth != depth) {
-				throw CrossBlockAbandon.INSTANCE; // same address, disagreeing owed depths
-			}
-			if (ctx.inProgress.contains(addr)) {
-				return Optional.empty(); // a loop's back-edge -- no new contribution
-			}
-			// Already resolved -- possibly to "no contribution" (memo holds an explicit null for
-			// a node whose every edge was itself a cycle), so ofNullable rather than of().
-			return Optional.ofNullable(ctx.memo.get(addr));
-		}
-		ctx.depthSeen.put(addr, depth);
-		ctx.spend();
-		ctx.inProgress.add(addr);
-		if (env.stopsAt(addr)) {
-			throw CrossBlockAbandon.INSTANCE; // the caller's stack is not modeled
-		}
-		List<Address> preds = closedWorldPredecessors(program, listing, addr, true);
-		if (preds == null || preds.isEmpty()) {
-			throw CrossBlockAbandon.INSTANCE; // unsound edge, or a dead end
-		}
-		if (preds.size() > 1 && --ctx.joinBudget < 0) {
-			throw CrossBlockAbandon.INSTANCE; // join cap exceeded
-		}
-
-		List<CrossBlockResult> contributions = new ArrayList<>();
-		for (Address predAddr : preds) {
-			Instruction predInstr = listing.getInstructionAt(predAddr);
-			if (predInstr == null) {
-				throw CrossBlockAbandon.INSTANCE;
-			}
-			boolean mech = hooks.isMechanismWrite(predInstr);
-			if (predInstr.getFlowType().isCall()) {
-				// Stepped over via the same fall-through witness findMatchingPush already relies
-				// on: reaching the fall-through proves the callee returned, and JSR/RTS are
-				// balanced by construction, so the depth counter stays exact across it.
-				// No spend() here: predAddr is charged exactly once, by the recursive call's own
-				// entry (bead grm-mej.3 X1 follow-up -- see solveCrossBlock's javadoc on the
-				// double-charge this replaced).
-				solveCrossBlock(program, listing, hooks, env, stackPointer, ctx, predAddr, depth)
-					.ifPresent(child -> contributions.add(new CrossBlockResult(child.phas(), true,
-						predAddr, child.sawMechanismWrite() || mech)));
-				continue;
-			}
-			String mnem = predInstr.getMnemonicString().toUpperCase();
-			switch (mnem) {
-				case "PHA" -> {
-					int next = depth - 1;
-					if (next == 0) {
-						// A TERMINAL node: unlike every other case below, this predAddr is never
-						// passed to a recursive solveCrossBlock call (there is nothing further to
-						// walk), so it has no other entry point to charge it. Charge it here,
-						// exactly once, matching every other node's single charge.
-						ctx.spend();
-						contributions.add(new CrossBlockResult(Set.of(predAddr), false, null, mech));
-						ctx.terminalCount++;
-					}
-					else {
-						solveCrossBlock(program, listing, hooks, env, stackPointer, ctx, predAddr,
-							next).ifPresent(child -> contributions
-								.add(carryMechanism(child, mech)));
-					}
-				}
-				case "PHP" -> {
-					if (depth - 1 == 0) {
-						throw CrossBlockAbandon.INSTANCE; // the matching push is a status byte
-					}
-					solveCrossBlock(program, listing, hooks, env, stackPointer, ctx, predAddr,
-						depth - 1).ifPresent(child -> contributions
-							.add(carryMechanism(child, mech)));
-				}
-				case "PLA", "PLP" -> solveCrossBlock(program, listing, hooks, env, stackPointer,
-					ctx, predAddr, depth + 1)
-						.ifPresent(child -> contributions.add(carryMechanism(child, mech)));
-				default -> {
-					if (HelperArgumentRecovery.writesStackPointer(predInstr, stackPointer)) {
-						throw CrossBlockAbandon.INSTANCE; // the stack pointer moved under us
-					}
-					solveCrossBlock(program, listing, hooks, env, stackPointer, ctx, predAddr,
-						depth).ifPresent(child -> contributions.add(carryMechanism(child, mech)));
-				}
-			}
-		}
-		ctx.inProgress.remove(addr);
-		if (contributions.isEmpty()) {
-			ctx.memo.put(addr, null); // record the resolution as "no contribution", not "unvisited"
-			return Optional.empty(); // every edge was itself a cycle -- no new contribution here
-		}
-		// Different push sites on different paths no longer abandon (bead grm-mej.21): each is a
-		// separate arm the caller resumes from, and the caller adopts the answer only when every
-		// arm agrees on what it read back. Bounded by CROSS_BLOCK_PUSH_CAP.
-		Set<Address> phas = new TreeSet<>();
-		boolean crossedCall = false;
-		boolean sawMechanismWrite = false;
-		Address agreedLastCall = null;
-		boolean firstCall = true;
-		boolean lastCallAgrees = true;
-		for (CrossBlockResult c : contributions) {
-			phas.addAll(c.phas());
-			if (phas.size() > CROSS_BLOCK_PUSH_CAP) {
-				throw CrossBlockAbandon.INSTANCE;
-			}
-			crossedCall |= c.crossedCall();
-			sawMechanismWrite |= c.sawMechanismWrite();
-			if (!c.crossedCall() || c.lastCallOnPath() == null) {
-				lastCallAgrees = false;
-			}
-			else if (firstCall) {
-				agreedLastCall = c.lastCallOnPath();
-				firstCall = false;
-			}
-			else if (!agreedLastCall.equals(c.lastCallOnPath())) {
-				lastCallAgrees = false;
-			}
-		}
-		CrossBlockResult combined = new CrossBlockResult(Set.copyOf(phas), crossedCall,
-			lastCallAgrees ? agreedLastCall : null, sawMechanismWrite);
-		ctx.memo.put(addr, combined);
-		return Optional.of(combined);
-	}
-
-	/** {@code child}, with {@code mech} folded into its {@code sawMechanismWrite} flag. */
-	private static CrossBlockResult carryMechanism(CrossBlockResult child, boolean mech) {
-		return mech && !child.sawMechanismWrite()
-				? new CrossBlockResult(child.phas(), child.crossedCall(), child.lastCallOnPath(),
-					true)
-				: child;
-	}
-
-	// ------------------------------------------------------------------
-	// RAM save-slot forwarding across calls and joins (bead grm-zsxz increment Z2)
-	// ------------------------------------------------------------------
-
-	/** {@link #saveSlotForwarded}'s own cap on the instructions ONE callee closure's writer
-	 *  census may visit. A sentinel against a pathological closure (a game's whole main loop is
-	 *  reachable from some calls), not a value tuned to one title; over it, the census abandons. */
-	private static final int SLOT_CENSUS_INSTRUCTION_CAP = 4096;
-
-	/** How far back from an {@code RTS}/{@code RTI} the census looks for the push-then-return
-	 *  dispatch idiom ({@link #looksLikeReturnDispatch}). */
-	private static final int RETURN_DISPATCH_LOOKBACK = 8;
-
-	/** Thrown internally by the save-slot search and census to abandon the WHOLE proof from any
-	 *  recursion depth; caught only at the top. Stateless, no stack trace -- pure control flow. */
-	private static final class SlotAbandon extends RuntimeException {
-		static final SlotAbandon INSTANCE = new SlotAbandon();
-
-		private SlotAbandon() {
-			super(null, null, false, false);
-		}
-	}
-
-	/** How one instruction relates to the save slot a proof is forwarding. */
-	private enum SlotWrite {
-		/** Provably does not write the slot. */
-		NONE,
-		/** A plain {@code STA}/{@code STX}/{@code STY} to exactly the slot -- a usable source. */
-		STORES_SLOT,
-		/** Writes (or may write) the slot in a way that is not a usable source: a read-modify-
-		 *  write, an indexed store whose reachable window covers the slot, a resolved write
-		 *  reference from anything else. */
-		WRITES_SLOT,
-		/** A memory write this proof cannot place at all. */
-		UNPLACEABLE,
-		/** A true indirect store, stepped over under
-		 *  {@link SlotAssumption#INDIRECT_STORES_DO_NOT_WRITE_SLOT}. */
-		INDIRECT_ASSUMED
-	}
-
-	/** One save-slot search node's resolution: the store every path from it reaches, the calls
-	 *  whose save helper ran it ({@code via}; empty when the store is on the paths themselves --
-	 *  bead grm-mej.23), and whether any of those paths relied on the indirect-store assumption. */
-	private record SlotResult(Address store, Set<Address> via, boolean indirectAssumed) {}
-
-	/** Sentinel cap on the distinct calls ({@link SlotResult#via}) one save-slot proof may resolve
-	 *  a save helper through (bead grm-mej.23). cv3's shared {@code e67f} epilogue measured 31 arms;
-	 *  this is about twice that, a sentinel against a pathological fan-in, not a tuned value. */
-	private static final int SLOT_HELPER_ARM_CAP = 64;
-
-	/** Mutable search-wide state for one save-slot proof. Spending mirrors
-	 *  {@link CrossBlockSearch}: once per node entered, once more per terminal store. */
-	private static final class SlotSearch {
-
-		int nodeBudget = CROSS_BLOCK_NODE_CAP;
-		int joinBudget = CROSS_BLOCK_JOIN_CAP;
-		final Set<Address> visited = new HashSet<>();
-		final Map<Address, SlotResult> memo = new HashMap<>();
-		final Set<Address> inProgress = new HashSet<>();
-
-		void spend() {
-			if (--nodeBudget < 0) {
-				throw SlotAbandon.INSTANCE;
-			}
-		}
-	}
-
-	/**
-	 * The value a load of a RAM SAVE SLOT reads, forwarded from the ONE store that filled it --
-	 * across calls and control-flow joins within one function body (bead grm-zsxz increment Z2).
-	 * The RAM-slot model in the same backward ALL-PATHS skeleton X1 built for stack slots
-	 * ({@link #crossBlockMatchingPush}): slot identity is an ADDRESS rather than a depth, a path
-	 * ends at a placeable store to that address, and a call is crossed only on a WRITER CENSUS of
-	 * its callee closure instead of the stack's fall-through witness. Blaster Master's
-	 * {@code FUN_e9b8} is the shape ({@code e9bb LDA $DB / STA $D3}, three calls, {@code e9c9 LDA
-	 * $D3 / JSR $E61B}).
-	 * <p>
-	 * <b>A FALLBACK ONLY</b>, called solely where {@link #resolveStoredValue} was about to return
-	 * a wholly unknown {@code ANALYZER_LIMIT} for this load, and only under a state oracle
-	 * ({@link Hooks#hasStateOracle}) off any grm-wul arm. Returns {@code null} on EVERY failure --
-	 * a declined proof, no state at the store, or a resumed walk that ends anywhere other than a
-	 * value or a restore -- so the caller keeps today's answer exactly; it can only turn a decline
-	 * into an answer, never change a classification it did not improve (grm-mej.3's lesson:
-	 * widening what a walk traverses changes stop classification, so a resumed walk ending in,
-	 * say, {@code RUNTIME_SOURCE} is NOT adopted).
-	 * <p>
-	 * <b>Resolution.</b> The store is re-scanned for the register it stores, under the tracked
-	 * state AT THE STORE ({@link Hooks#stateAt}; {@code null} abandons -- the ironsword rule,
-	 * {@link #resumeStateAfterPairing}). That state predates every call and mechanism write
-	 * between the store and the load, so a mirror read feeding the store is attributed the bank
-	 * live at the read. A resolved value is folded through this walk's accumulators exactly as
-	 * {@link #forwardedStoreValue} folds one; a {@code RESTORED_BANK} stop is kept, with the slot
-	 * recorded as its {@link SlotCarrier}, when this walk's accumulators are still the identity
-	 * (the stored byte reaches the site unmodified).
-	 * <p>
-	 * <b>The proof</b> (all paths backward from the load, under {@link #closedWorldPredecessors}'
-	 * closed-world rules): every path must reach the SAME plain store to the slot before reaching
-	 * anything that may write it. Abandons on: different stores on different paths (stores whose
-	 * values might agree are NOT reconciled -- that would need each resolved under its own state,
-	 * and no measured customer needs it); a path reaching a function entry, a call reference, an
-	 * undisassembled predecessor, or the env's entry (a JUMP in from another function is walked,
-	 * bead grm-mej.22); any other writer of the slot on a path ({@link #classifySlotWrite}); a
-	 * crossed call whose callee closure may write the slot ({@link #calleeClosureCensus}) --
-	 * unless that callee is a SAVE HELPER ({@link #saveHelperStore}, bead grm-mej.23), when the
-	 * call ends the path as its store, resolved per call by {@link #saveHelperArms}; the node/join
-	 * caps (the same
-	 * {@link #CROSS_BLOCK_NODE_CAP}/{@link #CROSS_BLOCK_JOIN_CAP} X1 uses). Slots that may alias
-	 * the stack ({@link StackFloor}), non-writable and volatile cells, and indexed loads are
-	 * refused up front. Interrupt handlers are not modelled as writers -- the same stance the
-	 * within-block forwarding has always taken.
-	 */
-	private static Scan saveSlotForwarded(Program program, Instruction load, int aAcc, int oAcc,
-			int mask, Hooks hooks, RegisterEnv env, Budget budget, int depth) {
-		if (depth >= MAX_RESOLVE_DEPTH) {
-			return null;
-		}
-		Address cell = plainAbsoluteTarget(load);
-		if (cell == null) {
-			return null;
-		}
-		MemoryBlock block = program.getMemory().getBlock(cell);
-		if (block == null || !block.isWrite() || block.isVolatile() ||
-			StackFloor.mayAliasStack(program, cell)) {
-			return null;
-		}
-		int innerMask = mask & aAcc & ~oAcc;
-		if (innerMask == 0) {
-			return null;
-		}
-		SlotProof proof = saveSlotProof(program, load, cell, hooks, env);
-		if (proof.store() == null) {
-			return null;
-		}
-		Listing listing = program.getListing();
-		Instruction store = listing.getInstructionAt(proof.store());
-		Character storeReg = store == null ? null : storeRegister(store);
-		if (storeReg == null) {
-			return null;
-		}
-		if (!proof.via().isEmpty()) {
-			return saveHelperArms(program, load, store, storeReg, cell, proof, aAcc, oAcc, mask,
-				innerMask, hooks, budget, depth);
-		}
-		MechanismState atStore = hooks.stateAt(store.getMinAddress());
-		if (atStore == null) {
-			return null; // no state at the store: abandon, never withdraw-and-continue
-		}
-		Scan inner = resolveStoredValue(program, store, storeReg, atStore, innerMask, hooks, env,
-			budget, depth + 1);
-		SlotCarrier carrier = new SlotCarrier(cell, store.getMinAddress(), load.getMinAddress(),
-			proof.indirectStoresAssumed());
-		Msg.debug(StoredValueScanner.class, "save-slot forwarding: load=" + load.getMinAddress() +
-			" cell=" + cell + " store=" + store.getMinAddress() + " -> " + inner.stop());
-		if (inner.stop() == BankSwitchStrategy.ValueStop.RESTORED_BANK && inner.readBack() != null &&
-			aAcc == 0xFF && oAcc == 0x00) {
-			// grm-mej.8: checked BEFORE the partly-known case below, so a restore whose byte the
-			// strategy could partly evaluate keeps its read-back -- see restoredKeepingValue.
-			Scan restored = restoredKeepingValue(aAcc, oAcc, mask, inner.value(),
-				inner.readBack().withSlot(carrier));
-			if (restored != null) {
-				return restored;
-			}
-		}
-		if (inner.value().knownMask() != 0) {
-			return stopped(aAcc, oAcc, mask, inner.value(),
-				BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
-		}
-		return null;
-	}
-
-	/**
-	 * {@link #saveSlotForwarded}'s answer when the proof's store sits inside a SAVE HELPER the
-	 * paths CALL (bead grm-mej.23; {@link #saveHelperStore}). Each call is an arm: the paths
-	 * reach the same store through different calls (cv3's ~30 trampolines each {@code JSR e2e0}),
-	 * and the store's state is the merge over every caller, so each arm is resolved under the
-	 * state AT ITS OWN CALL ({@link Hooks#stateAt}) -- sound because the helper's line from its
-	 * entry to the store switches nothing. The answer is adopted only as grm-mej.21's
-	 * {@link #pairedArms} adopts one: EVERY arm a {@code RESTORED_BANK} read-back of the SAME
-	 * cell, read on that straight line (so the call-site state is the state at the read), with
-	 * this walk's accumulators still the identity. Anything else -- an arm with no state at its
-	 * call, an arm that resolves to a number or declines -- returns {@code null}, keeping today's
-	 * answer: merging resolved arm values would be sound too, but no measured customer needs it.
-	 */
-	private static Scan saveHelperArms(Program program, Instruction load, Instruction store,
-			char storeReg, Address cell, SlotProof proof, int aAcc, int oAcc, int mask,
-			int innerMask, Hooks hooks, Budget budget, int depth) {
-		if (aAcc != 0xFF || oAcc != 0x00) {
-			return null;
-		}
-		Listing listing = program.getListing();
-		List<ReadBack> reads = new ArrayList<>();
-		PartialByte merged = null;
-		for (Address callAt : proof.via()) {
-			Instruction call = listing.getInstructionAt(callAt);
-			Address[] flows = call == null ? null : call.getFlows();
-			if (flows == null || flows.length != 1) {
-				return null;
-			}
-			Address entry = flows[0];
-			MechanismState atCall = hooks.stateAt(callAt);
-			if (atCall == null) {
-				return null; // no state at this call -- abandon, never withdraw (ironsword)
-			}
-			Scan arm = resolveStoredValue(program, store, storeReg, atCall, innerMask, hooks,
-				RegisterEnv.NONE, budget, depth + 1);
-			ReadBack rb = arm.readBack();
-			if (arm.stop() != BankSwitchStrategy.ValueStop.RESTORED_BANK || rb == null ||
-				!rb.arms().isEmpty() || rb.slot() != null || rb.crossBlockPush() != null ||
-				rb.carriedAcross() != null || !sameSpace(rb.readAt(), entry) ||
-				rb.readAt().compareTo(entry) < 0 ||
-				rb.readAt().compareTo(store.getMinAddress()) >= 0 ||
-				(!reads.isEmpty() && !rb.cell().equals(reads.get(0).cell()))) {
-				return null;
-			}
-			reads.add(rb.withSlot(new SlotCarrier(cell, store.getMinAddress(),
-				load.getMinAddress(), proof.indirectStoresAssumed(), callAt)));
-			merged = merged == null ? arm.value() : PartialByte.merge(merged, arm.value());
-		}
-		Msg.debug(StoredValueScanner.class, "save-slot forwarding through a save helper: load=" +
-			load.getMinAddress() + " cell=" + cell + " store=" + store.getMinAddress() + " over " +
-			reads.size() + " call(s)");
-		ReadBack readBack = reads.size() == 1 ? reads.get(0) : ReadBack.joined(reads);
-		Scan restored = restoredKeepingValue(aAcc, oAcc, mask, merged, readBack);
-		// Every arm's state pinned the read-back byte whole: the merged value, as the direct
-		// route keeps one (saveSlotForwarded's partly-known branch).
-		return restored != null ? restored
-				: stopped(aAcc, oAcc, mask, merged, BankSwitchStrategy.ValueStop.ANALYZER_LIMIT);
-	}
-
-	private static boolean sameSpace(Address a, Address b) {
-		return a.getAddressSpace().equals(b.getAddressSpace());
-	}
-
-	/** The (possibly memoized) save-slot proof for {@code load} reading {@code cell}. */
-	private static SlotProof saveSlotProof(Program program, Instruction load, Address cell,
-			Hooks hooks, RegisterEnv env) {
-		ProofMemo memo = hooks.saveSlotMemo();
-		SlotKey key = new SlotKey(load.getMinAddress(), cell.getOffset(), env.entryAddr());
-		SlotProof cached = memo == null ? null : memo.slotProofs.get(key);
-		if (cached != null) {
-			return cached;
-		}
-		SlotSearch ctx = new SlotSearch();
-		SlotProof proof;
-		try {
-			proof = solveSlot(program, program.getListing(), env, hooks, memo, ctx, cell,
-				load.getMinAddress())
-					.map(r -> new SlotProof(r.store(), new ArrayList<>(new TreeSet<>(r.via())),
-						r.indirectAssumed()))
-					.orElse(SlotProof.DECLINED);
-		}
-		catch (SlotAbandon abandon) {
-			proof = SlotProof.DECLINED;
-		}
-		if (memo != null) {
-			memo.slotProofs.put(key, proof);
-		}
-		return proof;
-	}
-
-	/**
-	 * The recursive heart of {@link #saveSlotProof}: what every path backward from {@code addr}
-	 * resolves to. {@link Optional#empty()} means a loop back-edge (or a node whose every edge
-	 * was one) -- no new contribution -- exactly as in {@link #solveCrossBlock}.
-	 */
-	private static Optional<SlotResult> solveSlot(Program program, Listing listing,
-			RegisterEnv env, Hooks hooks, ProofMemo memo, SlotSearch ctx, Address cell,
-			Address addr) {
-		if (ctx.visited.contains(addr)) {
-			if (ctx.inProgress.contains(addr)) {
-				return Optional.empty();
-			}
-			return Optional.ofNullable(ctx.memo.get(addr));
-		}
-		ctx.visited.add(addr);
-		ctx.spend();
-		ctx.inProgress.add(addr);
-		if (env.stopsAt(addr)) {
-			throw SlotAbandon.INSTANCE; // the caller's memory is not modelled
-		}
-		// grm-mej.22: a JUMP in from another function is one more enumerated edge (cv3's e67f
-		// LDA $22, the shared tail of ~30 trampolines that each JMP e67f) -- the same rule, and
-		// the same per-node entry/call-reference abandons, crossBlockMatchingPush walks under.
-		List<Address> preds = closedWorldPredecessors(program, listing, addr, true);
-		if (preds == null || preds.isEmpty()) {
-			throw SlotAbandon.INSTANCE; // a function entry, a call ref, an unsound edge, a dead end
-		}
-		if (preds.size() > 1 && --ctx.joinBudget < 0) {
-			throw SlotAbandon.INSTANCE;
-		}
-		List<SlotResult> contributions = new ArrayList<>();
-		for (Address predAddr : preds) {
-			Instruction pred = listing.getInstructionAt(predAddr);
-			if (pred == null) {
-				throw SlotAbandon.INSTANCE;
-			}
-			boolean assumed = false;
-			switch (classifySlotWrite(program, pred, cell)) {
-				case STORES_SLOT -> {
-					ctx.spend(); // a terminal node, charged once (see SlotSearch)
-					contributions.add(new SlotResult(predAddr, Set.of(), false));
-					continue;
-				}
-				case WRITES_SLOT, UNPLACEABLE -> throw SlotAbandon.INSTANCE;
-				case INDIRECT_ASSUMED -> assumed = true;
-				case NONE -> {
-				}
-			}
-			if (pred.getFlowType().isCall()) {
-				CensusResult census = callCensus(program, listing, memo, pred, cell);
-				if (!census.clean()) {
-					// grm-mej.23: a callee that may write the slot is still a usable SOURCE when it
-					// is a save helper -- it stores the slot exactly once, last, on every path.
-					SaveHelperStore helper = saveHelperStore(program, listing, hooks, memo, pred,
-						cell);
-					if (helper == null) {
-						throw SlotAbandon.INSTANCE; // the callee closure may write the slot
-					}
-					ctx.spend(); // a terminal node, charged once (see SlotSearch)
-					contributions.add(new SlotResult(helper.store(), Set.of(predAddr),
-						assumed || helper.indirectStoresAssumed()));
-					continue;
-				}
-				assumed |= census.indirectStoresAssumed();
-			}
-			boolean viaAssumption = assumed;
-			solveSlot(program, listing, env, hooks, memo, ctx, cell, predAddr).ifPresent(child ->
-				contributions.add(viaAssumption && !child.indirectAssumed()
-						? new SlotResult(child.store(), child.via(), true) : child));
-		}
-		ctx.inProgress.remove(addr);
-		if (contributions.isEmpty()) {
-			ctx.memo.put(addr, null);
-			return Optional.empty();
-		}
-		Address store = contributions.get(0).store();
-		boolean direct = contributions.get(0).via().isEmpty();
-		boolean anyAssumed = false;
-		Set<Address> via = new HashSet<>();
-		for (SlotResult c : contributions) {
-			if (!c.store().equals(store)) {
-				throw SlotAbandon.INSTANCE; // different stores on different paths
-			}
-			if (c.via().isEmpty() != direct) {
-				throw SlotAbandon.INSTANCE; // the store reached both directly and through a call
-			}
-			anyAssumed |= c.indirectAssumed();
-			via.addAll(c.via());
-		}
-		if (via.size() > SLOT_HELPER_ARM_CAP) {
-			throw SlotAbandon.INSTANCE;
-		}
-		SlotResult combined = new SlotResult(store, via, anyAssumed);
-		ctx.memo.put(addr, combined);
-		return Optional.of(combined);
-	}
-
-	/**
-	 * The writer census for one crossed {@code call}: whether NOTHING its callee closure may
-	 * execute writes {@code cell}. The call must have exactly one resolved, disassembled target in
-	 * a known bank; see {@link #calleeClosureCensus} for the closure itself.
-	 */
-	private static CensusResult callCensus(Program program, Listing listing, ProofMemo memo,
-			Instruction call, Address cell) {
-		Address[] flows = call.getFlows();
-		if (call.getFlowType().isComputed() || flows == null || flows.length != 1) {
-			return CensusResult.DIRTY; // an indirect or unresolved call
-		}
-		Address entry = flows[0];
-		if (entersUnknownBank(program, call, entry)) {
-			return CensusResult.DIRTY;
-		}
-		// grm-mej.25: the index registers this call site provably passes in, the census's seed
-		// for propagating X/Y through the closure (see calleeClosureCensus).
-		Integer x = constantRegisterValue(program, call, 'X', INERT_HOOKS, RegisterEnv.NONE,
-			new Budget(MAX_RESOLVE_STEPS));
-		Integer y = constantRegisterValue(program, call, 'Y', INERT_HOOKS, RegisterEnv.NONE,
-			new Budget(MAX_RESOLVE_STEPS));
-		return memoizedCensus(program, listing, memo, entry, cell, x, y);
-	}
-
-	/** {@link #calleeClosureCensus} from {@code entry}, through {@code memo} when there is one. */
-	private static CensusResult memoizedCensus(Program program, Listing listing, ProofMemo memo,
-			Address entry, Address cell) {
-		return memoizedCensus(program, listing, memo, entry, cell, null, null);
-	}
-
-	/**
-	 * {@link #memoizedCensus} with the index registers known on entry ({@code null} = unknown),
-	 * keyed on them too (bead grm-mej.25): {@link #calleeClosureCensus} propagates them forward
-	 * through the closure.
-	 */
-	private static CensusResult memoizedCensus(Program program, Listing listing, ProofMemo memo,
-			Address entry, Address cell, Integer x, Integer y) {
-		CensusKey key = new CensusKey(entry, cell.getOffset(), x, y);
-		CensusResult cached = memo == null ? null : memo.censuses.get(key);
-		if (cached != null) {
-			return cached;
-		}
-		CensusResult result = calleeClosureCensus(program, listing, entry, cell, x, y);
-		if (memo != null) {
-			memo.censuses.put(key, result);
-		}
-		return result;
-	}
-
-	/** A save helper's slot store ({@link #saveHelperStore}): the store, the callee entry, and
-	 *  whether the census after the store relied on the indirect-store assumption. */
-	record SaveHelperStore(Address entry, Address store, boolean indirectStoresAssumed) {}
-
-	/**
-	 * Whether {@code call}'s callee is a SAVE HELPER for {@code cell} (bead grm-mej.23): every
-	 * path from its entry stores the slot exactly once, with a plain store, and nothing after
-	 * that store writes it again -- so after the call returns, the slot holds what that store
-	 * wrote, and the call can end a save-slot path as if the store were on it. cv3's
-	 * {@code FUN_e2e0} ({@code PHA / LDA $21 / STA $22 / PLA / STA $21 / STA $5115 / RTS}) is the
-	 * shape.
-	 * <p>
-	 * Deliberately narrow: the entry must reach the store by a STRAIGHT fall-through line (no
-	 * flow, no call, no other writer of the slot, no {@link Hooks#isMechanismWrite}, at most
-	 * {@link #MAX_BACKWARD_SCAN} instructions), which makes "every path stores it once" and "no
-	 * bank switches between the entry and the store" both hold by construction -- the second is
-	 * what lets {@link #saveSlotForwarded} resolve the store under the state AT THE CALL. What
-	 * follows the store must pass the same closure census a crossed call does
-	 * ({@link #calleeClosureCensus}); a loop back to the store is caught there, as the store
-	 * itself is a writer. The call needs one resolved target in a known bank, as
-	 * {@link #callCensus} requires. {@code null} on any failure.
-	 */
-	private static SaveHelperStore saveHelperStore(Program program, Listing listing, Hooks hooks,
-			ProofMemo memo, Instruction call, Address cell) {
-		Address[] flows = call.getFlows();
-		if (call.getFlowType().isComputed() || flows == null || flows.length != 1) {
-			return null;
-		}
-		Address entry = flows[0];
-		if (entersUnknownBank(program, call, entry)) {
-			return null;
-		}
-		Address cursor = entry;
-		for (int i = 0; i < MAX_BACKWARD_SCAN; i++) {
-			Instruction instr = listing.getInstructionAt(cursor);
-			if (instr == null || hooks.isMechanismWrite(instr)) {
-				return null;
-			}
-			SlotWrite write = classifySlotWrite(program, instr, cell);
-			if (write == SlotWrite.STORES_SLOT) {
-				Address after = instr.getFallThrough();
-				if (after == null) {
-					return null;
-				}
-				CensusResult rest = memoizedCensus(program, listing, memo, after, cell);
-				return rest.clean()
-						? new SaveHelperStore(entry, instr.getMinAddress(),
-							rest.indirectStoresAssumed())
-						: null;
-			}
-			if (write != SlotWrite.NONE) {
-				return null;
-			}
-			ghidra.program.model.symbol.FlowType ft = instr.getFlowType();
-			Address next = instr.getFallThrough();
-			if (!ft.isFallthrough() || ft.isCall() || instr.getFlows().length > 0 ||
-				next == null) {
-				return null;
-			}
-			cursor = next;
-		}
-		return null;
-	}
-
-	/**
-	 * Every instruction reachable from {@code entry} -- following fall-through, branches, jumps
-	 * and calls TRANSITIVELY, instruction by instruction rather than through Ghidra's function
-	 * bodies (which can be wrong) -- is checked with {@link #classifySlotWrite}. DIRTY (abandon)
-	 * when any of them may write {@code cell}, or the closure cannot be fully resolved: a computed
-	 * jump or call ({@code JMP ($nnnn)}), a jump or call with no resolved target, an undisassembled
-	 * target, a base-space target in a banked window entered from outside that bank's own image
-	 * ({@link #entersUnknownBank} -- which bank runs there depends on state this census does not
-	 * have; a realized overlay is one known image and is walked), a {@code BRK}, a return that looks like a push-then-return dispatch
-	 * ({@link #looksLikeReturnDispatch}, whose real targets are invisible to the listing), or more
-	 * than {@link #SLOT_CENSUS_INSTRUCTION_CAP} instructions. Indirect stores are stepped over
-	 * under {@link SlotAssumption#INDIRECT_STORES_DO_NOT_WRITE_SLOT}, and reported.
-	 * <p>
-	 * <b>Index registers are propagated FORWARD through the closure</b> (bead grm-mej.25): each
-	 * instruction carries the X and Y it may be reached with, starting from {@code entryX}/
-	 * {@code entryY} (the crossed call's provable values, {@code null} = unknown) and merged at
-	 * every join -- two different constants, or a constant and unknown, merge to unknown, and a
-	 * merged address is re-visited, so a store is classified under every value that reaches it.
-	 * Sound because only closure paths run between the crossed call and its return (interrupts
-	 * are out of scope, as everywhere here). A callee is entered with the caller's registers; the
-	 * fall-through after a call keeps a register only when {@link #calleePreserves} proves it.
-	 * cv3's ec04 is the measured shape: {@code LDX #$00}, then a loop that calls the zero-page
-	 * add helper e899 ({@code STA $00,X / INC $01,X}) from three sites behind loop joins, where
-	 * no backward straight-line walk can see the {@code LDX}. An index the propagation does not
-	 * know falls back to the state-free {@link #constantIndex}/{@link #loopIndexRange}.
-	 */
-	private static CensusResult calleeClosureCensus(Program program, Listing listing,
-			Address entry, Address cell, Integer entryX, Integer entryY) {
-		Map<Address, IndexRegs> regs = new HashMap<>();
-		List<Address> work = new ArrayList<>();
-		regs.put(entry, new IndexRegs(entryX, entryY));
-		work.add(entry);
-		boolean assumed = false;
-		while (!work.isEmpty()) {
-			Address at = work.remove(work.size() - 1);
-			if (regs.size() > SLOT_CENSUS_INSTRUCTION_CAP) {
-				return CensusResult.DIRTY;
-			}
-			Instruction instr = listing.getInstructionAt(at);
-			if (instr == null) {
-				return CensusResult.DIRTY; // undisassembled
-			}
-			IndexRegs in = regs.get(at);
-			switch (classifySlotWrite(program, instr, cell, in)) {
-				case STORES_SLOT, WRITES_SLOT, UNPLACEABLE -> {
-					return CensusResult.DIRTY;
-				}
-				case INDIRECT_ASSUMED -> assumed = true;
-				case NONE -> {
-				}
-			}
-			String mnem = instr.getMnemonicString().toUpperCase();
-			if (mnem.equals("BRK")) {
-				return CensusResult.DIRTY;
-			}
-			if (mnem.equals("RTS") || mnem.equals("RTI")) {
-				if (looksLikeReturnDispatch(listing, instr)) {
-					return CensusResult.DIRTY;
-				}
-				continue;
-			}
-			ghidra.program.model.symbol.FlowType ft = instr.getFlowType();
-			if (ft.isComputed()) {
-				return CensusResult.DIRTY;
-			}
-			Address[] flows = instr.getFlows();
-			if ((ft.isJump() || ft.isCall()) && (flows == null || flows.length == 0)) {
-				return CensusResult.DIRTY;
-			}
-			// A call enters its callee with the registers it was reached with; everything else
-			// passes on what it leaves behind.
-			IndexRegs out = ft.isCall() ? in : in.after(instr);
-			// A conditional branch whose flags are provable has one live successor (grm-uurl):
-			// blmaster ebf2 BEQ after LDA #0 never falls into the palette table at ebf4.
-			Boolean taken = ft.isConditional() ? knownBranchOutcome(program, instr) : null;
-			if (Boolean.TRUE.equals(taken)) {
-				for (Address target : flows) {
-					if (entersUnknownBank(program, instr, target)) {
-						return CensusResult.DIRTY;
-					}
-					reach(regs, work, target, out);
-				}
-				continue;
-			}
-			if (Boolean.FALSE.equals(taken)) {
-				flows = null;
-			}
-			if (flows != null) {
-				for (Address target : flows) {
-					if (entersUnknownBank(program, instr, target)) {
-						return CensusResult.DIRTY;
-					}
-					reach(regs, work, target, out);
-				}
-			}
-			Address ft2 = instr.getFallThrough();
-			if (ft2 != null) {
-				reach(regs, work, ft2, ft.isCall()
-						? in.afterCall(calleePreserves(program, instr, 'X'),
-							calleePreserves(program, instr, 'Y'))
-						: out);
-			}
-		}
-		return new CensusResult(true, assumed);
-	}
-
-	/** Records that {@code target} is reached with {@code with}, (re)queueing it when that is new
-	 *  or weakens what it was already reached with. */
-	private static void reach(Map<Address, IndexRegs> regs, List<Address> work, Address target,
-			IndexRegs with) {
-		IndexRegs old = regs.get(target);
-		IndexRegs merged = old == null ? with : old.merge(with);
-		if (!merged.equals(old)) {
-			regs.put(target, merged);
-			work.add(target);
-		}
-	}
-
-	/**
-	 * The X and Y {@link #calleeClosureCensus} may reach an instruction with: a provable constant
-	 * ({@code 0..255}) or {@code null} (unknown). Bead grm-mej.25.
-	 */
-	record IndexRegs(Integer x, Integer y) {
-
-		static final IndexRegs UNKNOWN = new IndexRegs(null, null);
-
-		/** Every path's value: a register both sides agree on stays, anything else is unknown. */
-		IndexRegs merge(IndexRegs other) {
-			return new IndexRegs(java.util.Objects.equals(x, other.x) ? x : null,
-				java.util.Objects.equals(y, other.y) ? y : null);
-		}
-
-		/** After a call: a register survives only when the callee provably preserves it. */
-		IndexRegs afterCall(boolean keepX, boolean keepY) {
-			return new IndexRegs(keepX ? x : null, keepY ? y : null);
-		}
-
-		/** The registers after the non-call {@code instr} executes. */
-		IndexRegs after(Instruction instr) {
-			int op;
-			try {
-				op = instr.getByte(0) & 0xFF;
-			}
-			catch (MemoryAccessException e) {
-				return UNKNOWN;
-			}
-			Integer nx = x;
-			Integer ny = y;
-			switch (op) {
-				case 0xA2 -> nx = immediate(instr); // LDX #imm
-				case 0xA0 -> ny = immediate(instr); // LDY #imm
-				case 0xE8 -> nx = x == null ? null : (x + 1) & 0xFF; // INX
-				case 0xCA -> nx = x == null ? null : (x - 1) & 0xFF; // DEX
-				case 0xC8 -> ny = y == null ? null : (y + 1) & 0xFF; // INY
-				case 0x88 -> ny = y == null ? null : (y - 1) & 0xFF; // DEY
-				default -> {
-					if (writesRegister(instr, 'X')) {
-						nx = null;
-					}
-					if (writesRegister(instr, 'Y')) {
-						ny = null;
-					}
-				}
-			}
-			return new IndexRegs(nx, ny);
-		}
-
-		private static Integer immediate(Instruction instr) {
-			try {
-				return instr.getByte(1) & 0xFF;
-			}
-			catch (MemoryAccessException e) {
-				return null;
-			}
-		}
-
-		/** By mnemonic (LDX/TAX/TSX/PLX, LAX and kin) and by Ghidra's own result objects, so an
-		 *  instruction either one says writes the register makes it unknown. */
-		private static boolean writesRegister(Instruction instr, char reg) {
-			String m = instr.getMnemonicString().toUpperCase();
-			boolean byName = reg == 'X'
-					? Set.of("LDX", "TAX", "TSX", "PLX", "INX", "DEX", "LAX", "LAS", "SBX", "AXS")
-							.contains(m)
-					: Set.of("LDY", "TAY", "PLY", "INY", "DEY").contains(m);
-			if (byName) {
-				return true;
-			}
-			for (Object o : instr.getResultObjects()) {
-				if (o instanceof Register r &&
-					r.getName().equalsIgnoreCase(String.valueOf(reg))) {
-					return true;
-				}
-			}
-			return false;
-		}
-	}
 
 	/** Instructions that leave N and Z alone, which {@link #knownBranchOutcome} may walk back over
 	 *  to the flag setter. Deliberately short: anything not listed ends the walk. */
@@ -2596,7 +1323,7 @@ final class StoredValueScanner {
 			if (reg == null || !binaryModeFlags(program, prev, m)) {
 				return null;
 			}
-			Integer v = constantRegisterValue(program, after, reg, INERT_HOOKS, RegisterEnv.NONE,
+			Integer v = constantRegisterValue(program, after, reg, Hooks.INERT, RegisterEnv.NONE,
 				new Budget(MAX_RESOLVE_STEPS));
 			if (v == null) {
 				return null;
@@ -2626,7 +1353,7 @@ final class StoredValueScanner {
 		if (!mnem.equals("ADC") && !mnem.equals("SBC")) {
 			return true;
 		}
-		Integer d = constantLocValue(program, setter, ConstantSemantics.Loc.D, INERT_HOOKS,
+		Integer d = constantLocValue(program, setter, ConstantSemantics.Loc.D, Hooks.INERT,
 			RegisterEnv.NONE, new Budget(MAX_RESOLVE_STEPS));
 		if (d != null) {
 			return d == 0;
@@ -2647,7 +1374,7 @@ final class StoredValueScanner {
 	 * {@code W8000_M2_B8::b1fb}. Only base-space banked targets (a window's home bytes, cv3's
 	 * {@code $C000} window under {@code bank_5116}) entered from another block stay unknown.
 	 */
-	private static boolean entersUnknownBank(Program program, Instruction from, Address target) {
+	static boolean entersUnknownBank(Program program, Instruction from, Address target) {
 		MemoryBlock targetBlock = program.getMemory().getBlock(target);
 		if (targetBlock == null) {
 			return true;
@@ -2667,10 +1394,10 @@ final class StoredValueScanner {
 	 * hi,X / PHA / LDA lo,X / PHA / RTS}): walking back over straight-line code, pushes outnumber
 	 * pops before anything else intervenes. Such a return jumps to an address the listing never
 	 * records, so the census cannot see where it goes and must abandon. A heuristic over the
-	 * last {@link #RETURN_DISPATCH_LOOKBACK} instructions -- an epilogue restoring saved registers
+	 * last {@link SaveSlotForwarding#RETURN_DISPATCH_LOOKBACK} instructions -- an epilogue restoring saved registers
 	 * ({@code PLA / TAY / PLA / RTS}) pops, and passes.
 	 */
-	private static boolean looksLikeReturnDispatch(Listing listing, Instruction ret) {
+	static boolean looksLikeReturnDispatch(Listing listing, Instruction ret) {
 		int balance = 0;
 		Instruction cur = ret;
 		for (int k = 0; k < RETURN_DISPATCH_LOOKBACK; k++) {
@@ -2714,17 +1441,17 @@ final class StoredValueScanner {
 	 * {@code base..base+$FF}; anything else is {@code UNPLACEABLE}.</li>
 	 * </ul>
 	 */
-	private static SlotWrite classifySlotWrite(Program program, Instruction instr, Address cell) {
+	static SlotWrite classifySlotWrite(Program program, Instruction instr, Address cell) {
 		return classifySlotWrite(program, instr, cell, IndexRegs.UNKNOWN);
 	}
 
-	/** {@link #classifySlotWrite} with the index registers {@link #calleeClosureCensus}
+	/** {@link #classifySlotWrite} with the index registers {@link SaveSlotForwarding#calleeClosureCensus}
 	 *  propagated to {@code instr} (bead grm-mej.25); an unknown one falls back to the
 	 *  state-free evaluators. */
-	private static SlotWrite classifySlotWrite(Program program, Instruction instr, Address cell,
+	static SlotWrite classifySlotWrite(Program program, Instruction instr, Address cell,
 			IndexRegs known) {
-		Character storeReg = storeRegister(instr);
-		Address plain = plainAbsoluteTarget(instr);
+		Character storeReg = MosOperands.storeRegister(instr);
+		Address plain = MosOperands.plainAbsoluteTarget(instr);
 		for (Reference ref : instr.getReferencesFrom()) {
 			if (ref.getReferenceType().isWrite() && sameCell(ref.getToAddress(), cell)) {
 				return storeReg != null && plain != null && sameCell(plain, cell)
@@ -2732,7 +1459,7 @@ final class StoredValueScanner {
 			}
 		}
 		String mnem = instr.getMnemonicString().toUpperCase();
-		boolean writer = (MEMORY_WRITERS.contains(mnem) && !isAccumulatorForm(instr)) ||
+		boolean writer = (MEMORY_WRITERS.contains(mnem) && !MosOperands.isAccumulatorForm(instr)) ||
 			mnem.equals("STZ") || mnem.equals("TSB") || mnem.equals("TRB");
 		if (!writer) {
 			return SlotWrite.NONE;
@@ -2799,28 +1526,13 @@ final class StoredValueScanner {
 		return SlotWrite.UNPLACEABLE;
 	}
 
-	/** Hooks that resolve nothing and see no mechanism -- the state-free context
-	 *  {@link #constantIndex} evaluates in, so a census or slot proof stays memoizable. */
-	private static final Hooks INERT_HOOKS = new Hooks() {
-		@Override
-		public boolean isMechanismWrite(Instruction instr) {
-			return false;
-		}
-
-		@Override
-		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-				MechanismState inStateAtStore) {
-			return null;
-		}
-	};
-
 	/**
 	 * The index register's value on entry to an indexed store, when it is a PROVABLE constant
 	 * (bead grm-zsxz Z2, owner ruling 2026-10-05): {@link #constantRegisterValue}'s
 	 * all-or-nothing straight-line walk, so a redefinition it cannot evaluate ({@code INX} of an
 	 * unknown, {@code TAX}, {@code PLA}-fed transfers, a call, a join, a block boundary) yields
 	 * {@code null} and the caller keeps its conservative window rule. State-free: evaluated under
-	 * {@link #INERT_HOOKS} and {@link RegisterEnv#NONE}, with a fresh budget. Blaster Master's
+	 * {@link Hooks#INERT} and {@link RegisterEnv#NONE}, with a fresh budget. Blaster Master's
 	 * {@code ea3a} ({@code LDX #$7A / ... / STA $00,X / STA $01,X}) is the measured case.
 	 */
 	/** The propagated value of {@code instr}'s index register, or {@code null}. */
@@ -2842,7 +1554,7 @@ final class StoredValueScanner {
 		if (!name.equals("X") && !name.equals("Y")) {
 			return null;
 		}
-		Integer v = constantRegisterValue(program, instr, name.charAt(0), INERT_HOOKS,
+		Integer v = constantRegisterValue(program, instr, name.charAt(0), Hooks.INERT,
 			RegisterEnv.NONE, new Budget(MAX_RESOLVE_STEPS));
 		return v == null ? null : v & 0xFF;
 	}
@@ -2862,7 +1574,7 @@ final class StoredValueScanner {
 		}
 		char reg = Character.toUpperCase(idx.getName().charAt(0));
 		return LoopIdioms.countedLoopIndexRange(program, instr,
-			p -> constantRegisterValue(program, p, reg, INERT_HOOKS, RegisterEnv.NONE,
+			p -> constantRegisterValue(program, p, reg, Hooks.INERT, RegisterEnv.NONE,
 				new Budget(MAX_RESOLVE_STEPS)));
 	}
 
@@ -2877,7 +1589,7 @@ final class StoredValueScanner {
 	 */
 	private static PartialByte countedLoopValue(Program program, Instruction at, char reg) {
 		LoopIdioms.IndexRange range = LoopIdioms.countedLoopRange(program, at, reg,
-			p -> constantRegisterValue(program, p, Character.toUpperCase(reg), INERT_HOOKS,
+			p -> constantRegisterValue(program, p, Character.toUpperCase(reg), Hooks.INERT,
 				RegisterEnv.NONE, new Budget(MAX_RESOLVE_STEPS)));
 		if (range == null) {
 			return PartialByte.unknown();
@@ -2916,13 +1628,13 @@ final class StoredValueScanner {
 	 * <em>just</em> wrote sits at {@code $0100 + (S - 1) + 1}, i.e. one more than the
 	 * post-decrement {@code S} that a following {@code TSX} would load. An operand
 	 * {@code $01nn,X} therefore names {@code n = nn}, and finding the push it reads is
-	 * exactly {@link #findMatchingPush}'s depth-{@code n} generalization, entered at the
+	 * exactly {@link CrossBlockStackPairing#findMatchingPush}'s depth-{@code n} generalization, entered at the
 	 * {@code TSX} rather than at a {@code PLA} (which always owes exactly {@code n == 1}).
 	 * <p>
 	 * This method's own job is upstream of that: given {@code load}, confirm its shape (absolute
 	 * indexed by X, base in {@code $0101..$01FF}), walk backward to find the {@code TSX} that set
 	 * X, and confirm nothing in between could have overwritten the slot -- then hand off to
-	 * {@link #findMatchingPush}.
+	 * {@link CrossBlockStackPairing#findMatchingPush}.
 	 * <p>
 	 * <b>Returns {@code null} (decline) when:</b>
 	 * <ul>
@@ -2933,7 +1645,7 @@ final class StoredValueScanner {
 	 * <li>the base does not lie in {@code $0101..$01FF} -- outside the stack page, or naming
 	 * {@code $0100} itself ({@code n == 0}, which is not "{@code n} pushes back" from anything);</li>
 	 * <li>walking backward from {@code load} to find the {@code TSX}, ANY of the guards
-	 * {@link #findMatchingPush} itself applies is violated first: {@code env.stopsAt}, the
+	 * {@link CrossBlockStackPairing#findMatchingPush} itself applies is violated first: {@code env.stopsAt}, the
 	 * instruction before {@code cur} not existing, a broken fall-through, an unlicensed
 	 * {@link FlowEdges#isControlFlowJoin}, a flow or a call, or {@link Hooks#isMechanismWrite} -- reused
 	 * verbatim rather than reimplemented, for the identical soundness reasons {@code
@@ -2942,29 +1654,29 @@ final class StoredValueScanner {
 	 * {@code TSX} and {@code load}.</b> The load's effective address is
 	 * {@code $0100 + S(at the TSX) + n} -- a fixed cell -- and a {@code PLA} followed by a
 	 * {@code PHA} in that window can overwrite EXACTLY that cell with an unrelated byte before
-	 * {@code load} reads it. Attributing the read to the push {@link #findMatchingPush} finds
+	 * {@code load} reads it. Attributing the read to the push {@link CrossBlockStackPairing#findMatchingPush} finds
 	 * would then be a confident WRONG value, not a missing one, which is the failure direction
 	 * this scanner exists to avoid;</li>
 	 * <li><b>anything writes X</b> in that same window. Asked of the LANGUAGE
-	 * ({@link #writesRegister}) rather than a mnemonic list -- see
+	 * ({@link MosOperands#writesRegister}) rather than a mnemonic list -- see
 	 * {@code HelperArgumentRecovery.argumentSurvivesPrologue}'s javadoc for the same call and why
 	 * it is preferred over enumerating mnemonics. {@code TSX} itself writes X and is this walk's
 	 * own terminator, so it is tested FIRST and the generic "writes X" test is applied only to
 	 * every OTHER instruction in the window -- checking the generic test before recognizing
 	 * {@code TSX} would misread the terminator itself as an abandon.</li>
 	 * </ul>
-	 * On finding the {@code TSX}, this hands off to {@link #findMatchingPush} with
+	 * On finding the {@code TSX}, this hands off to {@link CrossBlockStackPairing#findMatchingPush} with
 	 * {@code initialDepth = n}, entered AT the {@code TSX} (which is exactly where that method's
 	 * own backward walk starts examining from, by design -- it inspects the instruction BEFORE
 	 * the instruction it is handed).
 	 *
 	 * @param budgetSteps    how many further instructions this search -- INCLUDING the further
-	 *                       search {@link #findMatchingPush} performs once the {@code TSX} is
+	 *                       search {@link CrossBlockStackPairing#findMatchingPush} performs once the {@code TSX} is
 	 *                       found -- may step over, spent from the caller's own
 	 *                       {@link #MAX_BACKWARD_SCAN} budget rather than a fresh one
 	 * @param span           out-param, valid on every return path: how many instructions this
 	 *                       search stepped over IN TOTAL (its own plus
-	 *                       {@link #findMatchingPush}'s), and whether either of them crossed a
+	 *                       {@link CrossBlockStackPairing#findMatchingPush}'s), and whether either of them crossed a
 	 *                       mechanism write
 	 */
 	/**
@@ -3059,7 +1771,7 @@ final class StoredValueScanner {
 				span.steps = steps;
 				return null; // could overwrite the reloaded slot -- see javadoc
 			}
-			if (writesRegister(prev, xRegister)) {
+			if (MosOperands.writesRegister(prev, xRegister)) {
 				span.steps = steps;
 				return null; // X changed before we found the TSX that is supposed to set it
 			}
@@ -3203,7 +1915,7 @@ final class StoredValueScanner {
 	 * <li>zero {@code isWrite()} references to the cell in the {@code ReferenceManager}
 	 * <em>and</em> no disassembled instruction with a plain (non-indexed, non-indirect) operand
 	 * that stores to it. The second leg exists because a reference is laid down only where
-	 * something created one -- see {@link #writesMemory}'s refless-store note -- so references
+	 * something created one -- see {@link LocalStoreForwarding#writesMemory}'s refless-store note -- so references
 	 * alone would call a plainly written cell untouched;</li>
 	 * <li><b>for a ZERO-PAGE cell, additionally no store instruction anywhere in the program
 	 * with an indexed or indirect operand.</b> Zero page is where 6502 parameter latches live
@@ -3280,7 +1992,7 @@ final class StoredValueScanner {
 			for (Instruction instr : program.getListing().getInstructions(true)) {
 				String mnem = instr.getMnemonicString().toUpperCase();
 				if (!(MEMORY_WRITERS.contains(mnem) || mnem.equals("STZ") ||
-					mnem.equals("TSB") || mnem.equals("TRB")) || isAccumulatorForm(instr)) {
+					mnem.equals("TSB") || mnem.equals("TRB")) || MosOperands.isAccumulatorForm(instr)) {
 					continue;
 				}
 				for (Reference ref : instr.getReferencesFrom()) {
@@ -3288,7 +2000,7 @@ final class StoredValueScanner {
 						plain.add(ref.getToAddress());
 					}
 				}
-				Address t = plainAbsoluteTarget(instr);
+				Address t = MosOperands.plainAbsoluteTarget(instr);
 				if (t != null) {
 					plain.add(t);
 				}
@@ -3317,7 +2029,7 @@ final class StoredValueScanner {
 	 * that here, once, is what keeps every {@code return} in the walk free to name its own
 	 * reason without also having to work out whether it still applies.
 	 */
-	private static Scan stopped(int aAcc, int oAcc, int mask, PartialByte base,
+	static Scan stopped(int aAcc, int oAcc, int mask, PartialByte base,
 			BankSwitchStrategy.ValueStop reason) {
 		return stopped(aAcc, oAcc, mask, base, reason, null);
 	}
@@ -3327,7 +2039,7 @@ final class StoredValueScanner {
 	 * {@link ReadBack} a {@code RESTORED_BANK} stop names. Discarded with the reason when the
 	 * combined value knows something: a read-back that resolved is just a resolved value.
 	 */
-	private static Scan stopped(int aAcc, int oAcc, int mask, PartialByte base,
+	static Scan stopped(int aAcc, int oAcc, int mask, PartialByte base,
 			BankSwitchStrategy.ValueStop reason, ReadBack readBack) {
 		PartialByte value = combine(aAcc, oAcc, mask, base);
 		return value.knownMask() != 0 ? new Scan(value, BankSwitchStrategy.ValueStop.RESOLVED)
@@ -3352,7 +2064,7 @@ final class StoredValueScanner {
 	 * Callers must establish the read-back's own shape first (identity accumulators, a live-bank
 	 * mirror) -- this only decides between the two stop reasons.
 	 */
-	private static Scan restoredKeepingValue(int aAcc, int oAcc, int mask, PartialByte base,
+	static Scan restoredKeepingValue(int aAcc, int oAcc, int mask, PartialByte base,
 			ReadBack readBack) {
 		PartialByte value = combine(aAcc, oAcc, mask, base);
 		if (value.knowsAll(mask)) {
@@ -3361,287 +2073,6 @@ final class StoredValueScanner {
 		return new Scan(value, BankSwitchStrategy.ValueStop.RESTORED_BANK, readBack);
 	}
 
-	// ------------------------------------------------------------------
-	// Local store-to-load forwarding (grm-mej.1)
-	// ------------------------------------------------------------------
-
-	/**
-	 * The fully known byte an {@code AND}/{@code ORA} operand contributes: its immediate value, or
-	 * -- when the operand names memory whose address is statically certain -- the value forwarded
-	 * from a store to that cell earlier in the same basic block. {@code null} when neither
-	 * applies, which is the pre-grm-mej.1 behavior for every non-immediate operand.
-	 * <p>
-	 * <b>All-or-nothing, deliberately.</b> The mask algebra composes an operand into
-	 * {@code (aAcc, oAcc)} as if it were an immediate, and that composition has no way to say
-	 * "this bit of the operand was unknown" -- expressing it would need a third accumulator for
-	 * bits forced unknown, perturbing the algebra that
-	 * {@code src/test/java/retromachines/BitAlgebraEquivalenceTest.java} proves exhaustively.
-	 * Requiring all eight bits keeps that proof untouched and costs nothing on the measured case
-	 * (Ironsword's {@code $C3} holds either the caller's fully known {@code A} or nothing). This
-	 * is the same reasoning {@link #constantRegisterValue} already records for itself.
-	 * <p>
-	 * <b>{@link Hooks#resolveMirrorLoad} IS consulted, below forwarding</b> (grm-mej.2), in the
-	 * same order and for the same reason as the {@code LD<reg>} branch of
-	 * {@link #resolveStoredValue}: a bank spliced into an {@code ORA} operand is the same claim
-	 * about the same cell, and letting the two branches disagree about precedence would be a bug
-	 * waiting to be found by whichever board splices rather than loads. The all-or-nothing rule
-	 * above still applies afterwards, so a mirror narrower than the whole byte -- every board
-	 * whose latch field is not eight bits wide -- contributes nothing here and declines exactly as
-	 * before.
-	 * <p>
-	 * <b>{@link Hooks#resolveLoad} is still deliberately NOT consulted here</b>, only forwarding
-	 * and mirrors. A strategy resolving an {@code ORA} operand to a bank-invariant ROM byte is a
-	 * separate further capability with its own blast radius across every pinned title, and unlike
-	 * the mirror path it is not needed by anything measured. Adding it is one line at the top of
-	 * this method.
-	 */
-	private static Integer operandByte(Program program, Instruction instr, MechanismState inStateAtStore,
-			Hooks hooks, RegisterEnv env, Budget budget, int depth) {
-		if (isImmediate(instr)) {
-			return immediateOperandValue(instr);
-		}
-		Address target = effectiveOperandTarget(program, instr, hooks, env);
-		PartialByte forwarded =
-			forwardedStoreValue(program, instr, target, inStateAtStore, hooks, env, budget, depth);
-		if (forwarded.isFullyKnown()) {
-			return forwarded.exact();
-		}
-		if (forwarded.knownMask() == 0) {
-			PartialByte mirrored = hooks.resolveMirrorLoad(instr, target, inStateAtStore);
-			if (mirrored != null && mirrored.isFullyKnown()) {
-				return mirrored.exact();
-			}
-		}
-		return null;
-	}
-
-	/**
-	 * The value {@code cell} holds when {@code useInstr} executes, reduced to {@code mask} -- the
-	 * MEMORY dual of {@link #resolveStoredValue}'s register query, asked at the same instruction
-	 * (bead grm-67g).
-	 * <p>
-	 * A bank-switch helper does not always take its argument in a register. smb3's {@code FUN_ffc2}
-	 * is handed the bank through RAM shadow {@code $0720}:
-	 * <pre>
-	 *   ca23  LDA #$1b / STA $0720 / JSR $ffc2     &lt;- useInstr is the JSR, cell is $0720
-	 *   ffc2  ... LDA $0720 / STA $8001            &lt;- the helper consumes it here
-	 * </pre>
-	 * Once {@code HelperArgumentRecovery.inboundArgumentCell} has proved the helper reaches its switch
-	 * site holding {@code $0720}'s value unmodified, this answers the other half: what the CALLER
-	 * put there. Every guard that makes the answer trustworthy already exists in
-	 * {@link #forwardedStoreValue} -- block linkage, {@link FlowEdges#isControlFlowJoin}, the
-	 * {@link Hooks#isMechanismWrite} abort, and the unplaceable-store and call aborts -- so this
-	 * is an entry point onto it, not a second scanner.
-	 * <p>
-	 * <b>A fresh {@link Budget}</b>, like every other public entry point: only the internal
-	 * forwarding chain shares one (see {@link #resolveStoredValue}'s private overload). A caller's
-	 * cell query must not be weakened by whatever some earlier query spent.
-	 * <p>
-	 * <b>{@link RegisterEnv#NONE} deliberately.</b> This scan runs in the CALLER, where there is no
-	 * entry to stop at and nothing to adopt -- the mirror of the reason
-	 * {@code valueSuppliedInsideHelper} needs an env and this does not.
-	 * <p>
-	 * <b>{@code inStateAtStore} is the CALLER's tracked in-state at {@code useInstr}, not
-	 * {@link MechanismState#unknown()}</b> (bead grm-mej.3 item 4 -- this was {@code unknown()}
-	 * hardcoded before, back when the sole production caller passed {@code NO_HOOKS} and no hook
-	 * ever consulted it). It is consulted only through {@code hooks.resolveMirrorLoad} /
-	 * {@code hooks.resolveLoad}, and {@link #forwardedStoreValue} WITHDRAWS it to
-	 * {@link MechanismState#unknown()} the moment it crosses a {@link Hooks#isMechanismWrite} on the
-	 * walk from {@code useInstr} back to the store that fills {@code cell} -- the identical
-	 * grm-4bgh.7 machinery {@link #resolveStoredValue} itself relies on. That withdrawal is what
-	 * makes passing the CALL's state here sound rather than "a state that is off by the
-	 * intervening instructions": the state offered to a hook is never further from the truth than
-	 * the nearest mechanism write between it and {@code useInstr}, and past that write it is
-	 * honestly unknown instead of stale. A caller that still wants the pre-mirror behaviour (no
-	 * hook ever sees a non-{@code unknown()} state) passes {@link MechanismState#unknown()} explicitly.
-	 */
-	static PartialByte callerCellValue(Program program, Instruction useInstr, Address cell,
-			MechanismState inStateAtStore, int mask, Hooks hooks) {
-		return callerCellValue(program, useInstr, cell, inStateAtStore, mask, hooks,
-			RegisterEnv.NONE);
-	}
-
-	/** {@link #callerCellValue} along {@code env}'s arms (bead grm-wul); {@code NONE} crosses nothing. */
-	static PartialByte callerCellValue(Program program, Instruction useInstr, Address cell,
-			MechanismState inStateAtStore, int mask, Hooks hooks, RegisterEnv env) {
-		PartialByte value = forwardedStoreValue(program, useInstr, cell, inStateAtStore, hooks,
-			env, new Budget(MAX_RESOLVE_STEPS), 0);
-		// Equivalent to combine(0xFF, 0x00, mask, value), spelled out because there is no
-		// accumulated AND/ORA transform to fold here -- the cell's byte arrives verbatim.
-		return value.restrict(mask);
-	}
-
-	/**
-	 * The value {@code target} holds when {@code useInstr} reads it, forwarded from the nearest
-	 * preceding store to that same cell <em>within {@code useInstr}'s own basic block</em>, by
-	 * recursing into {@link #resolveStoredValue} on that store. {@link MechanismState#unknown()} when
-	 * no such store is provably reached.
-	 * <p>
-	 * This is the piece grm-hum could only work around. Ironsword's {@code FUN_ffc0} launders the
-	 * caller's bank argument through {@code $C3} ({@code STA $C3 ... ORA $C3 / STA $8000}), so the
-	 * whole of AxROM's tracked field is derivable only if the scan can follow a value through a
-	 * memory cell. A local forward within one block is much cheaper than general memory dataflow
-	 * and covers the idiom, because a helper that stashes an argument and splices it back in does
-	 * both in straight-line code.
-	 * <p>
-	 * <b>Not restricted to the zero page.</b> See the class javadoc: the measured cells happen to
-	 * be zero-page, but Contra's save slots are {@code $07EC}/{@code $07ED}, and the scanner has
-	 * no zero-page-specific path to restrict in the first place.
-	 * <p>
-	 * <b>Soundness.</b> Every guard {@link #resolveStoredValue} applies is reused verbatim rather
-	 * than reimplemented -- block linkage, {@link FlowEdges#isControlFlowJoin}, the
-	 * {@link Hooks#isMechanismWrite} in-state withdrawal, {@link #MAX_BACKWARD_SCAN} -- and on
-	 * top of
-	 * them this walk declines on <em>any</em> intervening instruction that might write
-	 * {@code target} without being a store this scanner can place: an indexed or indirect store,
-	 * a read-modify-write, or a call. A store the walk can prove targets a <em>different</em>
-	 * cell is stepped over; anything it cannot place at all ends the walk. Declining
-	 * under-reports, which is this scanner's failure mode everywhere else.
-	 * <p>
-	 * The {@code env} entry stop ends the walk with {@link MechanismState#unknown()} rather than
-	 * adopting anything: {@link RegisterEnv} describes a call site's <em>registers</em>, and says
-	 * nothing whatever about memory. A caller's zero page is not modeled and must not be guessed.
-	 * <p>
-	 * <b>Stack-page cells BELOW the assumed stack floor ARE forwarded through, deliberately</b>
-	 * ({@link StackFloor}; grm-mej.3 increment 2, narrowed by the floor afterwards -- the ruling
-	 * below is the project owner's, recorded here for the implementation
-	 * that carries it out). Before this increment the whole page was refused outright: a blanket
-	 * guard existed because {@code PHA}/{@code PHP} write the stack without naming an address any
-	 * of {@link #writesMemory}'s detectors can see, so a push between a store and a load of the
-	 * same stack cell would be stepped over and a stale value attributed forward -- and because
-	 * treating {@code PHA}/{@code PHP} as memory writes to reject that case would have ended the
-	 * walk for <em>every</em> target, Ironsword's {@code FUN_ffc0} has a {@code PHA} sitting
-	 * between the {@code STA $C3} this forwards from and the {@code ORA $C3} that consumes it.
-	 * <p>
-	 * The guard is now accepted to be over-conservative for a low-in-the-page cell: dodge's
-	 * {@code FUN_ff08} parks its argument at {@code $0103} and reloads it several instructions
-	 * later, stepping over an intervening {@code PHA} that is unrelated to {@code $0103}
-	 * entirely. Refusing the whole page declines that case even though nothing pushed onto the
-	 * stack could plausibly alias {@code $0103} -- doing so would need the stack to run ~253
-	 * bytes deep at the moment of the push, which does not happen in practice; games park scratch
-	 * cells low in the stack page precisely because the stack never reaches them. This is the
-	 * identical aliasing assumption {@code HelperArgumentRecovery.argumentSurvivesPrologue} already
-	 * makes over this same dodge routine, so refusing here was internally inconsistent rather
-	 * than conservative -- one code path trusted the low stack page and the other did not, over
-	 * the same bytes of the same ROM.
-	 * <p>
-	 * <b>The residual risk</b> is exactly that deep-stack scenario: a push that genuinely does
-	 * reach a cell this walk is willing to forward through would alias a value that was never
-	 * really stored there, and nothing here detects it. It is now <em>bounded</em> rather than
-	 * merely accepted: {@link StackFloor#mayAliasStack} refuses any cell at or above the assumed
-	 * floor, so the risk is confined to a title whose stack runs deeper than that floor, and the
-	 * remedy for such a title is to move the floor rather than to re-litigate this method.
-	 * {@code argumentSurvivesPrologue} and {@code inboundArgumentCell} consult the same floor,
-	 * which is what keeps the three walks agreeing about the same bytes of the same ROM -- the
-	 * inconsistency that motivated increment 2 in the first place.
-	 * <p>
-	 * The motivating reason the guard had to key on the CELL being read rather than on the
-	 * instructions passed over remains true and still shapes this method even though the refusal
-	 * itself is gone: {@code PHA}/{@code PHP} are still invisible to {@link #writesMemory}, so a
-	 * push that genuinely does write the forwarded cell (the accepted residual risk above) is
-	 * still stepped over rather than caught -- there is no cheaper per-instruction detector for
-	 * it, only the low-probability argument above.
-	 */
-	private static PartialByte forwardedStoreValue(Program program, Instruction useInstr,
-			Address target, MechanismState inStateAtStore, Hooks hooks, RegisterEnv env, Budget budget,
-			int depth) {
-		if (target == null || depth >= MAX_RESOLVE_DEPTH) {
-			return PartialByte.unknown();
-		}
-		if (StackFloor.mayAliasStack(program, target)) {
-			// A push between the store and the use would be stepped over silently -- see javadoc.
-			return PartialByte.unknown();
-		}
-		Listing listing = program.getListing();
-		// Withdrawn rather than aborted on, exactly as in resolveStoredValue -- see grm-4bgh.7.
-		MechanismState inState = inStateAtStore;
-		Instruction cur = useInstr;
-		for (int i = 0; i < MAX_BACKWARD_SCAN; i++) {
-			if (env.stopsAt(cur.getMinAddress())) {
-				return PartialByte.unknown(); // the caller's memory is not modeled -- see javadoc
-			}
-			if (!budget.spend()) {
-				return PartialByte.unknown();
-			}
-			// Block start, left the basic block, or another path reaches cur with a different
-			// cell value -- unless the env licenses this exact join (grm-k90) or names the arm
-			// (grm-wul), in which case prev is the real predecessor on the path asked about and
-			// a store in that prefix genuinely did execute. Honored here as well as in the
-			// register walks deliberately: the licence describes the EDGE, not the kind of value
-			// being carried across it, and a forwarding walk that refused where a register walk
-			// crossed would make the two disagree about what the same instruction stream did.
-			Instruction prev = pathPredecessor(program, listing, cur, env);
-			if (prev == null) {
-				return PartialByte.unknown();
-			}
-			if (hooks.isMechanismWrite(prev)) {
-				// Same rule as the register scan's, and now the same REMEDY (grm-4bgh.7): the
-				// in-state is withdrawn for everything read past this point, and the walk goes
-				// on. Note the ordering matters and is favorable -- the writesMemory test below
-				// still runs on this very instruction, so a mechanism write that IS a store to
-				// the cell being forwarded is forwarded from rather than skipped, which is the
-				// right answer and was previously unreachable.
-				inState = MechanismState.unknown();
-			}
-
-			if (writesMemory(prev)) {
-				Character storeReg = storeRegister(prev);
-				// The store's own target shares this query tree's budget, unlike the LD<reg>
-				// branch's -- see resolveStoredValue's private overload for why only the
-				// forwarding lookups do.
-				Address storeTarget = storeReg == null ? null
-						: effectiveTarget(program, prev, hooks, env, budget, depth + 1);
-				if (storeTarget == null) {
-					return PartialByte.unknown(); // a memory write this scanner cannot place
-				}
-				if (storeTarget.equals(target)) {
-					return resolveStoredValue(program, prev, storeReg, inState, PartialByte.BYTE_MASK, hooks,
-						env, budget, depth + 1).value();
-				}
-				// provably a different cell -- harmless, keep walking
-			}
-			if (prev.getFlowType().isCall()) {
-				return PartialByte.unknown(); // a subroutine may write anywhere
-			}
-			cur = prev;
-		}
-		return PartialByte.unknown();
-	}
-
-	/**
-	 * Whether {@code instr} may write memory -- the predicate {@link #forwardedStoreValue} uses to
-	 * decide that a cell's value can no longer be attributed past this instruction.
-	 * <p>
-	 * Three independent detectors, deliberately unioned rather than ranked, because each one
-	 * alone has a blind spot: {@link Instruction#getResultObjects} reports a concrete destination
-	 * address for {@code STA $C3} but not for a computed one like {@code STA ($10),Y}; a write
-	 * reference exists only where something laid one down (the same refless-store gap
-	 * {@code MemoryLatchBankSwitchStrategy.writesInRange} needs two tiers for); and the mnemonic
-	 * test covers the read-modify-write stores, which {@link #storeRegister} deliberately does not
-	 * recognize. Over-reporting merely forfeits a forward; under-reporting would be unsound.
-	 * <p>
-	 * <b>Package-private for a second consumer</b> (bead grm-67g):
-	 * {@code HelperArgumentRecovery.inboundArgumentCell} asks the identical question -- "may this
-	 * instruction have written the cell I am attributing a value to?" -- over a FORWARD walk
-	 * through a helper body rather than this backward one, and the three-detector union is
-	 * load-bearing for both. The reference-only {@link #writesAddress} is the tempting shortcut
-	 * there and is not sound for it: a missed write costs that predicate a confident wrong bank,
-	 * not merely a forfeited forward.
-	 */
-	static boolean writesMemory(Instruction instr) {
-		for (Object o : instr.getResultObjects()) {
-			if (!(o instanceof Register)) {
-				return true;
-			}
-		}
-		for (Reference ref : instr.getReferencesFrom()) {
-			if (ref.getReferenceType().isWrite()) {
-				return true;
-			}
-		}
-		return MEMORY_WRITERS.contains(instr.getMnemonicString().toUpperCase()) &&
-			!isAccumulatorForm(instr);
-	}
 
 	// ------------------------------------------------------------------
 	// Known effective address (grm-hum GAP 1)
@@ -3649,7 +2080,7 @@ final class StoredValueScanner {
 
 	/**
 	 * The single address {@code instr}'s operand 0 actually accesses, when that is statically
-	 * certain: {@link #plainAbsoluteTarget} when the operand is unindexed (unchanged behavior),
+	 * certain: {@link MosOperands#plainAbsoluteTarget} when the operand is unindexed (unchanged behavior),
 	 * otherwise an <em>absolute</em>-indexed operand whose index register
 	 * {@link #constantRegisterValue} pins to a fully known byte.
 	 * <p>
@@ -3670,9 +2101,9 @@ final class StoredValueScanner {
 	}
 
 	/** {@link #effectiveOperandTarget} within an ongoing query tree's depth and step budget. */
-	private static Address effectiveTarget(Program program, Instruction instr, Hooks hooks,
+	static Address effectiveTarget(Program program, Instruction instr, Hooks hooks,
 			RegisterEnv env, Budget budget, int depth) {
-		Address plain = plainAbsoluteTarget(instr);
+		Address plain = MosOperands.plainAbsoluteTarget(instr);
 		if (plain != null) {
 			return plain;
 		}
@@ -3751,7 +2182,7 @@ final class StoredValueScanner {
 		return constantRegisterValue(program, at, reg, hooks, env, budget, 0);
 	}
 
-	private static Integer constantRegisterValue(Program program, Instruction at, char reg,
+	static Integer constantRegisterValue(Program program, Instruction at, char reg,
 			Hooks hooks, RegisterEnv env, Budget budget, int depth) {
 		return constantValue(program, at, ConstantSemantics.Loc.ofRegister(reg), hooks, env,
 			budget, depth);
@@ -3798,7 +2229,7 @@ final class StoredValueScanner {
 	 * per-program one ({@link CalleeRegisterSummary#memoFor}) because these walks run from hooks
 	 * with no run-scoped holder.
 	 */
-	private static boolean calleePreserves(Program program, Instruction call, char reg) {
+	static boolean calleePreserves(Program program, Instruction call, char reg) {
 		char r = Character.toUpperCase(reg);
 		if (r != 'A' && r != 'X' && r != 'Y') {
 			return false;
@@ -3992,169 +2423,5 @@ final class StoredValueScanner {
 		catch (MemoryAccessException e) {
 			return false;
 		}
-	}
-
-	/**
-	 * Whether {@code instr} uses the accumulator addressing mode ({@code ASL A} and friends)
-	 * rather than a memory operand -- the {@code bbb = 2}, {@code cc = 2} column, i.e.
-	 * {@code (op & 0x1f) == 0x0A}. Callers gate on the mnemonic first, so the other
-	 * instructions in that column (e.g. {@code TAX}, {@code NOP}) never reach here.
-	 */
-	static boolean isAccumulatorForm(Instruction instr) {
-		try {
-			return (instr.getByte(0) & 0x1F) == 0x0A;
-		}
-		catch (MemoryAccessException e) {
-			return false;
-		}
-	}
-
-	// ------------------------------------------------------------------
-	// Operand helpers shared by store-recognizing strategies
-	// ------------------------------------------------------------------
-
-	/**
-	 * The register a 6502 store targets -- {@code 'A'}, {@code 'X'}, or {@code 'Y'} for
-	 * {@code STA}/{@code STX}/{@code STY} -- or {@code null} for any other mnemonic. In
-	 * particular the read-modify-write stores ({@code INC}/{@code DEC}/{@code ASL}/
-	 * {@code LSR}/{@code ROL}/{@code ROR}) return {@code null}: they mutate the target in
-	 * place and this scanner does not model the resulting value.
-	 */
-	static Character storeRegister(Instruction instr) {
-		String mnem = instr.getMnemonicString().toUpperCase();
-		if (mnem.equals("STA") || mnem.equals("STX") || mnem.equals("STY")) {
-			return mnem.charAt(2); // 'A' | 'X' | 'Y'
-		}
-		return null;
-	}
-
-	static boolean writesAddress(Instruction instr, Address addr) {
-		for (Reference ref : instr.getReferencesFrom()) {
-			if (ref.getToAddress().equals(addr) && ref.getReferenceType().isWrite()) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	static boolean readsAddress(Instruction instr, Address addr) {
-		for (Reference ref : instr.getReferencesFrom()) {
-			if (ref.getToAddress().equals(addr) && ref.getReferenceType().isRead()) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	/**
-	 * Whether {@code instr} writes {@code reg} (e.g. {@code STA PORT} on the bundled 6510
-	 * language, where the on-die $01 port is a register, not a memory address). Used
-	 * alongside {@link #writesAddress} so a mechanism modeled as a CPU register is detected
-	 * the same way as one modeled as a memory-mapped address.
-	 */
-	static boolean writesRegister(Instruction instr, Register reg) {
-		for (Object o : instr.getResultObjects()) {
-			if (o instanceof Register r && r.equals(reg)) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	/** Whether {@code instr} reads {@code reg} (e.g. {@code LDA PORT}); see {@link #writesRegister}. */
-	static boolean readsRegister(Instruction instr, Register reg) {
-		for (Object o : instr.getInputObjects()) {
-			if (o instanceof Register r && r.equals(reg)) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	/**
-	 * Whether {@code instr} writes {@code reg}, by the same mnemonic sets this scanner's own
-	 * backward walks stop on. Exposed for {@link BankMirrors}' discovery walks (grm-mej.2), which
-	 * are structurally the same walk asking a different question and must agree with these on
-	 * what clobbers a register -- a discovery pass that walked past a modifier this scanner stops
-	 * at would nominate a cell the scanner can then never resolve through.
-	 * <p>
-	 * A call is deliberately NOT covered: {@code JSR} modifies every register but is not in any
-	 * modifier set, so every walk tests {@code getFlowType().isCall()} separately.
-	 */
-	static boolean modifiesRegister(Instruction instr, char reg) {
-		return modifiesRegister(registerModifiers(reg), instr.getMnemonicString().toUpperCase(),
-			instr);
-	}
-
-	/**
-	 * Whether {@code mnem} (already upper-cased, from {@code instr}) is in {@code modifiers}
-	 * AND actually writes the register. ASL/LSR/ROL/ROR are in {@link #A_MODIFIERS} by
-	 * mnemonic but only write A in accumulator form; {@code ROR $F0} rotates memory and leaves A
-	 * alone (grm-jmsm: tmnt's {@code STA $21 / SEC / ROR $F0 / STA $FFFF} helper bodies).
-	 */
-	private static boolean modifiesRegister(Set<String> modifiers, String mnem,
-			Instruction instr) {
-		if (!modifiers.contains(mnem)) {
-			return false;
-		}
-		return !SHIFT_MNEMONICS.contains(mnem) || isAccumulatorForm(instr);
-	}
-
-	private static final Set<String> SHIFT_MNEMONICS = Set.of("ASL", "LSR", "ROL", "ROR");
-
-	private static Set<String> registerModifiers(char reg) {
-		return switch (reg) {
-			case 'A' -> A_MODIFIERS;
-			case 'X' -> X_MODIFIERS;
-			case 'Y' -> Y_MODIFIERS;
-			default -> Set.of();
-		};
-	}
-
-	static boolean isImmediate(Instruction instr) {
-		String rep = instr.getDefaultOperandRepresentation(0);
-		return rep != null && rep.startsWith("#");
-	}
-
-	/**
-	 * Extracts the constant value of an immediate operand (e.g. the {@code $35} in
-	 * {@code LDA #$35}). {@link ghidra.program.model.listing.CodeUnit#getScalar} only
-	 * resolves scalars used as addressing components, not bare immediate operands, so we
-	 * pull the {@link Scalar} directly out of the operand's object list instead.
-	 */
-	static Integer immediateOperandValue(Instruction instr) {
-		for (Object obj : instr.getOpObjects(0)) {
-			if (obj instanceof Scalar s) {
-				return (int) s.getUnsignedValue();
-			}
-		}
-		return null;
-	}
-
-	/**
-	 * The single constant memory address an operand names, or {@code null} when the
-	 * operand is indexed/indirect (any register participates) or names no address --
-	 * i.e. non-null exactly for plain absolute/zero-page addressing, where the target
-	 * is statically certain.
-	 * <p>
-	 * Still the right predicate wherever "is this operand unindexed?" is the actual question
-	 * (the {@code addr_mask} decode ruling, {@code JMP} target extraction). Where the question
-	 * is "which address does this access reach?", prefer {@link #effectiveOperandTarget}, which
-	 * answers this and additionally resolves an absolute-indexed operand with a constant index.
-	 */
-	static Address plainAbsoluteTarget(Instruction instr) {
-		Address addr = null;
-		for (Object obj : instr.getOpObjects(0)) {
-			if (obj instanceof ghidra.program.model.lang.Register) {
-				return null; // indexed -- runtime-dependent target
-			}
-			if (obj instanceof Address a) {
-				if (addr != null) {
-					return null;
-				}
-				addr = a;
-			}
-		}
-		return addr;
 	}
 }

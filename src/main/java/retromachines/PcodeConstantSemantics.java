@@ -130,7 +130,7 @@ import ghidra.program.model.pcode.Varnode;
  * subtables -- {@code LAX} is the example -- never resolves a memory operand, under EITHER
  * evaluator, even though this class's own interpreter handles {@code LAX}'s p-code fine in
  * isolation: {@code instr.getOpObjects(0)} yields no {@code Address} for it, so
- * {@link StoredValueScanner#plainAbsoluteTarget} always declines, and {@code
+ * {@link MosOperands#plainAbsoluteTarget} always declines, and {@code
  * WalkInputs.memoryOperand()} -- the one implementation either evaluator's
  * {@link Inputs#memoryOperand} ever calls -- uses that same resolution to decide what address
  * to hand a strategy's hook, so the hook is never even asked about the real address. Not
@@ -232,7 +232,7 @@ final class PcodeConstantSemantics implements ConstantSemantics {
 		 * if there is none. Computed ONCE, structurally, from the raw op array -- not
 		 * tracked dynamically during interpretation -- because it is a property of the
 		 * INSTRUCTION's addressing mode (which memory access is "the operand"), the same
-		 * kind of fact {@link StoredValueScanner#plainAbsoluteTarget} answers structurally.
+		 * kind of fact {@link MosOperands#plainAbsoluteTarget} answers structurally.
 		 * Every read strictly before this index is a pointer-fetch component (e.g. the two
 		 * zero-page bytes {@code readZpPointer} reads for an indirect mode) and is never
 		 * treated as the operand: {@link Inputs#memoryOperand} answers for the single

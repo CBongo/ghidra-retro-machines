@@ -194,7 +194,7 @@ public class PcodeConstantSemanticsProgramTest extends AbstractProgramTest {
 	 * {@code LAX}: the opcode's hand-rolled addressing (measured -- {@code LAX}'s zero-page and
 	 * absolute forms both bypass the {@code OP1}/{@code OP2} addressing subtables the rest of
 	 * the instruction set routes through, so {@code instr.getOpObjects(0)} never yields an
-	 * {@code Address}) means {@link StoredValueScanner#plainAbsoluteTarget} always declines for
+	 * {@code Address}) means {@link MosOperands#plainAbsoluteTarget} always declines for
 	 * it, walk or no walk -- and so does {@code WalkInputs.memoryOperand()}, which uses that
 	 * same resolution to decide what address to hand a strategy's hook, for TABLE exactly as
 	 * much as for PCODE. That is a real, structural limit on undocumented opcodes with

@@ -695,7 +695,7 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * caller-supplied argument at all -- so {@link HelperArgumentRecovery#recoverCallArgument}
 	 * may use it even when {@code HelperModel.argReg()} is {@code null} (bead {@code grm-5l14}).
 	 * <p>
-	 * {@code argReg} comes from {@link StoredValueScanner#storeRegister}, which only recognizes
+	 * {@code argReg} comes from {@link MosOperands#storeRegister}, which only recognizes
 	 * a plain {@code STA}/{@code STX}/{@code STY}; a read-modify-write switch site ({@code INC},
 	 * {@code ASL}, ...) always reports {@code null}, and the pre-{@code grm-5l14} code took that
 	 * as "no argument register, therefore no derivable effect" and poisoned the whole call.
@@ -1027,24 +1027,6 @@ public interface BankSwitchStrategy extends ExtensionPoint {
 	 * @return hooks for value scans that run at helper call sites
 	 */
 	default StoredValueScanner.Hooks callerSideHooks() {
-		return NO_CALLER_SIDE_HOOKS;
+		return StoredValueScanner.Hooks.INERT;
 	}
-
-	/**
-	 * The default {@link #callerSideHooks()}: safe under a real in-state ONLY because it never
-	 * looks at one -- no mirror resolution, no ROM-byte resolution, {@code isMechanismWrite}
-	 * always {@code false}. Shared as one instance rather than allocated per call.
-	 */
-	StoredValueScanner.Hooks NO_CALLER_SIDE_HOOKS = new StoredValueScanner.Hooks() {
-		@Override
-		public boolean isMechanismWrite(Instruction instr) {
-			return false;
-		}
-
-		@Override
-		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-				MechanismState inStateAtStore) {
-			return null;
-		}
-	};
 }

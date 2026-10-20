@@ -436,7 +436,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 			// The counted-loop BNE: a structural commit, with no per-site register scan.
 			return null;
 		}
-		Character reg = StoredValueScanner.storeRegister(switchSite);
+		Character reg = MosOperands.storeRegister(switchSite);
 		if (reg == null || isCountedLoopBody(program, switchSite)) {
 			return null;
 		}
@@ -490,7 +490,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 					: SwitchOutcome.deposit(committed, depositMask(loopFields));
 		}
 
-		Character reg = StoredValueScanner.storeRegister(instr);
+		Character reg = MosOperands.storeRegister(instr);
 		if (reg == null) {
 			// A read-modify-write store (INC/ASL/... to the range) isn't a plain byte commit
 			// this scanner can attribute a value to; it DID hit the register. It poisons --
@@ -804,7 +804,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	 * {@code INC} whose operand is its OWN opcode byte. Any write to {@code $8000-$FFFF}
 	 * with bit 7 set resets the shifter and forces {@code prg_mode = 3}, and {@code $EE} has
 	 * bit 7 set, so this is the most determinable write in the program -- yet
-	 * {@link StoredValueScanner#storeRegister} knows only {@code STA}/{@code STX}/{@code STY}
+	 * {@link MosOperands#storeRegister} knows only {@code STA}/{@code STX}/{@code STY}
 	 * and the whole mechanism was being poisoned at the program's reset vector, which is the
 	 * seed every later inference hangs off.
 	 * <p>
@@ -911,7 +911,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 
 	/**
 	 * The caller-independent half of {@code grm-5l14}: a self-modifying RMW reset write has no
-	 * argument register ({@link StoredValueScanner#storeRegister} never recognizes an
+	 * argument register ({@link MosOperands#storeRegister} never recognizes an
 	 * {@code INC}/{@code DEC} as a store), which -- before this override existed -- sent every
 	 * call reaching such a site through {@link HelperArgumentRecovery#recoverCallArgument}'s
 	 * {@code argReg == null} degrade and poisoned the whole mechanism at the call site, exactly
@@ -943,7 +943,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	public BankSwitchStrategy.HelperDeposit callerIndependentDeposit(Program program,
 			Instruction switchSite) {
 		Long offset = writesInRange(switchSite);
-		if (offset == null || StoredValueScanner.storeRegister(switchSite) != null) {
+		if (offset == null || MosOperands.storeRegister(switchSite) != null) {
 			return null; // not a mechanism write, or an ordinary STA/STX/STY -- has a real argument
 		}
 		if (!rmwResetsShifter(switchSite, offset)) {
@@ -1061,10 +1061,10 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 		}
 		char counterReg = decMnem.charAt(2); // 'X' | 'Y'
 		if (!counterInit.getMnemonicString().equalsIgnoreCase("LD" + counterReg) ||
-			!StoredValueScanner.isImmediate(counterInit)) {
+			!MosOperands.isImmediate(counterInit)) {
 			return null;
 		}
-		Integer tripCount = StoredValueScanner.immediateOperandValue(counterInit);
+		Integer tripCount = MosOperands.immediateOperandValue(counterInit);
 		if (tripCount == null || tripCount != 5) {
 			return null;
 		}
@@ -1190,7 +1190,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	 *  javadoc; each such write gets its own independent bit-7 classification when the
 	 *  dataflow engine visits it directly). */
 	private boolean isChainStore(Instruction instr) {
-		return Character.valueOf('A').equals(StoredValueScanner.storeRegister(instr)) &&
+		return Character.valueOf('A').equals(MosOperands.storeRegister(instr)) &&
 			writesInRange(instr) != null;
 	}
 
@@ -1231,7 +1231,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	 * {@code DATA}, not {@code WRITE}: the p-code {@code STORE} goes to {@code ram:e000}, which
 	 * the overlay address does not match. With the reference tier alone, every such copy went
 	 * unclassified, so a call that the dataflow knows reaches it folded to "no bank effect".
-	 * Gated on {@link StoredValueScanner#storeRegister} (true STA/STX/STY), and plain absolute
+	 * Gated on {@link MosOperands#storeRegister} (true STA/STX/STY), and plain absolute
 	 * only, so no read-modify-write and no indexed store is newly seen.
 	 */
 	private Long writesInRange(Instruction instr) {
@@ -1241,10 +1241,10 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 				return to.getOffset();
 			}
 		}
-		if (StoredValueScanner.storeRegister(instr) == null) {
+		if (MosOperands.storeRegister(instr) == null) {
 			return null;
 		}
-		Address target = StoredValueScanner.plainAbsoluteTarget(instr);
+		Address target = MosOperands.plainAbsoluteTarget(instr);
 		return target != null && inRange(target) ? target.getOffset() : null;
 	}
 

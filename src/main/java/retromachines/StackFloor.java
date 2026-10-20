@@ -25,7 +25,7 @@ import ghidra.program.model.listing.Program;
  * <b>Why this exists.</b> Three walks in this extension attribute a value to a memory cell
  * across instructions that push onto the stack -- {@code PHA}, {@code PHP}, and a caller's
  * {@code JSR} return address. None of those names an address any of this extension's write
- * detectors ({@code StoredValueScanner.writesMemory}, {@code writesAddress}) can see, because
+ * detectors ({@code LocalStoreForwarding.writesMemory}, {@code writesAddress}) can see, because
  * the address is {@code $0100 + S} and {@code S} is not tracked. Each walk therefore steps
  * over a push without noticing it, and if the cell being attributed happens to live in the
  * stack page, the push may have silently overwritten it.

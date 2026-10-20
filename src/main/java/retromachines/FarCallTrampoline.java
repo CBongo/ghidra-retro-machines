@@ -200,7 +200,7 @@ final class FarCallTrampoline {
 			return out; // not write-once on both bytes: not this idiom
 		}
 		Instruction loStore = loWriters.get(0);
-		Character reg = StoredValueScanner.storeRegister(loStore);
+		Character reg = MosOperands.storeRegister(loStore);
 		if (reg == null) {
 			return out;
 		}

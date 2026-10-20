@@ -96,7 +96,7 @@ public class StoreForwardingProgramTest extends AbstractProgramTest {
 	 * Hooks that answer neither question: no instruction is a mechanism write, and no load
 	 * resolves beyond forwarding. The exact shape of {@code BoardBankAnalyzer}'s own
 	 * {@code NO_HOOKS}, reproduced here rather than exposed, since
-	 * {@link StoredValueScanner#callerCellValue}'s sole production caller
+	 * {@link LocalStoreForwarding#callerCellValue}'s sole production caller
 	 * ({@code HelperArgumentRecovery.inboundArgumentCell}'s caller-side half) always passes it: the
 	 * scan runs at the CALL SITE, outside any mechanism's interpretation, so a strategy's load
 	 * resolution has nothing to say about a cell the caller is merely setting up ahead of the
@@ -133,14 +133,14 @@ public class StoreForwardingProgramTest extends AbstractProgramTest {
 		builder.setBytes("0x8010", "46 f0", true); // LSR $F0
 		builder.setBytes("0x8012", "26 f0", true); // ROL $F0
 
-		assertFalse(StoredValueScanner.modifiesRegister(instructionAt("0x8005"), 'A'));
-		assertFalse(StoredValueScanner.modifiesRegister(instructionAt("0x800e"), 'A'));
-		assertFalse(StoredValueScanner.modifiesRegister(instructionAt("0x8010"), 'A'));
-		assertFalse(StoredValueScanner.modifiesRegister(instructionAt("0x8012"), 'A'));
-		assertTrue(StoredValueScanner.modifiesRegister(instructionAt("0x800a"), 'A'));
-		assertTrue(StoredValueScanner.modifiesRegister(instructionAt("0x800b"), 'A'));
-		assertTrue(StoredValueScanner.modifiesRegister(instructionAt("0x800c"), 'A'));
-		assertTrue(StoredValueScanner.modifiesRegister(instructionAt("0x800d"), 'A'));
+		assertFalse(MosOperands.modifiesRegister(instructionAt("0x8005"), 'A'));
+		assertFalse(MosOperands.modifiesRegister(instructionAt("0x800e"), 'A'));
+		assertFalse(MosOperands.modifiesRegister(instructionAt("0x8010"), 'A'));
+		assertFalse(MosOperands.modifiesRegister(instructionAt("0x8012"), 'A'));
+		assertTrue(MosOperands.modifiesRegister(instructionAt("0x800a"), 'A'));
+		assertTrue(MosOperands.modifiesRegister(instructionAt("0x800b"), 'A'));
+		assertTrue(MosOperands.modifiesRegister(instructionAt("0x800c"), 'A'));
+		assertTrue(MosOperands.modifiesRegister(instructionAt("0x800d"), 'A'));
 
 		assertBank(5, axromLatch().computeSwitch(program, instructionAt("0x8007"),
 			MechanismState.unknown()));
@@ -358,7 +358,7 @@ public class StoreForwardingProgramTest extends AbstractProgramTest {
 	 * nothing pushed onto the stack could reach {@code $0103} without the stack running ~253
 	 * bytes deep -- {@code HelperArgumentRecovery.argumentSurvivesPrologue} already makes the
 	 * identical assumption over the same dodge routine. See {@link StackFloor} for the full
-	 * ruling and {@code StoredValueScanner.forwardedStoreValue} for its residual risk.
+	 * ruling and {@code LocalStoreForwarding.forwardedStoreValue} for its residual risk.
 	 * <p>
 	 * {@code PHA} here is still invisible to {@code writesMemory}'s detectors -- it is simply no
 	 * longer treated as reason enough to refuse the whole page, only to (correctly) step over it
@@ -439,7 +439,7 @@ public class StoreForwardingProgramTest extends AbstractProgramTest {
 	// ------------------------------------------------------------------
 
 	/**
-	 * Pins {@link StoredValueScanner#callerCellValue}: the memory dual of
+	 * Pins {@link LocalStoreForwarding#callerCellValue}: the memory dual of
 	 * {@link StoredValueScanner#resolveStoredValue}'s register query, asked at the CALL SITE
 	 * rather than inside the helper. This is the other half of smb3's {@code FUN_ffc2} shape
 	 * ({@link HelperInboundCellProgramTest} pins the helper-side half,
@@ -449,7 +449,7 @@ public class StoreForwardingProgramTest extends AbstractProgramTest {
 	 * <pre>
 	 *   ca23  LDA #$1b / STA $0720 / JSR $ffc2     &lt;- useInstr is the JSR, cell is $0720
 	 * </pre>
-	 * Every guard is inherited from {@code StoredValueScanner.forwardedStoreValue} -- this is a
+	 * Every guard is inherited from {@code LocalStoreForwarding.forwardedStoreValue} -- this is a
 	 * thin entry point onto it, not a second scanner -- so this test is deliberately the simplest
 	 * possible shape: an immediate load, a store to the cell, then the call.
 	 */
@@ -460,7 +460,7 @@ public class StoreForwardingProgramTest extends AbstractProgramTest {
 		builder.setBytes("0x8005", "20 c2 ff", true); // JSR $FFC2   <- useInstr
 		builder.setBytes("0xffc2", "60", true); // RTS (callee, not otherwise touched)
 
-		assertCellValue(0xFF, 0x1B, StoredValueScanner.callerCellValue(program,
+		assertCellValue(0xFF, 0x1B, LocalStoreForwarding.callerCellValue(program,
 			instructionAt("0x8005"), builder.addr("0x0720"), MechanismState.unknown(), 0xFF, NO_HOOKS));
 	}
 
@@ -477,7 +477,7 @@ public class StoreForwardingProgramTest extends AbstractProgramTest {
 		builder.setBytes("0x8020", "60", true); // RTS
 		builder.setBytes("0xffc2", "60", true); // RTS
 
-		assertUnresolved(StoredValueScanner.callerCellValue(program, instructionAt("0x8006"),
+		assertUnresolved(LocalStoreForwarding.callerCellValue(program, instructionAt("0x8006"),
 			builder.addr("0x0720"), MechanismState.unknown(), 0xFF, NO_HOOKS));
 	}
 
@@ -494,7 +494,7 @@ public class StoreForwardingProgramTest extends AbstractProgramTest {
 		builder.setBytes("0x8005", "20 c2 ff", true); // JSR $FFC2   <- useInstr
 		builder.setBytes("0xffc2", "60", true); // RTS
 
-		assertCellValue(0x0F, 0x05, StoredValueScanner.callerCellValue(program,
+		assertCellValue(0x0F, 0x05, LocalStoreForwarding.callerCellValue(program,
 			instructionAt("0x8005"), builder.addr("0x0720"), MechanismState.unknown(), 0x0F, NO_HOOKS));
 	}
 }

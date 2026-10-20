@@ -73,7 +73,7 @@ import ghidra.program.model.mem.MemoryBlock;
  * is about to change it -- so resolving one from in-state would ship a confidently wrong bank,
  * which this engine rates strictly worse than no bank. They are carried for grm-mej.4's
  * labelling; grm-zsxz's
- * save-slot forwarding (StoredValueScanner.saveSlotForwarded) recovers such a cell's value from
+ * save-slot forwarding (SaveSlotForwarding.saveSlotForwarded) recovers such a cell's value from
  * the store that filled it, without consulting the kind at all.
  */
 public final class BankMirrors {
@@ -1256,7 +1256,7 @@ public final class BankMirrors {
 				if (store == null) {
 					continue;
 				}
-				Character reg = StoredValueScanner.storeRegister(store);
+				Character reg = MosOperands.storeRegister(store);
 				if (reg == null) {
 					continue;
 				}
@@ -1308,8 +1308,8 @@ public final class BankMirrors {
 					continue;
 				}
 
-				if (mnem.equals(loadMnem) && !StoredValueScanner.isImmediate(prev)) {
-					Address target = StoredValueScanner.plainAbsoluteTarget(prev);
+				if (mnem.equals(loadMnem) && !MosOperands.isImmediate(prev)) {
+					Address target = MosOperands.plainAbsoluteTarget(prev);
 					if (target != null && normalizedOffset(target) != null &&
 						romIdentifying.contains(normalizedOffset(target))) {
 						// The register was carrying a bank READ-BACK, so anything it was stored
@@ -1333,7 +1333,7 @@ public final class BankMirrors {
 					continue;
 				}
 
-				if (StoredValueScanner.modifiesRegister(prev, reg)) {
+				if (MosOperands.modifiesRegister(prev, reg)) {
 					return;
 				}
 				cur = prev;
@@ -1409,7 +1409,7 @@ public final class BankMirrors {
 					}
 					String mnem = prev.getMnemonicString().toUpperCase();
 					if (mnem.equals(loadMnem)) {
-						if (!StoredValueScanner.isImmediate(prev)) {
+						if (!MosOperands.isImmediate(prev)) {
 							Long offset = writableCellOffset(program, prev);
 							if (offset != null) {
 								Cell cell = cells.computeIfAbsent(offset, k -> new Cell());
@@ -1425,7 +1425,7 @@ public final class BankMirrors {
 						}
 						break; // the argument's source, whatever it was
 					}
-					if (StoredValueScanner.modifiesRegister(prev, reg)) {
+					if (MosOperands.modifiesRegister(prev, reg)) {
 						break;
 					}
 					cur = prev;
@@ -1497,14 +1497,14 @@ public final class BankMirrors {
 			for (Instruction load : listing.getInstructions(true)) {
 				String mnem = load.getMnemonicString().toUpperCase();
 				if (mnem.length() != 3 || !mnem.startsWith("LD") ||
-					StoredValueScanner.isImmediate(load)) {
+					MosOperands.isImmediate(load)) {
 					continue;
 				}
 				char reg = mnem.charAt(2);
 				if (reg != 'A' && reg != 'X' && reg != 'Y') {
 					continue;
 				}
-				Long from = normalizedOffset(StoredValueScanner.plainAbsoluteTarget(load));
+				Long from = normalizedOffset(MosOperands.plainAbsoluteTarget(load));
 				if (from == null || !sources.contains(from)) {
 					continue;
 				}
@@ -1537,7 +1537,7 @@ public final class BankMirrors {
 					}
 					return; // the copy's destination, whatever it was
 				}
-				if (StoredValueScanner.modifiesRegister(next, reg)) {
+				if (MosOperands.modifiesRegister(next, reg)) {
 					return;
 				}
 				cur = next;
@@ -1676,7 +1676,7 @@ public final class BankMirrors {
 		 * shares.
 		 */
 		private Long writableCellOffset(Program program, Instruction instr) {
-			Address target = StoredValueScanner.plainAbsoluteTarget(instr);
+			Address target = MosOperands.plainAbsoluteTarget(instr);
 			Long offset = normalizedOffset(target);
 			if (offset == null || (offset >= STACK_PAGE_START && offset <= STACK_PAGE_END)) {
 				return null;

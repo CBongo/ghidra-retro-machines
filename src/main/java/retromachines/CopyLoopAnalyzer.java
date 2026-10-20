@@ -272,7 +272,7 @@ public class CopyLoopAnalyzer extends AbstractAnalyzer {
 		// Bound the range from the LDX/LDY #imm counter init. Only the clean down-counting form
 		// gives a range certain to be [dst, dst+len).
 		Instruction init = LoopIdioms.findCounterInit(listing, lda, idx);
-		Integer n = init == null ? null : StoredValueScanner.immediateOperandValue(init);
+		Integer n = init == null ? null : MosOperands.immediateOperandValue(init);
 		if (!(downCount && bpl && backEdge)) {
 			return null; // not a copy loop -- an ordinary adjacent indexed load/store, ignore
 		}

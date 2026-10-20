@@ -104,7 +104,7 @@ final class SearchLoopDispatch {
 		List<Instruction> run = new ArrayList<>();
 		Instruction join = switchInstr;
 		for (int i = 0; ; i++) {
-			if (i >= MAX_RUN || StoredValueScanner.writesRegister(join, y)) {
+			if (i >= MAX_RUN || MosOperands.writesRegister(join, y)) {
 				return null;
 			}
 			run.add(0, join);
@@ -218,7 +218,7 @@ final class SearchLoopDispatch {
 		}
 		cur = head;
 		for (int i = 0; ; i++) {
-			if (i >= MAX_RUN || StoredValueScanner.writesRegister(cur, y)) {
+			if (i >= MAX_RUN || MosOperands.writesRegister(cur, y)) {
 				return null;
 			}
 			if (cur.equals(branch)) {
@@ -240,7 +240,7 @@ final class SearchLoopDispatch {
 			if (n != null) {
 				return loopValues(n, step);
 			}
-			if (StoredValueScanner.writesRegister(prev, y) || hasIncomingFlow(program, prev)) {
+			if (MosOperands.writesRegister(prev, y) || hasIncomingFlow(program, prev)) {
 				return null;
 			}
 			before = prev;

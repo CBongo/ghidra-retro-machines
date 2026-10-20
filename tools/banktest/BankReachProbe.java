@@ -108,7 +108,7 @@
 // reference that landed in a bank overlay's space. Both, however, DO accept a
 // read-modify-write in range as a mechanism write (isMechanismWrite delegates straight to
 // writesInRange, with the INC-reset idiom of grm-4kc handled downstream), whereas §5's site
-// enumeration mirrors StoredValueScanner.storeRegister and so lists only STA/STX/STY. That
+// enumeration mirrors MosOperands.storeRegister and so lists only STA/STX/STY. That
 // blind spot is measured, not hidden: 'count stores.rmwInRange'.
 //
 // Emits a bounded block between
@@ -424,7 +424,7 @@ public class BankReachProbe extends GhidraScript {
 		// means a read-modify-write (INC/ASL/ROL/...), plus the illegal store opcodes. Production's
 		// mechanism-write gate ACCEPTS these (memory-latch's tier 1, and both other strategies'
 		// single tier, test references alone with no storeRegister filter), but this section
-		// mirrors StoredValueScanner.storeRegister and so cannot attribute a stored value to one.
+		// mirrors MosOperands.storeRegister and so cannot attribute a stored value to one.
 		// Counting them keeps the gap measured instead of silently absent -- bionic's MMC1 reset
 		// is `INC $FFE1` and is a real, determinable switch site (grm-4kc).
 		long rmwInRange = 0;

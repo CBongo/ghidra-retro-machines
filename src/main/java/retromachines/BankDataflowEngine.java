@@ -1704,7 +1704,7 @@ final class BankDataflowEngine {
 		}
 		Address headAddr = head.getMinAddress();
 		// Predecessor enumeration under the closed-world rules is shared with
-		// StoredValueScanner.crossBlockMatchingPush (bead grm-mej.3 increment X1), which needs
+		// CrossBlockStackPairing.crossBlockMatchingPush (bead grm-mej.3 increment X1), which needs
 		// the identical rule -- flow refs + fall-through only, no call references into the span,
 		// every predecessor disassembled, never crossing a function entry -- for its own
 		// ALL-PATHS backward search. This method's own extra requirement (at least two
@@ -1720,7 +1720,7 @@ final class BankDataflowEngine {
 		// still holds at each node it reaches, so the arm resolves only when its own straight
 		// line defines the value, exactly as a same-function arm does.
 		List<Address> preds =
-			StoredValueScanner.closedWorldPredecessors(program, listing, headAddr, true);
+			CrossBlockStackPairing.closedWorldPredecessors(program, listing, headAddr, true);
 		if (preds == null || preds.size() < 2) {
 			return null;
 		}

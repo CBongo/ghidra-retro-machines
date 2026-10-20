@@ -59,10 +59,10 @@ import retromachines.HelperDiscovery.HelperModel;
  * delegates to the three-address form, and the two were not split apart --
  * {@link #forgetCellsThePushMayHaveHit}, {@link #prologueSegments}, {@link #argumentReloadSource}
  * and {@link #writesStackPointer}); the shared {@link HelperModel} accessors
- * {@link #helperValueSite} and {@link #insideHelperEntry}; and {@link CallEffect}/{@code NO_HOOKS}.
+ * {@link #helperValueSite} and {@link #insideHelperEntry}; and {@link CallEffect}/{@code StoredValueScanner.Hooks.INERT}.
  * {@code BoardBankAnalyzer.added()} never reaches this class directly (it calls only
  * {@link HelperDiscovery}'s and {@link SaveRestoreTrampolines}' entry points), but
- * {@code StoredValueScanner.findMatchingPush} reaches {@link #writesStackPointer} via a qualified
+ * {@code CrossBlockStackPairing.findMatchingPush} reaches {@link #writesStackPointer} via a qualified
  * call, and {@link BankDataflowEngine} reaches {@link #recoverCallArgument} via
  * {@code import static} exactly as it did before this bead, since that method was already
  * {@code static} as of grm-shnf step 2.
@@ -137,7 +137,7 @@ final class HelperArgumentRecovery {
 	 * the caller's register is ruled out:
 	 * <ol>
 	 * <li>the caller's byte arriving through MEMORY -- {@link #inboundArgumentCell} proves the
-	 * helper consumes a cell it never writes, and {@link StoredValueScanner#callerCellValue}
+	 * helper consumes a cell it never writes, and {@link LocalStoreForwarding#callerCellValue}
 	 * reads what the caller stored there (smb3's {@code $0720});</li>
 	 * <li>the helper's OWN value where its body supplies a constant --
 	 * {@link #valueSuppliedInsideHelper} (grm-cxb), reading whichever site the strategy says
@@ -226,7 +226,7 @@ final class HelperArgumentRecovery {
 		/** The per-run proof memo -- X1's cross-block pairings (bead grm-mej.3) and Z2's save-slot
 		 *  proofs and callee censuses (bead grm-zsxz) -- or {@code null} when
 		 *  the caller has none to offer -- {@link #crossBlockProofMemo} then answers {@code null}
-		 *  too, and {@code StoredValueScanner.crossBlockMatchingPush} computes fresh every time. */
+		 *  too, and {@code CrossBlockStackPairing.crossBlockMatchingPush} computes fresh every time. */
 		private final StoredValueScanner.ProofMemo crossBlockMemo;
 		private int consultations;
 
@@ -329,7 +329,7 @@ final class HelperArgumentRecovery {
 	/**
 	 * {@link #recoverCallArgument} with the engine's per-run cross-block proof memo (bead
 	 * grm-mej.3 increment X1), handed to {@code OracleHooks} so
-	 * {@code StoredValueScanner.crossBlockMatchingPush}'s state-free proof is computed once per
+	 * {@code CrossBlockStackPairing.crossBlockMatchingPush}'s state-free proof is computed once per
 	 * {@code PLA} for the whole run rather than once per call site that happens to walk through
 	 * it. {@code null} -- every caller but {@code BankDataflowEngine} -- computes fresh each time,
 	 * which is the 8-argument form exactly.
@@ -373,7 +373,7 @@ final class HelperArgumentRecovery {
 			// write this analyzer simply cannot resolve, but wrong for a switch site whose
 			// effect does not depend on any caller argument at all (MMC1's self-modifying
 			// RMW reset idiom is exactly this: an INC/DEC read-modify-write, which
-			// StoredValueScanner.storeRegister never recognizes as a store register, yet the
+			// MosOperands.storeRegister never recognizes as a store register, yet the
 			// reset it performs is the same regardless of what any caller passed in). Ask the
 			// strategy before giving up -- see BankSwitchStrategy.callerIndependentDeposit's
 			// javadoc for why this is a genuinely different case from "unknown".
@@ -408,9 +408,9 @@ final class HelperArgumentRecovery {
 		// getting that space wrong is the easiest way to ship a wrong bank here.
 		MechanismState localIn = placement.toLocal(callSiteIn);
 		// The Hooks a scan running at THIS call site (i.e. outside helper's own instructions) may
-		// use (bead grm-mej.3 item 4). NOT NO_HOOKS any more for a strategy that overrides
+		// use (bead grm-mej.3 item 4). NOT StoredValueScanner.Hooks.INERT any more for a strategy that overrides
 		// BankSwitchStrategy.callerSideHooks() (MemoryLatchBankSwitchStrategy does, for contra's
-		// c0d3 LDA $8000 at a call site) -- but NO_HOOKS remains exactly right for
+		// c0d3 LDA $8000 at a call site) -- but StoredValueScanner.Hooks.INERT remains exactly right for
 		// valueSuppliedInsideHelper and inboundArgumentCell's effectiveOperandTarget call below,
 		// which run INSIDE the helper / do address computation rather than caller-side value
 		// recovery, and are deliberately NOT converted.
@@ -512,7 +512,7 @@ final class HelperArgumentRecovery {
 			!argumentSurvives) {
 			Address inbound = inboundArgumentCell(program, helper, reg);
 			PartialByte viaCell = inbound == null ? PartialByte.unknown()
-					: StoredValueScanner.callerCellValue(program, callInstr, inbound, localIn,
+					: LocalStoreForwarding.callerCellValue(program, callInstr, inbound, localIn,
 						byteMask, callerHooks, path);
 			// Partial knowledge counts, matching how combine() and BitField.deposit already treat
 			// a per-bit answer. Mirror-aware as of grm-mej.3 item 4 for the same reason the
@@ -563,7 +563,7 @@ final class HelperArgumentRecovery {
 		// is both the answer for a single-site helper and, for a folded one, the deposit whose
 		// emptiness decides whether this CALL SITE gets a warning. See foldDeposits.
 		Fold fold = foldDeposits(program, helper, switchSite, local, localIn, stateMask,
-			callerRegs, (cell, mask) -> StoredValueScanner.callerCellValue(program, callInstr,
+			callerRegs, (cell, mask) -> LocalStoreForwarding.callerCellValue(program, callInstr,
 				cell, localIn, mask, callerHooks, path));
 		if (!fold.primaryIsSwitchSite()) {
 			// grm-mej.27: the last-writer fold found switchSite is NOT what is live at the return,
@@ -578,7 +578,7 @@ final class HelperArgumentRecovery {
 					: program.getListing().getInstructionAt(fold.primarySite());
 			definitelyNoInboundArgument = live != null && helper.relay() == null &&
 				helper.strategy().consumesHelperArgument() &&
-				Character.valueOf(reg).equals(StoredValueScanner.storeRegister(live)) &&
+				Character.valueOf(reg).equals(MosOperands.storeRegister(live)) &&
 				argumentDefinitelyClobbered(program,
 					List.of(new PrologueSegment(helper.entry(), fold.primarySite())), reg);
 		}
@@ -636,7 +636,7 @@ final class HelperArgumentRecovery {
 				: new OracleHooks(callerHooksFor(helper), oracle, placement,
 					helper.strategy() == null ? null : helper.strategy().observedMirrors(),
 					crossBlockMemo);
-		return StoredValueScanner.callerCellValue(program, callInstr, cell, localIn, byteMask,
+		return LocalStoreForwarding.callerCellValue(program, callInstr, cell, localIn, byteMask,
 			hooks, RegisterEnv.NONE);
 	}
 
@@ -689,7 +689,7 @@ final class HelperArgumentRecovery {
 			}
 		}
 		Fold fold = foldDeposits(program, helper, switchSite, PartialByte.unknown(), localIn,
-			stateMask, callerRegs, (cell, mask) -> StoredValueScanner.callerCellValue(program,
+			stateMask, callerRegs, (cell, mask) -> LocalStoreForwarding.callerCellValue(program,
 				callInstr, cell, localIn, mask, callerHooks, path));
 		BankSwitchStrategy.HelperDeposit deposit = fold.deposit();
 		return new CallEffect(placement.position(deposit.value()),
@@ -801,7 +801,7 @@ final class HelperArgumentRecovery {
 	 * that every field this helper writes receives that same value, which is exactly the
 	 * assumption bead grm-4bgh was filed to say is wrong. The amplification is real and was
 	 * measured while writing this bead's tests: {@link #valueSuppliedInsideHelper} scans back
-	 * from the helper's value site with {@link #NO_HOOKS}, which steps straight over an earlier
+	 * from the helper's value site with {@link StoredValueScanner.Hooks#INERT}, which steps straight over an earlier
 	 * mechanism write (a plain {@code STA} does not touch the register being resolved), so it
 	 * can return a constant that belongs to a DIFFERENT site -- an earlier select write's own
 	 * {@code LDA #imm}, say. Under an unrestricted fold that stray constant would be deposited
@@ -1056,7 +1056,7 @@ final class HelperArgumentRecovery {
 		if (callerCell == null || helper.relay() != null) {
 			return PartialByte.unknown();
 		}
-		Character reg = StoredValueScanner.storeRegister(site);
+		Character reg = MosOperands.storeRegister(site);
 		Address entry = cfg.entry();
 		Address cell = reg == null ? null
 				: inboundArgumentCell(program, entry, site.getMinAddress(), reg);
@@ -1081,8 +1081,8 @@ final class HelperArgumentRecovery {
 			// The owner-accepted premise above covers calls and unplaceable stores only.
 			for (Address a : cfg.succs().keySet()) {
 				Instruction instr = listing.getInstructionAt(a);
-				if (instr != null && StoredValueScanner.writesMemory(instr) &&
-					cell.equals(StoredValueScanner.effectiveOperandTarget(program, instr, NO_HOOKS,
+				if (instr != null && LocalStoreForwarding.writesMemory(instr) &&
+					cell.equals(StoredValueScanner.effectiveOperandTarget(program, instr, StoredValueScanner.Hooks.INERT,
 						RegisterEnv.NONE))) {
 					return PartialByte.unknown();
 				}
@@ -1240,7 +1240,7 @@ final class HelperArgumentRecovery {
 	 * {@code $0100 + S}, so a tracked cell in the stack page could be clobbered by the very
 	 * {@code PHA} this walk models as a pure save. {@link StackFloor} draws that line, applied
 	 * by {@link #forgetCellsThePushMayHaveHit}; the same floor governs
-	 * {@code StoredValueScanner.forwardedStoreValue} and {@link #inboundArgumentCell}, so all
+	 * {@code LocalStoreForwarding.forwardedStoreValue} and {@link #inboundArgumentCell}, so all
 	 * three walks now make one assumption instead of three tacit ones.
 	 */
 	/**
@@ -1457,10 +1457,10 @@ final class HelperArgumentRecovery {
 			if (!modelled) {
 				// Any write to a cell we were relying on ends that reliance, whatever wrote it
 				// (a plain store, or an INC/ASL-style read-modify-write).
-				argumentCells.removeIf(cell -> StoredValueScanner.writesAddress(instr, cell));
-				Character stored = StoredValueScanner.storeRegister(instr);
+				argumentCells.removeIf(cell -> MosOperands.writesAddress(instr, cell));
+				Character stored = MosOperands.storeRegister(instr);
 				if (stored != null && stored.charValue() == reg && holdsArgument && straightLine) {
-					Address cell = StoredValueScanner.plainAbsoluteTarget(instr);
+					Address cell = MosOperands.plainAbsoluteTarget(instr);
 					if (cell != null) {
 						argumentCells.add(cell);
 					}
@@ -1470,7 +1470,7 @@ final class HelperArgumentRecovery {
 						argumentCells.clear();
 					}
 				}
-				if (StoredValueScanner.writesRegister(instr, register)) {
+				if (MosOperands.writesRegister(instr, register)) {
 					// A load is a RESTORE when it reads back a cell this walk watched the argument
 					// being written to; every other write to argReg loses it.
 					Address from = argumentReloadSource(instr, reg);
@@ -1537,9 +1537,9 @@ final class HelperArgumentRecovery {
 		if ("PH".concat(String.valueOf(reg)).equals(instr.getMnemonicString())) {
 			return false;
 		}
-		Character stored = StoredValueScanner.storeRegister(instr);
+		Character stored = MosOperands.storeRegister(instr);
 		if (stored != null && stored.charValue() == reg &&
-			StoredValueScanner.plainAbsoluteTarget(instr) != null) {
+			MosOperands.plainAbsoluteTarget(instr) != null) {
 			return false;
 		}
 		for (Object in : instr.getInputObjects()) {
@@ -1667,7 +1667,7 @@ final class HelperArgumentRecovery {
 		RegisterEnv insideOnly = new RegisterEnv(insideHelperEntry(helper), PartialByte.unknown(),
 			PartialByte.unknown(), PartialByte.unknown());
 		return StoredValueScanner.resolveStoredValue(program, site, reg, MechanismState.unknown(),
-			byteMask, NO_HOOKS, insideOnly);
+			byteMask, StoredValueScanner.Hooks.INERT, insideOnly);
 	}
 
 	/**
@@ -2022,10 +2022,10 @@ final class HelperArgumentRecovery {
 			if (mnem.equals("PHA") && aIsArgument) {
 				argumentPushes.add(instr.getMinAddress());
 			}
-			if (StoredValueScanner.writesRegister(instr, a)) {
+			if (MosOperands.writesRegister(instr, a)) {
 				aIsArgument = false;
 				Instruction pha = mnem.equals("LDA") && isStackPageIndexedAccess(instr)
-						? StoredValueScanner.stackRelativeReloadPush(program, instr, NO_HOOKS,
+						? StoredValueScanner.stackRelativeReloadPush(program, instr, StoredValueScanner.Hooks.INERT,
 							entry, MAX_RELOAD_WALK)
 						: null;
 				if (pha != null && argumentPushes.contains(pha.getMinAddress())) {
@@ -2041,7 +2041,7 @@ final class HelperArgumentRecovery {
 			else if (mnem.equals("SEC")) {
 				carry = 1;
 			}
-			else if (carryFlag == null || StoredValueScanner.writesRegister(instr, carryFlag)) {
+			else if (carryFlag == null || MosOperands.writesRegister(instr, carryFlag)) {
 				carry = null;
 			}
 			cursor = instr.getMaxAddress().next();
@@ -2053,7 +2053,7 @@ final class HelperArgumentRecovery {
 			return null;
 		}
 		Instruction site = listing.getInstructionAt(valueSite);
-		Character stored = site == null ? null : StoredValueScanner.storeRegister(site);
+		Character stored = site == null ? null : MosOperands.storeRegister(site);
 		if (stored == null || stored.charValue() != reg) {
 			return null;
 		}
@@ -2066,22 +2066,22 @@ final class HelperArgumentRecovery {
 			String mnem, Integer carry) {
 		switch (mnem) {
 			case "ASL" -> {
-				if (StoredValueScanner.isAccumulatorForm(instr) && t.shift() < 7) {
+				if (MosOperands.isAccumulatorForm(instr) && t.shift() < 7) {
 					return new ReloadTransform(t.shift() + 1, (t.add() << 1) & 0xFF);
 				}
 				return null;
 			}
 			case "ADC" -> {
-				Integer imm = StoredValueScanner.isImmediate(instr)
-						? StoredValueScanner.immediateOperandValue(instr) : null;
+				Integer imm = MosOperands.isImmediate(instr)
+						? MosOperands.immediateOperandValue(instr) : null;
 				if (imm == null || carry == null) {
 					return null;
 				}
 				return new ReloadTransform(t.shift(), (t.add() + imm + carry) & 0xFF);
 			}
 			case "ORA" -> {
-				Integer imm = StoredValueScanner.isImmediate(instr)
-						? StoredValueScanner.immediateOperandValue(instr) : null;
+				Integer imm = MosOperands.isImmediate(instr)
+						? MosOperands.immediateOperandValue(instr) : null;
 				int lowBits = (1 << t.shift()) - 1;
 				if (imm == null || (imm & ~lowBits) != 0 || t.add() > lowBits ||
 					(t.add() & imm) != 0) {
@@ -2222,7 +2222,7 @@ final class HelperArgumentRecovery {
 	 * like zelda2's {@code FUN_ffc9}. "ABSOLUTE" in the brief was contrasting a FIXED address
 	 * against an INDEXED/INDIRECT one (the very next clause, "non-indexed", is the same contrast
 	 * restated), not contrasting encoding lengths. There is therefore no zero-page exclusion here:
-	 * {@link #argumentReloadSource} (itself keyed on {@link StoredValueScanner#plainAbsoluteTarget},
+	 * {@link #argumentReloadSource} (itself keyed on {@link MosOperands#plainAbsoluteTarget},
 	 * which already refuses anything indexed) is the whole addressing-mode test.
 	 * <p>
 	 * <b>Re-verified against all six grm-jqt0 titles with the corrected criterion.</b> zelda2's
@@ -2294,7 +2294,7 @@ final class HelperArgumentRecovery {
 	 * statically certain -- the memory half of {@link #argumentSurvivesPrologue}'s save/restore
 	 * model, and the load-side predicate of {@link #inboundArgumentCell}. Null for anything else,
 	 * including an immediate load (no address operand at all) and an indexed one
-	 * ({@link StoredValueScanner#plainAbsoluteTarget} refuses those, since their target is
+	 * ({@link MosOperands#plainAbsoluteTarget} refuses those, since their target is
 	 * runtime-dependent).
 	 */
 	// Package-private (not private): SaveRestoreTrampolines.restoresEntryBank also calls
@@ -2303,7 +2303,7 @@ final class HelperArgumentRecovery {
 		if (!("LD" + reg).equals(instr.getMnemonicString())) {
 			return null;
 		}
-		return StoredValueScanner.plainAbsoluteTarget(instr);
+		return MosOperands.plainAbsoluteTarget(instr);
 	}
 
 	/**
@@ -2313,7 +2313,7 @@ final class HelperArgumentRecovery {
 	 * <b>The claim.</b> If the helper's LAST write to {@code reg} before its value-consuming site
 	 * is a plain load from cell C, and nothing between the entry and that site could have written
 	 * C, then C still holds what the CALLER put there. C is therefore an inbound argument, and its
-	 * value must be resolved at the CALL SITE ({@link StoredValueScanner#callerCellValue}) rather
+	 * value must be resolved at the CALL SITE ({@link LocalStoreForwarding#callerCellValue}) rather
 	 * than by scanning for {@code reg} there.
 	 * <p>
 	 * <b>This is the exact dual of {@link #argumentSurvivesPrologue}'s {@code argumentCells}
@@ -2377,7 +2377,7 @@ final class HelperArgumentRecovery {
 	 * linear-by-address walk skip a write to C, or count one that never executes, and both point
 	 * the unsafe way.
 	 * <p>
-	 * <b>{@link StoredValueScanner#writesMemory}, not {@code writesAddress}.</b> The reference-only
+	 * <b>{@link LocalStoreForwarding#writesMemory}, not {@code writesAddress}.</b> The reference-only
 	 * test under-reports (an indirect store has no concrete result address, refless stores exist,
 	 * and the read-modify-write mnemonics are invisible to {@code storeRegister}). In the
 	 * save/restore model a missed write is bounded by {@code holdsArgument}; here it is directly a
@@ -2386,7 +2386,7 @@ final class HelperArgumentRecovery {
 	 * <b>A cell in the live part of the stack page is refused</b> ({@link StackFloor}). This walk
 	 * is the one place where the hazard is not hypothetical: the caller reached {@code entry}
 	 * through a {@code JSR}, which pushed two bytes, and neither that nor a {@code PHA} inside
-	 * the range is visible to {@link StoredValueScanner#writesMemory}. Unlike the other two
+	 * the range is visible to {@link LocalStoreForwarding#writesMemory}. Unlike the other two
 	 * consumers of the floor, a wrong answer here is a confident wrong bank rather than a
 	 * forfeited forward, so the guard matters most here even though the code is smallest.
 	 *
@@ -2421,15 +2421,15 @@ final class HelperArgumentRecovery {
 			if (next == null || fallThrough == null || !fallThrough.equals(next)) {
 				return null; // a gap, an override, or the end of the space -- not one linear path
 			}
-			if (StoredValueScanner.writesMemory(instr)) {
-				Address target = StoredValueScanner.effectiveOperandTarget(program, instr, NO_HOOKS,
+			if (LocalStoreForwarding.writesMemory(instr)) {
+				Address target = StoredValueScanner.effectiveOperandTarget(program, instr, StoredValueScanner.Hooks.INERT,
 					RegisterEnv.NONE);
 				if (target == null) {
 					return null; // a write this scanner cannot place may have landed on the cell
 				}
 				written.add(target);
 			}
-			if (StoredValueScanner.writesRegister(instr, register)) {
+			if (MosOperands.writesRegister(instr, register)) {
 				cell = argumentReloadSource(instr, reg);
 			}
 			cursor = next;
@@ -2458,14 +2458,14 @@ final class HelperArgumentRecovery {
 	 * <b>Compared by BASE register, not by identity.</b> The 6502 declares the stack pointer
 	 * twice over the same bytes -- a two-byte {@code SP} and a one-byte {@code S} -- and
 	 * {@code CompilerSpec.getStackPointer()} answers one while {@code TXS}'s p-code writes the
-	 * other. An {@code equals} test (which is what {@link StoredValueScanner#writesRegister}
+	 * other. An {@code equals} test (which is what {@link MosOperands#writesRegister}
 	 * deliberately does, and must keep doing for A/X/Y) therefore reports that {@code TXS} does
 	 * not touch the stack, and the shadow stack would go on trusting a depth that had just moved
 	 * underneath it. Measured, not theorised: the {@code TXS} case was the one unit test that
 	 * failed on the identity comparison.
 	 * <p>
 	 * Package-private for a second consumer (grm-mej.3 increment 2):
-	 * {@code StoredValueScanner.findMatchingPush} needs the identical base-register-aware test
+	 * {@code CrossBlockStackPairing.findMatchingPush} needs the identical base-register-aware test
 	 * for its own PHA/PLA depth pairing, over a BACKWARD walk rather than this method's forward
 	 * one. Reused verbatim rather than reimplemented so the two walks cannot silently drift apart
 	 * on what "moves the stack pointer" means.
@@ -2496,7 +2496,7 @@ final class HelperArgumentRecovery {
 	 * {@code argValue}'s {@code stateMask} narrowing in {@link #recoverCallArgument} is a
 	 * different question (the field value itself) and keeps it.
 	 * <p>
-	 * {@link #NO_HOOKS} is used because the scan runs in the CALLER, outside any mechanism's
+	 * {@link StoredValueScanner.Hooks#INERT} is used because the scan runs in the CALLER, outside any mechanism's
 	 * interpretation: the caller's mechanism writes are not this helper's, and no strategy's
 	 * load resolution applies to a register the caller is merely setting up. A register the
 	 * scan cannot pin down comes back {@link BankState#unknown()}, which is what keeps a
@@ -2711,7 +2711,7 @@ final class HelperArgumentRecovery {
 	 * mechanism's field-local tracked state at the call, threaded down from
 	 * {@link #callSiteRegisters} -- replaces the historical hardcoded
 	 * {@link BankState#unknown()}, and {@link #callerHooksFor} replaces the historical
-	 * {@code NO_HOOKS}. This is masked to {@code 0xFF} rather than the mechanism's own
+	 * {@code StoredValueScanner.Hooks.INERT}. This is masked to {@code 0xFF} rather than the mechanism's own
 	 * {@code stateMask} exactly as before (an index register is not the mechanism's field, see
 	 * this method's original javadoc on {@link #callSiteRegisters}); the mask narrowing and the
 	 * in-state's coordinate space are independent questions, and only the mask stayed {@code 0xFF}
@@ -3094,14 +3094,14 @@ final class HelperArgumentRecovery {
 	/**
 	 * The {@link StoredValueScanner.Hooks} a caller-side scan for {@code helper} should use
 	 * (bead grm-mej.3 item 4): the helper's own strategy's {@link BankSwitchStrategy#callerSideHooks},
-	 * or plain {@link #NO_HOOKS} when the helper has no strategy at all (the same
+	 * or plain {@link StoredValueScanner.Hooks#INERT} when the helper has no strategy at all (the same
 	 * multi-mechanism-disagreement degrade {@link #recoverCallArgument} and
 	 * {@link #foldDeposits} already handle by testing {@code helper.strategy() == null}
 	 * elsewhere). One place for this so {@code recoverCallArgument} and
 	 * {@link #callSiteRegisters} cannot answer the question differently for the same helper.
 	 */
 	private static StoredValueScanner.Hooks callerHooksFor(HelperModel helper) {
-		return helper.strategy() == null ? NO_HOOKS : helper.strategy().callerSideHooks();
+		return helper.strategy() == null ? StoredValueScanner.Hooks.INERT : helper.strategy().callerSideHooks();
 	}
 
 	/**
@@ -3111,7 +3111,7 @@ final class HelperArgumentRecovery {
 	 * <p>
 	 * Before this bead the memo was keyed on {@code address} alone, and
 	 * {@code BankDataflowEngine.runDataflow}'s declaration comment argued that was sound because
-	 * {@link #callSiteRegisters}' three backward scans "use NO_HOOKS and never consult tracked
+	 * {@link #callSiteRegisters}' three backward scans "use StoredValueScanner.Hooks.INERT and never consult tracked
 	 * state". This bead makes that argument false for a strategy that overrides
 	 * {@link BankSwitchStrategy#callerSideHooks()}: {@link #survivingScan} now threads a real
 	 * {@code localIn} into those scans, so two dequeues of the same call address under different
@@ -3122,17 +3122,4 @@ final class HelperArgumentRecovery {
 	 */
 	record CallSiteRegKey(Address address, MechanismState localIn, Map<Address, Address> arms) {
 	}
-
-	private static final StoredValueScanner.Hooks NO_HOOKS = new StoredValueScanner.Hooks() {
-		@Override
-		public boolean isMechanismWrite(Instruction instr) {
-			return false;
-		}
-
-		@Override
-		public PartialByte resolveLoad(Instruction loadInstr, Address resolvedTarget,
-				MechanismState inStateAtStore) {
-			return null;
-		}
-	};
 }

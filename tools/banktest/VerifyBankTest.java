@@ -4106,7 +4106,7 @@ public class VerifyBankTest extends GhidraScript {
 		// ID1: the RESTORE, rcransom's fa43 trampoline shape -- read the mirror while r7=3, PHA,
 		// switch away through H16, call into the bank, PLA, feed the byte back into H16. This
 		// now RESOLVES (grm-mej.3 increment 3, "call-crossing PHA/PLA pairing"):
-		// StoredValueScanner.findMatchingPush steps OVER a call while pairing the PLA to its PHA
+		// CrossBlockStackPairing.findMatchingPush steps OVER a call while pairing the PLA to its PHA
 		// (the depth counter stays exact across JSR/RTS, which are balanced by construction --
 		// see findMatchingPush's javadoc), and the walk that resumes from the located PHA
 		// resolves the mirror read against the tracked state AT THAT PUSH (r7=3), via
@@ -4731,7 +4731,7 @@ public class VerifyBankTest extends GhidraScript {
 		// itself (LDA #$47 / STA $8000, the fixture idiom) before storing $1B (27) to
 		// $0720 immediately before the JSR, so HelperArgumentRecovery#inboundArgumentCell
 		// proves H2 consumes a cell it never writes, and
-		// StoredValueScanner#callerCellValue reads CallerE's own $1B at the call site.
+		// LocalStoreForwarding#callerCellValue reads CallerE's own $1B at the call site.
 		// Right before the JSR, CallerE loads A with a DECOY ($3F/63) distinct from the
 		// cell's value -- present so that r7=3 in the comment would expose the strategy
 		// (wrongly) register-sourcing the bank from A, while r7=5 proves it is genuinely
@@ -4749,7 +4749,7 @@ public class VerifyBankTest extends GhidraScript {
 		// G9 (bead grm-67g): CallerF ($E240) is the intervening-call CONTROL -- establishes
 		// select=7/prg_mode=1 itself like CallerE, then is otherwise identical except a JSR
 		// to a harmless subroutine ($E230) sits between the store to $0720 and the JSR to
-		// H2. A JSR may write anywhere (StoredValueScanner#forwardedStoreValue's call-
+		// H2. A JSR may write anywhere (LocalStoreForwarding#forwardedStoreValue's call-
 		// abort), so the caller-side forward scan cannot attribute the $0720 store across
 		// it. This is the control that proves G8 is not merely pattern-matching H2's shape:
 		// without a provable store reaching the call, the ONLY sound answer is a warning,
@@ -5018,7 +5018,7 @@ public class VerifyBankTest extends GhidraScript {
 		// F-rmw-reset (bead grm-4kc): the self-modifying reset idiom at $C07B --
 		// "INC $C07B", an INC on its own opcode byte, transcribed in shape from bionic's
 		// RESET ($FFE1: EE E1 FF  INC $FFE1). A read-modify-write into the register range
-		// used to poison unconditionally, because StoredValueScanner.storeRegister knows
+		// used to poison unconditionally, because MosOperands.storeRegister knows
 		// only STA/STX/STY. It is in fact exactly determinable: the byte read is this
 		// instruction's own $EE opcode, known by SELF-REFERENCE rather than by any
 		// memory-map argument -- whichever bank is mapped, the byte at that address is the

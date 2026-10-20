@@ -74,14 +74,14 @@ public class RegisterWriteBankSwitchStrategy implements BankSwitchStrategy {
 
 	/** Whether {@code instr} writes the mechanism, however it is modeled (address/register). */
 	private boolean writesMechanism(Instruction instr) {
-		return StoredValueScanner.writesAddress(instr, mechAddr) ||
-			(mechReg != null && StoredValueScanner.writesRegister(instr, mechReg));
+		return MosOperands.writesAddress(instr, mechAddr) ||
+			(mechReg != null && MosOperands.writesRegister(instr, mechReg));
 	}
 
 	/** Whether {@code instr} reads the mechanism back (LDA $01 / LDA PORT). */
 	private boolean readsMechanism(Instruction instr) {
-		return StoredValueScanner.readsAddress(instr, mechAddr) ||
-			(mechReg != null && StoredValueScanner.readsRegister(instr, mechReg));
+		return MosOperands.readsAddress(instr, mechAddr) ||
+			(mechReg != null && MosOperands.readsRegister(instr, mechReg));
 	}
 
 	/**
@@ -136,7 +136,7 @@ public class RegisterWriteBankSwitchStrategy implements BankSwitchStrategy {
 			return null;
 		}
 
-		Character reg = StoredValueScanner.storeRegister(instr);
+		Character reg = MosOperands.storeRegister(instr);
 		if (reg == null) {
 			// A mechanism write whose stored register we cannot even identify. Nothing was
 			// scanned, so there is no honest runtime gap to report -- this is our limitation.
@@ -151,7 +151,7 @@ public class RegisterWriteBankSwitchStrategy implements BankSwitchStrategy {
 	@Override
 	public ValueStop classifyHelperBodyGap(Program program, Instruction switchSite,
 			MechanismState inState, Address helperEntry) {
-		Character reg = StoredValueScanner.storeRegister(switchSite);
+		Character reg = MosOperands.storeRegister(switchSite);
 		if (reg == null) {
 			return ValueStop.ANALYZER_LIMIT;
 		}

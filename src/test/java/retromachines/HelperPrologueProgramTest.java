@@ -384,7 +384,7 @@ public class HelperPrologueProgramTest extends AbstractBundledLanguageTest {
 	 * themselves single-letter registers ({@code N V B D I Z C}), so most letters DO resolve --
 	 * a lookup by name is not the "obviously fails for anything unexpected" fallback it looks
 	 * like. Nothing can actually reach this branch today, since the argument register only ever
-	 * comes from {@code StoredValueScanner.storeRegister}, which answers A/X/Y or nothing; the
+	 * comes from {@code MosOperands.storeRegister}, which answers A/X/Y or nothing; the
 	 * branch exists so that if it ever could, it declines instead of throwing.
 	 */
 	@Test

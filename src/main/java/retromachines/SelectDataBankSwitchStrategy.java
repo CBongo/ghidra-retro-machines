@@ -441,7 +441,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 			return false;
 		}
 		Long offset = writesInRange(site);
-		Character reg = offset == null ? null : StoredValueScanner.storeRegister(site);
+		Character reg = offset == null ? null : MosOperands.storeRegister(site);
 		if (reg == null) {
 			return false;
 		}
@@ -522,7 +522,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 		if (offset == null) {
 			return ValueStop.ANALYZER_LIMIT;
 		}
-		Character reg = StoredValueScanner.storeRegister(switchSite);
+		Character reg = MosOperands.storeRegister(switchSite);
 		if (reg == null) {
 			// No identifiable stored register means nothing was scanned, so there is no scan to
 			// re-run and no argument to attribute -- same reasoning as the two converted
@@ -560,7 +560,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 		if (offset == null) {
 			return null;
 		}
-		Character reg = StoredValueScanner.storeRegister(instr);
+		Character reg = MosOperands.storeRegister(instr);
 		boolean even = (offset & 1) == 0;
 		if (even) {
 			int deposited = selectField.positionedMask() |
@@ -809,7 +809,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 			PartialByte argValue, MechanismState inState, int stateMask, RegisterEnv callerRegs) {
 		PartialByte effective = argValue;
 		if (argValue.knownMask() == 0) {
-			Character reg = StoredValueScanner.storeRegister(switchSite);
+			Character reg = MosOperands.storeRegister(switchSite);
 			if (reg != null) {
 				PartialByte evaluated = StoredValueScanner.resolveStoredValue(program, switchSite,
 					reg, inState, PartialByte.BYTE_MASK, hooks, callerRegs);
@@ -884,7 +884,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	private Integer selectSuppliedInsideHelper(Program program, Instruction dataWrite) {
 		Instruction select = ownSelectWrite(program, dataWrite);
 		return select == null ? null
-				: selectValueStored(program, select, StoredValueScanner.storeRegister(select),
+				: selectValueStored(program, select, MosOperands.storeRegister(select),
 					RegisterEnv.NONE);
 	}
 
@@ -908,7 +908,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 				if ((offset & 1) != 0) {
 					return null; // an earlier DATA write -- see the two-data-writes note above
 				}
-				return StoredValueScanner.storeRegister(prev) == null ? null : prev;
+				return MosOperands.storeRegister(prev) == null ? null : prev;
 			}
 			cur = prev;
 		}
@@ -961,7 +961,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 		if (select == null) {
 			return null;
 		}
-		char reg = StoredValueScanner.storeRegister(select);
+		char reg = MosOperands.storeRegister(select);
 		for (char counter : new char[] { 'X', 'Y' }) {
 			LoopIdioms.CountedLoop loop = LoopIdioms.countedLoop(program, select, counter,
 				p -> null);
@@ -1037,10 +1037,10 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 				return to.getOffset();
 			}
 		}
-		if (StoredValueScanner.storeRegister(instr) == null) {
+		if (MosOperands.storeRegister(instr) == null) {
 			return null;
 		}
-		Address target = StoredValueScanner.plainAbsoluteTarget(instr);
+		Address target = MosOperands.plainAbsoluteTarget(instr);
 		return target != null && inRange(target) ? target.getOffset() : null;
 	}
 

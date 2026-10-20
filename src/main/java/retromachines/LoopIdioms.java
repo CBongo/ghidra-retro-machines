@@ -73,7 +73,7 @@ final class LoopIdioms {
 	/** The single base address of an indexed operand (abs,X / abs,Y / zp,X), or null when the
 	 *  operand is not indexed or names more than one base. An indexed operand's base arrives
 	 *  as a {@link Scalar} (no static reference is made for a runtime base+index target), so
-	 *  this is the inverse of {@link StoredValueScanner#plainAbsoluteTarget}, which handles
+	 *  this is the inverse of {@link MosOperands#plainAbsoluteTarget}, which handles
 	 *  only the unindexed {@link Address} case.
 	 *
 	 *  <p><b>Banked machines re-home themselves</b> -- worth knowing before anyone "fixes" this.
@@ -245,7 +245,7 @@ final class LoopIdioms {
 		}
 		Instruction cur = listing.getInstructionBefore(lda.getAddress());
 		for (int i = 0; i < COUNTER_LOOKBACK && cur != null; i++) {
-			if (mnem(cur).equals(load) && StoredValueScanner.isImmediate(cur)) {
+			if (mnem(cur).equals(load) && MosOperands.isImmediate(cur)) {
 				return cur;
 			}
 			cur = listing.getInstructionBefore(cur.getAddress());
@@ -269,7 +269,7 @@ final class LoopIdioms {
 		for (int i = 0; i < JUMP_LOOKAHEAD && cur != null; i++) {
 			String m = mnem(cur);
 			if (m.equals("JMP") || m.equals("JSR")) {
-				Address t = StoredValueScanner.plainAbsoluteTarget(cur);
+				Address t = MosOperands.plainAbsoluteTarget(cur);
 				if (t != null && t.compareTo(base) >= 0 && t.compareTo(end) <= 0) {
 					return cur.getAddress();
 				}
@@ -341,7 +341,7 @@ final class LoopIdioms {
 				}
 				String m = mnem(site);
 				if (!(m.equals("JMP") || m.equals("JSR")) ||
-					!target.equals(StoredValueScanner.plainAbsoluteTarget(site))) {
+					!target.equals(MosOperands.plainAbsoluteTarget(site))) {
 					continue;
 				}
 				return new FlowInto(from, target);
@@ -517,8 +517,8 @@ final class LoopIdioms {
 		int stepAt = body.size() - 2;
 		Integer compareTo = null;
 		if (stepAt > 0 && mnem(body.get(stepAt)).equals("CP" + rn) &&
-			StoredValueScanner.isImmediate(body.get(stepAt))) {
-			compareTo = StoredValueScanner.immediateOperandValue(body.get(stepAt));
+			MosOperands.isImmediate(body.get(stepAt))) {
+			compareTo = MosOperands.immediateOperandValue(body.get(stepAt));
 			if (compareTo == null) {
 				return null;
 			}
@@ -545,8 +545,8 @@ final class LoopIdioms {
 			return null;
 		}
 		Integer n;
-		if (mnem(p).equals("LD" + rn) && StoredValueScanner.isImmediate(p)) {
-			n = StoredValueScanner.immediateOperandValue(p);
+		if (mnem(p).equals("LD" + rn) && MosOperands.isImmediate(p)) {
+			n = MosOperands.immediateOperandValue(p);
 		}
 		else if (Mos6502ConstantSemantics.INSTANCE.writes(p, loc)) {
 			return null;

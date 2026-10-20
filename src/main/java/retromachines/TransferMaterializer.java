@@ -486,7 +486,7 @@ final class TransferMaterializer {
 		if (jmp == null) {
 			return;
 		}
-		Address target = StoredValueScanner.plainAbsoluteTarget(jmp);
+		Address target = MosOperands.plainAbsoluteTarget(jmp);
 		if (target == null) {
 			return;
 		}

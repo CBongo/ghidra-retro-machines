@@ -461,7 +461,7 @@ public class PcodeConstantSemanticsDifferentialTest extends AbstractProgramTest 
 	 * PCODE-specific reason. {@code LAX} hand-rolls its own zero-page/absolute addressing
 	 * instead of routing through the {@code OP1}/{@code OP2} addressing subtables the rest of
 	 * the instruction set shares, so {@code instr.getOpObjects(0)} never yields an
-	 * {@code Address} and {@link StoredValueScanner#plainAbsoluteTarget} -- and so
+	 * {@code Address} and {@link MosOperands#plainAbsoluteTarget} -- and so
 	 * {@link StoredValueScanner#effectiveOperandTarget}, which
 	 * {@link ConstantSemantics.Inputs#effectiveTarget} calls through the real walk -- always
 	 * declines for it. {@code WalkInputs.memoryOperand()} (the ONE implementation of

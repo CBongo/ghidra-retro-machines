@@ -47,7 +47,7 @@ import ghidra.program.model.listing.Instruction;
  * byte that is, in practice, writable RAM this evaluator cannot pin.
  * <p>
  * <b>Why {@link #writes} is a UNION.</b> For A/X/Y it is the scanner's own modifier table
- * ({@link StoredValueScanner#modifiesRegister}) OR the instruction's p-code result objects; for
+ * ({@link MosOperands#modifiesRegister}) OR the instruction's p-code result objects; for
  * carry, anything outside {@link #CARRY_PRESERVING} OR p-code that writes {@code C}. Each half
  * alone has a hole: the modifier tables do not list the undocumented opcodes ({@code LAX}
  * writes A and X), and p-code is only as good as the language. Either one saying "writes" is
@@ -89,7 +89,7 @@ final class Mos6502ConstantSemantics implements ConstantSemantics {
 		if (loc == Loc.D) {
 			return D_WRITERS.contains(mnemonic(instr)) || ConstantSemantics.pcodeWrites(instr, "D");
 		}
-		return StoredValueScanner.modifiesRegister(instr, loc.register()) ||
+		return MosOperands.modifiesRegister(instr, loc.register()) ||
 			ConstantSemantics.pcodeWrites(instr, loc.name());
 	}
 
@@ -129,7 +129,7 @@ final class Mos6502ConstantSemantics implements ConstantSemantics {
 			case "LSR":
 			case "ROL":
 			case "ROR":
-				return StoredValueScanner.isAccumulatorForm(instr) ? shift(mnem, loc, in) : null;
+				return MosOperands.isAccumulatorForm(instr) ? shift(mnem, loc, in) : null;
 			case "AND":
 			case "ORA":
 			case "EOR":
@@ -150,8 +150,8 @@ final class Mos6502ConstantSemantics implements ConstantSemantics {
 
 	/** The byte an immediate-or-memory operand supplies. */
 	private static Integer operand(Instruction instr, Inputs in) {
-		if (StoredValueScanner.isImmediate(instr)) {
-			Integer imm = StoredValueScanner.immediateOperandValue(instr);
+		if (MosOperands.isImmediate(instr)) {
+			Integer imm = MosOperands.immediateOperandValue(instr);
 			return imm == null ? null : imm & 0xFF;
 		}
 		return in.memoryOperand();

@@ -43,7 +43,7 @@ import ghidra.program.model.mem.MemoryBlock;
  *   ffc9  STA $8001     ; the value site: select-data consumes here, not at firstSite
  * </pre>
  * The caller side ({@code ca23 LDA #$1b / STA $0720 / JSR $ffc2}) is a separate predicate
- * ({@link StoredValueScanner#callerCellValue}, pinned by {@code StoreForwardingProgramTest}) --
+ * ({@link LocalStoreForwarding#callerCellValue}, pinned by {@code StoreForwardingProgramTest}) --
  * this file only pins "does the helper body prove {@code $0720} arrives unmodified", not what
  * value ends up there.
  * <p>
@@ -137,7 +137,7 @@ public class HelperInboundCellProgramTest extends AbstractProgramTest {
 	 * An indirect store between entry and reload has no statically certain target, so
 	 * {@link StoredValueScanner#effectiveOperandTarget} returns null and the write cannot be
 	 * placed in {@code written} at all. This is the test that fails if the reference-only
-	 * {@code writesAddress} is ever substituted for {@link StoredValueScanner#writesMemory} --
+	 * {@code writesAddress} is ever substituted for {@link LocalStoreForwarding#writesMemory} --
 	 * under-reporting here is directly a confident wrong bank, not merely a forfeited forward.
 	 */
 	@Test

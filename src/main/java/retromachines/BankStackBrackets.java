@@ -185,7 +185,7 @@ final class BankStackBrackets {
 
 	/** Cell address a plain operand names, or -1. */
 	private static long plainOffset(Instruction instr) {
-		Address a = StoredValueScanner.plainAbsoluteTarget(instr);
+		Address a = MosOperands.plainAbsoluteTarget(instr);
 		return a == null ? -1 : a.getOffset();
 	}
 
@@ -289,8 +289,8 @@ final class BankStackBrackets {
 				}
 				case "CLC" -> prevClc = true;
 				case "ADC" -> {
-					Integer imm = StoredValueScanner.isImmediate(instr)
-							? StoredValueScanner.immediateOperandValue(instr) : null;
+					Integer imm = MosOperands.isImmediate(instr)
+							? MosOperands.immediateOperandValue(instr) : null;
 					a = clcBefore && imm != null && a.kind() == Val.SLOT
 							? new Val(Val.SLOT, null, a.plus() + imm) : Val.NO;
 				}
@@ -313,9 +313,9 @@ final class BankStackBrackets {
 				}
 				case "LDA", "LDX", "LDY" -> {
 					char reg = mnem.charAt(2);
-					if (StoredValueScanner.isImmediate(instr)) {
+					if (MosOperands.isImmediate(instr)) {
 						if (reg == 'A') {
-							lastImmA = StoredValueScanner.immediateOperandValue(instr);
+							lastImmA = MosOperands.immediateOperandValue(instr);
 							a = Val.NO;
 						}
 						else if (reg == 'Y') {
@@ -330,7 +330,7 @@ final class BankStackBrackets {
 										: incs == 0 && decs == 0 ? 1 : decs == 1 && incs == 0 ? 2 : 0;
 							}
 							else if (reg == 'A') {
-								Address from = StoredValueScanner.plainAbsoluteTarget(instr);
+								Address from = MosOperands.plainAbsoluteTarget(instr);
 								a = !sawMechanismWrite && SaveRestoreTrampolines
 									.isLiveBankMirror(c.mirrors(), from) &&
 									c.mirrors().identifyingField(from) != null
@@ -410,10 +410,10 @@ final class BankStackBrackets {
 						return null;
 					}
 					else {
-						if (StoredValueScanner.modifiesRegister(instr, 'A')) {
+						if (MosOperands.modifiesRegister(instr, 'A')) {
 							a = Val.NO;
 						}
-						if (StoredValueScanner.modifiesRegister(instr, 'Y')) {
+						if (MosOperands.modifiesRegister(instr, 'Y')) {
 							y = 0;
 						}
 					}
@@ -603,7 +603,7 @@ final class BankStackBrackets {
 				continue;
 			}
 			region.add(at);
-			if (StoredValueScanner.writesMemory(instr) && touchesStack(c, instr)) {
+			if (LocalStoreForwarding.writesMemory(instr) && touchesStack(c, instr)) {
 				return "writes the stack cells at " + at;
 			}
 			if (!instr.getFlowType().isCall()) {

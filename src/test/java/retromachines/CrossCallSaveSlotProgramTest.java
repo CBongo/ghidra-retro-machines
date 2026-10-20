@@ -38,7 +38,7 @@ import ghidra.program.model.symbol.SourceType;
 
 /**
  * {@code ProgramBuilder} coverage of bead grm-zsxz increment Z2, RAM SAVE-SLOT forwarding across
- * calls and joins: {@code StoredValueScanner.saveSlotForwarded}, the RAM-slot model in X1's
+ * calls and joins: {@code SaveSlotForwarding.saveSlotForwarded}, the RAM-slot model in X1's
  * backward all-paths skeleton (see {@link CrossBlockPushPullProgramTest} for the stack-slot
  * model). The shape is Blaster Master's {@code FUN_e9b8}: {@code LDA $DB / STA $D3 / JSR ... /
  * LDA $D3 / <switch>}, reduced here to a direct {@code STA $8000} site scanned under hooks that

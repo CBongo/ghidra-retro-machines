@@ -47,7 +47,7 @@ import retromachines.HelperDiscovery.HelperModel;
  * Pins {@code HelperArgumentRecovery}'s mirror-aware {@code NO_HOOKS} conversion (bead
  * grm-mej.3 item 4): the three caller-side {@link StoredValueScanner} scans -- the primary
  * register scan in {@code recoverCallArgument}, the caller's-cell route
- * ({@link StoredValueScanner#callerCellValue}), and the A/X/Y env scan in {@code surviving} --
+ * ({@link LocalStoreForwarding#callerCellValue}), and the A/X/Y env scan in {@code surviving} --
  * now thread a REAL tracked in-state and a strategy-supplied
  * {@link BankSwitchStrategy#callerSideHooks} instead of the historical {@code NO_HOOKS}
  * (unknown in-state, no hooks at all).
@@ -61,7 +61,7 @@ import retromachines.HelperDiscovery.HelperModel;
  * against the state AFTER it -- a confidently wrong bank. The test below is built on a MIRROR
  * LOAD specifically (not an immediate), because an immediate's value does not depend on the
  * in-state at all and so cannot distinguish "withdrawn correctly" from "in-state never mattered"
- * -- see {@code StoredValueScanner.findMatchingPush}'s javadoc for this exact test-design trap
+ * -- see {@code CrossBlockStackPairing.findMatchingPush}'s javadoc for this exact test-design trap
  * from a previous increment.
  */
 public class CallerSideMirrorHooksProgramTest extends AbstractProgramTest {

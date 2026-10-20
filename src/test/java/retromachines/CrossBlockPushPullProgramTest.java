@@ -36,8 +36,8 @@ import ghidra.program.model.symbol.SourceType;
 
 /**
  * {@code ProgramBuilder} coverage of bead grm-mej.3 increment X1, "cross-block PHA/PLA pairing":
- * {@link StoredValueScanner#crossBlockMatchingPush}, a bounded backward ALL-PATHS search used as
- * a fallback ONLY where {@link StoredValueScanner#findMatchingPush}'s straight-line walk gives up
+ * {@link CrossBlockStackPairing#crossBlockMatchingPush}, a bounded backward ALL-PATHS search used as
+ * a fallback ONLY where {@link CrossBlockStackPairing#findMatchingPush}'s straight-line walk gives up
  * on a flow break -- a control-flow join (a loop, a diamond) between the {@code PHA} and its
  * {@code PLA}. Modelled on {@link CallCrossingPushPullProgramTest} (increment 3, the identical
  * shape for a CALL crossing rather than a control-flow join), whose scanner-level fixtures this
@@ -68,7 +68,7 @@ public class CrossBlockPushPullProgramTest extends AbstractProgramTest {
 	/**
 	 * Hooks with a state AVAILABLE at every address (wholly unknown, but non-null) AND a state
 	 * oracle -- {@link StoredValueScanner.Hooks#hasStateOracle} true, which is what gates
-	 * {@link StoredValueScanner#crossBlockMatchingPush} into running at all. No per-run memo, so
+	 * {@link CrossBlockStackPairing#crossBlockMatchingPush} into running at all. No per-run memo, so
 	 * every call recomputes the proof fresh -- fine for these single-scan fixtures.
 	 */
 	private static final StoredValueScanner.Hooks ORACLE_HOOKS = new StoredValueScanner.Hooks() {
@@ -502,9 +502,9 @@ public class CrossBlockPushPullProgramTest extends AbstractProgramTest {
 	@Test
 	public void strictPredecessorRuleStillRefusesTheCrossFunctionJump() throws Exception {
 		sharedTailScan(true);
-		assertEquals(null, StoredValueScanner.closedWorldPredecessors(program,
+		assertEquals(null, CrossBlockStackPairing.closedWorldPredecessors(program,
 			program.getListing(), builder.addr("0xc016")));
-		assertEquals(2, StoredValueScanner.closedWorldPredecessors(program,
+		assertEquals(2, CrossBlockStackPairing.closedWorldPredecessors(program,
 			program.getListing(), builder.addr("0xc016"), true).size());
 	}
 
@@ -568,13 +568,13 @@ public class CrossBlockPushPullProgramTest extends AbstractProgramTest {
 
 	/**
 	 * PINS THE EXACT NODE-BUDGET BOUNDARY (bead grm-mej.3 X1 follow-up: the double-charge fix).
-	 * {@link StoredValueScanner.CrossBlockSearch#spend()} is called exactly once per node visited:
+	 * {@link CrossBlockStackPairing.CrossBlockSearch#spend()} is called exactly once per node visited:
 	 * once when the search enters {@code plaAddr} itself (the seed), once for every OTHER
 	 * predecessor address it enters (the self-targeting {@code BEQ}, then each padding
 	 * {@code NOP}), and once more, directly, for the terminal {@code PHA} (never itself recursed
 	 * into, so it has no other entry point to charge it). For {@code nopCount} padding
 	 * instructions that is {@code 1 (seed) + 1 (BEQ) + nopCount + 1 (terminal PHA)} spends, i.e.
-	 * {@code nopCount + 3}. {@link StoredValueScanner#CROSS_BLOCK_NODE_CAP} is 384 (64 until the
+	 * {@code nopCount + 3}. {@link CrossBlockStackPairing#CROSS_BLOCK_NODE_CAP} is 384 (64 until the
 	 * owner's 2026-10-03 approval, grm-mej.7), and {@code spend()} throws on the spend that would
 	 * take the budget negative -- so exactly 384 spends succeed and the 385th fails:
 	 * {@code nopCount = 381} (384 spends) resolves, {@code nopCount = 382} (385 spends) declines. This is the SAME shape as

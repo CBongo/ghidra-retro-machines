@@ -146,7 +146,7 @@ final class ProbeSupport {
 	// Instruction-shape helpers
 	// ------------------------------------------------------------------
 
-	/** Mirrors StoredValueScanner.storeRegister (:255-261): 'A'/'X'/'Y' for STA/STX/STY, else
+	/** Mirrors MosOperands.storeRegister (:255-261): 'A'/'X'/'Y' for STA/STX/STY, else
 	 *  null. Read-modify-write stores (INC/ASL/...) are excluded there and here. */
 	static Character storeRegister(Instruction instr) {
 		String mnem = instr.getMnemonicString().toUpperCase();
@@ -156,7 +156,7 @@ final class ProbeSupport {
 		return null;
 	}
 
-	/** Mirrors StoredValueScanner.plainAbsoluteTarget (:341-355): the single constant address
+	/** Mirrors MosOperands.plainAbsoluteTarget (:341-355): the single constant address
 	 *  an operand names, or null when any register participates (indexed/indirect) or when the
 	 *  operand names none or several. */
 	static Address plainAbsoluteTarget(Instruction instr) {
@@ -216,7 +216,7 @@ final class ProbeSupport {
 	 * throws away -- which localizes the failure to the space test (or the decode), not to the
 	 * absence of a reference. HelperShapeProbe uses it only to measure mechsites.rmwSkipped:
 	 * stores that write a mechanism range without being STA/STX/STY, which
-	 * {@link #storeRegister} intentionally excludes just as StoredValueScanner.storeRegister
+	 * {@link #storeRegister} intentionally excludes just as MosOperands.storeRegister
 	 * does in production.
 	 */
 	static boolean writesRangeAnySpace(Instruction instr, Mech mech) {

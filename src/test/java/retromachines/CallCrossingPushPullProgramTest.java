@@ -54,7 +54,7 @@ import retromachines.HelperDiscovery.HelperModel;
 
 /**
  * Tier-2 {@code ProgramBuilder} coverage of bead grm-mej.3 increment 3, "call-crossing PHA/PLA
- * pairing": {@link StoredValueScanner#findMatchingPush} now steps OVER a call (rather than
+ * pairing": {@link CrossBlockStackPairing#findMatchingPush} now steps OVER a call (rather than
  * abandoning) while pairing a {@code PLA} to its {@code PHA}, and the walk that resumes from the
  * push resolves against the tracked state AT THE PUSH (via a new
  * {@link StoredValueScanner.Hooks#stateAt} hook), not at the call -- because the pushed byte was

@@ -152,7 +152,7 @@ final class HelperDiscovery {
 			SwitchResult site = entry.getValue();
 			BankState result = site.effect();
 			Instruction store = program.getListing().getInstructionAt(entry.getKey());
-			Character reg = store == null ? null : StoredValueScanner.storeRegister(store);
+			Character reg = store == null ? null : MosOperands.storeRegister(store);
 
 			HelperModel existing = helpers.get(f);
 			if (existing == null) {
@@ -1000,7 +1000,7 @@ final class HelperDiscovery {
 	 * <b>The mechanism: a forward dataflow over the sub-CFG reachable from entry without passing
 	 * the relay.</b> The abstract state records, for each of A, X and Y, which inbound register
 	 * its value currently is, or LOCAL. Entry is (A, X, Y); {@code TAX}/{@code TAY}/{@code TXA}/
-	 * {@code TYA} relabel; ANY other write of a register ({@link StoredValueScanner#writesRegister},
+	 * {@code TYA} relabel; ANY other write of a register ({@link MosOperands#writesRegister},
 	 * the same oracle the straight-line trace used) makes it LOCAL; at a join, equal labels
 	 * survive and disagreeing ones become LOCAL. That last rule is what makes a diamond sound
 	 * rather than merely tolerated: FUN_c760's two arms both leave X untouched, so X is X at the
@@ -1107,7 +1107,7 @@ final class HelperDiscovery {
 				if (source != null) {
 					out[d] = state[regs.indexOf(source)];
 				}
-				else if (StoredValueScanner.writesRegister(instr, registers[d])) {
+				else if (MosOperands.writesRegister(instr, registers[d])) {
 					out[d] = LOCAL;
 				}
 			}

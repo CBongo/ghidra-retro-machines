@@ -304,10 +304,10 @@ final class ShadowCommits {
 
 	/** A direct (plain absolute / zero-page) write to the cell at {@code cellOffset}. */
 	private static boolean writesCell(Instruction instr, long cellOffset) {
-		if (!StoredValueScanner.writesMemory(instr)) {
+		if (!LocalStoreForwarding.writesMemory(instr)) {
 			return false;
 		}
-		Address target = StoredValueScanner.plainAbsoluteTarget(instr);
+		Address target = MosOperands.plainAbsoluteTarget(instr);
 		return target != null && target.getOffset() == cellOffset && isCpuSpace(target);
 	}
 
@@ -407,7 +407,7 @@ final class ShadowCommits {
 		FlowType flow = instr.getFlowType();
 		boolean call = flow.isCall();
 		boolean tail = flow.isJump() && flow.isUnConditional() && !flow.isComputed();
-		return call || tail ? StoredValueScanner.plainAbsoluteTarget(instr) : null;
+		return call || tail ? MosOperands.plainAbsoluteTarget(instr) : null;
 	}
 
 	/**

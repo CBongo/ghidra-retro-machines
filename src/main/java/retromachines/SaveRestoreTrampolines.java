@@ -237,7 +237,7 @@ final class SaveRestoreTrampolines {
 			if (cursor.equals(switchSite)) {
 				// The restore itself. It commits A, so the helper is a verified no-op exactly when
 				// A holds the bank that was live on entry.
-				Character stored = StoredValueScanner.storeRegister(instr);
+				Character stored = MosOperands.storeRegister(instr);
 				if (!(a.entryBank() && stored != null && stored.charValue() == 'A')) {
 					return null;
 				}
@@ -291,16 +291,16 @@ final class SaveRestoreTrampolines {
 				else if (from != null && cells.containsKey(from.getOffset())) {
 					a = new Holds(true, cells.get(from.getOffset()));
 				}
-				else if (StoredValueScanner.modifiesRegister(instr, 'A')) {
+				else if (MosOperands.modifiesRegister(instr, 'A')) {
 					a = Holds.NO;
 				}
-				if (!saveCells.isEmpty() && StoredValueScanner.writesMemory(instr)) {
-					Address target = StoredValueScanner.plainAbsoluteTarget(instr);
+				if (!saveCells.isEmpty() && LocalStoreForwarding.writesMemory(instr)) {
+					Address target = MosOperands.plainAbsoluteTarget(instr);
 					if (target == null) {
 						cells.clear(); // an indexed/indirect write might be the cell
 					}
 					else if (saveCells.contains(target.getOffset())) {
-						Character stored = StoredValueScanner.storeRegister(instr);
+						Character stored = MosOperands.storeRegister(instr);
 						if (stored != null && stored.charValue() == 'A' && a.entryBank()) {
 							cells.put(target.getOffset(), a.source());
 						}
@@ -477,7 +477,7 @@ final class SaveRestoreTrampolines {
 				}
 				if (switchSites.contains(instr.getMinAddress())) {
 					sawMechanismWrite = true;
-					Character stored = StoredValueScanner.storeRegister(instr);
+					Character stored = MosOperands.storeRegister(instr);
 					int committed = helper.strategy().bankFieldCommittedBySite(program, instr);
 					if (stored == null || committed < 0) {
 						return null;
@@ -517,20 +517,20 @@ final class SaveRestoreTrampolines {
 					newX = x.entry() ? new Held(true, x.source(), x.plus() + 1) : Held.NO;
 				}
 				else {
-					if (StoredValueScanner.modifiesRegister(instr, 'A')) {
+					if (MosOperands.modifiesRegister(instr, 'A')) {
 						newA = Held.NO;
 					}
-					if (StoredValueScanner.modifiesRegister(instr, 'X')) {
+					if (MosOperands.modifiesRegister(instr, 'X')) {
 						newX = Held.NO;
 					}
 				}
-				if (StoredValueScanner.writesMemory(instr)) {
-					Address target = StoredValueScanner.plainAbsoluteTarget(instr);
+				if (LocalStoreForwarding.writesMemory(instr)) {
+					Address target = MosOperands.plainAbsoluteTarget(instr);
 					if (target == null) {
 						cells.clear();
 					}
 					else if (saveCells.contains(target.getOffset())) {
-						Character stored = StoredValueScanner.storeRegister(instr);
+						Character stored = MosOperands.storeRegister(instr);
 						Held h = stored == null ? Held.NO : stored == 'A' ? a : stored == 'X' ? x
 								: Held.NO;
 						if (h.entry() && h.plus() == 0) {
@@ -695,7 +695,7 @@ final class SaveRestoreTrampolines {
 				}
 				default -> {
 					if (instr.getFlowType().isCall() || switchSites.contains(instr.getMinAddress()) ||
-						StoredValueScanner.writesMemory(instr) ||
+						LocalStoreForwarding.writesMemory(instr) ||
 						writesStackPointer(instr, stackPointer) || instr.getFlows().length > 0) {
 						return false;
 					}
