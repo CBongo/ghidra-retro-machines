@@ -462,9 +462,10 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				hintedSites);
 		}
 		DataflowResult flow =
-			runDataflow(program, monitor, listing, mechanisms, board, null, Map.of(), Set.of(),
-				BankStackBrackets.Claims.NONE,
-				new HelperDiscovery.BankResolution(board, bankUniverse, placementOverride));
+			runDataflow(program, monitor, listing,
+				BankDataflowEngine.DataflowInputs.of(mechanisms, board)
+						.withBankResolution(new HelperDiscovery.BankResolution(board,
+							bankUniverse, placementOverride)));
 
 		// Order is load-bearing. findCallEdgeWrappers runs LAST so its relay lookups see
 		// pass-through wrappers as helpers; it is also why exitEffect never encounters a relay
@@ -582,10 +583,15 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			AnalyzerLog.info(this, mode);
 		}
 		if (!helpers.isEmpty() || !mirrors.isEmpty()) {
-			flow = runDataflow(program, monitor, listing, mechanisms, board, helpers,
-				restoringTrampolines, secondTier.relayCallSites(), bracketClaims,
-				new HelperDiscovery.BankResolution(board, bankUniverse, placementOverride),
-				shadowCommits);
+			flow = runDataflow(program, monitor, listing,
+				BankDataflowEngine.DataflowInputs.of(mechanisms, board)
+						.withHelpers(helpers)
+						.withRestoringTrampolines(restoringTrampolines)
+						.withSecondTierRelaySites(secondTier.relayCallSites())
+						.withBracketClaims(bracketClaims)
+						.withBankResolution(new HelperDiscovery.BankResolution(board,
+							bankUniverse, placementOverride))
+						.withShadowCommits(shadowCommits));
 		}
 
 		// --- Bank mirror naming (grm-mej.4): turn the derived mirror set into symbols and

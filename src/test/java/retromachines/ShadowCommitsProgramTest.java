@@ -138,8 +138,11 @@ public class ShadowCommitsProgramTest extends AbstractProgramTest {
 			Map<Function, HelperDiscovery.HelperModel> helpers, ShadowCommits.Plan plan)
 			throws Exception {
 		return BankDataflowEngine.runDataflow(program, TaskMonitor.DUMMY, program.getListing(),
-			List.of(new BankStrategyRegistry.ConfiguredMechanism(latchStrategy(b), b.mask(), 0)),
-			b, helpers, Map.of(), java.util.Set.of(), BankStackBrackets.Claims.NONE, null, plan);
+			BankDataflowEngine.DataflowInputs
+					.of(List.of(new BankStrategyRegistry.ConfiguredMechanism(latchStrategy(b),
+						b.mask(), 0)), b)
+					.withHelpers(helpers)
+					.withShadowCommits(plan));
 	}
 
 	private String warning(Address at) {

@@ -125,10 +125,11 @@ public class SwitchSiteHintsProgramTest extends AbstractProgramTest {
 			Map<Function, HelperDiscovery.HelperModel> helpers,
 			HelperDiscovery.BankResolution resolution) throws Exception {
 		return BankDataflowEngine.runDataflow(program, TaskMonitor.DUMMY, program.getListing(),
-			List.of(new BankStrategyRegistry.ConfiguredMechanism(latchStrategy(board), board.mask(),
-				0)),
-			board, helpers, Map.of(), java.util.Set.of(), BankStackBrackets.Claims.NONE,
-			resolution);
+			BankDataflowEngine.DataflowInputs
+					.of(List.of(new BankStrategyRegistry.ConfiguredMechanism(latchStrategy(board),
+						board.mask(), 0)), board)
+					.withHelpers(helpers)
+					.withBankResolution(resolution));
 	}
 
 	/** The UxROM shape: PRG_LO computed from a 4-bit {@code bank}, so the bank universe can bind. */
@@ -661,8 +662,8 @@ public class SwitchSiteHintsProgramTest extends AbstractProgramTest {
 	private BankDataflowEngine.DataflowResult runWith(BoardDescriptorModel.BoardModel b,
 			BankSwitchStrategy strategy) throws Exception {
 		return BankDataflowEngine.runDataflow(program, TaskMonitor.DUMMY, program.getListing(),
-			List.of(new BankStrategyRegistry.ConfiguredMechanism(strategy, b.mask(), 0)), b, null,
-			Map.of(), java.util.Set.of(), BankStackBrackets.Claims.NONE, null);
+			BankDataflowEngine.DataflowInputs.of(
+				List.of(new BankStrategyRegistry.ConfiguredMechanism(strategy, b.mask(), 0)), b));
 	}
 
 	/**

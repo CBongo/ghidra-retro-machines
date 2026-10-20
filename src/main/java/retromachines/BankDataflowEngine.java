@@ -77,7 +77,7 @@ import retromachines.HelperDiscovery.HelperModel;
  * {@link BoardDescriptorModel}, {@link BankStrategyRegistry} and {@link BankAnnotationAdapter}'s
  * precedent in this package.
  *
- * <p>{@link #mergeAndEnqueue} and {@link #clampToResidence} needed no receiver at all: an
+ * <p>{@link Run#mergeAndEnqueue} and {@link #clampToResidence} needed no receiver at all: an
  * instance-state survey of the section found zero {@code this.} references and zero instance
  * fields on {@code BoardBankAnalyzer}, so both became {@code static} outright, staying
  * {@code private} since nothing outside this class calls them. {@link #runDataflow} calls
@@ -109,9 +109,9 @@ import retromachines.HelperDiscovery.HelperModel;
  * documented on {@link BankAnnotationAdapter} as well.
  * <p>
  * <b>Bead grm-wul (2026-09-19) made the state at an address a bounded set of whole states, one
- * per path, and added demand-driven PATH FORKING at merge sites</b> -- see the 11-argument
+ * per path, and added demand-driven PATH FORKING at merge sites</b> -- see
  * {@link #runDataflow}'s javadoc for the model, {@link #joinArms}/{@link #evaluateArms} for how
- * a site's arms are enumerated and evaluated, {@link #mergeAndEnqueue} for the live cap, and
+ * a site's arms are enumerated and evaluated, {@link Run#mergeAndEnqueue} for the live cap, and
  * {@link ForkBudget} for the two caps and the per-program ledger.
  */
 final class BankDataflowEngine {
@@ -127,7 +127,7 @@ final class BankDataflowEngine {
 	/**
 	 * Live forks one address may hold: the number of distinct {@link PathId}s in its state set.
 	 * Exceeding it collapses that address to today's single field-wise merge, permanently (see
-	 * {@link #mergeAndEnqueue}). Configurable constant for now; an analyzer option later if the
+	 * {@link Run#mergeAndEnqueue}). Configurable constant for now; an analyzer option later if the
 	 * real-ROM tally justifies one (the owner's ruling on grm-wul).
 	 */
 	static final int MAX_LIVE_FORKS_PER_BLOCK = 4;
@@ -161,18 +161,54 @@ final class BankDataflowEngine {
 	// ------------------------------------------------------------------
 
 	/**
-	 * As the 11-argument form with {@link ShadowCommits.Plan#NONE}: the entry point for every
-	 * caller that has no validated {@code banking.shadow_commits} hints.
+	 * Everything a dataflow run takes besides the program, the monitor and the listing -- the one
+	 * place a new per-run input is added (bead grm-rx1i.2), instead of a positional parameter in
+	 * every signature the run threads it through. Build one with {@link #of} and the {@code with*}
+	 * methods; every optional member defaults to the "none" a caller with no such input passed.
+	 * <p>
+	 * {@code helpers} is {@code null} for a run with no helper map (pass 1), which is not the same
+	 * as empty; {@code bankResolution} is {@code null} for the stateless callee lookup.
 	 */
-	static DataflowResult runDataflow(Program program, TaskMonitor monitor, Listing listing,
-			List<ConfiguredMechanism> mechanisms, BoardModel board,
+	record DataflowInputs(List<ConfiguredMechanism> mechanisms, BoardModel board,
 			Map<Function, HelperModel> helpers, Map<Function, Integer> restoringTrampolines,
 			Set<Address> secondTierRelaySites, BankStackBrackets.Claims bracketClaims,
-			HelperDiscovery.BankResolution bankResolution)
-			throws CancelledException {
-		return runDataflow(program, monitor, listing, mechanisms, board, helpers,
-			restoringTrampolines, secondTierRelaySites, bracketClaims, bankResolution,
-			ShadowCommits.Plan.NONE);
+			HelperDiscovery.BankResolution bankResolution, ShadowCommits.Plan shadowCommits) {
+
+		/** A run with no helpers, trampolines, relay sites, brackets, resolution or shadow hints. */
+		static DataflowInputs of(List<ConfiguredMechanism> mechanisms, BoardModel board) {
+			return new DataflowInputs(mechanisms, board, null, Map.of(), Set.of(),
+				BankStackBrackets.Claims.NONE, null, ShadowCommits.Plan.NONE);
+		}
+
+		DataflowInputs withHelpers(Map<Function, HelperModel> h) {
+			return new DataflowInputs(mechanisms, board, h, restoringTrampolines,
+				secondTierRelaySites, bracketClaims, bankResolution, shadowCommits);
+		}
+
+		DataflowInputs withRestoringTrampolines(Map<Function, Integer> t) {
+			return new DataflowInputs(mechanisms, board, helpers, t, secondTierRelaySites,
+				bracketClaims, bankResolution, shadowCommits);
+		}
+
+		DataflowInputs withSecondTierRelaySites(Set<Address> sites) {
+			return new DataflowInputs(mechanisms, board, helpers, restoringTrampolines, sites,
+				bracketClaims, bankResolution, shadowCommits);
+		}
+
+		DataflowInputs withBracketClaims(BankStackBrackets.Claims claims) {
+			return new DataflowInputs(mechanisms, board, helpers, restoringTrampolines,
+				secondTierRelaySites, claims, bankResolution, shadowCommits);
+		}
+
+		DataflowInputs withBankResolution(HelperDiscovery.BankResolution resolution) {
+			return new DataflowInputs(mechanisms, board, helpers, restoringTrampolines,
+				secondTierRelaySites, bracketClaims, resolution, shadowCommits);
+		}
+
+		DataflowInputs withShadowCommits(ShadowCommits.Plan plan) {
+			return new DataflowInputs(mechanisms, board, helpers, restoringTrampolines,
+				secondTierRelaySites, bracketClaims, bankResolution, plan);
+		}
 	}
 
 	/**
@@ -264,14 +300,8 @@ final class BankDataflowEngine {
 	 * question does not arise.
 	 */
 	static DataflowResult runDataflow(Program program, TaskMonitor monitor, Listing listing,
-			List<ConfiguredMechanism> mechanisms, BoardModel board,
-			Map<Function, HelperModel> helpers, Map<Function, Integer> restoringTrampolines,
-			Set<Address> secondTierRelaySites, BankStackBrackets.Claims bracketClaims,
-			HelperDiscovery.BankResolution bankResolution, ShadowCommits.Plan shadowCommits)
-			throws CancelledException {
-		DataflowResult locked = runDataflowOnce(program, monitor, listing, mechanisms, board,
-			helpers, restoringTrampolines, secondTierRelaySites, bracketClaims, bankResolution,
-			true, shadowCommits);
+			DataflowInputs inputs) throws CancelledException {
+		DataflowResult locked = runDataflowOnce(program, monitor, listing, inputs, true);
 		ModeLock lock = locked.modeLock();
 		if (lock == null || !lock.rejected()) {
 			return locked;
@@ -280,9 +310,7 @@ final class BankDataflowEngine {
 		// was formed writes another mode, or one the analyzer could not resolve. Nothing derived
 		// under the lock may reach the output, so the whole run is redone without it; the
 		// rejected lock rides along only as evidence for the warning the analyzer raises.
-		DataflowResult plain = runDataflowOnce(program, monitor, listing, mechanisms, board,
-			helpers, restoringTrampolines, secondTierRelaySites, bracketClaims, bankResolution,
-			false, shadowCommits);
+		DataflowResult plain = runDataflowOnce(program, monitor, listing, inputs, false);
 		return new DataflowResult(plain.stateIn(), plain.switchResults(), plain.callSwitches(),
 			plain.forkedStates(), plain.forkStats(), lock, null, plain.hintNotes());
 	}
@@ -292,25 +320,45 @@ final class BankDataflowEngine {
 	 * layout-mode field once the reset-reached code has written it -- see {@link ModeLock}.
 	 */
 	private static DataflowResult runDataflowOnce(Program program, TaskMonitor monitor,
-			Listing listing, List<ConfiguredMechanism> mechanisms, BoardModel board,
-			Map<Function, HelperModel> helpers, Map<Function, Integer> restoringTrampolines,
-			Set<Address> secondTierRelaySites, BankStackBrackets.Claims bracketClaims,
-			HelperDiscovery.BankResolution bankResolution, boolean allowModeLock,
-			ShadowCommits.Plan shadowCommits)
+			Listing listing, DataflowInputs inputs, boolean allowModeLock)
 			throws CancelledException {
+		return new Run(program, monitor, listing, inputs, allowModeLock).execute();
+	}
 
-		Map<Address, LinkedHashMap<PathId, BankState>> stateIn = new HashMap<>();
-		Set<Address> collapsedAddrs = new HashSet<>();
-		Map<Address, SwitchResult> switchResults = new HashMap<>();
-		Map<Address, CallSwitch> callSwitches = new HashMap<>();
-		Deque<Address> worklist = new ArrayDeque<>();
-		Map<String, int[]> clampCache = new HashMap<>();
-		Map<String, int[]> residenceInvariantCache = new HashMap<>();
-		// Scoped to this runDataflow call (not a field): phase 1/2 separation guarantees no
-		// instruction appears mid-fixpoint, so per-call scoping sidesteps any staleness
-		// question. See probeSite for the soundness invariant this relies on (grm-5tl.13.2).
-		Map<Address, MatchInfo> matchCache = new HashMap<>();
-		// Likewise scoped to this runDataflow call: the A/X/Y a helper call site supplies
+	/**
+	 * One fixpoint run's inputs and mutable state (bead grm-rx1i.2). A fresh instance per
+	 * {@link #runDataflowOnce}: nothing here is shared between runs, so the mode-lock redo starts
+	 * from empty maps exactly as the single-method form did. The methods that used to take this
+	 * state as a dozen positional parameters read the fields instead.
+	 */
+	private static final class Run {
+
+		private final Program program;
+		private final TaskMonitor monitor;
+		private final Listing listing;
+		private final List<ConfiguredMechanism> mechanisms;
+		private final BoardModel board;
+		private final Map<Function, HelperModel> helpers;
+		private final Map<Function, Integer> restoringTrampolines;
+		private final Set<Address> secondTierRelaySites;
+		private final BankStackBrackets.Claims bracketClaims;
+		private final HelperDiscovery.BankResolution bankResolution;
+		private final ShadowCommits.Plan shadowCommits;
+		/** Bead grm-dos9.6: whether this run may lock the board layout-mode field. */
+		private final boolean allowModeLock;
+
+		private final Map<Address, LinkedHashMap<PathId, BankState>> stateIn = new HashMap<>();
+		private final Set<Address> collapsedAddrs = new HashSet<>();
+		private final Map<Address, SwitchResult> switchResults = new HashMap<>();
+		private final Map<Address, CallSwitch> callSwitches = new HashMap<>();
+		private final Deque<Address> worklist = new ArrayDeque<>();
+		private final Map<String, int[]> clampCache = new HashMap<>();
+		private final Map<String, int[]> residenceInvariantCache = new HashMap<>();
+		// Scoped to this run (a field of the per-run object, never of the engine): phase 1/2
+		// separation guarantees no instruction appears mid-fixpoint, so per-run scoping sidesteps
+		// any staleness question. See probeSite for the soundness invariant this relies on (grm-5tl.13.2).
+		private final Map<Address, MatchInfo> matchCache = new HashMap<>();
+		// Likewise scoped to this run: the A/X/Y a helper call site supplies
 		// (grm-hum increment 2). Purely an efficiency memo -- but a necessary one: without it,
 		// three backward scans plus a strategy's mini-inline would rerun on EVERY dequeue of
 		// every helper call address across the whole fixpoint. Mega Man (25 switch sites, a
@@ -338,7 +386,7 @@ final class BankDataflowEngine {
 		// key can vary across dequeues of the same address now. argumentSurvivesPrologue remains
 		// a pure function of the listing and needs no key at all. grm-wul added the arm map to
 		// the key for the same reason: a caller-side scan along one arm answers for that arm.
-		Map<CallSiteRegKey, RegisterEnv> callSiteRegCache = new HashMap<>();
+		private final Map<CallSiteRegKey, RegisterEnv> callSiteRegCache = new HashMap<>();
 		// STATE DEPENDENCIES (bead grm-mej.3 increment 3): P -> the helper call sites whose
 		// argument recovery consulted the tracked state AT P through a StateOracle. A
 		// call-crossing PHA/PLA pairing resumes its walk from the push and resolves against the
@@ -352,364 +400,758 @@ final class BankDataflowEngine {
 		// because P had no state yet, which is precisely the case that must be re-asked later.
 		// Termination is unaffected: a dependent is enqueued only on a change at P, and changes
 		// are bounded by the same lattice that bounds every other enqueue here.
-		Map<Address, Set<Address>> stateDependents = new HashMap<>();
+		private final Map<Address, Set<Address>> stateDependents = new HashMap<>();
 		// The arms heading each site's block are structural -- a function of the listing and its
 		// flow references, both fixed for the duration of this run -- so they are enumerated once
 		// per address. An empty Optional records "not forkable here" so the walk is not repeated.
-		Map<Address, Optional<List<Arm>>> armCache = new HashMap<>();
+		private final Map<Address, Optional<List<Arm>>> armCache = new HashMap<>();
 		// The cross-block PHA/PLA pairing proof (bead grm-mej.3 increment X1) is STATE-FREE -- a
 		// function of the listing and control flow alone, like armCache above -- so it too is
 		// computed once per PLA address for the whole run and handed to every OracleHooks that
 		// might walk through it. The same holder carries grm-zsxz Z2's save-slot proofs and
 		// callee-closure writer censuses, which are state-free for the same reason.
-		StoredValueScanner.ProofMemo crossBlockProofMemo = new StoredValueScanner.ProofMemo();
-		ForkBudget budget = new ForkBudget(program);
+		private final StoredValueScanner.ProofMemo crossBlockProofMemo = new StoredValueScanner.ProofMemo();
+		private final ForkBudget budget;
+		// Bead grm-hb6.20: the diagnoses of banking.switch_sites bank: VALUE hints. Per-RUN state
+		// like switchResults: the last evaluation of a site wins, and the caller of runDataflow
+		// only ever sees the final run's, so a re-run (the mode-lock redo) or an earlier analysis
+		// pass cannot leave a duplicate or stale diagnosis behind.
+		private final Map<Address, SwitchSiteHints.HintNote> hintNotes = new HashMap<>();
 
-		// Only the REAL entries are seeded up front: the external entry points (reset and the
-		// vectors) and the loader's async entries. An ordinary function entry used to be seeded
-		// too, with the power-on state marked fully KNOWN, and that seed then merged against the
-		// state its callers carried in -- so wherever a caller had moved a field off its power-on
-		// value (cv3's RESET sets MMC5 prg_mode 2; the board resets to 3), the two "known"
-		// values disagreed and every callee lost the field. Bead grm-dos9.4. A function entry no
-		// real entry reaches is still seeded, as a FALLBACK once the fixpoint runs dry (see
-		// seedUnreachedFunctions), so the power-on state is what is assumed when no caller says
-		// otherwise, never a claim competing with one.
-		Set<Address> seeds = new LinkedHashSet<>();
-		AddressIterator eps = program.getSymbolTable().getExternalEntryPointIterator();
-		while (eps.hasNext()) {
-			seeds.add(eps.next());
+		Run(Program program, TaskMonitor monitor, Listing listing, DataflowInputs inputs,
+				boolean allowModeLock) {
+			this.program = program;
+			this.monitor = monitor;
+			this.listing = listing;
+			this.mechanisms = inputs.mechanisms();
+			this.board = inputs.board();
+			this.helpers = inputs.helpers();
+			this.restoringTrampolines = inputs.restoringTrampolines();
+			this.secondTierRelaySites = inputs.secondTierRelaySites();
+			this.bracketClaims = inputs.bracketClaims();
+			this.bankResolution = inputs.bankResolution();
+			this.shadowCommits = inputs.shadowCommits();
+			this.allowModeLock = allowModeLock;
+			this.budget = new ForkBudget(program);
 		}
 
-		// Two seed states, not one. banking.initial_state is what the board powers up holding,
-		// so it is sound for an entry the machine reaches from reset -- and unsound for one it
-		// reaches from an interrupt, which fires from arbitrary mainline context and leaves the
-		// interrupted code's bank live on entry. The loader tells us which entries those are
-		// (DescriptorSupport.ASYNC_ENTRY_POINTS_PROPERTY); this stays machine-independent and
-		// merely consumes the list. Bead grm-913.
-		BankState seedState = BankState.fullyKnown(board.mask(), board.initialState());
-		// Bead grm-hb6.20: banking.switch_sites bank: VALUE hints. Empty (and every use below is
-		// then skipped outright) for every program whose descriptor states none. hintNotes is
-		// per-RUN state like switchResults: the last evaluation of a site wins, and the caller of
-		// runDataflow only ever sees the final run's, so a re-run (the mode-lock redo) or an
-		// earlier analysis pass cannot leave a duplicate or stale diagnosis behind.
-		Map<Address, Integer> valueHints = SwitchSiteHints.valueHints(program);
-		Map<Address, SwitchSiteHints.HintNote> hintNotes = new HashMap<>();
-		Set<Address> asyncEntries = DescriptorSupport.parseAsyncEntryPoints(program);
-		// Bead grm-mej.12: a per-game banking.fixed_after_init hint names fields that hold their
-		// initial value at every instruction after init, so those bits (only) are known on an
-		// async entry too. Mask 0 (no hint) leaves this exactly BankState.unknown().
-		int fixedMask = DescriptorSupport.readFixedAfterInitMask(program) & board.mask();
-		BankState asyncSeed = fixedMask == 0 ? BankState.unknown()
-				: new BankState(fixedMask, seedState.bits() & fixedMask);
-		// Seeding runs in three phases (grm-dos9.6). The reset-side entries go first, alone, so
-		// that when the worklist first runs dry every mode write the reset path reaches has
-		// converged -- that census is what may lock the layout-mode field. The async entries
-		// follow, seeded with the locked mode when there is one, and then the fallback seeds for
-		// functions nothing reached (grm-dos9.4), again with the locked mode.
-		for (Address seed : seeds) {
-			if (!asyncEntries.contains(seed)) {
-				mergeAndEnqueue(seed, PathId.ROOT, seedState, stateIn, collapsedAddrs, worklist,
-					listing, board, clampCache, budget, stateDependents);
+		DataflowResult execute() throws CancelledException {
+
+			// Only the REAL entries are seeded up front: the external entry points (reset and the
+			// vectors) and the loader's async entries. An ordinary function entry used to be seeded
+			// too, with the power-on state marked fully KNOWN, and that seed then merged against the
+			// state its callers carried in -- so wherever a caller had moved a field off its power-on
+			// value (cv3's RESET sets MMC5 prg_mode 2; the board resets to 3), the two "known"
+			// values disagreed and every callee lost the field. Bead grm-dos9.4. A function entry no
+			// real entry reaches is still seeded, as a FALLBACK once the fixpoint runs dry (see
+			// seedUnreachedFunctions), so the power-on state is what is assumed when no caller says
+			// otherwise, never a claim competing with one.
+			Set<Address> seeds = new LinkedHashSet<>();
+			AddressIterator eps = program.getSymbolTable().getExternalEntryPointIterator();
+			while (eps.hasNext()) {
+				seeds.add(eps.next());
 			}
-		}
-		List<Address> functionEntries = new ArrayList<>();
-		for (Function f : program.getFunctionManager().getFunctions(true)) {
-			functionEntries.add(f.getEntryPoint());
-		}
-		// Bead grm-hb6.4: banking.switch_sites -- a game descriptor's "there is a bank-switch store
-		// here" hints join the fallback seed set, exactly like a function entry nothing reached.
-		// A SEED, never an injected result: the site's own computeSwitch still decides.
-		for (Address hinted : SwitchSiteHints.seedAddresses(program)) {
-			if (!functionEntries.contains(hinted)) {
-				functionEntries.add(hinted);
-			}
-		}
-		// The board's layout-mode field (MapCompiler's single shared `when:` field), or 0.
-		int layoutMask = board.modeField() == null ? 0
-				: board.modeField().positionedMask() & board.mask();
-		int modeMask = allowModeLock ? layoutMask : 0;
-		Map<Address, ModeWrite> modeWrites = new HashMap<>();
-		// grm-dos9.9: the direct sites whose every deposit was implicit (a shifter reset), and the
-		// helper sites each mode-writing CALL reaches. A call is an implicit set when every site
-		// of its helper is -- rcproam's ffea calls ff83, LDA #$80 / STA $8000 / RTS.
-		Set<Address> implicitSites = new HashSet<>();
-		Map<Address, List<Address>> callHelperSites = new HashMap<>();
-		boolean asyncSeeded = false;
-		ModeLock lock = null;
-		String noLock = null;
-		BankState fallbackSeed = seedState;
 
-		while (true) {
-			if (worklist.isEmpty()) {
-				if (!asyncSeeded) {
-					asyncSeeded = true;
-					markImplicitCalls(modeWrites, callHelperSites, implicitSites);
-					LockCensus census = censusModeLock(modeWrites, modeMask);
-					lock = census.lock();
-					noLock = census.noLock();
-					BankState asyncEntryState = asyncSeed;
-					if (lock != null) {
-						asyncEntryState = overwrite(asyncSeed, lock.state(), modeMask);
-						fallbackSeed = overwrite(seedState, lock.state(), modeMask);
-					}
-					for (Address seed : asyncEntries) {
-						mergeAndEnqueue(seed, PathId.ROOT, asyncEntryState, stateIn,
-							collapsedAddrs, worklist, listing, board, clampCache, budget,
-							stateDependents);
-					}
-				}
-				if (worklist.isEmpty() && !seedUnreachedFunctions(program, listing,
-					functionEntries, fallbackSeed, stateIn, collapsedAddrs, worklist, board,
-					clampCache, budget, stateDependents, bankResolution)) {
-					break;
+			// Two seed states, not one. banking.initial_state is what the board powers up holding,
+			// so it is sound for an entry the machine reaches from reset -- and unsound for one it
+			// reaches from an interrupt, which fires from arbitrary mainline context and leaves the
+			// interrupted code's bank live on entry. The loader tells us which entries those are
+			// (DescriptorSupport.ASYNC_ENTRY_POINTS_PROPERTY); this stays machine-independent and
+			// merely consumes the list. Bead grm-913.
+			BankState seedState = BankState.fullyKnown(board.mask(), board.initialState());
+			// Bead grm-hb6.20: banking.switch_sites bank: VALUE hints. Empty (and every use below is
+			// then skipped outright) for every program whose descriptor states none. hintNotes is
+			// per-RUN state like switchResults: the last evaluation of a site wins, and the caller of
+			// runDataflow only ever sees the final run's, so a re-run (the mode-lock redo) or an
+			// earlier analysis pass cannot leave a duplicate or stale diagnosis behind.
+			Map<Address, Integer> valueHints = SwitchSiteHints.valueHints(program);
+			Set<Address> asyncEntries = DescriptorSupport.parseAsyncEntryPoints(program);
+			// Bead grm-mej.12: a per-game banking.fixed_after_init hint names fields that hold their
+			// initial value at every instruction after init, so those bits (only) are known on an
+			// async entry too. Mask 0 (no hint) leaves this exactly BankState.unknown().
+			int fixedMask = DescriptorSupport.readFixedAfterInitMask(program) & board.mask();
+			BankState asyncSeed = fixedMask == 0 ? BankState.unknown()
+					: new BankState(fixedMask, seedState.bits() & fixedMask);
+			// Seeding runs in three phases (grm-dos9.6). The reset-side entries go first, alone, so
+			// that when the worklist first runs dry every mode write the reset path reaches has
+			// converged -- that census is what may lock the layout-mode field. The async entries
+			// follow, seeded with the locked mode when there is one, and then the fallback seeds for
+			// functions nothing reached (grm-dos9.4), again with the locked mode.
+			for (Address seed : seeds) {
+				if (!asyncEntries.contains(seed)) {
+					mergeAndEnqueue(seed, PathId.ROOT, seedState);
 				}
 			}
-			monitor.checkCancelled();
-			Address addr = worklist.poll();
-			Instruction instr = listing.getInstructionAt(addr);
-			if (instr == null) {
-				continue;
+			List<Address> functionEntries = new ArrayList<>();
+			for (Function f : program.getFunctionManager().getFunctions(true)) {
+				functionEntries.add(f.getEntryPoint());
 			}
-			// Every element at this address is re-processed on every dequeue: the set is small
-			// (at most MAX_LIVE_FORKS_PER_BLOCK) and a per-element dirty flag would buy little
-			// while adding a second thing that has to be right. Snapshot, because a self-loop's
-			// mergeAndEnqueue may mutate the live map underneath.
-			List<Map.Entry<PathId, BankState>> elements =
-				new ArrayList<>(stateIn.get(addr).entrySet());
-			SiteTally site = new SiteTally();
-			CallTally call = new CallTally();
-			Integer hint = valueHints.isEmpty() ? null : valueHints.get(addr);
-			HintTally hintTally = hint == null ? null : new HintTally(hint);
-			if (!shadowCommits.isEmpty() && hintTally == null) {
-				// grm-hb6.26: the last evaluation of a call wins -- retract a note an earlier
-				// dequeue left (ShadowCommits.apply re-records it if it still applies)
-				hintNotes.remove(addr);
+			// Bead grm-hb6.4: banking.switch_sites -- a game descriptor's "there is a bank-switch store
+			// here" hints join the fallback seed set, exactly like a function entry nothing reached.
+			// A SEED, never an injected result: the site's own computeSwitch still decides.
+			for (Address hinted : SwitchSiteHints.seedAddresses(program)) {
+				if (!functionEntries.contains(hinted)) {
+					functionEntries.add(hinted);
+				}
 			}
-			List<OutElement> outs = new ArrayList<>();
-			List<Address> calledSites = null;
+			// The board's layout-mode field (MapCompiler's single shared `when:` field), or 0.
+			int layoutMask = board.modeField() == null ? 0
+					: board.modeField().positionedMask() & board.mask();
+			int modeMask = allowModeLock ? layoutMask : 0;
+			Map<Address, ModeWrite> modeWrites = new HashMap<>();
+			// grm-dos9.9: the direct sites whose every deposit was implicit (a shifter reset), and the
+			// helper sites each mode-writing CALL reaches. A call is an implicit set when every site
+			// of its helper is -- rcproam's ffea calls ff83, LDA #$80 / STA $8000 / RTS.
+			Set<Address> implicitSites = new HashSet<>();
+			Map<Address, List<Address>> callHelperSites = new HashMap<>();
+			boolean asyncSeeded = false;
+			ModeLock lock = null;
+			String noLock = null;
+			BankState fallbackSeed = seedState;
 
-			for (Map.Entry<PathId, BankState> element : elements) {
-				PathId pathId = element.getKey();
-				BankState inState = element.getValue();
-
-				Probe probe = probeSite(program, instr, inState, mechanisms, matchCache,
-					RegisterEnv.NONE);
-				ConfiguredMechanism matchedMechanism = probe.mechanism();
-				// The strategy's answer now carries WHY an unrecovered value did not resolve (bead
-				// grm-3ou part 1). It rides the existing match cache unchanged: the stop reason is
-				// a property of the very recovery that produced the value, so anything already
-				// safe to cache as a value is safe to cache with its reason attached.
-				BankSwitchStrategy.SwitchOutcome switchedLocal = probe.outcome();
-
-				// Out-elements for THIS in-element: one, or one per arm value when the site forks.
-				List<OutElement> mine = new ArrayList<>();
-				if (switchedLocal != null) {
-					MechanismPlacement placement = matchedMechanism.placement();
-					int effectMask = matchedMechanism.effectMask();
-					if (hintTally != null) {
-						// grm-hb6.20: a VALID hint replaces the outcome with a fully known,
-						// RESOLVED one BEFORE the arm logic below, so a hinted site never forks.
-						switchedLocal = applyStoreHint(hintTally, switchedLocal, matchedMechanism,
-							inState, board, bankResolution, program, listing, instr, mechanisms,
-							matchCache, armCache);
-					}
-					List<MechanismState> forkValues = null;
-					List<MechanismState> deniedValues = null;
-					if (unresolvedOurs(switchedLocal)) {
-						// grm-wul: the site did not resolve and blamed us. Ask along each arm of
-						// the join heading its block, if there is one.
-						List<Arm> arms = armsFor(program, listing, instr, armCache);
-						List<MechanismState> perArm = arms == null ? null
-								: evaluateArms(program, listing, arms, env -> {
-									Probe along = probeSite(program, instr, inState, mechanisms,
-										matchCache, env);
-									return along.outcome() == null ? null : along.outcome().value();
-								}, 1);
-						if (perArm != null) {
-							List<MechanismState> values = distinct(perArm);
-							if (values.size() == 1) {
-								// Every arm agrees: the site resolves to that one value outright.
-								// Not a fork -- nothing to budget, nothing to carry separately.
-								switchedLocal = new BankSwitchStrategy.SwitchOutcome(values.get(0),
-									BankSwitchStrategy.ValueStop.RESOLVED);
-								budget.resolvedThroughArms++;
-							}
-							else if (budget.grant(addr, values.size(), ForkBudget.render(values))) {
-								forkValues = values;
-							}
-							else {
-								deniedValues = values;
-								switchedLocal = new BankSwitchStrategy.SwitchOutcome(
-									MechanismState.unknown(),
-									BankSwitchStrategy.ValueStop.MULTI_VALUED_AT_MERGE);
-							}
+			while (true) {
+				if (worklist.isEmpty()) {
+					if (!asyncSeeded) {
+						asyncSeeded = true;
+						markImplicitCalls(modeWrites, callHelperSites, implicitSites);
+						LockCensus census = censusModeLock(modeWrites, modeMask);
+						lock = census.lock();
+						noLock = census.noLock();
+						BankState asyncEntryState = asyncSeed;
+						if (lock != null) {
+							asyncEntryState = overwrite(asyncSeed, lock.state(), modeMask);
+							fallbackSeed = overwrite(seedState, lock.state(), modeMask);
+						}
+						for (Address seed : asyncEntries) {
+							mergeAndEnqueue(seed, PathId.ROOT, asyncEntryState);
 						}
 					}
-					if (forkValues != null) {
-						// FORK: this in-element becomes one out-element per distinct arm value,
-						// each with that value's positioned effect folded in on the mechanism's
-						// own bits, exactly as a resolved single value is below.
-						List<BankState> positionedArms = new ArrayList<>();
-						for (MechanismState armLocal : forkValues) {
-							BankState positioned = placement.position(armLocal);
-							positionedArms.add(positioned);
-							site.add(positioned, BankSwitchStrategy.ValueStop.RESOLVED);
+					if (worklist.isEmpty() && !seedUnreachedFunctions(functionEntries, fallbackSeed)) {
+						break;
+					}
+				}
+				monitor.checkCancelled();
+				Address addr = worklist.poll();
+				Instruction instr = listing.getInstructionAt(addr);
+				if (instr == null) {
+					continue;
+				}
+				// Every element at this address is re-processed on every dequeue: the set is small
+				// (at most MAX_LIVE_FORKS_PER_BLOCK) and a per-element dirty flag would buy little
+				// while adding a second thing that has to be right. Snapshot, because a self-loop's
+				// mergeAndEnqueue may mutate the live map underneath.
+				List<Map.Entry<PathId, BankState>> elements =
+					new ArrayList<>(stateIn.get(addr).entrySet());
+				SiteTally site = new SiteTally();
+				CallTally call = new CallTally();
+				Integer hint = valueHints.isEmpty() ? null : valueHints.get(addr);
+				HintTally hintTally = hint == null ? null : new HintTally(hint);
+				if (!shadowCommits.isEmpty() && hintTally == null) {
+					// grm-hb6.26: the last evaluation of a call wins -- retract a note an earlier
+					// dequeue left (ShadowCommits.apply re-records it if it still applies)
+					hintNotes.remove(addr);
+				}
+				List<OutElement> outs = new ArrayList<>();
+				List<Address> calledSites = null;
+
+				for (Map.Entry<PathId, BankState> element : elements) {
+					PathId pathId = element.getKey();
+					BankState inState = element.getValue();
+
+					Probe probe = probeSite(program, instr, inState, mechanisms, matchCache,
+						RegisterEnv.NONE);
+					ConfiguredMechanism matchedMechanism = probe.mechanism();
+					// The strategy's answer now carries WHY an unrecovered value did not resolve (bead
+					// grm-3ou part 1). It rides the existing match cache unchanged: the stop reason is
+					// a property of the very recovery that produced the value, so anything already
+					// safe to cache as a value is safe to cache with its reason attached.
+					BankSwitchStrategy.SwitchOutcome switchedLocal = probe.outcome();
+
+					// Out-elements for THIS in-element: one, or one per arm value when the site forks.
+					List<OutElement> mine = new ArrayList<>();
+					if (switchedLocal != null) {
+						MechanismPlacement placement = matchedMechanism.placement();
+						int effectMask = matchedMechanism.effectMask();
+						if (hintTally != null) {
+							// grm-hb6.20: a VALID hint replaces the outcome with a fully known,
+							// RESOLVED one BEFORE the arm logic below, so a hinted site never forks.
+							switchedLocal = applyStoreHint(hintTally, switchedLocal, matchedMechanism,
+								inState, instr);
+						}
+						List<MechanismState> forkValues = null;
+						List<MechanismState> deniedValues = null;
+						if (unresolvedOurs(switchedLocal)) {
+							// grm-wul: the site did not resolve and blamed us. Ask along each arm of
+							// the join heading its block, if there is one.
+							List<Arm> arms = armsFor(instr);
+							List<MechanismState> perArm = arms == null ? null
+									: evaluateArms(program, listing, arms, env -> {
+										Probe along = probeSite(program, instr, inState, mechanisms,
+											matchCache, env);
+										return along.outcome() == null ? null : along.outcome().value();
+									}, 1);
+							if (perArm != null) {
+								List<MechanismState> values = distinct(perArm);
+								if (values.size() == 1) {
+									// Every arm agrees: the site resolves to that one value outright.
+									// Not a fork -- nothing to budget, nothing to carry separately.
+									switchedLocal = new BankSwitchStrategy.SwitchOutcome(values.get(0),
+										BankSwitchStrategy.ValueStop.RESOLVED);
+									budget.resolvedThroughArms++;
+								}
+								else if (budget.grant(addr, values.size(), ForkBudget.render(values))) {
+									forkValues = values;
+								}
+								else {
+									deniedValues = values;
+									switchedLocal = new BankSwitchStrategy.SwitchOutcome(
+										MechanismState.unknown(),
+										BankSwitchStrategy.ValueStop.MULTI_VALUED_AT_MERGE);
+								}
+							}
+						}
+						if (forkValues != null) {
+							// FORK: this in-element becomes one out-element per distinct arm value,
+							// each with that value's positioned effect folded in on the mechanism's
+							// own bits, exactly as a resolved single value is below.
+							List<BankState> positionedArms = new ArrayList<>();
+							for (MechanismState armLocal : forkValues) {
+								BankState positioned = placement.position(armLocal);
+								positionedArms.add(positioned);
+								site.add(positioned, BankSwitchStrategy.ValueStop.RESOLVED);
+								BankState out = overwrite(inState,
+									fillFromLock(positioned, effectMask & modeMask, lock), effectMask);
+								mine.add(new OutElement(pathId.with(addr, positioned), out, out));
+							}
+							site.arms(positionedArms, false);
+						}
+						else {
+							// Fold: this mechanism's switch REPLACES only the bits it owns
+							// (effectMask), preserving whatever the rest of the tracked state already
+							// knew about other mechanisms' fields. For a single-mechanism board
+							// effectMask covers every tracked bit, so this reduces exactly to the old
+							// whole-state replace.
+							BankState positionedEffect = placement.position(switchedLocal.value());
+							BankSwitchStrategy.ValueStop stop = deniedValues != null
+									? BankSwitchStrategy.ValueStop.MULTI_VALUED_AT_MERGE
+									: classifyGap(program, instr, inState, matchedMechanism,
+										switchedLocal, helpers);
+							// grm-rd6h: classifyGap only ever reclassifies an ANALYZER_LIMIT (see its
+							// javadoc), so a RESTORED_BANK stop and its ReadBack always survive intact
+							// -- the guard below is defensive, not load-bearing.
+							site.add(positionedEffect, stop,
+								stop == BankSwitchStrategy.ValueStop.RESTORED_BANK
+										? switchedLocal.readBack() : null,
+								switchedLocal.implicit());
+							if (deniedValues != null) {
+								site.arms(deniedValues.stream()
+										.map(placement::position)
+										.toList(), true);
+							}
 							BankState out = overwrite(inState,
-								fillFromLock(positioned, effectMask & modeMask, lock), effectMask);
-							mine.add(new OutElement(pathId.with(addr, positioned), out, out));
+								fillFromLock(positionedEffect, effectMask & modeMask, lock), effectMask);
+							mine.add(new OutElement(pathId, out, out));
 						}
-						site.arms(positionedArms, false);
+						site.mechanism(matchedMechanism);
 					}
 					else {
-						// Fold: this mechanism's switch REPLACES only the bits it owns
-						// (effectMask), preserving whatever the rest of the tracked state already
-						// knew about other mechanisms' fields. For a single-mechanism board
-						// effectMask covers every tracked bit, so this reduces exactly to the old
-						// whole-state replace.
-						BankState positionedEffect = placement.position(switchedLocal.value());
-						BankSwitchStrategy.ValueStop stop = deniedValues != null
-								? BankSwitchStrategy.ValueStop.MULTI_VALUED_AT_MERGE
-								: classifyGap(program, instr, inState, matchedMechanism,
-									switchedLocal, helpers);
-						// grm-rd6h: classifyGap only ever reclassifies an ANALYZER_LIMIT (see its
-						// javadoc), so a RESTORED_BANK stop and its ReadBack always survive intact
-						// -- the guard below is defensive, not load-bearing.
-						site.add(positionedEffect, stop,
-							stop == BankSwitchStrategy.ValueStop.RESTORED_BANK
-									? switchedLocal.readBack() : null,
-							switchedLocal.implicit());
-						if (deniedValues != null) {
-							site.arms(deniedValues.stream()
-									.map(placement::position)
-									.toList(), true);
+						mine.add(new OutElement(pathId, inState, inState));
+					}
+
+					// isHelperCallSite, not bare isCall(), is what keeps a BRK-derived IRQ/vector
+					// reference out of this whole mechanism (beads grm-htgl, grm-ktne).
+					if (helpers != null && isHelperCallSite(instr)) {
+						HelperModel helper = calledHelper(program, instr, helpers, mine.get(0).out(),
+							bankResolution);
+						if (helper != null) {
+							calledSites = helper.sites();
+							// A store is never a call, so `mine` holds exactly one element here, and
+							// its out-state is the in-state.
+							mine = applyHelperCall(instr, helper, pathId, mine.get(0).out(), call, lock,
+								layoutMask, hintTally);
 						}
-						BankState out = overwrite(inState,
-							fillFromLock(positionedEffect, effectMask & modeMask, lock), effectMask);
-						mine.add(new OutElement(pathId, out, out));
 					}
-					site.mechanism(matchedMechanism);
-				}
-				else {
-					mine.add(new OutElement(pathId, inState, inState));
+					outs.addAll(mine);
 				}
 
-				// isHelperCallSite, not bare isCall(), is what keeps a BRK-derived IRQ/vector
-				// reference out of this whole mechanism (beads grm-htgl, grm-ktne).
-				if (helpers != null && isHelperCallSite(instr)) {
-					HelperModel helper = calledHelper(program, instr, helpers, mine.get(0).out(),
-						bankResolution);
-					if (helper != null) {
-						calledSites = helper.sites();
-						// A store is never a call, so `mine` holds exactly one element here, and
-						// its out-state is the in-state.
-						mine = applyHelperCall(program, instr, helper, pathId, mine.get(0).out(),
-							callSiteRegCache, restoringTrampolines, secondTierRelaySites, listing,
-							armCache, budget, call, stateIn, stateDependents, crossBlockProofMemo,
-							bracketClaims, lock, layoutMask, hintTally, board, bankResolution,
-							shadowCommits, hintNotes);
+				if (hintTally != null) {
+					// grm-hb6.20: neither a recognized latch store nor a recognized helper call
+					if (!hintTally.handled) {
+						hintTally.reject("no latch store or bank-switch helper call at this address");
+					}
+					hintNotes.put(addr, hintTally.note());
+				}
+				if (site.seen()) {
+					SwitchResult sr = site.result();
+					switchResults.put(addr, sr);
+					// Two kinds of direct site are not census entries (grm-dos9.7; together they made
+					// every MMC1 row refuse the lock). A NO_DEPOSIT site writes nothing -- MMC1's shift
+					// writes 1-4, a discarded CHR commit -- its "effect" is an echo of the in-state. A
+					// HELPER_ARGUMENT site's value is its caller's: the census judges it once per CALL
+					// SITE, under that caller's registers, so the body's merged non-answer is not a
+					// second, unresolved vote. An ENTRY_SUPPLIED site (grm-dos9.14) is the same
+					// argument made per entry.
+					if (sr.stop() != BankSwitchStrategy.ValueStop.NO_DEPOSIT &&
+						sr.stop() != BankSwitchStrategy.ValueStop.HELPER_ARGUMENT &&
+						sr.stop() != BankSwitchStrategy.ValueStop.ENTRY_SUPPLIED) {
+						recordModeWrite(modeWrites, addr, sr.effectMask() & modeMask, sr.effect(),
+							sr.stop(), site.implicit());
+					}
+					if (site.implicit()) {
+						implicitSites.add(addr);
+					}
+					else {
+						implicitSites.remove(addr);
 					}
 				}
-				outs.addAll(mine);
+				if (call.seen()) {
+					CallSwitch cs = call.result();
+					callSwitches.put(addr, cs);
+					recordModeWrite(modeWrites, addr, call.ownedMask() & modeMask, cs.effect(), null,
+						false);
+					if (calledSites != null) {
+						callHelperSites.put(addr, calledSites);
+					}
+				}
+
+				boolean isCall = instr.getFlowType().isCall();
+				for (OutElement out : outs) {
+					for (Address flowAddr : instr.getFlows()) {
+						if (mapsElsewhere(program, flowAddr, addr, out.out(), bankResolution) ||
+							contradictsResidence(program, flowAddr, addr, out.out(), bankResolution,
+								residenceInvariantCache)) {
+							continue;
+						}
+						// A fork ends at a function entry: a call target, or a jump onto an entry
+						// point (a tail call). The callee sees the merged ROOT state, exactly as
+						// the single-state engine gave it.
+						PathId to = isCall || budget.isFunctionEntry(flowAddr) ? PathId.ROOT
+								: out.pathId();
+						mergeAndEnqueue(flowAddr, to, out.out());
+					}
+					Address fallThrough = instr.getFallThrough();
+					// A return the state cannot explain still happens: forget the state, keep the edge
+					// (grm-q4ga), so the code after the call is still visited.
+					BankState fall = isCall && fallThrough != null &&
+						returnsElsewhere(program, listing, fallThrough, out.fall(), bankResolution)
+								? BankState.unknown()
+								: out.fall();
+					if (fallThrough != null &&
+						!mapsElsewhere(program, fallThrough, addr, fall,
+							bankResolution) &&
+						!contradictsResidence(program, fallThrough, addr, fall,
+							bankResolution, residenceInvariantCache)) {
+						PathId to = budget.isFunctionEntry(fallThrough) ? PathId.ROOT : out.pathId();
+						mergeAndEnqueue(fallThrough, to, fall);
+					}
+				}
 			}
 
+			// The single-state view every existing consumer reads: per address, the field-wise
+			// merge of its elements -- what the old engine would have held, or better where a fork
+			// resolved something it could not. The per-element view rides alongside for the one
+			// consumer that can use it (reference retargeting, which places one reference per
+			// distinct state).
+			Map<Address, BankState> merged = new HashMap<>();
+			Map<Address, List<BankState>> forkedStates = new HashMap<>();
+			for (Map.Entry<Address, LinkedHashMap<PathId, BankState>> e : stateIn.entrySet()) {
+				BankState acc = null;
+				for (BankState s : e.getValue().values()) {
+					acc = acc == null ? s : BankState.merge(acc, s);
+				}
+				merged.put(e.getKey(), acc);
+				if (e.getValue().size() > 1) {
+					forkedStates.put(e.getKey(), distinct(new ArrayList<>(e.getValue().values())));
+				}
+			}
+			if (lock != null) {
+				markImplicitCalls(modeWrites, callHelperSites, implicitSites);
+				lock = lock.verified(modeWrites);
+			}
+			return new DataflowResult(merged, switchResults, callSwitches, forkedStates,
+				budget.stats(), lock, noLock, hintNotes);
+		}
+
+		/**
+		 * Recovers the argument a helper call site supplies, with this run's call-site memo, trampoline
+		 * map and cross-block proof memo -- the context all three call sites that recover one share.
+		 */
+		private CallEffect recoverCall(Instruction instr, HelperModel helper, BankState outState,
+				RegisterEnv env, StateOracle oracle) {
+			return recoverCallArgument(program, instr, helper, outState, callSiteRegCache,
+				restoringTrampolines, env, oracle, crossBlockProofMemo);
+		}
+
+		/**
+		 * The helper-call half of one element's transfer (grm-hum increment 2 and successors; split
+		 * out of the main loop by grm-wul so the fork machinery reads the same for a call as for a
+		 * direct site). {@code outState} is the state after the call instruction's own effect (the
+		 * in-state: a call is never a store). Returns the out-element(s) for the call's fall-through:
+		 * one, or one per distinct arm effect when the argument resolved only along the arms of the
+		 * join heading this block.
+		 */
+		private List<OutElement> applyHelperCall(Instruction instr, HelperModel helper,
+				PathId pathId, BankState outState, CallTally call, ModeLock lock, int modeMask,
+				HintTally hintTally) {
+			Address addr = instr.getMinAddress();
+			// The recording StateOracle for THIS call (grm-mej.3 increment 3): answers the merged
+			// state at any instruction and records the ask as a dependency edge P -> addr, so a later
+			// change at P re-enqueues this call (see stateDependents' declaration). The MERGE over
+			// P's path elements is deliberate -- the query is asked on behalf of one element at addr,
+			// but attributing a single element at P to it would need the path identity to survive
+			// the pairing walk, and a merge can only lose knowledge, never invent it.
+			StateOracle oracle = p -> {
+				stateDependents.computeIfAbsent(p, k -> new LinkedHashSet<>()).add(addr);
+				LinkedHashMap<PathId, BankState> elements = stateIn.get(p);
+				if (elements == null || elements.isEmpty()) {
+					return null;
+				}
+				BankState acc = null;
+				for (BankState st : elements.values()) {
+					acc = acc == null ? st : BankState.merge(acc, st);
+				}
+				return acc;
+			};
+			CallEffect callEffect = helper.constState() != null
+					? new CallEffect(helper.constState(), helper.effectMask())
+					: recoverCall(instr, helper, outState, RegisterEnv.NONE, oracle);
+			callEffect = applyBracketClaim(callEffect, addr, bracketClaims, oracle);
+			BankStackBrackets.Restore helperRestore =
+				bracketClaims.helperRestores().get(helper.function());
+			if (helperRestore != null) {
+				// a self-contained restoring helper (grm-mej.10, FUN_9169): restore from the state
+				// at the call itself, computing the paired field rather than copying it
+				callEffect = BankStackBrackets.fold(callEffect, helperRestore, outState);
+			}
+			if (!shadowCommits.isEmpty()) {
+				// bead grm-hb6.26: banking.shadow_commits. Before the bank: value hint, which wins.
+				callEffect = ShadowCommits.apply(shadowCommits, hintNotes, callEffect, helper, outState,
+					program, instr, oracle, crossBlockProofMemo);
+			}
 			if (hintTally != null) {
-				// grm-hb6.20: neither a recognized latch store nor a recognized helper call
-				if (!hintTally.handled) {
-					hintTally.reject("no latch store or bank-switch helper call at this address");
-				}
-				hintNotes.put(addr, hintTally.note());
+				callEffect = applyCallHint(hintTally, callEffect, helper, outState, instr, oracle);
 			}
-			if (site.seen()) {
-				SwitchResult sr = site.result();
-				switchResults.put(addr, sr);
-				// Two kinds of direct site are not census entries (grm-dos9.7; together they made
-				// every MMC1 row refuse the lock). A NO_DEPOSIT site writes nothing -- MMC1's shift
-				// writes 1-4, a discarded CHR commit -- its "effect" is an echo of the in-state. A
-				// HELPER_ARGUMENT site's value is its caller's: the census judges it once per CALL
-				// SITE, under that caller's registers, so the body's merged non-answer is not a
-				// second, unresolved vote. An ENTRY_SUPPLIED site (grm-dos9.14) is the same
-				// argument made per entry.
-				if (sr.stop() != BankSwitchStrategy.ValueStop.NO_DEPOSIT &&
-					sr.stop() != BankSwitchStrategy.ValueStop.HELPER_ARGUMENT &&
-					sr.stop() != BankSwitchStrategy.ValueStop.ENTRY_SUPPLIED) {
-					recordModeWrite(modeWrites, addr, sr.effectMask() & modeMask, sr.effect(),
-						sr.stop(), site.implicit());
-				}
-				if (site.implicit()) {
-					implicitSites.add(addr);
-				}
-				else {
-					implicitSites.remove(addr);
-				}
-			}
-			if (call.seen()) {
-				CallSwitch cs = call.result();
-				callSwitches.put(addr, cs);
-				recordModeWrite(modeWrites, addr, call.ownedMask() & modeMask, cs.effect(), null,
-					false);
-				if (calledSites != null) {
-					callHelperSites.put(addr, calledSites);
-				}
-			}
-
-			boolean isCall = instr.getFlowType().isCall();
-			for (OutElement out : outs) {
-				for (Address flowAddr : instr.getFlows()) {
-					if (mapsElsewhere(program, flowAddr, addr, out.out(), bankResolution) ||
-						contradictsResidence(program, flowAddr, addr, out.out(), bankResolution,
-							residenceInvariantCache)) {
-						continue;
+			List<CallEffect> forkEffects = null;
+			boolean denied = false;
+			// grm-wul, the call-site twin of the direct case: the caller's argument did not resolve
+			// at this call and nothing says the failure is honest (a second-tier relay, a provably
+			// argument-less helper, a restore entry). Ask along each arm of the join heading the
+			// block. Every arm must resolve, and each arm's whole CallEffect is what the fork
+			// carries -- the deposit is the strategy's, computed along that arm, never a value the
+			// engine invented.
+			if (helper.constState() == null && !callEffect.argumentResolved() &&
+				callEffect.ownedMask() != 0 && !secondTierRelaySites.contains(addr) &&
+				!callEffect.noInboundArgument() && callEffect.restoredFrom() == null) {
+				List<Arm> arms = armsFor(instr);
+				if (arms != null) {
+					List<CallEffect> perArm = new ArrayList<>();
+					List<BankState> perArmValue = evaluateArms(program, listing, arms, env -> {
+						CallEffect along = recoverCall(instr, helper, outState, env, oracle);
+						if (!along.argumentResolved()) {
+							return null;
+						}
+						perArm.add(along);
+						return along.state();
+					}, 1);
+					if (perArmValue != null) {
+						List<CallEffect> values = new ArrayList<>();
+						for (CallEffect ce : perArm) {
+							if (values.stream().noneMatch(d -> d.state().equals(ce.state()) &&
+								d.ownedMask() == ce.ownedMask())) {
+								values.add(ce);
+							}
+						}
+						values.sort((a, b) -> a.state().bits() != b.state().bits()
+								? Integer.compare(a.state().bits(), b.state().bits())
+								: Integer.compare(a.state().knownMask(), b.state().knownMask()));
+						if (values.size() == 1) {
+							callEffect = values.get(0);
+							budget.resolvedThroughArms++;
+						}
+						else if (budget.grant(addr, values.size(),
+							ForkBudget.render(values.stream().map(CallEffect::state).toList()))) {
+							forkEffects = values;
+						}
+						else {
+							denied = true;
+							call.arms(values.stream().map(CallEffect::state).toList(), true);
+						}
 					}
-					// A fork ends at a function entry: a call target, or a jump onto an entry
-					// point (a tail call). The callee sees the merged ROOT state, exactly as
-					// the single-state engine gave it.
-					PathId to = isCall || budget.isFunctionEntry(flowAddr) ? PathId.ROOT
-							: out.pathId();
-					mergeAndEnqueue(flowAddr, to, out.out(), stateIn, collapsedAddrs, worklist,
-						listing, board, clampCache, budget, stateDependents);
-				}
-				Address fallThrough = instr.getFallThrough();
-				// A return the state cannot explain still happens: forget the state, keep the edge
-				// (grm-q4ga), so the code after the call is still visited.
-				BankState fall = isCall && fallThrough != null &&
-					returnsElsewhere(program, listing, fallThrough, out.fall(), bankResolution)
-							? BankState.unknown()
-							: out.fall();
-				if (fallThrough != null &&
-					!mapsElsewhere(program, fallThrough, addr, fall,
-						bankResolution) &&
-					!contradictsResidence(program, fallThrough, addr, fall,
-						bankResolution, residenceInvariantCache)) {
-					PathId to = budget.isFunctionEntry(fallThrough) ? PathId.ROOT : out.pathId();
-					mergeAndEnqueue(fallThrough, to, fall, stateIn, collapsedAddrs,
-						worklist, listing, board, clampCache, budget, stateDependents);
 				}
 			}
+			// bead grm-ylm6: an unresolved call at a known second-tier relay site is an
+			// HONEST gap, not our limitation -- reclassified here, after recoverCallArgument
+			// returns, rather than inside it: the relay-site set is a whole-program fact
+			// HelperDiscovery derives once, and threading it into recoverCallArgument's own
+			// several return points would duplicate what one check at this single call site
+			// already covers. See CallEffect#asSecondTierRelay and ValueStop
+			// #SECOND_TIER_ARGUMENT.
+			if (!callEffect.argumentResolved() && secondTierRelaySites.contains(addr)) {
+				callEffect = callEffect.asSecondTierRelay();
+			}
+			List<OutElement> outs = new ArrayList<>();
+			// ownedMask == 0 means this call site is a verified no-op on every tracked
+			// bit -- a serial-shift helper whose switch site targets an unconfigured CHR
+			// register, or (grm-mej.3) a save/restore trampoline proved to put the entry
+			// bank back before returning -- so skip both the fold (a no-op regardless, since
+			// callEffect.state()'s knownMask is always a subset of ownedMask by
+			// construction) and the annotation, so a provably-inert call gets neither a
+			// misleading "bank -> ?" comment nor a spurious WARNING bookmark.
+			if (callEffect.ownedMask() == 0) {
+				outs.add(new OutElement(pathId, outState, outState));
+				return outs;
+			}
+			// The annotation state echoes the in-state only within the helper's own
+			// mechanism window, plus the board's layout-mode field -- see CallSwitch's javadoc.
+			BankState mechIn = outState.restrictedTo(helper.effectMask() | modeMask);
+			String label = helperLabel(program, helper);
+			if (forkEffects != null) {
+				List<BankState> afters = new ArrayList<>();
+				for (CallEffect arm : forkEffects) {
+					BankState fall = overwrite(outState,
+						fillFromLock(arm.state(), arm.ownedMask() & modeMask, lock), arm.ownedMask());
+					BankState after = overwrite(mechIn, arm.state(), arm.ownedMask());
+					afters.add(after);
+					outs.add(new OutElement(pathId.with(addr, arm.state()), outState, fall));
+					call.add(label, arm.state(), after, true, false, false, null, null);
+					call.owned(arm.ownedMask());
+				}
+				call.arms(afters, false);
+				return outs;
+			}
+			BankState fallState = overwrite(outState,
+				fillFromLock(callEffect.state(), callEffect.ownedMask() & modeMask, lock),
+				callEffect.ownedMask());
+			outs.add(new OutElement(pathId, outState, fallState));
+			// grm-9z9t: an unresolved call must not be worded as a failed argument recovery when
+			// no recovery was attempted -- see ArgumentSought.
+			call.argumentSought(ArgumentSought.of(helper));
+			call.add(label, callEffect.state(),
+				overwrite(mechIn, callEffect.state(), callEffect.ownedMask()),
+				callEffect.argumentResolved(), callEffect.noInboundArgument(),
+				callEffect.secondTierRelay(), callEffect.restoreCell(), callEffect.readBack());
+			call.owned(callEffect.ownedMask());
+			return outs;
 		}
 
-		// The single-state view every existing consumer reads: per address, the field-wise
-		// merge of its elements -- what the old engine would have held, or better where a fork
-		// resolved something it could not. The per-element view rides alongside for the one
-		// consumer that can use it (reference retargeting, which places one reference per
-		// distinct state).
-		Map<Address, BankState> merged = new HashMap<>();
-		Map<Address, List<BankState>> forkedStates = new HashMap<>();
-		for (Map.Entry<Address, LinkedHashMap<PathId, BankState>> e : stateIn.entrySet()) {
-			BankState acc = null;
-			for (BankState s : e.getValue().values()) {
-				acc = acc == null ? s : BankState.merge(acc, s);
+		/**
+		 * Applies a {@code bank:} hint at a DIRECT latch store (bead grm-hb6.20): when it passes
+		 * {@link #fitHint}, the strategy's outcome is REPLACED by a fully known RESOLVED one, and the
+		 * values dataflow would have recovered (the plain probe, or along each arm of the join heading
+		 * the block when the plain probe blamed us) are noted if they disagree. The caller's arm/fork
+		 * logic then sees a resolved site and does nothing. An invalid hint returns {@code plain}
+		 * untouched.
+		 */
+		private BankSwitchStrategy.SwitchOutcome applyStoreHint(HintTally tally,
+				BankSwitchStrategy.SwitchOutcome plain, ConfiguredMechanism cm, BankState inState,
+				Instruction instr) {
+			if (plain.implicit()) {
+				tally.reject("the write's deposit is a hardware side effect (a shifter reset), " +
+					"not a bank the game chose");
+				return plain;
 			}
-			merged.put(e.getKey(), acc);
-			if (e.getValue().size() > 1) {
-				forkedStates.put(e.getKey(), distinct(new ArrayList<>(e.getValue().values())));
+			if (plain.stop() == BankSwitchStrategy.ValueStop.NO_DEPOSIT) {
+				tally.reject("the write commits no tracked bank field (a serial-shift write " +
+					"before the commit, or a select-data write to an untracked register)");
+				return plain;
+			}
+			MechanismPlacement placement = cm.placement();
+			// grm-hb6.22: judged on the bits THIS write deposits, so a multi-field mechanism's store
+			// that commits exactly one field (MMC3 R6 after select 6, MMC1's PRG commit) qualifies.
+			int deposited = plain.depositMask() == BankSwitchStrategy.SwitchOutcome.WHOLE_MECHANISM
+					? cm.effectMask() : placement.positionMask(plain.depositMask());
+			HintFit fit = fitHint(tally.bank, deposited, inState, board, bankResolution);
+			if (fit.problem() != null) {
+				tally.reject(fit.problem());
+				return plain;
+			}
+			// The hinted field in the mechanism's local coordinates; the rest of the outcome is the
+			// in-state echo the strategy already computed, and is kept as is.
+			BitField local = new BitField(fit.field().lsb() - placement.lsb(), fit.field().width());
+			int fieldMask = local.positionedMask();
+			List<MechanismState> recovered = new ArrayList<>();
+			if (plain.stop() == BankSwitchStrategy.ValueStop.RESOLVED) {
+				recovered.add(plain.value());
+			}
+			else if (unresolvedOurs(plain)) {
+				List<Arm> arms = armsFor(instr);
+				List<MechanismState> perArm = arms == null ? null
+						: evaluateArms(program, listing, arms, env -> {
+							Probe along = probeSite(program, instr, inState, mechanisms, matchCache, env);
+							return along.outcome() == null ? null : along.outcome().value();
+						}, 1);
+				if (perArm != null) {
+					recovered.addAll(distinct(perArm));
+				}
+			}
+			List<String> differing = new ArrayList<>();
+			for (MechanismState r : recovered) {
+				MechanismState f = local.extract(r);
+				if (((f.bits() ^ tally.bank) & f.knownMask()) != 0) {
+					differing.add(renderRecovered(f.knownMask(), f.bits(), local.widthMask()));
+				}
+			}
+			tally.apply(differing);
+			MechanismState echo = plain.value();
+			return new BankSwitchStrategy.SwitchOutcome(new MechanismState(echo.knownMask() | fieldMask,
+				(echo.bits() & ~fieldMask) | local.place(tally.bank)),
+				BankSwitchStrategy.ValueStop.RESOLVED, null, false, plain.depositMask());
+		}
+
+		/**
+		 * Applies a {@code bank:} hint at a CALL to a recognized bank-switch helper (bead grm-hb6.20,
+		 * the owner's 2026-10-18 scope ruling): the hint REPLACES the call's argument-derived
+		 * {@link CallEffect} with a fully known deposit on the helper's single owned field. The
+		 * recovered effect (or, when the argument did not resolve, the per-arm effects) is noted if it
+		 * disagrees. An invalid or ambiguous (multi-field) hint returns {@code recovered} untouched.
+		 */
+		private CallEffect applyCallHint(HintTally tally, CallEffect recovered, HelperModel helper,
+				BankState outState, Instruction instr, StateOracle oracle) {
+			int owned = recovered.ownedMask();
+			HintFit fit = fitHint(tally.bank, owned, outState, board, bankResolution);
+			if (fit.problem() != null) {
+				tally.reject(owned == 0 ? "the call deposits nothing on a tracked bank field"
+						: fit.problem());
+				return recovered;
+			}
+			FieldSpec field = fit.field();
+			List<BankState> recoveredStates = new ArrayList<>();
+			if (recovered.argumentResolved()) {
+				recoveredStates.add(recovered.state());
+			}
+			else if (helper.constState() == null &&
+				!secondTierRelaySites.contains(instr.getMinAddress()) &&
+				!recovered.noInboundArgument() && recovered.restoredFrom() == null) {
+				List<Arm> arms = armsFor(instr);
+				List<BankState> perArm = arms == null ? null
+						: evaluateArms(program, listing, arms, env -> {
+							CallEffect along = recoverCall(instr, helper, outState, env, oracle);
+							return along.argumentResolved() ? along.state() : null;
+						}, 1);
+				if (perArm != null) {
+					recoveredStates.addAll(distinct(perArm));
+				}
+			}
+			List<String> differing = new ArrayList<>();
+			for (BankState r : recoveredStates) {
+				int known = r.knownMask() & owned;
+				int hinted = tally.bank << field.lsb();
+				if (((r.bits() ^ hinted) & known) != 0) {
+					differing.add(renderRecovered(known >>> field.lsb(), r.bits() >>> field.lsb(),
+						field.widthMask()));
+				}
+			}
+			tally.apply(differing);
+			return new CallEffect(new BankState(owned, tally.bank << field.lsb()), owned);
+		}
+
+		/**
+		 * The arms of the control-flow join heading {@code instr}'s block, memoized per address;
+		 * {@code null} when the block is not headed by a forkable join (see {@link #joinArms}).
+		 */
+		private List<Arm> armsFor(Instruction instr) {
+			return armCache.computeIfAbsent(instr.getMinAddress(),
+				a -> Optional.ofNullable(joinArms(program, listing, instr, Map.of()))).orElse(null);
+		}
+
+		/**
+		 * The fallback half of the seeding policy (bead grm-dos9.4): called when the worklist has run
+		 * dry, it seeds function entries the fixpoint never reached with the power-on state and
+		 * reports whether it enqueued anything, so the caller's loop resumes.
+		 * <p>
+		 * Only entries with NO calling instruction are seeded in a round -- a function some code
+		 * calls should get its state from that call, and its caller may simply be another unreached
+		 * function that this same round is about to seed. Seeding the callee as well would recreate
+		 * exactly the conflict this policy removes: a fully-known power-on seed merged against the
+		 * caller's state. When every unreached entry has a caller (a cycle, or callers that are
+		 * themselves dead code), the lowest-addressed one is seeded alone, which breaks the cycle
+		 * deterministically and guarantees progress: each round gives at least one unreached entry
+		 * a state, so the loop ends once every function entry has one -- the same coverage the old
+		 * "seed every function up front" policy had.
+		 * <p>
+		 * A "calling instruction" is any instruction with a flow reference to the entry, or whose
+		 * fall-through is the entry. Async entries are already seeded up front and never reach here.
+		 */
+		private boolean seedUnreachedFunctions(List<Address> functionEntries, BankState seedState) {
+			List<Address> unreached = new ArrayList<>();
+			for (Address entry : functionEntries) {
+				// An entry the seed maps elsewhere is filtered here, not dropped at the merge: a
+				// dropped root would leave stateIn without it, so it would be re-picked forever and
+				// starve the entries behind it.
+				if (!stateIn.containsKey(entry) && listing.getInstructionAt(entry) != null &&
+					!mapsElsewhere(program, entry, null, seedState, bankResolution)) {
+					unreached.add(entry);
+				}
+			}
+			if (unreached.isEmpty()) {
+				return false;
+			}
+			List<Address> roots = new ArrayList<>();
+			for (Address entry : unreached) {
+				if (!hasCallingInstruction(program, listing, entry)) {
+					roots.add(entry);
+				}
+			}
+			if (roots.isEmpty()) {
+				roots.add(unreached.get(0));
+			}
+			for (Address entry : roots) {
+				mergeAndEnqueue(entry, PathId.ROOT, seedState);
+			}
+			return !worklist.isEmpty();
+		}
+
+		/**
+		 * Folds {@code incoming} into the element for {@code pathId} at {@code addr} and enqueues
+		 * the address if anything changed (bead grm-wul generalizes the single-state version: same
+		 * field-wise merge per element, plus the live cap).
+		 * <p>
+		 * <b>The live cap.</b> If adding a new path id would leave more than
+		 * {@link #MAX_LIVE_FORKS_PER_BLOCK} elements at {@code addr}, every element there is merged
+		 * field-wise into ONE {@link PathId#ROOT} element and the address is marked collapsed --
+		 * permanently: every later arrival at a collapsed address merges into ROOT whatever path it
+		 * came on. That is exactly what the single-state engine would have held (the merge of all
+		 * incoming states), so a collapse can lose what forking gained but never invent anything, and
+		 * it happens at most once per address, which the termination argument relies on.
+		 */
+		private void mergeAndEnqueue(Address addr, PathId pathId, BankState incoming) {
+			if (listing.getInstructionAt(addr) == null) {
+				// not (yet) disassembled / not code -- nothing to track here
+				return;
+			}
+			LinkedHashMap<PathId, BankState> elements =
+				stateIn.computeIfAbsent(addr, a -> new LinkedHashMap<>());
+			if (collapsedAddrs.contains(addr)) {
+				pathId = PathId.ROOT;
+			}
+			BankState existing = elements.get(pathId);
+			BankState merged = existing == null ? incoming : BankState.merge(existing, incoming);
+			merged = clampToResidence(addr, merged, board, clampCache);
+			boolean changed = existing == null || !merged.equals(existing);
+			if (!changed) {
+				return; // unchanged, already processed with this exact state -- nothing to do
+			}
+			elements.put(pathId, merged);
+			if (elements.size() > MAX_LIVE_FORKS_PER_BLOCK) {
+				BankState all = null;
+				for (BankState s : elements.values()) {
+					all = all == null ? s : BankState.merge(all, s);
+				}
+				budget.collapsed(addr, elements.size());
+				elements.clear();
+				elements.put(PathId.ROOT, all);
+				collapsedAddrs.add(addr);
+			}
+			budget.observeLive(addr, elements.size());
+			worklist.add(addr);
+			// The state at addr changed, so every helper call whose recovery consulted it through a
+			// StateOracle must be re-evaluated (grm-mej.3 increment 3) -- see stateDependents'
+			// declaration for why the fixpoint's own propagation does not cover this.
+			Set<Address> dependents = stateDependents.get(addr);
+			if (dependents != null) {
+				worklist.addAll(dependents);
 			}
 		}
-		if (lock != null) {
-			markImplicitCalls(modeWrites, callHelperSites, implicitSites);
-			lock = lock.verified(modeWrites);
-		}
-		return new DataflowResult(merged, switchResults, callSwitches, forkedStates,
-			budget.stats(), lock, noLock, hintNotes);
 	}
 
 	/**
@@ -934,170 +1376,6 @@ final class BankDataflowEngine {
 	}
 
 	/**
-	 * The helper-call half of one element's transfer (grm-hum increment 2 and successors; split
-	 * out of the main loop by grm-wul so the fork machinery reads the same for a call as for a
-	 * direct site). {@code outState} is the state after the call instruction's own effect (the
-	 * in-state: a call is never a store). Returns the out-element(s) for the call's fall-through:
-	 * one, or one per distinct arm effect when the argument resolved only along the arms of the
-	 * join heading this block.
-	 */
-	private static List<OutElement> applyHelperCall(Program program, Instruction instr,
-			HelperModel helper, PathId pathId, BankState outState,
-			Map<CallSiteRegKey, RegisterEnv> callSiteRegCache, Map<Function, Integer> restoringTrampolines,
-			Set<Address> secondTierRelaySites, Listing listing,
-			Map<Address, Optional<List<Arm>>> armCache, ForkBudget budget, CallTally call,
-			Map<Address, LinkedHashMap<PathId, BankState>> stateIn,
-			Map<Address, Set<Address>> stateDependents,
-			StoredValueScanner.ProofMemo crossBlockProofMemo,
-			BankStackBrackets.Claims bracketClaims, ModeLock lock, int modeMask,
-			HintTally hintTally, BoardModel board, HelperDiscovery.BankResolution bankResolution,
-			ShadowCommits.Plan shadowCommits, Map<Address, SwitchSiteHints.HintNote> hintNotes) {
-		Address addr = instr.getMinAddress();
-		// The recording StateOracle for THIS call (grm-mej.3 increment 3): answers the merged
-		// state at any instruction and records the ask as a dependency edge P -> addr, so a later
-		// change at P re-enqueues this call (see stateDependents' declaration). The MERGE over
-		// P's path elements is deliberate -- the query is asked on behalf of one element at addr,
-		// but attributing a single element at P to it would need the path identity to survive
-		// the pairing walk, and a merge can only lose knowledge, never invent it.
-		StateOracle oracle = p -> {
-			stateDependents.computeIfAbsent(p, k -> new LinkedHashSet<>()).add(addr);
-			LinkedHashMap<PathId, BankState> elements = stateIn.get(p);
-			if (elements == null || elements.isEmpty()) {
-				return null;
-			}
-			BankState acc = null;
-			for (BankState st : elements.values()) {
-				acc = acc == null ? st : BankState.merge(acc, st);
-			}
-			return acc;
-		};
-		CallEffect callEffect = helper.constState() != null
-				? new CallEffect(helper.constState(), helper.effectMask())
-				: recoverCallArgument(program, instr, helper, outState, callSiteRegCache,
-					restoringTrampolines, RegisterEnv.NONE, oracle, crossBlockProofMemo);
-		callEffect = applyBracketClaim(callEffect, addr, bracketClaims, oracle);
-		BankStackBrackets.Restore helperRestore =
-			bracketClaims.helperRestores().get(helper.function());
-		if (helperRestore != null) {
-			// a self-contained restoring helper (grm-mej.10, FUN_9169): restore from the state
-			// at the call itself, computing the paired field rather than copying it
-			callEffect = BankStackBrackets.fold(callEffect, helperRestore, outState);
-		}
-		if (!shadowCommits.isEmpty()) {
-			// bead grm-hb6.26: banking.shadow_commits. Before the bank: value hint, which wins.
-			callEffect = ShadowCommits.apply(shadowCommits, hintNotes, callEffect, helper, outState,
-				program, instr, oracle, crossBlockProofMemo);
-		}
-		if (hintTally != null) {
-			callEffect = applyCallHint(hintTally, callEffect, helper, outState, board,
-				bankResolution, program, listing, instr, callSiteRegCache, restoringTrampolines,
-				oracle, crossBlockProofMemo, armCache, secondTierRelaySites);
-		}
-		List<CallEffect> forkEffects = null;
-		boolean denied = false;
-		// grm-wul, the call-site twin of the direct case: the caller's argument did not resolve
-		// at this call and nothing says the failure is honest (a second-tier relay, a provably
-		// argument-less helper, a restore entry). Ask along each arm of the join heading the
-		// block. Every arm must resolve, and each arm's whole CallEffect is what the fork
-		// carries -- the deposit is the strategy's, computed along that arm, never a value the
-		// engine invented.
-		if (helper.constState() == null && !callEffect.argumentResolved() &&
-			callEffect.ownedMask() != 0 && !secondTierRelaySites.contains(addr) &&
-			!callEffect.noInboundArgument() && callEffect.restoredFrom() == null) {
-			List<Arm> arms = armsFor(program, listing, instr, armCache);
-			if (arms != null) {
-				List<CallEffect> perArm = new ArrayList<>();
-				List<BankState> perArmValue = evaluateArms(program, listing, arms, env -> {
-					CallEffect along = recoverCallArgument(program, instr, helper, outState,
-						callSiteRegCache, restoringTrampolines, env, oracle, crossBlockProofMemo);
-					if (!along.argumentResolved()) {
-						return null;
-					}
-					perArm.add(along);
-					return along.state();
-				}, 1);
-				if (perArmValue != null) {
-					List<CallEffect> values = new ArrayList<>();
-					for (CallEffect ce : perArm) {
-						if (values.stream().noneMatch(d -> d.state().equals(ce.state()) &&
-							d.ownedMask() == ce.ownedMask())) {
-							values.add(ce);
-						}
-					}
-					values.sort((a, b) -> a.state().bits() != b.state().bits()
-							? Integer.compare(a.state().bits(), b.state().bits())
-							: Integer.compare(a.state().knownMask(), b.state().knownMask()));
-					if (values.size() == 1) {
-						callEffect = values.get(0);
-						budget.resolvedThroughArms++;
-					}
-					else if (budget.grant(addr, values.size(),
-						ForkBudget.render(values.stream().map(CallEffect::state).toList()))) {
-						forkEffects = values;
-					}
-					else {
-						denied = true;
-						call.arms(values.stream().map(CallEffect::state).toList(), true);
-					}
-				}
-			}
-		}
-		// bead grm-ylm6: an unresolved call at a known second-tier relay site is an
-		// HONEST gap, not our limitation -- reclassified here, after recoverCallArgument
-		// returns, rather than inside it: the relay-site set is a whole-program fact
-		// HelperDiscovery derives once, and threading it into recoverCallArgument's own
-		// several return points would duplicate what one check at this single call site
-		// already covers. See CallEffect#asSecondTierRelay and ValueStop
-		// #SECOND_TIER_ARGUMENT.
-		if (!callEffect.argumentResolved() && secondTierRelaySites.contains(addr)) {
-			callEffect = callEffect.asSecondTierRelay();
-		}
-		List<OutElement> outs = new ArrayList<>();
-		// ownedMask == 0 means this call site is a verified no-op on every tracked
-		// bit -- a serial-shift helper whose switch site targets an unconfigured CHR
-		// register, or (grm-mej.3) a save/restore trampoline proved to put the entry
-		// bank back before returning -- so skip both the fold (a no-op regardless, since
-		// callEffect.state()'s knownMask is always a subset of ownedMask by
-		// construction) and the annotation, so a provably-inert call gets neither a
-		// misleading "bank -> ?" comment nor a spurious WARNING bookmark.
-		if (callEffect.ownedMask() == 0) {
-			outs.add(new OutElement(pathId, outState, outState));
-			return outs;
-		}
-		// The annotation state echoes the in-state only within the helper's own
-		// mechanism window, plus the board's layout-mode field -- see CallSwitch's javadoc.
-		BankState mechIn = outState.restrictedTo(helper.effectMask() | modeMask);
-		String label = helperLabel(program, helper);
-		if (forkEffects != null) {
-			List<BankState> afters = new ArrayList<>();
-			for (CallEffect arm : forkEffects) {
-				BankState fall = overwrite(outState,
-					fillFromLock(arm.state(), arm.ownedMask() & modeMask, lock), arm.ownedMask());
-				BankState after = overwrite(mechIn, arm.state(), arm.ownedMask());
-				afters.add(after);
-				outs.add(new OutElement(pathId.with(addr, arm.state()), outState, fall));
-				call.add(label, arm.state(), after, true, false, false, null, null);
-				call.owned(arm.ownedMask());
-			}
-			call.arms(afters, false);
-			return outs;
-		}
-		BankState fallState = overwrite(outState,
-			fillFromLock(callEffect.state(), callEffect.ownedMask() & modeMask, lock),
-			callEffect.ownedMask());
-		outs.add(new OutElement(pathId, outState, fallState));
-		// grm-9z9t: an unresolved call must not be worded as a failed argument recovery when
-		// no recovery was attempted -- see ArgumentSought.
-		call.argumentSought(ArgumentSought.of(helper));
-		call.add(label, callEffect.state(),
-			overwrite(mechIn, callEffect.state(), callEffect.ownedMask()),
-			callEffect.argumentResolved(), callEffect.noInboundArgument(),
-			callEffect.secondTierRelay(), callEffect.restoreCell(), callEffect.readBack());
-		call.owned(callEffect.ownedMask());
-		return outs;
-	}
-
-	/**
 	 * Folds a verified RAM bank-stack bracket (bead grm-mej.10, {@link BankStackBrackets}) into
 	 * a helper call's effect.
 	 * <p>
@@ -1265,125 +1543,6 @@ final class BankDataflowEngine {
 					" of mask 0x" + Integer.toHexString(knownMask);
 	}
 
-	/**
-	 * Applies a {@code bank:} hint at a DIRECT latch store (bead grm-hb6.20): when it passes
-	 * {@link #fitHint}, the strategy's outcome is REPLACED by a fully known RESOLVED one, and the
-	 * values dataflow would have recovered (the plain probe, or along each arm of the join heading
-	 * the block when the plain probe blamed us) are noted if they disagree. The caller's arm/fork
-	 * logic then sees a resolved site and does nothing. An invalid hint returns {@code plain}
-	 * untouched.
-	 */
-	private static BankSwitchStrategy.SwitchOutcome applyStoreHint(HintTally tally,
-			BankSwitchStrategy.SwitchOutcome plain, ConfiguredMechanism cm, BankState inState,
-			BoardModel board, HelperDiscovery.BankResolution bankResolution, Program program,
-			Listing listing, Instruction instr, List<ConfiguredMechanism> mechanisms,
-			Map<Address, MatchInfo> matchCache, Map<Address, Optional<List<Arm>>> armCache) {
-		if (plain.implicit()) {
-			tally.reject("the write's deposit is a hardware side effect (a shifter reset), " +
-				"not a bank the game chose");
-			return plain;
-		}
-		if (plain.stop() == BankSwitchStrategy.ValueStop.NO_DEPOSIT) {
-			tally.reject("the write commits no tracked bank field (a serial-shift write " +
-				"before the commit, or a select-data write to an untracked register)");
-			return plain;
-		}
-		MechanismPlacement placement = cm.placement();
-		// grm-hb6.22: judged on the bits THIS write deposits, so a multi-field mechanism's store
-		// that commits exactly one field (MMC3 R6 after select 6, MMC1's PRG commit) qualifies.
-		int deposited = plain.depositMask() == BankSwitchStrategy.SwitchOutcome.WHOLE_MECHANISM
-				? cm.effectMask() : placement.positionMask(plain.depositMask());
-		HintFit fit = fitHint(tally.bank, deposited, inState, board, bankResolution);
-		if (fit.problem() != null) {
-			tally.reject(fit.problem());
-			return plain;
-		}
-		// The hinted field in the mechanism's local coordinates; the rest of the outcome is the
-		// in-state echo the strategy already computed, and is kept as is.
-		BitField local = new BitField(fit.field().lsb() - placement.lsb(), fit.field().width());
-		int fieldMask = local.positionedMask();
-		List<MechanismState> recovered = new ArrayList<>();
-		if (plain.stop() == BankSwitchStrategy.ValueStop.RESOLVED) {
-			recovered.add(plain.value());
-		}
-		else if (unresolvedOurs(plain)) {
-			List<Arm> arms = armsFor(program, listing, instr, armCache);
-			List<MechanismState> perArm = arms == null ? null
-					: evaluateArms(program, listing, arms, env -> {
-						Probe along = probeSite(program, instr, inState, mechanisms, matchCache, env);
-						return along.outcome() == null ? null : along.outcome().value();
-					}, 1);
-			if (perArm != null) {
-				recovered.addAll(distinct(perArm));
-			}
-		}
-		List<String> differing = new ArrayList<>();
-		for (MechanismState r : recovered) {
-			MechanismState f = local.extract(r);
-			if (((f.bits() ^ tally.bank) & f.knownMask()) != 0) {
-				differing.add(renderRecovered(f.knownMask(), f.bits(), local.widthMask()));
-			}
-		}
-		tally.apply(differing);
-		MechanismState echo = plain.value();
-		return new BankSwitchStrategy.SwitchOutcome(new MechanismState(echo.knownMask() | fieldMask,
-			(echo.bits() & ~fieldMask) | local.place(tally.bank)),
-			BankSwitchStrategy.ValueStop.RESOLVED, null, false, plain.depositMask());
-	}
-
-	/**
-	 * Applies a {@code bank:} hint at a CALL to a recognized bank-switch helper (bead grm-hb6.20,
-	 * the owner's 2026-10-18 scope ruling): the hint REPLACES the call's argument-derived
-	 * {@link CallEffect} with a fully known deposit on the helper's single owned field. The
-	 * recovered effect (or, when the argument did not resolve, the per-arm effects) is noted if it
-	 * disagrees. An invalid or ambiguous (multi-field) hint returns {@code recovered} untouched.
-	 */
-	private static CallEffect applyCallHint(HintTally tally, CallEffect recovered,
-			HelperModel helper, BankState outState, BoardModel board,
-			HelperDiscovery.BankResolution bankResolution, Program program, Listing listing,
-			Instruction instr, Map<CallSiteRegKey, RegisterEnv> callSiteRegCache,
-			Map<Function, Integer> restoringTrampolines, StateOracle oracle,
-			StoredValueScanner.ProofMemo crossBlockProofMemo,
-			Map<Address, Optional<List<Arm>>> armCache, Set<Address> secondTierRelaySites) {
-		int owned = recovered.ownedMask();
-		HintFit fit = fitHint(tally.bank, owned, outState, board, bankResolution);
-		if (fit.problem() != null) {
-			tally.reject(owned == 0 ? "the call deposits nothing on a tracked bank field"
-					: fit.problem());
-			return recovered;
-		}
-		FieldSpec field = fit.field();
-		List<BankState> recoveredStates = new ArrayList<>();
-		if (recovered.argumentResolved()) {
-			recoveredStates.add(recovered.state());
-		}
-		else if (helper.constState() == null &&
-			!secondTierRelaySites.contains(instr.getMinAddress()) &&
-			!recovered.noInboundArgument() && recovered.restoredFrom() == null) {
-			List<Arm> arms = armsFor(program, listing, instr, armCache);
-			List<BankState> perArm = arms == null ? null
-					: evaluateArms(program, listing, arms, env -> {
-						CallEffect along = recoverCallArgument(program, instr, helper, outState,
-							callSiteRegCache, restoringTrampolines, env, oracle, crossBlockProofMemo);
-						return along.argumentResolved() ? along.state() : null;
-					}, 1);
-			if (perArm != null) {
-				recoveredStates.addAll(distinct(perArm));
-			}
-		}
-		List<String> differing = new ArrayList<>();
-		for (BankState r : recoveredStates) {
-			int known = r.knownMask() & owned;
-			int hinted = tally.bank << field.lsb();
-			if (((r.bits() ^ hinted) & known) != 0) {
-				differing.add(renderRecovered(known >>> field.lsb(), r.bits() >>> field.lsb(),
-					field.widthMask()));
-			}
-		}
-		tally.apply(differing);
-		return new CallEffect(new BankState(owned, tally.bank << field.lsb()), owned);
-	}
-
 	/** A strategy's answer for one address: which mechanism matched (null: none) and what it said. */
 	private record Probe(ConfiguredMechanism mechanism, BankSwitchStrategy.SwitchOutcome outcome) {}
 
@@ -1508,16 +1667,6 @@ final class BankDataflowEngine {
 	 * recently extended with -- the instruction a nested enumeration walks back from.
 	 */
 	private record Arm(Map<Address, Address> preds, Address tip) {}
-
-	/**
-	 * The arms of the control-flow join heading {@code instr}'s block, memoized per address;
-	 * {@code null} when the block is not headed by a forkable join (see {@link #joinArms}).
-	 */
-	private static List<Arm> armsFor(Program program, Listing listing, Instruction instr,
-			Map<Address, Optional<List<Arm>>> armCache) {
-		return armCache.computeIfAbsent(instr.getMinAddress(),
-			a -> Optional.ofNullable(joinArms(program, listing, instr, Map.of()))).orElse(null);
-	}
 
 	/**
 	 * Walks back from {@code from} along the path {@code base} describes to the instruction the
@@ -2167,59 +2316,6 @@ final class BankDataflowEngine {
 
 
 	/**
-	 * The fallback half of the seeding policy (bead grm-dos9.4): called when the worklist has run
-	 * dry, it seeds function entries the fixpoint never reached with the power-on state and
-	 * reports whether it enqueued anything, so the caller's loop resumes.
-	 * <p>
-	 * Only entries with NO calling instruction are seeded in a round -- a function some code
-	 * calls should get its state from that call, and its caller may simply be another unreached
-	 * function that this same round is about to seed. Seeding the callee as well would recreate
-	 * exactly the conflict this policy removes: a fully-known power-on seed merged against the
-	 * caller's state. When every unreached entry has a caller (a cycle, or callers that are
-	 * themselves dead code), the lowest-addressed one is seeded alone, which breaks the cycle
-	 * deterministically and guarantees progress: each round gives at least one unreached entry
-	 * a state, so the loop ends once every function entry has one -- the same coverage the old
-	 * "seed every function up front" policy had.
-	 * <p>
-	 * A "calling instruction" is any instruction with a flow reference to the entry, or whose
-	 * fall-through is the entry. Async entries are already seeded up front and never reach here.
-	 */
-	private static boolean seedUnreachedFunctions(Program program, Listing listing,
-			List<Address> functionEntries, BankState seedState,
-			Map<Address, LinkedHashMap<PathId, BankState>> stateIn, Set<Address> collapsedAddrs,
-			Deque<Address> worklist, BoardModel board, Map<String, int[]> clampCache,
-			ForkBudget budget, Map<Address, Set<Address>> stateDependents,
-			HelperDiscovery.BankResolution bankResolution) {
-		List<Address> unreached = new ArrayList<>();
-		for (Address entry : functionEntries) {
-			// An entry the seed maps elsewhere is filtered here, not dropped at the merge: a
-			// dropped root would leave stateIn without it, so it would be re-picked forever and
-			// starve the entries behind it.
-			if (!stateIn.containsKey(entry) && listing.getInstructionAt(entry) != null &&
-				!mapsElsewhere(program, entry, null, seedState, bankResolution)) {
-				unreached.add(entry);
-			}
-		}
-		if (unreached.isEmpty()) {
-			return false;
-		}
-		List<Address> roots = new ArrayList<>();
-		for (Address entry : unreached) {
-			if (!hasCallingInstruction(program, listing, entry)) {
-				roots.add(entry);
-			}
-		}
-		if (roots.isEmpty()) {
-			roots.add(unreached.get(0));
-		}
-		for (Address entry : roots) {
-			mergeAndEnqueue(entry, PathId.ROOT, seedState, stateIn, collapsedAddrs, worklist,
-				listing, board, clampCache, budget, stateDependents);
-		}
-		return !worklist.isEmpty();
-	}
-
-	/**
 	 * Whether {@code instr} can be a call site of a bank-switch helper: its flow is a call,
 	 * and not a COMPUTED jump that a flow override promoted to one (beads grm-htgl, grm-ktne).
 	 * <p>
@@ -2504,62 +2600,6 @@ final class BankDataflowEngine {
 		}
 		Instruction before = listing.getInstructionBefore(entry);
 		return before != null && entry.equals(before.getFallThrough());
-	}
-
-	/**
-	 * Folds {@code incoming} into the element for {@code pathId} at {@code addr} and enqueues
-	 * the address if anything changed (bead grm-wul generalizes the single-state version: same
-	 * field-wise merge per element, plus the live cap).
-	 * <p>
-	 * <b>The live cap.</b> If adding a new path id would leave more than
-	 * {@link #MAX_LIVE_FORKS_PER_BLOCK} elements at {@code addr}, every element there is merged
-	 * field-wise into ONE {@link PathId#ROOT} element and the address is marked collapsed --
-	 * permanently: every later arrival at a collapsed address merges into ROOT whatever path it
-	 * came on. That is exactly what the single-state engine would have held (the merge of all
-	 * incoming states), so a collapse can lose what forking gained but never invent anything, and
-	 * it happens at most once per address, which the termination argument relies on.
-	 */
-	private static void mergeAndEnqueue(Address addr, PathId pathId, BankState incoming,
-			Map<Address, LinkedHashMap<PathId, BankState>> stateIn, Set<Address> collapsedAddrs,
-			Deque<Address> worklist, Listing listing, BoardModel board,
-			Map<String, int[]> clampCache, ForkBudget budget,
-			Map<Address, Set<Address>> stateDependents) {
-		if (listing.getInstructionAt(addr) == null) {
-			// not (yet) disassembled / not code -- nothing to track here
-			return;
-		}
-		LinkedHashMap<PathId, BankState> elements =
-			stateIn.computeIfAbsent(addr, a -> new LinkedHashMap<>());
-		if (collapsedAddrs.contains(addr)) {
-			pathId = PathId.ROOT;
-		}
-		BankState existing = elements.get(pathId);
-		BankState merged = existing == null ? incoming : BankState.merge(existing, incoming);
-		merged = clampToResidence(addr, merged, board, clampCache);
-		boolean changed = existing == null || !merged.equals(existing);
-		if (!changed) {
-			return; // unchanged, already processed with this exact state -- nothing to do
-		}
-		elements.put(pathId, merged);
-		if (elements.size() > MAX_LIVE_FORKS_PER_BLOCK) {
-			BankState all = null;
-			for (BankState s : elements.values()) {
-				all = all == null ? s : BankState.merge(all, s);
-			}
-			budget.collapsed(addr, elements.size());
-			elements.clear();
-			elements.put(PathId.ROOT, all);
-			collapsedAddrs.add(addr);
-		}
-		budget.observeLive(addr, elements.size());
-		worklist.add(addr);
-		// The state at addr changed, so every helper call whose recovery consulted it through a
-		// StateOracle must be re-evaluated (grm-mej.3 increment 3) -- see stateDependents'
-		// declaration for why the fixpoint's own propagation does not cover this.
-		Set<Address> dependents = stateDependents.get(addr);
-		if (dependents != null) {
-			worklist.addAll(dependents);
-		}
 	}
 
 

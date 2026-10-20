@@ -171,15 +171,14 @@ public class ModeLockSerialShiftProgramTest extends AbstractProgramTest {
 	private BankDataflowEngine.DataflowResult run() throws Exception {
 		List<BankStrategyRegistry.ConfiguredMechanism> mechanisms = List.of(mmc1());
 		BankDataflowEngine.DataflowResult pass1 = BankDataflowEngine.runDataflow(program,
-			TaskMonitor.DUMMY, program.getListing(), mechanisms, board(), null, Map.of(), java.util.Set.of(),
-			BankStackBrackets.Claims.NONE, null, ShadowCommits.Plan.NONE);
+			TaskMonitor.DUMMY, program.getListing(),
+			BankDataflowEngine.DataflowInputs.of(mechanisms, board()));
 		Map<Function, HelperModel> helpers =
 			HelperDiscovery.findHelpers(program, pass1.switchResults());
 		assertFalse("the fixture must yield a helper, or the test proves nothing",
 			helpers.isEmpty());
 		return BankDataflowEngine.runDataflow(program, TaskMonitor.DUMMY, program.getListing(),
-			mechanisms, board(), helpers, Map.of(), java.util.Set.of(),
-			BankStackBrackets.Claims.NONE, null, ShadowCommits.Plan.NONE);
+			BankDataflowEngine.DataflowInputs.of(mechanisms, board()).withHelpers(helpers));
 	}
 
 	/** blmaster's case: the caller passes prg_mode 3, and the mode locks to 3. */
@@ -304,8 +303,8 @@ public class ModeLockSerialShiftProgramTest extends AbstractProgramTest {
 	private BankDataflowEngine.DataflowResult runWithWrappers() throws Exception {
 		List<BankStrategyRegistry.ConfiguredMechanism> mechanisms = List.of(mmc1());
 		BankDataflowEngine.DataflowResult pass1 = BankDataflowEngine.runDataflow(program,
-			TaskMonitor.DUMMY, program.getListing(), mechanisms, board(), null, Map.of(), java.util.Set.of(),
-			BankStackBrackets.Claims.NONE, null, ShadowCommits.Plan.NONE);
+			TaskMonitor.DUMMY, program.getListing(),
+			BankDataflowEngine.DataflowInputs.of(mechanisms, board()));
 		Map<Function, HelperModel> helpers = HelperDiscovery.findCallEdgeWrappers(program,
 			HelperDiscovery.findPassThroughWrappers(program,
 				HelperDiscovery.composeTailCalls(program,
@@ -313,8 +312,7 @@ public class ModeLockSerialShiftProgramTest extends AbstractProgramTest {
 				pass1.switchResults()),
 			pass1.switchResults());
 		return BankDataflowEngine.runDataflow(program, TaskMonitor.DUMMY, program.getListing(),
-			mechanisms, board(), helpers, Map.of(), java.util.Set.of(),
-			BankStackBrackets.Claims.NONE, null, ShadowCommits.Plan.NONE);
+			BankDataflowEngine.DataflowInputs.of(mechanisms, board()).withHelpers(helpers));
 	}
 
 	/** The JMP-closed entry is a call-edge wrapper, so its caller's bank is deposited. */
