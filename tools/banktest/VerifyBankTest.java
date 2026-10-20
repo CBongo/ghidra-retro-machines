@@ -82,14 +82,14 @@ public class VerifyBankTest extends GhidraScript {
 	private static final String CATEGORY_NES = "NesBankingAnalyzer";
 
 	// Program-info property a loader stamps with the image's per-game identity
-	// (DescriptorSupport.GAME_IDENTITY_PROPERTY -- package-private, so it is re-declared as a
+	// (DescriptorHints.GAME_IDENTITY_PROPERTY -- package-private, so it is re-declared as a
 	// literal here rather than referenced; this script links against only the public analyzer
 	// classes). Same convention as the "Retro Machine Map" literal in checkPet4032() and the
 	// literals at tools/banktest/RealRomDump.java:57-60.
 	private static final String GAME_IDENTITY_PROPERTY = "Retro Machines.Game Identity";
 
 	// Program-info property a loader stamps with the entry points reached asynchronously --
-	// the 6502 NMI/IRQ vector targets (DescriptorSupport.ASYNC_ENTRY_POINTS_PROPERTY, bead
+	// the 6502 NMI/IRQ vector targets (DescriptorHints.ASYNC_ENTRY_POINTS_PROPERTY, bead
 	// grm-913). Re-declared as a literal for the reason above.
 	private static final String ASYNC_ENTRY_POINTS_PROPERTY = "Retro Machines.Async Entry Points";
 

@@ -347,14 +347,7 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 		ByteProvider provider = settings.provider();
 		MessageLog log = settings.log();
 
-		// Optional user-supplied ROM images (bead grm-mbm), keyed by descriptor image name.
-		Map<String, String> romPaths = new HashMap<>();
-		for (RomSlot slot : romSlots()) {
-			String path = OptionUtils.getOption(slot.optionName(), settings.options(), "");
-			if (path != null && !path.isBlank()) {
-				romPaths.put(slot.target(), path.trim());
-			}
-		}
+		Map<String, String> romPaths = readRomPaths(settings);
 
 		// --- Load the descriptor JSON ---
 		JsonObject map;
@@ -426,65 +419,8 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 				}
 			}
 
-			// --- Banked windows: home occupant in base space, alternates in overlay spaces ---
-			JsonArray windows = map.has("windows") ? map.getAsJsonArray("windows") : new JsonArray();
-			JsonObject banking = map.getAsJsonObject("banking");
-			if (windows.isEmpty()) {
-				// A fixed-map machine such as the PET has no banked-window work.
-			}
-			else if (banking == null || !banking.has("initial_state") ||
-					!banking.has("states")) {
-				// grm-z15: skipping window setup is only honest when nothing needed it. If a
-				// PRG slice targets a banked-window occupant, that occupant would never get a
-				// placement space and persistPrgPlacement would abort deep in the pipeline
-				// with a confusing "No address space was created" error -- fail up front with
-				// a clear message naming the unsatisfiable placement instead.
-				List<String> stranded = windowOccupantSliceTargets(windows, slicesByTarget);
-				if (!stranded.isEmpty()) {
-					throw new IOException(getMapPath() + " banking section is incomplete (need " +
-						"initial_state and states), but the PRG needs a banked-window placement " +
-						"for " + String.join(", ", stranded) + "; cannot import");
-				}
-				log.appendMsg(getMapPath() + " banking section incomplete " +
-					"(need initial_state and states); skipping banked-window setup");
-			}
-			else {
-				int initialState = banking.get("initial_state").getAsInt();
-				JsonObject homeState = null;
-				for (JsonElement se : banking.getAsJsonArray("states")) {
-					JsonObject state = se.getAsJsonObject();
-					if (state.get("value").getAsInt() == initialState) {
-						homeState = state;
-						break;
-					}
-				}
-				if (homeState == null) {
-					log.appendMsg("banking.initial_state " + initialState +
-						" not found in banking.states; skipping window setup");
-				}
-
-				for (JsonElement we : windows) {
-					JsonObject window = we.getAsJsonObject();
-					String windowName = window.get("name").getAsString();
-					String homeOccupantName = homeState != null && homeState.has(windowName)
-							? homeState.get(windowName).getAsString()
-							: null;
-
-					List<DescriptorSupport.NamedCandidate> occupantCandidates = new ArrayList<>();
-					JsonArray occupants = window.getAsJsonArray("occupants");
-					FileDataTypeManager gdtMgrForCandidates = gdtMgr;
-					for (JsonElement oe : occupants) {
-						JsonObject occupant = oe.getAsJsonObject();
-						String occupantName = occupant.get("name").getAsString();
-						occupantCandidates.add(new DescriptorSupport.NamedCandidate(occupantName,
-							(p, bs, isHome, l) -> createWindowOccupant(p, bs, occupant, window,
-								isHome, gdtMgrForCandidates, romPaths,
-								slicesByTarget.get(occupantName), prgFileBytes, placementSpaces, l)));
-					}
-					DescriptorSupport.placeHomeInBaseWindow(program, baseSpace, occupantCandidates,
-						homeOccupantName, log);
-				}
-			}
+			realizeBankedWindows(program, baseSpace, map, gdtMgr, romPaths, slicesByTarget,
+				prgFileBytes, placementSpaces, log);
 
 			// Keep what was persisted: the entry-point resolution below used to call the
 			// one-arg resolvePrgAddress, which re-reads and re-parses PRG_SLICES out of
@@ -499,110 +435,14 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 			List<LoadedSlice> loadedSlices = persistPrgPlacement(program, loadAddr, prgLength,
 				wrapped, prgSlices, placementSpaces);
 			program.getOptions(Program.PROGRAM_INFO).setString(
-				DescriptorSupport.MAP_PATH_PROPERTY, getMapPath());
+				DescriptorHints.MAP_PATH_PROPERTY, getMapPath());
 			afterPrgPlacement(program, prgSlices, log);
 
-			// --- Descriptor symbol sets ---
-			JsonArray symbolSets = map.getAsJsonArray("symbols");
-			for (JsonElement se : symbolSets) {
-				JsonObject set = se.getAsJsonObject();
-				String setName = set.get("set").getAsString();
-				// Whether to apply this set is exactly the per-set checkbox value (grm-zlj) --
-				// NOT OR-ed with the descriptor default. The checkbox's own default was seeded
-				// (in getDefaultOptions) to the descriptor `default:`, so an unattended import
-				// applies precisely the descriptor defaults, while a user can turn any set on
-				// or off (including unchecking an on-by-default set). The isDefault fallback
-				// here only applies if the checkbox is absent, e.g. the map failed to load
-				// during getDefaultOptions.
-				boolean isDefault = set.has("default") && set.get("default").getAsBoolean();
-				boolean enabled = OptionUtils.getOption(symbolOptionName(setName),
-					settings.options(), Boolean.valueOf(isDefault));
-				// Record the decision (applied or not) so DescriptorAnnotationAnalyzer honours it
-				// on re-analysis: import options are not program state (grm-hb6.14).
-				DescriptorAnnotationAnalyzer.recordSymbolSetChoice(program, setName, enabled);
-				if (!enabled) {
-					continue;
-				}
-				DescriptorSupport.applySymbolSet(program, baseSpace, set,
-					(name, addr) -> markAsFunction(program, name, addr), log);
-			}
+			applySymbolSets(program, baseSpace, map, settings, log);
 
 			// --- Program entry point ---
-			// A BASIC-start PRG's bytes at the load address are the first BASIC line's
-			// link, not machine code -- marking a function there (the unconditional
-			// behavior prior to grm-odt.1) mislabels every such PRG. A CBM BASIC analyzer
-			// walks the tokenized line chain and, if it finds a SYS line, marks the real
-			// ML entry point instead; this loader's job is only to recognize the case (a
-			// structural sniff of the line-link chain -- see CbmBasicWalker.isBasicStart,
-			// which never compares loadAddr against a hardcoded address such as $0801)
-			// and stay out of the analyzer's way.
-			if (prgLength == 0) {
-				// grm-z15: a zero-payload PRG places no bytes anywhere, so planPrgSlices/
-				// resolvePrgAddress have nothing to resolve -- the old code fell through to
-				// the "No placed PRG slice contains load address" IOException below, caught
-				// and logged as an ugly "Failed to set entry point". The memory map was
-				// already fully built above; just label the load address in base space
-				// directly. Not attempting basicStart detection here: a zero-length payload
-				// is trivially not a BASIC program.
-				try {
-					Address entryAddr = baseSpace.getAddress(loadAddr);
-					program.getSymbolTable().createLabel(entryAddr, "entry", SourceType.IMPORTED);
-					program.getSymbolTable().addExternalEntryPoint(entryAddr);
-					MemoryBlock entryBlock = program.getMemory().getBlock(entryAddr);
-					if (entryBlock != null && entryBlock.isExecute()) {
-						markAsFunction(program, "entry", entryAddr);
-					}
-					log.appendMsg("zero-payload PRG: built the memory map; no program bytes to " +
-						"place (labelled the load address $" + Long.toHexString(loadAddr) + ")");
-				}
-				catch (Exception e) {
-					log.appendMsg("Failed to set entry point: " + e.getMessage());
-				}
-			}
-			else {
-				boolean basicStart = !wrapped && looksLikeBasicStart(provider, loadAddr, prgLength);
-				try {
-					Address entryAddr = resolvePrgAddress(program, loadAddr, loadedSlices);
-					if (entryAddr == null) {
-						throw new IOException("No placed PRG slice contains load address $" +
-							Long.toHexString(loadAddr));
-					}
-					program.getSymbolTable().createLabel(entryAddr,
-						entryAddr.getAddressSpace().equals(baseSpace) ? "entry" : "load_start",
-						SourceType.IMPORTED);
-					MemoryBlock entryBlock = program.getMemory().getBlock(entryAddr);
-					boolean executableEntry = entryBlock != null && entryBlock.isExecute();
-					// grm-z15: addExternalEntryPoint (SymbolTable) merely records the address in
-					// the entry-point set -- it has no executability requirement and makes no
-					// code assumption, so call it unconditionally (this restores the pre-rework
-					// behavior; a load address landing in a non-executable block, e.g. the
-					// P6510 io block at $0000, must not be silently dropped from the entry-point
-					// set). Only the function mark below stays gated on executability.
-					program.getSymbolTable().addExternalEntryPoint(entryAddr);
-					if (basicStart) {
-						log.appendMsg("PRG looks like a BASIC-start program (well-formed line-link " +
-							"chain at 0x" + Long.toHexString(loadAddr) + "); not marking a function " +
-							"there -- a CBM BASIC analyzer can locate the real ML entry from a SYS line");
-					}
-					else if (executableEntry) {
-						markAsFunction(program, "entry", entryAddr);
-					}
-					else {
-						log.appendMsg("PRG load start $" + Long.toHexString(loadAddr) +
-							" is in non-executable block " +
-							(entryBlock == null ? "<none>" : entryBlock.getName()) +
-							"; recorded an external entry point but did not mark a function there");
-					}
-					if (!entryAddr.getAddressSpace().equals(baseSpace)) {
-						log.appendMsg("PRG load start $" + Long.toHexString(loadAddr) + " is in " +
-							entryAddr.getAddressSpace().getName() +
-							" beneath the initial-state ROM/IO mapping; no duplicate base entry was created");
-					}
-				}
-				catch (Exception e) {
-					log.appendMsg("Failed to set entry point: " + e.getMessage());
-				}
-			}
+			labelEntryPoint(program, baseSpace, provider, loadAddr, prgLength, wrapped,
+				loadedSlices, log);
 
 			// Remember the ROM paths used (GUI only) so the next import defaults to them.
 			saveRomPreferences(settings);
@@ -610,6 +450,192 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 		finally {
 			if (gdtMgr != null) {
 				gdtMgr.close();
+			}
+		}
+	}
+
+	/** User-supplied ROM image paths (bead grm-mbm), keyed by descriptor image name. */
+	private Map<String, String> readRomPaths(ImporterSettings settings) throws IOException {
+		Map<String, String> romPaths = new HashMap<>();
+		for (RomSlot slot : romSlots()) {
+			String path = OptionUtils.getOption(slot.optionName(), settings.options(), "");
+			if (path != null && !path.isBlank()) {
+				romPaths.put(slot.target(), path.trim());
+			}
+		}
+		return romPaths;
+	}
+
+	/** Banked windows: home occupant in base space, alternates in overlay spaces. */
+	private void realizeBankedWindows(Program program, AddressSpace baseSpace, JsonObject map,
+			FileDataTypeManager gdtMgr, Map<String, String> romPaths,
+			Map<String, List<PrgSlice>> slicesByTarget, FileBytes prgFileBytes,
+			Map<String, AddressSpace> placementSpaces, MessageLog log) throws IOException {
+		JsonArray windows = map.has("windows") ? map.getAsJsonArray("windows") : new JsonArray();
+		JsonObject banking = map.getAsJsonObject("banking");
+		if (windows.isEmpty()) {
+			// A fixed-map machine such as the PET has no banked-window work.
+		}
+		else if (banking == null || !banking.has("initial_state") ||
+				!banking.has("states")) {
+			// grm-z15: skipping window setup is only honest when nothing needed it. If a
+			// PRG slice targets a banked-window occupant, that occupant would never get a
+			// placement space and persistPrgPlacement would abort deep in the pipeline
+			// with a confusing "No address space was created" error -- fail up front with
+			// a clear message naming the unsatisfiable placement instead.
+			List<String> stranded = windowOccupantSliceTargets(windows, slicesByTarget);
+			if (!stranded.isEmpty()) {
+				throw new IOException(getMapPath() + " banking section is incomplete (need " +
+					"initial_state and states), but the PRG needs a banked-window placement " +
+					"for " + String.join(", ", stranded) + "; cannot import");
+			}
+			log.appendMsg(getMapPath() + " banking section incomplete " +
+				"(need initial_state and states); skipping banked-window setup");
+		}
+		else {
+			int initialState = banking.get("initial_state").getAsInt();
+			JsonObject homeState = null;
+			for (JsonElement se : banking.getAsJsonArray("states")) {
+				JsonObject state = se.getAsJsonObject();
+				if (state.get("value").getAsInt() == initialState) {
+					homeState = state;
+					break;
+				}
+			}
+			if (homeState == null) {
+				log.appendMsg("banking.initial_state " + initialState +
+					" not found in banking.states; skipping window setup");
+			}
+
+			for (JsonElement we : windows) {
+				JsonObject window = we.getAsJsonObject();
+				String windowName = window.get("name").getAsString();
+				String homeOccupantName = homeState != null && homeState.has(windowName)
+						? homeState.get(windowName).getAsString()
+						: null;
+
+				List<WindowPlanner.NamedCandidate> occupantCandidates = new ArrayList<>();
+				JsonArray occupants = window.getAsJsonArray("occupants");
+				FileDataTypeManager gdtMgrForCandidates = gdtMgr;
+				for (JsonElement oe : occupants) {
+					JsonObject occupant = oe.getAsJsonObject();
+					String occupantName = occupant.get("name").getAsString();
+					occupantCandidates.add(new WindowPlanner.NamedCandidate(occupantName,
+						(p, bs, isHome, l) -> createWindowOccupant(p, bs, occupant, window,
+							isHome, gdtMgrForCandidates, romPaths,
+							slicesByTarget.get(occupantName), prgFileBytes, placementSpaces, l)));
+				}
+				WindowPlanner.placeHomeInBaseWindow(program, baseSpace, occupantCandidates,
+					homeOccupantName, log);
+			}
+		}
+	}
+
+	/** Applies the descriptor symbol sets the per-set import options (or defaults) enable. */
+	private void applySymbolSets(Program program, AddressSpace baseSpace, JsonObject map,
+			ImporterSettings settings, MessageLog log) {
+		JsonArray symbolSets = map.getAsJsonArray("symbols");
+		for (JsonElement se : symbolSets) {
+			JsonObject set = se.getAsJsonObject();
+			String setName = set.get("set").getAsString();
+			// Whether to apply this set is exactly the per-set checkbox value (grm-zlj) --
+			// NOT OR-ed with the descriptor default. The checkbox's own default was seeded
+			// (in getDefaultOptions) to the descriptor `default:`, so an unattended import
+			// applies precisely the descriptor defaults, while a user can turn any set on
+			// or off (including unchecking an on-by-default set). The isDefault fallback
+			// here only applies if the checkbox is absent, e.g. the map failed to load
+			// during getDefaultOptions.
+			boolean isDefault = set.has("default") && set.get("default").getAsBoolean();
+			boolean enabled = OptionUtils.getOption(symbolOptionName(setName),
+				settings.options(), Boolean.valueOf(isDefault));
+			// Record the decision (applied or not) so DescriptorAnnotationAnalyzer honours it
+			// on re-analysis: import options are not program state (grm-hb6.14).
+			DescriptorAnnotationAnalyzer.recordSymbolSetChoice(program, setName, enabled);
+			if (!enabled) {
+				continue;
+			}
+			DescriptorApply.applySymbolSet(program, baseSpace, set,
+				(name, addr) -> markAsFunction(program, name, addr), log);
+		}
+	}
+
+	/** Labels the program entry point (and marks a function there when it is honest to). */
+	private void labelEntryPoint(Program program, AddressSpace baseSpace, ByteProvider provider,
+			long loadAddr, long prgLength, boolean wrapped, List<LoadedSlice> loadedSlices,
+			MessageLog log) {
+		// A BASIC-start PRG's bytes at the load address are the first BASIC line's
+		// link, not machine code -- marking a function there (the unconditional
+		// behavior prior to grm-odt.1) mislabels every such PRG. A CBM BASIC analyzer
+		// walks the tokenized line chain and, if it finds a SYS line, marks the real
+		// ML entry point instead; this loader's job is only to recognize the case (a
+		// structural sniff of the line-link chain -- see CbmBasicWalker.isBasicStart,
+		// which never compares loadAddr against a hardcoded address such as $0801)
+		// and stay out of the analyzer's way.
+		if (prgLength == 0) {
+			// grm-z15: a zero-payload PRG places no bytes anywhere, so planPrgSlices/
+			// resolvePrgAddress have nothing to resolve -- the old code fell through to
+			// the "No placed PRG slice contains load address" IOException below, caught
+			// and logged as an ugly "Failed to set entry point". The memory map was
+			// already fully built above; just label the load address in base space
+			// directly. Not attempting basicStart detection here: a zero-length payload
+			// is trivially not a BASIC program.
+			try {
+				Address entryAddr = baseSpace.getAddress(loadAddr);
+				program.getSymbolTable().createLabel(entryAddr, "entry", SourceType.IMPORTED);
+				program.getSymbolTable().addExternalEntryPoint(entryAddr);
+				MemoryBlock entryBlock = program.getMemory().getBlock(entryAddr);
+				if (entryBlock != null && entryBlock.isExecute()) {
+					markAsFunction(program, "entry", entryAddr);
+				}
+				log.appendMsg("zero-payload PRG: built the memory map; no program bytes to " +
+					"place (labelled the load address $" + Long.toHexString(loadAddr) + ")");
+			}
+			catch (Exception e) {
+				log.appendMsg("Failed to set entry point: " + e.getMessage());
+			}
+		}
+		else {
+			boolean basicStart = !wrapped && looksLikeBasicStart(provider, loadAddr, prgLength);
+			try {
+				Address entryAddr = resolvePrgAddress(program, loadAddr, loadedSlices);
+				if (entryAddr == null) {
+					throw new IOException("No placed PRG slice contains load address $" +
+						Long.toHexString(loadAddr));
+				}
+				program.getSymbolTable().createLabel(entryAddr,
+					entryAddr.getAddressSpace().equals(baseSpace) ? "entry" : "load_start",
+					SourceType.IMPORTED);
+				MemoryBlock entryBlock = program.getMemory().getBlock(entryAddr);
+				boolean executableEntry = entryBlock != null && entryBlock.isExecute();
+				// grm-z15: addExternalEntryPoint (SymbolTable) merely records the address in
+				// the entry-point set -- it has no executability requirement and makes no
+				// code assumption, so call it unconditionally (this restores the pre-rework
+				// behavior; a load address landing in a non-executable block, e.g. the
+				// P6510 io block at $0000, must not be silently dropped from the entry-point
+				// set). Only the function mark below stays gated on executability.
+				program.getSymbolTable().addExternalEntryPoint(entryAddr);
+				if (basicStart) {
+					log.appendMsg("PRG looks like a BASIC-start program (well-formed line-link " +
+						"chain at 0x" + Long.toHexString(loadAddr) + "); not marking a function " +
+						"there -- a CBM BASIC analyzer can locate the real ML entry from a SYS line");
+				}
+				else if (executableEntry) {
+					markAsFunction(program, "entry", entryAddr);
+				}
+				else {
+					log.appendMsg("PRG load start $" + Long.toHexString(loadAddr) +
+						" is in non-executable block " +
+						(entryBlock == null ? "<none>" : entryBlock.getName()) +
+						"; recorded an external entry point but did not mark a function there");
+				}
+				if (!entryAddr.getAddressSpace().equals(baseSpace)) {
+					log.appendMsg("PRG load start $" + Long.toHexString(loadAddr) + " is in " +
+						entryAddr.getAddressSpace().getName() +
+						" beneath the initial-state ROM/IO mapping; no duplicate base entry was created");
+				}
+			}
+			catch (Exception e) {
+				log.appendMsg("Failed to set entry point: " + e.getMessage());
 			}
 		}
 	}
@@ -760,7 +786,7 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 				false, romPath, DescriptorMemory.perms(region, kind), log);
 			if (block != null) {
 				if (region.has("type") && gdtMgr != null) {
-					DescriptorSupport.applyStructType(program, baseSpace, gdtMgr, region,
+					DescriptorApply.applyStructType(program, baseSpace, gdtMgr, region,
 						getMapPath(), log);
 				}
 				return;
@@ -779,7 +805,7 @@ public abstract class AbstractCbmPrgLoader extends AbstractProgramWrapperLoader 
 			region.has("comment") ? region.get("comment").getAsString() : null, region, overlay,
 			fileBytes, slices, placementSpaces);
 		if (region.has("type") && gdtMgr != null) {
-			DescriptorSupport.applyStructType(program, targetSpace, gdtMgr, region, getMapPath(), log);
+			DescriptorApply.applyStructType(program, targetSpace, gdtMgr, region, getMapPath(), log);
 		}
 	}
 

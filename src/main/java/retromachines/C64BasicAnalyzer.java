@@ -170,7 +170,7 @@ public class C64BasicAnalyzer extends AbstractAnalyzer {
 	private static BasicConfig basicConfig(Program program) throws IOException {
 		String format = program.getExecutableFormat();
 		String mapPath = program.getOptions(Program.PROGRAM_INFO).getString(
-			DescriptorSupport.MAP_PATH_PROPERTY, "");
+			DescriptorHints.MAP_PATH_PROPERTY, "");
 		if (mapPath == null || mapPath.isBlank()) {
 			return C64PrgLoader.NAME.equals(format) ? legacyC64Config() : null;
 		}

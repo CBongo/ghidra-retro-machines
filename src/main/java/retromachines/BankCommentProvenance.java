@@ -77,7 +77,7 @@ import ghidra.util.exception.DuplicateNameException;
 final class BankCommentProvenance {
 
 	/**
-	 * The user-property-map name. Namespaced like {@link DescriptorSupport}'s program-info
+	 * The user-property-map name. Namespaced like {@link DescriptorHints}' program-info
 	 * properties so it cannot collide with another extension's map.
 	 */
 	static final String PROPERTY_MAP = "Retro Machines.Bank Comment";

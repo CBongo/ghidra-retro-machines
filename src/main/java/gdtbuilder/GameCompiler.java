@@ -58,7 +58,7 @@ import com.google.gson.GsonBuilder;
  * map, never packed against a bit layout.</b> A game descriptor deliberately does not
  * declare its own {@code banking.state} tuple -- the whole point of the tier (bead
  * {@code grm-hb6.12}) is that the game tier must not know the board's bit layout. Packing
- * happens at LOAD time, in {@code DescriptorSupport.applyGameInitialStateHint}, against the
+ * happens at LOAD time, in {@code BoardStateFields.applyGameInitialStateHint}, against the
  * matched board descriptor's own parsed {@code banking.state} field tuple -- the only place
  * both the field name and its width are known together.
  * <p>
@@ -660,7 +660,7 @@ public class GameCompiler {
 	 * NAMES the game never changes after initialization, so asynchronously reached entries
 	 * (NMI/IRQ) may be seeded with those fields known at their effective initial value. Names
 	 * only here -- whether each names a real field of the matched board is checked at import
-	 * (DescriptorSupport.resolveFixedAfterInitMask), where the board's bit layout is known.
+	 * (BoardStateFields.resolveFixedAfterInitMask), where the board's bit layout is known.
 	 */
 	@SuppressWarnings("unchecked")
 	private static List<String> buildFixedAfterInit(Object listObj) {

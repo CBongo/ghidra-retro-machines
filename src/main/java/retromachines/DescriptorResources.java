@@ -30,7 +30,7 @@ import ghidra.program.model.lang.LanguageNotFoundException;
 import ghidra.program.util.DefaultLanguageService;
 
 /**
- * Descriptor/archive resource loading, split out of {@link DescriptorSupport} (QR-12
+ * Descriptor/archive resource loading, split out of the former {@code DescriptorSupport} (QR-12
  * increment 5): bundled compiled descriptors and data-type archives, and the language-id
  * resolution that goes with them.
  */

@@ -30,7 +30,7 @@ import retromachines.BoardDescriptorModel.BoardModel;
 
 /**
  * Load-time resolution of an image-relative {@code banking.initial_state} (bead
- * {@code grm-y0ml}): {@link DescriptorSupport#resolveInitialState} and the analyzer side's
+ * {@code grm-y0ml}): {@link BoardStateFields#resolveInitialState} and the analyzer side's
  * preference for the loader's resolved value in {@link BoardModel#parse}.
  * <p>
  * Same tier as {@link BoardModelParseTest} -- Gson in, numbers out, with
@@ -61,7 +61,7 @@ public class InitialStateResolutionTest {
 	}
 
 	private static Long resolve(String text, long imageSize, MessageLog log) {
-		return DescriptorSupport.resolveInitialState(json(text), imageSize, log, "test.map");
+		return BoardStateFields.resolveInitialState(json(text), imageSize, log, "test.map");
 	}
 
 	@Test

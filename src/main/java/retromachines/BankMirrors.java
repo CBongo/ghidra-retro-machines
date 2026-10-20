@@ -1045,13 +1045,13 @@ public final class BankMirrors {
 	 * One bank's slice of one window, as bytes. The loader realizes exactly one bank of a
 	 * switchable window in BASE space (the home bank) and every other as a
 	 * {@code <window>_B<n>} overlay, so the space lookup falling back to the default space IS
-	 * the home-bank case -- see {@code DescriptorSupport.OverlayNaming}. Returns {@code null}
+	 * the home-bank case -- see {@code OverlayNaming}. Returns {@code null}
 	 * unless the whole {@code [start, start+length)} range is initialized memory.
 	 */
 	private static byte[] readWindowImage(Program program, String windowName, int bank, long start,
 			int length) {
 		AddressSpace space = program.getAddressFactory()
-				.getAddressSpace(DescriptorSupport.OverlayNaming.bankBlockName(windowName, bank));
+				.getAddressSpace(OverlayNaming.bankBlockName(windowName, bank));
 		if (space == null) {
 			space = program.getAddressFactory().getDefaultAddressSpace();
 		}

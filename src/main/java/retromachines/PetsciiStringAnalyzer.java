@@ -52,7 +52,7 @@ import retromachines.data.TerminatedPetsciiStringDataType;
  * runs automatically during auto-analysis.
  * <p>
  * <b>Gating:</b> only runs when the importing loader recorded a compiled descriptor
- * ({@link DescriptorSupport#MAP_PATH_PROPERTY}) whose {@code system.text} declares
+ * ({@link DescriptorHints#MAP_PATH_PROPERTY}) whose {@code system.text} declares
  * {@code encoding: petscii} AND carries a {@code string_search} subtree (its mere presence
  * is the opt-in -- a descriptor author who wants PETSCII string typing adds it; one who
  * doesn't, omits it). {@code system.text.variant} selects which datatype pair
@@ -125,7 +125,7 @@ public class PetsciiStringAnalyzer extends AbstractAnalyzer {
 	 *  {@code encoding: petscii} and a {@code string_search} subtree. */
 	private static TextConfig textConfig(Program program) throws IOException {
 		String mapPath = program.getOptions(Program.PROGRAM_INFO).getString(
-			DescriptorSupport.MAP_PATH_PROPERTY, "");
+			DescriptorHints.MAP_PATH_PROPERTY, "");
 		if (mapPath == null || mapPath.isBlank()) {
 			return null;
 		}

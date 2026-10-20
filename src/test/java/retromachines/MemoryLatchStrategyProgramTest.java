@@ -1265,7 +1265,7 @@ public class MemoryLatchStrategyProgramTest extends AbstractProgramTest {
 	/**
 	 * Lays a 4-bank UxROM image's overlay spaces: bank 0 is home (base space, no overlay of its
 	 * own), banks 1-3 each get a {@code PRG_LO_B<n>} overlay -- the naming contract
-	 * {@link DescriptorSupport.OverlayNaming} defines and the loader realizes. Bank 9's block is
+	 * {@link OverlayNaming} defines and the loader realizes. Bank 9's block is
 	 * pointedly absent, because "bank values beyond the image simply don't exist".
 	 */
 	private void layFourBankOverlays() {

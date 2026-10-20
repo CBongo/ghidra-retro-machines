@@ -91,7 +91,7 @@ public class BankMirrorDerivationProgramTest extends AbstractProgramTest {
 
 	/**
 	 * Lays {@code banks-1} non-home bank overlays over the switchable window, following the
-	 * {@code <window>_B<n>} naming contract {@link DescriptorSupport.OverlayNaming} defines and
+	 * {@code <window>_B<n>} naming contract {@link OverlayNaming} defines and
 	 * the loader realizes: bank 0 is home and lives in BASE space with no overlay of its own.
 	 */
 	private void layBankOverlays(int banks) {

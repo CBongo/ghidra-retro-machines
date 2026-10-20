@@ -50,7 +50,7 @@ import ghidra.app.util.importer.MessageLog;
  * <p>
  * Drives the SHIPPED descriptors (read straight off disk via the {@code grm.moduleDir} system
  * property the {@code test} task sets, so no {@code Application} bootstrap is needed) through
- * the real {@link DescriptorSupport#placeableBanks} and the real
+ * the real {@link WindowPlanner#placeableBanks} and the real
  * {@link NesRomLoader#placementError(Map, Map, String, long)} -- the same two calls the loader
  * makes on both its routes. Only descriptor loading is left out, so a green run here is the
  * GUI ({@code validateOptions}) and headless ({@code load}) verdicts both, which is exactly
@@ -73,7 +73,7 @@ public class NesPlacementValidationTest {
 
 	private static Map<String, NavigableSet<Integer>> banks(String descriptor, long prgSize)
 			throws IOException {
-		return DescriptorSupport.placeableBanks(map(descriptor), prgSize, new MessageLog(),
+		return WindowPlanner.placeableBanks(map(descriptor), prgSize, new MessageLog(),
 			descriptor);
 	}
 

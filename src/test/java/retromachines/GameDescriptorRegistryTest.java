@@ -78,7 +78,7 @@ public class GameDescriptorRegistryTest {
 	@Test
 	public void matchesOnPrgShaPrimary() {
 		GameDescriptor smb3 = descriptor("smb3", "nes_mmc3", PRG_A, FILE_A, "games/smb3.gmap");
-		DescriptorSupport.GameIdentity identity = new DescriptorSupport.GameIdentity(PRG_A, FILE_B);
+		GameIdentities.GameIdentity identity = new GameIdentities.GameIdentity(PRG_A, FILE_B);
 		GameDescriptor match =
 			GameDescriptorRegistry.resolve(List.of(smb3), identity, "nes_mmc3", new MessageLog());
 		assertEquals(smb3, match);
@@ -87,7 +87,7 @@ public class GameDescriptorRegistryTest {
 	@Test
 	public void matchesOnFileShaAliasWhenPrgDoesNotMatch() {
 		GameDescriptor smb3 = descriptor("smb3", "nes_mmc3", PRG_A, FILE_A, "games/smb3.gmap");
-		DescriptorSupport.GameIdentity identity = new DescriptorSupport.GameIdentity(PRG_B, FILE_A);
+		GameIdentities.GameIdentity identity = new GameIdentities.GameIdentity(PRG_B, FILE_A);
 		GameDescriptor match =
 			GameDescriptorRegistry.resolve(List.of(smb3), identity, "nes_mmc3", new MessageLog());
 		assertEquals(smb3, match);
@@ -102,7 +102,7 @@ public class GameDescriptorRegistryTest {
 			"games/prg-match.gmap");
 		GameDescriptor fileMatch = descriptor("file-match", "nes_mmc3", "b".repeat(64), FILE_A,
 			"games/file-match.gmap");
-		DescriptorSupport.GameIdentity identity = new DescriptorSupport.GameIdentity(PRG_A, FILE_A);
+		GameIdentities.GameIdentity identity = new GameIdentities.GameIdentity(PRG_A, FILE_A);
 		GameDescriptor match = GameDescriptorRegistry.resolve(List.of(fileMatch, prgMatch),
 			identity, "nes_mmc3", new MessageLog());
 		assertEquals(prgMatch, match);
@@ -111,7 +111,7 @@ public class GameDescriptorRegistryTest {
 	@Test
 	public void noMatchReturnsNull() {
 		GameDescriptor smb3 = descriptor("smb3", "nes_mmc3", PRG_A, FILE_A, "games/smb3.gmap");
-		DescriptorSupport.GameIdentity identity = new DescriptorSupport.GameIdentity(PRG_B, FILE_B);
+		GameIdentities.GameIdentity identity = new GameIdentities.GameIdentity(PRG_B, FILE_B);
 		assertNull(GameDescriptorRegistry.resolve(List.of(smb3), identity, "nes_mmc3",
 			new MessageLog()));
 	}
@@ -119,7 +119,7 @@ public class GameDescriptorRegistryTest {
 	@Test
 	public void boardMismatchIgnoresTheWholeFileAndLogs() {
 		GameDescriptor smb3 = descriptor("smb3", "nes_mmc1", PRG_A, FILE_A, "games/smb3.gmap");
-		DescriptorSupport.GameIdentity identity = new DescriptorSupport.GameIdentity(PRG_A, FILE_A);
+		GameIdentities.GameIdentity identity = new GameIdentities.GameIdentity(PRG_A, FILE_A);
 		MessageLog log = new MessageLog();
 		assertNull(GameDescriptorRegistry.resolve(List.of(smb3), identity, "nes_mmc3", log));
 		assertTrue(log.toString(), log.toString().contains("nes_mmc1"));
@@ -132,7 +132,7 @@ public class GameDescriptorRegistryTest {
 			"games/first.gmap");
 		GameDescriptor second = descriptor("second", "nes_mmc3", PRG_A, "d".repeat(64),
 			"games/second.gmap");
-		DescriptorSupport.GameIdentity identity = new DescriptorSupport.GameIdentity(PRG_A, FILE_A);
+		GameIdentities.GameIdentity identity = new GameIdentities.GameIdentity(PRG_A, FILE_A);
 		MessageLog log = new MessageLog();
 		assertNull(GameDescriptorRegistry.resolve(List.of(first, second), identity, "nes_mmc3",
 			log));
@@ -252,7 +252,7 @@ public class GameDescriptorRegistryTest {
 			GameDescriptorRegistry.scanOverlay(List.of(f), new MessageLog()).get(0);
 		GameDescriptor curated =
 			descriptor("smb3", "nes_mmc3", PRG_A, FILE_A, "games/smb3.gmap");
-		DescriptorSupport.GameIdentity identity = new DescriptorSupport.GameIdentity(PRG_A, FILE_A);
+		GameIdentities.GameIdentity identity = new GameIdentities.GameIdentity(PRG_A, FILE_A);
 		for (int i = 0; i < 2; i++) {
 			MessageLog log = new MessageLog();
 			GameDescriptor match = GameDescriptorRegistry.resolve(List.of(curated, overlay),
@@ -275,7 +275,7 @@ public class GameDescriptorRegistryTest {
 			GameDescriptorRegistry.scanOverlay(List.of(f), new MessageLog()).get(0);
 		GameDescriptor curated =
 			descriptor("smb3", "nes_mmc3", PRG_A, FILE_B, "games/smb3.gmap");
-		DescriptorSupport.GameIdentity identity = new DescriptorSupport.GameIdentity(PRG_A, FILE_A);
+		GameIdentities.GameIdentity identity = new GameIdentities.GameIdentity(PRG_A, FILE_A);
 		assertEquals(curated, GameDescriptorRegistry.resolve(List.of(curated, overlay), identity,
 			"nes_mmc3", new MessageLog()));
 	}
@@ -288,7 +288,7 @@ public class GameDescriptorRegistryTest {
 			GameDescriptorRegistry.scanOverlay(List.of(one, two), new MessageLog());
 		GameDescriptor curated =
 			descriptor("smb3", "nes_mmc3", PRG_A, "e".repeat(64), "games/smb3.gmap");
-		DescriptorSupport.GameIdentity identity = new DescriptorSupport.GameIdentity(PRG_A, "f".repeat(64));
+		GameIdentities.GameIdentity identity = new GameIdentities.GameIdentity(PRG_A, "f".repeat(64));
 		MessageLog log = new MessageLog();
 		List<GameDescriptor> all = new java.util.ArrayList<>(overlays);
 		all.add(curated);

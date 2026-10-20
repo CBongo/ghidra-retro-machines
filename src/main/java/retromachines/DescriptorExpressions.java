@@ -22,7 +22,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Computed-window {@code maps:} expression evaluation, split out of {@link DescriptorSupport}
+ * Computed-window {@code maps:} expression evaluation, split out of the former {@code DescriptorSupport}
  * (QR-12 increment 5): pure string -&gt; long arithmetic over the descriptor schema's expression
  * grammar (docs/MAP_FORMAT.md), with no Ghidra types on the stack at all.
  */

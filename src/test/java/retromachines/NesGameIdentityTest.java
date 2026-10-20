@@ -112,12 +112,12 @@ public class NesGameIdentityTest {
 		return out;
 	}
 
-	private static DescriptorSupport.GameIdentity identityOf(byte[] image) throws IOException {
+	private static GameIdentities.GameIdentity identityOf(byte[] image) throws IOException {
 		return NesRomLoader.gameIdentity(new ByteArrayProvider(image));
 	}
 
 	/**
-	 * An independent SHA-256 oracle: deliberately NOT {@code DescriptorSupport.sha256Hex}, so a
+	 * An independent SHA-256 oracle: deliberately NOT {@code GameIdentities.sha256Hex}, so a
 	 * bug in the production digest or its hex formatting cannot cancel itself out here.
 	 */
 	private static String sha256Hex(byte[] data) {
@@ -144,7 +144,7 @@ public class NesGameIdentityTest {
 		byte[] chr = filler(2048, 41);
 		byte[] image = ines(1, true, false, null, concat(prg, chr));
 
-		DescriptorSupport.GameIdentity id = identityOf(image);
+		GameIdentities.GameIdentity id = identityOf(image);
 		assertNotNull(id);
 		assertEquals(sha256Hex(prg), id.prgSha256());
 		assertEquals(sha256Hex(image), id.fileSha256());
@@ -159,8 +159,8 @@ public class NesGameIdentityTest {
 		byte[] clean = ines(1, false, false, null, prg);
 		byte[] scribbled = ines(1, false, false, new byte[] { 'u', 'd', 'e', '!' }, prg);
 
-		DescriptorSupport.GameIdentity cleanId = identityOf(clean);
-		DescriptorSupport.GameIdentity scribbledId = identityOf(scribbled);
+		GameIdentities.GameIdentity cleanId = identityOf(clean);
+		GameIdentities.GameIdentity scribbledId = identityOf(scribbled);
 		assertNotNull(cleanId);
 		assertNotNull(scribbledId);
 		assertEquals(cleanId.prgSha256(), scribbledId.prgSha256());
@@ -174,8 +174,8 @@ public class NesGameIdentityTest {
 		byte[] trained = ines(1, true, false, null, prg);
 		assertEquals(TRAINER_LEN, trained.length - plain.length);
 
-		DescriptorSupport.GameIdentity plainId = identityOf(plain);
-		DescriptorSupport.GameIdentity trainedId = identityOf(trained);
+		GameIdentities.GameIdentity plainId = identityOf(plain);
+		GameIdentities.GameIdentity trainedId = identityOf(trained);
 		assertNotNull(plainId);
 		assertNotNull(trainedId);
 		assertEquals(plainId.prgSha256(), trainedId.prgSha256());
@@ -191,8 +191,8 @@ public class NesGameIdentityTest {
 		byte[] nes2 = ines(2, false, true, null, prg);
 		assertEquals(0, nes2[9] & 0x0F);
 
-		DescriptorSupport.GameIdentity ines1Id = identityOf(ines1);
-		DescriptorSupport.GameIdentity nes2Id = identityOf(nes2);
+		GameIdentities.GameIdentity ines1Id = identityOf(ines1);
+		GameIdentities.GameIdentity nes2Id = identityOf(nes2);
 		assertNotNull(ines1Id);
 		assertNotNull(nes2Id);
 		assertEquals(sha256Hex(prg), ines1Id.prgSha256());
@@ -205,8 +205,8 @@ public class NesGameIdentityTest {
 		byte[] prgOnly = ines(1, false, false, null, prg);
 		byte[] withChr = ines(1, false, false, null, concat(prg, filler(8192, 17)));
 
-		DescriptorSupport.GameIdentity prgOnlyId = identityOf(prgOnly);
-		DescriptorSupport.GameIdentity withChrId = identityOf(withChr);
+		GameIdentities.GameIdentity prgOnlyId = identityOf(prgOnly);
+		GameIdentities.GameIdentity withChrId = identityOf(withChr);
 		assertNotNull(prgOnlyId);
 		assertNotNull(withChrId);
 		assertEquals(prgOnlyId.prgSha256(), withChrId.prgSha256());
@@ -220,8 +220,8 @@ public class NesGameIdentityTest {
 		byte[] patched = original.clone();
 		patched[INES_HEADER_LEN + 1234] ^= 0x01;
 
-		DescriptorSupport.GameIdentity originalId = identityOf(original);
-		DescriptorSupport.GameIdentity patchedId = identityOf(patched);
+		GameIdentities.GameIdentity originalId = identityOf(original);
+		GameIdentities.GameIdentity patchedId = identityOf(patched);
 		assertNotNull(originalId);
 		assertNotNull(patchedId);
 		assertNotEquals(originalId.prgSha256(), patchedId.prgSha256());
@@ -245,7 +245,7 @@ public class NesGameIdentityTest {
 		byte[] image = ines(0x34, false, true, null, concat(prg, chr));
 		image[9] = 0x0F;
 
-		DescriptorSupport.GameIdentity id = identityOf(image);
+		GameIdentities.GameIdentity id = identityOf(image);
 		assertNotNull(id);
 		assertEquals(sha256Hex(prg), id.prgSha256());
 		assertEquals(sha256Hex(image), id.fileSha256());

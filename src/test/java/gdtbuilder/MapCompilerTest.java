@@ -338,7 +338,7 @@ public class MapCompilerTest {
 
 	/** grm-p7i: {@code memory.layouts[].when} must name exactly one field, that field must be
 	 *  the same across every layout, no two layouts may declare the same when: value, and the
-	 *  value must be an integer -- the four rules {@code DescriptorSupport.planWindows}
+	 *  value must be an integer -- the four rules {@code WindowPlanner.planWindows}
 	 *  enforces at load time by silently discarding {@code memory.layouts[]} rather than
 	 *  failing. */
 	@Test

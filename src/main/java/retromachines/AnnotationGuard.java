@@ -34,9 +34,9 @@ import ghidra.util.exception.InvalidInputException;
  * {@code USER_DEFINED} symbol, comment or reference.</blockquote>
  *
  * <p>
- * This class is the one shared place both loaders ({@link DescriptorSupport}) and analyzers
+ * This class is the one shared place both loaders ({@link DescriptorApply}) and analyzers
  * ({@code BoardBankAnalyzer}) route through to honour that rule, so it lives outside
- * {@link DescriptorSupport} (which is descriptor-specific) rather than inside it.
+ * {@link DescriptorApply} (which is descriptor-specific) rather than inside it.
  *
  * <h2>Symbols and references: {@code SourceType} is load-bearing</h2>
  * Ghidra symbols and references carry a real {@link SourceType}, and a user-created label or

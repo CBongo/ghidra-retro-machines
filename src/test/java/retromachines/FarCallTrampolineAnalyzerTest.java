@@ -182,7 +182,7 @@ public class FarCallTrampolineAnalyzerTest extends AbstractBundledLanguageTest {
 		inTx(program, "describe import", () -> {
 			program.setExecutableFormat(NesRomLoader.NAME);
 			program.getOptions(Program.PROGRAM_INFO)
-					.setString(DescriptorSupport.MAP_PATH_PROPERTY, "machines/nes-axrom.map");
+					.setString(DescriptorHints.MAP_PATH_PROPERTY, "machines/nes-axrom.map");
 		});
 		return program;
 	}

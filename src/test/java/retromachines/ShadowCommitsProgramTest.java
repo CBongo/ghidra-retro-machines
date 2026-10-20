@@ -124,9 +124,9 @@ public class ShadowCommitsProgramTest extends AbstractProgramTest {
 	private void publish(String entriesJson) {
 		JsonObject doc = JsonParser.parseString(
 			"{\"banking\": {\"shadow_commits\": " + entriesJson + "}}").getAsJsonObject();
-		String published = DescriptorSupport.formatShadowCommits(doc, DESCRIPTOR);
+		String published = DescriptorHints.formatShadowCommits(doc, DESCRIPTOR);
 		inTx(program, "publish shadow_commits", () -> program.getOptions(Program.PROGRAM_INFO)
-				.setString(DescriptorSupport.SHADOW_COMMITS_PROPERTY, published));
+				.setString(DescriptorHints.SHADOW_COMMITS_PROPERTY, published));
 	}
 
 	private void hint(String field, long cell) {

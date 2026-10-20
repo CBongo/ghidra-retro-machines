@@ -127,12 +127,12 @@ public final class GameDescriptorExporter {
 
 	/** The program's recorded identity as {prg, file}, or null if it has none. */
 	public static String[] identityOf(Program program) {
-		String spec = DescriptorSupport.programInfoString(program,
-			DescriptorSupport.GAME_IDENTITY_PROPERTY);
+		String spec = DescriptorHints.programInfoString(program,
+			DescriptorHints.GAME_IDENTITY_PROPERTY);
 		if (spec == null) {
 			return null;
 		}
-		DescriptorSupport.GameIdentity id = DescriptorSupport.parseGameIdentity(spec);
+		GameIdentities.GameIdentity id = GameIdentities.parseGameIdentity(spec);
 		return id == null ? null : new String[] { id.prgSha256(), id.fileSha256() };
 	}
 
@@ -147,7 +147,7 @@ public final class GameDescriptorExporter {
 			String note) {
 		String[] identity = identityOf(program);
 		String mapPath =
-			DescriptorSupport.programInfoString(program, DescriptorSupport.MAP_PATH_PROPERTY);
+			DescriptorHints.programInfoString(program, DescriptorHints.MAP_PATH_PROPERTY);
 		String boardId = null;
 		for (NesBoardRegistry.Board board : NesBoardRegistry.boards()) {
 			if (board.mapPath().equals(mapPath)) {
@@ -158,7 +158,7 @@ public final class GameDescriptorExporter {
 		if (identity != null && boardId != null) {
 			var match = GameDescriptorRegistry.resolve(
 				GameDescriptorRegistry.scan(new ghidra.app.util.importer.MessageLog()),
-				new DescriptorSupport.GameIdentity(identity[0], identity[1]), boardId,
+				new GameIdentities.GameIdentity(identity[0], identity[1]), boardId,
 				new ghidra.app.util.importer.MessageLog());
 			if (match != null && match.doc().has("banking") &&
 				match.doc().getAsJsonObject("banking").has("initial_state")) {
@@ -386,7 +386,7 @@ public final class GameDescriptorExporter {
 	private static List<Map<String, Object>> verbatimBankingList(Program program,
 			List<String> skipped, BankingHintKind kind) {
 		List<Map<String, Object>> out = new ArrayList<>();
-		String spec = DescriptorSupport.programInfoString(program, kind.property);
+		String spec = DescriptorHints.programInfoString(program, kind.property);
 		if (spec == null || spec.isBlank()) {
 			return out;
 		}

@@ -136,7 +136,7 @@ final class SwitchSiteHints {
 		if (site.block() == null) {
 			return program.getAddressFactory().getDefaultAddressSpace().getAddress(site.addr());
 		}
-		return DescriptorSupport.blockAddress(program, site.block(), site.addr());
+		return DescriptorApply.blockAddress(program, site.block(), site.addr());
 	}
 
 	/**

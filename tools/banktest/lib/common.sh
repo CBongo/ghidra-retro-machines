@@ -681,7 +681,7 @@ ext_identity() {
 	# .map files reference types by NAME while the .gdt holds the DEFINITIONS, so renaming a
 	# struct FIELD in machines/*.yaml leaves the .map byte-identical (measured) and moves no
 	# jar either. Without the sources manifest, such an edit would be invisible to this whole
-	# key while DescriptorSupport.applyStructType really does apply those structs to memory.
+	# key while DescriptorApply.applyStructType really does apply those structs to memory.
 	# The manifest is a deterministic sha256-per-source-file listing of machines/**, so it
 	# catches exactly what the .gdt would have, and nothing that varies build to build.
 	loose="$(find "$base" -type f -path '*/Extensions/*' ! -name '*.jar' ! -name '*.gdt' 2>/dev/null | LC_ALL=C sort)"

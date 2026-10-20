@@ -71,7 +71,7 @@ import ghidra.util.exception.CancelledException;
  * layout: the initial-state bank in base space, every other bank as an overlay block
  * {@code <window>_B<bank>} for {@link NesBankingAnalyzer} to retarget references into.
  * Mode-dependent window sets ({@code memory.layouts[]}, e.g. MMC3's prg_mode) are
- * normalized through {@link DescriptorSupport#planWindows} and realized the same way
+ * normalized through {@link WindowPlanner#planWindows} and realized the same way
  * per layout, with non-home layouts' instances as mode-qualified overlays
  * ({@code <window>_M<mode>} / {@code <window>_M<mode>_B<bank>}).
  */
@@ -87,7 +87,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 	 * User bank-placement override: space-separated {@code window:bank} pairs (e.g.
 	 * {@code "W8000:5"}) pinning a mode-varying switchable window to hold PRG bank N where
 	 * dataflow could not recover it. Persisted verbatim into
-	 * {@link DescriptorSupport#PLACEMENT_OVERRIDE_PROPERTY}; {@link NesBankingAnalyzer}
+	 * {@link DescriptorHints#PLACEMENT_OVERRIDE_PROPERTY}; {@link NesBankingAnalyzer}
 	 * re-parses and applies it. Headless arg: {@code -loader-placement W8000:5} (colon
 	 * separator, not '=': cmd.exe's analyzeHeadless.bat splits arg values on '=').
 	 */
@@ -141,7 +141,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 	 * descriptor's compiled {@code banking.initial_state} constant (bead {@code grm-3fvj}).
 	 * <p>
 	 * <b>The bug this exists to fix.</b> A mode-switching board's HOME layout -- the one whose
-	 * windows become the base (non-overlay) blocks, per {@code DescriptorSupport.planWindows} --
+	 * windows become the base (non-overlay) blocks, per {@code WindowPlanner.planWindows} --
 	 * is chosen from that constant. On MMC3 the constant is {@code prg_mode: 0}, which is the
 	 * conventional power-on guess and is NOT wrong as a guess: real MMC3 power-on register
 	 * contents are undefined. But a cartridge that runs mode 1 then gets every base block at
@@ -166,7 +166,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 	 * literal rather than pick a winner.
 	 * <p>
 	 * <b>Ordering.</b> The caller applies this BEFORE
-	 * {@code DescriptorSupport.applyGameInitialStateHint}, so a curated per-game value (bead
+	 * {@code BoardStateFields.applyGameInitialStateHint}, so a curated per-game value (bead
 	 * grm-hb6.12) always overrides this inference. That is deliberate and is the safe direction:
 	 * a hint was checked by a human against the actual cartridge, whereas this is a heuristic over
 	 * bytes. smb3 currently carries such a hint AND would resolve the same way here, so the two
@@ -201,7 +201,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 		}
 		String modeName = params.get("mode_field").getAsString();
 		BoardDescriptorModel.FieldSpec field =
-			DescriptorSupport.findField(DescriptorSupport.parseStateFields(map), modeName);
+			BoardStateFields.findField(BoardStateFields.parseStateFields(map), modeName);
 		if (field == null) {
 			log.appendMsg(mapPath + ": a mechanism names mode_field '" + modeName +
 				"', which is not a banking.state field; keeping the compiled initial_state");
@@ -243,7 +243,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 	 * Packs {@code mode} into {@code initialState}'s mode field. Separated from
 	 * {@link #scanImageMode} because the VERDICT and the PACKING have different consumers: the
 	 * packed state sets the home layout, while the verdict itself also answers "is this board's
-	 * mode KNOWN for this image", which {@code DescriptorSupport.planWindows} needs to decide
+	 * mode KNOWN for this image", which {@code WindowPlanner.planWindows} needs to decide
 	 * whether the other modes' overlay blocks may be suppressed (bead grm-ic5). Those are
 	 * genuinely different questions -- rcransom and megaman3 resolve mode 0, which EQUALS the
 	 * descriptor's compiled default, so the packed state does not change while the mode is
@@ -263,8 +263,8 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 				break;
 			}
 		}
-		BoardDescriptorModel.FieldSpec field = DescriptorSupport.findField(
-			DescriptorSupport.parseStateFields(map), params.get("mode_field").getAsString());
+		BoardDescriptorModel.FieldSpec field = BoardStateFields.findField(
+			BoardStateFields.parseStateFields(map), params.get("mode_field").getAsString());
 		return field.pos().deposit(initialState, mode);
 	}
 
@@ -395,7 +395,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 	 * other.
 	 * Package-private so a pure-JUnit test can drive it over synthetic images.
 	 */
-	static DescriptorSupport.GameIdentity gameIdentity(ByteProvider provider) throws IOException {
+	static GameIdentities.GameIdentity gameIdentity(ByteProvider provider) throws IOException {
 		InesHeader header = InesHeader.parse(provider);
 		if (header == null || header.prgSize() == 0) {
 			return null;
@@ -407,13 +407,13 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 		}
 		String prgSha;
 		try (InputStream in = provider.getInputStream(prgOffset)) {
-			prgSha = DescriptorSupport.sha256Hex(in, prgLength);
+			prgSha = GameIdentities.sha256Hex(in, prgLength);
 		}
 		String fileSha;
 		try (InputStream in = provider.getInputStream(0)) {
-			fileSha = DescriptorSupport.sha256Hex(in, -1);
+			fileSha = GameIdentities.sha256Hex(in, -1);
 		}
-		return new DescriptorSupport.GameIdentity(prgSha, fileSha);
+		return new GameIdentities.GameIdentity(prgSha, fileSha);
 	}
 
 	/** The executable-format name stamped on imports; gated on by {@link NesBankingAnalyzer}. */
@@ -534,7 +534,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 		if (placement != null && !placement.isBlank()) {
 			Map<String, Integer> pairs;
 			try {
-				pairs = DescriptorSupport.parsePlacementOverride(placement);
+				pairs = DescriptorHints.parsePlacementOverride(placement);
 			}
 			catch (IllegalArgumentException e) {
 				return PLACEMENT_OPTION_NAME + ": " + e.getMessage();
@@ -571,7 +571,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 	 * routes accept exactly the same overrides.
 	 * <p>
 	 * The legal bank set is per window, computed by
-	 * {@link DescriptorSupport#placeableBanks} from that window's own expression and length
+	 * {@link WindowPlanner#placeableBanks} from that window's own expression and length
 	 * against the PRG byte size -- <em>not</em> from the iNES header's 16 KiB bank count,
 	 * which is a container unit unrelated to what a given window's bank field selects
 	 * (bead grm-n5f: a 32 KiB MMC3 image has four placeable 8 KiB banks but a header bank
@@ -583,7 +583,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 	private static String placementError(Map<String, Integer> pairs, NesBoardRegistry.Board board,
 			InesHeader header) throws IOException {
 		JsonObject map = DescriptorResources.loadMap(board.mapPath());
-		Map<String, NavigableSet<Integer>> placeable = DescriptorSupport.placeableBanks(map,
+		Map<String, NavigableSet<Integer>> placeable = WindowPlanner.placeableBanks(map,
 			header.prgSize(), new MessageLog(), board.mapPath());
 		return placementError(pairs, placeable, board.id(), header.prgSize());
 	}
@@ -650,41 +650,11 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 			return;
 		}
 
-		// The header's declared PRG size is trusted throughout (window placement, the
-		// $FFFA-$FFFF vector read); a body shorter than declared would place windows over
-		// bytes past EOF, and the unguarded vector read would then throw IOException out of
-		// load() -- an exception dialog instead of a diagnosable message. Reject up front.
-		long declaredEnd = header.prgFileOffset() + header.prgSize();
-		if (declaredEnd > provider.length()) {
-			log.appendMsg("Truncated iNES image: header declares PRG through file offset " +
-				declaredEnd + " but the file is only " + provider.length() +
-				" bytes; refusing to load a truncated ROM");
+		if (!prgImageIsComplete(provider, header, log)) {
 			return;
 		}
 
-		// Per-game identity (bead grm-hb6.1, docs/per-game-descriptors-design.md section 2): a
-		// fact about the FILE, so it is derived here -- after the truncation guard above proves
-		// the PRG slice readable, and before any board policy runs, since identity neither
-		// depends on which board won nor may be lost to the no-board return below. It is
-		// recorded even when nothing consumes it: the logged value is the key a user pastes
-		// into an overlay descriptor.
-		DescriptorSupport.GameIdentity identity = gameIdentity(provider);
-		if (identity != null) {
-			program.getOptions(Program.PROGRAM_INFO)
-					.setString(DescriptorSupport.GAME_IDENTITY_PROPERTY,
-						identity.toPropertyValue());
-			log.appendMsg("game identity " + identity.toPropertyValue());
-		}
-		else {
-			log.appendMsg("iNES header declares no usable PRG slice; skipping game identity");
-		}
-
-		// iNES mapper number (bead grm-3ppn): a fact about the file, so recorded unconditionally
-		// -- before board resolution, and even when no board matches below -- the same discipline
-		// GAME_IDENTITY_PROPERTY above follows. Owner's motivation: board names are not memorable
-		// the way mapper numbers are.
-		program.getOptions(Program.PROGRAM_INFO)
-				.setString(DescriptorSupport.INES_MAPPER_PROPERTY, mapperPropertyValue(header));
+		GameIdentities.GameIdentity identity = recordFileFacts(program, provider, header, log);
 
 		String boardId = OptionUtils.getOption(BOARD_OPTION_NAME, settings.options(), "");
 		NesBoardRegistry.Board board = boardId.isEmpty() ? NesBoardRegistry.forMapper(header.mapper())
@@ -698,73 +668,18 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 			board.name() + "); PRG " + (header.prgSize() / 1024) + "K, CHR " +
 			(header.chrSize() / 1024) + "K" + (header.trainer() ? ", trainer" : ""));
 
-		// record the chosen board so the bank analyzer interprets with the same descriptor
-		program.getOptions(Program.PROGRAM_INFO)
-				.setString(DescriptorSupport.MAP_PATH_PROPERTY, board.mapPath());
-		// Human board name (bead grm-3ppn), the "which board, in words" counterpart to
-		// INES_MAPPER_PROPERTY above -- board .map `name` fields already read "NES MMC3 (iNES
-		// mapper 4)"-style, so this is just publishing what the board resolved to.
-		program.getOptions(Program.PROGRAM_INFO)
-				.setString(DescriptorSupport.BOARD_NAME_PROPERTY, board.name());
+		recordBoardFacts(program, board);
 
 		// Optional per-game .tbl text table (bead grm-pqk): store the raw text so the
 		// TblStringAnalyzer can decode strings and re-analysis never needs the file. Like
 		// validateOptions above, a bad table is only logged -- it never blocks the import.
 		TblTableSupport.apply(program, settings.options(), TBL_PREF_KEY, log);
 
-		// Curated per-game descriptor resolution (bead grm-hb6.12, first increment): resolve
-		// against the identity computed above -- prg_sha256 primary, file_sha256 alias -- and
-		// cross-check the resolved board (docs/per-game-descriptors-design.md section 3.2).
-		// No static memoization: GameDescriptorRegistry.scan() re-scans every import (see its
-		// class javadoc). Absent when nothing matched; that is the common case today, since
-		// the curated set starts with one title.
-		GameDescriptorRegistry.GameDescriptor gameDescriptor = null;
-		if (identity != null) {
-			List<GameDescriptorRegistry.GameDescriptor> candidates =
-				GameDescriptorRegistry.scan(log);
-			gameDescriptor = GameDescriptorRegistry.resolve(candidates, identity, board.id(), log);
-			if (gameDescriptor != null) {
-				program.getOptions(Program.PROGRAM_INFO).setString(
-					DescriptorSupport.GAME_DESCRIPTOR_PROPERTY, gameDescriptor.gmapPath());
-				log.appendMsg(
-					"game descriptor resolved: " + gameDescriptor.gmapPath() + " ('" +
-						gameDescriptor.id() + "')");
-				// banking.* hint lists (grm-mej.7 bank_identifying_offsets, grm-hb6.4
-				// switch_sites, grm-mej.9 save_cells, grm-mej.10 bank_stacks/paired_fields,
-				// grm-hb6.26 shadow_commits): published for the analyzer, which verifies each
-				// against the ROM before it may license anything.
-				for (BankingHintKind kind : BankingHintKind.values()) {
-					String hints = kind.format(gameDescriptor.doc(), gameDescriptor.gmapPath());
-					if (hints != null) {
-						program.getOptions(Program.PROGRAM_INFO).setString(kind.property, hints);
-					}
-				}
-			}
-		}
+		GameDescriptorRegistry.GameDescriptor gameDescriptor =
+			resolveGameDescriptor(program, identity, board, log);
 
-		// record a user placement override for the analyzer to apply to unresolved bank
-		// placements. validateOptions already vetted this in the GUI, but the headless
-		// ProgramLoader path never calls validateOptions (Ghidra 12.x), so re-check here and
-		// refuse a malformed/inapplicable override rather than persisting a misleading one.
-		String placement = OptionUtils.getOption(PLACEMENT_OPTION_NAME, settings.options(), "");
-		if (placement != null && !placement.isBlank()) {
-			Map<String, Integer> pairs;
-			try {
-				pairs = DescriptorSupport.parsePlacementOverride(placement);
-			}
-			catch (IllegalArgumentException e) {
-				log.appendMsg(PLACEMENT_OPTION_NAME + ": " + e.getMessage() +
-					" -- refusing to import with an invalid placement override");
-				return;
-			}
-			String err = placementError(pairs, board, header);
-			if (err != null) {
-				log.appendMsg(err + " -- refusing to import with an invalid placement override");
-				return;
-			}
-			program.getOptions(Program.PROGRAM_INFO)
-					.setString(DescriptorSupport.PLACEMENT_OVERRIDE_PROPERTY, placement.trim());
-			log.appendMsg("placement override: " + placement.trim());
+		if (!recordPlacementOverride(program, settings, board, header, log)) {
+			return;
 		}
 
 		JsonObject map = DescriptorResources.loadMap(board.mapPath());
@@ -808,84 +723,11 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 			// every other in-range bank value gets an overlay block <name>_B<value> that
 			// the bank analyzer retargets references into.
 			List<PlacedWindow> placed = new ArrayList<>();
-			List<BoardDescriptorModel.FieldSpec> fields = DescriptorSupport.parseStateFields(map);
-			// Image-relative seeds (banking.initial_state_expr, bead grm-y0ml) resolve HERE:
-			// the PRG size is a load-time fact, so the .map keeps the expression symbolic and
-			// this is the first place it can be evaluated. Published below for the analyzer,
-			// which has no image size of its own.
-			Long initialState =
-				DescriptorSupport.resolveInitialState(map, header.prgSize(), log, board.mapPath());
-			// Curated game-descriptor initial_state hint (bead grm-hb6.12), folded in AFTER
-			// initial_state_expr per docs/per-game-descriptors-design.md's ruling -- see
-			// DescriptorSupport.applyGameInitialStateHint's javadoc for the failure discipline.
-			// Image-resolved MODE field (bead grm-3fvj), folded in BEFORE the curated hint so a
-			// hand-checked per-game value always wins over this inference -- see
-			// scanImageMode's javadoc for why that ordering is the safe one.
-			//
-			// liveMode is kept separately from initialState and means something STRONGER than
-			// "the mode field's value": it means the mode is KNOWN for this image rather than
-			// assumed from the descriptor's power-on constant. Only a known mode licenses
-			// suppressing the other modes' overlay blocks (bead grm-ic5's ruling), and the two
-			// are not the same test -- rcransom and megaman3 resolve mode 0, which equals the
-			// compiled default, so initialState does not move while the mode IS known. It stays
-			// null when the scan declines (too few sites, or a split vote) and no curated hint
-			// states the mode (grm-ic5.1, below), which is exactly that ruling's "indeterminate"
-			// branch and keeps every mode's blocks.
-			Integer liveMode =
-				scanImageMode(map, readPrgImage(provider, header, log), log, board.mapPath());
-			if (liveMode != null) {
-				initialState = applyMode(map, initialState, liveMode, log, board.mapPath());
-			}
-			// A curated hint naming the layout mode field is a KNOWN mode too (bead grm-ic5.1):
-			// a human recorded it against the cartridge. It wins over the scan, the same
-			// ordering as for initialState just above.
-			if (gameDescriptor != null) {
-				Integer hintedMode = DescriptorSupport.gameHintedLayoutMode(map, initialState,
-					gameDescriptor.doc());
-				initialState = DescriptorSupport.applyGameInitialStateHint(map, initialState,
-					gameDescriptor.doc(), gameDescriptor.gmapPath(), log);
-				if (hintedMode != null) {
-					if (liveMode != null && !liveMode.equals(hintedMode)) {
-						log.appendMsg(gameDescriptor.gmapPath() + ": layout mode " + hintedMode +
-							" overrides the image-resolved mode " + liveMode);
-					}
-					liveMode = hintedMode;
-					log.appendMsg("layout mode " + liveMode + " stated by " +
-						gameDescriptor.gmapPath() +
-						"; it licenses suppressing the other modes' overlay blocks");
-				}
-			}
-			if (initialState != null &&
-				!initialState.equals(DescriptorSupport.initialState(map))) {
-				program.getOptions(Program.PROGRAM_INFO).setString(
-					DescriptorSupport.INITIAL_STATE_PROPERTY, Long.toString(initialState));
-				log.appendMsg("banking.initial_state resolved to " + initialState +
-					" against the " + header.prgSize() + "-byte PRG image");
-			}
-			// bead grm-mej.12: banking.fixed_after_init -> a mask the analyzer seeds async
-			// entries with (the hint's fields are known at their initial value there).
-			if (gameDescriptor != null) {
-				long fixedMask = DescriptorSupport.resolveFixedAfterInitMask(map,
-					gameDescriptor.doc(), gameDescriptor.gmapPath(), log);
-				if (fixedMask != 0) {
-					program.getOptions(Program.PROGRAM_INFO).setString(
-						DescriptorSupport.FIXED_AFTER_INIT_MASK_PROPERTY,
-						Long.toString(fixedMask));
-					log.appendMsg(gameDescriptor.gmapPath() + ": banking.fixed_after_init " +
-						"resolves to state mask " + fixedMask);
-				}
-			}
-			DescriptorSupport.LayoutPlan plan =
-				DescriptorSupport.planWindows(map, log, board.mapPath(), liveMode);
-
-			for (DescriptorSupport.PlannedWindow pw : plan.invariant()) {
-				realizeInvariantWindow(program, baseSpace, pw, fields, initialState, header,
-					fileBytes, board.mapPath(), placed, log);
-			}
-			if (plan.modeField() != null && !plan.varying().isEmpty()) {
-				realizeVaryingWindows(program, baseSpace, plan, fields, initialState, header,
-					fileBytes, board.mapPath(), placed, log);
-			}
+			EffectiveState eff = resolveEffectiveInitialState(program, provider, header, map,
+				board, gameDescriptor, log);
+			recordFixedAfterInit(program, map, gameDescriptor, log);
+			realizeWindows(program, baseSpace, map, eff.liveMode(), eff.initialState(), header,
+				fileBytes, board.mapPath(), placed, log);
 
 			if (header.chrSize() > 0) {
 				log.appendMsg("CHR ROM (" + (header.chrSize() / 1024) +
@@ -893,16 +735,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 			}
 
 			// --- Default-on symbol sets (MMIO labels, vector slot labels) ---
-			for (JsonElement se : map.getAsJsonArray("symbols")) {
-				JsonObject set = se.getAsJsonObject();
-				boolean enabled = set.has("default") && set.get("default").getAsBoolean();
-				DescriptorAnnotationAnalyzer.recordSymbolSetChoice(program,
-					set.get("set").getAsString(), enabled);
-				if (enabled) {
-					DescriptorSupport.applySymbolSet(program, baseSpace, set,
-						(name, addr) -> markAsFunction(program, name, addr), log);
-				}
-			}
+			applyDefaultSymbolSets(program, baseSpace, map, log);
 
 			// --- Vectors: label targets and register entry points ---
 			labelVectorTargets(program, baseSpace, provider, header, placed, log);
@@ -910,6 +743,259 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 		finally {
 			if (gdtMgr != null) {
 				gdtMgr.close();
+			}
+		}
+	}
+
+	/**
+	 * Header/truncation guard: false (after logging) when the iNES image declares more PRG than
+	 * the file holds, in which case {@link #load} refuses the import.
+	 */
+	private static boolean prgImageIsComplete(ByteProvider provider, InesHeader header,
+			MessageLog log) throws IOException {
+		// The header's declared PRG size is trusted throughout (window placement, the
+		// $FFFA-$FFFF vector read); a body shorter than declared would place windows over
+		// bytes past EOF, and the unguarded vector read would then throw IOException out of
+		// load() -- an exception dialog instead of a diagnosable message. Reject up front.
+		long declaredEnd = header.prgFileOffset() + header.prgSize();
+		if (declaredEnd > provider.length()) {
+			log.appendMsg("Truncated iNES image: header declares PRG through file offset " +
+				declaredEnd + " but the file is only " + provider.length() +
+				" bytes; refusing to load a truncated ROM");
+			return false;
+		}
+		return true;
+	}
+
+	/**
+	 * File facts recorded before any board policy runs: the per-game identity (returned, or null
+	 * when the header declares no usable PRG slice) and the iNES mapper number.
+	 */
+	private static GameIdentities.GameIdentity recordFileFacts(Program program,
+			ByteProvider provider, InesHeader header, MessageLog log) throws IOException {
+		// Per-game identity (bead grm-hb6.1, docs/per-game-descriptors-design.md section 2): a
+		// fact about the FILE, so it is derived here -- after the truncation guard above proves
+		// the PRG slice readable, and before any board policy runs, since identity neither
+		// depends on which board won nor may be lost to the no-board return below. It is
+		// recorded even when nothing consumes it: the logged value is the key a user pastes
+		// into an overlay descriptor.
+		GameIdentities.GameIdentity identity = gameIdentity(provider);
+		if (identity != null) {
+			program.getOptions(Program.PROGRAM_INFO)
+					.setString(DescriptorHints.GAME_IDENTITY_PROPERTY,
+						identity.toPropertyValue());
+			log.appendMsg("game identity " + identity.toPropertyValue());
+		}
+		else {
+			log.appendMsg("iNES header declares no usable PRG slice; skipping game identity");
+		}
+
+		// iNES mapper number (bead grm-3ppn): a fact about the file, so recorded unconditionally
+		// -- before board resolution, and even when no board matches below -- the same discipline
+		// GAME_IDENTITY_PROPERTY above follows. Owner's motivation: board names are not memorable
+		// the way mapper numbers are.
+		program.getOptions(Program.PROGRAM_INFO)
+				.setString(DescriptorHints.INES_MAPPER_PROPERTY, mapperPropertyValue(header));
+		return identity;
+	}
+
+	/** Records the chosen board for the bank analyzer, and its human name for people. */
+	private static void recordBoardFacts(Program program, NesBoardRegistry.Board board) {
+		// record the chosen board so the bank analyzer interprets with the same descriptor
+		program.getOptions(Program.PROGRAM_INFO)
+				.setString(DescriptorHints.MAP_PATH_PROPERTY, board.mapPath());
+		// Human board name (bead grm-3ppn), the "which board, in words" counterpart to
+		// INES_MAPPER_PROPERTY above -- board .map `name` fields already read "NES MMC3 (iNES
+		// mapper 4)"-style, so this is just publishing what the board resolved to.
+		program.getOptions(Program.PROGRAM_INFO)
+				.setString(DescriptorHints.BOARD_NAME_PROPERTY, board.name());
+	}
+
+	/**
+	 * Resolves the curated per-game descriptor against {@code identity} (null when nothing
+	 * matched or there is no identity), recording its path and publishing its banking hints.
+	 */
+	private static GameDescriptorRegistry.GameDescriptor resolveGameDescriptor(Program program,
+			GameIdentities.GameIdentity identity, NesBoardRegistry.Board board, MessageLog log) {
+		// Curated per-game descriptor resolution (bead grm-hb6.12, first increment): resolve
+		// against the identity computed above -- prg_sha256 primary, file_sha256 alias -- and
+		// cross-check the resolved board (docs/per-game-descriptors-design.md section 3.2).
+		// No static memoization: GameDescriptorRegistry.scan() re-scans every import (see its
+		// class javadoc). Absent when nothing matched; that is the common case today, since
+		// the curated set starts with one title.
+		GameDescriptorRegistry.GameDescriptor gameDescriptor = null;
+		if (identity != null) {
+			List<GameDescriptorRegistry.GameDescriptor> candidates =
+				GameDescriptorRegistry.scan(log);
+			gameDescriptor = GameDescriptorRegistry.resolve(candidates, identity, board.id(), log);
+			if (gameDescriptor != null) {
+				program.getOptions(Program.PROGRAM_INFO).setString(
+					DescriptorHints.GAME_DESCRIPTOR_PROPERTY, gameDescriptor.gmapPath());
+				log.appendMsg(
+					"game descriptor resolved: " + gameDescriptor.gmapPath() + " ('" +
+						gameDescriptor.id() + "')");
+				// banking.* hint lists (grm-mej.7 bank_identifying_offsets, grm-hb6.4
+				// switch_sites, grm-mej.9 save_cells, grm-mej.10 bank_stacks/paired_fields,
+				// grm-hb6.26 shadow_commits): published for the analyzer, which verifies each
+				// against the ROM before it may license anything.
+				for (BankingHintKind kind : BankingHintKind.values()) {
+					String hints = kind.format(gameDescriptor.doc(), gameDescriptor.gmapPath());
+					if (hints != null) {
+						program.getOptions(Program.PROGRAM_INFO).setString(kind.property, hints);
+					}
+				}
+			}
+		}
+		return gameDescriptor;
+	}
+
+	/**
+	 * Validates and records a user placement override. False (after logging) when the override is
+	 * malformed or inapplicable, in which case {@link #load} refuses the import.
+	 */
+	private static boolean recordPlacementOverride(Program program, ImporterSettings settings,
+			NesBoardRegistry.Board board, InesHeader header, MessageLog log) throws IOException {
+		// record a user placement override for the analyzer to apply to unresolved bank
+		// placements. validateOptions already vetted this in the GUI, but the headless
+		// ProgramLoader path never calls validateOptions (Ghidra 12.x), so re-check here and
+		// refuse a malformed/inapplicable override rather than persisting a misleading one.
+		String placement = OptionUtils.getOption(PLACEMENT_OPTION_NAME, settings.options(), "");
+		if (placement != null && !placement.isBlank()) {
+			Map<String, Integer> pairs;
+			try {
+				pairs = DescriptorHints.parsePlacementOverride(placement);
+			}
+			catch (IllegalArgumentException e) {
+				log.appendMsg(PLACEMENT_OPTION_NAME + ": " + e.getMessage() +
+					" -- refusing to import with an invalid placement override");
+				return false;
+			}
+			String err = placementError(pairs, board, header);
+			if (err != null) {
+				log.appendMsg(err + " -- refusing to import with an invalid placement override");
+				return false;
+			}
+			program.getOptions(Program.PROGRAM_INFO)
+					.setString(DescriptorHints.PLACEMENT_OVERRIDE_PROPERTY, placement.trim());
+			log.appendMsg("placement override: " + placement.trim());
+		}
+		return true;
+	}
+
+	/**
+	 * The packed power-on state after folding every source in order -- the image-relative
+	 * {@code initial_state_expr}, the image-resolved mode, the curated hint -- plus the live
+	 * layout mode (null unless DETERMINED).
+	 */
+	private record EffectiveState(Long initialState, Integer liveMode) {}
+
+	/** Resolves the {@link EffectiveState}, publishing the state when it moved off the literal. */
+	private static EffectiveState resolveEffectiveInitialState(Program program,
+			ByteProvider provider, InesHeader header, JsonObject map, NesBoardRegistry.Board board,
+			GameDescriptorRegistry.GameDescriptor gameDescriptor, MessageLog log) {
+		// Image-relative seeds (banking.initial_state_expr, bead grm-y0ml) resolve HERE:
+		// the PRG size is a load-time fact, so the .map keeps the expression symbolic and
+		// this is the first place it can be evaluated. Published below for the analyzer,
+		// which has no image size of its own.
+		Long initialState =
+			BoardStateFields.resolveInitialState(map, header.prgSize(), log, board.mapPath());
+		// Curated game-descriptor initial_state hint (bead grm-hb6.12), folded in AFTER
+		// initial_state_expr per docs/per-game-descriptors-design.md's ruling -- see
+		// BoardStateFields.applyGameInitialStateHint's javadoc for the failure discipline.
+		// Image-resolved MODE field (bead grm-3fvj), folded in BEFORE the curated hint so a
+		// hand-checked per-game value always wins over this inference -- see
+		// scanImageMode's javadoc for why that ordering is the safe one.
+		//
+		// liveMode is kept separately from initialState and means something STRONGER than
+		// "the mode field's value": it means the mode is KNOWN for this image rather than
+		// assumed from the descriptor's power-on constant. Only a known mode licenses
+		// suppressing the other modes' overlay blocks (bead grm-ic5's ruling), and the two
+		// are not the same test -- rcransom and megaman3 resolve mode 0, which equals the
+		// compiled default, so initialState does not move while the mode IS known. It stays
+		// null when the scan declines (too few sites, or a split vote) and no curated hint
+		// states the mode (grm-ic5.1, below), which is exactly that ruling's "indeterminate"
+		// branch and keeps every mode's blocks.
+		Integer liveMode =
+			scanImageMode(map, readPrgImage(provider, header, log), log, board.mapPath());
+		if (liveMode != null) {
+			initialState = applyMode(map, initialState, liveMode, log, board.mapPath());
+		}
+		// A curated hint naming the layout mode field is a KNOWN mode too (bead grm-ic5.1):
+		// a human recorded it against the cartridge. It wins over the scan, the same
+		// ordering as for initialState just above.
+		if (gameDescriptor != null) {
+			Integer hintedMode = BoardStateFields.gameHintedLayoutMode(map, initialState,
+				gameDescriptor.doc());
+			initialState = BoardStateFields.applyGameInitialStateHint(map, initialState,
+				gameDescriptor.doc(), gameDescriptor.gmapPath(), log);
+			if (hintedMode != null) {
+				if (liveMode != null && !liveMode.equals(hintedMode)) {
+					log.appendMsg(gameDescriptor.gmapPath() + ": layout mode " + hintedMode +
+						" overrides the image-resolved mode " + liveMode);
+				}
+				liveMode = hintedMode;
+				log.appendMsg("layout mode " + liveMode + " stated by " +
+					gameDescriptor.gmapPath() +
+					"; it licenses suppressing the other modes' overlay blocks");
+			}
+		}
+		if (initialState != null &&
+			!initialState.equals(BoardStateFields.initialState(map))) {
+			program.getOptions(Program.PROGRAM_INFO).setString(
+				DescriptorHints.INITIAL_STATE_PROPERTY, Long.toString(initialState));
+			log.appendMsg("banking.initial_state resolved to " + initialState +
+				" against the " + header.prgSize() + "-byte PRG image");
+		}
+		return new EffectiveState(initialState, liveMode);
+	}
+
+	/** Publishes the game descriptor's {@code banking.fixed_after_init} state mask, if any. */
+	private static void recordFixedAfterInit(Program program, JsonObject map,
+			GameDescriptorRegistry.GameDescriptor gameDescriptor, MessageLog log) {
+		// bead grm-mej.12: banking.fixed_after_init -> a mask the analyzer seeds async
+		// entries with (the hint's fields are known at their initial value there).
+		if (gameDescriptor != null) {
+			long fixedMask = BoardStateFields.resolveFixedAfterInitMask(map,
+				gameDescriptor.doc(), gameDescriptor.gmapPath(), log);
+			if (fixedMask != 0) {
+				program.getOptions(Program.PROGRAM_INFO).setString(
+					DescriptorHints.FIXED_AFTER_INIT_MASK_PROPERTY,
+					Long.toString(fixedMask));
+				log.appendMsg(gameDescriptor.gmapPath() + ": banking.fixed_after_init " +
+					"resolves to state mask " + fixedMask);
+			}
+		}
+	}
+
+	/** Plans the descriptor's windows for {@code liveMode} and realizes each as memory blocks. */
+	private static void realizeWindows(Program program, AddressSpace baseSpace, JsonObject map,
+			Integer liveMode, Long initialState, InesHeader header, FileBytes fileBytes,
+			String mapPath, List<PlacedWindow> placed, MessageLog log) {
+		List<BoardDescriptorModel.FieldSpec> fields = BoardStateFields.parseStateFields(map);
+		WindowPlanner.LayoutPlan plan =
+			WindowPlanner.planWindows(map, log, mapPath, liveMode);
+
+		for (WindowPlanner.PlannedWindow pw : plan.invariant()) {
+			realizeInvariantWindow(program, baseSpace, pw, fields, initialState, header,
+				fileBytes, mapPath, placed, log);
+		}
+		if (plan.modeField() != null && !plan.varying().isEmpty()) {
+			realizeVaryingWindows(program, baseSpace, plan, fields, initialState, header,
+				fileBytes, mapPath, placed, log);
+		}
+	}
+
+	/** Applies the default-on symbol sets (MMIO labels, vector slot labels). */
+	private void applyDefaultSymbolSets(Program program, AddressSpace baseSpace, JsonObject map,
+			MessageLog log) {
+		for (JsonElement se : map.getAsJsonArray("symbols")) {
+			JsonObject set = se.getAsJsonObject();
+			boolean enabled = set.has("default") && set.get("default").getAsBoolean();
+			DescriptorAnnotationAnalyzer.recordSymbolSetChoice(program,
+				set.get("set").getAsString(), enabled);
+			if (enabled) {
+				DescriptorApply.applySymbolSet(program, baseSpace, set,
+					(name, addr) -> markAsFunction(program, name, addr), log);
 			}
 		}
 	}
@@ -971,13 +1057,18 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 			}
 		}
 
+		recordAsyncEntries(program, asyncEntries);
+	}
+
+	/** Publishes the asynchronously reached entry points (NMI/IRQ targets) for the analyzer. */
+	private static void recordAsyncEntries(Program program, Set<Address> asyncEntries) {
 		// Written only when non-empty: an absent property and an empty one mean the same
 		// thing to the read side, and not writing it keeps the Program Info display clean
 		// for a ROM whose vector table fell outside the mapped windows.
 		if (!asyncEntries.isEmpty()) {
 			program.getOptions(Program.PROGRAM_INFO).setString(
-				DescriptorSupport.ASYNC_ENTRY_POINTS_PROPERTY,
-				DescriptorSupport.formatAsyncEntryPoints(asyncEntries));
+				DescriptorHints.ASYNC_ENTRY_POINTS_PROPERTY,
+				DescriptorHints.formatAsyncEntryPoints(asyncEntries));
 		}
 	}
 
@@ -991,7 +1082,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 	 * {@code <name>_B<bank>} overlays for every other in-range bank).
 	 */
 	private static void realizeInvariantWindow(Program program, AddressSpace baseSpace,
-			DescriptorSupport.PlannedWindow pw, List<BoardDescriptorModel.FieldSpec> fields,
+			WindowPlanner.PlannedWindow pw, List<BoardDescriptorModel.FieldSpec> fields,
 			Long initialState, InesHeader header, FileBytes fileBytes, String mapPath,
 			List<PlacedWindow> placed, MessageLog log) {
 
@@ -1026,7 +1117,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 
 		Set<String> exprFields = DescriptorExpressions.referencedFields(expr);
 		BoardDescriptorModel.FieldSpec field = exprFields.size() == 1
-				? DescriptorSupport.findField(fields, exprFields.iterator().next())
+				? BoardStateFields.findField(fields, exprFields.iterator().next())
 				: null;
 		if (field == null) {
 			log.appendMsg("Window '" + name + "' skipped: '" + expr +
@@ -1043,11 +1134,11 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 			(initialState == null ? 0 : field.valueIn(initialState)) & decodedMask;
 
 		// Build one named candidate per in-range bank value, then hand them to the shared
-		// home-in-base placement policy (DescriptorSupport.placeHomeInBaseWindow); only the
+		// home-in-base placement policy (WindowPlanner.placeHomeInBaseWindow); only the
 		// home candidate's srcOffset is needed here (for PlacedWindow bookkeeping), so we
 		// stash offsets by block name as we build the list.
 		Map<String, Long> srcOffsetsByName = new HashMap<>();
-		List<DescriptorSupport.NamedCandidate> candidates = new ArrayList<>();
+		List<WindowPlanner.NamedCandidate> candidates = new ArrayList<>();
 		for (long v = 0; v < (1L << field.width()); v++) {
 			if ((v & decodedMask) != v) {
 				continue; // non-canonical twin of a lower field value
@@ -1058,20 +1149,20 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 				continue; // bank values beyond the image simply don't exist
 			}
 			boolean home = v == fieldInitial;
-			// see DescriptorSupport.OverlayNaming for why blockName doubling as the overlay
+			// see OverlayNaming for why blockName doubling as the overlay
 			// AddressSpace's name is safe to rely on here.
 			String blockName =
-				home ? name : DescriptorSupport.OverlayNaming.bankBlockName(name, (int) v);
+				home ? name : OverlayNaming.bankBlockName(name, (int) v);
 			srcOffsetsByName.put(blockName, srcOffset);
 			String windowComment = name + " = PRG[" + expr + "], " + field.name() + "=" + v +
 				" (offset 0x" + Long.toHexString(srcOffset) +
 				(home ? ", home bank in base space)" : ")");
 			long fileOffset = header.prgFileOffset() + srcOffset;
-			candidates.add(new DescriptorSupport.NamedCandidate(blockName,
+			candidates.add(new WindowPlanner.NamedCandidate(blockName,
 				(p, bs, isHome, l) -> createWindowBlock(p, bs, !isHome, blockName, windowComment,
 					start, length, fileBytes, fileOffset, mapPath, l)));
 		}
-		DescriptorSupport.placeHomeInBaseWindow(program, baseSpace, candidates, name, log);
+		WindowPlanner.placeHomeInBaseWindow(program, baseSpace, candidates, name, log);
 		Long homeSrcOffset = srcOffsetsByName.get(name);
 		if (homeSrcOffset != null) {
 			placed.add(new PlacedWindow(name, start, end, homeSrcOffset));
@@ -1081,7 +1172,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 	/**
 	 * Realizes every mode-varying window (from {@code memory.layouts[]}), grouped by
 	 * window name across all layouts so each window's full set of per-mode instances is
-	 * handed to {@link DescriptorSupport#placeHomeInBaseWindow} together -- exactly one
+	 * handed to {@link WindowPlanner#placeHomeInBaseWindow} together -- exactly one
 	 * instance across every (layout, bank) combination is "home": the layout whose mode
 	 * value equals the mode field's {@code initial_state} value, and (for a switchable
 	 * expression) the bank value equal to that field's own initial value. Every other
@@ -1090,12 +1181,12 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 	 * expression's non-home (layout, bank) pair).
 	 */
 	private static void realizeVaryingWindows(Program program, AddressSpace baseSpace,
-			DescriptorSupport.LayoutPlan plan, List<BoardDescriptorModel.FieldSpec> fields,
+			WindowPlanner.LayoutPlan plan, List<BoardDescriptorModel.FieldSpec> fields,
 			Long initialState, InesHeader header, FileBytes fileBytes, String mapPath,
 			List<PlacedWindow> placed, MessageLog log) {
 
 		BoardDescriptorModel.FieldSpec modeFieldSpec =
-			DescriptorSupport.findField(fields, plan.modeField());
+			BoardStateFields.findField(fields, plan.modeField());
 		if (modeFieldSpec == null || initialState == null) {
 			log.appendMsg("memory.layouts[] present but mode field '" + plan.modeField() +
 				"' not found in banking.state (or initial_state missing); skipping " +
@@ -1104,21 +1195,21 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 		}
 		long homeModeValue = modeFieldSpec.valueIn(initialState);
 
-		Map<String, List<DescriptorSupport.PlannedWindow>> byName = new LinkedHashMap<>();
-		for (DescriptorSupport.PlannedWindow pw : plan.varying()) {
+		Map<String, List<WindowPlanner.PlannedWindow>> byName = new LinkedHashMap<>();
+		for (WindowPlanner.PlannedWindow pw : plan.varying()) {
 			byName.computeIfAbsent(pw.name(), k -> new ArrayList<>()).add(pw);
 		}
 
-		for (Map.Entry<String, List<DescriptorSupport.PlannedWindow>> entry : byName.entrySet()) {
+		for (Map.Entry<String, List<WindowPlanner.PlannedWindow>> entry : byName.entrySet()) {
 			String name = entry.getKey();
-			List<DescriptorSupport.PlannedWindow> instances = entry.getValue();
+			List<WindowPlanner.PlannedWindow> instances = entry.getValue();
 			if (instances.stream().anyMatch(pw -> pw.expr() == null)) {
 				log.appendMsg("Window '" + name +
 					"' has enumerated occupants; not supported by this loader");
 				continue;
 			}
 			Map<String, Long> srcOffsetsByName = new HashMap<>();
-			List<DescriptorSupport.NamedCandidate> candidates = new ArrayList<>();
+			List<WindowPlanner.NamedCandidate> candidates = new ArrayList<>();
 			// The home layout's instance defines where the base-space block (and the
 			// PlacedWindow used for vector reads) sits; layouts normally agree on a
 			// window's CPU-space location, but each instance's block uses its own
@@ -1126,7 +1217,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 			long homeStart = instances.get(0).start();
 			long homeEnd = instances.get(0).end();
 
-			for (DescriptorSupport.PlannedWindow pw : instances) {
+			for (WindowPlanner.PlannedWindow pw : instances) {
 				int m = pw.modeValue();
 				boolean isHomeLayout = m == homeModeValue;
 				String expr = pw.expr();
@@ -1143,13 +1234,13 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 						continue;
 					}
 					String blockName = isHomeLayout ? name
-							: DescriptorSupport.OverlayNaming.modeBlockName(name, m);
+							: OverlayNaming.modeBlockName(name, m);
 					srcOffsetsByName.put(blockName, srcOffset);
 					String comment = name + " = PRG[" + expr + "] (mode " + plan.modeField() + "=" +
 						m + ", offset 0x" + Long.toHexString(srcOffset) +
 						(isHomeLayout ? ", home mode in base space)" : ")");
 					long fileOffset = header.prgFileOffset() + srcOffset;
-					candidates.add(new DescriptorSupport.NamedCandidate(blockName,
+					candidates.add(new WindowPlanner.NamedCandidate(blockName,
 						(p, bs, isHome, l) -> createWindowBlock(p, bs, !isHome, blockName, comment,
 							start, length, fileBytes, fileOffset, mapPath, l)));
 					continue;
@@ -1160,7 +1251,7 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 
 				Set<String> exprFields = DescriptorExpressions.referencedFields(expr);
 				BoardDescriptorModel.FieldSpec bankField = exprFields.size() == 1
-						? DescriptorSupport.findField(fields, exprFields.iterator().next())
+						? BoardStateFields.findField(fields, exprFields.iterator().next())
 						: null;
 				if (bankField == null) {
 					log.appendMsg("Window '" + name + "' (mode " + plan.modeField() + "=" + m +
@@ -1182,19 +1273,19 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 					}
 					boolean home = isHomeLayout && v == bankInitial;
 					String blockName = home ? name
-							: DescriptorSupport.OverlayNaming.modeBankBlockName(name, m, (int) v);
+							: OverlayNaming.modeBankBlockName(name, m, (int) v);
 					srcOffsetsByName.put(blockName, srcOffset);
 					String comment = name + " = PRG[" + expr + "], mode " + plan.modeField() + "=" + m +
 						", " + bankField.name() + "=" + v + " (offset 0x" +
 						Long.toHexString(srcOffset) + (home ? ", home in base space)" : ")");
 					long fileOffset = header.prgFileOffset() + srcOffset;
-					candidates.add(new DescriptorSupport.NamedCandidate(blockName,
+					candidates.add(new WindowPlanner.NamedCandidate(blockName,
 						(p, bs, isHome, l) -> createWindowBlock(p, bs, !isHome, blockName, comment,
 							start, length, fileBytes, fileOffset, mapPath, l)));
 				}
 			}
 
-			DescriptorSupport.placeHomeInBaseWindow(program, baseSpace, candidates, name, log);
+			WindowPlanner.placeHomeInBaseWindow(program, baseSpace, candidates, name, log);
 			Long homeSrcOffset = srcOffsetsByName.get(name);
 			if (homeSrcOffset != null) {
 				placed.add(new PlacedWindow(name, homeStart, homeEnd, homeSrcOffset));

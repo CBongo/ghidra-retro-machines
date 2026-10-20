@@ -29,7 +29,7 @@ import ghidra.app.util.importer.MessageLog;
 /**
  * Load-time folding of a curated game descriptor's {@code banking.initial_state} hint (bead
  * {@code grm-hb6.12}) into an already-resolved packed power-on state:
- * {@link DescriptorSupport#applyGameInitialStateHint}. Same tier and same Gson-in/numbers-out
+ * {@link BoardStateFields#applyGameInitialStateHint}. Same tier and same Gson-in/numbers-out
  * style as {@link InitialStateResolutionTest}, which covers the board-only half of this same
  * seam ({@code banking.initial_state_expr}, bead {@code grm-y0ml}) that this hint is folded in
  * AFTER.
@@ -65,7 +65,7 @@ public class GameInitialStateHintTest {
 		MessageLog log = new MessageLog();
 		// select=1 (bits 0-2), r6=2 (bits 4-5) -> literal 9 = 0b01001 has select=1, prg_mode=1,
 		// r6=0. Hint sets prg_mode to 0: expect select and r6 untouched, prg_mode bit cleared.
-		Long result = DescriptorSupport.applyGameInitialStateHint(json(MMC3_SHAPE), 9L,
+		Long result = BoardStateFields.applyGameInitialStateHint(json(MMC3_SHAPE), 9L,
 			gameDoc("{ \"prg_mode\": 0 }"), "games/test.gmap", log);
 		assertEquals(Long.valueOf(1), result); // 0b00001: select=1, prg_mode=0, r6=0
 	}
@@ -75,7 +75,7 @@ public class GameInitialStateHintTest {
 		MessageLog log = new MessageLog();
 		// literal prg_mode is 1 (bit 3 of 9); hint sets it to... itself would be a no-op test,
 		// so flip it and confirm the packed result actually changed.
-		Long result = DescriptorSupport.applyGameInitialStateHint(json(MMC3_SHAPE), 9L,
+		Long result = BoardStateFields.applyGameInitialStateHint(json(MMC3_SHAPE), 9L,
 			gameDoc("{ \"prg_mode\": 0 }"), "games/test.gmap", log);
 		assertEquals("hint must change the packed value away from the compiled literal",
 			Long.valueOf(1), result);
@@ -90,7 +90,7 @@ public class GameInitialStateHintTest {
 		String boardWithExpr = MMC3_SHAPE.replace("\"initial_state\": 9,",
 			"\"initial_state\": 9, \"initial_state_expr\": { \"r6\": \"image_size\" },");
 		long afterExpr = 9L | (3L << 4); // pretend the expr resolved r6 to 3
-		Long result = DescriptorSupport.applyGameInitialStateHint(json(boardWithExpr), afterExpr,
+		Long result = BoardStateFields.applyGameInitialStateHint(json(boardWithExpr), afterExpr,
 			gameDoc("{ \"r6\": 1 }"), "games/test.gmap", log);
 		assertEquals(Long.valueOf(9L | (1L << 4)), result);
 		assertTrue("overriding an initial_state_expr field must be logged",
@@ -102,7 +102,7 @@ public class GameInitialStateHintTest {
 	public void noHintLeavesTheResolvedValueUntouched() {
 		MessageLog log = new MessageLog();
 		JsonObject gameDoc = json("{ \"game\": { \"id\": \"x\" } }"); // no banking at all
-		assertEquals(Long.valueOf(9), DescriptorSupport.applyGameInitialStateHint(
+		assertEquals(Long.valueOf(9), BoardStateFields.applyGameInitialStateHint(
 			json(MMC3_SHAPE), 9L, gameDoc, "games/test.gmap", log));
 		assertEquals("", log.toString().trim());
 	}
@@ -112,7 +112,7 @@ public class GameInitialStateHintTest {
 	@Test
 	public void unknownFieldNameIsRefusedAndLogged() {
 		MessageLog log = new MessageLog();
-		Long result = DescriptorSupport.applyGameInitialStateHint(json(MMC3_SHAPE), 9L,
+		Long result = BoardStateFields.applyGameInitialStateHint(json(MMC3_SHAPE), 9L,
 			gameDoc("{ \"nope\": 1 }"), "games/test.gmap", log);
 		assertEquals("unknown field must leave the packed value untouched", Long.valueOf(9),
 			result);
@@ -124,7 +124,7 @@ public class GameInitialStateHintTest {
 	public void outOfRangeValueIsRefusedAndLogged() {
 		MessageLog log = new MessageLog();
 		// prg_mode is 1 bit wide; 2 does not fit.
-		Long result = DescriptorSupport.applyGameInitialStateHint(json(MMC3_SHAPE), 9L,
+		Long result = BoardStateFields.applyGameInitialStateHint(json(MMC3_SHAPE), 9L,
 			gameDoc("{ \"prg_mode\": 2 }"), "games/test.gmap", log);
 		assertEquals("out-of-range value must leave the field at its previously resolved value",
 			Long.valueOf(9), result);
@@ -137,7 +137,7 @@ public class GameInitialStateHintTest {
 		MessageLog log = new MessageLog();
 		// resolveInitialState returns null when the board descriptor has no banking.initial_state
 		// at all (e.g. NROM) -- nothing to fold a field value into.
-		Long result = DescriptorSupport.applyGameInitialStateHint(json("{}"), null,
+		Long result = BoardStateFields.applyGameInitialStateHint(json("{}"), null,
 			gameDoc("{ \"prg_mode\": 1 }"), "games/test.gmap", log);
 		assertNull(result);
 		assertTrue(log.toString(), log.toString().contains("no banking.initial_state"));
@@ -148,7 +148,7 @@ public class GameInitialStateHintTest {
 		MessageLog log = new MessageLog();
 		JsonObject gameDoc =
 			json("{ \"banking\": { \"initial_state\": { \"prg_mode\": \"not-a-number\" } } }");
-		Long result = DescriptorSupport.applyGameInitialStateHint(json(MMC3_SHAPE), 9L, gameDoc,
+		Long result = BoardStateFields.applyGameInitialStateHint(json(MMC3_SHAPE), 9L, gameDoc,
 			"games/test.gmap", log);
 		assertEquals(Long.valueOf(9), result);
 		assertTrue(log.toString(), log.toString().contains("prg_mode"));
@@ -186,14 +186,14 @@ public class GameInitialStateHintTest {
 
 	@Test
 	public void hintedLayoutModeIsReturned() {
-		assertEquals(Integer.valueOf(0), DescriptorSupport.gameHintedLayoutMode(json(MMC1_SHAPE),
+		assertEquals(Integer.valueOf(0), BoardStateFields.gameHintedLayoutMode(json(MMC1_SHAPE),
 			12L, gameDoc("{ \"prg_mode\": 0 }")));
 	}
 
 	@Test
 	public void hintNotNamingTheLayoutFieldStatesNoMode() {
 		// megaman2's shape: a prg_bank hint moves the home bank but says nothing about the mode.
-		assertNull(DescriptorSupport.gameHintedLayoutMode(json(MMC1_SHAPE), 12L,
+		assertNull(BoardStateFields.gameHintedLayoutMode(json(MMC1_SHAPE), 12L,
 			gameDoc("{ \"prg_bank\": 14 }")));
 	}
 
@@ -201,31 +201,31 @@ public class GameInitialStateHintTest {
 	public void refusedHintValuesStateNoMode() {
 		// Every case applyGameInitialStateHint refuses must also be refused here, or a hint that
 		// did not move the home layout could still license suppression.
-		assertNull(DescriptorSupport.gameHintedLayoutMode(json(MMC1_SHAPE), 12L,
+		assertNull(BoardStateFields.gameHintedLayoutMode(json(MMC1_SHAPE), 12L,
 			gameDoc("{ \"prg_mode\": 4 }")));
-		assertNull(DescriptorSupport.gameHintedLayoutMode(json(MMC1_SHAPE), 12L,
+		assertNull(BoardStateFields.gameHintedLayoutMode(json(MMC1_SHAPE), 12L,
 			gameDoc("{ \"prg_mode\": \"zero\" }")));
-		assertNull(DescriptorSupport.gameHintedLayoutMode(json(MMC1_SHAPE), null,
+		assertNull(BoardStateFields.gameHintedLayoutMode(json(MMC1_SHAPE), null,
 			gameDoc("{ \"prg_mode\": 0 }")));
 	}
 
 	@Test
 	public void boardWithoutLayoutsStatesNoMode() {
 		// MMC3_SHAPE has a prg_mode state field but no layouts: nothing to suppress.
-		assertNull(DescriptorSupport.gameHintedLayoutMode(json(MMC3_SHAPE), 9L,
+		assertNull(BoardStateFields.gameHintedLayoutMode(json(MMC3_SHAPE), 9L,
 			gameDoc("{ \"prg_mode\": 0 }")));
 	}
 
 	@Test
 	public void hintedModeSuppressesTheOtherLayoutsInstances() {
 		JsonObject map = json(MMC1_SHAPE);
-		Integer mode = DescriptorSupport.gameHintedLayoutMode(map, 12L,
+		Integer mode = BoardStateFields.gameHintedLayoutMode(map, 12L,
 			gameDoc("{ \"prg_mode\": 0 }"));
-		DescriptorSupport.LayoutPlan plan =
-			DescriptorSupport.planWindows(map, new MessageLog(), "test.map", mode);
+		WindowPlanner.LayoutPlan plan =
+			WindowPlanner.planWindows(map, new MessageLog(), "test.map", mode);
 		assertEquals(1, plan.varying().size());
 		assertEquals(Integer.valueOf(0), plan.varying().get(0).modeValue());
-		assertEquals(4, DescriptorSupport.planWindows(map, new MessageLog(), "test.map", null)
+		assertEquals(4, WindowPlanner.planWindows(map, new MessageLog(), "test.map", null)
 				.varying().size());
 	}
 }

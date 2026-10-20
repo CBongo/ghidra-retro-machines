@@ -48,7 +48,7 @@ import ghidra.util.task.TaskMonitor;
  * worry was that helper-argument recovery ({@link HelperArgumentRecovery#recoverCallArgument})
  * would try to recover an argument at every one of those, scaling with misdisassembled data
  * rather than with anything real -- and that the fix would need to actively filter them out,
- * possibly by cross-referencing {@link DescriptorSupport#ASYNC_ENTRY_POINTS_PROPERTY} (bead
+ * possibly by cross-referencing {@link DescriptorHints#ASYNC_ENTRY_POINTS_PROPERTY} (bead
  * {@code grm-913}'s IRQ/NMI entry list).
  * <p>
  * <b>What this test settles.</b> As first written (grm-htgl), that the worry does not apply and

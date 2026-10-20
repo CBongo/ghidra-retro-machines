@@ -139,7 +139,7 @@ public class GameDescriptorCommentsCarrierTest extends AbstractBundledLanguageTe
 		int[] written = new int[1];
 		tx(p, () -> {
 			for (var se : doc.getAsJsonArray("comments")) {
-				written[0] += DescriptorSupport.applyCommentSet(p,
+				written[0] += DescriptorApply.applyCommentSet(p,
 					p.getAddressFactory().getDefaultAddressSpace(), se.getAsJsonObject(), log);
 			}
 		});

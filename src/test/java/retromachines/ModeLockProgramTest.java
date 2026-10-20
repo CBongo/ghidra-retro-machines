@@ -86,8 +86,8 @@ public class ModeLockProgramTest extends AbstractProgramTest {
 		makeFunction(NMI, NMI + hex.split(" ").length - 1, "NMI", false);
 		inTx(program, "async entries", () -> {
 			program.getOptions(Program.PROGRAM_INFO).setString(
-				DescriptorSupport.ASYNC_ENTRY_POINTS_PROPERTY,
-				DescriptorSupport.formatAsyncEntryPoints(List.of(addr(NMI))));
+				DescriptorHints.ASYNC_ENTRY_POINTS_PROPERTY,
+				DescriptorHints.formatAsyncEntryPoints(List.of(addr(NMI))));
 		});
 	}
 
@@ -294,7 +294,7 @@ public class ModeLockProgramTest extends AbstractProgramTest {
 
 	private String detectedMode() {
 		return program.getOptions(Program.PROGRAM_INFO)
-				.getString(DescriptorSupport.DETECTED_PRG_MODE_PROPERTY, null);
+				.getString(DescriptorHints.DETECTED_PRG_MODE_PROPERTY, null);
 	}
 
 	/**

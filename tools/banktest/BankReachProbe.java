@@ -213,7 +213,7 @@ public class BankReachProbe extends GhidraScript {
 
 	/**
 	 * Program-info property the loader stamps with the board's .map path
-	 * (DescriptorSupport.MAP_PATH_PROPERTY -- kept as a literal here, exactly as
+	 * (DescriptorHints.MAP_PATH_PROPERTY -- kept as a literal here, exactly as
 	 * RealRomDump.java:57-60 does, so this script needs no extension classes on its path;
 	 * DescriptorSupport is package-private and unreachable from a script regardless).
 	 */

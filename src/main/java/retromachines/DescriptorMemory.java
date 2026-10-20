@@ -34,9 +34,9 @@ import ghidra.program.model.mem.MemoryConflictException;
 import ghidra.util.exception.AssertException;
 
 /**
- * Memory-realization helpers split out of {@link DescriptorSupport} (QR-12 increment 5):
+ * Memory-realization helpers split out of the former {@code DescriptorSupport} (QR-12 increment 5):
  * block permissions by descriptor kind, always-visible regions, and IO subregion carve-up.
- * {@code applyStructType} (Data types) stays on {@link DescriptorSupport}, so
+ * {@code applyStructType} (Data types) stays on {@link DescriptorApply}, so
  * {@link #createRegionBlock} and {@link #createIoSubregions} call back into it.
  */
 final class DescriptorMemory {
@@ -176,7 +176,7 @@ final class DescriptorMemory {
 		markVolatileIfIo(block, kind);
 
 		if (region.has("type") && gdtMgr != null) {
-			DescriptorSupport.applyStructType(program, baseSpace, gdtMgr, region, source, log);
+			DescriptorApply.applyStructType(program, baseSpace, gdtMgr, region, source, log);
 		}
 	}
 
@@ -218,7 +218,7 @@ final class DescriptorMemory {
 			markVolatileIfIo(block, kind);
 
 			if (sub.has("type") && gdtMgr != null) {
-				DescriptorSupport.applyStructType(program, baseSpace, gdtMgr, sub, source, log);
+				DescriptorApply.applyStructType(program, baseSpace, gdtMgr, sub, source, log);
 			}
 		}
 	}

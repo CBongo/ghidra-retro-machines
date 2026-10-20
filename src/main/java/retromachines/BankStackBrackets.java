@@ -35,8 +35,8 @@ import ghidra.program.model.symbol.Reference;
 
 import retromachines.BankStrategyRegistry.ConfiguredMechanism;
 import retromachines.BoardDescriptorModel.FieldSpec;
-import retromachines.DescriptorSupport.BankStack;
-import retromachines.DescriptorSupport.PairedFields;
+import retromachines.DescriptorHints.BankStack;
+import retromachines.DescriptorHints.PairedFields;
 
 /**
  * RAM bank-stack brackets (bead grm-mej.10): a function that PUSHES the live bank onto a RAM

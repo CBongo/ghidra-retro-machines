@@ -517,8 +517,8 @@ public class CallerSideRestoreProgramTest extends AbstractProgramTest {
 	private void markAsyncEntry(Address... entries) {
 		inTx(program, "set async entry points", () -> {
 			program.getOptions(Program.PROGRAM_INFO).setString(
-				DescriptorSupport.ASYNC_ENTRY_POINTS_PROPERTY,
-				DescriptorSupport.formatAsyncEntryPoints(List.of(entries)));
+				DescriptorHints.ASYNC_ENTRY_POINTS_PROPERTY,
+				DescriptorHints.formatAsyncEntryPoints(List.of(entries)));
 		});
 	}
 

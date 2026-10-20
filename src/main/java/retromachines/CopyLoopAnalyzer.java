@@ -146,7 +146,7 @@ public class CopyLoopAnalyzer extends AbstractAnalyzer {
 		// Gate on the descriptor plus the ISA rather than on a specific loader: LoopIdioms is
 		// 6502 mnemonics and nothing else, and every machine we load is one of ours.
 		String mapPath = program.getOptions(Program.PROGRAM_INFO)
-				.getString(DescriptorSupport.MAP_PATH_PROPERTY, "");
+				.getString(DescriptorHints.MAP_PATH_PROPERTY, "");
 		if (mapPath.isEmpty()) {
 			return false;
 		}

@@ -57,6 +57,6 @@ public class NesBankingAnalyzer extends BoardBankAnalyzer {
 		// The loader records which board descriptor it imported with; a missing property
 		// (imports that predate it) skips analysis rather than guessing a board.
 		return program.getOptions(Program.PROGRAM_INFO)
-				.getString(DescriptorSupport.MAP_PATH_PROPERTY, null);
+				.getString(DescriptorHints.MAP_PATH_PROPERTY, null);
 	}
 }

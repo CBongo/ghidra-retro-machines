@@ -108,7 +108,7 @@ public class DescriptorCopyHintAnalyzer extends AbstractAnalyzer {
 	/** The program's compiled descriptor, or null when it was not imported with one. */
 	private static JsonObject loadMap(Program program) throws IOException {
 		String mapPath = program.getOptions(Program.PROGRAM_INFO)
-				.getString(DescriptorSupport.MAP_PATH_PROPERTY, "");
+				.getString(DescriptorHints.MAP_PATH_PROPERTY, "");
 		if (mapPath == null || mapPath.isBlank()) {
 			return null;
 		}

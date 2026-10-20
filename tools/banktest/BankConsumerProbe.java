@@ -238,7 +238,7 @@ public class BankConsumerProbe extends GhidraScript {
 
 	/**
 	 * Program-info property the loader stamps with the board's .map path
-	 * (DescriptorSupport.MAP_PATH_PROPERTY -- kept as a literal here, exactly as
+	 * (DescriptorHints.MAP_PATH_PROPERTY -- kept as a literal here, exactly as
 	 * RealRomDump.java:57-60 and BankReachProbe.java do, so this script needs no extension
 	 * classes on its path; DescriptorSupport is package-private and unreachable from a script
 	 * regardless).
@@ -314,7 +314,7 @@ public class BankConsumerProbe extends GhidraScript {
 	 * One window instance from the descriptor: a top-level {@code windows[]} entry
 	 * ({@code mode == null}), a layout window hoisted because every layout defines it
 	 * identically ({@code mode == null}), or one {@code (name, mode)} pair of a mode-varying
-	 * window. Mirrors DescriptorSupport.PlannedWindow plus the SWITCHABLE/FIXED ruling
+	 * window. Mirrors WindowPlanner.PlannedWindow plus the SWITCHABLE/FIXED ruling
 	 * BoardBankAnalyzer.BoardModel.parse makes from {@code referencedFields(expr)}
 	 * (:2434-2440 for invariant windows, :2476-2498 for varying ones).
 	 */
@@ -566,7 +566,7 @@ public class BankConsumerProbe extends GhidraScript {
 			}
 		}
 
-		// --- window plan (re-implements DescriptorSupport.planWindows, :920-983) ----
+		// --- window plan (re-implements WindowPlanner.planWindows, :920-983) ----
 		List<PlannedWindow> planned = planWindows(root);
 		String modeFieldName = plannedModeField;
 		modeField = modeFieldName == null ? null : fieldByName(modeFieldName);
@@ -1694,7 +1694,7 @@ public class BankConsumerProbe extends GhidraScript {
 	// Re-derived production helpers (see the file header for why: independent of production)
 	// ==================================================================
 
-	/** One normalized window instance; mirrors DescriptorSupport.PlannedWindow (:881-887). */
+	/** One normalized window instance; mirrors WindowPlanner.PlannedWindow (:881-887). */
 	private static final class PlannedWindow {
 		String name;
 		long start;
@@ -1704,11 +1704,11 @@ public class BankConsumerProbe extends GhidraScript {
 		Integer mode;
 	}
 
-	/** Set by {@link #planWindows}; mirrors DescriptorSupport.LayoutPlan.modeField (:899). */
+	/** Set by {@link #planWindows}; mirrors WindowPlanner.LayoutPlan.modeField (:899). */
 	private String plannedModeField;
 
 	/**
-	 * Mirrors DescriptorSupport.planWindows (:920-983), including its two rulings that matter
+	 * Mirrors WindowPlanner.planWindows (:920-983), including its two rulings that matter
 	 * here: every layout's {@code when:} must name the SAME single field (otherwise
 	 * {@code layouts} are ignored wholesale, conservatively), and a window name defined
 	 * IDENTICALLY in every layout is hoisted to mode-invariant (that is how MMC3's WA000/WE000
@@ -1784,7 +1784,7 @@ public class BankConsumerProbe extends GhidraScript {
 		return all;
 	}
 
-	/** Mirrors DescriptorSupport.allIdentical (:986-994). */
+	/** Mirrors WindowPlanner.allIdentical (:986-994). */
 	private static boolean allIdentical(List<JsonObject> defs) {
 		JsonObject first = defs.get(0);
 		for (int i = 1; i < defs.size(); i++) {
@@ -1795,7 +1795,7 @@ public class BankConsumerProbe extends GhidraScript {
 		return true;
 	}
 
-	/** Mirrors DescriptorSupport.toPlannedWindow (:996-1004). */
+	/** Mirrors WindowPlanner.toPlannedWindow (:996-1004). */
 	private static PlannedWindow toPlannedWindow(JsonObject w, Integer mode) {
 		PlannedWindow pw = new PlannedWindow();
 		pw.name = w.get("name").getAsString();
@@ -1828,7 +1828,7 @@ public class BankConsumerProbe extends GhidraScript {
 		return out;
 	}
 
-	/** Mirrors DescriptorSupport.OverlayNaming.parseBankValue (:1085-1091). */
+	/** Mirrors OverlayNaming.parseBankValue (:1085-1091). */
 	private static Integer parseBankValue(String windowName, String spaceName) {
 		String prefix = windowName + "_B";
 		if (!spaceName.startsWith(prefix)) {
@@ -1838,7 +1838,7 @@ public class BankConsumerProbe extends GhidraScript {
 	}
 
 	/**
-	 * Mirrors DescriptorSupport.OverlayNaming.parseModeValue (:1105-1111). The strict
+	 * Mirrors OverlayNaming.parseModeValue (:1105-1111). The strict
 	 * all-digits remainder is load-bearing: it is what makes {@code W8000_M3_B7} FAIL here, so
 	 * a mode-varying SWITCHABLE instance is never miscounted as a mode-fixed one.
 	 */
@@ -1850,7 +1850,7 @@ public class BankConsumerProbe extends GhidraScript {
 		return parseDigits(spaceName.substring(prefix.length()));
 	}
 
-	/** Mirrors DescriptorSupport.OverlayNaming.parseModeBankValue (:1118-1124); returns
+	/** Mirrors OverlayNaming.parseModeBankValue (:1118-1124); returns
 	 *  {@code {mode, bank}} or null. */
 	private static int[] parseModeBankValue(String windowName, String spaceName) {
 		String prefix = windowName + "_M";
@@ -1870,7 +1870,7 @@ public class BankConsumerProbe extends GhidraScript {
 		return new int[] { mode, bank };
 	}
 
-	/** Mirrors DescriptorSupport.OverlayNaming.parseDigits (:1128-1141). */
+	/** Mirrors OverlayNaming.parseDigits (:1128-1141). */
 	private static Integer parseDigits(String s) {
 		if (s.isEmpty()) {
 			return null;

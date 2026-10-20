@@ -37,7 +37,7 @@ import ghidra.framework.Application;
  * increment bead {@code grm-hb6.12}) -- the title-tier counterpart of
  * {@link NesBoardRegistry}, scanning the extension's bundled {@code machines/games/*.gmap}
  * files (compiled by {@code gdtbuilder.GameCompiler}) and resolving one against a program's
- * per-game identity ({@link DescriptorSupport.GameIdentity}, bead {@code grm-hb6.1}).
+ * per-game identity ({@link GameIdentities.GameIdentity}, bead {@code grm-hb6.1}).
  * <p>
  * <b>Two sources, overlay first (bead {@code grm-hb6.2}, section 5.2).</b> The curated
  * {@code .gmap} files bundled in the extension, and a user-directory overlay of
@@ -57,7 +57,7 @@ final class GameDescriptorRegistry {
 
 	/**
 	 * One resolved game descriptor: its declared identity/board (for matching) and the raw
-	 * compiled document (for consumers, e.g. {@link DescriptorSupport#applyGameInitialStateHint}
+	 * compiled document (for consumers, e.g. {@link BoardStateFields#applyGameInitialStateHint}
 	 * reading {@code banking.initial_state}).
 	 */
 	record GameDescriptor(String id, String board, String prgSha256, String fileSha256,
@@ -232,7 +232,7 @@ final class GameDescriptorRegistry {
 	 * is ignored, never applied against a board it was not reasoned about.
 	 */
 	static GameDescriptor resolve(List<GameDescriptor> candidates,
-			DescriptorSupport.GameIdentity identity, String boardId, MessageLog log) {
+			GameIdentities.GameIdentity identity, String boardId, MessageLog log) {
 		GameDescriptor match = pickTiered(
 			matching(candidates, gd -> gd.prgSha256().equals(identity.prgSha256())),
 			"prg_sha256 " + identity.prgSha256(), log);

@@ -330,17 +330,17 @@ public class StackReloadReadBackProgramTest extends AbstractProgramTest {
 				{ "schema": 2, "banking": { "bank_identifying_offsets": [
 				  { "address": 49151, "shift": 1, "low": 1, "provenance": "p" } ] } }
 				""").getAsJsonObject();
-		String value = DescriptorSupport.formatMembershipHints(gmap, "games/rcransom.gmap");
+		String value = DescriptorHints.formatMembershipHints(gmap, "games/rcransom.gmap");
 		assertNotNull(value);
-		assertNull(DescriptorSupport.formatMembershipHints(
+		assertNull(DescriptorHints.formatMembershipHints(
 			JsonParser.parseString("{ \"schema\": 2 }").getAsJsonObject(), "x"));
 		inTx(program, "set property", () -> {
 			program.getOptions(ghidra.program.model.listing.Program.PROGRAM_INFO).setString(
-				DescriptorSupport.BANK_IDENTIFYING_HINTS_PROPERTY, value);
+				DescriptorHints.BANK_IDENTIFYING_HINTS_PROPERTY, value);
 		});
 		List<String> problems = new ArrayList<>();
 		List<BankMirrors.MembershipHint> hints =
-			DescriptorSupport.parseMembershipHints(program, problems);
+			DescriptorHints.parseMembershipHints(program, problems);
 		assertEquals(List.of(), problems);
 		assertEquals(List.of(new BankMirrors.MembershipHint(0xBFFF, 1, 1, "games/rcransom.gmap")),
 			hints);

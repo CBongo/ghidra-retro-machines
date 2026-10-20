@@ -41,24 +41,24 @@ import ghidra.program.model.listing.Program;
 enum BankingHintKind {
 
 	BANK_IDENTIFYING_OFFSETS("bank_identifying_offsets",
-		DescriptorSupport.BANK_IDENTIFYING_HINTS_PROPERTY, "offsets",
+		DescriptorHints.BANK_IDENTIFYING_HINTS_PROPERTY, "offsets",
 		new String[] { "address" }, new String[] { "shift", "low" },
 		new String[] { "bias", "modulus_bits" }),
 
-	SWITCH_SITES("switch_sites", DescriptorSupport.SWITCH_SITES_PROPERTY, "sites",
+	SWITCH_SITES("switch_sites", DescriptorHints.SWITCH_SITES_PROPERTY, "sites",
 		new String[] { "addr" }, new String[0],
 		new String[] { "block", "entry", "comment", "bank" }),
 
-	SAVE_CELLS("save_cells", DescriptorSupport.SAVE_CELLS_PROPERTY, "cells",
+	SAVE_CELLS("save_cells", DescriptorHints.SAVE_CELLS_PROPERTY, "cells",
 		new String[] { "address" }, new String[0], new String[0]),
 
-	BANK_STACKS("bank_stacks", DescriptorSupport.BANK_STACKS_PROPERTY, "stacks",
+	BANK_STACKS("bank_stacks", DescriptorHints.BANK_STACKS_PROPERTY, "stacks",
 		new String[] { "pointer", "slots" }, new String[0], new String[0]),
 
-	SHADOW_COMMITS("shadow_commits", DescriptorSupport.SHADOW_COMMITS_PROPERTY, "commits",
+	SHADOW_COMMITS("shadow_commits", DescriptorHints.SHADOW_COMMITS_PROPERTY, "commits",
 		new String[] { "helper", "cell" }, new String[] { "field" }, new String[0]),
 
-	PAIRED_FIELDS("paired_fields", DescriptorSupport.PAIRED_FIELDS_PROPERTY, "pairs",
+	PAIRED_FIELDS("paired_fields", DescriptorHints.PAIRED_FIELDS_PROPERTY, "pairs",
 		new String[0], new String[] { "high", "low", "offset" }, new String[0]);
 
 	/** One entry of the array, plus the property's root object (for the {@code source}). */
@@ -105,12 +105,12 @@ enum BankingHintKind {
 
 	/** The recorded {@code source} path, or null when absent/unreadable ("" if it has none). */
 	String source(Program program) {
-		return DescriptorSupport.hintSource(program, property);
+		return DescriptorHints.hintSource(program, property);
 	}
 
 	/** True when the program carries a non-blank property for this kind. */
 	boolean isRecorded(Program program) {
-		String spec = DescriptorSupport.programInfoString(program, property);
+		String spec = DescriptorHints.programInfoString(program, property);
 		return spec != null && !spec.isBlank();
 	}
 
@@ -131,7 +131,7 @@ enum BankingHintKind {
 	 */
 	<T> List<T> read(Program program, List<String> problems, EntryReader<T> reader) {
 		List<T> out = new ArrayList<>();
-		String spec = DescriptorSupport.programInfoString(program, property);
+		String spec = DescriptorHints.programInfoString(program, property);
 		if (spec == null || spec.isBlank()) {
 			return out;
 		}

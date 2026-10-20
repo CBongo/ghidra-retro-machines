@@ -846,7 +846,7 @@ public class MapCompiler {
 
 	/**
 	 * Builds {@code memory.layouts[]} (mode-dependent window sets), enforcing at compile time
-	 * the four rules {@code DescriptorSupport.planWindows} imposes at load time but does not
+	 * the four rules {@code WindowPlanner.planWindows} imposes at load time but does not
 	 * fail on -- a violation there silently discards {@code memory.layouts[]} in its entirety
 	 * (logged, not thrown), so a descriptor that violates one still "compiles" and ships doing
 	 * less than it declares. Mirrored here so the failure happens where the descriptor is
@@ -930,7 +930,7 @@ public class MapCompiler {
 
 	/**
 	 * Validates and converts a {@code memory.layouts[].when} value to an {@code int}.
-	 * {@code DescriptorSupport.planWindows} reads this with {@code JsonElement.getAsInt()},
+	 * {@code WindowPlanner.planWindows} reads this with {@code JsonElement.getAsInt()},
 	 * which silently truncates a fractional {@link Double} (e.g. YAML {@code 0.5}) rather than
 	 * failing -- so this compile-time check must reject non-integral values explicitly rather
 	 * than reuse {@link #toInt}, which would truncate the same way.
@@ -1355,7 +1355,7 @@ public class MapCompiler {
 	 * with each expression field contributing <b>0</b>, and a sibling
 	 * {@code initial_state_expr} object carries {@code fieldName -> expression}. The loader
 	 * evaluates it against the real image and overwrites those fields' bits
-	 * ({@code DescriptorSupport.resolveInitialState}).
+	 * ({@code BoardStateFields.resolveInitialState}).
 	 * <p>
 	 * Two properties fall out of that choice, both deliberate. A descriptor whose
 	 * {@code initial_state} is literals-only -- every descriptor shipped before this existed --

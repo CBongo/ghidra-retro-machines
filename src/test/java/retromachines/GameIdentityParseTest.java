@@ -30,8 +30,8 @@ import org.junit.Test;
 
 /**
  * Pure-JUnit coverage of the per-game identity grammar and digest (bead grm-hb6.1):
- * {@link DescriptorSupport.GameIdentity}, {@link DescriptorSupport#parseGameIdentity} and
- * {@link DescriptorSupport#sha256Hex}. Imports nothing from {@code ghidra.*} -- the property
+ * {@link GameIdentities.GameIdentity}, {@link GameIdentities#parseGameIdentity} and
+ * {@link GameIdentities#sha256Hex}. Imports nothing from {@code ghidra.*} -- the property
  * value is plain string logic and the digest is plain {@code MessageDigest}, so no Ghidra
  * runtime bootstrap is needed (same discipline as {@link PlacementOverrideParseTest} and
  * {@link BankStateTest}). That is also the reason the identity path uses {@code MessageDigest}
@@ -60,7 +60,7 @@ public class GameIdentityParseTest {
 
 	@Test
 	public void propertyValueUsesColonSeparatedPrgAndFileTokens() {
-		String value = new DescriptorSupport.GameIdentity(PRG_HEX, FILE_HEX).toPropertyValue();
+		String value = new GameIdentities.GameIdentity(PRG_HEX, FILE_HEX).toPropertyValue();
 		assertTrue("unexpected property shape: " + value,
 			value.matches("^prg:[0-9a-f]{64} file:[0-9a-f]{64}$"));
 		// '=' anywhere in the value would be mangled by the headless batch arg parser.
@@ -69,15 +69,15 @@ public class GameIdentityParseTest {
 
 	@Test
 	public void propertyValueRoundTripsThroughParse() {
-		DescriptorSupport.GameIdentity id =
-			new DescriptorSupport.GameIdentity(PRG_HEX, FILE_HEX);
-		assertEquals(id, DescriptorSupport.parseGameIdentity(id.toPropertyValue()));
+		GameIdentities.GameIdentity id =
+			new GameIdentities.GameIdentity(PRG_HEX, FILE_HEX);
+		assertEquals(id, GameIdentities.parseGameIdentity(id.toPropertyValue()));
 	}
 
 	@Test
 	public void tokenOrderDoesNotMatter() {
-		DescriptorSupport.GameIdentity parsed =
-			DescriptorSupport.parseGameIdentity("file:" + FILE_HEX + " prg:" + PRG_HEX);
+		GameIdentities.GameIdentity parsed =
+			GameIdentities.parseGameIdentity("file:" + FILE_HEX + " prg:" + PRG_HEX);
 		assertNotNull(parsed);
 		assertEquals(PRG_HEX, parsed.prgSha256());
 		assertEquals(FILE_HEX, parsed.fileSha256());
@@ -88,9 +88,9 @@ public class GameIdentityParseTest {
 		// ROM managers print digests in uppercase, and a hand-authored overlay descriptor
 		// pastes whatever casing the user happened to have. Two identities naming the same
 		// bytes must compare equal regardless, or a descriptor silently fails to match.
-		DescriptorSupport.GameIdentity upper = DescriptorSupport.parseGameIdentity(
+		GameIdentities.GameIdentity upper = GameIdentities.parseGameIdentity(
 			"prg:" + PRG_HEX.toUpperCase() + " file:" + FILE_HEX.toUpperCase());
-		DescriptorSupport.GameIdentity lower = DescriptorSupport.parseGameIdentity(
+		GameIdentities.GameIdentity lower = GameIdentities.parseGameIdentity(
 			"prg:" + PRG_HEX + " file:" + FILE_HEX);
 		assertEquals(lower, upper);
 		assertEquals(PRG_HEX, upper.prgSha256());
@@ -102,26 +102,26 @@ public class GameIdentityParseTest {
 		// Deliberately NOT parsePlacementOverride's empty-collection-on-blank: "this program
 		// has no identity" is a distinct state from "an identity with empty halves", and only
 		// the former can occur -- a loader writes both halves or writes nothing.
-		assertNull(DescriptorSupport.parseGameIdentity(null));
-		assertNull(DescriptorSupport.parseGameIdentity(""));
-		assertNull(DescriptorSupport.parseGameIdentity("   "));
+		assertNull(GameIdentities.parseGameIdentity(null));
+		assertNull(GameIdentities.parseGameIdentity(""));
+		assertNull(GameIdentities.parseGameIdentity("   "));
 	}
 
 	@Test
 	public void equalsSeparatorIsRejected() {
 		// The '='-based shape must not parse -- it is exactly what the headless batch arg
 		// parser mangles, and every grammar in this extension uses colons because of it.
-		assertThrows(IllegalArgumentException.class, () -> DescriptorSupport
+		assertThrows(IllegalArgumentException.class, () -> GameIdentities
 				.parseGameIdentity("prg=" + PRG_HEX + " file=" + FILE_HEX));
 	}
 
 	@Test
 	public void missingHalfIsRejected() {
 		IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
-			() -> DescriptorSupport.parseGameIdentity("prg:" + PRG_HEX));
+			() -> GameIdentities.parseGameIdentity("prg:" + PRG_HEX));
 		assertTrue(e.getMessage().contains("both"));
 		assertThrows(IllegalArgumentException.class,
-			() -> DescriptorSupport.parseGameIdentity("file:" + FILE_HEX));
+			() -> GameIdentities.parseGameIdentity("file:" + FILE_HEX));
 	}
 
 	@Test
@@ -129,35 +129,35 @@ public class GameIdentityParseTest {
 		// 63 hex digits: one short, which a truncated copy/paste produces.
 		String shortHex = PRG_HEX.substring(1);
 		assertEquals(63, shortHex.length());
-		assertThrows(IllegalArgumentException.class, () -> DescriptorSupport
+		assertThrows(IllegalArgumentException.class, () -> GameIdentities
 				.parseGameIdentity("prg:" + shortHex + " file:" + FILE_HEX));
 
 		// Right length, wrong alphabet -- 'g' is not a hex digit.
 		String notHex = "g" + PRG_HEX.substring(1);
 		assertEquals(64, notHex.length());
-		assertThrows(IllegalArgumentException.class, () -> DescriptorSupport
+		assertThrows(IllegalArgumentException.class, () -> GameIdentities
 				.parseGameIdentity("prg:" + notHex + " file:" + FILE_HEX));
 	}
 
 	@Test
 	public void unknownKeyIsRejected() {
-		assertThrows(IllegalArgumentException.class, () -> DescriptorSupport.parseGameIdentity(
+		assertThrows(IllegalArgumentException.class, () -> GameIdentities.parseGameIdentity(
 			"chr:" + FILE_HEX + " prg:" + PRG_HEX + " file:" + FILE_HEX));
 	}
 
 	@Test
 	public void repeatedKeyIsRejected() {
 		IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
-			() -> DescriptorSupport.parseGameIdentity("prg:" + PRG_HEX + " prg:" + FILE_HEX));
+			() -> GameIdentities.parseGameIdentity("prg:" + PRG_HEX + " prg:" + FILE_HEX));
 		assertTrue(e.getMessage().contains("more than once"));
 	}
 
 	@Test
 	public void sha256HexMatchesTheCanonicalTestVectors() throws IOException {
-		String empty = DescriptorSupport.sha256Hex(new ByteArrayInputStream(new byte[0]), -1);
+		String empty = GameIdentities.sha256Hex(new ByteArrayInputStream(new byte[0]), -1);
 		assertEquals(SHA256_EMPTY, empty);
 
-		String abc = DescriptorSupport.sha256Hex(
+		String abc = GameIdentities.sha256Hex(
 			new ByteArrayInputStream("abc".getBytes(StandardCharsets.UTF_8)), -1);
 		assertEquals(SHA256_ABC, abc);
 
@@ -175,12 +175,12 @@ public class GameIdentityParseTest {
 		byte[] head = new byte[16];
 		System.arraycopy(all, 0, head, 0, head.length);
 
-		String prefixOfAll = DescriptorSupport.sha256Hex(new ByteArrayInputStream(all), 16);
-		String headAlone = DescriptorSupport.sha256Hex(new ByteArrayInputStream(head), -1);
+		String prefixOfAll = GameIdentities.sha256Hex(new ByteArrayInputStream(all), 16);
+		String headAlone = GameIdentities.sha256Hex(new ByteArrayInputStream(head), -1);
 		assertEquals(headAlone, prefixOfAll);
 
 		// The trailing bytes really were excluded, not merely hashed identically.
-		String allBytes = DescriptorSupport.sha256Hex(new ByteArrayInputStream(all), -1);
+		String allBytes = GameIdentities.sha256Hex(new ByteArrayInputStream(all), -1);
 		assertFalse(allBytes.equals(prefixOfAll));
 	}
 
@@ -189,6 +189,6 @@ public class GameIdentityParseTest {
 		// A short read means the caller's slice bounds were wrong; hashing whatever arrived
 		// would mint a well-formed but wrong key, so it has to fail loudly.
 		assertThrows(IOException.class,
-			() -> DescriptorSupport.sha256Hex(new ByteArrayInputStream(new byte[4]), 8));
+			() -> GameIdentities.sha256Hex(new ByteArrayInputStream(new byte[4]), 8));
 	}
 }

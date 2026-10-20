@@ -25,7 +25,7 @@ import java.util.Map;
 import org.junit.Test;
 
 /**
- * Pure-JUnit coverage of {@link DescriptorSupport#parsePlacementOverride} (bead grm-hsv.3):
+ * Pure-JUnit coverage of {@link DescriptorHints#parsePlacementOverride} (bead grm-hsv.3):
  * the shared {@code window:bank} grammar both the NES loader (validateOptions) and the bank
  * analyzer (read side) go through. Imports nothing from {@code ghidra.*} -- the grammar is
  * plain string logic, so no Ghidra runtime bootstrap is needed (same discipline as
@@ -36,7 +36,7 @@ public class PlacementOverrideParseTest {
 
 	@Test
 	public void singlePairParsesToWindowBankEntry() {
-		Map<String, Integer> parsed = DescriptorSupport.parsePlacementOverride("W8000:5");
+		Map<String, Integer> parsed = DescriptorHints.parsePlacementOverride("W8000:5");
 		assertEquals(1, parsed.size());
 		assertEquals(Integer.valueOf(5), parsed.get("W8000"));
 	}
@@ -44,7 +44,7 @@ public class PlacementOverrideParseTest {
 	@Test
 	public void multiplePairsPreserveInsertionOrder() {
 		Map<String, Integer> parsed =
-			DescriptorSupport.parsePlacementOverride("W8000:5 WC000:3");
+			DescriptorHints.parsePlacementOverride("W8000:5 WC000:3");
 		assertEquals(2, parsed.size());
 		assertEquals(Integer.valueOf(5), parsed.get("W8000"));
 		assertEquals(Integer.valueOf(3), parsed.get("WC000"));
@@ -54,7 +54,7 @@ public class PlacementOverrideParseTest {
 	@Test
 	public void extraWhitespaceBetweenAndAroundPairsIsTolerated() {
 		Map<String, Integer> parsed =
-			DescriptorSupport.parsePlacementOverride("  W8000:5   WC000:3  ");
+			DescriptorHints.parsePlacementOverride("  W8000:5   WC000:3  ");
 		assertEquals(2, parsed.size());
 		assertEquals(Integer.valueOf(5), parsed.get("W8000"));
 		assertEquals(Integer.valueOf(3), parsed.get("WC000"));
@@ -62,9 +62,9 @@ public class PlacementOverrideParseTest {
 
 	@Test
 	public void nullAndBlankYieldEmptyMap() {
-		assertTrue(DescriptorSupport.parsePlacementOverride(null).isEmpty());
-		assertTrue(DescriptorSupport.parsePlacementOverride("").isEmpty());
-		assertTrue(DescriptorSupport.parsePlacementOverride("   ").isEmpty());
+		assertTrue(DescriptorHints.parsePlacementOverride(null).isEmpty());
+		assertTrue(DescriptorHints.parsePlacementOverride("").isEmpty());
+		assertTrue(DescriptorHints.parsePlacementOverride("   ").isEmpty());
 	}
 
 	@Test
@@ -72,26 +72,26 @@ public class PlacementOverrideParseTest {
 		// The old '='-based shape (bank=5:W8000) must not parse -- it is exactly what the
 		// headless batch arg parser mangles, and the grammar moved to colons because of it.
 		IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
-			() -> DescriptorSupport.parsePlacementOverride("bank=5:W8000"));
+			() -> DescriptorHints.parsePlacementOverride("bank=5:W8000"));
 		assertTrue(e.getMessage().contains("window:bank"));
 	}
 
 	@Test
 	public void missingBankIsRejected() {
 		assertThrows(IllegalArgumentException.class,
-			() -> DescriptorSupport.parsePlacementOverride("W8000"));
+			() -> DescriptorHints.parsePlacementOverride("W8000"));
 	}
 
 	@Test
 	public void nonNumericBankIsRejected() {
 		assertThrows(IllegalArgumentException.class,
-			() -> DescriptorSupport.parsePlacementOverride("W8000:x"));
+			() -> DescriptorHints.parsePlacementOverride("W8000:x"));
 	}
 
 	@Test
 	public void repeatedWindowIsRejected() {
 		IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
-			() -> DescriptorSupport.parsePlacementOverride("W8000:5 W8000:3"));
+			() -> DescriptorHints.parsePlacementOverride("W8000:5 W8000:3"));
 		assertTrue(e.getMessage().contains("more than once"));
 	}
 }

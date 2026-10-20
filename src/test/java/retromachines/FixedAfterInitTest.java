@@ -27,7 +27,7 @@ import ghidra.app.util.importer.MessageLog;
 
 /**
  * A game descriptor's {@code banking.fixed_after_init} hint (bead grm-mej.12) resolved to a
- * state-bit mask by {@link DescriptorSupport#resolveFixedAfterInitMask}. Same Gson-in/number-out
+ * state-bit mask by {@link BoardStateFields#resolveFixedAfterInitMask}. Same Gson-in/number-out
  * style as {@link GameInitialStateHintTest}.
  */
 public class FixedAfterInitTest {
@@ -51,34 +51,34 @@ public class FixedAfterInitTest {
 	@Test
 	public void fieldBecomesItsBitRange() {
 		MessageLog log = new MessageLog();
-		assertEquals(0b1100L, DescriptorSupport.resolveFixedAfterInitMask(json(BOARD),
+		assertEquals(0b1100L, BoardStateFields.resolveFixedAfterInitMask(json(BOARD),
 			game("[\"prg_mode\"]"), "g.gmap", log));
 		assertEquals("", log.toString().trim());
 	}
 
 	@Test
 	public void severalFieldsUnion() {
-		assertEquals(0b1111L, DescriptorSupport.resolveFixedAfterInitMask(json(BOARD),
+		assertEquals(0b1111L, BoardStateFields.resolveFixedAfterInitMask(json(BOARD),
 			game("[\"prg_mode\", \"mirroring\"]"), "g.gmap", new MessageLog()));
 	}
 
 	@Test
 	public void unknownFieldIsLoggedAndIgnored() {
 		MessageLog log = new MessageLog();
-		assertEquals(0b1100L, DescriptorSupport.resolveFixedAfterInitMask(json(BOARD),
+		assertEquals(0b1100L, BoardStateFields.resolveFixedAfterInitMask(json(BOARD),
 			game("[\"nope\", \"prg_mode\"]"), "g.gmap", log));
 		assertTrue(log.toString(), log.toString().contains("nope"));
 	}
 
 	@Test
 	public void onlyUnknownFieldGivesZero() {
-		assertEquals(0L, DescriptorSupport.resolveFixedAfterInitMask(json(BOARD),
+		assertEquals(0L, BoardStateFields.resolveFixedAfterInitMask(json(BOARD),
 			game("[\"nope\"]"), "g.gmap", new MessageLog()));
 	}
 
 	@Test
 	public void noHintGivesZero() {
-		assertEquals(0L, DescriptorSupport.resolveFixedAfterInitMask(json(BOARD),
+		assertEquals(0L, BoardStateFields.resolveFixedAfterInitMask(json(BOARD),
 			json("{ \"game\": {} }"), "g.gmap", new MessageLog()));
 	}
 }

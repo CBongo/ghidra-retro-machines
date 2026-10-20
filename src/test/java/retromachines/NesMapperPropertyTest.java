@@ -146,7 +146,7 @@ public class NesMapperPropertyTest {
 	 */
 	@Test
 	public void humanFacingPropertyNamesAreTopLevel() {
-		assertFalse(DescriptorSupport.INES_MAPPER_PROPERTY.contains(Options.DELIMITER_STRING));
-		assertFalse(DescriptorSupport.BOARD_NAME_PROPERTY.contains(Options.DELIMITER_STRING));
+		assertFalse(DescriptorHints.INES_MAPPER_PROPERTY.contains(Options.DELIMITER_STRING));
+		assertFalse(DescriptorHints.BOARD_NAME_PROPERTY.contains(Options.DELIMITER_STRING));
 	}
 }

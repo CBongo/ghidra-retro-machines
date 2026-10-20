@@ -121,11 +121,11 @@ public class DecodedMaskTest {
 				continue;
 			}
 			MessageLog log = new MessageLog();
-			DescriptorSupport.LayoutPlan plan = DescriptorSupport.planWindows(map, log, f.getName());
-			List<FieldSpec> fields = DescriptorSupport.parseStateFields(map);
-			List<DescriptorSupport.PlannedWindow> all = new ArrayList<>(plan.invariant());
+			WindowPlanner.LayoutPlan plan = WindowPlanner.planWindows(map, log, f.getName());
+			List<FieldSpec> fields = BoardStateFields.parseStateFields(map);
+			List<WindowPlanner.PlannedWindow> all = new ArrayList<>(plan.invariant());
 			all.addAll(plan.varying());
-			for (DescriptorSupport.PlannedWindow pw : all) {
+			for (WindowPlanner.PlannedWindow pw : all) {
 				if (pw.expr() == null) {
 					continue;
 				}
@@ -133,7 +133,7 @@ public class DecodedMaskTest {
 				if (refs.size() != 1) {
 					continue;
 				}
-				FieldSpec field = DescriptorSupport.findField(fields, refs.iterator().next());
+				FieldSpec field = BoardStateFields.findField(fields, refs.iterator().next());
 				if (field == null) {
 					continue;
 				}

@@ -308,7 +308,7 @@ final class BankAnnotationAdapter {
 	 * the engine ASSUMED the locked value (owner ruling 2026-10-11), so the assumption is visible
 	 * at the site it was made.</li>
 	 * </ul>
-	 * {@link DescriptorSupport#DETECTED_PRG_MODE_PROPERTY} carries the locked value while the lock
+	 * {@link DescriptorHints#DETECTED_PRG_MODE_PROPERTY} carries the locked value while the lock
 	 * holds and is removed otherwise. The bookmarks live in their own category, cleared on every
 	 * round, so a stale one cannot outlive the round that raised it, and one can never replace (or
 	 * be replaced by) an ordinary switch-site bookmark at the same address -- Ghidra keeps a single
@@ -323,14 +323,14 @@ final class BankAnnotationAdapter {
 		Options info = program.getOptions(Program.PROGRAM_INFO);
 		FieldSpec field = board.modeField();
 		if (lock == null || field == null) {
-			info.removeOption(DescriptorSupport.DETECTED_PRG_MODE_PROPERTY);
+			info.removeOption(DescriptorHints.DETECTED_PRG_MODE_PROPERTY);
 			return 0;
 		}
 		int locked = field.valueIn(lock.state().bits());
 		String origin = "code reached from reset only ever sets " + field.name() + "=" + locked +
 			" (first at " + lock.source() + ")";
 		if (!lock.rejected()) {
-			info.setString(DescriptorSupport.DETECTED_PRG_MODE_PROPERTY, Integer.toString(locked));
+			info.setString(DescriptorHints.DETECTED_PRG_MODE_PROPERTY, Integer.toString(locked));
 			for (Address site : lock.assumed()) {
 				bm.setBookmark(site, BookmarkType.NOTE, category, field.name() + " assumed to stay " +
 					locked + " here: this write's " + field.name() + " bits could not be resolved, and " +
@@ -338,7 +338,7 @@ final class BankAnnotationAdapter {
 			}
 			return 0;
 		}
-		info.removeOption(DescriptorSupport.DETECTED_PRG_MODE_PROPERTY);
+		info.removeOption(DescriptorHints.DETECTED_PRG_MODE_PROPERTY);
 		for (Address site : lock.contradictions()) {
 			BankDataflowEngine.ModeWrite w = lock.writes().get(site);
 			String what = w.resolved()
@@ -1196,7 +1196,7 @@ final class BankAnnotationAdapter {
 	 * name (mode-invariant computed windows) or by {@link #modeBankKey} (one mode-varying
 	 * window instance). Derived once per run from the program's own address spaces plus the
 	 * one home bank the loader realizes in BASE space rather than as an overlay -- see
-	 * {@link DescriptorSupport.OverlayNaming} for the naming contract this parses back, and
+	 * {@link OverlayNaming} for the naming contract this parses back, and
 	 * {@link #impossibleBank} for why the program rather than the container header is the
 	 * authority.
 	 */
@@ -1254,7 +1254,7 @@ final class BankAnnotationAdapter {
 				continue;
 			}
 			Integer v =
-				DescriptorSupport.OverlayNaming.parseBankValue(windowName, space.getName());
+				OverlayNaming.parseBankValue(windowName, space.getName());
 			if (v != null) {
 				banks.add(v);
 			}
@@ -1278,8 +1278,8 @@ final class BankAnnotationAdapter {
 			if (!space.isOverlaySpace()) {
 				continue;
 			}
-			DescriptorSupport.OverlayNaming.ModeBank mb =
-				DescriptorSupport.OverlayNaming.parseModeBankValue(windowName, space.getName());
+			OverlayNaming.ModeBank mb =
+				OverlayNaming.parseModeBankValue(windowName, space.getName());
 			if (mb != null && mb.mode() == modeValue) {
 				banks.add(mb.bank());
 			}
@@ -1417,7 +1417,7 @@ final class BankAnnotationAdapter {
 
 	/**
 	 * Records that the reference at {@code addr} was placed into bank {@code bank} because the
-	 * user pinned it via the {@link DescriptorSupport#PLACEMENT_OVERRIDE_PROPERTY} override --
+	 * user pinned it via the {@link DescriptorHints#PLACEMENT_OVERRIDE_PROPERTY} override --
 	 * dataflow did not recover the switchable bank here (grm-hsv.3). Uses the {@code bank ->}
 	 * vocabulary so the provenance shows in the listing and the banktest dump, and defers to an
 	 * existing bank-switch annotation rather than clobbering it.
@@ -1430,7 +1430,7 @@ final class BankAnnotationAdapter {
 
 	/**
 	 * Reads and parses the user bank-placement override
-	 * ({@link DescriptorSupport#PLACEMENT_OVERRIDE_PROPERTY}) a loader may have persisted:
+	 * ({@link DescriptorHints#PLACEMENT_OVERRIDE_PROPERTY}) a loader may have persisted:
 	 * a window-name -> bank map applied in {@link #retargetReferences} where dataflow left a
 	 * switchable bank unknown. Absent -> empty; a malformed value (should not happen -- the
 	 * loader validated it) is logged and ignored, matching the loader-degradation convention.
@@ -1438,12 +1438,12 @@ final class BankAnnotationAdapter {
 	static Map<String, Integer> readPlacementOverride(BoardBankAnalyzer analyzer, Program program,
 			MessageLog log) {
 		String spec = program.getOptions(Program.PROGRAM_INFO)
-				.getString(DescriptorSupport.PLACEMENT_OVERRIDE_PROPERTY, null);
+				.getString(DescriptorHints.PLACEMENT_OVERRIDE_PROPERTY, null);
 		if (spec == null || spec.isBlank()) {
 			return Map.of();
 		}
 		try {
-			Map<String, Integer> override = DescriptorSupport.parsePlacementOverride(spec);
+			Map<String, Integer> override = DescriptorHints.parsePlacementOverride(spec);
 			if (!override.isEmpty()) {
 				AnalyzerLog.info(analyzer, "placement override active: " + override);
 			}
@@ -2162,7 +2162,7 @@ final class BankAnnotationAdapter {
 					boolean selfWindow =
 						fromBase && findWindow(board.computedWindows(), fromOffset) == computed;
 					if (placeOverlayRef(analyzer, program, refMgr, instr, key,
-						DescriptorSupport.OverlayNaming.bankBlockName(computed.name(), cr.bank()),
+						OverlayNaming.bankBlockName(computed.name(), cr.bank()),
 						refType, makePrimary, primaryGiven, placed, monitor, log) > 0) {
 						added++;
 						((cr.fullyKnown() || cr.overridden()) && !selfWindow ? replaced : keepBase)
@@ -2198,7 +2198,7 @@ final class BankAnnotationAdapter {
 							continue;
 						}
 						if (placeOverlayRef(analyzer, program, refMgr, instr, key,
-							DescriptorSupport.OverlayNaming.modeBlockName(instance.name(), modeValue),
+							OverlayNaming.modeBlockName(instance.name(), modeValue),
 							refType, makePrimary, primaryGiven, placed, monitor, log) > 0) {
 							added++;
 							(modeKnown && !selfWindow ? replaced : keepBase).add(key);
@@ -2220,7 +2220,7 @@ final class BankAnnotationAdapter {
 							continue;
 						}
 						if (placeOverlayRef(analyzer, program, refMgr, instr, key,
-							DescriptorSupport.OverlayNaming.modeBankBlockName(instance.name(), modeValue,
+							OverlayNaming.modeBankBlockName(instance.name(), modeValue,
 								mr.bank()), refType, makePrimary, primaryGiven, placed, monitor, log) > 0) {
 							added++;
 							(modeKnown && (mr.fullyKnown() || mr.overridden()) && !selfWindow
@@ -2276,7 +2276,7 @@ final class BankAnnotationAdapter {
 			ComputedResolution cr = resolveComputedBank(board, bankUniverse, state, effective,
 				placementOverride, computed);
 			return new OffsetResolution(
-				DescriptorSupport.OverlayNaming.bankBlockName(computed.name(), cr.bank()),
+				OverlayNaming.bankBlockName(computed.name(), cr.bank()),
 				cr.fullyKnown() || cr.overridden(), cr.home());
 		}
 		if (board.modeField() != null) {
@@ -2288,12 +2288,12 @@ final class BankAnnotationAdapter {
 			}
 			if (instance.bankField() == null) {
 				return new OffsetResolution(
-					DescriptorSupport.OverlayNaming.modeBlockName(instance.name(), modeValue),
+					OverlayNaming.modeBlockName(instance.name(), modeValue),
 					modeKnown, modeValue == board.homeModeValue());
 			}
 			ModeBankResolution mr = resolveModeBank(board, bankUniverse, state, effective,
 				modeValue, placementOverride, instance);
-			return new OffsetResolution(DescriptorSupport.OverlayNaming.modeBankBlockName(
+			return new OffsetResolution(OverlayNaming.modeBankBlockName(
 				instance.name(), modeValue, mr.bank()),
 				modeKnown && (mr.fullyKnown() || mr.overridden()), mr.home());
 		}

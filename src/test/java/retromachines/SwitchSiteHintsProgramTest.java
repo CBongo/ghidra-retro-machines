@@ -45,7 +45,7 @@ import ghidra.util.task.TaskMonitor;
  * The seam is {@link SwitchSiteHints#materialize} plus {@link BankDataflowEngine#runDataflow}
  * with a hand-built board, exactly as {@code BankPathForkProgramTest} drives the engine: no
  * installed extension, no file on disk. The descriptor object is handed in through the same
- * {@link DescriptorSupport#formatSwitchSites} the loader uses, so the property under test is the
+ * {@link DescriptorHints#formatSwitchSites} the loader uses, so the property under test is the
  * one a real import publishes.
  */
 public class SwitchSiteHintsProgramTest extends AbstractProgramTest {
@@ -74,9 +74,9 @@ public class SwitchSiteHintsProgramTest extends AbstractProgramTest {
 	private void hint(String sitesYamlAsJson) {
 		JsonObject doc = JsonParser.parseString(
 			"{\"banking\": {\"switch_sites\": " + sitesYamlAsJson + "}}").getAsJsonObject();
-		String published = DescriptorSupport.formatSwitchSites(doc, "machines/games/test.gmap");
+		String published = DescriptorHints.formatSwitchSites(doc, "machines/games/test.gmap");
 		inTx(program, "publish switch_sites", () -> program.getOptions(Program.PROGRAM_INFO)
-				.setString(DescriptorSupport.SWITCH_SITES_PROPERTY, published));
+				.setString(DescriptorHints.SWITCH_SITES_PROPERTY, published));
 	}
 
 	private void hintAt(String addrDecimal, String extra) {
@@ -283,7 +283,7 @@ public class SwitchSiteHintsProgramTest extends AbstractProgramTest {
 	public void malformedPropertyIsReportedAndAppliesNothing() throws Exception {
 		layUnreachedStore(LATCH_STORE);
 		inTx(program, "garbage", () -> program.getOptions(Program.PROGRAM_INFO)
-				.setString(DescriptorSupport.SWITCH_SITES_PROPERTY, "{\"sites\": [{\"x\": 1}]}"));
+				.setString(DescriptorHints.SWITCH_SITES_PROPERTY, "{\"sites\": [{\"x\": 1}]}"));
 
 		MessageLog log = new MessageLog();
 		List<Address> ready = materialize(log);

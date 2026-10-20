@@ -473,7 +473,7 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 		// machine from the executable format, so a program without it is a program later
 		// passes cannot interpret.
 		program.getOptions(Program.PROGRAM_INFO)
-				.setString(DescriptorSupport.MAP_PATH_PROPERTY, MAP_PATH);
+				.setString(DescriptorHints.MAP_PATH_PROPERTY, MAP_PATH);
 
 		for (JsonElement e : map.getAsJsonArray("regions")) {
 			JsonObject region = e.getAsJsonObject();
@@ -494,7 +494,7 @@ public class SnesRomLoader extends AbstractProgramWrapperLoader {
 			DescriptorAnnotationAnalyzer.recordSymbolSetChoice(program,
 				set.get("set").getAsString(), enabled);
 			if (enabled) {
-				DescriptorSupport.applySymbolSet(program, space, set, null, log);
+				DescriptorApply.applySymbolSet(program, space, set, null, log);
 			}
 		}
 	}

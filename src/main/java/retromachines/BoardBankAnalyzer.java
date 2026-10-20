@@ -426,7 +426,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		}
 
 		BoardModel board = BoardModel.parse(map, log, getName(), mapPath,
-			DescriptorSupport.readResolvedInitialState(program));
+			DescriptorHints.readResolvedInitialState(program));
 		if (board == null) {
 			return true;
 		}
@@ -503,7 +503,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// against what the ROM bytes proved above -- see BankMirrors.withMembershipHints.
 		List<String> hintProblems = new ArrayList<>();
 		mirrors = mirrors.withMembershipHints(
-			DescriptorSupport.parseMembershipHints(program, hintProblems), hintProblems);
+			DescriptorHints.parseMembershipHints(program, hintProblems), hintProblems);
 		for (String problem : hintProblems) {
 			AnalyzerLog.info(this, problem);
 			log.appendMsg(problem);
@@ -527,17 +527,17 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// helper's inner call. Read here, at analysis time, so a re-analysis picks it up; used
 		// only as a premise of the restoring-trampoline walk, never as a source of a bank value.
 		List<String> saveCellProblems = new ArrayList<>();
-		Set<Long> saveCells = DescriptorSupport.parseSaveCells(program, saveCellProblems);
+		Set<Long> saveCells = DescriptorHints.parseSaveCells(program, saveCellProblems);
 		for (String problem : saveCellProblems) {
 			AnalyzerLog.info(this, problem);
 			log.appendMsg(problem);
 		}
 		// bead grm-mej.10: banking.bank_stacks / banking.paired_fields, read once here.
 		List<String> stackProblems = new ArrayList<>();
-		List<DescriptorSupport.BankStack> bankStacks =
-			DescriptorSupport.parseBankStacks(program, stackProblems);
-		List<DescriptorSupport.PairedFields> pairedFields =
-			DescriptorSupport.parsePairedFields(program, stackProblems);
+		List<DescriptorHints.BankStack> bankStacks =
+			DescriptorHints.parseBankStacks(program, stackProblems);
+		List<DescriptorHints.PairedFields> pairedFields =
+			DescriptorHints.parsePairedFields(program, stackProblems);
 		for (String problem : stackProblems) {
 			AnalyzerLog.info(this, problem);
 			log.appendMsg(problem);
@@ -626,7 +626,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		Set<Address> alreadyWarned = new LinkedHashSet<>();
 		// The loader's interrupt entries (bead grm-913), for the caller-side restore note's
 		// "unchanged from handler entry" clause -- the same list the engine seeds unknown.
-		Set<Address> asyncEntries = DescriptorSupport.parseAsyncEntryPoints(program);
+		Set<Address> asyncEntries = DescriptorHints.parseAsyncEntryPoints(program);
 		// `flow` and `mirrors` are reassigned above; the call-site classifier's lazy supplier needs
 		// effectively final copies.
 		DataflowResult finalFlow = flow;

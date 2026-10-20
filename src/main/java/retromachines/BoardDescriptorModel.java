@@ -53,7 +53,7 @@ final class BoardDescriptorModel {
 	 * One {@code banking.state} field: its name and its {@link BitField} position within the
 	 * packed state. Fields pack LSB-first in declaration order (mirrors
 	 * {@code MapCompiler.packState} at build time). The loader side
-	 * ({@link DescriptorSupport#parseStateFields}) uses this same record; until grm-ze06.4 it
+	 * ({@link BoardStateFields#parseStateFields}) uses this same record; until grm-ze06.4 it
 	 * had its own {@code StateField} whose {@code mask()} meant the UNPOSITIONED width mask.
 	 * Package-private, and it must stay that way: {@link BoardBankAnalyzer} consumes it
 	 * throughout, and {@code FieldSpecKnownTest} exercises {@link #fullyKnownIn} directly
@@ -246,7 +246,7 @@ final class BoardDescriptorModel {
 		 * cartridge"). That cannot be packed at build time and cannot be resolved here either:
 		 * this method sees only the {@code .map}, never an image size. The loader resolves it
 		 * at import and publishes the answer in
-		 * {@link DescriptorSupport#INITIAL_STATE_PROPERTY}; {@code resolved} is that value.
+		 * {@link DescriptorHints#INITIAL_STATE_PROPERTY}; {@code resolved} is that value.
 		 * Null -- the ordinary case, and the only case for every descriptor without an
 		 * expression, plus any program imported before this existed -- keeps the compiled
 		 * literal.
@@ -282,20 +282,14 @@ final class BoardDescriptorModel {
 			// The tracked-bit mask, per-bit annotation names, and field layout come from the
 			// banking.state field tuple (LSB first; multi-bit fields expand to name.0, ...).
 			List<String> stateBitNames = new ArrayList<>();
-			List<FieldSpec> fieldSpecs = new ArrayList<>();
-			if (banking.has("state")) {
-				for (JsonElement fe : banking.getAsJsonArray("state")) {
-					JsonObject field = fe.getAsJsonObject();
-					String fieldName = field.get("name").getAsString();
-					int bits = field.get("bits").getAsInt();
-					fieldSpecs.add(new FieldSpec(fieldName, stateBitNames.size(), bits));
-					if (bits == 1) {
-						stateBitNames.add(fieldName);
-					}
-					else {
-						for (int i = 0; i < bits; i++) {
-							stateBitNames.add(fieldName + "." + i);
-						}
+			List<FieldSpec> fieldSpecs = BoardStateFields.parseStateFields(map);
+			for (FieldSpec spec : fieldSpecs) {
+				if (spec.width() == 1) {
+					stateBitNames.add(spec.name());
+				}
+				else {
+					for (int i = 0; i < spec.width(); i++) {
+						stateBitNames.add(spec.name() + "." + i);
 					}
 				}
 			}
@@ -304,7 +298,7 @@ final class BoardDescriptorModel {
 			// --- Parse windows: enumerated occupants (C64-style, raw JSON -- PlannedWindow
 			// does not carry occupants) come straight off memory.windows[]; computed maps:
 			// windows (mode-invariant and mode-varying alike) are driven off the normalized
-			// DescriptorSupport.planWindows() plan so this engine and NesRomLoader agree on
+			// WindowPlanner.planWindows() plan so this engine and NesRomLoader agree on
 			// what a window's instances are without re-walking memory.layouts[] separately.
 			Map<String, WindowModel> windowsByName = new LinkedHashMap<>();
 			JsonArray windows = map.has("windows") ? map.getAsJsonArray("windows") : new JsonArray();
@@ -327,10 +321,10 @@ final class BoardDescriptorModel {
 				windowsByName.put(name, new WindowModel(name, start, end, occupants));
 			}
 
-			DescriptorSupport.LayoutPlan plan = DescriptorSupport.planWindows(map, log, mapPath);
+			WindowPlanner.LayoutPlan plan = WindowPlanner.planWindows(map, log, mapPath);
 
 			Map<String, ComputedWindowModel> computedByName = new LinkedHashMap<>();
-			for (DescriptorSupport.PlannedWindow pw : plan.invariant()) {
+			for (WindowPlanner.PlannedWindow pw : plan.invariant()) {
 				if (pw.expr() == null) {
 					continue; // enumerated occupant window, already handled above
 				}
@@ -374,7 +368,7 @@ final class BoardDescriptorModel {
 				}
 				else {
 					homeModeValue = modeField.valueIn(initialState);
-					for (DescriptorSupport.PlannedWindow pw : plan.varying()) {
+					for (WindowPlanner.PlannedWindow pw : plan.varying()) {
 						if (pw.expr() == null) {
 							log.appendMsg(source, "Window '" + pw.name() +
 								"' has enumerated occupants; not supported for mode-varying windows");

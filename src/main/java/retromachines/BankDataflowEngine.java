@@ -456,7 +456,7 @@ final class BankDataflowEngine {
 			// so it is sound for an entry the machine reaches from reset -- and unsound for one it
 			// reaches from an interrupt, which fires from arbitrary mainline context and leaves the
 			// interrupted code's bank live on entry. The loader tells us which entries those are
-			// (DescriptorSupport.ASYNC_ENTRY_POINTS_PROPERTY); this stays machine-independent and
+			// (DescriptorHints.ASYNC_ENTRY_POINTS_PROPERTY); this stays machine-independent and
 			// merely consumes the list. Bead grm-913.
 			BankState seedState = BankState.fullyKnown(board.mask(), board.initialState());
 			// Bead grm-hb6.20: banking.switch_sites bank: VALUE hints. Empty (and every use below is
@@ -465,11 +465,11 @@ final class BankDataflowEngine {
 			// runDataflow only ever sees the final run's, so a re-run (the mode-lock redo) or an
 			// earlier analysis pass cannot leave a duplicate or stale diagnosis behind.
 			Map<Address, Integer> valueHints = SwitchSiteHints.valueHints(program);
-			Set<Address> asyncEntries = DescriptorSupport.parseAsyncEntryPoints(program);
+			Set<Address> asyncEntries = DescriptorHints.parseAsyncEntryPoints(program);
 			// Bead grm-mej.12: a per-game banking.fixed_after_init hint names fields that hold their
 			// initial value at every instruction after init, so those bits (only) are known on an
 			// async entry too. Mask 0 (no hint) leaves this exactly BankState.unknown().
-			int fixedMask = DescriptorSupport.readFixedAfterInitMask(program) & board.mask();
+			int fixedMask = DescriptorHints.readFixedAfterInitMask(program) & board.mask();
 			BankState asyncSeed = fixedMask == 0 ? BankState.unknown()
 					: new BankState(fixedMask, seedState.bits() & fixedMask);
 			// Seeding runs in three phases (grm-dos9.6). The reset-side entries go first, alone, so
@@ -2493,7 +2493,7 @@ final class BankDataflowEngine {
 			HelperDiscovery.BankResolution ctx) {
 		BoardModel board = ctx.board();
 		for (ComputedWindowModel w : board.computedWindows().values()) {
-			Integer v = DescriptorSupport.OverlayNaming.parseBankValue(w.name(), overlayName);
+			Integer v = OverlayNaming.parseBankValue(w.name(), overlayName);
 			if (v != null) {
 				int mask = wrapInvariantBits(board, ctx.bankUniverse().get(w.name()), w.field(),
 					w.decodedMask());
@@ -2509,8 +2509,8 @@ final class BankDataflowEngine {
 			windowNames.add(w.name());
 		}
 		for (String windowName : windowNames) {
-			DescriptorSupport.OverlayNaming.ModeBank mb =
-				DescriptorSupport.OverlayNaming.parseModeBankValue(windowName, overlayName);
+			OverlayNaming.ModeBank mb =
+				OverlayNaming.parseModeBankValue(windowName, overlayName);
 			if (mb != null) {
 				ModeWindowModel instance = BankAnnotationAdapter
 					.findModeWindowInstance(board.modeWindows(), windowName, mb.mode());
@@ -2524,7 +2524,7 @@ final class BankDataflowEngine {
 					modeField.pos().place(mb.mode()) |
 						(instance.bankField().pos().place(mb.bank()) & bankMask) };
 			}
-			Integer mv = DescriptorSupport.OverlayNaming.parseModeValue(windowName, overlayName);
+			Integer mv = OverlayNaming.parseModeValue(windowName, overlayName);
 			if (mv != null) {
 				return new int[] { modeField.positionedMask(), modeField.pos().place(mv) };
 			}
@@ -2617,7 +2617,7 @@ final class BankDataflowEngine {
 		}
 		int[] clamp = clampCache.computeIfAbsent(space.getName(), name -> {
 			for (ComputedWindowModel w : board.computedWindows().values()) {
-				Integer v = DescriptorSupport.OverlayNaming.parseBankValue(w.name(), name);
+				Integer v = OverlayNaming.parseBankValue(w.name(), name);
 				if (v != null) {
 					// Pin only the bits the window decodes (grm-5dgx); ignored bits stay as
 					// they arrived -- execution inside the overlay never constrains them.
@@ -2634,8 +2634,8 @@ final class BankDataflowEngine {
 					windowNames.add(w.name());
 				}
 				for (String windowName : windowNames) {
-					DescriptorSupport.OverlayNaming.ModeBank mb =
-						DescriptorSupport.OverlayNaming.parseModeBankValue(windowName, name);
+					OverlayNaming.ModeBank mb =
+						OverlayNaming.parseModeBankValue(windowName, name);
 					if (mb != null) {
 						ModeWindowModel instance = BankAnnotationAdapter
 							.findModeWindowInstance(board.modeWindows(), windowName, mb.mode());
@@ -2649,7 +2649,7 @@ final class BankDataflowEngine {
 						}
 						continue;
 					}
-					Integer mv = DescriptorSupport.OverlayNaming.parseModeValue(windowName, name);
+					Integer mv = OverlayNaming.parseModeValue(windowName, name);
 					if (mv != null) {
 						return new int[] { modeField.positionedMask(), modeField.pos().place(mv) };
 					}

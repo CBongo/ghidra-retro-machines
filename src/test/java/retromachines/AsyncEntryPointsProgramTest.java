@@ -31,8 +31,8 @@ import ghidra.program.model.listing.Program;
 
 /**
  * Pins the loader-to-analyzer channel for asynchronously reached entry points (bead grm-913):
- * {@link DescriptorSupport#ASYNC_ENTRY_POINTS_PROPERTY} and its
- * {@link DescriptorSupport#formatAsyncEntryPoints}/{@link DescriptorSupport#parseAsyncEntryPoints}
+ * {@link DescriptorHints#ASYNC_ENTRY_POINTS_PROPERTY} and its
+ * {@link DescriptorHints#formatAsyncEntryPoints}/{@link DescriptorHints#parseAsyncEntryPoints}
  * pair.
  * <p>
  * Why this channel is worth its own test rather than being covered incidentally: it is the only
@@ -64,7 +64,7 @@ public class AsyncEntryPointsProgramTest extends AbstractBundledLanguageTest {
 	private void setProperty(String spec) {
 		inTx(program, "set async entry points", () -> {
 			program.getOptions(Program.PROGRAM_INFO)
-					.setString(DescriptorSupport.ASYNC_ENTRY_POINTS_PROPERTY, spec);
+					.setString(DescriptorHints.ASYNC_ENTRY_POINTS_PROPERTY, spec);
 		});
 	}
 
@@ -76,9 +76,9 @@ public class AsyncEntryPointsProgramTest extends AbstractBundledLanguageTest {
 	@Test
 	public void formattedAddressesParseBackToThemselves() {
 		List<Address> written = List.of(builder.addr("0x9000"), builder.addr("0xff8f"));
-		setProperty(DescriptorSupport.formatAsyncEntryPoints(written));
+		setProperty(DescriptorHints.formatAsyncEntryPoints(written));
 
-		assertEquals(Set.copyOf(written), DescriptorSupport.parseAsyncEntryPoints(program));
+		assertEquals(Set.copyOf(written), DescriptorHints.parseAsyncEntryPoints(program));
 	}
 
 	/**
@@ -88,7 +88,7 @@ public class AsyncEntryPointsProgramTest extends AbstractBundledLanguageTest {
 	 */
 	@Test
 	public void formatEmitsSpaceQualifiedTokens() {
-		String spec = DescriptorSupport.formatAsyncEntryPoints(List.of(builder.addr("0x9000")));
+		String spec = DescriptorHints.formatAsyncEntryPoints(List.of(builder.addr("0x9000")));
 
 		assertEquals(builder.addr("0x9000").toString(), spec);
 		assertTrue("token must round-trip through the address factory",
@@ -105,7 +105,7 @@ public class AsyncEntryPointsProgramTest extends AbstractBundledLanguageTest {
 	 */
 	@Test
 	public void absentPropertyYieldsNoAsyncEntries() {
-		assertEquals(Set.of(), DescriptorSupport.parseAsyncEntryPoints(program));
+		assertEquals(Set.of(), DescriptorHints.parseAsyncEntryPoints(program));
 	}
 
 	/** Same for a property present but empty, which the loader never writes but a user can. */
@@ -113,7 +113,7 @@ public class AsyncEntryPointsProgramTest extends AbstractBundledLanguageTest {
 	public void blankPropertyYieldsNoAsyncEntries() {
 		setProperty("   ");
 
-		assertEquals(Set.of(), DescriptorSupport.parseAsyncEntryPoints(program));
+		assertEquals(Set.of(), DescriptorHints.parseAsyncEntryPoints(program));
 	}
 
 	/**
@@ -127,13 +127,13 @@ public class AsyncEntryPointsProgramTest extends AbstractBundledLanguageTest {
 		setProperty("not-an-address " + builder.addr("0x9000"));
 
 		assertEquals(Set.of(builder.addr("0x9000")),
-			DescriptorSupport.parseAsyncEntryPoints(program));
+			DescriptorHints.parseAsyncEntryPoints(program));
 	}
 
 	/** Empty input formats to the empty string, which the read side already treats as absent. */
 	@Test
 	public void emptyListFormatsToEmptyString() {
-		assertEquals("", DescriptorSupport.formatAsyncEntryPoints(List.of()));
+		assertEquals("", DescriptorHints.formatAsyncEntryPoints(List.of()));
 	}
 
 	// ------------------------------------------------------------------
@@ -143,16 +143,16 @@ public class AsyncEntryPointsProgramTest extends AbstractBundledLanguageTest {
 	private void setFixedMask(String value) {
 		inTx(program, "set fixed mask", () -> {
 			program.getOptions(Program.PROGRAM_INFO)
-					.setString(DescriptorSupport.FIXED_AFTER_INIT_MASK_PROPERTY, value);
+					.setString(DescriptorHints.FIXED_AFTER_INIT_MASK_PROPERTY, value);
 		});
 	}
 
 	@Test
 	public void fixedAfterInitMaskReadsBackAndDegradesToZero() {
-		assertEquals("absent property = no hint", 0, DescriptorSupport.readFixedAfterInitMask(program));
+		assertEquals("absent property = no hint", 0, DescriptorHints.readFixedAfterInitMask(program));
 		setFixedMask("12");
-		assertEquals(12, DescriptorSupport.readFixedAfterInitMask(program));
+		assertEquals(12, DescriptorHints.readFixedAfterInitMask(program));
 		setFixedMask("garbage");
-		assertEquals(0, DescriptorSupport.readFixedAfterInitMask(program));
+		assertEquals(0, DescriptorHints.readFixedAfterInitMask(program));
 	}
 }

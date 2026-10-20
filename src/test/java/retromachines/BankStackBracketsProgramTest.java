@@ -33,7 +33,7 @@ import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSpace;
 
 import retromachines.BankStrategyRegistry.ConfiguredMechanism;
-import retromachines.DescriptorSupport.BankStack;
+import retromachines.DescriptorHints.BankStack;
 import retromachines.HelperArgumentRecovery.CallEffect;
 
 /**

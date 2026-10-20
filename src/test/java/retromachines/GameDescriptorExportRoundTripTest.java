@@ -210,11 +210,11 @@ public class GameDescriptorExportRoundTripTest extends AbstractBundledLanguageTe
 				{ "schema": 2, "banking": { "bank_identifying_offsets": [
 				  { "address": 49151, "shift": 1, "low": 1, "provenance": "%s" } ] } }
 				""".formatted(provenance)).getAsJsonObject();
-		String published = DescriptorSupport.formatMembershipHints(descriptor, "curated.gmap");
+		String published = DescriptorHints.formatMembershipHints(descriptor, "curated.gmap");
 		ProgramBuilder b = newBuilder();
 		ProgramDB src = b.getProgram();
 		edit(src, () -> src.getOptions(ghidra.program.model.listing.Program.PROGRAM_INFO)
-				.setString(DescriptorSupport.BANK_IDENTIFYING_HINTS_PROPERTY, published));
+				.setString(DescriptorHints.BANK_IDENTIFYING_HINTS_PROPERTY, published));
 
 		GameDescriptorExporter.Result result =
 			GameDescriptorExporter.export(src, request(Map.of("prg_mode", 0)));
@@ -232,7 +232,7 @@ public class GameDescriptorExportRoundTripTest extends AbstractBundledLanguageTe
 		assertEquals(curated, new Gson().toJsonTree(overlayResult.gameDoc()).getAsJsonObject());
 
 		// The fresh import publishes exactly what the original one did, initial_state kept too.
-		assertEquals(published, DescriptorSupport.formatMembershipHints(curated, "curated.gmap"));
+		assertEquals(published, DescriptorHints.formatMembershipHints(curated, "curated.gmap"));
 		assertEquals(0, curated.getAsJsonObject("banking").getAsJsonObject("initial_state")
 				.get("prg_mode").getAsInt());
 	}
@@ -250,11 +250,11 @@ public class GameDescriptorExportRoundTripTest extends AbstractBundledLanguageTe
 				    "comment": "latch behind JMP ($0300)", "provenance": "hand, 2026-10-18" },
 				  { "addr": 59348, "provenance": "scan" } ] } }
 				""").getAsJsonObject();
-		String published = DescriptorSupport.formatSwitchSites(descriptor, "curated.gmap");
+		String published = DescriptorHints.formatSwitchSites(descriptor, "curated.gmap");
 		ProgramBuilder b = newBuilder();
 		ProgramDB src = b.getProgram();
 		edit(src, () -> src.getOptions(ghidra.program.model.listing.Program.PROGRAM_INFO)
-				.setString(DescriptorSupport.SWITCH_SITES_PROPERTY, published));
+				.setString(DescriptorHints.SWITCH_SITES_PROPERTY, published));
 
 		GameDescriptorExporter.Result result =
 			GameDescriptorExporter.export(src, request(Map.of("prg_mode", 0)));
@@ -272,7 +272,7 @@ public class GameDescriptorExportRoundTripTest extends AbstractBundledLanguageTe
 				.getAsJsonObject();
 		assertEquals(curated, new Gson().toJsonTree(overlayResult.gameDoc()).getAsJsonObject());
 
-		assertEquals(published, DescriptorSupport.formatSwitchSites(curated, "curated.gmap"));
+		assertEquals(published, DescriptorHints.formatSwitchSites(curated, "curated.gmap"));
 	}
 
 	/**
@@ -286,11 +286,11 @@ public class GameDescriptorExportRoundTripTest extends AbstractBundledLanguageTe
 				  { "helper": 65470, "cell": 242, "field": "prg_bank",
 				    "provenance": "hand, 2026-10-19" } ] } }
 				""").getAsJsonObject();
-		String published = DescriptorSupport.formatShadowCommits(descriptor, "curated.gmap");
+		String published = DescriptorHints.formatShadowCommits(descriptor, "curated.gmap");
 		ProgramBuilder b = newBuilder();
 		ProgramDB src = b.getProgram();
 		edit(src, () -> src.getOptions(ghidra.program.model.listing.Program.PROGRAM_INFO)
-				.setString(DescriptorSupport.SHADOW_COMMITS_PROPERTY, published));
+				.setString(DescriptorHints.SHADOW_COMMITS_PROPERTY, published));
 
 		GameDescriptorExporter.Result result =
 			GameDescriptorExporter.export(src, request(Map.of("prg_mode", 0)));
@@ -308,7 +308,7 @@ public class GameDescriptorExportRoundTripTest extends AbstractBundledLanguageTe
 				.getAsJsonObject();
 		assertEquals(curated, new Gson().toJsonTree(overlayResult.gameDoc()).getAsJsonObject());
 
-		assertEquals(published, DescriptorSupport.formatShadowCommits(curated, "curated.gmap"));
+		assertEquals(published, DescriptorHints.formatShadowCommits(curated, "curated.gmap"));
 	}
 
 	/** No recorded hint, no exported key -- the exporter never derives one. */
@@ -326,13 +326,13 @@ public class GameDescriptorExportRoundTripTest extends AbstractBundledLanguageTe
 		ProgramBuilder b = newBuilder();
 		ProgramDB src = b.getProgram();
 		edit(src, () -> src.getOptions(ghidra.program.model.listing.Program.PROGRAM_INFO)
-				.setString(DescriptorSupport.BANK_IDENTIFYING_HINTS_PROPERTY,
+				.setString(DescriptorHints.BANK_IDENTIFYING_HINTS_PROPERTY,
 					"{\"source\":\"x\",\"offsets\":[{\"address\":49151}]}"));
 		GameDescriptorExporter.Result result = GameDescriptorExporter.export(src, request(null));
 		assertFalse(result.yaml(), result.yaml().contains("bank_identifying_offsets"));
 		assertEquals(1, result.skipped().size());
 		assertTrue(result.skipped().get(0),
-			result.skipped().get(0).contains(DescriptorSupport.BANK_IDENTIFYING_HINTS_PROPERTY));
+			result.skipped().get(0).contains(DescriptorHints.BANK_IDENTIFYING_HINTS_PROPERTY));
 	}
 
 	@Test
@@ -411,10 +411,10 @@ public class GameDescriptorExportRoundTripTest extends AbstractBundledLanguageTe
 			}
 		});
 		List<String> problems = new ArrayList<>();
-		assertEquals(1, DescriptorSupport.parseMembershipHints(src, problems).size());
-		assertEquals(1, DescriptorSupport.parseSaveCells(src, problems).size());
-		assertEquals(1, DescriptorSupport.parseBankStacks(src, problems).size());
-		assertEquals(1, DescriptorSupport.parsePairedFields(src, problems).size());
+		assertEquals(1, DescriptorHints.parseMembershipHints(src, problems).size());
+		assertEquals(1, DescriptorHints.parseSaveCells(src, problems).size());
+		assertEquals(1, DescriptorHints.parseBankStacks(src, problems).size());
+		assertEquals(1, DescriptorHints.parsePairedFields(src, problems).size());
 		assertEquals(1, SwitchSiteHints.parse(src, problems).size());
 		assertEquals("curated.gmap", ShadowCommits.source(src));
 		assertTrue(problems.toString(), problems.isEmpty());

@@ -80,7 +80,7 @@ public class RealRomDump extends GhidraScript {
 	private static final int SAMPLE_SYMBOLS = 25;
 
 	// Program-info property the loader stamps with the user's bank-placement override
-	// (DescriptorSupport.PLACEMENT_OVERRIDE_PROPERTY -- kept as a literal here so this script
+	// (DescriptorHints.PLACEMENT_OVERRIDE_PROPERTY -- kept as a literal here so this script
 	// needs no extension classes on its path; the .map path property is in the shared helper).
 	//
 	// `REALROM placement NONE` is KEPT in every golden although it reads NONE on all 35 NES rows:
@@ -90,7 +90,7 @@ public class RealRomDump extends GhidraScript {
 	private static final String PLACEMENT_OVERRIDE_PROPERTY = "Retro Machines.Placement Override";
 
 	// Program-info property the loader stamps with this image's per-game identity,
-	// "prg:<64 hex> file:<64 hex>" (DescriptorSupport.GAME_IDENTITY_PROPERTY -- kept as a
+	// "prg:<64 hex> file:<64 hex>" (DescriptorHints.GAME_IDENTITY_PROPERTY -- kept as a
 	// literal here for the same reason as the two above).
 	private static final String GAME_IDENTITY_PROPERTY = "Retro Machines.Game Identity";
 

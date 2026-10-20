@@ -131,7 +131,7 @@ public class DescriptorAnnotationAnalyzer extends AbstractAnalyzer {
 	}
 
 	private static String mapPath(Program program) {
-		String p = DescriptorSupport.programInfoString(program, DescriptorSupport.MAP_PATH_PROPERTY);
+		String p = DescriptorHints.programInfoString(program, DescriptorHints.MAP_PATH_PROPERTY);
 		return p == null || p.isBlank() ? null : p;
 	}
 
@@ -210,7 +210,7 @@ public class DescriptorAnnotationAnalyzer extends AbstractAnalyzer {
 	/** Whether {@code set} is enabled for this program: the recorded choice, else the default. */
 	static boolean symbolSetEnabled(Program program, JsonObject set) {
 		JsonObject choices =
-			parseChoices(DescriptorSupport.programInfoString(program, SYMBOL_SETS_PROPERTY));
+			parseChoices(DescriptorHints.programInfoString(program, SYMBOL_SETS_PROPERTY));
 		String name = set.get("set").getAsString();
 		if (choices.has(name)) {
 			return choices.get(name).getAsBoolean();
@@ -238,7 +238,7 @@ public class DescriptorAnnotationAnalyzer extends AbstractAnalyzer {
 				if (!symbolSetEnabled(program, set)) {
 					continue;
 				}
-				DescriptorSupport.applySymbolSet(program, base, set, (name, addr) -> {
+				DescriptorApply.applySymbolSet(program, base, set, (name, addr) -> {
 				}, log);
 			}
 		}
@@ -277,14 +277,14 @@ public class DescriptorAnnotationAnalyzer extends AbstractAnalyzer {
 	}
 
 	/** The program's recorded game identity, or null when absent or malformed. */
-	private static DescriptorSupport.GameIdentity identityOf(Program program) {
-		String spec = DescriptorSupport.programInfoString(program,
-			DescriptorSupport.GAME_IDENTITY_PROPERTY);
+	private static GameIdentities.GameIdentity identityOf(Program program) {
+		String spec = DescriptorHints.programInfoString(program,
+			DescriptorHints.GAME_IDENTITY_PROPERTY);
 		if (spec == null) {
 			return null;
 		}
 		try {
-			return DescriptorSupport.parseGameIdentity(spec);
+			return GameIdentities.parseGameIdentity(spec);
 		}
 		catch (IllegalArgumentException e) {
 			return null;
@@ -293,7 +293,7 @@ public class DescriptorAnnotationAnalyzer extends AbstractAnalyzer {
 
 	private static GameDescriptorRegistry.GameDescriptor resolveGame(Program program,
 			MessageLog log) {
-		DescriptorSupport.GameIdentity identity = identityOf(program);
+		GameIdentities.GameIdentity identity = identityOf(program);
 		String path = mapPath(program);
 		if (identity == null || path == null) {
 			return null;
@@ -313,7 +313,7 @@ public class DescriptorAnnotationAnalyzer extends AbstractAnalyzer {
 
 	/**
 	 * Applies the {@code symbols:} sets of a compiled game descriptor document -- the testable
-	 * seam. Same guards and idempotence as the machine sets ({@link DescriptorSupport#
+	 * seam. Same guards and idempotence as the machine sets ({@link DescriptorApply#
 	 * applySymbolSet}); entries land as {@code IMPORTED}, never {@code USER_DEFINED}
 	 * (design section 3c.3), so an exported user label returns as an imported one.
 	 */
@@ -328,7 +328,7 @@ public class DescriptorAnnotationAnalyzer extends AbstractAnalyzer {
 				JsonObject set = se.getAsJsonObject();
 				if (symbolSetEnabled(program, set)) {
 					// a GAME descriptor's comments are not recorded: re-export is a round trip
-					DescriptorSupport.applySymbolSet(program, base, set, (name, addr) -> {
+					DescriptorApply.applySymbolSet(program, base, set, (name, addr) -> {
 					}, log, false);
 				}
 			}
@@ -342,7 +342,7 @@ public class DescriptorAnnotationAnalyzer extends AbstractAnalyzer {
 				}
 				JsonObject set = se.getAsJsonObject();
 				if (commentSetEnabled(program, set)) {
-					DescriptorSupport.applyCommentSet(program, base, set, log);
+					DescriptorApply.applyCommentSet(program, base, set, log);
 				}
 			}
 		}
@@ -359,7 +359,7 @@ public class DescriptorAnnotationAnalyzer extends AbstractAnalyzer {
 	/** Whether the comments {@code set} is enabled: the recorded choice, else its default. */
 	static boolean commentSetEnabled(Program program, JsonObject set) {
 		JsonObject choices =
-			parseChoices(DescriptorSupport.programInfoString(program, SYMBOL_SETS_PROPERTY));
+			parseChoices(DescriptorHints.programInfoString(program, SYMBOL_SETS_PROPERTY));
 		String key = COMMENT_SET_KEY_PREFIX + set.get("set").getAsString();
 		if (choices.has(key)) {
 			return choices.get(key).getAsBoolean();
@@ -417,6 +417,6 @@ public class DescriptorAnnotationAnalyzer extends AbstractAnalyzer {
 		if (existing != null && existing.isDefined()) {
 			return;   // applied before, or the user typed it: either way, not ours to redo
 		}
-		DescriptorSupport.applyStructType(program, space, gdt, entry, source, log);
+		DescriptorApply.applyStructType(program, space, gdt, entry, source, log);
 	}
 }
