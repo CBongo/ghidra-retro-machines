@@ -473,37 +473,96 @@ public class GameCompiler {
 		if (initialState != null) {
 			out.put("initial_state", initialState);
 		}
-		List<Map<String, Object>> identifying =
-			buildIdentifyingOffsets(banking.get("bank_identifying_offsets"));
-		if (identifying != null) {
-			out.put("bank_identifying_offsets", identifying);
-		}
-		List<Map<String, Object>> sites = buildSwitchSites(banking.get("switch_sites"));
-		if (sites != null) {
-			out.put("switch_sites", sites);
-		}
-		List<Map<String, Object>> saveCells = buildSaveCells(banking.get("save_cells"));
-		if (saveCells != null) {
-			out.put("save_cells", saveCells);
-		}
-		List<Map<String, Object>> bankStacks = buildBankStacks(banking.get("bank_stacks"));
-		if (bankStacks != null) {
-			out.put("bank_stacks", bankStacks);
-		}
-		List<Map<String, Object>> shadowCommits =
-			buildShadowCommits(banking.get("shadow_commits"));
-		if (shadowCommits != null) {
-			out.put("shadow_commits", shadowCommits);
-		}
-		List<Map<String, Object>> paired = buildPairedFields(banking.get("paired_fields"));
-		if (paired != null) {
-			out.put("paired_fields", paired);
+		for (HintSpec spec : HINT_SPECS) {
+			List<Map<String, Object>> entries = buildHintList(spec, banking.get(spec.key()));
+			if (entries != null) {
+				out.put(spec.key(), entries);
+			}
 		}
 		List<String> fixed = buildFixedAfterInit(banking.get("fixed_after_init"));
 		if (fixed != null) {
 			out.put("fixed_after_init", fixed);
 		}
 		return out.isEmpty() ? null : out;
+	}
+
+	/** One state-list-of-mappings {@code banking.*} hint's compile spec (bead grm-rx1i.10). */
+	private record HintSpec(String key, String shape, Set<String> allowedKeys, HintEntry entry) {
+	}
+
+	/**
+	 * Validates and normalizes ONE entry of a hint list. {@code where} is the error-message
+	 * prefix; {@code seen} is the list's duplicate-detection set, which the hook alone keys.
+	 */
+	@FunctionalInterface
+	private interface HintEntry {
+		Map<String, Object> build(Map<String, Object> entry, String where, Set<Object> seen);
+	}
+
+	private static final HintSpec BANK_IDENTIFYING_OFFSETS = new HintSpec("bank_identifying_offsets",
+		"address, shift, low and provenance",
+		Set.of("address", "shift", "low", "bias", "modulus_bits", "provenance"),
+		GameCompiler::identifyingOffsetEntry);
+
+	private static final HintSpec SWITCH_SITES = new HintSpec("switch_sites",
+		"addr and provenance",
+		Set.of("addr", "block", "entry", "comment", "provenance", "bank"),
+		GameCompiler::switchSiteEntry);
+
+	private static final HintSpec SAVE_CELLS = new HintSpec("save_cells",
+		"address and provenance",
+		Set.of("address", "provenance"),
+		GameCompiler::saveCellEntry);
+
+	private static final HintSpec BANK_STACKS = new HintSpec("bank_stacks",
+		"pointer, slots and provenance",
+		Set.of("pointer", "slots", "provenance"),
+		GameCompiler::bankStackEntry);
+
+	private static final HintSpec SHADOW_COMMITS = new HintSpec("shadow_commits",
+		"helper, cell, field and provenance",
+		Set.of("helper", "cell", "field", "provenance"),
+		GameCompiler::shadowCommitEntry);
+
+	private static final HintSpec PAIRED_FIELDS = new HintSpec("paired_fields",
+		"high, low, offset and provenance",
+		Set.of("high", "low", "offset", "provenance"),
+		GameCompiler::pairedFieldEntry);
+
+	/** The list-shaped hints in output order (mirrors {@code retromachines.BankingHintKind}). */
+	private static final List<HintSpec> HINT_SPECS = List.of(BANK_IDENTIFYING_OFFSETS,
+		SWITCH_SITES, SAVE_CELLS, BANK_STACKS, SHADOW_COMMITS, PAIRED_FIELDS);
+
+	/**
+	 * The shared skeleton of every list-of-mappings {@code banking.*} hint: absent -> null; else
+	 * a non-empty list of mappings with only the spec's keys, each normalized by the spec's hook.
+	 */
+	@SuppressWarnings("unchecked")
+	private static List<Map<String, Object>> buildHintList(HintSpec spec, Object listObj) {
+		if (listObj == null) {
+			return null;
+		}
+		if (!(listObj instanceof List) || ((List<Object>) listObj).isEmpty()) {
+			throw new IllegalArgumentException(
+				"game descriptor 'banking." + spec.key() + ":' must be a non-empty list");
+		}
+		List<Map<String, Object>> out = new ArrayList<>();
+		Set<Object> seen = new java.util.HashSet<>();
+		for (Object entryObj : (List<Object>) listObj) {
+			if (!(entryObj instanceof Map)) {
+				throw new IllegalArgumentException("each 'banking." + spec.key() +
+					":' entry must be a mapping with " + spec.shape());
+			}
+			Map<String, Object> entry = (Map<String, Object>) entryObj;
+			for (String key : entry.keySet()) {
+				if (!spec.allowedKeys().contains(key)) {
+					throw new IllegalArgumentException("'banking." + spec.key() +
+						":' entry has unknown key '" + key + "'");
+				}
+			}
+			out.add(spec.entry().build(entry, "banking." + spec.key() + " entry", seen));
+		}
+		return out;
 	}
 
 	/**
@@ -514,47 +573,23 @@ public class GameCompiler {
 	 * decrements it and reloads the slot). SHAPE only here; the analyzer
 	 * ({@code BankStackBrackets}) uses it as the premise of its push/pop pairing proof.
 	 */
-	@SuppressWarnings("unchecked")
-	private static List<Map<String, Object>> buildBankStacks(Object listObj) {
-		if (listObj == null) {
-			return null;
-		}
-		if (!(listObj instanceof List) || ((List<Object>) listObj).isEmpty()) {
+	private static Map<String, Object> bankStackEntry(Map<String, Object> entry, String where,
+			Set<Object> seen) {
+		int pointer = MapCompiler.requireAddr(entry, "pointer", where);
+		int slots = MapCompiler.requireAddr(entry, "slots", where);
+		if (pointer < 0 || pointer > 0xFFFF || slots < 0 || slots > 0xFFFF) {
 			throw new IllegalArgumentException(
-				"game descriptor 'banking.bank_stacks:' must be a non-empty list");
+				where + ": pointer and slots must be 16-bit CPU addresses");
 		}
-		List<Map<String, Object>> out = new ArrayList<>();
-		Set<Integer> seen = new java.util.HashSet<>();
-		for (Object entryObj : (List<Object>) listObj) {
-			if (!(entryObj instanceof Map)) {
-				throw new IllegalArgumentException("each 'banking.bank_stacks:' entry must be a " +
-					"mapping with pointer, slots and provenance");
-			}
-			Map<String, Object> entry = (Map<String, Object>) entryObj;
-			for (String key : entry.keySet()) {
-				if (!Set.of("pointer", "slots", "provenance").contains(key)) {
-					throw new IllegalArgumentException(
-						"'banking.bank_stacks:' entry has unknown key '" + key + "'");
-				}
-			}
-			String where = "banking.bank_stacks entry";
-			int pointer = MapCompiler.requireAddr(entry, "pointer", where);
-			int slots = MapCompiler.requireAddr(entry, "slots", where);
-			if (pointer < 0 || pointer > 0xFFFF || slots < 0 || slots > 0xFFFF) {
-				throw new IllegalArgumentException(
-					where + ": pointer and slots must be 16-bit CPU addresses");
-			}
-			if (!seen.add(pointer)) {
-				throw new IllegalArgumentException(where + ": pointer " + pointer + " listed twice");
-			}
-			String provenance = MapCompiler.requireString(entry, "provenance", where);
-			Map<String, Object> e = new LinkedHashMap<>();
-			e.put("pointer", pointer);
-			e.put("slots", slots);
-			e.put("provenance", provenance);
-			out.add(e);
+		if (!seen.add(pointer)) {
+			throw new IllegalArgumentException(where + ": pointer " + pointer + " listed twice");
 		}
-		return out;
+		String provenance = MapCompiler.requireString(entry, "provenance", where);
+		Map<String, Object> e = new LinkedHashMap<>();
+		e.put("pointer", pointer);
+		e.put("slots", slots);
+		e.put("provenance", provenance);
+		return e;
 	}
 
 	/**
@@ -565,53 +600,29 @@ public class GameCompiler {
 	 * whether the helper, the field and the coherence premise hold in the image is checked at
 	 * analysis time ({@code ShadowCommits}).
 	 */
-	@SuppressWarnings("unchecked")
-	private static List<Map<String, Object>> buildShadowCommits(Object listObj) {
-		if (listObj == null) {
-			return null;
-		}
-		if (!(listObj instanceof List) || ((List<Object>) listObj).isEmpty()) {
+	private static Map<String, Object> shadowCommitEntry(Map<String, Object> entry, String where,
+			Set<Object> seen) {
+		int helper = MapCompiler.requireAddr(entry, "helper", where);
+		int cell = MapCompiler.requireAddr(entry, "cell", where);
+		if (helper < 0 || helper > 0xFFFF || cell < 0 || cell > 0xFFFF) {
 			throw new IllegalArgumentException(
-				"game descriptor 'banking.shadow_commits:' must be a non-empty list");
+				where + ": helper and cell must be 16-bit CPU addresses");
 		}
-		List<Map<String, Object>> out = new ArrayList<>();
-		Set<String> seen = new java.util.HashSet<>();
-		for (Object entryObj : (List<Object>) listObj) {
-			if (!(entryObj instanceof Map)) {
-				throw new IllegalArgumentException("each 'banking.shadow_commits:' entry must be " +
-					"a mapping with helper, cell, field and provenance");
-			}
-			Map<String, Object> entry = (Map<String, Object>) entryObj;
-			for (String key : entry.keySet()) {
-				if (!Set.of("helper", "cell", "field", "provenance").contains(key)) {
-					throw new IllegalArgumentException(
-						"'banking.shadow_commits:' entry has unknown key '" + key + "'");
-				}
-			}
-			String where = "banking.shadow_commits entry";
-			int helper = MapCompiler.requireAddr(entry, "helper", where);
-			int cell = MapCompiler.requireAddr(entry, "cell", where);
-			if (helper < 0 || helper > 0xFFFF || cell < 0 || cell > 0xFFFF) {
-				throw new IllegalArgumentException(
-					where + ": helper and cell must be 16-bit CPU addresses");
-			}
-			String field = MapCompiler.requireString(entry, "field", where);
-			if (!seen.add(helper + "/" + field)) {
-				throw new IllegalArgumentException(where + ": helper " + helper + " with field '" +
-					field + "' listed twice");
-			}
-			if (!(entry.get("field") instanceof String) || field.isBlank()) {
-				throw new IllegalArgumentException(where + ": field must be a non-blank name");
-			}
-			String provenance = MapCompiler.requireString(entry, "provenance", where);
-			Map<String, Object> e = new LinkedHashMap<>();
-			e.put("helper", helper);
-			e.put("cell", cell);
-			e.put("field", field);
-			e.put("provenance", provenance);
-			out.add(e);
+		String field = MapCompiler.requireString(entry, "field", where);
+		if (!seen.add(helper + "/" + field)) {
+			throw new IllegalArgumentException(where + ": helper " + helper + " with field '" +
+				field + "' listed twice");
 		}
-		return out;
+		if (!(entry.get("field") instanceof String) || field.isBlank()) {
+			throw new IllegalArgumentException(where + ": field must be a non-blank name");
+		}
+		String provenance = MapCompiler.requireString(entry, "provenance", where);
+		Map<String, Object> e = new LinkedHashMap<>();
+		e.put("helper", helper);
+		e.put("cell", cell);
+		e.put("field", field);
+		e.put("provenance", provenance);
+		return e;
 	}
 
 	/**
@@ -620,52 +631,28 @@ public class GameCompiler {
 	 * holds field {@code low}'s bank plus {@code offset} (tmnt3: r6 == r7 + 1). Names only here;
 	 * whether they name real fields of the matched board is checked at analysis time.
 	 */
-	@SuppressWarnings("unchecked")
-	private static List<Map<String, Object>> buildPairedFields(Object listObj) {
-		if (listObj == null) {
-			return null;
+	private static Map<String, Object> pairedFieldEntry(Map<String, Object> entry, String where,
+			Set<Object> seen) {
+		String high = MapCompiler.requireString(entry, "high", where);
+		String low = MapCompiler.requireString(entry, "low", where);
+		if (high.equals(low)) {
+			throw new IllegalArgumentException(where + ": high and low name the same field");
 		}
-		if (!(listObj instanceof List) || ((List<Object>) listObj).isEmpty()) {
+		int offset = MapCompiler.requireAddr(entry, "offset", where);
+		if (offset < 1 || offset > 0xFF) {
+			throw new IllegalArgumentException(where + ": offset must be in [1, 255]");
+		}
+		if (!seen.add(high + "/" + low)) {
 			throw new IllegalArgumentException(
-				"game descriptor 'banking.paired_fields:' must be a non-empty list");
+				where + ": " + high + "/" + low + " listed twice");
 		}
-		List<Map<String, Object>> out = new ArrayList<>();
-		Set<String> seen = new java.util.HashSet<>();
-		for (Object entryObj : (List<Object>) listObj) {
-			if (!(entryObj instanceof Map)) {
-				throw new IllegalArgumentException("each 'banking.paired_fields:' entry must be " +
-					"a mapping with high, low, offset and provenance");
-			}
-			Map<String, Object> entry = (Map<String, Object>) entryObj;
-			for (String key : entry.keySet()) {
-				if (!Set.of("high", "low", "offset", "provenance").contains(key)) {
-					throw new IllegalArgumentException(
-						"'banking.paired_fields:' entry has unknown key '" + key + "'");
-				}
-			}
-			String where = "banking.paired_fields entry";
-			String high = MapCompiler.requireString(entry, "high", where);
-			String low = MapCompiler.requireString(entry, "low", where);
-			if (high.equals(low)) {
-				throw new IllegalArgumentException(where + ": high and low name the same field");
-			}
-			int offset = MapCompiler.requireAddr(entry, "offset", where);
-			if (offset < 1 || offset > 0xFF) {
-				throw new IllegalArgumentException(where + ": offset must be in [1, 255]");
-			}
-			if (!seen.add(high + "/" + low)) {
-				throw new IllegalArgumentException(
-					where + ": " + high + "/" + low + " listed twice");
-			}
-			String provenance = MapCompiler.requireString(entry, "provenance", where);
-			Map<String, Object> e = new LinkedHashMap<>();
-			e.put("high", high);
-			e.put("low", low);
-			e.put("offset", offset);
-			e.put("provenance", provenance);
-			out.add(e);
-		}
-		return out;
+		String provenance = MapCompiler.requireString(entry, "provenance", where);
+		Map<String, Object> e = new LinkedHashMap<>();
+		e.put("high", high);
+		e.put("low", low);
+		e.put("offset", offset);
+		e.put("provenance", provenance);
+		return e;
 	}
 
 	/**
@@ -738,75 +725,51 @@ public class GameCompiler {
 	 * against the ROM bytes at analysis time (BankMirrors.withMembershipHints), where a hint
 	 * that does not verify is refused with a logged reason.
 	 */
-	@SuppressWarnings("unchecked")
-	private static List<Map<String, Object>> buildIdentifyingOffsets(Object listObj) {
-		if (listObj == null) {
-			return null;
+	private static Map<String, Object> identifyingOffsetEntry(Map<String, Object> entry, String where,
+			Set<Object> seen) {
+		int address = MapCompiler.requireAddr(entry, "address", where);
+		int shift = MapCompiler.requireAddr(entry, "shift", where);
+		int low = MapCompiler.requireAddr(entry, "low", where);
+		if (address < 0 || address > 0xFFFF) {
+			throw new IllegalArgumentException(where + ": address must be a 16-bit CPU address");
 		}
-		if (!(listObj instanceof List) || ((List<Object>) listObj).isEmpty()) {
-			throw new IllegalArgumentException(
-				"game descriptor 'banking.bank_identifying_offsets:' must be a non-empty list");
+		if (shift < 0 || shift > 2) {
+			throw new IllegalArgumentException(where + ": shift must be 0, 1 or 2 (the " +
+				"encodings the derivation tries)");
 		}
-		List<Map<String, Object>> out = new ArrayList<>();
-		for (Object entryObj : (List<Object>) listObj) {
-			if (!(entryObj instanceof Map)) {
-				throw new IllegalArgumentException("each 'banking.bank_identifying_offsets:' " +
-					"entry must be a mapping with address, shift, low and provenance");
-			}
-			Map<String, Object> entry = (Map<String, Object>) entryObj;
-			for (String key : entry.keySet()) {
-				if (!Set.of("address", "shift", "low", "bias", "modulus_bits", "provenance")
-						.contains(key)) {
-					throw new IllegalArgumentException("'banking.bank_identifying_offsets:' " +
-						"entry has unknown key '" + key + "'");
-				}
-			}
-			String where = "banking.bank_identifying_offsets entry";
-			int address = MapCompiler.requireAddr(entry, "address", where);
-			int shift = MapCompiler.requireAddr(entry, "shift", where);
-			int low = MapCompiler.requireAddr(entry, "low", where);
-			if (address < 0 || address > 0xFFFF) {
-				throw new IllegalArgumentException(where + ": address must be a 16-bit CPU address");
-			}
-			if (shift < 0 || shift > 2) {
-				throw new IllegalArgumentException(where + ": shift must be 0, 1 or 2 (the " +
-					"encodings the derivation tries)");
-			}
-			// grm-mej.9: optional BIASED form (byte = bank + bias on banks == low mod
-			// 2^modulus_bits). Both default to the classic form's values.
-			int bias = entry.containsKey("bias") ? MapCompiler.requireAddr(entry, "bias", where) : 0;
-			int modBits = entry.containsKey("modulus_bits")
-					? MapCompiler.requireAddr(entry, "modulus_bits", where) : shift;
-			if (bias < 0 || bias > 0xFF) {
-				throw new IllegalArgumentException(where + ": bias must be in [0, 255]");
-			}
-			if (modBits < shift || modBits > 2) {
-				throw new IllegalArgumentException(where +
-					": modulus_bits must be in [shift, 2]");
-			}
-			if (bias != 0 && shift != 0) {
-				throw new IllegalArgumentException(where + ": a biased encoding (bias != 0) " +
-					"must have shift 0");
-			}
-			if (low < 0 || low >= (1 << modBits)) {
-				throw new IllegalArgumentException(where +
-					": low must be in [0, 2^modulus_bits) (modulus_bits defaults to shift)");
-			}
-			String provenance = MapCompiler.requireString(entry, "provenance", where);
-			Map<String, Object> e = new LinkedHashMap<>();
-			e.put("address", address);
-			e.put("shift", shift);
-			e.put("low", low);
-			if (entry.containsKey("bias")) {
-				e.put("bias", bias);
-			}
-			if (entry.containsKey("modulus_bits")) {
-				e.put("modulus_bits", modBits);
-			}
-			e.put("provenance", provenance);
-			out.add(e);
+		// grm-mej.9: optional BIASED form (byte = bank + bias on banks == low mod
+		// 2^modulus_bits). Both default to the classic form's values.
+		int bias = entry.containsKey("bias") ? MapCompiler.requireAddr(entry, "bias", where) : 0;
+		int modBits = entry.containsKey("modulus_bits")
+				? MapCompiler.requireAddr(entry, "modulus_bits", where) : shift;
+		if (bias < 0 || bias > 0xFF) {
+			throw new IllegalArgumentException(where + ": bias must be in [0, 255]");
 		}
-		return out;
+		if (modBits < shift || modBits > 2) {
+			throw new IllegalArgumentException(where +
+				": modulus_bits must be in [shift, 2]");
+		}
+		if (bias != 0 && shift != 0) {
+			throw new IllegalArgumentException(where + ": a biased encoding (bias != 0) " +
+				"must have shift 0");
+		}
+		if (low < 0 || low >= (1 << modBits)) {
+			throw new IllegalArgumentException(where +
+				": low must be in [0, 2^modulus_bits) (modulus_bits defaults to shift)");
+		}
+		String provenance = MapCompiler.requireString(entry, "provenance", where);
+		Map<String, Object> e = new LinkedHashMap<>();
+		e.put("address", address);
+		e.put("shift", shift);
+		e.put("low", low);
+		if (entry.containsKey("bias")) {
+			e.put("bias", bias);
+		}
+		if (entry.containsKey("modulus_bits")) {
+			e.put("modulus_bits", modBits);
+		}
+		e.put("provenance", provenance);
+		return e;
 	}
 
 	/**
@@ -822,83 +785,58 @@ public class GameCompiler {
 	 * checked here; whether the board's window can hold it, and whether the site is a latch store
 	 * or a bank-switch helper call, are the analyzer's checks (they need the board and the ROM).
 	 */
-	@SuppressWarnings("unchecked")
-	private static List<Map<String, Object>> buildSwitchSites(Object listObj) {
-		if (listObj == null) {
-			return null;
+	private static Map<String, Object> switchSiteEntry(Map<String, Object> entry, String where,
+			Set<Object> seen) {
+		int addr = MapCompiler.requireAddr(entry, "addr", where);
+		if (addr < 0 || addr > 0xFFFF) {
+			throw new IllegalArgumentException(where + ": addr must be a 16-bit CPU address");
 		}
-		if (!(listObj instanceof List) || ((List<Object>) listObj).isEmpty()) {
-			throw new IllegalArgumentException(
-				"game descriptor 'banking.switch_sites:' must be a non-empty list");
+		String block = null;
+		if (entry.containsKey("block")) {
+			block = checkBlockName(MapCompiler.requireString(entry, "block", where), where);
 		}
-		List<Map<String, Object>> out = new ArrayList<>();
-		Set<String> seen = new java.util.HashSet<>();
-		for (Object entryObj : (List<Object>) listObj) {
-			if (!(entryObj instanceof Map)) {
-				throw new IllegalArgumentException("each 'banking.switch_sites:' entry must be " +
-					"a mapping with addr and provenance");
-			}
-			Map<String, Object> entry = (Map<String, Object>) entryObj;
-			for (String key : entry.keySet()) {
-				if (!Set.of("addr", "block", "entry", "comment", "provenance", "bank")
-						.contains(key)) {
-					throw new IllegalArgumentException(
-						"'banking.switch_sites:' entry has unknown key '" + key + "'");
-				}
-			}
-			String where = "banking.switch_sites entry";
-			int addr = MapCompiler.requireAddr(entry, "addr", where);
-			if (addr < 0 || addr > 0xFFFF) {
-				throw new IllegalArgumentException(where + ": addr must be a 16-bit CPU address");
-			}
-			String block = null;
-			if (entry.containsKey("block")) {
-				block = checkBlockName(MapCompiler.requireString(entry, "block", where), where);
-			}
-			if (!seen.add((block == null ? "" : block) + ":" + addr)) {
-				throw new IllegalArgumentException(where + ": addr " + addr +
-					(block == null ? "" : " in block '" + block + "'") + " listed twice");
-			}
-			boolean isEntry = false;
-			if (entry.containsKey("entry")) {
-				if (!(entry.get("entry") instanceof Boolean)) {
-					throw new IllegalArgumentException(where + ": 'entry' must be true or false");
-				}
-				isEntry = (Boolean) entry.get("entry");
-			}
-			Integer bank = null;
-			if (entry.containsKey("bank")) {
-				Object raw = entry.get("bank");
-				if (!(raw instanceof Integer) && !(raw instanceof Long)) {
-					throw new IllegalArgumentException(where +
-						": 'bank' must be a non-negative integer (a bank number)");
-				}
-				long v = ((Number) raw).longValue();
-				if (v < 0 || v > Integer.MAX_VALUE) {
-					throw new IllegalArgumentException(where +
-						": 'bank' must be a non-negative integer (a bank number)");
-				}
-				bank = (int) v;
-			}
-			String provenance = MapCompiler.requireString(entry, "provenance", where);
-			Map<String, Object> e = new LinkedHashMap<>();
-			e.put("addr", addr);
-			if (block != null) {
-				e.put("block", block);
-			}
-			if (isEntry) {
-				e.put("entry", true);
-			}
-			if (entry.containsKey("comment")) {
-				e.put("comment", MapCompiler.requireString(entry, "comment", where));
-			}
-			if (bank != null) {
-				e.put("bank", bank);
-			}
-			e.put("provenance", provenance);
-			out.add(e);
+		if (!seen.add((block == null ? "" : block) + ":" + addr)) {
+			throw new IllegalArgumentException(where + ": addr " + addr +
+				(block == null ? "" : " in block '" + block + "'") + " listed twice");
 		}
-		return out;
+		boolean isEntry = false;
+		if (entry.containsKey("entry")) {
+			if (!(entry.get("entry") instanceof Boolean)) {
+				throw new IllegalArgumentException(where + ": 'entry' must be true or false");
+			}
+			isEntry = (Boolean) entry.get("entry");
+		}
+		Integer bank = null;
+		if (entry.containsKey("bank")) {
+			Object raw = entry.get("bank");
+			if (!(raw instanceof Integer) && !(raw instanceof Long)) {
+				throw new IllegalArgumentException(where +
+					": 'bank' must be a non-negative integer (a bank number)");
+			}
+			long v = ((Number) raw).longValue();
+			if (v < 0 || v > Integer.MAX_VALUE) {
+				throw new IllegalArgumentException(where +
+					": 'bank' must be a non-negative integer (a bank number)");
+			}
+			bank = (int) v;
+		}
+		String provenance = MapCompiler.requireString(entry, "provenance", where);
+		Map<String, Object> e = new LinkedHashMap<>();
+		e.put("addr", addr);
+		if (block != null) {
+			e.put("block", block);
+		}
+		if (isEntry) {
+			e.put("entry", true);
+		}
+		if (entry.containsKey("comment")) {
+			e.put("comment", MapCompiler.requireString(entry, "comment", where));
+		}
+		if (bank != null) {
+			e.put("bank", bank);
+		}
+		e.put("provenance", provenance);
+		return e;
 	}
 
 	/**
@@ -909,43 +847,19 @@ public class GameCompiler {
 	 * analyzer (SaveRestoreTrampolines) uses it only as a premise of the restoring-trampoline
 	 * walk and never as a source of any bank value.
 	 */
-	@SuppressWarnings("unchecked")
-	private static List<Map<String, Object>> buildSaveCells(Object listObj) {
-		if (listObj == null) {
-			return null;
+	private static Map<String, Object> saveCellEntry(Map<String, Object> entry, String where,
+			Set<Object> seen) {
+		int address = MapCompiler.requireAddr(entry, "address", where);
+		if (address < 0 || address > 0xFFFF) {
+			throw new IllegalArgumentException(where + ": address must be a 16-bit CPU address");
 		}
-		if (!(listObj instanceof List) || ((List<Object>) listObj).isEmpty()) {
-			throw new IllegalArgumentException(
-				"game descriptor 'banking.save_cells:' must be a non-empty list");
+		if (!seen.add(address)) {
+			throw new IllegalArgumentException(where + ": address " + address + " listed twice");
 		}
-		List<Map<String, Object>> out = new ArrayList<>();
-		Set<Integer> seen = new java.util.HashSet<>();
-		for (Object entryObj : (List<Object>) listObj) {
-			if (!(entryObj instanceof Map)) {
-				throw new IllegalArgumentException("each 'banking.save_cells:' entry must be a " +
-					"mapping with address and provenance");
-			}
-			Map<String, Object> entry = (Map<String, Object>) entryObj;
-			for (String key : entry.keySet()) {
-				if (!Set.of("address", "provenance").contains(key)) {
-					throw new IllegalArgumentException(
-						"'banking.save_cells:' entry has unknown key '" + key + "'");
-				}
-			}
-			String where = "banking.save_cells entry";
-			int address = MapCompiler.requireAddr(entry, "address", where);
-			if (address < 0 || address > 0xFFFF) {
-				throw new IllegalArgumentException(where + ": address must be a 16-bit CPU address");
-			}
-			if (!seen.add(address)) {
-				throw new IllegalArgumentException(where + ": address " + address + " listed twice");
-			}
-			String provenance = MapCompiler.requireString(entry, "provenance", where);
-			Map<String, Object> e = new LinkedHashMap<>();
-			e.put("address", address);
-			e.put("provenance", provenance);
-			out.add(e);
-		}
-		return out;
+		String provenance = MapCompiler.requireString(entry, "provenance", where);
+		Map<String, Object> e = new LinkedHashMap<>();
+		e.put("address", address);
+		e.put("provenance", provenance);
+		return e;
 	}
 }

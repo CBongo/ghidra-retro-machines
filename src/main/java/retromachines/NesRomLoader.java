@@ -729,47 +729,15 @@ public class NesRomLoader extends AbstractProgramWrapperLoader {
 				log.appendMsg(
 					"game descriptor resolved: " + gameDescriptor.gmapPath() + " ('" +
 						gameDescriptor.id() + "')");
-				// bead grm-mej.7: publish the bank_identifying_offsets hint for the analyzer,
-				// which verifies it against the ROM bytes before it may license anything.
-				String hints = DescriptorSupport.formatMembershipHints(gameDescriptor.doc(),
-					gameDescriptor.gmapPath());
-				if (hints != null) {
-					program.getOptions(Program.PROGRAM_INFO).setString(
-						DescriptorSupport.BANK_IDENTIFYING_HINTS_PROPERTY, hints);
-				}
-				// bead grm-hb6.4: banking.switch_sites, consumed as dataflow seeds at analysis time.
-				String switchSites = DescriptorSupport.formatSwitchSites(gameDescriptor.doc(),
-					gameDescriptor.gmapPath());
-				if (switchSites != null) {
-					program.getOptions(Program.PROGRAM_INFO).setString(
-						DescriptorSupport.SWITCH_SITES_PROPERTY, switchSites);
-				}
-				// bead grm-mej.9: banking.save_cells, read by the analyzer at analysis time.
-				String saveCells = DescriptorSupport.formatSaveCells(gameDescriptor.doc(),
-					gameDescriptor.gmapPath());
-				if (saveCells != null) {
-					program.getOptions(Program.PROGRAM_INFO).setString(
-						DescriptorSupport.SAVE_CELLS_PROPERTY, saveCells);
-				}
-				// bead grm-mej.10: banking.bank_stacks and banking.paired_fields.
-				String bankStacks = DescriptorSupport.formatBankStacks(gameDescriptor.doc(),
-					gameDescriptor.gmapPath());
-				if (bankStacks != null) {
-					program.getOptions(Program.PROGRAM_INFO).setString(
-						DescriptorSupport.BANK_STACKS_PROPERTY, bankStacks);
-				}
-				// bead grm-hb6.26: banking.shadow_commits, read by the analyzer at analysis time.
-				String shadowCommits = DescriptorSupport.formatShadowCommits(gameDescriptor.doc(),
-					gameDescriptor.gmapPath());
-				if (shadowCommits != null) {
-					program.getOptions(Program.PROGRAM_INFO).setString(
-						DescriptorSupport.SHADOW_COMMITS_PROPERTY, shadowCommits);
-				}
-				String pairedFields = DescriptorSupport.formatPairedFields(gameDescriptor.doc(),
-					gameDescriptor.gmapPath());
-				if (pairedFields != null) {
-					program.getOptions(Program.PROGRAM_INFO).setString(
-						DescriptorSupport.PAIRED_FIELDS_PROPERTY, pairedFields);
+				// banking.* hint lists (grm-mej.7 bank_identifying_offsets, grm-hb6.4
+				// switch_sites, grm-mej.9 save_cells, grm-mej.10 bank_stacks/paired_fields,
+				// grm-hb6.26 shadow_commits): published for the analyzer, which verifies each
+				// against the ROM before it may license anything.
+				for (BankingHintKind kind : BankingHintKind.values()) {
+					String hints = kind.format(gameDescriptor.doc(), gameDescriptor.gmapPath());
+					if (hints != null) {
+						program.getOptions(Program.PROGRAM_INFO).setString(kind.property, hints);
+					}
 				}
 			}
 		}

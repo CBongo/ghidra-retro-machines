@@ -114,18 +114,7 @@ final class SwitchSiteHints {
 
 	/** The recorded hint's source path, or null when absent/unreadable. */
 	static String source(Program program) {
-		String spec = DescriptorSupport.programInfoString(program,
-			DescriptorSupport.SWITCH_SITES_PROPERTY);
-		if (spec == null || spec.isBlank()) {
-			return null;
-		}
-		try {
-			JsonObject root = JsonParser.parseString(spec).getAsJsonObject();
-			return root.has("source") ? root.get("source").getAsString() : "";
-		}
-		catch (RuntimeException e) {
-			return null;
-		}
+		return BankingHintKind.SWITCH_SITES.source(program);
 	}
 
 	/**
@@ -133,30 +122,13 @@ final class SwitchSiteHints {
 	 * contributes nothing -- a hint that cannot be read is a hint that is not applied.
 	 */
 	static List<Site> parse(Program program, List<String> problems) {
-		String spec = DescriptorSupport.programInfoString(program,
-			DescriptorSupport.SWITCH_SITES_PROPERTY);
-		List<Site> sites = new ArrayList<>();
-		if (spec == null || spec.isBlank()) {
-			return sites;
-		}
-		try {
-			JsonObject root = JsonParser.parseString(spec).getAsJsonObject();
-			for (JsonElement el : root.getAsJsonArray("sites")) {
-				JsonObject o = el.getAsJsonObject();
-				sites.add(new Site(o.get("addr").getAsLong(),
-					o.has("block") ? o.get("block").getAsString() : null,
-					o.has("entry") && o.get("entry").getAsBoolean(),
-					o.has("comment") ? o.get("comment").getAsString() : null,
-					o.get("provenance").getAsString(),
-						o.has("bank") ? Integer.valueOf(o.get("bank").getAsInt()) : null));
-			}
-		}
-		catch (RuntimeException e) {
-			problems.add(DescriptorSupport.SWITCH_SITES_PROPERTY + " is malformed (" +
-				e.getMessage() + "); no switch_sites hint applied");
-			return List.of();
-		}
-		return sites;
+		return BankingHintKind.SWITCH_SITES.readOrEmpty(program, problems,
+			(o, root) -> new Site(o.get("addr").getAsLong(),
+				o.has("block") ? o.get("block").getAsString() : null,
+				o.has("entry") && o.get("entry").getAsBoolean(),
+				o.has("comment") ? o.get("comment").getAsString() : null,
+				o.get("provenance").getAsString(),
+				o.has("bank") ? Integer.valueOf(o.get("bank").getAsInt()) : null));
 	}
 
 	/** {@code site}'s address in this program (block qualifier as for {@code symbols:}), or null. */

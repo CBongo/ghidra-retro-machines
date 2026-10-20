@@ -334,35 +334,11 @@ public final class GameDescriptorExporter {
 		if (req.initialState() != null && !req.initialState().isEmpty()) {
 			banking.put("initial_state", new LinkedHashMap<String, Object>(req.initialState()));
 		}
-		List<Map<String, Object>> identifying = identifyingOffsets(program, skipped);
-		if (!identifying.isEmpty()) {
-			banking.put("bank_identifying_offsets", identifying);
-		}
-		List<Map<String, Object>> switchSites = switchSites(program, skipped);
-		if (!switchSites.isEmpty()) {
-			banking.put("switch_sites", switchSites);
-		}
-		List<Map<String, Object>> saveCells = saveCells(program, skipped);
-		if (!saveCells.isEmpty()) {
-			banking.put("save_cells", saveCells);
-		}
-		List<Map<String, Object>> bankStacks = verbatimBankingList(program, skipped,
-			DescriptorSupport.BANK_STACKS_PROPERTY, "stacks", "banking.bank_stacks",
-			new String[] { "pointer", "slots" }, new String[0]);
-		if (!bankStacks.isEmpty()) {
-			banking.put("bank_stacks", bankStacks);
-		}
-		List<Map<String, Object>> shadowCommits = verbatimBankingList(program, skipped,
-			DescriptorSupport.SHADOW_COMMITS_PROPERTY, "commits", "banking.shadow_commits",
-			new String[] { "helper", "cell" }, new String[] { "field" });
-		if (!shadowCommits.isEmpty()) {
-			banking.put("shadow_commits", shadowCommits);
-		}
-		List<Map<String, Object>> pairedFields = verbatimBankingList(program, skipped,
-			DescriptorSupport.PAIRED_FIELDS_PROPERTY, "pairs", "banking.paired_fields",
-			new String[0], new String[] { "high", "low", "offset" });
-		if (!pairedFields.isEmpty()) {
-			banking.put("paired_fields", pairedFields);
+		for (BankingHintKind kind : BankingHintKind.values()) {
+			List<Map<String, Object>> hints = verbatimBankingList(program, skipped, kind);
+			if (!hints.isEmpty()) {
+				banking.put(kind.yamlKey, hints);
+			}
 		}
 		if (!banking.isEmpty()) {
 			doc.put("banking", banking);
@@ -399,151 +375,53 @@ public final class GameDescriptorExporter {
 	}
 
 	/**
-	 * The {@code banking.bank_identifying_offsets} entries, copied verbatim (provenance
-	 * included) from the {@link DescriptorSupport#BANK_IDENTIFYING_HINTS_PROPERTY} the loader
-	 * recorded, or an empty list when it recorded none (bead grm-hb6.19). Never derived: the key
-	 * records a human-established fact, and exporting a ROM-byte derivation would launder one
-	 * into it. A malformed property is reported in {@code skipped} and carries nothing.
-	 */
-	private static List<Map<String, Object>> identifyingOffsets(Program program,
-			List<String> skipped) {
-		List<Map<String, Object>> out = new ArrayList<>();
-		String spec = DescriptorSupport.programInfoString(program,
-			DescriptorSupport.BANK_IDENTIFYING_HINTS_PROPERTY);
-		if (spec == null || spec.isBlank()) {
-			return out;
-		}
-		try {
-			JsonObject root = JsonParser.parseString(spec).getAsJsonObject();
-			for (JsonElement el : root.getAsJsonArray("offsets")) {
-				JsonObject o = el.getAsJsonObject();
-				Map<String, Object> e = new LinkedHashMap<>();
-				e.put("address", new HexInt(o.get("address").getAsLong()));
-				e.put("shift", o.get("shift").getAsInt());
-				e.put("low", o.get("low").getAsInt());
-				if (o.has("bias")) {
-					e.put("bias", o.get("bias").getAsInt());
-				}
-				if (o.has("modulus_bits")) {
-					e.put("modulus_bits", o.get("modulus_bits").getAsInt());
-				}
-				e.put("provenance", o.get("provenance").getAsString());
-				out.add(e);
-			}
-		}
-		catch (RuntimeException e) {
-			skipped.add(DescriptorSupport.BANK_IDENTIFYING_HINTS_PROPERTY + " is malformed (" +
-				e.getMessage() + "); banking.bank_identifying_offsets not carried");
-			return new ArrayList<>();
-		}
-		return out;
-	}
-
-	/**
-	 * The {@code banking.switch_sites} entries (bead grm-hb6.4), copied verbatim, provenance
-	 * included, from the {@link DescriptorSupport#SWITCH_SITES_PROPERTY} the loader recorded.
-	 * Only the hints the descriptor in force STATED: sites the analysis discovered are output,
-	 * not a human fact, and are never exported.
-	 */
-	private static List<Map<String, Object>> switchSites(Program program, List<String> skipped) {
-		List<Map<String, Object>> out = new ArrayList<>();
-		String spec = DescriptorSupport.programInfoString(program,
-			DescriptorSupport.SWITCH_SITES_PROPERTY);
-		if (spec == null || spec.isBlank()) {
-			return out;
-		}
-		try {
-			JsonObject root = JsonParser.parseString(spec).getAsJsonObject();
-			for (JsonElement el : root.getAsJsonArray("sites")) {
-				JsonObject o = el.getAsJsonObject();
-				Map<String, Object> e = new LinkedHashMap<>();
-				e.put("addr", new HexInt(o.get("addr").getAsLong()));
-				if (o.has("block")) {
-					e.put("block", o.get("block").getAsString());
-				}
-				if (o.has("entry") && o.get("entry").getAsBoolean()) {
-					e.put("entry", true);
-				}
-				if (o.has("comment")) {
-					e.put("comment", o.get("comment").getAsString());
-				}
-				if (o.has("bank")) {
-					e.put("bank", o.get("bank").getAsInt());
-				}
-				e.put("provenance", o.get("provenance").getAsString());
-				out.add(e);
-			}
-		}
-		catch (RuntimeException e) {
-			skipped.add(DescriptorSupport.SWITCH_SITES_PROPERTY + " is malformed (" +
-				e.getMessage() + "); banking.switch_sites not carried");
-			return new ArrayList<>();
-		}
-		return out;
-	}
-
-	/**
-	 * The {@code banking.save_cells} entries (bead grm-mej.9), copied verbatim, provenance
-	 * included, from the {@link DescriptorSupport#SAVE_CELLS_PROPERTY} the loader recorded --
-	 * a human-established fact, never derived.
-	 */
-	private static List<Map<String, Object>> saveCells(Program program, List<String> skipped) {
-		List<Map<String, Object>> out = new ArrayList<>();
-		String spec = DescriptorSupport.programInfoString(program,
-			DescriptorSupport.SAVE_CELLS_PROPERTY);
-		if (spec == null || spec.isBlank()) {
-			return out;
-		}
-		try {
-			JsonObject root = JsonParser.parseString(spec).getAsJsonObject();
-			for (JsonElement el : root.getAsJsonArray("cells")) {
-				JsonObject o = el.getAsJsonObject();
-				Map<String, Object> e = new LinkedHashMap<>();
-				e.put("address", new HexInt(o.get("address").getAsLong()));
-				e.put("provenance", o.get("provenance").getAsString());
-				out.add(e);
-			}
-		}
-		catch (RuntimeException e) {
-			skipped.add(DescriptorSupport.SAVE_CELLS_PROPERTY + " is malformed (" +
-				e.getMessage() + "); banking.save_cells not carried");
-			return new ArrayList<>();
-		}
-		return out;
-	}
-
-	/**
 	 * A hand-stated banking hint list (bead grm-mej.10), copied verbatim, provenance included,
 	 * from the program property the loader recorded. {@code hexKeys} are written as hex
-	 * addresses, {@code plainKeys} as recorded (a string or small integer).
+	 * addresses, {@code plainKeys} as recorded (a string or small integer); {@code optionalKeys}
+	 * are carried as recorded only when present (a boolean only when true), between the plain keys
+	 * and the provenance. Never derived: the key records a human-established fact, and exporting
+	 * a ROM-byte derivation would launder one into it (grm-hb6.19). A malformed property is
+	 * reported in {@code skipped} and carries nothing.
 	 */
 	private static List<Map<String, Object>> verbatimBankingList(Program program,
-			List<String> skipped, String property, String arrayKey, String label,
-			String[] hexKeys, String[] plainKeys) {
+			List<String> skipped, BankingHintKind kind) {
 		List<Map<String, Object>> out = new ArrayList<>();
-		String spec = DescriptorSupport.programInfoString(program, property);
+		String spec = DescriptorSupport.programInfoString(program, kind.property);
 		if (spec == null || spec.isBlank()) {
 			return out;
 		}
 		try {
 			JsonObject root = JsonParser.parseString(spec).getAsJsonObject();
-			for (JsonElement el : root.getAsJsonArray(arrayKey)) {
+			for (JsonElement el : root.getAsJsonArray(kind.arrayKey)) {
 				JsonObject o = el.getAsJsonObject();
 				Map<String, Object> e = new LinkedHashMap<>();
-				for (String k : hexKeys) {
+				for (String k : kind.hexKeys) {
 					e.put(k, new HexInt(o.get(k).getAsLong()));
 				}
-				for (String k : plainKeys) {
+				for (String k : kind.plainKeys) {
 					var v = o.get(k).getAsJsonPrimitive();
 					e.put(k, v.isNumber() ? (Object) v.getAsInt() : v.getAsString());
 				}
+				for (String k : kind.optionalKeys) {
+					if (!o.has(k)) {
+						continue;
+					}
+					var v = o.get(k).getAsJsonPrimitive();
+					if (v.isBoolean()) {
+						if (v.getAsBoolean()) {
+							e.put(k, true);
+						}
+					}
+					else {
+						e.put(k, v.isNumber() ? (Object) v.getAsInt() : v.getAsString());
+					}
+				}
 				e.put("provenance", o.get("provenance").getAsString());
 				out.add(e);
 			}
 		}
 		catch (RuntimeException e) {
-			skipped.add(property + " is malformed (" + e.getMessage() + "); " + label +
-				" not carried");
+			skipped.add(kind.notCarriedMessage(e.getMessage()));
 			return new ArrayList<>();
 		}
 		return out;

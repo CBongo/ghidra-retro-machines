@@ -23,6 +23,7 @@ import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -374,5 +375,69 @@ public class GameDescriptorExportRoundTripTest extends AbstractBundledLanguageTe
 		File f = new File(tmp.getRoot(), "empty.yaml");
 		Files.writeString(f.toPath(), yaml);
 		assertTrue(GameCompiler.compileOverlay(f).ok());
+	}
+
+	/**
+	 * grm-rx1i.10: the {@link BankingHintKind} table covers every list-shaped hint end to end.
+	 * One sample entry per kind (every optional key present) is published, exported, recompiled
+	 * and republished: nothing may be dropped, reordered or reworded at any layer, and each kind's
+	 * parse reader must accept what its publisher wrote.
+	 */
+	@Test
+	public void everyBankingHintKindSurvivesTheRoundTrip() throws Exception {
+		JsonObject descriptor = JsonParser.parseString("""
+				{ "schema": 2, "banking": {
+				  "bank_identifying_offsets": [ { "address": 49151, "shift": 0, "low": 1,
+				    "bias": 3, "modulus_bits": 1, "provenance": "p-ident" } ],
+				  "switch_sites": [ { "addr": 32768, "block": "BANK0", "entry": true,
+				    "comment": "c", "bank": 2, "provenance": "p-site" } ],
+				  "save_cells": [ { "address": 16, "provenance": "p-cell" } ],
+				  "bank_stacks": [ { "pointer": 17, "slots": 512, "provenance": "p-stack" } ],
+				  "shadow_commits": [ { "helper": 49152, "cell": 18, "field": "r6",
+				    "provenance": "p-commit" } ],
+				  "paired_fields": [ { "high": "r6", "low": "r7", "offset": 1,
+				    "provenance": "p-pair" } ] } }
+				""").getAsJsonObject();
+		ProgramBuilder b = newBuilder();
+		ProgramDB src = b.getProgram();
+		edit(src, () -> {
+			for (BankingHintKind kind : BankingHintKind.values()) {
+				String published = kind.format(descriptor, "curated.gmap");
+				assertNotNull(kind.name(), published);
+				assertTrue(kind.name(), published.startsWith("{\"source\":\"curated.gmap\",\"" +
+					kind.arrayKey + "\":["));
+				src.getOptions(ghidra.program.model.listing.Program.PROGRAM_INFO)
+						.setString(kind.property, published);
+			}
+		});
+		List<String> problems = new ArrayList<>();
+		assertEquals(1, DescriptorSupport.parseMembershipHints(src, problems).size());
+		assertEquals(1, DescriptorSupport.parseSaveCells(src, problems).size());
+		assertEquals(1, DescriptorSupport.parseBankStacks(src, problems).size());
+		assertEquals(1, DescriptorSupport.parsePairedFields(src, problems).size());
+		assertEquals(1, SwitchSiteHints.parse(src, problems).size());
+		assertEquals("curated.gmap", ShadowCommits.source(src));
+		assertTrue(problems.toString(), problems.isEmpty());
+
+		GameDescriptorExporter.Result result =
+			GameDescriptorExporter.export(src, request(Map.of("prg_mode", 0)));
+		assertTrue(result.skipped().toString(), result.skipped().isEmpty());
+		int last = -1;
+		for (BankingHintKind kind : BankingHintKind.values()) {
+			int at = result.yaml().indexOf("\n  " + kind.yamlKey + ":");
+			assertTrue(kind.name() + " missing from export:\n" + result.yaml(), at > last);
+			last = at;
+		}
+
+		File overlay = new File(tmp.getRoot(), "allkinds.yaml");
+		Files.writeString(overlay.toPath(), result.yaml());
+		GameCompiler.CompileResult compiled = GameCompiler.compileOverlay(overlay);
+		assertTrue(compiled.errors().toString(), compiled.ok());
+		JsonObject recompiled =
+			new Gson().toJsonTree(compiled.gameDoc()).getAsJsonObject();
+		for (BankingHintKind kind : BankingHintKind.values()) {
+			assertEquals(kind.name(), kind.format(descriptor, "curated.gmap"),
+				kind.format(recompiled, "curated.gmap"));
+		}
 	}
 }

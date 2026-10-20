@@ -343,69 +343,25 @@ final class DescriptorSupport {
 	// ------------------------------------------------------------------
 
 	/**
-	 * The {@link #BANK_IDENTIFYING_HINTS_PROPERTY} value for {@code gameDescriptor}, or null when
-	 * it states no {@code banking.bank_identifying_offsets}.
-	 */
-	static String formatMembershipHints(JsonObject gameDescriptor, String source) {
-		JsonObject banking = gameDescriptor == null ? null
-				: gameDescriptor.getAsJsonObject("banking");
-		if (banking == null || !banking.has("bank_identifying_offsets")) {
-			return null;
-		}
-		JsonObject out = new JsonObject();
-		out.addProperty("source", source);
-		out.add("offsets", banking.getAsJsonArray("bank_identifying_offsets").deepCopy());
-		return out.toString();
-	}
-
-	/**
 	 * The membership hints {@code program}'s loader recorded, or an empty list. A malformed
 	 * property, or a malformed entry, is reported through {@code problems} and contributes
 	 * nothing -- a hint that cannot be read is a hint that is not applied, never a guess.
 	 */
 	static List<BankMirrors.MembershipHint> parseMembershipHints(Program program,
 			List<String> problems) {
-		String spec = programInfoString(program, BANK_IDENTIFYING_HINTS_PROPERTY);
-		List<BankMirrors.MembershipHint> hints = new ArrayList<>();
-		if (spec == null || spec.isBlank()) {
-			return hints;
-		}
-		try {
-			JsonObject root = JsonParser.parseString(spec).getAsJsonObject();
-			String source = root.get("source").getAsString();
-			for (JsonElement el : root.getAsJsonArray("offsets")) {
-				JsonObject o = el.getAsJsonObject();
+		return BankingHintKind.BANK_IDENTIFYING_OFFSETS.readOrEmpty(program, problems,
+			(o, root) -> {
+				String source = root.get("source").getAsString();
 				int shift = o.get("shift").getAsInt();
-				hints.add(new BankMirrors.MembershipHint(o.get("address").getAsLong(), shift,
+				return new BankMirrors.MembershipHint(o.get("address").getAsLong(), shift,
 					o.get("low").getAsInt(), o.has("bias") ? o.get("bias").getAsInt() : 0,
-					o.has("modulus_bits") ? o.get("modulus_bits").getAsInt() : shift, source));
-			}
-		}
-		catch (RuntimeException e) {
-			problems.add(BANK_IDENTIFYING_HINTS_PROPERTY + " is malformed (" + e.getMessage() +
-				"); no bank_identifying_offsets hint applied");
-			return List.of();
-		}
-		return hints;
+					o.has("modulus_bits") ? o.get("modulus_bits").getAsInt() : shift, source);
+			});
 	}
 
 	// ------------------------------------------------------------------
 	// Game-descriptor save cells (bead grm-mej.9)
 	// ------------------------------------------------------------------
-
-	/** The {@link #SAVE_CELLS_PROPERTY} value for {@code gameDescriptor}, or null when it states
-	 *  no {@code banking.save_cells}. */
-	static String formatSaveCells(JsonObject gameDescriptor, String source) {
-		JsonObject banking = gameDescriptor == null ? null
-				: gameDescriptor.getAsJsonObject("banking");
-		if (banking == null || !banking.has("save_cells")) {
-			return null;
-		}
-		JsonObject out = new JsonObject();
-		out.addProperty("source", source);
-		out.add("cells", banking.getAsJsonArray("save_cells").deepCopy());
-		return out.toString();
-	}
 
 	/**
 	 * The save-cell addresses {@code program}'s loader recorded (CPU addresses, base space), or
@@ -413,23 +369,9 @@ final class DescriptorSupport {
 	 * contributes nothing -- a hint that cannot be read is a hint that is not applied.
 	 */
 	static Set<Long> parseSaveCells(Program program, List<String> problems) {
-		String spec = programInfoString(program, SAVE_CELLS_PROPERTY);
-		Set<Long> cells = new java.util.LinkedHashSet<>();
-		if (spec == null || spec.isBlank()) {
-			return cells;
-		}
-		try {
-			JsonObject root = JsonParser.parseString(spec).getAsJsonObject();
-			for (JsonElement el : root.getAsJsonArray("cells")) {
-				cells.add(el.getAsJsonObject().get("address").getAsLong());
-			}
-		}
-		catch (RuntimeException e) {
-			problems.add(SAVE_CELLS_PROPERTY + " is malformed (" + e.getMessage() +
-				"); no save_cells hint applied");
-			return Set.of();
-		}
-		return cells;
+		List<Long> cells = BankingHintKind.SAVE_CELLS.read(program, problems,
+			(o, root) -> o.get("address").getAsLong());
+		return cells == null ? Set.of() : new java.util.LinkedHashSet<>(cells);
 	}
 
 	// ------------------------------------------------------------------
@@ -444,82 +386,50 @@ final class DescriptorSupport {
 	record PairedFields(String high, String low, int offset) {
 	}
 
-	private static String formatBankingList(JsonObject gameDescriptor, String source, String key,
-			String outKey) {
-		JsonObject banking = gameDescriptor == null ? null
-				: gameDescriptor.getAsJsonObject("banking");
-		if (banking == null || !banking.has(key)) {
+	/**
+	 * The {@code source} path recorded in the hint property {@code property}, or null when the
+	 * property is absent, blank or unreadable ("" when it carries no source).
+	 */
+	static String hintSource(Program program, String property) {
+		String spec = programInfoString(program, property);
+		if (spec == null || spec.isBlank()) {
 			return null;
 		}
-		JsonObject out = new JsonObject();
-		out.addProperty("source", source);
-		out.add(outKey, banking.getAsJsonArray(key).deepCopy());
-		return out.toString();
+		try {
+			JsonObject root = JsonParser.parseString(spec).getAsJsonObject();
+			return root.has("source") ? root.get("source").getAsString() : "";
+		}
+		catch (RuntimeException e) {
+			return null;
+		}
+	}
+
+	/** The {@link #BANK_IDENTIFYING_HINTS_PROPERTY} value, or null when the descriptor states none. */
+	static String formatMembershipHints(JsonObject gameDescriptor, String source) {
+		return BankingHintKind.BANK_IDENTIFYING_OFFSETS.format(gameDescriptor, source);
 	}
 
 	/** The {@link #SWITCH_SITES_PROPERTY} value, or null when the descriptor states none. */
 	static String formatSwitchSites(JsonObject gameDescriptor, String source) {
-		return formatBankingList(gameDescriptor, source, "switch_sites", "sites");
-	}
-
-	/** The {@link #BANK_STACKS_PROPERTY} value, or null when the descriptor states none. */
-	static String formatBankStacks(JsonObject gameDescriptor, String source) {
-		return formatBankingList(gameDescriptor, source, "bank_stacks", "stacks");
+		return BankingHintKind.SWITCH_SITES.format(gameDescriptor, source);
 	}
 
 	/** The {@link #SHADOW_COMMITS_PROPERTY} value, or null when the descriptor states none. */
 	static String formatShadowCommits(JsonObject gameDescriptor, String source) {
-		return formatBankingList(gameDescriptor, source, "shadow_commits", "commits");
-	}
-
-	/** The {@link #PAIRED_FIELDS_PROPERTY} value, or null when the descriptor states none. */
-	static String formatPairedFields(JsonObject gameDescriptor, String source) {
-		return formatBankingList(gameDescriptor, source, "paired_fields", "pairs");
+		return BankingHintKind.SHADOW_COMMITS.format(gameDescriptor, source);
 	}
 
 	/** The recorded bank stacks, or empty; malformed input is reported and contributes nothing. */
 	static List<BankStack> parseBankStacks(Program program, List<String> problems) {
-		String spec = programInfoString(program, BANK_STACKS_PROPERTY);
-		List<BankStack> stacks = new ArrayList<>();
-		if (spec == null || spec.isBlank()) {
-			return stacks;
-		}
-		try {
-			JsonObject root = JsonParser.parseString(spec).getAsJsonObject();
-			for (JsonElement el : root.getAsJsonArray("stacks")) {
-				JsonObject o = el.getAsJsonObject();
-				stacks.add(new BankStack(o.get("pointer").getAsLong(), o.get("slots").getAsLong()));
-			}
-		}
-		catch (RuntimeException e) {
-			problems.add(BANK_STACKS_PROPERTY + " is malformed (" + e.getMessage() +
-				"); no bank_stacks hint applied");
-			return List.of();
-		}
-		return stacks;
+		return BankingHintKind.BANK_STACKS.readOrEmpty(program, problems,
+			(o, root) -> new BankStack(o.get("pointer").getAsLong(), o.get("slots").getAsLong()));
 	}
 
 	/** The recorded field pairings, or empty; malformed input is reported and ignored. */
 	static List<PairedFields> parsePairedFields(Program program, List<String> problems) {
-		String spec = programInfoString(program, PAIRED_FIELDS_PROPERTY);
-		List<PairedFields> pairs = new ArrayList<>();
-		if (spec == null || spec.isBlank()) {
-			return pairs;
-		}
-		try {
-			JsonObject root = JsonParser.parseString(spec).getAsJsonObject();
-			for (JsonElement el : root.getAsJsonArray("pairs")) {
-				JsonObject o = el.getAsJsonObject();
-				pairs.add(new PairedFields(o.get("high").getAsString(),
-					o.get("low").getAsString(), o.get("offset").getAsInt()));
-			}
-		}
-		catch (RuntimeException e) {
-			problems.add(PAIRED_FIELDS_PROPERTY + " is malformed (" + e.getMessage() +
-				"); no paired_fields hint applied");
-			return List.of();
-		}
-		return pairs;
+		return BankingHintKind.PAIRED_FIELDS.readOrEmpty(program, problems,
+			(o, root) -> new PairedFields(o.get("high").getAsString(), o.get("low").getAsString(),
+				o.get("offset").getAsInt()));
 	}
 
 	// ------------------------------------------------------------------

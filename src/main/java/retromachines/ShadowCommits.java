@@ -140,18 +140,7 @@ final class ShadowCommits {
 
 	/** The descriptor-recorded source path, or null when absent/unreadable. */
 	static String source(Program program) {
-		String spec = DescriptorSupport.programInfoString(program,
-			DescriptorSupport.SHADOW_COMMITS_PROPERTY);
-		if (spec == null || spec.isBlank()) {
-			return null;
-		}
-		try {
-			JsonObject root = JsonParser.parseString(spec).getAsJsonObject();
-			return root.has("source") ? root.get("source").getAsString() : "";
-		}
-		catch (RuntimeException e) {
-			return null;
-		}
+		return BankingHintKind.SHADOW_COMMITS.source(program);
 	}
 
 	/**
@@ -169,26 +158,18 @@ final class ShadowCommits {
 	 */
 	static Plan plan(Program program, BoardModel board, Map<Function, HelperModel> helpers,
 			Map<Address, BankDataflowEngine.SwitchResult> switchResults) {
-		String spec = DescriptorSupport.programInfoString(program,
-			DescriptorSupport.SHADOW_COMMITS_PROPERTY);
-		if (spec == null || spec.isBlank()) {
+		if (!BankingHintKind.SHADOW_COMMITS.isRecorded(program)) {
 			return Plan.NONE;
 		}
 		String source = source(program);
 		String who = "game descriptor " + (source == null ? "(unknown)" : source);
-		List<Entry> entries = new ArrayList<>();
 		List<Problem> problems = new ArrayList<>();
-		try {
-			JsonObject root = JsonParser.parseString(spec).getAsJsonObject();
-			for (JsonElement el : root.getAsJsonArray("commits")) {
-				JsonObject o = el.getAsJsonObject();
-				entries.add(new Entry(o.get("helper").getAsLong(), o.get("cell").getAsLong(),
-					o.get("field").getAsString(), o.get("provenance").getAsString()));
-			}
-		}
-		catch (RuntimeException e) {
-			problems.add(new Problem(null, DescriptorSupport.SHADOW_COMMITS_PROPERTY +
-				" is malformed (" + e.getMessage() + "); no shadow_commits hint applied"));
+		List<String> readProblems = new ArrayList<>();
+		List<Entry> entries = BankingHintKind.SHADOW_COMMITS.read(program, readProblems,
+			(o, root) -> new Entry(o.get("helper").getAsLong(), o.get("cell").getAsLong(),
+				o.get("field").getAsString(), o.get("provenance").getAsString()));
+		if (entries == null) {
+			readProblems.forEach(text -> problems.add(new Problem(null, text)));
 			return new Plan(source, Map.of(), problems);
 		}
 		// Pass 1: the structural checks (helper modelled, field within its effect mask).
