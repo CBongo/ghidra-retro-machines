@@ -25,7 +25,7 @@
 // (MMC1) and select-data (MMC3). All three take their write range from the same two params,
 // start/end -- MemoryLatchBankSwitchStrategy.configure (:129-137),
 // SerialShiftBankSwitchStrategy.configure (:180-181),
-// SelectDataBankSwitchStrategy.configure (:106-107) -- so one Mech record models all three;
+// SelectDataBankSwitchStrategy.configure (:106-107) -- so one shared Mech record (ProbeSupport.java) models all three;
 // only memory-latch also reads addr_mask/addr_match, which is why the decode= column reports
 // NA on the other two instead of fabricating a MATCH out of an absent mask.
 //
@@ -87,7 +87,7 @@
 //         mirror.agree, renamed from today.ref / today.operand. It no longer answers the
 //         question -- it audits the answer. A disagreement with production is precisely the
 //         finding the re-implementation doctrine exists to surface (see "WHY THE HELPERS ARE
-//         RE-IMPLEMENTED" below), so mirror.agree=NO on a memory-latch board is a bug in one
+//         INDEPENDENT OF PRODUCTION" below), so mirror.agree=NO on a memory-latch board is a bug in one
 //         of the two and 'count mirror.disagree' totals them. On serial-shift/select-data the
 //         mirror does not model production at all, so mirror.agree is NA: the two tiers still
 //         describe the instruction truthfully ("carries a write ref in range" / "its operand
@@ -129,15 +129,21 @@
 // Run it in its OWN invocation: the realrom cache key does not include the extra postScript,
 // so a cached `check`/`bless` pair would silently skip the import this script needs.
 //
-// WHY THE HELPERS ARE RE-IMPLEMENTED HERE
-// retromachines.StoredValueScanner, retromachines.LoopIdioms and
-// retromachines.DescriptorSupport are package-private, and this script is not in that
-// package. Widening any of them would make a production class public FOREVER for the sake of
-// a diagnostic, so instead the three tiny helpers this probe needs are re-implemented
-// privately below, each pinned to the production line numbers it mirrors. The redundancy is
-// a feature, not a cost: an independent re-implementation means a DISAGREEMENT with
-// production is itself a finding rather than a silent shared bug -- which is exactly what
-// mirror.agree now reports.
+// WHY THE HELPERS ARE INDEPENDENT OF PRODUCTION BUT SHARED BETWEEN PROBES (grm-rx1i.16)
+// The rule is: a probe stays INDEPENDENT OF PRODUCTION. This probe must NOT call
+// retromachines.StoredValueScanner, LoopIdioms or DescriptorSupport (package-private; this
+// script is not in that package) -- it re-derives their rules, each helper pinned in
+// ProbeSupport.java to the production line numbers it mirrors. mirror.agree is exactly that
+// disagreement being reported.
+// A probe-vs-analyzer disagreement is itself a finding, which is lost the moment a probe
+// calls the code it is auditing, and the production classes involved are package-private and
+// must never be widened to public for the sake of a diagnostic. Sharing code BETWEEN PROBES
+// does not weaken that, so it is allowed and is done: the helpers common to BankReachProbe,
+// HelperShapeProbe and BankConsumerProbe (storeRegister, plainAbsoluteTarget, indexedBase,
+// writesRangeAnySpace, loadMechanisms, Mech, reachable) live in ProbeSupport.java, which
+// itself imports no retromachines production class. (This replaces the earlier convention
+// that the helpers were DUPLICATED rather than extracted; that protected independence of the
+// probes from each other, which was never the property worth protecting.)
 //
 // BEADS: grm-8cq / grm-3x1 / grm-9oz (original), grm-8iy + grm-8iy.2 (three strategies,
 // authoritative today=).
@@ -213,18 +219,14 @@ public class BankReachProbe extends GhidraScript {
 	 */
 	private static final String MAP_PATH_PROPERTY = "Retro Machine Map";
 
-	/** The one memory-latch strategy name, kept as a constant because several columns are
-	 *  meaningful only on it (addr_mask decode, and the mirror this probe cross-checks with). */
-	private static final String MEMORY_LATCH = "memory-latch";
+	/** Shared with the other probes (ProbeSupport.java, grm-rx1i.16): the memory-latch
+	 *  strategy name, meaningful because several columns apply only to it. */
+	private static final String MEMORY_LATCH = ProbeSupport.MEMORY_LATCH;
 
-	/**
-	 * The strategies whose write range is fully described by {@code start}/{@code end}, and so
-	 * by this probe's {@link Mech}. Every other strategy (register-write, ...) decides its
-	 * range differently and would be mis-modelled here, so it is reported as unsupported
-	 * rather than silently probed.
-	 */
-	private static final List<String> ACCEPTED_STRATEGIES =
-		List.of(MEMORY_LATCH, "serial-shift", "select-data");
+	/** Shared with the other probes (ProbeSupport.java): the strategies whose write range is
+	 *  fully described by start/end, and so by {@link ProbeSupport.Mech}. Every other strategy
+	 *  is reported as unsupported rather than silently probed. */
+	private static final List<String> ACCEPTED_STRATEGIES = ProbeSupport.ACCEPTED_STRATEGIES;
 
 	/**
 	 * Prefix of every WARNING bookmark {@code BoardBankAnalyzer.annotateOrWarn} (:1439-1455)
@@ -253,58 +255,11 @@ public class BankReachProbe extends GhidraScript {
 	// Model
 	// ------------------------------------------------------------------
 
-	/**
-	 * One configured mechanism of an {@link #ACCEPTED_STRATEGIES accepted} strategy.
-	 * {@code start}/{@code end} are read identically by all three
-	 * (MemoryLatchBankSwitchStrategy.configure :129-137, SerialShiftBankSwitchStrategy.configure
-	 * :180-181, SelectDataBankSwitchStrategy.configure :106-107). {@code addrMask}/
-	 * {@code addrMatch} exist ONLY on memory-latch; on the other two they are absent from the
-	 * schema entirely and stay 0 here, which is why {@link #memoryLatch()} gates every column
-	 * derived from them rather than letting "mask 0 always matches" read as a real MATCH.
-	 * <p>
-	 * {@code index} is the mechanism's position in the descriptor's {@code banking.mechanisms[]}
-	 * array (NOT its position among accepted ones), so {@code mech=<i>} points straight at the
-	 * JSON.
-	 */
-	private static final class Mech {
-		final int index;
-		final String strategy;
-		final long start;
-		final long end;
-		final long addrMask;
-		final long addrMatch;
-
-		Mech(int index, String strategy, long start, long end, long addrMask, long addrMatch) {
-			this.index = index;
-			this.strategy = strategy;
-			this.start = start;
-			this.end = end;
-			this.addrMask = addrMask;
-			this.addrMatch = addrMatch;
-		}
-
-		/** Whether the addr_mask decode and the re-implemented mirror apply to this mechanism. */
-		boolean memoryLatch() {
-			return MEMORY_LATCH.equals(strategy);
-		}
-
-		boolean inRange(long offset) {
-			return offset >= start && offset <= end;
-		}
-
-		/** Verbatim MemoryLatchBankSwitchStrategy.matchesDecode (:211-213). Callers must gate on
-		 *  {@link #memoryLatch()}: elsewhere there is no mask to satisfy, so a "true" here means
-		 *  "not applicable", not "matched". */
-		boolean matchesDecode(long offset) {
-			return addrMask == 0 || (offset & addrMask) == addrMatch;
-		}
-	}
-
 	/** One store instruction whose operand names an address inside some mechanism's latch
 	 *  range, together with every gate production applies to it. */
 	private static final class Site {
 		Address at;
-		Mech mech;
+		ProbeSupport.Mech mech;
 		char reg;
 		boolean indexed;
 		long base;
@@ -391,19 +346,20 @@ public class BankReachProbe extends GhidraScript {
 			return;
 		}
 
-		List<Mech> mechs;
+		List<ProbeSupport.Mech> mechs;
 		// Every strategy name the descriptor declares, accepted or not -- so the bail-out below
 		// says what the board actually IS instead of only what it is not.
 		List<String> declared = new ArrayList<>();
 		try {
-			mechs = loadMechanisms(mapPath, declared);
+			mechs = ProbeSupport.loadMechanisms(mapPath, declared,
+				msg -> println("BANKREACH error " + msg));
 		}
 		catch (Exception e) {
 			println("BANKREACH error descriptor " + mapPath + ": " + e.getClass().getSimpleName() +
 				": " + e.getMessage());
 			return;
 		}
-		for (Mech m : mechs) {
+		for (ProbeSupport.Mech m : mechs) {
 			// addr_mask/addr_match are memory-latch-only params; printing "0" for a board whose
 			// schema has no such key would read as "a mask is configured and it is zero".
 			println("BANKREACH mech " + m.index + " strategy=" + m.strategy + " start=" +
@@ -433,7 +389,7 @@ public class BankReachProbe extends GhidraScript {
 		}
 
 		// --- 4. reachability ------------------------------------------------------
-		Set<Address> reached = reachable(listing, seeds);
+		Set<Address> reached = ProbeSupport.reachable(listing, seeds, monitor);
 
 		// --- 4b. production's own answer (grm-8iy.2) ------------------------------
 		// The switch-site WARNING bookmarks, collected once. The Phase-3 requirement-violation
@@ -477,10 +433,10 @@ public class BankReachProbe extends GhidraScript {
 			monitor.checkCancelled();
 			Instruction instr = instrs.next();
 			instrsTotal++;
-			Character reg = storeRegister(instr);
+			Character reg = ProbeSupport.storeRegister(instr);
 			if (reg == null) {
-				for (Mech m : mechs) {
-					if (writesRangeAnySpace(instr, m)) {
+				for (ProbeSupport.Mech m : mechs) {
+					if (ProbeSupport.writesRangeAnySpace(instr, m)) {
 						rmwInRange++;
 						break;
 					}
@@ -493,9 +449,9 @@ public class BankReachProbe extends GhidraScript {
 			// that production's reference-based gate is what fails here, so a reference-based
 			// decode would be blind in exactly the cases we are hunting.
 			boolean indexed = false;
-			Address target = plainAbsoluteTarget(instr);
+			Address target = ProbeSupport.plainAbsoluteTarget(instr);
 			if (target == null) {
-				target = indexedBase(instr);
+				target = ProbeSupport.indexedBase(instr);
 				indexed = target != null;
 			}
 			if (target == null) {
@@ -515,8 +471,8 @@ public class BankReachProbe extends GhidraScript {
 				continue; // an operand value no default-space address can hold
 			}
 			long offset = normalized.getOffset();
-			Mech mech = null;
-			for (Mech m : mechs) {
+			ProbeSupport.Mech mech = null;
+			for (ProbeSupport.Mech m : mechs) {
 				if (m.inRange(offset)) {
 					// First match wins, mirroring runDataflow's ordered mechanism loop
 					// (:617-624), which breaks on the first strategy that claims the address.
@@ -547,7 +503,7 @@ public class BankReachProbe extends GhidraScript {
 			s.func = containing == null ? "NONE" : containing.getName();
 			s.reach = reached.contains(s.at);
 			s.refs = instr.getReferencesFrom().length;
-			s.write = writesRangeAnySpace(instr, mech);
+			s.write = ProbeSupport.writesRangeAnySpace(instr, mech);
 			// Production's own verdict, read off the program rather than re-derived.
 			String eol = listing.getComment(CommentType.EOL, s.at);
 			s.todayComment = eol != null && eol.contains("bank ->");
@@ -709,45 +665,6 @@ public class BankReachProbe extends GhidraScript {
 	}
 
 	// ------------------------------------------------------------------
-	// Reachability
-	// ------------------------------------------------------------------
-
-	/**
-	 * The set of instruction addresses runDataflow would ever dequeue, with the bank state
-	 * removed: seeds, then {@code instr.getFlows()} + {@code getFallThrough()} to fixpoint
-	 * (BankDataflowEngine.java:266-273), dropping any address with no instruction exactly as
-	 * {@code mergeAndEnqueue} does (BankDataflowEngine.java:323-326). Dropping the state is
-	 * sound for this question -- state affects the VALUE a switch produces, never which
-	 * addresses are visited.
-	 */
-	private Set<Address> reachable(Listing listing, Set<Address> seeds) throws Exception {
-		Set<Address> reached = new HashSet<>();
-		Deque<Address> work = new ArrayDeque<>(seeds);
-		while (!work.isEmpty()) {
-			monitor.checkCancelled();
-			Address addr = work.poll();
-			if (reached.contains(addr)) {
-				continue;
-			}
-			Instruction instr = listing.getInstructionAt(addr);
-			if (instr == null) {
-				// not (yet) disassembled / not code, or an address inside an instruction rather
-				// than at its start -- production drops it here too
-				continue;
-			}
-			reached.add(addr);
-			for (Address flow : instr.getFlows()) {
-				work.push(flow);
-			}
-			Address fallThrough = instr.getFallThrough();
-			if (fallThrough != null) {
-				work.push(fallThrough);
-			}
-		}
-		return reached;
-	}
-
-	// ------------------------------------------------------------------
 	// The two write predicates
 	// ------------------------------------------------------------------
 
@@ -791,12 +708,12 @@ public class BankReachProbe extends GhidraScript {
 	 * Reported split as {@code today.ref}/{@code today.operand} so a future divergence localizes
 	 * itself to the tier that drifted instead of presenting as one opaque wrong answer.
 	 */
-	private boolean writesInRange(Instruction instr, Mech mech, AddressSpace space) {
+	private boolean writesInRange(Instruction instr, ProbeSupport.Mech mech, AddressSpace space) {
 		return writesInRangeTier1(instr, mech, space) || writesInRangeTier2(instr, mech, space);
 	}
 
 	/** Tier 1: an authoritative write reference. Physical-space test, so overlays count. */
-	private boolean writesInRangeTier1(Instruction instr, Mech mech, AddressSpace space) {
+	private boolean writesInRangeTier1(Instruction instr, ProbeSupport.Mech mech, AddressSpace space) {
 		for (Reference ref : instr.getReferencesFrom()) {
 			Address to = ref.getToAddress();
 			if (ref.getReferenceType().isWrite() &&
@@ -809,16 +726,16 @@ public class BankReachProbe extends GhidraScript {
 	}
 
 	/** Tier 2: operand decode, for the stores that carry no write reference at all. */
-	private boolean writesInRangeTier2(Instruction instr, Mech mech, AddressSpace space) {
-		if (storeRegister(instr) == null) {
+	private boolean writesInRangeTier2(Instruction instr, ProbeSupport.Mech mech, AddressSpace space) {
+		if (ProbeSupport.storeRegister(instr) == null) {
 			return false; // RMW stores stay tier-1-only, as in production
 		}
-		Address target = plainAbsoluteTarget(instr);
+		Address target = ProbeSupport.plainAbsoluteTarget(instr);
 		if (target != null) {
 			return inPhysical(target, space) && mech.inRange(target.getOffset()) &&
 				mech.matchesDecode(target.getOffset());
 		}
-		Address base = indexedBase(instr);
+		Address base = ProbeSupport.indexedBase(instr);
 		if (base == null || mech.addrMask != 0) {
 			return false; // base & mask says nothing about (base + X) & mask
 		}
@@ -828,154 +745,6 @@ public class BankReachProbe extends GhidraScript {
 	/** Production's {@code inLatchRange} space half: an overlay over the code space counts. */
 	private static boolean inPhysical(Address addr, AddressSpace space) {
 		return addr.getAddressSpace().getPhysicalSpace().equals(space);
-	}
-
-	/**
-	 * Deliberately LOOSER than production: any write reference whose OFFSET falls in the latch
-	 * range, in any address space and ignoring the decode predicate. A site that is
-	 * {@code write=YES today=NO} has a perfectly good write reference that production throws
-	 * away -- which localizes the failure to the space test (or the decode), not to the
-	 * absence of a reference.
-	 */
-	private boolean writesRangeAnySpace(Instruction instr, Mech mech) {
-		for (Reference ref : instr.getReferencesFrom()) {
-			Address to = ref.getToAddress();
-			if (ref.getReferenceType().isWrite() && mech.inRange(to.getOffset())) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	// ------------------------------------------------------------------
-	// Re-implemented production helpers (see the file header for why)
-	// ------------------------------------------------------------------
-
-	/** Mirrors StoredValueScanner.storeRegister (:255-261): 'A'/'X'/'Y' for STA/STX/STY, else
-	 *  null. Read-modify-write stores (INC/ASL/...) are excluded there and here. */
-	private static Character storeRegister(Instruction instr) {
-		String mnem = instr.getMnemonicString().toUpperCase();
-		if (mnem.equals("STA") || mnem.equals("STX") || mnem.equals("STY")) {
-			return mnem.charAt(2); // 'A' | 'X' | 'Y'
-		}
-		return null;
-	}
-
-	/** Mirrors StoredValueScanner.plainAbsoluteTarget (:341-355): the single constant address
-	 *  an operand names, or null when any register participates (indexed/indirect) or when the
-	 *  operand names none or several. */
-	private static Address plainAbsoluteTarget(Instruction instr) {
-		Address addr = null;
-		for (Object obj : instr.getOpObjects(0)) {
-			if (obj instanceof Register) {
-				return null; // indexed -- runtime-dependent target
-			}
-			if (obj instanceof Address a) {
-				if (addr != null) {
-					return null;
-				}
-				addr = a;
-			}
-		}
-		return addr;
-	}
-
-	/** Mirrors LoopIdioms.indexedBase (:82-111): the base of an indexed operand (abs,X /
-	 *  abs,Y / zp,X), built in the EXECUTING instruction's space -- which for an out-of-overlay
-	 *  offset already resolves back to the base space (see that method's javadoc, :69-81). */
-	private static Address indexedBase(Instruction instr) {
-		Long base = null;
-		boolean indexed = false;
-		for (Object obj : instr.getOpObjects(0)) {
-			if (obj instanceof Register) {
-				indexed = true;
-			}
-			else if (obj instanceof Address a) {
-				if (base != null) {
-					return null;
-				}
-				base = a.getOffset();
-			}
-			else if (obj instanceof Scalar s) {
-				if (base != null) {
-					return null;
-				}
-				base = s.getUnsignedValue();
-			}
-		}
-		if (!indexed || base == null) {
-			return null;
-		}
-		try {
-			return instr.getMinAddress().getAddressSpace().getAddress(base);
-		}
-		catch (AddressOutOfBoundsException e) {
-			return null;
-		}
-	}
-
-	// ------------------------------------------------------------------
-	// Descriptor
-	// ------------------------------------------------------------------
-
-	/**
-	 * The descriptor's mechanisms whose strategy is one of {@link #ACCEPTED_STRATEGIES},
-	 * resolved through the same bundled-data lookup DescriptorResources.loadMap (:142-151) uses.
-	 * A malformed or partial mechanism is skipped rather than fatal -- one bad entry should not
-	 * blind the whole probe. Every strategy name encountered, accepted or not, is appended to
-	 * {@code declared} so the caller's bail-out can name what the board actually is.
-	 */
-	private List<Mech> loadMechanisms(String mapPath, List<String> declared) throws Exception {
-		ResourceFile mapFile = Application.findDataFileInAnyModule(mapPath);
-		if (mapFile == null) {
-			throw new IOException("could not find bundled data file " + mapPath);
-		}
-		JsonObject root;
-		try (InputStreamReader reader =
-			new InputStreamReader(mapFile.getInputStream(), StandardCharsets.UTF_8)) {
-			root = JsonParser.parseReader(reader).getAsJsonObject();
-		}
-		List<Mech> out = new ArrayList<>();
-		JsonObject banking = root.has("banking") ? root.getAsJsonObject("banking") : null;
-		if (banking == null || !banking.has("mechanisms")) {
-			return out;
-		}
-		JsonArray mechanisms = banking.getAsJsonArray("mechanisms");
-		int index = 0;
-		for (JsonElement element : mechanisms) {
-			int here = index++;
-			if (!element.isJsonObject()) {
-				continue;
-			}
-			JsonObject mech = element.getAsJsonObject();
-			if (!mech.has("strategy")) {
-				continue;
-			}
-			String strategy = mech.get("strategy").getAsString();
-			if (!declared.contains(strategy)) {
-				declared.add(strategy);
-			}
-			if (!ACCEPTED_STRATEGIES.contains(strategy)) {
-				continue; // range not described by start/end -- would be mis-modelled here
-			}
-			if (!mech.has("params")) {
-				println("BANKREACH error mechanism " + here + " has no params; skipped");
-				continue;
-			}
-			JsonObject params = mech.getAsJsonObject("params");
-			if (!params.has("start") || !params.has("end")) {
-				println("BANKREACH error mechanism " + here + " lacks start/end; skipped");
-				continue;
-			}
-			// addr_mask/addr_match are read unconditionally but are memory-latch-only in the
-			// schema; on the other two strategies they are absent and stay 0, which every
-			// consumer gates behind Mech.memoryLatch() rather than reading as "mask of 0".
-			out.add(new Mech(here, strategy, params.get("start").getAsLong(),
-				params.get("end").getAsLong(),
-				params.has("addr_mask") ? params.get("addr_mask").getAsLong() : 0,
-				params.has("addr_match") ? params.get("addr_match").getAsLong() : 0));
-		}
-		return out;
 	}
 
 	// ------------------------------------------------------------------
@@ -995,7 +764,7 @@ public class BankReachProbe extends GhidraScript {
 	 * Chunks overlap by two bytes so a three-byte pattern straddling a chunk boundary is still
 	 * seen exactly once.
 	 */
-	private void scanCandidates(Memory memory, AddressSetView undefined, List<Mech> mechs,
+	private void scanCandidates(Memory memory, AddressSetView undefined, List<ProbeSupport.Mech> mechs,
 			List<String> out, int[] counts) throws Exception {
 		final int chunkSize = 1 << 16;
 		for (AddressRange range : undefined.getAddressRanges()) {
@@ -1029,8 +798,8 @@ public class BankReachProbe extends GhidraScript {
 						continue;
 					}
 					long target = (buf[i + 1] & 0xFF) | ((buf[i + 2] & 0xFF) << 8);
-					Mech mech = null;
-					for (Mech m : mechs) {
+					ProbeSupport.Mech mech = null;
+					for (ProbeSupport.Mech m : mechs) {
 						if (m.inRange(target)) {
 							mech = m;
 							break;

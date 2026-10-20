@@ -18,7 +18,7 @@
 //
 // The warn population is kept anyway, deliberately, not deleted -- classified by bookmark-text
 // prefix (switchUnknown / violation / other) rather than filtered. The mech population is
-// itself a fresh, unaudited re-derivation (see "WHY THE HELPERS ARE RE-IMPLEMENTED" below), so
+// itself a fresh, unaudited re-derivation (see "WHY THE HELPERS ARE INDEPENDENT OF PRODUCTION" below), so
 // a warn-only or mech-only function is evidence about WHICH of the two populations is wrong on
 // a given title, not noise to discard. Every function found by either method is tagged
 // pop=BOTH / MECH-ONLY / WARN-ONLY, call-site tallies are reported once per population
@@ -36,20 +36,27 @@
 // Re-implementing the production rule here rather than calling it is deliberate, the same
 // choice BankReachProbe.java makes: a disagreement between the two is itself a finding. This
 // script must NOT call HelperDiscovery/findHelpers/StoredValueScanner -- see "WHY THE
-// HELPERS ARE RE-IMPLEMENTED" below.
+// HELPERS ARE INDEPENDENT OF PRODUCTION" below.
 //
 // This SCRIPT is committed and documented (tools/banktest/realrom/README.md); its OUTPUT is
 // never committed and never part of a golden -- the same posture as BankReachProbe.java's
 // header.
 //
-// WHY THE HELPERS ARE RE-IMPLEMENTED HERE
-// retromachines.StoredValueScanner and retromachines.DescriptorSupport are package-private,
-// and this script is not in that package. Widening either to public would do so FOREVER for
-// the sake of a diagnostic, so storeRegister / plainAbsoluteTarget / indexedBase /
-// loadMechanisms are re-implemented privately below. They are DUPLICATED from
-// BankReachProbe.java rather than extracted to a shared class -- the established convention
-// here (BankReachProbe.java:135-143, BankConsumerProbe.java:2050-2061) -- and each duplicate
-// names the BankReachProbe method it mirrors.
+// WHY THE HELPERS ARE INDEPENDENT OF PRODUCTION BUT SHARED BETWEEN PROBES (grm-rx1i.16)
+// The rule is: a probe stays INDEPENDENT OF PRODUCTION. This probe must NOT call
+// retromachines.StoredValueScanner, DescriptorSupport or HelperDiscovery (package-private;
+// this script is not in that package) -- storeRegister / plainAbsoluteTarget / indexedBase /
+// loadMechanisms are production rules re-derived in ProbeSupport.java, each naming the
+// production method it mirrors. Section 5's private reachableEntries copy stays in this file.
+// A probe-vs-analyzer disagreement is itself a finding, which is lost the moment a probe
+// calls the code it is auditing, and the production classes involved are package-private and
+// must never be widened to public for the sake of a diagnostic. Sharing code BETWEEN PROBES
+// does not weaken that, so it is allowed and is done: the helpers common to BankReachProbe,
+// HelperShapeProbe and BankConsumerProbe (storeRegister, plainAbsoluteTarget, indexedBase,
+// writesRangeAnySpace, loadMechanisms, Mech, reachable) live in ProbeSupport.java, which
+// itself imports no retromachines production class. (This replaces the earlier convention
+// that the helpers were DUPLICATED rather than extracted; that protected independence of the
+// probes from each other, which was never the property worth protecting.)
 //
 // BEADS: grm-nju (constant-argument prototype), grm-8iy.3 (the warn-only population was a
 // false premise; this mech/warn split is the fix, and TALLY.mech is what to compare against a
@@ -86,15 +93,12 @@ public class HelperShapeProbe extends GhidraScript {
 	 */
 	private static final String MAP_PATH_PROPERTY = "Retro Machine Map";
 
-	/** Mirrors BankReachProbe.MEMORY_LATCH (~:217). */
-	private static final String MEMORY_LATCH = "memory-latch";
+	/** Shared with the other probes (ProbeSupport.java, grm-rx1i.16). */
+	private static final String MEMORY_LATCH = ProbeSupport.MEMORY_LATCH;
 
-	/**
-	 * Mirrors BankReachProbe.ACCEPTED_STRATEGIES (~:225): the strategies whose write range is
-	 * fully described by start/end, and so by this probe's {@link Mech}.
-	 */
-	private static final List<String> ACCEPTED_STRATEGIES =
-		List.of(MEMORY_LATCH, "serial-shift", "select-data");
+	/** Shared with the other probes (ProbeSupport.java): the strategies whose write range is
+	 *  fully described by start/end, and so by {@link ProbeSupport.Mech}. */
+	private static final List<String> ACCEPTED_STRATEGIES = ProbeSupport.ACCEPTED_STRATEGIES;
 
 	/** Mirrors BankReachProbe.SWITCH_UNKNOWN_PREFIX (~:233). */
 	private static final String SWITCH_UNKNOWN_PREFIX = "Bank state becomes unknown here:";
@@ -114,40 +118,15 @@ public class HelperShapeProbe extends GhidraScript {
 	// Model
 	// ------------------------------------------------------------------
 
-	/**
-	 * One configured mechanism of an {@link #ACCEPTED_STRATEGIES accepted} strategy. Trimmed
-	 * from BankReachProbe.Mech (~:268-296): this probe only needs a plain start/end range match
-	 * to decide "is this store site a mechanism write", not BankReachProbe's addr_mask decode
-	 * verdict (that column answers a different question -- MATCH/MISS/UNDECIDED -- that this
-	 * probe does not ask).
-	 */
-	private static final class Mech {
-		final int index;
-		final String strategy;
-		final long start;
-		final long end;
-
-		Mech(int index, String strategy, long start, long end) {
-			this.index = index;
-			this.strategy = strategy;
-			this.start = start;
-			this.end = end;
-		}
-
-		boolean inRange(long offset) {
-			return offset >= start && offset <= end;
-		}
-	}
-
 	/** One mechanism-range store site, retained so its owning function can aggregate register
 	 *  agreement, first/last address, and which mechanism/offset it hit. */
 	private static final class MechSite {
 		final Address at;
 		final char reg;
-		final Mech mech;
+		final ProbeSupport.Mech mech;
 		final long offset;
 
-		MechSite(Address at, char reg, Mech mech, long offset) {
+		MechSite(Address at, char reg, ProbeSupport.Mech mech, long offset) {
 			this.at = at;
 			this.reg = reg;
 			this.mech = mech;
@@ -162,12 +141,12 @@ public class HelperShapeProbe extends GhidraScript {
 		final List<MechSite> sites = new ArrayList<>();
 		Address first;
 		Address last;
-		Mech mech; // the mechanism at the first (lowest-address) site
+		ProbeSupport.Mech mech; // the mechanism at the first (lowest-address) site
 		long latch; // the target offset at that same first site
 		Character reg; // register common to all sites so far, or already MIXED
 		boolean mixed;
 
-		void add(Address at, char r, Mech m, long offset) {
+		void add(Address at, char r, ProbeSupport.Mech m, long offset) {
 			sites.add(new MechSite(at, r, m, offset));
 			if (first == null) {
 				first = at;
@@ -247,13 +226,13 @@ public class HelperShapeProbe extends GhidraScript {
 			currentProgram.getOptions(Program.PROGRAM_INFO).getString(MAP_PATH_PROPERTY, null);
 		List<String> declared = new ArrayList<>();
 		String mechUnavailableReason = null;
-		List<Mech> mechs = new ArrayList<>();
+		List<ProbeSupport.Mech> mechs = new ArrayList<>();
 		if (mapPath == null || mapPath.isBlank()) {
 			mechUnavailableReason = "no '" + MAP_PATH_PROPERTY + "' property on this program";
 		}
 		else {
 			try {
-				mechs = loadMechanisms(mapPath, declared);
+				mechs = ProbeSupport.loadMechanisms(mapPath, declared, null);
 			}
 			catch (Exception e) {
 				mechUnavailableReason = "descriptor " + mapPath + ": " +
@@ -279,14 +258,14 @@ public class HelperShapeProbe extends GhidraScript {
 			while (mechInstrs.hasNext()) {
 				monitor.checkCancelled();
 				Instruction instr = mechInstrs.next();
-				Character reg = storeRegister(instr);
+				Character reg = ProbeSupport.storeRegister(instr);
 				if (reg == null) {
 					// Not an STA/STX/STY. On 6502 a non-store instruction that still WRITES a
 					// mechanism range is a read-modify-write (INC/ASL/ROL/...); production's own
 					// mechanism-write gate accepts those, this probe's storeRegister-based site
 					// enumeration structurally cannot, so the gap is counted rather than hidden.
-					for (Mech m : mechs) {
-						if (writesRangeAnySpace(instr, m)) {
+					for (ProbeSupport.Mech m : mechs) {
+						if (ProbeSupport.writesRangeAnySpace(instr, m)) {
 							rmwSkipped++;
 							break;
 						}
@@ -295,9 +274,9 @@ public class HelperShapeProbe extends GhidraScript {
 				}
 				// Decode the target from the OPERAND, mirroring BankReachProbe's site
 				// enumeration (~:494-502): plainAbsoluteTarget first, indexedBase as fallback.
-				Address target = plainAbsoluteTarget(instr);
+				Address target = ProbeSupport.plainAbsoluteTarget(instr);
 				if (target == null) {
-					target = indexedBase(instr);
+					target = ProbeSupport.indexedBase(instr);
 				}
 				if (target == null) {
 					continue; // zero-page-indirect / (zp),Y / no address operand
@@ -312,8 +291,8 @@ public class HelperShapeProbe extends GhidraScript {
 					continue;
 				}
 				long offset = normalized.getOffset();
-				Mech mech = null;
-				for (Mech m : mechs) {
+				ProbeSupport.Mech mech = null;
+				for (ProbeSupport.Mech m : mechs) {
 					if (m.inRange(offset)) {
 						mech = m; // first match wins, mirroring runDataflow's ordered loop
 						break;
@@ -938,147 +917,6 @@ public class HelperShapeProbe extends GhidraScript {
 		if (n == 0) {
 			println("HELPERSHAPE " + pad + "(no flow references to this entry point)");
 		}
-	}
-
-	// ------------------------------------------------------------------
-	// Re-implemented production helpers (see the file header for why)
-	// ------------------------------------------------------------------
-
-	/** Mirrors BankReachProbe.storeRegister (~:854-860), itself a mirror of
-	 *  StoredValueScanner.storeRegister: 'A'/'X'/'Y' for STA/STX/STY, else null.
-	 *  Read-modify-write stores (INC/ASL/...) are excluded there and here. */
-	private static Character storeRegister(Instruction instr) {
-		String mnem = instr.getMnemonicString().toUpperCase();
-		if (mnem.equals("STA") || mnem.equals("STX") || mnem.equals("STY")) {
-			return mnem.charAt(2); // 'A' | 'X' | 'Y'
-		}
-		return null;
-	}
-
-	/** Mirrors BankReachProbe.plainAbsoluteTarget (~:865-880): the single constant address an
-	 *  operand names, or null when any register participates (indexed/indirect) or when the
-	 *  operand names none or several. */
-	private static Address plainAbsoluteTarget(Instruction instr) {
-		Address addr = null;
-		for (Object obj : instr.getOpObjects(0)) {
-			if (obj instanceof Register) {
-				return null; // indexed -- runtime-dependent target
-			}
-			if (obj instanceof Address a) {
-				if (addr != null) {
-					return null;
-				}
-				addr = a;
-			}
-		}
-		return addr;
-	}
-
-	/** Mirrors BankReachProbe.indexedBase (~:884-910): the base of an indexed operand (abs,X /
-	 *  abs,Y / zp,X), built in the EXECUTING instruction's space -- which for an out-of-overlay
-	 *  offset already resolves back to the base space. */
-	private static Address indexedBase(Instruction instr) {
-		Long base = null;
-		boolean indexed = false;
-		for (Object obj : instr.getOpObjects(0)) {
-			if (obj instanceof Register) {
-				indexed = true;
-			}
-			else if (obj instanceof Address a) {
-				if (base != null) {
-					return null;
-				}
-				base = a.getOffset();
-			}
-			else if (obj instanceof Scalar s) {
-				if (base != null) {
-					return null;
-				}
-				base = s.getUnsignedValue();
-			}
-		}
-		if (!indexed || base == null) {
-			return null;
-		}
-		try {
-			return instr.getMinAddress().getAddressSpace().getAddress(base);
-		}
-		catch (AddressOutOfBoundsException e) {
-			return null;
-		}
-	}
-
-	/** Deliberately LOOSER than production: any write reference whose OFFSET falls in a
-	 *  mechanism's latch range, in any address space. Mirrors BankReachProbe's
-	 *  writesRangeAnySpace (~:838-846); used here only to measure mechsites.rmwSkipped -- stores
-	 *  that write a mechanism range without being STA/STX/STY, which storeRegister
-	 *  intentionally excludes just as StoredValueScanner.storeRegister does in production. */
-	private static boolean writesRangeAnySpace(Instruction instr, Mech mech) {
-		for (Reference ref : instr.getReferencesFrom()) {
-			Address to = ref.getToAddress();
-			if (ref.getReferenceType().isWrite() && mech.inRange(to.getOffset())) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	// ------------------------------------------------------------------
-	// Descriptor
-	// ------------------------------------------------------------------
-
-	/**
-	 * Mirrors BankReachProbe.loadMechanisms (~:926-975), trimmed to start/end only (see
-	 * {@link Mech}'s javadoc for why). The descriptor's mechanisms whose strategy is one of
-	 * {@link #ACCEPTED_STRATEGIES}, resolved through the same bundled-data lookup
-	 * DescriptorResources.loadMap uses. A malformed or partial mechanism is skipped rather than
-	 * fatal. Every strategy name encountered, accepted or not, is appended to {@code declared}
-	 * so the caller's unavailable-note can name what the board actually is.
-	 */
-	private List<Mech> loadMechanisms(String mapPath, List<String> declared) throws Exception {
-		ResourceFile mapFile = Application.findDataFileInAnyModule(mapPath);
-		if (mapFile == null) {
-			throw new IOException("could not find bundled data file " + mapPath);
-		}
-		JsonObject root;
-		try (InputStreamReader reader =
-			new InputStreamReader(mapFile.getInputStream(), StandardCharsets.UTF_8)) {
-			root = JsonParser.parseReader(reader).getAsJsonObject();
-		}
-		List<Mech> out = new ArrayList<>();
-		JsonObject banking = root.has("banking") ? root.getAsJsonObject("banking") : null;
-		if (banking == null || !banking.has("mechanisms")) {
-			return out;
-		}
-		JsonArray mechanisms = banking.getAsJsonArray("mechanisms");
-		int index = 0;
-		for (JsonElement element : mechanisms) {
-			int here = index++;
-			if (!element.isJsonObject()) {
-				continue;
-			}
-			JsonObject mech = element.getAsJsonObject();
-			if (!mech.has("strategy")) {
-				continue;
-			}
-			String strategy = mech.get("strategy").getAsString();
-			if (!declared.contains(strategy)) {
-				declared.add(strategy);
-			}
-			if (!ACCEPTED_STRATEGIES.contains(strategy)) {
-				continue; // range not described by start/end -- would be mis-modelled here
-			}
-			if (!mech.has("params")) {
-				continue;
-			}
-			JsonObject params = mech.getAsJsonObject("params");
-			if (!params.has("start") || !params.has("end")) {
-				continue;
-			}
-			out.add(new Mech(here, strategy, params.get("start").getAsLong(),
-				params.get("end").getAsLong()));
-		}
-		return out;
 	}
 
 	// ------------------------------------------------------------------

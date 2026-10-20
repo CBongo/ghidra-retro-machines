@@ -319,6 +319,13 @@ not cover them, so a cached `bless` would skip the import they need. Their outpu
 diagnostic-only and never reaches a golden (the driver's awk carve extracts only the
 `REALROM` block). Read the scripts' headers for details; all three are commented at length.
 
+The probes are **independent of production but may share code with each other** (bead
+grm-rx1i.16): they re-derive production's rules instead of calling `HelperDiscovery`,
+`findHelpers`, `StoredValueScanner` or `DescriptorSupport` (a probe-vs-analyzer disagreement is
+itself a finding, and package-private production classes are never widened for a diagnostic), but
+the helpers the probes have in common live in `tools/banktest/ProbeSupport.java` -- not a
+`-postScript`, and never importing a `retromachines` production class.
+
 ```bash
 REALROM_EXTRA_POSTSCRIPT=BankReachProbe.java    bash tools/banktest/realrom-test.sh check --only <id> <romdir>
 REALROM_EXTRA_POSTSCRIPT=HelperShapeProbe.java  bash tools/banktest/realrom-test.sh check --only <id> <romdir>

@@ -90,14 +90,22 @@
 // Run it in its OWN invocation: the realrom cache key does not include the extra postScript,
 // so a cached `check`/`bless` pair would silently skip the import this script needs.
 //
-// WHY THE HELPERS ARE RE-IMPLEMENTED HERE
+// WHY THE HELPERS ARE INDEPENDENT OF PRODUCTION BUT SHARED BETWEEN PROBES (grm-rx1i.16)
+// The rule is: a probe stays INDEPENDENT OF PRODUCTION. This probe must NOT call
 // retromachines.DescriptorSupport (planWindows, referencedFields, OverlayNaming, the maps:
-// expression parser) is package-private and this script is not in that package. Widening any
-// of it would make a production class public FOREVER for the sake of a diagnostic, so the
-// handful of helpers this probe needs are re-implemented privately below, each pinned by
-// comment to the production line numbers it mirrors. The redundancy is a feature: an
-// independent re-implementation means a DISAGREEMENT with production is itself a finding
-// (that is exactly what the blockcheck lines report) rather than a silent shared bug.
+// expression parser; package-private, and this script is not in that package) -- the
+// handful of helpers it needs are re-derived privately below, each pinned by comment to the
+// production line numbers it mirrors. A disagreement is exactly what the blockcheck lines
+// report. The reachability walk it shares with BankReachProbe lives in ProbeSupport.java.
+// A probe-vs-analyzer disagreement is itself a finding, which is lost the moment a probe
+// calls the code it is auditing, and the production classes involved are package-private and
+// must never be widened to public for the sake of a diagnostic. Sharing code BETWEEN PROBES
+// does not weaken that, so it is allowed and is done: the helpers common to BankReachProbe,
+// HelperShapeProbe and BankConsumerProbe (storeRegister, plainAbsoluteTarget, indexedBase,
+// writesRangeAnySpace, loadMechanisms, Mech, reachable) live in ProbeSupport.java, which
+// itself imports no retromachines production class. (This replaces the earlier convention
+// that the helpers were DUPLICATED rather than extracted; that protected independence of the
+// probes from each other, which was never the property worth protecting.)
 //
 // VERDICT THRESHOLDS (see also verdict.class below; every raw counter is emitted so a human
 // can override the call):
@@ -1578,45 +1586,6 @@ public class BankConsumerProbe extends GhidraScript {
 	// Reachability
 	// ==================================================================
 
-	/**
-	 * The set of instruction addresses runDataflow would ever dequeue, with the bank state
-	 * removed: seeds, then {@code instr.getFlows()} + {@code getFallThrough()} to fixpoint
-	 * (BankDataflowEngine.java:266-273), dropping any address with no instruction exactly as
-	 * {@code mergeAndEnqueue} does (BankDataflowEngine.java:323-326). Dropping the state is
-	 * sound for this question -- state affects the VALUE a switch produces, never which
-	 * addresses are visited.
-	 * <p>
-	 * Copied VERBATIM from BankReachProbe.java (its {@code reachable}), including this
-	 * pinning comment: the two probes must answer {@code reach=} identically or a
-	 * cross-reading of their output is meaningless.
-	 */
-	private Set<Address> reachable(Listing listing, Set<Address> seeds) throws Exception {
-		Set<Address> reached = new HashSet<>();
-		Deque<Address> work = new ArrayDeque<>(seeds);
-		while (!work.isEmpty()) {
-			monitor.checkCancelled();
-			Address addr = work.poll();
-			if (reached.contains(addr)) {
-				continue;
-			}
-			Instruction instr = listing.getInstructionAt(addr);
-			if (instr == null) {
-				// not (yet) disassembled / not code, or an address inside an instruction rather
-				// than at its start -- production drops it here too
-				continue;
-			}
-			reached.add(addr);
-			for (Address flow : instr.getFlows()) {
-				work.push(flow);
-			}
-			Address fallThrough = instr.getFallThrough();
-			if (fallThrough != null) {
-				work.push(fallThrough);
-			}
-		}
-		return reached;
-	}
-
 	/** Seeds byte-for-byte the set runDataflow builds (BankDataflowEngine.java:137-145). */
 	private Set<Address> reachableSet() throws Exception {
 		Set<Address> seeds = new LinkedHashSet<>();
@@ -1627,7 +1596,7 @@ public class BankConsumerProbe extends GhidraScript {
 		for (Function f : program.getFunctionManager().getFunctions(true)) {
 			seeds.add(f.getEntryPoint());
 		}
-		return reachable(listing, seeds);
+		return ProbeSupport.reachable(listing, seeds, monitor);
 	}
 
 	// ==================================================================
@@ -1722,7 +1691,7 @@ public class BankConsumerProbe extends GhidraScript {
 	}
 
 	// ==================================================================
-	// Re-implemented production helpers (see the file header for why)
+	// Re-derived production helpers (see the file header for why: independent of production)
 	// ==================================================================
 
 	/** One normalized window instance; mirrors DescriptorSupport.PlannedWindow (:881-887). */
@@ -2049,7 +2018,7 @@ public class BankConsumerProbe extends GhidraScript {
 	// ==================================================================
 
 	/** Resolved through the same bundled-data lookup DescriptorResources.loadMap (:142-151)
-	 *  uses, exactly as BankReachProbe.loadMechanisms does. */
+	 *  uses, exactly as ProbeSupport.loadMechanisms does. */
 	private JsonObject loadDescriptor(String mapPath) throws Exception {
 		ResourceFile mapFile = Application.findDataFileInAnyModule(mapPath);
 		if (mapFile == null) {
