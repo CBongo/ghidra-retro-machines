@@ -2903,7 +2903,7 @@ final class HelperArgumentRecovery {
 			if (cur == null || cur.getMinAddress().compareTo(last) > 0) {
 				break;
 			}
-			if (StoredValueScanner.isControlFlowJoin(program, cur, prev) &&
+			if (FlowEdges.isControlFlowJoin(program, cur, prev) &&
 				!reentered(program, cur.getMinAddress(), reachable)) {
 				joins.add(cur.getMinAddress());
 			}

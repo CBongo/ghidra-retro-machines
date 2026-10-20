@@ -898,8 +898,8 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 		Instruction cur = dataWrite;
 		for (int i = 0; i < MAX_OWN_SELECT_SCAN; i++) {
 			Instruction prev = listing.getInstructionBefore(cur.getMinAddress());
-			if (prev == null || !fallsInto(prev, cur) ||
-				StoredValueScanner.isControlFlowJoin(program, cur, prev) ||
+			if (prev == null || !FlowEdges.fallsInto(prev, cur) ||
+				FlowEdges.isControlFlowJoin(program, cur, prev) ||
 				prev.getFlowType().isCall()) {
 				return null;
 			}
@@ -987,14 +987,6 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 			}
 		}
 		return null;
-	}
-
-	/** Whether the fall-through path from {@code prev} is exactly {@code cur}. Same block-linkage
-	 *  test {@code BankMirrors.Discovery.fallsInto} and both {@code StoredValueScanner} walks use;
-	 *  duplicated rather than shared because that one is private to another class's nested type. */
-	private static boolean fallsInto(Instruction prev, Instruction cur) {
-		Address fallThrough = prev.getFallThrough();
-		return fallThrough != null && fallThrough.equals(cur.getMinAddress());
 	}
 
 	/**

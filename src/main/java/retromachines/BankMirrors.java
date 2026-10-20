@@ -1278,20 +1278,20 @@ public final class BankMirrors {
 			Instruction cur = store;
 			for (int i = 0; i < MAX_BACKWARD_SCAN; i++) {
 				Instruction prev = listing.getInstructionBefore(cur.getMinAddress());
-				if (prev == null || !fallsInto(prev, cur) ||
-					branchJoin(program, cur, prev) ||
+				if (prev == null || !FlowEdges.fallsInto(prev, cur) ||
+					FlowEdges.branchJoin(program, cur, prev) ||
 					prev.getFlowType().isCall() || switchSites.contains(prev.getMinAddress())) {
 					return;
 				}
-				// A CALL landing on cur is a second ENTRY, not a merge (see branchJoin), and may be
-				// crossed -- but only while the entry's own path to the mechanism write reads no
+				// A CALL landing on cur is a second ENTRY, not a merge (see FlowEdges.branchJoin), and
+				// may be crossed -- but only while the entry's own path to the mechanism write reads no
 				// cell. Castlevania III's IRQ enters FUN_e2e6 at e2e8 = the latch store itself,
 				// committing A and bypassing STA $21: a stale-shadow bypass, answered where the
 				// shadow is READ (shadowCoherentAt). Dragon Ball Z Datach's callers do
 				// LDA #$08 / STA $59 / JSR $cc0b, whose JSR $cc28 lands on LDA $59 / STA $8008:
 				// that entry COMMITS the cell, so callers fill it with the bank they ask for --
 				// an argument cell, not a copy of the live bank. Stop there, as before.
-				if (loadedACell && StoredValueScanner.isControlFlowJoin(program, cur, prev)) {
+				if (loadedACell && FlowEdges.isControlFlowJoin(program, cur, prev)) {
 					return;
 				}
 				String mnem = prev.getMnemonicString().toUpperCase();
@@ -1402,8 +1402,8 @@ public final class BankMirrors {
 				Instruction cur = call;
 				for (int i = 0; i < MAX_BACKWARD_SCAN; i++) {
 					Instruction prev = listing.getInstructionBefore(cur.getMinAddress());
-					if (prev == null || !fallsInto(prev, cur) ||
-						StoredValueScanner.isControlFlowJoin(program, cur, prev) ||
+					if (prev == null || !FlowEdges.fallsInto(prev, cur) ||
+						FlowEdges.isControlFlowJoin(program, cur, prev) ||
 						prev.getFlowType().isCall()) {
 						break;
 					}
@@ -1524,7 +1524,7 @@ public final class BankMirrors {
 					return;
 				}
 				Instruction next = listing.getInstructionAt(fallThrough);
-				if (next == null || StoredValueScanner.isControlFlowJoin(program, next, cur) ||
+				if (next == null || FlowEdges.isControlFlowJoin(program, next, cur) ||
 					next.getFlowType().isCall()) {
 					return;
 				}
@@ -1665,30 +1665,6 @@ public final class BankMirrors {
 				Collections.unmodifiableMap(new LinkedHashMap<>(romIdentifyingField)),
 				Collections.unmodifiableMap(new LinkedHashMap<>(romIdentifyingEncoding)),
 				Map.of());
-		}
-
-		/**
-		 * {@link StoredValueScanner#isControlFlowJoin} minus CALLS (bead grm-mej.20): another path
-		 * MERGES into {@code cur} only by a branch or jump. A call landing on {@code cur} is a
-		 * second ENTRY into a helper, which the walk may cross subject to the loadedACell guard in
-		 * {@link #walkFromMechanismWrite}.
-		 */
-		private static boolean branchJoin(Program program, Instruction cur, Instruction prev) {
-			for (ghidra.program.model.symbol.Reference ref : program.getReferenceManager()
-					.getReferencesTo(cur.getMinAddress())) {
-				if (ref.getReferenceType().isFlow() && !ref.getReferenceType().isCall() &&
-					!ref.getFromAddress().equals(prev.getMinAddress())) {
-					return true;
-				}
-			}
-			return false;
-		}
-
-		/** Whether the fall-through path from {@code prev} is exactly {@code cur} -- the block
-		 *  linkage test both {@code StoredValueScanner} walks use. */
-		private static boolean fallsInto(Instruction prev, Instruction cur) {
-			Address fallThrough = prev.getFallThrough();
-			return fallThrough != null && fallThrough.equals(cur.getMinAddress());
 		}
 
 		/**

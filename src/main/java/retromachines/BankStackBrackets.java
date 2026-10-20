@@ -635,7 +635,7 @@ final class BankStackBrackets {
 			Instruction fallFrom = instr.getFallFrom() == null ? null
 					: listing.getInstructionAt(instr.getFallFrom());
 			if (fallFrom != null && !inside.contains(fallFrom.getMinAddress()) &&
-				fallFrom.getFallThrough() != null && fallFrom.getFallThrough().equals(at)) {
+				FlowEdges.fallsInto(fallFrom, instr)) {
 				return "falls in from outside at " + at;
 			}
 			for (Reference ref : c.program().getReferenceManager().getReferencesTo(at)) {

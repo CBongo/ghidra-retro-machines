@@ -196,10 +196,10 @@ final class SearchLoopDispatch {
 		}
 		// After the branch: k DEYs, then the BPL back to L.
 		int step = 0;
-		Instruction cur = next(listing, branch);
+		Instruction cur = FlowEdges.nextFallThrough(listing, branch);
 		while (cur != null && "DEY".equalsIgnoreCase(cur.getMnemonicString())) {
 			step++;
-			cur = next(listing, cur);
+			cur = FlowEdges.nextFallThrough(listing, cur);
 		}
 		if (cur == null || step == 0 || !"BPL".equalsIgnoreCase(cur.getMnemonicString()) ||
 			cur.getFlows().length != 1) {
@@ -224,7 +224,7 @@ final class SearchLoopDispatch {
 			if (cur.equals(branch)) {
 				break;
 			}
-			cur = next(listing, cur);
+			cur = FlowEdges.nextFallThrough(listing, cur);
 			if (cur == null || hasIncomingFlow(program, cur)) {
 				return null;
 			}
@@ -252,12 +252,6 @@ final class SearchLoopDispatch {
 	private static Instruction fallsInto(Listing listing, Instruction instr) {
 		Instruction prev = listing.getInstructionBefore(instr.getMinAddress());
 		return prev != null && instr.getMinAddress().equals(prev.getFallThrough()) ? prev : null;
-	}
-
-	/** The instruction {@code instr} falls through to, or null. */
-	private static Instruction next(Listing listing, Instruction instr) {
-		Address ft = instr.getFallThrough();
-		return ft == null ? null : listing.getInstructionAt(ft);
 	}
 
 	private static List<Reference> incomingFlow(Program program, Instruction instr) {

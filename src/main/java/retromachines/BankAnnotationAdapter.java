@@ -1913,7 +1913,7 @@ final class BankAnnotationAdapter {
 	 * {@code $C06C}, both in {@code WC000}). Such a reference is the physical block's own
 	 * control-flow and data graph, and this project's passes read that graph through
 	 * references: {@code HelperDiscovery.calledHelper} resolves a callee over
-	 * {@code getFlows()}, {@code StoredValueScanner.isControlFlowJoin} and the fork engine's
+	 * {@code getFlows()}, {@code FlowEdges.isControlFlowJoin} and the fork engine's
 	 * predecessor walk over {@code getReferencesTo}. Retiring it silently unrecognizes the
 	 * helper (the call folds to "no bank effect") and cuts joins out of base-space functions --
 	 * and on a real cartridge it would hit every routine duplicated into every bank, whose

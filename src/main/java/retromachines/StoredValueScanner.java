@@ -1297,7 +1297,7 @@ final class StoredValueScanner {
 	 * inline comment at the crossing carries the fall-through-witness argument for why the depth
 	 * counter stays exact across it;</li>
 	 * <li>{@code cur} is a control-flow join not licensed by {@code env}
-	 * ({@link #isControlFlowJoin}) -- the same reasoning as every other backward walk in this
+	 * ({@link FlowEdges#isControlFlowJoin}) -- the same reasoning as every other backward walk in this
 	 * class: a join means some other path reaches this point in the span with a potentially
 	 * different stack depth, which is exactly the hazard the bullet above describes for an
 	 * outgoing branch, mirrored for an incoming one;</li>
@@ -2566,7 +2566,7 @@ final class StoredValueScanner {
 	 * taken ({@code FALSE}), or either ({@code null}) -- bead grm-uurl. Modeled for {@code BEQ},
 	 * {@code BNE}, {@code BMI} and {@code BPL}, whose Z/N come from the last instruction that set
 	 * them: the walk goes back over {@link #NZ_NEUTRAL} instructions within one straight-line run
-	 * ({@link #isControlFlowJoin} ends it) to a setter in {@link #NZ_FROM_RESULT}, and asks
+	 * ({@link FlowEdges#isControlFlowJoin} ends it) to a setter in {@link #NZ_FROM_RESULT}, and asks
 	 * {@link #constantRegisterValue} -- state-free, as for {@link #constantIndex} -- for the
 	 * register's value right after it. Z is "that value is 0", N its bit 7 ({@code ADC}/{@code SBC}
 	 * only in binary mode -- {@link #binaryModeFlags}). Anything else, or an accumulator
@@ -2583,8 +2583,8 @@ final class StoredValueScanner {
 		Instruction after = branch;
 		for (int i = 0; i < MAX_BACKWARD_SCAN; i++) {
 			Instruction prev = listing.getInstructionBefore(after.getMinAddress());
-			if (prev == null || !after.getMinAddress().equals(prev.getFallThrough()) ||
-				isControlFlowJoin(program, after, prev) || prev.getFlowType().isCall()) {
+			if (prev == null || !FlowEdges.fallsInto(prev, after) ||
+				FlowEdges.isControlFlowJoin(program, after, prev) || prev.getFlowType().isCall()) {
 				return null;
 			}
 			String m = prev.getMnemonicString().toUpperCase();
@@ -2675,8 +2675,7 @@ final class StoredValueScanner {
 		Instruction cur = ret;
 		for (int k = 0; k < RETURN_DISPATCH_LOOKBACK; k++) {
 			Instruction prev = listing.getInstructionBefore(cur.getMinAddress());
-			if (prev == null || prev.getFallThrough() == null ||
-				!prev.getFallThrough().equals(cur.getMinAddress()) ||
+			if (prev == null || !FlowEdges.fallsInto(prev, cur) ||
 				prev.getFlowType().isCall() || prev.getFlows().length > 0) {
 				return false;
 			}
@@ -2936,7 +2935,7 @@ final class StoredValueScanner {
 	 * <li>walking backward from {@code load} to find the {@code TSX}, ANY of the guards
 	 * {@link #findMatchingPush} itself applies is violated first: {@code env.stopsAt}, the
 	 * instruction before {@code cur} not existing, a broken fall-through, an unlicensed
-	 * {@link #isControlFlowJoin}, a flow or a call, or {@link Hooks#isMechanismWrite} -- reused
+	 * {@link FlowEdges#isControlFlowJoin}, a flow or a call, or {@link Hooks#isMechanismWrite} -- reused
 	 * verbatim rather than reimplemented, for the identical soundness reasons {@code
 	 * findMatchingPush}'s own javadoc gives for each;</li>
 	 * <li><b>ANY of {@code PHA}/{@code PHP}/{@code PLA}/{@code PLP} occurs between the
@@ -3074,7 +3073,7 @@ final class StoredValueScanner {
 	 * The instruction a backward walk steps to from {@code cur} on the path {@code env}
 	 * describes, or {@code null} when the walk must stop at {@code cur}: there is no instruction
 	 * before it, the one before it does not fall through into it (a basic-block start), or
-	 * {@code cur} is a {@link #isControlFlowJoin control-flow join} the env neither licenses
+	 * {@code cur} is a {@link FlowEdges#isControlFlowJoin control-flow join} the env neither licenses
 	 * ({@link RegisterEnv#mayCrossJoinAt}, grm-k90) nor names an arm for
 	 * ({@link RegisterEnv#armPredecessorAt}, grm-wul).
 	 * <p>
@@ -3106,44 +3105,13 @@ final class StoredValueScanner {
 		if (prev == null) {
 			return null;
 		}
-		Address prevFallThrough = prev.getFallThrough();
-		if (prevFallThrough == null || !prevFallThrough.equals(curAddr)) {
+		if (!FlowEdges.fallsInto(prev, cur)) {
 			return null; // not a straight-line predecessor of cur -- left the basic block
 		}
-		if (isControlFlowJoin(program, cur, prev) && !env.mayCrossJoinAt(curAddr)) {
+		if (FlowEdges.isControlFlowJoin(program, cur, prev) && !env.mayCrossJoinAt(curAddr)) {
 			return null;
 		}
 		return prev;
-	}
-
-	/**
-	 * Whether {@code cur} is reachable other than by falling through from {@code prev} --
-	 * i.e. another instruction branches, jumps, or calls to it, making it a control-flow
-	 * join. The backward scan follows only the {@code prev} fall-through path, so at a join
-	 * it cannot soundly attribute that path's register value to the store: the other
-	 * incoming path(s) may leave a different value.
-	 * <p>
-	 * A join is detected by an incoming <em>flow</em> reference from an address other than
-	 * {@code prev} (a conditional or unconditional branch to {@code cur} records one; the
-	 * implicit fall-through from {@code prev} is not a reference, and a branch from
-	 * {@code prev} whose target is also its own fall-through is excluded). Unresolved
-	 * computed jumps leave no reference and so are not detected -- conservative in the safe
-	 * direction (a missed join only forfeits a fold the scan would otherwise have made).
-	 * <p>
-	 * This stays a pure structural predicate: the one licensed exception (grm-k90) is applied by
-	 * each caller as {@code !env.mayCrossJoinAt(...)} alongside it, rather than folded in here,
-	 * so "is this a join" and "may this query cross it" remain separable questions and a reader
-	 * of either walk can see the licence being spent at the point it is spent.
-	 */
-	static boolean isControlFlowJoin(Program program, Instruction cur, Instruction prev) {
-		Address curAddr = cur.getMinAddress();
-		Address prevAddr = prev.getMinAddress();
-		for (Reference ref : program.getReferenceManager().getReferencesTo(curAddr)) {
-			if (ref.getReferenceType().isFlow() && !ref.getFromAddress().equals(prevAddr)) {
-				return true;
-			}
-		}
-		return false;
 	}
 
 	/**
@@ -3461,7 +3429,7 @@ final class StoredValueScanner {
 	 * Once {@code HelperArgumentRecovery.inboundArgumentCell} has proved the helper reaches its switch
 	 * site holding {@code $0720}'s value unmodified, this answers the other half: what the CALLER
 	 * put there. Every guard that makes the answer trustworthy already exists in
-	 * {@link #forwardedStoreValue} -- block linkage, {@link #isControlFlowJoin}, the
+	 * {@link #forwardedStoreValue} -- block linkage, {@link FlowEdges#isControlFlowJoin}, the
 	 * {@link Hooks#isMechanismWrite} abort, and the unplaceable-store and call aborts -- so this
 	 * is an entry point onto it, not a second scanner.
 	 * <p>
@@ -3521,7 +3489,7 @@ final class StoredValueScanner {
 	 * no zero-page-specific path to restrict in the first place.
 	 * <p>
 	 * <b>Soundness.</b> Every guard {@link #resolveStoredValue} applies is reused verbatim rather
-	 * than reimplemented -- block linkage, {@link #isControlFlowJoin}, the
+	 * than reimplemented -- block linkage, {@link FlowEdges#isControlFlowJoin}, the
 	 * {@link Hooks#isMechanismWrite} in-state withdrawal, {@link #MAX_BACKWARD_SCAN} -- and on
 	 * top of
 	 * them this walk declines on <em>any</em> intervening instruction that might write
@@ -3758,7 +3726,7 @@ final class StoredValueScanner {
 	 * exactly when all of its inputs do. See {@link Mos6502ConstantSemantics} for the table.
 	 * <p>
 	 * Every guard {@link #resolveStoredValue} applies is reused verbatim: fall-through block
-	 * linkage, {@link #isControlFlowJoin}, and {@link #MAX_BACKWARD_SCAN}; a call ends the walk.
+	 * linkage, {@link FlowEdges#isControlFlowJoin}, and {@link #MAX_BACKWARD_SCAN}; a call ends the walk.
 	 * The one guard NOT reused is the mechanism-write abort, and as of bead grm-4bgh.7 it is not
 	 * merely relaxed here but ABSENT: that guard exists to stop an in-state-derived value being
 	 * read across the write, and this evaluator never consults a caller's in-state at all.

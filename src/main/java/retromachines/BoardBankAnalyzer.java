@@ -1261,7 +1261,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 			}
 			Address next = instr.getFallThrough();
 			Instruction nextInstr = next == null ? null : listing.getInstructionAt(next);
-			if (nextInstr == null || StoredValueScanner.isControlFlowJoin(program, nextInstr, instr)) {
+			if (nextInstr == null || FlowEdges.isControlFlowJoin(program, nextInstr, instr)) {
 				return false;
 			}
 			cursor = next;

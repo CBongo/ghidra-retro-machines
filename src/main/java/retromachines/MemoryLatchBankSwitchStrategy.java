@@ -515,7 +515,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 			}
 			Address fallThrough = prev.getFallThrough();
 			if (fallThrough == null || !fallThrough.equals(cur.getMinAddress()) ||
-				StoredValueScanner.isControlFlowJoin(program, cur, prev)) {
+				FlowEdges.isControlFlowJoin(program, cur, prev)) {
 				return false; // another path could arrive here having bypassed the shadow
 			}
 			if (prev.getFlowType().isCall()) {

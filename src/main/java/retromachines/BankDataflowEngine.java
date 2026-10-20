@@ -1534,7 +1534,7 @@ final class BankDataflowEngine {
 	 * predecessor is deliberately not enumerated: the value scan refuses such a boundary today
 	 * for its linkage rule, not the join rule, and lifting that is a separate question from this
 	 * bead's (a two-armed merge). Unresolved computed jumps leave no reference and are invisible
-	 * here, exactly as they are to {@code StoredValueScanner.isControlFlowJoin} and to this
+	 * here, exactly as they are to {@code FlowEdges.isControlFlowJoin} and to this
 	 * engine's own forward flow -- the same closed-world assumption, applied consistently.
 	 */
 	private static List<Arm> joinArms(Program program, Listing listing, Instruction from,

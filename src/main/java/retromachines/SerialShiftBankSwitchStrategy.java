@@ -1027,11 +1027,11 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 			return null;
 		}
 		Long staOffset = writesInRange(head);
-		Instruction lsr = nextFallThrough(listing, head);
+		Instruction lsr = FlowEdges.nextFallThrough(listing, head);
 		if (lsr == null || !isLsrAccumulator(lsr)) {
 			return null;
 		}
-		Instruction dec = nextFallThrough(listing, lsr);
+		Instruction dec = FlowEdges.nextFallThrough(listing, lsr);
 		if (dec == null) {
 			return null;
 		}
@@ -1039,20 +1039,24 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 		if (!decMnem.equals("DEX") && !decMnem.equals("DEY")) {
 			return null;
 		}
-		Instruction bne = nextFallThrough(listing, dec);
+		Instruction bne = FlowEdges.nextFallThrough(listing, dec);
 		if (bne == null || !bne.getMinAddress().equals(instr.getMinAddress())) {
 			return null;
 		}
 
 		// No stray control flow into the body: the head's only incoming flow ref must be
 		// this BNE's back edge, and nothing may branch into the middle instructions.
-		if (!onlyFlowRefFrom(program, head, instr) || isControlFlowJoin(program, lsr, head) ||
-			isControlFlowJoin(program, dec, lsr) || isControlFlowJoin(program, instr, dec)) {
+		// The loop head's one permitted extra entry is the loop's own back edge (instr); any other
+		// flow reference into it is a join. (Formerly spelled !onlyFlowRefFrom(head, instr).)
+		if (FlowEdges.isControlFlowJoin(program, head, instr) ||
+			FlowEdges.isControlFlowJoin(program, lsr, head) ||
+			FlowEdges.isControlFlowJoin(program, dec, lsr) ||
+			FlowEdges.isControlFlowJoin(program, instr, dec)) {
 			return null;
 		}
 
 		Instruction counterInit = listing.getInstructionBefore(head.getMinAddress());
-		if (counterInit == null || !fallsThroughTo(counterInit, head)) {
+		if (counterInit == null || !FlowEdges.fallsInto(counterInit, head)) {
 			return null;
 		}
 		char counterReg = decMnem.charAt(2); // 'X' | 'Y'
@@ -1105,39 +1109,20 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	 *  {@link #matchCountedLoopBranch}, so suppression and commit can never disagree. */
 	private boolean isCountedLoopBody(Program program, Instruction staInstr) {
 		Listing listing = program.getListing();
-		Instruction lsr = nextFallThrough(listing, staInstr);
+		Instruction lsr = FlowEdges.nextFallThrough(listing, staInstr);
 		if (lsr == null || !isLsrAccumulator(lsr)) {
 			return false;
 		}
-		Instruction dec = nextFallThrough(listing, lsr);
+		Instruction dec = FlowEdges.nextFallThrough(listing, lsr);
 		if (dec == null) {
 			return false;
 		}
-		Instruction bne = nextFallThrough(listing, dec);
+		Instruction bne = FlowEdges.nextFallThrough(listing, dec);
 		if (bne == null) {
 			return false;
 		}
 		CountedLoop loop = matchCountedLoopBranch(program, bne);
 		return loop != null && loop.head().getMinAddress().equals(staInstr.getMinAddress());
-	}
-
-	/** The instruction at {@code from}'s fall-through address, or {@code null}. */
-	private static Instruction nextFallThrough(Listing listing, Instruction from) {
-		Address ft = from.getFallThrough();
-		return ft == null ? null : listing.getInstructionAt(ft);
-	}
-
-	/** Whether every incoming flow reference to {@code instr} comes from {@code only} --
-	 *  the loop-head variant of {@link #isControlFlowJoin}, where exactly one known
-	 *  branch (the loop's own back edge) is permitted. */
-	private static boolean onlyFlowRefFrom(Program program, Instruction instr, Instruction only) {
-		for (Reference ref : program.getReferenceManager().getReferencesTo(instr.getMinAddress())) {
-			if (ref.getReferenceType().isFlow() &&
-				!ref.getFromAddress().equals(only.getMinAddress())) {
-				return false;
-			}
-		}
-		return true;
 	}
 
 	// ------------------------------------------------------------------
@@ -1158,13 +1143,13 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 		Instruction cur = sta;
 		while (true) {
 			Instruction prevLsr = listing.getInstructionBefore(cur.getMinAddress());
-			if (prevLsr == null || !fallsThroughTo(prevLsr, cur) ||
-				isControlFlowJoin(program, cur, prevLsr) || !isLsrAccumulator(prevLsr)) {
+			if (prevLsr == null || !FlowEdges.fallsInto(prevLsr, cur) ||
+				FlowEdges.isControlFlowJoin(program, cur, prevLsr) || !isLsrAccumulator(prevLsr)) {
 				break;
 			}
 			Instruction prevSta = listing.getInstructionBefore(prevLsr.getMinAddress());
-			if (prevSta == null || !fallsThroughTo(prevSta, prevLsr) ||
-				isControlFlowJoin(program, prevLsr, prevSta) || !isChainStore(prevSta)) {
+			if (prevSta == null || !FlowEdges.fallsInto(prevSta, prevLsr) ||
+				FlowEdges.isControlFlowJoin(program, prevLsr, prevSta) || !isChainStore(prevSta)) {
 				break;
 			}
 			backCount++;
@@ -1181,7 +1166,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 			}
 			Instruction nextLsr = listing.getInstructionAt(ft1);
 			if (nextLsr == null || !isLsrAccumulator(nextLsr) ||
-				isControlFlowJoin(program, nextLsr, cur)) {
+				FlowEdges.isControlFlowJoin(program, nextLsr, cur)) {
 				break;
 			}
 			Address ft2 = nextLsr.getFallThrough();
@@ -1190,7 +1175,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 			}
 			Instruction nextSta = listing.getInstructionAt(ft2);
 			if (nextSta == null || !isChainStore(nextSta) ||
-				isControlFlowJoin(program, nextSta, nextLsr)) {
+				FlowEdges.isControlFlowJoin(program, nextSta, nextLsr)) {
 				break;
 			}
 			forwardCount++;
@@ -1214,8 +1199,8 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	private boolean precededByLsrA(Program program, Instruction instr) {
 		Listing listing = program.getListing();
 		Instruction prev = listing.getInstructionBefore(instr.getMinAddress());
-		return prev != null && fallsThroughTo(prev, instr) &&
-			!isControlFlowJoin(program, instr, prev) && isLsrAccumulator(prev);
+		return prev != null && FlowEdges.fallsInto(prev, instr) &&
+			!FlowEdges.isControlFlowJoin(program, instr, prev) && isLsrAccumulator(prev);
 	}
 
 	/** {@code LSR} in accumulator (implied) addressing -- zero operands, or a bare "A"
@@ -1229,29 +1214,6 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 		}
 		String rep = instr.getDefaultOperandRepresentation(0);
 		return rep == null || rep.equalsIgnoreCase("A");
-	}
-
-	private static boolean fallsThroughTo(Instruction from, Instruction to) {
-		Address ft = from.getFallThrough();
-		return ft != null && ft.equals(to.getMinAddress());
-	}
-
-	/**
-	 * Whether {@code cur} is reachable other than by falling through from {@code prev} --
-	 * i.e. some other instruction branches/jumps/calls into it, making an attribution
-	 * that assumes only the {@code prev} path unsound. Same logic as
-	 * {@code StoredValueScanner}'s private join check, duplicated here (package-private
-	 * reuse isn't available across that class's private boundary).
-	 */
-	private static boolean isControlFlowJoin(Program program, Instruction cur, Instruction prev) {
-		Address curAddr = cur.getMinAddress();
-		Address prevAddr = prev.getMinAddress();
-		for (Reference ref : program.getReferenceManager().getReferencesTo(curAddr)) {
-			if (ref.getReferenceType().isFlow() && !ref.getFromAddress().equals(prevAddr)) {
-				return true;
-			}
-		}
-		return false;
 	}
 
 	// ------------------------------------------------------------------
