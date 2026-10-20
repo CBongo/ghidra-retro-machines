@@ -96,9 +96,17 @@ final class SwitchSiteHints {
 	 * What the engine did with one {@code bank:} hint at its final evaluation of the site
 	 * (grm-hb6.20). {@code applied} false means the hint was NOT used and {@code problem} says why;
 	 * {@code recovered} is non-null only for an applied hint that dataflow DISAGREED with, and
-	 * renders the value(s) dataflow had recovered.
+	 * renders the value(s) dataflow had recovered. {@code honestDetail} (shadow_commits,
+	 * bead grm-wayn) is non-null when the call was reclassified as a relay of its function's inbound
+	 * argument and carries the NOTE text.
 	 */
-	record HintNote(int bank, boolean applied, String problem, String recovered) {
+	record HintNote(int bank, boolean applied, String problem, String recovered,
+			String honestDetail) {
+
+		/** A note with no relay classification (every {@code bank:} hint's). */
+		HintNote(int bank, boolean applied, String problem, String recovered) {
+			this(bank, applied, problem, recovered, null);
+		}
 	}
 
 	private SwitchSiteHints() {

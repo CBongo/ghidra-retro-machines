@@ -296,6 +296,271 @@ public class ShadowCommitsProgramTest extends AbstractProgramTest {
 			plan.problems().get(0).text().contains("bank-switch helper"));
 	}
 
+	// ---- several hints per helper; coherence over the committing set; relay (grm-td2j/grm-wayn) ----
+
+	/** Two 4-bit fields in one byte: {@code lo} (bits 0-3) and {@code hi} (bits 4-7). */
+	private BoardDescriptorModel.BoardModel twoFieldBoard() {
+		JsonObject map = JsonParser.parseString("""
+				{
+				  "banking": {
+				    "initial_state": 0,
+				    "mechanisms": [ { "strategy": "memory-latch" } ],
+				    "state": [ { "name": "lo", "bits": 4 }, { "name": "hi", "bits": 4 } ]
+				  }
+				}
+				""").getAsJsonObject();
+		BoardDescriptorModel.BoardModel board =
+			BoardDescriptorModel.BoardModel.parse(map, new MessageLog(), "test", "test.json");
+		assertNotNull(board);
+		return board;
+	}
+
+	private HelperDiscovery.HelperModel modelAt(int entry, BoardDescriptorModel.BoardModel b) {
+		Function f = program.getFunctionManager().getFunctionAt(addr(entry));
+		return new HelperDiscovery.HelperModel(f, addr(entry), null, 'A', b.mask(), 0,
+			latchStrategy(b), addr(entry), addr(entry), null, List.of(addr(entry)));
+	}
+
+	/** A second latch helper {@code STA $9000 / RTS} at {@code $C220}, added to {@code helpers}. */
+	private Map<Function, HelperDiscovery.HelperModel> withSecondHelper(
+			BoardDescriptorModel.BoardModel b, Map<Function, HelperDiscovery.HelperModel> helpers)
+			throws Exception {
+		put(0xc220, "8d 00 90 60");
+		makeFunction(0xc220, 0xc223, "HELPER2");
+		Map<Function, HelperDiscovery.HelperModel> all = new java.util.HashMap<>(helpers);
+		all.put(program.getFunctionManager().getFunctionAt(addr(0xc220)), modelAt(0xc220, b));
+		return all;
+	}
+
+	private static final String TWO_HINTS =
+		"[{\"helper\": 49664, \"cell\": 16, \"field\": \"lo\", \"provenance\": \"t\"}," +
+			" {\"helper\": 49664, \"cell\": 17, \"field\": \"hi\", \"provenance\": \"t\"}]";
+
+	@Test
+	public void twoHintsOnOneHelperCommitTheirFieldsFromTheirCells() throws Exception {
+		BoardDescriptorModel.BoardModel b = twoFieldBoard();
+		// LDA #2 / STA $10 / LDA #3 / STA $11 / LDA $12 / JSR $c200
+		Map<Function, HelperDiscovery.HelperModel> helpers =
+			build(b, "a9 02 85 10 a9 03 85 11 a5 12 20 00 c2 60", 0xc10d);
+		assertFalse("baseline: A is unrecoverable",
+			run(b, helpers, ShadowCommits.Plan.NONE).callSwitches().get(addr(0xc10a))
+					.argumentResolved());
+		publish(TWO_HINTS);
+
+		ShadowCommits.Plan plan = ShadowCommits.plan(program, b, helpers);
+
+		assertEquals(plan.problems().toString(), 2, plan.byHelper().get(0xc200L).size());
+		BankDataflowEngine.CallSwitch cs = run(b, helpers, plan).callSwitches().get(addr(0xc10a));
+		assertTrue(cs.argumentResolved());
+		assertEquals(0x32, cs.effect().bits());
+		assertEquals(0xFF, cs.effect().knownMask());
+	}
+
+	@Test
+	public void aCellWithNoStoreInTheBlockIsAPerCellNoOpBesideAnotherCellsStore()
+			throws Exception {
+		BoardDescriptorModel.BoardModel b = twoFieldBoard();
+		// LDA #2 / STA $10 / LDA $12 / JSR $c200 -- $11 (hi) not stored here
+		Map<Function, HelperDiscovery.HelperModel> helpers =
+			build(b, "a9 02 85 10 a5 12 20 00 c2 60", 0xc109);
+		publish(TWO_HINTS);
+		ShadowCommits.Plan plan = ShadowCommits.plan(program, b, helpers);
+		assertEquals(plan.problems().toString(), 2, plan.byHelper().get(0xc200L).size());
+
+		BankDataflowEngine.CallSwitch cs = run(b, helpers, plan).callSwitches().get(addr(0xc106));
+		assertTrue(cs.argumentResolved());
+		assertEquals("lo committed from the store", 2, cs.effect().bits() & 0xF);
+		assertEquals("hi left alone, so not part of this call's effect", 0xF,
+			cs.effect().knownMask());
+	}
+
+	@Test
+	public void aStoreCommittedByADifferentHintedHelperSatisfiesThePremise() throws Exception {
+		BoardDescriptorModel.BoardModel b = board();
+		// the store is committed by HELPER2 ($c220), not by the helper whose hint is checked
+		Map<Function, HelperDiscovery.HelperModel> helpers =
+			withSecondHelper(b, build(b, "a9 02 85 10 20 20 c2 60", 0xc107));
+		publish("[{\"helper\": 49664, \"cell\": 16, \"field\": \"bank\", \"provenance\": \"t\"}," +
+			" {\"helper\": 49696, \"cell\": 16, \"field\": \"bank\", \"provenance\": \"t\"}]");
+
+		ShadowCommits.Plan plan = ShadowCommits.plan(program, b, helpers);
+
+		assertTrue(plan.problems().toString(), plan.problems().isEmpty());
+		assertEquals(2, plan.byHelper().size());
+	}
+
+	@Test
+	public void aStoreCommittedByAnUnhintedHelperFailsThePremise() throws Exception {
+		BoardDescriptorModel.BoardModel b = board();
+		Map<Function, HelperDiscovery.HelperModel> helpers =
+			withSecondHelper(b, build(b, "a9 02 85 10 20 20 c2 60", 0xc107));
+		hint("bank", 0x10); // only $c200 is hinted; the store is committed by $c220
+
+		ShadowCommits.Plan plan = ShadowCommits.plan(program, b, helpers);
+
+		assertTrue(plan.byHelper().isEmpty());
+		assertTrue(plan.problems().toString(), plan.problems().get(0).text().contains("c102"));
+	}
+
+	@Test
+	public void aTailJumpToTheHelperSatisfiesThePremise() throws Exception {
+		BoardDescriptorModel.BoardModel b = board();
+		// LDA #2 / STA $10 / JMP $c200
+		Map<Function, HelperDiscovery.HelperModel> helpers =
+			build(b, "a9 02 85 10 4c 00 c2", 0xc106);
+		hint("bank", 0x10);
+
+		ShadowCommits.Plan plan = ShadowCommits.plan(program, b, helpers);
+
+		assertTrue(plan.problems().toString(), plan.problems().isEmpty());
+		assertEquals(1, plan.byHelper().size());
+	}
+
+	@Test
+	public void aThinWrapperThatCallsTheHelperSatisfiesThePremise() throws Exception {
+		BoardDescriptorModel.BoardModel b = board();
+		// LDA #2 / STA $10 / JSR $c300, where $c300 is JSR $c200 / RTS (not itself a helper)
+		Map<Function, HelperDiscovery.HelperModel> helpers =
+			build(b, "a9 02 85 10 20 00 c3 60", 0xc107);
+		put(0xc300, "20 00 c2 60");
+		makeFunction(0xc300, 0xc303, "WRAPPER");
+		hint("bank", 0x10);
+
+		ShadowCommits.Plan plan = ShadowCommits.plan(program, b, helpers);
+
+		assertTrue(plan.problems().toString(), plan.problems().isEmpty());
+	}
+
+	@Test
+	public void aStoreFollowedByNothingFailsThePremiseAndNamesTheStore() throws Exception {
+		BoardDescriptorModel.BoardModel b = board();
+		// LDA #2 / STA $10 / RTS
+		Map<Function, HelperDiscovery.HelperModel> helpers = build(b, "a9 02 85 10 60", 0xc104);
+		hint("bank", 0x10);
+
+		ShadowCommits.Plan plan = ShadowCommits.plan(program, b, helpers);
+
+		assertTrue(plan.byHelper().isEmpty());
+		assertTrue(plan.problems().toString(), plan.problems().get(0).text().contains("c102"));
+	}
+
+	@Test
+	public void aStoreFollowedByAnUnrelatedCallFailsThePremise() throws Exception {
+		BoardDescriptorModel.BoardModel b = board();
+		Map<Function, HelperDiscovery.HelperModel> helpers =
+			build(b, "a9 02 85 10 20 00 c3 60", 0xc107);
+		put(0xc300, "60");
+		makeFunction(0xc300, 0xc300, "OTHER");
+		hint("bank", 0x10);
+
+		ShadowCommits.Plan plan = ShadowCommits.plan(program, b, helpers);
+
+		assertTrue(plan.byHelper().isEmpty());
+		assertTrue(plan.problems().toString(), plan.problems().get(0).text().contains("c102"));
+	}
+
+	@Test
+	public void aStoreOfTheFunctionsInboundRegisterReclassifiesTheCallAsARelay() throws Exception {
+		BoardDescriptorModel.BoardModel b = board();
+		// STA $10 / JSR $c200 / RTS: A at the store is the caller's inbound A
+		Map<Function, HelperDiscovery.HelperModel> helpers = build(b, "85 10 20 00 c2 60", 0xc105);
+		assertFalse(run(b, helpers, ShadowCommits.Plan.NONE).callSwitches().get(addr(0xc102))
+				.secondTierRelay());
+		hint("bank", 0x10);
+		ShadowCommits.Plan plan = ShadowCommits.plan(program, b, helpers);
+		assertEquals(plan.problems().toString(), 1, plan.byHelper().size());
+
+		BankDataflowEngine.DataflowResult result = run(b, helpers, plan);
+
+		BankDataflowEngine.CallSwitch cs = result.callSwitches().get(addr(0xc102));
+		assertFalse(cs.argumentResolved());
+		assertTrue(cs.secondTierRelay());
+		String detail = result.hintNotes().get(addr(0xc102)).honestDetail();
+		assertTrue(detail, detail.contains("inbound argument of CALLER") &&
+			detail.contains("$0010") && detail.contains("register A"));
+		assertFalse("a relay note is not an applied value hint",
+			result.hintNotes().get(addr(0xc102)).applied());
+	}
+
+	@Test
+	public void aStoreOfALocallyLoadedRegisterIsNotARelay() throws Exception {
+		BoardDescriptorModel.BoardModel b = board();
+		// LDA $11 / STA $10 / JSR $c200: A is defined locally from an untracked cell
+		Map<Function, HelperDiscovery.HelperModel> helpers =
+			build(b, "a5 11 85 10 20 00 c2 60", 0xc107);
+		hint("bank", 0x10);
+		ShadowCommits.Plan plan = ShadowCommits.plan(program, b, helpers);
+
+		BankDataflowEngine.CallSwitch cs = run(b, helpers, plan).callSwitches().get(addr(0xc104));
+
+		assertFalse(cs.argumentResolved());
+		assertFalse("A is defined in this function: nothing to relay", cs.secondTierRelay());
+	}
+
+	// ---- field coherence: restore mode (smb3's direct sound-bank writes) ----
+
+	private ShadowCommits.Plan planWithMechanismWrites(BoardDescriptorModel.BoardModel b,
+			Map<Function, HelperDiscovery.HelperModel> helpers) throws Exception {
+		return ShadowCommits.plan(program, b, helpers,
+			run(b, helpers, ShadowCommits.Plan.NONE).switchResults());
+	}
+
+	@Test
+	public void aFieldOnlyWrittenInsideTheHelperIsCoherentAndANoStoreCallStaysANoOp()
+			throws Exception {
+		BoardDescriptorModel.BoardModel b = board();
+		Map<Function, HelperDiscovery.HelperModel> helpers = build(b, BARE_CALL, 0xc103);
+		hint("bank", 0x10);
+
+		ShadowCommits.Plan plan = planWithMechanismWrites(b, helpers);
+
+		assertTrue(plan.problems().toString(), plan.problems().isEmpty());
+		assertTrue("the only mechanism write is the helper's own", plan.byHelper().get(0xc200L)
+				.get(0).coherent());
+		assertNull(run(b, helpers, plan).callSwitches().get(addr(0xc100)));
+		assertTrue(plan.modeLines().get(0), plan.modeLines().get(0).contains("COHERENT"));
+	}
+
+	@Test
+	public void aDirectWriteOfTheFieldOutsideTheHelpersMakesNoStoreCallsRestores()
+			throws Exception {
+		BoardDescriptorModel.BoardModel b = board();
+		// LDA #5 / STA $9000 (a direct write of the field) / LDA $12 / JSR $c200
+		Map<Function, HelperDiscovery.HelperModel> helpers =
+			build(b, "a9 05 8d 00 90 a5 12 20 00 c2 60", 0xc10a);
+		hint("bank", 0x10);
+
+		ShadowCommits.Plan plan = planWithMechanismWrites(b, helpers);
+
+		assertTrue(plan.problems().toString(), plan.problems().isEmpty());
+		assertFalse(plan.byHelper().get(0xc200L).get(0).coherent());
+		assertTrue(plan.modeLines().get(0), plan.modeLines().get(0).contains("RESTORE"));
+		BankDataflowEngine.DataflowResult result = run(b, helpers, plan);
+		BankDataflowEngine.CallSwitch cs = result.callSwitches().get(addr(0xc107));
+		assertNotNull("the call is not a no-op", cs);
+		assertFalse("the field is not known after the restore", cs.argumentResolved());
+		assertNotNull(cs.restoreCell());
+		assertEquals(0, result.stateIn().get(addr(0xc10a)).knownMask());
+		String detail = result.hintNotes().get(addr(0xc107)).honestDetail();
+		assertTrue(detail, detail.contains("RESTORED") && detail.contains("$0010"));
+	}
+
+	@Test
+	public void inRestoreModeAStoreInTheBlockStillCommitsItsValue() throws Exception {
+		BoardDescriptorModel.BoardModel b = board();
+		// LDA #5 / STA $9000 / LDA #2 / STA $10 / LDA $12 / JSR $c200
+		Map<Function, HelperDiscovery.HelperModel> helpers =
+			build(b, "a9 05 8d 00 90 a9 02 85 10 a5 12 20 00 c2 60", 0xc10e);
+		hint("bank", 0x10);
+
+		ShadowCommits.Plan plan = planWithMechanismWrites(b, helpers);
+		assertFalse(plan.byHelper().get(0xc200L).get(0).coherent());
+
+		BankDataflowEngine.CallSwitch cs = run(b, helpers, plan).callSwitches().get(addr(0xc10b));
+		assertTrue(cs.argumentResolved());
+		assertEquals(2, cs.effect().bits());
+	}
+
 	@Test
 	public void withoutThePropertyNothingChanges() throws Exception {
 		BoardDescriptorModel.BoardModel b = board();

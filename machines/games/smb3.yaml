@@ -1,24 +1,59 @@
 # Curated per-game descriptor (title tier). Compiled to data/games/smb3.gmap.
 # docs/per-game-descriptors-design.md; first increment, bead grm-hb6.12.
 #
-# WHY THIS FILE HAS NO banking: SECTION ANY MORE (grm-3fvj, 2026-09-08). It used to carry
-# `banking: initial_state: { prg_mode: 1 }`, because machines/nes-mmc3.yaml assumes prg_mode 0
-# at power-on -- a conventional, honest guess, since MMC3 register contents are genuinely
-# undefined at reset -- while this cartridge's init sets bank-select bit 6 unconditionally and
-# so runs PRG mode 1. That hint is now REDUNDANT: NesRomLoader.imageResolvedMode derives the
-# same fact from the image itself, and smb3 is the strongest witness in the corpus for it (69 of
-# its 74 $8000 writes are LDA #imm, every one with bit 6 set). Verified by deleting the hint and
-# re-running the row: smb3's real-ROM golden still matches byte for byte.
+# HISTORY (grm-3fvj, 2026-09-08). This file used to carry `banking: initial_state: { prg_mode: 1 }`,
+# because machines/nes-mmc3.yaml assumes prg_mode 0 at power-on while this cartridge's init sets
+# bank-select bit 6 unconditionally and so runs PRG mode 1. That hint became REDUNDANT:
+# NesRomLoader.imageResolvedMode derives the same fact from the image itself (69 of its 74 $8000
+# writes are LDA #imm, every one with bit 6 set), so it was deleted; the identity and provenance
+# below are the tier's worked exemplar, and the hint can come straight back (one line) if the image
+# scan ever declines on this ROM. Do NOT add an empty banking.initial_state -- that is an error.
 #
-# THE FILE IS KEPT DELIBERATELY, as the per-game tier's worked exemplar -- identity (both hash
-# forms) and provenance, which is what docs/per-game-descriptors-design.md documents and what
-# grm-hb6.12 shipped. Deleting it would leave that tier with no live example. A descriptor with
-# no banking: section is valid; GameCompiler.buildBanking simply emits none. Do NOT "fix" this
-# by adding an empty banking.initial_state -- that is an error ("present but names no fields").
+# WHAT THE banking: SECTION IS NOW (grm-td2j, grm-wayn): banking.shadow_commits. smb3 keeps RAM
+# shadows of the MMC3 registers, and commits them through small fixed-bank helpers whose bank
+# value is NOT in a register but in the shadow cell:
 #
-# If a future change makes the image scan decline on this ROM (it requires at least 4 agreeing
-# LDA #imm/STA sites and unanimity), the hint can come straight back: it is one line, and the
-# provenance below still records the hand pass that established the fact.
+#   $071F is the R6 shadow, $0720 the R7 shadow, $0721 the bank-select ($8000) shadow.
+#
+#   FFD1  LDA #$46 / STA $0721 / STA $8000 / LDA $071F / STA $8001 / RTS     ; r6 <- $071F
+#   FFC2  LDA #$47 / STA $0721 / STA $8000 / LDA $0720 / STA $8001 / RTS     ; r7 <- $0720
+#   FFBF  JSR $FFD1, then FALLS INTO FFC2                                    ; r6 <- $071F, r7 <- $0720
+#   FC6F  LDA #$46 / STA $8000 / LDA $071F / STA $8001
+#         LDA #$47 / STA $8000 / LDA $0720 / STA $8001 / RTS     ; both, WITHOUT touching $0721
+#
+# Without this the analyzer sees four helpers whose deposited value comes from RAM, cannot follow
+# it, and warns at every call that is not preceded by a visible store ("bank argument could not be
+# recovered"). The hint states what the byte trace shows: a call to FFD1/FC6F commits r6 :=
+# $071F, a call to FFC2/FC6F commits r7 := $0720, and every store to either cell is committed at
+# once (the CELL premise). Evidence for the cell premise (orchestrator byte trace 2026-10-19 against the
+# pinned image, grm-td2j): all 18 direct stores to $071F are followed, in their own fall-through
+# run, by JSR $FFD1, JSR $FFBF, JMP $FFD1 or JMP $FFBF; all ~87 direct stores to $0720 (STA and
+# STY) by JSR $FFC2, JSR $FFBF or JMP $FFBF. The analyzer re-verifies that on every run. A store
+# is often committed by a DIFFERENT helper than the one being called, and some commits are TAIL
+# JUMPS, which is why the premise ranges over every helper that commits the cell and accepts a
+# JMP; FFBF is not a modelled bank-switch helper (it has no mechanism write of its own), so it gets
+# NO entry: the premise recognizes it as a thin wrapper of FFD1 and FFC2 instead.
+#
+# TWO PREMISES, AND smb3 RUNS IN RESTORE MODE. The cell premise above (every store to the cell is
+# committed) holds. FIELD coherence (r6/r7 are only ever written through the cells) does NOT:
+# the NMI handler switches the sound engine in directly, bypassing the shadows --
+#   f567 LDA #$46 / STA $8000 / LDA #$1d / STA $8001     ; r6 := 29, $071F untouched
+#   f571 LDA #$47 / STA $8000 / LDA #$1c / STA $8001     ; r7 := 28, $0720 untouched
+#   f57b JSR $a000                                       ; sound engine in the temp banks
+#   f57e JSR $fc6f                                       ; RESTORES r6/r7 from $071F/$0720
+# and ~16 more direct `LDA #$47|#$46 / STA $8000 / LDA #imm / STA $8001` sites (banks 10, 22, 30,
+# 31; e.g. cpu 85f7 r7 := 26) are each followed later by a no-store `JSR $FFC2` restoring R7 from
+# the shadow. So at a call with no store the field becomes the SHADOW's value (the last value
+# committed through the cell), not the in-state. Every hint here therefore runs in RESTORE mode
+# (the analyzer log says so per hint).
+#
+# EFFECT. A call preceded by a store to the cell in its own block takes the stored value (sound
+# in either mode). A call with no such store (FFC2 at 8631, ca68, ccdf; FC6F in the NMI handler)
+# is a RESTORE from the cell: the field becomes unknown and the site reports as an honest
+# RESTORED note naming the cell, instead of a warning. Sites whose cell value is a table lookup with an unknown index (8bae, 8cc1,
+# 9ace, 9b2f, 9bc9, 9bde: LDY $070a / LDA table,Y / STA $0720 / JSR $FFC2) stay warned -- that is
+# grm-mej.5's problem, not this hint's. FFAD (a CHR loop) and F586/F8CD (the bank-select
+# restore) are untouched.
 
 schema: 2
 
@@ -39,3 +74,33 @@ game:
   provenance: "owner's hand pass over the pinned smb3 real-ROM row, 2026-09-07 (grm-3fvj): the
     $8000 bank-select write sets bit 6 (PRG mode) at every observed occurrence, i.e. this ROM
     runs MMC3 PRG mode 1 from init, not the board descriptor's mode-0 power-on convention."
+
+banking:
+  shadow_commits:
+    - helper: 0xFFD1
+      cell: 0x071F
+      field: r6
+      provenance: "Orchestrator byte trace 2026-10-19 against the pinned image (grm-td2j): FFD1 is
+        LDA #$46 / STA $0721 / STA $8000 / LDA $071F / STA $8001 / RTS, so $071F is the R6 shadow;
+        every direct store to it (18 sites) is followed in its own fall-through run by JSR/JMP
+        $FFD1 or $FFBF (FFBF = JSR $FFD1 then FFC2). R6 is also written directly (the NMI's sound
+        bank at f567), so the cell holds the last R6 committed through it: a restore, not a no-op."
+    - helper: 0xFFC2
+      cell: 0x0720
+      field: r7
+      provenance: "Orchestrator byte trace 2026-10-19 against the pinned image (grm-td2j): FFC2 is
+        LDA #$47 / STA $0721 / STA $8000 / LDA $0720 / STA $8001 / RTS, so $0720 is the R7 shadow;
+        every direct store to it (~87 sites, STA and STY) is followed in its own fall-through run
+        by JSR $FFC2, JSR $FFBF or JMP $FFBF. R7 is also switched directly and temporarily (f571,
+        85f7, ...), so the cell holds the last R7 committed through it: a restore, not a no-op."
+    - helper: 0xFC6F
+      cell: 0x071F
+      field: r6
+      provenance: "Orchestrator byte trace 2026-10-19 against the pinned image (grm-td2j): FC6F is
+        LDA #$46 / STA $8000 / LDA $071F / STA $8001, then LDA #$47 / STA $8000 / LDA $0720 /
+        STA $8001 / RTS: it commits r6 from the same shadow as FFD1 (and does not touch $0721)."
+    - helper: 0xFC6F
+      cell: 0x0720
+      field: r7
+      provenance: "Orchestrator byte trace 2026-10-19 against the pinned image (grm-td2j): the
+        second half of FC6F commits r7 from the same shadow as FFC2."

@@ -20,6 +20,8 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.HashSet;
+import java.util.Set;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -77,7 +79,19 @@ final class ShadowCommits {
 	private static final int MAX_BLOCK_WALK = 64;
 
 	/** One validated entry. */
-	record Valid(long helper, long cell, FieldSpec field, String provenance) {
+	record Valid(long helper, long cell, FieldSpec field, String provenance,
+			String directWrite) {
+
+		/**
+		 * Whether the FIELD is only ever written through the cell (field coherence): then a call
+		 * with no store to the cell is a verified no-op on the field. Otherwise ({@code
+		 * directWrite} names a mechanism write of the field outside the committing helpers) the
+		 * hint runs in RESTORE mode: a call with no store restores the field from the cell, to a
+		 * value the analyzer cannot know.
+		 */
+		boolean coherent() {
+			return directWrite == null;
+		}
 	}
 
 	/** A hint that was not applied: where to put the bookmark (may be null) and why. */
@@ -87,11 +101,27 @@ final class ShadowCommits {
 	/**
 	 * The run's validated hints, keyed by the helper's entry OFFSET (a byte-identical home engine
 	 * can be modelled once per bank copy, each in its own overlay space, so the offset -- not the
-	 * space -- identifies the helper), plus the failures to report.
+	 * space -- identifies the helper), several per helper when it commits several fields (smb3's
+	 * FUN_fc6f commits r6 from one cell and r7 from another), plus the failures to report.
 	 */
-	record Plan(String source, Map<Long, Valid> byHelper, List<Problem> problems) {
+	record Plan(String source, Map<Long, List<Valid>> byHelper, List<Problem> problems) {
 
 		static final Plan NONE = new Plan(null, Map.of(), List.of());
+
+		/** One line per validated hint naming its mode, for the analyzer log. */
+		List<String> modeLines() {
+			List<String> out = new ArrayList<>();
+			for (List<Valid> vs : byHelper.values()) {
+				for (Valid v : vs) {
+					out.add("shadow_commits hint helper " + hex(v.helper()) + " cell " +
+						hex(v.cell()) + " field '" + v.field().name() + "': " + (v.coherent()
+								? "COHERENT mode (the field is only written through the cell)"
+								: "RESTORE mode (field also written directly: " + v.directWrite() +
+									")"));
+				}
+			}
+			return out;
+		}
 
 		boolean isEmpty() {
 			return byHelper.isEmpty();
@@ -129,6 +159,16 @@ final class ShadowCommits {
 	 * {@code helpers}. {@link Plan#NONE} (and no work) when the descriptor states none.
 	 */
 	static Plan plan(Program program, BoardModel board, Map<Function, HelperModel> helpers) {
+		return plan(program, board, helpers, Map.of());
+	}
+
+	/**
+	 * As the 3-argument form, with the recognized mechanism-write sites ({@code switchResults}),
+	 * which the FIELD-coherence premise needs: a hint whose field is also deposited by a mechanism
+	 * write outside every committing helper's body runs in restore mode (see {@link Valid}).
+	 */
+	static Plan plan(Program program, BoardModel board, Map<Function, HelperModel> helpers,
+			Map<Address, BankDataflowEngine.SwitchResult> switchResults) {
 		String spec = DescriptorSupport.programInfoString(program,
 			DescriptorSupport.SHADOW_COMMITS_PROPERTY);
 		if (spec == null || spec.isBlank()) {
@@ -151,14 +191,13 @@ final class ShadowCommits {
 				" is malformed (" + e.getMessage() + "); no shadow_commits hint applied"));
 			return new Plan(source, Map.of(), problems);
 		}
-		Map<Long, Valid> byHelper = new LinkedHashMap<>();
+		// Pass 1: the structural checks (helper modelled, field within its effect mask).
+		List<Valid> structural = new ArrayList<>();
 		for (Entry entry : entries) {
-			String what = "shadow_commits hint helper " + hex(entry.helper()) + " cell " +
-				hex(entry.cell()) + " field '" + entry.field() + "' from " + who;
-			Address where = baseAddress(program, entry.helper());
-			String failed = validate(program, board, helpers, entry);
+			String failed = validateStructure(board, helpers, entry);
 			if (failed != null) {
-				problems.add(new Problem(where, what + " was not applied: " + failed));
+				problems.add(new Problem(baseAddress(program, entry.helper()),
+					describe(entry, who) + " was not applied: " + failed));
 				continue;
 			}
 			FieldSpec field = null;
@@ -167,15 +206,74 @@ final class ShadowCommits {
 					field = f;
 				}
 			}
-			byHelper.put(entry.helper(),
-				new Valid(entry.helper(), entry.cell(), field, entry.provenance()));
+			structural.add(new Valid(entry.helper(), entry.cell(), field, entry.provenance(), null));
+		}
+		// Pass 2: the coherence premise. A store to a cell is committed by ANY structurally
+		// valid hint's helper that commits the same field from the same cell, by a call or a
+		// tail jump.
+		Set<Long> allHelpers = new HashSet<>();
+		for (Valid v : structural) {
+			allHelpers.add(v.helper());
+		}
+		Map<Long, List<Valid>> byHelper = new LinkedHashMap<>();
+		for (Valid v : structural) {
+			Set<Long> committers = new HashSet<>();
+			for (Valid other : structural) {
+				if (other.cell() == v.cell() && other.field().name().equals(v.field().name())) {
+					committers.add(other.helper());
+				}
+			}
+			String failed = validatePremise(program, v, new Committers(program, committers, allHelpers));
+			if (failed != null) {
+				problems.add(new Problem(baseAddress(program, v.helper()),
+					describe(new Entry(v.helper(), v.cell(), v.field().name(), v.provenance()), who) +
+						" was not applied: " + failed));
+				continue;
+			}
+			String direct = directFieldWrite(helpers, switchResults, v, committers);
+			byHelper.computeIfAbsent(v.helper(), k -> new ArrayList<>())
+					.add(new Valid(v.helper(), v.cell(), v.field(), v.provenance(), direct));
 		}
 		return new Plan(source, byHelper, problems);
 	}
 
-	/** Why {@code entry} cannot be applied, or null when it passes every check. */
-	private static String validate(Program program, BoardModel board,
-			Map<Function, HelperModel> helpers, Entry entry) {
+	/**
+	 * FIELD coherence: a description of a recognized mechanism write that deposits any bit of the
+	 * hint's field from OUTSIDE the bodies of every committing helper (so the field can change
+	 * without the cell), or null when there is none.
+	 */
+	private static String directFieldWrite(Map<Function, HelperModel> helpers,
+			Map<Address, BankDataflowEngine.SwitchResult> switchResults, Valid v,
+			Set<Long> committers) {
+		ghidra.program.model.address.AddressSet bodies = new ghidra.program.model.address.AddressSet();
+		for (HelperModel h : helpers.values()) {
+			if (committers.contains(h.entry().getOffset())) {
+				bodies.add(h.function().getBody());
+			}
+		}
+		Address first = null;
+		int count = 0;
+		for (Map.Entry<Address, BankDataflowEngine.SwitchResult> e : switchResults.entrySet()) {
+			if ((e.getValue().effectMask() & v.field().positionedMask()) == 0 ||
+				bodies.contains(e.getKey())) {
+				continue;
+			}
+			count++;
+			if (first == null || e.getKey().compareTo(first) < 0) {
+				first = e.getKey();
+			}
+		}
+		return first == null ? null : count + " mechanism write(s) outside the committing helpers, first at " + first;
+	}
+
+	private static String describe(Entry entry, String who) {
+		return "shadow_commits hint helper " + hex(entry.helper()) + " cell " + hex(entry.cell()) +
+			" field '" + entry.field() + "' from " + who;
+	}
+
+	/** Why {@code entry} cannot be applied for want of a helper or field, or null. */
+	private static String validateStructure(BoardModel board, Map<Function, HelperModel> helpers,
+			Entry entry) {
 		FieldSpec field = null;
 		for (FieldSpec f : board.fieldSpecs()) {
 			if (f.name().equals(entry.field())) {
@@ -202,12 +300,18 @@ final class ShadowCommits {
 					", the field's 0x" + Integer.toHexString(field.positionedMask()) + ")";
 			}
 		}
-		Listing listing = program.getListing();
-		for (Instruction instr : listing.getInstructions(true)) {
-			if (writesCell(instr, entry.cell()) && !followedByHelperCall(instr, entry.helper())) {
+		return null;
+	}
+
+	/** Why the coherence premise fails for {@code v} given the field's committing helpers, or null. */
+	private static String validatePremise(Program program, Valid v, Committers committers) {
+		for (Instruction instr : program.getListing().getInstructions(true)) {
+			if (writesCell(instr, v.cell()) && !committers.followsStore(instr)) {
 				return "the premise fails: the store at " + instr.getMinAddress() + " to cell " +
-					hex(entry.cell()) + " is not followed, in its own basic block, by a call to " +
-					hex(entry.helper());
+					hex(v.cell()) + " is not followed, in its own basic block, by a call or tail jump to (or a thin wrapper entering) " +
+					(committers.direct().size() == 1 ? "" : "any of ") + committers.direct().stream()
+							.map(ShadowCommits::hex).sorted().toList() +
+					" (the helpers committing field '" + v.field().name() + "' from it)";
 			}
 		}
 		return null;
@@ -231,58 +335,124 @@ final class ShadowCommits {
 		return space.isMemorySpace() || space.isOverlaySpace();
 	}
 
-	private static boolean callsHelper(Instruction instr, long helperOffset) {
-		if (!instr.getFlowType().isCall()) {
+	/**
+	 * The helpers that commit one (cell, field) pair, for the coherence premise. {@code direct}
+	 * are the hinted helpers' entry offsets for that pair; {@code all} every hinted helper of the
+	 * descriptor (a thin wrapper may call helpers of other fields on its way).
+	 * <p>
+	 * A store is committed when its own fall-through run reaches a CALL or an unconditional
+	 * TAIL JUMP to a direct committer, or to a thin WRAPPER of one: an address whose own
+	 * fall-through run (stepping over calls to hinted helpers) calls, jumps to, or falls into a
+	 * direct committer. smb3's {@code FFBF JSR $FFD1} falling into {@code FFC2} is the case: it is
+	 * not a modelled helper itself, yet every store followed by it is committed.
+	 */
+	private static final class Committers {
+		private final Program program;
+		private final Set<Long> direct;
+		private final Set<Long> all;
+		private final Map<Address, Boolean> wrapperMemo = new java.util.HashMap<>();
+
+		Committers(Program program, Set<Long> direct, Set<Long> all) {
+			this.program = program;
+			this.direct = direct;
+			this.all = all;
+		}
+
+		Set<Long> direct() {
+			return direct;
+		}
+
+		/** Whether the run of plain fall-through instructions after {@code store} commits it. */
+		boolean followsStore(Instruction store) {
+			Listing listing = program.getListing();
+			Instruction cur = store;
+			for (int i = 0; i < MAX_BLOCK_WALK; i++) {
+				if (!cur.getFlowType().equals(FlowType.FALL_THROUGH)) {
+					return false;
+				}
+				Address next = cur.getFallThrough();
+				cur = next == null ? null : listing.getInstructionAt(next);
+				if (cur == null) {
+					return false;
+				}
+				Address target = transferTarget(cur);
+				if (target != null && (direct.contains(target.getOffset()) || isWrapper(target))) {
+					return true;
+				}
+			}
 			return false;
 		}
-		Address target = StoredValueScanner.plainAbsoluteTarget(instr);
-		return target != null && target.getOffset() == helperOffset;
+
+		private boolean isWrapper(Address entry) {
+			Boolean known = wrapperMemo.get(entry);
+			if (known == null) {
+				wrapperMemo.put(entry, Boolean.FALSE); // a cycle commits nothing
+				known = computeWrapper(entry);
+				wrapperMemo.put(entry, known);
+			}
+			return known;
+		}
+
+		private boolean computeWrapper(Address entry) {
+			Listing listing = program.getListing();
+			Instruction cur = listing.getInstructionAt(entry);
+			for (int i = 0; i < MAX_BLOCK_WALK && cur != null; i++) {
+				if (i > 0 && direct.contains(cur.getMinAddress().getOffset())) {
+					return true; // fell into a committer's entry
+				}
+				Address target = transferTarget(cur);
+				if (target != null && direct.contains(target.getOffset())) {
+					return true;
+				}
+				FlowType flow = cur.getFlowType();
+				if (flow.isCall()) {
+					// step over a call only to a hinted helper (known to return, known effect)
+					if (target == null || !all.contains(target.getOffset())) {
+						return false;
+					}
+				}
+				else if (!flow.equals(FlowType.FALL_THROUGH)) {
+					return false;
+				}
+				Address next = cur.getFallThrough();
+				cur = next == null ? null : listing.getInstructionAt(next);
+			}
+			return false;
+		}
 	}
 
-	/** Whether the run of plain fall-through instructions after {@code store} reaches a call to the helper. */
-	private static boolean followedByHelperCall(Instruction store, long helperOffset) {
-		Listing listing = store.getProgram().getListing();
-		Instruction cur = store;
-		for (int i = 0; i < MAX_BLOCK_WALK; i++) {
-			if (!cur.getFlowType().equals(FlowType.FALL_THROUGH)) {
-				return false;
-			}
-			Address next = cur.getFallThrough();
-			cur = next == null ? null : listing.getInstructionAt(next);
-			if (cur == null) {
-				return false;
-			}
-			if (callsHelper(cur, helperOffset)) {
-				return true;
-			}
-		}
-		return false;
+	/** The target of a call or unconditional non-computed jump with a plain absolute operand, else null. */
+	private static Address transferTarget(Instruction instr) {
+		FlowType flow = instr.getFlowType();
+		boolean call = flow.isCall();
+		boolean tail = flow.isJump() && flow.isUnConditional() && !flow.isComputed();
+		return call || tail ? StoredValueScanner.plainAbsoluteTarget(instr) : null;
 	}
 
 	/**
-	 * Whether a direct store to the cell lies earlier in {@code call}'s own basic block -- a run of
-	 * plain fall-through instructions ending at the call.
+	 * The nearest direct store to the cell earlier in {@code call}'s own basic block -- a run of
+	 * plain fall-through instructions ending at the call -- or null.
 	 */
-	private static boolean storeEarlierInBlock(Instruction call, long cellOffset) {
+	private static Instruction storeEarlierInBlock(Instruction call, long cellOffset) {
 		Instruction cur = call;
 		for (int i = 0; i < MAX_BLOCK_WALK; i++) {
 			Address from = cur.getFallFrom();
 			if (from == null) {
-				return false;
+				return null;
 			}
 			Instruction prev = cur.getProgram().getListing().getInstructionAt(from);
 			if (prev == null) {
-				return false;
+				return null;
 			}
 			if (writesCell(prev, cellOffset)) {
-				return true;
+				return prev;
 			}
 			if (!prev.getFlowType().equals(FlowType.FALL_THROUGH)) {
-				return false;
+				return null;
 			}
 			cur = prev;
 		}
-		return false;
+		return null;
 	}
 
 	// ------------------------------------------------------------------
@@ -290,21 +460,28 @@ final class ShadowCommits {
 	// ------------------------------------------------------------------
 
 	/**
-	 * The validated hint for a call to {@code helper}, or null. A model whose effect mask does not
-	 * cover the hinted field (a different modelling of the same offset) is not matched.
+	 * The validated hints for a call to {@code helper}, empty when none. A model whose effect mask
+	 * does not cover a hinted field (a different modelling of the same offset) is not matched for
+	 * that hint.
 	 */
-	static Valid hintFor(Plan plan, HelperModel helper) {
+	static List<Valid> hintsFor(Plan plan, HelperModel helper) {
 		if (plan.isEmpty() || helper.constState() != null) {
-			return null;
+			return List.of();
 		}
-		Valid v = plan.byHelper().get(helper.entry().getOffset());
-		return v != null && (v.field().positionedMask() & ~helper.effectMask()) == 0 ? v : null;
+		List<Valid> out = new ArrayList<>();
+		for (Valid v : plan.byHelper().getOrDefault(helper.entry().getOffset(), List.of())) {
+			if ((v.field().positionedMask() & ~helper.effectMask()) == 0) {
+				out.add(v);
+			}
+		}
+		return out;
 	}
 
 	/**
-	 * Applies the hint at one call. Returns {@code recovered} untouched when it does not apply
-	 * (including: a store precedes the call but the cell's value is not known at all -- the call's
-	 * warning stays, honestly).
+	 * Applies the hints at one call, each independently and in descriptor order. Returns
+	 * {@code recovered} untouched when none applies (including: a store precedes the call but the
+	 * cell's value is not known at all -- the call's warning stays, honestly, unless that store
+	 * demonstrably stores the enclosing function's INBOUND register, see {@link #relayDetail}).
 	 *
 	 * @param notes the engine's per-site hint notes; an applied deposit records one so the
 	 *            annotation carries the "(game descriptor hint)" suffix and a disagreement with
@@ -313,45 +490,131 @@ final class ShadowCommits {
 	static CallEffect apply(Plan plan, Map<Address, SwitchSiteHints.HintNote> notes,
 			CallEffect recovered, HelperModel helper, BankState outState, Program program,
 			Instruction call, StateOracle oracle, StoredValueScanner.ProofMemo crossBlockMemo) {
-		Valid hint = hintFor(plan, helper);
-		if (hint == null) {
-			return recovered;
+		CallEffect effect = recovered;
+		Integer bank = null;
+		List<String> differs = new ArrayList<>();
+		List<String> relays = new ArrayList<>();
+		List<String> restores = new ArrayList<>();
+		for (Valid hint : hintsFor(plan, helper)) {
+			FieldSpec field = hint.field();
+			int fieldMask = field.positionedMask();
+			if ((effect.ownedMask() & fieldMask) == 0) {
+				continue;
+			}
+			Instruction store = storeEarlierInBlock(call, hint.cell());
+			if (store == null && !hint.coherent()) {
+				// RESTORE mode: the field is also written directly elsewhere, so the cell is the
+				// last value committed THROUGH it, not the live field. The call restores the
+				// field from the cell to a value this analyzer cannot know.
+				if (effect.argumentResolved()) {
+					continue;
+				}
+				BankState state = new BankState(effect.state().knownMask() & ~fieldMask,
+					effect.state().bits() & ~fieldMask);
+				Address restoreFrom = program.getAddressFactory().getDefaultAddressSpace()
+						.getAddress(hint.cell());
+				effect = new CallEffect(state, effect.ownedMask(), false,
+					effect.noInboundArgument(), effect.secondTierRelay(),
+					effect.restoreCell() != null ? effect.restoreCell() : restoreFrom,
+					effect.readBack());
+				restores.add(String.format("%s from $%04X", field.name(), hint.cell()));
+				continue;
+			}
+			if (store == null) {
+				// Coherence premise: the cell holds the live field value, so the commit re-installs it.
+				int owned = effect.ownedMask() & ~fieldMask;
+				BankState state = new BankState(effect.state().knownMask() & owned,
+					effect.state().bits() & effect.state().knownMask() & owned);
+				boolean resolved = owned == 0 || (owned & ~state.knownMask()) == 0
+						|| effect.argumentResolved();
+				effect = new CallEffect(state, owned, resolved, effect.noInboundArgument(),
+					effect.secondTierRelay(), effect.restoreCell(), effect.readBack());
+				continue;
+			}
+			Address cell =
+				program.getAddressFactory().getDefaultAddressSpace().getAddress(hint.cell());
+			PartialByte value = HelperArgumentRecovery.callerCellAtCall(program, call, helper,
+				outState, cell, field.widthMask(), oracle, crossBlockMemo);
+			if (value.knownMask() == 0) {
+				String relay = effect.argumentResolved() ? null
+						: relayDetail(program, call, store, hint);
+				if (relay != null) {
+					effect = effect.asSecondTierRelay();
+					relays.add(relay);
+				}
+				continue;
+			}
+			int known = (value.knownMask() & field.widthMask()) << field.lsb();
+			int bits = (value.bits() & field.widthMask()) << field.lsb();
+			BankState before = effect.state();
+			boolean differsHere = recovered.argumentResolved() &&
+				((recovered.state().bits() ^ bits) & recovered.state().knownMask() & known) != 0;
+			if (differsHere) {
+				differs.add(render(recovered.state().knownMask() & fieldMask,
+					recovered.state().bits(), field));
+			}
+			int newKnown = (before.knownMask() & ~fieldMask) | known;
+			int newBits = (before.bits() & ~fieldMask & newKnown) | bits;
+			if (!recovered.argumentResolved() || differsHere) {
+				// a hint that merely agrees with what dataflow resolved itself changes nothing,
+				// so it neither earns the "(game descriptor hint)" suffix nor a note
+				bank = (bits >>> field.lsb()) & field.widthMask();
+			}
+			effect = new CallEffect(new BankState(newKnown, newBits), effect.ownedMask(),
+				effect.argumentResolved() || (effect.ownedMask() & ~newKnown) == 0,
+				effect.noInboundArgument(), effect.secondTierRelay(), effect.restoreCell(),
+				effect.readBack());
 		}
-		FieldSpec field = hint.field();
-		int fieldMask = field.positionedMask();
-		if ((recovered.ownedMask() & fieldMask) == 0) {
-			return recovered;
+		if (!restores.isEmpty() && !effect.argumentResolved() && relays.isEmpty()) {
+			relays.add("Bank value is RESTORED here, not resolved: this call's helper " +
+				helper.function().getName() + " restores " + String.join(" and ", restores) +
+				" (the shadow cell(s) the game committed through earlier). The field is also " +
+				"written directly elsewhere in the game (not through the cell), so the cell " +
+				"tracks the last value committed through it, not the live bank; the bank after " +
+				"this call is that saved value, not a fresh one this analyzer failed to pin " +
+				"down -- a property of the game, not a gap in analysis.");
 		}
-		if (!storeEarlierInBlock(call, hint.cell())) {
-			// Coherence premise: the cell holds the live field value, so the commit re-installs it.
-			int owned = recovered.ownedMask() & ~fieldMask;
-			BankState state = new BankState(recovered.state().knownMask() & owned,
-				recovered.state().bits() & recovered.state().knownMask() & owned);
-			boolean resolved = owned == 0 || (owned & ~state.knownMask()) == 0
-					|| recovered.argumentResolved();
-			return new CallEffect(state, owned, resolved, recovered.noInboundArgument(),
-				recovered.secondTierRelay(), recovered.restoreCell(), recovered.readBack());
+		else if (!restores.isEmpty()) {
+			restores.clear();
 		}
-		Address cell = program.getAddressFactory().getDefaultAddressSpace().getAddress(hint.cell());
-		PartialByte value = HelperArgumentRecovery.callerCellAtCall(program, call, helper,
-			outState, cell, field.widthMask(), oracle, crossBlockMemo);
-		if (value.knownMask() == 0) {
-			return recovered;
+		if (bank != null || !relays.isEmpty()) {
+			notes.put(call.getMinAddress(),
+				new SwitchSiteHints.HintNote(bank == null ? 0 : bank, bank != null, null,
+					differs.isEmpty() ? null : String.join("; ", differs),
+					relays.isEmpty() ? null : String.join(" ", relays)));
 		}
-		int known = (value.knownMask() & field.widthMask()) << field.lsb();
-		int bits = (value.bits() & field.widthMask()) << field.lsb();
-		BankState before = recovered.state();
-		String differs = null;
-		if (recovered.argumentResolved() && ((before.bits() ^ bits) & before.knownMask() & known) != 0) {
-			differs = render(before.knownMask() & fieldMask, before.bits(), field);
+		return effect;
+	}
+
+	/**
+	 * The NOTE text when the store to the hinted cell stores the enclosing function's INBOUND
+	 * register on every path ({@link HelperDiscovery#inboundRegisterOrigin} with the store as its
+	 * sink; it declines on anything it cannot prove): the committed value is the far-call argument
+	 * each caller supplies, so it is resolved at the callers, not here. Null otherwise.
+	 */
+	private static String relayDetail(Program program, Instruction call, Instruction store,
+			Valid hint) {
+		char reg = switch (store.getMnemonicString().toUpperCase()) {
+			case "STA" -> 'A';
+			case "STX" -> 'X';
+			case "STY" -> 'Y';
+			default -> '?';
+		};
+		Function fn = program.getFunctionManager().getFunctionContaining(call.getMinAddress());
+		if (reg == '?' || fn == null || !fn.getBody().contains(store.getMinAddress())) {
+			return null;
 		}
-		int newKnown = (before.knownMask() & ~fieldMask) | known;
-		int newBits = (before.bits() & ~fieldMask & newKnown) | bits;
-		notes.put(call.getMinAddress(), new SwitchSiteHints.HintNote(
-			(bits >>> field.lsb()) & field.widthMask(), true, null, differs));
-		return new CallEffect(new BankState(newKnown, newBits), recovered.ownedMask(), true,
-			recovered.noInboundArgument(), recovered.secondTierRelay(), recovered.restoreCell(),
-			recovered.readBack());
+		Character origin = HelperDiscovery.inboundRegisterOrigin(program, fn,
+			store.getMinAddress(), reg, Map.of());
+		if (origin == null) {
+			return null;
+		}
+		return "Bank value is the inbound argument of " + fn.getName() + ": the shadow cell " +
+			String.format("$%04X", hint.cell()) + " is stored from register " + reg +
+			", which this function never defines" +
+			(origin == reg ? "" : " (it holds the inbound " + origin + ")") +
+			"; each caller supplies it (a far-call / relay), so it is resolved at the callers, " +
+			"not here.";
 	}
 
 	private static String render(int knownMask, int bits, FieldSpec field) {

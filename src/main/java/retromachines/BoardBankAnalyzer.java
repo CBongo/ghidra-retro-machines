@@ -576,7 +576,11 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		}
 		// bead grm-hb6.26: banking.shadow_commits -- validated once here against the modelled
 		// helpers; a hint that fails is reported (below) and not applied.
-		ShadowCommits.Plan shadowCommits = ShadowCommits.plan(program, board, helpers);
+		ShadowCommits.Plan shadowCommits =
+			ShadowCommits.plan(program, board, helpers, flow.switchResults());
+		for (String mode : shadowCommits.modeLines()) {
+			AnalyzerLog.info(this, mode);
+		}
 		if (!helpers.isEmpty() || !mirrors.isEmpty()) {
 			flow = runDataflow(program, monitor, listing, mechanisms, board, helpers,
 				restoringTrampolines, secondTier.relayCallSites(), bracketClaims,
@@ -788,12 +792,25 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				}
 				if (callSwitch.secondTierRelay() && !callSwitch.argumentResolved()) {
 					callStop = BankSwitchStrategy.ValueStop.SECOND_TIER_ARGUMENT;
+					// grm-wayn: a shadow_commits call that stores its function's inbound
+					// register carries its own, accurate text
+					SwitchSiteHints.HintNote relayNote = flow.hintNotes().get(addr);
+					if (relayNote != null) {
+						honestDetail = relayNote.honestDetail();
+					}
 				}
 				else if (callSwitch.armsDenied() && !callSwitch.argumentResolved()) {
 					// grm-wul: the arms resolved but the fork budget refused them -- ours, and
 					// named as such rather than folded into the generic argument warning.
 					callStop = BankSwitchStrategy.ValueStop.MULTI_VALUED_AT_MERGE;
 					warningText = multiValuedWarning(board, callSwitch.arms());
+				}
+				else if (callSwitch.restoreCell() != null && !callSwitch.argumentResolved() &&
+					flow.hintNotes().get(addr) != null &&
+					flow.hintNotes().get(addr).honestDetail() != null) {
+					// a shadow_commits hint in RESTORE mode names its own cells and reason
+					callStop = BankSwitchStrategy.ValueStop.RESTORED_BANK;
+					honestDetail = flow.hintNotes().get(addr).honestDetail();
 				}
 				else if (callSwitch.restoreCell() != null && !callSwitch.argumentResolved()) {
 					callStop = BankSwitchStrategy.ValueStop.RESTORED_BANK;

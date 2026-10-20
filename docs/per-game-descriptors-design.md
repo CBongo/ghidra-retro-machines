@@ -820,10 +820,12 @@ what makes tmnt3's `FUN_9169` (`grm-mej.17`) a verified `r6`+`r7` restore. First
 board field `field` from RAM cell `cell`, and that the cell is coherent with the live field.
 Published by `NesRomLoader.load` as `Retro Machines.Shadow Commits`, validated once per run by
 `ShadowCommits.plan` (helper modelled, field inside its effect mask, every direct store to the
-cell followed by a call to the helper; a failure is a WARNING bookmark and no hint), and folded
-into `BankDataflowEngine.applyHelperCall`: a store to the cell earlier in the call's block gives
-the field that value, no store makes the call a verified no-op. First user:
-`machines/games/dragonpower.yaml` (`FUN_ffbe` / `$F2`).
+cell followed by a call or tail jump to a helper committing the same field from it; a failure is a
+WARNING bookmark and no hint), and folded into `BankDataflowEngine.applyHelperCall`: a store to the
+cell earlier in the call's block gives the field that value, no store makes the call a verified
+no-op, and a store of the function's inbound register makes the call an honest relay NOTE
+(grm-wayn). One helper may carry several entries (one per field). First users:
+`machines/games/dragonpower.yaml` (`FUN_ffbe` / `$F2`) and `machines/games/smb3.yaml`.
 
 Three properties for every ANALYZER-consumed hint kind to inherit exactly:
 

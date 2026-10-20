@@ -575,7 +575,7 @@ public class GameCompiler {
 				"game descriptor 'banking.shadow_commits:' must be a non-empty list");
 		}
 		List<Map<String, Object>> out = new ArrayList<>();
-		Set<Integer> seen = new java.util.HashSet<>();
+		Set<String> seen = new java.util.HashSet<>();
 		for (Object entryObj : (List<Object>) listObj) {
 			if (!(entryObj instanceof Map)) {
 				throw new IllegalArgumentException("each 'banking.shadow_commits:' entry must be " +
@@ -595,10 +595,11 @@ public class GameCompiler {
 				throw new IllegalArgumentException(
 					where + ": helper and cell must be 16-bit CPU addresses");
 			}
-			if (!seen.add(helper)) {
-				throw new IllegalArgumentException(where + ": helper " + helper + " listed twice");
-			}
 			String field = MapCompiler.requireString(entry, "field", where);
+			if (!seen.add(helper + "/" + field)) {
+				throw new IllegalArgumentException(where + ": helper " + helper + " with field '" +
+					field + "' listed twice");
+			}
 			if (!(entry.get("field") instanceof String) || field.isBlank()) {
 				throw new IllegalArgumentException(where + ": field must be a non-blank name");
 			}

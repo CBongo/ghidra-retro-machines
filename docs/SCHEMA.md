@@ -959,7 +959,8 @@ banking:
 
 A hand-stated fact about a game whose bank-switch helper takes NO register argument but re-derives
 the bank from a RAM shadow (Dragon Power / Shenlong, GxROM: `FFBE LDA $F2 / ASL / ASL / ORA $F9 /
-TAY / LDA $FFCC,Y / STA $FFCC,Y`, reached through `FFE8 STA $F2 / JSR $FFBE`). Statement: **a call
+TAY / LDA $FFCC,Y / STA $FFCC,Y`, reached through `FFE8 STA $F2 / JSR $FFBE`; smb3, MMC3:
+`FFD1 LDA #$46 / STA $0721 / STA $8000 / LDA $071F / STA $8001`). Statement: **a call
 to `helper` commits `field` := the byte in `cell`** (identity encoding: the cell's byte is the
 field's value, masked to the field's width), **and the cell is coherent with the live field**
 (every write to it is committed by the helper before the bank matters). Consumed at analysis time
@@ -973,23 +974,58 @@ address) naming the descriptor and the failed check, and the call sites fall bac
 The checks: the helper address is the entry of a function discovery modelled as a bank-switch
 helper; `field` is a board state field lying within that helper's effect mask; and the coherence
 PREMISE -- every direct (plain absolute / zero-page, non-indexed, non-indirect) store to `cell`
-in the image is followed, in its own basic block with no intervening flow change, by a call to
-`helper`. An indexed or indirect store to the cell is invisible to that check, so the premise is
-also a stated fact the provenance must carry.
+in the image is followed, in its own basic block with no intervening flow change, by a call or an
+unconditional tail jump (`JMP abs`) to a helper that commits the same `field` from the same `cell`.
+That is ANY entry of the descriptor with that (cell, field) pair, not only the entry being
+validated, or a THIN WRAPPER of one: an address whose own fall-through run (stepping over calls to
+other hinted helpers) calls, jumps to, or falls into such a helper (smb3's `FFBF JSR $FFD1`, falling
+into `FFC2`, is not a modelled helper, yet every store followed by it is committed). A store that
+is followed by nothing, or by an unrelated call, fails the premise and the warning names it. An
+indexed or indirect store to the cell is invisible to that check, so the premise is also a stated
+fact the provenance must carry.
+
+**Two premises, two modes.** The cell premise above says every write to the CELL is committed.
+It does not say the FIELD is only ever written through the cell. A second check, FIELD coherence,
+does: every recognized mechanism write that deposits any bit of `field` must lie inside the body
+of one of the committing helpers for that (cell, field). When both hold the hint runs in
+**coherent** mode (the call-with-no-store rule (b) below). When the cell premise holds but some
+mechanism write of the field lies outside the helpers, the hint still applies in **restore**
+mode: the store-in-block rule (a) is unchanged (the stored value is what gets committed, sound
+without field coherence), but a call with NO store is not a no-op -- the field was changed
+directly since the last commit, so the call restores it from the cell to a value the analyzer
+cannot know. The field becomes unknown, `CallEffect.restoreCell` is set, and the call reports as
+the honest RESTORED_BANK note, naming the cell(s) (a helper restoring two fields names both in one
+note). The analyzer log carries one line per validated hint stating its mode and, for restore
+mode, the first outside write.
+
+**Several entries may name one helper** (one per field it commits: smb3's `FC6F` commits `r6` from
+`$071F` and `r7` from `$0720`); a `(helper, field)` pair is unique. Each entry is validated and
+applied independently, and at a call only the entries naming the called helper are considered.
 
 **At a call to a validated helper:** (a) with a direct store to `cell` earlier in the call's own
 basic block, the field takes the value the caller scan recovers for the cell at the call (the
 hint wins over what dataflow recovered; if dataflow had recovered a DIFFERENT known value a
 WARNING names both, as for `bank:` hints), the bank comment carries ` (game descriptor hint)`,
 and a cell value the scan cannot recover leaves the call's own effect and warning untouched;
-(b) with no such store, the coherence premise makes the call re-commit the live value, a verified
-no-op on the field -- no fold, no annotation, no warning, exactly like a restoring trampoline.
-A `bank:` value hint at the same call site still wins over both.
+(b) with no such store, in coherent mode, the coherence premise makes the call re-commit the live
+value, a verified no-op on the field (in restore mode: see above) -- no fold, no annotation, no warning, exactly like a restoring trampoline;
+(c) with a store to the cell earlier in the block whose value does NOT resolve, if the stored
+register provably holds the enclosing function's INBOUND register value on every path
+(`HelperDiscovery.inboundRegisterOrigin`, which declines on anything it cannot prove: a call, a
+local definition, a join that disagrees), the call is reclassified as a second-tier relay: an
+honest NOTE instead of a WARNING, reading "Bank value is the inbound argument of FUN_x: the shadow
+cell $00F2 is stored from register A, which this function never defines; each caller supplies it
+(a far-call / relay), so it is resolved at the callers, not here." (Dragon Power's `ffea`, the
+`STA $F2` / `JSR $FFBE` far-call trampoline.) A store of a locally defined register is not a relay
+and keeps its warning. A hint that merely agrees with a value dataflow already resolved changes
+nothing and earns no suffix. A `bank:` value hint at the same call site still wins over all of
+these.
 
-Shape validation (non-empty list, 16-bit `helper` and `cell`, `helper` unique, `field` a non-blank
+Shape validation (non-empty list, 16-bit `helper` and `cell`, `(helper, field)` unique, `field` a non-blank
 string, `provenance` present, no other keys) is `GameCompiler`'s; `ExportGameDescriptor.java`
-carries the key verbatim. With the key absent nothing changes. First user:
-`machines/games/dragonpower.yaml`.
+carries the key verbatim. With the key absent nothing changes. First users:
+`machines/games/dragonpower.yaml` (one entry; the relay case) and `machines/games/smb3.yaml` (four
+entries over three helpers; the several-hints, any-committing-helper, tail-jump and thin-wrapper cases).
 
 ### Annotation layer and export (bead `grm-hb6.5`)
 

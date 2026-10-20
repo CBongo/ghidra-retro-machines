@@ -526,6 +526,21 @@ public class GameCompilerTest {
 	}
 
 	@Test
+	public void oneHelperMayCommitSeveralFieldsButNotTheSameFieldTwice() throws Exception {
+		String second = """
+			    - helper: 0xFFBE
+			      cell: 0xF3
+			      field: chr_bank
+			      provenance: "CHR shadow committed by FUN_ffbe"
+			""";
+		JsonObject banking = compile("shtwo", validYaml() + SHADOW_COMMITS + second)
+			.getAsJsonObject("banking");
+		assertEquals(2, banking.getAsJsonArray("shadow_commits").size());
+		expectError("shdup", validYaml() + SHADOW_COMMITS + SHADOW_COMMITS.replace(
+			"  shadow_commits:\n", ""), "listed twice");
+	}
+
+	@Test
 	public void absentShadowCommitsEmitNothing() throws Exception {
 		assertFalse(compile("noshadow", validYaml()).getAsJsonObject("banking")
 			.has("shadow_commits"));
