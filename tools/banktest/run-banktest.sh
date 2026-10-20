@@ -93,20 +93,7 @@ usage() {
 }
 
 list_chunks() {
-	printf '%s\n' \
-		c64-banking \
-		c64-loader \
-		c64-recovery \
-		basic-petscii \
-		basic-dialects \
-		pet-loader \
-		snes-loader \
-		c128-loader \
-		nes-banking \
-		petscii-strings \
-		nes-text \
-		descriptors \
-		all
+	printf '%s\n' "${GRM_HEADLESS_CHUNKS[@]}" all
 }
 
 if [ "${1:-}" = "--list-chunks" ]; then
@@ -193,14 +180,11 @@ fi
 # Validate every requested chunk before creating a work directory or generating
 # fixtures, so a typo cannot leave partial output behind.
 for chunk in "${CHUNKS[@]}"; do
-	case "$chunk" in
-		c64-banking|c64-loader|c64-recovery|basic-petscii|basic-dialects|pet-loader|snes-loader|c128-loader|nes-banking|petscii-strings|nes-text|descriptors|all) ;;
-		*)
-			echo "unknown chunk: $chunk" >&2
-			usage
-			exit 2
-			;;
-	esac
+	if [ "$chunk" != all ] && ! grm_chunk_in "$chunk" "${GRM_HEADLESS_CHUNKS[@]}"; then
+		echo "unknown chunk: $chunk" >&2
+		usage
+		exit 2
+	fi
 done
 
 selected() {
@@ -239,41 +223,9 @@ fi
 #
 # All four runners now default to the same isolated tree. The GUI-install flow is still
 # reachable, but you have to ask for it.
-if [ "${GRM_SHARED_GHIDRA_INSTALL:-}" = 1 ]; then
-	echo "NOTE: GRM_SHARED_GHIDRA_INSTALL=1 -- reading the shared %APPDATA%/ghidra install" \
-		"instead of the isolated build/ghidra-home tree. Only tools/install-gui.ps1 writes" \
-		"that install, so this run cannot be attributed to the current source state." >&2
-fi
-
-# Build-by-default preflight (bead grm-4t2d option (e); see the header comment). Skipped
-# outright when build-and-test.sh already built+staged for this run (GRM_EXTENSION_BUILT_THIS_RUN),
-# so the two scripts never do the work twice, and skipped on request via --no-build/GRM_SKIP_BUILD.
-# Only meaningful against the isolated install -- GRM_SHARED_GHIDRA_INSTALL=1 reads the
-# %APPDATA% install that only tools/install-gui.ps1 ever writes, which this script must not build.
-#
-# THIS MUST RUN BEFORE grm_settings_base_fallback, AND THAT ORDER IS LOAD-BEARING (bug found
-# 2026-08-29 while building ab-test.sh). The fallback decides whether to use the isolated install
-# by testing whether build/ghidra-home EXISTS, and staging is what creates it. With the fallback
-# first, a FRESH WORKTREE -- which by definition has no build/ dir yet -- took the shared %APPDATA%
-# branch, and staging then installed into a build/ghidra-home the run was no longer pointed at:
-# the extension under test got built correctly and then not used. That is the grm-4t2d hazard
-# wearing a new hat. Under --no-build the directory may legitimately still be absent, and the
-# fallback's NOTE is then correct rather than misleading.
-EXT_NOTE_SUFFIX=""
-if [ "${GRM_EXTENSION_BUILT_THIS_RUN:-}" = 1 ]; then
-	: # build-and-test.sh already built+staged for this run; do not double-build
-elif [ "${GRM_SHARED_GHIDRA_INSTALL:-}" = 1 ]; then
-	EXT_NOTE_SUFFIX="shared-install"
-elif [ "$NO_BUILD" -eq 1 ] || [ "${GRM_SKIP_BUILD:-}" = 1 ]; then
-	EXT_NOTE_SUFFIX="no-build"
-else
-	grm_ensure_extension_staged
-fi
-
-if [ "${GRM_SHARED_GHIDRA_INSTALL:-}" != 1 ]; then
-	grm_settings_base_fallback "${CHUNKS[0]}"
-fi
-grm_apply_settings_base
+# Build-by-default preflight, settings base, EXT_ID/TOOLCHAIN_ID: grm_preflight in lib/common.sh
+# (bead grm-4t2d option (e); its staging-before-fallback order is load-bearing and documented there).
+grm_preflight "${CHUNKS[0]}"
 
 # Retention (bead grm-uqhd): drop old kept-on-failure work dirs and stale cache entries BEFORE
 # this run makes its own. Knobs: GRM_WORK_KEEP_DAYS/GRM_WORK_KEEP_FAILURES/GRM_CACHE_KEEP_DAYS.
@@ -304,53 +256,8 @@ FORCED=()
 # caching is disabled and bless re-imports as before -- correctness over speed.
 CACHE_DIR="$REPO_ROOT/build/banktest-cache"
 
-# ext_identity() lives in lib/common.sh (shared with realrom-test.sh).
-# Compute the extension identity once; empty => caching disabled for this run.
-EXT_ID="$(ext_identity)" || EXT_ID=""
-
-# toolchain_identity() lives in lib/common.sh (shared with realrom-test.sh). The extension is
-# only half of what produces a dump; the Ghidra install that runs it is the other half, and
-# until bead grm-kt44 neither cache keyed it at all. Empty => caching disabled for this run,
-# the same degrade an unknown EXT_ID already triggers.
-TOOLCHAIN_ID="$(toolchain_identity)" || TOOLCHAIN_ID=""
-if [ -n "$TOOLCHAIN_ID" ]; then
-	echo "== ghidra toolchain: $TOOLCHAIN_ID =="
-else
-	echo "== ghidra toolchain: UNKNOWN (could not fingerprint the install behind $GHIDRA_HEADLESS) =="
-	echo "   Candidate-dump caching is DISABLED for this run; every fixture re-imports."
-fi
-
-# ANNOUNCE IT (bead grm-4t2d). This value was originally computed here only to key the cache,
-# which is why the whole reason for the FIRST version of this note existed: the identity was
-# there and stayed silent. Now that this script builds by default (see the header comment and
-# EXT_NOTE_SUFFIX above), the note's job is to say WHICH of the three states applied, so a
-# surprising result can be attributed correctly rather than blamed on a stale build that this
-# run just fixed -- or credited to a rebuild that --no-build/GRM_SKIP_BUILD deliberately skipped.
-case "${GRM_EXTENSION_BUILT_THIS_RUN:-}/$EXT_NOTE_SUFFIX" in
-	1/*)
-		grm_installed_extension_note "$EXT_ID" \
-			"(built and installed by build-and-test.sh for this run, so it matches this tree.)"
-		;;
-	*/shared-install)
-		grm_installed_extension_note "$EXT_ID" \
-			"(GRM_SHARED_GHIDRA_INSTALL=1 -- this run does NOT build; it reads the shared" \
-			" %APPDATA%/ghidra install, which only tools/install-gui.ps1 ever writes, so it" \
-			" cannot be attributed to the current source state.)"
-		;;
-	*/no-build)
-		grm_installed_extension_note "$EXT_ID" \
-			"(--no-build/GRM_SKIP_BUILD skipped the pre-flight build -- this script analyzed" \
-			" with whatever was already installed. A surprising result may be a stale" \
-			" extension rather than your change; re-run without that flag/var to rebuild" \
-			" first, and treat any baseline or bisect taken through this run as unproven.)"
-		;;
-	*)
-		grm_installed_extension_note "$EXT_ID" \
-			"(built and staged by THIS run via 'gradle stageExtensionForTests' before" \
-			" analyzing, so it matches this working tree.)"
-		;;
-esac
-grm_packed_db_cache_note
+# EXT_ID and TOOLCHAIN_ID come from grm_preflight (empty => caching disabled for this run).
+grm_print_identity_banners bisect fixture
 echo "== batching: $BATCH_BANNER =="
 echo "== headless timeout: $TIMEOUT_BANNER =="
 

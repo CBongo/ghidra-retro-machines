@@ -994,41 +994,17 @@ fi
 # source of truth); GHIDRA_HEADLESS still overrides.
 grm_default_headless
 
-# Build-by-default preflight (bead grm-4t2d option (e); see the header comment). Skipped
-# outright when build-and-test.sh already built+staged for this run
-# (GRM_EXTENSION_BUILT_THIS_RUN), so the two scripts never do the work twice, and skipped on
-# request via --no-build/GRM_SKIP_BUILD.
-#
-# THIS MUST RUN BEFORE grm_settings_base_fallback, AND THAT ORDER IS LOAD-BEARING (bug found
-# 2026-08-29 while building ab-test.sh). The fallback decides whether to use the isolated
-# install by testing whether build/ghidra-home EXISTS. Staging is what creates it. With the
-# fallback first, a FRESH WORKTREE -- which by definition has no build/ dir yet -- took the
-# shared %APPDATA% branch, and then staging installed into build/ghidra-home that the run
-# was no longer pointed at: the extension under test was built correctly and then not used.
-# That is the grm-4t2d hazard wearing a new hat, and it defeats isolation for exactly the
-# "just run realrom-test.sh directly" flow grm-4t2d added. Staging first means the directory
-# exists by the time the fallback looks. Under --no-build the directory may legitimately
-# still be absent, and the fallback's NOTE is then correct rather than misleading.
-EXT_NOTE_SUFFIX=""
-if [ "${GRM_EXTENSION_BUILT_THIS_RUN:-}" = 1 ]; then
-	: # build-and-test.sh already built+staged for this run; do not double-build
-elif [ "$NO_BUILD" -eq 1 ] || [ "${GRM_SKIP_BUILD:-}" = 1 ]; then
-	EXT_NOTE_SUFFIX="no-build"
-else
-	grm_ensure_extension_staged
-fi
-
-# Same isolation as measure-overlay-scale.sh: point Ghidra's settings/Extensions dir at
-# the per-worktree build/ghidra-home tree.
-# The chunk name is only used in the "run build-and-test.sh first" hint, so name one that
-# actually covers this run's platform.
-grm_settings_base_fallback "$(tsv_field "$PLATFORMS_TSV" "${PLATFORMS_USED[0]}" fallback_chunk)"
-grm_apply_settings_base
-
 if ! command -v sha256sum >/dev/null 2>&1; then
 	echo "ERROR: sha256sum not found on PATH (needed to hash-pin ROMs)." >&2
 	exit 2
 fi
+
+# Build-by-default preflight, settings base (the per-worktree build/ghidra-home isolation, as in
+# measure-overlay-scale.sh), EXT_ID/TOOLCHAIN_ID: grm_preflight in lib/common.sh (bead grm-4t2d
+# option (e); its staging-before-fallback order is load-bearing and documented there). The chunk
+# name is only used in the "run build-and-test.sh first" hint, so name one that actually covers
+# this run's platform.
+grm_preflight "$(tsv_field "$PLATFORMS_TSV" "${PLATFORMS_USED[0]}" fallback_chunk)"
 
 # --- candidate-dump cache (bead grm-lne) --------------------------------
 # Mirror build-and-test.sh's cache: `check` stashes each freshly imported dump
@@ -1042,63 +1018,11 @@ fi
 # is unknown (e.g. falling back to the shared %APPDATA% install).
 CACHE_DIR="$REPO_ROOT/build/realrom-cache"
 
-# ext_identity() lives in lib/common.sh (shared with run-banktest.sh).
-# Compute the extension identity once; empty => caching disabled for this run.
-EXT_ID="$(ext_identity)" || EXT_ID=""
-
-# ANNOUNCE IT. This used to be the PRIMARY defense against the single most common failure in
-# this tier: an A/B against a stashed baseline silently comparing a build against itself
-# because this script did not build and nobody rebuilt between sides (grm-mej.2, 2026-08-10 --
-# it cost an incorrect zero-movement claim that had already been committed). As of grm-4t2d
-# option (e) this script builds by default, so that failure mode should no longer be reachable
-# without deliberately passing --no-build/GRM_SKIP_BUILD -- but the identity is still printed
-# as a SAFETY NET: if both sides of an A/B print the SAME line, something is wrong (a stale
-# cache, an unintended --no-build, a build that silently no-opped) and the comparison is
-# worthless no matter what the dumps say.
-case "${GRM_EXTENSION_BUILT_THIS_RUN:-}/$EXT_NOTE_SUFFIX" in
-	1/*)
-		grm_installed_extension_note "$EXT_ID" \
-			"(built and installed by build-and-test.sh for this run, so it matches this tree.)"
-		;;
-	*/no-build)
-		grm_installed_extension_note "$EXT_ID" \
-			"(--no-build/GRM_SKIP_BUILD skipped the pre-flight build -- this run analyzed" \
-			" with whatever was already installed. For an A/B, that means YOU must rebuild" \
-			" between sides, and this line MUST change between them or you are comparing a" \
-			" build against itself.)"
-		;;
-	*)
-		grm_installed_extension_note "$EXT_ID" \
-			"(built and staged by THIS run via 'gradle stageExtensionForTests' before" \
-			" analyzing. For an A/B this now happens automatically on both sides -- this" \
-			" line should still change between them; if it does not, treat the comparison" \
-			" as unproven and find out why before trusting it.)"
-		;;
-esac
-grm_decompiler_note
-grm_packed_db_cache_note
-# Resolved Ghidra install root (bead grm-k0h): GHIDRA_HEADLESS -- not GRM_GHIDRA_INSTALL --
-# is what actually launches Ghidra, so a native-side A/B (decompile.exe, sleigh.exe) needs
-# GRM_GHIDRA_INSTALL set AND this to name the install it resolved to, or a stray default
-# install silently gets measured instead. This is inert-by-name-alone, not just informational:
-# GRM_GHIDRA_INSTALL now feeds GHIDRA_HEADLESS's default (grm_default_headless above), but the
-# env var still wins if the caller set it explicitly, so the two can point at different
-# installs -- print both rather than assume they agree.
-echo "== ghidra install: $GRM_GHIDRA_INSTALL (headless: $GHIDRA_HEADLESS) =="
-
-# toolchain_identity() lives in lib/common.sh (shared with run-banktest.sh). Computed once;
-# empty => caching disabled for this run, exactly as an unknown EXT_ID disables it -- an
-# unidentifiable toolchain must degrade to "re-import", never to "reuse and hope" (bead
-# grm-kt44). Printed for the same safety-net reason the extension identity is: on a native A/B
-# (decompile.exe, sleigh.exe) THIS is the line that must differ between the two sides, while the
-# extension identity is expected NOT to.
-TOOLCHAIN_ID="$(toolchain_identity)" || TOOLCHAIN_ID=""
-if [ -n "$TOOLCHAIN_ID" ]; then
-	echo "== ghidra toolchain: $TOOLCHAIN_ID =="
-else
-	echo "== ghidra toolchain: UNKNOWN (could not fingerprint the install behind $GHIDRA_HEADLESS) =="
-	echo "   Candidate-dump caching is DISABLED for this run; every row re-imports."
-fi
+# The identity banners are the PRIMARY defense against the most common failure in this tier: an
+# A/B silently comparing a build against itself (grm-mej.2, 2026-08-10). If both sides of an A/B
+# print the SAME extension line, the comparison is worthless no matter what the dumps say; on a
+# native A/B the toolchain line is the one that must differ.
+grm_print_identity_banners ab row
 
 # sha256 of the REALROM_EXTRA_PRESCRIPT script FILE (bead grm-x4y1.2), resolved the way
 # analyzeHeadless resolves it for -preScript: the first word is the script (the rest are its
@@ -1258,11 +1182,6 @@ echo "== batching: $BATCH_BANNER =="
 if [ "$KEEP_PROJECT" = 1 ]; then
 	echo "== keeping analyzed projects under: $KEEP_DIR =="
 fi
-
-sanitize() {
-	# analyzeHeadless.bat chokes on parentheses/spaces -- strip to a safe copy name.
-	printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '_'
-}
 
 # ------------------------------------------------------------------
 # Build a sha256 -> path index of the supplied ROM dir(s). Depth-1 only (the focus set

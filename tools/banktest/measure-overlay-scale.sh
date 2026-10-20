@@ -62,12 +62,6 @@ WORK="${MEASURE_WORK_DIR:-$(grm_work_dir measure)}"
 mkdir -p "$WORK"
 echo "== work dir: $WORK =="
 
-sanitize() {
-	# Strip anything that isn't [A-Za-z0-9._-]; analyzeHeadless.bat chokes on
-	# parentheses (and spaces are asking for trouble in unquoted contexts).
-	printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '_'
-}
-
 declare -a ROW_NAME ROW_BLOCKS_TOTAL ROW_BLOCKS_OVERLAY ROW_SPACES_OVERLAY
 declare -a ROW_REFS ROW_REFS_ADDED ROW_WARNINGS ROW_WALL ROW_LOG ROW_STATUS
 

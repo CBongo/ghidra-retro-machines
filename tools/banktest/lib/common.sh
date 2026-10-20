@@ -878,3 +878,105 @@ grm_split_batch_log() {
 		{ if (cur == "") pre = pre $0 "\n"; else print $0 > cur }
 	' "$1"
 }
+
+# Strip anything that isn't [A-Za-z0-9._-]: analyzeHeadless.bat chokes on parentheses and spaces.
+# Shared by realrom-test.sh and measure-overlay-scale.sh (bead grm-rx1i.11).
+sanitize() {
+	printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '_'
+}
+
+# --- chunk vocabulary (bead grm-rx1i.11) -------------------------------------------------
+# The single source for chunk names. build-and-test.sh (front end: validation, usage, the
+# headless/unit/opt-in split) and run-banktest.sh (headless runner) both read these.
+# GRM_HEADLESS_CHUNKS run under run-banktest.sh; `unit` is JUnit only; GRM_OPTIN_CHUNKS are
+# the opt-in tiers that `all` does NOT include. Order is the --list-chunks order.
+GRM_HEADLESS_CHUNKS=(c64-banking c64-loader c64-recovery basic-petscii basic-dialects pet-loader
+	snes-loader c128-loader nes-banking petscii-strings nes-text descriptors)
+GRM_OPTIN_CHUNKS=(spc700-vectors spc700-dis-corpus spc-ipl-corpus snes-rom-corpus
+	w65816-vectors 6502-vectors)
+
+# grm_chunk_in <name> <array-elements...>: success when <name> is one of the elements.
+grm_chunk_in() {
+	local want="$1" c; shift
+	for c in "$@"; do [ "$c" = "$want" ] && return 0; done
+	return 1
+}
+
+# Build-by-default preflight shared by run-banktest.sh and realrom-test.sh (bead grm-rx1i.11;
+# the build-by-default rule is grm-4t2d option (e)). Needs NO_BUILD (0/1) set by the caller's
+# flag parsing and grm_default_headless already run. $1 = build-and-test.sh chunk named in the
+# "no isolated install yet" hint. Sets EXT_NOTE_SUFFIX, EXT_ID and TOOLCHAIN_ID (empty => the
+# caller's candidate-dump cache is disabled), and applies the settings base.
+#
+# THE ORDER IS LOAD-BEARING (bug found 2026-08-29 while building ab-test.sh): staging must run
+# BEFORE grm_settings_base_fallback. The fallback decides whether to use the isolated install by
+# testing whether build/ghidra-home EXISTS, and staging is what creates it. With the fallback
+# first, a FRESH WORKTREE took the shared %APPDATA% branch, then staging installed into a
+# build/ghidra-home the run was no longer pointed at: the extension under test was built
+# correctly and then not used. Under --no-build the directory may legitimately still be absent,
+# and the fallback's NOTE is then correct rather than misleading.
+#
+# GRM_SHARED_GHIDRA_INSTALL=1 (opt back in to the %APPDATA% install that only
+# tools/install-gui.ps1 writes) was run-banktest-only until grm-rx1i.11, though its comment
+# promised it for "all four runners" (17249b6); both runners now honour it.
+grm_preflight() {
+	EXT_NOTE_SUFFIX=""
+	if [ "${GRM_SHARED_GHIDRA_INSTALL:-}" = 1 ]; then
+		echo "NOTE: GRM_SHARED_GHIDRA_INSTALL=1 -- reading the shared %APPDATA%/ghidra install" \
+			"instead of the isolated build/ghidra-home tree. Only tools/install-gui.ps1 writes" \
+			"that install, so this run cannot be attributed to the current source state." >&2
+	fi
+	if [ "${GRM_EXTENSION_BUILT_THIS_RUN:-}" = 1 ]; then
+		: # build-and-test.sh already built+staged for this run; do not double-build
+	elif [ "${GRM_SHARED_GHIDRA_INSTALL:-}" = 1 ]; then
+		EXT_NOTE_SUFFIX="shared-install"   # must not build: it would stage an install we do not read
+	elif [ "${NO_BUILD:-0}" -eq 1 ] || [ "${GRM_SKIP_BUILD:-}" = 1 ]; then
+		EXT_NOTE_SUFFIX="no-build"
+	else
+		grm_ensure_extension_staged
+	fi
+	if [ "${GRM_SHARED_GHIDRA_INSTALL:-}" != 1 ]; then
+		grm_settings_base_fallback "$1"
+	fi
+	grm_apply_settings_base
+	# ext_identity()/toolchain_identity() are also the cache-key terms; empty => caching disabled.
+	EXT_ID="$(ext_identity)" || EXT_ID=""
+	TOOLCHAIN_ID="$(toolchain_identity)" || TOOLCHAIN_ID=""
+}
+
+# Identity banners, printed after grm_preflight. $1 = advice style: "ab" (real-ROM: an A/B must
+# see the extension line change between sides) or "bisect" (synthetic loop: warns about baselines
+# and bisects taken through a --no-build run). $2 = what re-imports when caching is off
+# ("row"/"fixture"). Order and content are the union of what the two runners printed before.
+grm_print_identity_banners() {
+	local style="$1" noun="$2" no_build_advice built_advice
+	if [ "$style" = ab ]; then
+		no_build_advice="(--no-build/GRM_SKIP_BUILD skipped the pre-flight build -- this run analyzed with whatever was already installed. For an A/B, that means YOU must rebuild between sides, and this line MUST change between them or you are comparing a build against itself.)"
+		built_advice="(built and staged by THIS run via 'gradle stageExtensionForTests' before analyzing. For an A/B this now happens automatically on both sides -- this line should still change between them; if it does not, treat the comparison as unproven and find out why before trusting it.)"
+	else
+		no_build_advice="(--no-build/GRM_SKIP_BUILD skipped the pre-flight build -- this script analyzed with whatever was already installed. A surprising result may be a stale extension rather than your change; re-run without that flag/var to rebuild first, and treat any baseline or bisect taken through this run as unproven.)"
+		built_advice="(built and staged by THIS run via 'gradle stageExtensionForTests' before analyzing, so it matches this working tree.)"
+	fi
+	# The note's job is to say WHICH state applied, so a surprising result is attributed correctly
+	# rather than blamed on a stale build this run just fixed (grm-4t2d).
+	case "${GRM_EXTENSION_BUILT_THIS_RUN:-}/${EXT_NOTE_SUFFIX:-}" in
+		1/*) grm_installed_extension_note "$EXT_ID" \
+			"(built and installed by build-and-test.sh for this run, so it matches this tree.)" ;;
+		*/shared-install) grm_installed_extension_note "$EXT_ID" \
+			"(GRM_SHARED_GHIDRA_INSTALL=1 -- this run does NOT build; it reads the shared %APPDATA%/ghidra install, which only tools/install-gui.ps1 ever writes, so it cannot be attributed to the current source state.)" ;;
+		*/no-build) grm_installed_extension_note "$EXT_ID" "$no_build_advice" ;;
+		*) grm_installed_extension_note "$EXT_ID" "$built_advice" ;;
+	esac
+	grm_decompiler_note
+	grm_packed_db_cache_note
+	# GHIDRA_HEADLESS -- not GRM_GHIDRA_INSTALL -- is what launches Ghidra, and the env var can
+	# make the two disagree, so print both (bead grm-k0h).
+	echo "== ghidra install: $GRM_GHIDRA_INSTALL (headless: $GHIDRA_HEADLESS) =="
+	# On a native A/B (decompile.exe, sleigh.exe) THIS is the line that must differ between sides.
+	if [ -n "$TOOLCHAIN_ID" ]; then
+		echo "== ghidra toolchain: $TOOLCHAIN_ID =="
+	else
+		echo "== ghidra toolchain: UNKNOWN (could not fingerprint the install behind $GHIDRA_HEADLESS) =="
+		echo "   Candidate-dump caching is DISABLED for this run; every $noun re-imports."
+	fi
+}

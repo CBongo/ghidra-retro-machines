@@ -46,8 +46,8 @@ usage() {
 	cat <<EOF
 usage: $0 [check|bless] [--force-criteria] [--batch-size N] [chunk ...]
 
-Chunks: c64-banking c64-loader c64-recovery basic-petscii basic-dialects pet-loader snes-loader c128-loader nes-banking
-        petscii-strings nes-text descriptors unit spc700-vectors spc700-dis-corpus spc-ipl-corpus snes-rom-corpus w65816-vectors 6502-vectors all
+Chunks: ${GRM_HEADLESS_CHUNKS[*]}
+        unit ${GRM_OPTIN_CHUNKS[*]} all
 
 With no chunks, all is selected. Use --list-chunks to print this list.
 
@@ -126,11 +126,13 @@ fi
 
 for chunk in "${REQUESTED_CHUNKS[@]}"; do
 	case "$chunk" in
-		c64-banking|c64-loader|c64-recovery|basic-petscii|basic-dialects|pet-loader|snes-loader|c128-loader|nes-banking|petscii-strings|nes-text|descriptors|unit|spc700-vectors|spc700-dis-corpus|spc-ipl-corpus|snes-rom-corpus|w65816-vectors|6502-vectors|all) ;;
+		all|unit) ;;
 		*)
-			echo "FAIL: unknown chunk '$chunk'" >&2
-			usage >&2
-			exit 2
+			if ! grm_chunk_in "$chunk" "${GRM_HEADLESS_CHUNKS[@]}" "${GRM_OPTIN_CHUNKS[@]}"; then
+				echo "FAIL: unknown chunk '$chunk'" >&2
+				usage >&2
+				exit 2
+			fi
 			;;
 	esac
 done
@@ -192,7 +194,7 @@ if has_chunk all; then
 	RUNNER_CHUNKS=(all)
 	RUN_JUNIT=1
 else
-	for chunk in c64-banking c64-loader c64-recovery basic-petscii basic-dialects pet-loader snes-loader c128-loader nes-banking petscii-strings nes-text descriptors; do
+	for chunk in "${GRM_HEADLESS_CHUNKS[@]}"; do
 		if has_chunk "$chunk"; then
 			RUN_HEADLESS=1
 			RUNNER_CHUNKS+=("$chunk")
