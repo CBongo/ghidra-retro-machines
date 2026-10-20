@@ -99,7 +99,8 @@ public class CallerStateReachesCalleeProgramTest extends AbstractProgramTest {
 		BoardDescriptorModel.BoardModel board = board();
 		return BankDataflowEngine.runDataflow(program, TaskMonitor.DUMMY, program.getListing(),
 			List.of(latch(0x9000, 0x3, MODE_MASK, 0), latch(0xa000, 0xF, BANK_MASK, 2)), board,
-			null, java.util.Map.of());
+			null, java.util.Map.of(), java.util.Set.of(),
+			BankStackBrackets.Claims.NONE, null, ShadowCommits.Plan.NONE);
 	}
 
 	/**

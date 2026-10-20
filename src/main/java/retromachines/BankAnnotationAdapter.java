@@ -169,20 +169,11 @@ final class BankAnnotationAdapter {
 	 * The impossible-bank case stays a WARNING regardless of {@code stop}: a bank number the
 	 * image cannot satisfy was RECOVERED, so it is a value-recovery defect no matter what the
 	 * scan would have said had it failed instead.
-	 */
-	static Marked annotateOrWarn(BoardBankAnalyzer analyzer, Program program, Listing listing,
-			Address addr, BankState state, BoardModel board,
-			Map<String, Set<Integer>> bankUniverse, String viaHelper, String warning,
-			BankSwitchStrategy.ValueStop stop, BankCommentProvenance provenance) {
-		return annotateOrWarn(analyzer, program, listing, addr, state, board, bankUniverse,
-			viaHelper, warning, stop, provenance, false, null);
-	}
-
-	/**
-	 * {@link #annotateOrWarn} with {@code warnDespiteKnowledge}: bookmark the WARNING even when
-	 * {@code state} does know something, and still write the comment (bead grm-4bgh.5).
 	 * <p>
-	 * The 11-argument form's rule -- warn iff NOTHING is known -- reads "is there anything to
+	 * <b>{@code warnDespiteKnowledge}</b> (bead grm-4bgh.5): bookmark the WARNING even when
+	 * {@code state} does know something, and still write the comment.
+	 * <p>
+	 * The default rule -- warn iff NOTHING is known -- reads "is there anything to
 	 * say here", which was the same question as "did recovery succeed" while a call site
 	 * produced one undifferentiated deposit. A multi-deposit helper separates them: it can
 	 * establish a select register from its own constant, so something IS known, while the
@@ -196,21 +187,10 @@ final class BankAnnotationAdapter {
 	 * include this site, and {@code alreadyWarned} should dedupe it. The impossible-bank check
 	 * still runs first and still wins -- an impossible recovered bank is a different and
 	 * stronger diagnosis than an unrecovered argument.
-	 */
-	static Marked annotateOrWarn(BoardBankAnalyzer analyzer, Program program, Listing listing,
-			Address addr, BankState state, BoardModel board,
-			Map<String, Set<Integer>> bankUniverse, String viaHelper, String warning,
-			BankSwitchStrategy.ValueStop stop, BankCommentProvenance provenance,
-			boolean warnDespiteKnowledge) {
-		return annotateOrWarn(analyzer, program, listing, addr, state, board, bankUniverse,
-			viaHelper, warning, stop, provenance, warnDespiteKnowledge, null);
-	}
-
-	/**
-	 * {@link #annotateOrWarn} with an explicit {@code honestDetail} override (bead grm-yflf): the
-	 * text an honest NOTE gets when {@code stop} classifies to one, IN PLACE OF
-	 * {@link #honestGapMessage}'s generic, stop-keyed text. {@code null} preserves the old
-	 * behaviour exactly (every other overload delegates here with {@code null}).
+	 * <p>
+	 * <b>{@code honestDetail}</b> (bead grm-yflf): the text an honest NOTE gets when {@code stop}
+	 * classifies to one, IN PLACE OF {@link #honestGapMessage}'s generic, stop-keyed text.
+	 * {@code null} keeps the generic text.
 	 * <p>
 	 * This exists because {@link BankSwitchStrategy.ValueStop#RESTORED_BANK}'s honest claim is
 	 * inherently PER-SITE -- it names the specific memory cell the helper restores the bank
@@ -220,21 +200,11 @@ final class BankAnnotationAdapter {
 	 * hand -- it is what proved {@code RESTORED_BANK} in the first place -- so it builds the full
 	 * message and passes it straight through, the same way it already builds {@code warning} for
 	 * the WARNING path.
-	 */
-	static Marked annotateOrWarn(BoardBankAnalyzer analyzer, Program program, Listing listing,
-			Address addr, BankState state, BoardModel board,
-			Map<String, Set<Integer>> bankUniverse, String viaHelper, String warning,
-			BankSwitchStrategy.ValueStop stop, BankCommentProvenance provenance,
-			boolean warnDespiteKnowledge, String honestDetail) {
-		return annotateOrWarn(analyzer, program, listing, addr, state, board, bankUniverse,
-			viaHelper, warning, stop, provenance, warnDespiteKnowledge, honestDetail, "");
-	}
-
-	/**
-	 * {@link #annotateOrWarn} with {@code commentSuffix} appended to a {@code bank ->} comment it
-	 * writes (bead grm-hb6.20): {@link SwitchSiteHints#HINT_COMMENT_SUFFIX} where the bank came
+	 * <p>
+	 * <b>{@code commentSuffix}</b> (bead grm-hb6.20) is appended to a {@code bank ->} comment
+	 * it writes: {@link SwitchSiteHints#HINT_COMMENT_SUFFIX} where the bank came
 	 * from a game descriptor's {@code bank:} hint rather than from dataflow, so a reader can tell
-	 * a stated value from a derived one. Empty is every other overload's behaviour exactly.
+	 * a stated value from a derived one. Empty writes nothing extra.
 	 */
 	static Marked annotateOrWarn(BoardBankAnalyzer analyzer, Program program, Listing listing,
 			Address addr, BankState state, BoardModel board,

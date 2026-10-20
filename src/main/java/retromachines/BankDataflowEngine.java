@@ -109,7 +109,7 @@ import retromachines.HelperDiscovery.HelperModel;
  * documented on {@link BankAnnotationAdapter} as well.
  * <p>
  * <b>Bead grm-wul (2026-09-19) made the state at an address a bounded set of whole states, one
- * per path, and added demand-driven PATH FORKING at merge sites</b> -- see the 8-argument
+ * per path, and added demand-driven PATH FORKING at merge sites</b> -- see the 11-argument
  * {@link #runDataflow}'s javadoc for the model, {@link #joinArms}/{@link #evaluateArms} for how
  * a site's arms are enumerated and evaluated, {@link #mergeAndEnqueue} for the live cap, and
  * {@link ForkBudget} for the two caps and the per-program ledger.
@@ -161,21 +161,27 @@ final class BankDataflowEngine {
 	// ------------------------------------------------------------------
 
 	/**
+	 * As the 11-argument form with {@link ShadowCommits.Plan#NONE}: the entry point for every
+	 * caller that has no validated {@code banking.shadow_commits} hints.
+	 */
+	static DataflowResult runDataflow(Program program, TaskMonitor monitor, Listing listing,
+			List<ConfiguredMechanism> mechanisms, BoardModel board,
+			Map<Function, HelperModel> helpers, Map<Function, Integer> restoringTrampolines,
+			Set<Address> secondTierRelaySites, BankStackBrackets.Claims bracketClaims,
+			HelperDiscovery.BankResolution bankResolution)
+			throws CancelledException {
+		return runDataflow(program, monitor, listing, mechanisms, board, helpers,
+			restoringTrampolines, secondTierRelaySites, bracketClaims, bankResolution,
+			ShadowCommits.Plan.NONE);
+	}
+
+	/**
 	 * One forward-dataflow run to fixpoint. When {@code helpers} is non-null, a call to
 	 * a helper function is itself a switch site: the state on the call's fall-through is
 	 * the helper's effect, not the flowed-through in-state (the call target's entry is
 	 * still seeded with the in-state -- the switch happens inside the helper).
-	 */
-	static DataflowResult runDataflow(Program program, TaskMonitor monitor, Listing listing,
-			List<ConfiguredMechanism> mechanisms, BoardModel board,
-			Map<Function, HelperModel> helpers, Map<Function, Integer> restoringTrampolines)
-			throws CancelledException {
-		return runDataflow(program, monitor, listing, mechanisms, board, helpers,
-			restoringTrampolines, Set.of());
-	}
-
-	/**
-	 * As the 7-argument form, with {@code secondTierRelaySites} (bead grm-ylm6): the call-site
+	 * <p>
+	 * {@code secondTierRelaySites} (bead grm-ylm6): the call-site
 	 * addresses {@link HelperDiscovery#findSecondTierHelpers} proved are a second-tier helper's
 	 * own relay call -- the register it reads is genuinely a live argument, but one supplied by
 	 * THIS FUNCTION's caller, not resolvable at this address no matter how good value recovery
@@ -184,8 +190,23 @@ final class BankDataflowEngine {
 	 * {@code BoardBankAnalyzer} can report it as an honest gap
 	 * ({@link BankSwitchStrategy.ValueStop#SECOND_TIER_ARGUMENT}) instead of our limitation --
 	 * see that method's javadoc. Empty for every caller but {@code BoardBankAnalyzer}'s phase-2
-	 * pass, which is the only one with a helper map (and therefore relay sites) to supply; the
-	 * 7-argument form above is pass 1's and every existing caller's unchanged entry point.
+	 * pass, which is the only one with a helper map (and therefore relay sites) to supply.
+	 * <p>
+	 * {@code bracketClaims} (bead grm-mej.10): the verified RAM bank-stack brackets. At a
+	 * claimed POP call site the restored fields are deposited from the tracked state at the
+	 * matching PUSH, and a claimed push's own unrecoverable argument is private to its bracket.
+	 * {@link BankStackBrackets.Claims#NONE} means no brackets.
+	 * <p>
+	 * {@code bankResolution} (bead grm-fj4m): when non-null,
+	 * the helper branch resolves a call's callee through
+	 * {@link HelperDiscovery#calledHelper(Program, Instruction, Map, BankState, HelperDiscovery.BankResolution)}
+	 * against the in-state at the call, so a base-space call into a window whose bank that state
+	 * pins reaches the overlay callee, not the home bank's function. Null is the stateless
+	 * lookup (pass 1 has no helpers, and tests that predate the bead).
+	 * <p>
+	 * {@code shadowCommits} (bead grm-hb6.26): the validated {@code banking.shadow_commits}
+	 * hints: at a call to a hinted helper the field is committed from the hinted RAM cell,
+	 * or the call is a no-op on it. {@link ShadowCommits.Plan#NONE} means no hints.
 	 * <p>
 	 * <b>The state at an address is a SET OF WHOLE STATES, keyed by path</b> (bead grm-wul,
 	 * option (b) path forking under the owner's 2026-09-19 ruling). Each element is one
@@ -241,54 +262,6 @@ final class BankDataflowEngine {
 	 * least one of them -- but it is a path this engine cannot re-derive from the final state.
 	 * The arm values the shipped strategies actually recover are immediates, for which the
 	 * question does not arise.
-	 */
-	static DataflowResult runDataflow(Program program, TaskMonitor monitor, Listing listing,
-			List<ConfiguredMechanism> mechanisms, BoardModel board,
-			Map<Function, HelperModel> helpers, Map<Function, Integer> restoringTrampolines,
-			Set<Address> secondTierRelaySites)
-			throws CancelledException {
-		return runDataflow(program, monitor, listing, mechanisms, board, helpers,
-			restoringTrampolines, secondTierRelaySites, BankStackBrackets.Claims.NONE);
-	}
-
-	/**
-	 * As the 8-argument form, with the verified RAM bank-stack brackets (bead grm-mej.10): at a
-	 * claimed POP call site the restored fields are deposited from the tracked state at the
-	 * matching PUSH, and a claimed push's own unrecoverable argument is private to its bracket.
-	 * {@link BankStackBrackets.Claims#NONE} is the 8-argument form exactly.
-	 */
-	static DataflowResult runDataflow(Program program, TaskMonitor monitor, Listing listing,
-			List<ConfiguredMechanism> mechanisms, BoardModel board,
-			Map<Function, HelperModel> helpers, Map<Function, Integer> restoringTrampolines,
-			Set<Address> secondTierRelaySites, BankStackBrackets.Claims bracketClaims)
-			throws CancelledException {
-		return runDataflow(program, monitor, listing, mechanisms, board, helpers,
-			restoringTrampolines, secondTierRelaySites, bracketClaims, null);
-	}
-
-	/**
-	 * As the 9-argument form, with the bank-resolution context (bead grm-fj4m): when non-null,
-	 * the helper branch resolves a call's callee through
-	 * {@link HelperDiscovery#calledHelper(Program, Instruction, Map, BankState, HelperDiscovery.BankResolution)}
-	 * against the in-state at the call, so a base-space call into a window whose bank that state
-	 * pins reaches the overlay callee, not the home bank's function. Null is the stateless
-	 * lookup (pass 1 has no helpers, and tests that predate the bead).
-	 */
-	static DataflowResult runDataflow(Program program, TaskMonitor monitor, Listing listing,
-			List<ConfiguredMechanism> mechanisms, BoardModel board,
-			Map<Function, HelperModel> helpers, Map<Function, Integer> restoringTrampolines,
-			Set<Address> secondTierRelaySites, BankStackBrackets.Claims bracketClaims,
-			HelperDiscovery.BankResolution bankResolution)
-			throws CancelledException {
-		return runDataflow(program, monitor, listing, mechanisms, board, helpers,
-			restoringTrampolines, secondTierRelaySites, bracketClaims, bankResolution,
-			ShadowCommits.Plan.NONE);
-	}
-
-	/**
-	 * As the 10-argument form, with the validated {@code banking.shadow_commits} hints (bead
-	 * grm-hb6.26): at a call to a hinted helper the field is committed from the hinted RAM cell,
-	 * or the call is a no-op on it. {@link ShadowCommits.Plan#NONE} is the 10-argument form exactly.
 	 */
 	static DataflowResult runDataflow(Program program, TaskMonitor monitor, Listing listing,
 			List<ConfiguredMechanism> mechanisms, BoardModel board,
@@ -728,7 +701,7 @@ final class BankDataflowEngine {
 			}
 			merged.put(e.getKey(), acc);
 			if (e.getValue().size() > 1) {
-				forkedStates.put(e.getKey(), distinctBoard(new ArrayList<>(e.getValue().values())));
+				forkedStates.put(e.getKey(), distinct(new ArrayList<>(e.getValue().values())));
 			}
 		}
 		if (lock != null) {
@@ -1523,11 +1496,6 @@ final class BankDataflowEngine {
 		out.sort((a, b) -> a.bits() != b.bits() ? Integer.compare(a.bits(), b.bits())
 				: Integer.compare(a.knownMask(), b.knownMask()));
 		return out;
-	}
-
-	/** {@link #distinct} over board states (the per-element view of a forked address). */
-	private static List<BankState> distinctBoard(List<BankState> states) {
-		return distinct(states);
 	}
 
 	// ------------------------------------------------------------------
@@ -2698,16 +2666,10 @@ final class BankDataflowEngine {
 			return new MechanismPlacement(lsb, effectMask);
 		}
 
-		/** The pre-grm-rd6h form: no read-back. */
-		SwitchResult(BankState effect, int effectMask, int lsb, BankSwitchStrategy strategy,
-				BankSwitchStrategy.ValueStop stop, List<BankState> arms, boolean armsDenied) {
-			this(effect, effectMask, lsb, strategy, stop, null, arms, armsDenied);
-		}
-
 		/** The pre-grm-wul form: no arms. */
 		SwitchResult(BankState effect, int effectMask, int lsb, BankSwitchStrategy strategy,
 				BankSwitchStrategy.ValueStop stop) {
-			this(effect, effectMask, lsb, strategy, stop, List.of(), false);
+			this(effect, effectMask, lsb, strategy, stop, null, List.of(), false);
 		}
 
 		/** Whether this site was carried forward as several elements, one per arm. */
@@ -2783,14 +2745,6 @@ final class BankDataflowEngine {
 			Address restoreCell, StoredValueScanner.ReadBack readBack, List<BankState> arms,
 			boolean armsDenied, ArgumentSought argumentSought) {
 
-		/** The pre-grm-wul form: no arms, no read-back. */
-		CallSwitch(String helperName, BankState effect, BankState stateAfter,
-				boolean argumentResolved, boolean noInboundArgument, boolean secondTierRelay,
-				Address restoreCell) {
-			this(helperName, effect, stateAfter, argumentResolved, noInboundArgument,
-				secondTierRelay, restoreCell, null, List.of(), false, ArgumentSought.SOUGHT);
-		}
-
 		/** Whether this call was carried forward as several elements, one per arm. */
 		boolean forked() {
 			return !armsDenied && arms.size() >= 2;
@@ -2811,14 +2765,6 @@ final class BankDataflowEngine {
 			Map<Address, SwitchResult> switchResults, Map<Address, CallSwitch> callSwitches,
 			Map<Address, List<BankState>> forkedStates, ForkStats forkStats, ModeLock modeLock,
 			String noModeLock, Map<Address, SwitchSiteHints.HintNote> hintNotes) {
-
-		/** The pre-grm-hb6.20 form: no {@code bank:} value hints were in play. */
-		DataflowResult(Map<Address, BankState> stateIn, Map<Address, SwitchResult> switchResults,
-				Map<Address, CallSwitch> callSwitches, Map<Address, List<BankState>> forkedStates,
-				ForkStats forkStats, ModeLock modeLock, String noModeLock) {
-			this(stateIn, switchResults, callSwitches, forkedStates, forkStats, modeLock,
-				noModeLock, Map.of());
-		}
 
 		/** Every distinct whole state at {@code addr}: the forked set, or the single state. */
 		List<BankState> statesAt(Address addr) {

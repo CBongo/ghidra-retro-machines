@@ -191,23 +191,7 @@ final class HelperArgumentRecovery {
 			HelperModel helper, BankState callSiteIn, Map<CallSiteRegKey, RegisterEnv> envCache,
 			Map<Function, Integer> restoringTrampolines) {
 		return recoverCallArgument(program, callInstr, helper, callSiteIn, envCache,
-			restoringTrampolines, RegisterEnv.NONE);
-	}
-
-	/**
-	 * {@link #recoverCallArgument} with every CALLER-SIDE scan evaluated along {@code path}'s
-	 * arms (bead grm-wul): the argument-register scan, the argument-cell forwarding and the
-	 * A/X/Y the mini-inline env is built from all walk the arm {@code path} names at each join
-	 * instead of refusing there. The scans that run INSIDE the helper (the mini-inline itself,
-	 * {@link #valueSuppliedInsideHelper}) are unaffected -- the arms are joins in the caller, and
-	 * those scans stop at the helper's entry before any caller join is reachable. With
-	 * {@link RegisterEnv#NONE} this is the seven-argument form exactly.
-	 */
-	static CallEffect recoverCallArgument(Program program, Instruction callInstr,
-			HelperModel helper, BankState callSiteIn, Map<CallSiteRegKey, RegisterEnv> envCache,
-			Map<Function, Integer> restoringTrampolines, RegisterEnv path) {
-		return recoverCallArgument(program, callInstr, helper, callSiteIn, envCache,
-			restoringTrampolines, path, null);
+			restoringTrampolines, RegisterEnv.NONE, null);
 	}
 
 	/**
@@ -313,7 +297,15 @@ final class HelperArgumentRecovery {
 	}
 
 	/**
-	 * {@link #recoverCallArgument} with a {@link StateOracle} (bead grm-mej.3 increment 3): every
+	 * {@link #recoverCallArgument} with every CALLER-SIDE scan evaluated along {@code path}'s
+	 * arms (bead grm-wul): the argument-register scan, the argument-cell forwarding and the
+	 * A/X/Y the mini-inline env is built from all walk the arm {@code path} names at each join
+	 * instead of refusing there. The scans that run INSIDE the helper (the mini-inline itself,
+	 * {@link #valueSuppliedInsideHelper}) are unaffected -- the arms are joins in the caller, and
+	 * those scans stop at the helper's entry before any caller join is reachable. With
+	 * {@link RegisterEnv#NONE} and a {@code null} oracle this is the six-argument form exactly.
+	 * <p>
+	 * Also takes a {@link StateOracle} (bead grm-mej.3 increment 3): every
 	 * caller-side scan may, when a PHA/PLA pairing crossed a call, resolve from the tracked state
 	 * AT THE PUSH rather than at the call. {@code null} means no oracle -- the scanner's default
 	 * {@code stateAt} answers {@code null} and a call-crossing pairing withdraws its in-state --
@@ -340,7 +332,7 @@ final class HelperArgumentRecovery {
 	 * {@code StoredValueScanner.crossBlockMatchingPush}'s state-free proof is computed once per
 	 * {@code PLA} for the whole run rather than once per call site that happens to walk through
 	 * it. {@code null} -- every caller but {@code BankDataflowEngine} -- computes fresh each time,
-	 * which is the 8-argument form above exactly.
+	 * which is the 8-argument form exactly.
 	 */
 	static CallEffect recoverCallArgument(Program program, Instruction callInstr,
 			HelperModel helper, BankState callSiteIn, Map<CallSiteRegKey, RegisterEnv> envCache,

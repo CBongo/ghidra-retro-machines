@@ -564,7 +564,8 @@ public class CallerSideRestoreProgramTest extends AbstractProgramTest {
 			addr(0xC030), addr(0xC030), null);
 
 		return BankDataflowEngine.runDataflow(program, TaskMonitor.DUMMY, program.getListing(),
-			List.of(mechanism), board, Map.of(h16, helper), java.util.Map.of());
+			List.of(mechanism), board, Map.of(h16, helper), java.util.Map.of(), java.util.Set.of(),
+			BankStackBrackets.Claims.NONE, null, ShadowCommits.Plan.NONE);
 	}
 
 	/**

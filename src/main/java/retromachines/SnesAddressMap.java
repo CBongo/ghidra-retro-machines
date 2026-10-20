@@ -122,16 +122,6 @@ public final class SnesAddressMap {
 	}
 
 	/**
-	 * Tests whether this class claims to model an address at all.
-	 *
-	 * @param address the raw 24-bit address
-	 * @return whether the address is modelled
-	 */
-	public boolean isModelled(long address) {
-		return kindOf(address) != Kind.UNMODELLED;
-	}
-
-	/**
 	 * Classifies the object visible at an address.
 	 *
 	 * @param address the raw 24-bit address

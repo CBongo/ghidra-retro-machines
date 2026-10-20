@@ -121,7 +121,8 @@ public class BankPathForkProgramTest extends AbstractProgramTest {
 			List<BankStrategyRegistry.ConfiguredMechanism> mechanisms,
 			BoardDescriptorModel.BoardModel board) throws Exception {
 		return BankDataflowEngine.runDataflow(program, TaskMonitor.DUMMY, program.getListing(),
-			mechanisms, board, null, java.util.Map.of());
+			mechanisms, board, null, java.util.Map.of(), java.util.Set.of(),
+			BankStackBrackets.Claims.NONE, null, ShadowCommits.Plan.NONE);
 	}
 
 	/**

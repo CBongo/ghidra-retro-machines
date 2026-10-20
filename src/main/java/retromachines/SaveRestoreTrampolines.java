@@ -144,15 +144,11 @@ final class SaveRestoreTrampolines {
 	 * fixpoint, where it would be a whole-body walk per dequeue per call site.
 	 *
 	 * @param switchSites every recognized mechanism-write address from pass 1
+	 * @param saveCells CPU offsets of the descriptor's hinted save cells (bead grm-mej.9); empty
+	 *        when the game states none
 	 */
 	// Package-private (not private) so BankSaveRestoreTrampolineProgramTest can call this
 	// directly with a hand-built HelperModel; see the visibility note on HelperModel itself.
-	static boolean restoresEntryBank(Program program, HelperModel helper,
-			BankMirrors mirrors, Set<Address> switchSites) {
-		return restoredFieldMask(program, helper, mirrors, switchSites, Set.of()) != null;
-	}
-
-	/** As above, with the descriptor's hinted save cells (bead grm-mej.9). */
 	static boolean restoresEntryBank(Program program, HelperModel helper,
 			BankMirrors mirrors, Set<Address> switchSites, Set<Long> saveCells) {
 		return restoredFieldMask(program, helper, mirrors, switchSites, saveCells) != null;
@@ -176,7 +172,7 @@ final class SaveRestoreTrampolines {
 	}
 
 	/**
-	 * {@link #restoresEntryBank(Program, HelperModel, BankMirrors, Set)} with the grm-mej.9
+	 * {@link #restoresEntryBank} with the grm-mej.9
 	 * additions: a HINTED save cell, and the per-site field masks needed to check a biased
 	 * identity byte against the field it restores.
 	 * <p>

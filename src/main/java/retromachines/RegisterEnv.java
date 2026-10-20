@@ -17,7 +17,6 @@ package retromachines;
 
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeMap;
 
 import ghidra.program.model.address.Address;
 
@@ -138,23 +137,10 @@ public record RegisterEnv(Address entryAddr, Address crossableJoin, PartialByte 
 		entryPathJoins = entryPathJoins == null ? Set.of() : Set.copyOf(entryPathJoins);
 	}
 
-	/** The pre-grm-dos9.2 seven-argument form: no entry-path joins. */
-	public RegisterEnv(Address entryAddr, Address crossableJoin, PartialByte a, PartialByte x,
-			PartialByte y, Map<Address, Address> armPredecessors,
-			Map<Character, StoredValueScanner.ReadBack> readBacks) {
-		this(entryAddr, crossableJoin, a, x, y, armPredecessors, readBacks, Set.of());
-	}
-
 	/** An env that crosses no join and knows nothing, but follows {@code arms} at each join it names. */
 	public static RegisterEnv onArms(Map<Address, Address> arms) {
 		return new RegisterEnv(null, null, PartialByte.unknown(), PartialByte.unknown(),
-			PartialByte.unknown(), arms, Map.of());
-	}
-
-	/** This env with {@code arms} as its arm map (replacing any it had); {@code readBacks} carries
-	 * over unchanged. */
-	public RegisterEnv withArms(Map<Address, Address> arms) {
-		return new RegisterEnv(entryAddr, crossableJoin, a, x, y, arms, readBacks, entryPathJoins);
+			PartialByte.unknown(), arms, Map.of(), Set.of());
 	}
 
 	/** This env with {@code readBacks} as its per-register read-back map (replacing any it had);
@@ -193,11 +179,6 @@ public record RegisterEnv(Address entryAddr, Address crossableJoin, PartialByte 
 	 */
 	public Address armPredecessorAt(Address join) {
 		return armPredecessors.get(join);
-	}
-
-	/** {@code arms} as a deterministic (address-ordered) map, for rendering and for use as a key. */
-	public static Map<Address, Address> sortedArms(Map<Address, Address> arms) {
-		return new TreeMap<>(arms);
 	}
 
 	/**
@@ -254,13 +235,13 @@ public record RegisterEnv(Address entryAddr, Address crossableJoin, PartialByte 
 	/** The pre-grm-wul five-argument form: no arm map, no read-backs. */
 	public RegisterEnv(Address entryAddr, Address crossableJoin, PartialByte a, PartialByte x,
 			PartialByte y) {
-		this(entryAddr, crossableJoin, a, x, y, Map.of(), Map.of());
+		this(entryAddr, crossableJoin, a, x, y, Map.of(), Map.of(), Set.of());
 	}
 
 	/** The pre-grm-ld68 six-argument form: no read-backs. */
 	public RegisterEnv(Address entryAddr, Address crossableJoin, PartialByte a, PartialByte x,
 			PartialByte y, Map<Address, Address> armPredecessors) {
-		this(entryAddr, crossableJoin, a, x, y, armPredecessors, Map.of());
+		this(entryAddr, crossableJoin, a, x, y, armPredecessors, Map.of(), Set.of());
 	}
 
 	/** What {@code reg} ({@code 'A'}/{@code 'X'}/{@code 'Y'}) holds on entry; unknown otherwise.

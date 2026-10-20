@@ -98,7 +98,7 @@ public class BankSaveRestoreTrampolineProgramTest extends AbstractProgramTest {
 	private boolean restores(Address entry, Address switchSite, BankMirrors mirrors,
 			Set<Address> switchSites) {
 		return SaveRestoreTrampolines.restoresEntryBank(program, model(entry, switchSite), mirrors,
-			switchSites);
+			switchSites, Set.of());
 	}
 
 	// ------------------------------------------------------------------

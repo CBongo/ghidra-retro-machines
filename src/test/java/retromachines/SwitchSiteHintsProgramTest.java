@@ -448,7 +448,7 @@ public class SwitchSiteHintsProgramTest extends AbstractProgramTest {
 				null, false, null, SwitchSiteHints.HINT_COMMENT_SUFFIX);
 			BankAnnotationAdapter.annotateOrWarn(analyzer, program, program.getListing(),
 				addr(0xc105), state, b, Map.of(), null, "w", BankSwitchStrategy.ValueStop.RESOLVED,
-				null, false, null);
+				null, false, null, "");
 		});
 		String hinted = program.getListing().getComment(
 			ghidra.program.model.listing.CommentType.EOL, addr(0xc102));
