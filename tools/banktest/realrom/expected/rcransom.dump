@@ -46,7 +46,7 @@ REALROM count refs.intoOverlay.retargeted 52
 REALROM count refs.intoOverlay.intraOverlay 2444
 REALROM count instrs.inOverlay 11779
 REALROM count bankComments 82
-REALROM count warnings 23
+REALROM count warnings 10
 REALROM count notes 9
 REALROM count symbols 49
 REALROM sample.bankcomment 9c4d bank -> select=5,prg_mode=0,r6=2,r7=3 via FUN_fe74 [switch-value flow]
@@ -157,25 +157,12 @@ REALROM sample.ref 8015 -> WA000_B3::abd0 UNCONDITIONAL_JUMP primary=true
 REALROM sample.ref 8016 -> W8000_M0_B12::8026 UNCONDITIONAL_JUMP primary=true
 REALROM sample.ref 801a -> W8000_M0_B8::91e4 DATA primary=true
 REALROM sample.ref.truncated 25 of 2496
-REALROM sample.warn 9c4d [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fe74, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
-REALROM sample.warn b734 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fe74, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
-REALROM sample.warn b93c [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_WA000_B13__ba21 whose bank argument could not be recovered at this call site
-REALROM sample.warn b980 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_WA000_B13__ba21 whose bank argument could not be recovered at this call site
-REALROM sample.warn c276 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fe56 whose bank argument could not be recovered at this call site
 REALROM sample.warn c2ac [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fed1 whose bank argument could not be recovered at this call site
 REALROM sample.warn c418 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fed1 whose bank argument could not be recovered at this call site
 REALROM sample.warn c452 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fed1 whose bank argument could not be recovered at this call site
-REALROM sample.warn c781 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fe74, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
 REALROM sample.warn c787 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fed1 whose bank argument could not be recovered at this call site
-REALROM sample.warn c7d7 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fe56 whose bank argument could not be recovered at this call site
-REALROM sample.warn c7ee [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fe74, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
-REALROM sample.warn e315 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fea1, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
-REALROM sample.warn e323 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fead, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
-REALROM sample.warn e331 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_feb9, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
-REALROM sample.warn e33f [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fec5, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
 REALROM sample.warn f1d0 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ff07, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
 REALROM sample.warn f21d [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ff29, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
-REALROM sample.warn f6a1 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fe74, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
 REALROM sample.warn fa50 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_fed1 whose bank argument could not be recovered at this call site
 REALROM sample.warn ff21 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.warn ff25 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)

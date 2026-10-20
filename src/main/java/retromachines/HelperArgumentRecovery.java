@@ -594,7 +594,7 @@ final class HelperArgumentRecovery {
 		BankSwitchStrategy.HelperDeposit deposit = fold.deposit();
 		BankState positionedValue = placement.position(deposit.value());
 		int positionedOwnedMask = placement.positionMask(deposit.ownedMask());
-		boolean argumentResolved = primary.value().knownMask() != 0;
+		boolean argumentResolved = argumentResolved(fold);
 		// grm-mej.7, the second half: a read-back kept only on the strength of a stack-relative
 		// reload survives only if the reload's transform IS the cell's encoding on the field the
 		// consuming deposit owns. See readBackMatchesReload.
@@ -663,9 +663,9 @@ final class HelperArgumentRecovery {
 	 * unconditional-sites guard.
 	 * <p>
 	 * The read-back, reload and inbound-cell refinements of the register path are not attempted:
-	 * each is defined over a named argument register. {@code argumentResolved} follows
-	 * {@code primary} exactly as on that path, so a call whose switch site still resolves nothing
-	 * keeps its warning.
+	 * each is defined over a named argument register. {@code argumentResolved} is decided by
+	 * {@link #argumentResolved(Fold)} exactly as on that path, so a call whose switch site owns
+	 * bits it still resolves nothing for keeps its warning.
 	 */
 	private static CallEffect recoverPerSiteWithoutArgReg(Program program, Instruction callInstr,
 			HelperModel helper, BankState callSiteIn, Map<CallSiteRegKey, RegisterEnv> envCache,
@@ -701,8 +701,27 @@ final class HelperArgumentRecovery {
 				callInstr, cell, localIn, mask, callerHooks, path));
 		BankSwitchStrategy.HelperDeposit deposit = fold.deposit();
 		return new CallEffect(placement.position(deposit.value()),
-			placement.positionMask(deposit.ownedMask()),
-			fold.primary().value().knownMask() != 0, false);
+			placement.positionMask(deposit.ownedMask()), argumentResolved(fold), false);
+	}
+
+	/**
+	 * Whether {@code fold}'s call site lost no bank information -- the warning's question (see
+	 * {@link #foldDeposits}' "primary decides the WARNING" paragraph). Normally that is whether
+	 * {@code primary} resolved anything. The one exception (bead grm-lwvc) is a primary that OWNS
+	 * nothing: a select-data write to an untracked register, a verified no-op. It consumed no
+	 * argument, so "the argument was not recovered" describes nothing; the call is resolved
+	 * exactly when the fold knows every bit the helper's other sites own. tmnt3's {@code FUN_f5a6}
+	 * is the shape: six CHR select/data pairs, whose only owned bits are the select and mode
+	 * fields its own constants supply. A primary that owns any bit -- rcransom's
+	 * {@code FUN_fed1} R7 write, the 43-warning census grm-4bgh.5 guards -- is unaffected.
+	 */
+	private static boolean argumentResolved(Fold fold) {
+		BankSwitchStrategy.HelperDeposit primary = fold.primary();
+		if (primary.value().knownMask() != 0 || primary.ownedMask() != 0) {
+			return primary.value().knownMask() != 0;
+		}
+		BankSwitchStrategy.HelperDeposit deposit = fold.deposit();
+		return (deposit.ownedMask() & ~deposit.value().knownMask()) == 0;
 	}
 
 	/** Whether {@code cell} is a ROM-identifying byte with a NON-identity encoding in

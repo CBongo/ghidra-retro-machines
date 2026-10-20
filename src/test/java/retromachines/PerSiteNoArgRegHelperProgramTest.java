@@ -198,6 +198,80 @@ public class PerSiteNoArgRegHelperProgramTest extends AbstractProgramTest {
 	}
 
 	// ------------------------------------------------------------------
+	// c2. grm-lwvc: a primary that owns nothing defers to the fold
+	// ------------------------------------------------------------------
+
+	/**
+	 * The tmnt3 FUN_f5a6 shape, in this config's terms: select 2 (untracked) / data from $30 /
+	 * select 3 (untracked) / data from $32. Sites: $9102, $9107, $910c, $9111. Every data write
+	 * is a verified no-op; the only owned bits are select, from the helper's own constants.
+	 */
+	private List<Address> buildChrOnly(String firstSelect) throws Exception {
+		buildCaller();
+		builder.setBytes("0x9100", firstSelect, true); // LDA #$02, or LDA $fb
+		builder.setBytes("0x9102", "8d 00 90", true); // STA $9000   select
+		builder.setBytes("0x9105", "a5 30", true); // LDA $30
+		builder.setBytes("0x9107", "8d 01 90", true); // STA $9001   CHR data
+		builder.setBytes("0x910a", "a9 03", true); // LDA #$03
+		builder.setBytes("0x910c", "8d 00 90", true); // STA $9000   select 3 (untracked)
+		builder.setBytes("0x910f", "a5 32", true); // LDA $32
+		builder.setBytes("0x9111", "8d 01 90", true); // STA $9001   CHR data
+		builder.setBytes("0x9114", "60", true); // RTS
+		List<Address> sites = new ArrayList<>();
+		for (String s : new String[] { "0x9102", "0x9107", "0x910c", "0x9111" }) {
+			sites.add(builder.addr(s));
+		}
+		return sites;
+	}
+
+	private HelperModel argRegModel(List<Address> sites) {
+		return new HelperModel(null, builder.addr("0x9100"), null, 'A', 0xFFF, 0, strategy(),
+			sites.get(sites.size() - 1), sites.get(0), null, sites);
+	}
+
+	@Test
+	public void chrOnlyHelperLosesNoBankInformation() throws Exception {
+		List<Address> sites = buildChrOnly("a9 02");
+		for (HelperModel helper : List.of(
+			nullArgRegModel(strategy(), "0x9102", "0x9107", "0x910c", "0x9111"),
+			argRegModel(sites))) {
+			CallEffect result = recover(helper);
+			assertEquals("only select is owned -- every data write is a CHR no-op", SELECT_MASK,
+				result.ownedMask());
+			assertEquals(SELECT_MASK, result.state().knownMask() & SELECT_MASK);
+			assertEquals(0x003, result.state().bits() & SELECT_MASK);
+			assertTrue("no owned bit is unknown, so the call must not warn",
+				result.argumentResolved());
+		}
+	}
+
+	@Test
+	public void chrOnlyPrimaryStillWarnsWhenAnEarlierDataWriteIsUnrouted() throws Exception {
+		// LDA $fb / STA $9000: the first data write's select is unknown, so it may have hit R6
+		// or R7 and owns both with an unknown value -- real lost information.
+		List<Address> sites = buildChrOnly("a5 fb");
+		CallEffect result = recover(argRegModel(sites));
+		assertEquals(R6_MASK | R7_MASK, result.ownedMask() & (R6_MASK | R7_MASK));
+		assertFalse(result.argumentResolved());
+	}
+
+	@Test
+	public void primaryThatOwnsAFieldStillDecidesTheWarning() throws Exception {
+		// The rcransom FUN_fed1 guard (grm-4bgh.5): the primary routes to R7 and resolves
+		// nothing, while the earlier constant select resolves -- that must keep warning.
+		buildCaller();
+		builder.setBytes("0x9100", "a9 07", true); // LDA #$07
+		builder.setBytes("0x9102", "8d 00 90", true); // STA $9000   select R7
+		builder.setBytes("0x9105", "a5 30", true); // LDA $30
+		builder.setBytes("0x9107", "8d 01 90", true); // STA $9001   R7 = ?
+		builder.setBytes("0x910a", "60", true); // RTS
+		CallEffect result =
+			recover(nullArgRegModel(strategy(), "0x9102", "0x9107"));
+		assertEquals(R7_MASK, result.ownedMask() & R7_MASK);
+		assertFalse(result.argumentResolved());
+	}
+
+	// ------------------------------------------------------------------
 	// d. ArgumentSought
 	// ------------------------------------------------------------------
 

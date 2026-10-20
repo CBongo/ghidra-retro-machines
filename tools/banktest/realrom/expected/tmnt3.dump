@@ -78,7 +78,7 @@ REALROM count refs.intoOverlay.retargeted 48
 REALROM count refs.intoOverlay.intraOverlay 1053
 REALROM count instrs.inOverlay 4514
 REALROM count bankComments 123
-REALROM count warnings 6
+REALROM count warnings 4
 REALROM count notes 2
 REALROM count symbols 17
 REALROM sample.bankcomment 8066 bank -> select=7,prg_mode=1,r6=0,r7=44 (wraps to 12) via FUN_8746 [switch-value flow]
@@ -233,8 +233,6 @@ REALROM sample.ref.truncated 25 of 1101
 REALROM sample.warn 8bdb [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_8705 whose bank argument could not be recovered at this call site
 REALROM sample.warn 9163 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_WA000_B26__a1a1 whose bank argument could not be recovered at this call site
 REALROM sample.warn 9181 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_WA000_B26__a1a1 whose bank argument could not be recovered at this call site
-REALROM sample.warn f84a [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_f5a6 whose bank argument could not be recovered at this call site
-REALROM sample.warn f878 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_f5e8 whose bank argument could not be recovered at this call site
 REALROM sample.warn f880 [NesBankingAnalyzer] Bank state becomes unknown here: mechanism write with a genuinely undeterminable value (value recovery could not pin down even one tracked bank bit -- e.g. a load of an unrelated address followed directly by the store, with no AND/ORA immediate to constrain it)
 REALROM sample.note ef20 [NesBankingAnalyzer mode lock] prg_mode assumed to stay 1 here: this write's prg_mode bits could not be resolved, and code reached from reset only ever sets prg_mode=1 (first at f624). Not verified at this site.
 REALROM sample.note f880 [NesBankingAnalyzer mode lock] prg_mode assumed to stay 1 here: this write's prg_mode bits could not be resolved, and code reached from reset only ever sets prg_mode=1 (first at f624). Not verified at this site.
