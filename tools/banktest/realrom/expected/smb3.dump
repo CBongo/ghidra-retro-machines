@@ -74,9 +74,9 @@ REALROM block WC000_M1_B9 c000-dfff overlay=true
 REALROM block WE000 e000-ffff overlay=false
 REALROM count blocks.total 70
 REALROM count blocks.overlay 62
-REALROM count refs.intoOverlay.retargeted 92
-REALROM count refs.intoOverlay.intraOverlay 2491
-REALROM count instrs.inOverlay 11693
+REALROM count refs.intoOverlay.retargeted 94
+REALROM count refs.intoOverlay.intraOverlay 2534
+REALROM count instrs.inOverlay 11977
 REALROM count bankComments 159
 REALROM count warnings 22
 REALROM count notes 7
@@ -163,7 +163,7 @@ REALROM sample.bankcomment f5a6 bank -> select=0,prg_mode=1,r6=0,r7=1? via FUN_f
 REALROM sample.bankcomment f5af bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment f5b4 bank -> select=7,prg_mode=1,r6=0,r7=26? [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
 REALROM sample.bankcomment f5c0 bank -> select=7,prg_mode=1,r6=0,r7=1? via FUN_fc6f [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
-REALROM sample.bankcomment f61d bank -> select=0,prg_mode=1,r6=0,r7=1? via FUN_ffad [known: prg_mode=1; assumed from initial: select.0,select.1,select.2,r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
+REALROM sample.bankcomment f61d bank -> select=0,prg_mode=1,r6=0,r7=26? via FUN_ffad [known: prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: select.0,select.1,select.2,r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
 REALROM sample.bankcomment f68f bank -> select=0,prg_mode=1,r6=0,r7=1? via FUN_ffad [known: prg_mode=1; assumed from initial: select.0,select.1,select.2,r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment f698 bank -> select=7,prg_mode=1,r6=0,r7=1? [known: select.0=1,select.1=1,select.2=1,prg_mode=1; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5,r7.0,r7.1,r7.2,r7.3,r7.4,r7.5] [switch-value flow]
 REALROM sample.bankcomment f69d bank -> select=7,prg_mode=1,r6=0,r7=26? [known: select.0=1,select.1=1,select.2=1,prg_mode=1,r7.0=0,r7.1=1,r7.2=0,r7.3=1,r7.4=1,r7.5=0; assumed from initial: r6.0,r6.1,r6.2,r6.3,r6.4,r6.5] [switch-value flow]
@@ -265,7 +265,7 @@ REALROM sample.ref 8abd -> WA000_B26::ac69 UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8ac6 -> WA000_B26::b44a UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8ada -> WA000_B26::acaa UNCONDITIONAL_CALL primary=true
 REALROM sample.ref 8b14 -> WA000_B26::b44a UNCONDITIONAL_CALL primary=true
-REALROM sample.ref.truncated 25 of 2583
+REALROM sample.ref.truncated 25 of 2628
 REALROM sample.warn 8631 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
 REALROM sample.warn 8bae [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.
 REALROM sample.warn 8cc1 [NesBankingAnalyzer] Bank state becomes unknown here: call to bank-switch helper FUN_ffc2, which takes NO INBOUND ARGUMENT -- its own prologue redefines the register its mechanism reads, so there is no caller value to recover. The bank is supplied inside the helper (typically from a RAM shadow) and is not resolved here.

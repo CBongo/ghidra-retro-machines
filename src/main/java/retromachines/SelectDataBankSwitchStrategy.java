@@ -17,6 +17,8 @@ package retromachines;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -664,7 +666,9 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	 * covers the union of every configured target field's mask (never select/prg_mode,
 	 * which a data write cannot touch regardless of which target was picked); the value
 	 * itself is left wholly unknown, since which field the (known) argument byte would even
-	 * land in is itself unresolved.</li>
+	 * land in is itself unresolved. When the helper's own select walks a counted loop
+	 * ({@link #selectsSuppliedInsideHelper}, grm-ml6q), only the targets in that value set are
+	 * poisoned -- none, for a loop confined to CHR registers.</li>
 	 * </ul>
 	 * </li>
 	 * </ul>
@@ -749,9 +753,14 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 			selectValue = selectField.valueIfFullyKnown(inState);
 		}
 		if (selectValue == null) {
+			// A helper whose own select walks a counted loop names a SET of registers (grm-ml6q):
+			// poison only the tracked targets in it -- none at all for smb3 FUN_ffad's CHR walk.
+			Set<Integer> possible = selectsSuppliedInsideHelper(program, switchSite);
 			int owned = 0;
-			for (BitField target : targets.values()) {
-				owned |= target.positionedMask();
+			for (Map.Entry<Integer, BitField> e : targets.entrySet()) {
+				if (possible == null || possible.contains(e.getKey())) {
+					owned |= e.getValue().positionedMask();
+				}
 			}
 			return new HelperDeposit(owned, new MechanismState(0, 0));
 		}
@@ -873,6 +882,18 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	 * in-state takes over -- the conservative direction.
 	 */
 	private Integer selectSuppliedInsideHelper(Program program, Instruction dataWrite) {
+		Instruction select = ownSelectWrite(program, dataWrite);
+		return select == null ? null
+				: selectValueStored(program, select, StoredValueScanner.storeRegister(select),
+					RegisterEnv.NONE);
+	}
+
+	/**
+	 * The helper's own select write on the straight-line path into {@code dataWrite}, or
+	 * {@code null} -- the walk {@link #selectSuppliedInsideHelper} documents, returning the write
+	 * itself so its stored byte can be evaluated more than one way.
+	 */
+	private Instruction ownSelectWrite(Program program, Instruction dataWrite) {
 		Listing listing = program.getListing();
 		Instruction cur = dataWrite;
 		for (int i = 0; i < MAX_OWN_SELECT_SCAN; i++) {
@@ -887,17 +908,83 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 				if ((offset & 1) != 0) {
 					return null; // an earlier DATA write -- see the two-data-writes note above
 				}
-				Character reg = StoredValueScanner.storeRegister(prev);
-				if (reg == null) {
-					return null;
-				}
-				PartialByte stored = StoredValueScanner.resolveStoredValue(program, prev, reg,
-					MechanismState.unknown(), PartialByte.BYTE_MASK, hooks);
-				MechanismState value = selectField.deposit(new MechanismState(0, 0),
-					extractByteField(stored, selectByteMask, selectByteShift));
-				return selectField.valueIfFullyKnown(value);
+				return StoredValueScanner.storeRegister(prev) == null ? null : prev;
 			}
 			cur = prev;
+		}
+		return null;
+	}
+
+	/** The select value {@code select} stores, resolved state-free under {@code env}, or
+	 *  {@code null} unless every select bit is known. */
+	private Integer selectValueStored(Program program, Instruction select, char reg,
+			RegisterEnv env) {
+		PartialByte stored = StoredValueScanner.resolveStoredValue(program, select, reg,
+			MechanismState.unknown(), PartialByte.BYTE_MASK, hooks, env);
+		MechanismState value = selectField.deposit(new MechanismState(0, 0),
+			extractByteField(stored, selectByteMask, selectByteShift));
+		return selectField.valueIfFullyKnown(value);
+	}
+
+	/**
+	 * The most counter values {@link #selectsSuppliedInsideHelper} evaluates one by one. The
+	 * helpers it models walk a register bank (MMC3: six CHR registers); a longer loop is declined.
+	 */
+	private static final int MAX_ENUMERATED_COUNTER_VALUES = 16;
+
+	/**
+	 * Every select value the helper's own select write can store when it is computed from a
+	 * COUNTED LOOP's counter, or {@code null} when that cannot be shown (bead grm-ml6q). smb3's
+	 * {@code FUN_ffad} is the shape:
+	 * <pre>
+	 *   ffad: LDY #5
+	 *   L:    TYA / ORA #$40 / STA $8000     ; select = Y | $40, Y in [0, 5]
+	 *         LDA $0719,Y / STA $8001        ; DATA write   &lt;- dataWrite
+	 *         DEY / BPL L
+	 * </pre>
+	 * {@link #selectSuppliedInsideHelper} declines it -- select differs per iteration -- and the
+	 * shared-bits answer the scanner gives at a loop head (grm-mej.29) cannot help either: Y in
+	 * 0..5 leaves the low three bits unknown, which spans R6/R7. The value SET can: {$40..$45},
+	 * every one a CHR register.
+	 * <p>
+	 * <b>Why it is sound.</b> {@link LoopIdioms#countedLoop} proves the counter holds a value in
+	 * its range at the loop head on every iteration, and that the head is the body's only join.
+	 * The select write is in that body before the step, so the walk back from it to the head
+	 * crosses no join, and pinning the counter there ({@link RegisterEnv}'s entry stop) with every
+	 * other register unknown evaluates the select write's byte as a function of the counter
+	 * alone. A value that does not fully resolve declines the whole set. The env-derived values
+	 * feed one call site's deposit and are never cached as the switch site's own outcome, which
+	 * is the condition {@link RegisterEnv}'s class javadoc puts on an entry stop.
+	 */
+	private Set<Integer> selectsSuppliedInsideHelper(Program program, Instruction dataWrite) {
+		Instruction select = ownSelectWrite(program, dataWrite);
+		if (select == null) {
+			return null;
+		}
+		char reg = StoredValueScanner.storeRegister(select);
+		for (char counter : new char[] { 'X', 'Y' }) {
+			LoopIdioms.CountedLoop loop = LoopIdioms.countedLoop(program, select, counter,
+				p -> null);
+			if (loop == null || loop.head() == null ||
+				loop.range().hi() - loop.range().lo() >= MAX_ENUMERATED_COUNTER_VALUES) {
+				continue;
+			}
+			Set<Integer> values = new TreeSet<>();
+			for (int v = loop.range().lo(); v <= loop.range().hi(); v++) {
+				PartialByte pinned = PartialByte.of(PartialByte.BYTE_MASK, v);
+				RegisterEnv env = new RegisterEnv(loop.head(), PartialByte.unknown(),
+					counter == 'X' ? pinned : PartialByte.unknown(),
+					counter == 'Y' ? pinned : PartialByte.unknown());
+				Integer value = selectValueStored(program, select, reg, env);
+				if (value == null) {
+					values = null;
+					break;
+				}
+				values.add(value);
+			}
+			if (values != null) {
+				return values;
+			}
 		}
 		return null;
 	}

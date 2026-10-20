@@ -421,6 +421,22 @@ final class LoopIdioms {
 	 */
 	static IndexRange countedLoopRange(Program program, Instruction access, char reg,
 			Function<Instruction, Integer> valueBefore) {
+		CountedLoop loop = countedLoop(program, access, reg, valueBefore);
+		return loop == null ? null : loop.range();
+	}
+
+	/** A counted loop's head {@code L} and the range its counter holds at every body instruction
+	 *  before the step -- {@link #countedLoop}. */
+	record CountedLoop(Address head, IndexRange range) {
+	}
+
+	/**
+	 * {@link #countedLoopRange} keeping the loop HEAD (bead grm-ml6q): the one join in the body,
+	 * where the counter's value is the range's on every iteration. A caller that pins the counter
+	 * there (a {@link RegisterEnv} entry stop) can evaluate a body instruction once per value.
+	 */
+	static CountedLoop countedLoop(Program program, Instruction access, char reg,
+			Function<Instruction, Integer> valueBefore) {
 		String rn = String.valueOf(Character.toUpperCase(reg));
 		if (!rn.equals("X") && !rn.equals("Y")) {
 			return null;
@@ -546,9 +562,9 @@ final class LoopIdioms {
 		String br = mnem(b);
 		if (br.equals("BPL") && compareTo == null) {
 			if (d < 0) {
-				return new IndexRange(0, n);
+				return new CountedLoop(head, new IndexRange(0, n));
 			}
-			return n <= 0x7F ? new IndexRange(n, 0x7F) : new IndexRange(n, n);
+			return new CountedLoop(head, n <= 0x7F ? new IndexRange(n, 0x7F) : new IndexRange(n, n));
 		}
 		if (!br.equals("BNE")) {
 			return null;
@@ -557,14 +573,14 @@ final class LoopIdioms {
 		int t = compareTo == null ? 0 : compareTo & 0xFF;
 		int k = ((t - d - n) * d) & 0xFF; // iterations after the first
 		if (k == 0xFF) {
-			return new IndexRange(0, 0xFF); // all 256 values (DEX / BNE entered at 0)
+			return new CountedLoop(head, new IndexRange(0, 0xFF)); // all 256 values (DEX / BNE entered at 0)
 		}
 		int lo = d > 0 ? n : n - k;
 		int hi = d > 0 ? n + k : n;
 		if (lo < 0 || hi > 0xFF) {
 			return null; // the sequence wraps: two ranges, not modeled
 		}
-		return new IndexRange(lo, hi);
+		return new CountedLoop(head, new IndexRange(lo, hi));
 	}
 
 	/** The instruction {@code instr} falls through to, or null when it has no fall-through. */
