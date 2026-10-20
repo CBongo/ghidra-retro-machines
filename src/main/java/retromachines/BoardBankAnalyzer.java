@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import com.google.gson.JsonObject;
@@ -626,6 +627,10 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		// The loader's interrupt entries (bead grm-913), for the caller-side restore note's
 		// "unchanged from handler entry" clause -- the same list the engine seeds unknown.
 		Set<Address> asyncEntries = DescriptorSupport.parseAsyncEntryPoints(program);
+		// `flow` and `mirrors` are reassigned above; the call-site classifier's lazy supplier needs
+		// effectively final copies.
+		DataflowResult finalFlow = flow;
+		BankMirrors finalMirrors = mirrors;
 		for (Map.Entry<Address, BankState> entry : flow.stateIn().entrySet()) {
 			monitor.checkCancelled();
 			Address addr = entry.getKey();
@@ -678,15 +683,7 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 										"AND/ORA immediate to constrain it)",
 							directStop, provenance, false, honestDetail,
 							hintSuffix(flow, addr));
-				if (marked == BankAnnotationAdapter.Marked.WARNED) {
-					warnings++;
-				}
-				if (marked.bookmarked()) {
-					// Dedupe on ANY bookmark, not only a warning: a site whose gap is honest is
-					// still diagnosed, and Phase 3 stacking a second bookmark on it would undo
-					// exactly the reclassification this is for.
-					alreadyWarned.add(addr);
-				}
+				warnings += tally(marked, addr, alreadyWarned);
 			}
 
 			CallSwitch callSwitch = flow.callSwitches().get(addr);
@@ -699,163 +696,26 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 				// that says the CALLER's argument was never recovered.
 				BankState annotState = callSwitch.effect().knownMask() == 0
 						? callSwitch.effect() : callSwitch.stateAfter();
-				// ANALYZER_LIMIT, unconditionally, still (bead grm-jqt0's final ruling --
-				// superseding this method's own first cut at the bead, which is why this
-				// paragraph is worth reading rather than skimming past). This IS the call site
-				// where the bank remains genuinely unknown after the call returns, and that
-				// unknown-ness is a real, plausibly-fixable gap -- so it STAYS a WARNING. What
-				// changes is only the WORDING for one sub-case, because the stock wording is
-				// FALSE for it.
-				//
-				// The sub-case: {@code callSwitch.noInboundArgument()},
-				// {@link HelperArgumentRecovery#argumentDefinitelyClobbered}'s syntactic proof
-				// that the callee's own prologue redefines the mechanism's register from
-				// something other than whatever the caller left there, on every path. zelda2's
-				// four {@code FUN_ffc9} call sites are the motivating case: "whose bank argument
-				// could not be recovered at this call site" is a lie there, because there IS no
-				// argument in play, provably -- A is dead on every path. But that does NOT make
-				// the site's outcome any less unknown. After the call, the bank is whatever
-				// {@code $0769} (zelda2) or the analogous shadow cell holds, and this analyzer
-				// has no idea what that is. That is exactly the class of gap grm-mej's shadow
-				// read-back epic exists to close, so it stays counted as one.
-				//
-				// zelda2's FUN_ffc9 and Bionic Commando's FUN_dca8 (LDA $65, the M13/M14
-				// fixture's real-world twin) are the SAME CASE, and this bead deliberately does
-				// NOT distinguish them, despite zelda2's $0769 having an external citation
-				// (Data Crystal) that $65 lacks. That citation answers "is this a real,
-				// understood hardware idiom" -- interesting, and grm-yflf's business -- but it
-				// answers nothing about whether THIS analyzer can resolve the byte, which is the
-				// only question this ValueStop machinery is allowed to ask. grm-mu7's and
-				// M13/M14's framing of bionic's shadow read as "our limitation, not the
-				// analyzer's" is UPHELD, not superseded, by this change: the fix here is a
-				// wording correction, not a reclassification, so the warning both cases already
-				// carried is unchanged.
-				//
-				// Consequence, load-bearing: the WARNING CENSUS grm-hum and grm-8iy depend on is
-				// unchanged by construction. No site's warning/note status moves; rcransom's 15
-				// argument-recovery sites naming one helper are exactly as warned as before.
-				// zelda2's four sites are expected to stop warning LATER, under fix (B)/grm-yflf,
-				// when the relational restore annotation (e.g. "restores the bank from $0769")
-				// gives them a real, resolved answer -- not here, and not by softening the stop
-				// reason.
-				String warningText = callSwitch.noInboundArgument()
-						? "Bank state becomes unknown here: call to bank-switch helper " +
-							callSwitch.helperName() + ", which takes NO INBOUND ARGUMENT -- its " +
-							"own prologue redefines the register its mechanism reads, so there " +
-							"is no caller value to recover. The bank is supplied inside the " +
-							"helper (typically from a RAM shadow) and is not resolved here."
-						// grm-9z9t: "could not be recovered" claims a recovery attempt; these two
-						// never made one -- see BankDataflowEngine.ArgumentSought.
-						: callSwitch.argumentSought() == ArgumentSought.NO_ARGUMENT_REGISTER
-						? "Bank state becomes unknown here: call to bank-switch helper " +
-							callSwitch.helperName() + ", which this analyzer models with no " +
-							"argument register, so no caller argument was sought at this call " +
-							"site; its effect is not resolved here"
-						: callSwitch.argumentSought() == ArgumentSought.RE_DERIVED_IN_HELPER
-						? "Bank state becomes unknown here: call to bank-switch helper " +
-							callSwitch.helperName() + ", whose latched value is re-derived " +
-							"inside the helper under this call site's registers (no caller " +
-							"argument is consulted), and that derivation did not resolve here"
-						: "Bank state becomes unknown here: call to bank-switch helper " +
-							callSwitch.helperName() + " whose bank argument could not be " +
-							"recovered at this call site";
-				// bead grm-ylm6: a call site that IS a second-tier helper's own relay -- the
-				// register it reads is a live argument, but one this call's own function never
-				// defines; it is supplied by THAT function's caller, one frame further out. Not
-				// our limitation, so it is classified SECOND_TIER_ARGUMENT (an honest NOTE, via
-				// annotateOrWarn's honestGapMessage) rather than ANALYZER_LIMIT (a WARNING) --
-				// see ValueStop#SECOND_TIER_ARGUMENT and CallSwitch#secondTierRelay. warningText
-				// above is unused on this path (honestGapMessage answers before it would be
-				// read), computed unconditionally only because the noInboundArgument case needs
-				// it and the two conditions are independent.
-				//
-				// bead grm-yflf (the classification half of grm-jqt0's fix (B)): a call site
-				// whose helper is a PROVEN no-argument RESTORE entry -- CallSwitch#restoreCell
-				// non-null -- names a real, honest fact this analyzer CAN state: the bank after
-				// this call is unchanged from whatever the game itself saved at that cell.
-				// zelda2's four FUN_ffc9 sites are the motivating case (restores from $0769).
-				// Checked after the second-tier test, and the two are not expected to coincide in
-				// practice (a relay call forwards a LIVE caller register; a restore call reads a
-				// helper-owned save cell) but second tier wins on the off chance they do, since it
-				// is the more specific, whole-program-derived fact.
-				BankSwitchStrategy.ValueStop callStop;
-				String honestDetail = null;
 				if (callSwitch.forked()) {
 					// grm-wul: the argument resolved along every arm of the join above this
 					// call, to several values, and the state was carried forward per arm.
 					BankAnnotationAdapter.Marked marked = BankAnnotationAdapter.annotateForked(this,
 						program, listing, addr, callSwitch.arms(), board, bankUniverse,
 						callSwitch.helperName(), provenance);
-					if (marked == BankAnnotationAdapter.Marked.WARNED) {
-						warnings++;
-					}
-					if (marked.bookmarked()) {
-						alreadyWarned.add(addr);
-					}
+					warnings += tally(marked, addr, alreadyWarned);
 					refs = refs.plus(retargetAll(program, refMgr, baseSpace, instr, board,
 						bankUniverse, flow, addr, placementOverride, monitor, log, provenance, refProvenance));
 					continue;
 				}
-				if (callSwitch.secondTierRelay() && !callSwitch.argumentResolved()) {
-					callStop = BankSwitchStrategy.ValueStop.SECOND_TIER_ARGUMENT;
-					// grm-wayn: a shadow_commits call that stores its function's inbound
-					// register carries its own, accurate text
-					SwitchSiteHints.HintNote relayNote = flow.hintNotes().get(addr);
-					if (relayNote != null) {
-						honestDetail = relayNote.honestDetail();
-					}
-				}
-				else if (callSwitch.armsDenied() && !callSwitch.argumentResolved()) {
-					// grm-wul: the arms resolved but the fork budget refused them -- ours, and
-					// named as such rather than folded into the generic argument warning.
-					callStop = BankSwitchStrategy.ValueStop.MULTI_VALUED_AT_MERGE;
-					warningText = multiValuedWarning(board, callSwitch.arms());
-				}
-				else if (callSwitch.restoreCell() != null && !callSwitch.argumentResolved() &&
-					flow.hintNotes().get(addr) != null &&
-					flow.hintNotes().get(addr).honestDetail() != null) {
-					// a shadow_commits hint in RESTORE mode names its own cells and reason
-					callStop = BankSwitchStrategy.ValueStop.RESTORED_BANK;
-					honestDetail = flow.hintNotes().get(addr).honestDetail();
-				}
-				else if (callSwitch.restoreCell() != null && !callSwitch.argumentResolved()) {
-					callStop = BankSwitchStrategy.ValueStop.RESTORED_BANK;
-					honestDetail = "Bank value is RESTORED here, not resolved: this call's helper " +
-						callSwitch.helperName() + " is a proven no-argument restore entry -- its " +
-						"own prologue reloads the bank directly from " + callSwitch.restoreCell() +
-						", a writable RAM cell nothing between that load and the switch touches, " +
-						"and commits it unchanged. The bank after this call is therefore whatever " +
-						"was last saved at " + callSwitch.restoreCell() + ", not a fresh value this " +
-						"analyzer failed to pin down -- a property of the game, not a gap in " +
-						"analysis.";
-				}
-				else if (callSwitch.readBack() != null && !callSwitch.argumentResolved() &&
-					(honestDetail = callerRestoreDetail(program, listing, flow, addr, callSwitch,
-						mirrors, asyncEntries)) != null) {
-					// bead grm-yflf, the caller-side half: the CALLER read the bank back from a
-					// live-bank mirror and handed it, unmodified, to the switch helper --
-					// megaman2's `LDA $29 / PHA / JSR c96b / PLA / JSR c000` and the bare
-					// `LDA $29 / JSR c000` in its NMI tail. What is committed is the bank live AT
-					// THAT READ, a relational fact the annotation states; the two clauses below
-					// say what more the listing proves about it (an entry-bank read, an interrupt
-					// entry), and nothing is claimed beyond what those checks establish.
-					// grm-mej.7: honestDetail was assigned in the condition above -- null there
-					// means the membership premise is unestablished, and this branch is skipped.
-					callStop = BankSwitchStrategy.ValueStop.RESTORED_BANK;
-				}
-				else {
-					callStop = BankSwitchStrategy.ValueStop.ANALYZER_LIMIT;
-				}
+				CallVerdict verdict = classifyCallSite(callSwitch, flow.hintNotes().get(addr),
+					() -> multiValuedWarning(board, callSwitch.arms()),
+					() -> callerRestoreDetail(program, listing, finalFlow, addr, callSwitch,
+						finalMirrors, asyncEntries));
 				BankAnnotationAdapter.Marked marked = BankAnnotationAdapter.annotateOrWarn(this,
 					program, listing, addr, annotState, board, bankUniverse,
-					callSwitch.helperName(), warningText, callStop, provenance,
-					!callSwitch.argumentResolved(), honestDetail, hintSuffix(flow, addr));
-				if (marked == BankAnnotationAdapter.Marked.WARNED) {
-					warnings++;
-				}
-				if (marked.bookmarked()) {
-					alreadyWarned.add(addr);
-				}
+					callSwitch.helperName(), verdict.warningText(), verdict.stop(), provenance,
+					!callSwitch.argumentResolved(), verdict.honestDetail(), hintSuffix(flow, addr));
+				warnings += tally(marked, addr, alreadyWarned);
 			}
 
 			refs = refs.plus(retargetAll(program, refMgr, baseSpace, instr, board, bankUniverse,
@@ -1295,6 +1155,173 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		}
 		return BankAnnotationAdapter.withLayoutMode(switchResult.effect(), inState,
 			switchResult.effectMask(), board);
+	}
+
+	/**
+	 * What {@link #classifyCallSite} decided for one non-forked call site: the stop reason the
+	 * annotation is classified under, the WARNING text used when that stop warns, and the honest
+	 * NOTE detail (null unless the stop is an honest one that carries its own text).
+	 */
+	record CallVerdict(BankSwitchStrategy.ValueStop stop, String warningText,
+			String honestDetail) {
+	}
+
+	/**
+	 * Classifies one non-forked call-switch site (the stop reason, WARNING text and honest detail
+	 * Phase 2 hands {@link BankAnnotationAdapter#annotateOrWarn}). Pure: everything it needs from
+	 * the program arrives as arguments. {@code hintNote} is the site's
+	 * {@code flow.hintNotes()} entry (or null); the two suppliers are lazy because
+	 * {@code multiValuedText} is only wanted when the fork budget denied the arms and
+	 * {@code callerRestoreDetail} only when every earlier test fell through (it may answer null,
+	 * meaning the membership premise is unestablished and the site is NOT a restore).
+	 */
+	static CallVerdict classifyCallSite(CallSwitch callSwitch, SwitchSiteHints.HintNote hintNote,
+			Supplier<String> multiValuedText, Supplier<String> callerRestoreDetail) {
+		// ANALYZER_LIMIT, unconditionally, still (bead grm-jqt0's final ruling --
+		// superseding this method's own first cut at the bead, which is why this
+		// paragraph is worth reading rather than skimming past). This IS the call site
+		// where the bank remains genuinely unknown after the call returns, and that
+		// unknown-ness is a real, plausibly-fixable gap -- so it STAYS a WARNING. What
+		// changes is only the WORDING for one sub-case, because the stock wording is
+		// FALSE for it.
+		//
+		// The sub-case: {@code callSwitch.noInboundArgument()},
+		// {@link HelperArgumentRecovery#argumentDefinitelyClobbered}'s syntactic proof
+		// that the callee's own prologue redefines the mechanism's register from
+		// something other than whatever the caller left there, on every path. zelda2's
+		// four {@code FUN_ffc9} call sites are the motivating case: "whose bank argument
+		// could not be recovered at this call site" is a lie there, because there IS no
+		// argument in play, provably -- A is dead on every path. But that does NOT make
+		// the site's outcome any less unknown. After the call, the bank is whatever
+		// {@code $0769} (zelda2) or the analogous shadow cell holds, and this analyzer
+		// has no idea what that is. That is exactly the class of gap grm-mej's shadow
+		// read-back epic exists to close, so it stays counted as one.
+		//
+		// zelda2's FUN_ffc9 and Bionic Commando's FUN_dca8 (LDA $65, the M13/M14
+		// fixture's real-world twin) are the SAME CASE, and this bead deliberately does
+		// NOT distinguish them, despite zelda2's $0769 having an external citation
+		// (Data Crystal) that $65 lacks. That citation answers "is this a real,
+		// understood hardware idiom" -- interesting, and grm-yflf's business -- but it
+		// answers nothing about whether THIS analyzer can resolve the byte, which is the
+		// only question this ValueStop machinery is allowed to ask. grm-mu7's and
+		// M13/M14's framing of bionic's shadow read as "our limitation, not the
+		// analyzer's" is UPHELD, not superseded, by this change: the fix here is a
+		// wording correction, not a reclassification, so the warning both cases already
+		// carried is unchanged.
+		//
+		// Consequence, load-bearing: the WARNING CENSUS grm-hum and grm-8iy depend on is
+		// unchanged by construction. No site's warning/note status moves; rcransom's 15
+		// argument-recovery sites naming one helper are exactly as warned as before.
+		// zelda2's four sites are expected to stop warning LATER, under fix (B)/grm-yflf,
+		// when the relational restore annotation (e.g. "restores the bank from $0769")
+		// gives them a real, resolved answer -- not here, and not by softening the stop
+		// reason.
+		String warningText = callSwitch.noInboundArgument()
+				? "Bank state becomes unknown here: call to bank-switch helper " +
+					callSwitch.helperName() + ", which takes NO INBOUND ARGUMENT -- its " +
+					"own prologue redefines the register its mechanism reads, so there " +
+					"is no caller value to recover. The bank is supplied inside the " +
+					"helper (typically from a RAM shadow) and is not resolved here."
+				// grm-9z9t: "could not be recovered" claims a recovery attempt; these two
+				// never made one -- see BankDataflowEngine.ArgumentSought.
+				: callSwitch.argumentSought() == ArgumentSought.NO_ARGUMENT_REGISTER
+				? "Bank state becomes unknown here: call to bank-switch helper " +
+					callSwitch.helperName() + ", which this analyzer models with no " +
+					"argument register, so no caller argument was sought at this call " +
+					"site; its effect is not resolved here"
+				: callSwitch.argumentSought() == ArgumentSought.RE_DERIVED_IN_HELPER
+				? "Bank state becomes unknown here: call to bank-switch helper " +
+					callSwitch.helperName() + ", whose latched value is re-derived " +
+					"inside the helper under this call site's registers (no caller " +
+					"argument is consulted), and that derivation did not resolve here"
+				: "Bank state becomes unknown here: call to bank-switch helper " +
+					callSwitch.helperName() + " whose bank argument could not be " +
+					"recovered at this call site";
+		// bead grm-ylm6: a call site that IS a second-tier helper's own relay -- the
+		// register it reads is a live argument, but one this call's own function never
+		// defines; it is supplied by THAT function's caller, one frame further out. Not
+		// our limitation, so it is classified SECOND_TIER_ARGUMENT (an honest NOTE, via
+		// annotateOrWarn's honestGapMessage) rather than ANALYZER_LIMIT (a WARNING) --
+		// see ValueStop#SECOND_TIER_ARGUMENT and CallSwitch#secondTierRelay. warningText
+		// above is unused on this path (honestGapMessage answers before it would be
+		// read), computed unconditionally only because the noInboundArgument case needs
+		// it and the two conditions are independent.
+		//
+		// bead grm-yflf (the classification half of grm-jqt0's fix (B)): a call site
+		// whose helper is a PROVEN no-argument RESTORE entry -- CallSwitch#restoreCell
+		// non-null -- names a real, honest fact this analyzer CAN state: the bank after
+		// this call is unchanged from whatever the game itself saved at that cell.
+		// zelda2's four FUN_ffc9 sites are the motivating case (restores from $0769).
+		// Checked after the second-tier test, and the two are not expected to coincide in
+		// practice (a relay call forwards a LIVE caller register; a restore call reads a
+		// helper-owned save cell) but second tier wins on the off chance they do, since it
+		// is the more specific, whole-program-derived fact.
+		BankSwitchStrategy.ValueStop callStop;
+		String honestDetail = null;
+		if (callSwitch.secondTierRelay() && !callSwitch.argumentResolved()) {
+			callStop = BankSwitchStrategy.ValueStop.SECOND_TIER_ARGUMENT;
+			// grm-wayn: a shadow_commits call that stores its function's inbound
+			// register carries its own, accurate text
+			if (hintNote != null) {
+				honestDetail = hintNote.honestDetail();
+			}
+		}
+		else if (callSwitch.armsDenied() && !callSwitch.argumentResolved()) {
+			// grm-wul: the arms resolved but the fork budget refused them -- ours, and
+			// named as such rather than folded into the generic argument warning.
+			callStop = BankSwitchStrategy.ValueStop.MULTI_VALUED_AT_MERGE;
+			warningText = multiValuedText.get();
+		}
+		else if (callSwitch.restoreCell() != null && !callSwitch.argumentResolved() &&
+			hintNote != null &&
+			hintNote.honestDetail() != null) {
+			// a shadow_commits hint in RESTORE mode names its own cells and reason
+			callStop = BankSwitchStrategy.ValueStop.RESTORED_BANK;
+			honestDetail = hintNote.honestDetail();
+		}
+		else if (callSwitch.restoreCell() != null && !callSwitch.argumentResolved()) {
+			callStop = BankSwitchStrategy.ValueStop.RESTORED_BANK;
+			honestDetail = "Bank value is RESTORED here, not resolved: this call's helper " +
+				callSwitch.helperName() + " is a proven no-argument restore entry -- its " +
+				"own prologue reloads the bank directly from " + callSwitch.restoreCell() +
+				", a writable RAM cell nothing between that load and the switch touches, " +
+				"and commits it unchanged. The bank after this call is therefore whatever " +
+				"was last saved at " + callSwitch.restoreCell() + ", not a fresh value this " +
+				"analyzer failed to pin down -- a property of the game, not a gap in " +
+				"analysis.";
+		}
+		else if (callSwitch.readBack() != null && !callSwitch.argumentResolved() &&
+			(honestDetail = callerRestoreDetail.get()) != null) {
+			// bead grm-yflf, the caller-side half: the CALLER read the bank back from a
+			// live-bank mirror and handed it, unmodified, to the switch helper --
+			// megaman2's `LDA $29 / PHA / JSR c96b / PLA / JSR c000` and the bare
+			// `LDA $29 / JSR c000` in its NMI tail. What is committed is the bank live AT
+			// THAT READ, a relational fact the annotation states; the two clauses below
+			// say what more the listing proves about it (an entry-bank read, an interrupt
+			// entry), and nothing is claimed beyond what those checks establish.
+			// grm-mej.7: honestDetail was assigned in the condition above -- null there
+			// means the membership premise is unestablished, and this branch is skipped.
+			callStop = BankSwitchStrategy.ValueStop.RESTORED_BANK;
+		}
+		else {
+			callStop = BankSwitchStrategy.ValueStop.ANALYZER_LIMIT;
+		}
+		return new CallVerdict(callStop, warningText, honestDetail);
+	}
+
+	/**
+	 * Books one annotation's {@link BankAnnotationAdapter.Marked} outcome: returns 1 when it was a
+	 * WARNING (the caller adds that to its count) and records the site in {@code alreadyWarned}
+	 * when it carries ANY bookmark. Dedupe on any bookmark, not only a warning: a site whose gap is
+	 * honest is still diagnosed, and Phase 3 stacking a second bookmark on it would undo exactly
+	 * the reclassification this is for.
+	 */
+	private static int tally(BankAnnotationAdapter.Marked marked, Address addr,
+			Set<Address> alreadyWarned) {
+		if (marked.bookmarked()) {
+			alreadyWarned.add(addr);
+		}
+		return marked == BankAnnotationAdapter.Marked.WARNED ? 1 : 0;
 	}
 
 	/**
