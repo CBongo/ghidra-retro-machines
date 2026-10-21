@@ -146,7 +146,7 @@ import ghidra.program.model.symbol.Reference;
  * decide a value, so this class overrides that method explicitly rather than inheriting its
  * {@link #cacheable()}-derived default.
  */
-public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
+public class SerialShiftBankSwitchStrategy extends AbstractRangeBankSwitchStrategy {
 	/** Creates an unconfigured serial-shift strategy. */
 	public SerialShiftBankSwitchStrategy() {
 	}
@@ -164,18 +164,10 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	private record ChainInfo(int index, int total, Instruction chainStart) {
 	}
 
-	private AddressSpace space;
-	private long rangeStart;
-	private long rangeEnd;
 
 	private Map<Integer, List<TargetField>> targets;
 	private List<ResetField> resetFields;
 	private final Set<BitField> allPoisonFields = new LinkedHashSet<>();
-
-	/** The addresses that MIRROR THE LIVE BANK (grm-mej.2), delivered by {@link #observeMirrors}
-	 *  between the analyzer's two dataflow passes. Empty for pass 1 and for any board with no
-	 *  derivable mirror, where this strategy behaves exactly as it did before they existed. */
-	private BankMirrors mirrors = BankMirrors.none();
 
 	/** Returns the descriptor strategy identifier. */
 	@Override
@@ -183,23 +175,10 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 		return "serial-shift";
 	}
 
-	/** Records bank-mirror locations discovered by the analyzer. */
-	@Override
-	public void observeMirrors(BankMirrors observed) {
-		mirrors = observed == null ? BankMirrors.none() : observed;
-	}
-
-	@Override
-	public BankMirrors observedMirrors() {
-		return mirrors;
-	}
-
 	/** Configures serial-shift range, targets, and reset deposits. */
 	@Override
 	public void configure(Program program, JsonObject params, int stateMask) {
-		space = program.getAddressFactory().getDefaultAddressSpace();
-		rangeStart = params.get("start").getAsLong();
-		rangeEnd = params.get("end").getAsLong();
+		configureRange(program, params);
 
 		JsonObject fieldLayout =
 			params.has("_field_layout") ? params.getAsJsonObject("_field_layout") : new JsonObject();
@@ -231,20 +210,10 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 		}
 	}
 
-	private static BitField fieldPos(JsonObject fieldLayout, String fieldName) {
-		JsonObject fl = fieldLayout.has(fieldName) ? fieldLayout.getAsJsonObject(fieldName) : null;
-		if (fl == null) {
-			throw new IllegalArgumentException(
-				"serial-shift: no field-layout entry for '" + fieldName +
-					"' -- is it listed in this mechanism's 'sets:'?");
-		}
-		return new BitField(fl.get("lsb").getAsInt(), fl.get("width").getAsInt());
-	}
-
 	private final StoredValueScanner.Hooks hooks = new StoredValueScanner.Hooks() {
 		@Override
 		public boolean isMechanismWrite(Instruction instr) {
-			return writesInRange(instr) != null;
+			return registerOffsetWritten(instr) != null;
 		}
 
 		@Override
@@ -431,7 +400,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	 * other poison branch has none).
 	 */
 	private GapScan gapScan(Program program, Instruction switchSite) {
-		Long offset = writesInRange(switchSite);
+		Long offset = registerOffsetWritten(switchSite);
 		if (offset == null) {
 			// The counted-loop BNE: a structural commit, with no per-site register scan.
 			return null;
@@ -472,7 +441,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 
 	private SwitchOutcome computeSwitchOutcomeValue(Program program, Instruction instr,
 			MechanismState inState) {
-		Long offset = writesInRange(instr);
+		Long offset = registerOffsetWritten(instr);
 		if (offset == null) {
 			// Not a mechanism write. The ONLY non-write instruction this strategy claims is
 			// the closing BNE of a counted serial-shift loop (the SECONDARY recognizer --
@@ -683,7 +652,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	 * {@code site} is neither shape.
 	 */
 	private Instruction scanOriginFor(Program program, Instruction site) {
-		if (writesInRange(site) != null) {
+		if (registerOffsetWritten(site) != null) {
 			ChainInfo chain = analyzeChain(program, site);
 			return chain == null ? site : chain.chainStart();
 		}
@@ -772,7 +741,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	 *  meaningful when several share one target as they do on every shipped chain -- or a
 	 *  counted loop's closing BNE), or {@code null} if {@code instr} is neither. */
 	private Integer targetIndexOf(Program program, Instruction instr) {
-		Long offset = writesInRange(instr);
+		Long offset = registerOffsetWritten(instr);
 		if (offset != null) {
 			return targetIndex(offset);
 		}
@@ -942,7 +911,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	@Override
 	public BankSwitchStrategy.HelperDeposit callerIndependentDeposit(Program program,
 			Instruction switchSite) {
-		Long offset = writesInRange(switchSite);
+		Long offset = registerOffsetWritten(switchSite);
 		if (offset == null || MosOperands.storeRegister(switchSite) != null) {
 			return null; // not a mechanism write, or an ordinary STA/STX/STY -- has a real argument
 		}
@@ -1026,7 +995,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 		if (head == null || !isChainStore(head)) {
 			return null;
 		}
-		Long staOffset = writesInRange(head);
+		Long staOffset = registerOffsetWritten(head);
 		Instruction lsr = FlowEdges.nextFallThrough(listing, head);
 		if (lsr == null || !isLsrAccumulator(lsr)) {
 			return null;
@@ -1191,7 +1160,7 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	 *  dataflow engine visits it directly). */
 	private boolean isChainStore(Instruction instr) {
 		return Character.valueOf('A').equals(MosOperands.storeRegister(instr)) &&
-			writesInRange(instr) != null;
+			registerOffsetWritten(instr) != null;
 	}
 
 	/** Whether {@code instr}'s straight-line, non-join predecessor is {@code LSR A} -- see
@@ -1219,39 +1188,6 @@ public class SerialShiftBankSwitchStrategy implements BankSwitchStrategy {
 	// ------------------------------------------------------------------
 	// Field/byte helpers (same conventions as SelectDataBankSwitchStrategy)
 	// ------------------------------------------------------------------
-
-	/**
-	 * The register offset {@code instr} writes, or null: a write reference first, then the
-	 * store's own plain-absolute operand -- the same two tiers as
-	 * {@code MemoryLatchBankSwitchStrategy.writesInRange}, compared by PHYSICAL space.
-	 * <p>
-	 * <b>Why the operand tier (grm-xwnc).</b> A store in a banked overlay copy of a helper
-	 * ({@code WC000_M2_B7::c200 STA $E000}, MMC1's register range lying inside the switchable
-	 * window itself) gets its operand reference in its OWN overlay, and Ghidra types it
-	 * {@code DATA}, not {@code WRITE}: the p-code {@code STORE} goes to {@code ram:e000}, which
-	 * the overlay address does not match. With the reference tier alone, every such copy went
-	 * unclassified, so a call that the dataflow knows reaches it folded to "no bank effect".
-	 * Gated on {@link MosOperands#storeRegister} (true STA/STX/STY), and plain absolute
-	 * only, so no read-modify-write and no indexed store is newly seen.
-	 */
-	private Long writesInRange(Instruction instr) {
-		for (Reference ref : instr.getReferencesFrom()) {
-			Address to = ref.getToAddress();
-			if (ref.getReferenceType().isWrite() && inRange(to)) {
-				return to.getOffset();
-			}
-		}
-		if (MosOperands.storeRegister(instr) == null) {
-			return null;
-		}
-		Address target = MosOperands.plainAbsoluteTarget(instr);
-		return target != null && inRange(target) ? target.getOffset() : null;
-	}
-
-	private boolean inRange(Address to) {
-		return to.getAddressSpace().getPhysicalSpace().equals(space) &&
-			to.getOffset() >= rangeStart && to.getOffset() <= rangeEnd;
-	}
 
 	private static MechanismState extractByteField(PartialByte byteState, int bits, int shift) {
 		int widthMask = (1 << bits) - 1;

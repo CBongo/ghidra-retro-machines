@@ -96,14 +96,11 @@ import ghidra.program.model.symbol.Reference;
  * registers, or a bank latch plus a separate mode latch) is supported as long as each
  * mechanism's own fields are contiguous.
  */
-public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
+public class MemoryLatchBankSwitchStrategy extends AbstractRangeBankSwitchStrategy {
 	/** Creates an unconfigured memory-latch strategy. */
 	public MemoryLatchBankSwitchStrategy() {
 	}
 
-	private AddressSpace space;
-	private long rangeStart;
-	private long rangeEnd;
 	private int mask;
 	private int shift;
 	private boolean busConflict;
@@ -146,14 +143,6 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 */
 	private final Map<Long, Optional<Integer>> invariantByteMemo = new HashMap<>();
 
-	/**
-	 * The addresses that MIRROR THE LIVE BANK on this program (bead grm-mej.2), delivered by
-	 * {@link #observeMirrors} between {@code BoardBankAnalyzer}'s two dataflow passes. Empty for
-	 * pass 1 and for every board with no derivable mirror, in which case this strategy behaves
-	 * exactly as it did before mirrors existed.
-	 */
-	private BankMirrors mirrors = BankMirrors.none();
-
 	/** Instruction budget for {@link #shadowCoherentAt}'s backward walk. Generous next to
 	 *  the two-to-five-instruction idioms elsewhere, because the span between a switch and
 	 *  a later restore is a whole interrupt handler's body -- megaman's is ~32 instructions.
@@ -165,17 +154,6 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	@Override
 	public String strategyName() {
 		return "memory-latch";
-	}
-
-	/** Records mirror locations that may provide bank values during recovery. */
-	@Override
-	public void observeMirrors(BankMirrors observed) {
-		mirrors = observed == null ? BankMirrors.none() : observed;
-	}
-
-	@Override
-	public BankMirrors observedMirrors() {
-		return mirrors;
 	}
 
 	/**
@@ -223,9 +201,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 */
 	@Override
 	public void configure(Program program, JsonObject params, int stateMask) {
-		space = program.getAddressFactory().getDefaultAddressSpace();
-		rangeStart = params.get("start").getAsLong();
-		rangeEnd = params.get("end").getAsLong();
+		configureRange(program, params);
 		mask = params.has("mask") ? params.get("mask").getAsInt() : stateMask;
 		shift = params.has("shift") ? params.get("shift").getAsInt() : 0;
 		busConflict = params.has("bus_conflict") && params.get("bus_conflict").getAsBoolean();
@@ -1011,11 +987,7 @@ public class MemoryLatchBankSwitchStrategy implements BankSwitchStrategy {
 	 * space, and it is the same physical bus address either way.
 	 */
 	private boolean inLatchRange(Address addr) {
-		if (!addr.getAddressSpace().getPhysicalSpace().equals(space)) {
-			return false;
-		}
-		long offset = addr.getOffset();
-		return offset >= rangeStart && offset <= rangeEnd;
+		return inRange(addr);
 	}
 
 	/**

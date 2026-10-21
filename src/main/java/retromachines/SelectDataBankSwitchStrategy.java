@@ -76,14 +76,11 @@ import ghidra.program.model.symbol.Reference;
  * {@code BoardBankAnalyzer}'s per-address strategy-match cache requires of a
  * non-{@link #cacheable()} strategy.
  */
-public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
+public class SelectDataBankSwitchStrategy extends AbstractRangeBankSwitchStrategy {
 	/** Creates an unconfigured select-data strategy. */
 	public SelectDataBankSwitchStrategy() {
 	}
 
-	private AddressSpace space;
-	private long rangeStart;
-	private long rangeEnd;
 
 	private int selectByteMask;
 	private int selectByteShift;
@@ -99,38 +96,16 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	 *  mechanism tracks at all. */
 	private Map<String, BitField> targetsByName;
 
-	/**
-	 * The addresses that MIRROR THE LIVE BANK on this program (bead grm-mej.2), delivered by
-	 * {@link #observeMirrors} between {@code BoardBankAnalyzer}'s two dataflow passes. Empty for
-	 * pass 1 and for every board with no derivable mirror, in which case this strategy behaves
-	 * exactly as it did before it observed them (bead grm-sen5 -- until then it did not override
-	 * {@code observeMirrors} at all, so no select-data board ever got bank-mirror read-back).
-	 */
-	private BankMirrors mirrors = BankMirrors.none();
-
 	/** Returns the descriptor strategy identifier. */
 	@Override
 	public String strategyName() {
 		return "select-data";
 	}
 
-	/** Records bank-mirror locations discovered by the analyzer. */
-	@Override
-	public void observeMirrors(BankMirrors observed) {
-		mirrors = observed == null ? BankMirrors.none() : observed;
-	}
-
-	@Override
-	public BankMirrors observedMirrors() {
-		return mirrors;
-	}
-
 	/** Configures select/data address decoding and field mappings. */
 	@Override
 	public void configure(Program program, JsonObject params, int stateMask) {
-		space = program.getAddressFactory().getDefaultAddressSpace();
-		rangeStart = params.get("start").getAsLong();
-		rangeEnd = params.get("end").getAsLong();
+		configureRange(program, params);
 
 		selectByteMask = params.has("select_mask") ? params.get("select_mask").getAsInt() : 0xFF;
 		selectByteShift = params.has("select_shift") ? params.get("select_shift").getAsInt() : 0;
@@ -157,20 +132,10 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 		}
 	}
 
-	private static BitField fieldPos(JsonObject fieldLayout, String fieldName) {
-		JsonObject fl = fieldLayout.has(fieldName) ? fieldLayout.getAsJsonObject(fieldName) : null;
-		if (fl == null) {
-			throw new IllegalArgumentException(
-				"select-data: no field-layout entry for '" + fieldName +
-					"' -- is it listed in this mechanism's 'sets:'?");
-		}
-		return new BitField(fl.get("lsb").getAsInt(), fl.get("width").getAsInt());
-	}
-
 	private final StoredValueScanner.Hooks hooks = new StoredValueScanner.Hooks() {
 		@Override
 		public boolean isMechanismWrite(Instruction instr) {
-			return writesInRange(instr) != null;
+			return registerOffsetWritten(instr) != null;
 		}
 
 		@Override
@@ -211,7 +176,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	 * {@link #callerSideHooks()}'s override (bead grm-sen5, same shape as
 	 * {@code MemoryLatchBankSwitchStrategy}'s): the same mirror answer as the direct-path
 	 * {@link #hooks} above, {@code resolveLoad} withheld per the interface's scope discipline,
-	 * and {@code isMechanismWrite} delegating to the SAME {@link #writesInRange} the direct-path
+	 * and {@code isMechanismWrite} delegating to the SAME {@link #registerOffsetWritten} the direct-path
 	 * hooks use. That delegation is the mandatory half: a caller-side scan using this object is
 	 * handed the REAL tracked in-state at the call, so an {@code isMechanismWrite} answering
 	 * {@code false} would let a mirror load BEFORE an intervening select/data write resolve
@@ -225,7 +190,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	private final StoredValueScanner.Hooks callerSideHooks = new StoredValueScanner.Hooks() {
 		@Override
 		public boolean isMechanismWrite(Instruction instr) {
-			return writesInRange(instr) != null;
+			return registerOffsetWritten(instr) != null;
 		}
 
 		@Override
@@ -440,7 +405,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 		if (mirrors.isEmpty() || site == null || siteInState == null) {
 			return false;
 		}
-		Long offset = writesInRange(site);
+		Long offset = registerOffsetWritten(site);
 		Character reg = offset == null ? null : MosOperands.storeRegister(site);
 		if (reg == null) {
 			return false;
@@ -518,7 +483,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	@Override
 	public ValueStop classifyHelperBodyGap(Program program, Instruction switchSite,
 			MechanismState inState, Address helperEntry) {
-		Long offset = writesInRange(switchSite);
+		Long offset = registerOffsetWritten(switchSite);
 		if (offset == null) {
 			return ValueStop.ANALYZER_LIMIT;
 		}
@@ -556,7 +521,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 
 	private SwitchOutcome computeSwitchOutcomeValue(Program program, Instruction instr,
 			MechanismState inState) {
-		Long offset = writesInRange(instr);
+		Long offset = registerOffsetWritten(instr);
 		if (offset == null) {
 			return null;
 		}
@@ -701,7 +666,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	 */
 	@Override
 	public int argumentByteMask(Program program, Instruction switchSite, int stateMask) {
-		Long offset = switchSite == null ? null : writesInRange(switchSite);
+		Long offset = switchSite == null ? null : registerOffsetWritten(switchSite);
 		if (offset == null) {
 			return BankSwitchStrategy.defaultArgumentByteMask(stateMask);
 		}
@@ -721,7 +686,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	@Override
 	public HelperDeposit depositHelperArgument(Program program, Instruction switchSite,
 			PartialByte argValue, MechanismState inState, int stateMask) {
-		Long offset = writesInRange(switchSite);
+		Long offset = registerOffsetWritten(switchSite);
 		if (offset == null) {
 			// switchSite isn't a shape this strategy itself recognizes as a mechanism
 			// write -- can't happen for a genuine HelperModel.switchSite (it was recorded
@@ -903,7 +868,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 				prev.getFlowType().isCall()) {
 				return null;
 			}
-			Long offset = writesInRange(prev);
+			Long offset = registerOffsetWritten(prev);
 			if (offset != null) {
 				if ((offset & 1) != 0) {
 					return null; // an earlier DATA write -- see the two-data-writes note above
@@ -1008,7 +973,7 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 	 *  whose select the helper does not supply is undeterminable (-1). */
 	@Override
 	public int bankFieldCommittedBySite(Program program, Instruction site) {
-		Long offset = writesInRange(site);
+		Long offset = registerOffsetWritten(site);
 		if (offset == null) {
 			return -1;
 		}
@@ -1021,32 +986,6 @@ public class SelectDataBankSwitchStrategy implements BankSwitchStrategy {
 		}
 		BitField target = targets.get(selectValue);
 		return target == null ? 0 : target.positionedMask();
-	}
-
-	/**
-	 * The register offset {@code instr} writes, or null: a write reference first, then the
-	 * store's own plain-absolute operand, compared by PHYSICAL space. Same two tiers and same
-	 * reason as {@code SerialShiftBankSwitchStrategy.writesInRange} (grm-xwnc): a store in a
-	 * banked overlay copy references its own overlay's address inside the switchable window,
-	 * typed {@code DATA} rather than {@code WRITE}.
-	 */
-	private Long writesInRange(Instruction instr) {
-		for (Reference ref : instr.getReferencesFrom()) {
-			Address to = ref.getToAddress();
-			if (ref.getReferenceType().isWrite() && inRange(to)) {
-				return to.getOffset();
-			}
-		}
-		if (MosOperands.storeRegister(instr) == null) {
-			return null;
-		}
-		Address target = MosOperands.plainAbsoluteTarget(instr);
-		return target != null && inRange(target) ? target.getOffset() : null;
-	}
-
-	private boolean inRange(Address to) {
-		return to.getAddressSpace().getPhysicalSpace().equals(space) &&
-			to.getOffset() >= rangeStart && to.getOffset() <= rangeEnd;
 	}
 
 	/** The BYTE-to-FIELD conversion for a select write (bead grm-ze06.1): extracts the sub-bits
