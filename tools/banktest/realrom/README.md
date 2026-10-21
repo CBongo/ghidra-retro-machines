@@ -391,6 +391,7 @@ probe is not the "bespoke probe" `AGENTS.md` warns against. Writing a new one pe
 | `DecompileSiteProbe.java` | Did the decompiler complete the function at each site, its error if not, and its BRANCHIND / jump-table counts | `GRM_DECOMPILE_SITES=<space>::<hex>,…` |
 | `InstructionCensus.java` | Per-block instruction counts and address ranges, for A/B-ing two builds or toolchains by diff | — |
 | `CopyEvidenceProbe.java` | For each copy loop: why a declined one declined (refs into its destination), and what a materialized `COPY_*` block holds | — |
+| `MapperWriteCensus.java` | Every instruction a configured strategy recognizes as a mapper-register write (production hooks, base and overlay), with target, mechanism, owning function, reachability, incoming flow and a +/-4-unit neighbour-validity signal, plus a per-mechanism target-address histogram (grm-nh4g) | — |
 
 The whole-program sweeps (`JumpTableProbe`, `InstructionCensus`, `SymbolNamespaceProbe ALL`)
 are the ones MCP does worst. They produce one diffable listing per run, which is what an A/B of
