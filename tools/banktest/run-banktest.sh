@@ -287,6 +287,15 @@ cache_key() {
 		printf 'loader:%s\n' "$loader"
 		printf 'opts:%s\n' "$(normalize_opts "$extra")"
 		printf 'dumpscript:'; sha256sum "$SCRIPT_DIR/VerifyBankTest.java" | cut -d' ' -f1
+		# VerifyBankTest's criteria live in companion classes (VerifyBase, Verify*Criteria; bead
+		# grm-rx1i.17) that the script bundle compiles with it -- an edit to one changes the dump
+		# and the verdicts just as an edit to VerifyBankTest.java does, so each must move the key.
+		# Globbed, so a companion added later is covered the day it is added.
+		for companion in "$SCRIPT_DIR"/VerifyBase.java "$SCRIPT_DIR"/Verify*Criteria.java; do
+			[ -f "$companion" ] || continue
+			printf 'dumpcompanion:%s:' "$(basename "$companion")"
+			sha256sum "$companion" | cut -d' ' -f1
+		done
 		printf 'ext:%s\n' "$EXT_ID"
 		# Files that shape the run without being the fixture or a loader option -- today the
 		# overlay descriptor YAML planted into the settings dir (grm-hb6.15). Set by the caller
