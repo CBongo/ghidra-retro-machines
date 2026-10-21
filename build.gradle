@@ -380,53 +380,47 @@ def machineMapTasks = []
 // machines/games/ at all.
 def descriptorSharedInputs = fileTree(dir: 'machines', excludes: ['*.yaml', 'games/*.yaml'])
 
+// One JavaExec per (descriptor, artifact) pair (bead grm-rx1i.14). Task names, descriptions,
+// args, inputs and outputs are exactly what the hand-written pairs declared; callers differ only
+// in compiler main class, output dir/extension and whether the shared descriptor tree is an input.
+def buildMachineArtifact(String taskName, File yamlFile, String yamlRelPath, String mainCls,
+		String outDir, String outExt, def sharedInputs) {
+	def baseName = yamlFile.name.replace('.yaml', '')
+	def outFile = file("${outDir}/${baseName}.${outExt}")
+	return tasks.create(taskName, JavaExec) {
+		group = "Ghidra Retro Machines"
+		description = "Generate ${outDir}/${baseName}.${outExt} from ${yamlRelPath} (build artifact; never committed)"
+		dependsOn 'compileGdtBuilderJava'
+		classpath = sourceSets.gdtBuilder.runtimeClasspath
+		mainClass = mainCls
+		doFirst {
+			file(outDir).mkdirs()
+		}
+		args = [
+			yamlFile.absolutePath,
+			outFile.absolutePath
+		]
+
+		inputs.file(yamlFile)
+		if (sharedInputs != null) {
+			inputs.files(sharedInputs)
+		}
+		inputs.files(sourceSets.gdtBuilder.output)
+		outputs.file(outFile)
+	}
+}
+
 fileTree(dir: 'machines', include: '*.yaml').each { yamlFile ->
 	def baseName = yamlFile.name.replace('.yaml', '')
 	// Capitalize each hyphen-separated component so e.g. nes-uxrom -> NesUxrom, yielding
 	// valid task names buildNesUxromGdt / buildNesUxromMap.
 	def taskId = baseName.split('-').collect { it.capitalize() }.join('')
+	def rel = "machines/${yamlFile.name}"
 
-	def gdtTask = tasks.create("build${taskId}Gdt", JavaExec) {
-		group = "Ghidra Retro Machines"
-		description = "Generate data/machines/${baseName}.gdt from machines/${yamlFile.name} (build artifact; never committed)"
-		dependsOn 'compileGdtBuilderJava'
-		classpath = sourceSets.gdtBuilder.runtimeClasspath
-		mainClass = 'gdtbuilder.GdtBuilder'
-		doFirst {
-			file('data/machines').mkdirs()
-		}
-		args = [
-			yamlFile.absolutePath,
-			file("data/machines/${baseName}.gdt").absolutePath
-		]
-
-		inputs.file(yamlFile)
-		inputs.files(descriptorSharedInputs)
-		inputs.files(sourceSets.gdtBuilder.output)
-		outputs.file(file("data/machines/${baseName}.gdt"))
-	}
-	machineGdtTasks << gdtTask
-
-	def mapTask = tasks.create("build${taskId}Map", JavaExec) {
-		group = "Ghidra Retro Machines"
-		description = "Generate data/machines/${baseName}.map from machines/${yamlFile.name} (build artifact; never committed)"
-		dependsOn 'compileGdtBuilderJava'
-		classpath = sourceSets.gdtBuilder.runtimeClasspath
-		mainClass = 'gdtbuilder.MapCompiler'
-		doFirst {
-			file('data/machines').mkdirs()
-		}
-		args = [
-			yamlFile.absolutePath,
-			file("data/machines/${baseName}.map").absolutePath
-		]
-
-		inputs.file(yamlFile)
-		inputs.files(descriptorSharedInputs)
-		inputs.files(sourceSets.gdtBuilder.output)
-		outputs.file(file("data/machines/${baseName}.map"))
-	}
-	machineMapTasks << mapTask
+	machineGdtTasks << buildMachineArtifact("build${taskId}Gdt", yamlFile, rel,
+		'gdtbuilder.GdtBuilder', 'data/machines', 'gdt', descriptorSharedInputs)
+	machineMapTasks << buildMachineArtifact("build${taskId}Map", yamlFile, rel,
+		'gdtbuilder.MapCompiler', 'data/machines', 'map', descriptorSharedInputs)
 }
 
 task buildGdt {
@@ -455,28 +449,12 @@ fileTree(dir: 'machines/games', include: '*.yaml').each { yamlFile ->
 	def baseName = yamlFile.name.replace('.yaml', '')
 	def taskId = baseName.split('-').collect { it.capitalize() }.join('')
 
-	def gameTask = tasks.create("build${taskId}Game", JavaExec) {
-		group = "Ghidra Retro Machines"
-		description = "Generate data/games/${baseName}.gmap from machines/games/${yamlFile.name} (build artifact; never committed)"
-		dependsOn 'compileGdtBuilderJava'
-		classpath = sourceSets.gdtBuilder.runtimeClasspath
-		mainClass = 'gdtbuilder.GameCompiler'
-		doFirst {
-			file('data/games').mkdirs()
-		}
-		args = [
-			yamlFile.absolutePath,
-			file("data/games/${baseName}.gmap").absolutePath
-		]
-
-		// A game descriptor is self-contained (no include:, no shared machines/generated/
-		// or machines/fragments/ dependency in this increment), so unlike the board tasks
-		// above, its only input besides the compiler itself is its own YAML file.
-		inputs.file(yamlFile)
-		inputs.files(sourceSets.gdtBuilder.output)
-		outputs.file(file("data/games/${baseName}.gmap"))
-	}
-	gameMapTasks << gameTask
+	// A game descriptor is self-contained (no include:, no shared machines/generated/
+	// or machines/fragments/ dependency in this increment), so unlike the board tasks
+	// above, its only input besides the compiler itself is its own YAML file (hence null
+	// shared inputs).
+	gameMapTasks << buildMachineArtifact("build${taskId}Game", yamlFile,
+		"machines/games/${yamlFile.name}", 'gdtbuilder.GameCompiler', 'data/games', 'gmap', null)
 }
 
 task buildGames {
@@ -785,198 +763,130 @@ test {
 	exclude '**/corpus/SpcIplCorpusTest.class'
 }
 
+// Opt-in Test tiers (bead grm-rx1i.14): every task below is a separate Test task with its own
+// forked worker JVM, split out of `test` (which excludes each of their classes -- see above)
+// because each needs user-supplied data this repo cannot ship. optInTest() holds what they share;
+// each call site states only what differs. Options (all default off):
+//   needsLanguages  GHIDRA_INSTALL_DIR env, dependsOn sleighCompile, grm.moduleDir. NOT an
+//                   input by itself -- see bundledLanguageInput.
+//   languageInput   declare data/languages as an input. The bundled languages reach the test
+//                   through grm.moduleDir -- a filesystem path, not the classpath -- so Gradle
+//                   cannot infer them. Without this, editing data/languages/*.sinc re-runs
+//                   sleighCompile (which declares its own inputs) and then reports the test
+//                   UP-TO-DATE, so the run goes green having exercised the PREVIOUS .sla.
+//                   `dependsOn` alone orders tasks; it does not invalidate this one's result.
+//   neverUpToDate   the input lives outside the project tree (an env-var-named corpus) and is
+//                   not a declared Gradle input, so Gradle cannot see it change; without this a
+//                   re-run prints a green UP-TO-DATE having surveyed nothing while the report
+//                   under build/ stays stale and looks freshly produced.
+//   forwardProps    -D properties forwarded to the worker. A forked worker does NOT inherit -D
+//                   properties from the launching `gradle` invocation, so a baseline-regeneration
+//                   switch would otherwise silently no-op (green run masking "the regeneration
+//                   never happened" -- a failure in the flattering direction). A `-D` given on the
+//                   command line is read fresh by the Gradle client every invocation (unlike the
+//                   daemon's stale environment), so a plain configuration-time read suffices.
+def optInTest = { String taskName, String taskDescription, String heap, String includePattern,
+		Map opts = [:] ->
+	tasks.create(taskName, Test) {
+		group = "Ghidra Retro Machines"
+		description = taskDescription
+		useJUnit()
+		maxHeapSize = heap
+		if (opts.needsLanguages) {
+			environment 'GHIDRA_INSTALL_DIR', ghidraInstallDir
+			dependsOn 'sleighCompile'
+			systemProperty 'grm.moduleDir', projectDir.absolutePath
+		}
+		if (opts.languageInput) {
+			inputs.files(fileTree(dir: 'data/languages')).withPropertyName('bundledLanguages')
+		}
+		testClassesDirs = sourceSets.test.output.classesDirs
+		classpath = sourceSets.test.runtimeClasspath
+		include includePattern
+		if (opts.showStandardStreams) {
+			testLogging { showStandardStreams = true }
+		}
+		if (opts.neverUpToDate) {
+			outputs.upToDateWhen { false }
+		}
+		(opts.forwardProps ?: []).each { String prop ->
+			if (System.getProperty(prop) != null) {
+				systemProperty prop, System.getProperty(prop)
+			}
+		}
+	}
+}
+
 // The SPC700 IPL-format static-scan corpus tier (bead grm-1.7.3). Reports candidate streams per
 // title to build/spc-ipl-corpus/candidates.tsv and asserts the F-Zero and Lemmings ground truth.
 // Pure Java (SpcIplScanner has no Ghidra dependency), so like snesRomCorpusTest it declares no
 // bundled-language machinery.
-task spcIplCorpusTest(type: Test) {
-	group = "Ghidra Retro Machines"
-	description = "Scan the ROMs under GRM_SPC700_DIS_CORPUS for SPC700 IPL-format upload " +
-		"streams (grm-1.7.3); skips when unset."
-	useJUnit()
-	maxHeapSize = '1g'
-	testClassesDirs = sourceSets.test.output.classesDirs
-	classpath = sourceSets.test.runtimeClasspath
-	include '**/corpus/SpcIplCorpusTest.class'
-	testLogging { showStandardStreams = true }
-	// The inputs live outside the project tree; never report UP-TO-DATE over a stale report.
-	outputs.upToDateWhen { false }
-}
+optInTest('spcIplCorpusTest',
+	"Scan the ROMs under GRM_SPC700_DIS_CORPUS for SPC700 IPL-format upload " +
+		"streams (grm-1.7.3); skips when unset.",
+	'1g', '**/corpus/SpcIplCorpusTest.class',
+	[showStandardStreams: true, neverUpToDate: true])
 
 // The SNES ROM header corpus survey (bead grm-9nxj.13). A reporting tier, not a gate: it writes
 // build/snes-rom-corpus/{roms.tsv,summary.txt} for triage and asserts only corpus-INDEPENDENT
-// invariants (parse never throws; a valid checksum pair is always accepted; an accepted header is
-// structurally self-consistent; parse is deterministic). See SnesRomCorpusTest's class doc for why
-// the distribution counts are reported and never asserted.
-task snesRomCorpusTest(type: Test) {
-	group = "Ghidra Retro Machines"
-	description = "Survey SnesRomHeader.parse over the SNES cartridge images named by " +
-		"GRM_SNES_ROM_DIR (grm-9nxj.13); skips when unset."
-	useJUnit()
-	// 1g for headroom over the largest image read whole (6 MB in the reference corpus, 921 files
-	// read and released one at a time).
-	maxHeapSize = '1g'
-	// Deliberately NO sleighCompile/GHIDRA_INSTALL_DIR/grm.moduleDir, unlike every other Test
-	// task here: SnesRomCorpusTest drives SnesRomHeader.parse(byte[]) directly. That is a plain
-	// record with no language, no Program and no Application bootstrap, so none of the bundled-
-	// language machinery is an input to this task and declaring it would only invent staleness.
-	testClassesDirs = sourceSets.test.output.classesDirs
-	classpath = sourceSets.test.runtimeClasspath
-	include '**/corpus/SnesRomCorpusTest.class'
-	testLogging { showStandardStreams = true }
-
-	// Never up-to-date: the whole input to this task -- the cartridge images under
-	// GRM_SNES_ROM_DIR -- lives outside the project tree and is not a declared Gradle input, so
-	// Gradle's staleness check cannot see it change. Without this, adding a ROM (or pointing the
-	// env var at a different collection) and re-running prints a green UP-TO-DATE having surveyed
-	// nothing, while build/snes-rom-corpus stays stale and looks freshly produced.
-	outputs.upToDateWhen { false }
-}
+// invariants. See SnesRomCorpusTest's class doc. 1g gives headroom over the largest image read
+// whole (6 MB in the reference corpus). Deliberately NO language machinery, unlike every other
+// Test task here: SnesRomCorpusTest drives SnesRomHeader.parse(byte[]) directly (no language, no
+// Program, no Application bootstrap), so declaring it would only invent staleness.
+optInTest('snesRomCorpusTest',
+	"Survey SnesRomHeader.parse over the SNES cartridge images named by " +
+		"GRM_SNES_ROM_DIR (grm-9nxj.13); skips when unset.",
+	'1g', '**/corpus/SnesRomCorpusTest.class',
+	[showStandardStreams: true, neverUpToDate: true])
 
 // The .dis corpus differential (bead grm-uy9s). A reporting tier, not a gate: it writes
 // build/spc700-dis-corpus/*.tsv for offline triage and asserts only that listing-declared code
 // actually disassembles. See Spc700DisCorpusTest's class doc for why the listings are not an
 // oracle and why this must not grow golden-file assertions.
-task spc700DisCorpusTest(type: Test) {
-	group = "Ghidra Retro Machines"
-	description = "Differential-compare SPC700 disassembly against the hand-annotated .dis " +
-		"listings named by GRM_SPC700_DIS_CORPUS (grm-uy9s); skips when unset."
-	useJUnit()
-	maxHeapSize = '2g'
-	environment 'GHIDRA_INSTALL_DIR', ghidraInstallDir
-	dependsOn 'sleighCompile'
-	systemProperty 'grm.moduleDir', projectDir.absolutePath
-	testClassesDirs = sourceSets.test.output.classesDirs
-	classpath = sourceSets.test.runtimeClasspath
-	include '**/corpus/Spc700DisCorpusTest.class'
-	testLogging { showStandardStreams = true }
+optInTest('spc700DisCorpusTest',
+	"Differential-compare SPC700 disassembly against the hand-annotated .dis " +
+		"listings named by GRM_SPC700_DIS_CORPUS (grm-uy9s); skips when unset.",
+	'2g', '**/corpus/Spc700DisCorpusTest.class',
+	[needsLanguages: true, showStandardStreams: true, neverUpToDate: true])
 
-	// Never up-to-date: the whole input to this task -- the .dis listings under
-	// GRM_SPC700_DIS_CORPUS -- lives outside the project tree and is not a declared Gradle
-	// input, so Gradle's staleness check cannot see it change. Without this, editing a listing
-	// (or pointing the env var at a different corpus) and re-running prints a green UP-TO-DATE
-	// having compared nothing, and the TSV reports under build/spc700-dis-corpus stay stale
-	// while looking freshly produced.
-	outputs.upToDateWhen { false }
-}
+// The exhaustive vector regressions, split out of `test` per the comments above. Each mirrors
+// `test`'s bundled-language setup (AbstractBundledLanguageTest grafting) and forwards its OWN
+// baseline-regeneration switch, deliberately a different -D property from `test`'s.
 
-// The exhaustive SPC700 vector regression (bead grm-c9d.2), split out of `test` per the comment
-// above. Mirrors `test`'s own config (bundled-language visibility, GHIDRA_INSTALL_DIR) since
-// Spc700VectorExhaustiveTest needs the same bundled-module grafting as everything else under
-// AbstractBundledLanguageTest.
-task spc700VectorTest(type: Test) {
-	group = "Ghidra Retro Machines"
-	description = "Exhaustive SPC700 vector regression (grm-c9d.2); requires GRM_SPC700_VECTORS " +
+// SPC700 (bead grm-c9d.2). 512m, not `test`'s 2g: with VectorRunner's periodic emulator rebuild
+// (grm-c9d.3 increment 10, VectorRunner.DEFAULT_REBUILD_INTERVAL) bounding the per-run growth of
+// AbstractPcodeMachine's thread registry, a full ~256,000-case run is measured reliably passing at
+// 128m and OOMing at 64m, so 512m keeps a 4x margin. (Before the rebuild fix this needed 9g.)
+optInTest('spc700VectorTest',
+	"Exhaustive SPC700 vector regression (grm-c9d.2); requires GRM_SPC700_VECTORS " +
 		"(refuses loudly otherwise). Not part of `test`/`unit`/`all` -- see build-and-test.sh's " +
-		"`spc700-vectors` chunk."
-	useJUnit()
-	// 512m, not `test`'s 2g: with VectorRunner's periodic emulator rebuild (grm-c9d.3 increment
-	// 10, VectorRunner.DEFAULT_REBUILD_INTERVAL) bounding the per-run growth of
-	// AbstractPcodeMachine's thread registry, a full ~256,000-case exhaustive run needs nowhere
-	// near what it used to -- measured reliably passing at 128m and OOMing at 64m, so 512m keeps
-	// a 4x margin over the measured floor rather than chasing the exact byte. Before the rebuild
-	// fix this task needed 9g (see the increment 9/10 reports): unbounded thread-registry growth
-	// across all 256,000 cases in one JVM, which the project owner ruled unacceptable on this
-	// 16 GB dev machine for what is meant to be routine local verification.
-	maxHeapSize = '512m'
-	environment 'GHIDRA_INSTALL_DIR', ghidraInstallDir
-	dependsOn 'sleighCompile'
-	systemProperty 'grm.moduleDir', projectDir.absolutePath
-	// The bundled languages are a real input to any test that decodes an instruction, but they
-	// reach the test through grm.moduleDir -- a filesystem path, not the classpath -- so Gradle
-	// cannot infer it. Without this declaration, editing data/languages/*.sinc re-runs
-	// sleighCompile (which does declare its own inputs) and then reports this task UP-TO-DATE,
-	// so the run goes green having exercised the PREVIOUS .sla. `dependsOn` alone does not help:
-	// it orders the tasks, it does not invalidate this one's result. Verified by hand --
-	// spc700VectorTest went UP-TO-DATE on a repeat run before this was added.
-	inputs.files(fileTree(dir: 'data/languages')).withPropertyName('bundledLanguages')
-	testClassesDirs = sourceSets.test.output.classesDirs
-	classpath = sourceSets.test.runtimeClasspath
-	include '**/vectors/Spc700VectorExhaustiveTest.class'
+		"`spc700-vectors` chunk.",
+	'512m', '**/vectors/Spc700VectorExhaustiveTest.class',
+	[needsLanguages: true, languageInput: true,
+		forwardProps: ['grm.spc700.regenerateExhaustiveBaseline']])
 
-	// Spc700VectorExhaustiveTest's OWN baseline-regeneration switch (grm-c9d.3 increment 6),
-	// deliberately a different -D property from `test`'s grm.spc700.regenerateBaseline above --
-	// forwarded here for the identical reason: this is a separate Test task with its own forked
-	// worker JVM, which does NOT inherit -D properties from the launching `gradle` invocation
-	// (nor from the `test` task's config block above, since spc700VectorTest is a wholly separate
-	// task, not a variant of `test`). Without this block, `gradle spc700VectorTest
-	// -Dgrm.spc700.regenerateExhaustiveBaseline=true` would silently no-op: the test would see no
-	// property, fall through to comparing against the existing baseline instead of regenerating
-	// it, most likely fail on drift, or -- worse -- pass and look like nothing happened. Verified
-	// by hand: without this block the property never reaches the forked worker.
-	if (System.getProperty('grm.spc700.regenerateExhaustiveBaseline') != null) {
-		systemProperty 'grm.spc700.regenerateExhaustiveBaseline',
-			System.getProperty('grm.spc700.regenerateExhaustiveBaseline')
-	}
-}
-
-// The exhaustive W65816 vector regression (bead grm-9nxj.3), the sibling of spc700VectorTest
-// immediately above -- see that task's comments for the reasoning behind every line here, which
-// this task mirrors exactly except for the heap size (see below).
-task w65816VectorTest(type: Test) {
-	group = "Ghidra Retro Machines"
-	description = "Exhaustive W65816 vector regression (grm-9nxj.3); requires " +
+// W65816 (bead grm-9nxj.3). UNMEASURED heap: no full SingleStepTests/65816 clone was available
+// when this was written, so 2g is a placeholder scaled up from spc700VectorTest for a suite 20x
+// the case count with larger (24-bit) per-case RAM payloads. It WILL need remeasuring against a
+// real run; see docs/testing.md's note on this tier.
+optInTest('w65816VectorTest',
+	"Exhaustive W65816 vector regression (grm-9nxj.3); requires " +
 		"GRM_W65816_VECTORS (refuses loudly otherwise). Not part of `test`/`unit`/`all` -- see " +
-		"build-and-test.sh's `w65816-vectors` chunk."
-	// UNMEASURED (bead grm-9nxj.3): no full SingleStepTests/65816 clone was available while
-	// writing this task, so -- unlike spc700VectorTest's 512m, measured directly against a real
-	// 256,000-case run -- this heap size is a placeholder carried over from spc700VectorTest
-	// scaled up for a suite 20x the case count with larger (24-bit) per-case RAM payloads. It
-	// WILL need remeasuring against a real run before being trusted; see docs/testing.md's note
-	// on this tier for whatever has actually been measured (or its absence).
-	maxHeapSize = '2g'
-	environment 'GHIDRA_INSTALL_DIR', ghidraInstallDir
-	dependsOn 'sleighCompile'
-	systemProperty 'grm.moduleDir', projectDir.absolutePath
-	inputs.files(fileTree(dir: 'data/languages')).withPropertyName('bundledLanguages')
-	testClassesDirs = sourceSets.test.output.classesDirs
-	classpath = sourceSets.test.runtimeClasspath
-	include '**/vectors/W65816VectorExhaustiveTest.class'
+		"build-and-test.sh's `w65816-vectors` chunk.",
+	'2g', '**/vectors/W65816VectorExhaustiveTest.class',
+	[needsLanguages: true, languageInput: true,
+		forwardProps: ['grm.w65816.regenerateExhaustiveBaseline']])
 
-	if (System.getProperty('grm.w65816.regenerateExhaustiveBaseline') != null) {
-		systemProperty 'grm.w65816.regenerateExhaustiveBaseline',
-			System.getProperty('grm.w65816.regenerateExhaustiveBaseline')
-	}
-}
-
-// The exhaustive NMOS 6502 vector regression (bead grm-hzv8), the sibling of spc700VectorTest/
-// w65816VectorTest above -- see spc700VectorTest's comments for the reasoning behind every line
-// here, which this task mirrors exactly except for the heap size (see below).
-task mos6502VectorTest(type: Test) {
-	group = "Ghidra Retro Machines"
-	description = "Exhaustive NMOS 6502 vector regression (grm-hzv8); requires " +
+// NMOS 6502 (bead grm-hzv8). 1g, MEASURED (2026-09-12): a full 2,560,000-case run completed
+// cleanly at this heap in 1m11s on the dev machine (not tuned further down -- 1g was the first
+// value tried and it passed, so no OOM boundary was probed).
+optInTest('mos6502VectorTest',
+	"Exhaustive NMOS 6502 vector regression (grm-hzv8); requires " +
 		"GRM_6502_VECTORS (refuses loudly otherwise). Not part of `test`/`unit`/`all` -- see " +
-		"build-and-test.sh's `6502-vectors` chunk."
-	// 1g, MEASURED (grm-hzv8, 2026-09-12): a full 2,560,000-case exhaustive run against this task
-	// completed cleanly at this heap size in 1m11s wall clock on this project's dev machine (not
-	// tuned further down -- 1g was the first value tried and it passed, so no OOM boundary was
-	// probed the way spc700VectorTest's 128m/64m pair was). VectorRunner's periodic emulator
-	// rebuild (VectorRunner.DEFAULT_REBUILD_INTERVAL) bounds the per-run growth of
-	// AbstractPcodeMachine's thread registry the same way it does for the SPC700/W65816 tiers, so
-	// this did not need spc700VectorTest's 9g-before-the-fix history repeated to arrive at a
-	// reasonable number.
-	maxHeapSize = '1g'
-	environment 'GHIDRA_INSTALL_DIR', ghidraInstallDir
-	dependsOn 'sleighCompile'
-	systemProperty 'grm.moduleDir', projectDir.absolutePath
-	// The bundled languages are a real input to any test that decodes an instruction, but they
-	// reach the test through grm.moduleDir -- a filesystem path, not the classpath -- so Gradle
-	// cannot infer it. See `test`'s identical declaration above for the full reasoning.
-	inputs.files(fileTree(dir: 'data/languages')).withPropertyName('bundledLanguages')
-	testClassesDirs = sourceSets.test.output.classesDirs
-	classpath = sourceSets.test.runtimeClasspath
-	include '**/vectors/Mos6502VectorExhaustiveTest.class'
-
-	// Mos6502VectorExhaustiveTest's OWN baseline-regeneration switch, deliberately a different -D
-	// property from `test`'s grm.mos6502.regenerateBaseline above -- forwarded here for the
-	// identical reason as spc700VectorTest's/w65816VectorTest's own forwarding blocks: this is a
-	// separate Test task with its own forked worker JVM, which does not inherit -D properties from
-	// the launching `gradle` invocation.
-	if (System.getProperty('grm.mos6502.regenerateExhaustiveBaseline') != null) {
-		systemProperty 'grm.mos6502.regenerateExhaustiveBaseline',
-			System.getProperty('grm.mos6502.regenerateExhaustiveBaseline')
-	}
-}
+		"build-and-test.sh's `6502-vectors` chunk.",
+	'1g', '**/vectors/Mos6502VectorExhaustiveTest.class',
+	[needsLanguages: true, languageInput: true,
+		forwardProps: ['grm.mos6502.regenerateExhaustiveBaseline']])
 
 //----------------------------------------------------------------------------------
 // Bundled sleigh language build (bead grm-bk6): compile data/languages/*.slaspec -> .sla.
