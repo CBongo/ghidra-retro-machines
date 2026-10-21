@@ -356,38 +356,44 @@ final class SaveRestoreTrampolines {
 	}
 
 	/**
-	 * {@link #restoredFieldMask(Program, HelperModel, BankMirrors, Set, Set)} with the
-	 * descriptor's stated field pairings (bead grm-mej.10). Whatever the pairing-free walk
-	 * proves is returned unchanged; only when it declines, the game states pairings and save
-	 * cells, is the {@link #pairedRestoredFieldMask} walk tried. With no pairings this IS the
-	 * five-argument form.
+	 * What {@link #classify} proved about one helper: {@code mask} is the restored-field mask (null
+	 * when the helper is no restoring trampoline), {@code paired} the computed restore carried by a
+	 * helper only the pairing-aware walk proves (null for a pairing-free claim or no claim).
 	 */
-	static Integer restoredFieldMask(Program program, HelperModel helper,
-			BankMirrors mirrors, Set<Address> switchSites, Set<Long> saveCells,
-			java.util.List<FieldPairing> pairings) {
-		Integer plain = restoredFieldMask(program, helper, mirrors, switchSites, saveCells);
-		if (plain != null || pairings.isEmpty() || saveCells.isEmpty()) {
-			return plain;
-		}
-		BankStackBrackets.Restore r = pairedRestoredFieldMask(program, helper, mirrors,
-			switchSites, saveCells, pairings);
-		return r == null ? null : r.restoredMask();
+	record Classification(Integer mask, BankStackBrackets.Restore paired) {
+		static final Classification NONE = new Classification(null, null);
 	}
 
 	/**
-	 * The computed restore of a helper that only the pairing-aware walk proves (null when the
-	 * helper is a pairing-free claim or no claim): the engine folds it per call, computing the
-	 * paired field from the low field instead of leaving both at their pre-call values.
+	 * {@link #restoredFieldMask(Program, HelperModel, BankMirrors, Set, Set)} with the
+	 * descriptor's stated field pairings (bead grm-mej.10), plus the computed restore of a helper
+	 * only the pairing-aware walk proves (the engine folds it per call, computing the paired
+	 * field from the low field instead of leaving both at their pre-call values). Each walk runs
+	 * at most once per helper. Whatever the pairing-free walk proves is returned unchanged, with
+	 * no computed restore; only when it declines, the game states pairings and save cells, is the
+	 * {@link #pairedRestoredFieldMask} walk tried. With no pairings the mask IS the five-argument
+	 * form's.
 	 */
-	static BankStackBrackets.Restore pairedRestore(Program program, HelperModel helper,
+	static Classification classify(Program program, HelperModel helper,
 			BankMirrors mirrors, Set<Address> switchSites, Set<Long> saveCells,
 			java.util.List<FieldPairing> pairings) {
-		if (pairings.isEmpty() || saveCells.isEmpty() ||
-			restoredFieldMask(program, helper, mirrors, switchSites, saveCells) != null) {
-			return null;
+		Integer plain = restoredFieldMask(program, helper, mirrors, switchSites, saveCells);
+		if (plain != null) {
+			return new Classification(plain, null);
 		}
-		return pairedRestoredFieldMask(program, helper, mirrors, switchSites, saveCells,
-			pairings);
+		if (pairings.isEmpty() || saveCells.isEmpty()) {
+			return Classification.NONE;
+		}
+		BankStackBrackets.Restore r = pairedRestoredFieldMask(program, helper, mirrors,
+			switchSites, saveCells, pairings);
+		return r == null ? Classification.NONE : new Classification(r.restoredMask(), r);
+	}
+
+	/** The mask of {@link #classify}; the pairing-aware form of the five-argument walk. */
+	static Integer restoredFieldMask(Program program, HelperModel helper,
+			BankMirrors mirrors, Set<Address> switchSites, Set<Long> saveCells,
+			java.util.List<FieldPairing> pairings) {
+		return classify(program, helper, mirrors, switchSites, saveCells, pairings).mask();
 	}
 
 	/** What a register is known to hold: the entry bank plus {@code plus}, from {@code source}. */

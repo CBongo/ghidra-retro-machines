@@ -545,15 +545,13 @@ public abstract class BoardBankAnalyzer extends AbstractAnalyzer {
 		List<SaveRestoreTrampolines.FieldPairing> pairings =
 			BankStackBrackets.resolvePairings(board, pairedFields);
 		for (HelperModel h : helpers.values()) {
-			Integer restored = SaveRestoreTrampolines.restoredFieldMask(program, h, mirrors,
-				flow.switchResults().keySet(), saveCells, pairings);
-			if (restored != null) {
+			SaveRestoreTrampolines.Classification c = SaveRestoreTrampolines.classify(program, h,
+				mirrors, flow.switchResults().keySet(), saveCells, pairings);
+			if (c.mask() != null) {
 				restoringTrampolines.put(h.function(),
-					restored == 0 ? SaveRestoreTrampolines.ALL_FIELDS : restored);
-				BankStackBrackets.Restore computed = SaveRestoreTrampolines.pairedRestore(program,
-					h, mirrors, flow.switchResults().keySet(), saveCells, pairings);
-				if (computed != null) {
-					helperRestores.put(h.function(), computed);
+					c.mask() == 0 ? SaveRestoreTrampolines.ALL_FIELDS : c.mask());
+				if (c.paired() != null) {
+					helperRestores.put(h.function(), c.paired());
 				}
 			}
 		}
