@@ -358,8 +358,9 @@ final class HelperArgumentRecovery {
 			}
 			CallEffect full = recoverPerSiteWithoutArgReg(program, callInstr, helper, callSiteIn,
 				envCache, path, oracle, crossBlockMemo);
-			return new CallEffect(full.state(), full.ownedMask() & ~fieldOnly, true,
-				full.noInboundArgument(), full.secondTierRelay(), null);
+			// recoverPerSiteWithoutArgReg builds `full` with no restoreCell and no readBack, so
+			// keeping them is the same as the null this used to pass.
+			return full.withOwnedMask(full.ownedMask() & ~fieldOnly).withResolved(true);
 		}
 		Character reg = helper.argReg();
 		if (helper.recoversPerSiteWithoutArgReg()) {
@@ -3088,6 +3089,33 @@ final class HelperArgumentRecovery {
 		CallEffect asSecondTierRelay() {
 			return new CallEffect(state, ownedMask, argumentResolved, noInboundArgument, true,
 				restoreCell, readBack);
+		}
+
+		// The withers below are the one place a copy-with-one-change lists every component, so a
+		// component added later (readBack was) is dropped here or nowhere.
+
+		/** This effect with {@code state} replaced and every other component kept. */
+		CallEffect withState(BankState newState) {
+			return new CallEffect(newState, ownedMask, argumentResolved, noInboundArgument,
+				secondTierRelay, restoreCell, readBack);
+		}
+
+		/** This effect with {@code ownedMask} replaced and every other component kept. */
+		CallEffect withOwnedMask(int newOwnedMask) {
+			return new CallEffect(state, newOwnedMask, argumentResolved, noInboundArgument,
+				secondTierRelay, restoreCell, readBack);
+		}
+
+		/** This effect with {@code argumentResolved} replaced and every other component kept. */
+		CallEffect withResolved(boolean resolved) {
+			return new CallEffect(state, ownedMask, resolved, noInboundArgument, secondTierRelay,
+				restoreCell, readBack);
+		}
+
+		/** This effect with {@code restoreCell} replaced and every other component kept. */
+		CallEffect withRestoreCell(Address cell) {
+			return new CallEffect(state, ownedMask, argumentResolved, noInboundArgument,
+				secondTierRelay, cell, readBack);
 		}
 	}
 

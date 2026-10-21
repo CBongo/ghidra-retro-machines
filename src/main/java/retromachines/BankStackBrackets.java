@@ -483,14 +483,10 @@ final class BankStackBrackets {
 	 */
 	static List<SaveRestoreTrampolines.FieldPairing> resolvePairings(
 			BoardDescriptorModel.BoardModel board, List<PairedFields> pairs) {
-		Map<String, FieldSpec> fields = new HashMap<>();
-		for (FieldSpec f : board.fieldSpecs()) {
-			fields.put(f.name(), f);
-		}
 		List<SaveRestoreTrampolines.FieldPairing> out = new java.util.ArrayList<>();
 		for (PairedFields p : pairs) {
-			FieldSpec high = fields.get(p.high());
-			FieldSpec low = fields.get(p.low());
+			FieldSpec high = board.field(p.high());
+			FieldSpec low = board.field(p.low());
 			if (high != null && low != null) {
 				out.add(new SaveRestoreTrampolines.FieldPairing(high.positionedMask(),
 					low.positionedMask(), p.offset()));

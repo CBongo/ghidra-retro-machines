@@ -1403,9 +1403,7 @@ final class BankDataflowEngine {
 		Integer pushFields = claims.privatePushes().get(addr);
 		if (pushFields != null && !effect.argumentResolved() && effect.ownedMask() != 0 &&
 			(effect.ownedMask() & ~effect.state().knownMask() & ~pushFields) == 0) {
-			return new CallEffect(effect.state(), effect.ownedMask(), true,
-				effect.noInboundArgument(), effect.secondTierRelay(), effect.restoreCell(),
-				effect.readBack());
+			return effect.withResolved(true);
 		}
 		return effect;
 	}

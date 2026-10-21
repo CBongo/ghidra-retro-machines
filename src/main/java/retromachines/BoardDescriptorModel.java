@@ -225,6 +225,14 @@ final class BoardDescriptorModel {
 		static final String BANK_WRAP_IMAGE = "image";
 
 		/**
+		 * The {@code banking.state} field named {@code name}, or null. MapCompiler rejects a
+		 * field declared twice, so first match and last match are the same field.
+		 */
+		FieldSpec field(String name) {
+			return BoardStateFields.findField(fieldSpecs, name);
+		}
+
+		/**
 		 * Parses the {@code banking} and {@code windows} sections of a board descriptor into
 		 * a {@link BoardModel}. Returns {@code null} when a required section is missing or
 		 * inconsistent, in which case the caller should skip bank-state analysis (but this is
@@ -338,10 +346,7 @@ final class BoardDescriptorModel {
 					continue;
 				}
 				String fieldName = fields.iterator().next();
-				FieldSpec fieldSpec = fieldSpecs.stream()
-						.filter(f -> f.name().equals(fieldName))
-						.findFirst()
-						.orElse(null);
+				FieldSpec fieldSpec = BoardStateFields.findField(fieldSpecs, fieldName);
 				if (fieldSpec == null) {
 					log.appendMsg(source, "computed window '" + pw.name() +
 						"' references unknown state field '" + fieldName + "'; skipping it");
@@ -358,10 +363,7 @@ final class BoardDescriptorModel {
 			int homeModeValue = 0;
 			List<ModeWindowModel> modeWindows = new ArrayList<>();
 			if (plan.modeField() != null) {
-				modeField = fieldSpecs.stream()
-						.filter(f -> f.name().equals(plan.modeField()))
-						.findFirst()
-						.orElse(null);
+				modeField = BoardStateFields.findField(fieldSpecs, plan.modeField());
 				if (modeField == null) {
 					log.appendMsg(source, "memory.layouts[] mode field '" + plan.modeField() +
 						"' not found in banking.state; skipping mode-varying windows");
@@ -384,10 +386,7 @@ final class BoardDescriptorModel {
 								continue;
 							}
 							String fieldName = exprFields.iterator().next();
-							bankField = fieldSpecs.stream()
-									.filter(f -> f.name().equals(fieldName))
-									.findFirst()
-									.orElse(null);
+							bankField = BoardStateFields.findField(fieldSpecs, fieldName);
 							if (bankField == null) {
 								log.appendMsg(source, "mode-varying window '" + pw.name() + "' (mode " +
 									plan.modeField() + "=" + pw.modeValue() +

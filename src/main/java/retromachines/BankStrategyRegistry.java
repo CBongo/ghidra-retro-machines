@@ -128,15 +128,13 @@ final class BankStrategyRegistry {
 					JsonObject fieldLayout = new JsonObject();
 					for (JsonElement se : mechanism.getAsJsonArray("sets")) {
 						String fieldName = se.getAsString();
-						board.fieldSpecs().stream()
-								.filter(f -> f.name().equals(fieldName))
-								.findFirst()
-								.ifPresent(f -> {
-									JsonObject fl = new JsonObject();
-									fl.addProperty("lsb", f.lsb() - lsb);
-									fl.addProperty("width", f.width());
-									fieldLayout.add(fieldName, fl);
-								});
+						FieldSpec f = board.field(fieldName);
+						if (f != null) {
+							JsonObject fl = new JsonObject();
+							fl.addProperty("lsb", f.lsb() - lsb);
+							fl.addProperty("width", f.width());
+							fieldLayout.add(fieldName, fl);
+						}
 					}
 					params.add("_field_layout", fieldLayout);
 				}
@@ -183,10 +181,7 @@ final class BankStrategyRegistry {
 		int lsb = Integer.MAX_VALUE;
 		for (JsonElement se : sets) {
 			String fieldName = se.getAsString();
-			FieldSpec field = board.fieldSpecs().stream()
-					.filter(f -> f.name().equals(fieldName))
-					.findFirst()
-					.orElse(null);
+			FieldSpec field = board.field(fieldName);
 			if (field == null) {
 				AnalyzerLog.warn(analyzer, log, "mechanism '" + strategyName + "' sets unknown state " +
 					"field '" + fieldName + "'; skipping that mechanism");

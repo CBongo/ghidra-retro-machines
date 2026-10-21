@@ -181,12 +181,7 @@ final class ShadowCommits {
 					describe(entry, who) + " was not applied: " + failed));
 				continue;
 			}
-			FieldSpec field = null;
-			for (FieldSpec f : board.fieldSpecs()) {
-				if (f.name().equals(entry.field())) {
-					field = f;
-				}
-			}
+			FieldSpec field = board.field(entry.field());
 			structural.add(new Valid(entry.helper(), entry.cell(), field, entry.provenance(), null));
 		}
 		// Pass 2: the coherence premise. A store to a cell is committed by ANY structurally
@@ -255,12 +250,7 @@ final class ShadowCommits {
 	/** Why {@code entry} cannot be applied for want of a helper or field, or null. */
 	private static String validateStructure(BoardModel board, Map<Function, HelperModel> helpers,
 			Entry entry) {
-		FieldSpec field = null;
-		for (FieldSpec f : board.fieldSpecs()) {
-			if (f.name().equals(entry.field())) {
-				field = f;
-			}
-		}
+		FieldSpec field = board.field(entry.field());
 		if (field == null) {
 			return "'" + entry.field() + "' is not a banking.state field of this board";
 		}
@@ -494,10 +484,8 @@ final class ShadowCommits {
 					effect.state().bits() & ~fieldMask);
 				Address restoreFrom = program.getAddressFactory().getDefaultAddressSpace()
 						.getAddress(hint.cell());
-				effect = new CallEffect(state, effect.ownedMask(), false,
-					effect.noInboundArgument(), effect.secondTierRelay(),
-					effect.restoreCell() != null ? effect.restoreCell() : restoreFrom,
-					effect.readBack());
+				effect = effect.withState(state).withResolved(false).withRestoreCell(
+					effect.restoreCell() != null ? effect.restoreCell() : restoreFrom);
 				restores.add(String.format("%s from $%04X", field.name(), hint.cell()));
 				continue;
 			}
@@ -508,8 +496,7 @@ final class ShadowCommits {
 					effect.state().bits() & effect.state().knownMask() & owned);
 				boolean resolved = owned == 0 || (owned & ~state.knownMask()) == 0
 						|| effect.argumentResolved();
-				effect = new CallEffect(state, owned, resolved, effect.noInboundArgument(),
-					effect.secondTierRelay(), effect.restoreCell(), effect.readBack());
+				effect = effect.withState(state).withOwnedMask(owned).withResolved(resolved);
 				continue;
 			}
 			Address cell =
@@ -541,10 +528,8 @@ final class ShadowCommits {
 				// so it neither earns the "(game descriptor hint)" suffix nor a note
 				bank = (bits >>> field.lsb()) & field.widthMask();
 			}
-			effect = new CallEffect(new BankState(newKnown, newBits), effect.ownedMask(),
-				effect.argumentResolved() || (effect.ownedMask() & ~newKnown) == 0,
-				effect.noInboundArgument(), effect.secondTierRelay(), effect.restoreCell(),
-				effect.readBack());
+			effect = effect.withState(new BankState(newKnown, newBits)).withResolved(
+				effect.argumentResolved() || (effect.ownedMask() & ~newKnown) == 0);
 		}
 		if (!restores.isEmpty() && !effect.argumentResolved() && relays.isEmpty()) {
 			relays.add("Bank value is RESTORED here, not resolved: this call's helper " +

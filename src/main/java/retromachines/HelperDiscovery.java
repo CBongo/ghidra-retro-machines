@@ -205,8 +205,8 @@ final class HelperDiscovery {
 				// switchSite -- both left null/unset is safe. firstSite goes with them: a null
 				// there makes midBodyEntryHelper decline, which is the right answer for a model
 				// that no longer describes one coherent mechanism.
-				helpers.put(f, new HelperModel(f, f.getEntryPoint(), null, null,
-					existing.effectMask() | site.effectMask(), 0, null, null, null, null));
+				helpers.put(f, HelperModel.composite(f, null,
+					existing.effectMask() | site.effectMask()));
 			}
 		}
 		return helpers;
@@ -309,8 +309,7 @@ final class HelperDiscovery {
 			// OWN body, which is no longer what this model asserts. A composed constant needs
 			// none of them (runDataflow uses constState directly), and a decline needs none
 			// either (recoverCallArgument short-circuits on the null argReg).
-			composed.put(f, new HelperModel(f, f.getEntryPoint(), effect.constState(), null,
-				effect.effectMask(), 0, null, null, null, null));
+			composed.put(f, HelperModel.composite(f, effect.constState(), effect.effectMask()));
 		}
 		return composed;
 	}
@@ -963,8 +962,8 @@ final class HelperDiscovery {
 			if (!restoreEffect.argumentResolved()) {
 				continue; // cannot establish the exit state -- decline rather than guess
 			}
-			HelperModel model = new HelperModel(wrapper, wrapper.getEntryPoint(),
-				restoreEffect.state(), null, wrapped.effectMask(), 0, null, null, null, null);
+			HelperModel model =
+				HelperModel.composite(wrapper, restoreEffect.state(), wrapped.effectMask());
 			result.put(wrapper, model);
 			relaySites.add(relayCall);
 		}
@@ -1542,6 +1541,16 @@ final class HelperDiscovery {
 		 */
 		HelperModel {
 			sites = normalizeSites(sites, switchSite);
+		}
+
+		/**
+		 * The "neither strategy nor argReg" model {@link #placement} throws on: a composed or
+		 * degraded summary that carries only a constant state and an effect mask, with
+		 * {@code lsb == 0} and no switch site.
+		 */
+		static HelperModel composite(Function function, BankState constState, int effectMask) {
+			return new HelperModel(function, function.getEntryPoint(), constState, null,
+				effectMask, 0, null, null, null, null);
 		}
 
 		/**
